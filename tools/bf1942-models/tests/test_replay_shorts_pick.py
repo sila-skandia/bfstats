@@ -43,9 +43,11 @@ class ShortsPickTests(unittest.TestCase):
         self.assertEqual(k["aaFromFoot"], "ground-to-air")
         self.assertEqual(k["tankToTank"], "tank-to-tank")
         self.assertEqual(k["longShot"], "long-shot")
+        # A man on foot who kills a tank (2026-11-09: Arnhem's 30 PIAT kills); a jeep is not one.
+        self.assertEqual(k["footOnTank"], "tank-buster")
         # Not worth a Short: armour on a jeep or a mortar, a rifle kill under
         # 100 m, a thrown grenade, a tank on a man on foot.
-        for name in ("tankToJeep", "tankToMortar", "shortShot", "longGrenade", "tankOnFoot"):
+        for name in ("tankToJeep", "tankToMortar", "shortShot", "longGrenade", "tankOnFoot", "footOnJeep"):
             self.assertIsNone(k[name], name)
 
     def test_the_key_is_the_apis(self) -> None:
@@ -58,6 +60,7 @@ class ShortsPickTests(unittest.TestCase):
             "Mustang downs Bf109 at 410 m",
             "Bazooka downs Bf109 at 120 m",
             "412 m K98Sniper shot on Bocage",
+            "Piat kills Tiger at 43 m",
             # A kill line and its round naming no weapon: no "null" in a title.
             "206 m shot on Omaha Beach",
             # Own goals: a crash, a fall, his own charge (a WASTED Short).

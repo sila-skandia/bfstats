@@ -49,8 +49,8 @@ const JUMP = 15;
 
 /** The kinds filmed one kill a Short. Own goals and spawn deaths are reels
  *  (`reelOf`): one alone was too quick or too forced (the owner, 2026-11-03). */
-export const KINDS = Object.freeze(['air-to-air', 'ground-to-air', 'tank-to-tank', 'long-shot']);
-const BASE = { 'air-to-air': 100, 'ground-to-air': 90, 'tank-to-tank': 70, 'long-shot': 50, 'own-goal': 80, 'spawn-death': 80 };
+export const KINDS = Object.freeze(['air-to-air', 'ground-to-air', 'tank-to-tank', 'tank-buster', 'long-shot']);
+const BASE = { 'air-to-air': 100, 'ground-to-air': 90, 'tank-to-tank': 70, 'tank-buster': 72, 'long-shot': 50, 'own-goal': 80, 'spawn-death': 80 };
 
 /** A man killed this soon after he spawned (the owner, 2026-11-03: "a
  *  soldier spawns in, and dies within 5 seconds"). One alone is too quick to
@@ -178,6 +178,9 @@ export function kindOfKill(killer, victim, distance, weapon) {
   if (!killer || !victim) return null;
   if (victim.kind === 'air') return killer.kind === 'air' ? 'air-to-air' : 'ground-to-air';
   if (killer.kind === 'armour' && victim.kind === 'armour') return 'tank-to-tank';
+  // A man on foot who kills a tank (a PIAT, a bazooka, a charge): the owner,
+  // 2026-11-09, on Arnhem's 351 kills making no single Short at all.
+  if (killer.foot && victim.kind === 'armour') return 'tank-buster';
   if (killer.foot && victim.foot && distance >= LONG_SHOT && !NOT_AIMED.test(String(weapon ?? ''))) return 'long-shot';
   return null;
 }
@@ -230,6 +233,7 @@ export function titleOf(c, display = s => s) {
     case 'air-to-air': return `${kv} downs ${vv} at ${m}`;
     case 'ground-to-air': return `${kv ?? (c.weapon ? display(c.weapon) : c.killerName)} downs ${vv} at ${m}`;
     case 'tank-to-tank': return `${kv} kills ${vv} at ${m}`;
+    case 'tank-buster': return `${c.weapon ? display(c.weapon) : c.killerName} kills ${vv} at ${m}`;
     case 'long-shot': return c.weapon ? `${m} ${display(c.weapon)} shot on ${levelWords(c.level)}` : `${m} shot on ${levelWords(c.level)}`;
     default: return `${c.killerName} kills ${c.victimName}`;
   }
@@ -435,8 +439,12 @@ export function pickShorts(candidates, { max = MAX_PER_RECORDING, taken = new Se
 }
 
 /** A kill the recording holds whole that can be filmed as a compilation's
- *  part (air on air the volley, else the bullet chase on its round), or null. */
-function filmablePart(rec, facts, k, models) {
+ *  part (air on air the volley, else the bullet chase on its round), or null.
+ *  `roundless` lets a kill between two men on foot through without a round
+ *  the page can chase (`noRound`): a burst films those in real time (the
+ *  runner's fast cut), and ahalol's and almighty-_-'s on Arnhem had too few
+ *  rounds to be filmed at all (2026-11-09). */
+function filmablePart(rec, facts, k, models, { roundless = false } = {}) {
   const f = facts.get(k);
   if (!f?.fresh) return null;
   const at = k.t - BEFORE;
@@ -446,9 +454,10 @@ function filmablePart(rec, facts, k, models) {
   const killer = mountOf(rec, k.killer, at, models);
   const victim = mountOf(rec, k.victim, at, models);
   const air = killer?.kind === 'air' && victim?.kind === 'air';
-  if (!air && !f.round?.f) return null;
+  const noRound = !air && !f.round?.f;
+  if (noRound && !(roundless && killer?.foot && victim?.foot)) return null;
   return {
-    t: k.t, killer: k.killer, victim: k.victim, air,
+    t: k.t, killer: k.killer, victim: k.victim, air, noRound,
     flying: killer?.kind === 'air', victimFlying: victim?.kind === 'air', killerVehicle: killer?.tmpl ?? null, victimVehicle: victim?.tmpl ?? null,
     killerName: nameAt(rec, k.killer, k.t), victimName: nameAt(rec, k.victim, k.t), weapon: k.weapon ?? null,
     distance: f.distance ?? 0,
@@ -746,7 +755,7 @@ export function burstReelsOf(rec, { slug = '', skip = new Set(), kills = rec.kil
       // the bullet chase, from these.
       inHull: Boolean(mountOf(rec, pid, b.kills[0].t - BEFORE, models)?.tmpl),
       shots: b.kills.map((k, i) => {
-        const part = filmablePart(rec, facts, k, models);
+        const part = filmablePart(rec, facts, k, models, { roundless: true });
         return part ? { ...part, streakIndex: i + 1 } : null;
       }).filter(Boolean),
       t: b.kills[0].t, victim, killer: pid, killerName: playerName, victimName: '',

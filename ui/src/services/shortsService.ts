@@ -80,6 +80,7 @@ const KINDS: Record<string, string> = {
   'air-to-air': 'Air to air',
   'ground-to-air': 'Ground to air',
   'tank-to-tank': 'Tank to tank',
+  'tank-buster': 'Tank buster',
   'long-shot': 'Long shot',
   'own-goal': 'Own goal',
   'spawn-death': 'Spawn and die',

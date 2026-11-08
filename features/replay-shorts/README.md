@@ -449,6 +449,22 @@ reviews in one sitting, all on Midway (`6zndpju5tv`):
   take is kept behind `--burst-take`. Measured: 81 s to 32 s; six of its
   eight kills in the fast cut.
 
+**Tank busters, and bursts without rounds (2026-11-09, later).** The owner:
+"I don't see any shorts of the Arnhem-1944 map ... surely more interesting
+things happened than that." Arnhem (`jy42xwcsfa`, FHSW Europe) has 351
+kills; the picker made no single Short of any. Its kinds were air to air,
+ground to air, tank to tank and a long shot on foot of 100 m or more, and
+Arnhem is a town fight: its longest kill is 102 m, its tanks kill men on
+foot, and men on foot kill its tanks (30 PIAT kills). A sixth single kind,
+`tank-buster` (base 72), is a man on foot killing armour: the bullet chase
+rides the rocket and the hull hold shows the wreck. Titled "Piat kills
+Tiger_Late at 30 m"; badged Tank buster; under the strip's Vehicle filter.
+Arnhem has four. Its two bursts were skipped too ("its kills cannot be
+filmed one by one"): a burst's kill needed a round the page could chase, and
+almighty-_-'s five had none. A burst's kill between two men on foot now
+passes without one (`filmablePart`'s `roundless`, `noRound`), and the runner
+films it in the fast cut, which needs no round; 4 of the 5 qualify.
+
 **What to build next** is in `IDEAS.md`: per-player packages (Player of the
 Round, the streak, Nemesis, a vehicle's life, a 30 s recap) and new single
 moments, from web research checked against four real rounds.

@@ -46,7 +46,7 @@ export const SHORT_FILTERS = Object.freeze([
   Object.freeze({ id: 'all', label: 'All', kinds: null, plate: null }),
   Object.freeze({ id: 'air', label: 'Air', kinds: ['air-to-air'], plate: 'icon_air_support' }),
   Object.freeze({ id: 'ground-to-air', label: 'Ground to air', kinds: ['ground-to-air'], plate: 'icon_air_spotted' }),
-  Object.freeze({ id: 'vehicle', label: 'Vehicle', kinds: ['tank-to-tank'], plate: 'icon_armor_spotted' }),
+  Object.freeze({ id: 'vehicle', label: 'Vehicle', kinds: ['tank-to-tank', 'tank-buster'], plate: 'icon_armor_spotted' }),
   Object.freeze({ id: 'soldier', label: 'Soldier', kinds: ['long-shot'], plate: 'icon_inf_spotted' }),
   Object.freeze({ id: 'streak', label: 'Streak', kinds: ['streak'], plate: 'icon_attacking' }),
   Object.freeze({ id: 'asmr', label: 'ASMR', kinds: ['asmr'], plate: 'icon_fire' }),
@@ -60,6 +60,7 @@ const KINDS = {
   'air-to-air': 'Air to air',
   'ground-to-air': 'Ground to air',
   'tank-to-tank': 'Tank to tank',
+  'tank-buster': 'Tank buster',
   'long-shot': 'Long shot',
   'own-goal': 'Own goal',
   'spawn-death': 'Spawn and die',
@@ -219,6 +220,7 @@ const STYLE = `
 .rs-kind-air-to-air { --rs-kind: #8fc0e8; }
 .rs-kind-ground-to-air { --rs-kind: #e0a96a; }
 .rs-kind-tank-to-tank { --rs-kind: #a3b46a; }
+.rs-kind-tank-buster { --rs-kind: #c9a05a; }
 .rs-kind-long-shot { --rs-kind: #e8c35a; }
 .rs-kind-own-goal { --rs-kind: #d6524a; }
 .rs-kind-spawn-death { --rs-kind: #c58be0; }

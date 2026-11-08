@@ -8,6 +8,8 @@ public static class ShortKinds
     public const string AirToAir = "air-to-air";
     public const string GroundToAir = "ground-to-air";
     public const string TankToTank = "tank-to-tank";
+    /// <summary>A man on foot who kills a tank.</summary>
+    public const string TankBuster = "tank-buster";
     public const string LongShot = "long-shot";
     /// <summary>A man killed by nobody but himself: a crash, a fall, his own charge.</summary>
     public const string OwnGoal = "own-goal";
@@ -23,7 +25,7 @@ public static class ShortKinds
 
     public static readonly IReadOnlySet<string> All = new HashSet<string>(StringComparer.Ordinal)
     {
-        AirToAir, GroundToAir, TankToTank, LongShot, OwnGoal, SpawnDeath, Streak, Asmr, Creator, Other,
+        AirToAir, GroundToAir, TankToTank, TankBuster, LongShot, OwnGoal, SpawnDeath, Streak, Asmr, Creator, Other,
     };
 
     /// <summary><c>{recordingSlug}:{killTime:F2}:{victimPid}</c>, the same on every machine.</summary>

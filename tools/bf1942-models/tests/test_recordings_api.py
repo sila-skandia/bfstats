@@ -115,7 +115,7 @@ class RecordingsApiTests(unittest.TestCase):
             ["all", None, None],
             ["air", "air-to-air", "icon_air_support"],
             ["ground-to-air", "ground-to-air", "icon_air_spotted"],
-            ["vehicle", "tank-to-tank", "icon_armor_spotted"],
+            ["vehicle", "tank-to-tank,tank-buster", "icon_armor_spotted"],
             ["soldier", "long-shot", "icon_inf_spotted"],
             ["streak", "streak", "icon_attacking"],
             ["asmr", "asmr", "icon_fire"],

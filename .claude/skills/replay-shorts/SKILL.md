@@ -234,6 +234,12 @@ about.
   fresh"). A burst's kills on foot within 60 m are the fast cut (`QUICK`,
   `filmQuick`); the one take behind him is `--burst-take`.
 
+- **A man on foot who kills a tank is a Short** (2026-11-09: Arnhem's 351
+  kills made none; "surely more interesting things happened than that").
+  Kind `tank-buster`, in the picker, the API's `ShortKinds`, the strip's
+  Vehicle filter and badge. A new kind must reach all four, and the API
+  must be deployed before one is uploaded (it refuses unknown kinds).
+
 ## On the Mac (2026-11-07)
 
 The owner's machine is now an M5 Max MacBook Pro: no systemd (the nightly

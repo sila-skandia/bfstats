@@ -1027,6 +1027,11 @@ const DIRECTOR = Object.freeze({
   // The flight: the share of the picture within flightNear metres that cuts
   // to the reverse, `reverse` [back, up] from the victim.
   flightNear: 3, flightShare: 0.45, reverse: [3.5, 0.9],
+  // ...and from behind a hull it kills (a PIAT on a Tiger, 2026-11-09) much
+  // farther and higher: at 3.5 m the lens sat on the hull and the hit filled
+  // the frame with fire. The hit itself is then the round cam's hull hold,
+  // which draws back by the hull's radius.
+  hullReverse: [14, 5],
   // The flight also turns to the reverse when the man it kills is hidden
   // (a bunker 12 m off, 2026-11-04): something drawn `hidden` metres or more
   // short of him at his pixel, `farther` metres or more from the lens, on
@@ -1350,13 +1355,16 @@ const DIRECTOR_SRC = `window.__director = (() => {
             }
           }
           if (!st.reverse) return;
+          // A hull struck: the round cam's own hold draws back from it.
+          if (flight.victimHull && r.creator.rounds?.state === 'impact') return;
           const vw = B.whereIs(r.rec, flight.victim, Math.min(r.time, (flight.t ?? Infinity) - 0.1), r.kills ?? r.rec.kills);
           const sw = B.whereIs(r.rec, st.pid, r.time, r.kills ?? r.rec.kills);
           if (!vw?.pos || !sw?.pos) return;
           const vic = V(vw.pos[0], vw.pos[1] + 1.1, vw.pos[2]);
           const from = V(sw.pos[0], sw.pos[1] + 1.4, sw.pos[2]);
           const back = vic.clone().sub(from).setY(0).normalize();
-          let at = vic.clone().addScaledVector(back, st.cfg.reverse[0]).add(V(0, st.cfg.reverse[1], 0));
+          const rev = flight.victimHull ? st.cfg.hullReverse : st.cfg.reverse;
+          let at = vic.clone().addScaledVector(back, rev[0]).add(V(0, rev[1], 0));
           let look = from.clone().lerp(vic, 0.6);
           // The reverse judged once: it must see the man it kills and not be
           // all wall; else the crane over the shooter, if that sees him; else
@@ -3067,8 +3075,10 @@ async function filmReel(page, reel, dir) {
       }
     }
     // A burst's close kill on foot: the fast cut, real time, two angles.
-    if (reel.burst && part.mode === 'shot' && quickKill(part)) {
-      const got = await filmQuick(page, reel, part, i, write, { fadeIn: i === 0 || !quickKill(parts[i - 1]) ? DIP.in : 0 });
+    // One with no round to chase (the picker's `noRound`) can only be this.
+    const quick = p => p && (p.noRound || quickKill(p));
+    if (reel.burst && part.mode === 'shot' && quick(part)) {
+      const got = await filmQuick(page, reel, part, i, write, { fadeIn: i === 0 || !quick(parts[i - 1]) ? DIP.in : 0 });
       if (got.ok && got.audio) audio.push(got.audio);
       if (!got.ok) log(`    part ${i + 1} left out: ${got.why}`);
       continue;
@@ -3488,7 +3498,7 @@ async function shootKill(page, cand, write, overlay = null, { lead = null } = {}
   // rules too (the owner, 2026-11-04: a church's walls hid n.o.i.c.e's kills;
   // "tighter, almost at their POV"). Installed once the take is armed, over
   // the creator's own lens hook, and only while the round cam waits armed.
-  const director = async on => page.evaluate(async ({ on, src, depth, pid, victim, t, air, fromAir, cfg }) => {
+  const director = async on => page.evaluate(async ({ on, src, depth, pid, victim, t, air, fromAir, victimHull, cfg }) => {
     const r = window.replay;
     if (!on) { const fl = window.__director?.flightLog?.() ?? null; window.__director?.remove(); return fl; }
     window.__rbSync ??= await import(new URL('replay-battles.js', location.href).href);
@@ -3502,8 +3512,10 @@ async function shootKill(page, cand, write, overlay = null, { lead = null } = {}
     flight.t = t;
     flight.air = air;
     flight.fromAir = fromAir;
+    flight.victimHull = victimHull;
     window.__director.install(pid, [], cfg, { chain: r.camera.lensHook, when: () => r.creator.rounds?.state === 'armed', flight });
   }, { on, src: DIRECTOR_SRC, depth: DEPTH_SRC, pid: cand.killer, victim: cand.victim, t: cand.t, air: Boolean(cand.victimFlying), fromAir: Boolean(cand.flying),
+    victimHull: Boolean(cand.victimVehicle),
     cfg: { ...DIRECTOR, shoulderOnly: true, reveal: overlay ? null : REVEAL } });
   const setup = await page.evaluate(({ t, victim, W, H, kv, vv, weapon }) => {
     const c = window.replay.creator;
@@ -3998,7 +4010,10 @@ try {
       // --kinds=own-goal,... films only those kinds (adding one kind to
       // recordings already clipped).
       const kinds = many('kinds').flatMap(k => k.split(','));
-      const pool = kinds.length ? cands.filter(c => kinds.includes(c.kind)) : cands;
+      // Tank busters only when asked for by name: their camera does not yet
+      // frame a hull in a town (2026-11-09, Arnhem: the lens on the hull, then
+      // in the fire), so the nightly leaves them out.
+      const pool = kinds.length ? cands.filter(c => kinds.includes(c.kind)) : cands.filter(c => c.kind !== 'tank-buster');
       const picks = LIVE || only.length
         ? cands.filter(c => only.some(([t, v]) => Math.abs(c.t - t) < 0.05 && c.victim === v))
         : P.pickShorts(pool, { max: Math.max(0, MAX - singlesTaken), taken: keys });
