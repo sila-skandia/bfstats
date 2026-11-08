@@ -19,7 +19,8 @@ public sealed class ShortService(
     ShortStorage storage,
     IClock clock,
     IOptions<ShortsOptions> options,
-    ILogger<ShortService> logger) : IShortService
+    ILogger<ShortService> logger,
+    IVideoFlattener? flattener = null) : IShortService
 {
     public const int DefaultDays = 7;
     /// <summary>Ten years: a player's or a server's page asks for all of them.</summary>
@@ -190,8 +191,21 @@ public sealed class ShortService(
         }
     }
 
+    public async Task<ShortDto?> FlattenVideoAsync(string slug, CancellationToken ct)
+    {
+        var row = await db.ReplayShorts.FirstOrDefaultAsync(s => s.Slug == slug, ct);
+        if (row is null) return null;
+        var path = storage.VideoPath(row.Slug);
+        if (flattener is not null && File.Exists(path) && await flattener.FlattenAsync(path, ct))
+        {
+            row.VideoBytes = new FileInfo(path).Length;
+            await db.SaveChangesAsync(ct);
+        }
+        return ShortDto.From(row);
+    }
+
     public Task<ShortUploadResult> UploadAsync(string? contentType, Stream body, long? contentLength, CancellationToken ct) =>
-        ReceiveAsync(contentType, body, contentLength, meta => Task.FromResult(Describe(meta)), ct);
+        ReceiveAsync(contentType, body, contentLength, flatten: false, meta => Task.FromResult(Describe(meta)), ct);
 
     public async Task<ShortUploadResult> ShareAsync(string? contentType, Stream body, long? contentLength, int userId, CancellationToken ct)
     {
@@ -201,7 +215,7 @@ public sealed class ShortService(
             .Select(n => n.PlayerName)
             .FirstOrDefaultAsync(ct)
             ?? throw new RecordingRejectedException("Link your in-game name to your account to share a Short.");
-        return await ReceiveAsync(contentType, body, contentLength, async meta =>
+        return await ReceiveAsync(contentType, body, contentLength, flatten: true, async meta =>
         {
             // Of a shared round, kind and key its own: a creator may share any clip of any round,
             // as many as he likes, each one Short.
@@ -221,7 +235,9 @@ public sealed class ShortService(
     public Task<bool> SharedByAsync(string slug, int userId, CancellationToken ct) =>
         db.ReplayShorts.AsNoTracking().AnyAsync(s => s.Slug == slug && s.CreatorUserId == userId, ct);
 
-    private async Task<ShortUploadResult> ReceiveAsync(string? contentType, Stream body, long? contentLength,
+    /// <summary>An upload received; <paramref name="flatten"/> rewrites a fragmented MP4 (a
+    /// studio share's, from the browser's recorder) as a plain one.</summary>
+    private async Task<ShortUploadResult> ReceiveAsync(string? contentType, Stream body, long? contentLength, bool flatten,
         Func<ShortUploadMeta, Task<ReplayShort>> describe, CancellationToken ct)
     {
         var limits = options.Value;
@@ -263,6 +279,7 @@ public sealed class ShortService(
             var row = await describe(meta);
             if (!await IsMp4Async(videoFile, ct)) throw new RecordingRejectedException("The video is not an MP4 file.");
             if (!await IsJpegAsync(posterFile, ct)) throw new RecordingRejectedException("The poster is not a JPEG file.");
+            if (flatten && flattener is not null) await flattener.FlattenAsync(videoFile, ct);
             row.VideoBytes = new FileInfo(videoFile).Length;
             row.PosterBytes = new FileInfo(posterFile).Length;
 

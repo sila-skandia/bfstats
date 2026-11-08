@@ -174,6 +174,16 @@ public class ShortsController(
         }
     }
 
+    /// <summary>Rewrites a Short's video as a plain MP4 when it is a fragmented one (a studio share
+    /// from before shares were flattened on the way in), so a link preview can read it.</summary>
+    [HttpPost("{slug:length(10)}/flatten")]
+    public async Task<ActionResult<ShortDto>> Flatten(string slug, CancellationToken ct)
+    {
+        if (RecordingStorage.CleanSlug(slug) is not { } clean) return NotFound();
+        if (await MayChangeAsync(clean, ct) is { } refusal) return refusal;
+        return await shorts.FlattenVideoAsync(clean, ct) is { } dto ? Ok(dto) : NotFound();
+    }
+
     /// <summary>Null when the request may change or take down the Short: the key, an admin, or
     /// the creator who shared it.</summary>
     private async Task<ObjectResult?> MayChangeAsync(string slug, CancellationToken ct)

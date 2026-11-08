@@ -36,6 +36,10 @@ public interface IShortService
     /// its new poster link, or null when there is none.</summary>
     Task<ShortDto?> SetPosterAsync(string slug, Stream body, CancellationToken ct);
 
+    /// <summary>Flattens a Short's video when it is a fragmented MP4 (<see cref="IVideoFlattener"/>):
+    /// the Short, its video link new when it was rewritten, or null when there is none.</summary>
+    Task<ShortDto?> FlattenVideoAsync(string slug, CancellationToken ct);
+
     /// <summary>Takes a Short down, row and files. False when there is none.</summary>
     Task<bool> DeleteAsync(string slug, CancellationToken ct);
 

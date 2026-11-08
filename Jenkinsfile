@@ -123,6 +123,7 @@ pipeline {
                         --secret id=sixlabors_lic,env=SIXLABORS_LICENSE_KEY \
                         --build-arg PROJECT_PATH=api \
                         --build-arg PROJECT_NAME=api \
+                        --build-arg WITH_FFMPEG=true \
                         --build-arg BUILDKIT_PROGRESS=plain \
                         --push \
                         -t anskia/bfstats-api:latest

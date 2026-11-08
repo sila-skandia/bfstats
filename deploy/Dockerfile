@@ -33,9 +33,15 @@ RUN --mount=type=secret,id=sixlabors_lic,required=false \
 
 FROM base AS final
 ARG PROJECT_NAME
+# The API's ffmpeg: a studio share's fragmented MP4 is rewritten as a plain one so a link
+# preview can read it (api/Shorts/VideoFlattener.cs). Only the API asks for it.
+ARG WITH_FFMPEG=false
 WORKDIR /app
-COPY --from=publish /app/publish .
 USER root
+RUN if [ "$WITH_FFMPEG" = "true" ]; then \
+      apt-get update && apt-get install -y --no-install-recommends ffmpeg && rm -rf /var/lib/apt/lists/* && ffmpeg -version | head -1; \
+    fi
+COPY --from=publish /app/publish .
 RUN echo "#!/bin/sh" > /app/entrypoint.sh && \
     echo "exec dotnet /app/${PROJECT_NAME}.dll \"\$@\"" >> /app/entrypoint.sh && \
     chmod +x /app/entrypoint.sh

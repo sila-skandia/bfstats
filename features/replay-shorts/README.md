@@ -525,6 +525,34 @@ down driven in WebKit and Chrome against a stand-in API: shown on the
 creator's own Short, asked, gone from the strip and the player, the next
 one open, hidden on the render job's Short.
 
+### Studio shares embed in Discord (2026-11-08, later)
+
+The owner posted `replay.bfstats.io/s/mdtqtue2k8` in Discord and no preview
+came. The page's tags were right and its poster and video loaded for
+Discordbot; the video was not. A browser's MediaRecorder writes MP4 in
+fragments: the index at the front is empty (`mvhd` duration 0) and the clip
+follows as 16 `moof`/`mdat` pairs. A player copes; Discord's preview reads
+the index. The render job's Shorts are one `mdat` behind a full `moov`, and
+embed.
+
+- A share's video is flattened on the way in (`api/Shorts/VideoFlattener.cs`):
+  a top-level `moof` means fragmented, and `ffmpeg -c copy -movflags
+  +faststart` rewrites it as one piece, index first. It copies, it does not
+  encode: 0.08 s for the Arnhem clip, 16.26 s in its index after. Without
+  ffmpeg (a developer's machine) the video is kept as it came.
+- The API image carries ffmpeg (`deploy/Dockerfile`, `WITH_FFMPEG=true` from
+  the Jenkinsfile, the API only): Ubuntu 24.04's 6.1.1, about 650 MB on the
+  image, nothing on the memory budget (it runs for a fraction of a second).
+- `POST /stats/shorts/{slug}/flatten` (the key, an admin or its creator)
+  flattens a Short already live. The video's link carries its size as a
+  version too (`.mp4?v=<bytes>`), so the cached fragmented file is not what
+  the next preview reads.
+
+Verified: `ShortsControllerTests` (35: a share flattened and a render job
+upload left, a live one flattened to a new link, a fragmented file known by
+its boxes and kept when there is no ffmpeg), and the image's own ffmpeg
+flattening the live `mdtqtue2k8.mp4` as the app user.
+
 ### The loader (2026-11-05)
 
 The owner: "When we deep link into a short, if the server is a tad slow it

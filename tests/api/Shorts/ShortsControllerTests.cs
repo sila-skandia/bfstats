@@ -147,7 +147,7 @@ public sealed class ShortsControllerTests : IDisposable
         var dto = await UploadAsync();
 
         Assert.Equal($"{RecordingSlug}:132.46:4", dto.Key);
-        Assert.Equal($"/stats/shorts/{dto.Slug}.mp4", dto.VideoUrl);
+        Assert.Equal($"/stats/shorts/{dto.Slug}.mp4?v={Mp4.Length}", dto.VideoUrl);
         Assert.Equal($"/stats/shorts/{dto.Slug}.jpg?v={Jpeg.Length}", dto.PosterUrl);
         Assert.Equal("P51", dto.KillerVehicle);
         Assert.Null(dto.VictimVehicle);
@@ -553,6 +553,85 @@ public sealed class ShortsControllerTests : IDisposable
         Assert.IsType<NotFoundResult>((await PosterBody(Controller(user: User(true)), better).SetPoster("zzzzzzzzzz", default)).Result);
     }
 
+    /// <summary>Flattens by stamping the file, and says which it was given.</summary>
+    private sealed class StampFlattener : IVideoFlattener
+    {
+        public List<string> Seen { get; } = [];
+
+        public async Task<bool> FlattenAsync(string path, CancellationToken ct)
+        {
+            Seen.Add(path);
+            await File.AppendAllTextAsync(path, "flat", ct);
+            return true;
+        }
+    }
+
+    [Fact]
+    public async Task Share_FlattensTheVideo_TheRenderJobsUploadIsLeft_AndFlattenRewritesOneLive()
+    {
+        var flattener = new StampFlattener();
+        var flattening = new ShortService(db, storage, clock, MsOptions.Create(new ShortsOptions { UploadKey = UploadKey }),
+            NullLogger<ShortService>.Instance, flattener);
+        ShortsController Using(string? key = null, ClaimsPrincipal? user = null)
+        {
+            var c = Controller(key, user);
+            return new ShortsController(flattening, storage, counter, new ConfigurationBuilder().Build(),
+                MsOptions.Create(new ShortsOptions { UploadKey = UploadKey }), MsOptions.Create(new RecordingsOptions()))
+            {
+                ControllerContext = c.ControllerContext,
+            };
+        }
+        db.Users.Add(new User { Id = 7, Email = "creator@example.com" });
+        db.Recordings.Add(new Recording { Slug = RecordingSlug, UploaderUserId = 7 });
+        db.UserPlayerNames.Add(new UserPlayerName { UserId = 7, PlayerName = "skandia", CreatedAt = DateTime.UtcNow });
+        await db.SaveChangesAsync();
+
+        var job = Using(UploadKey);
+        await Body(job, Meta());
+        var uploaded = Assert.IsType<ShortDto>(Assert.IsType<CreatedAtActionResult>((await job.Upload(default)).Result).Value);
+        Assert.Empty(flattener.Seen);
+        Assert.Equal(Mp4, await File.ReadAllBytesAsync(storage.VideoPath(uploaded.Slug)));
+
+        var share = Using(user: User(false));
+        await Body(share, ShareMeta());
+        var shared = Assert.IsType<ShortDto>(Assert.IsType<CreatedAtActionResult>((await share.Share(default)).Result).Value);
+        Assert.Single(flattener.Seen);
+        Assert.Equal(Mp4.Length + 4, new FileInfo(storage.VideoPath(shared.Slug)).Length);
+        Assert.Equal($"/stats/shorts/{shared.Slug}.mp4?v={Mp4.Length + 4}", shared.VideoUrl);
+
+        // One already live, flattened: a new link. Nobody signed in may not.
+        Assert.Equal(StatusCodes.Status401Unauthorized,
+            Assert.IsType<ObjectResult>((await Using().Flatten(uploaded.Slug, default)).Result).StatusCode);
+        var flat = Value(await Using(UploadKey).Flatten(uploaded.Slug, default));
+        Assert.Equal($"/stats/shorts/{uploaded.Slug}.mp4?v={Mp4.Length + 4}", flat.VideoUrl);
+    }
+
+    [Fact]
+    public async Task Flattener_KnowsAFragmentedMp4_AndKeepsTheFileWithoutFfmpeg()
+    {
+        Directory.CreateDirectory(directory);
+        static byte[] Box(string type, int body = 0)
+        {
+            var b = new byte[8 + body];
+            System.Buffers.Binary.BinaryPrimitives.WriteUInt32BigEndian(b, (uint)b.Length);
+            Encoding.ASCII.GetBytes(type).CopyTo(b, 4);
+            return b;
+        }
+        var plain = Path.Combine(directory, "plain.mp4");
+        var fragmented = Path.Combine(directory, "fragmented.mp4");
+        await File.WriteAllBytesAsync(plain, [.. Box("ftyp", 8), .. Box("moov", 16), .. Box("mdat", 32)]);
+        byte[] frag = [.. Box("ftyp", 8), .. Box("moov", 16), .. Box("moof", 8), .. Box("mdat", 32), .. Box("moof", 8), .. Box("mdat", 32)];
+        await File.WriteAllBytesAsync(fragmented, frag);
+        Assert.False(await FfmpegVideoFlattener.IsFragmentedAsync(plain, default));
+        Assert.True(await FfmpegVideoFlattener.IsFragmentedAsync(fragmented, default));
+
+        var none = new FfmpegVideoFlattener(MsOptions.Create(new ShortsOptions { FfmpegPath = "/no/such/ffmpeg" }),
+            NullLogger<FfmpegVideoFlattener>.Instance);
+        Assert.False(await none.FlattenAsync(plain, default));
+        Assert.False(await none.FlattenAsync(fragmented, default));
+        Assert.Equal(frag, await File.ReadAllBytesAsync(fragmented));
+    }
+
     [Fact]
     public async Task ShareLink_GoesOnToThePlayer_AndGivesAnUnfurlTheVideo()
     {
@@ -564,7 +643,7 @@ public sealed class ShortsControllerTests : IDisposable
         Assert.Null(result.StatusCode);
         Assert.Equal("text/html; charset=utf-8", result.ContentType);
         var html = result.Content!;
-        var video = $"https://play.bfstats.io/stats/shorts/{dto.Slug}.mp4";
+        var video = $"https://play.bfstats.io/stats/shorts/{dto.Slug}.mp4?v={Mp4.Length}";
         Assert.Contains($"<meta http-equiv=\"refresh\" content=\"0; url=https://play.bfstats.io/play/?tab=replay&amp;short={dto.Slug}\">", html);
         Assert.Contains($"<meta property=\"og:url\" content=\"https://replay.bfstats.io/s/{dto.Slug}\">", html);
         Assert.Contains("<meta property=\"og:type\" content=\"video.other\">", html);
