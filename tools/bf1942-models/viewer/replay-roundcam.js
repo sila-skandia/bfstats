@@ -387,6 +387,11 @@ export class RoundCam {
     this.state = 'idle';           // idle | armed | flying | impact
     this.bulletTime = BULLET_TIME.strong;
     this.afterHit = 'victim';      // victim | shooter | stay
+    // The hold on the hit, over the module's defaults: { real, speed, max,
+    // pastKill, hullReal, hullMax, hullSpeed } (any of them). The Shorts
+    // runner holds shorter and less slowed (the owner, 2026-11-09: "we're
+    // slowing down too much in the slow mo"); the studio keeps the defaults.
+    this.hold = null;
     this.style = 'chase';          // replay-shotstyle.js SHOT_STYLES
     this.angle = null;             // the placed camera: { pos, look, aim } (replay-shotstyle.js `angleOf`)
     this.target = null;            // { f, pid, kill, victim, weapon, obj, list, kind, life, label }
@@ -701,17 +706,19 @@ export class RoundCam {
     if (this.state === 'impact') {
       const im = this.impact;
       im.real += Math.max(0, dt);
-      const fell = !target.kill || t >= target.kill.t + HOLD_PAST_KILL;
+      const H = this.hold ?? {};
+      const fell = !target.kill || t >= target.kill.t + (H.pastKill ?? HOLD_PAST_KILL);
       // An orbit hold runs its half turn out.
       // The clip's cameras say whether the camera on the hit turns round
       // him (`holdTurns`); the take on its own, its style.
       const hull = im.reach > 0 && !target.melee;
-      const least = hull ? HULL_HOLD.real : (this.holdTurns ?? this.orbitHold()) ? ORBIT_HOLD : HOLD_REAL;
-      if ((im.real >= least && fell) || im.real >= Math.max(least, hull ? HULL_HOLD.max : HOLD_MAX_REAL) || !this.player.playing && im.real >= least) {
+      const least = hull ? H.hullReal ?? HULL_HOLD.real : (this.holdTurns ?? this.orbitHold()) ? ORBIT_HOLD : H.real ?? HOLD_REAL;
+      const most = hull ? H.hullMax ?? HULL_HOLD.max : H.max ?? HOLD_MAX_REAL;
+      if ((im.real >= least && fell) || im.real >= Math.max(least, most) || !this.player.playing && im.real >= least) {
         this.stop(true);
         return;
       }
-      this.easeClock(Math.min(this.savedSpeed, target.melee ? MELEE_SPEED : hull ? HULL_HOLD.speed : HOLD_SPEED), dt);
+      this.easeClock(Math.min(this.savedSpeed, target.melee ? MELEE_SPEED : hull ? H.hullSpeed ?? HULL_HOLD.speed : H.speed ?? HOLD_SPEED), dt);
     }
   }
 

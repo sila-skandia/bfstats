@@ -219,6 +219,21 @@ about.
   earlier in the run: a compilation by its kind and player, a single kill by
   killer, victim and round time within 1.5 s (`roundTwinMoments`).
 
+- **Show where the shot came from** (2026-11-09, `ckpzprzru7`: "an almost
+  300 metre kill so the shooter is off screen ... we need to zoom into the
+  shooter at the end"). A single kill whose take never showed the shooter
+  flies back up the round's path to him after the hold (`REVEAL` in the
+  director), cutting to him where the way in passes through the level.
+- **Less slow motion** (2026-11-09: "in general we're slowing down too much
+  in the slow mo"). A round's time on screen grows with the distance
+  (`SHORT_PACE`, 0.45-1.4 s), the hold on the hit is 1 s at 0.6x (the round
+  cam's `hold` override), stretches and volleys slow less.
+- **Close kills in a compilation are real time, cut between angles**
+  (2026-11-09, `zz2hpmkt7m`: "super tight (close quarters) so the slow down
+  kind of is annoying ... different angles and edits to keep it feeling
+  fresh"). A burst's kills on foot within 60 m are the fast cut (`QUICK`,
+  `filmQuick`); the one take behind him is `--burst-take`.
+
 ## On the Mac (2026-11-07)
 
 The owner's machine is now an M5 Max MacBook Pro: no systemd (the nightly

@@ -640,8 +640,9 @@ const STREAK_BADGE = `window.__streakBadge = (g, W, y, before, after, since, wor
  * the clock runs at a base speed that fits it in about `cap` seconds of
  * video (1x to `maxSpeed`), easing over `ease` seconds of round to `slow`
  * from `before` a kill to `after` it, so each kill lands in slow motion.
+ * `slow` was 0.4 until 2026-11-09 ("we're slowing down too much").
  */
-const BURST_PACE = Object.freeze({ cap: 30, maxSpeed: 4, slow: 0.4, before: 0.25, after: 0.45, ease: 0.25, fade: 10 });
+const BURST_PACE = Object.freeze({ cap: 30, maxSpeed: 4, slow: 0.75, before: 0.25, after: 0.45, ease: 0.25, fade: 10 });
 
 /**
  * A streak's stretch in one take (the picker's `stretchesOf`;
@@ -655,10 +656,12 @@ const BURST_PACE = Object.freeze({ cap: 30, maxSpeed: 4, slow: 0.4, before: 0.25
  * shows from `tagBefore` before his death to `tagAfter` after; a kill feed row
  * lasts `feedFrames`; kills not shown between two takes roll by on the count
  * as the next fades in (`rollFrames`); captions sit at `caption` px.
+ * Lighter since 2026-11-09 (the owner: "we're slowing down too much in the
+ * slow mo"): `slow` 0.45 to 0.75, `endSlow` 0.35 to 0.5, `hold` 2.6 to 2.
  */
 const STRETCH_PACE = Object.freeze({
-  maxSpeed: 2.5, perKill: 1.0, minRest: 2.5, slow: 0.45, before: 0.15, after: 0.35, ease: 0.2,
-  endSlow: 0.35, settle: 1.0, grey: 0.5, hold: 2.6, title: 60, tagBefore: 3.0, tagAfter: 0.8, feedFrames: 75,
+  maxSpeed: 2.5, perKill: 1.0, minRest: 2.5, slow: 0.75, before: 0.15, after: 0.35, ease: 0.2,
+  endSlow: 0.5, settle: 1.0, grey: 0.5, hold: 2.0, title: 60, tagBefore: 3.0, tagAfter: 0.8, feedFrames: 75,
   caption: 1420,
 });
 
@@ -1050,6 +1053,31 @@ const DIRECTOR = Object.freeze({
   // sat in his backpack) and goes kill by kill.
   roomy: 0.6,
 });
+/**
+ * The shooter seen at last (`reveal` in the director). A take counts as
+ * having shown him when he is inside `frame` of the picture (NDC) and at
+ * least `tall` of its height (`manSize` metres for a man, `hullSize` for a
+ * hull) for `seen` frames. One that did not, of a kill `minDist` metres or
+ * more, flies back up the round's path once the hold ends: a `beat` on the
+ * fallen man, then `flyBase + metres / flyPerM` seconds (clamped to
+ * `flyMin`..`flyMax`) over an arc `arcPerM` of the distance high (clamped),
+ * at least `clear` metres off the ground midway, turned onto him over the
+ * first `turn` of it, to the first clear of `ends` ([ahead toward his
+ * victim, side, up] metres from his eye, times `hullScale` for a hull), else
+ * `crane`; held `hold` seconds, then the look's fade. The fly from
+ * `probeFrom` of the way on is checked in `probes` steps against the depth
+ * picture; the first step into the level stops it `cutBack` steps short and
+ * cuts to the end.
+ */
+const REVEAL = Object.freeze({
+  frame: 0.9, tall: 0.12, manSize: 1.8, hullSize: 4, seen: 20, minDist: 25,
+  eye: 1.3, hullEye: 1.8, hullScale: 3,
+  beat: 0.35, flyBase: 1, flyPerM: 300, flyMin: 1.3, flyMax: 2.4,
+  arcPerM: 0.06, arcMin: 3, arcMax: 20, clear: 2.5, turn: 0.35, hold: 2, probeFrom: 0.3, probes: 28, cutBack: 1,
+  ends: [[4.5, 1.4, 0.2], [4.5, -1.4, 0.2], [3, 2.6, 1.8], [-2.2, 0.8, 0.6]],
+  crane: [-7, 0, 8],
+});
+
 /** A small depth picture of the scene from the camera as it stands, for
  *  judging what is in front of the lens (`window.__depth`): `near(d)` the
  *  share of it closer than `d` metres; `at(p)` the distance drawn at world
@@ -1166,7 +1194,129 @@ const DIRECTOR_SRC = `window.__director = (() => {
         st.frames[4]++;
         return true;
       };
+      // The shooter seen at last (the owner, 2026-11-09, a 294 m K98 on
+      // Midway filmed from behind the man it killed: "the shooter is off
+      // screen almost, I can't even see them ... we need to zoom into the
+      // shooter at the end"). Through the take it counts the frames he is in
+      // the picture and tall enough to make out; a take that never showed
+      // him flies back up the round's path when the hold ends, onto him from
+      // the front, and holds there to the fade. The clip's out point moves
+      // with it.
+      const reveal = c => {
+        const st = state;
+        const R = st?.cfg?.reveal;
+        if (!R || !flight || flight.air || flight.fromAir) return;
+        const rv = (st.rv ??= { seen: 0 });
+        if (rv.over) return;
+        const ro = r.creator.rounds;
+        const sw = B.whereIs(r.rec, st.pid, r.time, r.kills ?? r.rec.kills);
+        if (!sw?.pos) return;
+        const hull = sw.state === 'vehicle';
+        const E = V(sw.pos[0], sw.pos[1] + (hull ? R.hullEye : R.eye), sw.pos[2]);
+        const rec = r.creator.recorder;
+        const holdOpen = at => {
+          if (!rec?.started || rec.t1 >= at) return;
+          rec.t1 = at;
+          r.creator.range.out = at;
+        };
+        if (!rv.on) {
+          const s = ro?.state;
+          if (s === 'armed' || s === 'flying' || s === 'impact') {
+            const d = Math.max(0.5, c.position.distanceTo(E));
+            const v = E.clone().project(c);
+            const tall = (hull ? R.hullSize : R.manSize) / (2 * d * Math.tan((c.fov * Math.PI) / 360));
+            if (v.z < 1 && Math.abs(v.x) < R.frame && Math.abs(v.y) < R.frame && tall >= R.tall) rv.seen++;
+            if (s === 'impact') rv.impact = true;
+            // The hold may run past the clip's end: keep it open for the reveal.
+            if (rv.impact && rv.seen < R.seen) holdOpen(r.time + 0.4);
+            return;
+          }
+          if (!rv.impact) return;
+          if (rv.seen >= R.seen) { rv.over = true; return; }
+          const vw = B.whereIs(r.rec, flight.victim, (flight.t ?? r.time) - 0.1, r.kills ?? r.rec.kills);
+          const vic = vw?.pos ? V(vw.pos[0], vw.pos[1] + 1, vw.pos[2]) : null;
+          const far = vic ? vic.distanceTo(E) : 0;
+          if (far < R.minDist) { rv.over = true; return; }
+          // Where it ends: in front of him (toward the man he killed), off
+          // to one side, the first pose the depth picture says sees him.
+          const fwd = vic.clone().sub(E).setY(0).normalize();
+          const right = V(-fwd.z, 0, fwd.x);
+          const k = hull ? R.hullScale : 1;
+          const D = window.__depth;
+          const saved = [c.position.clone(), c.quaternion.clone()];
+          const offsets = R.ends.map(([a, s, u]) => [a * k, s * k, u * k]);
+          const at = ([a, s, u]) => E.clone().addScaledVector(fwd, a).addScaledVector(right, s).add(V(0, u, 0));
+          let pick = null;
+          for (const o of offsets) {
+            const p = at(o);
+            c.position.copy(p);
+            c.lookAt(E);
+            c.updateMatrixWorld();
+            D.take(c);
+            if (D.at(E, c) >= p.distanceTo(E) - 0.8 && D.near(1.2) < 0.25) { pick = o; break; }
+          }
+          c.position.copy(saved[0]);
+          c.quaternion.copy(saved[1]);
+          c.updateMatrixWorld();
+          rv.end = pick ?? R.crane.map(x => x * k);
+          rv.on = true;
+          rv.t0 = r.time;
+          rv.from = saved[0];
+          rv.path = (e, A) => {
+            const P = rv.from.clone().lerp(A, e).add(V(0, rv.arc * Math.sin(Math.PI * e), 0));
+            const g = r.ctx.groundHeight?.(P.x, P.z);
+            if (Number.isFinite(g)) P.y = Math.max(P.y, g + R.clear * Math.sin(Math.PI * e));
+            return P;
+          };
+          rv.q0 = saved[1];
+          rv.fwd = fwd;
+          rv.right = right;
+          rv.fly = Math.min(R.flyMax, Math.max(R.flyMin, R.flyBase + far / R.flyPerM));
+          rv.arc = Math.min(R.arcMax, Math.max(R.arcMin, far * R.arcPerM));
+          rv.far = far;
+          // The way in, judged by the depth picture a step at a time over
+          // the last part of the fly: where a step would pass through the
+          // level (he is in a bunker), the fly stops short there and cuts to
+          // the end pose (the first try flew a second through concrete).
+          const Aend = E.clone().addScaledVector(fwd, rv.end[0]).addScaledVector(right, rv.end[1]).add(V(0, rv.end[2], 0));
+          rv.cutAt = null;
+          let prev = rv.path(R.probeFrom, Aend);
+          for (let i = 1; i <= R.probes; i++) {
+            const e = R.probeFrom + ((1 - R.probeFrom) * i) / R.probes;
+            const p = rv.path(e, Aend);
+            c.position.copy(prev);
+            c.lookAt(p);
+            c.updateMatrixWorld();
+            D.take(c);
+            if (D.at(p, c) < prev.distanceTo(p) - 0.3) { rv.cutAt = R.probeFrom + ((1 - R.probeFrom) * Math.max(0, i - 1 - R.cutBack)) / R.probes; break; }
+            prev = p;
+          }
+          c.position.copy(saved[0]);
+          c.quaternion.copy(saved[1]);
+          c.updateMatrixWorld();
+          holdOpen(r.time + R.beat + rv.fly + R.hold + (r.creator.edits?.fadeOut || 0));
+          (st.flog ??= []).push('reveal ' + far.toFixed(0) + ' m seen ' + rv.seen + ' end ' + (pick ? offsets.indexOf(pick) : 'crane') + (rv.cutAt !== null ? ' cut ' + rv.cutAt.toFixed(2) : ''));
+        }
+        // The fly: eased from where the hold left the lens to the end pose,
+        // over an arc that clears the ground, looking at him all the way.
+        const [a, s, u] = rv.end;
+        const A = E.clone().addScaledVector(rv.fwd, a).addScaledVector(rv.right, s).add(V(0, u, 0));
+        const x = Math.min(1, Math.max(0, (r.time - rv.t0 - R.beat) / rv.fly));
+        const e = x * x * x * (x * (x * 6 - 15) + 10);
+        const cut = rv.cutAt !== null && e >= rv.cutAt;
+        const P = cut ? A : rv.path(rv.cutAt !== null ? Math.min(e, rv.cutAt) : e, A);
+        const q = new (c.quaternion.constructor)().setFromRotationMatrix(new (c.matrixWorld.constructor)().lookAt(P, E, V(0, 1, 0)));
+        const w = cut ? 1 : Math.min(1, e / R.turn);
+        c.position.copy(P);
+        c.quaternion.copy(rv.q0).slerp(q, w * w * (3 - 2 * w));
+        c.updateMatrixWorld();
+        c.matrixWorldInverse.copy(c.matrixWorld).invert();
+      };
       r.camera.setLensHook(c => {
+        place(c);
+        reveal(c);
+      });
+      const place = c => {
         const st = state;
         // The hook the page had (the creator's lens) runs first.
         st?.chain?.(c);
@@ -1353,7 +1503,7 @@ const DIRECTOR_SRC = `window.__director = (() => {
         c.quaternion.slerp(look, st.w);
         c.updateMatrixWorld();
         c.matrixWorldInverse.copy(c.matrixWorld).invert();
-      });
+      };
     },
     log() { return state?.log ?? []; },
     flightLog() { return [...(state?.flog ?? []), state?.reverse ? 'reverse' : 'chase', state?.crane ? 'crane' : '', state?.f10On ? 'f10' : ''].slice(-14); },
@@ -1376,13 +1526,13 @@ const STREAK_CARD = 2.2;
 
 const REEL_BEAT = Object.freeze({
   top: OVERLAY_TOP,
-  lead: 4, slow: 0.35, hold: 1.8, grey: 0.4, fade: 0.35, volleyLead: 5, volleyHold: 3.2, playerLead: 3.5, playerHold: 2.2,
+  lead: 4, slow: 0.35, hold: 1.8, grey: 0.4, fade: 0.35, volleyLead: 5, volleyHold: 2.4, playerLead: 3.5, playerHold: 2.2,
   // A volley stays behind the killer through the kill: the clock eases from
   // 1x to volleySlow over the volleyEase seconds of round before it, so the
   // last rounds of the burst fly slowly as the kill lands, and the lens
   // widens (up to volleyFov degrees) only when his victim would leave the
   // frame's middle volleyFit of it.
-  volleySlow: 0.3, volleyEase: 0.7, volleyFov: 80, volleyFit: 0.8,
+  volleySlow: 0.5, volleyEase: 0.7, volleyFov: 80, volleyFit: 0.8,
   // When the victim sits behind the killer's own plane on screen (dead ahead
   // on the chase line), the eye rises volleyLift metres, eased over
   // volleyLiftTime seconds, and stays up for the part.
@@ -2626,6 +2776,213 @@ const partLabel = (i, n, part, reel = null) => {
   return `${i + 1} of ${n}${part.count > 1 ? ` - ${part.count} kills` : ''}`;
 };
 
+/**
+ * A compilation's close kills cut fast (the owner, 2026-11-09, lop|DriFt's
+ * 8 in 59 s on Midway, filmed kill by kill as the bullet chase and 81 s
+ * long: "they're all super tight (close quarters) so the slow down kind of
+ * is annoying ... play it back in real time, and maybe use some different
+ * angles and edits to keep it feeling fresh"). A kill on foot within
+ * `maxDist` metres is two shots at 1x, cut hard on the action: the approach
+ * from `before` seconds ahead of the kill, then the kill from `cut` seconds
+ * before it to `after` past it. Each shot's angle turns over from kill to
+ * kill (`approach`, `kill`: QUICK_SRC's poses), the kill's never the
+ * approach's, the first of its list that the depth picture says is clear
+ * (less than `wall` of it within `near` metres, less than `cover` within
+ * `coverFar` metres or half the way to its subject, its subject seen), else the
+ * chase as placed; it follows the men, eased over `ease` seconds. Kills
+ * cut straight into one another; one after black comes in over `DIP.in`.
+ */
+const QUICK = Object.freeze({
+  maxDist: 60, before: 1.9, cut: 0.3, after: 1.0, settle: 0.5, ease: 0.12, near: 1.2, wall: 0.25, cover: 0.35, coverFar: 4,
+  approach: ['front', 'high', 'shoulder'], kill: ['reverse', 'shoulder', 'high'],
+});
+/** A kill the fast cut films: both men on foot, close. */
+const quickKill = part => !part.killerVehicle && !part.victimVehicle && !part.flying && !part.victimFlying
+  && Number.isFinite(Number(part.distance)) && Number(part.distance) <= QUICK.maxDist;
+/** The fast cut's camera (`window.__quick`): the poses, picked per shot,
+ *  placed each frame after the chase. */
+const QUICK_SRC = `window.__quick = (() => {
+  let st = null;
+  return {
+    install(o) {
+      const r = window.replay;
+      const B = window.__rbSync;
+      const D = window.__depth;
+      const cam = r.ctx.camera;
+      const V = (x = 0, y = 0, z = 0) => cam.position.clone().set(x, y, z);
+      const where = (pid, t) => B.whereIs(r.rec, pid, t, r.kills ?? r.rec.kills);
+      st = { ...o, phase: -1, pos: null, look: null, kind: null, kinds: [] };
+      // [where the lens is, what it looks at] from his eye K and his victim's chest Vp.
+      const pose = (kind, K, Vp) => {
+        const fwd = Vp.clone().sub(K).setY(0);
+        if (fwd.lengthSq() < 1e-6) fwd.set(0, 0, -1);
+        fwd.normalize();
+        const right = V(-fwd.z, 0, fwd.x);
+        const s = st.side;
+        if (kind === 'shoulder') return [K.clone().addScaledVector(fwd, -2.6).add(V(0, 0.5, 0)).addScaledVector(right, 0.6 * s), K.clone().lerp(Vp, 0.7)];
+        if (kind === 'front') return [K.clone().addScaledVector(fwd, 3.2).add(V(0, -0.2, 0)).addScaledVector(right, 1.6 * s), K.clone().addScaledVector(fwd, 0.6)];
+        if (kind === 'high') return [K.clone().addScaledVector(fwd, -5.5).add(V(0, 4.5, 0)).addScaledVector(right, 1.5 * s), K.clone().lerp(Vp, 0.6)];
+        if (kind === 'reverse') return [Vp.clone().addScaledVector(fwd, 2.4).add(V(0, 0.5, 0)).addScaledVector(right, 0.8 * s), Vp.clone().lerp(K, 0.5)];
+        return null;
+      };
+      // Clear: the lens not in a wall, little of the picture closer than
+      // half the way to the subject (a hut's roof under the high pose), the
+      // subject in the picture and seen (over his shoulder, a victim hidden
+      // only by the shooter's own back counts as seen).
+      const clearAt = (c, kind, [at, look], subject, K) => {
+        const saved = [c.position.clone(), c.quaternion.clone()];
+        c.position.copy(at);
+        c.lookAt(look);
+        c.updateMatrixWorld();
+        let ok = false;
+        if (D.take(c)) {
+          const v = subject.clone().project(c);
+          const inside = v.z < 1 && Math.abs(v.x) < 0.85 && Math.abs(v.y) < 0.85;
+          const drawn = D.at(subject, c);
+          const far = at.distanceTo(subject);
+          const own = kind === 'shoulder' && subject !== K && Math.abs(drawn - at.distanceTo(K)) < 1.2;
+          ok = inside && D.near(st.cfg.near) < st.cfg.wall && D.near(Math.min(st.cfg.coverFar, far / 2)) < st.cfg.cover
+            && (drawn >= far - 0.8 || own);
+          // The high shot is the two of them: from over a roof it showed only
+          // a small man on a slope, the shooter under the roof.
+          if (ok && kind === 'high' && subject !== K) {
+            const k = K.clone().project(c);
+            ok = k.z < 1 && Math.abs(k.x) < 0.85 && Math.abs(k.y) < 0.85 && D.at(K, c) >= at.distanceTo(K) - 0.8;
+          }
+        }
+        c.position.copy(saved[0]);
+        c.quaternion.copy(saved[1]);
+        c.updateMatrixWorld();
+        return ok;
+      };
+      r.camera.setLensHook(c => {
+        if (!st) return;
+        const t = r.time;
+        const kw = where(st.pid, t);
+        const vw = where(st.victim, Math.min(t, st.t - 0.1));
+        if (!kw?.pos || !vw?.pos) return;
+        const K = V(kw.pos[0], kw.pos[1] + 1.5, kw.pos[2]);
+        const Vp = V(vw.pos[0], vw.pos[1] + 1.1, vw.pos[2]);
+        const phase = t < st.t - st.cfg.cut ? 0 : 1;
+        if (phase !== st.phase) {
+          st.phase = phase;
+          const list = phase === 0 ? st.approach : st.kill;
+          st.kind = null;
+          for (const kind of list) {
+            if (phase === 1 && kind === st.kinds[0]) continue;
+            if (clearAt(c, kind, pose(kind, K, Vp), phase === 0 ? K : Vp, K)) { st.kind = kind; break; }
+          }
+          st.kinds.push(st.kind ?? 'chase');
+          st.pos = null;
+        }
+        if (!st.kind) return;
+        const [at, look] = pose(st.kind, K, Vp);
+        if (!st.pos) {
+          st.pos = at.clone();
+          st.look = look.clone();
+        } else {
+          const k = 1 - Math.exp(-1 / (st.cfg.ease * 30));
+          st.pos.lerp(at, k);
+          st.look.lerp(look, k);
+        }
+        c.position.copy(st.pos);
+        c.lookAt(st.look);
+        c.updateMatrixWorld();
+        c.matrixWorldInverse.copy(c.matrixWorld).invert();
+      });
+    },
+    kinds() { return st?.kinds ?? []; },
+    remove() {
+      st = null;
+      window.replay.camera.setLensHook(null);
+    },
+  };
+})();`;
+
+/** One close kill of a compilation in the fast cut (QUICK) into `write`:
+ *  his name and the count on top as the burst draws them. `i` turns the
+ *  angles over. `{ ok, audio, frames, hitFrame, kinds }`. */
+async function filmQuick(page, reel, part, i, write, { fadeIn = 0 } = {}) {
+  const counts = streakCounts(part, reel);
+  const roll = (j, list) => [...list.slice(j % list.length), ...list.slice(0, j % list.length)];
+  await page.evaluate(({ from, pid }) => {
+    const r = window.replay;
+    r.creator.toggle(false);
+    r.seek(Math.max(0, from));
+    r.speed = 1;
+    r.playing = false;
+    if (r.ui?.follow) r.ui.follow(pid);
+    else r.follow(pid);
+    if (r.ui?.setMode) r.ui.setMode('chase');
+    else r.camera.setMode('chase');
+  }, { from: part.t - QUICK.before - QUICK.settle, pid: part.killer });
+  await page.waitForTimeout(600);
+  await page.evaluate(async ({ src, depth }) => {
+    window.__rbSync ??= await import(new URL('replay-battles.js', location.href).href);
+    if (!window.__quick) (0, eval)(src);
+    if (!window.__depth) (0, eval)(depth);
+    await window.__depth.ready();
+    window.replay.playing = true;
+  }, { src: QUICK_SRC, depth: DEPTH_SRC });
+  for (let k = 0; k < Math.round(QUICK.settle * FPS); k++) {
+    await page.evaluate(async ({ W, H, FPS }) => {
+      window.__clock.step(1000 / FPS);
+      window.__renderOnce(W, H, 1 / FPS);
+      await window.__audioStep?.(1 / FPS);
+    }, { W, H, FPS });
+  }
+  await page.evaluate(o => window.__quick.install(o), {
+    pid: part.killer, victim: part.victim, t: part.t, side: i % 2 ? -1 : 1,
+    approach: roll(i, QUICK.approach), kill: roll(i, QUICK.kill), cfg: QUICK,
+  });
+  let from = null;
+  let n = 0;
+  let hitFrame = null;
+  for (let k = 0; k < MAX_FRAMES; k++) {
+    const res = await page.evaluate(async ({ W, H, FPS, t, end, name, top, before, after, hitFrame, n, fadeIn }) => {
+      const r = window.replay;
+      const at = window.__audioT?.() ?? null;
+      window.__clock.step(1000 / FPS);
+      window.__renderOnce(W, H, 1 / FPS);
+      await window.__audioStep?.(1 / FPS);
+      const hit = r.time >= t;
+      const cv = (window.__reelCanvas ??= Object.assign(document.createElement('canvas'), { width: W, height: H }));
+      const g = cv.getContext('2d');
+      g.drawImage(window.__renderer.domElement, 0, 0, W, H);
+      g.textAlign = 'center';
+      g.textBaseline = 'middle';
+      const V = (window.__vp ??= await import(new URL('vehicle-players.js', location.href).href));
+      const shown = V.decodePlayerName ? V.decodePlayerName(name) : name;
+      g.font = '800 64px system-ui, "Segoe UI", sans-serif';
+      const w = g.measureText(shown).width + 64;
+      g.fillStyle = 'rgba(12,12,10,0.62)';
+      g.beginPath();
+      g.roundRect(W / 2 - w / 2, 152 + top, w, 96, 48);
+      g.fill();
+      g.fillStyle = '#f6f1e2';
+      g.fillText(shown, W / 2, 202 + top);
+      const since = hitFrame === null ? (hit ? 0 : -1) : n - hitFrame;
+      window.__streakBadge(g, W, 310 + top, before, after, since, 'KILLS');
+      if (n < fadeIn) {
+        g.fillStyle = 'rgba(0,0,0,' + (1 - n / fadeIn) + ')';
+        g.fillRect(0, 0, W, H);
+      }
+      return { at, hit, done: r.time >= end, url: cv.toDataURL('image/jpeg', 0.92) };
+    }, { W, H, FPS, t: part.t, end: part.t + QUICK.after, name: reel.playerName ?? '', top: OVERLAY_TOP,
+      before: counts.before, after: counts.after, hitFrame, n, fadeIn });
+    if (from === null) from = res.at;
+    if (hitFrame === null && res.hit) hitFrame = n;
+    write(res.url);
+    n++;
+    framesWritten++;
+    if (res.done) break;
+  }
+  const kinds = await page.evaluate(() => { const k = window.__quick?.kinds() ?? []; window.__quick?.remove(); return k; });
+  log(`    kill ${counts.after} at ${part.t.toFixed(1)} (${Math.round(part.distance)} m): ${kinds.join(' / ')}, ${n} frames`);
+  if (n < FPS) return { ok: false, why: `only ${n} frames` };
+  return { ok: true, frames: n, hitFrame, kinds, audio: from === null ? null : [from, from + n / FPS] };
+}
+
 async function filmReel(page, reel, dir) {
   const frames = path.join(dir, 'frames');
   fs.rmSync(frames, { recursive: true, force: true });
@@ -2657,12 +3014,15 @@ async function filmReel(page, reel, dir) {
   } else if (reel.burst) {
     // One take behind him, unless he is in a hull or the take did not see
     // his kills: then kill by kill as the bullet chase (CLEAN).
-    const take = reel.inHull ? null : await filmBurst(page, reel);
+    // The one take behind him is kept behind --burst-take: kill by kill, the
+    // close ones in the fast cut (QUICK), is the default (2026-11-09).
+    const oneTake = args.includes('--burst-take');
+    const take = reel.inHull || !oneTake ? null : await filmBurst(page, reel);
     if (take && take.seen >= CLEAN.share && take.roomy >= DIRECTOR.roomy) {
       for (const url of take.frames) write(url);
       if (take.audio) audio.push(take.audio);
     } else {
-      log(`    burst ${reel.inHull ? 'from a hull' : `take saw ${Math.round((take?.seen ?? 0) * 100)}% of its kills, ${Math.round((take?.roomy ?? 0) * 100)}% from the chase`}: filmed kill by kill`);
+      log(`    burst ${reel.inHull ? 'from a hull' : !oneTake ? 'in the fast cut' : `take saw ${Math.round((take?.seen ?? 0) * 100)}% of its kills, ${Math.round((take?.roomy ?? 0) * 100)}% from the chase`}: filmed kill by kill`);
       burstParts = reel.shots ?? [];
       if (burstParts.length < 3) return { ok: false, why: 'its kills cannot be filmed one by one' };
     }
@@ -2705,6 +3065,13 @@ async function filmReel(page, reel, dir) {
         for (const url of card) write(url);
         audio.push([-100, -100 + card.length / FPS]);
       }
+    }
+    // A burst's close kill on foot: the fast cut, real time, two angles.
+    if (reel.burst && part.mode === 'shot' && quickKill(part)) {
+      const got = await filmQuick(page, reel, part, i, write, { fadeIn: i === 0 || !quickKill(parts[i - 1]) ? DIP.in : 0 });
+      if (got.ok && got.audio) audio.push(got.audio);
+      if (!got.ok) log(`    part ${i + 1} left out: ${got.why}`);
+      continue;
     }
     // A vehicle kill in a compilation is the bullet chase: one round, the
     // shot and the death one clip (the owner, 2026-11-03: the volley "cuts
@@ -3084,6 +3451,23 @@ async function film(page, cand, dir, view = null) {
 }
 
 /**
+ * A kill shot's slow motion in a Short (the owner, 2026-11-09: "in general
+ * we're slowing down too much in the slow mo"). The studio's 'strong' bullet
+ * time gives every round 2.5 s on screen however short its flight, so a 20 m
+ * SMG kill crawled; here the round's time on screen grows with the distance,
+ * `flightBase + metres / flightPerM` seconds (clamped to `flightMin`..
+ * `flightMax`), and the hold on the hit is shorter and less slowed (`hold`,
+ * the round cam's `hold` override).
+ */
+const SHORT_PACE = Object.freeze({
+  pace: 90, flightBase: 0.35, flightPerM: 250, flightMin: 0.45, flightMax: 1.4,
+  hold: Object.freeze({ real: 1.0, speed: 0.6, max: 2.5, pastKill: 0.7, hullReal: 2.6, hullMax: 4, hullSpeed: 0.75 }),
+});
+/** The round's seconds on screen in a Short, by the kill's distance. */
+const shortFlight = metres => Math.min(SHORT_PACE.flightMax,
+  Math.max(SHORT_PACE.flightMin, SHORT_PACE.flightBase + (Number(metres) > 0 ? Number(metres) : 0) / SHORT_PACE.flightPerM));
+
+/**
  * The creator's one-click kill shot of `cand` (the bullet chase, the Shorts
  * look), each recorded frame handed to `write` as a data URL. `overlay`
  * (`{ name, label, fadeIn }`) draws a compilation's player name and count over
@@ -3092,6 +3476,11 @@ async function film(page, cand, dir, view = null) {
  */
 async function shootKill(page, cand, write, overlay = null, { lead = null } = {}) {
   await armCreator(page, { lower: !overlay });
+  await page.evaluate(({ pace, flight, hold }) => {
+    const ro = window.replay.creator.rounds;
+    ro.bulletTime = { pace, flight };
+    ro.hold = hold;
+  }, { pace: SHORT_PACE.pace, flight: shortFlight(cand.distance), hold: SHORT_PACE.hold });
   // A shorter lead-in than the look's (a streak's later shots).
   if (lead !== null) await page.evaluate(l => { window.replay.creator.prefs.leadIn = l; }, lead);
   await page.evaluate(() => { delete window.__streakHitAt; });
@@ -3115,7 +3504,7 @@ async function shootKill(page, cand, write, overlay = null, { lead = null } = {}
     flight.fromAir = fromAir;
     window.__director.install(pid, [], cfg, { chain: r.camera.lensHook, when: () => r.creator.rounds?.state === 'armed', flight });
   }, { on, src: DIRECTOR_SRC, depth: DEPTH_SRC, pid: cand.killer, victim: cand.victim, t: cand.t, air: Boolean(cand.victimFlying), fromAir: Boolean(cand.flying),
-    cfg: { ...DIRECTOR, shoulderOnly: true } });
+    cfg: { ...DIRECTOR, shoulderOnly: true, reveal: overlay ? null : REVEAL } });
   const setup = await page.evaluate(({ t, victim, W, H, kv, vv, weapon }) => {
     const c = window.replay.creator;
     const row = c.killAt(t, victim);

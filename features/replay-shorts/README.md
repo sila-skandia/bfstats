@@ -404,6 +404,51 @@ from behind the victim, with no sides and a 66 s run time
   also counts a live Short with the same reel victim as that streak's, so a
   changed choice never films it twice. `--player=<name>` films one player's.
 
+**The shooter seen, less slow motion, the fast cut (2026-11-09).** Three
+reviews in one sitting, all on Midway (`6zndpju5tv`):
+
+- *"It doesn't include where the shot came from. This is an almost 300
+  metre kill so the shooter is off screen ... If we do these victim chase
+  ones, we need to zoom into the shooter at the end"* (`ckpzprzru7`,
+  `8dpfpeaj32`, Deus Ex Machina's K98 from a bunker). The director's
+  reverse filmed the whole take from behind the man killed; the shooter was
+  a pixel. Now the director counts the frames the shooter is in the
+  picture and at least 12% of its height (`REVEAL`); a take with fewer than
+  20 of a kill 25 m or more flies back up the round's path once the hold
+  ends (1.3-2.4 s by distance, an arc up to 20 m high, turned onto him over
+  the first third), to the first clear of four poses in front of, beside or
+  behind him, held 2 s to the fade. The clip's out point moves with it. The
+  first try flew a second through the bunker's concrete: the fly is now
+  checked step by step in the depth picture, and where it would enter the
+  level it stops a step short and cuts to him. Measured: both kills
+  revealed (seen 1 frame each); one ends outside the slit with him firing
+  again, one cuts from the bunker's wall to over his shoulder at the slit.
+  Single kills only; a compilation's parts do not reveal.
+- *"In general we're slowing down too much in the slow mo."* The studio's
+  'strong' bullet time gives every round 2.5 s on screen, so a 20 m kill
+  crawled. A Short's round now takes `0.35 + metres / 250` s (0.45-1.4 s,
+  `SHORT_PACE`), and the hold on the hit 1 s at 0.6x (was 1.4 s at 0.35x;
+  a hull 2.6 s at 0.75x, was 3.5 s at 0.6x), through the round cam's new
+  `hold` override (`replay-roundcam.js`; the studio keeps its defaults). A
+  streak's stretches slow to 0.75x at a kill (was 0.45x) and hold the end
+  2 s (2.6); a volley slows to 0.5x (0.3) and holds 2.4 s (3.2). The 294 m
+  kill went from 12.9 s with no reveal to 10.3 s with one.
+- *"These kills, they're all super tight (close quarters) so the slow down
+  kind of is annoying ... play it back in real time, and maybe use some
+  different angles and edits to keep it feeling fresh"* (`zz2hpmkt7m`,
+  lop|DriFt's 8 in 59 s, 81 s long: its one take saw too few kills in the
+  huts and it fell back to eight bullet chases). A burst is now filmed kill
+  by kill, and a kill on foot within 60 m is the fast cut (`QUICK`,
+  `filmQuick`): two shots at 1x, cut hard 0.3 s before the kill, the
+  approach from 1.9 s ahead and the kill to 1 s past, each angle (front,
+  high, over the shoulder, behind the victim) turning over from kill to
+  kill, the kill's never the approach's, and only one the depth picture
+  passes: the lens out of walls, under 35% of the picture within 4 m (a
+  hut's tin roof filled the first try's high shot), the subject seen, and
+  for the high shot both men. Kills cut straight into one another. The one
+  take is kept behind `--burst-take`. Measured: 81 s to 32 s; six of its
+  eight kills in the fast cut.
+
 **What to build next** is in `IDEAS.md`: per-player packages (Player of the
 Round, the streak, Nemesis, a vehicle's life, a 30 s recap) and new single
 moments, from web research checked against four real rounds.
