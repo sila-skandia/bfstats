@@ -10,6 +10,7 @@ network-attached volume. Most entries below trace back to one of those two facts
 
 | # | Date | Impact | Cause | Fixed by |
 |---|---|---|---|---|
+| 8 | 2026-11-08 | Levels and models at ~43 KB/s for hours | `cloudflared` tunnel degraded after 10 days up; `.glb`/`.json` not edge-cached, so every one crossed it | `rollout restart deployment/cloudflared` |
 | 7 | 2026-09-28 | play.bfstats.io pages did not start, 9.5 min | HAProxy `is_netcode` was `path_beg /netcode`, which took the viewer's `/netcode.js` | ACL narrowed, this commit |
 | 6 | 2026-08-16 | Site unresponsive | `Cache=Shared` in connection string | `b7feede` |
 | 5 | 2026-08-16 | Misdiagnosis, outage continued | Blamed `busy_timeout`; real cause was #6 | `b7feede` |
@@ -19,6 +20,40 @@ network-attached volume. Most entries below trace back to one of those two facts
 | 1 | — | App locked out of its own DB | `sqlite3` as root over SSH created root-owned WAL/shm | n/a — process |
 
 ---
+
+### 8. The tunnel slowed every level to a crawl — 2026-11-08
+
+For a few hours, map and model files on play.bfstats.io crawled: FHSWEurope's
+Tulagi Island took 68 s to load on a warm browser cache, Tulagi's 12 MB
+`scene.glb` arrived at ~43 KB/s and was cut off after 229 s, and the 103 MB
+FHSWEurope `_shared/collision-meshes.json` (24.5 MB gzipped) took 193 s. Small
+API calls through the same tunnel stayed fast, and textures were fine.
+
+Where the time was, leg by leg:
+- **nginx was not it.** From inside the mesh pod the same `scene.glb` took
+  0.1 s; HAProxy logged `Tr` 0-4 ms for every mesh request.
+- **The tunnel was.** HAProxy ended the stalled transfer `cD` (its 50 s
+  `timeout client`: cloudflared stopped reading), and cloudflared logged
+  `unexpected EOF` for it. Every cloudflared error in the 3 h before was on one
+  connection (`connIndex=2`, edge 198.41.192.37). cloudflared had been up 10
+  days; its CPU was idle.
+- **Why it hurt so much:** `.glb`, `.json` and `.ndjson` are still `DYNAMIC` at
+  Cloudflare (no Cache Rule for play/mesh, `features/asset-batch-downloads`
+  "Still open" 1), so every level file crosses the tunnel on every load, while
+  `/textures/` is `HIT` and was unaffected.
+
+`kubectl rollout restart deployment/cloudflared -n cloudflared` fixed it at
+once: the same `scene.glb` in 3.4 s, Tulagi's whole load in 28 s.
+
+Seen alongside, not the cause: the mesh pod (`cpu: 200m`) was CPU-throttled in
+45% of periods, mostly gzipping `collision-meshes.json` per request (6 s of its
+quota each), which has no `.gz`/`.br` beside it.
+
+**Remember:** when the site's level files crawl but the API is fast, time a
+file from inside the mesh pod first; if nginx is fast there, read the
+cloudflared log and restart the tunnel. The lasting fix is the edge Cache Rule
+for play.bfstats.io and mesh.bfstats.io, so level files stop crossing the
+tunnel at all.
 
 ### 7. The netcode route took the viewer's own modules — 2026-09-28
 
@@ -115,6 +150,12 @@ root-owned `-wal`/`-shm` files, locking the app out of its own database.
   re-derive the cause instead of tuning the same knob further.
 
 ## Open / watch
+
+- **Level files are not edge-cached** (#8). `.glb`, `.json` and `.ndjson` on
+  play.bfstats.io and mesh.bfstats.io are `cf-cache-status: DYNAMIC`, so every
+  one crosses the tunnel to the single node. A zone Cache Rule matching those
+  two hosts, eligible for cache with edge TTL from the origin's
+  `Cache-Control`, takes them off it. Dashboard work, outstanding.
 
 - **WAL growth.** `wal_autocheckpoint` is 1000 pages (4MB); the WAL has been observed at
   **216MB** because checkpoints couldn't complete against constant writers. A clean pod
