@@ -1672,6 +1672,9 @@ export function createProvingGroundPage(page) {
       ownerNode: id => page.damageVisuals?.get(id)?.node ?? null,
       camera: () => page.camera,
       scene: () => page.scene,
+      // The ways-out card takes the mouse while the fight is held.
+      releaseMouse: () => page.release?.(),
+      captureMouse: () => page.capture?.(),
     });
     return dogfight;
   }

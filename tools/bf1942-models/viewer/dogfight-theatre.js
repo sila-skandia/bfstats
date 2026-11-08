@@ -237,6 +237,7 @@ export function createDogfightTheatre({ host, makePlane, planeVisual = () => nul
           <p class="dfs-cap is-you"><b>YOU</b><i class="dfs-intent"></i><span></span></p>
         </div>
         <div class="dfs-endcard" hidden><b></b><span></span><div class="dfs-end-acts"></div></div>
+        <div class="dfs-helper" hidden data-step=""><small class="dfs-helper-kicker"></small><b class="dfs-helper-title"></b><span class="dfs-helper-words"></span><ol class="dfs-helper-ways"></ol><div class="dfs-helper-acts"></div></div>
         <button type="button" class="dfs-layer" hidden>
           <span class="dfs-layer-art"><img alt="" hidden>
             <svg class="dfs-layer-schematic" viewBox="0 0 96 72" aria-hidden="true"><path class="dfs-ls-grid" d="M0 18H96M0 36H96M0 54H96M24 0V72M48 0V72M72 0V72"/>
@@ -276,21 +277,21 @@ export function createDogfightTheatre({ host, makePlane, planeVisual = () => nul
       </div>
       <aside class="dfs-lower dfs-notes" aria-label="Notes" hidden>
         <header class="dfs-notes-head"><b>Notes</b><button type="button" class="dfs-btn dfs-notes-close" title="Close the notes (N)">${ICON.close}</button></header>
+        <div class="dfs-extend" hidden><div class="dfs-extend-head"><small>WAYS OUT</small><span></span><span class="dfs-extend-acts"></span></div><ol></ol></div>
+        <div class="dfs-whatif" hidden><div class="dfs-whatif-head"><small>WHAT IF</small><span></span><button type="button" class="dfs-chip" data-whatif="run">Fly their other ways out</button><button type="button" class="dfs-chip" data-whatif="back" hidden>Back to the recording</button></div><ol></ol></div>
+        <div class="dfs-moves" hidden></div>
+        <div class="dfs-watch" hidden><small>IN 3D</small><span>The fight on its own map, from the recording</span></div>
         <div class="dfs-survival" hidden><small>CAN YOU SURVIVE IT?</small><b></b><span></span></div>
+        <div class="dfs-story">
+          <div><h3 class="dfs-story-move">THE MOVE</h3><div class="dfs-move"></div></div>
+          <div><h3 class="dfs-story-counter">THE COUNTER</h3><div class="dfs-counter"></div></div>
+        </div>
+        <p class="dfs-fly-note">You fly the green plane (YOU), in the air, against the ace flying this move. The coach tells you what they are doing and what beats it.</p>
         <div class="dfs-scoring" hidden><small>HOW THE SCORES ARE MEASURED</small>
           <p>Each extension, reversal and bounce (the school's Dip, Flip and Ninja) is flown 9 times on BF1942's flight law: from the start you watch, and from 8 others with the ace nudged up to 30 m left or right, 30 m nearer or further, 10 m higher or lower, and 3 m/s faster or slower. The badge on the tab, such as 7/9, is how many of the 9 the move did its job in.</p>
           <p>7 or more: it works. 3 to 6: it works sometimes. Under 3: it rarely works. A low score is not your chance of dying: the bounce asks for much more than staying alive.</p>
           <dl><dt>${moveFull('dip')}</dt><dd></dd><dt>${moveFull('flip')}</dt><dd></dd><dt>${moveFull('ninja')}</dt><dd></dd></dl>
           <p class="dfs-scoring-this"></p></div>
-        <p class="dfs-fly-note">You fly the green plane (YOU), in the air, against the ace flying this move. The coach tells you what they are doing and what beats it.</p>
-        <div class="dfs-watch" hidden><small>IN 3D</small><span>The fight on its own map, from the recording</span></div>
-        <div class="dfs-whatif" hidden><div class="dfs-whatif-head"><small>WHAT IF</small><span></span><button type="button" class="dfs-chip" data-whatif="run">Fly their other ways out</button><button type="button" class="dfs-chip" data-whatif="back" hidden>Back to the recording</button></div><ol></ol></div>
-        <div class="dfs-extend" hidden><div class="dfs-extend-head"><small>DEADLOCK</small><span></span><span class="dfs-extend-acts"></span></div><ol></ol></div>
-        <div class="dfs-moves" hidden></div>
-        <div class="dfs-story">
-          <div><h3 class="dfs-story-move">THE MOVE</h3><div class="dfs-move"></div></div>
-          <div><h3 class="dfs-story-counter">THE COUNTER</h3><div class="dfs-counter"></div></div>
-        </div>
         <small class="dfs-legend"><span><i class="is-ace"></i><span class="is-ace-name">ace's energy</span></span><span><i class="is-you"></i><span class="is-you-name">your energy</span></span><span><i class="is-ace-shot"></i><span class="is-ace-shotname">ace has the shot</span></span><span><i class="is-you-shot"></i><span class="is-you-shotname">you have the shot</span></span><span><i class="is-hit"></i>hits</span></small>
       </aside>
     </section>`;
@@ -311,7 +312,7 @@ export function createDogfightTheatre({ host, makePlane, planeVisual = () => nul
     intents: [q('.dfs-cap.is-ace .dfs-intent'), q('.dfs-cap.is-you .dfs-intent')],
     shot: q('.dfs-shotcard'), reticle: q('.dfs-reticle'), lead: q('.dfs-lead'), reticleText: q('.dfs-reticle span'),
     survival: q('.dfs-survival'), score: q('.dfs-score'), steps: q('.dfs-steps'), pins: q('.dfs-pins'), scoring: q('.dfs-scoring'), moves: q('.dfs-moves'), whatif: q('.dfs-whatif'), extend: q('.dfs-extend'), watch: q('.dfs-watch'),
-    end: q('.dfs-endcard'), demos: q('.dfs-demos'), toggle: q('.dfs-toggle'), restart: q('.dfs-restart'),
+    end: q('.dfs-endcard'), helper: q('.dfs-helper'), demos: q('.dfs-demos'), toggle: q('.dfs-toggle'), restart: q('.dfs-restart'),
     speeds: q('.dfs-speeds'), cams: q('.dfs-cams'), chart: q('.dfs-chart'), scrub: q('.dfs-scrub'),
     move: q('.dfs-move'), counter: q('.dfs-counter'), fly: q('.dfs-fly'), flyNote: q('.dfs-fly-note'), flyRow: q('.dfs-flyrow'),
     arenaNow: q('.dfs-arena-now'), listToggle: q('.dfs-list-toggle'), notes: q('.dfs-notes'), notesBtn: q('.dfs-notes-btn'),
@@ -850,6 +851,7 @@ export function createDogfightTheatre({ host, makePlane, planeVisual = () => nul
    *  from `at` seconds. */
   function stageLesson(fight, { at = 0 } = {}) {
     ui.stage.classList.remove('is-empty');
+    if (!fight.extended) helperHide();
     state.fight = fight;
     state.orbit.az = sideOn(fight);
     state.t = at;
@@ -900,6 +902,8 @@ export function createDogfightTheatre({ host, makePlane, planeVisual = () => nul
   }
 
   function pickLesson(id) {
+    helper.seen.clear();
+    helperHide();
     const lesson = lessonById(id) ?? LESSONS[0];
     state.lesson = lesson;
     ui.lessons.querySelectorAll('.dfs-row').forEach(b => b.setAttribute('aria-current', String(b.dataset.lesson === lesson.id)));
@@ -1054,7 +1058,7 @@ export function createDogfightTheatre({ host, makePlane, planeVisual = () => nul
     const view = state.camera === 'top' ? s.ortho : s.camera;
     s.view = view;
     if (fight.recorded) drawWhatIfHead();
-    if (!world) drawExtendHead();
+    if (!world) { drawExtendHead(); drawHelper(); }
     if (state.hold > 0) {
       state.hold -= dt;
       if (state.hold <= 0) ui.shot.hidden = true;
@@ -1338,6 +1342,8 @@ export function createDogfightTheatre({ host, makePlane, planeVisual = () => nul
 
   function showEnd(fight) {
     if (!ui.end.hidden) return;
+    // The helper's own card carries the way out's verdict.
+    if (fight.extended && helper.step === 'playing') return;
     const [aceHits, youHits] = fight.hits;
     const who = whoOf;
     const b = ui.end.querySelector('b'), sp = ui.end.querySelector('span');
@@ -1812,6 +1818,7 @@ export function createDogfightTheatre({ host, makePlane, planeVisual = () => nul
 
   /** Put a recorded fight (or one spliced from it, `fight.whatIf`) on stage. */
   function showRecorded(fight, row, { at = 0 } = {}) {
+    if (!fight.extended) helperHide();
     state.lesson = null;
     state.demo = null;
     ui.demos.innerHTML = '';
@@ -2164,27 +2171,23 @@ export function createDogfightTheatre({ host, makePlane, planeVisual = () => nul
     const words = ui.extend.querySelector('.dfs-extend-head > span');
     const acts = ui.extend.querySelector('.dfs-extend-acts');
     if (ext) {
-      words.textContent = `${whoOf(ext.side)} ${ext.side === 1 && !fight.recorded ? 'fly' : 'flies'} "${ext.way.name.toLowerCase()}" from ${ext.t.toFixed(1)} s, against ${partyOf(1 - ext.side)} as they stood. ${resultWords(ext.score)}.`;
+      words.textContent = `${whoOf(ext.side)} ${ext.side === 1 && !fight.recorded ? 'fly' : 'flies'} "${ext.way.name.toLowerCase()}" from ${ext.t.toFixed(1)} s. ${resultWords(ext.score)}.`;
       acts.innerHTML = '<button type="button" class="dfs-chip" data-extend="back">Back to the fight</button>';
       return;
     }
     const sides = fight.recorded ? [0, 1] : [1];
     const runButtons = sides.map(side => `<button type="button" class="dfs-chip" data-extend="run" data-side="${side}" data-t="${t}">`
-      + `${fight.recorded ? `Extend for ${esc(fight.names[side])}` : 'Extend the scene'}</button>`).join('');
+      + `${fight.recorded ? `Fly them for ${esc(fight.names[side])}` : 'Fly them'}</button>`).join('');
     const sinceWords = from => (from < 0.5 ? 'the start' : `${from.toFixed(0)} s`);
     if (span) {
-      words.textContent = `${KIND_WORDS[span.kind][0].toUpperCase()}${KIND_WORDS[span.kind].slice(1)} since ${sinceWords(span.from)}: nobody has had a shot. `
-        + `Extend the scene from ${t.toFixed(1)} s to see the school's ways out of it, each flown from here.`;
+      words.textContent = `${kindWords(span.kind)} since ${sinceWords(span.from)}, nobody's shot. The ways out from ${t.toFixed(1)} s:`;
       acts.innerHTML = runButtons;
-      ui.notesBtn.classList.toggle('has-news', ui.notes.hidden);
     } else if (first) {
-      words.textContent = `${KIND_WORDS[first.kind][0].toUpperCase()}${KIND_WORDS[first.kind].slice(1)} from ${sinceWords(first.from)} to ${first.t1.toFixed(0)} s, the hatched band on the chart. `
-        + `Pause inside it to extend the scene from there, or extend it from ${t.toFixed(1)} s.`;
+      words.textContent = `${kindWords(first.kind)} from ${sinceWords(first.from)} to ${first.t1.toFixed(0)} s (hatched on the chart). The ways out from ${t.toFixed(1)} s:`;
       acts.innerHTML = `<button type="button" class="dfs-chip" data-extend="seek" data-t="${first.t0}">Go to it</button>` + runButtons;
     } else {
-      // No deadlock found, but the ways out fly from any moment: a fight
-      // that ends with no kill is still one to get out of.
-      words.textContent = `No deadlock in this fight: somebody always has the shot, or they are apart. The school's ways out can still be flown from ${t.toFixed(1)} s, against ${fight.recorded ? 'the other pilot' : 'the ace'} as they stand.`;
+      // No deadlock found, but the ways out fly from any moment.
+      words.textContent = `No deadlock in this fight. The ways out from ${t.toFixed(1)} s:`;
       acts.innerHTML = runButtons;
     }
   }
@@ -2197,8 +2200,7 @@ export function createDogfightTheatre({ host, makePlane, planeVisual = () => nul
     list.innerHTML = '<li class="dfs-extend-busy">Flying the ways out on the flight law…</li>';
     state.playing = false;
     ui.toggle.textContent = 'Play';
-    setNotes(true);
-    ui.extend.scrollIntoView({ block: 'start', behavior: 'smooth' });
+    helperBusy(side, t);
     const i0 = Math.max(1, Math.min(fight.tracks[0].length - 2, Math.round(t / fight.dt)));
     let moment, opponent, makers, origin = fight.origin ?? [0, 0, 0], ground = () => 0;
     if (fight.recorded) {
@@ -2221,11 +2223,126 @@ export function createDogfightTheatre({ host, makePlane, planeVisual = () => nul
     } catch (e) {
       console.warn('dogfight extend', e);
       list.innerHTML = '<li class="dfs-extend-busy">The ways out could not be flown here.</li>';
+      helperFailed();
       return;
     }
     state.extend = { base: fight, side, t: w.t, i0: w.i0, results: w.results, actual: w.actual, row: state.recording?.row ?? null };
     drawExtendList();
+    helperWays();
   }
+
+  // --- the helper -----------------------------------------------------------------
+  // The deadlock breaker as a card on the picture, the moment it applies:
+  // when the fight on stage is six seconds into a deadlock the card asks
+  // whether to see the ways out (the fight plays on meanwhile); yes holds
+  // the fight and flies them from this moment, lists them best first, and
+  // one click plays it from here with the card saying how it went, "Try
+  // another" and "Back to the fight". No, or the span passing, puts it away
+  // for that deadlock; it comes back on the next one, or on a restart.
+  const helper = { step: null, key: null, seen: new Set(), side: 1, t: 0 };
+  const helperUi = {
+    kicker: ui.helper.querySelector('.dfs-helper-kicker'), title: ui.helper.querySelector('.dfs-helper-title'),
+    words: ui.helper.querySelector('.dfs-helper-words'), ways: ui.helper.querySelector('.dfs-helper-ways'), acts: ui.helper.querySelector('.dfs-helper-acts'),
+  };
+  const helperKey = span => `${state.lesson?.id ?? ''}:${state.demo?.id ?? ''}:${state.recording?.row ?? ''}:${span.t0}`;
+  const kindWords = kind => `${KIND_WORDS[kind][0].toUpperCase()}${KIND_WORDS[kind].slice(1)}`;
+
+  function helperDraw(step, { kicker = '', title = '', words = '', ways = '', acts = '' }) {
+    helper.step = step;
+    ui.helper.dataset.step = step;
+    helperUi.kicker.textContent = kicker;
+    helperUi.title.textContent = title;
+    helperUi.words.textContent = words;
+    helperUi.ways.innerHTML = ways;
+    helperUi.acts.innerHTML = acts;
+    ui.helper.hidden = false;
+  }
+
+  function helperHide() {
+    helper.step = null;
+    ui.helper.hidden = true;
+  }
+
+  /** Put away for this deadlock, by the viewer or by the span passing. */
+  function helperLater() {
+    if (helper.key) helper.seen.add(helper.key);
+    helperHide();
+    // The notes still offer it.
+    ui.notesBtn.classList.toggle('has-news', ui.notes.hidden);
+  }
+
+  /** Every frame: the offer, when the fight is in a deadlock nobody has answered. */
+  function drawHelper() {
+    const fight = state.fight;
+    if (!fight) { if (helper.step) helperHide(); return; }
+    if (helper.step && helper.step !== 'offer') return;
+    if (fight.extended || !ui.end.hidden) { if (helper.step === 'offer') helperHide(); return; }
+    const span = deadlockIn(fight.deadlocks, state.t);
+    if (!span || state.t < span.t0) { if (helper.step === 'offer') helperLater(); return; }
+    const key = helperKey(span);
+    if (helper.seen.has(key)) { if (helper.step === 'offer') helperHide(); return; }
+    const title = `Nobody has had a shot for ${Math.max(0, Math.round(state.t - span.from))} s`;
+    if (helper.step === 'offer' && helper.key === key) {
+      if (helperUi.title.textContent !== title) helperUi.title.textContent = title;
+      return;
+    }
+    helper.key = key;
+    const sides = fight.recorded ? [0, 1] : [1];
+    helperDraw('offer', {
+      kicker: `DEADLOCK · ${KIND_WORDS[span.kind].toUpperCase()}`, title,
+      words: 'Want to see the school\'s ways out? Each one is flown from this moment, and you can watch any of them play from here.',
+      acts: sides.map(side => `<button type="button" class="dfs-helper-btn is-primary" data-helper="show" data-side="${side}">${fight.recorded ? `Show me, for ${esc(fight.names[side])}` : 'Show me the ways out'}</button>`).join('')
+        + '<button type="button" class="dfs-helper-btn" data-helper="later">Keep watching</button>',
+    });
+  }
+
+  function helperBusy(side, t) {
+    helper.side = side;
+    helper.t = t;
+    helperDraw('busy', { kicker: `WAYS OUT · FROM ${t.toFixed(1)} S`, title: 'Flying the ways out\u2026', words: 'Each one on the flight law, from exactly where the two of them stand.' });
+  }
+
+  function helperFailed() {
+    helperDraw('ways', { kicker: 'WAYS OUT', title: 'The ways out could not be flown here', acts: '<button type="button" class="dfs-helper-btn" data-helper="later">Close</button>' });
+  }
+
+  /** The ways, best first, each a button that plays it from the moment. */
+  function helperWays() {
+    const x = state.extend;
+    if (!x) { helperHide(); return; }
+    const tag = sc => `<i class="dfs-extend-tag is-${sc.result}">${RESULT_TAGS[sc.result]}</i>`;
+    const playing = !!state.fight?.extended;
+    helperDraw('ways', {
+      kicker: `WAYS OUT · FROM ${x.t.toFixed(1)} S`,
+      title: playing ? 'Try another' : 'Pick one to watch it from here',
+      ways: x.results.map((r, i) => (r.score
+        ? `<li><button type="button" data-helper-way="${i}"${state.fight?.extended?.way?.id === r.way.id ? ' aria-pressed="true"' : ''}>${tag(r.score)}<b>${esc(r.way.name)}</b><small>${esc(resultWords(r.score))}</small></button></li>`
+        : `<li class="is-off"><b>${esc(r.way.name)}</b><small>could not be flown</small></li>`)).join(''),
+      acts: playing ? '<button type="button" class="dfs-helper-btn" data-helper="back">Back to the fight</button>'
+        : '<button type="button" class="dfs-helper-btn" data-helper="later">Keep watching</button>',
+    });
+  }
+
+  /** The way on stage: how it went, and the way back. */
+  function helperPlaying(r) {
+    helperDraw('playing', {
+      kicker: `EXTENDED · FROM ${state.extend.t.toFixed(1)} S`, title: r.way.name,
+      words: `${resultWords(r.score)}. ${r.way.what}.`,
+      acts: '<button type="button" class="dfs-helper-btn is-primary" data-helper="ways">Try another</button><button type="button" class="dfs-helper-btn" data-helper="back">Back to the fight</button>',
+    });
+  }
+
+  ui.helper.addEventListener('click', e => {
+    const b = e.target.closest('button');
+    if (!b) return;
+    if (b.dataset.helperWay !== undefined) { playExtended(+b.dataset.helperWay); return; }
+    switch (b.dataset.helper) {
+      case 'show': runExtend(+b.dataset.side, state.t); break;
+      case 'later': helperLater(); break;
+      case 'ways': helperWays(); break;
+      case 'back': leaveExtended(); break;
+    }
+  });
 
   function drawExtendList() {
     const x = state.extend;
@@ -2265,12 +2382,14 @@ export function createDogfightTheatre({ host, makePlane, planeVisual = () => nul
       pickDemo.timer = setTimeout(() => ui.tc.classList.remove('is-shown'), 4200);
     }
     ui.extend.querySelectorAll('button[data-ext]').forEach(b => b.setAttribute('aria-pressed', String(+b.dataset.ext === i)));
+    helperPlaying(r);
   }
 
   /** Back from an extension to the fight it came from, just before the moment. */
   function leaveExtended() {
     const x = state.extend;
     if (!x) return;
+    helperLater();
     const at = Math.max(0, x.t - 2);
     if (x.base.recorded) showRecorded(x.base, x.row, { at });
     else if (state.lesson && state.demo) { pickDemo(state.lesson, state.demo.id); state.t = at; }
@@ -2520,7 +2639,7 @@ export function createDogfightTheatre({ host, makePlane, planeVisual = () => nul
   });
   ui.demos.addEventListener('click', e => {
     const b = e.target.closest('button[data-demo]');
-    if (b && state.lesson) pickDemo(state.lesson, b.dataset.demo);
+    if (b && state.lesson) { helper.seen.clear(); pickDemo(state.lesson, b.dataset.demo); }
   });
   ui.speeds.innerHTML = SPEEDS.map(v => `<button type="button" class="dfs-chip" data-speed="${v}">${v}x</button>`).join('')
     + '<button type="button" class="dfs-chip" data-slow="1" title="Slow the replay while the guns fire">Slow on shots</button>'
@@ -2553,7 +2672,7 @@ export function createDogfightTheatre({ host, makePlane, planeVisual = () => nul
   };
   ui.toggle.addEventListener('click', togglePlay);
   const rewind = () => { state.explained = new Set(); state.hold = 0; ui.shot.hidden = true; };
-  ui.restart.addEventListener('click', () => { state.t = state.startAt ?? 0; state.playing = true; ui.toggle.textContent = 'Pause'; ui.end.hidden = true; rewind(); });
+  ui.restart.addEventListener('click', () => { helper.seen.clear(); state.t = state.startAt ?? 0; state.playing = true; ui.toggle.textContent = 'Pause'; ui.end.hidden = true; rewind(); });
   ui.scrub.addEventListener('input', () => {
     if (!state.fight) return;
     state.t = +ui.scrub.value / 1000 * state.fight.duration;
@@ -2733,6 +2852,13 @@ export function createDogfightTheatre({ host, makePlane, planeVisual = () => nul
     },
     /** Back from the extension on stage (tests). */
     leaveExtended: () => leaveExtended(),
+    /** The helper card as drawn (tests). */
+    get helper() {
+      return ui.helper.hidden ? null : { step: helper.step, kicker: helperUi.kicker.textContent, title: helperUi.title.textContent,
+                                         ways: [...helperUi.ways.querySelectorAll('button')].map(b => b.textContent), acts: [...helperUi.acts.querySelectorAll('button')].map(b => b.dataset.helper) };
+    },
+    /** Press one of the helper's buttons (tests): `show`, `later`, `ways`, `back`, or a way's index. */
+    helperAct: act => { const b = typeof act === 'number' ? helperUi.ways.querySelector(`button[data-helper-way="${act}"]`) : helperUi.acts.querySelector(`button[data-helper="${act}"]`); if (b) b.click(); return !!b; },
     /** WHAT IF from `t` for the chased side, and play way `i` (tests). */
     whatIf: async (t, i = null) => {
       const side = state.recording ? chasedAt(state.recording.fight, t) : null;

@@ -2070,6 +2070,42 @@ a { color: var(--accent); }
   display: flex; flex-direction: column; gap: 4px;
 }
 .dfs-endcard[hidden] { display: none; }
+/* The helper: the deadlock breaker as a card on the picture, top right. */
+.dfs-helper {
+  position: absolute;
+  right: 14px; top: 14px;
+  width: min(340px, calc(100% - 28px));
+  padding: 10px 14px 12px;
+  background: rgba(19, 19, 19, 0.94);
+  border-top: 2px solid var(--mm-load-busy);
+  display: flex; flex-direction: column; gap: 5px;
+  z-index: 3;
+  animation: dfs-cap 0.3s ease-out;
+}
+.dfs-helper[hidden] { display: none; }
+.dfs-helper[data-step="playing"] { border-top-color: var(--mm-success); }
+.dfs-helper-kicker { font: 500 10px/1.4 var(--mm-font-mono); letter-spacing: 0.14em; color: var(--mm-load-busy); }
+.dfs-helper[data-step="playing"] .dfs-helper-kicker { color: var(--mm-success); }
+.dfs-helper-title { font-size: 15px; font-weight: 500; }
+.dfs-helper-words { color: var(--mm-ink-soft); font-size: 12.5px; line-height: 1.45; }
+.dfs-helper-words:empty { display: none; }
+.dfs-helper-ways { list-style: none; margin: 4px 0 0; padding: 0; display: grid; gap: 4px; max-height: 46vh; overflow: auto; }
+.dfs-helper-ways:empty { display: none; }
+.dfs-helper-ways li.is-off { color: var(--mm-ink-faint); padding: 5px 8px; }
+.dfs-helper-ways b { display: block; font: 500 12.5px/1.3 var(--mm-font-display); }
+.dfs-helper-ways small { display: block; color: var(--mm-ink-muted); font-size: 11.5px; line-height: 1.35; }
+.dfs-helper-ways button {
+  width: 100%; padding: 5px 8px; border: 1px solid var(--mm-rule-strong); border-radius: 2px;
+  background: transparent; color: var(--mm-ink); text-align: left; cursor: pointer; font: inherit;
+}
+.dfs-helper-ways button:hover { border-color: var(--mm-ink-muted); background: rgba(255, 255, 255, 0.04); }
+.dfs-helper-ways button[aria-pressed="true"] { border-color: var(--mm-success); background: rgba(125, 163, 76, 0.1); }
+.dfs-helper-acts { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 4px; }
+.dfs-helper-acts:empty { display: none; }
+.dfs-helper-btn { padding: 7px 12px; border: 1px solid var(--mm-rule-strong); border-radius: 2px; background: transparent; color: var(--mm-ink-soft); font: 500 13px/1.2 var(--mm-font-display); cursor: pointer; }
+.dfs-helper-btn:hover { color: var(--mm-ink); border-color: var(--mm-ink-muted); }
+.dfs-helper-btn.is-primary { border-color: var(--mm-success); background: rgba(125, 163, 76, 0.16); color: var(--mm-ink); }
+.dfs-helper-btn.is-primary:hover { background: rgba(125, 163, 76, 0.3); }
 .dfs-endcard b { font-size: 15px; font-weight: 500; }
 .dfs-endcard span { color: var(--mm-ink-soft); font-size: 12.5px; }
 /* No kill: the scene extended from the end, offered on the card itself. */
@@ -2675,22 +2711,34 @@ a { color: var(--accent); }
   position: absolute;
   left: 50%; top: 50%;
   transform: translate(-50%, -50%);
-  width: min(440px, calc(100vw - 32px));
+  width: min(460px, calc(100vw - 32px));
   padding: 10px 14px 10px;
-  background: rgba(19, 19, 19, 0.9);
-  border-top: 2px solid var(--mm-ink-muted);
+  background: rgba(19, 19, 19, 0.94);
+  border-top: 2px solid var(--mm-load-busy);
   animation: dfs-in 0.3s ease-out;
+  /* The one HUD card that takes the mouse: the fight is held while it is up. */
+  pointer-events: auto;
 }
 .dfl-extend[hidden] { display: none; }
 .dfl-extend-kicker { display: block; font-family: var(--mm-font-mono); font-size: 9.5px; letter-spacing: 0.14em; text-transform: uppercase; color: var(--mm-ink-muted); }
 .dfl-extend-title { display: block; margin: 3px 0 8px; font-size: 15px; font-weight: 500; color: var(--mm-ink); }
 .dfl-extend-list { list-style: none; margin: 0; padding: 0; display: grid; gap: 4px; }
-.dfl-extend-list li {
+.dfl-extend-list li, .dfl-extend-list li button {
   display: grid; grid-template-columns: auto 1fr; grid-template-rows: auto auto; column-gap: 10px; align-items: baseline;
   padding: 5px 8px; border: 1px solid var(--mm-rule-strong); border-radius: 2px;
 }
-.dfl-extend-list li[aria-pressed="true"] { border-color: var(--mm-success); background: rgba(125, 163, 76, 0.08); }
+.dfl-extend-list li:has(> button) { display: block; padding: 0; border: 0; }
+.dfl-extend-list li button { width: 100%; background: transparent; color: var(--mm-ink); text-align: left; cursor: pointer; font: inherit; }
+.dfl-extend-list li button:hover { border-color: var(--mm-ink-muted); background: rgba(255, 255, 255, 0.04); }
+.dfl-extend-list li button[aria-pressed="true"] { border-color: var(--mm-success); background: rgba(125, 163, 76, 0.1); }
 .dfl-extend-list li.is-off { color: var(--mm-ink-faint); }
+.dfl-extend-acts { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 8px; }
+.dfl-extend-acts:empty { display: none; }
+.dfl-extend-acts button { padding: 7px 12px; border-radius: 2px; font: 500 13px/1.2 var(--mm-font-display); cursor: pointer; }
+.dfl-extend-fly { border: 1px solid var(--mm-success); background: rgba(125, 163, 76, 0.16); color: var(--mm-ink); }
+.dfl-extend-fly:hover { background: rgba(125, 163, 76, 0.3); }
+.dfl-extend-back { border: 1px solid var(--mm-rule-strong); background: transparent; color: var(--mm-ink-soft); }
+.dfl-extend-back:hover { color: var(--mm-ink); border-color: var(--mm-ink-muted); }
 .dfl-extend-list kbd { grid-row: 1 / 3; align-self: center; }
 .dfl-extend-list b { font: 500 13px/1.3 var(--mm-font-display); color: var(--mm-ink); }
 .dfl-extend-list small { grid-column: 2; display: block; color: var(--mm-ink-muted); font-size: 11.5px; line-height: 1.35; }

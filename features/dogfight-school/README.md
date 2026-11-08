@@ -1023,6 +1023,57 @@ shows, and offers the extension from the current moment whether or not a
 deadlock was found there ("No deadlock in this fight ... The school's ways
 out can still be flown from 30.0 s").
 
+## The helper, and the notes turned round (2026-11-08)
+
+The owner, after the end card got its button: "it's not very intuitive. It
+can detect the lock, but unless you let the round go to the end it won't let
+you choose the deadlock. Also that notes panel is insanely complicated and
+filled with too much text ... redesign it to move the controls up. And make
+the deadlock option way more like a wizard almost, imagine clippy where it
+asks if you need help, we show the deadlock options the moment they happen
+to see the effect of trying each one."
+
+**The helper** (`dogfight-theatre.js`, `drawHelper` and the `helper*`
+functions; a card top right of the picture, where the end card goes): the
+moment the fight on stage is six seconds into a deadlock (`deadlockIn` at
+the span's `t0`) it asks, "DEADLOCK · A TURNING FIGHT. Nobody has had a shot
+for 6 s. Want to see the school's ways out?", with *Show me the ways out*
+(per pilot for a recording) and *Keep watching*; the fight plays on under
+it and the count climbs. *Show me* holds the fight, flies the ways out from
+this moment (`runExtend`, which no longer opens the notes) and lists them
+best first on the card: one click plays that way from here, and the card
+says how it went with *Try another* (the list again, the way on stage
+marked) and *Back to the fight* (the fight as it was, two seconds before the
+moment). *Keep watching*, *Back*, or the span passing puts the offer away for
+that deadlock (`helper.seen`, keyed by lesson, demo, recording row and the
+span's start); it comes back on the next deadlock, and on a restart, a demo
+tab or another lesson. The end card's button and the notes' block go through
+the same card, and the end card stays out of its way while a way out plays.
+Measured headless on the circle lesson: the offer at 5.5 s, the ways at
+6.9 s (leave clear at 1.4 km, four still locked or shot), each playable,
+back at 6.4 s with no second offer, the offer again after a restart.
+
+**The notes turned round.** The controls first: WAYS OUT, WHAT IF, the
+moves' seek chips and IN 3D; the reading under them: can you survive it,
+the move and the counter, the fly note, how the scores are measured
+(behind its button) and the chart's legend. The WAYS OUT block is one line
+("A turning fight since the start, nobody's shot. The ways out from 12.0
+s:") and a *Fly them* chip; the explanation lives on the helper.
+
+**The live fight's card takes the mouse.** The owner: "it kind of crashed
+the simulator. It was responsive but until I made a choice the cursor was
+missing and the deadlock could not be chosen. I had to hit V". The HUD is
+pointer-events: none and the mouse was locked to the view, so the card
+could only be driven from the keys. Now X releases the pointer lock
+(`page.release`) as the card comes up, the card takes clicks (the ways are
+buttons, picked on one click and flown on a second, with *Fly it: the school
+takes the controls* and *Back to the fight* under them, Esc for back), and
+flying a way captures the mouse again (`page.capture`, on the click or the
+key) and turns the instructor on, so the school flies your seat through the
+way until you touch the stick ("THE SCHOOL FLIES · LEAVE · touch the stick
+to take over"). "I assume in the simulator the deadlock will take over
+their controls? I think that would be very cool": it does.
+
 ## Reviewed against the real tactics (2026-11-07)
 
 The owner watched the flat scissors and saw "after the contact both planes

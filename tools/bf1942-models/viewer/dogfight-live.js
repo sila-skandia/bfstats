@@ -73,7 +73,9 @@ const esc = s => String(s ?? '').replace(/[&<>"]/g, c => ({ '&': '&amp;', '<': '
  * x, z), `groundAt(x, z)`, `playerDrive()` (the aircraft drive he holds, or
  * null), `playerRoot()`, `seatPlayer()` (into a fighter of his airfield),
  * `aceBot()` (the bot to fly, seated in an aircraft or not), `aceRoot(bot)`,
- * `gunOf(bot)`, `snapPresentation()`, `openSchool(id)`, `keyboardTaken()`.
+ * `gunOf(bot)`, `snapPresentation()`, `openSchool(id)`, `keyboardTaken()`,
+ * `releaseMouse()` and `captureMouse()` (the pointer lock, let go for the
+ * ways-out card and taken again when a way is flown).
  */
 export function createDogfightLive(page) {
   const hud = document.createElement('div');
@@ -96,7 +98,7 @@ export function createDogfightLive(page) {
       <div class="dfl-view-foot"><span class="dfl-range"></span><span class="dfl-above"></span><span class="dfl-scale"></span><span class="dfl-said"></span></div>
     </div>
     <div class="dfl-shottag" hidden></div>
-    <div class="dfl-extend" hidden><small class="dfl-extend-kicker"></small><b class="dfl-extend-title"></b><ol class="dfl-extend-list"></ol><span class="dfl-extend-foot"></span></div>
+    <div class="dfl-extend" hidden><small class="dfl-extend-kicker"></small><b class="dfl-extend-title"></b><ol class="dfl-extend-list"></ol><div class="dfl-extend-acts"></div><span class="dfl-extend-foot"></span></div>
     <div class="dfl-banner" hidden></div>
     <div class="dfl-foot"><kbd>P</kbd> pause <kbd>X</kbd> extend the scene <kbd>G</kbd> guide <kbd>I</kbd> instructor <kbd>Y</kbd> again <kbd>V</kbd> school <kbd>O</kbd> end</div>`;
   page.stage.appendChild(hud);
@@ -110,7 +112,7 @@ export function createDogfightLive(page) {
     range: q('.dfl-range'), above: q('.dfl-above'), scale: q('.dfl-scale'), said: q('.dfl-said'),
     his: q('.dfl-his'), yours: q('.dfl-yours'), kills: q('.dfl-kills'),
     shotTag: q('.dfl-shottag'),
-    extend: q('.dfl-extend'), extendKicker: q('.dfl-extend-kicker'), extendTitle: q('.dfl-extend-title'), extendList: q('.dfl-extend-list'), extendFoot: q('.dfl-extend-foot'),
+    extend: q('.dfl-extend'), extendKicker: q('.dfl-extend-kicker'), extendTitle: q('.dfl-extend-title'), extendList: q('.dfl-extend-list'), extendActs: q('.dfl-extend-acts'), extendFoot: q('.dfl-extend-foot'),
     banner: q('.dfl-banner'),
   };
 
@@ -666,6 +668,7 @@ export function createDogfightLive(page) {
   function clearExtend(all = false) {
     live.extend = null;
     ui.extend.hidden = true;
+    ui.extendActs.innerHTML = '';
     if (all) { live.extendWay = null; live.watch.reset(); live.deadlock = null; }
   }
 
@@ -679,10 +682,13 @@ export function createDogfightLive(page) {
     const t0 = live.t;
     live.extend = { busy: true, results: null, chosen: 0, t: t0, turn: 1 };
     ui.extend.hidden = false;
-    ui.extendKicker.textContent = `EXTEND THE SCENE · FROM ${t0.toFixed(1)} S`;
-    ui.extendTitle.textContent = dl ? `${KIND_WORDS[dl.kind][0].toUpperCase()}${KIND_WORDS[dl.kind].slice(1)}: nobody has had a shot for ${Math.round(dl.since)} s` : 'From here';
+    ui.extendKicker.textContent = dl ? `DEADLOCK · ${KIND_WORDS[dl.kind].toUpperCase()} · ${t0.toFixed(1)} S` : `FROM ${t0.toFixed(1)} S`;
+    ui.extendTitle.textContent = dl ? `Nobody has had a shot for ${Math.round(dl.since)} s. The ways out, from here:` : 'The school\'s ways out, from here:';
     ui.extendList.innerHTML = '<li class="dfl-extend-busy">Flying the ways out on the flight law…</li>';
+    ui.extendActs.innerHTML = '';
     ui.extendFoot.textContent = '';
+    // The fight is held: the mouse comes back for the card.
+    page.releaseMouse?.();
     const tracks = live.watch.tracks;
     const i0 = tracks[1].length - 1;
     // The watch's own last seconds stand in for the fight so far.
@@ -706,9 +712,10 @@ export function createDogfightLive(page) {
     if (!live.extend?.busy || !live.frozen) return;
     live.extend = { busy: false, results: w.results, chosen: 0, t: t0, turn: w.turn };
     ui.extendList.innerHTML = w.results.map((r, i) => (r.score
-      ? `<li data-way="${i}"><kbd>${i + 1}</kbd><i class="dfl-extend-tag is-${r.score.result}">${RESULT_TAGS[r.score.result]}</i><b>${esc(r.way.name)}</b><small>${esc(resultWords(r.score))}</small></li>`
+      ? `<li><button type="button" data-way="${i}"><kbd>${i + 1}</kbd><i class="dfl-extend-tag is-${r.score.result}">${RESULT_TAGS[r.score.result]}</i><b>${esc(r.way.name)}</b><small>${esc(resultWords(r.score))}</small></button></li>`
       : `<li class="is-off"><kbd>${i + 1}</kbd><b>${esc(r.way.name)}</b><small>could not be flown</small></li>`)).join('');
-    ui.extendFoot.innerHTML = '<kbd>1</kbd>–<kbd>5</kbd> pick a way, drawn in the sky and on the sphere · <kbd>X</kbd> or <kbd>P</kbd> fly it with the guide · <kbd>Y</kbd> again';
+    ui.extendActs.innerHTML = '<button type="button" class="dfl-extend-fly" data-act="fly">Fly it: the school takes the controls</button><button type="button" class="dfl-extend-back" data-act="back">Back to the fight</button>';
+    ui.extendFoot.innerHTML = 'Pick a way: it is drawn in the sky and on the sphere. Fly it and the school flies your seat through it; touch the stick to take over. <kbd>1</kbd>–<kbd>5</kbd> <kbd>X</kbd> <kbd>Esc</kbd>';
     showWay(w.results.findIndex(r => r.flown));
   }
 
@@ -718,7 +725,7 @@ export function createDogfightLive(page) {
     const r = x?.results?.[i];
     if (!r?.flown) return;
     x.chosen = i;
-    ui.extendList.querySelectorAll('li[data-way]').forEach(li => li.setAttribute('aria-pressed', String(+li.dataset.way === i)));
+    ui.extendList.querySelectorAll('button[data-way]').forEach(b => b.setAttribute('aria-pressed', String(+b.dataset.way === i)));
     live.lineRun = r.flown;
     drawLines(r.flown, false);
     live.lineAt = live.clock;
@@ -736,8 +743,21 @@ export function createDogfightLive(page) {
     live.moveDone = false;
     live.quarterFor = 0;
     live.frozen = null;
+    // The school flies the way from your seat until you touch the stick.
+    live.instructor = true;
+    live.instructorSince = live.clock;
     clearExtend();
-    banner(`FLY IT · ${r.way.name.toUpperCase()}`, 2.5, 'go');
+    page.captureMouse?.();
+    banner(`THE SCHOOL FLIES · ${r.way.name.toUpperCase()} · touch the stick to take over`, 3, 'go');
+  }
+
+  /** Back from the card to the fight as it was, nothing flown. */
+  function cancelExtend() {
+    if (!live.extend || live.extend.busy) return;
+    clearExtend(true);
+    live.frozen = null;
+    page.captureMouse?.();
+    banner('AS YOU WERE', 1.2, 'info');
   }
 
   // --- pause --------------------------------------------------------------------
@@ -878,11 +898,25 @@ export function createDogfightLive(page) {
     }
   }
 
+  ui.extend.addEventListener('click', e => {
+    const b = e.target.closest('button');
+    if (!b || !live.extend || live.extend.busy) return;
+    if (b.dataset.way !== undefined) {
+      // The way already picked, clicked again: fly it.
+      if (+b.dataset.way === live.extend.chosen && b.getAttribute('aria-pressed') === 'true') flyChosen();
+      else showWay(+b.dataset.way);
+      return;
+    }
+    if (b.dataset.act === 'fly') flyChosen();
+    else if (b.dataset.act === 'back') cancelExtend();
+  });
+
   function key(e) {
     if (!live.lesson) return false;
     // The ways out up: a digit picks one.
     if (live.extend && !live.extend.busy && /^Digit[1-5]$/.test(e.code)) { showWay(+e.code.slice(5) - 1); return true; }
     if (e.code === 'KeyX') { extendScene(); return true; }
+    if (e.code === 'Escape' && live.extend && !live.extend.busy) { cancelExtend(); return true; }
     if (e.code === 'KeyY') {
       live.frozen = null;
       live.guidePilot = null;
