@@ -22,4 +22,8 @@
     <ProjectReference Include="..\..\api\api.csproj" />
   </ItemGroup>
 
+  <ItemGroup>
+    <None Include="Shorts\Fixtures\*.mp4" CopyToOutputDirectory="PreserveNewest" />
+  </ItemGroup>
+
 </Project>

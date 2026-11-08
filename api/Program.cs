@@ -456,7 +456,7 @@ try
         builder.Configuration.GetSection(api.Shorts.ShortsOptions.Section));
     builder.Services.AddSingleton<api.Shorts.ShortStorage>();
     builder.Services.AddScoped<api.Shorts.IShortService, api.Shorts.ShortService>();
-    builder.Services.AddSingleton<api.Shorts.IVideoFlattener, api.Shorts.FfmpegVideoFlattener>();
+    builder.Services.AddSingleton<api.Shorts.IVideoFlattener, api.Shorts.Mp4Flattener>();
     builder.Services.AddSingleton<api.Shorts.ShortViewCounter>();
     builder.Services.AddSingleton<api.Shorts.IShortViewCounter>(
         sp => sp.GetRequiredService<api.Shorts.ShortViewCounter>());

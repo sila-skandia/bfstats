@@ -20,12 +20,4 @@ public record ShortsOptions
     public long MaxVideoBytes { get; init; } = 90 * MiB;
 
     public long MaxPosterBytes { get; init; } = 2 * MiB;
-
-    /// <summary>The ffmpeg that flattens a studio share's fragmented MP4 (<see cref="IVideoFlattener"/>).
-    /// Missing, the video is kept as it came.</summary>
-    public string FfmpegPath { get; init; } = "ffmpeg";
-
-    /// <summary>How long a flatten may take: it copies, it does not encode, so a 90 MiB video is a
-    /// second or two.</summary>
-    public TimeSpan FlattenTimeout { get; init; } = TimeSpan.FromSeconds(60);
 }

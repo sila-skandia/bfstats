@@ -535,23 +535,36 @@ follows as 16 `moof`/`mdat` pairs. A player copes; Discord's preview reads
 the index. The render job's Shorts are one `mdat` behind a full `moov`, and
 embed.
 
-- A share's video is flattened on the way in (`api/Shorts/VideoFlattener.cs`):
-  a top-level `moof` means fragmented, and `ffmpeg -c copy -movflags
-  +faststart` rewrites it as one piece, index first. It copies, it does not
-  encode: 0.08 s for the Arnhem clip, 16.26 s in its index after. Without
-  ffmpeg (a developer's machine) the video is kept as it came.
-- The API image carries ffmpeg (`deploy/Dockerfile`, `WITH_FFMPEG=true` from
-  the Jenkinsfile, the API only): Ubuntu 24.04's 6.1.1, about 650 MB on the
-  image, nothing on the memory budget (it runs for a fraction of a second).
+- A share's video is flattened on the way in (`api/Shorts/VideoFlattener.cs`,
+  `Mp4Flattener`), in C#: the fragments' `trun`s (with the `tfhd`'s and
+  `trex`'s defaults) give every sample's place, size, duration, composition
+  offset and sync flag; the samples go into one `mdat`, a run a chunk in
+  the order they came, behind a `moov` with full tables (`stts`, `ctts`,
+  `stss`, `stsc`, `stsz`, `stco`) and its durations, `mvex` dropped. Only
+  the index boxes are read into memory; the media is streamed across. A
+  track whose first fragment starts late (Safari's video, 26/600 s after its
+  audio) gets an edit list that waits that long. Anything it does not
+  understand leaves the file as it came. The Arnhem clip: 30 ms, and
+  ffmpeg finds the two files the same, packet for packet (timing, sizes,
+  key frames) and decoded frame for frame, the video still starting at
+  0.043 s.
+- First tried with ffmpeg in the API image (`7b99094d`, reverted in
+  `d55efb59`): Ubuntu's ffmpeg brings every codec's libraries, about 650 MB
+  on the image, to copy one layout into another.
 - `POST /stats/shorts/{slug}/flatten` (the key, an admin or its creator)
   flattens a Short already live. The video's link carries its size as a
   version too (`.mp4?v=<bytes>`), so the cached fragmented file is not what
   the next preview reads.
 
-Verified: `ShortsControllerTests` (35: a share flattened and a render job
-upload left, a live one flattened to a new link, a fragmented file known by
-its boxes and kept when there is no ffmpeg), and the image's own ffmpeg
-flattening the live `mdtqtue2k8.mp4` as the app user.
+Verified: `ShortsControllerTests` (37): a share flattened and a render job
+upload left; a live one flattened to a new link; a fragmented test clip
+(`tests/api/Shorts/Fixtures/fragmented.mp4`, ffmpeg's
+`frag_keyframe+empty_moov+default_base_moof`, B-frames, AAC) made one piece
+with every sample's bytes in order, its length in the index and its tables
+counted; a late video track kept as an edit list; a plain file and a cut-off
+one left as they came. The flattened test clip differs from its source only
+in its last AAC frame: the index now gives the audio's real length, so a
+player trims the 164 samples of padding.
 
 ### The loader (2026-11-05)
 

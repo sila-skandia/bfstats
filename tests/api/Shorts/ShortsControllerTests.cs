@@ -16,6 +16,7 @@ using Microsoft.Data.Sqlite;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
+using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Logging.Abstractions;
 using NodaTime;
 using MsOptions = Microsoft.Extensions.Options.Options;
@@ -606,30 +607,165 @@ public sealed class ShortsControllerTests : IDisposable
         Assert.Equal($"/stats/shorts/{uploaded.Slug}.mp4?v={Mp4.Length + 4}", flat.VideoUrl);
     }
 
+    /// <summary>The top-level boxes of an MP4: type, payload start, payload length.</summary>
+    private static List<(string Type, int At, int Length)> Boxes(byte[] data, int from = 0, int to = -1)
+    {
+        to = to < 0 ? data.Length : to;
+        var boxes = new List<(string, int, int)>();
+        for (var at = from; at + 8 <= to;)
+        {
+            var size = (int)System.Buffers.Binary.BinaryPrimitives.ReadUInt32BigEndian(data.AsSpan(at));
+            boxes.Add((Encoding.ASCII.GetString(data, at + 4, 4), at + 8, size - 8));
+            at += size;
+        }
+        return boxes;
+    }
+
+    /// <summary>The box at <paramref name="path"/> (types, outermost first) inside
+    /// <paramref name="data"/>'s top level.</summary>
+    private static List<(string Type, int At, int Length)> Find(byte[] data, params string[] path)
+    {
+        var level = Boxes(data);
+        foreach (var type in path[..^1])
+        {
+            var (_, at, length) = level.First(b => b.Type == type);
+            level = Boxes(data, at, at + length);
+        }
+        return level.Where(b => b.Type == path[^1]).ToList();
+    }
+
+    /// <summary>A logger that keeps what it is told, exceptions with it.</summary>
+    private sealed class Said : ILogger<Mp4Flattener>
+    {
+        public List<string> Lines { get; } = [];
+        public IDisposable? BeginScope<TState>(TState state) where TState : notnull => null;
+        public bool IsEnabled(LogLevel logLevel) => true;
+        public void Log<TState>(LogLevel logLevel, EventId eventId, TState state, Exception? exception, Func<TState, Exception?, string> formatter) =>
+            Lines.Add($"{logLevel}: {formatter(state, exception)} {exception}");
+    }
+
+    private static uint U32(byte[] data, int at) => System.Buffers.Binary.BinaryPrimitives.ReadUInt32BigEndian(data.AsSpan(at));
+
     [Fact]
-    public async Task Flattener_KnowsAFragmentedMp4_AndKeepsTheFileWithoutFfmpeg()
+    public async Task Flattener_RewritesAFragmentedMp4_AsOnePiece_IndexFirst_EverySampleAsItWas()
+    {
+        // A 1.2 s clip in the layout a browser's recorder writes: an empty moov, then
+        // moof/mdat pairs (ffmpeg's frag_keyframe+empty_moov+default_base_moof), 18 video
+        // frames with B-frames, 27 audio frames.
+        Directory.CreateDirectory(directory);
+        var path = Path.Combine(directory, "share.mp4");
+        File.Copy(Path.Combine(AppContext.BaseDirectory, "Shorts", "Fixtures", "fragmented.mp4"), path);
+        var before = await File.ReadAllBytesAsync(path);
+        var media = Boxes(before).Where(b => b.Type == "mdat").SelectMany(b => before.AsSpan(b.At, b.Length).ToArray()).ToArray();
+        var said = new Said();
+        var flattener = new Mp4Flattener(said);
+
+        Assert.True(await flattener.FlattenAsync(path, default), string.Join("\n", said.Lines));
+        var after = await File.ReadAllBytesAsync(path);
+        Assert.Equal(["ftyp", "moov", "mdat"], Boxes(after).Select(b => b.Type));
+        Assert.Empty(Find(after, "moov", "mvex"));
+
+        // Its length in the index, not 0: the longer track's, the audio's 1.33 s (AAC pads
+        // its last frame), as ffprobe reads the source.
+        var mvhd = Find(after, "moov", "mvhd")[0];
+        var seconds = (double)U32(after, mvhd.At + 16) / U32(after, mvhd.At + 12);
+        Assert.Equal(1.333, seconds, 3);
+
+        // Every sample, in the order it came, in the one mdat.
+        var mdat = Boxes(after).Single(b => b.Type == "mdat");
+        Assert.Equal(media, after.AsSpan(mdat.At, mdat.Length).ToArray());
+
+        var counts = new List<uint>();
+        foreach (var trak in Find(after, "moov", "trak"))
+        {
+            var level = Boxes(after, trak.At, trak.At + trak.Length);
+            var mdia = level.First(b => b.Type == "mdia");
+            var minf = Boxes(after, mdia.At, mdia.At + mdia.Length).First(b => b.Type == "minf");
+            var stbl = Boxes(after, minf.At, minf.At + minf.Length).First(b => b.Type == "stbl");
+            var tables = Boxes(after, stbl.At, stbl.At + stbl.Length).ToDictionary(b => b.Type);
+            var stsz = tables["stsz"];
+            counts.Add(U32(after, stsz.At + 8));
+            // Each chunk starts inside the mdat.
+            var stco = tables["stco"];
+            for (var i = 0; i < U32(after, stco.At + 4); i++)
+            {
+                Assert.InRange(U32(after, stco.At + 8 + i * 4), (uint)mdat.At, (uint)(mdat.At + mdat.Length - 1));
+            }
+            Assert.True(tables.ContainsKey("stts"));
+            Assert.True(tables.ContainsKey("stsc"));
+        }
+        Assert.Equal([18u, 27u], counts.Order());
+
+        // Flat already: left alone.
+        Assert.False(await flattener.FlattenAsync(path, default));
+        Assert.Equal(after, await File.ReadAllBytesAsync(path));
+    }
+
+    [Fact]
+    public async Task Flattener_KeepsATrackThatStartsLate_AsAnEditList()
+    {
+        // Safari's video starts a few hundredths of a second after its audio: its first
+        // fragment's tfdt is past 0. The fixture's video fragments moved 0.1 s on (1536 at
+        // 15360 a second) stand in for it.
+        Directory.CreateDirectory(directory);
+        var data = await File.ReadAllBytesAsync(Path.Combine(AppContext.BaseDirectory, "Shorts", "Fixtures", "fragmented.mp4"));
+        const uint videoTrack = 1;
+        foreach (var moof in Boxes(data).Where(b => b.Type == "moof"))
+        {
+            foreach (var traf in Boxes(data, moof.At, moof.At + moof.Length).Where(b => b.Type == "traf"))
+            {
+                var inner = Boxes(data, traf.At, traf.At + traf.Length);
+                if (U32(data, inner.First(b => b.Type == "tfhd").At + 4) != videoTrack) continue;
+                var tfdt = inner.First(b => b.Type == "tfdt");
+                if (data[tfdt.At] == 1)
+                {
+                    var v = System.Buffers.Binary.BinaryPrimitives.ReadUInt64BigEndian(data.AsSpan(tfdt.At + 4));
+                    System.Buffers.Binary.BinaryPrimitives.WriteUInt64BigEndian(data.AsSpan(tfdt.At + 4), v + 1536);
+                }
+                else
+                {
+                    System.Buffers.Binary.BinaryPrimitives.WriteUInt32BigEndian(data.AsSpan(tfdt.At + 4), U32(data, tfdt.At + 4) + 1536);
+                }
+            }
+        }
+        var path = Path.Combine(directory, "late.mp4");
+        await File.WriteAllBytesAsync(path, data);
+
+        Assert.True(await new Mp4Flattener(NullLogger<Mp4Flattener>.Instance).FlattenAsync(path, default));
+        var after = await File.ReadAllBytesAsync(path);
+        var mvhd = Find(after, "moov", "mvhd")[0];
+        var movieScale = U32(after, mvhd.At + 12);
+        var traks = Find(after, "moov", "trak");
+        var withEdits = traks.Where(t => Boxes(after, t.At, t.At + t.Length).Any(b => b.Type == "edts")).ToList();
+        var video = Assert.Single(withEdits);
+        Assert.Equal(videoTrack, U32(after, Boxes(after, video.At, video.At + video.Length).First(b => b.Type == "tkhd").At + 12));
+        var edts = Boxes(after, video.At, video.At + video.Length).First(b => b.Type == "edts");
+        var elst = Boxes(after, edts.At, edts.At + edts.Length).Single(b => b.Type == "elst");
+        // Two edits: 0.1 s of nothing (media time -1), then the track from its start.
+        Assert.Equal(2u, U32(after, elst.At + 4));
+        Assert.Equal(movieScale / 10, U32(after, elst.At + 8));
+        Assert.Equal(uint.MaxValue, U32(after, elst.At + 12));
+        Assert.Equal(0u, U32(after, elst.At + 24));
+    }
+
+    [Fact]
+    public async Task Flattener_LeavesAPlainOrBrokenFile_AsItCame()
     {
         Directory.CreateDirectory(directory);
-        static byte[] Box(string type, int body = 0)
-        {
-            var b = new byte[8 + body];
-            System.Buffers.Binary.BinaryPrimitives.WriteUInt32BigEndian(b, (uint)b.Length);
-            Encoding.ASCII.GetBytes(type).CopyTo(b, 4);
-            return b;
-        }
+        var flattener = new Mp4Flattener(NullLogger<Mp4Flattener>.Instance);
         var plain = Path.Combine(directory, "plain.mp4");
-        var fragmented = Path.Combine(directory, "fragmented.mp4");
-        await File.WriteAllBytesAsync(plain, [.. Box("ftyp", 8), .. Box("moov", 16), .. Box("mdat", 32)]);
-        byte[] frag = [.. Box("ftyp", 8), .. Box("moov", 16), .. Box("moof", 8), .. Box("mdat", 32), .. Box("moof", 8), .. Box("mdat", 32)];
-        await File.WriteAllBytesAsync(fragmented, frag);
-        Assert.False(await FfmpegVideoFlattener.IsFragmentedAsync(plain, default));
-        Assert.True(await FfmpegVideoFlattener.IsFragmentedAsync(fragmented, default));
+        await File.WriteAllBytesAsync(plain, Mp4);
+        Assert.False(await flattener.FlattenAsync(plain, default));
+        Assert.Equal(Mp4, await File.ReadAllBytesAsync(plain));
 
-        var none = new FfmpegVideoFlattener(MsOptions.Create(new ShortsOptions { FfmpegPath = "/no/such/ffmpeg" }),
-            NullLogger<FfmpegVideoFlattener>.Instance);
-        Assert.False(await none.FlattenAsync(plain, default));
-        Assert.False(await none.FlattenAsync(fragmented, default));
-        Assert.Equal(frag, await File.ReadAllBytesAsync(fragmented));
+        // A fragmented file cut off half way through its media.
+        var fixture = await File.ReadAllBytesAsync(Path.Combine(AppContext.BaseDirectory, "Shorts", "Fixtures", "fragmented.mp4"));
+        var cut = fixture[..(fixture.Length / 2)];
+        var broken = Path.Combine(directory, "broken.mp4");
+        await File.WriteAllBytesAsync(broken, cut);
+        Assert.False(await flattener.FlattenAsync(broken, default));
+        Assert.Equal(cut, await File.ReadAllBytesAsync(broken));
+        Assert.Single(Directory.GetFiles(directory, "broken*"));
     }
 
     [Fact]
