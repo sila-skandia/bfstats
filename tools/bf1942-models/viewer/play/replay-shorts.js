@@ -24,6 +24,15 @@ const VIEW_AFTER = 2;
  *  `detail.open`. The front end silences the menu music while it is open. */
 export const SHORT_PLAYER_EVENT = 'replay-short-player';
 
+/** Whether `viewer` (recordings-api.js `viewer()`: `{ names, isAdmin }`) may
+ *  take `short` down: an admin any, a creator the Shorts shared under one of
+ *  their linked names. The API decides; this only shows the button. */
+export function mayTakeDown(short, viewer) {
+  if (!short || !viewer) return false;
+  if (viewer.isAdmin) return true;
+  return Boolean(short.creatorName) && (viewer.names ?? []).includes(short.creatorName);
+}
+
 /** Seconds of the round before the kill that Watch the round opens on. */
 const LEAD_IN = 5;
 const MUTE_KEY = 'bf42-shorts-sound';
@@ -134,6 +143,8 @@ const ICONS = {
   // A link: two rounded loops, interlocked.
   link: '<path d="M6.6 9.4 9.4 6.6M7.2 4.6l1-1a2.6 2.6 0 0 1 3.7 3.7l-1 1M8.8 11.4l-1 1a2.6 2.6 0 0 1-3.7-3.7l1-1" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round"/>',
   eye: '<path d="M1.5 8S4 3.8 8 3.8 14.5 8 14.5 8 12 12.2 8 12.2 1.5 8 1.5 8z" fill="none" stroke="currentColor" stroke-width="1.4"/><circle cx="8" cy="8" r="2" fill="currentColor"/>',
+  // Take it down: a bin.
+  bin: '<path d="M2.8 4.4h10.4M6.2 4.4V2.9h3.6v1.5M4.2 4.4l.7 8.7h6.2l.7-8.7M6.8 6.8v4M9.2 6.8v4" fill="none" stroke="currentColor" stroke-width="1.4" stroke-linecap="round" stroke-linejoin="round"/>',
   // The kill: the killer's weapon pointing at the victim.
   arrow: '<path d="M2 8h10.2M8.8 4.6 12.2 8l-3.4 3.4" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"/>',
 };
@@ -290,6 +301,9 @@ const STYLE = `
 .rs-share { width: auto; padding: 0 14px 0 11px; gap: 7px; display: inline-flex; align-items: center; border-radius: 21px;
   font: 800 11px/1 'Trebuchet MS', 'Segoe UI', sans-serif; letter-spacing: .1em; text-transform: uppercase; }
 .rs-share.done { border-color: var(--rf-khaki); color: var(--rf-khaki); }
+.rs-takedown[hidden] { display: none; }
+.rs-takedown:hover, .rs-takedown:focus-visible { border-color: #e0665a; color: #ffb4ab; }
+.rs-takedown:disabled { opacity: .55; cursor: progress; }
 .rs-mute.on { padding: 0; width: 42px; justify-content: center; }
 .rs-mute.on span { display: none; }
 .rs-mute:not(.on) { border-color: var(--rf-khaki); box-shadow: 0 0 0 0 rgba(163, 156, 108, .6); animation: rs-call 2.2s ease-out infinite; }
@@ -731,8 +745,16 @@ export function createShorts({ api: apiOf, root = '../' }) {
     share.title = 'Copy a link to this Short: it plays in Discord';
     share.addEventListener('click', () => shareActive());
     renderShare();
+    // Take it down: for an admin, and for a creator on their own share.
+    const takeDown = el('button', 'rs-btn rs-share rs-takedown');
+    takeDown.type = 'button';
+    takeDown.hidden = true;
+    takeDown.title = 'Take this Short down: nobody can watch it after that';
+    takeDown.innerHTML = icon('bin');
+    takeDown.append(el('span', '', 'Take down'));
+    takeDown.addEventListener('click', () => takeDownActive());
     const tools = el('div', 'rs-tools');
-    tools.append(share, mute);
+    tools.append(takeDown, share, mute);
     top.append(close, tools);
     const nav = el('div', 'rs-nav');
     const up = iconButton('rs-btn', 'Previous Short', () => go(active - 1), 'up');
@@ -822,6 +844,63 @@ export function createShorts({ api: apiOf, root = '../' }) {
       } catch {
         window.prompt('The link to this Short:', href);
       }
+    }
+
+    // Who is watching, asked once a page (and again after a sign-in or out).
+    let viewerAsked = null;
+    const viewerOf = () => {
+      if (!state.api?.viewer) return Promise.resolve(null);
+      if (!viewerAsked) {
+        viewerAsked = state.api.viewer().catch(() => null);
+        state.api.onChange?.(() => { viewerAsked = null; });
+      }
+      return viewerAsked;
+    };
+
+    function syncTakeDown(s) {
+      takeDown.hidden = true;
+      takeDown.disabled = false;
+      if (!s) return;
+      viewerOf().then(viewer => {
+        if (slides[active] === s) takeDown.hidden = !mayTakeDown(s.short, viewer);
+      });
+    }
+
+    /** Takes the open Short down, after asking: off the strip, out of the
+     *  player, on to the next. */
+    async function takeDownActive() {
+      const s = slides[active];
+      if (!s || !state.api?.removeShort) return;
+      if (!window.confirm(`Take down "${s.short.title}"? Nobody can watch it after this, and it cannot be undone.`)) return;
+      takeDown.disabled = true;
+      try {
+        await state.api.removeShort(s.short.slug);
+      } catch (error) {
+        takeDown.disabled = false;
+        console.warn('replay-shorts: taking a Short down', error);
+        toast(error?.message || 'That Short could not be taken down.');
+        return;
+      }
+      const slug = s.short.slug;
+      state.items = state.items.filter(x => x.slug !== slug);
+      state.total = Math.max(state.items.length, state.total - 1);
+      row.querySelector(`.rs-card[data-slug="${CSS.escape(slug)}"]`)?.remove();
+      totalEl.textContent = state.items.length ? String(state.total) : '';
+      arrows();
+      const index = slides.indexOf(s);
+      disarm(s);
+      s.node.remove();
+      slides.splice(index, 1);
+      list = list.filter(x => x.slug !== slug);
+      toast('Short taken down.');
+      if (!slides.length) {
+        shut();
+        return;
+      }
+      const next = Math.min(index, slides.length - 1);
+      active = -1;
+      track.scrollTop = next * track.clientHeight;
+      activate(next);
     }
 
     function setSound(on) {
@@ -991,6 +1070,7 @@ export function createShorts({ api: apiOf, root = '../' }) {
       // A quarter of a second's grace: a clip that starts at once never flashes it.
       if (!isPlaying(s.video)) showWait(s, 250);
       linkWatch(s);
+      syncTakeDown(s);
       // The next one loads while this one plays; the one before stays ready.
       arm(slides[index + 1], 'auto');
       if (slides[index + 1]) linkWatch(slides[index + 1]);

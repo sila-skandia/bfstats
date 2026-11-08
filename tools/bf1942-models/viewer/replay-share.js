@@ -49,30 +49,80 @@ export function shareable({ mime, frame, replayUrl }) {
   return { ok: true, why: null };
 }
 
-/** A JPEG of the clip's middle frame, for its poster. */
-async function posterOf(blob) {
+/** Resolves on `name` from `target`, or rejects after `ms`. */
+const once = (target, name, ms) => new Promise((resolve, reject) => {
+  const timer = setTimeout(() => reject(new Error(`the clip gave no ${name}`)), ms);
+  target.addEventListener(name, () => { clearTimeout(timer); resolve(); }, { once: true });
+  target.addEventListener('error', () => { clearTimeout(timer); reject(new Error('the clip would not load')); }, { once: true });
+});
+
+/** Resolves once `video` has put a frame on screen (or after `ms`). */
+const frameShown = (video, ms = 1000) => new Promise(resolve => {
+  const timer = setTimeout(resolve, ms);
+  const done = () => { clearTimeout(timer); resolve(); };
+  if (typeof video.requestVideoFrameCallback === 'function') video.requestVideoFrameCallback(done);
+  else requestAnimationFrame(() => requestAnimationFrame(done));
+});
+
+/** The mean brightness of `canvas`, 0-255, from a sparse sample. */
+export function brightnessOf(canvas) {
+  const { data } = canvas.getContext('2d').getImageData(0, 0, canvas.width, canvas.height);
+  const step = 4 * 97;
+  let sum = 0;
+  let n = 0;
+  for (let i = 0; i < data.length; i += step, n++) sum += (data[i] + data[i + 1] + data[i + 2]) / 3;
+  return n ? sum / n : 0;
+}
+
+/** Below this mean brightness a poster is a black frame, not a picture. */
+const BLACK = 4;
+/** Where in the clip a poster is looked for: the middle, then either side. */
+const POSTER_AT = [0.5, 0.35, 0.65, 0.2, 0.8];
+
+/**
+ * A JPEG of the clip's middle frame, for its poster. Safari draws a video it
+ * has not shown a frame of as black, and a seek only says the frame is
+ * found, not drawn (2026-11-08: both of skandia's first studio shares went up
+ * with an all-black poster). So the video is kept in the page, the frame is
+ * drawn once it is on screen, and a black one is tried again elsewhere in the
+ * clip, played a moment the second time round.
+ */
+export async function posterOf(blob) {
   const video = el('video');
   video.muted = true;
   video.playsInline = true;
+  video.preload = 'auto';
+  video.setAttribute('aria-hidden', 'true');
+  Object.assign(video.style, {
+    position: 'fixed', left: '0', top: '0', width: '4px', height: '4px', opacity: '0.01', pointerEvents: 'none',
+  });
+  document.body.append(video);
   video.src = URL.createObjectURL(blob);
   try {
-    await new Promise((resolve, reject) => {
-      video.onloadedmetadata = resolve;
-      video.onerror = () => reject(new Error('the clip would not load'));
-    });
-    const duration = Number.isFinite(video.duration) ? video.duration : 1;
-    await new Promise(resolve => {
-      video.onseeked = resolve;
-      video.currentTime = duration / 2;
-    });
+    await once(video, 'loadeddata', 15000);
+    const duration = Number.isFinite(video.duration) && video.duration > 0 ? video.duration : 1;
     const cv = el('canvas');
     cv.width = video.videoWidth;
     cv.height = video.videoHeight;
-    cv.getContext('2d').drawImage(video, 0, 0);
+    const g = cv.getContext('2d');
+    for (const [k, at] of POSTER_AT.entries()) {
+      const sought = once(video, 'seeked', 5000);
+      video.currentTime = duration * at;
+      await sought;
+      if (k > 0) {
+        const shown = frameShown(video);
+        await video.play().catch(() => {});
+        await shown;
+        video.pause();
+      } else await frameShown(video);
+      g.drawImage(video, 0, 0, cv.width, cv.height);
+      if (brightnessOf(cv) >= BLACK) break;
+    }
     const jpeg = await new Promise(resolve => cv.toBlob(resolve, 'image/jpeg', 0.88));
     return { jpeg, duration };
   } finally {
     URL.revokeObjectURL(video.src);
+    video.remove();
   }
 }
 
@@ -114,7 +164,7 @@ export function offerShare(blob, mime, clip, { frame, replayUrl = new URLSearchP
   const label = el('label', '', 'Title');
   label.append(title);
   const note = el('p', 'rsh-note',
-    'It goes in the Shorts strip on the REPLAY tab under your linked in-game name, live at once. You can take it down again.');
+    'It goes in the Shorts strip on the REPLAY tab under your linked in-game name, live at once. Take down, on the Short in the player, removes it again.');
   const status = el('p', 'rsh-status');
   status.setAttribute('aria-live', 'polite');
   const row = el('div', 'rsh-row');
@@ -139,7 +189,11 @@ export function offerShare(blob, mime, clip, { frame, replayUrl = new URLSearchP
     status.textContent = text;
     status.classList.toggle('bad', bad);
   };
+  // Closing the dialog while it uploads stops the upload (2026-11-08: Not now
+  // closed it and the clip went up anyway, a Short nobody meant to share).
+  let upload = null;
   const shut = () => {
+    upload?.abort();
     back.remove();
     URL.revokeObjectURL(url);
     window.removeEventListener('keydown', onKey, true);
@@ -188,10 +242,13 @@ export function offerShare(blob, mime, clip, { frame, replayUrl = new URLSearchP
         mod: params.get('mod') ?? '',
       };
       say('Uploading');
+      upload = new AbortController();
+      close.textContent = 'Cancel upload';
       const made = await api.shareShort({
-        video: blob, poster: jpeg, meta,
+        video: blob, poster: jpeg, meta, signal: upload.signal,
         onProgress: k => say(`Uploading ${Math.round(k * 100)}%`),
       });
+      upload = null;
       done = true;
       signIn.hidden = true;
       say('Shared. It is in the Shorts strip now.');
@@ -203,6 +260,9 @@ export function offerShare(blob, mime, clip, { frame, replayUrl = new URLSearchP
       row.prepend(watch);
       close.textContent = 'Close';
     } catch (error) {
+      upload = null;
+      if (error?.aborted) return;
+      close.textContent = 'Not now';
       console.warn('replay-share: sharing the clip', error);
       say(error?.message || 'Sharing failed.', true);
     } finally {

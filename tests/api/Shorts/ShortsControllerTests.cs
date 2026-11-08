@@ -148,7 +148,7 @@ public sealed class ShortsControllerTests : IDisposable
 
         Assert.Equal($"{RecordingSlug}:132.46:4", dto.Key);
         Assert.Equal($"/stats/shorts/{dto.Slug}.mp4", dto.VideoUrl);
-        Assert.Equal($"/stats/shorts/{dto.Slug}.jpg", dto.PosterUrl);
+        Assert.Equal($"/stats/shorts/{dto.Slug}.jpg?v={Jpeg.Length}", dto.PosterUrl);
         Assert.Equal("P51", dto.KillerVehicle);
         Assert.Null(dto.VictimVehicle);
         Assert.Equal(Mp4, await File.ReadAllBytesAsync(storage.VideoPath(dto.Slug)));
@@ -511,6 +511,48 @@ public sealed class ShortsControllerTests : IDisposable
         Assert.IsType<NotFoundResult>(await Controller(user: User(true)).Delete(dto.Slug, default));
     }
 
+    private ShortsController PosterBody(ShortsController controller, byte[] body)
+    {
+        controller.HttpContext.Request.Body = new MemoryStream(body);
+        controller.HttpContext.Request.ContentLength = body.Length;
+        return controller;
+    }
+
+    [Fact]
+    public async Task SetPoster_ReplacesTheFile_AndGivesItANewLink_ForTheKeyAnAdminOrItsCreator()
+    {
+        db.Users.Add(new User { Id = 7, Email = "creator@example.com" });
+        db.Recordings.Add(new Recording { Slug = RecordingSlug, UploaderUserId = 7 });
+        db.UserPlayerNames.Add(new UserPlayerName { UserId = 7, PlayerName = "skandia", CreatedAt = DateTime.UtcNow });
+        await db.SaveChangesAsync();
+        var shared = Assert.IsType<ShortDto>(Assert.IsType<CreatedAtActionResult>((await ShareAsync(ShareMeta(), User(false))).Result).Value);
+        byte[] better = [0xFF, 0xD8, 0xFF, 0xE0, 1, 2, 3, 4, 5, 6, 0xFF, 0xD9];
+
+        // Nobody signed in, and someone else signed in: refused, the poster as it was.
+        Assert.Equal(StatusCodes.Status401Unauthorized,
+            Assert.IsType<ObjectResult>((await PosterBody(Controller(), better).SetPoster(shared.Slug, default)).Result).StatusCode);
+        var other = new ClaimsPrincipal(new ClaimsIdentity([new Claim(ClaimTypes.NameIdentifier, "8")], "test"));
+        Assert.Equal(StatusCodes.Status403Forbidden,
+            Assert.IsType<ObjectResult>((await PosterBody(Controller(user: other), better).SetPoster(shared.Slug, default)).Result).StatusCode);
+        Assert.Equal(Jpeg, await File.ReadAllBytesAsync(storage.PosterPath(shared.Slug)));
+
+        // Not a JPEG: refused.
+        Assert.Equal(StatusCodes.Status400BadRequest,
+            Assert.IsType<ObjectResult>((await PosterBody(Controller(user: User(false)), Mp4).SetPoster(shared.Slug, default)).Result).StatusCode);
+
+        // Its creator: the new file, and a link that is not the cached one.
+        var dto = Value(await PosterBody(Controller(user: User(false)), better).SetPoster(shared.Slug, default));
+        Assert.Equal(better, await File.ReadAllBytesAsync(storage.PosterPath(shared.Slug)));
+        Assert.Equal($"/stats/shorts/{shared.Slug}.jpg?v={better.Length}", dto.PosterUrl);
+        Assert.NotEqual(shared.PosterUrl, dto.PosterUrl);
+        Assert.Equal(better.Length, (await db.ReplayShorts.AsNoTracking().SingleAsync()).PosterBytes);
+
+        // The render job's own, by the key; none at all is a 404.
+        var job = await UploadAsync();
+        Assert.IsType<OkObjectResult>((await PosterBody(Controller(UploadKey), better).SetPoster(job.Slug, default)).Result);
+        Assert.IsType<NotFoundResult>((await PosterBody(Controller(user: User(true)), better).SetPoster("zzzzzzzzzz", default)).Result);
+    }
+
     [Fact]
     public async Task ShareLink_GoesOnToThePlayer_AndGivesAnUnfurlTheVideo()
     {
@@ -531,7 +573,7 @@ public sealed class ShortsControllerTests : IDisposable
         Assert.Contains("<meta property=\"og:video:type\" content=\"video/mp4\">", html);
         Assert.Contains("<meta property=\"og:video:width\" content=\"1080\">", html);
         Assert.Contains("<meta property=\"og:video:height\" content=\"1920\">", html);
-        Assert.Contains($"<meta property=\"og:image\" content=\"https://play.bfstats.io/stats/shorts/{dto.Slug}.jpg\">", html);
+        Assert.Contains($"<meta property=\"og:image\" content=\"https://play.bfstats.io/stats/shorts/{dto.Slug}.jpg?v={Jpeg.Length}\">", html);
         Assert.Contains("<meta name=\"twitter:card\" content=\"player\">", html);
         Assert.Contains("<meta property=\"og:description\" content=\"skandia → Rut · M2 · 412 m · Midway\">", html);
         // A title is free text: markup in it is text.

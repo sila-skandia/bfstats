@@ -151,6 +151,9 @@ class RecordingsApiTests(unittest.TestCase):
         self.assertEqual(shorts["line"], {
             "killer": "\u0418\u0432\u0430\u043d", "victim": "=NDR=Lapu", "weapon": "Tiger cannon", "distance": "192 m"})
         self.assertEqual(shorts["lineNoWeapon"], {"killer": "a", "victim": "b", "weapon": "Spitfire", "distance": ""})
+        # Take down: the creator their own share, an admin any; nobody signed
+        # in, or someone else, not.
+        self.assertEqual(shorts["takeDown"], [True, False, False, True, False, False])
 
     def test_a_short_watches_its_round_from_just_before_the_kill(self) -> None:
         shorts = self.results["shorts"]

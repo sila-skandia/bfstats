@@ -32,6 +32,10 @@ public interface IShortService
     /// <summary>Whether <paramref name="userId"/> shared the Short <paramref name="slug"/>.</summary>
     Task<bool> SharedByAsync(string slug, int userId, CancellationToken ct);
 
+    /// <summary>Replaces a Short's poster with the JPEG in <paramref name="body"/>: the Short with
+    /// its new poster link, or null when there is none.</summary>
+    Task<ShortDto?> SetPosterAsync(string slug, Stream body, CancellationToken ct);
+
     /// <summary>Takes a Short down, row and files. False when there is none.</summary>
     Task<bool> DeleteAsync(string slug, CancellationToken ct);
 

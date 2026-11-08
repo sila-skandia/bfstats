@@ -26,8 +26,10 @@ public sealed record ShortDto(
     string PosterUrl,
     string? CreatorName = null)
 {
+    /// <summary>The poster's link carries its size as a version (<c>?v=</c>): it is served for a
+    /// year, and a poster replaced (<c>PUT /stats/shorts/{slug}/poster</c>) is a new link.</summary>
     public static ShortDto From(ReplayShort s) => new(
         s.Slug, s.RecordingSlug, s.KillTime, s.VictimPid, s.Key, s.Kind, s.Title, s.Killer, s.Victim, s.Weapon,
         s.KillerVehicle, s.VictimVehicle, s.Distance, s.LengthSeconds, s.Level, s.Mod, s.CreatedAt, s.Views,
-        $"/stats/shorts/{s.Slug}.mp4", $"/stats/shorts/{s.Slug}.jpg", s.CreatorName);
+        $"/stats/shorts/{s.Slug}.mp4", $"/stats/shorts/{s.Slug}.jpg?v={s.PosterBytes}", s.CreatorName);
 }

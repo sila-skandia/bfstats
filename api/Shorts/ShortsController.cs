@@ -36,6 +36,9 @@ public class ShortsController(
     /// <summary>The rate limit on a player's shares: 10 an hour per account.</summary>
     public const string ShareLimit = "shorts-share";
 
+    /// <summary>A poster alone, as <see cref="ShortsOptions.MaxPosterBytes"/> takes it.</summary>
+    private const long PosterLimitBytes = 2L * 1024 * 1024 + 1;
+
     /// <summary>The whole upload body: the largest video and poster, and the framing round them.</summary>
     private const long UploadLimitBytes = 95L * 1024 * 1024;
 
@@ -149,12 +152,34 @@ public class ShortsController(
     public async Task<IActionResult> Delete(string slug, CancellationToken ct)
     {
         if (RecordingStorage.CleanSlug(slug) is not { } clean) return NotFound();
-        // The key, an admin, or the creator who shared it.
-        if (Refusal() is { } refusal && !(UserId() is { } userId && await shorts.SharedByAsync(clean, userId, ct)))
-        {
-            return refusal;
-        }
+        if (await MayChangeAsync(clean, ct) is { } refusal) return refusal;
         return await shorts.DeleteAsync(clean, ct) ? NoContent() : NotFound();
+    }
+
+    /// <summary>A new poster for a Short: a JPEG in the body. For the key, an admin, or the
+    /// creator who shared it (2026-11-08: studio shares went up with a black poster).</summary>
+    [HttpPut("{slug:length(10)}/poster")]
+    [RequestSizeLimit(PosterLimitBytes)]
+    public async Task<ActionResult<ShortDto>> SetPoster(string slug, CancellationToken ct)
+    {
+        if (RecordingStorage.CleanSlug(slug) is not { } clean) return NotFound();
+        if (await MayChangeAsync(clean, ct) is { } refusal) return refusal;
+        try
+        {
+            return await shorts.SetPosterAsync(clean, Request.Body, ct) is { } dto ? Ok(dto) : NotFound();
+        }
+        catch (RecordingRejectedException ex)
+        {
+            return StatusCode(ex.StatusCode, new { message = ex.Message });
+        }
+    }
+
+    /// <summary>Null when the request may change or take down the Short: the key, an admin, or
+    /// the creator who shared it.</summary>
+    private async Task<ObjectResult?> MayChangeAsync(string slug, CancellationToken ct)
+    {
+        if (Refusal() is not { } refusal) return null;
+        return UserId() is { } userId && await shorts.SharedByAsync(slug, userId, ct) ? null : refusal;
     }
 
     private int? UserId()

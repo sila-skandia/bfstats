@@ -485,6 +485,46 @@ Verified: `e2e/stats-page-shorts.spec.ts` (Shorts above the rounds, a panel
 for Shorts alone, paging, the row left out, the panel hidden) and
 `e2e/stats-page-replays.spec.ts`.
 
+### Creators' shares: the poster, Cancel and Take down (2026-11-08)
+
+The owner shared two studio clips of Germans crossing Arnhem bridge
+(`ky5wexau46`, then `mdtqtue2k8`), cancelled the first, and found it live
+anyway; the second "is missing the thumbnail". Both posters were the same
+all-black JPEG, and there was no way to take a Short down from the page,
+though the dialog said "You can take it down again".
+
+- **The black poster was Safari.** Both shares came from Safari 26.5 (the
+  API's request log). `posterOf` drew the middle frame as soon as the seek
+  said it was found; WebKit draws a video it has not shown a frame of as
+  black. Measured in Playwright's WebKit on the live `mdtqtue2k8.mp4`: the
+  old code's poster had a mean brightness of 0, Chrome's 51.8. Now the video
+  sits in the page (4 px, nearly transparent), the poster waits for
+  `loadeddata` and a frame shown (`requestVideoFrameCallback`), and a frame
+  darker than 4 of 255 is tried again at 35%, 65%, 20% and 80% of the clip,
+  played a moment first. The real module, in WebKit and in Chrome: 51.5 and
+  51.8, about 1.2 s, no video left behind.
+- **Cancel cancels.** Not now closed the dialog and left the upload running
+  (the first share took 67 s, 04:10:42 to 04:11:49). While it uploads the
+  button reads Cancel upload, and it, Esc or a click outside abort the
+  request (`shareShort({ signal })`).
+- **Take down in the player** (`replay-shorts.js` `mayTakeDown`,
+  `recordings-api.js` `removeShort`): for an admin on any Short, and for a
+  creator on the ones shared under their linked names (the API already
+  allowed both). It asks first, then the Short leaves the strip and the
+  player goes on to the next.
+- **A poster can be replaced**: `PUT /stats/shorts/{slug}/poster`, a JPEG
+  in the body, for the key, an admin or its creator. Posters are served for
+  a year (`immutable`, cached at Cloudflare), so the link now carries the
+  poster's size as a version (`.jpg?v=<bytes>`), in the strip and in the
+  share link's unfurl.
+
+Verified: `ShortsControllerTests` (33, a poster replaced by its creator and
+by the key, refused to nobody, to someone else and for a file that is not a
+JPEG, its new link), `test_recordings_api` (who sees Take down), and Take
+down driven in WebKit and Chrome against a stand-in API: shown on the
+creator's own Short, asked, gone from the strip and the player, the next
+one open, hidden on the render job's Short.
+
 ### The loader (2026-11-05)
 
 The owner: "When we deep link into a short, if the server is a tad slow it

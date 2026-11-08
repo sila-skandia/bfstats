@@ -248,14 +248,21 @@ export function createRecordingsApi(api) {
           || (xhr.status === 413 ? 'That file is too big to share.' : `The upload failed (HTTP ${xhr.status}).`), body));
       };
       xhr.onerror = () => reject(new ApiError(0, 'The upload broke off. Check the connection and try again.'));
+      xhr.onabort = () => reject(Object.assign(new ApiError(0, 'Upload cancelled.'), { aborted: true }));
+      if (signal?.aborted) {
+        reject(Object.assign(new ApiError(0, 'Upload cancelled.'), { aborted: true }));
+        return;
+      }
+      signal?.addEventListener('abort', () => xhr.abort(), { once: true });
       xhr.send(form);
     });
   }
 
   /** A creator's clip from the studio, shared as a Short (POST
    *  /stats/shorts/share): `video` an MP4 blob, `poster` a JPEG blob, `meta`
-   *  the API's ShortUploadMeta. Resolves with the Short. */
-  async function shareShort({ video, poster, meta, onProgress = () => {} }) {
+   *  the API's ShortUploadMeta. Resolves with the Short. `signal` aborted
+   *  stops the upload (rejecting with an ApiError of status 0, `aborted`). */
+  async function shareShort({ video, poster, meta, onProgress = () => {}, signal = null }) {
     const bearer = await token();
     if (!bearer) throw new ApiError(401, 'Sign in first.');
     const form = new FormData();
@@ -392,6 +399,8 @@ export function createRecordingsApi(api) {
      *  killers first. Names are raw (decode them to show them). */
     shortPlayers: ({ days = 7, signal } = {}) => request(`/stats/shorts/players?${readableQuery([['days', days]])}`, { signal }),
     short: (slug, { signal } = {}) => request(`/stats/shorts/${encodeURIComponent(slug)}`, { signal }),
+    /** Takes a Short down: an admin's, or the creator's own share. */
+    removeShort: slug => request(`/stats/shorts/${encodeURIComponent(slug)}`, { method: 'DELETE', auth: true }),
     /** A Short watched for a couple of seconds: `{ views }`. */
     viewShort: slug => request(`/stats/shorts/${encodeURIComponent(slug)}/views`, { method: 'POST' }),
 

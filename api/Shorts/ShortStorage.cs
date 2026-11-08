@@ -26,6 +26,9 @@ public sealed class ShortStorage(IRecordingStorage recordings)
         recordings.Promote(incomingPath, finalPath);
     }
 
+    /// <summary>Puts a new poster in place of the old one.</summary>
+    public void ReplacePoster(string incomingPath, string slug) => File.Move(incomingPath, PosterPath(slug), overwrite: true);
+
     /// <summary>Removes a Short's files. Missing ones are not an error.</summary>
     public void Delete(string slug)
     {

@@ -167,6 +167,29 @@ public sealed class ShortService(
         return true;
     }
 
+    public async Task<ShortDto?> SetPosterAsync(string slug, Stream body, CancellationToken ct)
+    {
+        var row = await db.ReplayShorts.FirstOrDefaultAsync(s => s.Slug == slug, ct);
+        if (row is null) return null;
+        string? posterFile = storage.IncomingPath();
+        try
+        {
+            await ReceiveAsync(body, posterFile, options.Value.MaxPosterBytes, "A Short's poster", ct);
+            if (!await IsJpegAsync(posterFile, ct)) throw new RecordingRejectedException("The poster is not a JPEG file.");
+            var bytes = new FileInfo(posterFile).Length;
+            storage.ReplacePoster(posterFile, row.Slug);
+            posterFile = null;
+            row.PosterBytes = bytes;
+            await db.SaveChangesAsync(ct);
+            logger.LogInformation("Short {Slug} has a new poster, {Bytes} bytes", row.Slug, bytes);
+            return ShortDto.From(row);
+        }
+        finally
+        {
+            Discard(posterFile);
+        }
+    }
+
     public Task<ShortUploadResult> UploadAsync(string? contentType, Stream body, long? contentLength, CancellationToken ct) =>
         ReceiveAsync(contentType, body, contentLength, meta => Task.FromResult(Describe(meta)), ct);
 
