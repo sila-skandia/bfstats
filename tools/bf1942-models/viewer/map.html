@@ -2965,7 +2965,31 @@ let schoolCamera = null;
 /** As the map layer in another page's school (`?embed`, dogfight-theatre.js
  *  LAYERS): word to it that this page cannot show the fight after all. */
 function tellSchool(message) {
-  if (params.has('embed') && window.parent !== window) window.parent.postMessage({ type: 'dfs-world', ...message }, location.origin);
+  if (!params.has('embed') || window.parent === window) return;
+  if (message.state === 'ready' || message.state === 'failed') stopTellingLoad?.();
+  window.parent.postMessage({ type: 'dfs-world', ...message }, location.origin);
+}
+/** As that map layer, the level's load as this page's loading screen shows
+ *  it, twice a second until the map is up or has failed: the school's card
+ *  draws it, and takes a load that stops moving for one that never will.
+ *  `fraction` is the screen's bar; `loaded`/`total` the bytes, `done`/`files`
+ *  the files (both grow as the page asks for more). */
+let stopTellingLoad = null;
+if (params.has('embed') && params.has('school') && window.parent !== window) {
+  let seen = { fraction: 0, state: 'idle' };
+  const unwatch = overlay.watch(w => {
+    seen = w;
+    if (w.state === 'error') tellSchool({ state: 'failed', reason: w.message || 'the level did not load' });
+  });
+  const report = () => {
+    let snap = null;
+    try { snap = downloadMeter.snapshot(); } catch { /* a nicety */ }
+    tellSchool({ state: 'progress', fraction: seen.fraction, phase: seen.state,
+                 loaded: snap?.loaded ?? 0, total: snap?.total ?? 0, done: snap?.done ?? 0, files: snap?.files ?? 0 });
+  };
+  const timer = setInterval(report, 500);
+  stopTellingLoad = () => { clearInterval(timer); unwatch(); stopTellingLoad = null; };
+  report();
 }
 const room = createNetRoom(bag(
   from(() => deployScreen, `deployActive paintDeployChrome`),

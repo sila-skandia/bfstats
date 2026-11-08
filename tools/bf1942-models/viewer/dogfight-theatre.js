@@ -67,8 +67,13 @@ const prettyPlane = t => String(t ?? '').replace(/^BF(\d)/, 'Bf $1').replace(/([
 /** The nearest the Wide camera comes to the point between the two, metres,
  *  however far the wheel zooms in. */
 const WIDE_NEAREST = 6;
-/** Seconds the map layer may take to load before the card says it did not. */
-const MAP_PATIENCE = 180;
+/** Where the list remembers its MOD chip unticked ('0'). */
+const MOD_ONLY_KEY = 'dogfight-school:mod-only';
+/** Seconds the map layer's load may stand still (no bytes, no file, no
+ *  move of its bar) before the card says it did not load. A big level (FHSW's
+ *  Tulagi, ~190 MB) takes minutes on a slow link and still arrives, so the
+ *  clock runs from the last sign of life, not from the click. */
+const MAP_STALL = 90;
 /** How far either side of the fight the sweeps run, metres. */
 const INTRO_REACH = 2600;
 const smooth01 = x => { const k = Math.min(1, Math.max(0, x)); return k * k * (3 - 2 * k); };
@@ -247,8 +252,8 @@ export function createDogfightTheatre({ host, makePlane, planeVisual = () => nul
           <span class="dfs-layer-art"><img alt="" hidden>
             <svg class="dfs-layer-schematic" viewBox="0 0 96 72" aria-hidden="true"><path class="dfs-ls-grid" d="M0 18H96M0 36H96M0 54H96M24 0V72M48 0V72M72 0V72"/>
               <path class="dfs-ls-ace" d="M8 60C24 52 30 20 50 22S70 50 88 14"/><path class="dfs-ls-you" d="M10 40C26 44 36 62 54 52S74 20 86 30"/></svg>
-            <i class="dfs-layer-scan"></i></span>
-          <span class="dfs-layer-text"><small>LAYER</small><b></b><span></span></span>
+            <i class="dfs-layer-scan"></i><span class="dfs-layer-load" aria-hidden="true"><b class="dfs-layer-pct"></b><i class="dfs-layer-bar"><i></i></i></span></span>
+          <span class="dfs-layer-text"><small>LAYER</small><b></b><span></span><small class="dfs-layer-bytes"></small></span>
         </button>
         <div class="dfs-shotcard" hidden><small></small><b></b><span class="dfs-shot-geo"></span><span class="dfs-shot-why"></span><span class="dfs-shot-other"></span></div>
         <div class="dfs-pins" aria-hidden="true"></div>
@@ -305,6 +310,7 @@ export function createDogfightTheatre({ host, makePlane, planeVisual = () => nul
   const ui = {
     planeBox: q('.dfs-plane'), planeList: q('.dfs-plane-list'), arenaBox: q('.dfs-arena'), arenaList: q('.dfs-arena-list'),
     layer: q('.dfs-layer'), layerImg: q('.dfs-layer-art img'), layerName: q('.dfs-layer-text b'), layerNote: q('.dfs-layer-text span'),
+    layerPct: q('.dfs-layer-pct'), layerBytes: q('.dfs-layer-bytes'),
     lessons: q('.dfs-lessons'), sections: q('.dfs-sections'), rule: q('.dfs-rule'), canvas: q('.dfs-canvas'), stage: q('.dfs-stage'),
     tags: [q('.dfs-tag.is-ace'), q('.dfs-tag.is-you')], guns: [q('.dfs-guns.is-ace'), q('.dfs-guns.is-you')],
     tc: q('.dfs-titlecard'), tcKicker: q('.dfs-tc-kicker'), tcTitle: q('.dfs-tc-title'), tcNote: q('.dfs-tc-note'),
@@ -1708,19 +1714,67 @@ export function createDogfightTheatre({ host, makePlane, planeVisual = () => nul
   let recordedOrder = 'duration';
   let recordedDesc = true;
   let recordedPilot = null;
+  /** The mod the site is on (`?mod=`, else the one picked last on another
+   *  page, else vanilla), as `{ id, tree, short, icon }`, once read; and
+   *  whether the list shows its fights alone (the MOD chip, ticked unless
+   *  this browser unticked it). Every row wears its own mod's icon. */
+  let recordedMod = null;
+  let recordedModOnly = (() => { try { return localStorage.getItem(MOD_ONLY_KEY) !== '0'; } catch { return true; } })();
+  /** Each mod's icon and short name, by id (the registry, `mods.json`). */
+  let modInfo = new Map();
   const recordedBase = String(recordings).replace(/[^/]*$/, '');
   const titleCase = s => String(s ?? '').replace(/[_-]+/g, ' ').replace(/\b\w/g, c => c.toUpperCase());
 
   async function loadRecorded() {
     if (recorded) return recorded;
-    try {
-      const res = await fetch(recordings);
-      recorded = res.ok ? await res.json() : [];
-    } catch {
-      recorded = [];
+    const [rows] = await Promise.all([
+      fetch(recordings).then(res => (res.ok ? res.json() : [])).catch(() => []),
+      readMods(),
+    ]);
+    if (!recorded) {
+      recorded = rows;
+      // A link to one fight (`?fight=`, no `?mod=`) lists that fight's mod,
+      // whatever this browser picked last.
+      const q = new URLSearchParams(location.search);
+      const linked = !q.get('mod') && q.get('fight') ? rows.find(r => r.id === q.get('fight')) : null;
+      if (linked && modInfo.has(rowMod(linked))) recordedMod = modInfo.get(rowMod(linked));
     }
     drawRecorded();
     return recorded;
+  }
+
+  /** The registry and the site's mod, for the MOD chip and the rows' icons. */
+  async function readMods() {
+    try {
+      const { loadMods, stored, treeOf } = await import('./mods.js');
+      const mods = await loadMods();
+      const icon = m => new URL(m.icon || `icons/mods/${m.id}.png`, VIEWER_ROOT).href;
+      modInfo = new Map(mods.map(m => [m.id, { id: m.id, tree: treeOf(m), short: m.short || m.name || m.id, icon: icon(m) }]));
+      const wanted = (new URLSearchParams(location.search).get('mod') || stored() || 'bf1942').toLowerCase();
+      recordedMod = modInfo.get(wanted) ?? modInfo.get('bf1942') ?? null;
+    } catch {
+      recordedMod = null;
+    }
+  }
+  /** The tree a recording was made in: a row without one is vanilla's. */
+  function rowMod(r) { return String(r.mod ?? 'bf1942').toLowerCase(); }
+
+  /** A row's mod as its icon, its short name on hover. */
+  function modIcon(r) {
+    const m = modInfo.get(rowMod(r));
+    return m ? `<img class="dfs-recs-modicon" src="${esc(m.icon)}" alt="${esc(m.short)}" title="${esc(m.short)}" width="12" height="12" loading="lazy">` : '';
+  }
+
+  /** The MOD chip: the site's mod, ticked to show its fights alone. */
+  function drawModChip(box) {
+    const chip = box.querySelector('.dfs-recs-mod');
+    chip.hidden = !recordedMod;
+    if (!recordedMod) return;
+    chip.querySelector('input').checked = recordedModOnly;
+    const img = chip.querySelector('img');
+    if (img.getAttribute('src') !== recordedMod.icon) img.src = recordedMod.icon;
+    chip.querySelector('span').textContent = recordedMod.short;
+    chip.title = recordedModOnly ? `${recordedMod.short} fights only. Untick for every mod.` : `Every mod. Tick for ${recordedMod.short} fights only.`;
   }
 
   /** The recorded fights in the list, grouped by day, by round or by
@@ -1728,14 +1782,16 @@ export function createDogfightTheatre({ host, makePlane, planeVisual = () => nul
   function drawRecorded() {
     const box = ui.lessons.querySelector('.dfs-recs');
     if (!box) return;
-    const kindRows = (recorded ?? []).filter(r => (recordedFilter === 'all' || r.kind === 'dogfight') && (!world || r.clip));
+    const modOnly = !!recordedMod && recordedModOnly;
+    const kindRows = (recorded ?? []).filter(r => (recordedFilter === 'all' || r.kind === 'dogfight') && (!world || r.clip)
+      && (!modOnly || rowMod(r) === recordedMod.tree));
     const named = r => r.sides.some(s => (decodePlayerName(s.name ?? '') || 'pilot') === recordedPilot);
     const rows = recordedGroup === 'pilot' && recordedPilot ? kindRows.filter(named) : kindRows;
     const fightItem = r => {
       const line = fightLine(r);
       return `<li>${ROW} data-recorded="${esc(r.id)}"${r.mutual ? ' data-mutual="1"' : ''}${r.kill ? ' data-kill="1"' : ''}>`
         + `<b>${esc(line.title)}</b><small>${esc(line.sub)}</small>`
-        + `<small class="dfs-recs-where">${esc(titleCase(r.level))} · ${esc(r.recorded ?? 'unknown day')}</small></div></li>`;
+        + `<small class="dfs-recs-where">${modIcon(r)}${esc(titleCase(r.level))} · ${esc(r.recorded ?? 'unknown day')}</small></div></li>`;
     };
     // One list, in the chosen order: duration (then the date), or the date
     // (the day, the round, and where in the round). Ties keep the other key.
@@ -1762,6 +1818,11 @@ export function createDogfightTheatre({ host, makePlane, planeVisual = () => nul
       count = fights(rows.length);
       html = sorted(rows).map(fightItem).join('');
     }
+    // Nothing on this mod yet: say so, and how to see the rest.
+    if (recorded !== null && modOnly && !kindRows.length) {
+      html = `<li class="dfs-recs-none">No ${recordedFilter === 'all' ? 'attacks' : 'dogfights'} recorded on ${esc(recordedMod.short)} yet. Untick ${esc(recordedMod.short)} above for every mod.</li>`;
+    }
+    drawModChip(box);
     box.querySelector('.dfs-recs-count').textContent = recorded === null ? 'loading' : count;
     box.querySelector('ol').innerHTML = html;
     box.querySelectorAll('button[data-filter]').forEach(b => b.setAttribute('aria-pressed', String(b.dataset.filter === recordedFilter)));
@@ -1931,6 +1992,7 @@ export function createDogfightTheatre({ host, makePlane, planeVisual = () => nul
     const name = titleCase(m.level);
     ui.layerName.textContent = '3D map';
     ui.layerNote.textContent = mapFrame && !mapFrame.ready ? `Loading ${name}` : name;
+    drawMapLoad();
     ui.layer.setAttribute('aria-label', `See it on ${name}, in 3D`);
     ui.layerImg.hidden = true;
     const want = `${m.mod}/${m.level}`;
@@ -1964,7 +2026,8 @@ export function createDogfightTheatre({ host, makePlane, planeVisual = () => nul
     el.allow = 'autoplay; fullscreen';
     el.src = url.href;
     root.append(el);
-    mapFrame = { el, id: rec.id, ready: false, timer: setTimeout(() => failMap('it took too long'), MAP_PATIENCE * 1000) };
+    mapFrame = { el, id: rec.id, ready: false, progress: null, timer: null };
+    stallClock();
     root.classList.add('is-map-loading');
     ui.layer.classList.add('is-loading');
     drawLayer(fight);
@@ -1992,6 +2055,41 @@ export function createDogfightTheatre({ host, makePlane, planeVisual = () => nul
     root.focus?.();
   }
 
+  /** The stall clock, wound again on every sign the load is moving. */
+  function stallClock() {
+    if (!mapFrame) return;
+    clearTimeout(mapFrame.timer);
+    mapFrame.timer = setTimeout(() => failMap('it stopped loading'), MAP_STALL * 1000);
+  }
+
+  const megabytes = b => {
+    const mb = b / 1048576;
+    return mb < 10 ? mb.toFixed(1) : String(Math.round(mb));
+  };
+
+  /** The card's load: the bar and percentage over its picture, the bytes
+   *  under its name, as the map's own loading screen has them. Nothing once
+   *  the map is up or gone. */
+  function drawMapLoad() {
+    const p = mapFrame && !mapFrame.ready ? mapFrame.progress : null;
+    ui.layer.toggleAttribute('aria-busy', !!(mapFrame && !mapFrame.ready));
+    if (!mapFrame || mapFrame.ready) {
+      ui.layer.style.removeProperty('--dfs-load');
+      ui.layerPct.textContent = '';
+      ui.layerBytes.textContent = '';
+      return;
+    }
+    // Held short of full until the map says it is up: the level in, its
+    // briefing and the school over it still to come.
+    const k = Math.min(0.99, Math.max(0, p?.fraction ?? 0));
+    ui.layer.style.setProperty('--dfs-load', k.toFixed(3));
+    ui.layerPct.textContent = p ? `${Math.floor(k * 100)}%` : '';
+    ui.layerBytes.textContent = !p || p.phase === 'idle' ? 'Opening the page'
+      : p.phase !== 'busy' ? 'Setting up the fight'
+      : p.total > 0 ? `${megabytes(p.loaded)} / ${megabytes(p.total)} MB · ${p.done} / ${p.files} files`
+      : 'Starting';
+  }
+
   function failMap(why) {
     const name = state.recording ? titleCase(state.recording.fight.meta.level) : 'the map';
     closeMap();
@@ -2003,9 +2101,17 @@ export function createDogfightTheatre({ host, makePlane, planeVisual = () => nul
     if (e.origin !== location.origin || !mapFrame || e.source !== mapFrame.el.contentWindow) return;
     const d = e.data;
     if (d?.type !== 'dfs-world') return;
-    if (d.state === 'ready') {
+    if (d.state === 'progress') {
+      const was = mapFrame.progress;
+      const p = { fraction: +d.fraction || 0, phase: String(d.phase ?? ''), loaded: +d.loaded || 0,
+                  total: +d.total || 0, done: +d.done || 0, files: +d.files || 0 };
+      mapFrame.progress = p;
+      if (!was || p.fraction !== was.fraction || p.loaded !== was.loaded || p.done !== was.done || p.files !== was.files || p.phase !== was.phase) stallClock();
+      drawMapLoad();
+    } else if (d.state === 'ready') {
       clearTimeout(mapFrame.timer);
       mapFrame.ready = true;
+      if (state.fight) drawLayer(state.recording?.fight ?? state.fight);
       root.classList.remove('is-map-loading');
       root.classList.add('is-on-map');
       ui.layer.classList.remove('is-loading');
@@ -2560,7 +2666,8 @@ export function createDogfightTheatre({ host, makePlane, planeVisual = () => nul
       <b>${esc(c.title)}</b><small>${esc(c.tagline)}</small></div></li>`).join('') : '')
     // Real fights out of the round recordings.
     + `<li class="dfs-group" data-section="recordings"><span>FROM THE RECORDINGS</span><small>Dogfights real players flew, found in the round recordings</small></li>
-    <li class="dfs-recs" data-section="recordings"><div class="dfs-recs-bar"><button type="button" class="dfs-chip" data-filter="dogfights">Dogfights</button>`
+    <li class="dfs-recs" data-section="recordings"><div class="dfs-recs-bar"><label class="dfs-chip dfs-recs-mod" hidden><input type="checkbox"><img alt="" width="14" height="14"><span></span></label>`
+    + `<button type="button" class="dfs-chip" data-filter="dogfights">Dogfights</button>`
     + `<button type="button" class="dfs-chip" data-filter="all">Every attack</button></div>`
     + `<div class="dfs-recs-bar"><button type="button" class="dfs-chip" data-group="duration" title="Longest first; again for shortest first">Duration</button>`
     + `<button type="button" class="dfs-chip" data-group="date" title="Newest first; again for oldest first">Date</button><button type="button" class="dfs-chip" data-group="pilot">By pilot</button>`
@@ -2629,6 +2736,14 @@ export function createDogfightTheatre({ host, makePlane, planeVisual = () => nul
     if (c && onFlyCourse) { close(false); onFlyCourse(c.dataset.course); return; }
     const b = e.target.closest('[data-lesson]');
     if (b) { pickLesson(b.dataset.lesson); if (narrow()) setList(false); }
+  });
+  ui.lessons.addEventListener('change', e => {
+    if (!e.target.closest('.dfs-recs-mod')) return;
+    recordedModOnly = e.target.checked;
+    try { localStorage.setItem(MOD_ONLY_KEY, recordedModOnly ? '1' : '0'); } catch { /* private window */ }
+    // A pilot's own fights may be on another mod: back to the leaderboard.
+    if (recordedGroup === 'pilot') recordedPilot = null;
+    drawRecorded();
   });
   // The way in gives way to a click on the picture or any key.
   ui.stage.addEventListener('pointerdown', () => endIntro(), true);
@@ -2884,6 +2999,8 @@ export function createDogfightTheatre({ host, makePlane, planeVisual = () => nul
     openMap: () => openMap(),
     /** Whether the map layer is loading or up, for the tests. */
     get mapLayer() { return mapFrame ? (mapFrame.ready ? 'up' : 'loading') : null; },
+    /** The map layer's load as its page last reported it (tests). */
+    get mapLoad() { return mapFrame?.progress ?? null; },
     /** The deadlocks in the fight on stage (tests). */
     get deadlocks() { return state.fight?.deadlocks ?? null; },
     /** Extend the scene from `t` for `side`, and play way `i` (tests). */

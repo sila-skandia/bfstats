@@ -526,7 +526,10 @@ export function createLoadOverlay(host, {
   // the level.
   const watchers = new Set();
   let shownFraction = 0;
-  const watched = () => ({ fraction: shownFraction, state: root.dataset.state ?? 'idle', hidden: root.hidden });
+  /** What the last `fail` said, for a watcher that reports it elsewhere. */
+  let failMessage = null;
+  const watched = () => ({ fraction: shownFraction, state: root.dataset.state ?? 'idle', hidden: root.hidden,
+                           message: root.dataset.state === 'error' ? failMessage : null });
   const emit = () => { for (const fn of watchers) { try { fn(watched()); } catch (_) { /* the watcher's problem */ } } };
   try { new MutationObserver(emit).observe(root, { attributes: true, attributeFilter: ['data-state', 'hidden'] }); } catch (_) { /* no DOM */ }
 
@@ -1102,6 +1105,7 @@ export function createLoadOverlay(host, {
         stopDetail();
         clearTimers();
         stopAnim();
+        failMessage = message || 'load failed';
         root.dataset.state = 'error';
         if (!visible) reveal();
         if (elBar) elBar.dataset.indeterminate = 'false';
@@ -1115,9 +1119,9 @@ export function createLoadOverlay(host, {
   }
 
   return {
-    /** Call `fn({ fraction, state, hidden })` now and whenever the bar or the
-     *  overlay's state moves (`state`: busy, briefing, done, error). Returns
-     *  the way to stop. */
+    /** Call `fn({ fraction, state, hidden, message })` now and whenever the
+     *  bar or the overlay's state moves (`state`: busy, briefing, done,
+     *  error; `message` what `fail` said, on error). Returns the way to stop. */
     watch(fn) {
       watchers.add(fn);
       try { fn(watched()); } catch (_) { /* the watcher's problem */ }

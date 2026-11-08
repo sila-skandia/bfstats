@@ -1865,6 +1865,30 @@ a { color: var(--accent); }
   border-right: 1.5px solid currentColor; border-bottom: 1.5px solid currentColor; transform: rotate(45deg);
 }
 .dfs-recs-bar .dfs-chip[data-dir="asc"]::after { transform: rotate(-135deg); vertical-align: -1px; }
+/* The MOD chip: the site's mod by its icon, ticked to list its fights
+   alone. The box is drawn, not the browser's: a square that fills with the
+   accent and a tick when on. */
+.dfs-lessons .dfs-recs-bar .dfs-recs-mod {
+  display: inline-flex; align-items: center; gap: 6px; cursor: pointer; text-transform: none; letter-spacing: 0.04em;
+}
+.dfs-recs-mod[hidden] { display: none !important; }
+.dfs-recs-mod input {
+  appearance: none; -webkit-appearance: none; margin: 0; width: 12px; height: 12px; flex: none;
+  border: 1px solid var(--mm-rule-strong); border-radius: 2px; background: transparent; display: grid; place-items: center; cursor: pointer;
+  transition: background 120ms ease, border-color 120ms ease;
+}
+.dfs-recs-mod input::after {
+  content: ''; width: 3px; height: 6px; margin-top: -2px; border: solid var(--mm-bg); border-width: 0 1.5px 1.5px 0;
+  transform: rotate(45deg) scale(0); transition: transform 120ms ease;
+}
+.dfs-recs-mod input:checked { background: var(--mm-accent); border-color: var(--mm-accent); }
+.dfs-recs-mod input:checked::after { transform: rotate(45deg) scale(1); }
+.dfs-recs-mod input:focus-visible { outline: 2px solid var(--mm-accent); outline-offset: 2px; }
+.dfs-recs-mod:has(input:checked) { color: var(--mm-ink); border-color: var(--mm-accent); }
+.dfs-recs-mod img { width: 14px; height: 14px; object-fit: contain; image-rendering: auto; }
+.dfs-recs-mod:not(:has(input:checked)) img { filter: grayscale(1) opacity(0.6); }
+.dfs-recs ol .dfs-recs-modicon { width: 12px; height: 12px; margin-right: 5px; vertical-align: -2px; object-fit: contain; }
+.dfs-recs-none { padding: 14px 16px; font-size: 12px; line-height: 1.5; color: var(--mm-ink-muted); }
 /* Each fight's map and day, now the list is not grouped by them. */
 .dfs-recs ol .dfs-row small.dfs-recs-where { font: 400 10px/1.4 var(--mm-font-mono); letter-spacing: 0.04em; color: var(--mm-ink-faint); }
 .dfs-recs-who { display: flex; align-items: center; gap: 10px; padding: 8px 16px; }
@@ -2827,6 +2851,26 @@ a { color: var(--accent); }
 .dfs-layer.is-loading .dfs-layer-text span::after { content: ''; display: inline-block; width: 1.2em; text-align: left; animation: dfs-layer-dots 1.2s steps(4) infinite; }
 @keyframes dfs-layer-dots { 0% { content: ''; } 25% { content: '.'; } 50% { content: '..'; } 75% { content: '...'; } }
 .dfs.is-intro .dfs-layer { opacity: 0; pointer-events: none; }
+/* How far the map has got, as its own loading screen counts it
+   (`--dfs-load`, 0-1): the percentage over the picture, a bar along its foot,
+   and the bytes and files under the card's name. */
+.dfs-layer-load { position: absolute; inset: 0; display: none; place-items: center; pointer-events: none; }
+.dfs-layer.is-loading .dfs-layer-load { display: grid; }
+.dfs-layer-pct {
+  font: 600 16px/1 var(--mm-font-mono); letter-spacing: 0.02em; color: var(--mm-ink);
+  text-shadow: 0 1px 6px rgb(0 0 0 / 0.85); font-variant-numeric: tabular-nums;
+}
+.dfs-layer-bar {
+  position: absolute; left: 6px; right: 6px; bottom: 6px; height: 3px; border-radius: 2px; overflow: hidden;
+  background: rgb(255 255 255 / 0.16);
+}
+.dfs-layer-bar > i {
+  display: block; height: 100%; width: calc(var(--dfs-load, 0) * 100%);
+  background: var(--mm-accent); box-shadow: 0 0 8px color-mix(in srgb, var(--mm-accent) 70%, transparent);
+  transition: width 500ms ease;
+}
+.dfs-layer-text small.dfs-layer-bytes { letter-spacing: 0.04em; font-variant-numeric: tabular-nums; margin-top: 2px; }
+.dfs-layer-bytes:empty { display: none; }
 
 /* The map layer itself: the fight's replay page over this whole window,
    loading unseen, then faded in once it says it is up. */
@@ -2839,6 +2883,7 @@ a { color: var(--accent); }
 @media (max-width: 720px) {
   .dfs-layer { grid-template-columns: 56px auto; left: 10px; bottom: 10px; }
   .dfs-layer-art { width: 56px; height: 56px; }
+  .dfs-layer-pct { font-size: 13px; }
   .dfs-layer-text { min-width: 0; padding: 6px 10px; }
 }
 /* The captions make room for the card: beside it on a wide stage, under it

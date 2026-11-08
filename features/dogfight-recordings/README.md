@@ -492,8 +492,19 @@ paths with **Schematic**. It calls attention twice when it first appears.
   it was playing; the frame is removed (its page, its WebGL context and its
   level go with it). A fight picked from the map's list comes back to the
   school, which shows it and loads its map again.
-- A page that cannot open the recording or its level says `failed`, and the
-  card says why; one that says nothing in 180 s is given up on.
+- While it loads, the map page says `progress` twice a second: its loading
+  screen's bar (`fraction`) and the bytes and files its download meter has
+  counted. The card draws them over its picture (a percentage and a bar
+  along the foot, held at 99% until `ready`) and under its name
+  ("142 / 190 MB · 582 / 750 files", then "Setting up the fight" once the
+  level is in and the school is being built over it). (2026-11-08)
+- A page that cannot open the recording or its level says `failed` (its
+  loading screen failing included), and the card says why. A load that
+  stops moving for 90 s (no byte, no file, no move of the bar:
+  `MAP_STALL`) is given up on. It was a flat 180 s from the click, which a
+  big mod level on a slow link overran while still arriving: FHSWEurope's
+  Tulagi Island is ~190 MB in ~750 files, about 90 s on a warm cache and
+  minutes cold, with nothing on the card to say it was moving. (2026-11-08)
 - The map page opened directly (the IN 3D link) has no card: there is no
   schematic to go back to.
 
@@ -604,12 +615,52 @@ planes, ranked by wins, then fewest losses (`pilotTable` in
 order chosen (Duration or Date flips it there too). The Dogfights / Every
 attack filter applies to all of it.
 
+**The mod** (2026-11-08): the list opens on the site's mod, the one in
+`?mod=` or else the one picked last on another page (`bf42-mesh-mod`, as
+`mods.js` keeps it), and a link to one fight (`?fight=`) opens on that
+fight's mod. The first chip is that mod's icon and short name with a box,
+ticked by default: ticked, the list, the leaderboard and the counts are that
+mod's fights alone; unticked, every mod's. The browser remembers an
+untick (`dogfight-school:mod-only`). Each row carries its mod's icon before
+its map. A mod with nothing recorded says so and how to see the rest.
+
 In the dogfights, Chief-H.E.M.P leads at 11-3 (23 fights, 3 rounds), then
 Paciencia 4-0, skandia 4-1, serg 4-1 and SonTinWong 4-3; over every attack,
 Chief-H.E.M.P 21-4, Option_X 10-1, Paciencia 8-1. A client recording sees
 the fights round the player who recorded it, so its recorder leads its own
 board; and a name is not a person (two players can share one, and one can
 change his).
+
+## On the replay's timeline (2026-11-08)
+
+The owner: "if there's a fight extracted it shows on the scrubber, so it
+takes you to the dogfight school." A round replay now marks its dogfights.
+
+- **Which.** `viewer/replay-dogfights.js` fetches the dogfight index once and
+  keeps the rows whose `slug` is a recording the page plays (a feed link,
+  `.../stats/recordings/<slug>.ndjson`, or a file named `<slug>.ndjson`),
+  dogfights only: bounces are left out, as the school's list leaves them out
+  by default. A clip (`?clip`), the school's own map layer (`?school`) and its
+  embed show none.
+- **Where.** A row's `t0` is on its recording's own clock. One recording plays
+  that clock; a merged round (one `?replay=` per member) moves each member's
+  fights onto the round's clock with that member's fit (`sourceClock`, the
+  comments' own). A merge that fell back to the first recording marks the
+  first's alone.
+- **How.** Each fight is a sky-blue span along the scrubber's track and a
+  plane over its start (`replay-timeline.js`, `--rp-air`); planes closer than
+  about 10 px share one. A fight the followed player flew in (by the name they
+  had then: the index names pilots, it has no ids) is brighter, its plane
+  larger. Hovering a plane or a span lists the fight in the school's own words
+  (`fightLine`, now in the light `viewer/dogfight-lines.js` so the replay does
+  not load the flight code) with a **Dogfight school** button.
+- **Where it goes.** The plane and the button open `dogfight.html?fight=<id>
+  &mod=<mod>` in a new tab, so the replay stays where it was.
+
+Checked locally on Battle of Britain (`8h4sbcea4g`): 29 dogfights, 17 planes
+after merging, the tooltip naming both pilots and their planes, and the live
+school opening on Option_X v Zincha from the link. Held by
+`tests/test_replay_dogfights.py`.
 
 ## What if: his other ways out (2026-11-07)
 
