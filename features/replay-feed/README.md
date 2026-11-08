@@ -153,13 +153,22 @@ Shared now, such a recording waits in the feed until its level is baked.
   says it can be shared to the feed instead.
 - Once the level is extracted and published, its recordings play with no
   change to the row: the check reads `maps.json` live.
-- **A level recognised by its flags goes up in the tree it was found in.**
-  A file that names no level (no `setLevel`, no `serverInfo`) is looked for in
-  its mod's tree, then vanilla's and both packs'. `describeRecording` kept the
-  level it found and dropped the tree, so a Secret Weapons round went up as
+- **The vanilla game and its two packs are one game** (2026-11-08). A
+  recording tagged `bf1942` on a Road to Rome or Secret Weapons level plays in
+  the pack's tree, and the other way round: gb8ft8napv went up as
   `bf1942/hellendoorn` and showed "Not in the viewer yet" with Hellendoorn
-  live under `xpack2` (gb8ft8napv, 2026-11-07; the row was corrected by hand).
-  It now sends the found tree's id (`test_recording_inspect.py`).
+  live under `xpack2`. A server rotating vanilla and pack levels is thought to
+  report `bf1942` on a pack's level, so the row is left as recorded and the
+  viewer looks across the three trees instead. `packWithLevel` (`mods.js`,
+  `VANILLA_FAMILY`) picks the tree: the named one when it has the level, else
+  the first of the others that does. The feed's `artFor` uses it for
+  `playable` and Watch; `map.html` goes again in the pack's tree (`packHref`,
+  `replay-open.js`) before the refusal, so a short link or an old copied link
+  lands right; Open recording does the same. The API's round detection takes
+  the three as one mod (`RecordingMods`), so recordings of one round tagged
+  differently still group. Separately, a file that names no level and is
+  recognised by its flags now goes up in the tree it was found in rather than
+  the mod it started from (`describeRecording`; `test_recording_inspect.py`).
 
 ## Short links
 

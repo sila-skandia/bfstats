@@ -135,6 +135,34 @@ export function menuLevels(mod, mods, rows, name = row => row.map ?? row.name) {
   return claimed.size ? rows.filter(row => !claimed.has(key(row))) : rows;
 }
 
+/** The vanilla game and its two packs, Road to Rome and Secret Weapons. For a
+ *  recording they are one game: a server rotating vanilla and pack levels
+ *  reports `bf1942` on a pack's level (gb8ft8napv, Hellendoorn tagged bf1942,
+ *  2026-11-07), and a pack's copy of Tobruk is Tobruk. */
+export const VANILLA_FAMILY = ['bf1942', 'xpack1', 'xpack2'];
+
+/**
+ * The tree to play `level` of a recording made in `modId` in: `modId` when its
+ * list has the level (or cannot be read, or the mod is not vanilla's or a
+ * pack's), else the first of the vanilla game and its packs whose list does,
+ * else `modId` still, for the caller to say the level is not extracted.
+ * `rowsOf(id)` resolves a tree's maps.json rows, or null.
+ */
+export async function packWithLevel(modId, level, rowsOf) {
+  const id = String(modId || VANILLA.id).toLowerCase();
+  const key = String(level || '').toLowerCase();
+  if (!key || !VANILLA_FAMILY.includes(id)) return id;
+  const has = rows => rows.some(entry => String(entry?.name ?? '').toLowerCase() === key);
+  const own = await Promise.resolve().then(() => rowsOf(id)).catch(() => null);
+  if (!own || has(own)) return id;
+  for (const other of VANILLA_FAMILY) {
+    if (other === id) continue;
+    const rows = await Promise.resolve().then(() => rowsOf(other)).catch(() => null);
+    if (rows && has(rows)) return other;
+  }
+  return id;
+}
+
 /** Mods with at least one asset on this tab, vanilla always first. */
 export function servable(mods, tab) {
   return mods.filter(mod =>

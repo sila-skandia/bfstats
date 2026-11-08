@@ -113,6 +113,23 @@ class ReplayOpenTests(unittest.TestCase):
         for case in ("already", "named", "held", "unnamed", "noMaps", "noReplay"):
             self.assertIsNone(own[case], case)
 
+    def test_the_vanilla_game_and_its_packs_share_their_levels(self) -> None:
+        # A server rotating vanilla and pack levels says bf1942 on a pack's
+        # level (gb8ft8napv: Hellendoorn, 2026-11-07): it plays in the tree
+        # that has it. One every tree has stays in its own; another mod's,
+        # or a level none has, is left to be refused.
+        packs = self.results["packs"]
+        self.assertEqual(packs["packOnly"], "xpack2")
+        self.assertEqual(packs["otherPack"], "xpack1")
+        self.assertEqual(packs["vanillaOnly"], "bf1942")
+        self.assertEqual(packs["shared"], "xpack1")
+        self.assertEqual(packs["nowhere"], "bf1942")
+        self.assertEqual(packs["otherMod"], "dc")
+        self.assertEqual(packs["unreadOwn"], "bf1942")
+        self.assertEqual(packs["href"], "https://play.bfstats.io/map.html?map=hellendoorn"
+                         "&replay=/stats/recordings/gb8ft8napv.ndjson&mod=xpack2")
+        self.assertIsNone(packs["hrefStays"])
+
     def test_a_recording_plays_where_its_level_is_extracted(self) -> None:
         refused = self.results["unplayable"]
         for case in ("here", "caseless", "noLevel", "noMod", "unreadList"):

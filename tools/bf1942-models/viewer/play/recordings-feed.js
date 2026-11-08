@@ -32,7 +32,7 @@ import {
 } from '../recordings-api.js';
 import { describeRecording, isRecording, levelTrees, sortRecordingFiles } from '../recording-inspect.js';
 import { recordedAt, titled } from '../replay-open.js';
-import { loadMods, servable, VANILLA } from '../mods.js';
+import { loadMods, packWithLevel, servable, VANILLA } from '../mods.js';
 import { artCandidates, firstLoadable, isBlankFrame } from '../level-art.js';
 import { loadHudPaths } from '../hud-pack.js';
 import { createShorts } from './replay-shorts.js';
@@ -579,12 +579,17 @@ export function createLevelArt(root, modList) {
 
   return async function artFor(modId, level) {
     const key = String(level || '').toLowerCase();
-    const id = modId || VANILLA.id;
+    // The vanilla game and its packs share their levels (mods.js
+    // `VANILLA_FAMILY`): a recording tagged bf1942 on a Secret Weapons level
+    // is drawn, and plays, from xpack2's tree.
+    const id = await packWithLevel(modId || VANILLA.id, key, other => catalog(other).then(tree => tree.rows));
     const own = await catalog(id);
     const vanilla = id === VANILLA.id ? own : await catalog(VANILLA.id);
     const trees = vanilla === own ? [own] : [own, vanilla];
     const arts = artCandidates(level, trees, (treeBase, rel) => new URL(rel, treeBase).href);
     return {
+      // The tree it plays in, which may be a pack's for a recording tagged bf1942.
+      mod: id,
       title: own.levels.get(key)?.title || vanilla.levels.get(key)?.title || titled(level || 'Unknown level'),
       art: arts[0],
       arts,
@@ -1394,14 +1399,23 @@ export function createReplayFeed({ root = '../', onWatchFile = null, playerName 
     return artFor(recording.mod, recording.level).then(level => level.playable, () => true);
   }
 
+  /** `recording` in the tree it plays in, or null when it cannot play here. */
+  async function inItsTree(recording) {
+    const level = await artFor(recording.mod, recording.level).catch(() => null);
+    if (!level) return recording;
+    return level.playable ? { ...recording, mod: level.mod || recording.mod } : null;
+  }
+
   async function watch(recording, at = null) {
-    if (!await playable(recording)) return;
-    location.assign(watchHref(recording, { root, fileUrl: p => state.api.fileUrl(p), at }));
+    const here = await inItsTree(recording);
+    if (!here) return;
+    location.assign(watchHref(here, { root, fileUrl: p => state.api.fileUrl(p), at }));
   }
 
   async function watchMerged(recording, round) {
-    if (!await playable(recording)) return;
-    location.assign(watchRoundHref(recording, round, { root, fileUrl: p => state.api.fileUrl(p) }));
+    const here = await inItsTree(recording);
+    if (!here) return;
+    location.assign(watchRoundHref(here, round, { root, fileUrl: p => state.api.fileUrl(p) }));
   }
 
   // --- one recording's page ------------------------------------------------------

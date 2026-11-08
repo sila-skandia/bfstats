@@ -469,7 +469,7 @@ import { cameraShakeFactorGlobal, setCameraShakeFactorGlobal } from './soldier.j
 import { createVideoApply } from './video-apply.js';
 import { createGlContextGuard } from './gl-context.js';
 import { createReplayController, recordingInfo } from './replay.js';
-import { installRecordingOpener, loadingNote, ownModHref, unplayableReason } from './replay-open.js';
+import { installRecordingOpener, loadingNote, ownModHref, packHref, unplayableReason } from './replay-open.js';
 import { installReplaySocial } from './replay-social.js';
 import { Armor } from './armor.js';
 import { loadHudPaths } from './hud-pack.js';
@@ -3350,6 +3350,15 @@ if (!manifest.length) {
   const ownMod = replayInfo ? await ownModHref(location.href, replayInfo, activeMod.id).catch(() => null) : null;
   if (ownMod) {
     location.replace(ownMod);
+    await new Promise(() => {});
+  }
+  // The vanilla game and its packs are one game for a recording: one that
+  // says bf1942 on a Secret Weapons level goes again in xpack2's tree.
+  const inPack = replayInfo
+    ? await packHref(location.href, params.get('map') || replayInfo.level, activeMod.id, manifest).catch(() => null)
+    : null;
+  if (inPack) {
+    location.replace(inPack);
     await new Promise(() => {});
   }
   // ...and the game type it was played in picks the level's layer (a co-op

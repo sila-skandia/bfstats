@@ -54,6 +54,20 @@ public sealed class RecordingRoundServiceTests : IDisposable
     }
 
     [Fact]
+    public async Task OneRoundTaggedVanillaAndAPack_IsOneRound()
+    {
+        // A server rotating vanilla and pack levels says bf1942; a recording begun
+        // mid-round goes up as the pack its level was found in.
+        var a = await ShareAsync(RoundFingerprintTests.FixtureText("bocage-a"), "Allies");
+        var b = await ShareAsync(RoundFingerprintTests.FixtureText("bocage-b")
+            .Replace("\"mod\":\"bf1942\"", "\"mod\":\"XPack2\""), "Axis");
+
+        Assert.Equal("xpack2", (await RowAsync(b.Slug)).Mod);
+        Assert.NotNull(b.Round);
+        Assert.Equal([a.Slug, b.Slug], b.Round!.Select(m => m.Slug));
+    }
+
+    [Fact]
     public async Task ARecordingOfAnotherRound_IsNotPutInIt()
     {
         var a = await ShareAsync(RoundFingerprintTests.FixtureText("bocage-a"), "Allies");

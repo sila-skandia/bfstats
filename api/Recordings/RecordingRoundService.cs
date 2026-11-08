@@ -143,7 +143,8 @@ public sealed partial class RecordingRoundService(
 
     /// <summary>
     /// The recordings that could be of <paramref name="recording"/>'s round, with their
-    /// fingerprints: the same level, game type and mod, the same server (or either names
+    /// fingerprints: the same level, game type and mod (the vanilla game and its packs are one,
+    /// <see cref="RecordingMods"/>), the same server (or either names
     /// none), and headers begun within <see cref="RecordingsOptions.RoundCandidateHours"/> and
     /// the longer one's length of each other (a header with no start could be any time).
     /// Found through the level's index; only these few fingerprints are read.
@@ -151,8 +152,9 @@ public sealed partial class RecordingRoundService(
     private async Task<List<(int Id, RoundFingerprint Fingerprint)>> CandidatesAsync(Recording recording, CancellationToken ct)
     {
         var settings = options.Value;
+        var mods = RecordingMods.SameGame(recording.Mod);
         var query = db.Recordings.AsNoTracking().Where(r =>
-            r.Level == recording.Level && r.Mod == recording.Mod && r.GameMode == recording.GameMode && r.Id != recording.Id);
+            r.Level == recording.Level && mods.Contains(r.Mod) && r.GameMode == recording.GameMode && r.Id != recording.Id);
         if (recording.ServerName.Length > 0)
         {
             query = query.Where(r => r.ServerName == recording.ServerName || r.ServerName == "");
@@ -199,7 +201,7 @@ public sealed partial class RecordingRoundService(
         var two = rows.FirstOrDefault(r => r.Slug == theirs)
             ?? throw new RecordingRejectedException($"There is no recording {theirs}.", StatusCodes.Status404NotFound);
         if (one.Id == two.Id) throw new RecordingRejectedException("That is this recording.");
-        var sameLevel = one.Level == two.Level && one.Mod == two.Mod && one.GameMode == two.GameMode;
+        var sameLevel = one.Level == two.Level && RecordingMods.AreSameGame(one.Mod, two.Mod) && one.GameMode == two.GameMode;
 
         RecordingRoundEvidenceDto evidence;
         await Gate.WaitAsync(ct);

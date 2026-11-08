@@ -250,4 +250,28 @@ results.modelUrlLists = await Promise.all([
   ['Willy.wreck', 'raid_on_agheila'], ['Willy', 'truk'], ['Stationary_mg42', 'raid_on_agheila'],
 ].map(([name, at]) => modAssets.modelUrlList(name, at)));
 
+// The vanilla game and its packs are one game (mods.js VANILLA_FAMILY): a
+// server rotating vanilla and pack levels says bf1942 on Hellendoorn
+// (gb8ft8napv, 2026-11-07), which is extracted in xpack2's tree alone.
+const { packWithLevel } = await imp('mods.js');
+const FAMILY_ROWS = {
+  bf1942: [{ name: 'Tobruk' }, { name: 'Wake' }],
+  xpack1: [{ name: 'Tobruk' }, { name: 'Anzio' }],
+  xpack2: [{ name: 'Tobruk' }, { name: 'Hellendoorn' }],
+  dc: [{ name: 'Basrah' }],
+};
+const rowsOf = async id => FAMILY_ROWS[id] ?? null;
+const WATCH = 'https://play.bfstats.io/map.html?mod=bf1942&map=hellendoorn&replay=/stats/recordings/gb8ft8napv.ndjson';
+results.packs = {
+  packOnly: await packWithLevel('bf1942', 'hellendoorn', rowsOf),
+  otherPack: await packWithLevel('xpack2', 'Anzio', rowsOf),
+  vanillaOnly: await packWithLevel('xpack1', 'wake', rowsOf),
+  shared: await packWithLevel('xpack1', 'tobruk', rowsOf),
+  nowhere: await packWithLevel('bf1942', 'kharkov', rowsOf),
+  otherMod: await packWithLevel('dc', 'hellendoorn', rowsOf),
+  unreadOwn: await packWithLevel('bf1942', 'hellendoorn', async id => (id === 'bf1942' ? null : rowsOf(id))),
+  href: await open.packHref(WATCH, 'hellendoorn', 'bf1942', FAMILY_ROWS.bf1942, rowsOf),
+  hrefStays: await open.packHref(WATCH.replace('hellendoorn', 'wake'), 'wake', 'bf1942', FAMILY_ROWS.bf1942, rowsOf),
+};
+
 process.stdout.write(JSON.stringify(results));

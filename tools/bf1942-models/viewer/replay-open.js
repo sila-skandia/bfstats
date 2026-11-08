@@ -26,7 +26,7 @@
 
 import { parseRecording } from './replay-recording.js';
 import { recogniseLevel } from './replay-level.js';
-import { loadMods, servable, trees as treeMods, VANILLA } from './mods.js';
+import { loadMods, packWithLevel, servable, trees as treeMods, VANILLA } from './mods.js';
 import { VIEWER_ROOT } from './viewer-root.js';
 
 /** `?replay=local:<key>` names a recording this browser keeps. */
@@ -342,6 +342,31 @@ export async function ownModHref(href, info, current, mods = null) {
 }
 
 /**
+ * Where a recording of the vanilla game or a pack plays when this page's tree
+ * lacks its level: `href` with `mod=` the vanilla game's or the pack's that
+ * has it, or null to stay. A server rotating vanilla and pack levels reports
+ * `bf1942` on a pack's level (mods.js `VANILLA_FAMILY`), so a link that says
+ * bf1942/hellendoorn plays in xpack2's tree. `current` is the page's mod,
+ * `levels` its maps.json; `rowsOf(id)` reads another tree's (the harness's;
+ * the page reads the viewer's).
+ */
+export async function packHref(href, level, current, levels, rowsOf = null) {
+  if (!level || !levels?.length) return null;
+  const read = rowsOf ?? (async id => {
+    const mod = servable(await loadMods(), 'maps').find(m => m.id === id);
+    return mod ? levelsOf(mod) : null;
+  });
+  const here = String(current || '').toLowerCase();
+  const id = await packWithLevel(here, level, other => (other === here ? levels : read(other)));
+  if (id === here) return null;
+  // The mod pair alone changes, so the rest of the link reads as it was written.
+  const url = new URL(href);
+  const pairs = url.search.slice(1).split('&').filter(pair => pair && !/^mod=/i.test(pair));
+  url.search = [...pairs, `mod=${encodeURIComponent(id)}`].join('&');
+  return url.href;
+}
+
+/**
  * Why a recording cannot play on this page, or '' when it can. `mod` is the
  * mod it is to play in (`?mod=`, else the one its server named) and `level`
  * its level (`?map=`, else the one it names); `levels` is the page's
@@ -605,6 +630,15 @@ export function installRecordingOpener({ mod = () => VANILLA.id, levelName = () 
         // Closed, or another file opened in its place.
         if (!place) return;
         show('busy', `Reading ${recording.name}`);
+      }
+      // The vanilla game and its packs share their levels: one that says
+      // bf1942 on a Secret Weapons level plays in xpack2's tree.
+      const pack = await packWithLevel(place.mod.id, place.level, async id => {
+        const mod = id === place.mod.id ? place.mod : servable(await loadMods(), 'maps').find(m => m.id === id);
+        return mod ? levelsOf(mod) : null;
+      });
+      if (pack !== place.mod.id) {
+        place = { ...place, mod: servable(await loadMods(), 'maps').find(m => m.id === pack) ?? place.mod };
       }
       const entry = await levelEntry(place.mod, place.level);
       if (entry === false) {
