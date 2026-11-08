@@ -3,9 +3,14 @@
 // hover preview with a frame of the view grabbed as playback passed that
 // moment (features/round-replay-ux). Plain pointer events throughout: the
 // mouse reaches it without any pointer lock.
+//
+// The round's dogfights (replay-dogfights.js, features/dogfight-recordings)
+// lie along the track as sky-blue spans, a plane over each one's start: the
+// plane, or Dogfight school in the tooltip, opens that fight in the school.
 
 import { chapterText, involves } from './replay-chapters.js';
-import { roundClock } from './replay-recording.js';
+import { nameAt, roundClock } from './replay-recording.js';
+import { recordingFights } from './replay-dogfights.js';
 
 /** Markers closer than this, pixels, share one mark. */
 const MERGE_PX = 7;
@@ -43,6 +48,8 @@ const GLYPH = {
   burst: '<path d="M6 .3l1.5 3.4 3.5-1.3-1.7 3.3 2.4 1.9-3.6.6.2 3.5L6 9.6l-2.3 2.1.2-3.5-3.6-.6 2.4-1.9L1 2.4l3.5 1.3z" fill="currentColor"/>',
   flag: '<path d="M2 .5h1.5v11H2z" fill="currentColor"/><path d="M3.5 1h7.2l-2 2.6 2 2.6H3.5z" fill="currentColor"/>',
   spawn: '<path d="M6 .6l4 4.5H7.3v3.8H4.7V5.1H2z" fill="currentColor"/><path d="M1.6 11h8.8" stroke="currentColor" stroke-width="1.6" stroke-linecap="round"/>',
+  // A fighter from above, nose up: for a dogfight.
+  plane: '<path d="M6 .4c.55 0 .85.55.85 1.3v2.9l4.75 2.3v1.4L6.85 6.9v2.7l1.7 1.15v.95L6 11.1l-2.55.6v-.95l1.7-1.15V6.9L.4 8.3V6.9l4.75-2.3V1.7C5.15.95 5.45.4 6 .4z" fill="currentColor"/>',
 };
 
 export function glyphSvg(name) {
@@ -108,8 +115,19 @@ export class ReplayTimeline {
       zone.style.right = '0';
       this.track.append(zone);
     }
-    this.track.append(this.fill, this.hoverLine, this.knob);
-    this.el.append(this.marks, this.track);
+    // The dogfights: spans on the track, over the fill, under the knob; their
+    // planes over the marks. Filled in once the index has answered.
+    this.fightSpans = el('div', 'rp-tl-fights');
+    this.fightMarks = el('div', 'rp-tl-fightmarks');
+    this.fights = [];
+    this.fightClusters = [];
+    this.track.append(this.fill, this.fightSpans, this.hoverLine, this.knob);
+    this.el.append(this.marks, this.fightMarks, this.track);
+    recordingFights(rec).then(fights => {
+      if (this.disposed || !fights.length) return;
+      this.fights = fights;
+      this.layout();
+    }, error => console.warn('replay: the round\'s dogfights left out', error));
 
     this.tip = el('div', 'rp-tip');
     this.tipImg = el('canvas', 'rp-tip-img');
@@ -197,6 +215,71 @@ export class ReplayTimeline {
       this.marks.append(mark);
     }
     this.clusters = clusters;
+    this.layoutFights(width, pid);
+  }
+
+  /** Whether the followed player flew in `fight`, by the name they had then
+   *  (the index names its pilots, it has no ids). */
+  flewIn(fight, pid) {
+    if (pid === null || pid === undefined) return false;
+    let name;
+    try { name = nameAt(this.player.rec, pid, (fight.t0 + fight.t1) / 2); } catch { return false; }
+    return fight.row.sides.some(s => s.name === name);
+  }
+
+  /** The dogfights: a span each along the track, and a plane over the start
+   *  of each, merged where planes would overlap. A plane is a link to the
+   *  dogfight school on that fight (the first, where they merged). */
+  layoutFights(width, pid) {
+    this.fightSpans.textContent = '';
+    this.fightMarks.textContent = '';
+    this.fightClusters = [];
+    if (!this.fights.length) return;
+    const pct = t => `${(t / this.duration) * 100}%`;
+    for (const fight of this.fights) {
+      fight.mine = this.flewIn(fight, pid);
+      const span = el('i', `rp-tl-fight${fight.mine ? ' mine' : ''}`);
+      span.style.left = pct(fight.t0);
+      span.style.width = `max(2px, ${((fight.t1 - fight.t0) / this.duration) * 100}%)`;
+      this.fightSpans.append(span);
+    }
+    for (const fight of this.fights) {
+      const x = (fight.t0 / this.duration) * width;
+      const last = this.fightClusters[this.fightClusters.length - 1];
+      if (last && x - last.x < MERGE_PX * 1.5) {
+        last.fights.push(fight);
+        continue;
+      }
+      this.fightClusters.push({ x, fights: [fight] });
+    }
+    for (const cluster of this.fightClusters) {
+      // The followed player's own fight leads its cluster.
+      const lead = cluster.fights.find(f => f.mine) ?? cluster.fights[0];
+      const mark = el('a', `rp-mk rp-mk-fight glyph${lead.mine ? ' mine' : ''}`);
+      mark.href = lead.href;
+      mark.target = '_blank';
+      mark.rel = 'noopener';
+      mark.tabIndex = -1;
+      mark.style.left = `${(cluster.x / width) * 100}%`;
+      mark.innerHTML = glyphSvg('plane');
+      mark.setAttribute('aria-label', `Dogfight: ${lead.title}. Open it in the dogfight school`);
+      cluster.mark = mark;
+      cluster.lead = lead;
+      this.fightMarks.append(mark);
+    }
+  }
+
+  /** The dogfights the pointer at `clientX` is over: a plane within reach,
+   *  else every span under it. At most two. */
+  fightsAt(clientX) {
+    if (!this.fights.length) return [];
+    const r = this.el.getBoundingClientRect();
+    const x = clientX - r.left;
+    const near = this.fightClusters.find(c => Math.abs(c.x - x) <= HOVER_PX);
+    if (near) return near.fights.slice(0, 2);
+    const t = this.timeAt(clientX);
+    const slack = (HOVER_PX / Math.max(1, r.width)) * this.duration;
+    return this.fights.filter(f => t >= f.t0 - slack && t <= f.t1 + slack).slice(0, 2);
   }
 
   /** The playhead at `t`. */
@@ -235,6 +318,8 @@ export class ReplayTimeline {
     if (e.button !== 0) return;
     this.ui.activity();
     this.player.ctx.ensureAudio?.();
+    // A dogfight's plane is a link: its click opens the school, no scrub.
+    if (e.target.closest?.('.rp-mk-fight')) return;
     const mark = e.target.closest?.('.rp-mk');
     const cluster = mark ? this.clusters.find(c => c.mark === mark) : null;
     if (cluster) {
@@ -280,13 +365,15 @@ export class ReplayTimeline {
     const rect = this.el.getBoundingClientRect();
     const stage = this.ui.root.getBoundingClientRect();
     const t = this.timeAt(clientX);
-    const cluster = this.clusterAt(clientX);
+    const fights = this.fightsAt(clientX);
+    const fightMark = fights.length && this.fightClusters.some(c => c.fights[0] === fights[0] && Math.abs(c.x - (clientX - rect.left)) <= HOVER_PX);
+    const cluster = fightMark ? null : this.clusterAt(clientX);
     this.hoverLine.style.left = `${((clientX - rect.left) / Math.max(1, rect.width)) * 100}%`;
-    const at = cluster ? cluster.lead.ch.t : t;
-    const frame = cluster ? this.frameOfChapter(cluster) : this.frameAt(t);
+    const at = cluster ? cluster.lead.ch.t : fightMark ? fights[0].t0 : t;
+    const frame = cluster ? this.frameOfChapter(cluster) : this.frameAt(at);
     // The content is rebuilt only when it changes: the tooltip is refreshed
     // every frame while the pointer rests on a playing timeline.
-    const key = `${cluster ? cluster.lead.i : ''}|${fmtClock(at)}|${frame?.id ?? ''}|${this.player.followPid}`;
+    const key = `${cluster ? cluster.lead.i : ''}|${fights.map(f => f.id).join(',')}|${fmtClock(at)}|${frame?.id ?? ''}|${this.player.followPid}`;
     if (key !== this.tipKey) {
       this.tipKey = key;
       // The time, and the round's own clock beside it.
@@ -321,6 +408,22 @@ export class ReplayTimeline {
           this.tipList.append(li);
         }
         if (cluster.items.length > TIP_EVENTS) this.tipList.append(el('li', 'more', `+${cluster.items.length - TIP_EVENTS} more`));
+      }
+      // The dogfights there, each with the way into the school.
+      for (const fight of fights) {
+        const li = el('li', `fight${fight.mine ? ' mine' : ''}`);
+        const icon = el('i', 'g');
+        icon.innerHTML = glyphSvg('plane');
+        const words = el('span', 'rp-tip-fight');
+        words.append(el('b', '', fight.title), el('small', '', fight.sub));
+        const go = el('a', 'rp-tip-shot rp-tip-school', 'Dogfight school');
+        go.href = fight.href;
+        go.target = '_blank';
+        go.rel = 'noopener';
+        go.title = 'Open this fight in the dogfight school: both paths, the shots, who was on whose tail';
+        go.addEventListener('click', () => this.hideTip());
+        li.append(icon, words, go);
+        this.tipList.append(li);
       }
     }
     // The frame nearest that moment, if playback has been there.
@@ -434,6 +537,7 @@ export class ReplayTimeline {
   }
 
   dispose() {
+    this.disposed = true;
     this.resize.disconnect();
     for (const map of [this.chapterFrames, this.bucketFrames]) {
       for (const frame of map.values()) frame?.image?.close?.();

@@ -195,6 +195,7 @@ html:has(.rp-root.board-open) #comms-canvas { visibility: hidden !important; }
   --rp-gold: #e8c35a;
   --rp-fire: #f0913c;
   --rp-life: #a9c36a;
+  --rp-air: #7fd0e4;
   --rp-font: 'Trebuchet MS', 'Geist Variable', 'Segoe UI', system-ui, sans-serif;
   --rp-mono: var(--mm-font-mono, ui-monospace, monospace);
   --rp-bar-h: 88px;
@@ -306,6 +307,17 @@ html:has(.rp-root.board-open) #comms-canvas { visibility: hidden !important; }
 .rp-mk.vehicle.mine { opacity: 1; }
 .rp-mk.spawn { color: var(--rp-life); }
 .rp-mk.round { width: 2px; height: 30px; bottom: -14px; background: var(--rp-khaki); opacity: .9; }
+/* The round's dogfights: a sky span along the track for each, a plane over
+   its start that opens it in the dogfight school (replay-dogfights.js). */
+.rp-tl-fights { position: absolute; inset: 0; pointer-events: none; }
+.rp-tl-fight { position: absolute; top: 0; bottom: 0; border-radius: 3px; background: var(--rp-air); opacity: .5;
+  box-shadow: 0 0 6px rgba(127, 208, 228, .35); }
+.rp-tl-fight.mine { opacity: .9; }
+.rp-tl-fightmarks { position: absolute; left: 0; right: 0; top: 1px; height: 16px; pointer-events: none; }
+.rp-mk-fight { pointer-events: auto; color: var(--rp-air); opacity: .85; bottom: 1px; transition: transform .12s, opacity .12s; }
+.rp-mk-fight svg { width: 11px; height: 11px; }
+.rp-mk-fight:hover { opacity: 1; transform: translateX(-50%) translateY(-1px) scale(1.25); }
+.rp-mk-fight.mine svg { width: 14px; height: 14px; filter: drop-shadow(0 0 3px rgba(127, 208, 228, .8)) drop-shadow(0 1px 1px rgba(0, 0, 0, .8)); }
 .rp-mini { position: absolute; left: 0; right: 0; bottom: 0; height: 3px; background: rgba(255, 255, 255, .1);
   opacity: 0; transition: opacity .35s; }
 .rp-mini > i { display: block; height: 100%; width: 0; background: var(--rp-khaki); }
@@ -337,6 +349,14 @@ html:has(.rp-root.board-open) #comms-canvas { visibility: hidden !important; }
 .rp-tip-list li.kill.mine i { color: var(--rp-gold); } .rp-tip-list li.death i { color: var(--rp-axis); }
 .rp-tip-list li.vehicle i { color: var(--rp-fire); }
 .rp-tip-list li.spawn i { color: var(--rp-life); }
+.rp-tip-list li.fight { padding-top: 4px; }
+.rp-tip-list li.fight i { color: var(--rp-air); align-self: flex-start; margin-top: 2px; }
+.rp-tip:has(li.fight) { max-width: min(380px, calc(100vw - 16px)); }
+.rp-tip-list li > span.rp-tip-fight { flex: 1; white-space: normal; line-height: 1.3; }
+.rp-tip-fight b { display: block; font-weight: 600; color: var(--rp-ink); }
+.rp-tip-fight small { display: block; font-size: 10px; }
+.rp-tip-shot.rp-tip-school { display: inline-flex; align-items: center; border-color: var(--rp-air); color: var(--rp-air); text-decoration: none; }
+.rp-tip-shot.rp-tip-school:hover { background: var(--rp-air); color: var(--rp-khaki-ink); }
 
 /* The player card. Its own width, not the half of the view left of its
    anchor, or a phone cuts the spawn countdown short. */
