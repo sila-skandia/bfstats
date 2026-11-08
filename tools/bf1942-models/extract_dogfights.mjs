@@ -27,8 +27,15 @@
 // `<out>/<id>.ndjson`, which the replay page plays in 3D on the fight's map
 // (the school's IN 3D buttons). `--clips all` writes one for every attack,
 // `--clips none` none.
+//
+// A recording may be the API's own stored file, `<slug>.ndjson.gz`, read as it
+// is (the refresh job, dogfights/refresh.mjs, reads the recordings volume).
+// `--max-mb <n>` skips a recording bigger than n MB unpacked: the whole file
+// is parsed at once and needs about five times its size in heap, so one long
+// round would otherwise take a memory-bounded run down with it.
 
-import { readFile, writeFile, mkdir, readdir, stat } from 'node:fs/promises';
+import { readFile, writeFile, mkdir, readdir, stat, open } from 'node:fs/promises';
+import { gunzipSync } from 'node:zlib';
 import path from 'node:path';
 import { pathToFileURL, fileURLToPath } from 'node:url';
 
@@ -46,7 +53,8 @@ const opt = (name, fallback = null) => {
   return i >= 0 ? args[i + 1] : fallback;
 };
 const flags = new Set(['--report']);
-const valued = new Set(['--out', '--feed', '--download', '--recent', '--catalogue', '--clips']);
+const valued = new Set(['--out', '--feed', '--download', '--recent', '--catalogue', '--clips', '--max-mb']);
+const maxBytes = opt('max-mb') ? Number(opt('max-mb')) * 1024 * 1024 : Infinity;
 const clips = opt('clips', 'dogfights');
 /** Seconds of the round a clip keeps before a fight and after it. */
 const CLIP_LEAD = 5, CLIP_TAIL = 3;
@@ -87,7 +95,7 @@ if (opt('download')) {
 }
 for (const [i, f] of [...files.entries()]) {
   if ((await stat(f)).isDirectory()) {
-    files.splice(i, 1, ...(await readdir(f)).filter(n => n.endsWith('.ndjson')).map(n => path.join(f, n)));
+    files.splice(i, 1, ...(await readdir(f)).filter(n => /\.ndjson(\.gz)?$/.test(n)).map(n => path.join(f, n)));
   }
 }
 if (!files.length) {
@@ -131,12 +139,32 @@ if (!report) {
   index = await readFile(indexFile, 'utf8').then(JSON.parse, () => []);
 }
 
-const tally = { recordings: 0, fights: 0, dogfights: 0, kills: 0 };
+/** A recording's size unpacked: a gzip member's last four bytes hold it (mod 4 GiB). */
+async function unpackedSize(file) {
+  if (!file.endsWith('.gz')) return (await stat(file)).size;
+  const fh = await open(file, 'r');
+  try {
+    const { size } = await fh.stat();
+    const tail = Buffer.alloc(4);
+    await fh.read(tail, 0, 4, Math.max(0, size - 4));
+    return tail.readUInt32LE(0);
+  } finally {
+    await fh.close();
+  }
+}
+
+const tally = { recordings: 0, fights: 0, dogfights: 0, kills: 0, skipped: 0 };
 for (const file of files) {
-  const slug = path.basename(file, '.ndjson');
+  const slug = path.basename(file).replace(/\.ndjson(\.gz)?$/, '');
   let rec, text;
   try {
-    text = await readFile(file, 'utf8');
+    const size = await unpackedSize(file);
+    if (size > maxBytes) {
+      console.warn(`${slug}: ${(size / 1048576).toFixed(0)} MB unpacked, over --max-mb ${opt('max-mb')}; skipped`);
+      tally.skipped++;
+      continue;
+    }
+    text = file.endsWith('.gz') ? gunzipSync(await readFile(file)).toString('utf8') : await readFile(file, 'utf8');
     rec = parseRecording(text);
   } catch (e) {
     console.warn(`${slug}: ${e.message}`);
@@ -188,4 +216,6 @@ if (!report) {
   index.sort((a, b) => (b.recorded ?? '').localeCompare(a.recorded ?? '') || a.slug.localeCompare(b.slug) || a.t0 - b.t0);
   await writeFile(indexFile, JSON.stringify(index, null, 1));
 }
+// Peak memory, for sizing the refresh job's limit (deploy/app/dogfights-cronjob.yaml).
+tally.maxRssMb = Math.round(process.resourceUsage().maxRSS / 1024);
 console.error(JSON.stringify(tally));

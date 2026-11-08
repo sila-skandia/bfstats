@@ -1,9 +1,10 @@
 # Dogfights from the recordings
 
-Status: built (2026-11-07). The detector, the extractor and the dogfight
-school's FROM THE RECORDINGS list are in place and run over the 32 public
-recordings; the extracted fights are local files, not yet published. Not yet
-flown or watched by a person.
+Status: built (2026-11-07), published (2026-11-08). The detector, the
+extractor and the dogfight school's FROM THE RECORDINGS list are in place.
+The fights are on play.bfstats.io under `/replays/dogfights/`, and a
+CronJob on the cluster rebuilds them from every public recording when the
+feed changes (The refresh job, below). Not yet flown or watched by a person.
 
 Real dogfights out of the round recordings players upload, played back in the
 dogfight school's theatre (features/dogfight-school) in its simplified view:
@@ -653,6 +654,64 @@ What it is not: the chaser is the school's gunner, not the player who was
 there, and 8 s is a short horizon; a way out that buys 8 s may still lose
 the fight.
 
+## The refresh job (2026-11-08)
+
+The fights the live school lists come from the `bfstats-dogfights` CronJob
+(`deploy/app/dogfights-cronjob.yaml`), not from a hand run.
+
+- **When.** Every three hours at :41 UTC (recordings arrive one to four a
+  day). `dogfights/refresh.mjs` reads the public feed from the API inside
+  the cluster and fingerprints it: each recording's slug, mod, level, date,
+  server, source and file size, plus the image's code version. When that
+  matches the live build's `build.json`, the run stops within a second.
+- **What.** Otherwise it runs `extract_dogfights.mjs` over every public
+  recording. Each is read in place from the API's recordings volume as the
+  API stores it, `<slug>.ndjson.gz`, so nothing is downloaded or cached. A
+  recording the feed lists but the disk lacks is left out; when most are
+  missing (the volume not mounted) the run fails. The aircraft catalogues
+  are the assets volume's `mesh/models`, so the run needs no internet.
+- **Where.** The assets volume's `mesh/replays/dogfights` is a symlink to a
+  build under `mesh/replays/.dogfights/<stamp>`. A run builds a new one
+  beside it (`<stamp>.partial`), makes it world-readable (dirs 755, files
+  644), adds `build.json` (when, the code version, the fingerprint, the
+  counts), then points the symlink at it with one rename. nginx serves the
+  old list or the new one, never part of either. The build it replaced
+  stays until the next swap, for a page that loaded the old index; older
+  builds are removed. The first run moved the hand-published folder into
+  `.dogfights/<stamp>-by-hand` (the only moment the folder was missing).
+- **When it fails** (the API down after four tries over a minute, an empty
+  feed, the extractor dying), the live list stays as it was.
+- **The image** is `anskia/bfstats-dogfights` (`dogfights/Dockerfile`): Node
+  22, the viewer tree, `sim/` and the extractor. Jenkins' Dogfights stage
+  builds it with every viewer, `sim/`, extractor or `dogfights/` change,
+  from the same commit as the mesh image. The CronJob pulls `:latest` each
+  run, and a new code version rebuilds every fight on the next run, so a
+  detector fix reaches the live list within three hours of the deploy.
+  Jenkins' role does not cover CronJobs, so the manifest is applied by hand
+  (the commands are at its top).
+- **Memory.** The extractor parses a whole recording at once, so memory
+  follows the biggest recording. Measured 2026-11-08 in the image on arm64
+  under one CPU, over the 36 public recordings (largest 48 MB unpacked):
+  556 to 601 MB peak RSS at a 256 to 640 MB heap, about two minutes. A 512
+  MiB limit OOM-killed it. One recording alone peaks at about 130 MB plus
+  five times its size. The job runs with a 640 MB heap, a 1 GiB limit and
+  `--max-mb 96`: a recording over 96 MB unpacked (about 60 to 120 minutes
+  of play) is skipped with a line in the log. The API takes up to 512 MB,
+  so a long round's fights are missing until the cap or the reader changes.
+  The extractor prints its own peak (`maxRssMb`) on its last line.
+- **By hand**: a run now, then its log:
+
+```bash
+kubectl --context hetzner -n bf42-stats create job --from=cronjob/bfstats-dogfights dogfights-manual-$(date +%s)
+kubectl --context hetzner -n bf42-stats logs -f job/<that name>
+curl -s https://play.bfstats.io/replays/dogfights/build.json
+```
+
+`refresh.mjs --force` rebuilds even when nothing changed. Locally, the same
+image runs against a folder of `<slug>.ndjson.gz` files, the feed's public
+URL (`DOGFIGHTS_API=https://bfstats.io/stats/recordings`) and a `mesh/models`
+copy; the replays side must be writable by uid 1000.
+
 ## Tests
 
 `tools/bf1942-models/tests/test_dogfight_recordings.py` writes a 30 s round
@@ -670,11 +729,6 @@ aimed count, the kill, and the theatre's frame and reading of it.
   GPU that is two levels' worth of work. Pausing the Range page's frame
   while the frame is up would halve it.
 
-- **Publishing.** The files and clips are local (`viewer/replays/dogfights` is
-  ignored, as the other generated trees are). For play.bfstats.io they need a home on the
-  assets volume and a run after each upload, or the replay page could find a
-  recording's fights itself (the detector is a browser module and runs in a
-  fraction of a second on a parsed recording).
 - **The heights** are the recording's own, metres above the map's zero, not
   above the ground under the plane.
 - **The planes drawn** are each pilot's own type: the Range battle's parked

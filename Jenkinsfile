@@ -62,6 +62,7 @@ pipeline {
               env.NOTIFICATIONS_CHANGED = 'true'
               env.MESH_CHANGED = 'true'
               env.NETCODE_CHANGED = 'true'
+              env.DOGFIGHTS_CHANGED = 'true'
           } else {
               env.API_CHANGED = changedFiles.any { it.startsWith('api/') } ? 'true' : 'false'
               env.UI_CHANGED = changedFiles.any { it.startsWith('ui/') } ? 'true' : 'false'
@@ -75,9 +76,15 @@ pipeline {
               env.NETCODE_CHANGED = changedFiles.any {
                   it.startsWith('netcode/') || it.startsWith('tools/bf1942-models/server/') || it.startsWith('tools/bf1942-models/viewer/')
               } ? 'true' : 'false'
+              // The dogfight refresh job runs the viewer's detector, so it
+              // rebuilds with every viewer change, like the mesh image.
+              env.DOGFIGHTS_CHANGED = changedFiles.any {
+                  it.startsWith('dogfights/') || it.startsWith('tools/bf1942-models/viewer/') ||
+                  it.startsWith('tools/bf1942-models/sim/') || it == 'tools/bf1942-models/extract_dogfights.mjs'
+              } ? 'true' : 'false'
           }
 
-          echo "API_CHANGED=${env.API_CHANGED}, UI_CHANGED=${env.UI_CHANGED}, NOTIFICATIONS_CHANGED=${env.NOTIFICATIONS_CHANGED}, MESH_CHANGED=${env.MESH_CHANGED}, NETCODE_CHANGED=${env.NETCODE_CHANGED}"
+          echo "API_CHANGED=${env.API_CHANGED}, UI_CHANGED=${env.UI_CHANGED}, NOTIFICATIONS_CHANGED=${env.NOTIFICATIONS_CHANGED}, MESH_CHANGED=${env.MESH_CHANGED}, NETCODE_CHANGED=${env.NETCODE_CHANGED}, DOGFIGHTS_CHANGED=${env.DOGFIGHTS_CHANGED}"
         }
       }
     }
@@ -407,6 +414,44 @@ pipeline {
               }
             }
           }
+        // The dogfight school's refresh job (deploy/app/dogfights-cronjob.yaml,
+        // features/dogfight-recordings). Build only: the CronJob pulls
+        // :latest on its next run, and Jenkins' role does not cover CronJobs,
+        // so the manifest itself is applied by hand.
+        stage('Dogfights Pipeline') {
+          when { anyOf { expression { env.DOGFIGHTS_CHANGED == 'true' }; expression { params.BUILD_ALL } } }
+          stages {
+            stage('Build Dogfights Docker Image') {
+              agent {
+                kubernetes {
+                  cloud 'Local k8s'
+                  yamlFile 'deploy/pod.yaml'
+                  nodeSelector 'kubernetes.io/hostname=bethany'
+                }
+              }
+              steps {
+                container('dind') {
+                  withCredentials([
+                    usernamePassword(credentialsId: 'jenkins-bf1942-stats-dockerhub-pat', usernameVariable: 'DOCKER_USERNAME', passwordVariable: 'DOCKER_PASSWORD')
+                  ]) {
+                    sh '''
+                      echo "$DOCKER_PASSWORD" | docker login -u "$DOCKER_USERNAME" --password-stdin
+
+                      docker buildx create --name multiarch-builder-dogfights --driver docker-container --use || true
+                      docker buildx use multiarch-builder-dogfights
+
+                      DOCKER_BUILDKIT=1 docker buildx build -f dogfights/Dockerfile . \
+                        --platform linux/arm64 \
+                        --build-arg BUILDKIT_PROGRESS=plain \
+                        --push \
+                        -t anskia/bfstats-dogfights:latest
+                    '''
+                  }
+                }
+              }
+            }
+          }
+        }
         // BF1942 netcode room server (features/netcode-play-multiplayer,
         // P2). DISABLED by default: the deployment files are written and
         // NOT applied (repo convention — deployment is the owner's call),

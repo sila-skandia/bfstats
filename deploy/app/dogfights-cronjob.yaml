@@ -1,0 +1,104 @@
+# The dogfight school's Fights list, kept fresh (features/dogfight-recordings,
+# "The refresh job"). Every three hours it reads the public REPLAY feed and,
+# when anything in it has changed since the live build (or the image has),
+# re-runs the dogfight extractor over every public recording and swaps the
+# result into the assets volume's mesh/replays/dogfights, which bfstats-mesh
+# serves as /replays/dogfights/ (mesh-deployment.yaml). A run with nothing
+# new exits in a second.
+#
+# Inputs, read in place, so nothing is downloaded or cached: the API's
+# recordings volume (recordings-storage.yaml, `<slug>.ndjson.gz` on the
+# node's root disk) and the aircraft catalogues in mesh/models. Output: a
+# fresh folder under mesh/replays/.dogfights/, then one rename of the
+# mesh/replays/dogfights symlink (dogfights/refresh.mjs). A failed run
+# leaves the live list as it was.
+#
+# The image is built by Jenkins (the Dogfights stage) from the same commit
+# as the mesh image; imagePullPolicy Always makes the next run use it, and
+# a new image's code version makes that run rebuild every fight. Jenkins'
+# role does not cover CronJobs, so this file is applied by hand:
+#   kubectl --context hetzner -n bf42-stats apply -f deploy/app/dogfights-cronjob.yaml
+# and a run started now with:
+#   kubectl --context hetzner -n bf42-stats create job --from=cronjob/bfstats-dogfights dogfights-manual-$(date +%s)
+apiVersion: batch/v1
+kind: CronJob
+metadata:
+  name: bfstats-dogfights
+  namespace: bf42-stats
+spec:
+  # Recordings arrive one to four a day (2026-11). Off the hour, so the run
+  # does not land on the API's hourly aggregate and ranking sweeps.
+  schedule: "41 */3 * * *"
+  concurrencyPolicy: Forbid
+  startingDeadlineSeconds: 3600
+  successfulJobsHistoryLimit: 1
+  failedJobsHistoryLimit: 3
+  jobTemplate:
+    spec:
+      # A failure is a fault to look at (the API down, a recording too big
+      # for the limit), not a flake: one retry, then the next schedule.
+      backoffLimit: 1
+      activeDeadlineSeconds: 1800
+      template:
+        metadata:
+          labels:
+            app: bfstats-dogfights
+        spec:
+          restartPolicy: Never
+          nodeSelector:
+            kubernetes.io/arch: arm64
+          # uid and gid 1000: the owner of the recordings directory (0750,
+          # the API deployment's init container) and of the assets volume's
+          # trees (FileBrowser's user).
+          securityContext:
+            runAsUser: 1000
+            runAsGroup: 1000
+            runAsNonRoot: true
+          containers:
+            - name: dogfights
+              image: anskia/bfstats-dogfights:latest
+              imagePullPolicy: Always
+              env:
+                - name: DOGFIGHTS_API
+                  value: "http://bf42-stats-service:8080/stats/recordings"
+                # The extractor parses a whole recording at once. Measured
+                # 2026-11-08 over the 36 public recordings (largest 48 MB
+                # unpacked), arm64, 1 CPU: 556-601 MB peak RSS at a 256-448 MB
+                # heap, 2 min; a 512Mi limit OOM-killed it. A single recording
+                # peaks at about 130 MB plus 5x its size, so 96 MB (a 60 to
+                # 120 minute round) fits the heap and limit below; a bigger
+                # one is skipped with a line in the log rather than taking
+                # every run down with it.
+                - name: DOGFIGHTS_HEAP_MB
+                  value: "640"
+                - name: DOGFIGHTS_MAX_MB
+                  value: "96"
+              # No priorityClassName: when the node is short, this is the
+              # first thing that should go. It runs only while the feed has
+              # changed, two minutes at a time.
+              resources:
+                requests:
+                  memory: "640Mi"
+                  cpu: "100m"
+                limits:
+                  memory: "1Gi"
+                  cpu: "1000m"
+              volumeMounts:
+                - name: recordings
+                  mountPath: /recordings
+                  readOnly: true
+                - name: assets-data
+                  mountPath: /models
+                  subPath: assets/mesh/models
+                  readOnly: true
+                - name: assets-data
+                  mountPath: /replays
+                  subPath: assets/mesh/replays
+          volumes:
+            - name: recordings
+              persistentVolumeClaim:
+                claimName: bfstats-recordings
+                readOnly: true
+            - name: assets-data
+              persistentVolumeClaim:
+                claimName: bf42-stats-pvc-v2
