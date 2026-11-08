@@ -659,8 +659,10 @@ the fight.
 The fights the live school lists come from the `bfstats-dogfights` CronJob
 (`deploy/app/dogfights-cronjob.yaml`), not from a hand run.
 
-- **When.** Every three hours at :41 UTC (recordings arrive one to four a
-  day). `dogfights/refresh.mjs` reads the public feed from the API inside
+- **When.** Once a day at 08:41 UTC, the quiet end of the day for the
+  site and the game servers (recordings arrive one to four a day). The API's
+  hourly sweeps move with each API deploy (they start 3 and 10 minutes
+  after the pod), so no fixed minute avoids them. `dogfights/refresh.mjs` reads the public feed from the API inside
   the cluster and fingerprints it: each recording's slug, mod, level, date,
   server, source and file size, plus the image's code version. When that
   matches the live build's `build.json`, the run stops within a second.
@@ -686,7 +688,8 @@ The fights the live school lists come from the `bfstats-dogfights` CronJob
   builds it with every viewer, `sim/`, extractor or `dogfights/` change,
   from the same commit as the mesh image. The CronJob pulls `:latest` each
   run, and a new code version rebuilds every fight on the next run, so a
-  detector fix reaches the live list within three hours of the deploy.
+  detector fix reaches the live list on the next morning's run (or a run by
+  hand).
   Jenkins' role does not cover CronJobs, so the manifest is applied by hand
   (the commands are at its top).
 - **Memory.** The extractor parses a whole recording at once, so memory
@@ -694,7 +697,10 @@ The fights the live school lists come from the `bfstats-dogfights` CronJob
   under one CPU, over the 36 public recordings (largest 48 MB unpacked):
   556 to 601 MB peak RSS at a 256 to 640 MB heap, about two minutes. A 512
   MiB limit OOM-killed it. One recording alone peaks at about 130 MB plus
-  five times its size. The job runs with a 640 MB heap, a 1 GiB limit and
+  five times its size. The job runs with a 640 MB heap, a 1 GiB limit, a
+  64Mi request (low on purpose, as the namespace sizes its pods: the node
+  has no 640Mi to reserve, and the job borrows unused memory for its two
+  minutes), and
   `--max-mb 96`: a recording over 96 MB unpacked (about 60 to 120 minutes
   of play) is skipped with a line in the log. The API takes up to 512 MB,
   so a long round's fights are missing until the cap or the reader changes.

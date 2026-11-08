@@ -1,5 +1,5 @@
 # The dogfight school's Fights list, kept fresh (features/dogfight-recordings,
-# "The refresh job"). Every three hours it reads the public REPLAY feed and,
+# "The refresh job"). Once a day it reads the public REPLAY feed and,
 # when anything in it has changed since the live build (or the image has),
 # re-runs the dogfight extractor over every public recording and swaps the
 # result into the assets volume's mesh/replays/dogfights, which bfstats-mesh
@@ -26,9 +26,13 @@ metadata:
   name: bfstats-dogfights
   namespace: bf42-stats
 spec:
-  # Recordings arrive one to four a day (2026-11). Off the hour, so the run
-  # does not land on the API's hourly aggregate and ranking sweeps.
-  schedule: "41 */3 * * *"
+  # Recordings arrive one to four a day (2026-11). 08:41 UTC is the quiet end
+  # of the day for the site and the game servers (night in the Americas,
+  # early morning in Europe). The API's hourly aggregate and ranking sweeps
+  # cannot be dodged by the clock: each starts 3 or 10 minutes after the API
+  # pod does and repeats an hour after it ends, so their minute moves with
+  # every API deploy.
+  schedule: "41 8 * * *"
   concurrencyPolicy: Forbid
   startingDeadlineSeconds: 3600
   successfulJobsHistoryLimit: 1
@@ -74,12 +78,16 @@ spec:
                 - name: DOGFIGHTS_MAX_MB
                   value: "96"
               # No priorityClassName: when the node is short, this is the
-              # first thing that should go. It runs only while the feed has
-              # changed, two minutes at a time.
+              # first thing that should go. The request is low on purpose,
+              # the way this namespace sizes its pods: the node has no 640Mi
+              # left to reserve, so a real-sized request would leave the pod
+              # Pending. It borrows memory nobody is using for the two
+              # minutes it runs. The limit is the measured peak with headroom;
+              # limits here add up to more than the node has, by design.
               resources:
                 requests:
-                  memory: "640Mi"
-                  cpu: "100m"
+                  memory: "64Mi"
+                  cpu: "50m"
                 limits:
                   memory: "1Gi"
                   cpu: "1000m"
