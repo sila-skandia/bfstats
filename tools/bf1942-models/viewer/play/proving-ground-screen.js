@@ -348,8 +348,7 @@ export function createProvingGroundScreen({
             <span class="pgm-mode-body">
               <span class="pgm-mode-kicker">Air combat</span>
               <span class="pgm-mode-title">Dogfight school</span>
-              <span class="pgm-mode-text">The classic air combat moves and their counters, replayed in the theatre, then
-                flown for real against an ace with a coach in your ear. Ring courses for pure stick skill.</span>
+              <span class="pgm-mode-text">Improve your dogfighting by learning from other players.</span>
               <ul class="pgm-mode-facts" role="list"><li>Six lessons</li><li>Ring courses</li><li>Bot ace</li></ul>
               <span class="pgm-mode-cta">Report for training ${CHEVRON}</span>
             </span>

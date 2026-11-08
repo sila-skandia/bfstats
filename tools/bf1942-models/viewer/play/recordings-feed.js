@@ -37,7 +37,7 @@ import { artCandidates, firstLoadable, isBlankFrame } from '../level-art.js';
 import { loadHudPaths } from '../hud-pack.js';
 import { createShorts } from './replay-shorts.js';
 import { reactionBar } from '../comment-reactions.js';
-import { remindToUpdate } from '../recorder-update.js';
+import { BATTLEVIEW, DISCORD, remindToUpdate } from '../recorder-update.js';
 
 const PAGE_SIZE = 24;
 
@@ -65,11 +65,15 @@ const ICONS = {
   chevron: '<path d="M3.5 6 8 10.5 12.5 6" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/>',
   round: '<rect x="1.8" y="5.2" width="9" height="7" rx="1.2" fill="none" stroke="currentColor" stroke-width="1.4"/><path d="M4.6 3.2h8.4a1 1 0 0 1 1 1v6.3" fill="none" stroke="currentColor" stroke-width="1.4" stroke-linecap="round"/><path d="M5.2 7.3v2.9l2.6-1.45z" fill="currentColor"/>',
   unlink: '<path d="M6.6 9.4 9.4 6.6M7.2 4.6l1.2-1.2a2.6 2.6 0 0 1 3.7 3.7l-1.2 1.2M8.8 11.4l-1.2 1.2a2.6 2.6 0 0 1-3.7-3.7l1.2-1.2M2.5 2.5l11 11" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"/>',
+  // Record: the button on a camera, lit.
+  rec: '<circle cx="8" cy="8" r="6" fill="none" stroke="currentColor" stroke-width="1.4"/><circle class="rf-rec-dot" cx="8" cy="8" r="3" fill="#d9574a"/>',
   more: '<circle cx="8" cy="3.2" r="1.45" fill="currentColor"/><circle cx="8" cy="8" r="1.45" fill="currentColor"/><circle cx="8" cy="12.8" r="1.45" fill="currentColor"/>',
   // A server recording: the whole field, every player on it (radar sweep).
   field: '<circle cx="8" cy="8" r="5.6" fill="none" stroke="currentColor" stroke-width="1.4"/><circle cx="8" cy="8" r="2.6" fill="none" stroke="currentColor" stroke-width="1.2" opacity=".7"/><path d="M8 8 12 4.1" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"/><circle cx="8" cy="8" r="1.1" fill="currentColor"/>',
 };
 const icon = name => `<svg viewBox="0 0 16 16" aria-hidden="true">${ICONS[name] ?? ''}</svg>`;
+/** Discord's mark, in its own box: the head's link to the community. */
+const DISCORD_MARK = '<svg class="rf-discord-mark" viewBox="0 0 127.14 96.36" aria-hidden="true"><path fill="currentColor" d="M107.7 8.07A105.15 105.15 0 0 0 81.47 0a72.06 72.06 0 0 0-3.36 6.83 97.68 97.68 0 0 0-29.11 0A72.37 72.37 0 0 0 45.64 0a105.89 105.89 0 0 0-26.25 8.09C2.79 32.65-1.71 56.6.54 80.21a105.73 105.73 0 0 0 32.17 16.15 77.7 77.7 0 0 0 6.89-11.11 68.42 68.42 0 0 1-10.85-5.18c.91-.66 1.8-1.34 2.66-2a75.57 75.57 0 0 0 64.32 0c.87.71 1.76 1.39 2.66 2a68.68 68.68 0 0 1-10.87 5.19 77 77 0 0 0 6.89 11.1 105.25 105.25 0 0 0 32.19-16.14c2.64-27.38-4.51-51.11-18.9-72.15zM42.45 65.69C36.18 65.69 31 60 31 53s5-12.74 11.43-12.74S54 46 53.89 53s-5.05 12.69-11.44 12.69zm42.24 0C78.41 65.69 73.25 60 73.25 53s5-12.74 11.44-12.74S96.23 46 96.12 53s-5.04 12.69-11.43 12.69z"/></svg>';
 
 const STYLE = `
 .rf-root { position: fixed; z-index: 20; display: flex; min-width: 0; min-height: 0;
@@ -98,6 +102,21 @@ const STYLE = `
 .rf-account .rf-who { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; max-width: 16ch; }
 .rf-head .rf-btn { color: var(--rf-khaki-ink); border-color: rgba(21, 21, 14, .35); background: rgba(255, 255, 255, .12); height: 24px; }
 .rf-head .rf-btn:hover { background: rgba(255, 255, 255, .26); border-color: rgba(21, 21, 14, .6); }
+/* The community link: Discord's mark alone, and on hover or focus the word
+   Feedback slides out of it while the pill takes Discord's blurple. */
+.rf-discord { display: inline-flex; align-items: center; height: 24px; padding: 0 6px; flex: none;
+  border: 1px solid rgba(21, 21, 14, .35); border-radius: 12px; background: rgba(255, 255, 255, .12); color: var(--rf-khaki-ink);
+  text-decoration: none; overflow: hidden;
+  transition: background-color .22s ease, border-color .22s ease, color .22s ease, padding .28s cubic-bezier(.2, .8, .2, 1); }
+.rf-root .rf-discord .rf-discord-mark { width: 17px; height: 13px; transition: transform .28s cubic-bezier(.2, .8, .2, 1); }
+.rf-discord-label { display: inline-block; max-width: 0; opacity: 0; transform: translateX(10px); white-space: nowrap;
+  font: 800 11px/1 'Trebuchet MS', 'Segoe UI', sans-serif; letter-spacing: .12em; text-transform: uppercase;
+  transition: max-width .32s cubic-bezier(.2, .8, .2, 1), opacity .2s ease .06s, transform .32s cubic-bezier(.2, .8, .2, 1),
+    margin .32s cubic-bezier(.2, .8, .2, 1); }
+.rf-discord:hover, .rf-discord:focus-visible { background: #5865f2; border-color: #5865f2; color: #fff; padding: 0 10px 0 8px; }
+.rf-discord:hover .rf-discord-mark, .rf-discord:focus-visible .rf-discord-mark { transform: rotate(-8deg) scale(1.08); }
+.rf-discord:hover .rf-discord-label, .rf-discord:focus-visible .rf-discord-label { max-width: 12ch; opacity: 1; transform: none; margin-right: 7px; }
+.rf-discord:focus-visible { outline: 1px solid var(--rf-khaki-ink); outline-offset: 1px; }
 .rf-bar { display: flex; flex-wrap: wrap; align-items: center; gap: 8px 10px; padding: 10px 14px; flex: none;
   border-bottom: 1px solid var(--rf-edge); background: var(--rf-plate-deep); }
 .rf-seg { display: inline-flex; border: 1px solid var(--rf-edge); border-radius: 6px; overflow: hidden; }
@@ -121,6 +140,13 @@ const STYLE = `
 .rf-btn:disabled { opacity: .45; cursor: default; }
 .rf-btn:focus-visible, .rf-seg button:focus-visible, .rf-card a:focus-visible, .rf-time:focus-visible, .rf-player:focus-visible,
 .rf-input:focus-visible, .rf-select:focus-visible { outline: 1px solid var(--rf-gold); outline-offset: 1px; }
+/* Record your games: the camera's red light, breathing, a ring of it going
+   out round the button. */
+.rf-rec-dot { transform-box: fill-box; transform-origin: center; animation: rf-rec-dot 1.6s ease-in-out infinite; }
+.rf-record svg { overflow: visible; border-radius: 50%; animation: rf-rec-ring 1.6s ease-out infinite; }
+.rf-record:hover .rf-rec-dot { animation-duration: .8s; }
+@keyframes rf-rec-dot { 0%, 100% { opacity: 1; transform: scale(1); } 50% { opacity: .55; transform: scale(.78); } }
+@keyframes rf-rec-ring { 0% { box-shadow: 0 0 0 0 rgba(217, 87, 74, .55); } 70%, 100% { box-shadow: 0 0 0 7px rgba(217, 87, 74, 0); } }
 .rf-storage { color: var(--rf-faint); font-size: 11px; white-space: nowrap; }
 /* The filters: quiet until touched, lit while they narrow the feed. What a
    filter says is drawn; the native select lies over it unseen, so the pill is
@@ -435,8 +461,10 @@ const STYLE = `
   .rf-chosen { grid-template-columns: 96px minmax(0, 1fr); }
 }
 @media (prefers-reduced-motion: reduce) {
+  .rf-discord, .rf-discord-label, .rf-root .rf-discord .rf-discord-mark,
   .rf-play, .rf-drop, .rf-progress i, .rf-filter, .rf-deck::before, .rf-deck::after, .rf-manage-btn { transition: none; }
   .rf-skeleton .rf-cover, .rf-root .rf-weak::before { animation: none; }
+  .rf-rec-dot, .rf-record svg { animation: none; }
 }
 `;
 
@@ -662,7 +690,14 @@ export function createReplayFeed({ root = '../', onWatchFile = null, playerName 
   const heading = el('h1', '', 'Recordings');
   const countEl = el('span', 'rf-count');
   const account = el('div', 'rf-account');
-  head.append(heading, countEl, el('span', 'rf-spacer'), account);
+  const discord = el('a', 'rf-discord');
+  discord.href = DISCORD;
+  discord.target = '_blank';
+  discord.rel = 'noopener noreferrer';
+  discord.title = 'Feedback, bugs and ideas: the bfstats.io Discord';
+  discord.setAttribute('aria-label', 'Feedback on Discord');
+  discord.innerHTML = `<span class="rf-discord-label" aria-hidden="true">Feedback</span>${DISCORD_MARK}`;
+  head.append(heading, countEl, el('span', 'rf-spacer'), discord, account);
   const bar = el('div', 'rf-bar');
   const sortSeg = el('div', 'rf-seg');
   sortSeg.setAttribute('role', 'group');
@@ -700,8 +735,15 @@ export function createReplayFeed({ root = '../', onWatchFile = null, playerName 
   const watchFile = button('quiet', 'Watch a file', () => onWatchFile?.(), 'file');
   watchFile.title = 'Watch a bf42plus recording from this computer without sharing it';
   watchFile.hidden = !onWatchFile;
+  // How to make a recording at all: BattleView's install steps on bfstats.io.
+  const recordLink = el('a', 'rf-btn quiet rf-record');
+  recordLink.href = `${BATTLEVIEW}#bv-install`;
+  recordLink.target = '_blank';
+  recordLink.rel = 'noopener';
+  recordLink.title = 'Install BattleView to record your own rounds, or your whole server';
+  recordLink.innerHTML = `${icon('rec')}<span>Record your games</span>`;
   const shareBtn = button('primary', 'Share a recording', () => openShare(), 'upload');
-  bar.append(sortSeg, sourceSeg, filtersEl, storageEl, el('span', 'rf-spacer'), watchFile, shareBtn);
+  bar.append(sortSeg, sourceSeg, filtersEl, storageEl, el('span', 'rf-spacer'), recordLink, watchFile, shareBtn);
   const body = el('div', 'rf-body');
   const shade = el('div', 'rf-shade');
   shade.hidden = true;
