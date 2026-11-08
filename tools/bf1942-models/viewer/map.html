@@ -3544,10 +3544,18 @@ replayController = createReplayController({
         if (!entireBefore) { optEntire.checked = true; optEntire.dispatchEvent(new Event('change')); }
         // Only the two planes heard: not the wind, not the level's ambience.
         pageAudio.quietWorld = true;
+        // The brand goes back to the school on this fight (inside the
+        // school's own window, `embed`, it hands back to its schematic).
+        const schoolHome = new URL('dogfight.html', location.href);
+        schoolHome.search = '';
+        schoolHome.searchParams.set('fight', params.get('school'));
+        if (params.get('mod') && params.get('mod') !== 'bf1942') schoolHome.searchParams.set('mod', params.get('mod'));
         const theatre = createDogfightTheatre({
           host: document.getElementById('stage'),
           makePlane: () => null,
           planeName: '',
+          siteHref: schoolHome.href,
+          siteTitle: 'Back to the school',
           // Esc: the round itself, as the replay plays it.
           onClose: () => {
             schoolCamera = null;

@@ -11,6 +11,12 @@
 // `?arena=<battle>` picks the arena, `?lesson=<id>` opens a lesson; both are
 // otherwise this browser's last (`localStorage`), and the plane is the one
 // the Range's school remembers too.
+//
+// `?mod=<id>` is the game or mod the school is on (else the one the viewer's
+// pages last picked): its arenas are its own battles, its planes its own
+// models, and its recorded fights the ones listed first. A mod with no
+// battle that has fighters on both sides keeps vanilla's arenas for the
+// lessons, and says so. The pill in the header changes it, and reloads.
 
 import { Aircraft } from './aircraft.js';
 import { createDogfightTheatre } from './dogfight-theatre.js';
@@ -18,9 +24,10 @@ import { fighterRank } from './dogfight-lessons.js';
 import { arenasFrom, planeIn, aceAgainst, arenaUrl } from './dogfight-arena.js';
 import { loadPlaneModel, airframeRoot, planeVisual } from './plane-models.js';
 import { VIEWER_ROOT } from './viewer-root.js';
+import { loadMods, stored as storedMod, remember, trees, VANILLA } from './mods.js';
 
 const params = new URLSearchParams(location.search);
-const ARENA_KEY = 'dogfight-school:arena';
+const ARENA_KEY_VANILLA = 'dogfight-school:arena';
 /** The Range's school remembers your plane under the same name. */
 const PLANE_KEY = 'dogfight-school:plane';
 const stored = key => { try { return localStorage.getItem(key); } catch { return null; } };
@@ -38,12 +45,39 @@ async function json(rel) {
   return res.json();
 }
 
-const [rows, levels] = await Promise.all([json('models/models.json'), json('maps/maps.json')]);
-const arenas = arenasFrom(rows, levels.map(l => l.name));
+/** The games and mods the school can be on: a tree of their own with models
+ *  and levels extracted (a view such as Community Maps is its tree's). */
+const allMods = await loadMods();
+const offered = trees(allMods).filter(m => m.id === VANILLA.id || (Number(m.counts?.models) > 0 && Number(m.counts?.maps) > 0));
+/** A link to one fight with no `?mod=` is on that fight's mod. */
+async function fightMod(id) {
+  if (!id) return null;
+  try { return (await json('replays/dogfights/index.json')).find(r => r.id === id)?.mod ?? VANILLA.id; } catch { return null; }
+}
+const wantMod = String(params.get('mod') || await fightMod(params.get('fight')) || storedMod() || VANILLA.id).toLowerCase();
+const mod = offered.find(m => m.id === wantMod) ?? offered.find(m => m.id === VANILLA.id) ?? VANILLA;
+const vanillaMod = offered.find(m => m.id === VANILLA.id) ?? VANILLA;
+
+/** A tree's arenas, from its own catalogue over its own levels. */
+async function arenasOf(m) {
+  const [rows, levels] = await Promise.all([json(`${m.paths.models}/models.json`), json(`${m.paths.maps}/maps.json`)]);
+  return arenasFrom(rows, levels.map(l => l.name));
+}
+say(`Reading ${mod.name || mod.short}'s battles`);
+let arenas = await arenasOf(mod).catch(error => { console.warn(`dogfight school: ${mod.id} arenas`, error); return []; });
+/** The tree the arenas (and so the lessons' planes and FLY IT) come from. */
+let arenaMod = mod;
+if (!arenas.length && mod.id !== VANILLA.id) {
+  arenas = await arenasOf(vanillaMod);
+  arenaMod = vanillaMod;
+}
 if (!arenas.length) {
   say('No arena: no battle here has fighters on both sides');
   throw new Error('dogfight school: no arenas');
 }
+const modId = m => (m.id === VANILLA.id ? null : m.id);
+/** The arena is remembered per mod; vanilla keeps the key it always had. */
+const ARENA_KEY = arenaMod.id === VANILLA.id ? ARENA_KEY_VANILLA : `${ARENA_KEY_VANILLA}:${arenaMod.id}`;
 const want = (params.get('arena') ?? stored(ARENA_KEY) ?? '').toLowerCase();
 let arena = arenas.find(a => a.map.toLowerCase() === want) ?? arenas[0];
 let choice = stored(PLANE_KEY);
@@ -62,7 +96,7 @@ async function loadModels() {
   const ticket = ++loading;
   const best = [...arena.planes].sort((a, b) => fighterRank(a.template) - fighterRank(b.template))[0];
   const me = mine(), ace = aceAgainst(arena, me);
-  const [f, m, a] = await Promise.all([best, me, ace].map(p => (p ? loadPlaneModel(p.template) : null)));
+  const [f, m, a] = await Promise.all([best, me, ace].map(p => (p ? loadPlaneModel(p.template, modId(arenaMod)) : null)));
   if (ticket !== loading) return false;
   models.fighter = airframeRoot(f) ?? models.fighter;
   models.mine = airframeRoot(m) ?? models.fighter;
@@ -80,7 +114,7 @@ if (!models.fighter) {
 /** Into the arena: the lesson (or ring course) flown in your plane. */
 function fly({ lesson = null, move = null, course = null }) {
   const me = mine();
-  location.href = arenaUrl(VIEWER_ROOT.href, { map: arena.map, side: me?.side ?? 'Allied', lesson, move, course, base: location.href });
+  location.href = arenaUrl(VIEWER_ROOT.href, { map: arena.map, mod: modId(arenaMod), side: me?.side ?? 'Allied', lesson, move, course, base: location.href });
 }
 
 const theatre = createDogfightTheatre({
@@ -120,6 +154,22 @@ const theatre = createDogfightTheatre({
     choice = template;
     store(PLANE_KEY, template);
     loadModels().then(on => { if (on) theatre.planesChanged(); });
+  },
+  mods: {
+    list: () => offered.map(m => ({ id: m.id, name: m.name || m.short || m.id, short: m.short || m.name || m.id,
+      icon: new URL(m.icon || `icons/mods/${m.id}.png`, VIEWER_ROOT).href })),
+    current: () => mod.id,
+    note: () => (arenaMod === mod ? null
+      : `${mod.short || mod.name} has no battle with fighters on both sides yet: the lessons fly in ${arenaMod.short}'s.`),
+    // Another mod is another catalogue: the page starts again on it, on the
+    // lesson or scenario on stage (a recorded fight is the old mod's).
+    pick: id => {
+      remember(id);
+      const next = new URL(location.href);
+      for (const k of ['mod', 'fight', 'arena']) next.searchParams.delete(k);
+      if (id !== VANILLA.id) next.searchParams.set('mod', id);
+      location.href = next.href;
+    },
   },
   arenas: {
     list: () => arenas,

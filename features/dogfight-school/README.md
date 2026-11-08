@@ -1094,12 +1094,51 @@ their controls? I think that would be very cool": it does.
   should take you back to The Range tab, not the main site". The sigil and
   the bfstats.io line top left of the school page now go where Esc goes: the
   front end's Range tab (`play/index.html?tab=proving`), in the same tab
-  (`siteHref`, `siteTitle`); anywhere else the theatre is drawn they still
-  open the site.
+  (`siteHref`, `siteTitle`); anywhere else the theatre is drawn they go to
+  the school's page (2026-11-09, below).
 - **O goes back to the school.** "When you exit the dogfight simulator it
   should take you back to the dogfight school": O ends the lesson and opens
   the school overlay on that lesson (`page.openSchool(id)`), the mouse let
   go, instead of leaving you on the floor with V to press.
+
+## The school's mod, and the logo always home (2026-11-09)
+
+- **The logo goes back to the school.** The owner, from a fight's 3D map:
+  "clicked the site logo it took me back to the main stats site. It should go
+  back to the dogfight school always." The theatre's brand now defaults to
+  the school's own page (`dogfight.html`, with the page's `?mod=`) in the same
+  tab, titled *Back to the school*; nothing in the school opens bfstats.io
+  any more. On a fight's map (`map.html?school=<id>`) it goes to
+  `dogfight.html?fight=<id>&mod=<mod>`, the school on that fight; as the
+  LAYERS card's map inside the school (`embed`) it hands back to the
+  schematic, as Esc does. The school page itself keeps its brand on the
+  Range tab. The arena's load briefing (`dogfight-briefing.js`) wears the
+  same: its sigil and *Dogfight school* link to the school page.
+- **The mod pill.** Top right of the school's header, beside *The Range*: the
+  mod's icon and short name; pressed, the games and mods with models and
+  levels extracted (`mods.json` trees, not views) list under the header, icon,
+  name and short name. A pick reloads the page on `?mod=<id>` (and remembers
+  it as the viewer's other pages do, `mods.js` `remember`), keeping the lesson
+  and scenario, dropping a fight and an arena. The school is then that mod's:
+  its arenas from its own `models.json` over its own `maps.json`, its planes
+  from its tree (`loadPlaneModel(template, mod)`), FLY IT into its battle
+  (`arenaUrl` `mod`), the arena remembered per mod, and its fights listed
+  first (the recordings' MOD chip already followed `?mod=`). On 2026-11-09
+  the trees give: BF1942 5 arenas (20 levels), RtR and SW theirs, EoD 2 levels, FH 1,
+  FHSW 12 arenas (El Alamein's Spitfire Ib v Bf 109-F first), FHSWEurope 16 levels. Desert
+  Combat has none (its jets are not in `FIGHTERS`): the lessons keep
+  BF1942's arenas and a line under the header says so.
+- **A fight link carries its mod.** `?fight=<id>` with no `?mod=` opens the
+  page on that fight's mod (the dogfight index's `mod`), so the pill, the
+  arenas and the fights list agree.
+- **Fixed on the way:** the address dropped `?fight=` as a recording was
+  picked (`syncUrl` read the fight on stage, which the pick had not put there
+  yet); it reads the recording picked.
+- Checked in the browser pane: the pill and list at 1400 px and at phone
+  width, a switch to FHSW (12 arenas, its Spitfire drawn), DC's fallback
+  line, and Tulagi Island's map with the school over it: the logo opened
+  `dogfight.html?fight=zejq6ugy69-1&mod=fhsweurope` in the same tab. FLY IT
+  into a mod's arena was not flown.
 
 ## Reviewed against the real tactics (2026-11-07)
 
@@ -1318,7 +1357,9 @@ above.
 - **His hits are counted, not felt.** The range is harmless, so the score
   counts his rounds on you and a banner says when 22 would have brought you
   down (`KILL_HITS`, the duel's number, not read from the damage tables).
-- **Mods** are untested: the school picks fighters by name (`FIGHTERS`).
+- **Mods** pick fighters by name (`FIGHTERS`): a mod whose fighters are
+  named otherwise (Desert Combat's jets) has no arena, and FLY IT into a
+  mod's arena has not been flown.
 - **The guide follows one counter.** It is the lesson's counter pilot, so in
   the free fight against the ace it flies *You meet the dive* whatever he
   does. A guide that picks the counter to the ace's phase is the next step.

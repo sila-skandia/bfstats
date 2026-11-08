@@ -1787,7 +1787,40 @@ a { color: var(--accent); }
 .dfs-panel { width: 248px; display: flex; flex-direction: column; min-height: 0; }
 .dfs.is-list-closed .dfs-panel { display: none; }
 .dfs-brand { display: flex; flex-direction: column; gap: 3px; padding: 14px 16px 12px; border-bottom: 1px solid var(--mm-rule); }
-.dfs-brand > div { display: flex; flex-direction: column; gap: 3px; min-width: 0; }
+.dfs-brand-row { display: flex; align-items: center; justify-content: space-between; gap: 8px; min-width: 0; }
+/* The game or mod the school is on: its icon and short name in a pill, the
+   others listed under the header when it is pressed. */
+.dfs-mod-now {
+  flex: none; display: inline-flex; align-items: center; gap: 6px; max-width: 140px; height: 24px; margin: -3px 0 -1px;
+  padding: 0 6px 0 4px; border: 1px solid var(--mm-rule-strong); border-radius: 12px; background: var(--mm-bg-soft, transparent);
+  color: var(--mm-ink); font: 500 10px/1 var(--mm-font-mono); letter-spacing: 0.1em; text-transform: uppercase; cursor: pointer;
+  transition: border-color 160ms ease, background 160ms ease, box-shadow 160ms ease;
+}
+.dfs-mod-now[hidden] { display: none; }
+.dfs-mod-now img { width: 18px; height: 18px; flex: none; border-radius: 4px; object-fit: contain; }
+.dfs-mod-now span { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.dfs-mod-now .dfs-ico { flex: none; color: var(--mm-ink-muted); transition: transform 160ms ease; }
+.dfs-mod-now:hover, .dfs-mod-now:focus-visible { border-color: var(--mm-accent); outline: none; }
+.dfs-mod-now[aria-expanded="true"] { border-color: var(--mm-accent); box-shadow: 0 0 0 3px color-mix(in srgb, var(--mm-accent) 22%, transparent); }
+.dfs-mod-now[aria-expanded="true"] .dfs-ico { transform: rotate(180deg); }
+.dfs-mod-now.is-busy { pointer-events: none; }
+.dfs-mod-now.is-busy img { animation: dfs-mod-busy 0.9s ease-in-out infinite alternate; }
+@keyframes dfs-mod-busy { from { opacity: 0.35; transform: scale(0.88); } to { opacity: 1; transform: scale(1); } }
+.dfs-mod-note { margin: 6px 0 0; padding-left: 8px; border-left: 2px solid var(--mm-load-busy, var(--mm-accent)); color: var(--mm-ink-muted); font-size: 11.5px; line-height: 1.4; }
+.dfs-mod-note[hidden] { display: none; }
+.dfs-mod-list { display: flex; flex-direction: column; gap: 2px; margin: 10px -8px 0; max-height: 50vh; overflow: auto; animation: dfs-mod-open 160ms ease-out; }
+.dfs-mod-list[hidden] { display: none; }
+@keyframes dfs-mod-open { from { opacity: 0; transform: translateY(-4px); } to { opacity: 1; transform: none; } }
+.dfs-mod-list button {
+  display: grid; grid-template-columns: 22px minmax(0, 1fr) auto; align-items: center; gap: 10px; padding: 6px 8px;
+  border: 0; border-left: 2px solid transparent; border-radius: 3px; background: none; color: var(--mm-ink); text-align: left; cursor: pointer;
+}
+.dfs-mod-list button:hover, .dfs-mod-list button:focus-visible { background: var(--mm-bg-soft); outline: none; }
+.dfs-mod-list button[aria-checked="true"] { border-left-color: var(--mm-accent); background: var(--mm-bg-soft); }
+.dfs-mod-list img { width: 22px; height: 22px; border-radius: 4px; object-fit: contain; }
+.dfs-brand .dfs-mod-list b { display: block; font-size: 12.5px; font-weight: 500; line-height: 1.25; letter-spacing: 0; text-transform: none; }
+.dfs-brand .dfs-mod-list b::before { content: none; }
+.dfs-brand .dfs-mod-list small { margin: 0; font: 400 10px/1.4 var(--mm-font-mono); letter-spacing: 0.06em; text-transform: uppercase; color: var(--mm-ink-muted); }
 /* The bfstats.io sigil at the rail's head: the site's own, as on its
    header and the mesh pages' bar. */
 .dfs-brand-sigil { display: block; width: 32px; height: 32px; border-radius: 50%; transition: transform 200ms ease, filter 200ms ease; }

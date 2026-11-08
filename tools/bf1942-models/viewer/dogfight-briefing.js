@@ -18,6 +18,13 @@ import { MOVE_INFO, stepsOf } from './dogfight-steps.js';
 import { VIEWER_ROOT } from './viewer-root.js';
 
 const LOGO = new URL('bfstats-logo.webp', VIEWER_ROOT).href;
+/** The school's own page, in this page's mod: where the brand goes. */
+function schoolHome() {
+  const url = new URL('dogfight.html', VIEWER_ROOT);
+  const mod = new URLSearchParams(location.search).get('mod');
+  if (mod && mod !== 'bf1942') url.searchParams.set('mod', mod);
+  return url.href;
+}
 /** The longest the briefing waits after take-off for the lesson to take the
  *  screen, before it goes regardless. */
 const HANDOVER_MAX_MS = 8000;
@@ -136,7 +143,11 @@ const CSS = `
   display: grid; grid-template-rows: auto 1fr auto; gap: 18px; }
 .dfb-head { display: flex; align-items: center; gap: 12px; padding-bottom: 14px; border-bottom: 1px solid var(--mm-rule, #2d2d2d); }
 .dfb-head img { width: 28px; height: 28px; }
-.dfb-head a { color: var(--mm-ink-muted, #8a8a8a); text-decoration: none; font: 500 10.5px/1 var(--mm-font-mono, monospace); letter-spacing: .14em; text-transform: uppercase; }
+.dfb-home { display: inline-flex; align-items: center; gap: 12px; color: inherit; text-decoration: none; }
+.dfb-home img { transition: transform 200ms ease; }
+.dfb-home:hover img, .dfb-home:focus-visible img { transform: rotate(-6deg) scale(1.06); }
+.dfb-home:hover b, .dfb-home:focus-visible b { text-decoration: underline; text-underline-offset: 3px; }
+.dfb-home:focus-visible { outline: none; }
 .dfb-head b { font-weight: 600; letter-spacing: .02em; }
 .dfb-head span { margin-left: auto; font: 500 10.5px/1 var(--mm-font-mono, monospace); letter-spacing: .14em; text-transform: uppercase; color: var(--mm-accent-soft, #9aa666); }
 .dfb-body { display: grid; gap: 22px; align-content: start; }
@@ -232,8 +243,7 @@ export function createSchoolBriefing({ entry, overlay, handedOver = () => true }
     ? `<dt><kbd>${esc(k[0])}</kbd></dt><dd>${esc(k[1])}</dd>` : '<i class="dfb-split"></i>')).join('');
   root.innerHTML = `
     <div class="dfb-inner">
-      <header class="dfb-head"><img src="${LOGO}" alt="" width="28" height="28"><a href="https://bfstats.io" target="_blank" rel="noopener">bfstats.io</a>
-        <b>Dogfight school</b><span>The Range · ${esc(mapTitle(entry.map))}</span></header>
+      <header class="dfb-head"><a class="dfb-home" href="${esc(schoolHome())}" title="Back to the dogfight school"><img src="${LOGO}" alt="" width="28" height="28"><b>Dogfight school</b></a><span>The Range · ${esc(mapTitle(entry.map))}</span></header>
       <div class="dfb-body">
         <div class="dfb-hero">
           <div><small class="dfb-kicker">${esc(say.kicker)}</small><h1>${esc(say.title)}</h1><p class="dfb-lede">${esc(say.lede)}</p></div>

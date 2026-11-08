@@ -62,6 +62,16 @@ const ICON = {
 };
 /** The bfstats.io sigil, the site's own (the mesh pages' top bar wears it too). */
 const LOGO = new URL('bfstats-logo.webp', VIEWER_ROOT).href;
+/** The school's own page: where its brand goes from a fight's map, the
+ *  Range's overlay and the arena (never out to the site). */
+const SCHOOL_PAGE = new URL('dogfight.html', VIEWER_ROOT).href;
+/** The school's page in the mod this page is on. */
+function schoolPage() {
+  const url = new URL(SCHOOL_PAGE);
+  const mod = new URLSearchParams(globalThis.location?.search ?? '').get('mod');
+  if (mod && mod !== 'bf1942') url.searchParams.set('mod', mod);
+  return url.href;
+}
 /** A plane template as the arena list says it: `BF109` "Bf 109", `Yak9` "Yak 9". */
 const prettyPlane = t => String(t ?? '').replace(/^BF(\d)/, 'Bf $1').replace(/([a-z])(\d)/g, '$1 $2').replace(/_/g, ' ');
 /** The nearest the Wide camera comes to the point between the two, metres,
@@ -169,6 +179,15 @@ const esc = s => String(s ?? '').replace(/[&<>"]/g, c => ({ '&': '&amp;', '<': '
  * pick(map) }`, the battles its lessons can be flown in (`dogfight-arena.js`),
  * chosen in the sidebar above YOUR PLANE.
  *
+ * `mods` (the school's own page too): `{ list(), current(), note(), pick(id) }`,
+ * the game or mod the school is on, each `{ id, name, short, icon }`, chosen
+ * from the pill in the header; `note()` says what the pick could not give
+ * (no arena of its own), or null.
+ *
+ * The brand (`siteHref`, `siteTitle`) goes to the school's own page unless
+ * the page says otherwise; on a fight's map inside the school (`embed`) it
+ * hands back to that school's schematic.
+ *
  * The LAYERS card in the stage's corner switches a recorded fight between
  * the schematic and its own map, the way a map site switches to satellite:
  * the map page loads hidden in this window, the schematic plays on, and when
@@ -180,9 +199,9 @@ export function createDogfightTheatre({ host, makePlane, planeVisual = () => nul
                                         planes = () => [], plane = () => null, onPlane = null,
                                         recordings = new URL('replays/dogfights/index.json', VIEWER_ROOT).href, planeVisualFor = () => null,
                                         makePlaneFor = null, world = null, embed = null, arenas = null,
-                                        siteHref = 'https://bfstats.io', siteTitle = 'bfstats.io', url = false }) {
-  // The brand links: the site itself in a new tab, or the page that owns
-  // this one (the front end's Range tab) in this one.
+                                        mods = null, siteHref = schoolPage(), siteTitle = 'Back to the school', url = false }) {
+  // The brand links: the school's own page, or the page that owns this one
+  // (the front end's Range tab), in this tab; another site in a new one.
   const siteExternal = /^https?:/.test(siteHref) && !siteHref.startsWith(location.origin);
   const siteAttrs = `href="${esc(siteHref)}"${siteExternal ? ' target="_blank" rel="noopener"' : ''} title="${esc(siteTitle)}"`;
   // The two pilots in the site's team tints (the enemy kill red, the other
@@ -217,8 +236,12 @@ export function createDogfightTheatre({ host, makePlane, planeVisual = () => nul
       </nav>
       <div class="dfs-panel">
         <header class="dfs-brand">
-          <div><a class="dfs-brand-site" ${siteAttrs}>${esc(siteTitle)}</a><b>Dogfight school</b></div>
+          <div class="dfs-brand-row"><a class="dfs-brand-site" ${siteAttrs}>${esc(siteTitle)}</a>
+            <button type="button" class="dfs-mod-now" hidden aria-haspopup="true" aria-expanded="false" title="Choose the game or mod"><img alt="" width="18" height="18"><span></span>${ICON.caret}</button></div>
+          <b>Dogfight school</b>
           <small>Moves, and their counters, flown on BF1942's own flight law</small>
+          <p class="dfs-mod-note" hidden></p>
+          <div class="dfs-mod-list" role="radiogroup" aria-label="Game or mod" hidden></div>
         </header>
         <div class="dfs-arena" hidden><button type="button" class="dfs-arena-now" aria-expanded="false" title="Choose the arena"><span>ARENA</span><b></b><small></small>${ICON.caret}</button>
           <div class="dfs-arena-list" role="radiogroup" aria-label="Arena" hidden></div></div>
@@ -326,7 +349,7 @@ export function createDogfightTheatre({ host, makePlane, planeVisual = () => nul
     end: q('.dfs-endcard'), helper: q('.dfs-helper'), demos: q('.dfs-demos'), toggle: q('.dfs-toggle'), restart: q('.dfs-restart'),
     speeds: q('.dfs-speeds'), cams: q('.dfs-cams'), chart: q('.dfs-chart'), scrub: q('.dfs-scrub'),
     move: q('.dfs-move'), counter: q('.dfs-counter'), fly: q('.dfs-fly'), flyNote: q('.dfs-fly-note'), flyRow: q('.dfs-flyrow'),
-    arenaNow: q('.dfs-arena-now'), listToggle: q('.dfs-list-toggle'), notes: q('.dfs-notes'), notesBtn: q('.dfs-notes-btn'),
+    arenaNow: q('.dfs-arena-now'), modNow: q('.dfs-mod-now'), modList: q('.dfs-mod-list'), modNote: q('.dfs-mod-note'), listToggle: q('.dfs-list-toggle'), notes: q('.dfs-notes'), notesBtn: q('.dfs-notes-btn'),
     time: q('.dfs-time'), speedNow: q('.dfs-speed-now'), camNow: q('.dfs-cam-now'), menus: [...root.querySelectorAll('.dfs-menu')],
   };
 
@@ -2573,7 +2596,9 @@ export function createDogfightTheatre({ host, makePlane, planeVisual = () => nul
     if (!url || world || fromUrl || typeof history === 'undefined') return;
     const next = new URL(location.href);
     const set = (k, v) => (v ? next.searchParams.set(k, v) : next.searchParams.delete(k));
-    const rec = state.recording && state.fight?.recorded ? state.recording.id : null;
+    // The recording picked, not the fight on stage: a pick writes the address
+    // before its fight takes the stage.
+    const rec = state.recording?.fight?.recorded ? state.recording.id : null;
     set('fight', rec);
     set('lesson', rec ? null : state.lesson?.id ?? null);
     set('demo', rec ? null : state.demo?.id ?? null);
@@ -2652,7 +2677,19 @@ export function createDogfightTheatre({ host, makePlane, planeVisual = () => nul
       m.querySelector('.dfs-menu-btn').setAttribute('aria-expanded', String(was));
     });
   }
-  root.addEventListener('pointerdown', e => { if (!e.target.closest('.dfs-menu')) closeMenus(); });
+  root.addEventListener('pointerdown', e => {
+    if (!e.target.closest('.dfs-menu')) closeMenus();
+    if (!e.target.closest('.dfs-mod-now, .dfs-mod-list')) setModList(false);
+  });
+  // On a fight's map inside the school, the brand is the way back to it: the
+  // school's schematic, where the map was opened from.
+  for (const a of root.querySelectorAll('.dfs-brand-sigil, .dfs-brand-site')) {
+    a.addEventListener('click', e => {
+      if (!(world && embed) || e.metaKey || e.ctrlKey || e.shiftKey || e.button) return;
+      e.preventDefault();
+      embed.leave(state.t, state.playing);
+    });
+  }
 
   // --- input ------------------------------------------------------------------------
   ui.lessons.innerHTML = LESSONS.map((l, i) => `
@@ -2869,6 +2906,7 @@ export function createDogfightTheatre({ host, makePlane, planeVisual = () => nul
     if (e.target.matches?.('input:not([type=range]), textarea')) return;
     const menuOpen = ui.menus.some(m => !m.querySelector('.dfs-pop').hidden);
     if (e.code === 'Escape' && menuOpen) { e.preventDefault(); closeMenus(); return; }
+    if (e.code === 'Escape' && !ui.modList.hidden) { e.preventDefault(); setModList(false); ui.modNow.focus(); return; }
     if (e.code === 'KeyL' && !e.metaKey && !e.ctrlKey) { setList(!listOpen()); return; }
     if (e.code === 'KeyN' && !e.metaKey && !e.ctrlKey) { setNotes(ui.notes.hidden); return; }
     // X extends the scene from a deadlock at this moment (the other seat), the
@@ -2922,6 +2960,41 @@ export function createDogfightTheatre({ host, makePlane, planeVisual = () => nul
     ui.arenaList.hidden = !ui.arenaList.hidden;
     ui.arenaNow.setAttribute('aria-expanded', String(!ui.arenaList.hidden));
   });
+  /** The game or mod the school is on, as a pill in the header: its icon and
+   *  short name; the list of the others opens under the header. */
+  function drawMods() {
+    const list = mods?.list() ?? [];
+    const now = list.find(m => m.id === mods?.current()) ?? null;
+    ui.modNow.hidden = !now || list.length < 2;
+    const note = mods?.note?.() ?? null;
+    ui.modNote.hidden = !note;
+    ui.modNote.textContent = note ?? '';
+    if (!now) return;
+    const img = ui.modNow.querySelector('img');
+    if (img.getAttribute('src') !== now.icon) img.src = now.icon;
+    ui.modNow.querySelector('span').textContent = now.short;
+    ui.modNow.title = `${now.name}: choose the game or mod`;
+    ui.modList.innerHTML = list.map(m => `<button type="button" role="radio" data-mod="${esc(m.id)}" aria-checked="${m === now}">`
+      + `<img src="${esc(m.icon)}" alt="" width="22" height="22" loading="lazy"><b>${esc(m.name)}</b><small>${m.short.toLowerCase() === m.name.toLowerCase() ? '' : esc(m.short)}</small></button>`).join('');
+  }
+  function setModList(on) {
+    if (ui.modList.hidden === !on) return;
+    ui.modList.hidden = !on;
+    ui.modNow.setAttribute('aria-expanded', String(on));
+  }
+  ui.modNow.addEventListener('click', () => setModList(ui.modList.hidden));
+  ui.modList.addEventListener('click', e => {
+    const b = e.target.closest('button[data-mod]');
+    if (!b || !mods) return;
+    setModList(false);
+    if (b.dataset.mod === mods.current()) return;
+    ui.modNow.classList.add('is-busy');
+    ui.modNow.querySelector('span').textContent = mods.list().find(m => m.id === b.dataset.mod)?.short ?? '';
+    const img = b.querySelector('img');
+    if (img) ui.modNow.querySelector('img').src = img.src;
+    mods.pick(b.dataset.mod);
+  });
+  drawMods();
   ui.planeList.addEventListener('click', e => {
     const b = e.target.closest('button[data-plane]');
     if (!b || !onPlane) return;
@@ -2981,7 +3054,7 @@ export function createDogfightTheatre({ host, makePlane, planeVisual = () => nul
       await pickRecorded(id, { at });
     },
     /** The arena and plane choosers drawn again (the page changed them). */
-    redrawChoices: () => { drawArenas(); drawPlanes(); },
+    redrawChoices: () => { drawMods(); drawArenas(); drawPlanes(); },
     /** The page's planes changed (another arena or plane): every lesson is
      *  flown again on the new airframe, and the demo on stage at once, at
      *  the second it was at. A recorded fight keeps its own types. */
