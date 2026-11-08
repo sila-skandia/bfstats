@@ -2072,6 +2072,10 @@ a { color: var(--accent); }
 .dfs-endcard[hidden] { display: none; }
 .dfs-endcard b { font-size: 15px; font-weight: 500; }
 .dfs-endcard span { color: var(--mm-ink-soft); font-size: 12.5px; }
+/* No kill: the scene extended from the end, offered on the card itself. */
+.dfs-end-acts { display: flex; flex-wrap: wrap; gap: 6px; align-items: center; margin-top: 6px; padding-top: 8px; border-top: 1px solid var(--mm-rule); }
+.dfs-end-acts[hidden] { display: none; }
+.dfs-end-acts small { flex-basis: 100%; color: var(--mm-ink-soft); font-size: 12px; line-height: 1.4; }
 /* The one bar under the picture: play and the clock, the lesson's fights as
    tabs, then the speed and camera menus, the notes and FLY IT. */
 .dfs-bar-row {
@@ -2490,9 +2494,9 @@ a { color: var(--accent); }
   .dfs-tools { margin-left: auto; }
 }
 
-/* The live fight: a short coach line at the top, the view of the two of you
-   bottom right, a ring or an edge arrow on him, a line of score. The stick
-   shows only while the instructor flies. */
+/* The live fight: a short coach line at the top, the sphere (the two of you,
+   dogfight-sphere.js) bottom right, a ring or an edge arrow on him, a line of
+   score. The stick shows only while the instructor flies. */
 .dfl { position: absolute; inset: 0; z-index: 31; pointer-events: none; }
 /* Dark while the school seats you, so the ground and the airfield never show
    between asking for a lesson and being in the air (dogfight-cover.js). */
@@ -2551,18 +2555,11 @@ a { color: var(--accent); }
 .dfl-view {
   position: absolute;
   right: 16px; bottom: 190px;
-  width: min(340px, 40vw); aspect-ratio: 16 / 10;
+  width: min(300px, 36vw); aspect-ratio: 1;
   border: 1px solid var(--mm-rule-strong);
   background: transparent;
 }
 .dfl-view-svg { position: absolute; inset: 0; width: 100%; height: 100%; overflow: visible; }
-.dfl-trail { fill: none; stroke-width: 2; stroke-linejoin: round; opacity: 0.85; }
-.dfl-trail.is-you { stroke: var(--dfs-you); }
-.dfl-trail.is-him { stroke: var(--dfs-ace); }
-.dfl-los { stroke: var(--mm-ink-muted); stroke-width: 1; stroke-dasharray: 4 4; }
-.dfl-pin circle { stroke: var(--mm-bg); stroke-width: 1.5; }
-.dfl-pin.is-you circle { fill: var(--dfs-you); }
-.dfl-pin.is-him circle { fill: var(--dfs-ace); }
 .dfl-pin text { font: 600 10px var(--mm-font-mono); letter-spacing: 0.12em; text-anchor: middle; paint-order: stroke; stroke: rgba(0, 0, 0, 0.55); stroke-width: 1.5px; }
 .dfl-pin.is-you text { fill: var(--dfs-you); }
 .dfl-pin.is-him text { fill: var(--dfs-ace); }

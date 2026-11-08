@@ -11,12 +11,14 @@
 // him in the main view or an arrow at the edge pointing to him, and a line of
 // score. Under it, the guide: what to do with the stick right now, as
 // arrows and keys, from a pilot flying the lesson's counter in your seat
-// (G hides it), and the lines: that pilot's next seconds drawn into the
-// world from where you both are, a green path with rings to fly through,
-// his path in red, a gold ring where you would have the shot. The
-// instructor (I) flies your seat through that counter until you touch the
-// controls. P pauses the fight with the lines up; Y starts the engagement
-// again.
+// (G hides it), and the sphere (bottom right, `dogfight-sphere.js`): you at
+// the centre of a sphere that holds the two of you, him where he is against
+// you, both noses and trails, the horizon, and that pilot's next seconds
+// drawn inside it in green, his in red, a gold ring where you would have
+// the shot. The lines (the same seconds drawn into the world, rings to fly
+// through) come up only while the fight is frozen: paused (P), or with the
+// ways out of a deadlock up (X). The instructor (I) flies your seat through
+// that counter until you touch the controls; Y starts the engagement again.
 
 import { createPilot } from './dogfight-pilot.js';
 import * as THREE from 'three';
@@ -28,6 +30,7 @@ import { lessonById, KEY_WORDS, flightOf } from './dogfight-lessons.js';
 import { createGuide, token } from './dogfight-guide.js';
 import { MOVE_INFO, moveLabel } from './dogfight-steps.js';
 import { seatCover } from './dogfight-cover.js';
+import { createTacticalSphere } from './dogfight-sphere.js';
 
 /** The moves' names as the coach says them: the pilot's name for each
  *  (`dogfight-steps.js`), as the theatre's tabs and move card say it. */
@@ -87,12 +90,10 @@ export function createDogfightLive(page) {
     <div class="dfl-mark" hidden><i></i><span></span></div>
     <div class="dfl-view">
       <svg class="dfl-view-svg" aria-hidden="true">
-        <polyline class="dfl-trail is-you"></polyline><polyline class="dfl-trail is-him"></polyline>
-        <line class="dfl-los"></line>
-        <g class="dfl-pin is-you"><circle r="5"></circle><text dy="-10">YOU</text></g>
-        <g class="dfl-pin is-him"><circle r="5"></circle><text dy="-10">ACE</text></g>
+        <g class="dfl-pin is-you"><text dy="14">YOU</text></g>
+        <g class="dfl-pin is-him"><text dy="-9">ACE</text></g>
       </svg>
-      <div class="dfl-view-foot"><span class="dfl-range"></span><span class="dfl-above"></span><span class="dfl-said"></span></div>
+      <div class="dfl-view-foot"><span class="dfl-range"></span><span class="dfl-above"></span><span class="dfl-scale"></span><span class="dfl-said"></span></div>
     </div>
     <div class="dfl-shottag" hidden></div>
     <div class="dfl-extend" hidden><small class="dfl-extend-kicker"></small><b class="dfl-extend-title"></b><ol class="dfl-extend-list"></ol><span class="dfl-extend-foot"></span></div>
@@ -105,9 +106,8 @@ export function createDogfightLive(page) {
   const ui = {
     coach: q('.dfl-coach'), lesson: q('.dfl-lesson'), line: q('.dfl-line'), tip: q('.dfl-tip'), keys: q('.dfl-keys'),
     mark: q('.dfl-mark'), markText: q('.dfl-mark span'),
-    view: q('.dfl-view'), svg: q('.dfl-view-svg'), trailYou: q('.dfl-trail.is-you'), trailHim: q('.dfl-trail.is-him'),
-    los: q('.dfl-los'), pinYou: q('.dfl-pin.is-you'), pinHim: q('.dfl-pin.is-him'),
-    range: q('.dfl-range'), above: q('.dfl-above'), said: q('.dfl-said'),
+    view: q('.dfl-view'), svg: q('.dfl-view-svg'), pinYou: q('.dfl-pin.is-you'), pinHim: q('.dfl-pin.is-him'),
+    range: q('.dfl-range'), above: q('.dfl-above'), scale: q('.dfl-scale'), said: q('.dfl-said'),
     his: q('.dfl-his'), yours: q('.dfl-yours'), kills: q('.dfl-kills'),
     shotTag: q('.dfl-shottag'),
     extend: q('.dfl-extend'), extendKicker: q('.dfl-extend-kicker'), extendTitle: q('.dfl-extend-title'), extendList: q('.dfl-extend-list'), extendFoot: q('.dfl-extend-foot'),
@@ -123,6 +123,8 @@ export function createDogfightLive(page) {
     // The deadlock watch, the scene extended from a frozen moment (its
     // ways out and the one picked), and the way the guide now flies.
     watch: createDeadlockWatch(), deadlock: null, extend: null, extendWay: null,
+    // The sphere, built on first use (its colours are the page's tokens).
+    sphere: null,
   };
 
   function banner(text, seconds = 2.5, tone = 'info') {
@@ -216,6 +218,7 @@ export function createDogfightLive(page) {
     live.lineRun = null;
     live.lineAt = -Infinity;
     hideLines();
+    live.sphere?.reset();
     page.snapPresentation?.();
     live.phase = 'fight';
     cover.clear();
@@ -302,7 +305,10 @@ export function createDogfightLive(page) {
     if (!ui.banner.hidden && live.clock > live.bannerUntil) ui.banner.hidden = true;
     if (!live.lesson) return;
     if (page.covered?.()) { hud.style.visibility = 'hidden'; if (live.lines) live.lines.group.visible = false; return; }
-    if (live.lines) live.lines.group.visible = live.guideOn || !!live.extend;
+    // The lines in the world only while the fight is held still: in motion
+    // they are redrawn as the fight leaves them, and flash; the sphere
+    // carries the same seconds meanwhile.
+    if (live.lines) live.lines.group.visible = !!live.frozen && (live.guideOn || !!live.extend);
     hud.style.visibility = '';
     live.t += dt;
     const bot = page.aceBot?.() ?? null;
@@ -334,6 +340,7 @@ export function createDogfightLive(page) {
       holdStill(live.frozen);
       markHim(live.frozen.you, live.frozen.him);
       tagShot();
+      drawSphere(live.frozen.you, live.frozen.him, dt);
       return;
     }
     // The fight. Is he down?
@@ -410,7 +417,7 @@ export function createDogfightLive(page) {
     g.rudder += (out.stick.rudder - g.rudder) * a;
     g.throttle += ((out.throttle ?? 1) - g.throttle) * a;
     g.fire = out.fire ? 1 : Math.max(0, g.fire - dt * 3);
-    drawGuide(g, live.lastInput, live.instructor ? 'INSTRUCTOR FLYING · touch the stick to take over' : 'DO THIS · fly through the green rings');
+    drawGuide(g, live.lastInput, live.instructor ? 'INSTRUCTOR FLYING · touch the stick to take over' : 'DO THIS · the green path on the sphere');
     if (live.guideOn) followLines(you);
     const due = live.guideOn ? linesDue(you) : null;
     if (due && live.clock - live.lineAt > REPLAN_MIN) {
@@ -420,6 +427,7 @@ export function createDogfightLive(page) {
       updateLines(you, him, due === 'used');
     }
     tagShot();
+    drawSphere(you, him, dt);
   }
 
   /** The pilot the guide and the instructor fly: the move being practised,
@@ -532,6 +540,26 @@ export function createDogfightLive(page) {
     return live.lines.rings.filter(ring => ring.visible).length <= 1 ? 'used' : null;
   }
 
+  /** The sphere (`dogfight-sphere.js`), in the page's colours. */
+  function sphereObject() {
+    if (live.sphere) return live.sphere;
+    live.sphere = createTacticalSphere({
+      you: token('--dfs-you', '#7da34c'), him: token('--dfs-ace', '#d65a5a'), hit: token('--mm-load-busy', '#c5a23a'),
+      ink: token('--mm-ink-muted', '#9a9a9a'), warn: token('--mm-load-busy', '#c5a23a'),
+    });
+    return live.sphere;
+  }
+
+  /** The sphere brought up to this frame: both of you, the trails, the
+   *  guide's seconds (`live.lineRun`) and the ground under you. */
+  function drawSphere(you, him, dt) {
+    const S = sphereObject();
+    const s = S.update({ you, him, dt, trails: live.trails, lines: live.guideOn || live.extend ? live.lineRun : null,
+                         groundY: page.groundAt?.(you.position[0], you.position[2]) ?? null, guideOn: live.guideOn || !!live.extend });
+    const scale = `sphere ${s.radius >= 1000 ? `${(s.radius / 1000).toFixed(1)} km` : `${Math.round(s.radius / 10) * 10} m`}`;
+    if (ui.scale.textContent !== scale) ui.scale.textContent = scale;
+  }
+
   function linesObject() {
     if (live.lines) return live.lines;
     const C = { you: token('--mm-success', '#7da34c'), him: token('--mm-kill', '#d65a5a'), hit: token('--mm-load-busy', '#c5a23a') };
@@ -615,7 +643,7 @@ export function createDogfightLive(page) {
   function tagShot() {
     const cam = page.camera?.();
     const shot = live.lineShot;
-    const show = !!(cam && shot && live.guideOn && live.lines?.group.parent);
+    const show = !!(cam && shot && live.guideOn && live.lines?.group.parent && live.lines.group.visible);
     if (!show) { ui.shotTag.hidden = true; return; }
     cam.updateMatrixWorld();
     _p.set(...shot.at).project(cam);
@@ -680,7 +708,7 @@ export function createDogfightLive(page) {
     ui.extendList.innerHTML = w.results.map((r, i) => (r.score
       ? `<li data-way="${i}"><kbd>${i + 1}</kbd><i class="dfl-extend-tag is-${r.score.result}">${RESULT_TAGS[r.score.result]}</i><b>${esc(r.way.name)}</b><small>${esc(resultWords(r.score))}</small></li>`
       : `<li class="is-off"><kbd>${i + 1}</kbd><b>${esc(r.way.name)}</b><small>could not be flown</small></li>`)).join('');
-    ui.extendFoot.innerHTML = '<kbd>1</kbd>–<kbd>5</kbd> pick a way, drawn as the lines · <kbd>X</kbd> or <kbd>P</kbd> fly it with the guide · <kbd>Y</kbd> again';
+    ui.extendFoot.innerHTML = '<kbd>1</kbd>–<kbd>5</kbd> pick a way, drawn in the sky and on the sphere · <kbd>X</kbd> or <kbd>P</kbd> fly it with the guide · <kbd>Y</kbd> again';
     showWay(w.results.findIndex(r => r.flown));
   }
 
@@ -728,7 +756,7 @@ export function createDogfightLive(page) {
     const you = stateOf(page.playerDrive()?.state), him = stateOf(live.bot?.vehicle?.drive?.state);
     if (!you || !him) return;
     live.frozen = { you, him };
-    banner('PAUSED · fly through the green rings · P to go', 2.5, 'info');
+    banner('PAUSED · the lines are up · P to go', 2.5, 'info');
   }
 
   /** Both airframes held at the frozen moment: put back every frame. */
@@ -801,35 +829,21 @@ export function createDogfightLive(page) {
   }
 
   /**
-   * The view: the world drawn again into its window, from behind you and a
-   * little above, looking past you at him, so the two of you are always in
-   * it; each of you pinned and trailed over it. Called by the page after its
-   * own render (`proving-ground-page.js` `renderInset`).
+   * The view: the sphere (`dogfight-sphere.js`) drawn into its window by
+   * the page's own renderer after its render (`proving-ground-page.js`
+   * `renderInset`), the two of you labelled over it.
    */
-  const viewCam = new THREE.PerspectiveCamera(48, 1.6, 2, 6000);
-  const _a = new THREE.Vector3(), _b = new THREE.Vector3(), _m = new THREE.Vector3();
-  const _vp = new THREE.Vector4(), _sc = new THREE.Vector4();
+  const _vp = new THREE.Vector4(), _sc = new THREE.Vector4(), _cc = new THREE.Color();
   function renderInset(renderer) {
     const you = live.you, him = live.him;
-    if (hud.hidden || live.phase !== 'fight' || !you || !him || hud.style.visibility === 'hidden') return;
-    const scene = page.scene?.();
-    if (!scene) return;
+    if (hud.hidden || live.phase !== 'fight' || !you || !him || hud.style.visibility === 'hidden' || !live.sphere) return;
     const el = renderer.domElement;
     const cr = el.getBoundingClientRect();
     const fr = ui.view.getBoundingClientRect();
     if (!cr.width || !fr.width) return;
-    // Behind you on the line from him to you, raised a third of the way up,
-    // far enough back that both fit.
-    _a.set(...you.position);
-    _b.set(...him.position);
-    const range = _a.distanceTo(_b);
-    const back = clamp(range * 0.45, 45, 320);
-    const los = _m.copy(_b).sub(_a).normalize();
-    viewCam.position.copy(_a).addScaledVector(los, -back).add(new THREE.Vector3(0, back * 0.35 + 10, 0));
-    viewCam.lookAt(_m.copy(_a).lerp(_b, 0.45));
-    viewCam.aspect = fr.width / fr.height;
-    viewCam.updateProjectionMatrix();
-    viewCam.updateMatrixWorld();
+    const S = live.sphere;
+    S.camera.aspect = fr.width / fr.height;
+    S.camera.updateProjectionMatrix();
     const sx = el.width / cr.width, sy = el.height / cr.height;
     renderer.getViewport(_vp);
     renderer.getScissor(_sc);
@@ -839,30 +853,28 @@ export function createDogfightLive(page) {
     renderer.setScissor(x, y, w, h);
     renderer.setScissorTest(true);
     renderer.autoClear = false;
-    renderer.clearDepth();
-    renderer.render(scene, viewCam);
+    // Its own dark ground: the cage and the paths read over any sky.
+    renderer.getClearColor(_cc);
+    const ca = renderer.getClearAlpha();
+    renderer.setClearColor(0x121212, 1);
+    renderer.clear(true, true, false);
+    renderer.setClearColor(_cc, ca);
+    renderer.render(S.scene, S.camera);
     renderer.autoClear = clear;
     renderer.setScissorTest(test);
     renderer.setScissor(_sc);
     renderer.setViewport(_vp);
-    // The pins and trails, over it.
+    // The labels, over it.
     const W = fr.width, H = fr.height;
     ui.svg.setAttribute('viewBox', `0 0 ${W} ${H}`);
-    const toView = p => {
-      _m.set(p[0], p[1], p[2]).project(viewCam);
-      return _m.z > 1 ? null : [(_m.x * 0.5 + 0.5) * W, (-_m.y * 0.5 + 0.5) * H];
+    const at = (you2, pos) => {
+      const n = S.project(pos, you2.position);
+      return n ? [(n[0] * 0.5 + 0.5) * W, (-n[1] * 0.5 + 0.5) * H] : null;
     };
-    const line = (el2, pts) => el2.setAttribute('points', pts.map(toView).filter(Boolean).map(q => q.map(v => v.toFixed(1)).join(',')).join(' '));
-    line(ui.trailYou, live.trails.you);
-    line(ui.trailHim, live.trails.him);
-    const py = toView(you.position), ph = toView(him.position);
+    const py = at(you, you.position), ph = at(you, him.position);
     for (const [pin, pt] of [[ui.pinYou, py], [ui.pinHim, ph]]) {
       pin.style.display = pt ? '' : 'none';
       if (pt) pin.setAttribute('transform', `translate(${pt[0].toFixed(1)},${pt[1].toFixed(1)})`);
-    }
-    if (py && ph) {
-      ui.los.setAttribute('x1', py[0]); ui.los.setAttribute('y1', py[1]);
-      ui.los.setAttribute('x2', ph[0]); ui.los.setAttribute('y2', ph[1]);
     }
   }
 
@@ -906,6 +918,7 @@ export function createDogfightLive(page) {
         extend: live.extend ? { busy: live.extend.busy, chosen: live.extend.chosen, t: +live.extend.t.toFixed(1),
                                 results: (live.extend.results ?? []).map(r => ({ id: r.way.id, result: r.score?.result ?? null, words: r.score ? resultWords(r.score) : null, error: r.error ?? null })) } : null,
         extendWay: live.extendWay?.id ?? null,
+        sphere: live.sphere?.state ?? null,
         lines: live.lineRun ? { you: live.lineRun.tracks[1].length, rings: live.lines ? live.lines.rings.filter(r => r.visible).length : 0, seconds: +(live.lineRun.tracks[1].at(-1).t).toFixed(1), shot: live.lineShot ? { t: +live.lineShot.t.toFixed(1), range: live.lineShot.range } : null,
                                 inScene: !!live.lines?.group.parent, tag: ui.shotTag.hidden ? null : ui.shotTag.textContent } : null,
       };

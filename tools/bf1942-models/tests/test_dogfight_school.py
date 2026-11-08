@@ -47,6 +47,7 @@ MODULES = {
     "dogfight-steps.js": VIEWER / "dogfight-steps.js",
     "dogfight-cover.js": VIEWER / "dogfight-cover.js",
     "dogfight-deadlock.js": VIEWER / "dogfight-deadlock.js",
+    "dogfight-sphere.js": VIEWER / "dogfight-sphere.js",
 }
 
 

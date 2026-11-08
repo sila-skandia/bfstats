@@ -68,13 +68,15 @@ is published: no asset is involved.
   lesson's ace.
 - **The live fight:** the coach (top centre: what he is doing, what to do,
   the keys, and one line of score), the guide (bottom left: which way to move
-  the stick), the view (bottom right: a window on the two of you, see below),
-  and a ring on him with his range, or an arrow on the screen's edge pointing
-  to him ("261 m behind"). The range's own readout and hit log are hidden
-  while you fly. **P** pause, **X** extend the scene (the school's ways out
-  of a deadlock, flown from where you both are: "Extend the scene" below),
-  **G** the guide and its lines on or off, **I** the instructor, **Y** again,
-  **O** end the lesson, **V** back to the theatre.
+  the stick), the sphere (bottom right: you at the centre, him where he is
+  against you, both trails, the horizon and the guide's next seconds: "The
+  sphere" below), and a ring on him with his range, or an arrow on the
+  screen's edge pointing to him ("261 m behind"). The range's own readout and
+  hit log are hidden while you fly. **P** pause (the lines come up in the
+  sky), **X** extend the scene (the school's ways out of a deadlock, flown
+  from where you both are: "Extend the scene" below), **G** the guide and its
+  paths on or off, **I** the instructor, **Y** again, **O** end the lesson,
+  **V** back to the theatre.
 - **Ring courses:** in the school's list under the lessons (RING COURSES),
   or `?proving=1&map=<battle>&course=<id>`. In the air: **Y** again, **N**
   the next course, **I** the instructor, **G** the guide, **O** end.
@@ -304,9 +306,9 @@ back* (S), *Fire* (Space or click). A row turns green while you are doing it;
 the ring turns green when your stick is where his is. The keys are the Air
 control map's defaults (`controls-defaults.js`); a rebound key is not shown.
 
-**The lines** (on with the guide; 2026-11-08: further out and quieter, see
-"Extend the scene"): four times a second the school flies the
-next 3.5 s off the page from where you both are (`runDuel` from both
+**The lines** (2026-11-08: in the world only while the fight is held still,
+see "The sphere"; the same seconds are on the sphere while it moves): the
+school flies the next seconds off the page from where you both are (`runDuel` from both
 airframes' exact states and both pilots' memories, you flying the counter
 the guide follows) and draws it into the world: a green tube for your way,
 rings every half second from a second out to fly through, his path in red,
@@ -960,6 +962,66 @@ windscreen, each 4 m across instead of 5, at 70% instead of 95%, the tube
 thinner and fainter. The lines are flown again when one ring or none is
 left ahead (was two). The stick gate bottom left is still the "which way to
 turn" cue; the rings say where the turn goes.
+
+## The sphere (2026-11-08)
+
+The owner, on the lines and rings in the live fight: "it's very confusing
+to have these lines and rings appear and flash on my screen - it seems like
+the action moves too fast for them to keep up - so why even show them".
+They were right about the cause: the lines are a 6.5 s prediction, flown
+again whenever you drift 45 m off it, which a fight against a pilot who
+reacts to you does every second or two, so the whole set was torn down and
+redrawn in front of you. A path to fly through suits a fixed future (a ring
+course); in a fight the future depends on both of you. What they asked for
+instead: "visualise the enemy relative to me, in like a 3d sphere, that is
+zoomed out enough to show both our positions, so that that will help you
+visualise how to escape a tail".
+
+**The sphere** (`viewer/dogfight-sphere.js`, bottom right, where the chase
+window was) is that instrument. You are the green silhouette at the centre,
+banked as you are banked; the ace is the red one where they are against you,
+with their nose drawn ahead of them and a drop line to your height so above
+and below read. The sphere's radius is 1.35 times the range (150 m to 2.5
+km), grown at once when they would leave it and eased back in over 0.8 s
+when they close; the foot says it ("sphere 540 m") next to the range and
+the height difference. Through the middle, the horizon ring, with fainter
+rings at 30 and 60 degrees above and below; the ground is a gold ring at its
+height whenever it is inside the sphere. The last four seconds of both
+paths trail behind each of you, and a dashed line joins you. The camera sits
+behind you along your heading and above (2.3 and 1.1 radii), the world's up
+kept up, so behind you is below the centre and ahead is above it, the way
+the edge arrow reads; the heading is smoothed over a third of a second and
+held while the nose is within 23 degrees of the vertical, so a loop does not
+swing the picture round (`tests/test_dogfight_sphere.py`).
+
+**The guide's seconds live in it now.** The guide pilot's next 6.5 s (yours
+in green, theirs in red, the gold ring where your guns would have them) are
+drawn inside the sphere, as world points, so a path you have left stays
+where it was and the gap between it and your trail shows what you did
+instead; a re-plan there is a small change in a small instrument, not a
+tunnel rebuilt in the windscreen. The lines in the world come up only while
+the fight is held still (P, or the ways out under X), where there is time to
+read them, and the DO THIS head says "the green path on the sphere". G
+turns the guide and its paths off; the sphere itself stays.
+
+**Drawn by the page's renderer** into the window's rectangle after the main
+render (`dogfight-live.js` `renderInset`, as the chase window was), on its
+own dark ground, with YOU and ACE labelled over it from the sphere camera's
+projection. Nothing in the module touches the DOM, so node flies it in the
+tests: the radius bounds and easing, behind below and ahead above, right to
+the right, higher drawn higher, the frame following your heading and holding
+through 88 degrees of pitch, and the paths, shot ring and ground showing
+when they should.
+
+**And the deadlock breaker is on the end card.** The owner, on the lessons
+tab, watching a fight end with no kill: "I can't see it ... it's a tie break
+... that's where I wanted to see it". The DEADLOCK block was in the notes
+panel, closed by default, and hidden when no deadlock was found. Now a fight
+that ends with no kill offers "Extend the scene" on the end card itself
+(per pilot for a recording), flown from the end; the notes block always
+shows, and offers the extension from the current moment whether or not a
+deadlock was found there ("No deadlock in this fight ... The school's ways
+out can still be flown from 30.0 s").
 
 ## Reviewed against the real tactics (2026-11-07)
 
