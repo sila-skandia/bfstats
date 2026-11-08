@@ -21,7 +21,7 @@
 
 import { FOV_RANGE, fmt } from './replay-creator-panel.js';
 import { moveIcon } from './replay-clipbar.js';
-import { AB_MOVES, CAM_RECIPES, CAMS, HAND_OVERS, MOTIONS, camGlyph, camLabel, camTitle, camsFor } from './replay-cuts.js';
+import { AB_MOVES, CAM_RECIPES, CAMS, HAND_OVERS, MOTIONS, camGlyph, camLabel, camTitle, camsFor, holdsEnd } from './replay-cuts.js';
 import { RAMP_SPEEDS, rampSpanOf, screenSeconds, speedWord } from './replay-shot.js';
 import { FADES, FRAMES, FREEZES, GRADES, drawOverlay, drawSafeArea, editsOf, editsShow, gradeOf } from './replay-studio-fx.js';
 import { StudioTour } from './replay-studio-tour.js';
@@ -811,8 +811,9 @@ export class Studio {
       col('Cameras', [
         'The Camera lane is the clip\'s cameras in a row: over their shoulder, the bullet chase from the shot, the player it killed.',
         'Each has a camera icon at its start: click it to set the camera yourself (fly it, Use this view). Dashed means automatic.',
-        'Your camera can have an end camera (the + at its end): it moves there over its part, by Glide, Orbit, 360 or Whip.',
-        'Click a camera to swap it, Loop it, or split it. Drag the gold line between two to change when; click its glyph for Cut, Glide or Whip.',
+        'Your camera can have an end camera (the + at its end): it moves there by Glide, Orbit, 360 or Whip. Drag it to when it should get there; it holds it after.',
+        'Right-click the Camera lane to start a new camera there: the chase again after your end camera, say.',
+        'Click a camera to swap it or Loop it. Drag the gold line between two to change when; click its glyph for Cut, Glide or Whip.',
         'Every change loops the part it changed. Whole clip (or Play) plays all of it again; Clear starts over.',
         'Game chase, Game front chase and Game fly-by are the game\'s own cameras (F10-F12) on the shooter or what they drive.',
       ]),
@@ -1107,7 +1108,7 @@ export class Studio {
     const take = creator.autoFilms(span) ? creator.takeInside(span) : null;
     this.recipeGroup.hidden = !take;
     const list = creator.camStretches(span);
-    const sig = JSON.stringify(list.map(c => [c.cam, c.t0, c.t1, c.into, c.motion, c.move, c.view?.pos, c.end?.pos])) + creator.keyShots.size + (take ? 1 : 0);
+    const sig = JSON.stringify(list.map(c => [c.cam, c.t0, c.t1, c.into, c.motion, c.move, c.tEnd, c.view?.pos, c.end?.pos])) + creator.keyShots.size + (take ? 1 : 0);
     if (!force && sig === this.camSig) return;
     this.camSig = sig;
     this.camList.textContent = '';
@@ -1175,6 +1176,11 @@ export class Studio {
           more.append(select(AB_MOVES.map(([id, label]) => [id, `${label} to its end camera`]), c.move ?? 'glide', 'How it goes from its camera to its end camera',
             v => creator.setAbMoveAt(c.i, v)));
           more.append(this.btn('', 'No end camera: hold its camera', () => creator.removeEndAt(c.i), 'st-ghost st-icon', 'close'));
+          if (holdsEnd(c)) {
+            const by = el('span', 'st-keyt', `there by ${fmt(Math.max(0, creator.screenAt(c.tEnd) - s0))}, then held`);
+            by.title = 'Drag the end camera on the strip to change when it gets there';
+            more.append(by);
+          }
         } else {
           more.append(select(MOTIONS.map(([id, label]) => [id, label]), c.motion ?? 'still', 'How it moves while it films', v => creator.setMotionAt(c.i, v)));
         }

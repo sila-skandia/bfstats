@@ -584,6 +584,10 @@ class ClipBarTests(unittest.TestCase):
         self.assertEqual(self.cb["crossed"], [True, False, False, False, False])
 
     def test_the_camera_lane_names_each_camera_and_its_hand_over(self) -> None:
+        self.assertEqual(self.cb["endLane"], [
+            ["Glide to its end camera, then holds", 102, 0.5], ["Orbit to its end camera", 106, 1]])
+        self.assertEqual(self.cb["endWords"], [
+            "End camera 0.50 s before the shot, then held", "End camera 30% of the way to the victim, then held", "End camera as its part ends"])
         self.assertEqual(self.cb["lane"], [
             ["Your camera", "Push in", "cam:placed", None],
             ["Bullet chase", "automatic", "style:chase", "cut"],
@@ -794,6 +798,24 @@ class CutsTests(unittest.TestCase):
         # A new camera glides in, but into his eyes it cuts.
         self.assertEqual(e["intos"], ["glide", "glide", "cut", "glide"])
 
+    def test_an_end_camera_dragged_earlier_is_got_to_then_held(self) -> None:
+        d = self.c["ends"]["drags"]
+        # Dragged to 9 s: kept as a second before the shot, held after it.
+        self.assertEqual(d["early"], [{"ev": "shot", "dt": -1}, 9, True])
+        # Dragged back to its part's end: the part's end again.
+        self.assertEqual(d["back"], [None, 10])
+        # Never before its own start.
+        self.assertEqual(d["tooEarly"], 7.02)
+        # The hand-over moved in front of it: there as its part ends.
+        self.assertEqual(d["cutBefore"], 8.5)
+        self.assertEqual(d["read"], {"ev": "shot", "dt": -1})
+        self.assertFalse(d["noEnd"])
+        self.assertFalse(d["swapped"])
+        self.assertTrue(d["noEndCam"])
+        # A camera started after it (the right-click's new camera): it
+        # films 9.5 s to the shot, the chase from the shot.
+        self.assertEqual(d["after"], [["placed", 7, 9.5], ["shoulder", 9.5, 10], ["chase", 10, 15]])
+
 
 class ClipClockTests(unittest.TestCase):
     """The clip as it plays (replay-clipclock.js): 100 to 108 s, a round
@@ -890,6 +912,9 @@ class CutRigTests(unittest.TestCase):
     def test_your_camera_moves_from_its_camera_to_its_end_camera(self) -> None:
         # Over its part in seconds of the video, the lens with it.
         self.assertEqual(self.r["abMove"], [[0, 60], [5, 45], [10, 30]])
+        # Its end camera dragged to 8 s: half way at 7.5 s, there by 8 s,
+        # then held to the end of its part.
+        self.assertEqual(self.r["abHeld"], [[0, 60], [5, 45], [10, 30], [10, 30], [10, 30]])
 
     def test_circle_the_victim_starts_off_the_rounds_line(self) -> None:
         self.assertEqual(self.r["circle"], [4.308, 1.4, -46.581])

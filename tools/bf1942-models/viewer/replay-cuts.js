@@ -234,6 +234,10 @@ function camOf(raw, first, allowed) {
     if (end) {
       out.end = end;
       out.move = abMoveOf(raw.move);
+      // When it arrives there, if not at the end of its part: it holds the
+      // end camera from then on.
+      const endAt = anchorOf(raw.endAt);
+      if (endAt) out.endAt = endAt;
     }
   }
   return out;
@@ -254,7 +258,9 @@ export function camsOf(raw, take = null) {
 }
 
 /** The cameras with their stretches of the clip, `[{ ...cam, i, t0, t1 }]`,
- *  in the clip's moments `ev`: kept in their order and inside the clip. */
+ *  in the clip's moments `ev`: kept in their order and inside the clip. One
+ *  of yours with an end camera also has `tEnd`, when it gets there (the end
+ *  of its part unless its end camera was dragged earlier). */
 export function resolveCams(cams, ev) {
   const out = [];
   let prev = ev.start;
@@ -265,7 +271,35 @@ export function resolveCams(cams, ev) {
     out.push({ ...c, i, t0, t1: ev.end });
   }
   for (let i = 0; i < out.length - 1; i++) out[i].t1 = out[i + 1].t0;
+  for (const c of out) {
+    if (!c.end) continue;
+    const want = c.endAt ? timeOf(c.endAt, ev) : c.t1;
+    c.tEnd = Math.max(c.t0 + Math.min(CAM_MIN, (c.t1 - c.t0) / 2), Math.min(c.t1, want));
+  }
   return out;
+}
+
+/** Whether camera `c` (resolveCams) gets to its end camera before its part
+ *  ends, and holds it from there. */
+export const holdsEnd = c => Boolean(c?.end && Number.isFinite(c.tEnd) && c.t1 - c.tEnd > CAM_MIN);
+
+/**
+ * `cams` with camera `i`'s end camera reached at `t` (its icon dragged along
+ * the strip), held between its own start and end: kept by what it happens
+ * at, like a hand-over. At its part's end (within `CAM_MIN`) it is the part's
+ * end again, wherever that goes.
+ */
+export function moveEnd(cams, i, t, ev) {
+  const c = resolveCams(cams, ev)[i];
+  if (!c?.end) return cams;
+  const at = Math.min(c.t1, Math.max(c.t0 + CAM_MIN, t));
+  return cams.map((x, j) => {
+    if (j !== i) return x;
+    const next = { ...x };
+    if (c.t1 - at <= CAM_MIN) delete next.endAt;
+    else next.endAt = anchorAt(at, ev);
+    return next;
+  });
 }
 
 /** Which of `list` (resolveCams) films `t`: the last to start at or before
@@ -307,6 +341,7 @@ export function setCam(cams, i, cam, extra = {}) {
       delete next.motion;
       delete next.end;
       delete next.move;
+      delete next.endAt;
     }
     return next;
   });
@@ -356,7 +391,10 @@ export function setPlaced(cams, i, { view, motion, end, move } = {}) {
       else delete next.end;
     }
     if (next.end) next.move = abMoveOf(move ?? c.move);
-    else delete next.move;
+    else {
+      delete next.move;
+      delete next.endAt;
+    }
     return next;
   });
 }

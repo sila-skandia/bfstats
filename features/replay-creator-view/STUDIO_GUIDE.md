@@ -112,10 +112,12 @@ shooter, the round and the man it kills. **To set a camera yourself,** click
 its icon, fly the view where you want it, and press Use this view (see Your
 camera below). The icon turns solid with your view in it.
 
-**To add a camera,** drag it from the tray onto the strip. It films from
-where you let go until the next camera takes over, and glides in. A click on
-a tray chip puts it at the playhead. The chooser's Split it here makes a
-second camera from the moment you clicked, to change on its own.
+**To add a camera,** right-click the Camera lane where it should start and
+pick it from the cards, or drag it from the tray onto the strip. It films
+from there until the next camera takes over, and glides in. A click on a
+tray chip puts it at the playhead. Right-clicking near the start of a camera
+swaps that camera instead. The same menu loops, changes or takes away the
+camera under the pointer.
 
 **To change when a camera takes over,** drag the gold line between two
 cameras. Inside the round's flight the line keeps its share of the flight
@@ -155,14 +157,25 @@ playhead on: fly with Free fly, press K.
 
 ### An end camera
 
-A camera of yours can move from one view to another over its part: its
-camera at the start, its end camera at the end.
+A camera of yours can move from one view to another: its camera at the
+start, its end camera where you put it on the block.
 
-1. Click the + at the end of your camera's block (or Add an end camera in
-   its chooser).
-2. The clip pauses just before the camera's part ends. Fly to the second
-   view and press Use this view.
-3. The part loops: the camera goes from its camera to its end camera.
+1. Click the + on your camera's block (or Add an end camera in its
+   chooser), or drag the + along the block to when the camera should get
+   there.
+2. The clip pauses there. Fly to the second view and press Use this view.
+3. The part loops: the camera goes from its camera to its end camera, then
+   holds it to the end of its part. The held stretch is hatched, and the
+   block says "then holds".
+
+**To change when it gets there,** drag the end camera's picture along the
+block. While you drag it says what it is kept at ("0.50 s before the shot"),
+like a hand-over line, and it snaps to the shot, the hit and the playhead.
+Dragged right to the block's end, it gets there as the part ends.
+
+A whole shot made of several cameras: set a camera, drag its end camera to
+half way, then right-click the Camera lane after it and pick Game chase (or
+Over the shoulder) to follow the shooter again from there.
 
 Click the camera to choose how it gets there: Glide (eases across), Orbit
 (swings round the action), 360 (a full turn round the action on the way) or

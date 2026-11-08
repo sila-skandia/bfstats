@@ -625,7 +625,8 @@ export class CutRig {
   }
 
   /** A camera of your own: from its start camera to its end camera over
-   *  its stretch (a glide, an orbit, a 360 or a whip), else the view kept,
+   *  its stretch, or till the moment its end camera was dragged to and held
+   *  from there (a glide, an orbit, a 360 or a whip), else the view kept,
    *  still, turning to follow the action from the framing kept, or moving on
    *  it (push in, pull back, circle, crane up). TrackRig's moves, in seconds
    *  of the video. */
@@ -637,7 +638,7 @@ export class CutRig {
     this.fovNow = Number.isFinite(v.fov) ? v.fov : null;
     if (c.end) {
       const s0 = s.screen(c.t0);
-      const s1 = Math.max(s0 + 1e-3, s.screen(c.t1));
+      const s1 = Math.max(s0 + 1e-3, s.screen(Number.isFinite(c.tEnd) ? c.tEnd : c.t1));
       const key = `${c.i}|ab|${v.pos.join(',')}|${v.quat.join(',')}|${c.end.pos.join(',')}|${c.end.quat.join(',')}|${c.move}|${s0}|${s1}`;
       let rig = this.moves.get(c.i);
       if (rig?.key !== key) {

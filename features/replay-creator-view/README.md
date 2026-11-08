@@ -1669,7 +1669,8 @@ against the change:
 - A thrown knife is shot as a melee orbit; riding the thrown round (a prop
   the recording carries, replay-props.js) is not done.
 - A camera of yours has two views at most, its camera and its end camera.
-  A path through three or more is two cameras of yours with a glide between.
+  A path through three or more is two cameras of yours with a glide between
+  (the end camera dragged earlier, a new camera right-clicked in after it).
 - A loop of a part that starts in the round's flight starts 0.3 s before
   the shot, so it is longer than the part: the page's round has to be fired
   to be ridden.
@@ -1701,3 +1702,61 @@ least 40 m from him and 15 m over him) and turns over half a second to look
 six tenths of the way from the bomb to him, so the bomb falls away from the
 lens onto the target. The hold stays on that spot and looks at the wreck.
 Any shot style but the reverse.
+
+### End cameras on the strip, a new camera by right-click (2026-11-08)
+
+The owner: "set a camera multiple times in a shot ... set one camera, then
+another, then ideally I want to chase the player. But the issue is that I
+can set the start and end only." Their idea: "drag the end camera position
+to where I want the end camera transition. Then I can right mouse click the
+camera strip to place another, which might start chasing the player again".
+
+The end camera always arrived as its camera's part ended, so the move took
+the whole block, and a new camera mid-block was "Split it here" at the
+bottom of the chooser, as a copy of the camera to then change.
+
+- **The end camera drags** (replay-clipbar.js `bindEnd`). Its picture (or
+  the + before there is one) sits on the block where the camera gets to it;
+  dragged, it snaps like a hand-over line and says what it is kept at ("End
+  camera 1.31 s before the shot, then held"). The drop keeps it and loops
+  the part; the + dropped places the end camera at that moment. A press
+  that does not move sets the view, as before. After it the block is
+  hatched (`rc-cb-camhold`) and its words say "then holds".
+- **Kept by what it happens at** (replay-cuts.js `endAt`, `moveEnd`,
+  `resolveCams`'s `tEnd`, `holdsEnd`): the same anchors as a hand-over, so
+  it survives the round landing late. Dropped within `CAM_MIN` of the
+  part's end it is the part's end again. A hand-over moved in front of it
+  makes it arrive as the part ends; no end camera, or a swap to another
+  camera, takes it away. `CutRig.placedPose` runs the move to `tEnd` and
+  TrackRig holds the end camera after it.
+- **Right-click on the Camera lane** (`newCamMenu`): "A new camera from
+  0:02.7, after Your camera" and every camera as cards, which go in there
+  (`addCamAt`; within `CAM_MIN` of a camera's start they swap it), then the
+  camera under the pointer: Change it (its chooser), Loop it, Take it away.
+  A click on a camera still opens its chooser; the gold line's right-click
+  is still its hand-over menu.
+- The Camera tab's row says "there by 0:01.7, then held"; the Help and
+  `STUDIO_GUIDE.md` say how.
+
+Verified: the creator tests (130) add the drag's anchors (before the shot,
+back to the part's end, held past its start, a hand-over moved in front of
+it), read-back, the end camera taken away with it, a camera inserted after
+it, the rig half way at 7.5 s and on the end camera from 8 s to the end of
+its part, and the lane's words. All 635 replay tests pass.
+
+In headless Chromium on a lab recording (`20261106-180027-wake-coop-w32`,
+Graham Stoker's Browning on Naozumi Shoda, 248 m), with the mouse:
+
+- Camera 1's icon set it; its + dragged to half its block read "End camera
+  1.31 s before the shot, then held" and paused there for placing; Enter
+  kept it as `{ shot, dt: -1.31 }`. Looped, per frame: 4.70 m off the
+  start view at 32.49 s, 3.31 m off the end view at 33.09 s, 0.00 m from
+  33.69 s (the end camera's moment 33.58 s) and still 0.00 m at 34.80 s,
+  the part's end 34.89 s.
+- Right-click at 80% of the block offered the cards under "A new camera
+  from 0:02.7, after Your camera"; Game chase went in at 0.30 s before the
+  shot, camera 1 cut to 0:00-0:02.7, and it glided off the held view (1.23
+  m, 2.76 m, 4.10 m off it) until the bullet chase took the shot.
+- The end camera dragged to 75% kept `{ shot, dt: -0.98 }`; a click on it
+  paused at that moment for placing; Ctrl+Z put the drag back. No page
+  errors.

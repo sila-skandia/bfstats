@@ -32,7 +32,8 @@ import { RAMP_SPEEDS, rampSpanOf, speedWord } from './replay-shot.js';
 import { isMelee } from './replay-shotstyle.js';
 import { FRAMES, TEXT_EASE, lowerStart } from './replay-studio-fx.js';
 import {
-  AB_MOVES, CAM_MIN, HAND_OVERS, HAND_OVER_LEN, MOTIONS, abMoveLabel, anchorAt, camGlyph, camLabel, camTitle, camsFor, handOverLabel, motionLabel,
+  AB_MOVES, CAM_MIN, HAND_OVERS, HAND_OVER_LEN, MOTIONS, abMoveLabel, anchorAt, camGlyph, camLabel, camTitle, camsFor, handOverLabel, holdsEnd,
+  motionLabel,
 } from './replay-cuts.js';
 
 const clamp = (v, lo, hi) => Math.min(hi, Math.max(lo, v));
@@ -76,9 +77,27 @@ const CLICK_SLOP = 5;
 export function camLane(list) {
   return list.map(c => ({
     i: c.i, cam: c.cam, t0: c.t0, t1: c.t1, label: camLabel(c.cam), glyph: camGlyph(c.cam),
-    sub: c.cam === 'placed' ? (c.end ? `${abMoveLabel(c.move)} to its end camera` : motionLabel(c.motion)) : 'automatic',
-    into: c.i > 0 ? c.into ?? 'cut' : null, end: Boolean(c.end),
+    sub: c.cam === 'placed'
+      ? (c.end ? `${abMoveLabel(c.move)} to its end camera${holdsEnd(c) ? ', then holds' : ''}` : motionLabel(c.motion)) : 'automatic',
+    into: c.i > 0 ? c.into ?? 'cut' : null, end: Boolean(c.end), tEnd: c.end ? c.tEnd ?? c.t1 : null,
   }));
+}
+
+/** Where on camera `c`'s block (camLane) its end camera sits, a share of
+ *  the block in seconds of the video (`sx`): 1 at its end. */
+export function endShare(c, sx) {
+  const w = sx(c.t1) - sx(c.t0);
+  if (!(w > 1e-6) || !Number.isFinite(c.tEnd)) return 1;
+  return Math.min(1, Math.max(0, (sx(c.tEnd) - sx(c.t0)) / w));
+}
+
+/** The end camera's icon's place on its block: its right edge at `share`,
+ *  never over the camera's own icon at the block's start. */
+const endLeft = share => `max(${(share * 100).toFixed(3)}%, 60px)`;
+
+/** What an end camera dragged to `at` is reached at, in words. */
+export function endWords(at) {
+  return at ? `End camera ${handOverWords(at).replace(/^./, ch => ch.toLowerCase())}, then held` : 'End camera as its part ends';
 }
 
 /** What a hand-over is kept at, in words, for the line being dragged. */
@@ -380,9 +399,15 @@ export class ClipBar {
   }
 
   openMenu(menu, clientX) {
+    this.openMenuOn(menu, this.timeAt(clientX));
+  }
+
+  /** `menu` opened over moment `t` of the strip. */
+  openMenuOn(menu, t) {
+    if (!menu) return;
     this.menu = menu;
     this.creator.ui.activity?.();
-    this.openPop('menu', this.at(this.timeAt(clientX)) * 100);
+    this.openPop('menu', this.at(t) * 100);
   }
 
   /** `{ title, items }` for a right-click: which lane, which thing on it. */
@@ -402,9 +427,7 @@ export class ClipBar {
       }
       const cut = target?.closest?.('.rc-cb-cut');
       if (cut) return this.handOverMenu(Number(cut.dataset.i));
-      const list = creator.camStretches(span);
-      const i = list.findIndex(c => t >= c.t0 - 1e-6 && t < c.t1) ?? -1;
-      return this.camMenu(i >= 0 ? i : list.length - 1, t);
+      return this.newCamMenu(t);
     }
     if (lane === 'text') {
       const e = creator.edits;
@@ -537,6 +560,37 @@ export class ClipBar {
     if (inside) items.push({ label: 'Split it here', title: 'A second camera from here on: click it to pick what it films', run: () => creator.splitCamAt(t), icon: 'cut', rule: true });
     if (list.length > 1) items.push({ label: 'Take it away', run: () => creator.removeCamAt(i), rule: !inside });
     return { title: `Camera ${i + 1} · ${fmt(Math.max(0, s0))} to ${fmt(Math.max(0, s1))}`, items, wide: true };
+  }
+
+  /** A right-click on the Camera lane at `t`: a new camera from there (the
+   *  one filming it is cut there and the new one films on to the next
+   *  hand-over), or the camera under the pointer changed, looped or taken
+   *  away. Close to a camera's start, the cards swap that camera instead. */
+  newCamMenu(t) {
+    const creator = this.creator;
+    const span = creator.span;
+    const list = creator.camStretches(span);
+    if (!list.length) return null;
+    let i = list.findIndex(c => t >= c.t0 - 1e-6 && t < c.t1);
+    if (i < 0) i = list.length - 1;
+    const c = list[i];
+    const take = creator.autoFilms(span) ? creator.takeInside(span) : null;
+    const at = Math.min(t, span.t1 - 0.05);
+    const swap = at - c.t0 <= CAM_MIN;
+    const rel = Math.max(0, this.sx(at) - this.sx(span.t0));
+    const items = [
+      { heading: true, label: swap ? `Camera ${i + 1} becomes` : `A new camera from ${fmt(rel)}, after ${camLabel(c.cam)}` },
+      { cards: camsFor(take).map(id => ({ label: camLabel(id), title: camTitle(id), icon: camGlyph(id), on: swap && c.cam === id,
+        run: () => creator.addCamAt(at, id) })) },
+      { heading: true, label: `Camera ${i + 1} · ${camLabel(c.cam)}` },
+      { chips: [
+        { label: 'Change it', title: 'Its chooser: what it films, how it moves and takes over', icon: camGlyph(c.cam),
+          run: () => this.openMenuOn(this.camMenu(i, t), t) },
+        { label: 'Loop it', title: 'Play this camera\'s part over and over', icon: 'orbit360', run: () => creator.loopPart({ kind: 'cam', i }) },
+        ...(list.length > 1 ? [{ label: 'Take it away', title: 'The camera before films on in its place', run: () => creator.removeCamAt(i) }] : []),
+      ] },
+    ];
+    return { title: `Camera lane · ${fmt(rel)}`, items, wide: true };
   }
 
   /** The hand-over into camera `i`: a cut, a glide or a whip. */
@@ -1105,7 +1159,7 @@ export class ClipBar {
     const list = creator.camStretches(span);
     const sig = [span.t0, span.t1, this.window.w0, this.window.w1, slow?.t0, slow?.t1, action?.t0, action?.t1, timing?.sig,
       take?.f?.t, take?.kill?.t, creator.takeHeld, creator.ramp.speed, Boolean(this.paint), autoSlow?.t0, autoSlow?.t1, autoSlow?.pace,
-      JSON.stringify(list.map(c => [c.cam, c.t0, c.t1, c.into, c.motion, c.move, Boolean(c.end), c.view?.pos?.[0], c.end?.pos?.[0]])),
+      JSON.stringify(list.map(c => [c.cam, c.t0, c.t1, c.into, c.motion, c.move, Boolean(c.end), c.tEnd, c.view?.pos?.[0], c.end?.pos?.[0]])),
       creator.placing?.i, creator.keyShots.size, creator.part?.t0, creator.part?.t1,
       JSON.stringify(creator.edits), creator.studio?.open].join('|');
     this.syncActive(t, list);
@@ -1199,10 +1253,24 @@ export class ClipBar {
       words.append(el('b', '', c.label));
       if (c.sub) words.append(el('small', '', c.sub));
       b.append(words);
-      // Your own camera's end camera, or a + for one: it moves there.
+      // Your own camera's end camera, or a + for one: it moves there, by
+      // the moment the icon sits at, and holds it after. Both drag.
       if (own.cam === 'placed') {
-        b.append(this.camIcon(own.end ?? null, own.end ? 'cam:placed' : 'plus', c.i, 'end',
-          own.end ? `End camera: it ${abMoveLabel(own.move).toLowerCase()}s here over its part; click to set it again` : 'Add an end camera: the camera moves to it over its part'));
+        const share = endShare(c, t => this.sx(t));
+        if (own.end && share < 1 - 1e-3) {
+          const hold = el('i', 'rc-cb-camhold');
+          hold.style.left = `${share * 100}%`;
+          hold.title = 'Holds its end camera from here';
+          b.append(hold);
+        }
+        const icon = this.camIcon(own.end ?? null, own.end ? 'cam:placed' : 'plus', c.i, 'end',
+          own.end ? `End camera: it ${abMoveLabel(own.move).toLowerCase()}s here, then holds it. Drag it to when it should get there; click to set it again`
+            : 'Add an end camera: drag it to when the camera should get there, or click to set it at the end of its part');
+        icon.style.left = endLeft(share);
+        // The words stop short of an end camera dragged over them.
+        if (share < 1 - 1e-3) words.style.maxWidth = `max(0px, calc(${(share * 100).toFixed(3)}% - 70px))`;
+        b.append(icon);
+        this.bindEnd(icon, b, list[c.i]);
       } else b.append(el('i', 'rc-cb-caret'));
       this.camEls.push(b);
     }
@@ -1310,6 +1378,7 @@ export class ClipBar {
       if (g) b.append(g);
     }
     b.addEventListener('pointerdown', e => e.stopPropagation());
+    if (which === 'end') return b;
     b.addEventListener('click', e => {
       e.stopPropagation();
       this.closePop();
@@ -1317,6 +1386,76 @@ export class ClipBar {
       this.sync(creator.player.time, true);
     });
     return b;
+  }
+
+  /**
+   * Camera `c`'s end camera icon (or its +) dragged along its block: it goes
+   * where the camera should get to its end camera, snapping to the shot, the
+   * hit, the man down and the playhead, and the words say what it is kept
+   * at. The drop keeps it and loops the part; the + dropped places the end
+   * camera there. A press that does not move sets the end camera, as a
+   * click on any camera's icon does.
+   */
+  bindEnd(icon, block, c) {
+    const creator = this.creator;
+    icon.addEventListener('click', e => e.stopPropagation());
+    icon.addEventListener('pointerdown', e => {
+      if (e.button !== 0) return;
+      e.stopPropagation();
+      e.preventDefault();
+      this.closePop();
+      creator.ui.activity?.();
+      const lo = c.t0 + CAM_MIN;
+      const hi = c.t1;
+      const marks = this.snapMarks({ playhead: true });
+      const x0 = e.clientX;
+      let t = Number.isFinite(c.tEnd) ? c.tEnd : c.t1;
+      let moved = false;
+      this.dragging = true;
+      icon.classList.add('held');
+      const w = Math.max(1e-6, this.sx(c.t1) - this.sx(c.t0));
+      let hold = block.querySelector('.rc-cb-camhold');
+      const moveIt = ev => {
+        if (!moved && Math.abs(ev.clientX - x0) <= CLICK_SLOP) return;
+        moved = true;
+        t = clamp(this.snap(this.timeAt(ev.clientX), { marks }), lo, hi);
+        if (hi - t <= CAM_MIN) t = hi;
+        const share = Math.min(1, Math.max(0, (this.sx(t) - this.sx(c.t0)) / w));
+        icon.style.left = endLeft(share);
+        const words = block.querySelector('.rc-cb-camwords');
+        if (words) words.style.maxWidth = share < 1 - 1e-3 ? `max(0px, calc(${(share * 100).toFixed(3)}% - 70px))` : '';
+        if (!hold) {
+          hold = el('i', 'rc-cb-camhold');
+          block.insertBefore(hold, icon);
+        }
+        hold.style.left = `${share * 100}%`;
+        hold.hidden = share >= 1 - 1e-3;
+        const m = creator.timing()?.moments;
+        this.tip.hidden = false;
+        this.tip.textContent = m ? endWords(hi - t <= CAM_MIN ? null : anchorAt(t, m)) : '';
+        this.tip.style.left = this.pct(t);
+      };
+      const up = ev => {
+        moveIt(ev);
+        icon.removeEventListener('pointermove', moveIt);
+        icon.removeEventListener('pointerup', up);
+        icon.removeEventListener('pointercancel', up);
+        this.dragging = false;
+        this.showSnap(null);
+        this.tip.hidden = true;
+        icon.classList.remove('held');
+        try {
+          if (!moved) creator.placeCam(c.i, { which: 'end' });
+          else if (c.end) creator.moveEndAt(c.i, t);
+          else creator.placeCam(c.i, { which: 'end', endAt: t });
+        } catch (error) { console.warn('creator: an end camera', error); }
+        this.sync(creator.player.time, true);
+      };
+      try { icon.setPointerCapture(e.pointerId); } catch {}
+      icon.addEventListener('pointermove', moveIt);
+      icon.addEventListener('pointerup', up);
+      icon.addEventListener('pointercancel', up);
+    });
   }
 
   /** The camera filming the playhead lit. */
@@ -1432,11 +1571,17 @@ const STYLE = `
   border: 1.5px dashed rgba(255, 255, 255, .7); border-radius: 4px; background: rgba(0, 0, 0, .35); color: #fff; cursor: pointer; }
 .rc-cb-camicon .rc-cb-icon { width: 15px; height: 15px; stroke-width: 2.2; }
 .rc-cb-camicon.set { border: 1.5px solid var(--rp-gold); }
-.rc-cb-camicon.end { margin-left: auto; }
+/* The end camera sits where the camera gets to it, and drags; after it the
+   block is hatched: the end camera held. */
+.rc-cb-camicon.end { position: absolute; top: 3px; z-index: 2; transform: translateX(-100%); margin-left: -4px; cursor: ew-resize; touch-action: none; }
+.rc-cb-camicon.end.held { border-color: #fff; border-style: solid; box-shadow: 0 0 0 2px rgba(255, 255, 255, .35); }
+.rc-cb-camhold { position: absolute; top: 0; bottom: 0; right: 0; z-index: 1; pointer-events: none; border-left: 1.5px solid rgba(23, 21, 15, .55);
+  background: repeating-linear-gradient(135deg, rgba(23, 21, 15, .22) 0 4px, transparent 4px 8px); }
+.rc-cb-camhold[hidden] { display: none; }
 .rc-cb-camicon.add { min-width: 22px; opacity: .75; }
 .rc-cb-plus { font: 800 15px/1 var(--rp-font); }
 .rc-cb-camicon:hover, .rc-cb-camicon:focus-visible { border-color: #fff; border-style: solid; background: var(--rp-gold); color: #17150f; opacity: 1; outline: none; }
-.rc-cb-cam:has(.rc-cb-camicon.end) { padding-right: 4px; }
+.rc-cb-cam:has(.rc-cb-camicon.end) { padding-right: 34px; }
 /* A part of the clip playing over and over. */
 .rc-cb-part { position: absolute; top: 0; bottom: 0; z-index: 2; pointer-events: none; box-sizing: border-box;
   background: rgba(110, 231, 255, .08); border: 1.5px solid rgba(110, 231, 255, .85); border-radius: 4px; }

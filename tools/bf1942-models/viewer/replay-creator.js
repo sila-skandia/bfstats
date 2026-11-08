@@ -37,7 +37,7 @@ import { nameAt, teamAt } from './replay-recording.js';
 import { RoundCam, BULLET_TIME, bulletTimeSpan, guessSpeed, heavyRound, nextShotOf, slowFor, victimHullLife } from './replay-roundcam.js';
 import { CutRig, keyOf, keyValid } from './replay-camtrack.js';
 import {
-  CAM_RECIPES, STYLE_CAM, abMoveLabel, camLabel, camsFromKeys, camsOf, defaultCams, insertCam, moveCut, removeCam, resolveCams,
+  CAM_RECIPES, STYLE_CAM, abMoveLabel, camLabel, camsFromKeys, camsOf, defaultCams, insertCam, moveCut, moveEnd, removeCam, resolveCams,
   camIndexAt, sameCams, setCam, setHandOver, setPlaced, handOverLabel, motionLabel,
 } from './replay-cuts.js';
 import { clipClock } from './replay-clipclock.js';
@@ -1747,6 +1747,20 @@ export class ReplayCreator {
     this.loopPart({ kind: 'cam', i });
   }
 
+  /** Camera `i`, one of yours, gets to its end camera at `t` and holds it
+   *  from there (its end camera's icon dragged along the strip). */
+  moveEndAt(i, t) {
+    const span = this.span;
+    if (!span) return;
+    const m = this.timing(span).moments;
+    const next = moveEnd(this.camList(span), i, t, m);
+    const c = resolveCams(next, m)[i];
+    const word = c?.endAt ? `Camera ${i + 1} gets to its end camera at ${fmt(Math.max(0, this.screenAt(c.tEnd)))}, then holds it`
+      : `Camera ${i + 1} gets to its end camera as its part ends`;
+    this.setCams(next, word, { replay: false });
+    this.loopPart({ kind: 'cam', i });
+  }
+
   /** Camera `i`'s end camera taken away: it holds its start camera again. */
   removeEndAt(i) {
     this.setCams(setPlaced(this.camList(), i, { end: null }), `Camera ${i + 1} holds its camera`, { replay: false });
@@ -1945,7 +1959,7 @@ export class ReplayCreator {
    * it is flown to. The camera becomes yours. A new camera of yours from
    * `at` (the tray) is placed the same way. Esc puts the cameras back.
    */
-  placeCam(i, { at = null, which = 'start' } = {}) {
+  placeCam(i, { at = null, which = 'start', endAt = null } = {}) {
     const span = this.span;
     if (!span) return;
     if (this.placing) this.cancelPlacing({ quiet: true });
@@ -1964,10 +1978,11 @@ export class ReplayCreator {
       list = resolveCams(cams, m);
       i = camIndexAt(list, at + 1e-4);
     } else {
-      const c = list[i];
+      let c = list[i];
       if (!c) return;
       // Its start camera is seen just after it takes over, its end camera
-      // just before the next does: a tenth of a second of the video in.
+      // just before the next does (a tenth of a second of the video in), or
+      // where it gets to it, when that was dragged earlier.
       const s0 = tm.clock.toScreen(c.t0);
       const s1 = tm.clock.toScreen(c.t1);
       const pad = Math.min(0.1, (s1 - s0) / 4);
@@ -1976,7 +1991,13 @@ export class ReplayCreator {
       start = own ? { ...own } : this.poseOfCam(list, i, t) ?? this.viewOnScreen();
       if (!start) return;
       if (c.cam !== 'placed') cams = setPlaced(cams, i, { view: start, motion: 'still' });
-      if (which === 'end') cams = setPlaced(cams, i, { end: c.end ?? start });
+      if (which === 'end') {
+        cams = setPlaced(cams, i, { end: c.end ?? start });
+        // The + dragged to where the end camera should be got to.
+        if (Number.isFinite(endAt)) cams = moveEnd(cams, i, endAt, m);
+        c = resolveCams(cams, m)[i];
+        if (c.endAt && Number.isFinite(c.tEnd)) t = c.tEnd;
+      }
     }
     this.stopPart({ quiet: true });
     this.queue = null;

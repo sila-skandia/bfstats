@@ -739,6 +739,11 @@ results.clip = {
     steps: [5, 12, 20, 60].map(CB.tickStep),
     crossed: [[105.9, 106.02, 106], [106.5, 106.6, 106], [null, 106.1, 106], [90, 106.1, 106], [105, 105.9, 106]]
       .map(([p, t, o]) => CB.crossedOut(p, t, o)),
+    endLane: CB.camLane([
+      { i: 0, cam: 'placed', t0: 100, t1: 104, view: {}, end: {}, move: 'glide', endAt: { ev: 'shot', dt: -1 }, tEnd: 102 },
+      { i: 1, cam: 'placed', t0: 104, t1: 106, view: {}, end: {}, move: 'orbit', tEnd: 106 },
+    ]).map(c => [c.sub, c.tEnd, round(CB.endShare(c, t => t), 3)]),
+    endWords: [{ ev: 'shot', dt: -0.5 }, { ev: 'flight', p: 0.3 }, null].map(CB.endWords),
     lane: CB.camLane([
       { i: 0, cam: 'placed', t0: 100, t1: 103, motion: 'push', view: {} },
       { i: 1, cam: 'chase', t0: 103, t1: 103.06, at: { ev: 'shot', dt: 0 }, into: 'cut' },
@@ -808,7 +813,26 @@ results.clip = {
       const noEnd = CU.setPlaced([withEnd], 0, { end: null })[0];
       const swapped = CU.setCam([withEnd], 0, 'chase', {})[0];
       const read = CU.camsOf([{ cam: 'placed', view: A, end: B, move: 'nope' }, { cam: 'placed', at: { ev: 'shot', dt: 0 }, view: A, end: { pos: [1] } }], take);
-      return { withEnd, noEnd, swapped, read, intos: ['placed', 'chase', 'eyes', 'victim'].map(cam => CU.insertCam(def, 9, cam, ev)[1].into) };
+      // Its end camera dragged: before the shot, into the flight, back to
+      // its part's end; past its start it is held to it.
+      const two = [withEnd, { cam: 'chase', at: { ev: 'shot', dt: 0 }, into: 'cut' }];
+      const dragged = CU.moveEnd(two, 0, 9, ev);
+      const tEnd = list => round(CU.resolveCams(list, ev)[0].tEnd, 3);
+      const drags = {
+        early: [dragged[0].endAt, tEnd(dragged), CU.holdsEnd(CU.resolveCams(dragged, ev)[0])],
+        back: [CU.moveEnd(dragged, 0, 10, ev)[0].endAt ?? null, tEnd(CU.moveEnd(dragged, 0, 10, ev))],
+        tooEarly: tEnd(CU.moveEnd(two, 0, 2, ev)),
+        // The next hand-over moved before it: it gets there as its part ends.
+        cutBefore: tEnd(CU.moveCut(dragged, 1, 8.5, ev)),
+        // Read back with it, and without the end camera it goes too.
+        read: CU.camsOf(dragged, take)[0].endAt,
+        noEnd: 'endAt' in CU.setPlaced(dragged, 0, { end: null })[0],
+        swapped: 'endAt' in CU.setCam(dragged, 0, 'shoulder')[0],
+        noEndCam: CU.moveEnd(def, 0, 9, ev) === def,
+        // A new camera after it: the chase again from 9.5 s.
+        after: brief(CU.resolveCams(CU.insertCam(dragged, 9.5, 'shoulder', ev), ev)),
+      };
+      return { withEnd, noEnd, swapped, read, drags, intos: ['placed', 'chase', 'eyes', 'victim'].map(cam => CU.insertCam(def, 9, cam, ev)[1].into) };
     })(),
   };
 }
@@ -950,6 +974,14 @@ results.clip = {
     shot(ab, t);
     return [round(cam.position.x, 2), ab.fovAt(t)];
   });
+  // Its end camera dragged to 2 s before the shot (8 s): there by 8 s and
+  // held to the end of its part.
+  const abEarly = new T.CutRig(scene, [{ cam: 'placed', view: { pos: [0, 0, 0], quat: [0, 0, 0, 1], fov: 60 }, end: { pos: [10, 0, 0], quat: [0, 0, 0, 1], fov: 30 },
+    move: 'glide', endAt: { ev: 'shot', dt: -2 } }]);
+  const abHeld = [7, 7.5, 8, 9, 15].map(t => {
+    shot(abEarly, t);
+    return [round(cam.position.x, 2), abEarly.fovAt(t)];
+  });
   // Circle the victim: off the round's line on the shooter's side.
   const circler = new T.CutRig(scene, [{ cam: 'victim' }]);
   shot(circler, 7);
@@ -965,7 +997,7 @@ results.clip = {
   const dragRound = played.drag(1, 1);
   const near = played.nearPlane();
   const dragYours = paused.place(cam, 0, 8) && paused.drag(1, 1);
-  results.cutRig = { scrub, play, fromReset, letGo, abMove, glide, eyes: eyesFrames, noEyes, track, push, circle, lens, dragRound, near, dragYours };
+  results.cutRig = { scrub, play, fromReset, letGo, abMove, abHeld, glide, eyes: eyesFrames, noEyes, track, push, circle, lens, dragRound, near, dragYours };
 }
 
 // --- the studio's edits ---------------------------------------------------------------------------
