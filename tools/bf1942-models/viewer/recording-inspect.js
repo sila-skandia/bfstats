@@ -88,7 +88,7 @@ export async function describeRecording(text, { fallbackMod = VANILLA.id, onStag
   const rec = parseRecording(text);
   const mods = servable(await loadMods(), 'maps');
   const named = String(rec.mod || '').toLowerCase();
-  const mod = named ? mods.find(m => m.id === named) ?? null : mods.find(m => m.id === fallbackMod) ?? VANILLA;
+  let mod = named ? mods.find(m => m.id === named) ?? null : mods.find(m => m.id === fallbackMod) ?? VANILLA;
   let level = String(rec.level || '').toLowerCase();
   // Only a mod with levels here can be searched or chosen from.
   if (!level && !mod) {
@@ -98,7 +98,14 @@ export async function describeRecording(text, { fallbackMod = VANILLA.id, onStag
     onStage('Finding the level by its flags');
     const found = await recogniseLevel(rec, await levelTrees(mod, m => VANILLA_PACKS.includes(m.id)), sceneOf)
       .catch(error => { console.warn('recording-inspect: the level search failed', error); return null; });
-    if (found) level = String(found.entry.name).toLowerCase();
+    // The level is in the tree it was found in: a Secret Weapons level found
+    // from vanilla is xpack2's, and goes up as xpack2's, or the feed looks for
+    // it in vanilla's tree and says it is not extracted (gb8ft8napv, Hellendoorn,
+    // 2026-11-07).
+    if (found) {
+      level = String(found.entry.name).toLowerCase();
+      mod = found.mod;
+    }
   }
   const players = [...new Set([...rec.players.values()].map(p => String(p.name ?? '').trim()).filter(Boolean))];
   return {
