@@ -4,6 +4,7 @@ using api.PlayerTracking;
 using api.Recordings.Models;
 using api.Utils;
 using Microsoft.AspNetCore.Http;
+using Microsoft.Data.Sqlite;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Caching.Memory;
 using Microsoft.Extensions.Logging;
@@ -49,6 +50,13 @@ public interface IRecordingService
 
     Task<bool> DeleteCommentAsync(string slug, int commentId, RecordingActor actor, CancellationToken ct);
 
+    /// <summary>Gives (<paramref name="give"/>) or takes back <paramref name="actor"/>'s
+    /// <paramref name="kind"/> of reaction to a comment, and answers the comment's reactions
+    /// after it; null when there is no such comment on the recording. Giving one twice, or
+    /// taking back one never given, changes nothing.</summary>
+    Task<IReadOnlyList<RecordingCommentReactionDto>?> ReactAsync(
+        string slug, int commentId, string kind, bool give, RecordingActor actor, CancellationToken ct);
+
     /// <summary>The linked player name <paramref name="name"/> matches, as the account has it;
     /// throws for one the account has not linked.</summary>
     Task<string> PostingNameAsync(RecordingActor actor, string? name, CancellationToken ct);
@@ -74,6 +82,9 @@ public sealed class RecordingService(
     public const int DefaultPageSize = 24;
     public const int MaxPageSize = 48;
     public const int MaxCommentPageSize = 200;
+
+    /// <summary>SQLITE_CONSTRAINT: a key already there, or one gone.</summary>
+    private const int SqliteConstraint = 19;
 
     /// <summary>The most names a filter offers: those with the most recordings.</summary>
     public const int MaxFilterChoices = 100;
@@ -377,15 +388,20 @@ public sealed class RecordingService(
         pageSize = pageSize is < 1 or > MaxCommentPageSize ? 20 : pageSize;
         var comments = db.RecordingComments.AsNoTracking().Where(c => c.RecordingId == recording.Id);
         // `time`: in the order they happen in the round, for the replay's own list; the
-        // ones that name no time after.
-        var ordered = sort == "time"
-            ? comments.OrderBy(c => c.AtSeconds == null).ThenBy(c => c.AtSeconds).ThenBy(c => c.Id)
-            : comments.OrderByDescending(c => c.Id);
+        // ones that name no time after. `top`: the most reacted to first, then the newest.
+        var reactions = db.RecordingCommentReactions;
+        var ordered = sort switch
+        {
+            "time" => comments.OrderBy(c => c.AtSeconds == null).ThenBy(c => c.AtSeconds).ThenBy(c => c.Id),
+            "top" => comments.OrderByDescending(c => reactions.Count(r => r.CommentId == c.Id)).ThenByDescending(c => c.Id),
+            _ => comments.OrderByDescending(c => c.Id),
+        };
         var total = await comments.CountAsync(ct);
         var rows = await ordered.Skip((page - 1) * pageSize).Take(pageSize).ToListAsync(ct);
         var owner = Manages(actor, recording.UploaderUserId);
+        var reactionsOf = await ReactionsAsync([.. rows.Select(c => c.Id)], actor, ct);
         return new PagedRecordingCommentsDto(
-            [.. rows.Select(c => CommentDto(c, owner || c.AuthorUserId == actor?.UserId))],
+            [.. rows.Select(c => CommentDto(c, owner || c.AuthorUserId == actor?.UserId, reactionsOf.GetValueOrDefault(c.Id) ?? []))],
             total,
             page,
             pageSize,
@@ -421,7 +437,7 @@ public sealed class RecordingService(
         await db.Recordings.Where(r => r.Id == recording.Id)
             .ExecuteUpdateAsync(set => set.SetProperty(r => r.CommentCount, r => r.CommentCount + 1), ct);
         await transaction.CommitAsync(ct);
-        return CommentDto(comment, canDelete: true);
+        return CommentDto(comment, canDelete: true, []);
     }
 
     public async Task<bool> DeleteCommentAsync(string slug, int commentId, RecordingActor actor, CancellationToken ct)
@@ -442,6 +458,69 @@ public sealed class RecordingService(
             .ExecuteUpdateAsync(set => set.SetProperty(r => r.CommentCount, r => r.CommentCount - 1), ct);
         await transaction.CommitAsync(ct);
         return true;
+    }
+
+    public async Task<IReadOnlyList<RecordingCommentReactionDto>?> ReactAsync(
+        string slug, int commentId, string kind, bool give, RecordingActor actor, CancellationToken ct)
+    {
+        var clean = RecordingReactions.Clean(kind)
+            ?? throw new RecordingRejectedException($"That is not a reaction. Try one of: {string.Join(", ", RecordingReactions.Kinds)}.");
+        var exists = await db.RecordingComments.AsNoTracking()
+            .AnyAsync(c => c.Id == commentId && c.Recording.Slug == slug && !c.Recording.FileMissing, ct);
+        if (!exists) return null;
+        var mine = db.RecordingCommentReactions
+            .Where(r => r.CommentId == commentId && r.UserId == actor.UserId && r.Kind == clean);
+        if (!give)
+        {
+            await mine.ExecuteDeleteAsync(ct);
+        }
+        else if (!await mine.AnyAsync(ct))
+        {
+            var reaction = new RecordingCommentReaction
+            {
+                CommentId = commentId,
+                UserId = actor.UserId,
+                Kind = clean,
+                CreatedAt = clock.GetCurrentInstant(),
+            };
+            db.RecordingCommentReactions.Add(reaction);
+            try
+            {
+                await db.SaveChangesAsync(ct);
+            }
+            catch (DbUpdateException ex) when (ex.InnerException is SqliteException { SqliteErrorCode: SqliteConstraint })
+            {
+                // The same reaction from a second tab between the read and the write, so it is
+                // there; or the comment went meanwhile. Anything else (a busy database) is not
+                // swallowed: the page would show a like that never saved.
+                db.Entry(reaction).State = EntityState.Detached;
+            }
+        }
+        return (await ReactionsAsync([commentId], actor, ct)).GetValueOrDefault(commentId) ?? [];
+    }
+
+    /// <summary>Each comment's reactions, as <see cref="CommentDto"/> lists them, for those
+    /// that have any; the viewer's own are marked <c>Mine</c>.</summary>
+    private async Task<Dictionary<int, IReadOnlyList<RecordingCommentReactionDto>>> ReactionsAsync(
+        IReadOnlyCollection<int> commentIds, RecordingActor? actor, CancellationToken ct)
+    {
+        if (commentIds.Count == 0) return [];
+        var reactions = db.RecordingCommentReactions.AsNoTracking().Where(r => commentIds.Contains(r.CommentId));
+        var counts = await reactions
+            .GroupBy(r => new { r.CommentId, r.Kind })
+            .Select(g => new { g.Key.CommentId, g.Key.Kind, Count = g.Count() })
+            .ToListAsync(ct);
+        HashSet<(int CommentId, string Kind)> own = actor is null ? [] : [.. (await reactions
+            .Where(r => r.UserId == actor.UserId)
+            .Select(r => new { r.CommentId, r.Kind })
+            .ToListAsync(ct)).Select(m => (m.CommentId, m.Kind))];
+        return counts
+            .GroupBy(c => c.CommentId)
+            .ToDictionary(
+                g => g.Key,
+                g => (IReadOnlyList<RecordingCommentReactionDto>)[.. g
+                    .OrderBy(c => RecordingReactions.Order(c.Kind))
+                    .Select(c => new RecordingCommentReactionDto(c.Kind, c.Count, own.Contains((c.CommentId, c.Kind))))]);
     }
 
     public async Task<string> PostingNameAsync(RecordingActor actor, string? name, CancellationToken ct)
@@ -753,8 +832,9 @@ public sealed class RecordingService(
         r.StatsRoundId,
         SourceName(r.Source));
 
-    private static RecordingCommentDto CommentDto(RecordingComment c, bool canDelete) =>
-        new(c.Id, c.AuthorName, c.Content, c.AtSeconds, c.CreatedAt, canDelete);
+    private static RecordingCommentDto CommentDto(
+        RecordingComment c, bool canDelete, IReadOnlyList<RecordingCommentReactionDto> reactions) =>
+        new(c.Id, c.AuthorName, c.Content, c.AtSeconds, c.CreatedAt, canDelete, reactions);
 
     private static List<string> Players(string json)
     {

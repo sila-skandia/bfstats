@@ -296,4 +296,26 @@ results.share = [
   share.shareable({ mime: 'video/mp4', frame: '916', replayUrl: 'replays/bocage.ndjson' }),
 ].map(r => r.ok);
 
+// Likes and reactions on a comment (comment-reactions.js): what a click does to
+// its counts before the API answers, and what a title says of who gave them.
+const reactions = await imp('comment-reactions.js');
+{
+  const start = [{ kind: 'like', count: 2, mine: false }, { kind: 'rip', count: 1, mine: true }];
+  const liked = reactions.toggleReaction(start, 'like');
+  const unliked = reactions.toggleReaction(liked.reactions, 'like');
+  const fire = reactions.toggleReaction(start, 'fire');
+  const ripGone = reactions.toggleReaction(start, 'rip');
+  results.reactions = {
+    kinds: reactions.REACTIONS.map(r => r.kind),
+    liked, unliked, fire, ripGone,
+    fromNone: reactions.toggleReaction(undefined, 'wow'),
+    startUntouched: start,
+    who: [
+      { kind: 'like', count: 3, mine: true }, { kind: 'like', count: 2, mine: true }, { kind: 'like', count: 1, mine: true },
+      { kind: 'haha', count: 1, mine: false }, { kind: 'haha', count: 4, mine: false }, { kind: 'rip', count: 0 },
+    ].map(reactions.reactionWho),
+    glyphs: reactions.REACTIONS.every(r => reactions.reactionGlyph(r.kind).includes('<path') || reactions.reactionGlyph(r.kind).includes('<circle')),
+  };
+}
+
 process.stdout.write(JSON.stringify(results));

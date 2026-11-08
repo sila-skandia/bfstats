@@ -364,6 +364,11 @@ export function createRecordingsApi(api) {
       request(`/stats/recordings/${encodeURIComponent(slug)}/comments`, { method: 'POST', json: { content, authorName }, auth: true }),
     removeComment: (slug, id) =>
       request(`/stats/recordings/${encodeURIComponent(slug)}/comments/${id}`, { method: 'DELETE', auth: true }),
+    /** Gives (`give`) or takes back a like or reaction (comment-reactions.js
+     *  `REACTIONS`) on a comment; answers its reactions, `[{ kind, count, mine }]`. */
+    react: (slug, id, kind, give = true) =>
+      request(`/stats/recordings/${encodeURIComponent(slug)}/comments/${id}/reactions/${encodeURIComponent(kind)}`,
+        { method: give ? 'PUT' : 'DELETE', auth: true }),
     upload,
 
     /** The account's BF1942 profiles (features/game-profiles): `[{ name,

@@ -2475,6 +2475,29 @@ namespace api.Migrations
                     b.ToTable("RecordingComments");
                 });
 
+            modelBuilder.Entity("api.Recordings.Models.RecordingCommentReaction", b =>
+                {
+                    b.Property<int>("CommentId")
+                        .HasColumnType("INTEGER");
+
+                    b.Property<int>("UserId")
+                        .HasColumnType("INTEGER");
+
+                    b.Property<string>("Kind")
+                        .HasMaxLength(16)
+                        .HasColumnType("TEXT");
+
+                    b.Property<string>("CreatedAt")
+                        .IsRequired()
+                        .HasColumnType("TEXT");
+
+                    b.HasKey("CommentId", "UserId", "Kind");
+
+                    b.HasIndex("UserId");
+
+                    b.ToTable("RecordingCommentReactions");
+                });
+
             modelBuilder.Entity("api.Recordings.Models.RecordingFingerprint", b =>
                 {
                     b.Property<int>("RecordingId")
@@ -3283,6 +3306,25 @@ namespace api.Migrations
                     b.Navigation("Author");
 
                     b.Navigation("Recording");
+                });
+
+            modelBuilder.Entity("api.Recordings.Models.RecordingCommentReaction", b =>
+                {
+                    b.HasOne("api.Recordings.Models.RecordingComment", "Comment")
+                        .WithMany()
+                        .HasForeignKey("CommentId")
+                        .OnDelete(DeleteBehavior.Cascade)
+                        .IsRequired();
+
+                    b.HasOne("api.PlayerTracking.User", "User")
+                        .WithMany()
+                        .HasForeignKey("UserId")
+                        .OnDelete(DeleteBehavior.Cascade)
+                        .IsRequired();
+
+                    b.Navigation("Comment");
+
+                    b.Navigation("User");
                 });
 
             modelBuilder.Entity("api.Recordings.Models.RecordingFingerprint", b =>

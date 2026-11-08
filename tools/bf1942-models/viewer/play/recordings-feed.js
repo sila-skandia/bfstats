@@ -9,8 +9,10 @@
 //
 // A card's cover plays the recording; its title opens its page. A time in a
 // comment (`0:21 get rekt`) is a link into the replay at that moment, as a
-// time in a YouTube comment is. Watching is `map.html`, where the same
-// comments run alongside the round (replay-social.js).
+// time in a YouTube comment is. A comment can be liked and reacted to
+// (comment-reactions.js), and the comments read Top first by those. Watching
+// is `map.html`, where the same comments run alongside the round
+// (replay-social.js).
 //
 // Several players' recordings of one round are found by the API and grouped
 // (features/replay-feed, "Rounds"): the feed pages a round as one card, a deck
@@ -34,6 +36,7 @@ import { loadMods, servable, VANILLA } from '../mods.js';
 import { artCandidates, firstLoadable, isBlankFrame } from '../level-art.js';
 import { loadHudPaths } from '../hud-pack.js';
 import { createShorts } from './replay-shorts.js';
+import { reactionBar } from '../comment-reactions.js';
 import { remindToUpdate } from '../recorder-update.js';
 
 const PAGE_SIZE = 24;
@@ -377,6 +380,7 @@ const STYLE = `
 .rf-comment-who b { color: var(--rf-ink); margin-right: 6px; }
 .rf-comment-text { grid-column: 2; margin: 2px 0 0; white-space: pre-wrap; overflow-wrap: anywhere; -webkit-user-select: text; user-select: text; }
 .rf-comment .rf-btn { grid-row: 1; grid-column: 3; height: 24px; padding: 0 6px; }
+.rf-comment-reactions { grid-column: 2 / -1; }
 .rf-time { color: #9fc3ff; font-weight: 700; text-decoration: none; font-variant-numeric: tabular-nums; }
 .rf-time:hover { text-decoration: underline; }
 .rf-status { min-height: 16px; color: var(--rf-muted); font-size: 12px; }
@@ -738,7 +742,8 @@ export function createReplayFeed({ root = '../', onWatchFile = null, playerName 
   }
 
   /** Who the page reads the feed as. What the API says a viewer may do (a
-   *  card's or a page's `canManage`, a comment's `canDelete`, `canEditRound`)
+   *  card's or a page's `canManage`, a comment's `canDelete` and which of its
+   *  reactions are `mine`, `canEditRound`)
    *  is for that viewer. */
   const readAs = () => (state.api?.signedIn ? 'in' : 'out');
 
@@ -809,7 +814,10 @@ export function createReplayFeed({ root = '../', onWatchFile = null, playerName 
       Object.assign(state.detail, { canManage: false, canEditRound: false });
       state.detail.round?.forEach(drop);
     }
-    for (const comment of state.comments) comment.canDelete = false;
+    for (const comment of state.comments) {
+      comment.canDelete = false;
+      comment.reactions = comment.reactions?.map(r => ({ ...r, mine: false }));
+    }
     state.listAs = state.detailAs = 'out';
   }
 
@@ -1864,7 +1872,7 @@ export function createReplayFeed({ root = '../', onWatchFile = null, playerName 
     const top = el('div', 'rf-comments-head');
     top.append(el('h2', '', state.commentTotal ? count(state.commentTotal, 'comment') : 'Comments'));
     const seg = el('div', 'rf-seg');
-    for (const [id, label] of [['newest', 'Newest'], ['time', 'In round order']]) {
+    for (const [id, label] of [['newest', 'Newest'], ['top', 'Top'], ['time', 'In round order']]) {
       const b = el('button', '', label);
       b.type = 'button';
       b.setAttribute('aria-pressed', String(state.commentSort === id));
@@ -1924,6 +1932,18 @@ export function createReplayFeed({ root = '../', onWatchFile = null, playerName 
       }, 'trash'));
     }
     li.append(text);
+    const api = state.api;
+    const bar = reactionBar(comment, {
+      react: api?.canWrite ? (kind, give) => api.react(recording.slug, comment.id, kind, give) : null,
+      canReact: () => Boolean(api?.signedIn),
+      signIn: () => {
+        flash('Sign in to like and react to comments.');
+        signIn();
+      },
+      failed: message => flash(message, true),
+    });
+    bar.classList.add('rf-comment-reactions');
+    li.append(bar);
     return li;
   }
 

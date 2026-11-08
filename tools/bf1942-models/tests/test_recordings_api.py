@@ -12,6 +12,7 @@ comments are checked in a browser against a running API.
 from __future__ import annotations
 
 import json
+import re
 import shutil
 import subprocess
 import unittest
@@ -293,6 +294,36 @@ class RecordingsApiTests(unittest.TestCase):
         self.assertEqual(filtered["hrefSource"], "?tab=replay&source=server")
         self.assertEqual(filtered["ofSource"], ["server", "client", "client", "", ""])
         self.assertEqual(filtered["hasServer"], [True, False, True, False, False])
+
+    def test_a_click_on_a_reaction_gives_it_or_takes_it_back(self) -> None:
+        r = self.results["reactions"]
+        mine = lambda state: [(x["kind"], x["count"], x["mine"]) for x in state["reactions"]]
+        self.assertEqual((mine(r["liked"]), r["liked"]["give"]), ([("like", 3, True), ("rip", 1, True)], True))
+        self.assertEqual((mine(r["unliked"]), r["unliked"]["give"]), ([("like", 2, False), ("rip", 1, True)], False))
+        # A new kind goes in the list's order, and the last one taken back goes.
+        self.assertEqual(mine(r["fire"]), [("like", 2, False), ("fire", 1, True), ("rip", 1, True)])
+        self.assertEqual(mine(r["ripGone"]), [("like", 2, False)])
+        self.assertEqual(mine(r["fromNone"]), [("wow", 1, True)])
+        # The comment's own list is left as it was, for putting back on a refusal.
+        self.assertEqual(r["startUntouched"], [
+            {"kind": "like", "count": 2, "mine": False}, {"kind": "rip", "count": 1, "mine": True}])
+
+    def test_a_reaction_says_who_gave_it(self) -> None:
+        self.assertEqual(self.results["reactions"]["who"], [
+            "Like: you and 2 others", "Like: you and 1 other", "Like: you",
+            "Haha: 1 person", "Haha: 4 people", "RIP",
+        ])
+        self.assertTrue(self.results["reactions"]["glyphs"])
+
+    def test_the_pages_offer_the_reactions_the_api_takes(self) -> None:
+        source = (Path(__file__).resolve().parents[3] / "api/Recordings/RecordingReactions.cs").read_text()
+        kinds = re.search(r"kinds = \[(.*?)\];", source, re.S)
+        self.assertIsNotNone(kinds)
+        api_kinds = re.findall(r'"(\w+)"', kinds.group(1))
+        self.assertEqual(["like", *api_kinds], self.results["reactions"]["kinds"])
+        # Names, never emoji: nothing outside plain ASCII in the glyphs' module.
+        module = (Path(__file__).resolve().parents[1] / "viewer/comment-reactions.js").read_text()
+        self.assertTrue(module.isascii())
 
 
 if __name__ == "__main__":

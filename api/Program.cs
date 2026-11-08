@@ -998,6 +998,11 @@ try
             RateLimitPartition.GetFixedWindowLimiter(
                 partitionKey: api.Recordings.ClientAddress.Of(httpContext),
                 factory: _ => new FixedWindowRateLimiterOptions { PermitLimit = 20, Window = TimeSpan.FromMinutes(10) }));
+        // A like is a click, and a click is often taken back: more room than a comment.
+        options.AddPolicy(api.Recordings.RecordingsController.ReactionLimit, httpContext =>
+            RateLimitPartition.GetFixedWindowLimiter(
+                partitionKey: api.Recordings.ClientAddress.Of(httpContext),
+                factory: _ => new FixedWindowRateLimiterOptions { PermitLimit = 120, Window = TimeSpan.FromMinutes(10) }));
         options.AddPolicy(api.Recordings.RecordingsController.ViewLimit, httpContext =>
             RateLimitPartition.GetFixedWindowLimiter(
                 partitionKey: api.Recordings.ClientAddress.Of(httpContext),

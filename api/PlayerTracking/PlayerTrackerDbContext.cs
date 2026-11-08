@@ -73,6 +73,7 @@ public class PlayerTrackerDbContext : DbContext
     // Shared gameplay recordings (features/replay-feed)
     public DbSet<Recording> Recordings { get; set; }
     public DbSet<RecordingComment> RecordingComments { get; set; }
+    public DbSet<RecordingCommentReaction> RecordingCommentReactions { get; set; }
     public DbSet<RecordingView> RecordingViews { get; set; }
     public DbSet<RecordingFingerprint> RecordingFingerprints { get; set; }
     public DbSet<RecordingRoundLink> RecordingRoundLinks { get; set; }
@@ -1502,6 +1503,24 @@ public class PlayerTrackerDbContext : DbContext
                 .WithMany()
                 .HasForeignKey(c => c.AuthorUserId)
                 .OnDelete(DeleteBehavior.Restrict);
+        });
+
+        // A comment's likes and reactions (features/replay-feed, "Likes and reactions"): one row
+        // per account and kind. The key leads with the comment, which is how a page reads them.
+        modelBuilder.Entity<RecordingCommentReaction>(reaction =>
+        {
+            reaction.HasKey(r => new { r.CommentId, r.UserId, r.Kind });
+            reaction.HasIndex(r => r.UserId);
+            reaction.Property(r => r.Kind).HasMaxLength(16);
+            reaction.Property(r => r.CreatedAt).HasConversion(v => FormatInstant(v), v => ParseInstant(v));
+            reaction.HasOne(r => r.Comment)
+                .WithMany()
+                .HasForeignKey(r => r.CommentId)
+                .OnDelete(DeleteBehavior.Cascade);
+            reaction.HasOne(r => r.User)
+                .WithMany()
+                .HasForeignKey(r => r.UserId)
+                .OnDelete(DeleteBehavior.Cascade);
         });
 
         modelBuilder.Entity<RecordingView>(view =>

@@ -38,6 +38,7 @@ public class RecordingsController(
     public const string UploadLimit = "recordings-upload";
     public const string CommentLimit = "recordings-comments";
     public const string ViewLimit = "recordings-views";
+    public const string ReactionLimit = "recordings-reactions";
 
     /// <summary>The feed, narrowed to one <paramref name="server"/>, one
     /// <paramref name="uploader"/>, the rounds one <paramref name="player"/> played in, or any
@@ -275,6 +276,38 @@ public class RecordingsController(
         try
         {
             return await recordings.DeleteCommentAsync(slug, commentId, actor, ct) ? NoContent() : NotFound();
+        }
+        catch (RecordingRejectedException ex)
+        {
+            return Rejected(ex);
+        }
+    }
+
+    /// <summary>Likes a comment, or gives it another reaction (features/replay-feed, "Likes
+    /// and reactions"); answers the comment's reactions. Any signed-in account may react: a
+    /// reaction is a count, and needs no linked player name.</summary>
+    [HttpPut("{slug:length(10)}/comments/{commentId:int}/reactions/{kind}")]
+    [Authorize]
+    [EnableRateLimiting(ReactionLimit)]
+    public Task<ActionResult<IReadOnlyList<RecordingCommentReactionDto>>> React(
+        string slug, int commentId, string kind, CancellationToken ct) => SetReaction(slug, commentId, kind, true, ct);
+
+    /// <summary>Takes a like or reaction back; answers the comment's reactions.</summary>
+    [HttpDelete("{slug:length(10)}/comments/{commentId:int}/reactions/{kind}")]
+    [Authorize]
+    [EnableRateLimiting(ReactionLimit)]
+    public Task<ActionResult<IReadOnlyList<RecordingCommentReactionDto>>> Unreact(
+        string slug, int commentId, string kind, CancellationToken ct) => SetReaction(slug, commentId, kind, false, ct);
+
+    private async Task<ActionResult<IReadOnlyList<RecordingCommentReactionDto>>> SetReaction(
+        string slug, int commentId, string kind, bool on, CancellationToken ct)
+    {
+        if (Actor() is not { } actor) return Unauthorized();
+        try
+        {
+            return await recordings.ReactAsync(slug, commentId, kind, on, actor, ct) is { } reactions
+                ? Ok(reactions)
+                : NotFound();
         }
         catch (RecordingRejectedException ex)
         {

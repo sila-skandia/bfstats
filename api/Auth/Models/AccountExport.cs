@@ -18,7 +18,8 @@ public sealed record AccountExport(
     IReadOnlyList<AccountExportTournament> Tournaments,
     IReadOnlyList<AccountExportTeamMembership> TournamentTeamMemberships,
     IReadOnlyList<AccountExportRecording>? SharedRecordings = null,
-    IReadOnlyList<AccountExportGameProfile>? GameProfiles = null);
+    IReadOnlyList<AccountExportGameProfile>? GameProfiles = null,
+    IReadOnlyList<AccountExportReaction>? CommentReactions = null);
 
 public sealed record AccountExportProfile(
     int Id,
@@ -55,6 +56,14 @@ public sealed record AccountExportComment(
     string Content,
     DateTime CreatedAtUtc,
     DateTime UpdatedAtUtc);
+
+/// <summary>A like or reaction given to a comment on a shared recording (features/replay-feed).</summary>
+public sealed record AccountExportReaction(
+    string Kind,
+    string RecordingTitle,
+    string CommentAuthor,
+    string CommentContent,
+    DateTime ReactedAtUtc);
 
 public sealed record AccountExportTournament(int Id, string Name, DateTime CreatedAtUtc);
 

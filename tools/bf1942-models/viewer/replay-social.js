@@ -1,7 +1,8 @@
 // A shared recording's life in the replay (features/replay-feed): the view it
 // counts, the place a link starts it (`&t=21`), its comments beside the round
 // with each time in them a place to jump to, their marks along the timeline,
-// and the comments coming up as the round passes the moment they name. The
+// and the comments coming up as the round passes the moment they name. Each
+// comment has its likes and reactions under it (comment-reactions.js). The
 // uploader, or an admin, can make the frame on screen the recording's cover
 // (F, or the menu).
 //
@@ -40,6 +41,7 @@ import {
 import { isLocalReplay, readLocalRecording } from './replay-open.js';
 import { recorderName } from './replay-chapters.js';
 import { remindToUpdate } from './recorder-update.js';
+import { reactionBar } from './comment-reactions.js';
 
 /** A comment comes up this long as the round passes its moment, seconds. */
 const BUBBLE_SECONDS = 5;
@@ -517,7 +519,16 @@ export function installReplaySocial({ replayUrl, replayUrls = [replayUrl], param
         });
         who.append(del);
       }
-      item.append(who, textWithTimes(comment));
+      const bar = reactionBar(comment, {
+        react: api.canWrite ? (kind, give) => api.react(members[comment.member]?.slug ?? slug, comment.id, kind, give) : null,
+        canReact: () => api.signedIn,
+        signIn: () => {
+          ui.flash('Sign in to like and react to comments.', 2500);
+          signIn();
+        },
+        failed: message => ui.flash(message, 2500),
+      });
+      item.append(who, textWithTimes(comment), bar);
       nodes.list.append(item);
     }
     highlightNow();

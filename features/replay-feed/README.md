@@ -43,9 +43,10 @@ rest of the screen.
   its uploader or an admin Rename and Delete (below, "Renaming and deleting").
 - **A card's menu** (the dots beside its title), for its uploader or an admin:
   Rename and Delete.
-- **Comments**, newest first or in round order. A time in one (`0:21`,
-  `12:40`, `1:02:03`) is a link that opens the replay at that moment
-  (`&t=21`); a time past the recording's end stays text.
+- **Comments**, newest first, top first or in round order. A time in one
+  (`0:21`, `12:40`, `1:02:03`) is a link that opens the replay at that moment
+  (`&t=21`); a time past the recording's end stays text. Each comment can be
+  liked and reacted to (below, "Likes and reactions").
 - **Share a recording**: pick or drop a `replay_*.ndjson` (and its `ev_*.xml`
   server log). The browser reads it with the replay's own parser (level,
   game type, server, recorder, length), recognises the level by its flags for a
@@ -68,6 +69,8 @@ shared recording:
   panel beside the round with each time a place to jump to, the comment
   nearest before the playhead lit, and a box that starts with the moment on
   screen (`4:12 `); Enter posts;
+- has a Like button and the other reactions under each comment, as the feed's
+  page does (below, "Likes and reactions");
 - marks each timed comment on the timeline; a click jumps there;
 - brings each timed comment up as the round passes its moment, while the
   panel is shut;
@@ -150,6 +153,13 @@ Shared now, such a recording waits in the feed until its level is baked.
   says it can be shared to the feed instead.
 - Once the level is extracted and published, its recordings play with no
   change to the row: the check reads `maps.json` live.
+- **A level recognised by its flags goes up in the tree it was found in.**
+  A file that names no level (no `setLevel`, no `serverInfo`) is looked for in
+  its mod's tree, then vanilla's and both packs'. `describeRecording` kept the
+  level it found and dropped the tree, so a Secret Weapons round went up as
+  `bf1942/hellendoorn` and showed "Not in the viewer yet" with Hellendoorn
+  live under `xpack2` (gb8ft8napv, 2026-11-07; the row was corrected by hand).
+  It now sends the found tree's id (`test_recording_inspect.py`).
 
 ## Short links
 
@@ -242,7 +252,8 @@ bfstats.io, read-only (the feed's reads are CORS-open for that). `?api=local`,
 | `PATCH`, `DELETE /{slug}` | rename, remove (uploader or admin) |
 | `PUT /{slug}/thumbnail` | the cover, re-encoded by ImageSharp as a JPEG no wider than 640 px, so what is served is an image this code made |
 | `POST /{slug}/views` | a view (202) |
-| `GET`, `POST /{slug}/comments`, `DELETE /{slug}/comments/{id}` | comments; `sort=time` is round order. Deleting is for the author, the recording's uploader or an admin. |
+| `GET`, `POST /{slug}/comments`, `DELETE /{slug}/comments/{id}` | comments, each with its `reactions` (`[{ kind, count, mine }]`, below, "Likes and reactions"); `sort=time` is round order, `sort=top` the most reacted to first, then the newest. Deleting is for the author, the recording's uploader or an admin. |
+| `PUT`, `DELETE /{slug}/comments/{id}/reactions/{kind}` | like or react to a comment, or take it back; answers the comment's `reactions`. Any signed-in account, linked name or not. An unknown kind is a 400. |
 | `GET /me` | the names the signed-in visitor posts as |
 | `POST`, `DELETE /{slug}/round` | an admin puts the recording in another's round (`{"with": "<its slug or any link to it>", "confirm": false}`), or takes it out of its own for good; the recording's page after (below, "Rounds"). Two recordings whose files fall short of what detection needs are a 409 with `evidence` until `confirm` is true. |
 
@@ -339,7 +350,7 @@ origin, whatever got past the checks above.
 | A cover | 1 MB in, 16 to 2048 px a side, JPEG, PNG or WebP, one frame |
 | Names in a file | a player 32 characters, a server 64; a level, mod or game type `[a-z0-9_-]{1,64}` |
 | Titles, comments | 100 and 1000 characters, plain text: control characters and bidi overrides removed, never rendered as HTML |
-| Rate | per address (Cloudflare's `CF-Connecting-IP`): 10 uploads an hour, 20 comments or covers in 10 minutes, 60 views a minute |
+| Rate | per address (Cloudflare's `CF-Connecting-IP`): 10 uploads an hour, 20 comments or covers in 10 minutes, 120 likes or reactions in 10 minutes, 60 views a minute |
 
 A recording is in the feed only while its file is on disk: the root disk is
 not backed up, so `RecordingFileReconciler` looks every six hours (and at
@@ -353,9 +364,53 @@ on this database and a request waiting one out would hold a pooled connection
 user by id, anyone else by a keyed hash of address and browser, so no address
 is kept. A batch the database will not take is retried and then dropped.
 
-**Account data**: an account's export lists its shared recordings and its
-comments on recordings; erasing it removes both (the recordings with everyone's
-comments on them, and their files).
+**Account data**: an account's export lists its shared recordings, its
+comments on recordings and its likes and reactions (`commentReactions`);
+erasing it removes all three (the recordings with everyone's comments on them,
+and their files; a comment going takes its reactions with it).
+
+## Likes and reactions
+
+Added 2026-11-08. A comment on a recording, on the feed's page and in the
+replay's panel, has a row under it:
+
+- **Like** (a thumbs-up), always there, with its count once it has one.
+- **The other reactions it has**, as chips with their counts: Love, Haha, Wow,
+  Fire and RIP. A chip is a button too: pressing one gives that reaction, or
+  takes it back.
+- **Add a reaction** (a face with a plus) opens the picker inline after it,
+  the five beside each other; a press elsewhere or Escape shuts it.
+
+What the viewer gave is lit gold, and a title says who: "Like: you and 2
+others", "Haha: 4 people". Giving one pops its glyph (none under
+`prefers-reduced-motion`). A click shows at once and the API's answer puts it
+right; a refusal puts it back and says why. Signed out, a click says to sign
+in and starts it; a page that only reads the live API (a viewer run from this
+PC against bfstats.io) shows the counts with nothing to press.
+
+**Decided:**
+
+- **One of each kind per account, several kinds allowed** (Discord and Slack,
+  not Facebook's one-of-six): you can like a comment and laugh at it.
+  `RecordingCommentReactions` is keyed `(CommentId, UserId, Kind)`, so giving
+  one twice is still once; the key leads with the comment, which is how a page
+  reads them, and `UserId` is indexed for the account export and erasure.
+- **A reaction needs a signed-in account, not a linked player name.** It is a
+  count and shows no name, so there is no "post as" to choose.
+- **Counts, not names.** The page says whether you are among them and how
+  many others are; it does not list who.
+- **Names, not emoji.** CLAUDE.md keeps emoji out of the codebase, so the API
+  stores a kind's name (`like`, `love`, `haha`, `wow`, `fire`, `rip`;
+  `api/Recordings/RecordingReactions.cs`) and `viewer/comment-reactions.js`
+  draws each as its own 16 px SVG glyph: a thumbs-up, a heart, two faces, a
+  flame and a skull. `test_recordings_api.py` holds the two lists to each
+  other, and the module to plain ASCII.
+- **Top** on the feed's page orders by all reactions together, then newest.
+  The replay's panel stays in round order.
+
+**Tests:** `RecordingServiceTests` (`Reactions_*`, `Comments_TopIsTheMostReactedToFirst`,
+`DeleteComment_TakesItsReactionsWithIt`, and the account erasure test);
+`test_recordings_api.py` for the toggle, the titles and the kinds.
 
 ## Renaming and deleting
 

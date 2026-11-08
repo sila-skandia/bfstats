@@ -341,6 +341,80 @@ public sealed class RecordingServiceTests : IDisposable
         Assert.Equal(0, (await fixture.Service.GetAsync(shared.Slug, null, default))!.CommentCount);
     }
 
+    /// <summary>Likes and reactions (features/replay-feed, "Likes and reactions"): one of each
+    /// kind per account, counted per comment, the viewer's own marked, and taken back.</summary>
+    [Fact]
+    public async Task Reactions_CountEachAccountOnceAndMarkTheViewers()
+    {
+        var shared = await Share("r");
+        var comment = await fixture.Service.AddCommentAsync(shared.Slug, fixture.AsOther, new("0:21 get rekt", "Rut"), default);
+        Assert.Empty(comment!.Reactions);
+
+        await fixture.Service.ReactAsync(shared.Slug, comment.Id, "like", true, fixture.AsUploader, default);
+        // Twice is still once.
+        await fixture.Service.ReactAsync(shared.Slug, comment.Id, "like", true, fixture.AsUploader, default);
+        // An account needs no linked player name to react, and may give several kinds.
+        await fixture.Service.ReactAsync(shared.Slug, comment.Id, "LIKE", true, fixture.AsUnlinked, default);
+        var after = await fixture.Service.ReactAsync(shared.Slug, comment.Id, "fire", true, fixture.AsUnlinked, default);
+
+        Assert.Equal([("like", 2, true), ("fire", 1, true)], after!.Select(r => (r.Kind, r.Count, r.Mine)));
+        var asUploader = (await fixture.Service.CommentsAsync(shared.Slug, null, 1, 20, fixture.AsUploader, default))!.Items.Single();
+        Assert.Equal([("like", 2, true), ("fire", 1, false)], asUploader.Reactions.Select(r => (r.Kind, r.Count, r.Mine)));
+        var signedOut = (await fixture.Service.CommentsAsync(shared.Slug, null, 1, 20, null, default))!.Items.Single();
+        Assert.All(signedOut.Reactions, r => Assert.False(r.Mine));
+
+        var undone = await fixture.Service.ReactAsync(shared.Slug, comment.Id, "like", false, fixture.AsUploader, default);
+        Assert.Equal([("like", 1, false), ("fire", 1, false)], undone!.Select(r => (r.Kind, r.Count, r.Mine)));
+        // Taking back one never given changes nothing.
+        await fixture.Service.ReactAsync(shared.Slug, comment.Id, "wow", false, fixture.AsUploader, default);
+        Assert.Equal(2, await fixture.Db.RecordingCommentReactions.CountAsync());
+    }
+
+    [Fact]
+    public async Task Reactions_AreOnlyTheKnownKindsOnAComment()
+    {
+        var shared = await Share("r");
+        var other = await Share("s");
+        var comment = await fixture.Service.AddCommentAsync(shared.Slug, fixture.AsOther, new("hi", "Rut"), default);
+
+        var unknown = await Assert.ThrowsAsync<RecordingRejectedException>(
+            () => fixture.Service.ReactAsync(shared.Slug, comment!.Id, "<script>", true, fixture.AsUploader, default));
+        Assert.Equal(400, unknown.StatusCode);
+        Assert.Null(await fixture.Service.ReactAsync(shared.Slug, 9999, "like", true, fixture.AsUploader, default));
+        // A comment is found on its own recording only.
+        Assert.Null(await fixture.Service.ReactAsync(other.Slug, comment!.Id, "like", true, fixture.AsUploader, default));
+        Assert.Equal(0, await fixture.Db.RecordingCommentReactions.CountAsync());
+    }
+
+    [Fact]
+    public async Task Comments_TopIsTheMostReactedToFirst()
+    {
+        var shared = await Share("t");
+        var first = await fixture.Service.AddCommentAsync(shared.Slug, fixture.AsOther, new("first", "Rut"), default);
+        var second = await fixture.Service.AddCommentAsync(shared.Slug, fixture.AsOther, new("second", "Rut"), default);
+        var third = await fixture.Service.AddCommentAsync(shared.Slug, fixture.AsOther, new("third", "Rut"), default);
+        await fixture.Service.ReactAsync(shared.Slug, first!.Id, "like", true, fixture.AsUploader, default);
+        await fixture.Service.ReactAsync(shared.Slug, first.Id, "haha", true, fixture.AsAdmin, default);
+        await fixture.Service.ReactAsync(shared.Slug, second!.Id, "like", true, fixture.AsAdmin, default);
+
+        var top = await fixture.Service.CommentsAsync(shared.Slug, "top", 1, 20, null, default);
+
+        // Ties, here the one with none, go newest first.
+        Assert.Equal([first.Id, second.Id, third!.Id], top!.Items.Select(c => c.Id));
+    }
+
+    [Fact]
+    public async Task DeleteComment_TakesItsReactionsWithIt()
+    {
+        var shared = await Share("d");
+        var comment = await fixture.Service.AddCommentAsync(shared.Slug, fixture.AsOther, new("bye", "Rut"), default);
+        await fixture.Service.ReactAsync(shared.Slug, comment!.Id, "rip", true, fixture.AsUploader, default);
+
+        Assert.True(await fixture.Service.DeleteCommentAsync(shared.Slug, comment.Id, fixture.AsOther, default));
+
+        Assert.Equal(0, await fixture.Db.RecordingCommentReactions.CountAsync());
+    }
+
     [Fact]
     public async Task RenameAndDelete_AreTheUploadersOrAnAdmins()
     {
@@ -446,15 +520,22 @@ public sealed class RecordingServiceTests : IDisposable
         await fixture.Service.AddCommentAsync(others.Slug, fixture.AsUploader, new("0:05 nice", "skandia"), default);
         await fixture.Service.AddCommentAsync(others.Slug, fixture.AsOther, new("ty", "Rut"), default);
         await fixture.Service.AddCommentAsync(theirs.Slug, fixture.AsOther, new("wow", "Rut"), default);
+        var ty = (await fixture.Service.CommentsAsync(others.Slug, null, 1, 20, null, default))!.Items.Single(c => c.Content == "ty");
+        await fixture.Service.ReactAsync(others.Slug, ty.Id, "love", true, fixture.AsUploader, default);
+        await fixture.Service.ReactAsync(others.Slug, ty.Id, "like", true, fixture.AsAdmin, default);
         var accounts = new AccountService(fixture.Db, NullLogger<AccountService>.Instance, fixture.Storage);
 
         var export = await accounts.ExportAsync(fixture.Uploader.Id);
         Assert.Single(export!.SharedRecordings!);
         Assert.Contains(export.Comments, c => c.Kind == "recording" && c.Content == "0:05 nice");
+        Assert.Equal([("love", "ty")], export.CommentReactions!.Select(r => (r.Kind, r.CommentContent)));
 
         var summary = await accounts.DeleteAsync(fixture.Uploader.Id);
 
         Assert.Equal(1, summary!.RecordingsRemoved);
+        Assert.Equal(1, summary.ReactionsRemoved);
+        // Their love goes; the admin's like stays.
+        Assert.Equal(["like"], await fixture.Db.RecordingCommentReactions.Select(r => r.Kind).ToListAsync());
         Assert.False(File.Exists(fixture.Storage.RecordingPath(theirs.Slug)));
         fixture.Db.ChangeTracker.Clear();
         var left = await fixture.Db.Recordings.SingleAsync();

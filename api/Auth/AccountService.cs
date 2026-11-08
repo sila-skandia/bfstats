@@ -128,6 +128,13 @@ public class AccountService(
                 c.CreatedAt.ToDateTimeUtc(), c.CreatedAt.ToDateTimeUtc()))
             .ToListAsync(cancellationToken);
 
+        var commentReactions = await context.RecordingCommentReactions.AsNoTracking()
+            .Where(r => r.UserId == userId)
+            .OrderBy(r => r.CommentId)
+            .Select(r => new AccountExportReaction(
+                r.Kind, r.Comment.Recording.Title, r.Comment.AuthorName, r.Comment.Content, r.CreatedAt.ToDateTimeUtc()))
+            .ToListAsync(cancellationToken);
+
         var recordings = await context.Recordings.AsNoTracking()
             .Where(r => r.UploaderUserId == userId)
             .Select(r => new AccountExportRecording(r.Slug, r.Title, r.UploaderName, r.CreatedAt.ToDateTimeUtc()))
@@ -165,7 +172,8 @@ public class AccountService(
             Tournaments: tournaments,
             TournamentTeamMemberships: memberships,
             SharedRecordings: recordings,
-            GameProfiles: gameProfiles);
+            GameProfiles: gameProfiles,
+            CommentReactions: commentReactions);
     }
 
     public async Task<AccountDeletionSummary?> DeleteAsync(int userId, CancellationToken cancellationToken = default)
@@ -238,6 +246,9 @@ public class AccountService(
         }
         context.RecordingComments.RemoveRange(recordingComments);
         context.Recordings.RemoveRange(recordings);
+        // Their likes and reactions on anyone's comments: counts with their account behind them.
+        var reactionsRemoved = await context.RecordingCommentReactions.Where(r => r.UserId == userId)
+            .ExecuteDeleteAsync(cancellationToken);
 
         // Tournament rosters are public competition records. The roster line
         // keeps the in-game name that played; only the account link is severed.
@@ -305,7 +316,8 @@ public class AccountService(
             TournamentsAnonymised: tournaments.Count,
             TournamentPostsAnonymised: posts.Count,
             RecordingsRemoved: recordings.Count,
-            GameProfilesRemoved: gameProfiles.Count);
+            GameProfilesRemoved: gameProfiles.Count,
+            ReactionsRemoved: reactionsRemoved);
 
         // Deliberately no email in this log line — logging the address of someone
         // who just asked to be forgotten would defeat the request.

@@ -11,6 +11,15 @@
       "port": 9222
     },
     {
+      "name": "api-replay-feed",
+      "runtimeExecutable": "sh",
+      "runtimeArgs": [
+        "-c",
+        "cd api && ASPNETCORE_ENVIRONMENT=Development E2E_SEED=true DB_PATH=/tmp/feed.db Jwt__PrivateKey=\"$(base64 < ../.e2e/jwt-e2e.pem | tr -d '\\n')\" RefreshToken__Secret=\"$(cat ../.e2e/refresh-secret)\" Jwt__Issuer=http://localhost:9222 Jwt__Audience=http://localhost:5273 Recordings__Path=/tmp/feed-recordings Recordings__MinFreeBytes=0 Recordings__MinFreeFraction=0 dotnet run --no-launch-profile --urls http://localhost:9222"
+      ],
+      "port": 9222
+    },
+    {
       "name": "ui",
       "runtimeExecutable": "npm",
       "runtimeArgs": [
