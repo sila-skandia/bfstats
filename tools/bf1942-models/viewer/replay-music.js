@@ -3,28 +3,41 @@
 // the clip as it plays in the studio, the game held quiet, so they can tell
 // the hit lands on the drums. With `record` on (the default) Record puts it
 // in the file too, mixed with the game's sound or alone while the game is
-// muted (2026-11-09: "can you export with a song uploaded?"): the song is
-// routed through the page's audio context (`attach`) so the recorder can
-// take it with the rest.
+// muted (2026-11-09: "can you export with a song uploaded?"): the song plays
+// in the page's audio context (`attach` answers its output node) so the
+// recorder can take it with the rest.
+//
+// The song is a decoded AudioBuffer played by an AudioBufferSourceNode, not
+// an <audio> element (2026-11-10). An element seeks with a stall: after
+// `currentTime` is set the song stands still for 0.3-0.5 s in Safari with
+// any file and in Chrome with an MP3 that has no seek table, so the song
+// landed behind the clip by more than the seek tolerance and was seeked
+// again, and again ("very stuttery, like it's playing forward and back").
+// A buffer starts at an exact sample at once, in every browser, and a loop
+// or a scrub puts the song back in place with a 15 ms crossfade.
 //
 // The song follows the clip's video time: it starts at `offset` seconds into
 // the track as the clip starts, and is put back in place when the playhead
-// jumps (a loop, a scrub, a seek). In between it runs on its own clock rather
-// than being pulled about every frame: the clip's clock is a model of the
-// page's, a few hundredths out on a kill shot until its round has flown once,
-// and a song nudged that often stutters.
+// jumps (a loop, a scrub, a seek). In between it runs on the audio clock and
+// its rate is pulled a little toward where the clip's clock says it should
+// be (`songRate`): a buffer's rate changes its pitch, so the pull is small
+// and a drift it cannot close in a couple of seconds is a restart instead.
 //
 // `songPosition` and `songAction` are pure, so `tests/replay_sync_harness.mjs`
-// runs them; ClipMusic wraps one <audio> element.
+// runs them; ClipMusic wraps one buffer and the voice playing it.
 
 /** A playhead move bigger than this in one frame is a jump the song follows. */
 export const JUMP = 0.4;
 /** Seconds the song may drift from the clip's clock before it is put back
- *  in place outright; under it the song is eased back by its rate. */
-export const DRIFT_SEEK = 0.25;
-/** How much faster or slower the song may play to close a drift (its pitch
- *  is kept): a tenth closes 50 ms in half a second, unheard. */
-export const RATE_PULL = 0.1;
+ *  in place outright (a crossfaded restart); under it the song is eased
+ *  back by its rate. */
+export const DRIFT_SEEK = 0.15;
+/** How much faster or slower the song may play to close a drift: a buffer's
+ *  rate bends its pitch, so at most 3% (half a semitone), which closes
+ *  DRIFT_SEEK in 2.5 s and the usual few hundredths in under a second. */
+export const RATE_PULL = 0.03;
+/** The crossfade of a restart and the fade of a stop, seconds: no click. */
+export const FADE = 0.015;
 
 /**
  * The song's playback rate this frame to close `drift` seconds (where it
@@ -54,7 +67,7 @@ export function songPosition(video, offset, duration = Infinity) {
  * `s` is `{ playing, video, prevT, t, paused, offset, duration, at, frozen }`:
  * whether the clip plays (a freeze on the kill counts as playing, its
  * picture held and its music not), the clip's video seconds now, the round's
- * time this frame and last, whether the song is paused now, where it is
+ * time this frame and last, whether the song is silent now, where it is
  * (`at`, its own seconds) and whether the clip is held on a freeze. Kept in
  * step it answers the `rate` to play at (`songRate`).
  */
@@ -117,9 +130,11 @@ export function slidOffset(start, dx, duration = Infinity) {
 }
 
 export class ClipMusic {
-  constructor() {
-    this.audio = null;
-    this.url = null;
+  /** `pageContext` answers the page's AudioContext, or null before the page
+   *  has sound: the song plays there, where the recorder can take it. */
+  constructor(pageContext = null) {
+    this.pageContext = pageContext;
+    this.file = null;
     this.name = '';
     this.offset = 0;
     this.volume = 0.9;
@@ -127,18 +142,28 @@ export class ClipMusic {
     this.record = true;
     this.prevT = null;
     this.error = null;
-    this.graph = null;            // { context, audio, src, out }: the song in Web Audio (`attach`)
     this.peaks = null;            // the song's waveform (`songPeaks`), once decoded
     this.onChange = null;         // called when the song or its waveform changes
     this.ownContext = null;       // a context of its own, on a page with no audio of its own
+    this.context = null;          // the context the song plays in
+    this.out = null;              // its output gain there (the volume), on to the speakers
+    this.buffer = null;           // the decoded song
+    this.voice = null;            // { src, gain, pos, since, rate }: the buffer playing, and where it is
+    this.restarts = 0;            // how often the song was put back in place (a probe's count)
   }
 
+  /** A song is on the lane, decoded or still decoding. */
   get loaded() {
-    return Boolean(this.audio);
+    return Boolean(this.file);
+  }
+
+  /** The song can play. */
+  get ready() {
+    return Boolean(this.buffer);
   }
 
   get duration() {
-    const d = this.audio?.duration;
+    const d = this.buffer?.duration;
     return Number.isFinite(d) ? d : Infinity;
   }
 
@@ -146,79 +171,180 @@ export class ClipMusic {
   load(file) {
     this.clear();
     if (!file) return;
-    this.url = URL.createObjectURL(file);
-    const audio = new Audio();
-    audio.preload = 'auto';
-    audio.preservesPitch = true;
-    audio.src = this.url;
-    audio.volume = this.volume;
-    audio.addEventListener('error', () => { this.error = 'This file will not play here: try an MP3'; });
-    this.audio = audio;
+    this.file = file;
     this.name = file.name ?? 'Song';
     this.error = null;
     this.prevT = null;
-    this.peaks = null;
-    this.decode(file, audio);
+    this.decode(file);
     this.onChange?.();
   }
 
-  /** The song's waveform, worked out off the page's clock: an offline
-   *  context decodes it; a song the browser will not decode has none. */
-  async decode(file, audio) {
+  /** The context the song plays in: the page's, else one of its own. */
+  contextFor() {
+    const page = this.pageContext?.() ?? null;
+    if (page) return page;
+    if (!this.ownContext) {
+      try { this.ownContext = new (globalThis.AudioContext ?? globalThis.webkitAudioContext)(); } catch { return null; }
+    }
+    return this.ownContext;
+  }
+
+  /** The song decoded into `context` (the one it plays in), and its
+   *  waveform from the samples; a song the browser will not decode says so. */
+  async decode(file, context = this.contextFor()) {
+    if (!context) {
+      this.error = 'This browser has no sound here';
+      this.onChange?.();
+      return;
+    }
     try {
       const bytes = await file.arrayBuffer();
-      const ctx = new OfflineAudioContext(1, 1, 44100);
-      const buffer = await ctx.decodeAudioData(bytes);
-      if (this.audio !== audio) return;
+      const buffer = await context.decodeAudioData(bytes);
+      if (this.file !== file) return;
+      this.use(context);
+      this.buffer = buffer;
       const channels = [];
       for (let c = 0; c < buffer.numberOfChannels; c++) channels.push(buffer.getChannelData(c));
       this.peaks = songPeaks(channels, buffer.sampleRate);
       this.onChange?.();
     } catch (error) {
-      console.warn('replay music: no waveform for this song', error);
+      if (this.file !== file) return;
+      console.warn('replay music: this song will not decode', error);
+      this.error = 'This file will not play here: try an MP3';
+      this.onChange?.();
     }
+  }
+
+  /** The song's output in `context`: a gain for its volume, on to the speakers. */
+  use(context) {
+    if (this.context === context && this.out) return;
+    this.stop(0);
+    if (this.out) { try { this.out.disconnect(); } catch {} }
+    this.context = context;
+    this.out = context.createGain();
+    this.out.gain.value = this.volume;
+    this.out.connect(context.destination);
   }
 
   /**
-   * The song's output node in `context` (the page's, else one of its own):
-   * its element routed through Web Audio once, a gain for its volume, and on
-   * to the speakers, so a recorder of that context can mix it in. Null with
-   * no song, or where the browser will not route it.
+   * The song's output node in `context` (the page's, else the one it plays
+   * in), so a recorder of that context can mix it in. Null with no song. A
+   * song decoded into another context is moved: its buffer plays in this
+   * one from the next frame (it is put back in place there).
    */
   attach(context = null) {
-    if (!this.audio) return null;
-    const ctx = context ?? (this.ownContext ??= new AudioContext());
-    if (this.graph?.audio === this.audio) return this.graph.context === ctx ? this.graph.out : null;
+    if (!this.file) return null;
+    const ctx = context ?? this.context ?? this.contextFor();
+    if (!ctx) return null;
+    if (this.context !== ctx) {
+      this.use(ctx);
+      // The buffer was decoded elsewhere: Safari and Chrome play it all the
+      // same, and where one would not, decode it again here.
+      if (this.buffer && !this.plays(this.buffer, ctx)) {
+        this.buffer = null;
+        this.decode(this.file, ctx);
+      }
+    }
+    if (ctx.state !== 'running') ctx.resume?.().catch?.(() => {});
+    return this.out;
+  }
+
+  /** Whether `buffer` can be given to a source of `context`. */
+  plays(buffer, context) {
     try {
-      const src = ctx.createMediaElementSource(this.audio);
-      const out = ctx.createGain();
-      out.gain.value = this.volume;
-      src.connect(out);
-      out.connect(ctx.destination);
-      // The gain sets the level now: the element's own would be applied twice.
-      this.audio.volume = 1;
-      this.graph = { context: ctx, audio: this.audio, src, out };
-      if (ctx.state !== 'running') ctx.resume?.().catch(() => {});
-      return out;
-    } catch (error) {
-      console.warn('replay music: the song cannot be recorded here', error);
-      return null;
+      const src = context.createBufferSource();
+      src.buffer = buffer;
+      return true;
+    } catch {
+      return false;
     }
   }
 
+  /** Where the song is now, its own seconds, or null while silent. */
+  position() {
+    const v = this.voice;
+    if (!v) return null;
+    return v.pos + (this.context.currentTime - v.since) * v.rate;
+  }
+
+  /** The song from `at` (its own seconds) at `rate`, faded in over `fade`. */
+  start(at, rate = 1, fade = FADE) {
+    const ctx = this.context;
+    if (!ctx || !this.buffer || !this.out) return;
+    const now = ctx.currentTime;
+    let src;
+    try {
+      src = ctx.createBufferSource();
+      src.buffer = this.buffer;
+    } catch (error) {
+      console.warn('replay music: the song cannot play here', error);
+      return;
+    }
+    src.playbackRate.value = rate;
+    const gain = ctx.createGain();
+    gain.gain.setValueAtTime(fade > 0 ? 0 : 1, now);
+    if (fade > 0) gain.gain.linearRampToValueAtTime(1, now + fade);
+    src.connect(gain);
+    gain.connect(this.out);
+    const voice = { src, gain, pos: at, since: now, rate, stopped: false };
+    src.onended = () => {
+      // The song ran out on its own: silent until the clip puts it back.
+      if (this.voice === voice && !voice.stopped) this.voice = null;
+      try { src.disconnect(); gain.disconnect(); } catch {}
+    };
+    src.start(now, Math.max(0, Math.min(this.buffer.duration, at)));
+    this.voice = voice;
+    if (ctx.state !== 'running') ctx.resume?.().catch?.(() => {});
+  }
+
+  /** The voice faded out over `fade` seconds and gone. */
+  stop(fade = FADE) {
+    const v = this.voice;
+    if (!v) return;
+    this.voice = null;
+    v.stopped = true;
+    const ctx = this.context;
+    const now = ctx?.currentTime ?? 0;
+    try {
+      if (fade > 0 && ctx) {
+        v.gain.gain.cancelScheduledValues(now);
+        v.gain.gain.setValueAtTime(v.gain.gain.value, now);
+        v.gain.gain.linearRampToValueAtTime(0, now + fade);
+        v.src.stop(now + fade + 0.005);
+      } else {
+        v.src.stop();
+      }
+    } catch {}
+  }
+
+  /** The song put back in place at `at`: the old voice fades as the new one
+   *  comes in, so a loop's return or a scrub does not click. */
+  seek(at) {
+    this.stop(FADE);
+    this.start(at, 1, FADE);
+    this.restarts++;
+  }
+
+  /** The song's rate, its position carried over so it stays known. */
+  setRate(rate) {
+    const v = this.voice;
+    if (!v || Math.abs(v.rate - rate) < 1e-3) return;
+    const now = this.context.currentTime;
+    v.pos += (now - v.since) * v.rate;
+    v.since = now;
+    v.rate = rate;
+    v.src.playbackRate.setValueAtTime(rate, now);
+  }
+
   clear() {
-    if (this.graph) {
-      try { this.graph.src.disconnect(); this.graph.out.disconnect(); } catch {}
-      this.graph = null;
+    this.stop(0);
+    if (this.out) {
+      try { this.out.disconnect(); } catch {}
+      this.out = null;
     }
-    if (this.audio) {
-      try { this.audio.pause(); } catch {}
-      this.audio.removeAttribute('src');
-      try { this.audio.load(); } catch {}
-    }
-    if (this.url) URL.revokeObjectURL(this.url);
-    this.audio = null;
-    this.url = null;
+    this.context = null;
+    this.buffer = null;
+    this.file = null;
     this.name = '';
     this.error = null;
     this.prevT = null;
@@ -228,45 +354,42 @@ export class ClipMusic {
 
   setVolume(v) {
     this.volume = Math.min(1, Math.max(0, v));
-    if (this.graph?.audio === this.audio) this.graph.out.gain.value = this.volume;
-    else if (this.audio) this.audio.volume = this.volume;
+    if (this.out) this.out.gain.value = this.volume;
   }
 
   /** The song put back in place at the next frame (an offset changed). */
   resync() {
-    if (this.audio && !this.audio.paused) this.audio.pause();
+    this.stop(FADE);
   }
 
   /** Each frame: `{ on, playing, video, t }` (`on`: the studio is open on a
    *  clip and nothing is recording). */
   frame({ on, playing, video, t, frozen = false }) {
-    const audio = this.audio;
-    if (!audio) return;
+    if (!this.buffer) return;
     if (!on) {
-      if (!audio.paused) audio.pause();
+      this.stop(FADE);
       this.prevT = null;
       return;
     }
     const step = songAction({
-      playing, video, prevT: this.prevT, t, paused: audio.paused, offset: this.offset, duration: this.duration, at: audio.currentTime, frozen,
+      playing, video, prevT: this.prevT, t, paused: !this.voice, offset: this.offset, duration: this.duration, at: this.position(), frozen,
     });
     this.prevT = t;
-    const rate = step.rate ?? 1;
-    if (Math.abs(audio.playbackRate - rate) > 1e-3) audio.playbackRate = rate;
     if (step.act === 'pause') {
-      if (!audio.paused) audio.pause();
+      this.stop(FADE);
     } else if (step.act === 'play') {
-      try { audio.currentTime = step.at; } catch {}
-      audio.play().catch(() => {});
+      this.start(step.at, 1, FADE);
     } else if (step.act === 'seek') {
-      try { audio.currentTime = step.at; } catch {}
+      this.seek(step.at);
+    } else {
+      this.setRate(step.rate ?? 1);
     }
   }
 
   /** Whether the game is held quiet: a song loaded and the creator wants
    *  to hear it alone. */
   quietNow() {
-    return Boolean(this.audio && this.quietGame);
+    return Boolean(this.file && this.quietGame);
   }
 
   dispose() {

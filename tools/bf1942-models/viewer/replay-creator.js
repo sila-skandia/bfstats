@@ -285,7 +285,8 @@ export class ReplayCreator {
     this.ramp = noRamp();         // the shot's slow motion (replay-shot.js)
     this.sync = null;             // the hit pinned to a time of the video (replay-sync.js), or null
     this.syncFit = null;          // ... and how the last fit went: fitStart's or fitSpeed's answer
-    this.music = new ClipMusic(); // a song to hear the clip with in the studio (replay-music.js)
+    // A song to hear the clip with in the studio (replay-music.js), played in the page's audio context.
+    this.music = new ClipMusic(() => this.ctx?.audioTap?.()?.context ?? null);
     this.gameQuiet = false;       // ... and the game's sound held down under it
     this.sharedSong = null;       // { name, offset }: the song a shared edit was cut to (`openEdit`)
     this.sharedFrom = null;       // { name, authorName, code }: the shared edit opened from a link

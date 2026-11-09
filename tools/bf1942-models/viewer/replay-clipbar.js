@@ -723,7 +723,7 @@ export class ClipBar {
     const x = s => (s - sa) / Math.max(1e-6, sb - sa);
     block.style.left = `${clamp(x(v0), 0, 1) * 100}%`;
     block.style.width = `${Math.max(0, clamp(x(v1), 0, 1) - clamp(x(v0), 0, 1)) * 100}%`;
-    label.textContent = `${music.name} · from ${videoTime(music.offset)}${music.quietGame ? ' · game muted' : ''}${music.record ? '' : ' · not recorded'}`;
+    label.textContent = `${music.name}${music.ready ? '' : (music.error ? ` · ${music.error}` : ' · decoding')} · from ${videoTime(music.offset)}${music.quietGame ? ' · game muted' : ''}${music.record ? '' : ' · not recorded'}`;
     const w = Math.max(1, Math.round(block.getBoundingClientRect().width || this.strip.clientWidth * (x(v1) - x(v0))));
     const h = 26;
     const dpr = Math.min(2, globalThis.devicePixelRatio || 1);
@@ -1609,7 +1609,7 @@ export class ClipBar {
       JSON.stringify(list.map(c => [c.cam, c.t0, c.t1, c.into, c.motion, c.move, Boolean(c.end), c.tEnd, c.view?.pos?.[0], c.end?.pos?.[0]])),
       creator.placing?.i, creator.keyShots.size, creator.part?.t0, creator.part?.t1,
       JSON.stringify(creator.edits), creator.studio?.open, JSON.stringify(creator.sync), creator.syncFit?.ok, JSON.stringify(creator.ramp),
-      creator.music.name, creator.music.offset, Boolean(creator.music.peaks), creator.music.quietGame, creator.music.record, creator.sharedSong?.name].join('|');
+      creator.music.name, creator.music.offset, Boolean(creator.music.peaks), creator.music.ready, creator.music.error, creator.music.quietGame, creator.music.record, creator.sharedSong?.name].join('|');
     this.syncActive(t, list);
     if (!force && sig === this.sig) return;
     if (this.dragging) return;

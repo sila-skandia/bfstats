@@ -190,12 +190,16 @@ class SongTests(unittest.TestCase):
 
     def test_a_drift_is_closed_by_its_rate_and_a_big_one_by_a_seek(self) -> None:
         # The recorded file's picture follows the clip's clock: a song left on
-        # its own ran 0.2 s off the explosion (2026-11-09).
-        self.assertAlmostEqual(self.song["behind"]["rate"], 1.06, places=2)
-        self.assertAlmostEqual(self.song["ahead"]["rate"], 0.94, places=2)
+        # its own ran 0.2 s off the explosion (2026-11-09). The song is a
+        # buffer whose rate bends its pitch (2026-11-10), so the pull is at
+        # most 3% and a drift over 0.15 s is a crossfaded restart instead.
+        self.assertEqual(self.song["limits"], {"seek": 0.15, "pull": 0.03})
+        self.assertAlmostEqual(self.song["behind"]["rate"], 1.03, places=3)
+        self.assertAlmostEqual(self.song["ahead"]["rate"], 0.97, places=3)
+        self.assertEqual(self.song["offABit"]["act"], "keep")
         self.assertEqual(self.song["farBehind"], {"act": "seek", "at": 10})
         self.assertEqual(self.song["frozen"], {"act": "keep", "rate": 1})
-        self.assertEqual([round(r, 2) for r in self.song["rates"]], [0.9, 0.9, 1, 1.04, 1.1, 1.1])
+        self.assertEqual([round(r, 3) for r in self.song["rates"]], [0.97, 0.97, 1, 1.01, 1.03, 1.03])
 
     def test_it_starts_in_place_and_stops_with_the_clip(self) -> None:
         self.assertEqual(self.song["start"], {"act": "play", "at": 10})

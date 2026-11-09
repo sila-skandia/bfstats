@@ -164,9 +164,11 @@ results.rampOf = {
     inStep: M.songAction({ ...base, at: 10 }),
     behind: M.songAction({ ...base, at: 9.97 }),
     ahead: M.songAction({ ...base, at: 10.03 }),
+    offABit: M.songAction({ ...base, at: 9.88 }),
     farBehind: M.songAction({ ...base, at: 9.6 }),
     frozen: M.songAction({ ...base, at: 9.5, frozen: true }),
-    rates: [-1, -0.05, 0, 0.02, 0.05, 1].map(M.songRate),
+    rates: [-1, -0.05, 0, 0.005, 0.02, 1].map(M.songRate),
+    limits: { seek: M.DRIFT_SEEK, pull: M.RATE_PULL },
   };
   // The waveform: a quiet second and a loud one, at 1 kHz, 50 peaks a second.
   const n = 2000;

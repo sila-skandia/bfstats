@@ -2216,3 +2216,65 @@ one, with the mouse (`steps-more.js`, kept with this session's notes):
 
 No console error from the creator or the studio in either run; the whole
 replay set, 691 tests, passed.
+
+### The song stutters in Safari (2026-11-10)
+
+The owner, with Gimme Shelter on the Music lane of their Bocage edit: "the
+sound is very stuttery, like it's playing forward and back ... in chrome
+it's better".
+
+The song was an `<audio>` element kept in step with the clip's clock by its
+rate and, past a quarter second of drift, by setting `currentTime`. An
+element's seek is not free: after `currentTime` is set the song stands
+still while the decoder finds its place, and only then plays on from the
+target, so it lands behind the clock by that stall. Measured with the
+owner's MP3 (an ffmpeg remux with no seek table) in Playwright's WebKit
+and Chromium, seeking once a second to where the song should be:
+
+| | WebKit | Chromium |
+|---|---|---|
+| Owner's MP3, behind after a seek | 0.34-0.50 s | 0.26-0.28 s |
+| CBR MP3 / WAV / AAC | 0.29-0.53 s | 0.05-0.07 s |
+
+In WebKit every file lands behind by more than the tolerance, and in
+Chromium this file does, so each seek earned another a moment later:
+8 seeks in 5 s in WebKit, 17 in Chromium, each a jump forward then a stall.
+That is the forward-and-back. The earlier measurement (The song in the
+recording) used a WAV, which Chromium seeks in 0.05 s, and never saw it.
+
+- **The song is a decoded AudioBuffer** (`replay-music.js`), played by an
+  AudioBufferSourceNode in the page's audio context (`ClipMusic` takes the
+  context from `ctx.audioTap`, else makes one of its own). A buffer starts
+  at an exact sample at once, in every browser, so a loop's return, a scrub
+  or a seek puts the song back in place with a 15 ms crossfade (`seek`,
+  `FADE`) instead of a stall. The waveform comes from the same decode; the
+  OfflineAudioContext and the object URL are gone.
+- **A smaller pull, and a restart sooner.** A buffer's rate bends its pitch
+  (no `preservesPitch`), so `RATE_PULL` is 3% (half a semitone, and only
+  while a drift is open) where the element had 10%, and `DRIFT_SEEK` is
+  0.15 s where it had 0.25: a drift the pull cannot close in a couple of
+  seconds is a crossfaded restart, which costs nothing now. `songAction`'s
+  answers are unchanged in kind; `paused` means silent.
+- `attach` answers the song's gain in the recorder's context; a buffer
+  decoded in another context plays there as well, and is decoded again
+  where a browser will not take it. `loaded` is a song on the lane,
+  `ready` one that can play; the lane's label says "decoding" between, and
+  the error where a file will not decode.
+- The whole song is held decoded: 4.5 min in stereo at 48 kHz is about
+  100 MB, for as long as it is on the lane.
+
+Measured on the real page (Bocage, Lagtastic's bazooka on FAVELA at 1:08,
+the owner's MP3 added by the lane's file input, the clip played 12 s):
+
+- WebKit: decoded in 0.38 s into the page's 48 kHz context; 719 frames, the
+  song never silent, 2 restarts (the clock re-laid when the round landed,
+  and the loop's return), drift otherwise at most 0.024 s, mean 0.006 s;
+  through the kill's slow motion the song ran 20 ms ahead and the rate sat
+  at 0.97 pulling it back.
+- Headless Chromium (11 fps, its clock behind the wall's): decoded in
+  1.8 s, drift mean 0.039 s, 4 restarts, none over 0.15 s once settled. The
+  clip recorded with the song: an MP4 with Opus at 48 kHz, mean -12.5 dB,
+  the RMS level moving with the music frame to frame.
+
+`test_replay_sync` SongTests assert the new limits (a 0.12 s drift kept and
+pulled, a 0.4 s one a seek, the rate between 0.97 and 1.03).
