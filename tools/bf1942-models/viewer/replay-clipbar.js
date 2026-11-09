@@ -32,6 +32,7 @@ import { RAMP_SPEEDS, rampSpanOf, speedWord } from './replay-shot.js';
 import { isMelee } from './replay-shotstyle.js';
 import { FRAMES, TEXT_EASE, lowerStart } from './replay-studio-fx.js';
 import { parseVideoTime, videoTime } from './replay-sync.js';
+import { peakBetween, slidOffset } from './replay-music.js';
 import {
   AB_MOVES, CAM_MIN, HAND_OVERS, HAND_OVER_LEN, MOTIONS, abMoveLabel, anchorAt, camGlyph, camLabel, camTitle, camsFor, handOverLabel, holdsEnd,
   motionLabel,
@@ -231,7 +232,24 @@ export class ClipBar {
       // The studio's: the text over the footage, and the effects.
       text: el('div', 'rc-cb-lane rc-cb-text'),
       fx: el('div', 'rc-cb-lane rc-cb-fx'),
+      // The song the clip is cut to (replay-music.js): its waveform under the
+      // clip, dragged to slide it, a click or a dropped file to add one.
+      music: el('div', 'rc-cb-lane rc-cb-music'),
     };
+    this.songFile = el('input');
+    this.songFile.type = 'file';
+    this.songFile.accept = 'audio/*,.mp3,.m4a,.ogg,.wav';
+    this.songFile.hidden = true;
+    this.songFile.addEventListener('change', () => {
+      const f = this.songFile.files?.[0];
+      if (f) this.addSong(f);
+      this.songFile.value = '';
+    });
+    creator.music.onChange = () => {
+      this.sig = '';
+      this.sync(creator.player.time, true);
+    };
+    this.bindSongDrop();
     this.knob = el('div', 'rc-cb-knob');
     // The chooser a click on a camera or a right-click opens, and Export's.
     this.pop = el('div', 'rc-cb-pop');
@@ -283,15 +301,16 @@ export class ClipBar {
       ['Speed', 'Where the clip plays slowly. Drag across the lane to slow a stretch; right-click it for how slow'],
       ['Text', 'The title and the lower third over the footage. Drag to move them, their ends to resize; right-click to add'],
       ['FX', 'Fades, the flash, the zoom punch, the shake and the freeze on the kill. Right-click to switch them'],
+      ['Music', 'The song the clip is cut to. Click or drop an MP3 to add one; drag it to slide it under the clip; right-click to land the hit on a beat'],
     ]) {
-      const l = el('span', label === 'Text' || label === 'FX' ? 'st-only' : label === 'Camera' ? 'cam' : '', label);
+      const l = el('span', label === 'Text' || label === 'FX' || label === 'Music' ? 'st-only' : label === 'Camera' ? 'cam' : '', label);
       l.title = title;
       legend.append(l);
     }
     const body = el('div', 'rc-cb-body');
     body.append(legend, strip);
     this.hint = el('p', 'rc-cb-hint', 'Click a camera to change it · drag the line between two · right-click for more');
-    bar.append(head, body, this.hint, this.pop);
+    bar.append(head, body, this.hint, this.pop, this.songFile);
     this.el = bar;
     this.bindScrub();
     this.bindMenu();
@@ -375,6 +394,7 @@ export class ClipBar {
   // --- the chooser -------------------------------------------------------------------------
 
   closePop() {
+    if (this.popKind === 'menu') this.showDrop(null);
     this.pop.hidden = true;
     this.popKind = null;
     this.menu = null;
@@ -396,6 +416,18 @@ export class ClipBar {
   openMenuAt(clientX, clientY, target = null) {
     const menu = this.menuAt(clientX, clientY, target);
     if (!menu) return;
+    // The clip holds still while a menu is open (2026-11-09: "because the
+    // timeline keeps moving it's really hard to know where you're cutting"),
+    // and a line marks the moment the menu is about: a new camera goes there.
+    const creator = this.creator;
+    if (creator.player.playing) {
+      creator.stopPart?.({ quiet: true });
+      creator.player.playing = false;
+      creator.rangePlaying = false;
+    }
+    const t = this.timeAt(clientX);
+    const lane = this.laneAt(clientY);
+    if (lane !== 'events') this.showDrop(t, lane, '');
     this.openMenu(menu, clientX);
   }
 
@@ -469,6 +501,7 @@ export class ClipBar {
         ],
       };
     }
+    if (lane === 'music') return this.songMenu(t, rel);
     if (lane === 'fx') {
       const e = creator.edits;
       const kill = creator.fxKill.kill;
@@ -543,6 +576,174 @@ export class ClipBar {
         ...(pin ? [item('Take the pin away', () => creator.unpinHit())] : []),
       ],
     };
+  }
+
+  // --- the Music lane (replay-music.js) ------------------------------------------------------
+
+  /** A song from the creator's disk on the lane: it plays with the clip
+   *  from its start, the game muted. */
+  addSong(file) {
+    const creator = this.creator;
+    creator.music.load(file);
+    // A shared edit's song starts where its author had it.
+    if (creator.sharedSong) creator.music.offset = creator.sharedSong.offset;
+    creator.ui.flash(`${file.name} · plays with the clip from its start · drag it on the Music lane to slide it`, 3000);
+    this.sync(creator.player.time, true);
+  }
+
+  /** A file dropped on the Music lane is the song. */
+  bindSongDrop() {
+    const lane = this.lanes.music;
+    lane.addEventListener('dragover', e => {
+      if (![...(e.dataTransfer?.types ?? [])].includes('Files')) return;
+      e.preventDefault();
+      lane.classList.add('dropping');
+    });
+    lane.addEventListener('dragleave', () => lane.classList.remove('dropping'));
+    lane.addEventListener('drop', e => {
+      lane.classList.remove('dropping');
+      const f = [...(e.dataTransfer?.files ?? [])].find(file => /^audio\//.test(file.type) || /\.(mp3|m4a|ogg|wav)$/i.test(file.name));
+      if (!f) return;
+      e.preventDefault();
+      this.addSong(f);
+    });
+  }
+
+  /** The Music lane's right-click: land the hit on the beat under the
+   *  pointer, the song's switches and volume, change or remove it. */
+  songMenu(t, rel) {
+    const creator = this.creator;
+    const music = creator.music;
+    const item = (label, run, { on = false, rule = false } = {}) => ({ label, run, on, rule });
+    if (!music.loaded) {
+      return {
+        title: creator.sharedSong ? `Cut to ${creator.sharedSong.name}` : 'Music',
+        items: [item(creator.sharedSong ? 'Add your copy of the song' : 'Add a song (MP3)', () => this.songFile.click())],
+      };
+    }
+    const pinnable = creator.pinMoment() !== null && rel > 0.2;
+    return {
+      title: `${music.name} · song ${videoTime(music.offset + Math.max(0, rel))}`,
+      items: [
+        ...(pinnable ? [item(`Land the hit here (${videoTime(rel)} of the video)`, () => creator.pinHit(rel))] : []),
+        item('Mute the game while it plays', () => { music.quietGame = !music.quietGame; }, { on: music.quietGame, rule: pinnable }),
+        item('Put the song in the recording', () => { music.record = !music.record; }, { on: music.record }),
+        { chips: [1, 0.75, 0.5, 0.25].map(v => ({ label: `${Math.round(v * 100)}%`, on: Math.abs(music.volume - v) < 0.01, title: 'Song volume',
+          run: () => music.setVolume(v) })) },
+        item('Start the song with the clip', () => { music.offset = 0; music.resync(); }, { rule: true }),
+        item('Change the song', () => this.songFile.click()),
+        item('Remove the song', () => { music.clear(); creator.quietGame(false); }),
+      ],
+    };
+  }
+
+  /** The song on the lane: its waveform under the clip in seconds of the
+   *  video (where the song plays from `offset` at the clip's start), dragged
+   *  sideways to slide it; or what to do with an empty lane. */
+  drawSong(span) {
+    const creator = this.creator;
+    const music = creator.music;
+    const lane = this.lanes.music;
+    if (!music.loaded) {
+      const words = creator.sharedSong
+        ? `cut to ${creator.sharedSong.name} · click or drop your copy here`
+        : 'no song · click or drop an MP3 here to cut the clip to it';
+      const seg = el('span', 'rc-cb-seg plain song-add', words);
+      seg.style.left = this.pct(span.t0);
+      seg.style.width = this.widthOf(span.t0, span.t1);
+      seg.addEventListener('pointerdown', e => e.stopPropagation());
+      seg.addEventListener('click', e => {
+        e.stopPropagation();
+        this.songFile.click();
+      });
+      lane.append(seg);
+      return;
+    }
+    const block = el('div', 'rc-cb-song');
+    const canvas = el('canvas', 'rc-cb-wave');
+    const label = el('b', 'rc-cb-songname', '');
+    block.append(canvas, label);
+    block.title = 'The song under the clip: drag it sideways to slide it, right-click to land the hit on a beat';
+    lane.append(block);
+    const paint = () => this.paintSong(span, block, canvas, label);
+    paint();
+    this.bindSongDrag(block, span, paint);
+  }
+
+  /** The song block's place and its waveform, for the offset as it stands. */
+  paintSong(span, block, canvas, label) {
+    const music = this.creator.music;
+    const { w0, w1 } = this.window;
+    const sa = this.sx(w0);
+    const sb = this.sx(w1);
+    const s0 = this.sx(span.t0);
+    const dur = music.duration;
+    // The song plays from the clip's start (at `offset`) to its own end.
+    const v0 = Math.max(sa, s0);
+    const v1 = Math.min(sb, Number.isFinite(dur) ? s0 + dur - music.offset : sb);
+    const x = s => (s - sa) / Math.max(1e-6, sb - sa);
+    block.style.left = `${clamp(x(v0), 0, 1) * 100}%`;
+    block.style.width = `${Math.max(0, clamp(x(v1), 0, 1) - clamp(x(v0), 0, 1)) * 100}%`;
+    label.textContent = `${music.name} · from ${videoTime(music.offset)}${music.quietGame ? ' · game muted' : ''}${music.record ? '' : ' · not recorded'}`;
+    const w = Math.max(1, Math.round(block.getBoundingClientRect().width || this.strip.clientWidth * (x(v1) - x(v0))));
+    const h = 26;
+    const dpr = Math.min(2, globalThis.devicePixelRatio || 1);
+    canvas.width = Math.round(w * dpr);
+    canvas.height = Math.round(h * dpr);
+    const g = canvas.getContext('2d');
+    if (!g) return;
+    g.clearRect(0, 0, canvas.width, canvas.height);
+    if (!music.peaks) return;
+    g.fillStyle = 'rgba(110, 231, 255, .7)';
+    const per = (v1 - v0) / canvas.width;
+    for (let px = 0; px < canvas.width; px++) {
+      const at = music.offset + (v0 - s0) + px * per;
+      const p = peakBetween(music.peaks, at, at + per);
+      const bar = Math.max(1, p * (canvas.height - 2));
+      g.fillRect(px, (canvas.height - bar) / 2, 1, bar);
+    }
+  }
+
+  /** The song dragged sideways: its offset moves the other way (right is
+   *  later in the clip, so earlier in the song). A press that does not move
+   *  goes there, as on every lane. */
+  bindSongDrag(block, span, paint) {
+    const creator = this.creator;
+    block.addEventListener('pointerdown', e => {
+      if (e.button !== 0) return;
+      e.stopPropagation();
+      e.preventDefault();
+      const music = creator.music;
+      const r = this.strip.getBoundingClientRect();
+      const perPx = (this.sx(this.window.w1) - this.sx(this.window.w0)) / Math.max(1, r.width);
+      const startX = e.clientX;
+      const start = music.offset;
+      let moved = false;
+      this.dragging = true;
+      const move = ev => {
+        if (!moved && Math.abs(ev.clientX - startX) < CLICK_SLOP) return;
+        moved = true;
+        music.offset = slidOffset(start, (ev.clientX - startX) * perPx, music.duration);
+        paint();
+        this.tip.hidden = false;
+        this.tip.textContent = `The song from ${videoTime(music.offset)} at the clip's start`;
+        this.tip.style.left = this.pct(span.t0);
+      };
+      const up = ev => {
+        block.removeEventListener('pointermove', move);
+        block.removeEventListener('pointerup', up);
+        block.removeEventListener('pointercancel', up);
+        this.dragging = false;
+        this.tip.hidden = true;
+        if (moved) music.resync();
+        else creator.player.seek(this.timeAt(ev.clientX));
+        this.sync(creator.player.time, true);
+      };
+      try { block.setPointerCapture(e.pointerId); } catch {}
+      block.addEventListener('pointermove', move);
+      block.addEventListener('pointerup', up);
+      block.addEventListener('pointercancel', up);
+    });
   }
 
   /** Camera `i`'s chooser: the cameras it can be (one of yours placed
@@ -883,7 +1084,7 @@ export class ClipBar {
 
   /** Which lane is at `clientY`. */
   laneAt(clientY) {
-    for (const name of ['fx', 'text', 'speed', 'camera']) {
+    for (const name of ['music', 'fx', 'text', 'speed', 'camera']) {
       const r = this.lanes[name].getBoundingClientRect();
       if (r.height > 0 && clientY >= r.top - 1) return name;
     }
@@ -1287,7 +1488,8 @@ export class ClipBar {
       take?.f?.t, take?.kill?.t, creator.takeHeld, creator.ramp.speed, Boolean(this.paint), autoSlow?.t0, autoSlow?.t1, autoSlow?.pace,
       JSON.stringify(list.map(c => [c.cam, c.t0, c.t1, c.into, c.motion, c.move, Boolean(c.end), c.tEnd, c.view?.pos?.[0], c.end?.pos?.[0]])),
       creator.placing?.i, creator.keyShots.size, creator.part?.t0, creator.part?.t1,
-      JSON.stringify(creator.edits), creator.studio?.open, JSON.stringify(creator.sync), creator.syncFit?.ok, JSON.stringify(creator.ramp)].join('|');
+      JSON.stringify(creator.edits), creator.studio?.open, JSON.stringify(creator.sync), creator.syncFit?.ok, JSON.stringify(creator.ramp),
+      creator.music.name, creator.music.offset, Boolean(creator.music.peaks), creator.music.quietGame, creator.music.record, creator.sharedSong?.name].join('|');
     this.syncActive(t, list);
     if (!force && sig === this.sig) return;
     if (this.dragging) return;
@@ -1491,6 +1693,7 @@ export class ClipBar {
     if (!(e.fadeIn > 0) && !(e.fadeOut > 0) && !(e.flash || e.punch || e.shake || e.freeze > 0)) {
       node('fx', 'span', 'rc-cb-seg plain', 'no effects · right-click for fades and kill effects', span.t0, span.t1);
     }
+    this.drawSong(span);
     const part = creator.part;
     this.partBand.hidden = !part;
     if (part) {
@@ -1803,8 +2006,22 @@ const STYLE = `
 .rc-cb.studio .rc-cb-text { display: block; top: 97px; height: 22px; border-top: 1px solid rgba(255, 255, 255, .05); }
 .rc-cb.studio .rc-cb-fx { display: block; top: 121px; height: 22px; border-top: 1px solid rgba(255, 255, 255, .05); }
 .rc-cb.studio .rc-cb-legend .st-only { display: block; }
-.rc-cb.studio .rc-cb-legend { grid-template-rows: 15px 20px 36px 26px 24px 24px; }
-.rc-cb.studio .rc-cb-strip { height: 146px; }
+.rc-cb.studio .rc-cb-legend { grid-template-rows: 15px 20px 36px 26px 24px 24px 32px; }
+.rc-cb.studio .rc-cb-strip { height: 178px; }
+/* The song: its waveform under the clip, dragged to slide it. */
+.rc-cb-music { display: none; }
+.rc-cb.studio .rc-cb-music { display: block; top: 145px; height: 30px; border-top: 1px solid rgba(255, 255, 255, .05); }
+.rc-cb-music.dropping { background: rgba(110, 231, 255, .12); box-shadow: inset 0 0 0 1px #6ee7ff; }
+.rc-cb-music .rc-cb-seg { top: 4px; height: 22px; line-height: 22px; }
+.rc-cb-music .song-add { pointer-events: auto; cursor: pointer; }
+.rc-cb-music .song-add:hover { color: var(--rp-ink); }
+.rc-cb-song { position: absolute; top: 2px; height: 26px; overflow: hidden; border-radius: 4px; cursor: grab; touch-action: none;
+  background: rgba(12, 42, 51, .85); box-shadow: inset 0 0 0 1px rgba(110, 231, 255, .55); }
+.rc-cb-song:active { cursor: grabbing; }
+.rc-cb-wave { position: absolute; left: 0; top: 0; width: 100%; height: 100%; pointer-events: none; }
+.rc-cb-songname { position: absolute; left: 6px; top: 50%; transform: translateY(-50%); padding: 0 5px; border-radius: 3px; max-width: calc(100% - 12px);
+  overflow: hidden; text-overflow: ellipsis; white-space: nowrap; background: rgba(6, 18, 22, .72); color: #d9f8ff;
+  font: 800 9px/14px var(--rp-font); letter-spacing: .06em; pointer-events: none; }
 .rc-cb.studio .rc-cb-ticks i { height: 137px; }
 .rc-cb.studio .rc-cb-head, .rc-cb.studio .rc-cb-hint { display: none; }
 .rc-cb.studio .rc-cb-body { margin-top: 0; }

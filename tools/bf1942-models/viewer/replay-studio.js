@@ -23,7 +23,6 @@ import { FOV_RANGE, fmt } from './replay-creator-panel.js';
 import { moveIcon } from './replay-clipbar.js';
 import { AB_MOVES, CAM_RECIPES, CAMS, HAND_OVERS, MOTIONS, camGlyph, camLabel, camTitle, camsFor, holdsEnd } from './replay-cuts.js';
 import { RAMP_SPEEDS, rampSpanOf, screenSeconds, speedWord } from './replay-shot.js';
-import { parseVideoTime, videoTime } from './replay-sync.js';
 import { FADES, FRAMES, FREEZES, GRADES, drawOverlay, drawSafeArea, editsOf, editsShow, gradeOf } from './replay-studio-fx.js';
 import { StudioTour } from './replay-studio-tour.js';
 
@@ -826,7 +825,7 @@ export class Studio {
         'Drag from the tray onto the strip: cameras, slow-mo, text, effects. A click puts it at the playhead.',
         'Drag a thing to move it; drag its ends to resize it. Right-click a lane for more.',
         'Wheel zooms, Shift-wheel pans; drags snap to the shot, the hit and the hand-overs.',
-        'Cutting to music? Right-click the Kill mark, Land the hit at a time of the video, type 0:41: the clip\'s start moves so the hit lands there. Drag the clip\'s start instead and the slow motion\'s speed is worked out. Add the song on the Export tab to hear it.',
+        'Cutting to music? Right-click the Kill mark, Land the hit at a time of the video, type 0:41: the clip\'s start moves so the hit lands there. Drag the clip\'s start instead and the slow motion\'s speed is worked out. Add the song on the strip\'s Music lane to hear it and see its beats.',
       ]),
       keys,
     );
@@ -1357,7 +1356,6 @@ export class Studio {
     });
     page.append(
       this.buildShare(),
-      this.buildMusic(),
       this.group('Export', rec, thumb, facts, this.note('Recording plays the clip in real time, slow motion included, and saves it when it ends. Keep other windows quiet while it runs.')),
       this.group('Kept clips', keep, this.clipList, montage, montageNote),
     );
@@ -1400,7 +1398,7 @@ export class Studio {
       from.hidden = !f;
       if (f) from.textContent = `Opened from ${f.authorName ? `${f.authorName}'s` : 'a shared'} edit, ${f.name}. Your changes are yours: share them as a new link.`;
     });
-    const what = this.note('Shares the clip, its cameras (yours too), slow motion, the hit\'s pin, look, text and effects. The song is named, not sent.');
+    const what = this.note('Shares the clip, its cameras (yours too), slow motion, the hit\'s pin, look, text and effects. The song on the Music lane is named, not sent.');
     return this.group('Share this edit', from, nameRow, go, out, status, what);
   }
 
@@ -1413,60 +1411,6 @@ export class Studio {
     } catch {
       status.textContent = 'Copy the link above.';
     }
-  }
-
-  /** A song to hear the clip with (replay-music.js): the track the clip is
-   *  being cut to, from the creator's disk, playing from the clip's start
-   *  with the game held quiet. Heard here, not recorded. */
-  buildMusic() {
-    const creator = this.creator;
-    const music = creator.music;
-    const file = el('input');
-    file.type = 'file';
-    file.accept = 'audio/*,.mp3,.m4a,.ogg,.wav';
-    file.hidden = true;
-    file.addEventListener('change', () => {
-      const f = file.files?.[0];
-      if (f) {
-        music.load(f);
-        creator.ui.flash(`${f.name} · it plays with the clip from its start`, 2600);
-      }
-      file.value = '';
-      this.refresh(true);
-    });
-    const add = this.btn('Add a song', 'Hear the clip with the track you will cut it to (MP3): it plays from the clip\'s start', () => file.click(), 'st-wide st-ghost', 'plus');
-    const name = el('p', 'st-note st-song');
-    const [startRow, startInput] = this.textInput('Song at the clip\'s start', () => videoTime(music.offset), text => {
-      const v = /^\s*0*(:0*)?(\.0*)?\s*$/.test(text) ? 0 : parseVideoTime(text);
-      if (v === null) return;
-      music.offset = v;
-      music.resync();
-    }, '0:00.0', 10);
-    startInput.title = 'How far into the song the clip starts: 0:00 to start the song with the clip';
-    startRow.classList.add('wide');
-    const quiet = this.check('Mute the game while it plays', () => music.quietGame, v => { music.quietGame = v; }, 'Hold the game\'s own sound down so you hear the song alone, and record it alone');
-    const inFile = this.check('Put the song in the recording', () => music.record, v => { music.record = v; },
-      'Record the clip with the song from the clip\'s start: with the game\'s sound, or alone while the game is muted');
-    const volume = this.slider('Song volume', 0, 1, 0.05, () => music.volume, v => music.setVolume(v), v => `${Math.round(v * 100)}%`);
-    const remove = this.btn('Remove the song', 'Take the song away: the game is heard again', () => {
-      music.clear();
-      creator.quietGame(false);
-    }, 'st-ghost st-small');
-    const how = this.note('');
-    this.syncs.push(() => {
-      const on = music.loaded;
-      add.lastChild.textContent = on ? 'Change the song' : 'Add a song';
-      const d = music.duration;
-      const cutTo = creator.sharedSong;
-      name.textContent = on ? `${music.name}${Number.isFinite(d) ? ` · ${videoTime(d)}` : ''}${music.error ? ` · ${music.error}` : ''}`
-        : cutTo ? `This edit was cut to ${cutTo.name}, from ${videoTime(cutTo.offset)} of it. Add your copy to hear it.`
-          : 'Hear the clip with the track you are cutting it to.';
-      how.textContent = music.record
-        ? `Record puts the song in the file from the clip's first frame${music.quietGame ? ', on its own: the game is muted' : ', with the game\'s sound'}. Not in a montage.`
-        : 'Heard here only: Record puts the game\'s sound in the file. In your editor, start the song at 0:00 under the video.';
-      for (const n of [startRow, quiet, inFile, volume, remove, how]) n.hidden = !on;
-    });
-    return this.group('Music', file, name, add, startRow, quiet, inFile, volume, remove, how);
   }
 
   syncClips(force) {

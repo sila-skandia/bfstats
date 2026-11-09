@@ -1988,3 +1988,46 @@ the first frame after 41.08 s, when the page drew it (headless captures
 about six frames a second there, 41.009 then 41.165). The first recording
 of a session drew the explosion 0.15 s late: the frame that first draws it
 stalls; one play through it before recording takes that away.
+
+### The Music lane, and a strip that holds still (2026-11-09)
+
+The owner: "Why is the song upload on the export tab, it's so odd, can't we
+add a sound track to the studio scrubber". The song is now the strip's
+bottom lane in the studio (`replay-clipbar.js` `drawSong`, `paintSong`,
+`bindSongDrag`, `songMenu`; the Export tab's Music group is gone):
+
+- Empty, it says so and takes a click (the file picker) or a dropped audio
+  file; for a shared edit it names the song the edit was cut to.
+- Loaded, it is a block under the clip with the song's waveform
+  (`replay-music.js` `songPeaks`, 50 peaks a second decoded off the page's
+  clock in an OfflineAudioContext; `peakBetween` per pixel) in seconds of
+  the video, from where the song plays at the clip's start. Dragged
+  sideways it slides the song (`slidOffset`: right is later in the clip, so
+  earlier in the song); a press that does not move goes there.
+- Right-click: Land the hit here (the pin at the video time under the
+  pointer, so the drum hit seen in the waveform is where the explosion
+  goes), Mute the game, Put the song in the recording, the volume, Start
+  the song with the clip, Change and Remove.
+
+The owner, on adding a camera after the victim's circle: "because the
+timeline keeps moving it's really hard to know where you're cutting". A
+right-click on the strip now pauses the clip, and a line marks the moment
+the menu is about until it closes; a camera from the Camera lane's menu
+starts exactly there (it always did, by the pointer's time, but nothing
+showed it while the playhead ran).
+
+Measured in headless Chromium on Bocage: the lane's waveform drawn (4612
+lit pixels over 1153), dragged 120 px left the song started at 0:01.7, the
+lane's menu at the kill offered "Land the hit here (0:05.5 of the video)";
+a right-click on the Camera lane while the clip played paused it (the clock
+held at 271.23 s) with the line shown, and closing the menu took the line
+away.
+
+Reported the same day, not reproduced, asked about: Game front chase added
+after the victim's circle "goes back in time to their kill on the tank" (in
+the probe it filmed the Mustang, 28-53 m from it, following BF6; the part
+that loops starts half a second before the cut, on the circle over the
+tank, and Play restarts the clip from its start); a click into the bullet
+time leaves the camera hanging (paused mid-flight the chase showed the
+stand-in bomb, and played from there followed it onto the tank, 68 m to
+5 m).

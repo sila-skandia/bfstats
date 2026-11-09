@@ -71,6 +71,51 @@ export function songAction(s) {
   return { act: 'keep', rate: songRate(drift) };
 }
 
+/** Peaks a second the waveform keeps: fine enough to see a drum hit. */
+export const PEAKS_PER_SECOND = 50;
+
+/**
+ * The song's waveform: the loudest sample of each 1/`perSecond` of it,
+ * across its channels (`channels`, Float32Arrays at `sampleRate`). The
+ * strip's Music lane draws it under the clip so the drop can be seen.
+ */
+export function songPeaks(channels, sampleRate, perSecond = PEAKS_PER_SECOND) {
+  const n = channels[0]?.length ?? 0;
+  const step = Math.max(1, Math.round(sampleRate / perSecond));
+  const out = new Float32Array(Math.ceil(n / step));
+  for (const ch of channels) {
+    for (let b = 0; b < out.length; b++) {
+      let peak = out[b];
+      const end = Math.min(n, (b + 1) * step);
+      for (let i = b * step; i < end; i++) {
+        const v = ch[i] < 0 ? -ch[i] : ch[i];
+        if (v > peak) peak = v;
+      }
+      out[b] = peak;
+    }
+  }
+  return out;
+}
+
+/** The loudest peak from `from` to `to` seconds of the song (`peaks` at
+ *  `perSecond`), 0 outside it. */
+export function peakBetween(peaks, from, to, perSecond = PEAKS_PER_SECOND) {
+  if (!peaks?.length || !(to > 0)) return 0;
+  const a = Math.max(0, Math.floor(from * perSecond));
+  const b = Math.min(peaks.length, Math.max(a + 1, Math.ceil(to * perSecond)));
+  let m = 0;
+  for (let i = a; i < b; i++) if (peaks[i] > m) m = peaks[i];
+  return m;
+}
+
+/** The song's start under the clip after a drag of `dx` seconds of the
+ *  video (right is later in the clip, so earlier in the song), held inside
+ *  the song. */
+export function slidOffset(start, dx, duration = Infinity) {
+  const most = Number.isFinite(duration) ? Math.max(0, duration - 0.5) : Infinity;
+  return Math.min(most, Math.max(0, start - dx));
+}
+
 export class ClipMusic {
   constructor() {
     this.audio = null;
@@ -83,6 +128,8 @@ export class ClipMusic {
     this.prevT = null;
     this.error = null;
     this.graph = null;            // { context, audio, src, out }: the song in Web Audio (`attach`)
+    this.peaks = null;            // the song's waveform (`songPeaks`), once decoded
+    this.onChange = null;         // called when the song or its waveform changes
     this.ownContext = null;       // a context of its own, on a page with no audio of its own
   }
 
@@ -110,6 +157,26 @@ export class ClipMusic {
     this.name = file.name ?? 'Song';
     this.error = null;
     this.prevT = null;
+    this.peaks = null;
+    this.decode(file, audio);
+    this.onChange?.();
+  }
+
+  /** The song's waveform, worked out off the page's clock: an offline
+   *  context decodes it; a song the browser will not decode has none. */
+  async decode(file, audio) {
+    try {
+      const bytes = await file.arrayBuffer();
+      const ctx = new OfflineAudioContext(1, 1, 44100);
+      const buffer = await ctx.decodeAudioData(bytes);
+      if (this.audio !== audio) return;
+      const channels = [];
+      for (let c = 0; c < buffer.numberOfChannels; c++) channels.push(buffer.getChannelData(c));
+      this.peaks = songPeaks(channels, buffer.sampleRate);
+      this.onChange?.();
+    } catch (error) {
+      console.warn('replay music: no waveform for this song', error);
+    }
   }
 
   /**
@@ -155,6 +222,8 @@ export class ClipMusic {
     this.name = '';
     this.error = null;
     this.prevT = null;
+    this.peaks = null;
+    this.onChange?.();
   }
 
   setVolume(v) {

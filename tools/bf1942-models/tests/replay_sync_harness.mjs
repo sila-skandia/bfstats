@@ -168,6 +168,16 @@ results.rampOf = {
     frozen: M.songAction({ ...base, at: 9.5, frozen: true }),
     rates: [-1, -0.05, 0, 0.02, 0.05, 1].map(M.songRate),
   };
+  // The waveform: a quiet second and a loud one, at 1 kHz, 50 peaks a second.
+  const n = 2000;
+  const ch = new Float32Array(n);
+  for (let i = 0; i < n; i++) ch[i] = (i < 1000 ? 0.1 : 0.8) * Math.sin(i / 3);
+  const peaks = M.songPeaks([ch, ch.map(v => v / 2)], 1000, 50);
+  results.wave = {
+    length: peaks.length, quiet: round(peaks[10], 2), loud: round(peaks[60], 2),
+    between: [round(M.peakBetween(peaks, 0.5, 0.9), 2), round(M.peakBetween(peaks, 0.9, 1.1), 2), M.peakBetween(peaks, 5, 6)],
+    slid: [M.slidOffset(10, 2, 200), M.slidOffset(10, -2, 200), M.slidOffset(1, 5, 200), M.slidOffset(10, -500, 200)],
+  };
 }
 
 // The camera waiting on a shooter in a hull (replay-roundcam.js `waitingDir`):

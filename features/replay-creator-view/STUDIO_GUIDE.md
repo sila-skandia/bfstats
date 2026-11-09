@@ -57,7 +57,7 @@ seconds of video, and the timeline gives it that room, so the round's flight
 is wide enough to work in. The clock says the same: 0:04.0 / 0:11.7 is four
 seconds into an 11.7 second video.
 
-The lanes from top to bottom are Clip, Camera, Speed, Text and FX. They all
+The lanes from top to bottom are Clip, Camera, Speed, Text, FX and Music. They all
 follow the same rules:
 
 - Click goes to that moment, and dragging scrubs. The monitor shows the
@@ -66,7 +66,9 @@ follow the same rules:
   rail along its top slides the whole clip. Slow motion and text bars move
   by their middle and resize by their ends.
 - Right-click (a long press on touch) opens a menu of what you can do to
-  whatever is under the pointer.
+  whatever is under the pointer. The clip pauses while the menu is open, and
+  a line marks the moment it is about: a camera added from the Camera lane's
+  menu starts exactly there, whatever the playhead was doing.
 - The mouse wheel zooms the timeline round the pointer. Shift and the wheel
   pans it.
 - Drags snap to the clip's ends, the shot, the hit, the man going down, the
@@ -279,11 +281,15 @@ clip plays the page measures where the round actually lands and the start is
 nudged to match, so play it through once before you record. Record the clip
 and the song lines up from 0:00 in any editor.
 
-To hear it, add the song on the Export tab (Music, Add a song). It stays on
-your computer. It plays with the clip from the clip's start, follows a loop
-or a scrub, and the game is muted while it plays (untick Mute the game to
-hear both). Song at the clip's start skips into the track when the clip
-should start part way through it.
+To hear it, add the song on the strip's Music lane, the bottom one: click
+it, or drop an MP3 on it. It stays on your computer. The lane shows the
+song's waveform under the clip, so you can see the drop: drag it sideways
+to slide the song under the clip, and right-click the drum hit you see and
+choose Land the hit here, which pins the hit there. The song plays with the
+clip from the clip's start, follows a loop or a scrub, and the game is muted
+while it plays. Right-click the lane for Mute the game, Put the song in the
+recording, the volume, Start the song with the clip, and changing or
+removing it.
 
 Record puts the song in the video file too (Put the song in the recording,
 on by default): from the clip's first frame, on its own while the game is
@@ -326,9 +332,8 @@ clips keeps one style.
   effects and frame. The song is named, not sent: they add their own copy
   under Music. The round has to be shared on bfstats.io, and you have to be
   signed in. Their changes are theirs; they can share a link of their own.
-- Music: Add a song to hear the clip with the track you are cutting it to
-  (see The hit on a beat). Record puts it in the file unless you untick Put
-  the song in the recording.
+- The song on the Music lane goes in the file (see The hit on a beat) unless
+  you untick Put the song in the recording on the lane's right-click menu.
 - Record the clip plays it once in real time at the monitor's full size and
   downloads it (MP4 or WebM, with the game's sound). Slow motion takes its
   time: the video clock says how long. Keep other windows quiet while it

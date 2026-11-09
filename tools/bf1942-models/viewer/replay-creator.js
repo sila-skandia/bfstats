@@ -2430,7 +2430,7 @@ export class ReplayCreator {
     this.studio?.refresh(true);
     this.playRange();
     const who = this.sharedFrom.authorName ? ` · ${this.sharedFrom.authorName}'s edit` : '';
-    this.ui.flash(`${this.sharedFrom.name}${who}${song ? ` · cut to ${song.name}: add your copy under Export, Music` : ''}`, 6000);
+    this.ui.flash(`${this.sharedFrom.name}${who}${song ? ` · cut to ${song.name}: drop your copy on the Music lane` : ''}`, 6000);
     return true;
   }
 

@@ -208,6 +208,25 @@ class SongTests(unittest.TestCase):
         self.assertEqual(self.song["scrubbed"], {"act": "seek", "at": 14})
 
 
+class SongLaneTests(unittest.TestCase):
+    """The Music lane's waveform and drag (replay-music.js)."""
+
+    w: dict
+
+    @classmethod
+    def setUpClass(cls) -> None:
+        cls.w = run_harness()["wave"]
+
+    def test_the_waveform_keeps_the_loudest_of_each_fiftieth(self) -> None:
+        self.assertEqual(self.w["length"], 100)
+        self.assertAlmostEqual(self.w["quiet"], 0.1, places=2)
+        self.assertAlmostEqual(self.w["loud"], 0.8, places=2)
+        self.assertEqual(self.w["between"], [0.1, 0.8, 0])
+
+    def test_a_drag_right_starts_the_song_earlier_held_inside_it(self) -> None:
+        self.assertEqual(self.w["slid"], [8, 12, 0, 199.5])
+
+
 class WaitingCameraTests(unittest.TestCase):
     """The camera waiting on a shooter in a hull faces the way the hull
     travels until the shot comes near (replay-roundcam.js `waitingDir`)."""
