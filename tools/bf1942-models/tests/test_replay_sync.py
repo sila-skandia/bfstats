@@ -222,5 +222,24 @@ class WaitingCameraTests(unittest.TestCase):
         self.assertEqual(self.w["still"], [0, 0, -1])
 
 
+class BombLandingTests(unittest.TestCase):
+    """A dropped bomb lands at its kill line every play, so a pinned hit is
+    the explosion (replay-roundcam.js `landingOf`)."""
+
+    b: dict
+
+    @classmethod
+    def setUpClass(cls) -> None:
+        cls.b = run_harness()["bombLanding"]
+
+    def test_the_mustangs_bomb_lands_on_the_tigers_death_released_as_recorded(self) -> None:
+        self.assertEqual(self.b["mustang"], {"landAt": HIT})
+
+    def test_drops_the_page_cannot_have_seen_or_the_server_flew_are_left_alone(self) -> None:
+        self.assertIsNone(self.b["tooQuick"])
+        self.assertIsNone(self.b["tooLong"])
+        self.assertIsNone(self.b["serverFlown"])
+
+
 if __name__ == "__main__":
     unittest.main()

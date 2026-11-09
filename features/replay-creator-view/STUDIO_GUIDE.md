@@ -273,11 +273,11 @@ When it cannot fit, the pin turns red and says why, and the clip is left as
 it was: "Too long by 32.5 s even at normal speed: start the clip later", or
 "Short by 12.3 s even at 1/20 from the clip's start: start the clip
 earlier". The
-first time the clip plays, the page measures where the round actually lands
-and the start is nudged to match, so the hit is on the pin from the second
-time round. After changing the slow motion, play the clip through once
-before you record. Record the clip and the song lines up from 0:00 in any
-editor.
+A dropped bomb is steered to land exactly as the target dies, so it is on
+the pin from the first play. For a bullet or a shell, the first time the
+clip plays the page measures where the round actually lands and the start is
+nudged to match, so play it through once before you record. Record the clip
+and the song lines up from 0:00 in any editor.
 
 To hear it, add the song on the Export tab (Music, Add a song). It stays on
 your computer. It plays with the clip from the clip's start, follows a loop

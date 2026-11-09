@@ -1895,3 +1895,18 @@ Two more from the same session, both met on that clip:
   hull travels, from its recorded track, and eases onto the line of fire over
   the last 2.5 s before the shot, so the hand-over to the bomb is unchanged.
   A hull standing still (a tank, a gun) waits on the line of fire as before.
+
+**The bomb lands on the beat (same day).** The page's bomb fell on its own
+physics, nothing steering it: it struck at 273.37-273.41 s against a death at
+273.49 s, and in a pinned clip up to 273.9 s, because `keepTime` puts the
+replay's clock forward over a stalled frame and the round in the air was not
+stepped for it. `landingOf` now plans a dropped bomb too: released where and
+when the recording has it (no `fireAt`, nothing held back), steered in its
+fall to land at the death (`BOMB_FALL`: falls of 0.2-8 s; a server's flown
+bomb never), and the creator's `hitOf` takes that landing from the first
+play rather than an estimate the first play corrected. Measured, pinned at
+0:41: the round cam's round struck at 273.479 s and 273.472 s of the round
+on two plays, 40.92 s and 40.83 s into the video on the very first play; the
+start trimmed to 4:29.5 (0.09x worked out), 40.68 s. The Open note above
+("Play the clip once after changing its slow motion") no longer applies to
+bombs.

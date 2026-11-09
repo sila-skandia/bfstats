@@ -34,7 +34,9 @@
 import * as THREE from 'three';
 import { isLocalHost, resolveApi, sharedRecordingsApi } from './recordings-api.js';
 import { nameAt, teamAt } from './replay-recording.js';
-import { RoundCam, BULLET_TIME, bulletTimeSpan, guessSpeed, heavyRound, nextShotOf, slowFor, victimHullLife } from './replay-roundcam.js';
+import {
+  RoundCam, BULLET_TIME, bulletTimeSpan, guessSpeed, heavyRound, kindOfWeapon, landingOf, nextShotOf, slowFor, victimHullLife,
+} from './replay-roundcam.js';
 import { CutRig, keyOf, keyValid } from './replay-camtrack.js';
 import {
   CAM_RECIPES, STYLE_CAM, abMoveLabel, camLabel, camsFromKeys, camsOf, defaultCams, insertCam, moveCut, moveEnd, removeCam, resolveCams,
@@ -1326,10 +1328,14 @@ export class ReplayCreator {
     // A server recording's shell, rocket or bomb: where the server's round
     // struck (replay-flights.js).
     if (f.flight?.drawn && Number.isFinite(f.flight.destroyed)) return Math.max(f.t, f.flight.destroyed);
-    const seen = this.seen.get(f);
-    if (Number.isFinite(seen?.hit)) return Math.max(f.t, seen.hit);
     const g = this.takeGeometry(take);
     const dist = g ? Math.hypot(g.to[0] - g.from[0], g.to[1] - g.from[1], g.to[2] - g.from[2]) : null;
+    // A dropped bomb is steered onto the death (replay-roundcam.js
+    // `landingOf`): it lands there, every time, from the first play.
+    const plan = take.kill && kindOfWeapon(f.weapon) === 'bomb' ? landingOf(f, take.kill, 0) : null;
+    if (plan) return Math.max(f.t, plan.landAt);
+    const seen = this.seen.get(f);
+    if (Number.isFinite(seen?.hit)) return Math.max(f.t, seen.hit);
     return f.t + (dist ? dist / guessSpeed(f.weapon) : 0.15);
   }
 

@@ -109,9 +109,19 @@ const HULL_HOLD = Object.freeze({ real: 3.5, max: 5, speed: 0.6 });
  * its flight (`fireAt`), and its round is aimed, every frame, at where he is
  * at the death, its drop allowed for, arriving at it (`landAt`). Only rounds
  * the page flies (a tracer or a shell); not more than LANDING.shift seconds
- * either way, and a server's flown shell, a bomb, a rocket or a grenade never.
+ * either way, and a server's flown shell, a rocket or a grenade never.
+ *
+ * A bomb (2026-11-09) is released where and when the recording has it, out
+ * of the plane, and steered in its fall to land at the death: it is not held
+ * back (`fireAt` is absent), only its arrival is set. Left to the page's
+ * physics it struck 0.1 s of the round early with bullet time and up to
+ * 0.4 s late when the replay's clock was put forward under it, which at 1/4
+ * moved the explosion on a creator's beat by over a second of video.
  */
 export const LANDING = Object.freeze({ shift: 1.5, least: 0.01, gravity: 9.81 });
+/** Seconds of the round a dropped bomb may take to fall and still be steered
+ *  onto its death: shorter is a drop the page cannot have seen leave. */
+export const BOMB_FALL = Object.freeze({ least: 0.2, most: 8 });
 
 /** When `kill`'s round should leave and land: `{ fireAt, landAt }`, or null
  *  for a shot it is not done for. `flight` is the round's seconds to him at
@@ -120,6 +130,10 @@ export function landingOf(f, kill, flight) {
   if (!f || !kill || !Number.isFinite(f.t) || !Number.isFinite(kill.t) || !(flight >= 0)) return null;
   if (f.flight?.drawn || isMelee(f.weapon)) return null;
   const kind = kindOfWeapon(f.weapon);
+  if (kind === 'bomb') {
+    const fall = kill.t - f.t;
+    return fall >= BOMB_FALL.least && fall <= BOMB_FALL.most ? { landAt: kill.t } : null;
+  }
   if (kind !== 'tracer' && kind !== 'shell') return null;
   const landAt = kill.t;
   const fireAt = landAt - flight;
@@ -487,8 +501,10 @@ export class RoundCam {
     if (!target?.kill || !target.victimAt || !this.player.holdShot) return;
     const plan = landingOf(target.f, target.kill, target.victimDist / guessSpeed(target.weapon));
     if (!plan) return;
-    target.fireAt = plan.fireAt;
     target.landAt = plan.landAt;
+    // A bomb leaves as recorded: only its landing is set.
+    if (plan.fireAt === undefined) return;
+    target.fireAt = plan.fireAt;
     target.fired = false;
     this.player.holdShot(target.f);
   }

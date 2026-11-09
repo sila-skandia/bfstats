@@ -176,4 +176,13 @@ results.rampOf = {
   };
 }
 
+// A dropped bomb is steered onto its death (replay-roundcam.js `landingOf`):
+// released as recorded (no `fireAt`), landing at the kill line.
+results.bombLanding = {
+  mustang: RC.landingOf({ t: SHOT, weapon: 'MustangBombDummy' }, { t: HIT }, 0),
+  tooQuick: RC.landingOf({ t: 10, weapon: 'MustangBombDummy' }, { t: 10.1 }, 0),
+  tooLong: RC.landingOf({ t: 10, weapon: 'MustangBombDummy' }, { t: 19 }, 0),
+  serverFlown: RC.landingOf({ t: SHOT, weapon: 'MustangBombDummy', flight: { drawn: true } }, { t: HIT }, 0),
+};
+
 console.log(JSON.stringify(results));
