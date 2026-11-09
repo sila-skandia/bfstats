@@ -9,7 +9,7 @@
 import {
   applyPreset, changeVideo, chosenDisplayMode, DEFAULT_VIDEO, displayModes, displayOf, displayPixelRatio,
   EFFECTS, GRAPHICS, migrateRenderScale, normalizeVideo, onVideoChange, performanceOf,
-  PRESETS, scaledViewDistance, storedVideo, storeVideo, TEXTURE, VIDEO_KEY, viewDistanceFog,
+  PRESETS, scaledViewDistance, screenFrame, storedVideo, storeVideo, TEXTURE, VIDEO_KEY, viewDistanceFog,
 } from '../viewer/video-settings.js';
 import { lodPercent, selectLod, setLodPercent } from '../viewer/mesh-cull.js';
 import { EmitterClock, emitterIntensityScale, setEmitterIntensityScale } from '../viewer/effects-core.js';
@@ -145,6 +145,33 @@ out.textureState = [1, 2, 3, 4, 5].map(q => textureState(q, 16));
       mode: pixelRatioFor({ displayHeight: 720, display: screens.hd }),
       noScreen: pixelRatioFor({ displayHeight: 720, display: null, dpr: 3 }),
     },
+  };
+  // A window shorter than its screen shows the middle of the game's frame
+  // (`screenFrame`), measured through three's own projection: the angles
+  // across and up the stage, and what that projection does at its centre.
+  const THREE = await import('three');
+  const lens = (w, h, display) => {
+    const frame = screenFrame(w, h, display);
+    const cam = new THREE.PerspectiveCamera(57.3, w / h, 0.1, 1000);
+    if (frame) {
+      cam.aspect = frame.fullWidth / frame.fullHeight;
+      cam.setViewOffset(frame.fullWidth, frame.fullHeight, 0, frame.offsetY, w, h);
+    }
+    cam.updateProjectionMatrix();
+    const m = cam.projectionMatrix.elements;
+    const deg = r => (r * 180) / Math.PI;
+    return { frame, across: deg(2 * Math.atan(1 / m[0])), up: deg(2 * Math.atan(1 / m[5])),
+             offCentre: [m[8], m[9]], fov: cam.fov, zoom: cam.zoom };
+  };
+  out.screenFrame = {
+    maximised: lens(1920, 953, screens.hd),
+    fullScreen: lens(1920, 1080, screens.hd),
+    tallWindow: lens(1200, 1000, screens.hd),
+    phone: lens(390, 700, screens.phone),
+    zoomedWindow: lens(1536, 762, screens.zoomed),
+    ultrawide: lens(2560, 953, displayOf({ width: 2560, height: 1080 }, 1)),
+    noScreen: screenFrame(1920, 953, null),
+    noStage: screenFrame(0, 0, screens.hd),
   };
   // A RENDER SCALE kept before the list read as a mode, kept as one by the
   // next change; a preset leaves it alone; DEFAULT forgets it.

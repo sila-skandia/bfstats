@@ -1,7 +1,7 @@
 # OPTIONS > VIDEO
 
 Status: **built** (2026-10-10, anti-aliasing; 2026-11-01, the game's rows;
-2026-11-06, DISPLAY MODE). Seven rows, the VIDEO PERFORMANCE presets and the
+2026-11-06, DISPLAY MODE; 2026-11-10, a window keeps the game's frame). Seven rows, the VIDEO PERFORMANCE presets and the
 DISPLAY MODE list: GRAPHICS QUALITY, EFFECTS QUALITY, ENVIRONMENT MAPPING,
 LIGHTMAPS, TEXTURE QUALITY and VIEW DISTANCE from the game, ANTI-ALIASING of
 this site's own, and the game's resolution list (VID-11), which replaced
@@ -305,3 +305,51 @@ Decisions:
   SAVE). SAVE stays without an action.
 - The list fits the plate's twelve rows on every screen (ten entries at
   most), so the scroll arrows are drawn and do nothing.
+
+## The window's frame (2026-11-10)
+
+A player on a 1920x1080 screen said the browser game felt "more arcade-y"
+than the real one. The field of view itself was right: 57.3 degrees up on
+foot and in every seat (VIEW-8, VIEW-13), with the sides from the shape of
+the picture, which is how both the game and three.js work. What differed was
+the shape. The game draws full screen, so on a 16:9 screen it shows **88.3
+degrees across**. The page draws into the browser window, which is shorter
+than the screen by the tabs, the address bar and the taskbar: 1920x953 in a
+maximised Windows Chrome, measured on play.bfstats.io with the match's bar
+already hidden. The same 57.3 up over that stage showed **95.5 degrees
+across** (100 with the site bar up), and everything in it 12 % smaller. That
+is the wider, fish-eyed, faster-looking picture of an arcade shooter.
+
+**What the page does now** (`video-settings.js` `screenFrame`, applied in
+`map.html` `resize()`): in a match, a stage wider than the screen's shape
+shows the middle of the frame the game would draw full screen on that
+screen, as wide as the stage. A maximised 1080p window sees 88.3 across and
+51.5 up, the game's picture with 64 lines cut from the top and the bottom.
+It is three's `setViewOffset`, so `camera.fov` and `camera.zoom` (what the
+LOD and the cull read, `mesh-cull.js` `fovModifier`) are untouched, and the
+first-person pass copies the same crop (`copyViewOffset`, `hand-weapon.js`),
+so the arms and the gun stay the size they are against the world.
+
+Decisions:
+
+- **Only a stage wider than the screen is cropped.** A window narrower than
+  the screen's shape draws its own frame at 57.3 up, as the game does in a
+  narrower mode (4:3 is 72.1 across). A portrait screen is never cropped: the
+  game has no portrait mode, and an upright phone would see 28 degrees across.
+- **Matches only** (`IN_MATCH`: Instant Battle, a room, a relay). Replays and
+  the creator's cameras keep their own framing, so the Shorts renderer's
+  output does not move; the flythrough is not the game's view.
+- **Full screen is unchanged.** With no browser chrome the stage is the
+  screen's shape and nothing is cropped.
+- `?screenframe=0` turns it off for a side-by-side.
+
+Checked: `test_video_settings.py`
+`test_a_window_shorter_than_its_screen_shows_the_games_frame` measures the
+angles through three's own projection matrix (maximised, full screen, browser
+zoom, ultrawide, a tall window, a phone). In the page at 1920x953 on a 16:9
+screen, on foot on Wake: `view` 1920x1080 offset 63.5, 88.33 across, 51.48 up,
+`fov` 57.3, centred; the arms and the rifle drawn under the same crop.
+
+Open: the screen is read from `screen.width/height` when the stage resizes. A
+window dragged to a screen of another shape at the same density is not
+re-measured until the next resize.

@@ -460,7 +460,7 @@ import {
   storeHardware3d, storedHardware3d,
 } from './sound-options.js';
 import { ds3dDopplerFactor, ds3dHardware, setDs3dDopplerFactor, setDs3dHardware } from './ds3d-pan.js';
-import { changeVideo } from './video-settings.js';
+import { changeVideo, displayOf, screenFrame } from './video-settings.js';
 import { lodPercent, setLodPercent } from './mesh-cull.js';
 import { billboardDistanceScale, setBillboardDistanceScale, setTreesDrawn } from './tree-foliage.js';
 import { emitterIntensityScale, setEmitterIntensityScale } from './effects-core.js';
@@ -1075,8 +1075,21 @@ function resize() {
   const ratio = canvasPixelRatio();
   if (renderer.getPixelRatio() !== ratio) renderer.setPixelRatio(ratio);
   renderer.setSize(w, h, false);
-  camera.aspect = w / h;
-  camera.updateProjectionMatrix();
+  // In a match, a window shorter than the screen (the browser's tabs, address
+  // bar and taskbar) shows the middle of the frame the game draws full screen
+  // on it, not a wider view (`screenFrame`, ledger VIEW-8): 88.3 degrees
+  // across in a maximised 1080p window, as in the game, where the same
+  // vertical angle over the shorter stage was 95. Only the projection is
+  // cropped: `camera.fov` and `zoom`, which the LOD reads, stay the game's.
+  // `?screenframe=0` draws the stage's own frame, for comparison.
+  const frame = IN_MATCH && params.get('screenframe') !== '0' ? screenFrame(w, h, displayOf()) : null;
+  if (frame) {
+    camera.aspect = frame.fullWidth / frame.fullHeight;
+    camera.setViewOffset(frame.fullWidth, frame.fullHeight, 0, frame.offsetY, w, h);
+  } else {
+    camera.aspect = w / h;
+    camera.clearViewOffset();
+  }
 }
 addEventListener('resize', resize);
 // The side panel collapsing resizes the stage without resizing the window.

@@ -66,6 +66,7 @@ export function installTestHooks(page) {
     // clamp: 1/15 is a 15 fps machine, whose every frame owes two world ticks.
     window.__renderOnce = (w = 1280, h = 800, dt = 1 / 60) => {
       page.renderer.setSize(w, h, false);
+      page.camera.clearViewOffset();   // the forced size draws its own frame, not `screenFrame`'s
       page.camera.aspect = w / h;
       page.camera.updateProjectionMatrix();
       page.frame(Math.min(Math.max(dt, 0), 0.1));

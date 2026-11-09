@@ -34,6 +34,7 @@ import { applyViewShake } from './fire-shake.js';
 import { ThrowCharge } from './throw-charge.js';
 import { bestLoadedSlot, heldKitSlots, kitItemOrder, totalAmmo } from './kit-select.js';
 import { fireCycle } from './fire-timer.js';
+import { copyViewOffset } from './video-settings.js';
 
 /**
  * Built once by the page, where this code used to sit. `page` hands in
@@ -872,6 +873,7 @@ export function createHandWeapon(page) {
       ? soldierKit.handWeapon.fov1p / soldierKit.DEG_TO_RAD : FOOT_FOV;
     soldierKit.vmCamera.fov = baseFov * soldierKit.handWeapon.fovCur;
     soldierKit.vmCamera.aspect = page.camera.aspect;
+    copyViewOffset(soldierKit.vmCamera, page.camera);   // the world's crop (`screenFrame`)
     soldierKit.vmCamera.near = 0.1;   // the engine's render-view near, baked unchanged
     soldierKit.vmCamera.far = page.camera.far;
     soldierKit.vmCamera.updateProjectionMatrix();

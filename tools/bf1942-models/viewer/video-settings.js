@@ -179,6 +179,45 @@ export function displayPixelRatio(display, displayHeight) {
   return Math.min(4, Math.max(0.25, mode.height / display.cssHeight));
 }
 
+/** The game's whole frame for a stage `w` x `h` (CSS pixels) on `display`,
+ *  when the stage is a crop of it; null when the stage draws the frame whole.
+ *
+ *  The game fixes the vertical angle (`renderer.fieldOfView 1`, ledger VIEW-8)
+ *  and takes the sides from the display mode's shape: 88.3 degrees across on
+ *  a 16:9 screen. A browser window on that screen is shorter than it, by the
+ *  tabs, the address bar and the taskbar (1920x953 on a maximised Windows
+ *  Chrome), so the same vertical angle over the shorter stage would show 95
+ *  degrees across with everything 12 % smaller: a wider, faster-looking
+ *  picture than the game ever drew there. So a stage wider than the screen's
+ *  shape shows the middle of the frame the game would draw full screen, as
+ *  wide as the stage: `{ fullWidth, fullHeight, offsetY }` for three's
+ *  `setViewOffset`. A stage as narrow as the screen or narrower (a tall
+ *  window) draws its own frame, as the game does in any mode narrower than
+ *  16:9. So does any stage on a portrait screen: no display mode the game
+ *  lists is taller than wide, and a phone held upright would otherwise see
+ *  28 degrees across. */
+export function screenFrame(w, h, display) {
+  if (!(w > 0 && h > 0) || !display) return null;
+  const screenAspect = display.cssWidth / display.cssHeight;
+  if (!(screenAspect >= 1) || w / h <= screenAspect * 1.001) return null;
+  const fullHeight = w / screenAspect;
+  return { fullWidth: w, fullHeight, offsetY: (fullHeight - h) / 2 };
+}
+
+/** Give `dst` the crop `src` draws with (three's `setViewOffset`), or none,
+ *  without allocating: a pass drawn over the world's (the first-person arms)
+ *  must crop the same frame, or the gun would sit 12 % smaller than the world
+ *  around it. Call before `dst.updateProjectionMatrix()`. */
+export function copyViewOffset(dst, src) {
+  const v = src.view;
+  if (v?.enabled) {
+    if (dst.view) Object.assign(dst.view, v);
+    else dst.view = { ...v };
+  } else if (dst.view) {
+    dst.view.enabled = false;
+  }
+}
+
 /** A stored RENDER SCALE percentage as DISPLAY MODE: the entry nearest the
  *  height it drew at (the default's height times the percentage). 100 %, or
  *  no screen to measure, is no choice. */

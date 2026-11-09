@@ -22,6 +22,7 @@ the test needs no `node_modules` anywhere above the checkout.
 from __future__ import annotations
 
 import json
+import math
 import re
 import shutil
 import subprocess
@@ -176,6 +177,35 @@ class VideoSettingsTests(unittest.TestCase):
         self.assertIsNone(d["none"])
         self.assertEqual([], d["noModes"])
         self.assertEqual({"hd768": "1365x768x32", "hdNone": "1920x1080x32"}, d["chosen"])
+
+    def test_a_window_shorter_than_its_screen_shows_the_games_frame(self) -> None:
+        # VIEW-8: 57.3 degrees up, the sides from the screen's shape, so 88.3
+        # across on 16:9. A maximised browser window on a 1080p screen is
+        # 1920x953; it shows the middle of the 1920x1080 frame, not 57.3 up
+        # over 953 lines (95.5 across, everything 12 % smaller).
+        f = self.results["screenFrame"]
+        m = f["maximised"]
+        self.assertEqual({"fullWidth": 1920, "fullHeight": 1080, "offsetY": 63.5}, m["frame"])
+        self.assertAlmostEqual(88.33, m["across"], places=2)
+        self.assertAlmostEqual(2 * math.degrees(math.atan(math.tan(math.radians(57.3) / 2) * 953 / 1080)), m["up"], places=6)
+        # Centred, and no number the LOD reads moves (mesh-cull `fovModifier`).
+        self.assertEqual([0, 0], m["offCentre"])
+        self.assertEqual((57.3, 1), (m["fov"], m["zoom"]))
+        # Full screen draws the frame whole, as before.
+        self.assertIsNone(f["fullScreen"]["frame"])
+        self.assertAlmostEqual(88.33, f["fullScreen"]["across"], places=2)
+        self.assertAlmostEqual(57.3, f["fullScreen"]["up"], places=6)
+        # Browser zoom changes the CSS pixels, not the shape.
+        self.assertAlmostEqual(88.33, f["zoomedWindow"]["across"], places=2)
+        # A wider screen keeps its own wider frame.
+        self.assertAlmostEqual(2 * math.degrees(math.atan(math.tan(math.radians(57.3) / 2) * 2560 / 1080)),
+                               f["ultrawide"]["across"], places=6)
+        # A window narrower than the screen, and a portrait phone, keep 57.3 up.
+        self.assertIsNone(f["tallWindow"]["frame"])
+        self.assertIsNone(f["phone"]["frame"])
+        self.assertAlmostEqual(57.3, f["phone"]["up"], places=6)
+        self.assertIsNone(f["noScreen"])
+        self.assertIsNone(f["noStage"])
 
     def test_display_mode_is_the_canvas_pixel_ratio(self) -> None:
         r = self.results["display"]["ratio"]
