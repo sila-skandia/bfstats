@@ -1,8 +1,9 @@
-# bfstats-dogfights: the job that keeps the dogfight school's Fights list
-# fresh (deploy/app/dogfights-cronjob.yaml, features/dogfight-recordings).
+# bfstats-dogfights: the job that keeps the schools' fights lists fresh
+# (deploy/app/dogfights-cronjob.yaml, features/dogfight-recordings,
+# features/battle-schools): the dogfight school's and the tank school's.
 #
 # One Node process, refresh.mjs, which runs tools/bf1942-models/
-# extract_dogfights.mjs: the detector and the recording reader are the
+# extract_dogfights.mjs and extract_tank_fights.mjs: the detectors and the recording reader are the
 # viewer's own modules, so the image carries the viewer tree wholesale (the
 # mesh and netcode images' rule) at the relative paths the extractor expects.
 # Built from the same commit as the mesh image, the fights it writes are the
@@ -10,14 +11,16 @@
 #
 # MOUNT CONTRACT (the CronJob): the API's recordings volume read-only at
 # /recordings, the assets volume's mesh/models read-only at /models (the
-# aircraft catalogues), and mesh/replays read-write at /replays.
+# aircraft catalogues), its mesh/ root read-only at /mesh (the tank
+# extractor's AI data, catalogues and glbs), and mesh/replays read-write at
+# /replays.
 FROM node:22-alpine
 
 WORKDIR /app
 
 COPY tools/bf1942-models/viewer/ /app/tools/bf1942-models/viewer/
 COPY tools/bf1942-models/sim/ /app/tools/bf1942-models/sim/
-COPY tools/bf1942-models/extract_dogfights.mjs /app/tools/bf1942-models/
+COPY tools/bf1942-models/extract_dogfights.mjs tools/bf1942-models/extract_tank_fights.mjs /app/tools/bf1942-models/
 COPY dogfights/refresh.mjs /app/dogfights/
 
 # Local extract trees never ship (.dockerignore keeps them out of the

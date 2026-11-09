@@ -708,7 +708,11 @@ the fight.
 ## The refresh job (2026-11-08)
 
 The fights the live school lists come from the `bfstats-dogfights` CronJob
-(`deploy/app/dogfights-cronjob.yaml`), not from a hand run.
+(`deploy/app/dogfights-cronjob.yaml`), not from a hand run. Since 2026-11-09
+the same job builds the tank school's list too, after the dogfights, into
+`mesh/replays/tankfights` (features/battle-schools, "Tank fights from the
+recordings"); everything below holds for both, each list with its own
+fingerprint, build folder and swap.
 
 - **When.** Once a day at 08:41 UTC, the quiet end of the day for the
   site and the game servers (recordings arrive one to four a day). The API's

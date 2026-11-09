@@ -1,17 +1,20 @@
-# The dogfight school's Fights list, kept fresh (features/dogfight-recordings,
-# "The refresh job"). Once a day it reads the public REPLAY feed and,
-# when anything in it has changed since the live build (or the image has),
-# re-runs the dogfight extractor over every public recording and swaps the
-# result into the assets volume's mesh/replays/dogfights, which bfstats-mesh
-# serves as /replays/dogfights/ (mesh-deployment.yaml). A run with nothing
-# new exits in a second.
+# The schools' fights lists, kept fresh (features/dogfight-recordings,
+# "The refresh job"; features/battle-schools, "Tank fights from the
+# recordings"). Once a day it reads the public REPLAY feed and, when anything
+# in it has changed since a list's live build (or the image has), re-runs
+# that list's extractor over every public recording and swaps the result into
+# the assets volume's mesh/replays/dogfights or mesh/replays/tankfights, which
+# bfstats-mesh serves as /replays/dogfights/ and /replays/tankfights/
+# (mesh-deployment.yaml). The dogfights run first; one list failing leaves
+# the other's as built. A run with nothing new exits in a second.
 #
 # Inputs, read in place, so nothing is downloaded or cached: the API's
 # recordings volume (recordings-storage.yaml, `<slug>.ndjson.gz` on the
-# node's root disk) and the aircraft catalogues in mesh/models. Output: a
-# fresh folder under mesh/replays/.dogfights/, then one rename of the
-# mesh/replays/dogfights symlink (dogfights/refresh.mjs). A failed run
-# leaves the live list as it was.
+# node's root disk), the aircraft catalogues in mesh/models, and for the tank
+# fights the trees' AI data, catalogues and glbs under mesh/. Output: a fresh
+# folder under mesh/replays/.dogfights/ (or .tankfights/), then one rename of
+# the list's symlink (dogfights/refresh.mjs). A failed run leaves the live
+# list as it was.
 #
 # The image is built by Jenkins (the Dogfights stage) from the same commit
 # as the mesh image; imagePullPolicy Always makes the next run use it, and
@@ -42,7 +45,8 @@ spec:
       # A failure is a fault to look at (the API down, a recording too big
       # for the limit), not a flake: one retry, then the next schedule.
       backoffLimit: 1
-      activeDeadlineSeconds: 1800
+      # Two extractors now: about two minutes each over 36 recordings.
+      activeDeadlineSeconds: 2700
       template:
         metadata:
           labels:
@@ -65,6 +69,9 @@ spec:
               env:
                 - name: DOGFIGHTS_API
                   value: "http://bf42-stats-service:8080/stats/recordings"
+                # The tank extractor peaked at 696 MB over the same 36
+                # (2026-11-09, arm64, its glbs read from mesh/), inside the
+                # limit below. Each list runs on its own, one after the other.
                 # The extractor parses a whole recording at once. Measured
                 # 2026-11-08 over the 36 public recordings (largest 48 MB
                 # unpacked), arm64, 1 CPU: 556-601 MB peak RSS at a 256-448 MB
@@ -98,6 +105,12 @@ spec:
                 - name: assets-data
                   mountPath: /models
                   subPath: assets/mesh/models
+                  readOnly: true
+                # The tank extractor reads models/, maps/<tree>/_shared and
+                # glbs/ from the mesh root, as the site serves them.
+                - name: assets-data
+                  mountPath: /mesh
+                  subPath: assets/mesh
                   readOnly: true
                 - name: assets-data
                   mountPath: /replays

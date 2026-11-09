@@ -1,8 +1,13 @@
 #!/usr/bin/env node
-// Keeps the dogfight school's Fights list fresh: the bfstats-dogfights CronJob
-// (deploy/app/dogfights-cronjob.yaml, features/dogfight-recordings).
+// Keeps the schools' fights lists fresh: the bfstats-dogfights CronJob
+// (deploy/app/dogfights-cronjob.yaml, features/dogfight-recordings). Two
+// lists, each from the same feed and each with a live build of its own: the
+// dogfight school's (extract_dogfights.mjs, `<replays>/dogfights`) and the
+// tank school's (extract_tank_fights.mjs, `<replays>/tankfights`,
+// features/battle-schools). One list failing leaves the other's as built,
+// and the run exits non-zero at the end.
 //
-//   node refresh.mjs [--force]
+//   node refresh.mjs [--force] [--only dogfights|tankfights]
 //
 // 1. Reads the public REPLAY feed from the API, every page.
 // 2. Fingerprints it (each recording's slug, mod, level, date, server, source,
@@ -22,8 +27,12 @@
 //   DOGFIGHTS_RECORDINGS  the API's recordings directory [/recordings]
 //   DOGFIGHTS_REPLAYS     the assets volume's mesh/replays [/replays]
 //   DOGFIGHTS_CATALOGUE   the assets volume's mesh/models [/models]
+//   DOGFIGHTS_MESH        the assets volume's mesh/ root, for the tank
+//                         extractor's AI data, catalogues and glbs [/mesh]
 //   DOGFIGHTS_MAX_MB      skip a recording bigger than this unpacked [96]
-//   DOGFIGHTS_HEAP_MB     the extractor's heap [640]
+//   DOGFIGHTS_HEAP_MB     the extractors' heap [640]
+//
+// Steps 3 to 5 are run once per list.
 
 import { spawn } from 'node:child_process';
 import { createHash } from 'node:crypto';
@@ -37,13 +46,23 @@ const API = env('DOGFIGHTS_API', 'http://bf42-stats-service:8080/stats/recording
 const RECORDINGS = env('DOGFIGHTS_RECORDINGS', '/recordings');
 const REPLAYS = env('DOGFIGHTS_REPLAYS', '/replays');
 const CATALOGUE = env('DOGFIGHTS_CATALOGUE', '/models');
+const MESH = env('DOGFIGHTS_MESH', '/mesh');
 const MAX_MB = env('DOGFIGHTS_MAX_MB', '96');
 const HEAP_MB = env('DOGFIGHTS_HEAP_MB', '640');
-const EXTRACTOR = path.join(HERE, '..', 'tools', 'bf1942-models', 'extract_dogfights.mjs');
+const TOOLS = path.join(HERE, '..', 'tools', 'bf1942-models');
 const force = process.argv.includes('--force');
+const only = process.argv.includes('--only') ? process.argv[process.argv.indexOf('--only') + 1] : null;
+const TMP = process.env.TMPDIR || '/tmp';
 
-const LIVE = path.join(REPLAYS, 'dogfights');
-const BUILDS = path.join(REPLAYS, '.dogfights');
+/** The lists: where each goes, and how its extractor is run. */
+const LISTS = [
+  { name: 'dogfights', extractor: path.join(TOOLS, 'extract_dogfights.mjs'), args: ['--catalogue', CATALOGUE] },
+  // The tank extractor reads the trees' AI data, catalogues and glbs from the
+  // mesh root as the site serves it, and keeps its glb facts in a cache the
+  // job's own (temporary) disk can hold.
+  { name: 'tankfights', extractor: path.join(TOOLS, 'extract_tank_fights.mjs'),
+    args: ['--catalogue', MESH, '--glb-cache', path.join(TMP, 'tankfights-glb-guns.json')] },
+].filter(l => !only || l.name === only);
 const log = (...a) => console.log(new Date().toISOString(), ...a);
 
 /** This image's code: VERSION is written when the image is built. */
@@ -92,64 +111,82 @@ if (files.length < items.length / 2) {
   throw new Error(`only ${files.length} of ${items.length} recordings in ${RECORDINGS}; the live list is left as it is`);
 }
 inputs.sort((a, b) => a[0].localeCompare(b[0]));
-const fingerprint = createHash('sha256').update(JSON.stringify({ version, maxMb: MAX_MB, inputs })).digest('hex').slice(0, 16);
-const live = await readFile(path.join(LIVE, 'build.json'), 'utf8').then(JSON.parse, () => null);
-log(`feed: ${items.length} recordings, ${files.length} on disk; version ${version}; fingerprint ${fingerprint}, live ${live?.fingerprint ?? 'none'}`);
-if (!force && live?.fingerprint === fingerprint) {
-  log('unchanged; nothing to do');
-  process.exit(0);
-}
-
-// 3. Build beside the live list, on the same volume, so the swap is a rename.
-const stamp = new Date().toISOString().replace(/[-:]/g, '').replace(/\.\d+Z$/, 'Z');
-const partial = path.join(BUILDS, `${stamp}.partial`);
-const build = path.join(BUILDS, stamp);
-await mkdir(BUILDS, { recursive: true });
-for (const name of await readdir(BUILDS)) {
-  if (name.endsWith('.partial')) await rm(path.join(BUILDS, name), { recursive: true, force: true });
-}
-await mkdir(partial);
-const feedFile = path.join(process.env.TMPDIR || '/tmp', 'dogfights-feed.json');
+const feedFile = path.join(TMP, 'fights-feed.json');
 await writeFile(feedFile, JSON.stringify(items));
-const code = await new Promise((resolve, reject) => {
-  const child = spawn(process.execPath, [
-    `--max-old-space-size=${HEAP_MB}`, EXTRACTOR, ...files,
-    '--feed', feedFile, '--out', partial, '--catalogue', CATALOGUE, '--max-mb', MAX_MB,
-  ], { stdio: 'inherit' });
-  child.on('error', reject);
-  child.on('exit', (c, signal) => resolve(signal ? 128 : c));
-});
-if (code !== 0) {
-  await rm(partial, { recursive: true, force: true });
-  throw new Error(`extractor exited ${code}; the live list is left as it is`);
+log(`feed: ${items.length} recordings, ${files.length} on disk; version ${version}`);
+
+let failed = 0;
+for (const list of LISTS) {
+  try {
+    await refresh(list);
+  } catch (e) {
+    failed++;
+    log(`${list.name}: ${e.message}`);
+  }
 }
-const index = JSON.parse(await readFile(path.join(partial, 'index.json'), 'utf8'));
-if (!Array.isArray(index)) throw new Error('index.json is not a list');
-await writeFile(path.join(partial, 'build.json'), JSON.stringify({
-  built: new Date().toISOString(), version, fingerprint, recordings: files.length, fights: index.length,
-}, null, 1));
+if (failed) process.exit(1);
 
-// 4. Readable by nginx (its workers are in group 1000 too, but a file is
-//    a+r either way: the publish scripts' rule), then the swap.
-await chmod(partial, 0o755);
-for (const name of await readdir(partial)) await chmod(path.join(partial, name), 0o644);
-await rename(partial, build);
+/** Steps 3 to 5 for one list: build beside its live one, swap, prune. */
+async function refresh({ name, extractor, args }) {
+  const LIVE = path.join(REPLAYS, name);
+  const BUILDS = path.join(REPLAYS, `.${name}`);
+  const fingerprint = createHash('sha256').update(JSON.stringify({ version, maxMb: MAX_MB, inputs })).digest('hex').slice(0, 16);
+  const live = await readFile(path.join(LIVE, 'build.json'), 'utf8').then(JSON.parse, () => null);
+  log(`${name}: fingerprint ${fingerprint}, live ${live?.fingerprint ?? 'none'}`);
+  if (!force && live?.fingerprint === fingerprint) {
+    log(`${name}: unchanged; nothing to do`);
+    return;
+  }
 
-const before = await lstat(LIVE).catch(() => null);
-let previous = before?.isSymbolicLink() ? path.basename(await readlink(LIVE)) : null;
-if (before && !before.isSymbolicLink()) {
-  // A folder published by hand: moved into the builds once, after which every
-  // swap is the single rename below. The site misses it for that one moment.
-  previous = `${stamp}-by-hand`;
-  await rename(LIVE, path.join(BUILDS, previous));
-}
-const next = path.join(REPLAYS, '.dogfights-next');
-await rm(next, { force: true });
-await symlink(path.join('.dogfights', stamp), next);
-await rename(next, LIVE);
-log(`live: ${stamp}, ${index.length} fights from ${files.length} recordings (was ${previous ?? 'nothing'})`);
+  // 3. Build beside the live list, on the same volume, so the swap is a rename.
+  const stamp = new Date().toISOString().replace(/[-:]/g, '').replace(/\.\d+Z$/, 'Z');
+  const partial = path.join(BUILDS, `${stamp}.partial`);
+  const build = path.join(BUILDS, stamp);
+  await mkdir(BUILDS, { recursive: true });
+  for (const entry of await readdir(BUILDS)) {
+    if (entry.endsWith('.partial')) await rm(path.join(BUILDS, entry), { recursive: true, force: true });
+  }
+  await mkdir(partial);
+  const code = await new Promise((resolve, reject) => {
+    const child = spawn(process.execPath, [
+      `--max-old-space-size=${HEAP_MB}`, extractor, ...files,
+      '--feed', feedFile, '--out', partial, ...args, '--max-mb', MAX_MB,
+    ], { stdio: 'inherit' });
+    child.on('error', reject);
+    child.on('exit', (c, signal) => resolve(signal ? 128 : c));
+  });
+  if (code !== 0) {
+    await rm(partial, { recursive: true, force: true });
+    throw new Error(`extractor exited ${code}; the live list is left as it is`);
+  }
+  const index = JSON.parse(await readFile(path.join(partial, 'index.json'), 'utf8'));
+  if (!Array.isArray(index)) throw new Error('index.json is not a list');
+  await writeFile(path.join(partial, 'build.json'), JSON.stringify({
+    built: new Date().toISOString(), version, fingerprint, recordings: files.length, fights: index.length,
+  }, null, 1));
 
-// 5. Keep the live build and the one it replaced.
-for (const name of await readdir(BUILDS)) {
-  if (name !== stamp && name !== previous) await rm(path.join(BUILDS, name), { recursive: true, force: true });
+  // 4. Readable by nginx (its workers are in group 1000 too, but a file is
+  //    a+r either way: the publish scripts' rule), then the swap.
+  await chmod(partial, 0o755);
+  for (const entry of await readdir(partial)) await chmod(path.join(partial, entry), 0o644);
+  await rename(partial, build);
+
+  const before = await lstat(LIVE).catch(() => null);
+  let previous = before?.isSymbolicLink() ? path.basename(await readlink(LIVE)) : null;
+  if (before && !before.isSymbolicLink()) {
+    // A folder published by hand: moved into the builds once, after which every
+    // swap is the single rename below. The site misses it for that one moment.
+    previous = `${stamp}-by-hand`;
+    await rename(LIVE, path.join(BUILDS, previous));
+  }
+  const next = path.join(REPLAYS, `.${name}-next`);
+  await rm(next, { force: true });
+  await symlink(path.join(`.${name}`, stamp), next);
+  await rename(next, LIVE);
+  log(`${name}: live ${stamp}, ${index.length} fights from ${files.length} recordings (was ${previous ?? 'nothing'})`);
+
+  // 5. Keep the live build and the one it replaced.
+  for (const entry of await readdir(BUILDS)) {
+    if (entry !== stamp && entry !== previous) await rm(path.join(BUILDS, entry), { recursive: true, force: true });
+  }
 }

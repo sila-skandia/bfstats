@@ -80,7 +80,8 @@ pipeline {
               // rebuilds with every viewer change, like the mesh image.
               env.DOGFIGHTS_CHANGED = changedFiles.any {
                   it.startsWith('dogfights/') || it.startsWith('tools/bf1942-models/viewer/') ||
-                  it.startsWith('tools/bf1942-models/sim/') || it == 'tools/bf1942-models/extract_dogfights.mjs'
+                  it.startsWith('tools/bf1942-models/sim/') || it == 'tools/bf1942-models/extract_dogfights.mjs' ||
+                  it == 'tools/bf1942-models/extract_tank_fights.mjs'
               } ? 'true' : 'false'
           }
 

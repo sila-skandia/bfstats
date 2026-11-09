@@ -9,7 +9,8 @@ second round in [tank-matchup.md](tank-matchup.md), "On the school's page,
 second round") and its FIGHTS list ("Tank fights from the recordings",
 below). It is reached by its address only: the Range tab's card was taken
 off on 2026-11-09 while the school is built. Its lessons, GUNNERY and DRIVE
-IT are not built. The fights index is not published to the live site.
+IT are not built. The fights index is built by the `bfstats-dogfights`
+CronJob beside the dogfights (2026-11-09), into `mesh/replays/tankfights`.
 
 The owner's brief (2026-11-09): research how the dogfight school could apply
 to other battle types, tank against tank above all. "I'm a fly boy, not a
@@ -417,12 +418,15 @@ gun, turret and hit points are read off its glb's extras (`fireArms`,
   headless duel. The recordings' fights are listed (FIGHTS) but not
   published, and no fight has a theatre of its own: WATCH opens the round
   replay at its start.
-- **Publishing the fights.** `viewer/replays/` is not in git. The dogfights
-  reach the live site through the `bfstats-dogfights` CronJob
-  (features/dogfight-recordings, "The refresh job"); the tank fights need the
-  same (the job extended to run `extract_tank_fights.mjs` beside
-  `extract_dogfights.mjs`) or a hand publish to `mesh/replays/tankfights`.
-  Both are kubectl work, confirm-first.
+- **Publishing the fights.** Done 2026-11-09: the `bfstats-dogfights`
+  CronJob runs `extract_tank_fights.mjs` after `extract_dogfights.mjs`
+  (`dogfights/refresh.mjs`, `--only tankfights` for one list). Each list
+  has its own fingerprint, build folder (`mesh/replays/.tankfights/`) and
+  symlink swap; one failing leaves the other as built. The job mounts the
+  assets volume's `mesh/` root read-only at `/mesh` for the tank
+  extractor's AI data, catalogues and glbs. Checked locally against the
+  public feed and the 36 recordings: 370 fights, 696 MB peak, a minute;
+  the second run stopped at "unchanged".
 
 ## A planning approach
 
@@ -474,8 +478,9 @@ real doctrine as history, then show what the game does with it.
 
 ## Tank fights from the recordings (2026-11-09)
 
-Status: built, run over the 36 cached public recordings, not yet published
-and not yet listed by the school's page. The owner's ask: "find tank battles
+Status: built, run over the 36 cached public recordings, listed by the
+school's page (FIGHTS), and built daily by the `bfstats-dogfights` CronJob
+into `mesh/replays/tankfights` (2026-11-09). The owner's ask: "find tank battles
 from recordings, the best ones are those at the highest range. Extra special
 ones are where a light weight comes out on top against a heavy. Ideally
 starting from maximum HP for both."
@@ -724,9 +729,7 @@ exist.
 
 ### Open
 
-- **Publishing.** The fights are not yet published to `mesh.bfstats.io`.
-  There is no refresh job like the dogfights' CronJob.
-- **The school's list and a theatre.** The per-fight file is written for a
+- **A theatre.** The per-fight file is written for a
   theatre that does not exist yet. Its turret yaw (the `...Tower` part's
   heading on the hull) has not been drawn or checked.
 - **Clips.** No 3D clips (`recording-slice.js`) are cut yet.
