@@ -426,7 +426,10 @@ gun, turret and hit points are read off its glb's extras (`fireArms`,
   assets volume's `mesh/` root read-only at `/mesh` for the tank
   extractor's AI data, catalogues and glbs. Checked locally against the
   public feed and the 36 recordings: 370 fights, 696 MB peak, a minute;
-  the second run stopped at "unchanged".
+  the second run stopped at "unchanged". Live since the first cluster run
+  (a manual job, 2026-11-09 08:02 UTC, image `b5fc55e007be`): 370 fights,
+  184 kills, 17 upsets, the longest kill 295 m, at
+  `/replays/tankfights/index.json`; the same run rebuilt the dogfights (303).
 
 ## A planning approach
 
