@@ -67,6 +67,25 @@ class RecordingsApiTests(unittest.TestCase):
             self.results["query"],
             "mod=bf1942&map=midway&replay=http://localhost:9222/stats/recordings/abcdefghjk.ndjson&t=21&name=a%20b%26c")
 
+    def test_a_recording_is_shared_through_the_upload(self) -> None:
+        up = self.results["upload"]
+        self.assertEqual(up["plain"], {"slug": "abcdefghjk"})
+        self.assertEqual(up["withLog"], "abcdefghjk")
+        self.assertEqual(up["stages"], ["Compressing", "Uploading"])
+        self.assertEqual(up["progress"], [0.5, 1])
+        first, second, third, aborted = up["sent"]
+        self.assertEqual((first["method"], first["url"], first["auth"]), ("POST", "https://bfstats.io/stats/recordings", "Bearer tok.en"))
+        self.assertEqual(first["parts"], ["meta", "recording"])
+        self.assertEqual(first["names"], ["blob", "replay_20260927-203459.ndjson.gz"])
+        self.assertEqual(second["parts"], ["meta", "recording", "serverlog", "thumbnail"])
+        self.assertEqual(second["names"][2:], ["round.xml.gz", "cover.jpg"])
+        # A signal already aborted never opens the request; one aborted on the
+        # wire cancels it. Neither is "signal is not defined".
+        self.assertEqual(up["dead"], {"message": "Upload cancelled.", "aborted": True})
+        self.assertEqual(third["parts"], ["meta", "recording"])
+        self.assertEqual(aborted, "aborted")
+        self.assertEqual(up["midway"], {"message": "Upload cancelled.", "aborted": True})
+
     def test_the_feed_says_lengths_counts_and_ages_as_people_do(self) -> None:
         self.assertEqual(self.results["clock"], ["0:00", "0:59", "14:43", "1:02:03", "0:00"])
         self.assertEqual(self.results["count"], [

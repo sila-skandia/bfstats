@@ -223,8 +223,9 @@ export function createRecordingsApi(api) {
 
   /** The upload, with its progress (fetch reports none): gzipped in the
    *  browser where it can be, which shrinks a recording about four times on
-   *  the wire and on the server's disk. */
-  async function upload({ recording, serverLog = null, thumbnail = null, meta, onProgress = () => {}, onStage = () => {} }) {
+   *  the wire and on the server's disk. `signal` aborted stops the upload
+   *  (rejecting with an ApiError of status 0, `aborted`). */
+  async function upload({ recording, serverLog = null, thumbnail = null, meta, onProgress = () => {}, onStage = () => {}, signal = null }) {
     const bearer = await token();
     if (!bearer) throw new ApiError(401, 'Sign in first.');
     onStage('Compressing');

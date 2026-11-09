@@ -326,4 +326,49 @@ const reactions = await imp('comment-reactions.js');
   };
 }
 
+// Sharing a recording (replay-social.js's Share dialog goes through
+// `upload`): the stages it says, the request it sends with the signed-in
+// token, the gzipped parts, and Not now aborting it. The Share dialog gives
+// no signal of its own; the Short's does. Both must leave the upload working
+// (2026-11-08 shipped an `upload` reading a `signal` it never took, and every
+// share died after "Compressing" with "signal is not defined").
+{
+  const sent = [];
+  class FakeXhr {
+    constructor() { this.upload = {}; this.headers = {}; this.status = 201; this.responseText = '{"slug":"abcdefghjk"}'; }
+    open(method, url) { this.method = method; this.url = url; }
+    setRequestHeader(k, v) { this.headers[k] = v; }
+    send(form) {
+      sent.push({ method: this.method, url: this.url, auth: this.headers.Authorization, parts: [...form.keys()], names: [...form.entries()].map(([, v]) => v.name ?? null) });
+      this.upload.onprogress?.({ lengthComputable: true, loaded: 1, total: 2 });
+      this.upload.onprogress?.({ lengthComputable: true, loaded: 2, total: 2 });
+      if (!FakeXhr.hold) queueMicrotask(() => this.onload());
+    }
+    abort() { sent.push('aborted'); queueMicrotask(() => this.onabort()); }
+  }
+  globalThis.XMLHttpRequest = FakeXhr;
+  const store = new Map();
+  globalThis.localStorage = { getItem: k => store.get(k) ?? null, setItem: (k, v) => store.set(k, v), removeItem: k => store.delete(k) };
+  const expiresAt = new Date(Date.now() + 60 * 60 * 1000).toISOString();
+  localStorage.setItem('bf42-mesh-auth:https://bfstats.io', JSON.stringify({ token: 'tok.en', expiresAt }));
+  const signedIn = api.createRecordingsApi({ base: 'https://bfstats.io', mode: 'remote' });
+  const recording = new File(['{"k":"h","v":5}\n'], 'replay_20260927-203459.ndjson');
+  const meta = { title: 'A round', level: 'midway' };
+  const stages = [];
+  const progress = [];
+  const plain = await signedIn.upload({ recording, meta, onStage: s => stages.push(s), onProgress: p => progress.push(p) });
+  const withLog = await signedIn.upload({ recording, serverLog: new File(['<log/>'], 'round.xml'), thumbnail: new Blob(['jpg']), meta });
+  const cancelled = new AbortController();
+  cancelled.abort();
+  const dead = await signedIn.upload({ recording, meta, signal: cancelled.signal }).then(() => null, e => ({ message: e.message, aborted: e.aborted === true }));
+  const live = new AbortController();
+  FakeXhr.hold = true;
+  const midway = signedIn.upload({ recording, meta, signal: live.signal }).then(() => null, e => ({ message: e.message, aborted: e.aborted === true }));
+  // `upload` compresses before it opens the request: abort once the request is on the wire.
+  while (sent.length < 3) await new Promise(r => setTimeout(r, 1));
+  live.abort();
+  FakeXhr.hold = false;
+  results.upload = { plain, withLog: withLog.slug, stages, progress, sent, dead, midway: await midway };
+}
+
 process.stdout.write(JSON.stringify(results));
