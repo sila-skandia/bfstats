@@ -465,6 +465,25 @@ almighty-_-'s five had none. A burst's kill between two men on foot now
 passes without one (`filmablePart`'s `roundless`, `noRound`), and the runner
 films it in the fast cut, which needs no round; 4 of the 5 qualify.
 
+**Long shots show where the shot came from (2026-11-09, latest).** The owner
+on `bb6ukneg3e` (286 m, Midway): "a mess ... it seems to hover above the
+shooter but looking at the victim ... It should show either the shooter or
+the victim, then pan to the victim or shooter to give context"; long shots
+"only show the victim not the shooter, it should pan to the shooter, or show
+some fancy line on the screen that measures the shot". Taken down. Three
+changes, single kills: a long shot never takes the crane (over a shooter
+280 m from the man he kills it looked at neither); a long shot always flies
+back to the shooter after the hold (REVEAL), not only when the take never
+showed him; and a kill of 80 m or more carries the shot measured on the
+level's minimap in the top right (`SHOT_INSET`): the shooter gold, the man
+he kills red, a faint line between them, the round's line running out with
+the metres counting up. Compilations get the inset under their count. An
+end pose with more than 30% of the picture within 3 m is not clear (a
+bunker's wall 2 m off filled the end of the 273 m Midway reveal). Not yet
+right: the 286 m re-film opens behind one man and cuts to another, and the
+order of a long shot (the shooter, the round, the fall, back to him) needs
+its own pass before the held long shots are re-filmed.
+
 **What to build next** is in `IDEAS.md`: per-player packages (Player of the
 Round, the streak, Nemesis, a vehicle's life, a 30 s recap) and new single
 moments, from web research checked against four real rounds.

@@ -1069,7 +1069,9 @@ const DIRECTOR = Object.freeze({
  * at least `clear` metres off the ground midway, turned onto him over the
  * first `turn` of it, to the first clear of `ends` ([ahead toward his
  * victim, side, up] metres from his eye, times `hullScale` for a hull), else
- * `crane`; held `hold` seconds, then the look's fade. The fly from
+ * `crane` (an end pose is clear when he is seen and under `endWall` of the
+ * picture is within `endWallNear` metres: a bunker's wall 2 m off filled one);
+ * held `hold` seconds, then the look's fade. The fly from
  * `probeFrom` of the way on is checked in `probes` steps against the depth
  * picture; the first step into the level stops it `cutBack` steps short and
  * cuts to the end.
@@ -1078,7 +1080,7 @@ const REVEAL = Object.freeze({
   frame: 0.9, tall: 0.12, manSize: 1.8, hullSize: 4, seen: 20, minDist: 25,
   eye: 1.3, hullEye: 1.8, hullScale: 3,
   beat: 0.35, flyBase: 1, flyPerM: 300, flyMin: 1.3, flyMax: 2.4,
-  arcPerM: 0.06, arcMin: 3, arcMax: 20, clear: 2.5, turn: 0.35, hold: 2, probeFrom: 0.3, probes: 28, cutBack: 1,
+  arcPerM: 0.06, arcMin: 3, arcMax: 20, clear: 2.5, turn: 0.35, hold: 2, probeFrom: 0.3, probes: 28, cutBack: 1, endWall: 0.3, endWallNear: 3,
   ends: [[4.5, 1.4, 0.2], [4.5, -1.4, 0.2], [3, 2.6, 1.8], [-2.2, 0.8, 0.6]],
   crane: [-7, 0, 8],
 });
@@ -1237,7 +1239,9 @@ const DIRECTOR_SRC = `window.__director = (() => {
             return;
           }
           if (!rv.impact) return;
-          if (rv.seen >= R.seen) { rv.over = true; return; }
+          // A long shot always goes back to him (2026-11-09: "it should pan to
+          // the shooter"); another only when the take never showed him.
+          if (rv.seen >= R.seen && !flight.long) { rv.over = true; return; }
           const vw = B.whereIs(r.rec, flight.victim, (flight.t ?? r.time) - 0.1, r.kills ?? r.rec.kills);
           const vic = vw?.pos ? V(vw.pos[0], vw.pos[1] + 1, vw.pos[2]) : null;
           const far = vic ? vic.distanceTo(E) : 0;
@@ -1258,7 +1262,7 @@ const DIRECTOR_SRC = `window.__director = (() => {
             c.lookAt(E);
             c.updateMatrixWorld();
             D.take(c);
-            if (D.at(E, c) >= p.distanceTo(E) - 0.8 && D.near(1.2) < 0.25) { pick = o; break; }
+            if (D.at(E, c) >= p.distanceTo(E) - 0.8 && D.near(1.2) < 0.25 && D.near(R.endWallNear) < R.endWall) { pick = o; break; }
           }
           c.position.copy(saved[0]);
           c.quaternion.copy(saved[1]);
@@ -1382,7 +1386,9 @@ const DIRECTOR_SRC = `window.__director = (() => {
             };
             const craneAt = from.clone().addScaledVector(back, -st.cfg.crane[0]).add(V(0, st.cfg.crane[1], 0));
             if (sees(at, look)) st.crane = false;
-            else if (sees(craneAt, vic)) st.crane = true;
+            // Never for a long shot: over a shooter 280 m from the man he
+            // kills, it looked at neither (the owner, 2026-11-09, bb6ukneg3e).
+            else if (!flight.long && sees(craneAt, vic)) st.crane = true;
             else {
               st.reverse = false;
               st.noReverse = true;
@@ -3461,6 +3467,111 @@ async function film(page, cand, dir, view = null) {
 }
 
 /**
+ * The shot measured on the map (the owner, 2026-11-09: long shots "only show
+ * the victim not the shooter ... or show some fancy line on the screen that
+ * measures the shot"). A kill of `from` metres or more carries a small map of
+ * the level, `size` px, in the top right (`y`; under the count, `yUnder`, in
+ * a compilation): the shooter in gold, the man he kills in red, a faint line
+ * between them, and as the round flies a solid line runs out to it with the
+ * metres counting up. Cropped round the two, `pad` times their distance (at
+ * least `minSpan` of the map). The look's fade takes it out with the picture.
+ */
+const SHOT_INSET = Object.freeze({ from: 80, size: 300, margin: 36, y: 150, yUnder: 430, pad: 2.4, minSpan: 0.06 });
+const SHOT_INSET_SRC = `window.__shotInset = (() => {
+  let map = null, prog = 0, loading = null;
+  const load = async () => {
+    const q = new URLSearchParams(location.search);
+    const mod = (q.get('mod') || 'bf1942').toLowerCase();
+    const sceneUrl = new URL('maps/' + (mod === 'bf1942' ? '' : 'mods/' + mod + '/') + q.get('map') + '/scene.json', location.href).href;
+    const scene = await fetch(sceneUrl).then(x => x.json());
+    const mm = (scene.extras ?? scene).minimap;
+    if (!mm?.image || !mm.worldToImage) return null;
+    const img = new Image();
+    img.crossOrigin = 'anonymous';
+    img.src = new URL(mm.image, sceneUrl).href;
+    await img.decode();
+    return { img, m: mm.worldToImage };
+  };
+  return {
+    reset() { prog = 0; },
+    async draw(g, W, H, o, alpha) {
+      if (!(alpha > 0.01)) return;
+      map ??= await (loading ??= load().catch(() => null));
+      if (!map) return;
+      const r = window.replay;
+      const B = (window.__rbSync ??= await import(new URL('replay-battles.js', location.href).href));
+      const kills = r.kills ?? r.rec.kills;
+      const sw = B.whereIs(r.rec, o.shooter, o.t - 0.3, kills);
+      const vw = B.whereIs(r.rec, o.victim, o.t - 0.1, kills);
+      if (!sw?.pos || !vw?.pos) return;
+      const m = map.m;
+      const uv = (x, z) => [m[0] * x + m[1] * z + m[2], m[3] * x + m[4] * z + m[5]];
+      const S = uv(sw.pos[0], sw.pos[2]);
+      const Vv = uv(vw.pos[0], vw.pos[2]);
+      // How far the round has come, never back.
+      const ro = r.creator.rounds;
+      if (ro?.state === 'flying' && ro.pos) prog = Math.max(prog, Math.min(1, Math.hypot(ro.pos.x - sw.pos[0], ro.pos.z - sw.pos[2]) / Math.max(1, o.distance)));
+      else if (ro?.state === 'impact' || r.time >= o.t) prog = 1;
+      const c = o.cfg;
+      const span = Math.min(1, Math.max(c.minSpan, Math.hypot(Vv[0] - S[0], Vv[1] - S[1]) * c.pad));
+      const cu = (S[0] + Vv[0]) / 2, cv = (S[1] + Vv[1]) / 2;
+      const size = c.size, x0 = W - size - c.margin, y0 = o.y;
+      const toXY = p => [x0 + ((p[0] - (cu - span / 2)) / span) * size, y0 + ((p[1] - (cv - span / 2)) / span) * size];
+      g.save();
+      g.globalAlpha = alpha;
+      g.shadowColor = 'rgba(0,0,0,0.55)';
+      g.shadowBlur = 18;
+      g.fillStyle = 'rgba(10,10,8,0.78)';
+      g.beginPath(); g.roundRect(x0, y0, size, size, 20); g.fill();
+      g.shadowBlur = 0;
+      g.save();
+      g.beginPath(); g.roundRect(x0, y0, size, size, 20); g.clip();
+      const iw = map.img.naturalWidth, ih = map.img.naturalHeight;
+      g.globalAlpha = alpha * 0.8;
+      g.drawImage(map.img, (cu - span / 2) * iw, (cv - span / 2) * ih, span * iw, span * ih, x0, y0, size, size);
+      g.globalAlpha = alpha;
+      const [sx, sy] = toXY(S), [vx, vy] = toXY(Vv);
+      g.setLineDash([10, 10]);
+      g.lineWidth = 3;
+      g.strokeStyle = 'rgba(246,241,226,0.55)';
+      g.beginPath(); g.moveTo(sx, sy); g.lineTo(vx, vy); g.stroke();
+      g.setLineDash([]);
+      const px = sx + (vx - sx) * prog, py = sy + (vy - sy) * prog;
+      if (prog > 0) {
+        g.lineWidth = 6; g.lineCap = 'round';
+        g.strokeStyle = 'rgba(232,195,90,0.98)';
+        g.beginPath(); g.moveTo(sx, sy); g.lineTo(px, py); g.stroke();
+      }
+      g.fillStyle = '#e8c35a';
+      g.beginPath(); g.arc(sx, sy, 11, 0, Math.PI * 2); g.fill();
+      g.lineWidth = 3; g.strokeStyle = '#0c0c0a'; g.stroke();
+      g.fillStyle = '#d6524a';
+      g.beginPath(); g.arc(vx, vy, 11, 0, Math.PI * 2); g.fill();
+      g.stroke();
+      if (prog > 0 && prog < 1) {
+        g.fillStyle = '#ffffff';
+        g.beginPath(); g.arc(px, py, 6, 0, Math.PI * 2); g.fill();
+      }
+      g.restore();
+      g.lineWidth = 2;
+      g.strokeStyle = 'rgba(246,241,226,0.35)';
+      g.beginPath(); g.roundRect(x0, y0, size, size, 20); g.stroke();
+      // The metres, counting up with the round.
+      const shown = prog > 0 ? Math.round(o.distance * prog) : o.distance;
+      g.textAlign = 'center';
+      g.textBaseline = 'middle';
+      g.font = '900 64px system-ui, "Segoe UI", sans-serif';
+      g.lineWidth = 8; g.strokeStyle = 'rgba(0,0,0,0.6)';
+      const label = shown + ' m';
+      g.strokeText(label, x0 + size / 2, y0 + size + 46);
+      g.fillStyle = prog >= 1 ? '#e8c35a' : prog > 0 ? '#f6f1e2' : 'rgba(246,241,226,0.7)';
+      g.fillText(label, x0 + size / 2, y0 + size + 46);
+      g.restore();
+    },
+  };
+})();`;
+
+/**
  * A kill shot's slow motion in a Short (the owner, 2026-11-09: "in general
  * we're slowing down too much in the slow mo"). The studio's 'strong' bullet
  * time gives every round 2.5 s on screen however short its flight, so a 20 m
@@ -3498,7 +3609,7 @@ async function shootKill(page, cand, write, overlay = null, { lead = null } = {}
   // rules too (the owner, 2026-11-04: a church's walls hid n.o.i.c.e's kills;
   // "tighter, almost at their POV"). Installed once the take is armed, over
   // the creator's own lens hook, and only while the round cam waits armed.
-  const director = async on => page.evaluate(async ({ on, src, depth, pid, victim, t, air, fromAir, victimHull, cfg }) => {
+  const director = async on => page.evaluate(async ({ on, src, depth, pid, victim, t, air, fromAir, victimHull, long, cfg }) => {
     const r = window.replay;
     if (!on) { const fl = window.__director?.flightLog?.() ?? null; window.__director?.remove(); return fl; }
     window.__rbSync ??= await import(new URL('replay-battles.js', location.href).href);
@@ -3513,9 +3624,10 @@ async function shootKill(page, cand, write, overlay = null, { lead = null } = {}
     flight.air = air;
     flight.fromAir = fromAir;
     flight.victimHull = victimHull;
+    flight.long = long;
     window.__director.install(pid, [], cfg, { chain: r.camera.lensHook, when: () => r.creator.rounds?.state === 'armed', flight });
   }, { on, src: DIRECTOR_SRC, depth: DEPTH_SRC, pid: cand.killer, victim: cand.victim, t: cand.t, air: Boolean(cand.victimFlying), fromAir: Boolean(cand.flying),
-    victimHull: Boolean(cand.victimVehicle),
+    victimHull: Boolean(cand.victimVehicle), long: cand.kind === 'long-shot',
     cfg: { ...DIRECTOR, shoulderOnly: true, reveal: overlay ? null : REVEAL } });
   const setup = await page.evaluate(({ t, victim, W, H, kv, vv, weapon }) => {
     const c = window.replay.creator;
@@ -3528,12 +3640,18 @@ async function shootKill(page, cand, write, overlay = null, { lead = null } = {}
     return { ok: Boolean(c.recorder), kill: row.kill?.t ?? t, names: { killerVehicle: d(kv), victimVehicle: d(vv), weapon: d(weapon) } };
   }, { t: cand.t, victim: cand.victim, W, H, kv: cand.killerVehicle, vv: cand.victimVehicle, weapon: cand.weapon });
   if (!setup.ok) return { ok: false, why: setup.why ?? 'the recorder did not start' };
+  // The shot measured on the level's map (SHOT_INSET), for a kill far enough
+  // that the camera cannot hold both men.
+  const inset = !cand.flying && !cand.victimFlying && Number(cand.distance) >= SHOT_INSET.from
+    ? { shooter: cand.killer, victim: cand.victim, t: cand.t, distance: Math.round(cand.distance), y: overlay ? SHOT_INSET.yUnder + (overlay.top ?? 0) : SHOT_INSET.y, cfg: SHOT_INSET }
+    : null;
+  if (inset) await page.evaluate(src => { if (!window.__shotInset) (0, eval)(src); window.__shotInset.reset(); }, SHOT_INSET_SRC);
   await director(true);
   let n = 0;
   let hitFrame = null;
   let audioFrom = null;
   for (let i = 0; i < MAX_FRAMES; i++) {
-    const res = await page.evaluate(async ({ W, H, FPS, overlay, n, trace }) => {
+    const res = await page.evaluate(async ({ W, H, FPS, overlay, n, trace, inset }) => {
       const at = window.__audioT?.() ?? null;
       window.__clock.step(1000 / FPS);
       window.__renderOnce(W, H, 1 / FPS);
@@ -3561,8 +3679,14 @@ async function shootKill(page, cand, write, overlay = null, { lead = null } = {}
       }
       if (rec?.started) {
         const src = rec.source ?? window.__renderer.domElement;
-        if (!overlay) out.url = src.toDataURL('image/jpeg', 0.92);
-        else {
+        if (!overlay && !inset) out.url = src.toDataURL('image/jpeg', 0.92);
+        else if (!overlay) {
+          const cv = (window.__shotCanvas ??= Object.assign(document.createElement('canvas'), { width: W, height: H }));
+          const g = cv.getContext('2d');
+          g.drawImage(src, 0, 0, W, H);
+          await window.__shotInset.draw(g, W, H, inset, 1 - (c.overlayState?.()?.black ?? 0));
+          out.url = cv.toDataURL('image/jpeg', 0.92);
+        } else {
           const cv = (window.__shotCanvas ??= Object.assign(document.createElement('canvas'), { width: W, height: H }));
           const g = cv.getContext('2d');
           g.drawImage(src, 0, 0, W, H);
@@ -3629,6 +3753,7 @@ async function shootKill(page, cand, write, overlay = null, { lead = null } = {}
             g.fillStyle = '#f6f1e2';
             g.fillText(shown, W / 2, 202 + overlay.top);
           }
+          if (inset) await window.__shotInset.draw(g, W, H, inset, 1);
           // In from black, so each kill reads as its own.
           if (n < overlay.fadeIn) {
             g.fillStyle = `rgba(0,0,0,${1 - n / overlay.fadeIn})`;
@@ -3638,7 +3763,7 @@ async function shootKill(page, cand, write, overlay = null, { lead = null } = {}
         }
       }
       return out;
-    }, { W, H, FPS, overlay, n, trace: TRACE });
+    }, { W, H, FPS, overlay, n, trace: TRACE, inset });
     if (res.trace) traceLog.push(res.trace);
     if (res.url) {
       if (n === 0) audioFrom = res.at;
