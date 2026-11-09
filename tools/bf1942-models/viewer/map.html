@@ -2656,6 +2656,11 @@ const roundSpawners = createRoundSpawners(bag(
   },
 ));
 guns.onRoundSpawners = roundSpawners.onRound;
+// An impact bundle's own spawners (EMT-14): BF1918's flamethrower sets the
+// ground alight through `e_BurningFlameEffect`'s `FireDamageSpawner`.
+guns.onEffectSpawners = ({ frame, runs }) => {
+  for (const { spec, life } of runs) roundSpawners.onEffect([spec], frame, life);
+};
 let roundSpawnersRoot = null;
 const tickRoundSpawners = roundSpawners.tick;
 roundSpawners.tick = dt => {

@@ -118,6 +118,11 @@ export class GunFire {
     // handle's `end()` is called when the round is gone (`round-spawners.js`).
     // Null (the model browser) stands nothing.
     this.onRoundSpawners = null;
+    // The ObjectSpawners an impact's EffectBundle carries (EMT-14: BF1918's
+    // flamethrower fire): `(spawners, record) => void`, with `spawners` from
+    // `effects.spawnersAt` (`{ frame, runs }`), called once per live hit
+    // whose bundle carries any (`round-impact.js`). Null stands nothing.
+    this.onEffectSpawners = null;
     // The `attacker -> defender -> EffectBundle` table out of
     // `_shared/damage.json`, and the `projectileTemplate -> attacker material`
     // table beside it. Both optional; without them a hit still stops the round,

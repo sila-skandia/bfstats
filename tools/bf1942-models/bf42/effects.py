@@ -331,10 +331,15 @@ class BundleNode:
     emitters: list[tuple[con_mod.ChildRef, con_mod.ObjectTemplate,
                          con_mod.ObjectTemplate, dict]] = field(default_factory=list)
     bundles: list["BundleNode"] = field(default_factory=list)
+    # `addTemplate`d ObjectSpawners: built with the bundle like any child, so
+    # one runs where the bundle plays for as long as it lives (BF1918's
+    # `e_BurningFlameEffect` stands `FireDamage` through `FireDamageSpawner`).
+    spawners: list[con_mod.ChildRef] = field(default_factory=list)
 
     @property
     def empty(self) -> bool:
-        return not self.emitters and all(b.empty for b in self.bundles)
+        return (not self.emitters and not self.spawners
+                and all(b.empty for b in self.bundles))
 
     def count(self) -> int:
         return len(self.emitters) + sum(b.count() for b in self.bundles)
@@ -397,6 +402,8 @@ def bundle_tree(library: con_mod.ObjectLibrary, name: str, *,
             spec = emitter_spec(child, payload)
             if spec is not None:
                 node.emitters.append((ref, child, payload, spec))
+        elif kind == "objectspawner":
+            node.spawners.append(ref)
     return node
 
 

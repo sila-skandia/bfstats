@@ -185,5 +185,39 @@ class DeployRoleTests(unittest.TestCase):
         self.assertFalse(self.roles["bombRack"]["deploys"])
 
 
+@unittest.skipUnless(shutil.which("node"), "node is not installed")
+class EffectSpawnerTests(unittest.TestCase):
+    """EMT-14 and SUP-23: BF1918's flamethrower fire, an impact bundle's
+    ObjectSpawner standing an undrawn object whose depot sweeps onto it."""
+
+    @classmethod
+    def setUpClass(cls) -> None:
+        result = subprocess.run(["node", str(HARNESS)], capture_output=True, text=True,
+                                timeout=120, check=True)
+        cls.out = json.loads(result.stdout.strip().splitlines()[-1])
+
+    def test_the_page_sweeps_a_depot_as_the_exporter_does(self) -> None:
+        # `depotOffsetAt` against `bf42/assemble.py` `depot_offset_at` at the
+        # same times (test_bf1918_area_damage): pitch -100 deg/s to -90.
+        self.assertEqual([[0, 50, -50], [0, 43.3013, -25], [0, 25, -6.6987],
+                          [0, 8.6824, -0.7596], [0, 0, 0], [0, 0, 0]], self.out["sweep"])
+
+    def test_an_effects_spawner_stands_its_fire_and_ends_with_the_bundle(self) -> None:
+        fire = self.out["effectFire"]
+        # `SpawnDelayAtStart 1`: nothing at 0.9 s, the depot at 1 s.
+        self.assertEqual(0, fire["before"])
+        self.assertEqual(1, fire["after"])
+        # No level parked a FireDamage: the pool was handed the entry to grow from.
+        self.assertEqual([False], fire["entries"])
+        # 0.1 s after it stood the depot is still up the rotator (pitch -10),
+        # and from 0.9 s on it is on the impact.
+        self.assertGreater(fire["atStand"][1] - 20, 40)
+        self.assertEqual([100, 20, 200], fire["afterSweep"])
+        # The bundle's 6 s, then the spawner goes with it.
+        self.assertEqual(1, fire["roundsAt2"])
+        self.assertEqual(0, fire["roundsAt65"])
+        self.assertIsNone(fire["inRoom"])
+
+
 if __name__ == "__main__":
     unittest.main()

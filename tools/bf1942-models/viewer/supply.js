@@ -71,7 +71,8 @@ function healSigned(armor, amount) {
  * (`extras.armor`): an object authored at or under its own critical threshold
  * bleeds `hpLostWhileCriticalDamage` from its first second and is destroyed
  * when it reaches 0 (HP-17's scripted burn-down: the bleed is billed whole
- * seconds at a time), and a destroyed Armor stops every depot under it (SUP,
+ * seconds at a time; a word never written is 1 a second, HP-22), and a
+ * destroyed Armor stops every depot under it (SUP,
  * `update` 0x083241c9) and drops the spawner's hold (AI-121). Infinity for
  * anything else. FHSW's `AlliedAirSpawnSelfReloaderObj` (200 hit points,
  * `criticalDamage 201`, 100 a second) lives 2 s.
@@ -79,10 +80,17 @@ function healSigned(armor, amount) {
 export function heldObjectLife(armor) {
   const hp = Number(armor?.hitpoints);
   const critical = Number(armor?.criticalDamage);
-  const rate = Number(armor?.hpLostWhileCriticalDamage);
+  const rate = Number(armor?.hpLostWhileCriticalDamage ?? HP_LOST_WHILE_CRITICAL_DEFAULT);
   if (!(hp > 0) || !(rate > 0) || !(hp <= critical)) return Infinity;
   return Math.ceil(hp / rate);
 }
+
+/** `hpLostWhileCriticalDamage` where the `.con` never says it: the
+ *  `SimpleObjectTemplate` constructor's 1.0 a second (HP-22; `armor.js` has
+ *  the same constant, this file imports nothing). BF1918's gas grenade's
+ *  `GasGrenadeDamage` (25 at 25) is gone at 25 s, its flamethrower's
+ *  `FireDamage` (3 at 3) at 3 s. */
+const HP_LOST_WHILE_CRITICAL_DEFAULT = 1;
 
 export class SupplyDepot {
   /**

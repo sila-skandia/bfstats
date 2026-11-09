@@ -466,6 +466,8 @@ const hullAt = (template, overrides = {}) => withCounter(target({
     repairer: heldObjectLife({ hitpoints: 200, criticalDamage: 199, hpLostWhileCriticalDamage: 100 }),
     atThreshold: heldObjectLife({ hitpoints: 40, criticalDamage: 40, hpLostWhileCriticalDamage: 15 }),
     noBleed: heldObjectLife({ hitpoints: 200, criticalDamage: 201, hpLostWhileCriticalDamage: 0 }),
+    // BF1918's `GasGrenadeDamage`: the word unwritten, the template's 1 a second.
+    unwritten: heldObjectLife({ hitpoints: 25, criticalDamage: 25 }),
     none: heldObjectLife(null),
   };
   const RELOADER = { radius: 20.0, team: 2, health: [0, 0, 0],

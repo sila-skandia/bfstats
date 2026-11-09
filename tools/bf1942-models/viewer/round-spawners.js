@@ -83,6 +83,68 @@ export function standMatrix(spawnerWorld, spec, out = new THREE.Matrix4()) {
   return out.compose(_pos, _quat, _one);
 }
 
+/** A Refractor yaw / pitch / roll (degrees) as a glb quaternion:
+ *  `bf42/gltf.py` `quat_from_ypr`, Ry(-yaw) Rx(-pitch) Rz(roll). */
+function yprQuaternion(ypr, out) {
+  const y = THREE.MathUtils.degToRad(-ypr[0]) / 2;
+  const p = THREE.MathUtils.degToRad(-ypr[1]) / 2;
+  const r = THREE.MathUtils.degToRad(ypr[2]) / 2;
+  _qy.set(0, Math.sin(y), 0, Math.cos(y));
+  _qx.set(Math.sin(p), 0, 0, Math.cos(p));
+  _qz.set(0, 0, Math.sin(r), Math.cos(r));
+  return out.copy(_qy).multiply(_qx).multiply(_qz);
+}
+const _qy = new THREE.Quaternion();
+const _qx = new THREE.Quaternion();
+const _qz = new THREE.Quaternion();
+const _qa = new THREE.Quaternion();
+const _qacc = new THREE.Quaternion();
+const _vacc = new THREE.Vector3();
+const _vstep = new THREE.Vector3();
+const _angles = [0, 0, 0];
+
+/**
+ * Where a logic object's depot is `t` seconds after the object was made, in
+ * its frame (glb axes), into `out`: its `sweep` links composed with every
+ * self-turning bundle at its angle then, or its fixed `translation`. An
+ * unmanned `RotationalBundle`'s angle is `continousRotationSpeed x t`, clipped
+ * into `[min, max]`, or wrapped at 180 when both are 0 (GUN-2; an axis whose
+ * `maxSpeed` is 0 is not stepped, GUN-20, and the exporter leaves its rate
+ * out). `bf42/assemble.py` `depot_offset_at` is the same arithmetic. BF1918's
+ * gas grenade: 50 m up a rotator 50 m ahead at 0, on the object's origin from
+ * 0.9 s (SUP-23).
+ */
+export function depotOffsetAt(data, t, out = [0, 0, 0]) {
+  const links = data?.sweep;
+  if (!Array.isArray(links) || !links.length) {
+    const tr = data?.translation ?? [0, 0, 0];
+    out[0] = tr[0]; out[1] = tr[1]; out[2] = tr[2];
+    return out;
+  }
+  _vacc.set(0, 0, 0);
+  _qacc.identity();
+  for (const link of links) {
+    const tr = link.translation ?? [0, 0, 0];
+    _vacc.add(_vstep.set(tr[0], tr[1], tr[2]).applyQuaternion(_qacc));
+    if (link.rotation) _qacc.multiply(_qa.set(link.rotation[0], link.rotation[1], link.rotation[2], link.rotation[3]));
+    const spin = link.spin;
+    if (spin) {
+      if (spin.pivot) _vacc.add(_vstep.set(spin.pivot[0], spin.pivot[1], spin.pivot[2]).applyQuaternion(_qacc));
+      for (let i = 0; i < 3; i++) {
+        const lo = spin.min?.[i] ?? 0;
+        const hi = spin.max?.[i] ?? 0;
+        let a = (spin.rate?.[i] ?? 0) * t;
+        if (lo === 0 && hi === 0) a = ((a + 180) % 360 + 360) % 360 - 180;
+        else a = Math.min(Math.max(a, lo), hi);
+        _angles[i] = a;
+      }
+      _qacc.multiply(yprQuaternion(_angles, _qa));
+    }
+  }
+  out[0] = _vacc.x; out[1] = _vacc.y; out[2] = _vacc.z;
+  return out;
+}
+
 /** The pad law for one spawner of one round, ready for its first frame. */
 export function roundSpawnerPad(spec, { players = 0, maxPlayers = 0 } = {}) {
   const pad = new SpawnerPad({
@@ -190,9 +252,13 @@ export function createRoundSpawners(page) {
     return { players: page.world?.players?.size ?? 0, maxPlayers: page.maxPlayers ?? 0 };
   }
 
-  function startRound(specs, shot) {
+  // Seconds of world time this page has ticked: the age a depot's sweep is
+  // read at (`startDepots`).
+  let clock = 0;
+
+  function startRound(specs, shot, { life = Infinity } = {}) {
     const round = {
-      shot, ended: false,
+      shot, ended: false, life,
       entries: specs.map(spec => ({ spec, pad: roundSpawnerPad(spec, counts()), local: spawnerLocal(spec) })),
     };
     rounds.push(round);
@@ -204,6 +270,26 @@ export function createRoundSpawners(page) {
     if (page.roomJoined || group?.replay || !Array.isArray(specs) || !specs.length) return null;
     launched++;
     return startRound(specs, shot);
+  };
+
+  /**
+   * An effect bundle that carries ObjectSpawners has played (`round-impact.js`,
+   * a live round's hit): its spawners run where it stands, in its frame
+   * (`frame` = `{ position, quaternion }`, the bundle's root as
+   * `playCollisionEffect` stands it on the surface, IMP-1), for `life`
+   * seconds, the bundle's own `timeToLive` (EMT-14), as a round's run for the
+   * round's life. BF1918's flamethrower: `e_BurningFlameEffect` (6 s) stands
+   * `FireDamage` a second in, whose depot burns what is within 5 m of it.
+   */
+  spawners.onEffect = (specs, frame, life = Infinity) => {
+    if (page.roomJoined || !Array.isArray(specs) || !specs.length || !frame?.position) return null;
+    const mesh = new THREE.Object3D();
+    const p = frame.position;
+    mesh.position.set(p[0], p[1], p[2]);
+    if (frame.quaternion) mesh.quaternion.copy(frame.quaternion);
+    mesh.updateMatrixWorld(true);
+    launched++;
+    return startRound(specs, { mesh }, { life });
   };
 
   function warnOnce(key, message) {
@@ -283,8 +369,11 @@ export function createRoundSpawners(page) {
     return true;
   }
 
-  /** A parked node for `template`, the pool grown by one when none is free. */
-  function nodeFor(template) {
+  /** A parked node for `template`, the pool grown by one when none is free.
+   *  `entry` is the spawner's `objects` row: one that draws nothing grows
+   *  from a mould made on the spot when no level parked one (a hand
+   *  weapon's round, an effect's spawner; `level-statics.js` `logicMould`). */
+  function nodeFor(template, entry = null) {
     const pads = page.vehiclePads;
     const padWorld = page.wrecks?.padWorld;
     // A parked node is in the wreck side's books from the load (alive, not
@@ -292,7 +381,7 @@ export function createRoundSpawners(page) {
     const busy = node => padWorld.alive(node) && padWorld.destroyed(node);
     let record = pads.takeRoundNode(template, busy);
     if (record) return record;
-    record = pads.growRoundNode?.(template) ?? null;
+    record = pads.growRoundNode?.(template, entry) ?? null;
     if (record && adoptGrown(record)) return record;
     // A template the level parked no node for is not this page's to stand:
     // a hand weapon's round (Desert Combat's mortar) is `deployables-page.js`'s.
@@ -302,15 +391,20 @@ export function createRoundSpawners(page) {
   }
 
   /** A logic node's SupplyDepots, each where it rides on the object, for as
-   *  long as the object stands (`world-fields.js` drops a gone one). */
+   *  long as the object stands (`world-fields.js` drops a gone one). A depot
+   *  under a bundle that turns by itself (`sweep`) is where the turning tree
+   *  has it at the object's age (`depotOffsetAt`), read at every cycle. */
   function startDepots(node, depots, gone) {
     const field = page.world?.supplyField;
     if (!field || !Array.isArray(depots) || !depots.length) return;
+    const born = clock;
     for (const data of depots) {
       const t = data.translation ?? [0, 0, 0];
+      const off = [t[0], t[1], t[2]];
       const locate = () => {
+        if (data.sweep) depotOffsetAt(data, clock - born, off);
         node.updateWorldMatrix(true, false);
-        _at.set(t[0], t[1], t[2]).applyMatrix4(node.matrixWorld);
+        _at.set(off[0], off[1], off[2]).applyMatrix4(node.matrixWorld);
         return { x: _at.x, y: _at.y, z: _at.z };
       };
       field.add(new SupplyDepot(locate(), data, data.template ?? null, { root: node, locate, gone }));
@@ -339,7 +433,7 @@ export function createRoundSpawners(page) {
     }
     if (object?.kind?.toLowerCase?.() === 'kit') return layKit(template, matrix);
     if (!pads?.takeRoundNode || !padWorld) return refuse(template, 'no pool');
-    const record = nodeFor(template);
+    const record = nodeFor(template, object);
     if (!record) return refuse(template, 'no free node');
     const node = record.baked;
     pads.setRoundLive(record, true);
@@ -454,8 +548,11 @@ export function createRoundSpawners(page) {
   /** `dt` seconds of world time. */
   spawners.tick = dt => {
     if (!(dt > 0) || page.roomJoined) return;
+    clock += dt;
     for (let i = rounds.length - 1; i >= 0; i--) {
       const round = rounds[i];
+      // An effect's spawners go with its bundle (`onEffect`).
+      if (!round.ended && round.ticked && round.age >= round.life) round.ended = true;
       // A round born and gone inside one world tick still had its spawner for
       // that tick: the engine builds the spawner with the round and registers
       // it for frame updates in its ctor (0x08312910). FH's towing tractors'

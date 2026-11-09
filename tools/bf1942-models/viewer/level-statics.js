@@ -939,9 +939,9 @@ export function createLevelStatics(page) {
    * level. Null when there is no mould or the growth bound is reached.
    */
   const grown = new WeakMap();
-  statics.growRoundNode = template => {
+  statics.growRoundNode = (template, entry = null) => {
     const spawners = statics.spawnersRoot;
-    const mould = spawners ? roundMouldOf(spawners, template) : null;
+    const mould = spawners ? (roundMouldOf(spawners, template) ?? logicMould(spawners, template, entry)) : null;
     if (!mould) return null;
     const key = String(template).toLowerCase();
     if (!grown.has(spawners)) grown.set(spawners, new Map());
@@ -964,6 +964,30 @@ export function createLevelStatics(page) {
     if (!statics.mapVehicles.includes(node)) statics.mapVehicles.push(node);
     return fileRoundNode(node);
   };
+
+  /**
+   * A mould made on demand for an object that draws nothing
+   * (`round_spawner_record`'s `drawn: false` entry with its `logic`), which
+   * no level parked because no placed gun throws it: a hand weapon's round
+   * (BF1918's gas grenades' `GasGrenadeDamage`) or an effect's spawner (its
+   * flamethrower fire's `FireDamage`). Its node is an empty group
+   * (`logicObjectNode`), so nothing has to load; it is filed as a parked
+   * mould would be and never stood itself.
+   */
+  function logicMould(spawners, template, entry) {
+    if (entry?.drawn !== false || !entry.logic) return null;
+    const mould = logicObjectNode(template, entry);
+    mould.userData.roundSpawned = template;
+    mould.userData.roundMould = true;
+    mould.visible = false;
+    spawners.add(mould);
+    mould.updateMatrixWorld(true);
+    let moulds = roundMoulds.get(spawners);
+    if (!moulds) roundMoulds.set(spawners, (moulds = new Map()));
+    moulds.set(String(template).toLowerCase(), mould);
+    fileRoundNode(mould);
+    return mould;
+  }
 
   /** A pad's node stood up now, whatever its pad's law says: the behaviour
    *  audit tests a pad vehicle its side's flag has not fielded yet, and a

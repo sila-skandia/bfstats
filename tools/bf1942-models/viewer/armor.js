@@ -73,6 +73,16 @@ export const MAX_HITPOINTS_CEILING = 128;
  */
 export const TEMPLATE_HITPOINTS_DEFAULT = 10;
 
+/**
+ * `hpLostWhileCriticalDamage` before any `.con` sets it: 1.0 a second
+ * (HP-22). The `SimpleObjectTemplate` constructor stores 1.0 at +0xf8
+ * (lnxded `0x081dbe35`), the console word writes that field as it is
+ * (`ConsoleClass128::executeObjectMethod` `0x081c6c2e`) and
+ * `setArmorComponent` hands it to the Armor's `setHpLostWhileCriticalDamage`
+ * (`0x081ddd26`, Armor +0x11c, the rate HP-17 bills).
+ */
+export const HP_LOST_WHILE_CRITICAL_DEFAULT = 1;
+
 /** One of a template's two hit-point words as the Armor receives it: the
  *  authored value rounded up, or the template default when it was never
  *  authored. */

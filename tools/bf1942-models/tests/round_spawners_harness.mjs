@@ -14,7 +14,7 @@ const viewer = viewerDir(path.join(HERE, '..', 'viewer'));
 installModuleHooks(viewer);
 const imp = name => import(pathToFileURL(path.join(viewer, name)).href);
 const THREE = await imp('vendor/three.module.js');
-const { createRoundSpawners, standMatrix, spawnerLocal, deployRole } = await imp('round-spawners.js');
+const { createRoundSpawners, standMatrix, spawnerLocal, deployRole, depotOffsetAt } = await imp('round-spawners.js');
 const { loadRoundSpawnPool, roundSpawnTemplates } = await imp('level-statics.js');
 
 const SPAWNER = {
@@ -402,6 +402,72 @@ const step = (s, seconds) => { for (let i = 0; i < Math.round(seconds * 30); i++
     rehookOnTractor: deployRole(rehook, tractor), rehookOnTowedGun: deployRole(rehook, gun),
     apShell: deployRole(apShell, gun), flakShell: deployRole(flakShell, gun), mine: deployRole(mine, gun), bombRack: deployRole(bombRack, gun),
   };
+}
+
+// --- BF1918's burning ground: an effect's spawner, a depot that sweeps in ------
+// `FireDamageSpawner` as `extract_effects.py` writes it on
+// `e_BurningFlameEffect` (`bf42/assemble.py` `_depot_record`), 2026-11-10.
+{
+  const SWEEP = [
+    { translation: [0, 0, -50], spin: { rate: [0, -100, 0], min: [0, -90, 0], max: [0, 0, 0] } },
+    { translation: [0, 50, 0] },
+  ];
+  const FIRE = {
+    template: 'FireDamageSpawner', translation: [0, 0, 0], rotation: [0, 0, 0, 1],
+    templates: { 1: 'FireDamage', 2: 'FireDamage' },
+    team: 1, minSpawnDelay: 1, maxSpawnDelay: 1, spawnDelayAtStart: true,
+    maxNrOfObjectSpawned: 1, nrOfObjectToSpawn: -1, radius: 5, holdObject: false,
+    teamOnVehicle: false, spawnOffset: [0, 0, 0], timeToLive: 30, distance: 100, damageWhenLost: 1,
+    objects: { FireDamage: {
+      kind: 'PlayerControlObject', drawn: false,
+      logic: {
+        armor: { hitpoints: 3, maxHitpoints: 3, criticalDamage: 3, timeToLiveAfterDeath: 0, hasArmor: true },
+        depots: [{ template: 'Fire_area_damage_depot', radius: 5, team: 0, health: [-1, -1, 0],
+                   workOnSoldiers: true, workOnVehicles: true, translation: [0, 50, -50], sweep: SWEEP }],
+      },
+    } },
+  };
+  out.sweep = [0, 0.3, 0.6, 0.8, 0.9, 2].map(t => depotOffsetAt({ sweep: SWEEP }, t).map(v => +v.toFixed(4)));
+
+  // No level parked a FireDamage: the pool grows one from the entry it is handed.
+  const { page, records, alive } = makePage({ nodes: 0 });
+  const entries = [];
+  page.vehiclePads.growRoundNode = (template, entry) => {
+    entries.push(entry?.drawn ?? null);
+    if (entry?.drawn !== false) return null;
+    const node = new THREE.Object3D();
+    node.name = `${template}${records.length}`;
+    node.userData.logicObject = entry.logic;
+    const record = { round: true, template, baked: node, live: new Set() };
+    records.push(record);
+    alive.add(node);
+    return record;
+  };
+  page.collider.addOwner = () => 7;
+  page.wrecks.registerDamageable = () => {};
+  page.hullBodies.adoptSpawnedBody = () => {};
+  const depots = [];
+  page.world.supplyField = { add: d => { depots.push(d); return d; } };
+  const s = createRoundSpawners(page);
+  const frame = { position: [100, 20, 200], quaternion: new THREE.Quaternion() };
+  const handle = s.onEffect([FIRE], frame, 6);
+  step(s, 0.9);
+  const before = depots.length;
+  step(s, 0.2);
+  const depot = depots[0];
+  const where = () => { const p = depot.locate(); return [p.x, p.y, p.z].map(v => +v.toFixed(3)); };
+  const atStand = depot ? where() : null;
+  step(s, 0.9);
+  const afterSweep = depot ? where() : null;
+  const roundsAt2 = s.state().rounds.length;
+  step(s, 4.5);
+  out.effectFire = {
+    handle: !!handle, before, after: depots.length, entries, atStand, afterSweep,
+    roundsAt2, roundsAt65: s.state().rounds.length, launched: s.state().launched,
+  };
+  // A joined room stands nothing.
+  page.roomJoined = true;
+  out.effectFire.inRoom = s.onEffect([FIRE], frame, 6);
 }
 
 console.log(JSON.stringify(out));

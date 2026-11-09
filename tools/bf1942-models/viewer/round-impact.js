@@ -135,6 +135,13 @@ export function impact(guns, group, spec, hit, velocity = null, travelled = 0, o
       speed: velocity ? velocity.length() : 0,
     });
     record.played = !!handle;
+    // The bundle's ObjectSpawners (EMT-14: BF1918's burning ground), run
+    // where it stands whether or not a particle was drawn. A replayed round
+    // stands nothing, as with `onRoundSpawners`.
+    if (guns.onEffectSpawners && !group?.replay) {
+      const spawners = guns.effects.spawnersAt?.(record.effect, record.point, record.normal);
+      if (spawners) guns.onEffectSpawners(spawners, record);
+    }
   }
   spawnImpact(guns, hit, family);
   guns.onImpact?.(record, hit);

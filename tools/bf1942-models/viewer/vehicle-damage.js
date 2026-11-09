@@ -38,7 +38,7 @@
 // under plain node. The caller owns every scene concern: where an effect is
 // drawn, what a wreck looks like, who is allowed to climb in.
 
-import { Armor, DEATH_EPSILON, templateHitPoints } from './armor.js';
+import { Armor, DEATH_EPSILON, HP_LOST_WHILE_CRITICAL_DEFAULT, templateHitPoints } from './armor.js';
 import { blastDistance, splashDamage as splashHp } from './effects-core.js';
 
 /** `addArmorEffect`'s death tier: the explosion and the scrap. */
@@ -129,9 +129,11 @@ export class DamageableVehicle {
     this.armorKnown = extras !== null && typeof extras === 'object';
     this.criticalDamage = Number.isFinite(extras?.criticalDamage)
       ? extras.criticalDamage : null;
+    // A template that never says the word bleeds the constructor's 1.0 a
+    // second (HP-22: `SimpleObjectTemplate` +0xf8, lnxded 0x081dbe35).
     this.hpLostWhileCriticalDamage =
       Number.isFinite(extras?.hpLostWhileCriticalDamage)
-        ? extras.hpLostWhileCriticalDamage : null;
+        ? extras.hpLostWhileCriticalDamage : HP_LOST_WHILE_CRITICAL_DEFAULT;
     this.hpLostWhileDamageFromWater =
       Number.isFinite(extras?.hpLostWhileDamageFromWater)
         ? extras.hpLostWhileDamageFromWater : null;

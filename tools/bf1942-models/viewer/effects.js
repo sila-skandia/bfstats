@@ -13,7 +13,7 @@
 import * as THREE from 'three';
 import {
   basisFromNormal, EmitterClock, spawnParticleInto, newParticleRecord, integrateParticle,
-  evalParticleInto, atlasGrid, frameIndex, GRAVITY,
+  evalParticleInto, atlasGrid, frameIndex, GRAVITY, sampleCrd,
 } from './effects-core.js';
 
 // Lids. The engine keeps 127 decals per emitter ring (`DecalEmitter::addDecal`,
@@ -98,6 +98,42 @@ const D3D_BLEND_FACTOR = [
   THREE.DstAlphaFactor, THREE.OneMinusDstAlphaFactor, THREE.DstColorFactor,
   THREE.OneMinusDstColorFactor, THREE.SrcAlphaSaturateFactor,
 ];
+
+/**
+ * The ObjectSpawners a baked bundle carries (`extras.effectBundle.spawners`,
+ * EMT-14), on the bundle itself or on a bundle it nests, each as its round
+ * record with `translation` and `rotation` moved into the root bundle's
+ * frame, and `lifetimes`: the `timeToLive` of every bundle from the one that
+ * holds it up to the root, since a bundle's children go with it. Empty for
+ * almost every bundle.
+ */
+function bundleSpawners(bundle, inverse) {
+  const out = [];
+  bundle.traverse(node => {
+    const specs = node.userData?.effectBundle?.spawners;
+    if (!Array.isArray(specs) || !specs.length) return;
+    const lifetimes = [];
+    for (let at = node; at; at = at === bundle ? null : at.parent) {
+      const ttl = at.userData?.effectBundle?.timeToLive;
+      if (ttl != null) lifetimes.push(ttl);
+    }
+    const local = inverse.clone().multiply(node.matrixWorld);
+    for (const spec of specs) {
+      const t = spec.translation ?? [0, 0, 0];
+      const r = spec.rotation ?? [0, 0, 0, 1];
+      const m = new THREE.Matrix4().compose(new THREE.Vector3(t[0], t[1], t[2]),
+                                            new THREE.Quaternion(r[0], r[1], r[2], r[3]),
+                                            new THREE.Vector3(1, 1, 1));
+      m.premultiply(local);
+      const position = new THREE.Vector3();
+      const quaternion = new THREE.Quaternion();
+      m.decompose(position, quaternion, new THREE.Vector3());
+      out.push({ spec: { ...spec, translation: position.toArray(), rotation: quaternion.toArray() },
+                 lifetimes });
+    }
+  });
+  return out;
+}
 
 /** Quaternion whose local X/Y/-Z are the frame's right/up/dof. */
 function frameQuaternion(basis, out) {
@@ -188,7 +224,8 @@ export class EffectLibrary {
         local.decompose(position, quaternion, scale);
         emitters.push({ spec, position, quaternion, node });
       });
-      this.bundles.set(info.name.toLowerCase(), { name: info.name, node: bundle, emitters });
+      this.bundles.set(info.name.toLowerCase(),
+                       { name: info.name, node: bundle, emitters, spawners: bundleSpawners(bundle, inverse) });
     }
     root.visible = false;
   }
@@ -313,6 +350,33 @@ export class EffectPlayer {
   }
 
   has(name) { return !!this.library?.has(name); }
+
+  /**
+   * What a bundle's ObjectSpawners need to run where it stands
+   * (`bundleSpawners`, EMT-14): `{ frame: { position, quaternion }, runs:
+   * [{ spec, life }] }`, the frame `play` stands it in on a surface (IMP-1)
+   * and each spawner's life, the shortest `timeToLive` drawn over the bundles
+   * that hold it (a negative one lives as long as its parent). Null for a
+   * bundle that carries none, which is nearly every one. Not tied to a run: a
+   * spawner is the server's, and no view, `lodDistance` or particle budget
+   * that keeps a run from playing stops it.
+   */
+  spawnersAt(name, position, normal = null) {
+    const spawners = this.library?.get(name)?.spawners;
+    if (!spawners?.length || !position) return null;
+    const quaternion = new THREE.Quaternion();
+    const basis = basisFromNormal(normal || [0, 1, 0]) || basisFromNormal([0, 1, 0]);
+    frameQuaternion(basis, quaternion);
+    const runs = spawners.map(({ spec, lifetimes }) => {
+      let life = Infinity;
+      for (const crd of lifetimes) {
+        const t = sampleCrd(crd, this.rand);
+        if (t >= 0) life = Math.min(life, t);
+      }
+      return { spec, life };
+    });
+    return { frame: { position: [position[0], position[1], position[2]], quaternion }, runs };
+  }
 
   /**
    * A flying round's own sound script (ledger SND-19: an object's patches

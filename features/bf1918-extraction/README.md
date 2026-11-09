@@ -46,10 +46,10 @@ From a census of the mod's scripts against the exporter and viewer
 
 | Mechanic | Levels | How BF1918 builds it | State |
 |---|---|---|---|
-| Gas grenades | 22 | the round's ObjectSpawner stands an undrawn PCO whose `SupplyDepot` (radius 8, -3 hp) sits under a `RotationalBundle`; the exporter collected only direct-child depots, so no damage | in progress |
+| Gas grenades | 22 | the round's ObjectSpawner stands an undrawn PCO whose `SupplyDepot` (radius 8, -3 hp) sits under a `RotationalBundle`; fixed in code (SUP-23, HP-22): the depot sweeps onto the cloud in 0.9 s; live after the re-runs below |
 | Gas trench mortars (Livens) | 4 | the round stands `GasDamage`, a depot as a direct child (radius 12) | exported; not seen working in a page |
 | Gas masks | 4 | team skins (`GerGas`, `EngGas`, `FrzGas`, `UsaGas`); no immunity in the data | works (`setTeamSkin`) |
-| Flamethrower ground fire | 33 | material 256+ -> `e_FlamefuelGrnd` -> `e_BurningFlameEffect` (6 s) -> an ObjectSpawner inside the effect stands `FireDamage`, a depot under a rotator | in progress |
+| Flamethrower ground fire | 33 | material 256+ -> `e_FlamefuelGrnd` -> `e_BurningFlameEffect` (6 s) -> an ObjectSpawner inside the effect stands `FireDamage`, a depot under a rotator | fixed in code (EMT-14): an effect's spawners stand their objects; live after the re-runs below |
 | Armoured train | 7 | a VCLand hull pushed by a `c_ETPlane` engine, held on invisible `*_Guide_m1` rails by sideways RollGrip springs; the cars are separate PCOs pushed by held 200 t `TrainPuller` couplers | in progress |
 | `vehicleFoV` (trench periscope, scoped MGs) | 50 | `ObjectTemplate.vehicleFoV 0.2` | fixed in code (VIEW-16); live after the re-runs below |
 | Bayonet ammo sharing | 19 rifles | `ObjectTemplate.WeaponLink 3`, the set-less spelling the console accepts; read only as `setWeaponLink` | fixed in code (FA-8, CON-15); live after the re-runs below |
@@ -154,6 +154,72 @@ damageable with 1e10 through the world's damage pass, which wrecks it.
 | XPack2 | `WasserfallRocket` (`vehicleFov`, `destroyOnExit`) | models in the xpack2 tree |
 
 Then optimise and publish as the pipeline does.
+
+## Gas and the burning ground (2026-11-10)
+
+Both are an undrawn PlayerControlObject whose damage is a `SupplyDepot`
+hung 50 m up a self-turning `RotationalBundle` 50 m ahead of it. The gas
+grenades' round stands `GasGrenadeDamage` (radius 8, 3 HP/s) through its
+`GasGrenadeDamageSpawner`; the flamethrower's round (`material 256`) plays
+`e_BurningFlameEffect` on the ground, whose own `FireDamageSpawner` stands
+`FireDamage` (radius 5, 1 HP/s). The trench mortar's `GasDamage` carries its
+depot as a direct child and needed nothing new.
+
+What retail does, from the ledger:
+
+| Question | Answer | Row |
+|---|---|---|
+| Where is a depot under a bundle? | At its own absolute position every cycle. BF1918's rotator pitches down at 100 deg/s to its -90 stop, so the depot starts 70.7 m off and 50 m up and sits on the object's origin from 0.9 s (inside the gas's 8 m from 0.81 s). The trick delays the damage about a second | SUP-23 (with GUN-2, GUN-20, MLK-17) |
+| How long does the cloud live? | `hpLostWhileCriticalDamage` unwritten is 1.0 a second. `GasGrenadeDamage` (25 at 25) is destroyed at 25 s, so it hurts from about 4.9 s to 29 s after the throw. The drawn `GasEffect` cloud (60 at 60) goes at 60 s. `FireDamage` (3 at 3) lives 3 s | HP-22, HP-17 |
+| Does the fire need anything special? | An ObjectSpawner inside an EffectBundle is built with it and runs where it plays. A dedicated server plays no collision effect at all (`dedicatedServer`), so in retail the burning ground hurts only in a game that is its own server: single player, or a locally hosted round | EMT-14 |
+| Do materials 256 and up reach the effect lookup? | Yes. `damage.json` keys attackers by string; row `256` against the ground is `e_BurningFlameEffect` (last-wins over `e_FlamefuelGrnd`) | IMP-2 |
+
+What was built:
+
+- `bf42/assemble.py`: `logic_object_record` walks through bundles to the
+  depots under them (`_logic_children`), and a depot under a self-turning
+  bundle carries `sweep`, its links with each bundle's `spin`
+  (`_depot_record`, `bundle_spin`, `depot_offset_at`). Spawners and spawn
+  points are still read from direct children only.
+- `bf42/effects.py` keeps a bundle's ObjectSpawner children
+  (`BundleNode.spawners`), and `bake_effect_library` writes them on the
+  bundle as `effectBundle.spawners`, in the round record's shape.
+- `viewer/round-spawners.js`: `depotOffsetAt` places a sweeping depot at
+  each cycle; `onEffect` runs an effect's spawners for the bundle's
+  `timeToLive`; a `drawn: false` object no level parked grows from a mould
+  made on the spot (`level-statics.js` `logicMould`), so a hand weapon's
+  round and an effect's spawner can stand one.
+- `viewer/effects.js` `spawnersAt`, `round-impact.js` (a live hit only) and
+  `map.html` `guns.onEffectSpawners` wire the fire in.
+- The default bleed: `armor.js` `HP_LOST_WHILE_CRITICAL_DEFAULT`, read by
+  `vehicle-damage.js`, `supply.js` `heldObjectLife` and
+  `deployables-page.js` (the human's `GasEffect` cloud).
+
+Tests: `tests/test_bf1918_area_damage.py` (the extractor, from the mod's own
+words), `test_round_spawners.py` `EffectSpawnerTests`, `test_supply.py`.
+
+To publish: `patch_round_spawners.py --mod bf1918` (the six gas grenade
+glbs, their poses and viewmodels, and the kit nodes of 15 exported level
+scenes: 37 glbs, measured with `--dry-run`), and `extract_effects.py --mod
+bf1918` for `_shared/effects.glb` (three bundles carry the spawner:
+`e_BurningFlameEffect` and the two that nest it). No scene layer changes.
+Vanilla, FH, DC Final and EoD gain nothing from the patch (`--dry-run`: 0
+glbs).
+
+Open:
+
+- Bots' gas clouds are not drawn: `GasEffect` draws, and the pool only
+  parks drawn objects a placed gun throws. The damage stands for bots and
+  the human alike.
+- `GasDamage` (the trench mortar) is 20 at 19.9 and starts above its
+  threshold, so it lives until `hpLostWhileUpSideDown` or a hit takes it
+  under; the page does not bill the upside-down rate on a stood object.
+- `Exploding_steel_barrel1`'s 4 HP armour tier plays `e_BurningFlameEffect`
+  four times, and `e_Barrel_Explosion` nests it; the page's armour tiers do
+  not run an effect's spawners yet (`Game::playEffect` has the same
+  `dedicatedServer` gate, EMT-14).
+- When exactly an EffectBundle is destroyed after its `timeToLive` was not
+  traced (EMT-14); the page ends the spawner at the `timeToLive`.
 
 ## Open items
 

@@ -130,6 +130,133 @@ def template_draws(library, name: str | None, *, depth: int = 0,
     return False
 
 
+_LOGIC_LEAVES = frozenset({"supplydepot", "objectspawner", "spawnpoint"})
+
+
+def _logic_children(library, template, chain: tuple = (), depth: int = 0):
+    """Every `addTemplate` child of `template` a logic object carries, as
+    `(ref, child, chain)`: the direct children with an empty chain, and the
+    depots, spawners and spawn points under a child that is none of those (a
+    `Bundle`, BF1918's `RotationalBundle rotator`) with `chain` the refs and
+    templates in between, outermost first. The engine builds a template's
+    whole tree with it, so a depot under a bundle exists as one under the
+    root does; only where it is differs (`_depot_record`)."""
+    if depth > 6:
+        return
+    for ref in template.children:
+        child_name = con_mod.instance_template_name(ref, library.object)
+        child = library.object(child_name) if child_name else None
+        if child is None:
+            continue
+        if child.kind.lower() in _LOGIC_LEAVES:
+            yield ref, child, chain
+        elif child.kind.lower() != "playercontrolobject":
+            yield from _logic_children(library, child, chain + ((ref, child),), depth + 1)
+
+
+# `RotationalBundleTemplate`'s `maxSpeed` default (GUN-1, `0x081d90c0`): an
+# axis is stepped only while its component is non-zero (GUN-20).
+_BUNDLE_MAX_SPEED_DEFAULT = (1.0, 1.0, 1.0)
+
+
+def bundle_spin(template) -> dict | None:
+    """The angles an unmanned `RotationalBundle` turns through by itself, or
+    None. With no input the servo's speed register stays 0 (GUN-2: it ramps
+    toward `sign(acceleration) x input x maxSpeed`), so each angle is
+    `continousRotationSpeed x t`, clipped into `[min, max]` unless both are
+    the template's 0, when it wraps at 180 (GUN-2's wrap gate). An axis turns
+    only when its `maxSpeed` is non-zero (GUN-20). Degrees and deg/s, yaw /
+    pitch / roll as the `.con` writes them; `pivot` in the glb's axes."""
+    if template.kind.lower() != "rotationalbundle" or not template.continuous_rotation:
+        return None
+    speeds = template.max_speed or _BUNDLE_MAX_SPEED_DEFAULT
+    rate = [float(r) if (r and speeds[i]) else 0.0
+            for i, r in enumerate(template.continuous_rotation)]
+    if not any(rate):
+        return None
+    spin = {"rate": rate,
+            "min": [float(v) for v in (template.min_rotation or (0.0, 0.0, 0.0))],
+            "max": [float(v) for v in (template.max_rotation or (0.0, 0.0, 0.0))]}
+    if template.pivot_position and any(template.pivot_position):
+        spin["pivot"] = _gltf_vec(template.pivot_position)
+    return spin
+
+
+def _qrotate(q, v) -> tuple[float, float, float]:
+    x, y, z, w = q
+    # v' = q v q*, written out.
+    tx = 2.0 * (y * v[2] - z * v[1])
+    ty = 2.0 * (z * v[0] - x * v[2])
+    tz = 2.0 * (x * v[1] - y * v[0])
+    return (v[0] + w * tx + (y * tz - z * ty),
+            v[1] + w * ty + (z * tx - x * tz),
+            v[2] + w * tz + (x * ty - y * tx))
+
+
+def _spin_angles(spin: dict, t: float) -> list[float]:
+    out = []
+    for rate, lo, hi in zip(spin["rate"], spin["min"], spin["max"]):
+        a = rate * t
+        if lo == 0.0 and hi == 0.0:
+            a = (a + 180.0) % 360.0 - 180.0
+        else:
+            a = min(max(a, lo), hi)
+        out.append(a)
+    return out
+
+
+def depot_offset_at(record: dict, t: float) -> list[float]:
+    """Where a logic object's depot is, `t` seconds after the object was
+    made, in the object's frame (glb axes): `record["sweep"]` composed with
+    every bundle at its angle then (`bundle_spin`), or its fixed
+    `translation`. The page's `round-spawners.js` `depotOffsetAt` is the
+    same arithmetic."""
+    links = record.get("sweep")
+    if not links:
+        return list(record["translation"])
+    pos = (0.0, 0.0, 0.0)
+    rot = (0.0, 0.0, 0.0, 1.0)
+    for link in links:
+        t_local = link.get("translation", (0.0, 0.0, 0.0))
+        pos = tuple(p + d for p, d in zip(pos, _qrotate(rot, t_local)))
+        if (r := link.get("rotation")) is not None:
+            rot = gltf.quat_mul(rot, tuple(r))
+        if (spin := link.get("spin")) is not None:
+            if (pivot := spin.get("pivot")) is not None:
+                pos = tuple(p + d for p, d in zip(pos, _qrotate(rot, pivot)))
+            rot = gltf.quat_mul(rot, gltf.quat_from_ypr(*_spin_angles(spin, t)))
+    return [round(v, 6) + 0.0 for v in pos]
+
+
+def _depot_record(child, ref, chain) -> dict:
+    """A depot as `logic.depots` carries it. `translation` is where it sits
+    in the object's frame with every bundle at rest; under a bundle that
+    turns by itself (`bundle_spin`) it also carries `sweep`, the links from
+    the object down to the depot, so the page can put it where the turning
+    tree has it at each moment. BF1918's gas grenade and flamethrower fire
+    hang theirs 50 m up a rotator 50 m ahead (`rotator`, `rotator2`), which
+    pitches it down to -90 in 0.9 s: the depot starts 70.7 m away and ends on
+    the object's origin (MLK-17: positive pitch is nose-down, so -90 swings
+    the rotator's up onto its back)."""
+    record = {"template": child.name, **supply_extras(child)}
+    links = []
+    for link_ref, link_template in chain:
+        link: dict = {"translation": _gltf_vec(link_ref.position or (0.0, 0.0, 0.0))}
+        rotation = tuple(link_ref.rotation or (0.0, 0.0, 0.0))
+        if any(abs(r) > 1e-9 for r in rotation):
+            link["rotation"] = [round(q, 6) for q in gltf.quat_from_ypr(*rotation)]
+        if (spin := bundle_spin(link_template)) is not None:
+            link["spin"] = spin
+        links.append(link)
+    leaf: dict = {"translation": _gltf_vec(ref.position or (0.0, 0.0, 0.0))}
+    links.append(leaf)
+    record["translation"] = depot_offset_at({"sweep": [
+        {k: v for k, v in link.items() if k != "spin"} for link in links]}, 0.0)
+    if any("spin" in link for link in links):
+        record["sweep"] = links
+    return record
+
+
 def logic_object_record(library, template, *, depth: int = 0) -> dict:
     """What the page needs to stand an object that draws nothing (a
     `PlayerControlObject` whose root is created invisible and whose children
@@ -147,19 +274,14 @@ def logic_object_record(library, template, *, depth: int = 0) -> dict:
     if armor := armor_extras(template):
         record["armor"] = armor
     depots, spawners, spawn_points = [], [], 0
-    for ref in template.children:
-        child_name = con_mod.instance_template_name(ref, library.object)
-        child = library.object(child_name) if child_name else None
-        if child is None:
-            continue
+    for ref, child, chain in _logic_children(library, template):
         kind = child.kind.lower()
         if kind == "supplydepot":
-            depots.append({"template": child.name, **supply_extras(child),
-                           "translation": _gltf_vec(ref.position or (0.0, 0.0, 0.0))})
-        elif kind == "objectspawner" and depth < 2:
+            depots.append(_depot_record(child, ref, chain))
+        elif kind == "objectspawner" and depth < 2 and not chain:
             if (spawner := round_spawner_record(library, ref, depth=depth + 1)) is not None:
                 spawners.append(spawner)
-        elif kind == "spawnpoint":
+        elif kind == "spawnpoint" and not chain:
             spawn_points += 1
     if depots:
         record["depots"] = depots
@@ -2361,11 +2483,22 @@ class Assembler:
                 child = build(nested, depth + 1)
                 if child is not None:
                     children.append(child)
-            if not children:
+            spawners = [record for ref in node.spawners
+                        if (record := round_spawner_record(self.library, ref)) is not None]
+            if not children and not spawners:
                 return None
             props = node.template.effect_props
             extras: dict = {"templateKind": node.template.kind,
                             "effectBundle": {"name": node.template.name}}
+            if spawners:
+                # The bundle's ObjectSpawners, as a round's `projectile.spawners`
+                # carries them (`round_spawner_record`): placed in the bundle's
+                # frame, run by the page's `round-spawners.js` where the bundle
+                # plays and for as long as it lives. Only a game that is its own
+                # server stands anything: a dedicated server plays no collision
+                # effect at all (`Game::playCollisionEffect` returns at once on
+                # `dedicatedServer`, EMT-14).
+                extras["effectBundle"]["spawners"] = spawners
             if (raw := props.get("timetolive")) and (ttl := con_mod.crd4(raw.split()[0])):
                 extras["effectBundle"]["timeToLive"] = ttl
             if node.template.work_on_materials:

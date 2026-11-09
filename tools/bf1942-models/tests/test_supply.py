@@ -271,6 +271,8 @@ class SupplyDepotTests(unittest.TestCase):
         self.assertEqual(3, life["atThreshold"])
         self.assertIsNone(life["noBleed"])
         self.assertIsNone(life["none"])
+        # HP-22: `hpLostWhileCriticalDamage` unwritten is 1.0 a second.
+        self.assertEqual(25, life["unwritten"])
 
     def test_a_burn_down_depot_works_in_pulses_and_restarts_with_its_carrier(self):
         """Two seconds alive in every 47 (a 2 s life and the spawner's 45 s
