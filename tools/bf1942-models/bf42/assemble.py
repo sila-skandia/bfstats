@@ -2931,6 +2931,13 @@ class Assembler:
             "input": template.input_fire or "c_PIFire",
             "control": control or "vehicle",
             "muzzles": len(muzzles),
+            # Whether the muzzles are the template's own `addFireArmsPosition`
+            # lines or the one fallback at `projectilePosition`. A loaded
+            # dummy hangs at each declared one, or at the FireArms' origin when
+            # none is declared (ledger FA-5, `viewer/loaded-rounds.js`
+            # `barrelsDeclared`). Written false as well as true, so the page
+            # can tell this export from an older one.
+            "barrelsDeclared": bool(template.fire_arms_positions),
             "tracer": tracer,
             "recoil": ({"size": template.recoil_size,
                         "speed": template.recoil_speed}

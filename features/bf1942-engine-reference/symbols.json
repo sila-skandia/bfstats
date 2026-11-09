@@ -16404,6 +16404,15 @@
    "note": "Cited by ledger FA-2 (verified), IMP-8 (confirmed). FA-2: \"0x08288030 returns +0x1e4; createProjectile 0x0828bdb0 takes pool[+0x1e8] and wraps at +0x1e4;\". Name from the lnxded symbol table."
   },
   {
+   "address": "0x0828c380",
+   "name": "dice::ref2::world::FireArms::createAllDummyProjectiles()",
+   "kind": "function",
+   "subsystem": "weapons",
+   "confidence": "verified",
+   "source": "ledger-FA-5",
+   "note": "lnxded. Called from FireArms::init when the dummy template (+0x1a0) is set; returns if the dummy list (+0x1bc) is non-empty. One dummy per template addFireArmsPosition (+0x210, vector<Vec3>), child of the FireArms, matrix = identity with only the translation row set to the position (rotation token never applied). No position: one dummy, identity matrix, at the FireArms' origin; projectilePosition not read. Ledger FA-5."
+  },
+  {
    "address": "0x0828ca40",
    "name": "dice::ref2::world::FireArms::mags()",
    "kind": "function",
@@ -17131,6 +17140,15 @@
    "confidence": "verified",
    "source": "ledger-index",
    "note": "Cited by ledger FA-6 (verified). FA-6: \"runs world::ConsoleClass355::executeObjectMethod 0x082d8fe0, which writes getActiveTemplate()+0x349\". Name from the lnxded symbol table."
+  },
+  {
+   "address": "0x082d9f80",
+   "name": "ConsoleClass359::executeObjectMethod() (ObjectTemplate.addFireArmsPosition)",
+   "kind": "function",
+   "subsystem": "weapons",
+   "confidence": "working",
+   "source": "ledger-FA-5",
+   "note": "lnxded, dice::ref2::world anonymous ConsoleClass359. Pushes the position Vec3 to FireArmsTemplate+0x210 and the rotation Vec3 to +0x21c, the pair the Mac client's FireArmsTemplate::addFireArmsPosition pushes to +0x288/+0x294. Name of the console word inferred from that shape, not read from getFunctionName. Ledger FA-5."
   },
   {
    "address": "0x082db8e0",

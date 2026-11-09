@@ -21,6 +21,21 @@
 // with the body's own baked rotation kept (the same "rotated body inside an
 // aimed container" `spawnProjectile` builds).
 //
+// Where each dummy hangs is the engine's `FireArms::createAllDummyProjectiles`
+// (lnxded `0x0828c380`, ledger FA-5): one dummy per `addFireArmsPosition`,
+// placed at that position with no rotation; and for a rack that declares no
+// position, ONE dummy at the FireArms' own origin, wherever its
+// `projectilePosition` is. `projectilePosition` is only where the fired round
+// is released. The exporter falls back to a single muzzle AT
+// `projectilePosition` for such a rack, so the dummy goes on the rack there,
+// not on the muzzle (`barrelsDeclared`). That is the Elco80's and Type 38's
+// `FloatingMineLauncher`: the loaded mine sits on the stern deck, and the
+// round drops 2 m further aft. Hung on the muzzle it floated 2 m off the
+// stern at the waterline, and a Short's viewer took it for a bullet that fell
+// short. The Fletcher's and Hatsuzuki's depth charges (1 m aft), and the
+// Aichival-T's and SBD-T's torpedoes (1 m and 0.6 m low), were misplaced the
+// same way.
+//
 // It does not take the muzzle's aim. The second token of `addFireArmsPosition`
 // is the direction the fired round leaves, not the pose of the hanging dummy:
 // the F-14B's and AV-8B's Mk 83s release at `0/35/0` (35 degrees down) and
@@ -29,8 +44,9 @@
 // rack's own frame; `spawnProjectile` still aims the fired round along the
 // muzzle. Every other rack in the installed trees carries a toe-in or spread
 // of 2.1 degrees or less there (the AIM-9s, the rocket rails), which the same
-// rule drops. Raised rails (the Katyusha, the Wurfgerat 40) are raised by a
-// parent node, not by the muzzle, so they stay raised. Ledger FA-5.
+// rule drops; the engine never applies that rotation to a dummy (FA-5).
+// Raised rails (the Katyusha, the Wurfgerat 40) are raised by a parent node,
+// not by the muzzle, so they stay raised.
 //
 // Which rack qualifies is read off the bake, not guessed from a name: the
 // `projectileMesh` extras carry the template the drawn body came from, and
@@ -92,6 +108,36 @@ function muzzlesOf(gun) {
   return out.sort((a, b) => (a.userData.muzzle.index ?? 0) - (b.userData.muzzle.index ?? 0));
 }
 
+/**
+ * Whether the rack's muzzles are its own `addFireArmsPosition` lines, so a
+ * dummy hangs at each, or the one muzzle the exporter falls back to at
+ * `projectilePosition` (`assemble.py` `_fire_arms`), where the round is
+ * released and no dummy hangs.
+ *
+ * A bake from 2026-11-09 on says so (`fireArms.barrelsDeclared`). An older
+ * one is read from what it does carry: more than one muzzle is declared, and
+ * so is a single muzzle with a `projectilePosition` written beside it (the
+ * exporter writes that only when the barrels are declared), one with an aim
+ * of its own (the fallback muzzle is never turned: FHSW's
+ * `SdKfz251RRocket1`..`6` declare one toed-in rail each), or one off the
+ * rack's centreline (FH's copies of the same rails are unturned but sit at
+ * the same ±0.25 m, and every `projectilePosition` a fallback came from in
+ * the published trees is on the centreline). What is left is taken for the
+ * fallback; a muzzle at the rack's origin is the same either way. The
+ * published trees were scanned against this on 2026-11-09 (ledger FA-5,
+ * `features/plane-bombs-and-torpedoes/BUILD.md` section 9).
+ */
+export function barrelsDeclared(gun, muzzles = muzzlesOf(gun)) {
+  const stats = gun?.userData?.fireArms;
+  if (typeof stats?.barrelsDeclared === 'boolean') return stats.barrelsDeclared;
+  if (muzzles.length !== 1) return muzzles.length > 1;
+  if (stats?.projectilePosition) return true;
+  const [muzzle] = muzzles;
+  const q = muzzle.quaternion;
+  if (q && Math.abs(q.w) < 1 - 1e-9) return true;
+  return Math.abs(muzzle.position?.x ?? 0) > 1e-4;
+}
+
 /** The loaded-round nodes under `gun`, in barrel order. */
 export function loadedRoundsOf(gun) {
   const out = [];
@@ -112,7 +158,9 @@ export function mountLoadedRounds(gun) {
   if (!drawsLoadedRounds(gun)) return [];
   const body = bodyOf(gun);
   const muzzles = muzzlesOf(gun);
-  const barrels = muzzles.length ? muzzles : [gun];
+  // A rack that declares no `addFireArmsPosition` hangs its one dummy at its
+  // own origin, not at the muzzle the exporter put at `projectilePosition`.
+  const barrels = muzzles.length && barrelsDeclared(gun, muzzles) ? muzzles : [gun];
   barrels.forEach((muzzle, barrel) => {
     const have = (muzzle.children || []).some(child => child.userData?.[LOADED_ROUND_KEY]);
     if (have) return;
