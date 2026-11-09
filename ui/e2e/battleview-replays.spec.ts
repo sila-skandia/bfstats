@@ -148,4 +148,23 @@ test.describe('BattleView replays', () => {
     await page.locator('.mm-shorts-slot').scrollIntoViewIfNeeded()
     await expect(page.getByTestId('shorts-strip')).toHaveCount(0)
   })
+
+  // The people who helped make the replays: one link down from the BattleView page.
+  test('the thanks page is linked from the BattleView page and names everyone', async ({ page }) => {
+    await stub(page, [], [])
+
+    await page.goto('/battleview')
+    await page.getByTestId('battleview-thanks-link').click()
+
+    await expect(page).toHaveURL(/\/battleview\/thanks$/)
+    await expect(page.getByRole('heading', { level: 1 })).toHaveText('Thank you')
+    await expect(page.getByTestId('battleview-thanks-person').getByRole('heading', { level: 2 })).toHaveText([
+      'Black Mamba',
+      'tragic!',
+      'Chief-H.E.M.P',
+      '=Volpi=[Heph]',
+      'Jan Paul',
+    ])
+    await expect(page.locator('#jan-paul a')).toHaveAttribute('href', 'https://replay.bfstats.io/s/mdtqtue2k8')
+  })
 })

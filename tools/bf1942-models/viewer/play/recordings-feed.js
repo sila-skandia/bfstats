@@ -67,6 +67,8 @@ const ICONS = {
   unlink: '<path d="M6.6 9.4 9.4 6.6M7.2 4.6l1.2-1.2a2.6 2.6 0 0 1 3.7 3.7l-1.2 1.2M8.8 11.4l-1.2 1.2a2.6 2.6 0 0 1-3.7-3.7l1.2-1.2M2.5 2.5l11 11" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"/>',
   // Record: the button on a camera, lit.
   rec: '<circle cx="8" cy="8" r="6" fill="none" stroke="currentColor" stroke-width="1.4"/><circle class="rf-rec-dot" cx="8" cy="8" r="3" fill="#d9574a"/>',
+  // Thanks: a five-point star, the people who helped make the replays.
+  star: '<path d="M8 1.9l1.85 3.85 4.2.55-3.07 2.9.78 4.17L8 11.3l-3.76 2.07.78-4.17-3.07-2.9 4.2-.55z" fill="none" stroke="currentColor" stroke-width="1.3" stroke-linejoin="round"/>',
   more: '<circle cx="8" cy="3.2" r="1.45" fill="currentColor"/><circle cx="8" cy="8" r="1.45" fill="currentColor"/><circle cx="8" cy="12.8" r="1.45" fill="currentColor"/>',
   // A server recording: the whole field, every player on it (radar sweep).
   field: '<circle cx="8" cy="8" r="5.6" fill="none" stroke="currentColor" stroke-width="1.4"/><circle cx="8" cy="8" r="2.6" fill="none" stroke="currentColor" stroke-width="1.2" opacity=".7"/><path d="M8 8 12 4.1" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"/><circle cx="8" cy="8" r="1.1" fill="currentColor"/>',
@@ -117,6 +119,16 @@ const STYLE = `
 .rf-discord:hover .rf-discord-mark, .rf-discord:focus-visible .rf-discord-mark { transform: rotate(-8deg) scale(1.08); }
 .rf-discord:hover .rf-discord-label, .rf-discord:focus-visible .rf-discord-label { max-width: 12ch; opacity: 1; transform: none; margin-right: 7px; }
 .rf-discord:focus-visible { outline: 1px solid var(--rf-khaki-ink); outline-offset: 1px; }
+/* Thanks: the people who helped make the replays, on bfstats.io. The head's
+   pill, its star turning a little on hover. */
+.rf-thanks { display: inline-flex; align-items: center; gap: 6px; height: 24px; padding: 0 9px 0 7px; flex: none;
+  border: 1px solid rgba(21, 21, 14, .35); border-radius: 12px; background: rgba(255, 255, 255, .12); color: var(--rf-khaki-ink);
+  font: 800 11px/1 'Trebuchet MS', 'Segoe UI', sans-serif; letter-spacing: .12em; text-transform: uppercase; text-decoration: none;
+  transition: background-color .22s ease, border-color .22s ease; }
+.rf-root .rf-thanks svg { width: 13px; height: 13px; transition: transform .32s cubic-bezier(.2, .8, .2, 1); }
+.rf-thanks:hover, .rf-thanks:focus-visible { background: rgba(255, 255, 255, .26); border-color: rgba(21, 21, 14, .6); }
+.rf-thanks:hover svg, .rf-thanks:focus-visible svg { transform: rotate(36deg) scale(1.1); }
+.rf-thanks:focus-visible { outline: 1px solid var(--rf-khaki-ink); outline-offset: 1px; }
 .rf-bar { display: flex; flex-wrap: wrap; align-items: center; gap: 8px 10px; padding: 10px 14px; flex: none;
   border-bottom: 1px solid var(--rf-edge); background: var(--rf-plate-deep); }
 .rf-seg { display: inline-flex; border: 1px solid var(--rf-edge); border-radius: 6px; overflow: hidden; }
@@ -461,7 +473,7 @@ const STYLE = `
   .rf-chosen { grid-template-columns: 96px minmax(0, 1fr); }
 }
 @media (prefers-reduced-motion: reduce) {
-  .rf-discord, .rf-discord-label, .rf-root .rf-discord .rf-discord-mark,
+  .rf-discord, .rf-discord-label, .rf-root .rf-discord .rf-discord-mark, .rf-thanks, .rf-root .rf-thanks svg,
   .rf-play, .rf-drop, .rf-progress i, .rf-filter, .rf-deck::before, .rf-deck::after, .rf-manage-btn { transition: none; }
   .rf-skeleton .rf-cover, .rf-root .rf-weak::before { animation: none; }
   .rf-rec-dot, .rf-record svg { animation: none; }
@@ -697,7 +709,14 @@ export function createReplayFeed({ root = '../', onWatchFile = null, playerName 
   discord.title = 'Feedback, bugs and ideas: the bfstats.io Discord';
   discord.setAttribute('aria-label', 'Feedback on Discord');
   discord.innerHTML = `<span class="rf-discord-label" aria-hidden="true">Feedback</span>${DISCORD_MARK}`;
-  head.append(heading, countEl, el('span', 'rf-spacer'), discord, account);
+  // The people who helped make the replays (features/battleview-install-page).
+  const thanks = el('a', 'rf-thanks');
+  thanks.href = `${BATTLEVIEW}/thanks`;
+  thanks.target = '_blank';
+  thanks.rel = 'noopener';
+  thanks.title = 'The players who helped make the replays';
+  thanks.innerHTML = `${icon('star')}<span>Thanks</span>`;
+  head.append(heading, countEl, el('span', 'rf-spacer'), thanks, discord, account);
   const bar = el('div', 'rf-bar');
   const sortSeg = el('div', 'rf-seg');
   sortSeg.setAttribute('role', 'group');

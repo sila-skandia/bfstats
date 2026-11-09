@@ -440,6 +440,12 @@ const snippets = {
       </a>
     </section>
 
+    <RouterLink to="/battleview/thanks" class="bv-thanks" data-testid="battleview-thanks-link">
+      <span class="bv-thanks__label">Thank you</span>
+      <span class="bv-thanks__text">To the players who helped make the replays what they are</span>
+      <i class="pi pi-arrow-right" aria-hidden="true" />
+    </RouterLink>
+
     <p class="bv__disclaimer">
       This is a community tool, and is not affiliated with EA or DICE. Not that they'd care, given the game is
       abandonware at this point.
@@ -738,6 +744,30 @@ const snippets = {
   color: var(--mm-ink-soft);
 }
 .bv-community__btn { flex: none; }
+
+.bv-thanks {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  gap: 4px 14px;
+  margin-top: 14px;
+  padding: 14px 20px;
+  border-left: 2px solid var(--mm-rule-strong);
+  color: var(--mm-ink-soft);
+  text-decoration: none;
+  transition: border-color 160ms ease, color 160ms ease;
+}
+.bv-thanks:hover { border-left-color: var(--mm-highlight); color: var(--mm-ink); }
+.bv-thanks__label {
+  font-size: 12px;
+  font-weight: 600;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: var(--mm-ink);
+}
+.bv-thanks__text { flex: 1 1 260px; min-width: 0; font-size: 14px; }
+.bv-thanks .pi { font-size: 12px; transition: transform 160ms ease; }
+.bv-thanks:hover .pi { transform: translateX(3px); }
 
 .bv__disclaimer {
   margin: 28px 0 0;

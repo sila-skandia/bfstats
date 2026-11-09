@@ -45,6 +45,7 @@ const PlayerWrappedV4 = () => import('../views/v4/PlayerWrappedV4.vue')
 const TermsV4 = () => import('../views/v4/TermsV4.vue')
 const PrivacyV4 = () => import('../views/v4/PrivacyV4.vue')
 const BattleViewV4 = () => import('../views/v4/BattleViewV4.vue')
+const BattleViewThanksV4 = () => import('../views/v4/BattleViewThanksV4.vue')
 const BlogIndexV4 = () => import('../views/v4/BlogIndexV4.vue')
 const BlogPostV4 = () => import('../views/v4/BlogPostV4.vue')
 
@@ -704,6 +705,16 @@ const routes: RouteRecordRaw[] = [
           meta: {
             title: 'BattleView, the BF1942 3D recorder · bfstats.io',
             description: 'Record Battlefield 1942 rounds with BF42++ or the server recorder, and watch them back in 3D.'
+          }
+        },
+        // The people who helped make the replay system (features/battleview-install-page).
+        {
+          path: '/battleview/thanks',
+          name: 'battleview-thanks',
+          component: BattleViewThanksV4,
+          meta: {
+            title: 'Thank you · BattleView · bfstats.io',
+            description: 'The people who helped make the BattleView replay system.'
           }
         },
         // Posts are markdown under src/content/blog/ (features/blog/README.md).

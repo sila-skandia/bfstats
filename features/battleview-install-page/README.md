@@ -98,3 +98,12 @@ link sits in the breadcrumb strip instead of the UTC clock.
   router's meta handler now points `link[rel=canonical]` at
   `https://bfstats.io<path>` on each navigation, so this page (and every other)
   is no longer declared a duplicate of the homepage.
+
+## Thanks page (2026-11-09)
+
+`/battleview/thanks` (`ui/src/views/v4/BattleViewThanksV4.vue`) thanks the
+players who helped make the replay system. The text is the owner's own words,
+kept exactly as written, spelling included: do not edit, tidy or "fix" it
+unless the owner asks. It is linked from the BattleView page (under the
+Discord strip) and from a Thanks pill in the REPLAY feed's header on
+play.bfstats.io (`tools/bf1942-models/viewer/play/recordings-feed.js`).
