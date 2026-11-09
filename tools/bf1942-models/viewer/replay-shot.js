@@ -45,8 +45,8 @@ export function rampOf(kept) {
   if (!kept || typeof kept !== 'object') return noRamp();
   const time = v => (Number.isFinite(v) ? v : null);
   // A speed worked out to land the hit on a time (replay-sync.js) may be any
-  // speed from a tenth to normal; one picked by hand is one of RAMP_SPEEDS.
-  const fit = kept.fit === true && Number.isFinite(kept.speed) && kept.speed >= 0.1 - 1e-9 && kept.speed <= 1;
+  // speed from a twentieth to normal; one picked by hand is one of RAMP_SPEEDS.
+  const fit = kept.fit === true && Number.isFinite(kept.speed) && kept.speed >= 0.05 - 1e-9 && kept.speed <= 1;
   const speed = fit ? kept.speed : RAMP_SPEEDS.includes(kept.speed) ? kept.speed : 1;
   const out = { in: time(kept.in), out: time(kept.out), speed, ease: Number.isFinite(kept.ease) ? clamp(kept.ease, 0, 4) : RAMP_EASE };
   if (fit) out.fit = true;

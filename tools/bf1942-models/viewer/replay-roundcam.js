@@ -232,6 +232,8 @@ const _qs = new THREE.Quaternion();
 const _vs = new THREE.Vector3();
 const _vs2 = new THREE.Vector3();
 const _box = new THREE.Box3();
+const _vh = new THREE.Vector3();
+const _vd = new THREE.Vector3();
 /** A kill round's aim point stays this far over the water, metres. */
 const WATER_CLEAR = 0.5;
 const FORWARD = new THREE.Vector3(0, 0, -1);
@@ -246,6 +248,28 @@ const smooth = (a, b, x) => {
 /** A recorded shot's muzzle and direction in the view's frame (BF1942's with
  *  z negated), into `pos` and `dir` (unit); false for a shot with no
  *  direction. */
+/** Metres a second under which a hull is standing still: its heading says
+ *  nothing, and the camera waits on the line of fire. */
+export const HEADING_MIN_SPEED = 2;
+
+/**
+ * Which way a camera waiting on a shooter in a hull faces at `t`, into `out`:
+ * the hull's own heading (`heading`, unit, or null standing still) until
+ * SETUP_LEAD before the shot at `shotT`, eased onto the line of fire
+ * (`shot`, unit) as the shot comes. The line of fire alone is right for a man
+ * on foot, who faces it; a plane flies its own way for the seconds before a
+ * bomb leaves, and "behind it on the line of fire" stood the camera in front
+ * of the Mustang on Bocage for half a minute (2026-11-09: "it frames the
+ * Mustang using chase front").
+ */
+export function waitingDir(shot, heading, t, shotT, out) {
+  if (!heading) return out.copy(shot);
+  const k = smooth(shotT - SETUP_LEAD, shotT, t);
+  out.copy(heading).lerp(shot, k);
+  if (out.lengthSq() < 1e-6) return out.copy(shot);
+  return out.normalize();
+}
+
 export function shotRay(f, pos, dir) {
   if (!Array.isArray(f?.pos) || !Array.isArray(f?.dir)) return false;
   pos.set(f.pos[0], f.pos[1], -f.pos[2]);
@@ -974,8 +998,10 @@ export class RoundCam {
     const look = _vl;
     if (this.state === 'armed') {
       const hull = this.shooterHull(t, _v3);
-      if (hull) this.rigPose(style, _v3, this.shotDir, null, pos, look, 0, hull.radius);
-      else this.rigPose(style, this.shoulderAnchor(t, _v3), this.shotDir, null, pos, look);
+      if (hull) {
+        const dir = waitingDir(this.shotDir, this.hullHeading(hull.life, t, _vh), t, this.target.f.t, _vd);
+        this.rigPose(style, _v3, dir, null, pos, look, 0, hull.radius);
+      } else this.rigPose(style, this.shoulderAnchor(t, _v3), this.shotDir, null, pos, look);
     }
     else if (this.target.kind === 'bomb' && this.target.victimAt && style !== 'reverse') this.placeDrop(style, pos, look);
     else this.rigPose(style, this.drawn(), this.dir, this.target.kind ?? 'tracer', pos, look, this.target.progress ?? 0);
@@ -1275,6 +1301,20 @@ export class RoundCam {
     if (!Number.isFinite(out.x)) return null;
     target.hullRadius ??= hullRadius(hull);
     return { life, radius: target.hullRadius };
+  }
+
+  /** Which way the shooter's hull is travelling at `t`, from its recorded
+   *  track over a fifth of a second, into `out` (unit, the view's axes); null
+   *  standing still or with no track there. */
+  hullHeading(life, t, out) {
+    if (!life?.keys) return null;
+    const a = positionAt(life, t - 0.1);
+    const b = positionAt(life, t + 0.1);
+    if (!a || !b) return null;
+    out.set(b[0] - a[0], b[1] - a[1], -(b[2] - a[2]));
+    const n = out.length();
+    if (!(n > HEADING_MIN_SPEED * 0.2) || !Number.isFinite(n)) return null;
+    return out.divideScalar(n);
   }
 
   /** The hull the kill's victim was in, as drawn, and its bounding radius

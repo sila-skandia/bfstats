@@ -15,8 +15,8 @@ import { installModuleHooks, viewerDir } from '../sim/env.mjs';
 const viewer = viewerDir();
 installModuleHooks(viewer);
 const imp = name => import(pathToFileURL(path.join(viewer, name)).href);
-const [Y, CC, S, RC, M] = await Promise.all([imp('replay-sync.js'), imp('replay-clipclock.js'), imp('replay-shot.js'), imp('replay-roundcam.js'),
-  imp('replay-music.js')]);
+const [Y, CC, S, RC, M, THREE] = await Promise.all([imp('replay-sync.js'), imp('replay-clipclock.js'), imp('replay-shot.js'), imp('replay-roundcam.js'),
+  imp('replay-music.js'), imp('vendor/three.module.js')]);
 
 const round = (v, n = 3) => (v === null || v === undefined ? v : Math.round(v * 10 ** n) / 10 ** n);
 const results = {};
@@ -92,9 +92,31 @@ const hitAt = (span, ramp) => {
   results.speedTooLong = { ok: fit.ok, over: round(fit.over, 2), speed: fit.speed };
 }
 
-// Held too late: even at a tenth the hit comes before 0:41.
+// The start trimmed to 4.5 s before the hit, the slow motion kicking in 1.5 s
+// before it: that stretch cannot fill 41 s even at the slowest, so it is
+// grown back to the clip's start and the speed worked out over all of it.
 {
-  const span = { t0: 271.5, t1: END };
+  const span = { t0: HIT - 4.5, t1: END };
+  const late = { in: HIT - 1.5, out: HIT + S.RAMP_EASE, speed: 0.25, ease: S.RAMP_EASE };
+  const lead = (ramp, speed) => hitAt(span, { ...ramp, speed: Math.min(speed, 0.9999) });
+  const alone = Y.fitSpeed(speed => lead(late, speed), WANT);
+  const fit = Y.fitSpeedOver(lead, [late, { ...late, in: null }], WANT);
+  results.trimmed = {
+    alone: { ok: alone.ok, short: round(alone.short, 2) },
+    ok: fit.ok, grown: fit.grown, in: fit.stretch.in, speed: round(fit.speed, 4),
+    landed: round(hitAt(span, { ...fit.stretch, speed: fit.speed }), 4),
+  };
+  // Too long even at normal speed: a longer stretch does not help, and the
+  // stretch as set is the answer.
+  const far = { t0: 200, t1: END };
+  const over = Y.fitSpeedOver((ramp, speed) => hitAt(far, { ...ramp, speed: Math.min(speed, 0.9999) }), [late, { ...late, in: null }], WANT);
+  results.trimmedOver = { ok: over.ok, grown: over.grown, over: round(over.over, 2) };
+}
+
+// Held too late: even at a twentieth from the clip's start the hit comes
+// before 0:41.
+{
+  const span = { t0: 272.0, t1: END };
   const fit = Y.fitSpeed(speed => hitAt(span, pinStretch(Math.min(speed, 0.9999))), WANT);
   results.speedTooShort = { ok: fit.ok, short: round(fit.short, 2), speed: fit.speed };
 }
@@ -117,11 +139,12 @@ results.words = {
   long: Y.syncWords({ ...pin, hold: 'start' }, { ok: false, over: 32.5, short: 0 }),
   slowest: Y.syncWords({ ...pin, hold: 'start' }, { ok: false, over: 0, short: 12.3 }),
 };
-results.speedWords = [1, 0.5, 0.25, 0.1, 0.27, 0.333, 0.2412].map(S.speedWord);
+results.speedWords = [1, 0.5, 0.25, 0.1, 0.27, 0.333, 0.2412, 0.05].map(S.speedWord);
 results.rampOf = {
   fitted: S.rampOf({ in: 1, out: 2, speed: 0.2712, ease: 0.35, fit: true }),
   picked: S.rampOf({ in: 1, out: 2, speed: 0.2712, ease: 0.35 }),
-  tooSlow: S.rampOf({ in: 1, out: 2, speed: 0.05, ease: 0.35, fit: true }),
+  twentieth: S.rampOf({ in: 1, out: 2, speed: 0.05, ease: 0.35, fit: true }),
+  tooSlow: S.rampOf({ in: 1, out: 2, speed: 0.04, ease: 0.35, fit: true }),
 };
 
 // The song under the clip (replay-music.js): where it is for a time of the
@@ -137,6 +160,19 @@ results.rampOf = {
     looped: M.songAction({ ...base, t: 90, video: 0 }),
     scrubbed: M.songAction({ ...base, t: 103, video: 14 }),
     pastSong: M.songAction({ ...base, video: 250 }),
+  };
+}
+
+// The camera waiting on a shooter in a hull (replay-roundcam.js `waitingDir`):
+// the hull's heading until 2.5 s before the shot, eased onto the line of
+// fire as the shot comes. The Mustang flies +X; the bomb leaves along -Z.
+{
+  const shot = new THREE.Vector3(0, 0, -1);
+  const heading = new THREE.Vector3(1, 0, 0);
+  const at = t => { const v = RC.waitingDir(shot, heading, t, 100, new THREE.Vector3()); return [round(v.x), round(v.y), round(v.z)]; };
+  results.waiting = {
+    early: at(80), setup: at(97.5), half: at(98.75), shot: at(100), after: at(101),
+    still: (() => { const v = RC.waitingDir(shot, null, 80, 100, new THREE.Vector3()); return [v.x, v.y, v.z]; })(),
   };
 }
 

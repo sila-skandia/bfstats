@@ -1179,16 +1179,28 @@ export class ClipBar {
       e.preventDefault();
       const gap = 0.3;
       this.holding = true;
+      // The strip holds its layout while the end is dragged: it is laid out
+      // in seconds of the video, and a start moved through slow motion
+      // changes how many there are, so a strip laid out again under the
+      // pointer ran the end away from it (aimed at 4:29, the start landed at
+      // 4:32.2, past the bomb). The handle moves itself; the strip is laid
+      // out again on the drop.
+      this.dragging = true;
       const move = ev => {
         const t = this.snap(this.timeAt(ev.clientX), { skip: creator.range[which] });
         if (which === 'in') creator.range.in = Math.min(t, creator.range.out - gap);
         else creator.range.out = Math.max(t, creator.range.in + gap);
         creator.syncRange();
-        this.sync(creator.player.time, true);
+        handle.style.left = this.pct(creator.range[which]);
+        this.tip.hidden = false;
+        this.tip.textContent = `${which === 'in' ? 'Starts' : 'Ends'} at ${fmt(creator.range[which])} of the round`;
+        this.tip.style.left = this.pct(creator.range[which]);
       };
       const up = ev => {
         move(ev);
         this.showSnap(null);
+        this.tip.hidden = true;
+        this.dragging = false;
         this.holding = false;
         handle.removeEventListener('pointermove', move);
         handle.removeEventListener('pointerup', up);

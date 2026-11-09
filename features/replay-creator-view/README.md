@@ -1802,7 +1802,7 @@ muted.
   browser's own Enter in a form is all that reaches it). `hold: 'slow'`
   moves the clip's start (`fitStart`, bisection over `clipClock`, never
   later than 0.3 s before the shot); `hold: 'start'` works out the slow
-  stretch's speed (`fitSpeed`, a tenth to normal; a fitted ramp carries
+  stretch's speed (`fitSpeed`, a twentieth to normal; a fitted ramp carries
   `fit: true`, and only a fitted ramp may hold a speed off `RAMP_SPEEDS`;
   `speedWord` says `0.15x`). With no slow motion of their own the pin lays
   one (`auto`) from the clip's start to the hit plus the ease, so the clock
@@ -1856,3 +1856,42 @@ speed, with no play between) the Tiger blew up about 0.6 s before them. Play
 the clip once after changing its slow motion, then record. The cause is the
 round cam's steered landing (`LANDING`, `planLanding`) reading the clock's
 speed; a landing fixed in round time would make the pin exact.
+
+The owner, the same day, trimming the start in: "it keeps the time, but the
+clip gets to it with 17s because I compressed the start". A start dragged
+holds the start and works out the speed; with the slow motion kicking in
+late, that stretch could not fill 41 s even at 1/10, so the pin went red and
+the clip played its 1/4 to a hit at 17 s. Now (`fitSpeedOver`) a stretch
+that cannot fill the time even at the slowest is grown back to the clip's
+start and the speed worked out over all of it, and the slowest is 1/20
+(`FIT_SLOWEST`; `rampOf` keeps a fitted speed down to it). Only a start too
+close for even that turns the pin red ("Short by 3.2 s even at 1/20 from the
+clip's start: start the clip earlier"). Tests: the start trimmed to 4.5 s
+before the hit with the slow motion from 1.5 s before it lands on 41.000 s at
+0.10x from the clip's start; a clip too long at normal speed is not helped by
+a longer stretch.
+
+Two more from the same session, both met on that clip:
+
+- **The start's drag ran away from the pointer.** The strip is laid out in
+  seconds of the video, and a start dragged through slow motion changes how
+  many there are, so the strip was laid out again under the pointer on every
+  move: a drag aimed at 4:29.0 let go at 4:32.2, past the bomb, and the pin
+  went red. The clip's ends now drag on a strip that holds its layout
+  (`bindHandle` sets `dragging`, moves the handle itself and says "Starts at
+  4:29.0 of the round"); it is laid out again on the drop. Measured: dropped
+  at 4:29.0 and 4:29.5, landed at 269.000 and 269.500, the hit on 0:41.0 at
+  0.12x and 0.11x worked out from the clip's start.
+- **Camera 1 framed the Mustang from in front.** The owner: "it frames the
+  mustang ... using chase front. All I want to do is change it to chase";
+  picking Bullet chase for camera 1 did nothing. Before the shot, Over the
+  shoulder and Bullet chase are the same picture (the round cam's chase
+  style, `ROUND_STYLE`), and it stood behind the shooter on the line of fire
+  (`shotDir`, fixed at the moment of release). A man on foot faces his line
+  of fire; a plane flies its own way for the half minute before a bomb
+  leaves, so "behind on the line of fire" was in front of the Mustang
+  whenever it flew the other way. Now (`replay-roundcam.js` `waitingDir`,
+  `hullHeading`) a camera waiting on a shooter in a hull faces the way the
+  hull travels, from its recorded track, and eases onto the line of fire over
+  the last 2.5 s before the shot, so the hand-over to the bomb is unchanged.
+  A hull standing still (a tank, a gun) waits on the line of fire as before.

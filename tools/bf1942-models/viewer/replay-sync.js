@@ -11,7 +11,11 @@
 // - `hold: 'slow'`: the slow motion is as the creator set it; the clip's
 //   start moves.
 // - `hold: 'start'`: the clip's start is where the creator put it; the slow
-//   stretch's speed is worked out, any speed between 1/10 and normal.
+//   stretch's speed is worked out, any speed between 1/20 and normal. A
+//   stretch too short to fill the time even at the slowest is grown back to
+//   the clip's start: a creator who trims the start closer to the action
+//   (2026-11-09: "it gets to it in 17 s because I compressed the start")
+//   wants the hit kept on its time, not a red pin.
 //
 // The thing a creator touches is the thing held: dragging the clip's start
 // holds the start, picking a speed holds the slow motion. `auto` marks a slow
@@ -22,8 +26,11 @@
 // a given start or speed (replay-clipclock.js), so
 // `tests/replay_sync_harness.mjs` runs it.
 
-/** The slowest a fitted stretch plays: the strip's own slowest speed. */
-export const FIT_SLOWEST = 0.1;
+/** The slowest a fitted stretch plays. Half the strip's own slowest: a
+ *  start trimmed close to the hit still reaches a riff's length. The page
+ *  draws every frame at it; only the recording's 10 Hz samples are eased
+ *  over longer. */
+export const FIT_SLOWEST = 0.05;
 /** How close the moment must land to its time, seconds of the video: under
  *  a frame at 60 fps. The clip's clock is stepped at 1/120 s
  *  (replay-clipclock.js), so a kill shot's bullet time cannot be read finer. */
@@ -106,6 +113,25 @@ export function fitSpeed(lead, want, { slowest = FIT_SLOWEST } = {}) {
   return { ok: Math.abs(got - want) <= FIT_TOLERANCE, speed, got, over: 0, short: 0 };
 }
 
+/**
+ * fitSpeed over the first of `stretches` (ramps, in order of preference)
+ * that can land it: the slow stretch as the creator set it, then grown back
+ * to the clip's start. `lead(stretch, speed)` is the video's seconds to the
+ * moment. A clip too long even at normal speed is not helped by a longer
+ * stretch, so that answer comes from the first. `{ ...fitSpeed's, stretch,
+ * grown }`, `grown` when a later stretch was taken.
+ */
+export function fitSpeedOver(lead, stretches, want, opts = {}) {
+  let last = null;
+  for (let i = 0; i < stretches.length; i++) {
+    const fit = fitSpeed(speed => lead(stretches[i], speed), want, opts);
+    const out = { ...fit, stretch: stretches[i], grown: i > 0 };
+    if (fit.ok || fit.over > 0) return out;
+    last = out;
+  }
+  return last;
+}
+
 /** `m:ss.s` for a time of the video. */
 export function videoTime(s) {
   const v = Math.round(Math.max(0, s) * 10) / 10;
@@ -140,7 +166,7 @@ export function syncWords(pin, fit) {
   const by = v => `${v.toFixed(1)} s`;
   if (pin.hold === 'start') {
     if (fit.over > 0) return `Too long by ${by(fit.over)} even at normal speed: start the clip later`;
-    return `Short by ${by(fit.short)} even at 1/10: start earlier or slow a longer stretch`;
+    return `Short by ${by(fit.short)} even at 1/20 from the clip's start: start the clip earlier`;
   }
   if (fit.short > 0) return `Short by ${by(fit.short)}: the round does not go back far enough at this speed. Slow more of it`;
   return `${when} is too soon: the clip has to start before the shot. Pin a later time, or slow less of it`;

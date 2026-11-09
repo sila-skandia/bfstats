@@ -45,7 +45,7 @@ import { pickAt, pickCandidates, shotOfRound } from './replay-pick.js';
 import { ClipRecorder, clipName, download, recorderMime } from './replay-clip.js';
 import { dossierOf, killFactsOf } from './replay-dossier.js';
 import { RAMP_EASE, RAMP_SPEEDS, actionOf, killByFire, nextKillShot, noRamp, rampOf, rampSpanOf, rampSpeedAt, ramping, speedWord } from './replay-shot.js';
-import { fitSpeed, fitStart, syncOf, syncWords } from './replay-sync.js';
+import { fitSpeedOver, fitStart, syncOf, syncWords } from './replay-sync.js';
 import { ClipMusic } from './replay-music.js';
 import { CreatorPanel, FOV_RANGE, LEAD_INS, fmt } from './replay-creator-panel.js';
 import { STYLE_IDS, angleOf, isMelee, styleLabel, styleOf, suggestAngles } from './replay-shotstyle.js';
@@ -2187,14 +2187,17 @@ export class ReplayCreator {
     const stretch = pin.auto ? pinStretch : own;
     if (pin.hold === 'start') {
       // A speed has to have a stretch to slow: the pin's, where there is none.
+      // One too short to fill the time even at the slowest is grown back to
+      // the clip's start (a start trimmed closer to the action).
       const st = stretch ?? pinStretch;
       const auto = stretch ? pin.auto : true;
-      const lead = speed => clipClock({ span, ramp: { ...st, speed: Math.min(speed, 0.9999) }, bullet, freeze }).toScreen(at);
-      const fit = fitSpeed(lead, pin.at);
+      const stretches = st.in === null ? [st] : [st, { ...st, in: null }];
+      const lead = (ramp, speed) => clipClock({ span, ramp: { ...ramp, speed: Math.min(speed, 0.9999) }, bullet, freeze }).toScreen(at);
+      const fit = fitSpeedOver(lead, stretches, pin.at);
       this.syncFit = { ...fit, hold: 'start' };
       this.syncStart = span.t0;
       if (!fit.ok) return false;
-      const next = { ...st, speed: fit.speed, fit: true };
+      const next = { ...fit.stretch, speed: fit.speed, fit: true };
       const moved = JSON.stringify(next) !== JSON.stringify(this.ramp);
       this.ramp = next;
       if (auto !== pin.auto) this.sync = { ...pin, auto };
@@ -2306,7 +2309,7 @@ export class ReplayCreator {
     const head = syncWords(pin, fit);
     if (!fit?.ok) return head;
     return pin.hold === 'start'
-      ? `${head} · slow motion ${speedWord(this.ramp.speed)}, worked out from the start`
+      ? `${head} · slow motion ${speedWord(this.ramp.speed)}${fit.grown ? ' from the clip\'s start' : ''}, worked out from the start`
       : `${head} · the clip starts at ${fmt(this.range.in)} of the round`;
   }
 

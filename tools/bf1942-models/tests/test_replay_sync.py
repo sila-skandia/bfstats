@@ -104,11 +104,31 @@ class SpeedWorkedOutTests(unittest.TestCase):
         self.assertEqual(s["speed"], 1)
         self.assertAlmostEqual(s["over"], (HIT - 200) - 41, delta=0.05)
 
-    def test_too_short_even_at_a_tenth(self) -> None:
+    def test_too_short_even_at_a_twentieth(self) -> None:
         s = self.r["speedTooShort"]
         self.assertFalse(s["ok"])
-        self.assertEqual(s["speed"], 0.1)
+        self.assertEqual(s["speed"], 0.05)
         self.assertGreater(s["short"], 0)
+
+    def test_a_start_trimmed_close_keeps_the_hit_on_its_time(self) -> None:
+        # The owner, 2026-11-09: "the clip gets to it with 17s because I
+        # compressed the start". The late stretch alone cannot fill 41 s; it
+        # is grown back to the clip's start and slowed over all of it.
+        t = self.r["trimmed"]
+        self.assertFalse(t["alone"]["ok"])
+        self.assertGreater(t["alone"]["short"], 0)
+        self.assertTrue(t["ok"])
+        self.assertTrue(t["grown"])
+        self.assertIsNone(t["in"])
+        self.assertAlmostEqual(t["landed"], 41, delta=0.01)
+        self.assertGreater(t["speed"], 0.05)
+        self.assertLess(t["speed"], 0.15)
+
+    def test_a_longer_stretch_does_not_help_a_clip_too_long_at_normal_speed(self) -> None:
+        o = self.r["trimmedOver"]
+        self.assertFalse(o["ok"])
+        self.assertFalse(o["grown"])
+        self.assertGreater(o["over"], 30)
 
 
 class PinWordsTests(unittest.TestCase):
@@ -137,10 +157,10 @@ class PinWordsTests(unittest.TestCase):
         self.assertIn("start before the shot", w["soon"])
         self.assertIn("no hit", w["missing"])
         self.assertIn("Too long by 32.5 s even at normal speed", w["long"])
-        self.assertIn("even at 1/10", w["slowest"])
+        self.assertIn("even at 1/20 from the clip's start", w["slowest"])
 
     def test_a_worked_out_speed_is_said_as_it_is(self) -> None:
-        self.assertEqual(self.r["speedWords"], ["1x", "1/2", "1/4", "1/10", "0.27x", "1/3", "0.24x"])
+        self.assertEqual(self.r["speedWords"], ["1x", "1/2", "1/4", "1/10", "0.27x", "1/3", "0.24x", "1/20"])
 
     def test_only_a_worked_out_speed_may_be_off_the_strips_speeds(self) -> None:
         ro = self.r["rampOf"]
@@ -148,6 +168,7 @@ class PinWordsTests(unittest.TestCase):
         self.assertTrue(ro["fitted"]["fit"])
         self.assertEqual(ro["picked"]["speed"], 1)
         self.assertNotIn("fit", ro["picked"])
+        self.assertEqual(ro["twentieth"]["speed"], 0.05)
         self.assertEqual(ro["tooSlow"]["speed"], 1)
 
 
@@ -175,6 +196,30 @@ class SongTests(unittest.TestCase):
     def test_a_loop_or_a_scrub_puts_it_back_in_place(self) -> None:
         self.assertEqual(self.song["looped"], {"act": "seek", "at": 0})
         self.assertEqual(self.song["scrubbed"], {"act": "seek", "at": 14})
+
+
+class WaitingCameraTests(unittest.TestCase):
+    """The camera waiting on a shooter in a hull faces the way the hull
+    travels until the shot comes near (replay-roundcam.js `waitingDir`)."""
+
+    w: dict
+
+    @classmethod
+    def setUpClass(cls) -> None:
+        cls.w = run_harness()["waiting"]
+
+    def test_it_follows_the_hull_until_the_shot_comes_near(self) -> None:
+        self.assertEqual(self.w["early"], [1, 0, 0])
+        self.assertEqual(self.w["setup"], [1, 0, 0])
+
+    def test_it_eases_onto_the_line_of_fire_by_the_shot(self) -> None:
+        x, _, z = self.w["half"]
+        self.assertAlmostEqual(x, -z, places=2)
+        self.assertEqual(self.w["shot"], [0, 0, -1])
+        self.assertEqual(self.w["after"], [0, 0, -1])
+
+    def test_a_hull_standing_still_waits_on_the_line_of_fire(self) -> None:
+        self.assertEqual(self.w["still"], [0, 0, -1])
 
 
 if __name__ == "__main__":

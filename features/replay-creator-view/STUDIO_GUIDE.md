@@ -259,8 +259,11 @@ on the Kill mark, and the studio works the rest out:
   striped while the studio sets it.
 - **Work out the slow motion.** Drag the clip's start to the frame you want
   it to open on and it is held there (the handle gets a blue ring). The slow
-  stretch's speed is worked out instead, any speed from a tenth to normal:
-  the Speed lane says "0.27x slow · worked out to the pin".
+  stretch's speed is worked out instead, any speed from a twentieth to
+  normal: the Speed lane says "0.27x slow · worked out to the pin". Trim the
+  start in close to the action and the hit stays on its time: if your slow
+  stretch is too short to fill it, the slow motion is stretched back to the
+  clip's start and slowed over all of it.
 
 Whatever you touch is what stays put: drag the start and the speed is
 worked out; pick a speed on the Speed lane and the start moves. The same
@@ -268,7 +271,8 @@ choice is in the pin's box (click the pin), with Take the pin away.
 
 When it cannot fit, the pin turns red and says why, and the clip is left as
 it was: "Too long by 32.5 s even at normal speed: start the clip later", or
-"Short by 12.3 s even at 1/10: start earlier or slow a longer stretch". The
+"Short by 12.3 s even at 1/20 from the clip's start: start the clip
+earlier". The
 first time the clip plays, the page measures where the round actually lands
 and the start is nudged to match, so the hit is on the pin from the second
 time round. After changing the slow motion, play the clip through once
