@@ -282,10 +282,7 @@ Two traps, both found in the page:
   - **The drills** (`?tab=proving`): LIVE-FIRE RANGE and DOGFIGHT SCHOOL as
     two cards, each on a loading screen from the game (`desert.webp`, Battle
     of Britain's `load.webp`). The school's card opens `dogfight.html` with
-    no battle: the school chooses its own arena in its sidebar. A third,
-    TANK SCHOOL (2026-11-09, on `eastern.webp`), opens `tanks.html` the same
-    way ([battle-schools](../battle-schools/README.md)); the cards sit three
-    across, two under 1100 px and one on a phone.
+    no battle: the school chooses its own arena in its sidebar.
   - **Select loadout** (`?tab=proving&view=loadout`, or
     `&battle=<map>&side=<1|2>`): the battles as loadout cards (the menu
     thumbnail from `menu-levels.json`, falling back to the loading screen,
