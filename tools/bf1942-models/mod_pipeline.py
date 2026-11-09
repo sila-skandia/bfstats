@@ -304,7 +304,8 @@ STEPS: tuple[Step, ...] = (
     _s("tank_school", "Tank school sheet: each tank driven and fired on flat ground "
        "(drive, steadiness and their traces)",
        inputs=('{models}/models.json', '{shared}/collision-meshes.json',
-               '{shared}/part-mobility.json', '{shared}/vehicle-ai.json', '{shared}/damage.json'),
+               '{shared}/part-mobility.json', '{shared}/vehicle-ai.json', '{shared}/damage.json',
+               '{models}/damage.json'),
        cmds=(("node", "surveys/tank_school_sheet.mjs", "--mod", "{id}",
               "--models", "{models}", "--maps", "{maps}",
               "--out", "{shared}/tank-school.json"),),

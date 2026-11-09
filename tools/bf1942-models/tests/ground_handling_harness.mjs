@@ -51,8 +51,11 @@ const COLLISION = JSON.parse(fs.readFileSync(
   path.join(assets, 'maps', 'mods', 'desertcombat', '_shared', 'collision-meshes.json'), 'utf8'));
 // The mod's material table, for each wheel's own side of the pair (what the
 // page's boarding hands the drive: `wheelContactDepths`, ledger TANK-26).
+// The level bake's copy, else the model pass's (the same tables; a tree whose
+// levels are not baked has only the second, as the page falls back too).
 const TABLES = JSON.parse(fs.readFileSync(
-  path.join(assets, 'maps', 'mods', 'desertcombat', '_shared', 'damage.json'), 'utf8'));
+  [path.join(assets, 'maps', 'mods', 'desertcombat', '_shared', 'damage.json'), path.join(MODELS, 'damage.json')]
+    .find(f => fs.existsSync(f)), 'utf8'));
 const FIXTURE = JSON.parse(zlib.gunzipSync(fs.readFileSync(path.join(HERE, 'fixtures', 'dc_lock_episodes.json.gz'))));
 const DT = 1 / 30;
 const SAND = +(process.env.GROUND_FRICTION || 0.8);

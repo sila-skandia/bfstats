@@ -508,7 +508,9 @@ The pattern is the dogfight one (`features/dogfight-recordings`):
    recording's own mod's tree first, then vanilla's:
    - Where the game's AI data has the template
      (`maps/<tree>/_shared/vehicle-ai.json`), it is a tank when it is
-     `class: 'Land'` with `equipmentType: 0` and has a main gun.
+     `class: 'Land'` on a `Tank` or `AmphibiousTank` row of the mod's own
+     `AIbehaviours.con` (`equipment`; vanilla's row 0 for a table extracted
+     before the names were carried) and has a main gun.
    - Where it does not, `tank-arena.js` `isTank` on the model catalogue
      decides. FHSW's AI data lacks the King Tiger, the StuG III B and the
      Cruiser Mk II.

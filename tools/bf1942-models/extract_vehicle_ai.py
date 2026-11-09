@@ -693,7 +693,9 @@ def extract(mod: str, game_dir: Path = GAME.parent, levels: bool = True) -> dict
     `<Unit>@<Level>`. Each such record carries the `level` that declares it.
     """
     chain = mod_chain(game_dir, mod)
-    _meshes, _textures, objects, _game = build_pools(chain, [])
+    _meshes, _textures, objects, game = build_pools(chain, [])
+    blob = game.try_read("bf1942/game/aibehaviours.con")
+    rows = equipment_rows(blob.decode("latin-1") if blob is not None else "")
 
     def read(name: str) -> str | None:
         blob = objects.try_read(name)
@@ -716,7 +718,7 @@ def extract(mod: str, game_dir: Path = GAME.parent, levels: bool = True) -> dict
         if info is not None:
             vehicles[sites.get(root, (root, ""))[0]] = info
     if not levels:
-        return {"mod": mod, "vehicles": vehicles}
+        return named(mod, vehicles, rows)
 
     taken = {name.lower() for name in vehicles}
     seats = {pco.lower() for info in vehicles.values() for pco in info["seats"]}
@@ -782,7 +784,31 @@ def extract(mod: str, game_dir: Path = GAME.parent, levels: bool = True) -> dict
             info["level"] = level_name
             vehicles[key] = info
             taken.add(key.lower())
-    return {"mod": mod, "vehicles": vehicles}
+    return named(mod, vehicles, rows)
+
+
+SET_VEHICLE_RE = re.compile(r"^\s*aiSettings\.setVehicle\s+(\d+)\s+(\w+)", re.I | re.M)
+
+
+def equipment_rows(text: str) -> dict[int, str]:
+    """The mod's `AIbehaviours.con` `aiSettings.setVehicle <row> <name>` list:
+    what each `equipmentType` row is called. Vanilla's runs 0 Tank to 17
+    FixedGuidedMissileLauncher; a mod adds its own rows past it and each
+    numbers them its own way (EoD's 18 is AmphibiousTank, FHSW's
+    MobileArtillery), so a row is known by its name, not its number."""
+    return {int(n): name for n, name in SET_VEHICLE_RE.findall(text)}
+
+
+def named(mod: str, vehicles: dict[str, dict], rows: dict[int, str]) -> dict:
+    """The table as written: each record and seat that has an
+    `equipmentType` also carries its row's name as `equipment`, and the rows
+    themselves ride along as `equipmentTypes`."""
+    for info in vehicles.values():
+        for rec in (info, *(info.get("seatsAi") or {}).values()):
+            row = rec.get("equipmentType") if isinstance(rec, dict) else None
+            if row is not None and row in rows:
+                rec["equipment"] = rows[row]
+    return {"mod": mod, "equipmentTypes": {str(k): v for k, v in sorted(rows.items())}, "vehicles": vehicles}
 
 
 def level_roots(local_names: list[str], read_local, l_graph: dict, l_kinds: dict, l_ai_of: dict,

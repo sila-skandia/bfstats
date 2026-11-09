@@ -19,7 +19,7 @@ from unittest import mock
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 
-from extract_vehicle_ai import GAME, basic_temp, control_info, extract, is_anti_aircraft, parse_objects_con, parse_weapons_con  # noqa: E402
+from extract_vehicle_ai import GAME, basic_temp, control_info, equipment_rows, extract, is_anti_aircraft, named, parse_objects_con, parse_weapons_con  # noqa: E402
 
 AA_ALLIES = """
 rem *** Plugins ***
@@ -489,3 +489,29 @@ class VanillaLevelUnitTests(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+class EquipmentRowTests(unittest.TestCase):
+    """A unit's `equipmentType` is its row of the mod's own `AIbehaviours.con`
+    `setVehicle` list, and each mod numbers the rows past vanilla's 17 its own
+    way (EoD's 18 is AmphibiousTank, FHSW's MobileArtillery): the table
+    carries each row's name, so a reader asks for `Tank`, not for 0."""
+
+    EOD = """
+aiSettings.setVehicle  0 Tank
+aiSettings.setVehicle 16 AmphibiousCar
+rem aiSettings.setVehicle 99 Commented
+aiSettings.setVehicle 18 AmphibiousTank
+"""
+
+    def test_the_rows_are_read_by_number_and_name(self):
+        self.assertEqual(equipment_rows(self.EOD), {0: "Tank", 16: "AmphibiousCar", 18: "AmphibiousTank"})
+
+    def test_each_record_and_seat_carries_its_row_s_name(self):
+        vehicles = {"PT76": {"equipmentType": 18, "seatsAi": {"PT76": {"equipmentType": 18}}},
+                    "Crate": {}}
+        out = named("EoD", vehicles, equipment_rows(self.EOD))
+        self.assertEqual(out["equipmentTypes"], {"0": "Tank", "16": "AmphibiousCar", "18": "AmphibiousTank"})
+        self.assertEqual(out["vehicles"]["PT76"]["equipment"], "AmphibiousTank")
+        self.assertEqual(out["vehicles"]["PT76"]["seatsAi"]["PT76"]["equipment"], "AmphibiousTank")
+        self.assertNotIn("equipment", out["vehicles"]["Crate"])

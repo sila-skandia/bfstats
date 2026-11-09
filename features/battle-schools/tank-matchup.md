@@ -523,6 +523,29 @@ sheet is run by hand (vanilla is not a pipeline mod) and pinned as
 trees (bf1918, BG42, FinnWars, GCMOD, Interstate, Pirates) publish no
 models, so they have nothing to measure and the page does not offer them.
 
+**A mod's AI rows are known by name (2026-11-09).** The first pipeline run
+from the owner's own install, for EoD, gave 12 tanks where the published
+sheet had 17. The published EoD tree had no `vehicle-ai.json`, so its sheet
+had come from the catalogue's rule; the local run had the AI data, and the
+AI rule took only `equipmentType` 0. That number is a row of the mod's own
+`Game/AIbehaviours.con` `aiSettings.setVehicle` list, and a mod adds rows
+past vanilla's 17 and numbers them its own way: EoD's 16 is AmphibiousCar
+(BMP-1, BRDM), 18 AmphibiousTank (PT-76, V-100), 19 AmphibiousAPC (BTR-60,
+M113s), 20 AmphibiousArty, where FHSW's 19 is MobileArtillery. So
+`extract_vehicle_ai.py` now carries the list (`equipmentTypes`) and stamps
+each record and seat with its row's name (`equipment`), and `tank-arena.js`
+`tankRow` takes `Tank` and `AmphibiousTank` by name (row 0 for a table
+extracted before the names). The same run showed the T-54 and T-62 missing
+from both sheets: EoD names their guns `T54Gun` and `T62Gun`, which the
+`...GunBarrel` / `...Cannon` pattern missed; a one-word name ending in `Gun`
+now counts (`Type63_AAGunLeft` and `Coaxial_PK` do not). Across every tree
+that adds only FHSW Europe's Autoblinda 41 and 43 (turreted armoured cars,
+no AI record) and FH's towed `pak38`, which `NOT_A_TANK` now names. EoD's
+sheet went from 17 to 16: the T-54, T-62 and Sexton in; the BMP-1, BTR-60,
+BRDM-2 and M109 out (the game's AmphibiousCar, AmphibiousAPC and
+ArtilleryDriver). Desert Combat's sheet from the install matched the
+published one exactly.
+
 **Every shot measured.** The owner, on the BMP-2's empty FIRE AHEAD: "it's
 physics so we can calculate something". Two cases had been left out, and
 both are measured now. A gun the game gives no recoil (`fireingForce` 0: the

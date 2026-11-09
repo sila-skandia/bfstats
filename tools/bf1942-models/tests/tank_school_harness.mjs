@@ -92,13 +92,22 @@ const ai = {
   Battery: { class: 'Land', equipmentType: 13, aiWeapons: { Howitzer: { strength: { HeavyArmour: 5 } } } },
   OddTank: { class: 'Land', equipmentType: 0, fireArms: { OddTankBarrelThing: 'OddTankMainGun' },
     seatsAi: { OddTank: { aiWeapons: { OddTankMainGun: { strength: { HeavyArmour: 6 } } } } } },
+  // A table that names its rows (EoD's): row 18 is AmphibiousTank, 16
+  // AmphibiousCar; the name decides, not the number.
+  PT76: { class: 'Land', equipmentType: 18, equipment: 'AmphibiousTank', aiWeapons: { PT76MainGun: { strength: { HeavyArmour: 5 } } } },
+  'BMP-1': { class: 'Land', equipmentType: 16, equipment: 'AmphibiousCar', aiWeapons: { BMPMainGun: { strength: { HeavyArmour: 8 } } } },
+  T54: { class: 'Land', equipmentType: 0, equipment: 'Tank', aiWeapons: { T54MainGun: { strength: { HeavyArmour: 9 } } } },
 };
 const aiRows = [row('Sherman', 'Allied', ['El_Alamein'], 100, ['ShermanGunBarrel']), row('MGTrack', 'Axis', ['El_Alamein'], 150, ['MGTrackGunBarrel']),
   row('Battery', 'Axis', ['El_Alamein'], 100, ['BatteryCannon']), row('OddTank', 'Axis', ['El_Alamein'], 250, ['OddTankBarrelThing']),
   // Not in the AI data: the catalogue's rule, less what the name says.
   row('Kingtiger', 'Axis', ['El_Alamein'], 160, ['KTGunBarrel']), row('M36', 'Allied', ['El_Alamein'], 130, ['M36GunBarrelAP', 'M36GunBarrelHE']),
   row('Pak43_41Mobile_towedgun', 'Axis', ['El_Alamein'], 100, ['Pak43_41GunBarrelAP']), row('HowitzerBattery3', 'Allied', ['El_Alamein'], 200, ['HowitzerBatteryCannon']),
-  row('SdKfz251/1', 'Axis', ['El_Alamein'], 120, ['SdKfz251/1GunBarrel'])];
+  row('SdKfz251/1', 'Axis', ['El_Alamein'], 120, ['SdKfz251/1GunBarrel']),
+  row('PT76', 'Axis', ['El_Alamein'], 100, ['PT76GunBarrel']), row('BMP-1', 'Axis', ['El_Alamein'], 100, ['BMP1GunBarrel']),
+  // The hull's own name with `Gun` on it is its gun (EoD's T-54); a towed
+  // anti-tank gun so named is not a tank (FH's pak38, no AI record).
+  row('T54', 'Axis', ['El_Alamein'], 105, ['Coaxial_PK', 'DSHK', 'T54Gun']), row('pak38', 'Axis', ['El_Alamein'], 100, ['pak38Gun'])];
 out.m36Gun = A.mainGunName(aiRows[5], ai);
 out.aiTanks = aiRows.filter(r => A.isTank(r, ai)).map(r => r.name);
 out.aiGun = A.mainGunName(aiRows[3], ai);

@@ -16,7 +16,8 @@
 //
 // When the tree's AI data is at hand (`_shared/vehicle-ai.json`, its
 // `vehicles`), the game's own word decides: a tank is in it, `class: 'Land'`
-// with `equipmentType: 0` and a weapon the AI rates against armour. Every vanilla tank is, and so are a mod's (FHSW's
+// on a `Tank` or `AmphibiousTank` row of the mod's own `AIbehaviours.con`
+// (`equipment`; vanilla's row 0) and a weapon the AI rates against armour. Every vanilla tank is, and so are a mod's (FHSW's
 // Panzer III J, KV-1S, StuH 42), while half-tracks are 6, jeeps and cavalry
 // 5, towed and AA guns 4, artillery batteries 13 and self-propelled guns 14.
 // The catalogue's rule is the fallback for a template the AI data lacks.
@@ -33,8 +34,10 @@ const ARENA_NAMES = {
 };
 
 // A gun barrel or cannon by name, with whatever load a mod writes after it
-// (`M36GunBarrelAP`, `KV1GunBarrel`, `m13_40Cannon`).
-const GUN = /(gunbarrel|cannon)/i;
+// (`M36GunBarrelAP`, `KV1GunBarrel`, `m13_40Cannon`), or the hull's own name
+// with `Gun` on it, as EoD names its T-54's and T-62's (`T54Gun`): one word,
+// no `_`, so a `Type63_AAGunLeft` or a `Coaxial_PK` is not one.
+const GUN = /(gunbarrel|cannon)|^[a-z0-9-]+gun$/i;
 const AIR_GUN = /^(aa|radar|flak)/i;
 const isMainGun = w => GUN.test(String(w)) && !AIR_GUN.test(String(w));
 
@@ -45,6 +48,17 @@ const isMainGun = w => GUN.test(String(w)) && !AIR_GUN.test(String(w));
 export function armourWeapon(entry) {
   const weapons = [entry?.aiWeapons, ...Object.values(entry?.seatsAi ?? {}).map(s => s?.aiWeapons)];
   return weapons.some(ws => Object.values(ws ?? {}).some(w => Number(w?.strength?.HeavyArmour) > 0));
+}
+
+/** Whether the AI files a unit as a tank: its `equipmentType` row is called
+ *  `Tank` or `AmphibiousTank` in the mod's own `AIbehaviours.con` (EoD's
+ *  PT-76 and V-100 are row 18, `AmphibiousTank`; its BMP-1 is an
+ *  `AmphibiousCar` and its BTR-60 an `AmphibiousAPC`). The rows are each
+ *  mod's to number, so the name decides; a table extracted before the names
+ *  were carried falls back to vanilla's row 0. */
+export function tankRow(entry) {
+  if (entry?.equipment != null) return /^(amphibious)?tank$/i.test(String(entry.equipment));
+  return Number(entry?.equipmentType) === 0;
 }
 
 /** Whether a catalogue row is a tank (see the head of this file). `ai` is
@@ -59,7 +73,7 @@ export function isTank(row, ai = null) {
   // bot side) falls to the catalogue's rule below, without what its name
   // says is not a tank.
   const entry = ai && typeof ai === 'object' ? ai[row.name] : null;
-  if (entry) return String(entry.class).toLowerCase() === 'land' && Number(entry.equipmentType) === 0 && armourWeapon(entry);
+  if (entry) return String(entry.class).toLowerCase() === 'land' && tankRow(entry) && armourWeapon(entry);
   if (NOT_A_TANK.test(row.name)) return false;
   const hp = Number(row.hitpoints);
   if (!(hp >= 100 && hp <= 300)) return false;
@@ -73,9 +87,10 @@ const SIDE_GUN = /flam|he$|heat|trac|smoke|_alt|spotter|dummy/i;
 /** What a template's name says is not a tank, for a template the AI data
  *  lacks (and for a tree with none): FHSW's and FH's towed guns, batteries,
  *  howitzers, bunker and wooden turrets, radio and static props, dug-in
- *  hulls, mortar carriers, the M3A1 and Sd Kfz 251 half-tracks, and a gun
- *  named by its calibre (FH's `5cmKwK` emplacement). */
-export const NOT_A_TANK = /towed|battery|howitzer|turret|bunker|radio|static|dugin|artillery|mortar|^m3a1|^sdkfz\s*25[01]|^c7p|^\d+\s*(cm|mm)/i;
+ *  hulls, mortar carriers, the M3A1 and Sd Kfz 251 half-tracks, a gun
+ *  named by its calibre (FH's `5cmKwK` emplacement), and a bare anti-tank
+ *  gun (FH's towed `pak38`, whose `pak38Gun` reads as a hull's own gun). */
+export const NOT_A_TANK = /towed|battery|howitzer|turret|bunker|radio|static|dugin|artillery|mortar|^m3a1|^sdkfz\s*25[01]|^c7p|^\d+\s*(cm|mm)|^pak\s*\d+$/i;
 
 /** The tank's main gun's FireArms name: the one the AI data maps to a
  *  `...MainGun`, else the catalogue's first gun that is not a side gun. */

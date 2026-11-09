@@ -298,7 +298,11 @@ const collisionMeshes = existsSync(join(shared, 'collision-meshes.json')) ? JSON
 if (collisionMeshes && !collisionMeshes.mobility && existsSync(join(shared, 'part-mobility.json'))) {
   collisionMeshes.mobility = JSON.parse(readFileSync(join(shared, 'part-mobility.json'), 'utf8')).mobility;
 }
-const tables = existsSync(join(shared, 'damage.json')) ? JSON.parse(readFileSync(join(shared, 'damage.json'), 'utf8')) : null;
+// The level bake's copy of the damage tables, else the model pass's (the same
+// MaterialManager tables; the page falls back the same way), so a tree whose
+// levels are not baked can be measured.
+const damageAt = [join(shared, 'damage.json'), join(modelsDir, 'damage.json')].find(f => existsSync(f));
+const tables = damageAt ? JSON.parse(readFileSync(damageAt, 'utf8')) : null;
 
 const sheet = { mod: modId, made: 'surveys/tank_school_sheet.mjs', tanks: {} };
 for (const row of rows.filter(r => isTank(r, ai)).sort((a, b) => a.name.localeCompare(b.name))) {

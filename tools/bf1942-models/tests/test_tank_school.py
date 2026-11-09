@@ -94,7 +94,9 @@ class TankSchoolTests(unittest.TestCase):
     def test_the_game_s_ai_data_says_what_a_tank_is(self) -> None:
         # Equipment 0 with a weapon rated against armour: not a machine-gun
         # half-track, not an artillery battery; an oddly named mod tank is.
-        self.assertEqual(self.out["aiTanks"], ["Sherman", "OddTank", "Kingtiger", "M36"])
+        # A mod's own row is known by its name: an AmphibiousTank is in, an
+        # AmphibiousCar is out; a `T54Gun` is the T-54's gun; a bare Pak is out.
+        self.assertEqual(self.out["aiTanks"], ["Sherman", "OddTank", "Kingtiger", "M36", "PT76", "T54"])
         # A gun named with its load after it is still the gun; the HE one is a side gun.
         self.assertEqual(self.out["m36Gun"], "M36GunBarrelAP")
         self.assertEqual(self.out["aiGun"], "OddTankBarrelThing")
