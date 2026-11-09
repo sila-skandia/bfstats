@@ -29,10 +29,10 @@ All runs from a detached worktree; state file
 
 | Defect | Fix | Guard |
 |---|---|---|
-| A seat state at speed 0 (a still pose) divided by zero and aborted the seat-pose pass; the engine holds frame 0 | 29c07d3eb `extract_pose.clip_timeline` | `tests/test_bf1918_extract_fixes.py` |
-| `Font/BF1942.tga` is a 32-bit truecolour TGA; the `hud` step accepted 8-bit grey only | 29c07d3eb `bf42/font.py` | `tests/test_bf1918_extract_fixes.py` |
-| A weapon clip animates `load3`, a bone its skeleton lacks; the rig builder raised. The engine poses only the skeleton's bones | 29c07d3eb `extract_viewmodel.py` | the `viewmodels` step |
-| Nine levels keep their statics in `SP/MPStaticObjects.con` chosen on `game.gamemode`, and eight run `TrainGuideRails.con`, all from the root `StaticObjects.con`; the exporter read the root file alone, so they baked bare and the train had no rails. The host takes the MP arm | 245cd2636 `bf42/level.py`, `extract_map.py` | `tests/test_mode_statics.py` `HostGameModeTests` |
+| A seat state at speed 0 (a still pose) divided by zero and aborted the seat-pose pass; the engine holds frame 0 | b722d1870 `extract_pose.clip_timeline` | `tests/test_bf1918_extract_fixes.py` |
+| `Font/BF1942.tga` is a 32-bit truecolour TGA; the `hud` step accepted 8-bit grey only | b722d1870 `bf42/font.py` | `tests/test_bf1918_extract_fixes.py` |
+| A weapon clip animates `load3`, a bone its skeleton lacks; the rig builder raised. The engine poses only the skeleton's bones | b722d1870 `extract_viewmodel.py` | the `viewmodels` step |
+| Nine levels keep their statics in `SP/MPStaticObjects.con` chosen on `game.gamemode`, and eight run `TrainGuideRails.con`, all from the root `StaticObjects.con`; the exporter read the root file alone, so they baked bare and the train had no rails. The host takes the MP arm | 3faae2fe5 `bf42/level.py`, `extract_map.py` | `tests/test_mode_statics.py` `HostGameModeTests` |
 
 The nine bare levels: basra, besika_bucht, cassino, fao_landing, krakau,
 nuit_d_orage, vitry, ypern1914, ypres_streets. The train levels:
