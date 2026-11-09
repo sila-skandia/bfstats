@@ -1114,3 +1114,51 @@ python3 -m unittest discover -s tests -p "test_*.py" -q
 
 Then serve `viewer/` and open `poses.html`; keys 1/2/3 for stance, Q/W/E for
 motion.
+
+## 11. A mod's lower states carry the weapon's name (2026-11-10)
+
+Reported on `3cqup373fj` (FHSWEurope, manchuria-1945, recorded 2026-11-08 by
+an updated BF42++, `anim` table of 28,403 states): at 3:06 soldiers still
+glide, and one who stops and sets off again runs properly for a moment before
+gliding. **In the data and drawn from a guess: viewer-side.**
+
+- **The data** (`body_states.mjs --at 186 --window 8`): thirteen soldiers
+  with rows in the window, every one of them in a state the viewer did not
+  name. FHSW registers its lower machine per kit item, as the engine does the
+  torso's: `Lb_RunForwardArisaka`, `Lb_RunForwardMosinNagant`,
+  `Lb_StrafeRightTT33`, `Lb_CrouchArisaka`, `Lb_RunJumpSVT40`,
+  `Lb_WalkForwardLowerNormal_JPN`. 7,170 of the table's 28,403 states are
+  lower states; vanilla has 85, all weapon-free. The table still holds the
+  vanilla names (`Lb_RunForward` is index 14891) but no soldier is ever in
+  them. The transitions (`Lb_LieToCrouch`, `Lb_RunStandToLie`), the swim, the
+  ladder, the blast and the parachute keep vanilla's names.
+- **What the page drew.** `recordedGait` matched the vanilla names exactly, so
+  every one of those states returned null and the legs fell to the speed
+  bands, the path section 10 replaced for vanilla: a beat late, unable to say
+  backward, and run -> walk -> run on the backward run's speed. The audit
+  (`audit_replay_states.mjs`, live, 170-200 s) judged only the 18 `Lb_Stand`,
+  the transitions and `Lb_Lie` episodes and skipped the rest, since a state
+  with no family has nothing to be judged against; it was blind to every FHSW
+  soldier on foot. A playing probe of the live page following pid 17 from
+  176 s drew `run.lower` for his `Lb_RunForwardArisaka`, so the speed path
+  does draw a run for a followed man; what it does for the rest of the field
+  was not measured before the change.
+- **The fix** (`remote-gait.js` `lowerBase`): a recorded lower state is read
+  as the vanilla gait or transition state it extends, the longest vanilla
+  name it begins with, unless what follows is one of vanilla's own
+  continuations (`Lb_CrouchTurnLeft`, `Lb_StandInVehicle`) or a mod's seat or
+  mount (`Lb_StandATgunGunner`, `Lb_StandVehiclePushRun`), which stay their
+  own. `recordedGait`, `recordedStanceEntry`, `recordedClip` (so
+  `Lb_RunJumpSVT40` plays the jump clip and `Lb_RunBackwardArisaka` the
+  backward run) and `lowerHeldByLod` (a bot resting in `Lb_CrouchArisaka`)
+  all read through it. Vanilla names read as themselves, so 8t224pppqe is
+  unchanged.
+- **Measured** (`audit_replay_states.mjs --recording 3cqup373fj --from 170
+  --to 200 --serve viewer`): 69 of 69 lower-state episodes drawn across 38
+  states, 30 of them weapon-suffixed (`Lb_RunForwardArisaka` 3 of 3,
+  `Lb_RunBackwardArisaka` 4 of 4, `Lb_RunJumpSVT40` 3 of 3,
+  `Lb_CrouchStrafeLeftArisaka` 2 of 2...). The two `bolt` torso misses are on
+  the live page too and are a separate FHSW finding
+  (`features/fhsweurope-extraction/README.md`, 2026-11-10).
+- **Tests**: `test_remote_gait.py`
+  `test_a_mods_weapon_named_lower_state_is_the_vanilla_state_it_extends`.

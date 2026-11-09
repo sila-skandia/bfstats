@@ -279,6 +279,26 @@ install ships (274) is live. A publish of this tree must stage `maps.json`
 without it (copy the file, never hard-link it: a running bake rewrites it in
 place) and set `models/mods.json`'s fhsweurope `maps` count to 274.
 
+## 2026-11-10: soldiers on foot glide, the lower states carry the weapon's name
+
+`3cqup373fj` (manchuria-1945, recorded 2026-11-08 by an updated BF42++, the
+first FHSW upload with a state table; the API turned the earlier ones away,
+see `api/Recordings/RecordingInspector.cs` `MaxLineBytes`). At 3:06 the
+soldiers glide, and a man who stops and sets off runs for a moment, then
+glides. **Viewer-side.** FHSW registers its lower animation states per kit
+item (`Lb_RunForwardArisaka`, `Lb_CrouchMosinNagant`, `Lb_RunJumpSVT40`:
+7,170 lower states of 28,403), and the replay named gaits by vanilla's exact
+names, so every FHSW soldier on foot fell to the speed guess and the state
+audit judged none of them. Fixed in `viewer/remote-gait.js` (`lowerBase`);
+the audit on 170-200 s now judges 69 of 69 lower-state episodes drawn.
+`features/soldier-locomotion-animation/README.md` section 11.
+
+Still open from the same window: **`bolt 0 of 2`** on the torso, live and
+local alike. FHSW hands a rifle's fire to `Ub_StandBoltOperate<W>` and the
+page draws no bolt for the two episodes judged; whether the FHSW grip
+bundles carry the clip under that name is the next check
+(`extract_pose.py` `UPPER_ACTIONS`).
+
 ## 2026-10-27 night: flag, spawn and bot findings from the behaviour audit
 
 Four rows from `audit_behaviour.mjs --quick`, each reproduced alone, fixed and

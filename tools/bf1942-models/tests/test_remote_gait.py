@@ -293,6 +293,52 @@ class RecordedLowerStateTests(unittest.TestCase):
         self.assertIsNone(self.out["recordedGait"]["Lb_ParachuteFall"])
         self.assertEqual([None, None, None], self.out["recordedGaitNone"])
 
+    def test_a_mods_weapon_named_lower_state_is_the_vanilla_state_it_extends(self) -> None:
+        """FHSW puts the item's name on its lower states as the engine does on
+        the torso's (3cqup373fj, manchuria-1945, 2026-11-08: every soldier on
+        foot ran in `Lb_RunForwardArisaka`, `Lb_RunForwardMosinNagant`...,
+        never `Lb_RunForward`). Read by their exact names none named a gait, so
+        they fell to the speed bands and the audit judged none of them."""
+        base = self.out["lowerBase"]
+        for name, want in {
+            "Lb_RunForwardArisaka": "Lb_RunForward", "Lb_RunForwardMosinNagant": "Lb_RunForward",
+            "Lb_RunForwardLowerNormal_JPN": "Lb_RunForward", "Lb_RunBackwardArisaka": "Lb_RunBackward",
+            "Lb_RunJumpSVT40": "Lb_RunJump", "Lb_RunJumpSmokeGren_RDG2": "Lb_RunJump",
+            "Lb_StrafeLeftTT33": "Lb_StrafeLeft", "Lb_StrafeRightArisaka": "Lb_StrafeRight",
+            "Lb_WalkForwardArisaka": "Lb_WalkForward", "Lb_CrouchArisaka": "Lb_Crouch",
+            "Lb_CrouchForwardType99": "Lb_CrouchForward", "Lb_CrouchStrafeLeftMosinNagant": "Lb_CrouchStrafeLeft",
+            # Vanilla's own read as themselves, whatever the case.
+            "Lb_RunForward": "Lb_RunForward", "Lb_Crouch": "Lb_Crouch", "Lb_LieToCrouch": "Lb_LieToCrouch",
+            "Lb_RunStandToLie": "Lb_RunStandToLie", "LB_CROUCHARISAKA": "Lb_Crouch",
+            "Lb_Stand": "Lb_Stand", "Lb_StandJump": "Lb_StandJump", "Lb_StandRelax": "Lb_StandRelax",
+        }.items():
+            self.assertEqual(want, base[name], name)
+        # Vanilla's continuations, a mod's seats and mounts, and the states
+        # that extend no gait are their own, as before.
+        for name in ("Lb_CrouchTurnLeft", "Lb_LieTurnRight", "Lb_StandInVehicle", "Lb_StandATgunGunner",
+                     "Lb_StandVehiclePushRun", "Lb_LowTripodGunnerLieStrafeLeft", "Lb_StartSwim",
+                     "Lb_ClimbLadder1", "Lb_DieBackStand", "Lb_ExplosionForward", ""):
+            self.assertIsNone(base[name], name)
+        gait = self.out["recordedGaitMod"]
+        self.assertEqual({"family": "run", "reverse": False}, gait["Lb_RunForwardArisaka"])
+        self.assertEqual({"family": "run", "reverse": True}, gait["Lb_RunBackwardArisaka"])
+        self.assertEqual({"family": "run", "reverse": False}, gait["Lb_StrafeRightArisaka"])
+        self.assertEqual({"family": "run", "reverse": False}, gait["Lb_RunJumpSVT40"])
+        self.assertEqual({"family": "walk", "reverse": False}, gait["Lb_WalkForwardArisaka"])
+        self.assertEqual({"family": "crouch", "reverse": False}, gait["Lb_CrouchArisaka"])
+        self.assertEqual({"family": "crouchwalk", "reverse": False}, gait["Lb_CrouchForwardType99"])
+        self.assertEqual({"family": "crouchwalk", "reverse": False}, gait["Lb_CrouchStrafeLeftMosinNagant"])
+        for name in ("Lb_StandInVehicle", "Lb_StandVehiclePushRun", "Lb_CrouchTurnLeft"):
+            self.assertIsNone(gait[name], name)
+        clip = self.out["recordedClipMod"]
+        self.assertEqual("Lb_RunJump", clip["runJump"])
+        self.assertEqual("Lb_RunBackward", clip["runBackward"])
+        self.assertIsNone(clip["runForward"])
+        entry = self.out["recordedStanceEntryMod"]
+        self.assertEqual({"from": "crouch", "to": "prone", "backward": False}, entry["crouchToLie"])
+        self.assertEqual({"from": "stand", "to": "prone", "backward": False}, entry["dive"])
+        self.assertIsNone(entry["chainGoesOn"])
+
     def test_replay_gait_reads_the_state_before_the_speed(self) -> None:
         g = self.out["recordedReplayGait"]
         self.assertEqual("run", g["runBackwardSlow"])     # the speed said walk

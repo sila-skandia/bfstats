@@ -10,6 +10,7 @@ import { CHARACTER_HEIGHT, POSE_CAMERA_POS } from './soldier-pose.js';
 import { EXPLOSION_AIRBORNE, PARACHUTE_AIRBORNE } from './knockback.js';
 import { ROCKETEERING_AIRBORNE } from './rocket-pack.js';
 import { RADIO_MESSAGES } from './radio.js';
+import { lowerBase } from './remote-gait.js';
 
 // --- conventions --------------------------------------------------------------
 
@@ -2334,7 +2335,7 @@ export function lodAt(rec, pid, t) {
  * knockback is the engine's own at any LOD and is kept.
  */
 export function lowerHeldByLod(rec, pid, lower, t) {
-  if (typeof lower !== 'string' || !RESTING_LOWER.test(lower)) return false;
+  if (typeof lower !== 'string' || !RESTING_LOWER.test(lowerBase(lower) ?? lower)) return false;
   return (lodAt(rec, pid, t) ?? 0) >= 1;
 }
 

@@ -76,7 +76,7 @@ for (const [nid, entries] of rec.stances ?? []) {
     template: life?.tmpl ?? null,
     alive: life ? at >= life.created && (life.diedAt === undefined || at < life.diedAt) : null,
     bodyAtT: body ? {
-      stance: body.stance, lower: body.lower?.name ?? null, upper: body.upper?.name ?? null,
+      stance: body.stance, lower: body.lower ?? null, upper: body.upper ?? null,
       firing: body.firing, reloading: body.reloading, item: body.item ?? null,
     } : null,
     changes: inWindow.map(e => ({

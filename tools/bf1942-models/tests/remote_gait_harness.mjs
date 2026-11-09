@@ -9,7 +9,7 @@
 
 import {
   BANDS, FALLBACKS, FAMILY_CLIPS, TOP_SPEED, WALK_FACTOR,
-  recordedAction, recordedClip, recordedGait, recordedStanceEntry, remoteClipFamily, remoteGait, replayGait, resolveRemoteGait,
+  lowerBase, recordedAction, recordedClip, recordedGait, recordedStanceEntry, remoteClipFamily, remoteGait, replayGait, resolveRemoteGait,
 } from './remote-gait.js';
 
 // What a published rig really binds: the pose pair's three clips plus the four
@@ -124,6 +124,35 @@ out.recordedGait = Object.fromEntries([
   'Lb_LieToStand', 'LB_RUNFORWARD', 'Lb_StartSwim', 'Lb_ParachuteFall',
 ].map(name => [name, recordedGait(name)]));
 out.recordedGaitNone = [recordedGait(null), recordedGait(undefined), recordedGait('')];
+// A mod's lower states with the item's name on them (FHSW, 3cqup373fj
+// manchuria-1945: 7,170 of its 28,403 states are lower, per kit item), read
+// as the vanilla state each extends; vanilla's own continuations and a mod's
+// seats and gun mounts are states of their own, as before.
+out.lowerBase = Object.fromEntries([
+  'Lb_RunForwardArisaka', 'Lb_RunForwardMosinNagant', 'Lb_RunForwardLowerNormal_JPN', 'Lb_RunBackwardArisaka',
+  'Lb_RunJumpSVT40', 'Lb_RunJumpSmokeGren_RDG2', 'Lb_StrafeLeftTT33', 'Lb_StrafeRightArisaka',
+  'Lb_WalkForwardArisaka', 'Lb_CrouchArisaka', 'Lb_CrouchForwardType99', 'Lb_CrouchStrafeLeftMosinNagant',
+  'Lb_RunForward', 'Lb_Crouch', 'Lb_LieToCrouch', 'Lb_RunStandToLie', 'LB_CROUCHARISAKA',
+  'Lb_Stand', 'Lb_StandJump', 'Lb_StandRelax',
+  'Lb_CrouchTurnLeft', 'Lb_LieTurnRight', 'Lb_StandInVehicle', 'Lb_StandATgunGunner', 'Lb_StandVehiclePushRun',
+  'Lb_LowTripodGunnerLieStrafeLeft', 'Lb_StartSwim', 'Lb_ClimbLadder1', 'Lb_DieBackStand', 'Lb_ExplosionForward', '',
+].map(name => [name, lowerBase(name)]));
+out.recordedGaitMod = Object.fromEntries([
+  'Lb_RunForwardArisaka', 'Lb_RunBackwardArisaka', 'Lb_StrafeRightArisaka', 'Lb_RunJumpSVT40',
+  'Lb_WalkForwardArisaka', 'Lb_CrouchArisaka', 'Lb_CrouchForwardType99', 'Lb_CrouchStrafeLeftMosinNagant',
+  'Lb_StandInVehicle', 'Lb_StandVehiclePushRun', 'Lb_CrouchTurnLeft',
+].map(name => [name, recordedGait(name)]));
+out.recordedClipMod = {
+  runJump: recordedClip('Lb_RunJumpSVT40', 'lower'),
+  runBackward: recordedClip('Lb_RunBackwardArisaka', 'lower'),
+  runForward: recordedClip('Lb_RunForwardArisaka', 'lower'),
+};
+out.recordedStanceEntryMod = {
+  // The transitions keep vanilla's names; the state before one may not.
+  crouchToLie: recordedStanceEntry('Lb_CrouchToLie', 'Lb_CrouchArisaka'),
+  dive: recordedStanceEntry('Lb_RunStandToLie', 'Lb_RunForwardArisaka'),
+  chainGoesOn: recordedStanceEntry('Lb_CrouchToLie', 'Lb_StandToLie'),
+};
 out.recordedReplayGait = {
   // A backward run at the speed that sat on the run band: the state says run.
   runBackwardSlow: replayGait(3.9, { stance: 'stand', lower: 'Lb_RunBackward' }),

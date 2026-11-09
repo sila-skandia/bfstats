@@ -213,7 +213,8 @@ export function replayGait(speed, body) {
  *  * **the legs running forward while he backs off.** No band says backward.
  *
  * The names are vanilla's (`animations/AnimationStates*.con`, read through
- * `bf42/animstates.py`), which the mods keep: the strafes are the forward run
+ * `bf42/animstates.py`), read through `lowerBase` for a mod that puts the
+ * weapon's name on them: the strafes are the forward run
  * clip at 1.3 (`Lb_StrafeLeft 3PRunLower.baf 1.3`, so `run`, forward), every
  * `*Backward` lower state is its forward clip at a negative rate
  * (`Lb_WalkBackward 3PWalkLower.baf -1.0`, `Lb_CrouchBackward -0.8`,
@@ -231,13 +232,66 @@ export function replayGait(speed, body) {
  */
 export function recordedGait(lower) {
   if (typeof lower !== 'string' || !lower) return null;
-  const key = lower.toLowerCase();
+  const key = (lowerBase(lower) ?? lower).toLowerCase();
   const reverse = /backward$/.test(key);
   for (const [pattern, family] of RECORDED_LOWER) {
     if (pattern.test(key)) return { family, reverse };
   }
   return null;
 }
+
+/**
+ * The vanilla lower state a recorded lower state extends, or null for one
+ * that extends none.
+ *
+ * Vanilla's lower states are weapon-free (`Lb_RunForward`, `Lb_Crouch`; 85 in
+ * all), and only the torso's carry the item (`Ub_RunForwardThompson`). FHSW
+ * registers a lower state per item as well: `Lb_RunForwardArisaka`,
+ * `Lb_CrouchMosinNagant`, `Lb_RunJumpSVT40`, `Lb_StrafeLeftTT33`,
+ * `Lb_WalkForwardLowerNormal_JPN`, 7,170 lower states of the 28,403 on
+ * 3cqup373fj (manchuria-1945, 2026-11-08), and its soldiers run, strafe and
+ * crouch in those, never in the vanilla names, which its table still holds.
+ * Read by their exact names, none of them named a gait, so every FHSW soldier
+ * on foot fell to the speed bands, which draw a run a beat late and cannot say
+ * backward, and the audit (`audit_replay_states.mjs`) judged none of them.
+ * The transitions (`Lb_LieToCrouch`), the swim, the ladder, the blast and the
+ * parachute keep vanilla's names in every mod seen.
+ *
+ * The base is the longest vanilla gait or transition state the name begins
+ * with, unless what follows is one of vanilla's own continuations
+ * (`Lb_CrouchTurnLeft`, `Lb_StandInVehicle`) or a mod's seat or gun mount
+ * (`Lb_StandATgunGunner`, `Lb_StandVehiclePushRun`), which are states of
+ * their own, as they were. A vanilla name reads as itself.
+ */
+export function lowerBase(lower) {
+  if (typeof lower !== 'string' || !lower) return null;
+  const key = lower.toLowerCase();
+  for (const [prefix, name] of VANILLA_LOWER) {
+    if (!key.startsWith(prefix)) continue;
+    const rest = key.slice(prefix.length);
+    if (rest && OWN_CONTINUATION.test(rest)) return null;
+    return name;
+  }
+  return null;
+}
+
+/** Vanilla's gait and transition lower states, longest name first, so
+ *  `Lb_CrouchForward<W>` is the crouch-walk and not the crouch. */
+const VANILLA_LOWER = Object.freeze([
+  'Lb_Stand', 'Lb_StandRelax', 'Lb_StandJump',
+  'Lb_WalkForward', 'Lb_WalkBackward',
+  'Lb_RunForward', 'Lb_RunBackward', 'Lb_RunJump', 'Lb_RunJumpBackward',
+  'Lb_StrafeLeft', 'Lb_StrafeRight',
+  'Lb_Crouch', 'Lb_CrouchForward', 'Lb_CrouchBackward', 'Lb_CrouchStrafeLeft', 'Lb_CrouchStrafeRight',
+  'Lb_Lie', 'Lb_LieForward', 'Lb_LieBackward', 'Lb_LieStrafeLeft', 'Lb_LieStrafeRight',
+  'Lb_StandToCrouch', 'Lb_CrouchToStand', 'Lb_StandToLie', 'Lb_CrouchToLie',
+  'Lb_LieToCrouch', 'Lb_LieToStand', 'Lb_RunStandToLie',
+].sort((a, b) => b.length - a.length).map(name => [name.toLowerCase(), name]));
+
+/** What may follow a vanilla state's name and still be another state, not an
+ *  item: vanilla's turns and seat (`Lb_LieTurnLeft`, `Lb_StandInVehicle`),
+ *  and FHSW's gun mounts and vehicle pushing. */
+const OWN_CONTINUATION = /^(turn|invehicle|atgun|vehicle)/;
 
 const RECORDED_LOWER = Object.freeze([
   [/^lb_lie(forward|backward)$/, 'crawl'],
@@ -277,10 +331,10 @@ const RECORDED_LOWER = Object.freeze([
  */
 export function recordedStanceEntry(lower, previous = null) {
   if (typeof lower !== 'string') return null;
-  const key = lower.toLowerCase();
+  const key = (lowerBase(lower) ?? lower).toLowerCase();
   const entry = RECORDED_ENTRY[key];
   if (!entry) return null;
-  const prev = typeof previous === 'string' ? previous.toLowerCase() : null;
+  const prev = typeof previous === 'string' ? (lowerBase(previous) ?? previous).toLowerCase() : null;
   if (prev && CHAIN_NEXT[prev] === key) return null;
   return entry;
 }
@@ -315,7 +369,8 @@ const CHAIN_NEXT = Object.freeze({
  * the old grip's pose instead of cutting to `Ub_StandRaiseWeapon<W>`
  * (8t224pppqe, pid 1, 26.86-27.73 and the 28 s of `Lb_RunBackward`).
  *
- * The lower states are weapon-free and keep their names. An upper state
+ * The lower states are weapon-free in vanilla and keep their names; a mod's
+ * `Lb_RunJumpSVT40` is read as `Lb_RunJump` (`lowerBase`). An upper state
  * carries the item it belongs to (`Ub_StandRaiseWeaponKnifeAxis`), and the
  * bundle files it without (`Ub_StandRaiseWeapon`): `weapon` is the item the
  * drawn body holds, and a state of another item -- the knife's draw, recorded
@@ -332,7 +387,7 @@ const CHAIN_NEXT = Object.freeze({
  */
 export function recordedClip(state, half, weapon = null) {
   if (typeof state !== 'string' || !state) return null;
-  if (half === 'lower') return RECORDED_LOWER_CLIPS.get(state.toLowerCase()) ?? null;
+  if (half === 'lower') return RECORDED_LOWER_CLIPS.get((lowerBase(state) ?? state).toLowerCase()) ?? null;
   if (half !== 'upper') return null;
   const m = RECORDED_UPPER_CLIP.exec(state);
   if (!m) return null;
