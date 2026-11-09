@@ -443,6 +443,7 @@ try
         builder.Configuration.GetSection(api.Recordings.RecordingsOptions.Section));
     builder.Services.AddSingleton<api.Recordings.IRecordingStorage, api.Recordings.RecordingStorage>();
     builder.Services.AddScoped<api.Recordings.IRecordingService, api.Recordings.RecordingService>();
+    builder.Services.AddScoped<api.Recordings.IRecordingEditService, api.Recordings.RecordingEditService>();
     builder.Services.AddScoped<api.Recordings.IRecordingUploadService, api.Recordings.RecordingUploadService>();
     builder.Services.AddScoped<api.Recordings.IRecordingRoundService, api.Recordings.RecordingRoundService>();
     builder.Services.AddScoped<api.Recordings.IRecordingStatsRoundService, api.Recordings.RecordingStatsRoundService>();

@@ -74,6 +74,7 @@ public class PlayerTrackerDbContext : DbContext
     public DbSet<Recording> Recordings { get; set; }
     public DbSet<RecordingComment> RecordingComments { get; set; }
     public DbSet<RecordingCommentReaction> RecordingCommentReactions { get; set; }
+    public DbSet<RecordingEdit> RecordingEdits { get; set; }
     public DbSet<RecordingView> RecordingViews { get; set; }
     public DbSet<RecordingFingerprint> RecordingFingerprints { get; set; }
     public DbSet<RecordingRoundLink> RecordingRoundLinks { get; set; }
@@ -1502,6 +1503,26 @@ public class PlayerTrackerDbContext : DbContext
             comment.HasOne(c => c.Author)
                 .WithMany()
                 .HasForeignKey(c => c.AuthorUserId)
+                .OnDelete(DeleteBehavior.Restrict);
+        });
+
+        // A creator's edit of a clip, opened from a link (features/replay-creator-view,
+        // "Sharing an edit"): found by its code; gone with its recording.
+        modelBuilder.Entity<RecordingEdit>(edit =>
+        {
+            edit.HasKey(e => e.Id);
+            edit.HasIndex(e => e.Code).IsUnique();
+            edit.HasIndex(e => e.RecordingId);
+            edit.Property(e => e.Code).HasMaxLength(16);
+            edit.Property(e => e.Name).HasMaxLength(api.Recordings.RecordingEditService.MaxName);
+            edit.Property(e => e.CreatedAt).HasConversion(v => FormatInstant(v), v => ParseInstant(v));
+            edit.HasOne(e => e.Recording)
+                .WithMany()
+                .HasForeignKey(e => e.RecordingId)
+                .OnDelete(DeleteBehavior.Cascade);
+            edit.HasOne(e => e.Author)
+                .WithMany()
+                .HasForeignKey(e => e.AuthorUserId)
                 .OnDelete(DeleteBehavior.Restrict);
         });
 

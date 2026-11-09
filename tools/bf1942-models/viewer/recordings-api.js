@@ -292,6 +292,16 @@ export function createRecordingsApi(api) {
     base,
     mode,
     shareShort,
+    /** A creator's edit of a clip of shared recording `slug` (features/
+     *  replay-creator-view, "Sharing an edit"): `{ name, edit }`. Resolves
+     *  with the kept edit, its `code` and its `link`. */
+    shareEdit(slug, { name, edit }) {
+      return request(`/stats/recordings/${encodeURIComponent(slug)}/edits`, { method: 'POST', json: { name, edit }, auth: true });
+    },
+    /** A shared edit by its code: `{ code, slug, name, authorName, edit, link }`. */
+    edit(code) {
+      return request(`/stats/recording-edits/${encodeURIComponent(code)}`);
+    },
     /** Sharing and commenting are possible here: not a remote API read from this PC. */
     get canWrite() { return mode !== 'remote'; },
     get signedIn() { return Boolean(session); },

@@ -1910,3 +1910,51 @@ on two plays, 40.92 s and 40.83 s into the video on the very first play; the
 start trimmed to 4:29.5 (0.09x worked out), 40.68 s. The Open note above
 ("Play the clip once after changing its slow motion") no longer applies to
 bombs.
+
+### Sharing an edit (2026-11-09)
+
+The owner: "I really want to share a clip with someone. The creator in this
+case wants to create the content, how can I share them my edit? If they
+need to upload the song themselves that's fine, but the framing and
+everything would be excellent to share ... via discord link."
+
+- **Share this edit** (Export tab, `buildShare`): a name (the kill's words by
+  default), the button, and the link with Copy. `ReplayCreator.editPayload`
+  is everything a kept clip carries plus the pin, the bullet time, the frame
+  and the song's name and offset (never the song); `shareEdit` posts it
+  against the shared round (`recordings-api.js` `shareEdit`). A round not on
+  bfstats.io, or read from another site, says so instead.
+- **The API** (`api/Recordings`: `RecordingEdit`, `RecordingEditService`,
+  `RecordingEditsController`, migration `AddRecordingEdits`): `POST
+  /stats/recordings/{slug}/edits` (signed in; an object of at most 64 KB; a
+  name cut to 80 characters; shared under the account's first linked name,
+  or none) answers `{ code, link, ... }`; `GET /stats/recording-edits/{code}`
+  is public. An edit goes with its recording.
+- **The link** is the recording's short link with `?edit=<code>`:
+  `replay.bfstats.io/<slug>?edit=<code>`. HAProxy already sends the short
+  link and its query to `/replay/{slug}`, which now names the edit for an
+  unfurl ("Mustang bomb · skandia's edit", "An edit of <recording> · ...")
+  and goes on to `map.html?...&edit=<code>`. An edit of another recording is
+  ignored there and the link is the recording's own.
+- **Opening it** (`fetchLinkedEdit`, `openPendingEdit`, `openEdit`): fetched
+  as the creator view is granted, opened on the first frame the replay runs:
+  the clip through `useClip`, then the bullet time, frame and pin; the studio
+  shows who it came from, and Music names the song and its offset for the
+  viewer to add their own copy. The studio's first-time tour is not offered
+  over it (it would make a clip of its own in its place). Changes are the
+  viewer's own; sharing again makes a new link.
+
+Verified: `tests/api/Recordings/RecordingEditTests.cs` and a short link test
+in `RecordingsControllerTests.cs` (kept and read back by code in any case,
+the link, the author's name or none, a name not theirs refused, not an
+object or too big refused, the unfurl's title, description, url and
+refresh, an edit of another recording ignored). In headless Chromium against
+a local API (`api-replay-feed`) with the Bocage round uploaded: the Bocage
+kill shot with Game chase cameras, the pin at 0:41, a cinematic grade, a
+title, 9:16 and a song at 1.5 s; Share this edit by the mouse answered
+`replay.bfstats.io/rmp5uanuzx?edit=djqufk8z` (798 bytes kept); the short
+link's page titled it "BF6 · Mustang Bomb · kills Onzz · 126 m · skandia's
+edit"; with the browser's storage cleared, `&edit=djqufk8z` opened the studio
+on the same start (263.058), cameras, slow motion, pin (the hit at 41.000),
+grade, title, frame, and "This edit was cut to riff-drums-41.mp3, from 0:01.5
+of it. Add your copy to hear it."

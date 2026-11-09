@@ -77,9 +77,13 @@ public class RecordingsController(
     /// <summary>A recording's short link (features/replay-feed, "Short links"): HAProxy sends
     /// <c>replay.bfstats.io/&lt;slug&gt;</c> and the play host's <c>/replay/&lt;slug&gt;</c> here. A
     /// page that goes on to the replay at <c>?t=</c>, with the title, round and cover for
-    /// whatever unfurls the link. A slug retyped in capitals still finds its recording.</summary>
+    /// whatever unfurls the link. A slug retyped in capitals still finds its recording.
+    /// <c>?edit=</c> names a creator's edit of a clip of it (features/replay-creator-view,
+    /// "Sharing an edit"): the unfurl names the edit, and the replay opens it.</summary>
     [HttpGet("/replay/{slug}")]
-    public async Task<ContentResult> ShortLink(string slug, [FromQuery] string? t, CancellationToken ct)
+    public async Task<ContentResult> ShortLink(
+        string slug, [FromQuery] string? t, CancellationToken ct, [FromQuery] string? edit = null,
+        [FromServices] IRecordingEditService? edits = null)
     {
         var detail = RecordingStorage.CleanSlug(slug.ToLowerInvariant()) is { } clean
             ? await recordings.GetAsync(clean, null, ct)
@@ -97,8 +101,13 @@ public class RecordingsController(
             };
         }
         Response.Headers.CacheControl = "public, max-age=300";
+        // An edit of another recording, or none by that code, is the recording's own link.
+        var shared = edits is not null && RecordingEditService.CleanCode(edit) is { } code
+            ? await edits.GetAsync(code, ct)
+            : null;
+        if (shared is not null && shared.Slug != detail.Slug) shared = null;
         return Content(
-            RecordingShortLink.Page(detail, play, options.Value.ShortLinkOrigin.TrimEnd('/'), RecordingShortLink.Moment(t)),
+            RecordingShortLink.Page(detail, play, options.Value.ShortLinkOrigin.TrimEnd('/'), RecordingShortLink.Moment(t), shared),
             "text/html; charset=utf-8");
     }
 

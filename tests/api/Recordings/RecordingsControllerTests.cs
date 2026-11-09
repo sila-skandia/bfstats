@@ -104,6 +104,33 @@ public sealed class RecordingsControllerTests : IDisposable
         Assert.StartsWith("default-src 'none'", controller.Response.Headers.ContentSecurityPolicy.ToString());
     }
 
+    /// <summary>A short link with <c>?edit=</c> (features/replay-creator-view, "Sharing an
+    /// edit") names the edit and who cut it, and the replay it goes on to opens it; an edit of
+    /// another recording is not this one's, and the link is the recording's own.</summary>
+    [Fact]
+    public async Task ShortLink_WithAnEdit_NamesIt_AndOpensIt()
+    {
+        recordings.GetAsync(Slug, null, Arg.Any<CancellationToken>()).Returns(Detail());
+        var edits = Substitute.For<IRecordingEditService>();
+        using var doc = System.Text.Json.JsonDocument.Parse("{}");
+        edits.GetAsync("k3f9ab2c", Arg.Any<CancellationToken>()).Returns(new RecordingEditDto(
+            "k3f9ab2c", Slug, "Mustang bomb", "skandia", "2026-11-09T08:00:00Z", doc.RootElement.Clone(),
+            "https://replay.bfstats.io/abcdefghjk?edit=k3f9ab2c"));
+        edits.GetAsync("zzzzzzzz", Arg.Any<CancellationToken>()).Returns(new RecordingEditDto(
+            "zzzzzzzz", "otherslugx", "Not this one", "Rut", "2026-11-09T08:00:00Z", doc.RootElement.Clone(), ""));
+
+        var html = (await controller.ShortLink(Slug, null, CancellationToken.None, "K3F9AB2C", edits)).Content!;
+
+        Assert.Contains("&amp;edit=k3f9ab2c\">", html);
+        Assert.Contains("<meta property=\"og:title\" content=\"Mustang bomb · skandia&#x27;s edit\">", html);
+        Assert.Contains("<meta property=\"og:url\" content=\"https://replay.bfstats.io/abcdefghjk?edit=k3f9ab2c\">", html);
+        Assert.Contains("<meta property=\"og:description\" content=\"An edit of Bocage on MoonGamers.com · Bocage", html);
+
+        var other = (await controller.ShortLink(Slug, null, CancellationToken.None, "zzzzzzzz", edits)).Content!;
+        Assert.DoesNotContain("edit=", other);
+        Assert.Contains("<meta property=\"og:title\" content=\"Bocage on MoonGamers.com\">", other);
+    }
+
     /// <summary>A recording with no cover of its own shows its round's; with none at all, the
     /// unfurl is text.</summary>
     [Fact]

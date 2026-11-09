@@ -196,7 +196,9 @@ export class Studio {
     creator.clipbar.fit();
     creator.clipbar.sync(creator.player.time, true);
     ui.flash('Studio · click a camera on the strip to change it, drag from the tray, Esc to leave', 3200);
-    this.withTour(tour => tour.offer());
+    // Not over a shared edit just opened from a link: the tour makes a clip
+    // of its own, and would take the edit's place. Help still has it.
+    if (!creator.sharedFrom) this.withTour(tour => tour.offer());
   }
 
   /** The tour (replay-studio-tour.js), made the first time it is wanted; an
@@ -1354,10 +1356,63 @@ export class Studio {
         : 'Keep two clips or more for a montage.';
     });
     page.append(
+      this.buildShare(),
       this.buildMusic(),
       this.group('Export', rec, thumb, facts, this.note('Recording plays the clip in real time, slow motion included, and saves it when it ends. Keep other windows quiet while it runs.')),
       this.group('Kept clips', keep, this.clipList, montage, montageNote),
     );
+  }
+
+  /** Sharing the edit (features/replay-creator-view, "Sharing an edit"): the
+   *  clip's cameras, slow motion, pin, look, text and effects kept on
+   *  bfstats.io against the shared round, and a link that opens them in the
+   *  studio. The song is named, never sent. */
+  buildShare() {
+    const creator = this.creator;
+    const [nameRow, nameInput] = this.textInput('Name', () => this.shareName ?? creator.editName(), v => { this.shareName = v; }, '', 80);
+    nameInput.title = 'What the link is called where it is pasted';
+    const out = el('div', 'st-sharelink');
+    out.hidden = true;
+    const link = el('input', 'st-sharebox');
+    link.readOnly = true;
+    link.setAttribute('aria-label', 'The edit\'s link');
+    const copy = this.btn('Copy', 'Copy the link', () => this.copyLink(link.value, status), 'st-small');
+    out.append(link, copy);
+    const status = el('p', 'st-note st-sharestatus', '');
+    const go = this.btn('Share this edit', 'Keep this edit on bfstats.io and copy a link that opens it in the studio', () => {
+      go.disabled = true;
+      status.textContent = 'Sharing...';
+      status.classList.remove('bad');
+      creator.shareEdit((this.shareName ?? creator.editName()).trim() || creator.editName()).then(made => {
+        link.value = made.link;
+        out.hidden = false;
+        this.copyLink(made.link, status, `Shared as ${made.name}. The link is copied: paste it in Discord or send it.`);
+      }).catch(error => {
+        status.classList.add('bad');
+        status.textContent = error?.status === 401
+          ? 'Sign in on bfstats.io to share an edit.'
+          : error?.message || 'The edit could not be shared.';
+      }).finally(() => { go.disabled = false; });
+    }, 'st-wide', 'film');
+    const from = this.note('');
+    this.syncs.push(() => {
+      const f = creator.sharedFrom;
+      from.hidden = !f;
+      if (f) from.textContent = `Opened from ${f.authorName ? `${f.authorName}'s` : 'a shared'} edit, ${f.name}. Your changes are yours: share them as a new link.`;
+    });
+    const what = this.note('Shares the clip, its cameras (yours too), slow motion, the hit\'s pin, look, text and effects. The song is named, not sent.');
+    return this.group('Share this edit', from, nameRow, go, out, status, what);
+  }
+
+  /** `text` to the clipboard, and `said` (or a word that it is) in `status`. */
+  copyLink(text, status, said = 'Link copied') {
+    status.classList.remove('bad');
+    const done = () => { status.textContent = said; };
+    try {
+      navigator.clipboard.writeText(text).then(done, () => { status.textContent = `${said.replace(/ The link is copied:.*/, '')} Copy the link above.`; });
+    } catch {
+      status.textContent = 'Copy the link above.';
+    }
   }
 
   /** A song to hear the clip with (replay-music.js): the track the clip is
@@ -1400,7 +1455,10 @@ export class Studio {
       const on = music.loaded;
       add.lastChild.textContent = on ? 'Change the song' : 'Add a song';
       const d = music.duration;
-      name.textContent = on ? `${music.name}${Number.isFinite(d) ? ` · ${videoTime(d)}` : ''}${music.error ? ` · ${music.error}` : ''}` : 'Hear the clip with the track you are cutting it to.';
+      const cutTo = creator.sharedSong;
+      name.textContent = on ? `${music.name}${Number.isFinite(d) ? ` · ${videoTime(d)}` : ''}${music.error ? ` · ${music.error}` : ''}`
+        : cutTo ? `This edit was cut to ${cutTo.name}, from ${videoTime(cutTo.offset)} of it. Add your copy to hear it.`
+          : 'Hear the clip with the track you are cutting it to.';
       for (const n of [startRow, quiet, volume, remove, how]) n.hidden = !on;
     });
     return this.group('Music', file, name, add, startRow, quiet, volume, remove, how);
@@ -1560,6 +1618,12 @@ html.st-rec .st-recbar { position: fixed; top: 12px; left: 12px; display: flex; 
 .st-note { margin: 0; color: var(--rp-muted); font-size: 12px; line-height: 1.45; }
 .st-note[hidden] { display: none; }
 .st-toggle[hidden], .st-slider[hidden], .st-text[hidden] { display: none; }
+/* A shared edit's link, and Copy beside it. */
+.st-sharelink { display: grid; grid-template-columns: minmax(0, 1fr) auto; gap: 6px; align-items: center; }
+.st-sharelink[hidden] { display: none; }
+.st-sharebox { height: 30px; min-width: 0; padding: 0 8px; border: 1px solid var(--rp-edge); border-radius: 5px; background: rgba(0, 0, 0, .35);
+  color: var(--rp-ink); font: 12px var(--rp-mono); }
+.st-sharestatus.bad { color: #ff9d93; }
 /* The song's start: a longer label than the Text tab's boxes. */
 .st-text.wide { grid-template-columns: 130px minmax(0, 1fr); }
 .st-facts b { color: var(--rp-ink); font-family: var(--rp-mono); }

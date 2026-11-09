@@ -23,7 +23,7 @@ public static class RecordingShortLink
 
     /// <summary>The replay's address on the play host, root-relative, as <c>watchHref</c> in
     /// recordings-api.js writes it: <c>/map.html?mod=…&amp;map=…&amp;replay=/stats/recordings/&lt;slug&gt;.ndjson…</c>.</summary>
-    public static string WatchPath(RecordingDetailDto recording, int? at)
+    public static string WatchPath(RecordingDetailDto recording, int? at, string? edit = null)
     {
         (string Name, string? Value)[] pairs =
         [
@@ -32,6 +32,7 @@ public static class RecordingShortLink
             ("replay", recording.RecordingUrl),
             ("serverlog", recording.ServerLogUrl),
             ("t", at?.ToString(CultureInfo.InvariantCulture)),
+            ("edit", edit),
         ];
         return "/map.html?" + string.Join('&', pairs
             .Where(p => !string.IsNullOrEmpty(p.Value))
@@ -41,30 +42,42 @@ public static class RecordingShortLink
     /// <summary>The page for a recording: its preview tags, and a refresh to the replay on
     /// <paramref name="playOrigin"/> (a refresh replaces the history entry, so Back leaves the
     /// replay for where the link was). <paramref name="linkOrigin"/> is the short link's host.</summary>
-    public static string Page(RecordingDetailDto recording, string playOrigin, string linkOrigin, int? at)
+    public static string Page(RecordingDetailDto recording, string playOrigin, string linkOrigin, int? at, RecordingEditDto? edit = null)
     {
-        var watch = playOrigin + WatchPath(recording, at);
-        var self = $"{linkOrigin}/{recording.Slug}";
+        var watch = playOrigin + WatchPath(recording, at, edit?.Code);
+        var self = edit is null ? $"{linkOrigin}/{recording.Slug}" : RecordingEditService.Link(linkOrigin, recording.Slug, edit.Code);
+        // An edit's link names the edit and who cut it (features/replay-creator-view,
+        // "Sharing an edit"), then the recording it is of.
+        var title = edit is null ? recording.Title : EditTitle(edit);
+        var description = edit is null ? Description(recording) : $"An edit of {recording.Title} · {Description(recording)}";
         var cover = recording.ThumbnailUrl
             ?? recording.Round?.Select(m => m.ThumbnailUrl).FirstOrDefault(url => url is not null);
         var html = new StringBuilder();
         html.Append("<!doctype html>\n<html lang=\"en\">\n<head>\n<meta charset=\"utf-8\">\n");
         html.Append("<meta name=\"color-scheme\" content=\"dark light\">\n");
-        Tag(html, "title", $"{recording.Title} · BattleView | bfstats.io");
+        Tag(html, "title", $"{title} · BattleView | bfstats.io");
         Meta(html, "http-equiv", "refresh", $"0; url={watch}");
         Meta(html, "property", "og:site_name", "bfstats.io");
         Meta(html, "property", "og:type", "website");
-        Meta(html, "property", "og:title", recording.Title);
-        Meta(html, "property", "og:description", Description(recording));
+        Meta(html, "property", "og:title", title);
+        Meta(html, "property", "og:description", description);
         Meta(html, "property", "og:url", self);
         if (cover is not null) Meta(html, "property", "og:image", playOrigin + cover);
         Meta(html, "name", "twitter:card", cover is null ? "summary" : "summary_large_image");
         Meta(html, "name", "theme-color", "#a39c6c");
         html.Append($"<link rel=\"canonical\" href=\"{Encode(self)}\">\n");
         html.Append("</head>\n<body>\n");
-        html.Append($"<p><a href=\"{Encode(watch)}\">{Encode(recording.Title)}</a></p>\n");
+        html.Append($"<p><a href=\"{Encode(watch)}\">{Encode(title)}</a></p>\n");
         html.Append("</body>\n</html>\n");
         return html.ToString();
+    }
+
+    /// <summary><c>Mustang bomb · skandia's edit</c>; an edit by an account with no linked
+    /// name is just its name.</summary>
+    internal static string EditTitle(RecordingEditDto edit)
+    {
+        var author = edit.AuthorName.Length > 0 ? Shown(edit.AuthorName) : "";
+        return author.Length > 0 ? $"{edit.Name} · {author}'s edit" : edit.Name;
     }
 
     /// <summary>The page for a link to no recording: one deleted, one whose file has gone, a

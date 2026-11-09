@@ -315,6 +315,12 @@ clips keeps one style.
 
 ## Export
 
+- Share this edit: name it and click Share this edit. The link is copied:
+  paste it in Discord or send it. Whoever opens it gets the studio on your
+  clip with its cameras (yours too), slow motion, the hit's pin, look, text,
+  effects and frame. The song is named, not sent: they add their own copy
+  under Music. The round has to be shared on bfstats.io, and you have to be
+  signed in. Their changes are theirs; they can share a link of their own.
 - Music: Add a song to hear the clip with the track you are cutting it to
   (see The hit on a beat). It is not put in the recording.
 - Record the clip plays it once in real time at the monitor's full size and

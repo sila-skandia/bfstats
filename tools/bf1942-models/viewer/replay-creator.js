@@ -32,7 +32,7 @@
 // takes its rigs and lens (replay-camera.js `setRig`, `setLensHook`).
 
 import * as THREE from 'three';
-import { isLocalHost, resolveApi, sharedRecordingsApi } from './recordings-api.js';
+import { apiMode, isLocalHost, resolveApi, sharedRecordingOf, sharedRecordingsApi } from './recordings-api.js';
 import { nameAt, teamAt } from './replay-recording.js';
 import {
   RoundCam, BULLET_TIME, bulletTimeSpan, guessSpeed, heavyRound, kindOfWeapon, landingOf, nextShotOf, slowFor, victimHullLife,
@@ -275,6 +275,9 @@ export class ReplayCreator {
     this.syncFit = null;          // ... and how the last fit went: fitStart's or fitSpeed's answer
     this.music = new ClipMusic(); // a song to hear the clip with in the studio (replay-music.js)
     this.gameQuiet = false;       // ... and the game's sound held down under it
+    this.sharedSong = null;       // { name, offset }: the song a shared edit was cut to (`openEdit`)
+    this.sharedFrom = null;       // { name, authorName, code }: the shared edit opened from a link
+    this.pendingEdit = null;      // { code } then { dto }: a link's `?edit=`, opened once the replay runs
     this.edits = defaultEdits();  // the look, the text and the effects (replay-studio-fx.js)
     this.history = { undo: [], redo: [], cur: null, restoring: false }; // the clip's edits, for undo (`noteHistory`)
     this.frozen = null;           // { until }: the freeze on the kill holding the clock (`lead`)
@@ -602,7 +605,10 @@ export class ReplayCreator {
     ok = Boolean(ok);
     if (ok === this.granted) return;
     this.granted = ok;
-    if (ok) quietly('the creator view', () => this.install());
+    if (ok) {
+      quietly('the creator view', () => this.install());
+      quietly('a shared edit', () => this.fetchLinkedEdit());
+    }
     else {
       this.toggle(false);
       this.button?.remove();
@@ -2319,6 +2325,115 @@ export class ReplayCreator {
       : `${head} · the clip starts at ${fmt(this.range.in)} of the round`;
   }
 
+  // --- sharing an edit (features/replay-creator-view, "Sharing an edit") ---------------------
+
+  /** The clip as an edit to share: everything a kept clip carries, the
+   *  hit's pin, the bullet time, the frame, and the name of the song it was
+   *  cut to (never the song). Null with no clip. */
+  editPayload() {
+    const span = this.span;
+    if (!span) return null;
+    const take = this.take?.kill ? this.take : this.takeInside(span);
+    const song = this.music.loaded ? { name: this.music.name, offset: this.music.offset } : this.sharedSong;
+    return {
+      v: 1, in: span.t0, out: span.t1, pid: this.rangePid ?? this.player.followPid ?? null,
+      cams: this.cams ? JSON.parse(JSON.stringify(this.cams)) : null, ramp: { ...this.ramp },
+      action: this.action ? { ...this.action } : null, sync: this.sync ? { ...this.sync } : null,
+      edits: editsOf(this.edits), shot: { style: this.rounds.style, angle: this.rounds.angle ? { ...this.rounds.angle } : null },
+      kill: take?.kill ? { t: take.kill.t, victim: take.kill.victim } : null,
+      pace: this.prefs.pace, frame: this.prefs.frame,
+      music: song ? { name: String(song.name).slice(0, 120), offset: song.offset } : null,
+    };
+  }
+
+  /** A name for the edit from its kill: who, with what, whom. */
+  editName() {
+    const lines = this.lowerLines();
+    return lines ? lines.filter(Boolean).join(' · ').slice(0, 80) : `Clip at ${fmt(this.span?.t0 ?? 0)}`;
+  }
+
+  /** The clip shared as an edit of this round (POST /stats/recordings/
+   *  {slug}/edits): resolves with `{ code, link, name }`. Throws with words
+   *  to show where it cannot be: a round not shared on bfstats.io, read from
+   *  another site, or no clip. */
+  async shareEdit(name = this.editName()) {
+    const shared = sharedRecordingOf(new URLSearchParams(globalThis.location?.search ?? '').get('replay'));
+    if (!shared) throw new Error('Only an edit of a round shared on bfstats.io can be shared. Share the round first.');
+    const api = sharedRecordingsApi({ base: shared.base, mode: apiMode(shared.base) });
+    if (!api.canWrite) throw new Error('This round is read from another site: open it on bfstats.io to share an edit of it.');
+    const edit = this.editPayload();
+    if (!edit) throw new Error('Mark a clip first.');
+    return api.shareEdit(shared.slug, { name, edit });
+  }
+
+  /** A link's `?edit=<code>`: fetched now, opened once the replay runs. */
+  fetchLinkedEdit() {
+    if (this.pendingEdit !== null) return;
+    const params = new URLSearchParams(globalThis.location?.search ?? '');
+    const code = params.get('edit');
+    if (!code) return;
+    const shared = sharedRecordingOf(params.get('replay'));
+    this.pendingEdit = { code };
+    if (!shared) return;
+    const api = sharedRecordingsApi({ base: shared.base, mode: apiMode(shared.base) });
+    api.edit(code).then(dto => {
+      if (dto?.slug !== shared.slug) {
+        this.ui.flash('That edit is of another round', 3000);
+        return;
+      }
+      this.pendingEdit.dto = dto;
+    }).catch(error => {
+      console.warn('creator: a shared edit', error);
+      this.ui.flash('That edit could not be opened: it may have been taken down', 3200);
+    });
+  }
+
+  /** The fetched edit opened, the first frame the replay runs with it. */
+  openPendingEdit() {
+    const dto = this.pendingEdit.dto;
+    this.pendingEdit.dto = null;
+    this.openEdit(dto.edit, { name: dto.name, authorName: dto.authorName, code: dto.code });
+  }
+
+  /**
+   * A shared edit opened in the studio: the clip as its author left it
+   * (`useClip`), with their bullet time, frame and pin, and the name of the
+   * song it was cut to, whose copy the viewer adds themselves. False for an
+   * edit that does not fit this round.
+   */
+  openEdit(p, meta = {}) {
+    const d = this.player.rec.duration;
+    const inRound = t => Number.isFinite(t) && t >= 0 && t <= d + 0.01;
+    if (!p || p.v !== 1 || !inRound(p.in) || !inRound(p.out) || !(p.out > p.in)) {
+      this.ui.flash('That edit does not fit this round', 3000);
+      return false;
+    }
+    if (!this.on) this.toggle(true);
+    if (!this.on) return false;
+    if (Object.hasOwn(BULLET_TIME, p.pace)) this.setPref('pace', p.pace);
+    if (['none', '239', '185', '916'].includes(p.frame)) this.setPref('frame', p.frame);
+    this.useClip({
+      in: p.in, out: p.out, pid: Number.isInteger(p.pid) ? p.pid : null, cams: camsOf(p.cams, ANY_TAKE), keys: null,
+      ramp: p.ramp ? rampOf(p.ramp) : null, action: spanIn(p.action, inRound),
+      shot: p.shot ? { style: styleOf(p.shot.style), angle: angleOf(p.shot.angle) } : null,
+      edits: p.edits ? editsOf(p.edits) : null,
+      kill: inRound(p.kill?.t) && Number.isInteger(p.kill?.victim) ? { t: p.kill.t, victim: p.kill.victim } : null,
+      sync: p.sync ?? null,
+    }, false);
+    const song = p.music && typeof p.music.name === 'string' && p.music.name.trim()
+      ? { name: p.music.name.trim().slice(0, 120), offset: Number.isFinite(p.music.offset) ? clamp(p.music.offset, 0, 600) : 0 } : null;
+    this.sharedSong = song;
+    if (song && !this.music.loaded) this.music.offset = song.offset;
+    this.sharedFrom = { name: String(meta.name ?? 'An edit'), authorName: String(meta.authorName ?? ''), code: meta.code ?? null };
+    this.history.cur = this.snapshot();
+    this.studio?.show();
+    this.studio?.refresh(true);
+    this.playRange();
+    const who = this.sharedFrom.authorName ? ` · ${this.sharedFrom.authorName}'s edit` : '';
+    this.ui.flash(`${this.sharedFrom.name}${who}${song ? ` · cut to ${song.name}: add your copy under Export, Music` : ''}`, 6000);
+    return true;
+  }
+
   /** The slow stretch painted on the strip: `t0` to `t1` at `speed`. */
   setSlowRange(t0, t1, speed = this.ramp.speed < 1 ? this.ramp.speed : 0.25, { quiet = false } = {}) {
     const span = this.span;
@@ -3841,6 +3956,7 @@ export class ReplayCreator {
 
   /** After the frame: the recording, the pick ring, the plate, the panel. */
   update(t, dt) {
+    if (this.pendingEdit?.dto) quietly('a shared edit', () => this.openPendingEdit());
     if (!this.on) return;
     if (this.frozen) {
       // Taken elsewhere by hand while frozen: the freeze is over.
