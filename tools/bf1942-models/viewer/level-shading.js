@@ -135,6 +135,10 @@ export function createLevelShading(page) {
           / (repeatsTexture(extent) ? Math.max(1, Math.round(extent)) : 1);
         const source = Array.isArray(obj.material) ? obj.material : [obj.material];
         const bound = source.map(m => {
+          // A patch baked with no tile art (vxf_stunts_one names an empty
+          // texture) has no `map`, so three declares no `vMapUv` and the
+          // detail sum below would not compile: the patch keeps its colour.
+          if (!m.map) return m;
           const mat = m.clone();
           mat.userData = { ...mat.userData };
           const prev = mat.onBeforeCompile;

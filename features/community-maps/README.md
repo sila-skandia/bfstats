@@ -116,6 +116,51 @@ Findings from the bake, all in the maps' own data:
 * A few textures are missing: an empty `texture/` name, `sherW2_f`,
   `B17Win_L`, `RUBBLE_5`, `it_house01_rubble`, `pf_w2_r`.
 
+### The behaviour pass (2026-11-09)
+
+`audit_behaviour.mjs --quick` over all 76 levels tested 345 vehicles, 742 kits
+and 647 spawn points. It ran two levels at a time against a local
+`serve_viewer.py` in remote mode, from a worktree whose `viewer/maps` was the
+published bake. On the GPU (`gpu_args.mjs`) a level takes 12 to 150 s, and the
+whole pass took 31 min. Fixed on the way:
+
+* **Jeep_Racing's jeeps could not be driven.** The level's own Willy writes
+  `setEngineType c_ETcar`, and every reader compares `c_ETCar`, so the page
+  took the driver's seat, which carries the level's boost guns, for a gun seat.
+  `bf42/con.py` now stores the engine's own spelling (`ENGINE_TYPES`; an
+  install-wide scan found no other level spelling a known type another way).
+  Re-baked and republished.
+- **vxf_stunts_one's terrain failed to compile.** The level names an empty
+  terrain texture, so some patches bake with no `map`, and the detail layer
+  (`level-shading.js` `bindTerrainDetail`) referenced `vMapUv` on them. Those
+  patches now keep their colour without the detail.
+
+What stays open is the maps' own data, not ours:
+
+* High spawns that fall: sniper_challenge's Axis base is a
+  `setSpawnAsParaTroper 1` sky drop at 721 m, and the audit's tester never
+  opens a parachute, so his kits read as no fire and no reload.
+  quest_for_adventure, vxf_stunts_one's `deep_base`, The_Dungeon and
+  Omaturi_Channel_Airmini's air-start point stand where the author put them.
+- Vehicles placed off anything (`veh.off-its-pad`): waterworld's rafts 190 to
+  290 m under the sea, sniper_challenge's B17s at 747 m, vxf_stunts_one's
+  Corsairs between stacked bridges. Physics drops them in retail too.
+- Silent engines: Pearl Harbor's own `Enterprise` declares no engine sound, and
+  beinbrekkbakken's own KettenKrad loads `Sounds/KettenKradEngine.ssc`, which
+  its archive does not ship.
+- `veh.no-steer`: a vanilla KettenKrad (downhill_to_the_beach_two) and Willy
+  (sniper_challenge) turn less than a degree in 2.5 s on those levels' ground.
+  Both turn elsewhere, so this is the levels' surfaces and slopes.
+- `veh.gun-silent`: shigaisen_g's Elco80Raft "guns" are boosts (`dbsjumper`,
+  `dbsNO2`) with no sound.
+- Bots stall on Oahu and XhAOS_KART_RACE. Most other levels ship no AI data,
+  so retail puts no bot on them either (`bots.no-ai-data`).
+
+A spawn that "does nothing on Done" was reported on Attack on Pearl Harbor.
+It did not reproduce on the live site by the map link (both sides, Conquest),
+by Instant Battle (CoOp with bots, Done and Enter), or in the pass (10 kits on
+both sides). Open until it is seen again.
+
 ## A batch from a machine without vanilla's tree (2026-11-09)
 
 The owner's Mac had no local copy of vanilla's tree: `viewer/maps` held only

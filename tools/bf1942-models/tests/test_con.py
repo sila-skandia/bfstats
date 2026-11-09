@@ -964,6 +964,24 @@ ObjectTemplate.setEngineType c_ETRocket
         self.assertEqual("c_ETRocket",
                          library.object("KatyushaRocket_Engine").engine_type)
 
+    def test_engine_type_is_stored_in_the_engines_spelling(self) -> None:
+        # Jeep_Racing (a community map) writes `c_ETcar`; the con reader takes
+        # an enum word in any case and every reader downstream compares the
+        # canonical spelling. A word nobody declares stays as authored.
+        library = ObjectLibrary()
+        library.add_con(
+            "bf1942/levels/Jeep_racing/Objects/Willy/Physics.con",
+            """
+ObjectTemplate.create Engine WillyEngine
+ObjectTemplate.setEngineType c_ETcar
+
+ObjectTemplate.create Engine OddEngine
+ObjectTemplate.setEngineType c_ETLand
+""",
+        )
+        self.assertEqual("c_ETCar", library.object("WillyEngine").engine_type)
+        self.assertEqual("c_ETLand", library.object("OddEngine").engine_type)
+
     def test_emitter_motion_in_dof_is_read(self) -> None:
         # Verbatim from the Sherman's Em_MuzzPanz_WSmoke (recedes behind the
         # muzzle) and Em_MuzzPanz_Smoke (spawns 0.4 m back).

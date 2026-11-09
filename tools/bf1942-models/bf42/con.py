@@ -427,6 +427,15 @@ def floats(text: str) -> tuple[float, ...] | None:
     return values or None
 
 
+#: `setEngineType`'s words in the engine's own spelling. The con reader takes
+#: an enum word in any case, and Jeep_Racing (a community map) writes
+#: `c_ETcar`; every reader downstream compares the canonical spelling, so the
+#: page took that jeep's driver seat for a gun and the car could not be
+#: driven (2026-11-09). A word not listed is kept as authored.
+ENGINE_TYPES = {name.lower(): name for name in (
+    "c_ETPlane", "c_ETShip", "c_ETTank", "c_ETCar", "c_ETTorpedo", "c_ETRocket")}
+
+
 def truthy(text: str) -> bool | None:
     """A boolean the data writes three ways: `1`, `0`, and `c_True`.
 
@@ -3160,7 +3169,8 @@ class ObjectLibrary:
                             "setinputfire": "input_fire",
                             "destblendmode": "dest_blend_mode",
                             "texture": "sprite_texture",
-                        }[cmd], args.split()[0])
+                        }[cmd], ENGINE_TYPES.get(args.split()[0].lower(), args.split()[0])
+                           if cmd == "setenginetype" else args.split()[0])
                 elif cmd in ("gravitymodifier", "positionalspeedindof",
                              "relativepositionindof"):
                     # Written as CRD triples (`CRD_UNIFORM/-5/-10/0`) or bare
