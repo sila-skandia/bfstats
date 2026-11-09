@@ -274,3 +274,20 @@ Server and player names are stored as raw mojibake (some clients/servers send cp
 - Replace emoji icons with SVGs or PrimeIcons.
 - Replace emoji streak/status indicators with CSS keyframe glows, pulses, and badges.
 - Keep copyable/shareable strings clean and structured with plain text symbols (e.g., `[+]`, `[-]`, `[WIN]`, `[MATCH]`) instead of emojis.
+
+## Committing and pushing
+
+Commit and push to `main` without asking once a change is finished and
+verified (`./scripts/verify.sh` passes, or every failure is shown to be
+another session's work in progress). Do not ask "commit and push?" at the
+end of a turn: do it, then say what was pushed.
+
+- Commit only your own changes: `git commit --only <paths>`, after `git add`
+  for new files. The main checkout often holds other sessions' uncommitted
+  work; never stage, commit, stash or revert it.
+- Push with a plain `git push origin main`. Never force-push, rewrite
+  history, or push another session's branch.
+- A change that adds an EF migration, touches `deploy/`, or changes a
+  production setting still says so in the summary, since pushing deploys it.
+- Still ask first for anything destructive or outside git: kubectl,
+  applying manifests, deleting volume content (see "Conventions").
