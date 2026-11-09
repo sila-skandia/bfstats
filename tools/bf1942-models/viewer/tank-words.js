@@ -12,12 +12,26 @@
 const n1 = v => (Math.abs(v - Math.round(v)) < 0.05 ? String(Math.round(v)) : v.toFixed(1));
 const s = v => (v === 1 ? '' : 's');
 const shotsAt = (t, b) => t?.shots?.[b]?.shots ?? null;
+/** Past this many hits a gun is no answer to a face, whatever the sum says
+ *  (FHSW's 23 mm against a T-VI's front: 1,714). */
+export const NO_ANSWER = 30;
+/** A count of shots as a sentence says it: none get through, past 30, or the number. */
+export const sayShots = n => (n == null ? 'nothing gets through' : n > NO_ANSWER ? `more than ${NO_ANSWER}` : String(n));
+const plain = (...ns) => ns.every(n => n != null && n <= NO_ANSWER);
+/** The three faces in one sentence, for a gun that cannot answer them all. */
+const faces3 = (who, f, sd, r) => `${who}: front ${sayShots(f)}, side ${sayShots(sd)}, rear ${sayShots(r)}.`;
+/** Whether a gun hurts a hull from any side. */
+export const hurtsAtAll = t => [0, 90, 180].some(b => shotsAt(t, b) != null);
+/** Whether it is an answer from any side: some face within 30 hits. */
+export const answers = t => [0, 90, 180].some(b => { const n = shotsAt(t, b); return n != null && n <= NO_ANSWER; });
 
 /** Where to aim at `them` with `you`'s gun. */
 export function aimWords(you, them) {
   const f = shotsAt(them, 0), sd = shotsAt(them, 90), r = shotsAt(them, 180);
-  if (f == null) return [];
-  const out = [`Their front takes ${f} of your shot${s(f)}, their side ${sd}, their rear ${r}.`];
+  if (!them?.shots) return [];
+  if (!hurtsAtAll(them)) return ['Your gun cannot hurt them from any side: no plate that faces you takes damage from its round. Leave them to someone who can.'];
+  const out = [plain(f, sd, r) ? `Their front takes ${f} of your shot${s(f)}, their side ${sd}, their rear ${r}.` : faces3('Shots of yours to kill them', f, sd, r)];
+  if (f == null || f > NO_ANSWER) out.push('Your gun is no answer to their front: get to a side it can hurt.');
   if (r != null && sd != null && r >= sd) out.push('Their rear is no softer than their side: going round the back buys nothing over the flank.');
   else if (r === 1) out.push('A square hit on their rear plate kills them outright.');
   if (them.shots[0].bestShots === 1 && f > 1) out.push('Their front has a one-shot spot: look for the red on it.');
@@ -27,10 +41,11 @@ export function aimWords(you, them) {
 /** What `you` must keep away from `them`'s gun. */
 export function exposureWords(you, them) {
   const f = shotsAt(you, 0), sd = shotsAt(you, 90), r = shotsAt(you, 180);
-  if (f == null) return [];
-  const out = [`Your front takes ${f} of their shot${s(f)}, your side ${sd}, your rear ${r}.`];
+  if (!you?.shots) return [];
+  if (!hurtsAtAll(you)) return ['Their gun cannot hurt you from any side: no plate of yours that faces them takes damage from its round.'];
+  const out = [plain(f, sd, r) ? `Your front takes ${f} of their shot${s(f)}, your side ${sd}, your rear ${r}.` : faces3('Their shots to kill you', f, sd, r)];
   const mine = shotsAt(them, 0);    // your shots on their front
-  if (mine != null) {
+  if (mine != null && f != null && plain(mine, f)) {
     const yourTime = mine * you.gun.reload, theirTime = f * them.gun.reload;
     if (mine >= 2 * f) {
       out.push(`Do not trade from the front: you need ${mine} hits on theirs, they need ${f} on yours `
@@ -90,8 +105,15 @@ export function hullWords(you, them) {
 
 /** The one line at the top: the most important thing in this pairing. */
 export function headline(you, them) {
+  if (!hurtsAtAll(them) && !hurtsAtAll(you)) return 'Neither gun can hurt the other: this is not a fight.';
+  if (!answers(them) && !answers(you)) return 'Neither gun is an answer to the other: this is not a fight.';
+  if (!hurtsAtAll(them)) return 'Your gun cannot hurt them, and theirs can hurt you: do not take this fight.';
+  if (!answers(them)) return `Your gun barely scratches them (more than ${NO_ANSWER} hits from every side): do not take this fight.`;
+  if (!hurtsAtAll(you)) return 'Their gun cannot hurt you: take your time and find the face yours gets through.';
+  if (!answers(you)) return `Their gun barely scratches you (more than ${NO_ANSWER} hits from every side): take your time and find the face yours gets through.`;
   const mine = shotsAt(them, 0), theirs = shotsAt(you, 0);
   const ty = you.gun.traverse, tt = them.gun.traverse;
+  if ((mine == null || mine > NO_ANSWER) && theirs != null) return 'Your gun is no answer to their front: get to a side it can hurt.';
   if (mine != null && theirs != null && mine >= 2 * theirs) {
     return ty >= 1.4 * tt ? 'Get off their front, and use your faster turret to stay on their side.' : 'Get off their front: you lose a straight trade.';
   }
@@ -110,4 +132,49 @@ export function matchupWords(you, them) {
     guns: gunWords(you, them),
     hulls: hullWords(you, them),
   };
+}
+
+// --- steadiness, in what it does to a shot ---------------------------------------
+
+/** How far off a shot lands at `range` metres when the gun is tilted `deg`
+ *  degrees from where it was laid: the hull carries the gun with it. */
+export function missAt(deg, range = 200) {
+  return range * Math.tan(Math.abs(deg) * Math.PI / 180);
+}
+
+/** When a trace (degrees, `hz` samples a second) is last more than `tol`
+ *  degrees from where it comes to rest: from then on the gun stays within
+ *  it, and a re-aim holds. 0 if it never left. (A hull can come to rest
+ *  tilted, the Tiger 1.5 degrees low after a hard stop: that is the rest,
+ *  not a swing, and `steadyWords` says it on its own.) */
+export function steadyAfter(values, hz, tol = 1) {
+  const rest = values[values.length - 1] ?? 0;
+  let last = -1;
+  values.forEach((v, i) => { if (Math.abs(v - rest) > tol) last = i; });
+  return last < 0 ? 0 : (last + 1) / hz;
+}
+
+/** What a scenario's trace means for one tank's next shot, in a sentence or
+ *  two: the worst miss it throws at 200 m, and when it is steady to fire. */
+export function steadyWords(name, trace, summary = null, { range = 200, reload = null } = {}) {
+  if (!trace?.values?.length) return [];
+  const peak = Math.max(...trace.values.map(Math.abs));
+  const after = steadyAfter(trace.values, trace.hz, 1);
+  const out = [];
+  if (peak <= 1) {
+    out.push(`${name}: never more than ${n1(peak)} deg off. Fire when you like.`);
+  } else {
+    out.push(`${name}: at worst ${n1(peak)} deg off, which throws a shot ${Math.round(missAt(peak, range))} m wide of a target ${range} m away. `
+      + `It has stopped swinging (within 1 deg) after ${n1(after)} s.`);
+  }
+  if (reload && peak > 1) {
+    out.push(after <= reload
+      ? `It has settled before the next round is loaded (${n1(reload)} s).`
+      : `It is still swinging when the next round is loaded (${n1(reload)} s): wait, or the shot goes wide.`);
+  }
+  const left = summary?.left;
+  if (left != null && Math.abs(left) >= 0.5) {
+    out.push(`It comes to rest ${n1(Math.abs(left))} deg ${left < 0 ? 'low' : 'high'}: ${Math.round(missAt(left, range))} m at ${range} m until you re-aim.`);
+  }
+  return out;
 }

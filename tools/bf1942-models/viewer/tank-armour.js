@@ -36,9 +36,13 @@ export function bandOf(shots) {
   return BANDS.find(b => shots <= b.max);
 }
 
-/** What vanilla's tank faces are called (the Damage System tutorial's
- *  names, `proving-ground-page.js` `materialName`). */
-export function faceName(material) {
+/** What a tank face is called: vanilla's by the Damage System tutorial's
+ *  names (`proving-ground-page.js` `materialName`); a mod's by its own
+ *  table's label where it has one (FHSW names its plates by thickness,
+ *  "15mm"). */
+export function faceName(material, tables = null) {
+  const label = String(tables?.materials?.[material]?.label ?? '');
+  if (/^\d+(\.\d+)?\s*mm$/i.test(label)) return `${label} plate`;
   const named = { 46: 'Running gear', 47: 'Light armour', 50: 'Rear armour', 51: 'Side armour', 52: 'Front armour',
                   53: 'Heavy armour', 54: 'Heaviest armour' };
   return named[material] ?? `Material ${material}`;
@@ -52,12 +56,17 @@ export function pricer(tables, attMaterial) {
   return def => headOnFor(weapon, def) ?? 0;
 }
 
+/** A part a mod hangs off a hull to catch rounds that are not the hull's: FHSW's
+ *  `BulletCatcher` cubes, 19 to 24 m down (COL-20). Not a face of the tank. */
+export const CATCHER = /catcher/i;
+const caught = o => { for (let a = o; a; a = a.parent) if (CATCHER.test(a.name ?? '')) return true; return false; };
+
 /** The hull's collision meshes: `{ mesh, material }` for each, from the glb's
  *  collision layer (`geometry.userData.collision`, `defenseMaterial`). */
 export function collisionFaces(root) {
   const out = [];
   root.traverse(o => {
-    if (!o.isMesh || !o.geometry?.userData?.collision) return;
+    if (!o.isMesh || !o.geometry?.userData?.collision || caught(o)) return;
     const material = o.geometry.userData.defenseMaterial;
     out.push({ mesh: o, material: Number.isFinite(Number(material)) ? Number(material) : null });
   });
@@ -153,14 +162,14 @@ export function worldTriangles(root) {
 /** The faces a hull shows, with what a square hit on each costs and the
  *  shots that makes: `[{ material, name, damage, shots, band }]`, most
  *  dangerous first, one row per material. */
-export function faceTable(root, price, hitpoints) {
+export function faceTable(root, price, hitpoints, tables = null) {
   const seen = new Map();
   for (const { material } of collisionFaces(root)) {
     if (material == null || seen.has(material)) continue;
     const damage = price(material);
     if (!(damage > 0)) continue;
     const shots = shotsFor(hitpoints, damage);
-    seen.set(material, { material, name: faceName(material), damage: Math.round(damage * 10) / 10, shots, band: bandOf(shots) });
+    seen.set(material, { material, name: faceName(material, tables), damage: Math.round(damage * 10) / 10, shots, band: bandOf(shots) });
   }
   return [...seen.values()].sort((a, b) => a.shots - b.shots || b.damage - a.damage);
 }

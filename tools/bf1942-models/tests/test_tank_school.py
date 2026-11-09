@@ -73,7 +73,9 @@ class TankSchoolTests(unittest.TestCase):
 
     def test_one_arena_per_pair_of_tank_sets(self) -> None:
         arenas = {a["map"]: a for a in self.out["arenas"]}
-        self.assertEqual(list(arenas), ["Kursk", "El_Alamein", "Iwo_Jima"])
+        # And last, every tank of the tree, any two of them, heaviest first.
+        self.assertEqual(list(arenas), ["Kursk", "El_Alamein", "Iwo_Jima", "*"])
+        self.assertEqual(self.out["every"], {"map": "*", "tanks": ["Tiger", "Captured", "Chi-ha", "PanzerIV", "Sherman", "T34"]})
         # El Alamein and Gazala field the same tanks, so they are one arena;
         # a tank both sides drive is neither's.
         self.assertEqual(arenas["El_Alamein"]["battles"], ["El Alamein", "Gazala"])
@@ -84,6 +86,19 @@ class TankSchoolTests(unittest.TestCase):
         self.assertEqual(self.out["picks"], {"yoursDefault": "Sherman", "yoursChosen": "Tiger",
                                              "theirsDefault": "Tiger", "theirsForAxis": "Sherman"})
         self.assertEqual(self.out["names"], ["Panzer IV", "T-34-85", "Chi-ha", "King Tiger"])
+
+    def test_the_game_s_ai_data_says_what_a_tank_is(self) -> None:
+        # Equipment 0 with a weapon rated against armour: not a machine-gun
+        # half-track, not an artillery battery; an oddly named mod tank is.
+        self.assertEqual(self.out["aiTanks"], ["Sherman", "OddTank", "Kingtiger", "M36"])
+        # A gun named with its load after it is still the gun; the HE one is a side gun.
+        self.assertEqual(self.out["m36Gun"], "M36GunBarrelAP")
+        self.assertEqual(self.out["aiGun"], "OddTankBarrelThing")
+
+    def test_the_main_gun_is_a_real_round_past_an_ammunition_switch(self) -> None:
+        # FHSW's ammunition switch fires a stand-in under the main gun's name;
+        # the armour-piercing sibling is the gun.
+        self.assertEqual(self.out["pick"], {"fakeThenAP": "VGunBarrel_AP", "named": "ShermanGunBarrel", "none": None})
 
     # --- where a tank is hit (DMG-1, DMG-3, DMG-4) ---------------------------------------
 
@@ -122,6 +137,16 @@ class TankSchoolTests(unittest.TestCase):
         w = self.out["words"]["shermanPanzer"]
         self.assertIn("Your shell drops about 4 deg per 100 m, theirs 2", " ".join(w["guns"]))
         self.assertIn("You both reload in about 2.9 s.", w["guns"])
+
+    def test_a_gun_that_cannot_hurt_them_is_called_out(self) -> None:
+        w = self.out["words"]
+        self.assertEqual(w["cannot"]["headline"], "Your gun cannot hurt them, and theirs can hurt you: do not take this fight.")
+        self.assertIn("Your gun cannot hurt them", w["cannot"]["aim"][0])
+        self.assertEqual(w["cannotEither"]["headline"], "Neither gun can hurt the other: this is not a fight.")
+        # 1,714 hits is no answer; a side that takes nothing says so.
+        self.assertEqual(w["noAnswer"]["aim"][0], "Shots of yours to kill them: front more than 30, side 4, rear nothing gets through.")
+        self.assertIn("Your gun is no answer to their front: get to a side it can hurt.", w["noAnswer"]["aim"])
+        self.assertEqual(w["scratchedBoth"]["headline"], "Neither gun is an answer to the other: this is not a fight.")
 
     # --- the sheet --------------------------------------------------------------------------
 

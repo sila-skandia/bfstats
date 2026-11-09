@@ -79,6 +79,32 @@ out.picks = {
   theirsForAxis: A.enemyOf(west, A.tankIn(west, 'PanzerIV')).template,
 };
 out.names = ['PanzerIV', 'T34-85', 'Chi-ha', 'KingTiger'].map(A.prettyTank);
+out.every = (() => { const e = arenas.find(a => a.every); return e && { map: e.map, tanks: e.tanks.map(t => t.template) }; })();
+// The game's AI data decides when it is there: equipment 0 with a weapon
+// rated against armour. A gun half-track (equipment 0, machine guns only)
+// and an artillery battery are out; a mod tank named oddly is in.
+const ai = {
+  Sherman: { class: 'Land', equipmentType: 0, aiWeapons: { ShermanMainGun: { strength: { HeavyArmour: 2 } } } },
+  MGTrack: { class: 'Land', equipmentType: 0, aiWeapons: { MG: { strength: { HeavyArmour: 0 } } } },
+  Battery: { class: 'Land', equipmentType: 13, aiWeapons: { Howitzer: { strength: { HeavyArmour: 5 } } } },
+  OddTank: { class: 'Land', equipmentType: 0, fireArms: { OddTankBarrelThing: 'OddTankMainGun' },
+    seatsAi: { OddTank: { aiWeapons: { OddTankMainGun: { strength: { HeavyArmour: 6 } } } } } },
+};
+const aiRows = [row('Sherman', 'Allied', ['El_Alamein'], 100, ['ShermanGunBarrel']), row('MGTrack', 'Axis', ['El_Alamein'], 150, ['MGTrackGunBarrel']),
+  row('Battery', 'Axis', ['El_Alamein'], 100, ['BatteryCannon']), row('OddTank', 'Axis', ['El_Alamein'], 250, ['OddTankBarrelThing']),
+  // Not in the AI data: the catalogue's rule, less what the name says.
+  row('Kingtiger', 'Axis', ['El_Alamein'], 160, ['KTGunBarrel']), row('M36', 'Allied', ['El_Alamein'], 130, ['M36GunBarrelAP', 'M36GunBarrelHE']),
+  row('Pak43_41Mobile_towedgun', 'Axis', ['El_Alamein'], 100, ['Pak43_41GunBarrelAP']), row('HowitzerBattery3', 'Allied', ['El_Alamein'], 200, ['HowitzerBatteryCannon']),
+  row('SdKfz251/1', 'Axis', ['El_Alamein'], 120, ['SdKfz251/1GunBarrel'])];
+out.m36Gun = A.mainGunName(aiRows[5], ai);
+out.aiTanks = aiRows.filter(r => A.isTank(r, ai)).map(r => r.name);
+out.aiGun = A.mainGunName(aiRows[3], ai);
+const fa = (name, template, material, velocity) => ({ name, userData: { fireArms: { velocity, projectile: { kind: 'shell', template, material } } } });
+out.pick = {
+  fakeThenAP: A.pickMainGun([fa('VGunBarrel', 'ChangeAmmo_FakeProjectile', 210, 465), fa('VGunBarrel_Canister', 'Canister', 656, 450), fa('VGunBarrel_AP', '57mmAP', 692, 465)], 'VGunBarrel')?.name,
+  named: A.pickMainGun([fa('ShermanGunBarrel', 'ShermanProjectile', 236, 100)], 'ShermanGunBarrel')?.name,
+  none: A.pickMainGun([fa('X', 'ChangeAmmo_FakeProjectile', 210, 1)], 'X'),
+};
 
 // --- armour: a box hull, 6 m long, 3 m wide, 2 m tall ---------------------------
 // Front plate material 52, sides 51, rear 50, roof 51; and a gun barrel of 46
@@ -117,7 +143,13 @@ const sheet = JSON.parse(readFileSync(join(viewer, 'tank-school', 'bf1942.json')
 const sherman = tank('Sherman', 2.87, 35, 4, S(3, 2, 1, 1), sheet.tanks.Sherman);
 const tiger = tank('Tiger', 4, 20, 4, S(10, 4, 4, 3), sheet.tanks.Tiger);
 const panzer = tank('Panzer IV', 2.87, 35, 2, S(3, 3, 2), sheet.tanks.PanzerIV);
+const ghost = tank('Ghost', 2.87, 35, 4, { 0: { shots: null }, 90: { shots: null }, 180: { shots: null } });
+const scratch = tank('Scratch', 2.87, 35, 4, S(1714, 4, null));
 out.words = {
+  cannot: W.matchupWords(sherman, ghost),
+  cannotEither: W.matchupWords(ghost, ghost),
+  noAnswer: W.matchupWords(sherman, scratch),
+  scratchedBoth: W.matchupWords(tank('A', 3, 30, 4, S(40, 50, 60)), tank('B', 3, 30, 4, S(35, 45, 31))),
   shermanTiger: W.matchupWords(sherman, tiger),
   tigerSherman: W.matchupWords(tiger, sherman),
   shermanPanzer: W.matchupWords(sherman, panzer),

@@ -336,3 +336,103 @@ the glTF scene. Checked in the browser pane on the local model viewer:
 
 It reaches mesh.bfstats.io once pushed: the Mesh Pipeline builds on any change
 under `tools/bf1942-models/viewer/` ([mesh-site](../mesh-site/README.md)).
+
+## On the school's page, second round (2026-11-09)
+
+The owner, after the first build: overlay the hit regions on the tank, as they
+translate better for players; the steadiness panel is not intuitive, show the
+real model wobbling; and the guns chart is unclear, show both tanks and the
+pitch of the gun for each distance. Then: take the school off the Range tab
+(deep link only), FHSW's models are all grey, show loading progress in the
+model window, and check pairings across mods. All built in `tanks.html`.
+
+**The hit regions on the tank.** The stage's first view is now OVERLAY: each
+tank's own textured model, with its collision faces painted by band and laid
+over it at 0.62 opacity. The faces are on a render layer of their own, drawn
+after the model with the depth cleared, so a plate shows on the tank even
+where the model's skin stands a few centimetres proud of it. FACES shows the
+painted hull alone, MODEL the model alone. Edge lines are drawn only on a
+coarse hull (300 triangles or fewer a mesh): on FHSW's detailed collision
+meshes they were stripes.
+
+**The guns: how far up to aim.** The arc chart is gone. For each tank, its
+own model side-on and to scale (`viewer/tank-snapshots.js`: an orthographic
+picture at 34 px a metre), with its gun drawn from the elevating bundle's
+pivot at the true angle each distance needs, 100 to 400 m and the target's
+lit. Under them, each gunner's sight at the target's range: the target's
+front at its true angular size in a window a few degrees tall, and the cross
+where the gun must point above it ("aim here: 7.7 degrees above"). Every
+other number moved into ALL THE GUN NUMBERS.
+
+**How steady the hull is.** Each hull is its own side picture (its rear for
+the shot across, which rolls it) turned by the measured trace about its
+middle, with the gun's line turning with it against a dashed line where it
+was laid. A scrubber and PLAY drive it; the panel plays the first time it
+comes into view. Under each, "nose 9.3 deg down: a shot now lands 33 m off
+at 200 m". The words (`tank-words.js` `steadyWords`) say the worst miss at
+200 m, when the hull has stopped swinging (within 1 degree of where it comes
+to rest: the Tiger rests 1.5 degrees low after a hard stop, which is said on
+its own), and whether that is before the next round is loaded.
+
+**Loading.** The models load through the game's own loader with its download
+progress (`loadTankModel`, the `plane-models.js` lookup), and a card on the
+stage shows each tank's bytes and a bar (a sweep when the size is unknown,
+"then its textures" once the glb is in, then "Measuring the hit faces and
+drawing the tanks"). The full-screen wait covers only reading the arenas.
+
+### Mods: what was wrong, and what decides a tank now
+
+FHSW's tanks were grey because every face priced at nothing: the overlay
+painted them all "no damage". Three causes, all fixed:
+
+| Cause | Example | Fix |
+|---|---|---|
+| The catalogue's rule took in non-tanks | FHSW's artillery batteries, bunker turrets, cavalry, gun half-tracks, carriers with an anti-tank rifle | The tree's AI data decides (`_shared/vehicle-ai.json`): a tank is in it, `class` Land (Desert Combat spells it `land`), `equipmentType` 0, with a weapon the AI rates against armour (`strength.HeavyArmour` above 0), and with a main gun the catalogue can name. The catalogue's rule stays only for a tree with no AI data (EoD) |
+| The main gun was a stand-in | FHSW's ammunition switch: `ValentineVIIIGunBarrel` fires `ChangeAmmo_FakeProjectile` (material 210, "Knives"); the real round is on `ValentineVIIIGunBarrel_AP` | `pickMainGun`: the AI's mapped main gun if its round is real, else its armour-piercing sibling, else any real shell |
+| A part far from the hull caught the rays | FHSW's `BulletCatcher` cubes (COL-20), which also made the tanks tiny on the stage | Faces under a part named for a catcher, or outside the drawn model's box, are left out of the painting, the framing and the clocks |
+
+A tree whose catalogue cannot pair its sides (Desert Combat files its T-72 as
+Allied, beside the M1A1) gets an **Every tank** arena: any two of its tanks.
+Every tree has one, last in its list.
+
+Where a gun does nothing, the stage says so on that tank ("Your gun cannot
+hurt this tank"; amber "barely scratches" past 30 hits from every side), and
+says why when the cause is the data rather than the armour: no tank gun
+found, a round the damage table does not list, a hull with no hit faces.
+Counts past 30 read "more than 30" (FHSW's 23 mm on a T-VI's front: 1,714).
+
+### Checked across the mods
+
+`surveys/tank_school_pairs.mjs` reads each published tree and prices the
+first pairs of up to eight arenas both ways (2026-11-09). After the fixes no
+pairing fails for want of a gun or of faces; every "nothing" left is the
+tree's own damage table:
+
+| Tree | Arenas (with Every tank) | Tanks | What the pairs showed |
+|---|---|---|---|
+| bf1942 | 6 | 8 | Every pair hurts both ways. The Sexton stays: vanilla's own AI files it as equipment 0, rated against heavy armour |
+| xpack1 | 9 | 11 | Every pair both ways; the M3 GMC needs 4 on a StuG's front, the M11/39 needs 6 on the M3 GMC's |
+| xpack2 | 2 | 11 | Every pair both ways (the Sturmtiger and T95 come in through Every tank) |
+| fh | 3 | 27 | Panzer III L against an IS-2: nothing gets through from any side (4 of the IS-2's 14 plate materials take damage, none that faces it). Ha-Go on a Sherman POA's front: 538 |
+| fhsw, fhsweurope | 53, 47 | 379, 418 | FHSW keeps its self-propelled guns (its own AI files the Wespe, Priest and Sexton as equipment 0). Toldi I on a T-34: the side only. 23 mm on a T-VI: more than 30 |
+| desertcombat | 1 (Every tank) | 7 | T-72 on a Shilka: 2 a side; the Shilka's 23 mm on a T-72: more than 30 |
+| eod | 3 | 18 | No AI data, so the catalogue's rule: an M109 and mortar carriers come in. EoD's own tables price a Sherman on a Tiger's front at 111 |
+| bf1918, gcmod, finnwars, bg42, pirates, interstate | - | - | No published catalogue: the school does not offer them |
+
+In the browser (headless Chrome, the local viewer): FHSW Valentine VIII
+against Panzer III J (both hurt, plates named by thickness, "5mm plate"),
+FH Panzer III L against IS-2 (the warning on the stage, the IS-2 painted "no
+damage"), Desert Combat's Every tank arena (T-72 against Shilka), and
+vanilla. No page errors; a mod without a tank sheet says "not measured" in
+the drive and steadiness panels.
+
+### Fights from the recordings
+
+A second rail section, FIGHTS (`?view=fights`): the tank fights the
+recordings agent found (`viewer/replays/tankfights/index.json`, README "Tank
+fights from the recordings"), this mod's first, filtered All, Kills, Light
+beats heavy and Both at full health, ordered Best, Longest shot or Newest.
+Each row: the kill shot's range, who beat whom in what (weight, hit points at
+the start, hits of shots), the level, date and length, its badges, WATCH
+(the round replay at the fight's start) and MATCHUP (the two tanks in the
+every-tank arena, the winner's yours).
