@@ -123,6 +123,19 @@ export function createHullBodies(page) {
     return spec;
   }
 
+  /**
+   * A ship's spec, for the body world to hand a driver (`adoptDriven`). It
+   * carries the root part `checkVsTerrain` measures her depth on, as
+   * `bodySpecFor` gives a land hull, so the hull's `submarineData` clock
+   * (`world-damage.js` `submersionDepth`, PHY-3) reads a driven submarine's
+   * real depth: without it a Gato read 0 m and her crew never ran out of air.
+   */
+  function seaHullSpec(node) {
+    const spec = describeVehicleParts(node, hullBodies.collisionMeshes);
+    if (spec) spec.waterPart = rootCollisionPart(spec.parts, node);
+    return spec;
+  }
+
   /** `extras.physics.hasMobilePhysics === false`: never moved (PHY-17). */
   function isStaticRoot(node) {
     return node?.userData?.physics?.hasMobilePhysics === false;
@@ -1394,8 +1407,7 @@ export function createHullBodies(page) {
       // A static root is scenery, never driven and never parked (PHY-17).
       if (isStaticRoot(visual.node)) continue;
       const sea = isSeaHull(visual.node);
-      const spec = sea ? describeVehicleParts(visual.node, hullBodies.collisionMeshes)
-                       : bodySpecFor(visual.node);
+      const spec = sea ? seaHullSpec(visual.node) : bodySpecFor(visual.node);
       if (!spec) continue;
       visual.node.updateWorldMatrix(true, false);
       bodyScene.set(owner, {
@@ -2123,8 +2135,7 @@ export function createHullBodies(page) {
     if (!visual || bodyScene.has(owner) || !hullBodies.collisionMeshes) return false;
     if (isStaticRoot(visual.node)) return false;
     const sea = isSeaHull(visual.node);
-    const spec = sea ? describeVehicleParts(visual.node, hullBodies.collisionMeshes)
-                     : bodySpecFor(visual.node);
+    const spec = sea ? seaHullSpec(visual.node) : bodySpecFor(visual.node);
     if (!spec) return false;
     visual.node.updateWorldMatrix(true, false);
     bodyScene.set(owner, {

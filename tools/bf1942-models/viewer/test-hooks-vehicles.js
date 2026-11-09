@@ -327,6 +327,35 @@ export function installVehicleHooks(page) {
   // The local seat's sonar or radar scope (`map-sonar.js`): which table entry
   // it runs on, how far the sweep has turned and the dots still lit, by id
   // (`v<node id>` a hull, `p<player id>` a man on foot) with their life.
+  // The submarine feed (`submarine-hud.js`): what it read off the boat the
+  // local player drives this frame, and what it last wrote.
+  window.__submarine = () => {
+    const root = page.localPlayer.occupancy?.root;
+    const owner = root ? page.world?.nodeOwners?.get(root) : undefined;
+    const entry = owner === undefined ? null : page.bodyWorld?.get(owner);
+    const water = entry?.spec?.waterPart ?? null;
+    return {
+      read: page.submarineHud?.read() ?? null,
+      last: page.submarineHud?.last ?? null,
+      // The body world's hull, which the damage clock's depth reads.
+      body: entry && {
+        owner, parts: entry.parts.length, waterPart: water?.node?.name ?? null,
+        found: !!water && entry.parts.some(p => p.node === water.node && p.kind !== 'spring'),
+        vertices: (() => {
+          const part = water && entry.parts.find(p => p.node === water.node && p.kind !== 'spring');
+          const layer = part?.shape?.layers?.[0];
+          if (!layer?.vertices?.length || typeof part.worldVertex !== 'function') {
+            return { count: layer?.vertices?.length ?? null, worldVertex: typeof part?.worldVertex };
+          }
+          const v = [0, 0, 0];
+          let low = Infinity;
+          for (let i = 0; i < layer.vertices.length / 3; i++) { part.worldVertex(0, i, v); low = Math.min(low, v[1]); }
+          return { count: layer.vertices.length / 3, low };
+        })(),
+        oxygen: page.world?.vehicleDamage?.get(owner)?.oxygen ?? null,
+      },
+    };
+  };
   window.__sonar = () => {
     const local = page.mapSonar.localScope();
     return {

@@ -32,7 +32,7 @@ root unless they start with `viewer/`, which means `tools/bf1942-models/viewer/`
 | 3 | Ground AA against aircraft | **4** | The fuse, the burst and the AA bot are built and pure. The pilot's counters are clear moves. The gun cannot move, which makes it half a duel |
 | 4 | Bomber against a ground target (dive bombing, level bombing, torpedo runs) | **3** | The ballistics are built and exact, but it is a range or a course more than a duel, unless the target fights back (item 3) |
 | 5 | Combined arms and team fights | **3** | It has the most value, because the best BF1942 play is teamwork, and the most cost: N-seat duels, a friendly bot and team scoring |
-| 6 | Naval (destroyer, submarine, torpedoes, carriers, landing craft) | **3** for destroyer against submarine and torpedo leads, **2** for the rest | Ship physics is measured, but the submarine's dive is not on a control, fights last minutes, and few rounds are played on the naval maps |
+| 6 | Naval (destroyer, submarine, torpedoes, carriers, landing craft) | **3** for destroyer against submarine and torpedo leads, **2** for the rest | Ship physics is measured, the submarine dives on its key (since 2026-11-09), fights last minutes, and few rounds are played on the naval maps |
 | 7 | Light vehicles: the jeep against infantry and tanks, the APC role | **2** | Fights are decided by a ram or a mine in one second. The tricks are tips, not moves with counters |
 | 8 | Artillery and spotting | **2** | Indirect, slow and one-sided. It suits an explainer or a range better than a duel |
 
@@ -348,8 +348,9 @@ or a fighter is added (sections 2 and 3).
 - **Submarines.** A submarine's trim angle is a dive-depth setpoint, and it
   does not sink without limit (the SHIP-7 reversal,
   `features/bf1942-ships-research-2026-09-22/VERDICT.md` 2.1). The dive law is
-  in `viewer/body-float.js`, but it is not on a control: a Gato drives and
-  floats, and does not dive (`features/viewer-ships/README.md` section 7,
+  in `viewer/body-float.js`, and since 2026-11-09 it is on the arrow keys
+  (`features/submarine-dive-and-hud`; before that a Gato drove and floated
+  and did not dive, `features/viewer-ships/README.md` section 7,
   item 2).
 - **Depth charges.** Under water the fuse is different: it goes off near an
   object of 50,000 or more whose height is within the distance, which is 50 m
@@ -396,7 +397,7 @@ or a fighter is added (sections 2 and 3).
 | Part | State |
 |---|---|
 | Surface ships and their guns | Physics measured. Bots have boat steering and large-bore fire, but no plans |
-| Submarine | Needs the dive put on a control before any submarine lesson |
+| Submarine | The dive is on its key (2026-11-09); no lesson yet |
 | Pace | A fight lasts minutes, not seconds. The theatre would have to play at high speed and the nine-start grid cost more node time |
 | Recordings | The detector would need ships as parties and a much larger miss distance for slow, long-flight shells. The naval maps (Midway, Coral Sea, Iwo Jima's fleet) are played less, so expect few fights |
 | Carriers and landing craft | These are logistics and nerve, not duels. A carrier lesson is a landing and take-off course (`features/aircraft-ground-law` has the deck), not a fight |

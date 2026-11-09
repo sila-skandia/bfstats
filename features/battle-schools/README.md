@@ -203,7 +203,7 @@ From `other-matchups.md`, ranked for fit:
 | 3 | Ground AA against aircraft | 4 | The flak fuse and AA bot exist, and the pilot's counters are clear moves. The gun cannot move, so it is half a duel |
 | 4 | Bombing a ground target | 3 | Exact ballistics, but a course more than a duel |
 | 5 | Team fights (2v2, tank plus engineer) | 3 | The most value and the most cost: two-a-side duels, a friendly bot, team scoring. The Thach weave waits on this too |
-| 6 | Naval | 2 to 3 | Measured physics, but the submarine cannot dive on a control and fights last minutes |
+| 6 | Naval | 2 to 3 | Measured physics; the submarine dives on its key since 2026-11-09 (`features/submarine-dive-and-hud`), and fights last minutes |
 | 7 | Light vehicles | 2 | One ram or one mine decides it: tips, not moves |
 | 8 | Artillery and spotting | 2 | Indirect and slow; an explainer, not a duel |
 

@@ -122,6 +122,7 @@ import {
   COULOMB_GRAVITY, COULOMB_KINETIC_COEFFICIENT, SIMULATION_FPS,
 } from './body-friction.js';
 import { DEFAULT_TORQUE, shipSpec } from './ship-spec.js';
+import { heldAxisStep } from './vehicle-base.js';
 import { createShipLaw, shipTick, SHIP_TICK } from './ship-law.js';
 
 // Reading a ship out of its node tree (`hullGeometry`, `shipSpec`) is
@@ -788,13 +789,63 @@ export class Ship extends Aircraft {
    */
   get aground() { return this.state.grounded || this._touchedBed === true; }
 
+  /**
+   * A submarine's dive: each `FloatingBundle` that authors an axis on a key
+   * (`GatoFloater`, `Sub7C_Floater`: `c_PIPitch`, `setMinRotation 0/0/0`,
+   * `setMaxRotation 0/50/0`, `setMaxSpeed 0/2/0`, `setAcceleration 0/1/0`,
+   * no `setAutomaticReset`) is a RotationalBundle, and
+   * `FloatingBundle::handleUpdate` (`0x08240180`) runs its
+   * `calculateAndClipAngle` once a tick and writes the negated angle into
+   * the float node's `+0xa0`, the `angle` term of the lift (SHIP-7). That
+   * angle is a depth setpoint in metres: the boat settles at
+   * `angle + 0.5` under her float plane. The axis holds where the key left it
+   * (GUN-2, `heldAxisStep`), so the arrows dive and surface her and a
+   * released key keeps the depth.
+   *
+   * `float.trim` is built on first use from the node's own rig, so a hull
+   * with no such float pays one empty pass.
+   */
+  advanceTrim(dt) {
+    if (this._trims === undefined) {
+      this._trims = [];
+      for (const float of this.floats || []) {
+        const rig = float.node?.userData?.rig;
+        if (!rig || rig.automaticReset) continue;
+        const spec = Object.values(rig.axes || {})
+          .find(axis => axis?.input && !axis.free && axis.driver !== 'rate');
+        if (!spec) continue;
+        const span = Math.max(Math.abs(spec.min ?? 0), Math.abs(spec.max ?? 0));
+        if (!(span > 0)) continue;
+        float.trim = { spec, span, reg: { value: 0, speed: 0 } };
+        float.angle = 0;
+        this._trims.push(float);
+      }
+    }
+    for (const float of this._trims) {
+      const { spec, span, reg } = float.trim;
+      heldAxisStep(spec, reg, this.input(spec.input), dt);
+      float.angle = -reg.value * span;
+    }
+  }
+
+  /** The dive setpoint in metres (the first trimmed float's bundle angle), or
+   *  null for a hull that cannot dive. */
+  get diveSetpoint() {
+    if (this._trims === undefined) this.advanceTrim(0);
+    const float = this._trims[0];
+    return float ? float.trim.reg.value * float.trim.span : null;
+  }
+
   /** The engine's own per-tick contact latch, cleared once a tick.
    *  Also latches `beachedThisTick` on the frame the keel first touches. */
   integrate(dt) {
     const wasAground = this.aground;
     this._touchedBed = false;
     if (this.law) this.#integrateLaw(dt);
-    else super.integrate(dt);
+    else {
+      this.advanceTrim(dt);
+      super.integrate(dt);
+    }
     this.beachedThisTick = !wasAground && this.aground;
     if (this.beachedThisTick) {
       this.beachSpeed = Math.hypot(this.state.velocity.x, this.state.velocity.z);
@@ -825,6 +876,7 @@ export class Ship extends Aircraft {
     law.clock = Math.max(0, law.clock - ticks * SHIP_TICK);
     if (ticks > 8) ticks = 8;
     for (let i = 0; i < ticks; i++) {
+      this.advanceTrim(SHIP_TICK);
       if ((this._bedHold ?? 0) > 0 || this.deepestContact()) {
         this.#beachedTick();
         continue;

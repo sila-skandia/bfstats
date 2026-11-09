@@ -337,14 +337,62 @@ class HudLayoutGoldenTests(unittest.TestCase):
 
     # -- everything else the extractor is expected to produce ----------------
 
-    def test_all_sixteen_groups_are_present_and_non_empty(self) -> None:
+    def test_all_nineteen_groups_are_present_and_non_empty(self) -> None:
         expected = {"soldierIcon", "soldierAmmo", "vehicleIcon", "vehicleHealth",
                     "vehicleSeats", "primaryAmmo", "secondaryAmmo", "supplyIcon",
                     "hitIndicator", "weaponBar", "crosshair", "tickets", "outside",
-                    "spawnTimer", "spawnText", "statusMessage"}
+                    "spawnTimer", "spawnText", "statusMessage",
+                    "periscope", "depthFade", "submarine"}
         self.assertEqual(expected, set(self.hud["groups"]))
         for key in expected:
             self.assertTrue(self.group(key)["elements"], key)
+
+    # -- the submarine (SUB-2, SUB-4, SUB-5) --------------------------------
+
+    def test_the_periscope_group(self) -> None:
+        els = self.group("periscope")["elements"]
+        textures = [e.get("texture") for e in els]
+        self.assertEqual(["periscope", None, None, "artillery_zeromarker_4x32",
+                          "artillery_grid_hori_256x32", "artillery_marker_32x8", "cockpit_512x512"], textures)
+        gate = [{"var": "CrossHair/ShowCrossHair", "op": "eq", "value": True},
+                {"var": "Submarine/ShowPeriscope", "op": "eq", "value": True}]
+        for el in els[:6]:
+            self.assertEqual(gate, el["when"])
+        # The bearing marker: TranslateNode X = DirectionAngle * 42.
+        marker = els[5]
+        self.assertEqual([{"x": {"op": "mul", "a": {"var": "Submarine/DirectionAngle"}, "b": 42.0}, "y": 0}],
+                         marker["shift"])
+        self.assertEqual([381.0, 464.0, 32.0, 8.0], marker["rect"])
+        cockpit = els[6]
+        self.assertEqual([0.0, 0.0, 800.0, 600.0], cockpit["rect"])
+        self.assertEqual({"Submarine/DepthHud/ShowSubmarineCockpit", "Submarine/ShowDepthHud"},
+                         {c["var"] for c in cockpit["when"]})
+
+    def test_the_deep_fade_is_one_black_quad_on_its_alpha(self) -> None:
+        (fade,) = self.group("depthFade")["elements"]
+        self.assertEqual("fill", fade["kind"])
+        self.assertEqual({"a": {"var": "Submarine/DepthHud/DepthHudAlpha"}}, fade["colorVars"])
+        self.assertEqual([{"var": "Submarine/ShowDepthHud", "op": "eq", "value": True}], fade["when"])
+
+    def test_the_gauges(self) -> None:
+        els = self.group("submarine")["elements"]
+        self.assertEqual(14, len(els))
+        tapes = [e for e in els if e["kind"] == "scroll-picture"]
+        self.assertEqual(6, len(tapes))
+        self.assertEqual(["Submarine/Depth"] * 3 + ["Submarine/WantedDepth"] * 3, [t["valueVar"] for t in tapes])
+        self.assertEqual({"Submarine/MaximumDepth"}, {t["maxVar"] for t in tapes})
+        self.assertEqual([None, "Submarine/PeriscopeDepth", "Submarine/MaxDepth"] * 2,
+                         [t.get("maintainVar") for t in tapes])
+        self.assertEqual([False, False, True] * 2, [t["fromBottom"] for t in tapes])
+        # The depth mark on the water gauge: Y = Depth / MaximumDepth * 64,
+        # at X -2 (an IntData 4294967294).
+        mark = next(e for e in els if e.get("texture") == "panel_djup3_32x4")
+        self.assertEqual([341.0, 527.0, 32.0, 4.0], mark["rect"])
+        self.assertEqual({"op": "mul", "a": {"op": "div", "a": {"var": "Submarine/Depth"},
+                                              "b": {"var": "Submarine/MaximumDepth"}}, "b": 64},
+                         mark["shift"][0]["y"])
+        air = els[-1]
+        self.assertEqual(("fill-picture", "Submarine/Oxygen", 100), (air["kind"], air["valueVar"], air["max"]))
 
     # -- the respawn wait ---------------------------------------------------
 
@@ -631,6 +679,8 @@ class DamageIndicatorGoldenTests(unittest.TestCase):
         "weaponBar": ["weaponBar"], "crosshair": ["crosshair"], "tickets": ["tickets"],
         "outside": ["outside"], "spawnTimer": ["spawnTimer"], "spawnText": ["spawnText"],
         "statusMessage": ["statusMessage"],
+        # The submarine's three tops, found by what each one draws (SUB-4).
+        "periscope": ["periscope"], "depthFade": ["depthFade"], "submarine": ["submarine"],
     }
 
     @classmethod
@@ -643,6 +693,8 @@ class DamageIndicatorGoldenTests(unittest.TestCase):
         cls.hud = hud.decode_hud(data, lexicon={})
         cls.tops = {key: hud.find_top(cls.root, sig, rect, True)[0]
                     for key, (sig, rect) in hud.RAW_TOPS.items()}
+        cls.tops.update({key: hud.find_top_mentioning(cls.root, needle)
+                         for key, needle in hud.SUBMARINE_TOPS.items()})
 
     def hit_chain(self) -> list:
         return self.tops["hitIndicator"]["Split node"].chain()

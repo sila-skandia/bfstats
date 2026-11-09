@@ -497,6 +497,8 @@ import {
 import { createHudFeed } from './hud-feed.js';
 import { CROSSHAIR_FACTORS, createVehicleHud } from './vehicle-hud.js';
 import { createSoldierHud } from './soldier-hud.js';
+import { createSubmarineHud } from './submarine-hud.js';
+import { submersionDepth } from './world-damage.js';
 import { createHandWeapon } from './hand-weapon.js';
 import { createKitDropsPage } from './kit-drops-page.js';
 import { wearPagePaint } from './level-skin.js';
@@ -1830,6 +1832,40 @@ const vehicleHud = createVehicleHud(bag(
     get replayAim() { return replayController?.crosshairAim() ?? null; },
   },
 ));
+// The submarine's gauges, periscope and deep fade (submarine-hud.js), fed
+// from the boat the local player drives.
+const submarineHud = createSubmarineHud({
+  vars: () => hudFeed.gameHud.vars,
+  setFullscreenMap: on => mapSurfaces?.bfmap?.setOpen(on),
+  read: () => {
+    const occ = localPlayer.occupancy;
+    const drive = localPlayer.aircraft;
+    const root = occ?.root;
+    const physics = root?.userData?.physics;
+    if (!drive || !root || occ.rootId !== occ.activeSeatId || physics?.vehicleType !== 'VTSubmarine') return null;
+    const world = level.world;
+    const waterLevel = world?.collider?.waterLevel;
+    // By the hull's node, as the damage clock keys it (`world.nodeOwners`).
+    const owner = world?.nodeOwners?.get(root);
+    const vehicle = owner === undefined ? null : world.vehicleDamage?.get(owner) ?? null;
+    const p = drive.state.position;
+    const bed = world?.collider?.heightfield?.height?.(p.x, p.z);
+    // The camera's bearing off the bow, positive to starboard. In the hull's
+    // own frame here her bow is -Z and her starboard +X.
+    camera.getWorldDirection(_subCam).applyQuaternion(_subQ.copy(drive.state.orientation).invert());
+    return {
+      physics,
+      depth: submersionDepth(world?.bodyWorld?.get(owner), waterLevel),
+      waterColumn: Number.isFinite(bed) && Number.isFinite(waterLevel) ? waterLevel - bed : 0,
+      setpoint: drive.diveSetpoint ?? 0,
+      oxygen: vehicle?.oxygen ?? 1,
+      bearing: Math.atan2(_subCam.x, -_subCam.z),
+      firstPerson: !!(seatCamera?.view?.firstPerson ?? drive.firstPerson),
+    };
+  },
+});
+const _subCam = new THREE.Vector3();
+const _subQ = new THREE.Quaternion();
 const soldierHud = createSoldierHud(bag(
   from(() => controls, `crossHairColor`),
   from(() => hudFeed, `gameHud hudPack`),
@@ -1843,6 +1879,7 @@ const soldierHud = createSoldierHud(bag(
   from(() => ticketFeed, `feedFlagIconVars feedTicketVars`),
   {
     get combatFrame() { return combatFrameNow(); }, get LOCAL_PLAYER() { return LOCAL_PLAYER; },
+    submarineHud,
     get optOnFoot() { return optOnFoot; }, get optPilot() { return optPilot; },
     // A round being watched (replay-round.js) shows its counter as a round in
     // play does, with nobody of the page's own in the world.
@@ -4377,6 +4414,7 @@ setInterval(() => {
     'No frame has completed for several seconds. The GPU may be hung. Reload to recover.');
 }, 1000);
 const testHooks = installTestHooks(bag(
+  { submarineHud },
   from(() => deployScreen, `deployActive KITS`),
   from(() => flagCapture, `announceCapture captureVoiceDirs captureVoiceKind flags
     lastCaptureVoice playCaptureVoice`),

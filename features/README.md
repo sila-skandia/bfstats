@@ -128,6 +128,7 @@ folder answers.
 | [pilot-mouse-look](pilot-mouse-look/README.md) | build | Why does a pilot's view move only while the mouse-look key is held? |
 | [bf1942-ships-research-2026-09-22](bf1942-ships-research-2026-09-22/README.md) | research | How do retail ships float, sink, steer and carry deck spawns? |
 | [viewer-ships](viewer-ships/README.md) | build | How do ships float, steer, sink, beach and spawn soldiers in the viewer? |
+| [submarine-dive-and-hud](submarine-dive-and-hud/README.md) | build | How does a submarine dive on the arrow keys, and what do its gauges, periscope and deep view show? |
 | [carrier-destroyer-parity](carrier-destroyer-parity/README.md) | design | How should carrier deck planes, davits, beaching and destroyer turrets be fixed? |
 | [maps-viewer-drivable-decks-and-reload-sound](maps-viewer-drivable-decks-and-reload-sound/README.md) | build | How do driven vehicles mount bridges and repair pads instead of hitting them? |
 | [bf1942-seat-defects-2026-09-20](bf1942-seat-defects-2026-09-20/README.md) | fix | Why did tanks list, lose their 1P interior, crosshair and sound? |

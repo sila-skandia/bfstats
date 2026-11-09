@@ -365,12 +365,16 @@ export function createSoldierHud(page) {
     // whenever the player is in the world, on foot or in any seat, and it
     // stays up through the death cam -- the owner's recording draws the cross
     // over the dropped helmet -- which is what lets a hit landed in the last
-    // instant finish its fade. No periscope is modelled, and that gate has to
-    // read false, not unfed, or the whole group culls. Nothing feeds
+    // instant finish its fade. The periscope gate is the submarine feed's
+    // (`submarine-hud.js`), which writes false rather than leaving it unfed
+    // outside a boat, or the whole group would cull. Nothing feeds
     // `CrossHairType`: the DOM `#crosshair` draws the cross (updateCrosshair),
     // so the layout's share is the hit marks and, below, the scope.
-    vars['CrossHair/ShowCrossHair'] = (inWorld || inVehicle) && layoutHasHitMarks();
-    vars['Submarine/ShowPeriscope'] = false;
+    // The periscope rides in this group (`ShowCrossHair` and
+    // `Submarine/ShowPeriscope`), so a boat's driver raises it too.
+    page.submarineHud?.update(dt);
+    vars['CrossHair/ShowCrossHair'] = ((inWorld || inVehicle) && layoutHasHitMarks())
+      || !!vars['Submarine/ShowPeriscope'];
     vars['CrossHair/ScopeIndex'] = 0;
     // `game.setCrossHairColor`, in the profile's 0-255: the layout divides by
     // 256 itself, as the game's does (XHIT-7).

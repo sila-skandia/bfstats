@@ -209,6 +209,49 @@ def default_value(obj):
     return None
 
 
+EXPR_OPS = {"AddData": "add", "SubData": "sub", "MulData": "mul", "DivData": "div"}
+
+
+def expr(obj):
+    """A Data object as an expression the viewer evaluates each frame: a
+    number for a literal, `{"var": name}` for a named (live) Data, and
+    `{"op": add|sub|mul|div, "a": .., "b": ..}` over those. The submarine's
+    gauges place their marks this way (`Submarine/Depth /
+    Submarine/MaximumDepth * 64`), which a literal default cannot carry.
+    None for anything else."""
+    if isinstance(obj, (int, float)) and not isinstance(obj, bool):
+        return obj
+    if not isinstance(obj, meme.Obj):
+        return None
+    if obj.name:
+        return {"var": obj.name}
+    if obj.cls in EXPR_OPS:
+        a, b = expr(obj["Data 1"]), expr(obj["Data 2"])
+        if a is None or b is None:
+            return None
+        return {"op": EXPR_OPS[obj.cls], "a": a, "b": b}
+    value = default_value(obj)
+    return value if isinstance(value, (int, float)) and not isinstance(value, bool) else None
+
+
+def is_live(e) -> bool:
+    """Whether an `expr` reads a variable anywhere (else it is a constant)."""
+    if isinstance(e, dict):
+        return "var" in e or is_live(e.get("a")) or is_live(e.get("b"))
+    return False
+
+
+def add_shift(live: dict | None, x, y) -> dict | None:
+    """`live` with one more offset on the leaf's rect: `shift` is a list of
+    `{"x": expr, "y": expr}` the viewer sums each frame (a `TranslateNode`,
+    or a `BfTransformNode` whose X or Y is computed)."""
+    if not is_live(x) and not is_live(y):
+        return live
+    out = dict(live or {})
+    out["shift"] = [*out.get("shift", []), {"x": x if is_live(x) else 0, "y": y if is_live(y) else 0}]
+    return out
+
+
 NEG_CMP = {"eq": "ne", "ne": "eq"}
 FLIP_CMP = {"lt": "gt", "le": "ge", "gt": "lt", "ge": "le", "eq": "eq", "ne": "ne"}
 
@@ -418,10 +461,25 @@ class Flattener:
             elif cls == "BfTransformNode":
                 xv, xvar = default_value(node["X"]), named(node["X"])
                 yv, yvar = default_value(node["Y"]), named(node["Y"])
+                xe, ye = expr(node["X"]), expr(node["Y"])
+                # A computed offset (neither a literal nor one named Data)
+                # moves the leaves each frame; its literal default does not
+                # place them, since the viewer adds the live value instead.
+                if is_live(xe) and not xvar:
+                    xv = None
+                if is_live(ye) and not yvar:
+                    yv = None
                 x, y = ox + (xv or 0), oy + (yv or 0)
                 w, h = node["Width"], node["Height"]
                 pv = {"x": xvar, "xDefault": xv, "y": yvar, "yDefault": yv}
-                self.run(node.children(), x, y, [x, y, w, h], color, when, pv, tag, on_enter, rotation, live)
+                moved = add_shift(live, xe if not xvar else 0, ye if not yvar else 0)
+                self.run(node.children(), x, y, [x, y, w, h], color, when, pv, tag, on_enter, rotation, moved)
+            elif cls == "TranslateNode":
+                # Moves what follows it in its list by (X, Y), each frame: the
+                # periscope's bearing marker (`Submarine/DirectionAngle * 42`).
+                live = add_shift(live, expr(node["X"]), expr(node["Y"]))
+            elif cls == "BfScrollPictureNode":
+                self.emit_scroll_picture(node, rect, color, when, tag, live)
             elif cls == "SplitNode":
                 self.run(node.children(), ox, oy, rect, color, when, posvar, tag, on_enter, rotation, live)
             elif cls == "PictureNode":
@@ -529,6 +587,38 @@ class Flattener:
         extra["horizontalAlign"] = bool(node["Horizontal align"])
         extra["fillOrder"] = bool(node["Fill order"])
         self.leaf("fill-picture", rect, color, when, tag, **extra)
+
+    def emit_scroll_picture(self, node, rect, color, when, tag=None, live=None) -> None:
+        """`BfScrollPictureNode`: a tall tape slid by a value and shown
+        through a window (the submarine's depth tapes). Its fields as
+        streamed: the picture, the value and its full scale, `Y offset` and
+        `Size` (ints: the window's top inset and height), `Var size` (which
+        the node itself overwrites with the band it draws), `Maintain value`
+        (the depth the green or red copy is clipped at) and `From bottom`.
+        `hud.js` `_drawScrollPicture` is the paint."""
+        pic = node["Scroll picture"]
+        value, value_var = default_value(node["Variable"]), named(node["Variable"])
+        maxv, maxv_var = default_value(node["Maximum value"]), named(node["Maximum value"])
+        keep, keep_var = default_value(node["Maintain value"]), named(node["Maintain value"])
+        extra: dict = {"texture": texture_key(pic)} if pic else {}
+        if value is not None:
+            extra["value"] = value
+        if value_var:
+            extra["valueVar"] = value_var
+        if maxv is not None:
+            extra["max"] = maxv
+        if maxv_var:
+            extra["maxVar"] = maxv_var
+        extra["yOffset"] = to_signed32(node["Y offset"])
+        extra["size"] = to_signed32(node["Size"])
+        if keep is not None:
+            extra["maintain"] = keep
+        if keep_var:
+            extra["maintainVar"] = keep_var
+        extra["fromBottom"] = bool(node["From bottom"])
+        if live and live.get("shift"):
+            extra["shift"] = live["shift"]
+        self.leaf("scroll-picture", rect, color, when, tag, **extra)
 
     def emit_text(self, node, rect, color, when, tag=None) -> None:
         src, style = node["String"], node["Style"]
@@ -816,6 +906,43 @@ MOD_NOTE = (
 )
 
 
+# The submarine's three tops (SUB-2). None is told apart by its leading
+# CullNodes -- the periscope's top opens on a TransformNode, the deep fade's on
+# a SplitNode -- so each is found by a picture or a variable only it carries:
+# the periscope and the cockpit picture (vanilla's top 4), the black fade over
+# `Submarine/DepthHud/DepthHudAlpha` (top 15) and the gauges under
+# `Submarine/ShowSubmarine` (top 41). A mod whose menu/InGame lacks one gets
+# an empty group.
+SUBMARINE_TOPS = {
+    "periscope": "Submarine/periscope.tga",
+    "depthFade": "Submarine/DepthHud/DepthHudAlpha",
+    "submarine": "Submarine/sub_deapth_panel_32x64.tga",
+}
+
+
+def _mentions(obj, needle: str, depth: int = 0) -> bool:
+    if depth > 40:
+        return False
+    if isinstance(obj, meme.Obj):
+        if obj.name == needle:
+            return True
+        # Not along "Next node": that is the entry's siblings, not its own.
+        return any(_mentions(v, needle, depth + 1)
+                   for k, v in obj.fields.items() if not (depth == 0 and k == "Next node"))
+    if isinstance(obj, list):
+        return any(_mentions(v, needle, depth + 1) for v in obj)
+    return obj == needle
+
+
+def find_top_mentioning(root: meme.Obj, needle: str) -> meme.Obj | None:
+    """The one top-level entry whose subtree names `needle` (a picture path or
+    a Data's name), or None. More than one raises, as `find_top` does."""
+    found = [top for top in root.chain() if _mentions(top, needle)]
+    if len(found) > 1:
+        raise SystemExit(f"{len(found)} menu/InGame top-level entries mention {needle!r}")
+    return found[0] if found else None
+
+
 def notes_for(owner: str) -> list[str]:
     """`owner` is the mod in the chain whose menu.rfa held `menu/InGame`."""
     if owner.lower() == "bf1942":
@@ -863,6 +990,11 @@ def decode_hud(ingame: bytes, lexicon: dict[str, str],
         "outside": raw["outside"],
         **{key: raw[key] for key in RESPAWN_GROUPS},
     }
+    for key, needle in SUBMARINE_TOPS.items():
+        top = find_top_mentioning(root, needle)
+        groups[key] = flatten([top], lexicon) if top is not None else []
+        if top is None:
+            absent.append(key)
 
     out_groups = {}
     fonts: set[str] = set()

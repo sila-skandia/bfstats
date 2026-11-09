@@ -429,7 +429,9 @@ At her draft, and 3.5 m lower with the sea over her main deck line.
    so the work is wiring it in for every floating hull rather than only for a
    sinking one, and giving `body-ground.js`'s parked path a way to leave a
    ship's heave to the float term.
-2. **The submarine dive is in the module and not on a control.** The law is
+2. ~~**The submarine dive is in the module and not on a control.**~~ Built
+   2026-11-09 (`ship.js` `advanceTrim`, ledger SUB-1, with the gauges, the
+   periscope and the deep view in `features/submarine-dive-and-hud`). The law is
    implemented and tested (`depth = angle_Y + 0.5`, capped at 50.5 m by
    `setMaxRotation 0/50/0`); what is missing is the `RotationalBundle` on the
    float node driven by `c_PIPitch` at `setMaxSpeed 0/2/0` /

@@ -219,6 +219,26 @@ SPRITES: list[str] = [
     "Texture/Ingame/Icon_tank_turn_body_32x32",
     "Texture/Ingame/Icon_tank_turn_pipe_16x32",
     "Texture/Ingame/Icon_server_msg_16x16",
+    # A submarine's HUD (`submarine-hud.js`, SUB-1..SUB-4): the periscope and
+    # the bearing scale under it (the artillery spotter's grid, marker and
+    # zero mark, which `menu/InGame` reuses), the cockpit picture behind the
+    # fullscreen map when she is deep, the water-depth gauge and its marks,
+    # the two scrolling depth tapes with their periscope-green and crush-red
+    # copies, and the air gauge.
+    "Texture/Submarine/periscope",
+    "Texture/Submarine/cockpit_512x512",
+    "Texture/Ingame/Artillery/artillery_grid_hori_256x32",
+    "Texture/Ingame/Artillery/artillery_marker_32x8",
+    "Texture/Ingame/Artillery/artillery_zeromarker_4x32",
+    "Texture/Submarine/panel_djup_32x64",
+    "Texture/Submarine/panel_djup2_32x64",
+    "Texture/Submarine/panel_djup3_32x4",
+    "Texture/Submarine/sub_deapth_numbers_32x256",
+    "Texture/Submarine/sub_deapth_numbers_green_32x256",
+    "Texture/Submarine/sub_deapth_numbers_red_32x256",
+    "Texture/Submarine/sub_deapth_panel_32x64",
+    "Texture/Submarine/panel_syre_64x64",
+    "Texture/Submarine/panel_syre2_64x64",
     # The root copies — `menu/InGame` names both with no directory at all
     # (`Picture='ingame_weaponbar_512x64.tga'`), which resolves to
     # `menu/Texture/`, not the near-identical `menu/Texture/Ingame/` copy of

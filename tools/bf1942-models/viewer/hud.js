@@ -55,18 +55,19 @@
 const DEFAULT_VIRTUAL = [800, 600];
 
 /** The groups in the order `menu/InGame` draws them: its root chain, each
- *  group at its first top's index (ledger HFD-8) -- crosshair 3, supply 6-13,
- *  weaponBar 19, soldierIcon 21, soldierAmmo 22, the vehicle panel 23-26,
- *  tickets 27, spawnTimer 33, spawnText 35, hitIndicator 37, outside 42,
- *  statusMessage 46. `hud-layout.json` lists them in
+ *  group at its first top's index (ledger HFD-8) -- crosshair 3, periscope 4,
+ *  supply 6-13, depthFade 15, weaponBar 19, soldierIcon 21, soldierAmmo 22,
+ *  the vehicle panel 23-26, tickets 27, spawnTimer 33, spawnText 35,
+ *  hitIndicator 37, submarine 41, outside 42, statusMessage 46.
+ *  `hud-layout.json` lists them in
  *  its own order, which put the weapon bar, the crosshair group and the
  *  tickets after the hit indicator; that only mattered once the indicator's
  *  full-screen wash was drawn, because the wash tints everything under it.
  *  A group this list does not name paints last, in file order. */
 export const PAINT_ORDER = [
-  'crosshair', 'supplyIcon', 'weaponBar', 'soldierIcon', 'soldierAmmo',
+  'crosshair', 'periscope', 'supplyIcon', 'depthFade', 'weaponBar', 'soldierIcon', 'soldierAmmo',
   'vehicleIcon', 'vehicleHealth', 'vehicleSeats', 'primaryAmmo', 'secondaryAmmo',
-  'tickets', 'spawnTimer', 'spawnText', 'hitIndicator', 'outside', 'statusMessage',
+  'tickets', 'spawnTimer', 'spawnText', 'hitIndicator', 'submarine', 'outside', 'statusMessage',
 ];
 
 /** The respawn wait's plates (`extract_hud_layout.py` `RESPAWN_GROUPS`): the
@@ -193,7 +194,12 @@ function condOk(c, vars) {
 function contentVarsOf(el) {
   const out = [];
   if (el.kind === 'text' && el.var) out.push(el.var);
-  if (el.kind === 'fill-picture' && el.valueVar) out.push(el.valueVar);
+  if ((el.kind === 'fill-picture' || el.kind === 'scroll-picture') && el.valueVar) out.push(el.valueVar);
+  // A computed offset has no literal to fall back on: unfed, the leaf culls.
+  for (const s of el.shift || []) {
+    collectExprVars(s.x, out);
+    collectExprVars(s.y, out);
+  }
   if (el.kind === 'occupied-seat' && el.dataRef) out.push(el.dataRef);
   // A `BfMultiplyColorEffect2` alpha is required, not tolerant: its authored
   // default is an editor preview (the crosshair's `HitIndicationTime` ships
@@ -201,6 +207,82 @@ function contentVarsOf(el) {
   // good. Unfed, the leaf culls -- the engine's own resting value is 0.
   if (el.alphaVars) out.push(...el.alphaVars);
   return out;
+}
+
+/** The variables an `extract_hud_layout.py` `expr` reads, pushed onto `out`. */
+function collectExprVars(e, out) {
+  if (!e || typeof e !== 'object') return;
+  if (e.var) out.push(e.var);
+  collectExprVars(e.a, out);
+  collectExprVars(e.b, out);
+}
+
+/** An `expr` (a number, `{var}`, or `{op, a, b}` over those) on the live
+ *  variables. A division by zero is 0, as an unset gauge reads. */
+export function evalExpr(e, vars) {
+  if (typeof e === 'number') return e;
+  if (!e || typeof e !== 'object') return 0;
+  if (e.var) {
+    const n = Number(vars[e.var]);
+    return Number.isFinite(n) ? n : 0;
+  }
+  const a = evalExpr(e.a, vars), b = evalExpr(e.b, vars);
+  switch (e.op) {
+    case 'add': return a + b;
+    case 'sub': return a - b;
+    case 'mul': return a * b;
+    case 'div': return b ? a / b : 0;
+    default: return 0;
+  }
+}
+
+/** A leaf's live offset: the sum of its `shift` entries (a `TranslateNode`,
+ *  a `BfTransformNode` with a computed X or Y). */
+export function shiftOf(el, vars) {
+  let dx = 0, dy = 0;
+  for (const s of el.shift || []) {
+    dx += evalExpr(s.x, vars);
+    dy += evalExpr(s.y, vars);
+  }
+  return [dx, dy];
+}
+
+/**
+ * `BfScrollPictureNode::onPaint` (the Mac client's symbols, `0x008cd...`,
+ * ledger SUB-2): where a depth tape is drawn and the band it is clipped to.
+ * Returns `{ top, clipTop, clipHeight }` in the leaf's virtual units, or null
+ * when nothing draws. `top` is the tape's own top edge,
+ * `y - v*h/max - v/5` for value `v` and the leaf's rect height `h`.
+ *
+ * The band is the window, `size` tall from `y + yOffset`, unless the node
+ * keeps a value (`Maintain value > 0`): then it is `(keep - v)*2.8 + 32`
+ * tall, the part of the window above the kept depth (`fromBottom` false, the
+ * green periscope copy) or below it (`fromBottom` true, never negative, the
+ * red crush copy).
+ */
+export function scrollPictureBand(el, vars, y, h) {
+  const v = Number(el.valueVar ? vars[el.valueVar] : el.value);
+  const max = Number(el.maxVar && vars[el.maxVar] !== undefined ? vars[el.maxVar] : el.max);
+  if (!Number.isFinite(v) || !(max > 0)) return null;
+  const keep = Number(el.maintainVar && vars[el.maintainVar] !== undefined ? vars[el.maintainVar] : el.maintain) || 0;
+  const size = Number(el.size) || 0;
+  const yOffset = Number(el.yOffset) || 0;
+  const top = y - v * h / max - (v / 10) * 2;
+  let band = size;
+  if (keep > 0) {
+    band = (keep - v) * 2.8 + 32;
+    if (el.fromBottom) band = Math.max(0, band);
+  }
+  let clipTop, clipHeight;
+  if (!el.fromBottom) {
+    clipTop = y + yOffset;
+    clipHeight = band - yOffset;
+  } else {
+    clipTop = y + yOffset + band;
+    clipHeight = (size + y) - clipTop;
+  }
+  if (!(clipHeight > 0)) return null;
+  return { top, clipTop, clipHeight };
 }
 
 const WHITE = [1, 1, 1, 1];
@@ -259,6 +341,13 @@ function trackedVarsOf(el, out) {
     if (el[key]) out.add(el[key]);
   }
   if (el.rotation?.angleVar) out.add(el.rotation.angleVar);
+  if (el.maintainVar) out.add(el.maintainVar);
+  const shiftVars = [];
+  for (const s of el.shift || []) {
+    collectExprVars(s.x, shiftVars);
+    collectExprVars(s.y, shiftVars);
+  }
+  for (const name of shiftVars) out.add(name);
   for (const b of Object.values(el.colorVars || {})) out.add(b.var);
   for (const name of el.alphaVars || []) out.add(name);
   if (el.posVar) {
@@ -575,8 +664,16 @@ export class Hud {
 
   _paintElement(ctx, el) {
     if (!this._visible(el)) return;
-    const [x, y, w, h] = el.rect || [0, 0, 0, 0];
+    let [x, y, w, h] = el.rect || [0, 0, 0, 0];
+    if (el.shift) {
+      const [dx, dy] = shiftOf(el, this.vars);
+      x += dx;
+      y += dy;
+    }
     switch (el.kind) {
+      case 'scroll-picture':
+        this._drawScrollPicture(ctx, el, x, y, w, h);
+        break;
       case 'picture':
         this._drawPicture(ctx, el, x, y, w, h, this.sprite(el.texture));
         break;
@@ -650,6 +747,23 @@ export class Hud {
     } else {
       ctx.drawImage(img, x, y, w, h);
     }
+    ctx.globalAlpha = 1;
+  }
+
+  /** A depth tape (`scrollPictureBand`): the tape at its slid position,
+   *  clipped to its band. */
+  _drawScrollPicture(ctx, el, x, y, w, h) {
+    const img = this.sprite(el.texture);
+    if (!img) return;
+    const band = scrollPictureBand(el, this.vars, y, h);
+    if (!band) return;
+    ctx.save();
+    ctx.beginPath();
+    ctx.rect(x, band.clipTop, w, band.clipHeight);
+    ctx.clip();
+    ctx.globalAlpha = el.color ? el.color[3] : 1;
+    ctx.drawImage(img, x, band.top, w, h);
+    ctx.restore();
     ctx.globalAlpha = 1;
   }
 
@@ -773,8 +887,8 @@ export class Hud {
    *  the whole screen takes when the player is hurt, `(1, 0, 0,
    *  HitFromDir/HitFromDirAlpha)` over everything the chain drew before it
    *  (ledger HFD-5, HFD-8; the owner's recording at 9.93 s). */
-  _drawFill(ctx, el) {
-    const [x, y, w, h] = el.rect;
+  _drawFill(ctx, el, ...at) {
+    const [x, y, w, h] = at.length === 4 ? at : el.rect;
     const color = liveColor(el, this.vars, this._rgba);
     if (!el.colorVars && this.vars['HitFromDir/HitFromDirAlpha'] != null
         && (el.when || []).some(w => w.var === 'HitFromDir/HitFromDir')) {
