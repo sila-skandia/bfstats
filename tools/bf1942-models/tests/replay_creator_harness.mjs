@@ -177,6 +177,13 @@ const vec = v => [round(v.x), round(v.y), round(v.z)];
   const armed = cam.arm(f, { kill });
   const victimAt = cam.target.victimAt ? vec(cam.target.victimAt) : null;
   const victimDist = round(cam.target.victimDist ?? -1, 2);
+  // A man under the water's level is aimed at over it (a PT boat's driver,
+  // whose hull's origin is under the surface).
+  player.ctx.waterLevel = () => 5;
+  cam.aimVictim();
+  const overWater = round(cam.target.victimAt.y, 2);
+  player.ctx.waterLevel = () => null;
+  cam.aimVictim();
   const early = frame();
   const burst = tracer([0, 1.6, 0], [0, 0, -1]);
   while (player.time < 10) {
@@ -208,7 +215,7 @@ const vec = v => [round(v.x), round(v.y), round(v.z)];
     frames++;
   }
   results.roundcam = {
-    armed, victimAt, victimDist, early, speedAtShot: round(speedAtShot, 3), claimed, state1, behindBy, speedInFlight,
+    armed, victimAt, victimDist, overWater, early, speedAtShot: round(speedAtShot, 3), claimed, state1, behindBy, speedInFlight,
     streakHidden, realFlight: round(realFlight, 2), state2, impactAt, endState: cam.state, speedAfter: player.speed, followed,
     rigReleased: player.camera.rig === null, heldPastKill: round(player.time - 10.3, 2) >= 0.9,
     endsAtCamera: vec(camera.position),

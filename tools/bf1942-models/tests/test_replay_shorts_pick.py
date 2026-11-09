@@ -49,9 +49,13 @@ class ShortsPickTests(unittest.TestCase):
         # (2026-11-09: a 428 m kill of a PT boat's crewman made no Short).
         for name in ("sniperOnBoat", "sniperOnJeep", "sniperOnGun"):
             self.assertEqual(k[name], "long-shot", name)
+        # A gun shot excludes nothing: a tank crewman shot out of a tank that
+        # lives is a long shot, not a tank buster; a pilot is ground to air.
+        self.assertEqual(k["sniperOnTankCrew"], "long-shot")
+        self.assertEqual(k["sniperOnPlane"], "ground-to-air")
         # Not worth a Short: armour on a jeep or a mortar, a rifle kill under
         # 100 m, a thrown grenade, a tank on a man on foot.
-        for name in ("tankToJeep", "tankToMortar", "shortShot", "longGrenade", "tankOnFoot", "footOnJeep", "closeOnBoat"):
+        for name in ("tankToJeep", "tankToMortar", "shortShot", "longGrenade", "tankOnFoot", "footOnJeep", "closeOnBoat", "rocketOnTankCrew"):
             self.assertIsNone(k[name], name)
 
     def test_the_key_is_the_apis(self) -> None:

@@ -44,6 +44,9 @@ export const WINDOW = Object.freeze({ before: 5.5, after: 1 });
  *  out of range for a moment (2026-11-03, a Mustang 79.5 m in 0.84 s on Battle
  *  of Britain). A man standing still sends nothing for seconds and moves
  *  nothing: that is not one. */
+/** A hull destroyed within this many seconds of its man's kill line died
+ *  with him. */
+const HULL_DIED = 2;
 const GAP = 0.3;
 const JUMP = 15;
 
@@ -173,17 +176,23 @@ function lifeOf(rec, pid, t) {
   return root?.life ?? null;
 }
 
-/** The kind of Short a kill makes, or null for one that makes none. */
-export function kindOfKill(killer, victim, distance, weapon) {
+/** The kind of Short a kill makes, or null for one that makes none.
+ *  `hullDied`: the victim's hull was destroyed with him (a man on foot who
+ *  kills a tank); false when the shot took the man and left the hull. */
+export function kindOfKill(killer, victim, distance, weapon, { hullDied = true } = {}) {
   if (!killer || !victim) return null;
   if (victim.kind === 'air') return killer.kind === 'air' ? 'air-to-air' : 'ground-to-air';
   if (killer.kind === 'armour' && victim.kind === 'armour') return 'tank-to-tank';
   // A man on foot who kills a tank (a PIAT, a bazooka, a charge): the owner,
   // 2026-11-09, on Arnhem's 351 kills making no single Short at all.
-  if (killer.foot && victim.kind === 'armour') return 'tank-buster';
-  // A long shot from a man on foot, at a man on foot or one in a boat, a jeep
-  // or on a gun (2026-11-09: Deus Ex Machina's 428 m K98 kill of a PT boat's
-  // crewman on Midway made no Short; the victim had to be on foot).
+  // A tank that lives through the kill was not busted: the shot took the man
+  // in it (no rifle kill of a tank's crew over 24 recordings killed the hull,
+  // and rockets, charges and mines mostly did, within 0.1 s).
+  if (killer.foot && victim.kind === 'armour' && hullDied) return 'tank-buster';
+  // A long shot from a man on foot, whatever the man he kills is in, but a
+  // plane (2026-11-09: Deus Ex Machina's 428 m K98 kill of a PT boat's
+  // crewman on Midway made no Short; the victim had to be on foot. The owner:
+  // "a gun shot should not exclude anything").
   if (killer.foot && distance >= LONG_SHOT && !NOT_AIMED.test(String(weapon ?? ''))) return 'long-shot';
   return null;
 }
@@ -261,7 +270,10 @@ export function shortCandidates(rec, { models, slug = '', kills = rec.kills } = 
     const victim = mountOf(rec, k.victim, at, models);
     // A kill line can name no weapon; the round that made it does.
     const weapon = k.weapon || f.round.f.weapon || null;
-    const kind = kindOfKill(killer, victim, f.distance, weapon);
+    // His hull destroyed with him, or he alone killed in it.
+    const hull = victim?.tmpl ? lifeOf(rec, k.victim, at) : null;
+    const hullDied = Boolean(hull && hull.killedAt !== undefined && Math.abs(hull.killedAt - k.t) <= HULL_DIED);
+    const kind = kindOfKill(killer, victim, f.distance, weapon, { hullDied });
     if (!kind) continue;
     // The recording must hold both men whole over what the Short shows.
     const [w0, w1] = [k.t - WINDOW.before, k.t + WINDOW.after];

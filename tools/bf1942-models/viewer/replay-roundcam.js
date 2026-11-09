@@ -229,6 +229,11 @@ const _vl = new THREE.Vector3();
 const _vn = new THREE.Vector3();
 const _vc = new THREE.Vector3();
 const _qs = new THREE.Quaternion();
+const _vs = new THREE.Vector3();
+const _vs2 = new THREE.Vector3();
+const _box = new THREE.Box3();
+/** A kill round's aim point stays this far over the water, metres. */
+const WATER_CLEAR = 0.5;
 const FORWARD = new THREE.Vector3(0, 0, -1);
 
 const scaleRig = (rig, r) => ({ back: rig.back * r, up: rig.up * r, side: rig.side * r, ahead: rig.ahead * r });
@@ -544,10 +549,41 @@ export class RoundCam {
     const w = whereIs(this.player.rec, kill.victim, kill.t - 0.05, this.player.kills ?? this.player.rec.kills);
     if (!w.pos) return;
     // A man on foot is placed at his feet; the rounds point 0.3 m over his
-    // origin, a metre up (replay-dossier.js `aimPointOf`). A hull's own.
+    // origin, a metre up (replay-dossier.js `aimPointOf`). A man in a hull,
+    // at his seat (`seatPointOf`).
     const lift = (w.state === 'foot' ? CHARACTER_HEIGHT : 0) + 0.3;
     target.victimAt = new THREE.Vector3(w.pos[0], w.pos[1] + lift, w.pos[2]);
+    if (w.state === 'vehicle') this.seatPointOf(w, target.victimAt);
+    // Never under the water: steered at a point below the surface the round
+    // meets it first and stops short (a 428 m K98 kill of a PT boat's driver
+    // on Midway, 2026-11-09: the Elco's origin is 1.9 m under the water, and
+    // the round fell in 20 m short of the boat).
+    const water = this.player.ctx?.waterLevel?.();
+    if (Number.isFinite(water) && target.victimAt.y < water + WATER_CLEAR) target.victimAt.y = water + WATER_CLEAR;
     target.victimDist = target.victimAt.distanceTo(this.shotPos);
+  }
+
+  /**
+   * Where a man in a hull sits, at the hull's recorded place `w.pos` (in
+   * `out`): his seat's node as the drawn hull carries it, or, for the seat
+   * that is the hull itself (a driver's, whose node is the hull's origin,
+   * at a boat's waterline), the middle of the drawn hull. Offsets are taken
+   * from the hull as drawn now and moved to where the recording has it at the
+   * kill. Unchanged when the hull is not drawn.
+   */
+  seatPointOf(w, out) {
+    const hull = w.life ? this.player.hulls?.get(w.life) : null;
+    const root = hull?.root;
+    if (!root) return out;
+    root.updateWorldMatrix(true, true);
+    const origin = root.getWorldPosition(_vs);
+    if (!Number.isFinite(origin.x)) return out;
+    const occ = hull.occupancy;
+    const id = occ?.order?.[w.seat ?? 0];
+    const node = id && id !== occ.rootId ? occ.survey?.seats?.get(id)?.node : null;
+    const at = node ? node.getWorldPosition(_vs2) : _box.setFromObject(root).getCenter(_vs2);
+    if (!Number.isFinite(at.x)) return out;
+    return out.set(w.pos[0], w.pos[1], w.pos[2]).add(at.sub(origin));
   }
 
   /** Every round flying now is older than the one awaited. */

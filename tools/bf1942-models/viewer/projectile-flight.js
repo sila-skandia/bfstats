@@ -501,6 +501,10 @@ function followStuck(shot) {
   return 0;
 }
 
+/** A surface a kill-shot round steered onto its victim flies through
+ *  (`throughGround`, replay-roundcam.js `LANDING`): the ground and the water. */
+const steeredThrough = (struck, round) => Boolean(round.throughGround && (struck?.kind === 'terrain' || struck?.kind === 'water'));
+
 /**
  * A water contact this round is allowed to survive: the engine's only
  * `return 0`, and the whole of an aircraft torpedo's water entry.
@@ -639,8 +643,9 @@ export function advanceTracers(guns, dt) {
     let struck = roundCollides(spec) ? sweep(guns, tracer.group, tracer.mesh.position,
                                tracer.velocity, step, tracer.lead) : null;
     // The replay's kill-shot round landing on its victim (replay-roundcam.js
-    // `LANDING`) goes through a rise its recorded flight cleared.
-    if (struck?.kind === 'terrain' && tracer.throughGround) struck = null;
+    // `LANDING`) goes through a rise its recorded flight cleared, and the
+    // water a long flat shot skims on its way to a boat.
+    if (steeredThrough(struck, tracer)) struck = null;
     if (struck) {
       // Put the streak's head on the surface before it goes, so the last
       // frame drawn is the round stopping rather than the round past it.
@@ -774,7 +779,7 @@ export function advanceProjectiles(guns, dt) {
       }
       let struck = sweep(guns, shot.group, shot.mesh.position,
                                  shot.velocity, step, 0);
-      if (struck?.kind === 'terrain' && shot.throughGround) struck = null;
+      if (steeredThrough(struck, shot)) struck = null;
       if (struck && !throughWater(guns, shot, struck)) {
         shot.mesh.position.set(struck.x, struck.y, struck.z);
         impact(guns, shot.group, shot.group.stats.projectile, struck,
@@ -847,7 +852,7 @@ export function advanceProjectiles(guns, dt) {
       }
       let struck = roundCollides(shot.group.stats.projectile)
         ? sweep(guns, shot.group, shot.mesh.position, shot.velocity, step, 0) : null;
-      if (struck?.kind === 'terrain' && shot.throughGround) struck = null;
+      if (steeredThrough(struck, shot)) struck = null;
       if (struck && !throughWater(guns, shot, struck)) {
         shot.mesh.position.set(struck.x, struck.y, struck.z);
         impact(guns, shot.group, shot.group.stats.projectile, struck,

@@ -1687,6 +1687,28 @@ against the change:
   and deterministic. The sound would need its own pass -- the tap is real
   time only -- so it is its own feature, not a patch here.
 
+### A man in a hull is aimed at in it, over the water (2026-11-09)
+
+The owner, on a 428 m K98 kill of a PT boat's driver on Midway
+(`3qy6mzcy9e`): "the bullet trace ... is way off. The bullet drops in the
+water about 20m before the boat." The round was steered at the hull's
+recorded origin plus 0.3 m, and an Elco80's origin is its driver's seat at
+the keel: 18.1 m, under Midway's water at 20. A long flat shot meets the
+surface before the point it is steered at, and the tracer ended there.
+`aimVictim` now aims at a man in a hull's seat (`seatPointOf`: his seat's
+node on the drawn hull, or the drawn hull's middle when his seat is the
+hull itself, as a driver's is, moved to where the recording has the hull at
+the kill), never less than 0.5 m over the water (`WATER_CLEAR`), and a
+steered round flies through water as it does through a rise
+(`projectile-flight.js` `steeredThrough`). Measured with `--trace`: the
+impact moved from the keel to the deck, 3.2 m up and on the boat.
+
+Not the round, and not fixed here: the brown sphere a hold shows 3 m off an
+Elco80's stern at the waterline is the boat's own `FloatingMineLauncher round
+1`, the loaded mine `loaded-rounds.js` draws at the launcher's position
+(ledger FA-5, "binary unread"). It is the colour of the Shorts' drawn round
+and reads as one fallen short.
+
 ### A bomb is seen falling (2026-11-04)
 
 The owner, on skandia's BF109 compilation on Battleaxe (`3fumm77ubh`, kills

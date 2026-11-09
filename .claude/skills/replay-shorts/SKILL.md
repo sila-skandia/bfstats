@@ -233,9 +233,13 @@ about.
   sniper into his bunker's wall). Re-filmed as `yt7n9d5ejd`.
 - **A long shot at a man in a hull counts** (2026-11-09: "we're missing
   some of the longest shots", a 428 m K98 kill of a PT boat's crewman on
-  Midway). `kindOfKill` needed both men on foot; now the victim may be in a
-  boat, a jeep or on a gun (a plane or armour stay their own kinds). When a
-  long kill is missing, check the kind before the recorder's range.
+  Midway; "a gun shot should not exclude anything"). `kindOfKill` needed
+  both men on foot; now the victim may be in anything but a plane, a tank
+  included when it lives through the kill (a tank-buster is one that dies
+  with its man). When a long kill is missing, check the kind before the
+  recorder's range. A round at a man in a hull is aimed at his seat, over the
+  water: aimed at a PT boat's keel it fell in 20 m short. The brown sphere
+  off an Elco80's stern is its loaded mine, not the round.
 - **Less slow motion** (2026-11-09: "in general we're slowing down too much
   in the slow mo"). A round's time on screen grows with the distance
   (`SHORT_PACE`, 0.45-1.4 s), the hold on the hit is 1 s at 0.6x (the round

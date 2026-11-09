@@ -514,11 +514,24 @@ on Midway. Not the recorder's range: both men were whole around it. The
 victim was a PT boat's crewman (Elco80), and a long shot needed both men on
 foot, so it made no Short; nor did his 186 m kill of an MG42 gunner or his
 226 m kill of a jeep driver. A long shot is now a man on foot's aimed kill of
-100 m or more at a man on foot or in anything but a plane or armour (those
-stay ground-to-air and tank-buster). Over the 24 shared recordings it found
-eight kills longer than their recording's longest live long shot, most of
-them snipers picking off AA, MG and anti-tank gunners (402 m on Battle of
-Britain, 306 m on Savoy); filmed and uploaded with the 428 m (`3qy6mzcy9e`).
+100 m or more at a man on foot or in anything but a plane (ground-to-air).
+The owner: "a gun shot should not exclude anything. A sniper hitting a PT
+driver is insane." A man killed in a tank that lives through the kill was
+shot out of it, so it is a long shot too; a tank-buster is a tank that dies
+with its man (`HULL_DIED`, 2 s). Over 24 recordings every rifle and machine
+gun kill of a tank's crew left the hull standing (14 of them at 100 m or
+more), and the rockets, charges and mines mostly killed it within 0.1 s. AA
+guns of 100 hit points or more are armour, so a sniper's kill of their
+gunner was hidden the same way.
+
+Over the 24 shared recordings the wider kind found eleven kills longer than
+their recording's longest live long shot, most of them snipers picking off
+AA, MG and anti-tank gunners (402 m on Battle of Britain, 306 m on Savoy)
+and a Sherman's crewman at 227 m on Bocage. Ten went up, filmed with the
+round cam's fix for a man in a hull (`features/replay-creator-view`, "A man
+in a hull is aimed at in it, over the water"); the 185 m Panzer IV crewman
+on Tobruk was held back (its reveal ends behind a boulder). The 428 m is
+`4nw3zh6n7e`.
 
 **What to build next** is in `IDEAS.md`: per-player packages (Player of the
 Round, the streak, Nemesis, a vehicle's life, a 30 s recap) and new single

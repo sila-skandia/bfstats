@@ -143,6 +143,11 @@ class RoundCamTests(unittest.TestCase):
         self.assertEqual(self.cam["victimAt"][2], -30)
         self.assertAlmostEqual(self.cam["victimDist"], 30, delta=0.5)
 
+    def test_it_never_aims_under_the_water(self) -> None:
+        # A PT boat's origin is under the surface; a round steered there met
+        # the water 20 m short of the boat (Midway, 2026-11-09).
+        self.assertEqual(self.cam["overWater"], 5.5)
+
     def test_it_waits_on_the_orbit_until_the_shot_is_near(self) -> None:
         self.assertFalse(self.cam["early"])
 
