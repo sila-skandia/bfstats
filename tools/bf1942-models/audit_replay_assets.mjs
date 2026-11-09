@@ -1,5 +1,6 @@
 #!/usr/bin/env node
 import os from 'node:os';
+import { GPU_ARGS } from './gpu_args.mjs';
 // Replay-driven asset audit: play shared recordings headless and report every
 // asset the page asked for and did not get, classified by owning extractor and
 // split live-missing vs locally-missing.
@@ -244,7 +245,7 @@ async function main() {
   const { chromium } = await import(pathToFileURL(playwright).href);
   const browser = await chromium.launch({
     headless: !flag('headed'),
-    args: ['--use-angle=vulkan', '--enable-features=Vulkan', '--ignore-gpu-blocklist',
+    args: [...GPU_ARGS,
       '--autoplay-policy=no-user-gesture-required'],
   });
 

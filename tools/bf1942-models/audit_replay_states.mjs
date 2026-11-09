@@ -1,5 +1,6 @@
 #!/usr/bin/env node
 import os from 'node:os';
+import { GPU_ARGS } from './gpu_args.mjs';
 // Recorded-against-drawn audit: play a recording forward headless and count,
 // for every soldier on foot, how many of the states the file records the page
 // actually drew.
@@ -528,7 +529,7 @@ async function main() {
   const { chromium } = await import(pathToFileURL(playwright).href);
   const browser = await chromium.launch({
     headless: !flag('headed'),
-    args: ['--use-angle=vulkan', '--enable-features=Vulkan', '--ignore-gpu-blocklist'],
+    args: [...GPU_ARGS],
   });
 
   const report = { base: BASE, recordings: [] };

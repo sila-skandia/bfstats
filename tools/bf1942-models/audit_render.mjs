@@ -27,6 +27,7 @@
 // Exit status 1 when any frame is flagged.
 
 import { chromium } from '../../ui/node_modules/playwright/index.mjs';
+import { GPU_ARGS } from './gpu_args.mjs';
 import { readFile, mkdir, writeFile } from 'node:fs/promises';
 import { existsSync, readdirSync } from 'node:fs';
 import { isPlaceholderModel, modelFlagged } from './audit_render_rules.mjs';
@@ -61,7 +62,7 @@ for (const lv of levels) {
 
 await mkdir(out, { recursive: true });
 const browser = await chromium.launch({
-  args: ['--use-angle=vulkan', '--enable-features=Vulkan', '--ignore-gpu-blocklist'],
+  args: [...GPU_ARGS],
 });
 const page = await browser.newPage({ viewport: { width: 820, height: 500 } });
 page.on('pageerror', e => console.error('page error:', e.message));

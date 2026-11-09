@@ -24,6 +24,7 @@
 // `audit_replay_assets.mjs` finds it.
 
 import { readFile, writeFile } from 'node:fs/promises';
+import { GPU_ARGS } from './gpu_args.mjs';
 import { existsSync } from 'node:fs';
 import { dirname, resolve } from 'node:path';
 import { fileURLToPath, pathToFileURL } from 'node:url';
@@ -100,7 +101,7 @@ const main = async () => {
   const files = new Map();          // path -> bytes (as the server reported)
   const browser = await chromium.launch({
     headless: true,
-    args: ['--use-angle=vulkan', '--enable-features=Vulkan', '--ignore-gpu-blocklist',
+    args: [...GPU_ARGS,
       '--autoplay-policy=no-user-gesture-required'],
   });
   let lastAt = Date.now();

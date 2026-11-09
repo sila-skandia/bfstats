@@ -24,6 +24,7 @@
 // stopped here. Never 5273.
 
 import { chromium } from '../../ui/node_modules/playwright/index.mjs';
+import { GPU_ARGS } from './gpu_args.mjs';
 import { readFile, writeFile, mkdir } from 'node:fs/promises';
 import { existsSync } from 'node:fs';
 import { spawn } from 'node:child_process';
@@ -2133,6 +2134,11 @@ async function testWeapon(s, level, row, team, slot, rec, primary) {
     for (let i = 0; i < 12 && !await s.ev(() => window.__reload?.() || window.__hw()?.reloading); i++) {
       await stepDt(s, 3, 1 / 30);
     }
+    // What `startReload` saw when it refused the key (hand-fire.js): the fire
+    // cycle, the clip's eject, the magazine, zoom and the active item.
+    const asked = await s.ev(() => { const h = window.__hw(); return h && {
+      cool: +(h.cool ?? 0).toFixed(3), eject: +(h.eject ?? 0).toFixed(3), clipIn: h.clipIn, rounds: h.rounds,
+      mags: h.mags, zoomed: h.zoomed, firing: h.firing, name: h.name }; });
     const rc = new Set();
     let refilled = false, sawReloading = false, hp = null, stepped = 0;
     // The weapon's own `reloadTime` and 3 s over it, never under 6 s: a mod's
@@ -2145,16 +2151,26 @@ async function testWeapon(s, level, row, team, slot, rec, primary) {
     for (let i = 0; i < Math.ceil(budget / 0.2); i++) {
       await stepDt(s, 6, 1 / 30);
       stepped += 0.2;   // scripted time only; the page's own frames run on top
-      const x = await s.ev(() => ({ hw: window.__hw(), hp: window.__soldier?.()?.hp ?? null }));
+      // The key again while the change has not begun, as a player presses it:
+      // `startReload` refuses it while the last round's fire cycle runs
+      // (`hw.cool`, BODY-7), and that cycle runs on the page's frame clock.
+      // On a fast GPU the steps above outran a bolt-action's 1.5 s cycle, and
+      // a single early press read as a reload that never completes (K98 and
+      // No4 engineers on every vanilla level, 2026-11-09).
+      const x = await s.ev(() => {
+        const h = window.__hw();
+        if (h && !h.reloading && !(h.rounds > 0)) window.__reload?.();
+        return { hw: window.__hw(), hp: window.__soldier?.()?.hp ?? null };
+      });
       if (x.hp != null) hp = +x.hp.toFixed(1);
       if (x.hw?.clip) rc.add(x.hw.clip);
       if (x.hw?.reloading) sawReloading = true;
       if ((x.hw?.rounds ?? 0) > 0) { refilled = true; break; }
     }
-    wr.reload = { refilled, sawReloading, clips: [...rc], reloadTime, stepped_s: +stepped.toFixed(1), hp };
+    wr.reload = { refilled, sawReloading, clips: [...rc], reloadTime, stepped_s: +stepped.toFixed(1), hp, asked };
     if (!refilled) {
       add({ check: 'kit.reload', level, template_or_kit: tag, severity: 'major', cause_key: 'kit.reload-never-completes',
-        evidence: `magazine emptied, R pressed, ${budget.toFixed(1)} s later (reloadTime ${reloadTime}) rounds still 0 (reloading seen ${sawReloading}, clips ${[...rc]}, hp ${hp})` });
+        evidence: `magazine emptied, R pressed, ${budget.toFixed(1)} s later (reloadTime ${reloadTime}) rounds still 0 (reloading seen ${sawReloading}, clips ${[...rc]}, hp ${hp}; at the key ${JSON.stringify(asked)})` });
       rec.failed = true;
     } else if (rc.size <= 1 && rx?.reloadAbsent) {
       add({ check: 'kit.reload', level, template_or_kit: tag, severity: 'info', cause_key: 'kit.reload-clip-absent-from-install',
@@ -2621,7 +2637,7 @@ async function botPhase(browser, level, mode, summary, scene = null) {
 let currentBrowser = null;
 async function launchBrowser() {
   currentBrowser = await chromium.launch({
-    args: ['--use-angle=vulkan', '--enable-features=Vulkan', '--ignore-gpu-blocklist'],
+    args: [...GPU_ARGS],
   });
   return currentBrowser;
 }

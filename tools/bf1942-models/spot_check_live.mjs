@@ -9,6 +9,7 @@
 //
 // Playwright comes from ui/node_modules (NODE_PATH, as for shoot.mjs).
 import { mkdir, writeFile } from 'node:fs/promises';
+import { GPU_ARGS } from './gpu_args.mjs';
 import { createRequire } from 'node:module';
 import { dirname, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
@@ -181,7 +182,7 @@ async function checkLevel(browser, level) {
 }
 
 const browser = await chromium.launch({
-  args: ['--use-angle=vulkan', '--enable-features=Vulkan', '--ignore-gpu-blocklist'],
+  args: [...GPU_ARGS],
 });
 const reports = [];
 for (const level of LEVELS) reports.push(await checkLevel(browser, level));
