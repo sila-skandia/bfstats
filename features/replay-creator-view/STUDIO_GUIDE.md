@@ -283,9 +283,14 @@ To hear it, add the song on the Export tab (Music, Add a song). It stays on
 your computer. It plays with the clip from the clip's start, follows a loop
 or a scrub, and the game is muted while it plays (untick Mute the game to
 hear both). Song at the clip's start skips into the track when the clip
-should start part way through it. The song is for hearing only: Record puts
-the game's sound in the file, so start the song at 0:00 under the video in
-your editor.
+should start part way through it.
+
+Record puts the song in the video file too (Put the song in the recording,
+on by default): from the clip's first frame, on its own while the game is
+muted, or mixed with the game's sound. The song is kept in step with the
+clip's own clock while it records, so the drums land on the explosion.
+Play the clip through once before recording: the first time an explosion is
+drawn it can stall a frame. A montage records without the song.
 
 ## Look, text and effects
 
@@ -322,7 +327,8 @@ clips keeps one style.
   under Music. The round has to be shared on bfstats.io, and you have to be
   signed in. Their changes are theirs; they can share a link of their own.
 - Music: Add a song to hear the clip with the track you are cutting it to
-  (see The hit on a beat). It is not put in the recording.
+  (see The hit on a beat). Record puts it in the file unless you untick Put
+  the song in the recording.
 - Record the clip plays it once in real time at the monitor's full size and
   downloads it (MP4 or WebM, with the game's sound). Slow motion takes its
   time: the video clock says how long. Keep other windows quiet while it

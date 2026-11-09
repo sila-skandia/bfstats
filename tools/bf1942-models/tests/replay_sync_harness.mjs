@@ -160,6 +160,13 @@ results.rampOf = {
     looped: M.songAction({ ...base, t: 90, video: 0 }),
     scrubbed: M.songAction({ ...base, t: 103, video: 14 }),
     pastSong: M.songAction({ ...base, video: 250 }),
+    // The song where it is (`at`) against where the clip's clock says.
+    inStep: M.songAction({ ...base, at: 10 }),
+    behind: M.songAction({ ...base, at: 9.97 }),
+    ahead: M.songAction({ ...base, at: 10.03 }),
+    farBehind: M.songAction({ ...base, at: 9.6 }),
+    frozen: M.songAction({ ...base, at: 9.5, frozen: true }),
+    rates: [-1, -0.05, 0, 0.02, 0.05, 1].map(M.songRate),
   };
 }
 

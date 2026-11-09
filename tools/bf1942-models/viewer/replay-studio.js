@@ -1444,13 +1444,15 @@ export class Studio {
     }, '0:00.0', 10);
     startInput.title = 'How far into the song the clip starts: 0:00 to start the song with the clip';
     startRow.classList.add('wide');
-    const quiet = this.check('Mute the game while it plays', () => music.quietGame, v => { music.quietGame = v; }, 'Hold the game\'s own sound down so you hear the song alone');
+    const quiet = this.check('Mute the game while it plays', () => music.quietGame, v => { music.quietGame = v; }, 'Hold the game\'s own sound down so you hear the song alone, and record it alone');
+    const inFile = this.check('Put the song in the recording', () => music.record, v => { music.record = v; },
+      'Record the clip with the song from the clip\'s start: with the game\'s sound, or alone while the game is muted');
     const volume = this.slider('Song volume', 0, 1, 0.05, () => music.volume, v => music.setVolume(v), v => `${Math.round(v * 100)}%`);
     const remove = this.btn('Remove the song', 'Take the song away: the game is heard again', () => {
       music.clear();
       creator.quietGame(false);
     }, 'st-ghost st-small');
-    const how = this.note('Heard here only: Record puts the game\'s sound in the file. In your editor, start the song at 0:00 under the video.');
+    const how = this.note('');
     this.syncs.push(() => {
       const on = music.loaded;
       add.lastChild.textContent = on ? 'Change the song' : 'Add a song';
@@ -1459,9 +1461,12 @@ export class Studio {
       name.textContent = on ? `${music.name}${Number.isFinite(d) ? ` · ${videoTime(d)}` : ''}${music.error ? ` · ${music.error}` : ''}`
         : cutTo ? `This edit was cut to ${cutTo.name}, from ${videoTime(cutTo.offset)} of it. Add your copy to hear it.`
           : 'Hear the clip with the track you are cutting it to.';
-      for (const n of [startRow, quiet, volume, remove, how]) n.hidden = !on;
+      how.textContent = music.record
+        ? `Record puts the song in the file from the clip's first frame${music.quietGame ? ', on its own: the game is muted' : ', with the game\'s sound'}. Not in a montage.`
+        : 'Heard here only: Record puts the game\'s sound in the file. In your editor, start the song at 0:00 under the video.';
+      for (const n of [startRow, quiet, inFile, volume, remove, how]) n.hidden = !on;
     });
-    return this.group('Music', file, name, add, startRow, quiet, volume, remove, how);
+    return this.group('Music', file, name, add, startRow, quiet, inFile, volume, remove, how);
   }
 
   syncClips(force) {

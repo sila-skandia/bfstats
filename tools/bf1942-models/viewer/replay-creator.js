@@ -3426,11 +3426,17 @@ export class ReplayCreator {
       source.width = crop?.w ?? canvas.width;
       source.height = crop?.h ?? canvas.height;
     }
-    const clip = new ClipRecorder(source, { sound: () => this.ctx.audioTap?.() ?? null });
+    // The game's mix, and the song where it goes in the file too
+    // (replay-music.js): never in a montage, whose clips are not one song.
+    const tap = this.ctx.audioTap?.() ?? null;
+    const song = !queue && this.music.loaded && this.music.record ? this.music.attach(tap?.context ?? null) : null;
+    const clip = new ClipRecorder(source, {
+      sound: () => (tap || song ? { context: tap?.context ?? song.context, node: tap?.node ?? null, extra: song ? [song] : [] } : null),
+    });
     this.recorder = {
       clip, t0: span.t0, t1: span.t1, started: false, level: this.player.rec.level, crop, source, compose,
       // A montage: the kept clips still to come, one after another in one file.
-      queue: queue ? [...queue] : null, count: queue ? queue.length + 1 : 1, paused: false,
+      queue: queue ? [...queue] : null, count: queue ? queue.length + 1 : 1, paused: false, song: Boolean(song),
     };
 
     this.player.seek(Math.max(0, span.t0 - SETTLE));
@@ -3994,12 +4000,14 @@ export class ReplayCreator {
 
   /** The song under the clip, each frame: it plays while the studio plays
    *  the clip, from the clip's start, and the game is held quiet under it.
-   *  Never while recording: the file carries the game's own sound. */
+   *  While recording only when it goes in the file (`recorder.song`): from
+   *  the frame the file starts, so the drums are where the pin put them. */
   runMusic(t) {
     const span = this.span;
-    const on = Boolean(this.on && this.studio?.open && span && !this.recorder);
+    const r = this.recorder;
+    const on = Boolean(this.on && span && (r ? r.song && r.started && !r.paused : this.studio?.open));
     const video = on ? this.timing(span).clock.toScreen(t) : null;
-    this.music.frame({ on, playing: this.player.playing || Boolean(this.frozen), video, t });
+    this.music.frame({ on, playing: this.player.playing || Boolean(this.frozen), video, t, frozen: Boolean(this.frozen) });
     this.quietGame(on && this.music.quietNow());
   }
 

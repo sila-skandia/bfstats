@@ -43,9 +43,10 @@ export function download(blob, name) {
 }
 
 /**
- * One recording of `canvas`. `sound()` answers `{ context, node }`, the
- * page's audio context and the node its mix leaves by, or null to record
- * without sound.
+ * One recording of `canvas`. `sound()` answers `{ context, node, extra }`,
+ * the page's audio context, the node its mix leaves by (or null), and any
+ * more nodes of that context to mix in (a creator's song, replay-music.js),
+ * or null to record without sound.
  */
 export class ClipRecorder {
   constructor(canvas, { sound = () => null, fps = 60, bitrate = 16_000_000 } = {}) {
@@ -71,15 +72,16 @@ export class ClipRecorder {
     let tap = null;
     try {
       const source = this.sound?.();
-      if (source?.context && source?.node && source.context.state === 'running') {
+      const nodes = [source?.node, ...(source?.extra ?? [])].filter(Boolean);
+      if (source?.context && nodes.length && source.context.state === 'running') {
         const dest = source.context.createMediaStreamDestination();
-        source.node.connect(dest);
+        for (const node of nodes) node.connect(dest);
         const track = dest.stream.getAudioTracks()[0];
         if (track) {
           stream.addTrack(track);
-          tap = { node: source.node, dest };
+          tap = { nodes, dest };
         } else {
-          source.node.disconnect(dest);
+          for (const node of nodes) node.disconnect(dest);
         }
       }
     } catch (error) {
@@ -115,7 +117,9 @@ export class ClipRecorder {
 
   untap(tap = this.tap) {
     if (!tap) return;
-    try { tap.node.disconnect(tap.dest); } catch {}
+    for (const node of tap.nodes) {
+      try { node.disconnect(tap.dest); } catch {}
+    }
   }
 
   /** Stops, and answers the clip as a Blob. */

@@ -1958,3 +1958,33 @@ edit"; with the browser's storage cleared, `&edit=djqufk8z` opened the studio
 on the same start (263.058), cameras, slow motion, pin (the hit at 41.000),
 grade, title, frame, and "This edit was cut to riff-drums-41.mp3, from 0:01.5
 of it. Add your copy to hear it."
+
+### The song in the recording (2026-11-09)
+
+The owner: "can you export with a song uploaded?" It could not: the song
+paused while recording, and with the game muted the file was silent.
+
+- `replay-music.js` `attach` routes the song's `<audio>` through the page's
+  audio context once (a MediaElementSource and a gain for its volume, on to
+  the speakers; a context of its own on a page with no audio), and
+  `replay-clip.js` `ClipRecorder` takes `extra` nodes beside the game's mix.
+  `record()` adds the song unless the recording is a montage or Put the song
+  in the recording is off (`music.record`, default on). Muted, the file has
+  the song alone; unmuted, both.
+- While recording the song plays from the frame the file starts
+  (`runMusic`: `recorder.song`, `started`, not `paused`).
+- **Locked to the clip's clock.** Left on its own the song ran 0.2 s off the
+  explosion in a file: the picture follows the clip's clock, which wanders a
+  little against the wall's. Each frame the song's rate is pulled toward
+  where the clip's clock says it should be (`songRate`: up to a tenth faster
+  or slower, pitch kept; `DRIFT_SEEK`, a quarter second, seeks), and left
+  alone through a freeze.
+
+Measured in headless Chromium, Bocage pinned at 0:41 with the test song (a
+tone, a burst at exactly 0:41), the game muted: the clip's clock within
+0.06 s of the wall's and the song within 0.08 s of the clip's for the whole
+45 s; in the file (WebM, VP9 and Opus) the burst at 41.01 s and the flash on
+the first frame after 41.08 s, when the page drew it (headless captures
+about six frames a second there, 41.009 then 41.165). The first recording
+of a session drew the explosion 0.15 s late: the frame that first draws it
+stalls; one play through it before recording takes that away.

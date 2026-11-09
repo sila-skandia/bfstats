@@ -185,7 +185,17 @@ class SongTests(unittest.TestCase):
         self.assertEqual(self.song["positions"], [None, 0, 41, 53.5, None])
 
     def test_it_is_left_alone_while_it_plays_along(self) -> None:
-        self.assertEqual(self.song["keep"], {"act": "keep"})
+        self.assertEqual(self.song["keep"], {"act": "keep", "rate": 1})
+        self.assertEqual(self.song["inStep"], {"act": "keep", "rate": 1})
+
+    def test_a_drift_is_closed_by_its_rate_and_a_big_one_by_a_seek(self) -> None:
+        # The recorded file's picture follows the clip's clock: a song left on
+        # its own ran 0.2 s off the explosion (2026-11-09).
+        self.assertAlmostEqual(self.song["behind"]["rate"], 1.06, places=2)
+        self.assertAlmostEqual(self.song["ahead"]["rate"], 0.94, places=2)
+        self.assertEqual(self.song["farBehind"], {"act": "seek", "at": 10})
+        self.assertEqual(self.song["frozen"], {"act": "keep", "rate": 1})
+        self.assertEqual([round(r, 2) for r in self.song["rates"]], [0.9, 0.9, 1, 1.04, 1.1, 1.1])
 
     def test_it_starts_in_place_and_stops_with_the_clip(self) -> None:
         self.assertEqual(self.song["start"], {"act": "play", "at": 10})
