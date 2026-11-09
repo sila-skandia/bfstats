@@ -1,8 +1,8 @@
 // The replay board's Accuracy view as a dashboard (features/replay-accuracy):
 // every player's rounds fired, hits and accuracy down the left, and for the
 // one picked, his accuracy as it ran through the round, the rounds he fired
-// and the rounds fired at him, his weapons, his ranges and who he traded fire
-// with.
+// and the rounds fired at him, his weapons, his ranges, whom he fired at and
+// who fired at him.
 //
 // Owner's ask (2026-11-02): "it'd be nice to see it calculated as a moving
 // value as the round plays ... if we know what their final accuracy will be
@@ -1005,7 +1005,7 @@ export class AccuracyDash {
 
     // The panels.
     const grid = el('div', 'rp-accd-grid');
-    grid.append(this.weaponsPanel(entry, display), this.rangePanel(detail), this.tradePanel(detail), this.triggerPanel(entry, detail));
+    grid.append(this.weaponsPanel(entry, display), this.rangePanel(detail), this.aimPanel(entry, detail), this.tradePanel(detail), this.triggerPanel(entry, detail));
 
     this.dash.append(who, tiles, chart, grid);
   }
@@ -1323,7 +1323,42 @@ export class AccuracyDash {
     return panel;
   }
 
-  /** Who he traded fire with: the men who fired most at him, and the men he hit most. */
+  /** Whom he fired at: the enemies his rounds hit or passed near, most first
+   *  (`playerDetail` `aimedAt`), the mirror of under fire. */
+  aimPanel(entry, detail) {
+    const panel = el('div', 'rp-accd-panel');
+    panel.append(heading('WHO THEY FIRED AT', this.kind !== 'all'));
+    if (!detail) return panel;
+    const bars = el('div', 'rp-accd-bars');
+    const list = detail.aimedAt.slice(0, 4);
+    const max = Math.max(1, ...list.map(s => s.rounds));
+    for (const s of list) {
+      const bar = el('div', 'rp-accd-bar');
+      const num = el('span', 'num');
+      num.append(el('b', '', int(s.rounds)), document.createTextNode(` rounds, ${s.hits} hit`));
+      const track = el('div', 'track');
+      const a = el('i');
+      a.style.width = `${(s.rounds / max) * 100}%`;
+      const b = el('i');
+      b.style.width = `${(Math.min(s.hits, s.rounds) / max) * 100}%`;
+      track.append(a, b);
+      bar.append(el('span', `nm t${team(s.team)}`, s.name), num, track);
+      bars.append(bar);
+    }
+    if (!list.length) bars.append(el('div', 'rp-accd-note', 'None of their rounds seen passing near an enemy.'));
+    panel.append(bars);
+    const facts = el('dl', 'rp-accd-facts');
+    facts.style.marginTop = '8px';
+    const fact = (k, v) => facts.append(el('dt', '', k), el('dd', '', v));
+    const seen = (entry.shots ?? []).reduce((n, s) => n + s.n, 0);
+    fact('Rounds near an enemy', seen ? `${int(detail.aimedRounds)} of ${int(seen)}` : '-');
+    if (detail.victims[0]) fact('Hit most', `${detail.victims[0].name} (${detail.victims[0].hits})`);
+    if (detail.nearest) fact('Closest miss', `${detail.nearest.miss.toFixed(1)} m, ${detail.nearest.at}`);
+    panel.append(facts);
+    return panel;
+  }
+
+  /** Who traded fire with him: the men who fired most at him. */
   tradePanel(detail) {
     const panel = el('div', 'rp-accd-panel');
     panel.append(heading('UNDER FIRE', this.kind !== 'all'));
@@ -1352,7 +1387,6 @@ export class AccuracyDash {
     fact('Rounds at them', int(countBy(detail.incoming, Infinity)));
     fact('Hits taken', int(detail.hitsTaken));
     if (detail.closest) fact('Closest miss', `${detail.closest.miss.toFixed(1)} m, ${detail.closest.by}`);
-    if (detail.victims[0]) fact('Hit most', `${detail.victims[0].name} (${detail.victims[0].hits})`);
     panel.append(facts);
     return panel;
   }
@@ -1396,7 +1430,7 @@ export class AccuracyDash {
       ? [this.mode === 'now' ? 'Showing the numbers as they stood at the replay\'s clock: pick Whole round for the final ones.'
         : 'Showing the whole round: pick So far to see the numbers as they stood at the replay\'s clock, updating as it plays.',
       'Click a player for their full breakdown.', counted, rebuiltText, `Under ${this.fewAt ?? FEW_ROUNDS} rounds is too few to judge: faded, and last by accuracy.`]
-      : [counted, rebuiltText, 'Ranges, targets and rounds fired at them are from what this recording saw. Click the graph to go to that moment.']).filter(Boolean).join(' ');
+      : [counted, rebuiltText, 'Ranges, targets, whom they fired at and rounds fired at them are from what this recording saw. Click the graph to go to that moment.']).filter(Boolean).join(' ');
     const key = `${table}|${text}`;
     if (this.footKey === key) return;
     this.footKey = key;

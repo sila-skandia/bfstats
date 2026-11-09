@@ -157,6 +157,21 @@ class ReplayAccuracyTests(unittest.TestCase):
         self.assertEqual(d["ranges"], [0, 1, 0, 0, 0])
         self.assertEqual(d["farthest"], 30)
 
+    def test_whom_a_player_fired_at(self) -> None:
+        # Owner, 2026-11-09: "who they fired at the most". The mirror of under
+        # fire: each player's rounds at the victim are the victim's rounds from
+        # them. The shooter's 5.0 and the grenade at 20.0 hit, 8.0 passed
+        # through; the round 15 m wide and the grenade at his own teammate are
+        # at no one.
+        f = self.results["firedAt"]
+        self.assertEqual(f["aimedAt"], [["Victim", 3, 2]])
+        self.assertEqual(f["rounds"], 3)
+        self.assertEqual(f["nearest"][0], "Victim")
+        self.assertLess(f["nearest"][1], 1)
+        shooters = {name: [rounds, hits] for name, rounds, hits in self.results["underFire"]["shooters"]}
+        for who, key in [("Shooter", "aimedAt"), ("Leaver", "leaver"), ("Joiner", "joiner")]:
+            self.assertEqual(f[key], [["Victim", *shooters[who]]], who)
+
 
     def test_every_player_side_by_side(self) -> None:
         # Owner, 2026-11-09: players want "a full comparison between players

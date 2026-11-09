@@ -662,6 +662,39 @@ const NEAR_HULL = 8;
 const BURST_GAP = 0.4;
 const RANGES = [[0, 25], [25, 50], [50, 100], [100, 200], [200, Infinity]];
 
+/** Round `f` as the near-miss test flies it, with its weapon's table row:
+ *  null for one without a direction or a muzzle. */
+function flightOf(f, weapons) {
+  const n = Math.hypot(...(f.dir ?? [0, 0, 0]));
+  if (!(n > 0.1) || !Array.isArray(f.pos) || !f.pos.every(Number.isFinite)) return null;
+  const spec = weapons?.get(lower(f.weapon)) ?? null;
+  const speed = spec?.speed > 0 ? spec.speed : DEFAULT_SPEED;
+  const range = spec?.life > 0 ? Math.min(MAX_RANGE, speed * spec.life + REACH_SLACK) : MAX_RANGE;
+  return { spec, round: { t: f.t, pos: f.pos, unit: f.dir.map(x => x / n), speed, range } };
+}
+
+/** How near a round (`flightOf`) passed what `pid` controlled when it was
+ *  fired, metres: null where it passed further than NEAR_SOLDIER from a
+ *  soldier or NEAR_HULL from a hull, or out of its reach. A shell or a
+ *  grenade is measured from the edge of its blast. */
+function nearMiss(rec, flight, pid) {
+  const t = flight.round.t;
+  const nid = controlledAt(rec, pid, t);
+  if (nid === null || nid === undefined) return null;
+  const life = rootOf(rec, nid, t, pid)?.life;
+  if (!life || !positionAt(life, t, _p)) return null;
+  let miss;
+  if (flight.spec?.radius > 0) {
+    const met = arcMeeting(flight.round, GRAVITY, 0.02, MAX_FLIGHT, life);
+    miss = met ? met.miss - flight.spec.radius : null;
+  } else {
+    const soldier = Boolean(life.soldier);
+    miss = meeting(flight.round, life, soldier ? SOLDIER_FROM : 0, soldier ? SOLDIER_TO : 0)?.miss ?? null;
+  }
+  if (miss === null || miss > (life.soldier ? NEAR_SOLDIER : NEAR_HULL)) return null;
+  return Math.max(0, miss);
+}
+
 /** What a struck life was: a soldier, armour (land, sea, a fixed gun) or an
  *  aircraft. */
 function targetKind(life, weapons, categories) {
@@ -672,7 +705,8 @@ function targetKind(life, weapons, categories) {
 
 /**
  * The dashboard's detail for one board entry: kills, bursts, ranges, what he
- * hit and whom, and the rounds others fired at him. `board` is the whole
+ * hit and whom, the enemies his rounds went at, and the rounds others fired
+ * at him. `board` is the whole
  * board (every player's rebuilt rounds); `weapons` as `rebuildTallies`.
  * Everything here is as the recording saw it, so a distant player's share is
  * a sample.
@@ -755,42 +789,66 @@ export function playerDetail(rec, entry, board, { weapons = null, categories = n
   for (const f of rec.fires ?? []) {
     if (f.press || !(f.pid >= 0) || f.pid === pid) continue;
     if (rec.serverFile && f.fake) continue;
-    const n = Math.hypot(...(f.dir ?? [0, 0, 0]));
-    if (!(n > 0.1) || !Array.isArray(f.pos) || !f.pos.every(Number.isFinite)) continue;
     const t = f.t;
     if (!his(t)) continue;
-    const mine = teamAt(rec, pid, t);
-    const side = teamAt(rec, f.pid, t);
-    if (!mine || !side || mine === side) continue;
+    // A round that hit him is one at him whatever its side: its hit is
+    // already counted, and a hit is never more than its rounds.
     const s = byShot.get(f);
     if (s && struck.has(s)) {
       incoming.push({ t, n: s.n, hit: true });
       shooter(f.pid, t).rounds += s.n;
       continue;
     }
-    const nid = controlledAt(rec, pid, t);
-    if (nid === null || nid === undefined) continue;
-    const life = rootOf(rec, nid, t, pid)?.life;
-    if (!life || !positionAt(life, t, _p)) continue;
-    const spec = weapons?.get(lower(f.weapon)) ?? null;
-    const speed = spec?.speed > 0 ? spec.speed : DEFAULT_SPEED;
-    const range = spec?.life > 0 ? Math.min(MAX_RANGE, speed * spec.life + REACH_SLACK) : MAX_RANGE;
-    const round = { t, pos: f.pos, unit: f.dir.map(x => x / n), speed, range };
-    let miss;
-    if (spec?.radius > 0) {
-      const met = arcMeeting(round, GRAVITY, 0.02, MAX_FLIGHT, life);
-      miss = met ? met.miss - spec.radius : null;
-    } else {
-      const soldier = Boolean(life.soldier);
-      miss = meeting(round, life, soldier ? SOLDIER_FROM : 0, soldier ? SOLDIER_TO : 0)?.miss ?? null;
-    }
-    if (miss === null || miss > (life.soldier ? NEAR_SOLDIER : NEAR_HULL)) continue;
+    const mine = teamAt(rec, pid, t);
+    const side = teamAt(rec, f.pid, t);
+    if (!mine || !side || mine === side) continue;
+    const flight = flightOf(f, weapons);
+    if (!flight) continue;
+    const miss = nearMiss(rec, flight, pid);
+    if (miss === null) continue;
     const rounds = s?.n ?? 1;
     incoming.push({ t, n: rounds, hit: false });
     shooter(f.pid, t).rounds += rounds;
-    if (!closest || miss < closest.miss) closest = { miss: Math.max(0, miss), t, by: nameAt(rec, f.pid, t) };
+    if (!closest || miss < closest.miss) closest = { miss, t, by: nameAt(rec, f.pid, t) };
   }
   incoming.sort((a, b) => a.t - b.t);
+
+  // Fired at: the enemies his own rounds went at, the mirror of under fire. A
+  // round that hit is its victim's, and counts too for every other enemy it
+  // passed as near as a round fired at him above, as under fire counts it, so
+  // his row there and theirs here agree. `aimedRounds` counts each round once.
+  const aimed = new Map();
+  const target = (tpid, t) => {
+    const who = nameAt(rec, tpid, t);
+    if (!aimed.has(who)) aimed.set(who, { name: who, team: teamAt(rec, tpid, t), rounds: 0, hits: 0 });
+    return aimed.get(who);
+  };
+  const others = [...(rec.sessions?.keys() ?? rec.players?.keys() ?? [])].filter(p => p !== pid);
+  let nearest = null;
+  let aimedRounds = 0;
+  for (const s of shots) {
+    if (!his(s.t)) continue;
+    const struckPid = s.hit && Number.isInteger(s.victimPid) ? s.victimPid : null;
+    let near = struckPid !== null;
+    if (near) {
+      const v = target(struckPid, s.t);
+      v.rounds += s.n;
+      v.hits++;
+    }
+    const mine = teamAt(rec, pid, s.t);
+    const flight = mine && s.f ? flightOf(s.f, weapons) : null;
+    for (const o of flight ? others : []) {
+      if (o === struckPid) continue;
+      const side = teamAt(rec, o, s.t);
+      if (!side || side === mine) continue;
+      const miss = nearMiss(rec, flight, o);
+      if (miss === null) continue;
+      near = true;
+      target(o, s.t).rounds += s.n;
+      if (!nearest || miss < nearest.miss) nearest = { miss, t: s.t, at: nameAt(rec, o, s.t) };
+    }
+    if (near) aimedRounds += s.n;
+  }
 
   return {
     kills: kills.map(k => k.t), deaths: deaths.map(k => k.t),
@@ -799,6 +857,7 @@ export function playerDetail(rec, entry, board, { weapons = null, categories = n
     victims: [...victims.values()].sort((a, b) => b.hits - a.hits),
     incoming, hitsTaken, closest,
     shooters: [...shooters.values()].filter(s => s.rounds || s.hits).sort((a, b) => b.rounds - a.rounds || b.hits - a.hits),
+    aimedAt: [...aimed.values()].sort((a, b) => b.rounds - a.rounds || b.hits - a.hits), aimedRounds, nearest,
   };
 }
 

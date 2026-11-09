@@ -42,8 +42,11 @@ his dashboard. With nobody picked it shows the man followed, else the top row:
   the moment, and a click seeks the replay there.
 - **Panels (whole round):** his weapons (accuracy, hits / fired); hits by range
   (0-25, 25-50, 50-100, 100-200, 200+ m, bullets only) and what they hit
-  (soldiers, armour, aircraft); under fire (the men who fired most at him,
-  rounds at him, hits taken, the closest miss, whom he hit most); trigger
+  (soldiers, armour, aircraft); who they fired at (the enemies his rounds hit
+  or passed near, most rounds first, with the hits, the share of his rounds
+  that went near an enemy, whom he hit most and his closest miss); under fire
+  (the men who fired most at him, rounds at him, hits taken, the closest
+  miss); trigger
   (bursts, rounds a burst, the longest burst, hits in a row, rounds a hit, hits
   a kill).
 - **WATCH** follows him and closes the board.
@@ -62,6 +65,19 @@ rebuild's verdict) or passed within 3 m of him on foot, or 8 m of the origin of
 the hull he rode. A blast counts when its arc came within its radius plus 3 m.
 Like everything the rebuild sees, it is a sample: a client is told only about
 rounds near it.
+
+"Who they fired at" (asked 2026-11-09: "who they fired at the most?") is the
+same test run the other way (`aimedAt`): each of his rounds that hit is its
+victim's, and it and each miss count for every other enemy it passed within
+those distances, as their under fire counts it. So a player's row in his
+victim's under fire and the victim's row in his fired at are the same numbers
+(on Kharkov `272wb7fjbj`, all 794 pairs whose names are on one board row), and
+a burst sprayed across a group is in each of their rows. Checking that found
+under fire counting a teammate's hit (a teamkill, a hit as he changed sides)
+as a hit but not a round, "0 rounds, 2 hit": a round that hit him is now one
+at him whatever its side. "Rounds near an enemy" counts each round once; a round near
+no enemy is in no one's row. One player's detail, both ways, takes 9 ms
+(median, 29 ms the slowest) on that round.
 
 The game's chat strip (`#comms-canvas`) is drawn above the replay's layer. It
 is hidden while the board is open: it scrawled over the rows of every view.
@@ -263,11 +279,12 @@ row's names and columns were shifted one cell left. It is `rp-bst` now.
 
 `tools/bf1942-models/tests/test_replay_accuracy.py` (`replay_accuracy_harness.mjs`): the
 tallies, the running totals and their scaling to the tally, the fire buckets, the
-rounds fired at a player and one player's detail.
+rounds fired at a player, whom a player fired at (the mirror of the first) and
+one player's detail.
 
 ## Open
 
-- The weapons, range and under-fire panels are whole-round only. The range and
+- The weapons, range, fired-at and under-fire panels are whole-round only. The range and
   target panels count all weapons under a filter. Per-kind detail would need
   `playerDetail` per kind.
 - The crosshair's hit marks (`replay-hitmarks.js`) still mark one hit a drop;

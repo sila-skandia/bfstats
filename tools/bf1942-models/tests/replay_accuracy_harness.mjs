@@ -132,6 +132,10 @@ results.noWeapons = weaponKind('Mp40', null);
     shooters: d.shooters.map(s => [s.name, s.rounds, s.hits]),
   };
   const mine = playerDetail(rec, shooter, board, options);
+  // Whom each fired at (2026-11-09), the mirror of the victim's under fire.
+  const aim = p => playerDetail(rec, p, board, options).aimedAt.map(s => [s.name, s.rounds, s.hits]);
+  results.firedAt = { aimedAt: aim(shooter), rounds: mine.aimedRounds, nearest: mine.nearest && [mine.nearest.at, +mine.nearest.miss.toFixed(2)],
+    leaver: aim(board.find(p => p.name === 'Leaver')), joiner: aim(board.find(p => p.name === 'Joiner')) };
   results.shooterDetail = { bursts: mine.bursts, targets: mine.targets, victims: mine.victims.map(v => [v.name, v.hits]),
     ranges: mine.ranges.map(r => r.n), farthest: mine.farthest && Math.round(mine.farthest.dist) };
 }
