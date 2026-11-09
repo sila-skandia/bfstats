@@ -168,6 +168,8 @@ export function arenasFrom(rows, levels = null, ai = null) {
       map,
       name: ARENA_NAMES[String(map).toLowerCase()] ?? levelWords(map),
       battles: g.battles.map(levelWords),
+      // The battles as the catalogue spells them, for the loadouts' lookup.
+      levels: [...g.battles],
       tanks,
       allied: tanks.filter(t => t.side === 'Allied'),
       axis: tanks.filter(t => t.side === 'Axis'),
@@ -191,7 +193,7 @@ export function arenasFrom(rows, levels = null, ai = null) {
     let allied = tanks.filter(t => t.side === 'Allied'), axis = tanks.filter(t => t.side === 'Axis');
     if (!axis.length) { axis = tanks; }
     if (!allied.length) { allied = tanks; }
-    arenas.push({ map: EVERY, name: 'Every tank', battles: [], every: true, tanks, allied, axis });
+    arenas.push({ map: EVERY, name: 'Every tank', battles: [], levels: [], every: true, tanks, allied, axis });
   }
   return arenas;
 }

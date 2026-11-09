@@ -196,3 +196,77 @@ class TankSchoolTests(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+class OnFootTests(unittest.TestCase):
+    """The ON FOOT panel (tank-matchup.md, "On foot"): a side's anti-tank
+    weapons out of its kits, each round's flight and spread, the words, and
+    the rig the sight view draws."""
+
+    @classmethod
+    def setUpClass(cls) -> None:
+        cls.out = run_harness()
+
+    def test_a_side_carries_what_its_kits_on_the_battle_hold(self) -> None:
+        f = self.out["foot"]
+        # The AI's rating decides: the Panzerfaust and a random kit's
+        # Panzerfaust in, the K98 and the grenade out.
+        self.assertEqual(f["axis"], ["Panzerfaust30", "RandomGerPanzerfaust7"])
+        self.assertEqual(f["allied"], ["Piat"])
+        # Every battle: a level's own kit (the Bazooka) beside the global one.
+        self.assertEqual(f["alliedEvery"], ["Piat", "Bazooka"])
+        # With no AI table, an Anti-tank kit's items, all of them.
+        self.assertEqual(f["noTable"], ["K98", "Panzerfaust30", "GrenadeAxis"])
+
+    def test_the_panzerfaust_30_is_a_lob(self) -> None:
+        p = self.out["launcher"]["pf30"]
+        self.assertEqual(p["speed"], 28)
+        # 57 m at best, the tube near 45 degrees; 70 m is out of reach.
+        self.assertEqual((p["reach"], p["reachE"]), (57.0, 44))
+        self.assertIsNone(p["out70"])
+        self.assertEqual((p["aim30"], p["aim50"], p["t50"]), (13.9, 29.2, 2.0))
+        # setMinDev 2: a hundredth of a radian per point, so 1 m at 50 m;
+        # walking adds setSpeedDev's 8 times the standing 1.4.
+        self.assertEqual(p["spread"], {"still": 2.0, "moving": 13.2, "declared": True})
+        self.assertEqual(p["still50"], 1.0)
+        self.assertEqual(p["zoom"], 0.8)
+
+    def test_spread_words_the_engine_ignores_are_no_spread(self) -> None:
+        b = self.out["launcher"]["bazooka"]
+        # DEV-8: minDeviation / maxDeviation are not the engine's words; a
+        # projectile that declares no gravity falls at full gravity.
+        self.assertEqual(b["spread"], {"still": 0, "moving": 0, "declared": False})
+        self.assertEqual(b["gravity"], 1)
+
+    def test_a_round_of_no_gravity_ends_on_its_fuse(self) -> None:
+        law = self.out["launcher"]["law"]
+        # 0.01 gravity under the launch's 0.98 m/s lift (FA-23): it climbs,
+        # and its 20 s fuse, not the ground, ends it, 1300 m out.
+        self.assertTrue(law["fuse"])
+        self.assertEqual(law["reach"], 1300)
+        self.assertTrue(law["rises"])
+
+    def test_placed_and_unfired_weapons(self) -> None:
+        self.assertTrue(self.out["launcher"]["placed"])
+        self.assertIsNone(self.out["launcher"]["none"])
+        self.assertEqual(self.out["launcher"]["glb"], "2.0")
+
+    def test_the_words(self) -> None:
+        w = self.out["launcherWords"]
+        self.assertIn("point the tube 13.9 deg above them", w["pf30at30"][0])
+        self.assertIn("1.1 s", w["pf30at30"][1])
+        self.assertIn("strays up to 0.6 m", w["pf30at30"][2])
+        self.assertEqual(w["pf30at30"][3], "Hits to kill on a plate it gets through: front 10, side 10, rear 9.")
+        self.assertIn("cannot reach 70 m", w["pf30at70"][0])
+        self.assertIn("Get within 57 m", w["pf30at70"][0])
+        self.assertIn("No spread", w["bazooka"][2])
+        self.assertEqual(w["immune"][-1], "Its warhead cannot hurt the KV-2 from any side.")
+
+    def test_the_rig_a_soldier_holds_it_with(self) -> None:
+        self.assertEqual(self.out["rigs"], ["FMGermanSoldier__Panzerfaust30", "BritishSoldier__Piat",
+                                            "FMGermanSoldier__Panzerfaust30", None, "USSoldier__Bazooka"])
+        # center1pHands plus the zoom position, z into three's frame.
+        z = self.out["zoomPose"]
+        self.assertAlmostEqual(z["x"], -0.167, places=6)
+        self.assertAlmostEqual(z["y"], -1.756, places=6)
+        self.assertAlmostEqual(z["z"], -0.2, places=6)

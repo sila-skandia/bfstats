@@ -13,7 +13,10 @@
 //      reload, traverse, hold-over and reach;
 //   03 the drive, and 04 how steady each hull is, from the tank sheet the
 //      `surveys/tank_school_sheet.mjs` survey writes into each tree
-//      (`<maps>/_shared/tank-school.json`, the pipeline's `tank_school` step).
+//      (`<maps>/_shared/tank-school.json`, the pipeline's `tank_school` step);
+//   05 on foot: the anti-tank weapons one side's kits carry on the arena's
+//      battles (`tank-launchers.js`), each round's lob to the other's tank
+//      drawn to scale, its sight with the spread, the lead, and its hits.
 //
 // Each panel opens with plain words for the pairing (`tank-words.js`), never
 // a verdict on who wins.
@@ -28,10 +31,13 @@ import { modelFileStem } from './model-file.js';
 import { VIEWER_ROOT } from './viewer-root.js';
 import { loadMods, stored as storedMod, remember, trees, treeOf, VANILLA } from './mods.js';
 import { arenasFrom, tankIn, enemyOf, prettyTank, mainGunName, pickMainGun } from './tank-arena.js';
-import { gunOf, reach, degreesPer100, dropAt, timeTo, elevationFor } from './tank-ballistics.js';
+import { gunOf, reach, degreesPer100, dropAt, timeTo, elevationFor, positionAt } from './tank-ballistics.js';
+import { sideWeapons, launcherOf, glbJson, reachOf, aimFor, strayAt } from './tank-launchers.js';
+import { resolveGlb } from './glb-store.js';
 import { BANDS, IMMUNE, CATCHER, bandOf, faceName, pricer, collisionFaces, bearingShots, faceTable, angleModOf } from './tank-armour.js';
-import { matchupWords, missAt, steadyWords, NO_ANSWER, hurtsAtAll, answers, sayShots } from './tank-words.js';
+import { matchupWords, missAt, steadyWords, launcherWords, NO_ANSWER, hurtsAtAll, answers, sayShots } from './tank-words.js';
 import { snapshots } from './tank-snapshots.js';
+import { createSightView, rigStemFor } from './tank-sight-view.js';
 import { decodePlayerName } from './vehicle-players.js';
 import { angleFactor } from './crash-damage.js';
 import { shotsFor } from './armour-damage.js';
@@ -69,8 +75,14 @@ function vehicleAi(m) {
   if (!aiOf.has(m.id)) aiOf.set(m.id, json(`${m.paths.maps}/_shared/vehicle-ai.json`).then(d => d?.vehicles ?? null).catch(() => null));
   return aiOf.get(m.id);
 }
+/** The tree's model catalogue, read once (the arenas, and ON FOOT's weapons). */
+const catalogues = new Map();
+function catalogueOf(m) {
+  if (!catalogues.has(m.id)) catalogues.set(m.id, json(`${m.paths.models}/models.json`));
+  return catalogues.get(m.id);
+}
 async function arenasOf(m) {
-  const [rows, levels, ai] = await Promise.all([json(`${m.paths.models}/models.json`), json(`${m.paths.maps}/maps.json`).catch(() => null), vehicleAi(m)]);
+  const [rows, levels, ai] = await Promise.all([catalogueOf(m), json(`${m.paths.maps}/maps.json`).catch(() => null), vehicleAi(m)]);
   return arenasFrom(rows, levels ? levels.map(l => l.name) : null, ai);
 }
 say(`Reading ${mod.short || mod.name}'s battles`);
@@ -86,7 +98,9 @@ if (!arenas.length) {
 }
 const modId = m => (m.id === VANILLA.id ? null : m.id);
 const ARENA_KEY = arenaMod.id === VANILLA.id ? `${KEY}:arena` : `${KEY}:arena:${arenaMod.id}`;
-let arena = arenas.find(a => a.map.toLowerCase() === String(params.get('arena') ?? stored(ARENA_KEY) ?? '').toLowerCase()) ?? arenas[0];
+// An arena by its key, or by any battle it holds (`?arena=arnhem-1944`).
+const wantArena = String(params.get('arena') ?? stored(ARENA_KEY) ?? '').toLowerCase();
+let arena = arenas.find(a => a.map.toLowerCase() === wantArena) ?? arenas.find(a => (a.levels ?? []).some(l => String(l).toLowerCase() === wantArena)) ?? arenas[0];
 let yoursChoice = params.get('yours') ?? stored(`${KEY}:yours`);
 let theirsChoice = params.get('theirs') ?? stored(`${KEY}:theirs`);
 /** Any tank of the arena may be yours or theirs; the defaults are its first
@@ -306,6 +320,28 @@ root.innerHTML = `
       <table class="tks-table tks-drive-table"></table>
       <ul class="tks-words tks-hull-words"></ul>
     </section>
+    <section class="tks-card tks-foot-at" aria-labelledby="tks-h-foot">
+      <header class="tks-card-head"><small>05</small><h2 id="tks-h-foot">On foot: the anti-tank weapons</h2></header>
+      <p class="tks-intro">What a soldier of each side carries against tanks on this arena's battles, fired at the other side's tank. A hand-held round leaves slowly, so it falls fast: the chart draws its path to the tank at true scale, and the sight shows how far above the tank to point and how far the round can stray.</p>
+      <div class="tks-foot-bar">
+        <span class="tks-seg" role="radiogroup" aria-label="Whose soldiers">
+          <button type="button" data-whose="yours">Your side's</button><button type="button" data-whose="theirs">Their side's</button>
+        </span>
+        <span class="tks-foot-target"></span>
+      </div>
+      <div class="tks-foot-picks" role="radiogroup" aria-label="Weapon"></div>
+      <label class="tks-range is-foot"><span>Tank at</span><input type="range" min="10" max="150" step="5" value="50" aria-label="Tank distance"><b></b></label>
+      <figure class="tks-lob"><svg class="tks-lob-chart" viewBox="0 0 760 250" role="img" aria-label="The round's path to the tank, to scale"></svg><figcaption class="tks-lob-key"></figcaption></figure>
+      <div class="tks-foot-pair">
+        <figure class="tks-sight is-foot"><figcaption></figcaption>
+          <div class="tks-foot-sight"><canvas width="640" height="480"></canvas><img class="tks-foot-scope" alt="" hidden><svg class="tks-foot-hud" viewBox="0 0 640 480" aria-hidden="true"></svg><span class="tks-foot-sight-wait" hidden>Loading the weapon in hand</span></div>
+          <p class="tks-sight-words"></p></figure>
+        <figure class="tks-clock is-foot"><div></div><figcaption><b>Hits to kill</b> on a plate it gets through, from each side</figcaption></figure>
+      </div>
+      <ul class="tks-words tks-foot-words"></ul>
+      <details class="tks-more tks-foot-more"><summary>Every weapon side by side</summary><table class="tks-table tks-foot-table"></table></details>
+      <p class="tks-foot-empty" hidden></p>
+    </section>
     <footer class="tks-foot">Every number is the game's own: the damage tables from <code>Game.rfa</code>, each gun's <code>Weapons.con</code>, the tanks' collision faces, and the server's per-tick tank law driven in node (<code>surveys/tank_school_sheet.mjs</code>). Notes: <code>features/battle-schools</code>.</footer>
   </main>`;
 document.body.appendChild(root);
@@ -324,6 +360,10 @@ const ui = {
   driveTable: q('.tks-drive-table'), hullWords: q('.tks-hull-words'),
   scenarios: q('.tks-steady .tks-seg'), play: q('.tks-play'), rockers: [...root.querySelectorAll('.tks-rockers figure')],
   trace: q('.tks-trace'), steadyNote: q('.tks-steady-note'), listToggle: q('.dfs-list-toggle'),
+  foot: q('.tks-foot-at'), footWhose: q('.tks-foot-bar .tks-seg'), footTarget: q('.tks-foot-target'), footPicks: q('.tks-foot-picks'),
+  footRange: q('.tks-range.is-foot input'), footRangeOut: q('.tks-range.is-foot b'), lob: q('.tks-lob-chart'), lobKey: q('.tks-lob-key'),
+  footSight: q('.tks-sight.is-foot'), footClock: q('.tks-clock.is-foot > div'), footWords: q('.tks-foot-words'),
+  footMore: q('.tks-foot-more'), footTable: q('.tks-foot-table'), footEmpty: q('.tks-foot-empty'),
   board: q('.tks-board'), fights: q('.tks-fights'), fightList: q('.tks-fight-list'), fightCount: q('.tks-fight-count'), fightMore: q('.tks-fight-more'),
 };
 
@@ -961,6 +1001,312 @@ new IntersectionObserver(seen => {
   if (seen.some(x => x.isIntersecting) && playOnSight && current.entries.length) { playOnSight = false; drawSteady(0); play(); }
 }, { threshold: 0.35 }).observe(q('.tks-steady'));
 
+// --- 05: on foot ------------------------------------------------------------------------
+
+/** A standing soldier's tube, above the ground, where the lob chart starts
+ *  him. The aim is at the tube's own height on the tank, as the guns panel
+ *  aims (a model's picture box is no measure of its hull's middle: a mod
+ *  hangs parts off some). */
+const MUZZLE_H = 1.5;
+const foot = { whose: stored(`${KEY}:foot-whose`) === 'theirs' ? 'theirs' : 'yours', pick: stored(`${KEY}:foot-pick`), weapons: [], ticket: 0 };
+let loadoutsP = null;
+const loadoutsOf = () => (loadoutsP ??= json(`${arenaMod.paths.maps}/_shared/loadouts.json`).catch(() => null));
+
+/** A weapon's round and spread off its own glb's JSON (no textures), read once. */
+const weaponCache = new Map();
+function weaponOf(name) {
+  const key = String(name).toLowerCase();
+  if (!weaponCache.has(key)) {
+    weaponCache.set(key, (async () => {
+      const rows = await catalogueOf(arenaMod).catch(() => []);
+      const row = rows.find(r => r.name.toLowerCase() === key && r.category === 'handweapon') ?? rows.find(r => r.name.toLowerCase() === key);
+      if (!row?.glb) return null;
+      for (const url of modelUrls(arenaMod.paths.models, row.glb)) {
+        try {
+          const real = (await resolveGlb(url)).url;
+          const res = await fetch(real);
+          if (!res.ok) continue;
+          const l = launcherOf(row.name, glbJson(await res.arrayBuffer()));
+          return l ? { ...l, label: prettyTank(row.name), reach: reachOf(l) } : null;
+        } catch { /* the next tree */ }
+      }
+      return null;
+    })());
+  }
+  return weaponCache.get(key);
+}
+
+const footRoses = new Map();
+/** The target's clock for one warhead. */
+function footRose(target, w) {
+  const key = `${target.template}|${w.material}`;
+  if (!footRoses.has(key)) footRoses.set(key, bearingShots(target.scene, pricer(tables, w.material), target.tank.hp, { bearings: BEARINGS }));
+  return footRoses.get(key);
+}
+const footShots = rose => Object.fromEntries(Object.entries(rose ?? {}).map(([b, v]) => [b, { shots: v.share > 0 ? v.hurtShots : null, share: v.share }]));
+
+/** Who shoots at whom: your side's soldiers at their tank, or theirs at yours. */
+function footPair() {
+  const [them, you] = current.entries;
+  return foot.whose === 'yours' ? { side: yours().side, target: them } : { side: theirs().side, target: you };
+}
+
+async function drawFoot() {
+  const ticket = ++foot.ticket;
+  const { side, target } = footPair();
+  if (!target) return;
+  for (const b of ui.footWhose.querySelectorAll('button')) b.setAttribute('aria-checked', String(b.dataset.whose === foot.whose));
+  ui.footTarget.innerHTML = `${esc(side === 'Axis' ? 'Axis' : 'Allied')} soldiers against the <b class="${foot.whose === 'yours' ? 'is-them' : 'is-you'}">${esc(target.tank.name)}</b>`;
+  ui.footPicks.innerHTML = '<span class="tks-foot-wait">Reading the kits</span>';
+  const loadouts = await loadoutsOf();
+  const names = sideWeapons(loadouts, arena.every ? [] : arena.levels, side);
+  const read = (await Promise.all(names.map(n => weaponOf(n.name).then(w => (w ? { ...w, kits: n.kits, rated: n.rated } : null))))).filter(w => w && !w.placed);
+  if (ticket !== foot.ticket) return;
+  // Only what can hurt this tank somewhere: a weapon the AI rates against
+  // armour that no plate of this hull answers is said under the list.
+  const plates = [...new Set(collisionFaces(target.scene).map(f => f.material).filter(m => m != null))];
+  const hurts = w => { const price = pricer(tables, w.material); return plates.some(m => price(m) > 0); };
+  const ws = read.filter(hurts), useless = read.filter(w => !hurts(w) && w.rated);
+  ws.sort((a, b) => a.gun.speed - b.gun.speed || a.label.localeCompare(b.label));
+  foot.weapons = ws;
+  const none = !ws.length;
+  ui.foot.classList.toggle('is-empty', none);
+  ui.footEmpty.hidden = !none;
+  if (none) {
+    ui.footPicks.innerHTML = '';
+    ui.footEmpty.textContent = !loadouts ? 'This game or mod publishes no kit loadouts, so its soldiers\' weapons are not known here.'
+      : read.length ? `Nothing ${side === 'Axis' ? 'Axis' : 'Allied'} soldiers carry here can hurt the ${target.tank.name}: no plate of it takes damage from ${read.map(w => w.label).join(', ')}.`
+      : `No ${side === 'Axis' ? 'Axis' : 'Allied'} kit on ${arena.every ? 'any battle' : 'these battles'} carries a weapon that fires at tanks.`;
+    window.__tankSchool.foot = { side, target: target.template, weapons: [] };
+    return;
+  }
+  const pick = ws.find(w => w.name === foot.pick) ?? ws.find(w => /faust|bazooka|schreck|piat|rpg|law|rocket/i.test(w.name)) ?? ws[0];
+  foot.pick = pick.name;
+  ui.footPicks.innerHTML = ws.map(w => `<button type="button" class="dfs-chip" role="radio" aria-checked="${w === pick}" data-weapon="${esc(w.name)}">`
+    + `<b>${esc(w.label)}</b><small>${n1(w.gun.speed)} m/s</small></button>`).join('')
+    + (useless.length ? `<span class="tks-foot-useless">Carried too, but no plate of the ${esc(target.tank.name)} takes damage from: ${useless.map(w => esc(w.label)).join(', ')}.</span>` : '');
+  // The distance slider runs to the furthest any of them reaches.
+  const far = Math.max(...ws.map(w => w.reach.range));
+  ui.footRange.max = String(Math.min(400, Math.max(50, Math.ceil(far / 10) * 10)));
+  drawFootPick();
+  ui.footTable.innerHTML = '';
+  if (ui.footMore.open) drawFootTable();
+}
+
+function drawFootPick() {
+  const { side, target } = footPair();
+  const w = foot.weapons.find(x => x.name === foot.pick);
+  if (!w || !target) return;
+  const R = Math.min(Number(ui.footRange.value), Number(ui.footRange.max));
+  ui.footRangeOut.textContent = `${R} m`;
+  const snap = target.snaps.front;
+  const aim = aimFor(w, R);
+  const drop = dropAt(w.gun, R);
+  const stillM = strayAt(w.spread.still, R), movingM = strayAt(w.spread.moving, R);
+  ui.lob.innerHTML = lobSvg(w, R, aim, target);
+  ui.lobKey.innerHTML = `<span><i class="is-aim"></i>aimed to hit, the tube ${aim.elevation == null ? 'cannot reach' : `${n1(aim.elevation)} deg up`}</span>`
+    + `<span><i class="is-level"></i>aimed straight at them</span><span>${n1(w.gun.speed)} m/s, ${w.gun.gravity === 1 ? 'full gravity' : `${n1(w.gun.gravity * 100)}% gravity`}, fuse ${n1(w.ttl)} s</span>`;
+  ui.footSight.querySelector('figcaption').innerHTML = `<b>Through the sight</b><span>${esc(w.label)} zoomed, at the ${esc(target.tank.name)} ${R} m off</span>`;
+  drawThroughSight(w, R, aim, target, side);
+  const rose = footRose(target, w);
+  ui.footClock.innerHTML = clockSvg(rose, `${target.tank.name}: hits to kill from each side with the ${w.label}`);
+  const top = target.tank.sheet?.drive?.top ?? null;
+  const words = launcherWords({ name: w.label, reach: w.reach, aim, drop, spread: w.spread, stillM, movingM },
+    { name: target.tank.name, heightM: snap.heightM, lengthM: target.snaps.side.widthM, top, shots: footShots(rose) }, R);
+  ui.footWords.innerHTML = words.map(x => `<li>${esc(x)}</li>`).join('');
+  window.__tankSchool.foot = {
+    side, target: target.template, weapons: foot.weapons.map(x => x.name), pick: w.name, range: R,
+    speed: w.gun.speed, elevation: aim.elevation, t: aim.t, reach: w.reach.range, spread: w.spread, words,
+  };
+}
+
+/** The round's path to the tank, both axes in metres at one scale: aimed to
+ *  hit (solid) and aimed straight at them (dashed), from a standing soldier's
+ *  tube, the tank broadside at the distance, its nose towards him. */
+function lobSvg(w, R, aim, target) {
+  const W = 760, H = 250, L = 34, Rp = 16, T = 14, B = 30;
+  const snap = target.snaps.side;
+  const lenM = snap.widthM, tH = snap.heightM;
+  const el = aim.elevation ?? w.reach.elevation;
+  const tEnd = aim.elevation != null ? aim.t : w.reach.t;
+  const at = (t, e) => { const p = positionAt(w.gun, t, e); return { x: p.x, y: MUZZLE_H + p.y }; };
+  const hit = []; for (let i = 0; i <= 80; i++) hit.push(at(tEnd * i / 80, el));
+  // Out of reach: the best lob, until it lands or its fuse runs out.
+  const level = [];
+  for (let t = 0; t <= w.ttl; t += 0.01) { const p = at(t, 0); level.push(p); if (p.y <= 0 || p.x >= R) break; }
+  const apex = hit.reduce((m, p) => (p.y > m.y ? p : m), hit[0]);
+  const xMax = Math.max(R + lenM + 2, ...hit.map(p => p.x)), yMax = Math.max(apex.y, tH, MUZZLE_H) + 1;
+  const k = Math.min((W - L - Rp) / (xMax + 3), (H - T - B) / yMax);
+  // As tall as the lob needs: a flat shot leaves no empty sky above it.
+  const Hu = Math.max(130, Math.round(T + B + yMax * k));
+  ui.lob.setAttribute('viewBox', `0 0 ${W} ${Hu}`);
+  const sx = x => L + (x + 3) * k, sy = y => Hu - B - y * k;
+  const path = pts => pts.map((p, i) => `${i ? 'L' : 'M'}${sx(p.x).toFixed(1)} ${sy(Math.max(p.y, 0)).toFixed(1)}`).join('');
+  let svg = `<line class="tks-lob-ground" x1="${L}" y1="${sy(0)}" x2="${W - Rp}" y2="${sy(0)}"/>`;
+  const step = xMax > 300 ? 100 : xMax > 120 ? 50 : xMax > 50 ? 20 : 10;
+  for (let x = 0; x <= xMax; x += step) svg += `<line class="tks-grid" x1="${sx(x)}" y1="${sy(0)}" x2="${sx(x)}" y2="${sy(0) + 5}"/><text class="tks-tick" x="${sx(x)}" y="${Hu - 10}">${x} m</text>`;
+  // The tank, broadside, its nose towards the shooter: the side picture's nose points right, so it is mirrored.
+  const s = k / snap.pxPerM, cx = sx(R + lenM / 2);
+  svg += `<g transform="translate(${cx.toFixed(1)} 0) scale(-1 1) translate(${(-cx).toFixed(1)} 0)"><image href="${snap.url}" x="${(cx - snap.middle.x * s).toFixed(1)}" y="${(sy(0) - snap.groundY * s).toFixed(1)}" width="${(snap.width * s).toFixed(1)}" height="${(snap.height * s).toFixed(1)}"/></g>`;
+  // The soldier: 1.8 m, the tube at his shoulder.
+  const m = v => (v * k).toFixed(1);
+  svg += `<g class="tks-soldier" transform="translate(${sx(0).toFixed(1)} ${sy(0).toFixed(1)})"><circle cx="0" cy="-${m(1.68)}" r="${m(0.12)}"/>`
+    + `<path d="M0 -${m(1.55)}V-${m(0.9)}M0 -${m(0.9)}L-${m(0.22)} 0M0 -${m(0.9)}L${m(0.22)} 0M-${m(0.4)} -${m(MUZZLE_H)}h${m(0.9)}"/></g>`;
+  svg += `<path class="tks-lob-path is-level" d="${path(level)}"/><path class="tks-lob-path is-aim" d="${path(hit)}"/>`;
+  if (aim.elevation != null && apex.y > MUZZLE_H + 0.5) {
+    svg += `<line class="tks-sight-gap" x1="${sx(apex.x)}" y1="${sy(apex.y)}" x2="${sx(apex.x)}" y2="${sy(0)}"/>`
+      + `<text class="tks-lob-label" x="${(sx(apex.x) + 6).toFixed(1)}" y="${(sy(apex.y) - 6).toFixed(1)}">${n1(apex.y)} m up</text>`;
+  }
+  const lv = level[level.length - 1];
+  if (lv && lv.y <= 0 && lv.x < R - 0.5) svg += `<text class="tks-lob-label is-level" x="${(sx(lv.x) + 6).toFixed(1)}" y="${(sy(0) - 6).toFixed(1)}">lands ${n1(lv.x)} m out</text>`;
+  if (aim.elevation == null) svg += `<text class="tks-lob-label" x="${Math.min(sx(hit[hit.length - 1].x), W - 140).toFixed(1)}" y="${(sy(0) - 8).toFixed(1)}">${w.reach.fuse ? 'fuse out' : 'its furthest'}: ${Math.round(w.reach.range)} m</text>`;
+  return svg;
+}
+
+// The view down the tube: the weapon's own first-person rig and HUD scope,
+// the tank at its distance (`tank-sight-view.js`).
+let sightView = null;
+const rigIndexes = new Map(), rigScenes = new Map(), scopeTables = new Map();
+/** The rig indexes to ask, the tree's own then vanilla's: a mod inherits
+ *  vanilla's rigs as it inherits its models (Desert Combat's Bazooka). */
+const rigIndexesOf = () => {
+  if (!rigIndexes.has(arenaMod.id)) {
+    const own = json(`${arenaMod.paths.models}/viewmodels/index.json`).catch(() => null);
+    rigIndexes.set(arenaMod.id, Promise.all([own, arenaMod.id === VANILLA.id ? null : json('models/viewmodels/index.json').catch(() => null)]));
+  }
+  return rigIndexes.get(arenaMod.id);
+};
+const scopesOf = () => {
+  if (!scopeTables.has(arenaMod.id)) {
+    scopeTables.set(arenaMod.id, json(`${arenaMod.paths.maps}/_shared/hud/scopes.json`).catch(() => null)
+      .then(t => t ?? (arenaMod.id === VANILLA.id ? null : json('maps/_shared/hud/scopes.json').catch(() => null))));
+  }
+  return scopeTables.get(arenaMod.id);
+};
+/** The scope picture a weapon draws zoomed, or null: the pack's `scopes.json`
+ *  (SCOPE-2), else the weapon's own zoom block; `sniper.tga` for one that
+ *  names none (SCOPE-6). */
+async function scopeOf(w) {
+  const optic = (await scopesOf())?.[w.name.toLowerCase()] ?? null;
+  if (!(optic?.useScope ?? w.zoom?.scope)) return null;
+  const icon = optic?.scopeIcon || w.zoom?.icon || 'sniper.tga';
+  const stem = String(icon).replace(/\\/g, '/').split('/').pop().replace(/\.[^.]+$/, '').toLowerCase();
+  return [`${arenaMod.paths.maps}/_shared/hud/${stem}.png`, `maps/_shared/hud/${stem}.png`];
+}
+/** The side's soldier on the arena's first battle (`loadouts.json`). */
+function soldierOf(loadouts, side) {
+  const team = side === 'Axis' ? '1' : '2';
+  const want = (arena.levels ?? []).map(l => String(l).toLowerCase());
+  for (const [level, teams] of Object.entries(loadouts?.levels ?? {})) {
+    if (want.length && !want.includes(level.toLowerCase())) continue;
+    if (teams?.[team]?.soldier) return teams[team].soldier;
+  }
+  return null;
+}
+async function rigOf(w, side) {
+  const soldier = soldierOf(await loadoutsOf(), side);
+  const stem = (await rigIndexesOf()).map(index => rigStemFor(index, soldier, w.name)).find(Boolean) ?? null;
+  if (!stem) return null;
+  if (!rigScenes.has(stem)) {
+    rigScenes.set(stem, (async () => {
+      gltfLoader ??= new GLTFLoader();
+      for (const url of modelUrls(arenaMod.paths.models, `viewmodels/${stem}.fp.glb`)) {
+        try { return { stem, gltf: await gltfLoader.loadAsync(url) }; } catch { /* the next tree */ }
+      }
+      return null;
+    })());
+  }
+  return rigScenes.get(stem);
+}
+
+let sightRun = 0;
+const rigKeyGuess = w => [...rigScenes.keys()].find(k => k.toLowerCase().endsWith(`__${w.name.toLowerCase()}`)) ?? null;
+async function drawThroughSight(w, R, aim, target, side) {
+  const run = ++sightRun;
+  const box = ui.footSight.querySelector('.tks-foot-sight');
+  const canvas = box.querySelector('canvas'), hud = box.querySelector('.tks-foot-hud'), scope = box.querySelector('.tks-foot-scope');
+  const waitTag = box.querySelector('.tks-foot-sight-wait');
+  const words = ui.footSight.querySelector('.tks-sight-words');
+  try { sightView ??= createSightView(canvas); } catch { sightView = null; }
+  if (!sightView) { words.textContent = 'This browser could not draw the view down the tube.'; return; }
+  sightView.setTank(`${target.template}`, target.scene, target.snaps.side.widthM);
+  // Nothing of the last weapon's view stays up while this one's rig loads.
+  if (!rigScenes.has(rigKeyGuess(w))) { scope.hidden = true; hud.innerHTML = ''; words.textContent = ''; }
+  waitTag.hidden = false;
+  const [held, scopeUrls] = await Promise.all([rigOf(w, side), scopeOf(w)]);
+  if (run !== sightRun) return;
+  waitTag.hidden = true;
+  const doc = held?.gltf?.parser?.json?.extras ?? held?.gltf?.userData ?? null;
+  const view = doc?.view ?? null;
+  sightView.setRig(held?.stem ?? null, held?.gltf ?? null, view);
+  // The world through the weapon's zoomed field of view (radians), the arms
+  // through `set1pFov x soldierZoomFov`.
+  const worldFov = (Number(view?.zoomFov ?? w.zoom?.fov) || 1) * 180 / Math.PI;
+  const armsFov = (Number(view?.fov1p) || 0.47) * (Number(view?.soldierZoomFov ?? w.zoom?.soldierFov) || 1) * 180 / Math.PI;
+  const W = 640, H = 480;
+  const { toScreen, pxPerRad } = sightView.draw({ R, elevation: aim.elevation ?? 0, worldFov, armsFov, width: W, height: H });
+  // The scope picture over the whole frame (SCOPE-4), the mod's own or vanilla's.
+  scope.hidden = !scopeUrls;
+  if (scopeUrls) {
+    scope.onerror = () => { if (scope.src.endsWith(scopeUrls[0].split('/').pop()) && !scope.dataset.tried) { scope.dataset.tried = '1'; scope.src = scopeUrls[1]; } else scope.hidden = true; };
+    delete scope.dataset.tried;
+    scope.src = scopeUrls[0];
+  }
+  // The HUD: the crosshair at the centre, where the tube points, and where the
+  // round comes down: the tank's middle at the tube's height, with its spread.
+  let svg = '';
+  if (w.crossHair !== 'CHTNone') svg += `<path class="tks-foot-cross" d="M${W / 2 - 14} ${H / 2}h9M${W / 2 + 5} ${H / 2}h9M${W / 2} ${H / 2 - 14}v9M${W / 2} ${H / 2 + 5}v9"/>`;
+  if (aim.elevation != null) {
+    const p = toScreen(new THREE.Vector3(0, 0, -R));
+    const box2 = (h, cls) => { const r = Math.tan(h / 100) * pxPerRad; return `<rect class="tks-foot-spread ${cls}" x="${(p.x - r).toFixed(1)}" y="${(p.y - r).toFixed(1)}" width="${(2 * r).toFixed(1)}" height="${(2 * r).toFixed(1)}"/>`; };
+    if (w.spread.declared && w.spread.still > 0) svg += box2(w.spread.moving, 'is-moving') + box2(w.spread.still, 'is-still');
+    svg += `<circle class="tks-foot-hit" cx="${p.x.toFixed(1)}" cy="${p.y.toFixed(1)}" r="5"/>`;
+    const gap = p.y - H / 2;
+    if (gap > 18) svg += `<line class="tks-foot-gap" x1="${W / 2}" y1="${H / 2 + 16}" x2="${W / 2}" y2="${(p.y - 8).toFixed(1)}"/>`
+      + `<text class="tks-foot-label" x="${W / 2 + 10}" y="${((H / 2 + p.y) / 2 + 4).toFixed(1)}">${n1(aim.elevation)}&#176;</text>`;
+    svg += `<text class="tks-foot-label" x="${(p.x + 12).toFixed(1)}" y="${(p.y + 4).toFixed(1)}">lands here</text>`;
+  }
+  hud.innerHTML = svg;
+  const where = !held ? ' No first-person rig of it is published, so the arms are not drawn.' : '';
+  words.textContent = aim.elevation == null
+    ? `Out of reach: it goes ${Math.round(w.reach.range)} m at most.${where}`
+    : `The crosshair is where the tube points; the dot is where the round comes down on the ${target.tank.name}${w.spread.declared && w.spread.still > 0 ? ', inside the box standing still, the dashed box walking' : ''}. ${Math.abs(aim.elevation) < 0.25 ? 'Put the crosshair on the tank' : `Put the crosshair ${n1(Math.abs(aim.elevation))} deg ${aim.elevation > 0 ? 'above' : 'below'} the tank`}: the dot then sits on it.${scopeUrls ? ' The scope picture is the weapon\'s own HUD.' : ''}${where}`;
+}
+
+/** Every weapon of the side against the target, one row each. */
+function drawFootTable() {
+  const { target } = footPair();
+  if (!target || !foot.weapons.length) return;
+  const cell = v => `<td>${v}</td>`;
+  const at = (w, R) => { const a = aimFor(w, R); return a.elevation == null ? 'out of reach' : `${n1(a.elevation)} deg`; };
+  ui.footTable.innerHTML = '<thead><tr><th>Weapon</th><th>Speed</th><th>Reaches</th><th>Up at 25 m</th><th>Up at 50 m</th><th>Up at 100 m</th><th>Spread at 50 m<small>still, per axis</small></th><th>Hits to kill<small>front / side / rear</small></th></tr></thead><tbody>'
+    + foot.weapons.map(w => {
+      const sh = footShots(footRose(target, w));
+      const h = b => (sh[b]?.shots == null ? '-' : sh[b].shots > NO_ANSWER ? `${NO_ANSWER}+` : sh[b].shots);
+      return `<tr${w.name === foot.pick ? ' class="is-picked"' : ''}><th scope="row">${esc(w.label)}</th>${cell(`${n1(w.gun.speed)} m/s`)}${cell(`${Math.round(w.reach.range)} m`)}`
+        + `${cell(at(w, 25))}${cell(at(w, 50))}${cell(at(w, 100))}${cell(w.spread.declared ? `${n1(strayAt(w.spread.still, 50))} m` : 'none')}${cell(`${h(0)} / ${h(90)} / ${h(180)}`)}</tr>`;
+    }).join('') + '</tbody>';
+}
+
+ui.footWhose.addEventListener('click', e => {
+  const b = e.target.closest('button[data-whose]');
+  if (!b || b.dataset.whose === foot.whose) return;
+  foot.whose = b.dataset.whose;
+  store(`${KEY}:foot-whose`, foot.whose);
+  drawFoot();
+});
+ui.footPicks.addEventListener('click', e => {
+  const b = e.target.closest('button[data-weapon]');
+  if (!b) return;
+  foot.pick = b.dataset.weapon;
+  store(`${KEY}:foot-pick`, foot.pick);
+  for (const x of ui.footPicks.querySelectorAll('button')) x.setAttribute('aria-checked', String(x === b));
+  drawFootPick();
+  if (ui.footMore.open) drawFootTable();
+});
+ui.footRange.addEventListener('input', () => drawFootPick());
+ui.footMore.addEventListener('toggle', () => { if (ui.footMore.open) drawFootTable(); });
+
 // --- loading a pairing ------------------------------------------------------------------
 
 const MB = b => (b / 1048576).toFixed(b < 1048576 * 10 ? 1 : 0);
@@ -1096,6 +1442,7 @@ async function refresh() {
   drawClocks();
   drawGuns();
   drawDrive();
+  drawFoot();
   stopPlay();
   drawSteady(0);
   playOnSight = true;

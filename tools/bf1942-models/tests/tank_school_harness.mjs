@@ -7,7 +7,10 @@
 // - `viewer/tank-armour.js`: a box hull with a front, side and rear plate of
 //   its own, priced by a small damage table, cast from each bearing;
 // - `viewer/tank-words.js`: the words for a pairing built from those numbers;
-// - `tests/fixtures/tank-school-bf1942.json`: vanilla's tank sheet, pinned.
+// - `tests/fixtures/tank-school-bf1942.json`: vanilla's tank sheet, pinned;
+// - `viewer/tank-launchers.js` and `tank-sight-view.js` (its pure helpers):
+//   a side's anti-tank weapons out of a small loadouts table, a launcher's
+//   round and spread out of a glb's JSON, and the rig a soldier holds it with.
 //
 // Prints one JSON object.
 
@@ -25,6 +28,8 @@ const B = await load('tank-ballistics.js');
 const A = await load('tank-arena.js');
 const R = await load('tank-armour.js');
 const W = await load('tank-words.js');
+const L = await load('tank-launchers.js');
+const V = await load('tank-sight-view.js');
 
 const out = {};
 const r1 = v => Math.round(v * 10) / 10;
@@ -181,5 +186,74 @@ out.sheet = Object.fromEntries(Object.entries(sheet.tanks).map(([k, v]) => [k, {
   top: v.drive.top, hardStop: v.steady.hardStop, fireAcross: v.steady.fireAcross, fireingForce: v.fireingForce,
   traces: Object.fromEntries(Object.entries(v.traces).map(([s, t]) => [s, { axis: t.axis, hz: t.hz, n: t.values.length }])),
 }]));
+
+
+// --- on foot: the anti-tank weapons -----------------------------------------------------
+// Two levels, each team's kits; the AI table rates the Panzerfaust and the
+// PIAT against armour and the grenade not; a random kit's variants count;
+// a level's own kit wins over the global one.
+const loadouts = {
+  kits: {
+    GerAT: { class: 'Anti-tank', items: ['K98', 'Panzerfaust30', 'GrenadeAxis'] },
+    GerRandom: { class: 'Assault', items: ['Mp40', 'RandomGerPanzerfaust'], random: [{ template: 'RandomGerPanzerfaust', variants: ['RandomGerPanzerfaust7'] }] },
+    GbAT: { class: 'Anti-tank', items: ['Piat', 'No2'] },
+  },
+  levelKits: { other: { GbAT: { class: 'Anti-tank', items: ['Bazooka'] } } },
+  levels: {
+    'arnhem-1944': { 1: { soldier: 'GermanSoldier', slots: { 0: 'GerAT', 1: 'GerRandom' } }, 2: { soldier: 'BritishSoldier', slots: { 0: 'GbAT' } } },
+    other: { 2: { soldier: 'USSoldier', slots: { 0: 'GbAT' } } },
+  },
+  aiWeapons: {
+    Panzerfaust30: { strength: { HeavyArmour: 3 } }, GrenadeAxis: { strength: { HeavyArmour: 0 } }, K98: { strength: { HeavyArmour: 0 } },
+    RandomGerPanzerfaust7: { strength: { HeavyArmour: 3 } }, No2: { strength: { HeavyArmour: 0 } }, Piat: { strength: { HeavyArmour: 3 } }, Bazooka: { strength: { HeavyArmour: 2 } },
+  },
+};
+const names = ws => ws.map(w => w.name);
+out.foot = {
+  axis: names(L.sideWeapons(loadouts, ['Arnhem-1944'], 'Axis')),
+  allied: names(L.sideWeapons(loadouts, ['Arnhem-1944'], 'Allied')),
+  alliedEvery: names(L.sideWeapons(loadouts, [], 'Allied')),
+  // No AI table (EoD's loadouts): the Anti-tank kits' items, all of them.
+  noTable: names(L.sideWeapons({ ...loadouts, aiWeapons: undefined }, ['Arnhem-1944'], 'Axis')),
+};
+// FHSW's Panzerfaust 30, as its glb carries it.
+const pf30 = L.launcherOf('Panzerfaust30', {
+  extras: { weapon: { deviation: { min: 2.0, mod: [1.4, 0.9, 1.0], speed: [8.0, 0.5, 0.5, 0.5] }, zoom: { fov: 0.8, soldierFov: 0.8 }, crossHair: 'CHTCrossHair' } },
+  nodes: [{ name: 'Panzerfaust30', extras: { fireArms: { velocity: 28, reloadTime: 1, projectile: { kind: 'shell', gravity: 1, material: 287, timeToLive: 10 } } } }],
+});
+// Vanilla's Bazooka: only the words the engine ignores (DEV-8).
+const bazooka = L.launcherOf('Bazooka', {
+  extras: { weapon: { deviation: { minDeviation: 0, maxDeviation: 0.5 } } },
+  nodes: [{ name: 'Bazooka', extras: { fireArms: { velocity: 50, projectile: { kind: 'shell', material: 250, timeToLive: 10 } } } }],
+});
+// EoD's LAW: next to no gravity; the launch's lift carries it up past its fuse.
+const law = L.launcherOf('Law', { nodes: [{ name: 'Law', extras: { fireArms: { velocity: 65, projectile: { kind: 'shell', gravity: 0.01, material: 226, timeToLive: 20 } } } }] });
+const placed = L.launcherOf('Haft', { nodes: [{ name: 'Haft', extras: { fireArms: { velocity: 3, projectile: { gravity: 0.85, material: 814 } } } }] });
+const aim50 = L.aimFor(pf30, 50), aim30 = L.aimFor(pf30, 30);
+out.launcher = {
+  pf30: { speed: pf30.gun.speed, spread: pf30.spread, reach: r1(L.reachOf(pf30).range), reachE: L.reachOf(pf30).elevation,
+    aim30: r1(aim30.elevation), aim50: r1(aim50.elevation), t50: r1(aim50.t), out70: L.aimFor(pf30, 70).elevation,
+    still50: r1(L.strayAt(pf30.spread.still, 50)), zoom: pf30.zoom.fov },
+  bazooka: { gravity: bazooka.gun.gravity, spread: bazooka.spread },
+  law: { reach: Math.round(L.reachOf(law).range), fuse: L.reachOf(law).fuse, rises: B.dropAt(law.gun, 50) < 0 },
+  placed: placed.placed, none: L.launcherOf('Knife', { nodes: [{ name: 'Knife', extras: {} }] }),
+  glb: (() => {
+    const json = JSON.stringify({ asset: { version: '2.0' } }) + ' ';
+    const body = Buffer.from(json.padEnd(Math.ceil(json.length / 4) * 4, ' '));
+    const head = Buffer.alloc(20);
+    head.writeUInt32LE(0x46546c67, 0); head.writeUInt32LE(2, 4); head.writeUInt32LE(20 + body.length, 8);
+    head.writeUInt32LE(body.length, 12); head.writeUInt32LE(0x4e4f534a, 16);
+    return L.glbJson(Buffer.concat([head, body]))?.asset?.version;
+  })(),
+};
+const kv2 = { name: 'KV-2', heightM: 3.4, lengthM: 6.9, top: 7, shots: { 0: { shots: 10, share: 0.9 }, 90: { shots: 10, share: 0.9 }, 180: { shots: 9, share: 0.9 } } };
+const wordsFor = (l, R, target = kv2) => { const aim = L.aimFor(l, R); return W.launcherWords({ name: 'Panzerfaust 30', reach: L.reachOf(l), aim, drop: B.dropAt(l.gun, R), spread: l.spread,
+  stillM: L.strayAt(l.spread.still, R), movingM: L.strayAt(l.spread.moving, R) }, target, R); };
+out.launcherWords = { pf30at30: wordsFor(pf30, 30), pf30at70: wordsFor(pf30, 70), bazooka: wordsFor(bazooka, 50), immune: wordsFor(pf30, 30, { ...kv2, shots: {} }) };
+// The rig a soldier holds it with: his own pair's shared rig, his own, or any.
+const index = { rigs: ['BritishSoldier__Piat', 'FMGermanSoldier__Panzerfaust30', 'GermanSoldier__K98'], pairs: { VolkssturmSoldier__Panzerfaust30: { rig: 'FMGermanSoldier__Panzerfaust30' } } };
+out.rigs = [V.rigStemFor(index, 'VolkssturmSoldier', 'Panzerfaust30'), V.rigStemFor(index, 'BritishSoldier', 'piat'),
+  V.rigStemFor(index, 'GermanSoldier', 'Panzerfaust30'), V.rigStemFor(index, 'GermanSoldier', 'Bazooka'), V.rigStemFor(['USSoldier__Bazooka'], 'USSoldier', 'Bazooka')];
+out.zoomPose = V.zoomPose({ center1pHands: [-0.06, -1.56, 0.1], soldierZoomPosition: [-0.107, -0.196, 0.1] });
 
 console.log(JSON.stringify(out));

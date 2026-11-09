@@ -559,3 +559,110 @@ EE-9 fired across its hull rolls 11.7 degrees and settles in 0.9 s.
 
 **One more slider.** A second TARGET AT over the sights, in step with the
 one over the chart.
+
+
+## On foot: the anti-tank weapons (2026-11-10)
+
+The owner: "the FHSW panzerfaust is insane difficult to shoot. I'd love to
+know its range and drop. Are we able to collect anti-tank weapons and plot
+them against a tank?" Then, mid-build: "HUD sights are important too ...
+those PIAT and axis anti tank have a complicated HUD ... or at least overlay
+the HUD so it can be shown how to make a shot". Card 05, ON FOOT.
+
+**Which weapons.** A side's kits on the arena's battles
+(`loadouts.json` `levels[level][team].slots`, team 1 Axis and 2 Allied,
+a level's own kit before the global one, a `Random*` item's variants
+beside it), and of their items those the game's own AI table rates against
+heavy armour (`aiWeapons[name].strength.HeavyArmour > 0`). EoD's loadouts
+carry no AI table, so there the Anti-tank kits' items stand in, and the
+knives and pistols that brings drop out at the next filter: a weapon is
+listed only when some plate of the target takes damage from its round. A
+rated weapon that hurts no plate of this tank is named under the list ("Carried
+too, but no plate of the T-34 takes damage from: Grenade Axis"). A round
+slower than 10 m/s is set down, not fired (FHSW's Haft-Hohlladung, 3 m/s),
+and left out.
+
+**The round.** The weapon's own glb: `fireArms.velocity`, the projectile's
+`gravity` (1 when it declares none), `material` and `timeToLive`. Every hand
+launcher's round is `kind: 'shell'` with no motor of its own, so it flies
+`tank-ballistics.js`'s closed form, the launch lift included (FA-23: +0.98
+m/s whatever the round's gravity). That lift is why EoD's LAW (gravity 0.01)
+climbs 0.7 m over 50 m and is ended by its 20 s fuse, 1300 m out, not by the
+ground: the reach is "until it lands or its fuse runs out".
+
+| FHSW launcher | m/s | Up to hit at 25 m | at 50 m | at 100 m | Flight to 50 m | Reach |
+|---|---|---|---|---|---|---|
+| Panzerfaust 30, Faustpatrone II | 28 | 10.9 deg | 29.2 deg | out of reach | 2.0 s | 57 m |
+| Panzerfaust 60 | 45 | 3.4 | 8.8 | 21 | 1.1 s | 144 m |
+| Panzerfaust 100 | 60 | 1.6 | 4.5 | 10.6 | 0.8 s | 253 m |
+| PIAT | 76 | | 2.6 | | 0.7 s | 402 m |
+| Bazooka | 82 | 0.6 | 2.2 | 5.3 | 0.6 s | 468 m |
+| Panzerfaust 150 | 85 | 0.5 | 2.0 | 4.9 | 0.6 s | 502 m |
+| Panzerfaust 250 | 150 | flat | 0.4 | 1.3 | 0.3 s | about 1 km |
+
+(The flight to 50 m is at the elevation that hits; aimed level, the
+Panzerfaust 30 lands 15.7 m out.)
+
+**The spread.** The glb's document extras carry the weapon's deviation
+(`extras.weapon.deviation`: `min` is `setMinDev`, `speed` is `setSpeedDev`,
+`mod` is `setDevMod`). A round strays up to `total / 100` radians on each of
+the up and right axes (DEV-9), `min` unscaled by stance (DEV-2), and walking
+adds up to `speed[0] x mod[stand]`. FHSW gives its Panzerfausts `setMinDev
+2.0` and a walking cap of 8 x 1.4: standing still a round lands within 1 m
+of the aim point at 50 m on each axis, walking within 6.6 m. That and the
+lob are why it feels so hard. Vanilla's Bazooka and Panzerschreck declare
+only `minDeviation` / `maxDeviation`, words the engine does not read
+(DEV-8, checked in vanilla's `Objects.con`), so they have no spread at all:
+the panel says "A miss is the drop or the lead, never luck".
+
+**The lead.** The flight time times the target's top speed (from the tank
+sheet), in metres and tank lengths: a Panzerfaust 60 at 50 m on a Tiger
+crossing at 11 m/s, 12.4 m, 1.6 lengths.
+
+**The card.** YOUR SIDE'S / THEIR SIDE'S (whose soldiers, at the other
+side's tank in the matchup), a chip per weapon, a TANK AT slider out to the
+furthest reach, then:
+
+- the lob at true scale, both axes in metres: a standing soldier (the tube
+  1.5 m up), the path aimed to hit and the path aimed straight at them, the
+  tank broadside at the distance, its nose towards him, and the apex height;
+- THROUGH THE SIGHT (`tank-sight-view.js`): what the soldier sees zoomed.
+  The world through the weapon's `zoomFov` (radians, vertical, as
+  `hand-fire.js` sets the camera), pitched up by the aim, the tank's model
+  at the distance; the weapon's first-person rig
+  (`viewmodels/<Soldier>__<Weapon>.fp.glb`, the side's soldier from the
+  loadouts, the tree's index then vanilla's) at its zoom pose
+  (`center1pHands` + `soldierZoomPosition`) in its own pass through
+  `set1pFov x soldierZoomFov`, its standing `idle` clip; the HUD's scope
+  picture across the whole frame where the weapon has one (the pack's
+  `scopes.json`, SCOPE-2..SCOPE-6: FHSW's rifle grenades); and over it all
+  the crosshair (where the tube points: `fireInCameraDof`), the dot where
+  the round comes down on the tank, and its spread as squares;
+- the clock of hits to kill for that warhead, and the words;
+- EVERY WEAPON SIDE BY SIDE: speed, reach, the aim at 25, 50 and 100 m,
+  the spread at 50 m and the hits to kill from the front, side and rear.
+
+What the sight view shows about FHSW's own sights: aimed for the range, the
+Panzerfaust 30's leaf has its "30m" mark at the tank's height at 30 m, and
+the PIAT's aperture plate has the hole marked "6" at the tank's height at
+60 m. The sights are the range tables, and the page says the angle they
+encode. Their sideways place is the viewer's first-person mount, the same
+the map page draws; it puts both marks right of the crosshair, which has
+not been checked against the retail game.
+
+**Checked** in headless Chrome (ui's Playwright, the viewer on its preview
+port): vanilla Kursk (the Panzerschreck against the T-34, no spread, 0.5
+deg at 50 m), FHSW Karelia (the Panzerfaust 30 against the KV-2, 13.9 deg
+at 30 m, 57 m reach), FHSW Gold Beach (the PIAT against the Churchill VCS
+and the Panzerfaust 60 against the Tiger), Desert Combat (the Bazooka and
+SMAW against the T-72) and EoD (the M79, LAW and M72 against the T-34-85),
+with no page errors. `tests/test_tank_school.py` `OnFootTests` pins the
+kit reading, the Panzerfaust 30's numbers, DEV-8's no spread, the LAW's
+fuse, the words and the rig lookup.
+
+**Open.** A thrown weapon (a Molotov, a Gammon bomb, a grenade) is drawn
+as a 20 to 25 m/s round, which is how the engine launches it; nothing
+marks it as thrown. The sight view draws the target front-on, so the lead
+shows in the words and not on the picture. FHSW's Arnhem is not an arena
+(the school has no tank pair there), so its Panzerfaust 100 is reached on
+Westwall, Hungary Forest or the Seelow Heights.

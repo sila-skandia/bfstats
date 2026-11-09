@@ -371,7 +371,9 @@ front, and use your faster turret to stay on their side."
 | `viewer/tank-ballistics.js` | The shell's flight in closed form (FA-23, IMP-7, IMP-8: `projectile-flight.js`'s per-tick parabola): `dropAt`, `elevationFor`, `reach`, `leadAngle`, `degreesPer100`, `arc` |
 | `viewer/tank-words.js` | The sentences |
 | `surveys/tank_school_sheet.mjs` -> `<maps>/_shared/tank-school.json` | Each tank driven and fired through the page's own drive law on flat ground: the drive numbers, the steadiness and the traces. A file of the tree: `mod_pipeline.py`'s `tank_school` step writes it, `publish-mesh-delta.py maps` publishes it. Vanilla's is run by hand (`--models viewer/models --maps viewer/maps`, or `--fetch` for the published tree) and pinned in `tests/fixtures/tank-school-bf1942.json` |
-| `viewer/play/proving-ground-screen.js` | The TANK SCHOOL card |
+| `viewer/tank-launchers.js` | ON FOOT's data: `sideWeapons` (a side's anti-tank items on the arena's battles, from `loadouts.json`), `launcherOf` (a hand weapon's round and spread from its glb's JSON chunk), `reachOf` (to the ground or the fuse), `aimFor`, `strayAt` |
+| `viewer/tank-sight-view.js` | ON FOOT's view down the tube: the tank through the weapon's `zoomFov`, its first-person rig at the zoom pose in a pass of its own (`rigStemFor`, `zoomPose`) |
+| `viewer/play/proving-ground-screen.js` | The TANK SCHOOL card (taken off again; the page is reached by its link) |
 
 What it borrows: `armour-damage.js` (`damageMath`, `shotsFor`) and
 `crash-damage.js` (`angleFactor`) as they are; `plane-models.js`'s model

@@ -187,3 +187,42 @@ export function steadyWords(name, trace, summary = null, { range = 200, reload =
   }
   return out;
 }
+
+/**
+ * A soldier's anti-tank weapon against a tank, at R m (the ON FOOT panel):
+ * `w` is `{ name, reach, aim: { elevation, t }, drop, spread: { still,
+ * moving, declared }, stillM, movingM }` (`tank-launchers.js`), `target` is
+ * `{ name, heightM, lengthM, top, shots }` with `top` its top speed (m/s, or
+ * null) and `shots` its clock (`{ 0, 90, 180: { shots, share } }`).
+ */
+export function launcherWords(w, target, R) {
+  const out = [];
+  const reach = Math.round(w.reach.range);
+  const ends = w.reach.fuse ? 'its fuse runs out' : 'it lands';
+  if (w.aim.elevation == null) {
+    out.push(`The ${w.name} cannot reach ${R} m: ${ends} ${reach} m out at most, with the tube ${n1(w.reach.elevation)} deg up. Get within ${reach} m.`);
+  } else {
+    const e = w.aim.elevation, h = target.heightM;
+    if (w.drop < 0) out.push(`Aim straight at them: the round climbs on its launch and barely falls, ${n1(-w.drop)} m above the line by ${R} m.`);
+    else if (w.drop < h * 0.5) out.push(`Aim straight at them: by ${R} m the round falls ${n1(w.drop)} m, less than half their height.`);
+    else out.push(`At ${R} m point the tube ${n1(e)} deg above them: the round falls ${n1(w.drop)} m on the way, ${n1(w.drop / h)} times their height. It goes ${reach} m at most.`);
+    const t = w.aim.t;
+    if (target.top) {
+      const lead = target.top * t, lengths = target.lengthM ? lead / target.lengthM : null;
+      out.push(`It takes ${n1(t)} s to get there. Crossing at ${n1(target.top)} m/s, the ${target.name} moves ${n1(lead)} m in that time`
+        + `${lengths != null && lengths >= 0.5 ? `, ${n1(lengths)} tank length${n1(lengths) === '1' ? '' : 's'}` : ''}: aim that far ahead, or wait until it stops or drives straight at you.`);
+    } else {
+      out.push(`It takes ${n1(t)} s to get there: lead a moving tank by its speed times that.`);
+    }
+  }
+  if (!w.spread.declared || w.spread.still === 0) {
+    out.push('No spread: the game sends the round exactly where the tube points. A miss is the drop or the lead, never luck.');
+  } else {
+    out.push(`Standing still it strays up to ${n1(w.stillM)} m from where you point at ${R} m, on each axis; walking, up to ${n1(w.movingM)} m. Stop before you fire.`);
+  }
+  const f = shotsAt(target, 0), sd = shotsAt(target, 90), r = shotsAt(target, 180);
+  if (![f, sd, r].some(v => v != null)) out.push(`Its warhead cannot hurt the ${target.name} from any side.`);
+  else if (plain(f, sd, r)) out.push(`Hits to kill on a plate it gets through: front ${f}, side ${sd}, rear ${r}.`);
+  else out.push(faces3('Hits to kill', f, sd, r));
+  return out;
+}
