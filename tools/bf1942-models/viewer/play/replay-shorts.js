@@ -45,7 +45,7 @@ const PLAYER_KEY = 'bf42-shorts-player';
 export const SHORT_FILTERS = Object.freeze([
   Object.freeze({ id: 'all', label: 'All', kinds: null, plate: null }),
   Object.freeze({ id: 'air', label: 'Air', kinds: ['air-to-air'], plate: 'icon_air_support' }),
-  Object.freeze({ id: 'ground-to-air', label: 'Ground to air', kinds: ['ground-to-air'], plate: 'icon_air_spotted' }),
+  Object.freeze({ id: 'ground-to-air', label: 'Ground to air', kinds: ['tank-to-air', 'ground-to-air'], plate: 'icon_air_spotted' }),
   Object.freeze({ id: 'vehicle', label: 'Vehicle', kinds: ['tank-to-tank', 'tank-buster'], plate: 'icon_armor_spotted' }),
   Object.freeze({ id: 'soldier', label: 'Soldier', kinds: ['long-shot'], plate: 'icon_inf_spotted' }),
   Object.freeze({ id: 'streak', label: 'Streak', kinds: ['streak'], plate: 'icon_attacking' }),
@@ -58,6 +58,7 @@ export const shortFilter = id => SHORT_FILTERS.find(f => f.id === id) ?? SHORT_F
 /** A Short's kind as its badge says it; `other` and unknown kinds are a Kill. */
 const KINDS = {
   'air-to-air': 'Air to air',
+  'tank-to-air': 'Tank downs plane',
   'ground-to-air': 'Ground to air',
   'tank-to-tank': 'Tank to tank',
   'tank-buster': 'Tank buster',
@@ -219,6 +220,7 @@ const STYLE = `
   box-shadow: 0 0 6px var(--rs-kind, var(--rf-khaki)); }
 .rs-kind-air-to-air { --rs-kind: #8fc0e8; }
 .rs-kind-ground-to-air { --rs-kind: #e0a96a; }
+.rs-kind-tank-to-air { --rs-kind: #f0c060; }
 .rs-kind-tank-to-tank { --rs-kind: #a3b46a; }
 .rs-kind-tank-buster { --rs-kind: #c9a05a; }
 .rs-kind-long-shot { --rs-kind: #e8c35a; }

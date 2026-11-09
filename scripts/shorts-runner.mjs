@@ -62,6 +62,87 @@ const REFILM = args.includes('--refilm-live');
 const UPLOAD = FILMED || REFILM || args.includes('--upload');
 /** Sound (--sound): the page's audio rendered offline in step with the frames. */
 const SOUND = args.includes('--sound');
+/** --ignore-checks: upload a Short the quality checks held back (QA). */
+const IGNORE_CHECKS = args.includes('--ignore-checks');
+/**
+ * Quality checks on every filmed Short (the owner, 2026-11-10: "we should
+ * be picking up some basic issues like this when we export ... sounds should
+ * exist if we're capturing firing, things should roughly match up"). The
+ * page counts, each rendered frame, whether the lens is under the terrain
+ * (57su2b7u9y: a shell steered under a ridge, the camera on its tail looking
+ * up through the ground) and whether the chased round is; the sound is
+ * measured once rendered (g5e45cdyby: no shot to hear). A Short failing one
+ * is written with its `checks` and held back from upload; --ignore-checks
+ * sends it anyway. Each count is a share of the frames it applies to.
+ */
+const QA = Object.freeze({
+  // The lens this far under the ground it stands over, this many frames and
+  // this share of the Short: a frame or two at a hit's dust is not it.
+  camUnderM: 0.3, camUnderFrames: 6, camUnderShare: 0.03,
+  // The chased round under the ground for this share of its flight: it was
+  // steered through a rise, and what the camera shows is the underside.
+  roundUnderM: 1.0, roundUnderShare: 0.3, roundFrames: 10,
+  // A Short whose loudest second is under this is silent.
+  silentDb: -50,
+});
+const QA_SRC = `window.__qa = (() => {
+  const st = { frames: 0, camUnder: 0, flying: 0, roundUnder: 0, deepest: 0 };
+  const sample = () => {
+    const r = window.replay;
+    if (!r?.ctx) return;
+    const cam = r.ctx.camera;
+    st.frames++;
+    const g = r.ctx.groundHeight?.(cam.position.x, cam.position.z);
+    if (Number.isFinite(g) && cam.position.y < g - ${QA.camUnderM}) { st.camUnder++; st.deepest = Math.max(st.deepest, g - cam.position.y); }
+    const rc = r.creator?.rounds;
+    if (rc?.state === 'flying' && rc.pos) {
+      st.flying++;
+      const gr = r.ctx.groundHeight?.(rc.pos.x, rc.pos.z);
+      if (Number.isFinite(gr) && rc.pos.y < gr - ${QA.roundUnderM}) st.roundUnder++;
+    }
+  };
+  const orig = window.__renderOnce;
+  if (orig && !orig.__qa) {
+    const wrapped = (...a) => { const out = orig(...a); sample(); return out; };
+    wrapped.__qa = true;
+    window.__renderOnce = wrapped;
+  }
+  return {
+    reset() { for (const k of Object.keys(st)) st[k] = 0; },
+    take() { const out = { ...st, deepest: Math.round(st.deepest * 10) / 10 }; this.reset(); return out; },
+  };
+})();`;
+/** The page's quality counts for the Short just filmed (QA), or null. */
+const qaTake = page => page.evaluate(() => window.__qa?.take() ?? null).catch(() => null);
+const qaReset = page => page.evaluate(() => window.__qa?.reset()).catch(() => {});
+/** The loudest and the median second of a rendered sound, in dBFS RMS. */
+function soundLevels(wav) {
+  try {
+    const out = execFileSync('ffmpeg', ['-v', 'error', '-i', wav, '-af', `asetnsamples=${AUDIO_RATE},astats=metadata=1:reset=1,ametadata=print:key=lavfi.astats.Overall.RMS_level:file=-`, '-f', 'null', '-'],
+      { encoding: 'utf8', stdio: ['ignore', 'pipe', 'pipe'], maxBuffer: 64 * 1024 * 1024 });
+    const levels = [...out.matchAll(/RMS_level=(-?[\d.]+|-inf)/g)].map(m => (m[1] === '-inf' ? -120 : Number(m[1]))).filter(Number.isFinite);
+    if (!levels.length) return null;
+    const sorted = [...levels].sort((a, b) => a - b);
+    return { maxDb: Math.round(Math.max(...levels)), medianDb: Math.round(sorted[Math.floor(sorted.length / 2)]), seconds: levels.length };
+  } catch (e) {
+    log(`  sound levels: ${e.message.slice(0, 120)}`);
+    return null;
+  }
+}
+/** The verdict on a filmed Short: its page counts, its sound, and what it
+ *  failed (empty when nothing). */
+function judge(made) {
+  const q = made.checks ?? {};
+  const failed = [];
+  if (q.frames && q.camUnder >= QA.camUnderFrames && q.camUnder / q.frames >= QA.camUnderShare) {
+    failed.push(`the camera under the terrain for ${q.camUnder} of ${q.frames} frames (${q.deepest} m at most)`);
+  }
+  if (q.flying >= QA.roundFrames && q.roundUnder / q.flying >= QA.roundUnderShare) {
+    failed.push(`the round under the terrain for ${Math.round((100 * q.roundUnder) / q.flying)}% of its flight`);
+  }
+  if (made.sound && made.sound.maxDb < QA.silentDb) failed.push(`silent: its loudest second is ${made.sound.maxDb} dB`);
+  return { ...q, sound: made.sound ?? null, failed };
+}
 /** The offline audio's rate: 1/30 s is 1280 samples, ten render quanta, so a
  *  frame's audio ends exactly where a suspend can stop the render. */
 const AUDIO_RATE = 38400;
@@ -425,6 +506,7 @@ async function openPage(browser, url) {
   // The hulls and bodies keep arriving for a while after the status line.
   await page.waitForTimeout(8000);
   log('loaded in', Math.round((Date.now() - t0) / 1000), 's');
+  await page.evaluate(QA_SRC);
   await page.evaluate(async () => {
     window.__renderer.setAnimationLoop(null);
     window.__clock.take();
@@ -3023,6 +3105,7 @@ async function filmReel(page, reel, dir) {
   const frames = path.join(dir, 'frames');
   fs.rmSync(frames, { recursive: true, force: true });
   fs.mkdirSync(frames, { recursive: true });
+  await qaReset(page);
   let n = 0;
   const audio = [];
   const write = url => {
@@ -3447,7 +3530,7 @@ async function filmReel(page, reel, dir) {
     return { killerVehicle: d(kv), victimVehicle: d(vv), weapon: d(weapon) };
   }, { kv: reel.parts[0].killerVehicle ?? null, vv: reel.parts[0].victimVehicle ?? null, weapon: reel.parts[0].weapon ?? null });
   return { ok: true, mp4, poster, audio: audio.length ? audio : null, frames: n, edited: n, asmr: Boolean(reel.asmr),
-    lengthSeconds: Math.round((n / FPS) * 10) / 10, names };
+    lengthSeconds: Math.round((n / FPS) * 10) / 10, names, checks: await qaTake(page) };
 }
 
 /** One Short filmed into `dir`: frames, then the MP4 and its poster. */
@@ -3462,6 +3545,7 @@ async function film(page, cand, dir, view = null) {
   const frames = path.join(dir, 'frames');
   fs.rmSync(frames, { recursive: true, force: true });
   fs.mkdirSync(frames, { recursive: true });
+  await qaReset(page);
   let n = 0;
   const shot = await shootKill(page, cand, url => {
     fs.writeFileSync(path.join(frames, `f${String(n++).padStart(4, '0')}.jpg`), Buffer.from(url.split(',')[1], 'base64'));
@@ -3485,7 +3569,7 @@ async function film(page, cand, dir, view = null) {
   execFileSync('ffmpeg', ['-y', '-loglevel', 'error', '-i', path.join(frames, `f${String(at).padStart(4, '0')}.jpg`),
     '-vf', 'scale=540:960', '-q:v', '4', poster]);
   fs.rmSync(frames, { recursive: true, force: true });
-  return { ok: true, mp4, poster, audio, frames: n, edited, lengthSeconds: Math.round((n / FPS) * 10) / 10, names: setup.names };
+  return { ok: true, mp4, poster, audio, frames: n, edited, lengthSeconds: Math.round((n / FPS) * 10) / 10, names: setup.names, checks: await qaTake(page) };
 }
 
 /**
@@ -3704,6 +3788,10 @@ async function shootKill(page, cand, write, overlay = null, { lead = null } = {}
           victim: w?.pos ? [w.pos[0], w.pos[1], w.pos[2]].map(x => +x.toFixed(1)) : null, vstate: w?.state,
           hullHp: hull?.lastHp ?? null, diesAt: hull?.diesAt?.at ?? null,
           ground: rc.state === 'flying' || rc.state === 'impact' ? +(r.ctx.groundHeight?.(rc.pos.x, rc.pos.z) ?? NaN).toFixed(1) : null,
+          // The camera as drawn, and the ground under it: a lens under the
+          // terrain sees the sky through it (2026-11-10, 57su2b7u9y).
+          cam: r.ctx.camera.position.toArray().map(x => +x.toFixed(1)),
+          camGround: +(r.ctx.groundHeight?.(r.ctx.camera.position.x, r.ctx.camera.position.z) ?? NaN).toFixed(1),
           hit: r.ctx.guns?.hits?.[0]?.point?.map(x => +x.toFixed(1)) ?? null };
       }
       if (rec?.started) {
@@ -3849,7 +3937,8 @@ async function addSound(page, done) {
     execFileSync('ffmpeg', ['-y', '-loglevel', 'error', '-i', silent, '-i', wav, '-map', '0:v', '-map', '1:a', '-c:v', 'copy',
       '-c:a', 'aac', '-b:a', '160k', '-ar', '48000', '-af', made.asmr ? `${ASMR_SOUND},apad` : 'apad', '-shortest', '-movflags', '+faststart', made.mp4]);
     fs.rmSync(silent);
-    log(`  sound added to ${path.basename(dir)}`);
+    made.sound = soundLevels(wav);
+    log(`  sound added to ${path.basename(dir)}${made.sound ? ` (peak ${made.sound.maxDb} dB)` : ''}`);
   });
 }
 
@@ -3895,6 +3984,10 @@ if (FILMED) {
     const made = { mp4: path.join(dir, 'short.mp4'), poster: path.join(dir, 'poster.jpg') };
     if (!fs.existsSync(made.mp4) || !fs.existsSync(made.poster)) continue;
     const meta = JSON.parse(fs.readFileSync(path.join(dir, 'meta.json'), 'utf8'));
+    if (meta.checks?.failed?.length && !IGNORE_CHECKS) {
+      log(`held back "${meta.title}": ${meta.checks.failed.join('; ')}`);
+      continue;
+    }
     try {
       const short = await upload(meta, made);
       log(`uploaded ${short.slug} "${meta.title}"`);
@@ -4314,6 +4407,17 @@ try {
       phase = `uploading ${r.slug}`;
       for (const { c, meta, made, dir } of done) {
         let slug = null;
+        // The quality checks (QA): written with the Short, and a failed one
+        // is held back unless --ignore-checks.
+        meta.checks = judge(made);
+        fs.writeFileSync(path.join(dir, 'meta.json'), JSON.stringify(meta, null, 2));
+        if (meta.checks.failed.length) {
+          log(`  held back "${meta.title}": ${meta.checks.failed.join('; ')}${IGNORE_CHECKS ? ' (uploaded anyway)' : ''}`);
+        }
+        if (UPLOAD && meta.checks.failed.length && !IGNORE_CHECKS) {
+          summary.push({ recording: r.slug, title: meta.title, kind: c.kind, dir, slug: null, heldBack: meta.checks.failed });
+          continue;
+        }
         if (UPLOAD) {
           // One Short refused never costs the rest of the recording's.
           try {

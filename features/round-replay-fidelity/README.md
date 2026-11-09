@@ -525,3 +525,23 @@ never seen on foot, nobody invented for a player on foot).
   plus 0/0.3/0, a metre under the bots' and a replay's, which hang it at his
   origin (`CHARACTER_HEIGHT` over the feet), where the risers meet his
   shoulders in the page (soldier 22). Not checked in play.
+
+## The replayed rounds' hull cast (2026-11-10)
+
+The owner, on the editor's bullet chase over Manchuria in slow motion:
+"really laggy. The moment it zooms out it's fine", and not in the filmed
+Short. Measured in the page: 27 fps over the shoulder, 5 fps through the
+chase and the hold, 27 again after. Not the recording's 10 Hz. The world's
+tick ran `guns.advance` three times a frame (catch-up), and each tick swept
+50 tracers of the planes' strafing; each sweep's `collider.cast` cost 415
+microseconds, of which the terrain march, the static index and the moved
+hulls were 2, and `dynamicCast` (replay-gunfire.js, the replayed hulls) 384:
+it walked every hull life of the round (4,661) for the 157 drawn and ran
+three.js's recursive `intersectObject` over each one's hundreds of meshes.
+Now the drawn hulls are listed once per replay clock change, each with its
+root's position and `hullRadius`, and a ray is tested against that sphere
+(3 m slack for a frame's motion) before the raycast: 2.8 microseconds a
+cast, 59 of 60 random rays agreeing with the old result before the centre
+moved to the root (a placed gun's group stays at the origin), 11 of 11
+after; the chase at 24 ms a frame.
+

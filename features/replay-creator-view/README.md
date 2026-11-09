@@ -2278,3 +2278,19 @@ the owner's MP3 added by the lane's file input, the clip played 12 s):
 
 `test_replay_sync` SongTests assert the new limits (a 0.12 s drift kept and
 pulled, a 0.4 s one a seek, the rate between 0.97 and 1.03).
+
+### A seat is not a bullet catcher (2026-11-10)
+
+The round cam aims a shell at the man it kills: his seat's node on the drawn
+hull, or, for the seat that is the hull itself, the middle of the drawn
+hull's box (`seatPointOf`). FHSW hangs three `BulletCatcher` cubes 19-24 m
+under its tanks (COL-20), and they were in the box: a Ho-I's and a Ho-Chi's
+drivers on Manchuria sat 12-19 m under their tanks, every shell at them ran
+under the ridge between, and the camera rode behind it under the ground
+(`57su2b7u9y`, `b4h2mruapn`). Two guards: `ReplayHull` hides the catchers and
+marks them collision, so neither the box nor `hullRadius` sees them; and a
+seat farther from the hull's origin than `SEAT_REACH` radii (1.5, at least
+`SEAT_REACH_MIN` 2 m) is a bad box, not a seat, and he sits over the origin,
+0.4 radii up. The runner's `--trace` now records the camera's position and
+the ground under it each frame, which is how the depth was read.
+

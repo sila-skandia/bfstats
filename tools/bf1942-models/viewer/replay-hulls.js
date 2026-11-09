@@ -238,6 +238,10 @@ export function recordedLaunch(node, shot) {
   };
 }
 
+/** FHSW's `BulletCatcher_new`, `BulletCatcher17,5m`, `BulletCatcher25m`:
+ *  the cubes hung under a hull to stop a ranging gun's rounds. */
+export const BULLET_CATCHER = /bulletcatcher/i;
+
 export class ReplayHull {
   /**
    * @param {object} player  the ReplayPlayer (its `ctx`, `rec`, `showGhosts`)
@@ -261,6 +265,18 @@ export class ReplayHull {
     // where the recording has it; left on the ship it was a second copy,
     // frozen on her deck, and its seats were counted among hers.
     for (const craft of spawnedCraftUnder(this.root)) craft.parent?.remove(craft);
+    // FHSW hangs three `BulletCatcher` cubes 19 to 24 m under its tanks and
+    // ships (vehicle-bodies.js, COL-20): hull parts to the engine, nothing to
+    // the eye. Drawn, they sat 40 m under the ground and counted as the hull:
+    // its bounding radius came out 40 m, and the middle of its box 12-19 m
+    // under it, where the round cam steered every shell at a tank's driver
+    // (Manchuria, 2026-11-10). Hidden here and marked as collision, so
+    // `hullRadius` and the seat point measure the tank alone.
+    this.root.traverse(obj => {
+      if (!BULLET_CATCHER.test(obj.name ?? '')) return;
+      obj.visible = false;
+      obj.userData.collision = true;
+    });
     this.group.add(scene);
     this.wreck = wreck;
     if (wreck) {

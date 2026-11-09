@@ -39,7 +39,13 @@ class ShortsPickTests(unittest.TestCase):
     def test_a_kill_is_classed_by_what_both_men_were_in(self) -> None:
         k = self.r["kinds"]
         self.assertEqual(k["airToAir"], "air-to-air")
+        # A tank's shell into a plane is its own kind (the owner, 2026-11-10:
+        # The Clëäner's IS-2 on a Ki-67, "incredible"); an AA mount's kill of
+        # one, by name or by the gun it fires, is ground to air.
+        self.assertEqual(k["tankToAir"], "tank-to-air")
         self.assertEqual(k["groundToAir"], "ground-to-air")
+        self.assertEqual(k["spaaOnPlane"], "ground-to-air")
+        self.assertEqual(k["spaaNamedOnPlane"], "ground-to-air")
         self.assertEqual(k["aaFromFoot"], "ground-to-air")
         self.assertEqual(k["tankToTank"], "tank-to-tank")
         self.assertEqual(k["longShot"], "long-shot")
@@ -66,6 +72,7 @@ class ShortsPickTests(unittest.TestCase):
         self.assertEqual(self.r["titles"], [
             "M4A1 kills TIGER at 192 m",
             "Mustang downs Bf109 at 410 m",
+            "IS-2 shell downs Ki-67 Hiryu at 431 m",
             "Bazooka downs Bf109 at 120 m",
             "412 m K98Sniper shot on Bocage",
             "Piat kills Tiger at 43 m",
@@ -91,6 +98,9 @@ class ShortsPickTests(unittest.TestCase):
         self.assertEqual(self.r["pickedOne"], [100])
         # Kills already clipped are left out.
         self.assertEqual(self.r["pickedTaken"], [104, 300, 700])
+        # Every tank-to-air kill is a Short past the three (the owner,
+        # 2026-11-10), but never one at the moment of another pick.
+        self.assertEqual(self.r["pickedAlways"], [900, 950, 100, 500])
 
 
     def test_a_kill_the_recording_does_not_hold_whole_is_left_out(self) -> None:

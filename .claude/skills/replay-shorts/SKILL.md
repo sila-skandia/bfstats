@@ -256,6 +256,33 @@ about.
   Vehicle filter and badge. A new kind must reach all four, and the API
   must be deployed before one is uploaded (it refuses unknown kinds).
 
+- **A tank's shell into a plane is the shot to look for** (2026-11-10,
+  `57su2b7u9y`: "incredible, this should be something we look for"; "favour
+  shots from ground to air ... the longer distance the more epic"). Kind
+  `tank-to-air` (base 120, every one of a round a Short, `ALWAYS`); an AA
+  mount's kill of a plane stays ground to air (`AA_HULL`); shots at planes
+  from the ground count their metres at 5 a point. Re-filmed The Clëäner's
+  431 m IS-2 shell on a Ki-67 (Manchuria) under it.
+- **Rounds under the ground on Manchuria** (2026-11-10, `57su2b7u9y`,
+  `b4h2mruapn`): FHSW's `BulletCatcher` cubes 20-40 m under its tanks were
+  in the drawn hull's box, so the round cam aimed every shell at a driver
+  12-19 m under his tank. `ReplayHull` hides them; `seatPointOf` refuses a
+  seat farther than 1.5 radii from the origin. `--trace` records the camera
+  and the ground under it: read it before guessing at a camera fault.
+- **A kill nobody heard fire is not filmed** (2026-11-10, `g5e45cdyby`: "no
+  sound when the player fires"): a roundless kill needs the killer's
+  recorded trigger within 1.5 s (`heardShot`).
+- **Quality checks hold a Short back** (2026-11-10: "we should be picking up
+  some basic issues like this when we export"). `QA` in the runner: the lens
+  or the chased round under the terrain, a silent sound; written as
+  `checks` in meta.json, "held back" in the log, never uploaded without
+  `--ignore-checks`. When a run holds one back, look at why before sending
+  it.
+- **The editor's chase at 5 fps was the hull cast**, not the recording
+  (2026-11-10): `replay-gunfire.js` now tests a hull's sphere before its
+  meshes. Measure frame times per round-cam state in the page before
+  blaming sample rates.
+
 ## On the Mac (2026-11-07)
 
 The owner's machine is now an M5 Max MacBook Pro: no systemd (the nightly

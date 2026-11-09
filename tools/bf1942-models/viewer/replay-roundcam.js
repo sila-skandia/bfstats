@@ -182,6 +182,10 @@ const BULLET_GUESS = 650;
  *  and to the side, metres, and how far ahead of it the camera looks. */
 /** Metres the camera keeps above ground and water: less than the orbit's. */
 const CLEARANCE = 0.15;
+/** A seat is within SEAT_REACH hull radii (at least SEAT_REACH_MIN m) of the
+ *  hull's origin; farther is a bad box, not a seat (`seatPointOf`). */
+const SEAT_REACH = 1.5;
+const SEAT_REACH_MIN = 2;
 /** A soldier's round leaves his eye (ledger XHIT-18), inside his drawn body,
  *  and a hull gun's need not leave its barrel as drawn (Bocage's MG 42 nest:
  *  0.36 m off it, its gunner's camera 2.3 m back); the bullet the round cam
@@ -623,7 +627,15 @@ export class RoundCam {
     const node = id && id !== occ.rootId ? occ.survey?.seats?.get(id)?.node : null;
     const at = node ? node.getWorldPosition(_vs2) : _box.setFromObject(root).getCenter(_vs2);
     if (!Number.isFinite(at.x)) return out;
-    return out.set(w.pos[0], w.pos[1], w.pos[2]).add(at.sub(origin));
+    const off = at.sub(origin);
+    // A seat farther from the hull's origin than the hull is big is not his
+    // seat: the middle of a drawn FHSW tank's box came out 12-19 m under the
+    // hull (Manchuria, 2026-11-10, a Ho-I and a Ho-Chi), and every shell
+    // steered at it ran under the ground for its last 100 m, the camera on
+    // its tail. Then he sits over the origin, a little up.
+    const r = hullRadius(hull);
+    if (!(off.length() <= Math.max(r, SEAT_REACH_MIN) * SEAT_REACH)) off.set(0, Math.min(r, 3) * 0.4, 0);
+    return out.set(w.pos[0], w.pos[1], w.pos[2]).add(off);
   }
 
   /** Every round flying now is older than the one awaited. */

@@ -558,6 +558,56 @@ a Short; a failing Shorts call leaves the recordings as they were. **The
 player** opens with `&short=<slug>`; Watch the round fetches the recording
 and opens the replay 5 s before the kill.
 
+**A tank's shell into a plane, and quality checks (2026-11-10).** The
+owner on `57su2b7u9y` (The Clëäner's 11-kill streak on Manchuria): "that
+tank to plane kill at the start is incredible, this should be something we
+look for"; later, "you will also favour shots from ground to air, as they
+are extra epic. The longer distance the more epic." A seventh single kind,
+`tank-to-air` (base 120, over air to air's 100): armour whose template and
+weapon are not an AA mount's (`AA_HULL`: FHSW's 76mmSPAA29K, ZSUM17,
+ZIS12_25mmAATwin, 20mmType98AA; vanilla's Flak38, Wirbelwind, M16) killing a
+plane. Every one of a round is a Short past the three (`ALWAYS`), titled
+"IS-2 shell downs Ki-67 Hiryu at 431 m", badged Tank downs plane, under the
+strip's Ground to air filter. Shots at planes from the ground count their
+metres at 5 a point, twice a tank kill's. The same review found four faults
+in the night's Shorts, each with a cause and a check:
+
+- *Rounds under the ground* (`57su2b7u9y`, `b4h2mruapn`: "heaps of issues
+  with the rounds travelling under ground"). FHSW hangs three
+  `BulletCatcher` cubes 19-24 m under its tanks (vehicle-bodies.js, COL-20);
+  drawn, they sat 40 m under the ground, and the round cam's seat point for
+  a tank's driver, the middle of the drawn hull's box, came out 12-19 m
+  under the tank. Every shell was steered at that point, through the ridge
+  between, with the camera on its tail looking up through the ground; the
+  trace (`--trace`, now with the camera and the ground under it) showed the
+  447 m shot 18 m deep. `ReplayHull` hides the catchers and marks them
+  collision, so `hullRadius` and the seat point measure the tank alone
+  (`SEAT_REACH`: a seat farther than 1.5 radii from the origin is not one).
+- *A silent shot* (`g5e45cdyby`, almighty-_-'s 5 kills in 22 s on Arnhem:
+  "no sound when the player fires"). The recording holds no rounds and no
+  trigger for his K98 kills (bf42plus before the state table); the page
+  plays a recorded trigger (`fireShot`) or nothing. A roundless kill now
+  needs his trigger within 1.5 s (`heardShot`), and the burst falls out.
+- *The editor's bullet chase at 5 fps* (vjkykup9, the same plane kill, in
+  slow motion: "really laggy. The moment it zooms out it's fine"). Not the
+  recording (the Ki-67 is sampled at 10 Hz throughout): every replayed
+  round's sweep cast against the replayed hulls walked all 4,661 hull lives
+  of the round and ran three.js's recursive raycast on each of the 157 drawn,
+  384 of a cast's 415 microseconds; with 50 tracers of the planes' strafing
+  and the world's catch-up ticks, 160 casts a frame. `replay-gunfire.js`
+  keeps the drawn hulls per frame and tests the ray against each hull's
+  bounding sphere first: 2.8 microseconds a cast, the chase at 24 ms a frame
+  where it was 110-165.
+- *Checks on every Short* ("we should be picking up some basic issues like
+  this when we export"). The runner's `QA`: the page counts, each rendered
+  frame, the lens under the terrain and the chased round under it
+  (`window.__qa`, over `__renderOnce`), and the rendered sound's loudest and
+  median second are measured (`soundLevels`). A Short failing one (the
+  camera under for 3% of its frames and 6 or more; the round under for 30%
+  of its flight; a peak under -50 dB) is written with `checks.failed` and
+  held back from upload, by the run and by `--upload-filmed`;
+  `--ignore-checks` sends it anyway.
+
 ### On the stats pages (2026-11-04)
 
 The owner: "on the stats site, the PlayerDetailsV4 and ServerDetailsV4 pages,

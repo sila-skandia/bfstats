@@ -52,8 +52,17 @@ const JUMP = 15;
 
 /** The kinds filmed one kill a Short. Own goals and spawn deaths are reels
  *  (`reelOf`): one alone was too quick or too forced (the owner, 2026-11-03). */
-export const KINDS = Object.freeze(['air-to-air', 'ground-to-air', 'tank-to-tank', 'tank-buster', 'long-shot']);
-const BASE = { 'air-to-air': 100, 'ground-to-air': 90, 'tank-to-tank': 70, 'tank-buster': 72, 'long-shot': 50, 'own-goal': 80, 'spawn-death': 80 };
+export const KINDS = Object.freeze(['tank-to-air', 'air-to-air', 'ground-to-air', 'tank-to-tank', 'tank-buster', 'long-shot']);
+const BASE = { 'tank-to-air': 120, 'air-to-air': 100, 'ground-to-air': 90, 'tank-to-tank': 70, 'tank-buster': 72, 'long-shot': 50, 'own-goal': 80, 'spawn-death': 80 };
+/** The kinds every kill of which is a Short, past a recording's `max` (the
+ *  owner, 2026-11-10, The Clëäner's IS-2 shell into a Ki-67 on Manchuria:
+ *  "incredible, this should be something we look for"). */
+export const ALWAYS = Object.freeze(['tank-to-air']);
+/** A hull built to shoot at planes: its kill of one is ground to air, not a
+ *  tank's miracle (FHSW's 76mmSPAA29K, ZSUM17, ZIS12_25mmAATwin; vanilla's
+ *  Flak38, Wirbelwind, M16). Matched against the hull's template and the
+ *  weapon the kill names. */
+const AA_HULL = /aa|flak|spaa|wirbel|ostwind|zsu|bofors|oerlikon|m16|m15|quad|_mg|mg\d|browning|dshk|maxim|vickers|pom/i;
 
 /** A man killed this soon after he spawned (the owner, 2026-11-03: "a
  *  soldier spawns in, and dies within 5 seconds"). One alone is too quick to
@@ -181,6 +190,10 @@ function lifeOf(rec, pid, t) {
  *  kills a tank); false when the shot took the man and left the hull. */
 export function kindOfKill(killer, victim, distance, weapon, { hullDied = true } = {}) {
   if (!killer || !victim) return null;
+  // A tank's shell into a plane is the rarest shot there is (the owner,
+  // 2026-11-10): its own kind, over every other, unless the hull is an AA
+  // mount, whose job it is (AA_HULL).
+  if (victim.kind === 'air' && killer.kind === 'armour' && !AA_HULL.test(`${killer.tmpl ?? ''} ${weapon ?? ''}`)) return 'tank-to-air';
   if (victim.kind === 'air') return killer.kind === 'air' ? 'air-to-air' : 'ground-to-air';
   if (killer.kind === 'armour' && victim.kind === 'armour') return 'tank-to-tank';
   // A man on foot who kills a tank (a PIAT, a bazooka, a charge): the owner,
@@ -243,6 +256,7 @@ export function titleOf(c, display = s => s) {
   }
   switch (c.kind) {
     case 'air-to-air': return `${kv} downs ${vv} at ${m}`;
+    case 'tank-to-air': return `${kv} shell downs ${vv} at ${m}`;
     case 'ground-to-air': return `${kv ?? (c.weapon ? display(c.weapon) : c.killerName)} downs ${vv} at ${m}`;
     case 'tank-to-tank': return `${kv} kills ${vv} at ${m}`;
     case 'tank-buster': return `${c.weapon ? display(c.weapon) : c.killerName} kills ${vv} at ${m}`;
@@ -280,7 +294,10 @@ export function shortCandidates(rec, { models, slug = '', kills = rec.kills } = 
     if (!continuityOf(lifeOf(rec, k.killer, at), w0, w1).ok) continue;
     if (!continuityOf(lifeOf(rec, k.victim, at), w0, w1).ok) continue;
     const multi = kills.filter(o => o !== k && o.killer === k.killer && Math.abs(o.t - k.t) <= MULTI_GAP).length;
-    const score = BASE[kind] + f.distance / (kind === 'long-shot' ? 6 : 10) + (multi ? MULTI_BONUS : 0);
+    // A shot from the ground at a plane is extra epic, the longer the more
+    // (the owner, 2026-11-10): its metres weigh twice a tank kill's.
+    const perMetre = kind === 'long-shot' ? 6 : kind === 'tank-to-air' || kind === 'ground-to-air' ? 5 : 10;
+    const score = BASE[kind] + f.distance / perMetre + (multi ? MULTI_BONUS : 0);
     out.push({
       key: shortKey(slug, k.t, k.victim), t: k.t, victim: k.victim, killer: k.killer,
       killerName: nameAt(rec, k.killer, k.t), victimName: nameAt(rec, k.victim, k.t),
@@ -434,6 +451,8 @@ export function reelOf(candidates, kind, { slug = '', level = '', causes = null 
  * The Shorts of a recording from its candidates (best first): the best of
  * each kind first, then the best of the rest, at most `max`, none within
  * SAME_MOMENT of another, none whose key is in `taken` (already clipped).
+ * Every kill of an ALWAYS kind is picked whatever `max` (a tank's second
+ * plane of the round is as much a miracle as its first).
  */
 export function pickShorts(candidates, { max = MAX_PER_RECORDING, taken = new Set() } = {}) {
   const fresh = candidates.filter(c => KINDS.includes(c.kind) && !taken.has(c.key));
@@ -450,6 +469,9 @@ export function pickShorts(candidates, { max = MAX_PER_RECORDING, taken = new Se
     if (picked.length >= max) break;
     if (!picked.includes(c) && clear(c)) picked.push(c);
   }
+  for (const c of fresh) {
+    if (ALWAYS.includes(c.kind) && !picked.includes(c) && clear(c)) picked.push(c);
+  }
   return picked.sort((a, b) => b.score - a.score);
 }
 
@@ -459,6 +481,16 @@ export function pickShorts(candidates, { max = MAX_PER_RECORDING, taken = new Se
  *  the page can chase (`noRound`): a burst films those in real time (the
  *  runner's fast cut), and ahalol's and almighty-_-'s on Arnhem had too few
  *  rounds to be filmed at all (2026-11-09). */
+/** Seconds before a kill within which its shooter's recorded trigger is the
+ *  shot that made it: the page plays that trigger (replay.js `fireShot`). */
+const HEARD_SHOT = 1.5;
+/** Whether the recording holds the killer's trigger for kill `k` (`fires`
+ *  by his pid within HEARD_SHOT before it), the one sound a roundless kill
+ *  can have. */
+export function heardShot(rec, k) {
+  return (rec.fires ?? []).some(f => f.pid === k.killer && f.t <= k.t + 0.05 && f.t >= k.t - HEARD_SHOT);
+}
+
 function filmablePart(rec, facts, k, models, { roundless = false } = {}) {
   const f = facts.get(k);
   if (!f?.fresh) return null;
@@ -470,7 +502,11 @@ function filmablePart(rec, facts, k, models, { roundless = false } = {}) {
   const victim = mountOf(rec, k.victim, at, models);
   const air = killer?.kind === 'air' && victim?.kind === 'air';
   const noRound = !air && !f.round?.f;
-  if (noRound && !(roundless && killer?.foot && victim?.foot)) return null;
+  // Without a round the page has only his recorded trigger to play: a kill
+  // nobody heard fire is not filmed (the owner, 2026-11-10, g5e45cdyby on
+  // Arnhem: "no sound when the player fires"; the recording had no rounds
+  // and no fire for almighty-_-'s K98 kills, the page drew him silent).
+  if (noRound && !(roundless && killer?.foot && victim?.foot && heardShot(rec, k))) return null;
   return {
     t: k.t, killer: k.killer, victim: k.victim, air, noRound,
     flying: killer?.kind === 'air', victimFlying: victim?.kind === 'air', killerVehicle: killer?.tmpl ?? null, victimVehicle: victim?.tmpl ?? null,

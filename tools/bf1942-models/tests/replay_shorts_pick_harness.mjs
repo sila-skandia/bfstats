@@ -35,6 +35,9 @@ const models = new Map([
   ['bf109', { category: 'air', hitpoints: 60 }],
   ['mustang', { category: 'air', hitpoints: 60 }],
   ['lct', { category: 'sea', hitpoints: 400 }],
+  ['flak38', { category: 'land', hitpoints: 100 }],
+  ['wirbelwind', { category: 'land', hitpoints: 140 }],
+  ['76mmspaa29k', { category: 'land', hitpoints: 150 }],
 ]);
 const hull = tmpl => ({ tmpl, kind: P.hullKind(tmpl, models) });
 const foot = { foot: true };
@@ -49,7 +52,10 @@ console.log(JSON.stringify({
   hullKinds: ['M4A1', 'Tiger', 'Willys', 'Mortar', 'Bf109', 'LCT', 'Unknown'].map(t => P.hullKind(t, models)),
   kinds: {
     airToAir: P.kindOfKill(hull('Mustang'), hull('Bf109'), 400, 'MustangGuns'),
-    groundToAir: P.kindOfKill(hull('Tiger'), hull('Bf109'), 300, 'Tiger'),
+    tankToAir: P.kindOfKill(hull('Tiger'), hull('Bf109'), 300, 'Tiger'),
+    groundToAir: P.kindOfKill(hull('Flak38'), hull('Bf109'), 300, 'Flak38'),
+    spaaOnPlane: P.kindOfKill(hull('Wirbelwind'), hull('Bf109'), 300, 'Wirbelwind'),
+    spaaNamedOnPlane: P.kindOfKill(hull('76mmSPAA29K'), hull('Bf109'), 346, '76mmSPAA29K'),
     aaFromFoot: P.kindOfKill(foot, hull('Bf109'), 120, 'Bazooka'),
     tankToTank: P.kindOfKill(hull('M4A1'), hull('Tiger'), 190, 'M4A1'),
     tankToJeep: P.kindOfKill(hull('M4A1'), hull('Willys'), 190, 'M4A1'),
@@ -73,6 +79,7 @@ console.log(JSON.stringify({
   titles: [
     P.titleOf({ kind: 'tank-to-tank', killerVehicle: 'M4A1', victimVehicle: 'Tiger', distance: 192 }, s => s.toUpperCase()),
     P.titleOf({ kind: 'air-to-air', killerVehicle: 'Mustang', victimVehicle: 'Bf109', distance: 410 }),
+    P.titleOf({ kind: 'tank-to-air', killerVehicle: 'IS2', victimVehicle: 'Ki-67', distance: 431 }, s => (s === 'IS2' ? 'IS-2' : s === 'Ki-67' ? 'Ki-67 Hiryu' : s)),
     P.titleOf({ kind: 'ground-to-air', killerVehicle: null, victimVehicle: 'Bf109', weapon: 'Bazooka', distance: 120 }),
     P.titleOf({ kind: 'long-shot', weapon: 'K98Sniper', distance: 412, level: 'bocage-1944' }),
     P.titleOf({ kind: 'tank-buster', weapon: 'Piat', victimVehicle: 'Tiger', distance: 43 }),
@@ -89,6 +96,9 @@ console.log(JSON.stringify({
   picked: P.pickShorts(list).map(c => c.t),
   pickedOne: P.pickShorts(list, { max: 1 }).map(c => c.t),
   pickedTaken: P.pickShorts(list, { taken: new Set(['k100', 'k500']) }).map(c => c.t),
+  // Two tank-to-air kills past a max of 3 are both picked; one at the same
+  // moment as a pick is not.
+  pickedAlways: P.pickShorts([...list, cand('tank-to-air', 900, 160), cand('tank-to-air', 950, 150), cand('tank-to-air', 102, 155)]).map(c => c.t),
   reels: (() => {
     const c = (kind, t, score) => ({ key: `k${t}`, kind, t, score, lived: 1.5, level: 'savoy' });
     const cands = [c('own-goal', 50, 90), c('own-goal', 10, 95), c('spawn-death', 5, 80), c('spawn-death', 20, 85), c('own-goal', 30, 70), c('tank-to-tank', 40, 99)];

@@ -6,6 +6,8 @@ namespace api.Shorts;
 public static class ShortKinds
 {
     public const string AirToAir = "air-to-air";
+    /// <summary>A tank's shell into a plane (the owner, 2026-11-10: the rarest shot there is).</summary>
+    public const string TankToAir = "tank-to-air";
     public const string GroundToAir = "ground-to-air";
     public const string TankToTank = "tank-to-tank";
     /// <summary>A man on foot who kills a tank.</summary>
@@ -25,7 +27,7 @@ public static class ShortKinds
 
     public static readonly IReadOnlySet<string> All = new HashSet<string>(StringComparer.Ordinal)
     {
-        AirToAir, GroundToAir, TankToTank, TankBuster, LongShot, OwnGoal, SpawnDeath, Streak, Asmr, Creator, Other,
+        AirToAir, TankToAir, GroundToAir, TankToTank, TankBuster, LongShot, OwnGoal, SpawnDeath, Streak, Asmr, Creator, Other,
     };
 
     /// <summary><c>{recordingSlug}:{killTime:F2}:{victimPid}</c>, the same on every machine.</summary>
