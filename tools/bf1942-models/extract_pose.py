@@ -752,6 +752,11 @@ def clip_timeline(animation: baf.Animation, speed: float,
     """
     frames = [pose_mod.align_clip_roots(skeleton, animation.local_pose(f))
               for f in range(animation.frames)]
+    if speed == 0:
+        # The phase never advances, so the engine holds frame 0 for good. BF1918
+        # authors seat states at speed 0 as still poses. A one-frame timeline
+        # with any period is that hold.
+        return frames[:1], 1.0
     if speed < 0 and len(frames) > 1:
         frames = ([frames[0], *reversed(frames[1:])] if loop
                   else list(reversed(frames)))

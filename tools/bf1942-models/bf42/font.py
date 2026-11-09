@@ -222,6 +222,8 @@ def decode_alpha_tga(data: bytes) -> tuple[int, int, bytes]:
     id_len, _cmap_type, image_type = data[0], data[1], data[2]
     width, height = struct.unpack_from("<HH", data, 12)
     depth, descriptor = data[16], data[17]
+    if image_type in (2, 10) and depth in (24, 32):
+        return _decode_truecolor_tga(data, id_len, image_type, width, height, depth, descriptor)
     if depth != 8 or image_type not in (3, 11):
         raise ValueError(f"expected an 8-bit greyscale TGA, got type {image_type} at {depth} bpp")
     pos = 18 + id_len
@@ -250,6 +252,45 @@ def decode_alpha_tga(data: bytes) -> tuple[int, int, bytes]:
         for a in row:
             rgba[i] = rgba[i + 1] = rgba[i + 2] = 255
             rgba[i + 3] = a
+            i += 4
+    return width, height, bytes(rgba)
+
+
+def _decode_truecolor_tga(data: bytes, id_len: int, image_type: int, width: int,
+                          height: int, depth: int, descriptor: int) -> tuple[int, int, bytes]:
+    """A 24- or 32-bit TGA (type 2, or type 10 RLE) to RGBA top-down. BF1918
+    ships its console atlas this way: white glyphs on black, a 1-bit alpha.
+    A 32-bit texel keeps its own colour and alpha; a 24-bit one has no alpha,
+    so its grey level is the coverage, as an 8-bit atlas's is."""
+    size = depth // 8
+    n = width * height
+    pos = 18 + id_len
+    if image_type == 2:
+        raw = data[pos:pos + n * size]
+    else:
+        out = bytearray()
+        while len(out) < n * size:
+            packet = data[pos]
+            pos += 1
+            run = (packet & 0x7F) + 1
+            if packet & 0x80:
+                out += data[pos:pos + size] * run
+                pos += size
+            else:
+                out += data[pos:pos + run * size]
+                pos += run * size
+        raw = bytes(out[:n * size])
+    row_bytes = width * size
+    rows = [raw[y * row_bytes:(y + 1) * row_bytes] for y in range(height)]
+    if not descriptor & 0x20:  # bottom-up storage
+        rows.reverse()
+    rgba = bytearray(n * 4)
+    i = 0
+    for row in rows:
+        for x in range(0, row_bytes, size):
+            b, g, r = row[x], row[x + 1], row[x + 2]
+            a = row[x + 3] if size == 4 else max(r, g, b)
+            rgba[i:i + 4] = bytes((r, g, b, a))
             i += 4
     return width, height, bytes(rgba)
 

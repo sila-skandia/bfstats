@@ -1143,8 +1143,12 @@ def export_viewmodel(soldier: str, weapon: str, *, machine, meshes, textures,
                          for f in weapon_index]
             clip_bones = {ske_mod.canonical(track.name)
                           for track in weapon_clip.bones}
+            # A clip track for a bone the weapon skeleton lacks moves nothing
+            # (a BF1918 weapon clip animates `load3`, which its skeleton
+            # never declares): only the skeleton's own bones are posed.
+            skeleton_bones = set(per_frame[0]) if per_frame else set()
             for bone_key, node_index in bound_nodes.items():
-                if bone_key in clip_bones:
+                if bone_key in clip_bones and bone_key in skeleton_bones:
                     tracks.append((node_index, weapon_times,
                                    [frame[bone_key] for frame in per_frame]))
                 elif bone_key in weapon_rest:
