@@ -26,6 +26,7 @@ folder answers.
 
 | Folder | Kind | The question it answers |
 |---|---|---|
+| [bf1918-extraction](bf1918-extraction/README.md) | tracker | Which BF1918 levels are in the viewer within the 15 GB budget, which of the WWI mod's custom mechanics (animals, gas, trains, airships) work, and what is still open? |
 | [bf1942-engine-reference](bf1942-engine-reference/README.md) | research | What does the retail engine do? The ledger, subsystem notes, symbols and tools |
 | [bf1942-knowledge-map](bf1942-knowledge-map/README.md) | design | Why the docs stay where they are, and how a session finds what the repo knows |
 | [bf1942-in-the-browser](bf1942-in-the-browser/README.md) | build | How were the play site's Instant Battle screen, console and Escape menu built? |
