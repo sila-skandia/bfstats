@@ -508,6 +508,8 @@ class Context:
     # --no-behaviour-new.
     behaviour_new: bool = False
     new_levels: list[str] = field(default_factory=list)
+    # --behaviour-shards N: that many headless pages at once, one level a job.
+    behaviour_shards: int = 1
     # v_static's scope: the levels an incremental run named (`--levels`,
     # `--pick`, `verify --last-run`) and the time it started, so the audits
     # read those levels and the model files the run wrote. None is the full
@@ -1011,6 +1013,11 @@ class chromium_lock:
         os.makedirs(os.path.dirname(CHROMIUM_LOCK), exist_ok=True)
         self.fd = os.open(CHROMIUM_LOCK, os.O_CREAT | os.O_RDWR, 0o666)
         fcntl.flock(self.fd, fcntl.LOCK_EX)
+        # Another session films on the GPU while this flag exists; wait for it.
+        flag = Path("/tmp/bfstats-gpu-busy")
+        while flag.exists():
+            print(f"chromium: waiting, {flag} exists", file=sys.stderr, flush=True)
+            time.sleep(30)
         return self
 
     def __exit__(self, *exc):
@@ -3241,6 +3248,7 @@ def behaviour_new_plan(args, ctx: Context, state: State, steps: list[Step]) -> l
                     or getattr(args, "all_own_levels", False))
     dry = bool(getattr(args, "dry_run", False))
     ctx.behaviour_new = not (getattr(args, "no_behaviour_new", False) or dry)
+    ctx.behaviour_shards = max(1, int(getattr(args, "behaviour_shards", 1) or 1))
     baked_dirs, _ = baked_levels(ctx)
     fresh = new_level_set(ctx.level_names, baked_dirs, force=ctx.force,
                           bakes="levels" in names and (explicit or ctx.force))
@@ -3407,16 +3415,108 @@ def run_behaviour_new(ctx: Context) -> None:
         run_static_audits(ctx, sound.parent, audits=("sound",))
     if sound.is_file():
         qctx.behaviour_args = ["--quick", "--static", str(sound)]
-    port = free_viewer_port()
-    with ViewerServer(port) as srv:
-        if srv.proc is None or srv.proc.poll() is not None:
-            raise RuntimeError(f"serve_viewer.py exited on port {port}")
-        gate = gate_behaviour(qctx, work, srv.url, levels=names, out_name=BEHAVIOUR_NEW_OUT,
-                              timeout=BEHAVIOUR_NEW_LEVEL_TIMEOUT_S * len(names),
-                              log=work / "behaviour-new.log")
+    if ctx.behaviour_shards > 1 and len(names) > 1:
+        gate, port = sharded_behaviour(qctx, work, names, ctx.behaviour_shards)
+    else:
+        port = free_viewer_port()
+        with ViewerServer(port) as srv:
+            if srv.proc is None or srv.proc.poll() is not None:
+                raise RuntimeError(f"serve_viewer.py exited on port {port}")
+            gate = gate_behaviour(qctx, work, srv.url, levels=names, out_name=BEHAVIOUR_NEW_OUT,
+                                  timeout=BEHAVIOUR_NEW_LEVEL_TIMEOUT_S * len(names),
+                                  log=work / "behaviour-new.log")
     summary = behaviour_new_verdict(gate, names)
     summary.update(port=port, dropped=dropped, json=_rel(work / BEHAVIOUR_NEW_OUT))
     finish(summary)
+
+
+GPU_BUSY_FLAG = Path("/tmp/bfstats-gpu-busy")
+
+
+def wait_gpu_free(label: str = "") -> None:
+    """Hold while another session films on the GPU (it creates the flag file
+    for the length of a recording and removes it after)."""
+    while GPU_BUSY_FLAG.exists():
+        print(f"{label}waiting, {GPU_BUSY_FLAG} exists", file=sys.stderr, flush=True)
+        time.sleep(30)
+
+
+def sharded_behaviour(ctx: Context, work: Path, names: list[str], shards: int):
+    """`v_behaviour_new` over `shards` headless pages at once: one viewer server
+    per page on the step's own ports, a queue of one level per job, each job its
+    own `audit_behaviour.mjs --levels <one>` writing a part JSON, merged into
+    `behaviour-new.json` as `merge_behaviour` merges a re-run. Not under the
+    Chromium lock (that is the serial sweep's); a job waits while the GPU flag
+    exists instead. Returns the gate and the first port."""
+    import contextlib
+    parts = work / "behaviour-new.parts"
+    shutil.rmtree(parts, ignore_errors=True)
+    parts.mkdir(parents=True)
+    log_path = work / "behaviour-new.log"
+    log_path.write_text("")
+    queue = list(names)
+    lock = threading.Lock()
+    done: dict[str, tuple[int, Path, float]] = {}
+
+    def worker(srv: "ViewerServer", slot: int) -> None:
+        while True:
+            with lock:
+                if not queue:
+                    return
+                level = queue.pop(0)
+            wait_gpu_free(f"behaviour shard {slot}: ")
+            out = parts / (re.sub(r"[^A-Za-z0-9_.-]", "_", level) + ".json")
+            argv = ["node", "audit_behaviour.mjs", "--mod", ctx.cfg.id, "--levels", level,
+                    "--url", srv.url, "--json", str(out), *ctx.behaviour_args]
+            t = time.time()
+            try:
+                p, secs = _run_capture(argv, timeout=BEHAVIOUR_NEW_LEVEL_TIMEOUT_S)
+                rc, text = p.returncode, (p.stdout or "") + (p.stderr or "")
+            except subprocess.TimeoutExpired:
+                rc, text, secs = 124, "timed out\n", time.time() - t
+            with lock:
+                done[level] = (rc, out, secs)
+                with log_path.open("a") as fh:
+                    fh.write(f"=== [shard {slot}] {' '.join(argv)}\n{text}=== rc={rc} {secs:.0f}s\n")
+            print(f"behaviour shard {slot}: {level} rc={rc} {secs:.0f}s", file=sys.stderr, flush=True)
+
+    first_port = None
+    with contextlib.ExitStack() as stack:
+        servers = []
+        for _ in range(min(shards, len(names))):
+            port = free_viewer_port()
+            srv = stack.enter_context(ViewerServer(port))
+            if srv.proc is None or srv.proc.poll() is not None:
+                raise RuntimeError(f"serve_viewer.py exited on port {port}")
+            first_port = first_port or port
+            servers.append(srv)
+        threads = [threading.Thread(target=worker, args=(srv, i), daemon=True)
+                   for i, srv in enumerate(servers)]
+        for th in threads:
+            th.start()
+        for th in threads:
+            th.join()
+
+    merged: dict = {"levels": [], "findings": [], "tested": []}
+    rcs, secs_total = [], 0.0
+    for level in names:
+        rc, out, secs = done.get(level, (2, parts / "missing", 0.0))
+        rcs.append(rc)
+        secs_total += secs
+        if out.is_file():
+            part = json.loads(out.read_text())
+            for key, value in part.items():
+                if key not in merged:
+                    merged[key] = value
+            merged = merge_behaviour(merged, part, [level])
+    out = work / BEHAVIOUR_NEW_OUT
+    out.write_text(json.dumps(merged, indent=1))
+    argv = ["node", "audit_behaviour.mjs", "--mod", ctx.cfg.id, "--levels", ",".join(names),
+            f"(sharded x{len(servers) if names else 0})", *ctx.behaviour_args]
+    rc = 2 if all(r == 2 for r in rcs) else max([r for r in rcs if r != 2] or [0])
+    rc = 1 if rc not in (0, 2) else rc
+    gate = _behaviour_result(ctx, out, subprocess.CompletedProcess(argv, rc), argv, secs_total)
+    return gate, first_port
 
 
 def behaviour_new_finish(ctx: Context, state: State, results: list[dict], *, dry_run: bool) -> None:
@@ -3831,6 +3931,10 @@ def build_parser() -> argparse.ArgumentParser:
                    help="skip v_behaviour_new, the quick behaviour audit of the levels this run "
                         "bakes (5-10 min a level, headless Chromium); the levels stay pending "
                         "in the state file for the next run")
+    r.add_argument("--behaviour-shards", type=int, default=1,
+                   help="v_behaviour_new: run this many headless pages at once, each on its "
+                        "own viewer server, one level a job (default 1, the serial sweep under "
+                        "the Chromium lock). A job waits while /tmp/bfstats-gpu-busy exists")
     r.set_defaults(fn=cmd_run)
 
     v = sub.add_parser("verify", help="idempotent verification steps, then the gates; with no "

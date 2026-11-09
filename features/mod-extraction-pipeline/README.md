@@ -436,6 +436,15 @@ bots and catches page errors and 404s.
   (`BEHAVIOUR_PLAY_BREAKING`), then the other blockers, then the majors.
   Output is `out/mod-pipeline/<id>/gates/behaviour-new.json`, with
   `.summary.json` and `.log` beside it.
+* **Shards (2026-11-10):** `--behaviour-shards N` runs N headless pages at
+  once, each on its own viewer server from 5350-5359, as a queue of one level
+  per `audit_behaviour.mjs` job. The part JSONs merge into the same
+  `behaviour-new.json` (`merge_behaviour`), and a level whose job could not
+  stage is reported not covered. Shards do not take the Chromium lock; a job
+  instead waits while `/tmp/bfstats-gpu-busy` exists, the flag a session
+  filming on the GPU creates for the length of a recording (the lock waits on
+  it too). BF1918's 112 levels at 5-10 min each were 10 to 19 hours serial on
+  the M5 Max; four shards bring that to a quarter.
 * **What it is not:** a `--quick` run is a sample, and it never earns a
   scorecard tier. The full sweep stays under `gates`.
 * **Opt-out:** `--no-behaviour-new` skips the step and leaves the levels

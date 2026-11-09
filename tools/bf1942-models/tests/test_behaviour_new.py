@@ -324,3 +324,72 @@ class Harness(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+class Sharded(unittest.TestCase):
+    """`--behaviour-shards N`: one level a job over N pages, merged into the
+    same `behaviour-new.json`, never under the Chromium lock, and holding
+    while another session's GPU flag is up."""
+
+    def _run(self, t, names, results, flag=None):
+        calls = []
+
+        def fake(argv, timeout=7200, chromium=False):
+            level = argv[argv.index("--levels") + 1]
+            calls.append((level, chromium, argv[argv.index("--url") + 1]))
+            rc, rows = results[level]
+            if rc != 2:
+                Path(argv[argv.index("--json") + 1]).write_text(json.dumps(
+                    {"mod": "fh", "quick": True, "levels": [{"level": level}],
+                     "findings": rows, "tested": [{"level": level}]}))
+            return subprocess.CompletedProcess(argv, rc, "", ""), 1.0
+
+        ports = iter(range(5350, 5360))
+
+        def server(port):
+            srv = mock.MagicMock()
+            srv.__enter__.return_value = SimpleNamespace(
+                proc=SimpleNamespace(poll=lambda: None), url=f"http://127.0.0.1:{port}")
+            return srv
+        ctx = M.Context(cfg=M.MODS["fh"], behaviour_args=["--quick"])
+        with mock.patch.object(M, "_run_capture", fake), \
+                mock.patch.object(M, "ViewerServer", side_effect=server), \
+                mock.patch.object(M, "free_viewer_port", side_effect=lambda: next(ports)), \
+                mock.patch.object(M, "GPU_BUSY_FLAG", flag or Path(t) / "no-flag"):
+            g, port = M.sharded_behaviour(ctx, Path(t), names, 2)
+        return g, port, calls
+
+    def test_each_level_is_its_own_job_and_the_parts_merge(self):
+        with tempfile.TemporaryDirectory() as t:
+            g, port, calls = self._run(t, ["A", "B", "C"], {
+                "A": (0, []), "B": (1, [finding("B", "veh.immobile")]), "C": (0, [])})
+            self.assertEqual(5350, port)
+            self.assertEqual({"A", "B", "C"}, {c[0] for c in calls})
+            self.assertFalse(any(c[1] for c in calls))          # never the serial lock
+            self.assertEqual({"http://127.0.0.1:5350", "http://127.0.0.1:5351"},
+                             {c[2] for c in calls})
+            merged = json.loads((Path(t) / M.BEHAVIOUR_NEW_OUT).read_text())
+            self.assertEqual(["A", "B", "C"], sorted(r["level"] for r in merged["levels"]))
+            verdict = M.behaviour_new_verdict(g, ["A", "B", "C"])
+            self.assertEqual("fail", verdict["verdict"])
+            self.assertEqual("veh.immobile", verdict["rows"][0]["cause"])
+
+    def test_a_level_that_could_not_stage_is_not_covered(self):
+        with tempfile.TemporaryDirectory() as t:
+            g, _, _ = self._run(t, ["A", "B"], {"A": (0, []), "B": (2, [])})
+            verdict = M.behaviour_new_verdict(g, ["A", "B"])
+            self.assertEqual(["B"], verdict["not_covered"])
+            self.assertFalse(verdict["ok"])
+
+    def test_a_job_waits_while_the_gpu_flag_exists(self):
+        with tempfile.TemporaryDirectory() as t:
+            flag = Path(t) / "busy"
+            flag.write_text("filming")
+            slept = []
+
+            def sleep(s):
+                slept.append(s)
+                flag.unlink()
+            with mock.patch.object(M.time, "sleep", sleep), mock.patch("sys.stderr"):
+                self._run(t, ["A", "B"], {"A": (0, []), "B": (0, [])}, flag=flag)
+            self.assertEqual([30], slept)
