@@ -30,7 +30,7 @@ import { fmt } from './replay-creator-panel.js';
 import { nameAt } from './replay-recording.js';
 import { RAMP_SPEEDS, slowerThan, speedWord } from './replay-shot.js';
 import { isMelee } from './replay-shotstyle.js';
-import { FRAMES, TEXT_EASE, lowerStart } from './replay-studio-fx.js';
+import { FRAMES, FREEZES, FX_WORDS, TEXT_EASE, fxMoments } from './replay-studio-fx.js';
 import { parseVideoTime, videoTime } from './replay-sync.js';
 import { peakBetween, slidOffset } from './replay-music.js';
 import {
@@ -299,8 +299,8 @@ export class ClipBar {
       ['Clip', 'The clip and what happens in it. Drag its ends to trim, its top rail to slide it; right-click for more'],
       ['Camera', 'What films each part of the clip. Click a camera to pick another or place your own; drag the gold line between two to move the change'],
       ['Speed', 'Where the clip plays slowly. Drag across the lane to slow a stretch; right-click it for how slow'],
-      ['Text', 'The title and the lower third over the footage. Drag to move them, their ends to resize; right-click to add'],
-      ['FX', 'Fades, the flash, the zoom punch, the shake and the freeze on the kill. Right-click to switch them'],
+      ['Text', 'Titles and lower thirds over the footage, as many as you like. Drag to move them, their ends to resize; right-click to add one'],
+      ['FX', 'Fades, the flash, the zoom punch, the shake and the freeze on the kill, and any effect placed where you like. Right-click to switch them or add one; drag a placed one to move it'],
       ['Music', 'The song the clip is cut to. Click or drop an MP3 to add one; drag it to slide it under the clip; right-click to land the hit on a beat'],
     ]) {
       const l = el('span', label === 'Text' || label === 'FX' || label === 'Music' ? 'st-only' : label === 'Camera' ? 'cam' : '', label);
@@ -435,11 +435,20 @@ export class ClipBar {
     this.openMenuOn(menu, this.timeAt(clientX));
   }
 
-  /** `menu` opened over moment `t` of the strip. */
+  /** `menu` opened over moment `t` of the strip. The clip holds still under
+   *  any menu, a click's (a camera's chooser, a hand-over's) as much as a
+   *  right-click's: the 2026-11-09 audit found the clip playing on under a
+   *  chooser, so what it was about had moved by the time it was read. */
   openMenuOn(menu, t) {
     if (!menu) return;
+    const creator = this.creator;
+    if (creator.player.playing) {
+      creator.stopPart?.({ quiet: true });
+      creator.player.playing = false;
+      creator.rangePlaying = false;
+    }
     this.menu = menu;
-    this.creator.ui.activity?.();
+    creator.ui.activity?.();
     this.openPop('menu', this.at(t) * 100);
   }
 
@@ -478,36 +487,47 @@ export class ClipBar {
       return this.newCamMenu(t);
     }
     if (lane === 'text') {
-      const e = creator.edits;
-      const tt = t - span.t0;
-      const onTitle = e.title.on && tt >= e.title.t - 0.05 && tt <= e.title.t + e.title.dur + 0.05;
-      const ls = lowerStart(e, span, creator.fxKill.shot);
-      const onLower = e.lower.on && tt >= ls - 0.05 && tt <= ls + e.lower.dur + 0.05;
-      if (onTitle || onLower) {
-        const which = onTitle ? 'title' : 'lower';
+      // The bar under the pointer (the one pressed, else the one at its
+      // time), then what can be added here: there can be any number.
+      const bars = creator.textBars(span);
+      const pressed = target?.closest?.('.rc-cb-seg.txt')?.dataset.key ?? null;
+      const bar = bars.find(b => b.key === pressed) ?? bars.find(b => t >= b.t0 - 0.05 && t <= b.t0 + b.dur + 0.05) ?? null;
+      const adds = [
+        item(bars.some(b => b.kind === 'title') ? 'Add another title here' : 'Add a title here', () => creator.addText('title', t), { rule: Boolean(bar) }),
+        item(bars.some(b => b.kind === 'lower') ? 'Add another lower third here' : 'Add a lower third here', () => creator.addText('lower', t)),
+      ];
+      if (bar) {
         return {
-          title: onTitle ? 'Title' : 'Lower third',
+          title: bar.kind === 'title' ? 'Title' : 'Lower third',
           items: [
-            item('Edit its words', () => creator.studio?.focus(which)),
-            item('Remove', () => creator.setEdit(`${which}.on`, false), { rule: true }),
+            item('Edit its words', () => creator.studio?.focus(bar.key)),
+            item('Take it away', () => creator.removeText(bar.key)),
+            ...adds,
           ],
         };
       }
-      return {
-        title: `Text · ${at}`,
-        items: [
-          item('Add a title here', () => creator.addText('title', t)),
-          item('Add a lower third here', () => creator.addText('lower', t)),
-        ],
-      };
+      return { title: `Text · ${at}`, items: adds };
     }
     if (lane === 'music') return this.songMenu(t, rel);
     if (lane === 'fx') {
       const e = creator.edits;
       const kill = creator.fxKill.kill;
+      // An effect placed by hand under the pointer: its own menu.
+      const markEl = target?.closest?.('.rc-cb-fxm.mark');
+      const mark = markEl ? e.fx[Number(markEl.dataset.k)] : null;
+      if (mark) {
+        const k = Number(markEl.dataset.k);
+        return {
+          title: `${FX_WORDS[mark.kind]} · +${fmt(this.sx(span.t0 + mark.t) - this.sx(span.t0))}`,
+          items: [
+            ...(mark.kind === 'freeze' ? FREEZES.filter(v => v > 0).map(v => item(`Held ${v} s`, () => creator.setFx(k, { dur: v }), { on: mark.dur === v })) : []),
+            item('Take it away', () => creator.removeFx(k), { rule: mark.kind === 'freeze' }),
+          ],
+        };
+      }
       const toggle = (label, path, on, value) => item(label, () => creator.setEdit(path, on ? (typeof value === 'number' ? 0 : false) : value), { on });
       return {
-        title: kill === null ? 'Effects · the clip has no kill' : 'Effects',
+        title: kill === null ? `Effects · ${at} · the clip has no kill` : `Effects · ${at}`,
         items: [
           toggle('Fade in from black', 'fadeIn', e.fadeIn > 0, 0.5),
           toggle('Fade out to black', 'fadeOut', e.fadeOut > 0, 1),
@@ -517,6 +537,11 @@ export class ClipBar {
             toggle('Shake on the hit', 'shake', e.shake, true),
             toggle('Freeze on the hit (1 s)', 'freeze', e.freeze > 0, 1),
           ]),
+          // Any of them here, at the pointer's moment, as many as wanted.
+          item(`Flash here (${at})`, () => creator.addFx('flash', t), { rule: true }),
+          item(`Zoom punch here (${at})`, () => creator.addFx('punch', t)),
+          item(`Shake here (${at})`, () => creator.addFx('shake', t)),
+          item(`Freeze here (${at}, 1 s)`, () => creator.addFx('freeze', t, 1)),
         ],
       };
     }
@@ -1207,7 +1232,8 @@ export class ClipBar {
         this.sync(creator.player.time, true);
         return;
       }
-      timeline.scrubTo = this.timeAt(e.clientX);
+      // A click on a mark goes exactly there.
+      timeline.scrubTo = !p.moved && p.mark !== null ? p.mark : this.timeAt(e.clientX);
       // A click on a camera: its chooser.
       if (!p.moved && p.cam !== null) {
         try {
@@ -1217,7 +1243,7 @@ export class ClipBar {
       }
     };
     this.strip.addEventListener('pointerdown', e => {
-      if (e.button !== 0 || this.dragging || e.target.closest('.rc-cb-h, .rc-cb-mk, .rc-cb-cut, .rc-cb-grip, .rc-cb-seg.slow, .rc-cb-seg.txt')) return;
+      if (e.button !== 0 || this.dragging || e.target.closest('.rc-cb-h, .rc-cb-cut, .rc-cb-grip, .rc-cb-seg.slow, .rc-cb-seg.txt, .rc-cb-fxm.mark')) return;
       e.preventDefault();
       creator.ui.activity?.();
       this.closePop();
@@ -1225,9 +1251,11 @@ export class ClipBar {
       const span = creator.span;
       const paint = this.laneAt(e.clientY) === 'speed' && span && t >= span.t0 && t <= span.t1;
       const camEl = e.target.closest('.rc-cb-cam');
+      const markEl = e.target.closest('.rc-cb-mk[data-t]');
       press = {
         x: e.clientX, y: e.clientY, mode: paint ? 'paint' : 'scrub', t0: t, t1: null, moved: false,
         cam: camEl ? Number(camEl.dataset.i) : null,
+        mark: markEl ? Number(markEl.dataset.t) : null,
       };
       if (e.pointerType === 'touch') {
         const target = e.target;
@@ -1337,12 +1365,60 @@ export class ClipBar {
    *  `own` false is the take's automatic bullet time: moved or resized, it
    *  becomes the clip's own slow motion. */
   bindSlow(seg, slow, { own = true } = {}) {
-    this.bindBar(seg, slow, next => this.creator.setSlowRange(next.t0, next.t1, own ? this.creator.ramp.speed : 0.25), { minLen: PAINT_MIN });
+    this.bindBar(seg, slow, next => this.creator.setSlowRange(next.t0, next.t1, own ? this.creator.ramp.speed : 0.25),
+      { minLen: PAINT_MIN, click: ev => this.openMenuAt(ev.clientX, ev.clientY, seg) });
+  }
+
+  /** A mark on a lane (an effect placed by hand) dragged along: it moves,
+   *  snapping to the clip's moments, inside the clip; `drop(t)` sets it. A
+   *  press that does not move is a click, which goes there. */
+  bindMark(mark, at, drop) {
+    const creator = this.creator;
+    const strip = this.strip;
+    mark.addEventListener('pointerdown', e => {
+      if (e.button !== 0) return;
+      e.stopPropagation();
+      e.preventDefault();
+      this.closePop();
+      creator.ui.activity?.();
+      const span = creator.span;
+      const grab = this.timeAt(e.clientX);
+      let t = at;
+      let moved = false;
+      this.dragging = true;
+      mark.classList.add('held');
+      const move = ev => {
+        const x = this.timeAt(ev.clientX);
+        if (!moved && Math.abs(x - grab) < 0.02) return;
+        moved = true;
+        t = clamp(this.snap(at + (x - grab), { skip: at }), span.t0, span.t1);
+        mark.style.left = this.pct(t);
+      };
+      const up = ev => {
+        move(ev);
+        strip.removeEventListener('pointermove', move);
+        strip.removeEventListener('pointerup', up);
+        strip.removeEventListener('pointercancel', up);
+        this.dragging = false;
+        this.showSnap(null);
+        mark.classList.remove('held');
+        try {
+          if (moved) drop(t);
+          else creator.player.seek(at);
+        } catch (error) { console.warn('creator: a mark on the strip', error); }
+        this.sync(creator.player.time, true);
+      };
+      try { strip.setPointerCapture(e.pointerId); } catch {}
+      strip.addEventListener('pointermove', move);
+      strip.addEventListener('pointerup', up);
+      strip.addEventListener('pointercancel', up);
+    });
   }
 
   /** A bar on a lane dragged (a slow stretch, a title): its body moves it,
-   *  a grip resizes it, inside the clip; `drop(next)` sets it. */
-  bindBar(seg, at, drop, { minLen = 0.4 } = {}) {
+   *  a grip resizes it, inside the clip; `drop(next)` sets it. A press that
+   *  does not move is a click: `click(ev)`, else it goes to the bar's start. */
+  bindBar(seg, at, drop, { minLen = 0.4, click = null } = {}) {
     const creator = this.creator;
     const strip = this.strip;
     seg.addEventListener('pointerdown', e => {
@@ -1388,7 +1464,11 @@ export class ClipBar {
         this.dragging = false;
         this.showSnap(null);
         seg.classList.remove('held');
-        try { if (moved) drop(next); } catch (error) { console.warn('creator: a bar on the strip', error); }
+        try {
+          if (moved) drop(next);
+          else if (click) click(ev);
+          else creator.player.seek(at.t0);
+        } catch (error) { console.warn('creator: a bar on the strip', error); }
         this.sync(creator.player.time, true);
       };
       try { strip.setPointerCapture(e.pointerId); } catch {}
@@ -1437,7 +1517,12 @@ export class ClipBar {
         handle.removeEventListener('pointercancel', up);
         this.fit();
         creator.rangeChanged(`${which === 'in' ? 'In' : 'Out'} ${fmt(creator.range[which])}`);
-        creator.replayClip();
+        // The end just moved is what plays: a part looping elsewhere let go
+        // (the 2026-11-09 audit extended the end 4 s and watched Side-on loop
+        // on), the last two seconds for a new end, the start for a new start.
+        if (creator.part) creator.stopPart({ quiet: true });
+        if (which === 'out' && creator.span) creator.playFrom(Math.max(creator.span.t0, creator.span.t1 - 2));
+        else creator.replayClip();
         this.sync(creator.player.time, true);
       };
       try { handle.setPointerCapture(e.pointerId); } catch {}
@@ -1462,6 +1547,11 @@ export class ClipBar {
       const t1 = creator.range.out;
       let by = 0;
       this.holding = true;
+      // The strip keeps the clock it had when the rail was taken: the slid
+      // clip's own clock would move the rail's seconds under the pointer, so
+      // each move measured against it came out a few hundredths (the 2026-11-09
+      // audit: four drags of one to three seconds moved the clip 0.015-0.07 s).
+      this.dragging = true;
       const move = ev => {
         by = this.timeAt(ev.clientX) - start;
         creator.slideClip(t0, t1, by, { preview: true });
@@ -1470,6 +1560,7 @@ export class ClipBar {
       const up = ev => {
         move(ev);
         this.holding = false;
+        this.dragging = false;
         grip.removeEventListener('pointermove', move);
         grip.removeEventListener('pointerup', up);
         grip.removeEventListener('pointercancel', up);
@@ -1549,12 +1640,11 @@ export class ClipBar {
       this.lanes[lane].append(n);
       return n;
     };
+    // A mark (the shot, the kill) is a moment: a press on it goes there, and
+    // a drag from it scrubs like a drag from anywhere else on the lane (the
+    // strip's scrub reads `data-t` for the press that does not move).
     const go = (n, t0) => {
-      n.addEventListener('pointerdown', e => e.stopPropagation());
-      n.addEventListener('click', e => {
-        e.stopPropagation();
-        creator.player.seek(t0);
-      });
+      n.dataset.t = String(t0);
     };
     for (const lane of Object.values(this.lanes)) lane.textContent = '';
 
@@ -1699,23 +1789,28 @@ export class ClipBar {
       const seg = node('speed', 'span', 'rc-cb-seg slow more', '', t0, t1,
         'Slow motion: drag to move it, drag an end to resize it, right-click for how slow or to take it away');
       seg.append(el('b', '', `${speedWord(m.speed)} slow`));
-      this.bindBar(grips(seg), { t0, t1 }, next => creator.setMoreSlow(k, { t0: next.t0, t1: next.t1 }), { minLen: PAINT_MIN });
+      this.bindBar(grips(seg), { t0, t1 }, next => creator.setMoreSlow(k, { t0: next.t0, t1: next.t1 }),
+        { minLen: PAINT_MIN, click: ev => this.openMenuAt(ev.clientX, ev.clientY, seg) });
     }
 
-    // TEXT and FX, the studio's lanes (hidden on the round's bar).
+    // TEXT and FX, the studio's lanes (hidden on the round's bar). Every
+    // piece of text is a bar (there can be any number); the longest are
+    // laid first so a short one over a long one stays on top.
     const e = creator.edits;
     const fxKill = creator.fxKill;
-    const textBar = (which, label, t0, dur) => {
-      const seg = node('text', 'span', `rc-cb-seg txt ${which}`, '', span.t0 + t0, span.t0 + t0 + dur,
+    const bars = creator.textBars(span);
+    for (const bar of [...bars].sort((a, b) => b.dur - a.dur)) {
+      const words = bar.text || (bar.kind === 'lower' ? (creator.lowerLines()?.[0] ?? 'who killed whom') : '(no words)');
+      const label = `${bar.kind === 'title' ? 'Title' : 'Lower third'} · ${words}`;
+      const seg = node('text', 'span', `rc-cb-seg txt ${bar.kind}`, '', bar.t0, bar.t0 + bar.dur,
         `${label}: drag to move it, an end to resize it, right-click to edit or remove it`);
+      seg.dataset.key = bar.key;
       seg.append(el('b', '', label));
-      this.bindBar(grips(seg), { t0: span.t0 + t0, t1: span.t0 + t0 + dur }, next => {
-        creator.setEdit(which, { ...creator.edits[which], t: next.t0 - span.t0, dur: Math.max(TEXT_EASE * 2, next.t1 - next.t0) });
-      });
-    };
-    if (e.title.on) textBar('title', `Title · ${e.title.text || '(no words)'}`, e.title.t, e.title.dur);
-    if (e.lower.on) textBar('lower', `Lower third · ${e.lower.text || (creator.lowerLines()?.[0] ?? 'who killed whom')}`, lowerStart(e, span, fxKill.shot), e.lower.dur);
-    if (!e.title.on && !e.lower.on) node('text', 'span', 'rc-cb-seg plain', 'no text · right-click to add a title or a lower third', span.t0, span.t1);
+      this.bindBar(grips(seg), { t0: bar.t0, t1: bar.t0 + bar.dur }, next => {
+        creator.setTextAt(bar.key, next.t0, Math.max(TEXT_EASE * 2, next.t1 - next.t0));
+      }, { click: () => creator.studio?.focus(bar.key) });
+    }
+    if (!bars.length) node('text', 'span', 'rc-cb-seg plain', 'no text · right-click to add a title or a lower third', span.t0, span.t1);
     const fxMark = (cls, label, t0, t1 = null, title = '') => {
       const n = node('fx', 'span', `rc-cb-fxm ${cls}`, '', t0, t1, title);
       const glyph = moveIcon(`fx:${cls}`);
@@ -1729,8 +1824,16 @@ export class ClipBar {
       const on = [e.flash && 'flash', e.punch && 'punch', e.shake && 'shake', e.freeze > 0 && `freeze ${e.freeze} s`].filter(Boolean);
       if (on.length) fxMark('kill', on.join(' · '), fxKill.kill, null, 'As the round hits: right-click the lane to change');
     }
-    if (!(e.fadeIn > 0) && !(e.fadeOut > 0) && !(e.flash || e.punch || e.shake || e.freeze > 0)) {
-      node('fx', 'span', 'rc-cb-seg plain', 'no effects · right-click for fades and kill effects', span.t0, span.t1);
+    // The effects placed by hand, a mark each: dragged, it moves.
+    for (const m of fxMoments(e, span)) {
+      if (m.at < span.t0 - 1e-3 || m.at > span.t1 + 1e-3) continue;
+      const label = m.kind === 'freeze' ? `freeze ${m.dur} s` : FX_WORDS[m.kind].toLowerCase();
+      const n = fxMark(`mark ${m.kind}`, label, m.at, null, `${FX_WORDS[m.kind]} here: drag to move it, right-click to change or take it away`);
+      n.dataset.k = String(m.k);
+      this.bindMark(n, m.at, t => creator.setFx(m.k, { t }));
+    }
+    if (!(e.fadeIn > 0) && !(e.fadeOut > 0) && !(e.flash || e.punch || e.shake || e.freeze > 0) && !e.fx.length) {
+      node('fx', 'span', 'rc-cb-seg plain', 'no effects · right-click for fades, kill effects, or an effect here', span.t0, span.t1);
     }
     this.drawSong(span);
     const part = creator.part;
@@ -2075,6 +2178,10 @@ const STYLE = `
 .rc-cb-fxm.fadein { background: linear-gradient(90deg, #000, rgba(0, 0, 0, 0)); box-shadow: inset 0 0 0 1px rgba(255, 255, 255, .25); }
 .rc-cb-fxm.fadeout { background: linear-gradient(90deg, rgba(0, 0, 0, 0), #000); box-shadow: inset 0 0 0 1px rgba(255, 255, 255, .25); justify-content: flex-end; }
 .rc-cb-fxm.kill { margin-left: -9px; color: #fff; text-shadow: 0 0 6px rgba(255, 255, 255, .7); }
+.rc-cb-fxm.mark { margin-left: -9px; color: #e9fbff; background: rgba(110, 231, 255, .2); box-shadow: inset 0 0 0 1px rgba(110, 231, 255, .55);
+  pointer-events: auto; cursor: grab; touch-action: none; }
+.rc-cb-fxm.mark:hover { background: rgba(110, 231, 255, .32); }
+.rc-cb-fxm.mark.held { cursor: grabbing; box-shadow: 0 0 0 1px #fff; }
 .rc-cb-fxm .rc-cb-icon { width: 12px; height: 12px; }
 .rc-cb-studio { border-color: var(--rp-gold); color: var(--rp-gold); }
 .rc-cb-studio::before { content: ''; width: 10px; height: 10px; border: 1.5px solid currentColor; border-radius: 2px; box-sizing: border-box;

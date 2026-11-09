@@ -864,10 +864,13 @@ results.clip = {
   const off = CC.clipClock({ span, bullet: { ...bullet, preset: null } });
   const own = CC.clipClock({ span, ramp: { in: 104, out: 106, speed: 0.25, ease: 0.35 }, bullet });
   const frozen = CC.clipClock({ span, bullet, freeze: { at: 103.1, real: 1 } });
+  // Two freezes: the kill's and one placed by hand, each its own seconds.
+  const frozen2 = CC.clipClock({ span, bullet, freeze: [{ at: 103.1, real: 1 }, { at: 106, real: 0.5 }] });
   let monotone = true;
   for (let t = 99; t < 109; t += 0.003) if (!(S(t + 0.003) > S(t))) monotone = false;
   const flightSpeed = round(kill.speedAt(103.05), 4);
   results.clock = {
+    frozen2: [round(frozen2.length - kill.length, 2), round(frozen2.toScreen(106.05) - frozen2.toScreen(105.95) - 0.1, 1)],
     speedAt: [kill.speedAt(101), flightSpeed, round(kill.speedAt(103.5), 3), kill.speedAt(99), round(frozen.speedAt(103.1), 4)],
     plain: [plain.length, plain.toScreen(104), plain.toRound(4), plain.toScreen(99), plain.toScreen(110), plain.down].map(v => (v === null ? null : round(v, 3))),
     lead: round(S(102.5), 2),
@@ -1041,6 +1044,30 @@ results.clip = {
       return { grade: r.grade, flash: r.flash, lower: r.lower, title: r.title.on };
     })(),
     cinemaTitle: ST.applyRecipe(FX.defaultEdits(), ST.RECIPES.find(([id]) => id === 'cinema')[3]).title.text,
+    // More text and effects placed by hand ("More of everything"): the
+    // bars, what is read back, which title shows, and effects at their
+    // own moments.
+    more: (() => {
+      const m = FX.editsOf({
+        ...FX.defaultEdits(),
+        title: { on: true, text: 'One', t: 0.5, dur: 2 },
+        texts: [{ kind: 'title', text: 'Two', t: 1.5, dur: 2 }, { kind: 'lower', text: '', t: 3, dur: 1 }, { kind: 'bogus' }, { kind: 'title', text: 'Three', t: 900, dur: 99 }],
+        fx: [{ kind: 'flash', t: 1 }, { kind: 'freeze', t: 2, dur: 7 }, { kind: 'punch', t: 5 }, { kind: 'shake', t: 6 }, { kind: 'nope', t: 1 }],
+      });
+      const bars = FX.textBars(m, span, 103.6).map(b => [b.key, b.kind, round(b.t0, 2), b.dur]);
+      const titleAt = t => FX.overlayAt(m, span, t, { lowerLines: ['Him', 'MG'] }).title?.text ?? null;
+      return {
+        bars,
+        kinds: m.fx.map(f => `${f.kind}@${f.t}${f.dur ? `/${f.dur}` : ''}`),
+        titles: [100.8, 101.8, 102.4, 103.2].map(titleAt),
+        lower: FX.overlayAt(m, span, 103.5, { lowerLines: ['Him', 'MG'] }).lower?.lines ?? null,
+        flash: round(FX.overlayAt(m, span, 101.02, {}).white, 3),
+        punch: [round(FX.punchAt(m, null, 105.04, span), 3), FX.punchAt(m, null, 105.04)],
+        shake: [FX.shakeAt(m, null, 106.1, span) ? 'on' : null, FX.shakeAt(m, null, 106.1)],
+        freezes: FX.freezesOf({ ...m, freeze: 1 }, span, 104).map(f => [f.at, f.real]),
+        shows: FX.editsShow({ ...FX.defaultEdits(), fx: [{ kind: 'flash', t: 1 }] }),
+      };
+    })(),
     boxes: [['169', 1000, 700], ['916', 1000, 700], ['11', 600, 900], ['none', 800, 600]].map(([f, w, h]) => ST.monitorBox({ x: 10, y: 20, w, h }, f)),
   };
 }

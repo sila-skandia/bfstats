@@ -57,7 +57,7 @@ import { whereIs } from './replay-battles.js';
 import { CHARACTER_HEIGHT } from './soldier-pose.js';
 import { ClipBar, crossedOut } from './replay-clipbar.js';
 import { Studio } from './replay-studio.js';
-import { defaultEdits, drawOverlay, editsOf, editsShow, gradeOf, overlayAt, punchAt, shakeAt } from './replay-studio-fx.js';
+import { FX_WORDS, MAX_FX, MAX_TEXTS, TEXT_DUR, defaultEdits, drawOverlay, editsOf, editsShow, freezesOf, gradeOf, overlayAt, punchAt, shakeAt, textBars } from './replay-studio-fx.js';
 
 /** The keys that pick a camera by hand (replay-ui.js `key`): orbit, first
  *  person, free and Auto, C, the game's F9-F12 and the scout view's J. */
@@ -156,6 +156,13 @@ const _xAxis = new THREE.Vector3(1, 0, 0);
 /** A camera key's pose as a string: its picture's key, the same however its
  *  time moves. */
 const poseSig = key => [...key.pos, ...key.quat].map(v => v.toFixed(3)).join(',');
+
+/** 1st, 2nd, 3rd, 4th... */
+export function ordinal(n) {
+  const k = n % 100;
+  const suffix = k >= 11 && k <= 13 ? 'th' : ['th', 'st', 'nd', 'rd'][n % 10] ?? 'th';
+  return `${n}${suffix}`;
+}
 
 export function cropOf(frame, w, h) {
   const aspect = { 169: 16 / 9, 11: 1, 239: 2.39, 185: 1.85, 916: 9 / 16 }[frame];
@@ -286,6 +293,8 @@ export class ReplayCreator {
     this.edits = defaultEdits();  // the look, the text and the effects (replay-studio-fx.js)
     this.history = { undo: [], redo: [], cur: null, restoring: false }; // the clip's edits, for undo (`noteHistory`)
     this.frozen = null;           // { until }: the freeze on the kill holding the clock (`lead`)
+    this.montage = null;          // { list, i }: the kept clips playing one after another (`playMontage`)
+    this.keepShot = null;         // the clip just kept, wanting its picture from the next frame
     this.ramped = null;           // { base, applied } while the ramp owns the clock
     this.clips = [];
     this.track = null;            // the clip's cameras as a rig (replay-camtrack.js CutRig) while they film
@@ -348,6 +357,8 @@ export class ReplayCreator {
         edits: c.edits ? editsOf(c.edits) : null,
         kill: inRound(c.kill?.t) && Number.isInteger(c.kill?.victim) ? { t: c.kill.t, victim: c.kill.victim } : null,
         sync: syncOf(c.sync),
+        // Its picture, taken as it was kept (the Montage tab's card).
+        thumb: typeof c.thumb === 'string' && c.thumb.startsWith('data:image/') && c.thumb.length < 40000 ? c.thumb : null,
       }));
     this.rounds.angle = angleOf(kept.angle);
     this.cams = camsOf(kept.cams, ANY_TAKE);
@@ -789,6 +800,12 @@ export class ReplayCreator {
         }
         if (this.part) {
           this.stopPart({ quiet: true });
+          this.player.playing = false;
+          this.rangePlaying = false;
+          return true;
+        }
+        if (this.montage) {
+          this.stopMontage();
           this.player.playing = false;
           this.rangePlaying = false;
           return true;
@@ -1363,7 +1380,7 @@ export class ReplayCreator {
     const f = take?.f ?? null;
     const own = this.ownSlow();
     const sig = [span.t0, span.t1, f?.t, take?.kill?.t, f ? this.seen.get(f)?.hit : null, own ? JSON.stringify(this.ramp) : '',
-      this.prefs.pace, this.edits.freeze, JSON.stringify(this.cams)].join('|');
+      this.prefs.pace, this.edits.freeze, JSON.stringify(this.edits.fx), JSON.stringify(this.cams)].join('|');
     if (this.timed?.sig === sig) return this.timed;
     const { hit, bullet, freeze } = this.clockInputs(span);
     const clock = clipClock({ span, ramp: own ? this.ramp : null, bullet, freeze });
@@ -1373,13 +1390,14 @@ export class ReplayCreator {
   }
 
   /** What the clip's clock is run with but its slow motion
-   *  (replay-clipclock.js): `{ take, hit, bullet, freeze }`. */
+   *  (replay-clipclock.js): `{ take, hit, bullet, freeze }`, `freeze` every
+   *  freeze on the clip (the kill's, and those placed by hand). */
   clockInputs(span = this.span) {
     const take = this.autoFilms(span) ? this.takeInside(span) : null;
     const f = take?.f ?? null;
     const hit = take ? this.hitOf(take, span) : null;
     const turns = take ? this.holdTurns(span, take, hit) : false;
-    const freeze = take?.kill && this.edits.freeze > 0 ? { at: hit, real: this.edits.freeze } : null;
+    const freeze = freezesOf(this.edits, span, take?.kill ? hit : null);
     let bullet = null;
     if (take) {
       const g = this.takeGeometry(take);
@@ -1525,6 +1543,7 @@ export class ReplayCreator {
     if (!back) return;
     this.cancelPlacing({ quiet: true });
     this.stopPart({ quiet: true });
+    this.stopMontage({ quiet: true });
     // The studio is the clip's: it goes with it.
     if (this.studio?.open) this.studio.close();
     this.editing = null;
@@ -1593,8 +1612,16 @@ export class ReplayCreator {
     // round's clock (a clip with no take) go with the clip.
     if (this.cams) this.cams = this.cams.map(c => (c.at?.ev === 'time' ? { ...c, at: { ev: 'time', t: c.at.t + shift } } : c));
     if (this.action) this.action = { t0: this.action.t0 + shift, t1: this.action.t1 + shift };
-    if (this.ramp.in !== null) this.ramp.in += shift;
-    if (this.ramp.out !== null) this.ramp.out += shift;
+    // Slow motion set round a kill stays on the kill, as the cameras kept
+    // by its moments do (the 2026-11-09 audit slid a clip and found its
+    // slow motion off the shot); a clip of anything takes its stretches
+    // with it.
+    const keepsKill = Boolean(this.take) && this.take.f.t >= this.range.in && this.take.f.t <= this.range.out;
+    if (!keepsKill) {
+      if (this.ramp.in !== null) this.ramp.in += shift;
+      if (this.ramp.out !== null) this.ramp.out += shift;
+      if (this.ramp.more) this.ramp.more = this.ramp.more.map(m => ({ ...m, in: m.in + shift, out: m.out + shift }));
+    }
     // A take slid off its kill is a clip of whatever is there now.
     if (this.take && (this.take.f.t < this.range.in || this.take.f.t > this.range.out)) {
       this.take = null;
@@ -1752,11 +1779,101 @@ export class ReplayCreator {
     const span = this.span;
     if (!span) return;
     const e = this.edits;
-    const at = Math.max(0, Math.min(t, span.t1 - 0.5) - span.t0);
-    if (which === 'title') {
+    // Inside the clip, whole: a bar dropped at the end used to overhang it
+    // and leap back on its first drag (the 2026-11-09 audit).
+    const len = span.t1 - span.t0;
+    const fit = dur => Math.max(0, Math.min(t - span.t0, len - dur));
+    const at = fit(which === 'title' ? (e.title.on ? TEXT_DUR.title : e.title.dur) : (e.lower.on ? TEXT_DUR.lower : e.lower.dur));
+    // The first title or lower third is the clip's own; any more go in
+    // `texts`, a bar each on the Text lane ("More of everything").
+    if (which === 'title' && !e.title.on) {
       this.setEdit('title', { ...e.title, on: true, t: at, text: e.title.text || 'Kill of the round' });
       this.studio?.focus('title');
-    } else this.setEdit('lower', { ...e.lower, on: true, t: at });
+      return;
+    }
+    if (which === 'lower' && !e.lower.on) {
+      this.setEdit('lower', { ...e.lower, on: true, t: at });
+      return;
+    }
+    if (e.texts.length >= MAX_TEXTS) {
+      this.ui.flash(`A clip holds ${MAX_TEXTS} more pieces of text at most`, 2000);
+      return;
+    }
+    this.setEdit('texts', [...e.texts, { kind: which, text: '', t: at, dur: TEXT_DUR[which] }]);
+    const key = `texts.${e.texts.length}`;
+    this.ui.flash(`${which === 'title' ? 'Another title' : 'Another lower third'} at +${fmt(this.screenAt(span.t0 + at))} · type its words`, 2200);
+    this.studio?.focus(key);
+  }
+
+  /** A piece of text (`textBars` key) moved or resized on the Text lane:
+   *  `t0` the round time it comes in, `dur` its seconds. */
+  setTextAt(key, t0, dur) {
+    const span = this.span;
+    if (!span) return;
+    const at = Math.max(0, t0 - span.t0);
+    if (key === 'title' || key === 'lower') {
+      this.setEdit(key, { ...this.edits[key], t: at, dur });
+      return;
+    }
+    const k = Number(key.split('.')[1]);
+    if (!this.edits.texts[k]) return;
+    this.setEdit('texts', this.edits.texts.map((x, i) => (i === k ? { ...x, t: at, dur } : x)));
+  }
+
+  /** A piece of text taken away. The clip's own title and lower third are
+   *  switched off (their words kept); any more is gone. */
+  removeText(key) {
+    if (key === 'title' || key === 'lower') {
+      this.setEdit(`${key}.on`, false);
+      return;
+    }
+    const k = Number(key.split('.')[1]);
+    this.setEdit('texts', this.edits.texts.filter((_, i) => i !== k));
+  }
+
+  /** The words of a piece of text. */
+  textOf(key) {
+    if (key === 'title' || key === 'lower') return this.edits[key];
+    return this.edits.texts[Number(key.split('.')[1])] ?? null;
+  }
+
+  /** The pieces of text on the clip, each a bar (replay-studio-fx.js
+   *  `textBars`). */
+  textBars(span = this.span) {
+    return textBars(this.edits, span, this.fxKill.shot);
+  }
+
+  /** An effect placed at round time `t` by hand (the FX lane's menu, the
+   *  tray dropped away from the kill): a flash, a zoom punch, a shake or a
+   *  freeze of `dur` seconds, going off there every time the clip plays. */
+  addFx(kind, t, dur = 1) {
+    const span = this.span;
+    const kinds = (Array.isArray(kind) ? kind : [kind]).filter(k => FX_WORDS[k]);
+    if (!span || !kinds.length) return;
+    if (this.edits.fx.length + kinds.length > MAX_FX) {
+      this.ui.flash(`A clip holds ${MAX_FX} placed effects at most`, 2000);
+      return;
+    }
+    const at = Math.max(0, Math.min(t, span.t1) - span.t0);
+    const marks = kinds.map(k => (k === 'freeze' ? { kind: k, t: at, dur } : { kind: k, t: at }));
+    this.setEdit('fx', [...this.edits.fx, ...marks]);
+    this.ui.flash(`${kinds.map(k => FX_WORDS[k]).join(', ')} at +${fmt(this.screenAt(span.t0 + at))}`, 1600);
+  }
+
+  /** Effect `k` (its index in `edits.fx`) moved to round time `t`, or its
+   *  freeze given `dur` seconds. */
+  setFx(k, { t = null, dur = null } = {}) {
+    const span = this.span;
+    const m = this.edits.fx[k];
+    if (!span || !m) return;
+    const next = { ...m };
+    if (t !== null) next.t = Math.max(0, Math.min(t, span.t1) - span.t0);
+    if (dur !== null && m.kind === 'freeze') next.dur = dur;
+    this.setEdit('fx', this.edits.fx.map((x, i) => (i === k ? next : x)));
+  }
+
+  removeFx(k) {
+    this.setEdit('fx', this.edits.fx.filter((_, i) => i !== k));
   }
 
   /** Camera `i` taken away: the one before films on in its place. */
@@ -3324,8 +3441,13 @@ export class ReplayCreator {
     const take = this.take?.kill ? this.take : this.takeInside(span);
     // The whole shot, not just its two ends: a clip played again is the
     // cameras and the slow motion it was kept with.
-    this.clips.push({
-      name: `${who} ${fmt(span.t0)}`, in: span.t0, out: span.t1, pid: pid ?? null,
+    // Its name: who and when, and a count where a clip of the same start is
+    // already kept (the same kill cut two ways).
+    let name = `${who} ${fmt(span.t0)}`;
+    const same = this.clips.filter(c => c.name === name || c.name.startsWith(`${name} (`)).length;
+    if (same) name = `${name} (${same + 1})`;
+    const clip = {
+      name, in: span.t0, out: span.t1, pid: pid ?? null,
       cams: this.cams ? JSON.parse(JSON.stringify(this.cams)) : null, ramp: { ...this.ramp },
       action: this.action ? { ...this.action } : null,
       shot: { style: this.rounds.style, angle: this.rounds.angle ? { ...this.rounds.angle } : null },
@@ -3334,11 +3456,93 @@ export class ReplayCreator {
       // know which, and its lower third and kill effects follow this one.
       kill: take?.kill ? { t: take.kill.t, victim: take.kill.victim } : null,
       sync: this.sync ? { ...this.sync } : null,
-    });
-    this.clips.sort((a, b) => a.in - b.in);
+      thumb: null,
+    };
+    // At the end of the montage: the kept clips play and record in the
+    // order they are kept, and the Montage tab reorders them.
+    this.clips.push(clip);
+    this.keepShot = clip;
     this.saveKept();
     this.panel?.refresh(true);
-    this.ui.flash('Clip saved');
+    this.studio?.refresh(true);
+    this.ui.flash(this.clips.length > 1 ? `Clip kept · ${ordinal(this.clips.length)} in the montage` : 'Clip kept · the first of the montage', 2200);
+  }
+
+  /** The clip just kept gets its picture from this frame: the view in the
+   *  clip's frame, small, kept with it for the Montage tab's card. */
+  drawKeepShot(canvas) {
+    const clip = this.keepShot;
+    this.keepShot = null;
+    if (!clip || !this.clips.includes(clip)) return;
+    const crop = cropOf(this.prefs.frame, canvas.width, canvas.height) ?? { x: 0, y: 0, w: canvas.width, h: canvas.height };
+    const scale = Math.min(160 / Math.max(1, crop.w), 90 / Math.max(1, crop.h));
+    const pic = document.createElement('canvas');
+    pic.width = Math.max(16, Math.round(crop.w * scale));
+    pic.height = Math.max(9, Math.round(crop.h * scale));
+    pic.getContext('2d').drawImage(canvas, crop.x, crop.y, crop.w, crop.h, 0, 0, pic.width, pic.height);
+    clip.thumb = pic.toDataURL('image/jpeg', 0.7);
+    this.writeKept();
+    this.studio?.refresh(true);
+  }
+
+  /** Kept clip `clip` moved to place `to` in the montage (0 first). */
+  moveClip(clip, to) {
+    const from = this.clips.indexOf(clip);
+    if (from < 0) return;
+    const list = this.clips.filter(c => c !== clip);
+    list.splice(Math.max(0, Math.min(to, list.length)), 0, clip);
+    if (list.every((c, i) => c === this.clips[i])) return;
+    this.clips = list;
+    this.saveKept();
+    this.panel?.refresh(true);
+    this.studio?.refresh(true);
+  }
+
+  /**
+   * The montage played through: the kept clips one after another from the
+   * `from`th, each with its own cameras, slow motion and look, on the
+   * monitor (features/replay-creator-view, "The montage"). Each clip opens
+   * on the strip as it plays; at the last one's end it stops.
+   */
+  playMontage(from = 0) {
+    if (!this.clips.length) {
+      this.ui.flash('Keep a clip first: Keep the clip', 2000);
+      return;
+    }
+    if (this.recorder) return;
+    const i = Math.max(0, Math.min(from, this.clips.length - 1));
+    this.montage = { list: [...this.clips], i };
+    this.useClip(this.clips[i], true);
+    this.studio?.refresh(true);
+    this.ui.flash(`Montage · ${i + 1} of ${this.clips.length} · ${this.clips[i].name}`, 2000);
+  }
+
+  stopMontage({ quiet = false } = {}) {
+    if (!this.montage) return;
+    this.montage = null;
+    this.studio?.refresh(true);
+    if (!quiet) this.ui.flash('Montage stopped', 1400);
+  }
+
+  /** The montage's next clip, at the end of the one playing; the end of the
+   *  last stops it. */
+  montageNext() {
+    const m = this.montage;
+    if (!m) return;
+    const next = m.i + 1;
+    if (next >= m.list.length || !this.clips.includes(m.list[next])) {
+      this.montage = null;
+      this.player.playing = false;
+      this.rangePlaying = false;
+      this.endFly();
+      this.studio?.refresh(true);
+      this.ui.flash('The montage is over · Play the montage plays it again', 2400);
+      return;
+    }
+    m.i = next;
+    this.useClip(m.list[next], true);
+    this.studio?.refresh(true);
+    this.ui.flash(`Montage · ${next + 1} of ${m.list.length} · ${m.list[next].name}`, 1800);
   }
 
   /** A saved clip back on the bench: its range, and the camera move and slow
@@ -3536,7 +3740,9 @@ export class ReplayCreator {
    * while the next clip is put on the bench and played up to its start.
    */
   recordMontage(clips = this.clips) {
-    const list = [...clips].sort((a, b) => a.in - b.in);
+    // In the montage's order (the Montage tab's), not the round's.
+    const list = [...clips];
+    this.stopMontage({ quiet: true });
     if (list.length < 2) {
       this.ui.flash(list.length ? 'Keep another clip for a montage: one clip is Record' : 'Keep some clips first: Keep the clip', 2600);
       return;
@@ -3620,6 +3826,7 @@ export class ReplayCreator {
     if (this.suggestions?.job) quietly('the suggested angles', () => this.drawThumbs(canvas));
     else if (this.shotWanted && this.on) quietly('a view\'s picture', () => this.drawKeyShot(canvas));
     if (this.thumbWanted) quietly('the thumbnail', () => this.drawThumbnail(canvas));
+    if (this.keepShot) quietly('the kept clip\'s picture', () => this.drawKeepShot(canvas));
     const r = this.recorder;
     if (!r?.started || !(r.crop || r.compose)) return;
     r.draw ??= r.source.getContext('2d');
@@ -3765,7 +3972,8 @@ export class ReplayCreator {
     // The zoom punch and the shake on the kill (replay-studio-fx.js), while
     // the clip is on the strip or recording.
     const fx = this.editing || this.recorder ? this.fxKill.kill : null;
-    const punch = punchAt(this.edits, fx, t);
+    const fxSpan = this.editing || this.recorder ? this.span : null;
+    const punch = punchAt(this.edits, fx, t, fxSpan);
     if (punch !== 1) fov = (fov ?? this.player.camera.pageLens.fov ?? cam.fov) * punch;
     else if (fov === null && this.punched) fov = this.player.camera.pageLens.fov ?? null;
     this.punched = punch !== 1;
@@ -3780,7 +3988,7 @@ export class ReplayCreator {
     }
     if (changed) cam.updateProjectionMatrix();
     if (this.lens.roll) cam.quaternion.multiply(_roll.setFromAxisAngle(_z, (this.lens.roll * Math.PI) / 180));
-    const shake = shakeAt(this.edits, fx, t);
+    const shake = shakeAt(this.edits, fx, t, fxSpan);
     if (shake) {
       cam.quaternion.multiply(_roll.setFromAxisAngle(_yAxis, shake.yaw));
       cam.quaternion.multiply(_roll.setFromAxisAngle(_xAxis, shake.pitch));
@@ -3929,12 +4137,15 @@ export class ReplayCreator {
       // The frame steps the clock on from the jump: a frame's worth past it.
       if (span && t >= span.t0 - 1e-3 && t < span.t0 + 0.5) this.loopClip();
     }
-    // The freeze on the kill: the clip playing across its kill holds still
-    // for a moment of real time, the camera still moving (`update` lets go).
-    const freezeKill = this.edits.freeze > 0 && (this.editing || this.recorder) ? this.fxKill.kill : null;
-    if (freezeKill !== null && !this.frozen && this.player.playing && prev !== null && prev < freezeKill && t >= freezeKill && t - prev < 0.5) {
-      this.player.playing = false;
-      this.frozen = { until: performance.now() + this.edits.freeze * 1000, t };
+    // A freeze (on the kill, or placed by hand): the clip playing across it
+    // holds still for a moment of real time, the camera still moving
+    // (`update` lets go).
+    if (!this.frozen && this.player.playing && prev !== null && (this.editing || this.recorder) && this.span) {
+      const held = freezesOf(this.edits, this.span, this.fxKill.kill).find(f => prev < f.at && t >= f.at && t - prev < 0.5);
+      if (held) {
+        this.player.playing = false;
+        this.frozen = { until: performance.now() + held.real * 1000, t };
+      }
     }
     // A move's preview stops paused on its end.
     if (this.previewUntil !== null && this.previewUntil !== undefined) {
@@ -3966,7 +4177,8 @@ export class ReplayCreator {
       const span = this.span;
       const player = this.player;
       if (!this.recorder && player.playing && crossedOut(prev, t, span.t1)) {
-        if (this.range.loop) {
+        if (this.montage) this.montageNext();
+        else if (this.range.loop) {
           this.loopDue = true;
           this.ui.timeline.scrubTo = span.t0;
         }
@@ -4121,6 +4333,7 @@ export class ReplayCreator {
   stopAll() {
     const any = this.rounds.active || this.track || this.recorder || this.queue || this.rangePlaying;
     this.cancelPlacing({ quiet: true });
+    this.stopMontage({ quiet: true });
     this.queue = null;
     this.rangePlaying = false;
     this.take = null;

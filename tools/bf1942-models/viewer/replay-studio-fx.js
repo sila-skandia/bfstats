@@ -7,8 +7,10 @@
 // seen is what is exported.
 //
 // Times are the round's. A clip's own text is placed from the clip's start
-// (`title.t`, `lower.t`), so sliding the clip takes it along; the effects on
-// the kill (flash, zoom punch, shake, freeze) are placed by the kill.
+// (`title.t`, `lower.t`, and each of `texts`), so sliding the clip takes it
+// along; the effects on the kill (flash, zoom punch, shake, freeze) are
+// placed by the kill, and any more of them (`fx`) from the clip's start, like
+// the text ("More of everything", 2026-11-09).
 
 /** Colour grades: `[id, label, CSS filter, tint]`. The filter is the same
  *  string for the view's canvas (CSS) and the recording's (`ctx.filter`); a
@@ -39,6 +41,16 @@ export const FRAMES = Object.freeze([
 export const FADES = Object.freeze([0, 0.5, 1, 2]);
 export const FREEZES = Object.freeze([0, 0.5, 1, 1.5]);
 
+/** The most pieces of text a clip holds beyond its title and lower third,
+ *  and the most effects placed by hand. */
+export const MAX_TEXTS = 8;
+export const MAX_FX = 8;
+/** What can be placed on the FX lane at a moment of your own. */
+export const FX_KINDS = Object.freeze(['flash', 'punch', 'shake', 'freeze']);
+export const FX_WORDS = Object.freeze({ flash: 'Flash', punch: 'Zoom punch', shake: 'Shake', freeze: 'Freeze' });
+/** How long a piece of text stays up when nothing says. */
+export const TEXT_DUR = Object.freeze({ title: 2.4, lower: 3.5 });
+
 /** A clip's edits with nothing on. */
 export function defaultEdits() {
   return {
@@ -55,6 +67,12 @@ export function defaultEdits() {
     punch: false,
     shake: false,
     freeze: 0,
+    // More text: `{ kind: 'title' | 'lower', text, t, dur }`, `t` seconds
+    // from the clip's start.
+    texts: [],
+    // Effects placed by hand: `{ kind: FX_KINDS, t, dur? }` (`dur` a
+    // freeze's seconds), `t` seconds from the clip's start.
+    fx: [],
   };
 }
 
@@ -83,13 +101,53 @@ export function editsOf(raw) {
     punch: Boolean(raw.punch),
     shake: Boolean(raw.shake),
     freeze: FREEZES.includes(raw.freeze) ? raw.freeze : 0,
+    texts: (Array.isArray(raw.texts) ? raw.texts : [])
+      .filter(x => x && (x.kind === 'title' || x.kind === 'lower')).slice(0, MAX_TEXTS)
+      .map(x => ({ kind: x.kind, text: str(x.text), t: num(x.t, 0, 600, 0), dur: num(x.dur, 0.3, 30, TEXT_DUR[x.kind]) })),
+    fx: (Array.isArray(raw.fx) ? raw.fx : [])
+      .filter(x => x && FX_KINDS.includes(x.kind)).slice(0, MAX_FX)
+      .map(x => (x.kind === 'freeze'
+        ? { kind: x.kind, t: num(x.t, 0, 600, 0), dur: FREEZES.includes(x.dur) && x.dur > 0 ? x.dur : 1 }
+        : { kind: x.kind, t: num(x.t, 0, 600, 0) })),
   };
 }
 
 /** Whether the edits draw anything over the footage or change its colour. */
 export function editsShow(e) {
   return Boolean(e && (e.grade !== 'none' || e.vignette > 0 || e.title.on || e.lower.on || (e.tag.on && e.tag.text)
-    || e.feed || e.fadeIn > 0 || e.fadeOut > 0 || e.flash));
+    || e.feed || e.fadeIn > 0 || e.fadeOut > 0 || e.flash || e.texts?.length || e.fx?.some(f => f.kind === 'flash')));
+}
+
+/**
+ * Every piece of text on the clip as a bar: `[{ key, kind, text, t0, dur }]`,
+ * `t0` the round time it comes in, `key` the path in the edits that holds
+ * it ('title', 'lower', 'texts.0'...). The title and the lower third first,
+ * then the more there is, in the order it was added.
+ */
+export function textBars(edits, span, shotT = null) {
+  const out = [];
+  if (!edits || !span) return out;
+  if (edits.title.on) out.push({ key: 'title', kind: 'title', text: edits.title.text, t0: span.t0 + edits.title.t, dur: edits.title.dur });
+  if (edits.lower.on) out.push({ key: 'lower', kind: 'lower', text: edits.lower.text, t0: span.t0 + lowerStart(edits, span, shotT), dur: edits.lower.dur });
+  (edits.texts ?? []).forEach((x, k) => out.push({ key: `texts.${k}`, kind: x.kind, text: x.text, t0: span.t0 + x.t, dur: x.dur }));
+  return out;
+}
+
+/** The effects placed by hand of one `kind` (or all), each at its round
+ *  time: `[{ k, kind, at, dur }]`, `k` its index in `edits.fx`. */
+export function fxMoments(edits, span, kind = null) {
+  if (!edits?.fx?.length || !span) return [];
+  return edits.fx.map((m, k) => ({ k, kind: m.kind, at: span.t0 + m.t, dur: m.dur ?? null })).filter(m => kind === null || m.kind === kind);
+}
+
+/** Every freeze on the clip, the kill's first: `[{ at, real }]` for the
+ *  clip's clock (replay-clipclock.js). */
+export function freezesOf(edits, span, kill = null) {
+  const out = [];
+  if (!edits || !span) return out;
+  if (edits.freeze > 0 && Number.isFinite(kill)) out.push({ at: kill, real: edits.freeze });
+  for (const m of fxMoments(edits, span, 'freeze')) out.push({ at: m.at, real: m.dur });
+  return out;
 }
 
 const clamp01 = x => Math.min(1, Math.max(0, x));
@@ -123,22 +181,29 @@ export function overlayAt(edits, span, t, { kill = null, shotT = null, lowerLine
   if (!edits || !span) return out;
   if (edits.fadeIn > 0) out.black = Math.max(out.black, 1 - smooth(span.t0, span.t0 + edits.fadeIn, t));
   if (edits.fadeOut > 0) out.black = Math.max(out.black, smooth(span.t1 - edits.fadeOut, span.t1, t));
-  if (edits.flash && Number.isFinite(kill) && t >= kill) {
-    const dt = t - kill;
-    if (dt < 0.4) out.white = 0.85 * Math.exp(-dt / 0.09);
-  }
+  // A white flash at the kill, and at each one placed by hand.
+  const flashAt = at => {
+    const dt = t - at;
+    if (dt >= 0 && dt < 0.4) out.white = Math.max(out.white, 0.85 * Math.exp(-dt / 0.09));
+  };
+  if (edits.flash && Number.isFinite(kill)) flashAt(kill);
+  for (const m of fxMoments(edits, span, 'flash')) flashAt(m.at);
   const textAt = (t0, dur) => {
     const a = Math.min(smooth(t0, t0 + TEXT_EASE, t), 1 - smooth(t0 + dur - TEXT_EASE, t0 + dur, t));
     return a > 0.002 ? a : 0;
   };
-  if (edits.title.on && edits.title.text.trim()) {
-    const a = textAt(span.t0 + edits.title.t, edits.title.dur);
-    if (a) out.title = { text: edits.title.text.trim(), a };
-  }
-  if (edits.lower.on) {
-    const lines = edits.lower.text.trim() ? [edits.lower.text.trim()] : (lowerLines ?? []).filter(Boolean);
-    const a = lines.length ? textAt(span.t0 + lowerStart(edits, span, shotT), edits.lower.dur) : 0;
-    if (a) out.lower = { lines, a };
+  // Of the titles up at once the most in wins, and so with the lower thirds.
+  for (const bar of textBars(edits, span, shotT)) {
+    if (bar.kind === 'title') {
+      const text = bar.text.trim();
+      if (!text) continue;
+      const a = textAt(bar.t0, bar.dur);
+      if (a && !(out.title && out.title.a >= a)) out.title = { text, a };
+    } else {
+      const lines = bar.text.trim() ? [bar.text.trim()] : (lowerLines ?? []).filter(Boolean);
+      const a = lines.length ? textAt(bar.t0, bar.dur) : 0;
+      if (a && !(out.lower && out.lower.a >= a)) out.lower = { lines, a };
+    }
   }
   if (edits.tag.on && edits.tag.text.trim()) out.tag = edits.tag.text.trim();
   // The kill feed, the game's way: the newest on top, each a few seconds.
@@ -153,22 +218,33 @@ export function overlayAt(edits, span, t, { kill = null, shotT = null, lowerLine
 /** The colour a side's names are drawn in, as the replay draws them. */
 const TEAM_INK = { 1: '#ff5959', 2: '#6699ff' };
 
-/** The zoom punch on the kill: the field of view's factor at round time `t`
- *  (1 none): in by a quarter over 0.08 s, out again over half a second. */
-export function punchAt(edits, kill, t) {
-  if (!edits?.punch || !Number.isFinite(kill) || t < kill) return 1;
-  const dt = t - kill;
-  if (dt < 0.08) return 1 - 0.26 * (dt / 0.08);
-  const f = 1 - 0.26 * Math.exp(-(dt - 0.08) / 0.22);
+/** The zoom punch on the kill, and at each punch placed by hand: the field
+ *  of view's factor at round time `t` (1 none): in by a quarter over 0.08 s,
+ *  out again over half a second. */
+export function punchAt(edits, kill, t, span = null) {
+  let f = 1;
+  const at = k => {
+    const dt = t - k;
+    if (dt < 0) return;
+    f = Math.min(f, dt < 0.08 ? 1 - 0.26 * (dt / 0.08) : 1 - 0.26 * Math.exp(-(dt - 0.08) / 0.22));
+  };
+  if (edits?.punch && Number.isFinite(kill)) at(kill);
+  for (const m of fxMoments(edits, span, 'punch')) at(m.at);
   return f > 0.999 ? 1 : f;
 }
 
-/** The shake on the kill: `{ yaw, pitch }` radians at round time `t`,
- *  dying away over about a second; the same every time round. */
-export function shakeAt(edits, kill, t) {
-  if (!edits?.shake || !Number.isFinite(kill) || t < kill) return null;
-  const dt = t - kill;
-  if (dt > 1.4) return null;
+/** The shake on the kill, and at each shake placed by hand: `{ yaw, pitch }`
+ *  radians at round time `t`, dying away over about a second; the same every
+ *  time round. The freshest shake is the one felt. */
+export function shakeAt(edits, kill, t, span = null) {
+  let dt = null;
+  const at = k => {
+    const d = t - k;
+    if (d >= 0 && d <= 1.4 && (dt === null || d < dt)) dt = d;
+  };
+  if (edits?.shake && Number.isFinite(kill)) at(kill);
+  for (const m of fxMoments(edits, span, 'shake')) at(m.at);
+  if (dt === null) return null;
   const amp = 0.022 * Math.exp(-dt / 0.3);
   return {
     yaw: amp * (Math.sin(dt * 53 + 1.3) * 0.7 + Math.sin(dt * 31 + 0.2) * 0.3),

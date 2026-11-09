@@ -146,7 +146,7 @@ export const TOUR_STEPS = Object.freeze([
   },
   {
     id: 'end', title: 'That is a clip', tab: 'clips',
-    words: () => 'Keep it here, open the next kill from the Kills tab, and Record a montage once you have two. Help has the keys; Clear starts a clip over, Ctrl+Z takes back a step.',
+    words: () => 'Keep it here, open the next kill from the Kills tab, and the Montage tab plays your kept clips together and records them as one video. Help has the keys; Clear starts a clip over, Ctrl+Z takes back a step.',
     target: () => ['[data-tour="keep"]'],
   },
 ]);

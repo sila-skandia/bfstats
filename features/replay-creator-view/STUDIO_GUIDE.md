@@ -40,14 +40,16 @@ The same tour as videos, a step each and one of the whole tour, is made by
   2.39:1), Thumbnail, Record and Help. Esc or the cross leaves the studio.
 - The monitor is the 3D view in the shape of the frame. What it shows is
   what gets recorded, text and colour included.
-- The inspector on the right has six tabs: Kills, Camera, Look, Text,
-  Effects and Export.
+- The inspector on the right has seven tabs: Kills, Camera, Look, Text,
+  Effects, Montage and Export.
 - Under the monitor: the transport (start, frame back, play, frame on, end),
   the video's clock, the camera switch (Clip camera, Orbit, His eyes, Free
   fly, Game view) and Camera here; then the tray; then the timeline. Game
   view is the game's own cameras on what he drives: it reads Chase, Front
   chase or Fly-by while one is on, and a click goes to the next (F10-F12 do
-  the same).
+  the same). The tray is Speed, Text and Effects first, then the cameras;
+  on a narrow window it scrolls with the wheel, its faded edge saying there
+  is more.
 
 ## The timeline
 
@@ -252,7 +254,8 @@ away. To slow one camera's part alone (the circle round the victim, say),
 click its block and choose Slow its part: it plays one step slower than it
 does now (1/4 where it runs at speed, 1/10 inside a stretch at 1/4). Where
 two stretches overlap the slower one plays. A stretch after the hit leaves
-the hit's pin where it is.
+the hit's pin where it is. The Effects tab's Slow motion group lists every
+stretch with its speed and a cross to take it away.
 
 ## The hit on a beat
 
@@ -317,10 +320,26 @@ drawn it can stall a frame. A montage records without the song.
   own words; the round's kill feed in team colours; your channel tag. Titles
   and lower thirds are bars on the Text lane. Drag Title or Lower third from
   the tray to put one where you let go.
+- As many titles and lower thirds as you like: drop Title or Lower third
+  from the tray again, right-click the Text lane and choose Add another
+  title here, or Another title on the Text tab. Each is its own bar with its
+  own words and time on screen (the Text tab lists them: Title 2, Lower
+  third 2...). Drag a bar to move it, its ends to resize it; right-click it
+  to edit its words or take it away. Where two titles are up at once the one
+  more fully in shows.
 - Effects: fade in from black and out to black, and as the round hits a
   white flash, a zoom punch, a shake and a freeze frame. They show on the
   FX lane; right-click it to switch them. The tray's Hit effects turns on
-  the flash, the punch and the shake at once; Freeze holds the picture.
+  the flash, the punch and the shake at once; Freeze holds the picture. Let
+  go of either on the kill (the drop line snaps to it) and they are the
+  kill's.
+- An effect anywhere else, as many as you like: right-click the FX lane
+  where it should go off and choose Flash here, Zoom punch here, Shake here
+  or Freeze here, or drop Hit effects or Freeze from the tray away from the
+  kill. Each is a mark on the lane: drag it to move it, right-click it for a
+  freeze's seconds or to take it away. The Effects tab lists them under
+  Placed effects. A placed freeze adds its seconds to the video like the
+  kill's, and the timeline gives it the room.
 - Recipes on the Look tab set a grade, frame and effects in one click. Ctrl+Z
   takes a recipe back in one step.
 
@@ -352,10 +371,29 @@ clips keeps one style.
   records; Esc stops and saves.
 - Save a thumbnail downloads the frame on screen as a PNG, cropped, graded
   and with its text.
-- Keep the clip adds it to Kept clips with its cameras, slow motion, look,
-  text and effects. Names can be edited in the list.
-- Record a montage records every kept clip in the order they happened, into
-  one video, each with its own cameras and style.
+- Keep the clip keeps it with its cameras, slow motion, look, text and
+  effects, and puts it at the end of the montage (the Montage tab).
+
+## The montage
+
+A video of several clips from one round: clip the kills one at a time, keep
+each, then play them together and record them as one file.
+
+- Keep the clip (on the Montage tab, or Export) adds the clip on the strip
+  to the end of the montage, with everything it carries and a picture of
+  the monitor as it stood. Kill shot the next kill, cut it, keep it again.
+- The Montage tab is the clips as cards, in the order they play: picture,
+  name (type over it to rename), its seconds of video and what it carries.
+  Drag a card onto another to move it, or use its arrows. The camera button
+  opens a clip on the strip to change it (Keep the clip again keeps the
+  changed version as a new clip; take the old one out with the cross).
+- Play the montage plays them one after another on the monitor, each with
+  its own cameras, slow motion, look, text and effects, each opening on the
+  strip as its turn comes; a MONTAGE chip over the monitor says which of how
+  many. The play button on a card starts from that clip. Esc, Stop or the
+  end of the last clip stops it, on that clip.
+- Record the montage records them all into one video file, in this order.
+  Two clips or more.
 
 ## Keys
 
@@ -386,5 +424,6 @@ clips keeps one style.
 - Give the first camera an end camera close behind the shooter: the view
   glides in to his shoulder as he fires, and the chase takes the shot.
 - For Shorts, turn on the safe-area guide before placing text.
-- Keep the clips as you go and record them all at the end with Record a
+- Keep the clips as you go, order them on the Montage tab, watch them
+  together with Play the montage and record them all with Record the
   montage.

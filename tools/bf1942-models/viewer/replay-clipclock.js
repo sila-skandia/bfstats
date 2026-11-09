@@ -54,7 +54,8 @@ function lowerBound(arr, v) {
  *   lands (the trigger for a knife), the kill line, the bullet time preset
  *   (BULLET_TIME, null when off), the clock's speed while the shot is coming
  *   and while the round flies, and whether the hold is a turn round the man.
- * - `freeze`: `{ at, real }`, the clock held `real` seconds at `at`.
+ * - `freeze`: `{ at, real }`, the clock held `real` seconds at `at`; or a
+ *   list of them (the kill's, and any placed by hand).
  *
  * `{ toScreen(t), toRound(s), length, down, knots }`: `toScreen` is seconds
  * of the video from the clip's start (negative before it; outside the clip
@@ -73,14 +74,16 @@ export function clipClock({ span, ramp = null, bullet = null, freeze = null, ste
   let state = bullet ? 'armed' : 'idle';
   let real = 0;
   let down = null;
-  let frozen = !(freeze?.real > 0) || !(freeze.at >= span.t0 && freeze.at <= span.t1);
+  const freezes = (Array.isArray(freeze) ? freeze : freeze ? [freeze] : [])
+    .filter(f => f?.real > 0 && f.at >= span.t0 && f.at <= span.t1).sort((a, b) => a.at - b.at);
+  let fi = 0;
   const eased = Boolean(bullet?.preset) && !own;
   for (let i = 0; i < MAX_STEPS && t < span.t1; i++) {
-    if (!frozen && t >= freeze.at) {
-      frozen = true;
-      s += freeze.real;
+    while (fi < freezes.length && t >= freezes[fi].at) {
+      s += freezes[fi].real;
       ts.push(t);
       ss.push(s);
+      fi++;
     }
     let target = null;
     if (state === 'armed') {

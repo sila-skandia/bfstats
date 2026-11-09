@@ -722,6 +722,24 @@ class StudioTests(unittest.TestCase):
         self.assertEqual(r["lower"], {"on": True, "text": "Mine", "t": 1, "dur": 3})
         self.assertEqual(self.st["cinemaTitle"], "Kill of the round")
 
+    def test_more_text_and_effects_placed_by_hand(self) -> None:
+        m = self.st["more"]
+        # The title, then the more there is, each a bar from the clip's
+        # start; a bad kind is dropped and a wild time clamped.
+        self.assertEqual(m["bars"][:3], [["title", "title", 100.5, 2], ["texts.0", "title", 101.5, 2], ["texts.1", "lower", 103, 1]])
+        self.assertEqual(len(m["bars"]), 4)
+        self.assertEqual(m["kinds"], ["flash@1", "freeze@2/1", "punch@5", "shake@6"])
+        # Two titles up at once: the one most in shows, the first on a tie.
+        self.assertEqual(m["titles"], ["One", "One", "Two", "Two"])
+        # A lower third of its own with no words writes itself from the kill.
+        self.assertEqual(m["lower"], ["Him", "MG"])
+        # A flash, a punch and a shake where they were placed, not on a kill.
+        self.assertEqual(m["flash"], 0.681)
+        self.assertEqual(m["punch"], [0.87, 1])
+        self.assertEqual(m["shake"], ["on", None])
+        self.assertEqual(m["freezes"], [[104, 1], [102, 1]])
+        self.assertTrue(m["shows"])
+
     def test_the_monitor_takes_the_frames_shape(self) -> None:
         b = self.st["boxes"]
         self.assertEqual(b[0], {"x": 10, "y": 89, "w": 1000, "h": 562})
@@ -869,6 +887,11 @@ class ClipClockTests(unittest.TestCase):
 
     def test_the_freeze_is_seconds_of_video_at_one_moment(self) -> None:
         self.assertEqual(self.k["frozen"], [1, 103.1])
+
+    def test_two_freezes_each_add_their_own_seconds(self) -> None:
+        # The kill's 1 s and a half second placed at 106: 1.5 s more video,
+        # the clock standing still half a second at 106.
+        self.assertEqual(self.k["frozen2"], [1.5, 0.5])
 
 
 class CutRigTests(unittest.TestCase):

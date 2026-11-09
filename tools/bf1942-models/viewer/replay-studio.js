@@ -23,7 +23,7 @@ import { FOV_RANGE, fmt } from './replay-creator-panel.js';
 import { moveIcon } from './replay-clipbar.js';
 import { AB_MOVES, CAM_RECIPES, CAMS, HAND_OVERS, MOTIONS, camGlyph, camLabel, camTitle, camsFor, holdsEnd } from './replay-cuts.js';
 import { RAMP_SPEEDS, screenSeconds, speedWord } from './replay-shot.js';
-import { FADES, FRAMES, FREEZES, GRADES, drawOverlay, drawSafeArea, editsOf, editsShow, gradeOf } from './replay-studio-fx.js';
+import { FADES, FRAMES, FREEZES, FX_WORDS, GRADES, drawOverlay, drawSafeArea, editsOf, editsShow, fxMoments, gradeOf } from './replay-studio-fx.js';
 import { StudioTour } from './replay-studio-tour.js';
 
 /** The game's outside views the Game view button names (replay-camera.js
@@ -107,6 +107,7 @@ const TABS = Object.freeze([
   ['look', 'Look'],
   ['text', 'Text'],
   ['fx', 'Effects'],
+  ['montage', 'Montage'],
   ['clips', 'Export'],
 ]);
 
@@ -541,6 +542,7 @@ export class Studio {
     this.buildLook(this.pages.look);
     this.buildText(this.pages.text);
     this.buildFx(this.pages.fx);
+    this.buildMontage(this.pages.montage);
     this.buildClips(this.pages.clips);
 
     // The dock: the transport over the clip's strip.
@@ -592,8 +594,22 @@ export class Studio {
     this.recLabel = el('span', '', 'REC');
     recbar.append(this.recLabel, this.btn('Stop', 'Stop and save (Esc)', () => creator.stopRecording(true), 'st-rec-btn on', 'rec'));
 
+    // While the montage plays: which clip of how many, over the monitor.
+    const montageBar = el('div', 'st-montagebar');
+    montageBar.hidden = true;
+    const montageWords = el('span', 'st-montagewords', '');
+    montageBar.append(el('b', '', 'MONTAGE'), montageWords, this.btn('Stop', 'Stop the montage and stay on this clip (Esc)', () => {
+      creator.stopMontage();
+      creator.player.playing = false;
+    }, 'st-small', 'close'));
+    this.syncs.push(() => {
+      const m = creator.montage;
+      montageBar.hidden = !m;
+      if (m) montageWords.textContent = `${m.i + 1} of ${m.list.length} · ${m.list[m.i]?.name ?? ''}`;
+    });
+
     this.help = this.buildHelp();
-    root.append(top, side, dock, recbar, this.help);
+    root.append(top, side, dock, recbar, montageBar, this.help);
     this.el = root;
     this.setTab(this.tab);
   }
@@ -627,6 +643,23 @@ export class Studio {
     const creator = this.creator;
     const tray = el('div', 'st-tray');
     tray.append(el('span', 'st-tray-label', 'Drag onto the strip'));
+    // More chips than fit (1440 px wide, the 2026-11-09 audit lost Hit
+    // effects off the right with no sign of it): the right edge fades until
+    // the tray is scrolled to its end.
+    const fade = () => {
+      tray.classList.toggle('more', tray.scrollLeft + tray.clientWidth < tray.scrollWidth - 2);
+      tray.classList.toggle('more-left', tray.scrollLeft > 2);
+    };
+    tray.addEventListener('scroll', fade, { passive: true });
+    // The wheel over the tray scrolls it along (it has no height to scroll).
+    tray.addEventListener('wheel', e => {
+      if (tray.scrollWidth <= tray.clientWidth + 2) return;
+      const d = Math.abs(e.deltaX) > Math.abs(e.deltaY) ? e.deltaX : e.deltaY;
+      tray.scrollLeft += d;
+      e.preventDefault();
+    }, { passive: false });
+    if (typeof ResizeObserver === 'function') new ResizeObserver(fade).observe(tray);
+    requestAnimationFrame(fade);
     this.trayCams = new Map();
     const group = (title, items) => {
       const g = el('div', 'st-tray-group');
@@ -635,34 +668,34 @@ export class Studio {
       tray.append(g);
       return g;
     };
+    const kill = () => creator.fxKill.kill;
+    // Let go on the kill (the drop line snaps to it), an effect is the
+    // kill's; let go anywhere else, it goes off there, as many as wanted.
+    const onKill = t => kill() !== null && Math.abs(t - kill()) < 1e-6;
+    group('Speed', [
+      { id: 'slow', label: 'Slow-mo', title: 'Slow motion at 1/4 from where it lands, a second of the round. Drop it again for another stretch', glyph: 'fx:slow', lane: 'speed',
+        drop: t => creator.addSlow(t, Math.min(creator.span.t1, t + 1), 0.25) },
+      { id: 'freeze', label: 'Freeze', title: 'The picture held a second: on the kill when let go there, else where it lands', glyph: 'fx:freeze', lane: 'fx', at: kill,
+        drop: t => (onKill(t) ? creator.setEdit('freeze', 1) : creator.addFx('freeze', t, 1)) },
+    ]);
+    group('Text', [
+      { id: 'title', label: 'Title', title: 'A title over the middle of the frame, from where it lands. Drop it again for another', glyph: 'txt:title', lane: 'text',
+        drop: t => creator.addText('title', t) },
+      { id: 'lower', label: 'Lower third', title: 'Who, with what, whom and how far, from where it lands. Drop it again for another, with words of its own', glyph: 'txt:lower', lane: 'text',
+        drop: t => creator.addText('lower', t) },
+    ]);
+    group('Effects', [
+      { id: 'hitfx', label: 'Hit effects', title: 'A flash, a zoom punch and a shake: on the kill when let go there (each on its own on the Effects tab), else where it lands',
+        glyph: 'fx:flash', lane: 'fx', at: kill,
+        drop: t => (onKill(t) ? creator.setEdits({ flash: true, punch: true, shake: true }, 'Hit effects on') : creator.addFx(['flash', 'punch', 'shake'], t)) },
+    ]);
+    // The cameras last: there are twelve, and what a narrow tray cuts off
+    // is the tail of them, which the Camera lane's right-click offers too
+    // (the 2026-11-09 audit lost Hit effects off the right at 1440 px).
     group('Camera', CAMS.map(([id, label, title, glyph]) => ({
       id: `cam:${id}`, label: TRAY_WORDS[id] ?? label, name: label, title: `${label}: ${title}. Drag onto the strip: it films from there to the next change`,
       glyph, lane: 'camera', drop: t => creator.addCamAt(t, id), cam: id,
     })));
-    const kill = () => creator.fxKill.kill;
-    const needsKill = fn => t => {
-      if (kill() === null) {
-        creator.ui.flash('This clip has no kill for that to go off on', 1800);
-        return;
-      }
-      fn(t);
-    };
-    group('Speed', [
-      { id: 'slow', label: 'Slow-mo', title: 'Slow motion at 1/4 from where it lands, a second of the round', glyph: 'fx:slow', lane: 'speed',
-        drop: t => creator.addSlow(t, Math.min(creator.span.t1, t + 1), 0.25) },
-      { id: 'freeze', label: 'Freeze', title: 'The picture held a second as the round hits', glyph: 'fx:freeze', lane: 'fx', at: kill,
-        drop: needsKill(() => creator.setEdit('freeze', 1)) },
-    ]);
-    group('Text', [
-      { id: 'title', label: 'Title', title: 'A title over the middle of the frame, from where it lands', glyph: 'txt:title', lane: 'text',
-        drop: t => creator.addText('title', t) },
-      { id: 'lower', label: 'Lower third', title: 'Who, with what, whom and how far, from where it lands', glyph: 'txt:lower', lane: 'text',
-        drop: t => creator.addText('lower', t) },
-    ]);
-    group('Effects', [
-      { id: 'hitfx', label: 'Hit effects', title: 'A flash, a zoom punch and a shake as the round hits (each on its own on the Effects tab)',
-        glyph: 'fx:flash', lane: 'fx', at: kill, drop: needsKill(() => creator.setEdits({ flash: true, punch: true, shake: true }, 'Hit effects on')) },
-    ]);
     this.syncs.push(() => {
       const span = creator.span;
       const take = span && creator.autoFilms(span) ? creator.takeInside(span) : null;
@@ -687,16 +720,21 @@ export class Studio {
     const bar = () => creator.clipbar;
     const landAt = (x, y) => {
       if (it.at) {
-        // An effect goes off on the hit, wherever it is let go.
+        // An effect let go near the hit is the hit's (the drop line snaps
+        // to it); let go elsewhere on the strip it goes off there.
         const r = bar().strip.getBoundingClientRect();
-        const t = it.at();
+        const kill = it.at();
         const over = x >= r.left - 4 && x <= r.right + 4 && y >= r.top - 40 && y <= r.bottom + 12;
-        if (!over || t === null) {
+        if (!over) {
           bar().showDrop(null);
           return null;
         }
-        bar().showDrop(t, it.lane, `${it.label} · as the round hits`);
-        return t;
+        const t = bar().timeAt(x);
+        if (kill !== null && Math.abs(bar().sx(t) - bar().sx(kill)) < 0.6) {
+          bar().showDrop(kill, it.lane, `${it.label} · as the round hits`);
+          return kill;
+        }
+        return bar().dragOver(x, y, it.lane, `${it.label} · here`);
       }
       return bar().dragOver(x, y, it.lane, it.label);
     };
@@ -733,9 +771,11 @@ export class Studio {
           if (dragged) {
             if (ev.type === 'pointerup' && t !== null) it.drop(t);
           } else {
-            // Clicked: at the playhead, inside the clip.
+            // Clicked: at the playhead, inside the clip; an effect of the
+            // kill's goes on the kill.
             const span = creator.span;
-            if (span) it.drop(Math.min(span.t1, Math.max(span.t0, creator.player.time)));
+            const kill = it.at ? it.at() : null;
+            if (span) it.drop(kill !== null ? kill : Math.min(span.t1, Math.max(span.t0, creator.player.time)));
           }
         } catch (error) { console.warn('studio: the tray', error); }
         this.refresh(true);
@@ -808,7 +848,7 @@ export class Studio {
         'Kill shot on a kill (the round\'s timeline, or the Kills tab) opens it here, filmed and looping.',
         'Look: pick a recipe. Frag movie and Shorts are good starts.',
         'Export: Record the clip. It plays once and downloads.',
-        'Keep the clip, open the next kill, and Record a montage at the end.',
+        'Keep the clip, open the next kill, and the Montage tab plays the kept clips together and records them as one video.',
       ]),
       col('Cameras', [
         'The Camera lane is the clip\'s cameras in a row: over their shoulder, the bullet chase from the shot, the player it killed.',
@@ -852,7 +892,7 @@ export class Studio {
   focus(which) {
     if (!this.open) this.show();
     this.setTab('text');
-    const input = which === 'lower' ? this.lowerInput : this.titleInput;
+    const input = which === 'lower' ? this.lowerInput : which === 'title' ? this.titleInput : this.textInputs?.get(which);
     requestAnimationFrame(() => {
       input?.focus();
       input?.select();
@@ -896,8 +936,9 @@ export class Studio {
     return b;
   }
 
-  /** A row of choices: `[value, label, title?, glyph?]`. */
-  seg(items, get, set, cls = '') {
+  /** A row of choices: `[value, label, title?, glyph?]`. One in a list that
+   *  is rebuilt (`live` false) is set once, not kept in step. */
+  seg(items, get, set, cls = '', { live = true } = {}) {
     const row = el('div', `st-seg ${cls}`.trim());
     const buttons = items.map(([value, label, title, glyph]) => {
       const b = el('button', 'st-segbtn');
@@ -916,13 +957,15 @@ export class Studio {
       row.append(b);
       return [value, b];
     });
-    this.syncs.push(() => {
+    const sync = () => {
       const now = get();
       for (const [value, b] of buttons) {
         b.classList.toggle('on', value === now);
         b.setAttribute('aria-pressed', String(value === now));
       }
-    });
+    };
+    if (live) this.syncs.push(sync);
+    else sync();
     return row;
   }
 
@@ -1277,9 +1320,79 @@ export class Studio {
     const [tagRow] = this.textInput('Words', () => e().tag.text, v => creator.setEdit('tag', { on: true, text: v }, 'type:tag'), 'your channel', 40);
     const lowerGroup = this.group('Lower third', lowerOn, lowerRow, lowerDur, lowerReset, this.note('Left blank it writes itself from the kill: the shooter, the weapon, the player killed, the distance.'));
     lowerGroup.dataset.tour = 'lower';
+    // More text: a group each, rebuilt when one is added or taken away (not
+    // while its words are typed), with its words in `textInputs` for `focus`.
+    this.textInputs = new Map();
+    const more = el('div', 'st-more');
+    const moreAdd = el('div', 'st-line');
+    moreAdd.append(
+      this.btn('Another title', 'One more title, at the playhead', () => creator.addText('title', creator.player.time), 'st-ghost st-small', 'plus'),
+      this.btn('Another lower third', 'One more lower third, at the playhead, with words of its own', () => creator.addText('lower', creator.player.time), 'st-ghost st-small', 'plus'),
+    );
+    let moreSig = null;
+    const moreSyncs = [];
+    this.syncs.push(() => {
+      const texts = e().texts;
+      const sig = texts.map(x => x.kind).join(',');
+      if (sig !== moreSig) {
+        moreSig = sig;
+        moreSyncs.length = 0;
+        more.textContent = '';
+        this.textInputs.clear();
+        texts.forEach((x, k) => {
+          const key = `texts.${k}`;
+          const row = el('label', 'st-text');
+          row.append(el('span', '', 'Words'));
+          const input = el('input');
+          input.type = 'text';
+          input.maxLength = 80;
+          input.spellcheck = false;
+          input.placeholder = x.kind === 'title' ? 'its words' : auto();
+          input.value = x.text;
+          input.addEventListener('input', () => creator.setEdit(`${key}.text`, input.value, `type:${key}`));
+          input.addEventListener('keydown', ev => {
+            ev.stopPropagation();
+            if (ev.key === 'Enter' || ev.key === 'Escape') input.blur();
+          });
+          input.addEventListener('keyup', ev => ev.stopPropagation());
+          row.append(input);
+          this.textInputs.set(key, input);
+          const dur = el('label', 'st-slider');
+          const out = el('output', '', '');
+          const range = el('input');
+          range.type = 'range';
+          range.min = '1';
+          range.max = '8';
+          range.step = '0.1';
+          range.value = String(x.dur);
+          out.textContent = `${x.dur.toFixed(1)} s`;
+          range.addEventListener('input', () => {
+            creator.setEdit(`${key}.dur`, Number(range.value), `slide:${key}`);
+            out.textContent = `${Number(range.value).toFixed(1)} s`;
+          });
+          dur.append(el('span', '', 'On screen'), range, out);
+          const n = texts.slice(0, k + 1).filter(y => y.kind === x.kind).length + 1;
+          const g = this.group(`${x.kind === 'title' ? 'Title' : 'Lower third'} ${n}`, row, dur,
+            this.btn('Take it away', 'Remove this piece of text', () => creator.removeText(key), 'st-ghost st-small', 'close'));
+          more.append(g);
+          moreSyncs.push(() => {
+            const now = e().texts[k];
+            if (!now) return;
+            if (document.activeElement !== input) input.value = now.text;
+            if (document.activeElement !== range) {
+              range.value = String(now.dur);
+              out.textContent = `${now.dur.toFixed(1)} s`;
+            }
+          });
+        });
+      }
+      for (const fn of moreSyncs) fn();
+    });
     page.append(
       this.group('Title', titleOn, titleRow, titleDur, this.note('Over the middle of the frame, ruled in gold. Drag it on the Text lane to move it.')),
       lowerGroup,
+      more,
+      this.group('More text', moreAdd, this.note('A clip can carry any number of titles and lower thirds, a bar each on the Text lane: drag one to move it, its ends to resize it. Right-click the lane to add one where you point, or drop Title or Lower third from the tray.')),
       this.group('Kill feed', feedOn, this.note('The round\'s kills in the corner as they happen, in the game\'s colours.')),
       this.group('Channel tag', tagOn, tagRow, this.note('In the corner the whole clip, for the video\'s credit.')),
     );
@@ -1307,6 +1420,10 @@ export class Studio {
       creator.pickSlowSpeed(at.t0, at.t1, v);
     });
     const clear = this.btn('No slow motion of my own', 'Remove the clip\'s own slow motion: the kill shot\'s bullet time comes back', () => creator.clearSlow(), 'st-ghost st-small');
+    // The other stretches of slow motion, a line each with its speed and a
+    // way to take it away (the Speed lane has the same by right-click).
+    const moreSlow = el('div', 'st-list');
+    let slowSig = null;
     this.syncs.push(() => {
       const span = creator.span;
       const own = creator.mainSlow(span);
@@ -1317,12 +1434,50 @@ export class Studio {
           : 'Normal speed. Pick a speed, or drag across the Speed lane.';
       if (creator.sync) this.slowLine.textContent += ` ${creator.syncSay()}.`;
       clear.hidden = !own;
+      const more = creator.ramp.more ?? [];
+      const sig = span ? more.map(m => `${m.in}|${m.out}|${m.speed}`).join(';') : '';
+      if (sig === slowSig) return;
+      slowSig = sig;
+      moreSlow.textContent = '';
+      moreSlow.hidden = !more.length;
+      more.forEach((m, k) => {
+        const line = el('div', 'st-item');
+        const words = el('span', 'st-itemwords', `${speedWord(m.speed)} from +${fmt(creator.screenAt(m.in))} to +${fmt(creator.screenAt(m.out))}`);
+        const speed = this.seg(RAMP_SPEEDS.filter(v => v < 1).map(v => [v, speedWord(v)]), () => creator.ramp.more?.[k]?.speed ?? null, v => creator.setMoreSlow(k, { speed: v }), 'st-tight', { live: false });
+        line.append(words, speed, this.btn('', 'Take this slow motion away', () => creator.removeMoreSlow(k), 'st-ghost st-icon', 'close'));
+        moreSlow.append(line);
+      });
+    });
+    // The effects placed by hand, a line each: where it goes off, a freeze's
+    // seconds, and a way to take it away.
+    const placed = el('div', 'st-list');
+    const placedNote = this.note('Right-click the FX lane where an effect should go off (a flash, a zoom punch, a shake or a freeze), or drop Hit effects or Freeze from the tray away from the kill. Drag a placed effect on the lane to move it. As many as you like.');
+    let fxSig = null;
+    this.syncs.push(() => {
+      const span = creator.span;
+      const list = span ? fxMoments(e(), span) : [];
+      const sig = list.map(m => `${m.kind}|${m.at}|${m.dur}`).join(';');
+      if (sig === fxSig) return;
+      fxSig = sig;
+      placed.textContent = '';
+      placed.hidden = !list.length;
+      for (const m of list) {
+        const line = el('div', 'st-item');
+        const words = el('span', 'st-itemwords', `${FX_WORDS[m.kind]} at +${fmt(creator.screenAt(m.at))}`);
+        line.append(words);
+        if (m.kind === 'freeze') {
+          line.append(this.seg(FREEZES.filter(v => v > 0).map(v => [v, `${v} s`]), () => e().fx[m.k]?.dur ?? null, v => creator.setFx(m.k, { dur: v }), 'st-tight', { live: false }));
+        }
+        line.append(this.btn('', 'Take this effect away', () => creator.removeFx(m.k), 'st-ghost st-icon', 'close'));
+        placed.append(line);
+      }
     });
     page.append(
       this.group('Fade in from black', fadeIn),
       this.group('Fade out to black', fadeOut),
       this.group('On the kill', flash, punch, shake, el('span', 'st-label', 'Freeze frame'), freeze, killNote),
-      this.group('Slow motion', this.slowLine, speeds, clear),
+      this.group('Placed effects', placed, placedNote),
+      this.group('Slow motion', this.slowLine, speeds, clear, moreSlow),
     );
   }
 
@@ -1340,19 +1495,13 @@ export class Studio {
       this.sizeText.textContent = this.outputSize();
       this.watchText.textContent = span ? `about ${Math.round(creator.screenLength(span))} s` : '';
     });
-    const keep = this.btn('Keep the clip', 'Keep it with its camera, slow motion, look, text and effects', () => creator.saveClip(), 'st-wide st-ghost', 'plus');
+    const keep = this.btn('Keep the clip', 'Keep it with its cameras, slow motion, look, text and effects: it joins the montage', () => creator.saveClip(), 'st-wide st-ghost', 'plus');
     keep.dataset.tour = 'keep';
-    this.clipList = el('div', 'st-clips');
-    const montage = this.btn('Record a montage', 'Every kept clip, one after another, as one video', () => this.record({ montage: true }), 'st-wide', 'film');
-    const montageNote = el('p', 'st-note');
+    const keptNote = this.note('');
     this.syncs.push(() => {
       const n = creator.clips.length;
-      montage.disabled = n < 2;
-      montage.lastChild.textContent = n >= 2 ? `Record a montage of ${n} clips` : 'Record a montage';
-      const secs = creator.clips.reduce((sum, c) => sum + screenSeconds(c.ramp ?? { speed: 1, in: null, out: null }, { t0: c.in, t1: c.out }, c.in, c.out), 0);
-      montageNote.textContent = n >= 2
-        ? `In the order they happened, each with its own camera, slow motion, look and effects: about ${Math.round(secs)} s.`
-        : 'Keep two clips or more for a montage.';
+      keptNote.textContent = n ? `${n} kept clip${n === 1 ? '' : 's'} on the Montage tab, where they play together and record as one video.`
+        : 'Kept clips go on the Montage tab, where they play together and record as one video.';
     });
     // What sound goes in the file: the game's, the song's, both or none.
     const music = creator.music;
@@ -1372,7 +1521,45 @@ export class Studio {
       this.group('Sound in the file', game, song, soundNote),
       this.buildShare(),
       this.group('Export', rec, thumb, facts, this.note('Recording plays the clip in real time, slow motion included, and saves it when it ends. Keep other windows quiet while it runs.')),
-      this.group('Kept clips', keep, this.clipList, montage, montageNote),
+      this.group('Keep the clip', keep, keptNote),
+    );
+  }
+
+  /**
+   * The Montage tab (features/replay-creator-view, "The montage"): the kept
+   * clips as cards in the order they play, each with its picture, its name
+   * and what it carries; Play the montage plays them one after another on
+   * the monitor, each on the strip as it plays, and Record the montage
+   * records them into one file. Keep the clip (here and on Export) adds
+   * the clip on the strip to the end.
+   */
+  buildMontage(page) {
+    const creator = this.creator;
+    const keep = this.btn('Keep the clip', 'The clip on the strip, with its cameras, slow motion, look, text and effects, at the end of the montage', () => creator.saveClip(), 'st-wide st-ghost', 'plus');
+    const play = this.btn('Play the montage', 'Every kept clip one after another on the monitor, from the first (Esc stops)', () => {
+      if (creator.montage) {
+        creator.stopMontage();
+        creator.player.playing = false;
+      } else creator.playMontage(0);
+    }, 'st-wide', 'play');
+    const rec = this.btn('Record the montage', 'Every kept clip, one after another, as one video file', () => this.record({ montage: true }), 'st-wide st-rec-btn', 'rec');
+    const facts = this.note('');
+    this.syncs.push(() => {
+      const n = creator.clips.length;
+      const m = creator.montage;
+      play.disabled = !n;
+      play.lastChild.textContent = m ? 'Stop the montage' : 'Play the montage';
+      rec.disabled = n < 2;
+      rec.lastChild.textContent = n >= 2 ? `Record the montage of ${n} clips` : 'Record the montage';
+      const secs = creator.clips.reduce((sum, c) => sum + screenSeconds(c.ramp ?? { speed: 1, in: null, out: null }, { t0: c.in, t1: c.out }, c.in, c.out), 0);
+      facts.textContent = n ? `${n} clip${n === 1 ? '' : 's'}, about ${Math.round(secs)} s of video, in this order. Each plays with its own cameras, slow motion, look, text and effects.`
+        : 'Keep the clip on the strip to start one.';
+    });
+    this.clipList = el('div', 'st-clips');
+    page.append(
+      this.group('The montage', play, rec, facts),
+      this.group('Clips, in order', this.clipList, keep,
+        this.note('Drag a card onto another to move it, or use its arrows. The camera opens a clip on the strip to change it; Keep the clip again keeps the changed version as a new clip.')),
     );
   }
 
@@ -1428,32 +1615,92 @@ export class Studio {
     }
   }
 
+  /** The Montage tab's cards, one a kept clip, in the montage's order:
+   *  rebuilt when a clip is kept, taken away, renamed, moved or given its
+   *  picture; the card playing now is marked each refresh. */
   syncClips(force) {
     const creator = this.creator;
-    const sig = creator.clips.map(c => `${c.name}|${c.in}|${c.out}`).join(';');
-    if (!force && sig === this.clipSig) return;
-    this.clipSig = sig;
-    this.clipList.textContent = '';
-    if (!creator.clips.length) {
-      this.clipList.append(this.note('None kept yet.'));
-      return;
+    const m = creator.montage;
+    const sig = creator.clips.map(c => `${c.name}|${c.in}|${c.out}|${c.thumb ? 1 : 0}|${c.cams?.length ?? 0}`).join(';');
+    if (force || sig !== this.clipSig) {
+      this.clipSig = sig;
+      this.clipList.textContent = '';
+      if (!creator.clips.length) {
+        this.clipList.append(this.note('Nothing kept yet. Keep the clip puts the clip on the strip here; every clip you keep joins the montage after it.'));
+      }
+      creator.clips.forEach((clip, i) => this.clipList.append(this.clipCard(clip, i)));
     }
-    for (const clip of creator.clips) {
-      const row = el('div', 'st-clip');
-      const name = el('input', 'st-clipname');
-      name.value = clip.name;
-      name.title = 'Rename';
-      name.setAttribute('aria-label', 'Clip name');
-      name.addEventListener('change', () => {
-        creator.renameClip(clip, name.value);
-        this.clipSig = '';
-      });
-      const when = el('span', 'st-keyt', `${fmt(clip.in)}-${fmt(clip.out)}`);
-      row.append(name, when,
-        this.btn('', 'Open this clip', () => creator.useClip(clip), 'st-ghost st-icon', 'play'),
-        this.btn('', 'Forget this clip', () => creator.removeClip(clip), 'st-ghost st-icon', 'close'));
-      this.clipList.append(row);
+    for (const card of this.clipList.querySelectorAll('.st-card')) {
+      card.classList.toggle('playing', Boolean(m) && m.list[m.i] === creator.clips[Number(card.dataset.i)]);
     }
+  }
+
+  /** One kept clip's card: its picture, its name (typed over to rename),
+   *  its seconds of video and what it carries, and what can be done with it.
+   *  Dragged over another card it takes that place in the montage. */
+  clipCard(clip, i) {
+    const creator = this.creator;
+    const card = el('div', 'st-card');
+    card.draggable = true;
+    card.dataset.i = String(i);
+    const pic = el('div', 'st-thumb');
+    if (clip.thumb) {
+      const img = el('img');
+      img.src = clip.thumb;
+      img.alt = '';
+      pic.append(img);
+    } else pic.append(el('span', 'st-thumb-n', String(i + 1)));
+    const body = el('div', 'st-card-body');
+    const name = el('input', 'st-clipname');
+    name.value = clip.name;
+    name.title = 'Rename';
+    name.setAttribute('aria-label', 'Clip name');
+    name.addEventListener('change', () => {
+      creator.renameClip(clip, name.value);
+      this.clipSig = '';
+    });
+    name.addEventListener('keydown', e => {
+      e.stopPropagation();
+      if (e.key === 'Enter' || e.key === 'Escape') name.blur();
+    });
+    name.addEventListener('keyup', e => e.stopPropagation());
+    name.addEventListener('pointerdown', e => e.stopPropagation());
+    const secs = screenSeconds(clip.ramp ?? { speed: 1, in: null, out: null }, { t0: clip.in, t1: clip.out }, clip.in, clip.out);
+    const carries = [`${Math.round(secs)} s`, clip.cams?.length > 1 ? `${clip.cams.length} cameras` : null,
+      clip.ramp && clip.ramp.speed < 1 ? `${speedWord(clip.ramp.speed)} slow` : null, clip.kill ? 'kill shot' : null].filter(Boolean);
+    body.append(name, el('span', 'st-card-sub', `${i + 1} · ${fmt(clip.in)} · ${carries.join(' · ')}`));
+    const acts = el('div', 'st-card-acts');
+    acts.append(
+      this.btn('', 'Play the montage from this clip', () => creator.playMontage(i), 'st-ghost st-icon', 'play'),
+      this.btn('', 'Open this clip on the strip to change it', () => {
+        creator.stopMontage({ quiet: true });
+        creator.useClip(clip);
+      }, 'st-ghost st-icon', 'camera'),
+      this.btn('', 'Earlier in the montage', () => creator.moveClip(clip, i - 1), 'st-ghost st-icon', 'up'),
+      this.btn('', 'Later in the montage', () => creator.moveClip(clip, i + 1), 'st-ghost st-icon', 'down'),
+      this.btn('', 'Take this clip out of the montage', () => creator.removeClip(clip), 'st-ghost st-icon', 'close'),
+    );
+    card.append(pic, body, acts);
+    // Dragged onto another card, it goes there.
+    card.addEventListener('dragstart', e => {
+      e.dataTransfer.setData('text/plain', String(i));
+      e.dataTransfer.effectAllowed = 'move';
+      card.classList.add('dragging');
+    });
+    card.addEventListener('dragend', () => card.classList.remove('dragging'));
+    card.addEventListener('dragover', e => {
+      e.preventDefault();
+      e.dataTransfer.dropEffect = 'move';
+      card.classList.add('over');
+    });
+    card.addEventListener('dragleave', () => card.classList.remove('over'));
+    card.addEventListener('drop', e => {
+      e.preventDefault();
+      card.classList.remove('over');
+      const from = Number(e.dataTransfer.getData('text/plain'));
+      if (Number.isInteger(from) && creator.clips[from] && from !== i) creator.moveClip(creator.clips[from], i);
+    });
+    return card;
   }
 }
 
@@ -1476,6 +1723,8 @@ const GLYPHS = Object.freeze({
   clear: 'M4 7h16M10 11v6M14 11v6M6 7l1 13h10l1-13M9 7V4h6v3',
   loop: 'M17 2l3 3-3 3M4 11V9a4 4 0 0 1 4-4h12M7 22l-3-3 3-3M20 13v2a4 4 0 0 1-4 4H4',
   plus: 'M12 5v14M5 12h14',
+  up: 'M12 19V5M5 12l7-7 7 7',
+  down: 'M12 5v14M5 12l7 7 7-7',
   film: 'M4 4h16v16H4zM8 4v16M16 4v16M4 9h4M4 15h4M16 9h4M16 15h4',
   help: 'M12 12m-9 0a9 9 0 1 0 18 0a9 9 0 1 0-18 0M9.5 9.5a2.5 2.5 0 1 1 3.5 2.3c-.6.3-1 .9-1 1.6V14M12 17.5v.5',
 });
@@ -1576,6 +1825,13 @@ html.st-rec .st-recbar { position: fixed; top: 12px; left: 12px; display: flex; 
 .st-body { flex: 1; min-height: 0; overflow: auto; padding: 4px 14px 18px; scrollbar-width: thin; scrollbar-color: rgba(200, 194, 152, .38) transparent; }
 .st-page[hidden] { display: none; }
 .st-group { padding: 12px 0 6px; border-bottom: 1px solid rgba(200, 194, 152, .1); display: flex; flex-direction: column; gap: 8px; }
+.st-more:empty { display: none; }
+.st-list { display: flex; flex-direction: column; gap: 6px; }
+.st-list[hidden] { display: none; }
+.st-item { display: flex; align-items: center; gap: 8px; min-height: 30px; }
+.st-itemwords { flex: 1 1 auto; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-size: 12px; }
+.st-seg.st-tight { flex: none; }
+.st-seg.st-tight .st-segbtn { height: 26px; min-width: 0; padding: 0 7px; font-size: 10px; }
 .st-group:last-child { border-bottom: 0; }
 .st-group h3 { margin: 0; color: var(--rp-muted); font: 800 10px var(--rp-font); letter-spacing: .16em; text-transform: uppercase; }
 .st-label { color: var(--rp-muted); font-size: 12px; }
@@ -1630,7 +1886,25 @@ html.st-rec .st-recbar { position: fixed; top: 12px; left: 12px; display: flex; 
 .st-grade .st-sw { width: 100%; aspect-ratio: 4 / 3; }
 .st-grade:hover { color: var(--rp-ink); border-color: var(--rp-edge); }
 .st-grade.on { color: var(--rp-gold); border-color: var(--rp-gold); }
-.st-clips { display: flex; flex-direction: column; gap: 4px; }
+.st-clips { display: flex; flex-direction: column; gap: 6px; }
+.st-card { display: grid; grid-template-columns: 64px minmax(0, 1fr); align-items: center; gap: 8px; padding: 5px; box-sizing: border-box;
+  border: 1px solid var(--rp-edge); border-radius: 7px; background: rgba(255, 255, 255, .025); cursor: grab; }
+.st-card.playing { border-color: var(--rp-gold); box-shadow: inset 0 0 0 1px var(--rp-gold); }
+.st-card.dragging { opacity: .45; }
+.st-card.over { outline: 2px dashed var(--rp-gold); outline-offset: 1px; }
+.st-thumb { width: 64px; height: 36px; display: flex; align-items: center; justify-content: center; border-radius: 4px; overflow: hidden;
+  background: #000; color: var(--rp-muted); font: 800 14px var(--rp-mono); }
+.st-thumb img { width: 100%; height: 100%; object-fit: cover; display: block; }
+.st-card-body { display: flex; flex-direction: column; min-width: 0; gap: 1px; }
+.st-card-body .st-clipname { height: 26px; }
+.st-card-sub { padding: 0 8px; color: var(--rp-muted); font: 11px var(--rp-mono); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.st-card-acts { grid-column: 1 / -1; display: flex; gap: 2px; justify-content: flex-end; }
+.st-card-acts .st-icon { width: 28px; height: 28px; }
+.st-montagebar { position: absolute; left: 50%; top: ${TOP_H + 12}px; transform: translateX(-50%); display: flex; align-items: center; gap: 10px;
+  padding: 5px 6px 5px 12px; border-radius: 6px; border: 1px solid var(--rp-gold); background: rgba(0, 0, 0, .72); font: 700 12px var(--rp-mono); letter-spacing: .06em; }
+.st-montagebar[hidden] { display: none; }
+.st-montagebar b { color: var(--rp-gold); letter-spacing: .18em; }
+.st-montagewords { max-width: 40vw; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 .st-moments { display: flex; flex-direction: column; gap: 2px; padding: 8px 0 4px; }
 .st-moment { appearance: none; display: grid; grid-template-columns: 46px minmax(0, 1fr) auto; align-items: center; gap: 10px; width: 100%;
   padding: 7px 8px; border: 1px solid transparent; border-radius: 6px; background: none; color: var(--rp-ink); text-align: left; cursor: pointer; font: inherit; }
@@ -1684,9 +1958,14 @@ html.st-rec .st-recbar { position: fixed; top: 12px; left: 12px; display: flex; 
 .st-strip { flex: 1; min-height: 0; position: relative; }
 /* The tray: what can go on the clip, dragged onto the strip. */
 .st-tray { display: flex; align-items: center; gap: 8px; height: 34px; padding-left: 66px; overflow-x: auto; overflow-y: hidden; scrollbar-width: none; }
+.st-tray.more { mask-image: linear-gradient(90deg, #000 calc(100% - 56px), transparent); -webkit-mask-image: linear-gradient(90deg, #000 calc(100% - 56px), transparent); }
+.st-tray.more-left { mask-image: linear-gradient(90deg, transparent, #000 56px); -webkit-mask-image: linear-gradient(90deg, transparent, #000 56px); }
+.st-tray.more.more-left { mask-image: linear-gradient(90deg, transparent, #000 56px, #000 calc(100% - 56px), transparent);
+  -webkit-mask-image: linear-gradient(90deg, transparent, #000 56px, #000 calc(100% - 56px), transparent); }
 .st-tray::-webkit-scrollbar { display: none; }
 .st-tray-label { color: var(--rp-muted); font: 800 9px var(--rp-font); letter-spacing: .12em; text-transform: uppercase; white-space: nowrap; }
-.st-tray-group { flex: none; display: flex; align-items: center; gap: 4px; padding-left: 8px; border-left: 1px solid rgba(200, 194, 152, .16); }
+.st-tray-group { flex: none; display: flex; align-items: center; gap: 3px; padding-left: 7px; border-left: 1px solid rgba(200, 194, 152, .16); }
+.st-tray-group:first-of-type { border-left: 0; padding-left: 0; }
 .st-tray-head { margin-right: 2px; color: var(--rp-muted); font: 800 9px var(--rp-font); letter-spacing: .1em; text-transform: uppercase; white-space: nowrap; }
 .st-chip { appearance: none; flex: none; display: inline-flex; align-items: center; gap: 5px; height: 28px; padding: 0 8px; border: 1px solid var(--rp-edge);
   border-radius: 14px; background: rgba(255, 255, 255, .04); color: var(--rp-ink); font: 700 11px var(--rp-font); white-space: nowrap;

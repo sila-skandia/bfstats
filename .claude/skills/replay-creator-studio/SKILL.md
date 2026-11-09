@@ -98,15 +98,15 @@ All files are in `tools/bf1942-models/viewer/`.
 
 | File | What it owns |
 |---|---|
-| `replay-creator.js` | The creator: the clip (`range`, `span`), the take (`take`, `takeInside`, `autoFilms`), the cameras (`cams`, `camList`, `camStretches`, `setCams`, `setCamAt`, `addCamAt`, `moveHandOver`, `setAbMoveAt`, `removeEndAt`, `applyCamRecipe`, `cameraHere`, `clearClip`), setting a camera or its end camera (`placeCam(i, { which })`, `usePlaced`, `cancelPlacing`), a part over and over (`loopPart`, `partRange`, `startPart`, `stopPart`, `partClock`), the clip's clock and moments (`timing`, `hitOf`, `seen`, `noteFlight`), the rig's scene (`leadInto`, `sceneOf`), slow motion (`ramp`, `setSlowRange`, `ownSlow`, `autoSlow`), edits (`setEdit`, `setEdits`), the kill effects' moment (`fxKill`: the hit), undo (`snapshot`, `noteHistory`, `undo`), recording (`record`, `composeFrame`, `recordMontage`), the lens hook (`shapeLens`) and the freeze (`lead`, `update`) |
+| `replay-creator.js` | The creator: the clip (`range`, `span`), the take (`take`, `takeInside`, `autoFilms`), the cameras (`cams`, `camList`, `camStretches`, `setCams`, `setCamAt`, `addCamAt`, `moveHandOver`, `setAbMoveAt`, `removeEndAt`, `applyCamRecipe`, `cameraHere`, `clearClip`), setting a camera or its end camera (`placeCam(i, { which })`, `usePlaced`, `cancelPlacing`), a part over and over (`loopPart`, `partRange`, `startPart`, `stopPart`, `partClock`), the clip's clock and moments (`timing`, `hitOf`, `seen`, `noteFlight`), the rig's scene (`leadInto`, `sceneOf`), slow motion (`ramp`, `setSlowRange`, `ownSlow`, `autoSlow`), edits (`setEdit`, `setEdits`; more text `addText`, `setTextAt`, `removeText`, `textBars`; effects placed by hand `addFx`, `setFx`, `removeFx`), the kill effects' moment (`fxKill`: the hit), undo (`snapshot`, `noteHistory`, `undo`), recording (`record`, `composeFrame`, `recordMontage`), the kept clips as the montage (`saveClip`, `drawKeepShot`, `moveClip`, `playMontage`, `montageNext`, `stopMontage`), the lens hook (`shapeLens`) and the freezes (`lead`, `update`) |
 | `replay-cuts.js` | Pure: the cameras (`CAMS`, `camsFor`), defaults and recipes (`defaultCams`, `CAM_RECIPES`), hand-overs kept by moments (`anchorAt`, `timeOf`), the list's edits (`insertCam`, `setCam`, `removeCam`, `moveCut`, `setHandOver`, `setPlaced` with its `end` and `move`), the moves to an end camera (`AB_MOVES`, `abMoveOf`), read-back (`camsOf`), old keyframes into cameras (`camsFromKeys`) |
 | `replay-clipclock.js` | Pure: the clip as it plays (`clipClock`: `toScreen`, `toRound`, `speedAt`, `length`, `down`), the round cam's clock and the clip's own slow motion and freeze run in real-time steps |
 | `replay-camtrack.js` | The cameras as a rig (`CutRig`: which camera films now, hand-overs, the live round cam or the stand-in, his eyes, the circle, your camera's moves and its move to its end camera, `placedPose`; `NO_SWING` for the cameras on the round), and `TrackRig`'s moves it borrows (`END_MOVES`) |
 | `replay-roundcam.js` | The round cam, its shot styles, bullet time (`easeClock`), the drawn bullet (`drawnRoundAt`); one style for a frame (`placeAs`), the hold from each style's own start (`holdFrom`), a stand-in laid out without a page round (`modelAt`) |
 | `replay-clipbar.js` | The strip: lanes laid out by the clip's clock (`sx`, `rt`, `at`, `pct`), camera blocks, their icons and their chooser (`camLane`, `camIcon`, `camMenu`), the looping part's band (`partBand`, Whole clip), hand-over lines (`bindCut`, `handOverWords`, `handOverMenu`), menus (`menuAt`), bars (`bindSlow`, `bindBar`), snapping, zoom, the tray's drop line (`dragOver`) |
-| `replay-studio.js` | The studio: layout (`monitorBox`, `place`), the top bar's Clear menu (`toggleClear`), inspector tabs (the Camera tab's recipes and camera rows: `buildCamera`, `syncCams`), the tray (`buildTray`, `trayChip`), transport, look recipes, help, the overlay and grade preview |
+| `replay-studio.js` | The studio: layout (`monitorBox`, `place`), the top bar's Clear menu (`toggleClear`), inspector tabs (the Camera tab's recipes and camera rows: `buildCamera`, `syncCams`; the Montage tab's cards: `buildMontage`, `syncClips`, `clipCard`), the tray (`buildTray`, `trayChip`), transport, look recipes, help, the overlay and grade preview |
 | `replay-studio-tour.js` | The tour: the kill it picks (`pickTourKill`), the studio read as plain facts (`tourFacts`), the steps with what each lights and waits for (`TOUR_STEPS`, `stepState`, `nextStep`), the ring and the card (`StudioTour`, made by `Studio.withTour`; offered on the first opening, Take the tour in Help) |
-| `replay-studio-fx.js` | Pure: `defaultEdits`, `editsOf`, `overlayAt`, `drawOverlay`, `punchAt`, `shakeAt`, grades, frames |
+| `replay-studio-fx.js` | Pure: `defaultEdits`, `editsOf`, `overlayAt`, `drawOverlay`, `punchAt`, `shakeAt`, grades, frames; more text and placed effects (`textBars`, `fxMoments`, `freezesOf`, `MAX_TEXTS`, `MAX_FX`) |
 | `replay-shot.js` | Pure: the ramp (slow motion), `keysIn`, `screenSeconds` |
 | `replay-creator-panel.js` | The side panel's tabs outside the studio |
 
@@ -123,7 +123,12 @@ The models:
   in browser storage, with each kept clip, and in every undo snapshot.
 - `edits` is the look, text and effects. It is kept with the recording in
   browser storage, and with each kept clip, and carries over to the next
-  kill opened from the Kills tab (the cameras do not).
+  kill opened from the Kills tab (the cameras do not). Its `title` and
+  `lower` are the clip's own; `texts` is every piece of text after them and
+  `fx` every effect placed away from the kill, both from the clip's start.
+- The kept clips (`clips`) are the montage, in the order they are kept:
+  `playMontage` plays them one after another and `recordMontage` records
+  them in that order. Each carries a `thumb` taken as it was kept.
 - A kept clip carries `kill: { t, victim }`. Without it, a clip that
   contains another kill cannot find its own, and its lower third and kill
   effects vanish.
@@ -190,8 +195,12 @@ The models:
    icon, an end camera measured every frame, a hand-over looped, Clear and
    Ctrl+Z, a recording). It loads
    `map.html?replay=...&shots` from the viewer on :5273 (the owner's main
-   checkout; the Bocage recording lives untracked in `viewer/replays/`). Run
-   one headless browser at a time.
+   checkout; the Bocage recording lives untracked in `viewer/replays/`: as
+   of 2026-11-09 it is `replays/feed/zz4g8tz9ph.ndjson`, so pass `--replay`,
+   and pick the kill with `creator.moments()` as the tour does rather than
+   by a killer id, since the file changes). Run one headless browser at a
+   time, and check `ps -eo args | grep -c "[h]eadless_shell"` is 0 first:
+   the replay unit tests run one too.
 3. Measure; do not just screenshot. Record per frame which camera films
    (`creator.track.active.cam`), the round's progress
    (`rounds.target.progress`), the camera's distance to your camera's view

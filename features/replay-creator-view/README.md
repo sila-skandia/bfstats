@@ -2070,3 +2070,149 @@ read "1/4 slow" and "1/10 slow". With Sound in the file all off the recorded
 file had a VP9 stream and no audio stream. Tests: the stretches kept,
 speeds where they overlap, the pin unmoved by a stretch after the hit, a
 cut kept by his going down when that moment moves 4 s, `slowerThan`.
+
+### More of everything, the montage, and a creator's audit (2026-11-09)
+
+The owner: "lets allow them to have multiple independent slow mos along the
+time line ... Then the same for all the other effects so they can be added
+multiple times." Then: "create videos from replays ... let them clip like
+they can do, but then let them watch clips together." And a creator agent
+on the site to find "usability issues and bugs ... Often I try to scrub and
+it moves a setting in the timeline, instead I wanted to scrub."
+
+**Slow motion** already took more than one stretch (the section above).
+Audited, two gaps: the Effects tab's Slow motion group spoke only of the
+clip's own stretch (it now lists every other stretch with its speed and a
+cross), and a click on a slow bar did nothing (it opens the bar's menu, as a
+click on a camera opens its chooser).
+
+**More text** (`replay-studio-fx.js` `edits.texts`, up to `MAX_TEXTS` 8:
+`{ kind: 'title' | 'lower', text, t, dur }` from the clip's start, like the
+title's own `t`). The clip's own title and lower third stay as they were
+(the recipes, the tour and the Text tab's first groups work on them); the
+first Title dropped from the tray, right-clicked on the Text lane or added
+on the Text tab turns the clip's own on, every one after it is one more
+(`ReplayCreator.addText`). `textBars` lays them all out for the strip and
+the overlay; where two titles are up at once the one more fully in shows,
+the first on a tie. Each is a bar on the Text lane (drag, resize, a click
+opens its words, right-click to edit or take away; `setTextAt`, `removeText`),
+and a group on the Text tab (Title 2, Lower third 2: words, time on screen,
+Take it away; rebuilt when one is added or removed, never while typing).
+
+**Effects anywhere** (`edits.fx`, up to `MAX_FX` 8: `{ kind: 'flash' |
+'punch' | 'shake' | 'freeze', t, dur? }` from the clip's start). The kill's
+effects stay the kill's, placed by the hit as before. A right-click on the
+FX lane adds Flash here, Zoom punch here, Shake here or Freeze here at the
+pointer's moment (`addFx`); the tray's Hit effects and Freeze go on the
+kill when let go within 0.6 s of video of it (the drop line snaps there,
+"as the round hits") and anywhere else go off where they land (a click on
+the chip still means the kill). Each is a mark on the FX lane, dragged to
+move it (`bindMark`), right-clicked for a freeze's seconds or to take it
+away; the Effects tab lists them under Placed effects. `overlayAt`,
+`punchAt` and `shakeAt` take every moment (the freshest shake is the one
+felt, the strongest white the one drawn); `freezesOf` gives the clip's clock
+every freeze, the kill's and the placed ones, and `clipClock` takes a list
+(`timing`'s signature carries `edits.fx`), so the strip gives a placed
+freeze its seconds like the kill's.
+
+**The montage** (`ReplayCreator.montage`, the studio's Montage tab). Keep
+the clip was the way to collect clips and Record a montage the only way to
+see them together, in the order they happened. Now the kept clips are the
+montage, in the order they are kept (`saveClip` appends, no longer sorts;
+`moveClip` reorders; `recordMontage` records in that order). The Montage
+tab (`buildMontage`, `clipCard`) is the clips as cards: a picture of the
+monitor taken as the clip was kept (`keepShot`, `drawKeepShot` in
+`afterRender`: a JPEG of the frame's crop up to 160 x 90, kept with the clip,
+`thumb`), the name to type over, its seconds of video and what it carries,
+and buttons: play the montage from it, open it on the strip, earlier,
+later, take it out; a card dragged onto another takes its place. Play the
+montage (`playMontage`) plays them one after another on the monitor with
+`useClip`, each opening on the strip as its turn comes, a MONTAGE chip over
+the monitor saying which of how many (`montageBar`); at the out point of
+each `lead` goes to the next (`montageNext`) instead of looping, and the
+last one's end stops it. Esc, Stop, X, closing the editor or recording stop
+it too. Keep the clip stays on Export as well (the tour's last step points
+at it) with a note that the kept clips are on the Montage tab.
+
+**The creator's audit** (a subagent as a content creator, the built-in
+browser, mouse only; the live site had no sign-in in the pane so every
+finding is from the owner's local viewer on the Bocage recording). What
+it found and what changed:
+
+- *The gold rail that slides the whole clip barely moved*: four drags of one
+  to three seconds moved the clip 0.015-0.07 s. The rail's move re-read the
+  slid clip's clock each pointer move, which moved the strip's seconds under
+  the pointer. The strip now holds its clock while the rail is held
+  (`dragging`, as a handle or a bar does).
+- *Slow motion slid off the shot* with the clip. For a clip round a kill the
+  clip's stretches now stay in the round's time, as the cameras kept by the
+  kill's moments do; a clip of anything takes them with it, the other
+  stretches too (`slideClip`).
+- *A text bar dropped near the clip's end overhung it* and leapt back on
+  its first drag. A piece of text is placed so it fits inside the clip.
+- *A click's chooser left the clip playing underneath* (a right-click's
+  menu paused it). Every strip menu pauses the clip (`openMenuOn`).
+- *Dead zones*: a drag from the Shot or Kill mark did nothing (it scrubs
+  now; a click on a mark goes exactly there), a click on a text bar did
+  nothing (it opens the words), a click on a slow bar did nothing (its
+  menu).
+- *A loop on a part survived a trim*: the end was extended 4 s and a camera
+  in the middle looped on. A trim lets the part go and plays the end that
+  moved: the last two seconds for a new end, from the start for a new
+  start.
+- *The tray clipped its last chips at 1440 px with no sign* (and the probe
+  at 1600 px dropped Hit effects on nothing, the chip being off the right).
+  The cameras, twelve of them, now come last, so what a narrow tray cuts off
+  is their tail (the Camera lane's right-click offers the same); the edge
+  with more behind it fades, and the wheel over the tray scrolls it.
+- Left as designed, with the reasons: a click on a camera opens its chooser
+  (principle 2: arcade users do not right-click; it now pauses, and Esc
+  closes it); an edit plays the part it changed even when paused (principle
+  6); a slow bar's end lands where the hand let go in the round's time and
+  is drawn where the new clock puts it; the first stretch of your own slow
+  motion replaces the kill shot's bullet time, said in the toast; Esc with
+  nothing open leaves the studio.
+
+Measured in headless Chromium (1600 x 900) on the local Bocage recording
+(`replays/feed/zz4g8tz9ph.ndjson`), the best kill picked as the tour picks
+one, with the mouse (`steps-more.js`, kept with this session's notes):
+
+- Title dropped from the tray at 20% and 55% of a 7.07 s clip: the clip's
+  own title at +1.41 s with "ONE" typed into the focused Words box, a second
+  at +3.89 s ("TWO", its own box focused), two bars on the Text lane, one
+  Title 2 group on the Text tab. Lower third twice: the clip's own and a
+  Lower third 2, both reading "Lower third · Maitland" (the auto words).
+  The second title's bar dragged 80 px moved it +3.89 → +4.67 s with the
+  playhead unmoved (1081.244 s before and after).
+- Hit effects dropped at 15% (the kill at 1081.96 s, the drop at 1079.73 s):
+  flash, punch and shake marks at +1.06 s and no kill flag set; Freeze
+  dropped at 85%: a placed freeze at +6.01 s, the video 11.06 → 12.06 s. The
+  freeze mark dragged 60 px left moved it to +5.51 s, playhead unmoved. The
+  chip clicked (not dragged) set the kill's three flags. The FX lane's menu
+  offered the six kill and fade toggles and Flash, Zoom punch, Shake and
+  Freeze here (+0:06.7). Ctrl+Z took the kill flags back in one step and the
+  freeze's move in the next. Playing the montage, the clip held still a
+  second at the placed freeze (playing false at 1086.74 s, on again at
+  1087.04).
+- Two stretches painted on the Speed lane (5-12% and 70-80%): the first the
+  clip's own, the second in `ramp.more`, two bars, five rows on the Effects
+  tab (four placed effects and the second stretch). A click on the first bar
+  opened "Your slow motion · 1/4" with the speeds.
+- The rail dragged 150 px: the clip slid 2.024 s, exactly the strip's
+  seconds for 150 px; its slow motion stayed at 1081.667-1082.667 s on the
+  kill. Camera 1's icon clicked: `placing` { i: 0, which: 'start' }. The auto
+  bullet-time bar dragged 60 px became the clip's own at 1/4, moved. A drag
+  from the Shot mark scrubbed 1080.69 → 1081.82 s with no menu; a click on
+  the Kill mark landed on the hit (1081.963 s). A click on a text bar opened
+  the Text tab with its words in hand; a click on a camera block paused the
+  clip under its chooser. Side-on looping, the end dragged 50 px: the part
+  let go and the clip played its last two seconds.
+- Two clips kept (the second trimmed to 3 s): both with a JPEG picture,
+  named "Maitland 18:00.7" and "Maitland 18:00.7 (2)"; the second card
+  dragged onto the first went first. Play the montage: MONTAGE 1 of 2 over
+  the monitor, the second clip at its end, stopped and the chip gone at the
+  second's end. The tray at 1600 px: 1747 px of chips in 1576, the faded
+  edge on, Hit effects at x 566, the cameras' tail cut.
+
+No console error from the creator or the studio in either run; the whole
+replay set, 691 tests, passed.
