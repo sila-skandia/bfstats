@@ -245,6 +245,15 @@ clip; the timeline is laid out again when you let go. Drag it to move it,
 drag its ends to resize it, and right-click it for 1/2, 1/4 or 1/10. Remove
 it and the bullet time comes back.
 
+A clip can have more than one stretch of slow motion. Drag across the Speed
+lane away from your stretch, or drop Slow-mo from the tray, and it is one
+more bar: move it, resize it, right-click it for its speed or to take it
+away. To slow one camera's part alone (the circle round the victim, say),
+click its block and choose Slow its part: it plays one step slower than it
+does now (1/4 where it runs at speed, 1/10 inside a stretch at 1/4). Where
+two stretches overlap the slower one plays. A stretch after the hit leaves
+the hit's pin where it is.
+
 ## The hit on a beat
 
 Cutting the clip to music, you know where the drums come in, say 0:41 of
@@ -334,6 +343,9 @@ clips keeps one style.
   signed in. Their changes are theirs; they can share a link of their own.
 - The song on the Music lane goes in the file (see The hit on a beat) unless
   you untick Put the song in the recording on the lane's right-click menu.
+- Sound in the file: the game's sound and the song on the Music lane, each
+  on or off. Both off records a silent video, to lay the sound in another
+  editor.
 - Record the clip plays it once in real time at the monitor's full size and
   downloads it (MP4 or WebM, with the game's sound). Slow motion takes its
   time: the video clock says how long. Keep other windows quiet while it

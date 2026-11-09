@@ -2031,3 +2031,42 @@ tank, and Play restarts the clip from its start); a click into the bullet
 time leaves the camera hanging (paused mid-flight the chase showed the
 stand-in bomb, and played from there followed it onto the tank, 68 m to
 5 m).
+
+### More than one slow motion, sound in the file, a cut that stays after the circle (2026-11-09)
+
+The owner, on their shared edit `ev9ac5t2`: "as we circle the victim, I'd
+love to apply a custom slow mo to just that section", and: "allow them to
+not export with the music - and not export with any sound effects".
+
+- **More stretches of slow motion** (`replay-shot.js`: `ramp.more`, up to
+  `MAX_MORE` 8, each at one of the strip's speeds; `slowStretches`,
+  `slowsClip`; `rampSpeedAt` takes the slowest where they overlap). The
+  clip's own stretch is still the one the pin and the Speed lane's main
+  controls work on (`ReplayCreator.mainSlow`); the others are `addSlow`,
+  `setMoreSlow`, `removeMoreSlow`, a bar each on the Speed lane. A drag
+  across the lane clear of the main stretch, the tray's Slow-mo, and "Slow
+  down from here" add one; a camera's chooser has **Slow its part**, one
+  step slower than the part plays now (`slowerThan`). The pin's fit carries
+  them (`pinStretch.more`) and never turns "work out the speed" on a clip
+  with extras alone into one slowed whole.
+- **Sound in the file** (Export tab): the game's sound (`prefs.recordGame`,
+  kept) and the song (`music.record`); both off records with no sound track
+  (`ClipRecorder` gets no nodes). Recording with the game's sound in, the
+  game is heard while it records.
+- **The cut after the circle.** The owner's "it cut to them prior to the
+  attack dropping a bomb": their Game front chase was kept by the hit
+  (`hit + 2.36 s`) and the circle before it by his going down; slow motion
+  over the hold moved his going down past the cut, `resolveCams` kept the
+  order, and the circle was squeezed to nothing with the cut starting where
+  it began. `anchorAfter` keeps a cut placed or dragged after a camera kept
+  by his going down by that too (`insertCam`, `moveCut`). A cut kept the
+  old way stays as it was until its line is dragged once.
+
+Measured on the owner's edit in headless Chromium (the live recording,
+`?edit=ev9ac5t2`): it opened with the circle 274.46-275.84 s inside the
+main 1/4 stretch, 4.82 s of video; Slow its part added 1/10 over it, 9.58 s
+of video, the clip 59.5 s to 64.3 s, the hit still at 41.000; the Speed lane
+read "1/4 slow" and "1/10 slow". With Sound in the file all off the recorded
+file had a VP9 stream and no audio stream. Tests: the stretches kept,
+speeds where they overlap, the pin unmoved by a stretch after the hit, a
+cut kept by his going down when that moment moves 4 s, `slowerThan`.

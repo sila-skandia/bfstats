@@ -46,7 +46,9 @@ import { clipClock } from './replay-clipclock.js';
 import { pickAt, pickCandidates, shotOfRound } from './replay-pick.js';
 import { ClipRecorder, clipName, download, recorderMime } from './replay-clip.js';
 import { dossierOf, killFactsOf } from './replay-dossier.js';
-import { RAMP_EASE, RAMP_SPEEDS, actionOf, killByFire, nextKillShot, noRamp, rampOf, rampSpanOf, rampSpeedAt, ramping, speedWord } from './replay-shot.js';
+import {
+  MAX_MORE, RAMP_EASE, RAMP_SPEEDS, actionOf, killByFire, nextKillShot, noRamp, rampOf, rampSpanOf, rampSpeedAt, ramping, slowsClip, speedWord,
+} from './replay-shot.js';
 import { fitSpeedOver, fitStart, syncOf, syncWords } from './replay-sync.js';
 import { ClipMusic } from './replay-music.js';
 import { CreatorPanel, FOV_RANGE, LEAD_INS, fmt } from './replay-creator-panel.js';
@@ -241,6 +243,9 @@ function loadPrefs() {
     frame: ['none', '239', '185', '916'].includes(kept.frame) ? kept.frame : 'none',
     thirds: Boolean(kept.thirds),
     snapKill: kept.snapKill !== false,
+    // The game's sound in a recorded file; off with the song off too, the
+    // file is silent, for laying the sound in another editor.
+    recordGame: kept.recordGame !== false,
     shotStyle: styleOf(kept.shotStyle),
     angleAim: kept.angleAim === 'lock' ? 'lock' : 'track',
   };
@@ -2193,7 +2198,10 @@ export class ReplayCreator {
     // so the clock is back to normal as the round strikes; it follows the hit
     // when the page measures the round landing elsewhere.
     const own = this.ownSlow() ? { ...this.ramp } : null;
-    const pinStretch = { in: null, out: hit + RAMP_EASE, speed: own?.speed ?? 0.25, ease: RAMP_EASE, ...(own?.fit ? { fit: true } : {}) };
+    const pinStretch = {
+      in: null, out: hit + RAMP_EASE, speed: own && ramping(own) ? own.speed : 0.25, ease: RAMP_EASE,
+      ...(own?.fit ? { fit: true } : {}), ...(own?.more ? { more: own.more } : {}),
+    };
     // No stretch of its own and no pin's: the clip plays as it would
     // (bullet time, or normal speed) and only the start can move.
     const stretch = pin.auto ? pinStretch : own;
@@ -2201,8 +2209,8 @@ export class ReplayCreator {
       // A speed has to have a stretch to slow: the pin's, where there is none.
       // One too short to fill the time even at the slowest is grown back to
       // the clip's start (a start trimmed closer to the action).
-      const st = stretch ?? pinStretch;
-      const auto = stretch ? pin.auto : true;
+      const st = stretch && ramping(stretch) ? stretch : pinStretch;
+      const auto = st === stretch ? pin.auto : true;
       const stretches = st.in === null ? [st] : [st, { ...st, in: null }];
       const lead = (ramp, speed) => clipClock({ span, ramp: { ...ramp, speed: Math.min(speed, 0.9999) }, bullet, freeze }).toScreen(at);
       const fit = fitSpeedOver(lead, stretches, pin.at);
@@ -2220,7 +2228,7 @@ export class ReplayCreator {
     const latest = bullet ? bullet.shot - 0.3 : hit - 0.05;
     const lead = t0 => {
       const s = { t0, t1: span.t1 };
-      return clipClock({ span: s, ramp: stretch && ramping(stretch) && rampSpanOf(stretch, s) ? stretch : null, bullet, freeze }).toScreen(at);
+      return clipClock({ span: s, ramp: stretch && slowsClip(stretch, s) ? stretch : null, bullet, freeze }).toScreen(at);
     };
     const fit = fitStart(lead, hit, pin.at, { latest });
     this.syncFit = { ...fit, hold: 'slow' };
@@ -2495,7 +2503,70 @@ export class ReplayCreator {
    *  and a take's bullet time stands aside (replay-roundcam.js `easeClock`). */
   ownSlow() {
     const span = this.span;
-    return Boolean(span && ramping(this.ramp) && rampSpanOf(this.ramp, span));
+    return Boolean(span && slowsClip(this.ramp, span));
+  }
+
+  /** The clip's own slow stretch, `{ t0, t1 }`, or null: the one the strip's
+   *  speed controls and the hit's pin work on. More may run beside it
+   *  (`ramp.more`, `addSlow`). */
+  mainSlow(span = this.span) {
+    return span && ramping(this.ramp) ? rampSpanOf(this.ramp, span) : null;
+  }
+
+  /** Another stretch of slow motion, `t0` to `t1` at `speed`, beside the
+   *  clip's own: a part of it slowed on its own (the victim's circle). With
+   *  none of its own yet, it is the clip's own. */
+  addSlow(t0, t1, speed = 0.25) {
+    const span = this.span;
+    if (!span) return;
+    const a = clamp(Math.min(t0, t1), span.t0, span.t1);
+    const b = clamp(Math.max(t0, t1), span.t0, span.t1);
+    if (b - a < 0.1) return;
+    if (!this.mainSlow(span)) {
+      this.setSlowRange(a, b, speed);
+      return;
+    }
+    const more = [...(this.ramp.more ?? []), { in: a, out: b, speed: RAMP_SPEEDS.includes(speed) && speed < 1 ? speed : 0.25 }].slice(-MAX_MORE);
+    this.ramp = { ...this.ramp, more };
+    this.slowEdited(`${speedWord(more.at(-1).speed)} over ${(b - a).toFixed(1)} s more`);
+  }
+
+  /** Stretch `k` of `ramp.more` moved to `t0`-`t1`, or to `speed`. */
+  setMoreSlow(k, { t0 = null, t1 = null, speed = null } = {}) {
+    const more = [...(this.ramp.more ?? [])];
+    const m = more[k];
+    if (!m) return;
+    const next = { ...m };
+    if (t0 !== null && t1 !== null && t1 - t0 >= 0.1) {
+      next.in = t0;
+      next.out = t1;
+    }
+    if (speed !== null && RAMP_SPEEDS.includes(speed) && speed < 1) next.speed = speed;
+    more[k] = next;
+    this.ramp = { ...this.ramp, more };
+    this.slowEdited(`${speedWord(next.speed)} over ${(next.out - next.in).toFixed(1)} s`);
+  }
+
+  /** Stretch `k` of `ramp.more` taken away. */
+  removeMoreSlow(k) {
+    const more = (this.ramp.more ?? []).filter((_, j) => j !== k);
+    const next = { ...this.ramp };
+    if (more.length) next.more = more;
+    else delete next.more;
+    this.ramp = next;
+    this.slowEdited('That slow motion is gone');
+  }
+
+  /** After a slow stretch changed: the pin fitted again, kept, laid out. */
+  slowEdited(word) {
+    this.fitSyncNow();
+    this.releaseRamp();
+    this.saveKept();
+    this.syncRange();
+    this.panel?.refresh(true);
+    this.clipbar?.sync(this.player.time, true);
+    this.slowChanged();
+    this.ui.flash(this.sync ? `${word} · ${this.syncSay()}` : word, 2400);
   }
 
   /** The take's own bullet time over the clip, as the speed lane draws it:
@@ -3428,7 +3499,7 @@ export class ReplayCreator {
     }
     // The game's mix, and the song where it goes in the file too
     // (replay-music.js): never in a montage, whose clips are not one song.
-    const tap = this.ctx.audioTap?.() ?? null;
+    const tap = this.prefs.recordGame ? this.ctx.audioTap?.() ?? null : null;
     const song = !queue && this.music.loaded && this.music.record ? this.music.attach(tap?.context ?? null) : null;
     const clip = new ClipRecorder(source, {
       sound: () => (tap || song ? { context: tap?.context ?? song.context, node: tap?.node ?? null, extra: song ? [song] : [] } : null),
@@ -4008,7 +4079,9 @@ export class ReplayCreator {
     const on = Boolean(this.on && span && (r ? r.song && r.started && !r.paused : this.studio?.open));
     const video = on ? this.timing(span).clock.toScreen(t) : null;
     this.music.frame({ on, playing: this.player.playing || Boolean(this.frozen), video, t, frozen: Boolean(this.frozen) });
-    this.quietGame(on && this.music.quietNow());
+    // Recording with the game's sound in the file, the game is heard: the
+    // file takes the page's mix as it leaves for the speakers.
+    this.quietGame(on && this.music.quietNow() && !(r && this.prefs.recordGame));
   }
 
   /** The game's own sound held down (a song playing over it) or back. */

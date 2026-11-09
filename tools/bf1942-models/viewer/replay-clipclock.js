@@ -17,7 +17,7 @@
 // runs it.
 
 import { BULLET_CLOCK } from './replay-roundcam.js';
-import { rampSpanOf, rampSpeedAt, ramping } from './replay-shot.js';
+import { rampSpeedAt, slowsClip } from './replay-shot.js';
 
 /** Real seconds a step of the model. */
 const STEP = 1 / 120;
@@ -64,7 +64,7 @@ function lowerBound(arr, v) {
  */
 export function clipClock({ span, ramp = null, bullet = null, freeze = null, step = STEP }) {
   const C = BULLET_CLOCK;
-  const own = ramping(ramp) && rampSpanOf(ramp, span) !== null;
+  const own = slowsClip(ramp, span);
   const ts = [span.t0];
   const ss = [0];
   let t = span.t0;

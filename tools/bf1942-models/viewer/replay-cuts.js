@@ -159,6 +159,21 @@ export function anchorAt(t, ev, snap = 1e-4) {
   return { ev: 'down', dt: t - (down ?? hit) };
 }
 
+/**
+ * A hand-over at `t` that follows camera `prev`, kept by what it happens
+ * at: as `anchorAt`, but one after a camera kept by the man going down is
+ * kept by that too, never by the hit. The moment he goes down moves with the
+ * slow motion over the hold and the hit does not, so a camera kept by the hit
+ * after the victim's circle (kept by his going down) slid in front of it once
+ * the slow motion changed, and the circle was squeezed to nothing: the
+ * owner's "it cut to them prior to the attack" (2026-11-09).
+ */
+export function anchorAfter(t, ev, prev) {
+  const at = anchorAt(t, ev);
+  if (at.ev !== 'hit' || prev?.at?.ev !== 'down' || ev.down === null || ev.down === undefined) return at;
+  return { ev: 'down', dt: t - ev.down };
+}
+
 /** A clip's cameras before anything is changed: a kill shot is over the
  *  shoulder, the bullet chase from the trigger, and the man it killed once
  *  he is down; any other clip is the replay's own camera. */
@@ -327,7 +342,7 @@ export function insertCam(cams, t, cam, ev, extra = {}) {
   const near = t - list[i].t0 <= CAM_MIN;
   if (near) return setCam(cams, i, cam, extra);
   const out = cams.map(c => ({ ...c }));
-  out.splice(i + 1, 0, { cam, at: anchorAt(t, ev), into: intoFor(cam), ...extra });
+  out.splice(i + 1, 0, { cam, at: anchorAfter(t, ev, out[i]), into: intoFor(cam), ...extra });
   return out;
 }
 
@@ -367,7 +382,7 @@ export function moveCut(cams, i, t, ev) {
   const lo = list[i - 1].t0 + CAM_MIN;
   const hi = (list[i + 1]?.t0 ?? ev.end) - CAM_MIN;
   const at = Math.min(hi, Math.max(lo, t));
-  return cams.map((c, j) => (j === i ? { ...c, at: anchorAt(at, ev) } : c));
+  return cams.map((c, j) => (j === i ? { ...c, at: anchorAfter(at, ev, cams[i - 1]) } : c));
 }
 
 /** `cams` with camera `i` handing over its way (`into`). */

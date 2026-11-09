@@ -29,6 +29,9 @@ export const ACTION_SETTLE = 0.4;
  *  each end: a hard cut to a tenth of the speed reads as a dropped frame. */
 export const RAMP_EASE = 0.35;
 
+/** The most stretches of slow motion a clip has beside its own. */
+export const MAX_MORE = 8;
+
 /** A shot with no camera move and no slow motion. */
 export const noRamp = () => ({ in: null, out: null, speed: 1, ease: RAMP_EASE });
 
@@ -50,6 +53,12 @@ export function rampOf(kept) {
   const speed = fit ? kept.speed : RAMP_SPEEDS.includes(kept.speed) ? kept.speed : 1;
   const out = { in: time(kept.in), out: time(kept.out), speed, ease: Number.isFinite(kept.ease) ? clamp(kept.ease, 0, 4) : RAMP_EASE };
   if (fit) out.fit = true;
+  // More stretches of slow motion beside it (2026-11-09: "as we circle the
+  // victim, I'd love to apply a custom slow mo to just that section").
+  const more = (Array.isArray(kept.more) ? kept.more : [])
+    .filter(m => m && Number.isFinite(m.in) && Number.isFinite(m.out) && m.out > m.in && RAMP_SPEEDS.includes(m.speed) && m.speed < 1)
+    .slice(0, MAX_MORE).map(m => ({ in: m.in, out: m.out, speed: m.speed }));
+  if (more.length) out.more = more;
   return out;
 }
 
@@ -84,15 +93,56 @@ export function rampSpanOf(ramp, span = null) {
  * is the page's own again.
  */
 export function rampSpeedAt(ramp, span, t, base = 1) {
-  if (!ramping(ramp) || !Number.isFinite(t)) return null;
-  const at = rampSpanOf(ramp, span);
-  if (!at) return null;
-  if (t < at.t0 || t > at.t1) return null;
-  const want = Math.min(base, ramp.speed);
-  const ease = clamp(ramp.ease ?? RAMP_EASE, 0, (at.t1 - at.t0) / 2);
-  const k = Math.min(smooth(at.t0, at.t0 + ease, t), smooth(at.t1, at.t1 - ease, t));
-  return base + (want - base) * k;
+  if (!ramp || !Number.isFinite(t)) return null;
+  // Where stretches overlap the slowest wins: the victim's circle slowed
+  // inside the stretch that runs to the hit plays at the circle's speed.
+  let speed = null;
+  for (const at of slowStretches(ramp, span)) {
+    if (t < at.t0 || t > at.t1) continue;
+    const want = Math.min(base, at.speed);
+    const ease = clamp(ramp.ease ?? RAMP_EASE, 0, (at.t1 - at.t0) / 2);
+    const k = Math.min(smooth(at.t0, at.t0 + ease, t), smooth(at.t1, at.t1 - ease, t));
+    const v = base + (want - base) * k;
+    if (speed === null || v < speed) speed = v;
+  }
+  return speed;
 }
+
+/** The speed one step slower than `speed` on the strip's speeds: what
+ *  "Slow its part" asks for over a part already slowed. */
+export function slowerThan(speed) {
+  const steps = RAMP_SPEEDS.filter(v => v < 1).sort((a, b) => b - a);
+  return steps.find(v => v < speed - 1e-6) ?? steps.at(-1);
+}
+
+/**
+ * Every stretch the clip runs slowly over, inside `span`: `[{ t0, t1, speed,
+ * k }]`, its own first (`k` -1, `rampSpanOf`), then the more it has (`k` their
+ * index in `ramp.more`), each held inside the clip. Where two overlap the
+ * slowest wins (`rampSpeedAt`).
+ */
+export function slowStretches(ramp, span = null) {
+  const out = [];
+  if (!ramp) return out;
+  if (ramping(ramp)) {
+    const main = rampSpanOf(ramp, span);
+    if (main) out.push({ ...main, speed: ramp.speed, k: -1 });
+  }
+  for (const [k, m] of (ramp.more ?? []).entries()) {
+    let t0 = m.in;
+    let t1 = m.out;
+    if (span) {
+      t0 = clamp(t0, span.t0, span.t1);
+      t1 = clamp(t1, span.t0, span.t1);
+    }
+    if (t1 > t0 && m.speed > 0 && m.speed < 1) out.push({ t0, t1, speed: m.speed, k });
+  }
+  return out;
+}
+
+/** Whether the clip runs any slow motion of its own: then its clock is the
+ *  clip's, and a kill shot's bullet time stands aside. */
+export const slowsClip = (ramp, span = null) => slowStretches(ramp, span).length > 0;
 
 /**
  * The action a clip is of: the round leaving at `fire` and what it did at

@@ -208,6 +208,66 @@ class SongTests(unittest.TestCase):
         self.assertEqual(self.song["scrubbed"], {"act": "seek", "at": 14})
 
 
+class MoreSlowMotionTests(unittest.TestCase):
+    """More than one stretch of slow motion: the victim's circle slowed on
+    its own, after the pin's stretch to the hit (2026-11-09)."""
+
+    m: dict
+
+    @classmethod
+    def setUpClass(cls) -> None:
+        cls.m = run_harness()["more"]
+
+    def test_only_whole_stretches_at_the_strips_speeds_are_kept(self) -> None:
+        self.assertEqual(self.m["kept"], [{"in": 276, "out": 279, "speed": 0.1}])
+
+    def test_each_stretch_slows_its_own_part(self) -> None:
+        self.assertEqual([s[2] for s in self.m["stretches"]], [0.25, 0.1])
+        self.assertEqual(self.m["speeds"][0], 0.25)
+        self.assertEqual(self.m["speeds"][1], 0.1)
+        self.assertIsNone(self.m["speeds"][2])
+
+    def test_a_stretch_after_the_hit_leaves_the_pin_where_it_was(self) -> None:
+        self.assertEqual(self.m["hitSame"], 0)
+        slowed, plain = self.m["circle"]
+        self.assertGreater(slowed, plain * 5)
+
+    def test_where_stretches_overlap_the_slowest_wins(self) -> None:
+        # The owner's edit: the circle inside the 1/4 that runs past the hit.
+        self.assertEqual(self.m["overlap"], 0.1)
+        self.assertEqual(self.m["slower"], [0.5, 0.25, 0.1, 0.1, 0.25])
+
+    def test_more_stretches_alone_still_run_the_clips_clock(self) -> None:
+        self.assertTrue(self.m["onlyMore"])
+        self.assertFalse(self.m["none"])
+
+
+class CutAfterCircleTests(unittest.TestCase):
+    """A cut after the victim's circle stays after it when slow motion moves
+    the moment he goes down (replay-cuts.js `anchorAfter`)."""
+
+    c: dict
+
+    @classmethod
+    def setUpClass(cls) -> None:
+        cls.c = run_harness()["cutAfterCircle"]
+
+    def test_it_is_kept_by_his_going_down(self) -> None:
+        self.assertEqual(self.c["at"], {"ev": "down", "dt": 3})
+
+    def test_it_stays_after_the_circle_when_that_moment_moves(self) -> None:
+        # He goes down 4 s later than when the cut was added (the slow motion
+        # over the hold changed): the cut moves with him.
+        self.assertEqual(self.c["keptAfter"], [["shoulder", 263], ["chase", 272], ["victim", 280], ["gamefront", 283]])
+        # Kept by the hit, as before, the circle was squeezed to nothing.
+        self.assertEqual(self.c["oldWay"], [["shoulder", 263], ["chase", 272], ["victim", 280], ["gamefront", 280]])
+
+    def test_before_the_circle_it_is_kept_by_the_hit_as_ever(self) -> None:
+        self.assertEqual(self.c["beforeDown"], {"ev": "hit", "dt": 1.5})
+        # Following the circle, a cut is kept by his going down even before it.
+        self.assertEqual(self.c["afterChase"], {"ev": "down", "dt": -1})
+
+
 class SongLaneTests(unittest.TestCase):
     """The Music lane's waveform and drag (replay-music.js)."""
 

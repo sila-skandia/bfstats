@@ -28,7 +28,7 @@
 
 import { fmt } from './replay-creator-panel.js';
 import { nameAt } from './replay-recording.js';
-import { RAMP_SPEEDS, rampSpanOf, speedWord } from './replay-shot.js';
+import { RAMP_SPEEDS, slowerThan, speedWord } from './replay-shot.js';
 import { isMelee } from './replay-shotstyle.js';
 import { FRAMES, TEXT_EASE, lowerStart } from './replay-studio-fx.js';
 import { parseVideoTime, videoTime } from './replay-sync.js';
@@ -521,7 +521,21 @@ export class ClipBar {
       };
     }
     if (lane === 'speed') {
-      const slow = creator.ownSlow() ? rampSpanOf(creator.ramp, span) : null;
+      // Another stretch of slow motion under the pointer: its speed, its
+      // ends, take it away.
+      for (const [k, m] of (creator.ramp.more ?? []).entries()) {
+        if (t < m.in - 0.05 || t > m.out + 0.05) continue;
+        return {
+          title: `Slow motion · ${speedWord(m.speed)}`,
+          items: [
+            ...RAMP_SPEEDS.filter(v => v < 1).map(v => item(`${speedWord(v)} speed`, () => creator.setMoreSlow(k, { speed: v }), { on: m.speed === v })),
+            ...(t > m.in + 0.15 ? [item(`Slow motion starts here (${at})`, () => creator.setMoreSlow(k, { t0: t, t1: m.out }), { rule: true })] : []),
+            ...(t < m.out - 0.15 ? [item(`Slow motion ends here (${at})`, () => creator.setMoreSlow(k, { t0: m.in, t1: t }))] : []),
+            item('Take this slow motion away', () => creator.removeMoreSlow(k), { rule: true }),
+          ],
+        };
+      }
+      const slow = creator.mainSlow(span);
       if (slow && t >= slow.t0 - 0.05 && t <= slow.t1 + 0.05) {
         const comesBack = creator.rounds.bulletTime && creator.autoFilms(span);
         return {
@@ -555,7 +569,7 @@ export class ClipBar {
       return {
         title: 'Speed · normal',
         items: [
-          item('Slow down from here', () => creator.setSlowRange(t, Math.min(span.t1, t + 1.2), 0.25)),
+          item('Slow down from here', () => creator.addSlow(t, Math.min(span.t1, t + 1.2), 0.25)),
           ...(action ? [item('Slow the action', () => creator.setSlowRange(action.t0, action.t1, 0.25))] : []),
           item('Slow the whole clip to 1/2', () => creator.setSlowRange(span.t0, span.t1, 0.5)),
         ],
@@ -768,6 +782,15 @@ export class ClipBar {
       { label: c.end ? 'Set its end camera' : 'Add an end camera', title: 'A second view it moves to over its part',
         icon: 'glide', run: () => creator.placeCam(i, { which: 'end' }) },
       { label: 'Loop it', title: 'Play this camera\'s part over and over', icon: 'orbit360', run: () => creator.loopPart({ kind: 'cam', i }) },
+      { label: 'Slow its part', title: 'Slow motion at 1/4 over this camera\'s part alone: the Speed lane gets a bar to resize or right-click',
+        icon: 'fx:slow', run: () => {
+          // One step slower than the part plays now: 1/4 where it runs at
+          // speed, 1/10 inside a stretch at 1/4.
+          const clock = creator.timing(span).clock;
+          const now = Math.min(1, ...[c.t0 + 0.05, (c.t0 + c.t1) / 2, c.t1 - 0.05].map(x => clock.speedAt(x) ?? 1));
+          creator.addSlow(c.t0, c.t1, slowerThan(now));
+          creator.loopPart({ kind: 'cam', i });
+        } },
     ] });
     if (c.cam === 'placed' && c.end) {
       items.push({ heading: true, label: 'To its end camera' });
@@ -1172,7 +1195,13 @@ export class ClipBar {
         const span = creator.span;
         const a = Math.min(p.t0, p.t1 ?? p.t0);
         const b = Math.max(p.t0, p.t1 ?? p.t0);
-        if (span && b - a >= PAINT_MIN) creator.setSlowRange(a, b, 0.25);
+        // Painted over the clip's own slow motion, it is moved there; painted
+        // elsewhere beside it, it is one more stretch.
+        const own = creator.mainSlow(span);
+        if (span && b - a >= PAINT_MIN) {
+          if (own && (b <= own.t0 || a >= own.t1)) creator.addSlow(a, b, 0.25);
+          else creator.setSlowRange(a, b, 0.25);
+        }
         else creator.player.seek(p.t0);
         this.paint = null;
         this.sync(creator.player.time, true);
@@ -1479,7 +1508,7 @@ export class ClipBar {
     const playLabel = creator.player.playing ? 'Pause' : 'Play';
     if (this.playBtn.textContent !== playLabel) this.playBtn.textContent = playLabel;
     this.exportBtn.classList.toggle('on', Boolean(creator.recorder));
-    const slow = this.paint ?? (creator.ownSlow() ? rampSpanOf(creator.ramp, span) : null);
+    const slow = this.paint ?? creator.mainSlow(span);
     const autoSlow = this.paint || slow ? null : creator.autoSlow(span);
     const action = creator.clipAction;
     const take = creator.take;
@@ -1652,15 +1681,25 @@ export class ClipBar {
         slow.t0, slow.t1, 'Slow motion: drag to move it, drag an end to resize it, right-click for how slow');
       const fitted = !this.paint && creator.sync && creator.ramp.fit && creator.sync.hold === 'start' ? ' · worked out to the pin'
         : !this.paint && creator.sync?.auto ? ' · to the hit' : '';
-      seg.append(el('b', '', `${speedWord(this.paint && !creator.ownSlow() ? 0.25 : creator.ramp.speed)} slow${fitted}`));
+      seg.append(el('b', '', `${speedWord(this.paint && !creator.mainSlow(span) ? 0.25 : creator.ramp.speed)} slow${fitted}`));
       if (!this.paint) this.bindSlow(grips(seg), slow);
     } else if (autoSlow) {
       const seg = node('speed', 'span', 'rc-cb-seg slow auto', '', autoSlow.t0, autoSlow.t1,
         'The kill shot slows itself here (bullet time). Drag it or its ends to make it your own; right-click for how much');
       seg.append(el('b', '', `Bullet time · auto`));
       this.bindSlow(grips(seg), autoSlow, { own: false });
-    } else {
+    } else if (!(creator.ramp.more?.length)) {
       node('speed', 'span', 'rc-cb-seg plain', 'normal speed · drag here to slow a stretch down', span.t0, span.t1);
+    }
+    // The clip's other stretches of slow motion, each its own bar.
+    for (const [k, m] of (creator.ramp.more ?? []).entries()) {
+      const t0 = clamp(m.in, span.t0, span.t1);
+      const t1 = clamp(m.out, span.t0, span.t1);
+      if (!(t1 > t0)) continue;
+      const seg = node('speed', 'span', 'rc-cb-seg slow more', '', t0, t1,
+        'Slow motion: drag to move it, drag an end to resize it, right-click for how slow or to take it away');
+      seg.append(el('b', '', `${speedWord(m.speed)} slow`));
+      this.bindBar(grips(seg), { t0, t1 }, next => creator.setMoreSlow(k, { t0: next.t0, t1: next.t1 }), { minLen: PAINT_MIN });
     }
 
     // TEXT and FX, the studio's lanes (hidden on the round's bar).

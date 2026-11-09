@@ -15,8 +15,8 @@ import { installModuleHooks, viewerDir } from '../sim/env.mjs';
 const viewer = viewerDir();
 installModuleHooks(viewer);
 const imp = name => import(pathToFileURL(path.join(viewer, name)).href);
-const [Y, CC, S, RC, M, THREE] = await Promise.all([imp('replay-sync.js'), imp('replay-clipclock.js'), imp('replay-shot.js'), imp('replay-roundcam.js'),
-  imp('replay-music.js'), imp('vendor/three.module.js')]);
+const [Y, CC, S, RC, M, THREE, CU] = await Promise.all([imp('replay-sync.js'), imp('replay-clipclock.js'), imp('replay-shot.js'), imp('replay-roundcam.js'),
+  imp('replay-music.js'), imp('vendor/three.module.js'), imp('replay-cuts.js')]);
 
 const round = (v, n = 3) => (v === null || v === undefined ? v : Math.round(v * 10 ** n) / 10 ** n);
 const results = {};
@@ -201,5 +201,43 @@ results.bombLanding = {
   tooLong: RC.landingOf({ t: 10, weapon: 'MustangBombDummy' }, { t: 19 }, 0),
   serverFlown: RC.landingOf({ t: SHOT, weapon: 'MustangBombDummy', flight: { drawn: true } }, { t: HIT }, 0),
 };
+
+// More than one stretch of slow motion (replay-shot.js `more`): the pin's
+// own to the hit, and the victim's circle slowed on its own after it.
+{
+  const span = { t0: 263, t1: 285 };
+  const ramp = S.rampOf({ in: null, out: HIT + 0.35, speed: 0.25, ease: 0.35, more: [{ in: 276, out: 279, speed: 0.1 }, { in: 1, out: 0, speed: 0.25 }, { in: 280, out: 281, speed: 0.3 }] });
+  const plain = S.rampOf({ in: null, out: HIT + 0.35, speed: 0.25, ease: 0.35 });
+  const clock = CC.clipClock({ span, ramp });
+  const before = CC.clipClock({ span, ramp: plain });
+  results.more = {
+    kept: ramp.more,
+    stretches: S.slowStretches(ramp, span).map(x => [x.t0, x.t1, x.speed, x.k]),
+    speeds: [270, 277.5, 279.5].map(t => round(S.rampSpeedAt(ramp, span, t), 3)),
+    hitSame: round(clock.toScreen(HIT - 1e-6) - before.toScreen(HIT - 1e-6), 4),
+    circle: [round(clock.toScreen(279) - clock.toScreen(276), 2), round(before.toScreen(279) - before.toScreen(276), 2)],
+    onlyMore: S.slowsClip({ in: null, out: null, speed: 1, more: [{ in: 276, out: 279, speed: 0.25 }] }, span),
+    none: S.slowsClip({ in: null, out: null, speed: 1 }, span),
+    // Overlapping: the circle at 1/10 inside a stretch at 1/4.
+    overlap: round(S.rampSpeedAt(S.rampOf({ in: 270, out: 280, speed: 0.25, ease: 0.35, more: [{ in: 276, out: 279, speed: 0.1 }] }), span, 277.5), 3),
+    slower: [1, 0.5, 0.25, 0.1, 0.3].map(S.slowerThan),
+  };
+}
+
+// A cut after the victim's circle is kept by his going down too
+// (replay-cuts.js `anchorAfter`), so slow motion that moves that moment
+// cannot slide the cut in front of the circle.
+{
+  const ev = { start: 263, end: 285, shot: 272, hit: 273.5, down: 276 };
+  const cams = [{ cam: 'shoulder' }, { cam: 'chase', at: { ev: 'shot', dt: 0 }, into: 'cut' }, { cam: 'victim', at: { ev: 'down', dt: 0 }, into: 'glide' }];
+  const added = CU.insertCam(cams, 279, 'gamefront', ev);
+  const later = { ...ev, down: 280 };
+  const brief = list => CU.resolveCams(list, later).map(c => [c.cam, round(c.t0, 2)]);
+  const old = [...cams, { cam: 'gamefront', at: { ev: 'hit', dt: 279 - 273.5 }, into: 'glide' }];
+  results.cutAfterCircle = {
+    at: added[3].at, keptAfter: brief(added), oldWay: brief(old),
+    beforeDown: CU.anchorAfter(275, ev, cams[1]), afterChase: CU.anchorAfter(275, ev, cams[2]),
+  };
+}
 
 console.log(JSON.stringify(results));

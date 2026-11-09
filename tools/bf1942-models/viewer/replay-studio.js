@@ -22,7 +22,7 @@
 import { FOV_RANGE, fmt } from './replay-creator-panel.js';
 import { moveIcon } from './replay-clipbar.js';
 import { AB_MOVES, CAM_RECIPES, CAMS, HAND_OVERS, MOTIONS, camGlyph, camLabel, camTitle, camsFor, holdsEnd } from './replay-cuts.js';
-import { RAMP_SPEEDS, rampSpanOf, screenSeconds, speedWord } from './replay-shot.js';
+import { RAMP_SPEEDS, screenSeconds, speedWord } from './replay-shot.js';
 import { FADES, FRAMES, FREEZES, GRADES, drawOverlay, drawSafeArea, editsOf, editsShow, gradeOf } from './replay-studio-fx.js';
 import { StudioTour } from './replay-studio-tour.js';
 
@@ -649,7 +649,7 @@ export class Studio {
     };
     group('Speed', [
       { id: 'slow', label: 'Slow-mo', title: 'Slow motion at 1/4 from where it lands, a second of the round', glyph: 'fx:slow', lane: 'speed',
-        drop: t => creator.setSlowRange(t, Math.min(creator.span.t1, t + 1), 0.25) },
+        drop: t => creator.addSlow(t, Math.min(creator.span.t1, t + 1), 0.25) },
       { id: 'freeze', label: 'Freeze', title: 'The picture held a second as the round hits', glyph: 'fx:freeze', lane: 'fx', at: kill,
         drop: needsKill(() => creator.setEdit('freeze', 1)) },
     ]);
@@ -1301,15 +1301,15 @@ export class Studio {
       killNote.hidden = creator.fxKill.kill !== null;
     });
     this.slowLine = el('p', 'st-note');
-    const speeds = this.seg(RAMP_SPEEDS.filter(v => v < 1).map(v => [v, speedWord(v)]), () => (creator.ownSlow() ? creator.ramp.speed : null), v => {
+    const speeds = this.seg(RAMP_SPEEDS.filter(v => v < 1).map(v => [v, speedWord(v)]), () => (creator.mainSlow() ? creator.ramp.speed : null), v => {
       const span = creator.span;
-      const at = creator.ownSlow() ? rampSpanOf(creator.ramp, span) : creator.autoSlow(span) ?? creator.clipAction ?? { t0: span.t0, t1: span.t1 };
+      const at = creator.mainSlow(span) ?? creator.autoSlow(span) ?? creator.clipAction ?? { t0: span.t0, t1: span.t1 };
       creator.pickSlowSpeed(at.t0, at.t1, v);
     });
     const clear = this.btn('No slow motion of my own', 'Remove the clip\'s own slow motion: the kill shot\'s bullet time comes back', () => creator.clearSlow(), 'st-ghost st-small');
     this.syncs.push(() => {
       const span = creator.span;
-      const own = creator.ownSlow() ? rampSpanOf(creator.ramp, span) : null;
+      const own = creator.mainSlow(span);
       const auto = creator.autoSlow(span);
       this.slowLine.textContent = own
         ? `Yours: ${speedWord(creator.ramp.speed)} from +${fmt(creator.screenAt(own.t0))} to +${fmt(creator.screenAt(own.t1))}. About ${Math.round(creator.screenLength(span))} s to watch.`
@@ -1354,7 +1354,22 @@ export class Studio {
         ? `In the order they happened, each with its own camera, slow motion, look and effects: about ${Math.round(secs)} s.`
         : 'Keep two clips or more for a montage.';
     });
+    // What sound goes in the file: the game's, the song's, both or none.
+    const music = creator.music;
+    const game = this.check('Game sound', () => creator.prefs.recordGame, v => creator.setPref('recordGame', v), 'The game\'s own sound in the recorded file');
+    const song = this.check('The song on the Music lane', () => music.loaded && music.record, v => { music.record = v; },
+      'The song in the recorded file, from the clip\'s start');
+    const soundNote = this.note('');
+    this.syncs.push(() => {
+      const box = song.querySelector('input');
+      if (box) box.disabled = !music.loaded;
+      const g = creator.prefs.recordGame;
+      const s = music.loaded && music.record;
+      soundNote.textContent = g && s ? 'The game and the song, mixed.' : g ? 'The game\'s sound alone.'
+        : s ? 'The song alone.' : 'No sound: a silent video, to lay the sound in another editor.';
+    });
     page.append(
+      this.group('Sound in the file', game, song, soundNote),
       this.buildShare(),
       this.group('Export', rec, thumb, facts, this.note('Recording plays the clip in real time, slow motion included, and saves it when it ends. Keep other windows quiet while it runs.')),
       this.group('Kept clips', keep, this.clipList, montage, montageNote),
