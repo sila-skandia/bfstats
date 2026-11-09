@@ -169,6 +169,10 @@ export function surveyVehicle(root) {
         // `hasMobilePhysics` bit is clear and whose tree carries an Engine
         // (PHY-17); absent on every other seat and in older bakes.
         mobilePhysics: node?.userData?.physics?.hasMobilePhysics ?? null,
+        // `ObjectTemplate.vehicleFov` of the seat's own PCO, radians (ledger
+        // VIEW-16): the render view's FOV while this seat's Camera is the view
+        // (`seat-view.js` `vehicleFovDegrees`). Null keeps the world's.
+        vehicleFov: node?.userData?.physics?.vehicleFov ?? null,
       };
       seats.set(id, seat);
       order.push(id);

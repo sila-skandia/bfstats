@@ -173,6 +173,13 @@ ever does carry these words, treat it exactly like a hand weapon's zoom
 ([handweapon-view-and-deviation.md](handweapon-view-and-deviation.md)),
 not as a new mechanism.
 
+**A mod's manned gun can have its own lens (VIEW-16, 2026-11-10).**
+`vehicleFov` is a `PlayerControlObject` word, not a `FireArms` one, so the
+search above does not see it on BF1918's periscope and scoped MGs or on
+XPack2's Wasserfall (outside the 1,753 bf1942 files). `Camera::setVehicleFOV`
+puts the value on the render view as an absolute vertical angle in radians
+while that seat's Camera is the view, in every view mode; it is no toggle.
+
 ## 5. Firing: magazine, reload, and heat
 
 Vanilla's magazine/reload/heat vocabulary on vehicle `FireArms`: `magSize

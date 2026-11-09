@@ -474,6 +474,7 @@ import { installReplaySocial } from './replay-social.js';
 import { Armor } from './armor.js';
 import { loadHudPaths } from './hud-pack.js';
 import { VehicleRegistry } from './vehicle-instance.js';
+import { KILL_DAMAGE } from './crash-damage.js';
 import { createBotReferee } from './bot-referee.js';
 import { createBotRounds } from './bot-rounds.js';
 import { botWeaponData as botWeaponDataOf } from './bot-barrels.js';
@@ -1215,7 +1216,22 @@ const vehicles = new VehicleRegistry({
   releaseAudio: (playerId, root) => pageAudio.releaseVehicleAudio(audioSeatKey(playerId), root),
   // A seat taken or freed changes every bot's candidate list.
   onChange: () => { botUnits.candidateCache.at = -1; },
+  destroyOnExit: (node, root) => destroyOnExit(node, root),
 });
+/**
+ * `destroyOnExit` (ledger SEAT-38): the PCO a player has just climbed out of
+ * takes `giveDamage(pco, 1e10, ...)`, so it dies as any destroyed object does.
+ * A deployed mortar or MG is `deployables-page.js`'s to end; a placed or
+ * padded hull is the world's damageable, whose next damage pass announces the
+ * death and wrecks it (`vehicle-hits.js` `stepVehicleDamage`). In a room the
+ * server bills the objects' damage, and deploys nothing.
+ */
+function destroyOnExit(node, root) {
+  if (room?.roomJoined) return;
+  if (deployables?.destroyOnExit?.(root) || deployables?.destroyOnExit?.(node)) return;
+  const hull = level.world?.damageableOf(node) ?? null;
+  if (hull && !hull.destroyed) hull.damage(KILL_DAMAGE);
+}
 /** Scratch for the per-tick seat position feed (`vehicles.publishSeatPositions`). */
 const seatWorldPos = new THREE.Vector3();
 const audioSeatKey = playerId => (playerId === LOCAL_PLAYER ? 'local' : `bot:${playerId}`);

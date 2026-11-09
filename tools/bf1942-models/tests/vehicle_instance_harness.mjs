@@ -349,4 +349,40 @@ results.driverArrives = { drive: !!driver.drive, gunnerSeesIt: alone.drive === d
   results.vacatedInFlight = r;
 }
 
+// `destroyOnExit` (ledger SEAT-38): BF1918's DeployedStokes, a bare gun root
+// whose PCO writes the word. A player's own exit hands the hook the PCO he
+// left, once he is out; a leave that is no exit (a death, the round's end)
+// does not, nor does the exit of a seat whose PCO lacks the word.
+{
+  const w = new World({ collider, extras: EXTRAS });
+  w.addPlayer('gunner', { team: 1 });
+  w.addBotPlayer('crew', { team: 1 });
+  const calls = [];
+  const reg = new VehicleRegistry({
+    world: () => w,
+    destroyOnExit: (pco, root) => calls.push({
+      pco: pco.name, root: root.name, seatedThen: reg.seatOf('gunner') !== null || reg.seatOf('crew') !== null,
+    }),
+  });
+  const stokes = () => {
+    const entry = node('DeployedStokesEntry', { control: 'DeployedStokes', templateKind: 'EntryPoint', seat: { control: 'DeployedStokes', entryRadius: 2 } });
+    return node('DeployedStokes', {
+      control: 'DeployedStokes', templateKind: 'PlayerControlObject', physics: { destroyOnExit: true },
+    }, entry);
+  };
+  const r = {};
+  const a = stokes();
+  reg.enter(a, null, 'gunner');
+  const out = reg.leave('gunner', { exited: true });
+  r.exited = { destroyed: out.destroyed, calls: [...calls] };
+  calls.length = 0;
+  const b = stokes();
+  reg.enter(b, null, 'crew');
+  r.died = { destroyed: reg.leave('crew').destroyed, calls: calls.length };
+  const plain = sherman();
+  reg.enter(plain, 'shermanBrowning_PCO1', 'gunner');
+  r.plain = { destroyed: reg.leave('gunner', { exited: true }).destroyed, calls: calls.length };
+  results.destroyOnExit = r;
+}
+
 process.stdout.write(JSON.stringify(results));

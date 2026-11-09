@@ -160,6 +160,11 @@ def object_record(library, name: str, models: dict[str, dict]) -> dict:
                            ("timeToLiveAfterDeath", template.time_to_live_after_death)):
             if value is not None:
                 record[key] = value
+        # The gunner's exit destroys it (`PlayerControlObject::exit`, ledger
+        # SEAT-38): BF1918's DeployedStokes, DeployedWerfer16 and
+        # DeployedHotchkiss_MG.
+        if template.destroy_on_exit:
+            record["destroyOnExit"] = True
     radius = ((row or {}).get("dimensions") or {}).get("radius")
     if radius is not None:
         record["radius"] = radius

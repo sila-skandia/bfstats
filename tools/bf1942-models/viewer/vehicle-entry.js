@@ -382,7 +382,7 @@ export function createVehicleEntry(page) {
     // The room's control channel: capture the seat row before the seat is
     // given back.
     const netSeat = page.occupancy ? page.netSeatRow('exit') : null;
-    page.leaveSeat();
+    page.leaveSeat({ exited: true });
     if (netSeat) page.netSendAction(netSeat);
     page.markPilot(false);
     if (page.optOnFoot.checked && page.soldier) {
@@ -446,7 +446,7 @@ export function createVehicleEntry(page) {
     const hull = hullMotion(page.occupancy.drive, page.occupancy.root,
       page.occupancy.rootKind === 'air');
     const netSeat = page.netSeatRow('exit');
-    page.leaveSeat();
+    page.leaveSeat({ exited: true });
     if (netSeat) page.netSendAction(netSeat);
     page.markPilot(false);
     if (page.optOnFoot.checked && page.soldier) {

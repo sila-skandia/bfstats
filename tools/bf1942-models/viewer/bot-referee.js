@@ -1226,7 +1226,10 @@ export function createBotReferee(env) {
     const m = bot.vehicle;
     if (!m) return;
     const w = world();
-    const p = units()?.leave(bot) ?? { x: bot.position[0], y: bot.position[1], z: bot.position[2] };
+    // A bot climbing out of his own accord is an exit (`destroyOnExit`,
+    // ledger SEAT-38); a death in the seat or the round's end is not.
+    const p = units()?.leave(bot, { exited: !killed && !silent })
+      ?? { x: bot.position[0], y: bot.position[1], z: bot.position[2] };
     const record = w.player(bot.playerId);
     if (record) { record.vehicleStrType = null; record.position = null; }
     const soldier = record?.soldier;

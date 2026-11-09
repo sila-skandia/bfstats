@@ -51,15 +51,103 @@ From a census of the mod's scripts against the exporter and viewer
 | Gas masks | 4 | team skins (`GerGas`, `EngGas`, `FrzGas`, `UsaGas`); no immunity in the data | works (`setTeamSkin`) |
 | Flamethrower ground fire | 33 | material 256+ -> `e_FlamefuelGrnd` -> `e_BurningFlameEffect` (6 s) -> an ObjectSpawner inside the effect stands `FireDamage`, a depot under a rotator | in progress |
 | Armoured train | 7 | a VCLand hull pushed by a `c_ETPlane` engine, held on invisible `*_Guide_m1` rails by sideways RollGrip springs; the cars are separate PCOs pushed by held 200 t `TrainPuller` couplers | in progress |
-| `vehicleFoV` (trench periscope, scoped MGs) | 50 | `ObjectTemplate.vehicleFoV 0.2`; never read | in progress |
-| Bayonet ammo sharing | 19 rifles | `ObjectTemplate.WeaponLink 3`, the set-less spelling the console accepts; read only as `setWeaponLink` | in progress |
-| `destroyOnExit` on deployed mortars and MGs | 51 | answered, not built | in progress |
+| `vehicleFoV` (trench periscope, scoped MGs) | 50 | `ObjectTemplate.vehicleFoV 0.2` | fixed in code (VIEW-16); live after the re-runs below |
+| Bayonet ammo sharing | 19 rifles | `ObjectTemplate.WeaponLink 3`, the set-less spelling the console accepts; read only as `setWeaponLink` | fixed in code (FA-8, CON-15); live after the re-runs below |
+| `destroyOnExit` on deployed mortars and MGs | 51 | `giveDamage(pco, 1e10)` on a player's own exit | fixed in code (SEAT-38); live after the re-runs below |
 | Zeppelin L30, Lebaudy airships | 8 | VCLand, seven `c_ETPlane` engines, buoyancy from `FloatingBundle`s with a huge hull height, crew as separate PCOs | partly; to test |
 | Horses and cavalry | 41 | FHSW's horses; bf1918 adds a jump (`HorseJump`, alt-fire recoil 320), a horn and a lance | mostly; jump and lance to test |
 | Batteries (one gunner, 2-5 guns) | 34 | peer RotationalBundles on one seat; staggered `fireDelay` | partly; to test |
 | PushCage kill zones | 12 | a `SupplyDepot` at -1000 hp inside a no-capture cage | likely; to test |
 | Deep-water damage | 102 templates | `damageFromDeepWater`, `hpLostWhileDamageFromDeepWater` | not modelled (minor) |
 | Soldier speed table | all | `Soldier.setForwardSpeed` and friends in `CommonSoldierDataSound.inc` | not read; whether retail applies them is open |
+
+## 2026-11-10: three words the tree missed
+
+### `vehicleFov`: the periscope and the scoped MGs (VIEW-16)
+
+`ObjectTemplate.vehicleFov` sits on the PlayerControlObject. Retail's
+`Camera::setVehicleFOV` puts it on the render view unchanged while a Camera
+under that PCO is the view: radians of the whole vertical angle, the unit of
+`renderer.fieldOfView 1` and of a hand weapon's `zoomFov`. It is a constant of
+the seat, not a toggle, and the function tests no view mode, so the seat's
+chase looks through it too (VIEW-16 says what is inferred about the caller).
+
+| Template | `vehicleFov` | Degrees | Placed on |
+|---|---|---|---|
+| `Scherenfernrohr` (trench periscope, also an artillery `Marker` seat) | 0.2 | 11.5 | 34 levels |
+| `MG08_MGZF` | 0.1 | 5.7 | 7 |
+| `Maxima_M1910`, `Maxima_M1910_Graben` | 0.9 | 51.6 | 15 |
+| `Stationary_Lewis`, `StationaryAA_Lewis` | 0.9 | 51.6 | none placed |
+| four `Stationary_Rifleshild_*` | 0.6 | 34.4 | none placed |
+| `Stationary_Villar_Perosa` | 0.95 | 54.4 | none placed |
+| `SMSDresdenLookout`, `SuffrenLookout` (ship lookouts) | 0.2 | 11.5 | none placed |
+
+Built: `bf42/con.py` reads `vehicleFov` (and `setVehicleFov`) into
+`extras.physics.vehicleFov` on the PCO node; `viewer/seat-survey.js` puts it on
+the seat; `viewer/seat-view.js` `vehicleFovDegrees` turns it into degrees;
+`viewer/seat-camera.js` `seatFov` makes it the camera's FOV in every view of
+that seat, manned gun, pilot or driver alike. A seat without it keeps 57.3.
+
+Vanilla: no bf1942 vehicle writes it (GUN-6). XPack2's `WasserfallRocket`
+writes 1.5 (85.9 degrees) and now gets it, which is retail.
+
+### `WeaponLink`: the bayonet rifles share the rifle's rounds (FA-8)
+
+19 BF1918 bayonet items (`M98Bajo`, `P1914Bajo`, `CarcanoBajo`, `MosinBayonet`
+and the rest) write `ObjectTemplate.WeaponLink 3`, the property's registered
+name; FHSW and XPack1 write `setWeaponLink`. The console answers to both
+(CON-15), the reader read only the second. `con.py` now files `weaponLink`
+under `setweaponlink` (`_OBJECT_TEMPLATE_PROPERTIES`), so the weapon's
+`magazine.link` is 3 and `hand-weapon.js` `ammoFor` draws from the slot-3
+rifle's magazines (`kit-ammo.js` `linked`), as FHSW's Garand bayonet does.
+Kits and loadouts carry no link; the weapon glb and its first-person rigs do.
+
+### `destroyOnExit`: a deployed mortar or MG goes when its gunner leaves (SEAT-38)
+
+`PlayerControlObject::exit` ends, once the soldier is out, in
+`giveDamage(pco, 1e10)` with no attacker on the PCO he left when its template
+says `destroyOnExit`. The object dies as any destroyed object does.
+`exitPlayer()` never reads the word, so the rule is for a player's own exit.
+BF1918's `DeployedStokes`, `DeployedWerfer16` and `DeployedHotchkiss_MG` (stood
+by `StokesDeploy`, `Werfer16Deploy` and `HotchkissDeploy`, 51 levels together)
+and XPack2's `WasserfallRocket` write it.
+
+Built: `con.py` `destroy_on_exit` -> `extras.physics.destroyOnExit`;
+`extract_deployables.py` writes `destroyOnExit` on the object's row of
+`deployables.json` (the page stamps it on a glb that predates the word);
+`vehicle-instance.js` `leave(playerId, { exited })` calls `env.destroyOnExit`
+after a player's own exit, which the human's E (`vehicle-entry.js`) and a bot's
+dismount (`bot-referee.js` `leaveVehicle`, not when killed or at the round's
+end) pass; `map.html` `destroyOnExit` ends a deployed object through
+`deployables-page.js` (its armour's death effects, then gone) and any other
+damageable with 1e10 through the world's damage pass, which wrecks it.
+
+## What has to re-run in the bf1918 tree
+
+| What | Templates | Step |
+|---|---|---|
+| `vehicleFov` | `Scherenfernrohr`, `MG08_MGZF`, `Maxima_M1910`, `Maxima_M1910_Graben`, `Stationary_Lewis`, `StationaryAA_Lewis`, the four `Stationary_Rifleshild_*`, `Stationary_Villar_Perosa`, `SMSDresden`, `Suffren` | models; and a full bake (the `scene` layer) of the 60 exported levels whose `scene.glb` places one of them, since a placed PCO's `extras.physics` is the bake's node, not the model glb (counted 2026-11-10 off the live `scene.glb`s: broodseinde, chateau-thierry, paternkofel, krakau, lodz, ... every row of `maps.json` that places them) |
+| `WeaponLink` | the 19 `*Bajo` / `MosinBayonet` items (59 kits carry one in slot 2 beside the rifle in slot 3) | `patch_weapon_stats.py --mod bf1918`: its dry run on 2026-11-10 would patch 29 glbs (16 weapon glbs, 13 first-person rigs) and their reports |
+| `destroyOnExit` | `DeployedStokes`, `DeployedWerfer16`, `DeployedHotchkiss_MG` | `extract_deployables.py --mod bf1918 --out viewer/models/mods/bf1918` (enough for the page); models for the glbs' own extras |
+| XPack2 | `WasserfallRocket` (`vehicleFov`, `destroyOnExit`) | models in the xpack2 tree |
+
+Then optimise and publish as the pipeline does.
+
+## Open
+
+- The client's call site of `Camera::setVehicleFOV` was not traced: that the
+  chase views keep the vehicle FOV rests on the function testing no mode and on
+  `getTransformation` restoring it by hand in mode 17.
+- Whether the mouse look slows with a seat's `vehicleFov`, as it does with a
+  weapon's `zoomFov` (VIEW-10), was not read; the page does not slow it.
+- Which other paths call `PlayerControlObject::exit` (a death in the seat, a
+  seat switch): the page destroys on an E press and a bot's own dismount only.
+- A deployed object's 3 s `timeToLiveAfterDeath` and 1 s fade are not drawn:
+  `deployables-page.js` removes it at once, as it always has for the DC mortar.
+- The replay's seat lens (`replay-camera.js` `SEAT_LENS`) does not read
+  `vehicleFov`.
+- Bots do not share magazines across a weapon link; only the human's hand
+  weapon counts rounds that way.
 
 ## Open items
 

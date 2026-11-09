@@ -216,3 +216,29 @@ export function seatViewModes({ cvm = null, nose = false, settings = null } = {}
   }
   return out;
 }
+
+/**
+ * A seat's own field of view, in three.js's degrees (whole vertical angle), or
+ * null when the seat keeps the render view's (ledger VIEW-16).
+ *
+ * `ObjectTemplate.vehicleFov` sits on the PlayerControlObject
+ * (`PlayerControlObjectTemplate+0x248`). `Camera::setVehicleFOV` (lnxded
+ * 0x081aadd0) walks up from its Camera to the first PlayerControlObject, and
+ * when that one's `getVehicleFov` is not 0 and differs from the render view's,
+ * saves the render view's FOV and calls `setFieldOfView(vehicleFov)` with the
+ * value as it is: the render view's unit, radians of the whole vertical angle,
+ * as `renderer.fieldOfView 1` is (VIEW-8) and as a hand weapon's `zoomFov` is
+ * (VIEW-12). On a Camera under no such PCO, or one whose value is 0 (the
+ * ctor's, and every vanilla vehicle's but XPack2's Wasserfall, GUN-6), it puts
+ * the saved FOV back. The function tests no view mode, so the value holds for
+ * the seat's chase as for its inside view. It is no toggle: nothing on a seat
+ * zooms it in or out. BF1918's trench periscope `Scherenfernrohr` writes 0.2
+ * (11.5 degrees), `MG08_MGZF` 0.1 (5.7), `Maxima_M1910` 0.9 (51.6).
+ *
+ * @param {number | null | undefined} vehicleFov the seat PCO's
+ *   `extras.physics.vehicleFov`, radians
+ * @returns {number | null}
+ */
+export function vehicleFovDegrees(vehicleFov) {
+  return Number.isFinite(vehicleFov) && vehicleFov > 0 ? vehicleFov * 180 / Math.PI : null;
+}

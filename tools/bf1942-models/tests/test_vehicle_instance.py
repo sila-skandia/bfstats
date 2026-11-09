@@ -226,6 +226,16 @@ class HullTeamTests(unittest.TestCase):
         self.assertEqual(r["down"]["transformed"], 1)
         self.assertEqual(r["parked"]["steppedAfter"], 0)
 
+    def test_an_exit_destroys_a_destroy_on_exit_pco_once_he_is_out(self) -> None:
+        # SEAT-38: `PlayerControlObject::exit` ends in `giveDamage(pco, 1e10)`
+        # after the player is put out; `exitPlayer` never reads the word.
+        r = self.results["destroyOnExit"]
+        self.assertTrue(r["exited"]["destroyed"])
+        self.assertEqual([{"pco": "DeployedStokes", "root": "DeployedStokes", "seatedThen": False}],
+                         r["exited"]["calls"])
+        self.assertEqual({"destroyed": False, "calls": 0}, r["died"])
+        self.assertEqual({"destroyed": False, "calls": 0}, r["plain"])
+
 
 if __name__ == "__main__":
     unittest.main()

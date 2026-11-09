@@ -629,7 +629,7 @@ export function createBotUnits(env) {
 
   /** Give the seat back; returns where the body stands up beside: the hull's
    *  own simulated position when it has a drive, else its node's. */
-  units.leave = bot => {
+  units.leave = (bot, { exited = false } = {}) => {
     const seat = env.vehicles.seatOf(bot.playerId);
     const drive = seat?.drive ?? null;
     let p;
@@ -656,7 +656,8 @@ export function createBotUnits(env) {
     // The seat goes back to the hull: its guns released, the world's record
     // cleared, the audio claim dropped; the last one out parks the hull where
     // it stands (`vehicle-instance.js`).
-    env.vehicles.leave(bot.playerId);
+    // `exited`: his own dismount, the exit `destroyOnExit` answers to.
+    env.vehicles.leave(bot.playerId, { exited });
     return p;
   };
 

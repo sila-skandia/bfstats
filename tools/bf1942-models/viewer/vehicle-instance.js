@@ -177,7 +177,9 @@ function restWheels(drive) {
  *    gets the hull back as a parked body;
  *  - `thaw(root)` / `freeze(root)`: the scene's matrix walk;
  *  - `claimAudio(playerId, root, drive, groups)` / `releaseAudio(playerId, root)`;
- *  - `onChange(instance)`: a seat, the drive or the guns changed.
+ *  - `onChange(instance)`: a seat, the drive or the guns changed;
+ *  - `destroyOnExit(pcoNode, root)`: a player got out of a seat whose
+ *    PlayerControlObject says `destroyOnExit` (ledger SEAT-38).
  * Every hook is optional.
  */
 export class VehicleRegistry {
@@ -325,7 +327,9 @@ export class VehicleRegistry {
   }
 
   /**
-   * `playerId` gets out. The last one out parks the hull where it stands: its
+   * `playerId` gets out (`exited`: of his own will, the E key or a bot's
+   * dismount, which is what `destroyOnExit` answers to; `env.destroyOnExit`
+   * is handed the seat's PCO node and the root). The last one out parks the hull where it stands: its
    * controls released, its pose written, the body world given a parked body
    * carrying the drive's velocity, and the node frozen again. Returns
    * `{ instance, seatId, drive, emptied }`, or null when not seated.
@@ -343,12 +347,15 @@ export class VehicleRegistry {
    * the controls at zero until it is down and at rest, and is parked then
    * exactly as a hull left on the ground is parked here.
    */
-  leave(playerId) {
+  leave(playerId, { exited = false } = {}) {
     const handle = this.seated.get(playerId);
     if (!handle) return null;
     const inst = handle.instance;
     const seatId = handle.seatId;
     const drive = inst.drive;
+    // The PlayerControlObject of the seat he leaves, read before the seat
+    // goes back: `destroyOnExit` is its own template's word.
+    const seatNode = inst.occupancy.seatInfo(seatId)?.node ?? inst.root;
     this.#vacate(inst, seatId);
     inst.seats.delete(seatId);
     inst.handles.delete(playerId);
@@ -380,7 +387,15 @@ export class VehicleRegistry {
       this.instances.delete(inst.root);
     }
     this.env.onChange?.(inst);
-    return { instance: inst, seatId, drive, emptied };
+    // `destroyOnExit` (ledger SEAT-38): a player's own exit
+    // (`GameServer::exitVehicle` -> `PlayerControlObject::exit` 0x08317d00)
+    // ends in `giveDamage(pco, 1e10, ...)` on the PCO he left, once he is
+    // out: BF1918's deployed mortars and MG, XPack2's Wasserfall. A death,
+    // a round's end or the pilot box's release is no exit (`exited` false;
+    // `exitPlayer` 0x083183d0 never reads the word).
+    const destroyed = exited && seatNode?.userData?.physics?.destroyOnExit === true;
+    if (destroyed) this.env.destroyOnExit?.(seatNode, inst.root);
+    return { instance: inst, seatId, drive, emptied, destroyed };
   }
 
   /** Every seat's world position into the world's player records: the seat

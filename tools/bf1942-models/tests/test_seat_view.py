@@ -197,6 +197,18 @@ class SeatViewTests(unittest.TestCase):
         self.assertEqual([1, 1, 1], got["VCLandRestored"])
         self.assertEqual([1, 1, 1], got["VCAirRestored"])
 
+    def test_a_seats_vehicle_fov_is_radians_of_the_vertical_angle(self) -> None:
+        # VIEW-16: `Camera::setVehicleFOV` hands the value to the render
+        # view's `setFieldOfView` unchanged, the unit of
+        # `renderer.fieldOfView 1` (57.30 degrees, VIEW-8).
+        got = self.results["vehicleFov"]
+        self.assertAlmostEqual(11.459, got["periscope"], places=3)
+        self.assertAlmostEqual(5.730, got["scopedMg"], places=3)
+        self.assertAlmostEqual(85.944, got["wasserfall"], places=3)
+        self.assertAlmostEqual(57.296, got["renderView"], places=3)
+        for key in ("zero", "absent", "negative", "text"):
+            self.assertIsNone(got[key], key)
+
 
 if __name__ == "__main__":
     unittest.main()

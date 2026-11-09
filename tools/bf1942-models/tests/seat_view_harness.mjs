@@ -3,7 +3,7 @@
 
 import {
   SEAT_VIEW_ORDER, SEAT_VIEW_MODE_ID, NOSE_CAM_OFFSETS,
-  noseCamOffset, seatViewModes, NoseHull, NOSE_HIDDEN_LAYER,
+  noseCamOffset, seatViewModes, NoseHull, NOSE_HIDDEN_LAYER, vehicleFovDegrees,
   VIEW_COCKPIT, VIEW_NOSE, VIEW_CHASE, VIEW_FRONT, VIEW_FLYBY,
 } from './seat-view.js';
 import {
@@ -165,5 +165,18 @@ results.truthy = {
   }
   results.noseInterior = out;
 }
+
+// VIEW-16: a seat PCO's `vehicleFov`, radians of the render view's whole
+// vertical angle, in three.js's degrees; 0, absent or junk keeps the world's.
+results.vehicleFov = {
+  periscope: vehicleFovDegrees(0.2),      // BF1918 Scherenfernrohr
+  scopedMg: vehicleFovDegrees(0.1),       // BF1918 MG08_MGZF
+  wasserfall: vehicleFovDegrees(1.5),     // XPack2 WasserfallRocket
+  renderView: vehicleFovDegrees(1),       // `renderer.fieldOfView 1`
+  zero: vehicleFovDegrees(0),
+  absent: vehicleFovDegrees(undefined),
+  negative: vehicleFovDegrees(-0.5),
+  text: vehicleFovDegrees('0.2'),
+};
 
 process.stdout.write(JSON.stringify(results));

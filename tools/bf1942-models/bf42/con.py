@@ -78,7 +78,8 @@ _OBJECT_TEMPLATE_PROPERTIES = frozenset({
     "colorrgbaovertime", "cooldownpersec", "createinvisible", "criticaldamage",
     "cvmchase", "cvmexterntrace", "cvmflyby", "cvmfrontchase", "cvminside",
     "cvmtrace", "damagefromwater", "damagetype", "damagewhenlost",
-    "destblendmode", "detonateonwatercollision", "dieaftercoll", "distance",
+    "destblendmode", "destroyonexit", "detonateonwatercollision",
+    "dieaftercoll", "distance",
     "disttomindamage", "disttostartlosedamage", "drag", "endeffecttemplate",
     "exitspeedmod", "explodenearenemydistance", "firedelay", "fireincameradof",
     "fireingforce", "fireonce", "geometry", "gravitymodifier", "grip", "hasarmor",
@@ -109,13 +110,15 @@ _OBJECT_TEMPLATE_PROPERTIES = frozenset({
     "setnumberofweaponicons", "setpivotposition", "setprimaryammoicon",
     "setscopeicon", "setsecondaryammoicon", "setsighticon", "setsnipersight",
     "setstrength", "setsubmarinehuddepthmodifier", "setsubmarinehuddirmodifier",
-    "settorque", "setvehicleicon", "setvehicleiconpos", "showinfirstperson",
+    "settorque", "setvehicleicon", "setvehicleiconpos", "setweaponlink",
+    "showinfirstperson",
     "showinthirdperson", "size", "sizeovertime", "soldiercameraposition",
     "soldierzoomfov", "soldierzoomposition", "spawnoffset", "speedmod",
     "starteffecttemplate", "stopatendeffect", "team", "template", "texture",
     "timedelayonoverheat", "timetolive", "timetoliveafterdeath",
     "togglemouselook", "tracerscaler", "unzoombetweenfiretime", "usescope",
-    "velocity", "visiblebarreltemplate", "visibledummyprojectiletemplate",
+    "vehiclefov", "velocity", "visiblebarreltemplate",
+    "visibledummyprojectiletemplate",
     "workonsoldiers", "workonvehicles", "ymodonexplosion", "zoomfov",
 })
 # `GeometryTemplate.lodDistance` is a terrain property, not `setLodDistance`.
@@ -1576,6 +1579,18 @@ class ObjectTemplate:
     # one user is Secret Weapons' WasserfallRocket (5 s, 15 m).
     camera_delay_time: float | None = None
     camera_delay_distance: float | None = None
+    # `destroyOnExit` (PlayerControlObjectTemplate +0x191, ledger SEAT-38):
+    # `PlayerControlObject::exit` 0x08317d00 ends, when it is set, in
+    # `GameServer::giveDamage(this, 1e10, -1, -1, -1, 0/0/0, -1, false, true)`,
+    # so the PCO a gunner climbs out of dies as any destroyed hull does.
+    # BF1918's deployed Stokes, Werfer16 and Hotchkiss; XPack2's Wasserfall.
+    destroy_on_exit: bool | None = None
+    # `vehicleFov` (PlayerControlObjectTemplate +0x248, ledger VIEW-16): the
+    # render view's field of view, absolute, a whole vertical angle in
+    # radians like `renderer.fieldOfView`, that `Camera::setVehicleFOV`
+    # 0x081aadd0 puts on while a Camera under this PCO is the view. 0 (the
+    # ctor's) leaves the render view's own 1 rad (GUN-6).
+    vehicle_fov: float | None = None
     soldier_exit_location: tuple[tuple[float, float, float],
                                  tuple[float, float, float]] | None = None
     damage_from_water: bool | None = None
@@ -1621,7 +1636,10 @@ class ObjectTemplate:
     # the weapon throws the clip (`FireArms::EjectClip`, the Garand's ping)
     # and nothing reloads for this long (ledger FA-7).
     eject_clip_time: float | None = None
-    # `setWeaponLink <itemIndex>`: this weapon has no magazines of its own.
+    # `weaponLink <itemIndex>`: this weapon has no magazines of its own.
+    # The console registers the property as `weaponLink` and answers to
+    # `setWeaponLink` too (CON-15); FHSW writes the second, BF1918's rifles
+    # the first (`console_word` files both under `setweaponlink`).
     # `FireArms::mags()` hands it those of the soldier's item at that index,
     # and the reload, fire and eject timers with them (FA-8): FHSW's bayonet
     # rifle in slot 1 and the plain rifle in slot 3 are one rifle's rounds.
@@ -2174,6 +2192,9 @@ class ObjectTemplate:
             "exitSpeedMod": self.exit_speed_mod,
             "cameraDelayTime": self.camera_delay_time,
             "cameraDelayDistance": self.camera_delay_distance,
+            "destroyOnExit": True if self.destroy_on_exit else None,
+            "vehicleFov": (self.vehicle_fov
+                           if self.vehicle_fov and self.vehicle_fov > 0 else None),
             "soldierExitLocation": (
                 {"position": list(self.soldier_exit_location[0]),
                  "rotation": list(self.soldier_exit_location[1])}
@@ -3022,7 +3043,7 @@ class ObjectLibrary:
                     "setgearupengineinput", "setgeardownengineinput",
                     "mass", "drag", "speedmod", "anglemod",
                     "exittimer", "exitspeedmod",
-                    "cameradelaytime", "cameradelaydistance",
+                    "cameradelaytime", "cameradelaydistance", "vehiclefov",
                     "hplostwhiledamagefromwater", "hplostwhileupsidedown",
                     "setsubmarinehuddepthmodifier", "setsubmarinehuddirmodifier",
                 ):
@@ -3061,6 +3082,7 @@ class ObjectLibrary:
                         "exitspeedmod": "exit_speed_mod",
                         "cameradelaytime": "camera_delay_time",
                         "cameradelaydistance": "camera_delay_distance",
+                        "vehiclefov": "vehicle_fov",
                         "hplostwhiledamagefromwater": "hp_lost_while_damage_from_water",
                         "hplostwhileupsidedown": "hp_lost_while_upside_down",
                         "setsubmarinehuddepthmodifier": "submarine_hud_depth_modifier",
@@ -3102,11 +3124,12 @@ class ObjectLibrary:
                         "outsidehudoffset": "outside_hud_offset",
                     }[cmd], value)
                 elif cmd in ("rememberexcessinput", "hasrestrictedexit",
-                             "damagefromwater"):
+                             "damagefromwater", "destroyonexit"):
                     if (value := truthy(args)) is not None:
                         setattr(obj, {
                             "rememberexcessinput": "remember_excess_input",
                             "hasrestrictedexit": "has_restricted_exit",
+                            "destroyonexit": "destroy_on_exit",
                             "damagefromwater": "damage_from_water",
                         }[cmd], value)
                 elif cmd in ("grip", "setvehiclecategory", "setvehicletype"):

@@ -223,6 +223,11 @@ export function createDeployablesPage(page) {
       node.traverse(obj => { if (page.isCollision?.(obj)) obj.visible = false; });
       node.name = spec.template ?? template;
       node.userData.deployed = record.id;
+      // `destroyOnExit` (ledger SEAT-38) as `deployables.json` has it, for a
+      // glb extracted before the exporter wrote the word on the PCO itself.
+      if (spec.destroyOnExit && !node.userData.physics?.destroyOnExit) {
+        node.userData.physics = { ...(node.userData.physics ?? {}), destroyOnExit: true };
+      }
       page.bindDynamicShading?.(node);
       // The level's paint (`level-skin.js`, ledger LOAD-3): the glb is kept
       // for the page, so each object is painted for the level it stands in.
@@ -256,6 +261,21 @@ export function createDeployablesPage(page) {
     const i = placed.indexOf(record);
     if (i >= 0) placed.splice(i, 1);
   }
+
+  /**
+   * The gunner climbed out of a placed object whose PCO says `destroyOnExit`
+   * (ledger SEAT-38: BF1918's DeployedStokes, DeployedWerfer16 and
+   * DeployedHotchkiss_MG). Retail's `PlayerControlObject::exit` gives it 1e10
+   * damage, so it dies as it does when its abandoned clock runs out: its
+   * armour's last effects, and gone. Returns whether `node` was one of ours.
+   */
+  deployables.destroyOnExit = node => {
+    const record = node ? placed.find(r => r.node === node) : null;
+    if (!record) return false;
+    record.hp = 0;
+    removeObject(record);
+    return true;
+  };
 
   let tickClock = 0;
 

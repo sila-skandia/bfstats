@@ -1788,6 +1788,48 @@ ObjectTemplate.setAllowReloadOnEmptyClipOnly 0
         # CON-15: a property answers to its `set` spelling too.
         self.assertIs(False, library.object("Carbine").reload_on_empty_only)
 
+    def test_weapon_link_answers_to_both_spellings(self) -> None:
+        # FA-8 / CON-15: the console registers `weaponLink` (BF1942.exe has
+        # that string and no `setWeaponLink`), and a property answers to its
+        # `set` spelling too. XPack1's K98Bayonet writes the second; BF1918's
+        # 19 bayonet rifles (`M98Bajo`, objects.rfa HandWeapons/M98) the first.
+        library = ObjectLibrary()
+        library.add_con("Objects/HandWeapons/M98/Objects.con", """
+ObjectTemplate.create HandFireArms M98Bajo
+ObjectTemplate.itemIndex 1
+ObjectTemplate.WeaponLink 3
+ObjectTemplate.magSize 5
+ObjectTemplate.create HandFireArms K98Bayonet
+ObjectTemplate.setWeaponLink 3
+ObjectTemplate.create HandFireArms M98
+ObjectTemplate.magSize 5
+""")
+        self.assertEqual(3, library.object("M98Bajo").weapon_link)
+        self.assertEqual(3, library.object("M98Bajo").weapon_stats()["magazine"]["link"])
+        self.assertEqual(3, library.object("K98Bayonet").weapon_link)
+        self.assertIsNone(library.object("M98").weapon_link)
+
+    def test_vehicle_fov_and_destroy_on_exit_ride_the_pco_physics(self) -> None:
+        # BF1918 objects.rfa Stationary_Weapons/Scherenfernrohr (`vehicleFoV
+        # 0.2`, VIEW-16) and DeployedStokes (`destroyOnExit 1`, SEAT-38); a
+        # zero vehicleFov is the ctor's "none" and is not written.
+        library = ObjectLibrary()
+        library.add_con("Objects/Stationary_Weapons/Scherenfernrohr/Objects.con", """
+ObjectTemplate.create PlayerControlObject Scherenfernrohr
+ObjectTemplate.vehicleFoV 0.2
+ObjectTemplate.create PlayerControlObject DeployedStokes
+ObjectTemplate.destroyOnExit 1
+ObjectTemplate.create PlayerControlObject Quiet
+ObjectTemplate.setVehicleFov 0
+ObjectTemplate.setDestroyOnExit 0
+""")
+        self.assertEqual({"vehicleFov": 0.2}, library.object("Scherenfernrohr").physics())
+        self.assertEqual({"destroyOnExit": True}, library.object("DeployedStokes").physics())
+        quiet = library.object("Quiet")
+        self.assertEqual(0.0, quiet.vehicle_fov)
+        self.assertIs(False, quiet.destroy_on_exit)
+        self.assertIsNone(quiet.physics())
+
     def test_hand_weapon_hud_words_and_the_shipped_amom_typo(self) -> None:
         # Objects/HandWeapons/M1Garand/Objects.con spells the position words
         # correctly; Objects/HandWeapons/K98/Objects.con -- like 13 of

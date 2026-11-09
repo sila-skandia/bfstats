@@ -192,7 +192,7 @@ export function createLocalPlayer(page) {
     page.updateMobileControls();
   }
 
-  function leaveSeat({ reset = false } = {}) {
+  function leaveSeat({ reset = false, exited = false } = {}) {
     const seat = localPlayer.occupancy;
     if (!seat) return;
     const drive = seat.drive;
@@ -208,7 +208,9 @@ export function createLocalPlayer(page) {
       page.view?.setMode('cockpit');
       drive.setFirstPerson(false);
     }
-    page.vehicles.leave(page.LOCAL_PLAYER);
+    // `exited`: his own E (vehicle-entry.js), the one exit `destroyOnExit`
+    // answers to (ledger SEAT-38); a death in the seat is not one.
+    page.vehicles.leave(page.LOCAL_PLAYER, { exited });
     page.clearVehicleHud();
     // The seat's view rig goes with the seat: the next mount builds its own.
     page.forgetSeatViews();
@@ -287,9 +289,12 @@ export function createLocalPlayer(page) {
   localPlayer.prone = false;           // `c_PILie` is a toggle, not a hold
   // The lens every vehicle view looks through: the render view's own 1 rad,
   // 57.30 degrees vertical (`renderer.fieldOfView 1`, VideoDefault.con, ledger
-  // VIEW-8), which no vanilla vehicle changes (`vehicleFov`, GUN-6). It was
+  // VIEW-8), which no bf1942 vehicle changes (`vehicleFov`, GUN-6). It was
   // the free camera's 60 until 2026-10-11: a seat, an aircraft and a car are
-  // the same render view as the soldier's and as the manned gun's below.
+  // the same render view as the soldier's and as the manned gun's below. A
+  // seat whose PCO does write `vehicleFov` (XPack2's Wasserfall, BF1918's
+  // periscope and scoped MGs) looks through that instead, every view of it
+  // (`seat-camera.js` `seatFov`, VIEW-16).
   const FLY_FOV = 57.3;
   const FLY_NEAR = page.camera.near;
   // The near plane of a seat's own view. `Renderer_drawView` (0x004662c0) gives

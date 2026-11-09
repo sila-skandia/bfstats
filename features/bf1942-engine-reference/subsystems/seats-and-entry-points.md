@@ -224,6 +224,14 @@ leaves his velocity alone, so he carries the hull's (measured on the lab). It
 also marks the hull he left on him for 2.0 s, during which a contact with it
 pushes him but costs him nothing.
 
+**A seat that dies when he leaves it (SEAT-38, 2026-11-10).** The last thing
+`exit(bool)` does, once he is out, is test the seat PCO's `destroyOnExit`
+(template `+0x191`) and, when it is set, hand that PCO to
+`GameServer::giveDamage` with 1e10 and no attacker: it dies as any destroyed
+object does, effects, blast and wreck clock included. `exitPlayer()` never
+reads the word. BF1918's deployed mortars and MG and XPack2's Wasserfall write
+it.
+
 **While he is aboard (SEAT-36).** The server ghosts nothing about the object a
 client controls: the driven hull, or the seat he mans. Its hit points and its
 guns' magazines reach that client in the control state alone, and a seat

@@ -1,7 +1,7 @@
 import * as THREE from 'three';
 import { VehicleCamera, FixedSubject, cameraLookLimits } from './vehicle-camera.js';
 import { loadCockpitSwaps } from './vehicle-base.js';
-import { seatViewModes, noseCamOffset, NoseHull } from './seat-view.js';
+import { seatViewModes, noseCamOffset, NoseHull, vehicleFovDegrees } from './seat-view.js';
 import { ServerSettings, readServerSettings } from './server-settings.js';
 import { readWorldPose, AIM_INPUTS } from './seats.js';
 import {
@@ -628,17 +628,31 @@ export function createSeatCamera(page) {
       // `updateProjectionMatrix()`, every frame.
       // Inside the gun's own FOV; an external view of the same seat is the
       // world's, the same as the driver's chase.
-      const wantFov = seatCamera.view && !seatCamera.view.inside ? page.FLY_FOV : page.MANNED_GUN_FOV;
+      // A seat whose PCO writes `vehicleFov` (VIEW-16: BF1918's periscope and
+      // scoped MGs) looks through that in every view of its Camera.
+      const wantFov = seatFov() ?? (seatCamera.view && !seatCamera.view.inside ? page.FLY_FOV : page.MANNED_GUN_FOV);
       if (page.camera.fov !== wantFov) {
         page.camera.fov = wantFov;
         page.camera.updateProjectionMatrix();
       }
       seatCamera.manned(dt);
-    } else if (page.camera.fov !== page.FLY_FOV) {
-      page.camera.fov = page.FLY_FOV;
-      page.camera.updateProjectionMatrix();
+    } else {
+      const wantFov = seatFov() ?? page.FLY_FOV;
+      if (page.camera.fov !== wantFov) {
+        page.camera.fov = wantFov;
+        page.camera.updateProjectionMatrix();
+      }
     }
   };
+
+  /** The active seat's own field of view in degrees, or null for the render
+   *  view's (`vehicleFov` on the seat's PCO, `seat-view.js`
+   *  `vehicleFovDegrees`, ledger VIEW-16). */
+  function seatFov() {
+    const occ = page.occupancy;
+    const seat = occ?.seatInfo?.(occ.activeSeatId);
+    return vehicleFovDegrees(seat?.vehicleFov ?? seat?.node?.userData?.physics?.vehicleFov);
+  }
 
   Object.assign(seatCamera, {
     CHASE_OPTION,
