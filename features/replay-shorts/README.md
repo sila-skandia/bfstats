@@ -423,7 +423,8 @@ reviews in one sitting, all on Midway (`6zndpju5tv`):
   level it stops a step short and cuts to him. Measured: both kills
   revealed (seen 1 frame each); one ends outside the slit with him firing
   again, one cuts from the bunker's wall to over his shoulder at the slit.
-  Single kills only; a compilation's parts do not reveal.
+  Single kills only; a compilation's parts do not reveal (since the same
+  day, its long shots do: below).
 - *"In general we're slowing down too much in the slow mo."* The studio's
   'strong' bullet time gives every round 2.5 s on screen, so a 20 m kill
   crawled. A Short's round now takes `0.35 + metres / 250` s (0.45-1.4 s,
@@ -483,6 +484,29 @@ bunker's wall 2 m off filled the end of the 273 m Midway reveal). Not yet
 right: the 286 m re-film opens behind one man and cuts to another, and the
 order of a long shot (the shooter, the round, the fall, back to him) needs
 its own pass before the held long shots are re-filmed.
+
+**A streak's long shots go back to the shooter; no map card for a man who
+stayed put (2026-11-09, latest).** The owner on `bb2ec8rr35` (Deus Ex
+Machina's 30-kill streak on Midway, all K98 kills of 273-428 m from a
+bunker): "the long range sniper kills has no trace back to the shooter",
+and "the mini map shows between kills even though the player doesn't
+actually move. They are on foot so are moving side to side". One of his
+kills did not count as on foot, so the streak was filmed part by part
+(`shootKill`), where the reveal was off. Three changes:
+
+- A compilation part that is a ground kill of 80 m or more (`SHOT_INSET.from`)
+  is a long shot: it reveals, held 1.2 s (`REVEAL_PART`), and never takes
+  the crane or the reverse. Other parts still do not reveal.
+- The map card judges how far he got from where the gap began, not the
+  length of his route: strafing in the bunker walked 115-144 m a gap and
+  never got more than 19 m from the start.
+- The reveal's end pose stays where it was judged clear and only the look
+  follows him (eased). Placed on him each frame, his 3 m strafe dragged the
+  lens outside the slit into the concrete: two of the four streak reveals,
+  and 1.5 s of wall in the 294 m single (`6jjw8uum7h`).
+
+Re-filmed as `yt7n9d5ejd` (39 s, every part ends on him) and the 294 m
+single as `s2emvyp9db`.
 
 **What to build next** is in `IDEAS.md`: per-player packages (Player of the
 Round, the streak, Nemesis, a vehicle's life, a 30 s recap) and new single

@@ -224,6 +224,13 @@ about.
   shooter at the end"). A single kill whose take never showed the shooter
   flies back up the round's path to him after the hold (`REVEAL` in the
   director), cutting to him where the way in passes through the level.
+- **A streak's long shots go back to him too** (2026-11-09, `bb2ec8rr35`:
+  "the long range sniper kills has no trace back to the shooter"; "the mini
+  map shows between kills even though the player doesn't actually move").
+  A compilation part of 80 m or more reveals (`REVEAL_PART`); the map card
+  needs him 80 m from where the gap began, not 80 m of strafing; the
+  reveal's end pose is fixed once judged clear (it followed a strafing
+  sniper into his bunker's wall). Re-filmed as `yt7n9d5ejd`.
 - **Less slow motion** (2026-11-09: "in general we're slowing down too much
   in the slow mo"). A round's time on screen grows with the distance
   (`SHORT_PACE`, 0.45-1.4 s), the hold on the hit is 1 s at 0.6x (the round

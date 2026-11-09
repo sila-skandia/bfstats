@@ -851,7 +851,8 @@ async function coldOpen(page, frames, n, marks, audio) {
  *  long, faded over `fade`, the route drawn from `drawFrom` to `drawTo`. */
 const MAP_CARD = Object.freeze({ gap: 20, frames: 30, fade: 4, drawFrom: 4, drawTo: 24, samples: 48, moved: 80 });
 /** A plane's route is a squiggle and says little (the owner, 2026-11-04):
- *  no card for one. A card only when he has moved `moved` metres. */
+ *  no card for one. A card only when he has got `moved` metres from where
+ *  the gap began. */
 async function mapCard(page, reel, a, b, { shown = 0 } = {}) {
   return page.evaluate(async ({ W, H, pid, t0, t1, card, name, top, shown: cardsBefore }) => {
     const r = window.replay;
@@ -879,10 +880,14 @@ async function mapCard(page, reel, a, b, { shown = 0 } = {}) {
       if (w?.pos) route.push([m[0] * w.pos[0] + m[1] * w.pos[2] + m[2], m[3] * w.pos[0] + m[4] * w.pos[2] + m[5]]);
     }
     if (route.length < 2) return null;
-    // How far he went (in map units, then metres by the projection's scale).
-    let length = 0;
-    for (let i = 1; i < route.length; i++) length += Math.hypot(route[i][0] - route[i - 1][0], route[i][1] - route[i - 1][1]);
-    const metres = length / Math.max(1e-9, Math.hypot(m[0], m[3]));
+    // How far he got from where he started (in map units, then metres by the
+    // projection's scale). Not the length of the route: a sniper strafing in
+    // his bunker for three minutes walks 140 m and goes nowhere (Deus Ex
+    // Machina on Midway, bb2ec8rr35, 2026-11-09: 115-144 m of route, never
+    // more than 19 m from his start).
+    let far = 0;
+    for (const p of route) far = Math.max(far, Math.hypot(p[0] - route[0][0], p[1] - route[0][1]));
+    const metres = far / Math.max(1e-9, Math.hypot(m[0], m[3]));
     // A man who stayed put has no route to show (rafal_pl's bunker drew a dot
     // and "+1:20", 2026-11-04): no card, the first included.
     if (metres < card.moved) return null;
@@ -1084,6 +1089,10 @@ const REVEAL = Object.freeze({
   ends: [[4.5, 1.4, 0.2], [4.5, -1.4, 0.2], [3, 2.6, 1.8], [-2.2, 0.8, 0.6]],
   crane: [-7, 0, 8],
 });
+
+/** A long shot's reveal inside a compilation: held shorter, the dip into the
+ *  next part follows it. */
+const REVEAL_PART = Object.freeze({ ...REVEAL, hold: 1.2 });
 
 /** A small depth picture of the scene from the camera as it stands, for
  *  judging what is in front of the lens (`window.__depth`): `near(d)` the
@@ -1294,6 +1303,12 @@ const DIRECTOR_SRC = `window.__director = (() => {
           // level (he is in a bunker), the fly stops short there and cuts to
           // the end pose (the first try flew a second through concrete).
           const Aend = E.clone().addScaledVector(fwd, rv.end[0]).addScaledVector(right, rv.end[1]).add(V(0, rv.end[2], 0));
+          // The end pose stays where it was judged clear; only the look
+          // follows him. Placed on him each frame, a sniper strafing 3 m in
+          // his bunker dragged the lens outside the slit into the concrete
+          // (Deus Ex Machina, Midway, 2026-11-09).
+          rv.A = Aend;
+          rv.look = E.clone();
           rv.cutAt = null;
           let prev = rv.path(R.probeFrom, Aend);
           for (let i = 1; i <= R.probes; i++) {
@@ -1314,13 +1329,14 @@ const DIRECTOR_SRC = `window.__director = (() => {
         }
         // The fly: eased from where the hold left the lens to the end pose,
         // over an arc that clears the ground, looking at him all the way.
-        const [a, s, u] = rv.end;
-        const A = E.clone().addScaledVector(rv.fwd, a).addScaledVector(rv.right, s).add(V(0, u, 0));
+        const A = rv.A;
+        rv.look.lerp(E, 0.15);
+        const L = rv.look;
         const x = Math.min(1, Math.max(0, (r.time - rv.t0 - R.beat) / rv.fly));
         const e = x * x * x * (x * (x * 6 - 15) + 10);
         const cut = rv.cutAt !== null && e >= rv.cutAt;
         const P = cut ? A : rv.path(rv.cutAt !== null ? Math.min(e, rv.cutAt) : e, A);
-        const q = new (c.quaternion.constructor)().setFromRotationMatrix(new (c.matrixWorld.constructor)().lookAt(P, E, V(0, 1, 0)));
+        const q = new (c.quaternion.constructor)().setFromRotationMatrix(new (c.matrixWorld.constructor)().lookAt(P, L, V(0, 1, 0)));
         const w = cut ? 1 : Math.min(1, e / R.turn);
         c.position.copy(P);
         c.quaternion.copy(rv.q0).slerp(q, w * w * (3 - 2 * w));
@@ -3602,6 +3618,13 @@ const shortFlight = metres => Math.min(SHORT_PACE.flightMax,
  * audio: [from, to], kill, names }`.
  */
 async function shootKill(page, cand, write, overlay = null, { lead = null } = {}) {
+  // A long shot runs shooter, round, fall, back to him (REVEAL). In a
+  // compilation that is any ground kill of SHOT_INSET.from metres or more: a
+  // streak of 273-428 m K98 kills never showed where they came from
+  // (bb2ec8rr35, Midway, 2026-11-09). A compilation's other parts do not
+  // reveal.
+  const groundLong = !cand.flying && !cand.victimFlying && Number(cand.distance) >= SHOT_INSET.from;
+  const long = cand.kind === 'long-shot' || Boolean(overlay && groundLong);
   await armCreator(page, { lower: !overlay });
   await page.evaluate(({ pace, flight, hold }) => {
     const ro = window.replay.creator.rounds;
@@ -3633,8 +3656,8 @@ async function shootKill(page, cand, write, overlay = null, { lead = null } = {}
     flight.long = long;
     window.__director.install(pid, [], cfg, { chain: r.camera.lensHook, when: () => r.creator.rounds?.state === 'armed', flight });
   }, { on, src: DIRECTOR_SRC, depth: DEPTH_SRC, pid: cand.killer, victim: cand.victim, t: cand.t, air: Boolean(cand.victimFlying), fromAir: Boolean(cand.flying),
-    victimHull: Boolean(cand.victimVehicle), long: cand.kind === 'long-shot',
-    cfg: { ...DIRECTOR, shoulderOnly: true, reveal: overlay ? null : REVEAL } });
+    victimHull: Boolean(cand.victimVehicle), long,
+    cfg: { ...DIRECTOR, shoulderOnly: true, reveal: overlay ? (long ? REVEAL_PART : null) : REVEAL } });
   const setup = await page.evaluate(({ t, victim, W, H, kv, vv, weapon }) => {
     const c = window.replay.creator;
     const row = c.killAt(t, victim);
