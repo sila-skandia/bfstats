@@ -186,6 +186,23 @@ const CLEARANCE = 0.15;
  *  hull's origin; farther is a bad box, not a seat (`seatPointOf`). */
 const SEAT_REACH = 1.5;
 const SEAT_REACH_MIN = 2;
+const _meshBox = new THREE.Box3();
+
+/** The box round what `root` draws, into `box`: its visible meshes alone.
+ *  `Box3.setFromObject` takes every geometry whatever its visibility, and a
+ *  FHSW tank carries its gun's pooled rounds 19 m under it and its bullet
+ *  catchers 40 m under, hidden; their box put a tank's driver 20 m under
+ *  the tank (Manchuria, 2026-11-10). Empty when nothing is drawn. */
+function drawnBox(root, box) {
+  box.makeEmpty();
+  root.traverse(obj => {
+    if (!obj.isMesh || !obj.geometry || !obj.visible) return;
+    if (!obj.geometry.boundingBox) obj.geometry.computeBoundingBox();
+    _meshBox.copy(obj.geometry.boundingBox).applyMatrix4(obj.matrixWorld);
+    box.union(_meshBox);
+  });
+  return box;
+}
 /** A soldier's round leaves his eye (ledger XHIT-18), inside his drawn body,
  *  and a hull gun's need not leave its barrel as drawn (Bocage's MG 42 nest:
  *  0.36 m off it, its gunner's camera 2.3 m back); the bullet the round cam
@@ -625,7 +642,7 @@ export class RoundCam {
     const occ = hull.occupancy;
     const id = occ?.order?.[w.seat ?? 0];
     const node = id && id !== occ.rootId ? occ.survey?.seats?.get(id)?.node : null;
-    const at = node ? node.getWorldPosition(_vs2) : _box.setFromObject(root).getCenter(_vs2);
+    const at = node ? node.getWorldPosition(_vs2) : drawnBox(root, _box).getCenter(_vs2);
     if (!Number.isFinite(at.x)) return out;
     const off = at.sub(origin);
     // A seat farther from the hull's origin than the hull is big is not his

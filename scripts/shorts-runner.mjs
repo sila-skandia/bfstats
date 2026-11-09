@@ -81,7 +81,9 @@ const QA = Object.freeze({
   camUnderM: 0.3, camUnderFrames: 6, camUnderShare: 0.03,
   // The chased round under the ground for this share of its flight: it was
   // steered through a rise, and what the camera shows is the underside.
-  roundUnderM: 1.0, roundUnderShare: 0.3, roundFrames: 10,
+  // (0.3 let through a streak whose shell ran under a ridge for a fifth of
+  // its flight, the sky showing through the ground, 2026-11-10.)
+  roundUnderM: 1.0, roundUnderShare: 0.1, roundFrames: 10,
   // A Short whose loudest second is under this is silent.
   silentDb: -50,
 });

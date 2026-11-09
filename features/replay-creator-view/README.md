@@ -2294,3 +2294,12 @@ seat farther from the hull's origin than `SEAT_REACH` radii (1.5, at least
 0.4 radii up. The runner's `--trace` now records the camera's position and
 the ground under it each frame, which is how the depth was read.
 
+The first re-film still ran under: the hidden catchers were out of
+`hullRadius`, but the gun's pooled round stand-ins (`Ho-Chi_GunHEAT_projectile`,
+its `_trail`), hidden 19 m under the hull between shots, still measured the
+tank at 21 m, so 1.5 radii let a 20 m offset through; and three's
+`Box3.setFromObject` takes every geometry whatever its visibility. Both now
+read visible meshes alone (`drawnBox`, and `hullRadius` skips a hidden mesh):
+on Manchuria's 157 drawn hulls a tank measures 5-7 m and no box centre
+stands more than 3 m from its origin.
+

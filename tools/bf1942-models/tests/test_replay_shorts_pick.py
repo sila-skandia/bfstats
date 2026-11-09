@@ -46,6 +46,10 @@ class ShortsPickTests(unittest.TestCase):
         self.assertEqual(k["groundToAir"], "ground-to-air")
         self.assertEqual(k["spaaOnPlane"], "ground-to-air")
         self.assertEqual(k["spaaNamedOnPlane"], "ground-to-air")
+        # A gun named by its bore with no AA in it (FHSW's 20mmType2Multi_wide,
+        # filmed as a tank's shell the first night); a tank destroyer is a tank.
+        self.assertEqual(k["boreNamedGunOnPlane"], "ground-to-air")
+        self.assertEqual(k["tankDestroyerOnPlane"], "tank-to-air")
         self.assertEqual(k["aaFromFoot"], "ground-to-air")
         self.assertEqual(k["tankToTank"], "tank-to-tank")
         self.assertEqual(k["longShot"], "long-shot")
@@ -95,7 +99,9 @@ class ShortsPickTests(unittest.TestCase):
         # Best tank kill, the long shot, then the best of the rest that is not
         # the moment already taken (104 s is 4 s after 100 s).
         self.assertEqual(self.r["picked"], [100, 300, 500])
-        self.assertEqual(self.r["pickedOne"], [100])
+        # The best of each kind comes whatever the cap (2026-11-10: a 418 m
+        # sniper shot fell off Manchuria's three behind two shots at planes).
+        self.assertEqual(self.r["pickedOne"], [100, 500])
         # Kills already clipped are left out.
         self.assertEqual(self.r["pickedTaken"], [104, 300, 700])
         # Every tank-to-air kill is a Short past the three (the owner,

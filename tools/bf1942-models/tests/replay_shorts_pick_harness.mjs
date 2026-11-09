@@ -38,6 +38,8 @@ const models = new Map([
   ['flak38', { category: 'land', hitpoints: 100 }],
   ['wirbelwind', { category: 'land', hitpoints: 140 }],
   ['76mmspaa29k', { category: 'land', hitpoints: 150 }],
+  ['20mmtype2multi_wide', { category: 'land', hitpoints: 120 }],
+  ['ho-ri2', { category: 'land', hitpoints: 200 }],
 ]);
 const hull = tmpl => ({ tmpl, kind: P.hullKind(tmpl, models) });
 const foot = { foot: true };
@@ -56,6 +58,8 @@ console.log(JSON.stringify({
     groundToAir: P.kindOfKill(hull('Flak38'), hull('Bf109'), 300, 'Flak38'),
     spaaOnPlane: P.kindOfKill(hull('Wirbelwind'), hull('Bf109'), 300, 'Wirbelwind'),
     spaaNamedOnPlane: P.kindOfKill(hull('76mmSPAA29K'), hull('Bf109'), 346, '76mmSPAA29K'),
+    boreNamedGunOnPlane: P.kindOfKill(hull('20mmType2Multi_wide'), hull('Bf109'), 183, '20mmType2Multi_wide'),
+    tankDestroyerOnPlane: P.kindOfKill(hull('Ho-Ri2'), hull('Bf109'), 162, 'Ho-Ri2'),
     aaFromFoot: P.kindOfKill(foot, hull('Bf109'), 120, 'Bazooka'),
     tankToTank: P.kindOfKill(hull('M4A1'), hull('Tiger'), 190, 'M4A1'),
     tankToJeep: P.kindOfKill(hull('M4A1'), hull('Willys'), 190, 'M4A1'),

@@ -262,13 +262,18 @@ about.
   `tank-to-air` (base 120, every one of a round a Short, `ALWAYS`); an AA
   mount's kill of a plane stays ground to air (`AA_HULL`); shots at planes
   from the ground count their metres at 5 a point. Re-filmed The Clëäner's
-  431 m IS-2 shell on a Ki-67 (Manchuria) under it.
+  431 m IS-2 shell on a Ki-67 (Manchuria) under it. A gun named by its bore
+  (`20mmType2Multi_wide`) is an AA mount, not a tank; and the best of every
+  kind is a Short whatever `--max` (the 418 m sniper shot had fallen off).
 - **Rounds under the ground on Manchuria** (2026-11-10, `57su2b7u9y`,
   `b4h2mruapn`): FHSW's `BulletCatcher` cubes 20-40 m under its tanks were
   in the drawn hull's box, so the round cam aimed every shell at a driver
-  12-19 m under his tank. `ReplayHull` hides them; `seatPointOf` refuses a
+  12-19 m under his tank, and the gun's pooled round stand-ins hang hidden
+  19 m under it too. `ReplayHull` hides the catchers; `hullRadius` and the
+  seat box (`drawnBox`) measure visible meshes only; `seatPointOf` refuses a
   seat farther than 1.5 radii from the origin. `--trace` records the camera
-  and the ground under it: read it before guessing at a camera fault.
+  and the ground under it: read it before guessing at a camera fault, and
+  after a camera fix film one affected Short and sheet it before the batch.
 - **A kill nobody heard fire is not filmed** (2026-11-10, `g5e45cdyby`: "no
   sound when the player fires"): a roundless kill needs the killer's
   recorded trigger within 1.5 s (`heardShot`).

@@ -569,7 +569,13 @@ ZIS12_25mmAATwin, 20mmType98AA; vanilla's Flak38, Wirbelwind, M16) killing a
 plane. Every one of a round is a Short past the three (`ALWAYS`), titled
 "IS-2 shell downs Ki-67 Hiryu at 431 m", badged Tank downs plane, under the
 strip's Ground to air filter. Shots at planes from the ground count their
-metres at 5 a point, twice a tank kill's. The same review found four faults
+metres at 5 a point, twice a tank kill's. The first night's run filmed
+FHSW's `20mmType2Multi_wide` as a tank's shell (a gun named by its bore, no
+AA in it): `AA_HULL` now takes a bore-named template and a multi-barrel
+mount for a gun. It also dropped Manchuria's 418 m sniper shot, fourth
+behind two shots at planes and a tank kill: the best of every kind is now a
+Short whatever `--max`, which caps only the rest. The same review found four
+faults
 in the night's Shorts, each with a cause and a check:
 
 - *Rounds under the ground* (`57su2b7u9y`, `b4h2mruapn`: "heaps of issues
@@ -583,6 +589,11 @@ in the night's Shorts, each with a cause and a check:
   447 m shot 18 m deep. `ReplayHull` hides the catchers and marks them
   collision, so `hullRadius` and the seat point measure the tank alone
   (`SEAT_REACH`: a seat farther than 1.5 radii from the origin is not one).
+  The first re-film still ran under: the gun's pooled round stand-ins, hidden
+  19 m under the hull, kept the radius at 21 m, and three's box counts hidden
+  geometry. Both measurements now take visible meshes only (`drawnBox`), and
+  the round-under check fails a Short at a tenth of its flight, not a third
+  (the streak passed at a fifth with the sky showing through the ground).
 - *A silent shot* (`g5e45cdyby`, almighty-_-'s 5 kills in 22 s on Arnhem:
   "no sound when the player fires"). The recording holds no rounds and no
   trigger for his K98 kills (bf42plus before the state table); the page

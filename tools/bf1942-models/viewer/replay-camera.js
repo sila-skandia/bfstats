@@ -321,6 +321,11 @@ export function hullRadius(hull) {
   let radius = 0;
   root.traverse(obj => {
     if (!obj.isMesh || !obj.geometry) return;
+    // Only what is drawn: a gun's pooled round stand-ins (`Ho-Chi_GunHEAT_projectile`,
+    // its `_trail`) wait hidden 19 m under an FHSW tank, and FHSW's hidden
+    // bullet catchers 40 m under it; counted, a 3 m tank measured 21 m
+    // (Manchuria, 2026-11-10), and every camera framed by it stood off.
+    if (!obj.visible) return;
     for (let n = obj; n && n !== root; n = n.parent) {
       if (n.userData?.collision || /collision/i.test(n.name || '')) return;
     }

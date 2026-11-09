@@ -59,10 +59,12 @@ const BASE = { 'tank-to-air': 120, 'air-to-air': 100, 'ground-to-air': 90, 'tank
  *  "incredible, this should be something we look for"). */
 export const ALWAYS = Object.freeze(['tank-to-air']);
 /** A hull built to shoot at planes: its kill of one is ground to air, not a
- *  tank's miracle (FHSW's 76mmSPAA29K, ZSUM17, ZIS12_25mmAATwin; vanilla's
- *  Flak38, Wirbelwind, M16). Matched against the hull's template and the
- *  weapon the kill names. */
-const AA_HULL = /aa|flak|spaa|wirbel|ostwind|zsu|bofors|oerlikon|m16|m15|quad|_mg|mg\d|browning|dshk|maxim|vickers|pom/i;
+ *  tank's miracle (FHSW's 76mmSPAA29K, ZSUM17, ZIS12_25mmAATwin, and its
+ *  20mmType2Multi_wide, a gun named by its calibre with no AA in it, which
+ *  the first night filmed as a tank's; vanilla's Flak38, Wirbelwind, M16).
+ *  Matched against the hull's template and the weapon the kill names: a
+ *  tank is named for its model (IS2, Tiger, Ho-Ri2), a gun for its bore. */
+const AA_HULL = /aa|flak|spaa|wirbel|ostwind|zsu|bofors|oerlikon|m16|m15|quad|multi|twin|_mg|mg\d|browning|dshk|maxim|vickers|pom|^\d+(\.\d+)?(mm|cm)/i;
 
 /** A man killed this soon after he spawned (the owner, 2026-11-03: "a
  *  soldier spawns in, and dies within 5 seconds"). One alone is too quick to
@@ -449,9 +451,9 @@ export function reelOf(candidates, kind, { slug = '', level = '', causes = null 
 
 /**
  * The Shorts of a recording from its candidates (best first): the best of
- * each kind first, then the best of the rest, at most `max`, none within
- * SAME_MOMENT of another, none whose key is in `taken` (already clipped).
- * Every kill of an ALWAYS kind is picked whatever `max` (a tank's second
+ * each kind first, whatever `max`, then the best of the rest up to `max`,
+ * none within SAME_MOMENT of another, none whose key is in `taken` (already
+ * clipped). Every kill of an ALWAYS kind is picked too (a tank's second
  * plane of the round is as much a miracle as its first).
  */
 export function pickShorts(candidates, { max = MAX_PER_RECORDING, taken = new Set() } = {}) {
@@ -459,10 +461,11 @@ export function pickShorts(candidates, { max = MAX_PER_RECORDING, taken = new Se
   const picked = [];
   const clear = c => picked.every(p => Math.abs(p.t - c.t) >= SAME_MOMENT);
   // The best of each kind, the kinds ranked by their best: a crash beats the
-  // third tank kill.
+  // third tank kill. Every kind's best is a Short whatever `max` (2026-11-10:
+  // with shots at planes ranked first, Manchuria's 418 m sniper shot fell
+  // off the three; `max` caps the rest).
   const bests = KINDS.map(kind => fresh.find(c => c.kind === kind)).filter(Boolean).sort((a, b) => b.score - a.score);
   for (const best of bests) {
-    if (picked.length >= max) break;
     if (clear(best)) picked.push(best);
   }
   for (const c of fresh) {
