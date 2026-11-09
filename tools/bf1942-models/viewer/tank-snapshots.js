@@ -49,8 +49,17 @@ export function snapshots(source, { gunName = null, pxPerM = 34, pad = 0.5, dpr 
   model.traverse(o => { if (o.isMesh && o.geometry?.userData?.collision) o.visible = false; });
   scene.add(model);
   model.updateMatrixWorld(true);
+  // The tank's box from its own cluster of meshes: a mod hangs parts far
+  // off some hulls (FHSW's T95 and Valentine carry pieces metres away),
+  // which would shrink the tank to a speck in its picture. Meshes whose
+  // middle is more than 6 m from the median middle are left out.
+  const shown = [];
+  model.traverse(o => { if (o.isMesh && shownIn(o, scene)) shown.push({ o, c: new THREE.Box3().setFromObject(o).getCenter(new THREE.Vector3()) }); });
+  const med = k => { const v = shown.map(x => x.c[k]).sort((a, b) => a - b); return v.length ? v[Math.floor(v.length / 2)] : 0; };
+  const centre = new THREE.Vector3(med('x'), med('y'), med('z'));
   const box = new THREE.Box3();
-  model.traverse(o => { if (o.isMesh && shownIn(o, scene)) box.expandByObject(o); });
+  for (const { o, c } of shown) if (c.distanceTo(centre) <= 6) box.expandByObject(o);
+  if (box.isEmpty()) model.traverse(o => { if (o.isMesh && shownIn(o, scene)) box.expandByObject(o); });
   const gun = gunNode(model, gunName);
   let pivotNode = null;
   for (let a = gun?.parent; a && a !== model; a = a.parent) if (a.userData?.rig?.axes?.pitch) { pivotNode = a; break; }

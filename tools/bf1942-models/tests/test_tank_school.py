@@ -117,6 +117,17 @@ class TankSchoolTests(unittest.TestCase):
         # From 60 degrees above, the roof shows.
         self.assertGreater(self.out["roseAbove"]["mean"], r["0"]["mean"])
 
+    def test_the_aimed_reading_counts_only_what_gets_through(self) -> None:
+        a = self.out["aimed"]
+        # Head-on the proof plate is all there is: nothing gets through.
+        self.assertEqual((a["0"]["hurtShots"], a["0"]["share"]), (None, 0))
+        # From 45 degrees the side plate gets through (3 hits at its angle)
+        # on two thirds of what shows (it is twice the front's length); the
+        # blind average, proof front included, reads 4.
+        self.assertEqual((a["45"]["hurtShots"], a["45"]["shots"]), (3, 4))
+        self.assertTrue(0.6 < a["45"]["share"] < 0.75, a["45"]["share"])
+        self.assertEqual((a["90"]["hurtShots"], a["90"]["share"]), (2, 1))
+
     # --- the words ---------------------------------------------------------------------------
 
     def test_sherman_against_tiger_says_get_off_their_front(self) -> None:
@@ -146,6 +157,7 @@ class TankSchoolTests(unittest.TestCase):
         # 1,714 hits is no answer; a side that takes nothing says so.
         self.assertEqual(w["noAnswer"]["aim"][0], "Shots of yours to kill them: front more than 30, side 4, rear nothing gets through.")
         self.assertIn("Your gun is no answer to their front: get to a side it can hurt.", w["noAnswer"]["aim"])
+        self.assertIn("Only 26% of their front takes damage from your gun: aim at the painted plates, not the grey.", w["thinFront"]["aim"])
         self.assertEqual(w["scratchedBoth"]["headline"], "Neither gun is an answer to the other: this is not a fight.")
 
     # --- the sheet --------------------------------------------------------------------------

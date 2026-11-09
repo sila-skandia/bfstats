@@ -134,6 +134,12 @@ out.bands = [1, 2, 3, 4, 5, 6, 13, null].map(s => R.bandOf(s).id);
 const rose = R.bearingShots(hull, price, 100, { bearings: [0, 45, 90, 180], step: 0.1 });
 out.rose = Object.fromEntries(Object.entries(rose).map(([b, v]) => [b, { mean: v.mean, max: v.max, shots: v.shots, bestShots: v.bestShots }]));
 out.roseAbove = R.bearingShots(hull, price, 100, { bearings: [0], elevation: 60, step: 0.1 })[0];
+// The aimed reading: hits on a plate the gun gets through, and how much of
+// the side those plates cover. With the front plate made proof, nothing gets
+// through head-on; from 45 degrees only the side plate does.
+const proofFront = def => (def === 52 ? 0 : price(def));
+out.aimed = Object.fromEntries(Object.entries(R.bearingShots(hull, proofFront, 100, { bearings: [0, 45, 90], step: 0.1 }))
+  .map(([b, v]) => [b, { hurtShots: v.share > 0 ? v.hurtShots : null, share: v.share, shots: v.shots }]));
 out.faceTable = R.faceTable(hull, price, 100).map(f => [f.material, f.damage, f.shots]);
 
 // --- words ------------------------------------------------------------------------
@@ -149,6 +155,7 @@ out.words = {
   cannot: W.matchupWords(sherman, ghost),
   cannotEither: W.matchupWords(ghost, ghost),
   noAnswer: W.matchupWords(sherman, scratch),
+  thinFront: W.matchupWords(sherman, tank('Thin', 3, 30, 4, { 0: { shots: 3, bestShots: 3, share: 0.26 }, 90: { shots: 3, bestShots: 3, share: 0.24 }, 180: { shots: 3, bestShots: 3, share: 0.5 } })),
   scratchedBoth: W.matchupWords(tank('A', 3, 30, 4, S(40, 50, 60)), tank('B', 3, 30, 4, S(35, 45, 31))),
   shermanTiger: W.matchupWords(sherman, tiger),
   tigerSherman: W.matchupWords(tiger, sherman),

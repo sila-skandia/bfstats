@@ -32,6 +32,10 @@ export function aimWords(you, them) {
   if (!hurtsAtAll(them)) return ['Your gun cannot hurt them from any side: no plate that faces you takes damage from its round. Leave them to someone who can.'];
   const out = [plain(f, sd, r) ? `Their front takes ${f} of your shot${s(f)}, their side ${sd}, their rear ${r}.` : faces3('Shots of yours to kill them', f, sd, r)];
   if (f == null || f > NO_ANSWER) out.push('Your gun is no answer to their front: get to a side it can hurt.');
+  const share = them.shots[0]?.share;
+  if (f != null && share != null && share < 0.6) {
+    out.push(`Only ${Math.round(share * 100)}% of their front takes damage from your gun: aim at the painted plates, not the grey.`);
+  }
   if (r != null && sd != null && r >= sd) out.push('Their rear is no softer than their side: going round the back buys nothing over the flank.');
   else if (r === 1) out.push('A square hit on their rear plate kills them outright.');
   if (them.shots[0].bestShots === 1 && f > 1) out.push('Their front has a one-shot spot: look for the red on it.');

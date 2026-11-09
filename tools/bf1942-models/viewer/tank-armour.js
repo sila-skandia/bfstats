@@ -107,6 +107,7 @@ export function bearingShots(root, price, hitpoints, { bearings = [0, 30, 60, 90
     const r2 = new THREE.Vector3().crossVectors(r1, dir);
     const n = Math.ceil(R / step);
     let sum = 0, max = 0, hits = 0;
+    const hurting = [];
     // The grid sits half a step off the hull's middle, so no ray runs
     // exactly along a plate's edge.
     for (let i = -n; i < n; i++) {
@@ -123,14 +124,25 @@ export function bearingShots(root, price, hitpoints, { bearings = [0, 30, 60, 90
         if (!best) continue;
         const d = price(best.material) * angleFactor(Math.abs(best.normal.dot(dir)), angleMod);
         sum += d; max = Math.max(max, d); hits++;
+        if (d > 0) hurting.push(d);
       }
     }
     const mean = hits ? sum / hits : 0;
+    // A gunner aims at what their gun gets through. `hurtShots` is the shots
+    // a hit on a hurting plate needs (the median such hit), and `share` how
+    // much of what they see those plates cover. `shots` is the blind
+    // average, misses on plates the gun cannot hurt included: on a hull of
+    // mixed thickness (FHSW's T95, 25 to 250 mm) it reads 12 head-on and 40
+    // at 30 degrees while a 3-shot plate shows from every side.
+    hurting.sort((x, y) => x - y);
+    const median = hurting.length ? hurting[Math.floor((hurting.length - 1) / 2)] : 0;
     out[az] = {
       mean: Math.round(mean * 10) / 10,
       max: Math.round(max * 10) / 10,
       shots: shotsFor(hitpoints, mean),
       bestShots: shotsFor(hitpoints, max),
+      hurtShots: shotsFor(hitpoints, median),
+      share: hits ? Math.round(hurting.length / hits * 100) / 100 : 0,
       area: Math.round(hits * step * step * 10) / 10,
     };
   }

@@ -103,25 +103,13 @@
 
 /* 02: the gun's pitch for each distance, and the sight. */
 .tks-intro { margin: 0; max-width: 80ch; color: var(--mm-ink-muted); font-size: 13px; line-height: 1.5; }
-.tks-lanes, .tks-sights, .tks-rockers { display: grid; grid-template-columns: repeat(auto-fit, minmax(min(100%, 440px), 1fr)); gap: 14px 24px; }
-.tks-lane, .tks-sight, .tks-rockers figure { margin: 0; display: flex; flex-direction: column; justify-content: space-between; gap: 8px; min-width: 0; padding: 10px 12px 12px; border: 1px solid var(--mm-rule); border-radius: 4px; background: var(--mm-stage); }
-.tks-lane svg, .tks-rockers svg { display: block; width: 100%; height: auto; max-height: 230px; overflow: visible; }
-.tks-lane figcaption, .tks-sight figcaption, .tks-rockers figcaption { color: var(--mm-ink-soft); font-size: 12.5px; line-height: 1.45; }
-.tks-lane figcaption b, .tks-sight figcaption b, .tks-rockers figcaption b { font: 600 11px/1.2 var(--mm-font-mono); letter-spacing: 0.12em; text-transform: uppercase; margin-right: 6px; }
-.tks-lane figcaption em { font-style: normal; color: var(--mm-ink); font-weight: 600; }
+.tks-sights, .tks-rockers { display: grid; grid-template-columns: repeat(auto-fit, minmax(min(100%, 440px), 1fr)); gap: 14px 24px; }
+.tks-sight, .tks-rockers figure { margin: 0; display: flex; flex-direction: column; justify-content: space-between; gap: 8px; min-width: 0; padding: 10px 12px 12px; border: 1px solid var(--mm-rule); border-radius: 4px; background: var(--mm-stage); }
+.tks-sight figcaption, .tks-rockers figcaption { color: var(--mm-ink-soft); font-size: 12.5px; line-height: 1.45; }
+.tks-sight figcaption b, .tks-rockers figcaption b { font: 600 11px/1.2 var(--mm-font-mono); letter-spacing: 0.12em; text-transform: uppercase; margin-right: 6px; }
 .is-you > figcaption b { color: var(--tks-you); }
 .is-them > figcaption b { color: var(--tks-them); }
 .tks-ground { stroke: var(--mm-rule-strong); stroke-width: 1; }
-.tks-bore { stroke: var(--mm-ink-faint); stroke-width: 1; stroke-dasharray: 3 4; }
-.tks-fan { stroke: var(--mm-ink-faint); stroke-width: 1.2; }
-.is-you .tks-fan.is-lit { stroke: var(--tks-you); stroke-width: 2.4; }
-.is-them .tks-fan.is-lit { stroke: var(--tks-them); stroke-width: 2.4; }
-.tks-fan-label { fill: var(--mm-ink-muted); font: 400 15px var(--mm-font-mono); }
-.tks-fan-label.is-level { fill: var(--mm-ink-faint); }
-.tks-fan-label.is-lit { fill: var(--mm-ink); font-weight: 600; }
-.tks-sight figcaption { display: flex; flex-wrap: wrap; gap: 2px 6px; align-items: baseline; }
-.tks-sight figcaption span { color: var(--mm-ink-muted); font-size: 12px; }
-.tks-sight svg { display: block; width: 100%; max-width: 420px; height: auto; border-radius: 3px; }
 .tks-sight-sky { fill: #1b1d1a; }
 .tks-sight-horizon { stroke: #3a3d33; stroke-width: 1; }
 .tks-sight-bracket { fill: none; stroke: var(--mm-ink-muted); stroke-width: 1.2; }
@@ -129,8 +117,6 @@
 .tks-sight-cross { stroke: var(--mm-ink); stroke-width: 2; fill: none; }
 .is-you .tks-sight-cross { stroke: var(--tks-you); }
 .is-them .tks-sight-cross { stroke: var(--tks-them); }
-.tks-sight-label { fill: var(--mm-ink); font: 500 11.5px var(--mm-font-mono); }
-.tks-sight-label.is-dim { fill: var(--mm-ink-muted); font-weight: 400; }
 .tks-more summary { cursor: pointer; color: var(--mm-ink-muted); font: 500 10.5px/1.6 var(--mm-font-mono); letter-spacing: 0.12em; text-transform: uppercase; }
 .tks-more summary:hover { color: var(--mm-ink); }
 .tks-more[open] summary { margin-bottom: 6px; }
@@ -255,3 +241,45 @@
   .tks-f-tags { flex-direction: row; grid-column: 2; }
   .tks-f-acts { grid-column: 2; }
 }
+.tks-clock svg text { paint-order: stroke; stroke: rgb(12 12 12 / 0.85); stroke-width: 3px; fill: var(--mm-ink); }
+.tks-clock svg path.is-fill { stroke: none; }
+.tks-clock-key { flex-basis: 100%; margin: 0; max-width: 80ch; color: var(--mm-ink-muted); font-size: 12px; line-height: 1.45; }
+
+/* 02, second round: the elevation chart and the two sights. */
+.tks-elev { margin: 0; display: flex; flex-direction: column; gap: 10px; padding: 12px 14px; border: 1px solid var(--mm-rule); border-radius: 4px; background: var(--mm-stage); }
+.tks-elev-key { display: flex; flex-wrap: wrap; gap: 10px 28px; align-items: center; }
+.tks-elev-key span { display: grid; grid-template-columns: auto auto; grid-template-rows: auto auto; column-gap: 10px; align-items: center; }
+.tks-elev-key img { grid-row: 1 / 3; height: 34px; width: auto; }
+.tks-elev-key b { font: 600 11px/1.2 var(--mm-font-mono); letter-spacing: 0.12em; text-transform: uppercase; }
+.tks-elev-key .is-you b { color: var(--tks-you); }
+.tks-elev-key .is-them b { color: var(--tks-them); }
+.tks-elev-key small { color: var(--mm-ink-muted); font: 400 10.5px var(--mm-font-mono); }
+.tks-elev-chart { display: block; width: 100%; height: auto; }
+.tks-grid { stroke: var(--mm-rule); stroke-width: 1; }
+.tks-target-line { stroke: var(--mm-ink-faint); stroke-width: 1; stroke-dasharray: 4 4; }
+.tks-curve { fill: none; stroke-width: 2.5; }
+.tks-curve.is-you { stroke: var(--tks-you); }
+.tks-curve.is-them { stroke: var(--tks-them); }
+.tks-dot { stroke: var(--mm-stage); stroke-width: 2; }
+.tks-dot.is-you { fill: var(--tks-you); }
+.tks-dot.is-them { fill: var(--tks-them); }
+.tks-dot-label { font: 600 12px var(--mm-font-mono); text-anchor: end; paint-order: stroke; stroke: var(--mm-stage); stroke-width: 4px; }
+.tks-dot-label.is-you { fill: var(--tks-you); }
+.tks-dot-label.is-them { fill: var(--tks-them); }
+.tks-curve-name { font: 500 11px var(--mm-font-mono); letter-spacing: 0.06em; }
+.tks-curve-name.is-you { fill: var(--tks-you); }
+.tks-curve-name.is-them { fill: var(--tks-them); }
+.tks-sight { align-items: center; }
+.tks-sight figcaption { align-self: stretch; display: flex; flex-wrap: wrap; gap: 2px 8px; align-items: baseline; }
+.tks-sight figcaption span { color: var(--mm-ink-muted); font-size: 12px; }
+.tks-sight svg { display: block; width: 100%; max-width: 360px; height: auto; border-radius: 3px; }
+.tks-sight-label { fill: var(--mm-ink); font: 500 12px var(--mm-font-mono); }
+.tks-sight-words { align-self: stretch; margin: 0; color: var(--mm-ink-soft); font-size: 12.5px; line-height: 1.45; text-align: center; }
+.tks-sight-note { grid-column: 1 / -1; margin: 0; color: var(--mm-ink-faint); font: 400 10.5px var(--mm-font-mono); text-align: center; }
+.tks-rockers figure { align-items: center; justify-content: center; }
+.tks-rockers svg { display: block; width: 100%; max-width: 520px; height: auto; max-height: 220px; overflow: visible; }
+.tks-rockers figcaption { align-self: stretch; }
+.tks-steady-empty { margin: 0; padding: 18px; border: 1px dashed var(--mm-rule-strong); border-radius: 4px; color: var(--mm-ink-muted); font-size: 13px; text-align: center; }
+.tks-steady.is-empty .tks-rockers, .tks-steady.is-empty .tks-trace, .tks-steady.is-empty .tks-steady-bar, .tks-steady.is-empty .tks-steady-words, .tks-steady.is-empty .tks-steady-note { display: none; }
+.tks-steady:not(.is-empty) .tks-steady-empty { display: none; }
+.tks-elev-same { color: var(--mm-ink-muted); font: 400 11px var(--mm-font-mono); font-style: normal; }

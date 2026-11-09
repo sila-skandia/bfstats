@@ -436,3 +436,38 @@ Each row: the kill shot's range, who beat whom in what (weight, hit points at
 the start, hits of shots), the level, date and length, its badges, WATCH
 (the round replay at the fight's start) and MATCHUP (the two tanks in the
 every-tank arena, the winner's yours).
+
+## Third round: what a gunner reads (2026-11-09)
+
+The owner on FHSW's Valentine VIII against a T95 GMC: do those numbers look
+right, "my tank shows 30+ hits to the front"; and everything below the stage
+looks unfinished, nothing centred, the sight's text overlapping.
+
+**The numbers were right, the clock's summary was not.** The Valentine's
+57 mm round does nothing to the T95's 130 to 250 mm plates and 50 to 80 to
+its thinner ones. The clock averaged every ray, misses on proof plates
+included, so it read 12 head-on and "30+" at 30 degrees while a 3-hit plate
+showed from every side. `bearingShots` now also gives `hurtShots` (the
+median hit on a plate the gun gets through) and `share` (how much of that
+side those plates cover). The clock shows the first as its number and fills
+each sector out from the hull by the second; the words read the same
+("Only 22% of their front takes damage from your gun: aim at the painted
+plates"). The T95 from the Valentine: 3 hits on 26% of its front, 4 on 9% at
+30 degrees, 3 on 50% of its rear. Vanilla barely moves: a Sherman needs 13
+hits on a Tiger's front plate, every plate of it hurting.
+
+**The guns.** The per-tank fan only worked for vanilla's slow shells: FHSW's
+guns fire at 465 to 800 m/s, so every line sat at 0.2 degrees and the tanks
+were specks in empty frames. Now one chart: how high each gun must point
+for each distance, both tanks on it with their pictures in the key, the
+target's distance marked and read off ("0.22 deg", "7.7 deg"); a slow shell
+climbs, a fast one stays flat. Under it the two sights share one angular
+window, so they compare; the window holds only the target, the cross and
+the gap, and the words go under it ("Aim straight at them: by 200 m the
+shell drops 0.8 m, less than half their height").
+
+**Pictures of mod tanks.** Some FHSW models carry parts metres from the hull,
+which shrank the tank to a speck in its picture; `tank-snapshots.js` now
+boxes a tank by the meshes within 6 m of their median middle.
+
+**Steadiness on an unmeasured mod** is one line, not empty frames.

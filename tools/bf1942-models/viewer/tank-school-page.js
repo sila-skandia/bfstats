@@ -267,16 +267,17 @@ root.innerHTML = `
       </div>
       <div class="tks-legend" aria-label="Shots to kill"></div>
       <div class="tks-clocks">
-        <figure class="tks-clock is-them"><div></div><figcaption><b>Theirs</b> your shots to kill, from each side</figcaption></figure>
-        <figure class="tks-clock is-you"><div></div><figcaption><b>Yours</b> their shots to kill, from each side</figcaption></figure>
+        <figure class="tks-clock is-them"><div></div><figcaption><b>Theirs</b> your hits to kill, from each side</figcaption></figure>
+        <figure class="tks-clock is-you"><div></div><figcaption><b>Yours</b> their hits to kill, from each side</figcaption></figure>
+        <p class="tks-clock-key">The number: hits on a plate the gun gets through. The fill: how much of that side those plates cover; a thin sliver means a small target, grey means nothing gets through.</p>
       </div>
       <div class="tks-words-pair"><ul class="tks-words tks-aim"></ul><ul class="tks-words tks-exposed"></ul></div>
     </section>
     <section class="tks-card tks-guns" aria-labelledby="tks-h-guns">
       <header class="tks-card-head"><small>02</small><h2 id="tks-h-guns">The guns: how far up to aim</h2></header>
-      <p class="tks-intro">A tank shell drops, so to hit a tank further away the gun points higher. Each tank below is drawn to scale with its gun at the angle each distance needs; the line for the target is lit. Under them, what each gunner sees: the cross is where the gun points, and it has to sit that far above the target.</p>
+      <p class="tks-intro">A shell drops, so the further the target, the higher the gun must point. The chart is how high each gun must point for each distance: a slow shell climbs steeply, a fast one stays nearly flat. Under it, what each gunner sees at the distance you pick: the cross is where the gun points, and it has to sit that far above the target.</p>
       <label class="tks-range"><span>Target at</span><input type="range" min="50" max="400" step="10" value="200"><b></b></label>
-      <div class="tks-lanes"></div>
+      <figure class="tks-elev"><div class="tks-elev-key"></div><svg class="tks-elev-chart" viewBox="0 0 760 270" role="img" aria-label="How high each gun must point for each distance"></svg></figure>
       <div class="tks-sights"></div>
       <ul class="tks-words tks-gun-words"></ul>
       <details class="tks-more"><summary>All the gun numbers</summary><table class="tks-table tks-gun-table"></table></details>
@@ -295,6 +296,7 @@ root.innerHTML = `
       <div class="tks-rockers"><figure class="is-you"><svg></svg><figcaption></figcaption></figure><figure class="is-them"><svg></svg><figcaption></figcaption></figure></div>
       <ul class="tks-words tks-steady-words"></ul>
       <svg class="tks-trace" viewBox="0 0 560 150" role="img" aria-label="The hull's swing over time"></svg>
+      <p class="tks-steady-empty">Not measured for this game or mod yet: its tanks have not been driven through the tank law. Vanilla's are.</p>
       <p class="tks-steady-note"></p>
     </section>
     <section class="tks-card tks-drive" aria-labelledby="tks-h-drive">
@@ -314,7 +316,7 @@ const ui = {
   canvas: q('.tks-canvas'), stage: q('.tks-stage'), load: q('.tks-load'), loadRows: q('.tks-load-rows'), tip: q('.tks-tip'), view: q('.tks-view'), legend: q('.tks-legend'),
   clockThem: q('.tks-clock.is-them > div'), clockYou: q('.tks-clock.is-you > div'),
   aim: q('.tks-aim'), exposed: q('.tks-exposed'),
-  lanes: q('.tks-lanes'), sights: q('.tks-sights'), range: q('.tks-range input'), rangeOut: q('.tks-range b'), gunTable: q('.tks-gun-table'), gunWords: q('.tks-gun-words'),
+  elevKey: q('.tks-elev-key'), elevChart: q('.tks-elev-chart'), sights: q('.tks-sights'), range: q('.tks-range input'), rangeOut: q('.tks-range b'), gunTable: q('.tks-gun-table'), gunWords: q('.tks-gun-words'),
   scrub: q('.tks-scrub'), clockNow: q('.tks-clock-now'), steadyWords: q('.tks-steady-words'),
   driveTable: q('.tks-drive-table'), hullWords: q('.tks-hull-words'),
   scenarios: q('.tks-steady .tks-seg'), play: q('.tks-play'), rockers: [...root.querySelectorAll('.tks-rockers figure')],
@@ -655,17 +657,23 @@ const BEARINGS = [0, 30, 60, 90, 120, 150, 180];
 function clockSvg(byBearing, label) {
   if (!byBearing) return '<p class="tks-empty">No collision faces in this model.</p>';
   const R0 = 46, R1 = 76, C = 86;
-  const sector = (deg, shots) => {
+  // Each sector: the shots a hit on a plate the gun gets through needs (the
+  // number, and its band's colour), filled out from the hull by how much of
+  // that side those plates cover (`tank-armour.js` `bearingShots`).
+  const sector = (deg, v) => {
+    const shots = v?.share > 0 ? v.hurtShots : null;
     const a0 = (deg - 15 - 90) * Math.PI / 180, a1 = (deg + 15 - 90) * Math.PI / 180;
     const p = (r, a) => `${(C + r * Math.cos(a)).toFixed(1)} ${(C + r * Math.sin(a)).toFixed(1)}`;
+    const ring = (r0, r1, fill, cls = '') => `<path${cls} d="M${p(r0, a0)} L${p(r1, a0)} A${r1} ${r1} 0 0 1 ${p(r1, a1)} L${p(r0, a1)} A${r0} ${r0} 0 0 0 ${p(r0, a0)}Z" fill="${fill}"/>`;
     const mid = (deg - 90) * Math.PI / 180, rm = (R0 + R1) / 2;
-    return `<path d="M${p(R0, a0)} L${p(R1, a0)} A${R1} ${R1} 0 0 1 ${p(R1, a1)} L${p(R0, a1)} A${R0} ${R0} 0 0 0 ${p(R0, a0)}Z" fill="${bandOf(shots).color}"/>`
+    const reach = R0 + (R1 - R0) * Math.min(1, Math.max(shots == null ? 0 : 0.14, v?.share ?? 0));
+    return ring(R0, R1, IMMUNE.color) + (shots == null ? '' : ring(R0, reach, bandOf(shots).color, ' class="is-fill"'))
       + `<text x="${(C + rm * Math.cos(mid)).toFixed(1)}" y="${(C + rm * Math.sin(mid) + 4).toFixed(1)}">${shots == null ? '-' : shots > NO_ANSWER ? `${NO_ANSWER}+` : shots}</text>`;
   };
   let body = '';
   for (let deg = 0; deg < 360; deg += 30) {
     const b = deg <= 180 ? deg : 360 - deg;
-    body += sector(deg, byBearing[b]?.shots ?? null);
+    body += sector(deg, byBearing[b] ?? null);
   }
   const hull = `<rect x="${C - 11}" y="${C - 22}" width="22" height="44" rx="3" class="tks-clock-hull"/><circle cx="${C}" cy="${C - 2}" r="8" class="tks-clock-hull"/><path d="M${C} ${C - 10}V${C - 34}" class="tks-clock-gun"/>`;
   return `<svg viewBox="0 0 172 172" role="img" aria-label="${esc(label)}">${body}${hull}`
@@ -688,74 +696,77 @@ function drawClocks() {
 
 // --- 02: the guns ---------------------------------------------------------------------
 
-const FAN = [100, 200, 300, 400];
 const deg = r => r * 180 / Math.PI;
 
-/** One tank side-on, to scale, with its gun drawn at the elevation each
- *  distance needs (true angles), the target's lit. */
-function laneSvg(entry, R, who) {
-  const snap = entry.snaps.side;
-  const gun = entry.tank.gun;
-  const L = 330;
-  const lines = [...new Set([...FAN, R])].sort((a, b) => a - b).map(d => ({ d, e: elevationFor(gun, d, { maxElevation: gun.up }), lit: d === R }));
-  const reachable = lines.filter(l => l.e != null);
-  const top = Math.min(0, ...reachable.map(l => snap.pivot.y - L * Math.sin(l.e * Math.PI / 180) - 22 - 18 * reachable.length));
-  const W = snap.width + L + 130, H = Math.max(snap.height, snap.pivot.y + 20) - top;
-  let svg = `<line class="tks-ground" x1="0" y1="${snap.groundY}" x2="${W}" y2="${snap.groundY}"/>`
-    + `<image href="${snap.url}" x="0" y="0" width="${snap.width}" height="${snap.height}"/>`
-    + `<line class="tks-bore" x1="${snap.pivot.x}" y1="${snap.pivot.y}" x2="${snap.pivot.x + L}" y2="${snap.pivot.y}"/>`
-    + `<text class="tks-fan-label is-level" x="${snap.pivot.x + L + 6}" y="${snap.pivot.y + 4}">level</text>`;
-  // Labels kept at least 13 px apart, pushed up from the flattest.
-  let lastY = Infinity;
-  for (const l of reachable) {
-    const a = l.e * Math.PI / 180;
-    const x = snap.pivot.x + L * Math.cos(a), y = snap.pivot.y - L * Math.sin(a);
-    const ly = Math.min(y + 5, lastY - 18);
-    lastY = ly;
-    if (!FAN.includes(l.d) && !l.lit) continue;
-    svg += `<line class="tks-fan${l.lit ? ' is-lit' : ''}" x1="${snap.pivot.x}" y1="${snap.pivot.y}" x2="${x.toFixed(1)}" y2="${y.toFixed(1)}"/>`
-      + `<text class="tks-fan-label${l.lit ? ' is-lit' : ''}" x="${(x + 6).toFixed(1)}" y="${ly.toFixed(1)}">${l.d} m  ${l.e.toFixed(1)}&#176;</text>`;
+/** How high each gun must point for each distance, both on one chart, the
+ *  chosen distance marked. True degrees on the y axis, from 0 to the larger
+ *  gun's need at 400 m (at least 1 degree, so a fast gun's flat line reads
+ *  as flat rather than filling the chart). */
+function elevationSvg(pair, R) {
+  const W = 760, H = 270, L = 54, Rt = 104, T = 16, B = 34;
+  const ranges = []; for (let r = 25; r <= 400; r += 5) ranges.push(r);
+  const curves = pair.map(p => ({ ...p, pts: ranges.map(r => ({ r, e: elevationFor(p.e.tank.gun, r, { maxElevation: p.e.tank.gun.up }) })).filter(x => x.e != null) }));
+  const top = Math.max(1, ...curves.flatMap(c => c.pts.map(x => x.e))) * 1.12;
+  const sx = r => L + (r / 400) * (W - L - Rt), sy = e => T + (1 - e / top) * (H - T - B);
+  let svg = '';
+  // Grid: every 100 m, and a few round degrees.
+  const step = top > 12 ? 5 : top > 6 ? 2 : top > 3 ? 1 : top > 1.5 ? 0.5 : 0.25;
+  for (let e = 0; e <= top + 1e-9; e += step) {
+    svg += `<line class="tks-grid" x1="${L}" y1="${sy(e).toFixed(1)}" x2="${W - Rt}" y2="${sy(e).toFixed(1)}"/>`
+      + `<text class="tks-tick is-y" x="${L - 8}" y="${(sy(e) + 4).toFixed(1)}">${e === 0 ? 'level' : `${+e.toFixed(2)}&#176;`}</text>`;
   }
-  const lit = lines.find(l => l.lit);
-  const drop = dropAt(gun, R);
-  const targetH = entry.target.snaps.side.heightM;
-  const caption = lit?.e == null
-    ? `<b>${esc(entry.tank.name)}</b> cannot reach ${R} m: the gun lifts only ${n1(gun.up)} deg.`
-    : `<b>${esc(entry.tank.name)}</b> to hit at ${R} m: gun <em>${lit.e.toFixed(1)} deg</em> up. `
-      + `Aimed straight at the target, the shell drops ${n1(drop)} m on the way, ${n1(drop / targetH)} times the ${esc(entry.target.tank.name)}'s height.`;
-  return `<figure class="tks-lane ${who}"><svg viewBox="0 ${top.toFixed(1)} ${W.toFixed(1)} ${H.toFixed(1)}" role="img" aria-label="${esc(entry.tank.name)}: gun angle for each distance">${svg}</svg><figcaption>${caption}</figcaption></figure>`;
+  for (let r = 0; r <= 400; r += 100) svg += `<text class="tks-tick" x="${sx(r)}" y="${H - 12}">${r} m</text>`;
+  svg += `<line class="tks-target-line" x1="${sx(R)}" y1="${T}" x2="${sx(R)}" y2="${H - B}"/>`;
+  const labels = [], names = [];
+  for (const c of curves) {
+    if (c.pts.length > 1) svg += `<path class="tks-curve ${c.who}" d="${c.pts.map((x, i) => `${i ? 'L' : 'M'}${sx(x.r).toFixed(1)} ${sy(x.e).toFixed(1)}`).join('')}"/>`;
+    const eR = elevationFor(c.e.tank.gun, R, { maxElevation: c.e.tank.gun.up });
+    if (eR != null) {
+      svg += `<circle class="tks-dot ${c.who}" cx="${sx(R)}" cy="${sy(eR).toFixed(1)}" r="5"/>`;
+      labels.push({ who: c.who, y: sy(eR), text: `${eR < 1 ? eR.toFixed(2) : eR.toFixed(1)}&#176;` });
+    }
+    const end = c.pts[c.pts.length - 1];
+    if (end) names.push({ who: c.who, x: sx(end.r) + 8, y: sy(end.e) + 4, text: c.e.tank.name });
+  }
+  // The names at the curves' ends, kept 15 px apart and inside the chart.
+  names.sort((a, b) => a.y - b.y);
+  for (let i = 1; i < names.length; i++) names[i].y = Math.max(names[i].y, names[i - 1].y + 15);
+  for (const n of names) svg += `<text class="tks-curve-name ${n.who}" x="${n.x.toFixed(1)}" y="${Math.min(n.y, H - B).toFixed(1)}">${esc(n.text.length > 14 ? `${n.text.slice(0, 13)}.` : n.text)}</text>`;
+  // The two readings at the target, kept 16 px apart.
+  labels.sort((a, b) => a.y - b.y);
+  for (let i = 1; i < labels.length; i++) labels[i].y = Math.max(labels[i].y, labels[i - 1].y + 16);
+  for (const l of labels) svg += `<text class="tks-dot-label ${l.who}" x="${sx(R) - 10}" y="${(l.y + 4).toFixed(1)}">${l.text}</text>`;
+  return svg;
 }
 
-/** What the gunner sees at R m: the target at its true size against a window
- *  of a few degrees, and the cross where the gun must point. */
-function sightSvg(entry, R, who) {
+/** What one gunner sees at R m: a window `span` degrees tall (the same for
+ *  both gunners, so the two compare), the target at its true size, and the
+ *  cross where the gun must point. Words go under it, not on it. */
+function sightSvg(entry, R, span) {
   const gun = entry.tank.gun;
   const e = elevationFor(gun, R, { maxElevation: gun.up });
   const tgt = entry.target.snaps.front;
-  const W = 320, H = 230;
-  const tH = deg(Math.atan(tgt.heightM / R));
-  const span = Math.max((e ?? gun.up) + tH * 2 + 2.5, 5);   // degrees, top to bottom
+  const W = 360, H = 240;
   const k = H / span;                                         // px a degree
+  const tH = deg(Math.atan(tgt.heightM / R));
   const s = (deg(Math.atan(1 / R)) * k) / tgt.pxPerM;         // image px -> window px
-  const cx = W / 2, cy = H - 22 - (tH / 2) * k;               // the target's middle
+  const cx = W / 2, groundY = H - 18, cy = groundY - (tH / 2) * k;
   const iw = tgt.width * s, ih = tgt.height * s;
-  const ix = cx - tgt.middle.x * s, iy = cy - tgt.middle.y * s;
   let svg = `<rect class="tks-sight-sky" x="0" y="0" width="${W}" height="${H}"/>`
-    + `<line class="tks-sight-horizon" x1="0" y1="${(cy + (tH / 2) * k).toFixed(1)}" x2="${W}" y2="${(cy + (tH / 2) * k).toFixed(1)}"/>`
-    + `<image href="${tgt.url}" x="${ix.toFixed(1)}" y="${iy.toFixed(1)}" width="${iw.toFixed(1)}" height="${ih.toFixed(1)}"/>`
-    + `<path class="tks-sight-bracket" d="M${cx - iw / 2 - 5} ${cy - ih / 2 - 3}h-4v${ih + 6}h4M${cx + iw / 2 + 5} ${cy - ih / 2 - 3}h4v${ih + 6}h-4"/>`;
+    + `<line class="tks-sight-horizon" x1="0" y1="${groundY}" x2="${W}" y2="${groundY}"/>`
+    + `<image href="${tgt.url}" x="${(cx - tgt.middle.x * s).toFixed(1)}" y="${(cy - tgt.middle.y * s).toFixed(1)}" width="${iw.toFixed(1)}" height="${ih.toFixed(1)}"/>`;
+  // Brackets at least 14 px tall, so a far tank is still found.
+  const bh = Math.max(ih, 14) / 2 + 3, bw = Math.max(iw, 14) / 2 + 5;
+  svg += `<path class="tks-sight-bracket" d="M${cx - bw + 4} ${cy - bh}h-4v${bh * 2}h4M${cx + bw - 4} ${cy - bh}h4v${bh * 2}h-4"/>`;
   if (e != null) {
     const ay = cy - e * k;
-    svg += `<line class="tks-sight-gap" x1="${cx}" y1="${(cy - 4).toFixed(1)}" x2="${cx}" y2="${(ay + 9).toFixed(1)}"/>`
-      + `<path class="tks-sight-cross" d="M${cx - 14} ${ay}h10M${cx + 4} ${ay}h10M${cx} ${ay - 14}v10M${cx} ${ay + 4}v10"/>`
-      + `<text class="tks-sight-label" x="${cx + 20}" y="${(ay + 4).toFixed(1)}">aim here: ${e.toFixed(1)}&#176; above</text>`
-      + `<text class="tks-sight-label is-dim" x="${cx + 20}" y="${(cy + 4).toFixed(1)}">the ${esc(entry.target.tank.name)}, ${R} m</text>`;
-  } else {
-    svg += `<text class="tks-sight-label" x="${cx}" y="30" text-anchor="middle">out of reach</text>`;
+    if (cy - ay > bh + 10) {
+      svg += `<line class="tks-sight-gap" x1="${cx}" y1="${(cy - bh - 2).toFixed(1)}" x2="${cx}" y2="${(ay + 12).toFixed(1)}"/>`
+        + `<text class="tks-sight-label" x="${cx + 10}" y="${((ay + cy - bh) / 2 + 4).toFixed(1)}">${e.toFixed(e < 1 ? 2 : 1)}&#176;</text>`;
+    }
+    svg += `<path class="tks-sight-cross" d="M${cx - 16} ${ay}h11M${cx + 5} ${ay}h11M${cx} ${ay - 16}v11M${cx} ${ay + 5}v11"/>`;
   }
-  const head = who === 'is-you' ? 'Through your sight' : 'Through their sight';
-  return `<figure class="tks-sight ${who}"><figcaption><b>${head}</b><span>${esc(entry.tank.name)} at the ${esc(entry.target.tank.name)}, ${R} m. The window is ${n1(span)} deg tall.</span></figcaption>`
-    + `<svg viewBox="0 0 ${W} ${H}" role="img" aria-label="${esc(head)}">${svg}</svg></figure>`;
+  return { svg: `<svg viewBox="0 0 ${W} ${H}" role="img" aria-label="${esc(entry.tank.name)}'s sight on the ${esc(entry.target.tank.name)}">${svg}</svg>`, e };
 }
 
 function drawGuns() {
@@ -763,8 +774,24 @@ function drawGuns() {
   const R = Number(ui.range.value);
   ui.rangeOut.textContent = `${R} m`;
   const pair = [{ who: 'is-you', e: { ...you, target: them } }, { who: 'is-them', e: { ...them, target: you } }];
-  ui.lanes.innerHTML = pair.map(p => laneSvg(p.e, R, p.who)).join('');
-  ui.sights.innerHTML = pair.map(p => sightSvg(p.e, R, p.who)).join('');
+  ui.elevKey.innerHTML = pair.map(p => `<span class="${p.who}"><img src="${p.e.snaps.side.url}" alt="" height="34"><b>${esc(p.e.tank.name)}</b>`
+    + `<small>${n1(p.e.tank.gun.speed)} m/s, ${p.e.tank.gun.gravity === 1 ? 'full gravity' : `${n1(p.e.tank.gun.gravity * 100)}% gravity`}</small></span>`).join('')
+    + (you.tank.gun.speed === them.tank.gun.speed && you.tank.gun.gravity === them.tank.gun.gravity
+      ? '<em class="tks-elev-same">The same shell: one line over the other.</em>' : '');
+  ui.elevChart.innerHTML = elevationSvg(pair, R);
+  // One angular window for both sights: the larger aim, the target, and room.
+  const need = pair.map(p => elevationFor(p.e.tank.gun, R, { maxElevation: p.e.tank.gun.up }) ?? p.e.tank.gun.up);
+  const tallest = Math.max(...pair.map(p => deg(Math.atan(p.e.target.snaps.front.heightM / R))));
+  const span = Math.max(Math.max(...need) * 1.25 + tallest * 2 + 0.6, 1.5);
+  ui.sights.innerHTML = pair.map(p => {
+    const sv = sightSvg(p.e, R, span);
+    const tH = p.e.target.snaps.front.heightM, drop = dropAt(p.e.tank.gun, R);
+    const words = sv.e == null ? `Out of reach: the gun lifts only ${n1(p.e.tank.gun.up)} deg.`
+      : drop < tH * 0.5 ? `Aim straight at them: by ${R} m the shell drops ${n1(drop)} m, less than half their height.`
+      : `Put the cross ${sv.e.toFixed(sv.e < 1 ? 2 : 1)} deg above them: the shell drops ${n1(drop)} m by ${R} m, ${n1(drop / tH)} times their height.`;
+    return `<figure class="tks-sight ${p.who}"><figcaption><b>${p.who === 'is-you' ? 'Your sight' : 'Their sight'}</b><span>${esc(p.e.tank.name)} at the ${esc(p.e.target.tank.name)}, ${R} m</span></figcaption>`
+      + sv.svg + `<p class="tks-sight-words">${esc(words)}</p></figure>`;
+  }).join('') + `<p class="tks-sight-note">Both windows are ${n1(span)} deg tall, the target at its true size.</p>`;
   const guns = [{ who: 'is-you', t: you.tank }, { who: 'is-them', t: them.tank }];
   const row = (label, f, hint = '') => `<tr><th scope="row">${label}${hint ? `<small>${hint}</small>` : ''}</th>${guns.map(g => `<td class="${g.who}">${f(g.t)}</td>`).join('')}</tr>`;
   ui.gunTable.innerHTML = `<thead><tr><th></th><th class="is-you">${esc(you.tank.name)}<small>yours</small></th><th class="is-them">${esc(them.tank.name)}<small>theirs</small></th></tr></thead><tbody>`
@@ -839,12 +866,9 @@ function drawSteady(t = steadyT) {
   const traces = pair.map(p => p.e.tank.sheet?.traces?.[scenario] ?? null);
   const sums = pair.map(p => p.e.tank.sheet?.steady?.[scenario] ?? null);
   ui.steadyNote.textContent = SCENARIO_WORDS[scenario];
-  if (!traces[0] && !traces[1]) {
-    ui.trace.innerHTML = `<text class="tks-tick" x="280" y="80">Not measured for this mod yet</text>`;
-    ui.steadyWords.innerHTML = '';
-    for (const f of ui.rockers) { f.querySelector('svg').outerHTML = '<svg></svg>'; f.querySelector('figcaption').textContent = ''; }
-    return;
-  }
+  // Nothing measured for either tank: one line instead of empty frames.
+  q('.tks-steady').classList.toggle('is-empty', !traces[0] && !traces[1]);
+  if (!traces[0] && !traces[1]) return;
   const any = traces.find(Boolean);
   const dur = Math.max(...traces.map(x => (x ? (x.values.length - 1) / x.hz : 0)));
   ui.scrub.max = String(dur);
@@ -1018,7 +1042,10 @@ async function refresh() {
   setShow(stage.show);
   // The words read each hull's clock at eye level.
   const rose = e => roseFor(e, 0);
-  const shotsOf = e => Object.fromEntries(Object.entries(rose(e) ?? {}).map(([b, v]) => [b, v]));
+  // The words read the clock as the gunner aims: hits on a plate the gun
+  // gets through, with how much of the side those plates cover.
+  const shotsOf = e => Object.fromEntries(Object.entries(rose(e) ?? {}).map(([b, v]) => [b,
+    { shots: v.share > 0 ? v.hurtShots : null, bestShots: v.bestShots, share: v.share }]));
   const youW = { ...you.tank, shots: shotsOf(you) }, themW = { ...them.tank, shots: shotsOf(them) };
   const words = matchupWords(youW, themW);
   ui.headline.textContent = words.headline;
