@@ -508,6 +508,18 @@ kills did not count as on foot, so the streak was filmed part by part
 Re-filmed as `yt7n9d5ejd` (39 s, every part ends on him) and the 294 m
 single as `s2emvyp9db`.
 
+**A long shot can be at a man in a hull (2026-11-09, latest).** The owner:
+"we're missing some of the longest shots", Deus Ex Machina's 428 m K98 kill
+on Midway. Not the recorder's range: both men were whole around it. The
+victim was a PT boat's crewman (Elco80), and a long shot needed both men on
+foot, so it made no Short; nor did his 186 m kill of an MG42 gunner or his
+226 m kill of a jeep driver. A long shot is now a man on foot's aimed kill of
+100 m or more at a man on foot or in anything but a plane or armour (those
+stay ground-to-air and tank-buster). Over the 24 shared recordings it found
+eight kills longer than their recording's longest live long shot, most of
+them snipers picking off AA, MG and anti-tank gunners (402 m on Battle of
+Britain, 306 m on Savoy); filmed and uploaded with the 428 m (`3qy6mzcy9e`).
+
 **What to build next** is in `IDEAS.md`: per-player packages (Player of the
 Round, the streak, Nemesis, a vehicle's life, a 30 s recap) and new single
 moments, from web research checked against four real rounds.

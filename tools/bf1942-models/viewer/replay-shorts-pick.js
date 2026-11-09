@@ -181,7 +181,10 @@ export function kindOfKill(killer, victim, distance, weapon) {
   // A man on foot who kills a tank (a PIAT, a bazooka, a charge): the owner,
   // 2026-11-09, on Arnhem's 351 kills making no single Short at all.
   if (killer.foot && victim.kind === 'armour') return 'tank-buster';
-  if (killer.foot && victim.foot && distance >= LONG_SHOT && !NOT_AIMED.test(String(weapon ?? ''))) return 'long-shot';
+  // A long shot from a man on foot, at a man on foot or one in a boat, a jeep
+  // or on a gun (2026-11-09: Deus Ex Machina's 428 m K98 kill of a PT boat's
+  // crewman on Midway made no Short; the victim had to be on foot).
+  if (killer.foot && distance >= LONG_SHOT && !NOT_AIMED.test(String(weapon ?? ''))) return 'long-shot';
   return null;
 }
 

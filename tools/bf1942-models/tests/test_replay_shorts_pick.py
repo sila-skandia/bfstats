@@ -3,7 +3,7 @@ features/replay-shorts): which kills of a recording become Shorts.
 
 A render job films the best few kills of each shared recording as 9:16
 Shorts. The picker classes each kill by what the two men were in (air to air,
-ground to air, tank to tank, a long shot on foot), titles it from its facts,
+ground to air, tank to tank, a long shot from a man on foot), titles it from its facts,
 keys it so it is never clipped twice, and picks at most three a recording,
 one of a kind first and never two of the same moment.
 """
@@ -45,9 +45,13 @@ class ShortsPickTests(unittest.TestCase):
         self.assertEqual(k["longShot"], "long-shot")
         # A man on foot who kills a tank (2026-11-09: Arnhem's 30 PIAT kills); a jeep is not one.
         self.assertEqual(k["footOnTank"], "tank-buster")
+        # A sniper's long shot at a man in a boat, a jeep or on a gun
+        # (2026-11-09: a 428 m kill of a PT boat's crewman made no Short).
+        for name in ("sniperOnBoat", "sniperOnJeep", "sniperOnGun"):
+            self.assertEqual(k[name], "long-shot", name)
         # Not worth a Short: armour on a jeep or a mortar, a rifle kill under
         # 100 m, a thrown grenade, a tank on a man on foot.
-        for name in ("tankToJeep", "tankToMortar", "shortShot", "longGrenade", "tankOnFoot", "footOnJeep"):
+        for name in ("tankToJeep", "tankToMortar", "shortShot", "longGrenade", "tankOnFoot", "footOnJeep", "closeOnBoat"):
             self.assertIsNone(k[name], name)
 
     def test_the_key_is_the_apis(self) -> None:
