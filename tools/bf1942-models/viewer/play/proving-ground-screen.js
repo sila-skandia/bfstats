@@ -6,10 +6,10 @@
 //
 // Two screens in the panel, the way a game's training menu reads:
 //
-// - **The drills.** LIVE-FIRE RANGE and DOGFIGHT SCHOOL, each a card with the
-//   game's own loading-screen art. The school is one page whatever the battle
-//   (`dogfight.html`, which keeps its own arena), so its card goes straight
-//   there.
+// - **The drills.** LIVE-FIRE RANGE, DOGFIGHT SCHOOL and TANK SCHOOL, each a
+//   card with the game's own loading-screen art. Each school is one page
+//   whatever the battle (`dogfight.html`, `tanks.html`, which keep their own
+//   arenas), so their cards go straight there.
 // - **Select loadout.** The range is the same empty white floor on every
 //   battle; what changes is the arsenal on it. So the battles are offered as
 //   loadouts: a grid of their menu thumbnails, each with the two nations and
@@ -51,6 +51,7 @@ export const NATIONS = Object.freeze({
 const DRILL_ART = {
   range: 'maps/_shared/load/desert.webp',
   school: 'maps/battle_of_britain/load.webp',
+  tanks: 'maps/_shared/load/eastern.webp',
 };
 
 const STYLE = `
@@ -89,12 +90,13 @@ const STYLE = `
 .pgm-modes-head { display: flex; align-items: baseline; gap: 12px; flex-wrap: wrap; }
 .pgm-modes-head h2 { margin: 0; font: 800 22px/1 'Trebuchet MS', sans-serif; letter-spacing: .08em; text-transform: uppercase; }
 .pgm-modes-head p { margin: 0; color: var(--pgm-muted); }
-.pgm-modes-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 14px; flex: 1 1 auto; min-height: 0; }
+.pgm-modes-grid { display: grid; grid-template-columns: repeat(3, 1fr); gap: 14px; flex: 1 1 auto; min-height: 0; }
 .pgm-mode { appearance: none; position: relative; display: flex; flex-direction: column; justify-content: flex-end;
   min-height: 0; padding: 0; border: 1px solid var(--pgm-edge); border-radius: 6px; overflow: hidden; isolation: isolate;
   background: #0b0b09; color: var(--pgm-ink); text-align: left; font: inherit; cursor: pointer;
   --accent: var(--pgm-green); transition: border-color .2s ease, box-shadow .2s ease, transform .2s ease; }
 .pgm-mode[data-mode="school"] { --accent: var(--pgm-amber); }
+.pgm-mode[data-mode="tanks"] { --accent: var(--pgm-sky); }
 .pgm-mode-art { position: absolute; inset: 0; z-index: -2; background: #11110e center / cover no-repeat;
   background-image: var(--art); filter: saturate(.85) contrast(1.05); transform: scale(1.02);
   transition: transform .6s cubic-bezier(.2,.7,.2,1), filter .3s ease; }
@@ -242,6 +244,9 @@ const STYLE = `
 .pgm-hints kbd { min-width: 16px; padding: 2px 4px; border: 1px solid rgba(238,236,217,.35); border-radius: 3px; color: var(--pgm-ink);
   font: 700 10px/1 'Courier New', monospace; text-align: center; }
 
+@media (max-width: 1100px) {
+  .pgm-modes-grid { grid-template-columns: repeat(2, 1fr); }
+}
 @media (max-width: 640px) {
   .pgm-modes { padding: 10px; gap: 10px; overflow: auto; }
   .pgm-modes-grid { grid-template-columns: 1fr; grid-auto-rows: minmax(220px, 1fr); flex: none; }
@@ -353,6 +358,18 @@ export function createProvingGroundScreen({
               <span class="pgm-mode-cta">Report for training ${CHEVRON}</span>
             </span>
           </button>
+          <button type="button" class="pgm-mode" data-mode="tanks">
+            <span class="pgm-mode-art" style='--art: ${art(DRILL_ART.tanks)}'></span>
+            <span class="pgm-mode-frame"></span>
+            <span class="pgm-mode-no">03</span>
+            <span class="pgm-mode-body">
+              <span class="pgm-mode-kicker">Armour</span>
+              <span class="pgm-mode-title">Tank school</span>
+              <span class="pgm-mode-text">Pick your tank and theirs: where to aim, where you are exposed, and what each gun and hull make you do.</span>
+              <ul class="pgm-mode-facts" role="list"><li>Hit faces</li><li>Shell arcs</li><li>Hull wobble</li></ul>
+              <span class="pgm-mode-cta">Choose a matchup ${CHEVRON}</span>
+            </span>
+          </button>
         </div>
       </div>
 
@@ -456,6 +473,12 @@ export function createProvingGroundScreen({
     } else {
       rootEl.querySelector('.pgm-mode')?.focus({ preventScroll: true });
     }
+  }
+
+  function openTankSchool() {
+    // The tank school (features/battle-schools): its own page, the matchup
+    // first and no level to load.
+    onStart(new URL(`${root}tanks.html`, location.href).toString());
   }
 
   function openSchool() {
@@ -711,6 +734,7 @@ export function createProvingGroundScreen({
     const mode = e.target.closest('.pgm-mode');
     if (mode) {
       if (mode.dataset.mode === 'school') openSchool();
+      else if (mode.dataset.mode === 'tanks') openTankSchool();
       else setView('loadout');
       return;
     }
