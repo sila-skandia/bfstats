@@ -15,7 +15,7 @@ const viewer = viewerDir();
 installModuleHooks(viewer);
 const imp = name => import(pathToFileURL(path.join(viewer, name)).href);
 const [recording, accuracy] = await Promise.all([imp('replay-recording.js'), imp('replay-accuracy.js')]);
-const { accuracyBoard, accuracySeries, compareBoard, countBy, fireBuckets, playerDetail, rebuildTallies, sortCompare, totalsAt, totalsOf, weaponKind, weaponTableFrom } = accuracy;
+const { accuracyBoard, accuracySeries, compareBoard, countBy, fireBuckets, playerDetail, rebuildTallies, sortCompare, totalsAt, totalsOf, weaponFilter, weaponKind, weaponsOn, weaponTableFrom } = accuracy;
 
 const line = o => JSON.stringify(o);
 const toward = (from, to) => {
@@ -140,9 +140,11 @@ results.noWeapons = weaponKind('Mp40', null);
 // pid, one after; a teamkill is no kill.
 {
   const krec = { ...rec, kills: [
-    { t: 5.2, kind: 'kill', killer: 3, victim: 5 }, { t: 21.6, kind: 'kill', killer: 3, victim: 5 },
-    { t: 12.2, kind: 'kill', killer: 8, victim: 5 }, { t: 17, kind: 'kill', killer: 8, victim: 5 },
-    { t: 26.6, kind: 'tk', killer: 3, victim: 9 },
+    { t: 5.2, kind: 'kill', killer: 3, victim: 5, weapon: 'Mp40' },
+    { t: 21.6, kind: 'kill', killer: 3, victim: 5, weapon: 'GrenadeAllies' },
+    { t: 12.2, kind: 'kill', killer: 8, victim: 5, weapon: 'Mp40' },
+    { t: 17, kind: 'kill', killer: 8, victim: 5, weapon: null, inferredWeapon: 'Mp40' },
+    { t: 26.6, kind: 'tk', killer: 3, victim: 9, weapon: 'GrenadeAllies' },
   ] };
   const fresh = accuracyBoard(krec, options);
   const pick = c => sortCompare(c.rows, 'acc').map(r => [r.p.name, r.fired, r.hit, r.kills, r.perKill === null ? null : +r.perKill.toFixed(2), r.few,
@@ -157,6 +159,19 @@ results.noWeapons = weaponKind('Mp40', null);
     early: compareBoard(krec, fresh, { t: 13 }).rows.map(r => [r.p.name, r.kills]).sort(),
     byFired: sortCompare(compareBoard(krec, fresh).rows, 'fired').map(r => r.p.name),
     byPerKill: sortCompare(compareBoard(krec, fresh).rows, 'perKill').map(r => r.p.name),
+  };
+  // One weapon (2026-11-09): "compare players using a particular weapon".
+  const one = kind => {
+    const c = compareBoard(krec, fresh, { kind });
+    return { fewAt: c.fewAt, rows: sortCompare(c.rows, 'fired').map(r => [r.p.name, r.fired, r.hit, r.kills, r.few, +r.share.toFixed(3)]) };
+  };
+  results.weapon = {
+    mp40: one(weaponFilter('Mp40')), grenade: one(weaponFilter('GrenadeAllies')),
+    both: one(weaponFilter(['Mp40', 'GrenadeAllies'])), key: weaponFilter(['Mp40', 'GrenadeAllies', 'mp40']),
+    infantryKills: compareBoard(krec, fresh, { kind: 'infantry' }).rows.find(r => r.p.name === 'Shooter').kills,
+    list: weaponsOn(fresh).map(w => [w.name, w.kind, w.players, w.fired, w.hit]),
+    merged: weaponsOn(fresh, 0, t => (t === 'GrenadeAllies' || t === 'Mp40' ? 'Gun' : t)).map(w => [w.name, w.tmpls.length, w.players, w.fired]),
+    team1: weaponsOn(fresh, 1).length,
   };
 }
 // A server recording: one `f` per barrel, a bot's fake round marked, the

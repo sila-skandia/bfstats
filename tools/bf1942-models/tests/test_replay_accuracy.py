@@ -184,7 +184,7 @@ class ReplayAccuracyTests(unittest.TestCase):
 
     def test_the_comparison_by_board_side_and_clock(self) -> None:
         c = self.results["compare"]
-        # On Air only the pilot, and no rounds a kill: kills are not by weapon.
+        # On Air only the pilot, who killed nobody: no rounds a kill.
         self.assertEqual(c["air"], [["Pilot", 6, 1, 0, None, True, 0.0, "BF109"]])
         self.assertEqual(c["axis"], 0)
         # At 13 s: the joiner has not fired, the leaver has his kill, the
@@ -193,6 +193,35 @@ class ReplayAccuracyTests(unittest.TestCase):
         self.assertEqual(c["byFired"], ["Shooter", "Pilot", "Leaver", "Joiner"])
         # Fewest rounds a kill first; no kills last.
         self.assertEqual(c["byPerKill"], ["Joiner", "Leaver", "Shooter", "Pilot"])
+
+    def test_everyone_on_one_weapon(self) -> None:
+        # Owner, 2026-11-09: "compare players using a particular weapon". The
+        # numbers are that weapon's alone, the kills the kill feed gave it
+        # (the seat's where the feed names none), and share is how much of
+        # their round it was.
+        w = self.results["weapon"]
+        self.assertEqual(w["mp40"]["rows"], [
+            ["Shooter", 40, 12, 1, False, 0.952], ["Leaver", 2, 1, 1, True, 1.0], ["Joiner", 1, 0, 1, True, 1.0]])
+        self.assertEqual(w["grenade"]["rows"], [["Shooter", 2, 1, 1, True, 0.048]])
+        self.assertEqual(w["infantryKills"], 2)
+
+    def test_too_few_scales_with_the_weapon(self) -> None:
+        # Twenty rounds on All; for one weapon a fifth of the most anyone
+        # fired of it, at least three: nobody throws twenty grenades.
+        w = self.results["weapon"]
+        self.assertEqual(self.results["compare"]["rows"][0][5], False)
+        self.assertEqual(w["mp40"]["fewAt"], 8)
+        self.assertEqual(w["grenade"]["fewAt"], 3)
+
+    def test_weapons_of_one_name_are_one(self) -> None:
+        # Each side's grenade is "Grenade" in the game: one entry on the
+        # picker and one filter, whoever's they were.
+        w = self.results["weapon"]
+        self.assertEqual(w["key"], "row:grenadeallies|mp40")
+        self.assertEqual([r[:3] for r in w["both"]["rows"]], [["Shooter", 42, 13], ["Leaver", 2, 1], ["Joiner", 1, 0]])
+        self.assertEqual(w["list"], [["Mp40", "infantry", 3, 43, 13], ["BF109", "air", 1, 6, 1], ["GrenadeAllies", "infantry", 1, 2, 1]])
+        self.assertEqual(w["merged"], [["Gun", 2, 3, 45], ["BF109", 1, 1, 6]])
+        self.assertEqual(w["team1"], 0)
 
 
 if __name__ == "__main__":

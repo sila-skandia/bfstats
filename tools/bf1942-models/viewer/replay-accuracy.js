@@ -490,12 +490,36 @@ export function recordedHits(rec, weapons = null) {
   return out;
 }
 
+/** A board filter: 'all', a board ('infantry', 'vehicle', 'air', 'other'),
+ *  or weapons, `row:<lower template>|...` (`weaponFilter`): one weapon, or
+ *  the several the game gives one name (each side's grenade is "Grenade"). */
+export function weaponFilter(tmpls) {
+  return `row:${[...new Set([tmpls].flat().map(lower))].sort().join('|')}`;
+}
+
+const filterSets = new Map();
+
+/** The lower-case templates a weapon filter names, or null for 'all' or a board. */
+export function filterWeapons(kind) {
+  if (typeof kind !== 'string' || !kind.startsWith('row:')) return null;
+  let set = filterSets.get(kind);
+  if (!set) filterSets.set(kind, set = new Set(kind.slice(4).split('|')));
+  return set;
+}
+
+/** Is board row `r` (`{ tmpl, kind }`) under filter `kind`? */
+export function rowIn(r, kind) {
+  if (kind === 'all') return true;
+  const w = filterWeapons(kind);
+  return w !== null ? w.has(lower(r.tmpl)) : r.kind === kind;
+}
+
 /** One board entry's totals over the rows of `kind` ('all' for every row). */
 export function totalsOf(entry, kind = 'all') {
   let fired = 0;
   let hit = 0;
   for (const r of entry.rows) {
-    if (kind !== 'all' && r.kind !== kind) continue;
+    if (!rowIn(r, kind)) continue;
     fired += r.fired;
     hit += r.hit;
   }
@@ -513,8 +537,8 @@ function trackOf(entry, key) {
   let all = tracks.get(entry);
   if (!all) tracks.set(entry, all = new Map());
   if (all.has(key)) return all.get(key);
-  const row = key.startsWith('row:') ? key.slice(4) : null;
-  const wanted = (tmpl, kind) => (row !== null ? lower(tmpl) === row : key === 'all' || kind === key);
+  const rows = filterWeapons(key);
+  const wanted = (tmpl, kind) => (rows !== null ? rows.has(lower(tmpl)) : key === 'all' || kind === key);
   const fires = (entry.shots ?? []).filter(s => wanted(s.tmpl, entry.kinds?.get(lower(s.tmpl))));
   const hits = (entry.hitLog ?? []).filter(h => wanted(h.tmpl, h.kind));
   const ft = new Float64Array(fires.length);
@@ -566,7 +590,7 @@ export function totalsAt(entry, kind, t) {
   let hit = 0;
   let estimated = false;
   for (const r of entry.rows ?? []) {
-    if (kind !== 'all' && r.kind !== kind) continue;
+    if (!rowIn(r, kind)) continue;
     if (!(r.fired > 0) && !(r.hit > 0)) continue;
     const track = trackOf(entry, `row:${lower(r.tmpl)}`);
     let f;
@@ -786,23 +810,49 @@ export const FEW_ROUNDS = 20;
 
 const killTimes = new WeakMap();
 
-/** When `entry` killed and when he died: `{ kills: [t], deaths: [t] }`, in
- *  time order. A reused pid's kills go to whoever held the name then. */
+/** When `entry` killed and when he died: `{ kills: [t], deaths: [t], byWeapon:
+ *  Map<lower template, [t]> }`, in time order. A kill's weapon is the kill
+ *  feed's, the same stat template as the board's rows (the vehicle he was
+ *  in, else the hand weapon), or the seat it was put down to. A reused pid's
+ *  kills go to whoever held the name then. */
 export function killTimesOf(rec, entry) {
   let out = killTimes.get(entry);
   if (out) return out;
   const { pid, name } = entry;
   const kills = [];
   const deaths = [];
+  const byWeapon = new Map();
   for (const k of rec.kills ?? []) {
-    if (k.killer === pid && k.kind === 'kill' && nameAt(rec, pid, k.t) === name) kills.push(k.t);
+    if (k.killer === pid && k.kind === 'kill' && nameAt(rec, pid, k.t) === name) {
+      kills.push(k.t);
+      const w = lower(k.weapon ?? k.inferredWeapon);
+      if (w) {
+        if (!byWeapon.has(w)) byWeapon.set(w, []);
+        byWeapon.get(w).push(k.t);
+      }
+    }
     if (k.victim === pid && nameAt(rec, pid, k.t) === name) deaths.push(k.t);
   }
   kills.sort((a, b) => a - b);
   deaths.sort((a, b) => a - b);
-  out = { kills, deaths };
+  for (const list of byWeapon.values()) list.sort((a, b) => a - b);
+  out = { kills, deaths, byWeapon };
   killTimes.set(entry, out);
   return out;
+}
+
+/** `entry`'s kills with the weapons under filter `kind` by time `t` (null:
+ *  the whole round). `kindOf`, `Map<lower template, board>`, places a weapon
+ *  he never fired a round of; his own rows place the rest. */
+export function killsUnder(rec, entry, kind = 'all', t = null, kindOf = null) {
+  const { kills, byWeapon } = killTimesOf(rec, entry);
+  if (kind === 'all') return t === null ? kills.length : upTo(kills, t);
+  let n = 0;
+  for (const [w, times] of byWeapon) {
+    if (!rowIn({ tmpl: w, kind: kindOf?.get(w) ?? entry.kinds?.get(w) ?? null }, kind)) continue;
+    n += t === null ? times.length : upTo(times, t);
+  }
+  return n;
 }
 
 /** How many of the sorted times `times` are at or before `t`. */
@@ -821,17 +871,25 @@ function upTo(times, t) {
  * The Accuracy tab's comparison table: every player with rounds on `kind`,
  * side by side, at recording time `t` (null for the whole round), on `team`
  * (0 for both). Each row is `{ p, fired, hit, accuracy, estimated, kills,
- * perKill, vs, few, top, mix }`:
- * - `perKill`, rounds fired a kill (on 'all' only: the kills are not by weapon);
+ * perKill, vs, few, top, mix, share }`. `kind` is any filter `rowIn` takes:
+ * - `kills`, the kill feed's kills with the weapons under `kind` (a weapon no
+ *   one fired a round of, a jeep's, is under 'all' only);
+ * - `perKill`, rounds fired a kill, null with no kills;
+ * - `share`, the part of his whole round's rounds that are under `kind`;
  * - `vs`, his accuracy less the average of everyone on the table, in [0, 1];
- * - `few`, under FEW_ROUNDS rounds, too few to judge;
+ * - `few`, under `fewAt` rounds, too few to judge: FEW_ROUNDS, or for one
+ *   weapon a fifth of the most anyone fired of it, 3 at least (nobody throws
+ *   twenty grenades);
  * - `top`, the weapon he fired most on `kind`, `{ tmpl, fired, hit }`, whole round;
  * - `mix`, his whole round's rounds by board, `{ infantry, vehicle, air, other }`.
- * Also `avg` and `best` (the best accuracy of FEW_ROUNDS rounds or more), and
+ * Also `avg`, `best` (the best accuracy of `fewAt` rounds or more), `fewAt`, and
  * `teams`, `{ 1: {...}, 2: {...} }` each `{ players, fired, hit, accuracy, kills }`
  * over both teams whatever `team` is.
  */
 export function compareBoard(rec, board, { kind = 'all', t = null, team = 0 } = {}) {
+  // Which board each weapon is on, from every player's rows.
+  const kindOf = new Map();
+  for (const p of board ?? []) for (const r of p.rows) kindOf.set(lower(r.tmpl), r.kind);
   const all = [];
   for (const p of board ?? []) {
     const final = totalsOf(p, kind);
@@ -844,20 +902,24 @@ export function compareBoard(rec, board, { kind = 'all', t = null, team = 0 } = 
       at = now;
       estimated = now.estimated;
     }
-    const { kills: kt } = killTimesOf(rec, p);
-    const kills = t === null ? kt.length : upTo(kt, t);
+    const kills = killsUnder(rec, p, kind, t, kindOf);
     const mix = { infantry: 0, vehicle: 0, air: 0, other: 0 };
     let top = null;
     for (const r of p.rows) {
       mix[r.kind in mix ? r.kind : 'other'] += r.fired;
-      if ((kind === 'all' || r.kind === kind) && r.fired > 0 && (!top || r.fired > top.fired)) top = r;
+      if (rowIn(r, kind) && r.fired > 0 && (!top || r.fired > top.fired)) top = r;
     }
     all.push({
       p, fired: at.fired, hit: at.hit, accuracy: at.accuracy, estimated, kills,
-      perKill: kind === 'all' && kills ? at.fired / kills : null,
-      few: at.fired < FEW_ROUNDS, top: top ? { tmpl: top.tmpl, fired: top.fired, hit: top.hit } : null, mix,
+      perKill: kills ? at.fired / kills : null,
+      few: false, top: top ? { tmpl: top.tmpl, fired: top.fired, hit: top.hit } : null, mix,
+      share: p.fired > 0 ? final.fired / p.fired : null,
     });
   }
+  // Whole-round rounds, so a row does not flicker across the line as the clock runs.
+  const most = Math.max(0, ...all.map(r => totalsOf(r.p, kind).fired));
+  const fewAt = filterWeapons(kind) ? Math.max(3, Math.min(FEW_ROUNDS, Math.round(most / 5))) : FEW_ROUNDS;
+  for (const r of all) r.few = r.fired < fewAt;
   const teams = {};
   for (const side of [1, 2]) {
     const mine = all.filter(r => r.p.team === side);
@@ -871,12 +933,41 @@ export function compareBoard(rec, board, { kind = 'all', t = null, team = 0 } = 
   const avg = fired > 0 ? hit / fired : null;
   for (const r of rows) r.vs = avg !== null && r.accuracy !== null ? r.accuracy - avg : null;
   const best = Math.max(0, ...rows.filter(r => !r.few).map(r => r.accuracy ?? 0));
-  return { rows, avg, best: best > 0 ? best : null, teams };
+  return { rows, avg, best: best > 0 ? best : null, teams, fewAt };
+}
+
+/**
+ * Every weapon fired on `board` (players on `team`, 0 for both), for the
+ * comparison table's weapon picker: `[{ key, name, tmpls, kind, players,
+ * fired, hit, accuracy }]`, `key` the filter (`weaponFilter`), most players
+ * first. `nameOf(tmpl)` is the name the game shows: weapons of one name on
+ * one board are one entry (each side's grenade), as a player sees them.
+ */
+export function weaponsOn(board, team = 0, nameOf = tmpl => tmpl) {
+  const out = new Map();
+  for (const p of board ?? []) {
+    if (team && p.team !== team) continue;
+    const mine = new Set();
+    for (const r of p.rows) {
+      if (!(r.fired > 0)) continue;
+      const name = String(nameOf(r.tmpl) ?? r.tmpl);
+      const id = `${r.kind}|${name.toLowerCase()}`;
+      const w = out.get(id) ?? { name, tmpls: new Set(), kind: r.kind, players: 0, fired: 0, hit: 0 };
+      w.tmpls.add(r.tmpl);
+      if (!mine.has(id)) w.players++;
+      mine.add(id);
+      w.fired += r.fired;
+      w.hit += r.hit;
+      out.set(id, w);
+    }
+  }
+  return [...out.values()].map(w => ({ ...w, tmpls: [...w.tmpls], key: weaponFilter([...w.tmpls]), accuracy: w.fired > 0 ? w.hit / w.fired : null }))
+    .sort((a, b) => b.players - a.players || b.fired - a.fired || a.name.localeCompare(b.name));
 }
 
 /** Sort the comparison table's rows in place by `key`: 'acc' (and 'vs'),
  *  'fired', 'hit', 'kills' most first; 'perKill' fewest first. A row under
- *  FEW_ROUNDS rounds goes after the rest on accuracy, a row with no kills
+ *  its table's `fewAt` rounds (`few`) goes after the rest on accuracy, a row with no kills
  *  after the rest on rounds a kill. Ties go to more rounds, then the name. */
 export function sortCompare(rows, key = 'acc') {
   const by = {

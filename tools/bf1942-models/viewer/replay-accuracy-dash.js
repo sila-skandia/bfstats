@@ -15,7 +15,7 @@
 // part of his firing: the running counts keep the recording's shape and are
 // scaled to finish on the server's numbers (replay-accuracy.js `totalsAt`).
 
-import { accuracySeries, compareBoard, countBy, FEW_ROUNDS, fireBuckets, sortCompare, totalsAt, totalsOf } from './replay-accuracy.js';
+import { accuracySeries, compareBoard, countBy, FEW_ROUNDS, filterWeapons, fireBuckets, killsUnder, rowIn, sortCompare, totalsAt, totalsOf, weaponFilter, weaponsOn } from './replay-accuracy.js';
 import { fmtClock } from './replay-timeline.js';
 
 function el(tag, className, text) {
@@ -229,6 +229,48 @@ export const ACC_DASH_STYLE = `
 .rp-accd-key { display: inline-flex; flex-wrap: wrap; gap: 4px 10px; margin-right: 10px; }
 .rp-accd-key i { display: inline-block; width: 8px; height: 8px; border-radius: 2px; margin-right: 4px; vertical-align: -1px; }
 
+.rp-crow-wpn[data-w] { cursor: pointer; }
+.rp-crow-wpn[data-w]:hover span { color: var(--rp-gold); text-decoration: underline dotted; text-underline-offset: 3px; }
+.rp-crow-share { display: grid; grid-template-columns: 32px minmax(0, 1fr); align-items: center; gap: 6px; }
+.rp-crow-share small { text-align: right; }
+.rp-crow-share .track { position: relative; height: 4px; border-radius: 2px; background: rgba(255, 255, 255, .07); overflow: hidden; }
+.rp-crow-share .track i { position: absolute; left: 0; top: 0; bottom: 0; background: rgba(163, 156, 108, .75); }
+.rp-accd-vs .wname { max-width: 150px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; color: var(--rp-gold);
+  font: 800 10px/1.2 var(--rp-font); letter-spacing: .08em; }
+
+/* The Weapon picker. */
+.rp-accd-wpick { position: relative; display: inline-flex; }
+.rp-accd-wbtn { display: inline-flex; align-items: center; gap: 6px; max-width: 190px; }
+.rp-accd-wbtn .lbl { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.rp-accd-wbtn .caret { flex: none; width: 0; height: 0; border-left: 4px solid transparent; border-right: 4px solid transparent; border-top: 5px solid currentColor; }
+.rp-accd-wbtn[aria-expanded="true"] .caret { transform: rotate(180deg); }
+.rp-accd-wpick.on .rp-accd-wbtn { border-radius: 4px 0 0 4px; }
+.rp-accd-wclear { position: relative; width: 22px; padding: 0; border: 1px solid var(--rp-gold); border-left: 0; border-radius: 0 4px 4px 0;
+  background: rgba(232, 195, 90, .12); color: var(--rp-ink); cursor: pointer; }
+.rp-accd-wclear::before, .rp-accd-wclear::after { content: ''; position: absolute; left: 50%; top: 50%; width: 9px; height: 1.5px; background: currentColor; }
+.rp-accd-wclear::before { transform: translate(-50%, -50%) rotate(45deg); }
+.rp-accd-wclear::after { transform: translate(-50%, -50%) rotate(-45deg); }
+.rp-accd-wclear:hover { color: var(--rp-gold); }
+.rp-accd-wpick:not(.on) .rp-accd-wclear { display: none; }
+.rp-accd-wmenu { position: absolute; right: 0; top: calc(100% + 6px); z-index: 20; width: min(320px, calc(100vw - 32px)); max-height: 380px;
+  display: flex; flex-direction: column; border: 1px solid var(--rp-edge-strong); border-radius: 6px; background: var(--rp-plate-menu);
+  box-shadow: 0 14px 34px rgba(0, 0, 0, .5); overflow: hidden; }
+.rp-accd-wmenu[hidden] { display: none; }
+.rp-accd-wmenu form { margin: 0; padding: 8px; border-bottom: 1px solid var(--rp-edge); }
+.rp-accd-wmenu input { width: 100%; box-sizing: border-box; padding: 5px 8px; border: 1px solid var(--rp-edge); border-radius: 4px;
+  background: rgba(0, 0, 0, .25); color: var(--rp-ink); font: 12px/1.3 var(--rp-font); }
+.rp-accd-wmenu input:focus { outline: none; border-color: var(--rp-gold); }
+.rp-accd-wmenu .list { overflow: auto; padding: 2px 0 6px; overscroll-behavior: contain; }
+.rp-accd-wmenu .grp { padding: 8px 12px 3px; color: var(--rp-muted); font: 800 9px/1.3 var(--rp-font); letter-spacing: .14em; }
+.rp-accd-wmenu .none { padding: 16px 12px; color: var(--rp-muted); font: 12px/1.4 var(--rp-font); text-align: center; }
+.rp-accd-witem { display: grid; grid-template-columns: minmax(0, 1fr) auto 46px; gap: 10px; align-items: baseline; width: 100%; padding: 5px 12px;
+  border: 0; background: none; color: var(--rp-ink); font: 12px/1.3 var(--rp-font); text-align: left; cursor: pointer; }
+.rp-accd-witem:hover, .rp-accd-witem:focus-visible { background: rgba(255, 255, 255, .08); outline: none; }
+.rp-accd-witem.on { box-shadow: inset 3px 0 0 var(--rp-gold); background: rgba(232, 195, 90, .12); }
+.rp-accd-witem .nm { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-weight: 700; }
+.rp-accd-witem .pl { color: var(--rp-muted); font: 10px var(--rp-mono); }
+.rp-accd-witem .ac { text-align: right; color: var(--rp-gold); font: 11px var(--rp-mono); font-variant-numeric: tabular-nums; }
+
 @media (max-width: 1060px) {
   .rp-accd-cmp .rp-acc-cols, .rp-accd-cmp .rp-arow {
     grid-template-columns: 26px minmax(110px, 1.3fr) minmax(130px, 1.5fr) 50px 54px 46px 40px 54px minmax(90px, 1fr); }
@@ -274,12 +316,146 @@ export class AccuracyDash {
     // 'table', every player side by side, or 'player', one player's dashboard.
     this.view = 'table';
     this.tableSort = 'acc';
+    // The weapon picked, as the game names it; null on All or a board.
+    this.kindName = null;
     // 0 both sides, 1 Axis, 2 Allied.
     this.team = 0;
     this.build();
   }
 
   get player() { return this.ui.player; }
+
+  /** A template's name as the game shows it. */
+  display(tmpl) {
+    return this.ui.lexicon?.()?.names?.[tmpl] ?? tmpl;
+  }
+
+  /** The board filter: 'all', a board, or weapons (`weaponFilter`), `name`
+   *  as the game shows them. */
+  setKind(kind, name = null) {
+    this.kind = kind;
+    const tmpls = filterWeapons(kind);
+    this.kindName = tmpls !== null ? name ?? this.display([...tmpls][0]) : null;
+    this.closeWeaponMenu();
+    for (const [k, node] of Object.entries(this.kindButtons)) node.setAttribute('aria-pressed', String(k === kind));
+    const on = this.kindName !== null;
+    this.wPick.classList.toggle('on', on);
+    this.wBtn.setAttribute('aria-pressed', String(on));
+    this.wLabel.textContent = on ? this.kindName : 'Weapon';
+    this.wBtn.title = on ? `Comparing everyone on the ${this.kindName}: pick another weapon or vehicle` : 'Compare everyone on one weapon or vehicle';
+    this.render(true);
+  }
+
+  /** The Weapon picker beside the boards: every weapon and vehicle fired this
+   *  round, grouped by board, with how many used it. Picking one compares
+   *  everyone on it alone; the cross goes back to All. */
+  buildWeaponPick() {
+    const wrap = el('div', 'rp-accd-wpick');
+    const btn = el('button', 'rp-acc-kind rp-accd-wbtn');
+    btn.type = 'button';
+    btn.setAttribute('aria-haspopup', 'true');
+    btn.setAttribute('aria-expanded', 'false');
+    btn.setAttribute('aria-pressed', 'false');
+    btn.title = 'Compare everyone on one weapon or vehicle';
+    this.wLabel = el('span', 'lbl', 'Weapon');
+    btn.append(this.wLabel, el('i', 'caret'));
+    btn.addEventListener('click', e => {
+      e.stopPropagation();
+      if (this.wMenu.hidden) this.openWeaponMenu();
+      else this.closeWeaponMenu();
+    });
+    const clear = el('button', 'rp-accd-wclear');
+    clear.type = 'button';
+    clear.title = 'Back to all weapons';
+    clear.setAttribute('aria-label', 'Back to all weapons');
+    clear.addEventListener('click', e => {
+      e.stopPropagation();
+      this.setKind('all');
+    });
+    const menu = el('div', 'rp-accd-wmenu');
+    menu.hidden = true;
+    // A form, so Enter picks the first match: the replay keeps keydown to
+    // itself, but leaves a field's typing and its submit alone.
+    const form = el('form');
+    const search = el('input');
+    search.type = 'search';
+    search.placeholder = 'Find a weapon or vehicle';
+    search.setAttribute('aria-label', 'Find a weapon or vehicle');
+    search.autocomplete = 'off';
+    search.spellcheck = false;
+    form.append(search);
+    form.addEventListener('submit', e => {
+      e.preventDefault();
+      e.stopPropagation();
+      const first = this.wList.querySelector('.rp-accd-witem');
+      if (first) this.setKind(first.dataset.key, first.dataset.name);
+    });
+    search.addEventListener('input', () => this.fillWeaponMenu());
+    this.wList = el('div', 'list');
+    this.wList.addEventListener('click', e => {
+      const item = e.target.closest?.('.rp-accd-witem');
+      if (!item) return;
+      e.stopPropagation();
+      this.setKind(item.dataset.key, item.dataset.name);
+    });
+    menu.append(form, this.wList);
+    menu.addEventListener('click', e => e.stopPropagation());
+    wrap.append(btn, clear, menu);
+    this.wPick = wrap;
+    this.wBtn = btn;
+    this.wMenu = menu;
+    this.wSearch = search;
+    this.onOutside = e => {
+      if (!wrap.contains(e.target)) this.closeWeaponMenu();
+    };
+    return wrap;
+  }
+
+  openWeaponMenu() {
+    this.wMenu.hidden = false;
+    this.wBtn.setAttribute('aria-expanded', 'true');
+    this.wSearch.value = '';
+    this.fillWeaponMenu();
+    document.addEventListener('pointerdown', this.onOutside, true);
+    // A phone's keyboard would cover the list: there it waits for a tap.
+    if (!window.matchMedia?.('(pointer: coarse)').matches) this.wSearch.focus({ preventScroll: true });
+  }
+
+  closeWeaponMenu() {
+    if (!this.wMenu || this.wMenu.hidden) return;
+    this.wMenu.hidden = true;
+    this.wBtn.setAttribute('aria-expanded', 'false');
+    document.removeEventListener('pointerdown', this.onOutside, true);
+  }
+
+  fillWeaponMenu() {
+    const board = this.player.accuracy?.() ?? [];
+    const q = this.wSearch.value.trim().toLowerCase();
+    const list = weaponsOn(board, this.team, t => this.display(t))
+      .filter(w => !q || w.name.toLowerCase().includes(q) || w.tmpls.some(t => t.toLowerCase().includes(q)));
+    this.wList.textContent = '';
+    if (!list.length) {
+      this.wList.append(el('div', 'none', q ? 'No weapon or vehicle by that name this round.' : 'No rounds fired yet.'));
+      return;
+    }
+    const groups = [['infantry', 'INFANTRY'], ['vehicle', 'VEHICLES'], ['air', 'AIR'], ['other', 'OTHER']];
+    const known = new Set(['infantry', 'vehicle', 'air']);
+    for (const [kind, title] of groups) {
+      const group = list.filter(w => (known.has(w.kind) ? w.kind : 'other') === kind);
+      if (!group.length) continue;
+      this.wList.append(el('div', 'grp', title));
+      for (const w of group) {
+        const item = el('button', `rp-accd-witem${w.key === this.kind ? ' on' : ''}`);
+        item.type = 'button';
+        item.dataset.key = w.key;
+        const name = w.name;
+        item.dataset.name = name;
+        item.append(el('span', 'nm', name), el('span', 'pl', `${w.players} player${w.players === 1 ? '' : 's'}`), el('span', 'ac', pct(w.accuracy)));
+        item.title = `${name}: ${w.players} player${w.players === 1 ? '' : 's'}, ${int(w.hit)} hits of ${int(w.fired)} rounds, whole round`;
+        this.wList.append(item);
+      }
+    }
+  }
 
   /** Whole round ('final') or so far ('now'). */
   setMode(m) {
@@ -327,13 +503,12 @@ export class AccuracyDash {
       b.setAttribute('aria-pressed', String(kind === 'all'));
       b.addEventListener('click', e => {
         e.stopPropagation();
-        this.kind = kind;
-        for (const [k, node] of Object.entries(this.kindButtons)) node.setAttribute('aria-pressed', String(k === kind));
-        this.render(true);
+        this.setKind(kind);
       });
       kinds.append(b);
       this.kindButtons[kind] = b;
     }
+    kinds.append(this.buildWeaponPick());
     const sides = el('div', 'rp-accd-mode');
     sides.setAttribute('role', 'group');
     sides.setAttribute('aria-label', 'Side');
@@ -430,12 +605,23 @@ export class AccuracyDash {
       sortable('fired', 'FIRED', 'Sort by rounds fired'),
       sortable('hit', 'HITS', 'Sort by hits'),
       sortable('kills', 'K', 'Sort by kills'),
-      sortable('perKill', 'RDS/K', 'Rounds fired a kill, fewest first (All only: kills are not by weapon)', 'c-pk'),
+      sortable('perKill', 'RDS/K', 'Rounds fired a kill, fewest first: the kills made with the weapons on show', 'c-pk'),
       plain('TREND', 'Their accuracy through the round, on one scale for everyone', 'c c-trend'),
-      plain('MAIN WEAPON', 'The weapon they fired most, with its accuracy (whole round)', 'l c-wpn'),
+      this.wpnHead = plain('MAIN WEAPON', 'The weapon they fired most, with its accuracy (whole round). Click one to compare everyone on it', 'l c-wpn'),
       plain('ROLE', 'Where their rounds came from, whole round: on foot, in vehicles, in the air', 'l c-mix'));
     this.tableRows = el('div', 'rp-acc-rows');
     this.tableRows.addEventListener('click', e => {
+      // A player's main weapon: everyone on it.
+      const wpn = e.target.closest?.('.rp-crow-wpn[data-w]');
+      if (wpn) {
+        e.stopPropagation();
+        // Every weapon of its name on its board: each side's grenade is one.
+        const board = this.player.accuracy?.() ?? [];
+        const w = weaponsOn(board, 0, t => this.display(t))
+          .find(x => x.tmpls.some(t => t.toLowerCase() === wpn.dataset.w.toLowerCase()));
+        this.setKind(w?.key ?? weaponFilter(wpn.dataset.w), w?.name ?? this.display(wpn.dataset.w));
+        return;
+      }
       const row = e.target.closest?.('.rp-arow[data-key]');
       if (!row) return;
       e.stopPropagation();
@@ -510,17 +696,26 @@ export class AccuracyDash {
     const rec = player.rec;
     const kind = this.kind;
     const now = this.mode === 'now';
-    const { rows, avg, best, teams } = compareBoard(rec, board, { kind, t: now ? t : null, team: this.team });
+    const { rows, avg, best, teams, fewAt } = compareBoard(rec, board, { kind, t: now ? t : null, team: this.team });
+    this.fewAt = fewAt;
+    this.tableCols.acc.title = `Sort by accuracy. The bars share one scale; the dashed mark is the average. Under ${fewAt} rounds is too few to judge`;
     sortCompare(rows, this.tableSort);
     for (const [k, b] of Object.entries(this.tableCols)) {
       if (k === this.tableSort) b.setAttribute('aria-sort', k === 'perKill' ? 'ascending' : 'descending');
       else b.removeAttribute('aria-sort');
     }
     this.renderSides(teams);
+    const one = this.kindName;
+    this.wpnHead.textContent = one ? 'OF THEIR ROUNDS' : 'MAIN WEAPON';
+    this.wpnHead.title = one ? `How much of their firing all round was the ${one}`
+      : 'The weapon they fired most, with its accuracy (whole round). Click one to compare everyone on it';
     this.tableRows.textContent = '';
     if (!rows.length) {
-      this.tableRows.append(el('div', 'rp-acc-empty', now ? 'Nobody has fired yet.'
-        : this.kind === 'all' && !this.team ? 'No rounds fired in this recording.' : 'No rounds fired on this board.'));
+      const side = this.team ? ' on this side' : '';
+      this.tableRows.append(el('div', 'rp-acc-empty', one
+        ? (now ? `Nobody${side} has fired the ${one} yet.` : `Nobody${side} fired the ${one}.`)
+        : now ? 'Nobody has fired yet.'
+          : this.kind === 'all' && !this.team ? 'No rounds fired in this recording.' : 'No rounds fired on this board.'));
       return;
     }
     const display = name => this.ui.lexicon?.()?.names?.[name] ?? name;
@@ -529,7 +724,7 @@ export class AccuracyDash {
     // So do the trends: the best whole-round accuracy with room for the
     // early swings.
     const shown = board.filter(p => !this.team || p.team === this.team);
-    const finals = shown.map(p => totalsOf(p, kind)).filter(x => x.fired >= FEW_ROUNDS);
+    const finals = shown.map(p => totalsOf(p, kind)).filter(x => x.fired >= fewAt);
     const trendMax = Math.min(1, niceCeil(Math.max(0.05, ...finals.map(x => x.accuracy ?? 0)) * 1.3));
     const trendAvg = roundAverage(shown, kind);
     const duration = rec.duration || 1;
@@ -576,7 +771,8 @@ export class AccuracyDash {
       const rank = el('span', `rk${i < 3 && this.tableSort !== 'perKill' ? ' top' : ''}`, String(i + 1));
       row.append(rank, nm, acc, vs, el('span', `n${est}`, int(r.fired)), el('span', `n${est}`, int(r.hit)),
         el('span', 'n', String(r.kills)), el('span', 'n c-pk', r.perKill === null ? '-' : int(r.perKill)),
-        this.trendCell(p, kind, duration, trendMax, trendAvg, now ? t : duration), this.weaponCell(r.top, display), this.mixCell(r.mix));
+        this.trendCell(p, kind, duration, trendMax, trendAvg, now ? t : duration),
+        one ? this.shareCell(r.share) : this.weaponCell(r.top, display), this.mixCell(r.mix));
       this.tableRows.append(row);
     });
   }
@@ -609,8 +805,20 @@ export class AccuracyDash {
     const cell = el('span', 'rp-crow-wpn c-wpn');
     if (!top) return cell;
     const name = display(top.tmpl);
+    cell.dataset.w = top.tmpl;
     cell.append(el('span', '', name), el('small', '', pct(top.fired ? top.hit / top.fired : null)));
-    cell.title = `${name}: ${int(top.hit)} hits of ${int(top.fired)} rounds, whole round`;
+    cell.title = `${name}: ${int(top.hit)} hits of ${int(top.fired)} rounds, whole round. Click to compare everyone on the ${name}`;
+    return cell;
+  }
+
+  /** With one weapon picked: how much of his whole round's firing it was. */
+  shareCell(share) {
+    const cell = el('span', 'rp-crow-wpn rp-crow-share c-wpn');
+    const bar = el('span', 'track');
+    const fill = el('i');
+    fill.style.width = `${Math.round(Math.min(1, share ?? 0) * 100)}%`;
+    bar.append(fill);
+    cell.append(el('small', '', share === null ? '-' : `${Math.round(share * 100)}%`), bar);
     return cell;
   }
 
@@ -662,6 +870,11 @@ export class AccuracyDash {
       this.setMode(this.mode === 'now' ? 'final' : 'now');
     });
     mid.append(when);
+    if (this.kindName) {
+      const w = el('span', 'wname', this.kindName.toUpperCase());
+      w.title = `Every number here is the ${this.kindName}'s alone`;
+      mid.append(w);
+    }
     this.sides.append(side(1, teams[1], teams[2]), mid, side(2, teams[2], teams[1]));
   }
 
@@ -826,10 +1039,10 @@ export class AccuracyDash {
     d.hits.v.textContent = `${approx}${int(at.hit)}`;
     d.hits.s.textContent = this.mode === 'now' ? `of ${int(final.hit)}` : `${int(final.fired - final.hit)} missed`;
     const until = this.mode === 'now' ? t : Infinity;
-    const kills = detail ? detail.kills.filter(k => k <= until).length : 0;
+    // The kill feed names each kill's weapon: kills with the weapons on this board.
+    const kills = killsUnder(this.player.rec, entry, kind, until === Infinity ? null : until);
     const deaths = detail ? detail.deaths.filter(k => k <= until).length : 0;
-    // Kills are not by weapon in the recording's tally: only on All.
-    d.perKill.v.textContent = kind === 'all' && kills && at.fired >= 1 ? `${approx}${int(at.fired / kills)}` : '-';
+    d.perKill.v.textContent = kills && at.fired >= 1 ? `${approx}${int(at.fired / kills)}` : '-';
     d.perKill.s.textContent = `${kills} kill${kills === 1 ? '' : 's'}, ${deaths} death${deaths === 1 ? '' : 's'}`;
     if (detail) {
       const incoming = countBy(detail.incoming, until);
@@ -839,7 +1052,7 @@ export class AccuracyDash {
       let far = null;
       for (const h of detail.hitDists) {
         if (h.t > until || (far && h.dist <= far.dist)) continue;
-        if (kind !== 'all' && entry.kinds?.get(String(h.tmpl).toLowerCase()) !== kind) continue;
+        if (!rowIn({ tmpl: h.tmpl, kind: entry.kinds?.get(String(h.tmpl).toLowerCase()) }, kind)) continue;
         far = h;
       }
       d.far.v.textContent = far ? metres(far.dist) : '-';
@@ -1051,7 +1264,7 @@ export class AccuracyDash {
     const panel = el('div', 'rp-accd-panel');
     panel.append(heading('WEAPONS'));
     const bars = el('div', 'rp-accd-bars');
-    const rows = entry.rows.filter(r => (this.kind === 'all' || r.kind === this.kind) && (r.fired || r.hit));
+    const rows = entry.rows.filter(r => rowIn(r, this.kind) && (r.fired || r.hit));
     const max = Math.max(1, ...rows.map(r => r.fired));
     for (const r of rows.slice(0, 8)) {
       const bar = el('div', 'rp-accd-bar');
@@ -1182,7 +1395,7 @@ export class AccuracyDash {
     const text = (table
       ? [this.mode === 'now' ? 'Showing the numbers as they stood at the replay\'s clock: pick Whole round for the final ones.'
         : 'Showing the whole round: pick So far to see the numbers as they stood at the replay\'s clock, updating as it plays.',
-      'Click a player for their full breakdown.', counted, rebuiltText, `Under ${FEW_ROUNDS} rounds is too few to judge: faded, and last by accuracy.`]
+      'Click a player for their full breakdown.', counted, rebuiltText, `Under ${this.fewAt ?? FEW_ROUNDS} rounds is too few to judge: faded, and last by accuracy.`]
       : [counted, rebuiltText, 'Ranges, targets and rounds fired at them are from what this recording saw. Click the graph to go to that moment.']).filter(Boolean).join(' ');
     const key = `${table}|${text}`;
     if (this.footKey === key) return;

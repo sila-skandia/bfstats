@@ -101,15 +101,47 @@ opened marked.
   says the same in words.
 - **Both / Axis / Allied** narrows the table and the dashboard's list. It,
   the Whole round / So far toggle and the board filters drive both views.
-- Kills are counted from the kill feed and are the player's whatever the
-  board filter, so rounds a kill is shown on All only. A reused pid's kills go
-  to whoever held the name. The trend, the weapon and the role are the whole
+- Kills are counted from the kill feed, which names each kill's weapon as the
+  same stat template as the rows (the vehicle, else the hand weapon; a seat's
+  `inferredWeapon` where it names none): a board filter or a weapon counts
+  only its own kills, and rounds a kill follows. A reused pid's kills go to
+  whoever held the name. The trend, the weapon and the role are the whole
   round's; the rest follows the clock in "so far".
 - Narrower than 1060 px the trend and role go; on a phone the table keeps
   rank, name, accuracy, fired, hits and kills.
 
-Tests: `test_every_player_side_by_side` and
-`test_the_comparison_by_board_side_and_clock` in
+### One weapon
+
+Asked 2026-11-09: "filter the accuracy all players by the vehicle or player
+type. It needs to be intuitive, but it'd be great to compare players using a
+particular weapon."
+
+- **Weapon** beside All / Infantry / Vehicles / Air opens a list of every
+  weapon and vehicle fired this round, under Infantry, Vehicles and Air, with
+  how many players used it and its accuracy, most players first. Typing
+  narrows it; Enter takes the first. Picked, the button carries its name and
+  a cross back to All.
+- Clicking a player's **main weapon** in the table does the same: the
+  quickest way from "who's good with the Thompson" to the answer.
+- The table is then that weapon alone: its rounds, hits, kills and rounds a
+  kill, the trend of its accuracy, and in place of the main weapon **of their
+  rounds**, how much of their firing it was. The two sides compare on it, the
+  pill between them names it, and a player's dashboard opens on it too.
+- Weapons the game gives one name are one entry and one filter
+  (`weaponsOn`'s `nameOf`, the lexicon): each side's grenade is "Grenade",
+  each side's knife "Knife". A filter is `row:<template>|<template>`
+  (`weaponFilter`, `filterWeapons`, `rowIn`).
+- Too few to judge is twenty rounds on All and the boards. For one weapon it
+  is a fifth of the most anyone fired of it, three at least: nobody throws
+  twenty grenades, and on Bocage every grenade row was faded at twenty.
+- Kit classes (medic, assault, scout...) are not a filter: which kit a weapon
+  belongs to is the mod's, and a player's kit changes through the round. The
+  weapon is what a class is compared on in practice (the Bazooka is the
+  anti-tank kit's, the K98 sniper the scout's).
+
+Tests: `test_every_player_side_by_side`,
+`test_the_comparison_by_board_side_and_clock`, `test_everyone_on_one_weapon`,
+`test_too_few_scales_with_the_weapon` and `test_weapons_of_one_name_are_one` in
 `tests/test_replay_accuracy.py`.
 
 ## Where the numbers come from
