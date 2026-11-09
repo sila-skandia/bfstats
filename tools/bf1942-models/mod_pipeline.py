@@ -301,6 +301,19 @@ STEPS: tuple[Step, ...] = (
               "--out", "{shared}/vehicle-ai.json"),),
        outputs=(("{shared}/vehicle-ai.json", 1),), after=("levels",),
        fixes="bots never board a vehicle on the mod's levels"),
+    _s("tank_school", "Tank school sheet: each tank driven and fired on flat ground "
+       "(drive, steadiness and their traces)",
+       inputs=('{models}/models.json', '{shared}/collision-meshes.json',
+               '{shared}/part-mobility.json', '{shared}/vehicle-ai.json', '{shared}/damage.json'),
+       cmds=(("node", "surveys/tank_school_sheet.mjs", "--mod", "{id}",
+              "--models", "{models}", "--maps", "{maps}",
+              "--out", "{shared}/tank-school.json"),),
+       needs=("{models}/models.json",),
+       outputs=(("{shared}/tank-school.json", 1),),
+       after=("models", "levels", "collision", "part_mobility", "vehicle_ai"),
+       fixes="the tank school's DRIVE and HOW STEADY panels empty for the mod "
+             "(Desert Combat, 2026-11-09); a re-extract or AI change leaves the sheet "
+             "describing the old tanks"),
     _s("trees", "Tree billboard cards",
        cmds=(("python3", "extract_tree_billboards.py", "--mod", "{M}", "--out", "{shared}"),),
        outputs=(("{shared}/trees.json", 1),), after=("levels",),

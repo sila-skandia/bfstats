@@ -7,7 +7,7 @@
 // - `viewer/tank-armour.js`: a box hull with a front, side and rear plate of
 //   its own, priced by a small damage table, cast from each bearing;
 // - `viewer/tank-words.js`: the words for a pairing built from those numbers;
-// - `viewer/tank-school/bf1942.json`: the committed tank sheet.
+// - `tests/fixtures/tank-school-bf1942.json`: vanilla's tank sheet, pinned.
 //
 // Prints one JSON object.
 
@@ -149,7 +149,7 @@ out.faceTable = R.faceTable(hull, price, 100).map(f => [f.material, f.damage, f.
 // --- words ------------------------------------------------------------------------
 const tank = (name, reload, traverse, per100, shots, sheet = null) => ({ name, gun: { reload, traverse, per100 }, shots, sheet });
 const S = (f, s, r, best = f) => ({ 0: { shots: f, bestShots: best }, 90: { shots: s, bestShots: s }, 180: { shots: r, bestShots: r } });
-const sheet = JSON.parse(readFileSync(join(viewer, 'tank-school', 'bf1942.json'), 'utf8'));
+const sheet = JSON.parse(readFileSync(join(here, 'fixtures', 'tank-school-bf1942.json'), 'utf8'));
 const sherman = tank('Sherman', 2.87, 35, 4, S(3, 2, 1, 1), sheet.tanks.Sherman);
 const tiger = tank('Tiger', 4, 20, 4, S(10, 4, 4, 3), sheet.tanks.Tiger);
 const panzer = tank('Panzer IV', 2.87, 35, 2, S(3, 3, 2), sheet.tanks.PanzerIV);

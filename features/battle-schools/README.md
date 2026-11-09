@@ -370,7 +370,7 @@ front, and use your faster turret to stay on their side."
 | `viewer/tank-armour.js` | `pricer` (the damage table, DMG-1, DMG-3), `bandOf`, `bearingShots` (the ray grid from each bearing, every triangle tested directly so it runs on the page's meshes and in node; the engine's angle factor, DMG-4), `faceTable` |
 | `viewer/tank-ballistics.js` | The shell's flight in closed form (FA-23, IMP-7, IMP-8: `projectile-flight.js`'s per-tick parabola): `dropAt`, `elevationFor`, `reach`, `leadAngle`, `degreesPer100`, `arc` |
 | `viewer/tank-words.js` | The sentences |
-| `surveys/tank_school_sheet.mjs` -> `viewer/tank-school/bf1942.json` | Each tank driven through the page's tracked drive on flat ground: the drive numbers, the steadiness and the traces (21 KB). Run with `--models` and `--maps` pointing at a tree that holds the glbs (the viewer's own, or a download of the published ones) |
+| `surveys/tank_school_sheet.mjs` -> `<maps>/_shared/tank-school.json` | Each tank driven and fired through the page's own drive law on flat ground: the drive numbers, the steadiness and the traces. A file of the tree: `mod_pipeline.py`'s `tank_school` step writes it, `publish-mesh-delta.py maps` publishes it. Vanilla's is run by hand (`--models viewer/models --maps viewer/maps`, or `--fetch` for the published tree) and pinned in `tests/fixtures/tank-school-bf1942.json` |
 | `viewer/play/proving-ground-screen.js` | The TANK SCHOOL card |
 
 What it borrows: `armour-damage.js` (`damageMath`, `shotsFor`) and

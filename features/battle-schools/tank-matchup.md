@@ -493,11 +493,35 @@ A vehicle with no shell to fire (the Shilka) is priced by its autocannon.
 was vanilla's only. `surveys/tank_school_sheet.mjs --fetch` now downloads a
 published tree's catalogue, its `_shared` collision, mobility, damage and AI
 data, and its tanks' glbs, and drives them, so every mod has its sheet
-(`viewer/tank-school/<mod>.json`). Leaving the collision data out was tried
+(then `viewer/tank-school/<mod>.json`, now the tree's own: below). Leaving the collision data out was tried
 and is wrong (turns 10 to 40% quicker, the rocking off by up to a third), and
 FHSW's is 24 MB compressed, so the sheets are made ahead rather than in the
 page. A wheeled hull is driven too (the EE-9: 26.5 m/s). The vanilla tanks inside
 Desert Combat's tree measure exactly as in vanilla's sheet.
+
+**The sheet is a file of the tree, made by the mod pipeline.** The owner:
+"if we need to add in extra steps to populate the school data we should do
+this". The sheet first lived in git (`viewer/tank-school/<mod>.json`) and
+was made by hand, so a re-extract or an AI change would have left it
+describing the old tanks. It now lives beside the data it is measured from,
+`<maps>/_shared/tank-school.json`, and `mod_pipeline.py` writes it in its
+`tank_school` step (after `models`, `levels`, `collision`, `part_mobility`
+and `vehicle_ai`; its inputs are those files, so a change to any re-runs
+it). It is published with the rest of `_shared` by
+`scripts/publish-mesh-delta.py maps`. What the step does, per tank, about a
+second each: build the published glb into the server's scene tree, drop it
+on its springs on flat ground with the tree's collision meshes, and step
+the page's own drive law (`tracked-vehicle.js`, `wheeled-vehicle.js`) at
+60 Hz with scripted inputs: full throttle to top speed, reverse, 5 m out
+and back, 90-degree turns, a hard stop, letting go, a full-lock turn and a
+pull-away, and one tick of the gun's `fireingForce` at the barrel (FA-19)
+ahead and across. Pitch and roll are sampled the whole time; the peak, the
+time to come still and the swings are the panel's numbers, and the samples
+its trace. No randomness: two runs give byte-identical sheets. Vanilla's
+sheet is run by hand (vanilla is not a pipeline mod) and pinned as
+`tests/fixtures/tank-school-bf1942.json`. The service record's poses-only
+trees (bf1918, BG42, FinnWars, GCMOD, Interstate, Pirates) publish no
+models, so they have nothing to measure and the page does not offer them.
 
 **Every shot measured.** The owner, on the BMP-2's empty FIRE AHEAD: "it's
 physics so we can calculate something". Two cases had been left out, and

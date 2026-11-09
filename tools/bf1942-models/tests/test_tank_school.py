@@ -4,8 +4,8 @@ pure modules under it.
 
 `tank_school_harness.mjs` runs `viewer/tank-ballistics.js`, `viewer/tank-arena.js`,
 `viewer/tank-armour.js` and `viewer/tank-words.js` in node, over a small catalogue
-and a box hull of their own, and reads the committed tank sheet
-`viewer/tank-school/bf1942.json` (written by `surveys/tank_school_sheet.mjs`).
+and a box hull of their own, and reads vanilla's tank sheet, pinned as
+`tests/fixtures/tank-school-bf1942.json` (written by `surveys/tank_school_sheet.mjs`).
 """
 
 from __future__ import annotations

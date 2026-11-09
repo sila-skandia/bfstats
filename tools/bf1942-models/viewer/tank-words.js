@@ -7,7 +7,7 @@
 // Pure: two tanks in, sentences out. A tank here is
 //   { name, hp, gun: { reload, traverse, per100, reach },
 //     shots: { 0, 90, 180: { shots, bestShots } }    // its hull, hit by the other's gun
-//     sheet: { drive, steady } | null }              // tank-school/<mod>.json
+//     sheet: { drive, steady } | null }              // <maps>/_shared/tank-school.json
 
 const n1 = v => (Math.abs(v - Math.round(v)) < 0.05 ? String(Math.round(v)) : v.toFixed(1));
 const s = v => (v === 1 ? '' : 's');

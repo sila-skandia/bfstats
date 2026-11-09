@@ -12,7 +12,8 @@
 //   02 the guns: both shells' arcs to one target (`tank-ballistics.js`), and
 //      reload, traverse, hold-over and reach;
 //   03 the drive, and 04 how steady each hull is, from the tank sheet the
-//      `surveys/tank_school_sheet.mjs` survey writes (`tank-school/<mod>.json`).
+//      `surveys/tank_school_sheet.mjs` survey writes into each tree
+//      (`<maps>/_shared/tank-school.json`, the pipeline's `tank_school` step).
 //
 // Each panel opens with plain words for the pairing (`tank-words.js`), never
 // a verdict on who wins.
@@ -99,7 +100,7 @@ const theirs = () => {
 
 const [tables, sheet] = await Promise.all([
   json(`${arenaMod.paths.maps}/_shared/damage.json`).catch(() => json(`${arenaMod.paths.models}/damage.json`)).catch(() => null),
-  json(`tank-school/${treeOf(arenaMod)}.json`).catch(() => null),
+  json(`${arenaMod.paths.maps}/_shared/tank-school.json`).catch(() => null),
 ]);
 
 // --- a tank's model, with its download's progress ----------------------------------

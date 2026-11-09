@@ -24,16 +24,23 @@
 //            the panel to play back
 //
 //   node surveys/tank_school_sheet.mjs [--models <dir>] [--maps <dir>]
-//        [--mod bf1942] [--out viewer/tank-school/bf1942.json]
+//        [--mod bf1942] [--out <maps>/_shared/tank-school.json]
 //        [--fetch https://mesh.bfstats.io/]
+//
+// The sheet is a file of the tree, beside the `vehicle-ai.json` it reads:
+// `mod_pipeline.py`'s `tank_school` step writes it after the models,
+// collision and AI steps, and it is published with the rest of the tree's
+// `_shared` (the page reads `<maps>/_shared/tank-school.json`).
 //
 // `--models` is a tree's models directory (its models.json and glbs) and
 // `--maps` its maps directory (`_shared/collision-meshes.json`,
 // `part-mobility.json`, `damage.json`, `vehicle-ai.json`); both default to
-// the viewer's own. With `--fetch`, whatever of those and of the tanks' glbs
+// the viewer's own. A glb the tree does not hold is looked for in the content
+// store (`viewer/glbs/<sha>.glb`) and then in vanilla's models, as the page
+// looks a model up. With `--fetch`, whatever of those and of the tanks' glbs
 // is missing is downloaded from the published trees into those directories
-// first (a mod's paths from `models/mods.json`), so any tree can be
-// measured without a local extraction:
+// first (a mod's paths from `models/mods.json`), so any published tree can
+// be measured without a local extraction:
 //
 //   node surveys/tank_school_sheet.mjs --mod desertcombat --fetch https://mesh.bfstats.io/ \
 //        --models ~/.cache/bfstats-tank-school/desertcombat/models \
@@ -74,7 +81,7 @@ const opt = name => { const i = args.indexOf(name); return i >= 0 ? args[i + 1] 
 const modelsDir = resolve(opt('--models') ?? join(viewerDir, 'models'));
 const mapsDir = resolve(opt('--maps') ?? join(viewerDir, 'maps'));
 const modId = opt('--mod') ?? 'bf1942';
-const outPath = resolve(opt('--out') ?? join(viewerDir, 'tank-school', `${modId}.json`));
+const outPath = resolve(opt('--out') ?? join(mapsDir, '_shared', 'tank-school.json'));
 const site = opt('--fetch');
 
 const r2 = n => (Number.isFinite(n) ? Math.round(n * 100) / 100 : null);
@@ -279,6 +286,11 @@ if (site) {
   }
 }
 
+if (!existsSync(join(modelsDir, 'models.json'))) {
+  // A poses-only tree (the service record's mods) has no models to drive.
+  console.error(`${modId}: no models.json in ${modelsDir}${site ? ' or on the site' : ''}; nothing to measure`);
+  process.exit(1);
+}
 const rows = JSON.parse(readFileSync(join(modelsDir, 'models.json'), 'utf8'));
 const shared = join(mapsDir, '_shared');
 const ai = existsSync(join(shared, 'vehicle-ai.json')) ? JSON.parse(readFileSync(join(shared, 'vehicle-ai.json'), 'utf8')).vehicles ?? null : null;
@@ -290,7 +302,13 @@ const tables = existsSync(join(shared, 'damage.json')) ? JSON.parse(readFileSync
 
 const sheet = { mod: modId, made: 'surveys/tank_school_sheet.mjs', tanks: {} };
 for (const row of rows.filter(r => isTank(r, ai)).sort((a, b) => a.name.localeCompare(b.name))) {
-  const glb = join(modelsDir, row.glb);
+  // The tree's own glb, else the content store's, else vanilla's (a mod's
+  // tree holds only what it adds).
+  let glb = join(modelsDir, row.glb);
+  if (!site && !existsSync(glb)) {
+    glb = [row.sha && join(viewerDir, 'glbs', `${row.sha}.glb`), join(viewerDir, 'models', row.glb)]
+      .find(f => f && existsSync(f)) ?? glb;
+  }
   if (site && !existsSync(glb)) {
     // The tree's own file, else the content store's (a tree whose glbs the
     // volume keeps by hash), else vanilla's (a mod's tree holds what it adds).
