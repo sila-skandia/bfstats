@@ -552,5 +552,43 @@ class SimVehicleTests(unittest.TestCase):
         self.assertEqual(unresolved, [], f"aircraft without a wreck glb: {unresolved}")
 
 
+def gebirgspass_assets() -> Path | None:
+    """The tree holding a bf1918 Gebirgspass bake with its guide rails."""
+    roots = [ASSETS] if ASSETS else []
+    roots += [ROOT / "viewer"]
+    if os.environ.get("BF42_VIEWER_ASSETS"):
+        roots.insert(0, Path(os.environ["BF42_VIEWER_ASSETS"]))
+    for root in roots:
+        level = root / "maps" / "mods" / "bf1918" / "gebirgspass" / "scene.glb"
+        if not level.is_file():
+            continue
+        with level.open("rb") as f:
+            head = f.read(20)
+            chunk = f.read(int.from_bytes(head[12:16], "little"))
+        if b"_guide_m1" in chunk:
+            return root
+    return None
+
+
+@unittest.skipIf(shutil.which("node") is None, "node is not installed")
+class ArmouredTrainLevelTests(unittest.TestCase):
+    def test_bf1918s_armoured_train_stays_between_its_guide_walls(self) -> None:
+        # Gebirgspass's locomotive, its throttle open for 40 s: the guide
+        # wheels (`c_CGLandscape` springs, ledger COL-25) press on the
+        # invisible `*_guide_m1` walls the level runs from TrainGuideRails.con.
+        # A sample between two wall pieces sees one wall only.
+        assets = gebirgspass_assets()
+        if assets is None:
+            self.skipTest("no bf1918 gebirgspass bake with its guide rails")
+        proc = subprocess.run(["node", str(HARNESS), str(assets), "armouredTrain"],
+                              capture_output=True, text=True, timeout=300)
+        if proc.returncode != 0:
+            raise AssertionError(f"recipe armouredTrain failed:\n{proc.stderr}")
+        r = json.loads(proc.stdout.strip().splitlines()[-1])
+        self.assertEqual(r["template"], "ArmouredTrain_GILI")
+        self.assertGreater(r["travelled"], 200, r)
+        self.assertGreaterEqual(r["onRails"], 32, r)
+
+
 if __name__ == "__main__":
     unittest.main()

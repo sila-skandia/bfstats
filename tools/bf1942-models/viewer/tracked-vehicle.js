@@ -62,7 +62,7 @@ import {
   DEFAULT_MATERIAL_FRICTION, DEFAULT_MATERIAL_RESISTANCE, WHEEL_MATERIAL_FRICTION,
   WHEEL_MATERIAL_RESISTANCE, hullContactFriction, surfaceNormalAt, intoContactPlane, addBoxDrag,
 } from './ground-contact.js';
-import { Wheel, gripOf, mergeWheelPush } from './suspension.js';
+import { Wheel, gripOf, mergeWheelPush, meetsTerrain } from './suspension.js';
 import { clamp, EngineState, ENGINE_BIT_THRUST, engineTypeBits } from './ground-engine.js';
 import { traverseOwn } from './spawned-craft.js';
 import { bodyMotion, scrollBeltsByEngine, scrollBeltsByMotion } from './track-scroll.js';
@@ -1088,7 +1088,7 @@ export class TrackedVehicle extends Vehicle {
       const attach = this._attach.copy(wheel.rest).applyQuaternion(q).add(s.position);
       const vert = this._vert.copy(attach).addScaledVector(probeDown, wheel.contactDepth ?? wheel.radius);
       wheel.push.set(0, 0, 0);
-      if (this.#ground(vert.x, vert.z, attach.y + DECK_STEP_UP, this._groundOut)) {
+      if (meetsTerrain(wheel) && this.#ground(vert.x, vert.z, attach.y + DECK_STEP_UP, this._groundOut)) {
         const pen = this._groundOut.y - vert.y;
         if (pen >= 0) {
           const n = this._groundOut.n;
@@ -1097,6 +1097,53 @@ export class TrackedVehicle extends Vehicle {
       }
       if (rest) wheel.dPrev.copy(wheel.push).multiplyScalar(-1);
       else wheel.dPrev.sub(was.sub(wheel.push).multiplyScalar(-1));
+      wheel.compression = wheel.push.length();
+    }
+  }
+
+  /**
+   * The body world's resolve has just written each wheel's push against the
+   * statics at this tick's pose (`body-world.js`, COL-21): the displacement
+   * every spring stands on next tick is that push merged with the terrain's
+   * at the same pose, which is what the engine's one resolve pass leaves on
+   * the wheel (`setAdjust` over both contacts, `solveImpulse` along their mean
+   * normal). `#collide` ran first, with the static push of the tick before:
+   * its friction keeps that contact, but taken as the spring's displacement it
+   * put the force two ticks behind the pose. A tank brushing a wall did not
+   * notice; BF1918's armoured train, whose road wheels stand on its
+   * embankment (a static) and whose guide wheels press on the guide walls
+   * (COL-25), bounced off the one and oscillated between the others. Each
+   * wheel that has a static push, or had one, is re-stood here. `Dprev` is
+   * left alone: the spring step takes it from the D it read last tick.
+   */
+  takeStaticPushes() {
+    const s = this.state;
+    const q = this._q.copy(s.orientation);
+    const probeDown = this._dir.set(0, -1, 0).applyQuaternion(q);
+    const ground = this._groundOut;
+    const n = this._normal;
+    for (const wheel of this.wheels) {
+      const st = wheel.staticPush;
+      if (!st && !wheel.onStatic) continue;
+      wheel.onStatic = !!st;
+      const attach = this._attach.copy(wheel.rest).applyQuaternion(q).add(s.position);
+      const vert = this._vert.copy(attach).addScaledVector(probeDown, wheel.contactDepth ?? wheel.radius);
+      let pen = -Infinity;
+      n.set(0, 1, 0);
+      if (meetsTerrain(wheel) && this.#ground(vert.x, vert.z, attach.y + DECK_STEP_UP, ground)) {
+        pen = ground.y - vert.y;
+        n.copy(ground.n);
+      }
+      const stDepth = st ? Math.hypot(st.x, st.y, st.z) : 0;
+      if (stDepth > 0 && pen > 0) {
+        const along = mergeWheelPush(ground.n, pen, st, n);
+        pen = along > 0 ? along : -Infinity;
+      } else if (stDepth > 0 && stDepth > Math.max(0, pen)) {
+        pen = stDepth;
+        n.set(st.x / stDepth, st.y / stDepth, st.z / stDepth);
+      }
+      if (pen >= 0) wheel.push.copy(n).multiplyScalar(Math.min(PUSH_LIMIT, pen * n.lengthSq()));
+      else wheel.push.set(0, 0, 0);
       wheel.compression = wheel.push.length();
     }
   }
@@ -1169,7 +1216,10 @@ export class TrackedVehicle extends Vehicle {
       const vert = this._vert.copy(attach).addScaledVector(probeDown, depthBelow);
       const fromY = attach.y + DECK_STEP_UP;
       let pen = -Infinity;
-      if (this.#ground(vert.x, vert.z, fromY, ground)) pen = ground.y - vert.y;
+      // A `c_CGLandscape` wheel meets the static world only (`meetsTerrain`,
+      // COL-25); `ground.n` still holds a normal for the merge below.
+      if (!meetsTerrain(wheel)) ground.n.set(0, 1, 0);
+      else if (this.#ground(vert.x, vert.z, fromY, ground)) pen = ground.y - vert.y;
       // The terrain's push and the static world's (the body world's
       // `solveImpulse` on the level's statics, COL-21). Both contacts post on
       // the wheel's one response, so with the wheel on the ground they merge

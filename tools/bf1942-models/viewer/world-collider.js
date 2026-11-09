@@ -598,10 +598,12 @@ export class WorldCollider {
           owner, true, stepTop, deckFloorCos, candidates);
         return count > 0;
       },
-      cast(ox, oy, oz, dx, dy, dz, maxDist) {
+      // `owner` and `stepTop` were applied by `near`; `groups` is the probing
+      // part's collision-group mask (`body-statics.js`).
+      cast(ox, oy, oz, dx, dy, dz, maxDist, owner, stepTop, groups = 0) {
         const s = world.statics;
         if (!s || !count) return null;
-        return s.castAmong(candidates, count, ox, oy, oz, dx, dy, dz, maxDist, hit);
+        return s.castAmong(candidates, count, ox, oy, oz, dx, dy, dz, maxDist, hit, groups);
       },
       /** Whether `owner` is an `Obstacle` (`templateKind`, the class
        *  `ObjectTemplate.create Obstacle` makes: barbed wire). */

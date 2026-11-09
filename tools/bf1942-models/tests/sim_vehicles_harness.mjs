@@ -1431,6 +1431,46 @@ recipes.idleHulls = async function idleHulls() {
   return { relief: round(best.relief), hulls };
 };
 
+// BF1918's armoured train driven along Gebirgspass's track (ledger COL-25,
+// features/bf1918-armoured-train): a bot takes the locomotive, the throttle
+// is held open for 40 s, and every second the walls are looked for either
+// side of the hull at its guide wheels' height (a level ray across the hull
+// at 1.3 m under its origin, against the level's statics: the
+// `*_guide_m1` walls are 2.93 m apart). `onRails` counts the samples with a
+// wall within 1.6 m on both sides.
+recipes.armouredTrain = async function armouredTrain() {
+  const match = await start('gebirgspass', 2, SEED, 'bf1918');
+  const b = match.bots.find(o => !o.vehicle);
+  const seated = mount(match, b, 'ArmouredTrain_GILI');
+  freezeOthers(match, [b.playerId]);
+  const node = seated.node;
+  const collider = match.stage.terrain.collider;
+  const V = () => new M.THREE.Vector3();
+  const start0 = node.getWorldPosition(V());
+  const samples = [];
+  let onRails = 0, wallsSeen = 0;
+  for (let s = 0; s < 40; s++) {
+    run(match, 1, () => { match.world.setInput(b.playerId, { forward: 1, forwardKeys: 1 }); return false; });
+    node.updateWorldMatrix(true, false);
+    const p = node.getWorldPosition(V());
+    const q = node.getWorldQuaternion(new M.THREE.Quaternion());
+    const right = new M.THREE.Vector3(1, 0, 0).applyQuaternion(q);
+    const down = new M.THREE.Vector3(0, -1.3, 0).applyQuaternion(q);
+    const o = p.clone().add(down);
+    const side = sign => {
+      const hit = collider.cast(o.x, o.y, o.z, sign * right.x, sign * right.y, sign * right.z, 3);
+      return hit && hit.kind === 'object' ? round(hit.t) : null;
+    };
+    const l = side(-1), r = side(1);
+    if (l !== null || r !== null) wallsSeen++;
+    if (l !== null && r !== null && l < 1.6 && r < 1.6) onRails++;
+    samples.push({ t: s + 1, x: round(p.x), y: round(p.y), z: round(p.z), left: l, right: r });
+  }
+  const end = node.getWorldPosition(V());
+  return { template: seated.template, travelled: round(end.distanceTo(start0)), onRails, wallsSeen,
+           samples: samples.length, trace: samples };
+};
+
 const fn = recipes[recipe];
 if (!fn) throw new Error(`unknown recipe ${recipe} (${Object.keys(recipes).join(', ')})`);
 process.stdout.write(JSON.stringify(await fn()) + '\n');

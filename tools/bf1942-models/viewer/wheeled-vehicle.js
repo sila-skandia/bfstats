@@ -43,7 +43,7 @@ import {
 } from './ground-contact.js';
 import {
   SPRING_AXIS_Y, SPRING_GRAVITY_SCALE, SPRING_AXIS_FLOOR, Wheel, probeAlongAxis,
-  MAX_OVERRUN, staticSpringContact, gripOf,
+  MAX_OVERRUN, staticSpringContact, gripOf, meetsTerrain,
 } from './suspension.js';
 import { clamp, EngineState, ENGINE_BIT_THRUST, engineTypeBits } from './ground-engine.js';
 import { traverseOwn } from './spawned-craft.js';
@@ -535,7 +535,8 @@ export class GroundVehicle extends Vehicle {
       // is this wheel's floor; a deck above it is something the vehicle has to
       // drive round to, and a deck it is under stays over its head.
       const fromY = attach.y + DECK_STEP_UP;
-      const reach = probeAlongAxis(this.groundHeight, attach, axisWorld, fromY);
+      // A `c_CGLandscape` wheel never meets the ground (`meetsTerrain`).
+      const reach = meetsTerrain(wheel) ? probeAlongAxis(this.groundHeight, attach, axisWorld, fromY) : Infinity;
       const raw = Number.isFinite(reach) ? (wheel.contactDepth ?? wheel.radius) - reach : -Infinity;
       // A static face the wheel met last tick, deeper than the ground: the
       // engine's wheel is a body and every static face is ground to it

@@ -991,16 +991,23 @@ export class CollisionIndex {
    * than twenty-six of them.
    *
    * `dx/dy/dz` unit, `maxDist` metres, `out.t` metres. The returned normal
-   * faces the ray's start, as `cast`'s does.
+   * faces the ray's start, as `cast`'s does. `groups` is the probing part's
+   * collision-group mask, as `cast`'s is: a triangle whose static shares a
+   * bit with it is not tested (`checkObjectVsObjects` 0x0825d820, section
+   * 5.2 item 5), so a train's guide wheel (`c_CGLandscape` and
+   * `c_CGStaticObjects`) looks past the visible rails (`c_CGStaticObjects`)
+   * to the guide walls (ledger COL-25).
    */
-  castAmong(list, count, ox, oy, oz, dx, dy, dz, maxDist, out) {
+  castAmong(list, count, ox, oy, oz, dx, dy, dz, maxDist, out, groups = 0) {
     if (!(count > 0) || !(maxDist > 0)) return null;
     const stats = this.stats;
     stats.queries++;
     let best = maxDist;
     let found = -1;
+    const triGroups = groups && this.groups ? this.groups : null;
     for (let k = 0; k < count; k++) {
       const tri = list[k];
+      if (triGroups && (triGroups[tri] & groups)) continue;
       stats.tests++;
       const t = this.#intersect(tri, ox, oy, oz, dx, dy, dz, best);
       if (t >= 0 && t < best) { best = t; found = tri; }

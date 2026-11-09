@@ -368,6 +368,9 @@ export class BodyWorld {
           }
           part.response.clearContacts();
         }
+        // The pushes are this pose's: the drive stands its springs on them
+        // (`TrackedVehicle.takeStaticPushes`).
+        body.vehicle?.takeStaticPushes?.();
       }
       for (const part of entry.parts) {
         part.response.solve(body, part.worldPos(_pos), rootPart.response);

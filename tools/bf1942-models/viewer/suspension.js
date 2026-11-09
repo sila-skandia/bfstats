@@ -169,7 +169,26 @@ export class Wheel {
      *  next tick (physics.md section 6). `{ x, y, z, friction, resistance }`;
      *  written by `body-world.js`, read once by `staticSpringContact`. */
     this.staticPush = null;
+    /** The spring template's `addToCollisionGroup` mask, from its collision
+     *  part (`vehicle-bodies.js` `wheelContactDepths`, `world-bodies.js`
+     *  `adoptDriven`); 0 for a wheel in no group, which is every vanilla one. */
+    this.groups = 0;
   }
+}
+
+/** `c_CGLandscape`'s bit (ledger FF-2). */
+const CG_LANDSCAPE_BIT = 1;
+
+/**
+ * Whether a wheel meets the terrain at all. `checkVsTerrain` 0x0825a960 is
+ * skipped for a response in `c_CGLandscape` (collision-response.md section
+ * 7), so such a spring is pushed only by static faces (COL-21): BF1918's
+ * armoured train's four `ArmouredTrain_GuideWheel`s hang 0.3 m under its road
+ * wheels and press sideways on the guide walls, and probed down the hull's
+ * +Y the drive stood the train on them (ledger COL-25).
+ */
+export function meetsTerrain(wheel) {
+  return !(wheel.groups & CG_LANDSCAPE_BIT);
 }
 
 /**

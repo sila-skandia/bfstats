@@ -35,13 +35,16 @@
 //       (`WorldCollider.staticProbe` does exactly that, and it is the
 //       difference between one grid walk per body per tick and one per
 //       vertex). Without it every vertex pays a grid walk on an empty field.
-//   cast(ox, oy, oz, dx, dy, dz, maxDist, owner, stepTop)
+//   cast(ox, oy, oz, dx, dy, dz, maxDist, owner, stepTop, groups)
 //       The first static face a ray crosses, or null. `dx/dy/dz` unit,
 //       `maxDist` metres. `owner` is the probing body's own owner id, to be
 //       skipped along with every other simulated body (those are the contact
 //       solver's, not this pass's); `stepTop` is the drivable-deck gate (see
 //       `supportY`). Both are passed on every cast so an adapter with no
-//       `near` still has them. The hit carries `x/y/z` (the crossing),
+//       `near` still has them. `groups` is the probing part's collision-group
+//       mask: a static that shares a bit with it is not a face to this part
+//       (spec 5.2 item 5; a train's guide wheel and the visible rails, ledger
+//       COL-25). The hit carries `x/y/z` (the crossing),
 //       `nx/ny/nz` (the face normal **oriented back toward the ray's start**)
 //       and `material`.
 //   obstacleAt(hit) -> number
@@ -242,7 +245,7 @@ function probePart(part, body, statics, handlers, owner, stepTop, share, wheel =
     if (!(len > 1e-6)) continue;
     const inv = 1 / len;
     const hit = statics.cast(_S[0], _S[1], _S[2], dx * inv, dy * inv, dz * inv,
-                             len, owner, stepTop);
+                             len, owner, stepTop, part.groups | 0);
     if (!hit) continue;
     if (wheel && statics.drivableAt?.(hit)) continue;
 

@@ -718,9 +718,11 @@ const _wpA = [0, 0, 0], _wpB = [0, 0, 0];
  * once and every part pair under it exactly once. No explicit stamp field is
  * kept; this is a deliberate simplification, noted in the track report.
  *
- * Not implemented, both because the briefing says to skip them and because
- * neither ever filters a vehicle pair (confirmed by both R3/F7 and V3 §1d):
- * object flag `0x1` ("inactive") and collision groups.
+ * Not implemented, because it never filters a vehicle pair (R3/F7, V3 §1d):
+ * object flag `0x1` ("inactive"). The collision groups are (§5.2 item 5): a
+ * part pair whose `groups` masks share a bit is skipped. No vanilla vehicle
+ * part is in a group; a mod's can be (COL-20, COL-25: BF1918's train's guide
+ * wheels and its `TrainPuller` couplers, FHSW's bullet catchers).
  *
  * @param {CollisionPart[]} parts every collidable part in the scene, in any
  *   order, root and children mixed and interleaved across bodies
@@ -746,6 +748,7 @@ export function collideBodies(parts, dt, handlers) {
       for (const partA of _groupPool[i].parts) {
         for (const partB of _groupPool[j].parts) {
           if (!partA.isRoot && !partB.isRoot) continue;            // rule 7
+          if ((partA.groups & partB.groups) !== 0) continue;       // rule 5, the groups
 
           const rA = partA.shape.radius, rB = partB.shape.radius;
           if (rA < PART_RADIUS_MIN && rB < PART_RADIUS_MIN) continue;   // rule 8

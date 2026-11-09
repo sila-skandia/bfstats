@@ -220,6 +220,15 @@ function relativeTransform(rootWorld, partWorld) {
  * the hull's inertia box. What is given up: such a part meeting another
  * vehicle, which under the ground it never does.
  *
+ * A `Spring` in that group is kept, with its mask on the part (`groups`): a
+ * wheel that rides the static world alone. BF1918's armoured train hangs
+ * four `ArmouredTrain_GuideWheel`s (`c_CGLandscape` and
+ * `c_CGStaticObjects`, mask 3) sideways off two Engines turned 0/0/+-90, and
+ * they press on the inner faces of the invisible `*_guide_m1` walls; the
+ * terrain never meets them (`terrainContact`), and the visible rails, which
+ * are in `c_CGStaticObjects`, share a bit with them and never meet them
+ * either (collision-response.md section 5.2 item 5; ledger COL-25).
+ *
  * A vehicle a child ObjectSpawner places (`extras.heldSpawner`, a towed gun on
  * its hook, a carrier's parked aircraft) is a root of its own in the engine and
  * none of its collision is the carrier's (FHX-31).
@@ -234,13 +243,14 @@ export function describeVehicleParts(root, collisionMeshes) {
   const parts = [];
   let hullBox = null, hullVolume = -1;
 
-  const addPart = (owner, world, entry, isSpring, template = null) => {
+  const addPart = (owner, world, entry, isSpring, template = null, groups = 0) => {
     const { offset, rot } = relativeTransform(rootWorld, world);
     parts.push({
       node: owner, kind: isSpring ? 'spring' : 'body',
       shape: shapeFromMeshEntry(entry), offset, rot,
       spring: isSpring ? (owner.userData.physics || null) : null,
       mobile: partIsMobile(collisionMeshes, template),
+      groups,
     });
     if (!isSpring) {
       const [lo, hi] = entry.bbox;
@@ -259,7 +269,8 @@ export function describeVehicleParts(root, collisionMeshes) {
     for (const child of node.children) if (child.userData?.collision) return;
     const entry = meshEntryFor(collisionMeshes, node.userData.geometry);
     if (!entry || !entry.layers.length || !entry.layers[0].v.length) return;
-    addPart(node, node.matrixWorld.elements, entry, true, node.userData.control ?? node.name);
+    addPart(node, node.matrixWorld.elements, entry, true, node.userData.control ?? node.name,
+            collisionGroupsOf(collisionMeshes, node.name));
   };
 
   const visit = node => {
@@ -276,12 +287,17 @@ export function describeVehicleParts(root, collisionMeshes) {
     // (FHX-31).
     if (node !== root && data?.heldSpawner) return;
     if (data?.collision && data.sourceGeometry) {
-      const entry = collisionGroupsOf(collisionMeshes, data.sourceTemplate) & CG_LANDSCAPE
+      const owner = node.parent;
+      const isSpring = owner?.userData?.templateKind === 'Spring';
+      const groups = collisionGroupsOf(collisionMeshes, data.sourceTemplate);
+      // A `c_CGLandscape` Spring stays: it is a wheel that meets the static
+      // world and never the terrain (BF1918's `ArmouredTrain_GuideWheel`,
+      // FHSW's rail wagons' guide wheels, COL-20, COL-25). Any other part in
+      // that group is left out, as the header says.
+      const entry = (groups & CG_LANDSCAPE) && !isSpring
         ? null : meshEntryFor(collisionMeshes, data.sourceGeometry);
       if (entry && entry.layers.length && entry.layers[0].v.length) {
-        const owner = node.parent;
-        addPart(owner, node.matrixWorld.elements, entry,
-                owner?.userData?.templateKind === 'Spring', data.sourceTemplate);
+        addPart(owner, node.matrixWorld.elements, entry, isSpring, data.sourceTemplate, groups);
       }
     } else {
       springProbe(node);
@@ -541,6 +557,10 @@ export function collisionPartsFor(spec, body, { hullOnly = false } = {}) {
     part.node = desc.node;
     part.mobile = desc.mobile !== false;
     part.spring = desc.spring;
+    // The template's `addToCollisionGroup` mask: a pair that shares a bit is
+    // never tested (collision-response.md section 5.2 item 5), and a
+    // `c_CGLandscape` part never meets the terrain (section 7).
+    part.groups = desc.groups | 0;
     parts.push(part);
   }
   return parts;
@@ -610,7 +630,14 @@ export function wheelContactDepths(vehicle, spec, tables = null) {
       const d = Math.hypot(part.offset[0] - wheel.rest.x, part.offset[2] - wheel.rest.z);
       if (d < bestD) { bestD = d; best = part; }
     }
+    // The wheel's own spring part, by node, before the nearest axle: a guide
+    // wheel sits 0.2 m outboard of a train's road wheel.
+    const own = springs.find(p => p.node && p.node === wheel.node);
+    if (own) { best = own; bestD = 0; }
     if (!best || bestD > 0.25) continue;
+    // Its collision groups: a `c_CGLandscape` wheel's drive never probes the
+    // terrain (`suspension.js` `meetsTerrain`).
+    wheel.groups = best.groups | 0;
     const v = best.shape.layers[0].vertices;
     const count = v.length / 3 <= 3 ? 1 : v.length / 3;
     const rot = best.rot;
@@ -757,6 +784,9 @@ export const REST_ON = 0.75;
 function col0Points(spec, { position, axes }, height) {
   const points = [];
   for (const part of spec.parts) {
+    // A `c_CGLandscape` part never meets the terrain (COL-20), nor anything
+    // the settle stands a hull on.
+    if (part.groups & CG_LANDSCAPE) continue;
     const v = part.shape?.layers?.[0]?.vertices;
     if (!v?.length) continue;
     const n = v.length / 3 <= 3 ? 1 : v.length / 3;

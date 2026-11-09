@@ -47,7 +47,11 @@ export function adoptDriven(world, owner, vehicle, spec) {
   const wheelOf = new Map((vehicle.wheels ?? []).map(w => [w.node, w]));
   const springs = collisionPartsFor(spec, driven)
     .filter(part => part.kind === 'spring' && wheelOf.has(part.node));
-  for (const part of springs) part.wheel = wheelOf.get(part.node);
+  for (const part of springs) {
+    part.wheel = wheelOf.get(part.node);
+    // A `c_CGLandscape` spring's drive leaves the terrain alone (COL-25).
+    part.wheel.groups = part.groups | 0;
+  }
   world.bodyWorld.addDriven(owner, driven,
     collisionPartsFor(spec, driven, { hullOnly: true }), spec, springs);
   // The solver now owns this hull's contacts with the static world, so the

@@ -32,6 +32,9 @@ import {
   WAKE_CONTACT_SPEED_SQ as HANDLER_SPEED_THRESHOLD_SQ,
 } from './body-friction.js';
 
+/** `c_CGLandscape`'s bit (ledger FF-2; `vehicle-bodies.js` `CG_LANDSCAPE`). */
+const CG_LANDSCAPE_BIT = 1;
+
 function clamp(v, lo, hi) { return v < lo ? lo : (v > hi ? hi : v); }
 function lenSq3(v) { return v[0] * v[0] + v[1] * v[1] + v[2] * v[2]; }
 
@@ -91,6 +94,10 @@ export function terrainContact(part, terrain, handlers, reportTerrainDamage = tr
   // its spawner stood under the ground by every such part's depth again (FHSW
   // Operation_SpringAwakening's ISU152: 25.7 m on the page, 11.4 in retail).
   if (part.mobile === false) return 0;
+  // `checkVsTerrain` is skipped for a response in `c_CGLandscape`
+  // (collision-response.md section 7): a train's guide wheel rides the guide
+  // rails and never the ground (COL-25).
+  if (part.groups & CG_LANDSCAPE_BIT) return 0;
   const layer0 = part.shape.layers[0];
   if (!layer0 || !layer0.vertices) return 0;
   const rawCount = layer0.vertices.length / 3;
