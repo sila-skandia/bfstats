@@ -765,7 +765,10 @@ def level_archives(archives: Path) -> dict[str, list[Path]]:
     def order(path: Path):
         m = re.search(r"_(\d{3})$", path.stem)
         return (re.sub(r"_\d{3}$", "", path.stem).lower(), int(m.group(1)) if m else -1)
-    for path in sorted(levels_dir.glob("*.rfa"), key=order):
+    # Any case of the suffix: community maps ship `giza.RFA`, which the game
+    # loads and a case-sensitive `glob("*.rfa")` skipped.
+    rfas = (p for p in levels_dir.iterdir() if p.is_file() and p.suffix.lower() == ".rfa")
+    for path in sorted(rfas, key=order):
         stem = path.stem
         base = re.sub(r"_\d{3}$", "", stem)
         out.setdefault(base.lower(), []).append(path)

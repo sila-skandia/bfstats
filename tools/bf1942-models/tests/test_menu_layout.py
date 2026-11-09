@@ -1072,3 +1072,20 @@ class ListRowsWellTests(unittest.TestCase):
             rows = eml.list_rows(layout, Path(tmp))
         self.assertEqual(264.0, rows["top"])
         self.assertEqual(422.0, rows["bottom"])
+
+
+class LevelArchiveSuffixTests(unittest.TestCase):
+    """A level archive is found whatever case its suffix is spelled in."""
+
+    def test_an_upper_case_suffix_is_a_level(self) -> None:
+        # Community maps ship `giza.RFA` and `vxf_stunts_one.RFA`; the game
+        # loads them, and a case-sensitive glob left them off the menu list.
+        with tempfile.TemporaryDirectory() as tmp:
+            levels = Path(tmp) / "bf1942" / "levels"
+            levels.mkdir(parents=True)
+            for name in ("giza.RFA", "Coral_sea.rfa", "Coral_Sea_003.rfa", "readme.txt"):
+                (levels / name).write_bytes(b"")
+            found = eml.level_archives(Path(tmp))
+        self.assertEqual({"giza", "coral_sea"}, set(found))
+        self.assertEqual(["Coral_sea.rfa", "Coral_Sea_003.rfa"],
+                         [p.name for p in found["coral_sea"]])
