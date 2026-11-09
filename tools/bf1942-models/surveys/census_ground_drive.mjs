@@ -261,7 +261,11 @@ function measure(glbPath, collisionMeshes, tables) {
     if (out.turn.turned < -5) flags.push('wrong-way');
     // A crawler (a crew-pushed gun, a TOG, a Karl) turns at its walking
     // pace; full lock at 2 m/s is not a turn to judge.
-    else if (Math.abs(out.turn.turned) < 30 && out.turn.speed >= 6) flags.push('weak-turn');
+    // Nor is a hull nothing steers: no steered wheel and no driven one to
+    // turn it by (BF1918's armoured train, a propeller sled the guide rails
+    // steer, features/bf1918-armoured-train).
+    else if (Math.abs(out.turn.turned) < 30 && out.turn.speed >= 6
+             && (out.steered > 0 || out.driven > 0)) flags.push('weak-turn');
     // Only the straight line's slip. The turn's is the server's own law:
     // the lab's Puma on desert_hill slid 68 degrees at full lock from
     // 26 m/s and the page's drive holds it to a millimetre an ack through

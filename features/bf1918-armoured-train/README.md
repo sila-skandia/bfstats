@@ -96,6 +96,9 @@ the same mask and take the same path.
   - The same recipe on the code before this change found walls on both sides
     in 10 of 40 samples. The train derailed at 25 s, fell 10 m off the
     embankment and stopped.
+- `surveys/census_ground_drive.mjs` no longer flags `weak-turn` on a hull
+  with no steered and no driven wheel. The train settles at 1.0 m on its road
+  wheels on flat ground; before, it stood on its guide wheels at 1.3 m.
 - The headless runner shares the page's modules, but this was not looked at in
   a browser page. The room server's world (`server/level-data.mjs`) runs the
   same `BodyWorld` and drive, so it takes the change too. That was not run.
@@ -146,7 +149,4 @@ Also open, all small:
   X, which the Engine's roll turns vertical, so the wheel resists vertical
   slip along the wall. `TrackedVehicle` lays every axle along the hull's X.
   At a wall that axle is edge-on and asks for nothing.
-- **The census flags `weak-turn`.** `surveys/census_ground_drive.mjs` flags
-  the train for not turning. A hull that nothing steers should not be judged
-  on its turn.
 - **Not checked against retail.** No lab recording of the train exists.
