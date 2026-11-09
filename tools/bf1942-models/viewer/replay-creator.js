@@ -44,7 +44,9 @@ import { clipClock } from './replay-clipclock.js';
 import { pickAt, pickCandidates, shotOfRound } from './replay-pick.js';
 import { ClipRecorder, clipName, download, recorderMime } from './replay-clip.js';
 import { dossierOf, killFactsOf } from './replay-dossier.js';
-import { RAMP_SPEEDS, actionOf, killByFire, nextKillShot, noRamp, rampOf, rampSpanOf, rampSpeedAt, ramping, speedWord } from './replay-shot.js';
+import { RAMP_EASE, RAMP_SPEEDS, actionOf, killByFire, nextKillShot, noRamp, rampOf, rampSpanOf, rampSpeedAt, ramping, speedWord } from './replay-shot.js';
+import { fitSpeed, fitStart, syncOf, syncWords } from './replay-sync.js';
+import { ClipMusic } from './replay-music.js';
 import { CreatorPanel, FOV_RANGE, LEAD_INS, fmt } from './replay-creator-panel.js';
 import { STYLE_IDS, angleOf, isMelee, styleLabel, styleOf, suggestAngles } from './replay-shotstyle.js';
 import { whereIs } from './replay-battles.js';
@@ -267,6 +269,10 @@ export class ReplayCreator {
     this.seen = new Map();        // a take's shot -> { hit, down } as the page flew it: lays the clip out (`timing`)
     this.action = null;           // { t0, t1 }: what the clip is of, inside its ends (`beat`)
     this.ramp = noRamp();         // the shot's slow motion (replay-shot.js)
+    this.sync = null;             // the hit pinned to a time of the video (replay-sync.js), or null
+    this.syncFit = null;          // ... and how the last fit went: fitStart's or fitSpeed's answer
+    this.music = new ClipMusic(); // a song to hear the clip with in the studio (replay-music.js)
+    this.gameQuiet = false;       // ... and the game's sound held down under it
     this.edits = defaultEdits();  // the look, the text and the effects (replay-studio-fx.js)
     this.history = { undo: [], redo: [], cur: null, restoring: false }; // the clip's edits, for undo (`noteHistory`)
     this.frozen = null;           // { until }: the freeze on the kill holding the clock (`lead`)
@@ -331,6 +337,7 @@ export class ReplayCreator {
         shot: c.shot ? { style: styleOf(c.shot.style), angle: angleOf(c.shot.angle) } : null,
         edits: c.edits ? editsOf(c.edits) : null,
         kill: inRound(c.kill?.t) && Number.isInteger(c.kill?.victim) ? { t: c.kill.t, victim: c.kill.victim } : null,
+        sync: syncOf(c.sync),
       }));
     this.rounds.angle = angleOf(kept.angle);
     this.cams = camsOf(kept.cams, ANY_TAKE);
@@ -343,16 +350,21 @@ export class ReplayCreator {
     if (!inRound(this.ramp.out)) this.ramp.out = null;
     this.action = spanIn(kept.action, inRound);
     this.edits = editsOf(kept.edits);
+    this.sync = syncOf(kept.sync);
   }
 
   /** `group` names a run of edits that undo takes back as one (the words
    *  typed in one box, one slider's travel). */
   saveKept(group = null) {
+    this.writeKept();
+    this.noteHistory(group);
+  }
+
+  writeKept() {
     writeJson(this.storeKey, {
       clips: this.clips, cams: this.cams, ramp: this.ramp, action: this.action,
-      range: { in: this.range.in, out: this.range.out }, angle: this.rounds.angle, edits: this.edits,
+      range: { in: this.range.in, out: this.range.out }, angle: this.rounds.angle, edits: this.edits, sync: this.sync,
     });
-    this.noteHistory(group);
   }
 
   // --- undo ---------------------------------------------------------------------------------
@@ -361,7 +373,7 @@ export class ReplayCreator {
    *  text, effects and bullet time. */
   snapshot() {
     return JSON.stringify({
-      range: { in: this.range.in, out: this.range.out }, cams: this.cams, ramp: this.ramp, edits: this.edits,
+      range: { in: this.range.in, out: this.range.out }, cams: this.cams, ramp: this.ramp, edits: this.edits, sync: this.sync,
       pace: this.prefs.pace, frame: this.prefs.frame,
     });
   }
@@ -423,6 +435,8 @@ export class ReplayCreator {
       this.placing = null;
       this.ramp = rampOf(s.ramp);
       this.edits = editsOf(s.edits);
+      this.sync = syncOf(s.sync);
+      this.syncFit = null;
       Object.assign(this.prefs, { pace: s.pace ?? this.prefs.pace, frame: s.frame ?? this.prefs.frame });
       this.savePrefs();
       this.applyPrefs();
@@ -691,6 +705,11 @@ export class ReplayCreator {
       this.cancelPlacing({ quiet: true });
       this.player.camera.setLensHook(null);
       this.setHover(null);
+      // The song stops with the view and the game is heard again.
+      quietly('the song', () => {
+        this.music.frame({ on: false });
+        this.quietGame(false);
+      });
       this.ui.flash('Creator view off');
     }
     this.syncFrame();
@@ -1231,8 +1250,11 @@ export class ReplayCreator {
     this.take = { f, kill };
     this.takeHeld = false;
     this.suggestions = null;
-    // Each kill is filmed fresh: its own three cameras until changed.
+    // Each kill is filmed fresh: its own three cameras until changed, and
+    // nothing pinned.
     this.cams = null;
+    this.sync = null;
+    this.syncFit = null;
     this.clipAround(f.t, kill?.t ?? f.t, f.pid, { tail: TAKE_TAIL });
     this.range.loop = true;
     this.openEditor();
@@ -1326,6 +1348,18 @@ export class ReplayCreator {
     const sig = [span.t0, span.t1, f?.t, take?.kill?.t, f ? this.seen.get(f)?.hit : null, own ? JSON.stringify(this.ramp) : '',
       this.prefs.pace, this.edits.freeze, JSON.stringify(this.cams)].join('|');
     if (this.timed?.sig === sig) return this.timed;
+    const { hit, bullet, freeze } = this.clockInputs(span);
+    const clock = clipClock({ span, ramp: own ? this.ramp : null, bullet, freeze });
+    const moments = { start: span.t0, end: span.t1, shot: f?.t ?? null, hit, down: take ? clock.down ?? span.t1 : null };
+    this.timed = { sig, clock, moments };
+    return this.timed;
+  }
+
+  /** What the clip's clock is run with but its slow motion
+   *  (replay-clipclock.js): `{ take, hit, bullet, freeze }`. */
+  clockInputs(span = this.span) {
+    const take = this.autoFilms(span) ? this.takeInside(span) : null;
+    const f = take?.f ?? null;
     const hit = take ? this.hitOf(take, span) : null;
     const turns = take ? this.holdTurns(span, take, hit) : false;
     const freeze = take?.kill && this.edits.freeze > 0 ? { at: hit, real: this.edits.freeze } : null;
@@ -1342,10 +1376,7 @@ export class ReplayCreator {
         flightSlow: flight > 0 ? slowFor((dist ?? 0) / flight, preset, dist) : 1,
       };
     }
-    const clock = clipClock({ span, ramp: own ? this.ramp : null, bullet, freeze });
-    const moments = { start: span.t0, end: span.t1, shot: f?.t ?? null, hit, down: take ? clock.down ?? span.t1 : null };
-    this.timed = { sig, clock, moments };
-    return this.timed;
+    return { take, hit, bullet, freeze };
   }
 
   /** Seconds of the video the clip runs, its slow motion and bullet time
@@ -1574,6 +1605,8 @@ export class ReplayCreator {
     this.action = null;
     this.suggestions = null;
     this.cams = null;
+    this.sync = null;
+    this.syncFit = null;
     this.range.in = clamp(t - 2, 0, d);
     this.range.out = clamp(t + 5, 0, d);
     this.range.loop = true;
@@ -1780,6 +1813,8 @@ export class ReplayCreator {
       this.ramp = noRamp();
       this.releaseRamp();
       this.edits = defaultEdits();
+      this.sync = null;
+      this.syncFit = null;
     }
     this.saveKept();
     this.camsChanged({ replay: false });
@@ -2103,6 +2138,178 @@ export class ReplayCreator {
     return box;
   }
 
+  // --- the hit on a time of the video (replay-sync.js) ---------------------------------------
+
+  /** When the clip's round hits, seconds of the round, while it is inside
+   *  the clip: the moment a pin holds. */
+  pinMoment(span = this.span) {
+    const hit = this.fxKill.kill;
+    return span && Number.isFinite(hit) && hit > span.t0 && hit <= span.t1 + 1e-3 ? hit : null;
+  }
+
+  /** Seconds of the video from the clip's start to its hit, as the clip
+   *  plays now; null with no hit inside it. The moment the round strikes,
+   *  before any freeze on it. */
+  hitOnVideo(span = this.span) {
+    const hit = this.pinMoment(span);
+    if (hit === null) return null;
+    return this.timing(span).clock.toScreen(hit - 1e-6);
+  }
+
+  /**
+   * The clip worked out so its hit lands `this.sync.at` seconds into the
+   * video: the start moved under the slow motion it has (`hold: 'slow'`),
+   * or the slow stretch's speed found for the start it has (`hold:
+   * 'start'`). The clip changes only when it lands; `this.syncFit` says how
+   * it went either way. True when the clip moved.
+   */
+  fitSync() {
+    const pin = this.sync;
+    const span = this.span;
+    if (!pin || !span) {
+      this.syncFit = null;
+      return false;
+    }
+    const hit = this.pinMoment(span);
+    if (hit === null) {
+      this.syncFit = { ok: false, missing: true, hold: pin.hold };
+      return false;
+    }
+    const { bullet, freeze } = this.clockInputs(span);
+    const at = hit - 1e-6;
+    // The pin's own stretch runs from the clip's start to just past the hit,
+    // so the clock is back to normal as the round strikes; it follows the hit
+    // when the page measures the round landing elsewhere.
+    const own = this.ownSlow() ? { ...this.ramp } : null;
+    const pinStretch = { in: null, out: hit + RAMP_EASE, speed: own?.speed ?? 0.25, ease: RAMP_EASE, ...(own?.fit ? { fit: true } : {}) };
+    // No stretch of its own and no pin's: the clip plays as it would
+    // (bullet time, or normal speed) and only the start can move.
+    const stretch = pin.auto ? pinStretch : own;
+    if (pin.hold === 'start') {
+      // A speed has to have a stretch to slow: the pin's, where there is none.
+      const st = stretch ?? pinStretch;
+      const auto = stretch ? pin.auto : true;
+      const lead = speed => clipClock({ span, ramp: { ...st, speed: Math.min(speed, 0.9999) }, bullet, freeze }).toScreen(at);
+      const fit = fitSpeed(lead, pin.at);
+      this.syncFit = { ...fit, hold: 'start' };
+      this.syncStart = span.t0;
+      if (!fit.ok) return false;
+      const next = { ...st, speed: fit.speed, fit: true };
+      const moved = JSON.stringify(next) !== JSON.stringify(this.ramp);
+      this.ramp = next;
+      if (auto !== pin.auto) this.sync = { ...pin, auto };
+      return moved;
+    }
+    // The round cam has to fire the page's round: the clip starts before
+    // the shot (replay-creator-studio, "A loop can only ride ...").
+    const latest = bullet ? bullet.shot - 0.3 : hit - 0.05;
+    const lead = t0 => {
+      const s = { t0, t1: span.t1 };
+      return clipClock({ span: s, ramp: stretch && ramping(stretch) && rampSpanOf(stretch, s) ? stretch : null, bullet, freeze }).toScreen(at);
+    };
+    const fit = fitStart(lead, hit, pin.at, { latest });
+    this.syncFit = { ...fit, hold: 'slow' };
+    if (!fit.ok) {
+      this.syncStart = span.t0;
+      return false;
+    }
+    const moved = Math.abs(fit.t0 - span.t0) > 1e-6 || (stretch && JSON.stringify(stretch) !== JSON.stringify(this.ramp));
+    this.range.in = fit.t0;
+    if (stretch) this.ramp = { ...stretch };
+    this.syncStart = fit.t0;
+    return Boolean(moved);
+  }
+
+  /** The fit made inside an edit that is about to be kept (one undo step
+   *  with it): the clock let go if it moved. */
+  fitSyncNow() {
+    if (!this.sync) return false;
+    const moved = this.fitSync();
+    if (moved) this.releaseRamp();
+    this.syncSeen = null;
+    return moved;
+  }
+
+  /**
+   * Each frame the clip is open: the pin kept true as what it rests on
+   * changes under it -- above all the page measuring where the round really
+   * landed, a tenth of a second off the estimate. Kept without an undo step:
+   * it is the studio's sums, not an edit. Never while recording, dragging
+   * or placing a camera.
+   */
+  keepSync() {
+    const span = this.span;
+    if (!this.sync || !span || this.recorder || this.placing || this.clipbar?.dragging || this.clipbar?.holding) return;
+    const sig = `${this.timing(span).sig}|${JSON.stringify(this.sync)}|${this.rounds.bulletTime ? 1 : 0}`;
+    if (sig === this.syncSeen) return;
+    const moved = this.fitSync();
+    if (moved) {
+      this.releaseRamp();
+      this.syncRange();
+      this.clipbar?.fit();
+      this.writeKept();
+      this.history.cur = this.snapshot();
+    }
+    this.syncSeen = `${this.timing(this.span).sig}|${JSON.stringify(this.sync)}|${this.rounds.bulletTime ? 1 : 0}`;
+    if (moved) {
+      this.clipbar?.sync(this.player.time, true);
+      this.studio?.refresh(true);
+    }
+  }
+
+  /** The hit pinned `at` seconds into the video; `hold` says which of the
+   *  start and the slow motion is held while the other is worked out. */
+  pinHit(at, hold = this.sync?.hold ?? 'slow') {
+    const span = this.span;
+    if (!span) return;
+    if (this.pinMoment(span) === null) {
+      this.ui.flash('This clip has no hit inside it to pin: open a kill as a kill shot', 2600);
+      return;
+    }
+    this.cancelPlacing({ quiet: true });
+    this.stopPart({ quiet: true });
+    const before = this.sync;
+    this.sync = { ev: 'hit', at, hold: hold === 'start' ? 'start' : 'slow', auto: before?.auto ?? !this.ownSlow() };
+    this.fitSyncNow();
+    this.syncRange();
+    this.clipbar?.fit();
+    this.saveKept();
+    this.panel?.refresh(true);
+    this.clipbar?.sync(this.player.time, true);
+    this.studio?.refresh(true);
+    this.ui.flash(this.syncSay(), 3200);
+    if (this.syncFit?.ok) this.replayClip();
+  }
+
+  /** Which of the two is held, the pin kept where it is. */
+  holdSync(hold) {
+    if (!this.sync) return;
+    this.pinHit(this.sync.at, hold);
+  }
+
+  /** The pin taken away: the clip stays as the last fit left it. */
+  unpinHit() {
+    if (!this.sync) return;
+    this.sync = null;
+    this.syncFit = null;
+    this.saveKept();
+    this.clipbar?.sync(this.player.time, true);
+    this.studio?.refresh(true);
+    this.ui.flash('The hit is not pinned any more · the clip stays as it is', 2200);
+  }
+
+  /** The pin in words, with what the studio worked out for it. */
+  syncSay() {
+    const pin = this.sync;
+    if (!pin) return '';
+    const fit = this.syncFit;
+    const head = syncWords(pin, fit);
+    if (!fit?.ok) return head;
+    return pin.hold === 'start'
+      ? `${head} · slow motion ${speedWord(this.ramp.speed)}, worked out from the start`
+      : `${head} · the clip starts at ${fmt(this.range.in)} of the round`;
+  }
+
   /** The slow stretch painted on the strip: `t0` to `t1` at `speed`. */
   setSlowRange(t0, t1, speed = this.ramp.speed < 1 ? this.ramp.speed : 0.25, { quiet = false } = {}) {
     const span = this.span;
@@ -2112,7 +2319,14 @@ export class ReplayCreator {
     if (b - a < 0.1) return;
     this.ramp.in = a;
     this.ramp.out = b;
-    this.ramp.speed = RAMP_SPEEDS.includes(speed) ? speed : 0.25;
+    // A fitted speed (the hit pinned, replay-sync.js) stays as it is while
+    // its stretch is dragged; a speed picked is one of the strip's.
+    const keepFit = this.ramp.fit === true && speed === this.ramp.speed;
+    this.ramp.speed = RAMP_SPEEDS.includes(speed) || keepFit ? speed : 0.25;
+    if (!keepFit) delete this.ramp.fit;
+    // The stretch is the creator's own now, not the pin's.
+    if (this.sync) this.sync = { ...this.sync, auto: false };
+    this.fitSyncNow();
     this.releaseRamp();
     this.saveKept();
     this.syncRange();
@@ -2121,8 +2335,15 @@ export class ReplayCreator {
     const replaced = this.rounds.bulletTime && this.autoFilms(span);
     this.slowChanged();
     if (!quiet) {
-      this.ui.flash(`${speedWord(this.ramp.speed)} over ${(b - a).toFixed(1)} s${replaced ? ' · in place of the kill shot\'s bullet time' : ''}`, 2400);
+      this.ui.flash(this.sync ? this.syncSay() : `${speedWord(this.ramp.speed)} over ${(b - a).toFixed(1)} s${replaced ? ' · in place of the kill shot\'s bullet time' : ''}`, 2400);
     }
+  }
+
+  /** A speed picked for the slow stretch: with the hit pinned, the speed is
+   *  then held and the clip's start moves (replay-sync.js). */
+  pickSlowSpeed(t0, t1, speed) {
+    if (this.sync) this.sync = { ...this.sync, hold: 'slow' };
+    this.setSlowRange(t0, t1, speed);
   }
 
   /** The clip's slow motion gone: normal speed throughout, or a take's own
@@ -2131,6 +2352,12 @@ export class ReplayCreator {
     this.ramp.in = null;
     this.ramp.out = null;
     this.ramp.speed = 1;
+    delete this.ramp.fit;
+    // Normal speed is a speed picked: the hit's pin moves the start.
+    if (this.sync) {
+      this.sync = { ...this.sync, hold: 'slow', auto: false };
+      this.fitSyncNow();
+    }
     this.releaseRamp();
     this.saveKept();
     this.syncRange();
@@ -2746,6 +2973,15 @@ export class ReplayCreator {
     // end keeps it -- it is still inside.
     const span = this.span;
     if (this.action && (!span || this.action.t1 <= span.t0 || this.action.t0 >= span.t1)) this.action = null;
+    // The hit pinned: a start moved by hand is held, and the slow motion's
+    // speed is worked out to it; an end moved refits as it is held.
+    if (this.sync && span) {
+      if (this.syncStart !== undefined && Math.abs(span.t0 - this.syncStart) > 1e-6 && this.sync.hold !== 'start') {
+        this.sync = { ...this.sync, hold: 'start' };
+      }
+      this.fitSyncNow();
+      if (word) word = `${word} · ${this.syncSay()}`;
+    }
     this.saveKept();
     this.syncRange();
     if (this.editing) {
@@ -2812,6 +3048,11 @@ export class ReplayCreator {
   /** How slowly the clip runs over its slow stretch; 1 is off. */
   setRampSpeed(speed) {
     this.ramp.speed = RAMP_SPEEDS.includes(speed) ? speed : 1;
+    delete this.ramp.fit;
+    if (this.sync) {
+      this.sync = { ...this.sync, hold: 'slow' };
+      this.fitSyncNow();
+    }
     this.releaseRamp();
     this.saveKept();
     this.syncRange();
@@ -2897,6 +3138,7 @@ export class ReplayCreator {
       // The kill it is a shot of: a clip with other kills in it would not
       // know which, and its lower third and kill effects follow this one.
       kill: take?.kill ? { t: take.kill.t, victim: take.kill.victim } : null,
+      sync: this.sync ? { ...this.sync } : null,
     });
     this.clips.sort((a, b) => a.in - b.in);
     this.saveKept();
@@ -2917,6 +3159,8 @@ export class ReplayCreator {
     this.endFly();
     if (clip.ramp) this.ramp = rampOf(clip.ramp);
     if (clip.edits) this.edits = editsOf(clip.edits);
+    this.sync = syncOf(clip.sync);
+    this.syncFit = null;
     if (clip.shot) {
       if (clip.shot.angle) this.rounds.angle = { ...clip.shot.angle, aim: this.prefs.angleAim };
       if (clip.shot.style !== 'fixed' || this.rounds.angle) {
@@ -3554,6 +3798,36 @@ export class ReplayCreator {
       }
     }
     this.runRamp(t);
+    this.keepTime(t);
+  }
+
+  /**
+   * A pinned clip (the hit on a beat, replay-sync.js) keeps to the wall
+   * clock while it plays. The page caps a frame's step at a tenth of a
+   * second (map.html `frame`), so a stalled frame loses round time, and the
+   * hit lands that much late in a video whose clock is the wall's: 2.6 s
+   * late over 41 s in a headless browser. The playhead is put forward to
+   * where the clip's clock (replay-clipclock.js) says it should be; frames
+   * are skipped, never the beat. Anchored where playing began, again after
+   * any jump, pause or freeze; never pulled back.
+   */
+  keepTime(t) {
+    const span = this.span;
+    const player = this.player;
+    if (!this.sync || !span || !this.editing || !player.playing || this.frozen || this.ui.scrubbing || t < span.t0 || t >= span.t1) {
+      this.clockRun = null;
+      return;
+    }
+    const clock = this.timing(span).clock;
+    const now = performance.now();
+    const run = this.clockRun;
+    if (!run || t < run.lastT - 1e-6 || t > run.lastT + 0.5) {
+      this.clockRun = { wall: now - clock.toScreen(t) * 1000, lastT: t };
+      return;
+    }
+    const want = Math.min(span.t1, clock.toRound((now - run.wall) / 1000));
+    if (want > t + 1e-3 && want - t < 0.5) player.time = want;
+    run.lastT = player.time;
   }
 
   /** After the frame: the recording, the pick ring, the plate, the panel. */
@@ -3585,14 +3859,38 @@ export class ReplayCreator {
       quietly('the clip\'s cameras', () => this.leadInto());
     }
     this.syncPlacing();
+    if (this.editing && this.sync) quietly('the hit pin', () => this.keepSync());
+    quietly('the song', () => this.runMusic(t));
     if (this.editing) this.clipbar?.sync(t);
     // The studio's panels are a nicety over the clip: one that throws must
     // not take the creator view down with it.
     quietly('the studio', () => this.studio?.frame(t));
   }
 
+  /** The song under the clip, each frame: it plays while the studio plays
+   *  the clip, from the clip's start, and the game is held quiet under it.
+   *  Never while recording: the file carries the game's own sound. */
+  runMusic(t) {
+    const span = this.span;
+    const on = Boolean(this.on && this.studio?.open && span && !this.recorder);
+    const video = on ? this.timing(span).clock.toScreen(t) : null;
+    this.music.frame({ on, playing: this.player.playing || Boolean(this.frozen), video, t });
+    this.quietGame(on && this.music.quietNow());
+  }
+
+  /** The game's own sound held down (a song playing over it) or back. */
+  quietGame(quiet) {
+    if (quiet === this.gameQuiet) return;
+    this.gameQuiet = quiet;
+    this.ctx.quietGame?.(quiet);
+  }
+
   dispose() {
     this.disposed = true;
+    quietly('the song', () => {
+      this.music.dispose();
+      this.quietGame(false);
+    });
     quietly('the recording', () => this.stopRecording(false));
     quietly('the studio', () => this.studio?.dispose());
     quietly('the round cam', () => this.rounds.dispose());

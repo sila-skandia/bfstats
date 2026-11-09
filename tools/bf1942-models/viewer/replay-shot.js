@@ -44,8 +44,13 @@ const smooth = (a, b, x) => {
 export function rampOf(kept) {
   if (!kept || typeof kept !== 'object') return noRamp();
   const time = v => (Number.isFinite(v) ? v : null);
-  const speed = RAMP_SPEEDS.includes(kept.speed) ? kept.speed : 1;
-  return { in: time(kept.in), out: time(kept.out), speed, ease: Number.isFinite(kept.ease) ? clamp(kept.ease, 0, 4) : RAMP_EASE };
+  // A speed worked out to land the hit on a time (replay-sync.js) may be any
+  // speed from a tenth to normal; one picked by hand is one of RAMP_SPEEDS.
+  const fit = kept.fit === true && Number.isFinite(kept.speed) && kept.speed >= 0.1 - 1e-9 && kept.speed <= 1;
+  const speed = fit ? kept.speed : RAMP_SPEEDS.includes(kept.speed) ? kept.speed : 1;
+  const out = { in: time(kept.in), out: time(kept.out), speed, ease: Number.isFinite(kept.ease) ? clamp(kept.ease, 0, 4) : RAMP_EASE };
+  if (fit) out.fit = true;
+  return out;
 }
 
 /** Whether a ramp does anything at all. */
@@ -150,8 +155,10 @@ export function screenSeconds(ramp, span, t0, t1, base = 1, steps = 240) {
 /** A ramp's speed as the panel and the plate word it: `1/4`. */
 export function speedWord(speed) {
   if (!(speed > 0) || speed >= 1) return '1x';
-  const n = Math.round(1 / speed);
-  return `1/${n}`;
+  const n = 1 / speed;
+  // A fitted speed (replay-sync.js) that is no fraction of one is said as
+  // it is: 0.27x, not a 1/4 it is not.
+  return Math.abs(n - Math.round(n)) < 0.02 ? `1/${Math.round(n)}` : `${speed.toFixed(2)}x`;
 }
 
 /** The camera keys that fall inside `span` (`{ t0, t1 }`), in time order. */

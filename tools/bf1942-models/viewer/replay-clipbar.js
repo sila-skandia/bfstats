@@ -31,6 +31,7 @@ import { nameAt } from './replay-recording.js';
 import { RAMP_SPEEDS, rampSpanOf, speedWord } from './replay-shot.js';
 import { isMelee } from './replay-shotstyle.js';
 import { FRAMES, TEXT_EASE, lowerStart } from './replay-studio-fx.js';
+import { parseVideoTime, videoTime } from './replay-sync.js';
 import {
   AB_MOVES, CAM_MIN, HAND_OVERS, HAND_OVER_LEN, MOTIONS, abMoveLabel, anchorAt, camGlyph, camLabel, camTitle, camsFor, handOverLabel, holdsEnd,
   motionLabel,
@@ -410,6 +411,21 @@ export class ClipBar {
     this.openPop('menu', this.at(t) * 100);
   }
 
+  /** The box that pins the hit to a time of the video (replay-sync.js),
+   *  over the hit. */
+  openPin() {
+    const creator = this.creator;
+    const span = creator.span;
+    if (!span) return;
+    this.pinHold = creator.sync?.hold ?? 'slow';
+    this.pinText = null;
+    const hit = creator.pinMoment(span);
+    this.menu = null;
+    this.openPop('pin', hit === null ? 50 : this.at(hit) * 100);
+    this.pop.querySelector('input')?.focus();
+    this.pop.querySelector('input')?.select();
+  }
+
   /** `{ title, items }` for a right-click: which lane, which thing on it. */
   menuAt(clientX, clientY, target) {
     const creator = this.creator;
@@ -478,8 +494,14 @@ export class ClipBar {
         return {
           title: `Your slow motion · ${speedWord(creator.ramp.speed)}`,
           items: [
-            ...RAMP_SPEEDS.filter(v => v < 1).map(v => item(`${speedWord(v)} speed`, () => creator.setSlowRange(slow.t0, slow.t1, v),
+            ...RAMP_SPEEDS.filter(v => v < 1).map(v => item(`${speedWord(v)} speed`, () => creator.pickSlowSpeed(slow.t0, slow.t1, v),
               { on: creator.ramp.speed === v })),
+            // Its ends, here: the start's grip can sit under the clip's own
+            // start handle (a stretch from the clip's start, as the hit's pin
+            // lays one).
+            ...(t > slow.t0 + 0.15 ? [item(`Slow motion starts here (${at})`, () => creator.setSlowRange(t, slow.t1, creator.ramp.speed), { rule: true })] : []),
+            ...(t < slow.t1 - 0.15 ? [item(`Slow motion ends here (${at})`, () => creator.setSlowRange(slow.t0, t, creator.ramp.speed),
+              { rule: !(t > slow.t0 + 0.15) })] : []),
             item(comesBack ? 'Remove it: the kill shot\'s bullet time comes back' : 'Back to normal speed', () => creator.clearSlow(), { rule: true }),
           ],
         };
@@ -507,6 +529,8 @@ export class ClipBar {
       };
     }
     const take = creator.take ?? creator.takeInside(span);
+    const pin = creator.sync;
+    const pinnable = creator.pinMoment(span) !== null;
     return {
       title: `Clip · ${at}`,
       items: [
@@ -514,6 +538,9 @@ export class ClipBar {
         item('End the clip here', () => creator.setEnd('out', t)),
         item('Play from here', () => creator.playFrom(t)),
         ...(take ? [item('Fit the clip to the kill', () => creator.fitToKill(), { rule: true })] : []),
+        ...(pinnable || pin ? [item(pin ? `The hit lands at ${videoTime(pin.at)} · change it` : 'Land the hit at a time of the video', () => this.openPin(),
+          { rule: true })] : []),
+        ...(pin ? [item('Take the pin away', () => creator.unpinHit())] : []),
       ],
     };
   }
@@ -663,6 +690,8 @@ export class ClipBar {
           pop.append(row);
         } else entry(it.label, it.on, it.run, { rule: it.rule, key: it.key, icon: it.icon, title: it.title });
       }
+    } else if (this.popKind === 'pin') {
+      this.fillPin(pop);
     } else if (this.popKind === 'export') {
       pop.append(el('b', 'rc-cb-pop-title', 'Frame'));
       for (const [id, label] of EXPORT_FRAMES) {
@@ -691,6 +720,87 @@ export class ClipBar {
       ? r.width - w
       : clamp((this.popX / 100) * r.width - 12, 0, Math.max(0, r.width - w));
     pop.style.left = `${left + this.strip.offsetLeft}px`;
+  }
+
+  /** The pin's box: when the hit lands, which of the two is worked out,
+   *  Land it, and what the last fit said. */
+  fillPin(pop) {
+    const creator = this.creator;
+    const pin = creator.sync;
+    pop.classList.add('wide');
+    pop.append(el('b', 'rc-cb-pop-title', 'The hit lands at'));
+    // A form, so Enter lands it: the replay takes every key at the window
+    // before a field sees it (replay-ui.js `onKeyDown`), but leaves the
+    // browser's own Enter in a form alone.
+    const row = el('form', 'rc-cb-pinrow');
+    row.noValidate = true;
+    const input = el('input', 'rc-cb-pintime');
+    input.type = 'text';
+    input.inputMode = 'decimal';
+    input.spellcheck = false;
+    input.setAttribute('aria-label', 'Seconds of the video the hit lands at');
+    const now = creator.hitOnVideo();
+    input.value = this.pinText ?? videoTime(pin?.at ?? now ?? 0);
+    const land = el('button', 'rc-cb-pinland', 'Land it');
+    land.type = 'submit';
+    row.append(input, land);
+    pop.append(row);
+    const note = el('p', 'rc-cb-pop-note', `Seconds of the video from the clip's start: 41, 0:41 or 0:41.5. Now it hits at ${videoTime(now ?? 0)}.`);
+    pop.append(note);
+    pop.append(el('span', 'rc-cb-pop-head', 'To get it there'));
+    const chips = el('div', 'rc-cb-chips');
+    for (const [hold, label, title] of [
+      ['slow', 'Move the clip\'s start', 'Keep the slow motion as it is and work out where the clip starts'],
+      ['start', 'Work out the slow motion', 'Keep the clip\'s start where it is and work out how slow the slow stretch plays'],
+    ]) {
+      const b = el('button', `rc-cb-chip${this.pinHold === hold ? ' on' : ''}`);
+      b.type = 'button';
+      b.title = title;
+      b.append(el('span', '', label));
+      b.addEventListener('click', e => {
+        e.stopPropagation();
+        this.pinHold = hold;
+        this.pinText = input.value;
+        this.fillPop();
+        this.pop.querySelector('input')?.focus();
+      });
+      chips.append(b);
+    }
+    pop.append(chips);
+    if (pin) {
+      const said = el('p', `rc-cb-pop-note rc-cb-pinsay${creator.syncFit?.ok ? '' : ' off'}`, creator.syncSay());
+      pop.append(said);
+    }
+    const go = () => {
+      const at = parseVideoTime(input.value);
+      if (at === null) {
+        input.classList.add('bad');
+        note.textContent = 'Type a time like 41, 0:41 or 0:41.5';
+        return;
+      }
+      this.closePop();
+      try { creator.pinHit(at, this.pinHold); } catch (error) { console.warn('creator: the hit pin', error); }
+      this.sync(creator.player.time, true);
+    };
+    row.addEventListener('submit', e => {
+      e.preventDefault();
+      e.stopPropagation();
+      go();
+    });
+    land.addEventListener('click', e => e.stopPropagation());
+    input.addEventListener('input', () => input.classList.remove('bad'));
+    if (pin) {
+      const off = el('button', 'rc-cb-item rule', '');
+      off.type = 'button';
+      off.append(el('i', 'rc-cb-mark', ''), el('span', '', 'Take the pin away'));
+      off.addEventListener('click', e => {
+        e.stopPropagation();
+        this.closePop();
+        creator.unpinHit();
+        this.sync(creator.player.time, true);
+      });
+      pop.append(off);
+    }
   }
 
   /** The strip's span round the clip's ends. */
@@ -1068,6 +1178,7 @@ export class ClipBar {
       e.stopPropagation();
       e.preventDefault();
       const gap = 0.3;
+      this.holding = true;
       const move = ev => {
         const t = this.snap(this.timeAt(ev.clientX), { skip: creator.range[which] });
         if (which === 'in') creator.range.in = Math.min(t, creator.range.out - gap);
@@ -1078,6 +1189,7 @@ export class ClipBar {
       const up = ev => {
         move(ev);
         this.showSnap(null);
+        this.holding = false;
         handle.removeEventListener('pointermove', move);
         handle.removeEventListener('pointerup', up);
         handle.removeEventListener('pointercancel', up);
@@ -1107,6 +1219,7 @@ export class ClipBar {
       const t0 = creator.range.in;
       const t1 = creator.range.out;
       let by = 0;
+      this.holding = true;
       const move = ev => {
         by = this.timeAt(ev.clientX) - start;
         creator.slideClip(t0, t1, by, { preview: true });
@@ -1114,6 +1227,7 @@ export class ClipBar {
       };
       const up = ev => {
         move(ev);
+        this.holding = false;
         grip.removeEventListener('pointermove', move);
         grip.removeEventListener('pointerup', up);
         grip.removeEventListener('pointercancel', up);
@@ -1161,7 +1275,7 @@ export class ClipBar {
       take?.f?.t, take?.kill?.t, creator.takeHeld, creator.ramp.speed, Boolean(this.paint), autoSlow?.t0, autoSlow?.t1, autoSlow?.pace,
       JSON.stringify(list.map(c => [c.cam, c.t0, c.t1, c.into, c.motion, c.move, Boolean(c.end), c.tEnd, c.view?.pos?.[0], c.end?.pos?.[0]])),
       creator.placing?.i, creator.keyShots.size, creator.part?.t0, creator.part?.t1,
-      JSON.stringify(creator.edits), creator.studio?.open].join('|');
+      JSON.stringify(creator.edits), creator.studio?.open, JSON.stringify(creator.sync), creator.syncFit?.ok, JSON.stringify(creator.ramp)].join('|');
     this.syncActive(t, list);
     if (!force && sig === this.sig) return;
     if (this.dragging) return;
@@ -1232,6 +1346,24 @@ export class ClipBar {
       if (m && hit > take.f.t) node('events', 'i', 'rc-cb-flight', '', take.f.t, hit, 'The round in flight');
       go(node('events', 'button', 'rc-cb-mk kill', 'Kill', hit, null,
         `The round hits: ${nameAt(rec, take.kill.killer, take.kill.t)} kills ${nameAt(rec, take.kill.victim, take.kill.t)}`), hit);
+    }
+    // The hit pinned to a time of the video: on the hit when it lands there,
+    // apart from it and red when it cannot.
+    const pin = creator.sync;
+    const landed = Boolean(pin && creator.syncFit?.ok);
+    this.inH.classList.toggle('held', Boolean(pin && pin.hold === 'start'));
+    this.inH.classList.toggle('fitted', Boolean(pin && pin.hold === 'slow' && landed));
+    this.inH.title = !pin ? 'The clip starts here: drag to trim'
+      : pin.hold === 'start' ? 'The clip starts here, held: the slow motion is worked out so the hit lands on its pin. Drag to move it'
+        : 'The clip starts here, worked out so the hit lands on its pin. Drag it to hold it here and work out the slow motion instead';
+    if (pin) {
+      const p = node('events', 'button', `rc-cb-pin${landed ? '' : ' off'}`, '', this.rt(s0 + pin.at), null, `${creator.syncSay()}. Click to change it`);
+      p.append(el('b', '', videoTime(pin.at)));
+      p.addEventListener('pointerdown', e => e.stopPropagation());
+      p.addEventListener('click', e => {
+        e.stopPropagation();
+        this.openPin();
+      });
     }
 
     // CAMERA: the clip's cameras, and the hand-overs between them.
@@ -1304,7 +1436,9 @@ export class ClipBar {
     if (slow) {
       const seg = node('speed', 'span', `rc-cb-seg slow${this.paint ? ' painting' : ''}`, '',
         slow.t0, slow.t1, 'Slow motion: drag to move it, drag an end to resize it, right-click for how slow');
-      seg.append(el('b', '', `${speedWord(this.paint && !creator.ownSlow() ? 0.25 : creator.ramp.speed)} slow`));
+      const fitted = !this.paint && creator.sync && creator.ramp.fit && creator.sync.hold === 'start' ? ' · worked out to the pin'
+        : !this.paint && creator.sync?.auto ? ' · to the hit' : '';
+      seg.append(el('b', '', `${speedWord(this.paint && !creator.ownSlow() ? 0.25 : creator.ramp.speed)} slow${fitted}`));
       if (!this.paint) this.bindSlow(grips(seg), slow);
     } else if (autoSlow) {
       const seg = node('speed', 'span', 'rc-cb-seg slow auto', '', autoSlow.t0, autoSlow.t1,
@@ -1544,6 +1678,30 @@ const STYLE = `
 .rc-cb-mk.shot { background: rgba(232, 195, 90, .9); color: #17150f; transform: translateX(calc(-100% - 1px)); border-radius: 3px 0 0 3px; }
 .rc-cb-mk.kill { background: #d9584b; color: #fff; transform: translateX(1px); border-radius: 0 3px 3px 0; }
 .rc-cb-mk.other { width: 2px; height: 14px; padding: 0; margin-left: -1px; background: rgba(217, 88, 75, .55); }
+/* The hit pinned to a time of the video: a drawing pin over the hit when it
+   lands there, red and apart from it when it cannot. */
+.rc-cb-pin { position: absolute; top: -12px; height: 26px; width: 2px; margin-left: -1px; padding: 0; border: 0; background: #6ee7ff;
+  box-shadow: 0 0 6px rgba(110, 231, 255, .8); cursor: pointer; z-index: 3; }
+.rc-cb-pin b { position: absolute; top: -2px; left: 50%; transform: translateX(-50%); padding: 0 5px; border-radius: 3px; background: #0c2a33;
+  border: 1px solid #6ee7ff; color: #d9f8ff; font: 800 9px/12px var(--rp-mono); white-space: nowrap; }
+.rc-cb-pin::after { content: ''; position: absolute; inset: 0 -6px; }
+.rc-cb-pin.off { background: #ff6b5e; box-shadow: 0 0 6px rgba(255, 107, 94, .8); animation: rc-cb-pinoff 1.1s ease-in-out infinite alternate; }
+.rc-cb-pin.off b { background: #3a1210; border-color: #ff6b5e; color: #ffd9d4; }
+@keyframes rc-cb-pinoff { to { opacity: .55; } }
+/* The clip's start set by the pin (striped) or held while the speed is
+   worked out (a bar across it). */
+.rc-cb-h.fitted { background: repeating-linear-gradient(180deg, var(--rp-gold) 0 4px, #6ee7ff 4px 8px); }
+.rc-cb-h.held { background: var(--rp-gold); box-shadow: 0 0 0 1px rgba(0, 0, 0, .5), 0 0 0 3px #6ee7ff; }
+.rc-cb-pinrow { display: flex; gap: 6px; padding: 4px 8px 2px; }
+.rc-cb-pintime { flex: 1; min-width: 0; height: 30px; box-sizing: border-box; padding: 0 9px; border: 1px solid var(--rp-edge); border-radius: 5px;
+  background: rgba(0, 0, 0, .35); color: var(--rp-ink); font: 700 15px var(--rp-mono); }
+.rc-cb-pintime:focus { outline: none; border-color: #6ee7ff; }
+.rc-cb-pintime.bad { border-color: #ff6b5e; }
+.rc-cb-pinland { height: 30px; padding: 0 14px; border: 0; border-radius: 5px; background: var(--rp-gold); color: #17150f;
+  font: 800 11px var(--rp-font); letter-spacing: .06em; text-transform: uppercase; cursor: pointer; }
+.rc-cb-pinland:hover { filter: brightness(1.12); }
+.rc-cb-pinsay { color: #9fe9f7; }
+.rc-cb-pinsay.off { color: #ff9d93; }
 /* The clip's cameras: a block each, coloured by what it films. */
 .rc-cb-cam { position: absolute; top: 2px; height: 30px; box-sizing: border-box; display: flex; align-items: center; gap: 6px; padding: 0 16px 0 4px;
   overflow: hidden; border-radius: 5px; color: #fff; cursor: pointer; touch-action: none; --c: 150, 150, 150;

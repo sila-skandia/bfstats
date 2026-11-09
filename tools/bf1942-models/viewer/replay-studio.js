@@ -23,6 +23,7 @@ import { FOV_RANGE, fmt } from './replay-creator-panel.js';
 import { moveIcon } from './replay-clipbar.js';
 import { AB_MOVES, CAM_RECIPES, CAMS, HAND_OVERS, MOTIONS, camGlyph, camLabel, camTitle, camsFor, holdsEnd } from './replay-cuts.js';
 import { RAMP_SPEEDS, rampSpanOf, screenSeconds, speedWord } from './replay-shot.js';
+import { parseVideoTime, videoTime } from './replay-sync.js';
 import { FADES, FRAMES, FREEZES, GRADES, drawOverlay, drawSafeArea, editsOf, editsShow, gradeOf } from './replay-studio-fx.js';
 import { StudioTour } from './replay-studio-tour.js';
 
@@ -823,6 +824,7 @@ export class Studio {
         'Drag from the tray onto the strip: cameras, slow-mo, text, effects. A click puts it at the playhead.',
         'Drag a thing to move it; drag its ends to resize it. Right-click a lane for more.',
         'Wheel zooms, Shift-wheel pans; drags snap to the shot, the hit and the hand-overs.',
+        'Cutting to music? Right-click the Kill mark, Land the hit at a time of the video, type 0:41: the clip\'s start moves so the hit lands there. Drag the clip\'s start instead and the slow motion\'s speed is worked out. Add the song on the Export tab to hear it.',
       ]),
       keys,
     );
@@ -1301,7 +1303,7 @@ export class Studio {
     const speeds = this.seg(RAMP_SPEEDS.filter(v => v < 1).map(v => [v, speedWord(v)]), () => (creator.ownSlow() ? creator.ramp.speed : null), v => {
       const span = creator.span;
       const at = creator.ownSlow() ? rampSpanOf(creator.ramp, span) : creator.autoSlow(span) ?? creator.clipAction ?? { t0: span.t0, t1: span.t1 };
-      creator.setSlowRange(at.t0, at.t1, v);
+      creator.pickSlowSpeed(at.t0, at.t1, v);
     });
     const clear = this.btn('No slow motion of my own', 'Remove the clip\'s own slow motion: the kill shot\'s bullet time comes back', () => creator.clearSlow(), 'st-ghost st-small');
     this.syncs.push(() => {
@@ -1312,6 +1314,7 @@ export class Studio {
         ? `Yours: ${speedWord(creator.ramp.speed)} from +${fmt(creator.screenAt(own.t0))} to +${fmt(creator.screenAt(own.t1))}. About ${Math.round(creator.screenLength(span))} s to watch.`
         : auto ? `The kill shot's bullet time (${creator.prefs.pace}) from +${fmt(creator.screenAt(auto.t0))} to +${fmt(creator.screenAt(auto.t1))}. Pick a speed to make it your own.`
           : 'Normal speed. Pick a speed, or drag across the Speed lane.';
+      if (creator.sync) this.slowLine.textContent += ` ${creator.syncSay()}.`;
       clear.hidden = !own;
     });
     page.append(
@@ -1351,9 +1354,56 @@ export class Studio {
         : 'Keep two clips or more for a montage.';
     });
     page.append(
+      this.buildMusic(),
       this.group('Export', rec, thumb, facts, this.note('Recording plays the clip in real time, slow motion included, and saves it when it ends. Keep other windows quiet while it runs.')),
       this.group('Kept clips', keep, this.clipList, montage, montageNote),
     );
+  }
+
+  /** A song to hear the clip with (replay-music.js): the track the clip is
+   *  being cut to, from the creator's disk, playing from the clip's start
+   *  with the game held quiet. Heard here, not recorded. */
+  buildMusic() {
+    const creator = this.creator;
+    const music = creator.music;
+    const file = el('input');
+    file.type = 'file';
+    file.accept = 'audio/*,.mp3,.m4a,.ogg,.wav';
+    file.hidden = true;
+    file.addEventListener('change', () => {
+      const f = file.files?.[0];
+      if (f) {
+        music.load(f);
+        creator.ui.flash(`${f.name} · it plays with the clip from its start`, 2600);
+      }
+      file.value = '';
+      this.refresh(true);
+    });
+    const add = this.btn('Add a song', 'Hear the clip with the track you will cut it to (MP3): it plays from the clip\'s start', () => file.click(), 'st-wide st-ghost', 'plus');
+    const name = el('p', 'st-note st-song');
+    const [startRow, startInput] = this.textInput('Song at the clip\'s start', () => videoTime(music.offset), text => {
+      const v = /^\s*0*(:0*)?(\.0*)?\s*$/.test(text) ? 0 : parseVideoTime(text);
+      if (v === null) return;
+      music.offset = v;
+      music.resync();
+    }, '0:00.0', 10);
+    startInput.title = 'How far into the song the clip starts: 0:00 to start the song with the clip';
+    startRow.classList.add('wide');
+    const quiet = this.check('Mute the game while it plays', () => music.quietGame, v => { music.quietGame = v; }, 'Hold the game\'s own sound down so you hear the song alone');
+    const volume = this.slider('Song volume', 0, 1, 0.05, () => music.volume, v => music.setVolume(v), v => `${Math.round(v * 100)}%`);
+    const remove = this.btn('Remove the song', 'Take the song away: the game is heard again', () => {
+      music.clear();
+      creator.quietGame(false);
+    }, 'st-ghost st-small');
+    const how = this.note('Heard here only: Record puts the game\'s sound in the file. In your editor, start the song at 0:00 under the video.');
+    this.syncs.push(() => {
+      const on = music.loaded;
+      add.lastChild.textContent = on ? 'Change the song' : 'Add a song';
+      const d = music.duration;
+      name.textContent = on ? `${music.name}${Number.isFinite(d) ? ` · ${videoTime(d)}` : ''}${music.error ? ` · ${music.error}` : ''}` : 'Hear the clip with the track you are cutting it to.';
+      for (const n of [startRow, quiet, volume, remove, how]) n.hidden = !on;
+    });
+    return this.group('Music', file, name, add, startRow, quiet, volume, remove, how);
   }
 
   syncClips(force) {
@@ -1509,6 +1559,9 @@ html.st-rec .st-recbar { position: fixed; top: 12px; left: 12px; display: flex; 
 .st-label { color: var(--rp-muted); font-size: 12px; }
 .st-note { margin: 0; color: var(--rp-muted); font-size: 12px; line-height: 1.45; }
 .st-note[hidden] { display: none; }
+.st-toggle[hidden], .st-slider[hidden], .st-text[hidden] { display: none; }
+/* The song's start: a longer label than the Text tab's boxes. */
+.st-text.wide { grid-template-columns: 130px minmax(0, 1fr); }
 .st-facts b { color: var(--rp-ink); font-family: var(--rp-mono); }
 .st-toggle { display: flex; align-items: center; gap: 9px; min-height: 30px; cursor: pointer; font-weight: 700; }
 .st-toggle input { width: 18px; height: 18px; accent-color: var(--rp-gold); margin: 0; }

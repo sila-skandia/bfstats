@@ -1782,3 +1782,77 @@ Graham Stoker's Browning on Naozumi Shoda, 248 m), with the mouse:
 - The end camera dragged to 75% kept `{ shot, dt: -0.98 }`; a click on it
   paused at that moment for placing; Ctrl+Z put the drag back. No page
   errors.
+
+### The hit on a beat (2026-11-09)
+
+A creator cutting skandia's Mustang bomb on Onzz's Tiger (Bocage,
+`wxprh7ze6n`, the Tiger dies at 273.49 s) to Gimme Shelter: the riff over
+the Mustang in slow motion for 41 s, the drums kicking in as the tank blows
+up. The hard part was working backwards from "the hit at 0:41" to a start
+frame. The owner: let them see what the studio proposes at the slow motion
+they picked, or drag the slow motion so it kicks in when they want and have
+the start follow, or fix the start and have the slow motion worked out, and
+say so when it cannot fit. Then: let them add the song to hear it, the game
+muted.
+
+- **The pin** (`replay-sync.js`, pure): `sync: { ev: 'hit', at, hold, auto }`,
+  kept with the clip, in undo snapshots and kept clips. Right-click the Kill
+  mark: Land the hit at a time of the video, a box that takes `41`, `0:41` or
+  `0:41.5` (a `<form>`: the replay takes every key at the window, and the
+  browser's own Enter in a form is all that reaches it). `hold: 'slow'`
+  moves the clip's start (`fitStart`, bisection over `clipClock`, never
+  later than 0.3 s before the shot); `hold: 'start'` works out the slow
+  stretch's speed (`fitSpeed`, a tenth to normal; a fitted ramp carries
+  `fit: true`, and only a fitted ramp may hold a speed off `RAMP_SPEEDS`;
+  `speedWord` says `0.15x`). With no slow motion of their own the pin lays
+  one (`auto`) from the clip's start to the hit plus the ease, so the clock
+  is back to normal as the round strikes. What the creator touches is held:
+  dragging the clip's start holds the start, picking a speed holds the slow
+  motion. When it cannot fit the clip is left alone and the pin goes red
+  with what to do ("Too long by 32.5 s even at normal speed: start the clip
+  later"). The Speed lane's menu gained Slow motion starts / ends here: a
+  stretch from the clip's start has its left grip under the clip's start
+  handle, and the probe's drag took the clip's start instead.
+- **Kept true** (`keepSync`): each frame the clip is open the pin is fitted
+  again when anything under it changes, above all the page measuring where
+  its round landed; kept without an undo step.
+- **The wall clock** (`keepTime`): the page caps a frame's step at 0.1 s, so
+  a stalled frame loses round time and a hit lands late in a video whose
+  clock is the wall's (2.6 s late over 41 s headless). A pinned clip that is
+  playing is put forward to where its clock says it should be; frames are
+  skipped, not the beat.
+- **The song** (`replay-music.js`): Export tab, Music, Add a song. An
+  `<audio>` from an object URL, from the clip's start at `offset`, put back
+  in place on a loop, a scrub or a seek and otherwise left on its own clock
+  (`songAction`). The page's world is held silent under it
+  (`ctx.quietGame`, the listener's gain in `map.html`), untickable. Heard,
+  not recorded: Record puts the game's sound in the file.
+
+Verified: 17 tests in `tests/test_replay_sync.py` (the fits on the round's
+own moments, the failures and their words, the speed words, the song's
+actions); all 670 replay tests pass. In headless Chromium on `wxprh7ze6n`
+with the mouse (`studio-probe.cjs`, steps in the session's scratchpad):
+
+- The Kill mark's menu, `0:41`, Enter: the start went to 4:23.6, the strip's
+  clock 0:44.8, the pin on the Kill mark, the start handle striped, the Speed
+  lane "1/4 slow · to the hit".
+- A test song with a burst at exactly 0:41: at the frame the page's round
+  struck, the song stood at 40.74, 41.04 and 40.99 s on three passes, the
+  game silent.
+- Slow motion starts here, 3 s of the round before the hit: the start moved
+  to 4:00.8, the hit still on 0:41. The start dragged 8 s later: held, the
+  speed worked out to 0.15x. Dragged to 4:30.8: red, "Short by 15.4 s even
+  at 1/10". Ctrl+Z put it back; 1/4 picked moved the start to 4:01.5.
+- The recorded file (44.54 s): the white flash jumps from luma 109 to 136 at
+  40.999 s.
+
+Open: the page's bomb does not land at the same round time every play. With
+the same settings its measured landing moved by up to 0.06 s of the round
+between passes (0.23 s of video at 1/4), and the first play after a change
+of slow motion landed it up to 0.45 s of the round away from the play
+before. The pin refits from each play, so the flash and the effects land on
+0:41 exactly, but in the recording above (made straight after a change of
+speed, with no play between) the Tiger blew up about 0.6 s before them. Play
+the clip once after changing its slow motion, then record. The cause is the
+round cam's steered landing (`LANDING`, `planLanding`) reading the clock's
+speed; a landing fixed in round time would make the pin exact.

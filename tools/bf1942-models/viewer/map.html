@@ -3715,6 +3715,13 @@ replayController = createReplayController({
     const listener = pageAudio.audioListener;
     return listener ? { context: listener.context, node: pageAudio.audioLimiter ?? listener.gain } : null;
   },
+  // The game's world held silent while a creator hears their song over the
+  // clip (replay-music.js), and back. Every world voice enters at the
+  // listener's gain; nothing else sets it.
+  quietGame: quiet => {
+    const gain = pageAudio.audioListener?.gain?.gain;
+    if (gain) gain.value = quiet ? 0 : 1;
+  },
   // The viewing side (features/round-replay-ux): the round's kills, flags and
   // chat go into this page's own message log, a side is drawn with its own
   // flag sprite, the recording player's hits wash his first-person view the

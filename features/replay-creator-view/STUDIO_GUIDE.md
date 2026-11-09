@@ -243,6 +243,46 @@ clip; the timeline is laid out again when you let go. Drag it to move it,
 drag its ends to resize it, and right-click it for 1/2, 1/4 or 1/10. Remove
 it and the bullet time comes back.
 
+## The hit on a beat
+
+Cutting the clip to music, you know where the drums come in, say 0:41 of
+the song, and want the round to hit there. Right-click the Kill mark on the
+Clip lane and choose Land the hit at a time of the video, type `0:41` (or
+`41`, or `0:41.5`) and press Enter. A blue pin marks 0:41 on the strip,
+on the Kill mark, and the studio works the rest out:
+
+- **Move the clip's start** (the default). The slow motion stays as you set
+  it and the clip's start moves back until the hit lands on 0:41. With no
+  slow motion of your own, it slows the whole run-up to the hit at 1/4 and
+  comes back to normal speed as the round strikes. Drag the slow stretch so
+  it kicks in later and the start moves again; the clip's start handle is
+  striped while the studio sets it.
+- **Work out the slow motion.** Drag the clip's start to the frame you want
+  it to open on and it is held there (the handle gets a blue ring). The slow
+  stretch's speed is worked out instead, any speed from a tenth to normal:
+  the Speed lane says "0.27x slow · worked out to the pin".
+
+Whatever you touch is what stays put: drag the start and the speed is
+worked out; pick a speed on the Speed lane and the start moves. The same
+choice is in the pin's box (click the pin), with Take the pin away.
+
+When it cannot fit, the pin turns red and says why, and the clip is left as
+it was: "Too long by 32.5 s even at normal speed: start the clip later", or
+"Short by 12.3 s even at 1/10: start earlier or slow a longer stretch". The
+first time the clip plays, the page measures where the round actually lands
+and the start is nudged to match, so the hit is on the pin from the second
+time round. After changing the slow motion, play the clip through once
+before you record. Record the clip and the song lines up from 0:00 in any
+editor.
+
+To hear it, add the song on the Export tab (Music, Add a song). It stays on
+your computer. It plays with the clip from the clip's start, follows a loop
+or a scrub, and the game is muted while it plays (untick Mute the game to
+hear both). Song at the clip's start skips into the track when the clip
+should start part way through it. The song is for hearing only: Record puts
+the game's sound in the file, so start the song at 0:00 under the video in
+your editor.
+
 ## Look, text and effects
 
 - Look: eight colour grades, a vignette, the frame, a thirds grid, and a
@@ -271,6 +311,8 @@ clips keeps one style.
 
 ## Export
 
+- Music: Add a song to hear the clip with the track you are cutting it to
+  (see The hit on a beat). It is not put in the recording.
 - Record the clip plays it once in real time at the monitor's full size and
   downloads it (MP4 or WebM, with the game's sound). Slow motion takes its
   time: the video clock says how long. Keep other windows quiet while it
