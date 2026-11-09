@@ -327,6 +327,21 @@ public class RecordingInspectorTests
         Assert.Contains("not a bf42plus recording", ex.Message, StringComparison.Ordinal);
     }
 
+    /// <summary>FHSW's animation state table is 58,059 states on one line, near 2 MB: an
+    /// updated BF42++ writes it whole, and the recording is as much a recording as a vanilla
+    /// one whose table is 44 KB.</summary>
+    [Fact]
+    public async Task Inspect_TakesAModsWholeAnimationStateTable()
+    {
+        var states = string.Join(',', Enumerable.Range(0, 58_059).Select(i => $"[{i},\"Fhsw_{i:D5}_Soldier_State_Name\",{i % 256}]"));
+        var line = $$"""{"k":"anim","t":0.0,"states":[{{states}}]}""";
+        Assert.InRange(Encoding.UTF8.GetByteCount(line), 1024 * 1024 + 1, RecordingInspector.MaxLineBytes);
+
+        var found = await Inspect(MidwayWith(line));
+
+        Assert.Equal("midway", found.Level);
+    }
+
     /// <summary>A gzip bomb: a small upload of records that repeat, which would unpack to the
     /// gigabyte the limit allows, is stopped once it passes the floor, far past any real
     /// recording's ratio.</summary>

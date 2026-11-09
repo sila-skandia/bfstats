@@ -24,10 +24,15 @@ namespace api.Recordings;
 /// </summary>
 public static class RecordingInspector
 {
-    /// <summary>A line longer than this is not a recorder's: its longest, a batch of every
-    /// object's state, is 44 KB in the ten real recordings on the owner's PC (v2 to v5). A line
-    /// is held whole while it is read, so this is also what one upload can make the API hold.</summary>
-    internal const int MaxLineBytes = 1024 * 1024;
+    /// <summary>A line longer than this is not a recorder's. The longest a recorder writes is
+    /// the <c>anim</c> state table, once a file, about 32 to 41 bytes a state: 44 KB for the
+    /// vanilla game's 1,395 states, 1.17 MB for FHSWEurope's 28,403 (a bf42plus from 2026-10-18
+    /// on writes the whole table; before, it stopped at 4,096 and a mod's was left out). The
+    /// 1 MiB this was until 2026-11-10 turned every FHSW recording from an updated BF42++ away
+    /// as "not a bf42plus recording" (a Manchuria 1945 round of 2026-11-08, 41.8 MB, its table
+    /// 1,167,301 bytes). A line is held whole while it is read, so this is also what one upload
+    /// can make the API hold.</summary>
+    internal const int MaxLineBytes = 8 * 1024 * 1024;
 
     /// <summary>
     /// A gzipped recording unpacks to no more than this many times its size, past
