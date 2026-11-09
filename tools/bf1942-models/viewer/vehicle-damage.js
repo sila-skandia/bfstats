@@ -119,6 +119,14 @@ export class DamageableVehicle {
     this.armor = new Armor(templateHitPoints(extras?.maxHitpoints),
                            templateHitPoints(extras?.hitpoints));
     this.effects = Array.isArray(extras?.effects) ? extras.effects : [];
+    // Whether the template's tiers are known at all. The assembler writes
+    // the `armor` block for every template with an Armor (since 2026-09-17)
+    // and lists `effects` only where the `.con` authored `addArmorEffect`
+    // rows, so a block with none means the template authored none, and its
+    // death draws nothing (ARM-1, ARM-11: `Armor::playEffect` plays the
+    // authored tier and nothing else). Only a node with no block at all
+    // leaves the tiers unknown.
+    this.armorKnown = extras !== null && typeof extras === 'object';
     this.criticalDamage = Number.isFinite(extras?.criticalDamage)
       ? extras.criticalDamage : null;
     this.hpLostWhileCriticalDamage =

@@ -114,6 +114,18 @@ class AfterDeathClockTests(unittest.TestCase):
         self.assertEqual(0, crash["runningAfterRespawn"])
         self.assertEqual(100, crash["hitPoints"])
 
+    def test_a_template_that_authored_no_death_tier_dies_without_one(self) -> None:
+        # FHSW stands an invisible `killerCage` dummy on every flag and lets
+        # it die every second (3cqup373fj, manchuria-1945, 14:23): with no
+        # `addArmorEffect` row its death draws nothing in the game (ARM-1,
+        # ARM-11). The stand-in explosion is only for a node with no armor
+        # block at all, whose tiers nobody knows.
+        stand = run_harness()["standIn"]
+        self.assertEqual({"armorKnown": True, "atKill": 0, "atCrash": 0}, stand["authoredNone"])
+        # An authored death tier plays as its own entry, not the stand-in.
+        self.assertEqual({"armorKnown": True, "atKill": 0, "atCrash": 0}, stand["authoredDeath"])
+        self.assertEqual({"armorKnown": False, "atKill": 1, "atCrash": 1}, stand["unknown"])
+
     def test_a_plane_killed_on_a_carrier_deck_burns_where_it_stands(self) -> None:
         # The deck is the drive's floor, not the terrain or the sea: a parked
         # plane killed there is a wreck in place, not a fall through the deck

@@ -293,6 +293,26 @@ audit judged none of them. Fixed in `viewer/remote-gait.js` (`lowerBase`);
 the audit on 170-200 s now judges 69 of 69 lower-state episodes drawn.
 `features/soldier-locomotion-animation/README.md` section 11.
 
+**The flags burst every second (14:23, same recording).** Reported as a looped
+explosion on the flags, seen on many maps, suspected to be an environment
+effect. It is not. FHSW stands its anti-camping dummies on each flag through
+the spawners: `killerCage_visible_5m_Allies` and `AllieskillerCage5mHard`
+(20,000 hp) are created at `japan_position` every 1.1 s and destroyed, their
+recorded hit points going 20,000 -> 10,000 -> 0 inside the second (447 of
+each in the round), and `killerCage_Remover{Allies,Axis}` (50 hp, critical
+from birth at 51, burning 10 hp/s) dies every 5 s at `gunsite` and
+`north_position` (2,156 and 416 created). None authors an `addArmorEffect`
+row (the glb's `armor` block carries no `effects`; `CNSPAirDummy`, one
+triangle), so in the game they die unseen. The page's `wreckVehicle` played
+`e_ExplGas` for any hull with no death tier: hooking `effects.play` on the
+live page from 858 s following Jan Paul (pid 27, 23 m from `gunsite`)
+logged 25 `e_ExplGas` from `vehicle-wrecks.js:410` in 8 s, every one at a
+flag's exact position. **Viewer-side.** Fixed: a hull whose armor block is
+known plays only what it authored (ARM-1, ARM-11); the stand-in stays for a
+node with no armor block at all (`DamageableVehicle.armorKnown`). The same
+hook on the fixed code over the same window: 0 plays at the three flags.
+`features/level-effects/README.md`, 2026-11-10.
+
 Still open from the same window: **`bolt 0 of 2`** on the torso, live and
 local alike. FHSW hands a rifle's fire to `Ub_StandBoltOperate<W>` and the
 page draws no bolt for the two episodes judged; whether the FHSW grip

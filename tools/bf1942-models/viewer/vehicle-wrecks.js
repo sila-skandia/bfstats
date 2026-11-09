@@ -404,9 +404,14 @@ export function createVehicleWrecks(page) {
     // The death tier is already burning: every caller has just handed it to
     // `showDamageTier` as the tier change the death came with. Playing it
     // again here doubled every death explosion, and stood a spawn effect's
-    // object (a ruined objective, a raft) up twice. A hull with no death tier
-    // gets the stand-in, on the ground's normal.
-    if (!deathTier(vehicle.effects, { inWater: false })) {
+    // object (a ruined objective, a raft) up twice. A hull whose template
+    // authored no death tier draws nothing when it dies, as the engine's
+    // does (ARM-1, ARM-11): FHSW stands an invisible `killerCage` dummy on
+    // each flag every second and lets it die (3cqup373fj, manchuria-1945),
+    // and the stand-in made every flag on every FHSW level burst twice a
+    // second. Only a hull with no armor block at all, whose tiers nobody
+    // knows, gets the stand-in, on the ground's normal.
+    if (!deathTier(vehicle.effects, { inWater: false }) && !vehicle.armorKnown) {
       page.effects.play('e_ExplGas', { position: [wreckDeathPos.x, wreckDeathPos.y, wreckDeathPos.z], normal: [0, 1, 0] });
     }
 
@@ -540,7 +545,7 @@ export function createVehicleWrecks(page) {
     // on over the fresh one.
     const death = deathTier(vehicle?.effects, { inWater });
     if (death) visual.handles.push(...playTier(visual, vehicle, death, 'crash'));
-    else page.effects.play('e_ExplGas', { position: [wreckDeathPos.x, wreckDeathPos.y, wreckDeathPos.z], normal: [0, 1, 0] });
+    else if (!vehicle?.armorKnown) page.effects.play('e_ExplGas', { position: [wreckDeathPos.x, wreckDeathPos.y, wreckDeathPos.z], normal: [0, 1, 0] });
     // The wreck has stopped moving: its drive is not a wreck's any more, and a
     // hull the spawner puts back on the pad has to be able to fly.
     restoreLift(drive);

@@ -236,7 +236,9 @@ const BOAT_GUN = {
   const hullOf = (nid, tmpl) => {
     const root = new THREE.Group();
     root.name = tmpl;
-    root.userData = { templateKind: 'PlayerControlObject', armor: { effects: [{ effect: 'e_Smoke', hp: 100 }] } };
+    // Its smoke tier and its authored death: a hull that authored no death
+    // tier blows up in neither the game nor the page (ARM-1, ARM-11).
+    root.userData = { templateKind: 'PlayerControlObject', armor: { effects: [{ effect: 'e_Smoke', hp: 100 }, { effect: 'e_ExplGas', hp: 0, offset: [0, 0, 0] }] } };
     const model = new THREE.Group();
     model.add(root);
     return new ReplayHull(player, rec.lives.find(l => l.nid === nid), model, null);

@@ -60,6 +60,19 @@ Ju88's `e_ScrapMetal_Ju88A`.
   stand-in, and only for a hull with no death tier. `playTier` gives each entry
   of a tier its own anchor at its own offset (ARM-11). Before, two entries of
   one bundle shared the first one's offset.
+  - **2026-11-10: the stand-in is only for a hull whose tiers are unknown.**
+    A template with an armor block and no `effects` authored no
+    `addArmorEffect` row (the assembler writes `effects` only where the
+    `.con` has them), and the engine's `Armor::playEffect` plays the
+    authored tier and nothing else (ARM-1, ARM-11), so its death draws
+    nothing. FHSW's `killerCage` dummies on every flag, stood up and killed
+    every 1 to 5 s by its spawners, made the stand-in a looped explosion on
+    every flag of every FHSW level (3cqup373fj, manchuria-1945, 14:23;
+    `features/fhsweurope-extraction/README.md`). `DamageableVehicle.armorKnown`
+    says whether the block was there; the kill and the crash both read it,
+    and `replay-hulls.js` likewise plays only the authored tier 0.
+    `test_vehicle_wrecks.py`
+    `test_a_template_that_authored_no_death_tier_dies_without_one`.
 
 ## What changes for vanilla and the expansions
 

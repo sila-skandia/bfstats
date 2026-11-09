@@ -416,6 +416,54 @@ async function deckWreck({ y, down = null }) {
 }
 
 /**
+ * What a death plays for a hull with no death tier: nothing when the armor
+ * block says the template authored none (FHSW's `killerCage_RemoverAllies`,
+ * 50 hp, no `addArmorEffect`, stood on every flag and dying every 5 s), the
+ * `e_ExplGas` stand-in only for a node with no armor block at all. Counts the
+ * stand-ins played by the kill and by the crash that follows.
+ */
+async function standIn(armor) {
+  globalThis.fetch = async () => ({ ok: true, json: async () => [] });
+  const h = hull();
+  h.node.name = 'killerCage_RemoverAllies';
+  h.node.position.set(0, 80, 0);
+  const drive = {
+    spec: { groundClearance: 1.2 },
+    state: { position: h.node.position, velocity: new THREE.Vector3(0, -30, 0) },
+    groundHeight: () => 0,
+  };
+  const played = [];
+  const vehicleDamage = new Map();
+  const wrecks = createVehicleWrecks({
+    ...page(), vehicleDamage, MODELS_BASE: 'models', extras: { level: 'Flag' },
+    vehicles: { instanceOf: () => null, lastFlightOf: () => ({ drive, kind: 'air' }) },
+    world: {
+      fireStates: new Map(), falling: new Set(), players: new Map(), armorOf: () => null,
+      addDamageable(owner, node, extras) {
+        const v = new DamageableVehicle(extras, { owner });
+        vehicleDamage.set(owner, v);
+        return v;
+      },
+    },
+    effects: { play: name => { played.push(name); return { stop() {} }; } },
+    collider: { waterLevel: 0 },
+    groundHeight: () => 0,
+    isCollision: () => false, bindDynamicShading() {},
+    retireVehicleBody() {}, freezeVehicle() {},
+  });
+  h.node.userData = armor === undefined ? {} : { armor };
+  const vehicle = wrecks.registerDamageable(9, h.node);
+  vehicle.damage(1000);
+  vehicle.update(1 / 30);
+  await wrecks.wreckVehicle(vehicle);
+  const atKill = played.filter(n => n === 'e_ExplGas').length;
+  h.node.position.y = 0;
+  wrecks.stepWrecks(1 / 30);
+  wrecks.stepWrecks(1 / 30);
+  return { armorKnown: vehicle.armorKnown, atKill, atCrash: played.filter(n => n === 'e_ExplGas').length - atKill };
+}
+
+/**
  * `killOccupantInSeat`: a man killed in a seat (the hull whole) loses it, and
  * a dead man still holding one -- the death latched by some path that did not
  * empty it -- loses it too. A living man in his seat keeps it.
@@ -463,6 +511,11 @@ process.stdout.write(JSON.stringify({
   deck: {
     parked: await deckWreck({ y: 18.8 + 1.2 }),
     shotDown: await deckWreck({ y: 80, down: 18.8 + 1.2 }),
+  },
+  standIn: {
+    authoredNone: await standIn({ hitpoints: 50, maxHitpoints: 50, criticalDamage: 51, hasArmor: true }),
+    authoredDeath: await standIn({ hitpoints: 50, maxHitpoints: 50, effects: [{ hp: 0, effect: 'e_ExplAni', offset: [0, 0, 0] }] }),
+    unknown: await standIn(undefined),
   },
   abandoned: {
     far: abandoned(),

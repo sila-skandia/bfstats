@@ -738,9 +738,10 @@ export class ReplayHull {
       && this.lastT !== null && t - this.lastT < DEATH_WINDOW && t >= this.lastT;
     if (killedNow) {
       const at = this.root.getWorldPosition(new THREE.Vector3());
+      // Only what the template authored for tier 0 (ARM-1, ARM-11): a
+      // template with smoke and fire but no death tier dies without one.
       const death = deathTier(this.effects, {});
-      const names = death?.names?.length ? death.names : ['e_ExplGas'];
-      for (const name of names) fx.play(name, { position: [at.x, at.y, at.z], normal: [0, 1, 0] });
+      for (const name of death?.names ?? []) fx.play(name, { position: [at.x, at.y, at.z], normal: [0, 1, 0] });
     }
   }
 
