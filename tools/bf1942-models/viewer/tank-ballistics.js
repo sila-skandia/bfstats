@@ -15,6 +15,12 @@
 //
 // (`projectile-flight.js` `firstTickLift`, g signed downward, dt = 1/30), and
 // x and z move at their launch speeds.
+//
+// A round that declares no gravity (`gravityModifier 0`) is flown straight,
+// without the lift: under the lift alone it would climb about 1 m a second,
+// so the sums would have a gunner aim 2 m under a tank at 200 m, but the
+// rounds that declare it are the mods' missiles and rockets (Desert Combat's
+// AT-5, 100 m/s), whose flight their motor and guidance decide.
 
 import { GRAVITY } from './physics.js';
 
@@ -49,7 +55,7 @@ export function launch(gun, elevation = 0, hull = null) {
   const e = elevation * DEG;
   return {
     x: gun.speed * Math.cos(e) + (hull?.along ?? 0),
-    y: gun.speed * Math.sin(e) + ROOT_LIFT + (hull?.up ?? 0),
+    y: gun.speed * Math.sin(e) + (gun.gravity > 0 ? ROOT_LIFT : 0) + (hull?.up ?? 0),
     z: hull?.across ?? 0,
   };
 }
@@ -87,6 +93,7 @@ export function dropAt(gun, range, hull = null) {
  * reach at `maxElevation`.
  */
 export function elevationFor(gun, range, { rise = 0, maxElevation = 20, hull = null } = {}) {
+  if (!(gun.gravity > 0) && !rise && !hull) return 0;
   const height = e => at(gun, range, e, hull).y - rise;
   let lo = -10, hi = maxElevation;
   if (height(hi) < 0) return null;
@@ -100,6 +107,8 @@ export function elevationFor(gun, range, { rise = 0, maxElevation = 20, hull = n
 /** How far the shell lands on flat ground at `elevation` (the muzzle's own
  *  height), and when: `{ range, t }`. */
 export function reach(gun, elevation = 20) {
+  // A straight round has no reach on flat ground: it never comes down.
+  if (!(gun.gravity > 0)) return { range: Infinity, t: Infinity };
   const v = launch(gun, elevation);
   const g = GRAVITY * gun.gravity;
   // 0.5 g t^2 + (vy - 0.875 g dt) t + 0.375 g dt^2 = 0, the later root.
@@ -117,6 +126,9 @@ export function reach(gun, elevation = 20) {
 export function leadAngle(gun, theirs = 0, yours = 0) {
   return Math.atan2(theirs - yours, gun.speed) / DEG;
 }
+
+/** Whether a gun's round flies straight: it declares no gravity. */
+export const flatShooter = gun => !(gun.gravity > 0);
 
 /** The hold-over rule of thumb: degrees of elevation per 100 m, from the
  *  elevation 400 m needs (within about half a degree out to 400 m). */

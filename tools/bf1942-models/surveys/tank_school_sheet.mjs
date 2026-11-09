@@ -25,11 +25,25 @@
 //
 //   node surveys/tank_school_sheet.mjs [--models <dir>] [--maps <dir>]
 //        [--mod bf1942] [--out viewer/tank-school/bf1942.json]
+//        [--fetch https://mesh.bfstats.io/]
 //
 // `--models` is a tree's models directory (its models.json and glbs) and
 // `--maps` its maps directory (`_shared/collision-meshes.json`,
-// `_shared/damage.json`); both default to the viewer's own. From
-// tools/bf1942-models. No Chromium; about a second a tank.
+// `part-mobility.json`, `damage.json`, `vehicle-ai.json`); both default to
+// the viewer's own. With `--fetch`, whatever of those and of the tanks' glbs
+// is missing is downloaded from the published trees into those directories
+// first (a mod's paths from `models/mods.json`), so any tree can be
+// measured without a local extraction:
+//
+//   node surveys/tank_school_sheet.mjs --mod desertcombat --fetch https://mesh.bfstats.io/ \
+//        --models ~/.cache/bfstats-tank-school/desertcombat/models \
+//        --maps ~/.cache/bfstats-tank-school/desertcombat/maps
+//
+// The tanks are the tree's own by `tank-arena.js` `isTank` with its AI data.
+// A wheeled hull (Desert Combat's EE-9) is driven too, its shot's push spent
+// on its velocity and spin; a gun with no `fireingForce` shoves nothing and
+// its hull is measured standing still. From tools/bf1942-models.
+// No Chromium; about a second a tank.
 
 import { readFileSync, writeFileSync, existsSync, mkdirSync } from 'node:fs';
 import { join, dirname, resolve } from 'node:path';
@@ -61,6 +75,7 @@ const modelsDir = resolve(opt('--models') ?? join(viewerDir, 'models'));
 const mapsDir = resolve(opt('--maps') ?? join(viewerDir, 'maps'));
 const modId = opt('--mod') ?? 'bf1942';
 const outPath = resolve(opt('--out') ?? join(viewerDir, 'tank-school', `${modId}.json`));
+const site = opt('--fetch');
 
 const r2 = n => (Number.isFinite(n) ? Math.round(n * 100) / 100 : null);
 const forwardOf = v => new THREE.Vector3(0, 0, -1).applyQuaternion(v.state.orientation);
@@ -125,7 +140,7 @@ function measure(glbPath, collisionMeshes, tables) {
     const root = fresh();
     root.position.set(0, 0, 0); root.quaternion.identity();
     const occ = new VehicleOccupancy(root, DRIVE_CLASSES);
-    if (occ.rootKind !== 'tank') return null;
+    if (occ.rootKind !== 'tank' && occ.rootKind !== 'ground') return null;
     occ.setActiveSeat(occ.rootId);
     const drive = occ.ensureDrive(null, { cockpit: false, groundHeight: () => 0, waterLevel: -1000, collisionMeshes });
     if (!drive) return null;
@@ -203,28 +218,70 @@ function measure(glbPath, collisionMeshes, tables) {
   const gunProbe = (() => { const root = fresh(); root.position.set(0, 0, 0); root.quaternion.identity(); return mainGun(root); })();
   out.fireingForce = gunProbe?.force ?? 0;
   for (const [key, yaw, axis] of [['fireAhead', 0, 'pitch'], ['fireAcross', 90, 'roll']]) {
-    if (!(out.fireingForce > 0)) { out.steady[key] = null; continue; }
+    // Every hull is measured, whatever its gun. A gun that declares no
+    // `fireingForce` (Desert Combat's AT-5 and chain guns) shoves nothing:
+    // the hull is driven on with no push, and stays where it rests. A wheeled
+    // hull's drive has no accumulator to post the push into, so the shot's
+    // one tick is spent on its velocity and spin directly, as the tracked
+    // law spends its own: `a dt`, and `(r x a) dt` over the box inertia in
+    // the hull's frame.
     const root = fresh(); root.position.set(0, 0, 0); root.quaternion.identity();
-    const gun = mainGun(root); const turret = turretOf(gun.node, root);
-    if (turret && yaw) turret.quaternion.premultiply(new THREE.Quaternion().setFromAxisAngle(new THREE.Vector3(0, 1, 0), -yaw / DEG));
-    root.updateMatrixWorld(true);
-    const m = gun.node.matrixWorld.elements;
-    const gunAt = new THREE.Vector3(m[12], m[13], m[14]);
-    const back = new THREE.Vector3(m[8], m[9], m[10]).normalize();   // +Z is back out of the barrel
+    const gun = mainGun(root) ?? (() => { let any = null; root.traverse(o => { if (!any && o.userData?.templateKind === 'FireArms') any = { node: o, force: 0 }; }); return any; })();
     const v = settled();
-    const q = v.state.orientation, pos = v.state.position;
-    const at = gunAt.clone().applyQuaternion(q).add(pos);
-    const a = back.clone().applyQuaternion(q).multiplyScalar(out.fireingForce);
-    v.law.acc.add(a);
-    v.law.racc.add(new THREE.Vector3().crossVectors(at.clone().sub(pos), a));
+    if (gun && out.fireingForce > 0) {
+      const turret = turretOf(gun.node, root);
+      if (turret && yaw) turret.quaternion.premultiply(new THREE.Quaternion().setFromAxisAngle(new THREE.Vector3(0, 1, 0), -yaw / DEG));
+      root.updateMatrixWorld(true);
+      const m = gun.node.matrixWorld.elements;
+      const gunAt = new THREE.Vector3(m[12], m[13], m[14]);
+      const back = new THREE.Vector3(m[8], m[9], m[10]).normalize();   // +Z is back out of the barrel
+      const q = v.state.orientation, pos = v.state.position;
+      const at = gunAt.clone().applyQuaternion(q).add(pos);
+      const a = back.clone().applyQuaternion(q).multiplyScalar(out.fireingForce);
+      const torque = new THREE.Vector3().crossVectors(at.clone().sub(pos), a);
+      if (v.law) {
+        v.law.acc.add(a);
+        v.law.racc.add(torque);
+      } else if (v._inertia) {
+        const tick = 1 / 30;
+        v.state.velocity.addScaledVector(a, tick);
+        const tb = torque.applyQuaternion(q.clone().invert());
+        v.state.angularVelocity.x += tb.x / v._inertia.x * tick;
+        v.state.angularVelocity.y += tb.y / v._inertia.y * tick;
+        v.state.angularVelocity.z += tb.z / v._inertia.z * tick;
+      }
+    }
     const r = rock(v, 8, { c_PIThrottle: 0, c_PIYaw: 0 }, axis);
     out.steady[key] = r.summary; out.traces[key] = { axis, hz: TRACE_HZ, values: r.trace };
   }
   return out;
 }
 
+// --- fetching a published tree -----------------------------------------------
+async function download(url, file) {
+  if (existsSync(file)) return true;
+  const res = await fetch(url, { headers: { 'User-Agent': 'bfstats-tank-school-sheet' } });
+  if (!res.ok) return false;
+  mkdirSync(dirname(file), { recursive: true });
+  writeFileSync(file, Buffer.from(await res.arrayBuffer()));
+  return true;
+}
+let paths = { models: 'models', maps: 'maps' };
+if (site) {
+  const base = site.replace(/\/?$/, '/');
+  const mods = await (await fetch(`${base}models/mods.json`)).json();
+  const entry = (mods.mods ?? mods).find(m => m.id === modId);
+  if (!entry) throw new Error(`no mod ${modId} on ${base}`);
+  paths = entry.paths;
+  await download(`${base}${paths.models}/models.json`, join(modelsDir, 'models.json'));
+  for (const f of ['collision-meshes.json', 'part-mobility.json', 'damage.json', 'vehicle-ai.json']) {
+    await download(`${base}${paths.maps}/_shared/${f}`, join(mapsDir, '_shared', f));
+  }
+}
+
 const rows = JSON.parse(readFileSync(join(modelsDir, 'models.json'), 'utf8'));
 const shared = join(mapsDir, '_shared');
+const ai = existsSync(join(shared, 'vehicle-ai.json')) ? JSON.parse(readFileSync(join(shared, 'vehicle-ai.json'), 'utf8')).vehicles ?? null : null;
 const collisionMeshes = existsSync(join(shared, 'collision-meshes.json')) ? JSON.parse(readFileSync(join(shared, 'collision-meshes.json'), 'utf8')) : null;
 if (collisionMeshes && !collisionMeshes.mobility && existsSync(join(shared, 'part-mobility.json'))) {
   collisionMeshes.mobility = JSON.parse(readFileSync(join(shared, 'part-mobility.json'), 'utf8')).mobility;
@@ -232,13 +289,22 @@ if (collisionMeshes && !collisionMeshes.mobility && existsSync(join(shared, 'par
 const tables = existsSync(join(shared, 'damage.json')) ? JSON.parse(readFileSync(join(shared, 'damage.json'), 'utf8')) : null;
 
 const sheet = { mod: modId, made: 'surveys/tank_school_sheet.mjs', tanks: {} };
-for (const row of rows.filter(isTank).sort((a, b) => a.name.localeCompare(b.name))) {
+for (const row of rows.filter(r => isTank(r, ai)).sort((a, b) => a.name.localeCompare(b.name))) {
   const glb = join(modelsDir, row.glb);
+  if (site && !existsSync(glb)) {
+    // The tree's own file, else the content store's (a tree whose glbs the
+    // volume keeps by hash), else vanilla's (a mod's tree holds what it adds).
+    const base = site.replace(/\/?$/, '/');
+    const ok = await download(`${base}${paths.models}/${row.glb}`, glb)
+      || (row.sha && await download(`${base}glbs/${row.sha}.glb`, glb))
+      || await download(`${base}models/${row.glb}`, glb);
+    if (!ok) { console.error(`${row.name}: no glb on ${base}`); continue; }
+  }
   if (!existsSync(glb)) { console.error(`${row.name}: no glb at ${glb}`); continue; }
   try {
     const m = measure(glb, collisionMeshes, tables);
     if (m) sheet.tanks[row.name] = m;
-    else console.error(`${row.name}: not a tracked drive`);
+    else console.error(`${row.name}: not a land drive`);
   } catch (e) {
     console.error(`${row.name}: ${e.message}`);
   }

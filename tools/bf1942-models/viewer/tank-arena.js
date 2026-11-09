@@ -208,14 +208,17 @@ export function enemyOf(arena, mine, choice = null) {
  * armour-piercing sibling, else any sibling, else the first real shell.
  */
 export function pickMainGun(nodes, wanted) {
-  const real = n => {
+  const live = n => {
     const fa = n.userData?.fireArms ?? {};
     const p = fa.projectile ?? {};
-    return p.kind === 'shell' && !/fake|changeammo/i.test(String(p.template ?? '')) && !(Number(fa.velocity) <= 5) && p.material != null;
+    return !/fake|changeammo/i.test(String(p.template ?? '')) && !(Number(fa.velocity) <= 5) && p.material != null;
   };
+  const real = n => live(n) && n.userData.fireArms.projectile.kind === 'shell';
   const guns = nodes.filter(real);
-  if (!guns.length) return null;
   const base = String(wanted ?? '').toLowerCase();
+  // An autocannon is a gun too where the vehicle has no shell to fire
+  // (Desert Combat's Shilka): the main gun by name, whatever its round.
+  if (!guns.length) return nodes.find(n => live(n) && n.name.toLowerCase() === base) ?? null;
   const own = base ? guns.filter(n => n.name.toLowerCase().startsWith(base)) : [];
   return own.find(n => n.name.toLowerCase() === base)
     ?? own.find(n => /_ap$/i.test(n.name)) ?? own.find(n => /_ap/i.test(n.name))

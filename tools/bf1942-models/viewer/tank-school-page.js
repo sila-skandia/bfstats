@@ -278,6 +278,7 @@ root.innerHTML = `
       <p class="tks-intro">A shell drops, so the further the target, the higher the gun must point. The chart is how high each gun must point for each distance: a slow shell climbs steeply, a fast one stays nearly flat. Under it, what each gunner sees at the distance you pick: the cross is where the gun points, and it has to sit that far above the target.</p>
       <label class="tks-range"><span>Target at</span><input type="range" min="50" max="400" step="10" value="200"><b></b></label>
       <figure class="tks-elev"><div class="tks-elev-key"></div><svg class="tks-elev-chart" viewBox="0 0 760 270" role="img" aria-label="How high each gun must point for each distance"></svg></figure>
+      <label class="tks-range is-sights"><span>Target at</span><input type="range" min="50" max="400" step="10" value="200" aria-label="Target distance for the sights"><b></b></label>
       <div class="tks-sights"></div>
       <ul class="tks-words tks-gun-words"></ul>
       <details class="tks-more"><summary>All the gun numbers</summary><table class="tks-table tks-gun-table"></table></details>
@@ -316,7 +317,8 @@ const ui = {
   canvas: q('.tks-canvas'), stage: q('.tks-stage'), load: q('.tks-load'), loadRows: q('.tks-load-rows'), tip: q('.tks-tip'), view: q('.tks-view'), legend: q('.tks-legend'),
   clockThem: q('.tks-clock.is-them > div'), clockYou: q('.tks-clock.is-you > div'),
   aim: q('.tks-aim'), exposed: q('.tks-exposed'),
-  elevKey: q('.tks-elev-key'), elevChart: q('.tks-elev-chart'), sights: q('.tks-sights'), range: q('.tks-range input'), rangeOut: q('.tks-range b'), gunTable: q('.tks-gun-table'), gunWords: q('.tks-gun-words'),
+  elevKey: q('.tks-elev-key'), elevChart: q('.tks-elev-chart'), sights: q('.tks-sights'), range: q('.tks-range input'), rangeOut: q('.tks-range b'),
+  rangeSight: q('.tks-range.is-sights input'), rangeSightOut: q('.tks-range.is-sights b'), gunTable: q('.tks-gun-table'), gunWords: q('.tks-gun-words'),
   scrub: q('.tks-scrub'), clockNow: q('.tks-clock-now'), steadyWords: q('.tks-steady-words'),
   driveTable: q('.tks-drive-table'), hullWords: q('.tks-hull-words'),
   scenarios: q('.tks-steady .tks-seg'), play: q('.tks-play'), rockers: [...root.querySelectorAll('.tks-rockers figure')],
@@ -772,7 +774,8 @@ function sightSvg(entry, R, span) {
 function drawGuns() {
   const [them, you] = current.entries;
   const R = Number(ui.range.value);
-  ui.rangeOut.textContent = `${R} m`;
+  ui.rangeOut.textContent = ui.rangeSightOut.textContent = `${R} m`;
+  ui.rangeSight.value = String(R);
   const pair = [{ who: 'is-you', e: { ...you, target: them } }, { who: 'is-them', e: { ...them, target: you } }];
   ui.elevKey.innerHTML = pair.map(p => `<span class="${p.who}"><img src="${p.e.snaps.side.url}" alt="" height="34"><b>${esc(p.e.tank.name)}</b>`
     + `<small>${n1(p.e.tank.gun.speed)} m/s, ${p.e.tank.gun.gravity === 1 ? 'full gravity' : `${n1(p.e.tank.gun.gravity * 100)}% gravity`}</small></span>`).join('')
@@ -787,6 +790,7 @@ function drawGuns() {
     const sv = sightSvg(p.e, R, span);
     const tH = p.e.target.snaps.front.heightM, drop = dropAt(p.e.tank.gun, R);
     const words = sv.e == null ? `Out of reach: the gun lifts only ${n1(p.e.tank.gun.up)} deg.`
+      : !(p.e.tank.gun.gravity > 0) ? 'Its round flies straight: put the cross on them.'
       : drop < tH * 0.5 ? `Aim straight at them: by ${R} m the shell drops ${n1(drop)} m, less than half their height.`
       : `Put the cross ${sv.e.toFixed(sv.e < 1 ? 2 : 1)} deg above them: the shell drops ${n1(drop)} m by ${R} m, ${n1(drop / tH)} times their height.`;
     return `<figure class="tks-sight ${p.who}"><figcaption><b>${p.who === 'is-you' ? 'Your sight' : 'Their sight'}</b><span>${esc(p.e.tank.name)} at the ${esc(p.e.target.tank.name)}, ${R} m</span></figcaption>`
@@ -801,13 +805,16 @@ function drawGuns() {
     + row(`Drop by ${R} m, aimed level`, t => `${n1(dropAt(t.gun, R))} m`)
     + row('Rule of thumb', t => (t.gun.per100 ? `about ${t.gun.per100} deg up per 100 m` : '-'))
     + row(`Flight to ${R} m`, t => `${n1(timeTo(t.gun, R))} s`)
-    + row('Furthest it reaches', t => `${Math.round(t.gun.reach.range)} m, gun at +${n1(t.gun.up)} deg`, 'on flat ground')
+    + row('Furthest it reaches', t => (Number.isFinite(t.gun.reach.range) ? `${Math.round(t.gun.reach.range)} m, gun at +${n1(t.gun.up)} deg` : 'it flies straight'), 'on flat ground')
     + row('Reload', t => `${t.gun.reload.toFixed(2)} s`)
     + row('Turret', t => (t.gun.traverse ? `${n1(t.gun.traverse)} deg/s, 90 deg in ${n1(90 / t.gun.traverse)} s` : '-'))
     + row('Gun up / down', t => `+${n1(t.gun.up)} / ${n1(t.gun.down)} deg`)
     + '</tbody>';
 }
+// Two sliders for one distance: one over the chart, one over the sights, so
+// neither needs a scroll back up.
 ui.range.addEventListener('input', () => drawGuns());
+ui.rangeSight.addEventListener('input', () => { ui.range.value = ui.rangeSight.value; drawGuns(); });
 
 // --- 03: the drive ----------------------------------------------------------------------
 
@@ -886,8 +893,14 @@ function drawSteady(t = steadyT) {
       + `<span class="tks-now-miss${miss >= 3 ? ' is-off' : ''}">a shot now lands ${miss} m off at 200 m</span>`;
   });
   ui.steadyWords.innerHTML = (current.hullAdvice ?? []).map(w => `<li>${esc(w)}</li>`).join('')
-    + pair.map((p, k) => steadyWords(p.e.tank.name, traces[k], sums[k], { reload: p.e.tank.gun.reload })
-      .map(w => `<li class="${p.who}">${esc(w)}</li>`).join('')).join('');
+    + pair.map((p, k) => {
+      // A gun the game gives no recoil (`fireingForce` 0) shoves nothing:
+      // say that, rather than only a swing of nothing.
+      const still = scenario.startsWith('fire') && p.e.tank.sheet?.fireingForce === 0;
+      const words = still ? [`${p.e.tank.name}: its gun has no recoil in the game, so firing does not move the hull. It stays on target.`]
+        : steadyWords(p.e.tank.name, traces[k], sums[k], { reload: p.e.tank.gun.reload });
+      return words.map(w => `<li class="${p.who}">${esc(w)}</li>`).join('');
+    }).join('');
   // The trace, small, under the picture.
   const hz = any.hz;
   const len = Math.max(...traces.map(x => x?.values.length ?? 0));

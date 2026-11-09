@@ -65,6 +65,10 @@ class TankSchoolTests(unittest.TestCase):
         # Driving at the target, the shell flies flatter.
         self.assertEqual(m["dropDrivingAt"], 19.9)
         self.assertIsNone(self.out["outOfReach"])
+        # A round that declares no gravity is flown straight: aim at the target.
+        self.assertEqual(self.out["straight"], {"flat": True, "e200": 0, "drop200": 0, "reach": None})
+        self.assertIn("Your round flies straight; theirs drops about 4 deg per 100 m, so past 200 m you have the easier shot.",
+                      self.out["words"]["straightVsSherman"]["guns"])
 
     # --- the arenas -------------------------------------------------------------------
 
@@ -98,7 +102,8 @@ class TankSchoolTests(unittest.TestCase):
     def test_the_main_gun_is_a_real_round_past_an_ammunition_switch(self) -> None:
         # FHSW's ammunition switch fires a stand-in under the main gun's name;
         # the armour-piercing sibling is the gun.
-        self.assertEqual(self.out["pick"], {"fakeThenAP": "VGunBarrel_AP", "named": "ShermanGunBarrel", "none": None})
+        self.assertEqual(self.out["pick"], {"fakeThenAP": "VGunBarrel_AP", "named": "ShermanGunBarrel", "none": None,
+                                            "autocannon": "ShilkaGunBarrel"})
 
     # --- where a tank is hit (DMG-1, DMG-3, DMG-4) ---------------------------------------
 
@@ -162,8 +167,9 @@ class TankSchoolTests(unittest.TestCase):
 
     # --- the sheet --------------------------------------------------------------------------
 
-    def test_the_sheet_holds_the_seven_vanilla_tanks(self) -> None:
-        self.assertEqual(sorted(self.out["sheet"]), ["Chi-ha", "M10", "PanzerIV", "Sherman", "T34", "T34-85", "Tiger"])
+    def test_the_sheet_holds_vanilla_s_tanks(self) -> None:
+        # The seven, and the Sexton vanilla's own AI files as a tank.
+        self.assertEqual(sorted(self.out["sheet"]), ["Chi-ha", "M10", "PanzerIV", "Sexton", "Sherman", "T34", "T34-85", "Tiger"])
 
     def test_the_tiger_wobbles_and_the_t34_does_not(self) -> None:
         s = self.out["sheet"]

@@ -51,6 +51,9 @@ out.moving = {
   dropDrivingAt: r1(B.dropAt(guns.sherman, 200, { along: 14.7 })),
 };
 out.outOfReach = B.elevationFor(guns.sherman, 600);
+// A round with no gravity (a mod's missile) flies straight: no drop, no aim-off.
+const straight = B.gunOf({ velocity: 100, projectile: { gravity: 0 } });
+out.straight = { flat: B.flatShooter(straight), e200: B.elevationFor(straight, 200), drop200: B.dropAt(straight, 200), reach: B.reach(straight).range };
 
 // --- arenas ---------------------------------------------------------------------
 const row = (name, side, levels, hp, weapons) => ({ name, category: 'land', sides: [side], levels, hitpoints: hp, weapons });
@@ -104,6 +107,7 @@ out.pick = {
   fakeThenAP: A.pickMainGun([fa('VGunBarrel', 'ChangeAmmo_FakeProjectile', 210, 465), fa('VGunBarrel_Canister', 'Canister', 656, 450), fa('VGunBarrel_AP', '57mmAP', 692, 465)], 'VGunBarrel')?.name,
   named: A.pickMainGun([fa('ShermanGunBarrel', 'ShermanProjectile', 236, 100)], 'ShermanGunBarrel')?.name,
   none: A.pickMainGun([fa('X', 'ChangeAmmo_FakeProjectile', 210, 1)], 'X'),
+  autocannon: A.pickMainGun([{ name: 'ShilkaGunBarrel', userData: { fireArms: { velocity: 900, projectile: { kind: 'bullet', template: '23mm', material: 501 } } } }], 'ShilkaGunBarrel')?.name,
 };
 
 // --- armour: a box hull, 6 m long, 3 m wide, 2 m tall ---------------------------
@@ -156,6 +160,7 @@ out.words = {
   cannotEither: W.matchupWords(ghost, ghost),
   noAnswer: W.matchupWords(sherman, scratch),
   thinFront: W.matchupWords(sherman, tank('Thin', 3, 30, 4, { 0: { shots: 3, bestShots: 3, share: 0.26 }, 90: { shots: 3, bestShots: 3, share: 0.24 }, 180: { shots: 3, bestShots: 3, share: 0.5 } })),
+  straightVsSherman: W.matchupWords(tank('Missile', 3, 30, 0, S(3, 2, 2)), sherman),
   scratchedBoth: W.matchupWords(tank('A', 3, 30, 4, S(40, 50, 60)), tank('B', 3, 30, 4, S(35, 45, 31))),
   shermanTiger: W.matchupWords(sherman, tiger),
   tigerSherman: W.matchupWords(tiger, sherman),

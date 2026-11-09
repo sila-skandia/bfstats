@@ -77,7 +77,12 @@ export function gunWords(you, them) {
   if (ty && tt && ty >= 1.4 * tt) out.push(`Their turret turns at ${n1(tt)} deg/s against your ${n1(ty)}: get round to their side and stay there.`);
   else if (ty && tt && tt >= 1.4 * ty) out.push(`Their turret turns at ${n1(tt)} deg/s against your ${n1(ty)}: do not try to circle them.`);
   const dy = you.gun.per100, dt = them.gun.per100;
-  if (dy && dt && dy !== dt) {
+  // 0 a hundred metres: a round that declares no gravity and flies straight.
+  if (dy === 0 || dt === 0) {
+    out.push(dy === 0 && dt === 0 ? 'Both your rounds fly straight: aim at them.'
+      : dy === 0 ? `Your round flies straight; theirs drops about ${dt} deg per 100 m, so past 200 m you have the easier shot.`
+        : `Their round flies straight; yours drops about ${dy} deg per 100 m: close the range, or hold over.`);
+  } else if (dy && dt && dy !== dt) {
     out.push(dy > dt
       ? `Your shell drops about ${dy} deg per 100 m, theirs ${dt}: past 200 m they can hit you more easily than you can hit them. Close the range, or stay out of their sight.`
       : `Your shell drops about ${dy} deg per 100 m, theirs ${dt}: at range the advantage is yours.`);

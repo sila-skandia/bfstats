@@ -471,3 +471,44 @@ which shrank the tank to a speck in its picture; `tank-snapshots.js` now
 boxes a tank by the meshes within 6 m of their median middle.
 
 **Steadiness on an unmeasured mod** is one line, not empty frames.
+
+## Fourth round: every mod measured, straight rounds, one more slider (2026-11-09)
+
+The owner on Desert Combat's BMP-2 against a T-72: the sight's cross sat
+below the wheels, most of THE DRIVE was empty ("surely we have that data"),
+and the distance slider sat above the chart, a scroll away from the sights.
+
+**Straight rounds.** The page priced the BMP-2's AT-5 (its weapon the AI
+rates against armour: 6, its 25 mm chain gun 2), a round at 100 m/s that
+declares no gravity. Under the engine's launch lift alone (FA-23, +0.98 m/s)
+such a round climbs about 1 m a second, so the sums put the cross 2 m under
+the target at 200 m. The rounds that declare no gravity are the mods'
+missiles and rockets, whose flight their motor and guidance decide, so
+`tank-ballistics.js` now flies them straight: no drop, no aim-off, no reach
+on flat ground. The sight says "Its round flies straight: put the cross on
+them", and the guns' words compare a straight round with a dropping one.
+A vehicle with no shell to fire (the Shilka) is priced by its autocannon.
+
+**Every mod measured.** THE DRIVE and STEADINESS read the tank sheet, which
+was vanilla's only. `surveys/tank_school_sheet.mjs --fetch` now downloads a
+published tree's catalogue, its `_shared` collision, mobility, damage and AI
+data, and its tanks' glbs, and drives them, so every mod has its sheet
+(`viewer/tank-school/<mod>.json`). Leaving the collision data out was tried
+and is wrong (turns 10 to 40% quicker, the rocking off by up to a third), and
+FHSW's is 24 MB compressed, so the sheets are made ahead rather than in the
+page. A wheeled hull is driven too (the EE-9: 26.5 m/s). The vanilla tanks inside
+Desert Combat's tree measure exactly as in vanilla's sheet.
+
+**Every shot measured.** The owner, on the BMP-2's empty FIRE AHEAD: "it's
+physics so we can calculate something". Two cases had been left out, and
+both are measured now. A gun the game gives no recoil (`fireingForce` 0: the
+BMP-2's AT-5, the M163's and Shilka's cannons) shoves nothing: the hull is
+driven on with no push and stays where it rests, and the page says so ("its
+gun has no recoil in the game, so firing does not move the hull"). A wheeled
+hull's drive has no accumulator to post the push into, so the shot's one
+tick is spent on its velocity and spin directly, as the tracked law spends
+it (`a dt`, and `(r x a) dt` over the box inertia in the hull's frame): the
+EE-9 fired across its hull rolls 11.7 degrees and settles in 0.9 s.
+
+**One more slider.** A second TARGET AT over the sights, in step with the
+one over the chart.
