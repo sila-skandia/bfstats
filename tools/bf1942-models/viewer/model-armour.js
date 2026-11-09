@@ -6,6 +6,7 @@
 
 import * as THREE from 'three';
 import { damageMath, distanceMod, hasDistanceFalloff, shotsFor, formatHp, weaponLabel } from './armour-damage.js';
+import { angleFactor as engineAngleFactor } from './crash-damage.js';
 
 /**
  * Built once by the page, where this code used to sit. `page` hands in
@@ -30,6 +31,7 @@ export async function createArmourInspector(page) {
   const collisionTargets = [];
   armour.lastHit = null;
   armour.hitState = null;
+  armour.angleMod = 0;
   armour.angleDragging = false;
   armour.angleDragStart = null;
 
@@ -98,7 +100,9 @@ export async function createArmourInspector(page) {
 
   // The MaterialManager tables out of Game.rfa, written by the extractor as
   // damage.json. Direct damage is materialDamage(att) * damageMod(att, def) *
-  // cos(angle) * distanceMod; splash swaps in material2 and a radius term. A
+  // angleFactor * distanceMod, the angle factor the engine's (ledger DMG-3,
+  // DMG-4: `angleMod + (1 - angleMod) sin(|cos| pi/2)`, the model's own
+  // `angleMod`, 0 where it authors none); splash swaps in material2 and a radius term. A
   // pair with no damageMod entry is one the engine ignores entirely.
   const damageTables = await fetch(`${page.MODELS_BASE}/damage.json?t=${Date.now()}`)
     .then(response => (response.ok ? response.json() : null))
@@ -440,6 +444,14 @@ export async function createArmourInspector(page) {
     };
   }
 
+  /** The angle term as the formula line spells it (ledger DMG-4). */
+  function angleTerm(angle) {
+    const mod = armour.angleMod;
+    if (mod >= 1) return `angleMod 1, any angle`;
+    const sine = `sin(|cos ${angle.toFixed(1)}\u00b0| \u00d7 \u03c0/2)`;
+    return mod > 0 ? `(${mod} + ${+(1 - mod).toFixed(3)} \u00d7 ${sine})` : sine;
+  }
+
   function updateHitPanel() {
     if (!armour.lastHit) return;
     const angle = Math.abs(armour.lastHit.angle);
@@ -475,7 +487,7 @@ export async function createArmourInspector(page) {
       }
       if (formula) {
         formula.textContent =
-          `cos(${angle.toFixed(1)}°) = ${multiplier.toFixed(3)}. ` +
+          `${angleTerm(angle)} = ${multiplier.toFixed(3)}. ` +
           'Orange is the shot path; white is the surface normal.';
       }
       return;
@@ -546,7 +558,7 @@ export async function createArmourInspector(page) {
       formula.textContent =
         `${formatHp(damage.base)} materialDamage x ${damage.mod} damageMod`
         + ` (att ${attGroup(damage.attMaterial)} vs def ${defGroup(damage.defMaterial)})`
-        + ` x cos(${angle.toFixed(1)}°) = ${multiplier.toFixed(3)}`
+        + ` x ${angleTerm(angle)} = ${multiplier.toFixed(3)}`
         + (damage.distanceMod !== 1 ? ` x ${damage.distanceMod.toFixed(3)}` : '')
         + ` = ${damage.direct.toFixed(2)} HP`;
     }
@@ -612,7 +624,10 @@ export async function createArmourInspector(page) {
     angleArc.visible = Math.abs(angle) >= .5;
 
     armour.lastHit.angle = angle;
-    armour.lastHit.angleFactor = Math.cos(Math.abs(radians));
+    // The engine's angle term, not a bare cosine (ledger DMG-4): flat near
+    // square (0.98 at 30 degrees, 0.71 at 60 on a tank), and always 1 for a
+    // model that authors `angleMod 1` (the aircraft).
+    armour.lastHit.angleFactor = engineAngleFactor(Math.abs(Math.cos(radians)), armour.angleMod);
     updateHitPanel();
     page.invalidate();
   }
@@ -806,6 +821,14 @@ export async function createArmourInspector(page) {
   /** A freshly loaded model: its report, its weapons and its collision hulls. */
   function adoptModel(root, report, entry) {
     armour.currentReport = report;
+    // The template's `angleMod` (the glb's physics extras), 0 where it
+    // authors none, as `vehicle-hits.js` `angleModOf` reads it in the game.
+    // `root` is the glTF scene; the template's own node, the first carrying
+    // physics extras, sits under it.
+    let physics = null;
+    root?.traverse?.(o => { if (!physics && o.userData?.physics) physics = o.userData.physics; });
+    const angleMod = Number(physics?.angleMod ?? NaN);
+    armour.angleMod = Number.isFinite(angleMod) ? angleMod : 0;
     buildWeaponSelect(entry);
     renderWeaponSummary();
     collectCollisions(root, report);

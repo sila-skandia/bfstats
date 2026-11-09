@@ -1,6 +1,7 @@
 // The armour inspector's damage arithmetic: the MaterialManager tables out of
 // Game.rfa (damage.json) and the weapon's own distance falloff. Direct damage
-// is materialDamage(att) * damageMod(att, def) * cos(angle) * distanceMod; a
+// is materialDamage(att) * damageMod(att, def) * angleFactor * distanceMod, the
+// angle factor the engine's (ledger DMG-4, `crash-damage.js` `angleFactor`); a
 // pair with no damageMod entry is one the engine ignores entirely. Split out
 // of `model-armour.js`, which keeps the selected weapon and the drawing.
 

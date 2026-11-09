@@ -733,14 +733,19 @@ material used for splash damage, not the material of every direct hit.
 Direct projectile damage includes an angle term:
 
 ```text
-damage = MaterialDamage * DamageMod * cos(impact angle) * DistanceMod
+damage = MaterialDamage * DamageMod * angleFactor * DistanceMod
+angleFactor = angleMod + (1 - angleMod) * sin(|cos(impact angle)| * pi/2)
 ```
 
-That is documented Refractor engine behaviour, not an assumption based on real
-armour and not a value inferred from vehicle physics. The angle is measured from
-the struck collision face's normal: a square hit is 0 degrees and keeps a factor
-of 1; a grazing hit approaches 90 degrees and 0. `ObjectTemplate.angleMod` is a
-separate control used by physical object-on-object collision damage.
+The tutorial writes the angle term as a bare `cos(impact angle)`; the binary's
+is the line above, with the struck object's own `ObjectTemplate.angleMod`
+(ledger DMG-3, DMG-4). The angle is measured from the struck collision face's
+normal. A hull that authors no `angleMod` (every vanilla tank, boat and gun)
+keeps 0.98 of a square hit at 30 degrees, 0.90 at 45 and 0.71 at 60; a model
+that authors `angleMod 1` (the aircraft, the soldiers) takes the same at any
+angle. *Corrected 2026-11-09 in the inspector too, which had kept the
+tutorial's cosine (half a hit at 60 degrees) after this README's correction of
+2026-09-29 below; `features/battle-schools` found it.*
 
 Enable **show armour regions** in the viewer. With no weapon selected the legend
 ranks the model's known defence materials from red (inferred most vulnerable)
@@ -757,7 +762,7 @@ The model's own guns are listed first; the rest are grouped by category.
 
 Clicking a coloured face selects the object part and starts with a square 0-degree
 shot. Without a weapon the reading is the angular share of head-on damage, 100% at
-0 degrees falling with `cos(angle)`. With a weapon it is hit points against the
+0 degrees falling with the angle factor above. With a weapon it is hit points against the
 vehicle's `hitpoints`, with **shots to destroy** and **shots to critical** from the
 root `Objects.con` health and `criticalDamage`, the splash figure at the blast
 centre against the vehicle's splash material, and a **Range** slider for the few
