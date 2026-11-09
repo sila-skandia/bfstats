@@ -1711,11 +1711,23 @@ _SCRIPT_ARG = re.compile(r"v_arg(\d+)", re.IGNORECASE)
 _SCRIPT_DEPTH = 12
 
 
-def _script_value(token: str, args: list[str]) -> str | None:
+# What a host's `game.gamemode -> v_x` / `game.gameplaymode -> v_x` store: a
+# multiplayer Conquest server, the mode the viewer plays and the one
+# `template_table.Console` assumes. BF1918 dispatches its statics on them
+# (`if v_gm == GMSingle run SPStaticObjects.con ... else run MPStaticObjects.con`).
+HOST_GAME_VARIABLES = {"game.gamemode": "GMMultiplayer", "game.gameplaymode": "GPM_CQ"}
+_GAME_VARIABLE_LINE = re.compile(r"^\s*(game\.gamemode|game\.gameplaymode)\s*->\s*(v_\w+)",
+                                 re.IGNORECASE)
+
+
+def _script_value(token: str, args: list[str],
+                  env: dict[str, str] | None = None) -> str | None:
     """A script token's value: `v_argN` is the Nth argument the file was run
     with ("" when there is none), a quoted word is the word, and any other
     `v_` variable is one this reader does not track (None)."""
     token = token.strip('"')
+    if env and token.lower() in env:
+        return env[token.lower()]
     match = _SCRIPT_ARG.fullmatch(token)
     if match:
         index = int(match.group(1)) - 1
@@ -1723,7 +1735,8 @@ def _script_value(token: str, args: list[str]) -> str | None:
     return None if token.lower().startswith("v_") else token
 
 
-def _script_condition(expr: str, args: list[str]) -> bool:
+def _script_condition(expr: str, args: list[str],
+                      env: dict[str, str] | None = None) -> bool:
     """One `if` test as a host decides it.
 
     Only the arguments are known: a mode script runs with `v_arg1 = host`
@@ -1735,7 +1748,7 @@ def _script_condition(expr: str, args: list[str]) -> bool:
     tokens = expr.split()
     if len(tokens) != 3 or tokens[1] not in ("==", "!="):
         return True
-    left, right = _script_value(tokens[0], args), _script_value(tokens[2], args)
+    left, right = _script_value(tokens[0], args, env), _script_value(tokens[2], args, env)
     if left is None or right is None:
         return True
     return (left.lower() == right.lower()) == (tokens[1] == "==")
@@ -1752,15 +1765,20 @@ def _host_lines(text: str, args: list[str]) -> list[str]:
     # one of its arms has been taken.
     frames: list[list[bool]] = []
     active = True
+    # Variables the script reads from the host (`game.gamemode -> v_gm`).
+    env: dict[str, str] = {}
     for line in con_mod.strip_comments(text).splitlines():
+        stored = _GAME_VARIABLE_LINE.match(line)
+        if stored and active:
+            env[stored.group(2).lower()] = HOST_GAME_VARIABLES[stored.group(1).lower()]
         match = _IF_LINE.match(line)
         if match:
             if match.group(1).lower() == "if":
-                take = active and _script_condition(match.group(2), args)
+                take = active and _script_condition(match.group(2), args, env)
                 frames.append([active, take])
             elif frames:
                 outer, taken = frames[-1]
-                take = outer and not taken and _script_condition(match.group(2), args)
+                take = outer and not taken and _script_condition(match.group(2), args, env)
                 frames[-1][1] = taken or take
             else:
                 continue

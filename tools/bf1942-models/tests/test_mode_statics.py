@@ -192,6 +192,40 @@ class HostLinesTests(unittest.TestCase):
         self.assertEqual(_host_lines("a\nreturn\nb\n", ["host"]), ["a"])
 
 
+class HostGameModeTests(unittest.TestCase):
+    """BF1918's root `StaticObjects.con` dispatches on the host's game mode
+    (basra, cassino, krakau, vitry, ypres_streets and four more): a host is a
+    multiplayer Conquest server, so its MP arm runs, and the files it runs
+    are followed, `TrainGuideRails.con` among them."""
+
+    DISPATCH = ("var v_gm\nvar v_gpm\ngame.gamemode -> v_gm\n"
+                "game.gameplaymode -> v_gpm\n"
+                "if v_gm == GMSingle\nrun SPStaticObjects.con\n"
+                "elseIf v_gpm == GPM_COOP\nrun SPStaticObjects.con\n"
+                "else\nrun MPStaticObjects.con\nendIf\n"
+                "run TrainGuideRails.con\n")
+
+    def test_the_host_takes_the_multiplayer_arm(self) -> None:
+        lines = _host_lines(self.DISPATCH, ["host"])
+        self.assertIn("run MPStaticObjects.con", lines)
+        self.assertNotIn("run SPStaticObjects.con", lines)
+
+    def test_an_unassigned_variable_still_keeps_its_first_arm(self) -> None:
+        text = "if v_gm == GMSingle\na\nelse\nb\nendIf\n"
+        self.assertEqual(_host_lines(text, ["host"]), ["a"])
+
+    def test_the_root_static_file_follows_its_runs(self) -> None:
+        files = _FakeFiles({
+            "StaticObjects.con": self.DISPATCH,
+            "SPStaticObjects.con": _create("sp_only", 1, 1),
+            "MPStaticObjects.con": _create("house_m1", 10, 20) + _create("trench_m1", 30, 40),
+            "TrainGuideRails.con": _create("RailRoad_Straight_Guide_m1", 5, 6),
+        })
+        made = script_objects(files, "staticobjects.con")
+        self.assertEqual([o.template for o in made.objects],
+                         ["house_m1", "trench_m1", "RailRoad_Straight_Guide_m1"])
+
+
 class ScriptObjectsTests(unittest.TestCase):
     """What a mode script's chain creates, the layer files apart."""
 

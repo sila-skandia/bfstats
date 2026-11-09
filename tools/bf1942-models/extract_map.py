@@ -79,6 +79,7 @@ from bf42.assemble import Assembler, Report  # noqa: E402
 from extract_pose import _match_skn_vertices, read_skin  # noqa: E402
 from bf42.level import (  # noqa: E402
     LevelFiles,
+    script_objects,
     StaticInstance,
     LevelInfo,
     index_object_lightmaps,
@@ -142,6 +143,9 @@ from extract_hud_assets import decode_tga  # noqa: E402
 # basename is itself a parity bug.
 TEXTURE_GAP_MODS = ("WarFront", "FH", "bf1918", "bg42", "FinnWars")
 
+
+
+_RUNS_A_FILE = re.compile(r"^\s*(run|include)\s+\S", re.IGNORECASE | re.MULTILINE)
 
 def _mod_dirs(game_dir: Path, names: list[str]) -> list[Path]:
     mods = game_dir / "Mods"
@@ -386,8 +390,16 @@ def load_level(game_dir: Path, mod: str, level: str,
     if files.find("Init/SkyAndSun.con"):
         parse_init_con(_read_text(files, "Init/SkyAndSun.con"), info)
     _load_extra_lens_flares(files, info)
-    if files.find("StaticObjects.con"):
-        info.static_objects = parse_static_objects(_read_text(files, "StaticObjects.con"))
+    statics_path = files.find("StaticObjects.con")
+    if statics_path:
+        statics_text = _read_text(files, "StaticObjects.con")
+        if _RUNS_A_FILE.search(con_mod.strip_comments(statics_text)):
+            # The file runs others (BF1918: `SPStaticObjects.con` or
+            # `MPStaticObjects.con` by game mode, `TrainGuideRails.con`):
+            # walk it as a host runs it, following each `run`.
+            info.static_objects = script_objects(files, statics_path).objects
+        else:
+            info.static_objects = parse_static_objects(statics_text)
     # Conquest is what every stock level ships and what these paths assumed,
     # but a mod map may only carry Ctf or ObjectiveMode — asking for the mode
     # the level actually has is what gets those their vehicles and flags.
