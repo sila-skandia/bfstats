@@ -439,6 +439,35 @@ state bits are that same register, but which of its bits feed the lean has
 not been read out of `FUN_004fb150`; only `0x10`, `0x20` and `0x2000` are
 named (`round-replay-capture`). Left until those bits are.
 
+## Nobody in a seat taken before the file began (2026-11-09)
+
+A creator cutting skandia's Mustang bomb on a Tiger (Bocage, `wxprh7ze6n`,
+a bf42plus 2.0 client file from MoonGamers) asked why nobody was flying the
+plane. The file has BF6 (pid 6, the recording player) in the Mustang's seat
+0 from its first `p` row to their death at 371.75 s, and no soldier of
+theirs until the respawn at 386.05 s. The same holds for every player who
+was in a vehicle when the file began: 21 of the 34 began seated (Onzz's
+Panzer IV, Tom's B17, Kipyoep's Panzer IV, two Willys...), and each has a
+soldier only after their first death. The file opens with the join's events
+and the roster but none of the held `createPlayer` / `createObject` records
+(`round-replay-capture` section 18, bf42plus `0254e92`), so it was written by
+an older build; a seated soldier is not in the sampler's view either way.
+
+Which seat a player sits in is in the data. Where a player is seated and has
+no soldier life yet, `replay-bodies.js` `seatStandIn` draws one: their
+side's soldier (their first recorded life's template, else the one most of
+the side wear) in the kit of their first recorded life, riding the hull's
+own track, from the hull's start to their first death or their first
+recorded soldier, whichever comes first. At 268 s BF6 is drawn in the
+Mustang's cockpit as a US medic, and six more players seated at that moment
+in the same file got bodies. Verdict: recorder-side gap (no soldier in the
+file), drawn by the viewer from the seat rows.
+
+Tests: `tests/test_replay_seat_standin.py` (a pilot seated from the start
+drawn until their first death, nothing between death and respawn, the
+recorded soldier winning once there is one, a side's soldier for a player
+never seen on foot, nobody invented for a player on foot).
+
 ## Open
 
 - ~~**Server files mark hulls and soldiers as kits.** `parseRecording` marks a

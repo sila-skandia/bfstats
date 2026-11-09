@@ -1028,7 +1028,62 @@ export class ReplaySoldiers {
       if (life.created > t || t >= life.destroyed) continue;
       if (!best || life.created > best.created) best = life;
     }
-    return best;
+    return best ?? this.seatStandIn(pid, nid, t);
+  }
+
+  /**
+   * A body for a player the recording has in a seat but has no soldier for:
+   * one who was already in a vehicle when the recording began. The
+   * recorder's opening snapshot writes the soldiers on foot and not the
+   * seated ones, so until that player first dies there is no soldier in the
+   * file, and the hull was drawn empty. In skandia's Bocage round
+   * (`wxprh7ze6n`) BF6 flew the Mustang for six minutes with nobody in the
+   * cockpit, and 20 more players began the round seated the same way.
+   *
+   * Who sits in which seat is in the data (the `p` rows), so the player is
+   * drawn there as their side's soldier, wearing the kit of their first
+   * recorded life (the respawn's kit is the best guess at the one they flew
+   * in). The stand-in rides its hull's own pose, never outlives their first
+   * death or their first recorded soldier, and is a fresh life per hull.
+   */
+  seatStandIn(pid, nid, t) {
+    const { rec } = this.player;
+    const root = rootOf(rec, nid, t, pid);
+    if (!root || root.life.soldier || root.life.camera || root.life.projectile) return null;
+    const lives = soldierLivesOf(rec, pid);
+    let first = null;
+    for (const life of lives) if (!first || life.created < first.created) first = life;
+    let end = first ? first.created : rec.duration;
+    for (const k of rec.kills ?? []) {
+      if (k.kind === 'kill' && k.victim === pid && k.t < end) {
+        end = k.t;
+        break;
+      }
+    }
+    if (t >= end) return null;
+    const key = `${pid}|${root.life.nid}|${end}`;
+    this.standIns ??= new Map();
+    let life = this.standIns.get(key);
+    if (!life) {
+      const team = root.life.team || teamAt(rec, pid, t) || first?.team || 0;
+      // The side's soldier: the template the player's own next life wears,
+      // else the one most of the side wear.
+      let tmpl = first?.tmpl ?? null;
+      if (!tmpl) {
+        const count = new Map();
+        for (const l of rec.lives) if (l.soldier && l.team === team && l.tmpl) count.set(l.tmpl, (count.get(l.tmpl) ?? 0) + 1);
+        tmpl = [...count].sort((a, b) => b[1] - a[1])[0]?.[0] ?? null;
+      }
+      if (!tmpl) return null;
+      life = {
+        // Negative: never a network id of the file's own.
+        nid: -(pid + 1) * 1_000_000 - root.life.nid, pid, tmpl, team, created: Math.max(0, root.life.created), destroyed: end,
+        pose: root.life.pose, keys: root.life.keys, replicated: [], soldier: true, standIn: true,
+        kits: first?.kits ?? null, kitTemplate: first ? kitAt(first, first.created) : null,
+      };
+      this.standIns.set(key, life);
+    }
+    return life;
   }
 
   /**
