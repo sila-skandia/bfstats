@@ -158,6 +158,42 @@ class ReplayAccuracyTests(unittest.TestCase):
         self.assertEqual(d["farthest"], 30)
 
 
+    def test_every_player_side_by_side(self) -> None:
+        # Owner, 2026-11-09: players want "a full comparison between players
+        # ... in a list", at a glance. Accuracy first, and a player of under
+        # 20 rounds goes last however lucky: the leaver's 1 of 2 is 50%.
+        c = self.results["compare"]
+        names = [r[0] for r in c["rows"]]
+        self.assertEqual(names, ["Shooter", "Leaver", "Pilot", "Joiner"])
+        shooter = c["rows"][0]
+        # 42 rounds, 13 hits, 2 kills (the teamkill is none): 21 rounds a kill.
+        self.assertEqual(shooter[1:6], [42, 13, 2, 21.0, False])
+        self.assertEqual(shooter[7], "Mp40")
+        # The pid's kills go to whoever held the name then.
+        by = {r[0]: r for r in c["rows"]}
+        self.assertEqual((by["Leaver"][3], by["Joiner"][3]), (1, 1))
+        self.assertTrue(by["Leaver"][5])
+        # The average is everyone's hits over everyone's rounds; the best
+        # counts only 20 rounds or more.
+        self.assertAlmostEqual(c["avg"], 15 / 51, places=4)
+        self.assertAlmostEqual(c["best"], 13 / 42, places=6)
+        self.assertAlmostEqual(shooter[6], 13 / 42 - 15 / 51, places=4)
+        self.assertEqual(c["teams"]["2"], [4, 51, 15, 4])
+        self.assertEqual(c["teams"]["1"], [0, 0, 0, 0])
+        self.assertEqual(c["mix"], {"infantry": 42, "vehicle": 0, "air": 0, "other": 0})
+
+    def test_the_comparison_by_board_side_and_clock(self) -> None:
+        c = self.results["compare"]
+        # On Air only the pilot, and no rounds a kill: kills are not by weapon.
+        self.assertEqual(c["air"], [["Pilot", 6, 1, 0, None, True, 0.0, "BF109"]])
+        self.assertEqual(c["axis"], 0)
+        # At 13 s: the joiner has not fired, the leaver has his kill, the
+        # shooter one of two.
+        self.assertEqual(c["early"], [["Leaver", 1], ["Shooter", 1]])
+        self.assertEqual(c["byFired"], ["Shooter", "Pilot", "Leaver", "Joiner"])
+        # Fewest rounds a kill first; no kills last.
+        self.assertEqual(c["byPerKill"], ["Joiner", "Leaver", "Shooter", "Pilot"])
+
 
 if __name__ == "__main__":
     unittest.main()

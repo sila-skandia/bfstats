@@ -778,6 +778,117 @@ export function playerDetail(rec, entry, board, { weapons = null, categories = n
   };
 }
 
+// --- every player side by side ------------------------------------------------
+
+/** Below this many rounds an accuracy is no measure of a shot: such a row
+ *  sorts last by accuracy and is not the round's best. */
+export const FEW_ROUNDS = 20;
+
+const killTimes = new WeakMap();
+
+/** When `entry` killed and when he died: `{ kills: [t], deaths: [t] }`, in
+ *  time order. A reused pid's kills go to whoever held the name then. */
+export function killTimesOf(rec, entry) {
+  let out = killTimes.get(entry);
+  if (out) return out;
+  const { pid, name } = entry;
+  const kills = [];
+  const deaths = [];
+  for (const k of rec.kills ?? []) {
+    if (k.killer === pid && k.kind === 'kill' && nameAt(rec, pid, k.t) === name) kills.push(k.t);
+    if (k.victim === pid && nameAt(rec, pid, k.t) === name) deaths.push(k.t);
+  }
+  kills.sort((a, b) => a - b);
+  deaths.sort((a, b) => a - b);
+  out = { kills, deaths };
+  killTimes.set(entry, out);
+  return out;
+}
+
+/** How many of the sorted times `times` are at or before `t`. */
+function upTo(times, t) {
+  let lo = 0;
+  let hi = times.length;
+  while (lo < hi) {
+    const mid = (lo + hi) >> 1;
+    if (times[mid] <= t) lo = mid + 1;
+    else hi = mid;
+  }
+  return lo;
+}
+
+/**
+ * The Accuracy tab's comparison table: every player with rounds on `kind`,
+ * side by side, at recording time `t` (null for the whole round), on `team`
+ * (0 for both). Each row is `{ p, fired, hit, accuracy, estimated, kills,
+ * perKill, vs, few, top, mix }`:
+ * - `perKill`, rounds fired a kill (on 'all' only: the kills are not by weapon);
+ * - `vs`, his accuracy less the average of everyone on the table, in [0, 1];
+ * - `few`, under FEW_ROUNDS rounds, too few to judge;
+ * - `top`, the weapon he fired most on `kind`, `{ tmpl, fired, hit }`, whole round;
+ * - `mix`, his whole round's rounds by board, `{ infantry, vehicle, air, other }`.
+ * Also `avg` and `best` (the best accuracy of FEW_ROUNDS rounds or more), and
+ * `teams`, `{ 1: {...}, 2: {...} }` each `{ players, fired, hit, accuracy, kills }`
+ * over both teams whatever `team` is.
+ */
+export function compareBoard(rec, board, { kind = 'all', t = null, team = 0 } = {}) {
+  const all = [];
+  for (const p of board ?? []) {
+    const final = totalsOf(p, kind);
+    if (!(final.fired > 0)) continue;
+    let at = final;
+    let estimated = false;
+    if (t !== null) {
+      const now = totalsAt(p, kind, t);
+      if (!now || !(now.fired >= 0.5)) continue;
+      at = now;
+      estimated = now.estimated;
+    }
+    const { kills: kt } = killTimesOf(rec, p);
+    const kills = t === null ? kt.length : upTo(kt, t);
+    const mix = { infantry: 0, vehicle: 0, air: 0, other: 0 };
+    let top = null;
+    for (const r of p.rows) {
+      mix[r.kind in mix ? r.kind : 'other'] += r.fired;
+      if ((kind === 'all' || r.kind === kind) && r.fired > 0 && (!top || r.fired > top.fired)) top = r;
+    }
+    all.push({
+      p, fired: at.fired, hit: at.hit, accuracy: at.accuracy, estimated, kills,
+      perKill: kind === 'all' && kills ? at.fired / kills : null,
+      few: at.fired < FEW_ROUNDS, top: top ? { tmpl: top.tmpl, fired: top.fired, hit: top.hit } : null, mix,
+    });
+  }
+  const teams = {};
+  for (const side of [1, 2]) {
+    const mine = all.filter(r => r.p.team === side);
+    const fired = mine.reduce((n, r) => n + r.fired, 0);
+    const hit = mine.reduce((n, r) => n + r.hit, 0);
+    teams[side] = { players: mine.length, fired, hit, accuracy: fired > 0 ? hit / fired : null, kills: mine.reduce((n, r) => n + r.kills, 0) };
+  }
+  const rows = team ? all.filter(r => r.p.team === team) : all;
+  const fired = rows.reduce((n, r) => n + r.fired, 0);
+  const hit = rows.reduce((n, r) => n + r.hit, 0);
+  const avg = fired > 0 ? hit / fired : null;
+  for (const r of rows) r.vs = avg !== null && r.accuracy !== null ? r.accuracy - avg : null;
+  const best = Math.max(0, ...rows.filter(r => !r.few).map(r => r.accuracy ?? 0));
+  return { rows, avg, best: best > 0 ? best : null, teams };
+}
+
+/** Sort the comparison table's rows in place by `key`: 'acc' (and 'vs'),
+ *  'fired', 'hit', 'kills' most first; 'perKill' fewest first. A row under
+ *  FEW_ROUNDS rounds goes after the rest on accuracy, a row with no kills
+ *  after the rest on rounds a kill. Ties go to more rounds, then the name. */
+export function sortCompare(rows, key = 'acc') {
+  const by = {
+    acc: (a, b) => (a.few - b.few) || (b.accuracy ?? 0) - (a.accuracy ?? 0),
+    fired: (a, b) => b.fired - a.fired || b.hit - a.hit,
+    hit: (a, b) => b.hit - a.hit || b.fired - a.fired,
+    kills: (a, b) => b.kills - a.kills || (a.perKill ?? Infinity) - (b.perKill ?? Infinity),
+    perKill: (a, b) => (a.perKill === null) - (b.perKill === null) || (a.perKill ?? 0) - (b.perKill ?? 0) || b.kills - a.kills,
+  }[key === 'vs' ? 'acc' : key] ?? (() => 0);
+  return rows.sort((a, b) => by(a, b) || b.fired - a.fired || a.p.name.localeCompare(b.p.name));
+}
+
 /** How many of `list` (`{ t, n? }` in time order) came by `t`. */
 export function countBy(list, t) {
   let n = 0;

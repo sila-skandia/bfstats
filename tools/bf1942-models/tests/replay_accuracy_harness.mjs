@@ -15,7 +15,7 @@ const viewer = viewerDir();
 installModuleHooks(viewer);
 const imp = name => import(pathToFileURL(path.join(viewer, name)).href);
 const [recording, accuracy] = await Promise.all([imp('replay-recording.js'), imp('replay-accuracy.js')]);
-const { accuracyBoard, accuracySeries, countBy, fireBuckets, playerDetail, rebuildTallies, totalsAt, totalsOf, weaponKind, weaponTableFrom } = accuracy;
+const { accuracyBoard, accuracySeries, compareBoard, countBy, fireBuckets, playerDetail, rebuildTallies, sortCompare, totalsAt, totalsOf, weaponKind, weaponTableFrom } = accuracy;
 
 const line = o => JSON.stringify(o);
 const toward = (from, to) => {
@@ -134,6 +134,30 @@ results.noWeapons = weaponKind('Mp40', null);
   const mine = playerDetail(rec, shooter, board, options);
   results.shooterDetail = { bursts: mine.bursts, targets: mine.targets, victims: mine.victims.map(v => [v.name, v.hits]),
     ranges: mine.ranges.map(r => r.n), farthest: mine.farthest && Math.round(mine.farthest.dist) };
+}
+// The comparison table (2026-11-09): every player side by side. Kills: the
+// shooter two, the leaver one before he goes and the joiner, on the leaver's
+// pid, one after; a teamkill is no kill.
+{
+  const krec = { ...rec, kills: [
+    { t: 5.2, kind: 'kill', killer: 3, victim: 5 }, { t: 21.6, kind: 'kill', killer: 3, victim: 5 },
+    { t: 12.2, kind: 'kill', killer: 8, victim: 5 }, { t: 17, kind: 'kill', killer: 8, victim: 5 },
+    { t: 26.6, kind: 'tk', killer: 3, victim: 9 },
+  ] };
+  const fresh = accuracyBoard(krec, options);
+  const pick = c => sortCompare(c.rows, 'acc').map(r => [r.p.name, r.fired, r.hit, r.kills, r.perKill === null ? null : +r.perKill.toFixed(2), r.few,
+    r.vs === null ? null : +r.vs.toFixed(4), r.top?.tmpl ?? null]);
+  const whole = compareBoard(krec, fresh, { kind: 'all' });
+  results.compare = {
+    rows: pick(whole), avg: +whole.avg.toFixed(4), best: whole.best,
+    teams: Object.fromEntries(Object.entries(whole.teams).map(([k, v]) => [k, [v.players, v.fired, v.hit, v.kills]])),
+    mix: whole.rows.find(r => r.p.name === 'Shooter').mix,
+    air: pick(compareBoard(krec, fresh, { kind: 'air' })),
+    axis: compareBoard(krec, fresh, { team: 1 }).rows.length,
+    early: compareBoard(krec, fresh, { t: 13 }).rows.map(r => [r.p.name, r.kills]).sort(),
+    byFired: sortCompare(compareBoard(krec, fresh).rows, 'fired').map(r => r.p.name),
+    byPerKill: sortCompare(compareBoard(krec, fresh).rows, 'perKill').map(r => r.p.name),
+  };
 }
 // A server recording: one `f` per barrel, a bot's fake round marked, the
 // server's own credits (`hg`).

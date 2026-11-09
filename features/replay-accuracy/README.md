@@ -24,7 +24,7 @@ graph", and "rather than present it as a regular score board we develop it as a
 rich 'dashboard' ... accuracy, bullets fired, and whatever hard core data we can
 capture. Some fun stuff too like how many bullets were shot at them."
 
-The Accuracy tab is a dashboard now (`viewer/replay-accuracy-dash.js`). The
+The Accuracy tab's player view is a dashboard (it opens from a row of the comparison table, below) (`viewer/replay-accuracy-dash.js`). The
 players are down the left, sortable by rounds fired, hits or accuracy, with
 the board filters (All, Infantry, Vehicles, Air) and **So far / Whole round**:
 so far follows the replay's clock, second by second. Clicking a player shows
@@ -68,6 +68,49 @@ is hidden while the board is open: it scrawled over the rows of every view.
 
 Measured on Kharkov (`272wb7fjbj`, 39 min, 14,427 rounds): the board takes
 0.3 s and one player's detail 40-80 ms, worked out when he is first picked.
+
+## Every player side by side
+
+Asked 2026-11-09: the tab is popular, but "it does show it per player. What
+some users are asking for is to see a full comparison between players ... in a
+list. The click in could show the current view ... at a glance people would
+like to see how each player stacked up against each other".
+
+The Accuracy tab now opens on a comparison table of every player
+(`compareBoard` and `sortCompare` in `viewer/replay-accuracy.js`, drawn by
+`renderTable` in `viewer/replay-accuracy-dash.js`). Clicking a row opens the
+dashboard above for that player; **All players** goes back, with the row last
+opened marked.
+
+- **Axis against Allied** over the table: each side's accuracy, rounds, hits
+  and kills, and the side ahead by how many points.
+- **The columns:** accuracy as a bar, every row on one scale with the
+  table's average as a dashed mark; points above or below that average; rounds
+  fired; hits; kills; rounds a kill; the accuracy trend through the round (one
+  scale for everyone, bright up to the clock); the weapon fired most with its
+  accuracy; and the role, the share of their rounds fired on foot, from
+  vehicles and from the air.
+- Every number column sorts (rounds a kill fewest first, no kills last).
+  Accuracy is the default, and a player under 20 rounds is faded and sorts
+  last on it, as in the list beside the dashboard.
+- **Whole round** is the default (owner, 2026-11-09: "show whole round by
+  default and make it clear how to toggle to so far"). The toggle reads
+  **SHOW Whole round | So far**, So far carrying a dot that pulses while it
+  follows the clock; the pill between the two sides says which is showing
+  (`WHOLE ROUND`, or `SO FAR · 8:24`) and switches to the other; the footer
+  says the same in words.
+- **Both / Axis / Allied** narrows the table and the dashboard's list. It,
+  the Whole round / So far toggle and the board filters drive both views.
+- Kills are counted from the kill feed and are the player's whatever the
+  board filter, so rounds a kill is shown on All only. A reused pid's kills go
+  to whoever held the name. The trend, the weapon and the role are the whole
+  round's; the rest follows the clock in "so far".
+- Narrower than 1060 px the trend and role go; on a phone the table keeps
+  rank, name, accuracy, fired, hits and kills.
+
+Tests: `test_every_player_side_by_side` and
+`test_the_comparison_by_board_side_and_clock` in
+`tests/test_replay_accuracy.py`.
 
 ## Where the numbers come from
 

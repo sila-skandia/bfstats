@@ -15,7 +15,7 @@
 // part of his firing: the running counts keep the recording's shape and are
 // scaled to finish on the server's numbers (replay-accuracy.js `totalsAt`).
 
-import { accuracySeries, countBy, fireBuckets, totalsAt, totalsOf } from './replay-accuracy.js';
+import { accuracySeries, compareBoard, countBy, FEW_ROUNDS, fireBuckets, sortCompare, totalsAt, totalsOf } from './replay-accuracy.js';
 import { fmtClock } from './replay-timeline.js';
 
 function el(tag, className, text) {
@@ -154,6 +154,87 @@ export const ACC_DASH_STYLE = `
 .rp-accd-empty { padding: 30px 12px; color: var(--rp-muted); text-align: center; }
 .rp-accd-note { color: var(--rp-muted); font-size: 11px; }
 
+/* The comparison table: every player side by side. A row opens their dashboard. */
+.rp-root.board-acc .rp-acc.rp-accd.cmp { display: flex; flex-direction: column; }
+.rp-accd.cmp > .rp-accd-list, .rp-accd.cmp > .rp-accd-dash { display: none; }
+.rp-accd:not(.cmp) > .rp-accd-sides, .rp-accd:not(.cmp) > .rp-accd-cmp { display: none; }
+.rp-accd-back { display: none; align-items: center; gap: 7px; padding: 3px 10px 3px 9px; border: 1px solid var(--rp-edge); border-radius: 4px;
+  background: none; color: var(--rp-ink); font: 800 10px/1.4 var(--rp-font); letter-spacing: .1em; cursor: pointer; }
+.rp-accd-back::before { content: ''; width: 5px; height: 5px; border-left: 2px solid currentColor; border-bottom: 2px solid currentColor; transform: rotate(45deg); }
+.rp-accd-back:hover { border-color: var(--rp-gold); color: var(--rp-gold); }
+.rp-accd:not(.cmp) .rp-accd-back { display: inline-flex; }
+
+.rp-accd-sides { display: grid; grid-template-columns: minmax(0, 1fr) auto minmax(0, 1fr); border-top: 1px solid var(--rp-edge); border-bottom: 1px solid var(--rp-edge);
+  background: linear-gradient(90deg, rgba(255, 89, 89, .07), rgba(255, 255, 255, 0) 45%, rgba(255, 255, 255, 0) 55%, rgba(110, 150, 255, .08)); }
+.rp-accd-side { display: flex; flex-direction: column; gap: 1px; padding: 7px 16px 8px; min-width: 0; font: 12px/1.35 var(--rp-font); }
+.rp-accd-side.t2 { align-items: flex-end; text-align: right; }
+.rp-accd-side .tn { font: 800 10px/1.3 var(--rp-font); letter-spacing: .14em; }
+.rp-accd-side.t1 .tn { color: #ff8b8b; } .rp-accd-side.t2 .tn { color: #9ab8ff; }
+.rp-accd-side .tn span { color: var(--rp-muted); font-weight: 700; letter-spacing: .06em; }
+.rp-accd-side .big { display: flex; align-items: baseline; gap: 8px; font: 700 24px/1.1 var(--rp-mono); font-variant-numeric: tabular-nums; }
+.rp-accd-side.t2 .big { flex-direction: row-reverse; }
+.rp-accd-side .lead { padding: 0 5px; border-radius: 3px; color: var(--rp-life); background: rgba(169, 195, 106, .14); font: 700 10px/1.6 var(--rp-mono); }
+.rp-accd-side .facts { color: var(--rp-muted); font: 11px/1.4 var(--rp-mono); font-variant-numeric: tabular-nums; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; max-width: 100%; }
+.rp-accd-side .facts b { color: var(--rp-ink); font-weight: 700; }
+.rp-accd-side.off { opacity: .4; }
+.rp-accd-vs { align-self: center; display: flex; flex-direction: column; align-items: center; gap: 5px; padding: 0 6px; }
+.rp-accd-vs b { color: var(--rp-muted); font: 800 10px/1 var(--rp-font); letter-spacing: .16em; }
+.rp-accd-vs .when { padding: 2px 8px; border: 1px solid var(--rp-edge); border-radius: 999px; background: none; color: var(--rp-ink);
+  font: 700 9px/1.4 var(--rp-mono); letter-spacing: .08em; white-space: nowrap; cursor: pointer; }
+.rp-accd-vs .when:hover { border-color: var(--rp-gold); color: var(--rp-gold); }
+.rp-accd-when { align-items: center; }
+.rp-accd-when .lbl { padding: 0 8px; color: var(--rp-muted); font: 800 9px/1 var(--rp-font); letter-spacing: .12em; border-right: 1px solid var(--rp-edge); align-self: stretch; display: flex; align-items: center; }
+.rp-accd-mode button.live { display: inline-flex; align-items: center; gap: 5px; }
+.rp-accd-mode button.live::before { content: ''; width: 6px; height: 6px; border-radius: 50%; background: var(--rp-muted); }
+.rp-accd-mode button.live[aria-pressed="true"]::before { background: var(--rp-axis); animation: rp-accd-live 1.6s ease-in-out infinite; }
+@keyframes rp-accd-live { 0%, 100% { opacity: 1; box-shadow: 0 0 0 0 rgba(255, 89, 89, .5); } 50% { opacity: .55; box-shadow: 0 0 0 3px rgba(255, 89, 89, 0); } }
+
+.rp-accd-cmp { display: flex; flex-direction: column; min-height: 0; flex: 1 1 auto; }
+.rp-accd-cmp .rp-acc-cols, .rp-accd-cmp .rp-arow {
+  grid-template-columns: 26px minmax(120px, 1.25fr) minmax(150px, 1.5fr) 50px 58px 50px 44px 58px 100px minmax(100px, 1fr) 64px; column-gap: 10px; }
+.rp-accd-cmp .rp-acc-cols .l, .rp-accd-cmp .rp-acc-cols button.l { text-align: left; }
+.rp-accd-cmp .rp-acc-cols .c { text-align: center; }
+.rp-accd-cmp .rp-acc-cols [title] { cursor: help; }
+.rp-accd-cmp .rp-acc-cols button[title] { cursor: pointer; }
+.rp-accd-cmp .rp-arow { padding: 5px 12px; min-height: 30px; }
+.rp-accd-cmp .rp-arow:nth-child(even):not(.me):not(.sel) { background: rgba(255, 255, 255, .025); }
+.rp-accd-cmp .rp-arow:nth-child(even):not(.me):not(.sel):hover, .rp-accd-cmp .rp-arow:hover { background: rgba(255, 255, 255, .08); }
+.rp-accd-cmp .rp-arow.sel { box-shadow: inset 3px 0 0 var(--rp-gold); background: rgba(232, 195, 90, .1); }
+.rp-accd-cmp .rp-arow .rk.top { color: var(--rp-gold); font-weight: 700; }
+.rp-accd-cmp .rp-arow .chip { padding: 0 4px; border: 1px solid var(--rp-edge); border-radius: 3px; color: var(--rp-muted); font: 800 8px/1.5 var(--rp-font); letter-spacing: .1em; }
+.rp-accd-cmp .rp-arow .est { color: var(--rp-muted); }
+.rp-crow-acc { display: grid; grid-template-columns: 50px minmax(0, 1fr); align-items: center; gap: 8px; }
+.rp-crow-acc b { text-align: right; font: 700 13px/1 var(--rp-mono); font-variant-numeric: tabular-nums; }
+.rp-crow-acc .track { position: relative; height: 8px; border-radius: 4px; background: rgba(255, 255, 255, .07); }
+.rp-crow-acc .track i { position: absolute; left: 0; top: 0; bottom: 0; border-radius: 4px; background: linear-gradient(90deg, rgba(232, 195, 90, .5), var(--rp-gold)); }
+.rp-arow.below .rp-crow-acc .track i { background: linear-gradient(90deg, rgba(163, 156, 108, .35), rgba(163, 156, 108, .75)); }
+.rp-crow-acc .track u { position: absolute; top: -3px; bottom: -3px; width: 0; border-left: 1px dashed rgba(238, 236, 217, .75); }
+.rp-arow.few .rp-crow-acc, .rp-arow.few .vs { opacity: .4; }
+.rp-accd-cmp .rp-arow .vs { text-align: right; font: 700 11px/1 var(--rp-mono); font-variant-numeric: tabular-nums; }
+.rp-accd-cmp .rp-arow .vs.up { color: var(--rp-life); } .rp-accd-cmp .rp-arow .vs.down { color: #ff8080; }
+.rp-crow-trend svg { display: block; width: 100%; height: 22px; overflow: visible; }
+.rp-crow-trend .ghost { fill: none; stroke: var(--rp-gold); stroke-width: 1.3; opacity: .25; stroke-linejoin: round; }
+.rp-crow-trend .past { fill: none; stroke: var(--rp-gold); stroke-width: 1.5; stroke-linejoin: round; }
+.rp-crow-trend .avg { stroke: rgba(238, 236, 217, .35); stroke-dasharray: 1 2; stroke-width: 1; }
+.rp-crow-trend .none { fill: var(--rp-muted); font: 9px var(--rp-mono); }
+.rp-crow-wpn { display: flex; align-items: baseline; gap: 6px; min-width: 0; white-space: nowrap; }
+.rp-crow-wpn span { overflow: hidden; text-overflow: ellipsis; min-width: 0; }
+.rp-crow-wpn small { flex: none; color: var(--rp-muted); font: 10px var(--rp-mono); }
+.rp-crow-mix { display: flex; height: 6px; border-radius: 3px; overflow: hidden; background: rgba(255, 255, 255, .07); }
+.rp-crow-mix i { height: 100%; }
+.rp-crow-mix .infantry, .rp-accd-key .infantry { background: var(--rp-gold); }
+.rp-crow-mix .vehicle, .rp-accd-key .vehicle { background: var(--rp-khaki); }
+.rp-crow-mix .air, .rp-accd-key .air { background: #8fb7d6; }
+.rp-crow-mix .other, .rp-accd-key .other { background: rgba(238, 236, 217, .3); }
+.rp-accd-key { display: inline-flex; flex-wrap: wrap; gap: 4px 10px; margin-right: 10px; }
+.rp-accd-key i { display: inline-block; width: 8px; height: 8px; border-radius: 2px; margin-right: 4px; vertical-align: -1px; }
+
+@media (max-width: 1060px) {
+  .rp-accd-cmp .rp-acc-cols, .rp-accd-cmp .rp-arow {
+    grid-template-columns: 26px minmax(110px, 1.3fr) minmax(130px, 1.5fr) 50px 54px 46px 40px 54px minmax(90px, 1fr); }
+  .rp-accd-cmp .c-trend, .rp-accd-cmp .c-mix, .rp-acc-foot .c-mix { display: none; }
+}
+
 @media (max-width: 720px) {
   .rp-root.board-acc .rp-board { width: calc(100% - 12px); }
   .rp-root.board-acc .rp-acc.rp-accd { display: flex; flex-direction: column; overflow: auto; }
@@ -165,8 +246,17 @@ export const ACC_DASH_STYLE = `
   .rp-accd-tiles { grid-template-columns: repeat(2, minmax(0, 1fr)); }
   .rp-accd-tile .v { font-size: 19px; }
   .rp-accd-tile.lead .v { font-size: 22px; }
+  .rp-accd-cmp .rp-acc-cols, .rp-accd-cmp .rp-arow { grid-template-columns: 20px minmax(0, 1fr) minmax(84px, 1fr) 40px 36px 30px; column-gap: 6px; padding-left: 8px; padding-right: 8px; }
+  .rp-accd-cmp .c-vs, .rp-accd-cmp .c-pk, .rp-accd-cmp .c-wpn, .rp-accd-cmp .rp-arow .nm small { display: none; }
+  .rp-crow-acc { grid-template-columns: 40px minmax(0, 1fr); gap: 5px; }
+  .rp-crow-acc b { font-size: 12px; }
+  .rp-accd-cmp .rp-acc-rows { max-height: none; overflow: visible; }
+  .rp-accd-side { padding: 6px 10px; }
+  .rp-accd-side .big { font-size: 19px; }
+  .rp-accd-side .facts { white-space: normal; }
+  .rp-accd-vs { padding: 0 2px; }
 }
-@media (prefers-reduced-motion: reduce) { .rp-accd-tile .meter { transition: none; } }
+@media (prefers-reduced-motion: reduce) { .rp-accd-tile .meter { transition: none; } .rp-accd-mode button.live::before { animation: none; } }
 `;
 
 /**
@@ -178,32 +268,53 @@ export class AccuracyDash {
     this.ui = ui;
     this.kind = 'all';
     this.sort = 'hit';
-    this.mode = 'now';
+    // The whole round first (owner, 2026-11-09); So far follows the replay's clock.
+    this.mode = 'final';
     this.selected = null;
+    // 'table', every player side by side, or 'player', one player's dashboard.
+    this.view = 'table';
+    this.tableSort = 'acc';
+    // 0 both sides, 1 Axis, 2 Allied.
+    this.team = 0;
     this.build();
   }
 
   get player() { return this.ui.player; }
 
+  /** Whole round ('final') or so far ('now'). */
+  setMode(m) {
+    this.mode = m;
+    for (const [k, node] of Object.entries(this.modeButtons)) node.setAttribute('aria-pressed', String(k === m));
+    this.render(true);
+  }
+
   build() {
     const box = el('div', 'rp-panel rp-acc rp-accd');
     this.box = box;
     const head = el('div', 'rp-acc-head');
-    head.append(el('b', '', 'ACCURACY'));
-    const mode = el('div', 'rp-accd-mode');
+    const back = el('button', 'rp-accd-back', 'ALL PLAYERS');
+    back.type = 'button';
+    back.title = 'Back to every player side by side';
+    back.addEventListener('click', e => {
+      e.stopPropagation();
+      this.view = 'table';
+      this.render(true);
+    });
+    head.append(back, el('b', '', 'ACCURACY'));
+    const mode = el('div', 'rp-accd-mode rp-accd-when');
     mode.setAttribute('role', 'group');
-    mode.setAttribute('aria-label', 'Numbers at');
+    mode.setAttribute('aria-label', 'Numbers for');
+    mode.append(el('span', 'lbl', 'SHOW'));
     this.modeButtons = {};
-    for (const [m, text, title] of [['now', 'So far', 'Numbers up to the replay\'s clock'], ['final', 'Whole round', 'The whole round\'s numbers']]) {
-      const b = el('button', '', text);
+    for (const [m, text, title] of [['final', 'Whole round', 'Everyone\'s numbers for the whole round'],
+      ['now', 'So far', 'Everyone\'s numbers up to the replay\'s clock, updating as it plays']]) {
+      const b = el('button', m === 'now' ? 'live' : '', text);
       b.type = 'button';
       b.title = title;
       b.setAttribute('aria-pressed', String(m === this.mode));
       b.addEventListener('click', e => {
         e.stopPropagation();
-        this.mode = m;
-        for (const [k, node] of Object.entries(this.modeButtons)) node.setAttribute('aria-pressed', String(k === m));
-        this.render(true);
+        this.setMode(m);
       });
       mode.append(b);
       this.modeButtons[m] = b;
@@ -223,7 +334,28 @@ export class AccuracyDash {
       kinds.append(b);
       this.kindButtons[kind] = b;
     }
-    head.append(mode, kinds);
+    const sides = el('div', 'rp-accd-mode');
+    sides.setAttribute('role', 'group');
+    sides.setAttribute('aria-label', 'Side');
+    this.teamButtons = {};
+    for (const [t, text] of [[0, 'Both'], [1, 'Axis'], [2, 'Allied']]) {
+      const b = el('button', '', text);
+      b.type = 'button';
+      b.setAttribute('aria-pressed', String(t === this.team));
+      b.addEventListener('click', e => {
+        e.stopPropagation();
+        this.team = t;
+        for (const [k, node] of Object.entries(this.teamButtons)) node.setAttribute('aria-pressed', String(Number(k) === t));
+        this.render(true);
+      });
+      sides.append(b);
+      this.teamButtons[t] = b;
+    }
+    head.append(mode, sides, kinds);
+
+    // The two sides, head to head, over the comparison table.
+    this.sides = el('div', 'rp-accd-sides');
+    this.buildTable();
 
     // The players.
     const list = el('div', 'rp-accd-list');
@@ -264,7 +396,55 @@ export class AccuracyDash {
     }) : null;
     this.resize?.observe(this.dash);
     this.foot = el('div', 'rp-acc-foot');
-    box.append(head, list, this.dash, this.foot);
+    box.append(head, this.sides, this.table, list, this.dash, this.foot);
+    box.classList.toggle('cmp', this.view === 'table');
+  }
+
+  /** The comparison table's head: every column sorts but the trend, the
+   *  weapon and the mix. */
+  buildTable() {
+    this.table = el('div', 'rp-accd-cmp');
+    const cols = el('div', 'rp-acc-cols');
+    this.tableCols = {};
+    const sortable = (key, text, title, cls = '') => {
+      const b = el('button', cls, text);
+      b.type = 'button';
+      b.title = title;
+      b.addEventListener('click', e => {
+        e.stopPropagation();
+        this.tableSort = key;
+        this.render(true);
+      });
+      this.tableCols[key] = b;
+      return b;
+    };
+    const plain = (text, title, cls) => {
+      const s = el('span', cls, text);
+      if (title) s.title = title;
+      return s;
+    };
+    cols.append(
+      el('span', '', '#'), plain('PLAYER', '', 'l'),
+      sortable('acc', 'ACCURACY', `Sort by accuracy. The bar is against the best on the table (${FEW_ROUNDS} rounds or more); the dashed mark is the average`, 'l'),
+      sortable('vs', 'VS AVG', 'Points above or below the average of everyone on the table', 'c-vs'),
+      sortable('fired', 'FIRED', 'Sort by rounds fired'),
+      sortable('hit', 'HITS', 'Sort by hits'),
+      sortable('kills', 'K', 'Sort by kills'),
+      sortable('perKill', 'RDS/K', 'Rounds fired a kill, fewest first (All only: kills are not by weapon)', 'c-pk'),
+      plain('TREND', 'Their accuracy through the round, on one scale for everyone', 'c c-trend'),
+      plain('MAIN WEAPON', 'The weapon they fired most, with its accuracy (whole round)', 'l c-wpn'),
+      plain('ROLE', 'Where their rounds came from, whole round: on foot, in vehicles, in the air', 'l c-mix'));
+    this.tableRows = el('div', 'rp-acc-rows');
+    this.tableRows.addEventListener('click', e => {
+      const row = e.target.closest?.('.rp-arow[data-key]');
+      if (!row) return;
+      e.stopPropagation();
+      this.selected = row.dataset.key;
+      this.view = 'player';
+      this.dash.scrollTop = 0;
+      this.render(true);
+    });
+    this.table.append(cols, this.tableRows);
   }
 
   /** The board, and each entry's numbers in the current mode, sorted. */
@@ -272,6 +452,7 @@ export class AccuracyDash {
     const kind = this.kind;
     const rows = [];
     for (const p of board) {
+      if (this.team && p.team !== this.team) continue;
       const final = totalsOf(p, kind);
       if (!(final.fired > 0)) continue;
       let at = final;
@@ -300,10 +481,16 @@ export class AccuracyDash {
     const board = player.accuracy?.() ?? [];
     const t = player.time;
     const sec = Math.floor(t);
-    const key = [board, this.kind, this.sort, this.mode, this.selected, player.followPid, sec];
+    const key = [board, this.kind, this.sort, this.mode, this.selected, player.followPid, this.view, this.team, this.tableSort, sec];
     if (!force && this.key && key.every((v, i) => v === this.key[i])) return;
-    const listChanged = force || !this.key || key.slice(0, 6).some((v, i) => v !== this.key[i]) || this.mode === 'now';
+    const listChanged = force || !this.key || key.slice(0, -1).some((v, i) => v !== this.key[i]) || this.mode === 'now';
     this.key = key;
+    this.box.classList.toggle('cmp', this.view === 'table');
+    if (this.view === 'table') {
+      if (listChanged) this.renderTable(board, t);
+      this.renderFoot(board);
+      return;
+    }
     const rows = this.rowsAt(board, t);
     // Whom the dashboard shows: the one picked, else the man followed, else the top.
     // Anyone with no rounds on this board gives way.
@@ -315,6 +502,167 @@ export class AccuracyDash {
     if (listChanged) this.renderList(rows, entry);
     this.renderDash(board, entry, t);
     this.renderFoot(board);
+  }
+
+  /** Every player side by side, sorted by the column picked. */
+  renderTable(board, t) {
+    const player = this.player;
+    const rec = player.rec;
+    const kind = this.kind;
+    const now = this.mode === 'now';
+    const { rows, avg, best, teams } = compareBoard(rec, board, { kind, t: now ? t : null, team: this.team });
+    sortCompare(rows, this.tableSort);
+    for (const [k, b] of Object.entries(this.tableCols)) {
+      if (k === this.tableSort) b.setAttribute('aria-sort', k === 'perKill' ? 'ascending' : 'descending');
+      else b.removeAttribute('aria-sort');
+    }
+    this.renderSides(teams);
+    this.tableRows.textContent = '';
+    if (!rows.length) {
+      this.tableRows.append(el('div', 'rp-acc-empty', now ? 'Nobody has fired yet.'
+        : this.kind === 'all' && !this.team ? 'No rounds fired in this recording.' : 'No rounds fired on this board.'));
+      return;
+    }
+    const display = name => this.ui.lexicon?.()?.names?.[name] ?? name;
+    // The bars share one scale, a little past the best on the table.
+    const scale = niceCeil(Math.max(0.05, best ?? 0, avg ?? 0) * 1.05);
+    // So do the trends: the best whole-round accuracy with room for the
+    // early swings.
+    const shown = board.filter(p => !this.team || p.team === this.team);
+    const finals = shown.map(p => totalsOf(p, kind)).filter(x => x.fired >= FEW_ROUNDS);
+    const trendMax = Math.min(1, niceCeil(Math.max(0.05, ...finals.map(x => x.accuracy ?? 0)) * 1.3));
+    const trendAvg = roundAverage(shown, kind);
+    const duration = rec.duration || 1;
+    const recPids = player.recordingPids ?? [player.recordingPid];
+    rows.forEach((r, i) => {
+      const p = r.p;
+      const cls = ['rp-arow', `t${team(p.team)}`];
+      if (p.pid === player.followPid) cls.push('me');
+      if (p.key === this.selected) cls.push('sel');
+      if (r.few) cls.push('few');
+      if (r.vs !== null && r.vs < 0) cls.push('below');
+      const row = el('button', cls.join(' '));
+      row.type = 'button';
+      row.dataset.key = p.key;
+      row.title = `${p.name}: open their dashboard${r.estimated ? '. So far, estimated: the server\'s whole-round tally, spread as this recording saw them fire' : ''}`;
+
+      const nm = el('span', 'nm');
+      nm.append(el('span', 'who', p.name));
+      if (recPids.includes(p.pid)) nm.append(el('span', 'rp-card-rec', 'REC'));
+      if (p.ai) nm.append(el('span', 'chip', 'BOT'));
+      if (p.source === 'rebuilt') {
+        const tag = el('small', '', 'rebuilt');
+        tag.title = SOURCE.rebuilt[1];
+        nm.append(tag);
+      }
+
+      const acc = el('span', 'rp-crow-acc');
+      const track = el('span', 'track');
+      const fill = el('i');
+      fill.style.width = `${(Math.min(1, (r.accuracy ?? 0) / scale) * 100).toFixed(1)}%`;
+      track.append(fill);
+      if (avg !== null) {
+        const mark = el('u');
+        mark.style.left = `${(Math.min(1, avg / scale) * 100).toFixed(1)}%`;
+        track.append(mark);
+      }
+      acc.append(el('b', r.estimated ? 'est' : '', pct(r.accuracy)), track);
+      if (r.few) acc.title = `Only ${int(r.fired)} rounds: too few to judge`;
+
+      const vs = el('span', `vs c-vs${r.vs === null ? '' : r.vs >= 0 ? ' up' : ' down'}`,
+        r.vs === null ? '-' : `${r.vs >= 0 ? '+' : '-'}${(Math.abs(r.vs) * 100).toFixed(1)}`);
+
+      const est = r.estimated ? ' est' : '';
+      const rank = el('span', `rk${i < 3 && this.tableSort !== 'perKill' ? ' top' : ''}`, String(i + 1));
+      row.append(rank, nm, acc, vs, el('span', `n${est}`, int(r.fired)), el('span', `n${est}`, int(r.hit)),
+        el('span', 'n', String(r.kills)), el('span', 'n c-pk', r.perKill === null ? '-' : int(r.perKill)),
+        this.trendCell(p, kind, duration, trendMax, trendAvg, now ? t : duration), this.weaponCell(r.top, display), this.mixCell(r.mix));
+      this.tableRows.append(row);
+    });
+  }
+
+  /** A row's accuracy through the round: bright up to the clock. */
+  trendCell(entry, kind, duration, yMax, avg, until) {
+    const cell = el('span', 'rp-crow-trend c-trend');
+    if (!this.trends) this.trends = new WeakMap();
+    let byKind = this.trends.get(entry);
+    if (!byKind) this.trends.set(entry, byKind = new Map());
+    let series = byKind.get(kind);
+    if (!series) byKind.set(kind, series = accuracySeries(entry, kind, duration, 60).filter(s => s.fired >= WARM_UP));
+    const W = 100;
+    const H = 22;
+    const root = svg('svg', { viewBox: `0 0 ${W} ${H}`, preserveAspectRatio: 'none', 'aria-hidden': 'true' });
+    const y = v => H - 1 - (Math.min(v ?? 0, yMax) / yMax) * (H - 2);
+    if (avg !== null) root.append(svg('line', { class: 'avg', x1: 0, x2: W, y1: y(avg), y2: y(avg), 'vector-effect': 'non-scaling-stroke' }));
+    if (series.length > 1) {
+      const d = series.map((s, i) => `${i ? 'L' : 'M'}${((s.t / duration) * W).toFixed(1)} ${y(s.accuracy).toFixed(1)}`).join('');
+      root.append(svg('path', { class: 'ghost', d, 'vector-effect': 'non-scaling-stroke' }));
+      const past = svg('svg', { x: 0, y: -2, width: Math.max(0, (until / duration) * W), height: H + 4, viewBox: `0 -2 ${Math.max(0.01, (until / duration) * W)} ${H + 4}`, preserveAspectRatio: 'none' });
+      past.append(svg('path', { class: 'past', d, 'vector-effect': 'non-scaling-stroke' }));
+      root.append(past);
+    }
+    cell.append(root);
+    return cell;
+  }
+
+  weaponCell(top, display) {
+    const cell = el('span', 'rp-crow-wpn c-wpn');
+    if (!top) return cell;
+    const name = display(top.tmpl);
+    cell.append(el('span', '', name), el('small', '', pct(top.fired ? top.hit / top.fired : null)));
+    cell.title = `${name}: ${int(top.hit)} hits of ${int(top.fired)} rounds, whole round`;
+    return cell;
+  }
+
+  mixCell(mix) {
+    const cell = el('span', 'rp-crow-mix c-mix');
+    const total = mix.infantry + mix.vehicle + mix.air + mix.other;
+    if (!total) return cell;
+    const words = { infantry: 'infantry', vehicle: 'vehicles', air: 'air', other: 'other' };
+    const parts = [];
+    for (const k of ['infantry', 'vehicle', 'air', 'other']) {
+      if (!mix[k]) continue;
+      const i = el('i', k);
+      i.style.width = `${(mix[k] / total) * 100}%`;
+      cell.append(i);
+      parts.push(`${Math.round((mix[k] / total) * 100)}% ${words[k]}`);
+    }
+    cell.title = `Their rounds, whole round: ${parts.join(', ')}`;
+    return cell;
+  }
+
+  /** Axis against Allied: each side's accuracy, rounds, hits and kills. */
+  renderSides(teams) {
+    this.sides.textContent = '';
+    const side = (n, s, other) => {
+      const box = el('div', `rp-accd-side t${n}${this.team && this.team !== n ? ' off' : ''}`);
+      const tn = el('div', 'tn', n === 1 ? 'AXIS' : 'ALLIED');
+      tn.append(el('span', '', ` \u00b7 ${s.players} player${s.players === 1 ? '' : 's'}`));
+      const big = el('div', 'big');
+      big.append(el('span', '', pct(s.accuracy)));
+      if (s.accuracy !== null && other.accuracy !== null && s.accuracy > other.accuracy) {
+        const lead = el('span', 'lead', `+${((s.accuracy - other.accuracy) * 100).toFixed(1)}`);
+        lead.title = 'Points of accuracy ahead of the other side';
+        big.append(lead);
+      }
+      const facts = el('div', 'facts');
+      facts.append(el('b', '', int(s.fired)), document.createTextNode(' fired \u00b7 '), el('b', '', int(s.hit)),
+        document.createTextNode(' hits \u00b7 '), el('b', '', int(s.kills)), document.createTextNode(' kills'));
+      box.append(tn, big, facts);
+      return box;
+    };
+    // The middle says which numbers these are, and how to get the others.
+    const mid = el('div', 'rp-accd-vs');
+    mid.append(el('b', '', 'VS'));
+    const when = el('button', 'when', this.mode === 'now' ? `SO FAR \u00b7 ${fmtClock(this.player.time)}` : 'WHOLE ROUND');
+    when.type = 'button';
+    when.title = this.mode === 'now' ? 'Show the whole round instead' : 'Show the numbers as they stood at the replay\'s clock instead';
+    when.addEventListener('click', e => {
+      e.stopPropagation();
+      this.setMode(this.mode === 'now' ? 'final' : 'now');
+    });
+    mid.append(when);
+    this.sides.append(side(1, teams[1], teams[2]), mid, side(2, teams[2], teams[1]));
   }
 
   renderList(rows, entry) {
@@ -827,10 +1175,30 @@ export class AccuracyDash {
       ? 'Hits as the server counted them during the round.'
       : rec.roundStats?.size ? 'Whole-round numbers are the server\'s round-end tally; "so far" spreads them as this recording saw each player fire (marked ~).'
         : rec.hitMarks?.size ? 'The recording player\'s hits are the server\'s own hit marks.' : '';
-    const text = [counted, rebuilt
+    const rebuiltText = rebuilt
       ? (counted ? 'Rows marked rebuilt are counted from what this recording saw.' : 'Counted from what this recording saw: the server\'s count is not in it.')
-      : '', 'Ranges, targets and rounds fired at them are from what this recording saw. Click the graph to go to that moment.'].filter(Boolean).join(' ');
-    if (this.foot.textContent !== text) this.foot.textContent = text;
+      : '';
+    const table = this.view === 'table';
+    const text = (table
+      ? [this.mode === 'now' ? 'Showing the numbers as they stood at the replay\'s clock: pick Whole round for the final ones.'
+        : 'Showing the whole round: pick So far to see the numbers as they stood at the replay\'s clock, updating as it plays.',
+      'Click a player for their full breakdown.', counted, rebuiltText, `Under ${FEW_ROUNDS} rounds is too few to judge: faded, and last by accuracy.`]
+      : [counted, rebuiltText, 'Ranges, targets and rounds fired at them are from what this recording saw. Click the graph to go to that moment.']).filter(Boolean).join(' ');
+    const key = `${table}|${text}`;
+    if (this.footKey === key) return;
+    this.footKey = key;
+    this.foot.textContent = '';
+    if (table) {
+      const legend = el('span', 'rp-accd-key');
+      for (const [k, word] of [['infantry', 'infantry'], ['vehicle', 'vehicles'], ['air', 'air']]) {
+        const s = el('span');
+        s.append(el('i', k), document.createTextNode(word));
+        legend.append(s);
+      }
+      legend.classList.add('c-mix');
+      this.foot.append(legend);
+    }
+    this.foot.append(document.createTextNode(text));
   }
 }
 
