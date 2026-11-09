@@ -1166,6 +1166,12 @@ const DIRECTOR_SRC = `window.__director = (() => {
       const B = window.__rbSync;
       const cam = r.ctx.camera;
       state = { pid, victims, cfg, pose: 0, w: 0, held: 0, last: null, frames: [0, 0, 0, 0, 0], chain };
+      // A long shot runs in one order (the owner, 2026-11-09: "show either the
+      // shooter or the victim, then pan"): over his shoulder, the round, the
+      // man falling, then back to him (REVEAL). No cut to behind the man it
+      // kills, before the shot or in flight: the 286 m Midway re-film opened
+      // behind one man and cut to another, and could not be followed.
+      if (flight?.long) state.noReverse = true;
       const V = (x = 0, y = 0, z = 0) => cam.position.clone().set(x, y, z);
       // F10: behind the plane along its flight and above, eased in, held
       // through the hit; true while it places the camera.
