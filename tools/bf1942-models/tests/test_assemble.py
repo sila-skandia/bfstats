@@ -2920,6 +2920,36 @@ GeometryTemplate.create StandardMesh Plane_hull
         self.assertIs(True, nodes["PlaneGuns"]["extras"]["fireArms"]["fireInCameraDof"])
         self.assertIs(False, nodes["PlaneCannon"]["extras"]["fireArms"]["fireInCameraDof"])
 
+    def test_every_gun_says_whether_its_barrels_are_declared(self) -> None:
+        # FA-5: a loaded dummy hangs at each `addFireArmsPosition`, or at the
+        # FireArms' origin when there is none, never at the muzzle the
+        # exporter falls back to at `projectilePosition`. The Elco80's
+        # `FloatingMineLauncher` shape against a two-barrel torpedo rack.
+        document, _ = self._assemble("""
+ObjectTemplate.create Bundle PlaneComplex
+ObjectTemplate.addTemplate PlaneBody
+ObjectTemplate.addTemplate MineLauncher
+ObjectTemplate.addTemplate TorpedoRack
+
+ObjectTemplate.create SimpleObject PlaneBody
+ObjectTemplate.geometry Plane_hull
+
+ObjectTemplate.create FireArms MineLauncher
+ObjectTemplate.projectileTemplate PlaneProjectile
+ObjectTemplate.projectilePosition 0/0/2
+
+ObjectTemplate.create FireArms TorpedoRack
+ObjectTemplate.projectileTemplate PlaneProjectile
+ObjectTemplate.projectilePosition 0/-1.5/3.55
+ObjectTemplate.addFireArmsPosition -3/2.9/0.4 0/0/0
+ObjectTemplate.addFireArmsPosition 3/2.9/0.4 0/0/0
+
+GeometryTemplate.create StandardMesh Plane_hull
+""")
+        nodes = {node["name"]: node for node in document["nodes"]}
+        self.assertIs(False, nodes["MineLauncher"]["extras"]["fireArms"]["barrelsDeclared"])
+        self.assertIs(True, nodes["TorpedoRack"]["extras"]["fireArms"]["barrelsDeclared"])
+
     def _assemble_root(self, root: str, con_text: str):
         library = ObjectLibrary()
         library.add_con("Objects/Weapons/Handheld/Test/Objects.con", con_text)

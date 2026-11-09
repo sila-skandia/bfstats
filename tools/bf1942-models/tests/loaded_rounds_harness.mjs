@@ -13,7 +13,8 @@ import { GunFire } from './gunfire.js';
 import { FireState } from './seats.js';
 import { idleFirePose } from './idle-vehicle.js';
 import {
-  drawsLoadedRounds, loadedRoundsOf, mountLoadedRounds, restoreLoadedRounds, syncLoadedRounds,
+  barrelsDeclared, drawsLoadedRounds, loadedRoundsOf, mountLoadedRounds, restoreLoadedRounds,
+  syncLoadedRounds,
 } from './loaded-rounds.js';
 
 /** A rack as `assemble.py` bakes one: muzzles, then the hidden body. */
@@ -135,6 +136,73 @@ const out = {};
   // The round sits on the muzzle's position.
   out.mk83WorldAtMuzzle = rounds.every(r =>
     r.getWorldPosition(new THREE.Vector3()).distanceTo(r.parent.getWorldPosition(new THREE.Vector3())) < 1e-9);
+}
+
+// --- one muzzle: a declared barrel, or the fallback at projectilePosition ---
+// A rack with no `addFireArmsPosition` gets one muzzle from the exporter at its
+// `projectilePosition`, where the round is released; the engine hangs its one
+// dummy at the FireArms' own origin (`createAllDummyProjectiles`, FA-5).
+{
+  /** A one-muzzle rack on a hull, `place(muzzle, stats)` shaping it. */
+  const single = (name, place) => {
+    const hull = new THREE.Group();
+    hull.name = `${name} hull`;
+    hull.rotation.set(0.05, 2.1, 0);
+    const gun = rack(name, { round: 'FloatingMine', body: 'FloatingMineLauncherDummy', muzzles: 1, magSize: 6, numOfMag: 1 });
+    // The Elco80 carries its launcher at 0.039/2.783/-9.865, turned 180.
+    gun.position.set(0.039, 2.783, 9.865);
+    gun.rotation.y = Math.PI;
+    const muzzle = gun.children.find(c => c.userData.muzzle);
+    muzzle.rotation.set(0, 0, 0);
+    place(muzzle, gun.userData.fireArms);
+    hull.add(gun);
+    const rounds = mountLoadedRounds(gun);
+    hull.updateMatrixWorld(true);
+    const world = n => n.getWorldPosition(new THREE.Vector3());
+    return {
+      declared: barrelsDeclared(gun),
+      rounds: rounds.length,
+      parent: rounds[0]?.parent.name,
+      offRack: world(rounds[0]).distanceTo(world(gun)),
+      offMuzzle: world(rounds[0]).distanceTo(world(muzzle)),
+    };
+  };
+  // `FloatingMineLauncher`: `projectilePosition 0/0/2`, no positions.
+  out.mine = single('FloatingMineLauncher', m => m.position.set(0, 0, -2));
+  // FH's `SdKfz251RRocket1`: one declared rail, toed in 0.6 degrees.
+  out.toedRail = single('SdKfz251RRocket1', m => {
+    m.position.set(-0.246, 0.04, 0.02);
+    m.rotation.y = -0.6 * Math.PI / 180;
+  });
+  // FH's copy of the same rail: unturned, but off the centreline, where no
+  // `projectilePosition` a fallback came from sits.
+  out.offCentreRail = single('SdKfz251/1RRocket1', m => m.position.set(-0.246, 0.04, 0.02));
+  // `WasserfallFireArmsBundle`: one declared position and a
+  // `projectilePosition 0/1/0` carried beside it.
+  out.wasserfall = single('WasserfallFireArmsBundle', (m, stats) => {
+    m.position.set(0, 0.5, 0);
+    stats.projectilePosition = [0, 1, 0];
+  });
+  // A bake that says so wins over the shape either way.
+  out.saysDeclared = single('SaysDeclared', (m, stats) => {
+    m.position.set(0, 0, -2);
+    stats.barrelsDeclared = true;
+  });
+  out.saysFallback = single('SaysFallback', (m, stats) => {
+    m.position.set(0, 0, -2);
+    m.rotation.y = 0.3;
+    stats.barrelsDeclared = false;
+  });
+  // Mounting the mine twice adds nothing.
+  {
+    const gun = rack('FloatingMineLauncher', { round: 'FloatingMine', body: 'FloatingMineLauncherDummy', muzzles: 1, magSize: 6, numOfMag: 1 });
+    const muzzle = gun.children.find(c => c.userData.muzzle);
+    muzzle.rotation.set(0, 0, 0);
+    muzzle.position.set(0, 0, -2);
+    mountLoadedRounds(gun);
+    out.mineMountTwice = mountLoadedRounds(gun).length;
+    out.mineMuzzleChildren = muzzle.children.length;
+  }
 }
 
 // --- the magazine, by hand ---------------------------------------------------

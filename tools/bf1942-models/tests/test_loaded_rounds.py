@@ -166,6 +166,43 @@ class LoadedRoundsTests(unittest.TestCase):
         self.assertEqual(4, self.results["mountTwice"])
         self.assertEqual([1, 1, 1, 1], self.results["childrenPerMuzzle"])
 
+    # --- one muzzle: declared, or the fallback at projectilePosition -----
+
+    def test_a_rack_with_no_positions_hangs_its_dummy_on_itself(self) -> None:
+        # The Elco80's `FloatingMineLauncher` declares no `addFireArmsPosition`;
+        # the exporter's one muzzle is its `projectilePosition`, 2 m aft, where
+        # the mine is dropped. The engine hangs the loaded mine at the
+        # launcher's origin (`createAllDummyProjectiles`, ledger FA-5).
+        mine = self.results["mine"]
+        self.assertFalse(mine["declared"])
+        self.assertEqual(1, mine["rounds"])
+        self.assertEqual("FloatingMineLauncher", mine["parent"])
+        self.assertLess(mine["offRack"], 1e-9)
+        self.assertAlmostEqual(2.0, mine["offMuzzle"], places=6)
+        self.assertEqual(1, self.results["mineMountTwice"])
+        self.assertEqual(0, self.results["mineMuzzleChildren"])
+
+    def test_a_single_declared_barrel_keeps_its_dummy(self) -> None:
+        # One muzzle is a declared barrel when it is turned (FHSW's toed-in
+        # rocket rails), off the rack's centreline (FH's unturned copies of
+        # them) or carries a `projectilePosition` beside it (the Wasserfall):
+        # the dummy sits on it.
+        for key, name in (("toedRail", "SdKfz251RRocket1"),
+                          ("offCentreRail", "SdKfz251/1RRocket1"),
+                          ("wasserfall", "WasserfallFireArmsBundle")):
+            with self.subTest(key):
+                r = self.results[key]
+                self.assertTrue(r["declared"])
+                self.assertEqual(f"{name} muzzle 1", r["parent"])
+                self.assertLess(r["offMuzzle"], 1e-9)
+
+    def test_a_bake_that_says_wins(self) -> None:
+        # `fireArms.barrelsDeclared`, written by the exporter from 2026-11-09.
+        self.assertTrue(self.results["saysDeclared"]["declared"])
+        self.assertEqual("SaysDeclared muzzle 1", self.results["saysDeclared"]["parent"])
+        self.assertFalse(self.results["saysFallback"]["declared"])
+        self.assertEqual("SaysFallback", self.results["saysFallback"]["parent"])
+
     # --- the magazine -----------------------------------------------------
 
     def test_the_first_barrels_empty_first(self) -> None:

@@ -471,3 +471,94 @@ carry `userData.loadedRound`, none of the firing-payload marks.
 
 Not read: which pylon empties first, and what a rack with more rounds than
 positions shows between reloads. Pinned by `tests/test_loaded_rounds.py`.
+
+## 9. Where a dummy hangs: the rack, not the release point (2026-11-09)
+
+The report: in a Midway Short (`6zndpju5tv`, about 114 s), an Elco80 drove
+past with a copper-brown sphere about 3 m off its stern at the waterline, and
+the owner took it for a bullet that fell short. It was the boat's loaded mine,
+`FloatingMineLauncher round 1`, hung where the mine is released rather than
+where it is carried.
+
+The Elco80's launcher (vanilla `Objects.rfa`,
+`Vehicles/Sea/Elco80/Weapons.con` lines 184-203) names
+`visibleDummyProjectileTemplate FloatingMineLauncherDummy` and declares **no**
+`addFireArmsPosition`, only `projectilePosition 0/0/2`. The hull mounts it at
+`0.039/2.783/-9.865`, turned 180 (`Objects.con` 110-112), so the round leaves
+2 m aft of the mount. The exporter gives a rack without positions one muzzle at
+its `projectilePosition` (`assemble.py` `_fire_arms`), which is right for the
+fired round, and section 8 hung each dummy on its muzzle, which put this one
+off the stern.
+
+**Retail, read in the binary (ledger FA-5, now verified):** lnxded
+`FireArms::createAllDummyProjectiles` `0x0828c380` makes one dummy per
+`addFireArmsPosition` at that position, with no rotation, and for a rack with
+none makes one dummy at the FireArms' own origin. `projectilePosition` is not
+read there. So retail draws the mine, on the stern deck at the mount. The
+Elco80's hull has a mine davit there, and the mine hangs from its hook.
+
+**The rule in the viewer:** `loaded-rounds.js` `barrelsDeclared(gun)` says
+whether the muzzles are declared barrels. When they are not, the rack's one
+dummy is parented to the rack itself, at its origin, with the body's own baked
+rotation. The exporter now writes `fireArms.barrelsDeclared` (true or false)
+so a new bake says it outright. An older bake is read from its shape: more than
+one muzzle is declared; so is a single muzzle with a `projectilePosition`
+written beside it (the exporter writes that only for declared barrels, the
+Wasserfall's case), a turned one (FHSW's `SdKfz251RRocket1`..`6`, one toed-in
+rail each) or one off the rack's centreline (FH's unturned copies of the same
+rails, at the same ±0.25 m). What is left is taken for the fallback; a muzzle
+at the origin is the same either way.
+
+**Who moved.** Vanilla, Road to Rome and Secret Weapons have four racks with a
+dummy and no position, all misplaced by their `projectilePosition` until now:
+
+| Rack | Carried by | Was off by |
+|---|---|---|
+| `FloatingMineLauncher` | Elco80, Type 38 | 2 m aft |
+| `DepthChargeLauncher` | Fletcher, Hatsuzuki | 1 m aft |
+| `Aichival-TBombRack` | Aichival-T | 1 m low |
+| `SBD-TBombDummy` | SBD-T | 0.6 m low |
+
+**Every published tree, scanned (2026-11-09).** The JSON chunk of every model
+glb with a weapon in the eight trees with a model registry (bf1942, xpack1,
+xpack2, desertcombat, eod, fh, fhsw, fhsweurope; 8,958 glbs, read through the
+`glbs/<sha>` store, whose blobs are served gzipped): 1,714 carry a rack with a
+dummy, 817 distinct racks. 686 declare barrels by count, offset or turn, 22
+more are FH's off-centre rails, 21 have their one muzzle at the origin, and 88
+(44 templates) read as fallbacks and now hang their dummy on the rack. Besides
+the vanilla four and their copies in every mod, those include FH/FHSW's
+`DepthChargeLauncher`/`DepthChargeUSLauncher` (10 m), FHSW's Ohka
+(`Baka_FireArm`, `BAKATYPE43_FireArm`: a 6.5 m body whose muzzle is 7 m from
+the rack, so on the muzzle it hung ahead of the Betty's nose), the FHSW Zero
+bomb racks (1.45 m low, 2 m aft), EoD's `SeemineLauncher` (the same 2 m mine),
+DC's `TOW` (1 m), and a run of FH/FHSW hand weapons whose offsets are 0.05 to
+0.35 m (Panzerfausts, small rifle grenades).
+
+The glb cannot settle FH's rifle grenades `K98Grenade`, `Wz29Grenade` and
+`RandomGerGrenadierRG3`: one unturned muzzle on the centreline 1 m up the
+barrel, a dummy mesh centred on its own origin. Read as fallbacks, their
+grenade now sits at the weapon's origin instead of the muzzle. If FH declares
+that point as an `addFireArmsPosition`, it belongs at the muzzle. FH is not
+installed on this machine, so its `.con` was not read; a re-bake of those
+three with `barrelsDeclared` settles it.
+
+**Checked:** `tests/test_loaded_rounds.py` (the mine's shape lands on the rack
+2 m from its muzzle; a toed-in single rail, a Wasserfall-shaped barrel with an
+offset, and a bake that says either way keep their own answer);
+`tests/test_assemble.py` `test_every_gun_says_whether_its_barrels_are_declared`.
+In the page: the `6zndpju5tv` replay at 114 s, served locally, puts
+`FloatingMineLauncher round 1` at hull-local `0.039/2.783/9.865`, 0.17 m inside
+the stern of a hull that ends at 10.03, on the davit's hook; before, it was at
+11.87, 1.8 m past the stern. The torpedoes stay in their tubes.
+
+**Not re-baked:** no published glb carries the new key. The shape reading
+is exact for vanilla, Road to Rome and Secret Weapons (their `.con`s read:
+the four fallbacks above, the Wasserfall declared with an offset) and gives
+the engine's answer for the mod racks above bar the three FH rifle grenades.
+A bake from here on writes the key.
+
+**Still open:** which dummy hides when its round fires. The viewer keeps
+emptying from the first barrel, so the mine's one dummy goes after the first
+drop and is back on the reload. The engine's lead is in FA-5:
+`FireArms::fireFinished` `0x08288470` and `ReloadFinished` `0x08289e70` walk
+the dummy list.
