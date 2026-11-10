@@ -239,7 +239,83 @@ Open:
 - When exactly an EffectBundle is destroyed after its `timeToLive` was not
   traced (EMT-14); the page ends the spawner at the `timeToLive`.
 
+## Whistles, bells, wire, speeds and coats (T1's rows, 2026-11-10)
+
+Five of tester T1's rows (`t1-cavalry-infantry-findings.md`), fixed by engine
+rule, none by a BF1918 case.
+
+* **The officer whistle and `BottleHeal` throw their round (SUP-27).** The page
+  took any hand weapon whose AI entry says `healing 1` for a medic bag, so the
+  whistle ran `useMedPack`'s branch, spent its round on nothing and threw no
+  `Officer-Ger-Kiste`. The engine picks the packs by template name
+  (`BFSoldierTemplate::init` keeps the ids of `MedPack` and `RepairPack`;
+  `handleMessage` compares). `kit-loadout.js` `healingPackKind` now does the
+  same. The whistle's child `Officer-GerAlt` (a `velocity 0`, `timeToLive 0`
+  placeholder) was dropped by `gun-groups.js`' placeholder guard; an alternate
+  fire on `c_PIAltFire` is kept now, so the right button blows the whistle
+  (its own `.ssc`) instead of toggling a zoom the whistle has no sight for.
+  Checked on gebirgspass (`Kuk_Officer3` pad kit, 10 HP, Steyr emptied):
+  `shots` 0 -> 1 0.4 s after the press, the round stood its two depots
+  (35 -> 37), HP 10 -> 30, the Steyr 0 -> 3 magazines; the right button fired
+  the blast (`alt.shots` +1) and left `zoomed` false. `BottleHeal`: `shots`
+  +2 over three presses, its depot stood each time.
+* **Projectile-less FireArms are exported (FA-25).** `bf42/assemble.py` built a
+  FireArms' muzzle and extras only with a `projectileTemplate`; the bell
+  (`bicycle_bell`), vanilla's four horns and BF1918's twenty never reached a
+  glb. A plain FireArms with none is kept now (`projectile` absent), and the
+  page keeps its group and fires it as a sound. A HandFireArms with none (the
+  packs) stays out. BF1918's `AimSound` (the rifles' shouldering sound, a
+  projectile-less FireArms on `c_PIAltFire`) rides along: `hand-alt-fire.js`
+  marks such a child `soundOnly`, it plays on the press and the press still
+  reaches the rifle's zoom; its 1 s cycle holds the rifle's trigger (FA-11),
+  which is what the engine's rule gives.
+* **Deployed wire is wire, not a wall (OBS-2..OBS-6).** The pioneer's
+  `BarbWire5` comes out of the level's parked pool as a moved owner, and
+  `WorldCollider.sweepSphere` dropped `passObstacles` before it swept the
+  moved owners, so its triangles stopped the soldier while the owner-level
+  check billed him. The flag now holds through the moved pass, and
+  `CollisionIndex.addOwner` tags an Obstacle's triangles when a wire is grown
+  into the index instead. Checked on gebirgspass (`KuK_Engineer`, slot 5):
+  run through the coil at 6.1 m/s, slowed on the touch tick, billed 5 HP
+  once, through and out the far side; before, a dead stop 1 m in.
+  `tests/test_obstacle.py` walks the same coil placed, added and moved.
+* **The `Soldier.*` globals (PHY-40..PHY-43, CS-15).** `bf42/con.py` reads
+  `Soldier.setForwardSpeed`, `setStrafeSpeed`, `setWalkSpeedFactor` and
+  `cameraShakeFactor` into one engine-wide record; `extract_pose.py` writes it
+  resolved as `gaits.json` `soldierBody.movement` (absent for vanilla);
+  `foot-body.js` writes it into `soldier-locomotion.js`' tables in place, so
+  the human and the bots both move by it, and sets the bob's global.
+  Gebirgspass with the patched `gaits.json`: forward 6.13, back 3.04, strafe
+  3.07 (PHY-34's cap is the not-forward slot, 3), walk 2.76, crouch 2.56 /
+  1.28 m/s; `bobUp` 0.047 m at a run where it was 0.
+  `setMoveAccelerationDeacceleration` is no BF1942.exe command and is not read.
+  The animation bands (`gait-select.js`, `remote-gait.js`) keep vanilla's
+  speeds: a clip choice, not a speed.
+* **A model glb walks its random children (KIT-2, LOAD-6).** `extract_models`
+  starts the counter at 0 per model, so a horse's body, harness and eight
+  legs take consecutive variants (`Random1..10`) and the authors' ordering
+  gives one coat; before, every part was variant 1 and a horse wore seven
+  coats. A level bake already rolled per placement (gebirgspass' four parked
+  `Horse_spear`s wear coats 7, 6, 5, 4, each whole). Side effect: a BF1918
+  soldier model's head and body now draw variants 1 and 2 (they were 1 and 1);
+  kits and first-person rigs do not use the counter. A start per spawned
+  horse would need every coat in the glb and is not done.
+
+What has to re-run (bf1918 tree unless named):
+
+| What | Step |
+|---|---|
+| bell and horns, `AimSound` | models for the vehicles in the folders whose `Weapons.con` declares a projectile-less FireArms (`Bicycle_albelt`, `Barkasse`, `Daimler_Truck`, `Dennis`, `FordT`, `Frz_Bus`, `HotchMit`, `Minerva`, `RenaultTaxi`, `RollsRoyce`, `Simplex`, `Sulky`, `Austin`, `Austin2s`, `Autocarmg`, `Autocarsup`, `Puggy`, `Puggy37`) and every hand weapon under the ten folders that `addTemplate AimSound` (`Carcano`, `M98`, `P1914`, `Berthier`, `Lebel`, `MosinNagant`, `K88`, `Mannlicher93`, `SMLE`, `Arisaka`); viewmodels (first-person rigs) of those rifles; a full bake (`scene` layer) of every exported level that places one of those vehicles (ypres_streets, siege_of_antwerp, aube_de_soiree, first_battle_of_arras, ypern1914 for the bicycle). Vanilla: models `Willy`, `Kettenkrad`, `Lynx`, and the scene layer of the levels that place them; XPack2: `HD_XA42`, `R75`, `Krupp`, `Willy` |
+| `Soldier.*` globals | `extract_pose.py --mod bf1918 --die --out viewer/models/mods/bf1918/poses` (rewrites `gaits.json`; checked into a scratch copy) |
+| horse coats | models for `Horse`, `Horse_spear`, `Cavalry_*` and the soldier models (the counter changes every model with two or more random children) |
+| whistle, wire | page code only |
+
 ## Open items
+
+* The officer whistle refills itself: its round's `OfficerGerSupplyDepot`
+  serves ammo types 1 and 2, the whistle is `AmmoType 3`, but the exporter
+  does not carry `AmmoType` (SUP-2), so the page serves an untagged item from
+  any row. Retail gives one whistle a life unless another depot serves type 3.
 
 * The `Lb_SitInBench` seat state a `PassengerInWilly` seat names is in no
   BF1918 archive: 32 (soldier, seat) poses fall back. Mod data.
