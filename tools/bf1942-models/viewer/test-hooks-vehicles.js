@@ -455,6 +455,8 @@ export function installVehicleHooks(page) {
         // Still on that spawner's hold (`spawned-craft.js` `spawnHoldOf`): it
         // goes where its host goes, a deck or an FH flying spawn's turning arm.
         onHold: !!visual?.node && spawnHoldOf(visual.node)?.released === false,
+        // On a land or air hull's hold for the hull's life (`hullHeldCraftUnder`).
+        onHull: !!visual?.node && !!spawnHoldOf(visual.node)?.onHull,
         x: at ? at[0] : null, y: at ? at[1] : null, z: at ? at[2] : null,
         pos: at ? at.map(n => Math.round(n * 100) / 100) : null,
         tier: v?.shown ? { threshold: v.shown.threshold, names: v.shown.names } : null,

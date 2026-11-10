@@ -428,7 +428,7 @@ const finite = a => a.every(Number.isFinite);
 async function liveVehicles(s) {
   return s.ev(() => window.__vehicles().filter(v => v.pos && v.pos.every(Number.isFinite))
     .map(v => ({ owner: v.owner, name: v.name, template: v.template ?? null, pos: v.pos, max: v.max,
-      destroyed: v.destroyed, absent: !!v.absent, held: !!v.held, onHold: !!v.onHold,
+      destroyed: v.destroyed, absent: !!v.absent, held: !!v.held, onHold: !!v.onHold, onHull: !!v.onHull,
       pad: v.pad ?? null, grips: v.grips ?? null })));
 }
 
@@ -2017,7 +2017,14 @@ async function vehiclePhase(s, level, team, summary, scene) {
           await testVehicle(s, other, tpl, level, side, again);
           if (!again.immobile) { freed = true; rec.retry = `instance ${other.owner} moved ${again.moved_m} m`; break; }
         }
-        if (!freed && stackedOn) {
+        // A crew object a land or air hull's spawner holds (`holdObject 1`)
+        // rides its hull for the hull's life and is never driven (SPAWN-33:
+        // BF1918's Kolossal MG platform, the Zeppelin's extra gunners), so
+        // "immobile" is the rule there, not a fault.
+        if (!freed && v.onHull) {
+          add({ check: 'veh.drive', level, template_or_kit: tpl, severity: 'info', cause_key: 'veh.held-crew-rides',
+            evidence: `${rec.immobile}; held on its hull by a spawner (SPAWN-33), not a vehicle to drive` });
+        } else if (!freed && stackedOn) {
           rec.stackedOn = stackedOn.template ?? stackedOn.name;
           add({ check: 'veh.drive', level, template_or_kit: tpl, severity: 'info', cause_key: 'veh.stacked-pad-variant',
             evidence: `${rec.immobile}; the pad's absent side, driven from inside its live ${rec.stackedOn} (owner ${stackedOn.owner}) on the same spot` });

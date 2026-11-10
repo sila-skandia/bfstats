@@ -41,5 +41,13 @@
   "template_or_kit": "HellcatFB",
   "retail_faithful": true,
   "evidence": "Retail-faithful nose-down at full throttle (checked 2026-10-28, FHX-47). FHSW/FHSWEurope `!_PACK_USA/Compressed.con` places `HellcatEngine` at 0/0.5612/3.9178 with no setCenterOfMassOffset, and `PhysicsEngine::updatePhysics` pushes the thrust on the root at the engine's absolute position (PHY-12, lnxded 0x0824d020; arm PHY-21), so full throttle pitches the nose down. In node the same airframe with the engine moved onto the thrust line falls 82 m instead of 208 m over the 7 s; Hellcat, Hellcat20mm, Hellcat_CP and HellcatFB share the 9400 kg body and the engine, and all four dive alike. A pilot holds the nose up with the stick; the audit's probe flies hands off."
+ },
+ {
+  "check": "spawn",
+  "cause_key": "spawn.not-on-ground",
+  "template_or_kit": "alliedbase_spawn5",
+  "level": "tgw_stalemate",
+  "retail_faithful": true,
+  "evidence": "A spawn point in the rubble of ruin_suburbhouse_1_M1 (BF1918 tgw_stalemate, Conquest SoldierSpawns). The quick check's settle reads it as not grounded, but standing there in the page the soldier is grounded and walks out 5-11 m in every direction (BF1918 world tester, 2026-11-10, scratchpad t4 findings). The rubble's uneven top is the authored ground; nothing to fix."
  }
 ]

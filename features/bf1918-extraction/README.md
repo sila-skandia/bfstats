@@ -9,21 +9,53 @@ of them with single-player (bot) data. Tree id `bf1918`:
 The owner gave this import at most **15 GB of the live volume** (30 GB free on
 2026-11-10), bot-supported levels first (the pipeline's `--pick` order).
 
-Measured on the first twelve bakes, after `optimise` moved the textures into
-the shared store: a level is 15 to 81 MB on disk (`scene.glb` + `.gz` + `.br`
-+ `scene.json`), 47 MB on average, a third of an FHSW level. The model tree is
-343 MB and the tree's `_shared` 130 MB. All 112 bot levels come to about
-5.5 GB, so the 21 levels without bot data fit as well if the owner wants them.
+Measured on the final tree (run 5): all 133 levels, 4.7 GB of `scene.glb`,
+1.8 GB of `.gz`, 0.8 GB of `.br` and 0.2 GB of `scene.json` and shared files;
+the model tree 1.75 GB; 1.5 GB of new textures in the shared store. **9.7 GB
+live in all**, 5.3 GB under the budget. A level is 15 to 81 MB, 47 MB on
+average after `optimise`, a third of an FHSW level. The 21 levels without bot
+data (run 3) fitted inside the budget, so all 133 went in.
+
+The upload is the slow part on this Mac: one `kubectl exec` stream per unit,
+eight at once, 0.4 to 1.5 MB/s in all on its Wi-Fi (the owner moved the laptop
+nearer the access point at 13:00). nginx's `try_files` needs the plain `.glb`
+beside its `.gz` and `.br`, so the raw scenes cannot be left out.
 
 ## Runs
 
 | Run | Levels | Notes |
 |---|---|---|
 | 1 (pilot) | amiens, belleau_wood, Bombing_Albion, gallipoli, Kilimanjaro, winter_train, Galicia, passo_di_falzarego, toska_airbattle, suez_canal, falkland_islands, Siege_de_Maubeuge | chosen for spread: tanks, gas, train, Zeppelin raid, landing, mountains, air, desert, Africa |
-| 2 | the other 100 levels with single-player data | `--behaviour-shards 4` |
+| 2 | the other 100 levels with single-player data | `--behaviour-shards 4`; 12 failed on a mid-edit `NameError`, re-run |
+| re-bake | the 16 levels the `run` fix changes | `--force-steps --only-steps levels` |
+| 3 | the 21 levels without single-player data | baked while the GPU was lent to a filming session |
+| 4 | all 133, `--force-steps` | the first round of fixes: class words, gas, fire, zoom, bayonets, destroyOnExit, the train |
+| 5 | all 133, `--force-steps` | the testers' fixes; the tree published |
 
 All runs from a detached worktree; state file
 `tools/bf1942-models/out/mod-pipeline/bf1918/state.json` in the main checkout.
+
+## Status (2026-11-10, 14:45)
+
+All 133 levels baked by run 5 with every fix below. The pipeline's quick
+behaviour check over all 133 (pass 3, four headless pages): **0 blockers**,
+16 majors, all explained:
+
+* 13 `asset.404`: vanilla HUD, fonts and pose index files absent on the Mac's
+  partial local tree (production has them; `serve_viewer.py --remote-vanilla`
+  is the fix, which the run's server predated).
+* `veh.immobile` on `KolossalMgGunnerExtra` (straits_field): the held crew
+  platform rides its hull by rule (SPAWN-33); the audit now says so
+  (`veh.held-crew-rides`).
+* `spawn.not-on-ground` tgw_stalemate `alliedbase_spawn5`: a rubble spawn the
+  world tester stood on; accepted with evidence.
+* `veh.no-engine-sound` `Caudron_BR` (mont_kemmel): **open**. Its engines are
+  `c_ETRocket` on a `VCAir` hull and `aircraft.js` has no rocket engine, so the
+  page classes it static.
+
+Four adversarial testers (cavalry and infantry, air, armour and artillery,
+naval and world) each took a quarter of the levels plus a theme; nine fix
+agents fixed what they found. Their write-ups follow.
 
 ## Defects found and fixed on the way
 
