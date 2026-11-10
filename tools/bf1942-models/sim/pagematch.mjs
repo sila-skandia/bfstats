@@ -3,6 +3,13 @@
 //
 //   node sim/pagematch.mjs --map The_Maze --mod community [--seconds 600] [--bots 16]
 //   node sim/pagematch.mjs --url "<a map.html URL>" [--seconds 600]
+//   node sim/pagematch.mjs bar --levels Berlin,Stalingrad,Kharkov,Bocage [--matches 3] [--out sim/baselines/page-dice.json]
+//   node sim/pagematch.mjs check --map The_Maze --mod community [--matches 3] [--bar sim/baselines/page-dice.json] [--out <file>]
+//
+// `bar` plays DICE's own levels on the page and keeps, for each figure, the
+// worst any of those matches showed. `check` plays a published level the
+// same way and holds the median of its matches to that: what the runner's
+// verdict cannot see is judged where the player meets it.
 //
 // The runner (`sim/run.mjs`) plays the page's bot code on stand-ins. This
 // plays the published level on the published page, so it answers what the
@@ -161,6 +168,48 @@ export async function pageMatch({ url, seconds = 600, loadTimeout = 240 }) {
   }
 }
 
+/** The figures a page match is held to, and which way is worse. */
+export const PAGE_CHECKS = [
+  ['teamKillsPerBotMinute', 'max'], ['suicidesPerBotMinute', 'max'], ['nonEnemyDeathShareWorseSide', 'max'], ['enemyKillsPerBotMinute', 'min'],
+];
+
+const median = xs => { const v = [...xs].sort((a, b) => a - b); return v.length ? (v.length % 2 ? v[(v.length - 1) / 2] : (v[v.length / 2 - 1] + v[v.length / 2]) / 2) : null; };
+
+/**
+ * The bar from page matches of DICE's own levels: for each figure the worst
+ * any one match showed (the most team kills, the fewest enemy kills). The
+ * page is not seeded and a match is ten minutes, so this is a ceiling a
+ * generated level's median must stay under, not a percentile.
+ */
+export function buildPageBar(matches, note = '') {
+  const bar = {};
+  for (const [k, worst] of PAGE_CHECKS) {
+    const xs = matches.map(m => m[k]).filter(Number.isFinite);
+    bar[k] = { worst, limit: xs.length ? (worst === 'max' ? Math.max(...xs) : Math.min(...xs)) : null, median: median(xs) };
+  }
+  return { note, matches: matches.map(m => ({ level: m.level, minutes: m.minutes, ...Object.fromEntries(PAGE_CHECKS.map(([k]) => [k, m[k]])), capturesTotal: m.capturesTotal })), bar };
+}
+
+/** A published level's page matches against the bar: the median of each figure, no worse than DICE's worst match. */
+export function judgePage(matches, pageBar) {
+  const checks = PAGE_CHECKS.map(([k, worst]) => {
+    const value = median(matches.map(m => m[k]).filter(Number.isFinite)), limit = pageBar?.bar?.[k]?.limit ?? null;
+    const pass = value == null || limit == null ? null : worst === 'max' ? value <= limit : value >= limit;
+    return { metric: k, median: value, bar: limit == null ? 'not measured' : `${worst === 'max' ? '<=' : '>='} ${limit}`, pass };
+  });
+  const failed = checks.filter(c => c.pass === false).map(c => c.metric);
+  return { verdict: failed.length ? 'fail' : 'pass', failed, checks, matches: matches.length };
+}
+
+/** `n` matches of one URL, a few at a time (each is a browser playing in real time). */
+async function playMany(url, n, seconds, parallel = 3) {
+  const out = [];
+  for (let i = 0; i < n; i += parallel) {
+    out.push(...await Promise.all(Array.from({ length: Math.min(parallel, n - i) }, () => pageMatch({ url, seconds }))));
+  }
+  return out;
+}
+
 function parseArgs(argv) {
   const a = {};
   for (let i = 0; i < argv.length; i++) if (argv[i].startsWith('--')) a[argv[i].slice(2)] = argv[i + 1]?.startsWith('--') || argv[i + 1] == null ? true : argv[++i];
@@ -168,7 +217,33 @@ function parseArgs(argv) {
 }
 
 if (process.argv[1] && path.resolve(process.argv[1]) === fileURLToPath(import.meta.url)) {
-  const a = parseArgs(process.argv.slice(2));
+  const cmd = ['bar', 'check'].includes(process.argv[2]) ? process.argv[2] : null;
+  const a = parseArgs(process.argv.slice(cmd ? 3 : 2));
+  const { readFileSync, writeFileSync } = await import('node:fs');
+  const BAR_FILE = path.join(HERE, 'baselines', 'page-dice.json');
+  const slim = m => { const { teamKills, ticketsOverTime, generated, ...rest } = m; return { ...rest, generated: generated ? { version: generated.version, template: generated.template ?? null } : null }; };
+  if (cmd === 'bar') {
+    const levels = String(a.levels ?? 'Berlin,Stalingrad,Kharkov,Bocage').split(','), n = Number(a.matches ?? 3), seconds = Number(a.seconds ?? 600);
+    // The levels side by side, one match of each at a time.
+    const rounds = [];
+    for (let i = 0; i < n; i++) rounds.push(...await Promise.all(levels.map(map => pageMatch({ url: matchUrl({ site: a.site ?? SITE, map, bots: Number(a.bots ?? 16) }), seconds }))));
+    const bar = buildPageBar(rounds.map(slim), `DICE levels on the page, ${n} matches each of ${seconds} s, ${Number(a.bots ?? 16)} bots: ${levels.join(', ')}; ${new Date().toISOString().slice(0, 10)}`);
+    writeFileSync(path.resolve(a.out ?? BAR_FILE), JSON.stringify(bar, null, 1) + '\n');
+    console.log(JSON.stringify(bar.bar, null, 1));
+    process.exit(0);
+  }
+  if (cmd === 'check') {
+    if (!a.map) { console.error('check: --map <Level> [--mod <mod>]'); process.exit(2); }
+    const url = matchUrl({ site: a.site ?? SITE, map: a.map, mod: a.mod ?? null, mode: a.mode ?? 'Conquest', bots: Number(a.bots ?? 16) });
+    const bar = JSON.parse(readFileSync(path.resolve(a.bar ?? BAR_FILE), 'utf8'));
+    const matches = (await playMany(url, Number(a.matches ?? 3), Number(a.seconds ?? 600))).map(slim);
+    const result = { level: a.map, mod: a.mod ?? 'bf1942', url, date: new Date().toISOString().slice(0, 10), bar: bar.note, ...judgePage(matches, bar),
+                     runs: matches.map(m => ({ generated: m.generated, minutes: m.minutes, tickets: m.tickets, capturesTotal: m.capturesTotal, ...Object.fromEntries(PAGE_CHECKS.map(([k]) => [k, m[k]])),
+                                               teamKillsBySide: Object.fromEntries(Object.entries(m.sides).map(([t, s]) => [t, s.teamKills])) })) };
+    if (a.out) writeFileSync(path.resolve(a.out), JSON.stringify(result, null, 1) + '\n');
+    console.log(JSON.stringify(result, null, 1));
+    process.exit(result.verdict === 'pass' ? 0 : 1);
+  }
   if (!a.url && !a.map) {
     console.error('usage: node sim/pagematch.mjs --map <Level> [--mod <mod>] [--mode Conquest] [--bots 16] [--seconds 600] [--site https://play.bfstats.io]\n'
       + '       node sim/pagematch.mjs --url "<map.html URL>" [--seconds 600]');

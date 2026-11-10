@@ -197,9 +197,52 @@ the runner alone is not enough to put a level live.** A page match belongs
 in the gate, with a bar from DICE's levels played the same way, and it is
 not there yet.
 
-## 6. What is not verified
+## 6. The page check
 
-1. One match a level, unseeded. The page figures are samples, not medians.
+`sim/pagematch.mjs` has two more commands since.
+
+```bash
+node sim/pagematch.mjs bar                                   # DICE's four levels, three matches each
+node sim/pagematch.mjs check --map DC_LostVillage --mod desertcombat --out bot-layers/desertcombat/dc_lostvillage/page.json
+```
+
+`bar` plays DICE's own levels on the page and keeps, for each figure, the
+worst any one match showed (`sim/baselines/page-dice.json`). `check` plays a
+published level three times and holds the median of each figure to that. The
+page is unseeded and a match is ten minutes, so the bar is a ceiling, not a
+percentile. Twelve matches, 2026-11-11, on the page with the seat fixes in:
+
+| Figure | The bar (DICE's worst match) | DICE's median |
+|---|---|---|
+| Team kills a bot-minute | at most 0.081 (Berlin) | 0.013 |
+| Suicides a bot-minute | at most 0.10 (Kharkov) | 0.028 |
+| Deaths no enemy caused, worse side | at most 0.50 (Bocage) | 0.22 |
+| Enemy kills a bot-minute | at least 0.11 (Bocage) | 0.31 |
+
+Captures have no bar: Stalingrad's three matches had 2, 1 and 0.
+
+**How a level goes live now** (README 17.1, with two steps added): the
+layer is published without its menu flag, so nobody is offered it; the page
+check is run; the flag is published only if the check passes or the
+acceptance names what it fails. The result is kept beside the verdict as
+`page.json`.
+
+| Level | Page check | Medians: team kills, suicides, death share, enemy kills | Tickets at ten minutes, Axis : Allies |
+|---|---|---|---|
+| The_Maze (generator 5) | **fails team kills** | 0.144, 0, 0.36, 0.36 | 35:67, 68:11, 62:29 |
+| Desert Combat DC_LostVillage | passes | 0, 0.056, 0.37, 0.22 | 99:27, 113:50, 71:37 |
+
+DC_LostVillage is the first mod level live (2026-11-11): better than
+nothing on Desert Combat's own bar and on DICE's (README section 20), no
+fight at all with no layer. What the page shows of it: the Axis side ahead
+on tickets in all three matches, as the runner's ten seeds said it would be
+(10 of 10), one quiet match of the three (0.05 enemy kills a bot-minute),
+and 4, 4 and 9 captures. Its menu tag was published after the check.
+
+## 7. What is not verified
+
+1. One match a level in sections 2 to 5, three in section 6, all unseeded:
+   samples, not medians of ten seeds.
 2. The page matches run with no person in them: the local player never
    leaves the deploy screen.
 3. Why the runner with kits still shows fewer team kills than the page.
@@ -207,3 +250,7 @@ not there yet.
    levels.
 5. The page's own team-kill rate on DICE's levels against retail's was not
    measured in the lab.
+6. DC_LostVillage's row in the Desert Combat menu was read back from the
+   volume with its flag set; the menu itself was not looked at.
+7. The page check is run by hand. Neither `botbatch accept` nor the bake's
+   gate asks for a `page.json` yet.

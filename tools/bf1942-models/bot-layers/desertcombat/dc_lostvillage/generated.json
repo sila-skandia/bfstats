@@ -1,0 +1,216 @@
+{
+ "generator": "botgen",
+ "version": 5,
+ "mod": "DesertCombat",
+ "level": "dc_lostvillage",
+ "objectSpawners": 10,
+ "template": "symmetric",
+ "templateSource": "DICE, bf1942 Kharkov (1.6 patch archives): AI/Strategies.con, AI/conditions.con, AI/prerequisites.con, unchanged",
+ "templateChoice": {
+  "name": "symmetric",
+  "inPlay": 5,
+  "rule": "5 capturable flags in play, more than 3"
+ },
+ "scope": "an infantry map painted from the walk test, a Tank0 map from the page painter, infantry order positions, no strategic maps, no co-op layer",
+ "unreachable": [],
+ "unreachableReasons": {},
+ "botSpawnsExcluded": [
+  "new_soldier_spawn10",
+  "new_soldier_spawn5",
+  "new_soldier_spawn11",
+  "new_soldier_spawn33",
+  "new_soldier_spawn38",
+  "new_soldier_spawn43",
+  "new_soldier_spawn44"
+ ],
+ "walkMap": {
+  "source": "walk test",
+  "engine": "none",
+  "vehicleMap": "page painter",
+  "vehicleBrush": 2.5,
+  "vehicleBrushes": [
+   {
+    "brush": 3,
+    "flagsOn": 4,
+    "spawnersOn": 0,
+    "pieces": 17,
+    "main": 3733711
+   },
+   {
+    "brush": 2.5,
+    "flagsOn": 6,
+    "spawnersOn": 3,
+    "pieces": 18,
+    "main": 3770345
+   },
+   {
+    "brush": 2,
+    "flagsOn": 6,
+    "spawnersOn": 3,
+    "pieces": 23,
+    "main": 3808595
+   },
+   {
+    "brush": 1.5,
+    "flagsOn": 5,
+    "spawnersOn": 3,
+    "pieces": 20,
+    "main": 3837623
+   }
+  ],
+  "opened": [
+   [
+    1116,
+    943
+   ],
+   [
+    1113,
+    944
+   ],
+   [
+    1112,
+    945
+   ],
+   [
+    1118,
+    982
+   ],
+   [
+    1039,
+    990
+   ],
+   [
+    1039,
+    991
+   ],
+   [
+    1040,
+    991
+   ],
+   [
+    1042,
+    992
+   ],
+   [
+    1192,
+    1006
+   ],
+   [
+    1151,
+    1028
+   ]
+  ],
+  "ways": [
+   {
+    "who": "new_soldier_spawn10",
+    "kind": "spawn",
+    "way": "none",
+    "opened": 0
+   },
+   {
+    "who": "new_soldier_spawn11",
+    "kind": "spawn",
+    "way": "none",
+    "opened": 0
+   },
+   {
+    "who": "new_soldier_spawn24",
+    "kind": "spawn",
+    "way": "walk",
+    "opened": 4
+   },
+   {
+    "who": "new_soldier_spawn26",
+    "kind": "spawn",
+    "way": "walk",
+    "opened": 3
+   },
+   {
+    "who": "new_soldier_spawn36",
+    "kind": "spawn",
+    "way": "walk",
+    "opened": 1
+   },
+   {
+    "who": "new_soldier_spawn47",
+    "kind": "spawn",
+    "way": "walk",
+    "opened": 1
+   },
+   {
+    "who": "new_soldier_spawn48",
+    "kind": "spawn",
+    "way": "walk",
+    "opened": 1
+   }
+  ],
+  "cover": 0.982,
+  "floors": {
+   "stacked": false,
+   "twoFloorShare": 0.008,
+   "raised": [],
+   "reason": null
+  }
+ },
+ "routeProbe": {
+  "chokeMax": 4,
+  "unreachable": [],
+  "stops": {},
+  "oneSided": {},
+  "sides": {
+   "1": {
+    "spawns": 33,
+    "flags": [
+     "eastpoint",
+     "factory",
+     "slums",
+     "villas",
+     "westpoint"
+    ]
+   },
+   "2": {
+    "spawns": 10,
+    "flags": [
+     "eastpoint",
+     "factory",
+     "slums",
+     "villas",
+     "westpoint"
+    ]
+   }
+  },
+  "chokes": {
+   "eastpoint:1": 0,
+   "eastpoint:2": 0,
+   "westpoint:1": 0,
+   "westpoint:2": 0,
+   "villas:1": 0,
+   "villas:2": 0,
+   "slums:1": 1,
+   "slums:2": 0,
+   "factory:1": 0,
+   "factory:2": 0
+  },
+  "late": {},
+  "shutLinks": []
+ },
+ "inputs": {
+  "controlPoints": "ff0377f61cdfb80d6c1f991bad1a8935a1f35a3578572c2e858b17c3ad715210",
+  "infantryMap": "e0f4ebf9943f4d69a20a988c018185e6546de0c71140c99b12d073b700e1f8ae",
+  "template": "43f8a790471528016570235f76e97dbb2045732458781a5139f37fed68bf98c0"
+ },
+ "files": {
+  "AI.con": "dddd9997f51975eefa3d3c820a32bc01455a92b0d9f7baf3895aa9ff25c141fa",
+  "AIpathFinding.con": "549030ff1cdb81bd819fcdc28c999857f4784e20ee4850753a8c1213f80184fe",
+  "AI/StrategicAreas.con": "7174da0ce77952aae075e78da44ed7947c6753bd3ea1d79805a6ed0287ac10df",
+  "AI/Strategies.con": "4ce0be59a0d6c5cd530db002fb062c4be8d936bc6ae59bd188803ccaf7869a8d",
+  "AI/conditions.con": "68a0c7a8aec69954063147b60fae560b2874884285737aa085efa76597d395aa",
+  "AI/prerequisites.con": "4c1f313bc285b228fd6ad03bfd1f44c5b15c8703c31f802eb605bc5f00f88bb5",
+  "Pathfinding/Infantry1Level0Map.raw": "355c02a8b5a3bc38b527f939b3d1c348036541021137cc9542fcb1f8775ecb37",
+  "Pathfinding/Infantry1Level1Map.raw": "3e3480f2c7d5a595ed489184acd91a6bf3cecfc1089bc0904327547ec3fc19cb",
+  "Pathfinding/Infantry1Level2Map.raw": "1176842c9e084b8ee73d1ee39a8f84b0907368f3123def121dfb17833aa92070",
+  "Pathfinding/Tank0Level0Map.raw": "df623cad85336dd8dd957bf5927cd786b5ab8c181069ae873c616926f6b7a099",
+  "Pathfinding/Tank0Level1Map.raw": "68ccc4dadce0e0da013a4e2ae927a34d08da1f95b574f5ce21f52ff60a7c58c0",
+  "Pathfinding/Tank0Level2Map.raw": "8cf167ff907ec9f7e0d54639c6d8aa90e7090fa1c390b9757f4c0d2007172c61"
+ }
+}

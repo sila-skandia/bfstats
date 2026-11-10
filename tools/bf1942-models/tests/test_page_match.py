@@ -70,6 +70,30 @@ class LineOfFire(unittest.TestCase):
         self.assertEqual(out["beside"]["off"], 6)
 
 
+class PageBar(unittest.TestCase):
+    def test_the_bar_is_the_worst_any_dice_match_showed(self):
+        bar = run_harness()["pageBar"]
+        self.assertEqual(bar["teamKillsPerBotMinute"]["limit"], 0.06)
+        self.assertEqual(bar["nonEnemyDeathShareWorseSide"]["limit"], 0.4)
+        # Enemy kills are the one figure where less is worse.
+        self.assertEqual(bar["enemyKillsPerBotMinute"]["limit"], 0.22)
+        self.assertEqual(bar["enemyKillsPerBotMinute"]["worst"], "min")
+
+    def test_a_levels_median_is_held_to_it(self):
+        out = run_harness()
+        # One match over the bar in three does not fail a level: the median does.
+        self.assertEqual(out["pageOk"]["verdict"], "pass")
+        shoots = out["pageShoots"]
+        self.assertEqual(shoots["verdict"], "fail")
+        self.assertEqual(shoots["failed"], ["teamKillsPerBotMinute", "nonEnemyDeathShareWorseSide"])
+        self.assertEqual(out["pageQuiet"]["failed"], ["enemyKillsPerBotMinute"])
+
+    def test_with_no_bar_nothing_is_judged(self):
+        none = run_harness()["pageNoBar"]
+        self.assertEqual(none["verdict"], "pass")
+        self.assertTrue(all(c["pass"] is None and c["bar"] == "not measured" for c in none["checks"]))
+
+
 class Url(unittest.TestCase):
     def test_the_hooks_need_shots_and_a_vanilla_level_names_no_mod(self):
         out = run_harness()

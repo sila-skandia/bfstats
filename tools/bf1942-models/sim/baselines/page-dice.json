@@ -1,0 +1,135 @@
+{
+ "note": "DICE levels on the page, 3 matches each of 600 s, 16 bots: Berlin, Stalingrad, Kharkov, Bocage; 2026-11-10",
+ "matches": [
+  {
+   "level": "Berlin",
+   "minutes": 10,
+   "teamKillsPerBotMinute": 0.0812,
+   "suicidesPerBotMinute": 0.0312,
+   "nonEnemyDeathShareWorseSide": 0.225,
+   "enemyKillsPerBotMinute": 0.3875,
+   "capturesTotal": 8
+  },
+  {
+   "level": "Stalingrad",
+   "minutes": 10,
+   "teamKillsPerBotMinute": 0.0125,
+   "suicidesPerBotMinute": 0.0187,
+   "nonEnemyDeathShareWorseSide": 0.111,
+   "enemyKillsPerBotMinute": 0.3312,
+   "capturesTotal": 2
+  },
+  {
+   "level": "Kharkov",
+   "minutes": 10,
+   "teamKillsPerBotMinute": 0,
+   "suicidesPerBotMinute": 0.025,
+   "nonEnemyDeathShareWorseSide": 0.088,
+   "enemyKillsPerBotMinute": 0.3437,
+   "capturesTotal": 15
+  },
+  {
+   "level": "Bocage",
+   "minutes": 10,
+   "teamKillsPerBotMinute": 0.0062,
+   "suicidesPerBotMinute": 0.025,
+   "nonEnemyDeathShareWorseSide": 0.174,
+   "enemyKillsPerBotMinute": 0.225,
+   "capturesTotal": 10
+  },
+  {
+   "level": "Berlin",
+   "minutes": 10,
+   "teamKillsPerBotMinute": 0.0562,
+   "suicidesPerBotMinute": 0.025,
+   "nonEnemyDeathShareWorseSide": 0.25,
+   "enemyKillsPerBotMinute": 0.275,
+   "capturesTotal": 0
+  },
+  {
+   "level": "Stalingrad",
+   "minutes": 10,
+   "teamKillsPerBotMinute": 0.0125,
+   "suicidesPerBotMinute": 0.0125,
+   "nonEnemyDeathShareWorseSide": 0.115,
+   "enemyKillsPerBotMinute": 0.25,
+   "capturesTotal": 1
+  },
+  {
+   "level": "Kharkov",
+   "minutes": 10,
+   "teamKillsPerBotMinute": 0.0187,
+   "suicidesPerBotMinute": 0.1,
+   "nonEnemyDeathShareWorseSide": 0.313,
+   "enemyKillsPerBotMinute": 0.3,
+   "capturesTotal": 6
+  },
+  {
+   "level": "Bocage",
+   "minutes": 10,
+   "teamKillsPerBotMinute": 0.0062,
+   "suicidesPerBotMinute": 0.0375,
+   "nonEnemyDeathShareWorseSide": 0.5,
+   "enemyKillsPerBotMinute": 0.1125,
+   "capturesTotal": 14
+  },
+  {
+   "level": "Berlin",
+   "minutes": 10,
+   "teamKillsPerBotMinute": 0.0562,
+   "suicidesPerBotMinute": 0.0375,
+   "nonEnemyDeathShareWorseSide": 0.379,
+   "enemyKillsPerBotMinute": 0.325,
+   "capturesTotal": 8
+  },
+  {
+   "level": "Stalingrad",
+   "minutes": 10,
+   "teamKillsPerBotMinute": 0.025,
+   "suicidesPerBotMinute": 0.0312,
+   "nonEnemyDeathShareWorseSide": 0.214,
+   "enemyKillsPerBotMinute": 0.3187,
+   "capturesTotal": 0
+  },
+  {
+   "level": "Kharkov",
+   "minutes": 10,
+   "teamKillsPerBotMinute": 0.0062,
+   "suicidesPerBotMinute": 0.0187,
+   "nonEnemyDeathShareWorseSide": 0.067,
+   "enemyKillsPerBotMinute": 0.375,
+   "capturesTotal": 15
+  },
+  {
+   "level": "Bocage",
+   "minutes": 10,
+   "teamKillsPerBotMinute": 0,
+   "suicidesPerBotMinute": 0.05,
+   "nonEnemyDeathShareWorseSide": 0.313,
+   "enemyKillsPerBotMinute": 0.1375,
+   "capturesTotal": 6
+  }
+ ],
+ "bar": {
+  "teamKillsPerBotMinute": {
+   "worst": "max",
+   "limit": 0.0812,
+   "median": 0.0125
+  },
+  "suicidesPerBotMinute": {
+   "worst": "max",
+   "limit": 0.1,
+   "median": 0.0281
+  },
+  "nonEnemyDeathShareWorseSide": {
+   "worst": "max",
+   "limit": 0.5,
+   "median": 0.2195
+  },
+  "enemyKillsPerBotMinute": {
+   "worst": "min",
+   "limit": 0.1125,
+   "median": 0.30935
+  }
+ }
+}
