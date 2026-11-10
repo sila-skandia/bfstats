@@ -12,6 +12,7 @@ import { modelFileStem } from './model-file.js';
 import { loadFirst, modelUrls, poseBases, rigEntryIn, rigIndexOf } from './pose-bases.js';
 import { createLevelSkin, sharePagePaint } from './level-skin.js';
 import { paintSoldierRig } from './soldier-skin.js';
+import { collectWeaponParts, poseWeaponParts } from './weapon-part-pose.js';
 
 /**
  * Built once by `createHandWeapon`. `page` is the narrow bag of getters it
@@ -531,6 +532,13 @@ export function createArmsRig(page) {
       }
     }
     hw.mixer.update(dt);
+    // The weapon's own parts follow the clip that owns the arms, unblended,
+    // and are at rest once its one-shot has run (ANIM-22, weapon-part-pose.js).
+    if (hw.weaponParts?.length) {
+      const action = hw.active ? hw.actions[hw.active] : null;
+      poseWeaponParts(hw.weaponParts, action ? hw.active : null, action?.time ?? 0,
+                      action?.loop === THREE.LoopOnce);
+    }
   }
 
   /** Fetch the weapon's glb — the arms rig where one is extracted for
@@ -758,6 +766,9 @@ export function createArmsRig(page) {
       fireVariants = [...fireVariantsFor('fire', Object.keys(actions)),
                       ...fireVariantsFor('proneFire', Object.keys(actions))];
     }
+    // The weapon's bound parts, read before any clip has moved them: their
+    // rest is the node's own transform (ANIM-22).
+    const weaponParts = mixer ? collectWeaponParts(gltf.scene, gltf.animations) : [];
     // The idle fidgets this rig baked (`idle1..idleN` — §11's `addIdle`
     // families): the names in slot order, the ANIM-6 dwell clock, and the
     // fidget currently owning the arms.
@@ -776,7 +787,7 @@ export function createArmsRig(page) {
     let weaponNode = null;
     if (fp) rig.traverse(obj => { if (obj.userData?.weldBone) weaponNode = obj; });
     return { doc, data, rig, fov1p, viewHip, viewZoom, mixer, actions, fireVariants,
-             fidgetNames, weaponNode };
+             fidgetNames, weaponNode, weaponParts };
   }
 
   /** The document extras of a fetched glb (where `mountRig` reads them). */
@@ -861,7 +872,10 @@ export function createArmsRig(page) {
     if (grip) page.warmups.rig = page.warmSubtree(grip, vmCamera, vmScene);
     return { doc: held.doc, data, rig: held.rig, fov1p: held.fov1p, viewHip, viewZoom,
              mixer: held.mixer, actions: held.actions, fireVariants: held.fireVariants,
-             fidgetNames: held.fidgetNames, weaponNode: grip, detached };
+             fidgetNames: held.fidgetNames, weaponNode: grip, detached,
+             // The held weapon's parts came off with it; the graft's are not on
+             // this mixer.
+             weaponParts: [] };
   }
 
   /** Take the rig down: off `vmRoot`, its mixer stopped, its GPU half freed. */

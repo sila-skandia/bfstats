@@ -470,7 +470,7 @@ export function createHandWeapon(page) {
     const graft = fp && !!held && armsRig.isGraft(gltf);
     if (!graft) release();
     const { doc, data, rig, fov1p, viewHip, viewZoom, mixer, actions, fireVariants,
-            fidgetNames, weaponNode, detached } = graft
+            fidgetNames, weaponNode, detached, weaponParts } = graft
       ? armsRig.graftRig(held, gltf, name)
       : armsRig.mountRig(gltf, fp, name, token);
     const magazine = data?.magazine || null;
@@ -515,6 +515,9 @@ export function createHandWeapon(page) {
       reloadPlayed: false,  // the arms' reload clip has been started for this magazine
       cool: 0,         // seconds until a semi-auto weapon has cycled
       weaponNode,      // the welded weapon inside the rig, or null when bare
+      // The weapon's own parts (the shell, the clip, a pin), posed from the
+      // clip owning the arms and never crossfaded (`weapon-part-pose.js`).
+      weaponParts: weaponParts ?? [],
       // A graft: the weapon whose arms and clips it is drawn in, and the
       // weapon nodes it took off the hand (`arms-rig.js` `graftRig`).
       graftOf: graft ? (held.graftOf ?? held.name) : null,

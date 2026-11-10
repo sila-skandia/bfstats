@@ -775,3 +775,24 @@ for what their own data does not do. Each is now judged by the hull's data.
 Nothing in the asset tree has to be re-extracted for this. It is audit, server
 and viewer code. The pipeline's own quick check picks it up once these
 commits are on its checkout.
+
+## The spent case that floated back into the Berthier (2026-11-10)
+
+The owner, on argonnerwald with the French rifleman's Berthier: after a shot
+something "floats in from the right ... into the gun", and the same on FHSW.
+It was the case. `BerthierBoltOperate.baf` throws it 0.43 m right and ends
+there; the rig carries the weapon's parts as tracks inside each arms clip, so
+the page's fade from the bolt to the aim (the aim's morph factor 0.7, 1.43 s)
+dragged it back across the screen. Retail never blends those bones: they are
+the weapon's own state machine's, and its one-shot ends in `StopDummyState`,
+whose `resetSkeleton` puts them home that frame (ledger ANIM-22).
+
+`viewer/weapon-part-pose.js` now poses every `boundBone` node after the mixer
+from the clip that owns the arms alone, and at rest once a one-shot's track for
+it has run; `arms-rig.js` and `replay-viewmodel.js` call it. Page-only: no
+re-extraction. Measured on a local page, one shot: the case was 0.42, 0.31,
+0.20, 0.08 m off its seat at 0.1, 0.4, 0.7, 1.0 s after the bolt ended, and
+is now 0 from the first frame. An offline scan of the rigs finds the same
+ending in 213 of BF1918's 312 rigs (cases, rounds, grenade rings and pins), in
+FHSW's No4s, and in vanilla's Thompson reload (the `flerp`, 0.125 m), which now
+snaps home too. Guard: `tests/test_weapon_part_pose.py`.

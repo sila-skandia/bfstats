@@ -28,6 +28,7 @@ import { createArmsRig } from './arms-rig.js';
 import { heldWeapon } from './replay-hud.js';
 import { ANIM_FLAGS, bodyAt } from './replay-recording.js';
 import { roundIsRecorded } from './replay-props.js';
+import { poseWeaponParts } from './weapon-part-pose.js';
 import { fireWithoutRound, serverFlies } from './replay-flights.js';
 import { delaySpan, hideSpan } from './fire-timer.js';
 import { syncReplayCollision } from './replay-gunfire.js';
@@ -660,6 +661,13 @@ export class ReplayViewmodel {
     }
     entry.active = live;
     entry.mixer.update(0);
+    // The weapon's parts take the clip holding the arms (the first entry),
+    // unblended, and rest once its one-shot has run (ANIM-22).
+    const owner = pose.find(p => entry.actions[p.family]);
+    if (entry.weaponParts?.length) {
+      poseWeaponParts(entry.weaponParts, owner?.family ?? null, owner?.time ?? 0,
+                      owner ? !this.clipOf(entry, owner.family).loop : false);
+    }
   }
 
   /**
