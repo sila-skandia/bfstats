@@ -282,7 +282,10 @@ about.
   or the chased round under the terrain, a silent sound; written as
   `checks` in meta.json, "held back" in the log, never uploaded without
   `--ignore-checks`. When a run holds one back, look at why before sending
-  it.
+  it: film it alone with `--trace` (`--player=<name>` picks one player's
+  streak or compilation) and read which camera state went under. The
+  director's poses now stay `groundClear` over the ground too (Delta74's
+  428 m battery shot, 17.6 m under its pit, 2026-11-10).
 - **The editor's chase at 5 fps was the hull cast**, not the recording
   (2026-11-10): `replay-gunfire.js` now tests a hull's sphere before its
   meshes. Measure frame times per round-cam state in the page before

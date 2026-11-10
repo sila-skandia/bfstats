@@ -1112,6 +1112,8 @@ async function dipOut(page, urls) {
  * it at least `hold` seconds before it may go back.
  */
 const DIRECTOR = Object.freeze({
+  // Metres the director keeps the lens over the ground (`aboveGround`).
+  groundClear: 0.3,
   reach: 40, ease: 0.3, hold: 1.5, eye: 1.6, hullEye: 2.4, near: 0.35, beyond: 5,
   // The flight: the share of the picture within flightNear metres that cuts
   // to the reverse, `reverse` [back, up] from the victim.
@@ -1427,9 +1429,23 @@ const DIRECTOR_SRC = `window.__director = (() => {
         c.updateMatrixWorld();
         c.matrixWorldInverse.copy(c.matrixWorld).invert();
       };
+      // Never under the ground, wherever a pose came from: the round cam
+      // clamps its own placements, but a pose written here is the last word
+      // before the render, and a coastal battery's shoulder shot on
+      // Manchuria sat 17.6 m under the pit for its whole lead-in (Delta74's
+      // 428 m shot, 2026-11-10, caught by the QA check).
+      const aboveGround = c => {
+        const g = r.ctx.groundHeight?.(c.position.x, c.position.z);
+        const clear = state.cfg.groundClear ?? 0.3;
+        if (!Number.isFinite(g) || c.position.y >= g + clear) return;
+        c.position.y = g + clear;
+        c.updateMatrixWorld();
+        c.matrixWorldInverse.copy(c.matrixWorld).invert();
+      };
       r.camera.setLensHook(c => {
         place(c);
         reveal(c);
+        if (state) aboveGround(c);
       });
       const place = c => {
         const st = state;
@@ -4280,7 +4296,9 @@ try {
       // kills, when he has five or more (the owner, 2026-11-03); --kinds=player
       // films only these.
       // --kinds=player-air or player-vehicle films only that half.
-      const wantsReel = reel => !kinds.length || kinds.includes('player') || kinds.includes(reel.air ? 'player-air' : 'player-vehicle');
+      // --player=<name> films only that player's reels too (a test of one).
+      const wantsReel = reel => (!kinds.length || kinds.includes('player') || kinds.includes(reel.air ? 'player-air' : 'player-vehicle'))
+        && (opt('player', null) === null || reel.playerName === opt('player', null));
       if (!LIVE && !only.length) {
         for (const reel of P.playerReelsOf(P.vehicleKillsOf(rec, { models }), { slug: r.slug, level: rec.level })) {
           if (!wantsReel(reel) || keys.has(reel.key)) continue;

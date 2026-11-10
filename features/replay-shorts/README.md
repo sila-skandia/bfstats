@@ -617,7 +617,13 @@ in the night's Shorts, each with a cause and a check:
   camera under for 3% of its frames and 6 or more; the round under for 30%
   of its flight; a peak under -50 dB) is written with `checks.failed` and
   held back from upload, by the run and by `--upload-filmed`;
-  `--ignore-checks` sends it anyway.
+  `--ignore-checks` sends it anyway. Its first catch: Delta74's 5 vehicle
+  kills on Manchuria, held back twice, the lens 17.6 m under the pit of a
+  coastal battery for the whole lead-in of a 428 m shot (`--trace`: 60
+  `armed` frames). The round cam clamps its own placements, but the
+  director's shoulder pose is written after it, so the director now keeps
+  every pose it writes `groundClear` (0.3 m) over the ground. `--player`
+  picks a player's compilations too, to film one such reel alone.
 
 ### On the stats pages (2026-11-04)
 
