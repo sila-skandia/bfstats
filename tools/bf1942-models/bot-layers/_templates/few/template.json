@@ -1,0 +1,11 @@
+{
+ "source": "DICE, bf1942 Kursk (1.6 patch archives, Kursk_003.rfa): AI/Strategies.con, AI/conditions.con, AI/prerequisites.con, unchanged",
+ "archetype": "few capturable flags in play: each side starts on a base of its own, and the flags between them are few",
+ "strategies": [
+  "breakOut",
+  "holdAndCamp",
+  "single",
+  "double"
+ ],
+ "note": "The side lists are Kursk's own ai.addSAIStrategy lines, in its order. Kursk is DICE's level with the fewest capturable flags (two, between two bases nobody can take). Its single and double attack with all of a side and post no defender while the enemy holds one flag or fewer; holdAndCamp, the one strategy that posts defenders, asks for exactly two flags held. Chosen by the generator for a level with few flags in play (botgen.mjs templateFor)."
+}

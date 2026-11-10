@@ -1,46 +1,82 @@
 {
  "level": "dc_basrah_nights",
  "verdict": "fail",
- "outcome": "no-fight",
+ "outcome": "no-better-than-nothing",
  "config": "with vehicles",
- "generatorVersion": 4,
+ "doctrine": "garrison",
+ "generatorVersion": 5,
  "inputs": {
   "controlPoints": "8ae304b8b42cdc5d2748c571ced417bf53f7737387caff378e764cb9577ebb59",
   "infantryMap": "dfde3ec49a308a6e2476ceffbf56b3ba941322a600fa9386319ff6421d808f46",
   "template": "43f8a790471528016570235f76e97dbb2045732458781a5139f37fed68bf98c0"
  },
- "baseline": "DICE layers with vehicles: berlin, stalingrad, kharkov, bocage; seeds 1..10, 600 s",
+ "baseline": "desertcombat's own layers with vehicles, garrison doctrine: berlin, dc_desertshield, kharkov, kursk; seeds 1..10, 600 s; dropped, no fight: dc_basrahs_edge, stalingrad",
+ "bar": {
+  "against": "desertcombat",
+  "why": "desertcombat's own bar, built from 4 of its levels that are alive (berlin, dc_desertshield, kharkov, kursk)"
+ },
+ "againstDice": {
+  "verdict": "fail",
+  "outcome": "no-better-than-nothing",
+  "baseline": "DICE layers with vehicles, garrison doctrine: berlin, stalingrad, kharkov, bocage; seeds 1..10, 600 s",
+  "sizes": {
+   "8": {
+    "verdict": "fail",
+    "failed": [
+     "stuckSecondsPerBotMinute",
+     "idleShare",
+     "redeploysPerBotMinute",
+     "teamKillsPerBotMinute",
+     "stuckSecondsPerBotMinuteWorseSide",
+     "routeFailuresPerBotMinuteWorseSide",
+     "redeploysPerBotMinuteWorseSide",
+     "nonEnemyDeathShareWorseSide",
+     "unitsNeverUsedShare"
+    ]
+   },
+   "16": {
+    "verdict": "fail",
+    "failed": [
+     "idleShare",
+     "redeploysPerBotMinute",
+     "enemyKillsPerBotMinute",
+     "routeFailuresPerBotMinuteWorseSide",
+     "redeploysPerBotMinuteWorseSide",
+     "nonEnemyDeathShareWorseSide",
+     "unitsNeverUsedShare"
+    ]
+   }
+  }
+ },
  "seeds": 10,
  "sizes": {
   "8": {
    "verdict": "fail",
    "failed": [
-    "enemyKillsPerBotMinute",
-    "bothSidesKill",
-    "ticketsBleed",
+    "stuckSecondsPerBotMinute",
+    "idleShare",
+    "teamKillsPerBotMinute",
+    "stuckSecondsPerBotMinuteWorseSide",
+    "redeploysPerBotMinuteWorseSide",
     "unitsNeverUsedShare"
    ],
    "winners": [
+    7,
     3,
-    6,
-    1
+    0
    ]
   },
   "16": {
    "verdict": "fail",
    "failed": [
     "idleShare",
-    "capturesTotal",
-    "enemyKillsPerBotMinute",
-    "flagCoverage",
-    "bothSidesCapture",
-    "nonEnemyDeathShareWorseSide",
+    "redeploysPerBotMinuteWorseSide",
     "unitsNeverUsedShare"
    ],
    "winners": [
-    2,
-    6,
-    2
+    7,
+    3,
+    0
    ]
   }
  },

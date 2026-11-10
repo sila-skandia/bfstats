@@ -77,6 +77,43 @@ export function balance(rows) {
   return { split, oneSided: rows.length > 1 && (split[0] === rows.length || split[1] === rows.length) ? (split[0] ? 1 : 2) : null };
 }
 
+/**
+ * The levels of a baseline's rows that have a fight by the alive checks at
+ * every side size, and the ones dropped with what they fail: a level nobody
+ * fights on is no standard (section 18.5 dropped Battleaxe and Wake the same
+ * way). `{ alive: [level], dropped: [{ level, failed: ['8:bothSidesKill', ...] }] }`.
+ */
+export function aliveLevels(rows) {
+  const alive = [], dropped = [];
+  for (const level of [...new Set(rows.map(r => r.level))].sort()) {
+    const mine = rows.filter(r => r.level === level);
+    const failed = [...new Set(mine.map(r => r.botsPerSide))].sort((a, b) => a - b)
+      .flatMap(size => aliveChecks(mine.filter(r => r.botsPerSide === size)).filter(c => !c.pass).map(c => `${size}:${c.metric}`));
+    (failed.length ? dropped.push({ level, failed }) : alive.push(level));
+  }
+  return { alive, dropped };
+}
+
+/** A mod's own bar is the one a mod's level is judged against when it is built from at least this many of its levels that are alive. */
+export const MOD_BAR_MIN_LEVELS = 3;
+
+/**
+ * Which bar a level's verdict is against. A mod's level (`mod` other than
+ * bf1942) is judged against its own mod's bar (`own`, a baseline built by
+ * `botbatch baseline --mod`) when that bar holds at least
+ * `MOD_BAR_MIN_LEVELS` alive levels; otherwise, and for a vanilla or
+ * community level, against DICE's (`dice`). The alive checks hold under
+ * either bar: they are the same three tests whatever the baseline.
+ * `{ against: 'dice' | <mod>, baseline, why }`.
+ */
+export function chooseBar({ mod = 'bf1942', dice, own = null }) {
+  const m = String(mod).toLowerCase();
+  if (m === 'bf1942' || !own) return { against: 'dice', baseline: dice, why: m === 'bf1942' ? 'a vanilla or community level: DICE\'s bar' : `no bar of ${m}'s own: DICE's` };
+  const alive = own.levelsAlive ?? [];
+  if (alive.length >= MOD_BAR_MIN_LEVELS) return { against: m, baseline: own, why: `${m}'s own bar, built from ${alive.length} of its levels that are alive (${alive.join(', ')})` };
+  return { against: 'dice', baseline: dice, why: `${m}'s own bar holds ${alive.length} alive level${alive.length === 1 ? '' : 's'}, fewer than ${MOD_BAR_MIN_LEVELS}: DICE's` };
+}
+
 /** `rows`: detector rows of the baseline levels. One band per side size. */
 export function buildBaseline(rows, note = '') {
   const sizes = {};

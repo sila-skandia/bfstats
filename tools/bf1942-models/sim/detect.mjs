@@ -42,6 +42,17 @@ export const TANK_SEATING_SECONDS = 60;
 
 const newSide = () => ({ aliveSeconds: 0, redeploys: 0, routeFailures: 0, byEnemy: 0, self: 0, byTeam: 0, drivingSeconds: 0 });
 
+/**
+ * The doctrine a match was played under, from its trace header: 'sai' when
+ * the header names none (the runner writes the field only off the SAI), the
+ * name when both sides share one, else 'axis/allies'.
+ */
+export function doctrineOf(header) {
+  const d = header?.doctrine;
+  if (!d) return 'sai';
+  return d[1] === d[2] ? String(d[1]) : `${d[1]}/${d[2]}`;
+}
+
 export function newDetector(header) {
   return {
     header, bots: new Map(), dt: (header.traceEvery ?? 1) / (header.tickHz ?? 30),
@@ -256,6 +267,11 @@ export function finish(d, summary = null, endT = null) {
   return {
     level: d.header.level, seed: d.header.seed, botsPerSide: d.header.botsPerSide, duration: d.header.duration,
     strategic: !!d.header.strategic, botMinutes: +minutes.toFixed(2),
+    // The doctrine both sides played (`sim/run.mjs --doctrine`): the header names it unless both ran the SAI.
+    doctrine: doctrineOf(d.header),
+    // Bots the runner dealt no kit: they fire the stand-in weapon, whose kills stop near 50 m. A match with
+    // any is not a match of the level (features/bot-map-generation, 19). null for a header with no bot list.
+    botsWithoutKit: Array.isArray(d.header.bots) ? d.header.bots.filter(b => !b.kit).length : null,
     captures: { 1: d.captures[1] ?? 0, 2: d.captures[2] ?? 0 },
     capturesTotal: (d.captures[1] ?? 0) + (d.captures[2] ?? 0),
     firstCapture: d.firstCapture,

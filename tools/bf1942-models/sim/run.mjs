@@ -138,6 +138,10 @@ async function runMatch(a) {
   match.emit({ k: 'summary', ...summary, trace: undefined, runtime: undefined, level_info: undefined, doctrine: undefined });
   flush();
   if (fd !== null) closeSync(fd);
+  // Bots dealt no kit fire the stand-in weapon: the level has no row in the tree's `_shared/loadouts.json`.
+  // Said in summary.json and on stdout, not in the trace, so a seed's trace stays byte for byte the same.
+  const bots = Object.values(summary.metrics?.perBot ?? summary.perBot ?? {});
+  summary.botsWithoutKit = bots.filter(b => !b.kit).length;
   writeFileSync(path.join(outDir, 'summary.json'), JSON.stringify(summary, null, 2) + '\n');
   const m = summary.metrics;
   const lines = [
@@ -153,6 +157,7 @@ async function runMatch(a) {
     `route failures ${m.routeFailures.total}, redeploys ${m.redeploys}, strategy changes ${m.strategyChanges}`
       + `${m.botErrors ? `, BOT ERRORS ${m.botErrors} (see the bot_error events)` : ''}`,
     `doctrine Axis ${summary.doctrine.sides[1]} / Allies ${summary.doctrine.sides[2]}`,
+    ...(summary.botsWithoutKit ? [`NO KIT: ${summary.botsWithoutKit} of ${bots.length} bots were dealt no kit and hold the stand-in weapon (no row for ${summary.level} in _shared/loadouts.json)`] : []),
     `out: ${outDir}`,
   ];
   process.stdout.write(lines.join('\n') + '\n');

@@ -18,7 +18,16 @@ republished The_Maze with two flags out of play, and judged the mods with
 their vehicles in: 47 botless levels of Desert Combat, Forgotten Hope,
 BF1918 and FHSW censused, four run through the full matrix, none passing.
 The owner accepted, the same day, that the stacked-floor community arenas
-get no bots, and asked for the mods next.
+get no bots, and asked for the mods next. Phase D (section 19, with
+[page-matches.md](page-matches.md) and [seat-behaviour.md](seat-behaviour.md))
+found on 2026-11-11 that the verifier had been judging something a player
+never meets: bots with a stand-in weapon on the community levels, and the
+engine's SAI where the page plays the garrison. With both put right and
+both bars rebuilt, The_Maze is still better than nothing and stays live on
+a new layer; shigaisen_B is not and was taken off the page; no mod level
+reaches better-than-nothing, on DICE's bar or its own mod's.
+
+**What is live, 2026-11-11: The_Maze only.**
 
 **Owner decisions, 2026-11-10.** Any level without bots is a candidate, in
 every mod and in the community maps, not only FHSW. The priority is on-foot
@@ -1210,6 +1219,10 @@ What the test taught on the way:
 
 ## 14. Phase A, 2026-11-10: the generator, the verifier, and shigaisen_B
 
+(Correction, section 19: the community levels' figures in sections 14 to
+18 were measured with bots holding a stand-in weapon, and every match in
+them under the engine's SAI doctrine, not the page's garrison. 19.1, 19.2.)
+
 The owner's go: generate bots for the candidates, starting with the plan of
 section 9.1, with the first map tested thoroughly before any rollout. This
 section is what was built and what the test found. The short version: the
@@ -2108,8 +2121,13 @@ says why it is shut. They are 630 KB and can be deleted at no cost but that.
 
 | Level | Outcome | Accepted short of | Published |
 |---|---|---|---|
-| shigaisen_B | better-than-nothing | redeploys at 16 a side, 0.1298 against 0.129 | 2026-11-10 |
-| The_Maze | better-than-nothing | idle share at 8 a side, 0.547 against 0.526 | 2026-11-10, twice |
+| shigaisen_B | better-than-nothing | redeploys at 16 a side, 0.1298 against 0.129 | 2026-11-10; **taken down 2026-11-11** |
+| The_Maze | better-than-nothing | idle share at 8 a side, 0.547 against 0.526 | 2026-11-10, twice; again 2026-11-11 |
+
+Both rows are the verdicts of 2026-11-10, which were measured with a
+stand-in weapon under the wrong doctrine (19.1, 19.2). Judged again,
+shigaisen_B is no better than the level with no layer and came off the page;
+The_Maze was accepted again short of route failures and republished (19.4).
 
 The_Maze was published twice on the day. The first layer (generator 3,
 accepted short of route failures and redeploys at both sizes) is the one
@@ -2309,7 +2327,9 @@ Scout or Idle with no target, and 71 % of that is bots ordered to their own
 base, which no enemy can take: the Allies spend 55 % of their time ordered
 to AlliedBase, the Axis 30 % to AxisBase. With three flags in play
 Kharkov's strategies keep half a side at home. The two _o_jka__ levels
-failed the same way in 16.5. It is the template's doing, not a route fault.
+failed the same way in 16.5. It is the template's doing, not a route fault. (Correction, section 19: that is the engine's SAI doctrine, which
+these matches ran and the page does not; under the page's garrison the
+idle share is a quarter of it, 19.2 and 19.3.)
 
 shigaisen_b through the probe: no flag is taken out and no way is shut. Its
 layer was not rewritten; the generator would write a version of 4 and a
@@ -2671,3 +2691,548 @@ In the order the measurements put them:
 9. `publish_bot_layers.py` was read, not run, for a mod's layer.
 10. From 16.7, still open: the stacked-floor figures, the stand-in for a
     person, the strategic maps, `createHomogenousCondition`.
+
+## 19. Phase D, 2026-11-11: real kits, the page's doctrine, a bar from each mod, and a template by the flags in play
+
+Two corrections came first, and every figure in this section is measured
+after both: the community levels' bots had been holding a stand-in weapon
+(19.1), and every match of sections 14 to 18 was played under the
+engine's SAI doctrine where the page plays the garrison (19.2). Then the
+bars were rebuilt (19.3), the two live levels judged again (19.4), the
+strategy template chosen by the flags in play (19.5), each mod given a
+bar of its own (19.6), and the Desert Combat levels and the community
+levels with vehicles judged (19.7 to 19.9). Nothing was accepted,
+published or committed here. The coordinator took shigaisen_B off the
+page and recorded The_Maze's new acceptance from 19.4.
+
+### 19.1 Sections 14 to 18 judged the community levels with a stand-in weapon
+
+**Correction to sections 14 to 18.** Every figure those sections give for
+a community level (shigaisen_B, The_Maze, hop, the two _o_jka__ levels,
+omaturi_channel_sniper, the census rows of 16.1) was measured with bots
+holding the runner's stand-in weapon, not their kits. The scratch
+community tree's `_shared/loadouts.json` was a stale copy that held rows
+for 24 levels, DICE's only; the published one holds 100. `sim/level.mjs
+kitFor` deals no kit to a level with no row, and a bot with no kit fires
+a generic weapon whose kills stop near 50 m. DICE's baselines and the mod
+levels were not affected: their trees' loadouts have a row for every
+level judged. Found by the coordinator, who also saw the live page agree
+with matches run with kits, not with the stand-in ones.
+
+What now stops it happening silently:
+
+* **The lint** (`botlint.mjs kitsDealt`) has an error `kits`: a side whose
+  row in the tree's `_shared/loadouts.json` names no kit that arms a bot.
+  `botbatch level` and `census` then refuse the level (`unsuitable`)
+  before a match is run.
+* **The runner** says it: `summary.json` carries `botsWithoutKit`, and the
+  printed summary ends with a `NO KIT` line. The trace is unchanged.
+* **The detector** keeps `botsWithoutKit` on every row (from the trace
+  header's bot list), and `botbatch` refuses a verdict (`unsuitable`,
+  `noKit` in `verdict.json`) on matches any of whose bots had no kit, and
+  refuses to build a baseline from them. That covers `matrix`, which runs
+  no lint.
+
+Checked on the real tree: The_Maze against the stale file gives the
+`kits` error and a 2-a-side match prints `NO KIT: 4 of 4 bots`; against
+the published file, neither. Tests: `tests/test_bot_bars.py
+StandInWeaponTests`.
+
+### 19.2 Every match before this section was played under the wrong doctrine
+
+**Correction to sections 14 to 18.** `viewer/map.html` plays
+`BOT_DOCTRINE = params.get('doctrine') || 'garrison'`; `sim/run.mjs`
+defaults to `sai`, and `botbatch.mjs` passed no `--doctrine`. So both bars
+and every verdict were of the engine's SAI, which a player never sees.
+The garrison (`features/bot-garrison/README.md`,
+`viewer/doctrine-garrison.js`) posts at most one guard a held flag and
+sends everyone else to attack. Found by the coordinator.
+
+`botbatch` now plays every match `--doctrine garrison` unless
+`--doctrine sai` asks for the other on purpose (`DEFAULT_DOCTRINE`). The
+run folders carry the doctrine (`v8-garrison`), so a run never resumes
+from another's matches; each detector row records it (`detect.mjs
+doctrineOf`, from the trace header, `sai` when the header names none); a
+bar records it (`doctrine`, and in its note); `verdict.json` records it.
+A bar of another doctrine than the run's, or rows of one, are refused
+(`doctrineMismatch`), and an acceptance made under another doctrine is
+withdrawn, not carried (`carryAccepted`). Tests: `tests/test_bot_bars.py
+DoctrineTests`.
+
+With no layer the two doctrines give the same matches to the digit
+(shigaisen_B and The_Maze, all forty rows): a level with no strategic
+layer gives the doctrine nothing to act on.
+
+### 19.3 The bars under the garrison
+
+`sim/baselines/onfoot-dice.json` and `sim/baselines/vehicles-dice.json`
+rebuilt: the same four levels, 10 seeds, 600 s, 8 and 16 a side, under the
+garrison, on the viewer with the merged seat fixes (230bc1d8e; the
+with-vehicles bar was started after it). The SAI bars are kept in scratch.
+p10 / p50 / p90, SAI then garrison:
+
+| On foot | 8 a side | 16 a side |
+|---|---|---|
+| Enemy kills a bot-minute | 0.30 / 0.60 / 1.41, then 0.66 / 0.88 / 1.30 | 0.17 / 0.35 / 0.84, then 0.68 / 0.85 / 1.34 |
+| Captures a match | 1 / 4 / 8.1, then 1 / 2 / 6 | 1 / 3 / 8, then 1 / 2 / 3.3 |
+| Idle share | 0.16 / 0.36 / 0.53, then 0.04 / 0.08 / 0.27 | 0.39 / 0.58 / 0.72, then 0.03 / 0.07 / 0.27 |
+| Route failures a bot-minute | 0 / 0 / 0.38, then 0 / 0.035 / 0.54 | 0.003 / 0.13 / 2.10, then 0.010 / 0.083 / 0.51 |
+| Stuck seconds a bot-minute | p90 2.06, then 3.63 | p90 1.99, then 3.42 |
+| Spawn traps a bot-minute | p90 0.143, then 0.201 | p90 0.079, then 0.143 |
+| Team kills a bot-minute | p90 0.061, then 0.076 | p90 0.040, then 0.124 |
+
+| With vehicles | 8 a side | 16 a side |
+|---|---|---|
+| Enemy kills a bot-minute | 0.036 / 0.121 / 0.48, then 0.18 / 0.32 / 0.64 | 0.076 / 0.158 / 0.59, then 0.38 / 0.46 / 0.74 |
+| Captures a match | 0 / 2 / 4.1, then 1 / 2.5 / 7 | 1 / 2 / 4.1, then 1 / 2 / 5.1 |
+| Idle share | 0.35 / 0.51 / 0.79, then 0.20 / 0.25 / 0.40 | 0.42 / 0.60 / 0.69, then 0.17 / 0.24 / 0.29 |
+| Route failures a bot-minute | p90 0.16, then 0.50 | p90 0.86, then 1.62 |
+| Hull stuck s a driving minute | p90 1.75, then 3.97 | p90 2.13, then 4.33 |
+| Mounted share | p50 0.84, then 0.71 | p50 0.66, then 0.55 |
+
+(The SAI with-vehicles column is the bar the merge of 230bc1d8e carried,
+built by the other agent on the seat fixes; section 18.5's figures are
+from before them.) Under the garrison the runner's kill rate with vehicles
+lands where the coordinator's page matches do (0.32 and 0.46 at the
+median; the page's DICE levels 0.22 to 0.40). The garrison's idle share is
+a quarter of the SAI's: the "half a side at home" of 18.3 was the SAI's.
+
+### 19.4 The two live levels, with kits and under the garrison
+
+The committed layers as they were (generator 4 and 3), on foot, 10 seeds,
+600 s, 8 and 16 a side, with and without the layer, against the garrison
+on-foot bar. Medians; the bar in brackets.
+
+| | The_Maze 8 | The_Maze 16 | shigaisen_B 8 | shigaisen_B 16 |
+|---|---|---|---|---|
+| Captures a match, layer (no layer) | 7 (0) | 6.5 (0) | **0 (2)** | **0 (2)** |
+| Enemy kills a bot-minute | 0.83 (0.66) | 0.83 (0.68) | 1.81 | 1.96 |
+| Route failures a bot-minute | **1.39 (0.54)** | **3.20 (0.51)** | **1.07** | **2.17** |
+| Route failures, worse side | **2.61 (0.80)** | **4.15 (0.78)** | **1.24** | **3.36** |
+| Spawn traps a bot-minute | 0.097 | 0.101 | **0.374 (0.201)** | **0.434 (0.143)** |
+| Team kills a bot-minute | 0.057 (0.076) | 0.080 (0.124) | 0.072 | **0.309 (0.124)** |
+| Idle share | 0.135 (0.27) | 0.104 (0.27) | 0.111 | 0.075 |
+| Checks failed | 2 | 2 | 5 | 11 |
+| Outcome | better-than-nothing | | **no-better-than-nothing** | |
+
+With the stand-in weapon and the SAI the same layers had read: The_Maze
+idle share failing at 8 a side (0.547), shigaisen_B passing at 8 a side.
+With kits under the SAI (an intermediate run, not judged by): The_Maze
+idle 0.53 and 0.56, kills 0.37 and 0.41; shigaisen_B captures 1 and 0.
+
+Both verdicts are in the repo's layer folders, written by the tool with
+the doctrine and the bar, the old acceptances withdrawn ("accepted on
+matches under the sai doctrine"). The coordinator then took shigaisen_B
+off the page and recorded a new acceptance on The_Maze, short of route
+failures at both sizes.
+
+**Where The_Maze's route failures are** (one traced match each, seed 1,
+the committed layer, the garrison): 872 of 903 at 16 a side and all 177
+at 8 a side are the Allies', all on foot, ordered to `center` and flag
+`2`. They cluster at two places: around flag 2 (260 to 300, -520) and the
+Allied base's exit (320 to 340, -760). In 71 % of them two or more
+teammates stand within 6 m of the failing bot; over all on-foot
+bot-seconds of the same match that is 29 %. So it is the mechanism of
+18.1 (a teammate's 2 m circle shuts a passage three or four cells wide),
+now with a whole side attacking through the same corridors. The route
+probe already says so of one way: flag `1` from the Allies' side has 12
+choke points (`routeProbe.chokes`), kept in play because the Axis reach
+it openly.
+
+Whether the probe's choke bar wants the garrison's numbers: no change was
+made. `CHOKE_MAX` is a property of DICE's maps (one standing teammate on
+the best route), not of a doctrine, and the maps did not change. What the
+garrison changes is how many teammates stand in a passage at once, and the
+probe tests one. A probe with two or three standing teammates, measured on
+DICE's four levels under the garrison, is the test that would set a bar
+for it. Not done.
+
+**Why nobody takes a flag on shigaisen_B with the layer.** Each side
+starts holding three flags and its base; no flag is neutral. Measured
+from traced matches (8 a side, seeds 1 and 2, the garrison):
+
+| | No layer | Committed layer | Kursk's template | One always-live attack | Layer, page-painted map |
+|---|---|---|---|---|---|
+| Captures a match (10 seeds, median) | 2 | 0 | 0 | 0 | 0.5 |
+| Alive ticks inside an enemy-held ring, Axis / Allies | 0.17 / 0, 0.05 / 0 | 0 / 0, 0.02 / 0.01 | 0.008 / 0.025 | | |
+| Axis ordered to the centre bridge, distance to it p10 / p50 | 7 / 53 m | | 52 / 89 m | | |
+| Victims, where on the line own base (0) to enemy base (1) | mostly 0.4 to 0.6 | mostly 0.3 to 0.5 | 0.3 to 0.4 | | |
+
+* With the committed layer both sides are in Kharkov's `finalPush` from
+  the first pass (the page counts flags held plus owned areas flagged
+  `ControlPoint`, so three flags held is six). `finalPush` weighs `Close`
+  hostile areas: the Axis is ordered 66 % of the time to the Allies'
+  southBridge_east and the Allies 68 % to the Axis' minka_south, the two
+  flags deepest in the enemy's half. With no layer every bot of a side
+  goes to the one nearest enemy flag (the page's fallback order: 100 % of
+  the Axis at the centre bridge).
+* So the template was tried first, and it is not the cause: Kursk's
+  template (no strategy live at the start, so attack values alone pick the
+  target: the Axis at the centre bridge 73 %) and a template of one attack
+  strategy always live both give no capture in twenty matches.
+* Nor is the layer's map: the same layer with its engine maps taken out,
+  so that the page paints its own as with no layer, gives 0.5 and 0
+  captures.
+* What every layered run shares and the no-layer run does not: the
+  garrison's posts and the strategic areas' orders. The posts hold 8 to 16
+  % of a side's alive ticks (`WPPost`), not half. Attackers ordered to the
+  centre bridge stop 89 m short at the median against 53 m with no layer,
+  and die on their own half.
+
+The cause is not found. Ruled out by measurement: the template, the map
+and the split between targets. Not tested: the garrison's posts (no way to
+turn them off from the generator or the runner without a viewer change)
+and the areas' order positions. No generator change was made for it.
+
+### 19.5 A strategy template chosen by the flags in play
+
+**Why Kharkov's template kept half a side at home under the SAI.** One
+traced match of The_Maze, 8 a side, seed 1, the SAI, stand-in weapon: the
+Allies spent the whole match in Kharkov's `bridge`, the Axis 11 % of it;
+the Allies' bots were ordered to their own base for 55 % of their alive
+ticks, the Axis' for 30 %. Kharkov's four strategies on the page:
+
+* `normal` (aggression 1.0, one attack, no defence) is gated on
+  `constantCond`, `Crisp Equal Enemy UnitConstant 1`. The page's state
+  table has no `UnitConstant` (`viewer/strategic-ai.js _updateStates`), so
+  the state reads 0, the Required condition fails and `normal` scores 0 in
+  every pass. On the page it is never chosen.
+* `bridge` (aggression 0.5, one attack, **one defence**) is gated on
+  `Friendly ControlPoint == 1`. A side holding its base alone takes it,
+  and half its bots defend the one area it owns: a base nobody can take.
+* `finalPush` needs three held (the page's count, 19.4), `breakOut` none.
+
+What retail does with `UnitConstant`, from the Linux server
+(`bf1942_lnxded.static`): it is value 0x2f of
+`StrategyCondition::Conditional` (`operator>>` stores `0x2f` after its
+string compare at 0x08488142), the last of the 48 state slots.
+`SCConstant::compare` (0x08639250) reads `states[conditional]` with no
+special case, and `SAI::updateStates` (0x086348c0) writes nothing at that
+slot (offset 0xbc). What else, if anything, writes it was not found, so
+whether `normal` is ever live in retail is open. A viewer question, not
+changed.
+
+**What DICE's levels with few flags do** (published `scene.json` `ai`
+blocks; Kursk read from `Kursk_003.rfa`): Kursk, the vanilla level with
+the fewest capturable flags (two), gates its attacks on the enemy's count
+(`maxOneEnemyCP`, `Enemy ControlPoint <= 1`): `single` and `double`
+(aggression 1.0, no defence) are live from the first pass; its one
+defending strategy, `holdAndCamp`, asks for exactly two held and five
+hostile areas. Kharkov, Bocage, El Alamein and Berlin (three capturable
+each) mix aggression 0.65 to 1.0 with one or two defences.
+
+**The change** (generator version 5, `botgen.mjs templateFor`): the
+template is chosen by the capturable flags left in play after the walk
+test and the route probe: up to three (`FEW_FLAGS`), DICE's Kursk,
+unchanged, as `bot-layers/_templates/few`; more, Kharkov's as before
+(`symmetric`). `generated.json` records the choice (`templateChoice`);
+`--template` forces one. INVENTION: the rule and the threshold are this
+tool's. Tests: `tests/test_bot_bars.py TemplateChoiceTests`.
+
+**Measured under the garrison** (10 seeds, 600 s, with kits). The idle
+share the template was meant for is gone under the garrison, so the
+question became whether it still helps:
+
+| | Kharkov's (committed) | Kursk's |
+|---|---|---|
+| The_Maze, on foot, 8 a side | fails route failures (1.39, bar 0.54) | **passes every check**: route failures 0.45, captures 10, kills 0.93 |
+| The_Maze, 16 a side | fails route failures (3.20, bar 0.51) | fails route failures (1.49) |
+| _o_jka__big, with vehicles (19.9) | fails 2 at 8 a side (self deaths, spawn traps), 3 at 16 | fails 1 at 8 a side (self deaths), 2 at 16 (idle share, self deaths) |
+| shigaisen_B (five in play, so Kharkov's by the rule; Kursk's forced) | 0 captures | 0 captures |
+| Inshallah_Valley (five in play; Kursk's forced, SAI runs) | 4 and 3.5 captures | 3 and 3.5; no better |
+
+Every check Kharkov's layer passes on The_Maze, Kursk's passes too. The
+coordinator asked for it to replace the committed layer through the tool;
+19.12 says what was written.
+
+Under the SAI and the stand-in weapon (before 19.1 and 19.2) Kursk's
+template had cut The_Maze's idle share from 0.55 to 0.20 at 8 a side; it
+is not judged by.
+
+### 19.6 A bar from each mod's own botted levels
+
+`botbatch baseline --vehicles --mod <Mod>` runs a mod's own shipped bot
+levels the way `vehicles-dice.json` is built and writes
+`sim/baselines/vehicles-<mod>.json` with the doctrine, `levelsAlive` and
+`dropped`: a level with no fight by the tool's own alive checks (each side
+kills in every seed, both lose tickets in every seed, no bot error) is left
+out and named with the checks it failed, as 18.5 did for Battleaxe and
+Wake.
+
+**The rule** (`judge.mjs chooseBar`): a mod level's verdict is against its
+own mod's bar when that bar holds at least three alive levels
+(`MOD_BAR_MIN_LEVELS`); otherwise against DICE's. A vanilla or community
+level is always against DICE's. The alive checks are the same three tests
+under either bar. `verdict.json` says which (`bar.against`, `bar.why`)
+and, when it is the mod's, keeps the verdict against DICE's beside it
+(`againstDice`); a mod bar too thin to judge by is still reported
+(`againstOwnMod`). The console line names the bar and prints the other.
+Tests: `tests/test_bot_bars.py ModBarTests`.
+
+**Desert Combat** (`vehicles-desertcombat.json`, the garrison, the merged
+viewer): six of DC's botted levels, its two own (DC_Basrahs_Edge,
+DC_DesertShield) and four of its remakes of DICE's (Kharkov, Stalingrad,
+Kursk, Berlin, fetched with `getlevel2.py`). Two are dropped:
+DC_Basrahs_Edge (a side with no kill in two seeds of ten at 8 a side) and
+Stalingrad (a side with no kill and no ticket lost in one seed at 8 a
+side). Kept: Berlin, DC_DesertShield, Kharkov, Kursk, so DC's bar judges.
+
+**Read it as a low bar.** Three of its four levels are DICE's layouts with
+DC's vehicles; the one DC original kept, DC_DesertShield, fights at 0.14
+and 0.15 enemy kills a bot-minute, under half of DICE's median, and its
+route failures (8 to 9 a bot-minute) set DC's route-failure bar. On the
+live page, by the coordinator's page matches, DC_DesertShield fights at
+0.044 with 8 of 15 deaths suicides. The bar's kill median is
+DICE-like only because of the three remakes. A DC level that passes DC's
+bar has not been shown to play like a DICE level.
+
+| Garrison, with vehicles, p10 / p50 / p90 | DICE 8 | DC 8 | DICE 16 | DC 16 |
+|---|---|---|---|---|
+| Enemy kills a bot-minute | 0.18 / 0.32 / 0.64 | 0.09 / 0.38 / 0.53 | 0.38 / 0.46 / 0.74 | 0.14 / 0.47 / 0.90 |
+| of which DC_DesertShield's median | | 0.138 | | 0.149 |
+| Captures a match | 1 / 2.5 / 7 | 0 / 3 / 6 | 1 / 2 / 5.1 | 1 / 3 / 5.1 |
+| Route failures a bot-minute | p90 0.50 | p90 10.3 | p90 1.62 | p90 9.0 |
+| Route failures, worse side | p90 0.95 | p90 12.5 | p90 2.75 | p90 11.0 |
+| Idle share | p90 0.40 | p90 0.46 | p90 0.29 | p90 0.35 |
+| Units never used | p90 0.29 | p90 0.50 | p90 0.23 | p90 0.26 |
+| Flag coverage, least of the levels | 0.333 | 1.0 | 0.333 | 1.0 |
+
+On DC's bar route failures stop failing anything, and flag coverage must
+be 1.0: every capturable flag taken in some seed. Per level, medians
+(8 / 16 a side): enemy kills DC_Basrahs_Edge 0.063 / 0.203, DesertShield
+0.138 / 0.149, Kharkov 0.414 / 0.529, Kursk 0.421 / 0.438, Stalingrad
+0.354 / 0.505, Berlin 0.372 / 0.869.
+
+An SAI build of the same bar (before 19.2, on the viewer before the
+merge) is kept in scratch and not used.
+
+### 19.7 Inshallah_Valley
+
+Ten seeds, 600 s, with vehicles, the garrison, the merged viewer, the
+generated layer (five capturable flags in play, so Kharkov's template)
+against no layer. Judged against DC's own bar by the rule; DICE's beside
+it.
+
+| | 8 a side | 16 a side |
+|---|---|---|
+| Against DC's bar | fails 2 of 24: flag coverage 0.6 (1.0), redeploys, worse side 0.154 (0.148) | fails 1: flag coverage 0.4 (1.0) |
+| Against DICE's bar | fails 5: route failures 1.15 (0.50), worse side 1.49 (0.95), redeploys 0.082 (0.074), worse side 0.154 (0.124), units never used 0.375 (0.29) | **passes all 24** |
+| Captures a match, layer (no layer) | 4.5 (3.5) | **2 (7)** |
+| Enemy kills a bot-minute, layer (no layer) | 0.36 (0.12) | 0.41 (0.20) |
+| Route failures a bot-minute, layer (no layer) | 1.15 (12.1) | 1.36 (7.4) |
+| Outcome | **no-better-than-nothing** (captures fall at 16 a side) | |
+
+Under both bars both sides kill in every seed. It is the nearest mod level
+to a pass: at 16 a side it clears every check of DICE's own bar, and the
+one check of DC's it fails asks that the two bases (capturable flags here,
+no fixed base) change hands, which they do in no seed with the layer or
+without.
+
+**Why captures fall.** With the layer the Outpost (434, -622) never
+changes hands at 16 a side and in 8 of 10 seeds at 8, where with no layer
+it does: at 16 a side Iraq's captures fall from 4 a match to 0. The generator gives the
+centre flag (the Village) the value 300 and the flanks 150, as DICE's
+Stalingrad does. Kharkov's strategies attack one target (`NumberOfAttacks
+1`, and a second only within 0.8 of the first), so with the Village
+contested the Outpost is never the target. Separated by experiment: the
+same layer with the Outpost's value alone raised to 300 (all else byte for
+byte the same, ten seeds): the Outpost changes hands in 9 of 10 seeds at 8
+a side and 10 of 10 at 16, captures go to 5.5 and 5. It is not adopted:
+kills fall (0.36 to 0.24, 0.41 to 0.26), route failures rise (1.15 to
+2.14), and at 16 a side captures are still under the no-layer level's 7,
+so the outcome would not change. A rule for the area values against the
+template's attack count is open.
+
+**Where the route failures are.** Under the garrison, 8 a side, ten
+traced matches: 2,106 failures, 68 % of them from a seat (the US side's
+Humvee_TOW 364, Iraq's T72 318 and Shilka 278 lead), clustered at the US
+base (820, -560), the Village (560, -380) and Iraq's base (360, -280); on
+foot, Iraq's base (320, -300). One bot-life holds 362 of them and the top
+tenth of lives 53 %: hulls that fail over and over where they stand.
+On the bare tank map every land-vehicle spawner but one has a route to
+every flag (a Shilka at 193, -370 sits in a pocket of it); so it is where
+hulls end up, not the map. Under the SAI (before 19.2), the on-foot
+failures were a narrow ford south of the Small Village (depth 0.5 to 1.3
+m, a few cells wide between deeper water) with teammates within 6 m at
+44 % of failures against 23 % of bot-seconds; the route probe closes every
+way from every spawn group on the bare map, ford included. No generator
+change: the hull failures want a hull probe in the lint (a vehicle
+spawner whose crew has no route on the Tank map: one of fourteen here),
+not built.
+
+### 19.8 DC_Basrah_Nights
+
+| | 8 a side | 16 a side |
+|---|---|---|
+| Against DC's bar | fails 6: stuck 1.64 (1.48), idle share 0.544 (0.459), team kills 0.069 (0.055), stuck worse side, redeploys worse side 0.34 (0.15), units never used 0.75 (0.50) | fails 3: idle 0.544 (0.345), redeploys worse side 0.40 (0.23), units never used 0.75 (0.26) |
+| Against DICE's bar | fails 9 | fails 7, among them enemy kills 0.363 (0.375) |
+| Captures, layer (no layer) | 6 (0) | 5 (0) |
+| Enemy kills a bot-minute, layer (no layer) | 0.35 (0.013) | 0.36 (0.020) |
+| Outcome | **no-better-than-nothing** | |
+
+Under the garrison it has a fight with the layer (both sides kill in every
+seed), which it did not under the SAI (18.7). The level with no layer has
+next to none (0.013 and 0.020 enemy kills a bot-minute, no side kills in 7
+seeds of 10 at 8 a side), and the layer is "no better" than it because
+stuck time and redeploys rise from the near-zero of bots that do not move
+(0.15 to 1.64 stuck seconds; 0.025 to 0.12 redeploys). The judge leaves
+out spawn traps against a dead no-layer level (`NEEDS_A_FIGHT`) but not
+stuck time or redeploys. That is the judge's rule as it stands, reported,
+not changed.
+
+**The unused units**: the level places eight. Four are fixed guns
+(`Stationary_browning` on `machinegunspawner`, two at leftspawn and two at
+rightspawn), four are cars (a Technical and a Humvee on the bases' scout
+car spawners, a Pickup and a Lada). Only the Pickup and the Humvee were
+ever seated; so of the six never used, four are the guns and two are the
+Technical and the Lada. The idle share is mostly the Iraqi side Scouting
+or Idle with no target, ordered to flags it holds (USspawn 12 % of all
+alive ticks, centerspawn 7 %): one seed traced, not separated further.
+
+### 19.9 hop and the _o_jka__ pair, with vehicles, kits and the garrison
+
+The committed layers (generator 4), with the level's vehicles and guns,
+10 seeds, 600 s, against the garrison with-vehicles bar.
+
+| Level | 8 a side | 16 a side | Outcome |
+|---|---|---|---|
+| hop | fails 12, among them no capture, stuck 2.73 (1.20), route failures 2.44 (0.50), spawn traps 0.32 (0.095), team kills 0.073 (0.034) | fails 8, no capture, route failures 5.31 (1.62) | better-than-nothing (with no layer: no kill in any seed, 52 route failures a bot-minute) |
+| _o_jka__big | fails 2: self deaths 0.063 (0.052), spawn traps 0.098 (0.095) | fails 3: idle share 0.326 (0.295), self deaths 0.095 (0.064), spawn traps 0.096 (0.095) | no-better-than-nothing (spawn traps rise against no layer) |
+| _o_jka__big, Kursk's template (the generator's choice: one flag in play) | fails 1: self deaths 0.068 | fails 2: idle share 0.311, self deaths 0.082 | no-better-than-nothing (16 a side captures 4 against 4.5 with no layer) |
+| _o_jka__ | no-fight: no kill, no capture | no-fight | no-fight |
+
+hop under the SAI with the stand-in weapon read better-than-nothing (18.7),
+then no-fight with kits under the SAI (a side with no kill in two seeds);
+under the garrison it fights (1.34 and 0.83 enemy kills a bot-minute) and
+nobody takes a base. _o_jka__big is two near-misses from a pass; its self
+deaths (a bot killed by its own hand or hull) are the one check neither
+template clears. Not diagnosed.
+
+The verdicts of all three are in their layer folders, written by the tool
+under the garrison; none of the three carried an acceptance.
+
+### 19.10 Forgotten Hope's own levels have no bar
+
+Three of Forgotten Hope's published botted levels (Operation_Goodwood,
+Prokhorovka, Gold_Beach; the others are the island and carrier levels Iwo
+Jima, Midway and Tarawa), run the same way: every one fails the
+alive checks, so `vehicles-fh.json` holds no level (`levelsAlive` empty,
+all three in `dropped`) and FH levels are judged against DICE's bar.
+
+| Level | Enemy kills a bot-minute, 8 / 16 a side | Seeds of ten with a side that never kills, 8 / 16 | Captures, 8 / 16 |
+|---|---|---|---|
+| Operation_Goodwood-1944 | 0.038 / 0.065 | 3 / 1 (and a side that loses no ticket) | 2 / 2 |
+| Prokhorovka-1943 | 0.050 / 0.057 | 2 / 2 | 1 / 1 |
+| Gold_Beach-1944 | 0.076 / 0.113 | 6 / 0 | 1 / 2 |
+
+So FH's own layers, played by the page's bots with vehicles, fight at an
+eighth to a quarter of DICE's median (0.32 and 0.46). That is the mod's own
+standard as the runner plays it, and it says the same thing the census of
+18.6 did about FH's botless levels: with vehicles in, the page's bots do
+not fight on FH's ground.
+
+FHSW's bar (Falaise_Pocket, Kharkov_Winter, Operation_Nordwind,
+The_Storm, Counterattack, all 1024 m and botted, fetched to the scratch
+tree) was started and stopped unfinished; FHSW levels are
+judged against DICE's.
+
+### 19.11 A gun nobody can reach (BF1918 Mauerfall), evaluated
+
+The other agent's traces showed Mauerfall's on-foot bots spending the
+match trying to board a gun on a tower, and suggested the generator or
+the lint mark a gun as unreachable when its seat is more than about 12 m
+above the walk point behind it. Checked:
+
+* **The case.** Section 18's Mauerfall match (seed 1, with vehicles, the
+  SAI): 1,092 bot-seconds of the `Change` behaviour went to one gun (the next
+  target had 13), a Maxima_M1910 at 612.5, 94.4, -578.4 (the `Turm`
+  spawner), its would-be crew standing at a median 615, 78, -586, 17.7 m
+  from it and 16 m below. It was never mounted.
+* **A reach test instead of a height.** For every object spawner of a
+  level, whether the walk flood (`walkflood.mjs walkedGround`, the same
+  one the walk test runs from the soldier spawns) stands anywhere within
+  4 m of it and from 2.5 m below it to 1 m above. Scratch script, not
+  in the repo.
+* **Mauerfall**: 6 of 64 spawners fail it: the tower Maxima, a
+  `werfer16` and a `ger_flamer` on the same kind of tower (18.2 m over the
+  terrain, no walked place near), a `flammenbunker` with walked ground
+  20.5 m below, and two `gotha_br` bombers that spawn 110 to 125 m up
+  (air spawns, not guns).
+* **DICE's levels**, the same test: Kharkov 0 of 23; Berlin 1 of 10 (an
+  MG42 11.4 m over the walked ground); Stalingrad 1 of 17 (a Browning
+  4 m over); Bocage 2 of 24 (an MG42 9.3 m over, and the B17 on its pad);
+  Omaha Beach 3 of 18 (the destroyer, two `Defgun` 1.5 m below the
+  walked floor at 3 m); El Alamein 3 of 48 (the B17, a Willy and a
+  Kubelwagen whose spawn the flood does not reach).
+
+So a 12 m threshold would have marked Mauerfall's three tower guns and
+none of DICE's, but by 0.6 m on Berlin's MG42, and height is not what
+decides it: DICE places guns 9 to 11 m up on structures, and whether a
+bot can reach one is a question of a way up (a ladder, which the page's
+soldier does not climb: section 16.1), not of a number. The reach test
+answers that directly, and it flags DICE's guns too, which says the page's
+bots cannot reach those either; whether retail's do is not known here.
+
+**Decision: not built into the generator.** The generator does not place
+guns and cannot keep a bot from wanting a seat; the behaviour that sends
+a bot to a seat with no way to it is the viewer's (`Change`, its seat
+choice). The useful form is a lint warning naming the guns the walk test
+cannot stand near, and a `Change` that skips a seat its bot has no route
+to. Both are open; the second is a viewer change for the other agent.
+
+### 19.12 What changed, and where it is
+
+* `sim/botbatch.mjs`: `--doctrine` (default `garrison`) on every match,
+  run folders by doctrine, `doctrineMismatch` refusals,
+  `baseline --mod` (a mod's own bar, its dead levels dropped), the bar
+  choice and `verdictWithBar` (`againstDice`, `againstOwnMod`),
+  `noKitRefusal`, `--template`, `--mod-baseline`; an acceptance does not
+  cross doctrines.
+* `sim/judge.mjs`: `aliveLevels`, `chooseBar`, `MOD_BAR_MIN_LEVELS`.
+* `sim/botgen.mjs`: generator version 5, `templateFor`, `FEW_FLAGS`,
+  `templateChoice` in the marker.
+* `sim/botlint.mjs`: `kitsDealt` and the `kits` error.
+* `sim/detect.mjs`: `botsWithoutKit` and `doctrine` on every row.
+* `sim/run.mjs`: `botsWithoutKit` in `summary.json` and the `NO KIT` line
+  (the trace is unchanged).
+* `bot-layers/_templates/few/`: DICE's Kursk strategies, unchanged.
+* `sim/baselines/onfoot-dice.json`, `vehicles-dice.json` rebuilt under the
+  garrison; `vehicles-desertcombat.json` new.
+* Layers and verdicts written by the tool: The_Maze (generator 5, Kursk's
+  template, the coordinator's acceptance carried by the tool's own rule),
+  shigaisen_B, hop, _o_jka__big, _o_jka__ (verdicts only), Inshallah_Valley
+  and DC_Basrah_Nights (verdicts, and a version-5 marker on unchanged
+  layer files). FHSW's Pegasus and Tunis still carry section 18's SAI
+  verdicts: not re-run.
+* Tests: `tests/test_bot_bars.py` with `tests/bot_bars_harness.mjs`
+  (templates, mod bars, the stand-in weapon, the doctrine). The scratch
+  community tree's `_shared/loadouts.json` was refreshed from the
+  published one, the stale copy kept beside it.
+
+### 19.13 Open, and not verified
+
+1. No runner verdict here was checked against a page match by this
+   section: the published layers (The_Maze, shigaisen_B) were measured on
+   the page by the coordinator; the rest are scratch layers, which cannot
+   be on the page.
+2. The page's team-kill rate is several times the runner's with kits
+   (about 0.09 to 0.27 a bot-minute on the page against 0.03): the
+   coordinator's finding, not chased.
+3. shigaisen_B's lost captures: the template, the map and the split of
+   targets are ruled out; the garrison's posts and the areas' order
+   positions are not tested (19.4).
+4. The_Maze's remaining route failures want a probe with more than one
+   standing teammate, and a bar for it from DICE's levels under the
+   garrison (19.4). Not built.
+5. Area values against a template's attack count (Inshallah's Outpost,
+   19.7): a rule is open.
+6. The judge compares stuck time and redeploys against a no-layer level
+   with no fight (DC_Basrah_Nights, 19.8); whether those belong with spawn
+   traps in `NEEDS_A_FIGHT` was not decided.
+7. A hull probe in the lint (a vehicle spawner whose crew has no route on
+   the Tank map) and a gun-reach warning (19.11): not built.
+8. `UnitConstant` in retail (19.5): what writes slot 0x2f was not found.
+9. FHSW's own bar was not built (19.10).
+10. The mod bars inherit the runner's vehicle behaviour; they move when
+    seat or vehicle code moves, and want a rebuild with DICE's whenever it
+    does.

@@ -1,7 +1,7 @@
 # Page matches: what the runner's verdicts were not seeing
 
-2026-11-11. Part of [bot map generation](README.md); it will be folded into
-that file as section 20 once section 19 is in.
+2026-11-11. Part of [bot map generation](README.md), beside its section 19:
+this is the page's side of what that section corrects.
 
 The verdicts in sections 14 to 18 come from `sim/run.mjs`, which plays the
 page's bot code on stand-ins. Nothing checked that a runner match is what a
@@ -52,8 +52,8 @@ bots that do not carry their kits**, including the two verdicts that put
 shigaisen_B and The_Maze live. DICE's baseline was not affected (its levels
 have their rows), and neither were the mods: every level in the Desert
 Combat, Forgotten Hope, BF1918 and FHSW scratch trees has a row in its own
-mod's file. The two live levels are being judged again with the published
-kits; a level with no kit row is to be a lint error.
+mod's file. A level with no kit row is now a lint error. Section 5 has what
+the two live levels came to when judged again.
 
 ## 2. The page against the runner
 
@@ -131,7 +131,40 @@ explain is this: the kill feed's line for a team-kill victim, and the
 killer's penalty. It is not a redeploy, which prints nothing and costs
 nothing.
 
-## 4. What is not verified
+## 4. The runner was also playing another doctrine
+
+Found the same day by the seat-behaviour work
+([seat-behaviour.md](seat-behaviour.md), 2.3): the page plays the garrison
+by default (`map.html`, `BOT_DOCTRINE`; [bot garrison](../bot-garrison/README.md))
+and the runner, and so every verdict and both bars, played the engine's SAI.
+Rebuilt under the garrison, the runner's with-vehicles bar on DICE's four
+levels goes from a median of 0.111 enemy kills a bot-minute to 0.304 at 8 a
+side, and lands on the page matches of section 2 level by level (Berlin 0.62
+against the page's 0.40, Bocage 0.23 and 0.22, Kharkov 0.31 and 0.34,
+Stalingrad 0.33 and 0.31). The idle share that failed The_Maze, half a side
+guarding a home base, is the SAI's: a player never saw it.
+
+`botbatch` now runs every match under the garrison and records the doctrine
+in each row, bar and verdict.
+
+## 5. The two live levels, judged again
+
+Published kits, the garrison, ten seeds, 600 s, 8 and 16 a side, with and
+without the layer, against DICE's on-foot bar rebuilt under the garrison.
+
+| Level | Outcome | Fails | What was done |
+|---|---|---|---|
+| The_Maze | better-than-nothing | route failures alone: 1.39 a bot-minute against 0.54 at 8 a side, 3.20 against 0.51 at 16 | accepted again on this verdict and republished, 2026-11-11 |
+| shigaisen_B | no-better-than-nothing | 5 checks at 8 a side, 11 at 16: no capture at either size (the level with no layer gets 2 a match), spawn traps, route failures, and at 16 a side team kills 0.309 against 0.124 | taken off the page, 2026-11-11: its `scene.json` is the published one less the `ai` block, its menu row has no flag |
+
+The_Maze with no layer has no kill in any seed; with it, 7 and 6.5 captures
+a match and 0.83 enemy kills a bot-minute at both sizes. shigaisen_B's layer
+cuts stuck time, route failures and redeploys five to twenty times and the
+fight is fierce (1.8 to 2.0 enemy kills a bot-minute), but nobody takes a
+flag, so by the tool's own rule it is not better than nothing. It can go
+back on a verdict that says otherwise.
+
+## 6. What is not verified
 
 1. One match a level, unseeded. The page figures are samples, not medians.
 2. The page matches run with no person in them: the local player never

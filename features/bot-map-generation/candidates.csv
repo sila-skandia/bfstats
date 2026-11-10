@@ -1,8 +1,8 @@
 tree,level,worldSize,gameTypes,cps,capturable,flagSpread,soldierSpawns,pads,land,air,sea,gun,noAiRecord,aiRecordShare,published,bakedLocally,twinWithBotData,class,rank,ruleOuts
-community,shigaisen_B,1024,Conquest+Ctf+Tdm,8,6,222,23,0,0,0,0,0,0,0.0,yes,yes,,contained on-foot,124,
+community,shigaisen_B,1024,Conquest+Ctf+Tdm,8,6,222,23,0,0,0,0,0,0,0.0,yes,yes,,contained on-foot,124,"phase D (kits, garrison): no-better-than-nothing, no capture with the layer; taken off the page"
 community,shigaisen_C,1024,Conquest+Ctf,8,6,231,17,0,0,0,0,0,0,0.0,yes,yes,,out: stacked floors,124,walk test: 81 % of the main floor has another walked floor over or under it; walk test: no flag a soldier can stand in and a side sealed in
 community,The_Dungeon,1024,Conquest+Ctf+Tdm,5,5,376,12,0,0,0,0,0,0,0.0,yes,yes,,contained on-foot,124,walk test: every spawn that reaches the main ground stands on terrain the page's soldier reads as too steep to climb; in a traced match 13 of 16 bots never left their spawn (cause not isolated further)
-community,The_Maze,1024,Conquest+Ctf+Tdm,7,5,347,20,0,0,0,0,0,0,0.0,yes,yes,,contained on-foot,124,"novelty name (race, sport, puzzle): check by hand"
+community,The_Maze,1024,Conquest+Ctf+Tdm,7,5,347,20,0,0,0,0,0,0,0.0,yes,yes,,contained on-foot,124,"novelty name (race, sport, puzzle): check by hand; phase D (kits, garrison): better-than-nothing short of route failures; Kursk template (generator 5)"
 community,The_corridor,1024,Conquest+Ctf+Tdm,5,3,289,8,0,0,0,0,0,0,0.0,yes,yes,,out: stacked floors,122,walk test: 84 % of the main floor has another walked floor over or under it; walk test: a side sealed in
 bf1918,cantigny,1024,Conquest,5,4,495,45,54,7,0,0,30,17,0.69,no,yes,,contained on-foot,120,phase C census: on foot no fight / with vehicles alive / lint: a side sealed in
 bf1918,chemin_des_dames,1024,Conquest,5,4,432,17,37,8,0,0,18,11,0.7,no,yes,,contained on-foot,120,phase C census: on foot no fight / with vehicles no fight
@@ -20,7 +20,7 @@ community,shigaisen_D,1024,Conquest+Ctf+Tdm,7,5,304,27,7,7,0,0,0,0,1.0,yes,yes,,
 community,The_Room,2048,Conquest,4,3,82,17,2,0,0,0,0,2,0.0,yes,yes,,out: stacked floors,120,walk test: 27 % of the main floor has another walked floor over or under it; walk test: a side sealed in
 community,The_Street,1024,Conquest+Ctf+Tdm,7,5,221,29,2,2,0,0,0,0,1.0,yes,yes,,out: stacked floors,120,walk test: 22 % of the main floor has another walked floor over or under it; walk test: no flag a soldier can stand in and a side that can reach no flag
 community,The_Street_day2,1024,Conquest+Ctf+Tdm,7,5,221,29,5,5,0,0,0,0,1.0,yes,yes,,out: stacked floors,120,walk test: 21 % of the main floor has another walked floor over or under it; walk test: no flag a soldier can stand in and a side that can reach no flag
-desertcombat,DC_Basrah_Nights,1024,Conquest+Ctf+Tdm,5,5,192,29,8,4,0,0,4,0,1.0,yes,yes,,contained on-foot,120,phase C census: on foot alive / with vehicles alive / judged with vehicles: no-fight
+desertcombat,DC_Basrah_Nights,1024,Conquest+Ctf+Tdm,5,5,192,29,8,4,0,0,4,0,1.0,yes,yes,,contained on-foot,120,"phase C census: on foot alive / with vehicles alive / judged with vehicles: no-fight; phase D (garrison): no-better-than-nothing; fights with the layer, none without"
 desertcombat,DC_LostVillage,2048,Conquest+Tdm,7,5,484,50,10,0,2,0,4,4,0.6,yes,yes,,contained on-foot,120,phase C census: on foot alive / with vehicles no fight
 desertcombat,DC_Sea_Rigs,2048,Conquest,5,5,292,17,19,2,0,4,10,3,0.84,yes,yes,,contained on-foot,120,phase C census: on foot no fight / with vehicles no fight / lint: no flag a soldier can stand in and a side that can reach no flag and a side with no spawn at the start and stacked floors (classed out)
 community,HOP,1024,Conquest+Ctf+Tdm,2,2,137,4,2,0,0,0,2,0,1.0,yes,yes,,contained on-foot,118,
@@ -95,7 +95,7 @@ desertcombat,DC_Medina_Ridge,1024,Conquest,4,3,840,36,112,20,3,10,4,75,0.33,yes,
 desertcombat,DC_Oil_Fields,2048,Conquest+Ctf+Tdm,8,7,1348,56,60,15,7,16,11,11,0.82,yes,yes,,open ground,60,phase C census: on foot no fight / with vehicles no fight / lint: no flag a soldier can stand in and a side that can reach no flag and a side sealed in
 desertcombat,DC_Operation_Bragg,2048,Conquest+Ctf+Tdm,5,3,1434,44,72,19,5,17,9,22,0.69,yes,yes,,open ground,60,phase C census: on foot no fight / with vehicles no fight / lint: no flag a soldier can stand in and a side that can reach no flag and a side sealed in
 desertcombat,DC_Urban_Siege,2048,Conquest,7,6,1316,43,37,21,1,5,5,5,0.86,yes,yes,,open ground,60,phase C census: on foot no fight / with vehicles no fight
-desertcombat,Inshallah_Valley,1024,Conquest+Ctf+Tdm,5,5,633,27,33,5,3,4,16,5,0.85,yes,yes,,open ground,60,phase C census: on foot no fight / with vehicles alive / judged with vehicles: no-better-than-nothing
+desertcombat,Inshallah_Valley,1024,Conquest+Ctf+Tdm,5,5,633,27,33,5,3,4,16,5,0.85,yes,yes,,open ground,60,phase C census: on foot no fight / with vehicles alive / judged with vehicles: no-better-than-nothing; phase D (garrison): no-better-than-nothing on DC bar (flag coverage); passes DICE bar at 16 a side
 xpack2,Raid_on_Agheila,2048,Conquest,7,5,920,35,59,24,5,0,15,15,0.75,yes,yes,,open ground,60,
 bf1918,aberdeen,1024,Conquest,7,,,49,70,52,0,0,18,0,1.0,no,no,eod,not exported: small world,57,
 dc_final,Aberdeen,1024,Conquest+Ctf,7,,,49,70,48,0,4,18,0,1.0,no,no,eod,not exported: small world,57,

@@ -3,32 +3,38 @@
  "verdict": "fail",
  "outcome": "better-than-nothing",
  "config": "on foot",
- "generatorVersion": 4,
+ "doctrine": "garrison",
+ "generatorVersion": 5,
  "inputs": {
   "controlPoints": "629be50a9e4e76f5ad512cb94b21c8973298658156d807b3a348706a470c413a",
   "infantryMap": "e9e21a38c3105cd2850a2c6b6dcd8eac4482e6f89da1e0468012bfbddaf6963b",
-  "template": "43f8a790471528016570235f76e97dbb2045732458781a5139f37fed68bf98c0"
+  "template": "bdc0e455f47f91b7e7724e71d7c0c196e839b36946ac3abb7663d725944081e5"
  },
- "baseline": "DICE layers on foot: berlin, stalingrad, kharkov, bocage; seeds 1..10, 600 s, --no-vehicles",
+ "baseline": "DICE layers on foot, garrison doctrine: berlin, stalingrad, kharkov, bocage; seeds 1..10, 600 s, --no-vehicles",
+ "bar": {
+  "against": "dice",
+  "why": "a vanilla or community level: DICE's bar"
+ },
  "seeds": 10,
  "sizes": {
   "8": {
-   "verdict": "fail",
-   "failed": [
-    "idleShare"
-   ],
+   "verdict": "pass",
+   "failed": [],
    "winners": [
-    7,
     3,
+    7,
     0
    ]
   },
   "16": {
-   "verdict": "pass",
-   "failed": [],
+   "verdict": "fail",
+   "failed": [
+    "routeFailuresPerBotMinute",
+    "routeFailuresPerBotMinuteWorseSide"
+   ],
    "winners": [
-    7,
-    3,
+    6,
+    4,
     0
    ]
   }
@@ -37,11 +43,12 @@
  "unreachable": [],
  "lintErrors": [],
  "accepted": {
-  "reason": "Passes every check at 16 a side and all but one at 8 a side, where idle share is 0.547 against 0.526: bots ordered to guard a home base nobody can take. Flags 3 and 4 are left out by the route probe, so no side queues at a ramp.",
+  "reason": "Judged with the published kits under the garrison, the doctrine the page plays, on the generator 5 layer: better than the level with no layer (which has no kill in any seed), every check passed at 8 a side, and short of DICE's bar at 16 a side on route failures alone, 1.49 a bot-minute against 0.51 (worse side 1.88). The layer it replaces had 3.20.",
   "date": "2026-11-10",
   "outcome": "better-than-nothing",
   "failed": [
-   "8:idleShare"
+   "16:routeFailuresPerBotMinute",
+   "16:routeFailuresPerBotMinuteWorseSide"
   ]
  }
 }

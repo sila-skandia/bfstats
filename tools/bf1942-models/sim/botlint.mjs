@@ -274,6 +274,26 @@ export function definedConditions(text) {
   return [...text.matchAll(/^\s*aiStrategy\.create\w*Condition\s+(\S+)/gim)].map(m => m[1]);
 }
 
+/**
+ * Whether the runner deals the level's bots a kit: each side needs a row in
+ * the tree's `_shared/loadouts.json` (`levels[map][side].slots`) whose kits
+ * hold a weapon the bots' table knows (`aiWeapons`), as `sim/level.mjs
+ * kitFor` reads it. A side with none fires the stand-in weapon, whose kills
+ * stop near 50 m: every community-level verdict of sections 14 to 18 was run
+ * so (features/bot-map-generation, 19). `{ sides: { 1: n, 2: n }, missing: [side] }`,
+ * n the kits of that side that arm a bot.
+ */
+export function kitsDealt(loadouts, map) {
+  const row = loadouts?.levels?.[map] ?? loadouts?.levels?.[String(map).toLowerCase()] ?? null;
+  const sides = {};
+  for (const side of [1, 2]) {
+    const slots = row?.[side]?.slots;
+    const names = (Array.isArray(slots) ? slots : Object.values(slots ?? {})).filter(Boolean);
+    sides[side] = names.filter(n => (loadouts?.kits?.[n]?.items ?? []).some(item => loadouts?.aiWeapons?.[item])).length;
+  }
+  return { sides, missing: [1, 2].filter(side => !sides[side]) };
+}
+
 export async function lintLevel({ maps, models = null, map, source = null }) {
   const loaded = await loadForBots({ maps, models, map, layerDir: source });
   const { nav, grid, extras, world } = loaded;
@@ -302,6 +322,14 @@ export async function lintLevel({ maps, models = null, map, source = null }) {
     pathIndex: existsSync(indexFile) ? JSON.parse(readFileSync(indexFile, 'utf8')) : null,
     walk, probe,
   });
+  // The kits: a level whose bots would hold the stand-in weapon is not judged.
+  const loadoutsFile = path.join(maps, '_shared', 'loadouts.json');
+  const kits = kitsDealt(existsSync(loadoutsFile) ? JSON.parse(readFileSync(loadoutsFile, 'utf8')) : null, map);
+  if (kits.missing.length) {
+    res.errors.push({ check: 'kits', text: `no kit for ${kits.missing.map(s => (s === 1 ? 'Axis' : 'Allies')).join(' or ')} in ${loadoutsFile}: `
+      + 'the bots would fire the stand-in weapon; refresh the tree\'s loadouts.json from the published one' });
+  }
+  res.facts = { ...(res.facts ?? {}), kits: kits.sides };
   return { level: map, generated: extras.ai?.generated ?? null, mapSource: grid.source, ...res, walk };
 }
 

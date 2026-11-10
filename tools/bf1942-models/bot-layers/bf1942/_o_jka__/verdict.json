@@ -3,13 +3,18 @@
  "verdict": "fail",
  "outcome": "no-fight",
  "config": "with vehicles",
+ "doctrine": "garrison",
  "generatorVersion": 4,
  "inputs": {
   "controlPoints": "113c779f4b66e2796932803f7d1c5d9f53af7b2b8cf9dbd4c3717db7ab13d572",
   "infantryMap": "20fd81e562592de845a9f6777dacd62fb723258a242f8db7a628d71a94c406ed",
   "template": "43f8a790471528016570235f76e97dbb2045732458781a5139f37fed68bf98c0"
  },
- "baseline": "DICE layers with vehicles: berlin, stalingrad, kharkov, bocage; seeds 1..10, 600 s",
+ "baseline": "DICE layers with vehicles, garrison doctrine: berlin, stalingrad, kharkov, bocage; seeds 1..10, 600 s",
+ "bar": {
+  "against": "dice",
+  "why": "a vanilla or community level: DICE's bar"
+ },
  "seeds": 10,
  "sizes": {
   "8": {
@@ -17,6 +22,7 @@
    "failed": [
     "idleShare",
     "routeFailuresPerBotMinute",
+    "capturesTotal",
     "enemyKillsPerBotMinute",
     "flagCoverage",
     "bothSidesCapture",
@@ -43,13 +49,12 @@
     "ticketsBleed",
     "routeFailuresPerBotMinuteWorseSide",
     "nonEnemyDeathShareWorseSide",
-    "hullStuckSecondsPerDrivingMinute",
-    "hullStuckSecondsPerDrivingMinuteWorseSide"
+    "tankSilentShare"
    ],
    "winners": [
+    6,
     0,
-    0,
-    10
+    4
    ]
   }
  },

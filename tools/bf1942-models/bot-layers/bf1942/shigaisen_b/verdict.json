@@ -1,48 +1,71 @@
 {
  "level": "shigaisen_b",
  "verdict": "fail",
- "outcome": "better-than-nothing",
+ "outcome": "no-better-than-nothing",
+ "config": "on foot",
+ "doctrine": "garrison",
  "generatorVersion": 3,
  "inputs": {
   "controlPoints": "2720d5f12a6c88964f1415fae2491a207c0b8a81f0a2ee4812510f859b3d3d97",
   "infantryMap": "82c12fcc51b113577767e8b7926a57445224e48a16790bd81d29b08268debaa9",
   "template": "43f8a790471528016570235f76e97dbb2045732458781a5139f37fed68bf98c0"
  },
- "baseline": "DICE layers on foot: berlin, stalingrad, kharkov, bocage; seeds 1..10, 600 s, --no-vehicles",
+ "baseline": "DICE layers on foot, garrison doctrine: berlin, stalingrad, kharkov, bocage; seeds 1..10, 600 s, --no-vehicles",
+ "bar": {
+  "against": "dice",
+  "why": "a vanilla or community level: DICE's bar"
+ },
  "seeds": 10,
  "sizes": {
   "8": {
-   "verdict": "pass",
-   "failed": [],
+   "verdict": "fail",
+   "failed": [
+    "spawnTrapsPerBotMinute",
+    "routeFailuresPerBotMinute",
+    "capturesTotal",
+    "spawnTrapsPerBotMinuteWorseSide",
+    "routeFailuresPerBotMinuteWorseSide"
+   ],
    "winners": [
-    0,
-    10,
+    4,
+    6,
     0
    ]
   },
   "16": {
    "verdict": "fail",
    "failed": [
-    "redeploysPerBotMinute"
+    "stuckSecondsPerBotMinute",
+    "spawnTrapsPerBotMinute",
+    "routeFailuresPerBotMinute",
+    "redeploysPerBotMinute",
+    "teamKillsPerBotMinute",
+    "capturesTotal",
+    "flagCoverage",
+    "bothSidesCapture",
+    "spawnTrapsPerBotMinuteWorseSide",
+    "routeFailuresPerBotMinuteWorseSide",
+    "redeploysPerBotMinuteWorseSide"
    ],
    "winners": [
-    0,
-    10,
+    8,
+    2,
     0
    ]
   }
  },
- "oneSided": 2,
+ "oneSided": null,
  "unreachable": [
   "windmill_west"
  ],
  "lintErrors": [],
- "accepted": {
+ "acceptanceWithdrawn": {
   "reason": "Passes every check against the DICE bar at 8 a side, the Instant Battle default; at 16 a side one check of fifteen is short by under one percent (redeploys 0.1298 a bot-minute against 0.129).",
   "date": "2026-11-10",
   "outcome": "better-than-nothing",
   "failed": [
    "16:redeploysPerBotMinute"
-  ]
+  ],
+  "because": "accepted on matches under the sai doctrine; these are under the garrison"
  }
 }

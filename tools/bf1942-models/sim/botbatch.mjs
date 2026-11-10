@@ -19,8 +19,16 @@
 //   node sim/botbatch.mjs accept --levels shigaisen_b --reason "<why it goes live short of the bar>" [--mod bf1942]
 //        records an acceptance on a layer that failed the bar but beat the level with no layer
 //
+//   node sim/botbatch.mjs baseline --vehicles --mod DesertCombat --maps <mod tree> --models <mod models> --levels a,b,c
+//        a mod's own bar, from the mod's own botted levels: sim/baselines/vehicles-desertcombat.json. A level
+//        with no fight by the alive checks is dropped from it and named in the file. A mod's level is then
+//        judged against its own mod's bar when that bar holds at least three alive levels, else against
+//        DICE's (`judge.mjs chooseBar`); the verdict says which, and keeps DICE's figures beside it
+//
 // A match is `sim/run.mjs` on foot (`--no-vehicles`), seeds 1..N at each side
-// size; the verdict per level is written to <out>/<level>/verdict.json.
+// size, under the garrison doctrine the page plays (`--doctrine sai` for the
+// engine's own); the verdict per level is written to <out>/<level>/verdict.json.
+// Matches whose bots were dealt no kit are refused, and so is a bar of another doctrine.
 
 import { spawn, spawnSync } from 'node:child_process';
 import { existsSync, mkdirSync, readdirSync, readFileSync, rmSync, statSync, writeFileSync } from 'node:fs';
@@ -30,7 +38,7 @@ import { fileURLToPath } from 'node:url';
 import { generate, LAYERS_ROOT } from './botgen.mjs';
 import { lintLevel, predictedDead, DEAD_CLASSES } from './botlint.mjs';
 import { detectRun } from './detect.mjs';
-import { aliveChecks, buildBaseline, judge, spread, unionCoverage } from './judge.mjs';
+import { aliveChecks, aliveLevels, buildBaseline, chooseBar, judge, spread, unionCoverage } from './judge.mjs';
 
 const HERE = path.dirname(fileURLToPath(import.meta.url));
 export const BASELINE_FILE = path.join(HERE, 'baselines', 'onfoot-dice.json');
@@ -38,7 +46,32 @@ export const BASELINE_FILE = path.join(HERE, 'baselines', 'onfoot-dice.json');
 export const VEHICLE_BASELINE_FILE = path.join(HERE, 'baselines', 'vehicles-dice.json');
 /** The two ways a match is played, as a verdict names them. */
 export const CONFIG = { foot: 'on foot', vehicles: 'with vehicles' };
-export const baselineFileFor = vehicles => (vehicles ? VEHICLE_BASELINE_FILE : BASELINE_FILE);
+/** DICE's bar for the configuration, or a mod's own (`mod` other than bf1942): `baselines/<vehicles|onfoot>-<mod>.json`. */
+export const baselineFileFor = (vehicles, mod = null) => (!mod || String(mod).toLowerCase() === 'bf1942'
+  ? (vehicles ? VEHICLE_BASELINE_FILE : BASELINE_FILE)
+  : path.join(HERE, 'baselines', `${vehicles ? 'vehicles' : 'onfoot'}-${String(mod).toLowerCase()}.json`));
+
+/**
+ * A level's verdict against the bar `chooseBar` picks, with the verdict
+ * against DICE's beside it when the two differ, so that a pass on a mod's
+ * own bar is never read as a pass on DICE's. `bar` says which it is against
+ * and why.
+ */
+export function verdictWithBar(level, rows, { mod = 'bf1942', dice, own = null, lint = null, none = null }) {
+  const bar = chooseBar({ mod, dice, own });
+  const v = verdictOf(level, rows, bar.baseline, lint, none);
+  const out = { ...v, bar: { against: bar.against, why: bar.why, note: bar.baseline.note ?? null } };
+  if (bar.against !== 'dice') {
+    const d = verdictOf(level, rows, dice, lint, none);
+    out.againstDice = { verdict: d.verdict, outcome: d.outcome, note: dice.note ?? null, sizes: d.sizes };
+  }
+  if (own && bar.against === 'dice') {
+    // A mod's bar too thin to judge by is still reported, for the reader.
+    const m = verdictOf(level, rows, own, lint, none);
+    out.againstOwnMod = { mod: String(mod).toLowerCase(), verdict: m.verdict, outcome: m.outcome, note: own.note ?? null, levelsAlive: own.levelsAlive ?? [], sizes: m.sizes };
+  }
+  return out;
+}
 /** The classes of `candidates.csv` version one of the generator covers: on foot. */
 export const IN_SCOPE = ['contained on-foot'];
 /** `candidates.csv`'s tree column to the mod folder whose tree holds the level. */
@@ -54,10 +87,34 @@ function runOne(args, cwd) {
 }
 
 /** Run the seeded matrix for one level; returns its detector rows. */
-export async function runMatrix({ maps, models, level, out, seeds = 10, sizes = [8, 16], time = 600, traceEvery = 30, jobs = Math.max(1, Math.min(8, os.cpus().length - 2)), keepTraces = false, force = false, vehicles = false }) {
+/**
+ * The doctrine every match is played under unless asked otherwise: the
+ * page's own default (`viewer/map.html BOT_DOCTRINE`, the garrison). The
+ * runner's own default is the engine's SAI; until section 19 every verdict
+ * and both bars were run on it, so they did not measure what a player sees.
+ */
+export const DEFAULT_DOCTRINE = 'garrison';
+/** A row's, a bar's or a verdict's doctrine; one that names none is from before the field, and was the SAI. */
+export const doctrineOfRecord = r => r?.doctrine ?? 'sai';
+
+/**
+ * Refuse to judge across doctrines: the bar's doctrine and every row's must
+ * be the run's. Returns null, or the reason.
+ */
+export function doctrineMismatch(doctrine, baseline, rows = []) {
+  const bar = doctrineOfRecord(baseline);
+  if (bar !== doctrine) return `the bar was run under the ${bar} doctrine and these matches under the ${doctrine}`;
+  const other = [...new Set(rows.map(doctrineOfRecord))].filter(d => d !== doctrine);
+  if (other.length) return `matches under ${other.join(', ')} among a run under the ${doctrine} doctrine (an older folder resumed?)`;
+  return null;
+}
+
+export async function runMatrix({ maps, models, level, out, seeds = 10, sizes = [8, 16], time = 600, traceEvery = 30, jobs = Math.max(1, Math.min(8, os.cpus().length - 2)), keepTraces = false, force = false, vehicles = false, doctrine = DEFAULT_DOCTRINE }) {
   const tasks = [];
   // `b8` on foot, `v8` with the level's vehicles: the two never share a folder, so neither resumes from the other.
-  for (const size of sizes) for (let seed = 1; seed <= seeds; seed++) tasks.push({ size, seed, dir: path.join(out, level, `${vehicles ? 'v' : 'b'}${size}`, `s${seed}`) });
+  // The doctrine names the folder too (`v8-garrison`), so a run never resumes from matches of another; the SAI's keep the old names.
+  const tag = doctrine === 'sai' ? '' : `-${doctrine}`;
+  for (const size of sizes) for (let seed = 1; seed <= seeds; seed++) tasks.push({ size, seed, dir: path.join(out, level, `${vehicles ? 'v' : 'b'}${size}${tag}`, `s${seed}`) });
   const rows = [];
   let next = 0;
   await Promise.all(Array.from({ length: jobs }, async () => {
@@ -68,7 +125,7 @@ export async function runMatrix({ maps, models, level, out, seeds = 10, sizes = 
       mkdirSync(t.dir, { recursive: true });
       await runOne([path.join(HERE, 'run.mjs'), '--map', level, '--maps', maps, ...(models ? ['--models', models] : []),
                     '--bots', String(t.size), '--time', String(time), '--seed', String(t.seed), ...(vehicles ? [] : ['--no-vehicles']),
-                    '--trace-every', String(traceEvery), '--quiet', '--out', t.dir], path.join(HERE, '..'));
+                    '--trace-every', String(traceEvery), '--doctrine', doctrine, '--quiet', '--out', t.dir], path.join(HERE, '..'));
       const row = { ...await detectRun(t.dir), config: vehicles ? CONFIG.vehicles : CONFIG.foot };
       writeFileSync(rowFile, JSON.stringify(row) + '\n');
       if (!keepTraces) rmSync(path.join(t.dir, 'trace.jsonl'), { force: true });
@@ -158,6 +215,19 @@ export function unsuitable(level, lint) {
            lint: { errors: lint.errors, warnings: lint.warnings.map(w => w.text), facts: lint.facts }, sizes: {}, versusNothing: null };
 }
 
+/**
+ * The verdict of matches whose bots were dealt no kit, or null: they fire
+ * the stand-in weapon, so the matches say nothing about the level as
+ * played (section 19). Read from each detector row's `botsWithoutKit`.
+ */
+export function noKitRefusal(level, rows) {
+  const bad = rows.filter(r => (r.botsWithoutKit ?? 0) > 0);
+  if (!bad.length) return null;
+  return { level, verdict: 'fail', outcome: 'unsuitable', oneSided: null, unreachable: [],
+           noKit: { matches: bad.length, of: rows.length, bots: Math.max(...bad.map(r => r.botsWithoutKit)) },
+           lint: null, sizes: {}, versusNothing: null };
+}
+
 /** The outcomes a failing layer may be accepted at. */
 export const ACCEPTABLE = ['better-than-nothing'];
 
@@ -187,6 +257,9 @@ export function acceptVerdict(short, reason, date) {
 export function carryAccepted(short, previous) {
   const was = previous?.accepted;
   if (!was || short.verdict === 'pass') return short;
+  // An acceptance of matches under another doctrine says nothing about these.
+  const then = previous.doctrine ?? 'sai', now = short.doctrine ?? 'sai';
+  if (then !== now) return { ...short, acceptanceWithdrawn: { ...was, because: `accepted on matches under the ${then} doctrine; these are under the ${now}` } };
   const fresh = failedChecks(short).filter(f => !(was.failed ?? []).includes(f));
   if (ACCEPTABLE.includes(short.outcome) && !short.lintErrors?.length && !fresh.length) return { ...short, accepted: was };
   return { ...short, acceptanceWithdrawn: { ...was, because: fresh.length ? `now also fails ${fresh.join(', ')}` : `now ${short.outcome}${short.lintErrors?.length ? ' with lint errors' : ''}` } };
@@ -297,6 +370,11 @@ async function main() {
       + '       census: one 300 s match a level, 8 a side [--time 300] [--bots 8] [--seed 1] [--no-match] [--no-generate]\n'
       + '       node sim/botbatch.mjs accept --levels a,b --reason "<why>" [--mod bf1942] [--layers <dir>]\n'
       + '       [--vehicles] the vehicles of the level in, judged against baselines/vehicles-dice.json (default: on foot)\n'
+      + '       baseline --mod <Mod>: the mod own bar, baselines/<vehicles|onfoot>-<mod>.json, its dead levels dropped\n'
+      + '       a mod level is judged against that bar when it holds >= 3 alive levels, else against DICE [--mod-baseline <file>]\n'
+      + '       [--template few|symmetric] force the strategy template (default: by the flags in play)\n'
+      + '       [--doctrine garrison|sai] the doctrine every match is played under (default garrison, the page default);\n'
+      + '       a bar or rows of another doctrine are refused\n'
       + '       [--mod bf1942] [--game-dir <dir>] [--archives <dir of level .rfa>] [--out <dir>] [--seeds 10] [--sizes 8,16] [--time 600] [--jobs N] [--baseline <file>] [--force] [--keep-traces] [--no-generate]\n'
       + '       level: a level with a lint error is not run (outcome "unsuitable") unless --despite-lint');
     process.exit(2);
@@ -304,7 +382,8 @@ async function main() {
   const maps = path.resolve(a.maps), models = a.models ? path.resolve(a.models) : null;
   const out = path.resolve(a.out ?? path.join(HERE, '..', 'out', 'bot-layers', cmd));
   const opts = { maps, models, out, seeds: Number(a.seeds ?? 10), sizes: String(a.sizes ?? '8,16').split(',').map(Number), time: Number(a.time ?? 600),
-                 force: !!a.force, keepTraces: !!a['keep-traces'], vehicles: !!a.vehicles, ...(a.jobs ? { jobs: Number(a.jobs) } : {}) };
+                 force: !!a.force, keepTraces: !!a['keep-traces'], vehicles: !!a.vehicles, doctrine: a.doctrine ?? DEFAULT_DOCTRINE,
+                 ...(a.jobs ? { jobs: Number(a.jobs) } : {}) };
   const config = opts.vehicles ? CONFIG.vehicles : CONFIG.foot;
   let levels = a.levels ? a.levels.split(',').map(l => ({ level: l.toLowerCase(), mod: a.mod ?? 'bf1942' })) : [];
   if (a.candidates) levels = candidateLevels(path.resolve(a.candidates), (a.classes ?? IN_SCOPE.join(';')).split(';'));
@@ -312,11 +391,24 @@ async function main() {
   if (cmd === 'baseline') {
     const rows = [];
     for (const l of levels) { console.error(`baseline ${l.level}`); rows.push(...await runMatrix({ ...opts, level: l.level })); }
-    const file = path.resolve(a.baseline ?? baselineFileFor(opts.vehicles));
+    const mixed = doctrineMismatch(opts.doctrine, { doctrine: opts.doctrine }, rows);
+    if (mixed) { console.error(`baseline refused: ${mixed}`); process.exit(1); }
+    const noKit = noKitRefusal('baseline', rows);
+    if (noKit) { console.error(`baseline refused: ${noKit.noKit.matches} of ${noKit.noKit.of} matches had bots dealt no kit`); process.exit(1); }
+    const mod = a.mod && a.mod.toLowerCase() !== 'bf1942' ? a.mod.toLowerCase() : null;
+    const file = path.resolve(a.baseline ?? baselineFileFor(opts.vehicles, mod));
     mkdirSync(path.dirname(file), { recursive: true });
-    const slim = buildBaseline(rows, `DICE layers ${config}: ${levels.map(l => l.level).join(', ')}; seeds 1..${opts.seeds}, ${opts.time} s${opts.vehicles ? '' : ', --no-vehicles'}`);
+    // A mod's bar keeps only its levels that have a fight; DICE's is the four levels as they are (section 14.4).
+    const { alive, dropped } = mod ? aliveLevels(rows) : { alive: levels.map(l => l.level), dropped: [] };
+    const kept = rows.filter(r => alive.includes(r.level));
+    const who = mod ? `${mod}'s own layers` : 'DICE layers';
+    const slim = buildBaseline(kept, `${who} ${config}, ${opts.doctrine} doctrine: ${alive.join(', ')}; seeds 1..${opts.seeds}, ${opts.time} s${opts.vehicles ? '' : ', --no-vehicles'}`
+      + (dropped.length ? `; dropped, no fight: ${dropped.map(d => d.level).join(', ')}` : ''));
+    slim.doctrine = opts.doctrine;
+    if (mod) Object.assign(slim, { mod, levelsAlive: alive, dropped });
     writeFileSync(file, JSON.stringify(slim, null, 1) + '\n');
-    console.log(`baseline: ${rows.length} matches -> ${file}`);
+    for (const d of dropped) console.log(`dropped ${d.level}: ${d.failed.join(', ')}`);
+    console.log(`baseline: ${kept.length} of ${rows.length} matches, ${alive.length} levels -> ${file}`);
     return;
   }
   const layersRoot = a.layers ? path.resolve(a.layers) : LAYERS_ROOT;
@@ -333,7 +425,7 @@ async function main() {
       prepared.push(item);
       try {
         ensureEngineMaps(layerDir, l.level, l.mod, a.archives);
-        if (!a['no-generate']) await generate({ maps, models, map: l.level, mod: l.mod, out: layersRoot });
+        if (!a['no-generate']) await generate({ maps, models, map: l.level, mod: l.mod, out: layersRoot, template: a.template ?? null });
         const on = patchScene(l, { BOT_LAYERS_UNVERIFIED: '1' });
         if (on.status !== 0) throw new Error(`patch_scene: ${(on.stderr || on.stdout).trim().split('\n').pop()}`);
         item.lint = await lintLevel({ maps, models, map: l.level, source: layerDir });
@@ -348,7 +440,7 @@ async function main() {
         const item = prepared[next++];
         if (item.error || a['no-match']) continue;
         try {
-          const rows = await runMatrix({ maps, models, out, level: item.level, seeds: seed, sizes: [bots], time, jobs: 1, force: true, vehicles: opts.vehicles });
+          const rows = await runMatrix({ maps, models, out, level: item.level, seeds: seed, sizes: [bots], time, jobs: 1, force: true, vehicles: opts.vehicles, doctrine: opts.doctrine });
           item.row = rows.find(r => r.seed === seed) ?? rows[rows.length - 1];
         } catch (e) { item.error = e.message.slice(0, 200); }
       }
@@ -366,6 +458,11 @@ async function main() {
     return;
   }
   const baseline = JSON.parse(readFileSync(path.resolve(a.baseline ?? baselineFileFor(opts.vehicles)), 'utf8'));
+  // A mod's own bar, when one is kept (`--mod-baseline` names another file).
+  const ownBar = mod => {
+    const file = a['mod-baseline'] ? path.resolve(a['mod-baseline']) : baselineFileFor(opts.vehicles, mod);
+    return String(mod).toLowerCase() !== 'bf1942' && existsSync(file) ? JSON.parse(readFileSync(file, 'utf8')) : null;
+  };
   let failed = 0;
   for (const l of levels) {
     let lint = null, none = null;
@@ -376,7 +473,7 @@ async function main() {
       // The engine's own search maps, when the level's archive is at hand and the layer has none.
       ensureEngineMaps(layerDir, l.level, l.mod, a.archives);
       if (!a['no-generate']) {
-        const g = await generate({ maps, models, map: l.level, mod: l.mod, out: layersRoot });
+        const g = await generate({ maps, models, map: l.level, mod: l.mod, out: layersRoot, template: a.template ?? null });
         console.error(`${l.level}: generated ${g.dir} (${g.changed.length ? g.changed.length + ' files written' : 'up to date'})`);
       }
       // The scratch tree takes the layer whatever its last verdict: this run is what judges it.
@@ -395,23 +492,37 @@ async function main() {
       }
     }
     const rows = refused ? [] : await runMatrix({ ...opts, out: cmd === 'level' ? path.join(out, l.level, 'generated') : out, level: l.level });
-    const v = { ...(refused ?? verdictOf(l.level, rows, baseline, lint, none)), config };
+    refused = refused ?? noKitRefusal(l.level, [...rows, ...(none ?? [])]);
+    // A bar or rows of another doctrine than the run's are not compared.
+    for (const [what, bar] of [['DICE', baseline], [l.mod, ownBar(l.mod)]]) {
+      if (refused || !bar) continue;
+      const why = doctrineMismatch(opts.doctrine, bar, [...rows, ...(none ?? [])]);
+      if (why) { console.error(`${l.level}: not judged against ${what}'s bar: ${why}`); process.exit(1); }
+    }
+    const v = { ...(refused ?? verdictWithBar(l.level, rows, { mod: l.mod, dice: baseline, own: ownBar(l.mod), lint, none })), config, doctrine: opts.doctrine };
     mkdirSync(path.join(out, l.level), { recursive: true });
     writeFileSync(path.join(out, l.level, 'verdict.json'), JSON.stringify(v, null, 1) + '\n');
     if (cmd === 'level') {
       // The layer's own record, which the bake's gate reads (`bf42/ai_level.py generated_layer_gate`).
       const marker = JSON.parse(readFileSync(path.join(layerDir, 'generated.json'), 'utf8'));
-      const short = { level: l.level, verdict: v.verdict, outcome: v.outcome, config, generatorVersion: marker.version, inputs: marker.inputs,
-                      baseline: baseline.note, seeds: opts.seeds, sizes: Object.fromEntries(Object.entries(v.sizes).map(([s, j]) => [s, { verdict: j.verdict, failed: j.failed, winners: j.balance?.split }])),
-                      oneSided: v.oneSided, unreachable: v.unreachable, lintErrors: lint.errors.map(e => e.text) };
+      const short = { level: l.level, verdict: v.verdict, outcome: v.outcome, config, doctrine: opts.doctrine, generatorVersion: marker.version, inputs: marker.inputs,
+                      baseline: v.bar?.note ?? baseline.note, bar: v.bar ? { against: v.bar.against, why: v.bar.why } : null,
+                      ...(v.againstDice ? { againstDice: { verdict: v.againstDice.verdict, outcome: v.againstDice.outcome, baseline: v.againstDice.note,
+                        sizes: Object.fromEntries(Object.entries(v.againstDice.sizes).map(([s, j]) => [s, { verdict: j.verdict, failed: j.failed }])) } } : {}),
+                      ...(v.againstOwnMod ? { againstOwnMod: { mod: v.againstOwnMod.mod, verdict: v.againstOwnMod.verdict, outcome: v.againstOwnMod.outcome, levelsAlive: v.againstOwnMod.levelsAlive,
+                        sizes: Object.fromEntries(Object.entries(v.againstOwnMod.sizes).map(([s, j]) => [s, { verdict: j.verdict, failed: j.failed }])) } } : {}),
+                      seeds: opts.seeds, sizes: Object.fromEntries(Object.entries(v.sizes).map(([s, j]) => [s, { verdict: j.verdict, failed: j.failed, winners: j.balance?.split }])),
+                      oneSided: v.oneSided, unreachable: v.unreachable, lintErrors: lint.errors.map(e => e.text), ...(v.noKit ? { noKit: v.noKit } : {}) };
       const file = path.join(layerDir, 'verdict.json');
       const kept = carryAccepted(short, existsSync(file) ? JSON.parse(readFileSync(file, 'utf8')) : null);
       if (kept.acceptanceWithdrawn) console.error(`${l.level}: acceptance withdrawn, ${kept.acceptanceWithdrawn.because}`);
       writeFileSync(file, JSON.stringify(kept, null, 1) + '\n');
     }
     if (v.verdict !== 'pass') failed++;
-    console.log(`${l.level}: ${v.outcome}` + (lint ? `, lint ${lint.errors.length} errors` : '')
-      + Object.entries(v.sizes).map(([s, j]) => `; ${s} a side ${j.verdict}${j.failed?.length ? ' (' + j.failed.join(', ') + ')' : ''}`).join(''));
+    const sizesLine = sizes => Object.entries(sizes).map(([s, j]) => `; ${s} a side ${j.verdict}${j.failed?.length ? ' (' + j.failed.join(', ') + ')' : ''}`).join('');
+    console.log(`${l.level}: ${v.outcome}${v.bar ? ` against ${v.bar.against === 'dice' ? "DICE's bar" : `${v.bar.against}'s own bar`}` : ''}` + (lint ? `, lint ${lint.errors.length} errors` : '') + sizesLine(v.sizes));
+    if (v.againstDice) console.log(`  against DICE's bar: ${v.againstDice.outcome}${sizesLine(v.againstDice.sizes)}`);
+    if (v.againstOwnMod) console.log(`  against ${v.againstOwnMod.mod}'s own bar (${v.againstOwnMod.levelsAlive.length} alive levels, not judged by): ${v.againstOwnMod.outcome}${sizesLine(v.againstOwnMod.sizes)}`);
   }
   process.exit(failed ? 1 : 0);
 }

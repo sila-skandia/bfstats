@@ -22,6 +22,9 @@
 // side's bots can finish a route to on the layer's own map, by the page's
 // own route code, is excluded as an unreachable one is.
 //
+// Version five chooses the strategy template by the capturable flags left in
+// play (`templateFor`): DICE's Kursk for a few, Kharkov's for more.
+//
 // Deterministic: the same level tree and the same template give the same
 // bytes. `generated.json` carries the generator's version and the hashes of
 // what it read, and the bake copies it into `scene.json` `ai.generated`.
@@ -41,9 +44,30 @@ import { CHOKE_MAX, probeLevel, probeTools, wayStop } from './routeprobe.mjs';
 
 const HERE = path.dirname(fileURLToPath(import.meta.url));
 export const GENERATOR = 'botgen';
-export const GENERATOR_VERSION = 4;
+export const GENERATOR_VERSION = 5;
 export const LAYERS_ROOT = path.resolve(HERE, '..', 'bot-layers');
 export const TEMPLATE_FILES = ['Strategies.con', 'conditions.con', 'prerequisites.con'];
+
+/**
+ * The strategy template by the capturable flags left in play: a flag a side
+ * can take that neither the walk test nor the route probe took out. Up to
+ * `FEW_FLAGS`, DICE's Kursk (`_templates/few`); above, Kharkov's
+ * (`_templates/symmetric`). Kharkov's opening strategy on the page is
+ * `bridge` (its `normal` is gated on `Enemy UnitConstant 1`, a state the page
+ * never fills), which posts half a side to defend while it holds a single
+ * flag; with few flags in play a side holds a single flag, its own base, for
+ * most of a match. Kursk attacks with all of a side and posts no defender
+ * while the enemy holds one flag or fewer (features/bot-map-generation, 19).
+ * INVENTION: the rule and its threshold are this tool's, measured on the
+ * levels of section 19; DICE chose per level by hand.
+ */
+export const FEW_FLAGS = 3;
+export const TEMPLATE_FEW = 'few', TEMPLATE_MANY = 'symmetric';
+export function templateFor(areas) {
+  const inPlay = areas.filter(a => !a.flag.fixed && !a.unreachable).length;
+  return { name: inPlay <= FEW_FLAGS ? TEMPLATE_FEW : TEMPLATE_MANY, inPlay,
+           rule: `${inPlay} capturable flag${inPlay === 1 ? '' : 's'} in play, ${inPlay <= FEW_FLAGS ? 'at most' : 'more than'} ${FEW_FLAGS}` };
+}
 
 /** A route `C` lies on: `A -> C -> B` no more than this much longer than `A -> B`. */
 export const ON_THE_WAY = 1.15;
@@ -542,7 +566,7 @@ export function paintedVehicleMap(nav, world, extras, size, flags = []) {
   return { pixels: pick.pixels, brush: pick.brush, tried: tried.map(({ pixels, ...t }) => t) };
 }
 
-export function buildLayer({ mod, level, extras, areas, navSha, template, rawFiles = {}, botSpawnsExcluded = [], walkMap = null, routeProbe = null }) {
+export function buildLayer({ mod, level, extras, areas, navSha, template, templateChoice = null, rawFiles = {}, botSpawnsExcluded = [], walkMap = null, routeProbe = null }) {
   const worldSize = Math.round(extras.worldSize || 1024);
   const viewDistance = Math.round(Math.min(400, Math.max(60, extras.drawDistance || 200)));
   const engineMaps = Object.keys(rawFiles).length > 0;
@@ -558,7 +582,7 @@ export function buildLayer({ mod, level, extras, areas, navSha, template, rawFil
     // What the level places for a crew: its vehicle and gun spawners. Above none, the bake's gate asks for a
     // verdict of matches run with them (`bf42/ai_level.py generated_layer_gate`).
     objectSpawners: (extras.objectSpawns ?? []).length,
-    template: template.name, templateSource: template.source,
+    template: template.name, templateSource: template.source, ...(templateChoice ? { templateChoice } : {}),
     scope: !engineMaps ? 'on foot: infantry order positions only, no search maps, no co-op layer'
       : walkMap?.engine === 'none'
         ? 'an infantry map painted from the walk test, a Tank0 map from the page painter, infantry order positions, no strategic maps, no co-op layer'
@@ -640,7 +664,7 @@ export async function levelWalkFacts(loaded, viewer = null) {
   return walkFacts({ collider: loaded.world.collider, grid: loaded.grid, flags: flagsOf(loaded.extras), spawns: spawnsOf(loaded.extras), body });
 }
 
-export async function generate({ maps, models, map, mod, out = LAYERS_ROOT, template = 'symmetric', check = false }) {
+export async function generate({ maps, models, map, mod, out = LAYERS_ROOT, template = null, check = false }) {
   const dir = path.join(out, mod.toLowerCase(), map.toLowerCase());
   const loaded = await loadForBots({ maps, models, map, layerDir: dir, layerFirst: true });
   const { nav, extras, world } = loaded;
@@ -733,7 +757,10 @@ export async function generate({ maps, models, map, mod, out = LAYERS_ROOT, temp
   }
   const bits = Buffer.alloc(grid.blocked.length);
   for (let i = 0; i < bits.length; i++) bits[i] = grid.blocked[i] ? 1 : 0;
-  const layer = buildLayer({ mod, level: map, extras, areas, navSha: sha(bits), template: readTemplate(template, out), rawFiles,
+  // The template: the one asked for, else by the flags left in play.
+  const chosen = templateFor(areas);
+  const templateChoice = template ? { ...chosen, name: template, rule: `asked for (${chosen.rule})` } : chosen;
+  const layer = buildLayer({ mod, level: map, extras, areas, navSha: sha(bits), template: readTemplate(templateChoice.name, out), templateChoice, rawFiles,
                              botSpawnsExcluded: excludedByWalk(facts), walkMap, routeProbe: probe });
   const want = { ...layer.files, 'generated.json': JSON.stringify(layer.marker, null, 1) + '\n' };
   const stale = [];
@@ -767,11 +794,11 @@ function parseArgs(argv) {
 if (process.argv[1] && path.resolve(process.argv[1]) === fileURLToPath(import.meta.url)) {
   const a = parseArgs(process.argv.slice(2));
   if (!a.map || !a.mod || !a.maps) {
-    console.error('usage: node sim/botgen.mjs --map <level dir> --mod <mod folder> --maps <maps tree> [--models <models tree>] [--out <bot-layers root>] [--template symmetric] [--check]');
+    console.error('usage: node sim/botgen.mjs --map <level dir> --mod <mod folder> --maps <maps tree> [--models <models tree>] [--out <bot-layers root>] [--template few|symmetric, default by the flags in play] [--check]');
     process.exit(2);
   }
   const res = await generate({ maps: path.resolve(a.maps), models: a.models ? path.resolve(a.models) : null, map: a.map, mod: a.mod,
-                               out: a.out ? path.resolve(a.out) : LAYERS_ROOT, template: a.template ?? 'symmetric', check: a.check });
+                               out: a.out ? path.resolve(a.out) : LAYERS_ROOT, template: a.template ?? null, check: a.check });
   for (const area of res.areas) {
     console.log(`${area.name.padEnd(22)} ${(area.unreachable ? 'unreachable on foot, excluded' : area.flags.join(',')).padEnd(34)} value ${String(area.value).padEnd(4)} neighbours ${area.neighbours.join(', ')}`);
   }

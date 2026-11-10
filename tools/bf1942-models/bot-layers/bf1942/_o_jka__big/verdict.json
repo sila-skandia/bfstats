@@ -3,38 +3,42 @@
  "verdict": "fail",
  "outcome": "no-better-than-nothing",
  "config": "with vehicles",
+ "doctrine": "garrison",
  "generatorVersion": 4,
  "inputs": {
   "controlPoints": "c15705f00122a0ffe5e11e18b520ea90f056860b8183d7d92ac73b6ffda5c79a",
   "infantryMap": "c86a692154a7a5e4d4899a191fd3d780055f7812674e40595fedf099daa16645",
   "template": "43f8a790471528016570235f76e97dbb2045732458781a5139f37fed68bf98c0"
  },
- "baseline": "DICE layers with vehicles: berlin, stalingrad, kharkov, bocage; seeds 1..10, 600 s",
+ "baseline": "DICE layers with vehicles, garrison doctrine: berlin, stalingrad, kharkov, bocage; seeds 1..10, 600 s",
+ "bar": {
+  "against": "dice",
+  "why": "a vanilla or community level: DICE's bar"
+ },
  "seeds": 10,
  "sizes": {
   "8": {
    "verdict": "fail",
    "failed": [
-    "routeFailuresPerBotMinute",
-    "routeFailuresPerBotMinuteWorseSide"
+    "selfDeathsPerBotMinute",
+    "spawnTrapsPerBotMinute"
    ],
    "winners": [
-    8,
-    2,
+    4,
+    6,
     0
    ]
   },
   "16": {
    "verdict": "fail",
    "failed": [
+    "idleShare",
     "selfDeathsPerBotMinute",
-    "routeFailuresPerBotMinute",
-    "routeFailuresPerBotMinuteWorseSide",
-    "tankSilentShare"
+    "spawnTrapsPerBotMinute"
    ],
    "winners": [
-    5,
-    5,
+    1,
+    9,
     0
    ]
   }
