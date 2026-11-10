@@ -135,4 +135,31 @@ out.mill = tall.find(a => a.name === 'Mill');
 out.millCon = gen.areasCon(tall);
 out.pathCon = gen.pathFindingCon();
 out.tags = [menu.levelTag({ singlePlayer: false }), menu.levelTag({ singlePlayer: false, generatedBots: true }), menu.levelTag({ singlePlayer: true }), menu.levelTag({})];
+// --- acceptance (sim/botbatch.mjs) ---------------------------------------------
+const batch = await imp('sim/botbatch.mjs');
+const short = (o = {}) => ({ level: 'x', verdict: 'fail', outcome: 'better-than-nothing', lintErrors: [],
+  sizes: { 8: { verdict: 'pass', failed: [] }, 16: { verdict: 'fail', failed: ['redeploysPerBotMinute'] } }, ...o });
+const refusal = (v, reason = 'why') => { try { batch.acceptVerdict(v, reason, '2026-11-10'); return null; } catch (e) { return e.message; } };
+const taken = batch.acceptVerdict(short({ acceptanceWithdrawn: { reason: 'old' } }), ' one check short ', '2026-11-10');
+out.accept = {
+  taken: taken.accepted, cleared: !('acceptanceWithdrawn' in taken),
+  refused: [refusal(short(), ' '), refusal(short({ verdict: 'pass', outcome: 'pass' })), refusal(short({ outcome: 'no-better-than-nothing' })), refusal(short({ lintErrors: ['e'] }))].map(m => !!m),
+  carried: batch.carryAccepted(short(), taken).accepted?.reason ?? null,
+  improved: batch.carryAccepted(short({ sizes: { 8: { failed: [] }, 16: { failed: [] } } }), taken).accepted?.reason ?? null,
+  passDrops: 'accepted' in batch.carryAccepted(short({ verdict: 'pass', outcome: 'pass' }), taken),
+  worse: batch.carryAccepted(short({ sizes: { 8: { failed: ['stuckSecondsPerBotMinute'] }, 16: { failed: ['redeploysPerBotMinute'] } } }), taken),
+  noBetter: batch.carryAccepted(short({ outcome: 'no-better-than-nothing' }), taken).acceptanceWithdrawn?.because ?? null,
+  none: batch.carryAccepted(short(), null),
+};
+// --- the outcome classes (sim/botbatch.mjs verdictOf) ----------------------------
+// `row` and `base` are the judge's fixtures above. The no-layer arm is far worse on every movement rate.
+const worse = o => row({ level: 'x', stuckSecondsPerBotMinute: 9, routeFailuresPerBotMinute: 9, redeploysPerBotMinute: 9, spawnTrapsPerBotMinute: 9, ...o });
+const failing = o => row({ level: 'x', stuckSecondsPerBotMinute: 3, ...o });
+out.outcomes = {
+  pass: batch.verdictOf('x', [row({ level: 'x' }), row({ level: 'x', seed: 2 })], base, null, [worse({}), worse({ seed: 2 })]).outcome,
+  better: batch.verdictOf('x', [failing({}), failing({ seed: 2 })], base, null, [worse({}), worse({ seed: 2 })]).outcome,
+  noBetter: batch.verdictOf('x', [failing({}), failing({ seed: 2 })], base, null, [failing({}), failing({ seed: 2 })]).outcome,
+  // Nobody fights: fewer stuck seconds than the no-layer arm, and still not better than nothing.
+  noFight: batch.verdictOf('x', [failing({ enemyKills: { 1: 0, 2: 0 }, enemyKillsPerBotMinute: 0 }), failing({ seed: 2 })], base, null, [worse({}), worse({ seed: 2 })]),
+};
 console.log(JSON.stringify(out));

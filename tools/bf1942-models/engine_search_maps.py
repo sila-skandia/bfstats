@@ -23,7 +23,8 @@ strategic map; that is expected and is why none is collected.
 
 The engine reads an archive only if the 148-byte block after its 8-byte
 header and its trailing bytes are those of a game archive, so the rebuilt
-archive keeps the source's and stores the added files as literal-only LZO.
+archive keeps the source's and stores the added files as literal-only LZO
+(or as they are, when the source archive is stored uncompressed).
 """
 
 from __future__ import annotations
@@ -83,11 +84,13 @@ def pack_file(data: bytes, seg_size: int = 16384) -> bytes:
 
 def rebuild_archive(src: Path, dst: Path, add: dict[str, bytes]) -> None:
     """`src` with `add` (archive path -> bytes) added or replaced: the header
-    block, every other file's compressed payload and the trailing bytes kept."""
+    block, every other file's payload and the trailing bytes kept. An archive
+    stored uncompressed (a third of the community map pack) stays so, and the
+    added files go in as they are."""
     b = src.read_bytes()
     data_size, compressed = struct.unpack_from("<II", b, 0)
-    if compressed != 1:
-        raise ValueError(f"{src.name}: not a compressed archive")
+    if compressed not in (0, 1):
+        raise ValueError(f"{src.name}: compression flag {compressed}, not 0 or 1")
     off = data_size
     (count,) = struct.unpack_from("<I", b, off)
     off += 4
@@ -110,7 +113,7 @@ def rebuild_archive(src: Path, dst: Path, add: dict[str, bytes]) -> None:
     by_name = {e[0].lower(): e for e in entries}
     for name, data in add.items():
         raw = name.encode("latin-1")
-        row = [raw, pack_file(data), len(data), tail0, 0]
+        row = [raw, pack_file(data) if compressed else data, len(data), tail0, 0]
         if raw.lower() in by_name:
             by_name[raw.lower()][1:3] = row[1:3]
         else:
@@ -121,7 +124,7 @@ def rebuild_archive(src: Path, dst: Path, add: dict[str, bytes]) -> None:
         offset = 8 + len(block) + len(body)
         body += blob
         index += struct.pack("<I", len(name)) + name + struct.pack("<III", len(blob), u, offset) + tail
-    dst.write_bytes(struct.pack("<II", 8 + len(block) + len(body), 1) + block + bytes(body)
+    dst.write_bytes(struct.pack("<II", 8 + len(block) + len(body), compressed) + block + bytes(body)
                     + struct.pack("<I", len(entries)) + bytes(index) + trailer)
 
 

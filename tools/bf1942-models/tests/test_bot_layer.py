@@ -180,6 +180,36 @@ class JudgeTests(unittest.TestCase):
         self.assertEqual(one, {"split": [2, 0, 0], "oneSided": 1})
         self.assertEqual(mixed, {"split": [1, 1, 0], "oneSided": None})
 
+    def test_a_failing_layer_is_classed_against_the_level_with_no_layer(self) -> None:
+        o = self.out["outcomes"]
+        self.assertEqual([o["pass"], o["better"], o["noBetter"]], ["pass", "better-than-nothing", "no-better-than-nothing"])
+
+    def test_a_level_nobody_fights_on_is_never_better_than_nothing(self) -> None:
+        dead = self.out["outcomes"]["noFight"]
+        self.assertEqual(dead["outcome"], "no-fight")
+        self.assertEqual(dead["dead"], ["8:bothSidesKill"])
+        # The comparison alone would have called it better: every movement rate fell.
+        self.assertTrue(dead["versusNothing"]["better"])
+
+    def test_an_acceptance_is_recorded_only_for_a_layer_better_than_nothing(self) -> None:
+        a = self.out["accept"]
+        self.assertEqual(a["taken"], {"reason": "one check short", "date": "2026-11-10",
+                                      "outcome": "better-than-nothing", "failed": ["16:redeploysPerBotMinute"]})
+        self.assertTrue(a["cleared"])
+        # No reason, a pass, no better than nothing, a lint error: each refused.
+        self.assertEqual(a["refused"], [True, True, True, True])
+
+    def test_an_acceptance_survives_a_rerun_only_while_the_result_is_no_worse(self) -> None:
+        a = self.out["accept"]
+        self.assertEqual(a["carried"], "one check short")
+        self.assertEqual(a["improved"], "one check short")
+        self.assertFalse(a["passDrops"])
+        self.assertNotIn("accepted", a["worse"])
+        self.assertEqual(a["worse"]["acceptanceWithdrawn"]["because"], "now also fails 8:stuckSecondsPerBotMinute")
+        self.assertEqual(a["noBetter"], "now no-better-than-nothing")
+        self.assertNotIn("accepted", a["none"])
+        self.assertNotIn("acceptanceWithdrawn", a["none"])
+
 
 class DoorwayTests(unittest.TestCase):
     @classmethod

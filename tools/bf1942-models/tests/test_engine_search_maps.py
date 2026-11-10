@@ -22,15 +22,15 @@ TAIL = bytes.fromhex("000000000000000020028a02")
 PREFIX = "bf1942/levels/Test_Level"
 
 
-def game_archive(path: Path, files: dict[str, bytes]) -> None:
-    """A compressed archive laid out as the game's: header, 148-byte block, payloads, index, trailer."""
+def game_archive(path: Path, files: dict[str, bytes], compressed: int = 1) -> None:
+    """An archive laid out as the game's: header, 148-byte block, payloads, index, trailer."""
     body, index = bytearray(), bytearray()
     for name, data in files.items():
-        blob = esm.pack_file(data)
+        blob = esm.pack_file(data) if compressed else data
         raw = name.encode("latin-1")
         index += struct.pack("<I", len(raw)) + raw + struct.pack("<III", len(blob), len(data), 156 + len(body)) + TAIL
         body += blob
-    path.write_bytes(struct.pack("<II", 156 + len(body), 1) + BLOCK + bytes(body)
+    path.write_bytes(struct.pack("<II", 156 + len(body), compressed) + BLOCK + bytes(body)
                      + struct.pack("<I", len(files)) + bytes(index) + TRAILER)
 
 
@@ -67,6 +67,22 @@ class ArchiveTests(unittest.TestCase):
             self.assertEqual(arch.read(f"{PREFIX}/StaticObjects.con"), SOURCE[f"{PREFIX}/StaticObjects.con"])
             names = [n.lower() for n in arch.entries]
             self.assertEqual(names, sorted(names))
+
+    def test_an_archive_stored_uncompressed_stays_uncompressed(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            src, dst = Path(tmp) / "src.rfa", Path(tmp) / "dst.rfa"
+            game_archive(src, SOURCE, compressed=0)
+            esm.rebuild_archive(src, dst, {f"{PREFIX}/AI.con": b"ai.init 2\r\n", f"{PREFIX}/Conquest.con": b"changed\r\n"})
+            out = dst.read_bytes()
+            self.assertEqual(struct.unpack_from("<I", out, 4)[0], 0)
+            self.assertEqual(out[8:156], BLOCK)
+            self.assertTrue(out.endswith(TRAILER))
+            # Stored as it is: the added file's bytes are in the archive verbatim.
+            self.assertIn(b"ai.init 2\r\n", out)
+            arch = RfaArchive(dst)
+            self.assertEqual(arch.read(f"{PREFIX}/AI.con"), b"ai.init 2\r\n")
+            self.assertEqual(arch.read(f"{PREFIX}/Conquest.con"), b"changed\r\n")
+            self.assertEqual(arch.read(f"{PREFIX}/StaticObjects.con"), SOURCE[f"{PREFIX}/StaticObjects.con"])
 
     def test_an_archive_without_the_block_is_refused(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:

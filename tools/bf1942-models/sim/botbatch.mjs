@@ -9,6 +9,9 @@
 //   node sim/botbatch.mjs level ... --candidates ../../features/bot-map-generation/candidates.csv [--classes "contained on-foot"]
 //        the same for every in-scope row of the candidates file whose level is in the tree
 //
+//   node sim/botbatch.mjs accept --levels shigaisen_b --reason "<why it goes live short of the bar>" [--mod bf1942]
+//        records an acceptance on a layer that failed the bar but beat the level with no layer
+//
 // A match is `sim/run.mjs` on foot (`--no-vehicles`), seeds 1..N at each side
 // size; the verdict per level is written to <out>/<level>/verdict.json.
 
@@ -87,6 +90,13 @@ export function betterThanNothing(rows, none) {
   return { better: all, detail };
 }
 
+/**
+ * The checks a level must pass at every side size before a failing layer can
+ * be called better than nothing: both sides kill in every seed, both lose
+ * tickets in every seed, and no bot throws.
+ */
+export const ALIVE = ['bothSidesKill', 'ticketsBleed', 'botErrors'];
+
 export function verdictOf(level, rows, baseline, lint = null, none = null) {
   const sizes = [...new Set(rows.map(r => r.botsPerSide))];
   const unreachable = lint?.facts?.unreachable ?? [];
@@ -97,10 +107,49 @@ export function verdictOf(level, rows, baseline, lint = null, none = null) {
   const sides = Object.values(judged).map(j => j.balance?.oneSided ?? null);
   const oneSided = sides.length && sides.every(s => s && s === sides[0]) ? sides[0] : null;
   const versus = none && none.length ? betterThanNothing(rows, none) : null;
-  const outcome = verdict === 'pass' ? 'pass' : versus ? (versus.better ? 'better-than-nothing' : 'no-better-than-nothing') : 'fail';
-  return { level, verdict, outcome, oneSided, unreachable,
+  // A match nobody fights is not better than anything: bots that stand still
+  // do not get stuck, fail routes or redeploy either. So the comparison is
+  // read only once the level is alive at every size (`ALIVE`).
+  const dead = Object.entries(judged).flatMap(([s, j]) => (j.failed ?? []).filter(f => ALIVE.includes(f)).map(f => `${s}:${f}`));
+  const outcome = verdict === 'pass' ? 'pass' : dead.length ? 'no-fight'
+    : versus ? (versus.better ? 'better-than-nothing' : 'no-better-than-nothing') : 'fail';
+  return { level, verdict, outcome, oneSided, unreachable, ...(dead.length ? { dead } : {}),
            lint: lint ? { errors: lint.errors, warnings: lint.warnings.map(w => w.text), facts: lint.facts } : null,
            sizes: judged, versusNothing: versus };
+}
+
+/** The outcomes a failing layer may be accepted at. */
+export const ACCEPTABLE = ['better-than-nothing'];
+
+const failedChecks = short => Object.entries(short.sizes ?? {}).flatMap(([size, j]) => (j.failed ?? []).map(f => `${size}:${f}`));
+
+/**
+ * Record an acceptance on a layer's verdict: the bake's gate then reads the
+ * layer though it missed the bar (`bf42/ai_level.py generated_layer_gate`).
+ * Only a layer with no lint error that measured better than the level with
+ * no layer can take one, and it names the checks it was accepted short of.
+ */
+export function acceptVerdict(short, reason, date) {
+  if (!String(reason ?? '').trim()) throw new Error('an acceptance needs a reason');
+  if (short.verdict === 'pass') throw new Error(`${short.level} passes: it needs no acceptance`);
+  if (!ACCEPTABLE.includes(short.outcome)) throw new Error(`${short.level} is ${short.outcome}: only ${ACCEPTABLE.join(', ')} can be accepted`);
+  if (short.lintErrors?.length) throw new Error(`${short.level} has lint errors`);
+  const { acceptanceWithdrawn, ...rest } = short;
+  return { ...rest, accepted: { reason: String(reason).trim(), date, outcome: short.outcome, failed: failedChecks(short) } };
+}
+
+/**
+ * A re-run's verdict with the acceptance the last one carried. It is kept
+ * only while the result is no worse than the one accepted: still acceptable,
+ * no lint error, and no check failing that did not fail then. Otherwise it is
+ * withdrawn, and says so; a pass drops it as unneeded.
+ */
+export function carryAccepted(short, previous) {
+  const was = previous?.accepted;
+  if (!was || short.verdict === 'pass') return short;
+  const fresh = failedChecks(short).filter(f => !(was.failed ?? []).includes(f));
+  if (ACCEPTABLE.includes(short.outcome) && !short.lintErrors?.length && !fresh.length) return { ...short, accepted: was };
+  return { ...short, acceptanceWithdrawn: { ...was, because: fresh.length ? `now also fails ${fresh.join(', ')}` : `now ${short.outcome}${short.lintErrors?.length ? ' with lint errors' : ''}` } };
 }
 
 function candidateLevels(file, classes) {
@@ -125,8 +174,21 @@ function parseArgs(argv) {
 async function main() {
   const a = parseArgs(process.argv.slice(2));
   const cmd = a._[0];
+  if (cmd === 'accept') {
+    let bad = 0;
+    for (const level of String(a.levels ?? '').split(',').map(l => l.trim().toLowerCase()).filter(Boolean)) {
+      const file = path.join(a.layers ? path.resolve(a.layers) : LAYERS_ROOT, (a.mod ?? 'bf1942').toLowerCase(), level, 'verdict.json');
+      try {
+        const next = acceptVerdict(JSON.parse(readFileSync(file, 'utf8')), a.reason, new Date().toISOString().slice(0, 10));
+        writeFileSync(file, JSON.stringify(next, null, 1) + '\n');
+        console.log(`${level}: accepted short of ${next.accepted.failed.join(', ')}`);
+      } catch (e) { bad++; console.error(`${level}: not accepted: ${e.code === 'ENOENT' ? 'no verdict.json' : e.message}`); }
+    }
+    process.exit(bad ? 1 : 0);
+  }
   if (!['baseline', 'matrix', 'level'].includes(cmd) || !a.maps) {
     console.error('usage: node sim/botbatch.mjs <baseline|matrix|level> --maps <tree> [--models <tree>] --levels a,b | --candidates <csv> [--classes c1;c2]\n'
+      + '       node sim/botbatch.mjs accept --levels a,b --reason "<why>" [--mod bf1942] [--layers <dir>]\n'
       + '       [--mod bf1942] [--game-dir <dir>] [--archives <dir of level .rfa>] [--out <dir>] [--seeds 10] [--sizes 8,16] [--time 600] [--jobs N] [--baseline <file>] [--force] [--keep-traces] [--no-generate]');
     process.exit(2);
   }
@@ -188,7 +250,10 @@ async function main() {
       const short = { level: l.level, verdict: v.verdict, outcome: v.outcome, generatorVersion: marker.version, inputs: marker.inputs,
                       baseline: baseline.note, seeds: opts.seeds, sizes: Object.fromEntries(Object.entries(v.sizes).map(([s, j]) => [s, { verdict: j.verdict, failed: j.failed, winners: j.balance?.split }])),
                       oneSided: v.oneSided, unreachable: v.unreachable, lintErrors: lint.errors.map(e => e.text) };
-      writeFileSync(path.join(layerDir, 'verdict.json'), JSON.stringify(short, null, 1) + '\n');
+      const file = path.join(layerDir, 'verdict.json');
+      const kept = carryAccepted(short, existsSync(file) ? JSON.parse(readFileSync(file, 'utf8')) : null);
+      if (kept.acceptanceWithdrawn) console.error(`${l.level}: acceptance withdrawn, ${kept.acceptanceWithdrawn.because}`);
+      writeFileSync(file, JSON.stringify(kept, null, 1) + '\n');
     }
     if (v.verdict !== 'pass') failed++;
     console.log(`${l.level}: ${v.outcome}` + (lint ? `, lint ${lint.errors.length} errors` : '')
