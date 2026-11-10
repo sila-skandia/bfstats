@@ -79,8 +79,11 @@ from bf42.rfa import RfaArchive, find_archives_dir  # noqa: E402
 sys.path.insert(0, str(Path.home() / ".claude/skills/bf1942-map-images/scripts"))
 from extract_map_images import decode_dds, encode_png  # noqa: E402
 
-sys.path.insert(0, str(Path(__file__).resolve().parents[2] / "scripts"))
-from extract_hud_assets import decode_tga  # noqa: E402
+# The engine's TGA reader, not the file format's: an RLE (type 10) file with a
+# bottom-left origin keeps its rows as stored (`bf42/meshtga.py`). BF1918's
+# `Menu/Background.tga`, the two airmen under the logo, is such a file and came
+# out upside down through the origin bit alone (2026-11-10).
+from extract_hud_pack import decode_tga  # noqa: E402
 
 VIEWER_MENU_DIR = (Path(__file__).resolve().parent / "viewer" / "maps"
                    / "_shared" / "hud" / "menu")

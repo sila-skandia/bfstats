@@ -390,6 +390,36 @@ export { isPropellerBlurPair };
  */
 const swapScratch = new THREE.Vector3();
 
+/**
+ * A `DistCompareSelector`'s alternative as the engine picks it, for a spec
+ * outside LOD-2's shortcut, or null for one inside it (exactly one
+ * comparison, 0.5: alternative 1 at a compare value of 0.5 or more, the
+ * distance never read; every vanilla, pack, DC and FH cockpit).
+ *
+ * `DistCompareLodSelector::getLodLevelRelative` (lnxded 0x08213e10, ledger
+ * LOD-8) otherwise: with `addLodDistance` d above 0 (`init` 0x08213d70 keeps
+ * it as written, `addLodDistance` 0x08214b00), alternative 0 while the
+ * camera's squared distance to the object, times `m_distanceLodFactor` (1.0)
+ * and the render view's term, is above d -- so within sqrt(d) metres, the
+ * term not applied, as LOD-3's is not; then `lower_bound` of the compare
+ * value over the comparisons as written (0x08213f08). The compare value is
+ * 1 in the Inside view and 0 in every other (LOD-2).
+ *
+ * `{ reach, inside, outside }`: the eye's reach in metres or null for none,
+ * and the alternative in an Inside view and in any other.
+ */
+export function distCompareRule(spec) {
+  if (String(spec?.selectorKind || '').toLowerCase() !== 'distcompareselector') return null;
+  const comparisons = (spec.comparisons ?? []).map(Number).filter(Number.isFinite);
+  if (comparisons.length === 1 && comparisons[0] === 0.5) return null;
+  const lowerBound = value => comparisons.filter(c => c < value).length;
+  // `addLodDistance` writes one float (`+0x28`, 0x08214b00): the last one
+  // declared is the selector's.
+  const distances = spec.distances ?? [];
+  const d = Number(distances[distances.length - 1]);
+  return { reach: d > 0 ? Math.sqrt(d) : null, inside: lowerBound(1), outside: lowerBound(0) };
+}
+
 class CockpitSwap {
   constructor(host, interior, hidden, spec) {
     this.host = host;
@@ -407,6 +437,12 @@ class CockpitSwap {
       ? Number(spec.distances?.[0]) : NaN;
     /** The eye's reach of the host inside which the interior draws, or null. */
     this.near = near > 0 ? near : null;
+    // A `DistCompareSelector` outside LOD-2's one-0.5 shortcut takes the
+    // engine's general branch (ledger LOD-8): BF1918's field guns hang their
+    // reticule on one of `[0.1]` and 0.6, at the spot `OutsideHudOffset`
+    // moves the eye to, so the sight is the toggled view's and not the first.
+    /** `distCompareRule(spec)`, or null: the view flip alone (LOD-2). */
+    this.compare = distCompareRule(spec);
     // The interior's rigged nodes as the glb authored them, read now because
     // this is the only moment they are certain to be at rest. A swap outlives
     // the `Vehicle` that grafted it (`cockpitGrafts`), and the next one would
@@ -435,6 +471,16 @@ class CockpitSwap {
     if (eye && this.near != null) {
       this.host.updateWorldMatrix(true, false);
       inside = swapScratch.setFromMatrixPosition(this.host.matrixWorld).distanceTo(eye) <= this.near;
+    } else if (this.compare) {
+      // The Inside view writes 1 into the selector, every other view 0
+      // (LOD-2); the alternative is `lower_bound` of that over the
+      // comparisons, and only inside the selector's reach of the eye.
+      inside = (inside ? this.compare.inside : this.compare.outside) >= 1;
+      if (inside && eye && this.compare.reach != null) {
+        this.host.updateWorldMatrix(true, false);
+        inside = swapScratch.setFromMatrixPosition(this.host.matrixWorld).distanceTo(eye)
+          <= this.compare.reach;
+      }
     }
     for (const node of this.interior) node.visible = inside;
     for (const node of this.hidden) node.visible = !inside;

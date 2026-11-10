@@ -2486,14 +2486,25 @@ def remove_superseded_rigs(out: Path, rows: dict[str, dict]) -> int:
     serves as a painted row loses its own `<stem>.fp.glb` (and `.gz` and
     report) — a fresh export would never write them, and leaving them keeps
     the whole duplication on disk. A delta run never deletes (its rows are
-    only pairs that had no file)."""
+    only pairs that had no file).
+
+    Names come from the listing, and a rig a row is served from is never
+    removed: on a case-insensitive disk (macOS) `AnzSoldier__No12.fp.glb`
+    opens BF1918's canonical `AnzSoldier__no12.fp.glb`, and unlinking it
+    took the rig its own painted rows point at (15 BF1918 pairs, 2026-11-10)."""
+    try:
+        names = set(os.listdir(out))
+    except OSError:
+        return 0
+    served = {str(row.get("rig", "")).lower() for row in rows.values()}
     removed = 0
     for stem in rows:
+        if stem.lower() in served:
+            continue
         for name in (f"{stem}.fp.glb", f"{stem}.fp.glb.gz",
                      f"{stem}.fp.report.json"):
-            path = out / name
-            if path.is_file():
-                path.unlink()
+            if name in names:
+                (out / name).unlink()
                 removed += name.endswith(".glb")
     return removed
 

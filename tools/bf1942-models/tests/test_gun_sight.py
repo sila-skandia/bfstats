@@ -77,6 +77,35 @@ class GunSightTests(unittest.TestCase):
         self.assertEqual([False, True], near["outside"])
         self.assertEqual([True, False], near["noEye"])
 
+    def test_a_compare_selector_off_the_shortcut_draws_where_the_eye_reaches_it(self) -> None:
+        # BF1918's French 75 on Aube de Soiree (the owner, 2026-11-10): the
+        # reticule hung in front of the shield in the first view.
+        compare = self.results["compare"]
+        # [the reticule, its exterior]
+        self.assertEqual([False, True], compare["seatEye"],
+                         "the reticule is the toggled view's, not the first's")
+        self.assertEqual([True, False], compare["sightEye"])
+        self.assertEqual([False, True], compare["otherView"],
+                         "outside the Inside view the compare value is 0 (LOD-2)")
+        self.assertEqual([True, False], compare["noEye"])
+
+    def test_the_compare_rule_reads_the_selector_as_the_engine_does(self) -> None:
+        rule = self.results["rule"]
+        self.assertIsNone(rule["vanilla"], "one comparison of 0.5 is LOD-2's shortcut")
+        self.assertAlmostEqual(0.7746, rule["frz75er"]["reach"], places=3)
+        self.assertEqual(1, rule["frz75er"]["inside"])
+        self.assertEqual(0, rule["frz75er"]["outside"])
+        self.assertAlmostEqual(1.0, rule["ft17beute"]["reach"],
+                               msg="addLodDistance overwrites: the last one is the selector's")
+        self.assertEqual(2, rule["ft17beute"]["inside"])
+        self.assertEqual(0, rule["none"]["inside"], "no comparison: alternative 0 always")
+        self.assertIsNone(rule["zero"]["reach"], "a distance of 0 is never tested")
+        self.assertEqual(1, rule["zero"]["inside"])
+        self.assertEqual(0, rule["zero"]["outside"])
+        self.assertEqual(0, rule["one"]["inside"], "lower_bound: 1 is not past a comparison of 1")
+        self.assertIsNone(rule["distance"])
+        self.assertIsNone(rule["second"], "DistCompareSelector2 is another class")
+
     def test_a_gun_left_before_its_sight_lands_is_seen_from_outside(self) -> None:
         self.assertEqual([False, True], self.results["left"])
 
