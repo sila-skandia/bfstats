@@ -1,0 +1,42 @@
+{
+ "generator": "botgen",
+ "version": 3,
+ "mod": "bf1942",
+ "level": "_o_jka__big",
+ "template": "symmetric",
+ "templateSource": "DICE, bf1942 Kharkov (1.6 patch archives): AI/Strategies.con, AI/conditions.con, AI/prerequisites.con, unchanged",
+ "scope": "on foot: the engine's own Tank0 and Infantry1 search maps, infantry order positions, no strategic maps, no co-op layer",
+ "unreachable": [],
+ "botSpawnsExcluded": [],
+ "walkMap": {
+  "source": "engine",
+  "opened": [],
+  "ways": [],
+  "cover": 0.814,
+  "floors": {
+   "stacked": false,
+   "twoFloorShare": 0.003,
+   "raised": [],
+   "reason": null
+  }
+ },
+ "inputs": {
+  "controlPoints": "c15705f00122a0ffe5e11e18b520ea90f056860b8183d7d92ac73b6ffda5c79a",
+  "infantryMap": "c86a692154a7a5e4d4899a191fd3d780055f7812674e40595fedf099daa16645",
+  "template": "43f8a790471528016570235f76e97dbb2045732458781a5139f37fed68bf98c0"
+ },
+ "files": {
+  "AI.con": "3dc94f663ac7545695a38d3670752432e4a5e64efe048dc4b26d578aece3748c",
+  "AIpathFinding.con": "714499ad831a139560e4913e729aee4c62a23457be02e0c36c73af18f4bb31cb",
+  "AI/StrategicAreas.con": "5b33712dd0cb814c6726aa4e7b4ea68e71846986c5e186538734ef55afbf7b82",
+  "AI/Strategies.con": "4ce0be59a0d6c5cd530db002fb062c4be8d936bc6ae59bd188803ccaf7869a8d",
+  "AI/conditions.con": "68a0c7a8aec69954063147b60fae560b2874884285737aa085efa76597d395aa",
+  "AI/prerequisites.con": "4c1f313bc285b228fd6ad03bfd1f44c5b15c8703c31f802eb605bc5f00f88bb5",
+  "Pathfinding/Infantry1Level0Map.raw": "442226ff169824c3b88905d09539e76166d793724ef8c4e90fd1fd9ab2613433",
+  "Pathfinding/Infantry1Level1Map.raw": "ea3755f095c44defcba6075c9a35a9e83b93308775b36195762acbef3ee708fe",
+  "Pathfinding/Infantry1Level2Map.raw": "940637f8d28fb36cd43e4da7e8541c4aa03bb855e5a0c0625c5857d6b7a42329",
+  "Pathfinding/Tank0Level0Map.raw": "862770a4bc4b3fa0203a88e59d62aa80aad4801dc37ae27fe67d46f544efc19b",
+  "Pathfinding/Tank0Level1Map.raw": "be5efc5c3656370b65418f11fc628d476a14b7c8ac96acd4bb3d412ff949da44",
+  "Pathfinding/Tank0Level2Map.raw": "dfc98a7a6df6c7b917443dcc4777a927d685a4d5f8c8b3860f5a2845d11d004a"
+ }
+}

@@ -1,0 +1,22 @@
+{
+ "level": "the_corridor",
+ "verdict": "fail",
+ "outcome": "unsuitable",
+ "generatorVersion": 3,
+ "inputs": {
+  "controlPoints": "97a5baba900d5cb8203496745ba69c1f899493219b725eb2d1d412695993d3c0",
+  "infantryMap": "bf6e7b562fccfe76a4495b3f8a069ba4d47d42a2f6a86986e8d01555af3dad0d",
+  "template": "43f8a790471528016570235f76e97dbb2045732458781a5139f37fed68bf98c0"
+ },
+ "baseline": "DICE layers on foot: berlin, stalingrad, kharkov, bocage; seeds 1..10, 600 s, --no-vehicles",
+ "seeds": 10,
+ "sizes": {},
+ "oneSided": null,
+ "unreachable": [
+  "Center_3F"
+ ],
+ "lintErrors": [
+  "the play surface is stacked floors (84 % of the main floor has another walked floor over or under it): a one-floor walk map cannot hold it",
+  "side 1 has no spawn with a route to any flag it must take: of its 1 spawns 1 have no way on foot to the main ground; the level places 6 ladders, which neither the walk test nor a bot climbs"
+ ]
+}

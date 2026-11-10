@@ -4,6 +4,12 @@
 // order positions stand on free cells of the map the page's soldiers walk,
 // and every capturable flag can be reached on foot from the rest.
 //
+// With the walk test's facts (`walkflood.mjs walkFacts`, which `lintLevel`
+// hands in) it also predicts a dead level before any match runs: an error
+// when a side has no spawn with a route to any flag it must take, when no
+// capturable flag is reachable in 3D, and when the play surface is stacked
+// floors a one-floor walk map cannot hold.
+//
 //   node sim/botlint.mjs --map shigaisen_b --maps <maps tree> [--models <tree>] [--source <layer folder>] [--json out.json]
 //
 // Exit 1 when it finds an error. `lintLayer` is the pure half the tests call.
@@ -11,31 +17,10 @@
 import { existsSync, readFileSync, writeFileSync } from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
-import { loadForBots, flagsOf, nearestFree, ORDER_SEARCH } from './botgen.mjs';
+import { loadForBots, levelWalkFacts, flagsOf, nearestFree, ORDER_SEARCH } from './botgen.mjs';
+import { components, STOREY } from './walkflood.mjs';
 
-/** 4-connected components of the free cells: `Int32Array` of ids, 0 blocked. */
-export function components(grid) {
-  const { width, height, blocked } = grid;
-  const id = new Int32Array(width * height);
-  const sizes = [0];
-  const stack = [];
-  for (let start = 0; start < id.length; start++) {
-    if (blocked[start] || id[start]) continue;
-    const n = sizes.length;
-    let size = 0;
-    id[start] = n; stack.push(start);
-    while (stack.length) {
-      const i = stack.pop(); size++;
-      const x = i % width, z = (i - x) / width;
-      if (x > 0 && !blocked[i - 1] && !id[i - 1]) { id[i - 1] = n; stack.push(i - 1); }
-      if (x < width - 1 && !blocked[i + 1] && !id[i + 1]) { id[i + 1] = n; stack.push(i + 1); }
-      if (z > 0 && !blocked[i - width] && !id[i - width]) { id[i - width] = n; stack.push(i - width); }
-      if (z < height - 1 && !blocked[i + width] && !id[i + width]) { id[i + width] = n; stack.push(i + width); }
-    }
-    sizes.push(size);
-  }
-  return { id, sizes };
-}
+export { components };
 
 const cellOf = (grid, x, z) => Math.floor(-z / grid.cellSize) * grid.width + Math.floor(x / grid.cellSize);
 
@@ -51,9 +36,10 @@ function inBox(area, x, z, grow = 0) {
  * `ground(x, z)` the map's own tests, `spawns` `[x, z]` soldier spawn points,
  * `defined` extra condition names the layer's own script defines.
  */
-export function lintLayer({ ai, flags, grid = null, isWalkable = null, ground = null, spawns = [], defined = [], pathIndex = null }) {
+export function lintLayer({ ai, flags, grid = null, isWalkable = null, ground = null, spawns = [], defined = [], pathIndex = null, walk = null }) {
   const errors = [], warnings = [];
-  const err = (check, text) => errors.push({ check, text });
+  // `dead`: the class of a finding that predicts a level nobody fights on (`DEAD_CLASSES`).
+  const err = (check, text, dead = null) => errors.push({ check, text, ...(dead ? { dead } : {}) });
   const warn = (check, text) => warnings.push({ check, text });
   const areas = ai?.strategicAreas ?? [];
   if (!areas.length) { err('loads', 'no strategic areas'); return { errors, warnings, facts: {} }; }
@@ -120,6 +106,10 @@ export function lintLayer({ ai, flags, grid = null, isWalkable = null, ground = 
       else if (!inBox(a, p[0], p[1], ORDER_SEARCH)) warn('order', `${a.name}: the ${type} order position is ${Math.round(Math.hypot(p[0] - a.max[0], p[1] - a.min[1]))} m from the area`);
     }
   }
+  if (walk) {
+    Object.assign(facts, lintWalk({ walk, flags, excluded, err, warn }));
+    return { errors, warnings, facts };
+  }
   // Reach on foot.
   const { id, sizes } = components(grid);
   const where = new Map();
@@ -154,13 +144,97 @@ export function lintLayer({ ai, flags, grid = null, isWalkable = null, ground = 
   return { errors, warnings, facts };
 }
 
+/** The lint's errors that predict a dead level, by class, as the census names them. */
+export const DEAD_CLASSES = {
+  'no-spawn': 'a side with no spawn at the start', sealed: 'a side sealed in',
+  'no-route': 'a side that can reach no flag', 'no-flag': 'no flag a soldier can stand in',
+  refused: 'spawns on ground the page refuses to climb',
+};
+
+/** The classes of dead level a lint result predicts: `[]` for none. */
+export function predictedDead(lint) {
+  return [...new Set((lint?.errors ?? []).map(e => e.dead).filter(Boolean))];
+}
+
+/** The walk test's facts as the lint and the census keep them: no flood, no per-cell arrays. */
+export function slimFacts(facts) {
+  return {
+    cover: facts.cover, capped: facts.capped, mainPlaces: facts.mainPlaces, regions: facts.regions.length, objectFloor: facts.objectFloor,
+    sidesMeet: facts.sidesMeet, ladders: facts.ladders,
+    floors: facts.floors,
+    spawns: facts.spawns.map(s => ({ name: s.name, side: s.side, landed: s.landed, onMainGround: s.onMainGround, usable: s.usable, refused: s.refused, fall: s.fall, over: s.over, under: s.under })),
+    flags: facts.flags.map(f => ({ name: f.name, fixed: f.fixed, team: f.team, radius: f.radius, reachable: f.reachable, walked: !!f.inRing,
+                                   onMainGround: !!f.onMainGround, poleLift: f.poleLift, over: f.over, under: f.under })),
+  };
+}
+
+/**
+ * The reach checks on the walk test's facts (`slimFacts`). A spawn serves
+ * bots when it has a way to the main ground and no other floor under it; a
+ * flag can be taken when a soldier on the map's main ground stands inside
+ * its 3D radius.
+ *
+ * INVENTION: the retail engine has no such checks (a level with a sealed
+ * base loads and its bots stand there). They are this tool's reading of what
+ * the page's bots, which route on a one-floor map and neither jump nor climb
+ * a ladder, can do; an error tagged `dead` predicts a level nobody fights on.
+ */
+function lintWalk({ walk, flags, excluded, err, warn }) {
+  const unreachable = [];
+  const serves = s => s.usable && s.over < STOREY;
+  const takeable = f => f.reachable && f.over < STOREY;
+  if (walk.capped) warn('reach', 'the walk test ran out of room before the ground did: its findings cover part of the level');
+  if (walk.floors?.stacked) err('floors', `the play surface is stacked floors (${walk.floors.reason}): a one-floor walk map cannot hold it`);
+  for (const f of walk.flags) {
+    if (f.fixed || takeable(f)) {
+      if (!f.fixed && excluded.has(f.name.toLowerCase())) warn('reach', `control point ${f.name} is excluded as unreachable, and the walk test finds a soldier can stand inside it`);
+      continue;
+    }
+    unreachable.push(f.name);
+    const text = f.reachable ? `control point ${f.name} stands ${f.over} m over another walked floor`
+      : f.walked ? `control point ${f.name}: no soldier on the walk map's main ground stands inside its ${f.radius} m radius (the ground inside it is ${f.onMainGround ? 'blocked on the map' : 'cut off from the main ground'})`
+        : `control point ${f.name}: no walked ground inside its ${f.radius} m radius${f.poleLift > f.radius ? ` (the pole is ${f.poleLift} m above the ground it stands over)` : ''}`;
+    if (excluded.has(f.name.toLowerCase())) warn('reach', `${text}: unreachable on foot, excluded`);
+    else err('reach', text);
+  }
+  const capturable = walk.flags.filter(f => !f.fixed);
+  if (capturable.length && !capturable.some(takeable)) err('reach', `no capturable flag is reachable in 3D: none of the ${capturable.length} has a place inside its radius that a soldier on the one-floor walk map's main ground can stand in`, 'no-flag');
+  for (const side of [1, 2]) {
+    const own = walk.spawns.filter(s => s.side === side);
+    const must = capturable.filter(f => f.team !== side);
+    if (!own.length) { err('reach', `side ${side} holds no spawn point at the start of the round`, 'no-spawn'); continue; }
+    const good = own.filter(serves);
+    if (!good.length) {
+      const sealed = own.filter(s => s.landed && !s.usable).length, air = own.filter(s => !s.landed).length;
+      const refused = own.filter(s => s.landed && !s.usable && s.refused).length;
+      err('reach', `side ${side} has no spawn with a route to any flag it must take: of its ${own.length} spawns ${sealed} have no way on foot to the main ground`
+        + (refused ? ` (${refused} stand on terrain the page's soldier refuses to climb: its normal there, read across a lattice cell, is past the slope limit)` : '')
+        + (air ? `, ${air} are in the air` : '') + (own.length - sealed - air ? `, ${own.length - sealed - air} stand over another floor` : '')
+        + (walk.ladders ? `; the level places ${walk.ladders} ladders, which neither the walk test nor a bot climbs` : ''), 'sealed');
+    } else if (must.length && !must.some(takeable)) {
+      err('reach', `side ${side} has no spawn with a route to any flag it must take: none of the ${must.length} flags it does not hold can be reached`, 'no-route');
+    } else if (good.every(s => s.refused)) {
+      // The page's rule, not the engine's (`soldier-resolve.js tooSteep` reads the terrain's normal as a
+      // central difference across a lattice cell): flat ground beside a tall terrain wall refuses every step up.
+      err('reach', `side ${side} has no spawn on ground a soldier walks freely: all ${good.length} that reach the main ground stand on terrain whose normal the page reads as past its slope limit, where it refuses any step uphill and a bot leaves only downhill, if at all`, 'refused');
+    }
+  }
+  const cut = walk.spawns.filter(s => !serves(s)).length;
+  if (cut) warn('reach', `${cut} of ${walk.spawns.length} soldier spawns have no way to the main walkable ground`);
+  return { unreachable, spawnsCutOff: cut, spawns: walk.spawns.length, flagsCutOff: unreachable.length,
+           cover: walk.cover, objectFloor: walk.objectFloor, floors: walk.floors, sidesMeet: walk.sidesMeet ?? null,
+           flagLift: Object.fromEntries(walk.flags.map(f => [f.name, f.poleLift])) };
+}
+
 /** Condition names a layer's own `conditions.con` defines, any kind. */
 export function definedConditions(text) {
   return [...text.matchAll(/^\s*aiStrategy\.create\w*Condition\s+(\S+)/gim)].map(m => m[1]);
 }
 
 export async function lintLevel({ maps, models = null, map, source = null }) {
-  const { nav, grid, extras, world } = await loadForBots({ maps, models, map, layerDir: source });
+  const loaded = await loadForBots({ maps, models, map, layerDir: source });
+  const { nav, grid, extras, world } = loaded;
+  const walk = slimFacts(await levelWalkFacts(loaded));
   const file = source ? path.join(source, 'AI', 'conditions.con') : null;
   const indexFile = path.join(maps, map, 'pathfinding', 'index.json');
   const spawns = (extras.soldierSpawns ?? []).filter(s => s.position).map(s => [s.position[0], s.position[2]]);
@@ -170,8 +244,9 @@ export async function lintLevel({ maps, models = null, map, source = null }) {
     ai: extras.ai, flags: flagsOf(extras), grid, isWalkable: nav.isWalkable, ground, spawns,
     defined: file && existsSync(file) ? definedConditions(readFileSync(file, 'latin1')) : [],
     pathIndex: existsSync(indexFile) ? JSON.parse(readFileSync(indexFile, 'utf8')) : null,
+    walk,
   });
-  return { level: map, generated: extras.ai?.generated ?? null, mapSource: grid.source, ...res };
+  return { level: map, generated: extras.ai?.generated ?? null, mapSource: grid.source, ...res, walk };
 }
 
 if (process.argv[1] && path.resolve(process.argv[1]) === fileURLToPath(import.meta.url)) {

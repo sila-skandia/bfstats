@@ -6,7 +6,7 @@ painter's doorways and the menu's tag.
 Python half reads the layer kept as source under `bot-layers/`.
 """
 
-# watches: tools/bf1942-models/bot-layers/*/*/* tools/bf1942-models/bot-layers/*/*/*/*
+# watches: tools/bf1942-models/bot-layers/*/*/* tools/bf1942-models/bot-layers/*/*/*/* tools/bf1942-models/bot-layers/*/*/*/*/*
 
 from __future__ import annotations
 
@@ -81,8 +81,7 @@ class GeneratorTests(unittest.TestCase):
         self.assertIn("aiStrategicArea.setTakeable 1 0\r\naiStrategicArea.setTakeable 2 0", block)
         self.assertNotIn("setOrderPosition", block)
 
-    def test_a_spawn_with_no_way_down_or_no_ground_is_kept_from_bots(self) -> None:
-        self.assertEqual(self.out["excluded"], ["top", "sealed"])
+    def test_bots_are_kept_off_a_spawn_the_layer_lists(self) -> None:
         first, avoided, none_left = self.out["avoid"]
         self.assertEqual((first, avoided), ("top", "foot"))
         self.assertIsNotNone(none_left)
@@ -121,6 +120,172 @@ class LintTests(unittest.TestCase):
 
     def test_a_condition_of_any_kind_counts_as_defined(self) -> None:
         self.assertEqual(self.out["defined"], ["a", "weakCond"])
+
+
+class WalkTestTests(unittest.TestCase):
+    """`sim/walkflood.mjs`: the fine flood on a world of boxes."""
+
+    @classmethod
+    def setUpClass(cls) -> None:
+        cls.out = run_harness()
+
+    def test_the_body_is_the_pages_soldier(self) -> None:
+        body = self.out["body"]
+        # The hull reach less the skin, the standing height, the step, a jump's apex at 30 Hz, the free fall.
+        self.assertEqual((body["radius"], body["height"], body["step"], body["drop"]), (0.39, 1.8, 0.45, 2))
+        self.assertAlmostEqual(body["jump"], 1.12, delta=0.01)
+
+    def test_a_door_is_a_way_and_a_slit_is_not(self) -> None:
+        self.assertEqual((self.out["way"]["door"], self.out["way"]["slit"]), ("walk", "none"))
+
+    def test_a_step_is_walked_and_a_kerb_takes_a_jump(self) -> None:
+        self.assertEqual((self.out["way"]["step"], self.out["way"]["kerb"]), ("walk", "jump"))
+
+    def test_a_ledge_is_walked_off_and_not_back_and_a_long_fall_is_no_way(self) -> None:
+        way = self.out["way"]
+        self.assertEqual((way["ledge"], way["ledgeBack"], way["cliff"]), ("walk", "none", "none"))
+
+    def test_terrain_the_page_reads_as_steep_refuses_the_step_up_only(self) -> None:
+        self.assertEqual(self.out["refused"], ["none", "walk"])
+
+    def test_spawns_and_flags_are_placed_on_the_walked_ground(self) -> None:
+        facts = self.out["walkFacts"]
+        self.assertEqual(facts["spawns"], {"a1": True, "b1": True, "in": False, "hut": False})
+        self.assertEqual(facts["regions"], 2)
+        # reachable, walked ground inside the ring, the pole's height over the ground it stands over
+        self.assertEqual(facts["flags"]["Mid"], [True, True, 0])
+        # 4.2 m up with a 5 m radius: a soldier within 2.7 m of the pole's foot is inside the ring.
+        self.assertEqual(facts["flags"]["Pole"], [True, True, 4.2])
+        self.assertEqual(facts["flags"]["Tower"], [False, False, 0])
+        self.assertEqual(facts["flags"]["Patch"], [False, True, 0])
+
+    def test_two_floors_over_each_other_are_stacked(self) -> None:
+        self.assertEqual(self.out["stacked"], {"stacked": True, "share": True, "over": 3.3, "unreachable": True})
+        self.assertFalse(self.out["walkFacts"]["stacked"])
+
+
+class WalkMapTests(unittest.TestCase):
+    """`sim/botgen.mjs prepareWalkMap` and the search-map writer."""
+
+    @classmethod
+    def setUpClass(cls) -> None:
+        cls.out = run_harness()
+        cls.walk = cls.out["walkMap"]
+
+    def test_a_pocket_with_a_way_out_has_the_ways_cells_opened(self) -> None:
+        ways = {w["who"]: w for w in self.walk["ways"]}
+        self.assertEqual(self.walk["source"], "engine")
+        self.assertEqual((ways["hut"]["way"], ways["Patch"]["way"]), ("walk", "walk"))
+        self.assertGreater(ways["hut"]["opened"], 0)
+        self.assertEqual(self.walk["opened"], ways["hut"]["opened"] + ways["Patch"]["opened"])
+        self.assertTrue(self.walk["openedWereBlocked"])
+        self.assertTrue(self.walk["after"]["spawns"]["hut"])
+        self.assertEqual(self.walk["after"]["flags"]["Patch"], [True, True, 0])
+
+    def test_a_sealed_pocket_is_left_shut_and_its_spawn_kept_from_bots(self) -> None:
+        ways = {w["who"]: w for w in self.walk["ways"]}
+        self.assertEqual(ways["in"], {"who": "in", "kind": "spawn", "way": "none", "opened": 0})
+        self.assertFalse(self.walk["after"]["spawns"]["in"])
+        self.assertEqual(self.walk["excluded"], ["in"])
+
+    def test_a_flag_no_soldier_on_walkable_ground_stands_inside_is_unreachable(self) -> None:
+        self.assertEqual(self.walk["reach"], {"Mid": False, "Pole": False, "Tower": True, "Patch": False})
+
+    def test_the_order_position_is_a_cell_whose_soldier_is_inside_the_ring(self) -> None:
+        near, far, none = self.out["order"]
+        self.assertEqual(near, [30.5, -20.5])
+        # 4 m from the pole's foot is outside the 2.7 m ring: the cell of the nearest place inside it instead.
+        self.assertNotEqual(far, [34.5, -20.5])
+        self.assertLessEqual(((far[0] - 30) ** 2 + (far[1] + 20) ** 2) ** 0.5, 2.8)
+        self.assertIsNone(none)
+
+    def test_a_second_run_puts_the_engines_map_back_first_and_opens_the_same_cells(self) -> None:
+        self.assertTrue(self.walk["sameAgain"])
+
+    def test_a_map_that_holds_none_of_the_ground_is_painted_from_the_main_ground(self) -> None:
+        painted = self.out["painted"]
+        self.assertEqual(painted["source"], "walk test")
+        self.assertEqual((painted["street"], painted["room"], painted["wall"]), (0, 1, 1))
+        self.assertEqual(painted["usable"], {"a1": True, "b1": True, "in": False, "hut": True})
+        self.assertTrue(painted["cover"])
+        # What the engine's map held is kept for the record: nothing here, most of it for the map that was kept.
+        self.assertEqual(painted["engineCover"], 0)
+        self.assertTrue(painted["keptCover"])
+
+    def test_a_painted_cell_is_free_only_when_a_body_stands_at_its_centre(self) -> None:
+        # Half of a cell's fine cells is not enough: the route runs through
+        # the centre, so the four fine cells about it must all be walked.
+        rule = self.out["paintRule"]
+        self.assertEqual((rule["whole"], rule["mostWithCentre"]), (0, 0))
+        self.assertEqual((rule["halfNoCentre"], rule["few"], rule["empty"]), (1, 1, 1))
+
+    def test_the_writer_gives_back_the_engines_own_bytes(self) -> None:
+        codec = self.out["codec"]
+        self.assertEqual(codec["same"], [True, True, True])
+        # A pixel of the next level is blocked when any of its four children is.
+        self.assertEqual(codec["coarser"], [True, True])
+
+    def test_levels_one_and_two_are_rebuilt_from_level_zero(self) -> None:
+        codec = self.out["codec"]
+        self.assertEqual(codec["pyramid"], [[0, 256, 1], [1, 128, 1], [2, 64, 1]])
+        self.assertTrue(codec["reads"])
+        self.assertEqual(codec["parents"], [True, True, False])
+
+
+class DeadLevelLintTests(unittest.TestCase):
+    """The lint's prediction of a level nobody fights on, and the census row that checks it."""
+
+    @classmethod
+    def setUpClass(cls) -> None:
+        cls.out = run_harness()
+        cls.lint = cls.out["deadLint"]
+
+    def test_a_sound_level_predicts_nothing(self) -> None:
+        self.assertEqual(self.lint["sound"], {"dead": [], "checks": [], "texts": []})
+
+    def test_a_side_with_no_spawn_that_reaches_a_flag_it_must_take_is_an_error(self) -> None:
+        self.assertEqual(self.lint["sealed"]["dead"], ["sealed"])
+        self.assertIn("side 1 has no spawn with a route to any flag it must take", self.lint["sealed"]["texts"][0])
+        self.assertEqual(self.lint["noSpawn"]["dead"], ["no-spawn"])
+        self.assertEqual(self.lint["noRoute"]["dead"], ["no-route"])
+
+    def test_no_capturable_flag_reachable_in_3d_is_an_error(self) -> None:
+        self.assertIn("no-flag", self.lint["noFlag"]["dead"])
+        self.assertTrue(any("no capturable flag is reachable in 3D" in t for t in self.lint["noFlag"]["texts"]))
+        self.assertTrue(any("the pole is 9 m above the ground it stands over" in t for t in self.lint["noFlag"]["texts"]))
+
+    def test_a_sealed_side_on_a_level_with_ladders_is_told_nobody_climbs_them(self) -> None:
+        self.assertIn("the level places 3 ladders, which neither the walk test nor a bot climbs", self.out["ladderText"])
+
+    def test_spawns_on_ground_the_page_refuses_to_climb_are_an_error(self) -> None:
+        self.assertEqual(self.lint["refused"]["dead"], ["refused"])
+
+    def test_stacked_floors_are_an_error_that_shuts_the_gate_and_not_a_prediction(self) -> None:
+        self.assertEqual(self.lint["stacked"]["checks"], ["floors"])
+        self.assertEqual(self.lint["stacked"]["dead"], [])
+        self.assertIn("stacked floors (40 %", self.lint["stacked"]["texts"][0])
+
+    def test_a_flag_the_generator_excluded_is_not_an_error(self) -> None:
+        self.assertEqual(self.lint["excluded"], 0)
+
+    def test_the_census_row_says_whether_the_lint_saw_a_dead_level_coming(self) -> None:
+        lively, sealed, missed = self.out["census"]["rows"]
+        # level, alive, failed alive checks, predicted classes, lint agrees, kills, spawns off, flags off, floors
+        self.assertEqual(lively, ["lively", True, [], [], True, [3, 4], 0, 0, "one"])
+        self.assertEqual(sealed, ["sealed", False, ["bothSidesKill", "ticketsBleed"], ["sealed"], True, [0, 0], 1, 0, "one"])
+        self.assertEqual(missed[:5], ["missed", False, ["bothSidesKill"], [], False])
+        self.assertEqual(self.out["census"]["table"], 4)
+
+    def test_a_level_the_lint_refuses_is_unsuitable_with_no_match_run(self) -> None:
+        u = self.out["unsuitable"]
+        self.assertIsNone(u["sound"])
+        self.assertEqual([u["verdict"], u["outcome"], u["predictedDead"]], ["fail", "unsuitable", ["sealed"]])
+        self.assertGreaterEqual(u["errors"], 1)
+        self.assertEqual(u["sizes"], {})
+        # Never an outcome a layer may be accepted at.
+        self.assertFalse(u["acceptable"])
+
+        self.assertEqual(self.out["alive"], ["botErrors"])
 
 
 class DetectorTests(unittest.TestCase):
@@ -190,6 +355,18 @@ class JudgeTests(unittest.TestCase):
         self.assertEqual(dead["dead"], ["8:bothSidesKill"])
         # The comparison alone would have called it better: every movement rate fell.
         self.assertTrue(dead["versusNothing"]["better"])
+
+    def test_a_no_layer_level_nobody_fights_on_sets_no_standard_for_spawn_traps(self) -> None:
+        # Nobody dies there, so nobody dies at a spawn: its zero is left out
+        # of the comparison and named. Against a no-layer arm that fights,
+        # the same rise counts as worse.
+        dead, live = self.out["versusDead"]["dead"], self.out["versusDead"]["live"]
+        self.assertTrue(dead["better"])
+        self.assertEqual(dead["detail"]["8"]["worsened"], [])
+        self.assertEqual(dead["detail"]["8"]["notCompared"], ["spawnTrapsPerBotMinute"])
+        self.assertFalse(live["better"])
+        self.assertEqual(live["detail"]["8"]["worsened"], ["spawnTrapsPerBotMinute"])
+        self.assertNotIn("notCompared", live["detail"]["8"])
 
     def test_an_acceptance_is_recorded_only_for_a_layer_better_than_nothing(self) -> None:
         a = self.out["accept"]
@@ -275,6 +452,24 @@ class BakeHookTests(unittest.TestCase):
             verdict.write_text(json.dumps({"verdict": "fail"}))
             with mock.patch.dict(os.environ, {**env, "BOT_LAYERS_UNVERIFIED": "1"}, clear=True):
                 self.assertIsNotNone(ai_level.load_generated_ai("bf1942", "shigaisen_B", root))
+
+    def test_a_scratch_run_points_the_bake_at_layers_outside_the_repo(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            shutil.copytree(LAYERS / "bf1942" / "shigaisen_b", Path(tmp) / "bf1942" / "a_scratch_level")
+            self.assertIsNone(ai_level.generated_layer_dir("bf1942", "a_scratch_level"))
+            with mock.patch.dict(os.environ, {"BOT_LAYERS_ROOT": tmp}):
+                self.assertEqual(ai_level.generated_layer_dir("bf1942", "A_Scratch_Level"), Path(tmp) / "bf1942" / "a_scratch_level")
+
+    def test_the_walk_tests_edit_of_the_map_is_marked_in_short(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            folder = Path(tmp) / "bf1942" / "shigaisen_b"
+            shutil.copytree(LAYERS / "bf1942" / "shigaisen_b", folder)
+            marker = json.loads((folder / "generated.json").read_text())
+            marker["walkMap"] = {"source": "walk test", "opened": [[1, 2], [3, 4]], "ways": [], "floors": {"stacked": False}}
+            (folder / "generated.json").write_text(json.dumps(marker))
+            with mock.patch.dict(os.environ, {"BOT_LAYERS_UNVERIFIED": "1"}):
+                ai = ai_level.load_generated_ai("bf1942", "shigaisen_B", Path(tmp))
+            self.assertEqual(ai.generated["walkMap"], {"source": "walk test", "opened": 2, "stacked": False})
 
     def test_a_shipped_layer_carries_no_marker(self) -> None:
         self.assertNotIn("generated", ai_level.LevelAi().to_json())

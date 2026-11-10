@@ -1,0 +1,28 @@
+{
+ "level": "the_street_g",
+ "verdict": "fail",
+ "outcome": "unsuitable",
+ "generatorVersion": 3,
+ "inputs": {
+  "controlPoints": "c501fa03825612aff3464ec1eb7e619839515f58ce09999ec751882102d52fef",
+  "infantryMap": "3284f82476654710d23ded435b723aa7fcf63404d26bcf68be6abec755d365ec",
+  "template": "43f8a790471528016570235f76e97dbb2045732458781a5139f37fed68bf98c0"
+ },
+ "baseline": "DICE layers on foot: berlin, stalingrad, kharkov, bocage; seeds 1..10, 600 s, --no-vehicles",
+ "seeds": 10,
+ "sizes": {},
+ "oneSided": null,
+ "unreachable": [
+  "center",
+  "L1",
+  "L2",
+  "R2",
+  "R1"
+ ],
+ "lintErrors": [
+  "the play surface is stacked floors (20 % of the main floor has another walked floor over or under it): a one-floor walk map cannot hold it",
+  "no capturable flag is reachable in 3D: none of the 5 has a place inside its radius that a soldier on the one-floor walk map's main ground can stand in",
+  "side 1 has no spawn with a route to any flag it must take: none of the 5 flags it does not hold can be reached",
+  "side 2 has no spawn with a route to any flag it must take: none of the 5 flags it does not hold can be reached"
+ ]
+}

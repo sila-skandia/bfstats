@@ -1,0 +1,23 @@
+{
+ "level": "the_room",
+ "verdict": "fail",
+ "outcome": "unsuitable",
+ "generatorVersion": 3,
+ "inputs": {
+  "controlPoints": "2bcde307ad69b6548f08a7975b9bee065ed200cea304f62b708a5192b5391546",
+  "infantryMap": "6861ec55ff28a93a026f553863a2df6ca0cac945184607476bcfdb026315f102",
+  "template": "43f8a790471528016570235f76e97dbb2045732458781a5139f37fed68bf98c0"
+ },
+ "baseline": "DICE layers on foot: berlin, stalingrad, kharkov, bocage; seeds 1..10, 600 s, --no-vehicles",
+ "seeds": 10,
+ "sizes": {},
+ "oneSided": null,
+ "unreachable": [
+  "room3",
+  "room1"
+ ],
+ "lintErrors": [
+  "the play surface is stacked floors (27 % of the main floor has another walked floor over or under it): a one-floor walk map cannot hold it",
+  "side 1 has no spawn with a route to any flag it must take: of its 4 spawns 4 have no way on foot to the main ground; the level places 8 ladders, which neither the walk test nor a bot climbs"
+ ]
+}

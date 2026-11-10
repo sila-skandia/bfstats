@@ -1,0 +1,24 @@
+{
+ "level": "omaturi_channel_sniper_day2",
+ "verdict": "fail",
+ "outcome": "unsuitable",
+ "generatorVersion": 3,
+ "inputs": {
+  "controlPoints": "689a30b5cd419b9ad644160dae65e78c8703af21efed6150adc03b8b26610eab",
+  "infantryMap": "e6015f3887cac793d3f6a5d367bc6887cae13696c5d95f98c7fe1d6262aeebe4",
+  "template": "43f8a790471528016570235f76e97dbb2045732458781a5139f37fed68bf98c0"
+ },
+ "baseline": "DICE layers on foot: berlin, stalingrad, kharkov, bocage; seeds 1..10, 600 s, --no-vehicles",
+ "seeds": 10,
+ "sizes": {},
+ "oneSided": null,
+ "unreachable": [
+  "kokan"
+ ],
+ "lintErrors": [
+  "the play surface is stacked floors (1 of 1 capturable flags stand a storey over or under another walked floor): a one-floor walk map cannot hold it",
+  "no capturable flag is reachable in 3D: none of the 1 has a place inside its radius that a soldier on the one-floor walk map's main ground can stand in",
+  "side 1 has no spawn with a route to any flag it must take: none of the 1 flags it does not hold can be reached",
+  "side 2 has no spawn with a route to any flag it must take: none of the 1 flags it does not hold can be reached"
+ ]
+}

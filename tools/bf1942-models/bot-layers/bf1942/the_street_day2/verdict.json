@@ -1,0 +1,28 @@
+{
+ "level": "the_street_day2",
+ "verdict": "fail",
+ "outcome": "unsuitable",
+ "generatorVersion": 3,
+ "inputs": {
+  "controlPoints": "95d5c2729c9f77facbe82d40b428d87d0c5cf86d07afe4bab39d1c146f22e618",
+  "infantryMap": "cebc45df2742638d9f693d8fc7606b0e6b4f888760d9ccf2104317373fdfe53c",
+  "template": "43f8a790471528016570235f76e97dbb2045732458781a5139f37fed68bf98c0"
+ },
+ "baseline": "DICE layers on foot: berlin, stalingrad, kharkov, bocage; seeds 1..10, 600 s, --no-vehicles",
+ "seeds": 10,
+ "sizes": {},
+ "oneSided": null,
+ "unreachable": [
+  "center",
+  "L1",
+  "L2",
+  "R2",
+  "R1"
+ ],
+ "lintErrors": [
+  "the play surface is stacked floors (21 % of the main floor has another walked floor over or under it): a one-floor walk map cannot hold it",
+  "no capturable flag is reachable in 3D: none of the 5 has a place inside its radius that a soldier on the one-floor walk map's main ground can stand in",
+  "side 1 has no spawn with a route to any flag it must take: none of the 5 flags it does not hold can be reached",
+  "side 2 has no spawn with a route to any flag it must take: none of the 5 flags it does not hold can be reached"
+ ]
+}

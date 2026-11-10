@@ -1,0 +1,34 @@
+rem *** Strategic areas: one per control point (botgen) ***
+
+aiStrategicArea.create AxisBase 532.7/396.9 537.7/401.9 50
+aiStrategicArea.addObjectTypeFlag Base
+aiStrategicArea.setSide 1
+aiStrategicArea.setTakeable 2 0
+
+aiStrategicArea.create Materials_place_ 540/892.5 545/897.5 10
+aiStrategicArea.setSide 2
+aiStrategicArea.setTakeable 1 0
+aiStrategicArea.setTakeable 2 0
+
+aiStrategicArea.create headquarters 506/957.1 511/962.1 200
+aiStrategicArea.addNeighbour Defense_line
+aiStrategicArea.addObjectTypeFlag Centre
+aiStrategicArea.addObjectTypeFlag ControlPoint
+aiStrategicArea.setOrderPosition Infantry 511/962.1
+aiStrategicArea.setSide 2
+
+aiStrategicArea.create Defense_line 516.4/791.6 541.4/816.6 200
+aiStrategicArea.addNeighbour headquarters
+aiStrategicArea.addNeighbour Landing_beach
+aiStrategicArea.addObjectTypeFlag Centre
+aiStrategicArea.addObjectTypeFlag ControlPoint
+aiStrategicArea.setOrderPosition Infantry 541.4/816.6
+aiStrategicArea.setSide 2
+
+aiStrategicArea.create Landing_beach 514.3/610.4 544.3/640.4 300
+aiStrategicArea.addNeighbour Defense_line
+aiStrategicArea.addObjectTypeFlag Centre
+aiStrategicArea.addObjectTypeFlag StrongPoint
+aiStrategicArea.addObjectTypeFlag Close
+aiStrategicArea.addObjectTypeFlag ControlPoint
+aiStrategicArea.setOrderPosition Infantry 544.3/640.4

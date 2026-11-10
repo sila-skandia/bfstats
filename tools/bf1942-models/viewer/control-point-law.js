@@ -23,9 +23,40 @@ export function captureRadius(flag) {
  * a bot standing up to 3 m above or below a 5 m flag inside its ring.
  */
 export const CAPTURE_STAND_MARGIN = 1.0;
-export function captureStandRadius(flag) {
+/** INVENTION, with `captureStandRadius`: the smallest ring a bot is sent
+ *  into, a body's radius. A narrower one cannot be held by walking. */
+export const CAPTURE_STAND_MIN = 1.0;
+
+/**
+ * How far out, across the ground, a body stood `dy` metres under or over a
+ * flag's pole is still inside its radius: the law below measures in 3D, so
+ * the radius leaves sqrt(r^2 - dy^2) on that ground, and 0 where it does not
+ * reach it. `dy` 0 (or unknown) is the radius itself.
+ */
+export function captureReach(flag, dy = 0) {
   const r = captureRadius(flag);
-  return Math.max(0.5 * r, r - CAPTURE_STAND_MARGIN);
+  if (!Number.isFinite(dy) || dy === 0) return r;
+  const left = r * r - dy * dy;
+  return left > 0 ? Math.sqrt(left) : 0;
+}
+
+/**
+ * INVENTION (the stand radius above, cut by the ground). `dy` is the pole's
+ * height over the ground the bot will stand on (0 when that is not known).
+ * Where a body at the flat figure is inside the 3D radius the flat figure
+ * stands, as it did before `dy` was read. Where it is not (the pole is on a
+ * floor above the street, or in a pit under it) the ring is what the
+ * geometry leaves on the ground, `captureReach`, less the same metre; and 0,
+ * no ring to stand in, where that is under `CAPTURE_STAND_MIN` or the radius
+ * does not reach the ground at all. The community map shigaisen_C stands six
+ * 5 m flags on a floor 4.1 m over the street: 2.8 m of reach, a 1.8 m ring.
+ */
+export function captureStandRadius(flag, dy = 0) {
+  const r = captureRadius(flag);
+  const flat = Math.max(0.5 * r, r - CAPTURE_STAND_MARGIN);
+  if (!Number.isFinite(dy) || Math.hypot(flat, dy) <= r) return flat;
+  const stand = captureReach(flag, dy) - CAPTURE_STAND_MARGIN;
+  return stand >= CAPTURE_STAND_MIN ? stand : 0;
 }
 
 /**

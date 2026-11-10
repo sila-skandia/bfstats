@@ -9,6 +9,7 @@
 
 import fs from 'node:fs';
 import { StrategicLayer, StrategicAI, compareCondition, SAI } from './strategic.js';
+import { captureReach, captureStandRadius } from './control-point-law.js';
 
 const scenePath = process.argv[2];
 let scene = null;
@@ -256,8 +257,10 @@ const narrowPins = {
   point: narrow.wp.point, radius: narrow.wp.radius, flag: narrow.wp.captureFlag?.name ?? null,
   endToFlag: toFlag(narrowEnd, narrow.flag), arrived: narrow.wp.arrived,
   // Inside the engine's R' (7 m) and outside the ring: still asked for, at
-  // the urgency the engine's order has at R' (0.25 x 2).
-  outsideRing: narrow.wp.urgency(106 - 4.5, -100), outsideArrived: narrow.wp.arrived,
+  // the urgency the engine's order has at R' (0.25 x 2). A flat ring keeps
+  // R' in the law: two of its radii out (8 m) is 8^2 / (4 x 7^2) x 2.
+  outsideRing: +narrow.wp.urgency(106 - 4.5, -100).toFixed(4), outsideArrived: narrow.wp.arrived,
+  twoRadii: +narrow.wp.urgency(106 - 8, -100).toFixed(4),
 };
 // The flag taken: the engine's rule reads the same point, arrived inside R'.
 narrow.flag.team = 1;
@@ -282,6 +285,44 @@ const walled = ringOrder(yardOf(5), { unitOf: () => ({ type: 'Infantery', isWalk
 // keeps the ring and ground 13.5 m under it leaves the engine's order.
 const onGround = y => ringOrder(yardOf(5), { unitOf: () => ({ type: 'Infantery', isWalkable: null, radius: 1.0, mounted: false,
                                                              groundAt: () => y }) });
+// The ring cut by the ground (control-point-law.js `captureReach`): the pole
+// 4.1 m over the ground a soldier stands on (the community map shigaisen_C's
+// six flags, on a floor over the street) leaves sqrt(25 - 16.81) = 2.86 m of
+// a 5 m radius, a 1.86 m ring; 4.1 m under it (a pole in a pit) the same;
+// 4.7 m leaves 1.71 m, no ring a body stands in, and the engine's order. A
+// 10 m flag is at least R' wide and keeps the engine's order on its own
+// ground, and 8.5 m over it is 5.27 m wide there: a 4.27 m ring.
+const lifted = onGround(3 - 4.1);
+const liftedEnd = walkOrder(lifted.wp, [60, -100]);
+const wideOnGround = (y, radius) => ringOrder(yardOf(radius), { unitOf: () => ({ type: 'Infantery', isWalkable: null, radius: 1.0, mounted: false,
+                                                                                 groundAt: () => y }) });
+const ground3d = {
+  lifted: plain(lifted),
+  liftedEndToFlag: toFlag(liftedEnd, lifted.flag),
+  // The capture law's own measure of where the walk ended: 3D, to the pole.
+  liftedEnd3d: +Math.hypot(toFlag(liftedEnd, lifted.flag), 4.1).toFixed(3),
+  liftedArrived: lifted.wp.arrived,
+  // Outside the ring and inside what the flat figure allowed (4 m): asked for.
+  liftedOutside: +lifted.wp.urgency(106 - 3, -100).toFixed(3), liftedOutsideArrived: lifted.wp.arrived,
+  // A ring the ground cut is asked for against its own radius (1.862 m): on
+  // its edge the law's own floor (0.25 x 2); from 1.155 radii (2.15 m) more
+  // than a look round asks (Scout's 1.0 over MoveTo's 1.5); from two radii
+  // the whole of it.
+  liftedAtEdge: +lifted.wp.urgency(106 - 1.8619, -100).toFixed(3),
+  liftedOverScout: [lifted.wp.urgency(106 - 2.14, -100) * 1.5 < 1, lifted.wp.urgency(106 - 2.16, -100) * 1.5 > 1],
+  liftedTwoRadii: lifted.wp.urgency(106 - 3.73, -100),
+  pit: plain(onGround(3 + 4.1)),
+  thin: plain(onGround(3 - 4.7)),
+  wideLevel: plain(wideOnGround(3, 10)).flag,
+  wideLifted: plain(wideOnGround(3 - 8.5, 10)),
+  law: {
+    reach: [captureReach({ radius: 5 }), captureReach({ radius: 5 }, 3), captureReach({ radius: 5 }, -4.1),
+            captureReach({ radius: 5 }, 5), captureReach({ radius: 5 }, 13.5), captureReach({}, 0)].map(v => +v.toFixed(3)),
+    stand: [captureStandRadius({ radius: 5 }), captureStandRadius({ radius: 5 }, 3), captureStandRadius({ radius: 5 }, 3.2),
+            captureStandRadius({ radius: 5 }, -4.1), captureStandRadius({ radius: 5 }, 4.7), captureStandRadius({ radius: 5 }, 13.5),
+            captureStandRadius({ radius: 1.5 }), captureStandRadius({ radius: 10 }, 8.5)].map(v => +v.toFixed(3)),
+  },
+};
 // No route: the bot hands the ring back and the next pass orders it the
 // engine's way, for that flag only.
 const lost = ringOrder(yardOf(5));
@@ -298,6 +339,7 @@ const captureRing = {
   beside: plain(beside),
   walled: plain(walled).flag,
   groundNear: plain(onGround(0.5)).flag, groundFar: plain(onGround(-10.5)).flag,
+  ground3d,
   afterNoRoute: { point: afterNoRoute.point, flag: afterNoRoute.captureFlag?.name ?? null },
 };
 const bindings = layer => layer.areas.map(a => [a.name, a.controlPoints.map(f => f.name), layer.ownerOf(a)]);

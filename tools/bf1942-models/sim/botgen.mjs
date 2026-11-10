@@ -8,8 +8,16 @@
 // second corner on the flag and its first corner the capture radius away,
 // sides and `setTakeable` from the flags, the order position on the nearest
 // free cell of the infantry map the page paints, neighbours from the routes
-// between the areas on that map, and DICE's Stalingrad strategies as the
+// between the areas on that map, and DICE's Kharkov strategies as the
 // template for a level where both sides start with ground of their own.
+//
+// Version three adds the walk test (`walkflood.mjs`): the layer's own
+// infantry map has the cells of a walked way opened where a spawn or a flag
+// sits in a pocket of it, a level whose floor the engine's map does not hold
+// gets a map painted from the walked ground, a flag is reachable when a
+// soldier on walkable ground stands inside its 3D radius, and bots are kept
+// off the spawns with no way to the main ground. Each rule that departs from
+// the retail engine is labelled INVENTION where it is written.
 //
 // Deterministic: the same level tree and the same template give the same
 // bytes. `generated.json` carries the generator's version and the hashes of
@@ -19,16 +27,17 @@
 //        --maps <maps tree> --models <models tree> [--out <bot-layers root>] [--check]
 
 import { createHash } from 'node:crypto';
-import { existsSync, mkdirSync, readFileSync, readdirSync, writeFileSync } from 'node:fs';
+import { existsSync, mkdirSync, readFileSync, readdirSync, rmSync, writeFileSync } from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath, pathToFileURL } from 'node:url';
 import { viewerDir, loadViewerModules, seedMathRandom } from './env.mjs';
 import { realLevel } from './level.mjs';
 import { createStage } from './stage.mjs';
+import { STOREY, MAP_COVER, paintGround, soldierBody, walkFacts, walkedGround, wayOut } from './walkflood.mjs';
 
 const HERE = path.dirname(fileURLToPath(import.meta.url));
 export const GENERATOR = 'botgen';
-export const GENERATOR_VERSION = 2;
+export const GENERATOR_VERSION = 3;
 export const LAYERS_ROOT = path.resolve(HERE, '..', 'bot-layers');
 export const TEMPLATE_FILES = ['Strategies.con', 'conditions.con', 'prerequisites.con'];
 
@@ -38,11 +47,16 @@ export const ON_THE_WAY = 1.15;
 export const ORDER_SEARCH = 30;
 /** The area box's half-width bounds, metres (the flag's capture radius between them). */
 export const BOX_MIN = 5, BOX_MAX = 40;
-/** A soldier spawn this far above the ground under it, or with no free ground within
- *  `SPAWN_REACH`, is one a bot cannot walk away from. */
-export const SPAWN_MAX_LIFT = 8, SPAWN_REACH = 3;
 /** A flag this far off the line between the bases, as a share of its length, is a flank. */
 export const FLANK_OFFSET = 0.12;
+
+/** The layer's map the walk test edits: DICE's infantry map. */
+export const WALK_MAP = 'Infantry1';
+/** Where a layer whose map is painted from the walk test keeps the engine's own level 0: the next run decides
+ *  again from it, and no bake reads it (a bake asks for `Pathfinding/<name>Level<L>Map.raw` by name). */
+export const ENGINE_COPY = `Pathfinding/engine/${WALK_MAP}Level0Map.raw`;
+/** How far a way out of a pocket is looked for, metres, and the most standing places one search may hold. */
+export const WAY_REACH = 150, WAY_CELLS = 2000000;
 
 const sha = data => createHash('sha256').update(data).digest('hex');
 const r1 = v => (Math.round(v * 10) / 10).toFixed(1).replace(/\.0$/, '');
@@ -87,14 +101,17 @@ function pathLength(points) {
  * walking distance between two `[x, z]` points on the infantry map, or
  * Infinity. Pure: the tests hand it a synthetic map.
  */
-export function buildAreas(flags, { orderPosition, route, ground = null }) {
+export function buildAreas(flags, { orderPosition, route, ground = null, reach = null }) {
   const areas = flags.map(f => {
     const half = Math.min(BOX_MAX, Math.max(BOX_MIN, f.radius));
-    const order = orderPosition(f.x, f.z);
+    // `reach(flag)` is the walk test's answer (`flagReach`): where a soldier
+    // on walkable ground stands inside the ring, or that none can.
+    const walked = reach ? reach(f) : null;
+    const order = walked ? walked.order : orderPosition(f.x, f.z);
     // A capturable flag no soldier can stand inside: no free ground near it,
     // or its pole further above that ground than its own radius reaches.
     const lift = order && ground ? f.y - ground(order[0], order[1]) : 0;
-    const unreachable = !f.fixed && (!order || lift > f.radius);
+    const unreachable = !f.fixed && (walked ? walked.unreachable : (!order || lift > f.radius));
     return { name: f.name, flag: f, half, order, flags: [], neighbours: [], value: 150, unreachable };
   });
   // The line the battle runs along: base to base, else the two sides' own
@@ -255,14 +272,170 @@ export function readTemplate(name, root = LAYERS_ROOT) {
   return { name, files, strategies: sides.strategies, source: sides.source };
 }
 
-/** Everything a layer's folder holds, as `{ relative path: text }`, and its marker. */
-/** The soldier spawns a bot should not be stood on: `[name]`. `free(x, z)` answers whether main walkable ground is within reach. */
-export function excludedSpawns(spawns, { free, ground }) {
-  return spawns.filter(s => s.position && s.name
-    && (!free(s.position[0], s.position[2]) || s.position[1] - ground(s.position[0], s.position[2]) > SPAWN_MAX_LIFT)).map(s => s.name);
+/** Everything a layer's folder holds, as `{ relative path: text }`, and its marker: `buildLayer`, below the walk test's rules. */
+/** The soldier spawns of a level as the walk test takes them: `[{ name, x, y, z, side }]`, the side its flag starts with. */
+export function spawnsOf(extras) {
+  const side = new Map((extras.controlPoints ?? []).map(c => [c.spawnGroupId, c.team === 1 || c.team === 2 ? c.team : 0]));
+  return (extras.soldierSpawns ?? []).filter(s => s.position && s.name)
+    .map(s => ({ name: s.name, x: s.position[0], y: s.position[1], z: s.position[2], side: side.get(s.group) ?? 0 }));
 }
 
-export function buildLayer({ mod, level, extras, areas, navSha, template, rawFiles = {}, botSpawnsExcluded = [] }) {
+/**
+ * The walk test's answer for one flag (`walkflood.mjs walkFacts`'s row):
+ * the order position and whether bots are kept off it. A flag is out when no
+ * soldier on walkable ground stands inside its 3D radius, or when the place
+ * that does is a storey over another walked floor: a route on a one-floor
+ * map cannot tell the two floors apart (INVENTION; shigaisen_B's windmill).
+ */
+export function flagReach(fact, fallback = null) {
+  let order = fallback;
+  if (fact.stand) {
+    // The flag's own nearest free cell when a soldier there is inside the ring, else the cell of the place that is.
+    const flat = Math.sqrt(Math.max(0, fact.radius ** 2 - (fact.stand[2] - fact.y) ** 2));
+    const near = fallback && Math.hypot(fallback[0] - fact.x, fallback[1] - fact.z) <= flat;
+    order = near ? fallback : [Math.floor(fact.stand[0]) + 0.5, -(Math.floor(-fact.stand[1]) + 0.5)];
+  }
+  return { order, unreachable: !fact.reachable || fact.over >= STOREY };
+}
+
+/** The spawns bots are kept off, from the walk test: no way to the main ground, or a storey over another floor.
+ *  INVENTION: the engine spawns a bot on any point of its side's group (`viewer/spawn-flags.js pickSpawn` honours the list). */
+export function excludedByWalk(facts) {
+  return facts.spawns.filter(s => !s.usable || s.over >= STOREY).map(s => s.name);
+}
+
+/** A decoded search-map level (`nav-baked.js BakedSearchMap`) as one byte a pixel, 1 blocked. */
+export function searchMapPixels(map) {
+  const out = new Uint8Array(map.width * map.height);
+  for (let z = 0; z < map.height; z++) for (let x = 0; x < map.width; x++) out[z * map.width + x] = map.blocked(x, z) ? 1 : 0;
+  return out;
+}
+
+/** The next pyramid level: a pixel is blocked when any of its four children is (measured on the engine's own files). */
+export function coarserPixels(pixels, size) {
+  const half = size >> 1;
+  const out = new Uint8Array(half * half);
+  for (let z = 0; z < half; z++) for (let x = 0; x < half; x++) {
+    const i = 2 * z * size + 2 * x;
+    out[z * half + x] = pixels[i] | pixels[i + 1] | pixels[i + size] | pixels[i + size + 1];
+  }
+  return out;
+}
+
+/**
+ * One search-map level in the engine's file layout (`CellMap::loadRawFile`,
+ * `nav-baked.js`): the five header words, the two special cells (all free,
+ * all blocked), then a record a 64 x 64 block: the special cell's index, or
+ * -1 and the block's 128 words. `pixels` is `size * size` bytes, 1 blocked.
+ */
+export function encodeSearchMap(pixels, size, level) {
+  const blocks = size >> 6;
+  if (blocks < 1 || blocks * 64 !== size || (blocks & (blocks - 1))) throw new Error(`a search map of ${size} pixels is not whole 64-pixel blocks`);
+  const parts = [];
+  const head = Buffer.alloc(32);
+  [Math.log2(blocks), Math.log2(blocks), level + 6, level, 0, 2].forEach((v, i) => head.writeInt32LE(v, i * 4));
+  head.writeUInt32LE(0, 24); head.writeUInt32LE(0xffffffff, 28);
+  parts.push(head);
+  for (let bz = 0; bz < blocks; bz++) for (let bx = 0; bx < blocks; bx++) {
+    const words = new Uint32Array(128);
+    let set = 0;
+    for (let row = 0; row < 64; row++) {
+      const at = (bz * 64 + row) * size + bx * 64;
+      for (let col = 0; col < 64; col++) if (pixels[at + col]) { words[row * 2 + (col >> 5)] |= (1 << (col & 31)) >>> 0; set++; }
+    }
+    const rec = Buffer.alloc(4);
+    if (set === 0 || set === 4096) { rec.writeInt32LE(set ? 1 : 0, 0); parts.push(rec); continue; }
+    rec.writeInt32LE(-1, 0);
+    const body = Buffer.alloc(512);
+    for (let w = 0; w < 128; w++) body.writeUInt32LE(words[w] >>> 0, w * 4);
+    parts.push(rec, body);
+  }
+  return Buffer.concat(parts);
+}
+
+/** The three pyramid levels of a map from its level-0 pixels: `{ 0: Buffer, 1: Buffer, 2: Buffer }`. */
+export function encodePyramid(pixels, size) {
+  const out = {};
+  let px = pixels, n = size;
+  for (let level = 0; level <= 2; level++) {
+    out[level] = encodeSearchMap(px, n, level);
+    px = coarserPixels(px, n); n >>= 1;
+  }
+  return out;
+}
+
+/**
+ * The layer's own infantry map, made to hold the ground the walk test finds.
+ * `engine` is the engine's level-0 map as pixels (`searchMapPixels`), or
+ * the layer's last map with `previous`, the `walkMap` block of its last
+ * `generated.json`, whose opened cells are shut again first.
+ *
+ * INVENTION, two rules, both recorded in the marker:
+ *  - **the floor's own map.** When the engine's map holds less than
+ *    `MAP_COVER` of the main ground free (a floor of objects high over the
+ *    terrain, corridors its one-metre brush closes), the map is painted from
+ *    the walked ground instead (`walkflood.mjs paintGround`).
+ *  - **a way out of a pocket.** A spawn that lands on the main ground, or a
+ *    flag with main ground inside its ring, whose cells the map keeps apart
+ *    from its main component gets the cells of the walked way opened. A
+ *    spawn on other ground is opened a way only when it can walk to the main
+ *    ground with no fall that costs health. A way that needs a jump is not
+ *    opened: the page's bots never jump.
+ *
+ * Returns `{ pixels, source, engineCover, opened, ways, facts }`;
+ * `engineCover` is the share of the main ground the engine's map held free
+ * (the marker keeps it for a painted map), `opened` is every cell
+ * `[x, z]` (engine z) this run freed, so a later run can put the engine's
+ * map back before it decides again.
+ */
+export function prepareWalkMap({ collider, size, flags, spawns, body, engine, previous = null }) {
+  const gridOf = pixels => ({ width: size, height: size, cellSize: 1, blocked: pixels });
+  const ground = walkedGround(collider, spawns, flags, body, size);
+  let pixels = Uint8Array.from(engine);
+  if (previous?.source === 'engine') for (const [x, z] of previous.opened ?? []) pixels[z * size + x] = 1;
+  const original = Uint8Array.from(pixels);
+  let facts = walkFacts({ collider, grid: gridOf(pixels), flags, spawns, body, ground });
+  // What the engine's own map held of the main ground, kept for the record when the map is painted.
+  const engineCover = facts.cover;
+  const painted = facts.mainRegion >= 0 && facts.cover < MAP_COVER;
+  if (painted) {
+    pixels = paintGround(ground, size, facts.mainRegion);
+    facts = walkFacts({ collider, grid: gridOf(pixels), flags, spawns, body, ground });
+  }
+  const { id } = facts.components;
+  const opened = new Set();
+  const ways = [];
+  const cellOf = (x, z) => Math.floor(-z) * size + Math.floor(x);
+  const onMain = (x, z, y) => {
+    const c = cellOf(x, z);
+    return c >= 0 && c < id.length && ((facts.mainComponent && id[c] === facts.mainComponent) || opened.has(c))
+      && ground.regionOf(x, z, y) === facts.mainRegion;
+  };
+  const open = (who, kind, start, twoWay) => {
+    const res = wayOut(collider, [start], body, onMain, { twoWay, reach: WAY_REACH, maxCells: WAY_CELLS });
+    let n = 0;
+    if (res.way === 'walk') {
+      for (const [x, z] of res.path) { const c = cellOf(x, z); if (pixels[c]) { pixels[c] = 0; opened.add(c); n++; } }
+    }
+    const fell = res.path ? res.path.some((p, i) => i && res.path[i - 1][2] - p[2] > body.step) : false;
+    ways.push({ who, kind, way: res.way === 'walk' && fell ? 'drop' : res.way, opened: n });
+  };
+  if (facts.mainRegion >= 0 && facts.mainComponent) {
+    for (const s of facts.spawns) {
+      if (!s.landed || s.usable || s.over >= STOREY) continue;
+      open(s.name, 'spawn', [s.x, s.y, s.z], s.onMainGround);
+    }
+    for (const f of facts.flags) {
+      if (f.reachable || !f.onMainGround || f.over >= STOREY) continue;
+      open(f.name, 'flag', [f.onMainGround[0], f.onMainGround[2] + 0.01, f.onMainGround[1]], true);
+    }
+  }
+  if (opened.size) facts = walkFacts({ collider, grid: gridOf(pixels), flags, spawns, body, ground });
+  const cells = [...opened].sort((p, q) => p - q).map(c => [c % size, Math.floor(c / size)]);
+  return { pixels, engine: original, source: painted ? 'walk test' : 'engine', engineCover, opened: cells, ways, facts };
+}
+
+export function buildLayer({ mod, level, extras, areas, navSha, template, rawFiles = {}, botSpawnsExcluded = [], walkMap = null }) {
   const worldSize = Math.round(extras.worldSize || 1024);
   const viewDistance = Math.round(Math.min(400, Math.max(60, extras.drawDistance || 200)));
   const engineMaps = Object.keys(rawFiles).length > 0;
@@ -276,11 +449,13 @@ export function buildLayer({ mod, level, extras, areas, navSha, template, rawFil
   const marker = {
     generator: GENERATOR, version: GENERATOR_VERSION, mod, level,
     template: template.name, templateSource: template.source,
-    scope: engineMaps
-      ? 'on foot: the engine\'s own Tank0 and Infantry1 search maps, infantry order positions, no strategic maps, no co-op layer'
-      : 'on foot: infantry order positions only, no search maps, no co-op layer',
+    scope: !engineMaps ? 'on foot: infantry order positions only, no search maps, no co-op layer'
+      : walkMap?.source === 'walk test'
+        ? 'on foot: an infantry map painted from the walk test, the engine\'s own Tank0 map, infantry order positions, no strategic maps, no co-op layer'
+        : 'on foot: the engine\'s own Tank0 and Infantry1 search maps, infantry order positions, no strategic maps, no co-op layer',
     unreachable: areas.filter(a => a.unreachable).map(a => a.name),
     botSpawnsExcluded,
+    ...(walkMap ? { walkMap } : {}),
     inputs: {
       controlPoints: sha(JSON.stringify(flags)),
       infantryMap: navSha,
@@ -295,11 +470,11 @@ export function buildLayer({ mod, level, extras, areas, navSha, template, rawFil
 }
 
 /** The engine's own infantry map kept in a layer folder (`engine_search_maps.py`), or null. */
-export async function layerInfantryMap(layerDir, viewer = null) {
-  const file = layerDir ? path.join(layerDir, 'Pathfinding', 'Infantry1Level0Map.raw') : null;
-  if (!file || !existsSync(file)) return null;
+export async function layerInfantryMap(layerDir, viewer = null, bytes = null) {
+  const file = layerDir ? path.join(layerDir, 'Pathfinding', `${WALK_MAP}Level0Map.raw`) : null;
+  if (!bytes && (!file || !existsSync(file))) return null;
   const baked = await import(pathToFileURL(path.join(viewerDir(viewer), 'nav-baked.js')).href);
-  const map = baked.decodeSearchMap(new Uint8Array(readFileSync(file)));
+  const map = baked.decodeSearchMap(new Uint8Array(bytes ?? readFileSync(file)));
   map.params = { name: 'Infantry1', waterMap: false, waterDepth: 1.5, maxSlope: 30, brush: 1.0, lowClip: 0.4, hiClip: 2.0, minLevel: 0, maxLevel: 2 };
   map.mapIndex = 1;
   return map;
@@ -310,7 +485,7 @@ export async function layerInfantryMap(layerDir, viewer = null) {
  * the level's own baked map when its tree has one, else the engine's map
  * from `layerDir` when the layer holds one, else the map the referee paints.
  */
-export async function loadForBots({ maps, models, map, viewer = null, layerDir = null }) {
+export async function loadForBots({ maps, models, map, viewer = null, layerDir = null, layerFirst = false }) {
   const M = await loadViewerModules(viewerDir(viewer));
   const log = console.log;
   console.log = () => {};
@@ -326,17 +501,35 @@ export async function loadForBots({ maps, models, map, viewer = null, layerDir =
       for (const spawn of flag.spawns ?? []) if (spawn?.position) seeds.push([spawn.position[0], spawn.position[2]]);
     }
     // `bot-referee.js spawn`'s own call: the map the page's soldiers walk.
-    const searchMap = world.collider?.searchMaps?.maps?.length ? null : await layerInfantryMap(layerDir, viewer);
-    const grid = nav.buildNavMap(world.collider, worldSize, { waterLevel: world.collider?.waterLevel, seeds, ...(searchMap ? { searchMap } : {}) });
-    return { M, level, world, nav, grid, extras: level.extras, worldSize };
+    // `layerFirst`: the generator's own call. A scratch tree the layer was applied to holds the
+    // layer's last maps as its baked ones, and the layer folder is what is being rewritten.
+    const shipped = !!world.collider?.searchMaps?.maps?.length && !(layerFirst && level.extras.ai?.generated);
+    const searchMap = shipped ? null : await layerInfantryMap(layerDir, viewer);
+    const build = map => nav.buildNavMap(world.collider, worldSize, { waterLevel: world.collider?.waterLevel, seeds,
+      ...(map ? { searchMap: map } : {}), ...(shipped ? {} : { baked: !!map }) });
+    const grid = build(searchMap);
+    // `regrid(bytes)`: the same map the page would build from another level-0 file of the layer.
+    const regrid = async bytes => build(await layerInfantryMap(null, viewer, bytes));
+    return { M, level, world, nav, grid, extras: level.extras, worldSize, searchMap, shipped, regrid };
   } finally {
     console.log = log;
   }
 }
 
+/**
+ * The walk test's facts for a loaded level (`loadForBots`'s result) against
+ * the map its bots walk, with no edit: what the lint and the census read.
+ */
+export async function levelWalkFacts(loaded, viewer = null) {
+  const body = await soldierBody(viewer);
+  return walkFacts({ collider: loaded.world.collider, grid: loaded.grid, flags: flagsOf(loaded.extras), spawns: spawnsOf(loaded.extras), body });
+}
+
 export async function generate({ maps, models, map, mod, out = LAYERS_ROOT, template = 'symmetric', check = false }) {
   const dir = path.join(out, mod.toLowerCase(), map.toLowerCase());
-  const { nav, grid, extras, world } = await loadForBots({ maps, models, map, layerDir: dir });
+  const loaded = await loadForBots({ maps, models, map, layerDir: dir, layerFirst: true });
+  const { nav, extras, world } = loaded;
+  let grid = loaded.grid;
   const rawDir = path.join(dir, 'Pathfinding');
   const rawFiles = existsSync(rawDir)
     ? Object.fromEntries(readdirSync(rawDir).filter(f => /\.raw$/i.test(f)).sort().map(f => [`Pathfinding/${f}`, readFileSync(path.join(rawDir, f))]))
@@ -346,21 +539,42 @@ export async function generate({ maps, models, map, mod, out = LAYERS_ROOT, temp
   }
   const flags = flagsOf(extras);
   if (flags.length < 2) throw new Error(`${map} has ${flags.length} control points; nothing to order bots to`);
+  // The walk test, and the layer's own infantry map made to hold what it finds.
+  const body = await soldierBody();
+  const spawns = spawnsOf(extras);
+  const markerFile = path.join(dir, 'generated.json');
+  const previous = existsSync(markerFile) ? JSON.parse(readFileSync(markerFile, 'utf8')).walkMap ?? null : null;
+  const size = Math.round(loaded.worldSize);
+  let facts, walkMap = null;
+  const keptFile = path.join(dir, ENGINE_COPY);
+  let dropCopy = false;
+  if (loaded.searchMap && loaded.searchMap.width === size) {
+    const kept = existsSync(keptFile) ? (await layerInfantryMap(null, null, readFileSync(keptFile))) : null;
+    const walk = prepareWalkMap({ collider: world.collider, size, flags, spawns, body,
+                                  engine: searchMapPixels(kept ?? loaded.searchMap), previous: kept ? null : previous });
+    const pyramid = encodePyramid(walk.pixels, size);
+    for (const level of [0, 1, 2]) rawFiles[`Pathfinding/${WALK_MAP}Level${level}Map.raw`] = pyramid[level];
+    if (walk.source === 'walk test') rawFiles[ENGINE_COPY] = encodeSearchMap(walk.engine, size, 0);
+    else dropCopy = !!kept;
+    grid = await loaded.regrid(pyramid[0]);
+    facts = walk.facts;
+    walkMap = { source: walk.source, ...(walk.source === 'walk test' ? { engineCover: walk.engineCover } : {}), opened: walk.opened, ways: walk.ways, cover: facts.cover, floors: facts.floors };
+  } else {
+    facts = walkFacts({ collider: world.collider, grid, flags, spawns, body });
+  }
+  const factOf = new Map(facts.flags.map(f => [f.name, f]));
   const areas = buildAreas(flags, {
     orderPosition: (x, z) => nearestFree(grid, nav.isWalkable, x, z),
+    reach: f => flagReach(factOf.get(f.name), nearestFree(grid, nav.isWalkable, f.x, f.z, f.fixed ? ORDER_SEARCH : f.radius)),
     route: (p, q) => {
       const pts = nav.findPath(grid, p[0], p[1], q[0], q[1]);
       return pts ? pathLength(pts) : Infinity;
     },
-    ground: (x, z) => world.collider.surfaceHeight(x, z),
   });
   const bits = Buffer.alloc(grid.blocked.length);
   for (let i = 0; i < bits.length; i++) bits[i] = grid.blocked[i] ? 1 : 0;
-  const botSpawnsExcluded = excludedSpawns(extras.soldierSpawns ?? [], {
-    free: (x, z) => !!nearestFree(grid, nav.isWalkable, x, z, SPAWN_REACH),
-    ground: (x, z) => world.collider.surfaceHeight(x, z),
-  });
-  const layer = buildLayer({ mod, level: map, extras, areas, navSha: sha(bits), template: readTemplate(template, out), rawFiles, botSpawnsExcluded });
+  const layer = buildLayer({ mod, level: map, extras, areas, navSha: sha(bits), template: readTemplate(template, out), rawFiles,
+                             botSpawnsExcluded: excludedByWalk(facts), walkMap });
   const want = { ...layer.files, 'generated.json': JSON.stringify(layer.marker, null, 1) + '\n' };
   const stale = [];
   for (const [rel, text] of Object.entries(want)) {
@@ -370,7 +584,14 @@ export async function generate({ maps, models, map, mod, out = LAYERS_ROOT, temp
     stale.push(rel);
     if (!check) { mkdirSync(path.dirname(file), { recursive: true }); writeFileSync(file, text, 'latin1'); }
   }
-  return { dir, areas, marker: layer.marker, changed: stale };
+  for (const [rel, data] of Object.entries(rawFiles)) {
+    const file = path.join(dir, rel);
+    if (existsSync(file) && readFileSync(file).equals(data)) continue;
+    stale.push(rel);
+    if (!check) { mkdirSync(path.dirname(file), { recursive: true }); writeFileSync(file, data); }
+  }
+  if (dropCopy) { stale.push(ENGINE_COPY); if (!check) rmSync(keptFile); }
+  return { dir, areas, marker: layer.marker, changed: stale, facts };
 }
 
 function parseArgs(argv) {

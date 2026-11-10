@@ -15,6 +15,7 @@ const det = await imp('sim/detect.mjs');
 const jud = await imp('sim/judge.mjs');
 const nav = await imp('viewer/nav-grid.js');
 const menu = await imp('viewer/play/menu-screen.js');
+const batch = await imp('sim/botbatch.mjs');
 const out = {};
 
 // --- the area rule ---------------------------------------------------------
@@ -128,15 +129,12 @@ out.door = {
 const sf = await imp('viewer/spawn-flags.js');
 const twoSpawns = { name: 'F', team: 1, spawns: [{ name: 'top', position: [0, 20, 0], group: 1 }, { name: 'foot', position: [2, 0, 0], group: 1 }] };
 out.avoid = [sf.pickSpawn(twoSpawns, 0)?.name, sf.pickSpawn(twoSpawns, 0, { avoid: ['top'] })?.name, sf.pickSpawn(twoSpawns, 0, { avoid: ['top', 'foot'] })?.name ?? null];
-out.excluded = gen.excludedSpawns([{ name: 'top', position: [0, 20, 0] }, { name: 'floor', position: [1, 0.9, 0] }, { name: 'sealed', position: [50, 0, 0] }],
-  { free: (x) => x < 40, ground: () => 0 });
 const tall = gen.buildAreas([...flags.slice(0, 3), { name: 'Mill', x: 220, y: 30, z: -230, radius: 5, team: 1, fixed: false }], { ...hooks, ground: () => 10 });
 out.mill = tall.find(a => a.name === 'Mill');
 out.millCon = gen.areasCon(tall);
 out.pathCon = gen.pathFindingCon();
 out.tags = [menu.levelTag({ singlePlayer: false }), menu.levelTag({ singlePlayer: false, generatedBots: true }), menu.levelTag({ singlePlayer: true }), menu.levelTag({})];
 // --- acceptance (sim/botbatch.mjs) ---------------------------------------------
-const batch = await imp('sim/botbatch.mjs');
 const short = (o = {}) => ({ level: 'x', verdict: 'fail', outcome: 'better-than-nothing', lintErrors: [],
   sizes: { 8: { verdict: 'pass', failed: [] }, 16: { verdict: 'fail', failed: ['redeploysPerBotMinute'] } }, ...o });
 const refusal = (v, reason = 'why') => { try { batch.acceptVerdict(v, reason, '2026-11-10'); return null; } catch (e) { return e.message; } };
@@ -162,4 +160,192 @@ out.outcomes = {
   // Nobody fights: fewer stuck seconds than the no-layer arm, and still not better than nothing.
   noFight: batch.verdictOf('x', [failing({ enemyKills: { 1: 0, 2: 0 }, enemyKillsPerBotMinute: 0 }), failing({ seed: 2 })], base, null, [worse({}), worse({ seed: 2 })]),
 };
+// The level with no layer has no fight (nobody kills): a few spawn traps with the layer are not "worse"
+// than its none. Against a no-layer arm that fights, the same rise is.
+const trapped = o => failing({ spawnTrapsPerBotMinute: 0.02, ...o });
+const deadNone = o => worse({ spawnTrapsPerBotMinute: 0, enemyKills: { 1: 0, 2: 0 }, ticketsBled: { 1: 0, 2: 0 }, capturesTotal: 0, ...o });
+const liveNone = o => worse({ spawnTrapsPerBotMinute: 0.01, ...o });
+out.versusDead = {
+  dead: batch.betterThanNothing([trapped({}), trapped({ seed: 2 })], [deadNone({}), deadNone({ seed: 2 })]),
+  live: batch.betterThanNothing([trapped({}), trapped({ seed: 2 })], [liveNone({}), liveNone({ seed: 2 })]),
+};
+// --- the walk test (sim/walkflood.mjs) on a world of boxes -----------------------
+// The flood asks a collider two things: the surface straight down from a
+// point, and whether a sphere swept along a line meets anything. Here both
+// are answered for axis-aligned boxes `[x0, x1, y0, y1, z0, z1]` over a
+// terrain function, the sphere as the box grown by its radius.
+const wf = await imp('sim/walkflood.mjs');
+function boxWorld(boxes, { terrain = () => 0, normalY = () => 1 } = {}) {
+  return {
+    waterLevel: null,
+    heightfield: { height: terrain },
+    cast(x, y, z, dx, dy, dz, max) {
+      let best = null;
+      const t = terrain(x, z);
+      if (t <= y && y - t <= max) best = { y: t, ny: normalY(x, z), kind: 'terrain' };
+      for (const b of boxes) {
+        if (x >= b[0] && x <= b[1] && z >= b[4] && z <= b[5] && b[3] <= y && y - b[3] <= max && (!best || b[3] > best.y)) best = { y: b[3], ny: 1, kind: 'object' };
+      }
+      return best;
+    },
+    sweepSphere(ox, oy, oz, dx, dy, dz, dist, r) {
+      let best = null;
+      const o = [ox, oy, oz], d = [dx, dy, dz];
+      for (const b of boxes) {
+        const lo = [b[0] - r, b[2] - r, b[4] - r], hi = [b[1] + r, b[3] + r, b[5] + r];
+        let t0 = 0, t1 = dist, axis = -1, sign = 0, miss = false;
+        for (let k = 0; k < 3 && !miss; k++) {
+          if (Math.abs(d[k]) < 1e-12) { miss = o[k] <= lo[k] || o[k] >= hi[k]; continue; }
+          let near = (lo[k] - o[k]) / d[k], far = (hi[k] - o[k]) / d[k];
+          const s = near < far ? -1 : 1;
+          if (near > far) [near, far] = [far, near];
+          if (near > t0) { t0 = near; axis = k; sign = s; }
+          t1 = Math.min(t1, far);
+        }
+        if (miss || axis < 0 || t0 > t1) continue;
+        if (!best || t0 < best.t) { const n = [0, 0, 0]; n[axis] = sign; best = { t: t0, nx: n[0], ny: n[1], nz: n[2] }; }
+      }
+      return best;
+    },
+  };
+}
+const body = await wf.soldierBody();
+out.body = body;
+const wallAt20 = (height, gap = null) => (gap
+  ? [[20, 20.3, 0, height, -64, gap[1]], [20, 20.3, 0, height, gap[0], 0]]
+  : [[20, 20.3, 0, height, -64, 0]]);
+const east = x => x > 25;
+const from = [[10, 0, -30]];
+const far = { reach: 24 };
+out.way = {
+  door: wf.wayOut(boxWorld(wallAt20(3, [-29.35, -30.6])), from, body, east, far).way,       // 1.25 m wide
+  slit: wf.wayOut(boxWorld(wallAt20(3, [-29.7, -30.3])), from, body, east, far).way,        // 0.6 m wide
+  kerb: wf.wayOut(boxWorld(wallAt20(1.0)), from, body, east, far).way,
+  step: wf.wayOut(boxWorld(wallAt20(0.4)), from, body, east, far).way,
+  // A platform 1.5 m up: a soldier walks off it, and no flood whose moves must be walked back does.
+  ledge: wf.wayOut(boxWorld([[0, 20, 0, 1.5, -64, 0]]), [[10, 1.5, -30]], body, east, far).way,
+  ledgeBack: wf.wayOut(boxWorld([[0, 20, 0, 1.5, -64, 0]]), [[10, 1.5, -30]], body, east, { ...far, twoWay: true }).way,
+  // A fall past the one that costs no health is not a way.
+  cliff: wf.wayOut(boxWorld([[0, 20, 0, 3, -64, 0]]), [[10, 3, -30]], body, east, far).way,
+};
+// The page's terrain rule: ground rising gently whose normal reads steep refuses every step up, and none down.
+const rising = boxWorld([], { terrain: x => (x > 15 ? (x - 15) * 0.1 : 0), normalY: x => (x > 15 ? 0.2 : 1) });
+out.refused = [wf.wayOut(rising, from, body, east, far).way, wf.wayOut(rising, [[30, 1.5, -30]], body, (x) => x < 12, far).way];
+
+// A 64 m level: an Axis spawn in the west, an Allied one in the east, one in a room with no door and
+// one in a hut with a 1.25 m door; flags on the ground, on a pole 4.2 m up, on top of a solid tower,
+// and in a patch the map blocks.
+const room = [[40, 50, 0, 3, -50.3, -50], [40, 50, 0, 3, -40, -39.7], [40, 40.3, 0, 3, -50, -40], [49.7, 50, 0, 3, -50, -40]];
+const hut = [[20, 28, 0, 3, -58.3, -58], [20, 28, 0, 3, -50, -49.7], [27.7, 28, 0, 3, -58, -50], [20, 20.3, 0, 3, -58, -54.6], [20, 20.3, 0, 3, -53.35, -50]];
+const tower = [10, 14, 0, 6, -14, -10];
+const level = boxWorld([...room, ...hut, tower]);
+const wSpawns = [{ name: 'a1', x: 8, y: 0, z: -30, side: 1 }, { name: 'b1', x: 56, y: 0, z: -30, side: 2 }, { name: 'in', x: 45, y: 0, z: -45, side: 2 },
+                 { name: 'hut', x: 24, y: 0, z: -54, side: 1 }];
+const wFlags = [
+  { name: 'Mid', x: 30, y: 0, z: -30, radius: 5, team: 0, fixed: false },
+  { name: 'Pole', x: 30, y: 4.2, z: -20, radius: 5, team: 0, fixed: false },
+  { name: 'Tower', x: 12, y: 6, z: -12, radius: 3, team: 1, fixed: false },
+  { name: 'Patch', x: 52, y: 0, z: -18, radius: 3, team: 2, fixed: false },
+];
+const SIZE = 64;
+const enginePixels = new Uint8Array(SIZE * SIZE);
+const block = (x0, x1, z0, z1) => { for (let z = z0; z <= z1; z++) for (let x = x0; x <= x1; x++) enginePixels[z * SIZE + x] = 1; };
+block(39, 50, 39, 50); block(9, 14, 9, 14); block(46, 58, 12, 24);
+for (let z = 41; z <= 48; z++) for (let x = 41; x <= 48; x++) enginePixels[z * SIZE + x] = 0;   // the room's floor: a pocket
+block(19, 28, 49, 58);
+for (let z = 51; z <= 56; z++) for (let x = 21; x <= 26; x++) enginePixels[z * SIZE + x] = 0;   // and the hut's: its door is one the map shuts
+const gridOf = px => ({ width: SIZE, height: SIZE, cellSize: 1, blocked: px });
+const facts = wf.walkFacts({ collider: level, grid: gridOf(enginePixels), flags: wFlags, spawns: wSpawns, body });
+const brief = f => ({ spawns: Object.fromEntries(f.spawns.map(s => [s.name, s.usable])),
+  flags: Object.fromEntries(f.flags.map(g => [g.name, [g.reachable, !!g.inRing, g.poleLift]])), stacked: f.floors.stacked, regions: f.regions.length });
+out.walkFacts = brief(facts);
+const prep = gen.prepareWalkMap({ collider: level, size: SIZE, flags: wFlags, spawns: wSpawns, body, engine: enginePixels });
+const again = gen.prepareWalkMap({ collider: level, size: SIZE, flags: wFlags, spawns: wSpawns, body, engine: prep.pixels, previous: { source: prep.source, opened: prep.opened } });
+out.walkMap = {
+  source: prep.source, ways: prep.ways, opened: prep.opened.length,
+  openedWereBlocked: prep.opened.every(([x, z]) => enginePixels[z * SIZE + x] === 1 && prep.pixels[z * SIZE + x] === 0),
+  after: brief(prep.facts), excluded: gen.excludedByWalk(prep.facts),
+  reach: Object.fromEntries(prep.facts.flags.map(f => [f.name, gen.flagReach(f).unreachable])),
+  sameAgain: Buffer.from(again.pixels).equals(Buffer.from(prep.pixels)) && JSON.stringify(again.opened) === JSON.stringify(prep.opened),
+};
+// The order position: the flag's own nearest free cell when a soldier there is inside the ring, else the cell
+// of the place that is (a pole 4.2 m up with a 5 m radius is a 2.7 m ring on the ground), else none.
+const pole = prep.facts.flags.find(f => f.name === 'Pole');
+out.order = [gen.flagReach(pole, [30.5, -20.5]).order, gen.flagReach(pole, [34.5, -20.5]).order, gen.flagReach(prep.facts.flags.find(f => f.name === 'Tower'), null).order];
+const ladderLint = lint.lintLayer({ ai: good, flags: lf, grid, isWalkable: walk, defined: ['homogenous'],
+  walk: { cover: 1, capped: false, ladders: 3, floors: { stacked: false }, spawns: [{ name: 'a', side: 1, landed: true, usable: false, over: 0 }, { name: 'b', side: 2, landed: true, usable: true, over: 0 }],
+          flags: [{ name: 'A', team: 1, fixed: false, reachable: true, over: 0 }, { name: 'B', team: 2, fixed: false, reachable: true, over: 0 }] } });
+out.ladderText = ladderLint.errors.map(e => e.text).join(' | ');
+// A map that holds none of the ground: painted from the walk test, the main ground only.
+const blind = gen.prepareWalkMap({ collider: level, size: SIZE, flags: wFlags, spawns: wSpawns, body, engine: new Uint8Array(SIZE * SIZE).fill(1) });
+out.painted = { source: blind.source, street: blind.pixels[30 * SIZE + 30], room: blind.pixels[45 * SIZE + 45], wall: blind.pixels[40 * SIZE + 45],
+  usable: brief(blind.facts).spawns, cover: blind.facts.cover > 0.9, engineCover: blind.engineCover, keptCover: prep.engineCover > 0.5 };
+// `paintGround` on fine places written out by hand, quarter-metre cells in one-metre cells `[gx, gz]`:
+// all sixteen; the west half (eight, the centre's four not all among them); twelve with the centre; six.
+const fine = (gx, gz, keep) => { const out = []; for (let i = 0; i < 4; i++) for (let j = 0; j < 4; j++) if (keep(i, j)) out.push([gx + (i + 0.5) / 4, -(gz + (j + 0.5) / 4)]); return out; };
+const handPlaces = [...fine(2, 2, () => true), ...fine(4, 2, i => i < 2), ...fine(6, 2, i => i > 0), ...fine(8, 2, (i, j) => i < 2 && j < 3)];
+const hand = wf.paintGround({ cell: 0.25, each(cb) { for (const [x, z] of handPlaces) cb(x, z, 0, 0); } }, 12, 0);
+out.paintRule = { whole: hand[2 * 12 + 2], halfNoCentre: hand[2 * 12 + 4], mostWithCentre: hand[2 * 12 + 6], few: hand[2 * 12 + 8], empty: hand[2 * 12 + 10] };
+// Two floors: a slab 3.3 m up over a third of the level, reached by stairs.
+const stairs = Array.from({ length: 10 }, (_, i) => [14 + 0.6 * i, 20, 0, 0.3 * (i + 1), -34, -30]);
+const twoFloors = boxWorld([...stairs, [20, 60, 3, 3.3, -60, -4]]);
+const upFlags = [{ name: 'Up', x: 40, y: 3.3, z: -32, radius: 5, team: 0, fixed: false }, { name: 'Down', x: 8, y: 0, z: -50, radius: 5, team: 0, fixed: false }];
+const upFacts = wf.walkFacts({ collider: twoFloors, grid: gridOf(new Uint8Array(SIZE * SIZE)), flags: upFlags, spawns: wSpawns.slice(0, 2), body });
+out.stacked = { stacked: upFacts.floors.stacked, share: upFacts.floors.twoFloorShare > 0.1, over: upFacts.flags[0].over, unreachable: gen.flagReach(upFacts.flags[0]).unreachable };
+
+// --- the search-map writer (sim/botgen.mjs) ---------------------------------------
+const { readFileSync, existsSync } = await import('node:fs');
+const baked = await imp('viewer/nav-baked.js');
+const rawOf = name => path.join(HERE, '..', 'bot-layers', 'bf1942', 'shigaisen_b', 'Pathfinding', name);
+out.codec = { same: [], coarser: [] };
+// The lab server's own files for shigaisen_B: Tank0 is never edited by the walk test.
+for (const lv of [0, 1, 2]) {
+  const bytes = readFileSync(rawOf(`Tank0Level${lv}Map.raw`));
+  const map = baked.decodeSearchMap(new Uint8Array(bytes));
+  const px = gen.searchMapPixels(map);
+  out.codec.same.push(gen.encodeSearchMap(px, map.width, lv).equals(bytes));
+  if (lv < 2) {
+    const up = gen.searchMapPixels(baked.decodeSearchMap(new Uint8Array(readFileSync(rawOf(`Tank0Level${lv + 1}Map.raw`)))));
+    out.codec.coarser.push(Buffer.from(gen.coarserPixels(px, map.width)).equals(Buffer.from(up)));
+  }
+}
+// A 256 m map of its own: one blocked pixel blocks its parent and its grandparent, and nothing else.
+const small = new Uint8Array(256 * 256);
+small[70 * 256 + 133] = 1;
+const pyramid = gen.encodePyramid(small, 256);
+const levels = [0, 1, 2].map(lv => baked.decodeSearchMap(new Uint8Array(pyramid[lv])));
+out.codec.pyramid = levels.map(m => [m.level, m.width, gen.searchMapPixels(m).reduce((n, v) => n + v, 0)]);
+out.codec.reads = Buffer.from(gen.searchMapPixels(levels[0])).equals(Buffer.from(small));
+out.codec.parents = [levels[1].blocked(66, 35), levels[2].blocked(33, 17), levels[1].blocked(67, 35)];
+
+// --- the dead-level lint and the census row -----------------------------------------
+const sp = (name, side, o = {}) => ({ name, side, landed: true, onMainGround: true, usable: true, refused: false, fall: 0, over: 0, under: 0, ...o });
+const fl = (name, team, o = {}) => ({ name, team, fixed: false, radius: 5, reachable: true, walked: true, onMainGround: true, poleLift: 0, over: 0, under: 0, ...o });
+const sound = { cover: 0.9, capped: false, floors: { stacked: false, reason: null }, spawns: [sp('a', 1), sp('b', 2)], flags: [fl('A', 1), fl('B', 2)] };
+const dead = w => { const r = run(good, lf, grid, { walk: w }); return { dead: lint.predictedDead(r), checks: checks(r), texts: r.errors.map(e => e.text) }; };
+out.deadLint = {
+  sound: dead(sound),
+  sealed: dead({ ...sound, spawns: [sp('a', 1, { usable: false }), sp('b', 2)] }),
+  noSpawn: dead({ ...sound, spawns: [sp('b', 2)] }),
+  noRoute: dead({ ...sound, flags: [fl('A', 1), fl('B', 2, { reachable: false })] }),
+  noFlag: dead({ ...sound, flags: [fl('A', 1, { reachable: false }), fl('B', 2, { reachable: false, walked: false, poleLift: 9 })] }),
+  refused: dead({ ...sound, spawns: [sp('a', 1, { refused: true }), sp('b', 2)] }),
+  stacked: dead({ ...sound, floors: { stacked: true, reason: '40 % of the main floor has another walked floor over or under it' } }),
+  // A flag the generator excluded is a warning, not an error.
+  excluded: run({ ...good, generated: { unreachable: ['B'] } }, lf, grid, { walk: { ...sound, flags: [fl('A', 1), fl('B', 2, { reachable: false }), fl('C', 0)] } }).errors.length,
+};
+const match = o => ({ enemyKills: { 1: 3, 2: 4 }, ticketsBled: { 1: 5, 2: 5 }, botErrors: 0, capturesTotal: 2, idleShare: 0.3, routeFailuresPerBotMinute: 0.4, stuckSecondsPerBotMinute: 1, ...o });
+const lintOf = w => ({ ...run(good, lf, grid, { walk: w }), walk: w });
+const rows = [
+  batch.censusRow('lively', lintOf(sound), match({})),
+  batch.censusRow('sealed', lintOf({ ...sound, spawns: [sp('a', 1, { usable: false }), sp('b', 2)] }), match({ enemyKills: { 1: 0, 2: 0 }, ticketsBled: { 1: 0, 2: 0 } })),
+  batch.censusRow('missed', lintOf(sound), match({ enemyKills: { 1: 0, 2: 2 } })),
+];
+out.census = { rows: rows.map(r => [r.level, r.alive, r.dead, r.predictedDead, r.lintAgrees, r.kills, r.spawnsOff, r.flagsOff, r.floors]), table: batch.censusTable(rows).split('\n').length };
+// A level the lint refuses is given its verdict with no match run.
+const sealedLint = lintOf({ ...sound, spawns: [sp('a', 1, { usable: false }), sp('b', 2)] });
+const refusedLevel = batch.unsuitable('sealed', sealedLint);
+out.unsuitable = { sound: batch.unsuitable('lively', lintOf(sound)), verdict: refusedLevel.verdict, outcome: refusedLevel.outcome, predictedDead: refusedLevel.predictedDead,
+                   errors: refusedLevel.lint.errors.length, sizes: refusedLevel.sizes, acceptable: batch.ACCEPTABLE.includes(refusedLevel.outcome) };
+out.alive = jud.aliveChecks([match({}), match({ botErrors: 1 })]).filter(c => !c.pass).map(c => c.metric);
 console.log(JSON.stringify(out));

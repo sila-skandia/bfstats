@@ -1,0 +1,42 @@
+{
+ "level": "the_maze",
+ "verdict": "fail",
+ "outcome": "better-than-nothing",
+ "generatorVersion": 3,
+ "inputs": {
+  "controlPoints": "629be50a9e4e76f5ad512cb94b21c8973298658156d807b3a348706a470c413a",
+  "infantryMap": "e9e21a38c3105cd2850a2c6b6dcd8eac4482e6f89da1e0468012bfbddaf6963b",
+  "template": "43f8a790471528016570235f76e97dbb2045732458781a5139f37fed68bf98c0"
+ },
+ "baseline": "DICE layers on foot: berlin, stalingrad, kharkov, bocage; seeds 1..10, 600 s, --no-vehicles",
+ "seeds": 10,
+ "sizes": {
+  "8": {
+   "verdict": "fail",
+   "failed": [
+    "routeFailuresPerBotMinute",
+    "redeploysPerBotMinute"
+   ],
+   "winners": [
+    9,
+    1,
+    0
+   ]
+  },
+  "16": {
+   "verdict": "fail",
+   "failed": [
+    "routeFailuresPerBotMinute",
+    "redeploysPerBotMinute"
+   ],
+   "winners": [
+    9,
+    1,
+    0
+   ]
+  }
+ },
+ "oneSided": null,
+ "unreachable": [],
+ "lintErrors": []
+}

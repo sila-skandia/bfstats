@@ -1,0 +1,29 @@
+{
+ "level": "shigaisen_c",
+ "verdict": "fail",
+ "outcome": "unsuitable",
+ "generatorVersion": 3,
+ "inputs": {
+  "controlPoints": "32709800b8541a7cfba2ed4d6d98258d890cd831f13acfcc8323f7819edd5aac",
+  "infantryMap": "d77ee90fa4e19de2426532a9a793e0b57b80f9b6624fd381e16d0d986a6662a7",
+  "template": "43f8a790471528016570235f76e97dbb2045732458781a5139f37fed68bf98c0"
+ },
+ "baseline": "DICE layers on foot: berlin, stalingrad, kharkov, bocage; seeds 1..10, 600 s, --no-vehicles",
+ "seeds": 10,
+ "sizes": {},
+ "oneSided": null,
+ "unreachable": [
+  "New_Control_Point1",
+  "New_Control_Point3",
+  "New_Control_Point4",
+  "New_Control_Point5",
+  "New_Control_Point6",
+  "New_Control_Point7"
+ ],
+ "lintErrors": [
+  "the play surface is stacked floors (81 % of the main floor has another walked floor over or under it): a one-floor walk map cannot hold it",
+  "no capturable flag is reachable in 3D: none of the 6 has a place inside its radius that a soldier on the one-floor walk map's main ground can stand in",
+  "side 1 has no spawn with a route to any flag it must take: of its 1 spawns 1 have no way on foot to the main ground",
+  "side 2 has no spawn with a route to any flag it must take: of its 1 spawns 1 have no way on foot to the main ground"
+ ]
+}

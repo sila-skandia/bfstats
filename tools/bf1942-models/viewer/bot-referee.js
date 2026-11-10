@@ -47,6 +47,7 @@ import { wantsSeat, SPAWN_STANDS } from './spawn-seat.js';
 import { EnemyStrengthTables } from './bot-strength.js';
 import { disembarkPath, DISEMBARK, LANDING_CRAFT_RE } from './doctrine-landing.js';
 import { playerPosition } from './bot-sense.js';
+import { footingAt } from './bot-pose.js';
 import { SAI, StrategicLayer, StrategicAI, StrategicCommand } from './strategic.js';
 import { roundHit } from './soldier-death.js';
 import { meetSoldier } from './skeleton-hit.js';
@@ -1187,10 +1188,12 @@ export function createBotReferee(env) {
     const bot = botOf(id);
     const m = bot?.vehicle;
     if (!m) {
-      // `groundAt`: the ground under a flag's pole, for the capture ring
-      // (strategic-ai.js `_captureRing`, INVENTION).
+      // `groundAt`: where a soldier stands under a flag's pole, for the
+      // capture ring (strategic-ai.js `_captureRing`, INVENTION). The
+      // terrain, not the water plane over it (bot-pose.js `footingAt`).
+      const collider = world()?.collider ?? null;
       return { type: 'Infantery', isWalkable: referee.navGrid ? (x, z) => isWalkable(referee.navGrid, x, z) : null,
-               radius: 1.0, mounted: false, groundAt: bot ? (x, z) => bot._groundAt(x, z) : null };
+               radius: 1.0, mounted: false, groundAt: bot ? (x, z) => footingAt(collider, x, z) : null };
     }
     // The hull's own search type where the level lists them (bot-units.js
     // `typeNav`: a vanilla jeep is a `Tank` unit), else by drive kind.

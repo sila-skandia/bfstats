@@ -3,7 +3,7 @@
 // data this reads.
 
 import { INFANTRY_TYPE } from './strategic-layer.js';
-import { captureRadius, captureStandRadius } from './control-point-law.js';
+import { captureReach, captureStandRadius } from './control-point-law.js';
 import { LANDING, landingZonesOf, beachTarget, beachLandingOrder } from './doctrine-landing.js';
 
 // ---------------------------------------------------------------------------
@@ -634,12 +634,24 @@ export class StrategicAI {
         // order has arrived only inside its ring, and between the ring and
         // R' it keeps the urgency the engine's order has at R' (0.25 x 2),
         // so the last metres are asked for as firmly as the approach was.
-        // Once the side holds the flag the engine's rule below reads the
-        // same point, and a bot in the ring is inside R'.
+        // A ring the ground cut (`ring.cut`: the pole on a floor over the
+        // street, or in a pit) is the exception: its urgency is the engine's
+        // law with the ring's own radius where it has R',
+        // clamp(d^2 / 4 r^2, 0.25, 1) x 2. Measured against R' those metres
+        // asked 0.5 all the way in, under the Scout behaviour's 1.0 for an
+        // enemy lost from sight, and a soldier who had seen one stood
+        // between the ring and R' turning to and fro until shot (the lifted
+        // shigaisen_B test level, seed 2, 27 s at 3.6 m from a 1.86 m ring).
+        // A flat ring keeps R': with its own radius for every ring, the real
+        // shigaisen_B at 16 a side went from 1.78 to 2.23 stuck seconds a
+        // bot-minute over ten seeds, and Stalingrad's traces changed. Once
+        // the side holds the flag the engine's rule below reads the same
+        // point, and a bot in the ring is inside R'.
         if (ring?.wanted()) {
-          if (d2 < ring.radius * ring.radius) { this.arrived = true; return 0; }
+          const r2 = ring.radius * ring.radius;
+          if (d2 < r2) { this.arrived = true; return 0; }
           this.arrived = false;
-          return Math.min(1, Math.max(0.25, d2 / (4 * R2))) * 2.0;
+          return Math.min(1, Math.max(0.25, d2 / (4 * (ring.cut ? r2 : R2)))) * 2.0;
         }
         if (d2 < R2) { this.arrived = true; return 0; }
         let factor;
@@ -669,19 +681,30 @@ export class StrategicAI {
    * what a route happened to cross. DICE's wider flags hide it.
    *
    * So for a soldier, when the area holds a control point that can change
-   * hands, whose radius is under this order's R', and which the side does
-   * not hold or is losing (the lose timer running, state 2), the order's
-   * point is the flag itself (the nearest point of the bot's own map inside
-   * the ring when the flag's cell is blocked, as the engine tests its own
-   * draws) and it has arrived only within `captureStandRadius` of the flag.
-   * Returns `{ flag, point, radius, wanted() }`, or null and the engine's
-   * order stands untouched: every flag at least R' wide, a held flag, an
-   * area with no point, a flag no cell of the map reaches.
+   * hands, whose reach across the ground is under this order's R', and which
+   * the side does not hold or is losing (the lose timer running, state 2),
+   * the order's point is the flag itself (the nearest point of the bot's own
+   * map inside the ring when the flag's cell is blocked, as the engine tests
+   * its own draws) and it has arrived only within `captureStandRadius` of
+   * the flag. Returns `{ flag, point, radius, cut, wanted() }`, or null and the
+   * engine's order stands untouched: every flag at least R' wide on the
+   * ground, a held flag, an area with no point, a flag no cell of the map
+   * reaches.
+   *
+   * The ring is the 3D radius cut by the ground. A capture is measured in 3D
+   * and an order across the ground, so where the unit knows the ground a
+   * soldier stands on under the pole (`unit.groundAt`) the flag's reach is
+   * what its radius leaves there, sqrt(r^2 - dy^2) (control-point-law.js
+   * `captureReach`), and the stand radius is that less the body's metre once
+   * the flat figure no longer fits (`captureStandRadius`). The community map
+   * shigaisen_C stands its six 5 m flags on a floor 4.1 m over the street:
+   * 2.8 m of reach, so a soldier must come within 1.8 m of the pole's foot,
+   * and the engine's order stopped them 6 m out. A wide flag on a height is
+   * narrow on the ground the same way (10 m, 8.5 m up: 5.3 m of reach).
    *
    * Two things keep a ring that cannot be stood in from being ordered. A
-   * pole the ground does not reach: where the unit knows the ground
-   * (`unit.groundAt`, the terrain) and a body on it at the ring's edge would
-   * still be outside the flag's 3D radius, the engine's order stands. Two of
+   * pole the ground does not reach: where the radius leaves less than a
+   * body's width on the ground, or nothing, the engine's order stands. Two of
    * Stalingrad's three flags are on an upper floor, 13.5 m over the street;
    * bound to their rings, bots failed 31 routes in 300 s where they had
    * failed none, walked at the walls and were redeployed. And a valid cell
@@ -699,11 +722,14 @@ export class StrategicAI {
     const wanted = flag => flag.team !== side || flag._cp?.state === 2;
     for (const flag of area.controlPoints) {
       if (!flag.position || flag.uncapturable || bot.ringless?.has(flag)) continue;
-      if (captureRadius(flag) >= arrive || !wanted(flag)) continue;
-      const stand = captureStandRadius(flag);
+      if (!wanted(flag)) continue;
       const [fx, fz] = [flag.position[0], flag.position[2]];
+      // The pole over (or under) the ground a soldier stands on at its foot.
       const ground = unit?.groundAt?.(fx, fz);
-      if (Number.isFinite(ground) && Math.hypot(stand, flag.position[1] - ground) > captureRadius(flag)) continue;
+      const dy = Number.isFinite(ground) ? flag.position[1] - ground : 0;
+      if (captureReach(flag, dy) >= arrive) continue;
+      const stand = captureStandRadius(flag, dy);
+      if (!(stand > 0)) continue;
       // The flag's own cell, else the nearest valid one on rings 1 m apart,
       // keeping at least 1 m of arrival radius about the point.
       let point = !valid || valid(fx, fz) ? [fx, fz] : null;
@@ -714,7 +740,8 @@ export class StrategicAI {
           if (valid(x, z)) { point = [x, z]; off = d; }
         }
       }
-      if (point) return { flag, point, radius: stand - off, wanted: () => wanted(flag) };
+      // `cut`: the ground left less than the flat figure (`_order`'s urgency).
+      if (point) return { flag, point, radius: stand - off, cut: stand < captureStandRadius(flag), wanted: () => wanted(flag) };
     }
     return null;
   }

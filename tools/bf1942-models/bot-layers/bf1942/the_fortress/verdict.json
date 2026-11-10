@@ -1,0 +1,21 @@
+{
+ "level": "the_fortress",
+ "verdict": "fail",
+ "outcome": "unsuitable",
+ "generatorVersion": 3,
+ "inputs": {
+  "controlPoints": "5f7a430488245a1a39c4ddfb5e7e265c1fd824dcebeb1208d7c866edb65c0e15",
+  "infantryMap": "4d30eb600d59ccfbe8552107a2d719366aae8eab4b16ce8ed508f48ad170da6b",
+  "template": "43f8a790471528016570235f76e97dbb2045732458781a5139f37fed68bf98c0"
+ },
+ "baseline": "DICE layers on foot: berlin, stalingrad, kharkov, bocage; seeds 1..10, 600 s, --no-vehicles",
+ "seeds": 10,
+ "sizes": {},
+ "oneSided": null,
+ "unreachable": [
+  "Materials_place_"
+ ],
+ "lintErrors": [
+  "side 1 holds no spawn point at the start of the round"
+ ]
+}

@@ -1,9 +1,9 @@
 tree,level,worldSize,gameTypes,cps,capturable,flagSpread,soldierSpawns,pads,land,air,sea,gun,noAiRecord,aiRecordShare,published,bakedLocally,twinWithBotData,class,rank,ruleOuts
 community,shigaisen_B,1024,Conquest+Ctf+Tdm,8,6,222,23,0,0,0,0,0,0,0.0,yes,yes,,contained on-foot,124,
-community,shigaisen_C,1024,Conquest+Ctf,8,6,231,17,0,0,0,0,0,0,0.0,yes,yes,,contained on-foot,124,
-community,The_Dungeon,1024,Conquest+Ctf+Tdm,5,5,376,12,0,0,0,0,0,0,0.0,yes,yes,,contained on-foot,124,
+community,shigaisen_C,1024,Conquest+Ctf,8,6,231,17,0,0,0,0,0,0,0.0,yes,yes,,out: stacked floors,124,walk test: 81 % of the main floor has another walked floor over or under it; walk test: no flag a soldier can stand in and a side sealed in
+community,The_Dungeon,1024,Conquest+Ctf+Tdm,5,5,376,12,0,0,0,0,0,0,0.0,yes,yes,,contained on-foot,124,walk test: every spawn that reaches the main ground stands on terrain the page's soldier reads as too steep to climb; in a traced match 13 of 16 bots never left their spawn (cause not isolated further)
 community,The_Maze,1024,Conquest+Ctf+Tdm,7,5,347,20,0,0,0,0,0,0,0.0,yes,yes,,contained on-foot,124,"novelty name (race, sport, puzzle): check by hand"
-community,The_corridor,1024,Conquest+Ctf+Tdm,5,3,289,8,0,0,0,0,0,0,0.0,yes,yes,,contained on-foot,122,
+community,The_corridor,1024,Conquest+Ctf+Tdm,5,3,289,8,0,0,0,0,0,0,0.0,yes,yes,,out: stacked floors,122,walk test: 84 % of the main floor has another walked floor over or under it; walk test: a side sealed in
 bf1918,cantigny,1024,Conquest,5,4,495,45,54,7,0,0,30,17,0.69,no,yes,,contained on-foot,120,
 bf1918,chemin_des_dames,1024,Conquest,5,4,432,17,37,8,0,0,18,11,0.7,no,yes,,contained on-foot,120,
 bf1918,dawnVille,1024,Conquest+Tdm,7,5,532,21,12,6,0,0,6,0,1.0,no,yes,,contained on-foot,120,
@@ -11,15 +11,15 @@ bf1918,deulemont,1024,Conquest+Tdm,8,6,317,13,24,2,0,0,18,4,0.83,no,yes,,contain
 bf1918,liberation_of_roeselare,1024,Conquest,8,7,350,62,67,3,0,0,35,29,0.57,no,yes,,contained on-foot,120,
 bf1918,lutte_de_honneur,1024,Conquest+Tdm,8,6,560,33,55,8,0,0,35,12,0.78,no,yes,,contained on-foot,120,
 bf1918,somme_gasattack,1024,Conquest,3,3,305,20,45,1,0,0,23,21,0.53,no,yes,,contained on-foot,120,
-community,KNIFE_CHAMPIONSHIP,1024,Conquest+Ctf+Tdm,7,3,280,25,10,0,0,0,0,10,0.0,yes,yes,,contained on-foot,120,
-community,Omaturi_Channel_Cannon,1024,Conquest+Ctf+Tdm,8,6,426,25,42,8,0,12,22,0,1.0,yes,yes,,contained on-foot,120,
+community,KNIFE_CHAMPIONSHIP,1024,Conquest+Ctf+Tdm,7,3,280,25,10,0,0,0,0,10,0.0,yes,yes,,out: stacked floors,120,walk test: 2 of 3 capturable flags stand a storey over or under another walked floor
+community,Omaturi_Channel_Cannon,1024,Conquest+Ctf+Tdm,8,6,426,25,42,8,0,12,22,0,1.0,yes,yes,,out: sides do not meet on foot,120,walk test: the two shores are apart from each other and from four of the six flags on foot (a side that can reach no flag and a side sealed in)
 community,Omaturi_Channel_Sniper,1024,Conquest+Ctf+Tdm,3,1,209,12,0,0,0,0,0,0,0.0,yes,yes,,contained on-foot,120,
-community,Omaturi_Channel_Sniper_day2,1024,Conquest+Ctf+Tdm,3,1,209,12,0,0,0,0,0,0,0.0,yes,yes,,contained on-foot,120,
-community,shigaisen_A,1024,Conquest+Ctf,7,5,212,25,7,4,0,0,3,0,1.0,yes,yes,,contained on-foot,120,
-community,shigaisen_D,1024,Conquest+Ctf+Tdm,7,5,304,27,7,7,0,0,0,0,1.0,yes,yes,,contained on-foot,120,
-community,The_Room,2048,Conquest,4,3,82,17,2,0,0,0,0,2,0.0,yes,yes,,contained on-foot,120,
-community,The_Street,1024,Conquest+Ctf+Tdm,7,5,221,29,2,2,0,0,0,0,1.0,yes,yes,,contained on-foot,120,
-community,The_Street_day2,1024,Conquest+Ctf+Tdm,7,5,221,29,5,5,0,0,0,0,1.0,yes,yes,,contained on-foot,120,
+community,Omaturi_Channel_Sniper_day2,1024,Conquest+Ctf+Tdm,3,1,209,12,0,0,0,0,0,0,0.0,yes,yes,,out: stacked floors,120,walk test: 1 of 1 capturable flags stand a storey over or under another walked floor; walk test: no flag a soldier can stand in and a side that can reach no flag
+community,shigaisen_A,1024,Conquest+Ctf,7,5,212,25,7,4,0,0,3,0,1.0,yes,yes,,out: stacked floors,120,walk test: 3 of 5 capturable flags stand a storey over or under another walked floor
+community,shigaisen_D,1024,Conquest+Ctf+Tdm,7,5,304,27,7,7,0,0,0,0,1.0,yes,yes,,out: stacked floors,120,walk test: 32 % of the main floor has another walked floor over or under it
+community,The_Room,2048,Conquest,4,3,82,17,2,0,0,0,0,2,0.0,yes,yes,,out: stacked floors,120,walk test: 27 % of the main floor has another walked floor over or under it; walk test: a side sealed in
+community,The_Street,1024,Conquest+Ctf+Tdm,7,5,221,29,2,2,0,0,0,0,1.0,yes,yes,,out: stacked floors,120,walk test: 22 % of the main floor has another walked floor over or under it; walk test: no flag a soldier can stand in and a side that can reach no flag
+community,The_Street_day2,1024,Conquest+Ctf+Tdm,7,5,221,29,5,5,0,0,0,0,1.0,yes,yes,,out: stacked floors,120,walk test: 21 % of the main floor has another walked floor over or under it; walk test: no flag a soldier can stand in and a side that can reach no flag
 desertcombat,DC_Basrah_Nights,1024,Conquest+Ctf+Tdm,5,5,192,29,8,4,0,0,4,0,1.0,yes,yes,,contained on-foot,120,
 desertcombat,DC_LostVillage,2048,Conquest+Tdm,7,5,484,50,10,0,2,0,4,4,0.6,yes,yes,,contained on-foot,120,
 desertcombat,DC_Sea_Rigs,2048,Conquest,5,5,292,17,19,2,0,4,10,3,0.84,yes,yes,,contained on-foot,120,
@@ -43,9 +43,9 @@ bf1918,battle_of_the_vosges,1024,Conquest+Tdm,7,5,443,20,45,14,2,0,21,8,0.82,yes
 bf1918,carriere,1024,Conquest,6,5,476,38,43,18,0,0,17,8,0.81,no,yes,,contained with vehicles,90,
 bf1918,Mauerfall,1024,Conquest+Ctf+Tdm,5,3,332,32,64,17,0,0,21,26,0.59,no,yes,,contained with vehicles,90,
 bf1918,sanaga_river,1024,Conquest,6,5,483,75,47,8,1,0,12,26,0.45,no,yes,,contained with vehicles,90,
-community,shigaisen_G,1024,Conquest+Ctf,5,3,273,27,18,14,0,4,0,0,1.0,yes,yes,,contained with vehicles,90,
-community,The_Fortress,1024,Conquest+Ctf+Tdm,5,4,561,21,42,13,0,2,27,0,1.0,yes,yes,,contained with vehicles,90,
-community,The_Street_G,1024,Conquest+Ctf+Tdm,7,5,237,29,22,22,0,0,0,0,1.0,yes,yes,,contained with vehicles,90,
+community,shigaisen_G,1024,Conquest+Ctf,5,3,273,27,18,14,0,4,0,0,1.0,yes,yes,,out: stacked floors,90,walk test: 74 % of the main floor has another walked floor over or under it; walk test: a side sealed in
+community,The_Fortress,1024,Conquest+Ctf+Tdm,5,4,561,21,42,13,0,2,27,0,1.0,yes,yes,,contained with vehicles,90,walk test: a side with no spawn at the start (the attackers have no soldier spawn point: no on-foot match)
+community,The_Street_G,1024,Conquest+Ctf+Tdm,7,5,237,29,22,22,0,0,0,0,1.0,yes,yes,,out: stacked floors,90,walk test: 20 % of the main floor has another walked floor over or under it; walk test: no flag a soldier can stand in and a side that can reach no flag
 community,knife_fight,1024,Conquest+Ctf+Tdm,4,0,204,8,12,12,0,0,0,0,1.0,yes,yes,,arena: fixed bases only,89,no capturable flag
 desertcombat,DC_Weapon_Bunkers,1024,Conquest,2,0,356,5,26,2,0,3,13,8,0.69,yes,yes,,arena: fixed bases only,89,no capturable flag
 eod,Operation_Linebacker,2048,Conquest,3,0,1150,6,51,18,11,0,20,2,0.96,yes,yes,,arena: fixed bases only,89,no capturable flag

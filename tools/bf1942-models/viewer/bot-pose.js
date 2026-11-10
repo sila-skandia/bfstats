@@ -71,6 +71,7 @@
 // is taken as full.
 
 import { EYE_HEIGHT, POSE_STAND, POSE_CROUCH, POSE_PRONE } from './soldier-pose.js';
+import { SWIM_ENTER_WATER, SWIM_FEET_DRAFT } from './swim.js';
 
 /** The AI's `SoldierPose` enum (1 stand, 2 crouch, 3 prone), by name. */
 export const SOLDIER_POSE = Object.freeze({ stand: 1, crouch: 2, prone: 3 });
@@ -195,6 +196,26 @@ export function waterDepthAt(collider, x, z) {
   if (!Number.isFinite(water)) return -Infinity;
   const ground = collider?.heightfield?.height?.(x, z);
   return Number.isFinite(ground) ? water - ground : -Infinity;
+}
+
+/**
+ * Where a soldier's feet are at (x, z), off any deck: the terrain, and where
+ * the water over it is deeper than a soldier wades (swim.js
+ * `SWIM_ENTER_WATER`, 1.43 m over the feet) the draft they float at
+ * (`SWIM_FEET_DRAFT` under the surface). The water plane is no floor for a
+ * soldier (soldier-resolve.js `groundUnder`): bot-pilot.js `groundAt`, the
+ * higher of the two, is a hull's and an aircraft's. On the community map
+ * shigaisen_C the whole street is 0.37 m under the water plane and a soldier
+ * walks on the street. NaN where the collider has no terrain.
+ */
+export function footingAt(collider, x, z) {
+  const hf = collider?.heightfield;
+  const ground = typeof hf?.heightInWorld === 'function' ? hf.heightInWorld(x, z)
+    : typeof hf?.height === 'function' ? hf.height(x, z) : NaN;
+  const water = collider?.waterLevel;
+  if (!Number.isFinite(ground)) return NaN;
+  if (Number.isFinite(water) && water - ground > SWIM_ENTER_WATER) return water - SWIM_FEET_DRAFT;
+  return ground;
 }
 
 /**

@@ -1,10 +1,19 @@
 """`engine_search_maps.py`: the archive it hands the retail server and the
 script layer it adds (features/bot-map-generation, section 13). The server
-run itself needs the lab and is not exercised here."""
+run itself needs the lab and is not exercised here.
+
+Also the writer for the maps it brings back (`sim/botgen.mjs
+encodeSearchMap`), against DICE's own shipped files where the game is
+installed."""
+
+# watches: tools/bf1942-models/engine_search_maps.py tools/bf1942-models/sim/botgen.mjs tools/bf1942-models/viewer/nav-baked.js
 
 from __future__ import annotations
 
+import json
+import os
 import struct
+import subprocess
 import sys
 import tempfile
 import unittest
@@ -15,6 +24,37 @@ sys.path.insert(0, str(ROOT))
 
 import engine_search_maps as esm  # noqa: E402
 from bf42.rfa import RfaArchive  # noqa: E402
+
+
+
+def find_game_dir() -> Path | None:
+    """The retail install: `BF1942_GAME_DIR`, wine's, or a Mac's CrossOver bottle."""
+    candidates = [os.environ.get("BF1942_GAME_DIR"),
+                  Path.home() / ".wine/drive_c/EA Games/Battlefield 1942",
+                  Path.home() / "Library/Application Support/CrossOver/Bottles/BF1942"
+                                "/drive_c/EA Games/Battlefield 1942"]
+    for c in candidates:
+        if c and (Path(c) / "Mods/bf1942/Archives/bf1942/levels").is_dir():
+            return Path(c)
+    return None
+
+
+#: Decode each search-map level in a folder, write it back, and compare; and
+#: rebuild each next level from the one below it.
+ROUND_TRIP = """
+import { readFileSync, readdirSync } from 'node:fs';
+const gen = await import(process.argv[1] + '/sim/botgen.mjs');
+const baked = await import(process.argv[1] + '/viewer/nav-baked.js');
+const dir = process.argv[2], out = {};
+const pixels = f => { const m = baked.decodeSearchMap(new Uint8Array(readFileSync(dir + '/' + f))); return [m, gen.searchMapPixels(m)]; };
+for (const f of readdirSync(dir).sort()) {
+  const [m, px] = pixels(f);
+  out[f] = { same: gen.encodeSearchMap(px, m.width, m.level).equals(readFileSync(dir + '/' + f)) };
+  const up = f.replace(/level(\\d)/, (s, d) => 'level' + (+d + 1));
+  if (up !== f && readdirSync(dir).includes(up)) out[f].coarser = Buffer.from(gen.coarserPixels(px, m.width)).equals(Buffer.from(pixels(up)[1]));
+}
+console.log(JSON.stringify(out));
+"""
 
 BLOCK = bytes(range(148))
 TRAILER = b"\x00\x00\x00\x00"
@@ -93,6 +133,60 @@ class ArchiveTests(unittest.TestCase):
                             + struct.pack("<I", len(name)) + name + struct.pack("<III", len(blob), 11, 8) + TAIL)
             with self.assertRaises(ValueError):
                 esm.rebuild_archive(src, Path(tmp) / "dst.rfa", {})
+
+
+class ReferencedLevelTests(unittest.TestCase):
+    def test_a_variant_names_the_level_whose_files_it_reads(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            src = Path(tmp) / "src.rfa"
+            day2 = "bf1942/levels/Test_Level_day2"
+            game_archive(src, {
+                f"{day2}/Init/Terrain.con": b"GeometryTemplate.file bf1942\\levels\\Test_Level\\Heightmap\r\n"
+                                            b"GeometryTemplate.texBaseName bf1942/levels/Test_Level/Textures/Tx\r\n"
+                                            b"GeometryTemplate.detailTexName bf1942\\levels\\Test_Level_day2\\Textures\\Detail\r\n",
+                f"{day2}/Conquest.con": b"run Conquest/SoldierSpawns\r\n",
+            })
+            arch = RfaArchive(src)
+            self.assertEqual(esm.referenced_levels(arch, esm.level_folder(arch)), ["Test_Level"])
+
+    def test_a_level_that_reads_only_its_own_files_names_none(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            src = Path(tmp) / "src.rfa"
+            game_archive(src, SOURCE)
+            arch = RfaArchive(src)
+            self.assertEqual(esm.referenced_levels(arch, esm.level_folder(arch)), [])
+
+
+class SearchMapWriterTests(unittest.TestCase):
+    """`sim/botgen.mjs encodeSearchMap` against DICE's own Kharkov maps."""
+
+    def test_dices_shipped_maps_are_written_back_byte_for_byte(self) -> None:
+        game = find_game_dir()
+        if game is None:
+            self.skipTest("Battlefield 1942 is not installed")
+        files: dict[str, bytes] = {}
+        for path in sorted((game / "Mods/bf1942/Archives/bf1942/levels").glob("[Kk]harkov*.rfa")):
+            arch = RfaArchive(path)
+            for name in arch.entries:
+                low = name.lower()
+                if "/pathfinding/" in low and low.endswith("map.raw"):
+                    files[low.rsplit("/", 1)[-1]] = arch.read(name)
+        if not files:
+            self.skipTest("Kharkov's search maps are not in the install")
+        with tempfile.TemporaryDirectory() as tmp:
+            for name, data in files.items():
+                (Path(tmp) / name).write_bytes(data)
+            proc = subprocess.run(["node", "--input-type=module", "-e", ROUND_TRIP, str(ROOT), tmp],
+                                  capture_output=True, text=True, timeout=120)
+        self.assertEqual(proc.returncode, 0, proc.stderr[-1500:])
+        out = json.loads(proc.stdout)
+        self.assertGreaterEqual(len(out), 6)
+        for name, row in out.items():
+            with self.subTest(file=name):
+                self.assertTrue(row["same"])
+                # Level 1 is level 0's pixels ORed four to one, and level 2 level 1's.
+                if "level2" not in name:
+                    self.assertTrue(row["coarser"])
 
 
 class ScriptLayerTests(unittest.TestCase):

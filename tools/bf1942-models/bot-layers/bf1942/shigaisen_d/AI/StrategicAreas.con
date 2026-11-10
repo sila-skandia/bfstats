@@ -1,0 +1,67 @@
+rem *** Strategic areas: one per control point (botgen) ***
+
+aiStrategicArea.create AxisBase 279.7/523.7 284.7/528.7 50
+aiStrategicArea.addNeighbour chapel
+aiStrategicArea.addNeighbour cave
+aiStrategicArea.addNeighbour TankBase
+aiStrategicArea.addNeighbour heavytankbase
+aiStrategicArea.addObjectTypeFlag Base
+aiStrategicArea.setOrderPosition Infantry 284.7/528.7
+aiStrategicArea.setSide 1
+aiStrategicArea.setTakeable 2 0
+
+aiStrategicArea.create AlliedBase 483.6/749.6 488.6/754.6 50
+aiStrategicArea.addNeighbour chapel
+aiStrategicArea.addNeighbour cave
+aiStrategicArea.addNeighbour TankBase
+aiStrategicArea.addNeighbour heavytankbase
+aiStrategicArea.addObjectTypeFlag Base
+aiStrategicArea.setOrderPosition Infantry 488.6/754.6
+aiStrategicArea.setSide 2
+aiStrategicArea.setTakeable 1 0
+
+aiStrategicArea.create chapel 404/650.8 414/660.8 300
+aiStrategicArea.addNeighbour AxisBase
+aiStrategicArea.addNeighbour AlliedBase
+aiStrategicArea.addNeighbour cave
+aiStrategicArea.addNeighbour TankBase
+aiStrategicArea.addNeighbour heavytankbase
+aiStrategicArea.addObjectTypeFlag Centre
+aiStrategicArea.addObjectTypeFlag StrongPoint
+aiStrategicArea.addObjectTypeFlag Close
+aiStrategicArea.addObjectTypeFlag ControlPoint
+aiStrategicArea.setOrderPosition Infantry 414/660.8
+
+aiStrategicArea.create cave 448/613.9 453/618.9 150
+aiStrategicArea.addNeighbour AxisBase
+aiStrategicArea.addNeighbour AlliedBase
+aiStrategicArea.addNeighbour chapel
+aiStrategicArea.addNeighbour TankBase
+aiStrategicArea.addNeighbour heavytankbase
+aiStrategicArea.addObjectTypeFlag Flank
+aiStrategicArea.addObjectTypeFlag ControlPoint
+aiStrategicArea.setOrderPosition Infantry 453/618.9
+
+aiStrategicArea.create house 346.4/581.8 351.4/586.8 10
+aiStrategicArea.setTakeable 1 0
+aiStrategicArea.setTakeable 2 0
+
+aiStrategicArea.create TankBase 288.1/741.2 296.1/749.2 150
+aiStrategicArea.addNeighbour AxisBase
+aiStrategicArea.addNeighbour AlliedBase
+aiStrategicArea.addNeighbour chapel
+aiStrategicArea.addNeighbour cave
+aiStrategicArea.addNeighbour heavytankbase
+aiStrategicArea.addObjectTypeFlag Flank
+aiStrategicArea.addObjectTypeFlag ControlPoint
+aiStrategicArea.setOrderPosition Infantry 294.5/751.5
+
+aiStrategicArea.create heavytankbase 482.3/517.4 491.3/526.4 150
+aiStrategicArea.addNeighbour AxisBase
+aiStrategicArea.addNeighbour AlliedBase
+aiStrategicArea.addNeighbour chapel
+aiStrategicArea.addNeighbour cave
+aiStrategicArea.addNeighbour TankBase
+aiStrategicArea.addObjectTypeFlag Flank
+aiStrategicArea.addObjectTypeFlag ControlPoint
+aiStrategicArea.setOrderPosition Infantry 491.3/526.4

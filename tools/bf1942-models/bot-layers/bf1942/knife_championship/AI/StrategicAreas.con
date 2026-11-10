@@ -1,0 +1,49 @@
+rem *** Strategic areas: one per control point (botgen) ***
+
+aiStrategicArea.create AxisBase 517.4/610.1 522.4/615.1 50
+aiStrategicArea.addNeighbour AlliedBase
+aiStrategicArea.addNeighbour New_Control_Point1
+aiStrategicArea.addObjectTypeFlag Base
+aiStrategicArea.setOrderPosition Infantry 526.5/615.5
+aiStrategicArea.setSide 1
+aiStrategicArea.setTakeable 2 0
+
+aiStrategicArea.create AlliedBase 512.8/697.4 517.8/702.4 50
+aiStrategicArea.addNeighbour AxisBase
+aiStrategicArea.addObjectTypeFlag Base
+aiStrategicArea.setOrderPosition Infantry 513.5/702.5
+aiStrategicArea.setSide 2
+aiStrategicArea.setTakeable 1 0
+
+aiStrategicArea.create PUBLICO 547.8/638.8 552.8/643.8 10
+aiStrategicArea.setSide 1
+aiStrategicArea.setTakeable 1 0
+aiStrategicArea.setTakeable 2 0
+
+aiStrategicArea.create PUBLICO_DOS 473.3/657.1 478.3/662.1 10
+aiStrategicArea.setSide 2
+aiStrategicArea.setTakeable 1 0
+aiStrategicArea.setTakeable 2 0
+
+aiStrategicArea.create New_Control_Point3 474.1/420.2 479.1/425.2 150
+aiStrategicArea.addNeighbour New_Control_Point2
+aiStrategicArea.addObjectTypeFlag Flank
+aiStrategicArea.addObjectTypeFlag Close
+aiStrategicArea.addObjectTypeFlag ControlPoint
+aiStrategicArea.setOrderPosition Infantry 479.5/424.5
+
+aiStrategicArea.create New_Control_Point1 562.7/544.3 567.7/549.3 50
+aiStrategicArea.addNeighbour AxisBase
+aiStrategicArea.addNeighbour New_Control_Point2
+aiStrategicArea.addObjectTypeFlag Base
+aiStrategicArea.setOrderPosition Infantry 568.5/549.5
+aiStrategicArea.setSide 1
+aiStrategicArea.setTakeable 2 0
+
+aiStrategicArea.create New_Control_Point2 569.7/549 574.7/554 50
+aiStrategicArea.addNeighbour New_Control_Point3
+aiStrategicArea.addNeighbour New_Control_Point1
+aiStrategicArea.addObjectTypeFlag Base
+aiStrategicArea.setOrderPosition Infantry 575.5/553.5
+aiStrategicArea.setSide 2
+aiStrategicArea.setTakeable 1 0

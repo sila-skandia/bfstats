@@ -1,0 +1,26 @@
+rem *** Strategic areas: one per control point (botgen) ***
+
+aiStrategicArea.create start 407.7/640.5 412.7/645.5 50
+aiStrategicArea.addNeighbour room2
+aiStrategicArea.addObjectTypeFlag Base
+aiStrategicArea.setOrderPosition Infantry 388.5/645.5
+aiStrategicArea.setSide 1
+aiStrategicArea.setTakeable 2 0
+
+aiStrategicArea.create room3 329.9/642.5 334.9/647.5 10
+aiStrategicArea.setSide 2
+aiStrategicArea.setTakeable 1 0
+aiStrategicArea.setTakeable 2 0
+
+aiStrategicArea.create room2 377.3/618.5 382.3/623.5 150
+aiStrategicArea.addNeighbour start
+aiStrategicArea.addObjectTypeFlag Flank
+aiStrategicArea.addObjectTypeFlag Close
+aiStrategicArea.addObjectTypeFlag ControlPoint
+aiStrategicArea.setOrderPosition Infantry 381.5/623.5
+aiStrategicArea.setSide 2
+
+aiStrategicArea.create room1 329.6/666.8 334.6/671.8 10
+aiStrategicArea.setSide 2
+aiStrategicArea.setTakeable 1 0
+aiStrategicArea.setTakeable 2 0

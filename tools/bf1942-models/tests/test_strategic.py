@@ -178,6 +178,24 @@ class StrategicFixtureTests(unittest.TestCase):
         self.assertEqual(n["heldInsideRr"], 0)
         self.assertTrue(n["heldArrived"])
 
+    def test_a_ring_the_ground_cut_is_asked_for_against_its_own_radius(self) -> None:
+        # The pole 4.1 m over the ground: a 1.862 m ring. On its edge the
+        # law's floor, 0.25 x 2; past 1.155 radii it outbids a look round
+        # (Scout's 1.0 against MoveTo's 1.5 x the order), which against R' it
+        # never did inside 6.9 m; at two radii it is whole.
+        g = self.results["pins"]["captureRing"]["ground3d"]
+        self.assertEqual(g["liftedAtEdge"], 0.5)
+        self.assertEqual(g["liftedOverScout"], [True, True])
+        self.assertEqual(g["liftedTwoRadii"], 2)
+
+    def test_a_flat_ring_keeps_the_engines_radius_in_its_urgency(self) -> None:
+        # A 4 m ring on its own ground: 8 m out is 8^2 / (4 x 7^2) x 2, the
+        # engine's law against R', not the 2.0 its own radius would ask.
+        # Shigaisen_B at 16 a side and Stalingrad's traces are the measure
+        # (features/bot-map-generation/README.md, section 16).
+        n = self.results["pins"]["captureRing"]["narrow"]
+        self.assertEqual(n["twoRadii"], 0.6531)
+
     def test_a_wide_flags_order_is_the_engines_own(self) -> None:
         # A 10 m flag (>= R'), and one with the template's default 8 m: the
         # engine's random point, its R, and arrival inside R' of that point.
@@ -213,6 +231,51 @@ class StrategicFixtureTests(unittest.TestCase):
         c = self.results["pins"]["captureRing"]
         self.assertEqual(c["groundNear"], "Pole")
         self.assertIsNone(c["groundFar"])
+
+    def test_a_pole_over_the_ground_is_ordered_into_what_its_radius_leaves_there(self) -> None:
+        # A 5 m flag 4.1 m over the ground a soldier stands on reaches
+        # sqrt(25 - 16.81) = 2.862 m across it: the order is the pole's foot,
+        # arrived only inside that less a body's metre, and the walk ends
+        # inside the 5 m the capture law measures in 3D. The flat 4 m ring
+        # left the body at hypot(4, 4.1) = 5.7 m, outside it.
+        g = self.results["pins"]["captureRing"]["ground3d"]
+        self.assertEqual(g["lifted"], {"point": [106, -100], "radius": 1.862, "flag": "Pole"})
+        self.assertLess(g["liftedEndToFlag"], 1.862)
+        self.assertLess(g["liftedEnd3d"], 5)
+        self.assertTrue(g["liftedArrived"])
+        # 3 m out: inside the flat ring, outside this one, still asked for
+        # (3^2 / (4 x 1.862^2) x 2).
+        self.assertEqual(g["liftedOutside"], 1.298)
+        self.assertFalse(g["liftedOutsideArrived"])
+        # A pole 4.1 m under the ground (a pit) is the same ring.
+        self.assertEqual(g["pit"], g["lifted"])
+
+    def test_a_radius_that_leaves_no_ring_on_the_ground_keeps_the_engines_order(self) -> None:
+        # 4.7 m up, a 5 m radius leaves 1.71 m: less a body's metre it is
+        # under a body's width, no ring to stand in. 13.5 m up (Stalingrad's
+        # upper-floor flags) it does not reach the ground at all.
+        c = self.results["pins"]["captureRing"]
+        self.assertEqual(c["ground3d"]["thin"]["point"], c["engineDraw"])
+        self.assertIsNone(c["ground3d"]["thin"]["flag"])
+        self.assertIsNone(c["groundFar"])
+
+    def test_a_wide_flag_on_a_height_is_narrow_on_the_ground(self) -> None:
+        # 10 m is at least R' (7 m here) and keeps the engine's order on its
+        # own ground; 8.5 m over it the radius leaves 5.268 m, under R': the
+        # ring, 4.268 m.
+        g = self.results["pins"]["captureRing"]["ground3d"]
+        self.assertIsNone(g["wideLevel"])
+        self.assertEqual(g["wideLifted"], {"point": [106, -100], "radius": 4.268, "flag": "Pole"})
+
+    def test_the_reach_and_the_stand_radius_follow_the_3d_radius(self) -> None:
+        # control-point-law.js `captureReach`: sqrt(r^2 - dy^2), 0 where the
+        # radius does not reach; the template's 8 m with no radius set.
+        law = self.results["pins"]["captureRing"]["ground3d"]["law"]
+        self.assertEqual(law["reach"], [5, 4, 2.862, 0, 0, 8])
+        # `captureStandRadius`: the flat figure (r - 1, at least r / 2) while
+        # a body there is inside the 3D radius (to 3 m up or down at 5 m);
+        # past that the reach less the metre; 0 under a body's width.
+        self.assertEqual(law["stand"], [4, 4, 2.842, 1.862, 0, 0, 0.75, 4.268])
 
     def test_a_ring_no_route_reaches_is_handed_back(self) -> None:
         # `noRoute` (bot-decision.js, two route failures running): the bot's

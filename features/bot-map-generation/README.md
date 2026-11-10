@@ -6,8 +6,12 @@ the lint, the detectors and the judge exist, and shigaisen_B has a generated
 layer kept as source. Phase A2 (section 15) fixed the three causes section
 14.6 named: shigaisen_B now passes every check at 8 a side and misses one at
 16 a side by 0.0008 redeploys a bot-minute, so its verdict is still a fail
-and the batch was not run. Nothing was published and no tree but a scratch
-one was touched.
+and the batch was not run. Phase B (section 16) took a census of the twenty
+fetched community levels and judged the six that could be judged: fourteen
+are classed out before a match is run (eleven of them arenas of stacked
+floors), none of the six passes at both sizes, and three are better than the
+same level with no layer (shigaisen_B, The_Maze, HOP). Nothing was published
+and no tree but a scratch one was touched.
 
 **Owner decisions, 2026-11-10.** Any level without bots is a candidate, in
 every mod and in the community maps, not only FHSW. The priority is on-foot
@@ -1754,3 +1758,319 @@ rule for flagless and air arenas, and engine maps for a mod's levels.
 3. Engine maps for mod levels; the strategic maps; numbered patch archives.
 4. The meeting-area rule; the batch.
 5. `createHomogenousCondition` in the reader (14.7).
+
+## 16. Phase B, 2026-11-10: why the other levels had no fight
+
+Section 15 left one level judged and nineteen fetched. The coordinator ran
+three of them and all three were dead: no kill, no capture, no ticket lost,
+with the layer and without. This section is the census that says why, the
+generic causes fixed, and the verdict on every level that could be judged.
+Six of the twenty were; fourteen are classed out before a match is run, each
+with its reason. Nothing was accepted and nothing published.
+
+### 16.1 The census
+
+```bash
+node sim/botbatch.mjs census --maps <scratch maps> --models <models> --mod bf1942 \
+     --game-dir <game folder> --archives ../../community-mappack-by-michaels \
+     --levels a,b,c --out <out>
+```
+
+Per level: the engine's maps if the layer has none (one level at a time, the
+lab's server is shared), the generator, the bake's `ai` layer on the scratch
+tree, the lint, and one match of 300 s at 8 a side, seed 1. One row a level,
+also `<out>/census.json`. With the engine's maps in hand the twenty levels
+take four and a half minutes; the engine's maps are two minutes a level on
+top, once. "Alive" is the batch's own rule: each side kills an enemy, both
+lose tickets, no bot throws.
+
+| Level | Alive | Kills (Axis/Allies) | Captures | Idle share | Route failures a bot-minute | Spawns off | Flags off | Flags over another floor, m | Floors | Map | Class |
+|---|---|---|---|---|---|---|---|---|---|---|---|
+| shigaisen_b | yes | 33/41 | 3 | 0.31 | 0.2 | 1 of 23 | 1 of 6 | 0 to 15.9 | one | engine | in |
+| shigaisen_c | no | 0/0 | 0 | 1.00 | 0.0 | 15 of 17 | 6 of 6 | 4 to 4.3 | stacked | engine | stacked; a side sealed in; no flag a soldier can stand in |
+| the_dungeon | no | 0/0 | 0 | 0.62 | 8.2 | 4 of 12 | 1 of 5 | 0 | one | painted | ground the page's soldier refuses |
+| the_maze | yes | 19/13 | 3 | 0.39 | 2.2 | 0 of 20 | 0 of 5 | 0 to 0.3 | one | painted | in |
+| the_corridor | no | 0/0 | 2 | 0.97 | 0.0 | 5 of 8 | 1 of 3 | 0 to 8.6 | stacked | painted | stacked; a side sealed in (ladders) |
+| knife_championship | yes | 3/2 | 0 | 0.61 | 0.0 | 19 of 25 | 2 of 3 | 0 to 8.6 | stacked | painted | stacked (2 of 3 flags a storey up) |
+| omaturi_channel_cannon | no | 0/0 | 0 | 0.99 | 0.0 | 11 of 25 | 4 of 6 | 0 | one | engine | sides do not meet on foot |
+| omaturi_channel_sniper | yes | 1/1 | 3 | 0.56 | 0.0 | 0 of 12 | 0 of 1 | 0 | one | painted | in |
+| omaturi_channel_sniper_day2 | no | 0/0 | 0 | 0.99 | 0.0 | 0 of 12 | 1 of 1 | 49.5 | stacked | engine | stacked (its one flag 49.5 m over the ground) |
+| shigaisen_a | yes | 9/11 | 4 | 0.46 | 2.0 | 6 of 25 | 3 of 5 | 0 to 9 | stacked | engine | stacked (3 of 5 flags a storey up) |
+| shigaisen_d | yes | 1/1 | 2 | 0.42 | 3.3 | 8 of 27 | 1 of 5 | 0 to 4.3 | stacked | engine | stacked (32 % of the floor) |
+| the_room | no | 0/0 | 0 | 0.74 | 2.6 | 12 of 17 | 2 of 3 | 0 to 54.7 | stacked | painted | stacked; a side sealed in (ladders) |
+| the_street | no | 0/0 | 0 | 0.98 | 0.2 | 9 of 29 | 5 of 5 | 4 to 11.7 | stacked | painted | stacked; no flag a soldier can stand in |
+| the_street_day2 | no | 0/0 | 0 | 0.97 | 0.0 | 9 of 29 | 5 of 5 | 4 to 11.7 | stacked | engine | stacked; no flag a soldier can stand in |
+| hop | yes | 29/46 | 0 | 0.28 | 1.7 | 0 of 4 | 0 of 2 | 0 to 0.1 | one | painted | in |
+| shigaisen_g | yes | 33/32 | 0 | 0.31 | 0.0 | 23 of 27 | 0 of 3 | 0 | stacked | engine | stacked; both bases sealed in (ladders) |
+| the_fortress | no | 0/2 | 1 | 0.77 | 7.2 | 2 of 21 | 1 of 4 | 0 to 0.2 | one | engine | attackers have no soldier spawn |
+| the_street_g | no | 0/0 | 0 | 0.19 | 3.3 | 9 of 29 | 5 of 5 | 4 to 11.7 | stacked | engine | stacked; no flag a soldier can stand in |
+| _o_jka__big | yes | 16/4 | 1 | 0.51 | 0.0 | 0 of 11 | 0 of 1 | 0 | one | engine | in |
+| _o_jka__ | yes | 14/16 | 2 | 0.70 | 0.7 | 0 of 7 | 0 of 1 | 0.2 | one | engine | in |
+
+"Spawns off" and "flags off" are the soldier spawns and capturable flags the
+walk test (16.3) finds cut off from the main walked ground or a storey over
+it. "Map" is where the layer's infantry map came from: the engine's own, or
+painted from the walk test because the engine's held under half the ground.
+
+Ten alive, ten dead. The lint (16.3) called nineteen of the twenty right
+before the match ran. The one it missed is shigaisen_g: both bases are
+sealed in (ladders are the only way down), the lint predicts a dead level,
+and the two sides shoot each other from where they stand.
+
+One seed overstates. Omaturi_channel_sniper is alive in the census with one
+kill a side and has no fight over ten seeds (16.5).
+
+### 16.2 The classes
+
+| Class | Levels | What it is |
+|---|---|---|
+| Stacked floors | shigaisen_c, the_corridor, knife_championship, omaturi_channel_sniper_day2, shigaisen_a, shigaisen_d, the_room, the_street, the_street_day2, shigaisen_g, the_street_g | The play surface is several floors over each other. A one-bit walk map holds one floor, and retail's AI could not route these either. Classed out, not worked on |
+| A side sealed in | shigaisen_c; with ladders the_corridor, the_room, shigaisen_g | No spawn of a side has a way on foot to the ground the flags are on |
+| No flag a soldier can stand in | shigaisen_c, the three the_street levels, omaturi_channel_sniper_day2 | No capturable flag has a place inside its 3D radius that a soldier on the one-floor map can stand in |
+| Sides never meet on foot | omaturi_channel_cannon, the_fortress | Two shores of a channel, 426 m apart with the guns between; a landing whose attackers have no soldier spawn point |
+| Ground the page's soldier refuses | the_dungeon | Every usable spawn stands on terrain the page reads as too steep to climb |
+
+Stacked is the walk test's reading: a tenth or more of the main floor has
+another walked floor over or under it, or half or more of the capturable
+flags stand a storey (2.5 m) over another walked floor. Both figures are
+this tool's choices (INVENTION, `walkflood.mjs STACKED_SHARE`,
+`STACKED_FLAGS`). Four stacked levels are alive in the census:
+knife_championship, shigaisen_a, shigaisen_d and shigaisen_g. They are
+classed out all the same. On shigaisen_a three of the five capturable flags
+are upstairs and a bot never contests them; on shigaisen_d a third of the
+floor has a second floor over it. The matrix was not run on them.
+
+**shigaisen_c, the level the coordinator traced.** Three causes, all the
+level's:
+
+* The level sinks the vanilla city blocks 4.5 to 8.3 m into the ground. The
+  engine draws its map from a cut at each mesh's lowest vertex plus 0.4 and
+  2.0 m, so the doorways on its map are the buried storey's. At street level
+  every opening is a window: a 0.67 m sill at the flag buildings, 0.93 m at
+  both bases. The page's soldier steps 0.45 m and a bot never jumps. That is
+  the Axis base's 76-cell pocket and the 712 route failures of the Allied
+  bots on the main component: a route the map allows and a sill the body
+  does not.
+* All six capturable flags stand on a floor 4.0 to 4.3 m over the street.
+  The 3D ring (16.3) now sends a bot under them; no bot can reach the place.
+* The water plane 0.37 m over the street is not a cause. It is under every
+  gate the page has (pose 0.4 m, firing and the medic 0.75, swimming 1.43,
+  the walk map 1.5); bots wade it at full speed.
+
+**the_dungeon.** In a traced match 13 of 16 bots never left their spawn
+point: some walk forward into the ground for the whole match, some have no
+route and stand. The lint flags it from the slope the page reads under
+every usable spawn (`soldier-resolve.js tooSteep` takes the terrain's
+normal across a lattice cell, so ground beside a terrain wall reads steep).
+Three Allied bots did walk 176 m, so "no spawn a soldier leaves" would
+overstate it; the lint's text was corrected to say what was measured. The
+cause is in the soldier's movement on that terrain and was not isolated
+further. A person playing the level on the page meets the same ground.
+
+### 16.3 What was fixed
+
+**(a) The capture ring from the 3D geometry** (`viewer/control-point-law.js
+captureReach`, `captureStandRadius`; `strategic-ai.js _captureRing`;
+`bot-decision.js fallbackRadius`; `bot-pose.js footingAt`). A capture is
+measured in 3D and an order across the ground. Where the pole stands `dy`
+over or under the ground a soldier stands on, the flag reaches
+`sqrt(r² - dy²)` across that ground, and the ring a bot is sent into is that
+less a body's metre. Under a metre of ring, or no reach at all, the engine's
+order stands as before: Stalingrad's two upper-floor flags, 13.5 m up with a
+5 m radius, keep it. The ground is the terrain, and the swim draft in water
+deeper than a soldier wades, never the water plane. Spec:
+`features/bf1942-ai-spec/strategic.md`, "The capture ring".
+
+Measured on a copy of shigaisen_B with its three small capturable flags
+lifted 4.1 m (a test level in scratch): ten seeds of 600 s gave 11 captures
+before, 15 with the 3D ring, and 23 once a ring the ground cut is asked for
+against its own radius instead of the order's (the last metres into a
+1.86 m ring were being outbid by the Scout behaviour).
+
+That urgency rule was first written for every ring, flat ones too, and that
+version was dropped. On the real shigaisen_B it raised stuck seconds a
+bot-minute from 1.78 to 2.23 at 16 a side and from 1.83 to 1.99 at 8, and it
+changed Stalingrad's two traces, which moves the bar (stuck p90 at 16 a side
+1.990 to 1.977, redeploys p90 0.129 to 0.140). Kept to rings the ground cut,
+no DICE level reads it (16.4).
+
+**(b) Spawn pockets, by a walk test** (`sim/walkflood.mjs`). A flood of
+standing places over the real collider on quarter-metre cells, with the
+page's own soldier: radius 0.39 m, height 1.8, step 0.45, slope limit 60
+degrees, wading 1.5 m, and a drop of no more than 2 m (the fall that costs
+no health). Every move is one the page's capsule can make. From it the
+generator (version 3) reads:
+
+* whether a spawn or a flag the map keeps in a pocket has a way out on foot.
+  If it has, the cells of that way are opened in the layer's own infantry
+  map and listed in `generated.json` (`walkMap.opened`, `walkMap.ways`). A
+  way that needs a jump is not opened. INVENTION.
+* which spawns bots are kept off (no way to the main ground, or a storey
+  over another floor), and which flags are out of reach in 3D.
+
+Cells opened: hop 31 (three ways), the_fortress 43, shigaisen_g 27,
+the_street_day2 20, the_street_g 11, the_street 9, the_corridor 54,
+shigaisen_d 1. No way found: 8 spawns on shigaisen_c (the sealed base), 23
+on shigaisen_g, 9 on omaturi_channel_cannon, 8 each on knife_championship
+and the_room. Of the levels judged in 16.5 only hop has opened cells.
+
+The search maps needed a writer (`botgen.mjs encodeSearchMap`,
+`encodePyramid`: level 0 edited, levels 1 and 2 the OR of four children). It
+reproduces DICE's nine Kharkov maps byte for byte.
+
+**(c) Route failures on the main component.** shigaisen_c's are the sills
+above: level data, not bot code. Nothing was changed for them.
+
+**(d) Arenas whose floor the engine's map does not hold.** The engine's map
+of the_corridor is blocked everywhere (the floor is objects high over the
+terrain), and its map holds under half of the walked ground on seven more
+levels: hop 2 %, knife_championship 7 %, the_room 28 %, the_dungeon 31 %,
+the_street 37 %, the_maze 39 %, omaturi_channel_sniper 44 %. Under half
+(`walkflood.mjs MAP_COVER`), the layer's infantry map is painted from the
+walk test's main ground instead and the engine's level 0 is kept beside it
+(`Pathfinding/engine/`), so a later run decides again. INVENTION, recorded
+as `walkMap.source: "walk test"` with `engineCover`.
+
+A painted cell is free when at least half of its quarter-metre cells hold a
+standing place and the four about its centre all do. The centre was added
+in this phase. With half the cell alone a cell half inside a wall's reach
+was free, the route ran through its centre, and bots walked into wall ends
+and stayed: on the_maze (walls a quarter of a metre thick, corridors three
+metres wide), three seeds of 600 s at 8 a side gave 7.1, 7.3 and 7.3 stuck
+seconds a bot-minute and no capture. With the centre: 2.2, 1.4 and 1.4, and
+3, 9 and 3 captures.
+
+**(e) The lint predicts a dead level** (`sim/botlint.mjs lintWalk`). Errors,
+each tagged with its class: a side holds no spawn point at the start; a
+side has no spawn with a way on foot to the main ground; a side can reach
+none of the flags it must take; no capturable flag is reachable in 3D;
+every usable spawn of a side stands on ground the page refuses; the play
+surface is stacked. `botbatch level` now lints before any match and gives a
+level with a lint error the outcome `unsuitable` in seconds, with the
+errors in its `verdict.json`; `--despite-lint` runs it all the same. All
+fourteen classed-out levels carry that verdict, so the bake's gate stays
+shut on them.
+
+**Also.** `engine_search_maps.py` links the archive a variant level reads
+(a second day keeps its terrain in the first day's archive; both day-2
+levels failed without it). The comparison with the no-layer level
+(`botbatch.mjs betterThanNothing`) leaves spawn traps out where the
+no-layer level has no fight: on the_maze nobody is killed in twenty matches
+with no layer, so its zero spawn traps read 0.011 a bot-minute with the
+layer as "worse" and the outcome as no-better-than-nothing. It is the same
+reasoning as `no-fight` on the other arm, and the left-out rate is named in
+the verdict (`notCompared`). No bar was moved.
+
+### 16.4 DICE levels and the baseline
+
+No bot-code change of this phase moves a DICE trace.
+
+| Level | With vehicles | On foot |
+|---|---|---|
+| Bocage | 455a8c43, identical | 02693d42, identical |
+| Kharkov | 777842fc, identical | c4a1ae94, identical |
+| Berlin | ba553cce, identical | a6949645, identical |
+| Stalingrad | b8680e9d, identical | 46f61f8d, identical |
+| El Alamein | 2cb9a704, identical | 59ad9ebb, identical |
+
+Seed 3, 8 a side, 300 s, the committed viewer against the final one (trace
+hashes, first eight digits). The baseline was rebuilt on the final code all
+the same (four levels, two sizes, ten seeds, 80 matches): the file is byte
+for byte the committed one, so every bar in 15.4 stands as written.
+
+### 16.5 The verdicts
+
+Ten seeds, 600 s, Conquest, on foot, 8 and 16 a side, the level with no
+layer and with the generated one, on the six levels that lint clean and
+were alive in the census. Medians; the bar in brackets.
+
+| Level | 8 a side | 16 a side | Outcome |
+|---|---|---|---|
+| shigaisen_b | pass, 15 of 15 | fail: redeploys 0.1298 (0.129) | better-than-nothing |
+| the_maze | fail: route failures 2.73 (0.38), redeploys 0.230 (0.198) | fail: route failures 4.22 (2.10), redeploys 0.203 (0.129) | better-than-nothing |
+| hop | fail, 6 checks: stuck 3.52 (2.06), spawn traps 0.194 (0.143), route failures 2.01 (0.38), redeploys 0.250 (0.198), no capture, one side never captures | fail, 7 checks: the same and flag coverage | better-than-nothing |
+| _o_jka__big | fail: idle share 0.60 (0.53) | pass, 15 of 15 | no-better-than-nothing |
+| _o_jka__ | fail: idle share 0.71 (0.53), route failures 0.50 (0.38) | fail: idle share 0.77 (0.72) | no-better-than-nothing |
+| omaturi_channel_sniper | fail, 5 checks | fail, 5 checks | no-fight |
+
+No layer against generated, the rates behind the outcome:
+
+| Level, size | Stuck seconds | Route failures | Redeploys | Idle share | Captures | Enemy kills a bot-minute |
+|---|---|---|---|---|---|---|
+| shigaisen_b, 8 | 12.97 to 1.83 | 12.80 to 0.34 | 0.87 to 0.16 | 0.02 to 0.31 | 2 to 3 | 1.00 to 1.09 |
+| shigaisen_b, 16 | 14.74 to 1.78 | 16.20 to 0.65 | 0.97 to 0.13 | 0.01 to 0.41 | 2 to 2 | 1.11 to 0.61 |
+| the_maze, 8 | 24.48 to 1.45 | 47.20 to 2.73 | 1.98 to 0.23 | 0 to 0.36 | 0 to 3 | 0 to 0.53 |
+| the_maze, 16 | 24.48 to 1.26 | 47.26 to 4.22 | 1.98 to 0.20 | 0 to 0.39 | 0 to 2 | 0 to 0.43 |
+| hop, 8 | 60.41 to 3.52 | 45.77 to 2.01 | 3.14 to 0.25 | 0 to 0.25 | 0 to 0 | 0 to 1.08 |
+| hop, 16 | 60.41 to 2.53 | 45.97 to 4.85 | 3.14 to 0.18 | 0 to 0.22 | 0 to 0 | 0 to 0.87 |
+| _o_jka__big, 8 | 1.79 to 0.30 | 0.28 to 0.00 | 0.12 to 0.03 | 0.30 to 0.60 | 3 to 2.5 | 0.64 to 0.30 |
+| _o_jka__big, 16 | 1.95 to 0.76 | 0.38 to 0.40 | 0.12 to 0.05 | 0.27 to 0.63 | 3 to 3 | 0.61 to 0.25 |
+| _o_jka__, 8 | 1.75 to 1.31 | 11.01 to 0.50 | 0.10 to 0.10 | 0.31 to 0.71 | 3 to 4.5 | 0.68 to 0.34 |
+| _o_jka__, 16 | 0.23 to 1.24 | 14.50 to 1.85 | 0.02 to 0.11 | 0.36 to 0.77 | 2 to 1 | 0.33 to 0.20 |
+| omaturi_channel_sniper, 8 | 14.11 to 3.65 | 24.75 to 0.00 | 0.28 to 0.00 | 0.47 to 0.64 | 1 to 1.5 | 0 to 0.013 |
+| omaturi_channel_sniper, 16 | 6.16 to 2.29 | 27.49 to 0.01 | 0.26 to 0.00 | 0.46 to 0.70 | 1 to 1.5 | 0 to 0.009 |
+
+Level by level:
+
+* **shigaisen_b** is section 15.4 again to the last digit: the 3D ring and
+  generator 3 change nothing on it. Its acceptance was carried by the tool.
+  The Allies still win ten of ten at both sizes (15.4).
+* **the_maze** has no fight at all with no layer (no kill in twenty
+  matches) and a full one with it: both sides kill in every seed, 49
+  captures over ten seeds at 8 a side, 13 of 15 checks at each size. What
+  fails is one place. In a traced match 137 of 167 route failures are at
+  396 to 398, -696 to -716, where a post and a short wall stand in the
+  north half of a three-metre corridor and leave a 0.75 m band to pass
+  through; bots cutting the corner from the crossing corridor walk into the
+  post. The Axis wins nine of ten at both sizes.
+* **hop** is two flags, both of them bases that can be taken, and four
+  spawn points, on a floor of objects. With no layer every bot is stuck for
+  the whole match. With the layer both sides kill in every seed (687 and
+  790 kills over ten seeds at 8 a side), and nobody takes a base: one
+  capture in twenty matches. The busiest stuck place is 524, -568, by the
+  Axis base.
+* **_o_jka__big** and **_o_jka__** already fight with no layer: the page's
+  painted map is enough there, and the no-layer level fails one check
+  (_o_jka__big: spawn traps, at both sizes) or two (_o_jka__: route failures
+  and team kills). The layer cuts route failures, doubles the idle share
+  and halves the kill rate: each level has one capturable
+  flag, and Kharkov's strategies keep most of a side at home. On these two
+  a generated layer is not an improvement, and the tool says so.
+* **omaturi_channel_sniper** is a sniping range: the bases are 209 m apart
+  on two cliffs with one flag between them, 51 m lower, with a 40 m radius. The
+  Allies take the flag in every seed and the Axis bleeds; 20 kills in ten
+  matches at 8 a side. Bots do not duel at that range.
+
+### 16.6 What a layer costs
+
+19 to 76 KB a level, median 49 KB, 922 KB for the twenty in
+`tools/bf1942-models/bot-layers/bf1942/`. The fourteen classed-out layers
+are kept: each holds two minutes of the lab's server and the verdict that
+says why it is shut. They are 630 KB and can be deleted at no cost but that.
+
+### 16.7 Open, and not verified
+
+1. Nothing in this phase was looked at in a browser. The page-side change
+   is bot code that the runner exercises.
+2. The four stacked levels that are alive were not run through the matrix,
+   and the two figures that class them are choices. shigaisen_a (two of
+   five flags on the ground) is the one to argue about.
+3. Whether bots walk the one-cell ways the generator opens was not isolated.
+   hop is the only judged level with any.
+4. the_dungeon's cause is named to the soldier's slope rule and no further.
+5. the_maze's corridor post, hop's bases and shigaisen_b's hut doors are
+   the same question: how the page's soldier steers past something narrow.
+   It belongs on a DICE level with a door, not on these.
+6. On a level with one capturable flag the Kharkov template idles half a
+   side. A template chosen by flag count is the next generator question;
+   the two _o_jka__ levels are the measure.
+7. The census's "alive" is one seed. It cleared omaturi_channel_sniper,
+   which ten seeds did not.
+8. Whether retail's bots jump a sill, and what retail's AI does on a stacked
+   level, were not looked at in the lab.
+9. `captureTick` on the page measures a capture from the soldier's feet;
+   the engine measures from the origin, a metre up. Found while reading,
+   not changed.
+10. From 15.8, still open: the stand-in for a person, engine maps for mod
+    levels, strategic maps, numbered patch archives, the meeting-area rule,
+    `createHomogenousCondition`.

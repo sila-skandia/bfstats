@@ -531,6 +531,33 @@ class BotAiTests(unittest.TestCase):
         self.assertAlmostEqual(c["wide"]["stopped"], c["unset"]["stopped"], delta=0.25)
         self.assertLess(c["narrow"]["stopped"], c["wide"]["stopped"] - 0.5)
 
+    def test_the_fallback_walks_under_a_flag_on_a_floor_above(self) -> None:
+        # A 5 m flag 4.1 m over a street that lies 0.37 m under the water
+        # plane (the community map shigaisen_C): the soldier stands on the
+        # street, the radius leaves sqrt(25 - 16.81) = 2.862 m there, and the
+        # fallback stops only inside that less a body's metre. The flat 4 m
+        # left the bot 5.7 m from the pole in 3D, outside the ring.
+        g = self.results["captureRing"]["lifted"]
+        self.assertEqual(g["arrive"], 1.862)
+        self.assertLess(g["stopped"], 1.862)
+        self.assertLess(g["stopped3d"], 5)
+        self.assertEqual(g["feet"], 0)                 # on the bed, not the water plane
+        self.assertTrue(g["arrived"], g)
+        self.assertTrue(g["goalReached"], g)
+
+    def test_the_fallback_under_a_flag_out_of_reach_keeps_its_radius(self) -> None:
+        # 13.5 m up the radius reaches no ground: R = 5, as for a wide flag.
+        g = self.results["captureRing"]["outOfReach"]
+        self.assertEqual(g["arrive"], 5)
+        self.assertGreater(g["stopped"], 3.5)
+
+    def test_a_soldiers_footing_is_the_bed_until_the_water_floats_them(self) -> None:
+        # bot-pose.js `footingAt` over a bed at 0: under 0.37 m and under
+        # 1.4 m of water the bed (a soldier wades to 1.43 m, swim.js); under
+        # 3 m the draft, 1.4 m under the surface; no water: the bed; no
+        # terrain: unknown.
+        self.assertEqual(self.results["captureRing"]["footing"], [0, 0, 1.6, 0, None])
+
     def test_the_bot_walks_toward_the_objective(self) -> None:
         move = self.results["moveTo"]
         self.assertGreater(move["movedForward"], 30)

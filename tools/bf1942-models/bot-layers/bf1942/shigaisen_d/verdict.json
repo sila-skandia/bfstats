@@ -1,0 +1,21 @@
+{
+ "level": "shigaisen_d",
+ "verdict": "fail",
+ "outcome": "unsuitable",
+ "generatorVersion": 3,
+ "inputs": {
+  "controlPoints": "40161ad8047c0450a8d094fa77b34efd2450dac858b8fae7f70c749c9c18c93f",
+  "infantryMap": "39d8b4e941f0cc49274282028977ad45915d0b328bde27f3628b495ba51ddcb7",
+  "template": "43f8a790471528016570235f76e97dbb2045732458781a5139f37fed68bf98c0"
+ },
+ "baseline": "DICE layers on foot: berlin, stalingrad, kharkov, bocage; seeds 1..10, 600 s, --no-vehicles",
+ "seeds": 10,
+ "sizes": {},
+ "oneSided": null,
+ "unreachable": [
+  "house"
+ ],
+ "lintErrors": [
+  "the play surface is stacked floors (32 % of the main floor has another walked floor over or under it): a one-floor walk map cannot hold it"
+ ]
+}

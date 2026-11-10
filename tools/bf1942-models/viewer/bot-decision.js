@@ -33,7 +33,8 @@ import { playerPosition, SOLDIER_RADIUS } from './bot-sense.js';
 import { TAKE_COVER, MEDIC } from './bot-behaviours.js';
 import { airAvoid } from './bot-pilot.js';
 import { isArtilleryDriver } from './bot-perception.js';
-import { captureRadius, captureStandRadius } from './control-point-law.js';
+import { captureReach, captureStandRadius } from './control-point-law.js';
+import { footingAt } from './bot-pose.js';
 
 /**
  * Behaviour names matching AIbehaviours.con §4.1, in registration order.
@@ -104,11 +105,16 @@ const FALLBACK_WAYPOINT_RADIUS = 5.0;
  * fallback's own arrival distance, R + a soldier's path radius, is walked
  * into, to within `captureStandRadius` of the pole; a 5 m flag's bot stopped
  * on its edge at 5 m and, a step up or down from the pole, outside the 3D
- * ring. Any flag at least that wide keeps R.
+ * ring. The width is the flag's reach across the ground a soldier stands on
+ * at its foot (control-point-law.js `captureReach`, bot-pose.js
+ * `footingAt`), and the ring what that geometry leaves. Any flag at least
+ * that wide on the ground, and one whose radius leaves no ring there, keeps R.
  */
-function fallbackRadius(flag) {
-  return captureRadius(flag) < FALLBACK_WAYPOINT_RADIUS + SOLDIER_RADIUS
-    ? captureStandRadius(flag) : FALLBACK_WAYPOINT_RADIUS;
+function fallbackRadius(bot, flag) {
+  const ground = footingAt(bot.world?.collider, flag.position[0], flag.position[2]);
+  const dy = Number.isFinite(ground) ? flag.position[1] - ground : 0;
+  if (captureReach(flag, dy) >= FALLBACK_WAYPOINT_RADIUS + SOLDIER_RADIUS) return FALLBACK_WAYPOINT_RADIUS;
+  return captureStandRadius(flag, dy) || FALLBACK_WAYPOINT_RADIUS;
 }
 /** Route failures in a row before a bot hands back an order into a flag's
  *  capture ring (INVENTION, `urgencyMoveTo`). */
@@ -142,7 +148,7 @@ export function updateObjectiveReadout(bot, dt) {
     const flag = bot._nearestEnemyFlag();
     bot.objective = flag;
     bot.objectiveGoal = flag ? [flag.position[0], flag.position[1], flag.position[2]] : null;
-    bot.goalReached = !!bot.objectiveGoal && bot._distTo(bot.objectiveGoal) < fallbackRadius(flag);
+    bot.goalReached = !!bot.objectiveGoal && bot._distTo(bot.objectiveGoal) < fallbackRadius(bot, flag);
   }
   // Progress is measured per order: a new order (a new waypoint object, or
   // the nearest enemy flag changing without one) starts the best distance
@@ -305,14 +311,21 @@ export function fallbackWaypoint(bot) {
   const R = FALLBACK_WAYPOINT_RADIUS;
   // The plan stops at `radius` (bot-plans.js `planMoveTo`): R, or the ring's
   // for a flag narrower than the fallback's arrival (`fallbackRadius`).
-  const radius = fallbackRadius(flag);
+  const radius = fallbackRadius(bot, flag);
   bot._fallback = {
     kind: 'WPMoveTo', flag, area: null, point, radius, arrived: false,
     urgency(x, z, r = SOLDIER_RADIUS) {
       const Rr = R + r;
       const d2 = (x - point[0]) ** 2 + (z - point[1]) ** 2;
-      this.arrived = radius < R ? d2 < radius * radius : d2 < 2 * Rr * Rr;
-      return Math.min(1, Math.max(0.1, d2 / (4 * Rr * Rr))) * 2.0;
+      const ringed = radius < R;
+      this.arrived = ringed ? d2 < radius * radius : d2 < 2 * Rr * Rr;
+      // A ring the ground cut (narrower than the flat figure: the pole on a
+      // floor above, or in a pit) is asked for against its own radius, as
+      // the strategic order's is (strategic-ai.js `_order`, INVENTION):
+      // against Rr the last metres into it asked for less than a look round
+      // (Scout) does. A flat ring keeps Rr.
+      const A2 = ringed && radius < captureStandRadius(flag) ? radius * radius : Rr * Rr;
+      return Math.min(1, Math.max(0.1, d2 / (4 * A2))) * 2.0;
     },
   };
   return bot._fallback;

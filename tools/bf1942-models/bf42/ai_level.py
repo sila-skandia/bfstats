@@ -500,8 +500,12 @@ class _FolderFiles:
 
 
 def generated_layer_dir(mod: str, level: str, root: Path | None = None) -> Path | None:
-    """The folder holding a generated bot layer for `level` of `mod`, or None."""
-    folder = Path(root or GENERATED_ROOT) / mod.lower() / level.lower()
+    """The folder holding a generated bot layer for `level` of `mod`, or None.
+    `BOT_LAYERS_ROOT` points a scratch run at layers kept outside the repo
+    (`sim/botbatch.mjs --layers`)."""
+    import os
+
+    folder = Path(root or os.environ.get("BOT_LAYERS_ROOT") or GENERATED_ROOT) / mod.lower() / level.lower()
     return folder if (folder / "generated.json").is_file() else None
 
 
@@ -563,6 +567,13 @@ def load_generated_ai(mod: str, level: str, root: Path | None = None) -> LevelAi
     marker = json.loads((folder / "generated.json").read_text())
     ai.generated = {k: marker[k] for k in ("generator", "version", "template", "scope", "unreachable", "botSpawnsExcluded", "inputs", "files")
                     if k in marker}
+    # The walk test's edit of the layer's own infantry map (`sim/botgen.mjs
+    # prepareWalkMap`), in short: where the map came from and how many cells
+    # of a walked way it had opened. The cells themselves stay in the marker.
+    walk = marker.get("walkMap")
+    if isinstance(walk, dict):
+        ai.generated["walkMap"] = {"source": walk.get("source"), "opened": len(walk.get("opened") or []),
+                                   "stacked": bool((walk.get("floors") or {}).get("stacked"))}
     ai.generated["gate"] = why
     return ai
 

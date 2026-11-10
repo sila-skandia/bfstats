@@ -1,0 +1,51 @@
+{
+ "level": "hop",
+ "verdict": "fail",
+ "outcome": "better-than-nothing",
+ "generatorVersion": 3,
+ "inputs": {
+  "controlPoints": "9a2c8aed0e23458fce46b65b98c340d52e4a3e32caead5c451e97e0fe59f2a33",
+  "infantryMap": "0329ef915541d905c70b55a1dbe42af1bc9f89727332f8a2272e0bdf76b2c0db",
+  "template": "43f8a790471528016570235f76e97dbb2045732458781a5139f37fed68bf98c0"
+ },
+ "baseline": "DICE layers on foot: berlin, stalingrad, kharkov, bocage; seeds 1..10, 600 s, --no-vehicles",
+ "seeds": 10,
+ "sizes": {
+  "8": {
+   "verdict": "fail",
+   "failed": [
+    "stuckSecondsPerBotMinute",
+    "spawnTrapsPerBotMinute",
+    "routeFailuresPerBotMinute",
+    "redeploysPerBotMinute",
+    "capturesTotal",
+    "bothSidesCapture"
+   ],
+   "winners": [
+    4,
+    6,
+    0
+   ]
+  },
+  "16": {
+   "verdict": "fail",
+   "failed": [
+    "stuckSecondsPerBotMinute",
+    "spawnTrapsPerBotMinute",
+    "routeFailuresPerBotMinute",
+    "redeploysPerBotMinute",
+    "capturesTotal",
+    "flagCoverage",
+    "bothSidesCapture"
+   ],
+   "winners": [
+    8,
+    2,
+    0
+   ]
+  }
+ },
+ "oneSided": null,
+ "unreachable": [],
+ "lintErrors": []
+}

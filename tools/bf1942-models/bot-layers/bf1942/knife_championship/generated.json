@@ -1,0 +1,119 @@
+{
+ "generator": "botgen",
+ "version": 3,
+ "mod": "bf1942",
+ "level": "knife_championship",
+ "template": "symmetric",
+ "templateSource": "DICE, bf1942 Kharkov (1.6 patch archives): AI/Strategies.con, AI/conditions.con, AI/prerequisites.con, unchanged",
+ "scope": "on foot: an infantry map painted from the walk test, the engine's own Tank0 map, infantry order positions, no strategic maps, no co-op layer",
+ "unreachable": [
+  "PUBLICO",
+  "PUBLICO_DOS"
+ ],
+ "botSpawnsExcluded": [
+  "AxisBase_Spawn1",
+  "AlliedBase_Spawn1",
+  "New_Control_Point1_Spawn1",
+  "New_Control_Point1_Spawn2",
+  "New_Control_Point1_Spawn3",
+  "New_Control_Point1_Spawn4",
+  "AxisBase_Spawn2",
+  "AxisBase_Spawn3",
+  "AxisBase_Spawn4",
+  "New_Control_Point2_Spawn1",
+  "New_Control_Point2_Spawn2",
+  "New_Control_Point2_Spawn3",
+  "New_Control_Point2_Spawn4",
+  "New_Control_Point2_Spawn5",
+  "New_Control_Point2_Spawn6",
+  "New_Control_Point2_Spawn7",
+  "AlliedBase_Spawn2",
+  "AlliedBase_Spawn3",
+  "AlliedBase_Spawn4"
+ ],
+ "walkMap": {
+  "source": "walk test",
+  "engineCover": 0.074,
+  "opened": [],
+  "ways": [
+   {
+    "who": "AxisBase_Spawn1",
+    "kind": "spawn",
+    "way": "none",
+    "opened": 0
+   },
+   {
+    "who": "AlliedBase_Spawn1",
+    "kind": "spawn",
+    "way": "none",
+    "opened": 0
+   },
+   {
+    "who": "AxisBase_Spawn2",
+    "kind": "spawn",
+    "way": "none",
+    "opened": 0
+   },
+   {
+    "who": "AxisBase_Spawn3",
+    "kind": "spawn",
+    "way": "none",
+    "opened": 0
+   },
+   {
+    "who": "AxisBase_Spawn4",
+    "kind": "spawn",
+    "way": "none",
+    "opened": 0
+   },
+   {
+    "who": "AlliedBase_Spawn2",
+    "kind": "spawn",
+    "way": "none",
+    "opened": 0
+   },
+   {
+    "who": "AlliedBase_Spawn3",
+    "kind": "spawn",
+    "way": "none",
+    "opened": 0
+   },
+   {
+    "who": "AlliedBase_Spawn4",
+    "kind": "spawn",
+    "way": "none",
+    "opened": 0
+   }
+  ],
+  "cover": 0.993,
+  "floors": {
+   "stacked": true,
+   "twoFloorShare": 0.008,
+   "raised": [
+    "PUBLICO",
+    "PUBLICO_DOS"
+   ],
+   "reason": "2 of 3 capturable flags stand a storey over or under another walked floor"
+  }
+ },
+ "inputs": {
+  "controlPoints": "56d8bccad2a7e19c47fa1d00e211046823f5661e17f2fb1b162af7f54080bda4",
+  "infantryMap": "c1e62c66d329722509f0bc103376ecd32baa08fe28b406766780c3a9eca45344",
+  "template": "43f8a790471528016570235f76e97dbb2045732458781a5139f37fed68bf98c0"
+ },
+ "files": {
+  "AI.con": "3dc94f663ac7545695a38d3670752432e4a5e64efe048dc4b26d578aece3748c",
+  "AIpathFinding.con": "714499ad831a139560e4913e729aee4c62a23457be02e0c36c73af18f4bb31cb",
+  "AI/StrategicAreas.con": "8bee3f1d0a73c116aa24f175640084db63626546aba10db43ffed883714d6f0b",
+  "AI/Strategies.con": "4ce0be59a0d6c5cd530db002fb062c4be8d936bc6ae59bd188803ccaf7869a8d",
+  "AI/conditions.con": "68a0c7a8aec69954063147b60fae560b2874884285737aa085efa76597d395aa",
+  "AI/prerequisites.con": "4c1f313bc285b228fd6ad03bfd1f44c5b15c8703c31f802eb605bc5f00f88bb5",
+  "Pathfinding/Infantry1Level0Map.raw": "80e5ee9c704eceec0b5085c79052d03eb177784f3587d2103bcd5faaf01cb539",
+  "Pathfinding/Infantry1Level1Map.raw": "fcdd3dbb5bb0ea3c17e02f0eb6cba9eff63b59b64d29d73792a9286da4732efe",
+  "Pathfinding/Infantry1Level2Map.raw": "2dc11d0b81388c0d0b90c63185b0acebbda5a1668ac0d671c485978f0e18cae7",
+  "Pathfinding/Tank0Level0Map.raw": "944dc5b5634eaf3e9f1ec741fd0613848906dffd91419c4a0ca1e79293f46163",
+  "Pathfinding/Tank0Level1Map.raw": "878d174cba751310e8e6fd110f31e9fe6fcf7235c669bb26201259b34c0fe854",
+  "Pathfinding/Tank0Level2Map.raw": "4e7fb00cfd3821e4872693d78b77829c0660275b71f40eb0993b3193e1aa33f3",
+  "Pathfinding/engine/Infantry1Level0Map.raw": "5d93929dfd93492849d065467650ea3c97340f8669939e98f24c27a5318f345f"
+ }
+}

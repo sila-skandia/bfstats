@@ -1,0 +1,25 @@
+{
+ "level": "omaturi_channel_cannon",
+ "verdict": "fail",
+ "outcome": "unsuitable",
+ "generatorVersion": 3,
+ "inputs": {
+  "controlPoints": "b031d7ce06ef1ba334139cba65f259c8613663c5652e3db21a276379da7b59ae",
+  "infantryMap": "85afbf6947332675989b81ae8e994cac23b3cd000676a7021c6a35a98cc79ba5",
+  "template": "43f8a790471528016570235f76e97dbb2045732458781a5139f37fed68bf98c0"
+ },
+ "baseline": "DICE layers on foot: berlin, stalingrad, kharkov, bocage; seeds 1..10, 600 s, --no-vehicles",
+ "seeds": 10,
+ "sizes": {},
+ "oneSided": null,
+ "unreachable": [
+  "BR",
+  "BL",
+  "island_a",
+  "island_b"
+ ],
+ "lintErrors": [
+  "side 1 has no spawn with a route to any flag it must take: none of the 4 flags it does not hold can be reached",
+  "side 2 has no spawn with a route to any flag it must take: of its 11 spawns 9 have no way on foot to the main ground, 2 are in the air"
+ ]
+}

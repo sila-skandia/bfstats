@@ -1,0 +1,68 @@
+rem *** Strategic areas: one per control point (botgen) ***
+
+aiStrategicArea.create AxisBase 502.2/512.6 507.2/517.6 50
+aiStrategicArea.addNeighbour 1
+aiStrategicArea.addNeighbour 2
+aiStrategicArea.addNeighbour center
+aiStrategicArea.addObjectTypeFlag Base
+aiStrategicArea.setOrderPosition Infantry 507.5/518.5
+aiStrategicArea.setSide 1
+aiStrategicArea.setTakeable 2 0
+
+aiStrategicArea.create AlliedBase 255.7/757.4 260.7/762.4 50
+aiStrategicArea.addNeighbour 1
+aiStrategicArea.addNeighbour 2
+aiStrategicArea.addNeighbour center
+aiStrategicArea.addNeighbour 3
+aiStrategicArea.addNeighbour 4
+aiStrategicArea.addObjectTypeFlag Base
+aiStrategicArea.setOrderPosition Infantry 261.5/762.5
+aiStrategicArea.setSide 2
+aiStrategicArea.setTakeable 1 0
+
+aiStrategicArea.create 1 474.5/731.9 484.5/741.9 150
+aiStrategicArea.addNeighbour AxisBase
+aiStrategicArea.addNeighbour AlliedBase
+aiStrategicArea.addNeighbour center
+aiStrategicArea.addNeighbour 4
+aiStrategicArea.addObjectTypeFlag Flank
+aiStrategicArea.addObjectTypeFlag ControlPoint
+aiStrategicArea.setOrderPosition Infantry 485.5/741.5
+
+aiStrategicArea.create 2 270.4/519.2 280.4/529.2 150
+aiStrategicArea.addNeighbour AxisBase
+aiStrategicArea.addNeighbour AlliedBase
+aiStrategicArea.addNeighbour center
+aiStrategicArea.addNeighbour 3
+aiStrategicArea.addObjectTypeFlag Flank
+aiStrategicArea.addObjectTypeFlag ControlPoint
+aiStrategicArea.setOrderPosition Infantry 280.5/528.5
+
+aiStrategicArea.create center 386.3/627.8 396.3/637.8 300
+aiStrategicArea.addNeighbour AxisBase
+aiStrategicArea.addNeighbour AlliedBase
+aiStrategicArea.addNeighbour 1
+aiStrategicArea.addNeighbour 2
+aiStrategicArea.addNeighbour 3
+aiStrategicArea.addNeighbour 4
+aiStrategicArea.addObjectTypeFlag Centre
+aiStrategicArea.addObjectTypeFlag StrongPoint
+aiStrategicArea.addObjectTypeFlag Close
+aiStrategicArea.addObjectTypeFlag ControlPoint
+aiStrategicArea.setOrderPosition Infantry 396.5/638.5
+
+aiStrategicArea.create 3 338.5/584.8 343.5/589.8 150
+aiStrategicArea.addNeighbour AlliedBase
+aiStrategicArea.addNeighbour 2
+aiStrategicArea.addNeighbour center
+aiStrategicArea.addObjectTypeFlag Flank
+aiStrategicArea.addObjectTypeFlag ControlPoint
+aiStrategicArea.setOrderPosition Infantry 342.5/589.5
+
+aiStrategicArea.create 4 434.3/687.9 439.3/692.9 150
+aiStrategicArea.addNeighbour AlliedBase
+aiStrategicArea.addNeighbour 1
+aiStrategicArea.addNeighbour center
+aiStrategicArea.addObjectTypeFlag Flank
+aiStrategicArea.addObjectTypeFlag ControlPoint
+aiStrategicArea.setOrderPosition Infantry 438.5/692.5

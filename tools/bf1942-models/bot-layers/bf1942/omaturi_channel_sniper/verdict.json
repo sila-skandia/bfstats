@@ -1,0 +1,48 @@
+{
+ "level": "omaturi_channel_sniper",
+ "verdict": "fail",
+ "outcome": "no-fight",
+ "generatorVersion": 3,
+ "inputs": {
+  "controlPoints": "010feb4eb74e46952ce9d34aea2114b6810afc5f94e2bb2227181f6728f5e18e",
+  "infantryMap": "52767c30ea4d73334b4bf04a45ccc7bd5a1af579fb642287dfe124853a1294da",
+  "template": "43f8a790471528016570235f76e97dbb2045732458781a5139f37fed68bf98c0"
+ },
+ "baseline": "DICE layers on foot: berlin, stalingrad, kharkov, bocage; seeds 1..10, 600 s, --no-vehicles",
+ "seeds": 10,
+ "sizes": {
+  "8": {
+   "verdict": "fail",
+   "failed": [
+    "stuckSecondsPerBotMinute",
+    "idleShare",
+    "enemyKillsPerBotMinute",
+    "bothSidesKill",
+    "ticketsBleed"
+   ],
+   "winners": [
+    0,
+    10,
+    0
+   ]
+  },
+  "16": {
+   "verdict": "fail",
+   "failed": [
+    "stuckSecondsPerBotMinute",
+    "enemyKillsPerBotMinute",
+    "bothSidesCapture",
+    "bothSidesKill",
+    "ticketsBleed"
+   ],
+   "winners": [
+    0,
+    10,
+    0
+   ]
+  }
+ },
+ "oneSided": 2,
+ "unreachable": [],
+ "lintErrors": []
+}

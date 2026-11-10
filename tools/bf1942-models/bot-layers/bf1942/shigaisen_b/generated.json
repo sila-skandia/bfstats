@@ -1,6 +1,6 @@
 {
  "generator": "botgen",
- "version": 2,
+ "version": 3,
  "mod": "bf1942",
  "level": "shigaisen_b",
  "template": "symmetric",
@@ -12,6 +12,20 @@
  "botSpawnsExcluded": [
   "New_Control_Point5_Spawn2"
  ],
+ "walkMap": {
+  "source": "engine",
+  "opened": [],
+  "ways": [],
+  "cover": 0.811,
+  "floors": {
+   "stacked": false,
+   "twoFloorShare": 0.013,
+   "raised": [
+    "windmill_west"
+   ],
+   "reason": null
+  }
+ },
  "inputs": {
   "controlPoints": "2720d5f12a6c88964f1415fae2491a207c0b8a81f0a2ee4812510f859b3d3d97",
   "infantryMap": "82c12fcc51b113577767e8b7926a57445224e48a16790bd81d29b08268debaa9",

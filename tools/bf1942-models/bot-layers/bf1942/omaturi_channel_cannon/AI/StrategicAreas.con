@@ -1,0 +1,52 @@
+rem *** Strategic areas: one per control point (botgen) ***
+
+aiStrategicArea.create AxisBase 300.1/620.8 305.1/625.8 50
+aiStrategicArea.addNeighbour AlliedBase
+aiStrategicArea.addNeighbour GR
+aiStrategicArea.addNeighbour GL
+aiStrategicArea.addObjectTypeFlag Base
+aiStrategicArea.setOrderPosition Infantry 305.1/625.8
+aiStrategicArea.setSide 1
+aiStrategicArea.setTakeable 2 0
+
+aiStrategicArea.create AlliedBase 726.5/619.8 731.5/624.8 50
+aiStrategicArea.addNeighbour AxisBase
+aiStrategicArea.addObjectTypeFlag Base
+aiStrategicArea.setOrderPosition Infantry 731.5/624.8
+aiStrategicArea.setSide 2
+aiStrategicArea.setTakeable 1 0
+
+aiStrategicArea.create GR 304.9/584.2 309.9/589.2 300
+aiStrategicArea.addNeighbour AxisBase
+aiStrategicArea.addObjectTypeFlag Centre
+aiStrategicArea.addObjectTypeFlag StrongPoint
+aiStrategicArea.addObjectTypeFlag Close
+aiStrategicArea.addObjectTypeFlag ControlPoint
+aiStrategicArea.setOrderPosition Infantry 309.9/589.2
+aiStrategicArea.setSide 1
+
+aiStrategicArea.create GL 306.4/669.7 311.4/674.7 200
+aiStrategicArea.addNeighbour AxisBase
+aiStrategicArea.addObjectTypeFlag Centre
+aiStrategicArea.addObjectTypeFlag Close
+aiStrategicArea.addObjectTypeFlag ControlPoint
+aiStrategicArea.setOrderPosition Infantry 311.4/674.7
+aiStrategicArea.setSide 1
+
+aiStrategicArea.create BR 713.1/658.1 718.1/663.1 10
+aiStrategicArea.setSide 2
+aiStrategicArea.setTakeable 1 0
+aiStrategicArea.setTakeable 2 0
+
+aiStrategicArea.create BL 710.8/592.1 715.8/597.1 10
+aiStrategicArea.setSide 2
+aiStrategicArea.setTakeable 1 0
+aiStrategicArea.setTakeable 2 0
+
+aiStrategicArea.create island_a 493.7/531.1 513.7/551.1 10
+aiStrategicArea.setTakeable 1 0
+aiStrategicArea.setTakeable 2 0
+
+aiStrategicArea.create island_b 494.1/703.6 514.1/723.6 10
+aiStrategicArea.setTakeable 1 0
+aiStrategicArea.setTakeable 2 0

@@ -1,0 +1,21 @@
+{
+ "level": "shigaisen_g",
+ "verdict": "fail",
+ "outcome": "unsuitable",
+ "generatorVersion": 3,
+ "inputs": {
+  "controlPoints": "3dab92797eb6aec1d2583abf46a446fb94fded59535e96d97af81ccb460cac3a",
+  "infantryMap": "922b5238f54161b397f48a92e4113e9bb68ee7de4ead308e4fdc395cdf4dc546",
+  "template": "43f8a790471528016570235f76e97dbb2045732458781a5139f37fed68bf98c0"
+ },
+ "baseline": "DICE layers on foot: berlin, stalingrad, kharkov, bocage; seeds 1..10, 600 s, --no-vehicles",
+ "seeds": 10,
+ "sizes": {},
+ "oneSided": null,
+ "unreachable": [],
+ "lintErrors": [
+  "the play surface is stacked floors (74 % of the main floor has another walked floor over or under it): a one-floor walk map cannot hold it",
+  "side 1 has no spawn with a route to any flag it must take: of its 9 spawns 9 have no way on foot to the main ground; the level places 4 ladders, which neither the walk test nor a bot climbs",
+  "side 2 has no spawn with a route to any flag it must take: of its 10 spawns 10 have no way on foot to the main ground; the level places 4 ladders, which neither the walk test nor a bot climbs"
+ ]
+}

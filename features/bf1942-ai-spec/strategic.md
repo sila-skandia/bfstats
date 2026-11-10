@@ -243,32 +243,78 @@ of the box, 6 m on foot at the least, while a capture counts a body inside the
 flag's own radius in 3D. A flag narrower than `Rr` is therefore not entered
 even by an order drawn on its pole: Stalingrad's 5 m `Railroads`, seven of the
 community map shigaisen_B's eight. So for a bot on foot, when the area holds a
-control point that can change hands, whose radius is under the order's `Rr`,
-and which the side does not hold or is losing (lose timer running):
+control point that can change hands, whose reach across the ground is under
+the order's `Rr`, and which the side does not hold or is losing (lose timer
+running):
 
 ```
+dy     = the pole's y - the ground a soldier stands on at its foot (0 when unknown)
+reach  = sqrt(r² - dy²), 0 where the radius does not reach that ground   (captureReach)
+stand  = max(r / 2, r - 1)        while hypot(that, dy) <= r               (captureStandRadius)
+         reach - 1                otherwise; under 1 m: no ring, the engine's order
 point  = the flag's x/z (blocked on the bot's map: the nearest valid point on
          rings 1 m apart, inside the stand radius less 1 m; none: the engine's order)
-radius = captureStandRadius(flag) - |point - flag|,   stand = max(r / 2, r - 1)
+radius = stand - |point - flag|
 while the flag is still to take:
   d² < radius²:  arrived, urgency 0
-  else:          urgency = clamp(d² / (4 Rr²), 0.25, 1) x 2   (0.5 inside Rr, the engine's value at Rr)
+  else:          urgency = clamp(d² / (4 A²), 0.25, 1) x 2
+                 A = Rr for a flat ring, the ring's radius for one the ground cut
 once the side holds it: the engine's table above, on the same point
 ```
 
-Every flag at least `Rr` wide, a held flag, an area with no point and a
-mounted bot keep the engine's order unchanged (a hull's `Rr` carries twice
-its bounding radius, and a ring is no promise of room for a hull at the
-pole). So does a pole the ground does not reach: where a body on the terrain
-at the ring's edge would still be outside the 3D radius (`hypot(stand, flag y
-- ground) > r`; the page's `strategicUnit` hands a soldier's unit `groundAt`),
-as under Stalingrad's two upper-floor flags, 13.5 m over the street. And a
-bot whose route to the ring's point fails twice running hands the ring back
-for that flag for the match (`noRoute`, bot-decision.js `urgencyMoveTo`); the
-next pass orders it the engine's way. Seed 3, 8 a side, 300 s: Bocage,
-Kharkov, Berlin and El Alamein trace byte for byte as before, with vehicles
-and without; Stalingrad's `Railroads` is taken at 64 s on foot, where it was
-at 180 s, with no route failure in either run.
+The urgency is the engine's own law (0.25 is the value it has at its arrival
+radius). For a flat ring it is measured against `Rr`, which asks 0.5 for
+every metre between the ring and `Rr`. For a ring the ground cut (the stand
+radius under the flat figure) that was not enough: 0.5 is under the 1.0 the
+Scout behaviour bids for an enemy lost from sight, even after MoveTo's 1.5,
+and a soldier who had seen one stood between the ring and `Rr`, one tick
+turning to its route and two turning back, and never walked in (27 s at
+3.6 m from a 1.86 m ring, then shot). So a cut ring is measured against its
+own radius, where that band is 0.155 of the radius wide, as the engine's is
+of `Rr`. On a copy of shigaisen_B with its three small capturable flags
+lifted 4.1 m (a test level, not a published one), ten seeds of 600 s: 11
+captures with no 3D ring, 15 with the ring and the urgency against `Rr`, 23
+with the ring's own radius.
+
+The ring's own radius for every ring, flat ones too, was tried and dropped
+(2026-11-10): it asks the whole 2.0 from two ring radii out, 8 m for a 4 m
+ring where `Rr` asks 0.65, so a soldier presses for the pole where they
+used to fight. On the real shigaisen_B, ten seeds of 600 s at 16 a side,
+stuck seconds a bot-minute went from 1.78 to 2.23 and redeploys from 0.130
+to 0.136 (at 8 a side 1.83 to 1.99, median captures 3 to 2.5), and
+Stalingrad's two traces changed. Kept to cut rings, shigaisen_B and all ten
+DICE traces below are byte for byte what they were.
+
+The ring is the flag's 3D radius cut by the ground: a capture is measured in
+3D (from the page's soldier at the feet) and an order across the ground. The
+ground is the page's `strategicUnit` `groundAt` for a soldier, `bot-pose.js
+footingAt`: the terrain, and under water deeper than a soldier wades (1.43 m)
+the draft they float at, never the water plane itself.
+
+*Example.* The community map shigaisen_C stands its six 5 m flags on a floor
+4.02 to 4.28 m over the street (and the street 0.37 m under the water plane,
+where a soldier still walks on it): `reach` 2.58 to 2.97 m, rings of 1.58 to
+1.97 m. The flat 4 m ring left a body `hypot(4, 4.1) = 5.7 m` from the pole,
+so before this rule those flags kept the engine's order and its 6 m stop. A
+10 m flag 8.5 m over the ground is 5.27 m wide there, under `Rr`: a 4.27 m
+ring.
+
+Every flag at least `Rr` wide on the ground, a held flag, an area with no
+point and a mounted bot keep the engine's order unchanged (a hull's `Rr`
+carries twice its bounding radius, and a ring is no promise of room for a
+hull at the pole). So does a pole whose radius leaves no ring on the ground:
+Stalingrad's two upper-floor flags, 13.5 m over the street with a 5 m radius.
+And a bot whose route to the ring's point fails twice running hands the ring
+back for that flag for the match (`noRoute`, bot-decision.js
+`urgencyMoveTo`); the next pass orders it the engine's way. Seed 3, 8 a side,
+300 s: Bocage, Kharkov, Berlin and El Alamein traced byte for byte as before
+the first version of the ring, with vehicles and without; Stalingrad's
+`Railroads` is taken at 64 s on foot, where it was at 180 s, with no route
+failure in either run. Reading `dy` (2026-11-10) changed none of the five:
+all ten traces are byte for byte the same, and no flag of theirs draws a
+different order (`Railroads` is 0.25 m under its ground and keeps its 4 m).
+No DICE level of the five has a ring the ground cut, so none reads the cut
+ring's urgency.
 
 **Regression (since `ee729113`).** The order no longer carries the
 `inside(x, z)` the bot reads for "inside the ordered area"
@@ -464,6 +510,9 @@ human on the now-Allied point runs it to neutral in 10 s.
 
 `bot.js _fallbackWaypoint`: the nearest flag the bot's side does not hold,
 as a `WPMoveTo` with `R = 5` (INVENTION) and factor 2, rebuilt when the
-nearest flag changes. Its plan stops at `R` from the pole; for a flag narrower
-than `R + 1` it stops at `captureStandRadius(flag)` instead (the capture ring,
-section 6; `bot-decision.js fallbackRadius`).
+nearest flag changes. Its plan stops at `R` from the pole; for a flag whose
+reach across the ground is under `R + 1` it stops at
+`captureStandRadius(flag, dy)` instead (the capture ring above, with the same
+`dy` and the same ground; `bot-decision.js fallbackRadius`), and where the
+ground cut that ring its urgency is measured against the ring's radius, as
+the order's is. A flag whose radius leaves no ring on the ground keeps `R`.

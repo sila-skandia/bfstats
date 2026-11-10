@@ -1,0 +1,22 @@
+{
+ "level": "the_dungeon",
+ "verdict": "fail",
+ "outcome": "unsuitable",
+ "generatorVersion": 3,
+ "inputs": {
+  "controlPoints": "589c7ee1368d76a6b41868d07c057e98234a4f8e79545b91548b2b2e226d92e7",
+  "infantryMap": "8439db020a22153864fccbf48f16a0f8989dd07379f3ba8cc0b21f66c26e5acd",
+  "template": "43f8a790471528016570235f76e97dbb2045732458781a5139f37fed68bf98c0"
+ },
+ "baseline": "DICE layers on foot: berlin, stalingrad, kharkov, bocage; seeds 1..10, 600 s, --no-vehicles",
+ "seeds": 10,
+ "sizes": {},
+ "oneSided": null,
+ "unreachable": [
+  "Bottom"
+ ],
+ "lintErrors": [
+  "side 1 has no spawn on ground a soldier walks freely: all 4 that reach the main ground stand on terrain whose normal the page reads as past its slope limit, where it refuses any step uphill and a bot leaves only downhill, if at all",
+  "side 2 has no spawn on ground a soldier walks freely: all 4 that reach the main ground stand on terrain whose normal the page reads as past its slope limit, where it refuses any step uphill and a bot leaves only downhill, if at all"
+ ]
+}

@@ -1,0 +1,22 @@
+{
+ "level": "knife_championship",
+ "verdict": "fail",
+ "outcome": "unsuitable",
+ "generatorVersion": 3,
+ "inputs": {
+  "controlPoints": "56d8bccad2a7e19c47fa1d00e211046823f5661e17f2fb1b162af7f54080bda4",
+  "infantryMap": "c1e62c66d329722509f0bc103376ecd32baa08fe28b406766780c3a9eca45344",
+  "template": "43f8a790471528016570235f76e97dbb2045732458781a5139f37fed68bf98c0"
+ },
+ "baseline": "DICE layers on foot: berlin, stalingrad, kharkov, bocage; seeds 1..10, 600 s, --no-vehicles",
+ "seeds": 10,
+ "sizes": {},
+ "oneSided": null,
+ "unreachable": [
+  "PUBLICO",
+  "PUBLICO_DOS"
+ ],
+ "lintErrors": [
+  "the play surface is stacked floors (2 of 3 capturable flags stand a storey over or under another walked floor): a one-floor walk map cannot hold it"
+ ]
+}

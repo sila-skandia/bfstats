@@ -176,6 +176,20 @@ def script_layer(archive: RfaArchive, prefix: str, world_size: int) -> dict[str,
     }
 
 
+def referenced_levels(archive: RfaArchive, prefix: str) -> list[str]:
+    """Other levels this level's scripts read files from (`bf1942\\levels\\<name>\\...`):
+    a variant of a level (a second day, a night) keeps its terrain in the first one's archive."""
+    own = prefix.split("/")[-1].lower()
+    found: dict[str, str] = {}
+    for name in archive.entries:
+        if not name.lower().endswith(".con"):
+            continue
+        for m in re.finditer(r"(?i)bf1942[\\/]levels[\\/]([^\\/\s]+)[\\/]", archive.read(name).decode("latin-1")):
+            if m.group(1).lower() != own:
+                found.setdefault(m.group(1).lower(), m.group(1))
+    return sorted(found.values(), key=str.lower)
+
+
 def world_size_of(archive: RfaArchive, prefix: str) -> int:
     hit = next((n for n in archive.entries if n.lower() == f"{prefix}/init/terrain.con".lower()), None)
     m = re.search(r"worldSize\s+(\d+)", archive.read(hit).decode("latin-1"), re.I) if hit else None
@@ -224,6 +238,12 @@ def run(args) -> int:
         for f in (arch_src / "bf1942" / "levels").iterdir():
             if not f.name.lower().startswith(level.lower()):
                 (levels / f.name).symlink_to(f)
+        # A level that reads another's files (its terrain, say) needs that archive beside it.
+        for other in referenced_levels(archive, prefix):
+            hit = next((f for f in sorted(source.parent.iterdir()) if f.name.lower() == f"{other.lower()}.rfa"), None)
+            link = levels / f"{other.lower()}.rfa"
+            if hit is not None and not link.exists() and not link.is_symlink():
+                link.symlink_to(hit)
         rebuild_archive(source, levels / f"{level.lower()}.rfa", script_layer(archive, prefix, world_size_of(archive, prefix)))
         for spelling in {level, level.lower()}:
             (inst / "bf1942" / "levels" / spelling / "Pathfinding").mkdir(parents=True, exist_ok=True)

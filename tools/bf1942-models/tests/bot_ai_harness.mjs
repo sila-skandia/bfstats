@@ -32,6 +32,7 @@ import { tankTurnTowards } from './bot-vehicle.js';
 import { curveOf } from './bot-decision.js';
 import { fixedAimable, planChange, execEnterVehicle, behindUnit, urgencyChangeTeleport, bailAllowedAt, changeArrive } from './bot-mount.js';
 import { updateObjectiveReadout } from './bot-decision.js';
+import { footingAt } from './bot-pose.js';
 
 // The level sits in the map's own frame: x in [0, worldSize], z in
 // [-worldSize, 0] (the exporter negates z). Home at (100, -100), the enemy
@@ -45,6 +46,7 @@ const collider = {
   surfaceHeight() { return 0; },
   heightfield: null,
 };
+const FLAT = collider;
 
 const EXTRAS = {
   worldSize: WORLD,
@@ -136,8 +138,8 @@ function moveToScenario() {
 /** The fallback at a flag 30 m off whose capture radius is `radius` (null:
  *  the template's default): where the bot stops, against the ring the capture
  *  law measures. INVENTION under test: bot-decision.js `fallbackRadius`. */
-function captureRingScenario(radius) {
-  const flagAt = [HOME[0], 0, HOME[2] - 30];
+function captureRingScenario(radius, lift = 0, collider = FLAT) {
+  const flagAt = [HOME[0], lift, HOME[2] - 30];
   const world = new World({ collider, extras: { ...EXTRAS, controlPoints: [
     EXTRAS.controlPoints[0], { name: 'Enemy', spawnGroupId: 2, team: 1, position: flagAt, ...(radius ? { radius } : {}) },
   ] } });
@@ -150,9 +152,20 @@ function captureRingScenario(radius) {
   }
   const s = world.player('bot_0').soldier;
   const wp = bot._fallbackWaypoint();
-  return { stopped: Math.hypot(s.x - flagAt[0], s.z - flagAt[2]), arrive: wp.radius, arrived: wp.arrived,
-           goalReached: bot.goalReached };
+  return { stopped: Math.hypot(s.x - flagAt[0], s.z - flagAt[2]), arrive: +wp.radius.toFixed(3), arrived: wp.arrived,
+           goalReached: bot.goalReached,
+           // The capture law's measure: 3D, from the feet to the pole.
+           stopped3d: Math.hypot(s.x - flagAt[0], s.y - flagAt[1], s.z - flagAt[2]), feet: s.y };
 }
+
+/** A street 0.37 m under the water plane, as on the community map
+ *  shigaisen_C: the terrain is where a soldier stands (bot-pose.js
+ *  `footingAt`), and the flag's pole is on a floor over it. */
+const STREET = {
+  waterLevel: 0.37,
+  surfaceHeight() { return 0.37; },
+  heightfield: { height() { return 0; }, normal(x, z, out) { out[0] = 0; out[1] = 1; out[2] = 0; return out; }, material() { return 0; } },
+};
 
 /** An axis-aligned box as twelve triangles, for the nav map's statics. */
 function box(x0, x1, y0, y1, z0, z1) {
@@ -1237,7 +1250,10 @@ const results = {
   aim: aimScenario(),
   friendly: friendlyScenario(),
   moveTo: moveToScenario(),
-  captureRing: { narrow: captureRingScenario(5), wide: captureRingScenario(10), unset: captureRingScenario(null) },
+  captureRing: { narrow: captureRingScenario(5), wide: captureRingScenario(10), unset: captureRingScenario(null),
+                 lifted: captureRingScenario(5, 4.1, STREET), outOfReach: captureRingScenario(5, 13.5, STREET),
+                 footing: [footingAt(STREET, 0, 0), footingAt({ ...STREET, waterLevel: 1.4 }, 0, 0), footingAt({ ...STREET, waterLevel: 3 }, 0, 0),
+                           footingAt({ ...STREET, waterLevel: null }, 0, 0), footingAt(FLAT, 0, 0)] },
   avoid: avoidScenario(),
   wedged: wedgedScenario(),
   steer: steerScenario(),

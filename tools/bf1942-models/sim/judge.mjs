@@ -67,6 +67,22 @@ export function buildBaseline(rows, note = '') {
   return { version: 1, note, sizes };
 }
 
+/**
+ * Whether anybody fights: each side kills an enemy in every match, both
+ * lose tickets in every match, and no bot throws. The three checks a level
+ * must pass before anything else about it means much (`botbatch.mjs ALIVE`).
+ */
+export function aliveChecks(rows) {
+  const fights = rows.every(r => (r.enemyKills?.[1] ?? 0) > 0 && (r.enemyKills?.[2] ?? 0) > 0);
+  const bled = rows.every(r => r.ticketsBled && r.ticketsBled[1] > 0 && r.ticketsBled[2] > 0);
+  const errors = rows.reduce((s, r) => s + (r.botErrors ?? 0), 0);
+  return [
+    { metric: 'bothSidesKill', median: fights ? 1 : 0, bar: 'each side kills an enemy in every seed', pass: fights },
+    { metric: 'ticketsBleed', median: bled ? 1 : 0, bar: 'both sides lose tickets in every seed', pass: bled },
+    { metric: 'botErrors', median: errors, bar: '== 0', pass: errors === 0 },
+  ];
+}
+
 /** Judge one level's rows (one side size) against the baseline. */
 export function judge(rows, baseline, { unreachable = [] } = {}) {
   const size = rows[0]?.botsPerSide;
@@ -85,12 +101,7 @@ export function judge(rows, baseline, { unreachable = [] } = {}) {
   checks.push({ metric: 'flagCoverage', median: cov?.coverage ?? null, bar: `>= ${band.flagCoverageMin}`, never: cov?.never ?? [], unreachable: cov?.unreachable ?? [], pass: cov !== null && cov.coverage >= band.flagCoverageMin });
   const side = s => rows.some(r => (r.captures?.[s] ?? 0) > 0);
   checks.push({ metric: 'bothSidesCapture', median: side(1) && side(2) ? 1 : 0, bar: 'each side captures in at least one seed', pass: side(1) && side(2) });
-  const fights = rows.every(r => (r.enemyKills?.[1] ?? 0) > 0 && (r.enemyKills?.[2] ?? 0) > 0);
-  checks.push({ metric: 'bothSidesKill', median: fights ? 1 : 0, bar: 'each side kills an enemy in every seed', pass: fights });
-  const bled = rows.every(r => r.ticketsBled && r.ticketsBled[1] > 0 && r.ticketsBled[2] > 0);
-  checks.push({ metric: 'ticketsBleed', median: bled ? 1 : 0, bar: 'both sides lose tickets in every seed', pass: bled });
-  const errors = rows.reduce((s, r) => s + (r.botErrors ?? 0), 0);
-  checks.push({ metric: 'botErrors', median: errors, bar: '== 0', pass: errors === 0 });
+  checks.push(...aliveChecks(rows));
   const winners = rows.map(r => r.winner ?? 0);
   // Balance is reported, not judged: DICE's own levels show one-sided rounds (Berlin at 16 a side).
   return { verdict: checks.every(c => c.pass) ? 'pass' : 'fail', size, seeds: rows.length, failed: checks.filter(c => !c.pass).map(c => c.metric), checks, winners, balance: balance(rows) };

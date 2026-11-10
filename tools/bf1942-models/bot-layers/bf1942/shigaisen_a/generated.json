@@ -1,0 +1,70 @@
+{
+ "generator": "botgen",
+ "version": 3,
+ "mod": "bf1942",
+ "level": "shigaisen_a",
+ "template": "symmetric",
+ "templateSource": "DICE, bf1942 Kharkov (1.6 patch archives): AI/Strategies.con, AI/conditions.con, AI/prerequisites.con, unchanged",
+ "scope": "on foot: the engine's own Tank0 and Infantry1 search maps, infantry order positions, no strategic maps, no co-op layer",
+ "unreachable": [
+  "chapel",
+  "house1",
+  "house2"
+ ],
+ "botSpawnsExcluded": [
+  "chapel_Spawn1",
+  "chapel_Spawn3",
+  "house1_Spawn1",
+  "house1_Spawn2",
+  "house2_Spawn1",
+  "house2_Spawn2"
+ ],
+ "walkMap": {
+  "source": "engine",
+  "opened": [],
+  "ways": [
+   {
+    "who": "house1_Spawn1",
+    "kind": "spawn",
+    "way": "none",
+    "opened": 0
+   },
+   {
+    "who": "house2_Spawn1",
+    "kind": "spawn",
+    "way": "none",
+    "opened": 0
+   }
+  ],
+  "cover": 0.632,
+  "floors": {
+   "stacked": true,
+   "twoFloorShare": 0.067,
+   "raised": [
+    "chapel",
+    "house1",
+    "house2"
+   ],
+   "reason": "3 of 5 capturable flags stand a storey over or under another walked floor"
+  }
+ },
+ "inputs": {
+  "controlPoints": "297d2079234f9a459c14d44e92c2b73332c8aa776cf015223eb38f081933b126",
+  "infantryMap": "c845590a0167526a8bda0321b2a808829f591aa6561ac9bfd311aecbd08e4ab1",
+  "template": "43f8a790471528016570235f76e97dbb2045732458781a5139f37fed68bf98c0"
+ },
+ "files": {
+  "AI.con": "3dc94f663ac7545695a38d3670752432e4a5e64efe048dc4b26d578aece3748c",
+  "AIpathFinding.con": "714499ad831a139560e4913e729aee4c62a23457be02e0c36c73af18f4bb31cb",
+  "AI/StrategicAreas.con": "be21b85ee0bc2a530a9db121638012f4a8cb3736775e8681b87ebe7147fe11f3",
+  "AI/Strategies.con": "4ce0be59a0d6c5cd530db002fb062c4be8d936bc6ae59bd188803ccaf7869a8d",
+  "AI/conditions.con": "68a0c7a8aec69954063147b60fae560b2874884285737aa085efa76597d395aa",
+  "AI/prerequisites.con": "4c1f313bc285b228fd6ad03bfd1f44c5b15c8703c31f802eb605bc5f00f88bb5",
+  "Pathfinding/Infantry1Level0Map.raw": "20a725af2eaec4a44d404a7920090f437d6c37af8d1a6eced2fda6980ba43172",
+  "Pathfinding/Infantry1Level1Map.raw": "b80321ca799f10cb00fd3934b7a9fbf2540343f51ad83cb252f26e0e15c543ab",
+  "Pathfinding/Infantry1Level2Map.raw": "ecd997f431e34b77acb27b5fbcaef8a2f1d1204420b0eb12bc8f469615d697b8",
+  "Pathfinding/Tank0Level0Map.raw": "83beb9d6cd6f9b5968e45d0f4b5f34c597edc49bef3f91b30916da380ba2858d",
+  "Pathfinding/Tank0Level1Map.raw": "20028a9f4bef9ec8f5e4374f483d3f1e31651f7c2d92f90c8c038af529b3442a",
+  "Pathfinding/Tank0Level2Map.raw": "e1677cb37af1e64c186e55ea6ddb83cb65d4b53c9c6994b049fde3652df31e59"
+ }
+}

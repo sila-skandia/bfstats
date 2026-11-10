@@ -1,0 +1,51 @@
+{
+ "generator": "botgen",
+ "version": 3,
+ "mod": "bf1942",
+ "level": "the_dungeon",
+ "template": "symmetric",
+ "templateSource": "DICE, bf1942 Kharkov (1.6 patch archives): AI/Strategies.con, AI/conditions.con, AI/prerequisites.con, unchanged",
+ "scope": "on foot: an infantry map painted from the walk test, the engine's own Tank0 map, infantry order positions, no strategic maps, no co-op layer",
+ "unreachable": [
+  "Bottom"
+ ],
+ "botSpawnsExcluded": [
+  "AxisBase_Spawn1",
+  "AlliedBase_Spawn1",
+  "East_Spawn3",
+  "West_Spawn1"
+ ],
+ "walkMap": {
+  "source": "walk test",
+  "engineCover": 0.31,
+  "opened": [],
+  "ways": [],
+  "cover": 0.962,
+  "floors": {
+   "stacked": false,
+   "twoFloorShare": 0.002,
+   "raised": [],
+   "reason": null
+  }
+ },
+ "inputs": {
+  "controlPoints": "589c7ee1368d76a6b41868d07c057e98234a4f8e79545b91548b2b2e226d92e7",
+  "infantryMap": "8439db020a22153864fccbf48f16a0f8989dd07379f3ba8cc0b21f66c26e5acd",
+  "template": "43f8a790471528016570235f76e97dbb2045732458781a5139f37fed68bf98c0"
+ },
+ "files": {
+  "AI.con": "3dc94f663ac7545695a38d3670752432e4a5e64efe048dc4b26d578aece3748c",
+  "AIpathFinding.con": "714499ad831a139560e4913e729aee4c62a23457be02e0c36c73af18f4bb31cb",
+  "AI/StrategicAreas.con": "d980307102ddebc09196f9229c460164dbb705fc7c34d1926b5bcada9cf9c507",
+  "AI/Strategies.con": "4ce0be59a0d6c5cd530db002fb062c4be8d936bc6ae59bd188803ccaf7869a8d",
+  "AI/conditions.con": "68a0c7a8aec69954063147b60fae560b2874884285737aa085efa76597d395aa",
+  "AI/prerequisites.con": "4c1f313bc285b228fd6ad03bfd1f44c5b15c8703c31f802eb605bc5f00f88bb5",
+  "Pathfinding/Infantry1Level0Map.raw": "d7c5c07758d66a6a44e1820919edbdd0fd59a41676f44352be34e37f55440a58",
+  "Pathfinding/Infantry1Level1Map.raw": "039e067ba53037bcd0cc14cdee07ea8c41d9e827c31cbdaee8e0950fa016f42a",
+  "Pathfinding/Infantry1Level2Map.raw": "908632d693fe0c681df6968cf8a9209ee6749145227452803e488d3f6f27abcb",
+  "Pathfinding/Tank0Level0Map.raw": "2312e0418ce5bac483a8f96e2e3c6cc8d514cf386db02aeac03b27b18c896416",
+  "Pathfinding/Tank0Level1Map.raw": "fb97c0458c915361fe6e228894a46392e05200113ef3670ef0744f1afa98587e",
+  "Pathfinding/Tank0Level2Map.raw": "9aa5cfca695fd64e95cc78542eaf7ccfc943210721315115bbff4b94e3feda15",
+  "Pathfinding/engine/Infantry1Level0Map.raw": "84b6b7aa553fcdb84b1c7f18371b086b4ed3985ab9946db9227132d9a34f8a38"
+ }
+}
