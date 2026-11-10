@@ -131,9 +131,32 @@ const RING_ROUTE_FAILURES = 2;
  *  cannot see, measured per order. */
 const NO_PROGRESS_RESPAWN = 12.0;
 
-/** The behaviours the bot's current unit registers (AIbehaviours.con rows). */
+/**
+ * The behaviours the bot's current unit registers (AIbehaviours.con rows).
+ * Seated, the seat's own row (`mount.row`, bot-rows.js): vanilla's `Fixed`
+ * row (the stationary MGs, the AA guns, every hull's top MG) registers Idle,
+ * Fire, Scout, MoveTo and Change and no Avoid or TakeCover, `Passenger` and
+ * `Car` no TakeCover, FH's and FHSW's `Tank` no TakeCover, BF1918's armed
+ * hulls no Scout or TakeCover. The engine evaluates only what the row lists
+ * (`BotBehaviour` per `setVehicleBehaviour` line), so a gunner the Tank rows
+ * gave TakeCover sat in it for minutes with an enemy in its sights
+ * (Stalingrad, seed 3: a PanzerIV's bow gunner, 220 s of 294 seated).
+ * Special stays off a seat: BF1918's `BBRoam` is not modelled, and the
+ * viewer's Special is the medic's. An aircraft and a seat with no row (the
+ * synthetic level's stand-ins, a table extracted before `equipmentType`)
+ * keep the Tank rows: the Plane row registers no Avoid in any mod's file,
+ * and the viewer's pilots fly their own avoid (`airAvoid`, bot-pilot.js).
+ */
 export function registered(bot) {
-  return bot.vehicle ? REGISTERED_VEHICLE : REGISTERED;
+  const m = bot.vehicle;
+  if (!m) return REGISTERED;
+  const row = m.row;
+  if (!row || m.kind === 'air') return REGISTERED_VEHICLE;
+  if (m._registeredFor !== row) {
+    m._registeredFor = row;
+    m._registered = REGISTERED_VEHICLE.filter(b => row.behaviours[b]);
+  }
+  return m._registered;
 }
 
 /** The page reads `objective`, `objectiveGoal`, `goalReached`. */
@@ -209,6 +232,9 @@ export function decisionMaking(bot, now, dt) {
   }
   // The winner.
   let reselect = !hasPlan;
+  // A behaviour the unit now in hand does not register (a seat's row, taken
+  // or swapped mid-plan) is not run on: the contest picks again.
+  if (hasPlan && !bot._registered().includes(bot.currentBehaviour)) reselect = true;
   if (hasPlan) {
     for (const name of bot._registered()) {
       if (bot._quotientChanged(name) || bot.changedTarget[name]) { reselect = true; break; }

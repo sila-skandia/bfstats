@@ -503,7 +503,7 @@ export async function realLevel(M, { maps, models, map }) {
     // Built by the stage, after the World (`stage.mjs`).
     collider: null,
     stage: { root, levelClips, damageTables, collisionMeshes, terrainMaterials, heightmap,
-             vehicleAi: vehicleJson?.vehicles ?? {} },
+             vehicleAi: vehicleJson?.vehicles ?? {}, vehicleAiMod: vehicleJson?.mod ?? null },
     kits: { kitFor, maxHp },
     botNames,
     weaponFire,

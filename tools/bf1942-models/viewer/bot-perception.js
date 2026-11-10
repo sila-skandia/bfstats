@@ -9,6 +9,7 @@ import { scoreTargets, scoreVehicleTargets, weaponAiOf, SOLDIER_BATTLE_STRENGTH,
 import { QUADRANTS, quadrantOf } from './bot-behaviours.js';
 import { TANK } from './bot-vehicle.js';
 import { unitTable } from './bot-strength.js';
+import { rowFire } from './bot-rows.js';
 
 /**
  * The world's line-of-sight test between two points, skipping the bot's own
@@ -342,7 +343,9 @@ export function chooseVehicleTarget(bot, now) {
     insideOrderedArea: bot._insideOrderedArea(),
     insideArea: bot.waypoints?.inside ? (pos) => bot.waypoints.inside(pos[0], pos[2]) : null,
     vetoed: bot.vetoedTargets, aimable, mode: air ? 'air' : fireMode(m) === 'infantry' ? 'infantry' : 'largeBore',
-    fixed: FIXED_EQUIPMENT.has(m.equipmentType) || !m.drives,
+    // A row that never walks (`BBMoveToFixed`) is a fixed gun's; vanilla's 4
+    // and 11 for a seat with no row.
+    fixed: (m.row ? m.row.behaviours.MoveTo === 'MoveToFixed' : FIXED_EQUIPMENT.has(m.equipmentType)) || !m.drives,
     lineOfFire: (rec) => {
       const p = bot.world?.players?.get(rec.id);
       const owner = p ? bot.senses?.unitOwnerOf?.(p) ?? -1 : -1;
@@ -372,6 +375,14 @@ const FIXED_EQUIPMENT = new Set([4, 11]);
  *  (`chooseVehicleTarget`, bot-plans.js `execArtilleryDriver`). */
 const ARTILLERY_DRIVER_EQUIPMENT = 14;
 export function fireMode(m) {
+  // The seat's row in its mod's own list (bot-rows.js): the Fire generator
+  // that row registers. A mod numbers its rows its own way (BF1918's 9 is
+  // `Gunner`, `BBFireInfantery`, vanilla's 9 `BoatFixed`), so the numbers
+  // below are vanilla's and stand only for a seat with no row.
+  const fire = rowFire(m?.row);
+  if (fire === 'FireDriver') return 'artilleryDriver';
+  if (fire === 'FireInfantery') return 'infantry';
+  if (fire) return 'largeBore';
   if (m?.equipmentType === ARTILLERY_DRIVER_EQUIPMENT) return 'artilleryDriver';
   if (Number.isInteger(m?.equipmentType)) return INFANTRY_FIRE_EQUIPMENT.has(m.equipmentType) ? 'infantry' : 'largeBore';
   return m?.drives && m?.kind === 'tank' ? 'infantry' : 'largeBore';
