@@ -16,7 +16,8 @@ import { runDuel } from './dogfight-duel.js';
 import { gunOf } from './dogfight-pilot.js';
 import { leadPoint } from './dogfight-flight.js';
 import { COURSES } from './dogfight-rings.js';
-import { LESSONS, demoSides, lessonById, RULES } from './dogfight-lessons.js';
+import { LESSONS, demoSides, fightSides, lessonById, RULES } from './dogfight-lessons.js';
+import { runFight } from './dogfight-fight.js';
 import { recordedFight, fightLine, pilotTable, inThirdPerson } from './dogfight-recorded.js';
 import { VIEWER_ROOT } from './viewer-root.js';
 import { decodePlayerName } from './vehicle-players.js';
@@ -362,7 +363,9 @@ export function createDogfightTheatre({ host, makePlane, planeVisual = () => nul
   /** A side's name on screen: the pilot's own in a recorded fight. */
   const nameOf = i => (state.fight?.recorded ? state.fight.names[i] : i === 0 ? 'ACE' : 'YOU');
   /** A side as a sentence starts it. */
-  const whoOf = i => (state.fight?.recorded ? state.fight.names[i] : i === 0 ? 'The ace' : 'You');
+  /** A plane beyond the two: a wingman, on your side or the ace's. */
+  const wingOf = i => (state.fight?.teams?.[i] === state.fight?.teams?.[1] ? 'your wingman' : 'their wingman');
+  const whoOf = i => (state.fight?.recorded ? state.fight.names[i] : i === 0 ? 'The ace' : i === 1 ? 'You' : wingOf(i).replace(/^./, c => c.toUpperCase()));
   // --- the moves' verdicts on the airframe on stage --------------------------
   // A lesson's counts were measured on the school's Spitfire, and they do not
   // carry to another plane (features/dogfight-doctrine, "The lessons on
@@ -396,9 +399,9 @@ export function createDogfightTheatre({ host, makePlane, planeVisual = () => nul
   }
   /** A side mid-sentence: a recording's pilot by name, a lesson's as "the
    *  ace" or "the other pilot". */
-  const partyOf = i => (state.fight?.recorded ? state.fight.names[i] : i === 0 ? 'the ace' : 'you');
+  const partyOf = i => (state.fight?.recorded ? state.fight.names[i] : i === 0 ? 'the ace' : i === 1 ? 'you' : wingOf(i));
   /** A pilot's caption about the two of them, both named (`inThirdPerson`). */
-  const said3 = (text, i) => inThirdPerson(text, partyOf(i), partyOf(1 - i));
+  const said3 = (text, i, other = 1 - i) => inThirdPerson(text, partyOf(i), partyOf(other));
   /** Write the sides' names everywhere the picture carries them. */
   function setNames() {
     for (const i of [0, 1]) {
@@ -552,7 +555,28 @@ export function createDogfightTheatre({ host, makePlane, planeVisual = () => nul
     attr.needsUpdate = true;
   }
 
-  /** The two actors: a fighter each, its trail, its shadow's trail, its drop line. */
+  /** A name tag and a GUNS callout for every plane: the two the markup
+   *  holds, and one more of each for a plane beyond them, in its team's
+   *  colour; the extra ones go when the fight has fewer planes. */
+  function ensureTags(fight) {
+    const box = ui.tags[0].parentElement;
+    for (const el of box.querySelectorAll('.is-extra')) el.remove();
+    ui.tags.length = 2;
+    ui.guns.length = 2;
+    for (let i = 2; i < fight.tracks.length; i++) {
+      const mine = fight.teams?.[i] === fight.teams?.[1];
+      const tag = document.createElement('span');
+      tag.className = `dfs-tag ${mine ? 'is-you' : 'is-ace'} is-extra`;
+      tag.textContent = 'WINGMAN';
+      const guns = document.createElement('span');
+      guns.className = `dfs-guns ${mine ? 'is-you' : 'is-ace'} is-extra`;
+      box.append(tag, guns);
+      ui.tags.push(tag);
+      ui.guns.push(guns);
+    }
+  }
+
+  /** The actors: a fighter each, its trail, its shadow's trail, its drop line. */
   function buildActors(fight) {
     const s = renderer();
     for (const a of s.actors) {
@@ -562,8 +586,10 @@ export function createDogfightTheatre({ host, makePlane, planeVisual = () => nul
       a.trail.geometry.dispose();
       a.shadow.geometry.dispose();
     }
-    s.actors = [0, 1].map(i => {
-      const color = i === 0 ? ACE : YOU;
+    ensureTags(fight);
+    s.actors = fight.tracks.map((_, i) => {
+      // A plane beyond the two flies in its team's colour.
+      const color = i === 0 ? ACE : i === 1 ? YOU : fight.teams?.[i] === fight.teams?.[1] ? YOU : ACE;
       let plane = null;
       // A recorded pilot's own type: at once when the battle parks it, or
       // swapped in when its model has loaded (`swapPlane`).
@@ -730,7 +756,11 @@ export function createDogfightTheatre({ host, makePlane, planeVisual = () => nul
     const key = `${lesson.id}/${demo.id}`;
     if (flown.has(key)) return flown.get(key);
     const origin = [0, groundY, 0];
-    const r = runDuel({ makePlane, seconds: demo.seconds ?? lesson.seconds, origin, groundAt: () => groundY, sides: demoSides(lesson, demo) });
+    // A demo with planes beyond the two (`demo.extra`: a wingman, a weave
+    // partner) is a fight of its own (`dogfight-fight.js`).
+    const r = demo.extra
+      ? runFight({ makePlane, seconds: demo.seconds ?? lesson.seconds, origin, groundAt: () => groundY, sides: fightSides(lesson, demo) })
+      : runDuel({ makePlane, seconds: demo.seconds ?? lesson.seconds, origin, groundAt: () => groundY, sides: demoSides(lesson, demo) });
     // A demo can stop where its move has played out (`endAt`, seconds),
     // while the move is still scored over the whole fight it flies; a kill
     // after the cut is not shown.
@@ -1013,7 +1043,10 @@ export function createDogfightTheatre({ host, makePlane, planeVisual = () => nul
       ui.survival.querySelector('b').textContent = SURVIVAL_WORDS[sv.verdict] ?? sv.verdict;
       ui.survival.querySelector('span').textContent = sv.line;
     }
-    ui.fly.disabled = !onFly;
+    // A lesson with a wingman is watched, not flown: the live fight has one
+    // plane a side.
+    ui.fly.disabled = !onFly || !!lesson.watchOnly;
+    ui.fly.title = lesson.watchOnly ? 'Watch only: the live fight puts one plane up each side' : '';
     pickDemo(lesson, lesson.demos.find(d => d.id === 'move')?.id ?? lesson.demos[0]?.id);
   }
 
@@ -1180,7 +1213,7 @@ export function createDogfightTheatre({ host, makePlane, planeVisual = () => nul
     const clock = `${state.t.toFixed(1)} / ${fight.duration.toFixed(0)} s`;
     if (ui.time.textContent !== clock) ui.time.textContent = clock;
     const o = fight.origin;
-    const now2 = [0, 1].map(i => sampleAt(fight.tracks[i], state.t, fight.dt));
+    const now2 = fight.tracks.map(track => sampleAt(track, state.t, fight.dt));
     for (const [i, a] of s.actors.entries()) {
       const k = now2[i];
       a.plane.position.set(k.p[0] - o[0], k.p[1] - o[1], k.p[2] - o[2]);
@@ -1221,15 +1254,19 @@ export function createDogfightTheatre({ host, makePlane, planeVisual = () => nul
               a.plane.position.x + _f.x * GUN_REACH, a.plane.position.y + _f.y * GUN_REACH, a.plane.position.z + _f.z * GUN_REACH]);
       a.gun.geometry.attributes.position.needsUpdate = true;
       const kk = k.k;
-      a.gun.material.color.set(kk.o ? C.hit : (i === 0 ? C.ace : C.you));
+      const mine = i === 1 || (i > 1 && fight.teams?.[i] === fight.teams?.[1]);
+      a.gun.material.color.set(kk.o ? C.hit : (mine ? C.you : C.ace));
       a.gun.material.opacity = kk.o ? 1 : kk.z ? 0.75 : 0.18;
-      const intent = kk.in ?? 'setup';
-      ui.intents[i].textContent = INTENT_WORDS[intent];
-      ui.intents[i].dataset.intent = intent;
       const d = a.drop.geometry.attributes.position.array;
       d.set([a.plane.position.x, a.plane.position.y, a.plane.position.z, a.plane.position.x, 1, a.plane.position.z]);
       a.drop.geometry.attributes.position.needsUpdate = true;
       a.drop.computeLineDistances();
+      // The meters, intents and captions are the two pilots'; a wingman
+      // has his tag, trail and gun line only.
+      if (i > 1) continue;
+      const intent = kk.in ?? 'setup';
+      ui.intents[i].textContent = INTENT_WORDS[intent];
+      ui.intents[i].dataset.intent = intent;
       const m = ui.meters[i];
       // His plan or plane, and the manoeuvre he is flying now.
       const now = state.fight.moves ? primaryAt(state.fight.moves, i, state.t) : null;
@@ -1255,7 +1292,9 @@ export function createDogfightTheatre({ host, makePlane, planeVisual = () => nul
       if (eye.hidden === blind) eye.hidden = !blind;
       m.classList.toggle('is-blind', blind);
       const said = sayingAt(fight, i, state.t);
-      const text = said3(said?.say ?? '', i);
+      // In a fight of more than two, he talks about the plane he is after.
+      const other = Number.isInteger(kk.target) && kk.target >= 0 && kk.target !== i ? kk.target : 1 - i;
+      const text = said3(said?.say ?? '', i, other);
       if (ui.caps[i].textContent !== text) {
         ui.caps[i].textContent = text;
         ui.caps[i].parentElement.classList.remove('is-new');
@@ -1271,7 +1310,7 @@ export function createDogfightTheatre({ host, makePlane, planeVisual = () => nul
       if (a.props.length) turnPropellers(a.props, now2[i].k.rv ?? 1, moved > 0 && moved < 0.5 ? moved : 0);
     }
     // The tracer rounds in the air at `t`, each its gun's own streak.
-    const used = [0, 0];
+    const used = s.actors.map(() => 0);
     const pxAt1m = view.isPerspectiveCamera ? 2 * Math.tan(view.fov * Math.PI / 360) / Math.max(1, h) : 0;
     const pxFlat = view.isOrthographicCamera ? (view.top - view.bottom) / view.zoom / Math.max(1, h) : 0;
     for (const r of s.tracerSet) {
@@ -1349,7 +1388,9 @@ export function createDogfightTheatre({ host, makePlane, planeVisual = () => nul
       const firing = on && firingAt(fight, i, state.t, 0);
       guns.classList.toggle('is-on', firing);
       if (firing) {
-        const range = Math.hypot(now2[0].p[0] - now2[1].p[0], now2[0].p[1] - now2[1].p[1], now2[0].p[2] - now2[1].p[2]);
+        // From the plane he is firing at: the other of the two, or a wingman's own target.
+        const at = now2[i < 2 ? 1 - i : (now2[i].k?.target ?? 0)] ?? now2[1 - Math.min(i, 1)];
+        const range = Math.hypot(now2[i].p[0] - at.p[0], now2[i].p[1] - at.p[1], now2[i].p[2] - at.p[2]);
         const struck = fight.rounds.some(r => r.side === i && r.hit && state.t >= r.hitT && state.t < r.hitT + 0.4);
         guns.textContent = `GUNS · ${Math.round(range)} M${struck ? ' · HIT' : ''}`;
         guns.style.transform = `translate(${(_m.x * 0.5 + 0.5) * w}px, ${(-_m.y * 0.5 + 0.5) * h}px) translate(-50%, -230%)`;
@@ -1444,6 +1485,8 @@ export function createDogfightTheatre({ host, makePlane, planeVisual = () => nul
     const e = fight.tracks.map(tr => Math.round(tr.at(-1).e));
     const shots = fight.shotTime.map(v => v.toFixed(1));
     sp.textContent = `Kill shots: the ace had ${shots[0]} s of them, you ${shots[1]} s. Hits: ace ${aceHits}, you ${youHits}. Energy at the end: ace ${e[0]} m, you ${e[1]} m.`;
+    // A wingman's rounds, in a fight of more than two.
+    if (fight.hits.length > 2) sp.textContent += ` ${fight.hits.slice(2).map((h, j) => `${whoOf(j + 2)}: ${h} hits`).join('. ')}.`;
     if (said) {
       const n = fight.names;
       sp.textContent = `${said.note} Kill shots: ${n[0]} had ${shots[0]} s of them, ${n[1]} ${shots[1]} s. Hits: ${n[0]} ${aceHits}, ${n[1]} ${youHits}. Energy at the end: ${n[0]} ${e[0]} m, ${n[1]} ${e[1]} m.`;

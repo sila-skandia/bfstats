@@ -1,9 +1,10 @@
 # Dogfight doctrine: Boelcke's rules in the dogfight school
 
-Status: **steps 1 to 5 of the build plan built** (2026-11-10, after the
-owner's go; step 4 below, "The BF1918 arena", the lessons' counts now flown
-on the airframe on stage, "The lessons on other airframes", and step 5, "The
-falling leaf"): the rules measured over any fight and reported over the 303
+Status: **steps 1 to 7 of the build plan built** (2026-11-10, after the
+owner's go: "The BF1918 arena", "The lessons on other airframes", "The
+falling leaf", "More than two planes", "The two-seater"); steps 8 and 9 wait
+on data the recordings do not yet hold (the build plan says why). Steps 1 to
+3: the rules measured over any fight and reported over the 303
 recorded fights, the school's Rules tab, the coach's rule lines and the end
 card's verdicts, and the gunnery drill. Steps 4 to 9 are proposals still.
 See "Built" and "What the recordings say" below; the research and the plan
@@ -127,6 +128,53 @@ lesson on *You follow them down*. Held by
 `test_dogfight_doctrine.py` `test_the_falling_leaf_gets_away_...` from the
 nine starts; the steps and fly-moves tests let it off the Dip, Flip and
 Ninja, since in it you are the attacker, not the pilot in trouble.
+
+## More than two planes (step 6, rule 8)
+
+`viewer/dogfight-fight.js` `runFight` flies any number of the school's
+pilots in teams, on the duel's airframes, hands and rounds: each pilot
+fights one enemy at a time (his plan's choice, else the nearest, kept until
+another is a third nearer), sees each enemy through eyes of his own, and is
+handed the whole fight (`c.team`) for the plans that work as a pair. Every
+round is flown against every plane; a plane down leaves the fight. The
+theatre flies a demo with `extra` planes through it and draws every plane
+(the extra ones with a tag, trail and gun line, in their team's colour;
+the meters and captions stay the two pilots').
+
+Lesson *The pair: your wingman* (`the-pair`, watch only: the live fight puts
+one plane up each side), a hunter 350 m behind you, from the nine starts:
+
+| Fight | Nine starts |
+|---|---|
+| Alone, flying straight | shot down every time, 16 to 30 s in |
+| Alone, turning hard | alive every time, nobody wins: 3 rounds on you in all, 8 of yours on them |
+| Your wingman covers you (`PLANS.wingman`: off your beam, onto any enemy closing on your tail) | never hit, every time; the hunter turns on your wingman and lands 0 to 2 |
+| Two abreast: the Thach weave, tried (`PLANS.weaver`) | from these starts the pair is never hit and the hunter takes 0 to 7 (11 in all); with the hunter's start moved instead of yours the pair took 3 to 4 a fight as well: it trades shots between equals |
+
+The wingman is the strongest single result the school has: the same pilot,
+flying straight, goes from shot down nine times in nine to never hit. The
+weave was invented against a better turner (the Zero against the Wildcat);
+between equal airframes, on this law, it is a coin the geometry tosses.
+Rule 8's Rules row opens the wingman's fight. Held by
+`test_dogfight_doctrine.py` `test_a_wingman_keeps_the_hunter_off_your_tail`.
+
+## The two-seater (step 7, rule 5)
+
+A two-seater's rear gunner is a turret in `runFight` (`side.gunner`,
+`GUNNER`): BF1918's arc (70 degrees either side of astern, 5 below the tail
+line to 40 above), 400 m, 0.8 s to react, a degree of wander. Lesson
+*Two-seaters: from beneath the tail* (`two-seater`, watch only), a
+two-seater flying straight at 50 m/s, from the nine starts:
+
+| Fight | Nine starts |
+|---|---|
+| From behind, level (`chaser`) | you are shot down in 7, the two-seater in 6: a trade |
+| From beneath the tail (`PLANS.underTail`: close on a point 90 m under the tail and 160 m behind, pull up into them, fire, drop back) | never shot down, hit in 3 of 9 (once 6 rounds, when the climb carried you into the arc), 2 to 6 rounds landed every time, shots on the way in taken |
+
+Mannock's rule holds on BF1918's own gunner arcs. Not modelled: a gunner
+who can be killed before the pilot (Richthofen's rule), since a plane here
+has one pool of hit points; and the two-seater does not manoeuvre.
+Held by `test_a_two_seater_is_attacked_from_beneath_its_tail`.
 
 ## The lessons on other airframes
 
@@ -684,11 +732,12 @@ recast [25].
   jets). On the law the jets do not run out of speed going up (the table),
   so the energy fight becomes a fight for position under a 1000 m ceiling.
   The F-16's gun is a 30 mm round with a 3 m blast and 5 s of flight; its
-  AIM-9 is, in the extracted data, a rocket with a motor and a fin and no
-  steering input (whether DC guides it some other way is not read in the
-  repo). Until that is read, the jets' rules are the visual-fight rules: 1
-  (position, surprise), 4, 6 and 7 carry; 5 depends on the missile; 8 is the
-  pair. Teaching DC means a DC arena first, which is outside this plan.
+  AIM-9, read from DC's own cons, flies straight and bursts within 7 m of a
+  plane ("Research notes"). So the jets' rules are the gun fight's: 1
+  (position, surprise), 3 (the missile is a deflection shot with a 7 m
+  bubble), 4, 5, 6 and 7 carry; 8 is the pair. Teaching DC means a DC arena
+  first (`FIGHTERS` and the arena builder know no jets), which is outside
+  this plan.
 
 ## Build plan, ranked
 
@@ -705,10 +754,10 @@ Sizes are rough: S a day or less, M a few days, L a week or more.
 | 3 | **The gunnery drill** (built) | 3 | M | 1 |
 | 4 | **A BF1918 arena** (built; the lessons not re-tuned for WWI) | all, period-correct | M | the lowercase-class fix (done upstream) |
 | 5 | **The falling leaf** (the ruse) (built) | 4 | S | 1, and 4 for the period |
-| 6 | **More than two planes in a duel**, then *The pair* and the Thach weave | 8 | L | 1 |
-| 7 | **The two-seater** (Mannock: from beneath the tail) | 5 | M | 4, 6 (a gunner seat) |
-| 8 | **The sun**, only if the recordings say it pays | 1 | S to M | 1 |
-| 9 | **The way home**, on a real level | 7 | M | a level arena |
+| 6 | **More than two planes in a duel**, then *The pair* and the Thach weave (built: `runFight`, the lesson) | 8 | L | 1 |
+| 7 | **The two-seater** (Mannock: from beneath the tail) (built) | 5 | M | 4, 6 (a gunner seat) |
+| 8 | **The sun**, only if the recordings say it pays (not built: 20 attacks from the sun, too few; waits on more recordings) | 1 | S to M | 1 |
+| 9 | **The way home**, on a real level (not built: the school has no level arena; in the recordings 5 of 303 fights ended by a ground gun, too few to say where) | 7 | M | a level arena |
 
 **1. Doctrine measures over any fight** (`viewer/dogfight-doctrine.js`, pure;
 a report script beside `dogfight_manoeuvres_report.mjs`). Over a fight in the
@@ -833,20 +882,34 @@ session group's shared notes.
   two-seaters from beneath their tails" is exactly the gap in the arc.
   The Albatros C.III's gun also turns only 70 degrees either side of
   astern; the other two turn all the way round.
-- **Desert Combat's missiles are not guided in the extracted data.** Every
-  rocket projectile in the DC tree (14 templates, the Stinger, Hellfire,
-  AIM-9, AA-10, SA-3 among them) carries a motor and a fin and no steering
-  input or seeker. Either DC steers them in a way the exporter does not keep
-  (the Hellfire and TOW are flown by their gunner in the real game), or they
-  fly straight. Not read further: it decides whether rule 5 is outdated by
-  missiles in DC, and it waits on a DC arena.
+- **Desert Combat's missiles fly straight and burst near a plane.** Read
+  from the mod's own cons (`~/.wine/.../Mods/DesertCombat` and `DC_Final`,
+  `OBJECTS.rfa`): the AIM-9, AA-10, Stinger, SA-3 and Hellfire are each a
+  `c_ETRocket` engine bound to `c_PIThrottle` alone and a fin, no steering
+  axis; what makes them anti-air is the proximity fuse
+  (`explodeNearEnemyDistance` 7 m for the AIM-9 and AA-10, 10 m for the
+  Stinger, 15 m for the SA-3; `ProximityFusePrimer` 0.1 to 0.25 s) and the
+  blast (`radius` 8 to 25 m). The engine's fuse (PROX-1 to PROX-6, verified)
+  goes off on any aircraft heavier than the round moving over 2.5 m/s, and
+  tests no team (PROX-5): a friendly plane crossing the stream sets it off.
+  So in DC the air-to-air missile is a deflection shot with a 7 m bubble:
+  rule 3 (close, in the sight) holds, and rule 5 is not outdated by it,
+  unlike the all-aspect missiles the modern sources mean. This replaces the
+  open question above.
 - **The Eindecker and the Morane G fly one table**: identical to the last
   decimal. The Fokker E was built after the Morane-Saulnier; BF1918 shares
   the physics.
 - **The school's `hardTurn` see-saws on a plane that climbs hard in a bank**
-  (the Albatros, above). A damped bank law would fix it for WWI airframes,
-  but every Spitfire lesson's count rests on the hand as it is, so it waits
-  on per-era tuning rather than a change under the Spitfire's lessons.
+  (the Albatros, above). Tried on scratch copies: capping the bank's
+  correction (at most 15 degrees off for the sink, 8 on for the climb) holds
+  the Albatros's sustained turn at 31.8 deg/s instead of 17.5, and moves 9 of
+  the Spitfire's declared counts: *When they have the height*'s Reversal
+  from 6 to 1, *Up and over*'s Bounce from 6 to 0, the scissors' Extension
+  from 6 to 3, the circle's from 7 to 9. Not adopted. It is the strongest
+  evidence that the school's upper-hand results are tuned to one hand on one
+  airframe: a change in a turning gain that a pilot would never notice
+  unmakes them. Per-era lessons, re-tuned and re-held from the nine starts
+  on their own airframe, are the honest fix.
 
 ## Sources
 

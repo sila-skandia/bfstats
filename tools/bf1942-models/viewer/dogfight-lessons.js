@@ -561,6 +561,76 @@ export const LESSONS = [
     },
   },
   {
+    // Boelcke's rule 8 (features/dogfight-doctrine): fight as a group. The
+    // first lesson of more than two planes (`dogfight-fight.js`).
+    id: 'the-pair',
+    title: 'The pair: your wingman',
+    tagline: 'A hunter on your tail. Alone you are a target; with a wingman you are a team.',
+    story: [
+      'A hunter settles on your tail from 350 m back. Flying straight, alone, you are shot down in every one of nine starts, 16 to 30 s in. Turning hard keeps you alive and gets you nowhere: they follow you round, 3 rounds on you in nine fights, 8 of yours on them.',
+      'In the players\' recorded fights, a pilot with more enemies than friends near won 7% and lost 26%; one shot at by a third plane went down 42% of the time. The group is the largest effect in the data.',
+    ],
+    counterStory: [
+      'Boelcke wrote it in 1916, and Mölders made it the pair in Spain in 1938: a leader and a wingman, the wingman\'s whole job the leader\'s tail. Here your wingman flies off your beam, a little behind; the moment the hunter closes on your tail, they turn onto the hunter. Flying straight, with your wingman there, you took no hit in any of the nine starts; the hunter turned on your wingman and landed 0 to 2.',
+      'The Thach weave, tried: two abreast turning in toward each other whenever someone is on a tail, so the hunter following one is dragged across the other\'s nose. It was invented against a Zero that out-turned a Wildcat. From these nine starts the pair was never hit and the hunter took 0 to 7 rounds; but it rests on the geometry: with the hunter\'s start moved instead of yours, the pair took 3 to 4 rounds a fight as well as giving them. Between equal planes it trades shots more than it wins them.',
+    ],
+    watchOnly: true,
+    ace: { plan: 'hunter', start: { at: [60, 430, 350], headingDeg: 0, speed: 66 } },
+    you: { start: { at: [0, 400, 0], headingDeg: 0, speed: 60 } },
+    demos: [
+      { id: 'move', label: 'Alone, flying straight', seat: 'cruiser', skill: 0.85,
+        note: 'Nobody watching your tail: they close and shoot you down.' },
+      { id: 'flat', label: 'Alone, turning hard', seat: 'flatTurn', skill: 0.85,
+        note: 'You turn as hard as it goes: they cannot hit you, and you cannot get away.' },
+      { id: 'counter', label: 'Your wingman covers you', seat: 'cruiser', skill: 0.85,
+        extra: [{ plan: 'wingman', start: { at: [-180, 400, 60], headingDeg: 0, speed: 60 }, memory: { leader: 1 } }],
+        note: 'Your wingman flies off your beam; the moment they close on your tail, your wingman turns onto them.' },
+      { id: 'weave', label: 'Two abreast: the Thach weave, tried', seat: 'weaver', skill: 0.85,
+        aceStart: { at: [60, 430, 380], headingDeg: 0, speed: 66 },
+        extra: [{ plan: 'weaver', start: { at: [-320, 400, 0], headingDeg: 0, speed: 60 } }],
+        note: 'Whenever someone is on a tail, both turn in toward each other: the hunter is dragged across the other\'s nose, and shots go both ways.' },
+    ],
+    seconds: 60,
+    coach: {
+      hunt: { line: 'They are closing on your tail', tip: 'Call your wingman: stay where they can reach you, and turn when they are inside 300 m.', keys: ['Mouse', 'Arrows'] },
+      track: { line: 'They are on your tail, closing to fire', tip: 'Turn hard now. Your wingman is coming.', keys: ['Mouse', 'Arrows'] },
+      lag: { line: 'They followed you into your turn', tip: 'Keep turning: drag them round to your wingman.', keys: ['Mouse', 'Arrows'] },
+      follow: { line: 'They are following you up, shallow', tip: 'Do not hang at the top.', keys: ['Mouse'] },
+      extend: { line: 'They are running', tip: 'Let them go: rejoin your wingman.', keys: ['W'] },
+      headon: { line: 'They are coming at you head-on', tip: 'Pass over them and turn back toward your wingman.', keys: ['Mouse', 'Arrows'] },
+      evade: { line: 'They are breaking away', tip: 'Let them go and get your speed back.', keys: ['W'] },
+    },
+  },
+  {
+    // Boelcke's rule 5 against a two-seater (features/dogfight-doctrine):
+    // Mannock's "two-seaters from beneath their tails", Richthofen's "kill
+    // the gunner first". The gunner's arc is BF1918's own.
+    id: 'two-seater',
+    title: 'Two-seaters: from beneath the tail',
+    tagline: 'A two-seater has a gunner facing aft. From behind it is a duel; from under the tail it is not.',
+    story: [
+      'A two-seater on a photo run, flying straight at 50 m/s, with a gunner on a ring facing aft. Come in from behind and level, the way you would on a scout, and you are flying into his guns: flown from nine starts, the gunner shot you down in 7 and you took the two-seater down in 6. A trade, not a kill.',
+      'The gunner\'s arc is BF1918\'s own: 70 degrees either side of the tail, from 40 degrees above the tail line to only 5 below it. On the Albatros C.III, the DH.4 and the Breguet 14 alike, nothing fires down past the tail.',
+    ],
+    counterStory: [
+      'Mannock\'s rule (1917): attack two-seaters from beneath their tails. Close on a point 90 m under the tail and 160 m behind it, where the ring cannot depress, pull up into them, fire, drop back under, and go again.',
+      'From the same nine starts you were never shot down, hit in 3 of 9 (once 6 times, when the climb carried you up into the arc), and you landed 2 to 6 rounds every time: slower, and safe. Richthofen\'s rule for the rest: the gunner is the first target.',
+    ],
+    watchOnly: true,
+    ace: { plan: 'cruiser', gunner: {}, start: { at: [0, 420, -350], headingDeg: 0, speed: 50 } },
+    you: { start: { at: [0, 400, 0], headingDeg: 0, speed: 62 } },
+    demos: [
+      { id: 'move', label: 'From behind, level', seat: 'chaser', skill: 0.9, aceSkill: 1, extra: [],
+        note: 'Straight in behind them, as on a scout: into the gunner\'s ring.' },
+      { id: 'counter', label: 'From beneath the tail', seat: 'underTail', skill: 0.9, aceSkill: 1, extra: [],
+        note: 'Under the tail, where the ring cannot depress; up into them, fire, and down again.' },
+    ],
+    seconds: 45,
+    coach: {
+      cruise: { line: 'A two-seater, flying straight', tip: 'Not from behind and level: the gunner faces you. Get under their tail.', keys: ['Mouse', 'S'] },
+    },
+  },
+  {
     // Boelcke's rule 3 as a drill (features/dogfight-doctrine): a target
     // that never shoots back, and the score is range.
     id: 'gunnery',
@@ -670,6 +740,20 @@ export function flightOf(lesson, demoId = null) {
     you: { start: lesson.you.start, memory: lesson.you.memory },
     guide: lesson.guide ?? lesson.demos.find(d => d.id === 'counter')?.seat ?? best?.seat ?? 'meetTheDive',
   };
+}
+
+/**
+ * A demo's planes beyond the two: `demo.extra`, each `{ plan, start, skill,
+ * memory, team }` (team `'you'`, the default, or `'ace'`), as `runFight`
+ * takes them, after the two `demoSides` (teams: the ace 'ace', you 'you').
+ * Empty for a duel.
+ */
+export function fightSides(lesson, demo) {
+  const [ace, you] = demoSides(lesson, demo);
+  // A two-seater's rear gunner rides on the ace (`ace.gunner`, `runFight`).
+  const gunner = lesson.ace.gunner ? { gunner: lesson.ace.gunner } : {};
+  return [{ ...ace, ...gunner, team: 'ace' }, { ...you, team: 'you' },
+    ...(demo.extra ?? []).map(x => ({ skill: 0.85, ...x, team: x.team ?? 'you' }))];
 }
 
 export function demoSides(lesson, demo) {

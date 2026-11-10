@@ -19,19 +19,43 @@
 // when a team has nobody left, or at `seconds`.
 
 import { createPilot } from './dogfight-pilot.js';
-import { stateOf, gunSolution, energyHeight, len, sub } from './dogfight-flight.js';
+import { stateOf, gunSolution, energyHeight, len, sub, add, scale, unit, dot, basis, leadPoint } from './dogfight-flight.js';
 import { placePlane, stage, applyStick, fireRound, segmentNear, strikesAirframe, HIT_RADIUS, KILL_HITS, DUEL_DT } from './dogfight-duel.js';
 
 /** A target is kept unless another enemy is this much nearer. */
 const SWITCH = 0.67;
 
 /**
+ * A two-seater's rear gunner (`side.gunner`): a turret that fires aft at
+ * the nearest enemy inside its arc and range, after `react` seconds of
+ * having him there. The arc is BF1918's (features/dogfight-doctrine,
+ * "Research notes"): `yaw` degrees either side of astern, `down` below the
+ * tail line to `up` above it; his aim wanders `spread` degrees.
+ */
+export const GUNNER = { yaw: 70, down: 5, up: 40, range: 400, react: 0.8, spread: 1.2, speed: 400 };
+
+/** Whether `p` is inside a gunner's arc on plane `st`, and how far. */
+export function inGunnerArc(st, p, arc = GUNNER) {
+  const { F, U } = basis(st.orientation);
+  const rel = sub(p, st.position), d = len(rel);
+  if (d > arc.range || d < 1) return null;
+  const los = scale(rel, 1 / d), aft = scale(F, -1);
+  const up = Math.asin(Math.max(-1, Math.min(1, dot(los, U)))) * 180 / Math.PI;
+  const flat = sub(los, scale(U, dot(los, U)));
+  const off = Math.acos(Math.max(-1, Math.min(1, dot(unit(flat), aft)))) * 180 / Math.PI;
+  return off <= arc.yaw && up >= -arc.down && up <= arc.up ? { d, off, up } : null;
+}
+
+/**
  * Fly a fight. `sides` is `{ plan, start, skill, team, memory }` each (team
- * any value; equal is friendly). Returns `{ tracks, events, rounds, hitsOn,
- * hitsBy, downs, end, dt, teams }`: a track per plane (the duel's sample,
- * plus `target`), `hitsOn[j]` the rounds in plane j, `hitsBy[i][j]` the
- * rounds plane i put in plane j, `downs` each plane brought down (`{ i, t,
- * by, why }`), and `end` (`{ t, winner: team, why }` or null).
+ * any value; equal is friendly). Returns `{ tracks, events, rounds, hits,
+ * hitsOn, hitsBy, downs, end, teamEnd, dt, teams }`: a track per plane (the
+ * duel's sample, plus `target`), `hits[i]` the rounds plane i landed,
+ * `hitsOn[j]` the rounds in plane j, `hitsBy[i][j]` the rounds plane i put
+ * in plane j, `downs` each plane brought down (`{ i, t, by, why }`), `end`
+ * the duel's shape for the theatre (the first of planes 0 and 1 to go down:
+ * `{ t, winner: the plane that did it, why }`), `teamEnd` when a team had
+ * nobody left (`{ t, winner: team, why }`).
  */
 export function runFight({ makePlane, sides, seconds = 60, origin = [0, 0, 0], groundAt = () => origin[1],
                            gun = {}, killHits = KILL_HITS, dt = DUEL_DT, arena = null }) {
@@ -97,6 +121,23 @@ export function runFight({ makePlane, sides, seconds = 60, origin = [0, 0, 0], g
         mem.eyes[cur.i] = mem.eye;
       }
       applyStick(planes[i], out);
+      // The rear gunner, on his own: the nearest enemy in his arc.
+      if (sides[i].gunner && enemies.length) {
+        const arc = { ...GUNNER, ...sides[i].gunner };
+        const mem2 = pilots[i].mem;
+        const seen = enemies.map(e => ({ e, a: inGunnerArc(me, e.state.position, arc) })).filter(x => x.a).sort((x, y) => x.a.d - y.a.d)[0];
+        mem2.gunnerT = seen ? (mem2.gunnerT ?? 0) + dt : 0;
+        if (seen && mem2.gunnerT >= arc.react) {
+          const lp = leadPoint(me, seen.e.state, { speed: arc.speed });
+          const j = (rand() - 0.5) * 2 * arc.spread * Math.PI / 180, j2 = (rand() - 0.5) * 2 * arc.spread * Math.PI / 180;
+          const dir = unit(add(unit(sub(lp, me.position)), [j, j2, -j]));
+          const v = add(me.velocity, scale(dir, arc.speed));
+          const p0 = add(me.position, scale(dir, 4));
+          rounds.push({ side: i, t, p: p0, start: p0, v, age: 0, done: false, hit: false, gunner: true });
+          if (!mem2.gunnerFiring) events.push({ t, side: i, phase: 'gunner', say: 'The gunner opens fire', intent: 'defend' });
+          mem2.gunnerFiring = true;
+        } else mem2.gunnerFiring = false;
+      }
       const him = targets[i].i >= 0 && alive[targets[i].i] ? states[targets[i].i] : null;
       const sol = him ? gunSolution(me, him, { ...pilots[i].gun, width: 5 }) : { fire: false, dist: Infinity, off: 180 };
       if (out.fire) rounds.push(fireRound(me, g, rand, i, t, k));
@@ -104,7 +145,10 @@ export function runFight({ makePlane, sides, seconds = 60, origin = [0, 0, 0], g
         t, p: me.position, q: [me.orientation.x, me.orientation.y, me.orientation.z, me.orientation.w],
         v: len(me.velocity), ph: out.phase, f: out.fire, h: out.fire && sol.fire,
         e: energyHeight(me.position[1] - origin[1], len(me.velocity)),
+        stick: [out.stick.pitch, out.stick.roll, out.stick.rudder, out.throttle],
         in: out.intent, o: sol.fire, z: sol.dist < pilots[i].gun.range && sol.off < 8,
+        so: Math.round(sol.off * 10) / 10, sd: Math.round(sol.dist),
+        rv: planes[i].rotorEngine ? Math.round(planes[i].rotorEngine.revs * 1000) / 1000 : null,
         sees: out.sees === false ? 0 : 1, target: targets[i].i,
       });
       if (out.phase !== lastPhase[i]) {
@@ -138,5 +182,8 @@ export function runFight({ makePlane, sides, seconds = 60, origin = [0, 0, 0], g
       if (!r.done && r.age > (g.reach ?? 600) / g.speed) r.done = true;
     }
   }
-  return { tracks, events, rounds, hitsOn, hitsBy, downs, end, dt, teams };
+  const first = downs.find(d => d.i === 0 || d.i === 1);
+  const duelEnd = first ? { t: first.t, winner: first.by ?? 1 - first.i, why: first.why } : null;
+  return { tracks, events, rounds, hits: hitsBy.map(row => row.reduce((a, b) => a + b, 0)), hitsOn, hitsBy, downs,
+           end: duelEnd, teamEnd: end, dt, teams };
 }

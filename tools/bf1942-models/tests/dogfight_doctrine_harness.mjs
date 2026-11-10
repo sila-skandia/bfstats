@@ -6,6 +6,8 @@
 // range of the mods' guns.
 import { doctrineOf, usefulRange, damageAt, falloffOf, RULES } from './dogfight-doctrine.js';
 import { movesOn, STARTS, nudge } from './dogfight-measure.js';
+import { runFight } from './dogfight-fight.js';
+import { fightSides } from './dogfight-lessons.js';
 
 const DEMOS = ['boom-and-zoom/move', 'boom-and-zoom/counter', 'under-the-height/move', 'under-the-height/counter',
   'on-his-tail/move', 'out-of-the-lock/flat', 'break-turn/without', 'the-circle/circle', 'up-and-over/ninja'];
@@ -103,4 +105,36 @@ const leaf = {};
     });
   }
 }
-console.log(JSON.stringify({ demos, guns, damage, rules: RULES.map(r => r.n), coach: coachCases, gunnery, onSpitfire, leaf }));
+// The pair (rule 8), every fight from the nine starts, flown as the
+// theatre flies it (`runFight` for a demo with planes beyond the two).
+const pair = {};
+{
+  const LP = LESSONS.find(l => l.id === 'the-pair');
+  for (const d of LP.demos) {
+    pair[d.id] = STARTS.map(st => {
+      const sides = fightSides(LP, d);
+      sides[1] = { ...sides[1], start: nudge(sides[1].start, st) };
+      const r = d.extra ? runFight({ makePlane, seconds: d.seconds ?? LP.seconds, groundAt: () => 0, sides })
+        : runDuel({ makePlane, seconds: d.seconds ?? LP.seconds, groundAt: () => 0, sides: sides.slice(0, 2) });
+      const on = r.hitsOn ?? [r.hits[1], r.hits[0]];
+      return { youDown: r.end?.why === 'shot down' && r.end.winner !== 1 && r.end.winner !== 2 ? r.end.t : null,
+        aceDown: !!r.downs?.some(x => x.i === 0), onYou: on[1], onAce: on[0], onWing: on[2] ?? null,
+        phases: [...new Set(r.events.filter(e => e.side === 2).map(e => e.phase))] };
+    });
+  }
+}
+// The two-seater (rule 5, Mannock's rule), from the nine starts.
+const twoSeater = {};
+{
+  const LT = LESSONS.find(l => l.id === 'two-seater');
+  for (const d of LT.demos) {
+    twoSeater[d.id] = STARTS.map(st => {
+      const sides = fightSides(LT, d);
+      sides[1] = { ...sides[1], start: nudge(sides[1].start, st) };
+      const r = runFight({ makePlane, seconds: d.seconds ?? LT.seconds, groundAt: () => 0, sides });
+      return { youDown: r.downs.some(x => x.i === 1), heDown: r.downs.some(x => x.i === 0), onYou: r.hitsOn[1], onHim: r.hitsOn[0],
+        gunnerRounds: r.rounds.filter(x => x.gunner).length };
+    });
+  }
+}
+console.log(JSON.stringify({ demos, guns, damage, rules: RULES.map(r => r.n), coach: coachCases, gunnery, onSpitfire, leaf, pair, twoSeater }));

@@ -125,6 +125,7 @@ export const INTENTS = {
   leafFollow: { chase: 'attack', follow: 'setup', pounce: 'attack' },
   wingman: { station: 'setup', cover: 'attack' },
   weaver: { abreast: 'setup', weave: 'defend', shoot: 'attack' },
+  underTail: { approach: 'setup', climb: 'attack', drop: 'setup' },
   meetTheDive: { climb: 'setup', face: 'defend', pass: 'defend', extend: 'setup' },
   bzDip: { climb: 'setup', face: 'defend', pass: 'defend', extend: 'setup', 'dip-run': 'defend' },
   bzAce: { climb: 'setup', perch: 'setup', dive: 'attack', zoom: 'setup', reverse: 'setup', 'let-go': 'setup' },
@@ -2587,6 +2588,34 @@ PLANS.weaver = {
     go(c, 'abreast');
     mem.dir ??= heading(me.velocity);
     return { ...pointNose(me, climbing(mem.dir, 0), { fine: 6 }), throttle: holdSpeed(c, 60), aimed: false };
+  },
+};
+
+/**
+ * Against a two-seater (features/dogfight-doctrine, Mannock's rule: "attack
+ * two-seaters from beneath their tails"): close on a point `UNDER.below`
+ * metres under his tail and `UNDER.back` behind it, where his gunner's ring
+ * cannot depress; from there pull up into him and fire; after the burst drop
+ * back under him and go again.
+ */
+const UNDER = { below: 90, back: 160, near: 60, climbFor: 3.5 };
+PLANS.underTail = {
+  title: 'From beneath the tail', first: 'approach',
+  says: { approach: 'Closing under their tail, out of the gunner\'s ring', climb: 'Pulling up into them from below', drop: 'Back down under them' },
+  step(c) {
+    const { me, him, g, mem } = c;
+    const hf = heading(him.velocity);
+    const spot = add(add(him.position, scale(hf, -UNDER.back)), [0, -UNDER.below, 0]);
+    const toSpot = sub(spot, me.position);
+    if (mem.phase === 'approach' && len(toSpot) < UNDER.near) go(c, 'climb');
+    if (mem.phase === 'climb' && (mem.since > UNDER.climbFor || g.range < 70)) go(c, 'drop');
+    if (mem.phase === 'drop' && mem.since > 3) go(c, 'approach');
+    if (mem.phase === 'climb') return { ...leadPursuit(c, { pull: 1, push: 0.6 }), throttle: 1 };
+    // Ahead of the spot along his path, with his speed: station-keeping.
+    const lead = add(spot, scale(him.velocity, 1.5));
+    const along = dot(sub(spot, me.position), hf);
+    // A shot that comes on the way in, from under the tail, is taken.
+    return { ...pointNose(me, sub(lead, me.position), { fine: 8 }), throttle: clamp(0.5 + along * 0.02, -1, 1) };
   },
 };
 

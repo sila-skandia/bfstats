@@ -91,8 +91,9 @@ class MoveStepsTests(unittest.TestCase):
         # the eight lessons show"), and the tabs mark it.
         for lesson, best in self.shape["best"].items():
             # Lessons with no Dip, Flip or Ninja: the ace, the gunnery
-            # drill's target and the falling leaf (features/dogfight-doctrine).
-            if lesson in ("free", "gunnery", "falling-leaf"):
+            # drill's target, the falling leaf, the pair and the two-seater
+            # (features/dogfight-doctrine).
+            if lesson in ("free", "gunnery", "falling-leaf", "the-pair", "two-seater"):
                 continue
             with self.subTest(lesson):
                 self.assertIsNotNone(best)

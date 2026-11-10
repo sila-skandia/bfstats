@@ -177,6 +177,32 @@ class DoctrineTests(unittest.TestCase):
         # The price the lesson states: their pull-out answers in three of nine.
         self.assertEqual(3, sum(1 for r in follow if r["hisHits"] > 0))
 
+    def test_a_wingman_keeps_the_hunter_off_your_tail(self) -> None:
+        pair = self.out["pair"]
+        # Alone and flying straight: shot down from every start.
+        self.assertTrue(all(r["youDown"] is not None for r in pair["move"]), pair["move"])
+        # Alone and turning hard: alive, and nobody wins.
+        self.assertTrue(all(r["youDown"] is None and not r["aceDown"] for r in pair["flat"]), pair["flat"])
+        # Your wingman covers you: flying straight, never hit.
+        self.assertTrue(all(r["onYou"] == 0 and r["youDown"] is None for r in pair["counter"]), pair["counter"])
+        self.assertIn("cover", pair["counter"][0]["phases"])
+        self.assertLessEqual(max(r["onWing"] for r in pair["counter"]), 2)
+        # The weave, from these starts: the pair never hit, the hunter hit.
+        self.assertTrue(all(r["onYou"] == 0 and r["onWing"] == 0 for r in pair["weave"]), pair["weave"])
+        self.assertGreater(sum(r["onAce"] for r in pair["weave"]), sum(r["onAce"] for r in pair["flat"]))
+        self.assertIn("shoot", pair["weave"][0]["phases"])
+
+    def test_a_two_seater_is_attacked_from_beneath_its_tail(self) -> None:
+        behind, under = self.out["twoSeater"]["move"], self.out["twoSeater"]["counter"]
+        # From behind and level: into the gunner's ring, shot down in most.
+        self.assertGreaterEqual(sum(r["youDown"] for r in behind), 6, behind)
+        self.assertTrue(all(r["gunnerRounds"] > 100 for r in behind), behind)
+        # From beneath the tail: never shot down, hit in a few, and landing
+        # rounds every time.
+        self.assertFalse(any(r["youDown"] for r in under), under)
+        self.assertLessEqual(sum(1 for r in under if r["onYou"] > 0), 3, under)
+        self.assertTrue(all(r["onHim"] >= 1 for r in under), under)
+
 
 class RecordedDoctrineTests(unittest.TestCase):
     """A recorded fight carries no eyes: `perceive` runs over its tracks."""

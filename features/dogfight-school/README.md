@@ -89,7 +89,8 @@ is published: no asset is involved.
   own row ("BOELCKE 3 · Hold fire: ..."); and the lesson *Gunnery: close,
   then closer* is a target that never shoots back, scored on range. *The
   falling leaf* is rule 4's ruse. A BF1918 arena pairs the WWI scouts by
-  their levels' spawners, and every move's count on the tabs is now flown on
+  their levels' spawners; *The pair* and *Two-seaters* fly three planes or
+  a rear gunner (`dogfight-fight.js`); and every move's count on the tabs is now flown on
   the plane the lessons fly on, the Spitfire's beside it where they differ
   (`features/dogfight-doctrine`, "The lessons on other airframes").
 
@@ -1353,10 +1354,11 @@ above.
 
 - **Not flown by hand.** The browser pane was hidden all session. A person
   should fly each lesson once with the mouse.
-- **The yo-yos, the lead turn and the Thach weave** are researched
-  (`research.md`) but not in the school: no pilot here made their fights say
-  what the lessons would. The Thach weave needs two friendly aircraft and the
-  school has one seat a side.
+- **The yo-yos and the lead turn** are researched (`research.md`) but not
+  in the school: no pilot here made their fights say what the lessons would.
+  The Thach weave is in *The pair* since 2026-11-10 (`runFight`,
+  `features/dogfight-doctrine`, "More than two planes"), as a try: between
+  equal airframes it trades shots rather than winning them.
 - **Against the ace** has no fight in the theatre: his fights end without a
   kill, which makes a dull reconstruction. He is the live fight's sparring
   partner.

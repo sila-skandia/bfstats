@@ -26,7 +26,7 @@ GIVES_UP = {"boom-and-zoom": "bzAce", "under-the-height": "uhAce", "up-and-over"
 MANY_TRIES = {"the-circle"}
 # Lessons where you are the attacker, not the pilot in trouble: no Dip,
 # Flip or Ninja to practise (features/dogfight-doctrine, the falling leaf).
-NO_MOVES = {"falling-leaf"}
+NO_MOVES = {"falling-leaf", "the-pair", "two-seater"}
 
 
 def run() -> dict:
