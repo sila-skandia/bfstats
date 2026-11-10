@@ -1217,6 +1217,7 @@ const vehicles = new VehicleRegistry({
   // A seat taken or freed changes every bot's candidate list.
   onChange: () => { botUnits.candidateCache.at = -1; },
   destroyOnExit: (node, root) => destroyOnExit(node, root),
+  fireOnceNames: () => level.extras?.fireOnce ?? null,
 });
 /**
  * `destroyOnExit` (ledger SEAT-38): the PCO a player has just climbed out of

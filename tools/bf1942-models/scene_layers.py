@@ -76,6 +76,7 @@ LAYERS: dict[str, tuple[tuple[str, ...], tuple[str, ...]]] = {
     "terrainDetail": (("terrainDetail",), ()),
     "meshCull": (("meshCull",), ()),
     "collisionGroups": (("collisionGroups",), ()),
+    "fireOnce": (("fireOnce",), ()),
     # No scene.json key: the level's `lightmaps/*.png`, which the glb names.
     "lightmaps": ((), ()),
 }
@@ -112,6 +113,8 @@ REPORT_ORDER = (
     "envmapTexture",
     # Added 2026-10-20, the same way.
     "collisionGroups",
+    # Added 2026-11-10, the same way.
+    "fireOnce",
 )
 MODE_KEY_ORDER = ("gameTypes", "controlPoints", "soldierSpawns",
                   "objectSpawns", "vehicleSoldierSpawns", "tickets",
@@ -892,6 +895,26 @@ def layer_collision_groups(ctx: LevelContext):
             if library is not None else {}), {}
 
 
+def fire_once_templates(library) -> list[str]:
+    """Every `FireArms` template of the level's library that says `fireOnce
+    1`, lower case: one round a press (ledger GUN-22, `FireArms::handleMessage`,
+    the class every seat gun is). Vanilla's horns and its Elco80 and Type38
+    torpedoes, FH's and EoD's horns, Desert Combat's artillery calls.
+    `viewer/gun-groups.js` latches a seat gun named here. The glb's own
+    `fireArms.fireOnce` (written by a bake since 2026-11-10) says the same; this
+    list is what reaches a tree baked before it without re-baking it. A
+    HandFireArms is left out: its press is `hand-fire.js`'s click.
+    """
+    return sorted(key.lower() for key, template in library.objects.items()
+                  if template.kind.lower() == "firearms" and template.fire_once)
+
+
+def layer_fire_once(ctx: LevelContext):
+    library = ctx.library
+    return ({"fireOnce": fire_once_templates(library)}
+            if library is not None else {}), {}
+
+
 _TERRAIN_WORD = re.compile(
     r"(?im)^\s*Terrain\.(shadowAmbient|shadowBorderFadeTime|shadowSamplingCullY|"
     r"shadowStaticObjectsCullBox)\s+(\S+)")
@@ -1006,6 +1029,7 @@ COMPUTE = {
     "terrainDetail": layer_terrain_detail,
     "meshCull": layer_mesh_cull,
     "collisionGroups": layer_collision_groups,
+    "fireOnce": layer_fire_once,
     "lightmaps": layer_lightmaps,
 }
 

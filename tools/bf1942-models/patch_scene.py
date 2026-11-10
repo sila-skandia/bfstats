@@ -32,6 +32,8 @@ each kind of change to one):
     collisionGroups the `collisionGroups` key: each template's
                     addToCollisionGroup mask (a round flies through a part
                     in c_CGProjectiles: barbed wire, fences, palms)
+    fireOnce        the `fireOnce` key: the FireArms that take one round a
+                    press (GUN-22: horns, torpedoes, artillery calls)
     all             every one of them
 
 Each level's layers are re-parsed from the game install and swapped into its
