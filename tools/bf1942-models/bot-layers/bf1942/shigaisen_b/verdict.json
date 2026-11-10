@@ -36,5 +36,13 @@
  "unreachable": [
   "windmill_west"
  ],
- "lintErrors": []
+ "lintErrors": [],
+ "accepted": {
+  "reason": "Passes every check against the DICE bar at 8 a side, the Instant Battle default; at 16 a side one check of fifteen is short by under one percent (redeploys 0.1298 a bot-minute against 0.129).",
+  "date": "2026-11-10",
+  "outcome": "better-than-nothing",
+  "failed": [
+   "16:redeploysPerBotMinute"
+  ]
+ }
 }
