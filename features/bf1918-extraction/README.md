@@ -950,3 +950,32 @@ a position, so every leg stood still (ledger GUN-25). `vehicle-base.js`
   and Hotchkiss, the mortars, Maxims, bicycle), published. FH, FHSW and
   FHSWEurope's horse model glbs (browse page and replays only) still lack it:
   `patch_held_axes.py --mod <tree>` on a machine holding those trees.
+
+## Held key axes in the FH, FHSW and FHSWEurope model glbs (2026-11-10)
+
+The horse fix (GUN-25, `8e78c6d6b`) left these three trees' model glbs to
+patch: they are on the volume only from this Mac. The census
+(`surveys/census_springless_held_axes.py`, 401 placed spring-less vehicles)
+named the candidates; each live glb's JSON chunk was streamed (byte ranges
+come back empty: the store serves its `.gz`) and run through
+`patch_held_axes.patch_doc`. Lacking: FH 12 of 26, FHSW 182 of 393,
+FHSWEurope 205 of 481 (MG tripods, mortars, AT and field guns, the
+horse-drawn Type 38s; 1,027 nodes). Patched with `patch_held_axes.py` in an
+isolated tree (`~/.cache/horse-patch/iso`), stored, and published: 194 blobs
+for FH and FHSW with only those rows' `sha` changed in their `models.json`
+(checked: no other field moved), and FHSWEurope's 205 per-tree glbs with
+their `.gz`/`.br`. Live: Horse-Type38FieldGun carries its 140 leg axes, FHSW's
+MG42Tripod resolves to its new blob, and The_Storm loads with no page error
+or failed glb.
+
+* **`store_glbs.py` on a partial tree drops every other row's `sha`**
+  (`_record_models` pops the key for a glb not on disk). Patching a few
+  files of a remote tree needs the shas written by hand, as here.
+* **A fresh worktree's `viewer/maps`, `viewer/textures` and
+  `viewer/models/mods` are links into the main checkout's shared tree.**
+  Setting up a scratch tree with `mkdir -p` and `curl` through them wrote
+  into the shared tree: `models/mods/fhsw/models.json` and
+  `maps/mods/fhsw/maps.json` now hold the live copies (whatever was there is
+  gone), and the FH/FHSWEurope folders, 140 FHSW level folders and 182 glbs
+  that landed there were moved out again. Replace the links before writing
+  into a scratch tree.
