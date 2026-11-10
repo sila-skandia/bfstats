@@ -16,6 +16,7 @@ import { emitterAt, isBed, loudestEmitter } from './area-sound.js';
 import { environmentPlays, scriptVolume } from './environment-sound.js';
 import { entryInMode } from './game-modes.js';
 import { ScrapeVoices } from './obstacle.js';
+import { nationStems } from './radio.js';
 
 /** A place a panner can take: Web Audio throws on a position that is not all
  *  numbers, and a one-shot at no position is better not played than a frame
@@ -969,6 +970,30 @@ export function createPageAudio(page) {
    * mod tree borrows vanilla's folder, and a tree extracted before any of this
    * falls back to the one language `soldier.json` resolved.
    */
+  /** `_shared/voices/soldier-voices.json` (`extract_soldier_voices.py`): which
+   *  of the soldier's own lines each language ships. */
+  function soldierVoicesIndex() {
+    if (pageAudio.soldierVoicesIndex === undefined) {
+      const shared = page.MAPS_BASE === 'maps' ? 'maps/_shared' : `${page.MAPS_BASE}/_shared`;
+      pageAudio.soldierVoicesIndex = fetch(`${shared}/voices/soldier-voices.json${page.bust()}`)
+        .then(r => (r.ok ? r.json() : null)).catch(() => null);
+    }
+    return pageAudio.soldierVoicesIndex;
+  }
+
+  /**
+   * The stems a random pick rolls over for `nation`: RADIO-6 drops a load whose
+   * file the language does not ship before the roll, so a patch never goes
+   * silent for want of a file. BF1918's Romanian, Greek and Senegalese
+   * soldiers ship `Dying1..8` where the patch names `Dying1..11`.
+   */
+  async function shippedStems(stems, nation) {
+    if (!nation || nation === 'unknown' || !stems?.length) return stems;
+    const index = await soldierVoicesIndex();
+    const kept = nationStems(index, { stems }, nation);
+    return kept.length ? kept : stems;
+  }
+
   const missingSoldierVoices = new Set();
   async function soldierVoiceBuffer(stem, nation) {
     if (page.AUDIO_OFF || !stem || nation === false) return null;
@@ -1027,9 +1052,11 @@ export function createPageAudio(page) {
     const trigger = manifest.triggers?.[triggerName];
     const patch = trigger?.patches?.[0];
     if (!patch?.layers?.length) return;
-    const choice = patch.layers[Math.floor(Math.random() * patch.layers.length)];
-    const buf = await soldierVoiceBuffer(choice.sample,
-      nation === undefined ? (position ? null : localNation()) : nation);
+    const speaker = nation === undefined ? (position ? null : localNation()) : nation;
+    const shipped = new Set(await shippedStems(patch.layers.map(l => l.sample), speaker));
+    const layers = patch.layers.filter(l => shipped.has(l.sample));
+    const choice = layers[Math.floor(Math.random() * layers.length)];
+    const buf = await soldierVoiceBuffer(choice.sample, speaker);
     if (buf) playSoldierOneShot(buf, choice.volume ?? 0.7, 0.05, 0, position);
   }
 
@@ -1044,10 +1071,10 @@ export function createPageAudio(page) {
     if (page.AUDIO_OFF || masterVolume() <= 0) return;
     const manifest = await soldierSoundsManifest();
     const layers = manifest?.triggers?.c_SstKilled?.patches?.[0]?.layers;
-    const stems = layers?.length ? layers.map(l => l.sample) : DYING_STEMS;
+    const speaker = nation === undefined ? (position ? null : localNation()) : nation;
+    const stems = await shippedStems(layers?.length ? layers.map(l => l.sample) : DYING_STEMS, speaker);
     const stem = stems[Math.floor(Math.random() * stems.length)];
-    const buf = await soldierVoiceBuffer(stem,
-      nation === undefined ? (position ? null : localNation()) : nation);
+    const buf = await soldierVoiceBuffer(stem, speaker);
     if (buf) playSoldierOneShot(buf, 1, 0.09, 0, position);
   }
 
