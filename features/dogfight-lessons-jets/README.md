@@ -77,7 +77,7 @@ same jet. Each row's own page has the measures, the MiG-29 and what is open;
 | [Up and over](up-and-over.md) | Following up: nothing either way. Following shallow: 1 to 12 hits | Words rewritten: they never hang slow at the top, they go over it at 550 m while the air holds them, top out at 725 m and come straight back down. The shot is as they pull, 390 to 430 m out: 6 to 12 hits in seven; their guns find you twice in nine, 1 and 3 hits. Dip 9 of 9, Flip 0, Ninja 0 | A jet ace that loops under the thin air (`jetUpAndOver`, `jetUoAce`, `jetUoAceSharp`); a jet Dip (`jetUoDip`: the shot as they pull, past them as they come down, away) |
 | [Out of their lock](out-of-the-lock.md) | Turning hard: shot down in 1 of 9 | Turning hard and turn-then-chop: no hit in 9 of 9. Flying straight: down in 9 of 9. Survival "no": the Dip is never hit and never gets away, Flip and Ninja 0 | The look-behind turn keeps the Spitfire's rate, not its 20 degrees of bank (`jetOlHardTurn`, `jetOlChop`) |
 | [On their tail](on-his-tail.md) | Nobody's kill; the Dip shot down in 9 of 9 | The rush is still nobody's kill (they break 436 to 543 m out). Dip 9 of 9, never hit | A jet Dip (`jetOtLeave`: not into their circle, straight on at full throttle) |
-| [The break turn](break-turn.md) | Flying straight is shot down in 1 of 9 | Flying straight: down in 9 of 9. The break: never down, 0 to 4 hits, all in the first 3.5 s. Dip 9 of 9, Flip 0, Ninja 0 | The target cruises at 68 m/s (Spitfire's units), the fight 45 s. The break comes at once: their cannon reaches 500 m |
+| [The break turn](break-turn.md) | Flying straight is shot down in 1 of 9 | Flying straight: down in 9 of 9. The break: never down, 0 to 4 hits, all in the first 3.5 s. No way out: the zoom goes on up through the top of the sky to 1,600 m while they level off under it, fast. Dip 0, Flip 0, Ninja 0. Survival "no" | The target cruises at 68 m/s (Spitfire's units), the fight 45 s. The break comes at once: their cannon reaches 500 m. Re-measured with the ceiling guard: the Dip's 9 of 9 had come from the hunter wallowing above 1,000 m |
 | [The flat scissors](scissors.md) | The braid swings 106 degrees off the line, 572 m apart | Swing 74 degrees at most, nobody's kill. No way out: the pilot who leaves is shot down in 9 of 9; Flip and Ninja 0. Survival "no" | A led scissors (`jetScissors`: reverses on the heading 0.8 s on) flown on the brakes, and jet copies of its ace |
 | [The Immelmann and the split-S](turnarounds.md) | Nobody down, but no split-S is ever flown: the ace is fast by the time they decide, and Immelmanns instead | The Immelmann costs the F-16 4.8 s and gains 130 m (never slower than 69 m/s) and is the jet's turn round below about 600 m; the split-S (163 m down, out at 96 m/s) is only for a jet that is slow and high. Nobody down in either. Dip 9 of 9, Flip 0, Ninja 0 | The split-S demo's ace starts 120 m closer, so the split-S is flown in all nine; words rewritten |
 | [Breaking the circle](the-circle.md) | Nobody gets a shot: holds | The circle holds; none of the six ways out works (0 of 9 each). Survival "no" | Words only |
@@ -127,6 +127,16 @@ follow the era too (`dogfight-theatre.js` `labelLessons`).
   989 m in one start: its zoom carries more, and a roof that anticipates by the
   pace holds it under 905 m but breaks the MiG-29's Dip (4 of 9), so it is not
   shipped.
+- **The guard is late for a steep climb.** It acts once a pilot is past
+  880 m and climbing, and a jet going up at 70 degrees has too little wing
+  left there to be levelled: plans that zoom steeply in your seat (the
+  break turn's Dip, most Ninjas) still coast up to 1,300 to 1,700 m, and
+  say so in their verdicts. Putting every paced pilot's plan under the two
+  lessons' roof (800 m, `underRoof` in the pilot's own step) was tried on
+  2026-11-11 and not shipped: it moves 39 tests in eight of the nine
+  lessons, boom and zoom's kill among them, because the lessons' perches
+  sit at 870 m, above that roof. A roof for every jet pilot is a re-tune of
+  the school, with the perches and the roof chosen together.
 - **Flips and Ninjas.** Almost every one is 0 of 9 on a jet and says so. A
   jet's own versions (a pass that does not wait for a slow top) would be new
   moves, not re-tunes.
@@ -140,5 +150,7 @@ follow the era too (`dogfight-theatre.js` `labelLessons`).
   lessons' higher perches are all there, so its fights begin flatter than
   the lesson draws them.
 - **Nobody has flown a jet lesson by hand** in FLY IT. The live fight is
-  fitted and reads the jet files (the scissors' ace there is `jetScAce`),
-  checked off the page only.
+  fitted, reads the jet files and has been run in a page with the
+  instructor flying your seat ([live-fight.md](live-fight.md), "Checked in
+  a page": it found the Range fitting both F-16s as the MiG-29 parked
+  beside them, fixed).
