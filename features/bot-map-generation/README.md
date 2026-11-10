@@ -1,8 +1,11 @@
 # Bot map generation: adding bot support to levels that ship without it
 
 Status: research and approach, 2026-11-10, with a follow-up the same day
-(sections 12 and 13). Nothing here is built. No level was extracted, baked,
-patched or published for it.
+(sections 12 and 13), then phase A of the build (section 14): the generator,
+the lint, the detectors and the judge exist, and shigaisen_B has a generated
+layer kept as source. That layer does not clear the DICE bar (stuck time,
+spawn traps, route failures, redeploys); section 14.6 says why. Nothing was
+published and no tree but a scratch one was touched.
 
 **Owner decisions, 2026-11-10.** Any level without bots is a candidate, in
 every mod and in the community maps, not only FHSW. The priority is on-foot
@@ -1191,3 +1194,332 @@ What the test taught on the way:
 * **The page's first delivery does not depend on any of this.** shigaisen_B
   needs strategic areas and the painted map the page already uses
   (section 9.1).
+
+## 14. Phase A, 2026-11-10: the generator, the verifier, and shigaisen_B
+
+The owner's go: generate bots for the candidates, starting with the plan of
+section 9.1, with the first map tested thoroughly before any rollout. This
+section is what was built and what the test found. The short version: the
+generated layer turns a level where bots barely function into one where both
+sides fight and take flags, and it still fails four of the twelve checks
+against DICE's own layers, for reasons that are in the map the page paints
+and in the level, not in the layer.
+
+### 14.1 What is built
+
+| File (under `tools/bf1942-models/`) | What |
+|---|---|
+| `sim/botgen.mjs` | The generator, version 1, for levels played on foot. One area per control point, sides and `setTakeable` from the flags, order positions on free cells, neighbours from routes on the painted infantry map, the strategy template's files. Deterministic; `--check` exits 1 when the folder is stale |
+| `bot-layers/_templates/symmetric/` | The strategy template: DICE's Kharkov `Strategies.con`, `conditions.con` and `prerequisites.con`, unchanged, and `template.json` (source, and each side's list in Kharkov's order) |
+| `bot-layers/bf1942/shigaisen_b/` | The generated layer as source: `AI.con`, `AI/StrategicAreas.con`, the three template files, `generated.json` |
+| `bf42/ai_level.py` (`load_generated_ai`, `generated_layer_dir`, `LevelAi.generated`), `scene_layers.py` (`layer_ai`) | The bake's hook |
+| `sim/botlint.mjs` | The static lint |
+| `sim/detect.mjs` | The detectors over a runner trace |
+| `sim/judge.mjs`, `sim/baselines/onfoot-dice.json` | The judge and the baseline it scores against |
+| `sim/botbatch.mjs` | The one entry point: `baseline`, `matrix`, `level` |
+| `viewer/nav-map.js` (`carveDoors`) | Doorways on the soldier's painted map (14.5) |
+| `viewer/play/skirmish.js`, `viewer/play/menu-screen.js`, `extract_menu_layout.py` | Instant Battle starts a generated level with bots and tags it EXPERIMENTAL BOTS |
+| `tests/test_bot_layer.py`, `tests/bot_layer_harness.mjs` | 23 tests: the area rule, the script, the bake hook, the lint, the detectors, the judge, the doorways, the tag |
+
+### 14.2 Design decisions
+
+* **Where a generated layer lives: `tools/bf1942-models/bot-layers/<mod
+  folder, lower case>/<level, lower case>/`, tracked.** The repo has no
+  per-level override folder to follow (its one override table is code,
+  `bf42/cockpit_overrides.py`), and a bake's only other input is the
+  install's archives, which are never modified. A tracked folder beside the
+  tools is the one place a re-bake on any machine can read. The files are
+  retail-format text, so the same folder is what a later archive writer
+  would pack for the real server. A community level sits under `bf1942/`
+  because that is the mod folder whose tree holds it.
+* **How a bake finds it.** `layer_ai` asks `load_level_ai` first. Only when
+  the level's own archives carry no `AI.con` does it call
+  `load_generated_ai(ctx.mod, ctx.level)`, which reads the folder through
+  the same parsers. A level that ships a layer is never overridden; a test
+  pins both halves. `patch_scene.py --layer ai` and a full level pass
+  therefore both reproduce the layer. Measured on a scratch tree: the patch
+  changed `ai` and nothing else, in 0.2 s, cover values included.
+* **The marker.** `scene.json` `ai.generated`: the generator's name and
+  version, the template, the scope ("on foot: infantry order positions only,
+  no search maps, no co-op layer"), the SHA-256 of the control points, of
+  the painted infantry map and of the template it read, and of each file it
+  wrote. A shipped layer has no such key. A test fails if a file under
+  `bot-layers/` no longer matches its marker, so a hand edit is caught.
+* **No `AIpathFinding.con`.** The page paints its own infantry map when a
+  level declares none, and with no declared map the bake writes no
+  `pathfinding/` folder. Search maps and the co-op layer stay out of scope.
+* **The page.** `extract_menu_layout.py` adds `generatedBots: true` to a
+  level's row in `menu-levels.json` when it ships no single-player scripts
+  and a generated layer exists. `skirmish.js` then sends the level's bot
+  count instead of 0 (the mode stays Conquest), and the row's tag reads
+  EXPERIMENTAL BOTS instead of NO BOTS, the 2026-10-12 agreement
+  (`features/fh-fhsw-open-issues/README.md`, "Parked"). `map.html` needed
+  no change: the referee builds the strategic AI whenever `ai` has areas.
+* **The template is Kharkov's, after Stalingrad's failed.** Both are DICE
+  levels of the matching shape (each side starts with a fixed base and
+  ground of its own). Stalingrad's set was tried first: its defensive
+  strategies are gated on a `createHomogenousCondition` (`weakCond`), which
+  `bf42/ai_level.py` does not parse, so the page's port sees the gate gone,
+  picks `holdCentre` (aggression 0) at the first pass, and the side never
+  attacks. Measured: ten seeds of the Stalingrad set on shigaisen_B took no
+  flag at all at 8 a side. Stalingrad itself shows the same on the page (one
+  capture a round in the baseline, a third of its flags ever changing
+  hands). That is a reader gap, recorded in 14.7, not a reason to edit a
+  template: Kharkov's conditions are all of the kind the reader parses.
+
+### 14.3 Commands
+
+From `tools/bf1942-models`. `<maps>` is a maps tree holding the baked level,
+`<models>` the models tree beside it.
+
+```bash
+# generate (or --check), apply through the bake, lint
+node sim/botgen.mjs --map shigaisen_b --mod bf1942 --maps <maps> --models <models>
+python3 patch_scene.py --layer ai --mod bf1942 --tree <maps> shigaisen_b
+node sim/botlint.mjs --map shigaisen_b --maps <maps> --models <models> --source bot-layers/bf1942/shigaisen_b
+
+# the batch entry point
+node sim/botbatch.mjs baseline --maps <maps> --models <models> --levels berlin,stalingrad,kharkov,bocage
+node sim/botbatch.mjs matrix   --maps <maps> --models <models> --levels shigaisen_b      # the tree as it is
+node sim/botbatch.mjs level    --maps <maps> --models <models> --mod bf1942 --levels shigaisen_b
+node sim/botbatch.mjs level    --maps <maps> --models <models> --candidates ../../features/bot-map-generation/candidates.csv
+```
+
+`level` generates, applies with `patch_scene.py --layer ai`, lints, runs the
+seeded matrix (seeds 1 to 10, 8 and 16 a side, 600 s, on foot), detects,
+judges and writes `<out>/<level>/verdict.json`. With `--candidates` it takes
+every published row of the class "contained on-foot" whose level is in the
+tree. The batch was not run. `patch_scene.py` needs the level's archive in
+the game folder it is pointed at; a community level whose archive is not in
+the install needs `--game-dir` on a folder that links it in.
+
+### 14.4 The bar: DICE's layers, run the same way
+
+`sim/baselines/onfoot-dice.json`: Berlin, Stalingrad, Kharkov and Bocage
+with their shipped layers and baked maps, seeds 1 to 10, 600 s,
+`--no-vehicles`, 8 and 16 a side, 80 matches. The judge's rule was fixed in
+`sim/judge.mjs` before shigaisen_B was scored: a rate's median over the
+seeds must be no worse than the baseline's 90th percentile, the captures'
+median no lower than its 10th, the share of capturable flags that ever
+change hands no lower than the weakest baseline level's, each side must
+capture in at least one seed, both must lose tickets in every seed, and no
+bot may throw.
+
+| Detector | 8 a side: p10 / median / p90 | 16 a side: p10 / median / p90 |
+|---|---|---|
+| Stuck seconds per bot-minute (MoveTo, throttle on, under 2 m in 10 s) | 0.33 / 0.93 / 1.97 | 0.21 / 0.90 / 2.19 |
+| Idle share (Idle or Scout with no target) | 0.16 / 0.36 / 0.54 | 0.39 / 0.55 / 0.72 |
+| Order flips A, B, A within 60 s, per bot-minute | 0.09 / 0.25 / 0.50 | 0.05 / 0.12 / 0.35 |
+| Self-inflicted deaths per bot-minute | 0 / 0 / 0 | 0 / 0 / 0 |
+| Spawn traps per bot-minute (dead or stuck within 10 s and 15 m of a spawn) | 0.01 / 0.07 / 0.14 | 0.00 / 0.03 / 0.08 |
+| Route failures per bot-minute | 0 / 0.00 / 0.38 | 0.01 / 0.09 / 2.10 |
+| No-progress redeploys per bot-minute | 0.03 / 0.10 / 0.19 | 0.02 / 0.07 / 0.14 |
+| Captures a match | 1 / 4 / 8.1 | 0.9 / 3 / 8 |
+| Flags that ever change hands, weakest level | 0.33 (Stalingrad) | 0.33 (Stalingrad) |
+
+DICE's own layers are not clean on the page: Stalingrad's two city flags
+never change hands in twenty rounds, Berlin's Axis wins all ten rounds at 16
+a side, and half the bots are idle at 16 a side. That is the bar, as agreed.
+
+### 14.5 shigaisen_B, ten seeds, 600 s, Conquest, on foot
+
+Medians over the ten seeds, with the lowest and highest seed. "Today" is the
+published level (no AI layer: the painted map and the nearest-flag fallback);
+"generated" is the same level with the layer applied through the bake. Both
+arms ran on the same viewer, doorways included.
+
+**8 a side**
+
+| Check | Today | Generated | Bar | Generated passes |
+|---|---|---|---|---|
+| Captures a match | 2 (1 to 3) | 3 (1 to 7) | at least 1 | yes |
+| Captures by side, summed over the seeds | Axis 1, Allies 19 | Axis 7, Allies 22 | each side at least once | yes |
+| Capturable flags that ever changed hands | 1 of 6 | 4 of 6 | at least a third | yes |
+| Time to first capture, median of the seeds with one | 167 s | 170 s | (not judged) | |
+| Stuck seconds per bot-minute | 11.96 (8.9 to 17.5) | 7.85 (6.5 to 10.4) | at most 1.97 | **no** |
+| Idle share | 0.02 | 0.35 (0.29 to 0.43) | at most 0.54 | yes |
+| Route failures per bot-minute | 15.1 (7.6 to 20.7) | 2.78 (1.5 to 3.1) | at most 0.38 | **no** |
+| Redeploys per bot-minute | 0.87 | 0.57 (0.47 to 0.67) | at most 0.19 | **no** |
+| Spawn traps per bot-minute | 0.42 | 0.25 (0.19 to 0.36) | at most 0.14 | **no** |
+| Self-inflicted deaths | 0 | 0 | 0 | yes |
+| Order flips per bot-minute | 0 | 0.39 | at most 0.50 | yes |
+| Both sides lose tickets in every seed, no bot error | yes | yes | | yes |
+| Winner by seed | Axis 10 of 10 | Allies 10 of 10 | (reported) | |
+
+**16 a side**
+
+| Check | Today | Generated | Bar | Generated passes |
+|---|---|---|---|---|
+| Captures a match | 2 (0 to 4) | 1.5 (1 to 4) | at least 0.9 | yes |
+| Captures by side, summed over the seeds | Axis 0, Allies 21 | Axis 9, Allies 11 | each side at least once | yes |
+| Capturable flags that ever changed hands | 1 of 6 | 4 of 6 | at least a third | yes |
+| Time to first capture, median | 130 s | 136 s | (not judged) | |
+| Stuck seconds per bot-minute | 14.01 (10.4 to 16.0) | 5.64 (4.3 to 6.9) | at most 2.19 | **no** |
+| Idle share | 0.02 | 0.47 (0.37 to 0.57) | at most 0.72 | yes |
+| Route failures per bot-minute | 15.2 (8.8 to 22.6) | 2.47 (1.4 to 4.4) | at most 2.10 | **no** |
+| Redeploys per bot-minute | 0.92 | 0.41 (0.31 to 0.51) | at most 0.14 | **no** |
+| Spawn traps per bot-minute | 0.46 | 0.15 (0.08 to 0.21) | at most 0.08 | **no** |
+| Self-inflicted deaths | 0 | 0 | 0 | yes |
+| Order flips per bot-minute | 0.05 | 0.16 | at most 0.35 | yes |
+| Both sides lose tickets in every seed, no bot error | yes | yes | | yes |
+| Winner by seed | Axis 10 of 10 | Allies 7, Axis 3 | (reported) | |
+
+Flags that never changed hands in any seed, generated arm: minka_northeast
+and windmill_west at both sizes. Close to never: centerBridge_east (9 of 10
+seeds at both sizes). Today's arm: every flag but centerBridge_east.
+
+The static lint on the generated layer: 2 errors, both windmill_west (the
+flag is 17.1 m above the ground a soldier stands on, with a 5 m radius, and
+the only free cells near it are a sealed pocket of two), and one warning
+that matters: 12 of 23 soldier spawns stand off the main walkable ground.
+
+**Verdict: fail at both side sizes, on stuck time, spawn traps, route
+failures and redeploys.** No threshold was moved. The layer is not rolled
+out on this evidence.
+
+### 14.6 What the bots actually do, and why it fails
+
+Route heat, 4 m cells, ten rounds summed: of the 1,061 cells of walkable
+ground, today's bots never enter 74 % (8 a side) and spend 34 % of their
+time on cells with no walkable ground at all; the generated layer's never
+enter 58 % (48 % at 16 a side) and spend 15 to 18 % off it. Today one cell
+by the centre bridge holds 16 % of all bot time; with the layer no cell
+holds more than 4 %. The lanes never used are the two bases' back areas and
+the ground behind minka_northeast and southBridge_east.
+
+The recurring stuck places, generated arm (bot-seconds over ten rounds, 8
+and 16 a side), and what stands there:
+
+| Place (x, z) | Bot-seconds | What is there |
+|---|---|---|
+| 740, -344 and 728, -340 | 817 + 433, 1,366 + 946 | `barack_m1`: AlliedBase_Spawn5 (742, -347) is on the barracks' floor, 0.9 m above the ground; the painter stamps the whole building |
+| 664, -324 | 806, 998 | `barack_m1` again, 6 m from centerBridge_east: its spawn 1 (670, -329) is inside |
+| 732, -300 and 740, -300 | 447, 672 + 408 | Near the Allied base; its spawns 2 to 4 are on raised floors with no free cell within 3 m (inference: the place itself was not looked at) |
+| 616, -336 and 616, -340 | 447 + 351 | The windmill: spawn 2 of its flag is on top at y 144, spawn 3 in a sealed pocket at its foot |
+| 524, -284, 576, -284, 592, -284 | 496, 467, 400 | West side, by minka_south (580, -280); not looked at |
+
+Three causes, none of them in the layer:
+
+1. **Spawns inside buildings the painted map blocks.** Six spawns stand on
+   raised floors (y 127.9 to 128.1 over ground at 127.0) inside `barack_m1`
+   and similar, with no free cell within 3 m; five more are in pockets of 2
+   to 17 cells. A bot spawned there has no route, pushes at a wall and is
+   redeployed 12 s later, often to the same kind of spawn. This is stuck
+   time, spawn traps, route failures and redeploys at once. The engine
+   treats these floors as ground because its rays find the object's top and
+   its AI meshes keep the doors (ledger AI-93); the painter has neither. A
+   rule that freed low level faces was tried and reverted the same hour: it
+   also frees the top of a one-metre sandbag wall, which `test_nav_grid.py`
+   rightly refused.
+2. **Flags with a 5 m capture radius.** Seven of the eight control points
+   have a 5 m radius. A bot's order is "arrived" within 6 m of its point
+   (`R = max(5, ...)` plus the 1 m path radius, ledger AI-70), so it can
+   stop a metre outside the ring and scout there. Measured on one traced
+   round: the median distance from an idle bot to its order point was 4.6
+   to 6.8 m per area. This caps captures and is why centerBridge_east (the
+   one 8 m flag today's bots take) is the only flag today's arm ever moves.
+   It is the bots' rule, not the layer's, and DICE's levels do not show it
+   because their flags are wider, so it was left alone as instructed.
+3. **windmill_west cannot be taken on foot.** The flag is on top of the
+   windmill. It starts Axis-owned and stays so in every round of both arms.
+
+So the layer does its part (orders to real flags, both sides attacking, a
+fight where there was a pile-up) and the level still fails on movement. The
+detectors separated the arms cleanly and named the places, which is what
+they are for.
+
+### 14.7 Fixed, tried and found on the way
+
+* **Doorways on the soldier's painted map** (`viewer/nav-map.js
+  carveDoors`, INVENTION, labelled in the code). A one-metre cell is stamped
+  when any collision face crosses the soldier's band inside it, so a door
+  narrower than two cells is closed by its own jambs before the brush runs.
+  The supply hut holding southBridge_east has a 1.25 m door and was a sealed
+  room: the flag was cut off and the generator gave it no neighbour. The
+  painter now keeps a quarter-cell mask of where the band's geometry lies in
+  each stamped cell; a cell is a doorway when a clear strip at least 0.75 m
+  wide crosses it (alone or with the stamped cell beside it), has geometry
+  on both sides of the strip, and leads to free ground or another doorway on
+  both ends. Only the infantry map (brush up to 1.5); a hull's map and a
+  water map are untouched, and a level with a baked map never reaches the
+  code. After it southBridge_east is reachable and has four neighbours. Two
+  wrong versions were caught by `test_nav_grid.py` and `test_bot_ai.py`
+  before anything was measured on them: one opened the cells beside any
+  wall, one read the quarter-rows in the wrong order.
+* **The strategy template** moved from Stalingrad's set to Kharkov's (14.2).
+* **Tried and removed: rescaling the template's flag counts.** Kharkov's
+  conditions count control points held (`Friendly ControlPoint 3`), so a
+  rule rescaled them to the level's flag count. The page counts flags held
+  plus owned areas flagged `ControlPoint`, so Kharkov's own start already
+  satisfies `finalPush` there and the rescaled values changed nothing; the
+  rule was deleted and the template is used unchanged.
+* **Found, not fixed:** `bf42/ai_level.py` does not parse
+  `aiStrategy.createHomogenousCondition`, so a prerequisite that names one
+  loses that gate on the page. Stalingrad and any level using the same
+  pattern are affected today. The lint treats such a name as defined when it
+  is given the layer's source.
+* **Found, not fixed:** the in-browser audit (`audit_behaviour.mjs`) reads
+  `viewer/maps/maps.json` from the real tree, which this machine's checkout
+  does not hold, so it could not be pointed at the scratch tree. A headless
+  page was driven by hand instead (14.8).
+
+### 14.8 Regression proof and the in-page check
+
+* **Shipped layers are untouched.** The same seeded match on HEAD's viewer
+  and on the working tree, 8 a side, 300 s, seed 3, every third tick traced,
+  vehicles on: Bocage, Kharkov and El Alamein give the same trace SHA-256
+  (`455a8c43...`, `777842fc...`, `2cb9a704...`) and the same summary
+  metrics. A level with a baked map returns before the painter's object pass,
+  so the doorway code cannot run for it.
+* **In the page.** `serve_viewer.py` on a scratch viewer folder (below),
+  headless Chromium, `map.html?map=shigaisen_B&mode=Conquest&botCount=16`:
+  the page reported 8 strategic areas and `generated: botgen`, 16 bots, all
+  16 moved more than 2 m in 45 s (MoveTo 10, Fire 3, Scout 2, Idle 1), no
+  page error. Three 404s: `assets.json`, `pathfinding/index.json` (the level
+  has no baked maps, as intended) and `models/weapon.glb`.
+
+* **The repo's verification.** `./scripts/verify.sh --skip-e2e` (nothing
+  under `ui/` or `api/` changed): 4,026 tests, OK, 136 skipped. The first
+  run failed one test, `test_select_model_tests`: the new test file scans
+  `bot-layers/` and had no `# watches:` line. It has one now.
+
+### 14.9 Playing it locally
+
+Nothing was written into `viewer/maps` or `viewer/models`. The patched level
+lives in a scratch tree, and a scratch viewer folder links the real viewer's
+files with its own `maps/` (the real `_shared` and `mods`, the scratch
+`shigaisen_b`, and a current `maps.json`, because the remote cache's copy
+predates the community levels and the page falls back to its first level
+without the row).
+
+```bash
+cd tools/bf1942-models
+python3 serve_viewer.py 5291 <scratch>/viewer-scratch
+# then open
+http://localhost:5291/map.html?map=shigaisen_B&mode=Conquest&botCount=16&botSkill=0.75&team=1&mute
+```
+
+`team=2` plays the Allies. To rebuild the scratch level from the tracked
+source: fetch the published level into a scratch maps tree, then
+`python3 patch_scene.py --layer ai --mod bf1942 --game-dir <a game folder
+that links community-mappack-by-michaels/shigaisen_B.rfa into its levels>
+--tree <scratch maps> shigaisen_b`.
+
+### 14.10 Open, in the order that would move the result
+
+1. Floors and interiors on the painted map: read `aiMeshes.rfa` for the
+   statics that have one (the engine's own answer for `barack_m1`), or take
+   the engine's generated maps of section 13 once an archive writer the
+   engine reads exists. This is what stands between shigaisen_B and the bar,
+   and it stands in front of every level on the shortlist that places the
+   same vanilla buildings.
+2. The 6 m arrival against a 5 m flag: a bots change, to be argued from the
+   engine's own behaviour on a small-radius flag in the lab, not from this
+   level.
+3. A generator rule for a flag that cannot be reached on foot (windmill_west):
+   today it gets an area with no neighbour and the lint reports it.
+4. The `createHomogenousCondition` reader gap.
+5. `audit_behaviour.mjs` against a tree other than the checkout's.
+6. Phase B (the batch over the shortlist) should wait for item 1: the other
+   contained levels place the same buildings, and the verdict would be the
+   same four detectors.

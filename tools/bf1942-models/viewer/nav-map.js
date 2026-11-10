@@ -26,6 +26,12 @@ export const COARSE_CELL = 16;
  *  face draws no outline. */
 const NO_OUTLINE_MATERIAL = 99;
 
+/** `carveDoors`: a cell in quarters, the clear strip a soldier needs (0.75 m),
+ *  and the widest brush whose map keeps doorways (the infantry map's 1.0). */
+const DOOR_SUB = 4;
+const DOOR_MIN_STRIP = 3;
+const DOOR_MAX_BRUSH = 1.5;
+
 /** A blocked-cell code. The bit is what matters; the value says why. */
 export const CELL_FREE = 0;
 export const CELL_NO_TERRAIN = 1;
@@ -200,6 +206,10 @@ export function buildNavMap(collider, worldSize, options = {}) {
   // --- statics: the clip band per object, the deck pass, then the brush ---
   const statics = collider?.statics;
   const stamp = new Uint8Array(total);   // object hits before dilation
+  // A soldier's map keeps its doorways (`carveDoors`); a hull's and a water
+  // map's do not.
+  const doors = !waterMap && brush / cellSize <= DOOR_MAX_BRUSH && cellSize === 1;
+  let door = null;
   if (statics?.tris && statics.count > 0) {
     const deck = new Uint8Array(total);    // object tops above the band
     const tris = statics.tris;
@@ -227,6 +237,8 @@ export function buildNavMap(collider, worldSize, options = {}) {
     const ctx = {
       cellSize, width, height, heights, blocked, lowClip, hiClip, water, waterDepth, stamp, deck,
       poly: new Float64Array(3 * 16), scratch: new Float64Array(3 * 16),
+      // Where inside each stamped cell the band's geometry lies (`carveDoors`).
+      sub: doors ? new Uint16Array(total) : null,
     };
     for (let t = 0; t < statics.count; t++) {
       const owner = owners ? owners[t] : -1;
@@ -243,6 +255,7 @@ export function buildNavMap(collider, worldSize, options = {}) {
         normalY[i] = 1;
       }
     }
+    if (ctx.sub) door = carveDoors(stamp, ctx.sub, blocked, width, height);
   }
 
   // The brush: every blocked cell, terrain or object, stamps the plus. A
@@ -264,6 +277,7 @@ export function buildNavMap(collider, worldSize, options = {}) {
         const x = gx + dx, z = gz + dz;
         if (x < 0 || x >= width || z < 0 || z >= height) continue;
         const j = z * width + x;
+        if (door && door[j]) continue;
         if (!dilated[j] || code === CELL_OBJECT) dilated[j] = code;
       }
     }
@@ -429,10 +443,114 @@ function rasteriseTriangle(tris, o, ownerBase, isDeck, noOutline, ctx) {
       }
       const base = Number.isFinite(ground) ? Math.max(ownerBase, ground) : ownerBase;
       if (!Number.isFinite(base)) continue;
-      if (!noOutline && hi >= base + lowClip && lo <= base + hiClip) stamp[idx] = 1;
-      else if (upward && lo >= water - waterDepth) deck[idx] = 1;
+      if (!noOutline && hi >= base + lowClip && lo <= base + hiClip) {
+        stamp[idx] = 1;
+        if (ctx.sub) ctx.sub[idx] |= subMask(poly, n, cx0, cz0, cellSize);
+      } else if (upward && lo >= water - waterDepth) deck[idx] = 1;
     }
   }
+}
+
+/** The quarter-cells (4 x 4, bit `row * 4 + col`, col along x, row along z)
+ *  a clipped polygon's footprint touches inside its cell. */
+function subMask(poly, n, cx0, cz0, cellSize) {
+  let minX = Infinity, maxX = -Infinity, minZ = Infinity, maxZ = -Infinity;
+  for (let i = 0; i < n; i++) {
+    const x = poly[i * 3], z = poly[i * 3 + 2];
+    if (x < minX) minX = x;
+    if (x > maxX) maxX = x;
+    if (z < minZ) minZ = z;
+    if (z > maxZ) maxZ = z;
+  }
+  const q = cellSize / DOOR_SUB;
+  const lo = v => Math.min(DOOR_SUB - 1, Math.max(0, Math.floor(v / q)));
+  const hi = v => Math.min(DOOR_SUB - 1, Math.max(0, Math.ceil(v / q) - 1));
+  const c0 = lo(minX - cx0), c1 = Math.max(c0, hi(maxX - cx0));
+  const r0 = lo(minZ - cz0), r1 = Math.max(r0, hi(maxZ - cz0));
+  let mask = 0;
+  for (let r = r0; r <= r1; r++) for (let c = c0; c <= c1; c++) mask |= 1 << (r * DOOR_SUB + c);
+  return mask;
+}
+
+/**
+ * Doorways (INVENTION). A one-metre cell is stamped when any collision face
+ * crosses the soldier's band inside it, so a door narrower than two cells is
+ * stamped shut by its own jambs, and the brush then closes what is left: on
+ * the community map shigaisen_B 13 of 23 soldier spawns and one flag stood
+ * in sealed rooms (features/bot-map-generation). The engine keeps such doors
+ * open with the buildings' AI meshes and their portals (ledger AI-93), which
+ * the painter does not read.
+ *
+ * A stamped cell is a doorway when the band's geometry leaves a clear strip
+ * at least `DOOR_MIN_STRIP` quarter-cells wide across it (alone, or with the
+ * stamped cell beside it, for a door that straddles two cells), and the
+ * cells before and behind it along the strip are free ground or doorways
+ * themselves. A doorway is unstamped and the brush does not close it.
+ */
+function carveDoors(stamp, sub, blocked, width, height) {
+  const total = width * height;
+  const FULL = (1 << DOOR_SUB) - 1;
+  // Bit c set: quarter-column (dir 0) or quarter-row (dir 1) c holds no geometry.
+  const clear = (i, dir) => {
+    if (!stamp[i]) return 0;
+    const m = sub[i];
+    let f = 0;
+    for (let c = 0; c < DOOR_SUB; c++) {
+      let hit = 0;
+      // A quarter-row's index rises with z and a cell's falls with it, so the
+      // rows are read back to front: bit order follows the cells' order.
+      for (let r = 0; r < DOOR_SUB; r++) hit |= dir === 0 ? m & (1 << (r * DOOR_SUB + c)) : m & (1 << ((DOOR_SUB - 1 - c) * DOOR_SUB + r));
+      if (!hit) f |= 1 << c;
+    }
+    return f;
+  };
+  const cand = [new Uint8Array(total), new Uint8Array(total)];
+  for (let dir = 0; dir < 2; dir++) {
+    const side = dir === 0 ? 1 : width;        // the cell beside this one along the wall
+    for (let i = 0; i < total; i++) {
+      if (!stamp[i]) continue;
+      const here = clear(i, dir);
+      if (!here) continue;
+      const x = i % width, z = (i - x) / width;
+      const before = dir === 0 ? (x > 0 ? clear(i - 1, 0) : 0) : (z > 0 ? clear(i - width, 1) : 0);
+      const after = dir === 0 ? (x < width - 1 ? clear(i + 1, 0) : 0) : (z < height - 1 ? clear(i + side, 1) : 0);
+      const strip = before | (here << DOOR_SUB) | (after << (2 * DOOR_SUB));
+      // The quarters that hold geometry: only a stamped cell has any.
+      const solid = (stamp[i - (dir === 0 ? 1 : width)] && (dir === 0 ? x > 0 : z > 0) ? FULL & ~before : 0)
+        | ((FULL & ~here) << DOOR_SUB)
+        | ((dir === 0 ? x < width - 1 : z < height - 1) && stamp[i + side] ? (FULL & ~after) << (2 * DOOR_SUB) : 0);
+      let run = 0, ok = false;
+      for (let b = 0; b <= 3 * DOOR_SUB && !ok; b++) {
+        if (b < 3 * DOOR_SUB && (strip >> b) & 1) { run++; continue; }
+        // A gap in a wall: wide enough, partly in this cell, and a jamb on
+        // each side of it. A clear strip beside a wall has one side only.
+        const start = b - run;
+        if (run >= DOOR_MIN_STRIP && b > DOOR_SUB && start < 2 * DOOR_SUB
+            && b < 3 * DOOR_SUB && (solid >> b) & 1 && start > 0 && (solid >> (start - 1)) & 1) ok = true;
+        run = 0;
+      }
+      if (ok) cand[dir][i] = 1;
+    }
+  }
+  // A doorway leads somewhere: free ground or another doorway on both sides.
+  for (let dir = 0; dir < 2; dir++) {
+    const step = dir === 0 ? width : 1;        // through the wall
+    const open = j => j >= 0 && j < total && (cand[dir][j] || (!stamp[j] && blocked[j] === CELL_FREE));
+    for (let changed = true; changed;) {
+      changed = false;
+      for (let i = 0; i < total; i++) {
+        if (!cand[dir][i]) continue;
+        const x = i % width;
+        const inRow = dir === 0 || (x > 0 && x < width - 1);
+        if (!inRow || !open(i - step) || !open(i + step)) { cand[dir][i] = 0; changed = true; }
+      }
+    }
+  }
+  const door = new Uint8Array(total);
+  for (let i = 0; i < total; i++) {
+    if (cand[0][i] || cand[1][i]) { door[i] = 1; stamp[i] = 0; }
+  }
+  return door;
 }
 
 /**

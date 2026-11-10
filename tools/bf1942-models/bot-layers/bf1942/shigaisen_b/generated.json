@@ -1,0 +1,21 @@
+{
+ "generator": "botgen",
+ "version": 1,
+ "mod": "bf1942",
+ "level": "shigaisen_b",
+ "template": "symmetric",
+ "templateSource": "DICE, bf1942 Kharkov (1.6 patch archives): AI/Strategies.con, AI/conditions.con, AI/prerequisites.con, unchanged",
+ "scope": "on foot: infantry order positions only, no search maps, no co-op layer",
+ "inputs": {
+  "controlPoints": "2720d5f12a6c88964f1415fae2491a207c0b8a81f0a2ee4812510f859b3d3d97",
+  "infantryMap": "92b235c5acac5aee0525c6cefe87eeaad840dbff111af1908474db451038a35c",
+  "template": "43f8a790471528016570235f76e97dbb2045732458781a5139f37fed68bf98c0"
+ },
+ "files": {
+  "AI.con": "84b54fdbafe161fd3682345ddef4b1a2f08529643491b9fc45c06500a5cc4522",
+  "AI/StrategicAreas.con": "f2d3fb2fa4518079f5b2a466d21b22e31c0ed1d3aa9cacc58f7280b2acd691cd",
+  "AI/Strategies.con": "4ce0be59a0d6c5cd530db002fb062c4be8d936bc6ae59bd188803ccaf7869a8d",
+  "AI/conditions.con": "68a0c7a8aec69954063147b60fae560b2874884285737aa085efa76597d395aa",
+  "AI/prerequisites.con": "4c1f313bc285b228fd6ad03bfd1f44c5b15c8703c31f802eb605bc5f00f88bb5"
+ }
+}

@@ -33,6 +33,7 @@ a control point.
 from __future__ import annotations
 
 import re
+from pathlib import Path
 from dataclasses import dataclass, field, asdict
 from typing import Any
 
@@ -183,9 +184,15 @@ class LevelAi:
     coverValues: dict[str, float] = field(default_factory=dict)
     # `AILandingZoneManager::createLandingZone` 0x084741e0, in creation order.
     landingZones: list[LandingZone] = field(default_factory=list)
+    # The marker of a layer the level did not ship (`load_generated_ai`): the
+    # generator, its version and the hashes of what it read. None, and left
+    # out of the JSON, for a level's own layer.
+    generated: dict[str, Any] | None = None
 
     def to_json(self) -> dict[str, Any]:
         out = asdict(self)
+        if out.get("generated") is None:
+            out.pop("generated", None)
         return out
 
 
@@ -465,6 +472,55 @@ def load_level_ai(files) -> LevelAi | None:
     parse_conditions(text("AI/conditions.con"), ai)
     parse_prerequisites(text("AI/prerequisites.con"), ai)
     parse_strategies(text("AI/Strategies.con"), ai)
+    return ai
+
+
+#: Where generated bot layers live as source: `<root>/<mod folder, lower
+#: case>/<level, lower case>/` holding `AI.con`, `AI/*.con` and
+#: `generated.json` (`sim/botgen.mjs` writes them;
+#: features/bot-map-generation). The install's archives are never modified,
+#: so this tracked folder is the only place a re-bake can find them.
+GENERATED_ROOT = Path(__file__).resolve().parents[1] / "bot-layers"
+
+
+class _FolderFiles:
+    """`find` / `read` over a folder of loose files, case-insensitively: what
+    `load_level_ai` asks of `LevelFiles`."""
+
+    def __init__(self, folder: Path) -> None:
+        self._index = {str(p.relative_to(folder)).replace("\\", "/").lower(): p
+                       for p in sorted(folder.rglob("*")) if p.is_file()}
+
+    def find(self, rel: str) -> str | None:
+        key = rel.replace("\\", "/").lower()
+        return key if key in self._index else None
+
+    def read(self, name: str) -> bytes:
+        return self._index[name].read_bytes()
+
+
+def generated_layer_dir(mod: str, level: str, root: Path | None = None) -> Path | None:
+    """The folder holding a generated bot layer for `level` of `mod`, or None."""
+    folder = Path(root or GENERATED_ROOT) / mod.lower() / level.lower()
+    return folder if (folder / "generated.json").is_file() else None
+
+
+def load_generated_ai(mod: str, level: str, root: Path | None = None) -> LevelAi | None:
+    """A generated bot layer, read with the parsers a shipped one is read
+    with, its marker on `generated`. The caller asks only when the level's
+    own archives carry no `AI.con` (`scene_layers.layer_ai`): a generated
+    layer never stands in for a shipped one."""
+    import json
+
+    folder = generated_layer_dir(mod, level, root)
+    if folder is None:
+        return None
+    ai = load_level_ai(_FolderFiles(folder))
+    if ai is None:
+        return None
+    marker = json.loads((folder / "generated.json").read_text())
+    ai.generated = {k: marker[k] for k in ("generator", "version", "template", "scope", "inputs", "files")
+                    if k in marker}
     return ai
 
 

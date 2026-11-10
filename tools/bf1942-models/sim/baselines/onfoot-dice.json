@@ -1,0 +1,348 @@
+{
+ "version": 1,
+ "note": "DICE layers on foot: berlin, stalingrad, kharkov, bocage; seeds 1..10, 600 s, --no-vehicles",
+ "sizes": {
+  "8": {
+   "levels": [
+    "berlin",
+    "bocage",
+    "kharkov",
+    "stalingrad"
+   ],
+   "matches": 40,
+   "duration": 600,
+   "metrics": {
+    "stuckSecondsPerBotMinute": {
+     "n": 40,
+     "min": 0.076,
+     "p10": 0.3286,
+     "p50": 0.9345,
+     "p90": 1.9683,
+     "max": 2.889
+    },
+    "idleShare": {
+     "n": 40,
+     "min": 0.0918,
+     "p10": 0.1567,
+     "p50": 0.3558,
+     "p90": 0.5368,
+     "max": 0.6044
+    },
+    "oscillationsPerBotMinute": {
+     "n": 40,
+     "min": 0.0127,
+     "p10": 0.0917,
+     "p50": 0.2523,
+     "p90": 0.5017,
+     "max": 0.6627
+    },
+    "selfDeathsPerBotMinute": {
+     "n": 40,
+     "min": 0,
+     "p10": 0,
+     "p50": 0,
+     "p90": 0,
+     "max": 0
+    },
+    "spawnTrapsPerBotMinute": {
+     "n": 40,
+     "min": 0,
+     "p10": 0.0121,
+     "p50": 0.0741,
+     "p90": 0.1434,
+     "max": 0.2546
+    },
+    "routeFailuresPerBotMinute": {
+     "n": 40,
+     "min": 0,
+     "p10": 0,
+     "p50": 0.0035,
+     "p90": 0.382,
+     "max": 2.661
+    },
+    "redeploysPerBotMinute": {
+     "n": 40,
+     "min": 0.014,
+     "p10": 0.0336,
+     "p50": 0.0985,
+     "p90": 0.1918,
+     "max": 0.228
+    },
+    "capturesTotal": {
+     "n": 40,
+     "min": 0,
+     "p10": 1,
+     "p50": 4,
+     "p90": 8.1,
+     "max": 10
+    },
+    "firstCapture": {
+     "n": 39,
+     "min": 36.17,
+     "p10": 36.462,
+     "p50": 52.57,
+     "p90": 222.778,
+     "max": 590.57
+    }
+   },
+   "perLevel": {
+    "berlin": {
+     "matches": 10,
+     "flagCoverage": 1,
+     "never": [],
+     "winners": [
+      5,
+      5,
+      0
+     ],
+     "medians": {
+      "stuckSecondsPerBotMinute": 1.3255,
+      "idleShare": 0.1734,
+      "oscillationsPerBotMinute": 0.46,
+      "selfDeathsPerBotMinute": 0,
+      "spawnTrapsPerBotMinute": 0.1201,
+      "routeFailuresPerBotMinute": 0.1505,
+      "redeploysPerBotMinute": 0.185,
+      "capturesTotal": 3
+     }
+    },
+    "bocage": {
+     "matches": 10,
+     "flagCoverage": 1,
+     "never": [],
+     "winners": [
+      3,
+      7,
+      0
+     ],
+     "medians": {
+      "stuckSecondsPerBotMinute": 0.331,
+      "idleShare": 0.293,
+      "oscillationsPerBotMinute": 0.3252,
+      "selfDeathsPerBotMinute": 0,
+      "spawnTrapsPerBotMinute": 0.1049,
+      "routeFailuresPerBotMinute": 0,
+      "redeploysPerBotMinute": 0.0376,
+      "capturesTotal": 5
+     }
+    },
+    "kharkov": {
+     "matches": 10,
+     "flagCoverage": 1,
+     "never": [],
+     "winners": [
+      4,
+      6,
+      0
+     ],
+     "medians": {
+      "stuckSecondsPerBotMinute": 0.6315,
+      "idleShare": 0.5122,
+      "oscillationsPerBotMinute": 0.1826,
+      "selfDeathsPerBotMinute": 0,
+      "spawnTrapsPerBotMinute": 0.0128,
+      "routeFailuresPerBotMinute": 0.0425,
+      "redeploysPerBotMinute": 0.0815,
+      "capturesTotal": 7.5
+     }
+    },
+    "stalingrad": {
+     "matches": 10,
+     "flagCoverage": 0.333,
+     "never": [
+      "German_city_HQ",
+      "Soviet_city_HQ"
+     ],
+     "winners": [
+      4,
+      6,
+      0
+     ],
+     "medians": {
+      "stuckSecondsPerBotMinute": 1.784,
+      "idleShare": 0.4413,
+      "oscillationsPerBotMinute": 0.1373,
+      "selfDeathsPerBotMinute": 0,
+      "spawnTrapsPerBotMinute": 0.0433,
+      "routeFailuresPerBotMinute": 0.0035,
+      "redeploysPerBotMinute": 0.1489,
+      "capturesTotal": 1
+     }
+    }
+   },
+   "flagCoverageMin": 0.333
+  },
+  "16": {
+   "levels": [
+    "berlin",
+    "bocage",
+    "kharkov",
+    "stalingrad"
+   ],
+   "matches": 40,
+   "duration": 600,
+   "metrics": {
+    "stuckSecondsPerBotMinute": {
+     "n": 40,
+     "min": 0,
+     "p10": 0.2112,
+     "p50": 0.9015,
+     "p90": 2.188,
+     "max": 2.763
+    },
+    "idleShare": {
+     "n": 40,
+     "min": 0.2589,
+     "p10": 0.3911,
+     "p50": 0.5467,
+     "p90": 0.7248,
+     "max": 0.7608
+    },
+    "oscillationsPerBotMinute": {
+     "n": 40,
+     "min": 0.0094,
+     "p10": 0.0469,
+     "p50": 0.1167,
+     "p90": 0.3485,
+     "max": 0.4879
+    },
+    "selfDeathsPerBotMinute": {
+     "n": 40,
+     "min": 0,
+     "p10": 0,
+     "p50": 0,
+     "p90": 0,
+     "max": 0
+    },
+    "spawnTrapsPerBotMinute": {
+     "n": 40,
+     "min": 0,
+     "p10": 0.0029,
+     "p50": 0.0296,
+     "p90": 0.0794,
+     "max": 0.0983
+    },
+    "routeFailuresPerBotMinute": {
+     "n": 40,
+     "min": 0,
+     "p10": 0.0066,
+     "p50": 0.0915,
+     "p90": 2.0997,
+     "max": 6.124
+    },
+    "redeploysPerBotMinute": {
+     "n": 40,
+     "min": 0,
+     "p10": 0.0161,
+     "p50": 0.0653,
+     "p90": 0.1364,
+     "max": 0.1691
+    },
+    "capturesTotal": {
+     "n": 40,
+     "min": 0,
+     "p10": 0.9,
+     "p50": 3,
+     "p90": 8,
+     "max": 8
+    },
+    "firstCapture": {
+     "n": 36,
+     "min": 36.67,
+     "p10": 36.835,
+     "p50": 58.9,
+     "p90": 306.68,
+     "max": 469.5
+    }
+   },
+   "perLevel": {
+    "berlin": {
+     "matches": 10,
+     "flagCoverage": 0.667,
+     "never": [
+      "Bernauer_Strasse_HQ"
+     ],
+     "winners": [
+      10,
+      0,
+      0
+     ],
+     "medians": {
+      "stuckSecondsPerBotMinute": 1.937,
+      "idleShare": 0.4209,
+      "oscillationsPerBotMinute": 0.3347,
+      "selfDeathsPerBotMinute": 0,
+      "spawnTrapsPerBotMinute": 0.0542,
+      "routeFailuresPerBotMinute": 1.926,
+      "redeploysPerBotMinute": 0.1063,
+      "capturesTotal": 1.5
+     }
+    },
+    "bocage": {
+     "matches": 10,
+     "flagCoverage": 1,
+     "never": [],
+     "winners": [
+      4,
+      6,
+      0
+     ],
+     "medians": {
+      "stuckSecondsPerBotMinute": 0.2195,
+      "idleShare": 0.5247,
+      "oscillationsPerBotMinute": 0.1055,
+      "selfDeathsPerBotMinute": 0,
+      "spawnTrapsPerBotMinute": 0.0546,
+      "routeFailuresPerBotMinute": 0.013,
+      "redeploysPerBotMinute": 0.02,
+      "capturesTotal": 5
+     }
+    },
+    "kharkov": {
+     "matches": 10,
+     "flagCoverage": 1,
+     "never": [],
+     "winners": [
+      4,
+      6,
+      0
+     ],
+     "medians": {
+      "stuckSecondsPerBotMinute": 0.435,
+      "idleShare": 0.7095,
+      "oscillationsPerBotMinute": 0.1056,
+      "selfDeathsPerBotMinute": 0,
+      "spawnTrapsPerBotMinute": 0.0032,
+      "routeFailuresPerBotMinute": 0.195,
+      "redeploysPerBotMinute": 0.0515,
+      "capturesTotal": 7
+     }
+    },
+    "stalingrad": {
+     "matches": 10,
+     "flagCoverage": 0.333,
+     "never": [
+      "German_city_HQ",
+      "Soviet_city_HQ"
+     ],
+     "winners": [
+      3,
+      5,
+      2
+     ],
+     "medians": {
+      "stuckSecondsPerBotMinute": 1.626,
+      "idleShare": 0.5422,
+      "oscillationsPerBotMinute": 0.1018,
+      "selfDeathsPerBotMinute": 0,
+      "spawnTrapsPerBotMinute": 0.0296,
+      "routeFailuresPerBotMinute": 0.054,
+      "redeploysPerBotMinute": 0.1,
+      "capturesTotal": 1
+     }
+    }
+   },
+   "flagCoverageMin": 0.333
+  }
+ }
+}

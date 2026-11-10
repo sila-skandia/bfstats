@@ -1,0 +1,11 @@
+{
+ "source": "DICE, bf1942 Kharkov (1.6 patch archives): AI/Strategies.con, AI/conditions.con, AI/prerequisites.con, unchanged",
+ "archetype": "both sides start with ground of their own (a fixed base or flags each)",
+ "strategies": [
+  "normal",
+  "bridge",
+  "finalPush",
+  "breakOut"
+ ],
+ "note": "The side lists are Kharkov's own ai.addSAIStrategy lines, in its order. Stalingrad's set was tried first and dropped: it gates its defensive strategies on a createHomogenousCondition the repo's reader does not parse, so the page's port picks them at the first pass and the side never attacks."
+}

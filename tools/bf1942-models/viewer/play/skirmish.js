@@ -180,7 +180,10 @@ export function createSkirmishScreen({
       // departs from it (owner, 2026-10-16): a level without them is listed
       // too and starts in Conquest with no bots, since the viewer has no
       // multiplayer screen to reach it from and bots need the single-player
-      // scripts. `launchUrl` sends `mode=Conquest` and `botCount=0` for it.
+      // scripts. `launchUrl` sends `mode=Conquest` and `botCount=0` for it,
+      // unless the level carries a generated bot layer (`generatedBots`,
+      // features/bot-map-generation): then it starts in Conquest with bots,
+      // and its row wears the EXPERIMENTAL BOTS tag instead.
       out.push({
         ...level,
         map: entry.name,
@@ -316,8 +319,9 @@ export function createSkirmishScreen({
     }
     if (activeMod.id !== VANILLA.id) url.searchParams.set('mod', activeMod.id);
     // Bot parameters: always passed when bots are enabled. A level without
-    // single-player scripts gets none: bots need them (see buildLevels).
-    const botless = state.level.singlePlayer === false;
+    // single-player scripts gets none: bots need them (see buildLevels),
+    // unless a bot layer was generated for it.
+    const botless = state.level.singlePlayer === false && !state.level.generatedBots;
     url.searchParams.set('botCount', String(botless ? 0 : state.botCount));
     url.searchParams.set('botSkill', String(state.botSkill));
     return url.toString();

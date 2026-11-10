@@ -43,7 +43,7 @@ import sys
 from pathlib import Path
 
 import extract_map as em
-from bf42.ai_level import add_cover_values, load_level_ai, write_level_search_maps
+from bf42.ai_level import add_cover_values, load_generated_ai, load_level_ai, write_level_search_maps
 from bf42.ctf import TemplateBlocks, flag_bases
 from bf42.level import (discover_level_sounds, load_briefing, load_tickets,
                         mode_template_edits)
@@ -657,6 +657,11 @@ def layer_sounds(ctx: LevelContext):
 def layer_ai(ctx: LevelContext):
     info, files = ctx.info, ctx.files
     level_ai = load_level_ai(files)
+    if level_ai is None:
+        # A level that ships no AI layer takes the generated one kept as
+        # source in `bot-layers/` (features/bot-map-generation), so a re-bake
+        # reproduces it. Never when the level's own archives carry one.
+        level_ai = load_generated_ai(ctx.mod, ctx.level)
     out = {}
     if level_ai is not None:
         # A template table, so a mode script's statics join it untagged: a

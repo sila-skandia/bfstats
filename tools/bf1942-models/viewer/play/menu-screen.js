@@ -198,6 +198,14 @@ export function thumbSpan(layout, box, scroll, count) {
 
 /** The row tag for a level with no single-player scripts: no bots on it. */
 export const NO_SP_TAG = 'NO BOTS';
+/** The tag of a level whose bot layer was generated, not shipped
+ *  (features/bot-map-generation): it plays with bots, as an experiment. */
+export const GENERATED_BOTS_TAG = 'EXPERIMENTAL BOTS';
+/** The tag a level's row wears, or null. */
+export function levelTag(level) {
+  if (level?.singlePlayer !== false) return null;
+  return level.generatedBots ? GENERATED_BOTS_TAG : NO_SP_TAG;
+}
 
 export const rgb = c => `rgb(${c.slice(0, 3).map(v => Math.round(v * 255)).join(',')})`;
 
@@ -388,7 +396,8 @@ function paintRows(ctx, layout, state, env) {
     // bots; a dim tag at the row's right edge says so, and the title stops
     // a space short of it.
     const left = Math.round(bx + box.scrollbarOffset);
-    const tagWidth = level.singlePlayer === false ? measureText(font, NO_SP_TAG) : 0;
+    const tag = levelTag(level);
+    const tagWidth = tag ? measureText(font, tag) : 0;
     const titleRoom = tagWidth
       ? (bx + width - tagWidth - 4) - left - measureText(font, ' ')
       : (bx + width) - left;
@@ -397,7 +406,7 @@ function paintRows(ctx, layout, state, env) {
     drawBitmapText(ctx, font, env.tint, fitText(font, level.title, titleRoom),
                    left, y + 1, [0.78, 0.78, 0.78]);
     if (tagWidth) {
-      drawBitmapText(ctx, font, env.tint, NO_SP_TAG,
+      drawBitmapText(ctx, font, env.tint, tag,
                      Math.round(bx + width - tagWidth - 4), y + 1, [0.5, 0.5, 0.5]);
     }
   }

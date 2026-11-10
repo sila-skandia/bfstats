@@ -1,0 +1,80 @@
+rem *** Strategic areas: one per control point (botgen) ***
+
+aiStrategicArea.create AxisBase 522.8/310.8 527.8/315.8 50
+aiStrategicArea.addNeighbour centerBridge_east
+aiStrategicArea.addNeighbour northBridge_west
+aiStrategicArea.addNeighbour minka_south
+aiStrategicArea.addObjectTypeFlag Base
+aiStrategicArea.setOrderPosition Infantry 528.5/314.5
+aiStrategicArea.setSide 1
+aiStrategicArea.setTakeable 2 0
+
+aiStrategicArea.create AlliedBase 744.6/308.7 749.6/313.7 50
+aiStrategicArea.addNeighbour centerBridge_east
+aiStrategicArea.addNeighbour minka_northeast
+aiStrategicArea.addNeighbour southBridge_east
+aiStrategicArea.addObjectTypeFlag Base
+aiStrategicArea.setOrderPosition Infantry 750.5/314.5
+aiStrategicArea.setSide 2
+aiStrategicArea.setTakeable 1 0
+
+aiStrategicArea.create centerBridge_east 661.8/318.6 669.8/326.6 300
+aiStrategicArea.addNeighbour AxisBase
+aiStrategicArea.addNeighbour AlliedBase
+aiStrategicArea.addNeighbour northBridge_west
+aiStrategicArea.addNeighbour minka_northeast
+aiStrategicArea.addNeighbour minka_south
+aiStrategicArea.addNeighbour southBridge_east
+aiStrategicArea.addObjectTypeFlag Centre
+aiStrategicArea.addObjectTypeFlag StrongPoint
+aiStrategicArea.addObjectTypeFlag ControlPoint
+aiStrategicArea.setOrderPosition Infantry 661.5/326.5
+aiStrategicArea.setSide 2
+
+aiStrategicArea.create northBridge_west 594.6/367.2 602.6/375.2 150
+aiStrategicArea.addNeighbour AxisBase
+aiStrategicArea.addNeighbour centerBridge_east
+aiStrategicArea.addNeighbour minka_northeast
+aiStrategicArea.addNeighbour minka_south
+aiStrategicArea.addNeighbour southBridge_east
+aiStrategicArea.addObjectTypeFlag Flank
+aiStrategicArea.addObjectTypeFlag ControlPoint
+aiStrategicArea.setOrderPosition Infantry 603.5/374.5
+aiStrategicArea.setSide 1
+
+aiStrategicArea.create minka_northeast 700.5/373.6 705.5/378.6 150
+aiStrategicArea.addNeighbour AlliedBase
+aiStrategicArea.addNeighbour centerBridge_east
+aiStrategicArea.addNeighbour northBridge_west
+aiStrategicArea.addNeighbour southBridge_east
+aiStrategicArea.addObjectTypeFlag Flank
+aiStrategicArea.addObjectTypeFlag ControlPoint
+aiStrategicArea.setOrderPosition Infantry 704.5/377.5
+aiStrategicArea.setSide 2
+
+aiStrategicArea.create minka_south 575.3/274.8 580.3/279.8 150
+aiStrategicArea.addNeighbour AxisBase
+aiStrategicArea.addNeighbour centerBridge_east
+aiStrategicArea.addNeighbour northBridge_west
+aiStrategicArea.addObjectTypeFlag Flank
+aiStrategicArea.addObjectTypeFlag Close
+aiStrategicArea.addObjectTypeFlag ControlPoint
+aiStrategicArea.setOrderPosition Infantry 579.5/278.5
+aiStrategicArea.setSide 1
+
+aiStrategicArea.create windmill_west 608/331.6 613/336.6 200
+aiStrategicArea.addObjectTypeFlag Centre
+aiStrategicArea.addObjectTypeFlag ControlPoint
+aiStrategicArea.setOrderPosition Infantry 609.5/338.5
+aiStrategicArea.setSide 1
+
+aiStrategicArea.create southBridge_east 682.3/283.7 687.3/288.7 200
+aiStrategicArea.addNeighbour AlliedBase
+aiStrategicArea.addNeighbour centerBridge_east
+aiStrategicArea.addNeighbour northBridge_west
+aiStrategicArea.addNeighbour minka_northeast
+aiStrategicArea.addObjectTypeFlag Centre
+aiStrategicArea.addObjectTypeFlag Close
+aiStrategicArea.addObjectTypeFlag ControlPoint
+aiStrategicArea.setOrderPosition Infantry 686.5/289.5
+aiStrategicArea.setSide 2

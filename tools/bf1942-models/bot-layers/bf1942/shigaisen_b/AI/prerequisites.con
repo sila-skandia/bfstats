@@ -1,0 +1,28 @@
+if v_arg1 == host
+rem ----- Host 
+rem ---------------------------------------------------------------------------- 
+
+rem *** Create Prerequisites ***
+
+
+rem *** Kharkov ***
+
+aiStrategy.createPrerequisite normalPrereq
+aiStrategy.addCondition constantCond 10.0
+rem aiStrategy.addCondition timeCond      0.005
+
+aiStrategy.createPrerequisite bridgePrereq
+aiStrategy.addCondition max2CPCond   5.0
+rem aiStrategy.addCondition timeCond     0.005
+
+aiStrategy.createPrerequisite finalPushPrereq
+aiStrategy.addCondition min4CpCond  5.0
+
+aiStrategy.createPrerequisite breakOutPrereq
+aiStrategy.addCondition oneCPOrLessCond 50.0
+
+
+
+rem ----------------------------------------------------------------------------
+endIf
+
