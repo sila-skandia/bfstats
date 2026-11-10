@@ -12,7 +12,7 @@ from __future__ import annotations
 
 import unittest
 
-from jet_school import jet_fit, jet_guides, jet_lesson, jet_steps, jet_tops, shot_down
+from jet_school import jet_fit, jet_guides, jet_lesson, jet_steps, jet_tops
 
 
 class FitTests(unittest.TestCase):
@@ -74,21 +74,10 @@ class FitTests(unittest.TestCase):
         self.assertEqual("x", self.f["same"])
 
 
-class BoomAndZoomOnAJetTests(unittest.TestCase):
-    """The first lesson re-tuned (`viewer/dogfight-jet-boom-and-zoom.js`)."""
-
-    def test_two_passes_bring_down_the_pilot_who_never_looks_up(self) -> None:
-        runs = jet_lesson("boom-and-zoom", demo="move")["demos"]["move"]
-        self.assertGreaterEqual(shot_down(runs, 1), 8)
-        self.assertTrue(all(r["hits"][1] == 0 for r in runs))
-        # As written, with the lesson's 0.6 s burst, two passes leave him alive.
-        base = jet_lesson("boom-and-zoom", demo="move", base=True)["demos"]["move"]
-        self.assertEqual(0, shot_down(base, 1))
-        self.assertTrue(all(12 <= r["hits"][0] <= 21 for r in base), [r["hits"] for r in base])
-
-    def test_meeting_the_dive_is_never_hit(self) -> None:
-        runs = jet_lesson("boom-and-zoom", demo="counter")["demos"]["counter"]
-        self.assertTrue(all(r["winner"] is None and r["hits"] == [0, 0] for r in runs), [r["hits"] for r in runs])
+class JetFileTests(unittest.TestCase):
+    """How a lesson's jet file is laid over it (`dogfight-lessons.js`
+    `lessonFor`). Boom and zoom's own jet fights are held in
+    `test_dogfight_jet_boom_and_zoom.py`."""
 
     def test_the_jet_file_is_laid_over_the_lesson(self) -> None:
         jet = jet_lesson("boom-and-zoom", demo="counter")
