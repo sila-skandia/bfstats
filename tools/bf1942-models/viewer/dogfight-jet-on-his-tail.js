@@ -26,7 +26,7 @@ export default {
     'Do not sit in their circle. A jet turning hard at 75 m/s turns 68 to 70 degrees a second, round a circle 123 to 127 m across: no lead you can pull follows that.',
     'And do not leave it the way a Spitfire does, when they are across it going away. Half a circle is not enough: they come round in behind you, 73 to 353 m back at the closest, inside their cannon\'s reach, and shoot you down 13 to 16 s after you leave.',
     'The way out is never to go in. You arrive 15 to 18 m/s faster than them; when they break, hold your line: wings level, full throttle, nose a little down. You go past them 80 to 91 m off while they turn into you, and by the time they are round you are out of their reach and opening. They do not come after you.',
-    'Getting on top does not work either. A jet does not run out of speed going up: climb beside their break and they come up too, and the two of you go on up through the top of the sky, over the top between 910 and 1,690 m, with nobody in a place to shoot. Once in nine they land 2 rounds on you on the way up.',
+    'Getting on top does not work either. A jet does not run out of speed going up: climb beside their break and they come up too, and both of you level off under the roof, between 805 and 836 m, with nobody in a place to shoot. Up there, level and fast, they come round onto your tail and sit there, never with a shot that would land.',
     'Flown nine times from slightly different starts: rushing in landed 0 to 3 rounds a fight and brought nobody down. Holding your line at their break got you clear and unhit nine times in nine; leaving their circle later was shot down nine times in nine. Climbing beside their break shot nobody down.',
   ],
   demos: {
@@ -47,8 +47,8 @@ export default {
     },
     ninja: {
       label: 'The Ninja: up beside their break, and they come up too',
-      note: 'The Spitfire\'s best try at getting on top: when they break you climb beside their circle instead of following them in. A jet does not run out of speed going up: they come up too, after you or away from you, and the two of you go on up through the top of the sky, over the top between 910 and 1,690 m, you at 16 to 20 m/s. Nobody is in a place to shoot, though once in nine they land 2 rounds on you on the way up.',
-      verdict: { works: 0, of: 9, line: 'None of the nine: no kill, 2 rounds landed, in one of the nine, and 0.17 s of a shot that would land. They had you for 0.23 s at most, landed 1 round on you once, and sat on your tail for up to 7.4 s.' },
+      note: 'The Spitfire\'s best try at getting on top: when they break you climb beside their circle instead of following them in. A jet does not run out of speed going up: they come up too, after you or away from you, and both of you level off under the roof, between 805 and 836 m. Nobody is in a place to shoot, and nobody is hit.',
+      verdict: { works: 0, of: 9, line: 'None of the nine: no kill, 2 rounds landed, in one of the nine, and 0.17 s of a shot that would land. They never had a shot on you that would land, but level under the roof they came round onto your tail and sat there, for 13 to 38 s in 7 of 9.' },
     },
   },
   survival: { verdict: 'yes', line: 'Yes, by never going in: when they break, hold your line at full throttle and you are clear and unhit in 9 of 9. Leave their circle once you are in it and their cannon gets you (shot down in 9 of 9). Nothing found gets you on top, over their circle or up beside it (0 of 9 each).' },

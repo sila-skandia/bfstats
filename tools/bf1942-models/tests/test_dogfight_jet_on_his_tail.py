@@ -30,7 +30,7 @@ import tempfile
 import unittest
 from pathlib import Path
 
-from jet_school import jet_lesson, shot_down
+from jet_school import jet_lesson, jet_tops, shot_down
 
 TOOLS = Path(__file__).resolve().parents[1]
 VIEWER = TOOLS / "viewer"
@@ -261,21 +261,21 @@ class OnTheirTailOnAJetTests(unittest.TestCase):
         self.assertTrue(all(r["top"][1] <= r["top"][0] for r in rows), [r["top"] for r in rows])
 
     def test_climbing_beside_their_break_gets_nothing_they_climb_too(self) -> None:
-        # "they come up too, after you or away from you, and the two of you go
-        # on up through the top of the sky, over the top between 910 and 1,690
-        # m, you at 16 to 20 m/s ... once in nine they land 2 rounds on you on
-        # the way up". The pilots' guard noses over at 880 m, but a jet in a
-        # steep climb cannot get its nose down there and climbs on.
+        # "they come up too, after you or away from you, and both of you level
+        # off under the roof, between 805 and 836 m. Nobody is in a place to
+        # shoot, and nobody is hit." Every jet pilot flies under the roof
+        # (`dogfight-jet-ceiling.js` `underRoof`, from `stepPilot`); before
+        # it both went on up to 910 to 1,690 m.
         rows = self.nine("ninja")
         self.assertTrue(all(r["winner"] is None for r in rows))
         tops = [h for r in rows for h in r["top"]]
-        self.assertEqual((910, 1688), (min(tops), max(tops)), [r["top"] for r in rows])
+        self.assertEqual((805, 836), (min(tops), max(tops)), [r["top"] for r in rows])
         self.assertTrue(all({"climb", "reverse"} & set(r["acePhases"]) for r in rows), [r["acePhases"] for r in rows])
-        self.assertEqual((16, 20), (min(r["slowest"][1] for r in rows), max(r["slowest"][1] for r in rows)))
-        self.assertEqual([[2, 0]], [r["hits"] for r in rows if r["hits"] != [0, 0]])
+        self.assertTrue(all(r["hits"] == [0, 0] for r in rows), [r["hits"] for r in rows])
         # "None of the nine: no kill, 2 rounds landed, in one of the nine, and
-        # 0.17 s of a shot that would land. They had you for 0.23 s at most,
-        # landed 1 round on you once, and sat on your tail for up to 7.4 s."
+        # 0.17 s of a shot that would land. They never had a shot on you that
+        # would land, but level under the roof they came round onto your tail
+        # and sat there, for 13 to 38 s in 7 of 9."
         ninja = self.l9("ninja")
         self.assertEqual(0, ninja["measured"]["works"])
         self.assertEqual(ninja["declared"]["works"], ninja["measured"]["works"])
@@ -283,9 +283,19 @@ class OnTheirTailOnAJetTests(unittest.TestCase):
         self.assertFalse(any(s["killed"] for s in scores))
         self.assertEqual([2], [s["hitsOnHim"] for s in scores if s["hitsOnHim"]])
         self.assertEqual(0.17, max(s["myShot"] for s in scores))
-        self.assertEqual([1], [s["hitsOnMe"] for s in scores if s["hitsOnMe"]])
-        self.assertEqual(0.23, max(s["hisShot"] for s in scores))
-        self.assertAlmostEqual(7.4, max(s["sixLost"] for s in scores), delta=0.05)
+        self.assertTrue(all(s["hitsOnMe"] == 0 and s["hisShot"] == 0 for s in scores), scores)
+        six = [s["sixLost"] for s in scores if s["sixLost"] >= 1]
+        self.assertEqual(7, len(six), [s["sixLost"] for s in scores])
+        self.assertTrue(13 <= min(six) and max(six) < 38.5, six)
+
+    def test_nobody_goes_over_the_roof(self) -> None:
+        # Neither plane, in any demo or move, tops 860 m on the F-16
+        # (`jet_tops`, the nine starts): the highest is the Ninja's 836 m.
+        tops = jet_tops("F16", "on-his-tail")["on-his-tail"]
+        self.assertEqual({"move", "dip", "flip", "ninja"}, set(tops))
+        highest = max(h for d in tops.values() for h in d["top"])
+        self.assertLessEqual(highest, 860, tops)
+        self.assertEqual(836, highest)
 
     def test_the_survival_verdict_follows_from_the_three(self) -> None:
         verdicts = [d["measured"]["verdict"] for d in self.jet["l9"].values()]
@@ -314,6 +324,16 @@ class OnTheirTailOnTheMig29Tests(unittest.TestCase):
         self.assertTrue(all(s["end"] == "shot down" for s in caught), caught)
         self.assertTrue(all(r["winner"] is None for r in mig["nine"]["move"]))
         self.assertEqual(9, shot_down(jet_lesson("on-his-tail", plane="Mig29", demo="dip", base=True)["demos"]["dip"], 1))
+
+    def test_the_mig_29_stays_under_the_roof_too(self) -> None:
+        # Its tops, measured: 852 m at most (the Ninja), where the climb
+        # beside their break went to 1,995 m before the roof. The Ninja is
+        # still 0 of 9 there, and nobody is hit in it from the nine starts.
+        tops = jet_tops("Mig29", "on-his-tail")["on-his-tail"]
+        self.assertEqual(852, max(h for d in tops.values() for h in d["top"]), tops)
+        mig = measure("Mig29")
+        self.assertEqual(0, mig["l9"]["ninja"]["measured"]["works"])
+        self.assertTrue(all(r["hits"] == [0, 0] for r in mig["nine"]["ninja"]))
 
 
 if __name__ == "__main__":
