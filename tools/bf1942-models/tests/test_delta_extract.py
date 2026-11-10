@@ -608,6 +608,17 @@ class SingleRigIndex(unittest.TestCase):
         self.assertFalse((self.out / "B__Gun.fp.report.json").exists())
         self.assertTrue((self.out / "A__Gun.fp.glb").exists())
 
+    def test_a_row_spelled_like_its_own_rig_never_removes_it(self):
+        # BF1918's kits say `no12` and `No12`: the canonical rig is
+        # `AnzSoldier__no12.fp.glb` and a painted row `AnzSoldier__No12`
+        # serves from it. On macOS the row's own name opens the rig; it must
+        # stay, and the row's twin `EngSoldier__No12` has no file to remove.
+        self.rig("AnzSoldier__no12")
+        rows = {"AnzSoldier__No12": {"rig": "AnzSoldier__no12"},
+                "EngSoldier__No12": {"rig": "AnzSoldier__no12"}}
+        self.assertEqual(0, ev.remove_superseded_rigs(self.out, rows))
+        self.assertIn("AnzSoldier__no12.fp.glb", os.listdir(self.out))
+
 
 class SkinsDecisionDelta(unittest.TestCase):
     """The level-skin DECISION fast path: with `--delta`, a level none of
