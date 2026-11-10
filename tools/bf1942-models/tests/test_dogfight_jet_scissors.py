@@ -265,39 +265,49 @@ class TheMovesOnAJetTests(unittest.TestCase):
         m = measure(kind="move", demo="ninja")
         rows = m["rows"]
         self.assertEqual(0, m["verdict"]["works"])
-        # "you climb 396 to 456 m in 20 s, up to the roof, and they climb
-        # after you, so at 20 s you are at most 101 m over them, and by 40 s
-        # level with them". Before the roof you went on to 1,144 m and were
-        # 250 to 410 m over them in 7 of 9.
+        # "you climb 357 to 395 m in 20 s, up to the roof, and they climb
+        # after you, so at 20 s you are only 20 to 40 m over them". Before
+        # the roof you went on to 1,144 m and were 250 to 410 m over them in
+        # 7 of 9.
         climbed = span(r["climbed"] for r in rows)
-        self.assertTrue(395.5 <= climbed[0] and climbed[1] < 456.5, climbed)
+        self.assertTrue(356.5 <= climbed[0] and climbed[1] < 395.5, climbed)
         over = span(r["over"] for r in rows)
-        self.assertTrue(-2 <= over[0] and over[1] < 101, over)
-        # "you never come down on them with a shot, and they never get one on you"
-        self.assertTrue(all(r["myShot"] == 0 and r["hisShot"] == 0 and r["attacks"] == 0 for r in rows))
-        # "Flown on to 40 and 60 s, there is still no attack in any of the nine."
-        for seconds in (40, 60):
+        self.assertTrue(19.5 <= over[0] and over[1] < 40.5, over)
+        # "You never come down on them with a shot": and in 20 s they never
+        # land one on you either (0.17 s of a shot, once).
+        self.assertTrue(all(r["myShot"] == 0 and r["attacks"] == 0 and r["hitsOnMe"] == 0 for r in rows))
+        self.assertEqual([0.17], [r["hisShot"] for r in rows if r["hisShot"]])
+        # "by 40 s level with them. ... Flown on, they come in behind you
+        # under the roof: rounds on you in 5 of 9 by 40 s and in 8 of 9 by
+        # 60 s, though nobody is shot down."
+        for seconds, struck in ((40, 5), (60, 8)):
             longer = measure(kind="move", demo="ninja", seconds=seconds)["rows"]
-            self.assertTrue(all(r["attacks"] == 0 and r["hisShot"] == 0 and r["hitsOnMe"] == 0 for r in longer), seconds)
-            # "by 40 s level with them": within 2 m of their height.
-            self.assertTrue(all(abs(r["over"]) < 2 for r in longer), [r["over"] for r in longer])
+            self.assertTrue(all(r["attacks"] == 0 and r["myShot"] == 0 and r["end"] is None for r in longer), seconds)
+            self.assertEqual(struck, sum(1 for r in longer if r["hitsOnMe"] > 0), [r["hitsOnMe"] for r in longer])
+            self.assertTrue(all(abs(r["over"]) < 10 for r in longer), [r["over"] for r in longer])
 
     def test_nobody_goes_over_the_roof(self) -> None:
         # Neither plane, in any demo or move, tops 860 m on the F-16 (the
-        # nine starts): the highest is your Ninja's 827 m, theirs 773 m.
+        # nine starts): the highest is your Ninja's 765 m, theirs 727 m.
         tops = jet_tops("F16", "scissors")["scissors"]
         self.assertEqual({"move", "dip", "flip", "ninja"}, set(tops))
         self.assertLessEqual(max(h for d in tops.values() for h in d["top"]), 860, tops)
-        self.assertEqual([773, 827], tops["ninja"]["top"])
+        self.assertEqual([727, 765], tops["ninja"]["top"])
 
     def test_the_mig_29_stays_under_the_roof_too(self) -> None:
-        # Measured: the Ninja tops 845 m (ace) and 843 m (you), where before
+        # Measured: the Ninja tops 763 m (ace) and 770 m (you), where before
         # the roof they went to 995 and 1,223 m; still no way out (0 of 9).
         tops = jet_tops("Mig29", "scissors")["scissors"]
-        self.assertEqual([845, 843], tops["ninja"]["top"])
-        self.assertEqual(845, max(h for d in tops.values() for h in d["top"]))
+        self.assertEqual([763, 770], tops["ninja"]["top"])
+        self.assertEqual(770, max(h for d in tops.values() for h in d["top"]))
         for demo in ("dip", "flip", "ninja"):
             self.assertEqual(0, measure(kind="move", demo=demo, plane="Mig29")["verdict"]["works"], demo)
+        # Its Ninja flown on is caught from behind too: rounds on you in 7 of
+        # 9 by 40 s and in all nine by 60 s, nobody shot down.
+        for seconds, struck in ((40, 7), (60, 9)):
+            longer = measure(kind="move", demo="ninja", plane="Mig29", seconds=seconds)["rows"]
+            self.assertEqual(struck, sum(1 for r in longer if r["hitsOnMe"] > 0), seconds)
+            self.assertTrue(all(r["end"] is None for r in longer), seconds)
 
     def test_the_verdicts_on_screen_are_the_counts(self) -> None:
         jet = jet_lesson("scissors", demo="move")

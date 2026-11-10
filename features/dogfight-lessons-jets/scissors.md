@@ -1,9 +1,9 @@
 # The flat scissors on a jet
 
-Status: **re-tuned** (2026-11-11), **re-measured under the roof**
-(2026-11-11): only the Ninja moved, and it is still 0 of 9; no way out works,
-survival stays "no". Nobody in any demo or move goes over 827 m on the F-16
-(845 m on the MiG-29). Files: `viewer/dogfight-jet-scissors.js`,
+Status: **re-tuned** (2026-11-11), **re-measured under the reworked roof**
+(2026-11-11, commit `868247883`): only the Ninja moved, and it is still 0 of
+9; no way out works, survival stays "no". Nobody in any demo or move goes
+over 765 m on the F-16 (770 m on the MiG-29). Files: `viewer/dogfight-jet-scissors.js`,
 `viewer/dogfight-jet-plan-scissors.js`, `tests/test_dogfight_jet_scissors.py`.
 
 What a scissors is on a jet, in one line: the same braid, flown on the
@@ -111,50 +111,72 @@ F-16 (the test's `_measure`, not the jet harness):
 |---|---|---|---|
 | Dip | 2/9 (shot down in 7) | 0/9 | out 8-9 s in, shot down 15-17 s later in 9 of 9, 250-440 m behind; leaving at crossing 1, 3 or 4, or diving 15 degrees: 0/9 each |
 | Flip | 0/9 | 0/9 | 39-42 m/s to their 48-49, three crossings, never in their rear quarter; your snaps 0.2-0.27 s in 2 of 9 (1 and 5 hits); you sink 60-71 m to end 30-53 m under them; theirs 0.07-0.27 s in 2, no hits; 9 m closest |
-| Ninja | 0/9 | 0/9 | under the roof (2026-11-11): climb 396-456 m in 20 s, levelled off under the roof, and they climb after you: at most 101 m over them at 20 s, level (within 2 m) at 40 and 60 s; no shot either way, no attack. Before the roof: climb 460-810 m, 250-410 m over them in 7 of 9 |
+| Ninja | 0/9 | 0/9 | on the reworked roof (2026-11-11): climb 357-395 m in 20 s, levelled off at about 765 m, and they climb after you: 20-40 m over them at 20 s, level (within 10 m) at 40 and 60 s; no attack, and flown on they come in behind you: rounds on you in 5 of 9 by 40 s, 8 of 9 by 60 s, nobody shot down. Before the roof: climb 460-810 m, 250-410 m over them in 7 of 9 |
 
 Small changes tried on the moves: the Ninja flown 40 and 60 s (0/9, no
-attack), the Flip 40 s (0/9). None made a move work, so none is shipped.
+attack of yours), the Flip 40 s (0/9). None made a move work, so none is shipped.
 
 ## The MiG-29 (pace 1.5)
 
 The same jet file holds: crossings 8, swing 69 degrees, at most 280-303 m
 apart, ace's snaps in 6 of 9 (0 to 1 hits), nobody's kill. As written it
 swung 98 degrees and was 515-874 m apart. Dip 0/9 (shot down in 8 of 9 L9,
-9 of 9 on the harness), Flip 0/9, Ninja 0/9. Under the roof the Ninja tops
-843 m (you) and 845 m (the ace), where it went to 1,223 and 995 m before;
-the moves are still 0 of 9 each.
+9 of 9 on the harness), Flip 0/9, Ninja 0/9. On the reworked roof the Ninja
+tops 770 m (you) and 763 m (the ace), where it went to 1,223 and 995 m
+before any roof (843 and 845 on the first roof); the moves are still 0 of 9
+each. As on the F-16, its Ninja flown on is caught from behind: rounds on
+you in 7 of 9 by 40 s and in all nine by 60 s (3 to 19), nobody shot down.
 
 ## Under the roof (2026-11-11)
 
-Commit `8d616bcc2` puts every jet pilot's plan through `underRoof`
-(`dogfight-jet-ceiling.js`, from `dogfight-pilot.js` `stepPilot`): the climb
-is levelled off by 800 m real. The scissors starts at 384 m real on the
-F-16, under 600, so `pacedHeight` leaves it where it was.
+Every jet pilot's plan goes through `underRoof` (`dogfight-jet-ceiling.js`,
+from `dogfight-pilot.js` `stepPilot`). The roof as it is now (commit
+`868247883`, replacing the first roof of `8d616bcc2`) only caps how hard a
+plan may pull the nose toward the sky: the pull that would put the path on
+the allowed climb (falling to level by 800 m real), worked out in the
+plane's pitch plane over the share of its lift that points up, less the
+pitch rate under way. The plan's own pull is flown wherever it asks for
+less; roll, rudder and trigger stay the plan's; the throttle comes off
+while the nose is more than 15 degrees over the allowed climb. The first
+roof instead took every answer over above 800 m and held whatever bank the
+plane had, and climbed a plan that wanted less at the steepest rate
+allowed: the first Ninja numbers below were flown inside that. The scissors
+starts at 384 m real on the F-16, under 600, so `pacedHeight` leaves it
+where it was.
 
-What moved, F-16, nine starts (`--tops`, ace / you):
+F-16, nine starts (`--tops`, ace / you):
 
-| Demo | Highest before | Under the roof |
-|---|---|---|
-| Scissoring | 386 / 394 m | unchanged |
-| Dip | 386 / 394 m | unchanged |
-| Flip | 386 / 393 m | unchanged |
-| Ninja | 789 / 1,144 m | 773 / 827 m |
+| Demo | Before any roof | First roof | Reworked roof |
+|---|---|---|---|
+| Scissoring | 386 / 394 m | unchanged | unchanged |
+| Dip | 386 / 394 m | unchanged | unchanged |
+| Flip | 386 / 393 m | unchanged | unchanged |
+| Ninja | 789 / 1,144 m | 773 / 827 m | 727 / 765 m |
 
-The braid, the Dip (shot down in 9 of 9) and the Flip are the same fights;
-their tests did not move. The Ninja (`scNinja` against `jetScClimber`) is
-still 0 of 9, but not for the old reason. Before, the 45-degree zoom went on
-to 1,144 m and left you 250 to 410 m over them in 7 of 9 with no way down
-on them. Now the roof levels your climb off (800 m at 16 s, 824 m at 20 s in the default start), and the
-climber, who climbs while you are more than 50 m above, comes up after you:
-at 20 s you are 2 m under to 101 m over them, and flown on to 40 and 60 s
-the two of you are level within 2 m, under the roof, with no attack either
-way (your snaps 0.1 to 0.2 s at most, never theirs). The note, verdict line,
-counter-story sentence and survival line are rewritten for that.
+The Ninja on the L9, F-16:
+
+| | Before any roof | First roof | Reworked roof |
+|---|---|---|---|
+| Climbed in 20 s | 460-810 m | 396-456 m | 357-395 m |
+| Over them at 20 s | 250-410 m in 7 of 9 | -2 to 101 m | 20-40 m |
+| At 40 and 60 s | still over them, no attack | level within 2 m, no shot from them | level within 10 m; their rounds on you in 5 of 9 by 40 s, 8 of 9 by 60 s (3 to 19), nobody down |
+| Count | 0 of 9 | 0 of 9 | 0 of 9 |
+
+The braid, the Dip (shot down in 9 of 9) and the Flip are the same fights
+on all three; their tests did not move. The Ninja (`scNinja` against
+`jetScClimber`) is still 0 of 9. Your plan wants to climb on (`ninja-up`,
+then `clear`, over and over), the roof holds it level at about 765 m, and
+the climber, who climbs while you are more than 50 m above them, comes up
+after you and then chases: in the default start flown 60 s they are 419 m
+behind at 20 s, nose 3 degrees off you, both at 120 to 126 m/s, and close
+to 262 m by 60 s, firing from 28 s on. The note, verdict line, counter-story
+sentence and survival line say so: the height lasts a few seconds, then
+they are level with you and in behind you.
 
 Nothing was tuned. The Ninja's job in the jet lesson is to show that going
 up out of a scissors is no way out on a jet, and it still is not. FLY IT's
-guide stays `jetScissors`: no way out works (Dip, Flip and Ninja 0 of 9).
+guide stays `jetScissors`: no way out works (Dip, Flip and Ninja 0 of 9 on
+both jets).
 
 ## Needed in shared files
 
@@ -172,8 +194,9 @@ guide stays `jetScissors`: no way out works (Dip, Flip and Ninja 0 of 9).
   past its gun range plus 30 m, 430 m in the Spitfire's units), which a
   scissors 250 m wide does not give.
 - The Ninja's height is never spent: the pendulum's dive rules are the
-  Spitfire's speeds (`SC`), and under the roof the climber catches you up
-  before any dive comes (level by 40 s). A jet Ninja would need its own
-  dive, early, which is a new move, not a re-tune.
+  Spitfire's speeds (`SC`), so `scNinja` on a jet keeps asking to climb,
+  and under the roof the climber catches you up before any dive comes
+  (level by 40 s, then behind you). A jet Ninja would need its own dive,
+  early, which is a new move, not a re-tune.
 - The ace's slowest is 34 m/s: the shot's brake (`throttle -0.4` when
   closing) bites at once on a jet. The F-16 still turns and climbs from 30.

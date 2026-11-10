@@ -20,9 +20,9 @@ export default {
   counterStory: [
     'Throttle back early and reverse early: roll the other way just before you cross, because the nose takes most of a second to answer. Keep the nose on the horizon.',
     'Do not shoot as you cross them head-on: that is a split second. Wait until they have drifted out in front and your nose comes onto their tail.',
-    'Do not leave it. A jet\'s cannon reaches: run at a crossing and they turn after you and sit 250 to 440 m behind you, close enough to shoot you down, in all nine. Going up out of it gets you the height for a few seconds only: the roof levels your climb off and they climb after you, level with you by 40 s. Flown nine times slower than them, you never once sat in their rear quarter.',
+    'Do not leave it. A jet\'s cannon reaches: run at a crossing and they turn after you and sit 250 to 440 m behind you, close enough to shoot you down, in all nine. Going up out of it gets you the height for a few seconds only: the roof levels your climb off and they climb after you, level with you by 40 s and then in behind you. Flown nine times slower than them, you never once sat in their rear quarter.',
   ],
-  survival: { verdict: 'no', line: 'No way out on a jet: while it lasts they get a tenth of a second at a time (one hit in 45 s, in 3 of 9), but leave at a crossing and they shoot you down (9 of 9); fly it slower than them and you never get behind them; go up and they climb after you to the roof, and nobody gets a shot (0 of 9 each).' },
+  survival: { verdict: 'no', line: 'No way out on a jet: while it lasts they get a tenth of a second at a time (one hit in 45 s, in 3 of 9), but leave at a crossing and they shoot you down (9 of 9); fly it slower than them and you never get behind them; go up and they climb after you to the roof and come in behind you (0 of 9 each).' },
   ace: { plan: 'jetScissors', memory: { lead: 0.8 } },
   // FLY IT's ace on a jet: the lesson's `scAce`, its scissors led.
   flyAce: 'jetScAce',
@@ -45,7 +45,7 @@ export default {
     ninja: {
       ace: 'jetScClimber',
       note: 'You do not fly the scissors: at the overshoot you go up 45 degrees at full throttle, to come down on them from above. On a jet the climb does not run out of speed, it runs into the roof: what you see is the height won, levelled off, and caught up.',
-      verdict: { works: 0, of: 9, line: 'The height is yours for a few seconds only: you climb 396 to 456 m in 20 s, up to the roof, and they climb after you, so at 20 s you are at most 101 m over them, and by 40 s level with them. You never come down on them with a shot, and they never get one on you. Flown on to 40 and 60 s, there is still no attack in any of the nine.' },
+      verdict: { works: 0, of: 9, line: 'The height is yours for a few seconds only: you climb 357 to 395 m in 20 s, up to the roof, and they climb after you, so at 20 s you are only 20 to 40 m over them, and by 40 s level with them. You never come down on them with a shot. Flown on, they come in behind you under the roof: rounds on you in 5 of 9 by 40 s and in 8 of 9 by 60 s, though nobody is shot down.' },
     },
   },
   coach: {
