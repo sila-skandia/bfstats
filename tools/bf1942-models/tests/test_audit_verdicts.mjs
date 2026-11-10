@@ -5,7 +5,8 @@
 //   node tests/test_audit_verdicts.mjs
 import assert from 'node:assert/strict';
 import { rightTurn, steerVerdict, SETTLE_RATE, heldByData, deployVerdict, rigFamilies, weldDeviation,
-  weldVerdict, padGroundVerdict, rollsFreely, botHolding, roundEnded } from '../audit_verdicts.mjs';
+  weldVerdict, padGroundVerdict, rollsFreely, botHolding, roundEnded, releaseSpeed, airDiverges,
+  RELEASE_MIN, RELEASE_MAX } from '../audit_verdicts.mjs';
 
 let failures = 0;
 const test = (name, fn) => {
@@ -270,6 +271,23 @@ test('a round in EndGame, or restarted since the mark, ended under the test', ()
     tickets: { 1: 0, 2: 12 } }, { restarts: 0 }), /^tickets, winner 2/);
   assert.match(roundEnded({ ...playing, restarts: 1 }, { restarts: 0 }), /restarted since \(1\)/);
   assert.equal(roundEnded({ ...playing, restarts: 1 }, null), null);
+});
+
+test('a level-flight release is 1.3 lift-off speeds, inside its bounds', () => {
+  assert.ok(Math.abs(releaseSpeed(32) - 41.6) < 1e-9);       // the Caudron
+  assert.equal(releaseSpeed(60), RELEASE_MAX);               // a fighter keeps 70
+  assert.equal(releaseSpeed(10), RELEASE_MIN);               // off a deck's edge
+  assert.equal(releaseSpeed(null), RELEASE_MAX);             // no lift-off seen
+});
+
+test('a phugoid peak is not a divergence; a nose that stays up is', () => {
+  const phugoid = [0.1, 0.4, 0.7, 0.8, 0.6, 0.3, 0.1, -0.1, 0.0];
+  assert.equal(airDiverges({ noseY: phugoid, dy7: 120 }), false);
+  const zoom = [0.2, 0.6, 0.8, 0.9, 0.94, 0.95, 0.93, 0.94, 0.95];
+  assert.equal(airDiverges({ noseY: zoom, dy7: 200 }), true);
+  const dive = [0, -0.3, -0.5, -0.7, -0.8, -0.9, -0.9, -0.95, -0.97];
+  assert.equal(airDiverges({ noseY: dive, dy7: -100 }), true);
+  assert.equal(airDiverges({ noseY: [0, 0, 0], dy7: -300 }), true);
 });
 
 if (failures) { console.log(`${failures} failed`); process.exit(1); }

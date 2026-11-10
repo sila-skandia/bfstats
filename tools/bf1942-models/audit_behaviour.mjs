@@ -31,7 +31,7 @@ import { spawn } from 'node:child_process';
 import { dirname, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { rightTurn, steerVerdict, SETTLE_RATE, heldByData, deployVerdict, rigFamilies, weldDeviation,
-  weldVerdict, padGroundVerdict, rollsFreely, botHolding, roundEnded } from './audit_verdicts.mjs';
+  weldVerdict, padGroundVerdict, rollsFreely, botHolding, roundEnded, releaseSpeed, airDiverges } from './audit_verdicts.mjs';
 
 const HERE = dirname(fileURLToPath(import.meta.url));
 const arg = (n, d) => { const i = process.argv.indexOf(`--${n}`); return i > -1 ? process.argv[i + 1] : d; };
@@ -785,8 +785,31 @@ async function testAir(s, tpl, level, rec) {
   // Ground roll first, as the player would.
   const g0 = await s.ev(() => ({ s: window.__plane().state(), h: window.__hull() }));
   await s.ev(() => window.__keys.add('KeyW'));
-  await s.step(360);
+  // The speed it lifts off at on its own, read every quarter second: two
+  // airborne samples running, the first one's speed (`releaseSpeed`).
+  let liftOff = null;
+  let airborne = 0;
+  let rollFrames = 0;
+  const rollSample = async () => {
+    await s.step(15);
+    rollFrames += 15;
+    const st = await s.ev(() => window.__plane()?.state() ?? null);
+    if (!st) return;
+    const v = Math.hypot(st.velocity.x, st.velocity.y, st.velocity.z);
+    if (st.grounded === false) {
+      if (++airborne === 1) rec.lift_off_candidate = v;
+      if (airborne === 2 && liftOff == null) liftOff = rec.lift_off_candidate;
+    } else airborne = 0;
+  };
+  while (rollFrames < 360) await rollSample();
   const g1 = await s.ev(() => window.__plane().state());
+  // Not off yet: on, hands off, up to 20 s more. The flight is placed off
+  // the 6 s pose (`g1`) whatever this does.
+  while (liftOff == null && rollFrames < 1560) await rollSample();
+  delete rec.lift_off_candidate;
+  rec.lift_off = liftOff == null ? null : +liftOff.toFixed(1);
+  const release = releaseSpeed(liftOff);
+  rec.release = +release.toFixed(1);
   const sp1 = Math.hypot(g1.velocity.x, g1.velocity.y, g1.velocity.z);
   const rolled = Math.hypot(g1.position.x - g0.s.position.x, g1.position.z - g0.s.position.z);
   rec.roll_m = +rolled.toFixed(1);
@@ -812,7 +835,7 @@ async function testAir(s, tpl, level, rec) {
   if (hp1 && !hp1.destroyed && hp1.max > 0 && hp1.hp < hp1.max - 1) {
     rec.roll_damage = { hp: +hp1.hp.toFixed(1), max: hp1.max, critical: hp1.critical };
     add({ check: 'air.fly', level, template_or_kit: tpl, severity: 'minor', cause_key: 'air.roll-damaged',
-      evidence: `the 6 s ground roll (${rolled.toFixed(1)} m) took it from ${hp1.max} to ${hp1.hp.toFixed(1)} hp`
+      evidence: `the ${(rollFrames / 60).toFixed(0)} s ground roll (${rolled.toFixed(1)} m in the first 6 s) took it from ${hp1.max} to ${hp1.hp.toFixed(1)} hp`
         + `${hp1.critical ? ' (critical)' : ''}; repaired before the flight checks` });
     await s.ev(([o, n]) => window.__damageVehicle?.(o, -n), [rec.owner, hp1.max]);
     await s.step(2);
@@ -835,23 +858,37 @@ async function testAir(s, tpl, level, rec) {
   rec.flight_y = +flyY.toFixed(0);
   // Upright, level, nose along dir (three's -z forward): yaw from -z.
   const yaw = Math.atan2(-dir[0], -dir[2]);
-  await holdFlight(s, { x: g1.position.x, y: flyY, z: g1.position.z }, dir, yaw, 70);
+  await holdFlight(s, { x: g1.position.x, y: flyY, z: g1.position.z }, dir, yaw, release);
   await s.step(10);
   const a0 = await s.ev(() => ({ h: window.__hull(), s: window.__plane().state() }));
-  await s.step(420);
+  // 15 s hands off, the nose read every half second: past the first
+  // phugoid peak, which a 7 s snapshot read as a divergence (`airDiverges`).
+  // The height lost is the first 7 s', as before.
+  const noseY = [];
+  let a7 = null;
+  for (let f = 30; f <= 900; f += 30) {
+    await s.step(30);
+    const at = await s.ev(() => ({ h: window.__hull(), s: window.__plane()?.state() ?? null }));
+    if (!at.s) break;
+    noseY.push(at.h.axes.forward[1]);
+    if (f === 420) a7 = at;
+  }
   const a1 = await s.ev(() => ({ h: window.__hull(), s: window.__plane().state() }));
-  const dy = a1.s.position.y - a0.s.position.y;
+  a7 ??= a1;
+  const dy = a7.s.position.y - a0.s.position.y;
   const spd = Math.hypot(a1.s.velocity.x, a1.s.velocity.y, a1.s.velocity.z);
   const fyEnd = a1.h.axes.forward[1];
-  rec.level_flight = { dy: +dy.toFixed(0), speed: +spd.toFixed(0), noseY: +fyEnd.toFixed(2) };
+  rec.level_flight = { release: rec.release, dy: +dy.toFixed(0), speed: +spd.toFixed(0), noseY: +fyEnd.toFixed(2),
+    nosePeak: +Math.max(...noseY.map(Math.abs), 0).toFixed(2) };
   if (!finite([a1.s.position.x, a1.s.position.y, a1.s.position.z])) {
     add({ check: 'air.fly', level, template_or_kit: tpl, severity: 'blocker', cause_key: 'veh.nan-state',
       evidence: 'level flight produced a non-finite position' });
     rec.failed = true; return;
   }
-  if (Math.abs(fyEnd) > 0.6 || dy < -250) {
+  if (airDiverges({ noseY, dy7: dy })) {
     add({ check: 'air.fly', level, template_or_kit: tpl, severity: 'major', cause_key: 'air.diverges',
-      evidence: `hands off, full throttle 7 s from 70 m/s level: dy ${dy.toFixed(0)} m, nose.y ${fyEnd.toFixed(2)}, ${spd.toFixed(0)} m/s` });
+      evidence: `hands off, full throttle 15 s from ${release.toFixed(0)} m/s level (lift-off ${rec.lift_off ?? 'not seen'}): `
+        + `dy ${dy.toFixed(0)} m in 7 s, nose.y ${fyEnd.toFixed(2)} at 15 s, ${spd.toFixed(0)} m/s` });
     rec.failed = true;
   }
   // Control directions on a fresh level start.
@@ -1502,6 +1539,20 @@ async function testVehicle(s, v, tpl, level, team, rec) {
       rec.failed = true;
     }
   }
+  // An aircraft's checks fly it hands off from its pad for half a minute and
+  // pin it there for its guns, and on a level whose pad is near the edge that
+  // is outside the combat area: 10 s, then 5 HP/s off the hull (CA-2). Two
+  // two-seaters died at 400 m mid-probe that way (t2 F10, the blow was
+  // `combatTick`), and read as planes that kill themselves. The bleed is the
+  // level's, not the airframe's, and the flag stands test it: off while the
+  // airframe is tested, and how long it was out is kept.
+  const bleed = cls.kind === 'air'
+    ? await s.ev(() => {
+      const a = window.__combatArea?.();
+      if (!a) return null;
+      window.__combatArea({ damagePerSecond: 0 });
+      return a.damagePerSecond;
+    }) : null;
   try {
     if (cls.kind === 'ground' || cls.kind === 'ship' || cls.kind === 'static') await checkHeldAxes(s, tpl, level, rec);
     if (cls.kind === 'ground') await testGround(s, tpl, level, rec, cls);
@@ -1511,6 +1562,14 @@ async function testVehicle(s, v, tpl, level, team, rec) {
   } finally {
     await s.ev(() => { for (const k of [...window.__keys]) window.__keys.delete(k); window.__setSeatFire?.(false, false); });
     if (cls.kind === 'air') await unpinAircraft(s);
+    if (bleed != null) {
+      const out = await s.ev(d => {
+        const a = window.__combatArea?.();
+        window.__combatArea({ damagePerSecond: d });
+        return a?.outsideFor ?? null;
+      }, bleed);
+      if (out > 0) rec.outside_combat_area_s = +out.toFixed(1);
+    }
   }
   await s.ev(() => { window.__seatWatch = null; });
   // A deploy seat's killer took the hull and the tester with it (AI-76,

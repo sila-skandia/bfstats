@@ -291,3 +291,40 @@ export function roundEnded(round, mark = null) {
   return `${round.endReason ?? round.status}, winner ${round.winner ?? 'none'}, tickets `
     + `${JSON.stringify(round.tickets ?? null)}${over ? '' : `, restarted since (${round.restarts})`}`;
 }
+
+/**
+ * The speed a level-flight check releases an airframe at: 1.3 times the speed
+ * it lifted off at on its own full-throttle roll, inside [MIN, MAX]; MAX when
+ * no lift-off was seen (a hull that never left the ground, or a roll the
+ * level cut short).
+ *
+ * It was 70 m/s for everything, which is twice a WWI two-seater's trim: the
+ * Caudron G.4 lifts off at 32 m/s and climbs out at 28-35, and released level
+ * at 70 its wings make four times its weight and it zooms vertical; the audit
+ * called that `air.diverges` (t2 Q1). A fighter lifts off at 45-55 and keeps
+ * a release at or near 70. 1.3 is the takeoff-safety margin of airmanship
+ * (V2 >= 1.2 Vs), not an engine number.   [HOUSE RULE]
+ */
+export const RELEASE_MIN = 30;
+export const RELEASE_MAX = 70;
+export function releaseSpeed(liftOff) {
+  if (!(liftOff > 0)) return RELEASE_MAX;
+  return Math.min(RELEASE_MAX, Math.max(RELEASE_MIN, 1.3 * liftOff));
+}
+
+/**
+ * Whether a hands-off flight diverged, from its nose samples (`noseY`, the
+ * forward axis's y, one per sample, oldest first) and the height it lost over
+ * the first seven seconds (`dy7`).
+ *
+ * Released off its trim a stable airframe answers with a phugoid: the nose
+ * swings up (or down) past 0.6, peaks and comes back. A 7 s snapshot read the
+ * first peak as a divergence. Diverged is a nose still past 0.6 through the
+ * whole last third of the window, or a hull falling 250 m in seven seconds.
+ */
+export function airDiverges({ noseY = [], dy7 = 0 } = {}) {
+  if (dy7 < -250) return true;
+  if (noseY.length < 3) return false;
+  const tail = noseY.slice(Math.floor((noseY.length * 2) / 3));
+  return tail.every(y => Math.abs(y) > 0.6);
+}
