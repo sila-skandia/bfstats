@@ -3520,8 +3520,10 @@ def sharded_behaviour(ctx: Context, work: Path, names: list[str], shards: int):
 
 
 def behaviour_new_finish(ctx: Context, state: State, results: list[dict], *, dry_run: bool) -> None:
-    """After the steps: a check that passed clears the pending set it covered
-    (a skipped or failed one keeps it), and its rows join the run's report."""
+    """After the steps: the levels a check passed leave the pending set (all
+    it covered on a pass; on a failure, those with no open finding and not
+    left uncovered), a skipped or unstaged check keeps it, and its rows join
+    the run's report."""
     row = next((r for r in results if r["step"] == BEHAVIOUR_NEW_STEP), None)
     if row is None or dry_run or row["status"] == "skipped-done":
         return
@@ -3532,9 +3534,16 @@ def behaviour_new_finish(ctx: Context, state: State, results: list[dict], *, dry
         return
     for line in behaviour_new_lines(summary):
         print(line)
-    if summary.get("ok") and summary.get("status") not in ("skipped",):
+    if summary.get("status") in ("skipped", "failed-to-run", "not-installed"):
+        return
+    # A failed check still passed the levels with no open finding that it
+    # covered: they leave the set, and the next check is the failing ones
+    # only (with --behaviour-shards a 130-level check is two hours).
+    failing = {lv.lower() for row in summary.get("rows", []) for lv in row.get("levels", [])}
+    failing |= {x.lower() for x in summary.get("not_covered", [])}
+    if summary.get("ok") or summary.get("levels"):
         state_rows = _maps_rows(ctx)
-        checked = {x.lower() for x in summary.get("levels", [])}
+        checked = {x.lower() for x in summary.get("levels", []) if x.lower() not in failing}
         dropped = {x.lower() for x in summary.get("dropped", [])}
 
         def cleared(n: str) -> bool:
@@ -3543,9 +3552,10 @@ def behaviour_new_finish(ctx: Context, state: State, results: list[dict], *, dry
         with state.lock:
             record = dict(state.data.get("behaviour_new") or {})
             left = [n for n in record.get("pending", []) if not cleared(n)]
-            if summary.get("levels"):
+            passed = [n for n in summary.get("levels", []) if n.lower() not in failing]
+            if passed:
                 record["checked"] = {**record.get("checked", {}),
-                                     **{n: now() for n in summary["levels"]}}
+                                     **{n: now() for n in passed}}
             record.update(pending=left, updated=now())
             state.data["behaviour_new"] = record
             state.save()

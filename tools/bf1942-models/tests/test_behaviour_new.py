@@ -144,9 +144,35 @@ class Plan(unittest.TestCase):
         self.assertIn("Kharkov", rec["checked"])
 
     def test_a_failure_keeps_the_set(self):
-        rec = self.finish({"ok": False, "status": "partial", "verdict": "fail", "levels": ["Kharkov"]},
+        rec = self.finish({"ok": False, "status": "partial", "verdict": "fail", "levels": ["Kharkov"],
+                           "rows": [{"what": "open major", "cause": "veh.immobile", "count": 1,
+                                     "levels": ["Kharkov"], "examples": []}]},
                           status="failed")
         self.assertEqual(["Kharkov"], rec["pending"])
+
+    def test_a_level_left_uncovered_stays(self):
+        rec = self.finish({"ok": False, "status": "partial", "verdict": "not-covered",
+                           "levels": ["Kharkov"], "rows": [], "not_covered": ["Kharkov"]},
+                          status="failed")
+        self.assertEqual(["Kharkov"], rec["pending"])
+
+    def test_a_failure_clears_the_levels_it_passed(self):
+        got, ctx, state = self.plan(args(levels=["Kharkov", "Kursk"]), ["Kharkov", "Kursk"])
+        self.assertEqual(["Kharkov", "Kursk"], got)
+        self.write_maps(["karelia", "kharkov", "kursk"])
+        out = Path(self.tmp.name) / "out"
+        (out / "fh" / "gates").mkdir(parents=True)
+        (out / "fh" / "gates" / "behaviour-new.summary.json").write_text(json.dumps(
+            {"ok": False, "status": "partial", "verdict": "fail", "levels": ["Kharkov", "Kursk"],
+             "rows": [{"what": "open major", "cause": "veh.immobile", "count": 1,
+                       "levels": ["kursk"], "examples": []}], "not_covered": []}))
+        with mock.patch.object(M, "OUT_ROOT", out), mock.patch("builtins.print"):
+            M.behaviour_new_finish(ctx, state, [{"step": "v_behaviour_new", "status": "failed"}],
+                                   dry_run=False)
+        rec = json.loads(self.state_path.read_text())["behaviour_new"]
+        self.assertEqual(["Kursk"], rec["pending"])
+        self.assertIn("Kharkov", rec["checked"])
+        self.assertNotIn("Kursk", rec["checked"])
 
     def test_a_skip_keeps_the_set(self):
         rec = self.finish({"ok": True, "status": "skipped", "levels": ["Kharkov"]})
@@ -392,4 +418,5 @@ class Sharded(unittest.TestCase):
                 flag.unlink()
             with mock.patch.object(M.time, "sleep", sleep), mock.patch("sys.stderr"):
                 self._run(t, ["A", "B"], {"A": (0, []), "B": (0, [])}, flag=flag)
-            self.assertEqual([30], slept)
+            self.assertTrue(slept)                  # each job may have looked once
+            self.assertEqual({30}, set(slept))
