@@ -8,6 +8,11 @@ fight could be made to hold with a small change it was ("Where the lessons
 stand"). The numbers in the words are the F-16's: the MiG-29 flies the same
 files and each lesson's own page says how it does there.
 
+Live on play.bfstats.io since 2026-11-11, checked headless there: on Desert
+Combat the school opens on the F-16 with the jet words, badges and step
+lists, the Spitfire's lessons on vanilla are as they were, and the Range's
+live scissors braids with the instructor flying.
+
 The owner, after Desert Combat got its arenas and its rules card
 ([dogfight-doctrine-1991](../dogfight-doctrine-1991/README.md)): "Yes,
 re-tune" the lessons for jets. They were written on one airframe, the
