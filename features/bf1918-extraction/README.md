@@ -892,3 +892,19 @@ trees moved from the per-pair index (`bf1942-rig-index/1`) to the painted one
 * **Open:** VIEW-17 records that the hip view's right hand now sits about
   55 px left of the old OBS capture §3 was fitted to; the zoomed view is
   what the owner checked in retail.
+
+## The field guns' reticule in the first view (2026-11-10)
+
+The owner, on Aube de Soiree's Entente base: the French 75's gunner saw the
+toggled view's reticule, a black box with the sight in it, hung in front of
+the shield. BF1918's guns hang it on a `distcompareselector` of `[0.1]` and
+0.6, which takes the engine's general branch, not LOD-2's single-0.5
+shortcut: the interior only within sqrt(0.6) = 0.775 m of the eye (ledger
+LOD-8). The gunner camera is 0.9 m from it, the C view's (`OutsideHudOffset
+0/0/1.65`) 0.75 m. The page flipped every compare selector on the view alone;
+`vehicle-base.js` `distCompareRule` now reads the branch. Checked in a page on
+20 templates' 151 seat views: the first view of the 75, 77, Ita75er, Kuk75er,
+Rus76er, Frz37Inf, Type 38, both Tsar Tank cannons and the Garford-Putilov
+gun lose the reticule, every C view keeps it, nothing else moves. FHSW's
+leFH18 and ZiS-2 (`[0.1]`, 0.1) behave the same. A page fix: nothing
+re-extracted.
