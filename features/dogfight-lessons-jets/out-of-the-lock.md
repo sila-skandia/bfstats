@@ -1,10 +1,11 @@
 # Out of their lock, on a jet
 
 Lesson `out-of-the-lock` ("Out of their lock: breaking the tail"), re-tuned
-for the F-16 (2026-11-10), re-measured under the roof (2026-11-11): the hard
-turn ends levelled off and faster, every count holds (Dip, Flip and Ninja 0
-of 9, survival "no"), and nobody in any demo or move goes over 812 m on the
-F-16 (855 m on the MiG-29). Files: `viewer/dogfight-jet-out-of-the-lock.js`
+for the F-16 (2026-11-10), re-measured under the reworked roof (2026-11-11,
+commit `868247883`): the hard turn levels off at about 760 m and slows in the
+thin air there, ending 665 to 672 m from them; every count holds (Dip, Flip
+and Ninja 0 of 9, survival "no"), and nobody in any demo or move goes over
+759 m on the F-16 (799 m on the MiG-29). Files: `viewer/dogfight-jet-out-of-the-lock.js`
 (the jet block), `viewer/dogfight-jet-plan-out-of-the-lock.js` (two jet
 watchers), `tests/test_dogfight_jet_out_of_the_lock.py`.
 
@@ -66,10 +67,12 @@ little easier than on the Spitfire, and still nothing passes.
   2.1 as written).
   Rewritten: the turn does not hold its height on a jet. `levelHardTurn`
   caps the bank at 65 degrees plus its sink term, and at full throttle the
-  F-16 has the lift and thrust to climb in it: both go up 359 to 364 m in 45
-  s, until the roof levels the turn off at 805 to 812 m in the last seconds,
-  ending at 105 to 111 m/s (97 to 98 before the roof, still climbing). The
-  words say so instead of "holding your height".
+  F-16 has the lift and thrust to climb in it: both go up 310 to 311 m in 45
+  s, until the roof levels the turn off at 747 to 759 m; there the air is
+  thin and the turn slows, you end at 120 to 121 m/s and 665 to 672 m from
+  them, and they are hunting you again (before any roof: 356 to 364 m up,
+  97 to 98 m/s, still climbing, still in `lag`). The words say so instead of
+  "holding your height".
 - **The chop** (rewritten): never flown in nine. `lockChop` chops only when
   they sit close behind (inside 90 m Spitfire, 115 m real), behind the wing
   line and still closing. Measured from 4 s into the turn: they are inside
@@ -107,44 +110,59 @@ either way in nine for both; flying straight is shot down in nine of nine,
 11 to 12 s. The moves: 0 of 9 each, as on the F-16. The test holds the
 MiG-29's flat, counter and without.
 
-Under the roof (2026-11-11) nobody is shot down and no round strikes you in
-flat or counter; the turn ends at 847 to 849 m at 151 to 152 m/s (it went
-to 874 to 905 m before). On the MiG-29 the chop is flown, in all nine, as it
-was before the roof, and now lands 1 round on them in one start. The chop
-topped out at 1,427 m before and the Ninja at 1,664 m; now the highest
-anyone goes is 855 m. The moves are still 0 of 9 each.
+On the reworked roof (2026-11-11) nobody is shot down in flat or counter.
+The hard turn is never hit; it ends at 764 m at 156 m/s (874 to 905 m before
+any roof). The chop is flown in 6 of 9 (in all nine before), and in 3 of
+those they land 4 to 7 rounds on you. The chop topped out at 1,427 m before
+any roof and the Ninja at 1,664 m; now the highest anyone goes is 799 m. The
+moves are still 0 of 9 each.
 
 ## Under the roof (2026-11-11)
 
-Commit `8d616bcc2` puts every jet pilot's plan through `underRoof`
-(`dogfight-jet-ceiling.js`, from `dogfight-pilot.js` `stepPilot`): the climb
-is levelled off by 800 m real, and a banked turn goes on level. The lesson's
-starts (480 and 448 m real on the F-16) are under 600, so `pacedHeight`
-leaves them where they were.
+Every jet pilot's plan goes through `underRoof` (`dogfight-jet-ceiling.js`,
+from `dogfight-pilot.js` `stepPilot`). The roof as it is now (commit
+`868247883`, replacing the first roof of `8d616bcc2`) only caps how hard a
+plan may pull the nose toward the sky: the pull that would put the path on
+the allowed climb (falling to level by 800 m real), worked out in the
+plane's pitch plane over the share of its lift that points up, less the
+pitch rate under way. The plan's own pull is flown wherever it asks for
+less; roll, rudder and trigger stay the plan's; the throttle comes off
+while the nose is more than 15 degrees over the allowed climb. It starts to
+act once the allowed climb is under 60 degrees, about 270 m under the roof
+on the F-16, so the hard turn's climbing circle feels it from about 530 m.
+The first roof took every answer over above 800 m and held the bank the
+plane had; the hard turn's last 3 s at 805-812 m were flown inside that.
+The lesson's starts (480 and 448 m real on the F-16) are under 600, so
+`pacedHeight` leaves them where they were.
 
-What moved, F-16, nine starts (`--tops`, ace / you):
+F-16, nine starts (`--tops`, ace / you):
 
-| Demo | Highest before | Under the roof |
-|---|---|---|
-| flat | 810 / 812 m, ending 97-98 m/s still climbing | 811 / 812 m, levelled off, ending 105-111 m/s |
-| counter | the same as flat (the chop never flown) | the same as flat |
-| dip | 487 / 465 m | unchanged |
-| flip | 626 / 753 m | 626 / 708 m |
-| ninja | 636 / 912 m (you over 880 m in 4 of 9) | 632 / 758 m |
+| Demo | Before any roof | First roof | Reworked roof |
+|---|---|---|---|
+| flat | 810 / 812 m; end 97-98 m/s, climbing, 275 m apart | 811 / 812 m; end 105-111 m/s | 757 / 759 m; end ace 109-111, you 120-121 m/s, 665-672 m apart, the hunter back in `hunt` |
+| counter | the same as flat (the chop never flown) | the same | the same |
+| dip | 487 / 465 m | unchanged | unchanged |
+| flip | 626 / 753 m | 626 / 708 m | 626 / 689 m |
+| ninja | 636 / 912 m (you over 880 m in 4 of 9) | 632 / 758 m | 627 / 737 m |
 
-The hard turn is the only fight whose words moved: it climbs 359 to 364 m in
-45 s as before, but reaches the roof in its last seconds and goes on level
-there, so the end speed is 105 to 111 m/s, not 97 to 99 (the test now also holds
-the hunter's landing shot before the turn to the 1.7 s it was, not the
-as-written 2.1). Hits, closest pass (64 to
-68 m) and the phases are unchanged, and the chop is still never flown on the
-F-16. The Flip and the Ninja are the same fights from the nine starts (`-
-3/4` and `- 1/2` in the same two); on the L9 their end ranges move but every
-number the words quote holds (the ace at 60 to 67 m/s, 5 hits in one fight,
-never hit yourself). The Dip did not move. Nothing was tuned; the story
-sentence and the flat demo's note now say the circle climbs to the roof.
+The hard turn is the only fight whose words moved. It climbs 310 m in 45 s,
+not 360: the roof bends the circle level from about 700 m, where the wing
+has under a third of its lift, and the turn slows there (in the default
+start from 40 degrees a second at 32 s to 15 at 44 s, at 69 degrees of bank
+and 119 m/s), so you draw away from the hunter, who drops out of `lag` and
+hunts you again at 43 s, 650 m back. Hits (none), closest pass (64 to 68 m)
+and the hunter's landing shot before the turn (1.7 s at most) are unchanged,
+and the chop is still never flown on the F-16. The Flip and the Ninja are
+the same fights from the nine starts (`- 3/4` and `- 1/2` in the same two);
+on the L9 their end ranges move but every number the words quote holds (the
+ace at 60 to 67 m/s, 5 hits in one fight, never hit yourself). The Dip did
+not move. Nothing was tuned; the story sentence and the flat demo's note
+now say the circle climbs to the roof and slows there.
 
-## Shared files (not changed)
+Flown on past the lesson's 45 s (default start, 90 s), the slow turn at the
+roof does not last: the hunter, lower and in thicker air, comes back and
+sits 200 m behind you by 90 s, nose 14.5 degrees off you, without firing.
+The lesson ends at 45 s and quotes none of it.
 
 ## Shared files (not changed)
 
