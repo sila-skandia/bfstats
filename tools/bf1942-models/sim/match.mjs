@@ -51,7 +51,7 @@ const v2 = (a) => (a ? a.map(r2) : null);
 export class Match {
   constructor({ M, level, botsPerSide = 4, botSkill = 0.75, duration = 120, seed = 1, traceEvery = 1,
                 sampleEvery = 1, vehicles = true, sink = null, doctrine = null, seats = [],
-                wreckLoader = null, maxPlayers = null }) {
+                wreckLoader = null, maxPlayers = null, holdFire = null }) {
     this.M = M;
     /** `[{ bot, template, seat }]`: bots seated by hand at t = 0 (`--seat`). */
     this.seats = seats;
@@ -78,6 +78,11 @@ export class Match {
     // byte the trace from before the interface).
     this.doctrine = M.parseDoctrineSpec(doctrine);
     this.baseline = this.doctrine[1] === 'sai' && this.doctrine[2] === 'sai';
+    /** The bots' hold-fire for a teammate in the line (INVENTION, viewer
+     *  bot-plans.js `holdFireFor`): on, as the page plays, except in the
+     *  engine's SAI on both sides, whose seeded traces are the engine-parity
+     *  ones (`--hold-fire on|off` decides either way). */
+    this.holdFire = holdFire ?? !this.baseline;
     this.hash = createHash('sha256');
     this.lines = 0;
     this.clock = 0;
@@ -254,6 +259,7 @@ export class Match {
     return {
       world: () => this.world,
       doctrine: this.doctrine,
+      holdFire: this.holdFire,
       // Read live: the stand-in vehicles are built after the referee.
       get units() { return stage ? stage.units : match.vehicles; },
       groundAt: (x, z, fromY) => this.groundAt(x, z, fromY),

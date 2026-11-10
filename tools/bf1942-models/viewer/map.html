@@ -1997,6 +1997,9 @@ const referee = createBotReferee({
   launchRound: (bot, stats) => botRounds.launch(bot, stats),
   debug: BOT_DEBUG,
   doctrine: BOT_DOCTRINE,
+  // `?holdfire=0`: the bots fire through a teammate in their line, as the
+  // engine's do (FF-7). On by default: bot-plans.js `holdFireFor`, INVENTION.
+  holdFire: params.get('holdfire') !== '0',
   // The player's shot, heard inside his weapon's sound radius, and incoming
   // fire when it lands nearby: the edge of his fire input this frame.
   beforeBots: () => {

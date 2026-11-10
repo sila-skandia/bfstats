@@ -270,6 +270,8 @@ export function urgencyChange(bot, mod, now) {
       const d = Math.hypot(c.pos[0] - bot.position[0], c.pos[2] - bot.position[2]);
       if (d > CHANGE.searchRadius) continue;
       if (c.vehicleId === m.vehicleId) continue;          // the same hull is the teleport's business
+      // A unit this bot gave up on (INVENTION, `UNIT_VETO`).
+      if (unitVetoed(bot, c, now)) continue;
       if (c.kind === 'air' && !candidateRunwayClear(bot, c)) continue;
       // `modifyForDriver` 0x0855f7d0 scales a secondary seat's whole urgency.
       // The unit's own urgency is `calculateVehicleUrgency` 0x08583b10 as
@@ -310,6 +312,8 @@ export function urgencyChange(bot, mod, now) {
   // seats him in; the list leaves those out (bot-units.js `doorless`).
   for (const c of cands) {
     if (c.occupiedBy) continue;
+    // A unit this bot gave up on, unreachable (INVENTION, `UNIT_VETO`).
+    if (unitVetoed(bot, c, now)) continue;
     // `BBChange::isMannedByEnemy` 0x0855fcb0, tested at 0x0855ea07 before
     // anything else is scored: the free seat of a hull the enemy crews is
     // not offered (the gunner's seat of a tank the enemy drives), so the bot
@@ -636,6 +640,81 @@ export function planChange(bot, now) {
   return plan;
 }
 
+/**
+ * The give-up on a unit the bot cannot get to (INVENTION, 2026-11-11,
+ * features/bot-map-generation/hold-fire.md). The engine has none: a failed
+ * path ends the move and the Change behaviour builds the same plan again
+ * (AI-140), and a walk that ends where the seat is still out of the Use key's
+ * 12.375 m (AI-138) presses nothing for ever. On BF1918's Mauerfall a gun
+ * 16.5 m up a tower held five bots under it all match, Change taking up to
+ * 0.60 of their alive time against 0.03 to 0.13 on DICE's levels; DICE's
+ * Berlin has an MG42 11.4 m up that bots do reach, so the test is progress,
+ * not height.
+ *
+ * While its Change plan runs out of Use reach, a bot keeps the nearest it has
+ * come to the unit (3D, from its origin, as the Use key measures). When
+ * `patience` seconds pass without getting `progress` metres nearer, or its
+ * route has failed `failures` times in a row, the unit (its hull: every seat
+ * of it) is vetoed for that bot for `seconds`, the plan is dropped and the
+ * bot goes back to its order. A gap of more than `gap` seconds in the chase
+ * (another behaviour won meanwhile) starts the clock again.
+ *  - `patience` 20 s: a soldier runs about 5 m/s, so a walk to anything in
+ *    the 50 m search radius gains a metre every second or so; 20 s with no
+ *    metre gained is standing, or circling.
+ *  - `seconds` 180: long enough that a bot under an unreachable gun spends at
+ *    most a ninth of its time on it, short enough that a gun whose way up
+ *    opens (a hull moved off a door) is tried again within the round.
+ */
+export const UNIT_VETO = Object.freeze({ patience: 20.0, progress: 1.0, failures: 3, gap: 5.0, seconds: 180.0 });
+
+/** The key a veto is held under: the hull, so that no seat of it is wanted. */
+export function vetoKey(c) {
+  return c?.vehicleId ?? c?.id ?? null;
+}
+
+/** Whether `c` is vetoed for `bot` at `now`; an expired veto is dropped. */
+export function unitVetoed(bot, c, now) {
+  const veto = bot._unitVeto;
+  if (!veto?.size) return false;
+  const key = vetoKey(c);
+  const until = veto.get(key);
+  if (until === undefined) return false;
+  if (now >= until) { veto.delete(key); return false; }
+  return true;
+}
+
+/** Veto `c` for `bot` from `now` (`UNIT_VETO.seconds`) and drop the chase. */
+export function vetoUnit(bot, c, now, why = 'no-progress') {
+  (bot._unitVeto ??= new Map()).set(vetoKey(c), now + UNIT_VETO.seconds);
+  bot._unitVetoes = (bot._unitVetoes ?? 0) + 1;
+  bot._lastUnitVeto = { key: vetoKey(c), at: now, why };
+  bot._changeChase = null;
+}
+
+/**
+ * One tick of a Change walk out of Use reach, `d` the 3D distance to the
+ * seat. True when this tick vetoes the unit: the plan is dropped (the next
+ * decision pass scores the Change without it) and the walk's route with it.
+ */
+export function chaseUnit(bot, c, d, now) {
+  const key = vetoKey(c);
+  let ch = bot._changeChase;
+  if (!ch || ch.key !== key || now - ch.last > UNIT_VETO.gap) {
+    ch = bot._changeChase = { key, best: d, since: now, last: now };
+  }
+  ch.last = now;
+  if (d < ch.best - UNIT_VETO.progress) { ch.best = d; ch.since = now; }
+  const routeFailed = !!bot.route?.failed && (bot._pathFailures ?? 0) >= UNIT_VETO.failures;
+  if (now - ch.since < UNIT_VETO.patience && !routeFailed) return false;
+  vetoUnit(bot, c, now, routeFailed ? 'route' : 'no-progress');
+  bot._changeResult = null;
+  if (bot.changedTarget) bot.changedTarget.Change = true;
+  bot.currentPlan = [];
+  bot.route = null;
+  bot.moveForward = 0; bot.moveStrafe = 0;
+  return true;
+}
+
 /** `ExitVehicle`: ask the page to unseat the bot (the Use key held). */
 export function execExitVehicle(bot) {
   if (!bot.vehicle) return true;
@@ -668,7 +747,12 @@ export function execEnterVehicle(bot, action) {
   if (!at) return false;
   const o = aiOrigin(bot);
   const d = Math.hypot(at[0] - o[0], at[1] - o[1], at[2] - o[2]);
-  if (d > CHANGE.useWithin) return false;
+  if (d > CHANGE.useWithin) {
+    // Out of the Use key's reach: the give-up's clock (INVENTION, `UNIT_VETO`).
+    if (chaseUnit(bot, c ?? { id: action.vehicleId }, d, bot._now ?? 0)) return true;
+    return false;
+  }
+  bot._changeChase = null;
   if (action.behind != null && !behindUnit(c ?? { seatPos: at, hullYaw: 0 }, bot.position, action.behind)) return false;
   bot.enterRequest = { vehicleId: action.vehicleId, seatId: action.seatId };
   return false;

@@ -82,3 +82,115 @@ export function roundPasses(world, firerId, targetId) {
   const hull = world?.player(firerId)?.occupancy?.root ?? null;
   return hull != null && world.player(targetId)?.occupancy?.root === hull;
 }
+
+// --- Hold-fire (INVENTION, 2026-11-11, features/bot-friendly-fire "Decisions",
+// features/bot-map-generation/hold-fire.md) ----------------------------------
+//
+// The engine has none (FF-7): a retail bot fires through a teammate in its
+// line. On the page's generated corridor levels that cost one side half its
+// deaths to its own rifles, and a person playing with the bots is shot in the
+// back in any corridor, so the owner chose playability over parity here. A bot
+// does not release a direct-fire round while a living teammate's body lies in
+// the line from its muzzle to the target, nearer than the target, inside a
+// tube a body wide and a bounded reach. Teammates only, no terrain ray: a
+// friend behind a wall the round could not pass is still a reason to hold,
+// which costs a moment's fire and never a friend.
+
+/** The hold-fire's tube and reach.
+ *  - `radius` 0.6 m: the referee's stand-in body radius (`BOT_BODY_RADIUS`),
+ *    where the runner's round meets a body, and wider than a drawn body's
+ *    shoulders (about 0.25 m each side) plus the cone's spread inside the
+ *    reach. 93 of the page's 99 team-kill victims with a known line stood
+ *    within a metre of it.
+ *  - `reach` 40 m: most victims stood 1 to 7 m from the muzzle with the
+ *    target 27 to 120 m beyond; past 40 m a friend in the tube is no longer
+ *    the close file a corridor makes, and the cone spreads the rounds round
+ *    him.
+ *  - `clearOfTarget` 1.0 m: a friend must be at least this much nearer than
+ *    the target, so one at the target's own spot does not silence the bot.
+ *  - `bodyBottom` 0.1 m and `bodyTop` by stance (standing 1.8, crouched 1.25,
+ *    prone 0.5; seated 1.2 over the seat): the body's vertical axis. */
+export const HOLD_FIRE = Object.freeze({
+  radius: 0.6,
+  reach: 40.0,
+  clearOfTarget: 1.0,
+  bodyBottom: 0.1,
+  bodyTop: Object.freeze({ stand: 1.8, walk: 1.8, crouch: 1.25, prone: 0.5, lie: 0.5, seated: 1.2 }),
+  /** The step aside (bot-plans.js `holdFireStep`): after holding this long on
+   *  foot the bot strafes away from the friend for `stepSeconds`, then looks
+   *  again; it keeps aiming throughout. */
+  stepAfter: 1.0,
+  stepSeconds: 0.75,
+  /** How far beside itself the bot looks for a walkable cell to step into. */
+  stepProbe: 1.0,
+});
+
+/** The closest approach of segment p0->p1 and segment q0->q1: `{ dist, s }`,
+ *  `s` the fraction along p0->p1 of p's closest point. */
+export function segmentDistance(p0, p1, q0, q1) {
+  const d1 = [p1[0] - p0[0], p1[1] - p0[1], p1[2] - p0[2]];
+  const d2 = [q1[0] - q0[0], q1[1] - q0[1], q1[2] - q0[2]];
+  const r = [p0[0] - q0[0], p0[1] - q0[1], p0[2] - q0[2]];
+  const dot = (u, v) => u[0] * v[0] + u[1] * v[1] + u[2] * v[2];
+  const clamp01 = x => Math.min(1, Math.max(0, x));
+  const a = dot(d1, d1), e = dot(d2, d2), f = dot(d2, r);
+  let s, t;
+  if (a <= 1e-12 && e <= 1e-12) { s = 0; t = 0; }
+  else if (a <= 1e-12) { s = 0; t = clamp01(f / e); }
+  else {
+    const c = dot(d1, r);
+    if (e <= 1e-12) { t = 0; s = clamp01(-c / a); }
+    else {
+      const b = dot(d1, d2), den = a * e - b * b;
+      s = den > 1e-12 ? clamp01((b * f - c * e) / den) : 0;
+      t = (b * s + f) / e;
+      if (t < 0) { t = 0; s = clamp01(-c / a); }
+      else if (t > 1) { t = 1; s = clamp01((b - c) / a); }
+    }
+  }
+  const cx = p0[0] + d1[0] * s - (q0[0] + d2[0] * t);
+  const cy = p0[1] + d1[1] * s - (q0[1] + d2[1] * t);
+  const cz = p0[2] + d1[2] * s - (q0[2] + d2[2] * t);
+  return { dist: Math.hypot(cx, cy, cz), s };
+}
+
+/**
+ * The nearest friend whose body is in the line of fire, or null.
+ * `origin` is where the round leaves, `aim` the point it is fired at (the
+ * target's), `friends` `[{ id, pos: [x, y, z] (feet), stance }]`: the living
+ * teammates the round could meet (the firer and his own hull's crew left
+ * out, as `roundPasses` passes them). Returns `{ id, along, offset, side }`:
+ * how far down the line the friend is, how far off it, and on which side of
+ * it: +1 along (dz, -dx) of the line's x/z (+x for a line down +z, which is
+ * a soldier's left: his strafe +1 runs along (-cos yaw, sin yaw),
+ * walking-body.js), -1 the other way.
+ */
+export function friendInLine(origin, aim, friends, opts = HOLD_FIRE) {
+  const dx = aim[0] - origin[0], dy = aim[1] - origin[1], dz = aim[2] - origin[2];
+  const len = Math.hypot(dx, dy, dz);
+  if (!(len > 1e-6) || !friends) return null;
+  const limit = Math.min(opts.reach ?? HOLD_FIRE.reach, len - (opts.clearOfTarget ?? HOLD_FIRE.clearOfTarget));
+  if (!(limit > 0)) return null;
+  const k = limit / len;
+  const end = [origin[0] + dx * k, origin[1] + dy * k, origin[2] + dz * k];
+  const radius = opts.radius ?? HOLD_FIRE.radius;
+  const tops = opts.bodyTop ?? HOLD_FIRE.bodyTop;
+  const bottom = opts.bodyBottom ?? HOLD_FIRE.bodyBottom;
+  const h = Math.hypot(dx, dz) || 1;
+  let best = null;
+  for (const f of friends) {
+    const p = f?.pos;
+    if (!p) continue;
+    // The cheap cut: the foot point against the line's x/z box.
+    if (p[0] < Math.min(origin[0], end[0]) - radius || p[0] > Math.max(origin[0], end[0]) + radius
+        || p[2] < Math.min(origin[2], end[2]) - radius || p[2] > Math.max(origin[2], end[2]) + radius) continue;
+    const top = tops[f.stance] ?? tops.stand;
+    const r = segmentDistance(origin, end, [p[0], p[1] + bottom, p[2]], [p[0], p[1] + top, p[2]]);
+    if (r.dist > radius) continue;
+    const along = r.s * limit;
+    if (along <= 1e-3 || (best && along >= best.along)) continue;
+    const lateral = ((p[0] - origin[0]) * dz - (p[2] - origin[2]) * dx) / h;
+    best = { id: f.id, along, offset: r.dist, side: lateral >= 0 ? 1 : -1 };
+  }
+  return best;
+}
