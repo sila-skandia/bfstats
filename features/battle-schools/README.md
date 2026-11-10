@@ -12,6 +12,11 @@ off on 2026-11-09 while the school is built. Its lessons, GUNNERY and DRIVE
 IT are not built. The fights index is built by the `bfstats-dogfights`
 CronJob beside the dogfights (2026-11-09), into `mesh/replays/tankfights`.
 
+**STUDY (2026-11-10):** each fight in FIGHTS has a **Study** button that
+recreates it to learn from: the fight from above, each shot through the
+gunner's sight, and both hulls' speed, pitch and range over time ("Studying
+a fight", below).
+
 **BF1918 (2026-11-10):** on a BF1918 arena the MATCHUP board's card 06
 holds the rules of 1917-18, each checked on the pairing, and the
 Villers-Bretonneux duel ([tank-doctrine-1918](../tank-doctrine-1918/README.md)).
@@ -752,3 +757,59 @@ exist.
 - **Weight by hit points.** It is crude across mods; see rule 9. An armour
   thickness from the hull materials (section 1 of `tanks-engine.md`) would be
   the better measure.
+
+## Studying a fight (2026-11-10)
+
+The owner's ask: not the 3D replay, "an intuitive recreation in a way that
+helps people learn": the angle of each player's shot on the other, through
+the player's eyes, with their movement to show how hard it was to aim, and
+the tanks' pitch and speed. FIGHTS' **Study** opens
+`tanks.html?mod=<mod>&view=study&fight=<id>` (in place for the page's own
+mod; another mod's reloads in its trees). Watch still opens the 3D replay
+at the fight's start; Matchup the two tanks' matchup.
+
+- **01 From above.** Both tracks to scale (north up), the tanks where they
+  were with their guns, every shell's ground track (solid if it hit), the
+  shell in flight, the kill; play at 1/4 to 2x, a scrubber, and the two
+  hulls' speed, pitch and hit points at the moment. The shot being studied
+  is drawn whole, with where its target was when it arrived.
+- **02 Through the gunner's sight.** One chip per main-gun shot. The other
+  tank's own model at its recorded range, heading, pitch and roll, seen
+  from the muzzle; the cross where the gun pointed (a slow shell's gun
+  points well over the tank: "7 deg over the tank"); the dot where the
+  shell passed; a faint copy of the tank where it had got to when the shell
+  arrived; the ring where the gun needed to point to hit; a close-up of the
+  tank. The words say the range, the gunner's speed and hull pitch, the
+  face they saw, the flight and drop, how far the target moved across the
+  sight and how far the gunner's own speed carried the shell, and for a
+  miss which way and by how much the gun needed to move. The ground is not
+  drawn.
+- **03 The instruments.** Speed, hull pitch and range over the fight, every
+  shot marked (solid if it hit); a click goes there.
+
+The numbers are `viewer/tank-duel.js` (pure): `sideAt` between samples,
+`shellAt` on the server's law (`tank-ballistics.js`: the launch's lift,
+FA-23, and the first tick without gravity, IMP-8), `studyShot` (the closest
+pass, the miss in the gunner's right and up, the aim that would have hit,
+solved on the same law), `shotWords`, `timeline`. The view is
+`viewer/tank-study-page.js`.
+
+**What changed in the fight files.** `sampleTankFight` now writes each
+hull's `pitch` and `roll` every sample (`attitudeOf`) and each shot's `hit`
+(the hit rule 4 credited, through `shotT` on the hit's evidence). The
+refresh job rebuilds every fight when its image changes, so the live files
+gain them on the first run after this commit's image (08:41 UTC daily);
+until then the pitch lane says so, and a shot's hit is matched from the
+evidence by range and time.
+
+**Found on the way.** The detector's rule 3 flies the shell without the
+launch's lift and first tick: about 3 m high over a vanilla shell's 2 s,
+inside its 5 m tolerance. Its `miss` therefore reads up to 3 m worse than
+the STUDY's; which shots it calls aimed is unchanged.
+
+Checked in headless Chrome on vanilla Aberdeen (Sherman against Tiger,
+12 shots, 3 hits): no page errors, the list's Study opens in place and
+plays, the sight frames the gun and the tank, at phone width no overflow.
+Tests: `test_tank_school.py` `StudyTests`, `test_tank_fights.py` (pitch,
+roll, hits on shots).
+

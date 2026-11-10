@@ -366,3 +366,51 @@
 .tks-rule-see:hover { color: var(--mm-ink); }
 .tks-rules-wait { margin: 0; color: var(--mm-ink-muted); font: 400 11px/1.5 var(--mm-font-mono); }
 @media (max-width: 760px) { .tks-duel { flex-direction: column; } }
+
+/* STUDY: one recorded fight recreated (tank-study-page.js). */
+.tks-st-acts { display: flex; flex-wrap: wrap; gap: 6px; }
+.tks-st-acts a { text-decoration: none; }
+.tks-st-wait { margin: 0; color: var(--mm-ink-muted); font: 400 11px/1.5 var(--mm-font-mono); }
+.tks-st-wait[hidden] { display: none; }
+.tks-st-name.is-a, .tks-st-name.is-b { font-weight: 600; }
+.tks-st-map, .tks-st-inst { width: 100%; height: auto; display: block; border: 1px solid var(--mm-rule); border-radius: 4px; background: var(--mm-stage); }
+.tks-st-track { fill: none; stroke-width: 1.2; stroke-opacity: 0.25; stroke-linejoin: round; }
+.tks-st-track.is-past { stroke-width: 2; stroke-opacity: 0.85; }
+.tks-st-shell { stroke-width: 1.4; stroke-dasharray: 4 3; stroke-opacity: 0.8; cursor: pointer; }
+.tks-st-shell.is-hit { stroke-dasharray: none; stroke-width: 2; stroke-opacity: 1; }
+.tks-st-shell.is-picked { stroke-width: 3; stroke-opacity: 1; }
+.tks-st-round { fill: var(--mm-ink); }
+.tks-st-burst { fill: none; stroke-width: 2; }
+.tks-st-kill { stroke: var(--mm-ink); stroke-width: 2.4; stroke-linecap: round; }
+.tks-st-scale line { stroke: var(--mm-ink-muted); stroke-width: 2; }
+.tks-st-scale text, .tks-st-north { fill: var(--mm-ink-muted); font: 500 10px/1 var(--mm-font-mono); }
+.tks-st-north { text-anchor: middle; }
+path.tks-st-north { fill: var(--mm-ink-muted); }
+.tks-st-shots { display: flex; flex-wrap: wrap; gap: 6px; }
+.tks-st-chip { border-left: 3px solid var(--st-col); }
+.tks-st-chip.is-hit small { color: var(--mm-ink); }
+.tks-st-sight { position: relative; width: 100%; aspect-ratio: 760 / 428; border: 1px solid var(--mm-rule); border-radius: 4px; overflow: hidden; background: #a9b6bb; }
+.tks-st-sight canvas, .tks-st-sight svg { position: absolute; inset: 0; width: 100%; height: 100%; max-width: none; }
+.tks-st-sight-wait { position: absolute; left: 12px; top: 10px; color: #1b1b1b; font: 500 10.5px/1.4 var(--mm-font-mono); letter-spacing: 0.12em; text-transform: uppercase; }
+.tks-st-cross { stroke: #111; stroke-width: 2; fill: none; }
+.tks-st-gap { stroke: #111; stroke-width: 1; stroke-dasharray: 3 3; }
+.tks-st-need { fill: none; stroke: #1d5f2f; stroke-width: 2.4; }
+.tks-st-pass { fill: #b23a3a; stroke: #fff; stroke-width: 1.4; }
+.tks-st-pass.is-hit { fill: #f2c94c; }
+.tks-st-label { fill: #111; font: 600 11px/1 var(--mm-font-mono); paint-order: stroke; stroke: rgb(255 255 255 / 0.7); stroke-width: 3px; }
+.tks-st-read { fill: #111; font: 500 11.5px/1 var(--mm-font-mono); paint-order: stroke; stroke: rgb(255 255 255 / 0.65); stroke-width: 3px; }
+.tks-st-lane { fill: var(--mm-ink-muted); font: 500 10px/1 var(--mm-font-mono); letter-spacing: 0.08em; text-transform: uppercase; }
+.tks-st-lane-bg { fill: rgb(255 255 255 / 0.02); stroke: var(--mm-rule); }
+.tks-st-zero { stroke: var(--mm-rule-strong); stroke-dasharray: 2 3; }
+.tks-st-line { fill: none; stroke-width: 1.6; stroke-linejoin: round; }
+.tks-st-mark { stroke-width: 1; stroke-dasharray: 3 3; stroke-opacity: 0.7; cursor: pointer; }
+.tks-st-mark.is-hit { stroke-dasharray: none; stroke-width: 1.6; stroke-opacity: 0.95; }
+.tks-st-mark.is-picked { stroke-width: 3; stroke-opacity: 1; }
+.tks-st-now-line { stroke: var(--mm-ink); stroke-width: 1; }
+.tks-st-empty { fill: var(--mm-ink-faint); font: 400 11px/1 var(--mm-font-mono); }
+.tks-st-inst { cursor: crosshair; }
+.tks-st-close { fill: none; stroke: #111; stroke-width: 1.2; }
+.tks-st-gap.is-hold { stroke-dasharray: 2 4; }
+.tks-st-studied { fill: none; stroke-width: 3; stroke-opacity: 0.35; stroke-linecap: round; }
+.tks-st-arrive { fill: none; stroke: var(--mm-ink-soft); stroke-width: 1.2; stroke-dasharray: 2 2; }
+.tks-st-maplabel { fill: var(--mm-ink-muted); font: 500 10px/1 var(--mm-font-mono); }

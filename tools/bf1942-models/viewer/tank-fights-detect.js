@@ -521,7 +521,7 @@ function pairFights(rec, rules, tanks, i, pa, j, pb, ev, hitBy) {
       evidence: run.map(e => ({ t: e.t, kind: e.kind, side: sideOf(e.from),
         ...(e.miss !== undefined ? { miss: e.miss, tau: e.tau } : {}), ...(e.range !== undefined ? { range: e.range } : {}),
         ...(e.how ? { how: e.how } : {}), ...(e.drop !== undefined && e.drop !== null ? { drop: e.drop, to: e.to } : {}),
-        ...(e.weapon ? { weapon: e.weapon } : {}) })),
+        ...(e.shotT !== undefined ? { shotT: e.shotT } : {}), ...(e.weapon ? { weapon: e.weapon } : {}) })),
     });
   }
   return fights;
@@ -548,6 +548,17 @@ function headingOf(q) {
   return Math.atan2(fx, fz) * 180 / Math.PI;
 }
 
+/** A hull's pitch and roll in degrees from its rotation (recorded frame):
+ *  pitch, the nose above level (+ up); roll, the right side above level
+ *  (+ right side up). */
+export function attitudeOf(q) {
+  const [x, y, z, w] = q;
+  // The nose (+z) and the right side (+x) turned by `q`; only their height matters.
+  const noseY = 2 * (y * z - w * x), rightY = 2 * (x * y + w * z);
+  const deg = v => Math.asin(Math.max(-1, Math.min(1, v))) * 180 / Math.PI;
+  return { pitch: deg(noseY), roll: deg(rightY) };
+}
+
 /** The turret's yaw on the hull at `t` (degrees), from the hull's moving
  *  part named for a tower or turret; null when the recording keeps none. */
 function turretAt(rec, nid, t) {
@@ -570,8 +581,10 @@ function turretAt(rec, nid, t) {
 
 /**
  * A found fight sampled for a theatre: both hulls every `dt` seconds from
- * `t0` (recorded frame, times from 0): place, heading, turret yaw on the
- * hull, hit points over time; every main-gun shot either tank fired in it.
+ * `t0` (recorded frame, times from 0): place, heading, hull pitch and roll
+ * (`attitudeOf`), turret yaw on the hull, hit points over time; every
+ * main-gun shot either tank fired in it, each with the hit rule 4 credited
+ * to it (`hit`). The tank school's STUDY view reads it (`tank-duel.js`).
  */
 export function sampleTankFight(rec, fight, { dt = 0.2, gun = null, rules = RULES } = {}) {
   const r1 = v => Math.round(v * 10) / 10;
@@ -580,12 +593,16 @@ export function sampleTankFight(rec, fight, { dt = 0.2, gun = null, rules = RULE
   const sides = fight.sides.map((side, s) => {
     const T = fight.tanks[s];
     const life = T.life;
-    const p = [], yaw = [], turret = [];
+    const p = [], yaw = [], turret = [], pitch = [], roll = [];
     for (let i = 0; i < n; i++) {
       const t = Math.min(fight.t0 + i * dt, (life.destroyed ?? Infinity) - 1e-3);
       const at = posAt(life, t) ?? [0, 0, 0];
       p.push(r1(at[0]), r1(at[1]), r1(at[2]));
-      yaw.push(r1(headingOf(flownRotationAt(life, t))));
+      const q = flownRotationAt(life, t);
+      yaw.push(r1(headingOf(q)));
+      const att = attitudeOf(q);
+      pitch.push(r1(att.pitch));
+      roll.push(r1(att.roll));
       const ty = turretAt(rec, life.nid, t);
       turret.push(ty === null ? null : r1(ty));
     }
@@ -599,7 +616,7 @@ export function sampleTankFight(rec, fight, { dt = 0.2, gun = null, rules = RULE
       if (gone && last && last[1] >= r1((i - 1) * dt) - 1e-6) last[1] = r1(i * dt);
       else if (gone) lost.push([r1(i * dt), r1(i * dt)]);
     }
-    return { ...side, p, yaw, turret, hp, lost: lost.filter(([a, b]) => b - a >= 0.5) };
+    return { ...side, p, yaw, pitch, roll, turret, hp, lost: lost.filter(([a, b]) => b - a >= 0.5) };
   });
   const aimedT = new Map(fight.evidence.filter(e => e.kind === 'aimed').map(e => [`${e.side}:${r3(e.t)}`, e]));
   const shots = [];
@@ -610,9 +627,12 @@ export function sampleTankFight(rec, fight, { dt = 0.2, gun = null, rules = RULE
       // The barrel that flew at him when one did, else the first.
       const b = (a && f.alts?.find(x => x.weapon === a.weapon)) || f;
       const g = gun ? gun(T.life.tmpl, b.weapon) : null;
+      // The hit rule 4 credited to this shot, if one was.
+      const h = fight.evidence.find(e => e.kind === 'hit' && e.side === s && e.shotT !== undefined && Math.abs(e.shotT - f.t) < 1e-3);
       shots.push({ side: s, t: r3(f.t - fight.t0), pos: b.pos.map(r1), dir: b.dir.map(v => Math.round(v * 1e4) / 1e4),
         pv: velAt(T.life, f.t).map(r1), weapon: b.weapon, speed: g?.speed ?? rules.shellSpeed, gravity: g?.gravity ?? 1,
-        aimed: Boolean(a), ...(a ? { miss: r1(a.miss), tau: r3(a.tau), range: Math.round(a.range) } : {}) });
+        aimed: Boolean(a), ...(a ? { miss: r1(a.miss), tau: r3(a.tau), range: Math.round(a.range) } : {}),
+        ...(h ? { hit: { t: r3(h.t - fight.t0), drop: h.drop ?? null, to: h.to ?? null } } : {}) });
     }
   }
   shots.sort((a, b) => a.t - b.t);
@@ -622,6 +642,7 @@ export function sampleTankFight(rec, fight, { dt = 0.2, gun = null, rules = RULE
     range: fight.range === null ? null : Math.round(fight.range), rangeHow: fight.rangeHow,
     end: { ...fight.end, t: r3(Math.max(0, fight.end.t - fight.t0)), ...(fight.end.since !== undefined ? { since: r3(Math.max(0, fight.end.since - fight.t0)) } : {}) },
     evidence: fight.evidence.map(e => ({ ...e, t: r3(e.t - fight.t0), ...(e.miss !== undefined ? { miss: r1(e.miss), tau: r3(e.tau) } : {}),
+      ...(e.shotT !== undefined ? { shotT: r3(e.shotT - fight.t0) } : {}),
       ...(e.range !== undefined ? { range: Math.round(e.range) } : {}) })),
     sides: sides.map(({ destroyed, target, ...rest }) => ({ ...rest, destroyed: destroyed === null ? null : r3(destroyed - fight.t0) })),
     shots,

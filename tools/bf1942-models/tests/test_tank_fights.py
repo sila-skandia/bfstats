@@ -122,6 +122,12 @@ class TankFightsTests(unittest.TestCase):
         self.assertEqual(0.2, s["dt"])
         self.assertEqual([97, 97], s["samples"])
         self.assertEqual([[0, 125], [8.3, 80], [12.3, 40], [16.4, 0]], s["hp"][1])
+        # Hull pitch and roll every sample (the STUDY view's instruments).
+        self.assertEqual([[97, 97, 0, 0], [97, 97, 0, 0]], s["attitude"])
+        # Each hit names its shot, and the shot carries the hit.
+        hits = [x["hit"] for x in s["shots"] if x["hit"]]
+        self.assertEqual(len(hits), len(s["hitShotT"]))
+        self.assertEqual([h["to"] for h in hits], [80, 40, 0])
 
 
 if __name__ == "__main__":

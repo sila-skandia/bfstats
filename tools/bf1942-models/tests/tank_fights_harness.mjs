@@ -116,7 +116,9 @@ const out = {
 if (fights.length) {
   const sampled = D.sampleTankFight(main.rec, fights[0]);
   out.sampled = { dt: sampled.dt, duration: sampled.duration, samples: sampled.sides.map(s => s.p.length / 3),
-    hp: sampled.sides.map(s => s.hp), shots: sampled.shots.map(s => ({ side: s.side, aimed: s.aimed })), yaw: sampled.sides.map(s => s.yaw[0]) };
+    hp: sampled.sides.map(s => s.hp), shots: sampled.shots.map(s => ({ side: s.side, aimed: s.aimed, hit: s.hit ?? null })), yaw: sampled.sides.map(s => s.yaw[0]),
+    attitude: sampled.sides.map(s => [s.pitch.length, s.roll.length, s.pitch[0], s.roll[0]]),
+    hitShotT: sampled.evidence.filter(e => e.kind === 'hit').map(e => e.shotT) };
 }
 out.hurt = D.findTankFights(round({ hurt: true }).rec, D.RULES, { tank }).map(fightOut);
 out.left = D.findTankFights(round({ leave: true }).rec, D.RULES, { tank }).map(fightOut);

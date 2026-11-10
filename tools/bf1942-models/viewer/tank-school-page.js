@@ -42,7 +42,8 @@ import { splashSpec, damageFactor } from './projectile-damage.js';
 import { matchupWords, missAt, steadyWords, launcherWords, NO_ANSWER, hurtsAtAll, answers, sayShots } from './tank-words.js';
 import { snapshots } from './tank-snapshots.js';
 import { createSightView, rigStemFor } from './tank-sight-view.js';
-import { rulesOn, VILLERS_BRETONNEUX, n1 as dn1 } from './tank-doctrine-1918.js';
+import { rulesOn, VILLERS_BRETONNEUX } from './tank-doctrine-1918.js';
+import { STUDY_HTML, mountStudy } from './tank-study-page.js';
 import { decodePlayerName } from './vehicle-players.js';
 import { angleFactor } from './crash-damage.js';
 import { shotsFor } from './armour-damage.js';
@@ -363,8 +364,9 @@ root.innerHTML = `
       <ol class="tks-rule-list" role="list"></ol>
       <p class="tks-rules-wait" hidden>Pricing their field guns and their soldiers' weapons against your tank</p>
     </section>
-    <footer class="tks-foot">Every number is the game's own: the damage tables from <code>Game.rfa</code>, each gun's <code>Weapons.con</code>, the tanks' collision faces, and the server's per-tick tank law driven in node (<code>surveys/tank_school_sheet.mjs</code>). Notes: <code>features/battle-schools</code>.</footer>
-  </main>`;
+    <footer class="tks-foot tks-board-foot">Every number is the game's own: the damage tables from <code>Game.rfa</code>, each gun's <code>Weapons.con</code>, the tanks' collision faces, and the server's per-tick tank law driven in node (<code>surveys/tank_school_sheet.mjs</code>). Notes: <code>features/battle-schools</code>.</footer>
+  </main>
+  ${STUDY_HTML}`;
 document.body.appendChild(root);
 const q = sel => root.querySelector(sel);
 const ui = {
@@ -387,7 +389,7 @@ const ui = {
   footMore: q('.tks-foot-more'), footTable: q('.tks-foot-table'), footEmpty: q('.tks-foot-empty'),
   rules: q('.tks-rules'), ruleList: q('.tks-rule-list'), rulesJump: q('.tks-rules-jump'), rulesWait: q('.tks-rules-wait'),
   duel: q('.tks-duel'), duelGo: q('.tks-duel-go'),
-  board: q('.tks-board'), fights: q('.tks-fights'), fightList: q('.tks-fight-list'), fightCount: q('.tks-fight-count'), fightMore: q('.tks-fight-more'),
+  board: q('.tks-board'), fights: q('.tks-fights'), study: q('.tks-study'), fightList: q('.tks-fight-list'), fightCount: q('.tks-fight-count'), fightMore: q('.tks-fight-more'),
 };
 
 // --- the sidebar ------------------------------------------------------------------
@@ -1670,6 +1672,13 @@ function fightMatchupHref(f) {
   next.searchParams.delete('view');
   return next.href;
 }
+/** The fight in the STUDY view, in its own mod's trees. */
+function studyHref(f) {
+  const next = new URL(fightMatchupHref(f));
+  next.searchParams.set('view', 'study');
+  next.searchParams.set('fight', f.id);
+  return next.href;
+}
 const END_WORDS = { left: 'one of them got out', 'out of range': "out of the recorder's sight", apart: 'they drove apart',
   quiet: 'they stopped firing', 'downed by another': 'someone else finished it', died: 'one of them died' };
 async function drawFights() {
@@ -1697,11 +1706,19 @@ async function drawFights() {
       + `<small class="tks-f-meta">${esc(levelName(f.level))} · ${esc(f.date ?? '')} · ${n1(f.duration)} s${end ? ` · ${esc(end)}` : ''}${fightState.allMods ? ` · ${esc(f.mod)}` : ''}</small></div>`
       + `<div class="tks-f-tags">${f.upset ? '<span class="is-upset">Light beats heavy</span>' : ''}${f.fullHpStart ? '<span class="is-full">Both at full health</span>' : ''}</div>`
       + `<div class="tks-f-acts"><a class="tks-toggle" href="${esc(new URL(f.replay, VIEWER_ROOT).href)}" target="_blank" rel="noopener">Watch</a>`
+      + `<a class="tks-toggle tks-f-study" href="${esc(studyHref(f))}" data-fight="${esc(f.id)}" data-mod="${esc(f.mod || VANILLA.id)}" title="The fight recreated to learn from: from above, through each gunner's sight, and the hulls' speed and pitch">Study</a>`
       + `<a class="tks-toggle" href="${esc(fightMatchupHref(f))}">Matchup</a></div></li>`;
   }).join('');
   ui.fightMore.hidden = rows.length <= fightState.shown;
 }
 ui.fights.addEventListener('click', e => {
+  // A fight of this page's mod opens here; another mod's reloads in its trees.
+  const study = e.target.closest('a.tks-f-study');
+  if (study && study.dataset.mod === treeOf(arenaMod) && !e.metaKey && !e.ctrlKey) {
+    e.preventDefault();
+    openStudy(study.dataset.fight);
+    return;
+  }
   const b = e.target.closest('button');
   if (!b) return;
   if (b.dataset.filter) fightState.filter = b.dataset.filter;
@@ -1713,14 +1730,34 @@ ui.fights.addEventListener('click', e => {
   drawFights();
 });
 function setView(view) {
-  const fights = view === 'fights';
+  const fights = view === 'fights', studying = view === 'study';
   ui.fights.hidden = !fights;
-  ui.board.hidden = fights;
-  root.querySelectorAll('.dfs-rail [data-view]').forEach(b => b.setAttribute('aria-pressed', String(b.dataset.view === view)));
+  ui.study.hidden = !studying;
+  ui.board.hidden = fights || studying;
+  if (!studying) study.close();
+  // A study is one of the fights.
+  root.querySelectorAll('.dfs-rail [data-view]').forEach(b => b.setAttribute('aria-pressed', String(b.dataset.view === (studying ? 'fights' : view))));
   const address = new URL(location.href);
-  if (fights) address.searchParams.set('view', 'fights'); else address.searchParams.delete('view');
+  if (fights || studying) address.searchParams.set('view', view); else address.searchParams.delete('view');
+  if (!studying) address.searchParams.delete('fight');
   history.replaceState(null, '', address);
-  if (fights) drawFights(); else requestAnimationFrame(resizeStage);
+  if (fights) drawFights(); else if (!studying) requestAnimationFrame(resizeStage);
+  root.querySelector('.tks-main:not([hidden])')?.scrollTo?.(0, 0);
+}
+const study = mountStudy(root, {
+  loadModel: template => loadTankModel(template),
+  prettyTank, playerName: decodePlayerName,
+  fightUrl: id => new URL(`replays/tankfights/${encodeURIComponent(id)}.json`, VIEWER_ROOT).href,
+  watchUrl: row => (row.replay ? new URL(row.replay, VIEWER_ROOT).href : '#'),
+  matchupUrl: row => (row.a ? fightMatchupHref(row) : '#'),
+  back: () => setView('fights'),
+});
+function openStudy(id) {
+  setView('study');
+  const address = new URL(location.href);
+  address.searchParams.set('fight', id);
+  history.replaceState(null, '', address);
+  study.open(id);
 }
 root.querySelector('.dfs-rail').addEventListener('click', e => {
   const b = e.target.closest('[data-view]');
@@ -1731,7 +1768,9 @@ drawMods();
 drawLegend();
 setBearing(30, { animate: false });
 window.__tankSchool = { arenas, get arena() { return arena.map; }, get yours() { return yours()?.template; }, get theirs() { return theirs()?.template; },
-  get entries() { return current.entries.map(e => e.tank); }, roseFor: (i, el = 0) => roseFor(current.entries[i], el), stage, ready: false };
+  get entries() { return current.entries.map(e => e.tank); }, roseFor: (i, el = 0) => roseFor(current.entries[i], el), stage, ready: false,
+  get study() { return study.state; } };
 wait.hidden = true;
 if (params.get('view') === 'fights') setView('fights');
+else if (params.get('view') === 'study' && params.get('fight')) openStudy(params.get('fight'));
 await refresh();

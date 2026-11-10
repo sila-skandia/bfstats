@@ -31,6 +31,8 @@ const W = await load('tank-words.js');
 const L = await load('tank-launchers.js');
 const V = await load('tank-sight-view.js');
 const D = await load('tank-doctrine-1918.js');
+const Duel = await load('tank-duel.js');
+const Det = await load('tank-fights-detect.js');
 
 const out = {};
 const r1 = v => Math.round(v * 10) / 10;
@@ -342,5 +344,37 @@ out.doctrine = {
   halt: D.haltMeasure(mk4),
   arcsA7V: D.arcWords(a7v).words,
 };
+
+// --- STUDY: a recorded fight taken apart (tank-duel.js) --------------------------------
+// Side 0 stands still at the origin; side 1 drives east at 5 m/s, 200 m to
+// the north. 0.2 s samples over 6 s.
+{
+  const dt = 0.2, n = 31;
+  const side = (fn, yaw) => ({ p: Array.from({ length: n }, (_, i) => fn(i * dt)).flat(), yaw: Array(n).fill(yaw), pitch: Array(n).fill(2), roll: Array(n).fill(0),
+    turret: Array(n).fill(0), hp: [[0, 100]], lost: [] });
+  const fight = { dt, duration: (n - 1) * dt, sides: [side(() => [0, 0, 0], 0), side(t => [5 * t, 0, 200], 90)], shots: [], evidence: [] };
+  const mid = Duel.sideAt(fight, 1, 1.1);
+  // A shot fired straight at where side 1 is, and one along the aim that would have hit.
+  const plain = { side: 0, t: 1, pos: [0, 2, 0], dir: [5 / 200, 0, 1], pv: [0, 0, 0], speed: 100, gravity: 1, aimed: true };
+  const first = Duel.studyShot(fight, plain);
+  const aimed = Duel.studyShot(fight, { ...plain, dir: first.need });
+  const stopped = Duel.studyShot(fight, { ...plain, pv: [3, 0, 0], dir: first.need });
+  out.duel = {
+    mid: { x: Math.round(mid.pos[0] * 100) / 100, speed: Math.round(mid.speed * 100) / 100, yaw: mid.yaw },
+    basisNorth: Duel.viewBasis([0, 0, 1]).r, basisEast: Duel.viewBasis([1, 0, 0]).r,
+    plainMiss: { right: r1(first.miss.right), up: r1(first.miss.up) }, tau: Math.round(first.tau * 100) / 100,
+    aimedMiss: Math.round(aimed.miss.total * 100) / 100, drop: r1(first.drop),
+    ownDrift: r1(stopped.drift.own), theirs: r1(first.drift.theirs),
+    aspect: Duel.aspectOf(Duel.sideAt(fight, 1, 1), [0, 2, 0]),
+    words: Duel.shotWords(first, ["A's Sherman", "B's Tiger"]),
+    unaimed: Duel.shotWords(Duel.studyShot(fight, { ...plain, aimed: false, dir: [1, 0, 0] }), ["A's Sherman", "B's Tiger"]),
+    timeline: Duel.timeline(fight).length,
+  };
+  // The hull's attitude from a rotation: 10 degrees nose-up about x, then 5 right side up about z.
+  const qx = a => [Math.sin(a / 2), 0, 0, Math.cos(a / 2)];
+  const qz = a => [0, 0, Math.sin(a / 2), Math.cos(a / 2)];
+  const d2r = Math.PI / 180;
+  out.attitude = { nose: Det.attitudeOf(qx(-10 * d2r)), right: Det.attitudeOf(qz(5 * d2r)) };
+}
 
 console.log(JSON.stringify(out));

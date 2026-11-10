@@ -381,3 +381,46 @@ class DoctrineTests(unittest.TestCase):
         self.assertIn("needs 4 hits on the A7V", duel[0])
         self.assertIn("about 25 of its 100 hit points", duel[0])
         self.assertIn("501 hits", duel[2])
+
+
+class StudyTests(unittest.TestCase):
+    """The STUDY view's numbers (`viewer/tank-duel.js`, features/battle-schools,
+    "Studying a fight"): a still tank firing at one driving east at 5 m/s,
+    200 m north, on the server's shell law."""
+
+    @classmethod
+    def setUpClass(cls) -> None:
+        out = run_harness()
+        cls.d, cls.att = out["duel"], out["attitude"]
+
+    def test_a_side_between_its_samples(self) -> None:
+        self.assertEqual(self.d["mid"], {"x": 5.5, "speed": 5, "yaw": 90})
+        self.assertEqual(self.d["timeline"], 31)
+
+    def test_right_and_up_in_the_recorded_frame(self) -> None:
+        # x east, y up, z north: looking north, right is east; looking east, south.
+        self.assertEqual(self.d["basisNorth"], [1, 0, 0])
+        self.assertEqual(self.d["basisEast"], [0, 0, -1])
+
+    def test_the_aim_that_would_have_hit_does(self) -> None:
+        # Fired straight at them: under by the drop, behind by their movement.
+        self.assertEqual(self.d["plainMiss"], {"right": -9.6, "up": -23.8})
+        self.assertAlmostEqual(self.d["tau"], 1.93, places=2)
+        # Fired along the aim the study works out: on them.
+        self.assertLess(self.d["aimedMiss"], 0.5)
+        self.assertEqual(self.d["theirs"], 9.6)
+        # A hull crossing at 3 m/s carries the shell 6 m across in 2 s.
+        self.assertEqual(self.d["ownDrift"], 6.1)
+
+    def test_the_words(self) -> None:
+        w = self.d["words"]
+        self.assertIn("at the side (right) of B's Tiger", w[0])
+        self.assertIn("dropped 24.7 m", w[1])
+        self.assertIn("23.8 m low and 9.6 m left", w[2])
+        self.assertIn("7.5 deg higher and 2.9 deg further right", w[3])
+        self.assertIn("not count it as aimed", self.d["unaimed"][0])
+
+    def test_hull_pitch_and_roll_from_its_rotation(self) -> None:
+        self.assertEqual(self.att["nose"], {"pitch": 10, "roll": 0})
+        self.assertAlmostEqual(self.att["right"]["roll"], 5, places=6)
+        self.assertEqual(self.att["right"]["pitch"], 0)
