@@ -19,7 +19,7 @@ import subprocess
 import unittest
 from pathlib import Path
 
-from jet_school import jet_lesson, shot_down
+from jet_school import jet_lesson, jet_tops, shot_down
 
 TOOLS = Path(__file__).resolve().parents[1]
 
@@ -265,19 +265,39 @@ class TheMovesOnAJetTests(unittest.TestCase):
         m = measure(kind="move", demo="ninja")
         rows = m["rows"]
         self.assertEqual(0, m["verdict"]["works"])
-        # "you climb 460 to 810 m in 20 s and are 250 to 410 m over them at
-        # the end in 7 of 9"
+        # "you climb 396 to 456 m in 20 s, up to the roof, and they climb
+        # after you, so at 20 s you are at most 101 m over them, and by 40 s
+        # level with them". Before the roof you went on to 1,144 m and were
+        # 250 to 410 m over them in 7 of 9.
         climbed = span(r["climbed"] for r in rows)
-        self.assertTrue(455 <= climbed[0] and climbed[1] <= 810, climbed)
-        high = [r["over"] for r in rows if r["over"] >= 245]
-        self.assertEqual(7, len(high))
-        self.assertLessEqual(max(high), 410)
+        self.assertTrue(395.5 <= climbed[0] and climbed[1] < 456.5, climbed)
+        over = span(r["over"] for r in rows)
+        self.assertTrue(-2 <= over[0] and over[1] < 101, over)
         # "you never come down on them with a shot, and they never get one on you"
         self.assertTrue(all(r["myShot"] == 0 and r["hisShot"] == 0 and r["attacks"] == 0 for r in rows))
         # "Flown on to 40 and 60 s, there is still no attack in any of the nine."
         for seconds in (40, 60):
             longer = measure(kind="move", demo="ninja", seconds=seconds)["rows"]
-            self.assertTrue(all(r["attacks"] == 0 for r in longer), seconds)
+            self.assertTrue(all(r["attacks"] == 0 and r["hisShot"] == 0 and r["hitsOnMe"] == 0 for r in longer), seconds)
+            # "by 40 s level with them": within 2 m of their height.
+            self.assertTrue(all(abs(r["over"]) < 2 for r in longer), [r["over"] for r in longer])
+
+    def test_nobody_goes_over_the_roof(self) -> None:
+        # Neither plane, in any demo or move, tops 860 m on the F-16 (the
+        # nine starts): the highest is your Ninja's 827 m, theirs 773 m.
+        tops = jet_tops("F16", "scissors")["scissors"]
+        self.assertEqual({"move", "dip", "flip", "ninja"}, set(tops))
+        self.assertLessEqual(max(h for d in tops.values() for h in d["top"]), 860, tops)
+        self.assertEqual([773, 827], tops["ninja"]["top"])
+
+    def test_the_mig_29_stays_under_the_roof_too(self) -> None:
+        # Measured: the Ninja tops 845 m (ace) and 843 m (you), where before
+        # the roof they went to 995 and 1,223 m; still no way out (0 of 9).
+        tops = jet_tops("Mig29", "scissors")["scissors"]
+        self.assertEqual([845, 843], tops["ninja"]["top"])
+        self.assertEqual(845, max(h for d in tops.values() for h in d["top"]))
+        for demo in ("dip", "flip", "ninja"):
+            self.assertEqual(0, measure(kind="move", demo=demo, plane="Mig29")["verdict"]["works"], demo)
 
     def test_the_verdicts_on_screen_are_the_counts(self) -> None:
         jet = jet_lesson("scissors", demo="move")
