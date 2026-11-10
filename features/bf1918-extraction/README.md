@@ -950,3 +950,53 @@ a position, so every leg stood still (ledger GUN-25). `vehicle-base.js`
   and Hotchkiss, the mortars, Maxims, bicycle), published. FH, FHSW and
   FHSWEurope's horse model glbs (browse page and replays only) still lack it:
   `patch_held_axes.py --mod <tree>` on a machine holding those trees.
+
+## Held key axes in the FH, FHSW and FHSWEurope model glbs (2026-11-10)
+
+The horse fix (GUN-25, `8e78c6d6b`) left these three trees' model glbs to
+patch: they are on the volume only from this Mac. The census
+(`surveys/census_springless_held_axes.py`, 401 placed spring-less vehicles)
+named the candidates; each live glb's JSON chunk was streamed (byte ranges
+come back empty: the store serves its `.gz`) and run through
+`patch_held_axes.patch_doc`. Lacking: FH 12 of 26, FHSW 182 of 393,
+FHSWEurope 205 of 481 (MG tripods, mortars, AT and field guns, the
+horse-drawn Type 38s; 1,027 nodes). Patched with `patch_held_axes.py` in an
+isolated tree (`~/.cache/horse-patch/iso`), stored, and published: 194 blobs
+for FH and FHSW with only those rows' `sha` changed in their `models.json`
+(checked: no other field moved), and FHSWEurope's 205 per-tree glbs with
+their `.gz`/`.br`. Live: Horse-Type38FieldGun carries its 140 leg axes, FHSW's
+MG42Tripod resolves to its new blob, and The_Storm loads with no page error
+or failed glb.
+
+* **`store_glbs.py` on a partial tree drops every other row's `sha`**
+  (`_record_models` pops the key for a glb not on disk). Patching a few
+  files of a remote tree needs the shas written by hand, as here.
+* **A fresh worktree's `viewer/maps`, `viewer/textures` and
+  `viewer/models/mods` are links into the main checkout's shared tree.**
+  Setting up a scratch tree with `mkdir -p` and `curl` through them wrote
+  into the shared tree: `models/mods/fhsw/models.json` and
+  `maps/mods/fhsw/maps.json` now hold the live copies (whatever was there is
+  gone), and the FH/FHSWEurope folders, 140 FHSW level folders and 182 glbs
+  that landed there were moved out again. Replace the links before writing
+  into a scratch tree.
+
+## FHSW and FHSWEurope caught up (2026-11-10, evening)
+
+With FHSW and FHSWEurope installed on this Mac:
+
+* **First-person rigs rebuilt** with the sights on the eye (VIEW-17): FHSW
+  1,562 rigs and 3,470 painted pairs (was 4,626 per-pair rigs), FHSWEurope
+  1,797 and 4,749; 4,976 store files, 5.43 GB. Both indexes are live with
+  their `sha` tables. Level paint kept as live (see the section above).
+* **`fireOnce` layer published**: FHSW 133 of 140 exported levels,
+  FHSWEurope 262 of 274.
+* **Not patched, because this install has no terrain for them** (each
+  level's archive lacks `Init/Terrain.con`, or the heightmap; Kiew's
+  `Kiew.rfa` here is 300 KB): FHSW and FHSWEurope a_day_of_zitadelle,
+  cretan_village, kiew, nuenen-1944, soletschnogorsk-1941, todtenbruch-1944,
+  tulagi_island; FHSWEurope also fall_gelb-1940, operation_lilliput,
+  road_to_ramelle, the_attack_on_carentan-1944 and spurning_fate-1945. They
+  were baked on the Linux PC, whose install has them;
+  `patch_scene.py --layer fireOnce --mod <M> --all` there finishes them.
+* **Publisher fix** (`98866dc69`): each volume listing has its own pod temp
+  file, so two publishes at once no longer refuse each other's count.
