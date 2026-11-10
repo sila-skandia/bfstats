@@ -979,3 +979,24 @@ or failed glb.
   gone), and the FH/FHSWEurope folders, 140 FHSW level folders and 182 glbs
   that landed there were moved out again. Replace the links before writing
   into a scratch tree.
+
+## FHSW and FHSWEurope caught up (2026-11-10, evening)
+
+With FHSW and FHSWEurope installed on this Mac:
+
+* **First-person rigs rebuilt** with the sights on the eye (VIEW-17): FHSW
+  1,562 rigs and 3,470 painted pairs (was 4,626 per-pair rigs), FHSWEurope
+  1,797 and 4,749; 4,976 store files, 5.43 GB. Both indexes are live with
+  their `sha` tables. Level paint kept as live (see the section above).
+* **`fireOnce` layer published**: FHSW 133 of 140 exported levels,
+  FHSWEurope 262 of 274.
+* **Not patched, because this install has no terrain for them** (each
+  level's archive lacks `Init/Terrain.con`, or the heightmap; Kiew's
+  `Kiew.rfa` here is 300 KB): FHSW and FHSWEurope a_day_of_zitadelle,
+  cretan_village, kiew, nuenen-1944, soletschnogorsk-1941, todtenbruch-1944,
+  tulagi_island; FHSWEurope also fall_gelb-1940, operation_lilliput,
+  road_to_ramelle, the_attack_on_carentan-1944 and spurning_fate-1945. They
+  were baked on the Linux PC, whose install has them;
+  `patch_scene.py --layer fireOnce --mod <M> --all` there finishes them.
+* **Publisher fix** (`98866dc69`): each volume listing has its own pod temp
+  file, so two publishes at once no longer refuse each other's count.
