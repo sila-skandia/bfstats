@@ -234,7 +234,6 @@ export class WorldCollider {
     let out = this.statics.sweepSphere(
       ox, oy, oz, dx, dy, dz, maxDist, radius, skipOwner, this.sweepHit, -1, skipBodies,
       deckStepTop, deckFloorCos, -1, shell, grazeDir);
-    this.statics.passObstacles = false;
     // `skipBodies`: the caller is itself a simulated body, and what it does to
     // another one is the contact solver's business (a push, a spin, damage on
     // both sides), not a dead stop against a swept sphere.
@@ -275,6 +274,10 @@ export class WorldCollider {
         out.depth = hit.depth;
       }
     }
+    // Held through the moved owners too: a wire a round's spawner stood out
+    // of the level's parked pool (bf1918's deployed `BarbWire5`) is a moved
+    // owner, and its triangles are the wire's as much as a placed coil's.
+    this.statics.passObstacles = false;
     this.elapsed += (performance.now() - started) * 1000;
     this.casts++;
     return out;

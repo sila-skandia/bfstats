@@ -312,11 +312,42 @@ export class CollisionIndex {
     this.materials = materials;
     this.owners = owners;
     this.groups = groups;
-    // An object is one piece: no drivable deck, articulated part or Obstacle
-    // of its own, which is what each table's blank says.
+    // An object is one piece: no drivable deck or articulated part of its
+    // own, which is what each table's blank says.
     if (this.drivable) this.drivable = grow(this.drivable, Uint8Array, 1, 0);
     if (this.subs) this.subs = grow(this.subs, Int32Array, 1, -1);
-    if (this.obstacles) this.obstacles = grow(this.obstacles, Int32Array, 1, -1);
+    // But it may be an Obstacle, or carry one: a pioneer's deployed barbed
+    // wire is `ObjectTemplate.create Obstacle BarbWire5` stood by a round's
+    // spawner (bf1918's `BarbWireSpawn`), and its triangles take the wire's
+    // rules (OBS-2..OBS-6: a soldier passes, slowed and billed; a vehicle
+    // rolls through), not a wall's. Tagged per triangle by the nearest
+    // `Obstacle` at or above its mesh, up to the object, as
+    // `buildCollisionIndex` tags a placed one.
+    const obstacleOf = mesh => {
+      for (let n = mesh; n; n = n.parent) {
+        if (n.userData?.templateKind === 'Obstacle') return n;
+        if (n === node) break;
+      }
+      return null;
+    };
+    const wires = meshes.map(obstacleOf);
+    if (this.obstacles || wires.some(Boolean)) {
+      const ids = this.obstacles ? grow(this.obstacles, Int32Array, 1, -1)
+        : new Int32Array(count).fill(-1);
+      let tri = before;
+      meshes.forEach((mesh, i) => {
+        const g = mesh.geometry;
+        const faces = Math.floor((g.index ? g.index.count : g.attributes.position.count) / 3);
+        const wire = wires[i];
+        if (wire) {
+          let id = this.obstacleNodes.indexOf(wire);
+          if (id < 0) { id = this.obstacleNodes.length; this.obstacleNodes.push(wire); }
+          ids.fill(id, tri, tri + faces);
+        }
+        tri += faces;
+      });
+      this.obstacles = ids;
+    }
     if (this.internalEdges) {
       const edges = grow(this.internalEdges, Uint8Array, 1, 0);
       edges.set(markInternalEdges(tris.subarray(before * 9), owners.subarray(before),

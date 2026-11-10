@@ -141,12 +141,29 @@ function coil(z0, z1) {
   return fakeMesh(pos, { index: idx });
 }
 
-function walkThrough(kind) {
+// `mode`: 'placed' (the level's own wire), 'added' (a wire a round's spawner
+// stood after the load, `addOwner` on a level that placed none: bf1918's
+// deployed `BarbWire5`), or 'moved' (a wire out of the level's parked pool,
+// baked 100 m off and moved onto the path through `setMovedOwner`).
+function walkThrough(kind, mode = 'placed') {
   const ground = flatGround();
-  const fence = placed(kind, [coil(-20, -24)], [32, 0, -22]);
-  const root = group([fence]);
-  const statics = buildCollisionIndex(root, { ownerRoots: [fence] });
+  const offset = mode === 'moved' ? 100 : 0;
+  const fence = placed(kind, [coil(-20 + offset, -24 + offset)], [32, 0, -22]);
+  fence.updateWorldMatrix = () => {};
+  // A slab under the ground, so the grid's bounds (every placed hull's) cover
+  // the path when the wire itself comes later.
+  const post = placed('SimpleObject', [fakeMesh([0, -5, 0, 64, -5, 0, 64, -5, -64, 0, -5, -64],
+                                                { index: [0, 1, 2, 0, 2, 3] })]);
+  const root = group(mode === 'added' ? [post] : [fence, post]);
+  const statics = buildCollisionIndex(root, { ownerRoots: mode === 'added' ? [post] : [fence, post] });
   const collider = new WorldCollider({ heightfield: ground, statics });
+  if (mode === 'added') collider.addOwner(fence);
+  if (mode === 'moved') {
+    // Baked at z + 100, now at z: world = fwd * baked, baked = inv * world.
+    const fwd = [1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1, 0, 0, 0, -100, 1];
+    const inv = [1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1, 0, 0, 0, 100, 1];
+    collider.setMovedOwner(0, fwd, inv, 32, 0.5, -22, 40);
+  }
   const soldier = new Soldier({ collider, worldSize: 64 });
   soldier.spawn(32, 0, -12, Math.PI);   // yaw pi faces -z
   const player = {
@@ -200,6 +217,17 @@ function walkThrough(kind) {
       m[e.tick] = (m[e.tick] ?? 0) + 1; return m;
     }, {}))),
   };
+  // The same coil stood after the load, and moved out of a parked pool.
+  const summary = run => ({
+    endZ: run.trace[run.trace.length - 1].z,
+    touches: run.trace.filter(r => r.touched).length,
+    bills: run.events.filter(e => e.lost > 0).length,
+    endHp: run.trace[run.trace.length - 1].hp,
+  });
+  results.walkAdded = summary(walkThrough('Obstacle', 'added'));
+  results.walkMoved = summary(walkThrough('Obstacle', 'moved'));
+  results.wallAdded = summary(walkThrough('SimpleObject', 'added'));
+  results.wallMoved = summary(walkThrough('SimpleObject', 'moved'));
 }
 
 // --- per triangle: XPack2's fence, a Bundle with a wire child ---------------------

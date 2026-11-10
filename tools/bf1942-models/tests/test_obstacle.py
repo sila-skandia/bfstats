@@ -102,6 +102,24 @@ class ObstacleTests(unittest.TestCase):
         self.assertGreater(w["wallEndZ"], -20)
         self.assertEqual(w["wallTouched"], 0)
 
+    def test_a_wire_stood_after_the_load_is_wire(self) -> None:
+        # bf1918's pioneer wire: `ObjectTemplate.create Obstacle BarbWire5`
+        # stood by a round's spawner, either grown into the index
+        # (`addOwner`) or a parked pool node moved onto the spot
+        # (`setMovedOwner`). Both pass the soldier through slowed and billed,
+        # exactly as the level's own coil does; the same shape as a plain
+        # static stops him either way.
+        placed = self.results["walk"]
+        for key in ("walkAdded", "walkMoved"):
+            run = self.results[key]
+            self.assertEqual(run["endZ"], placed["wireEndZ"], key)
+            self.assertEqual(run["bills"], len(placed["bills"]), key)
+            self.assertEqual(run["endHp"], placed["endHp"], key)
+        for key in ("wallAdded", "wallMoved"):
+            run = self.results[key]
+            self.assertEqual(run["endZ"], placed["wallEndZ"], key)
+            self.assertEqual(run["touches"], 0, key)
+
     def test_wire_is_known_per_triangle(self) -> None:
         t = self.results["perTriangle"]
         # One Bundle owner, a solid fence child and an Obstacle child.
