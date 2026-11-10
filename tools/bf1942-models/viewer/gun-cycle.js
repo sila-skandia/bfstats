@@ -160,6 +160,14 @@ export function advanceGroups(guns, dt) {
       group.markHeld = !!group.firing;
       continue;
     }
+    // A seat gun's `fireDelay` (FA-13): the FireArms ctor loads the delay
+    // timer from the template, so `Fire` with it running flags the shot
+    // pending and returns, and the round leaves when `handleUpdate` has
+    // counted the timer out (below). Zero, every vanilla vehicle gun, fires
+    // on the pull as before. A hand weapon's delay is `hand-fire.js`'s, so
+    // only a group collected with `fireDelay: true` (`SEAT_GUN_OPTIONS`)
+    // takes it here.
+    const delay = group.fireDelay > 0 ? group.fireDelay : 0;
     if (group.firing) {
       active = true;
       // `handleMessage` marks the trigger held (`+0x225`) on every tick the
@@ -167,8 +175,17 @@ export function advanceGroups(guns, dt) {
       // (`0x08289907`): a held trigger never releases between its rounds.
       group.soundHeld = true;
       if (group.cooldown <= 0 && hasRound(guns, group)) {
-        guns.fireShot(group);
-        group.cooldown = firePeriod(group.stats.roundOfFire);
+        if (delay > 0) {
+          // Message 6 reaches `Fire` every tick the trigger is held (GUN-18);
+          // while the shot is pending each only flags it again.
+          if (!group.delayPending) {
+            group.delayPending = true;
+            group.delayLeft = Math.fround(delay);
+          }
+        } else {
+          guns.fireShot(group);
+          group.cooldown = firePeriod(group.stats.roundOfFire);
+        }
       }
     } else if (group.sounding) {
       // A replayed gun has no trigger, only its rounds: its burst is the
@@ -185,6 +202,27 @@ export function advanceGroups(guns, dt) {
       // remainder, because the next round sets the timer rather than adding.
       group.cooldown = Math.max(0, Math.fround(group.cooldown - Math.fround(dt)));
       active = true;
+    }
+    if (group.delayPending) {
+      // `handleUpdate` counts the delay down after the fire timer, only while
+      // a shot is pending, and at or below 0 calls `Fire` again, which
+      // reloads the delay, fires the barrels and sets the fire timer (lnxded
+      // `0x08288a9c`..`0x08288ac5`, client `0x0053e503`). The press's own
+      // tick is the first off the timer, so the round leaves `delayTicks`
+      // after the press (`fire-timer.js`), trigger held or let go; and the
+      // fire timer first runs on the next tick (`delayedFireCycle`). A
+      // Ger150er_Batterie's five FireArms (0.3/0/0.7/0.8/0.2) ripple out of
+      // one press; a Stokes's round slides a second down its tube.
+      active = true;
+      group.delayLeft = Math.fround(group.delayLeft - Math.fround(dt));
+      if (!(group.delayLeft > 0)) {
+        group.delayPending = false;
+        group.delayLeft = 0;
+        if (hasRound(guns, group)) {
+          guns.fireShot(group);
+          group.cooldown = firePeriod(group.stats.roundOfFire);
+        }
+      }
     }
     if (poseRecoil(group, dt)) active = true;
     if (releaseTick(guns, group, dt)) active = true;

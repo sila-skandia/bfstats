@@ -191,6 +191,19 @@ class HullTeamTests(unittest.TestCase):
         self.assertFalse(s["allyIntoZeroAfter"])
         self.assertEqual(0, s["zeroCleared"])
 
+    def test_dont_clear_team_on_exit_keeps_the_last_crews_side(self) -> None:
+        # `clearTeam` 0x0831a610 tests template +0x190 (SEAT-27); the entry
+        # rule then refuses the other side (SEAT-26).
+        k = self.results["dontClearTeam"]
+        self.assertTrue(k["allyRides"])
+        self.assertTrue(k["left"])
+        self.assertEqual(2, k["keptTeam"])
+        self.assertFalse(k["axisSteals"])
+        self.assertTrue(k["allyAgain"])
+        self.assertEqual(2, k["afterSecondRide"])
+        self.assertEqual(0, k["respawned"])
+        self.assertTrue(k["axisAfterRespawn"])
+
     # --- the last man out of a hull in the air ----------------------------------
 
     def test_the_last_man_out_in_the_air_leaves_the_hull_coasting(self) -> None:

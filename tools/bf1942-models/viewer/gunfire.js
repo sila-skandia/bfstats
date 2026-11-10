@@ -341,6 +341,8 @@ export class GunFire {
   release(group) {
     if (!group) return false;
     group.firing = false;
+    // A shot still pending its `fireDelay` goes with the gun (FA-13).
+    group.delayPending = false;
     const index = this.groups.indexOf(group);
     if (index >= 0) this.groups.splice(index, 1);
     // Hiding a flash is not all of it: `advance` also *moves* one. An emitter

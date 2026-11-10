@@ -1607,6 +1607,12 @@ class ObjectTemplate:
     # so the PCO a gunner climbs out of dies as any destroyed hull does.
     # BF1918's deployed Stokes, Werfer16 and Hotchkiss; XPack2's Wasserfall.
     destroy_on_exit: bool | None = None
+    # `dontClearTeamOnExit` (PlayerControlObjectTemplate +0x190, ledger
+    # SEAT-27): `clearTeam` 0x0831a610 leaves the root's team as it is when
+    # the last man gets out, so an empty hull stays its last crew's side and
+    # the enemy cannot take it (SEAT-26). Vanilla's ships, BF1918's horses
+    # and ships (41 templates).
+    dont_clear_team_on_exit: bool | None = None
     # `vehicleFov` (PlayerControlObjectTemplate +0x248, ledger VIEW-16): the
     # render view's field of view, absolute, a whole vertical angle in
     # radians like `renderer.fieldOfView`, that `Camera::setVehicleFOV`
@@ -2215,6 +2221,7 @@ class ObjectTemplate:
             "cameraDelayTime": self.camera_delay_time,
             "cameraDelayDistance": self.camera_delay_distance,
             "destroyOnExit": True if self.destroy_on_exit else None,
+            "dontClearTeamOnExit": True if self.dont_clear_team_on_exit else None,
             "vehicleFov": (self.vehicle_fov
                            if self.vehicle_fov and self.vehicle_fov > 0 else None),
             "soldierExitLocation": (
@@ -3239,12 +3246,14 @@ class ObjectLibrary:
                         "outsidehudoffset": "outside_hud_offset",
                     }[cmd], value)
                 elif cmd in ("rememberexcessinput", "hasrestrictedexit",
-                             "damagefromwater", "destroyonexit"):
+                             "damagefromwater", "destroyonexit",
+                             "dontclearteamonexit"):
                     if (value := truthy(args)) is not None:
                         setattr(obj, {
                             "rememberexcessinput": "remember_excess_input",
                             "hasrestrictedexit": "has_restricted_exit",
                             "destroyonexit": "destroy_on_exit",
+                            "dontclearteamonexit": "dont_clear_team_on_exit",
                             "damagefromwater": "damage_from_water",
                         }[cmd], value)
                 elif cmd in ("grip", "setvehiclecategory", "setvehicletype"):

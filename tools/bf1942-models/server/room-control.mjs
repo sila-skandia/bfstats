@@ -175,7 +175,9 @@ export function createControlChannel({ room, event }) {
       if (other === slot) continue;
       if (room.world.player(other)?.occupancy?.root === vehicle.root) return crewman.team ?? 0;
     }
-    return 0;
+    // Nobody aboard: a `dontClearTeamOnExit` hull keeps its last crew's side
+    // (`unmount`, SEAT-27).
+    return vehicle.keptTeam ?? 0;
   }
 
   /** The engine's control channel rows (netcode.js): enter/exit/switch.
@@ -255,6 +257,15 @@ export function createControlChannel({ room, event }) {
     const root = player.occupancy.root;
     const vehicle = room.instance.table.find(v => v.root === root);
     room.instance.unmountFromSeat(room.world, connection.slot, vehicle);
+    // The last man out clears the hull's team unless its root PCO's template
+    // says `dontClearTeamOnExit` (`clearTeam` 0x0831a610 tests +0x190,
+    // SEAT-27): then it stays his side's, and the other side is refused at
+    // its door (`crewTeamOf`, SEAT-26). BF1918's horses and ships.
+    if (vehicle && connection.team && root?.userData?.physics?.dontClearTeamOnExit === true
+        && ![...room.players.keys()].some(other => other !== connection.slot
+          && room.world.player(other)?.occupancy?.root === root)) {
+      vehicle.keptTeam = connection.team;
+    }
     if (vehicle) {
       event('seatExit', connection, {
         vehicle: vehicle.id,

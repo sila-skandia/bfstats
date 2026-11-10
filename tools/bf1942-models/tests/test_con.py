@@ -1830,6 +1830,20 @@ ObjectTemplate.setDestroyOnExit 0
         self.assertIs(False, quiet.destroy_on_exit)
         self.assertIsNone(quiet.physics())
 
+    def test_dont_clear_team_on_exit_rides_the_pco_physics(self) -> None:
+        # BF1918 objects.rfa Vehicles/Land/Horse_Spear (`dontClearTeamOnExit
+        # 1`, SEAT-27): the hull keeps its last crew's team.
+        library = ObjectLibrary()
+        library.add_con("Objects/Vehicles/Land/Horse_Spear/Objects.con", """
+ObjectTemplate.create PlayerControlObject Horse_spear
+ObjectTemplate.dontClearTeamOnExit 1
+ObjectTemplate.create PlayerControlObject Cart
+ObjectTemplate.dontClearTeamOnExit 0
+""")
+        self.assertEqual({"dontClearTeamOnExit": True}, library.object("Horse_spear").physics())
+        self.assertIs(False, library.object("Cart").dont_clear_team_on_exit)
+        self.assertIsNone(library.object("Cart").physics())
+
     def test_hand_weapon_hud_words_and_the_shipped_amom_typo(self) -> None:
         # Objects/HandWeapons/M1Garand/Objects.con spells the position words
         # correctly; Objects/HandWeapons/K98/Objects.con -- like 13 of

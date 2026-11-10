@@ -63,6 +63,8 @@ export const SEAT_GUN_OPTIONS = {
   maxRange: 1500,
   roundLifetime: 'data',
   tracerLength: 'data',
+  // A seat gun's own `fireDelay` (FA-13): `gun-cycle.js` holds the round.
+  fireDelay: true,
 };
 
 /**
@@ -384,6 +386,15 @@ export class VehicleRegistry {
       }
       // A flying hull is not frozen: the fall composes through its own node.
       if (!flying) this.env.freeze?.(inst.root);
+      // The last man out clears the team (`clearTeam` 0x0831a610) unless the
+      // root PCO's template says `dontClearTeamOnExit` (+0x190, SEAT-27):
+      // then the empty hull stays his side's, and an enemy is refused at its
+      // door (SEAT-26) until a friend takes it. BF1918's horses and ships,
+      // vanilla's ships. Kept as a stamp, which `enter` already honours and
+      // `clearStamp` forgets when the hull is stood up fresh.
+      if (inst.team && inst.root?.userData?.physics?.dontClearTeamOnExit === true) {
+        this.stamps.set(inst.root, inst.team);
+      }
       this.instances.delete(inst.root);
     }
     this.env.onChange?.(inst);

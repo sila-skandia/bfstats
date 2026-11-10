@@ -265,6 +265,28 @@ results.driverArrives = { drive: !!driver.drive, gunnerSeesIt: alone.drive === d
     s.zeroCleared = reg.teamOf(zero);
     results.teamStamp = s;
   }
+  // `dontClearTeamOnExit` (template +0x190, SEAT-27): `clearTeam` leaves the
+  // root's team when the last man gets out. BF1918's lance horse: an ally
+  // rides it and gets off, the axis is refused, an ally may take it again
+  // and it is the last rider's side after him too.
+  {
+    const k = {};
+    const horse = sherman();
+    horse.userData.physics = { ...(horse.userData.physics ?? {}), dontClearTeamOnExit: true };
+    k.allyRides = !!reg.enter(horse, null, 'ally');
+    k.left = reg.leave('ally')?.emptied ?? null;
+    k.keptTeam = reg.teamOf(horse);
+    k.axisSteals = reg.enter(horse, null, 'axis') !== null;
+    k.allyAgain = !!reg.enter(horse, null, 'ally');
+    reg.leave('ally');
+    k.afterSecondRide = reg.teamOf(horse);
+    // A fresh stand of the object (a respawn) forgets it.
+    reg.clearStamp(horse);
+    k.respawned = reg.teamOf(horse);
+    k.axisAfterRespawn = !!reg.enter(horse, null, 'axis');
+    reg.leave('axis');
+    results.dontClearTeam = k;
+  }
   results.teamRule = {
     mayEnterHull: [[0, 1], [0, 2], [2, 2], [2, 1], [1, 2], [2, 0], [0, 0]].map(([h, t]) => mayEnterHull(h, t)),
     mannedByEnemy: [[{ hullTeam: 2 }, 1], [{ hullTeam: 2 }, 2], [{ hullTeam: 0 }, 1], [{ hullTeam: 2 }, 0], [{}, 1]]

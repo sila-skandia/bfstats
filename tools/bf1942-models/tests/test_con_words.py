@@ -64,7 +64,6 @@ ORPHAN_WORDS: dict[str, str] = {
     "setspawnrotation": "27x spawnpoint | doc | which way a spawned soldier faces",
     "hasstarteffect": "20x projectile | doc | the round plays an effect as it leaves",
     "disarmminesdistance": "10x bfsoldier | doc | the engineer's reach for disarming a mine",
-    "dontclearteamonexit": "10x playercontrolobject | doc | the hull keeps its team when the last crew leaves",
     "isportalpassing": "10x bfsoldier | new | nothing in the repo has ever looked at this",
     "portalpassingposition": "10x bfsoldier | new | its companion, equally unknown",
     "addpcoposid": "9x playercontrolobject | doc | another seat-id word",

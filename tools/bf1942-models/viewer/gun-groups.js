@@ -97,6 +97,7 @@ export function collectGroups(guns, root, options = {}) {
     platformVelocity = null,
     aimRay = null,
     spreadDeg = null,
+    fireDelay = false,
   } = options;
   if (replace) {
     guns.clear();
@@ -323,6 +324,14 @@ export function collectGroups(guns, root, options = {}) {
       aimRay: aimRay ?? (cameraNode ? cameraLaunch(obj, cameraNode) : null),
       cameraNode,
       spreadDeg,
+      // The template's `fireDelay` (FA-13), seconds from the pull to the
+      // round, which `gun-cycle.js` counts out for a group collected with
+      // `fireDelay: true` (a seat's gun). The exporter files the word under
+      // `throw`. A hand weapon's delay is `hand-fire.js`'s, so its group
+      // carries 0 here.
+      fireDelay: fireDelay ? Math.max(0, +(stats.throw?.fireDelay ?? 0) || 0) : 0,
+      delayPending: false,
+      delayLeft: 0,
       // Seconds of kick left (the engine's `FireArms+0x250`, GUN-12): 0 is
       // the barrel home, a round sets `3.14 / recoilSpeed`. Null never moves.
       recoil: stats.recoil ? 0 : null,
