@@ -27,7 +27,7 @@
 // (INVENTION). A failed route is retried a few times with the obstacle
 // circles and then walked straight at (INVENTION).
 
-import { beginLocalSearch, stepLocalSearch, findStrategicPath, traceClear, COARSE_CELL, freeLevel, isWalkable, resolveClearStart } from './nav-grid.js';
+import { beginLocalSearch, stepLocalSearch, findStrategicPath, traceClear, COARSE_CELL, freeLevel, isWalkable, resolveClearStart, freeRun } from './nav-grid.js';
 import { tankControl, TANK, actionStatusDecision, searchBox, checkLine } from './bot-vehicle.js';
 import { boatControl, boatResetControls, PLANE, collisionPredicted } from './bot-vehicle-air.js';
 import { friendlyHulls } from './bot-pilot.js';
@@ -717,8 +717,16 @@ export function popPassed(bot) {
  * route is failed.
  */
 export function trackObstruction(bot, speed, dt = 1 / 30) {
+  // A hull's throttle counts either way (INVENTION, the same rule's: "the
+  // throttle on"). Counting only a forward throttle let a hull that
+  // `actionStatusDecision` sends back and forth (state 9 ahead, state 8
+  // astern, a pedal reversal every second or two) zero the count on every
+  // reverse tick: FH's and FHSW's Pegasus RedTractor held its spawn pocket
+  // that way for 578 s of a 600 s match (features/bot-map-generation/
+  // hull-steering.md, cause 1). A soldier's throttle is never negative.
+  const throttle = bot.vehicle ? Math.abs(bot.moveForward ?? 0) : bot.moveForward;
   const stalled = bot._noVisiblePoint
-    || (bot.moveForward > 0.1 && speed < MOVING_SPEED);
+    || (throttle > 0.1 && speed < MOVING_SPEED);
   if (!stalled) {
     bot._stalledTicks = 0;
     return false;
@@ -765,8 +773,20 @@ function onHullObstructed(bot) {
   const speed = v ? Math.hypot(v.x, v.z) : 0;
   if (speed < MOVING_SPEED) {
     const f = bot._vehicleForward();
-    const push = (bot.moveForward ?? 0) < -0.1 ? -1 : 1;
     const R = bot._radius();
+    let push = (bot.moveForward ?? 0) < -0.1 ? -1 : 1;
+    // A hull the turn in the box drives back and forth is held at whichever
+    // end its map gives the shorter run (INVENTION, with the reverse count in
+    // `trackObstruction`): the pedal at the count's 150th tick says only which
+    // half of the shuffle it fell in, and a circle astern of a hull nosed into
+    // a pocket backs it further in.
+    const nav = bot._nav();
+    if (nav) {
+      const reach = 4 * R;
+      const ahead = freeRun(nav, bot.position[0], bot.position[2], f[0], f[1], reach, bot.obstacles);
+      const astern = freeRun(nav, bot.position[0], bot.position[2], -f[0], -f[1], reach, bot.obstacles);
+      if (ahead !== astern) push = ahead < astern ? 1 : -1;
+    }
     const ahead = (R + OBSTACLE_AHEAD) * push;
     bot.obstacles.push({ x: bot.position[0] + f[0] * ahead, z: bot.position[2] + f[1] * ahead,
                          r: R + OBSTACLE_RADIUS, age: 0, unit: bot.vehicle?.vehicleId ?? null });
