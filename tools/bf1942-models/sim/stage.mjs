@@ -311,6 +311,8 @@ export function createStage(M, level, { vehicles = true, kinds = STAGE_KINDS, se
     });
     // `loadAi` is a fetch; the companion file is already read.
     botUnits.ai = new Map(Object.entries(data.vehicleAi ?? {}).map(([k, v]) => [k.toLowerCase(), { name: k, ...v }]));
+    // ...and the file's `mod`, as `loadAi` keeps it (bot-rows.js).
+    botUnits.aiMod = data.vehicleAiMod ?? null;
     const allowed = new Set(kinds);
     units = Object.create(botUnits);
     units.candidates = () => botUnits.candidates().filter(c => allowed.has(c.kind));

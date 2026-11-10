@@ -14,6 +14,7 @@ import { buildNavMap, isWalkable, searchTypeMaps } from './nav-grid.js';
 import { craftTipped } from './doctrine-landing.js';
 import { mayEnterHull } from './vehicle-instance.js';
 import { findEntryPoint, wantsSeat, SPAWN_SEAT_REACH_AI, SPAWN_STANDS } from './spawn-seat.js';
+import { rowFor, rowFire } from './bot-rows.js';
 
 /** The body radius a land vehicle keeps on its map, and a plane's or ship's
  *  for its arrival circle (INVENTION). */
@@ -59,6 +60,9 @@ export function createBotUnits(env) {
       .then(r => (r.ok ? r.json() : null))
       .then(json => {
         units.ai = new Map();
+        // The mod whose `AIbehaviours.con` rows the records' `equipmentType`
+        // numbers index (bot-rows.js).
+        units.aiMod = json?.mod ?? null;
         for (const [name, info] of Object.entries(json?.vehicles ?? {})) units.ai.set(name.toLowerCase(), { name, ...info });
         return units.ai;
       })
@@ -310,7 +314,10 @@ export function createBotUnits(env) {
    * traverse and its Armament's anti-aircraft word.
    */
   function artilleryGunSeat(node, ai) {
-    if (ai?.equipmentType !== 14) return null;
+    // The row whose Fire is `BBFireDriver`: vanilla's 14 `ArtilleryDriver`,
+    // BF1918's 7 `Artillery`, EoD's 20 `AmphibiousArty` too (bot-rows.js).
+    const row = rowFor({ mod: units.aiMod, equipment: ai?.equipment, equipmentType: ai?.equipmentType });
+    if (row ? rowFire(row) !== 'FireDriver' : ai?.equipmentType !== 14) return null;
     const entry = Object.entries(ai.seatsAi ?? {}).find(([, s]) => s?.secondary);
     if (!entry) return null;
     const [seatId, s] = entry;
@@ -464,6 +471,9 @@ export function createBotUnits(env) {
             // `aiTemplatePlugIn.equipmentType`: the seat's `AIbehaviours.con`
             // vehicle row, which picks its Fire behaviour (bot-perception.js).
             equipmentType: seatAi?.equipmentType ?? (isRoot ? ai.equipmentType : null) ?? null,
+            // ...and the row's name in the mod's own list, where the table
+            // carries it (`extract_vehicle_ai.py` since 2026-11-09).
+            equipment: seatAi?.equipment ?? (isRoot ? ai.equipment : null) ?? null,
             // A type-14 root's gun seat (`artilleryGunSeat`) and the hull's
             // `isTurnable` (AITemplateMobile +0x30), which its Fire reads.
             gunSeat: isRoot ? gunSeat : null, isTurnable: !!ai.isTurnable,
@@ -599,6 +609,9 @@ export function createBotUnits(env) {
       maxSpeed: cand.maxSpeed,
       weapons: cand.weapons, template: cand.template, antiAircraft: !!cand.antiAircraft,
       controlInfo: cand.controlInfo ?? null, equipmentType: cand.equipmentType ?? null,
+      // The seat's `AIbehaviours.con` row in the mod's own list: which
+      // behaviours it registers and which Fire it runs (bot-rows.js).
+      row: rowFor({ mod: units.aiMod, equipment: cand.equipment, equipmentType: cand.equipmentType }),
       // A type-14 driver's gun seat, whether anyone holds it now
       // (`AIObjectUnit::isOccupied` 0x085dc0d0: any player), and its gun
       // groups while it is held (bot-aim.js `gunSeatAim`).
