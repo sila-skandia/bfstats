@@ -70,6 +70,17 @@ async function arenasOf(m) {
   const byTeams = teams ? arenasFromTeams(teams, names) : [];
   return byTeams.length ? byTeams : arenasFrom(rows, names);
 }
+/** A tree's collision meshes (`_shared/collision-meshes.json`), read once:
+ *  an airframe built with them takes the header box the engine reads its
+ *  drag and inertia from (COL-14), which is the box the plane flies on in
+ *  the arena. Without them it would take the drawn mesh's, and on Desert
+ *  Combat the two differ: the lesson's F-16 was not the one you then flew. */
+const collisions = new Map();
+function collisionOf(m) {
+  const id = m?.id ?? VANILLA.id;
+  if (!collisions.has(id)) collisions.set(id, json(`${(m ?? vanillaMod).paths.maps}/_shared/collision-meshes.json`).catch(() => null));
+  return collisions.get(id);
+}
 say(`Reading ${mod.name || mod.short}'s battles`);
 let arenas = await arenasOf(mod).catch(error => { console.warn(`dogfight school: ${mod.id} arenas`, error); return []; });
 /** The tree the arenas (and so the lessons' planes and FLY IT) come from. */
@@ -83,6 +94,9 @@ if (!arenas.length) {
   throw new Error('dogfight school: no arenas');
 }
 const modId = m => (m.id === VANILLA.id ? null : m.id);
+/** The arena tree's collision meshes, in hand before a plane is built. */
+const collisionMeshes = await collisionOf(arenaMod);
+const frame = { cockpit: false, collisionMeshes };
 /** The arena is remembered per mod; vanilla keeps the key it always had. */
 const ARENA_KEY = arenaMod.id === VANILLA.id ? ARENA_KEY_VANILLA : `${ARENA_KEY_VANILLA}:${arenaMod.id}`;
 const want = (params.get('arena') ?? stored(ARENA_KEY) ?? '').toLowerCase();
@@ -128,7 +142,7 @@ const JET_TREES = /^(desertcombat|dc_final)$/i;
 const laws = new Map();
 function lawOf(template, root) {
   const key = `${arenaMod.id}:${template}`;
-  if (!laws.has(key)) laws.set(key, root ? measureAirframe(() => new Aircraft(root.clone(true), null, { cockpit: false })) : null);
+  if (!laws.has(key)) laws.set(key, root ? measureAirframe(() => new Aircraft(root.clone(true), null, frame)) : null);
   return laws.get(key);
 }
 /** An address that names an arena follows the one picked, so a reload
@@ -187,20 +201,23 @@ const theatre = createDogfightTheatre({
   airframe: () => (models.fighterName ? { key: `${modId(arenaMod)}:${models.fighterName}`, name: pretty(models.fighterName) } : null),
   // Flown over a floor at 0, as the Range and the school's tests fly them.
   groundY: 0,
-  makePlane: () => new Aircraft(models.fighter.clone(true), null, { cockpit: false }),
+  makePlane: () => new Aircraft(models.fighter.clone(true), null, frame),
   planeVisual: i => planeVisual(i === 0 ? models.ace : models.mine),
   // A recorded fight's own types, from their trees.
   planeVisualFor: (template, mod) => loadPlaneModel(template, mod).then(scene => (scene ? planeVisual(scene) : null)),
   makePlaneFor: async (template, mod) => {
-    const root = airframeRoot(await loadPlaneModel(template, mod));
+    const [scene, meshes] = await Promise.all([loadPlaneModel(template, mod),
+      collisionOf(offered.find(m => m.id === String(mod ?? VANILLA.id).toLowerCase()) ?? vanillaMod)]);
+    const root = airframeRoot(scene);
     if (!root) return null;
+    const own = { cockpit: false, collisionMeshes: meshes };
     try {
-      new Aircraft(root.clone(true), null, { cockpit: false });
+      new Aircraft(root.clone(true), null, own);
     } catch (e) {
       console.warn(`dogfight what-if: ${template} airframe`, e);
       return null;
     }
-    return () => new Aircraft(root.clone(true), null, { cockpit: false });
+    return () => new Aircraft(root.clone(true), null, own);
   },
   onFly: (id, move) => fly({ lesson: id, move }),
   onFlyCourse: id => fly({ course: id }),

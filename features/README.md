@@ -175,6 +175,7 @@ folder answers.
 | [tank-doctrine-1918](tank-doctrine-1918/README.md) | build | Which written rules did WWI tank crews and the men who fought tanks get in 1917-18, which of them does BF1918's engine reward, and how does the tank school's RULES card read each on a pairing, Villers-Bretonneux first? |
 | [tank-doctrine-1991](tank-doctrine-1991/README.md) | build | Which written rules did tank crews of the 1991 Gulf War and the men who fought them have, which of them does Desert Combat's own data reward, and how does the tank school's RULES card read each on a pairing, the 73 Easting first? |
 | [dogfight-doctrine-1991](dogfight-doctrine-1991/README.md) | build | What did Blesse, Boyd and the F-16 manual tell jet pilots, what does Desert Combat's data make of each rule on the two jets on stage, and how did Desert Combat get arenas of its own in both schools? |
+| [dogfight-lessons-jets](dogfight-lessons-jets/README.md) | build | How does the dogfight school fly its lessons on a jet (the hands, the pace, the cannon, the fight at the Spitfire's size), how is a lesson re-tuned for jets, and where does each lesson stand? |
 | [bot-garrison](bot-garrison/README.md) | build | Why do bots post one guard per flag, and where is it tuned? |
 | [bot-weapons](bot-weapons/README.md) | build | Why did bots never reload or show rockets, and how do bot triggers fire? |
 | [bot-gunner-aim](bot-gunner-aim/README.md) | build | How do retail bots aim and fire mounted guns, and why do AA bots miss? |

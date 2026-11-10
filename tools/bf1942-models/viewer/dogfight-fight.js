@@ -18,9 +18,9 @@
 // leaves the fight, as one that flies into the ground does. The fight ends
 // when a team has nobody left, or at `seconds`.
 
-import { createPilot } from './dogfight-pilot.js';
+import { createPilot, gunOf } from './dogfight-pilot.js';
 import { stateOf, gunSolution, energyHeight, len, sub, add, scale, unit, dot, basis, leadPoint } from './dogfight-flight.js';
-import { placePlane, stage, applyStick, fireRound, segmentNear, strikesAirframe, HIT_RADIUS, KILL_HITS, DUEL_DT } from './dogfight-duel.js';
+import { placePlane, stage, applyStick, fireRound, segmentNear, strikesAirframe, fitAirframe, paced, pilotView, HIT_RADIUS, KILL_HITS, DUEL_DT } from './dogfight-duel.js';
 
 /** A target is kept unless another enemy is this much nearer. */
 const SWITCH = 0.67;
@@ -61,13 +61,22 @@ export function runFight({ makePlane, sides, seconds = 60, origin = [0, 0, 0], g
                            gun = {}, killHits = KILL_HITS, dt = DUEL_DT, arena = null }) {
   const n = sides.length;
   const teams = sides.map(s => s.team ?? 0);
+  // Each airframe fitted as a duel's is (`fitAirframe`): its hands, its
+  // pace, and for a jet its own cannon and the fight seen at the Spitfire's
+  // size.
+  const fitted = [];
   const planes = sides.map((side, i) => {
     const plane = makePlane(side, i);
+    const fit = fitted[i] = fitAirframe(plane, makePlane, i);
     plane.groundHeight = (x, z) => groundAt(x, z);
-    placePlane(plane, stage(origin, side.start));
+    placePlane(plane, stage(origin, paced(side.start, fit.pace)));
     return plane;
   });
-  const pilots = sides.map((side, i) => createPilot(side.plan ?? 'cruiser', { skill: side.skill ?? 1, gun, seed: i + 1 }));
+  const guns = sides.map((_, i) => gunOf(fitted[i].gun ?? gun));
+  const views = sides.map((_, i) => pilotView(fitted[i].pace));
+  const pilots = sides.map((side, i) => createPilot(side.plan ?? 'cruiser', { skill: side.skill ?? 1, gun: views[i].gun(fitted[i].gun ?? gun), seed: i + 1 }));
+  const grounds = views.map(v => v.ground(groundAt));
+  const fences = views.map(v => v.arena(arena));
   for (const [i, side] of sides.entries()) Object.assign(pilots[i].mem, structuredClone(side.memory ?? {}));
   const alive = sides.map(() => true);
   const tracks = sides.map(() => []);
@@ -80,7 +89,6 @@ export function runFight({ makePlane, sides, seconds = 60, origin = [0, 0, 0], g
   const targets = sides.map(() => ({ i: -1 }));
   let rng = 0x2545f491;
   const rand = () => ((rng = (rng * 1103515245 + 12345) >>> 0) / 4294967296);
-  const g = pilots[0].gun;
   let end = null;
   const down = (j, t, by, why) => {
     if (!alive[j]) return;
@@ -116,8 +124,9 @@ export function runFight({ makePlane, sides, seconds = 60, origin = [0, 0, 0], g
         // His eyes on this enemy, kept apart from his eyes on the others.
         mem.eyes ??= {};
         mem.eye = mem.eyes[cur.i];
-        out = pilots[i].step({ me, him: states[cur.i], dt, t, groundAt, ceilingBase: 0, arena,
-                               team: { index: i, target: cur.i, friends, enemies } });
+        const seen = x => ({ ...x, state: views[i].see(x.state) });
+        out = pilots[i].step({ me: views[i].see(me), him: views[i].see(states[cur.i]), dt, t, groundAt: grounds[i], ceilingBase: 0, arena: fences[i],
+                               team: { index: i, target: cur.i, friends: friends.map(seen), enemies: enemies.map(seen) } });
         mem.eyes[cur.i] = mem.eye;
       }
       applyStick(planes[i], out);
@@ -139,14 +148,14 @@ export function runFight({ makePlane, sides, seconds = 60, origin = [0, 0, 0], g
         } else mem2.gunnerFiring = false;
       }
       const him = targets[i].i >= 0 && alive[targets[i].i] ? states[targets[i].i] : null;
-      const sol = him ? gunSolution(me, him, { ...pilots[i].gun, width: 5 }) : { fire: false, dist: Infinity, off: 180 };
-      if (out.fire) rounds.push(fireRound(me, g, rand, i, t, k));
+      const sol = him ? gunSolution(me, him, { ...guns[i], width: 5 }) : { fire: false, dist: Infinity, off: 180 };
+      if (out.fire) rounds.push(fireRound(me, guns[i], rand, i, t, k));
       tracks[i].push({
         t, p: me.position, q: [me.orientation.x, me.orientation.y, me.orientation.z, me.orientation.w],
         v: len(me.velocity), ph: out.phase, f: out.fire, h: out.fire && sol.fire,
         e: energyHeight(me.position[1] - origin[1], len(me.velocity)),
         stick: [out.stick.pitch, out.stick.roll, out.stick.rudder, out.throttle],
-        in: out.intent, o: sol.fire, z: sol.dist < pilots[i].gun.range && sol.off < 8,
+        in: out.intent, o: sol.fire, z: sol.dist < guns[i].range && sol.off < 8,
         so: Math.round(sol.off * 10) / 10, sd: Math.round(sol.dist),
         rv: planes[i].rotorEngine ? Math.round(planes[i].rotorEngine.revs * 1000) / 1000 : null,
         sees: out.sees === false ? 0 : 1, target: targets[i].i,
@@ -179,7 +188,7 @@ export function runFight({ makePlane, sides, seconds = 60, origin = [0, 0, 0], g
           break;
         }
       }
-      if (!r.done && r.age > (g.reach ?? 600) / g.speed) r.done = true;
+      if (!r.done && r.age > (guns[r.side].reach ?? 600) / guns[r.side].speed) r.done = true;
     }
   }
   const first = downs.find(d => d.i === 0 || d.i === 1);

@@ -12,11 +12,11 @@
 // the world moves while it is open.
 
 import * as THREE from 'three';
-import { runDuel } from './dogfight-duel.js';
+import { runDuel, fitAirframe } from './dogfight-duel.js';
 import { gunOf } from './dogfight-pilot.js';
 import { leadPoint } from './dogfight-flight.js';
 import { COURSES } from './dogfight-rings.js';
-import { LESSONS, demoSides, fightSides, lessonById, RULES, jetName } from './dogfight-lessons.js';
+import { LESSONS, demoSides, fightSides, lessonById, setEra, RULES, jetName } from './dogfight-lessons.js';
 import { runFight } from './dogfight-fight.js';
 import { recordedFight, fightLine, pilotTable, inThirdPerson } from './dogfight-recorded.js';
 import { VIEWER_ROOT } from './viewer-root.js';
@@ -1017,10 +1017,21 @@ export function createDogfightTheatre({ host, makePlane, planeVisual = () => nul
     ui.demos.classList.toggle('is-over', ui.demos.scrollWidth > ui.demos.clientWidth + 1);
   }
 
+  /** The era of the airframe on stage (`dogfight-duel.js` `fitAirframe`): a
+   *  plane paced as a jet is taught the lessons' jet files
+   *  (`dogfight-jets.js`). On a fight's map there is no lesson to tell. */
+  function syncEra() {
+    if (world) return;
+    let jet = false;
+    try { jet = fitAirframe(makePlane(), makePlane).pace > 1; } catch { jet = false; }
+    setEra(jet ? 'jet' : null);
+  }
+
   function pickLesson(id) {
     helper.seen.clear();
     helperHide();
-    const lesson = lessonById(id) ?? LESSONS[0];
+    syncEra();
+    const lesson = lessonById(id) ?? lessonById(LESSONS[0].id);
     state.lesson = lesson;
     ui.lessons.querySelectorAll('.dfs-row').forEach(b => b.setAttribute('aria-current', String(b.dataset.lesson === lesson.id)));
     ui.storyHeads[0].textContent = 'THE MOVE';
@@ -1033,7 +1044,9 @@ export function createDogfightTheatre({ host, makePlane, planeVisual = () => nul
     closeMap();
     drawLayer(null);
     state.recording = null;
-    ui.move.innerHTML = lesson.story.map(p => `<p>${esc(p)}</p>`).join('');
+    // On a jet, what the nine flights on it showed comes before the story.
+    const jetNote = lesson.era === 'jet' && lesson.note ? `<p class="dfs-era-note"><b>On a jet</b> ${esc(lesson.note)}</p>` : '';
+    ui.move.innerHTML = jetNote + lesson.story.map(p => `<p>${esc(p)}</p>`).join('');
     ui.counter.innerHTML = lesson.counterStory.map(p => `<p>${esc(p)}</p>`).join('');
     drawTabs(lesson);
     scoreAirframe(lesson);
@@ -3231,7 +3244,10 @@ export function createDogfightTheatre({ host, makePlane, planeVisual = () => nul
       drawArenas(); drawPlanes(); drawRules();
       if (!state.open || world || !state.lesson || !state.demo || state.fight?.recorded) return;
       const { t, playing } = state;
-      pickDemo(state.lesson, state.demo.id);
+      // Another airframe may be another era: the lesson is read again.
+      const demoId = state.demo.id;
+      pickLesson(state.lesson.id);
+      if (state.lesson.demos.some(d => d.id === demoId)) pickDemo(state.lesson, demoId);
       state.t = Math.min(t, state.fight.duration);
       state.playing = playing;
       ui.toggle.textContent = playing ? 'Pause' : 'Play';

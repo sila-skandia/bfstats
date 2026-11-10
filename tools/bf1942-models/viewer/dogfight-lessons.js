@@ -15,6 +15,8 @@
 // Spitfire's, measured on the same law (features/dogfight-school/README.md,
 // "What the airframe does").
 
+import { JET_LESSONS } from './dogfight-jets.js';
+
 export const LESSONS = [
   {
     id: 'boom-and-zoom',
@@ -660,7 +662,35 @@ export const LESSONS = [
   },
 ];
 
-export const lessonById = id => LESSONS.find(l => l.id === id) ?? null;
+let pageEra = null;
+/** The era the page's airframe flies in (`'jet'` or null), which
+ *  `lessonById` then answers for. Set by whoever knows the airframe. */
+export function setEra(era) { pageEra = era === 'jet' ? 'jet' : null; }
+export const eraNow = () => pageEra;
+
+/**
+ * A lesson as an airframe of `era` flies it: the lesson itself, or for
+ * `'jet'` its jet file's changes laid over it (`dogfight-jets.js`): `ace`
+ * and `you` merged (their `start` and `memory` too), each demo by its id,
+ * everything else replaced. A lesson with no jet file is flown as written.
+ */
+export function lessonFor(lesson, era = null) {
+  const jet = era === 'jet' ? JET_LESSONS[lesson?.id] : null;
+  if (!lesson || !jet) return lesson;
+  const side = (base, over) => (over ? { ...base, ...over, start: { ...base?.start, ...over.start },
+    ...(base?.memory || over.memory ? { memory: { ...base?.memory, ...over.memory } } : {}) } : base);
+  const demos = (lesson.demos ?? []).map(d => {
+    const over = jet.demos?.[d.id];
+    if (!over) return d;
+    const merged = { ...d, ...over };
+    for (const key of ['aceMemory', 'youMemory']) if (d[key] || over[key]) merged[key] = { ...d[key], ...over[key] };
+    return merged;
+  });
+  return { ...lesson, ...jet, ace: side(lesson.ace, jet.ace), you: side(lesson.you, jet.you), demos, era: 'jet' };
+}
+
+/** A lesson by its id, as the page's era flies it (`setEra`). */
+export const lessonById = (id, era = pageEra) => lessonFor(LESSONS.find(l => l.id === id) ?? null, era);
 
 /**
  * The fights in which a pilot does nothing: flies straight and never looks

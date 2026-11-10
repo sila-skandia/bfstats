@@ -2198,6 +2198,9 @@ a { color: var(--accent); }
 .dfs-lessons .dfs-rule-fight p.dfs-rule-here { color: var(--mm-ink); }
 .dfs-lessons .dfs-rule-eyebrow { font: 500 10px/1.4 var(--mm-font-mono); letter-spacing: 0.14em; text-transform: uppercase; color: var(--mm-ink-muted); }
 .dfs-lessons .dfs-rule-fly { align-self: flex-start; margin-top: 4px; }
+/* A lesson's note for the era of the plane on stage (a jet). */
+.dfs-era-note { padding: 8px 10px; border-left: 2px solid var(--mm-accent); background: var(--mm-bg-soft); color: var(--mm-ink); }
+.dfs-era-note b { display: block; margin-bottom: 2px; font: 600 9.5px/1.6 var(--mm-font-mono); letter-spacing: 0.14em; text-transform: uppercase; color: var(--mm-accent); }
 .dfs-end-acts small { flex-basis: 100%; color: var(--mm-ink-soft); font-size: 12px; line-height: 1.4; }
 /* The one bar under the picture: play and the clock, the lesson's fights as
    tabs, then the speed and camera menus, the notes and FLY IT. */

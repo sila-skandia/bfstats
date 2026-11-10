@@ -38,6 +38,11 @@ MODULES = {
     # The dogfight school's lesson book (the page loads the rest of the
     # school on first use, features/dogfight-school).
     "dogfight-lessons.js": VIEWER / "dogfight-lessons.js",
+    # Its jet files, which are data (`viewer/dogfight-jets.js`).
+    "dogfight-jets.js": VIEWER / "dogfight-jets.js",
+    **{f"dogfight-jet-{i}.js": VIEWER / f"dogfight-jet-{i}.js" for i in (
+        "boom-and-zoom", "under-the-height", "up-and-over", "out-of-the-lock", "on-his-tail",
+        "break-turn", "scissors", "turnarounds", "the-circle")},
     "vendor/utils/SkeletonUtils.js": VIEWER / "vendor" / "utils" / "SkeletonUtils.js",
     "node_modules/three/three.module.js": VIEWER / "vendor" / "three.module.js",
 }

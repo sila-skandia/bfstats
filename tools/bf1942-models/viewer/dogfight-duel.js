@@ -4,8 +4,10 @@
 // surface (`state`, `setInput`, `integrate`, `lawEngines`); nothing here
 // draws.
 
-import { createPilot } from './dogfight-pilot.js';
-import { stateOf, gunSolution, energyHeight, len, rotate, basis, add, sub, scale, unit, dot } from './dogfight-flight.js';
+import { createPilot, gunOf } from './dogfight-pilot.js';
+// The jet lessons' own plans, registered on the pilots' as they load.
+import './dogfight-jet-plans.js';
+import { stateOf, gunSolution, pointNose, energyHeight, len, rotate, basis, bodyRates, add, sub, scale, unit, dot, HAND } from './dogfight-flight.js';
 
 /** The world's tick (`WORLD_TICK_DT`, LOOP-1). */
 export const DUEL_DT = 1 / 30;
@@ -30,6 +32,146 @@ export function placePlane(plane, { at, headingDeg = 0, pitchDeg = 0, speed = 55
   s.angularVelocity?.set?.(0, 0, 0);
   primeEngines(plane, throttle);
   return plane;
+}
+
+/**
+ * How long an airframe's nose takes to answer the stick: seconds from full
+ * aft stick, wings level at `HAND.speed`, until the pitch rate is `HAND.share`
+ * of the most it reaches in `HAND.seconds`. The school's Spitfire: 0.3 s.
+ */
+export function pitchLag(plane) {
+  plane.groundHeight = () => 0;
+  placePlane(plane, { at: [0, 400, 0], speed: HAND.speed });
+  const rates = [];
+  for (let i = 0; i < Math.round(HAND.seconds / DUEL_DT); i++) {
+    plane.setInput('c_PIPitch', -1);
+    plane.setInput('c_PIThrottle', 1);
+    plane.integrate(DUEL_DT);
+    const s = stateOf(plane.state);
+    rates.push(bodyRates(s.orientation, s.angularVelocity).pitch);
+  }
+  const most = Math.max(...rates);
+  const at = rates.findIndex(r => r >= HAND.share * most);
+  return most > 0 && at >= 0 ? (at + 1) * DUEL_DT : HAND.ref;
+}
+
+/**
+ * What a lesson's speeds are measured against. The lessons were written on
+ * the school's Spitfire, which flies level at `ref` m/s at `height` m, and
+ * their starts are its speeds (56 to 62 m/s, three quarters of that). An
+ * airframe that flies level more than `slack` times as fast starts every
+ * fight faster by that ratio, its `pace`: a jet set off at a Spitfire's
+ * cruise is not in the fight the lesson describes.
+ */
+export const PACE = Object.freeze({ height: 300, from: 90, seconds: 60, over: 10, ref: 75.6, slack: 1.15, roof: 900 });
+
+/** An airframe's level speed at full throttle (m/s): held at `PACE.height`
+ *  by a slow nose hold for `PACE.seconds`, the last `PACE.over` averaged. */
+export function levelSpeed(plane) {
+  plane.groundHeight = () => 0;
+  placePlane(plane, { at: [0, PACE.height, 0], speed: PACE.from });
+  const speeds = [], mem = {};
+  const ticks = Math.round(PACE.seconds / DUEL_DT);
+  for (let i = 0; i < ticks; i++) {
+    const st = stateOf(plane.state);
+    const up = Math.max(-0.25, Math.min(0.25, (PACE.height - st.position[1]) * 0.004 - st.velocity[1] * 0.02));
+    const k = pointNose(st, [0, up, -1], { fine: 8, mem, dt: DUEL_DT });
+    plane.setInput('c_PIPitch', k.pitch); plane.setInput('c_PIRoll', k.roll); plane.setInput('c_PIYaw', k.rudder);
+    plane.setInput('c_PIThrottle', 1);
+    plane.integrate(DUEL_DT);
+    if (i * DUEL_DT > PACE.seconds - PACE.over) speeds.push(len(stateOf(plane.state).velocity));
+  }
+  return speeds.reduce((a, b) => a + b, 0) / speeds.length;
+}
+
+/** The airframe's own cannon, off its model's extras: the FireArms on the
+ *  fire key that fires a bullet, as a duel's `gun`. One barrel on the nose:
+ *  no convergence, so the pilots open inside 400 m. Null with none. */
+export function ownGun(plane) {
+  let gun = null;
+  plane?.node?.traverse?.(n => {
+    const fa = n.userData?.fireArms, pr = fa?.projectile;
+    if (gun || !pr || pr.kind !== 'bullet' || (fa.input && fa.input !== 'c_PIFire') || !(Number(fa.velocity) > 300)) return;
+    gun = { speed: Number(fa.velocity), reach: Number(fa.velocity) * (Number(pr.timeToLive) || 1.5), span: 0.5, converge: 0 };
+  });
+  return gun;
+}
+
+/** One airframe type from another, by what the flight law reads of it. */
+const signature = plane => {
+  const k = plane?.spec ?? {};
+  return [k.mass, k.drag, ...(k.size ?? []), k.engines?.length, k.surfaces?.length].join('|');
+};
+const fits = new Map();
+const NEUTRAL = Object.freeze({ hand: null, pace: 1, gun: null });
+
+/**
+ * Fit a duel to `plane`'s airframe: `{ hand, pace, gun }`, measured once a
+ * type on a second airframe from `makePlane`.
+ *
+ * - `hand` (`dogfight-flight.js` `HAND`): its pitch lag over the Spitfire's,
+ *   where it is clearly slower to answer; it rides on the plane's state, and
+ *   the hands damp the pull by that much more.
+ * - `pace` (`PACE`): its level speed over the Spitfire's, where it is clearly
+ *   faster; the duel starts its fights that much faster.
+ * - `gun`: for an airframe paced as a jet, its own cannon (`ownGun`), which
+ *   the duel then fights with in place of the school's wing guns.
+ *
+ * An airframe as quick to answer and no faster than the Spitfire gets
+ * `{ hand: null, pace: 1, gun: null }` and is flown exactly as before.
+ */
+export function fitAirframe(plane, makePlane, key = 0) {
+  const sig = signature(plane);
+  if (!fits.has(sig)) {
+    let fit = NEUTRAL;
+    try {
+      const lag = pitchLag(makePlane(null, key)) / HAND.ref;
+      const hand = lag > HAND.slack ? Object.freeze({ pitch: Math.round(lag * 100) / 100 }) : null;
+      const scratch = makePlane(null, key);
+      if (hand) scratch.state.hand = hand;
+      const ratio = levelSpeed(scratch) / PACE.ref;
+      const pace = ratio > PACE.slack ? Math.round(ratio * 100) / 100 : 1;
+      fit = Object.freeze({ hand, pace, gun: pace > 1 ? ownGun(plane) : null });
+    } catch { fit = NEUTRAL; }
+    fits.set(sig, fit);
+  }
+  const fit = fits.get(sig);
+  // A plane that comes with a hand of its own keeps it.
+  if (fit.hand && plane?.state && plane.state.hand === undefined) plane.state.hand = fit.hand;
+  return fit;
+}
+
+/**
+ * A side's start at an airframe's pace: the lesson's fight made larger by
+ * `pace`, its speed and its place about the fight's centre alike. Heights
+ * grow too, and stop `PACE.roof` m under where the wings stop lifting.
+ */
+export function paced(start, pace = 1) {
+  if (pace === 1 || !start) return start;
+  const at = start.at ? [start.at[0] * pace, Math.min(start.at[1] * pace, Math.max(start.at[1], PACE.roof)), start.at[2] * pace] : start.at;
+  return { ...start, at, speed: (start.speed ?? 55) * pace };
+}
+
+/**
+ * The fight as a pilot at `pace` sees it. The plans were written in the
+ * Spitfire's numbers: zoom until under 55 m/s, open fire inside 130 m, dive
+ * when 150 m above. A jet flies the same shapes larger, so its pilot is
+ * shown the fight shrunk by its pace, every place and speed alike (angles
+ * and seconds are untouched), and flies it as the Spitfire's. `see` takes
+ * a flight state, `gun` the gun the pilot thinks with, `arena` the fence,
+ * `ground` the ground's height under a place. At pace 1 they hand back what
+ * they were given.
+ */
+export function pilotView(pace = 1) {
+  if (pace === 1) return { pace, see: s => s, gun: g => g, arena: a => a, ground: f => f };
+  const k = 1 / pace;
+  return {
+    pace,
+    see: s => (s ? { ...s, position: s.position.map(v => v * k), velocity: s.velocity.map(v => v * k) } : s),
+    gun: g => ({ ...g, speed: (g.speed ?? 400) * k, reach: (g.reach ?? 600) * k, ...(Number.isFinite(g.range) ? { range: g.range * k } : {}) }),
+    arena: a => (a ? { ...a, centre: a.centre.map(v => v * k), radius: a.radius * k } : a),
+    ground: f => (x, z) => f(x * pace, z * pace) * k,
+  };
 }
 
 /** The engines where a pilot holding `input` would have them by now. */
@@ -181,14 +323,22 @@ export function setPlaneState(plane, state, throttle = 1) {
  */
 export function runDuel({ makePlane, sides, seconds = 60, origin = [0, 0, 0], groundAt = () => origin[1],
                           gun = {}, killHits = KILL_HITS, dt = DUEL_DT, arena = null }) {
+  const fitted = [];
   const planes = sides.map((side, i) => {
     const plane = makePlane(side, i);
+    const fit = fitted[i] = fitAirframe(plane, makePlane, i);
     plane.groundHeight = (x, z) => groundAt(x, z);
     if (side.state) setPlaneState(plane, side.state, side.throttle ?? 1);
-    else placePlane(plane, stage(origin, side.start));
+    else placePlane(plane, stage(origin, paced(side.start, fit.pace)));
     return plane;
   });
-  const pilots = sides.map((side, i) => createPilot(side.plan ?? 'cruiser', { skill: side.skill ?? 1, gun, seed: i + 1 }));
+  // An airframe paced as a jet fights with its own cannon, and its pilot
+  // sees the fight at the Spitfire's size (`pilotView`).
+  const guns = sides.map((_, i) => gunOf(fitted[i].gun ?? gun));
+  const views = sides.map((_, i) => pilotView(fitted[i].pace));
+  const pilots = sides.map((side, i) => createPilot(side.plan ?? 'cruiser', { skill: side.skill ?? 1, gun: views[i].gun(fitted[i].gun ?? gun), seed: i + 1 }));
+  const grounds = views.map(v => v.ground(groundAt));
+  const fences = views.map(v => v.arena(arena));
   // A copy of each memory: a pilot writes into his, and two duels flown on
   // from one frozen moment must not share one.
   for (const [i, side] of sides.entries()) Object.assign(pilots[i].mem, structuredClone(side.memory ?? {}));
@@ -199,7 +349,6 @@ export function runDuel({ makePlane, sides, seconds = 60, origin = [0, 0, 0], gr
   const rounds = [];
   let rng = 0x2545f491;
   const rand = () => ((rng = (rng * 1103515245 + 12345) >>> 0) / 4294967296);
-  const g = pilots[0].gun;
   const lastPhase = ['', ''];
   let end = null;
   const ticks = Math.round(seconds / dt);
@@ -212,12 +361,12 @@ export function runDuel({ makePlane, sides, seconds = 60, origin = [0, 0, 0], gr
       const out = held
         ? { stick: { pitch: held.pitch ?? 0, roll: held.roll ?? 0, rudder: held.rudder ?? 0 }, throttle: held.throttle ?? 1,
             fire: false, phase: 'hold', say: 'Holding the stick where it is', move: 'Holding on', intent: 'setup' }
-        : pilots[i].step({ me, him, dt, t, groundAt, ceilingBase: 0, arena });
+        : pilots[i].step({ me: views[i].see(me), him: views[i].see(him), dt, t, groundAt: grounds[i], ceilingBase: 0, arena: fences[i] });
       applyStick(planes[i], out);
-      const sol = gunSolution(me, him, { ...pilots[i].gun, width: 5 });
+      const sol = gunSolution(me, him, { ...guns[i], width: 5 });
       const hit = out.fire && sol.fire;
       if (hit) onTarget[i] += dt * hitShare(sol.dist);
-      if (out.fire) rounds.push(fireRound(me, g, rand, i, t, n));
+      if (out.fire) rounds.push(fireRound(me, guns[i], rand, i, t, n));
       tracks[i].push({
         t, p: me.position, q: [me.orientation.x, me.orientation.y, me.orientation.z, me.orientation.w],
         v: len(me.velocity), ph: out.phase, f: out.fire, h: hit,
@@ -227,7 +376,7 @@ export function runDuel({ makePlane, sides, seconds = 60, origin = [0, 0, 0], gr
         // `o` a shot that lands (the nose on the lead, inside the reach),
         // `z` the kill zone round it (inside the reach, within 8 degrees),
         // `so` / `sd` how far off the lead and how far away.
-        in: out.intent, o: sol.fire, z: sol.dist < pilots[i].gun.range && sol.off < 8,
+        in: out.intent, o: sol.fire, z: sol.dist < guns[i].range && sol.off < 8,
         so: Math.round(sol.off * 10) / 10, sd: Math.round(sol.dist),
         // The propeller's engine revs (`Aircraft.rotorEngine`), which the
         // theatre turns the blades on; null for an airframe with none.
@@ -262,12 +411,12 @@ export function runDuel({ makePlane, sides, seconds = 60, origin = [0, 0, 0], gr
       if (segmentNear(from, r.p, target.position, HIT_RADIUS) && strikesAirframe(from, r.p, target)) {
         r.done = true; r.hit = true; r.hitT = t + dt; r.hitAt = r.p;
         if (end === null) hits[r.side]++;
-      } else if (r.age > (g.reach ?? 600) / g.speed) {
+      } else if (r.age > (guns[r.side].reach ?? 600) / guns[r.side].speed) {
         r.done = true;
       }
     }
   }
   // Where each airframe and pilot ended, to fly on from (`state`, `memory`).
-  return { tracks, events, onTarget: onTarget.map(v => +v.toFixed(2)), hits, rounds, end, dt,
+  return { tracks, events, onTarget: onTarget.map(v => +v.toFixed(2)), hits, rounds, end, dt, fits: fitted,
            finals: planes.map(p => stateOf(p.state)), mems: pilots.map(p => p.mem) };
 }

@@ -22,6 +22,20 @@
 // `rudder` positive yaws the nose right (measured on the Spitfire's own
 // tables, features/dogfight-school "The stick's signs").
 
+/**
+ * What the hands know of the airframe they fly. They were tuned on the
+ * school's Spitfire, whose nose answers the stick in a quarter of a second:
+ * its pitch rate is at 63% of what a full pull reaches `HAND.ref` s after
+ * the stick goes back. A jet's takes two and a half times as long (the
+ * F-16 0.83 s),
+ * and a hand that damps for the Spitfire's lag swings a jet's nose through
+ * the point it wanted. So an airframe measured laggier than `slack` times
+ * the Spitfire carries `state.hand.pitch`, its lag over the Spitfire's, and
+ * the pull is damped by that much more (`pointNose`). An airframe with no
+ * `hand` is flown as the Spitfire is, to the last decimal.
+ */
+export const HAND = Object.freeze({ speed: 100, seconds: 1.5, share: 0.63, ref: 1 / 3, slack: 1.25 });
+
 /** The engine's gravity (`BasicPhysicsSystem`, flight-model.md 2c). */
 export const G = 14.7295379;
 /** Where every wing stops lifting (`airDensityZeroAtHeight`). */
@@ -121,7 +135,10 @@ export function pointNose(state, dir, opts = {}) {
   // the pitch rate already under way. Rolling a long way first, the pull
   // waits (a pilot unloads, rolls, then pulls).
   const rollingFirst = clamp(1 - Math.max(0, Math.abs(toward) / DEG - 60) / 60, 0.15, 1);
-  let up = (pitchErr > 0 ? kPitch : kPitch * 0.75) * pitchErr + kPitchI * (mem?.iP ?? 0) - 0.55 * rates.pitch;
+  // The pitch rate under way is taken off the pull, by more on an airframe
+  // whose nose is slower to answer (`HAND`): it will coast further.
+  const lag = state.hand?.pitch ?? 1;
+  let up = (pitchErr > 0 ? kPitch : kPitch * 0.75) * pitchErr + kPitchI * (mem?.iP ?? 0) - 0.55 * lag * rates.pitch;
   if (off > fine * 1.6) up = Math.max(up, 0) * rollingFirst + Math.min(up, 0) * rollingFirst;
   up = clamp(up * gain, -push, pull);
   // The rudder trims the last few degrees sideways.
@@ -226,5 +243,7 @@ export function stateOf(s) {
     velocity: [s.velocity.x, s.velocity.y, s.velocity.z],
     orientation: { x: s.orientation.x, y: s.orientation.y, z: s.orientation.z, w: s.orientation.w },
     angularVelocity: s.angularVelocity ? [s.angularVelocity.x, s.angularVelocity.y, s.angularVelocity.z] : [0, 0, 0],
+    // What the hands know of this airframe (`HAND`), where it was fitted.
+    ...(s.hand ? { hand: s.hand } : {}),
   };
 }

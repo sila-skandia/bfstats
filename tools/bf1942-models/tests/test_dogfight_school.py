@@ -33,6 +33,9 @@ sys.path.insert(0, str(Path(__file__).resolve().parent))
 
 from test_flight import MODULES as FLIGHT_MODULES, THREE_PACKAGE, VIEWER  # noqa: E402
 
+# The lessons with a jet file of their own (`viewer/dogfight-jets.js`).
+JET_LESSON_IDS = ("boom-and-zoom", "under-the-height", "up-and-over", "out-of-the-lock", "on-his-tail",
+                  "break-turn", "scissors", "turnarounds", "the-circle")
 HARNESS = Path(__file__).resolve().parent / "dogfight_school_harness.mjs"
 MODULES = {
     **FLIGHT_MODULES,
@@ -40,6 +43,10 @@ MODULES = {
     "dogfight-pilot.js": VIEWER / "dogfight-pilot.js",
     "dogfight-duel.js": VIEWER / "dogfight-duel.js",
     "dogfight-lessons.js": VIEWER / "dogfight-lessons.js",
+    "dogfight-jets.js": VIEWER / "dogfight-jets.js",
+    **{f"dogfight-jet-{i}.js": VIEWER / f"dogfight-jet-{i}.js" for i in JET_LESSON_IDS},
+    "dogfight-jet-plans.js": VIEWER / "dogfight-jet-plans.js",
+    **{f"dogfight-jet-plan-{i}.js": VIEWER / f"dogfight-jet-plan-{i}.js" for i in JET_LESSON_IDS},
     "dogfight-coach.js": VIEWER / "dogfight-coach.js",
     "dogfight-live.js": VIEWER / "dogfight-live.js",
     "dogfight-doctrine.js": VIEWER / "dogfight-doctrine.js",

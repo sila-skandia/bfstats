@@ -1528,6 +1528,10 @@ export function createProvingGroundPage(page) {
     if (seat?.userData?.provingGround === 'airfield' && !nodes.includes(seat)) nodes.push(seat);
     return nodes;
   }
+  /** What a school airframe is built with: the level's collision meshes,
+   *  so its box is the header's, the one the plane you sit in flies on
+   *  (COL-14), not the drawn mesh's. */
+  const schoolFrame = () => ({ cockpit: false, collisionMeshes: page.hullBodies?.collisionMeshes ?? null });
   /** A plane's name: a jet by its designation (`Mig29` "MiG-29"). */
   const planeWords = template => jetName(template) ?? prettyName(template);
   /** The battle's aircraft you can fly, one row a type. */
@@ -1592,7 +1596,7 @@ export function createProvingGroundPage(page) {
       // The theatre's fights are flown over a floor at 0, as the school's
       // tests fly them, so a reconstruction here is the one the tests hold.
       groundY: 0,
-      makePlane: () => new Aircraft(fighter.clone(true), null, { cockpit: false }),
+      makePlane: () => new Aircraft(fighter.clone(true), null, schoolFrame()),
       planeVisual: i => (fighter ? visual(i === 0 ? enemy : fighter) : null),
       // A recorded fight's own types (features/dogfight-recordings): the
       // battle's parked one when it has it, else the template's own model
@@ -1618,12 +1622,12 @@ export function createProvingGroundPage(page) {
         }
         if (!root) return null;
         try {
-          new Aircraft(root.clone(true), null, { cockpit: false });
+          new Aircraft(root.clone(true), null, schoolFrame());
         } catch (e) {
           console.warn(`dogfight what-if: ${template} airframe`, e);
           return null;
         }
-        return () => new Aircraft(root.clone(true), null, { cockpit: false });
+        return () => new Aircraft(root.clone(true), null, schoolFrame());
       },
       onFly: (id, move) => flyLesson(id, move),
       onFlyCourse: id => flyRings(id),
@@ -1653,7 +1657,7 @@ export function createProvingGroundPage(page) {
     // (`tests/test_dogfight_school.py`). The clone shares its geometry.
     const airframe = { 0: () => fighterOn('enemyAir') ?? fighterOn('airfield'), 1: () => myPlane() };
     dogfight = createDogfightLive({
-      makePlane: i => new Aircraft(airframe[i]().clone(true), null, { cockpit: false }),
+      makePlane: i => new Aircraft(airframe[i]().clone(true), null, schoolFrame()),
       planeName,
       stage: page.stage,
       // Staged over the firing line heading down range. The range's combat
@@ -1731,7 +1735,7 @@ export function createProvingGroundPage(page) {
       groundAt: (x, z) => page.level.groundHeight?.(x, z) ?? PG.FLOOR,
       playerDrive: () => page.aircraft ?? null,
       seatPlayer: seatInPlane,
-      makePlane: () => new Aircraft(myPlane().clone(true), null, { cockpit: false }),
+      makePlane: () => new Aircraft(myPlane().clone(true), null, schoolFrame()),
       planeName,
       camera: () => page.camera,
       scene: () => page.scene,
