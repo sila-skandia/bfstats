@@ -1,7 +1,14 @@
 # Bot map generation: adding bot support to levels that ship without it
 
-Status: research and approach, 2026-11-10. Nothing here is built. No level was
-extracted, baked, patched or published for it.
+Status: research and approach, 2026-11-10, with a follow-up the same day
+(sections 12 and 13). Nothing here is built. No level was extracted, baked,
+patched or published for it.
+
+**Owner decisions, 2026-11-10.** Any level without bots is a candidate, in
+every mod and in the community maps, not only FHSW. The priority is on-foot
+and air play in a contained space, because that is what is fun against bots.
+The big naval levels are out. Section 12 is the census and the ranked
+shortlist under that rule; sections 1, 6.3, 8, 9 and 10 were revised to match.
 
 Every claim below carries its source: **measured** (how is in "How this was
 measured" at the end), **repo** (a document or module in this checkout),
@@ -23,7 +30,11 @@ apply the rule to the rest. The measurements change the picture in four ways.
    Levels with no bot data in either mod: 13 FHSW names and 14 FHSWEurope
    names, largely the same list; 10 of the 13 and 11 of the 14 are 8 km (one
    16 km) naval or air levels, nearly all ObjectiveMode only, the case
-   retail's bot AI handles worst.
+   retail's bot AI handles worst. Across every mod measured (section 12):
+   1,077 levels, 266 with no bot data, 92 of those with a botted twin in
+   another mod, and 68 of them community maps. The best targets under the
+   owner's rule are not in FHSW at all: they are small community infantry
+   levels and air arenas that are already published and have no bots anywhere.
 2. **"How the other bot maps do it" is three different crafts, not one rule.**
    DICE's 17 levels are hand-written and each is unique. FH and FHSW inherit
    or imitate that. FHSWEurope's 2024 work is template botting: three
@@ -47,16 +58,26 @@ apply the rule to the rest. The measurements change the picture in four ways.
    What is missing is a writer for the strategic maps, a strategic-area
    generator, a strategy template, a co-op layer writer, and the stuck,
    oscillation and outcome detectors on top of the runner.
+5. **The engine's own generator runs in the lab.** `ai.createAllMaps` in the
+   release Linux dedicated server painted and saved Kharkov's search maps on
+   this machine: within 0.06 % of DICE's shipped cells, and byte-identical
+   whether it started from the shipped maps or from empty ones. No debug
+   executable is needed for the search maps. The process aborts before it
+   writes the strategic maps, and a mod level was not tried (section 13).
 
 **Recommendation.** Build it as a rule-based pipeline with a simulator in the
 loop, and build the verifier before the generator, because the verifier is
-useful on day one: it lints the 317 existing AI layers and ranks them. Then
-generate for land Conquest levels, compare three ways on levels that have a
-community layer (none, community, generated), and only then decide which
-levels get generated data. Emit retail-format files as the single output; the
-page, the headless runner and the lab's real server all read that format
-already. Leave the 8 km naval ObjectiveMode levels to last: they need a game
-mode designed, not data derived.
+useful on day one: it lints the 317 existing AI layers and ranks them. Use
+the two FHSW levels with a community twin as the proving ground (none,
+community, generated), and make the first real delivery a contained on-foot
+level with no bots anywhere: the community map shigaisen_B (section 9). Then
+work down the shortlist of section 12: contained on-foot first, air arenas
+second, land vehicles after. Emit retail-format files as the single output;
+the page, the headless runner and the lab's real server all read that format
+already. Where the lab can load the level, take the search maps from the
+engine itself and keep the repo's painter as the fast path and the
+cross-check. The 8 km naval levels are out (owner, 2026-11-10); they would
+need a game mode designed, not data derived.
 
 **Machine learning: not needed for the core, and the examples would not
 support it.** Search maps and strategic maps are deterministic functions of
@@ -314,16 +335,14 @@ Reading:
   with the level's custom objects disabled (same Botinator pages). FHSW and
   FH statics are in that class, which is the likely reason FHSWEurope's maps
   are hand-drawn (inference).
-* Repo lead, not verified: the generator is in the Linux dedicated server
-  binary the lab already runs. `features/bf1942-engine-reference/symbols.json` has
-  `AIPathfinding::createMaps(unsigned int)` at 0x0847b2e0 (ledger AI-12 calls
-  it the editor path), and the second corpus
-  (`features/bf1942-engine-reference/recorpus.py createAllMaps`) lists
-  `AIConsole::createAllMaps` 0x084751c0, `AIPathfinding::createAllMaps`
-  0x08482730 and four `saveRawFile` functions. If the console word is
-  registered in the release server and the save path is live, the lab server
-  can produce the engine's own maps for any level with no debug executable,
-  which would be the reference to hold the painter against on mod statics.
+* The generator is in the release Linux dedicated server the lab runs, and
+  it works there (measured 2026-11-10, section 13). The lead was
+  `features/bf1942-engine-reference/symbols.json`
+  (`AIPathfinding::createMaps(unsigned int)` at 0x0847b2e0, which ledger AI-12
+  calls the editor path) and the second corpus
+  (`features/bf1942-engine-reference/recorpus.py createAllMaps`:
+  `AIConsole::createAllMaps`, `AIPathfinding::createAllMaps`, four
+  `saveRawFile` functions).
 
 ### 4.4 Strategic areas: what is regular and what is taste (measured)
 
@@ -473,6 +492,13 @@ on a name gate (`viewer/collision-meshes.js DRIVABLE_TOP_RE`) that has
 already missed decks twice (repo: `features/fhsweurope-extraction/README.md`
 item 5).
 
+Updated 2026-11-10: the engine is now a second source for this phase, and
+the better one for retail output. The release Linux server paints and saves a
+level's search maps itself (section 13), so where the lab can load the level
+the files come from the engine and the painter becomes the cross-check and
+the page's instant path. The painter stays necessary: it needs no server, it
+runs in under a second, and the page uses it for any level with no baked map.
+
 **3, water.** A water map is the inverse test (free where the water is at
 least the map's depth) with a wide shore brush. The repo's `Boat2` painter
 exists and Wake's landing craft already sail on a shipped map. Unknowns are
@@ -600,14 +626,36 @@ told otherwise; and it is the repo's port of the AI, not retail's.
 The server lab (`tools/bf1942-models/lab/`, skill `bf1942-server-lab`) runs
 the real dedicated server with bots in co-op and records rounds; its
 scenarios take a `mod` per level and FHSW and FHSWEurope co-op scenarios
-exist (`lab/scenarios/fhsw-arnhem-coop-rec.json`). A generated patch archive
-dropped into a scratch copy of the mod's `levels` folder is the retail test:
-does the server load the maps (it logs nothing when one fails, so compare
-bot movement, not the console), do bots leave their base, does a flag
-change hands. The recorder's output then runs through the same detectors
-as the headless trace, which also measures how far the page's port is from
-the engine on a generated layer. The lab lives on the Linux machine, so
-nothing in this ring was run for this document.
+exist (`lab/scenarios/fhsw-arnhem-coop-rec.json`).
+
+**Corrected 2026-11-10.** The first version of this section said the lab
+lives on the Linux machine and so nothing could be run. That was wrong. Both
+servers run on this Mac (repo: the skill, "On a Mac"; `lab/INSTALL.md`): the
+Windows one, `BF1942_w32ded.exe` 1.61 in the client's CrossOver bottle, which
+is the one the owner uses because it proved more reliable, and the Linux one
+in a container in the emulated x86_64 Colima VM `bf1942-lab-x86`, which
+`lab.py` reaches through `lab/linux-container/lab.sh`. Measured:
+`python3 lab/lab.py status` answered "no lab server running", and the
+container was up. What was then run is section 13: the engine's map
+generator, in a private instance beside the lab's install.
+
+A generated patch archive in a private copy of the instance's `levels`
+folder is the retail test: does the server load the maps (it logs nothing
+when one fails, so compare bot movement, not the console), do bots leave
+their base, does a flag change hands. The recorder's output then runs
+through the same detectors as the headless trace, which also measures how
+far the page's port is from the engine on a generated layer. That part has
+not been run: there is no generated layer yet. Two things the section 13
+test taught about doing it:
+
+* The engine does not read an archive written by `bf42/rfa.py write_rfa`.
+  It reads one that keeps the 148-byte block after the 8-byte header and the
+  four trailing bytes of a game archive (measured, section 13). A writer the
+  engine accepts is a prerequisite for this ring.
+* The lab's install links its `archives` folders to the server's source, so
+  a test that changes an archive needs an instance of its own with its own
+  `levels` folder (links to the source archives plus the changed file), not
+  an edit under the shared install.
 
 ### 6.4 What exists and what is missing
 
@@ -623,6 +671,7 @@ nothing in this ring was run for this document.
 | Stuck, idle, oscillation, self-death, coverage detectors | Missing |
 | Baseline corpus of metrics on hand-made layers | Missing |
 | Lab scenario template for a generated archive | Missing |
+| The engine's own search map generator, run in the lab | Works by hand for one vanilla level (section 13); no script, no archive writer the engine reads |
 
 ## 7. Where machine learning would and would not earn its place
 
@@ -675,8 +724,10 @@ level nobody plays has none; the rule-based path must stand alone.
 
 | Risk | Why it matters | What settles it |
 |---|---|---|
-| The levels truly without bot data are mostly 8 km naval or air ObjectiveMode | The generator derives data, not a game mode; ships, submarines and carriers are where retail bots are weakest | The owner decides whether those levels are in scope at all |
-| The painter under-blocks by 7 to 20 % against DICE and uses collision where the engine uses AI meshes | Bots may be sent through gaps the engine closes; on FH and FHSW statics there is no engine reference yet | Read the convex pass and the material rule; try the lab server's `createAllMaps` lead for engine output on mod statics |
+| In FHSW and FHSWEurope the levels truly without bot data are mostly 8 km naval or air ObjectiveMode | The generator derives data, not a game mode; ships, submarines and carriers are where retail bots are weakest | Settled: out of scope (owner, 2026-11-10). Section 12 ranks what is in |
+| The painter under-blocks by 7 to 20 % against DICE on Bocage and El Alamein, and on Kharkov's infantry map agrees on only 74 % (it leaves free 35 % of the cells DICE blocks) | Bots may be sent through gaps the engine closes | The engine's own output is now available as the reference (section 13): diff the painter against it per level, and read the convex pass and the material rule where they disagree |
+| The engine generator is proven on one vanilla level only | FH and FHSW statics lack AI meshes, and the tutorials report freezes and streaked infantry maps there; the process aborts before the strategic maps | Run it on FHSW Ramelle in a private instance with the mod linked in; find the abort |
+| Flagless arenas need an invented objective | A knife or air arena with two fixed bases gives the strategic AI nothing to attack; the generator must add a meeting area the level's author never wrote | Label it as generated; judge it by play and by the detectors, not by parity |
 | The strategic map writer has no reference algorithm | A wrong decomposition gives routes the local search cannot close (the AI-104 failure) | The regenerate-DICE test of phase 4 |
 | The page's strategy choice may be inert (`Required` conditions) | Strategy templates could be tuned against a port that ignores them | Re-read `StrategyPrerequisite::evaluate`; until then weight areas, not strategies |
 | FHSW's inherited AI layers are stale | 39 of 50 take FH's areas over FHSW's changed statics | Phase 0 lint, then regenerate search maps only |
@@ -689,22 +740,61 @@ level nobody plays has none; the rule-based path must stand alone.
 | Install dependency | FHSW needs the FH fan map packs for seven levels; this machine lacks them | Run archive work on the machine with the full install |
 
 Not verified in this research: the FHSWEurope archives themselves (only the
-published tree); whether the release Linux server registers
-`ai.createAllMaps`; generation time and limits on 4096 m maps under the
-debug executable; the engine's strategic map decomposition; anything on the
-lab server.
+published tree); the engine generator on a mod level, on a 4096 m level, on
+the Windows server, or through to the strategic maps; the engine's strategic
+map decomposition; a recorded bot round on any generated layer; the level
+archives of bg42, FinnWars, Pirates and Interstate, which are not installed
+here and have no level tree published.
 
 ## 9. First slice
 
-The smallest end-to-end proof, on two named levels that both have an
-identical FHSWEurope twin with a community layer, so every result has two
-comparison arms.
+Revised 2026-11-10 after the owner's priority rule and the broadened census.
+The recommendation: keep Ramelle and Seelow Heights as the verifier's proving
+ground, and make the first real delivery a contained on-foot level that has
+no bots anywhere, the community map shigaisen_B.
+
+### 9.1 The first delivery: shigaisen_B
+
+Measured (section 12): a 1024 m vanilla community level, Conquest, CTF and
+TDM, eight control points (six capturable) all within 222 m of each other,
+23 soldier spawns, no vehicle pad at all, vanilla kits, already published in
+vanilla's tree, and no bot data in any mod. It is the owner's case exactly:
+on foot, contained, playable on the page today without bots.
+
+It is also the smallest thing that can ship, because the page needs less
+than retail does. The page builds its strategic AI whenever the level's `ai`
+block has strategic areas (`viewer/bot-referee.js`), and paints its own
+infantry map when the level ships none. So for the page the first delivery
+is `AI.con`, `AI/StrategicAreas.con` and one strategy template: one area per
+control point by the rule of section 4.4, neighbours from routes on the
+painted map, sides and `setTakeable` from the flags. No `.raw` file, no
+co-op layer, no vehicles to assign.
+
+Done means: the generated layer passes the static checks; over ten seeds at
+8 a side and 600 s on the Conquest layer every capturable flag changes hands
+at least once, both sides capture, and stuck time, idle share and route
+failures per bot-minute are inside the spread of the vanilla baseline; then
+the owner plays it from a local viewer before anything is published. The
+comparison arm is the level as it is today (the nearest-flag fallback).
+
+Next two after it, to cover the other shapes on the shortlist before any
+batch: the_dungeon (five capturable flags indoors, the nav map's hard case)
+and omaturi_channel_airmini (an air arena with two fixed bases, which needs
+the meeting-area rule of section 12.4 and no search map at all).
+
+### 9.2 The proving ground: Ramelle and Seelow Heights
+
+Two FHSW levels that both have an identical FHSWEurope twin with a community
+layer, so every result has two comparison arms. They prove the verifier and
+the retail-format half of the pipeline; they are not the first thing a
+player gets.
 
 1. **FHSW Ramelle_Neuville-1944** (1024 m, tank and infantry only, 8 control
    points, 1,419 objects, a town with a river and a bridge). It is the level
    FHX-19 was root-caused on, the hardest kind for the painter (streets,
    statics without AI meshes), and section 4.7 already has its two baseline
-   arms.
+   arms. It is also the level to run the engine's generator on next
+   (section 13), since FHSW's statics are the open question there.
 2. **FHSW Seelow-Heights-1945** (2048 m, tank and infantry, 6 control
    points, open ground where the community map leaves 37 % of walkable
    terrain free). It exercises tank routes and long legs, where route areas
@@ -712,8 +802,8 @@ comparison arms.
 
 Scope: phases 0, 1, 2, 4, 5 version one, 6 with one template, and rings 1
 and 2 with the stuck, idle, coverage and self-death detectors. No water, no
-co-op layer (the page runs the bots on Conquest), no lab, no publish. Output
-goes to an overlay directory and a scratch copy of the level tree through
+co-op layer (the page runs the bots on Conquest), no publish. Output goes to
+an overlay directory and a scratch copy of the level tree through
 `patch_scene.py --layer ai`.
 
 Done means, for each level over ten seeds at 8 a side and 600 s, with
@@ -743,14 +833,21 @@ S is up to a day, M two to four days, L one to two weeks.
 | 9 | Strategy templates for the three archetypes, taken from DICE levels, and the archetype rule | S | 3 |
 | 10 | Runner detectors: stuck, idle, oscillation, self-death, spawn trap, vehicle use, flag coverage, outcome, route heat; a `sim/judge.mjs` that scores a summary against a baseline file | M | |
 | 11 | Baseline corpus: the detectors over the vanilla and FH hand-made layers, ten seeds each; the percentile file | S plus compute | 10 |
-| 12 | First slice on Ramelle and Seelow Heights: three-way comparison, written up here | M | 5 to 11 |
+| 12 | Proving ground on Ramelle and Seelow Heights (section 9.2): three-way comparison, written up here | M | 5 to 11 |
 | 13 | Overlay packaging (`write_rfa`), the generated marker, a `bot_data_generated` step in `mod_pipeline.py`, the menu's experimental tag | M | 12 |
 | 14 | Route, flank and choke areas (version two) with the simulator in the loop; parameter search | L | 12 |
 | 15 | Co-op layer writer and the per-hull AI template and `vehicleNumber` census for FHSW | M | 1 |
 | 16 | Water: `Boat` and `LandingCraft` maps, landing zones, the beach checks | L | 12 |
-| 17 | Lab ring: scenario template for a generated archive, the server-side-only test, the `createAllMaps` lead | M, on the lab machine | 13, 15 |
-| 18 | Batch over FHSW's 70 levels with a community twin: lint the twin, generate, three-way table, decide per level | L, mostly compute | 13, 14 |
-| 19 | ObjectiveMode and naval levels: a design per level with the owner | L, open-ended | owner |
+| 17 | Lab ring: scenario template for a generated archive, the server-side-only test (the lab runs on this Mac; section 6.3) | M | 13, 15, 21 |
+| 18 | Batch over FHSW's 70 levels with a community twin: lint the twin, generate, three-way table, decide per level. Lower priority since 2026-11-10: most are open ground with vehicles | L, mostly compute | 13, 14 |
+| 19 | ObjectiveMode and naval levels | Out of scope (owner, 2026-11-10) | |
+| 20 | First delivery, shigaisen_B (section 9.1): areas and one strategy template through the `ai` layer on a scratch tree, the headless matrix against today's fallback, a local play test | M | 8, 9, the stuck, idle and coverage detectors of 10 |
+| 21 | An archive writer the engine reads (the 148-byte header block and trailer kept; section 13), with a lab test that the server loads a file from it | S | |
+| 22 | The engine generator as a script: a private lab instance, the patched `AIpathFinding.con`, collect the `.raw` files, clean up; run over the vanilla levels as a regression against the shipped maps | M | 21 |
+| 23 | The engine generator on FHSW Ramelle (mod linked into a private instance) and the abort before the strategic maps: find it, or confirm the phase 4 writer is still needed | M | 22 |
+| 24 | The meeting-area rule for flagless arenas and air arenas (section 12.4), tried on omaturi_channel_airmini and omaturi_channel_knife | M | 20 |
+| 25 | Batch over the contained on-foot shortlist of section 12.3, then the air entries | M, mostly compute | 20, 24 |
+| 26 | Commit the all-mods census as `surveys/census_bot_candidates.py`, replacing `candidates.csv`'s scratch script | S | 1 |
 
 ## 11. How this was measured
 
@@ -794,3 +891,303 @@ All scripts were throwaway and are not in the repo; task 1 replaces them.
   the FHSW Coop Mappack 0.04 and FHSWEurope, and the DICE MDT documentation
   mirror. bfmods.com and team-simple.org could not be read; statements
   resting on search snippets alone are marked where used.
+
+## 12. Follow-up 2026-11-10: every mod and the community maps, ranked
+
+The owner's rule: any level without bots is a candidate; what makes bots
+worth adding is on-foot and air play in a contained space; the big naval
+levels are out. The per-level table behind this section is
+`features/bot-map-generation/candidates.csv` (266 rows, one per level with no
+bot data, ranked).
+
+### 12.1 Census by mod (measured)
+
+"Complete", "partial" and "none" are as in section 3. A partial level ships
+an AI layer of which the engine refuses a part.
+
+| Mod or pack | Levels | Complete | Partial | None | Where the levels were read |
+|---|---|---|---|---|---|
+| bf1942 (retail) | 23 | 17 | 2 | 4 | Published tree |
+| Community maps (levels of vanilla's tree; `community-mappack-by-michaels/` and strasbourg) | 77 | 8 | 1 | 68 | Published tree; the pack's 78 archives read as a cross-check |
+| XPack1 | 6 | 6 | 0 | 0 | Published tree, own levels only |
+| XPack2 | 9 | 8 | 0 | 1 | Published tree, own levels only |
+| FH 0.7 | 61 | 49 | 0 | 12 | 10 published, 51 from the install's archives |
+| FHSW 0.81 | 140 | 54 | 3 | 83 | Published tree |
+| FHSWEurope 0.84 | 274 | 257 | 3 | 14 | Published tree |
+| Desert Combat 0.7 | 35 | 20 | 2 | 13 | Published tree |
+| DC Final | 48 | 21 | 2 | 25 | Install's archives; no level tree published |
+| Eve of Destruction 2.50 | 239 | 238 | 0 | 1 | Published tree |
+| bf1918 3.4b | 134 | 109 | 2 | 23 | 133 from the local baked tree, 1 from the archives |
+| bf1919 | 8 | 8 | 0 | 0 | Install's archives |
+| Galactic Conquest | 23 | 0 | 1 | 22 | Install's archives; no level tree |
+| Total | 1,077 | 795 | 16 | 266 | |
+
+Not measured: bg42, FinnWars, Pirates and Interstate. They have rows in the
+models registry (the service record's poses-only trees), no published level
+tree, and are not installed on this machine.
+
+The partial levels, beyond the six of section 3.2: the community map
+attack_on_pearl_harbor (no `Tank0Level0Map.raw`, so nothing loads), Gazala
+and Tobruk in vanilla, Desert Combat and DC Final (no `Car.raw`, the last
+type), bf1918's fao_landing and priesterwald, and Galactic Conquest's
+gc_dantooine.
+
+The community pack's base mod: every level is vanilla's (repo:
+`features/community-maps/README.md`, each `Menu/Init.con` says
+`game.setMapId "bf1942"`). Its 78 archives are 77 levels (`shigaisen_A_001`
+is a patch); the archive census here read them in place and found 9 with an
+`AI.con`, which matches the nine the repo's note says show in Instant Battle.
+
+Of the 266 levels with no bot data, 92 have a same-named level with complete
+bot data in another mod: 71 of FHSW's 83 (70 in FHSWEurope, section 3.3,
+plus Aberdeen in EoD), 10 of FH's 12, all 4 of vanilla's, 4 of DC Final's,
+and one each in the community maps, FHSWEurope and bf1918.
+
+### 12.2 What is out, and why
+
+Classes assigned by rule from the level's own data (game types, control
+points, soldier spawns, the vehicles its pads place, the distance between
+its furthest control points), then checked by name for the novelty maps.
+
+| Class | Levels | Why it is out |
+|---|---|---|
+| Race, sport and puzzle maps (jeep and kart races, rally, football, bowling, hurdles, parcours, stunts) | 34 | Nothing a strategic area can express: the goal is a lap, a goal line or a jump. Bots would drive at a flag and stop |
+| 8 km or larger naval and air objective levels | 22 | Owner, 2026-11-10. Ships, submarines and carriers; mostly ObjectiveMode with no flags to take |
+| ObjectiveMode only, smaller | 6 | No co-op game type and no capturable flag; a game mode would have to be designed |
+| No soldier spawns | 5 | Nobody can deploy on foot; these are ship or vehicle-seat levels |
+
+That is 67 of the 266. Of the rest:
+
+| Class | Levels | By mod |
+|---|---|---|
+| Contained on-foot: flags within 600 m, at most eight land or air hulls | 30 | community 15, bf1918 7, FHSW 4, Desert Combat 3, FH 1 |
+| Contained with vehicles: flags within 600 m, more hulls | 19 | FHSW 8, bf1918 6, community 5 |
+| Air: at least half of six or more pads are aircraft | 6 | community 6 |
+| Arena with fixed bases only, or no control point | 7 | community 4, Desert Combat 1, DC Final 1 (its Coral Sea, which belongs with the naval class), EoD 1 |
+| Open ground or wide map: flags further apart | 89 | FHSW 56, community 9, bf1918 9, Desert Combat 8, vanilla 3, FH 2, XPack2 1, FHSWEurope 1 |
+| Not exported, so the flag spread is unknown | 48 | DC Final 22, Galactic Conquest 18, FH 7, bf1918 1 |
+
+FHSW's 83 are mostly the wrong shape for the owner's rule: 56 are open
+ground with vehicles, 15 are out, and the 12 contained ones all have a
+botted twin in FHSWEurope.
+
+### 12.3 The ranked shortlist
+
+Ranked by the owner's rule: contained on-foot first, then air, then arenas;
+within a class, levels with no bot data in any mod before levels with a
+twin, published before unpublished, capturable flags before fixed bases.
+"Flags" is control points / capturable; "spread" is the distance between
+the two furthest flags. All are 1024 m worlds unless said.
+
+| # | Level | Mod | Flags | Spread | Soldier spawns | Pads | Playable on the page today | Why |
+|---|---|---|---|---|---|---|---|---|
+| 1 | shigaisen_B | community | 8 / 6 | 222 m | 23 | none | yes | Street fighting on foot, six flags to take in a 220 m block, no vehicle to assign. The first delivery (section 9.1) |
+| 2 | shigaisen_C | community | 8 / 6 | 231 m | 17 | none | yes | The same shape; a second sample for the area rule |
+| 3 | the_dungeon | community | 5 / 5 | 376 m | 12 | none | yes | Every flag capturable, indoors: the nav map's hard case |
+| 4 | the_street, the_street_day2 | community | 7 / 5 | 221 m | 29 | 2 and 5 land hulls | yes | One street, many spawns, a couple of hulls to test boarding |
+| 5 | shigaisen_A, shigaisen_D | community | 7 / 5 | 212 m, 304 m | 25, 27 | 4 and 7 land hulls, 3 guns | yes | The street set with light vehicles |
+| 6 | dc_basrah_nights | Desert Combat | 5 / 5 | 192 m | 29 | 4 land hulls, 4 guns, all with an AI record | yes | The one small infantry level in Desert Combat without bots; modern kits |
+| 7 | the_maze | community | 7 / 5 | 347 m | 20 | none | yes | A maze: the stuck and oscillation detectors' best test |
+| 8 | the_corridor | community | 5 / 3 | 289 m | 8 | none | yes | A single lane; a degenerate neighbour graph |
+| 9 | knife_championship | community | 7 / 3 | 280 m | 25 | no vehicles | yes | A knife arena that is still Conquest; needs bots that close and stab |
+| 10 | omaturi_channel_sniper, _day2 | community | 3 / 1 | 209 m | 12 | none | yes | Two bases and one flag between them at sniping range |
+| 11 | the_room | community (2048 m world) | 4 / 3 | 82 m | 17 | none | yes | One room; the smallest fight on the list |
+| 12 | dc_lostvillage | Desert Combat (2048 m world) | 7 / 5 | 484 m | 50 | 2 aircraft, 4 guns | yes | A village on foot, no land hull, two aircraft (its DC Final sibling is named `_nopara`) |
+| 13 | battle_of_the_vosges | bf1918 | 7 / 5 | 443 m | 20 | 14 land, 2 air, 21 guns | on the volume, no registry row | Trench infantry with fixed guns, which the garrison doctrine already mans |
+| 14 | deulemont | bf1918 | 8 / 6 | 317 m | 13 | 2 land, 18 guns | baked locally, not on the volume | The tightest of bf1918's seven contained levels |
+| 15 | omaturi_channel_airmini | community | 2 / 0 | 26 m | 24 | 16 aircraft | yes | A small dogfight arena; needs areas only, no search map (12.4) |
+| 16 | air_attack | community (2048 m) | 2 / 0 | 1,358 m | 7 | 133 aircraft pads | yes | Two airfields and nothing but planes |
+| 17 | tl_plane_training | community (2048 m) | 4 / 2 | 2,395 m | 21 | 22 aircraft, 22 land | yes | Air with two flags to take: the ordinary rule applies |
+| 18 | bomberfight_big, bomberfight | community (4096 m) | 5 / 3, 3 / 1 | 2,576 m | 8 | 6 aircraft | yes | Bombers over capturable flags |
+| 19 | operation_linebacker | Eve of Destruction (2048 m) | 3 / 0 | 1,150 m | 6 | 11 aircraft, 18 land, 20 guns | yes | The only EoD level without bots; today they stand on the carrier deck (repo: `features/bot-path-budget`) |
+| 20 | omaturi_channel_knife | community | 2 / 0 | 129 m | 8 | none | yes | A pure knife pit; works only with the meeting-area rule (12.4) |
+| 21 | knife_fight | community | 4 / 0 | 204 m | 8 | 12 land hulls | yes | The same, with a dozen land hulls in the pit |
+| 22 | Battle_of_Edson_s_Ridge | FHSW | 5 / 3 | 199 m | 15 | 4 guns | yes | FHSW's smallest infantry level; FHSWEurope's twin is botted, so it is a three-arm level |
+| 23 | Stalingrad_RedSquare | FHSW | 8 / 6 | 298 m | 16 | 7 guns | yes | Urban infantry; the twin's flags differ (8 against 4), so its layer cannot simply be copied |
+
+Would need exporting first (the owner's call; not ranked): DC Final's
+dc_bridge (1024 m, five flags, 20 soldier spawns, no pads) and Galactic
+Conquest's six `gc_mini_*` levels (1024 m, four to six flags). Galactic
+Conquest ships no bot data at all, so its vehicles' AI templates are the
+open question there, and its pads could not be classified here.
+
+Retail levels worth a line although they are open ground with tanks, because
+they are the stock game's own gaps: Aberdeen, Liberation of Caen and
+Invasion of the Philippines in vanilla (all three have a botted twin in EoD
+or FH), and Raid on Agheila in the XPack2 tree (no twin).
+
+Caveats on the columns. The pad classes come from each tree's
+`_shared/vehicle-ai.json` (`class` and `types` of the template's AI record);
+a pad whose template has no record is counted as "no AI record", which
+includes kit and prop spawners as well as hulls a bot cannot use, so the
+share is rough and worst on FHSW (its pads average more unrecorded
+templates than recorded ones). "Playable on the page today" means the level
+is in a published tree; it says nothing about whether it was play-tested.
+
+### 12.4 The novelty maps, looked at honestly
+
+* **Small arenas with capturable flags are the easiest and best case.**
+  shigaisen_A to D, the_street, the_dungeon, the_corridor, the_maze,
+  the_room, knife_championship and omaturi_channel_sniper are ordinary
+  Conquest in a space of 80 to 380 m with no or few vehicles. The
+  control-point rule of section 4.4 applies unchanged, only the infantry
+  search map matters, and a round is short enough to judge in a few seeds.
+* **Arenas with fixed bases only need one invented rule.**
+  omaturi_channel_knife, knife_fight, omaturi_channel_tank and arena_tl (no
+  control point at all) have nothing capturable. The strategic AI gives no
+  attack value to an area whose control points are all uncapturable (repo:
+  `features/bf1942-ai-spec/strategic.md`, "Ownership"), which is why EoD's
+  Operation Linebacker bots stand on deck. The same document gives the way
+  out: an area with no control point is owned by presence (ledger AI-74), so
+  a generated "meeting" area in the middle of the arena, takeable by both
+  sides, gives both sides somewhere to go, and they fight when they meet.
+  That is the generator inventing an objective the author never wrote. It is
+  cheap, it has to be labelled, and it is judged by play (inference; not
+  built or run).
+* **Air arenas need areas and nothing else.** Aircraft have no search map
+  (`vehicleNumber` -1); a pilot is ordered to an area's middle at +75 m. On
+  omaturi_channel_airmini, air_attack and omaturi_channel_air (two fixed
+  bases each) the same meeting area works, and better: a bot in an
+  aircraft's own seat is not counted for presence (ledger AI-127), so the
+  area never changes hands and both sides are sent over it all round
+  (inference). What limits the result is the bot pilots, which is the
+  dogfight-school work (repo: `features/dogfight-school`), not the map data.
+* **Race, sport and puzzle maps have nothing for a bot to do.** A lap, a
+  goal or an obstacle course is not a place to take. Thirty-four levels.
+* **Knives.** The page's bots have a melee path (`tests/test_bot_melee.py`);
+  whether a kit with a knife and nothing else behaves on these maps, and
+  what the maps' kits actually hold, was not checked.
+
+### 12.5 How this section was measured
+
+* Published trees: every row of `maps.json` for vanilla (which holds the
+  community maps), XPack1, XPack2, FH, FHSW, FHSWEurope, Desert Combat and
+  EoD, each level's `scene.json` and `pathfinding/index.json`, and each
+  tree's `_shared/vehicle-ai.json`, read from mesh.bfstats.io on 2026-11-10.
+  bf1918 from the local baked tree (133 levels; its `maps.json` is not on
+  the volume and 5 of a sample of 20 of its scenes were).
+* Install archives, chain-merged with the engine's load rules as in section
+  11: vanilla, XPack1, XPack2, FH, Desert Combat, DC Final (over Desert
+  Combat), EoD, Galactic Conquest, bf1918, bf1919 (over bf1918), FHSW, and
+  the 78 archives of `community-mappack-by-michaels/`, read in place and not
+  modified. For a level not in a published tree the control points, soldier
+  spawns and pad templates were counted from its `Conquest/` (else first
+  present) layer's con files.
+* Community levels are the names in the registry's `community` row.
+  XPack trees were cut to the packs' own archives.
+* Twin: the same lower-case level name with complete bot data in a different
+  mod.
+* Flag spread: the largest distance between two control points of the
+  level's default layer.
+
+## 13. Follow-up 2026-11-10: the engine's own map generator, in the lab
+
+The question: can the retail dedicated server produce the search maps
+itself, with no debug executable? Verdict: **yes for the search maps on the
+release Linux server**, measured on one vanilla level; **not yet for the
+strategic maps** (the process aborts first); **probably not for the search
+maps on the Windows release server** (static signs only, not run).
+
+### 13.1 Static read
+
+| Sign | Linux release server (`bf1942_lnxded.static`) | Windows release server (`BF1942_w32ded.exe` 1.61) | Source |
+|---|---|---|---|
+| Console words `createMaps`, `createAllSearchMaps`, `createAllMaps` beside `loadMaps` and `addSearchMap` | present | present | measured: strings of the binaries the lab runs |
+| The search map generator's messages (`Local search map `, ` created `, `8Bit.raw`) | present | absent | measured |
+| The strategic half's messages (`Strategic search map created for `, `Unable to load local map `) | present | present | measured |
+
+The second corpus's decompile of a Linux 1.61 server (a lead, another
+build's addresses; `features/bf1942-engine-reference/recorpus.py
+createAllMaps`): `AIPathfinding::createAllMaps` calls `createAllSearchMaps`
+then `createAllSearchTypes`. `createAllSearchMaps` runs, for each declared
+map, `LocalMapInfo::update`, which is `LocalMap::loadRawFile`, then
+`LocalMap::update` (the painter of ledger AI-93), then `saveRawFile` and
+`save8BitRawFile`, with no condition on a debug or editor flag.
+`createAllSearchTypes` is `LocalMap::loadRawFile`, `StrategicMap::update`,
+`StrategicMap::save`. So the static read said it could work on Linux.
+
+### 13.2 The live test (measured)
+
+`python3 lab/lab.py status` said no lab server was running. The test did not
+use the lab's install or the game install: it built a private instance
+inside the lab folder (a copy of the server binary and of the rendered
+settings on other ports, an `archives` folder of links to the server's
+source archives, and its own file in place of the link for Kharkov's patch
+archive), ran it with `docker exec` in the lab's Linux container, and
+removed the instance afterwards. The lab's install, its source archives and
+its runs were not touched.
+
+The change to the level: in Kharkov's `AIpathFinding.con`, after
+`ai.loadMaps`, the two lines the community tutorials use, `run
+StaticObjects` and `ai.createAllMaps` (web, section 4.3).
+
+| Run | Result |
+|---|---|
+| The patched script | The server wrote `bf1942/levels/Kharkov/Pathfinding/` under its working directory: nine search maps (`tank0`, `infantry1`, `car4`, levels 0 to 2, lower-case names) and nine `...8bit.raw` previews, in about two and a half minutes under full x86 emulation. It then aborted with `free(): invalid pointer` (exit 134). No strategic map was written |
+| The same, with all-free maps for all nine files put in the patch archive first | The same nine files, byte-identical to the first run. So the output is the engine's own paint from terrain and statics, not a touch-up of what it loaded |
+
+Against DICE's shipped Kharkov maps (level 0, 1,048,576 cells each):
+
+| Map | Same file size as shipped | Cells that differ | Engine blocks, shipped free | Engine free, shipped blocked |
+|---|---|---|---|---|
+| `Tank0` | yes (57,888 bytes) | 588 (0.056 %) | 468 | 120 |
+| `Infantry1` | yes (60,448) | 509 (0.049 %) | 438 | 71 |
+| `Car4` | yes (51,232) | 383 (0.037 %) | 259 | 124 |
+
+The repo's painter on the same level, for scale: `Tank0` 98.6 % agreement,
+`Car4` 98.0 %, `Infantry1` 74.2 % (it leaves free 35 % of the cells DICE
+blocks). The engine reproduces DICE's map to four parts in ten thousand
+where the painter is off by a quarter of the infantry map.
+
+What the test taught on the way:
+
+* **The engine does not read an archive `bf42/rfa.py write_rfa` writes.**
+  A rewrite of Kharkov's patch archive with unchanged contents, in that
+  layout or in a compressed layout without the 148-byte block that follows
+  the 8-byte header, made the server fall back to the base archive and stop
+  with `template not found: AnimatedFlag`. The same contents rebuilt with
+  the source archive's 148-byte block and its four trailing bytes kept
+  loaded normally, including a changed file stored as a literal-only LZO
+  stream. What the block must hold was not determined; the source's was
+  copied.
+* A numbered patch `kharkov_010.rfa` written by `write_rfa` had no effect in
+  two runs. That is explained by the point above, so whether the server
+  reads a patch number it has never seen is still open.
+* The output folder had been created beforehand. Whether the server creates
+  it was not tested.
+
+### 13.3 What is still open
+
+* The strategic maps. The abort comes after the last search map is saved.
+  The decompile shows `createAllSearchMaps` building a temporary AI mesh
+  loader when none exists and destroying it at the end, which is a
+  candidate for the bad free (inference; not read in our binary). Routes to
+  try: `ai.createMaps <n>` per type, a second start with the generated
+  search maps in place, or the Windows server for the strategic half alone,
+  whose messages it has.
+* A mod level. FH and FHSW statics lack AI meshes, and the tutorials report
+  freezes and streaked infantry maps on such levels (web, section 4.3).
+  Kharkov has DICE's AI meshes. FHSW Ramelle in a private instance with the
+  mod linked in (`lab.py setup` takes client mods) is the test that decides
+  how much of phase 2 the engine can carry.
+* The 588 cells. Whether they come from the 1.6 patch's statics, from
+  running `StaticObjects` a second time, or from a hand edit by DICE was not
+  looked at.
+* Larger worlds, water maps, and the time on real hardware.
+
+### 13.4 What it changes
+
+* **Phase 2 has a reference and, for retail output, a better source.** For
+  any level the lab can load, the engine's own search maps are obtainable
+  with a script and no debug executable. The painter is no longer the only
+  way to make them, and it can now be scored against the engine on every
+  level instead of against whatever a mapper shipped.
+* **The painter has a measured gap to close.** Kharkov's infantry map says
+  the painter's flood or slope pass differs from the engine's in a way
+  Bocage and El Alamein did not show.
+* **Phase 4 is unchanged for now.** Until the strategic half runs, the
+  strategic map writer is still needed, and the regenerate-DICE test still
+  decides whether it is right.
+* **The page's first delivery does not depend on any of this.** shigaisen_B
+  needs strategic areas and the painted map the page already uses
+  (section 9.1).

@@ -1,0 +1,267 @@
+tree,level,worldSize,gameTypes,cps,capturable,flagSpread,soldierSpawns,pads,land,air,sea,gun,noAiRecord,aiRecordShare,published,bakedLocally,twinWithBotData,class,rank,ruleOuts
+community,shigaisen_B,1024,Conquest+Ctf+Tdm,8,6,222,23,0,0,0,0,0,0,0.0,yes,yes,,contained on-foot,124,
+community,shigaisen_C,1024,Conquest+Ctf,8,6,231,17,0,0,0,0,0,0,0.0,yes,yes,,contained on-foot,124,
+community,The_Dungeon,1024,Conquest+Ctf+Tdm,5,5,376,12,0,0,0,0,0,0,0.0,yes,yes,,contained on-foot,124,
+community,The_Maze,1024,Conquest+Ctf+Tdm,7,5,347,20,0,0,0,0,0,0,0.0,yes,yes,,contained on-foot,124,"novelty name (race, sport, puzzle): check by hand"
+community,The_corridor,1024,Conquest+Ctf+Tdm,5,3,289,8,0,0,0,0,0,0,0.0,yes,yes,,contained on-foot,122,
+bf1918,cantigny,1024,Conquest,5,4,495,45,54,7,0,0,30,17,0.69,no,yes,,contained on-foot,120,
+bf1918,chemin_des_dames,1024,Conquest,5,4,432,17,37,8,0,0,18,11,0.7,no,yes,,contained on-foot,120,
+bf1918,dawnVille,1024,Conquest+Tdm,7,5,532,21,12,6,0,0,6,0,1.0,no,yes,,contained on-foot,120,
+bf1918,deulemont,1024,Conquest+Tdm,8,6,317,13,24,2,0,0,18,4,0.83,no,yes,,contained on-foot,120,
+bf1918,liberation_of_roeselare,1024,Conquest,8,7,350,62,67,3,0,0,35,29,0.57,no,yes,,contained on-foot,120,
+bf1918,lutte_de_honneur,1024,Conquest+Tdm,8,6,560,33,55,8,0,0,35,12,0.78,no,yes,,contained on-foot,120,
+bf1918,somme_gasattack,1024,Conquest,3,3,305,20,45,1,0,0,23,21,0.53,no,yes,,contained on-foot,120,
+community,KNIFE_CHAMPIONSHIP,1024,Conquest+Ctf+Tdm,7,3,280,25,10,0,0,0,0,10,0.0,yes,yes,,contained on-foot,120,
+community,Omaturi_Channel_Cannon,1024,Conquest+Ctf+Tdm,8,6,426,25,42,8,0,12,22,0,1.0,yes,yes,,contained on-foot,120,
+community,Omaturi_Channel_Sniper,1024,Conquest+Ctf+Tdm,3,1,209,12,0,0,0,0,0,0,0.0,yes,yes,,contained on-foot,120,
+community,Omaturi_Channel_Sniper_day2,1024,Conquest+Ctf+Tdm,3,1,209,12,0,0,0,0,0,0,0.0,yes,yes,,contained on-foot,120,
+community,shigaisen_A,1024,Conquest+Ctf,7,5,212,25,7,4,0,0,3,0,1.0,yes,yes,,contained on-foot,120,
+community,shigaisen_D,1024,Conquest+Ctf+Tdm,7,5,304,27,7,7,0,0,0,0,1.0,yes,yes,,contained on-foot,120,
+community,The_Room,2048,Conquest,4,3,82,17,2,0,0,0,0,2,0.0,yes,yes,,contained on-foot,120,
+community,The_Street,1024,Conquest+Ctf+Tdm,7,5,221,29,2,2,0,0,0,0,1.0,yes,yes,,contained on-foot,120,
+community,The_Street_day2,1024,Conquest+Ctf+Tdm,7,5,221,29,5,5,0,0,0,0,1.0,yes,yes,,contained on-foot,120,
+desertcombat,DC_Basrah_Nights,1024,Conquest+Ctf+Tdm,5,5,192,29,8,4,0,0,4,0,1.0,yes,yes,,contained on-foot,120,
+desertcombat,DC_LostVillage,2048,Conquest+Tdm,7,5,484,50,10,0,2,0,4,4,0.6,yes,yes,,contained on-foot,120,
+desertcombat,DC_Sea_Rigs,2048,Conquest,5,5,292,17,19,2,0,4,10,3,0.84,yes,yes,,contained on-foot,120,
+community,HOP,1024,Conquest+Ctf+Tdm,2,2,137,4,2,0,0,0,2,0,1.0,yes,yes,,contained on-foot,118,
+fh,Pegasus,1024,Conquest,5,2,367,14,49,8,0,0,11,30,0.39,yes,yes,fhsweurope,contained on-foot,112,
+fhsw,Battle_of_Edson_s_Ridge,1024,Conquest,5,3,199,15,36,0,0,0,4,32,0.11,yes,yes,fhsweurope,contained on-foot,112,
+fhsw,Stalingrad_RedSquare,1024,Conquest,8,6,298,16,68,0,0,0,7,61,0.1,yes,yes,fhsweurope,contained on-foot,112,
+fhsw,Stalingrad_urban_area-1942,2048,Conquest,6,6,464,33,50,6,0,0,5,39,0.22,yes,yes,fhsweurope,contained on-foot,112,
+fhsw,Battle_Of_Pavlov-1942,2048,Conquest,3,1,162,11,66,3,0,0,8,55,0.17,yes,yes,fhsweurope,contained on-foot,108,
+community,Omaturi_Channel_Air,4096,Conquest+Ctf+Tdm,2,0,4453,13,24,0,24,0,0,0,1.0,yes,yes,,air arena,106,no capturable flag
+community,Omaturi_Channel_Airmini,1024,Conquest+Ctf+Tdm,2,0,26,24,16,0,16,0,0,0,1.0,yes,yes,,air arena,106,no capturable flag
+community,TL_PLANE_TRAINING,2048,Conquest+Ctf+Tdm,4,2,2395,21,44,22,22,0,0,0,1.0,yes,yes,,air with flags,105,"novelty name (race, sport, puzzle): check by hand"
+community,air_attack,2048,Conquest+Ctf+Tdm,2,0,1358,7,133,0,133,0,0,0,1.0,yes,yes,,air arena,104,no capturable flag
+community,bomberfight,4096,Conquest,3,1,2576,8,6,0,6,0,0,0,1.0,yes,yes,,air arena,104,
+community,bomberfight_big,4096,Conquest,5,3,2576,8,6,0,6,0,0,0,1.0,yes,yes,,air with flags,103,
+community,Omaturi_Channel_Knife,1024,Conquest+Ctf+Tdm,2,0,129,8,0,0,0,0,0,0,0.0,yes,yes,,arena: fixed bases only,93,no capturable flag
+community,Omaturi_Channel_Tank,1024,Conquest+Ctf+Tdm,2,0,444,12,30,30,0,0,0,0,1.0,yes,yes,,arena: fixed bases only,91,no capturable flag
+bf1918,baghdad,1024,Conquest,7,6,446,39,64,11,0,0,34,19,0.7,yes,yes,,contained with vehicles,90,
+bf1918,battle_of_cambrai,1024,Conquest,5,4,596,35,73,11,1,0,33,28,0.62,yes,yes,,contained with vehicles,90,
+bf1918,battle_of_the_vosges,1024,Conquest+Tdm,7,5,443,20,45,14,2,0,21,8,0.82,yes,yes,,contained with vehicles,90,
+bf1918,carriere,1024,Conquest,6,5,476,38,43,18,0,0,17,8,0.81,no,yes,,contained with vehicles,90,
+bf1918,Mauerfall,1024,Conquest+Ctf+Tdm,5,3,332,32,64,17,0,0,21,26,0.59,no,yes,,contained with vehicles,90,
+bf1918,sanaga_river,1024,Conquest,6,5,483,75,47,8,1,0,12,26,0.45,no,yes,,contained with vehicles,90,
+community,shigaisen_G,1024,Conquest+Ctf,5,3,273,27,18,14,0,4,0,0,1.0,yes,yes,,contained with vehicles,90,
+community,The_Fortress,1024,Conquest+Ctf+Tdm,5,4,561,21,42,13,0,2,27,0,1.0,yes,yes,,contained with vehicles,90,
+community,The_Street_G,1024,Conquest+Ctf+Tdm,7,5,237,29,22,22,0,0,0,0,1.0,yes,yes,,contained with vehicles,90,
+community,knife_fight,1024,Conquest+Ctf+Tdm,4,0,204,8,12,12,0,0,0,0,1.0,yes,yes,,arena: fixed bases only,89,no capturable flag
+desertcombat,DC_Weapon_Bunkers,1024,Conquest,2,0,356,5,26,2,0,3,13,8,0.69,yes,yes,,arena: fixed bases only,89,no capturable flag
+eod,Operation_Linebacker,2048,Conquest,3,0,1150,6,51,18,11,0,20,2,0.96,yes,yes,,arena: fixed bases only,89,no capturable flag
+community,_o_Jka__BIG,1024,Conquest+Ctf+Tdm,3,1,349,11,22,16,4,0,2,0,1.0,yes,yes,,contained with vehicles,86,
+community,_o_Jka__,1024,Conquest+Ctf+Tdm,3,1,142,7,10,10,0,0,0,0,1.0,yes,yes,,contained with vehicles,84,
+fhsw,Battle_for_ortona-1943,1024,Conquest,6,5,545,24,134,26,0,2,29,77,0.43,yes,yes,fhsweurope,contained with vehicles,82,
+fhsw,Berlin-1945-Outskirts,1024,Conquest,7,7,526,45,86,24,0,0,18,44,0.49,yes,yes,fhsweurope,contained with vehicles,82,
+fhsw,Berlin-1945-Streets,2048,Conquest,5,4,458,45,86,14,0,0,13,59,0.31,yes,yes,fhsweurope,contained with vehicles,82,
+fhsw,Bizerte-1943,1024,Conquest,6,5,352,38,89,21,0,0,11,57,0.36,yes,yes,fhsweurope,contained with vehicles,82,
+fhsw,Monte_Cassino-1944,1024,Conquest,6,5,580,23,69,19,0,0,17,33,0.52,yes,yes,fhsweurope,contained with vehicles,82,
+fhsw,Pegasus,1024,Conquest,5,2,367,22,70,11,0,0,11,48,0.31,yes,yes,fhsweurope,contained with vehicles,82,
+fhsw,Tunis-1943,1024,Conquest,8,5,562,40,115,46,0,0,7,62,0.46,yes,yes,fhsweurope,contained with vehicles,82,
+fhsw,Warsaw_Uprising,2048,Conquest,7,5,569,32,172,24,0,0,4,144,0.16,yes,yes,fhsweurope,contained with vehicles,82,
+community,ARENA_TL,1024,Conquest+Ctf+Tdm,0,0,0,23,1,0,0,0,0,1,0.0,yes,yes,,arena: no control points,76,no control points
+dc_final,DC_Bridge,1024,Conquest+Ctf,5,,,20,0,0,0,0,0,0,0.0,no,no,,not exported: small world,69,
+gcmod,GC_Mini_Caves,1024,Conquest,6,,,22,0,0,0,0,0,0,0.0,no,no,,not exported: small world,69,
+dc_final,DC_Al_Khafji_Docks,1024,Conquest+Ctf,6,,,32,27,17,0,3,2,5,0.81,no,no,,not exported: small world,65,
+dc_final,DC_Al_Nas,1024,Conquest+Ctf+Tdm,5,,,35,36,23,0,0,4,9,0.75,no,no,,not exported: small world,65,
+dc_final,DC_Al_Nas_Day2,1024,Conquest+Ctf+Tdm,4,,,33,34,17,0,5,3,9,0.74,no,no,,not exported: small world,65,
+dc_final,DC_Basrah_Nights,1024,Conquest+Ctf+Tdm,5,,,29,12,8,0,0,4,0,1.0,no,no,,not exported: small world,65,
+dc_final,DC_Battle_of_73_Easting,1024,Conquest+Ctf,4,,,40,96,54,0,9,24,9,0.91,no,no,,not exported: small world,65,
+dc_final,DC_Cornered,1024,Conquest,6,,,45,65,35,1,8,7,14,0.78,no,no,,not exported: small world,65,
+dc_final,DC_Medina_Ridge,1024,Conquest+Ctf,4,,,36,142,52,5,10,0,75,0.47,no,no,,not exported: small world,65,
+gcmod,GC_Anchorhead,1024,Conquest,6,,,23,42,0,0,0,0,42,0.0,no,no,,not exported: small world,65,
+gcmod,GC_Mini_Chandrila,1024,Conquest,4,,,12,8,0,0,0,0,8,0.0,no,no,,not exported: small world,65,
+gcmod,GC_Mini_Cove,1024,Conquest,5,,,15,12,0,0,0,0,12,0.0,no,no,,not exported: small world,65,
+gcmod,GC_Mini_Wasteland,1024,Conquest,5,,,10,18,0,0,0,0,18,0.0,no,no,,not exported: small world,65,
+gcmod,GC_Mini_Wayfar,1024,Conquest,4,,,16,12,0,0,0,0,12,0.0,no,no,,not exported: small world,65,
+gcmod,GC_Mos_Eisley,1024,Conquest,6,,,24,54,0,0,0,0,54,0.0,no,no,,not exported: small world,65,
+dc_final,DC_Weapon_Bunkers,1024,Conquest+Ctf,2,,,5,26,3,0,3,13,7,0.73,no,no,,not exported: small world,63,
+bf1918,fht_meuse_argonne_offensive,1024,Conquest,7,5,839,41,108,30,4,0,29,45,0.58,no,yes,,open ground,60,
+bf1918,hindenburg_line,2048,Conquest,7,5,771,50,55,6,2,0,28,19,0.65,no,yes,,open ground,60,
+bf1918,operation_gericht,1024,Conquest,7,5,636,65,53,8,0,0,24,21,0.6,no,yes,,open ground,60,
+bf1918,raid_on_fort_pontisse,2048,Conquest,8,6,637,64,74,14,0,0,30,30,0.59,no,yes,,open ground,60,
+bf1918,roye,2048,Conquest,6,4,722,46,72,19,15,0,32,6,0.92,no,yes,,open ground,60,
+bf1918,saint_quentin_canal,2048,Conquest,8,7,904,69,117,20,4,0,49,44,0.62,no,yes,,open ground,60,
+bf1918,scimitar_hill,1024,Conquest,8,6,684,60,38,6,0,0,22,10,0.74,no,yes,,open ground,60,
+community,beinbrekkbakken,1024,Conquest+Ctf,8,4,844,10,32,23,1,0,4,4,0.88,yes,yes,,open ground,60,
+community,KoH,1024,Conquest+Ctf,5,3,719,33,35,23,0,0,12,0,1.0,yes,yes,,open ground,60,
+community,sniper_challenge,1024,Conquest+Ctf,7,6,974,57,123,64,5,0,36,18,0.85,yes,yes,,open ground,60,
+community,strasbourg,2048,Conquest+Ctf+Tdm,6,4,1453,39,41,19,1,0,11,10,0.76,yes,yes,,open ground,60,
+community,The_AirPort,2048,Conquest+Ctf+Tdm,5,4,1488,48,49,13,23,0,2,11,0.78,yes,yes,,open ground,60,
+dc_final,Coral_sea,2048,Conquest,0,,,1,10,4,0,2,4,0,1.0,no,no,eod fh fhsweurope,arena: no control points,60,no control points
+desertcombat,DC_Al_Khafji_Docks,1024,Conquest+Ctf,6,4,673,32,21,11,0,3,2,5,0.76,yes,yes,,open ground,60,
+desertcombat,DC_Battle_of_73_Easting,1024,Conquest,4,2,975,40,50,20,0,10,12,8,0.84,yes,yes,,open ground,60,
+desertcombat,DC_Medina_Ridge,1024,Conquest,4,3,840,36,112,20,3,10,4,75,0.33,yes,yes,,open ground,60,
+desertcombat,DC_Oil_Fields,2048,Conquest+Ctf+Tdm,8,7,1348,56,60,15,7,16,11,11,0.82,yes,yes,,open ground,60,
+desertcombat,DC_Operation_Bragg,2048,Conquest+Ctf+Tdm,5,3,1434,44,72,19,5,17,9,22,0.69,yes,yes,,open ground,60,
+desertcombat,DC_Urban_Siege,2048,Conquest,7,6,1316,43,37,21,1,5,5,5,0.86,yes,yes,,open ground,60,
+desertcombat,Inshallah_Valley,1024,Conquest+Ctf+Tdm,5,5,633,27,33,5,3,4,16,5,0.85,yes,yes,,open ground,60,
+xpack2,Raid_on_Agheila,2048,Conquest,7,5,920,35,59,24,5,0,15,15,0.75,yes,yes,,open ground,60,
+bf1918,aberdeen,1024,Conquest,7,,,49,70,52,0,0,18,0,1.0,no,no,eod,not exported: small world,57,
+dc_final,Aberdeen,1024,Conquest+Ctf,7,,,49,70,48,0,4,18,0,1.0,no,no,eod,not exported: small world,57,
+fh,Aberdeen,1024,Conquest,7,,,49,120,29,0,0,14,77,0.36,no,no,eod,not exported: small world,57,
+fh,In_The_Hell_Of_Bocage-1944,1024,Conquest+Ctf,7,,,27,95,49,1,0,6,39,0.59,no,no,fhsweurope,not exported: small world,57,
+fh,Ramelle_Neuville-1944,1024,Conquest,8,,,30,48,4,0,0,2,42,0.12,no,no,fhsweurope,not exported: small world,57,
+bf1918,tabuaeran,4096,Conquest+ObjectiveMode,4,1,1358,35,39,4,3,5,20,7,0.82,no,yes,,open ground,56,
+community,Tanquilizer,1024,Conquest+Ctf+Tdm,3,1,1119,10,30,28,0,0,2,0,1.0,yes,yes,,open ground,56,
+bf1942,Aberdeen,1024,Conquest,7,7,1137,49,33,26,0,0,7,0,1.0,yes,yes,eod,open ground,52,
+bf1942,Invasion_of_the_Philippines,2048,Conquest,6,6,1242,30,50,11,2,9,24,4,0.92,yes,yes,eod fh fhsw fhsweurope,open ground,52,
+bf1942,Liberation_of_Caen,2048,Conquest,6,5,848,30,36,16,0,2,18,0,1.0,yes,yes,eod fh fhsw fhsweurope,open ground,52,
+community,The_Bridge,1024,Conquest+Ctf,3,3,694,15,8,8,0,0,0,0,1.0,yes,yes,eod,open ground,52,
+fh,Omaha_Charlie-Sector-1944,2048,Conquest,5,5,745,27,67,6,0,0,32,29,0.57,yes,yes,fhsweurope,open ground,52,
+fh,Seelow-Heights-1945,2048,Conquest,6,5,1438,22,101,20,5,0,21,55,0.46,yes,yes,fhsweurope,open ground,52,
+fhsw,Aberdeen,1024,Conquest,7,5,1137,55,69,36,0,0,7,26,0.62,yes,yes,eod,open ground,52,
+fhsw,Battle_at_River_Don,2048,Conquest,8,6,1188,28,99,26,0,0,15,58,0.41,yes,yes,fhsweurope,open ground,52,
+fhsw,Battle_of_Angaur,2048,Conquest,8,7,1228,30,152,23,1,10,57,61,0.6,yes,yes,fhsweurope,open ground,52,
+fhsw,Battle_of_Iwo_Jima,2048,Conquest,7,7,717,43,195,17,0,11,63,104,0.47,yes,yes,fhsweurope,open ground,52,
+fhsw,Battle_Over_Hokkaido-1945,1024,Conquest,7,3,1047,40,76,48,0,0,9,19,0.75,yes,yes,fhsweurope,open ground,52,
+fhsw,Eagles_Nest-1946,1024,Conquest,7,6,700,35,97,33,1,0,16,47,0.52,yes,yes,fhsweurope,open ground,52,
+fhsw,Earned_in_Blood,1024,Conquest,6,4,935,25,98,30,0,0,3,65,0.34,yes,yes,fhsweurope,open ground,52,
+fhsw,Fall_of_Berlin-1945,1024,Conquest,8,7,899,72,206,41,0,0,26,139,0.33,yes,yes,fhsweurope,open ground,52,
+fhsw,Fall_of_Singapore,2048,Conquest,9,7,1261,38,302,52,4,18,77,151,0.5,yes,yes,fhsweurope,open ground,52,
+fhsw,fht_battle_of_kohima-1944,1024,Conquest,8,4,792,43,168,57,1,7,34,69,0.59,yes,yes,fhsweurope,open ground,52,
+fhsw,fht_battle_of_mareth_line-1943,2048,Conquest,8,7,968,77,218,57,5,0,45,111,0.49,yes,yes,fhsweurope,open ground,52,
+fhsw,fht_dinant-1940,2048,Conquest,5,3,1208,63,211,73,0,11,18,109,0.48,yes,yes,fhsweurope,open ground,52,
+fhsw,fht_hong_kong-1941,1024,Conquest,8,7,1002,92,268,60,2,5,29,172,0.36,yes,yes,fhsweurope,open ground,52,
+fhsw,fht_operation_dracula-1945,2048,Conquest,7,4,1295,42,151,35,3,8,28,77,0.49,yes,yes,fhsweurope,open ground,52,
+fhsw,fht_operation_longcloth-1943,2048,Conquest,6,4,1177,67,229,56,5,4,33,131,0.43,yes,yes,fhsweurope,open ground,52,
+fhsw,fht_pasir_panjang-1942,2048,Conquest,7,5,1193,88,241,56,3,15,44,123,0.49,yes,yes,fhsweurope,open ground,52,
+fhsw,fht_siege_of_zeeland-1940,1024,Conquest,8,7,687,59,226,24,0,0,56,146,0.35,yes,yes,fhsweurope,open ground,52,
+fhsw,Gazaps-1945,2048,Conquest,7,4,1284,55,178,76,15,1,35,51,0.71,yes,yes,fhsweurope,open ground,52,
+fhsw,Hungary_Forest-1945,1024,Conquest,6,5,715,43,121,26,0,0,14,81,0.33,yes,yes,fhsweurope,open ground,52,
+fhsw,In_The_Hell_Of_Bocage-1944,1024,Conquest+Ctf,6,4,1068,36,69,19,0,0,7,43,0.38,yes,yes,fhsweurope,open ground,52,
+fhsw,Iron_Monster,1024,Conquest,7,4,828,23,112,51,0,0,6,55,0.51,yes,yes,fhsweurope,open ground,52,
+fhsw,Juno_Beach,2048,Conquest,6,6,814,124,58,16,0,4,21,17,0.71,yes,yes,fhsweurope,open ground,52,
+fhsw,Kakazu_Ridge-1945,1024,Conquest+Ctf,5,3,631,31,69,12,0,4,23,30,0.57,yes,yes,fhsweurope,open ground,52,
+fhsw,Manchuria-1945,2048,Conquest,8,6,1431,53,232,52,10,0,84,86,0.63,yes,yes,fhsweurope,open ground,52,
+fhsw,Moscow_Outskirts-1941,1024,Conquest,7,5,924,38,114,54,0,0,20,40,0.65,yes,yes,fhsweurope,open ground,52,
+fhsw,Omaha_Charlie-Sector-1944,2048,Conquest,9,7,769,45,209,21,0,7,50,131,0.37,yes,yes,fhsweurope,open ground,52,
+fhsw,pakfront,1024,Conquest,8,6,967,25,187,60,0,0,63,64,0.66,yes,yes,fhsweurope,open ground,52,
+fhsw,Ramelle_Neuville-1944,1024,Conquest,8,6,814,42,82,15,0,0,2,65,0.21,yes,yes,fhsweurope,open ground,52,
+fhsw,Raseiniai,1024,Conquest,9,6,752,43,127,10,0,0,11,106,0.17,yes,yes,fhsweurope,open ground,52,
+fhsw,Salerno-1943,1024,Conquest,7,5,884,46,71,20,4,0,17,30,0.58,yes,yes,fhsweurope,open ground,52,
+fhsw,Seelow-Heights-1945,2048,Conquest,6,5,1438,22,215,50,6,0,38,121,0.44,yes,yes,fhsweurope,open ground,52,
+fhsw,Siegfried_Line-1945,1024,Conquest,8,6,989,50,163,48,6,0,44,65,0.6,yes,yes,fhsweurope,open ground,52,
+fhsw,the_great_pursuit,2048,Conquest,8,7,901,48,123,28,0,0,22,73,0.41,yes,yes,fhsweurope,open ground,52,
+fhsw,Transcarpathia-1944,2048,Conquest,6,5,1141,29,116,34,1,1,18,62,0.47,yes,yes,fhsweurope,open ground,52,
+fhsw,Ural_Mountains-1947,2048,Conquest,7,4,1320,34,226,70,5,0,42,109,0.52,yes,yes,fhsweurope,open ground,52,
+fhsw,Way_to_Paris-1946,2048,Conquest,7,6,1466,65,77,54,0,0,6,17,0.78,yes,yes,fhsweurope,open ground,52,
+fhsw,Westminster-1942,2048,Conquest,8,6,737,42,141,54,0,1,11,75,0.47,yes,yes,fhsweurope,open ground,52,
+fhsw,Westwall-1945,2048,Conquest,8,4,1370,165,182,52,3,0,21,106,0.42,yes,yes,fhsweurope,open ground,52,
+fhsweurope,aberdeen,1024,CoOp+Conquest,7,5,1137,55,69,42,0,0,7,20,0.71,yes,yes,eod,open ground,52,
+bf1918,desert_winds,2048,CoOp+Conquest+Tdm,4,2,1674,16,19,2,8,0,9,0,1.0,no,yes,,wide map,40,
+community,Densloe_Practice,2048,Conquest,8,6,1711,54,66,46,4,2,2,12,0.82,yes,yes,,wide map,40,"novelty name (race, sport, puzzle): check by hand"
+community,kingof_thehill,2048,Conquest+Ctf+Tdm,5,5,2736,155,127,58,4,12,50,3,0.98,yes,yes,,wide map,40,
+dc_final,DC_Coastal_Hammer,2048,Conquest+Ctf,7,,,81,70,37,0,17,6,10,0.86,no,no,,not exported: large world,40,
+dc_final,DC_First_Light,2048,Conquest+Ctf+Tdm,6,,,34,102,64,13,8,1,16,0.84,no,no,,not exported: large world,40,
+dc_final,DC_LostVillage,2048,Conquest+Ctf+Tdm,7,,,50,7,0,2,0,4,1,0.86,no,no,,not exported: large world,40,
+dc_final,DC_LostVillage_nopara,2048,Conquest,7,,,50,8,0,1,1,4,2,0.75,no,no,,not exported: large world,40,
+dc_final,DC_No_Fly_Zone,4096,Conquest+Ctf,5,,,27,76,31,19,2,8,16,0.79,no,no,,not exported: large world,40,
+dc_final,DC_Oil_Fields,2048,Conquest+Ctf+Tdm,8,,,56,98,48,12,16,7,15,0.85,no,no,,not exported: large world,40,
+dc_final,DC_Operation_Bragg,2048,Conquest+CoOp+Ctf+Tdm,5,,,44,126,61,12,17,6,30,0.76,no,no,,not exported: large world,40,
+dc_final,DC_Sea_Rigs,2048,Conquest+Ctf,5,,,17,19,2,0,4,10,3,0.84,no,no,,not exported: large world,40,
+dc_final,DC_Twin_Rivers,2048,Conquest+Ctf,6,,,23,102,64,17,8,0,13,0.87,no,no,,not exported: large world,40,
+dc_final,DC_Urban_Siege,2048,Conquest+Ctf,7,,,41,50,34,2,5,3,6,0.88,no,no,,not exported: large world,40,
+desertcombat,DC_No_Fly_Zone,4096,Conquest+Ctf,5,3,2949,27,55,11,15,2,20,7,0.87,yes,yes,,wide map,40,
+fh,Saipan,4096,Conquest,6,,,30,137,38,8,20,25,46,0.66,no,no,,not exported: large world,40,
+fhsw,Operation_Varsity,2048,Conquest,8,5,2009,122,116,32,2,1,29,52,0.55,yes,yes,,wide map,40,
+gcmod,GC_BCanyon,2048,Conquest,7,,,21,78,0,0,0,0,78,0.0,no,no,,not exported: large world,40,
+gcmod,GC_Bespin,2048,Conquest,8,,,49,13,0,0,0,0,13,0.0,no,no,,not exported: large world,40,
+gcmod,GC_Corellia,2048,Conquest,6,,,24,82,0,0,0,0,82,0.0,no,no,,not exported: large world,40,
+gcmod,GC_Hoth,2048,Conquest,6,,,50,43,0,0,0,0,43,0.0,no,no,,not exported: large world,40,
+gcmod,GC_Judicator,2048,Conquest,8,,,24,25,0,0,0,0,25,0.0,no,no,,not exported: large world,40,
+gcmod,GC_Kryos,2048,Conquest,5,,,23,69,0,0,0,0,69,0.0,no,no,,not exported: large world,40,
+gcmod,GC_Lok,2048,Conquest+Ctf,6,,,19,57,0,0,0,0,57,0.0,no,no,,not exported: large world,40,
+gcmod,GC_Mini_Dant,2048,Conquest,5,,,16,8,0,0,0,0,8,0.0,no,no,,not exported: large world,40,
+gcmod,GC_MonCal,2048,Conquest,5,,,21,44,0,0,0,0,44,0.0,no,no,,not exported: large world,40,
+gcmod,GC_Tatooine,4096,Conquest,6,,,16,50,0,0,0,0,50,0.0,no,no,,not exported: large world,40,
+gcmod,GC_Vanguard,4096,Conquest,5,,,2,25,0,1,0,0,24,0.04,no,no,,not exported: large world,38,
+dc_final,Invasion_of_the_Philippines,2048,Conquest,6,,,30,103,28,2,24,45,4,0.96,no,no,eod fh fhsw fhsweurope,not exported: large world,32,
+dc_final,Liberation_of_Caen,2048,Conquest,6,,,30,55,32,0,4,14,5,0.91,no,no,eod fh fhsw fhsweurope,not exported: large world,32,
+fh,Battle_Of_Pavlov-1942,2048,Conquest,3,,,11,58,2,0,0,7,49,0.16,no,no,fhsweurope,not exported: large world,32,
+fh,Berlin-1945-Streets,2048,Conquest,5,,,38,69,13,0,0,11,45,0.35,no,no,fhsweurope,not exported: large world,32,
+fh,Saipan-1944,4096,Conquest,6,,,32,294,33,9,28,89,135,0.54,no,no,fhsweurope,not exported: large world,32,
+fhsw,Alaska-1948,2048,Conquest,9,6,1670,42,130,41,6,3,32,48,0.63,yes,yes,fhsweurope,wide map,32,
+fhsw,Apennines,2048,Conquest,7,4,1961,63,195,55,6,2,43,89,0.54,yes,yes,fhsweurope,wide map,32,
+fhsw,Battle_of_Gela-1943,2048,Conquest,9,6,1843,55,132,45,8,6,15,58,0.56,yes,yes,fhsweurope,wide map,32,
+fhsw,Battle_of_Peleliu,4096,Conquest,8,7,1602,48,184,16,2,13,80,73,0.6,yes,yes,fhsweurope,wide map,32,
+fhsw,Desert_Hill,2048,Conquest,7,4,1920,30,175,87,8,0,31,49,0.72,yes,yes,fhsweurope,wide map,32,
+fhsw,fht_the_breaking_point-1940,2048,Conquest,7,7,1610,74,287,108,0,0,40,139,0.52,yes,yes,fhsweurope,wide map,32,
+fhsw,Forgotten_Hometown,4096,Conquest,7,5,1586,84,128,71,3,0,24,30,0.77,yes,yes,fhsweurope,wide map,32,
+fhsw,ilomantsi-1944,2048,Conquest,8,5,1920,50,212,44,5,7,28,128,0.4,yes,yes,fhsweurope,wide map,32,
+fhsw,KORSUN_POCKET,2048,Conquest,7,3,1802,47,200,77,3,0,46,74,0.63,yes,yes,fhsweurope,wide map,32,
+fhsw,kushira,2048,Conquest,8,6,1558,35,403,101,2,6,73,221,0.45,yes,yes,fhsweurope,wide map,32,
+fhsw,Lake_Ladoga-1944,2048,Conquest,8,4,1956,40,106,5,21,27,18,35,0.67,yes,yes,fhsweurope,wide map,32,"novelty name (race, sport, puzzle): check by hand"
+fhsw,Naichi-1945,2048,Conquest,8,6,2020,41,341,76,7,0,100,158,0.54,yes,yes,fhsweurope,wide map,32,
+fhsw,Operation_Coronet-1946,2048,Conquest,7,5,1891,30,362,41,0,6,52,263,0.27,yes,yes,fhsweurope,wide map,32,
+fhsw,Operation_SpringAwakening,2048,Conquest,7,4,1584,32,234,111,3,9,47,64,0.73,yes,yes,fhsweurope,wide map,32,
+fhsw,Saipan-1944,4096,Conquest,6,6,1774,32,246,21,9,38,91,87,0.65,yes,yes,fhsweurope,wide map,32,
+fhsw,Simusyu_To-1945,2048,Conquest,8,7,1618,40,153,37,7,14,32,63,0.59,yes,yes,fhsweurope,wide map,32,
+fhsw,the_merville_battery,2048,Conquest+Ctf+Tdm,7,5,1562,26,283,32,3,2,81,165,0.42,yes,yes,fhsweurope,wide map,32,
+community,downhill_to_the_beach_two,2048,Conquest+Ctf+Tdm,8,6,1892,26,49,49,0,0,0,0,1.0,yes,yes,,"out: race, sport or puzzle map",20,"novelty name (race, sport, puzzle): check by hand"
+community,JEEP_ONLY,1024,Conquest+Ctf,6,4,809,21,36,36,0,0,0,0,1.0,yes,yes,,"out: race, sport or puzzle map",20,"novelty name (race, sport, puzzle): check by hand"
+community,Jeep_Racing,2048,Conquest,8,4,1674,38,61,46,4,0,11,0,1.0,yes,yes,,"out: race, sport or puzzle map",20,"novelty name (race, sport, puzzle): check by hand"
+community,long_hurdles,1024,Conquest,5,3,126,22,20,0,0,0,20,0,1.0,yes,yes,,"out: race, sport or puzzle map",20,"novelty name (race, sport, puzzle): check by hand"
+community,parcours_challenge,2048,Conquest+Ctf+Tdm,8,6,1576,12,123,88,2,15,16,2,0.98,yes,yes,,"out: race, sport or puzzle map",20,"novelty name (race, sport, puzzle): check by hand"
+community,parcours_challenge_simplified,2048,Conquest+Ctf+Tdm,8,6,1576,12,103,74,2,15,12,0,1.0,yes,yes,,"out: race, sport or puzzle map",20,"novelty name (race, sport, puzzle): check by hand"
+community,TL_Race,1024,Conquest+Ctf,7,3,445,12,92,87,1,0,4,0,1.0,yes,yes,,"out: race, sport or puzzle map",20,"novelty name (race, sport, puzzle): check by hand"
+community,waterworld,1024,Conquest+Ctf+Tdm,6,4,477,15,51,1,1,21,25,3,0.94,yes,yes,,"out: race, sport or puzzle map",20,"mostly ships; novelty name (race, sport, puzzle): check by hand"
+community,Xhaos_Lake,2048,Conquest+Ctf+Tdm,5,3,1184,16,59,12,2,4,13,28,0.53,yes,yes,,"out: race, sport or puzzle map",20,"novelty name (race, sport, puzzle): check by hand"
+community,quest_for_adventure,2048,Conquest+Ctf,7,5,2637,6,62,48,1,13,0,0,1.0,yes,yes,,"out: race, sport or puzzle map",18,"novelty name (race, sport, puzzle): check by hand"
+community,Rennpiste_Gebirge,1024,Conquest,6,4,391,3,22,22,0,0,0,0,1.0,yes,yes,,"out: race, sport or puzzle map",18,"novelty name (race, sport, puzzle): check by hand"
+community,Umi_s,1024,Conquest+Ctf,4,4,899,2,12,0,0,12,0,0,1.0,yes,yes,,"out: race, sport or puzzle map",18,"mostly ships; novelty name (race, sport, puzzle): check by hand"
+fhsweurope,escape_from_leyte,8192,ObjectiveMode,5,5,8682,3,32,0,7,18,0,7,0.78,yes,yes,,out: 8 km or larger naval or air objective level,18,ObjectiveMode only; 8 km or larger; mostly ships
+community,jeep_bowl,1024,Conquest+Ctf,3,1,268,24,24,24,0,0,0,0,1.0,yes,yes,,"out: race, sport or puzzle map",16,"novelty name (race, sport, puzzle): check by hand"
+community,Jeep_Race___,1024,Conquest,4,0,811,14,13,12,1,0,0,0,1.0,yes,yes,,"out: race, sport or puzzle map",16,"no capturable flag; novelty name (race, sport, puzzle): check by hand"
+community,short_hurdles,1024,Conquest,3,1,73,15,12,0,0,0,12,0,1.0,yes,yes,,"out: race, sport or puzzle map",16,"novelty name (race, sport, puzzle): check by hand"
+community,tank_bowl,1024,Conquest+Ctf,3,1,230,24,24,24,0,0,0,0,1.0,yes,yes,,"out: race, sport or puzzle map",16,"novelty name (race, sport, puzzle): check by hand"
+community,up_and_down,1024,Ctf,2,0,26,10,15,15,0,0,0,0,1.0,yes,yes,,"out: race, sport or puzzle map",16,"CTF only; no capturable flag; novelty name (race, sport, puzzle): check by hand"
+community,vxf_stunts_one,2048,Conquest+Ctf+Tdm,5,1,2818,10,50,16,34,0,0,0,1.0,yes,yes,,"out: race, sport or puzzle map",16,"novelty name (race, sport, puzzle): check by hand"
+fhsw,Adak_race,2048,Conquest,3,1,1565,20,47,44,2,0,0,1,0.98,yes,yes,,"out: race, sport or puzzle map",16,"novelty name (race, sport, puzzle): check by hand"
+fhsw,Air_Raid_Alert_-Kure-1945,8192,ObjectiveMode,5,0,6788,13,106,23,6,27,31,19,0.82,yes,yes,,out: 8 km or larger naval or air objective level,16,ObjectiveMode only; no capturable flag; 8 km or larger
+fhsw,Dover_Strait,8192,ObjectiveMode,4,0,7910,72,129,26,28,6,39,30,0.77,yes,yes,,out: 8 km or larger naval or air objective level,16,ObjectiveMode only; no capturable flag; 8 km or larger
+fhsw,Operation_Hailstone,8192,ObjectiveMode,5,0,6018,23,69,4,13,17,17,18,0.74,yes,yes,,out: 8 km or larger naval or air objective level,16,ObjectiveMode only; no capturable flag; 8 km or larger
+fhsweurope,adak_race,2048,Conquest,3,1,1571,20,51,47,2,0,0,2,0.96,yes,yes,,"out: race, sport or puzzle map",16,"novelty name (race, sport, puzzle): check by hand"
+fhsweurope,dover_strait,8192,ObjectiveMode,4,0,7910,72,129,26,28,6,39,30,0.77,yes,yes,,out: 8 km or larger naval or air objective level,16,ObjectiveMode only; no capturable flag; 8 km or larger
+fhsweurope,helsinki,2048,ObjectiveMode,5,0,2585,19,132,19,14,0,44,55,0.58,yes,yes,,out: ObjectiveMode only,16,ObjectiveMode only; no capturable flag
+fhsweurope,july26-1945,8192,ObjectiveMode,1,0,0,19,54,0,4,18,6,26,0.52,yes,yes,,out: 8 km or larger naval or air objective level,16,one control point; ObjectiveMode only; no capturable flag; 8 km or larger
+community,bowling_for_bad_guys,1024,Conquest+Ctf+Tdm,2,0,247,2,19,8,0,0,11,0,1.0,yes,yes,,"out: race, sport or puzzle map",14,"no capturable flag; novelty name (race, sport, puzzle): check by hand"
+community,DSFootball,1024,Conquest+Ctf+Tdm,2,0,484,4,30,26,0,0,2,2,0.93,yes,yes,,"out: race, sport or puzzle map",14,"no capturable flag; novelty name (race, sport, puzzle): check by hand"
+community,happy_saint_patrick_s_day,1024,Conquest+Ctf+Tdm,2,0,131,2,14,3,0,0,0,11,0.21,yes,yes,,"out: race, sport or puzzle map",14,no capturable flag
+community,JeepRace,1024,Conquest+Tdm,3,1,335,3,18,18,0,0,0,0,1.0,yes,yes,,"out: race, sport or puzzle map",14,"novelty name (race, sport, puzzle): check by hand"
+community,matrix,1024,Conquest+Ctf,3,1,139,8,242,0,0,0,0,242,0.0,yes,yes,,"out: race, sport or puzzle map",14,"novelty name (race, sport, puzzle): check by hand"
+community,Omaturi_Channel_Battleship,2048,Conquest+Ctf+Tdm,2,0,120,0,37,25,10,2,0,0,1.0,yes,yes,,"out: race, sport or puzzle map",14,no soldier spawns; no capturable flag
+community,Omaturi_Channel_Submarine,2048,Conquest+Ctf,2,0,1827,0,20,0,0,20,0,0,1.0,yes,yes,,"out: race, sport or puzzle map",14,no soldier spawns; no capturable flag; mostly ships
+community,RallyRace,1024,Conquest+Tdm,2,0,5,4,24,20,3,0,0,1,0.96,yes,yes,,"out: race, sport or puzzle map",14,"no capturable flag; novelty name (race, sport, puzzle): check by hand"
+community,team_liberation_air_race,2048,Conquest+Ctf+Tdm,2,0,158,2,14,0,14,0,0,0,1.0,yes,yes,,"out: race, sport or puzzle map",14,"no capturable flag; novelty name (race, sport, puzzle): check by hand"
+community,Tsukuba_Circuit,1024,Conquest+Ctf+Tdm,2,0,14,2,10,10,0,0,0,0,1.0,yes,yes,,"out: race, sport or puzzle map",14,"no capturable flag; novelty name (race, sport, puzzle): check by hand"
+community,Umi,2048,Conquest+Ctf,2,0,120,0,24,0,0,10,0,14,0.42,yes,yes,,"out: race, sport or puzzle map",14,"no soldier spawns; no capturable flag; mostly ships; novelty name (race, sport, puzzle): check by hand"
+desertcombat,DC_No_Fly_Zone_Day2,4096,Conquest,2,0,2949,0,46,13,5,3,12,13,0.72,yes,yes,,out: no soldier spawns,14,no soldier spawns; no capturable flag
+fh,Midway-1942,4096,Conquest,3,1,2411,0,44,4,0,11,24,5,0.89,yes,yes,,out: no soldier spawns,14,no soldier spawns
+fhsw,Battle_of_Leyte_Gulf_day2,8192,ObjectiveMode,0,0,0,0,48,0,0,17,0,31,0.35,yes,yes,,out: 8 km or larger naval or air objective level,14,no control points; no soldier spawns; ObjectiveMode only; 8 km or larger
+fhsw,Battle_of_Off_Malay,8192,ObjectiveMode,4,1,9838,0,14,0,0,6,0,8,0.43,yes,yes,,out: 8 km or larger naval or air objective level,14,no soldier spawns; ObjectiveMode only; 8 km or larger; mostly ships
+fhsw,Midway-1942,8192,Conquest+ObjectiveMode,2,0,7031,1,83,4,1,15,44,19,0.77,yes,yes,,out: 8 km or larger naval or air objective level,14,no capturable flag; 8 km or larger
+fhsw,Monster_des_Stahles,8192,ObjectiveMode,0,0,0,0,30,0,0,14,0,16,0.47,yes,yes,,out: 8 km or larger naval or air objective level,14,no control points; no soldier spawns; ObjectiveMode only; 8 km or larger; mostly ships
+fhsw,Operation_A,8192,ObjectiveMode,0,0,0,0,16,0,0,8,0,8,0.5,yes,yes,,out: 8 km or larger naval or air objective level,14,no control points; no soldier spawns; ObjectiveMode only; 8 km or larger; mostly ships
+fhsw,Operation_Kikusui_day1,8192,ObjectiveMode,2,0,8486,0,8,0,0,7,0,1,0.88,yes,yes,,out: 8 km or larger naval or air objective level,14,no soldier spawns; ObjectiveMode only; no capturable flag; 8 km or larger; mostly ships
+fhsw,ScapaFlow-1946,8192,ObjectiveMode,3,0,8156,0,89,4,0,19,45,21,0.76,yes,yes,,out: 8 km or larger naval or air objective level,14,no soldier spawns; ObjectiveMode only; no capturable flag; 8 km or larger
+fhsweurope,battle_of_leyte_gulf_day2,8192,ObjectiveMode,0,0,0,0,48,0,0,17,0,31,0.35,yes,yes,,out: 8 km or larger naval or air objective level,14,no control points; no soldier spawns; ObjectiveMode only; 8 km or larger
+fhsweurope,battle_of_off_malay,8192,ObjectiveMode,4,1,9838,0,13,0,0,6,0,7,0.46,yes,yes,,out: 8 km or larger naval or air objective level,14,no soldier spawns; ObjectiveMode only; 8 km or larger; mostly ships
+fhsweurope,midway-1942,8192,Conquest+ObjectiveMode,2,0,7031,1,83,4,1,15,44,19,0.77,yes,yes,,out: 8 km or larger naval or air objective level,14,no capturable flag; 8 km or larger
+fhsweurope,monster_des_stahles,8192,ObjectiveMode,0,0,0,0,28,0,0,13,0,15,0.46,yes,yes,,out: 8 km or larger naval or air objective level,14,no control points; no soldier spawns; ObjectiveMode only; 8 km or larger; mostly ships
+fhsweurope,operation_a,8192,ObjectiveMode,0,0,0,0,16,0,0,8,0,8,0.5,yes,yes,,out: 8 km or larger naval or air objective level,14,no control points; no soldier spawns; ObjectiveMode only; 8 km or larger; mostly ships
+fhsweurope,operation_kikusui_day1,8192,ObjectiveMode,2,0,8486,0,8,0,0,8,0,0,1.0,yes,yes,,out: 8 km or larger naval or air objective level,14,no soldier spawns; ObjectiveMode only; no capturable flag; 8 km or larger; mostly ships
+fhsweurope,scapaflow-1946,8192,ObjectiveMode,3,0,8156,0,89,4,0,19,45,21,0.76,yes,yes,,out: 8 km or larger naval or air objective level,14,no soldier spawns; ObjectiveMode only; no capturable flag; 8 km or larger
+fhsweurope,surigao_strait-1944,16384,ObjectiveMode,0,0,0,0,34,0,0,25,0,9,0.74,yes,yes,,out: 8 km or larger naval or air objective level,14,no control points; no soldier spawns; ObjectiveMode only; 8 km or larger; mostly ships
+fhsw,fht_conquest_of_java-1942,2048,Conquest,7,5,1468,63,160,21,3,7,34,95,0.41,yes,yes,fhsweurope,"out: race, sport or puzzle map",12,"novelty name (race, sport, puzzle): check by hand"
+dc_final,DC_DustBowl,2048,Conquest+Ctf,6,,,40,110,84,4,8,2,12,0.89,no,no,,"out: race, sport or puzzle map",10,"novelty name (race, sport, puzzle): check by hand"
+fhsw,Rheinuebung-1941,8192,Conquest,4,4,2317,0,38,0,0,14,0,24,0.37,yes,yes,fhsweurope,out: 8 km or larger naval or air objective level,10,no soldier spawns; 8 km or larger
+gcmod,GC_BonusRace,2048,Conquest,6,,,10,44,0,0,0,0,44,0.0,no,no,,"out: race, sport or puzzle map",10,"novelty name (race, sport, puzzle): check by hand"
+dc_final,DC_No_Fly_Zone_Day2,4096,Conquest,2,,,0,55,29,7,3,0,16,0.71,no,no,,out: no soldier spawns,8,no soldier spawns
+fhsw,Bombing_The_Reich-1945,4096,ObjectiveMode,5,0,3735,29,141,33,50,9,17,32,0.77,yes,yes,fhsweurope,out: ObjectiveMode only,8,ObjectiveMode only; no capturable flag
+gcmod,GC_DeathStar,4096,ObjectiveMode,5,,,9,42,0,0,0,0,42,0.0,no,no,,out: ObjectiveMode only,8,ObjectiveMode only
+gcmod,GC_Tanaab,4096,ObjectiveMode,3,,,6,12,0,0,0,0,12,0.0,no,no,,out: ObjectiveMode only,8,ObjectiveMode only
+gcmod,GC_Taskforce,4096,ObjectiveMode,0,,,0,8,0,0,0,0,8,0.0,no,no,,out: ObjectiveMode only,8,no control points; no soldier spawns; ObjectiveMode only
+bf1942,Coral_sea,2048,Conquest,0,0,0,0,10,0,0,2,4,4,0.6,yes,yes,eod fh fhsweurope,out: no soldier spawns,6,no control points; no soldier spawns
+fhsw,Battle_of_Bougainville,4096,ObjectiveMode,2,0,3652,0,128,24,33,8,40,23,0.82,yes,yes,fhsweurope,out: ObjectiveMode only,6,no soldier spawns; ObjectiveMode only; no capturable flag
+fh,Rheinuebung-1941,4096,Conquest,3,,,0,13,0,0,9,0,4,0.69,no,no,fhsweurope,out: no soldier spawns,0,no soldier spawns; mostly ships
