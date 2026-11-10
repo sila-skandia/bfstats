@@ -168,6 +168,7 @@ folder answers.
 | [bf1942-ai-research-2026-09-21](bf1942-ai-research-2026-09-21/README.md) | research | How does retail BF1942's bot AI sense, decide, path, aim and scale difficulty? |
 | [bf1942-ai-spec](bf1942-ai-spec/README.md) | design | What does each bot layer do, and where does every AI constant come from? |
 | [bot-doctrines](bot-doctrines/README.md) | build | How do bots get orders, and how do I add or compare a doctrine? |
+| [dogfight-doctrine](dogfight-doctrine/README.md) | research | Which of Boelcke's 1916 rules, and the WWII and jet doctrine after them, does the Refractor flight law reward, what can the dogfight school measure of each, and how would it teach them? |
 | [dogfight-recordings](dogfight-recordings/README.md) | build | How are real dogfights found in the round recordings players upload, and played back in the dogfight school's theatre to learn which manoeuvres win? |
 | [dogfight-school](dogfight-school/README.md) | build | How do I learn a dogfighting move and its counter: watch it flown on BF1942's own flight law, then fly against a bot ace who uses it? |
 | [battle-schools](battle-schools/README.md) | build | How would the dogfight school's approach carry over to tank against tank, infantry and the other match-ups; how does the tank school's MATCHUP show where to aim, the two guns and how steady each hull is, on any mod; and which real tank fights do the recordings hold? |
