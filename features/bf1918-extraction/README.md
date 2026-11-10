@@ -841,3 +841,18 @@ Willy, held 4 s, one honk; three taps, three. Invasion of the Philippines'
 Elco80, held, one torpedo, where a held trigger had emptied both tubes in
 0.29 s. Vanilla's `FloatingMineLauncher` is not `fireOnce` (its only line is
 a `rem`'d `altfireOnce`).
+
+**Live without a re-bake (2026-11-10).** A tree baked before the glb carried
+the word gets it from a `scene.json` layer: `fireOnce`, the level library's
+lower-case `FireArms` marked `fireOnce 1` (`scene_layers.fire_once_templates`,
+`patch_scene.py --layer fireOnce`), which `gun-groups.js` `namedFireOnce`
+asks when the glb does not say it. Patched from the live files and published
+(568 `scene.json`, 0.48 GB, `~/.cache/fireonce-stage`): vanilla and the
+community maps 97, XPack1 27, XPack2 30, BF1918 133, Desert Combat 35, EoD
+237, FH 9. Live check: Invasion of the Philippines' Elco80, held 4 s, one
+torpedo (two before). Not patched, because this Mac has no archive for them:
+Kasserine Pass and Truk in vanilla, XPack1, XPack2 and EoD; Strasbourg
+(community); FH's Road to Ramelle; and all of FHSW and FHSWEurope (no
+install here). Those keep a held trigger firing at `roundOfFire` until they
+are patched from the Linux PC (`patch_scene.py --layer fireOnce --mod <M> --all`)
+or re-baked.
