@@ -10,9 +10,9 @@
 // starts 120 m closer (the ace decides at 650 m, Spitfire units, while still
 // slow); from the lesson's own stage the ace is past 75 m/s by then and goes
 // up instead. A loop started high runs into the roof every jet's pilot flies
-// under (`dogfight-jet-ceiling.js`, 800 m), which pushes it off before the
-// top; the lesson's own Immelmanns start at 350 to 380 m and are untouched
-// by it. Every number below is the F-16 from the nine starts (the
+// under (`dogfight-jet-ceiling.js`, 800 m), which caps the pull of a loop
+// whose top it sees going over the roof; the lesson's own Immelmanns start
+// at 350 to 380 m and are untouched by it. Every number below is the F-16 from the nine starts (the
 // harness's for the demos, the school's `STARTS` for the Dip, Flip and
 // Ninja), in real metres and m/s.
 const SPLIT_STAGE = { at: [40, 460, -640], headingDeg: 180, speed: 45 };
@@ -21,7 +21,7 @@ export default {
   note: 'The Immelmann costs a jet almost nothing: they went up at 95 m/s and came over the top at 83, 130 m higher, and were never slow enough to catch hanging there. The split-S still trades height for speed, 163 m for 38 m/s, and it is for a jet that is slow and high, which a jet is only for a moment.',
   story: [
     'After a pass you have to turn round. A flat turn round at full pull takes an F-16 3 seconds from 96 m/s and leaves it at 79 m/s, at the height it was. The two vertical ways round trade height and speed instead, and a jet trades them on better terms than a Spitfire: its engine pushes harder than its weight, so it does not run out of speed going up.',
-    'Fast: pull straight up through half a loop and, upside down on top, roll upright. That is the Immelmann. Here the ace has just gone past you at 95 m/s; they climb about 130 m and roll out going back the other way 4.8 seconds later at 83 m/s, and 4 seconds after that they are at 89 m/s and still more than 100 m up. That is the turn round to make after a pass, and to make low down. The air thins toward 1000 m, and a jet\'s pilot levels off by 800 m, where the wing still has a fifth of its lift: from 450 m the loop is still round in 5 to 6 seconds, but from 510 m the climb is levelled off before the top, and they roll out 265 to 290 m higher after 9 to 10 seconds, only 92 to 122 degrees round. From 580 m up they never go over the top at all: the loop is flattened at 816 to 831 m, and 14 seconds later they are still up there, not round.',
+    'Fast: pull straight up through half a loop and, upside down on top, roll upright. That is the Immelmann. Here the ace has just gone past you at 95 m/s; they climb about 130 m and roll out going back the other way 4.8 seconds later at 83 m/s, and 4 seconds after that they are at 89 m/s and still more than 100 m up. That is the turn round to make after a pass, and to make low down. The air thins toward 1000 m, and a jet\'s pilot keeps under 800 m, where the wing still has a fifth of its lift: from 450 m the loop is still round in 5 to 6 seconds. From 510 m it goes over only if they pull up slow, at 60 to 80 m/s (round in 6 to 7 seconds, 155 to 165 m up); at cruising speed the pull is held back and they never go over. From 580 m up no loop goes over at all: they climb straight ahead to 768 m, level off there, and 14 seconds later are still flying away at 125 to 127 m/s.',
     'High and slow, with you coming at them: roll upside down with the nose on the horizon, then pull through half a loop downward. That is the split-S. They go in at 58 m/s and come out going back the way they came, 163 m lower and at 96 m/s, 5.3 seconds later. A jet is slow only for a moment, and that is the moment for it: from cruising speed a split-S buys almost no speed (in at 97 m/s, out at 91 to 101). It needs 500 m under it: from 380 m the pull out of the dive stops it 40 to 50 degrees short of round.',
   ],
   counterStory: [
@@ -53,7 +53,7 @@ export default {
     ninja: {
       aceStart: SPLIT_STAGE,
       note: 'The one-dive ambush, tried on a jet. Meet them from above and hold your height while they roll over. When their nose is 25 degrees down, dive with the lead. On a jet the split-S is over before you get there: you pass over them and they run.',
-      verdict: { works: 0, of: 9, line: 'No: in all nine they split-S, and your dive starts as their nose goes down, 3.5 to 3.7 s in, 237 to 298 m from them; 1.5 s later they are out and going the other way, 148 to 227 m under you at the closest, and nobody has fired. Diving sooner, as they roll over, put you in front of them as they came out: shot down in all nine.' },
+      verdict: { works: 0, of: 9, line: 'No: in all nine they split-S, and your dive starts as their nose goes down, 3.5 to 3.7 s in, 237 to 298 m from them; 1.5 s later they are out and going the other way, 145 to 227 m under you at the closest, and nobody has fired. Diving sooner, as they roll over, put you in front of them as they came out: shot down in all nine.' },
     },
   },
   coach: {

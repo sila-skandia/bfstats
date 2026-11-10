@@ -1,14 +1,15 @@
 # The Immelmann and the split-S on a jet (`turnarounds`)
 
-Status: **re-tuned, re-measured under the roof** (2026-11-11).
-`viewer/dogfight-jet-turnarounds.js` rewrites the words for the jet and
-moves the split-S stage; no plan of its own
+Status: **re-tuned, re-measured under the roof** (2026-11-11, the roof as
+reworked in `868247883`). `viewer/dogfight-jet-turnarounds.js` rewrites the
+words for the jet and moves the split-S stage; no plan of its own
 (`viewer/dogfight-jet-plan-turnarounds.js` stays `export {};`). On the F-16
 the roof changes none of the lesson's own fights' quoted numbers but the
 Ninja's ranges and the split-S stage's height gap; it does change what a
-lone Immelmann does above 450 m, and the story now says so. On the MiG-29
-the roof flattens the lesson's Immelmann and the Dip fails there (below).
-Held by `tests/test_dogfight_jet_turnarounds.py` (20 tests, about 75 s).
+lone Immelmann does from 510 m up, and the story says so. On the MiG-29 the
+roof caps the lesson's own Immelmann in the Dip and the Flip, so the ace
+never turns round (below). Held by `tests/test_dogfight_jet_turnarounds.py`
+(21 tests, about 60 s).
 
 ## What a turnaround costs the F-16
 
@@ -21,8 +22,8 @@ turnarounds flown by the lesson's own `turnarounds` phases from a level start
 | Flat turn round, full pull | 96 m/s, 384 m | 3.0 s | 79 m/s, same height | about 5 s |
 | Immelmann (the lesson's) | 95 m/s, 378 m | 4.8 s, 166 deg | +130 m at 83 m/s; slowest 69; 4 s on +109 m at 89 | 74 -> 37 m/s, +107 m |
 | Immelmann, lone, 192 to 448 m | 60 to 97 m/s | 4.4 to 6.3 s | climbs 108 to 149 m, out at 73 to 86 m/s: from 60 m/s it comes out *faster* | |
-| Immelmann, lone, 512 m | 61 to 97 m/s | 8.9 to 10.1 s | the roof levels the climb before the top: rolls out 266 to 290 m up, only 92 to 122 deg round | |
-| Immelmann, lone, 576 to 768 m | 61 to 98 m/s | never round | the loop is flattened at 816 to 831 m and still not round at 14 s | |
+| Immelmann, lone, 512 m, slow | 61 or 79 m/s | 6.2 to 6.7 s | climbs 155 to 165 m, 178 to 179 deg round, out at 84 to 86 m/s | |
+| Immelmann, lone, 512 m from 97 m/s, and 576 to 745 m | 61 to 98 m/s | never round | the roof caps the pull: they climb straight ahead to 768 or 769 m, level off, and are at 125 to 127 m/s at 14 s, 0 or 1 deg off their heading | |
 | Split-S (the lesson's, new stage) | 58 m/s, 589 m | 5.3 s, 180 deg | -163 m at 96 m/s | 51 -> 68 m/s, -145 m |
 | Split-S, lone, 448 to 635 m, from cruise | 97 m/s | 4.5 to 4.8 s | -139 to -167 m at 91 to 101 m/s | |
 | Split-S, lone, 384 m | 60 to 96 m/s | | the floor (`guard`) pulls it out 131 to 139 deg round | |
@@ -30,8 +31,8 @@ turnarounds flown by the lesson's own `turnarounds` phases from a level start
 
 So: **the Immelmann is the jet's turn round after a pass**, as long as it
 starts low (the lift dies linearly to 1000 m, `LIFT_CEILING`, and every jet
-pilot levels off by 800 m, so on the F-16 a loop started over about 450 m
-is flattened before the top); the jet's
+pilot keeps under 800 m, so on the F-16 a loop started at 510 m from
+cruise, or anywhere from 580 m up, is never flown); the jet's
 engine out-pulls its weight, so it climbs and keeps its speed, and its loop
 is tight (it ends 19 to 54 m *behind* where it pulled up). **The split-S is
 for the moment a jet is slow and high**: it still trades height for speed
@@ -62,40 +63,61 @@ and the story no longer says so.
 
 ## Under the roof (2026-11-11)
 
-Commit `8d616bcc2` keeps every jet pilot's answer under 800 m real
-(`dogfight-jet-ceiling.js` `underRoof`, from `stepPilot`; a plan going over
-the top of a loop can answer `roof: false`, and `PLANS.turnarounds` does
-not), and bends paced start heights over from 600 m toward 760
-(`pacedHeight`). What it moved here, F-16:
+Every jet pilot flies under a roof at 800 m real (`dogfight-jet-ceiling.js`
+`underRoof`, from `stepPilot`), and paced start heights are bent over from
+600 m toward 760 (`pacedHeight`, `8d616bcc2`). As reworked in `868247883`
+the roof no longer flies the nose itself: it caps how hard the plan may
+pull toward the sky in the plane's own pitch plane, less the pitch rate
+already under way, and leaves roll, rudder and trigger to the plan. A pull
+taking the plane over a loop whose top it predicts under 800 m (speed over
+pitch rate, times 1.3) is left alone; an inverted plane may pull through;
+the throttle comes off while the nose is more than 15 deg over the allowed
+climb. `PLANS.turnarounds` does not answer `roof: false`. What it does
+here, F-16:
 
 - **The lesson's own Immelmanns are untouched.** They start at 352 to
   378 m and top out at 479 to 535 m; the follow-up, the counter, the Dip
   and the Flip's Immelmann are the same to the decimal (130 m, 4.8 s,
   slowest 69 m/s; Dip 9 of 9 with every quoted number unchanged).
-- **A lone Immelmann started high is pushed off its loop.** It used to
-  climb 230 to 270 m from 640 m and go 700 m straight up from 768. Now
-  from 512 m the roof levels the climb before the top (rolled out 266 to
-  290 m up after 8.9 to 10.1 s, only 92 to 122 deg round), and from 576 m
-  up the loop is flattened at 816 to 831 m and never round in 14 s. The
-  plan file's starts at 500 and 600 (Spitfire size) are now 635 and 704 m
-  real, not 640 and 768. Answering `roof: false` through the loop (a
-  scratch run, not shipped: the plan is shared) completes it from 512 m
-  (+157 to +168 m, 5.4 to 6.7 s) and 576 m (+183 to +199), but from 635 m
-  it tops out at 863 to 892 m, over the 860 the school holds, and from
-  677 m up it goes 350 to 770 m straight up again. The story now says
-  "from 510 m ... only 92 to 122 degrees round" and "from 580 m up they
-  never go over the top at all".
+- **A lone Immelmann started high is not flown.** From 192 to 448 m it is
+  as it was (4.4 to 6.3 s, +108 to +149 m). From 512 m it still goes over
+  from 61 or 79 m/s (6.2 to 6.7 s, +155 to +165 m, 178 to 179 deg round),
+  but from 97 m/s the cap holds the pull back from the start (trace below)
+  and the loop never begins: the nose comes up to 41 to 42 deg at 2 to
+  2.5 s, then is let down, and they climb straight ahead to 768 m and fly
+  on level at 125 m/s. From 576, 635, 704 and 745 m (the highest a paced
+  start gets now: 768 at the Spitfire's size is 745 m real since
+  `4a526cfea`) every one does the same, levelled at 768 or 769 m, 0 or 1
+  deg off their heading at 14 s. The story says so: "From 510 m it goes
+  over only if they pull up slow ... From 580 m up no loop goes over at
+  all".
+- **The first roof** (`8d616bcc2` as it was) pushed the same loops over
+  instead: from 512 m they rolled out 266 to 290 m up only 92 to 122 deg
+  round, and from 576 m up the loop was flattened at 816 to 831 m. Before
+  any roof, from 640 m the loop climbed 230 to 270 m, and from 768 m it went
+  700 m straight up.
 - **The split-S stage's you is lower.** Its 600 m start is 704 m real, not
   768: 115 m over them, not 180. The Ninja's dive starts 237 to 298 m from
-  them (was 267 to 309) and closes to 148 to 227 m (was 215 to 272);
+  them (was 267 to 309) and closes to 145 to 227 m (was 215 to 272);
   still 0 of 9, and diving sooner (wings past 30 to 150 deg rolled) is
   still shot down in nine of nine.
 - **The Flip** no longer goes to 1,848 m: its turning fight tops out at
-  838 m and ends 124 to 470 m apart (was 1,013 to 1,494 in three). Its
-  quoted numbers and its 0 of 9 are unchanged.
+  780 m (838 under the first roof) and ends 124 to 357 m apart (was 1,013
+  to 1,494 in three before any roof). Its quoted numbers and its 0 of 9 are
+  unchanged.
 
 No F-16 verdict flipped (Dip 9, Flip 0, Ninja 0) and `survival` stays
-"yes". The highest anyone goes in any demo or move is 838 m.
+"yes". The highest anyone goes in any demo or move is 780 m.
+
+The trace of the uncapped loop that never starts (F-16, 512 m, 97 m/s,
+the lesson's own phases, `taJetSolo`): at 1 s pitch 7 deg, 1.5 s 27, 2 s
+41, 2.5 s 42 at 586 m and 92 m/s, then 38, 32, 26 ... 0 deg by 9.5 s, the
+phase `immelmann` throughout, heading unchanged, 768 m at 13 s, 125 m/s at
+14 s. Slower, the same height goes over: the loop's top is predicted from
+the speed over the pitch rate under way, so at the start of a pull, before
+an airframe with a 0.83 s pitch lag has built its rate, a fast loop's top
+reads high, the cap keeps the rate from building, and the prediction never
+comes down.
 
 ## What the nine F-16 flights showed, before and after
 
@@ -111,7 +133,7 @@ Hits are "ace/you", rounds each side landed.
 | `split` let them go | **no split-S at all**: the ace is at 105 m/s by 650 m and Immelmanns at 5.2-5.3 s; 0/0 | ace staged 120 m closer (`[40, 460, -640]`): split-S in all nine at 0.0-0.4 s, -163 m, 58 -> 96 m/s, 5.3 s; 0/0, nobody fires | **tuned** to hold (a): the split-S is real for a slow jet, the stage just has to catch it slow |
 | `dip` | 9 of 9 | 9 of 9 (same fight): roll out 277-342 m from you, chase from 257-263, let go at 634-704 m at 17.5-17.9 s, 2937-3081 m apart at 32 s, never fired | holds; verdict line in jet numbers |
 | `flip` | 0 of 9 | 0 of 9 (same fight): round at 9.7-10.2 s, 114-193 m from them, under their roll-out not their tail; they break or turn on you within 3.5 s; landing fire 0-0.1 s; 0-2 hits either way to 45 s | **rewritten** note and verdict |
-| `ninja` | 0 of 9, and no split-S (the Dip every time) | 0 of 9 at the split stage: dive at 3.5-3.7 s from 237-298 m (267-309 before the roof), off them 1.5 s later, closest 148-227 m (215-272), nobody fires | **rewritten**: the one-dive ambush does not work on a jet |
+| `ninja` | 0 of 9, and no split-S (the Dip every time) | 0 of 9 at the split stage: dive at 3.5-3.7 s from 237-298 m (267-309 before the roof), off them 1.5 s later, closest 145-227 m (215-272), nobody fires | **rewritten**: the one-dive ambush does not work on a jet |
 
 `survival` stays "yes", on the Dip alone.
 
@@ -136,31 +158,29 @@ Hits are "ace/you", rounds each side landed.
 
 ## The MiG-29 (pace 1.5), the same jet file
 
-Under the roof (2026-11-11):
+Under the roof (2026-11-11): the first roof (`8d616bcc2`) and the roof as
+reworked (`868247883`).
 
-| Demo | MiG-29 (before the roof) | MiG-29 under the roof |
-|---|---|---|
-| `immelmann` | Immelmann from 114 m/s at 414 m: +184 m, out at 94; nobody down, 0/0 to 0/1 | +234 m, out at 91, 6.2 s, only 151 deg round; nobody down, 0/0 to 5/1 |
-| `immelmann-counter` | from 112 m/s, +194 m at 96; landing fire 0.1-1.3 s, 0/5 to 0/16, nobody down | from 444 m: the roof flattens the loop, +336 m, 9.4 s, slowest 32 m/s, 118 deg round; landing fire 0.1-0.3 s, 0/0 to 0/2, nobody down |
-| `split` | split-S from 690 m at 69 m/s: -233 m, out at 118, 5.8 s; nobody fires | from 669 m at 68 m/s: -226 m, out at 117, 5.8 s; nobody fires |
-| `dip` / `flip` / `ninja` | 9 / 0 / 0 of 9 | **0** / 0 / 0 of 9 |
+| Demo | MiG-29 before the roof | first roof | the roof now |
+|---|---|---|---|
+| `immelmann` | from 114 m/s at 414 m: +184 m, out at 94; nobody down, 0/0 to 0/1 | +234 m, out at 91, 6.2 s, only 151 deg round; 0/0 to 5/1 | +183 m, out at 94, 5.0 s, 168 deg round; nobody down, 0/0 to 0/1 |
+| `immelmann-counter` | from 112 m/s, +194 m at 96; landing fire 0.1-1.3 s, 0/5 to 0/16 | from 444 m: flattened, +336 m, 9.4 s, slowest 32 m/s; 0/0 to 0/2 | +190 m at 91, 5.3 s, 172 deg round; landing fire 0.6-1.3 s, 0/4 to 0/13, nobody down |
+| `split` | from 690 m at 69 m/s: -233 m, out at 118, 5.8 s | from 669 m at 68 m/s: -226 m, out at 117, 5.8 s | the same as the first roof |
+| `dip` / `flip` / `ninja` | 9 / 0 / 0 of 9 | 0 / 0 / 0 of 9 | 9 / 0 / 0 of 9, but see below |
 
-**The MiG-29's Dip fails under the roof.** Its Immelmann starts at 455 to
-456 m real, and the roof flattens it: the trace (`--trace dip --plane Mig29
---start 4`) has the ace pull up at 457 m and 119 m/s at 5.5 s and, held
-under the roof, climb on in a slowing half loop to 791 m at 42 m/s 13 s in,
-roll out at 793 m only 117 deg round, then dive 300 m of height into speed
-(141 m/s against your 122) and close from 957 m to 507 m, firing from 29 s.
-Over the nine `STARTS`: 337 to 338 m up in 9.1 s, slowest 41 m/s; 1 to 5
-hits on you in seven of nine, 459 to 544 m apart at 32 s, never gone. A
-lone loop flown the same way from 450 m (Spitfire size 300) shows the push:
-the nose reaches 79 deg at 2.5 s and is brought back to 36 deg by 6 s
-while the plane slows from 113 to 38 m/s. A lone MiG
-Immelmann completes under the roof up to 376 m real and not from 450 m in
-two of three; with `roof: false` through the loop it completes cleanly from
-451 m (+195 to +209 m, 5.2 to 6.8 s, top 646 to 659 m) and from 525 m (top
-754 to 777 m), and from 600 m it goes over 900 m. The tests hold these; the
-words quote the F-16's. The highest anyone goes on the MiG-29 is 851 m.
+**The MiG-29's Dip is 9 of 9 because the ace never turns round.** In the
+Dip and the Flip its Immelmann starts at 455 to 456 m and 119 m/s, and the
+roof caps the pull before the loop begins: the ace climbs 323 to 329 m
+straight ahead, never slower than 107 m/s, and is still in its `immelmann`
+phase 26 s later (the Flip's, 39 s later), 0 to 20 deg off its heading. The
+trace (`--trace dip --plane Mig29 --start 4`): `immelmann` at 5.5 s, 457 m
+and 119 m/s; 570 m at 8 s, 686 at 10, 767 at 14 and 108 to 152 m/s, then
+775 to 780 m to the end, the separation opening from 186 m to 2,218. You run
+the other way, so the Dip "works": 2,000 to 2,778 m apart at 32 s, never
+fired at. The Flip has nobody to come round under. A lone MiG Immelmann
+goes over from 225 to 450 m (all speeds) and never from 525 m up (levelled
+at 769 to 783 m). The tests hold these; the words quote the F-16's. The
+highest anyone goes on the MiG-29 is 784 m.
 
 As written (no jet file) the MiG-29's `split` demo shows the high
 Immelmann's failure for real: too fast to split-S, the ace pulls up at 670 m
@@ -174,11 +194,9 @@ and 124 m/s, goes 763 m straight up to 1433 m and hangs there at 8 m/s
   Spitfire units (69 m/s), so on a jet that phase never opens. The fire in
   the counter is what `aim` gets on the way. Not changed: the counter on a
   jet is a head-on pass whichever phase fires.
-- **Shared: the harness** prints only each fight's end. The ace's
-  turnaround, the moves' `scoreMove` over `STARTS`, and the lone
-  turnarounds are flown by an inline module in the test file (`FLY`). A
-  `--moves` (`movesOn` with each start's score) and a per-side turnaround
-  summary in `dogfight_jet_harness.mjs` would let the next lesson skip that.
+- **The harness** now scores the moves over `STARTS` (`--moves`,
+  `jet_school.jet_moves`, `807800fbc`). The ace's turnaround and the lone
+  turnarounds are still flown by the test's inline module (`FLY`).
 - **Shared: the split-S decision** (`PLANS.turnarounds` `pass`) is a speed
   gate at the moment the range falls under 650: any airframe that
   accelerates quickly from a slow start passes the gate before the range.
@@ -189,18 +207,18 @@ and 124 m/s, goes 763 m straight up to 1433 m and hangs there at 8 m/s
 - **FLY IT** is fitted to a jet ([live-fight.md](live-fight.md)) and reads
   this file, the split-S demo's nearer start with it; nobody has flown this
   lesson in it by hand.
-- **Shared: the Immelmann under the roof.** `PLANS.turnarounds`'
-  `immelmann` and `rollout` phases do not answer `roof: false`, so a loop
-  started over about 450 m on the F-16 and 400 m on the MiG-29 is
-  flattened before the top. On the F-16 no lesson start is there; on the
-  MiG-29 the lesson's own Immelmanns (414 to 456 m) are, and its Dip goes
-  from 9 of 9 to 0. Answering `roof: false` while the loop is under way and
-  it started under about 520 m real would complete every loop that tops
-  out under 800 m (F-16 from 576 m: top 759 to 775; MiG-29 from 525 m: 754
-  to 777) and leave the higher ones to the roof. Not changed here: the plan
-  is shared. A jet plan of this lesson's own wrapping it would do the same
-  for this lesson only.
+- **Shared: the roof's loop prediction at the start of a pull.** The
+  reworked roof leaves a loop alone when its predicted top (speed over the
+  pitch rate under way, times 1.3) is under 800 m, but at the start of a
+  pull the rate has not built yet (pitch lag 0.83 s on the F-16, 0.87 on
+  the MiG-29), so a fast loop's top reads high and the cap stops the rate
+  from ever building: F-16 from 512 m at 97 m/s, and the MiG-29's lesson
+  Immelmann from 456 m at 119 m/s, climb straight ahead instead (trace
+  above). The same height from 61 or 79 m/s goes over. A prediction that
+  reads the pull the plan asks for (the rate the stick will give), not the
+  rate already under way, would fly these. Not changed here: shared.
 - **Heights.** The lesson's Immelmanns start at 352 to 378 m and the
   split-S at 589 m on the F-16, all inside the band where each completes
-  under the roof; on the MiG-29 the Immelmanns start at 414 to 456 m, in
-  the band where the roof flattens them, and the split-S at 669 m.
+  under the roof; on the MiG-29 the Immelmanns start at 414 to 456 m: the
+  demos' at 414 and 444 m are flown, the Dip's and the Flip's at 455 to
+  456 m are capped and never go over; the split-S starts at 669 m.

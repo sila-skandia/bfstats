@@ -109,9 +109,8 @@ PLANS.taJetSolo = {
   },
 };
 INTENTS.taJetSolo = { wait: 'setup', flat: 'setup' };
-// Immelmanns from 192 to 704 m real (150 to 600 at the Spitfire's size,
-// paced and bent over by `pacedHeight`), and one from 768 m, a height no
-// paced start reaches (a start already over the roof is kept as it is).
+// Immelmanns from 192 to 745 m real (150 to 600 and 768 at the Spitfire's
+// size, paced and bent over by `pacedHeight`: no paced start reaches 760).
 const SOLO = [['flat', 300, 75], ...[150, 200, 250, 300, 350, 400, 450, 500, 600, 768].flatMap(y => [45, 60, 75].map(v => ['immelmann', y, v])),
   ...[45, 60, 75].map(v => ['split', 300, v]), ['split', 350, 75], ['split', 400, 75], ['split', 500, 75]];
 for (const [kind, y, speed] of SOLO) {
@@ -203,23 +202,28 @@ class TurnaroundsOnAJetTests(unittest.TestCase):
         # From 60 m/s it comes out faster.
         self.assertTrue(all(s["vEnd"] > s["v0"] for s in low if s["speed"] == 45))
 
-    def test_high_up_the_roof_pushes_the_immelmann_off_its_loop(self) -> None:
-        # "from 510 m the climb is levelled off before the top, and they roll
-        # out 265 to 290 m higher after 9 to 10 seconds, only 92 to 122
-        # degrees round" (the roof, `dogfight-jet-ceiling.js` `underRoof`:
-        # the turnarounds plan does not answer `roof: false`).
-        at510 = solo("immelmann", 400)
-        self.assertTrue(all(s["height"] == 512 and s["done"] for s in at510), at510)
-        between(self, (s["up"] for s in at510), 265, 290, "climbs from 510 m")
-        between(self, (s["dur"] for s in at510), 8.9, 10.1, "takes from 510 m")
-        between(self, (s["turned"] for s in at510), 92, 122, "round from 510 m")
-        # "From 580 m up they never go over the top at all: the loop is
-        # flattened at 816 to 831 m, and 14 seconds later they are still up
-        # there, not round."
-        high = [s for y in (450, 500, 600, 768) for s in solo("immelmann", y)]
-        self.assertEqual({576, 635, 704, 768}, {s["height"] for s in high})
-        self.assertTrue(all(not s["done"] for s in high), high)
-        between(self, (s["height"] + s["peak"] for s in high), 816, 831, "flattened at")
+    def test_high_up_the_roof_caps_the_immelmanns_pull(self) -> None:
+        # "From 510 m it goes over only if they pull up slow, at 60 to 80 m/s
+        # (round in 6 to 7 seconds, 155 to 165 m up); at cruising speed the
+        # pull is held back and they never go over." (The roof,
+        # `dogfight-jet-ceiling.js` `underRoof`, caps the pull of a loop whose
+        # top it predicts over 800 m.)
+        slow = [s for s in solo("immelmann", 400) if s["speed"] < 75]
+        self.assertTrue(all(s["height"] == 512 and s["done"] and s["v0"] in (61, 79) for s in slow), slow)
+        between(self, (s["dur"] for s in slow), 6.2, 6.7, "takes from 510 m, slow")
+        between(self, (s["up"] for s in slow), 155, 165, "climbs from 510 m, slow")
+        between(self, (s["turned"] for s in slow), 178, 179, "round from 510 m, slow")
+        (fast,) = solo("immelmann", 400, 75)
+        self.assertEqual(97, fast["v0"])
+        self.assertFalse(fast["done"])
+        # "From 580 m up no loop goes over at all: they climb straight ahead to
+        # 768 m, level off there, and 14 seconds later are still flying away
+        # at 125 to 127 m/s."
+        high = [fast] + [s for y in (450, 500, 600, 768) for s in solo("immelmann", y)]
+        self.assertEqual({512, 576, 635, 704, 745}, {s["height"] for s in high})
+        self.assertTrue(all(not s["done"] and s["turned"] <= 1 for s in high), high)
+        between(self, (s["height"] + s["peak"] for s in high), 768, 769, "levelled at")
+        between(self, (s["vEnd"] for s in high), 125, 127, "14 s on")
 
     def test_chasing_them_up_you_keep_your_speed_and_get_a_snap(self) -> None:
         demo = self.f["demos"]["immelmann"]
@@ -311,7 +315,7 @@ class TurnaroundsOnAJetTests(unittest.TestCase):
         between(self, (e["range"] for e in dives), 237, 298, "dive from")
         outs = [next(e for e in m["events"] if e["side"] == 1 and e["phase"] == "dip-out") for m in moves]
         between(self, (o["t"] - d["t"] for o, d in zip(outs, dives)), 1.4, 1.6, "off them after")
-        between(self, (m["minRange"] for m in moves), 148, 227, "closest")
+        between(self, (m["minRange"] for m in moves), 145, 227, "closest")
         self.assertTrue(all(m["myShot"] == 0 and m["hisShot"] == 0 for m in moves))
         # "Diving sooner, as they roll over, put you in front of them as they
         # came out: shot down in all nine."
@@ -336,7 +340,7 @@ class TurnaroundsOnAJetTests(unittest.TestCase):
             self.assertEqual([0, 0], x["past"], demo)
         # The Flip's turning fight is the highest; the lesson's Immelmanns
         # top out at 479 to 535 m.
-        self.assertEqual(838, max(max(x["top"]) for x in tops.values()))
+        self.assertEqual(780, max(max(x["top"]) for x in tops.values()))
         self.assertEqual([479, 535], tops["immelmann"]["top"])
 
     def test_the_jet_file_is_laid_over_the_lesson(self) -> None:
@@ -345,31 +349,35 @@ class TurnaroundsOnAJetTests(unittest.TestCase):
 
 
 class TurnaroundsOnTheMig29Tests(unittest.TestCase):
-    """The MiG-29 (pace 1.5) flies the same file. Its Immelmanns start at
-    414 to 456 m, where the roof flattens its loop: the Dip fails."""
+    """The MiG-29 (pace 1.5) flies the same file. Its Immelmanns in the Dip
+    and the Flip start at 455 to 456 m and 119 m/s, where the roof caps the
+    pull: the ace never goes over, and climbs away straight ahead."""
 
     @classmethod
     def setUpClass(cls) -> None:
         cls.f = flown("Mig29")
 
-    def test_the_roof_flattens_the_lessons_immelmann_and_the_dip_fails(self) -> None:
-        self.assertEqual({"dip": 0, "flip": 0, "ninja": 0}, {d: sum(m["ok"] for m in ms) for d, ms in self.f["moves"].items()})
-        ace = [m["ace"] for m in self.f["moves"]["dip"]]
-        between(self, (a["y0"] for a in ace), 455, 456, "from")
-        between(self, (a["dur"] for a in ace), 9.1, 9.1, "takes")
-        between(self, (a["up"] for a in ace), 337, 338, "climbs")
-        between(self, (a["vmin"] for a in ace), 41, 41, "slowest")
-        between(self, (a["turned"] for a in ace), 116, 117, "round")
-        between(self, (m["hitsOnMe"] for m in self.f["moves"]["dip"]), 0, 5, "hits on you in the Dip")
-        self.assertEqual(7, sum(1 for m in self.f["moves"]["dip"] if m["hitsOnMe"]))
-        between(self, (m["endRange"] for m in self.f["moves"]["dip"]), 459, 544, "apart at 32 s")
+    def test_the_dip_works_because_they_never_turn_round(self) -> None:
+        self.assertEqual({"dip": 9, "flip": 0, "ninja": 0}, {d: sum(m["ok"] for m in ms) for d, ms in self.f["moves"].items()})
+        for demo in ("dip", "flip"):
+            ace = [m["ace"] for m in self.f["moves"][demo]]
+            between(self, (a["y0"] for a in ace), 455, 456, f"{demo}: from")
+            self.assertTrue(all(a["kind"] == "immelmann" and not a["done"] for a in ace), demo)
+            between(self, (a["up"] for a in ace), 323, 329, f"{demo}: climbs")
+            between(self, (a["vmin"] for a in ace), 107, 107, f"{demo}: slowest")
+        dip = self.f["moves"]["dip"]
+        self.assertTrue(all(m["hitsOnMe"] == 0 and m["hisShot"] == 0 for m in dip))
+        between(self, (m["endRange"] for m in dip), 2000, 2778, "apart at 32 s")
 
     def test_the_demos(self) -> None:
         imm = [r["ace"] for r in self.f["demos"]["immelmann"]]
         between(self, (a["y0"] for a in imm), 414, 414, "from")
-        between(self, (a["up"] for a in imm), 234, 234, "climbs")
-        between(self, (a["vEnd"] for a in imm), 91, 91, "out at")
-        between(self, (a["turned"] for a in imm), 151, 151, "round")
+        between(self, (a["up"] for a in imm), 183, 183, "climbs")
+        between(self, (a["vEnd"] for a in imm), 94, 94, "out at")
+        between(self, (a["turned"] for a in imm), 168, 168, "round")
+        counter = [r["ace"] for r in self.f["demos"]["immelmann-counter"]]
+        between(self, (a["up"] for a in counter), 190, 190, "counter: climbs")
+        between(self, (r["hits"][1] for r in self.f["demos"]["immelmann-counter"]), 4, 13, "counter: your hits")
         split = [r["ace"] for r in self.f["demos"]["split"]]
         between(self, (a["y0"] for a in split), 669, 669, "split-S from")
         between(self, (a["down"] for a in split), 226, 226, "lost")
@@ -378,10 +386,22 @@ class TurnaroundsOnTheMig29Tests(unittest.TestCase):
         for demo, rs in runs.items():
             self.assertEqual(0, shot_down(rs, 0) + shot_down(rs, 1), demo)
 
+    def test_lone_immelmanns(self) -> None:
+        low = [s for y in (150, 200, 250, 300) for s in solo_on(self.f, "immelmann", y)]
+        self.assertEqual({225, 300, 375, 450}, {s["height"] for s in low})
+        self.assertTrue(all(s["done"] for s in low))
+        high = [s for y in (350, 400, 450, 500, 600, 768) for s in solo_on(self.f, "immelmann", y)]
+        self.assertTrue(all(not s["done"] and s["turned"] <= 6 for s in high), high)
+        between(self, (s["height"] + s["peak"] for s in high), 769, 783, "levelled at")
+
     def test_under_the_roof(self) -> None:
         tops = jet_tops("Mig29", "turnarounds")["turnarounds"]
-        self.assertEqual(851, max(max(x["top"]) for x in tops.values()))
+        self.assertEqual(784, max(max(x["top"]) for x in tops.values()))
         self.assertTrue(all(x["past"] == [0, 0] for x in tops.values()))
+
+
+def solo_on(f: dict, kind: str, y: int) -> list[dict]:
+    return [s for s in f["solo"] if s["kind"] == kind and s["y"] == y]
 
 
 @functools.lru_cache(maxsize=None)
