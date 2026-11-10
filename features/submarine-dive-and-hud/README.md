@@ -57,7 +57,10 @@ land hull's spec carries.
   through `ship.js`. The setpoint runs at 2 m a second, coasts 2 m on release
   and holds; she settles at 12.49 m for a 12 m setpoint (SHIP-7's 12.5) and
   floats at 2.49 m at setpoint 0 (the closed form, 2.489); the setpoint stops
-  at 50; a sleeping root does not dive.
+  at 50; a sleeping root wakes on the key and dives, and stopped under water
+  she stays awake and climbs on the other arrow (SUB-7, 2026-11-10: a float
+  whose angle term is not 0 wakes the hull before its sleep test; the
+  harness's 'a sleeping root does not dive' was the opposite).
 - `tools/bf1942-models/tests/test_submarine_hud.py`: the readout, the
   periscope switch and the deep latch's half metre, the fade's timeline, the
   feed opening and closing the map, and the tape's band against hand
@@ -93,8 +96,28 @@ land hull's spec carries.
   points, not the air, so the air gauge there reads the page's own record,
   which does not drain.
 - **Check against retail.** Whether a parked Gato dives before she is under
-  way (TANK-21 says she does not), whether the periscope shows in third
+  way (SUB-7 says she does: the float's own angle wakes her), whether the periscope shows in third
   person, and how the deep view looks on the owner's install.
 - **The bearing marker's grey.** `menu/InGame` tints it 0.5 grey; `hud.js`
   applies a picture's alpha and not its colour, so it draws in its own
   yellow.
+
+## 2026-11-10: BF1918's M1uboot
+
+- **A stopped boat under water froze.** The page's floats ran only while the
+  root was awake and nothing but the revs woke it, so a boat at rest at her
+  setpoint slept after 100 ticks and the dive keys moved the setpoint and
+  nothing else, while the air ran out. `PhysicsFloatingBundle::updatePhysics`
+  wakes the hull first whenever the float's angle term is not 0 (SUB-7):
+  `ship-law.js` and `body-float.js` now do. With the setpoint back at 0 the
+  floats no longer wake her, and a hull climbing under 0.5 m/s can still sleep
+  on the way up (TANK-21).
+- **BF1918's layout.** Its `menu/InGame` keeps the cockpit picture in a top of
+  its own and folds the capture flag into the deep fade's SplitNode;
+  `extract_hud_layout.py` now gathers a group from every top carrying one of
+  its pictures and repeats no leaf another group holds. Vanilla's layout is
+  byte-identical. The bf1918 pack needs `extract_hud_mods.py --mod bf1918`.
+- **A stale local cache.** `serve_viewer.py` keeps a remote file until the
+  cache is removed, and `~/.cache/bfstats-mesh-remote/maps/_shared/hud/hud-layout.json`
+  on this Mac is from 5 November, before the submarine groups: every local
+  page, vanilla's Gato included, drew no submarine HUD from it.

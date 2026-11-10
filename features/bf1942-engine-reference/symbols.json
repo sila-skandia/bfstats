@@ -4173,6 +4173,15 @@
    "note": "switch(in_EAX): 1 BMZero .. 0xb BMSourceAlphaSaturate. Identity with D3DBLEND. Twins: operator<< 0x005241c0, operator>> 0x00524340. Ledger SPR-5."
   },
   {
+   "address": "0x005be800",
+   "name": "Sky::initSky",
+   "kind": "function",
+   "subsystem": "rendering",
+   "confidence": "working",
+   "source": "LOAD-33; winpc decompile 005be800 builds SkyBox and looks it up; Mac client dice::ref2::fx::Sky::initSky",
+   "note": ""
+  },
+  {
    "address": "0x005bee20",
    "name": "StandardMeshSubShader_resetRenderState",
    "kind": "function",

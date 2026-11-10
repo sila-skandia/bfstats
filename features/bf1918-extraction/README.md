@@ -536,3 +536,29 @@ Four tester findings (T3 F3, T1 F-mortar-aim, T4 F5, T1 F-lancer-team).
   gun (`GunFire.release`); whether retail's FireArms fires it after the exit
   was not read.
 - A level `ObjectSpawner`'s `teamOnVehicle` is still not stamped.
+
+## The level's own copy, the sky box, the sun, the load music and the submarine (2026-11-10)
+
+Five tester findings (T4 F1-F4, F9; T2 F7). Ledger LOAD-32..LOAD-34, LDPIC-3,
+SUB-7.
+
+| Finding | Retail | Changed |
+| Ambience twice (42 levels, 1023 emitters) | The level's `Init.con` declares `water1`, `bird`, `voegel` ... before the mod's `objects/Ambiente/`, whose `create` then makes nothing (LOAD-1, LOAD-2): one placement, one emitter, the level's 10..40 m ramp (LOAD-32) | `bf42/level.py` `discover_level_sounds` step 4 skips a template the level's `Sounds/*.con` declares; `_find_template_sound_script` (`shadowed`) and `_level_sound_children` treat a level-declared child as the level's |
+| Ramskapelle's sky is the cloud sheet | `Sky.initSky` instances the geometry template named `SkyBox` (client `0x005be800`, LOAD-33) | `parse_init_con` keeps each geometry template's file by name (first create wins) and takes `SkyBox`'s; the only one of 536 installed levels it moves |
+| Montblainville has no sun | **Not a defect.** `SkyAndSun.con` creates `TSun` with no textures and makes the sun from it before `include Lenz.con`, whose re-create configures nothing (LOAD-1, LOAD-34). `lensFlare: null` is what retail shows | `read_init_script` splices `include` inline (montblainville and bf1919's White_Guard are the only users); a second `create LensFlare` now configures nothing. The scene output is unchanged |
+| Galicia plays the mod's load music | The level's `Menu/Init.con` `setLoadMusicFilename` (LDPIC-3) | `extract_loading_assets.py` `level_load_music`, `transcode_music`: Galicia's row is `_shared/music/vehicle3.mp3` |
+| M1uboot: no submarine HUD | BF1918's `menu/InGame` draws the gauges, periscope and deep view as vanilla's does | `extract_hud_layout.py`: a submarine group is every top that carries one of its pictures (BF1918 moves the cockpit picture to a top of its own) and repeats no leaf another group holds (the capture flag folded into the deep fade's SplitNode drew twice). Vanilla's layout is byte-identical to the live one; all eight other installed mods decode periscope 7 / depthFade 1 / submarine 14. BF1918's layout now differs from vanilla's, so its pack needs its own `hud-layout.json`. Locally the testers' page also read a stale vanilla layout (5 Nov) out of `~/.cache/bfstats-mesh-remote`, which has no submarine groups at all |
+| M1uboot stopped under water freezes | A float whose angle term is not 0 wakes the hull before its sleep test (`0x0824d640` -> `0x0824da48`, SUB-7), so a held setpoint never sleeps | `viewer/ship-law.js` `shipTick` and `viewer/body-float.js` `step` wake on a non-zero float angle. Vanilla's Gato and Sub7C share the law. `M1uboot.cockpit.glb` 404s for the Gato too: neither LodObject has a cockpit alternative, and the deep view's cockpit is the HUD picture `cockpit_512x512` |
+
+The "sinks straight through the setpoint" half of F9 is the probe's depth
+measure: she came to rest at y 69.333, a float-plane depth of 21.97 m for a
+21.5 m setpoint, which is SHIP-7's setpoint + 0.5.
+
+### What has to re-run
+
+| Change | Levels | Step |
+| Ambience | the 42 BF1918 levels with a doubled emitter: amiens, aube_de_soiree, battle_of_bazargic, battle_of_halen, battle_of_jaroslawice, battle_of_leget, battle_of_liege, battle_of_mons, battle_of_struga, belgrade, bismarck_archipel, bold_venture, brusilov_offensive, champ_de_feu, champagne, chateau-thierry, dawnville, fort_bismarck, galicia, hindenburg_line, kolubara, kosovo, langemarck, liberation_of_roeselare, masuren, masurian_lakes, mont_kemmel, montblainville, morava_offensive, mughar_ridge, nebelberg, ramskapelle, roye, saint_quentin_canal, siege_de_maubeuge, siege_of_antwerp, tabuaeran, tolmezzo, tsingtao, villers_bretonneux, vitry, ypern1914 (no other published tree has one) | `patch_scene.py --layer sounds --mod bf1918 --all` (a scratch run over all 133 changed only `<x>_static` rows, exactly these) |
+| Sky box | bf1918 ramskapelle | full bake (`scene` layer: the sky is in `scene.glb`), then optimise and publish |
+| Load music | bf1918 Galicia | `extract_loading_assets.py --mod bf1918` (writes `_shared/music/vehicle3.mp3` and the row) |
+| Submarine HUD | the bf1918 pack | `extract_hud_mods.py --mod bf1918`, which now keeps its own `hud-layout.json` |
+| Dive wake | none | page code |
