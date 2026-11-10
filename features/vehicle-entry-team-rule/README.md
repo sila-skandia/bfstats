@@ -62,10 +62,15 @@ This line used to give only the branch, `fix/seats`. Ledger SEAT-26..SEAT-29
 
 ## Open
 
-- Not modelled: `dontClearTeamOnExit` (ships keep the last crew's side) and
-  the `teamOnVehicle` stamp (Kasserine Pass, naval spawners). The extract
-  carries neither word (`con.py`, `scene.json` objectSpawns); needs parsing,
-  re-extraction and a per-root team that outlives the instance.
+- ~~Not modelled: `dontClearTeamOnExit` (ships keep the last crew's side) and
+  the `teamOnVehicle` stamp.~~ *2026-11-10:* `dontClearTeamOnExit` is built:
+  `bf42/con.py` carries it on the PCO's `physics`, `VehicleRegistry.leave`
+  leaves the last crew's team as a stamp (the per-root team that outlives the
+  instance, `stamps`, which a round spawner's `teamOnVehicle` already used),
+  and the room server keeps it (`room-control.mjs`). It reaches a hull only
+  through a glb extracted since: the model glbs and the level bakes that
+  place the hull (`features/bf1918-extraction`, "Seat guns, doors and lance
+  horses"). A level `ObjectSpawner`'s `teamOnVehicle` is still open.
 - `teamOnVehicle 2`'s bool parse is unread. With a stamp modelled, the engine's
   bots would walk to an empty locked enemy hull and be refused (its own stall).
   *Added 2026-09-29: §4.1 of

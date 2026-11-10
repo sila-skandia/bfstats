@@ -470,3 +470,69 @@ deploy screen reads "0 CombatPatrol / Regular / Medic / Officer / Pioneer"
 Scharfschütze, Kaiserschütze, Richtschütze, Offizier, Kaiserjaeger (umlauts
 drawn by the bitmap font) and the Russians' Metki-Strelok, Pekhotinec ...;
 vanilla Kharkov's deploy screen is unchanged.
+
+## Seat guns, doors and lance horses (2026-11-10)
+
+Four tester findings (T3 F3, T1 F-mortar-aim, T4 F5, T1 F-lancer-team).
+
+- **Seat guns wait out `fireDelay`** (FA-13). `gun-cycle.js` `advanceGroups`
+  holds a seat gun's press pending and fires it `delayTicks(fireDelay)` after
+  (the press's tick the first off the timer), held or let go; the fire timer
+  then starts a tick late (`delayedFireCycle`). Only groups collected with
+  `SEAT_GUN_OPTIONS.fireDelay` take it, so a hand weapon's wind-up stays
+  `hand-fire.js`'s; bots fire seat guns through the same world tick. No
+  vanilla vehicle FireArms writes the word. Page (world ticks after one press):
+  mont_kemmel `Ger150er_Batterie` 9/0/20/23/6 for 0.3/0/0.7/0.8/0.2;
+  somme_gasattack `GasTrenchMortar` 0/5/12/21/26/36 for 0/0.18/0.42/0.72/0.9/1.22,
+  `3erWerfer16` 9/0/2; nebelberg's deployed Stokes (`fireDelay 1`) 29.
+- **The deployed Stokes points where it was set down** (SPAWN-34). The barrel
+  was right relative to the mortar; the mortar was wrong: `poseObject` stood it
+  up the slope's normal, and on nebelberg's 48-degree hill it sat nose-up, so
+  the barrel (60 degrees up its own front) leaned back. A placed object whose
+  PCO says `hasMobilePhysics 0` (DeployedStokes, DeployedWerfer16,
+  DeployedHotchkiss_MG) now stands at the spawner's point turned as the round
+  left the hand, and does not fall (SPAWN-30, HP-21). Page: thrown facing -z
+  the mortar faces (0, 0, -1), barrel (0, 0.87, -0.5), the round lands 97 m
+  ahead; thrown facing -x, 90 m along -x.
+- **Doors and barriers swing** (GUN-24). A seat whose only RotationalBundle is
+  on a key input now has a rig (`vehicle-occupancy.js` `rigFor`), which leaves
+  the mouse to the seat's view (`local-look.js`). A part a rig swings on a hull
+  that never moved takes its collision with it (`WorldCollider.syncRigParts`,
+  called from `world-vehicle-tick.js` when the rig moved). Page: bold_venture's
+  `Bunkertuer` opens 16 degrees in the first second of Arrow Up and stops at
+  90; a ray through the shut leaf's centre meets the door shut, passes open,
+  and meets it again shut; the open leaf answers where it is drawn.
+  montblainville's `Schranke1` lifts to 80 and back.
+- **An abandoned lance horse stays its side's** (SEAT-27). `bf42/con.py`
+  carries `dontClearTeamOnExit` on the PCO's `physics`; the last man out
+  leaves a stamp (`VehicleRegistry.leave`), and the room server keeps it
+  (`room-control.mjs`). Page, gebirgspass, with the word put on the horse at
+  run time (the tree's glbs predate it): team 1 rides and gets off, team 2 is
+  refused, team 1 takes it again; without the word team 2 rides off.
+
+### To re-extract
+
+- `dontClearTeamOnExit` rides the PCO node's extras, so every glb that
+  carries one of these hulls: the model glbs of bf1918's `Horse_spear`,
+  `Cricket`, `DepthChargeboot`, `Gnat`, `Gneisenau`, `M1uboot`,
+  `M1ubootCannonPCO2`, `Minensuchboot`, `SMSDresden`, `SMSEMDEN`,
+  `SSRiverClyde`, `Scarab`, `Scharnhorst`, `Seabase`, `SteamSchooner`,
+  `Suffren`, `Wickes` and vanilla's `Enterprise`, `Fletcher`, `Fletcher2`,
+  `Gato`, `Hatsuzuki`, `Hatsuzuki2`, `Hiryu`, `Hornet`, `PrinceOW`,
+  `Shokaku`, `Sub7C`, `Yamato`; and, because placed hulls are baked into
+  `scene.glb` (gebirgspass's four `Horse_spear` carry their `physics` there),
+  the full `scene` bake of every exported level that places one. Nothing else
+  changed in any extract.
+
+### Open
+
+- The round's own rotation in flight is not ledgered: SPAWN-34 rests on
+  `deployables.js`'s reading that nothing turns a round with no response
+  physics, so a Stokes thrown while looking down stands pitched down.
+- A static deployed object is not lifted out of a slope it is stood into
+  (retail's rule, SPAWN-28): on nebelberg's steep hill the Stokes stands
+  4 m into the ground, as the spawner's point puts it.
+- A shot still pending its `fireDelay` when the gunner leaves goes with the
+  gun (`GunFire.release`); whether retail's FireArms fires it after the exit
+  was not read.
+- A level `ObjectSpawner`'s `teamOnVehicle` is still not stamped.
