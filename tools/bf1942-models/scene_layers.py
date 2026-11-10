@@ -414,6 +414,10 @@ def layer_control_points(ctx: LevelContext):
 def layer_spawns(ctx: LevelContext):
     info = ctx.info
     by_mode = ctx.vehicle_soldier_spawns_by_mode
+    if ctx.include_objects:
+        # The groups the mod's `objects/` scripts bind sit under every layer
+        # for the level's own points too (SPAWNGRP-14).
+        em.bind_object_spawn_groups(info, ctx.ordered_objects)
     default = info.gameplay.mode or "Conquest"
     top = {
         "soldierSpawns": em._soldier_spawn_report(info),

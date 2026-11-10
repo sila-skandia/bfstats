@@ -94,6 +94,8 @@ from bf42.level import (  # noqa: E402
     init_spawn_groups,
     is_gameplay_kind,
     merge_spawn_groups,
+    parse_spawn_point_groups,
+    SpawnGroupSettings,
     load_game_types,
     load_gameplay_objects,
     borrowed_levels,
@@ -3327,6 +3329,9 @@ class TemplateIndex:
     def __init__(self, objects) -> None:
         self.blocks: dict[str, _Block] = {}
         self._carried: dict[str, list] = {}
+        # The spawn groups the mod's `objects/` scripts bind, in their run
+        # order (`object_spawn_groups`).
+        self.spawn_groups: dict[int, SpawnGroupSettings] = {}
         seen: set[str] = set()
         ordered = objects if isinstance(objects, LevelFirst) else LevelFirst(objects)
         for name in ordered.names():
@@ -3338,8 +3343,14 @@ class TemplateIndex:
             if blob is None:
                 continue
             text = blob.decode("latin-1", "replace")
-            if "objecttemplate" in text.lower():
+            folded = text.lower()
+            if "objecttemplate" in folded:
                 self._add(name, text)
+            # A level's own scripts bind theirs through `init_spawn_groups`
+            # (the ones its `Init.con` runs; the rest never run, LOAD-8).
+            if "spawnpointmanager" in folded and not lower.startswith("bf1942/levels/"):
+                self.spawn_groups = merge_spawn_groups(
+                    self.spawn_groups, parse_spawn_point_groups(text))
 
     def _add(self, source: str, text: str) -> None:
         current: _Block | None = None
@@ -3503,6 +3514,39 @@ def template_index(objects) -> TemplateIndex:
     return index
 
 
+def bind_object_spawn_groups(info: LevelInfo, objects, *layers) -> None:
+    """Lay the groups the mod's `objects/` scripts bind under every layer.
+
+    `Game::loadAllConFiles("objects/")` runs every `.con` of the mod's
+    `objects.rfa` (LOAD-5, LOAD-8), and a `spawnPointManager.group N` /
+    `groupTeam T` line in one is a console command like any other: it writes
+    the one group table (SPAWNGRP-1). It runs after `GlobalSpawnGroups.con`
+    and the level's `Init.con` and before the mode script (LOAD-15), so a
+    layer's `spawnPointManagerSettings.con` (and a control point) still
+    overrides it, and it overrides the global file. BF1918's
+    `Vehicles/Air/ZeppelinL30/Objects.con` is the only binder of the
+    Zeppelin's groups 41/42 (`groupTeam 1`): without it the Axis had no
+    spawn on their airship. Ledger SPAWNGRP-14.
+
+    The level's `Init.con` scripts are already merged into each layer
+    (`init_spawn_groups`), and they run before `objects/`; where both bind
+    one group the earlier run wins here. No installed mod does both.
+    Idempotent: a layer is bound once (`layers` names any the info does
+    not hold).
+    """
+    bound = template_index(objects).spawn_groups
+    if not bound:
+        return
+    for layer in [getattr(info, "gameplay", None),
+                  *(getattr(info, "modes", None) or {}).values(), *layers]:
+        if layer is None or getattr(layer, "_object_groups_bound", False):
+            continue
+        layer._object_groups_bound = True
+        layer.spawn_groups = merge_spawn_groups(bound, layer.spawn_groups)
+        layer.spawn_group_teams = {n: g.team for n, g in layer.spawn_groups.items()
+                                   if g.team is not None}
+
+
 def _vehicle_soldier_spawn_report(info: LevelInfo, objects, game,
                                   gameplay=None) -> list[dict]:
     """The spawn points the spawned objects carry, from their templates.
@@ -3523,6 +3567,7 @@ def _vehicle_soldier_spawn_report(info: LevelInfo, objects, game,
     wherever they are declared (`TemplateIndex`).
     """
     global_teams = _global_spawn_group_teams(game)
+    bind_object_spawn_groups(info, objects, gameplay)
     layer_groups = (info.gameplay if gameplay is None else gameplay).spawn_groups
     spawns = info.spawn_objects if gameplay is None else gameplay.object_spawns
     spawner_specs = (info.spawn_templates if gameplay is None

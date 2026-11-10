@@ -407,6 +407,66 @@ class CrossFileBundleTests(unittest.TestCase):
         self.assertEqual(out, [])
 
 
+# BF1918's airship binds its own groups in its own `objects.rfa` script, the
+# only binder of 41/42 anywhere in the mod (t2 F1).
+ZEPPELIN = """
+ObjectTemplate.create PlayerControlObject ZeppelinL30
+ObjectTemplate.addTemplate ZeppelinL30SoldierSpawnV
+ObjectTemplate.setPosition 0/-1.8/73.85
+
+ObjectTemplate.create SpawnPoint ZeppelinL30SoldierSpawnV
+ObjectTemplate.setSpawnId 0
+ObjectTemplate.setGroup 41
+ObjectTemplate.setAIEnterOnSpawn 1
+
+spawnPointManager.group 41
+spawnPointManager.groupTeam 1
+spawnPointManager.groupIcon test1.tga
+"""
+
+ZEPPELIN_SPAWNER = """
+ObjectTemplate.create ObjectSpawner zeppelinspawner
+ObjectTemplate.setObjectTemplate 1 ZeppelinL30
+"""
+
+
+class ObjectScriptGroupTests(unittest.TestCase):
+    """`Game::loadAllConFiles("objects/")` runs every script of the mod's
+    `objects.rfa`, its `spawnPointManager` lines included, after the global
+    file and the level's `Init.con` and before the mode script (SPAWNGRP-14,
+    LOAD-15): a group a vehicle's own script binds is that side's unless the
+    level's layer says otherwise."""
+
+    def _report(self, layer=None, path="objects/Vehicles/Air/ZeppelinL30/Objects.con"):
+        from bf42.level import SpawnGroupSettings
+        gameplay = SimpleNamespace(spawn_groups={
+            g: SpawnGroupSettings(group=g, team=t) for g, t in (layer or {}).items()},
+            spawn_group_teams={})
+        info = SimpleNamespace(
+            gameplay=gameplay, modes={},
+            spawn_objects=[_pad("zeppelinspawner", position=(1810.0, 151.5, 360.0), team=1)],
+            spawn_templates=parse_spawn_templates(ZEPPELIN_SPAWNER))
+        game = FakePool({"Bf1942/Game/GlobalSpawnGroups.con": GLOBAL_GROUPS})
+        return em._vehicle_soldier_spawn_report(info, FakePool({path: ZEPPELIN}), game), gameplay
+
+    def test_a_vehicle_script_binds_its_own_group(self):
+        out, gameplay = self._report()
+        self.assertEqual([(e["name"], e["group"], e["team"], e.get("aiEnterOnSpawn")) for e in out],
+                         [("zeppelinl30soldierspawnv", 41, 1, True)])
+        # Laid under the layer, so the level's own soldier spawns read it too.
+        self.assertEqual(gameplay.spawn_group_teams, {41: 1})
+
+    def test_the_levels_layer_still_wins(self):
+        out, _ = self._report(layer={41: 2})
+        self.assertEqual([e["team"] for e in out], [2])
+
+    def test_a_level_script_the_init_never_ran_binds_nothing(self):
+        # A level archive's own scripts bind through `init_spawn_groups`, and
+        # only those its `Init.con` runs (LOAD-8): not from the objects walk.
+        out, _ = self._report(path="bf1942/levels/Amiens/objects/Zeppelin/Objects.con")
+        self.assertEqual(out, [])
+
+
 def _game_dir() -> Path | None:
     try:
         from extract_models import DEFAULT_GAME_DIR
