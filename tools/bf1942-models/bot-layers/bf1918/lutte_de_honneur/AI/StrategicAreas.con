@@ -1,0 +1,72 @@
+rem *** Strategic areas: one per control point (botgen) ***
+
+aiStrategicArea.create german_fieldhq 506.9/749.1 526.9/769.1 50
+aiStrategicArea.addNeighbour german_lefttrenchtemplate
+aiStrategicArea.addNeighbour german_righttrenchtemplate
+aiStrategicArea.addObjectTypeFlag Base
+aiStrategicArea.setOrderPosition Tank 524.5/769.5
+aiStrategicArea.setOrderPosition Infantry 526.5/768.5
+aiStrategicArea.setSide 1
+aiStrategicArea.setTakeable 2 0
+
+aiStrategicArea.create british_fieldhq 535.5/189.5 555.5/209.5 50
+aiStrategicArea.addNeighbour british_2ndtrenchtemplate
+aiStrategicArea.addObjectTypeFlag Base
+aiStrategicArea.setOrderPosition Tank 553.5/209.5
+aiStrategicArea.setOrderPosition Infantry 554.5/209.5
+aiStrategicArea.setSide 2
+aiStrategicArea.setTakeable 1 0
+
+aiStrategicArea.create german_2ndtrenchtemplate 532.5/596.5 539.5/603.5 10
+aiStrategicArea.setTakeable 1 0
+aiStrategicArea.setTakeable 2 0
+
+aiStrategicArea.create german_lefttrenchtemplate 592.7/566.4 603.7/577.4 200
+aiStrategicArea.addNeighbour german_fieldhq
+aiStrategicArea.addNeighbour german_righttrenchtemplate
+aiStrategicArea.addNeighbour british_righttrenchtemplate
+aiStrategicArea.addObjectTypeFlag Centre
+aiStrategicArea.addObjectTypeFlag Close
+aiStrategicArea.addObjectTypeFlag ControlPoint
+aiStrategicArea.setOrderPosition Tank 596.5/584.5
+aiStrategicArea.setOrderPosition Infantry 604.5/577.5
+
+aiStrategicArea.create german_righttrenchtemplate 494.1/530.9 504.1/540.9 300
+aiStrategicArea.addNeighbour german_fieldhq
+aiStrategicArea.addNeighbour german_lefttrenchtemplate
+aiStrategicArea.addNeighbour british_righttrenchtemplate
+aiStrategicArea.addNeighbour british_lefttrenchtemplate
+aiStrategicArea.addObjectTypeFlag Centre
+aiStrategicArea.addObjectTypeFlag StrongPoint
+aiStrategicArea.addObjectTypeFlag ControlPoint
+aiStrategicArea.setOrderPosition Tank 495.5/549.5
+aiStrategicArea.setOrderPosition Infantry 504.5/539.5
+
+aiStrategicArea.create british_righttrenchtemplate 616.2/462.1 624.2/470.1 150
+aiStrategicArea.addNeighbour german_lefttrenchtemplate
+aiStrategicArea.addNeighbour german_righttrenchtemplate
+aiStrategicArea.addNeighbour british_lefttrenchtemplate
+aiStrategicArea.addNeighbour british_2ndtrenchtemplate
+aiStrategicArea.addObjectTypeFlag Flank
+aiStrategicArea.addObjectTypeFlag ControlPoint
+aiStrategicArea.setOrderPosition Tank 622.5/480.5
+aiStrategicArea.setOrderPosition Infantry 623.5/470.5
+
+aiStrategicArea.create british_lefttrenchtemplate 488.8/420.3 498.8/430.3 200
+aiStrategicArea.addNeighbour german_righttrenchtemplate
+aiStrategicArea.addNeighbour british_righttrenchtemplate
+aiStrategicArea.addNeighbour british_2ndtrenchtemplate
+aiStrategicArea.addObjectTypeFlag Centre
+aiStrategicArea.addObjectTypeFlag ControlPoint
+aiStrategicArea.setOrderPosition Tank 491.5/439.5
+aiStrategicArea.setOrderPosition Infantry 498.5/429.5
+
+aiStrategicArea.create british_2ndtrenchtemplate 566/331.9 573/338.9 200
+aiStrategicArea.addNeighbour british_fieldhq
+aiStrategicArea.addNeighbour british_righttrenchtemplate
+aiStrategicArea.addNeighbour british_lefttrenchtemplate
+aiStrategicArea.addObjectTypeFlag Centre
+aiStrategicArea.addObjectTypeFlag Close
+aiStrategicArea.addObjectTypeFlag ControlPoint
+aiStrategicArea.setOrderPosition Tank 581.5/337.5
+aiStrategicArea.setOrderPosition Infantry 573/338.9

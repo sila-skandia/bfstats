@@ -154,5 +154,11 @@ class DoctrineTests(unittest.TestCase):
         self.assertIn("sai doctrine", self.out["carryOtherDoctrine"])
 
 
+class CensusRowTests(unittest.TestCase):
+    def test_a_census_row_keeps_the_kill_rate_and_the_doctrine(self) -> None:
+        row = run_harness()["censusRow"]
+        self.assertEqual((row["alive"], row["enemyKillsPerBotMinute"], row["mountedShare"], row["doctrine"]), (True, 0.31, 0.5, "garrison"))
+
+
 if __name__ == "__main__":
     unittest.main()

@@ -416,6 +416,30 @@ class JudgeTests(unittest.TestCase):
         self.assertFalse(neither["better"])
         self.assertNotIn("fightOnlyWithLayer", neither["detail"]["8"])
 
+    def test_a_layer_that_fails_fewer_of_the_bars_checks_is_better_than_nothing(self) -> None:
+        quiet = self.out["versusQuiet"]
+        by = quiet["byTheBar"]["detail"]["8"]
+        self.assertLess(by["barChecksFailed"][0], by["barChecksFailed"][1])
+        self.assertIs(by["fewerFailed"], True)
+        self.assertTrue(quiet["byTheBar"]["better"])
+        # The movement rates alone call the same pair worse.
+        self.assertIn("stuckSecondsPerBotMinute", by["worsened"])
+        self.assertFalse(quiet["noBar"]["better"])
+        # As many failed as the level with no layer is not fewer.
+        self.assertFalse(quiet["noFewer"]["better"])
+        self.assertNotIn("fewerFailed", quiet["noFewer"]["detail"]["8"])
+
+    def test_the_owner_may_accept_a_layer_called_no_better_than_nothing(self) -> None:
+        own = self.out["ownerAcceptance"]
+        self.assertIn("the owner may", own["refusedWithout"])
+        self.assertEqual((own["by"], own["outcome"]), ("owner", "no-better-than-nothing"))
+        self.assertIn("no-fight", own["noFight"])
+        # It stands at the outcome accepted, and goes when the level gets worse.
+        self.assertEqual(own["carried"], "owner")
+        self.assertEqual(own["worse"], "now no-fight")
+        # An ordinary acceptance still does not survive a fall to no better.
+        self.assertEqual(own["ordinaryDoesNotCarry"], "now no-better-than-nothing")
+
     def test_an_acceptance_is_recorded_only_for_a_layer_better_than_nothing(self) -> None:
         a = self.out["accept"]
         self.assertEqual(a["taken"], {"reason": "one check short", "date": "2026-11-10",

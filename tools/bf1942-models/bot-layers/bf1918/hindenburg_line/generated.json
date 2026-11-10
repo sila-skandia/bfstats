@@ -1,0 +1,186 @@
+{
+ "generator": "botgen",
+ "version": 5,
+ "mod": "bf1918",
+ "level": "hindenburg_line",
+ "objectSpawners": 55,
+ "template": "symmetric",
+ "templateSource": "DICE, bf1942 Kharkov (1.6 patch archives): AI/Strategies.con, AI/conditions.con, AI/prerequisites.con, unchanged",
+ "templateChoice": {
+  "name": "symmetric",
+  "inPlay": 5,
+  "rule": "5 capturable flags in play, more than 3"
+ },
+ "scope": "an infantry map painted from the walk test, a Tank0 map from the page painter, infantry order positions, no strategic maps, no co-op layer",
+ "unreachable": [],
+ "unreachableReasons": {},
+ "botSpawnsExcluded": [
+  "First_Trench_Line_Spawn2",
+  "First_Trench_Line_Spawn3",
+  "First_Trench_Line_Spawn4",
+  "Second_Line_Trench_Spawn2",
+  "Second_Line_Trench_Spawn3",
+  "Second_Line_Trench_Spawn4",
+  "Second_Line_Trench_Spawn5",
+  "Second_Line_Trench_Spawn6",
+  "Hindenburg_Line_Spawn5",
+  "Tunnel_Spawn5"
+ ],
+ "walkMap": {
+  "source": "walk test",
+  "engine": "none",
+  "vehicleMap": "page painter",
+  "vehicleBrush": 1.5,
+  "vehicleBrushes": [
+   {
+    "brush": 3,
+    "flagsOn": 4,
+    "spawnersOn": 9,
+    "pieces": 13,
+    "main": 1428846
+   },
+   {
+    "brush": 2.5,
+    "flagsOn": 4,
+    "spawnersOn": 10,
+    "pieces": 12,
+    "main": 1466415
+   },
+   {
+    "brush": 2,
+    "flagsOn": 4,
+    "spawnersOn": 10,
+    "pieces": 12,
+    "main": 1483909
+   },
+   {
+    "brush": 1.5,
+    "flagsOn": 3,
+    "spawnersOn": 11,
+    "pieces": 18,
+    "main": 1517679
+   }
+  ],
+  "opened": [],
+  "ways": [
+   {
+    "who": "First_Trench_Line_Spawn2",
+    "kind": "spawn",
+    "way": "none",
+    "opened": 0
+   },
+   {
+    "who": "First_Trench_Line_Spawn3",
+    "kind": "spawn",
+    "way": "none",
+    "opened": 0
+   },
+   {
+    "who": "First_Trench_Line_Spawn4",
+    "kind": "spawn",
+    "way": "none",
+    "opened": 0
+   },
+   {
+    "who": "Second_Line_Trench_Spawn2",
+    "kind": "spawn",
+    "way": "none",
+    "opened": 0
+   },
+   {
+    "who": "Second_Line_Trench_Spawn3",
+    "kind": "spawn",
+    "way": "none",
+    "opened": 0
+   },
+   {
+    "who": "Second_Line_Trench_Spawn4",
+    "kind": "spawn",
+    "way": "jump",
+    "opened": 0
+   },
+   {
+    "who": "Second_Line_Trench_Spawn5",
+    "kind": "spawn",
+    "way": "jump",
+    "opened": 0
+   },
+   {
+    "who": "Second_Line_Trench_Spawn6",
+    "kind": "spawn",
+    "way": "jump",
+    "opened": 0
+   }
+  ],
+  "cover": 0.989,
+  "floors": {
+   "stacked": false,
+   "twoFloorShare": 0.004,
+   "raised": [
+    "Tunnel"
+   ],
+   "reason": null
+  }
+ },
+ "routeProbe": {
+  "chokeMax": 4,
+  "unreachable": [],
+  "stops": {},
+  "oneSided": {},
+  "sides": {
+   "1": {
+    "spawns": 26,
+    "flags": [
+     "First_Trench_Line",
+     "Hindenburg_Line",
+     "No_Mans_Land",
+     "Second_Line_Trench",
+     "Tunnel"
+    ]
+   },
+   "2": {
+    "spawns": 11,
+    "flags": [
+     "First_Trench_Line",
+     "Hindenburg_Line",
+     "No_Mans_Land",
+     "Second_Line_Trench",
+     "Tunnel"
+    ]
+   }
+  },
+  "chokes": {
+   "First_Trench_Line:1": 0,
+   "First_Trench_Line:2": 0,
+   "Second_Line_Trench:1": 0,
+   "Second_Line_Trench:2": 0,
+   "No_Mans_Land:1": 0,
+   "No_Mans_Land:2": 0,
+   "Hindenburg_Line:1": 1,
+   "Hindenburg_Line:2": 1,
+   "Tunnel:1": 0,
+   "Tunnel:2": 0
+  },
+  "late": {},
+  "shutLinks": []
+ },
+ "inputs": {
+  "controlPoints": "85843b1e20bdc8f7948ae9718f6375e4e4f8745f3d66c7b08dea2a4f2041bf66",
+  "infantryMap": "ed216338a5d023661d5848a55f0a20e96a18680d5b3fc59c4d67eebdfa60f223",
+  "template": "43f8a790471528016570235f76e97dbb2045732458781a5139f37fed68bf98c0"
+ },
+ "files": {
+  "AI.con": "dddd9997f51975eefa3d3c820a32bc01455a92b0d9f7baf3895aa9ff25c141fa",
+  "AIpathFinding.con": "9d8080cdfa7605961969aa126519b03be9691bd604ac76aef50166d81215edd2",
+  "AI/StrategicAreas.con": "8d3f0444d7f8471383e9f8b74a57219c172b8be28a9beff4731bdd2799070d3c",
+  "AI/Strategies.con": "4ce0be59a0d6c5cd530db002fb062c4be8d936bc6ae59bd188803ccaf7869a8d",
+  "AI/conditions.con": "68a0c7a8aec69954063147b60fae560b2874884285737aa085efa76597d395aa",
+  "AI/prerequisites.con": "4c1f313bc285b228fd6ad03bfd1f44c5b15c8703c31f802eb605bc5f00f88bb5",
+  "Pathfinding/Infantry1Level0Map.raw": "d6765ad65565361c8a46e6ef5683210051a609d31d3266402c215154fa7ae61d",
+  "Pathfinding/Infantry1Level1Map.raw": "b6477348b7be62bc6f42915a1dc41e4b162007f24b6a10c355f79918bcb52bfe",
+  "Pathfinding/Infantry1Level2Map.raw": "54ad8401bb64e8486005d400c2d52e96cd638d53ccebeef63b8cd7168276cc7d",
+  "Pathfinding/Tank0Level0Map.raw": "c1bc60f836aa6719026244869244b37e2ca5b3aa48efd27c4066f1458de0434e",
+  "Pathfinding/Tank0Level1Map.raw": "54e1de932eecc4e0fb84143313553346d924608a4ed86e08719944c8aad53adf",
+  "Pathfinding/Tank0Level2Map.raw": "11f42cfefd65a8baedcda4b6425031f7070644356073a77a8f5f5549a014d0d9"
+ }
+}

@@ -1,0 +1,137 @@
+{
+ "generator": "botgen",
+ "version": 5,
+ "mod": "bf1918",
+ "level": "chemin_des_dames",
+ "objectSpawners": 37,
+ "template": "symmetric",
+ "templateSource": "DICE, bf1942 Kharkov (1.6 patch archives): AI/Strategies.con, AI/conditions.con, AI/prerequisites.con, unchanged",
+ "templateChoice": {
+  "name": "symmetric",
+  "inPlay": 4,
+  "rule": "4 capturable flags in play, more than 3"
+ },
+ "scope": "an infantry map painted from the walk test, a Tank0 map from the page painter, infantry order positions, no strategic maps, no co-op layer",
+ "unreachable": [],
+ "unreachableReasons": {},
+ "botSpawnsExcluded": [
+  "dev1_1",
+  "cev1_2",
+  "dev1_3"
+ ],
+ "walkMap": {
+  "source": "walk test",
+  "engine": "none",
+  "vehicleMap": "page painter",
+  "vehicleBrush": 1.5,
+  "vehicleBrushes": [
+   {
+    "brush": 3,
+    "flagsOn": 5,
+    "spawnersOn": 6,
+    "pieces": 12,
+    "main": 861751
+   },
+   {
+    "brush": 2.5,
+    "flagsOn": 5,
+    "spawnersOn": 7,
+    "pieces": 8,
+    "main": 883347
+   },
+   {
+    "brush": 2,
+    "flagsOn": 5,
+    "spawnersOn": 10,
+    "pieces": 12,
+    "main": 895808
+   },
+   {
+    "brush": 1.5,
+    "flagsOn": 5,
+    "spawnersOn": 16,
+    "pieces": 8,
+    "main": 914352
+   }
+  ],
+  "opened": [],
+  "ways": [
+   {
+    "who": "cev1_2",
+    "kind": "spawn",
+    "way": "jump",
+    "opened": 0
+   },
+   {
+    "who": "dev1_3",
+    "kind": "spawn",
+    "way": "jump",
+    "opened": 0
+   }
+  ],
+  "cover": 0.984,
+  "floors": {
+   "stacked": false,
+   "twoFloorShare": 0.003,
+   "raised": [],
+   "reason": null
+  }
+ },
+ "routeProbe": {
+  "chokeMax": 4,
+  "unreachable": [],
+  "stops": {},
+  "oneSided": {},
+  "sides": {
+   "1": {
+    "spawns": 3,
+    "flags": [
+     "1st_devence_linetemplate",
+     "2nd_devence_linetemplate",
+     "axisbase",
+     "battlefieldtemplate"
+    ]
+   },
+   "2": {
+    "spawns": 5,
+    "flags": [
+     "1st_devence_linetemplate",
+     "2nd_devence_linetemplate",
+     "axisbase",
+     "battlefieldtemplate"
+    ]
+   }
+  },
+  "chokes": {
+   "axisbase:1": 0,
+   "axisbase:2": 0,
+   "battlefieldtemplate:1": 1,
+   "battlefieldtemplate:2": 0,
+   "1st_devence_linetemplate:1": 0,
+   "1st_devence_linetemplate:2": 0,
+   "2nd_devence_linetemplate:1": 0,
+   "2nd_devence_linetemplate:2": 0
+  },
+  "late": {},
+  "shutLinks": []
+ },
+ "inputs": {
+  "controlPoints": "2ba970a503747c015487a37d8e791e8b370e89f0532cef8b40aa48f885ce95a2",
+  "infantryMap": "e547be78b690a198352ce25d7520ea876df35e4ac84d8fa3822a4bc9fc792f68",
+  "template": "43f8a790471528016570235f76e97dbb2045732458781a5139f37fed68bf98c0"
+ },
+ "files": {
+  "AI.con": "1193c218d299f42bb30fb242add835adbee187298779aaa3abe8ef88b364708f",
+  "AIpathFinding.con": "9d8080cdfa7605961969aa126519b03be9691bd604ac76aef50166d81215edd2",
+  "AI/StrategicAreas.con": "a619d0f41e23982b3584af44f85549929242272ca132273a4a68575ad882995e",
+  "AI/Strategies.con": "4ce0be59a0d6c5cd530db002fb062c4be8d936bc6ae59bd188803ccaf7869a8d",
+  "AI/conditions.con": "68a0c7a8aec69954063147b60fae560b2874884285737aa085efa76597d395aa",
+  "AI/prerequisites.con": "4c1f313bc285b228fd6ad03bfd1f44c5b15c8703c31f802eb605bc5f00f88bb5",
+  "Pathfinding/Infantry1Level0Map.raw": "55a4f993f45078ede139ea28748ac94641553ee222e7ca33d96af92618e603cc",
+  "Pathfinding/Infantry1Level1Map.raw": "62e601f18517028d1f56831951cc00a8cae74b17e052b69a489b2c76c5bf545f",
+  "Pathfinding/Infantry1Level2Map.raw": "5681799787c4d23a3e9908ccc89447eba5cbc104b6731120e176bcbe3f7c6193",
+  "Pathfinding/Tank0Level0Map.raw": "d290d970ff30bba2fde07cca5ac5b4e0d5687a6e2c39336c94f7df285c9ee6ca",
+  "Pathfinding/Tank0Level1Map.raw": "b1d5d8f94292792fbd4a70cb4ccb2f5c26a72173608f618d31f7915f01bd2386",
+  "Pathfinding/Tank0Level2Map.raw": "3e6d366548aee86d3102f88a289a3c4bd64c87e706dc1dc67f37938675172ea5"
+ }
+}

@@ -1,7 +1,7 @@
 {
  "level": "inshallah_valley",
  "verdict": "fail",
- "outcome": "no-better-than-nothing",
+ "outcome": "better-than-nothing",
  "config": "with vehicles",
  "doctrine": "garrison",
  "generatorVersion": 5,
@@ -17,7 +17,7 @@
  },
  "againstDice": {
   "verdict": "fail",
-  "outcome": "no-better-than-nothing",
+  "outcome": "better-than-nothing",
   "baseline": "DICE layers with vehicles, garrison doctrine: berlin, stalingrad, kharkov, bocage; seeds 1..10, 600 s",
   "sizes": {
    "8": {
@@ -64,5 +64,15 @@
  },
  "oneSided": null,
  "unreachable": [],
- "lintErrors": []
+ "lintErrors": [],
+ "accepted": {
+  "reason": "Judged with kits, vehicles and the garrison: its matches fail 2 and 1 of Desert Combat's own bar's checks where the level with no layer fails 6 and 4, and against DICE's bar it passes every check at 16 a side. Short of its own mod's bar on flag coverage (0.6 and 0.4: its two bases never change hands) and the worse side's redeploys at 8 a side; at 16 a side it takes fewer flags than the level with no layer (2 a match against 7). Goes to the page for its check before it gets a menu flag.",
+  "date": "2026-11-10",
+  "outcome": "better-than-nothing",
+  "failed": [
+   "8:flagCoverage",
+   "8:redeploysPerBotMinuteWorseSide",
+   "16:flagCoverage"
+  ]
+ }
 }

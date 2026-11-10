@@ -169,6 +169,18 @@ out.accept = {
   noBetter: batch.carryAccepted(short({ outcome: 'no-better-than-nothing' }), taken).acceptanceWithdrawn?.because ?? null,
   none: batch.carryAccepted(short(), null),
 };
+// The owner's own acceptance: also of a layer called no better than nothing, never of one with no fight.
+const noBetterShort = short({ outcome: 'no-better-than-nothing' });
+const refuse = f => { try { f(); return null; } catch (e) { return e.message; } };
+const owned = batch.acceptVerdict(noBetterShort, 'the owner looked at it', '2026-11-11', { owner: true });
+out.ownerAcceptance = {
+  refusedWithout: refuse(() => batch.acceptVerdict(noBetterShort, 'why', '2026-11-11')),
+  by: owned.accepted.by, outcome: owned.accepted.outcome,
+  noFight: refuse(() => batch.acceptVerdict(short({ outcome: 'no-fight' }), 'why', '2026-11-11', { owner: true })),
+  carried: batch.carryAccepted(noBetterShort, owned).accepted?.by ?? null,
+  worse: batch.carryAccepted(short({ outcome: 'no-fight' }), owned).acceptanceWithdrawn?.because ?? null,
+  ordinaryDoesNotCarry: batch.carryAccepted(noBetterShort, batch.acceptVerdict(short(), 'why', '2026-11-11')).acceptanceWithdrawn?.because ?? null,
+};
 // --- the outcome classes (sim/botbatch.mjs verdictOf) ----------------------------
 // `row` and `base` are the judge's fixtures above. The no-layer arm is far worse on every movement rate.
 const worse = o => row({ level: 'x', stuckSecondsPerBotMinute: 9, routeFailuresPerBotMinute: 9, redeploysPerBotMinute: 9, spawnTrapsPerBotMinute: 9, ...o });
@@ -195,6 +207,16 @@ out.versusDead = {
 const still = o => row({ level: 'x', stuckSecondsPerBotMinute: 0.1, routeFailuresPerBotMinute: 0, redeploysPerBotMinute: 0.02, spawnTrapsPerBotMinute: 0,
                          enemyKills: { 1: 0, 2: 0 }, ticketsBled: { 1: 0, 2: 0 }, capturesTotal: 0, ...o });
 const moving = o => row({ level: 'x', stuckSecondsPerBotMinute: 1.6, routeFailuresPerBotMinute: 0.4, redeploysPerBotMinute: 0.12, capturesTotal: 6, ...o });
+// Both arms have a fight. The level with no layer barely kills and takes no flag, and its bots move little;
+// the layer's fight costs it some stuck time. By the movement rates alone it is worse; by the bar's own
+// count of failed checks it is better. With no bar given, the old comparison stands.
+const quiet = o => row({ level: 'x', stuckSecondsPerBotMinute: 0.1, routeFailuresPerBotMinute: 0, redeploysPerBotMinute: 0.02, spawnTrapsPerBotMinute: 0,
+                         enemyKillsPerBotMinute: 0.001, capturesTotal: 0, flagCoverage: 0, ...o });
+out.versusQuiet = {
+  byTheBar: batch.betterThanNothing([failing({}), failing({ seed: 2 })], [quiet({}), quiet({ seed: 2 })], base),
+  noBar: batch.betterThanNothing([failing({}), failing({ seed: 2 })], [quiet({}), quiet({ seed: 2 })]),
+  noFewer: batch.betterThanNothing([failing({}), failing({ seed: 2 })], [failing({}), failing({ seed: 2 })], base),
+};
 out.versusStill = {
   fight: batch.betterThanNothing([moving({}), moving({ seed: 2 })], [still({}), still({ seed: 2 })]),
   fewerCaptures: batch.betterThanNothing([moving({ capturesTotal: 1 }), moving({ seed: 2, capturesTotal: 1 })], [still({ capturesTotal: 3 }), still({ seed: 2, capturesTotal: 3 })]),

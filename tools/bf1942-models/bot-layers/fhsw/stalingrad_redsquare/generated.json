@@ -1,0 +1,150 @@
+{
+ "generator": "botgen",
+ "version": 5,
+ "mod": "FHSW",
+ "level": "stalingrad_redsquare",
+ "objectSpawners": 68,
+ "template": "symmetric",
+ "templateSource": "DICE, bf1942 Kharkov (1.6 patch archives): AI/Strategies.con, AI/conditions.con, AI/prerequisites.con, unchanged",
+ "templateChoice": {
+  "name": "symmetric",
+  "inPlay": 5,
+  "rule": "5 capturable flags in play, more than 3"
+ },
+ "scope": "an infantry map painted from the walk test, a Tank0 map from the page painter, infantry order positions, no strategic maps, no co-op layer",
+ "unreachable": [
+  "front_point"
+ ],
+ "unreachableReasons": {
+  "front_point": "walk test"
+ },
+ "botSpawnsExcluded": [
+  "axisbase_spawn2"
+ ],
+ "walkMap": {
+  "source": "walk test",
+  "engine": "none",
+  "vehicleMap": "page painter",
+  "vehicleBrush": 1.5,
+  "vehicleBrushes": [
+   {
+    "brush": 3,
+    "flagsOn": 3,
+    "spawnersOn": 0,
+    "pieces": 30,
+    "main": 3557
+   },
+   {
+    "brush": 2.5,
+    "flagsOn": 3,
+    "spawnersOn": 1,
+    "pieces": 24,
+    "main": 2211
+   },
+   {
+    "brush": 2,
+    "flagsOn": 3,
+    "spawnersOn": 1,
+    "pieces": 20,
+    "main": 2589
+   },
+   {
+    "brush": 1.5,
+    "flagsOn": 6,
+    "spawnersOn": 3,
+    "pieces": 12,
+    "main": 13211
+   }
+  ],
+  "opened": [
+   [
+    497,
+    639
+   ]
+  ],
+  "ways": [
+   {
+    "who": "axisbase_spawn1",
+    "kind": "spawn",
+    "way": "walk",
+    "opened": 1
+   },
+   {
+    "who": "axisbase_spawn2",
+    "kind": "spawn",
+    "way": "none",
+    "opened": 0
+   }
+  ],
+  "cover": 0.912,
+  "floors": {
+   "stacked": false,
+   "twoFloorShare": 0.039,
+   "raised": [
+    "front_point"
+   ],
+   "reason": null
+  }
+ },
+ "routeProbe": {
+  "chokeMax": 4,
+  "unreachable": [],
+  "stops": {},
+  "oneSided": {},
+  "sides": {
+   "1": {
+    "spawns": 5,
+    "flags": [
+     "city_east",
+     "city_west",
+     "north_east",
+     "north_west",
+     "red_square"
+    ]
+   },
+   "2": {
+    "spawns": 10,
+    "flags": [
+     "city_east",
+     "city_west",
+     "north_east",
+     "north_west",
+     "red_square"
+    ]
+   }
+  },
+  "chokes": {
+   "red_square:1": 0,
+   "red_square:2": 0,
+   "city_west:1": 0,
+   "city_west:2": 4,
+   "city_east:1": 0,
+   "city_east:2": 0,
+   "north_west:1": 0,
+   "north_west:2": 4,
+   "north_east:1": 0,
+   "north_east:2": 0
+  },
+  "late": {},
+  "shutLinks": []
+ },
+ "inputs": {
+  "controlPoints": "a15290c2d20daf4ccd83b130a60a2600b7deaa02ca690a31ef69fa75b1b821d4",
+  "infantryMap": "c7532b36547ab952f7d160fed39718bfe22b02cd30103978a811f53e42950755",
+  "template": "43f8a790471528016570235f76e97dbb2045732458781a5139f37fed68bf98c0"
+ },
+ "files": {
+  "AI.con": "31a329f37ca16cc9435d0e05164a8a4f06b134a90b24b1a7e8d2a5d783430124",
+  "AIpathFinding.con": "9d8080cdfa7605961969aa126519b03be9691bd604ac76aef50166d81215edd2",
+  "AI/StrategicAreas.con": "97ae764610c367d493d69611eea7182e6724dbbdc8014ad6757287b7150b2c08",
+  "AI/Strategies.con": "4ce0be59a0d6c5cd530db002fb062c4be8d936bc6ae59bd188803ccaf7869a8d",
+  "AI/conditions.con": "68a0c7a8aec69954063147b60fae560b2874884285737aa085efa76597d395aa",
+  "AI/prerequisites.con": "4c1f313bc285b228fd6ad03bfd1f44c5b15c8703c31f802eb605bc5f00f88bb5",
+  "Pathfinding/Infantry1Level0Map.raw": "4fcf211918cba4e052f31ec847b9619545689397144682f7c9ad16cdf7739097",
+  "Pathfinding/Infantry1Level1Map.raw": "6f1c912db85f8dd13218d918975694ac51dc59fca1c4bee74d38844e990612c9",
+  "Pathfinding/Infantry1Level2Map.raw": "15a5eeb9d4dc915ed364a32b055102adb4cf760874c115f3949a5dff10680a11",
+  "Pathfinding/Tank0Level0Map.raw": "278ca0afc433b91478b1c057e865304f4f224dfff62e7a88796e71ce49607936",
+  "Pathfinding/Tank0Level1Map.raw": "be819bde8437a3b27517b39982373324a595b07f64516412c867cce1438c4f70",
+  "Pathfinding/Tank0Level2Map.raw": "7921a418f8172e95d940bcab8a7fce33854697a26f779ed26411ceaf1abeb33c"
+ }
+}

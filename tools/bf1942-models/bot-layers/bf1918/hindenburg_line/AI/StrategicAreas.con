@@ -1,0 +1,67 @@
+rem *** Strategic areas: one per control point (botgen) ***
+
+aiStrategicArea.create Brit_base 951.3/1061.6 956.3/1066.6 50
+aiStrategicArea.addNeighbour First_Trench_Line
+aiStrategicArea.addObjectTypeFlag Base
+aiStrategicArea.setOrderPosition Tank 954.5/1066.5
+aiStrategicArea.setOrderPosition Infantry 955.5/1066.5
+aiStrategicArea.setSide 2
+aiStrategicArea.setTakeable 1 0
+
+aiStrategicArea.create First_Trench_Line 932.9/821.8 947.9/836.8 200
+aiStrategicArea.addNeighbour Brit_base
+aiStrategicArea.addNeighbour Second_Line_Trench
+aiStrategicArea.addObjectTypeFlag Centre
+aiStrategicArea.addObjectTypeFlag Close
+aiStrategicArea.addObjectTypeFlag ControlPoint
+aiStrategicArea.setOrderPosition Tank 946.5/839.5
+aiStrategicArea.setOrderPosition Infantry 947.5/837.5
+aiStrategicArea.setSide 2
+
+aiStrategicArea.create Second_Line_Trench 910.8/719.8 925.8/734.8 300
+aiStrategicArea.addNeighbour First_Trench_Line
+aiStrategicArea.addNeighbour No_Mans_Land
+aiStrategicArea.addObjectTypeFlag Centre
+aiStrategicArea.addObjectTypeFlag StrongPoint
+aiStrategicArea.addObjectTypeFlag ControlPoint
+aiStrategicArea.setOrderPosition Tank 925.5/736.5
+aiStrategicArea.setOrderPosition Infantry 925.5/735.5
+aiStrategicArea.setSide 1
+
+aiStrategicArea.create No_Mans_Land 950.8/577 965.8/592 200
+aiStrategicArea.addNeighbour Second_Line_Trench
+aiStrategicArea.addNeighbour Hindenburg_Line
+aiStrategicArea.addNeighbour Tunnel
+aiStrategicArea.addObjectTypeFlag Centre
+aiStrategicArea.addObjectTypeFlag ControlPoint
+aiStrategicArea.setOrderPosition Tank 967.5/592.5
+aiStrategicArea.setOrderPosition Infantry 966.5/592.5
+aiStrategicArea.setSide 1
+
+aiStrategicArea.create Hindenburg_Line 1023.4/442.4 1036.4/455.4 200
+aiStrategicArea.addNeighbour No_Mans_Land
+aiStrategicArea.addNeighbour Ger_base
+aiStrategicArea.addNeighbour Tunnel
+aiStrategicArea.addObjectTypeFlag Centre
+aiStrategicArea.addObjectTypeFlag Close
+aiStrategicArea.addObjectTypeFlag ControlPoint
+aiStrategicArea.setOrderPosition Tank 1033.5/457.5
+aiStrategicArea.setOrderPosition Infantry 1036.5/454.5
+aiStrategicArea.setSide 1
+
+aiStrategicArea.create Ger_base 1026.3/294.3 1031.3/299.3 50
+aiStrategicArea.addNeighbour Hindenburg_Line
+aiStrategicArea.addObjectTypeFlag Base
+aiStrategicArea.setOrderPosition Tank 1029.5/299.5
+aiStrategicArea.setOrderPosition Infantry 1030.5/299.5
+aiStrategicArea.setSide 1
+aiStrategicArea.setTakeable 2 0
+
+aiStrategicArea.create Tunnel 1013.7/552.4 1025.7/564.4 200
+aiStrategicArea.addNeighbour No_Mans_Land
+aiStrategicArea.addNeighbour Hindenburg_Line
+aiStrategicArea.addObjectTypeFlag Centre
+aiStrategicArea.addObjectTypeFlag ControlPoint
+aiStrategicArea.setOrderPosition Tank 1022.5/575.5
+aiStrategicArea.setOrderPosition Infantry 1025.7/564.4
+aiStrategicArea.setSide 1

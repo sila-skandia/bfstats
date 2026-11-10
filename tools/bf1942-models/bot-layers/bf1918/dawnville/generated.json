@@ -1,0 +1,197 @@
+{
+ "generator": "botgen",
+ "version": 5,
+ "mod": "bf1918",
+ "level": "dawnville",
+ "objectSpawners": 12,
+ "template": "symmetric",
+ "templateSource": "DICE, bf1942 Kharkov (1.6 patch archives): AI/Strategies.con, AI/conditions.con, AI/prerequisites.con, unchanged",
+ "templateChoice": {
+  "name": "symmetric",
+  "inPlay": 5,
+  "rule": "5 capturable flags in play, more than 3"
+ },
+ "scope": "an infantry map painted from the walk test, a Tank0 map from the page painter, infantry order positions, no strategic maps, no co-op layer",
+ "unreachable": [],
+ "unreachableReasons": {},
+ "botSpawnsExcluded": [
+  "french_trench_spawn1",
+  "french_trench_spawn2",
+  "french_trench_spawn3",
+  "french_trench_spawn4",
+  "french_trench_spawn5",
+  "german_trench_spawn1",
+  "german_trench_spawn2",
+  "german_trench_spawn3",
+  "german_trench_spawn4",
+  "new_control_point1_spawn3"
+ ],
+ "walkMap": {
+  "source": "walk test",
+  "engine": "none",
+  "vehicleMap": "page painter",
+  "vehicleBrush": 2.5,
+  "vehicleBrushes": [
+   {
+    "brush": 3,
+    "flagsOn": 6,
+    "spawnersOn": 5,
+    "pieces": 3,
+    "main": 844849
+   },
+   {
+    "brush": 2.5,
+    "flagsOn": 6,
+    "spawnersOn": 6,
+    "pieces": 5,
+    "main": 865072
+   },
+   {
+    "brush": 2,
+    "flagsOn": 5,
+    "spawnersOn": 6,
+    "pieces": 4,
+    "main": 878429
+   },
+   {
+    "brush": 1.5,
+    "flagsOn": 5,
+    "spawnersOn": 6,
+    "pieces": 4,
+    "main": 892700
+   }
+  ],
+  "opened": [
+   [
+    369,
+    387
+   ],
+   [
+    368,
+    388
+   ],
+   [
+    400,
+    592
+   ],
+   [
+    399,
+    593
+   ],
+   [
+    397,
+    594
+   ],
+   [
+    398,
+    594
+   ]
+  ],
+  "ways": [
+   {
+    "who": "german_trench_spawn1",
+    "kind": "spawn",
+    "way": "none",
+    "opened": 0
+   },
+   {
+    "who": "german_trench_spawn2",
+    "kind": "spawn",
+    "way": "none",
+    "opened": 0
+   },
+   {
+    "who": "german_trench_spawn4",
+    "kind": "spawn",
+    "way": "none",
+    "opened": 0
+   },
+   {
+    "who": "de_bunker_spawn2",
+    "kind": "spawn",
+    "way": "walk",
+    "opened": 4
+   },
+   {
+    "who": "fr_bunker_west_spawn1",
+    "kind": "spawn",
+    "way": "walk",
+    "opened": 2
+   },
+   {
+    "who": "new_control_point1_spawn3",
+    "kind": "spawn",
+    "way": "drop",
+    "opened": 0
+   }
+  ],
+  "cover": 0.986,
+  "floors": {
+   "stacked": false,
+   "twoFloorShare": 0.001,
+   "raised": [],
+   "reason": null
+  }
+ },
+ "routeProbe": {
+  "chokeMax": 4,
+  "unreachable": [],
+  "stops": {},
+  "oneSided": {},
+  "sides": {
+   "1": {
+    "spawns": 7,
+    "flags": [
+     "de_bunker",
+     "fr_bunker_west",
+     "french_trench",
+     "german_trench",
+     "verdun"
+    ]
+   },
+   "2": {
+    "spawns": 4,
+    "flags": [
+     "de_bunker",
+     "fr_bunker_west",
+     "french_trench",
+     "german_trench",
+     "verdun"
+    ]
+   }
+  },
+  "chokes": {
+   "fr_bunker_west:1": 1,
+   "fr_bunker_west:2": 0,
+   "french_trench:1": 0,
+   "french_trench:2": 0,
+   "german_trench:1": 0,
+   "german_trench:2": 0,
+   "de_bunker:1": 2,
+   "de_bunker:2": 0,
+   "verdun:1": 0,
+   "verdun:2": 0
+  },
+  "late": {},
+  "shutLinks": []
+ },
+ "inputs": {
+  "controlPoints": "8bf4a2c4abdf9ac5adbe77147527699fde6c67db4c1c03f1346dcb8c58628868",
+  "infantryMap": "6ca51f71b63b91843f25f3aade81460124adba7ce070f96e4ed07515f6070c36",
+  "template": "43f8a790471528016570235f76e97dbb2045732458781a5139f37fed68bf98c0"
+ },
+ "files": {
+  "AI.con": "22a3e370127833163855d36adda4a7391c034ecb2ac38f0c631787813d15b49b",
+  "AIpathFinding.con": "549030ff1cdb81bd819fcdc28c999857f4784e20ee4850753a8c1213f80184fe",
+  "AI/StrategicAreas.con": "4efd25cf87b91cd321a86a01d2268ce5fa7856f928cf8ba4924eefb294ac8d83",
+  "AI/Strategies.con": "4ce0be59a0d6c5cd530db002fb062c4be8d936bc6ae59bd188803ccaf7869a8d",
+  "AI/conditions.con": "68a0c7a8aec69954063147b60fae560b2874884285737aa085efa76597d395aa",
+  "AI/prerequisites.con": "4c1f313bc285b228fd6ad03bfd1f44c5b15c8703c31f802eb605bc5f00f88bb5",
+  "Pathfinding/Infantry1Level0Map.raw": "6fe01445d75a553038b7aceef892f25efa57b2b023d9f78e7d04111afd9796a0",
+  "Pathfinding/Infantry1Level1Map.raw": "259c238052f0bb88c1e5bd4ff59a53ac234e60671afd3750480b78bf4d5d6895",
+  "Pathfinding/Infantry1Level2Map.raw": "9326fd0205949631ad37def3351c671dc2709c93e122cd3636725d3b623cd161",
+  "Pathfinding/Tank0Level0Map.raw": "57cd34ac0b5818612b7fdb6ea664d2f27ce4c4b0b7d43c23212fb33591feefde",
+  "Pathfinding/Tank0Level1Map.raw": "a4be76a22840e2a00fa096f19756c47ec29fca301a2da37ca3029579636c008e",
+  "Pathfinding/Tank0Level2Map.raw": "d679ef7c0aa0e92e8f579912dbebedd9e4c1fe3e3e175eec751fc6e6cd624e4a"
+ }
+}

@@ -232,6 +232,8 @@ acceptance names what it fails. The result is kept beside the verdict as
 | The_Maze (generator 5) | **fails team kills** | 0.144, 0, 0.36, 0.36 | 35:67, 68:11, 62:29 |
 | Desert Combat DC_LostVillage | passes | 0, 0.056, 0.37, 0.22 | 99:27, 113:50, 71:37 |
 | FHSW Tunis-1943 | passes | 0, 0.013, 0.14, 0.17 | 29:91, 74:54, 23:82 |
+| Desert Combat DC_Basrah_Nights | passes | 0.075, 0.019, 0.25, 0.61 | 39:52, 49:50, 50:42 |
+| Desert Combat Inshallah_Valley | passes | 0.013, 0.025, 0.14, 0.30 | 85:70, 78:86, 87:79 |
 
 DC_LostVillage is the first mod level live (2026-11-11): better than
 nothing on Desert Combat's own bar and on DICE's (README section 20), no
@@ -246,6 +248,13 @@ on DICE's bar (no FHSW bar yet), no fight with no layer, wins split 5:5 and
 and 0.09, 0.24 and 0.17 enemy kills a bot-minute, with one team kill in
 thirty minutes. The runner had it at 0.066 a bot-minute at 8 a side, under
 the page bar's floor; the page has it over.
+
+DC_Basrah_Nights went up on the owner's say (README 19.8), and is the best
+of them on the page: 0.53 to 0.65 enemy kills a bot-minute, twice DICE's
+median there, 14, 23 and 19 captures in ten minutes, and the tickets level.
+The comparison that had called it no better than nothing was the tool's
+fault, not the level's; it now counts the bar's checks each arm fails
+(`fewerFailed`), and by that this layer and Inshallah_Valley's are better.
 
 BF1918's hindenburg_line also reached better-than-nothing and was **not**
 accepted: 95 to 97 % of the worse side's losses in the runner are redeploys

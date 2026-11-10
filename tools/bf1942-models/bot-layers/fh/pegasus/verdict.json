@@ -1,0 +1,73 @@
+{
+ "level": "pegasus",
+ "verdict": "fail",
+ "outcome": "no-better-than-nothing",
+ "config": "with vehicles",
+ "doctrine": "garrison",
+ "generatorVersion": 5,
+ "inputs": {
+  "controlPoints": "ed3d58a2019650ab3af2cd9d5b615e70fa9a93f3026d5ce38478e34589971574",
+  "infantryMap": "4d1efc4e3ea54a78c47ba114be20216f9279a92588a4c0630a5e73e7ed9c42c8",
+  "template": "bdc0e455f47f91b7e7724e71d7c0c196e839b36946ac3abb7663d725944081e5"
+ },
+ "baseline": "DICE layers with vehicles, garrison doctrine: berlin, stalingrad, kharkov, bocage; seeds 1..10, 600 s",
+ "bar": {
+  "against": "dice",
+  "why": "fh's own bar holds 0 alive levels, fewer than 3: DICE's"
+ },
+ "againstOwnMod": {
+  "mod": "fh",
+  "verdict": "fail",
+  "outcome": "no-better-than-nothing",
+  "levelsAlive": [],
+  "sizes": {
+   "8": {
+    "verdict": "no-baseline"
+   },
+   "16": {
+    "verdict": "no-baseline"
+   }
+  }
+ },
+ "seeds": 10,
+ "sizes": {
+  "8": {
+   "verdict": "fail",
+   "failed": [
+    "routeFailuresPerBotMinute",
+    "enemyKillsPerBotMinute",
+    "routeFailuresPerBotMinuteWorseSide",
+    "nonEnemyDeathShareWorseSide",
+    "hullStuckSecondsPerDrivingMinute",
+    "hullStuckSecondsPerDrivingMinuteWorseSide",
+    "unitsNeverUsedShare"
+   ],
+   "winners": [
+    0,
+    10,
+    0
+   ]
+  },
+  "16": {
+   "verdict": "fail",
+   "failed": [
+    "routeFailuresPerBotMinute",
+    "enemyKillsPerBotMinute",
+    "bothSidesCapture",
+    "routeFailuresPerBotMinuteWorseSide",
+    "nonEnemyDeathShareWorseSide",
+    "hullStuckSecondsPerDrivingMinute",
+    "hullStuckSecondsPerDrivingMinuteWorseSide",
+    "unitsNeverUsedShare"
+   ],
+   "winners": [
+    4,
+    6,
+    0
+   ]
+  }
+ },
+ "oneSided": null,
+ "unreachable": [],
+ "lintErrors": []
+}

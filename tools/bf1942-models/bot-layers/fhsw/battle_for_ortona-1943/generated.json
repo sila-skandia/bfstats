@@ -1,0 +1,217 @@
+{
+ "generator": "botgen",
+ "version": 5,
+ "mod": "FHSW",
+ "level": "battle_for_ortona-1943",
+ "objectSpawners": 134,
+ "template": "symmetric",
+ "templateSource": "DICE, bf1942 Kharkov (1.6 patch archives): AI/Strategies.con, AI/conditions.con, AI/prerequisites.con, unchanged",
+ "templateChoice": {
+  "name": "symmetric",
+  "inPlay": 5,
+  "rule": "5 capturable flags in play, more than 3"
+ },
+ "scope": "an infantry map painted from the walk test, a Tank0 map from the page painter, infantry order positions, no strategic maps, no co-op layer",
+ "unreachable": [],
+ "unreachableReasons": {},
+ "botSpawnsExcluded": [
+  "piazzale_della_stazione_spawn5",
+  "ortona_lateral_spawn1"
+ ],
+ "walkMap": {
+  "source": "walk test",
+  "engine": "none",
+  "vehicleMap": "page painter",
+  "vehicleBrush": 1.5,
+  "vehicleBrushes": [
+   {
+    "brush": 3,
+    "flagsOn": 2,
+    "spawnersOn": 11,
+    "pieces": 35,
+    "main": 155371
+   },
+   {
+    "brush": 2.5,
+    "flagsOn": 3,
+    "spawnersOn": 28,
+    "pieces": 28,
+    "main": 217470
+   },
+   {
+    "brush": 2,
+    "flagsOn": 3,
+    "spawnersOn": 28,
+    "pieces": 32,
+    "main": 407316
+   },
+   {
+    "brush": 1.5,
+    "flagsOn": 5,
+    "spawnersOn": 31,
+    "pieces": 25,
+    "main": 436891
+   }
+  ],
+  "opened": [
+   [
+    665,
+    212
+   ],
+   [
+    666,
+    212
+   ],
+   [
+    667,
+    212
+   ],
+   [
+    665,
+    213
+   ],
+   [
+    665,
+    214
+   ],
+   [
+    665,
+    215
+   ],
+   [
+    665,
+    216
+   ],
+   [
+    665,
+    217
+   ],
+   [
+    664,
+    218
+   ],
+   [
+    665,
+    218
+   ],
+   [
+    662,
+    219
+   ],
+   [
+    663,
+    219
+   ],
+   [
+    664,
+    219
+   ],
+   [
+    662,
+    220
+   ],
+   [
+    662,
+    221
+   ],
+   [
+    662,
+    222
+   ],
+   [
+    660,
+    223
+   ],
+   [
+    661,
+    223
+   ],
+   [
+    662,
+    223
+   ]
+  ],
+  "ways": [
+   {
+    "who": "piazzale_della_stazione_spawn5",
+    "kind": "spawn",
+    "way": "none",
+    "opened": 0
+   },
+   {
+    "who": "ortona_lateral_spawn1",
+    "kind": "spawn",
+    "way": "drop",
+    "opened": 19
+   }
+  ],
+  "cover": 0.984,
+  "floors": {
+   "stacked": false,
+   "twoFloorShare": 0.004,
+   "raised": [],
+   "reason": null
+  }
+ },
+ "routeProbe": {
+  "chokeMax": 4,
+  "unreachable": [],
+  "stops": {},
+  "oneSided": {},
+  "sides": {
+   "1": {
+    "spawns": 15,
+    "flags": [
+     "distretto_etterno",
+     "ortona_lateral",
+     "piazza_municipali",
+     "piazzale_della_stazione",
+     "st_maria_di_costantinopoli"
+    ]
+   },
+   "2": {
+    "spawns": 4,
+    "flags": [
+     "distretto_etterno",
+     "ortona_lateral",
+     "piazza_municipali",
+     "piazzale_della_stazione",
+     "st_maria_di_costantinopoli"
+    ]
+   }
+  },
+  "chokes": {
+   "st_maria_di_costantinopoli:1": 0,
+   "st_maria_di_costantinopoli:2": 0,
+   "ortona_lateral:1": 0,
+   "ortona_lateral:2": 0,
+   "piazzale_della_stazione:1": 0,
+   "piazzale_della_stazione:2": 0,
+   "piazza_municipali:1": 0,
+   "piazza_municipali:2": 0,
+   "distretto_etterno:1": 0,
+   "distretto_etterno:2": 0
+  },
+  "late": {},
+  "shutLinks": []
+ },
+ "inputs": {
+  "controlPoints": "29e129dca39d64afdaaf528ea6c923974a09bbcd6060cd30cfc6d19148d1a4b1",
+  "infantryMap": "2c0858fd74ab1eaabd5483eee8258f3ab46917e3dd20a95458e719323404541b",
+  "template": "43f8a790471528016570235f76e97dbb2045732458781a5139f37fed68bf98c0"
+ },
+ "files": {
+  "AI.con": "2e88566af8c1b2cc52e38b454aa77b6a44b20523d9715dd15a85ec04331a2e62",
+  "AIpathFinding.con": "9d8080cdfa7605961969aa126519b03be9691bd604ac76aef50166d81215edd2",
+  "AI/StrategicAreas.con": "d78376f8d1337500e1665929df55f220f3ab417c3e21d1714e0578f9b6cb6b6a",
+  "AI/Strategies.con": "4ce0be59a0d6c5cd530db002fb062c4be8d936bc6ae59bd188803ccaf7869a8d",
+  "AI/conditions.con": "68a0c7a8aec69954063147b60fae560b2874884285737aa085efa76597d395aa",
+  "AI/prerequisites.con": "4c1f313bc285b228fd6ad03bfd1f44c5b15c8703c31f802eb605bc5f00f88bb5",
+  "Pathfinding/Infantry1Level0Map.raw": "c96f0953b756a7fce42b643d69d26d186b4932570816e1cdfe8a1a0a018313b6",
+  "Pathfinding/Infantry1Level1Map.raw": "de1a101e62b855de5158bf7dff63b60a8deb246e5b9db0a5889422b9d5b409c1",
+  "Pathfinding/Infantry1Level2Map.raw": "a65c9d62155a87577d576cf388779d2cb538b70af6f024f9a10592162e12e465",
+  "Pathfinding/Tank0Level0Map.raw": "b3998457500284f22c976032c2d172c2f6ad3bb5076d2169e483b2cffc15a3bb",
+  "Pathfinding/Tank0Level1Map.raw": "f3553f8176e1ff7bc57ce629e6fbbeb769e83b9059e6309cc31944b0f3eeb074",
+  "Pathfinding/Tank0Level2Map.raw": "fb0df701e1d749b4abbf52dcc855593445fefc7047421de9514815aa6000039a"
+ }
+}

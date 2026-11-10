@@ -18,6 +18,7 @@
 //
 //   node sim/botbatch.mjs accept --levels shigaisen_b --reason "<why it goes live short of the bar>" [--mod bf1942]
 //        records an acceptance on a layer that failed the bar but beat the level with no layer
+//        (`--owner`: the owner's own, which may also take a layer the comparison calls no better than nothing)
 //
 //   node sim/botbatch.mjs baseline --vehicles --mod DesertCombat --maps <mod tree> --models <mod models> --levels a,b,c
 //        a mod's own bar, from the mod's own botted levels: sim/baselines/vehicles-desertcombat.json. A level
@@ -165,8 +166,19 @@ export const NEEDS_A_FIGHT = ['spawnTrapsPerBotMinute'];
  * rise of stuck time from 0.15 to 1.64 s a bot-minute read as "worse".
  * What the layer's matches fail against the bar is still in the verdict,
  * and an acceptance still names it.
+ *
+ * Last, with a bar to hold both to (`baseline`): the layer is better at a
+ * size where its matches have a fight and fail fewer of the bar's checks
+ * than the level with no layer fails (`fewerFailed`, `barChecksFailed`).
+ * The four movement rates above are a small part of what the judge measures;
+ * a layer that brings kills, captures and coverage and pays for them with
+ * some stuck time is a better match by the bar's own count, which is what
+ * this asks. DC_Basrah_Nights at 16 a side is the case: 0.020 enemy kills a
+ * bot-minute and no capture with no layer, 0.36 and 5 flags with one, and
+ * the movement rates alone read that as worse. Inshallah_Valley is the
+ * other: every check passed at 16 a side with the layer.
  */
-export function betterThanNothing(rows, none) {
+export function betterThanNothing(rows, none, baseline = null, { unreachable = [] } = {}) {
   const sizes = [...new Set(rows.map(r => r.botsPerSide))];
   const detail = {};
   let all = sizes.length > 0;
@@ -179,11 +191,16 @@ export function betterThanNothing(rows, none) {
     const improved = compared.filter(k => med(g, k) <= 0.75 * med(n, k));
     const worsened = compared.filter(k => med(g, k) >= 1.25 * med(n, k) && med(g, k) > 0);
     const captures = med(g, 'capturesTotal') >= med(n, 'capturesTotal');
-    const fightOnlyWithLayer = !noneAlive && aliveChecks(g).every(c => c.pass);
+    const layerAlive = aliveChecks(g).every(c => c.pass);
+    const fightOnlyWithLayer = !noneAlive && layerAlive;
+    // Both arms against the same bar: how many of its checks each fails.
+    const failedBy = baseline ? [judge(g, baseline, { unreachable }).failed?.length ?? 0, judge(n, baseline, { unreachable }).failed?.length ?? 0] : null;
+    const fewerFailed = !!failedBy && layerAlive && failedBy[0] < failedBy[1];
     detail[size] = { improved, worsened, captures: [med(g, 'capturesTotal'), med(n, 'capturesTotal')],
                      ...(noneAlive ? {} : { notCompared: MOVEMENT.filter(k => !compared.includes(k)) }),
-                     ...(fightOnlyWithLayer ? { fightOnlyWithLayer: true } : {}) };
-    if (!(captures && (fightOnlyWithLayer || (improved.length >= 2 && worsened.length === 0)))) all = false;
+                     ...(fightOnlyWithLayer ? { fightOnlyWithLayer: true } : {}),
+                     ...(failedBy ? { barChecksFailed: failedBy, ...(fewerFailed ? { fewerFailed: true } : {}) } : {}) };
+    if (!(fewerFailed || (captures && (fightOnlyWithLayer || (improved.length >= 2 && worsened.length === 0))))) all = false;
   }
   return { better: all, detail };
 }
@@ -204,7 +221,7 @@ export function verdictOf(level, rows, baseline, lint = null, none = null) {
   // Balance: reported at every size, flagged when one side takes every seed at every size.
   const sides = Object.values(judged).map(j => j.balance?.oneSided ?? null);
   const oneSided = sides.length && sides.every(s => s && s === sides[0]) ? sides[0] : null;
-  const versus = none && none.length ? betterThanNothing(rows, none) : null;
+  const versus = none && none.length ? betterThanNothing(rows, none, baseline, { unreachable }) : null;
   // A match nobody fights is not better than anything: bots that stand still
   // do not get stuck, fail routes or redeploy either. So the comparison is
   // read only once the level is alive at every size (`ALIVE`).
@@ -245,6 +262,14 @@ export function noKitRefusal(level, rows) {
 /** The outcomes a failing layer may be accepted at. */
 export const ACCEPTABLE = ['better-than-nothing'];
 
+/**
+ * What the owner may accept (`accept --owner`): also a layer the comparison
+ * does not call better than the level with no layer, when they have looked
+ * at what it does and said it goes up. Never a level with no fight or one
+ * the lint refuses. DC_Basrah_Nights is the case (README 19.8).
+ */
+export const OWNER_ACCEPTABLE = ['better-than-nothing', 'no-better-than-nothing'];
+
 const failedChecks = short => Object.entries(short.sizes ?? {}).flatMap(([size, j]) => (j.failed ?? []).map(f => `${size}:${f}`));
 
 /**
@@ -253,13 +278,17 @@ const failedChecks = short => Object.entries(short.sizes ?? {}).flatMap(([size, 
  * Only a layer with no lint error that measured better than the level with
  * no layer can take one, and it names the checks it was accepted short of.
  */
-export function acceptVerdict(short, reason, date) {
+export function acceptVerdict(short, reason, date, { owner = false } = {}) {
   if (!String(reason ?? '').trim()) throw new Error('an acceptance needs a reason');
   if (short.verdict === 'pass') throw new Error(`${short.level} passes: it needs no acceptance`);
-  if (!ACCEPTABLE.includes(short.outcome)) throw new Error(`${short.level} is ${short.outcome}: only ${ACCEPTABLE.join(', ')} can be accepted`);
+  const allowed = owner ? OWNER_ACCEPTABLE : ACCEPTABLE;
+  if (!allowed.includes(short.outcome)) {
+    throw new Error(`${short.level} is ${short.outcome}: only ${allowed.join(', ')} can be accepted`
+      + (!owner && OWNER_ACCEPTABLE.includes(short.outcome) ? ' (the owner may: --owner)' : ''));
+  }
   if (short.lintErrors?.length) throw new Error(`${short.level} has lint errors`);
   const { acceptanceWithdrawn, ...rest } = short;
-  return { ...rest, accepted: { reason: String(reason).trim(), date, outcome: short.outcome, failed: failedChecks(short) } };
+  return { ...rest, accepted: { reason: String(reason).trim(), date, outcome: short.outcome, failed: failedChecks(short), ...(owner ? { by: 'owner' } : {}) } };
 }
 
 /**
@@ -275,7 +304,9 @@ export function carryAccepted(short, previous) {
   const then = previous.doctrine ?? 'sai', now = short.doctrine ?? 'sai';
   if (then !== now) return { ...short, acceptanceWithdrawn: { ...was, because: `accepted on matches under the ${then} doctrine; these are under the ${now}` } };
   const fresh = failedChecks(short).filter(f => !(was.failed ?? []).includes(f));
-  if (ACCEPTABLE.includes(short.outcome) && !short.lintErrors?.length && !fresh.length) return { ...short, accepted: was };
+  // The owner's acceptance stands at the outcome they accepted, or a better one.
+  const still = ACCEPTABLE.includes(short.outcome) || (was.by === 'owner' && short.outcome === was.outcome);
+  if (still && !short.lintErrors?.length && !fresh.length) return { ...short, accepted: was };
   return { ...short, acceptanceWithdrawn: { ...was, because: fresh.length ? `now also fails ${fresh.join(', ')}` : `now ${short.outcome}${short.lintErrors?.length ? ' with lint errors' : ''}` } };
 }
 
@@ -296,6 +327,9 @@ export function censusRow(level, lint, row, { marker = null, layerBytes = 0, err
     alive: failed ? failed.length === 0 : null, dead: failed ?? [],
     kills: row ? [row.enemyKills?.[1] ?? 0, row.enemyKills?.[2] ?? 0] : null,
     captures: row ? row.capturesTotal : null,
+    enemyKillsPerBotMinute: row ? row.enemyKillsPerBotMinute : null,
+    mountedShare: row ? row.mountedShare ?? null : null,
+    doctrine: row ? row.doctrine ?? 'sai' : null,
     idleShare: row ? row.idleShare : null,
     routeFailuresPerBotMinute: row ? row.routeFailuresPerBotMinute : null,
     stuckSecondsPerBotMinute: row ? row.stuckSecondsPerBotMinute : null,
@@ -357,7 +391,7 @@ function parseArgs(argv) {
   const a = { _: [] };
   for (let i = 0; i < argv.length; i++) {
     const k = argv[i];
-    if (k === '--force' || k === '--keep-traces' || k === '--no-generate' || k === '--no-match' || k === '--despite-lint' || k === '--vehicles') a[k.slice(2)] = true;
+    if (k === '--force' || k === '--keep-traces' || k === '--no-generate' || k === '--no-match' || k === '--despite-lint' || k === '--vehicles' || k === '--no-layer' || k === '--owner') a[k.slice(2)] = true;
     else if (k.startsWith('--')) a[k.slice(2)] = argv[++i];
     else a._.push(k);
   }
@@ -372,7 +406,7 @@ async function main() {
     for (const level of String(a.levels ?? '').split(',').map(l => l.trim().toLowerCase()).filter(Boolean)) {
       const file = path.join(a.layers ? path.resolve(a.layers) : LAYERS_ROOT, (a.mod ?? 'bf1942').toLowerCase(), level, 'verdict.json');
       try {
-        const next = acceptVerdict(JSON.parse(readFileSync(file, 'utf8')), a.reason, new Date().toISOString().slice(0, 10));
+        const next = acceptVerdict(JSON.parse(readFileSync(file, 'utf8')), a.reason, new Date().toISOString().slice(0, 10), { owner: !!a.owner });
         writeFileSync(file, JSON.stringify(next, null, 1) + '\n');
         console.log(`${level}: accepted short of ${next.accepted.failed.join(', ')}`);
       } catch (e) { bad++; console.error(`${level}: not accepted: ${e.code === 'ENOENT' ? 'no verdict.json' : e.message}`); }
@@ -381,7 +415,7 @@ async function main() {
   }
   if (!['baseline', 'matrix', 'level', 'census'].includes(cmd) || !a.maps) {
     console.error('usage: node sim/botbatch.mjs <baseline|matrix|level|census> --maps <tree> [--models <tree>] --levels a,b | --candidates <csv> [--classes c1;c2]\n'
-      + '       census: one 300 s match a level, 8 a side [--time 300] [--bots 8] [--seed 1] [--no-match] [--no-generate]\n'
+      + '       census: one 300 s match a level, 8 a side [--time 300] [--bots 8] [--seed 1] [--no-match] [--no-generate] [--no-layer: the level with no layer, no lint]\n'
       + '       node sim/botbatch.mjs accept --levels a,b --reason "<why>" [--mod bf1942] [--layers <dir>]\n'
       + '       [--vehicles] the vehicles of the level in, judged against baselines/vehicles-dice.json (default: on foot)\n'
       + '       baseline --mod <Mod>: the mod own bar, baselines/<vehicles|onfoot>-<mod>.json, its dead levels dropped\n'
@@ -438,6 +472,12 @@ async function main() {
       const item = { ...l, layerDir, lint: null, error: null };
       prepared.push(item);
       try {
+        // `--no-layer`: the level as it is with no layer (the arm a layer is compared with): no generation, no lint.
+        if (a['no-layer']) {
+          const off = patchScene(l, { BOT_LAYERS_OFF: '1' });
+          if (off.status !== 0) throw new Error(`patch_scene: ${(off.stderr || off.stdout).trim().split('\n').pop()}`);
+          continue;
+        }
         ensureEngineMaps(layerDir, l.level, l.mod, a.archives);
         if (!a['no-generate']) await generate({ maps, models, map: l.level, mod: l.mod, out: layersRoot, template: a.template ?? null });
         const on = patchScene(l, { BOT_LAYERS_UNVERIFIED: '1' });
@@ -465,7 +505,7 @@ async function main() {
         marker: existsSync(markerFile) ? JSON.parse(readFileSync(markerFile, 'utf8')) : null });
     });
     mkdirSync(out, { recursive: true });
-    writeFileSync(path.join(out, 'census.json'), JSON.stringify({ time, bots, seed, config, rows }, null, 1) + '\n');
+    writeFileSync(path.join(out, 'census.json'), JSON.stringify({ time, bots, seed, config, doctrine: opts.doctrine, layer: !a['no-layer'], rows }, null, 1) + '\n');
     console.log(censusTable(rows));
     console.log(`census: ${rows.length} levels, ${rows.filter(r => r.alive).length} alive, ${rows.filter(r => r.alive === false).length} dead, `
       + `lint wrong on ${rows.filter(r => r.lintAgrees === false).length} -> ${path.join(out, 'census.json')}`);

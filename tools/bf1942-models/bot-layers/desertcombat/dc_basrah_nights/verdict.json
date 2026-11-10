@@ -1,7 +1,7 @@
 {
  "level": "dc_basrah_nights",
  "verdict": "fail",
- "outcome": "no-better-than-nothing",
+ "outcome": "better-than-nothing",
  "config": "with vehicles",
  "doctrine": "garrison",
  "generatorVersion": 5,
@@ -17,7 +17,7 @@
  },
  "againstDice": {
   "verdict": "fail",
-  "outcome": "no-better-than-nothing",
+  "outcome": "better-than-nothing",
   "baseline": "DICE layers with vehicles, garrison doctrine: berlin, stalingrad, kharkov, bocage; seeds 1..10, 600 s",
   "sizes": {
    "8": {
@@ -82,5 +82,22 @@
  },
  "oneSided": null,
  "unreachable": [],
- "lintErrors": []
+ "lintErrors": [],
+ "accepted": {
+  "reason": "The owner's decision, 2026-11-11. With no layer the level barely fights (0.013 and 0.020 enemy kills a bot-minute, no capture); with it 0.35 and 0.36, and 6 and 5 flags a match. The comparison calls it no better at 16 a side because bots that now move are sometimes stuck (1.64 s a bot-minute against 0.15) and redeploy. Short of Desert Combat's own bar on idle share, stuck time, redeploys and units never used (four of its eight are fixed guns).",
+  "date": "2026-11-10",
+  "outcome": "no-better-than-nothing",
+  "failed": [
+   "8:stuckSecondsPerBotMinute",
+   "8:idleShare",
+   "8:teamKillsPerBotMinute",
+   "8:stuckSecondsPerBotMinuteWorseSide",
+   "8:redeploysPerBotMinuteWorseSide",
+   "8:unitsNeverUsedShare",
+   "16:idleShare",
+   "16:redeploysPerBotMinuteWorseSide",
+   "16:unitsNeverUsedShare"
+  ],
+  "by": "owner"
+ }
 }

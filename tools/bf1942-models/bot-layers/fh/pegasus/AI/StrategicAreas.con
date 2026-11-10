@@ -1,0 +1,43 @@
+rem *** Strategic areas: one per control point (botgen) ***
+
+aiStrategicArea.create crashzone 520.3/416.1 527.3/423.1 50
+aiStrategicArea.addNeighbour gondree
+aiStrategicArea.addObjectTypeFlag Base
+aiStrategicArea.setOrderPosition Tank 527.3/423.1
+aiStrategicArea.setOrderPosition Infantry 527.3/423.1
+aiStrategicArea.setSide 2
+aiStrategicArea.setTakeable 1 0
+
+aiStrategicArea.create pegasus 476.4/572.6 481.4/577.6 10
+aiStrategicArea.setSide 1
+aiStrategicArea.setTakeable 1 0
+aiStrategicArea.setTakeable 2 0
+
+aiStrategicArea.create gondree 382/543.5 391/552.5 150
+aiStrategicArea.addNeighbour crashzone
+aiStrategicArea.addNeighbour benouville
+aiStrategicArea.addNeighbour le_port
+aiStrategicArea.addObjectTypeFlag Flank
+aiStrategicArea.addObjectTypeFlag Close
+aiStrategicArea.addObjectTypeFlag ControlPoint
+aiStrategicArea.setOrderPosition Tank 390.5/554.5
+aiStrategicArea.setOrderPosition Infantry 390.5/551.5
+aiStrategicArea.setSide 1
+
+aiStrategicArea.create benouville 255.8/395.4 261.8/401.4 50
+aiStrategicArea.addNeighbour gondree
+aiStrategicArea.addNeighbour le_port
+aiStrategicArea.addObjectTypeFlag Base
+aiStrategicArea.setOrderPosition Tank 261.5/399.5
+aiStrategicArea.setOrderPosition Infantry 261.5/400.5
+aiStrategicArea.setSide 1
+aiStrategicArea.setTakeable 2 0
+
+aiStrategicArea.create le_port 261.9/677.4 267.9/683.4 50
+aiStrategicArea.addNeighbour gondree
+aiStrategicArea.addNeighbour benouville
+aiStrategicArea.addObjectTypeFlag Base
+aiStrategicArea.setOrderPosition Tank 267.5/681.5
+aiStrategicArea.setOrderPosition Infantry 267.5/682.5
+aiStrategicArea.setSide 1
+aiStrategicArea.setTakeable 2 0

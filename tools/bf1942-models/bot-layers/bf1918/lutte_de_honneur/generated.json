@@ -1,0 +1,172 @@
+{
+ "generator": "botgen",
+ "version": 5,
+ "mod": "bf1918",
+ "level": "lutte_de_honneur",
+ "objectSpawners": 55,
+ "template": "symmetric",
+ "templateSource": "DICE, bf1942 Kharkov (1.6 patch archives): AI/Strategies.con, AI/conditions.con, AI/prerequisites.con, unchanged",
+ "templateChoice": {
+  "name": "symmetric",
+  "inPlay": 5,
+  "rule": "5 capturable flags in play, more than 3"
+ },
+ "scope": "an infantry map painted from the walk test, a Tank0 map from the page painter, infantry order positions, no strategic maps, no co-op layer",
+ "unreachable": [
+  "german_2ndtrenchtemplate"
+ ],
+ "unreachableReasons": {
+  "german_2ndtrenchtemplate": "route probe"
+ },
+ "botSpawnsExcluded": [
+  "german_fieldhq_spawn1",
+  "german_2ndtrench_spawn2",
+  "german_lefttrench_spawn",
+  "german_lefttrench_spawn2",
+  "german_righttrench_spawn4"
+ ],
+ "walkMap": {
+  "source": "walk test",
+  "engine": "none",
+  "vehicleMap": "page painter",
+  "vehicleBrush": 1.5,
+  "vehicleBrushes": [
+   {
+    "brush": 3,
+    "flagsOn": 5,
+    "spawnersOn": 0,
+    "pieces": 9,
+    "main": 547591
+   },
+   {
+    "brush": 2.5,
+    "flagsOn": 6,
+    "spawnersOn": 2,
+    "pieces": 13,
+    "main": 557055
+   },
+   {
+    "brush": 2,
+    "flagsOn": 6,
+    "spawnersOn": 2,
+    "pieces": 19,
+    "main": 563239
+   },
+   {
+    "brush": 1.5,
+    "flagsOn": 8,
+    "spawnersOn": 11,
+    "pieces": 10,
+    "main": 573249
+   }
+  ],
+  "opened": [],
+  "ways": [
+   {
+    "who": "german_2ndtrench_spawn2",
+    "kind": "spawn",
+    "way": "jump",
+    "opened": 0
+   },
+   {
+    "who": "german_lefttrench_spawn",
+    "kind": "spawn",
+    "way": "none",
+    "opened": 0
+   },
+   {
+    "who": "german_lefttrench_spawn2",
+    "kind": "spawn",
+    "way": "jump",
+    "opened": 0
+   },
+   {
+    "who": "german_righttrench_spawn4",
+    "kind": "spawn",
+    "way": "jump",
+    "opened": 0
+   }
+  ],
+  "cover": 0.99,
+  "floors": {
+   "stacked": false,
+   "twoFloorShare": 0.002,
+   "raised": [
+    "british_2ndtrenchtemplate"
+   ],
+   "reason": null
+  }
+ },
+ "routeProbe": {
+  "chokeMax": 4,
+  "unreachable": [
+   "german_2ndtrenchtemplate"
+  ],
+  "stops": {
+   "german_2ndtrenchtemplate": {
+    "1": {
+     "stage": "strategic"
+    },
+    "2": {
+     "stage": "strategic"
+    }
+   }
+  },
+  "oneSided": {},
+  "sides": {
+   "1": {
+    "spawns": 3,
+    "flags": [
+     "british_2ndtrenchtemplate",
+     "british_lefttrenchtemplate",
+     "british_righttrenchtemplate",
+     "german_lefttrenchtemplate",
+     "german_righttrenchtemplate"
+    ]
+   },
+   "2": {
+    "spawns": 3,
+    "flags": [
+     "british_2ndtrenchtemplate",
+     "british_lefttrenchtemplate",
+     "british_righttrenchtemplate",
+     "german_lefttrenchtemplate",
+     "german_righttrenchtemplate"
+    ]
+   }
+  },
+  "chokes": {
+   "german_lefttrenchtemplate:1": 0,
+   "german_lefttrenchtemplate:2": 0,
+   "german_righttrenchtemplate:1": 0,
+   "german_righttrenchtemplate:2": 0,
+   "british_righttrenchtemplate:1": 0,
+   "british_righttrenchtemplate:2": 0,
+   "british_lefttrenchtemplate:1": 0,
+   "british_lefttrenchtemplate:2": 0,
+   "british_2ndtrenchtemplate:1": 0,
+   "british_2ndtrenchtemplate:2": 0
+  },
+  "late": {},
+  "shutLinks": []
+ },
+ "inputs": {
+  "controlPoints": "0d137680a2900d0bfc7a0298204b5e7973fdf1e21c7be69d7589671b891cdc10",
+  "infantryMap": "a76b28961a42efebb61365eb98075c881379f751a763c0170b0a30d4925d358d",
+  "template": "43f8a790471528016570235f76e97dbb2045732458781a5139f37fed68bf98c0"
+ },
+ "files": {
+  "AI.con": "26a4968a932cb02f5560de800c61804de753d63024b7306accd1c363ba784669",
+  "AIpathFinding.con": "9d8080cdfa7605961969aa126519b03be9691bd604ac76aef50166d81215edd2",
+  "AI/StrategicAreas.con": "3176db0ec9a1b41bbb908c59e1f82a4d9234bfb2fa85376322aed7ae33fb7c12",
+  "AI/Strategies.con": "4ce0be59a0d6c5cd530db002fb062c4be8d936bc6ae59bd188803ccaf7869a8d",
+  "AI/conditions.con": "68a0c7a8aec69954063147b60fae560b2874884285737aa085efa76597d395aa",
+  "AI/prerequisites.con": "4c1f313bc285b228fd6ad03bfd1f44c5b15c8703c31f802eb605bc5f00f88bb5",
+  "Pathfinding/Infantry1Level0Map.raw": "cf0c07cf5cf138718eefef328387a2eda61a5d2cedff3a3c7e9e8910e00b8275",
+  "Pathfinding/Infantry1Level1Map.raw": "8ed601e34f03b0f7b41e2c4fe57f7025151b80d159b55a13f2b5c9d8caf19742",
+  "Pathfinding/Infantry1Level2Map.raw": "39da0c5a1116594ab9eac1a61d1e26be649b3f6738c2746d5347d4c0518f16a1",
+  "Pathfinding/Tank0Level0Map.raw": "2569d5732bb5ca049bbec42fb656f91c3b3b3b4d104b742e10eaef3248259bfb",
+  "Pathfinding/Tank0Level1Map.raw": "e82a81a37781017c23c49e5f432d1429ce6165fb4abcb659305e33bb454ca6bb",
+  "Pathfinding/Tank0Level2Map.raw": "2ce1b48a9c66e21931c6a113abb14320e41bc448cd38349d79645896ce0d3a7a"
+ }
+}

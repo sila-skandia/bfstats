@@ -88,4 +88,8 @@ const accepted = { level: 'x', verdict: 'fail', outcome: 'better-than-nothing', 
 out.carrySameDoctrine = !!batch.carryAccepted({ ...accepted, accepted: undefined, doctrine: 'garrison' }, { ...accepted, doctrine: 'garrison' }).accepted;
 out.carryOtherDoctrine = batch.carryAccepted({ ...accepted, accepted: undefined, doctrine: 'garrison' }, accepted).acceptanceWithdrawn?.because ?? null;
 
+// --- the census row ---------------------------------------------------------------
+out.censusRow = batch.censusRow('x', null, { enemyKills: { 1: 2, 2: 3 }, ticketsBled: { 1: 1, 2: 1 }, botErrors: 0, capturesTotal: 2,
+                                            enemyKillsPerBotMinute: 0.31, mountedShare: 0.5, doctrine: 'garrison' });
+
 console.log(JSON.stringify(out));

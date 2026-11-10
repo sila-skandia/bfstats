@@ -1,0 +1,75 @@
+rem *** Strategic areas: one per control point (botgen) ***
+
+aiStrategicArea.create axisbase 276.9/702.4 281.9/707.4 50
+aiStrategicArea.addNeighbour german_trench
+aiStrategicArea.addNeighbour de_bunker
+aiStrategicArea.addObjectTypeFlag Base
+aiStrategicArea.setOrderPosition Tank 278.5/704.5
+aiStrategicArea.setOrderPosition Infantry 282.5/708.5
+aiStrategicArea.setSide 1
+aiStrategicArea.setTakeable 2 0
+
+aiStrategicArea.create alliedbase 577.7/263.8 582.7/268.8 50
+aiStrategicArea.addNeighbour fr_bunker_west
+aiStrategicArea.addNeighbour french_trench
+aiStrategicArea.addObjectTypeFlag Base
+aiStrategicArea.setOrderPosition Tank 584.5/270.5
+aiStrategicArea.setOrderPosition Infantry 582.5/269.5
+aiStrategicArea.setSide 2
+aiStrategicArea.setTakeable 1 0
+
+aiStrategicArea.create fr_bunker_west 361.6/380 369.6/388 150
+aiStrategicArea.addNeighbour alliedbase
+aiStrategicArea.addNeighbour french_trench
+aiStrategicArea.addNeighbour german_trench
+aiStrategicArea.addNeighbour verdun
+aiStrategicArea.addObjectTypeFlag Flank
+aiStrategicArea.addObjectTypeFlag ControlPoint
+aiStrategicArea.setOrderPosition Tank 364.5/388.5
+aiStrategicArea.setOrderPosition Infantry 369.5/387.5
+aiStrategicArea.setSide 2
+
+aiStrategicArea.create french_trench 453.2/391.2 468.2/406.2 200
+aiStrategicArea.addNeighbour alliedbase
+aiStrategicArea.addNeighbour fr_bunker_west
+aiStrategicArea.addNeighbour verdun
+aiStrategicArea.addObjectTypeFlag Centre
+aiStrategicArea.addObjectTypeFlag Close
+aiStrategicArea.addObjectTypeFlag ControlPoint
+aiStrategicArea.setOrderPosition Tank 475.5/398.5
+aiStrategicArea.setOrderPosition Infantry 470.5/404.5
+aiStrategicArea.setSide 2
+
+aiStrategicArea.create german_trench 307.1/577.6 322.1/592.6 200
+aiStrategicArea.addNeighbour axisbase
+aiStrategicArea.addNeighbour fr_bunker_west
+aiStrategicArea.addNeighbour de_bunker
+aiStrategicArea.addNeighbour verdun
+aiStrategicArea.addObjectTypeFlag Centre
+aiStrategicArea.addObjectTypeFlag Close
+aiStrategicArea.addObjectTypeFlag ControlPoint
+aiStrategicArea.setOrderPosition Tank 317.5/598.5
+aiStrategicArea.setOrderPosition Infantry 320.5/594.5
+aiStrategicArea.setSide 1
+
+aiStrategicArea.create de_bunker 398.7/586.3 406.7/594.3 200
+aiStrategicArea.addNeighbour axisbase
+aiStrategicArea.addNeighbour german_trench
+aiStrategicArea.addNeighbour verdun
+aiStrategicArea.addObjectTypeFlag Centre
+aiStrategicArea.addObjectTypeFlag ControlPoint
+aiStrategicArea.setOrderPosition Tank 408.5/601.5
+aiStrategicArea.setOrderPosition Infantry 407.5/595.5
+aiStrategicArea.setSide 1
+
+aiStrategicArea.create verdun 352.2/459.6 392.2/499.6 300
+aiStrategicArea.addNeighbour fr_bunker_west
+aiStrategicArea.addNeighbour french_trench
+aiStrategicArea.addNeighbour german_trench
+aiStrategicArea.addNeighbour de_bunker
+aiStrategicArea.addObjectTypeFlag Centre
+aiStrategicArea.addObjectTypeFlag StrongPoint
+aiStrategicArea.addObjectTypeFlag ControlPoint
+aiStrategicArea.setOrderPosition Tank 389.5/499.5
+aiStrategicArea.setOrderPosition Infantry 391.5/499.5
+aiStrategicArea.setSide 1

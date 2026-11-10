@@ -1,0 +1,98 @@
+{
+ "level": "Inshallah_Valley",
+ "mod": "desertcombat",
+ "url": "https://play.bfstats.io/map.html?map=Inshallah_Valley&team=2&mode=Conquest&mod=desertcombat&botCount=16&botSkill=0.75&mute&shots",
+ "date": "2026-11-10",
+ "bar": "DICE levels on the page, 3 matches each of 600 s, 16 bots: Berlin, Stalingrad, Kharkov, Bocage; 2026-11-10",
+ "verdict": "pass",
+ "failed": [],
+ "checks": [
+  {
+   "metric": "teamKillsPerBotMinute",
+   "median": 0.0125,
+   "bar": "<= 0.0812",
+   "pass": true
+  },
+  {
+   "metric": "suicidesPerBotMinute",
+   "median": 0.025,
+   "bar": "<= 0.1",
+   "pass": true
+  },
+  {
+   "metric": "nonEnemyDeathShareWorseSide",
+   "median": 0.143,
+   "bar": "<= 0.5",
+   "pass": true
+  },
+  {
+   "metric": "enemyKillsPerBotMinute",
+   "median": 0.3,
+   "bar": ">= 0.1125",
+   "pass": true
+  }
+ ],
+ "matches": 3,
+ "runs": [
+  {
+   "generated": {
+    "version": 5,
+    "template": "symmetric"
+   },
+   "minutes": 10,
+   "tickets": {
+    "1": 85,
+    "2": 70
+   },
+   "capturesTotal": 11,
+   "teamKillsPerBotMinute": 0.0187,
+   "suicidesPerBotMinute": 0.025,
+   "nonEnemyDeathShareWorseSide": 0.143,
+   "enemyKillsPerBotMinute": 0.3125,
+   "teamKillsBySide": {
+    "1": 1,
+    "2": 2
+   }
+  },
+  {
+   "generated": {
+    "version": 5,
+    "template": "symmetric"
+   },
+   "minutes": 10,
+   "tickets": {
+    "1": 78,
+    "2": 86
+   },
+   "capturesTotal": 5,
+   "teamKillsPerBotMinute": 0,
+   "suicidesPerBotMinute": 0,
+   "nonEnemyDeathShareWorseSide": 0,
+   "enemyKillsPerBotMinute": 0.3,
+   "teamKillsBySide": {
+    "1": 0,
+    "2": 0
+   }
+  },
+  {
+   "generated": {
+    "version": 5,
+    "template": "symmetric"
+   },
+   "minutes": 10,
+   "tickets": {
+    "1": 87,
+    "2": 79
+   },
+   "capturesTotal": 4,
+   "teamKillsPerBotMinute": 0.0125,
+   "suicidesPerBotMinute": 0.0375,
+   "nonEnemyDeathShareWorseSide": 0.185,
+   "enemyKillsPerBotMinute": 0.2375,
+   "teamKillsBySide": {
+    "1": 0,
+    "2": 2
+   }
+  }
+ ]
+}

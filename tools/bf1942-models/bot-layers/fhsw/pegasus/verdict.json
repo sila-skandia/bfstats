@@ -1,33 +1,45 @@
 {
  "level": "pegasus",
  "verdict": "fail",
- "outcome": "no-fight",
+ "outcome": "no-better-than-nothing",
  "config": "with vehicles",
- "generatorVersion": 4,
+ "doctrine": "garrison",
+ "generatorVersion": 5,
  "inputs": {
   "controlPoints": "42cee693392cf5f00dc2d935292cd801fabab0bd8bcd693ae3f17dca40a7f26f",
   "infantryMap": "355e36802f8f484dcd6b28ca359630a10cbdce51ebdae11284f43647e3b8ee18",
-  "template": "43f8a790471528016570235f76e97dbb2045732458781a5139f37fed68bf98c0"
+  "template": "bdc0e455f47f91b7e7724e71d7c0c196e839b36946ac3abb7663d725944081e5"
  },
- "baseline": "DICE layers with vehicles: berlin, stalingrad, kharkov, bocage; seeds 1..10, 600 s",
+ "baseline": "DICE layers with vehicles, garrison doctrine: berlin, stalingrad, kharkov, bocage; seeds 1..10, 600 s",
+ "bar": {
+  "against": "dice",
+  "why": "no bar of fhsw's own: DICE's"
+ },
  "seeds": 10,
  "sizes": {
   "8": {
    "verdict": "fail",
    "failed": [
+    "stuckSecondsPerBotMinute",
+    "idleShare",
     "routeFailuresPerBotMinute",
+    "redeploysPerBotMinute",
+    "capturesTotal",
     "enemyKillsPerBotMinute",
     "flagCoverage",
     "bothSidesCapture",
-    "bothSidesKill",
-    "ticketsBleed",
+    "stuckSecondsPerBotMinuteWorseSide",
     "routeFailuresPerBotMinuteWorseSide",
+    "redeploysPerBotMinuteWorseSide",
+    "nonEnemyDeathShareWorseSide",
+    "hullStuckSecondsPerDrivingMinute",
+    "hullStuckSecondsPerDrivingMinuteWorseSide",
     "unitsNeverUsedShare"
    ],
    "winners": [
-    5,
-    3,
-    2
+    9,
+    0,
+    1
    ]
   },
   "16": {
@@ -39,17 +51,15 @@
     "enemyKillsPerBotMinute",
     "flagCoverage",
     "bothSidesCapture",
-    "bothSidesKill",
     "routeFailuresPerBotMinuteWorseSide",
-    "nonEnemyDeathShareWorseSide",
     "hullStuckSecondsPerDrivingMinute",
     "hullStuckSecondsPerDrivingMinuteWorseSide",
     "unitsNeverUsedShare"
    ],
    "winners": [
-    2,
-    7,
-    1
+    9,
+    1,
+    0
    ]
   }
  },

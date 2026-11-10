@@ -1,0 +1,64 @@
+rem *** Strategic areas: one per control point (botgen) ***
+
+aiStrategicArea.create st_maria_di_costantinopoli 638.7/440 658.7/460 150
+aiStrategicArea.addNeighbour ortona_lateral
+aiStrategicArea.addNeighbour piazzale_della_stazione
+aiStrategicArea.addNeighbour piazza_municipali
+aiStrategicArea.addObjectTypeFlag Flank
+aiStrategicArea.addObjectTypeFlag ControlPoint
+aiStrategicArea.setOrderPosition Tank 660.5/459.5
+aiStrategicArea.setOrderPosition Infantry 659.5/459.5
+aiStrategicArea.setSide 1
+
+aiStrategicArea.create alliedbase 383.6/145.2 388.6/150.2 50
+aiStrategicArea.addNeighbour ortona_lateral
+aiStrategicArea.addNeighbour piazzale_della_stazione
+aiStrategicArea.addNeighbour distretto_etterno
+aiStrategicArea.addObjectTypeFlag Base
+aiStrategicArea.setOrderPosition Tank 388.5/148.5
+aiStrategicArea.setOrderPosition Infantry 388.5/149.5
+aiStrategicArea.setSide 2
+aiStrategicArea.setTakeable 1 0
+
+aiStrategicArea.create ortona_lateral 641.6/197.5 656.6/212.5 150
+aiStrategicArea.addNeighbour st_maria_di_costantinopoli
+aiStrategicArea.addNeighbour alliedbase
+aiStrategicArea.addNeighbour piazzale_della_stazione
+aiStrategicArea.addNeighbour distretto_etterno
+aiStrategicArea.addObjectTypeFlag Flank
+aiStrategicArea.addObjectTypeFlag Close
+aiStrategicArea.addObjectTypeFlag ControlPoint
+aiStrategicArea.setOrderPosition Tank 656.5/214.5
+aiStrategicArea.setOrderPosition Infantry 657.5/212.5
+
+aiStrategicArea.create piazzale_della_stazione 413.2/546 428.2/561 300
+aiStrategicArea.addNeighbour st_maria_di_costantinopoli
+aiStrategicArea.addNeighbour alliedbase
+aiStrategicArea.addNeighbour ortona_lateral
+aiStrategicArea.addNeighbour piazza_municipali
+aiStrategicArea.addNeighbour distretto_etterno
+aiStrategicArea.addObjectTypeFlag Centre
+aiStrategicArea.addObjectTypeFlag StrongPoint
+aiStrategicArea.addObjectTypeFlag ControlPoint
+aiStrategicArea.setOrderPosition Tank 423.5/560.5
+aiStrategicArea.setOrderPosition Infantry 427.5/560.5
+aiStrategicArea.setSide 1
+
+aiStrategicArea.create piazza_municipali 466.3/670.8 482.3/686.8 200
+aiStrategicArea.addNeighbour st_maria_di_costantinopoli
+aiStrategicArea.addNeighbour piazzale_della_stazione
+aiStrategicArea.addObjectTypeFlag Centre
+aiStrategicArea.addObjectTypeFlag ControlPoint
+aiStrategicArea.setOrderPosition Tank 484.5/686.5
+aiStrategicArea.setOrderPosition Infantry 481.5/687.5
+aiStrategicArea.setSide 1
+
+aiStrategicArea.create distretto_etterno 254.9/550.6 274.9/570.6 150
+aiStrategicArea.addNeighbour alliedbase
+aiStrategicArea.addNeighbour ortona_lateral
+aiStrategicArea.addNeighbour piazzale_della_stazione
+aiStrategicArea.addObjectTypeFlag Flank
+aiStrategicArea.addObjectTypeFlag ControlPoint
+aiStrategicArea.setOrderPosition Tank 274.5/572.5
+aiStrategicArea.setOrderPosition Infantry 274.5/571.5
+aiStrategicArea.setSide 1

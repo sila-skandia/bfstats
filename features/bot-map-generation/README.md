@@ -29,8 +29,8 @@ reaches better-than-nothing, on DICE's bar or its own mod's.
 
 **What is live, 2026-11-11:** The_Maze (Community Maps), which fails the
 page check on team kills and says so in its acceptance, and two mod levels
-that pass it: Desert Combat's DC_LostVillage and FHSW's Tunis-1943. A level
-now goes to the page without its
+that pass it: Desert Combat's DC_LostVillage, DC_Basrah_Nights and
+Inshallah_Valley, and FHSW's Tunis-1943. A level now goes to the page without its
 menu flag, is played there three times against a bar from DICE's levels
 played the same way, and gets the flag after ([page-matches.md](page-matches.md),
 section 6).
@@ -2131,6 +2131,8 @@ says why it is shut. They are 630 KB and can be deleted at no cost but that.
 | The_Maze | better-than-nothing | idle share at 8 a side, 0.547 against 0.526 | 2026-11-10, twice; again 2026-11-11 |
 | Desert Combat DC_LostVillage | better-than-nothing | redeploys, flag coverage, the worse side's share of deaths no enemy caused; one-sided | 2026-11-11, after a page check |
 | FHSW Tunis-1943 | better-than-nothing | enemy kills, route failures, the worse side's share of deaths no enemy caused, units never used | 2026-11-11, after a page check |
+| Desert Combat DC_Basrah_Nights | better-than-nothing, on the owner's acceptance | idle share, stuck time, redeploys, units never used | 2026-11-11, after a page check |
+| Desert Combat Inshallah_Valley | better-than-nothing | flag coverage (its two bases never change hands), the worse side's redeploys at 8 a side | 2026-11-11, after a page check |
 
 Both rows are the verdicts of 2026-11-10, which were measured with a
 stand-in weapon under the wrong doctrine (19.1, 19.2). Judged again,
@@ -3110,6 +3112,20 @@ Whether a level that goes from 0.02 kills and no capture to 0.36 kills and
 5 captures should be called better is a question about the rule, left for
 the owner. Tests: `test_a_fight_where_the_level_with_no_layer_has_none_is_
 better_than_nothing`.
+
+**The owner's answer, the same day:** it goes up, and the rule is the
+coordinator's to fix. `accept --owner` records an acceptance of a layer the
+comparison calls no better than nothing (never one with no fight or a lint
+error). And the comparison has a third way now (`fewerFailed`): with a bar
+to hold both arms to, the layer is better at a size where its matches have
+a fight and fail fewer of the bar's checks than the level with no layer
+fails. The four movement rates are a small part of what the judge measures;
+the bar's own count is the whole of it. Re-judged from the same matches:
+DC_Basrah_Nights fails 6 and 3 checks where the level with no layer fails 8
+and 6, and Inshallah_Valley 2 and 1 against 6 and 4. Both are
+better-than-nothing by it. Tests:
+`test_a_layer_that_fails_fewer_of_the_bars_checks_is_better_than_nothing`,
+`test_the_owner_may_accept_a_layer_called_no_better_than_nothing`.
 
 **The unused units**: the level places eight. Four are fixed guns
 (`Stationary_browning` on `machinegunspawner`, two at leftspawn and two at

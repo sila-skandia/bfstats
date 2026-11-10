@@ -1,0 +1,53 @@
+rem *** Strategic areas: one per control point (botgen) ***
+
+aiStrategicArea.create axisbase 251.8/478.2 256.8/483.2 200
+aiStrategicArea.addNeighbour battlefieldtemplate
+aiStrategicArea.addNeighbour 1st_devence_linetemplate
+aiStrategicArea.addNeighbour 2nd_devence_linetemplate
+aiStrategicArea.addObjectTypeFlag Centre
+aiStrategicArea.addObjectTypeFlag ControlPoint
+aiStrategicArea.setOrderPosition Tank 256.5/481.5
+aiStrategicArea.setOrderPosition Infantry 257.5/483.5
+aiStrategicArea.setSide 2
+
+aiStrategicArea.create alliedbase 649/640.9 656/647.9 50
+aiStrategicArea.addNeighbour battlefieldtemplate
+aiStrategicArea.addNeighbour 1st_devence_linetemplate
+aiStrategicArea.addNeighbour 2nd_devence_linetemplate
+aiStrategicArea.addObjectTypeFlag Base
+aiStrategicArea.setOrderPosition Tank 653.5/647.5
+aiStrategicArea.setOrderPosition Infantry 655.5/648.5
+aiStrategicArea.setSide 1
+aiStrategicArea.setTakeable 2 0
+
+aiStrategicArea.create battlefieldtemplate 485.2/586.8 491.2/592.8 300
+aiStrategicArea.addNeighbour axisbase
+aiStrategicArea.addNeighbour alliedbase
+aiStrategicArea.addNeighbour 1st_devence_linetemplate
+aiStrategicArea.addNeighbour 2nd_devence_linetemplate
+aiStrategicArea.addObjectTypeFlag Centre
+aiStrategicArea.addObjectTypeFlag StrongPoint
+aiStrategicArea.addObjectTypeFlag Close
+aiStrategicArea.addObjectTypeFlag ControlPoint
+aiStrategicArea.setOrderPosition Tank 493.5/592.5
+aiStrategicArea.setOrderPosition Infantry 490.5/592.5
+
+aiStrategicArea.create 1st_devence_linetemplate 385.9/579.3 390.9/584.3 200
+aiStrategicArea.addNeighbour axisbase
+aiStrategicArea.addNeighbour alliedbase
+aiStrategicArea.addNeighbour battlefieldtemplate
+aiStrategicArea.addNeighbour 2nd_devence_linetemplate
+aiStrategicArea.addObjectTypeFlag Centre
+aiStrategicArea.addObjectTypeFlag ControlPoint
+aiStrategicArea.setOrderPosition Tank 382.5/580.5
+aiStrategicArea.setOrderPosition Infantry 389.5/582.5
+
+aiStrategicArea.create 2nd_devence_linetemplate 288.4/578.7 295.4/585.7 150
+aiStrategicArea.addNeighbour axisbase
+aiStrategicArea.addNeighbour alliedbase
+aiStrategicArea.addNeighbour battlefieldtemplate
+aiStrategicArea.addNeighbour 1st_devence_linetemplate
+aiStrategicArea.addObjectTypeFlag Flank
+aiStrategicArea.addObjectTypeFlag ControlPoint
+aiStrategicArea.setOrderPosition Tank 285.5/585.5
+aiStrategicArea.setOrderPosition Infantry 294.5/585.5
