@@ -1,7 +1,10 @@
 # Out of their lock, on a jet
 
 Lesson `out-of-the-lock` ("Out of their lock: breaking the tail"), re-tuned
-for the F-16 (2026-11-10). Files: `viewer/dogfight-jet-out-of-the-lock.js`
+for the F-16 (2026-11-10), re-measured under the roof (2026-11-11): the hard
+turn ends levelled off and faster, every count holds (Dip, Flip and Ninja 0
+of 9, survival "no"), and nobody in any demo or move goes over 812 m on the
+F-16 (855 m on the MiG-29). Files: `viewer/dogfight-jet-out-of-the-lock.js`
 (the jet block), `viewer/dogfight-jet-plan-out-of-the-lock.js` (two jet
 watchers), `tests/test_dogfight_jet_out_of_the_lock.py`.
 
@@ -59,12 +62,14 @@ little easier than on the Spitfire, and still nothing passes.
   Spitfire).
 - **Turning hard keeps you alive** (true, tuned to hold): no hit either way in
   nine, they follow you round in `lag`, never closer than 64 to 68 m, and
-  their landing shot is only the lock before the turn bites (2.1 s at most).
+  their landing shot is only the lock before the turn bites (1.7 s at most;
+  2.1 as written).
   Rewritten: the turn does not hold its height on a jet. `levelHardTurn`
   caps the bank at 65 degrees plus its sink term, and at full throttle the
-  F-16 has the lift and thrust to climb in it: both go up 356 to 364 m in 45
-  s, ending at 97 to 99 m/s. The words say so instead of "holding your
-  height".
+  F-16 has the lift and thrust to climb in it: both go up 359 to 364 m in 45
+  s, until the roof levels the turn off at 805 to 812 m in the last seconds,
+  ending at 105 to 111 m/s (97 to 98 before the roof, still climbing). The
+  words say so instead of "holding your height".
 - **The chop** (rewritten): never flown in nine. `lockChop` chops only when
   they sit close behind (inside 90 m Spitfire, 115 m real), behind the wing
   line and still closing. Measured from 4 s into the turn: they are inside
@@ -101,6 +106,45 @@ out rather than quote numbers no test holds.
 either way in nine for both; flying straight is shot down in nine of nine,
 11 to 12 s. The moves: 0 of 9 each, as on the F-16. The test holds the
 MiG-29's flat, counter and without.
+
+Under the roof (2026-11-11) nobody is shot down and no round strikes you in
+flat or counter; the turn ends at 847 to 849 m at 151 to 152 m/s (it went
+to 874 to 905 m before). On the MiG-29 the chop is flown, in all nine, as it
+was before the roof, and now lands 1 round on them in one start. The chop
+topped out at 1,427 m before and the Ninja at 1,664 m; now the highest
+anyone goes is 855 m. The moves are still 0 of 9 each.
+
+## Under the roof (2026-11-11)
+
+Commit `8d616bcc2` puts every jet pilot's plan through `underRoof`
+(`dogfight-jet-ceiling.js`, from `dogfight-pilot.js` `stepPilot`): the climb
+is levelled off by 800 m real, and a banked turn goes on level. The lesson's
+starts (480 and 448 m real on the F-16) are under 600, so `pacedHeight`
+leaves them where they were.
+
+What moved, F-16, nine starts (`--tops`, ace / you):
+
+| Demo | Highest before | Under the roof |
+|---|---|---|
+| flat | 810 / 812 m, ending 97-98 m/s still climbing | 811 / 812 m, levelled off, ending 105-111 m/s |
+| counter | the same as flat (the chop never flown) | the same as flat |
+| dip | 487 / 465 m | unchanged |
+| flip | 626 / 753 m | 626 / 708 m |
+| ninja | 636 / 912 m (you over 880 m in 4 of 9) | 632 / 758 m |
+
+The hard turn is the only fight whose words moved: it climbs 359 to 364 m in
+45 s as before, but reaches the roof in its last seconds and goes on level
+there, so the end speed is 105 to 111 m/s, not 97 to 99 (the test now also holds
+the hunter's landing shot before the turn to the 1.7 s it was, not the
+as-written 2.1). Hits, closest pass (64 to
+68 m) and the phases are unchanged, and the chop is still never flown on the
+F-16. The Flip and the Ninja are the same fights from the nine starts (`-
+3/4` and `- 1/2` in the same two); on the L9 their end ranges move but every
+number the words quote holds (the ace at 60 to 67 m/s, 5 hits in one fight,
+never hit yourself). The Dip did not move. Nothing was tuned; the story
+sentence and the flat demo's note now say the circle climbs to the roof.
+
+## Shared files (not changed)
 
 ## Shared files (not changed)
 

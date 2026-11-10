@@ -18,7 +18,7 @@ export default {
     'The best pilots get behind you and stay there. The hunter closes at full throttle, eases off as they get in, and holds their fire until they are inside about 190 m. Dead astern the hunter sits in the one cone your headrest hides, so a pilot who knows the hunter is coming keeps a turn on toward them and has them over the shoulder until they are in.',
     'On a jet that turn is steeper. The same 20 degrees of bank turns a faster aeroplane more slowly: the hunter slides into the cone, is lost, and comes in unseen, and a pilot who no longer knows they are there flies straight. Hold the Spitfire\'s rate of turn instead, 26 to 39 degrees of bank, and you have them in sight until they are in.',
     'Flying straight under the lock is death: shot down every time, 10 to 12 s in.',
-    'Turning hard does not shake them. They follow you round, never closer than 64 m, and once the turn is on their nose cannot come onto you: nobody is hit. At full throttle a jet has power to spare in the turn, so the circle climbs: both of you go up about 360 m in 45 s, at 97 to 99 m/s. The turn buys time, nothing more.',
+    'Turning hard does not shake them. They follow you round, never closer than 64 m, and once the turn is on their nose cannot come onto you: nobody is hit. At full throttle a jet has power to spare in the turn, so the circle climbs: both of you go up about 360 m in 45 s, until the roof levels the turn off at about 810 m and you end at 105 to 111 m/s. The turn buys time, nothing more.',
   ],
   counterStory: [
     'Running does not work against an equal jet. Seen 900 m back you can turn into them and go under them, as in a Spitfire, but they turn round after you and settle 300 to 340 m behind you, their nose on you. You both run at about 100 m/s: they never close to their 190 m, and you never get away. They give a chase up only once you are out of their guns\' reach, and a jet\'s cannon reaches past 500 m: 40 s on they are still behind you.',
@@ -29,7 +29,7 @@ export default {
   survival: { verdict: 'no', line: 'No: turning hard keeps you alive in all nine, but nothing gets you out. Passed under and run from, an equal jet sits 300 m behind you, never closing and never giving up; and they do not slow over the top, so no pass comes down on them from behind. The Dip, the Flip and the Ninja: 0 of 9 each.' },
   demos: {
     flat: { seat: 'jetOlHardTurn',
-      note: 'A turn toward them keeps them in sight, steeper than a Spitfire needs; once they are committed, as hard as it turns. They cannot hit you, but they follow you round and stay on your tail, and the circle climbs, 360 m in 45 s.' },
+      note: 'A turn toward them keeps them in sight, steeper than a Spitfire needs; once they are committed, as hard as it turns. They cannot hit you, but they follow you round and stay on your tail, and the circle climbs, 360 m in 45 s, up to the roof.' },
     counter: { seat: 'jetOlChop',
       note: 'Turn hard; when they slide in close behind you and are still closing, throttle back and pull up. On a jet that moment never comes: they swing in and out behind you, and in nine fights the chop was never flown.' },
     dip: {

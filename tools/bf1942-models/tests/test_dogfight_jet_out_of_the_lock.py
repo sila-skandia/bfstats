@@ -17,7 +17,7 @@ import tempfile
 import unittest
 from pathlib import Path
 
-from jet_school import jet_lesson, shot_down
+from jet_school import jet_lesson, jet_tops, shot_down
 
 TOOLS = Path(__file__).resolve().parent.parent
 LESSON = "out-of-the-lock"
@@ -140,17 +140,31 @@ class TheLockOnAJetTests(unittest.TestCase):
     def test_turning_hard_nobody_is_hit_and_they_stay_behind_you(self) -> None:
         # "They follow you round, never closer than 64 m, and once the turn is
         # on their nose cannot come onto you: nobody is hit. ... the circle
-        # climbs: both of you go up about 360 m in 45 s, at 97 to 99 m/s."
+        # climbs: both of you go up about 360 m in 45 s, until the roof levels
+        # the turn off at about 810 m and you end at 105 to 111 m/s." Before
+        # the roof (`underRoof`, every jet pilot) the circle ended at the same
+        # height still climbing, at 97 to 98 m/s.
         runs = demo("flat")
         for r in runs:
             self.assertIsNone(r["winner"], r)
             self.assertEqual([0, 0], r["hits"], r)
             self.assertTrue(64 <= r["closest"] <= 70, r)
-            # Their landing shot is the lock before the turn, 2.1 s at most.
-            self.assertLessEqual(r["shots"][0], 2.1, r)
+            # Their landing shot is the lock before the turn, 1.7 s at most.
+            self.assertLessEqual(r["shots"][0], 1.7, r)
             self.assertTrue(350 <= r["climbed"] <= 370, r)
-            self.assertTrue(all(97 <= v <= 99 for v in r["speed"]), r)
+            self.assertTrue(all(805 <= h <= 812 for h in r["height"]), r)
+            self.assertTrue(all(105 <= v <= 111 for v in r["speed"]), r)
             self.assertEqual(["track", "lag"], r["phases"][0], r)
+
+    def test_nobody_goes_over_the_roof(self) -> None:
+        # Neither plane, in any demo or move, tops 860 m on the F-16 (the
+        # nine starts): the highest is the turn's 812 m. The Ninja, which
+        # went to 912 m in four starts before the roof, tops 758 m.
+        tops = jet_tops("F16", LESSON)[LESSON]
+        self.assertEqual({"flat", "counter", "dip", "flip", "ninja"}, set(tops))
+        self.assertLessEqual(max(h for d in tops.values() for h in d["top"]), 860, tops)
+        self.assertEqual(812, max(h for d in tops.values() for h in d["top"]))
+        self.assertEqual(758, tops["ninja"]["top"][1])
 
     def test_the_chop_is_never_flown(self) -> None:
         # "in nine fights the chop was never flown, and the fight was the hard turn."
@@ -161,13 +175,25 @@ class TheLockOnAJetTests(unittest.TestCase):
 
     def test_the_mig_29_flies_it_the_same(self) -> None:
         # The look turn is a rate, not a bank, so it fits the MiG-29 too
-        # (pace 1.5), where the F-16's fixed 25 degrees would not.
+        # (pace 1.5), where the F-16's fixed 25 degrees would not. Nobody is
+        # shot down and no round strikes you. On the MiG-29 the chop is flown,
+        # in all nine, and under the roof it lands 1 round on them in one.
         self.assertEqual(9, shot_down(demo("without", plane="Mig29"), 1))
         for demo_id in ("flat", "counter"):
             runs = demo(demo_id, plane="Mig29")
-            self.assertTrue(all(r["winner"] is None and r["hits"] == [0, 0] for r in runs), demo_id)
+            self.assertTrue(all(r["winner"] is None and r["hits"][0] == 0 for r in runs), demo_id)
             base = demo(demo_id, plane="Mig29", base=True)
             self.assertEqual(1, shot_down(base, 1), demo_id)
+        self.assertTrue(all(r["hits"] == [0, 0] for r in demo("flat", plane="Mig29")))
+        chop = demo("counter", plane="Mig29")
+        self.assertTrue(all("chop" in r["phases"][1] for r in chop))
+        self.assertEqual([[0, 1]], [r["hits"] for r in chop if r["hits"] != [0, 0]])
+
+    def test_the_mig_29_stays_under_the_roof(self) -> None:
+        # Measured: 855 m at most (you, waiting to chop), where the chop went
+        # to 1,427 m and the Ninja to 1,664 m before the roof.
+        tops = jet_tops("Mig29", LESSON)[LESSON]
+        self.assertEqual(855, max(h for d in tops.values() for h in d["top"]), tops)
 
 
 class TheMovesOnAJetTests(unittest.TestCase):
