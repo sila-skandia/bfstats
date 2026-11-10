@@ -75,6 +75,21 @@ class HandAltFireTests(unittest.TestCase):
         self.assertFalse(busy["none"])
         self.assertAlmostEqual((9 + 20) / 30, busy["busyUntil"], delta=0.04)
 
+    def test_a_child_with_no_round_is_a_sound_and_leaves_the_zoom(self) -> None:
+        # bf1918's rifles hang `AimSound` (no projectile) on `c_PIAltFire`:
+        # its pull is heard and the press still toggles the sight. The
+        # bayonet and the officer whistle's blast carry a round and stab.
+        self.assertEqual({"stab": False, "whistleBlast": False, "aimSound": True},
+                         self.r["soundOnly"])
+
+    def test_the_packs_are_the_templates_of_those_names(self) -> None:
+        # SUP-27: `BFSoldierTemplate::init` keeps the ids of the templates
+        # named MedPack and RepairPack; a healing AI entry makes no pack.
+        self.assertEqual({
+            "MedPack": "medic", "medpack": "medic", "RepairPack": "repair",
+            "Officer-Ger": None, "BottleHeal": None, "Detonator": None, "null": None,
+        }, self.r["packs"])
+
 
 if __name__ == "__main__":
     unittest.main()

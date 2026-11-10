@@ -546,7 +546,8 @@ export function createHandFire(page) {
     // first one took instead of waiting for a free one (`world-fire.js`,
     // ledger SND-33).
     if (fired && alt.name && at) page.playWorldShot?.(alt.name, at.x, at.y + 1.4, at.z, at);
-    if (!began) return;
+    // A sound-only child (`AimSound`) is no stab: no thrust, no swing.
+    if (!began || alt.soundOnly) return;
     // His own body's thrust, for the outside views (`foot-body.js`).
     page.stabFootBody?.();
     // The swing, from the weapon's own clips when its rig carries them

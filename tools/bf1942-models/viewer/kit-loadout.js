@@ -66,6 +66,21 @@ export function kitPackSpec(loadouts, kit) {
 }
 
 /**
+ * Which of the soldier's two packs a hand weapon is: `'medic'` for the
+ * template named `MedPack`, `'repair'` for `RepairPack`, null for anything
+ * else (ledger SUP-27: `BFSoldierTemplate::init` keeps the ids of the
+ * templates of those names and `BFSoldier::handleMessage` dispatches on
+ * them). Compared without case, as the template manager resolves names
+ * (INFERRED: the lookup's case rule was not read).
+ */
+export function healingPackKind(name) {
+  const key = String(name ?? '').toLowerCase();
+  if (key === 'medpack') return 'medic';
+  if (key === 'repairpack') return 'repair';
+  return null;
+}
+
+/**
  * Built once by `createHandWeapon`. `page` is the narrow bag of getters it
  * builds, naming what this module reads:
  * `bust`, `currentDir`, `deployKit`, `deployTeamId`, `handWeapon`, `KITS`,
@@ -441,17 +456,24 @@ export function createKitLoadout(page) {
     return Number.isFinite(v) ? v : fallback;
   }
 
-  /** The healing pack in hand, with its use parameters — or null. The game's
-   *  own discriminator between the medic bag and the wrench is the AI
-   *  weapon's target typing (`weaponTemplate.healing 1` on both; the MedPack's
-   *  `strength` table is Infantry 2 alone, the RepairPack's is every armour
-   *  class and Infantry 0 — `loadouts.json`'s `aiWeapons`) — the same gate
-   *  the engine's `useMedPack` applies with its soldier-template class test,
-   *  and the bots' MedicAssist with its own. */
+  /** The healing pack in hand, with its use parameters — or null.
+   *
+   *  The engine picks the pack by its template's NAME (ledger SUP-27).
+   *  `BFSoldierTemplate::init` (lnxded 0x0827a730) looks up the templates
+   *  called `Detonator`, `MedPack` and `RepairPack` and keeps their ids at
+   *  +0x2a8, +0x2ac and +0x2b0 (`0x0827c011`, `0x0827bf9c`, `0x0827bf27`);
+   *  `BFSoldier::handleMessage`'s Fire branch compares the held item's
+   *  template id with them (`0x082776a0`..`0x082776b8`) and runs
+   *  `useMedPack` / `useRepairPack` only on a match. Every other hand weapon
+   *  fires its projectile, whatever its AI entry says. So bf1918's officer
+   *  whistle and `BottleHeal`, whose AI entry is the medics' `healing 1`, are
+   *  not medic bags: they throw a round whose supply depots do the healing.
+   *  Keying this on the AI table turned them into medic bags that fired no
+   *  round. */
   function healingPack() {
-    const ai = localAiWeapon();
-    if (!ai?.healing) return null;
-    if ((ai.strength?.Infantry ?? 0) > 0) {
+    const kind = healingPackKind(page.handWeapon?.name);
+    if (!kind) return null;
+    if (kind === 'medic') {
       return {
         radius: holderValue('healDistance', MEDIC_PACK.radius),
         allyHeal: holderValue('healFactor', MEDIC_PACK.allyHeal),

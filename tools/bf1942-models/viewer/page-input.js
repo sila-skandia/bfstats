@@ -582,7 +582,9 @@ export function createPageInput(page) {
     // is the stab's, not a zoom's, and the knife has no sight to zoom.
     if (hw?.alt) {
       pageInput.altQueued = true;
-      return false;
+      // A sound-only child (`AimSound`) hears the press and leaves it to the
+      // zoom: both FireArms take `c_PIAltFire`.
+      if (!hw.alt.soundOnly) return false;
     }
     if (hw?.data?.zoom?.toggle) {
       // `altFireOnce` masks the *held* alt-fire input on the client
@@ -602,8 +604,9 @@ export function createPageInput(page) {
     // A weapon with an alternate fire of its own (a bayonet's or a knife's
     // stab) spends the press on it, as the right button does in
     // `buttonChange`: one stab on the press edge, and no zoom.
-    const stab = foot && !!page.handWeapon?.alt;
-    if (stab && !pageInput.touchAltHeld) pageInput.altQueued = true;
+    const alt = foot ? page.handWeapon?.alt : null;
+    const stab = !!alt && !alt.soundOnly;
+    if (alt && !pageInput.touchAltHeld) pageInput.altQueued = true;
     pageInput.touchAltHeld = !!foot;
     pageInput.aimHeld = foot && !stab;
     pageInput.seatAltFire = seat;

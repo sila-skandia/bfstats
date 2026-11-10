@@ -36,6 +36,12 @@ export function createAlt(group, fireArms = {}, name = null) {
     // The cycle of a round the delay let go: its timer starts a tick later.
     delayedCycle: delayedFireCycle(fireArms.roundOfFire),
     cool: 0, wind: 0, pulse: false, shots: 0, held: 0,
+    // A child FireArms with no projectile at all (bf1918's `AimSound`, the
+    // rifles' shouldering sound): its pull is a sound and nothing else, so it
+    // is no stab, and the right button's press still reaches the weapon's
+    // own zoom (`page-input.js` `footAltPress`). Its timers still hold the
+    // primary off (FA-11).
+    soundOnly: !fireArms.projectile,
     // Every press that began a stab, for whoever tells others of it
     // (`net-room.js` `tellStab`).
     presses: 0,

@@ -105,4 +105,26 @@ results.bayonet = (() => {
   results.busy = { before, none: alt.altBusy(null), busyUntil: +busyUntil.toFixed(2) };
 }
 
+// A child FireArms with no projectile (bf1918's `AimSound`) is a sound, not a
+// stab: the press still reaches the zoom. One with a round (the bayonet, the
+// officer whistle's blast `Officer-GerAlt`, a `velocity 0` placeholder) stabs.
+results.soundOnly = {
+  stab: alt.createAlt({ shots: 0 }, { ...STAB, projectile: { kind: 'bullet' } }).soundOnly,
+  whistleBlast: alt.createAlt({ shots: 0 }, {
+    roundOfFire: 1, throw: { fireDelay: 0.4 }, input: 'c_PIAltFire', velocity: 0,
+    projectile: { template: 'Officer-GerAltProjectile', kind: 'bullet', timeToLive: 0 },
+  }).soundOnly,
+  aimSound: alt.createAlt({ shots: 0 }, { roundOfFire: 1, input: 'c_PIAltFire', magSize: -1 }).soundOnly,
+};
+
+// The soldier's two packs are the templates NAMED MedPack and RepairPack
+// (ledger SUP-27); a weapon whose AI entry heals (bf1918's officer whistle,
+// `BottleHeal`) is not one and fires its round.
+{
+  const { healingPackKind } = await import(pathToFileURL(path.join(viewer, 'kit-loadout.js')).href);
+  results.packs = Object.fromEntries(
+    ['MedPack', 'medpack', 'RepairPack', 'Officer-Ger', 'BottleHeal', 'Detonator', null]
+      .map(name => [String(name), healingPackKind(name)]));
+}
+
 process.stdout.write(JSON.stringify(results));

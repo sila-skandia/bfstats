@@ -3939,9 +3939,22 @@ class Assembler:
         # HandFireArms is the same contract held in a hand: the K98 declares
         # `projectileTemplate` and `roundOfFire` exactly like a wing gun, so
         # it earns the same muzzle node and firing extras.
+        #
+        # A plain FireArms with NO projectile is kept as well: its pull still
+        # runs `FireArms::Fire`, which triggers the sound script's Fire slot
+        # (SND-13, FA-25) with nothing to launch. Vanilla's `WillyHorn`,
+        # `KettenkradHorn`, `LynxHorn`, XPack2's `HarleyHorn`, bf1918's
+        # `bicycle_bell` and twenty horns are built that way (their
+        # `projectileTemplate` line commented out), and so is bf1918's
+        # `AimSound`, the rifles' shouldering sound on `c_PIAltFire`. Its
+        # extras say `projectile: null`; a viewer fires it as a sound. A
+        # HandFireArms without one (the MedPack, the RepairPack, the
+        # Detonator) stays out: those are the soldier's packs, dispatched by
+        # name and not by a fire group (ledger SUP-27).
         fire_extras: dict | None = None
-        if (template.kind.lower() in ("firearms", "handfirearms")
-                and template.projectile_template):
+        kind_lower = template.kind.lower()
+        if ((kind_lower == "handfirearms" and template.projectile_template)
+                or kind_lower == "firearms"):
             muzzle_nodes, fire_extras = self._fire_arms(
                 builder, template, report, control, depth)
             child_indices += muzzle_nodes

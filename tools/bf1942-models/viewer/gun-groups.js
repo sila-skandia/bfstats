@@ -213,7 +213,16 @@ export function collectGroups(guns, root, options = {}) {
     // ObjectSpawner (FH's mobile guns' deploy round, `round-spawners.js`), and
     // one that bursts when its clock runs out: the same seat's killer charge,
     // invisible at `velocity 0`, is what destroys the mobile gun.
-    if (stats.magType !== 2
+    // A FireArms with no projectile at all is kept too: it has nothing to fly
+    // and so costs no casts, and its pull still runs `FireArms::Fire`, which
+    // triggers the sound script's Fire slot (SND-13, FA-25) -- vanilla's
+    // `WillyHorn` and bf1918's `bicycle_bell` are a horn and a bell and
+    // nothing else. So is an alternate fire on `c_PIAltFire`: a second
+    // trigger the holder presses, whose pull is heard even when its round is
+    // a placeholder (bf1918's officer whistle blast, `Officer-GerAlt`: a
+    // `velocity 0` bullet with `timeToLive 0` and its own sound script).
+    if (stats.projectile && stats.input !== 'c_PIAltFire'
+        && stats.magType !== 2
         && !(stats.projectile?.depots?.length)
         && !(stats.projectile?.spawners?.length)
         && !burstsAtEndOfLife(stats.projectile)
