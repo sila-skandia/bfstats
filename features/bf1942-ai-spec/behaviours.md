@@ -9,8 +9,10 @@ generators (`_urgency*`, with `bot-fire.js`, `bot-behaviours.js`,
 
 **Registered behaviours**, in evaluation order (ties go to the earlier):
 on foot `Avoid, MoveTo, Idle, Fire, Special, Scout, TakeCover, Change`
-(`REGISTERED`, the `Infantery` rows of `AIbehaviours.con`); in any vehicle
-the same without `Special` (`REGISTERED_VEHICLE`, the `Tank` rows).
+(`REGISTERED`, the `Infantery` rows of `AIbehaviours.con`); seated, the
+behaviours of the seat's own row in its mod's list, in the same order and
+without `Special` (`bot-decision.js registered`, `bot-rows.js`; an aircraft
+and a seat with no row keep the `Tank` rows, [vehicles.md](vehicles.md#seated-behaviours)).
 
 **Modifier.** `base(i) = moral x personality(i) x basic(i)` with moral 1
 (drawn once and never updated in 1.61), personality `StandardWeights` and

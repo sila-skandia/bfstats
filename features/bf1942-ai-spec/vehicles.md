@@ -150,8 +150,16 @@ wheel. A gunner under a driver with own 8 and root 10: `8 x 1.0` beats `10 x
 
 ## Seated behaviours
 
-A mounted bot registers the `Tank` rows (no Special). A seat that does not
-drive returns 0 from MoveTo (`BBMoveToFixed`). Fire uses the unit's AI
+A mounted bot registers its seat's own row of `AIbehaviours.con`, read in
+its mod's own list (`bot-rows.js`; a mod numbers its rows its own way, so
+BF1918's 9 is `Gunner` where vanilla's is `BoatFixed`): vanilla's `Fixed`
+(every stationary MG, AA gun and hull-top MG) has MoveTo, Idle, Fire, Scout
+and Change and no Avoid or TakeCover, `Car` and `Passenger` no TakeCover,
+`Tank` everything but Special. Special stays off a seat (BF1918's `BBRoam`
+is not modelled). An aircraft, and a seat with no row, keep the `Tank` rows
+(INVENTION: the Plane row registers no Avoid, and the pilots fly their own
+avoid). A seat that does not drive returns 0 from MoveTo (`BBMoveToFixed`).
+Measured: features/bot-map-generation/seat-behaviour.md. Fire uses the unit's AI
 weapons through the turret ([behaviours.md](behaviours.md#fire-mounted)).
 Senses use the vehicle fields of view from the eye 2 m above the hull.
 
