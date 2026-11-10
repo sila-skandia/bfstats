@@ -122,6 +122,28 @@ end) pass; `map.html` `destroyOnExit` ends a deployed object through
 `deployables-page.js` (its armour's death effects, then gone) and any other
 damageable with 1e10 through the world's damage pass, which wrecks it.
 
+## How it was checked (2026-11-10)
+
+- Unit: `test_con` (both `weaponLink` spellings; `vehicleFov` and
+  `destroyOnExit` into the PCO's physics), `test_seat_view`
+  (`vehicleFovDegrees`), `test_vehicle_instance` (an exit hands the hook the
+  PCO once the player is out; a death or a plain seat does not),
+  `test_con_words` (`destroyonexit` left the orphan table; `subpos`, which
+  the tree already mentions, with it).
+- Scratch extract (`extract_models.py --mod bf1918` into the scratchpad):
+  `Scherenfernrohr.glb` and `MG08_MGZF.glb` carry `physics.vehicleFov` 0.2 and
+  0.1 on the PCO, `DeployedStokes.glb` `physics.destroyOnExit`, `M98Bajo.glb`
+  `extras.weapon.magazine.link` 3; `extract_deployables.py` adds
+  `destroyOnExit` to the three deployed objects and changes nothing else.
+- On the page (headless Chrome, broodseinde, the scratch `deployables.json`
+  served over the live one, the live bake's nodes given the value the new
+  exporter writes): `MG08_MGZF` 5.73 degrees inside and in the chase, the
+  periscope 11.46 both, the plain `MG08_MG` 57.3, back to 57.3 on foot. A
+  German who took the `Ger_Werfer` pad kit fired `Werfer16Deploy`, the
+  `DeployedWerfer16` stood, he took its seat and pressed E: he stood on foot
+  and the object was gone from `__deployables.placed()` and the scene, with no
+  page error.
+
 ## What has to re-run in the bf1918 tree
 
 | What | Templates | Step |
