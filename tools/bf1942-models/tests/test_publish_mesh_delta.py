@@ -186,5 +186,29 @@ class TarCommandTests(unittest.TestCase):
         self.assertIn('"gzip"', src)
 
 
+
+class ListingTempTests(unittest.TestCase):
+    """Two publishes at once wrote one `/tmp/mesh-models-listing.txt` on the
+    pod over each other, and each refused the other's count ("96948 of
+    39030", 2026-11-10). Each listing has a file of its own."""
+
+    def test_two_listings_use_two_files(self) -> None:
+        import types
+        pub = load_publisher()
+        seen: list[str] = []
+
+        def run(self, *args, **kwargs):
+            seen.append(args[-1])
+            return types.SimpleNamespace(stdout="0" if kwargs.get("text") else b"")
+
+        volume = object.__new__(pub.Volume)
+        volume.run = types.MethodType(run, volume)
+        self.assertEqual({}, volume.listing("models"))
+        self.assertEqual({}, volume.listing("models"))
+        temps = {word for cmd in seen for word in cmd.split()
+                 if word.startswith("/tmp/mesh-models-listing") and word.endswith(".txt")}
+        self.assertEqual(2, len(temps), seen)
+
+
 if __name__ == "__main__":
     unittest.main()
