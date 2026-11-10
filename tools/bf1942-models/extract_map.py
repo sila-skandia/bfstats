@@ -104,6 +104,7 @@ from bf42.level import (  # noqa: E402
     load_tickets,
     parse_cubemap_rcm,
     parse_init_con,
+    read_init_script,
     parse_sound_scripts,
     # Re-exported: `load_gameplay_objects` reads the ObjectSpawn files itself
     # now, but other modules import this name from here.
@@ -385,10 +386,12 @@ def load_level(game_dir: Path, mod: str, level: str,
         underlay = [p for other in borrowed
                     for p in find_level_archives(game_dir, mod, other, chain=chain)]
         files = load_level_files(paths, level, underlay)
+    # `include` runs its file inline (`read_init_script`): Montblainville's
+    # SkyAndSun.con includes `Lenz.con` after its own `TSun`.
     if files.find("Init.con"):
-        parse_init_con(_read_text(files, "Init.con"), info)
+        parse_init_con(read_init_script(files, "Init.con"), info)
     if files.find("Init/SkyAndSun.con"):
-        parse_init_con(_read_text(files, "Init/SkyAndSun.con"), info)
+        parse_init_con(read_init_script(files, "Init/SkyAndSun.con"), info)
     _load_extra_lens_flares(files, info)
     statics_path = files.find("StaticObjects.con")
     if statics_path:

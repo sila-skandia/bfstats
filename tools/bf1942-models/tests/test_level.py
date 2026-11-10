@@ -619,6 +619,7 @@ Cloud.setTexScale 8
     def test_geometry_file_keeps_only_the_leaf(self) -> None:
         info = LevelInfo(name="X", terrain=parse_terrain_con(""))
         parse_init_con(
+            "GeometryTemplate.create StandardMesh SkyBox\n"
             "GeometryTemplate.file bf1942\\levels\\X\\SkyCustom_m1\nSky.initSky\n",
             info,
         )

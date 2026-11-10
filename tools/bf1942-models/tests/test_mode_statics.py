@@ -458,13 +458,16 @@ ObjectTemplate.setPosition 0/15/0
         sounds = discover_level_sounds(self.FILES, [inst], library, None)
         self.assertEqual([a.points for a in sounds.areas], [[[10.0, 20.0, -20.0]]])
 
-    def test_a_child_the_library_knows_is_left_to_the_building_walk(self) -> None:
+    def test_a_child_the_library_also_declares_is_the_levels(self) -> None:
+        # The level's `Init.con` declares `turbinehum` before the mod's
+        # `objects/` does, and the later `create` makes nothing (LOAD-1,
+        # LOAD-2, LOAD-32): the turbine carries the level's hum, once.
         library = self._turbine_library()
         library.add_con("Objects/Sounds/Objects.con",
                         "ObjectTemplate.create SimpleObject turbinehum\n")
         inst = StaticInstance("TurbinesOrginal", (1.0, 2.0, 3.0), (0.0, 0.0, 0.0))
         sounds = discover_level_sounds(self.FILES, [inst], library, None)
-        self.assertEqual(sounds.areas, [])
+        self.assertEqual([a.name for a in sounds.areas], ["turbinehum"])
 
     def test_the_report_writes_modes_only_when_there_are_some(self) -> None:
         from bf42.level import LevelSounds, PlacedAreaSound

@@ -243,7 +243,7 @@ class SkyInfo:
     `ShaderManager.setTextureParam envmap` reflection source, six 128px faces.
     """
 
-    mesh: str = ""                    # GeometryTemplate.file preceding Sky.initSky
+    mesh: str = ""                    # the `SkyBox` template's file at Sky.initSky (LOAD-33)
     rot_angle: float = 0.0            # Sky.setRotAngle, degrees about +Y
     height_offset: float = 0.0        # sky.changeOfsSkyHeight, metres
     # `Sky.addCloud` alone does NOT produce clouds: the layer draws the cloud
@@ -2862,19 +2862,55 @@ def _parse_flare_verb(flare: LensFlare, which: str, field_key: str,
         setattr(element, attr, raw)
 
 
+_INIT_INCLUDE = re.compile(r"^[ \t]*include[ \t]+(.+?)[ \t]*$", re.IGNORECASE)
+
+
+def read_init_script(files, relative: str, _depth: int = 0) -> str:
+    """A level script's text with each bare `include <path>` spliced in place.
+
+    `include` executes the named file inline, resolved beside the file the
+    line is in (CON-14), so its lines run between the includer's line before
+    and after it. Montblainville's `Init/SkyAndSun.con` ends with `include
+    Lenz.con` (`Init/Lenz.con`). A target the level does not ship, a cycle or
+    a nest past eight deep is left out, as a failed include runs nothing.
+    """
+    text = files.read(relative).decode("latin-1")
+    if "include" not in text.lower() or _depth >= 8:
+        return text
+    folder = relative.replace("\\", "/").rsplit("/", 1)[0] if "/" in relative.replace("\\", "/") else ""
+    out: list[str] = []
+    for line in con_mod.strip_comments(text).splitlines():
+        match = _INIT_INCLUDE.match(line)
+        if not match:
+            out.append(line)
+            continue
+        target = match.group(1).strip().strip('"').replace("\\", "/")
+        resolved = posixpath.normpath(f"{folder}/{target}") if folder else target
+        if resolved.lower() == relative.lower() or files.find(resolved) is None:
+            continue
+        out.append(read_init_script(files, resolved, _depth + 1))
+    return "\n".join(out)
+
+
 def parse_init_con(text: str, info: LevelInfo) -> None:
     # FH and FHSW test `v_is_coop` here (the NonPush texture path, kits with
     # parachutes): decide it as a Conquest host does (FHR-3).
     if "v_is_coop" in text.lower():
         text = con_mod.resolve_coop_conditionals(con_mod.strip_comments(text))
-    # `GeometryTemplate.file` is stateful: the file loaded right before
-    # `Sky.initSky` is the sky box mesh. Comment lines are already stripped, so
-    # the REM'd cloud geometry in vanilla SkyAndSun.con does not shadow it —
-    # which is also what makes `cloud_mesh` a reliable clouds-exist signal:
-    # only a mod that genuinely creates the cloud template (bf1918, FHSW, ...)
-    # leaves an active `GeometryTemplate.create ... Cloud` + `.file` pair.
-    pending_geometry_file: str | None = None
-    pending_geometry_create: str | None = None
+    # The sky box is the geometry template named `SkyBox`: `Sky.initSky`
+    # (BF1942.exe 0x005be800) asks the geometry template manager for that
+    # name and instances it, whatever was created last (LOAD-33). BF1918's
+    # Ramskapelle creates its `Cloud` between `SkyBox` and `Sky.initSky`;
+    # the old rule (the file loaded right before `initSky`) drew the cloud
+    # sheet as the sky. A second `create` of a name configures nothing
+    # (LOAD-1), so its `.file` is ignored. Comment lines are already
+    # stripped, so the REM'd cloud geometry in vanilla SkyAndSun.con does
+    # not count -- which is also what makes `cloud_mesh` a reliable
+    # clouds-exist signal: only a mod that genuinely creates the cloud
+    # template (bf1918, FHSW, ...) leaves an active `GeometryTemplate.create
+    # ... Cloud` + `.file` pair.
+    geometry_files: dict[str, str | None] = {}
+    active_geometry: str | None = None
     # `ObjectTemplate.create LensFlare <name>` opens a block: every
     # `ObjectTemplate.*` line after it belongs to that template until the next
     # `create`. `Object.create <template>` / `Object.name <name>` then makes
@@ -2886,10 +2922,15 @@ def parse_init_con(text: str, info: LevelInfo) -> None:
         if ns == "objecttemplate":
             if cmd == "create":
                 # Any other `create` closes the flare block, whatever it makes.
+                # A second `create` of a name makes nothing and leaves no
+                # template open (LOAD-1), so the lines after it configure
+                # nothing: Montblainville's `include Lenz.con` re-creates
+                # `TSun` after `SkyAndSun.con` has created it (and its
+                # `Object.create TSun` already stands).
                 active_flare = None
-                if len(tokens) >= 2 and tokens[0].lower() == "lensflare":
-                    active_flare = info.lens_flares.setdefault(
-                        tokens[1], LensFlare(name=tokens[1]))
+                if len(tokens) >= 2 and tokens[0].lower() == "lensflare" \
+                        and tokens[1].lower() not in {k.lower() for k in info.lens_flares}:
+                    active_flare = info.lens_flares[tokens[1]] = LensFlare(name=tokens[1])
                 continue
             if active_flare is None:
                 continue
@@ -2918,12 +2959,16 @@ def parse_init_con(text: str, info: LevelInfo) -> None:
                 pending_object_template = None
             continue
         if ns == "geometrytemplate" and cmd == "create" and len(tokens) >= 2:
-            pending_geometry_create = tokens[1]
+            name = tokens[1].lower()
+            active_geometry = None if name in geometry_files else name
+            if active_geometry is not None:
+                geometry_files[active_geometry] = None
         elif ns == "geometrytemplate" and cmd == "file" and tokens:
-            pending_geometry_file = tokens[0].replace("\\", "/").rsplit("/", 1)[-1]
-            if pending_geometry_create and pending_geometry_create.lower() == "cloud":
-                info.sky.cloud_mesh = pending_geometry_file
-            pending_geometry_create = None
+            if active_geometry is not None:
+                geometry_file = tokens[0].replace("\\", "/").rsplit("/", 1)[-1]
+                geometry_files[active_geometry] = geometry_file
+                if active_geometry == "cloud":
+                    info.sky.cloud_mesh = geometry_file
         elif ns == "renderer":
             # Live console words only — confirmed against BF1942.exe string table
             # and Setup registrars (fogStart 0x008cf99c, fogEnd 0x008cfa0c,
@@ -2980,8 +3025,8 @@ def parse_init_con(text: str, info: LevelInfo) -> None:
                 except ValueError:
                     pass
             elif cmd == "initsky":
-                if pending_geometry_file:
-                    info.sky.mesh = pending_geometry_file
+                if geometry_files.get("skybox"):
+                    info.sky.mesh = geometry_files["skybox"]
             elif cmd == "setrotangle" and tokens:
                 info.sky.rot_angle = float(tokens[0])
             elif cmd == "changeofsskyheight" and tokens:
@@ -3712,11 +3757,19 @@ def parse_area_con(text: str) -> AreaSoundTemplate | None:
     return found[-1] if found else None
 
 
-def _find_template_sound_script(template_name: str, library, objects) -> tuple[str, str] | None:
+def _find_template_sound_script(template_name: str, library, objects,
+                                shadowed=()) -> tuple[str, str] | None:
     """Find loadSoundScript in template tree (template itself or any child).
 
     Returns (source_con_path, script_path) if found, None otherwise.
     Walks the template tree breadth-first to find the first sound script.
+
+    `shadowed` holds the lower-case names the level declares itself (its
+    `Sounds/*.con`). Those are the level's objects, not the library's: the
+    level's `Init.con` runs before the mod's `objects/` (LOAD-2) and the
+    first `create` of a name owns it (LOAD-1), so the walk neither stops at
+    one nor descends into the library's copy; `discover_level_sounds`'
+    level-template pass emits them.
     """
     if library is None or objects is None:
         return None
@@ -3727,7 +3780,7 @@ def _find_template_sound_script(template_name: str, library, objects) -> tuple[s
     while queue:
         current = queue.pop(0)
         key = current.lower()
-        if key in visited:
+        if key in visited or key in shadowed:
             continue
         visited.add(key)
 
@@ -3776,6 +3829,12 @@ def _level_sound_children(template: str, library,
     craft by). A static's emitter carries only the height, as a building's
     sound does; an emitter on a spawned object (`discover_level_sounds`'
     `spawned`) carries all three.
+
+    A child the level declares is the level's even where the library has a
+    template of that name too: the level's `Init.con` declares it first
+    (LOAD-2) and the mod's later `create` makes nothing (LOAD-1). BF1918
+    ships `objects/Ambiente/bird.con` and Battle of Leget its own
+    `Sounds/birds.con`.
     """
     if library is None:
         return []
@@ -3796,7 +3855,7 @@ def _level_sound_children(template: str, library,
             lx, ly, lz = ref.position
             below = (px + lx * cos_y + lz * sin_y, py + ly,
                      pz - lx * sin_y + lz * cos_y)
-            if ref.template.lower() in templates and library.object(ref.template) is None:
+            if ref.template.lower() in templates:
                 out.append((ref.template.lower(), below))
             else:
                 queue.append((ref.template, below,
@@ -3991,11 +4050,22 @@ def discover_level_sounds(files: LevelFiles, static_objects: list[StaticInstance
 
         for inst, modes in placements:
             template_key = inst.template.lower()
+            # A template the level declares in its own `Sounds/*.con` is the
+            # level's object, and step 3 has emitted it: one `Object.create`
+            # is one object of one template. The mod library's template of
+            # the same name never exists on this level, because the level's
+            # `Init.con` declares first (LOAD-2) and the mod's later `create`
+            # makes nothing (LOAD-1). BF1918's `objects/Ambiente/water1.con`
+            # (a 25..550 m ramp) doubled every one of Battle of Leget's 48
+            # `water1` (10..40 m) at the same point.
+            if template_key in templates:
+                continue
 
             # Check cache first
             if template_key not in template_sounds:
                 # Find sound script in this template or its children
-                script_info = _find_template_sound_script(inst.template, library, objects)
+                script_info = _find_template_sound_script(
+                    inst.template, library, objects, shadowed=templates)
                 if script_info is None:
                     template_sounds[template_key] = None
                     continue
