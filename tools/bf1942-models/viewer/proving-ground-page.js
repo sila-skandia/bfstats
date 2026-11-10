@@ -323,6 +323,30 @@ const esc = s => String(s ?? '').replace(/[&<>"]/g, c => ({ '&': '&amp;', '<': '
  * `occupancy`, `hullOpenTo(root, team)`, `isWreck(root)`, `spawnSeat`,
  * `enterVehicle`, `exitSeat`, `snapPresentation`, `capture()`, `release()`.
  */
+/**
+ * The best fighter of `nodes` standing for `role` (`airfield`, `enemyAir`):
+ * the first by `fighterRank`, wrecks left out. `nodes` is the level's
+ * vehicles for its lifetime (`level.mapVehicles`), the hulls being flown
+ * among them: the spawners group loses a hull while anyone drives it, so the
+ * best fighter read off it was the next type down as soon as you or the ace
+ * took off, and on Desert Combat the live fight fitted both F-16s as MiG-29s
+ * (features/dogfight-lessons-jets/live-fight.md, "Checked in a page").
+ */
+export function bestFighter(nodes, role, isWreck = () => false) {
+  const of = [...nodes].filter(n => n?.userData?.provingGround === role && !isWreck(n));
+  of.sort((a, b) => fighterRank(a.name) - fighterRank(b.name));
+  return of[0] ?? null;
+}
+
+/**
+ * The node a seat's scratch airframe is cloned from: the hull the seat's
+ * pilot sits in, once that is an aircraft, else `parked()` (the plane they
+ * will be put in). The live fight's fits and its lines fly this airframe.
+ */
+export function seatNode(vehicle, parked) {
+  return vehicle?.kind === 'air' && vehicle.node ? vehicle.node : parked();
+}
+
 export function createProvingGroundPage(page) {
   const root = new THREE.Group();
   root.name = 'provingGroundInstruments';
@@ -1505,11 +1529,11 @@ export function createProvingGroundPage(page) {
    *  range does (the front end's DOGFIGHT SCHOOL). */
   let wantSchool = page.wantSchool ?? null;
 
-  /** The battle's best fighter on a side's airfield (`airfield`, `enemyAir`). */
+  /** The battle's best fighter on a side's airfield (`airfield`, `enemyAir`),
+   *  flying or parked: the level's vehicles for its lifetime, not the parked
+   *  rows a hull leaves while it flies (`bestFighter`). */
   function fighterOn(role) {
-    const nodes = (page.level.spawnersRoot?.children ?? []).filter(n => n.userData?.provingGround === role && !page.isWreck?.(n));
-    nodes.sort((a, b) => fighterRank(a.name) - fighterRank(b.name));
-    return nodes[0] ?? null;
+    return bestFighter(page.level.mapVehicles ?? page.level.spawnersRoot?.children ?? [], role, n => !!page.isWreck?.(n));
   }
 
   // --- your plane ----------------------------------------------------------------
@@ -1655,7 +1679,13 @@ export function createProvingGroundPage(page) {
     // four times a second. Fresh each flight: an airframe reused carries its
     // servos and engines over from the last one and flies differently
     // (`tests/test_dogfight_school.py`). The clone shares its geometry.
-    const airframe = { 0: () => fighterOn('enemyAir') ?? fighterOn('airfield'), 1: () => myPlane() };
+    // Once seated, each is the hull its pilot sits in (`seatNode`): a hull
+    // taken leaves the parked rows, and the best one parked is then another
+    // type (on Desert Shield both F-16s flew fitted as MiG-29s).
+    const airframe = {
+      0: () => seatNode(page.aceBot?.()?.vehicle, () => fighterOn('enemyAir') ?? fighterOn('airfield')),
+      1: () => seatNode(page.aircraft ? { kind: 'air', node: page.occupancy?.root } : null, myPlane),
+    };
     dogfight = createDogfightLive({
       makePlane: i => new Aircraft(airframe[i]().clone(true), null, schoolFrame()),
       planeName,

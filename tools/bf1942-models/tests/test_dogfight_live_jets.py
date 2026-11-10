@@ -13,6 +13,7 @@ same sides. The Spitfire's side is held in `test_dogfight_school.py`
 from __future__ import annotations
 
 import unittest
+from pathlib import Path
 
 from jet_school import jet_live
 
@@ -72,6 +73,48 @@ class LiveFightOnAJetTests(unittest.TestCase):
 
     def test_a_seat_that_cannot_be_built_is_flown_as_the_spitfire(self) -> None:
         self.assertEqual([{"hand": None, "pace": 1, "gun": None}] * 2, self.live["broken"])
+
+
+class TheRangeFitsTheHullFlownTests(unittest.TestCase):
+    """Found in a page (live-fight.md, "Checked in a page"): on Desert Shield
+    the Range fitted each seat on the best fighter still parked, and a hull
+    being flown leaves the parked rows, so both F-16s were fitted as the
+    MiG-29 parked beside them. A seat is now fitted on the hull its pilot
+    sits in (`proving-ground-page.js` `seatNode`), and the best fighter is
+    read off the level's vehicles, flown or parked (`bestFighter`)."""
+
+    @classmethod
+    def setUpClass(cls) -> None:
+        cls.seat = jet_live()["seat"]
+
+    def test_the_ace_in_an_f16_is_fitted_as_the_f16(self) -> None:
+        self.assertEqual({"type": "F16", "hand": {"pitch": 2.5}, "pace": 1.28}, self.seat["seated"])
+
+    def test_the_parked_rows_alone_give_the_wrong_jet(self) -> None:
+        # What the Range fitted before: the MiG-29's hand and pace on the F-16.
+        self.assertEqual({"type": "Mig29", "hand": {"pitch": 2.6}, "pace": 1.5}, self.seat["parkedBest"])
+
+    def test_off_an_aircraft_the_seat_is_the_best_fighter(self) -> None:
+        self.assertEqual(("F16_4", "F16_4"), (self.seat["onFoot"], self.seat["noVehicle"]))
+        self.assertEqual("F16_4", self.seat["levelBest"])
+        self.assertEqual("Mig29_5", self.seat["wrecked"])
+        self.assertIsNone(self.seat["otherRole"])
+
+    def test_the_range_builds_its_airframes_with_the_levels_collision_meshes(self) -> None:
+        # `schoolFrame` reads `page.hullBodies`, which map.html did not hand
+        # the Range: its airframes took their box from the drawn mesh, and an
+        # F-16 measured 2.8 and 1.34 in the page, not the 2.5 and 1.28 of the
+        # plane you sit in. The page wiring itself, read from the source.
+        viewer = Path(__file__).resolve().parents[1] / "viewer"
+        page = (viewer / "map.html").read_text(encoding="utf-8")
+        start = page.index("createProvingGroundPage({")
+        self.assertIn("get hullBodies() { return hullBodies; }", page[start:start + 1500])
+        pg = (viewer / "proving-ground-page.js").read_text(encoding="utf-8")
+        self.assertIn("collisionMeshes: page.hullBodies?.collisionMeshes", pg)
+        build = pg[pg.index("async function buildDogfight()"):]
+        build = build[:build.index("createDogfightLive(")]
+        self.assertIn("0: () => seatNode(page.aceBot?.()?.vehicle", build)
+        self.assertIn("1: () => seatNode(page.aircraft", build)
 
 
 if __name__ == "__main__":

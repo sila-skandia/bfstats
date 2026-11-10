@@ -3268,6 +3268,9 @@ const roundEnd = createRoundEnd(bag(
 const provingPage = PROVING ? createProvingGroundPage({
   get scene() { return scene; }, get camera() { return camera; }, get guns() { return guns; },
   get level() { return level; }, get damageVisuals() { return wrecks.damageVisuals; },
+  // The level's collision meshes: the school's scratch airframes take their
+  // box from them, as the plane you sit in does (`schoolFrame`, COL-14).
+  get hullBodies() { return hullBodies; },
   stage: document.getElementById('stage'),
   isLocalGroup: group => !group?.replay && provingLocalRound(group),
   handGroup: () => (optOnFoot.checked && localPlayer.soldier && !localPlayer.soldierDead

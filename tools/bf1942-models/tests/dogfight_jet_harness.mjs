@@ -130,6 +130,32 @@ if (flag('--live')) {
   out.era.after = lessonById('boom-and-zoom').era ?? null;
   // A seat whose airframe cannot be built is flown as the Spitfire.
   out.broken = fitSeats(() => { throw new Error('no airframe'); });
+  // Which airframe the Range fits a seat on (`proving-ground-page.js`
+  // `seatNode`, `bestFighter`), as Desert Shield's enemy row stands once the
+  // ace has taken off in its F-16: the hull flown has left the parked rows,
+  // and a MiG-29 is the best one left there.
+  {
+    const { seatNode, bestFighter } = await load('proving-ground-page.js');
+    const node = (name, role) => ({ name, userData: { provingGround: role } });
+    const f16 = node('F16_4', 'enemyAir'), mig = node('Mig29_5', 'enemyAir'), a10 = node('A10_B_6', 'enemyAir');
+    const level = [a10, f16, mig];
+    const parked = [a10, mig];
+    const makerOf = n => jetMaker(THREE, Aircraft, fixture, n.name.replace(/_\d+$/, ''));
+    const fitOn = n => { const fits = fitSeats(() => makerOf(n)()); return { type: n.name.replace(/_\d+$/, ''), hand: fits[0].hand, pace: fits[0].pace }; };
+    out.seat = {
+      // Seated: the hull the ace sits in, whatever is parked.
+      seated: fitOn(seatNode({ kind: 'air', node: f16 }, () => bestFighter(parked, 'enemyAir'))),
+      // Before the fix: the best fighter read off the parked rows.
+      parkedBest: fitOn(bestFighter(parked, 'enemyAir')),
+      // Not yet in an aircraft (on foot, or walking to one): the parked best.
+      onFoot: seatNode({ kind: 'land', node: a10 }, () => bestFighter(level, 'enemyAir')).name,
+      noVehicle: seatNode(null, () => bestFighter(level, 'enemyAir')).name,
+      // Over the level's vehicles the hull flown is still the best.
+      levelBest: bestFighter(level, 'enemyAir').name,
+      wrecked: bestFighter(level, 'enemyAir', n => n === f16).name,
+      otherRole: bestFighter(level, 'airfield'),
+    };
+  }
   console.log(JSON.stringify(out));
   process.exit(0);
 }

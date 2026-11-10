@@ -1034,6 +1034,9 @@ export function createDogfightLive(page) {
         you: stateOf(page.playerDrive()?.state)?.position?.map(Math.round) ?? null,
         him: stateOf(live.bot?.vehicle?.drive?.state)?.position?.map(Math.round) ?? null,
         aceSpeed: Math.round(len(stateOf(live.bot?.vehicle?.drive?.state)?.velocity ?? [0, 0, 0])),
+        youSpeed: Math.round(len(stateOf(page.playerDrive()?.state)?.velocity ?? [0, 0, 0])),
+        // The types the two sit in, by template, as the page names them.
+        aceType: typeOf(live.aceRoot), youType: typeOf(page.playerRoot?.()),
         fire: !!live.aceOut?.fire, t: +live.t.toFixed(1), gun: live.aceGun ?? null,
         fits: live.fits.map(f => ({ hand: f.hand, pace: f.pace, gun: f.gun })), era: live.era,
         guide: guide.state,
@@ -1148,6 +1151,9 @@ export function guideToYou(say) {
 function clone(v) {
   try { return structuredClone(v); } catch { return JSON.parse(JSON.stringify(v)); }
 }
+
+/** A vehicle node's template: its name without the instance's `_<n>`. */
+const typeOf = node => (node?.name ? String(node.name).replace(/_\d+$/, '') : null);
 
 function isUnder(node, root) {
   for (let n = node; n; n = n.parent) if (n === root) return true;

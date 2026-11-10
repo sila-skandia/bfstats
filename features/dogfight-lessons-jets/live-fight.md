@@ -1,6 +1,7 @@
 # The live fight on a jet
 
-Status: **fitted** (2026-11-10). FLY IT on the Range (`viewer/dogfight-live.js`)
+Status: **fitted, and checked in a page** (2026-11-11: "Checked in a
+page", where two bugs in the Range's wiring were found and fixed). FLY IT on the Range (`viewer/dogfight-live.js`)
 now fits its two seats to their airframes the way the school's recorded duels
 do (`dogfight-duel.js` `runDuel`, `dogfight-fight.js` `runFight`; the README's
 "What a jet is to the school").
@@ -68,8 +69,9 @@ the start object itself, `pilotView(1)` returns each value it is given,
 `handed` returns the state itself, and `seatGun` and the pilot's gun are
 `gunOf` of the same gun as before. `setEra(null)` is the default era.
 
-`proving-ground-page.js` was not touched: its `makePlane(i)` already builds
-the ace's (0) and your (1) airframes.
+`proving-ground-page.js` was not touched then: its `makePlane(i)` builds
+the ace's (0) and your (1) airframes. Which hull each was built from was
+wrong in the page, and is fixed since ("Checked in a page").
 
 ## How it is checked
 
@@ -107,7 +109,85 @@ the ace's (0) and your (1) airframes.
   own cannon. The rounds are still the bot's world weapons, and the hits on
   you are still counted against `KILL_HITS` (22), which was written for the
   wing guns' stream.
-- **Not checked in a page.** No browser was used for this change. The page
-  wiring (`refit` at `start` and `place`, and the lesson read again when the
-  era changes) is covered only by reading the code, not by a run on the
-  Range.
+- **The ace's type on the Range is not the school's.** The school's FLY IT
+  says you fly "against the ace it was measured against", and its page
+  draws Desert Shield as F-16 against MiG-29 (`aceAgainst`). The Range parks
+  every type of the battle on both rows, and the ace bot takes the best
+  fighter on the enemy's (`map.html` `pilotBots`, `fighterRank`): on Desert
+  Combat that is always an F-16, so the live fight is F-16 against F-16
+  whatever you fly. The fits follow the hull actually flown, so this is a
+  question of which jet, not of a wrong fit.
+- **The scissors' guide is the Spitfire's Ninja** (`scNinja`, the lesson's
+  counter), which the jet file's own measures put at 0 of 9. In the page
+  the instructor flying it took your F-16 up to about 1,000 m and down to 27 m/s.
+- **Not flown by hand.** The runs below fly your seat with the instructor
+  (I), not a person with a stick.
+
+## Checked in a page (2026-11-11)
+
+Headless Chrome (SwiftShader) on the served working tree, the Range at the
+address the school's FLY IT builds:
+`map.html?proving=1&map=DC_DesertShield&team=2&botCount=1&botSkill=0.5&mod=desertcombat&spawn=FiringLine&arena=dogfight&dogfight=<lesson>`
+(plus `&move=dip`, `&mute&shots`), the instructor flying your seat, 30 s of
+fight each at about 0.8 fight seconds a wall second. The probe is the page's
+`__provingGround.dogfight.state`, which now also gives `youSpeed`,
+`aceType` and `youType`.
+
+**Two bugs, found on the first run and fixed** (`proving-ground-page.js`,
+`map.html`): both seats were fitted `hand.pitch` 2.8, pace 1.34, when the
+F-16 is 2.5 and 1.28.
+
+- **The wrong airframe.** The Range fitted each seat on the best fighter
+  still parked, and a hull being flown leaves the parked rows: once you
+  and the ace had taken off in the two F-16s, both seats were fitted (and
+  the lines and the ways out flown) on the MiG-29 parked beside them, and
+  the arena bar named your plane as the MiG-29. A seat is now fitted on the
+  hull its pilot sits in (`seatNode`), and the best fighter is read off
+  the level's vehicles for its lifetime (`level.mapVehicles`,
+  `bestFighter`).
+- **No collision meshes.** `schoolFrame` reads `page.hullBodies`, which
+  map.html never handed the Range, so its scratch airframes took their box
+  from the drawn mesh (an F-16 measured 2.6 and 1.25, a MiG-29 2.8 and
+  1.34) while the plane you sit in flies the header's. map.html now passes
+  it.
+
+`tests/test_dogfight_live_jets.py` `TheRangeFitsTheHullFlownTests` holds
+both: the ace in an F-16 beside a parked MiG-29 is fitted 2.5 and 1.28
+(the parked rows alone give the MiG-29's 2.6 and 1.5), and the page wiring.
+
+After the fix, F-16 against F-16:
+
+| | Scissors | Boom and zoom | On their tail | On their tail, the Dip |
+|---|---|---|---|---|
+| Era, fits (both seats) | jet; 2.5, 1.28, cannon 1,000 m/s | the same | the same | the same |
+| Ace's plan | `jetScAce`, memory `lead` 0.8 | `bzAce`, `burst` 1.1 | `otAce` | `otAce`, guide `jetOtLeave` |
+| Ace placed (over the floor) / speed | 384 m, 59 m/s (lesson 300, 44) | 870 m, 79 (lesson 680, 58) | 384 m, 69 (300, 52) | the same |
+| You placed / speed | 384 m, 69 m/s (300, 52) | 359 m, 74 (280, 56) | 410 m, 93 (320, 72) | the same |
+| Ace's phases | reverse, shoot 2.8, reverse 3.7, cross 5.5, chase 6.2, evade 28.2 | dive, zoom 5.1, clear 10.7, reverse 17.5, dive 19.7, let-go 23.7 | watch, break 2.7 and on | watch, break 2.6 and on |
+| Ace's height / farthest from the range's middle | 377 to 849 m / 1.4 km | 591 to 1,130 m / 1.3 km | 384 to 636 m / 250 m | the same |
+| Hits | none | none | none | none; 1.9 km apart at 28 s |
+
+- Every start is the lesson's at 1.28, the boom and zoom perch 870 m (under
+  900). The Dip run is `dogfight_jet_harness.mjs on-his-tail --trace dip`
+  flown in the page: the break at 2.7 s, the ace holding its break climbing
+  through 640 m by 30 s, 1,967 m apart at 30 s off the page and 1,904 at
+  28 s in it.
+- Nobody flew into the ground or past the fence (2.6 km). The ace's long
+  "break" on their tail is the plan's, the same off the page. Boom and
+  zoom's ace climbing to 1,130 m and 34 m/s at the top is the README's
+  open "over the top of the sky".
+- The coach's lines are the jet files': "the nose takes most of a second to
+  answer" (scissors), "wings level, full throttle (W), nose a little down"
+  (on their tail).
+- No page errors, no console errors from the school.
+- **Vanilla** (Battle of Britain, Spitfire against Spitfire, scissors and
+  boom and zoom, 20 s): era null, both fits `{ hand: null, pace: 1, gun:
+  null }`, starts as written (300 m at 44 and 52 m/s; the perch at 680),
+  the wing guns (400 m/s, 2.6 m span, 1.6 degrees in), `scAce` and `bzAce`
+  with no burst.
+- **A different plane** (the A-10 picked, scissors, 15 s): the ace still
+  flies the F-16 (above); your seat is fitted on the A-10 you sit in
+  (2.5, 1.15, its own 900 m/s cannon) and placed at 1.15 (345 m, 60 m/s)
+  while the ace starts at 1.28; the era is the ace's, jet. `refit` at
+  `place` reads the airframes the two sit in, so the seats differ and both
+  are right.
