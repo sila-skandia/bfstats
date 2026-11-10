@@ -7,7 +7,7 @@
 // top while the air still holds it, and comes straight back down at you.
 
 import { PLANS, INTENTS, go, heading, climbing, leadPursuit, easedClimb, turnToward } from './dogfight-pilot.js';
-import { pointNose, sub, add, unit, pitchOf, bankOf } from './dogfight-flight.js';
+import { pointNose, sub, add, unit, pitchOf } from './dogfight-flight.js';
 import { seenHeight, atRoof } from './dogfight-jet-ceiling.js';
 
 /**
@@ -75,17 +75,21 @@ INTENTS.jetUoDip = { chase: 'attack', 'dip-shot': 'attack', 'dip-pass': 'defend'
 //
 // Every jet pilot's answer goes under the roof in `stepPilot`
 // (`dogfight-jet-ceiling.js` `underRoof`), so this plan no longer puts its
-// own answers under it. It opts out (`roof: false`) where the roof would
-// spoil what it means to do:
-//   - the pull, which ends at `OVER_AT`, under the roof anyway. The roof's
-//     lead held the MiG-29's pull to 46 degrees, and a loop from that shallow
-//     a climb went up to 883 m; left alone it pulls to 53 degrees and tops
-//     out at 775 m. The F-16's pull reaches 72 degrees either way.
-//   - the loop, from `over` until it is out of its back half (`pounce` while
-//     still on its back). Rolled upright at the top by the roof, the MiG-29
-//     did not come back down at all and flew on level at 850 m.
-//   - the recovery, nose 35 degrees down. The roof cut its throttle and put
-//     the nose on the climb it allows, and the ace fell to 27 m/s.
+// own answers under it. The roof caps how hard a pull goes toward the sky
+// and takes the throttle off a nose well over the climb it allows; it leaves
+// a loop that fits under it, and an inverted plane, alone. The plan opts out
+// (`roof: false`) where that still spoils what it means to do:
+//   - the pull, which ends at `OVER_AT`, under the roof anyway. Capped, the
+//     MiG-29's pull reaches only 44 degrees and its Dip works 3 of 9; left
+//     alone it pulls to 53 degrees and loops over at 775 m. The F-16's pull
+//     reaches 72 degrees either way.
+//   - the loop, from `over`.
+//   - the recovery, nose 35 degrees down at full throttle: with the throttle
+//     off the F-16 ace fell to 33 m/s, out of the roof never under 44.
+// And the zoom back up off a pounce climbs at `ZOOM_MAX` at most: a pounce
+// up at you pitched the F-16 to 74 degrees at 600 m, too steep for the thin
+// air to bring back, and the ace either climbed on to 1,154 m (full throttle)
+// or hung at 9 m/s (the roof's throttle off).
 
 /** The real height the pull goes over the top at, metres (`mem.overAt`,
  *  also real metres: it is where the air is, not a size of the fight). */
@@ -94,6 +98,8 @@ const OVER_AT = 550;
 const JET_SLOW = 45;
 /** ... and pulls again once back over this. */
 const JET_AGAIN = 60;
+/** The steepest the zoom back up off a pounce climbs, degrees. */
+const ZOOM_MAX = 35;
 const RECOVER = 'Too slow: nose down for speed';
 
 function jetUp(name) {
@@ -117,9 +123,10 @@ function jetUp(name) {
         return { ...pointNose(me, climbing(heading(me.velocity), -35), { fine: 10, push: 0.7 }), throttle: 1, aimed: false, say: RECOVER, roof: false };
       }
       if (mem.phase === 'pull') return { ...out, roof: false };
-      // Coming out of the top of the loop on their back: still the loop.
-      if (mem.phase === 'pounce' && mem.jetLoop && bankOf(me.orientation).inverted) return { ...out, roof: false };
-      if (mem.phase !== 'over') { mem.jetLoop = undefined; return out; }
+      if (mem.phase !== 'over') mem.jetLoop = undefined;
+      // Back up off the pounce, no steeper than `ZOOM_MAX`.
+      if (mem.phase === 'zoom' && pitch > ZOOM_MAX) return { ...out, ...pointNose(me, climbing(heading(me.velocity), ZOOM_MAX), { fine: 6 }) };
+      if (mem.phase !== 'over') return out;
       // A steep climb no higher than the pull's goes over the top in the
       // loop; any other turns back to them level or nose down (the shared
       // roof over it).
