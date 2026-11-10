@@ -913,10 +913,18 @@ MOD_NOTE = (
 # `Submarine/DepthHud/DepthHudAlpha` (top 15) and the gauges under
 # `Submarine/ShowSubmarine` (top 41). A mod whose menu/InGame lacks one gets
 # an empty group.
+#
+# A group is every top that carries one of its pictures or variables, in file
+# order: BF1918 splits vanilla's top 4 in two, the periscope (its top 4) and
+# the cockpit picture (its top 5), and the cockpit is what the deep view
+# frames the map with (SUB-4). A mod's menu/InGame also folds the capture
+# flag's SplitNode into the deep fade's (BF1918's top 13); `find_nested`
+# already gave those leaves to `supplyIcon`, so a leaf another group holds is
+# not repeated here (it drew the flag twice).
 SUBMARINE_TOPS = {
-    "periscope": "Submarine/periscope.tga",
-    "depthFade": "Submarine/DepthHud/DepthHudAlpha",
-    "submarine": "Submarine/sub_deapth_panel_32x64.tga",
+    "periscope": ("Submarine/periscope.tga", "Submarine/cockpit_512x512.tga"),
+    "depthFade": ("Submarine/DepthHud/DepthHudAlpha",),
+    "submarine": ("Submarine/sub_deapth_panel_32x64.tga",),
 }
 
 
@@ -1000,10 +1008,19 @@ def decode_hud(ingame: bytes, lexicon: dict[str, str],
         "outside": raw["outside"],
         **{key: raw[key] for key in RESPAWN_GROUPS},
     }
-    for key, needle in SUBMARINE_TOPS.items():
-        top = find_top_mentioning(root, needle)
-        groups[key] = flatten([top], lexicon) if top is not None else []
-        if top is None:
+    order = {id(top): i for i, top in enumerate(root.chain())}
+    for key, needles in SUBMARINE_TOPS.items():
+        tops: list[meme.Obj] = []
+        for needle in needles:
+            top = find_top_mentioning(root, needle)
+            if top is not None and all(top is not t for t in tops):
+                tops.append(top)
+        tops.sort(key=lambda top: order.get(id(top), 0))
+        held = {json.dumps(el, sort_keys=True)
+                for elements in groups.values() for el in elements}
+        groups[key] = [el for el in flatten(tops, lexicon)
+                       if json.dumps(el, sort_keys=True) not in held] if tops else []
+        if not tops:
             absent.append(key)
 
     out_groups = {}

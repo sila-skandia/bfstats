@@ -18,9 +18,9 @@ What is pinned, every expected number from the law's own algebra:
 * at setpoint 0 she floats with `t` saturated:
   `depth = |g| H / (8 x 1.5 x floatMaxLift) = 14.73 x 3.3 / 19.53 = 2.489`;
 * the setpoint stops at 50 and comes back to 0 on the other arrow;
-* a root that has gone to sleep (TANK-21) does not dive until it wakes: the
-  floats run only while the root is awake, and nothing but the engine or a
-  contact wakes it;
+* a root that has gone to sleep (TANK-21) wakes on the key: a float whose
+  angle term is not 0 wakes the root before it reads its sleep (SUB-7), so a
+  boat stopped under water stays awake and surfaces on the other arrow;
 * a hull whose floats author no key axis has no setpoint.
 """
 
@@ -86,11 +86,26 @@ class ShipDiveTests(unittest.TestCase):
     def test_the_setpoint_stops_at_fifty(self) -> None:
         self.assertEqual(self.out["bottomed"]["setpoint"], 50)
 
-    def test_a_sleeping_root_does_not_dive(self) -> None:
+    def test_the_dive_key_wakes_a_sleeping_root(self) -> None:
+        # `PhysicsFloatingBundle::updatePhysics` wakes the root whenever the
+        # float's angle term is not 0 (SUB-7), before it reads the sleep.
         asleep = self.out["asleep"]
-        self.assertEqual(asleep["sleepiness"], 0)
+        self.assertEqual(asleep["slept"], 0)
+        self.assertGreater(asleep["sleepiness"], 0)
         self.assertGreater(asleep["setpoint"], 5)
-        self.assertEqual(asleep["moved"], 0)
+        self.assertLess(asleep["moved"], -1)
+
+    def test_stopped_under_water_she_stays_awake_and_surfaces_on_the_key(self) -> None:
+        deep = self.out["stoppedDeep"]
+        self.assertGreater(deep["sleepiness"], 0)
+        self.assertAlmostEqual(deep["depth"], deep["setpoint"] + 0.5, delta=0.05)
+        # The other arrow runs the setpoint back to 0 and she climbs while it
+        # does. Once it is 0 the floats no longer wake her, and this hull's
+        # box (the Daihatsu's, not a Gato's) climbs at 0.37 m/s, under the
+        # sleep test's 0.5: she sleeps on the way up, as TANK-21 has it.
+        up = self.out["stoppedSurfaced"]
+        self.assertEqual(up["setpoint"], 0)
+        self.assertLess(up["depth"], deep["depth"] - 3)
 
     def test_a_hull_without_a_trimmed_float_has_no_setpoint(self) -> None:
         self.assertIsNone(self.out["daihatsu"]["setpoint"])

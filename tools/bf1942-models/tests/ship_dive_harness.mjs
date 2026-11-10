@@ -90,14 +90,28 @@ function drive(ship, seconds, inputs) {
 
 const out = {};
 
-// Asleep with no way on, the key moves the setpoint and nothing else
-// (TANK-21: the floats run only while the root is awake).
+// Asleep with no way on (TANK-21), then the key: a float whose angle term is
+// not 0 wakes the root (SUB-7), so she goes down with no throttle.
 {
   const ship = make();
   drive(ship, 6, { c_PIThrottle: 0, c_PIPitch: 0 });
   const asleepY = ship.state.position.y;
+  const slept = ship.law.sleepiness;
   drive(ship, 5, { c_PIPitch: 1 });
-  out.asleep = { sleepiness: ship.law.sleepiness, setpoint: ship.diveSetpoint, moved: ship.state.position.y - asleepY };
+  out.asleep = { slept, sleepiness: ship.law.sleepiness, setpoint: ship.diveSetpoint, moved: ship.state.position.y - asleepY };
+}
+
+// Stopped under water: no way on for a minute at her setpoint, she stays
+// awake, and the other arrow brings her back to the surface.
+{
+  const ship = make();
+  drive(ship, 6, { c_PIThrottle: 0, c_PIPitch: 0 });
+  drive(ship, 6, { c_PIPitch: 1 });
+  drive(ship, 60, { c_PIPitch: 0 });
+  out.stoppedDeep = { setpoint: ship.diveSetpoint, depth: floatDepth(ship), sleepiness: ship.law.sleepiness };
+  drive(ship, 10, { c_PIPitch: -1 });
+  drive(ship, 60, { c_PIPitch: 0 });
+  out.stoppedSurfaced = { setpoint: ship.diveSetpoint, depth: floatDepth(ship) };
 }
 
 // Under way: down to a setpoint, held, and back up.

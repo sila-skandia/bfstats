@@ -484,6 +484,9 @@ export class FloatingHull {
     const body = this.body;
     for (const float of this.floats) {
       if (float.sinkRate) { float.sinkOffset += float.sinkRate; body.wake(); }
+      // A float's angle term wakes the hull the same way (0x0824da48,
+      // SUB-7): a submarine left with a dive setpoint never sleeps.
+      if ((float.angle || 0) !== 0) body.wake();
     }
     // **A sleeping ship makes no lift.** `updatePhysics` copies the root's
     // sleepiness and returns before it touches the water, and that early return

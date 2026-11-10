@@ -174,6 +174,34 @@ class ForgottenHopeFlagIconTests(unittest.TestCase):
             self.assertEqual({"var": "ShowFlagIcon", "op": "eq", "value": True}, element["when"][0])
 
 
+BF1918_MENU = DEFAULT_GAME_DIR / "Mods" / "bf1918" / "Archives" / "menu.rfa"
+
+
+@unittest.skipUnless(BF1918_MENU.exists(), "needs the BF1918 install")
+class Bf1918SubmarineGroupTests(unittest.TestCase):
+    """BF1918's menu/InGame splits vanilla's top 4 in two (the periscope, then
+    the cockpit picture in a top of its own) and folds the capture flag's
+    SplitNode into the deep fade's."""
+
+    @classmethod
+    def setUpClass(cls) -> None:
+        from bf42.rfa import RfaArchive
+        with RfaArchive(BF1918_MENU) as arch:
+            data = arch.read(next(e for e in arch.entries if e.lower() == "menu/ingame"))
+        cls.layout = hud.decode_hud(data, lexicon={}, strict=False)
+
+    def textures(self, key: str) -> list:
+        return [e.get("texture") for e in self.layout["groups"][key]["elements"]]
+
+    def test_the_cockpit_picture_is_in_the_periscope_group(self) -> None:
+        self.assertEqual("periscope", self.textures("periscope")[0])
+        self.assertEqual("cockpit_512x512", self.textures("periscope")[-1])
+
+    def test_the_deep_fade_does_not_draw_the_capture_flag_again(self) -> None:
+        self.assertEqual([None], self.textures("depthFade"))
+        self.assertEqual(2, self.textures("supplyIcon").count("icon_flag"))
+
+
 @unittest.skipUnless(GAME_MENU.exists(), "needs the BF1942 install")
 class HudLayoutGoldenTests(unittest.TestCase):
     """Golden checks against vanilla `menu/InGame` -- see
@@ -693,8 +721,9 @@ class DamageIndicatorGoldenTests(unittest.TestCase):
         cls.hud = hud.decode_hud(data, lexicon={})
         cls.tops = {key: hud.find_top(cls.root, sig, rect, True)[0]
                     for key, (sig, rect) in hud.RAW_TOPS.items()}
-        cls.tops.update({key: hud.find_top_mentioning(cls.root, needle)
-                         for key, needle in hud.SUBMARINE_TOPS.items()})
+        # A submarine group's first top: the one its first needle names.
+        cls.tops.update({key: hud.find_top_mentioning(cls.root, needles[0])
+                         for key, needles in hud.SUBMARINE_TOPS.items()})
 
     def hit_chain(self) -> list:
         return self.tops["hitIndicator"]["Split node"].chain()

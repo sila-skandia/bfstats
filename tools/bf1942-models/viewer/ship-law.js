@@ -304,6 +304,15 @@ export function shipTick(ship, law, throttle, yaw, running = true) {
     lift = Math.max(-LIFT_CLAMP, Math.min(LIFT_CLAMP, lift));
     addAt(_r, _a.copy(_up).multiplyScalar(-lift));
   }
+  // A float whose angle term is not 0 wakes the root before it reads the
+  // root's sleep (`PhysicsFloatingBundle::updatePhysics` 0x0824d640: `+0xa0
+  // != 0` -> the root's wake, vt+0xd4, at 0x0824da48; the sink rate `+0xb0`
+  // does the same at 0x0824da20; SUB-7). So a submarine with a setpoint
+  // held never sleeps: a boat stopped under water still answers the dive
+  // keys, and a parked one dives on them.
+  if (law.sleepiness >= 0 && ship.floats?.some(float => (float.angle || 0) !== 0 || float.sinkRate)) {
+    law.sleepiness = SLEEP_TICKS;
+  }
   // The floats, while the root is awake.
   if (law.sleepiness > 0 && Number.isFinite(ship.waterHeight)) {
     for (const float of ship.floats) {
