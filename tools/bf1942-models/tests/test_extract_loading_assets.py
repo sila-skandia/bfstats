@@ -272,6 +272,27 @@ class TestLevelAssetResolver(unittest.TestCase):
         self.assertIsNotNone(source_bg)
         self.assertEqual(source_bg[0], dummy_tga)
 
+    def test_a_level_names_its_own_load_music(self):
+        # BF1918's Galicia: its Menu/Init.con names `music/vehicle3.bik` over
+        # the mod's `vehicle4.bik`, in the file whose setLoadPicture is read.
+        rfa_dir = self.base / "Mods" / "bf1918" / "Archives" / "bf1942" / "levels"
+        rfa_dir.mkdir(parents=True)
+        (rfa_dir / "Galicia.rfa").write_bytes(make_mock_rfa({
+            "bf1942/levels/Galicia/Menu/Init.con": (
+                b"Game.setLoadPicture Load/Galicia.tga\r\n"
+                b"Game.setLoadMusicFilename \"music/vehicle3.bik\"\r\n"),
+        }))
+        (rfa_dir / "Amiens.rfa").write_bytes(make_mock_rfa({
+            "bf1942/levels/Amiens/Menu/Init.con": b"Game.setLoadPicture Load/Amiens.tga\r\n",
+        }))
+        extractor = ela.LoadingAssetExtractor(
+            bf1942_dir=self.base, output_dir=self.base / "viewer" / "maps")
+        mod_dirs = [self.base / "Mods" / "bf1918"]
+        self.assertEqual("music/vehicle3.bik",
+                         extractor.level_load_music("Galicia", mod_dirs))
+        self.assertIsNone(extractor.level_load_music("Amiens", mod_dirs))
+        self.assertIsNone(extractor.level_load_music("Nowhere", mod_dirs))
+
     def test_resolve_eod_loader_tga(self):
         # Create synthetic EoD level RFA containing loader.tga
         dummy_tga = make_dummy_tga(800, 600)

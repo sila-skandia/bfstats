@@ -816,6 +816,60 @@ class LoadingAssetExtractor:
         stem = Path(rel).stem.lower()
         return f"_shared/music/{stem}.mp3", find_mod_music_file(mod_dirs, rel)
 
+    def level_load_music(self, map_name: str, mod_dirs: list[Path]) -> str | None:
+        """The loading cue a level's own `Menu/Init.con` names, or None.
+
+        The level's menu script is the one whose `Game.setLoadPicture` gives
+        the level its picture (LDPIC-1), and its `Game.setLoadMusicFilename`
+        is read the same way: BF1918's Galicia names `music/vehicle3.bik`
+        over the mod's `vehicle4.bik` (LDPIC-3). The nearest mod's copy of
+        the level holds the script, as for the picture.
+        """
+        for mdir in mod_dirs:
+            archives_dir = resolve_case_insensitive(mdir, "Archives")
+            levels_dir = (resolve_case_insensitive(archives_dir, "bf1942/levels")
+                          if archives_dir else None)
+            rfas = find_level_archives(levels_dir, map_name) if levels_dir else []
+            if not rfas:
+                continue
+            # Patch first (`find_level_archives`): the first archive that
+            # ships the script is the copy the engine opens.
+            for rfa_path in rfas:
+                try:
+                    with ArchiveReader(rfa_path) as reader:
+                        entry = reader.find("menu/init.con")
+                        if entry:
+                            cmds = parse_menu_init_con(
+                                reader.read(entry).decode("latin-1", errors="replace"))
+                            return cmds.get("setloadmusicfilename")
+                except Exception as exc:  # a damaged archive keeps the mod's cue
+                    logger.warning("[%s] could not read %s: %s", map_name, rfa_path, exc)
+            return None
+        return None
+
+    def transcode_music(self, mod: str, rel: str) -> str | None:
+        """`rel` (a `music/*.bik` path) transcoded into the tree once; its ref."""
+        stem = Path(rel).stem.lower()
+        music_ref = f"_shared/music/{stem}.mp3"
+        bik_file = find_mod_music_file(self.search_path(mod), rel)
+        if bik_file is None:
+            logger.warning("[%s] %s not found along the mod path", mod, rel)
+            return None
+        dest_mp3 = self.mod_output_dir(mod) / music_ref
+        if self.manifest_only or self.backgrounds_only:
+            return music_ref if dest_mp3.is_file() else None
+        try:
+            if transcode_bik_to_mp3(bik_file, dest_mp3, bitrate="192k",
+                                    overwrite=False, dry_run=self.dry_run):
+                logger.info("[%s] Transcoded level loading audio -> %s", mod, dest_mp3)
+                self.summary.audio_extracted += 1
+        except Exception as exc:
+            msg = f"Failed to transcode {rel} for {mod}: {exc}"
+            logger.error(msg)
+            self.summary.errors.append(msg)
+            return None
+        return music_ref
+
     def extract_audio(self) -> None:
         """Transcode each mod's loading cue (`vehicle4.bik` everywhere) to 192k MP3.
 
@@ -911,10 +965,18 @@ class LoadingAssetExtractor:
                 logger.info("[%s] Extracted level background %s (%dx%d) -> %s", mod, map_name, size[0], size[1], out_path)
                 self.summary.backgrounds_extracted += 1
 
+            # A level's own cue (Galicia's `vehicle3.bik`) over the mod's.
+            level_music = music_ref
+            level_rel = self.level_load_music(map_name, mod_dirs)
+            if level_rel:
+                level_rel = level_rel.replace("\\", "/")
+                if f"_shared/music/{Path(level_rel).stem.lower()}.mp3" != music_ref:
+                    level_music = self.transcode_music(mod, level_rel) or music_ref
+
             record = {
                 "title": title,
                 "background": bg_ref,
-                "music": music_ref,
+                "music": level_music,
                 "theme": theme,
             }
             level_records[slug] = record
