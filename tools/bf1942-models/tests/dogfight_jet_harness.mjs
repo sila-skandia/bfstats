@@ -14,6 +14,9 @@
 //   node tests/dogfight_jet_harness.mjs --tops [--plane Mig29] [--lesson <id>] [--text]
 //       the highest each plane went in every demo and move of every jet
 //       lesson, nine starts each: the roof, school-wide
+//   node tests/dogfight_jet_harness.mjs <lesson> --moves [--demo <id>] [--plane Mig29] [--text]
+//       the lesson's Dip, Flip and Ninja scored as the school scores them,
+//       each of the nine starts with its measures
 //   node tests/dogfight_jet_harness.mjs --guides
 //       the ace and the guide FLY IT gives each jet lesson
 //   node tests/dogfight_jet_harness.mjs <lesson> --steps
@@ -246,6 +249,7 @@ function fly(demo, n) {
   sides[1] = { ...sides[1], start: { ...sides[1].start, at: [sides[1].start.at[0] + dx, sides[1].start.at[1], sides[1].start.at[2]], speed: sides[1].start.speed + dv } };
   return runDuel({ makePlane, seconds, groundAt: () => 0, sides });
 }
+const sidesOf = demo => demoSides(L, demo).map(x => x.plan);
 const sepAt = (r, i) => Math.hypot(...r.tracks[0][i].p.map((v, j) => v - r.tracks[1][i].p[j]));
 
 if (opt('--trace')) {
@@ -261,6 +265,38 @@ if (opt('--trace')) {
   }
   console.log(`end ${JSON.stringify(r.end)} hits ace ${r.hits?.[0]} you ${r.hits?.[1]}`);
   for (const s of [0, 1]) console.log(`${s ? 'you' : 'ace'}: ${r.events.filter(e => e.side === s).map(e => `${e.t.toFixed(1)} ${e.phase}`).join(', ')}`);
+  process.exit(0);
+}
+
+if (flag('--moves')) {
+  // The lesson's Dip, Flip and Ninja (or `--demo <id>`) as the school scores
+  // them (`dogfight-measure.js` `scoreMove` over its nine `STARTS`, as
+  // `movesOn` does): each start's score, how high each plane went, and when
+  // your seat entered each phase.
+  const { STARTS: NINE, nudge, scoreMove, verdictOf } = await load('dogfight-measure.js');
+  const out = { lesson: L.id, plane: opt('--plane', 'F16'), era: L.era ?? null, moves: {} };
+  for (const d of L.demos) {
+    if (opt('--demo') ? d.id !== opt('--demo') : !['dip', 'flip', 'ninja'].includes(d.kind)) continue;
+    const scores = [];
+    for (const st of NINE) {
+      const sides = demoSides(L, d);
+      sides[1] = { ...sides[1], start: nudge(sides[1].start, st) };
+      const r = runDuel({ makePlane, seconds: Number(opt('--seconds', d.seconds ?? L.seconds)), groundAt: () => 0, sides });
+      const last = Math.min(r.tracks[0].length, r.tracks[1].length) - 1;
+      scores.push({ ...scoreMove(r, d.kind ?? 'dip', 1), hits: r.hits, t: r1(r.tracks[1][last].t),
+        top: r.tracks.map(tr => Math.round(Math.max(...tr.map(k => k.p[1])))),
+        height: r.tracks.map(tr => Math.round(tr[last].p[1])), speed: r.tracks.map(tr => Math.round(tr[last].v)),
+        slowest: r.tracks.map(tr => Math.round(Math.min(...tr.map(k => k.v)))),
+        phases: [0, 1].map(i => r.events.filter(e => e.side === i && e.phase !== 'kill').map(e => [e.phase, r1(e.t)])) });
+    }
+    out.moves[d.id] = { ...verdictOf(scores), kind: d.kind ?? null, seat: sidesOf(d), scores };
+  }
+  if (flag('--text')) {
+    for (const [id, m] of Object.entries(out.moves)) {
+      console.log(`${L.id}/${id} (${m.seat.join(' v ')}): ${m.works} of ${m.of}`);
+      for (const x of m.scores) console.log(`  ${x.ok ? 'ok ' : '-- '} end ${String(x.endRange).padStart(5)} m (${x.opening >= 0 ? '+' : ''}${x.opening}) closest ${String(x.minRange).padStart(4)} hits on you ${x.hitsOnMe} on them ${x.hitsOnHim} shot ${x.myShot}/${x.hisShot} top ${x.top.join('/')} end v ${x.speed.join('/')} ${x.end ?? ''} | ${x.phases[1].map(p => p.join('@')).join(' ')}`);
+    }
+  } else console.log(JSON.stringify(out));
   process.exit(0);
 }
 

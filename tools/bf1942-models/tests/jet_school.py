@@ -77,6 +77,18 @@ def jet_tops(plane: str = "F16", lesson: str | None = None) -> dict:
     return _run(*args)["lessons"]
 
 
+@functools.lru_cache(maxsize=None)
+def jet_moves(lesson: str, plane: str = "F16", demo: str | None = None) -> dict:
+    """The lesson's Dip, Flip and Ninja (or `demo`) scored as the school
+    scores them over its nine starts: `{id: {"works", "of", "scores": [..]}}`,
+    each score `scoreMove`'s measures with `top`, `height`, `speed`,
+    `slowest` (`[ace, you]`) and `phases`."""
+    args = [lesson, "--moves", "--plane", plane]
+    if demo:
+        args += ["--demo", demo]
+    return _run(*args)["moves"]
+
+
 def shot_down(runs: list[dict], side: int) -> int:
     """In how many of the runs `side` (0 the ace, 1 you) was shot down."""
     return sum(1 for r in runs if r["winner"] == 1 - side and r["why"] == "shot down")
