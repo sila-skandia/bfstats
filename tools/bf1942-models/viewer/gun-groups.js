@@ -85,6 +85,16 @@ export function traverseOwn(obj, visit) {
   }
 }
 
+/** Whether `node`'s template is in a level's `fireOnce` list (lower case).
+ *  GLTFLoader suffixes a repeated name (`WillyHorn_1`), and some templates
+ *  end in `_<digits>` of their own, so both spellings are asked. */
+export function namedFireOnce(node, names) {
+  if (!names || !names.length || !node?.name) return false;
+  const set = names instanceof Set ? names : new Set(names);
+  const name = String(node.name).toLowerCase();
+  return set.has(name) || set.has(name.replace(/_\d+$/, ''));
+}
+
 /** `GunFire.collect`, which documents the options: index every FireArms under `root`. */
 export function collectGroups(guns, root, options = {}) {
   const {
@@ -99,6 +109,7 @@ export function collectGroups(guns, root, options = {}) {
     spreadDeg = null,
     fireDelay = false,
     fireOnce = false,
+    fireOnceNames = null,
   } = options;
   if (replace) {
     guns.clear();
@@ -335,7 +346,9 @@ export function collectGroups(guns, root, options = {}) {
       // `gun-cycle.js` latches for a group collected with `fireOnce: true`
       // (a seat's gun). A hand weapon's press is `hand-fire.js`'s click
       // pulse, so its group carries false here.
-      fireOnce: fireOnce && stats.fireOnce === true,
+      // A tree baked before the glb carried the word names the gun in its
+      // level's `scene.json` `fireOnce` (`scene_layers.fire_once_templates`).
+      fireOnce: fireOnce && (stats.fireOnce === true || namedFireOnce(obj, fireOnceNames)),
       onceHeld: false,
       delayPending: false,
       delayLeft: 0,

@@ -12,6 +12,7 @@ import assert from 'node:assert/strict';
 import { advanceGroups } from '../viewer/gun-cycle.js';
 import { FIRE_TICK } from '../viewer/fire-timer.js';
 import { SEAT_GUN_OPTIONS } from '../viewer/vehicle-instance.js';
+import { namedFireOnce } from '../viewer/gun-groups.js';
 
 function group(name, { roundOfFire = 1, fireOnce = false } = {}) {
   return {
@@ -71,6 +72,19 @@ test('a hand weapon group is left to hand-fire.js', () => {
   const g = group('GrenadeAllies', { fireOnce: true });
   g.fireOnce = false;
   assert.deepEqual(run(g, 90, () => true), [0, 30, 60]);
+});
+
+test('a glb baked before the word is named by its level', () => {
+  // scene.json `fireOnce` (scene_layers.fire_once_templates), lower case.
+  const names = ['willyhorn', 'elco80_torpedos', 'he111_50'];
+  assert.equal(namedFireOnce({ name: 'WillyHorn' }, names), true);
+  // GLTFLoader's suffix on the second Willy's horn.
+  assert.equal(namedFireOnce({ name: 'WillyHorn_3' }, names), true);
+  // A template that ends in _<digits> of its own is asked whole first.
+  assert.equal(namedFireOnce({ name: 'He111_50' }, names), true);
+  assert.equal(namedFireOnce({ name: 'Browning' }, names), false);
+  assert.equal(namedFireOnce({ name: 'WillyHorn' }, null), false);
+  assert.equal(namedFireOnce({ name: 'WillyHorn' }, []), false);
 });
 
 console.log(`${passed} passed`);

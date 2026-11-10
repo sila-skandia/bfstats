@@ -277,10 +277,10 @@ GeometryTemplate.create TreeMesh Bush_m1
 
     def test_its_own_layer(self) -> None:
         self.assertEqual(scene_layers.LAYERS["meshCull"], (("meshCull",), ()))
-        # After terrainDetail, ahead of envmapTexture (both added 2026-10-17)
-        # and collisionGroups (2026-10-20).
-        self.assertEqual(scene_layers.REPORT_ORDER[-3:],
-                         ("meshCull", "envmapTexture", "collisionGroups"))
+        # After terrainDetail, ahead of envmapTexture (both added 2026-10-17),
+        # collisionGroups (2026-10-20) and fireOnce (2026-11-10).
+        self.assertEqual(scene_layers.REPORT_ORDER[-4:],
+                         ("meshCull", "envmapTexture", "collisionGroups", "fireOnce"))
 
 
 class CollisionGroupTests(unittest.TestCase):
@@ -310,6 +310,36 @@ ObjectTemplate.setHasCollisionPhysics 1
     def test_its_own_layer(self) -> None:
         self.assertEqual(scene_layers.LAYERS["collisionGroups"], (("collisionGroups",), ()))
         self.assertIn("collisionGroups", scene_layers.COMPUTE)
+
+
+class FireOnceTests(unittest.TestCase):
+    """`fireOnce`: the level's FireArms that take one round a press (ledger
+    GUN-22), which the viewer latches on a seat gun baked before the glb
+    carried the word."""
+
+    def test_the_seat_guns_that_say_it_and_no_hand_weapon(self) -> None:
+        from bf42.con import ObjectLibrary
+
+        library = ObjectLibrary()
+        library.add_con("Objects/T/Weapons.con", """
+ObjectTemplate.create FireArms WillyHorn
+ObjectTemplate.magSize -1
+ObjectTemplate.fireOnce 1
+ObjectTemplate.create FireArms Elco80_Torpedos
+ObjectTemplate.fireonce 1
+ObjectTemplate.create FireArms FloatingMineLauncher
+rem ObjectTemplate.altfireOnce 1
+ObjectTemplate.create FireArms Browning
+ObjectTemplate.roundOfFire 10
+ObjectTemplate.create HandFireArms Colt
+ObjectTemplate.fireOnce 1
+""")
+        self.assertEqual(scene_layers.fire_once_templates(library),
+                         ["elco80_torpedos", "willyhorn"])
+
+    def test_its_own_layer(self) -> None:
+        self.assertEqual(scene_layers.LAYERS["fireOnce"], (("fireOnce",), ()))
+        self.assertIn("fireOnce", scene_layers.COMPUTE)
 
 
 class MergeTests(unittest.TestCase):

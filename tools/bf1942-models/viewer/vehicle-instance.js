@@ -183,7 +183,8 @@ function restWheels(drive) {
  *  - `claimAudio(playerId, root, drive, groups)` / `releaseAudio(playerId, root)`;
  *  - `onChange(instance)`: a seat, the drive or the guns changed;
  *  - `destroyOnExit(pcoNode, root)`: a player got out of a seat whose
- *    PlayerControlObject says `destroyOnExit` (ledger SEAT-38).
+ *    PlayerControlObject says `destroyOnExit` (ledger SEAT-38);
+ *  - `fireOnceNames()`: the level's `scene.json` `fireOnce` list (GUN-22).
  * Every hook is optional.
  */
 export class VehicleRegistry {
@@ -481,6 +482,8 @@ export class VehicleRegistry {
     const options = {
       ...SEAT_GUN_OPTIONS,
       platformVelocity: () => inst.drive?.state?.velocity ?? null,
+      // The level's `fireOnce` list (GUN-22), for a glb baked before the word.
+      fireOnceNames: this.env.fireOnceNames?.() ?? null,
     };
     let driven = [];
     if (seatId === inst.rootId && inst.drive) {
