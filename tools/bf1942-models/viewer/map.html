@@ -489,7 +489,6 @@ import { combatMaterial } from './world-fields.js';
 import { kitIndexOf } from './support-calls.js';
 import { createDeployScreen } from './deploy-screen.js';
 import { createSpawning } from './spawning.js';
-import { createReplayDeployView } from './replay-deploy.js';
 import { createMapSurfaces } from './map-surfaces.js';
 import { createTicketFeed } from './ticket-feed.js';
 import {
@@ -3006,17 +3005,9 @@ const spawning = createSpawning(bag(
     get LOCAL_PLAYER() { return LOCAL_PLAYER; }, get params() { return params; },
     get spawnFlagSelect() { return spawnFlagSelect; },
     get round() { return round; },
+    // A replay being watched: the deploy screen never opens over one.
+    watchingRound: () => replayController?.active() ?? false,
   },
-));
-
-// A dead followed player's spawn screen in a replay (replay-deploy.js): this
-// page's deploy screen, borrowed read-only while he waits.
-const replayDeployView = createReplayDeployView(bag(
-  from(() => deployScreen, `deployActive layoutDeploy paintDeployChrome`),
-  from(() => flagCapture, `flags refreshFlags`),
-  from(() => mapSurfaces, `drawFullMap fullmapBox toggleFullMap`),
-  from(() => spawning, `deployChoiceIndex deployFlagIndices deploySpots`),
-  { get spawning() { return spawning; }, get room() { return room; } },
 ));
 
 // A round to play back over the level: `?replay=<recording.ndjson>`, with
@@ -3841,9 +3832,6 @@ replayController = createReplayController({
   levelBriefing: () => level.extras?.briefing ?? null,
   playRoundMusic: kind => pageAudio.playRoundMusic(kind),
   stopRoundMusic: () => pageAudio.stopRoundMusic(),
-  // The page's spawn screen, which a dead followed player's wait opens
-  // read-only (replay-deploy.js).
-  deployView: () => replayDeployView,
 });
 if (replayUrl && !replayRefused) {
   replayController.openFromUrl(params.getAll('replay'), params.get('serverlog'))

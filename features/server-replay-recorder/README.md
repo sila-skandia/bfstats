@@ -532,10 +532,9 @@ the timer carried between two rows of one run. The page's capture rings
 read it in place of their estimate, on the minimap, the full map and the
 HUD, and the battle map (`replay-battlemap.js`) rings a flag from it.
 
-`replay-recording.js` reads `spawnPick` into `rec.spawnPicks`;
-`replay-deploy.js` opens the page's deploy screen read-only over a dead
-followed player's first person, with the ring on his last pick's group and
-his kit row (sweep entry 14).
+`replay-recording.js` reads `spawnPick` into `rec.spawnPicks`, as data only:
+a replay never shows the spawn screen, which would suggest the viewer can
+spawn into a recording (sweep entry 14, removed 2026-11-10).
 
 `replay-recording.js` reads `heal` into `rec.heals` (one a visit, `t` to
 `t1`, a log row at its start), `flagHolder` and a client file's raw 0x1E into

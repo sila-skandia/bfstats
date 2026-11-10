@@ -53,7 +53,6 @@ import { ReplayCamera, hullRadius, killerToFollow } from './replay-camera.js';
 import { buildChapters, killsOf, recordingPlayers, scoreTableOf } from './replay-chapters.js';
 import { scoreTable } from './round-state.js';
 import { ReplayDebrief } from './replay-debrief.js';
-import { ReplayDeploy } from './replay-deploy.js';
 import { ReplayFeed } from './replay-feed.js';
 import { dynamicCast } from './replay-gunfire.js';
 import { ReplayHull, modelKind } from './replay-hulls.js';
@@ -238,9 +237,10 @@ class ReplayPlayer {
     // The round-end debriefing over the world, once playback crosses the
     // round's end (replay-debrief.js).
     this.debrief = extra('the debriefing', () => new ReplayDebrief(this)) ?? null;
-    // A dead followed player's spawn screen, in his first person
-    // (replay-deploy.js).
-    this.deploy = extra('the spawn screen', () => new ReplayDeploy(this)) ?? null;
+    // No spawn screen while the followed player is dead: a replay is a
+    // recording, and the screen would say the viewer can spawn in. The page's
+    // own deploy screen refuses to open while one plays (spawning.js
+    // `openDeploy`).
     // The battles, streaks and plays worth watching, the battle map and the
     // Auto camera (features/round-replay-highlights).
     this.highlights = extra('the highlights', () => new ReplayHighlights(this)) ?? null;
@@ -1109,7 +1109,6 @@ class ReplayPlayer {
     guard.run("the server's rounds", () => this.flights.update(t));
     guard.run('the flags and tickets', () => this.round?.update(t));
     guard.run('the debriefing', () => this.debrief?.update(t, prevT));
-    guard.run('the spawn screen', () => this.deploy?.update(t), () => this.deploy?.view?.hide());
     if (!this.roundNoted && this.round?.points && this.statusLine) {
       // Once the level's points are matched: where the counter's numbers
       // come from.
@@ -1267,7 +1266,6 @@ class ReplayPlayer {
     extra('taking the creator view down', () => this.creator?.dispose());
     extra('taking the bar down', () => this.ui.dispose());
     extra('taking the debriefing down', () => this.debrief?.dispose());
-    extra('taking the spawn screen down', () => this.deploy?.dispose());
     extra('taking the scout view down', () => this.spotting?.dispose());
   }
 }

@@ -27,7 +27,7 @@ import { flagSide } from './spawn-flags.js';
  * `revive`, `roomJoined`, `round`, `setOnFoot`, `setScoreboard`, `shipFlagInactive`,
  * `snapPresentation`, `soldier`, `soldierDead`, `soldierMaxHp`,
  * `spawnFlagSelect`, `spawnSeat`, `spawnLayout`, `supplyTarget`, `toggleFullMap`, `toggleProne`,
- * `world`, `worldReady`.
+ * `watchingRound`, `world`, `worldReady`.
  */
 export function createSpawning(page) {
   const spawning = {};
@@ -423,6 +423,9 @@ export function createSpawning(page) {
   }
 
   function openDeploy() {
+    // Never over a replay: it is a recording, and the screen would say the
+    // viewer can spawn into it.
+    if (page.watchingRound?.()) return false;
     // Rebuilt on every open, not only when empty: `flags` otherwise survives a
     // level switch, and the rings would be drawn from the previous level's
     // flags — off the current map, or not anywhere at all. Rebuilding is a few
