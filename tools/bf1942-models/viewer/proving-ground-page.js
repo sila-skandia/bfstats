@@ -1585,6 +1585,8 @@ export function createProvingGroundPage(page) {
     school = createDogfightTheatre({
       host: page.stage,
       planeName: name,
+      // The plane the lessons fly on: the moves' counts are flown on it.
+      airframe: fighter ? { key: `range:${templateOf(fighter)}`, name } : null,
       // The theatre's fights are flown over a floor at 0, as the school's
       // tests fly them, so a reconstruction here is the one the tests hold.
       groundY: 0,

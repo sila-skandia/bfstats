@@ -66,7 +66,7 @@ export const KILL_HITS = 22;
  * muzzle speed plus the shooter's own velocity (`round-launch.js`
  * `platformVelocity`), scattered inside a small spread.
  */
-function fireRound(me, gun, rand, side, t, barrel) {
+export function fireRound(me, gun, rand, side, t, barrel) {
   const { F, U, R } = basis(me.orientation);
   const hand = barrel % 2 === 0 ? 1 : -1;
   const inward = Math.tan((gun.converge ?? 1.6) * DEG) * -hand;
@@ -117,7 +117,7 @@ function segmentBox(a, b, c, h) {
 }
 
 /** Whether the segment a..b passes within `r` of `c`. */
-function segmentNear(a, b, c, r) {
+export function segmentNear(a, b, c, r) {
   const ab = sub(b, a), ac = sub(c, a);
   const l2 = Math.max(1e-9, ab[0] * ab[0] + ab[1] * ab[1] + ab[2] * ab[2]);
   const t = Math.max(0, Math.min(1, (ac[0] * ab[0] + ac[1] * ab[1] + ac[2] * ab[2]) / l2));

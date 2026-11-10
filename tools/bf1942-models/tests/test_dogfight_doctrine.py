@@ -34,7 +34,7 @@ def run() -> dict:
     head = head[: head.index("const out = {};")]
     with tempfile.TemporaryDirectory() as tmp:
         work = Path(tmp)
-        for name, source in {**MODULES, "dogfight-doctrine.js": VIEWER / "dogfight-doctrine.js"}.items():
+        for name, source in MODULES.items():
             target = work / name
             target.parent.mkdir(parents=True, exist_ok=True)
             shutil.copyfile(source, target)
@@ -147,6 +147,35 @@ class DoctrineTests(unittest.TestCase):
         self.assertGreater(g["speeds"][0], 30)
         # And it can be shot.
         self.assertGreater(g["hits"][1], 0)
+
+    def test_the_moves_scored_on_the_spitfire_are_the_counts_the_lessons_declare(self) -> None:
+        # The theatre scores a lesson's moves on the airframe on stage
+        # (`dogfight-measure.js` `movesOn`); on the school's own Spitfire it
+        # must give back every declared count.
+        got = self.out["onSpitfire"]
+        self.assertGreaterEqual(len(got), 30)
+        for key, v in got.items():
+            self.assertEqual(v["declared"], v["works"], key)
+
+    def test_the_falling_leaf_gets_away_from_the_pilot_who_takes_it_for_a_kill(self) -> None:
+        fooled, follow = self.out["leaf"]["move"], self.out["leaf"]["counter"]
+        self.assertEqual(9, len(fooled))
+        for run in fooled + follow:
+            self.assertIsNotNone(run["fall"])
+            self.assertTrue(run["recovered"])
+        # Taken for a kill: out of sight and gone, every start.
+        for run in fooled:
+            self.assertGreater(run["endRange"], 1100, run)
+            self.assertLess(run["sight"], 0.3, run)
+            self.assertLessEqual(run["hitsAfter"], 4, run)
+        # Followed down: in sight, close, and hit, every start.
+        for run in follow:
+            self.assertLess(run["endRange"], 400, run)
+            self.assertGreaterEqual(run["sight"], 0.7, run)
+            self.assertGreaterEqual(run["hitsAfter"], 1, run)
+        self.assertGreater(sum(r["hitsAfter"] for r in follow), 3 * sum(r["hitsAfter"] for r in fooled))
+        # The price the lesson states: their pull-out answers in three of nine.
+        self.assertEqual(3, sum(1 for r in follow if r["hisHits"] > 0))
 
 
 class RecordedDoctrineTests(unittest.TestCase):

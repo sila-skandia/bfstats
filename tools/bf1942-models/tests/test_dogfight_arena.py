@@ -58,5 +58,53 @@ class ArenaTests(unittest.TestCase):
         self.assertEqual((q["dogfight"], q["move"]), ("boom-and-zoom", "dip-1"))
 
 
+    def test_a_mod_whose_teams_change_by_level_pairs_by_its_spawners(self) -> None:
+        # BF1918 (features/dogfight-doctrine): one arena per pair of fighter
+        # sets, team 1 flying as the construct's team 1; the two-seaters
+        # and bombers are no fighters; a level the tree lacks is no arena.
+        arenas = {a["map"]: a for a in self.out["teams"]}
+        self.assertEqual(sorted(arenas), ["Montfaucon", "battle_of_the_vosges"])
+        self.assertEqual((arenas["Montfaucon"]["allied"], arenas["Montfaucon"]["axis"]), (["Sopwith"], ["FokkerRed"]))
+        self.assertIn("Breguet14", arenas["Montfaucon"]["planes"])
+        self.assertEqual((arenas["battle_of_the_vosges"]["allied"], arenas["battle_of_the_vosges"]["axis"]), (["Spad7"], ["Fokker"]))
+
+    def test_the_wwi_scouts_are_fighters_and_the_two_seaters_are_not(self) -> None:
+        r = self.out["ranks"]
+        for scout in ("Spad7", "FokkerRed", "Sopwith", "Albatross", "se5"):
+            self.assertLess(r[scout], 100, scout)
+        for other in ("AlbatrossC3", "AircoDH4_Brit", "Gotha"):
+            self.assertEqual(900, r[other], other)
+        self.assertEqual(0, r["Spitfire"])
+        self.assertLess(r["Spad7"], r["se5"])
+
+
+class ArenaIndexTests(unittest.TestCase):
+    """`extract_dogfight_arenas.py`: each level's aircraft by team, from its
+    object spawners, in the catalogue's own spelling."""
+
+    def test_the_index_names_each_teams_aircraft(self) -> None:
+        import json
+        import sys
+        import tempfile
+        sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
+        import extract_dogfight_arenas as E
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            maps, models = root / "maps" / "mods" / "bf1918", root / "models" / "mods" / "bf1918"
+            models.mkdir(parents=True)
+            (models / "models.json").write_text(json.dumps([
+                {"name": "FokkerRed", "category": "air"}, {"name": "Sopwith", "category": "air"},
+                {"name": "Spad7", "category": "air"}, {"name": "MarkV", "category": "land"}]))
+            for level, spawns in {
+                "montfaucon": [{"templates": {"1": "fokkerred", "2": "sopwith"}}, {"templates": {"1": "markv", "2": "markv"}}],
+                "one_sided": [{"templates": {"1": "fokkerred"}}],
+            }.items():
+                (maps / level).mkdir(parents=True)
+                (maps / level / "scene.json").write_text(json.dumps({"objectSpawns": spawns}))
+            self.assertEqual(models.resolve(), E.models_tree_for(maps))
+            out = E.build(maps, models)
+        self.assertEqual({"version": 1, "levels": {"montfaucon": {"1": ["FokkerRed"], "2": ["Sopwith"]}}}, out)
+
+
 if __name__ == "__main__":
     unittest.main()

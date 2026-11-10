@@ -5,6 +5,7 @@
 // sides' attacks, bursts, dives met and the rules' verdicts; and the useful
 // range of the mods' guns.
 import { doctrineOf, usefulRange, damageAt, falloffOf, RULES } from './dogfight-doctrine.js';
+import { movesOn, STARTS, nudge } from './dogfight-measure.js';
 
 const DEMOS = ['boom-and-zoom/move', 'boom-and-zoom/counter', 'under-the-height/move', 'under-the-height/counter',
   'on-his-tail/move', 'out-of-the-lock/flat', 'break-turn/without', 'the-circle/circle', 'up-and-over/ninja'];
@@ -73,4 +74,33 @@ const gunnery = {
   speeds: [Math.round(Math.min(...lone.tracks[0].map(k => k.v))), Math.round(Math.max(...lone.tracks[0].map(k => k.v)))],
   chaserBursts: gdoc.sides[1].bursts.length, coachPhases: Object.keys(GL.coach),
 };
-console.log(JSON.stringify({ demos, guns, damage, rules: RULES.map(r => r.n), coach: coachCases, gunnery }));
+// Every lesson's moves on the school's own Spitfire, as the theatre scores
+// the airframe on stage: they must be the counts the lessons declare.
+const onSpitfire = {};
+for (const L of LESSONS) {
+  const got = await movesOn(L, { makePlane, runDuel, demoSides });
+  for (const [id, v] of Object.entries(got)) onSpitfire[`${L.id}/${id}`] = { works: v.works, declared: L.demos.find(d => d.id === id).verdict?.works ?? null };
+}
+// The falling leaf (rule 4), from the nine starts: the pilot who takes the
+// fall for a kill, and the one who follows them down.
+const leaf = {};
+{
+  const LL = LESSONS.find(l => l.id === 'falling-leaf');
+  for (const id of ['move', 'counter']) {
+    const d = LL.demos.find(x => x.id === id);
+    leaf[id] = STARTS.map(st => {
+      const sides = demoSides(LL, d);
+      sides[1] = { ...sides[1], start: nudge(sides[1].start, st) };
+      const r = runDuel({ makePlane, seconds: d.seconds ?? LL.seconds, groundAt: () => 0, sides });
+      const fall = r.events.find(e => e.side === 0 && e.phase === 'fall')?.t ?? null;
+      const after = r.tracks[1].filter(k => fall !== null && k.t > fall);
+      const A = r.tracks[0].at(-1), B = r.tracks[1].at(-1);
+      return { fall, recovered: r.events.some(e => e.side === 0 && e.phase === 'recover'),
+        endRange: Math.round(Math.hypot(A.p[0] - B.p[0], A.p[1] - B.p[1], A.p[2] - B.p[2])),
+        sight: after.length ? after.filter(k => k.sees).length / after.length : null,
+        hitsAfter: r.rounds.filter(x => x.side === 1 && x.hit && fall !== null && x.t > fall).length,
+        hisHits: r.rounds.filter(x => x.side === 0 && x.hit).length, down: r.end?.why === 'shot down' ? r.end.winner : null };
+    });
+  }
+}
+console.log(JSON.stringify({ demos, guns, damage, rules: RULES.map(r => r.n), coach: coachCases, gunnery, onSpitfire, leaf }));

@@ -21,7 +21,7 @@
 import { Aircraft } from './aircraft.js';
 import { createDogfightTheatre } from './dogfight-theatre.js';
 import { fighterRank } from './dogfight-lessons.js';
-import { arenasFrom, planeIn, aceAgainst, arenaUrl } from './dogfight-arena.js';
+import { arenasFrom, arenasFromTeams, planeIn, aceAgainst, arenaUrl } from './dogfight-arena.js';
 import { loadPlaneModel, airframeRoot, planeVisual } from './plane-models.js';
 import { VIEWER_ROOT } from './viewer-root.js';
 import { loadMods, stored as storedMod, remember, trees, VANILLA } from './mods.js';
@@ -34,7 +34,7 @@ const stored = key => { try { return localStorage.getItem(key); } catch { return
 const store = (key, value) => { try { localStorage.setItem(key, value); } catch { /* private window */ } };
 
 /** A template as a pilot says it: `BF109` "Bf 109", `Yak9` "Yak 9". */
-const pretty = t => String(t ?? '').replace(/^BF(\d)/, 'Bf $1').replace(/([a-z])(\d)/g, '$1 $2').replace(/_/g, ' ');
+const pretty = t => String(t ?? '').replace(/^BF(\d)/, 'Bf $1').replace(/([a-z])([A-Z])/g, '$1 $2').replace(/([a-z])(\d)/g, '$1 $2').replace(/_/g, ' ');
 
 const wait = document.querySelector('.dsp-wait');
 const say = text => { wait.querySelector('span').textContent = text; };
@@ -60,8 +60,13 @@ const vanillaMod = offered.find(m => m.id === VANILLA.id) ?? VANILLA;
 
 /** A tree's arenas, from its own catalogue over its own levels. */
 async function arenasOf(m) {
-  const [rows, levels] = await Promise.all([json(`${m.paths.models}/models.json`), json(`${m.paths.maps}/maps.json`)]);
-  return arenasFrom(rows, levels.map(l => l.name));
+  const [rows, levels, teams] = await Promise.all([json(`${m.paths.models}/models.json`), json(`${m.paths.maps}/maps.json`),
+    // Each level's aircraft by team, where the tree has the index: a mod
+    // whose sides change from level to level (BF1918) pairs only by it.
+    json(`${m.paths.maps}/dogfight-arenas.json`).catch(() => null)]);
+  const names = levels.map(l => l.name);
+  const byTeams = teams ? arenasFromTeams(teams, names) : [];
+  return byTeams.length ? byTeams : arenasFrom(rows, names);
 }
 say(`Reading ${mod.name || mod.short}'s battles`);
 let arenas = await arenasOf(mod).catch(error => { console.warn(`dogfight school: ${mod.id} arenas`, error); return []; });
@@ -99,6 +104,7 @@ async function loadModels() {
   const [f, m, a] = await Promise.all([best, me, ace].map(p => (p ? loadPlaneModel(p.template, modId(arenaMod)) : null)));
   if (ticket !== loading) return false;
   models.fighter = airframeRoot(f) ?? models.fighter;
+  if (airframeRoot(f)) models.fighterName = best.template;
   models.mine = airframeRoot(m) ?? models.fighter;
   models.ace = airframeRoot(a) ?? models.fighter;
   return true;
@@ -120,6 +126,9 @@ function fly({ lesson = null, move = null, course = null }) {
 const theatre = createDogfightTheatre({
   host: document.body,
   planeName: () => pretty(mine()?.template),
+  // The plane the lessons fly on (the arena's best fighter): every move's
+  // count on the tabs is flown on it (features/dogfight-doctrine).
+  airframe: () => (models.fighterName ? { key: `${modId(arenaMod)}:${models.fighterName}`, name: pretty(models.fighterName) } : null),
   // Flown over a floor at 0, as the Range and the school's tests fly them.
   groundY: 0,
   makePlane: () => new Aircraft(models.fighter.clone(true), null, { cockpit: false }),

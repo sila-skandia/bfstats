@@ -26,6 +26,7 @@ import { whatIf, chasedAt, spliceFight } from './dogfight-whatif.js';
 import { deadlockSpans, deadlockIn, extendFrom, momentOf, trackState, resultWords, RESULT_TAGS, KIND_WORDS } from './dogfight-deadlock.js';
 import { makeTracer, poseTracer, propellersOf, tracerGunOf, tracerRounds, turnPropellers } from './dogfight-plane-look.js';
 import { RULES as BOELCKE, doctrineOf } from './dogfight-doctrine.js';
+import { movesOn } from './dogfight-measure.js';
 
 /** A Neutral Depth token's value (tokens.css): the theatre's 3D colours
  *  are the site's, read where the page defines them, never written here. */
@@ -196,7 +197,7 @@ const esc = s => String(s ?? '').replace(/[&<>"]/g, c => ({ '&': '&amp;', '<': '
  * the map is up it fades in and its way in plays, from the moment the
  * schematic was at.
  */
-export function createDogfightTheatre({ host, makePlane, planeVisual = () => null, planeName = 'Spitfire',
+export function createDogfightTheatre({ host, makePlane, planeVisual = () => null, planeName = 'Spitfire', airframe = null,
                                         onFly = null, onFlyCourse = null, onClose = null, groundY = 0,
                                         planes = () => [], plane = () => null, onPlane = null,
                                         recordings = new URL('replays/dogfights/index.json', VIEWER_ROOT).href, planeVisualFor = () => null,
@@ -362,6 +363,37 @@ export function createDogfightTheatre({ host, makePlane, planeVisual = () => nul
   const nameOf = i => (state.fight?.recorded ? state.fight.names[i] : i === 0 ? 'ACE' : 'YOU');
   /** A side as a sentence starts it. */
   const whoOf = i => (state.fight?.recorded ? state.fight.names[i] : i === 0 ? 'The ace' : 'You');
+  // --- the moves' verdicts on the airframe on stage --------------------------
+  // A lesson's counts were measured on the school's Spitfire, and they do not
+  // carry to another plane (features/dogfight-doctrine, "The lessons on
+  // other airframes"). `airframe()` names the plane the lessons are flown on
+  // (`{ key, name }`); its counts are flown here, a lesson at a time, and
+  // every verdict on screen is read through `withAir`.
+  const onAirframe = new Map();
+  const scoring = new Set();
+  const airOf = () => (typeof airframe === 'function' ? airframe() : airframe) ?? null;
+  function withAir(lesson, d) {
+    const a = airOf();
+    const got = a && d?.verdict ? onAirframe.get(a.key)?.get(lesson?.id)?.[d.id] : null;
+    return got ? { ...d, verdict: { ...d.verdict, works: got.works, of: got.of, measured: d.verdict.works, on: a.name } } : d;
+  }
+  async function scoreAirframe(lesson) {
+    const a = airOf();
+    if (!a || !lesson?.demos?.some(d => d.verdict)) return;
+    const tag = `${a.key}|${lesson.id}`;
+    if (onAirframe.get(a.key)?.has(lesson.id) || scoring.has(tag)) return;
+    scoring.add(tag);
+    try {
+      const got = await movesOn(lesson, { makePlane, runDuel, demoSides, yieldTo: () => new Promise(res => setTimeout(res, 0)) });
+      if (!onAirframe.has(a.key)) onAirframe.set(a.key, new Map());
+      onAirframe.get(a.key).set(lesson.id, got);
+      if (state.lesson === lesson && airOf()?.key === a.key) { drawTabs(lesson); if (state.demo) drawScore(state.demo); }
+    } catch (error) {
+      console.warn('dogfight school: scoring the moves on', a.name, error);
+    } finally {
+      scoring.delete(tag);
+    }
+  }
   /** A side mid-sentence: a recording's pilot by name, a lesson's as "the
    *  ace" or "the other pilot". */
   const partyOf = i => (state.fight?.recorded ? state.fight.names[i] : i === 0 ? 'the ace' : 'you');
@@ -784,7 +816,8 @@ export function createDogfightTheatre({ host, makePlane, planeVisual = () => nul
 
   /** The score of the move on stage, said in words: how many of the nine
    *  test flights it worked in, and what "worked" means for it. */
-  function drawScore(demo) {
+  function drawScore(raw) {
+    const demo = raw ? withAir(state.lesson, raw) : raw;
     const v = demo ? verdictOf(demo.verdict) : null;
     const rule = demo ? PASS_RULES[demo.kind] : null;
     ui.score.hidden = !(v && rule);
@@ -798,11 +831,13 @@ export function createDogfightTheatre({ host, makePlane, planeVisual = () => nul
     const card = stepsOf(state.lesson?.id, demo.id);
     ui.score.dataset.verdict = v;
     ui.score.querySelector('.dfs-card-name').textContent = `${info.name} · ${info.nick}`.toUpperCase();
-    ui.score.querySelector('.dfs-card-best').hidden = bestMove(state.lesson?.demos ?? []) !== demo.id;
+    ui.score.querySelector('.dfs-card-best').hidden = bestMove((state.lesson?.demos ?? []).map(d => withAir(state.lesson, d))) !== demo.id;
     ui.score.querySelector('.dfs-card-what').textContent = info.what;
     ui.score.querySelector('.dfs-card-verdict b').textContent = `${CARD_WORDS[v]} · ${works}/${of}`;
     ui.score.querySelector('.dfs-card-verdict span').textContent = card?.why ?? '';
-    line.textContent = `${moveFull(demo.kind)} here: ${works} of ${of}. ${demo.verdict.line ?? ''}`.trim();
+    const other = Number.isFinite(demo.verdict.measured) && demo.verdict.measured !== works
+      ? ` On the ${demo.verdict.on} the lessons fly on here; the school's Spitfire, which the words below were written for: ${demo.verdict.measured} of ${of}.` : '';
+    line.textContent = `${moveFull(demo.kind)} here: ${works} of ${of}.${other} ${demo.verdict.line ?? ''}`.trim();
   }
 
   /**
@@ -913,11 +948,23 @@ export function createDogfightTheatre({ host, makePlane, planeVisual = () => nul
   function demoTab(d, best) {
     const info = MOVE_INFO[d.kind];
     const v = verdictOf(d.verdict);
-    const tip = info ? `${info.name} (${info.nick}): ${info.what} ${v ? `${CARD_WORDS[v]}, ${d.verdict.works} of ${d.verdict.of ?? 9} test flights.` : ''}` : '';
+    const on = Number.isFinite(d.verdict?.measured) ? ` on the ${d.verdict.on}${d.verdict.measured !== d.verdict.works ? ` (the Spitfire: ${d.verdict.measured})` : ''}` : '';
+    const tip = info ? `${info.name} (${info.nick}): ${info.what} ${v ? `${CARD_WORDS[v]}, ${d.verdict.works} of ${d.verdict.of ?? 9} test flights${on}.` : ''}` : '';
     return `<button type="button" role="tab" data-demo="${esc(d.id)}"${info ? ` data-kind="${esc(d.kind)}" title="${esc(tip)}"` : ''}${d.id === best ? ' data-best=""' : ''}${v ? ` data-verdict="${v}"` : ''}>`
       + (info ? `<small class="dfs-demo-kind">${esc(info.name.toUpperCase())}</small><em class="dfs-demo-nick">${esc(d.tab ?? info.nick)}</em>` : `<span>${esc(d.label)}</span>`)
       + (v ? `<i class="dfs-verdict is-${v}">${d.verdict.works}/${d.verdict.of ?? 9}</i>` : '')
       + '</button>';
+  }
+
+  /** The lesson's tabs, each move's count the airframe's once it is flown
+   *  (`withAir`), the one on stage kept pressed. */
+  function drawTabs(lesson) {
+    const demos = lesson.demos.map(d => withAir(lesson, d));
+    const best = bestMove(demos);
+    const on = state.lesson === lesson ? state.demo?.id : null;
+    ui.demos.innerHTML = demoOrder(demos).map(d => demoTab(d, best)).join('');
+    if (on) ui.demos.querySelectorAll('button[data-demo]').forEach(b => b.setAttribute('aria-selected', String(b.dataset.demo === on)));
+    fitDemos();
   }
 
   /** A lesson's tabs: its own fights first, then its moves, the one that
@@ -957,9 +1004,8 @@ export function createDogfightTheatre({ host, makePlane, planeVisual = () => nul
     state.recording = null;
     ui.move.innerHTML = lesson.story.map(p => `<p>${esc(p)}</p>`).join('');
     ui.counter.innerHTML = lesson.counterStory.map(p => `<p>${esc(p)}</p>`).join('');
-    const best = bestMove(lesson.demos);
-    ui.demos.innerHTML = demoOrder(lesson.demos).map(d => demoTab(d, best)).join('');
-    fitDemos();
+    drawTabs(lesson);
+    scoreAirframe(lesson);
     const sv = lesson.survival;
     ui.survival.hidden = !sv;
     if (sv) {
@@ -1404,7 +1450,7 @@ export function createDogfightTheatre({ host, makePlane, planeVisual = () => nul
     }
     ui.end.classList.toggle('is-lost', fight.ending?.why === 'out of range');
     // A Dip, Flip or Ninja says how it fared from all nine starts.
-    const demo = fight.extended ? null : state.demo, v = verdictOf(demo?.verdict);
+    const demo = fight.extended || !state.demo ? null : withAir(state.lesson, state.demo), v = verdictOf(demo?.verdict);
     ui.end.dataset.verdict = v ?? '';
     if (v) sp.textContent = `${MOVE_NAMES[demo.kind] ?? demo.label}: worked from ${demo.verdict.works} of ${demo.verdict.of ?? 9} starts. ${demo.verdict.line} ${sp.textContent}`;
     // No kill: the scene can be extended from the end, right here, the

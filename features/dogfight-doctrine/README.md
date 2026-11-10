@@ -1,7 +1,9 @@
 # Dogfight doctrine: Boelcke's rules in the dogfight school
 
-Status: **steps 1 to 3 of the build plan built** (2026-11-10, after the
-owner's go): the rules measured over any fight and reported over the 303
+Status: **steps 1 to 5 of the build plan built** (2026-11-10, after the
+owner's go; step 4 below, "The BF1918 arena", the lessons' counts now flown
+on the airframe on stage, "The lessons on other airframes", and step 5, "The
+falling leaf"): the rules measured over any fight and reported over the 303
 recorded fights, the school's Rules tab, the coach's rule lines and the end
 card's verdicts, and the gunnery drill. Steps 4 to 9 are proposals still.
 See "Built" and "What the recordings say" below; the research and the plan
@@ -66,6 +68,125 @@ cannot, and ends with a ranked build plan.
   lines, and the target. `test_dogfight_steps.py` lets the drill off its
   "every lesson names a best move", as it does *Against the ace*.
 
+## The BF1918 arena (step 4, 2026-11-10)
+
+The school pairs a battle's fighters by the model catalogue's `sides`
+(`bf42/roster.py`), which names a template's nation and calls it Axis or
+Allied the WWII way: Italy is an Axis nation, so BF1918's Italian-front
+Nieuport 11 is "Axis", the SPAD VII comes out German and Italian, and the
+Camel has no faction at all. Nothing paired, so the BF1918 school fell back
+to vanilla's arenas. What a WWI level really fields is in its object
+spawners, each naming its template for each team.
+
+- **`extract_dogfight_arenas.py`** writes `<maps tree>/dogfight-arenas.json`,
+  each level's aircraft by team from its `scene.json` `objectSpawns`, in the
+  catalogue's spelling; seconds a tree. It is a mod-pipeline step
+  (`dogfight_arenas`, after `levels`), so every later run and publish carries
+  it. On BF1918: 38 levels with aircraft on both teams, 21 arenas once paired
+  by fighter sets.
+- **`dogfight-arena.js` `arenasFromTeams`** builds the arenas from it (team 1
+  flies as the construct's team 1), and the school page prefers it where the
+  tree has one (`dogfight-school-page.js` `arenasOf`).
+- **`FIGHTERS`** knows the WWI scouts, ranked by the flight law
+  (`spad`, `fokker`, `sopwith`, `albatross`, `neuport`, `aircodh2`,
+  `halberstadt`, `eindekker`, `morane`, `d7a`, `se5`), and the two-seaters,
+  bombers, airships and balloons are checked first (`NOT_FIGHTERS`), so the
+  Albatros C.III is not taken for the Albatros scout.
+- Among the 21: Montfaucon (the Camel against the red triplane), Battle of
+  the Vosges and Nebelberg (SPAD against triplane), Château-Thierry (SE5
+  against D.VII), Brusilov Offensive (Nieuport against Albatros), Basra (DH.2
+  against Halberstadt), and the Fokker Scourge level.
+- Checked in headless Chrome with BF1918's trees: the school opens on
+  Montfaucon, "Sopwith v Fokker Red", the planes drawn from the mod's own
+  models. Not yet live: the index is in the local tree and goes with the
+  BF1918 import's next publish, and the live `mods.json` still counts no
+  BF1918 levels, so the live school does not offer the mod yet. FLY IT into
+  a BF1918 arena was not flown.
+- Tests: `test_dogfight_arena.py` (a WWI index paired, the two-seaters no
+  fighters, the index script on a small tree), `test_mod_pipeline.py` (the
+  step table).
+
+## The falling leaf (step 5, rule 4)
+
+Lesson *The falling leaf* (`falling-leaf`): the ace (`PLANS.leafAce`), with
+an enemy settled on their tail inside 300 m for 2.5 s, chops the throttle and
+spirals away at 110 degrees of bank, as a hit plane falls; 170 m down they
+pull out, under the follower's wings, and come back up. Two fights:
+
+| | Nine starts |
+|---|---|
+| *You take it for a kill* (`leafFooled`: sure of the kill, flies on, never looks down) | gone every time: 1.2 to 1.4 km apart at the end, in sight 10 to 20% of the time after the fall, 0 to 4 rounds landed, nearly all in its first second |
+| *You follow them down* (`leafFollow`: above and behind through the fall, throttle back, in as they pull out) | with them every time: 80 to 320 m at the end, in sight 80 to 100%, 1 to 10 rounds landed after the fall; in 3 of 9 their pull-out meets you nose to nose and they land 2 to 5 |
+
+What the flying found: the ruse is an escape, not a trap. The fooled pilot
+is never bounced afterwards: they fly on at full speed and the ace, 250 m
+below, cannot catch them. Which is what the WWI record says of it, and why
+Boelcke's second version tells the follower to go down after a damaged
+enemy rather than to watch his back. Rule 4's Rules row now opens this
+lesson on *You follow them down*. Held by
+`test_dogfight_doctrine.py` `test_the_falling_leaf_gets_away_...` from the
+nine starts; the steps and fly-moves tests let it off the Dip, Flip and
+Ninja, since in it you are the attacker, not the pilot in trouble.
+
+## The lessons on other airframes
+
+The school's lessons were tuned and measured on one airframe, El Alamein's
+Spitfire built in the test harness, and every count on the tabs ("EXTENSION
+9/9") is that Spitfire's. The theatre flies a lesson's fights on the arena's
+best fighter, so on Kursk (the Bf 109) or a BF1918 arena the fight on stage
+was one airframe and the count beside it another's. Every lesson's moves,
+flown from the nine starts on other airframes (`movesOn`; the guns stay the
+school's, so only the flight law differs):
+
+| Move | school Spitfire | Spitfire | Bf 109 | Yak 9 | Mustang | Corsair | Zero | FHSW Bf 109-F | `Sopwith` | `Albatross` | `Spad7` | `Fokker` | `neuport11` | `AircoDH2` | `eindekker` |
+|---|---|---|---|---|---|---|---|---|---|---|---|---|---|---|---|
+| boom-and-zoom / dip | 9 | 9 | 5 | 9 | 9 | 7 | 9 | 0 | 9 | 6 | 9 | 9 | 0 | 6 | 1 |
+| under-the-height / dip | 9 | 9 | 7 | 7 | 9 | 9 | 9 | 8 | 0 | 8 | 5 | 7 | 9 | 1 | 6 |
+| under-the-height / flip | 6 | 7 | 2 | 0 | 0 | 0 | 0 | 0 | 0 | 0 | 0 | 0 | 0 | 0 | 0 |
+| under-the-height / ninja | 1 | 2 | 0 | 0 | 0 | 0 | 1 | 0 | 0 | 0 | 0 | 0 | 0 | 0 | 0 |
+| up-and-over / dip | 7 | 7 | 9 | 6 | 5 | 7 | 7 | 8 | 3 | 6 | 6 | 6 | 7 | 8 | 2 |
+| up-and-over / ninja | 6 | 6 | 0 | 0 | 0 | 0 | 0 | 0 | 0 | 0 | 0 | 2 | 0 | 0 | 0 |
+| out-of-the-lock / dip | 9 | 9 | 9 | 9 | 9 | 9 | 9 | 1 | 0 | 9 | 0 | 0 | 3 | 0 | 0 |
+| out-of-the-lock / flip | 1 | 1 | 0 | 0 | 0 | 0 | 0 | 0 | 0 | 1 | 0 | 0 | 0 | 0 | 0 |
+| on-his-tail / dip | 6 | 6 | 2 | 5 | 1 | 1 | 0 | 9 | 0 | 4 | 0 | 0 | 0 | 0 | 0 |
+| on-his-tail / ninja | 3 | 3 | 3 | 1 | 0 | 0 | 0 | 0 | 3 | 0 | 0 | 0 | 1 | 0 | 0 |
+| break-turn / dip | 9 | 9 | 9 | 7 | 9 | 8 | 9 | 6 | 9 | 3 | 5 | 8 | 7 | 9 | 5 |
+| scissors / dip | 6 | 6 | 1 | 5 | 6 | 6 | 6 | 6 | 6 | 5 | 4 | 5 | 6 | 7 | 7 |
+| turnarounds / dip | 9 | 9 | 9 | 9 | 9 | 9 | 9 | 9 | 9 | 9 | 9 | 9 | 9 | 9 | 9 |
+| turnarounds / ninja | 6 | 6 | 0 | 0 | 0 | 0 | 0 | 0 | 0 | 0 | 0 | 0 | 2 | 0 | 0 |
+| the-circle / dip | 7 | 7 | 9 | 2 | 9 | 9 | 9 | 9 | 8 | 9 | 9 | 5 | 5 | 0 | 0 |
+| **Lessons survivable (a move 7+) / partly (3+)** | 7 / 9 | 7 / 9 | 6 / 8 | 5 / 8 | 6 / 8 | 7 / 8 | 7 / 8 | 5 / 7 | 4 / 7 | 4 / 9 | 3 / 7 | 4 / 7 | 4 / 7 | 4 / 5 | 2 / 4 |
+
+The moves that score 0 everywhere (every Reversal but two, most Bounces, the
+circle's tries) are left out.
+
+- **The Extension carries; the Reversal and the Bounce do not.** Leaving a
+  fight works on almost every airframe. Turning the tables and taking the
+  upper hand were tuned on the Spitfire: *When they have the height*'s
+  Reversal is 6 or 7 of 9 on the Spitfire and 0 to 2 anywhere else; *Up and
+  over*'s and the turnarounds' Bounce, 6 of 9 on the Spitfire, are 0 on
+  every other WWII airframe. The upper hand in the school is a Spitfire
+  result, not a lesson about the game.
+- **The WWI scouts fare worst**, 2 to 4 lessons of 9 fully survivable: the
+  plans' speeds and thresholds (starts at 60 to 92 m/s, `IN_CONTROL` 35 m/s,
+  the 900 m of an extension) are a WWII fighter's, and the `Albatross` pays
+  for the hand's see-saw on top (above).
+- **Fixed:** the theatre now flies each lesson's moves on the airframe on
+  stage when the lesson opens (`dogfight-measure.js` `movesOn`, moved from
+  `tests/dogfight_dfn_measure.mjs`, which re-exports it; about half a second
+  a lesson, yielding between flights) and shows that count on the tabs, the
+  move card, the end card and the best-move badge, saying the Spitfire's
+  count beside it where they differ. Checked in headless Chrome on Kursk:
+  boom and zoom's Extension tab went from 9/9 to 5/9 once flown on the Bf 109.
+  The words of each move (what goes wrong) are still the Spitfire's.
+  `test_dogfight_doctrine.py` holds `movesOn` on the school's Spitfire to
+  every declared count.
+- **What it means for doctrine:** the school's evidence for rules 1 and 6
+  (height first, meet the dive) holds across airframes in the recordings,
+  where every player flies their own plane. Its evidence for holding the
+  upper hand (the Bounce) does not: per-airframe plans, or lessons re-tuned
+  per era, are the work that would make a WWI or a Yak 9 Bounce honest.
+
 ## What the recordings say
 
 `node tools/bf1942-models/dogfight_doctrine_report.mjs <fights> --suns
@@ -83,6 +204,31 @@ left out (the pilot in the most fights, see `dogfight-recordings`).
 | 5 From behind | the first burst within 45 degrees of their tail / 45 to 90 / their front half | won 36%, lost 3% (107) / 41%, 2% (120) | 18%, 7% (154) |
 | 6 Meet the dive | dived on from 100 m above: met / ran | lost 28% of those fights, 5.4 hits taken (29) | lost 62%, 11.2 hits taken (21) |
 
+**Rule 8, the company** (the detector's rule 9, `dogfight-detect.js`
+`companyOf`, version 3): the other aircraft within 1.5 km of a fight, by
+side, and third pilots whose aimed rounds went at either of the two.
+Measured on the 32 recordings cached here, re-extracted with it (200
+fights, 400 pilots; `extract_dogfights.mjs <recordings> --out <dir>`, then
+the report); the published fights carry it once the refresh job runs the
+new detector.
+
+| A pilot's company | Pilots | Won | Lost | Shot down by a third |
+|---|---|---|---|---|
+| Alone | 32 | 28% | 28% | 3% |
+| More friends than enemies near | 161 | 26% | 7% | 1% |
+| Even, someone near | 46 | 11% | 11% | 7% |
+| More enemies than friends near | 161 | 7% | 26% | 11% |
+| A third pilot shot at you (two on one) | 67 | 1% | 15% | 27% |
+| A friend shot at your opponent too | 67 | 15% | 1% | 3% |
+
+The group pays, by the widest margin of any rule: outnumbered, a pilot
+lost almost four times as often as they won; with friends near, the
+reverse. Two on one is the worst place in BF1942's skies: 42% of the pilots
+it happened to went down, 27% to the third pilot. Boelcke's "avoid two on
+one" was about the waste (two on one target while another goes free); from
+the ganging side it shows as a win (15% won, 1% lost), so the waste is not
+visible in this data.
+
 What it adds to the proposal:
 
 - **Rules 1, 3, 4, 5 and 6 pay in real players' fights**, by margins the
@@ -91,6 +237,9 @@ What it adds to the proposal:
 - **The sun looks like it pays, on 20 attacks.** The school's eyes do not
   model it, so whatever the sun did, it did to the humans. Twenty is too few
   to build the glare cone on (step 8): it waits for more recordings.
+- **Rule 8 is the largest effect in the data**, and the school still flies
+  one plane a side: the multi-plane duel (step 6) is the most valuable
+  thing left to build.
 - **Rule 2's abandoned attacks are not the losing ones**: 7% won, 9% lost,
   about the base rate. The spoiled ones are (lost 20%), which is rule 6 seen
   from the other side.
@@ -430,13 +579,16 @@ at a glb instead of its built Spitfire.
 |---|---|---|---|---|---|---|---|
 | Spitfire | vanilla | 76.4 | 13.8 (45) | 33.1 (10.9, 83) | 166 m | 115 | 123 |
 | Bf 109 | vanilla | 75.7 | 14.1 (47) | 39.1 (9.2, 88) | 179 m | 113 | 118 |
+| `eindekker` (and `MoraneG`, identical) | BF1918 | 76.2 | 18.8 (43) | 31.9 (11.3, 69) | 239 m | 119 | 195 |
 | `neuport11` | BF1918 | 84.3 | 16.0 (36) | 37.1 (9.7, 101) | 243 m | 124 | 136 |
 | `AircoDH2` | BF1918 | 72.4 | 14.2 (47) | 51.8 (6.9, 66) | 184 m | 118 | 149 |
 | `Sopwith` | BF1918 | 66.1 | 10.2 (33) | 44.8 (8.0, 74) | 146 m | 118 | 129 |
 | `Spad7` | BF1918 | 76.4 | 13.0 (43) | 38.9 (9.3, 72) | 183 m | 123 | 109 |
 | `Fokker` | BF1918 | 68.3 | 12.8 (43) | 36.2 (10.0, 79) | 163 m | 118 | 91 |
-| `Albatross` | BF1918 | 74.7 | 18.9 (43) | 18.9 (19.0, 167) * | 196 m | 93 | 108 |
+| `Albatross` | BF1918 | 93.8 | 24.8 (57) | 17.5 (20.5, 181) *; 40 at a held 70 degrees of bank | 316 m | 114 | 177 |
 | `Halberstadt` | BF1918 | 71.3 | 12.3 (41) | 31.0 (11.6, 97) | 170 m | 121 | 91 |
+| `se5` ** | BF1918 | 41.5 | 7.3 (29) | 36.0 (10.0, 63) | 42 m | 35 | 29 |
+| `d7A` ** | BF1918 | 42.3 | 7.9 (29) | 24.5 (14.7, 90) | 41 m | 41 | 42 |
 | `AlbatrossC3` (two-seater) | BF1918 | 57.0 | 10.9 (37) | 30.5 (11.8, 85) | 109 m | 83 | 34 |
 | `AircoDH4_Brit` (two-seater) | BF1918 | 59.5 | 11.6 (39) | 28.9 (12.4, 98) | 122 m | 98 | 34 |
 | `Gotha` (bomber) | BF1918 | 48.6 | 9.6 (41) | 24.6 (14.6, 129) | 84 m | 102 | 24 |
@@ -445,11 +597,28 @@ at a glb instead of its built Spitfire.
 | F-15C | DC | 112.2 | 32.2 (109) | 46.6 (7.7, 113) | never | 124 | 128 |
 | Mirage | DC | 129.1 | 70.4 at 45 deg (146) | 54.8 (6.6, 121) | never | 137 | 175 |
 
-\* The `Albatross`'s turn is the hand's, not the airframe's: from a slower
-start it held the same 18 deg/s while its pull rate (46 deg/s at 70 m/s) is a
-fighter's. Its row needs a second look before a lesson quotes it. The `d7A`
-(36.5 m/s top, drag 0.5) and the Eindecker and SE5 (a fallback table, "Found
-on the way") are left out. These rows compare types on one footing; they
+Re-measured on the BF1918 tree as re-extracted at 10:41 on 2026-11-10, after
+the class-word fix ("Found on the way"); the first pass had the Eindecker and
+the SE5 on the fallback table and an older Albatros.
+
+\* The `Albatross`'s sustained turn is the hand's, not the airframe's. Held
+at a bank by `bankAndPull` it turns as the others do (40 deg/s at 70 degrees,
+holding its height; 53 at 80, sinking 15 m/s), but `hardTurn` eases the bank
+in proportion to the sink, and the Albatros climbs hard at 60 degrees and
+sinks fast at 82, so the hand see-saws between them and averages 18. The
+Spitfire's lift settles where the hand's gain expects. Every lesson flown on
+the Albatros pays for it (below).
+
+\** The SE5 and the D.VII come from another hand than the rest of BF1918's
+scouts (other part names, `se5Topleft`; regulator flaps with 2 degrees of
+travel against the others' 20 to 30) and carry a body drag of 0.8 and 0.5
+against 0.10 to 0.14. On the law, whose body drag was checked against the
+real game's Spitfire and Bf 109 within 12% (flight-model §10), that holds
+them to 42 m/s level and 35 to 41 m/s in a full-throttle dive. Whether retail
+BF1918 flies them that slowly is not checked: one lab flight in the real game
+would say. Until it does, the school ranks them last among the scouts.
+
+These rows compare types on one footing; they
 are not the school's numbers: its Spitfire is El Alamein's own table, built
 in the harness, which settles at 39 deg/s and 46 m/s in the hardest turn
 where the vanilla glb's, from a faster start, holds 33. A lesson quotes the
@@ -463,8 +632,10 @@ What the table says for doctrine:
   23 at 40, 76 at 120); there is no corner speed and no g limit. The real
   world's angles fighter against energy fighter is muted here: the turner
   is simply the plane with the better rate (the `AircoDH2`, the `Sopwith`).
-- **The WWI cast has real differences to teach.** The `neuport11` out-runs and
-  out-zooms the `AircoDH2`, which out-turns it by 15 deg/s. The `Sopwith`'s
+- **The WWI cast has real differences to teach.** The `Albatross` and the
+  `neuport11` out-run and out-zoom everything (94 and 84 m/s; 316 and 243 m
+  of zoom); the `AircoDH2` out-turns everything (52 deg/s), the `neuport11` by
+  15 deg/s. The `Sopwith`'s
   pilot should turn; the `neuport11`'s or the `Spad7`'s should go up and
   come down, which is Boelcke's rule 1 with numbers.
 - **The jets break the energy fight.** Thrust exceeds weight at low speed
@@ -529,11 +700,11 @@ Sizes are rough: S a day or less, M a few days, L a week or more.
 
 | # | Step | Rules | Size | Needs |
 |---|---|---|---|---|
-| 1 | **Doctrine measures over any fight** (built; rule 8's company is not) | 1, 2, 3, 4, 5, 8 | M | nothing |
+| 1 | **Doctrine measures over any fight** (built, rule 8's company with the detector's rule 9) | 1, 2, 3, 4, 5, 8 | M | nothing |
 | 2 | **The Boelcke cards and the coach's cues** (built) | 1 to 6 | S | 1 |
 | 3 | **The gunnery drill** (built) | 3 | M | 1 |
-| 4 | **A BF1918 arena** | all, period-correct | M | the lowercase-class fix |
-| 5 | **The falling leaf** (the ruse) | 4 | S | 1, and 4 for the period |
+| 4 | **A BF1918 arena** (built; the lessons not re-tuned for WWI) | all, period-correct | M | the lowercase-class fix (done upstream) |
+| 5 | **The falling leaf** (the ruse) (built) | 4 | S | 1, and 4 for the period |
 | 6 | **More than two planes in a duel**, then *The pair* and the Thach weave | 8 | L | 1 |
 | 7 | **The two-seater** (Mannock: from beneath the tail) | 5 | M | 4, 6 (a gunner seat) |
 | 8 | **The sun**, only if the recordings say it pays | 1 | S to M | 1 |
@@ -555,9 +726,8 @@ theatre's shape, flown or recorded:
   share of time the opponent is on the screen.
 - *Company*: friendly and enemy fighters within 1.5 km, and two on one
   (two shooters' aimed rounds at one target inside 5 s), from the recording's
-  other planes. Not built: an extracted fight holds its two planes only, so
-  the extractor (`extract_dogfights.mjs`) would have to keep the others near
-  it first.
+  other planes. Built as the detector's rule 9 (`companyOf`); an extracted
+  fight carries it as `company`.
 
 Then the report: what each rule's measure says about the 303 recorded fights
 (does an attack begun with the advantage win more; does a pilot who fires
@@ -628,6 +798,11 @@ names, and the cards point at them instead.
 
 ## Found on the way
 
+**Fixed on main by the BF1918 import (01d932ec8, "a class word is read case
+blind, as the engine reads it (LOAD-19)"), and the BF1918 tree re-extracted
+at 10:41, 2026-11-10; the airframe table above is re-measured on it.** The
+note as it was found:
+
 **Eight BF1918 aircraft fly a fallback table in the viewer.** Their cons
 write the class word in lowercase (`ObjectTemplate.create engine ...`,
 `ObjectTemplate.create wing ...`) and the exporter keeps it as written in
@@ -646,6 +821,32 @@ place, and other kinds are lowercase too: `simpleobject`, `lodobject`,
 `seatobject`, `playercontrolobject` in the Eindecker), and it belongs to the
 BF1918 import (`features/bf1918-extraction`). A hand-over note is in the
 session group's shared notes.
+
+## Research notes (2026-11-10)
+
+- **The two-seaters' rear guns cannot fire below the tail.** BF1918's
+  `AlbatrossC3`, `AircoDH4_Brit` and `Breguet14` rest their rear gun facing
+  aft, 3, 5 and 15 degrees above the tail line (each FireArms' barrel, the
+  glb's node rotations composed), and their pitch rigs travel 40, 40 and 30
+  degrees up but 5, 5 and 15 down (`-min` is up, as the tank school reads a
+  pitch rig). So none fires below the horizontal astern: Mannock's "attack
+  two-seaters from beneath their tails" is exactly the gap in the arc.
+  The Albatros C.III's gun also turns only 70 degrees either side of
+  astern; the other two turn all the way round.
+- **Desert Combat's missiles are not guided in the extracted data.** Every
+  rocket projectile in the DC tree (14 templates, the Stinger, Hellfire,
+  AIM-9, AA-10, SA-3 among them) carries a motor and a fin and no steering
+  input or seeker. Either DC steers them in a way the exporter does not keep
+  (the Hellfire and TOW are flown by their gunner in the real game), or they
+  fly straight. Not read further: it decides whether rule 5 is outdated by
+  missiles in DC, and it waits on a DC arena.
+- **The Eindecker and the Morane G fly one table**: identical to the last
+  decimal. The Fokker E was built after the Morane-Saulnier; BF1918 shares
+  the physics.
+- **The school's `hardTurn` see-saws on a plane that climbs hard in a bank**
+  (the Albatros, above). A damped bank law would fix it for WWI airframes,
+  but every Spitfire lesson's count rests on the hand as it is, so it waits
+  on per-era tuning rather than a change under the Spitfire's lessons.
 
 ## Sources
 

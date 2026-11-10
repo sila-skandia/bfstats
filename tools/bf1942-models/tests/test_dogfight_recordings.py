@@ -47,6 +47,15 @@ class DogfightRecordingsTests(unittest.TestCase):
         self.assertIn("KettenKrad", self.out["planesByMotion"])
         self.assertNotIn("KettenKrad", [p["tmpl"] for p in self.out["planes"]])
 
+    def test_a_fight_carries_its_company(self) -> None:
+        # Rule 9 (features/dogfight-doctrine, Boelcke's rule 8): the
+        # hunter's wingman is within 1.5 km of the fight, the hunter's own
+        # side and the prey's other; his rounds at his own side make him no
+        # third shooter at either.
+        company = self.out["fights"][0]["company"]
+        self.assertEqual([[1, 0], [0, 1]], company["near"])
+        self.assertEqual([[], []], company["thirds"])
+
     def test_only_the_aimed_fight_between_opposing_pilots_is_found(self) -> None:
         # The wingman's fire at his own side and the burst at the sky are not
         # fights: one fight, the hunter's.

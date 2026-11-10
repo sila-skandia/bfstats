@@ -97,7 +97,7 @@ const fights = D.findDogfights(rec, D.RULES, { air });
 const out = {
   planes: planes.map(p => ({ tmpl: p.life.tmpl, pilots: p.pilots.map(x => x.pid) })),
   planesByMotion: D.planesOf(rec).map(p => p.life.tmpl),
-  fights: fights.map(f => ({ t0: f.t0, t1: f.t1, kind: f.kind, mutual: f.mutual, closest: f.closest, kill: f.kill,
+  fights: fights.map(f => ({ t0: f.t0, t1: f.t1, kind: f.kind, mutual: f.mutual, closest: f.closest, kill: f.kill, company: f.company,
                              sides: f.sides.map(s => ({ name: s.name, tmpl: s.tmpl, team: s.team, aimed: s.aimed, turned: s.turned })) })),
 };
 if (fights.length) {

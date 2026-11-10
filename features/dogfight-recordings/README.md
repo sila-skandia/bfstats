@@ -126,6 +126,17 @@ moment, and the end card's title and first line (`endingWords` in
 timeline is hatched in his colour over the span (`lost`, per side, from
 `sampleFight`) and his meter reads OUT OF RANGE · PATH GUESSED while it lasts.
 
+### A fight's company (rule 9, version 3, 2026-11-10)
+
+Every fight carries `company` (`dogfight-detect.js` `companyOf`): the most
+aircraft of each pilot's own side and of the other side at once within 1.5
+km of the pair's midpoint (`near`), and the third pilots whose aimed rounds
+went at each plane (`thirds`). It is Boelcke's rule 8 measured
+(`features/dogfight-doctrine`, "What the recordings say"): outnumbered, a
+pilot won 7% and lost 26%; shot at by a third pilot, won 1% and went down
+42%. Tested in `test_dogfight_recordings.py` (the wingman near, his rounds at
+his own side no third shooter).
+
 ## What the theatre reads into it
 
 The file holds only what the recording says: both planes every 0.1 s in the

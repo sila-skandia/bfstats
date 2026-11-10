@@ -41,7 +41,7 @@ const gun = gunOf({ speed: 400, reach: 600, span: 2.5, converge: 1.6 });
 /** Fewer than this in a cell and its percentages are not printed. */
 const MIN = 5;
 
-const attacks = [], dives = [], bursts = [], sights = [], endings = {};
+const attacks = [], dives = [], bursts = [], sights = [], endings = {}, company = [];
 for (const row of rows) {
   const raw = JSON.parse(await readFile(path.join(dir, `${row.id}.json`), 'utf8'));
   const fight = recordedFight(raw);
@@ -55,6 +55,12 @@ for (const row of rows) {
     for (const b of side.bursts) bursts.push({ ...b, side: s });
     for (const d of side.dives) dives.push({ ...d, fight: row.id, side: s, won: winner === s, lost: winner === 1 - s });
     if (winner !== null) sights.push({ sight: side.sight, won: winner === s });
+    // Rule 8: the fight's company (the detector's rule 9), when the
+    // extraction carries it: friends and enemies near, and third shooters.
+    const c = raw.company;
+    if (c) company.push({ friends: c.near[s][0], enemies: c.near[s][1], ganged: (c.thirds[s] ?? []).length > 0,
+                          ganging: (c.thirds[1 - s] ?? []).length > 0, won: winner === s, lost: winner === 1 - s,
+                          downedByAnother: row.end?.why === 'downed by another' && row.end.side === s });
   });
 }
 
@@ -113,6 +119,18 @@ for (const [name, list] of [['Met it', dives.filter(d => d.met)], ['Ran', dives.
   const taken = list.reduce((x, d) => x + d.hitMe, 0);
   out.push(row([name, list.length, pct(list.filter(d => d.hitMe > 0).length, list.length), list.length ? (taken / list.length).toFixed(1) : '-',
     pct(list.filter(d => d.won).length, list.length), pct(list.filter(d => d.lost).length, list.length)]));
+}
+if (company.length) {
+  out.push('\n**Rule 8: the company** (other aircraft within 1.5 km of the fight, and third shooters)\n',
+    row(['', 'Pilots', 'Won', 'Lost', 'Shot down by a third']), row(['---', '---', '---', '---', '---']));
+  const line = (name, list) => out.push(row([name, list.length, pct(list.filter(x => x.won).length, list.length), pct(list.filter(x => x.lost).length, list.length),
+    pct(list.filter(x => x.downedByAnother).length, list.length)]));
+  line('Alone (nobody else near)', company.filter(x => !x.friends && !x.enemies));
+  line('More friends than enemies near', company.filter(x => x.friends > x.enemies));
+  line('Even, someone near', company.filter(x => x.friends === x.enemies && x.friends > 0));
+  line('More enemies than friends near', company.filter(x => x.enemies > x.friends));
+  line('A third pilot shot at you (two on one)', company.filter(x => x.ganged));
+  line('A friend shot at your opponent too', company.filter(x => x.ganging));
 }
 out.push(`\n**Rule 8: how the fights ended**: ${Object.entries(endings).sort((a, b) => b[1] - a[1]).map(([k, v]) => `${k} ${v}`).join(', ')}.`);
 console.log(out.join('\n'));

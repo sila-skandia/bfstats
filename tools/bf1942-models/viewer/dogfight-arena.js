@@ -62,6 +62,38 @@ export function arenasFrom(rows, levels) {
   return [...out.values()].sort((a, b) => order(a) - order(b) || a.name.localeCompare(b.name));
 }
 
+/**
+ * The arenas from a tree's `dogfight-arenas.json` (`extract_dogfight_arenas.py`):
+ * each level's aircraft by team, as its object spawners field them. For a
+ * mod whose teams change from level to level (BF1918), where the
+ * catalogue's WWII sides pair nothing. Team 1 flies as the construct's
+ * team 1 ('Axis'), team 2 as 'Allied' (`teamOf`); the arena's planes are
+ * the level's, one arena per pair of fighter sets, as `arenasFrom`.
+ */
+export function arenasFromTeams(index, levels) {
+  const held = new Map((levels ?? []).map(l => [String(l).toLowerCase(), l]));
+  const out = new Map();
+  for (const [level, teams] of Object.entries(index?.levels ?? {})) {
+    const map = held.get(level.toLowerCase());
+    if (!map) continue;
+    const planes = [];
+    for (const [team, side] of [['1', 'Axis'], ['2', 'Allied']]) {
+      for (const template of teams[team] ?? []) {
+        if (!planes.some(p => p.template === template)) planes.push({ template, side, fighter: isFighter(template) });
+      }
+    }
+    const rank = p => fighterRank(p.template);
+    planes.sort((a, b) => rank(a) - rank(b) || a.template.localeCompare(b.template));
+    const allied = planes.filter(p => p.side === 'Allied' && p.fighter).map(p => p.template);
+    const axis = planes.filter(p => p.side === 'Axis' && p.fighter).map(p => p.template);
+    if (!allied.length || !axis.length) continue;
+    const key = `${allied.join('+')}|${axis.join('+')}`;
+    const have = out.get(key);
+    if (!have || map < have.map) out.set(key, { map, name: map.replace(/_/g, ' '), planes, allied, axis });
+  }
+  return [...out.values()].sort((a, b) => a.name.localeCompare(b.name));
+}
+
 /** The plane you fly in `arena`: `choice` when the arena has it, else its
  *  best Allied fighter. */
 export function planeIn(arena, choice) {

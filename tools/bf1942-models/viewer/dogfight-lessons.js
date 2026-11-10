@@ -530,6 +530,37 @@ export const LESSONS = [
     },
   },
   {
+    // Boelcke's rule 4 (features/dogfight-doctrine): never let yourself be
+    // deceived by ruses; his second version, follow a damaged enemy down to
+    // be sure he is not faking.
+    id: 'falling-leaf',
+    title: 'The falling leaf',
+    tagline: 'They drop away as if hit. Take it for a kill and they are gone.',
+    story: [
+      'Settled on their tail, you watch them fall away: throttle off, spiralling down, as a plane that has been hit falls. It is a ruse as old as air fighting. A couple of hundred metres down they pull out, under your wings where you cannot see them, and fly home.',
+      'Flown from nine starts, the pilot who took the fall for a kill and flew on kept them in sight a tenth to a fifth of the time after it, landed 0 to 4 rounds, nearly all in the first second, and ended 1.2 to 1.4 km from them: gone, every time.',
+    ],
+    counterStory: [
+      'Boelcke wrote it in 1916: never let yourself be deceived by ruses, and follow a damaged enemy down to be sure. Go down after them, above and behind, throttle back so you do not fly past, and be on them as they pull out.',
+      'Flown from the same nine starts, the pilot who followed them down kept them in sight 80 to 100% of the time, stayed within 80 to 320 m, and landed 1 to 10 rounds after the fall. The price: in three of the nine their pull-out met you nose to nose and they landed 2 to 5 of their own.',
+    ],
+    ace: { plan: 'leafAce', start: { at: [0, 400, -260], headingDeg: 0, speed: 58 } },
+    you: { start: { at: [0, 420, 0], headingDeg: 0, speed: 62 } },
+    demos: [
+      { id: 'move', label: 'You take it for a kill', seat: 'leafFooled', skill: 0.85,
+        note: 'They fall away spinning; you fly on, sure of the kill. They pull out low and fly home.' },
+      { id: 'counter', label: 'You follow them down', seat: 'leafFollow', skill: 0.85,
+        note: 'Down after them, above and behind, and on them as they pull out.' },
+    ],
+    seconds: 40,
+    coach: {
+      cruise: { line: 'They are flying straight ahead of you', tip: 'Close in behind them and shoot. Watch what they do when you do.', keys: ['Mouse', 'Space'] },
+      fall: { line: 'They are falling away, spinning', tip: 'It may be a ruse. Follow them down: above and behind, throttle back.', keys: ['Mouse', 'S'] },
+      recover: { line: 'They are pulling out', tip: 'There it is: they were faking. Nose on them before they come up at you.', keys: ['Mouse', 'Space'] },
+      attack: { line: 'They are climbing back at you', tip: 'Meet them nose on, or turn away hard. Do not let them under your wing.', keys: ['Mouse', 'Arrows'] },
+    },
+  },
+  {
     // Boelcke's rule 3 as a drill (features/dogfight-doctrine): a target
     // that never shoots back, and the score is range.
     id: 'gunnery',
@@ -651,14 +682,21 @@ export function demoSides(lesson, demo) {
 /** Single-seat fighters first, then anything with wings: the order the
  *  school picks an airframe in. Matched on the template's name. */
 export const FIGHTERS = ['spitfire', 'bf109', 'mustang', 'yak9', 'zero', 'corsair', 'fw190', 'p47', 'p38', 'hurricane',
-  'me262', 'goblin', 'natter', 'bf110', 'mosquito'];
+  'me262', 'goblin', 'natter', 'bf110', 'mosquito',
+  // BF1918's single seaters (features/dogfight-doctrine, "The BF1918
+  // arena"), in the order the flight law ranks them: the SE5 and the D.VII
+  // carry five times the others' body drag and top out at 42 m/s.
+  'spad', 'fokker', 'sopwith', 'albatross', 'neuport', 'nieuport', 'aircodh2', 'halberstadt', 'eindekker', 'morane', 'd7a', 'se5'];
+/** Two-seaters, bombers and airships, checked before the fighters: the
+ *  Albatros C.III is not the Albatros scout. */
+const NOT_FIGHTERS = /b17|ju88|c47|lancaster|heinkel|he111|betty|ac130|transport|albatrossc|aircodh4|breguet|caudron|gotha|handleypage|felixstowe|hansaw|taube|bleriot|zeppelin|lebaudy|balloon/;
 
 /** How fighter-like a template is: 0 for the best, a large number for a
  *  bomber or anything unknown. */
 export function fighterRank(name) {
   const n = String(name ?? '').toLowerCase().replace(/[^a-z0-9]/g, '');
+  if (NOT_FIGHTERS.test(n)) return 900;
   const i = FIGHTERS.findIndex(f => n.includes(f));
   if (i >= 0) return i;
-  if (/b17|ju88|c47|lancaster|heinkel|he111|betty|ac130|transport/.test(n)) return 900;
   return 100;
 }

@@ -120,6 +120,11 @@ export const INTENTS = {
   circler: { turn: 'defend' },
   cruiser: { cruise: 'setup' },
   target: { straight: 'setup', turn: 'setup', jink: 'defend', climb: 'setup' },
+  leafAce: { cruise: 'setup', fall: 'defend', recover: 'setup', attack: 'attack' },
+  leafFooled: { chase: 'attack', done: 'setup' },
+  leafFollow: { chase: 'attack', follow: 'setup', pounce: 'attack' },
+  wingman: { station: 'setup', cover: 'attack' },
+  weaver: { abreast: 'setup', weave: 'defend', shoot: 'attack' },
   meetTheDive: { climb: 'setup', face: 'defend', pass: 'defend', extend: 'setup' },
   bzDip: { climb: 'setup', face: 'defend', pass: 'defend', extend: 'setup', 'dip-run': 'defend' },
   bzAce: { climb: 'setup', perch: 'setup', dive: 'attack', zoom: 'setup', reverse: 'setup', 'let-go': 'setup' },
@@ -427,7 +432,7 @@ function reflex(c, def) {
 const CLEAR = { bank: 60, for: 6, every: 4 };
 /** The school's pilots who by design never look round: the man flying
  *  straight and level under attack, and the one who never looks up. */
-const NEVER_CLEARS = new Set(['cruiser', 'unaware', 'target']);
+const NEVER_CLEARS = new Set(['cruiser', 'unaware', 'target', 'leafFooled']);
 function clearTurn(c) {
   const { g, mem, me } = c;
   if (NEVER_CLEARS.has(c.pilot.plan)) return null;
@@ -2420,6 +2425,168 @@ PLANS.target = {
         k = pointNose(me, climbing(mem.dir, 0), { fine: 6 });
     }
     return { ...k, throttle, aimed: false };
+  },
+};
+
+/**
+ * The falling leaf (features/dogfight-doctrine, Boelcke's rule 4: never be
+ * deceived by ruses). A pilot with an enemy settled on his tail chops his
+ * throttle and drops away in a spiral, as a plane that has been hit falls;
+ * past `LEAF.drop` metres down he pulls out and comes back up at his
+ * follower from below, where the wings hide him.
+ */
+const LEAF = { onTail: 300, settle: 2.5, bank: 110, drop: 170, fallMax: 6, recoverPitch: 5 };
+PLANS.leafAce = {
+  title: 'The falling leaf', first: 'cruise',
+  says: {
+    cruise: 'Cruising, letting them settle on my tail',
+    fall: 'Hit, falling away: throttle off, spiralling down',
+    recover: 'Pulling out low, under their wings',
+    attack: 'Back up at them from below',
+  },
+  step(c) {
+    const { me, g, mem } = c;
+    switch (mem.phase) {
+      case 'cruise': {
+        // Him settled behind me inside the guns' reach for a moment: fall.
+        const behind = g.hisAta < 25 && g.ata > 120 && g.range < LEAF.onTail;
+        mem.behindT = behind ? (mem.behindT ?? 0) + c.dt : 0;
+        if (mem.behindT > LEAF.settle) { mem.fallFrom = me.position[1]; mem.side = g.side || 1; go(c, 'fall'); break; }
+        mem.dir ??= heading(me.velocity);
+        return { ...pointNose(me, climbing(mem.dir, 0), { fine: 6 }), throttle: holdSpeed(c, 58) };
+      }
+      case 'fall': {
+        if (mem.fallFrom - me.position[1] > LEAF.drop || mem.since > LEAF.fallMax) { go(c, 'recover'); break; }
+        return { ...bankAndPull(me, mem.side * LEAF.bank, 0.8), throttle: -1, aimed: false };
+      }
+      case 'recover': {
+        if (pitchOf(me.orientation) > LEAF.recoverPitch || mem.since > 3) { go(c, 'attack'); break; }
+        return { ...pointNose(me, climbing(heading(me.velocity), 10), { fine: 20 }), throttle: 1, aimed: false };
+      }
+      default:
+        break;
+    }
+    return { ...leadPursuit(c, { pull: 1, push: 0.5 }), throttle: 1 };
+  },
+};
+
+/** Fooled by the falling leaf: on his tail and shooting until he drops away,
+ *  then sure of the kill, flying on, never looking down or back. */
+PLANS.leafFooled = {
+  title: 'Taking the fall for a kill', first: 'chase',
+  says: { chase: 'On their tail, guns on them', done: 'They are going down: flying on' },
+  step(c) {
+    const { me, him, g, mem } = c;
+    if (mem.phase === 'chase' && him.velocity[1] < -15 && g.above < -40) { mem.dir = heading(me.velocity); go(c, 'done'); }
+    if (mem.phase === 'done') return { ...pointNose(me, climbing(mem.dir, 0), { fine: 6 }), throttle: 1, aimed: false };
+    return { ...leadPursuit(c, { pull: 1, push: 0.6 }), throttle: g.closure > 12 && g.range < 220 ? 0.2 : 1 };
+  },
+};
+
+/** Not fooled: down after him, staying above and behind him through the
+ *  fall, nose on, throttle back so as not to fly past; as he pulls out,
+ *  in on him while his nose is still coming up. */
+PLANS.leafFollow = {
+  title: 'Following the fall', first: 'chase',
+  says: { chase: 'On their tail, guns on them', follow: 'They are falling: following them down, above and behind', pounce: 'They are pulling out: in on them' },
+  step(c) {
+    const { me, him, g, mem } = c;
+    if (mem.phase === 'chase' && him.velocity[1] < -15 && g.above < -40) go(c, 'follow');
+    if (mem.phase === 'follow') {
+      if (him.velocity[1] > -3 && mem.since > 1.5) { go(c, 'pounce'); }
+      else {
+        // His position a second and a half back along his path, 60 m above.
+        const p = add(sub(him.position, scale(him.velocity, 1.5)), [0, 60, 0]);
+        return { ...pointNose(me, sub(p, me.position), { fine: 10 }), throttle: g.range < 260 ? -1 : 0.3, aimed: true };
+      }
+    }
+    return { ...leadPursuit(c, { pull: 1, push: 0.6 }), throttle: g.closure > 12 && g.range < 220 ? 0.2 : 1 };
+  },
+};
+
+/**
+ * The pair (features/dogfight-doctrine, Boelcke's rule 8; the Rotte): the
+ * wingman flies a station off his leader's beam, a little behind, and his
+ * whole job is the leader's tail: an enemy closing on it inside
+ * `PAIR.cover` metres is his target until it is gone or off the tail.
+ * Needs the fight's `c.team` (`dogfight-fight.js` `runFight`).
+ */
+const PAIR = { abeam: 180, behind: 60, cover: 800, tailCone: 60 };
+PLANS.wingman = {
+  title: 'The wingman', first: 'station',
+  says: { station: 'On my leader\'s wing, watching his tail', cover: 'Someone is on my leader\'s tail: going for them' },
+  step(c) {
+    const { me, mem, team } = c;
+    const lead = team?.friends.find(f => f.i === (mem.leader ?? f.i)) ?? team?.friends[0];
+    if (!lead) { mem.target = null; return { ...leadPursuit(c, { pull: 1 }), throttle: 1 }; }
+    const L = lead.state, lf = basis(L.orientation).F;
+    // An enemy on the leader's tail: behind him, inside the cone, closing.
+    const threat = (team.enemies ?? []).map(e => {
+      const rel = sub(L.position, e.state.position), d = len(rel);
+      const ef = basis(e.state.orientation).F;
+      const nose = Math.acos(clamp(dot(ef, scale(rel, 1 / Math.max(d, 1e-6))))) / DEG;
+      const behind = Math.acos(clamp(dot(lf, scale(rel, 1 / Math.max(d, 1e-6))))) / DEG;
+      return { e, d, ok: d < PAIR.cover && nose < PAIR.tailCone && behind < 70 };
+    }).filter(x => x.ok).sort((a, b) => a.d - b.d)[0];
+    if (threat) {
+      mem.target = threat.e.i;
+      go(c, 'cover');
+      // The target this tick may still be another: point at the threat
+      // until the fight hands him over next tick.
+      if (c.team.target === threat.e.i) return { ...leadPursuit(c, { pull: 1, push: 0.6 }), throttle: 1 };
+      return { ...pointNose(me, sub(threat.e.state.position, me.position), { fine: 8 }), throttle: 1, aimed: false };
+    }
+    mem.target = null;
+    go(c, 'station');
+    // His station: abeam the leader on the side he is already on, a little
+    // behind, at the leader's height.
+    const lr = basis(L.orientation).R;
+    const side = Math.sign(dot(sub(me.position, L.position), lr)) || 1;
+    const spot = add(add(L.position, scale(lr, side * PAIR.abeam)), scale(lf, -PAIR.behind));
+    const toSpot = sub(add(spot, scale(L.velocity, 2)), me.position);
+    const gap = dot(sub(spot, me.position), lf);
+    return { ...pointNose(me, toSpot, { fine: 8 }), throttle: clamp(0.6 + gap * 0.02, -1, 1), aimed: false };
+  },
+};
+
+/**
+ * The Thach weave (Thach, 1941; features/dogfight-school research.md): two
+ * fighters abreast; when an enemy settles on either one's tail, both turn
+ * hard toward each other, and the attacker, following his target round,
+ * is dragged across the other's nose. At each crossing they reverse, toward
+ * each other again. Whoever has the attacker across his nose shoots.
+ */
+const WEAVE = { tail: 900, tailCone: 50, shootRange: 600, shootCone: 35 };
+PLANS.weaver = {
+  title: 'The weave', first: 'abreast',
+  says: { abreast: 'Abreast of my partner, watching both our tails', weave: 'Someone is on a tail: turning in toward my partner', shoot: 'They are across my nose: shooting' },
+  step(c) {
+    const { me, mem, team, g } = c;
+    const mate = team?.friends[0];
+    if (!mate) return { ...leadPursuit(c, { pull: 1 }), throttle: 1 };
+    const tailed = st => (team.enemies ?? []).some(e => {
+      const rel = sub(st.position, e.state.position), d = len(rel);
+      const nose = Math.acos(clamp(dot(basis(e.state.orientation).F, scale(rel, 1 / Math.max(d, 1e-6))))) / DEG;
+      return d < WEAVE.tail && nose < WEAVE.tailCone;
+    });
+    const threat = tailed(me) || tailed(mate.state);
+    // A shot: the enemy across my nose, close.
+    if (threat && g.ata < WEAVE.shootCone && g.range < WEAVE.shootRange && g.sees) {
+      go(c, 'shoot');
+      return { ...leadPursuit(c, { pull: 1, push: 0.6 }), throttle: 1 };
+    }
+    if (threat) {
+      // Toward the partner: on the horizon, which side of my heading he is.
+      const side = sideOf(basis(me.orientation), sub(mate.state.position, me.position));
+      if (mem.phase !== 'weave') mem.weaveSide = side;
+      // Past each other (he is now on the other side): reverse, toward him again.
+      if (mem.phase === 'weave' && side !== mem.weaveSide && mem.since > 2) { mem.weaveSide = side; mem.since = 0; }
+      go(c, 'weave');
+      return { ...hardTurn(me, mem.weaveSide, { maxBank: 80 }), throttle: 1, aimed: false };
+    }
+    go(c, 'abreast');
+    mem.dir ??= heading(me.velocity);
+    return { ...pointNose(me, climbing(mem.dir, 0), { fine: 6 }), throttle: holdSpeed(c, 60), aimed: false };
   },
 };
 

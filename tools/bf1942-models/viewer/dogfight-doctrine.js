@@ -65,7 +65,7 @@ export const RULES = [
     plain: 'Hold your fire until they are close and in the sight.', lesson: ['gunnery', null],
     here: 'In the recordings, 25 hits in 100 rounds inside 100 m, 13 at 300 to 400 m, 1 beyond. BF1918 rounds do full damage only to 100 m; FHSW rounds weaken from the muzzle.' },
   { n: 4, id: 'sight', name: 'Keep them in sight', rule: 'Always keep your eye on your opponent, and never let yourself be deceived by ruses.',
-    plain: 'Never lose sight of them. A plane falling away may be faking.', lesson: ['up-and-over', 'ninja'],
+    plain: 'Never lose sight of them. A plane falling away may be faking.', lesson: ['falling-leaf', 'counter'],
     here: 'No enemy plane is ever on the minimap, and their name shows only while you aim at them. The winners of the recorded fights had the other in sight 95% of the time, the losers 82%.' },
   { n: 5, id: 'behind', name: 'From behind', rule: 'In any form of attack it is essential to assail your enemy from behind.',
     plain: 'Come in from their tail, where they cannot see you or shoot.', lesson: ['on-his-tail', 'move'],

@@ -87,7 +87,11 @@ is published: no asset is involved.
   the recorded fights say and the lesson that shows it; the end card marks
   each rule kept or broken in the fight; the coach's rule lines ride in their
   own row ("BOELCKE 3 · Hold fire: ..."); and the lesson *Gunnery: close,
-  then closer* is a target that never shoots back, scored on range.
+  then closer* is a target that never shoots back, scored on range. *The
+  falling leaf* is rule 4's ruse. A BF1918 arena pairs the WWI scouts by
+  their levels' spawners, and every move's count on the tabs is now flown on
+  the plane the lessons fly on, the Spitfire's beside it where they differ
+  (`features/dogfight-doctrine`, "The lessons on other airframes").
 
 ## The hunter
 

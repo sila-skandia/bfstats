@@ -47,11 +47,20 @@
 //    with no one credited (a crash); he left his seat; a plane went out of
 //    the recorder's range (a client recording sees only what is near it);
 //    they flew apart; or neither fired again.
+// 9. (version 3, features/dogfight-doctrine: Boelcke's rule 8) Every fight
+//    carries its company: the other aircraft in the air near it, by side
+//    (`near`: the most at once of each pilot's own side and of the other's,
+//    within `company` metres of the pair's midpoint, sampled every
+//    `companyStep` seconds), and the third pilots who shot at either of the
+//    two (`thirds`: an aimed round, rule 3, from anyone else at that plane
+//    while the fight ran): two on one.
 
 import { isReplicated, teamAt, nameAt, flownPositionAt, flownRotationAt, flownGapAt } from './replay-recording.js';
 
 export const RULES = Object.freeze({
-  version: 2,
+  version: 3,
+  company: 1500,
+  companyStep: 1,
   airSpeed: 40,
   airSeconds: 3,
   airShare: 0.5,
@@ -327,7 +336,59 @@ export function findDogfights(rec, rules = RULES, { air = null } = {}) {
       }
     }
   }
+  for (const f of found) f.company = companyOf(rec, f, planes, rounds, rules);
   return found.sort((a, b) => a.t0 - b.t0);
+}
+
+/**
+ * Rule 9: the fight's company. `planes` is the round's planes (rule 1),
+ * `rounds` every pilot's gun rounds. Returns `{ near: [[own, other],
+ * [own, other]], thirds: [[{ pid, name, aimed }], [...]] }`, side 0 first:
+ * the most aircraft of each pilot's own side and of the other side at once
+ * within `company` metres of the pair's midpoint, and the third pilots whose
+ * aimed rounds went at each plane.
+ */
+export function companyOf(rec, fight, planes, rounds, rules = RULES) {
+  const ids = fight.life.map(l => l.nid);
+  const teams = fight.sides.map(s => s.team);
+  const near = [[0, 0], [0, 0]];
+  const others = [];
+  for (const P of planes) {
+    if (ids.includes(P.life.nid)) continue;
+    for (const pilot of P.pilots) {
+      if (pilot.to < fight.t0 || pilot.from > fight.t1) continue;
+      if (fight.sides.some(s => s.pid === pilot.pid)) continue;
+      others.push({ P, pilot, team: teamAt(rec, pilot.pid, Math.max(pilot.from, fight.t0)) });
+    }
+  }
+  for (let t = fight.t0; t <= fight.t1; t += rules.companyStep) {
+    const a = posAt(fight.life[0], t), b = posAt(fight.life[1], t);
+    if (!a || !b) continue;
+    const mid = [(a[0] + b[0]) / 2, (a[1] + b[1]) / 2, (a[2] + b[2]) / 2];
+    const count = [[0, 0], [0, 0]];
+    for (const o of others) {
+      if (t < o.pilot.from || t > o.pilot.to || !liveAt(o.P.life, t, rules)) continue;
+      const p = posAt(o.P.life, t);
+      if (!p || len(sub(p, mid)) > rules.company) continue;
+      for (const s of [0, 1]) count[s][o.team === teams[s] ? 0 : 1]++;
+    }
+    for (const s of [0, 1]) for (const k of [0, 1]) near[s][k] = Math.max(near[s][k], count[s][k]);
+  }
+  const thirds = [0, 1].map(s => {
+    const target = fight.life[s];
+    const by = new Map();
+    for (const o of others) {
+      if (o.team === teams[s]) continue;
+      for (const f of rounds.get(o.pilot.pid) ?? []) {
+        if (f.t < fight.t0 || f.t > fight.t1) continue;
+        if (f.nid !== null && f.nid !== undefined && f.nid !== o.P.life.nid) continue;
+        const m = roundMiss(f, o.P.life, target, rules);
+        if (m && m.miss <= rules.aimMiss) by.set(o.pilot.pid, (by.get(o.pilot.pid) ?? 0) + 1);
+      }
+    }
+    return [...by].map(([pid, aimed]) => ({ pid, name: nameAt(rec, pid, fight.t0) ?? null, aimed }));
+  });
+  return { near, thirds };
 }
 
 function pairFights(rec, rules, rounds, A, B, pa, pb, from, to) {
@@ -482,7 +543,7 @@ export function sampleFight(rec, fight, { dt = 0.1, round = true } = {}) {
   shots.sort((a, b) => a.t - b.t);
   return {
     dt, t0: Math.round(fight.t0 * 1000) / 1000, duration: Math.round((n - 1) * dt * 1000) / 1000,
-    kind: fight.kind, mutual: fight.mutual, closest: fight.closest,
+    kind: fight.kind, mutual: fight.mutual, closest: fight.closest, company: fight.company ?? null,
     kill: fight.kill ? { ...fight.kill, t: Math.round((fight.kill.t - fight.t0) * 1000) / 1000 } : null,
     end: fight.end ? { ...fight.end, t: Math.round(Math.max(0, fight.end.t - fight.t0) * 1000) / 1000,
       ...(fight.end.since !== undefined ? { since: Math.round(Math.max(0, fight.end.since - fight.t0) * 1000) / 1000 } : {}) } : null,

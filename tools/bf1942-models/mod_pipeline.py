@@ -371,6 +371,12 @@ STEPS: tuple[Step, ...] = (
              "indexes merge; nation twins export one rig per (weapon, body) with the rest as "
              "painted index rows, and the skins decision pass skips levels whose inputs did not "
              "move (features/mesh-asset-size, phase 5 step 4)"),
+    _s("dogfight_arenas", "Each level's aircraft by team, for the dogfight school's arenas",
+       inputs=('{maps}/maps.json', '{models}/models.json',),
+       cmds=(("python3", "extract_dogfight_arenas.py", "{maps}", "--models", "{models}"),),
+       outputs=(("{maps}/dogfight-arenas.json", 1),), after=("models", "levels"),
+       fixes="BF1918's WWII-sided catalogue paired no fighters, so the school had no WWI arena "
+             "(features/dogfight-doctrine)"),
     _s("manifest", "Registry models/mods.json, so thumbs render the mod's models",
        inputs=('{maps}/maps.json', '{models}/models.json',),
        cmds=(("python3", "build_mods_manifest.py"),),

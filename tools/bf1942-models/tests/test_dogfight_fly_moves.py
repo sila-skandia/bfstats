@@ -24,6 +24,9 @@ GIVES_UP = {"boom-and-zoom": "bzAce", "under-the-height": "uhAce", "up-and-over"
             "out-of-the-lock": "olAce", "scissors": "scAce", "turnarounds": "taAce", "the-circle": "btHunter"}
 # Lessons whose tries are named for what they try (`zoom`, `chop`), several of a kind.
 MANY_TRIES = {"the-circle"}
+# Lessons where you are the attacker, not the pilot in trouble: no Dip,
+# Flip or Ninja to practise (features/dogfight-doctrine, the falling leaf).
+NO_MOVES = {"falling-leaf"}
 
 
 def run() -> dict:
@@ -56,6 +59,9 @@ class FlyMovesTests(unittest.TestCase):
 
     def test_a_move_is_practised_as_it_was_measured(self) -> None:
         for lesson, row in self.out["lessons"].items():
+            if lesson in NO_MOVES:
+                self.assertEqual({}, row["moves"], lesson)
+                continue
             # Every lesson has its Dip, Flip and Ninja; Breaking the circle
             # has several tries of a kind, each a demo of its own.
             self.assertLessEqual({"dip", "flip", "ninja"} - ({"flip", "ninja"} if lesson in MANY_TRIES else set()),

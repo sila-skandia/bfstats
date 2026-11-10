@@ -34,7 +34,22 @@ const bob = arenas.find(a => a.map === 'Battle_of_Britain');
 const kursk = arenas.find(a => a.map === 'Kursk');
 const bf = bob.planes.find(p => p.template === 'BF109');
 const url = new URL(A.arenaUrl('/', { map: 'Kursk', side: 'Axis', lesson: 'boom-and-zoom', move: 'dip-1', base: 'http://localhost/dogfight.html' }));
+// BF1918's teams from its levels' spawners (`dogfight-arenas.json`), where
+// the catalogue's WWII sides pair nothing: a Camel against a red triplane,
+// a SPAD against a triplane on two levels (one arena), a level whose team 2
+// has only a two-seater (no arena), and a level the tree does not hold.
+const L = await import(pathToFileURL(path.join(viewer, 'dogfight-lessons.js')).href);
+const teams = A.arenasFromTeams({ version: 1, levels: {
+  montfaucon: { 1: ['FokkerRed'], 2: ['Sopwith', 'Breguet14'] },
+  battle_of_the_vosges: { 1: ['Fokker'], 2: ['Spad7'] },
+  nebelberg: { 1: ['Fokker'], 2: ['Spad7'] },
+  galicia: { 1: ['Albatross', 'AlbatrossC3'], 2: ['AircoDH4_Brit'] },
+  elsewhere: { 1: ['Fokker'], 2: ['Spad7', 'neuport11'] },
+} }, ['Montfaucon', 'battle_of_the_vosges', 'nebelberg', 'galicia']);
+const ranks = Object.fromEntries(['Spad7', 'FokkerRed', 'Sopwith', 'AlbatrossC3', 'Albatross', 'AircoDH4_Brit', 'Gotha', 'Spitfire', 'se5']
+  .map(n => [n, L.fighterRank(n)]));
 console.log(JSON.stringify({
+  teams: teams.map(a => ({ map: a.map, allied: a.allied, axis: a.axis, planes: a.planes.map(p => p.template) })), ranks,
   arenas: arenas.map(a => ({ map: a.map, allied: a.allied, axis: a.axis, planes: a.planes.map(p => p.template) })),
   planeIn: { chosen: A.planeIn(bob, 'BF109')?.template, missing: A.planeIn(bob, 'Zero')?.template },
   ace: { againstAxis: A.aceAgainst(bob, bf)?.template, againstAllied: A.aceAgainst(kursk, kursk.planes.find(p => p.template === 'Yak9'))?.template },
