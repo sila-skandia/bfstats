@@ -155,8 +155,10 @@ damageable with 1e10 through the world's damage pass, which wrecks it.
 
 Then optimise and publish as the pipeline does.
 
-## Open
+## Open items
 
+* The `Lb_SitInBench` seat state a `PassengerInWilly` seat names is in no
+  BF1918 archive: 32 (soldier, seat) poses fall back. Mod data.
 - The client's call site of `Camera::setVehicleFOV` was not traced: that the
   chase views keep the vehicle FOV rests on the function testing no mode and on
   `getTransformation` restoring it by hand in mode 17.
@@ -170,8 +172,3 @@ Then optimise and publish as the pipeline does.
   `vehicleFov`.
 - Bots do not share magazines across a weapon link; only the human's hand
   weapon counts rounds that way.
-
-## Open items
-
-* The `Lb_SitInBench` seat state a `PassengerInWilly` seat names is in no
-  BF1918 archive: 32 (soldier, seat) poses fall back. Mod data.
