@@ -52,6 +52,85 @@ if (flag('--fit')) {
   process.exit(0);
 }
 
+if (flag('--live')) {
+  // The live fight's seats (`dogfight-live.js` `fitSeats`, `seatPilot`,
+  // `stepSeat`) flown off the page as the Range flies them: each airframe
+  // placed at its paced start, each pilot stepped on the planes' real
+  // states, beside `runDuel` flying the same sides. Fitted, the two are one
+  // flight; unfitted (the live fight before 2026-11-10), they part.
+  const { fitSeats, seatPilot, seatGun, stepSeat, handed } = await load('dogfight-live.js');
+  const { createPilot } = await load('dogfight-pilot.js');
+  const { placePlane, stage, applyStick, DUEL_DT } = await load('dogfight-duel.js');
+  const { stateOf } = await load('dogfight-flight.js');
+  const { setEra, eraNow, lessonById, flightOf } = await load('dogfight-lessons.js');
+  const seconds = Number(opt('--seconds', 20));
+  const neutral = { hand: null, pace: 1, gun: null };
+  /** The live loop: `fits` the seats', `makers` 0 the ace's airframe, 1 yours. */
+  const liveLoop = (makers, sides, fits, secs = seconds) => {
+    const planes = sides.map((side, i) => {
+      const p = makers[i]();
+      p.groundHeight = () => 0;
+      placePlane(p, stage([0, 0, 0], paced(side.start, fits[i].pace)));
+      return p;
+    });
+    const pilots = sides.map((side, i) => seatPilot(side.plan, fits[i], { gun: {}, skill: side.skill ?? 1, seed: i + 1, memory: side.memory ?? {} }));
+    const tracks = [[], []];
+    for (let n = 0; n <= Math.round(secs / DUEL_DT); n++) {
+      const states = planes.map(p => stateOf(p.state));
+      for (let i = 0; i < 2; i++) {
+        const out = stepSeat(pilots[i], [fits[i], fits[1 - i]], { me: states[i], him: states[1 - i], dt: DUEL_DT, t: n * DUEL_DT, groundAt: () => 0, arena: null });
+        applyStick(planes[i], out);
+        tracks[i].push(states[i].position);
+      }
+      for (const p of planes) p.integrate(DUEL_DT);
+    }
+    return { tracks, planes, pilots };
+  };
+  const apart = (a, b) => {
+    let most = 0;
+    for (let i = 0; i < 2; i++) for (let n = 0; n < Math.min(a[i].length, b[i].length); n++)
+      most = Math.max(most, Math.hypot(...a[i][n].map((v, j) => v - b[i][n][j])));
+    return most;
+  };
+  const out = {};
+  const L = lessonFor(LESSONS.find(l => l.id === 'boom-and-zoom'), 'jet');
+  for (const [ace, you] of [['F16', 'F16'], ['F16', 'Mig29']]) {
+    const makers = [jetMaker(THREE, Aircraft, fixture, ace), jetMaker(THREE, Aircraft, fixture, you)];
+    const fits = fitSeats(i => makers[i]());
+    const sides = demoSides(L, L.demos.find(d => d.id === 'counter'));
+    const fitted = liveLoop(makers, sides, fits);
+    const duel = runDuel({ makePlane: (_, i) => makers[i](), seconds, groundAt: () => 0, sides });
+    const unfitted = liveLoop(makers, sides, [neutral, neutral]);
+    // The lines' boundary: from a moment of the live fight, its real states
+    // and its pilots' memories (in the space they see) flown on by a duel.
+    const mid = liveLoop(makers, sides, fits, 10);
+    const real = mid.planes.map(p => stateOf(p.state));
+    const on = runDuel({ makePlane: (_, i) => makers[i](), seconds: 1, groundAt: () => 0,
+      sides: sides.map((s, i) => ({ plan: s.plan, skill: s.skill, state: real[i], memory: mid.pilots[i].mem })) });
+    out[`${ace}/${you}`] = {
+      fits, apartFromDuel: apart(fitted.tracks, duel.tracks.map(t => t.map(k => k.p))), apartUnfitted: apart(fitted.tracks, unfitted.tracks),
+      startSpeed: [0, 1].map(i => Math.hypot(...duel.tracks[i][1].p.map((v, j) => v - duel.tracks[i][0].p[j])) / DUEL_DT),
+      lessonSpeeds: sides.map(s => s.start.speed),
+      aceGun: seatGun(fits[0], {}), pilotGun: seatPilot('ace', fits[0], { gun: {} }).gun, defaultGun: createPilot('ace', {}).gun,
+      handedHas: handed({ position: [0, 0, 0] }, fits[0]).hand ?? null,
+      // Where the duel flew on from: the real place it was handed.
+      handOff: Math.hypot(...on.tracks[1][0].p.map((v, j) => v - real[1].position[j])),
+      handOffMemPhase: on.mems[0].phase ?? null, liveMemPhase: mid.pilots[0].mem.phase ?? null,
+    };
+  }
+  // The era set from the ace's fit: the lesson read is the jet version.
+  setEra(null);
+  const jetFits = fitSeats(() => jetMaker(THREE, Aircraft, fixture, 'F16')());
+  setEra(jetFits[0].pace > 1 ? 'jet' : null);
+  out.era = { now: eraNow(), lesson: lessonById('boom-and-zoom').era ?? null, aceStart: flightOf(lessonById('boom-and-zoom')).ace.start };
+  setEra(null);
+  out.era.after = lessonById('boom-and-zoom').era ?? null;
+  // A seat whose airframe cannot be built is flown as the Spitfire.
+  out.broken = fitSeats(() => { throw new Error('no airframe'); });
+  console.log(JSON.stringify(out));
+  process.exit(0);
+}
+
 const lessonId = args.find(a => !a.startsWith('--') && a !== opt('--plane') && a !== opt('--demo') && a !== opt('--seconds') && a !== opt('--trace') && a !== opt('--step') && a !== opt('--start'));
 const base = LESSONS.find(l => l.id === lessonId);
 if (!base) { console.error(`no lesson ${lessonId}: ${LESSONS.map(l => l.id).join(', ')}`); process.exit(2); }

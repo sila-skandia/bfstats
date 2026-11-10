@@ -35,6 +35,13 @@ def jet_fit() -> dict:
 
 
 @functools.lru_cache(maxsize=None)
+def jet_live() -> dict:
+    """The live fight's seats (`dogfight-live.js`) flown off the page on the
+    jets, beside `runDuel` flying the same sides."""
+    return _run("--live")
+
+
+@functools.lru_cache(maxsize=None)
 def jet_lesson(lesson: str, plane: str = "F16", demo: str | None = None, base: bool = False) -> dict:
     """A lesson's demos from the nine starts on `plane`: `{"demos": {id: [run]}}`.
     `base` flies the lesson as written, without its jet file."""

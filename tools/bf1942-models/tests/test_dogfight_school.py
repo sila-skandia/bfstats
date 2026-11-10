@@ -447,5 +447,22 @@ class AceTests(_Harness):
         self.assertGreater(by, 80, bench)
 
 
+class LiveSeatsTests(_Harness):
+    """The live fight's seats fitted to the Spitfire (`dogfight-live.js`
+    `fitSeats`): neutral, so FLY IT on the Spitfire flies as it always has."""
+
+    def test_the_spitfires_seats_are_flown_as_before(self) -> None:
+        live = self.results["liveSeats"]
+        self.assertEqual([{"hand": None, "pace": 1, "gun": None}] * 2, live["fits"])
+        # Twenty seconds of the counter, both seats: every answer and every
+        # memory the same as the pilot stepped as the live fight stepped it.
+        self.assertGreater(live["ticks"], 1000)
+        self.assertEqual(live["ticks"], live["same"])
+        self.assertTrue(live["startsAsWritten"])
+        self.assertTrue(live["gun"])
+        self.assertTrue(live["pilotGun"])
+        self.assertTrue(live["handedSame"])
+
+
 if __name__ == "__main__":
     unittest.main()

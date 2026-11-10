@@ -12,10 +12,10 @@ import * as THREE from 'three';
 import { Aircraft } from './aircraft.js';
 import { stateOf, pointNose, hardTurn, bankAndPull, bankOf, pitchOf, basis, energyHeight, len, angleBetween } from './dogfight-flight.js';
 import { createPilot, geometry, situation, gunOf, PLANS, INTENTS, intentOf } from './dogfight-pilot.js';
-import { runDuel, placePlane, DUEL_DT, KILL_HITS, strikesAirframe } from './dogfight-duel.js';
+import { runDuel, placePlane, DUEL_DT, KILL_HITS, strikesAirframe, stage, paced, applyStick } from './dogfight-duel.js';
 import { LESSONS, demoSides, KEY_WORDS, fighterRank, RETIRED_DEMOS, demoById } from './dogfight-lessons.js';
 import { coach, TONE } from './dogfight-coach.js';
-import { toYou } from './dogfight-live.js';
+import { toYou, fitSeats, seatPilot, seatGun, stepSeat, handed } from './dogfight-live.js';
 import { COURSES, flyCourse, threadCourse, crossing, RING_RADIUS } from './dogfight-rings.js';
 
 const DT = DUEL_DT;
@@ -395,6 +395,51 @@ out.intentOf = { evade: intentOf('ace', 'evade'), recovering: intentOf('ace', 'a
     rows[opp] = row;
   }
   out.aceBench = rows;
+}
+
+// --- the live fight's seats on the Spitfire (dogfight-live.js) --------------
+// Fitted as the Range fits them, the Spitfire's seats are neutral, and every
+// helper the live fight now goes through hands back what it was given: a
+// pilot stepped through `stepSeat` answers to the decimal as one stepped as
+// the live fight stepped it before (features/dogfight-lessons-jets/live-fight.md).
+{
+  const fits = fitSeats(() => makePlane());
+  const L = LESSONS.find(l => l.id === 'boom-and-zoom');
+  const sides = demoSides(L, L.demos.find(d => d.id === 'counter'));
+  const arena = { centre: [0, 0], radius: 2600 };
+  const planes = sides.map((side, i) => {
+    const p = makePlane();
+    p.groundHeight = () => 0;
+    placePlane(p, stage([0, 0, 0], paced(side.start, fits[i].pace)));
+    return p;
+  });
+  const seated = sides.map((side, i) => seatPilot(side.plan, fits[i], { gun: {}, skill: side.skill, seed: i + 1, memory: side.memory ?? {} }));
+  const before = sides.map((side, i) => {
+    const p = createPilot(side.plan, { gun: {}, skill: side.skill, seed: i + 1 });
+    Object.assign(p.mem, structuredClone(side.memory ?? {}));
+    return p;
+  });
+  let ticks = 0, same = 0;
+  for (let n = 0; n <= Math.round(20 / DT); n++) {
+    const states = planes.map(p => stateOf(p.state));
+    for (let i = 0; i < 2; i++) {
+      const ctx = { me: states[i], him: states[1 - i], dt: DT, t: n * DT, groundAt: () => 0, arena };
+      const a = stepSeat(seated[i], [fits[i], fits[1 - i]], ctx);
+      const b = before[i].step({ ...ctx, ceilingBase: 0 });
+      ticks++;
+      if (JSON.stringify(a) === JSON.stringify(b) && JSON.stringify(seated[i].mem) === JSON.stringify(before[i].mem)) same++;
+      applyStick(planes[i], a);
+    }
+    for (const p of planes) p.integrate(DT);
+  }
+  const s0 = stateOf(planes[0].state);
+  out.liveSeats = {
+    fits, ticks, same,
+    startsAsWritten: sides.every((side, i) => paced(side.start, fits[i].pace) === side.start),
+    gun: JSON.stringify(seatGun(fits[0], { speed: 400, reach: 600 })) === JSON.stringify(gunOf({ speed: 400, reach: 600 })),
+    pilotGun: JSON.stringify(seatPilot('ace', fits[0], { gun: { speed: 400, reach: 600 } }).gun) === JSON.stringify(createPilot('ace', { gun: { speed: 400, reach: 600 } }).gun),
+    handedSame: handed(s0, fits[0]) === s0,
+  };
 }
 
 console.log(JSON.stringify(out));

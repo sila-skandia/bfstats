@@ -20,13 +20,13 @@
 // ways out of a deadlock up (X). The instructor (I) flies your seat through
 // that counter until you touch the controls; Y starts the engagement again.
 
-import { createPilot } from './dogfight-pilot.js';
+import { createPilot, gunOf } from './dogfight-pilot.js';
 import * as THREE from 'three';
 import { stateOf, len, sub, basis, clamp, dot, unit, gunSolution } from './dogfight-flight.js';
 import { createDeadlockWatch, extendFrom, resultWords, RESULT_TAGS, KIND_WORDS } from './dogfight-deadlock.js';
-import { placePlane, stage, runDuel, KILL_HITS } from './dogfight-duel.js';
+import { placePlane, stage, runDuel, KILL_HITS, fitAirframe, paced, pilotView } from './dogfight-duel.js';
 import { coach, TONE } from './dogfight-coach.js';
-import { lessonById, KEY_WORDS, flightOf } from './dogfight-lessons.js';
+import { lessonById, KEY_WORDS, flightOf, setEra } from './dogfight-lessons.js';
 import { createGuide, token } from './dogfight-guide.js';
 import { MOVE_INFO, moveLabel } from './dogfight-steps.js';
 import { seatCover } from './dogfight-cover.js';
@@ -132,6 +132,9 @@ export function createDogfightLive(page) {
     // Boelcke's rules in the coach (features/dogfight-doctrine): your guns'
     // useful range and falloff, and how long he has been off your screen.
     myGun: null, offScreen: 0,
+    // Each seat's airframe as the school fits it (`fitSeats`): 0 the ace's,
+    // 1 yours; and the ace's gun as the world fires it, in real metres.
+    fits: [NEUTRAL_FIT, NEUTRAL_FIT], aceGun: null, era: null,
   };
 
   function banner(text, seconds = 2.5, tone = 'info') {
@@ -147,9 +150,13 @@ export function createDogfightLive(page) {
    * against, the guide and the instructor flying it (`flightOf`).
    */
   function start(lessonId, demoId = null) {
+    // The lesson as the ace's airframe flies it: on a jet, its jet file.
+    refit();
     const lesson = lessonById(lessonId);
     if (!lesson) return false;
     live.lesson = lesson;
+    live.lessonId = lessonId;
+    live.demoId = demoId;
     live.flight = flightOf(lesson, demoId);
     live.moveDone = false;
     live.quarterFor = 0;
@@ -189,31 +196,57 @@ export function createDogfightLive(page) {
     return rc ? { centre: rc, radius: FENCE } : null;
   }
 
+  /**
+   * Both seats fitted to their airframes (`fitSeats`, off the page's scratch
+   * airframes: 0 the ace's type, 1 yours), and the lessons' era set from the
+   * ace's: a jet is taught the lessons' jet files. With no scratch airframes
+   * nothing is fitted and the era is left alone. True when the era changed.
+   */
+  function refit() {
+    if (!page.makePlane) return false;
+    live.fits = fitSeats(page.makePlane);
+    const era = live.fits[0].pace > 1 ? 'jet' : null;
+    setEra(era);
+    const changed = era !== live.era;
+    live.era = era;
+    return changed;
+  }
+
   /** Both seats in the air at the lesson's start, the ace's pilot fresh. */
   function place() {
-    const lesson = live.lesson;
     const drive = page.playerDrive();
     const bot = live.bot;
     const aceDrive = bot?.vehicle?.drive;
     if (!drive || !aceDrive) return false;
+    // Fitted again now both are seated, so the ace's type is the one flying.
+    // An era other than the one the lesson was read in reads it again.
+    if (refit() && lessonById(live.lessonId)) {
+      live.lesson = lessonById(live.lessonId);
+      live.flight = flightOf(live.lesson, live.demoId);
+    }
+    const lesson = live.lesson;
     const [cx, cz] = page.centre();
     const gy = page.groundAt(cx, cz);
     const origin = [cx, gy, cz];
     const f = live.flight;
-    placePlane(drive, stage(origin, f.you.start));
-    placePlane(aceDrive, stage(origin, f.ace.start));
+    // Each at its own airframe's pace: a jet starts the fight larger.
+    placePlane(drive, stage(origin, paced(f.you.start, live.fits[1].pace)));
+    placePlane(aceDrive, stage(origin, paced(f.ace.start, live.fits[0].pace)));
     for (const d of [drive, aceDrive]) {
       if (d.state) d.state.grounded = false;
       d.state?.angularVelocity?.set?.(0, 0, 0);
     }
     bot._airborne = true;
-    live.pilot = createPilot(f.ace.plan, { gun: page.gunOf?.(bot) ?? {} });
-    Object.assign(live.pilot.mem, structuredClone(f.ace.memory ?? {}));
+    // The ace's pilot thinks with its airframe's own cannon where it has
+    // one, shown at the Spitfire's size; the world's guns stay real.
+    const worldGun = page.gunOf?.(bot) ?? {};
+    live.pilot = seatPilot(f.ace.plan, live.fits[0], { gun: worldGun, memory: f.ace.memory ?? {} });
+    live.aceGun = seatGun(live.fits[0], worldGun);
     {
       // Your guns: your plane's own round and its falloff (its FireArms'
       // extras), inside the ace's convergence.
       const mine = gunFromNode(page.playerRoot?.());
-      live.myGun = { falloff: mine?.falloff ?? null, rate: mine?.rate ?? 12, useful: usefulRange({ range: live.pilot.gun.range, falloff: mine?.falloff }) };
+      live.myGun = { falloff: mine?.falloff ?? null, rate: mine?.rate ?? 12, useful: usefulRange({ range: live.aceGun.range, falloff: mine?.falloff }) };
     }
     // The gunnery drill's score (Boelcke's rule 3): rounds fired, how many
     // past the useful range, and every hit with its range.
@@ -257,7 +290,7 @@ export function createDogfightLive(page) {
       bot.isFiring = false;
       return;
     }
-    const out = live.pilot.step({ me, him, dt, t: live.t, groundAt: page.groundAt, ceilingBase: 0, arena: arena() });
+    const out = stepSeat(live.pilot, [live.fits[0], live.fits[1]], { me, him, dt, t: live.t, groundAt: page.groundAt, arena: arena() });
     live.aceOut = out;
     bot._airInput = { power: out.throttle, throttle: out.throttle, roll: out.stick.roll, pitch: out.stick.pitch,
                       rudder: out.stick.rudder };
@@ -390,7 +423,7 @@ export function createDogfightLive(page) {
     // The watch: whether the two of you are deadlocked (nobody's shot for
     // six seconds, both turning), judged on both guns' solutions.
     {
-      const gun = { ...(live.pilot?.gun ?? {}), width: 5 };
+      const gun = { ...(live.aceGun ?? {}), width: 5 };
       const quat = o => [o.x, o.y, o.z, o.w];
       live.deadlock = live.watch.push({ t: live.t,
         ace: { p: him.position, q: quat(him.orientation), o: gunSolution(him, you, gun).fire },
@@ -440,7 +473,7 @@ export function createDogfightLive(page) {
     // The guide: the counter's pilot flies your seat in his head, a frame
     // at a time, and his stick, smoothed, is what the guide says.
     if (!live.guidePilot) live.guidePilot = guidePilot();
-    const out = live.guidePilot.step({ me: you, him, dt, t: live.t, groundAt: page.groundAt, ceilingBase: 0, arena: arena() });
+    const out = stepSeat(live.guidePilot, [live.fits[1], live.fits[0]], { me: you, him, dt, t: live.t, groundAt: page.groundAt, arena: arena() });
     live.guideOut = out;
     checkMove(you, him, dt);
     const a = 1 - Math.exp(-dt / GUIDE_TAU);
@@ -466,9 +499,7 @@ export function createDogfightLive(page) {
   /** The pilot the guide and the instructor fly: the move being practised,
    *  else the lesson's counter (`flightOf`). */
   function guidePilot() {
-    const p = createPilot(live.flight.guide, { skill: 0.9, gun: page.gunOf?.(live.bot) ?? {} });
-    Object.assign(p.mem, clone(live.flight.you.memory ?? {}));
-    return p;
+    return seatPilot(live.flight.guide, live.fits[1], { skill: 0.9, gun: page.gunOf?.(live.bot) ?? {}, memory: live.flight.you.memory ?? {} });
   }
 
   /**
@@ -767,8 +798,10 @@ export function createDogfightLive(page) {
     const x = live.extend;
     const r = x?.results?.[x.chosen];
     if (!r?.flown) { clearExtend(); live.frozen = null; return; }
-    const p = createPilot(r.way.plan, { skill: 0.9, gun: page.gunOf?.(live.bot) ?? {} });
-    Object.assign(p.mem, { after: 0, pick: true, side: x.turn, dir: x.turn, y0: live.frozen.you.position[1] });
+    const p = seatPilot(r.way.plan, live.fits[1], { skill: 0.9, gun: page.gunOf?.(live.bot) ?? {} });
+    // Its memory is in the space it sees: the height to hold, shrunk.
+    const y0 = pilotView(live.fits[1].pace).see(live.frozen.you).position[1];
+    Object.assign(p.mem, { after: 0, pick: true, side: x.turn, dir: x.turn, y0 });
     live.guidePilot = p;
     live.extendWay = r.way;
     live.moveDone = false;
@@ -1001,7 +1034,8 @@ export function createDogfightLive(page) {
         you: stateOf(page.playerDrive()?.state)?.position?.map(Math.round) ?? null,
         him: stateOf(live.bot?.vehicle?.drive?.state)?.position?.map(Math.round) ?? null,
         aceSpeed: Math.round(len(stateOf(live.bot?.vehicle?.drive?.state)?.velocity ?? [0, 0, 0])),
-        fire: !!live.aceOut?.fire, t: +live.t.toFixed(1), gun: live.pilot?.gun ?? null,
+        fire: !!live.aceOut?.fire, t: +live.t.toFixed(1), gun: live.aceGun ?? null,
+        fits: live.fits.map(f => ({ hand: f.hand, pace: f.pace, gun: f.gun })), era: live.era,
         guide: guide.state,
         frozen: !!live.frozen,
         deadlock: live.deadlock ? { kind: live.deadlock.kind, since: live.deadlock.since } : null,
@@ -1014,6 +1048,66 @@ export function createDogfightLive(page) {
       };
     },
   };
+}
+
+// --- the seats fitted to their airframes ---------------------------------------
+// The lessons were written on the school's Spitfire. A duel fits itself to the
+// airframe it flies (`dogfight-duel.js` `fitAirframe`, `runDuel`); the live
+// fight does the same for its two seats with these, so the ace on a jet flies
+// with a jet's hands, from a jet's start, thinking with its own cannon and
+// shown the fight at the Spitfire's size. What the player's screen is told
+// (ranges, the sphere, the coach, the score) stays in real metres: only what
+// a pilot's plan is handed is shrunk. On the Spitfire every one of these
+// hands back what it was given (features/dogfight-lessons-jets/live-fight.md).
+
+const NEUTRAL_FIT = Object.freeze({ hand: null, pace: 1, gun: null });
+
+/** Both seats fitted: `makePlane(i)` builds a scratch airframe, 0 the ace's
+ *  type and 1 yours. A seat that cannot be built is flown as the Spitfire. */
+export function fitSeats(makePlane) {
+  return [0, 1].map(i => {
+    try {
+      const make = () => makePlane(i);
+      return fitAirframe(make(), make, i);
+    } catch {
+      return NEUTRAL_FIT;
+    }
+  });
+}
+
+/** A flight state as the seat's hands know it: its airframe's `hand`
+ *  (`dogfight-flight.js` `HAND`) on it, as a duel's airframe carries it. */
+export function handed(state, fit) {
+  return state && fit?.hand && state.hand === undefined ? { ...state, hand: fit.hand } : state;
+}
+
+/** The gun a seat's airframe fires, in the world's metres: its own cannon
+ *  where it is fitted one, else `gun` (`dogfight-pilot.js` `gunOf`). */
+export function seatGun(fit, gun = {}) {
+  return gunOf(fit?.gun ?? gun);
+}
+
+/** A pilot for a seat fitted `fit`: thinking with the seat's gun as its
+ *  pace shows it (`pilotView`), its `memory` copied in (a memory lives in
+ *  the space the pilot sees). `skill` and `seed` as `createPilot` takes them. */
+export function seatPilot(plan, fit, { gun = {}, skill, seed, memory } = {}) {
+  const opts = { gun: pilotView(fit.pace).gun(fit.gun ?? gun) };
+  if (skill !== undefined) opts.skill = skill;
+  if (seed !== undefined) opts.seed = seed;
+  const pilot = createPilot(plan, opts);
+  if (memory) Object.assign(pilot.mem, clone(memory));
+  return pilot;
+}
+
+/**
+ * One tick of a seat's pilot, `fits` its own seat's then the other's: both
+ * planes' states (real), the ground and the fence shown at its pace, as
+ * `runDuel` steps a pilot. Its answer is a stick, and needs no undoing.
+ */
+export function stepSeat(pilot, fits, { me, him, dt, t, groundAt, arena = null }) {
+  const view = pilotView(fits[0].pace);
+  return pilot.step({ me: view.see(handed(me, fits[0])), him: view.see(handed(him, fits[1])), dt, t,
+                      groundAt: view.ground(groundAt), ceilingBase: 0, arena: view.arena(arena) });
 }
 
 /** Verbs that do not lose an -s after "you": "he has" is "you have". */
