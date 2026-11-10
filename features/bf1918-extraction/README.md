@@ -856,3 +856,39 @@ Kasserine Pass and Truk in vanilla, XPack1, XPack2 and EoD; Strasbourg
 install here). Those keep a held trigger firing at `roundOfFire` until they
 are patched from the Linux PC (`patch_scene.py --layer fireOnce --mod <M> --all`)
 or re-baked.
+
+## Zoomed sights on the eye: every first-person rig rebuilt (2026-11-10)
+
+The owner, in the retail client: zoomed, the rifle is raised dead centre;
+ours sat right. Measured: the rounds were right (they leave the camera, the
+cone and drop are retail's); the drawn rifle was 3.9 to 4.0 cm right of the
+eye, so a zoomed front post sat about 2 degrees right and a shot laid on it
+landed 1.7 m left at 50 m. Vanilla had it too, under its crosshair. The cause
+was the rig extractor (ledger VIEW-17, `extract_viewmodel.first_person_locals`):
+it held `Bip01` and `Spine Root` at their parsed rests, which on
+`UsSoldier.ske` is the engine's frame plus -0.0392 m along x.
+
+Rebuilt and published from the live pair lists (`~/.cache/rig-stage`,
+`~/.cache/rig-publish`): vanilla 55 rigs and 162 painted pairs, XPack1 80/162,
+XPack2 88/156, Desert Combat 33/33, FH 142/190, EoD 285/350, BF1918 312/929;
+945 new store blobs (1.87 GB with their `.gz`), each tree's `index.json` with
+its `sha` table, and the painted soldiers' `soldiers/*.skin.glb`. The vanilla
+trees moved from the per-pair index (`bf1942-rig-index/1`) to the painted one
+(`/2`) that BF1918 already used. Live, zoomed: BF1918's Berthier front post
+0.04 degrees from centre, Berthier carbine 0.05, G88 0.04; vanilla K98 0.28
+(6 mm, from about 2 degrees). Fire, reload and bots unchanged, no page errors
+(argonnerwald, Wake, El Alamein).
+
+* **Level paint was not republished.** `skins.json` and `skins/` stay as
+  live: the fix moves no texture, and a staging root cannot re-decide level
+  paint (the decision reads each pickup's model glb, which a remote tree
+  holds only in the store), so a rebuild there drops levels it cannot see.
+* **Not rebuilt: FHSW and FHSWEurope** (4,626 and 1,829 rigs), whose install
+  is not on this Mac. Their rigs still draw 3.9 cm right until the
+  `viewmodels` step re-runs on the Linux PC.
+* **A macOS bug found on the way** (`remove_superseded_rigs`): a painted row
+  spelled like its rig (`AnzSoldier__No12` against `AnzSoldier__no12`)
+  unlinked the rig on a case-blind disk. Fixed, `test_delta_extract`.
+* **Open:** VIEW-17 records that the hip view's right hand now sits about
+  55 px left of the old OBS capture §3 was fitted to; the zoomed view is
+  what the owner checked in retail.
