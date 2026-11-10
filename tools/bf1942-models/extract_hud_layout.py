@@ -936,8 +936,18 @@ def _mentions(obj, needle: str, depth: int = 0) -> bool:
 
 def find_top_mentioning(root: meme.Obj, needle: str) -> meme.Obj | None:
     """The one top-level entry whose subtree names `needle` (a picture path or
-    a Data's name), or None. More than one raises, as `find_top` does."""
+    a Data's name), or None. More than one raises, as `find_top` does.
+
+    An entry that is itself a `CullVariableActionNode` only acts on the
+    variable (Forgotten Hope's menu/InGame follows the depth fade's SplitNode
+    with one that reads `Submarine/DepthHud/DepthHudAlpha`): it draws nothing,
+    so it is not the widget, and it is set aside when another entry carries
+    the name."""
     found = [top for top in root.chain() if _mentions(top, needle)]
+    if len(found) > 1:
+        drawn = [top for top in found if top.cls != "CullVariableActionNode"]
+        if drawn:
+            found = drawn
     if len(found) > 1:
         raise SystemExit(f"{len(found)} menu/InGame top-level entries mention {needle!r}")
     return found[0] if found else None
