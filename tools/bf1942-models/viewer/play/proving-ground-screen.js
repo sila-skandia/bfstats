@@ -6,8 +6,9 @@
 //
 // Two screens in the panel, the way a game's training menu reads:
 //
-// - **The drills.** LIVE-FIRE RANGE and DOGFIGHT SCHOOL, each a card with the
-//   game's own loading-screen art. The school is one page whatever the battle
+// - **The drills.** LIVE-FIRE RANGE and DOGFIGHT SCHOOL, each a card on a
+//   loading screen of the mod CUSTOM GAME picked: one with a tank on it, one
+//   with aircraft (`drill-art.js`). The school is one page whatever the battle
 //   (`dogfight.html`, which keeps its own arena), so its card goes straight
 //   there.
 // - **Select loadout.** The range is the same empty white floor on every
@@ -30,6 +31,8 @@ import { createMenuPack } from './menu-pack.js';
 import { elementVisible, inRect, paintElement, stageScale, toVirtual } from './menu-screen.js';
 import { hudPaths as plainHudPaths } from '../hud-pack.js';
 import { provingGroundUrl, START_POINTS, vehiclesByLevel } from '../proving-ground.js';
+import { firstLoadable } from '../level-art.js';
+import { drillArt } from './drill-art.js';
 
 export { provingGroundUrl, vehiclesByLevel };
 
@@ -46,12 +49,6 @@ export const NATIONS = Object.freeze({
   ger: 'Germany', brit: 'Britain', us: 'United States', rus: 'Soviet Union', jp: 'Japan',
   can: 'Canada', ita: 'Italy', fra: 'France', pol: 'Poland',
 });
-
-/** The art on the drills' cards: the game's own loading screens, vanilla's. */
-const DRILL_ART = {
-  range: 'maps/_shared/load/desert.webp',
-  school: 'maps/battle_of_britain/load.webp',
-};
 
 const STYLE = `
 .pgm-root { position: fixed; z-index: 20; display: flex; min-width: 0; min-height: 0;
@@ -95,9 +92,21 @@ const STYLE = `
   background: #0b0b09; color: var(--pgm-ink); text-align: left; font: inherit; cursor: pointer;
   --accent: var(--pgm-green); transition: border-color .2s ease, box-shadow .2s ease, transform .2s ease; }
 .pgm-mode[data-mode="school"] { --accent: var(--pgm-amber); }
-.pgm-mode-art { position: absolute; inset: 0; z-index: -2; background: #11110e center / cover no-repeat;
-  background-image: var(--art); filter: saturate(.85) contrast(1.05); transform: scale(1.02);
+.pgm-mode-art { position: absolute; inset: 0; z-index: -2; container-type: size; background: #11110e;
+  filter: saturate(.85) contrast(1.05); transform: scale(1.02);
   transition: transform .6s cubic-bezier(.2,.7,.2,1), filter .3s ease; }
+/* The picture (drill-art.js): a 4:3 loading screen, of which the card shows
+   the part from (--x0, --y0) to (--x1, --y1), scaled until that part covers
+   the card and centred on it. --w is the whole picture's drawn width. */
+.pgm-mode-pic { position: absolute; inset: 0; background: center / cover no-repeat; background-image: var(--art);
+  --x0: 0; --y0: 0; --x1: 1; --y1: 1; animation: pgm-art-in .35s ease-out; }
+@supports (width: 1cqw) {
+  .pgm-mode-pic { --w: max(100cqw / (var(--x1) - var(--x0)), 100cqh * 4 / 3 / (var(--y1) - var(--y0)));
+    background-size: var(--w) auto;
+    background-position: calc(50cqw - (var(--x0) + var(--x1)) / 2 * var(--w))
+      calc(50cqh - (var(--y0) + var(--y1)) / 2 * var(--w) * 3 / 4); }
+}
+@keyframes pgm-art-in { from { opacity: 0; } to { opacity: 1; } }
 .pgm-mode::before { content: ''; position: absolute; inset: 0; z-index: -1;
   background: linear-gradient(180deg, rgba(8,8,6,.15) 0%, rgba(8,8,6,.35) 38%, rgba(8,8,6,.92) 72%, rgba(8,8,6,.97) 100%); }
 /* A strip of light that sweeps the card when it is picked out. */
@@ -309,7 +318,7 @@ export function createProvingGroundScreen({
     style.textContent = STYLE;
     document.head.appendChild(style);
   }
-  const art = rel => `url("${new URL(`${root}${rel}`, location.href).href}")`;
+  const artUrl = rel => new URL(`${root}${rel}`, location.href).href;
   const rootEl = document.createElement('section');
   rootEl.className = 'pgm-root';
   rootEl.hidden = true;
@@ -329,7 +338,7 @@ export function createProvingGroundScreen({
         </div>
         <div class="pgm-modes-grid">
           <button type="button" class="pgm-mode" data-mode="range">
-            <span class="pgm-mode-art" style='--art: ${art(DRILL_ART.range)}'></span>
+            <span class="pgm-mode-art"><span class="pgm-mode-pic"></span></span>
             <span class="pgm-mode-frame"></span>
             <span class="pgm-mode-no">01</span>
             <span class="pgm-mode-body">
@@ -342,7 +351,7 @@ export function createProvingGroundScreen({
             </span>
           </button>
           <button type="button" class="pgm-mode" data-mode="school">
-            <span class="pgm-mode-art" style='--art: ${art(DRILL_ART.school)}'></span>
+            <span class="pgm-mode-art"><span class="pgm-mode-pic"></span></span>
             <span class="pgm-mode-frame"></span>
             <span class="pgm-mode-no">02</span>
             <span class="pgm-mode-body">
@@ -455,6 +464,36 @@ export function createProvingGroundScreen({
       picked?.scrollIntoView({ block: 'nearest' });
     } else {
       rootEl.querySelector('.pgm-mode')?.focus({ preventScroll: true });
+    }
+  }
+
+  /** The drills' cards on the active mod's pictures (`drill-art.js`): its own
+   *  where the tree has them, else vanilla's. */
+  let artFor = null;
+  function paintDrillArt() {
+    const info = mod();
+    const key = info?.id ?? '';
+    if (artFor === key) return;
+    artFor = key;
+    // The head's label too: the loadout screen writes it only when the
+    // arsenal changes, and a view over vanilla's tree shares vanilla's.
+    ui.mod.textContent = info && !info.vanilla ? info.id : '';
+    for (const [drill, chain] of Object.entries(drillArt(info))) {
+      const put = pick => {
+        // A fresh element, so the picture fades in again for each mod.
+        const pic = document.createElement('span');
+        pic.className = 'pgm-mode-pic';
+        pic.style.setProperty('--art', `url("${artUrl(pick.path)}")`);
+        ['--x0', '--y0', '--x1', '--y1'].forEach((name, i) => pic.style.setProperty(name, String(pick.crop[i])));
+        rootEl.querySelector(`.pgm-mode[data-mode="${drill}"] .pgm-mode-pic`)?.replaceWith(pic);
+      };
+      put(chain[0]);
+      if (chain.length < 2) continue;
+      firstLoadable(chain.map(c => artUrl(c.path))).then(url => {
+        if (artFor !== key) return;
+        const hit = chain.find(c => artUrl(c.path) === url);
+        if (hit && hit !== chain[0]) put(hit);
+      });
     }
   }
 
@@ -868,6 +907,7 @@ export function createProvingGroundScreen({
       const hit = asked ? all.find(r => r.map.toLowerCase() === asked.toLowerCase()) : null;
       if (hit) state.map = hit.map;
       if (query.get('side') === '2' || query.get('side') === '1') state.team = Number(query.get('side'));
+      paintDrillArt();
       rootEl.hidden = false;
       paint();
       setView(hit || query.get('view') === 'loadout' ? 'loadout' : 'modes', { focus: false });

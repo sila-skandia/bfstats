@@ -283,6 +283,20 @@ Two traps, both found in the page:
     two cards, each on a loading screen from the game (`desert.webp`, Battle
     of Britain's `load.webp`). The school's card opens `dogfight.html` with
     no battle: the school chooses its own arena in its sidebar.
+    Since 2026-11-10 the two pictures are the selected mod's own (the owner:
+    a different tank and plane behind the tiles for the mod you have picked,
+    from that mod's assets): `play/drill-art.js` names, per tree, one loading
+    screen with a tank on it and one with aircraft, picked by eye from the
+    pictures the tree's `maps.json` rows name, and the part of each the card
+    shows (`crop`: Desert Combat's screens are letterboxed, Eve of
+    Destruction's carry the mod's name, Forgotten Hope's are title cards with
+    the picture in a strip, and the card's words cover its lower half, so the
+    machine goes in the upper half). The card scales that part to cover
+    itself with container units (`.pgm-mode-pic`). A mod with no row, and a
+    picture missing from the tree, show vanilla's (`level-art.js`
+    `firstLoadable`). A new mod gets a row when its tree is published:
+    look through its loading screens, pick two, and check the crops on the
+    tab at desktop and phone width. `tests/test_drill_art.py`.
   - **Select loadout** (`?tab=proving&view=loadout`, or
     `&battle=<map>&side=<1|2>`): the battles as loadout cards (the menu
     thumbnail from `menu-levels.json`, falling back to the loading screen,
