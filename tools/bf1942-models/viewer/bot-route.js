@@ -41,12 +41,12 @@ const WAYPOINT_REACH_RADIUS = 3.0;
  *  much per failure (INVENTION: the engine's next search draws a fresh
  *  random radius on the next decision pass). */
 const ROUTE_RETRY_AFTER = 1.5;
-const ROUTE_RETRY_WIDEN = 16;
+export const ROUTE_RETRY_WIDEN = 16;
 /** A leg that fails its box is retried this many times, each 16 m wider
  *  (to 120 m: the coarse legs are an INVENTION and can cross a compound's
  *  paint, which only a wide box routes around). */
-const ROUTE_LEG_WIDENINGS = 6;
-const ROUTE_LEG_WIDE_NODES = 20000;
+export const ROUTE_LEG_WIDENINGS = 6;
+export const ROUTE_LEG_WIDE_NODES = 20000;
 
 /**
  * The pathfinding slice of the AI's budget. Ledger AI-6: `AIMain::action`
@@ -121,8 +121,8 @@ export function newPathBudget(nodes = PATH_BUDGET_NODES) {
 const SMOOTHING = 10;
 /** `updateLocalPath`: the local search box is `10 + rand * 14` metres, raised
  *  to the largest potential-obstacle radius, plus 1. */
-const LOCAL_SEARCH_RADIUS_MIN = 10;
-const LOCAL_SEARCH_RADIUS_RAND = 14;
+export const LOCAL_SEARCH_RADIUS_MIN = 10;
+export const LOCAL_SEARCH_RADIUS_RAND = 14;
 /** The body radius a path point is popped inside (`checkAgainstPath`
  *  0x0852bc40 tests `(vehicle+0x24)->v(0x30)`, the AI object's radius).
  *  INVENTION: the soldier's value was not read; the engine floors the

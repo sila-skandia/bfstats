@@ -1,0 +1,180 @@
+{
+ "generator": "botgen",
+ "version": 4,
+ "mod": "DesertCombat",
+ "level": "inshallah_valley",
+ "objectSpawners": 33,
+ "template": "symmetric",
+ "templateSource": "DICE, bf1942 Kharkov (1.6 patch archives): AI/Strategies.con, AI/conditions.con, AI/prerequisites.con, unchanged",
+ "scope": "an infantry map painted from the walk test, a Tank0 map from the page painter, infantry order positions, no strategic maps, no co-op layer",
+ "unreachable": [],
+ "unreachableReasons": {},
+ "botSpawnsExcluded": [
+  "Iraq_Base2",
+  "village4",
+  "Small_Village3",
+  "Small_Village6"
+ ],
+ "walkMap": {
+  "source": "walk test",
+  "engine": "none",
+  "vehicleMap": "page painter",
+  "vehicleBrush": 2,
+  "vehicleBrushes": [
+   {
+    "brush": 3,
+    "flagsOn": 4,
+    "spawnersOn": 11,
+    "pieces": 24,
+    "main": 44862
+   },
+   {
+    "brush": 2.5,
+    "flagsOn": 5,
+    "spawnersOn": 15,
+    "pieces": 23,
+    "main": 53733
+   },
+   {
+    "brush": 2,
+    "flagsOn": 5,
+    "spawnersOn": 18,
+    "pieces": 19,
+    "main": 58062
+   },
+   {
+    "brush": 1.5,
+    "flagsOn": 5,
+    "spawnersOn": 18,
+    "pieces": 20,
+    "main": 64260
+   }
+  ],
+  "opened": [
+   [
+    329,
+    307
+   ],
+   [
+    302,
+    320
+   ],
+   [
+    320,
+    324
+   ],
+   [
+    873,
+    598
+   ],
+   [
+    874,
+    598
+   ],
+   [
+    426,
+    624
+   ]
+  ],
+  "ways": [
+   {
+    "who": "Iraq_Base5",
+    "kind": "spawn",
+    "way": "walk",
+    "opened": 1
+   },
+   {
+    "who": "Iraq_Base1",
+    "kind": "spawn",
+    "way": "walk",
+    "opened": 1
+   },
+   {
+    "who": "Iraq_Base4",
+    "kind": "spawn",
+    "way": "walk",
+    "opened": 1
+   },
+   {
+    "who": "US_Base4",
+    "kind": "spawn",
+    "way": "walk",
+    "opened": 2
+   },
+   {
+    "who": "Outpost3",
+    "kind": "spawn",
+    "way": "walk",
+    "opened": 1
+   }
+  ],
+  "cover": 0.99,
+  "floors": {
+   "stacked": false,
+   "twoFloorShare": 0.002,
+   "raised": [],
+   "reason": null
+  }
+ },
+ "routeProbe": {
+  "chokeMax": 4,
+  "unreachable": [],
+  "stops": {},
+  "oneSided": {},
+  "sides": {
+   "1": {
+    "spawns": 9,
+    "flags": [
+     "Iraq_Base",
+     "OpenSpawnPoint_Village",
+     "Outpost",
+     "Small_Village",
+     "US_Base"
+    ]
+   },
+   "2": {
+    "spawns": 6,
+    "flags": [
+     "Iraq_Base",
+     "OpenSpawnPoint_Village",
+     "Outpost",
+     "Small_Village",
+     "US_Base"
+    ]
+   }
+  },
+  "chokes": {
+   "OpenSpawnPoint_Village:1": 0,
+   "OpenSpawnPoint_Village:2": 0,
+   "Small_Village:1": 0,
+   "Small_Village:2": 0,
+   "US_Base:1": 0,
+   "US_Base:2": 0,
+   "Iraq_Base:1": 0,
+   "Iraq_Base:2": 0,
+   "Outpost:1": 1,
+   "Outpost:2": 0
+  },
+  "late": {},
+  "shutLinks": []
+ },
+ "inputs": {
+  "controlPoints": "03aa733b11a4622c5d9778e916e578b8c2008649818ca91c560c0ab9cdf99634",
+  "infantryMap": "8af1fe06b4df2c0dd0d651ac5a3095d4b694179e25b46a0a3d08d7433a8c8329",
+  "template": "43f8a790471528016570235f76e97dbb2045732458781a5139f37fed68bf98c0"
+ },
+ "files": {
+  "AI.con": "3dc94f663ac7545695a38d3670752432e4a5e64efe048dc4b26d578aece3748c",
+  "AIpathFinding.con": "f41dfd5810e98ec067d853d4cdc8bbf2bb0ed9d4a5e9e14c87c94d234319cf53",
+  "AI/StrategicAreas.con": "4eb10d03fa92d12f5d03ea92624382034f210d925bc72b96e6817271f9e2b2ec",
+  "AI/Strategies.con": "4ce0be59a0d6c5cd530db002fb062c4be8d936bc6ae59bd188803ccaf7869a8d",
+  "AI/conditions.con": "68a0c7a8aec69954063147b60fae560b2874884285737aa085efa76597d395aa",
+  "AI/prerequisites.con": "4c1f313bc285b228fd6ad03bfd1f44c5b15c8703c31f802eb605bc5f00f88bb5",
+  "Pathfinding/Infantry1Level0Map.raw": "d893e0636be912e490ded4c84cf0194ebfb8df14cb8008b1d6992873285b0a35",
+  "Pathfinding/Infantry1Level1Map.raw": "e2f45cd7851db84968d5f521d6036d733610880c87ba72c8e9045bfd7821cd24",
+  "Pathfinding/Infantry1Level2Map.raw": "f1884a275bed7757ca08c314985f63ad857d5faa861a1b15d30aa75aba1ae3ac",
+  "Pathfinding/Tank0Level0Map.raw": "56ea03974d032b61fe351aebed5f94f804c524fe872d4ddb54ef6042c8b5e347",
+  "Pathfinding/Tank0Level1Map.raw": "db62fbf1f71a596cf1c288d469f52679f45af4ff7c5ef316c90d41a1f1815014",
+  "Pathfinding/Tank0Level2Map.raw": "4754822ffb281e8ff53e05ffc4522be16ff883dd84e1ee2fc03b85f3710988e0"
+ }
+}

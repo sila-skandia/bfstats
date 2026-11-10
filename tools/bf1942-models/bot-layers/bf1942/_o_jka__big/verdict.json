@@ -2,32 +2,39 @@
  "level": "_o_jka__big",
  "verdict": "fail",
  "outcome": "no-better-than-nothing",
- "generatorVersion": 3,
+ "config": "with vehicles",
+ "generatorVersion": 4,
  "inputs": {
   "controlPoints": "c15705f00122a0ffe5e11e18b520ea90f056860b8183d7d92ac73b6ffda5c79a",
   "infantryMap": "c86a692154a7a5e4d4899a191fd3d780055f7812674e40595fedf099daa16645",
   "template": "43f8a790471528016570235f76e97dbb2045732458781a5139f37fed68bf98c0"
  },
- "baseline": "DICE layers on foot: berlin, stalingrad, kharkov, bocage; seeds 1..10, 600 s, --no-vehicles",
+ "baseline": "DICE layers with vehicles: berlin, stalingrad, kharkov, bocage; seeds 1..10, 600 s",
  "seeds": 10,
  "sizes": {
   "8": {
    "verdict": "fail",
    "failed": [
-    "idleShare"
+    "routeFailuresPerBotMinute",
+    "routeFailuresPerBotMinuteWorseSide"
    ],
    "winners": [
-    9,
-    1,
+    8,
+    2,
     0
    ]
   },
   "16": {
-   "verdict": "pass",
-   "failed": [],
+   "verdict": "fail",
+   "failed": [
+    "selfDeathsPerBotMinute",
+    "routeFailuresPerBotMinute",
+    "routeFailuresPerBotMinuteWorseSide",
+    "tankSilentShare"
+   ],
    "winners": [
-    10,
-    0,
+    5,
+    5,
     0
    ]
   }

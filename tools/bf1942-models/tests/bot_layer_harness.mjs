@@ -126,6 +126,26 @@ out.door = {
   tankDoor: [cell(tank, 19, 20), cell(tank, 20, 20)],
 };
 
+// --- the land vehicles' map of a level the engine wrote none for (`botgen.mjs paintedVehicleMap`) ------
+// Two yards joined by a street 4 m wide between two long buildings: DICE's 3 m brush shuts the street
+// and leaves one flag on another piece; a narrower one leaves a lane. In open ground 3 m stands.
+const town = [...box(0, 62, 0, 4, -70, -50), ...box(66, 128, 0, 4, -70, -50)];
+const townWorld = { collider: { waterLevel: -100, heightfield: { height: () => 0 }, statics: { tris: new Float32Array(town), count: town.length / 9 } }, flags: [] };
+const townExtras = { objectSpawns: [{ position: [10, 0, -4] }, { position: [50, 0, -4] }] };
+const townFlags = [{ name: 'North', x: 20, z: -10 }, { name: 'South', x: 20, z: -118 }];
+const lane = gen.paintedVehicleMap(nav, townWorld, townExtras, 128, townFlags);
+const openWorld = { collider: { waterLevel: -100, heightfield: { height: () => 0 }, statics: { tris: new Float32Array(0), count: 0 } }, flags: [] };
+const open = gen.paintedVehicleMap(nav, openWorld, townExtras, 128, townFlags);
+out.vehicleMap = {
+  brush: lane.brush, tried: lane.tried.map(t => [t.brush, t.flagsOn, t.spawnersOn]),
+  street: [63, 64].some(x => lane.pixels[60 * 128 + x] === 0), wall: lane.pixels[60 * 128 + 10],
+  openBrush: open.brush, openFlags: open.tried[0].flagsOn,
+  con: [gen.pathFindingCon(true, lane.brush).includes('ai.addSearchMap Tank0 0 0 25 ' + lane.brush.toFixed(1) + ' 0.3 2.5 0'), gen.pathFindingCon().includes('ai.addSearchMap Tank0 0 0 25 3.0 0.3 2.5 0')],
+};
+// A hull's order position: the free cell of that map nearest the flag, written before the infantry's.
+const hull = gen.buildAreas(flags.slice(0, 3), { ...hooks, vehicleOrder: (x, z) => [Math.floor(x) + 2.5, Math.floor(z) + 0.5] });
+out.hullCon = gen.areasCon(hull);
+
 const sf = await imp('viewer/spawn-flags.js');
 const twoSpawns = { name: 'F', team: 1, spawns: [{ name: 'top', position: [0, 20, 0], group: 1 }, { name: 'foot', position: [2, 0, 0], group: 1 }] };
 out.avoid = [sf.pickSpawn(twoSpawns, 0)?.name, sf.pickSpawn(twoSpawns, 0, { avoid: ['top'] })?.name, sf.pickSpawn(twoSpawns, 0, { avoid: ['top', 'foot'] })?.name ?? null];
@@ -217,6 +237,11 @@ const wallAt20 = (height, gap = null) => (gap
 const east = x => x > 25;
 const from = [[10, 0, -30]];
 const far = { reach: 24 };
+// A bank that shelves one in five into a channel 6 m deep, the water half a metre under the bank: the
+// flood wades to the depth a swimmer stands up in and no further, whichever side of the surface its ray starts.
+const shelf = Object.assign(boxWorld([], { terrain: x => (x < 20 ? 0 : Math.max(-6, -(x - 20) * 0.2)) }), { waterLevel: -0.5 });
+const reaches = x => wf.wayOut(shelf, from, body, px => px > x, far).way;
+out.channel = { shallows: reaches(25), swim: reaches(31), across: reaches(33) };
 out.way = {
   door: wf.wayOut(boxWorld(wallAt20(3, [-29.35, -30.6])), from, body, east, far).way,       // 1.25 m wide
   slit: wf.wayOut(boxWorld(wallAt20(3, [-29.7, -30.3])), from, body, east, far).way,        // 0.6 m wide

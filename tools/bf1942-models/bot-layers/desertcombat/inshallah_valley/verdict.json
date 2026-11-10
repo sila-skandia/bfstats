@@ -1,0 +1,48 @@
+{
+ "level": "inshallah_valley",
+ "verdict": "fail",
+ "outcome": "no-better-than-nothing",
+ "config": "with vehicles",
+ "generatorVersion": 4,
+ "inputs": {
+  "controlPoints": "03aa733b11a4622c5d9778e916e578b8c2008649818ca91c560c0ab9cdf99634",
+  "infantryMap": "8af1fe06b4df2c0dd0d651ac5a3095d4b694179e25b46a0a3d08d7433a8c8329",
+  "template": "43f8a790471528016570235f76e97dbb2045732458781a5139f37fed68bf98c0"
+ },
+ "baseline": "DICE layers with vehicles: berlin, stalingrad, kharkov, bocage; seeds 1..10, 600 s",
+ "seeds": 10,
+ "sizes": {
+  "8": {
+   "verdict": "fail",
+   "failed": [
+    "routeFailuresPerBotMinute",
+    "routeFailuresPerBotMinuteWorseSide"
+   ],
+   "winners": [
+    8,
+    2,
+    0
+   ]
+  },
+  "16": {
+   "verdict": "fail",
+   "failed": [
+    "routeFailuresPerBotMinute",
+    "redeploysPerBotMinute",
+    "routeFailuresPerBotMinuteWorseSide",
+    "redeploysPerBotMinuteWorseSide",
+    "nonEnemyDeathShareWorseSide",
+    "hullStuckSecondsPerDrivingMinuteWorseSide",
+    "unitsNeverUsedShare"
+   ],
+   "winners": [
+    10,
+    0,
+    0
+   ]
+  }
+ },
+ "oneSided": null,
+ "unreachable": [],
+ "lintErrors": []
+}

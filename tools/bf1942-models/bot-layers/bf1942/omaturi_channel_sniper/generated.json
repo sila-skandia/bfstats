@@ -1,12 +1,14 @@
 {
  "generator": "botgen",
- "version": 3,
+ "version": 4,
  "mod": "bf1942",
  "level": "omaturi_channel_sniper",
+ "objectSpawners": 0,
  "template": "symmetric",
  "templateSource": "DICE, bf1942 Kharkov (1.6 patch archives): AI/Strategies.con, AI/conditions.con, AI/prerequisites.con, unchanged",
  "scope": "on foot: an infantry map painted from the walk test, the engine's own Tank0 map, infantry order positions, no strategic maps, no co-op layer",
  "unreachable": [],
+ "unreachableReasons": {},
  "botSpawnsExcluded": [],
  "walkMap": {
   "source": "walk test",
@@ -20,6 +22,32 @@
    "raised": [],
    "reason": null
   }
+ },
+ "routeProbe": {
+  "chokeMax": 4,
+  "unreachable": [],
+  "stops": {},
+  "oneSided": {},
+  "sides": {
+   "1": {
+    "spawns": 6,
+    "flags": [
+     "kokan"
+    ]
+   },
+   "2": {
+    "spawns": 6,
+    "flags": [
+     "kokan"
+    ]
+   }
+  },
+  "chokes": {
+   "kokan:1": 0,
+   "kokan:2": 0
+  },
+  "late": {},
+  "shutLinks": []
  },
  "inputs": {
   "controlPoints": "010feb4eb74e46952ce9d34aea2114b6810afc5f94e2bb2227181f6728f5e18e",

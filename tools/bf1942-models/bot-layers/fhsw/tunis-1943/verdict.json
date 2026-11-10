@@ -1,0 +1,51 @@
+{
+ "level": "tunis-1943",
+ "verdict": "fail",
+ "outcome": "no-fight",
+ "config": "with vehicles",
+ "generatorVersion": 4,
+ "inputs": {
+  "controlPoints": "d52be914e1e13d3864d219c00899819dcecbc3073dd3316db43d0a7570b635d1",
+  "infantryMap": "bae8a44d4fda55e8e0ccf9cae005b8339e6b21b6934beadd46a3f9651e4becee",
+  "template": "43f8a790471528016570235f76e97dbb2045732458781a5139f37fed68bf98c0"
+ },
+ "baseline": "DICE layers with vehicles: berlin, stalingrad, kharkov, bocage; seeds 1..10, 600 s",
+ "seeds": 10,
+ "sizes": {
+  "8": {
+   "verdict": "fail",
+   "failed": [
+    "routeFailuresPerBotMinute",
+    "enemyKillsPerBotMinute",
+    "bothSidesKill",
+    "ticketsBleed",
+    "routeFailuresPerBotMinuteWorseSide",
+    "unitsNeverUsedShare"
+   ],
+   "winners": [
+    5,
+    5,
+    0
+   ]
+  },
+  "16": {
+   "verdict": "fail",
+   "failed": [
+    "routeFailuresPerBotMinute",
+    "enemyKillsPerBotMinute",
+    "bothSidesKill",
+    "ticketsBleed",
+    "routeFailuresPerBotMinuteWorseSide",
+    "unitsNeverUsedShare"
+   ],
+   "winners": [
+    0,
+    10,
+    0
+   ]
+  }
+ },
+ "oneSided": null,
+ "unreachable": [],
+ "lintErrors": []
+}

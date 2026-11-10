@@ -1,0 +1,171 @@
+{
+ "generator": "botgen",
+ "version": 4,
+ "mod": "FHSW",
+ "level": "tunis-1943",
+ "objectSpawners": 115,
+ "template": "symmetric",
+ "templateSource": "DICE, bf1942 Kharkov (1.6 patch archives): AI/Strategies.con, AI/conditions.con, AI/prerequisites.con, unchanged",
+ "scope": "an infantry map painted from the walk test, a Tank0 map from the page painter, infantry order positions, no strategic maps, no co-op layer",
+ "unreachable": [
+  "tunisia5"
+ ],
+ "unreachableReasons": {
+  "tunisia5": "route probe"
+ },
+ "botSpawnsExcluded": [
+  "tunisia1_spawn2",
+  "tunisia1_spawn3",
+  "tunisia1_spawn4",
+  "tunisia2_spawn3",
+  "tunisia3_spawn4",
+  "tunisia4_spawn2",
+  "tunisia4_spawn3"
+ ],
+ "walkMap": {
+  "source": "walk test",
+  "engine": "none",
+  "vehicleMap": "page painter",
+  "vehicleBrush": 1.5,
+  "vehicleBrushes": [
+   {
+    "brush": 3,
+    "flagsOn": 6,
+    "spawnersOn": 32,
+    "pieces": 17,
+    "main": 723849
+   },
+   {
+    "brush": 2.5,
+    "flagsOn": 7,
+    "spawnersOn": 48,
+    "pieces": 21,
+    "main": 743453
+   },
+   {
+    "brush": 2,
+    "flagsOn": 7,
+    "spawnersOn": 49,
+    "pieces": 28,
+    "main": 748574
+   },
+   {
+    "brush": 1.5,
+    "flagsOn": 8,
+    "spawnersOn": 52,
+    "pieces": 29,
+    "main": 764202
+   }
+  ],
+  "opened": [
+   [
+    382,
+    32
+   ],
+   [
+    378,
+    33
+   ],
+   [
+    379,
+    33
+   ],
+   [
+    748,
+    48
+   ]
+  ],
+  "ways": [
+   {
+    "who": "axisbase_spawn4",
+    "kind": "spawn",
+    "way": "walk",
+    "opened": 1
+   },
+   {
+    "who": "tunisia2_spawn2",
+    "kind": "spawn",
+    "way": "walk",
+    "opened": 3
+   }
+  ],
+  "cover": 0.96,
+  "floors": {
+   "stacked": false,
+   "twoFloorShare": 0.015,
+   "raised": [],
+   "reason": null
+  }
+ },
+ "routeProbe": {
+  "chokeMax": 4,
+  "unreachable": [
+   "tunisia5"
+  ],
+  "stops": {
+   "tunisia5": {
+    "1": {
+     "stage": "strategic"
+    },
+    "2": {
+     "stage": "strategic"
+    }
+   }
+  },
+  "oneSided": {},
+  "sides": {
+   "1": {
+    "spawns": 20,
+    "flags": [
+     "tunisia1",
+     "tunisia2",
+     "tunisia3",
+     "tunisia4"
+    ]
+   },
+   "2": {
+    "spawns": 13,
+    "flags": [
+     "tunisia1",
+     "tunisia2",
+     "tunisia3",
+     "tunisia4"
+    ]
+   }
+  },
+  "chokes": {
+   "tunisia1:1": 2,
+   "tunisia1:2": 0,
+   "tunisia2:1": 0,
+   "tunisia2:2": 2,
+   "tunisia3:1": 1,
+   "tunisia3:2": 3,
+   "tunisia4:1": 3,
+   "tunisia4:2": 0
+  },
+  "late": {},
+  "shutLinks": [
+   "tunisia2>tunisia4",
+   "tunisia4>tunisia2"
+  ]
+ },
+ "inputs": {
+  "controlPoints": "d52be914e1e13d3864d219c00899819dcecbc3073dd3316db43d0a7570b635d1",
+  "infantryMap": "bae8a44d4fda55e8e0ccf9cae005b8339e6b21b6934beadd46a3f9651e4becee",
+  "template": "43f8a790471528016570235f76e97dbb2045732458781a5139f37fed68bf98c0"
+ },
+ "files": {
+  "AI.con": "66d0107424645c0bd4b9302464a872dc8996b195ea6ad89d4abaa3aea7d1e143",
+  "AIpathFinding.con": "9d8080cdfa7605961969aa126519b03be9691bd604ac76aef50166d81215edd2",
+  "AI/StrategicAreas.con": "63279012a33b8405c1c060923706383f6f1dfe0478d87db420ff5ac3e429a81b",
+  "AI/Strategies.con": "4ce0be59a0d6c5cd530db002fb062c4be8d936bc6ae59bd188803ccaf7869a8d",
+  "AI/conditions.con": "68a0c7a8aec69954063147b60fae560b2874884285737aa085efa76597d395aa",
+  "AI/prerequisites.con": "4c1f313bc285b228fd6ad03bfd1f44c5b15c8703c31f802eb605bc5f00f88bb5",
+  "Pathfinding/Infantry1Level0Map.raw": "a8ecf57d2f093ca73e7ab239e84ca27098986cae27aae57671e468f3cfabbbb7",
+  "Pathfinding/Infantry1Level1Map.raw": "734dfcdc6e7cbcde35ba238d9e41fa2df39e43fdc445accfd9239aa70b6b2f2a",
+  "Pathfinding/Infantry1Level2Map.raw": "1de5939b12995d6b82f8ef407c810894c71e13c9d58f2a8a6d3d7321f177ffbb",
+  "Pathfinding/Tank0Level0Map.raw": "885f377148d4f61c3e1ab90c6faad2bb47b563386973a560e6bfe9e21e79f52c",
+  "Pathfinding/Tank0Level1Map.raw": "c8907d903d28b367a53dcafcbd32ad3d517c46096c3174a654972f884dc3d4ba",
+  "Pathfinding/Tank0Level2Map.raw": "3201ee74d701471679f34015ecc27e761430547746263f583f036d4782a0c746"
+ }
+}

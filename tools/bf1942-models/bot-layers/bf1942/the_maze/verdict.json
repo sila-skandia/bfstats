@@ -2,7 +2,8 @@
  "level": "the_maze",
  "verdict": "fail",
  "outcome": "better-than-nothing",
- "generatorVersion": 3,
+ "config": "on foot",
+ "generatorVersion": 4,
  "inputs": {
   "controlPoints": "629be50a9e4e76f5ad512cb94b21c8973298658156d807b3a348706a470c413a",
   "infantryMap": "e9e21a38c3105cd2850a2c6b6dcd8eac4482e6f89da1e0468012bfbddaf6963b",
@@ -14,24 +15,20 @@
   "8": {
    "verdict": "fail",
    "failed": [
-    "routeFailuresPerBotMinute",
-    "redeploysPerBotMinute"
+    "idleShare"
    ],
    "winners": [
-    9,
-    1,
+    7,
+    3,
     0
    ]
   },
   "16": {
-   "verdict": "fail",
-   "failed": [
-    "routeFailuresPerBotMinute",
-    "redeploysPerBotMinute"
-   ],
+   "verdict": "pass",
+   "failed": [],
    "winners": [
-    9,
-    1,
+    7,
+    3,
     0
    ]
   }
@@ -40,14 +37,11 @@
  "unreachable": [],
  "lintErrors": [],
  "accepted": {
-  "reason": "Passes thirteen of fifteen checks against the DICE bar at both sizes, with kills and captures above it and stuck time under it; the level with no layer has no kill in twenty matches. Short on route failures (2.73 a bot-minute against 0.38 at 8 a side, 4.22 against 2.10 at 16) and redeploys (0.230 against 0.198, 0.203 against 0.129).",
+  "reason": "Passes every check at 16 a side and all but one at 8 a side, where idle share is 0.547 against 0.526: bots ordered to guard a home base nobody can take. Flags 3 and 4 are left out by the route probe, so no side queues at a ramp.",
   "date": "2026-11-10",
   "outcome": "better-than-nothing",
   "failed": [
-   "8:routeFailuresPerBotMinute",
-   "8:redeploysPerBotMinute",
-   "16:routeFailuresPerBotMinute",
-   "16:redeploysPerBotMinute"
+   "8:idleShare"
   ]
  }
 }

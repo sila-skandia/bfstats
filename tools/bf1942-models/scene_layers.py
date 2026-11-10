@@ -684,6 +684,59 @@ def layer_ai(ctx: LevelContext):
     return out, {}
 
 
+def ships_own_ai(report: dict) -> bool:
+    """Whether a published `scene.json` carries an AI layer the level shipped:
+    an `ai` block with no `generated` marker. Only a bake that read the
+    level's archives writes one, and a generated layer always carries the
+    marker (`load_generated_ai`), so the published file answers the question
+    `layer_ai` asks of the archives. It answers for the archives the last
+    bake read, not for the ones on this machine."""
+    ai = report.get("ai")
+    return isinstance(ai, dict) and not ai.get("generated")
+
+
+def layer_ai_without_archives(mod: str, level: str, level_dir: Path,
+                              report: dict) -> tuple[dict, dict, list[str]]:
+    """The `ai` layer of a level that ships no AI, from its generated layer
+    and its published `scene.json` alone (`patch_scene.py --no-archives`):
+    the game archives are never opened, so a machine that does not hold the
+    mod can still apply a layer. Returns `(top, modes, notes)`.
+
+    The caller has already asked `ships_own_ai(report)` and got no. The layer
+    goes through the same gate as `layer_ai` (`load_generated_ai`), and the
+    level's `pathfinding/` folder is written from the layer's own maps (or a
+    stale one removed), as there.
+
+    What the archives alone can give is `ai.coverValues`: each placed static's
+    `aiTemplatePlugIn.coverValue`, read from the mod's object library
+    (`add_cover_values`), which no published file carries. They do not depend
+    on the layer, so the ones a published generated block already holds are
+    kept; a level patched for the first time gets none, and its bots then
+    take cover on low ground instead of behind an object
+    (`viewer/bot-behaviours.js`, the no-cover fallback)."""
+    notes: list[str] = []
+    had = report.get("ai") if isinstance(report.get("ai"), dict) else None
+    level_ai = load_generated_ai(mod, level)
+    files = generated_layer_files(mod, level)
+    out = {}
+    if level_ai is not None:
+        kept = dict((had or {}).get("coverValues") or {})
+        if kept:
+            level_ai.coverValues = kept
+            notes.append(f"cover values kept from the published block ({len(kept)} templates)")
+        else:
+            notes.append("cover values left out: they are read from the mod's object "
+                         "library, which only the archives hold")
+        out["ai"] = level_ai.to_json()
+    elif files is None:
+        notes.append(f"no generated layer for {mod.lower()}/{level.lower()}")
+    else:
+        notes.append("the generated layer is gated out"
+                     + (": the published generated block is removed" if had else ""))
+    write_level_search_maps(files, level_ai, level_dir)
+    return out, {}, notes
+
+
 def layer_heightmap(ctx: LevelContext):
     # The whole `Heightmap.raw`, drawn patches and undrawn alike: what the
     # viewer's colliders stand everything on (`viewer/heightfield.js`

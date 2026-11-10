@@ -518,8 +518,10 @@ def generated_layer_files(mod: str, level: str, root: Path | None = None):
 def generated_layer_gate(folder: Path) -> tuple[bool, str]:
     """Whether a bake may read the layer in `folder`: its `verdict.json`
     (written by `sim/botbatch.mjs`) says `pass`, or it carries an explicit
-    `accepted` reason. `BOT_LAYERS_UNVERIFIED=1` lets a scratch tree take an
-    unjudged or failing layer for the test that judges it."""
+    `accepted` reason, and the verdict is for the way the level is played
+    (`with vehicles` when it places any). `BOT_LAYERS_UNVERIFIED=1` lets a
+    scratch tree take an unjudged or failing layer for the test that judges
+    it."""
     import json
     import os
 
@@ -531,6 +533,16 @@ def generated_layer_gate(folder: Path) -> tuple[bool, str]:
     if not file.is_file():
         return False, "no verdict"
     doc = json.loads(file.read_text())
+    # A level that places vehicles or guns is played with them (Instant Battle
+    # starts with vehicles on), so only a verdict of matches run with them
+    # opens its layer: an on-foot verdict, passed or accepted, does not say
+    # what a player meets. The marker says what the level places
+    # (`sim/botgen.mjs buildLayer`, generator 4 on; an older marker has no
+    # count and asks for nothing).
+    marker_file = folder / "generated.json"
+    placed = json.loads(marker_file.read_text()).get("objectSpawners") if marker_file.is_file() else None
+    if isinstance(placed, int) and placed > 0 and doc.get("config") != "with vehicles":
+        return False, f"verdict {doc.get('config') or 'on foot'}: the level places {placed} vehicles and guns, judge it with them"
     if doc.get("verdict") == "pass":
         return True, "pass"
     accepted = doc.get("accepted")

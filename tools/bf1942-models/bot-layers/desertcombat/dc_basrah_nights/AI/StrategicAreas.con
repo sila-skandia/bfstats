@@ -1,0 +1,50 @@
+rem *** Strategic areas: one per control point (botgen) ***
+
+aiStrategicArea.create centerspawn 375/629 384/638 300
+aiStrategicArea.addNeighbour USspawn
+aiStrategicArea.addNeighbour iraqspawn
+aiStrategicArea.addNeighbour leftspawn
+aiStrategicArea.addNeighbour rightspawn
+aiStrategicArea.addObjectTypeFlag Centre
+aiStrategicArea.addObjectTypeFlag StrongPoint
+aiStrategicArea.addObjectTypeFlag ControlPoint
+aiStrategicArea.setOrderPosition Tank 383.5/640.5
+aiStrategicArea.setOrderPosition Infantry 383.5/639.5
+
+aiStrategicArea.create USspawn 342/550 352/560 200
+aiStrategicArea.addNeighbour centerspawn
+aiStrategicArea.addNeighbour leftspawn
+aiStrategicArea.addNeighbour rightspawn
+aiStrategicArea.addObjectTypeFlag Centre
+aiStrategicArea.addObjectTypeFlag ControlPoint
+aiStrategicArea.setOrderPosition Tank 351.5/562.5
+aiStrategicArea.setOrderPosition Infantry 351.5/561.5
+aiStrategicArea.setSide 2
+
+aiStrategicArea.create iraqspawn 408/710 418/720 200
+aiStrategicArea.addNeighbour centerspawn
+aiStrategicArea.addNeighbour leftspawn
+aiStrategicArea.addNeighbour rightspawn
+aiStrategicArea.addObjectTypeFlag Centre
+aiStrategicArea.addObjectTypeFlag ControlPoint
+aiStrategicArea.setOrderPosition Tank 417.5/722.5
+aiStrategicArea.setOrderPosition Infantry 417.5/721.5
+aiStrategicArea.setSide 1
+
+aiStrategicArea.create leftspawn 278/630 288/640 150
+aiStrategicArea.addNeighbour centerspawn
+aiStrategicArea.addNeighbour USspawn
+aiStrategicArea.addNeighbour iraqspawn
+aiStrategicArea.addObjectTypeFlag Flank
+aiStrategicArea.addObjectTypeFlag ControlPoint
+aiStrategicArea.setOrderPosition Tank 294.5/635.5
+aiStrategicArea.setOrderPosition Infantry 287.5/641.5
+
+aiStrategicArea.create rightspawn 470/630 480/640 150
+aiStrategicArea.addNeighbour centerspawn
+aiStrategicArea.addNeighbour USspawn
+aiStrategicArea.addNeighbour iraqspawn
+aiStrategicArea.addObjectTypeFlag Flank
+aiStrategicArea.addObjectTypeFlag ControlPoint
+aiStrategicArea.setOrderPosition Tank 479.5/642.5
+aiStrategicArea.setOrderPosition Infantry 479.5/641.5

@@ -134,6 +134,14 @@ class WalkTestTests(unittest.TestCase):
         # The hull reach less the skin, the standing height, the step, a jump's apex at 30 Hz, the free fall.
         self.assertEqual((body["radius"], body["height"], body["step"], body["drop"]), (0.39, 1.8, 0.45, 2))
         self.assertAlmostEqual(body["jump"], 1.12, delta=0.01)
+        # Water no deeper than a swimmer stands up in: deeper, a soldier swims and the water bleeds them.
+        self.assertEqual(body["wade"], 1.35)
+
+    def test_the_walk_test_wades_and_does_not_swim(self) -> None:
+        # The bed 1 m down (half a metre of water over it) is walked; 2.2 m
+        # down (1.7 m of water) and beyond is not, though each step down the
+        # shelf is a small one and the ray that finds it starts under water.
+        self.assertEqual(self.out["channel"], {"shallows": "walk", "swim": "none", "across": "none"})
 
     def test_a_door_is_a_way_and_a_slit_is_not(self) -> None:
         self.assertEqual((self.out["way"]["door"], self.out["way"]["slit"]), ("walk", "none"))
@@ -211,6 +219,29 @@ class WalkMapTests(unittest.TestCase):
         # What the engine's map held is kept for the record: nothing here, most of it for the map that was kept.
         self.assertEqual(painted["engineCover"], 0)
         self.assertTrue(painted["keptCover"])
+
+    def test_a_painted_vehicle_map_takes_the_widest_brush_that_keeps_the_level_whole(self) -> None:
+        # A 4 m street between two yards: at DICE's 3 m the far flag is on
+        # another piece of the map; the widest brush that joins both flags
+        # and both spawners is taken, and the layer's script declares it.
+        v = self.out["vehicleMap"]
+        self.assertEqual(v["tried"][0][:2], [3, 1])
+        self.assertLess(v["brush"], 3)
+        self.assertEqual([t[1] for t in v["tried"] if t[0] == v["brush"]], [2])
+        # No wider brush tried did as well.
+        self.assertTrue(all(t[1] < 2 for t in v["tried"] if t[0] > v["brush"]))
+        self.assertTrue(v["street"])
+        self.assertEqual(v["wall"], 1)
+        self.assertEqual(v["con"], [True, True])
+        # Open ground keeps DICE's 3 m.
+        self.assertEqual((v["openBrush"], v["openFlags"]), (3, 2))
+
+    def test_a_hull_is_given_its_own_order_position(self) -> None:
+        con = self.out["hullCon"]
+        self.assertIn("aiStrategicArea.setOrderPosition Tank 202.5/204.5", con)
+        self.assertLess(con.index("setOrderPosition Tank 202.5/204.5"), con.index("setOrderPosition Infantry 200.5/204.5"))
+        # Not asked for, not written: an on-foot level's script is as it was.
+        self.assertNotIn("setOrderPosition Tank", self.out["con"])
 
     def test_a_painted_cell_is_free_only_when_a_body_stands_at_its_centre(self) -> None:
         # Half of a cell's fine cells is not enough: the route runs through
@@ -452,6 +483,35 @@ class BakeHookTests(unittest.TestCase):
             verdict.write_text(json.dumps({"verdict": "fail"}))
             with mock.patch.dict(os.environ, {**env, "BOT_LAYERS_UNVERIFIED": "1"}, clear=True):
                 self.assertIsNotNone(ai_level.load_generated_ai("bf1942", "shigaisen_B", root))
+
+    def test_a_level_that_places_vehicles_opens_only_on_a_verdict_with_them(self) -> None:
+        # The marker says what the level places (generator 4 on). Above none,
+        # a pass or an acceptance of on-foot matches does not open the layer.
+        with tempfile.TemporaryDirectory() as tmp:
+            folder = Path(tmp) / "bf1942" / "shigaisen_b"
+            shutil.copytree(LAYERS / "bf1942" / "shigaisen_b", folder)
+            marker = json.loads((folder / "generated.json").read_text())
+            verdict = folder / "verdict.json"
+            env = {k: v for k, v in os.environ.items() if not k.startswith("BOT_LAYERS_")}
+            with mock.patch.dict(os.environ, env, clear=True):
+                (folder / "generated.json").write_text(json.dumps({**marker, "objectSpawners": 8}))
+                verdict.write_text(json.dumps({"verdict": "pass", "config": "on foot"}))
+                ok, why = ai_level.generated_layer_gate(folder)
+                self.assertFalse(ok)
+                self.assertIn("places 8 vehicles and guns", why)
+                verdict.write_text(json.dumps({"verdict": "fail", "accepted": {"reason": "owner played it"}}))
+                self.assertFalse(ai_level.generated_layer_gate(folder)[0])
+                verdict.write_text(json.dumps({"verdict": "pass", "config": "with vehicles"}))
+                self.assertEqual(ai_level.generated_layer_gate(folder), (True, "pass"))
+                verdict.write_text(json.dumps({"verdict": "fail", "config": "with vehicles"}))
+                self.assertFalse(ai_level.generated_layer_gate(folder)[0])
+                # A level that places nothing is judged on foot, as before.
+                (folder / "generated.json").write_text(json.dumps({**marker, "objectSpawners": 0}))
+                verdict.write_text(json.dumps({"verdict": "pass", "config": "on foot"}))
+                self.assertEqual(ai_level.generated_layer_gate(folder), (True, "pass"))
+                # A marker older than the count asks for nothing.
+                (folder / "generated.json").write_text(json.dumps({k: v for k, v in marker.items() if k != "objectSpawners"}))
+                self.assertEqual(ai_level.generated_layer_gate(folder), (True, "pass"))
 
     def test_a_scratch_run_points_the_bake_at_layers_outside_the_repo(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:

@@ -1,6 +1,7 @@
 """`engine_search_maps.py`: the archive it hands the retail server and the
-script layer it adds (features/bot-map-generation, section 13). The server
-run itself needs the lab and is not exercised here.
+script layer it adds (features/bot-map-generation, section 13), and the
+instance it builds for a mod the lab's server lacks. The server run itself
+needs the lab and is not exercised here.
 
 Also the writer for the maps it brings back (`sim/botgen.mjs
 encodeSearchMap`), against DICE's own shipped files where the game is
@@ -157,6 +158,75 @@ class ReferencedLevelTests(unittest.TestCase):
             self.assertEqual(esm.referenced_levels(arch, esm.level_folder(arch)), [])
 
 
+DC_INIT = ("game.setCustomGameName DesertCombat\r\ngame.addModPath Mods/DesertCombat/\r\n"
+           "game.addModPath Mods/BF1942/\r\ngame.customGameFlushArchives 0 \r\n")
+
+
+class ModInstanceTests(unittest.TestCase):
+    """A mod the lab's server lacks, linked in from a client install."""
+
+    def client_mod(self, root: Path) -> Path:
+        mod = root / "game" / "Mods" / "DesertCombat"
+        for rel in ("init.con", "lexiconall.dat", "DCreadme.txt", "Movies/intro.con", "Settings/Profile.con",
+                    "Archives/OBJECTS.rfa", "Archives/GUI_RFAPack.exe", "Archives/bf1942/game.rfa",
+                    "Archives/bf1942/Levels/DC_Test.rfa", "Archives/bf1942/Levels/DC_Test_001.rfa",
+                    "Archives/bf1942/Levels/DC_Other.rfa"):
+            (mod / rel).parent.mkdir(parents=True, exist_ok=True)
+            (mod / rel).write_bytes(DC_INIT.encode() if rel == "init.con" else rel.encode())
+        return mod
+
+    def test_a_mods_init_names_itself_then_the_mods_it_builds_on(self) -> None:
+        self.assertEqual(esm.mod_paths(DC_INIT), ["DesertCombat", "BF1942"])
+        self.assertEqual(esm.mod_paths('game.addModPath "Mods\\bf1918\\"\nrem game.addModPath Mods/xpack1/\n'
+                                       "Game.AddModPath mods/bf1942/\ngame.addModPath Mods/BF1942/\n"), ["bf1918", "bf1942"])
+
+    def test_the_servers_own_mod_wins_and_the_case_on_disk_does_not_matter(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            mod = self.client_mod(Path(tmp))
+            server = Path(tmp) / "server" / "mods"
+            (server / "bf1942").mkdir(parents=True)
+            (mod.parent / "BF1942").mkdir()
+            roots = [server, mod.parent]
+            self.assertEqual(esm.find_mod("BF1942", roots), server / "bf1942")
+            self.assertEqual(esm.find_mod("desertcombat", roots), mod)
+            self.assertIsNone(esm.find_mod("FH", roots))
+
+    def test_a_client_mod_becomes_a_lower_case_tree_of_links_without_the_levels_own_archives(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            mod = self.client_mod(Path(tmp))
+            before = sorted(p.relative_to(mod).as_posix() for p in mod.rglob("*"))
+            dest = Path(tmp) / "inst" / "mods" / "desertcombat"
+            count = esm.link_mod(mod, dest, lambda rel: rel.startswith("archives/bf1942/levels/dc_test"))
+            got = sorted(p.relative_to(dest).as_posix() for p in dest.rglob("*") if not p.is_dir())
+            # Scripts, the lexicon and archives only; no movies, settings, readme or tool.
+            self.assertEqual(got, ["archives/bf1942/game.rfa", "archives/bf1942/levels/dc_other.rfa",
+                                   "archives/objects.rfa", "init.con", "lexiconall.dat"])
+            self.assertEqual(count, len(got))
+            for rel in got:
+                self.assertTrue((dest / rel).is_symlink(), rel)
+            self.assertEqual((dest / "archives/objects.rfa").resolve(), (mod / "Archives/OBJECTS.rfa").resolve())
+            self.assertEqual((dest / "archives/objects.rfa").read_bytes(), b"Archives/OBJECTS.rfa")
+            # The level's own folder is a real one, for the rebuilt archive, and the install is as it was.
+            self.assertFalse((dest / "archives/bf1942/levels").is_symlink())
+            self.assertEqual(sorted(p.relative_to(mod).as_posix() for p in mod.rglob("*")), before)
+
+    def test_the_maps_count_as_written_only_when_all_six_are_there_with_content(self) -> None:
+        want = [f"{name}Level{lv}Map.raw" for name, _, _ in esm.SEARCH_MAPS for lv in esm.LEVELS]
+        with tempfile.TemporaryDirectory() as tmp:
+            folder = Path(tmp) / "dc_test" / "Pathfinding"
+            folder.mkdir(parents=True)
+            self.assertIsNone(esm.map_sizes(Path(tmp), want))
+            # The server writes lower-case names, and an 8-bit preview beside each.
+            for w in want[:-1]:
+                (folder / w.lower()).write_bytes(bytes(96))
+                (folder / w.lower().replace("map.raw", "map8bit.raw")).write_bytes(bytes(4096))
+            self.assertIsNone(esm.map_sizes(Path(tmp), want))
+            (folder / want[-1].lower()).write_bytes(b"")
+            self.assertIsNone(esm.map_sizes(Path(tmp), want))
+            (folder / want[-1].lower()).write_bytes(bytes(608))
+            self.assertEqual(esm.map_sizes(Path(tmp), want), {**{w: 96 for w in want[:-1]}, want[-1]: 608})
+
+
 class SearchMapWriterTests(unittest.TestCase):
     """`sim/botgen.mjs encodeSearchMap` against DICE's own Kharkov maps."""
 
@@ -208,6 +278,15 @@ class ScriptLayerTests(unittest.TestCase):
         self.assertLess(path.index("ai.addSearchType Tank 0 0"), path.index("ai.addSearchType Infantry 1 0"))
         self.assertLess(path.index("run StaticObjects"), path.index("ai.createAllMaps"))
         self.assertIn("aiSettings.setWorldMapSize 2048 2048", layer[f"{PREFIX}/AI.con"].decode())
+
+    def test_the_terrain_only_diagnosis_asks_for_the_maps_before_any_static_exists(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            src = Path(tmp) / "src.rfa"
+            game_archive(src, SOURCE)
+            arch = RfaArchive(src)
+            path = esm.script_layer(arch, PREFIX, 2048, statics=False)[f"{PREFIX}/AIpathFinding.con"].decode()
+        self.assertNotIn("StaticObjects", path)
+        self.assertLess(path.index("ai.loadMaps"), path.index("ai.createAllMaps"))
 
 
 if __name__ == "__main__":

@@ -29,15 +29,20 @@ const SKIN = 0.01;
 /** The page's soldier, from the viewer's modules: `{ radius, height, step, jump, slopeCos, wade }`. */
 export async function soldierBody(viewer = null) {
   const imp = f => import(pathToFileURL(path.join(viewerDir(viewer), f)).href);
-  const [loco, pose, resolve, body, nav, fall] = await Promise.all(
-    ['soldier-locomotion.js', 'soldier-pose.js', 'soldier-resolve.js', 'point-body.js', 'nav-map.js', 'fall-damage.js'].map(imp));
+  const [loco, pose, resolve, body, nav, fall, swim] = await Promise.all(
+    ['soldier-locomotion.js', 'soldier-pose.js', 'soldier-resolve.js', 'point-body.js', 'nav-map.js', 'fall-damage.js', 'swim.js'].map(imp));
   // The apex of a jump at the engine's tick: the impulse and gravity's share of the same tick, then free fall.
   const dt = 1 / loco.ENGINE_TICK_RATE;
   let v = loco.JUMP_IMPULSE + body.GRAVITY * dt, jump = 0;
   while (v > 0) { jump += v * dt; v += body.GRAVITY * dt; }
   return {
     radius: resolve.HULL_REACH - SKIN, height: pose.BODY_HEIGHT[0], step: loco.STEP_HEIGHT,
-    jump: +jump.toFixed(3), slopeCos: loco.MAX_GROUND_SLOPE, wade: nav.INFANTRY_SEARCH_MAP.waterDepth,
+    jump: +jump.toFixed(3), slopeCos: loco.MAX_GROUND_SLOPE,
+    // Water a soldier crosses on their feet: no deeper than the infantry map's own limit, and no deeper than
+    // the depth a swimmer stands up at (`swim.js SWIM_LEAVE_WATER`, 1.35 m). Deeper and they swim, and a
+    // swimmer's Armor takes the water-damage tick: on Forgotten Hope's Pegasus the canal is 1.4 m deep, the
+    // map's 1.5 m called it ground, and the bots sent across it died in it with no kill to show for it.
+    wade: Math.min(nav.INFANTRY_SEARCH_MAP.waterDepth, swim.SWIM_LEAVE_WATER),
     drop: fall.FALL_HEIGHT_FREE ?? MAX_DROP,
   };
 }
@@ -47,6 +52,12 @@ export async function soldierBody(viewer = null) {
  * or null (nothing within `reach`, or water deeper than a soldier wades).
  * `collider` is the page's `WorldCollider`.
  */
+/** Whether terrain at height `bed` lies under more water than a soldier wades. */
+function drowned(collider, bed, wade) {
+  const water = collider?.waterLevel;
+  return Number.isFinite(water) && Number.isFinite(bed) && water - bed > wade;
+}
+
 export function floorBelow(collider, x, z, fromY, reach = 1e4, wade = 1.5) {
   const hit = collider.cast(x, fromY, z, 0, -1, 0, reach);
   if (!hit) return null;
@@ -56,7 +67,14 @@ export function floorBelow(collider, x, z, fromY, reach = 1e4, wade = 1.5) {
     return { y: bed, ny: 1, kind: 'terrain' };
   }
   // The collider's ray finds the terrain by bisection, good to centimetres; the height itself is exact.
-  if (hit.kind === 'terrain' && collider.heightfield) return { y: collider.heightfield.height(x, z), ny: hit.ny, kind: 'terrain' };
+  if (hit.kind === 'terrain' && collider.heightfield) {
+    const bed = collider.heightfield.height(x, z);
+    // A ray begun under the surface (the place it steps from is already in the water) meets the bed and
+    // never the water plane: the depth is asked here too, or a bank that shelves gently lets the flood
+    // walk on down a channel of any depth. Forgotten Hope's Pegasus canal is 5 to 7 m deep.
+    if (drowned(collider, bed, wade)) return null;
+    return { y: bed, ny: hit.ny, kind: 'terrain' };
+  }
   return { y: hit.y, ny: hit.ny, kind: hit.kind };
 }
 
@@ -72,6 +90,7 @@ export function floorsBelow(collider, x, z, fromY, toY, wade = 1.5) {
       if (Number.isFinite(bed) && hit.y - bed <= wade && bed >= toY) out.push({ y: bed, ny: 1, kind: 'terrain' });
       break;
     }
+    if (hit.kind === 'terrain' && drowned(collider, hit.y, wade)) break;
     out.push({ y: hit.y, ny: hit.ny, kind: hit.kind });
     if (hit.kind !== 'object') break;
     y = hit.y - 0.05;

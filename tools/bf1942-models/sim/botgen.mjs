@@ -18,6 +18,9 @@
 // soldier on walkable ground stands inside its 3D radius, and bots are kept
 // off the spawns with no way to the main ground. Each rule that departs from
 // the retail engine is labelled INVENTION where it is written.
+// Version four adds the route probe (`routeprobe.mjs`): a flag neither
+// side's bots can finish a route to on the layer's own map, by the page's
+// own route code, is excluded as an unreachable one is.
 //
 // Deterministic: the same level tree and the same template give the same
 // bytes. `generated.json` carries the generator's version and the hashes of
@@ -33,11 +36,12 @@ import { fileURLToPath, pathToFileURL } from 'node:url';
 import { viewerDir, loadViewerModules, seedMathRandom } from './env.mjs';
 import { realLevel } from './level.mjs';
 import { createStage } from './stage.mjs';
-import { STOREY, MAP_COVER, paintGround, soldierBody, walkFacts, walkedGround, wayOut } from './walkflood.mjs';
+import { STOREY, MAP_COVER, components, paintGround, soldierBody, walkFacts, walkedGround, wayOut } from './walkflood.mjs';
+import { CHOKE_MAX, probeLevel, probeTools, wayStop } from './routeprobe.mjs';
 
 const HERE = path.dirname(fileURLToPath(import.meta.url));
 export const GENERATOR = 'botgen';
-export const GENERATOR_VERSION = 3;
+export const GENERATOR_VERSION = 4;
 export const LAYERS_ROOT = path.resolve(HERE, '..', 'bot-layers');
 export const TEMPLATE_FILES = ['Strategies.con', 'conditions.con', 'prerequisites.con'];
 
@@ -45,6 +49,8 @@ export const TEMPLATE_FILES = ['Strategies.con', 'conditions.con', 'prerequisite
 export const ON_THE_WAY = 1.15;
 /** How far from a flag its order position may be looked for, metres. */
 export const ORDER_SEARCH = 30;
+/** The same for a hull's, on the land vehicles' map, whose brush keeps it off every wall. */
+export const VEHICLE_ORDER_SEARCH = 40;
 /** The area box's half-width bounds, metres (the flag's capture radius between them). */
 export const BOX_MIN = 5, BOX_MAX = 40;
 /** A flag this far off the line between the bases, as a share of its length, is a flank. */
@@ -52,6 +58,11 @@ export const FLANK_OFFSET = 0.12;
 
 /** The layer's map the walk test edits: DICE's infantry map. */
 export const WALK_MAP = 'Infantry1';
+/** The land vehicles' map (`pathFindingCon`), and its `ai.addSearchMap` parameters as the page's painter takes them. */
+export const VEHICLE_MAP = 'Tank0';
+export const VEHICLE_MAP_PARAMS = { waterDepth: 0, maxSlopeDeg: 25, brush: 3.0, lowClip: 0.3, hiClip: 2.5 };
+/** The brushes a painted land vehicles' map is tried at, DICE's first (`paintedVehicleMap`), metres. */
+export const VEHICLE_BRUSHES = [3.0, 2.5, 2.0, 1.5];
 /** Where a layer whose map is painted from the walk test keeps the engine's own level 0: the next run decides
  *  again from it, and no bake reads it (a bake asks for `Pathfinding/<name>Level<L>Map.raw` by name). */
 export const ENGINE_COPY = `Pathfinding/engine/${WALK_MAP}Level0Map.raw`;
@@ -101,7 +112,7 @@ function pathLength(points) {
  * walking distance between two `[x, z]` points on the infantry map, or
  * Infinity. Pure: the tests hand it a synthetic map.
  */
-export function buildAreas(flags, { orderPosition, route, ground = null, reach = null }) {
+export function buildAreas(flags, { orderPosition, route, ground = null, reach = null, vehicleOrder = null }) {
   const areas = flags.map(f => {
     const half = Math.min(BOX_MAX, Math.max(BOX_MIN, f.radius));
     // `reach(flag)` is the walk test's answer (`flagReach`): where a soldier
@@ -112,7 +123,10 @@ export function buildAreas(flags, { orderPosition, route, ground = null, reach =
     // or its pole further above that ground than its own radius reaches.
     const lift = order && ground ? f.y - ground(order[0], order[1]) : 0;
     const unreachable = !f.fixed && (walked ? walked.unreachable : (!order || lift > f.radius));
-    return { name: f.name, flag: f, half, order, flags: [], neighbours: [], value: 150, unreachable };
+    // Where a hull ordered to the area is sent: the free cell of the land vehicles' map nearest the flag
+    // (`vehicleOrder`), when the level places any. An area out of play has none, as it has no infantry one.
+    const tankOrder = vehicleOrder && !unreachable ? vehicleOrder(f.x, f.z) : null;
+    return { name: f.name, flag: f, half, order, tankOrder, flags: [], neighbours: [], value: 150, unreachable };
   });
   // The line the battle runs along: base to base, else the two sides' own
   // flags, else the two flags furthest apart.
@@ -218,6 +232,9 @@ export function areasCon(areas) {
     for (const flag of a.flags) out.push(`aiStrategicArea.addObjectTypeFlag ${flag}`);
     // No order position for a flag nobody can stand in: sending bots to its
     // foot was tried and stuck more of them there (features/bot-map-generation, 15).
+    // The land vehicles' first, as DICE's files have it. Without one a hull ordered to a flag inside a hut is
+    // sent to the flag itself (`AIStrategicArea::getOrderPos` falls back to the area's p2).
+    if (a.tankOrder && !a.unreachable) out.push(`aiStrategicArea.setOrderPosition Tank ${r1(a.tankOrder[0])}/${r1(-a.tankOrder[1])}`);
     if (a.order && !a.unreachable) out.push(`aiStrategicArea.setOrderPosition Infantry ${r1(a.order[0])}/${r1(-a.order[1])}`);
     if (f.team) out.push(`aiStrategicArea.setSide ${f.team}`);
     if (f.fixed && f.team) out.push(`aiStrategicArea.setTakeable ${f.team === 1 ? 2 : 1} 0`);
@@ -254,11 +271,12 @@ export function aiCon({ worldSize, viewDistance, strategies, searchMaps = false 
 }
 
 /** `AIpathFinding.con` for the engine's maps a layer holds (`engine_search_maps.py`): DICE's usual two. */
-export function pathFindingCon() {
+export function pathFindingCon(painted = false, brush = VEHICLE_MAP_PARAMS.brush) {
   return [
-    'rem *** Search maps painted by the engine itself (engine_search_maps.py) ***', '',
+    painted ? 'rem *** Search maps painted from the level as baked (sim/botgen.mjs): the walk test and the page painter ***'
+      : 'rem *** Search maps painted by the engine itself (engine_search_maps.py) ***', '',
     'ai.numAStarResources 10', '',
-    'ai.addSearchMap Tank0 0 0 25 3.0 0.3 2.5 0', 'ai.addSearchType Tank 0 0', '',
+    `ai.addSearchMap Tank0 0 0 25 ${brush.toFixed(1)} 0.3 2.5 0`, 'ai.addSearchType Tank 0 0', '',
     'ai.addSearchMap Infantry1 0 1.5 30 1.0 0.4 2.0 1', 'ai.addSearchType Infantry 1 0', '',
     'ai.loadMaps', '',
   ].join('\r\n');
@@ -296,6 +314,38 @@ export function flagReach(fact, fallback = null) {
     order = near ? fallback : [Math.floor(fact.stand[0]) + 0.5, -(Math.floor(-fact.stand[1]) + 0.5)];
   }
   return { order, unreachable: !fact.reachable || fact.over >= STOREY };
+}
+
+/**
+ * The route probe over the generator's areas (`routeprobe.mjs probeLevel`),
+ * as the marker keeps it: the capturable flags neither side's bots have an
+ * open way to (`unreachable`, with where each way stops: the planner's own
+ * failure, or more choke points than `CHOKE_MAX`), the flags only one side
+ * has (`oneSided`), what each side reaches, and the neighbour links that
+ * are shut.
+ *
+ * INVENTION: a flag in `unreachable` is taken out of play for both sides,
+ * exactly as one no soldier can stand inside is. The engine orders its bots
+ * to any area a side may take and lets them fail.
+ */
+export function probeAreas(tools, nav, areas, starts) {
+  const targets = areas.filter(a => !a.flag.fixed && !a.unreachable && a.order)
+    .map(a => ({ name: a.name, order: a.order, neighbours: a.neighbours }));
+  const res = probeLevel(tools, nav, { areas: targets, spawns: starts });
+  const unreachable = targets.filter(a => res.flags[a.name].sides.length === 0).map(a => a.name);
+  const ways = targets.flatMap(a => [1, 2].map(side => [a.name, side, res.flags[a.name].direct[side]]));
+  return {
+    chokeMax: CHOKE_MAX,
+    unreachable,
+    stops: Object.fromEntries(unreachable.map(n => [n, { 1: wayStop(res.flags[n].direct[1]), 2: wayStop(res.flags[n].direct[2]) }])),
+    oneSided: Object.fromEntries(targets.filter(a => res.flags[a.name].sides.length === 1).map(a => [a.name, res.flags[a.name].sides[0]])),
+    sides: res.sides,
+    // The choke points on each side's best way from its spawns to each flag (`routeprobe.mjs chokePoints`).
+    chokes: Object.fromEntries(ways.filter(([, , w]) => w?.ok).map(([n, side, w]) => [`${n}:${side}`, w.chokes])),
+    // A route that closes only after the bot's route has failed once or more is a route failure every time it is planned.
+    late: Object.fromEntries(ways.filter(([, , w]) => w?.ok && w.failures > 0).map(([n, side, w]) => [`${n}:${side}`, w.failures])),
+    shutLinks: res.links.filter(l => !l.open).map(l => `${l.from}>${l.to}`),
+  };
 }
 
 /** The spawns bots are kept off, from the walk test: no way to the main ground, or a storey over another floor.
@@ -435,27 +485,92 @@ export function prepareWalkMap({ collider, size, flags, spawns, body, engine, pr
   return { pixels, engine: original, source: painted ? 'walk test' : 'engine', engineCover, opened: cells, ways, facts };
 }
 
-export function buildLayer({ mod, level, extras, areas, navSha, template, rawFiles = {}, botSpawnsExcluded = [], walkMap = null }) {
+/**
+ * The land vehicles' map for a level the engine wrote none for: the page's
+ * own painter (`viewer/nav-map.js buildNavMap`, the map a hull routes on
+ * when a level ships no `Tank0`), with the seeds `viewer/bot-units.js
+ * vehicleNav` gives it, written out as the layer's `Tank0` so the layer's
+ * maps load in the engine's order.
+ *
+ * The brush is DICE's 3 m where that leaves the level in one piece, and
+ * the widest of `VEHICLE_BRUSHES` that does where it does not: the one
+ * that puts as many flags (the free cell nearest each, the hull's order
+ * position) and as many spawners on one piece of the map as any brush
+ * tried. A town's streets are narrower than the open ground DICE's 3 m was
+ * set for: on Desert Combat's Basrah Nights 3 m leaves the map in nineteen
+ * pieces, two flags of five and one vehicle of four on the largest, and the
+ * drivers sit still all match; 1.5 m joins all five flags and all four.
+ * The layer's `AIpathFinding.con` declares the brush used, so the page
+ * reads this map for its hulls.
+ *
+ * Returns `{ pixels, brush, tried }`, one byte a pixel, 1 blocked.
+ *
+ * INVENTION: the engine floods its own from the objects' collision
+ * outlines with the brush the level's script names; on a mod's level that
+ * flood leaves a few dozen cells.
+ */
+export function paintedVehicleMap(nav, world, extras, size, flags = []) {
+  const seeds = [];
+  for (const spawn of extras.objectSpawns ?? []) if (spawn?.position) seeds.push([spawn.position[0], spawn.position[2]]);
+  for (const flag of world.flags ?? []) for (const spawn of flag.spawns ?? []) if (spawn?.position) seeds.push([spawn.position[0], spawn.position[2]]);
+  const tried = [];
+  for (const brush of VEHICLE_BRUSHES) {
+    const map = nav.buildNavMap(world.collider, size, { waterLevel: world.collider?.waterLevel, ...VEHICLE_MAP_PARAMS, brush, seeds, baked: false });
+    const pixels = new Uint8Array(size * size);
+    for (let i = 0; i < pixels.length; i++) pixels[i] = map.blocked[i] ? 1 : 0;
+    const grid = { width: size, height: size, cellSize: 1, blocked: pixels };
+    const { id, sizes } = components(grid);
+    // The piece the level is played on: the one that holds most flags, then most spawners, then the largest.
+    // Not the largest alone: a walled town's map has more open ground outside the wall than inside it.
+    const pieceAt = (x, z) => { const c = Math.floor(-z) * size + Math.floor(x); return c >= 0 && c < id.length ? id[c] : 0; };
+    const flagPiece = flags.map(f => { const p = nearestFree(grid, nav.isWalkable, f.x, f.z, VEHICLE_ORDER_SEARCH); return p ? pieceAt(p[0], p[1]) : 0; });
+    const spawnerPiece = (extras.objectSpawns ?? []).filter(o => o?.position).map(o => pieceAt(o.position[0], o.position[2]));
+    const tally = list => { const n = new Map(); for (const c of list) if (c) n.set(c, (n.get(c) ?? 0) + 1); return n; };
+    const nf = tally(flagPiece), ns = tally(spawnerPiece);
+    let main = 0;
+    for (let i = 1; i < sizes.length; i++) {
+      const better = !main || (nf.get(i) ?? 0) > (nf.get(main) ?? 0)
+        || ((nf.get(i) ?? 0) === (nf.get(main) ?? 0) && ((ns.get(i) ?? 0) > (ns.get(main) ?? 0)
+          || ((ns.get(i) ?? 0) === (ns.get(main) ?? 0) && sizes[i] > sizes[main])));
+      if (better) main = i;
+    }
+    const flagsOn = main ? nf.get(main) ?? 0 : 0, spawnersOn = main ? ns.get(main) ?? 0 : 0;
+    tried.push({ brush, pixels, flagsOn, spawnersOn, pieces: sizes.length - 1, main: main ? sizes[main] : 0 });
+  }
+  const best = { flags: Math.max(...tried.map(t => t.flagsOn)), spawners: Math.max(...tried.map(t => t.spawnersOn)) };
+  const pick = tried.find(t => t.flagsOn === best.flags && t.spawnersOn === best.spawners) ?? tried[tried.length - 1];
+  return { pixels: pick.pixels, brush: pick.brush, tried: tried.map(({ pixels, ...t }) => t) };
+}
+
+export function buildLayer({ mod, level, extras, areas, navSha, template, rawFiles = {}, botSpawnsExcluded = [], walkMap = null, routeProbe = null }) {
   const worldSize = Math.round(extras.worldSize || 1024);
   const viewDistance = Math.round(Math.min(400, Math.max(60, extras.drawDistance || 200)));
   const engineMaps = Object.keys(rawFiles).length > 0;
   const files = {
     'AI.con': aiCon({ worldSize, viewDistance, strategies: template.strategies, searchMaps: engineMaps }),
-    ...(engineMaps ? { 'AIpathFinding.con': pathFindingCon() } : {}),
+    ...(engineMaps ? { 'AIpathFinding.con': pathFindingCon(walkMap?.engine === 'none', walkMap?.vehicleBrush ?? VEHICLE_MAP_PARAMS.brush) } : {}),
     'AI/StrategicAreas.con': areasCon(areas),
     ...Object.fromEntries(TEMPLATE_FILES.map(f => [`AI/${f}`, template.files[f]])),
   };
   const flags = flagsOf(extras).map(f => [f.name, r1(f.x), r1(f.y), r1(f.z), f.radius, f.team, f.fixed]);
   const marker = {
     generator: GENERATOR, version: GENERATOR_VERSION, mod, level,
+    // What the level places for a crew: its vehicle and gun spawners. Above none, the bake's gate asks for a
+    // verdict of matches run with them (`bf42/ai_level.py generated_layer_gate`).
+    objectSpawners: (extras.objectSpawns ?? []).length,
     template: template.name, templateSource: template.source,
     scope: !engineMaps ? 'on foot: infantry order positions only, no search maps, no co-op layer'
+      : walkMap?.engine === 'none'
+        ? 'an infantry map painted from the walk test, a Tank0 map from the page painter, infantry order positions, no strategic maps, no co-op layer'
       : walkMap?.source === 'walk test'
         ? 'on foot: an infantry map painted from the walk test, the engine\'s own Tank0 map, infantry order positions, no strategic maps, no co-op layer'
         : 'on foot: the engine\'s own Tank0 and Infantry1 search maps, infantry order positions, no strategic maps, no co-op layer',
     unreachable: areas.filter(a => a.unreachable).map(a => a.name),
+    // Why each is out: the walk test (no soldier stands inside it), or the route probe (no bot's route closes on it).
+    unreachableReasons: Object.fromEntries(areas.filter(a => a.unreachable).map(a => [a.name, routeProbe?.unreachable?.includes(a.name) ? 'route probe' : 'walk test'])),
     botSpawnsExcluded,
     ...(walkMap ? { walkMap } : {}),
+    ...(routeProbe ? { routeProbe } : {}),
     inputs: {
       controlPoints: sha(JSON.stringify(flags)),
       infantryMap: navSha,
@@ -548,33 +663,78 @@ export async function generate({ maps, models, map, mod, out = LAYERS_ROOT, temp
   let facts, walkMap = null;
   const keptFile = path.join(dir, ENGINE_COPY);
   let dropCopy = false;
-  if (loaded.searchMap && loaded.searchMap.width === size) {
-    const kept = existsSync(keptFile) ? (await layerInfantryMap(null, null, readFileSync(keptFile))) : null;
+  // A layer the engine wrote no map for (a mod's level, a level with no archive at hand): the infantry map is
+  // painted from the walk test alone, and the land vehicles' is the page's own painter's, written out.
+  const kept = existsSync(keptFile) ? (await layerInfantryMap(null, null, readFileSync(keptFile))) : null;
+  const noEngine = !kept && (!loaded.searchMap || previous?.engine === 'none');
+  if (noEngine || loaded.searchMap.width === size) {
     const walk = prepareWalkMap({ collider: world.collider, size, flags, spawns, body,
-                                  engine: searchMapPixels(kept ?? loaded.searchMap), previous: kept ? null : previous });
-    const pyramid = encodePyramid(walk.pixels, size);
-    for (const level of [0, 1, 2]) rawFiles[`Pathfinding/${WALK_MAP}Level${level}Map.raw`] = pyramid[level];
-    if (walk.source === 'walk test') rawFiles[ENGINE_COPY] = encodeSearchMap(walk.engine, size, 0);
-    else dropCopy = !!kept;
-    grid = await loaded.regrid(pyramid[0]);
-    facts = walk.facts;
-    walkMap = { source: walk.source, ...(walk.source === 'walk test' ? { engineCover: walk.engineCover } : {}), opened: walk.opened, ways: walk.ways, cover: facts.cover, floors: facts.floors };
+                                  engine: noEngine ? new Uint8Array(size * size).fill(1) : searchMapPixels(kept ?? loaded.searchMap),
+                                  previous: kept || noEngine ? null : previous });
+    if (noEngine && (walk.source !== 'walk test' || walk.facts.capped)) {
+      // The walk test found no main ground to paint (no spawn lands, or the flood ran out of room): no map is
+      // written and the page paints its own, as it does for a level with no layer.
+      for (const f of Object.keys(rawFiles)) delete rawFiles[f];
+      facts = walkFacts({ collider: world.collider, grid, flags, spawns, body });
+      walkMap = { source: 'page painter', engine: 'none', opened: [], ways: [], cover: facts.cover, floors: facts.floors, capped: !!walk.facts.capped };
+    } else {
+      const pyramid = encodePyramid(walk.pixels, size);
+      for (const level of [0, 1, 2]) rawFiles[`Pathfinding/${WALK_MAP}Level${level}Map.raw`] = pyramid[level];
+      if (walk.source === 'walk test' && !noEngine) rawFiles[ENGINE_COPY] = encodeSearchMap(walk.engine, size, 0);
+      else dropCopy = !!kept;
+      let painted = null;
+      if (noEngine) {
+        painted = paintedVehicleMap(nav, world, extras, size, flags);
+        const tank = encodePyramid(painted.pixels, size);
+        for (const level of [0, 1, 2]) rawFiles[`Pathfinding/${VEHICLE_MAP}Level${level}Map.raw`] = tank[level];
+      }
+      grid = await loaded.regrid(pyramid[0]);
+      facts = walk.facts;
+      walkMap = { source: walk.source, ...(noEngine ? { engine: 'none', vehicleMap: 'page painter', vehicleBrush: painted.brush, vehicleBrushes: painted.tried } : {}),
+                  ...(walk.source === 'walk test' && !noEngine ? { engineCover: walk.engineCover } : {}),
+                  opened: walk.opened, ways: walk.ways, cover: facts.cover, floors: facts.floors, ...(walk.facts.capped ? { capped: true } : {}) };
+    }
   } else {
     facts = walkFacts({ collider: world.collider, grid, flags, spawns, body });
   }
   const factOf = new Map(facts.flags.map(f => [f.name, f]));
-  const areas = buildAreas(flags, {
+  const noRoute = new Set();
+  // The land vehicles' map of the layer, for a hull's order position: only on a level that places something to crew.
+  const tankFile = `Pathfinding/${VEHICLE_MAP}Level0Map.raw`;
+  let tankGrid = null;
+  if ((extras.objectSpawns ?? []).length && rawFiles[tankFile]) {
+    const baked = await import(pathToFileURL(path.join(viewerDir(), 'nav-baked.js')).href);
+    const tm = baked.decodeSearchMap(new Uint8Array(rawFiles[tankFile]));
+    if (tm.width === size) tankGrid = { width: size, height: size, cellSize: 1, blocked: searchMapPixels(tm) };
+  }
+  const build = () => buildAreas(flags, {
+    vehicleOrder: tankGrid ? (x, z) => nearestFree(tankGrid, nav.isWalkable, x, z, VEHICLE_ORDER_SEARCH) : null,
     orderPosition: (x, z) => nearestFree(grid, nav.isWalkable, x, z),
-    reach: f => flagReach(factOf.get(f.name), nearestFree(grid, nav.isWalkable, f.x, f.z, f.fixed ? ORDER_SEARCH : f.radius)),
+    reach: f => {
+      const r = flagReach(factOf.get(f.name), nearestFree(grid, nav.isWalkable, f.x, f.z, f.fixed ? ORDER_SEARCH : f.radius));
+      return noRoute.has(f.name) ? { ...r, unreachable: true } : r;
+    },
     route: (p, q) => {
       const pts = nav.findPath(grid, p[0], p[1], q[0], q[1]);
       return pts ? pathLength(pts) : Infinity;
     },
   });
+  let areas = build();
+  // The route probe: the page's own planner on this map, from each side's usable spawns to every flag still in play.
+  const tools = await probeTools();
+  const usable = new Set(facts.spawns.filter(sp => sp.usable && sp.over < STOREY).map(sp => sp.name));
+  const starts = spawns.filter(sp => (sp.side === 1 || sp.side === 2) && usable.has(sp.name));
+  let probe = probeAreas(tools, grid, areas, starts);
+  if (probe.unreachable.length) {
+    for (const name of probe.unreachable) noRoute.add(name);
+    areas = build();
+    // The neighbours are drawn again without them, so the links are probed again.
+    probe = { ...probeAreas(tools, grid, areas, starts), unreachable: probe.unreachable, stops: probe.stops };
+  }
   const bits = Buffer.alloc(grid.blocked.length);
   for (let i = 0; i < bits.length; i++) bits[i] = grid.blocked[i] ? 1 : 0;
   const layer = buildLayer({ mod, level: map, extras, areas, navSha: sha(bits), template: readTemplate(template, out), rawFiles,
-                             botSpawnsExcluded: excludedByWalk(facts), walkMap });
+                             botSpawnsExcluded: excludedByWalk(facts), walkMap, routeProbe: probe });
   const want = { ...layer.files, 'generated.json': JSON.stringify(layer.marker, null, 1) + '\n' };
   const stale = [];
   for (const [rel, text] of Object.entries(want)) {
@@ -591,7 +751,7 @@ export async function generate({ maps, models, map, mod, out = LAYERS_ROOT, temp
     if (!check) { mkdirSync(path.dirname(file), { recursive: true }); writeFileSync(file, data); }
   }
   if (dropCopy) { stale.push(ENGINE_COPY); if (!check) rmSync(keptFile); }
-  return { dir, areas, marker: layer.marker, changed: stale, facts };
+  return { dir, areas, marker: layer.marker, changed: stale, facts, probe };
 }
 
 function parseArgs(argv) {

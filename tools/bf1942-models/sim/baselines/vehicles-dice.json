@@ -1,0 +1,670 @@
+{
+ "version": 1,
+ "note": "DICE layers with vehicles: berlin, stalingrad, kharkov, bocage; seeds 1..10, 600 s",
+ "sizes": {
+  "8": {
+   "levels": [
+    "berlin",
+    "bocage",
+    "kharkov",
+    "stalingrad"
+   ],
+   "matches": 40,
+   "duration": 600,
+   "metrics": {
+    "stuckSecondsPerBotMinute": {
+     "n": 40,
+     "min": 0,
+     "p10": 0,
+     "p50": 0.1515,
+     "p90": 0.6759,
+     "max": 1.067
+    },
+    "idleShare": {
+     "n": 40,
+     "min": 0.2534,
+     "p10": 0.3147,
+     "p50": 0.422,
+     "p90": 0.7042,
+     "max": 0.8798
+    },
+    "oscillationsPerBotMinute": {
+     "n": 40,
+     "min": 0,
+     "p10": 0.0184,
+     "p50": 0.0824,
+     "p90": 0.2393,
+     "max": 0.7424
+    },
+    "selfDeathsPerBotMinute": {
+     "n": 40,
+     "min": 0,
+     "p10": 0,
+     "p50": 0.0127,
+     "p90": 0.0455,
+     "max": 0.064
+    },
+    "spawnTrapsPerBotMinute": {
+     "n": 40,
+     "min": 0,
+     "p10": 0,
+     "p50": 0,
+     "p90": 0.0341,
+     "max": 0.0982
+    },
+    "routeFailuresPerBotMinute": {
+     "n": 40,
+     "min": 0,
+     "p10": 0,
+     "p50": 0.026,
+     "p90": 0.3065,
+     "max": 4.42
+    },
+    "redeploysPerBotMinute": {
+     "n": 40,
+     "min": 0,
+     "p10": 0,
+     "p50": 0.0095,
+     "p90": 0.0516,
+     "max": 0.0771
+    },
+    "teamKillsPerBotMinute": {
+     "n": 40,
+     "min": 0,
+     "p10": 0,
+     "p50": 0,
+     "p90": 0.0192,
+     "max": 0.0724
+    },
+    "capturesTotal": {
+     "n": 40,
+     "min": 0,
+     "p10": 0,
+     "p50": 3,
+     "p90": 5.1,
+     "max": 8
+    },
+    "enemyKillsPerBotMinute": {
+     "n": 40,
+     "min": 0.0126,
+     "p10": 0.0617,
+     "p50": 0.1113,
+     "p90": 0.3353,
+     "max": 0.6494
+    },
+    "firstCapture": {
+     "n": 32,
+     "min": 44.73,
+     "p10": 45.65,
+     "p50": 50.65,
+     "p90": 54.95,
+     "max": 151.6
+    },
+    "stuckSecondsPerBotMinuteWorseSide": {
+     "n": 40,
+     "min": 0,
+     "p10": 0,
+     "p50": 0.301,
+     "p90": 1.3599,
+     "max": 2.188
+    },
+    "spawnTrapsPerBotMinuteWorseSide": {
+     "n": 40,
+     "min": 0,
+     "p10": 0,
+     "p50": 0,
+     "p90": 0.0688,
+     "max": 0.2009
+    },
+    "routeFailuresPerBotMinuteWorseSide": {
+     "n": 40,
+     "min": 0,
+     "p10": 0,
+     "p50": 0.051,
+     "p90": 0.5492,
+     "max": 5.254
+    },
+    "redeploysPerBotMinuteWorseSide": {
+     "n": 40,
+     "min": 0,
+     "p10": 0,
+     "p50": 0.0191,
+     "p90": 0.1038,
+     "max": 0.1582
+    },
+    "nonEnemyDeathShareWorseSide": {
+     "n": 40,
+     "min": 0,
+     "p10": 0.1164,
+     "p50": 0.341,
+     "p90": 0.755,
+     "max": 1
+    },
+    "hullStuckSecondsPerDrivingMinute": {
+     "n": 40,
+     "min": 0,
+     "p10": 0,
+     "p50": 0.4915,
+     "p90": 3.2498,
+     "max": 9.133
+    },
+    "hullStuckSecondsPerDrivingMinuteWorseSide": {
+     "n": 40,
+     "min": 0,
+     "p10": 0,
+     "p50": 0.732,
+     "p90": 5.0296,
+     "max": 12.779
+    },
+    "unitsNeverUsedShare": {
+     "n": 40,
+     "min": 0.125,
+     "p10": 0.1631,
+     "p50": 0.2,
+     "p90": 0.4118,
+     "max": 0.4706
+    },
+    "tankSilentShare": {
+     "n": 40,
+     "min": 0,
+     "p10": 0,
+     "p50": 0.1667,
+     "p90": 0.5,
+     "max": 0.5
+    },
+    "mountedTeamKillsPerBotMinute": {
+     "n": 40,
+     "min": 0,
+     "p10": 0,
+     "p50": 0,
+     "p90": 0.0064,
+     "max": 0.0192
+    },
+    "mountedShare": {
+     "n": 40,
+     "min": 0.4988,
+     "p10": 0.5651,
+     "p50": 0.8424,
+     "p90": 0.8985,
+     "max": 0.9229
+    }
+   },
+   "perLevel": {
+    "berlin": {
+     "matches": 10,
+     "flagCoverage": 0.667,
+     "never": [
+      "Bernauer_Strasse_HQ"
+     ],
+     "winners": [
+      9,
+      1,
+      0
+     ],
+     "oneSided": null,
+     "medians": {
+      "stuckSecondsPerBotMinute": 0.2585,
+      "idleShare": 0.3293,
+      "oscillationsPerBotMinute": 0.0389,
+      "selfDeathsPerBotMinute": 0,
+      "spawnTrapsPerBotMinute": 0.03,
+      "routeFailuresPerBotMinute": 0.1125,
+      "redeploysPerBotMinute": 0.0228,
+      "teamKillsPerBotMinute": 0.0133,
+      "capturesTotal": 2,
+      "enemyKillsPerBotMinute": 0.3246,
+      "stuckSecondsPerBotMinuteWorseSide": 0.535,
+      "spawnTrapsPerBotMinuteWorseSide": 0.0542,
+      "routeFailuresPerBotMinuteWorseSide": 0.19,
+      "redeploysPerBotMinuteWorseSide": 0.0465,
+      "nonEnemyDeathShareWorseSide": 0.1394,
+      "hullStuckSecondsPerDrivingMinute": 1.122,
+      "hullStuckSecondsPerDrivingMinuteWorseSide": 2.312,
+      "unitsNeverUsedShare": 0.2,
+      "tankSilentShare": 0,
+      "mountedTeamKillsPerBotMinute": 0,
+      "mountedShare": 0.578
+     }
+    },
+    "bocage": {
+     "matches": 10,
+     "flagCoverage": 1,
+     "never": [],
+     "winners": [
+      7,
+      3,
+      0
+     ],
+     "oneSided": null,
+     "medians": {
+      "stuckSecondsPerBotMinute": 0.073,
+      "idleShare": 0.3772,
+      "oscillationsPerBotMinute": 0.1051,
+      "selfDeathsPerBotMinute": 0.0222,
+      "spawnTrapsPerBotMinute": 0,
+      "routeFailuresPerBotMinute": 0.067,
+      "redeploysPerBotMinute": 0.0063,
+      "teamKillsPerBotMinute": 0.0063,
+      "capturesTotal": 5,
+      "enemyKillsPerBotMinute": 0.1023,
+      "stuckSecondsPerBotMinuteWorseSide": 0.1445,
+      "spawnTrapsPerBotMinuteWorseSide": 0,
+      "routeFailuresPerBotMinuteWorseSide": 0.122,
+      "redeploysPerBotMinuteWorseSide": 0.0126,
+      "nonEnemyDeathShareWorseSide": 0.3893,
+      "hullStuckSecondsPerDrivingMinute": 0.076,
+      "hullStuckSecondsPerDrivingMinuteWorseSide": 0.211,
+      "unitsNeverUsedShare": 0.1667,
+      "tankSilentShare": 0.1389,
+      "mountedTeamKillsPerBotMinute": 0,
+      "mountedShare": 0.8798
+     }
+    },
+    "kharkov": {
+     "matches": 10,
+     "flagCoverage": 1,
+     "never": [],
+     "winners": [
+      5,
+      5,
+      0
+     ],
+     "oneSided": null,
+     "medians": {
+      "stuckSecondsPerBotMinute": 0,
+      "idleShare": 0.4,
+      "oscillationsPerBotMinute": 0.1823,
+      "selfDeathsPerBotMinute": 0.0287,
+      "spawnTrapsPerBotMinute": 0,
+      "routeFailuresPerBotMinute": 0.0225,
+      "redeploysPerBotMinute": 0,
+      "teamKillsPerBotMinute": 0,
+      "capturesTotal": 5,
+      "enemyKillsPerBotMinute": 0.1275,
+      "stuckSecondsPerBotMinuteWorseSide": 0,
+      "spawnTrapsPerBotMinuteWorseSide": 0,
+      "routeFailuresPerBotMinuteWorseSide": 0.045,
+      "redeploysPerBotMinuteWorseSide": 0,
+      "nonEnemyDeathShareWorseSide": 0.3137,
+      "hullStuckSecondsPerDrivingMinute": 0.13,
+      "hullStuckSecondsPerDrivingMinuteWorseSide": 0.2605,
+      "unitsNeverUsedShare": 0.2174,
+      "tankSilentShare": 0.1883,
+      "mountedTeamKillsPerBotMinute": 0,
+      "mountedShare": 0.8784
+     }
+    },
+    "stalingrad": {
+     "matches": 10,
+     "flagCoverage": 0.333,
+     "never": [
+      "German_city_HQ",
+      "Soviet_city_HQ"
+     ],
+     "winners": [
+      6,
+      4,
+      0
+     ],
+     "oneSided": null,
+     "medians": {
+      "stuckSecondsPerBotMinute": 0.4255,
+      "idleShare": 0.7005,
+      "oscillationsPerBotMinute": 0.0221,
+      "selfDeathsPerBotMinute": 0.0063,
+      "spawnTrapsPerBotMinute": 0.0095,
+      "routeFailuresPerBotMinute": 0,
+      "redeploysPerBotMinute": 0.0316,
+      "teamKillsPerBotMinute": 0,
+      "capturesTotal": 0,
+      "enemyKillsPerBotMinute": 0.0663,
+      "stuckSecondsPerBotMinuteWorseSide": 0.8505,
+      "spawnTrapsPerBotMinuteWorseSide": 0.0188,
+      "routeFailuresPerBotMinuteWorseSide": 0,
+      "redeploysPerBotMinuteWorseSide": 0.0631,
+      "nonEnemyDeathShareWorseSide": 0.5585,
+      "hullStuckSecondsPerDrivingMinute": 1.027,
+      "hullStuckSecondsPerDrivingMinuteWorseSide": 1.696,
+      "unitsNeverUsedShare": 0.4118,
+      "tankSilentShare": 0.4318,
+      "mountedTeamKillsPerBotMinute": 0,
+      "mountedShare": 0.7992
+     }
+    }
+   },
+   "flagCoverageMin": 0.333
+  },
+  "16": {
+   "levels": [
+    "berlin",
+    "bocage",
+    "kharkov",
+    "stalingrad"
+   ],
+   "matches": 40,
+   "duration": 600,
+   "metrics": {
+    "stuckSecondsPerBotMinute": {
+     "n": 40,
+     "min": 0,
+     "p10": 0,
+     "p50": 0.3385,
+     "p90": 1.3562,
+     "max": 2.01
+    },
+    "idleShare": {
+     "n": 40,
+     "min": 0.2439,
+     "p10": 0.2922,
+     "p50": 0.5262,
+     "p90": 0.6335,
+     "max": 0.664
+    },
+    "oscillationsPerBotMinute": {
+     "n": 40,
+     "min": 0.0033,
+     "p10": 0.0416,
+     "p50": 0.1229,
+     "p90": 0.1881,
+     "max": 0.2981
+    },
+    "selfDeathsPerBotMinute": {
+     "n": 40,
+     "min": 0,
+     "p10": 0,
+     "p50": 0.008,
+     "p90": 0.0288,
+     "max": 0.0451
+    },
+    "spawnTrapsPerBotMinute": {
+     "n": 40,
+     "min": 0,
+     "p10": 0,
+     "p50": 0.0145,
+     "p90": 0.0404,
+     "max": 0.1044
+    },
+    "routeFailuresPerBotMinute": {
+     "n": 40,
+     "min": 0.003,
+     "p10": 0.006,
+     "p50": 0.0435,
+     "p90": 0.546,
+     "max": 1.883
+    },
+    "redeploysPerBotMinute": {
+     "n": 40,
+     "min": 0,
+     "p10": 0,
+     "p50": 0.0243,
+     "p90": 0.0927,
+     "max": 0.1216
+    },
+    "teamKillsPerBotMinute": {
+     "n": 40,
+     "min": 0,
+     "p10": 0,
+     "p50": 0.0113,
+     "p90": 0.0583,
+     "max": 0.1325
+    },
+    "capturesTotal": {
+     "n": 40,
+     "min": 1,
+     "p10": 1,
+     "p50": 2,
+     "p90": 6,
+     "max": 7
+    },
+    "enemyKillsPerBotMinute": {
+     "n": 40,
+     "min": 0.0505,
+     "p10": 0.1188,
+     "p50": 0.1784,
+     "p90": 0.5203,
+     "max": 0.7937
+    },
+    "firstCapture": {
+     "n": 40,
+     "min": 41.63,
+     "p10": 49.884,
+     "p50": 69.42,
+     "p90": 187.9,
+     "max": 563.77
+    },
+    "stuckSecondsPerBotMinuteWorseSide": {
+     "n": 40,
+     "min": 0,
+     "p10": 0,
+     "p50": 0.6415,
+     "p90": 2.7068,
+     "max": 3.479
+    },
+    "spawnTrapsPerBotMinuteWorseSide": {
+     "n": 40,
+     "min": 0,
+     "p10": 0,
+     "p50": 0.0198,
+     "p90": 0.085,
+     "max": 0.147
+    },
+    "routeFailuresPerBotMinuteWorseSide": {
+     "n": 40,
+     "min": 0.006,
+     "p10": 0.013,
+     "p50": 0.0705,
+     "p90": 1.0393,
+     "max": 3.513
+    },
+    "redeploysPerBotMinuteWorseSide": {
+     "n": 40,
+     "min": 0,
+     "p10": 0,
+     "p50": 0.0396,
+     "p90": 0.1635,
+     "max": 0.2242
+    },
+    "nonEnemyDeathShareWorseSide": {
+     "n": 40,
+     "min": 0.1071,
+     "p10": 0.1578,
+     "p50": 0.2613,
+     "p90": 0.4642,
+     "max": 0.5938
+    },
+    "hullStuckSecondsPerDrivingMinute": {
+     "n": 40,
+     "min": 0,
+     "p10": 0,
+     "p50": 0.518,
+     "p90": 2.1549,
+     "max": 4.437
+    },
+    "hullStuckSecondsPerDrivingMinuteWorseSide": {
+     "n": 40,
+     "min": 0,
+     "p10": 0,
+     "p50": 0.8425,
+     "p90": 3.3786,
+     "max": 9.452
+    },
+    "unitsNeverUsedShare": {
+     "n": 40,
+     "min": 0.0417,
+     "p10": 0.0833,
+     "p50": 0.1277,
+     "p90": 0.2174,
+     "max": 0.2174
+    },
+    "tankSilentShare": {
+     "n": 40,
+     "min": 0,
+     "p10": 0,
+     "p50": 0.125,
+     "p90": 0.3103,
+     "max": 0.5714
+    },
+    "mountedTeamKillsPerBotMinute": {
+     "n": 40,
+     "min": 0,
+     "p10": 0,
+     "p50": 0,
+     "p90": 0.0096,
+     "max": 0.0236
+    },
+    "mountedShare": {
+     "n": 40,
+     "min": 0.2448,
+     "p10": 0.2913,
+     "p50": 0.6339,
+     "p90": 0.827,
+     "max": 0.8848
+    }
+   },
+   "perLevel": {
+    "berlin": {
+     "matches": 10,
+     "flagCoverage": 0.667,
+     "never": [
+      "Bernauer_Strasse_HQ"
+     ],
+     "winners": [
+      10,
+      0,
+      0
+     ],
+     "oneSided": 1,
+     "medians": {
+      "stuckSecondsPerBotMinute": 0.659,
+      "idleShare": 0.2959,
+      "oscillationsPerBotMinute": 0.0445,
+      "selfDeathsPerBotMinute": 0,
+      "spawnTrapsPerBotMinute": 0.0323,
+      "routeFailuresPerBotMinute": 0.2515,
+      "redeploysPerBotMinute": 0.0432,
+      "teamKillsPerBotMinute": 0.0543,
+      "capturesTotal": 1,
+      "enemyKillsPerBotMinute": 0.4983,
+      "stuckSecondsPerBotMinuteWorseSide": 1.3825,
+      "spawnTrapsPerBotMinuteWorseSide": 0.0683,
+      "routeFailuresPerBotMinuteWorseSide": 0.3635,
+      "redeploysPerBotMinuteWorseSide": 0.0885,
+      "nonEnemyDeathShareWorseSide": 0.1882,
+      "hullStuckSecondsPerDrivingMinute": 0.858,
+      "hullStuckSecondsPerDrivingMinuteWorseSide": 1.295,
+      "unitsNeverUsedShare": 0.2,
+      "tankSilentShare": 0.1056,
+      "mountedTeamKillsPerBotMinute": 0,
+      "mountedShare": 0.2933
+     }
+    },
+    "bocage": {
+     "matches": 10,
+     "flagCoverage": 1,
+     "never": [],
+     "winners": [
+      3,
+      6,
+      1
+     ],
+     "oneSided": null,
+     "medians": {
+      "stuckSecondsPerBotMinute": 0.06,
+      "idleShare": 0.5012,
+      "oscillationsPerBotMinute": 0.1504,
+      "selfDeathsPerBotMinute": 0.0207,
+      "spawnTrapsPerBotMinute": 0.0064,
+      "routeFailuresPerBotMinute": 0.0225,
+      "redeploysPerBotMinute": 0.0063,
+      "teamKillsPerBotMinute": 0.0063,
+      "capturesTotal": 5.5,
+      "enemyKillsPerBotMinute": 0.1487,
+      "stuckSecondsPerBotMinuteWorseSide": 0.0925,
+      "spawnTrapsPerBotMinuteWorseSide": 0.0097,
+      "routeFailuresPerBotMinuteWorseSide": 0.0415,
+      "redeploysPerBotMinuteWorseSide": 0.0095,
+      "nonEnemyDeathShareWorseSide": 0.25,
+      "hullStuckSecondsPerDrivingMinute": 0.804,
+      "hullStuckSecondsPerDrivingMinuteWorseSide": 1.197,
+      "unitsNeverUsedShare": 0.0833,
+      "tankSilentShare": 0.1625,
+      "mountedTeamKillsPerBotMinute": 0,
+      "mountedShare": 0.7595
+     }
+    },
+    "kharkov": {
+     "matches": 10,
+     "flagCoverage": 1,
+     "never": [],
+     "winners": [
+      2,
+      8,
+      0
+     ],
+     "oneSided": null,
+     "medians": {
+      "stuckSecondsPerBotMinute": 0.038,
+      "idleShare": 0.6092,
+      "oscillationsPerBotMinute": 0.1409,
+      "selfDeathsPerBotMinute": 0.0191,
+      "spawnTrapsPerBotMinute": 0,
+      "routeFailuresPerBotMinute": 0.0285,
+      "redeploysPerBotMinute": 0.0032,
+      "teamKillsPerBotMinute": 0,
+      "capturesTotal": 4,
+      "enemyKillsPerBotMinute": 0.1355,
+      "stuckSecondsPerBotMinuteWorseSide": 0.076,
+      "spawnTrapsPerBotMinuteWorseSide": 0,
+      "routeFailuresPerBotMinuteWorseSide": 0.035,
+      "redeploysPerBotMinuteWorseSide": 0.0063,
+      "nonEnemyDeathShareWorseSide": 0.2175,
+      "hullStuckSecondsPerDrivingMinute": 0.192,
+      "hullStuckSecondsPerDrivingMinuteWorseSide": 0.3725,
+      "unitsNeverUsedShare": 0.1956,
+      "tankSilentShare": 0.1875,
+      "mountedTeamKillsPerBotMinute": 0,
+      "mountedShare": 0.8016
+     }
+    },
+    "stalingrad": {
+     "matches": 10,
+     "flagCoverage": 0.333,
+     "never": [
+      "German_city_HQ",
+      "Soviet_city_HQ"
+     ],
+     "winners": [
+      3,
+      7,
+      0
+     ],
+     "oneSided": null,
+     "medians": {
+      "stuckSecondsPerBotMinute": 1.3435,
+      "idleShare": 0.5605,
+      "oscillationsPerBotMinute": 0.1043,
+      "selfDeathsPerBotMinute": 0.0032,
+      "spawnTrapsPerBotMinute": 0.0275,
+      "routeFailuresPerBotMinute": 0.0485,
+      "redeploysPerBotMinute": 0.0914,
+      "teamKillsPerBotMinute": 0.0178,
+      "capturesTotal": 1,
+      "enemyKillsPerBotMinute": 0.1883,
+      "stuckSecondsPerBotMinuteWorseSide": 2.562,
+      "spawnTrapsPerBotMinuteWorseSide": 0.0452,
+      "routeFailuresPerBotMinuteWorseSide": 0.0895,
+      "redeploysPerBotMinuteWorseSide": 0.159,
+      "nonEnemyDeathShareWorseSide": 0.4473,
+      "hullStuckSecondsPerDrivingMinute": 0.7985,
+      "hullStuckSecondsPerDrivingMinuteWorseSide": 1.484,
+      "unitsNeverUsedShare": 0.1176,
+      "tankSilentShare": 0.1041,
+      "mountedTeamKillsPerBotMinute": 0,
+      "mountedShare": 0.5393
+     }
+    }
+   },
+   "flagCoverageMin": 0.333
+  }
+ }
+}

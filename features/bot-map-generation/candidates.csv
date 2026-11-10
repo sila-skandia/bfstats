@@ -4,13 +4,13 @@ community,shigaisen_C,1024,Conquest+Ctf,8,6,231,17,0,0,0,0,0,0,0.0,yes,yes,,out:
 community,The_Dungeon,1024,Conquest+Ctf+Tdm,5,5,376,12,0,0,0,0,0,0,0.0,yes,yes,,contained on-foot,124,walk test: every spawn that reaches the main ground stands on terrain the page's soldier reads as too steep to climb; in a traced match 13 of 16 bots never left their spawn (cause not isolated further)
 community,The_Maze,1024,Conquest+Ctf+Tdm,7,5,347,20,0,0,0,0,0,0,0.0,yes,yes,,contained on-foot,124,"novelty name (race, sport, puzzle): check by hand"
 community,The_corridor,1024,Conquest+Ctf+Tdm,5,3,289,8,0,0,0,0,0,0,0.0,yes,yes,,out: stacked floors,122,walk test: 84 % of the main floor has another walked floor over or under it; walk test: a side sealed in
-bf1918,cantigny,1024,Conquest,5,4,495,45,54,7,0,0,30,17,0.69,no,yes,,contained on-foot,120,
-bf1918,chemin_des_dames,1024,Conquest,5,4,432,17,37,8,0,0,18,11,0.7,no,yes,,contained on-foot,120,
-bf1918,dawnVille,1024,Conquest+Tdm,7,5,532,21,12,6,0,0,6,0,1.0,no,yes,,contained on-foot,120,
-bf1918,deulemont,1024,Conquest+Tdm,8,6,317,13,24,2,0,0,18,4,0.83,no,yes,,contained on-foot,120,
-bf1918,liberation_of_roeselare,1024,Conquest,8,7,350,62,67,3,0,0,35,29,0.57,no,yes,,contained on-foot,120,
-bf1918,lutte_de_honneur,1024,Conquest+Tdm,8,6,560,33,55,8,0,0,35,12,0.78,no,yes,,contained on-foot,120,
-bf1918,somme_gasattack,1024,Conquest,3,3,305,20,45,1,0,0,23,21,0.53,no,yes,,contained on-foot,120,
+bf1918,cantigny,1024,Conquest,5,4,495,45,54,7,0,0,30,17,0.69,no,yes,,contained on-foot,120,phase C census: on foot no fight / with vehicles alive / lint: a side sealed in
+bf1918,chemin_des_dames,1024,Conquest,5,4,432,17,37,8,0,0,18,11,0.7,no,yes,,contained on-foot,120,phase C census: on foot no fight / with vehicles no fight
+bf1918,dawnVille,1024,Conquest+Tdm,7,5,532,21,12,6,0,0,6,0,1.0,no,yes,,contained on-foot,120,phase C census: on foot alive / with vehicles no fight
+bf1918,deulemont,1024,Conquest+Tdm,8,6,317,13,24,2,0,0,18,4,0.83,no,yes,,contained on-foot,120,phase C census: on foot no fight / with vehicles no fight / lint: a side sealed in
+bf1918,liberation_of_roeselare,1024,Conquest,8,7,350,62,67,3,0,0,35,29,0.57,no,yes,,contained on-foot,120,phase C census: on foot alive / with vehicles no fight / lint: a side sealed in
+bf1918,lutte_de_honneur,1024,Conquest+Tdm,8,6,560,33,55,8,0,0,35,12,0.78,no,yes,,contained on-foot,120,phase C census: on foot no fight / with vehicles no fight
+bf1918,somme_gasattack,1024,Conquest,3,3,305,20,45,1,0,0,23,21,0.53,no,yes,,contained on-foot,120,phase C census: on foot no fight / with vehicles no fight / lint: a side with no spawn at the start
 community,KNIFE_CHAMPIONSHIP,1024,Conquest+Ctf+Tdm,7,3,280,25,10,0,0,0,0,10,0.0,yes,yes,,out: stacked floors,120,walk test: 2 of 3 capturable flags stand a storey over or under another walked floor
 community,Omaturi_Channel_Cannon,1024,Conquest+Ctf+Tdm,8,6,426,25,42,8,0,12,22,0,1.0,yes,yes,,out: sides do not meet on foot,120,walk test: the two shores are apart from each other and from four of the six flags on foot (a side that can reach no flag and a side sealed in)
 community,Omaturi_Channel_Sniper,1024,Conquest+Ctf+Tdm,3,1,209,12,0,0,0,0,0,0,0.0,yes,yes,,contained on-foot,120,
@@ -20,15 +20,15 @@ community,shigaisen_D,1024,Conquest+Ctf+Tdm,7,5,304,27,7,7,0,0,0,0,1.0,yes,yes,,
 community,The_Room,2048,Conquest,4,3,82,17,2,0,0,0,0,2,0.0,yes,yes,,out: stacked floors,120,walk test: 27 % of the main floor has another walked floor over or under it; walk test: a side sealed in
 community,The_Street,1024,Conquest+Ctf+Tdm,7,5,221,29,2,2,0,0,0,0,1.0,yes,yes,,out: stacked floors,120,walk test: 22 % of the main floor has another walked floor over or under it; walk test: no flag a soldier can stand in and a side that can reach no flag
 community,The_Street_day2,1024,Conquest+Ctf+Tdm,7,5,221,29,5,5,0,0,0,0,1.0,yes,yes,,out: stacked floors,120,walk test: 21 % of the main floor has another walked floor over or under it; walk test: no flag a soldier can stand in and a side that can reach no flag
-desertcombat,DC_Basrah_Nights,1024,Conquest+Ctf+Tdm,5,5,192,29,8,4,0,0,4,0,1.0,yes,yes,,contained on-foot,120,
-desertcombat,DC_LostVillage,2048,Conquest+Tdm,7,5,484,50,10,0,2,0,4,4,0.6,yes,yes,,contained on-foot,120,
-desertcombat,DC_Sea_Rigs,2048,Conquest,5,5,292,17,19,2,0,4,10,3,0.84,yes,yes,,contained on-foot,120,
+desertcombat,DC_Basrah_Nights,1024,Conquest+Ctf+Tdm,5,5,192,29,8,4,0,0,4,0,1.0,yes,yes,,contained on-foot,120,phase C census: on foot alive / with vehicles alive / judged with vehicles: no-fight
+desertcombat,DC_LostVillage,2048,Conquest+Tdm,7,5,484,50,10,0,2,0,4,4,0.6,yes,yes,,contained on-foot,120,phase C census: on foot alive / with vehicles no fight
+desertcombat,DC_Sea_Rigs,2048,Conquest,5,5,292,17,19,2,0,4,10,3,0.84,yes,yes,,contained on-foot,120,phase C census: on foot no fight / with vehicles no fight / lint: no flag a soldier can stand in and a side that can reach no flag and a side with no spawn at the start and stacked floors (classed out)
 community,HOP,1024,Conquest+Ctf+Tdm,2,2,137,4,2,0,0,0,2,0,1.0,yes,yes,,contained on-foot,118,
-fh,Pegasus,1024,Conquest,5,2,367,14,49,8,0,0,11,30,0.39,yes,yes,fhsweurope,contained on-foot,112,
-fhsw,Battle_of_Edson_s_Ridge,1024,Conquest,5,3,199,15,36,0,0,0,4,32,0.11,yes,yes,fhsweurope,contained on-foot,112,
-fhsw,Stalingrad_RedSquare,1024,Conquest,8,6,298,16,68,0,0,0,7,61,0.1,yes,yes,fhsweurope,contained on-foot,112,
-fhsw,Stalingrad_urban_area-1942,2048,Conquest,6,6,464,33,50,6,0,0,5,39,0.22,yes,yes,fhsweurope,contained on-foot,112,
-fhsw,Battle_Of_Pavlov-1942,2048,Conquest,3,1,162,11,66,3,0,0,8,55,0.17,yes,yes,fhsweurope,contained on-foot,108,
+fh,Pegasus,1024,Conquest,5,2,367,14,49,8,0,0,11,30,0.39,yes,yes,fhsweurope,contained on-foot,112,phase C census: on foot alive / with vehicles no fight
+fhsw,Battle_of_Edson_s_Ridge,1024,Conquest,5,3,199,15,36,0,0,0,4,32,0.11,yes,yes,fhsweurope,contained on-foot,112,phase C census: on foot no fight / with vehicles no fight
+fhsw,Stalingrad_RedSquare,1024,Conquest,8,6,298,16,68,0,0,0,7,61,0.1,yes,yes,fhsweurope,contained on-foot,112,phase C census: on foot alive / with vehicles no fight
+fhsw,Stalingrad_urban_area-1942,2048,Conquest,6,6,464,33,50,6,0,0,5,39,0.22,yes,yes,fhsweurope,contained on-foot,112,phase C census: on foot no fight / with vehicles no fight
+fhsw,Battle_Of_Pavlov-1942,2048,Conquest,3,1,162,11,66,3,0,0,8,55,0.17,yes,yes,fhsweurope,contained on-foot,108,phase C census: on foot no fight / with vehicles no fight / lint: no flag a soldier can stand in and a side that can reach no flag and stacked floors (classed out)
 community,Omaturi_Channel_Air,4096,Conquest+Ctf+Tdm,2,0,4453,13,24,0,24,0,0,0,1.0,yes,yes,,air arena,106,no capturable flag
 community,Omaturi_Channel_Airmini,1024,Conquest+Ctf+Tdm,2,0,26,24,16,0,16,0,0,0,1.0,yes,yes,,air arena,106,no capturable flag
 community,TL_PLANE_TRAINING,2048,Conquest+Ctf+Tdm,4,2,2395,21,44,22,22,0,0,0,1.0,yes,yes,,air with flags,105,"novelty name (race, sport, puzzle): check by hand"
@@ -37,28 +37,28 @@ community,bomberfight,4096,Conquest,3,1,2576,8,6,0,6,0,0,0,1.0,yes,yes,,air aren
 community,bomberfight_big,4096,Conquest,5,3,2576,8,6,0,6,0,0,0,1.0,yes,yes,,air with flags,103,
 community,Omaturi_Channel_Knife,1024,Conquest+Ctf+Tdm,2,0,129,8,0,0,0,0,0,0,0.0,yes,yes,,arena: fixed bases only,93,no capturable flag
 community,Omaturi_Channel_Tank,1024,Conquest+Ctf+Tdm,2,0,444,12,30,30,0,0,0,0,1.0,yes,yes,,arena: fixed bases only,91,no capturable flag
-bf1918,baghdad,1024,Conquest,7,6,446,39,64,11,0,0,34,19,0.7,yes,yes,,contained with vehicles,90,
-bf1918,battle_of_cambrai,1024,Conquest,5,4,596,35,73,11,1,0,33,28,0.62,yes,yes,,contained with vehicles,90,
-bf1918,battle_of_the_vosges,1024,Conquest+Tdm,7,5,443,20,45,14,2,0,21,8,0.82,yes,yes,,contained with vehicles,90,
-bf1918,carriere,1024,Conquest,6,5,476,38,43,18,0,0,17,8,0.81,no,yes,,contained with vehicles,90,
-bf1918,Mauerfall,1024,Conquest+Ctf+Tdm,5,3,332,32,64,17,0,0,21,26,0.59,no,yes,,contained with vehicles,90,
-bf1918,sanaga_river,1024,Conquest,6,5,483,75,47,8,1,0,12,26,0.45,no,yes,,contained with vehicles,90,
+bf1918,baghdad,1024,Conquest,7,6,446,39,64,11,0,0,34,19,0.7,yes,yes,,contained with vehicles,90,phase C census: on foot no fight / with vehicles no fight / lint: a side that can reach no flag
+bf1918,battle_of_cambrai,1024,Conquest,5,4,596,35,73,11,1,0,33,28,0.62,yes,yes,,contained with vehicles,90,phase C census: on foot alive / with vehicles no fight
+bf1918,battle_of_the_vosges,1024,Conquest+Tdm,7,5,443,20,45,14,2,0,21,8,0.82,yes,yes,,contained with vehicles,90,phase C census: on foot no fight / with vehicles no fight / lint: a side with no spawn at the start
+bf1918,carriere,1024,Conquest,6,5,476,38,43,18,0,0,17,8,0.81,no,yes,,contained with vehicles,90,phase C census: on foot alive / with vehicles no fight / lint: stacked floors (classed out)
+bf1918,Mauerfall,1024,Conquest+Ctf+Tdm,5,3,332,32,64,17,0,0,21,26,0.59,no,yes,,contained with vehicles,90,phase C census: on foot alive / with vehicles no fight
+bf1918,sanaga_river,1024,Conquest,6,5,483,75,47,8,1,0,12,26,0.45,no,yes,,contained with vehicles,90,phase C census: on foot no fight / with vehicles no fight
 community,shigaisen_G,1024,Conquest+Ctf,5,3,273,27,18,14,0,4,0,0,1.0,yes,yes,,out: stacked floors,90,walk test: 74 % of the main floor has another walked floor over or under it; walk test: a side sealed in
 community,The_Fortress,1024,Conquest+Ctf+Tdm,5,4,561,21,42,13,0,2,27,0,1.0,yes,yes,,contained with vehicles,90,walk test: a side with no spawn at the start (the attackers have no soldier spawn point: no on-foot match)
 community,The_Street_G,1024,Conquest+Ctf+Tdm,7,5,237,29,22,22,0,0,0,0,1.0,yes,yes,,out: stacked floors,90,walk test: 20 % of the main floor has another walked floor over or under it; walk test: no flag a soldier can stand in and a side that can reach no flag
 community,knife_fight,1024,Conquest+Ctf+Tdm,4,0,204,8,12,12,0,0,0,0,1.0,yes,yes,,arena: fixed bases only,89,no capturable flag
-desertcombat,DC_Weapon_Bunkers,1024,Conquest,2,0,356,5,26,2,0,3,13,8,0.69,yes,yes,,arena: fixed bases only,89,no capturable flag
+desertcombat,DC_Weapon_Bunkers,1024,Conquest,2,0,356,5,26,2,0,3,13,8,0.69,yes,yes,,arena: fixed bases only,89,no capturable flag; phase C census: on foot no fight / with vehicles no fight / lint: a side with no spawn at the start
 eod,Operation_Linebacker,2048,Conquest,3,0,1150,6,51,18,11,0,20,2,0.96,yes,yes,,arena: fixed bases only,89,no capturable flag
 community,_o_Jka__BIG,1024,Conquest+Ctf+Tdm,3,1,349,11,22,16,4,0,2,0,1.0,yes,yes,,contained with vehicles,86,
 community,_o_Jka__,1024,Conquest+Ctf+Tdm,3,1,142,7,10,10,0,0,0,0,1.0,yes,yes,,contained with vehicles,84,
-fhsw,Battle_for_ortona-1943,1024,Conquest,6,5,545,24,134,26,0,2,29,77,0.43,yes,yes,fhsweurope,contained with vehicles,82,
-fhsw,Berlin-1945-Outskirts,1024,Conquest,7,7,526,45,86,24,0,0,18,44,0.49,yes,yes,fhsweurope,contained with vehicles,82,
-fhsw,Berlin-1945-Streets,2048,Conquest,5,4,458,45,86,14,0,0,13,59,0.31,yes,yes,fhsweurope,contained with vehicles,82,
-fhsw,Bizerte-1943,1024,Conquest,6,5,352,38,89,21,0,0,11,57,0.36,yes,yes,fhsweurope,contained with vehicles,82,
-fhsw,Monte_Cassino-1944,1024,Conquest,6,5,580,23,69,19,0,0,17,33,0.52,yes,yes,fhsweurope,contained with vehicles,82,
-fhsw,Pegasus,1024,Conquest,5,2,367,22,70,11,0,0,11,48,0.31,yes,yes,fhsweurope,contained with vehicles,82,
-fhsw,Tunis-1943,1024,Conquest,8,5,562,40,115,46,0,0,7,62,0.46,yes,yes,fhsweurope,contained with vehicles,82,
-fhsw,Warsaw_Uprising,2048,Conquest,7,5,569,32,172,24,0,0,4,144,0.16,yes,yes,fhsweurope,contained with vehicles,82,
+fhsw,Battle_for_ortona-1943,1024,Conquest,6,5,545,24,134,26,0,2,29,77,0.43,yes,yes,fhsweurope,contained with vehicles,82,phase C census: on foot alive / with vehicles no fight
+fhsw,Berlin-1945-Outskirts,1024,Conquest,7,7,526,45,86,24,0,0,18,44,0.49,yes,yes,fhsweurope,contained with vehicles,82,phase C census: on foot alive / with vehicles alive / lint: a side that can reach no flag
+fhsw,Berlin-1945-Streets,2048,Conquest,5,4,458,45,86,14,0,0,13,59,0.31,yes,yes,fhsweurope,contained with vehicles,82,phase C census: on foot no fight / with vehicles no fight
+fhsw,Bizerte-1943,1024,Conquest,6,5,352,38,89,21,0,0,11,57,0.36,yes,yes,fhsweurope,contained with vehicles,82,phase C census: on foot alive / with vehicles no fight
+fhsw,Monte_Cassino-1944,1024,Conquest,6,5,580,23,69,19,0,0,17,33,0.52,yes,yes,fhsweurope,contained with vehicles,82,phase C census: on foot alive / with vehicles no fight
+fhsw,Pegasus,1024,Conquest,5,2,367,22,70,11,0,0,11,48,0.31,yes,yes,fhsweurope,contained with vehicles,82,phase C census: on foot alive / with vehicles alive / judged with vehicles: no-fight
+fhsw,Tunis-1943,1024,Conquest,8,5,562,40,115,46,0,0,7,62,0.46,yes,yes,fhsweurope,contained with vehicles,82,phase C census: on foot alive / with vehicles alive / judged with vehicles: no-fight
+fhsw,Warsaw_Uprising,2048,Conquest,7,5,569,32,172,24,0,0,4,144,0.16,yes,yes,fhsweurope,contained with vehicles,82,phase C census: on foot alive / with vehicles no fight
 community,ARENA_TL,1024,Conquest+Ctf+Tdm,0,0,0,23,1,0,0,0,0,1,0.0,yes,yes,,arena: no control points,76,no control points
 dc_final,DC_Bridge,1024,Conquest+Ctf,5,,,20,0,0,0,0,0,0,0.0,no,no,,not exported: small world,69,
 gcmod,GC_Mini_Caves,1024,Conquest,6,,,22,0,0,0,0,0,0,0.0,no,no,,not exported: small world,69,
@@ -76,40 +76,40 @@ gcmod,GC_Mini_Wasteland,1024,Conquest,5,,,10,18,0,0,0,0,18,0.0,no,no,,not export
 gcmod,GC_Mini_Wayfar,1024,Conquest,4,,,16,12,0,0,0,0,12,0.0,no,no,,not exported: small world,65,
 gcmod,GC_Mos_Eisley,1024,Conquest,6,,,24,54,0,0,0,0,54,0.0,no,no,,not exported: small world,65,
 dc_final,DC_Weapon_Bunkers,1024,Conquest+Ctf,2,,,5,26,3,0,3,13,7,0.73,no,no,,not exported: small world,63,
-bf1918,fht_meuse_argonne_offensive,1024,Conquest,7,5,839,41,108,30,4,0,29,45,0.58,no,yes,,open ground,60,
-bf1918,hindenburg_line,2048,Conquest,7,5,771,50,55,6,2,0,28,19,0.65,no,yes,,open ground,60,
-bf1918,operation_gericht,1024,Conquest,7,5,636,65,53,8,0,0,24,21,0.6,no,yes,,open ground,60,
-bf1918,raid_on_fort_pontisse,2048,Conquest,8,6,637,64,74,14,0,0,30,30,0.59,no,yes,,open ground,60,
-bf1918,roye,2048,Conquest,6,4,722,46,72,19,15,0,32,6,0.92,no,yes,,open ground,60,
-bf1918,saint_quentin_canal,2048,Conquest,8,7,904,69,117,20,4,0,49,44,0.62,no,yes,,open ground,60,
-bf1918,scimitar_hill,1024,Conquest,8,6,684,60,38,6,0,0,22,10,0.74,no,yes,,open ground,60,
+bf1918,fht_meuse_argonne_offensive,1024,Conquest,7,5,839,41,108,30,4,0,29,45,0.58,no,yes,,open ground,60,phase C census: on foot alive / with vehicles no fight
+bf1918,hindenburg_line,2048,Conquest,7,5,771,50,55,6,2,0,28,19,0.65,no,yes,,open ground,60,phase C census: on foot alive / with vehicles no fight
+bf1918,operation_gericht,1024,Conquest,7,5,636,65,53,8,0,0,24,21,0.6,no,yes,,open ground,60,phase C census: on foot alive / with vehicles no fight
+bf1918,raid_on_fort_pontisse,2048,Conquest,8,6,637,64,74,14,0,0,30,30,0.59,no,yes,,open ground,60,phase C census: on foot no fight / with vehicles no fight / lint: a side sealed in and stacked floors (classed out)
+bf1918,roye,2048,Conquest,6,4,722,46,72,19,15,0,32,6,0.92,no,yes,,open ground,60,phase C census: on foot alive / with vehicles no fight
+bf1918,saint_quentin_canal,2048,Conquest,8,7,904,69,117,20,4,0,49,44,0.62,no,yes,,open ground,60,phase C census: on foot alive / with vehicles no fight
+bf1918,scimitar_hill,1024,Conquest,8,6,684,60,38,6,0,0,22,10,0.74,no,yes,,open ground,60,phase C census: on foot alive / with vehicles no fight
 community,beinbrekkbakken,1024,Conquest+Ctf,8,4,844,10,32,23,1,0,4,4,0.88,yes,yes,,open ground,60,
 community,KoH,1024,Conquest+Ctf,5,3,719,33,35,23,0,0,12,0,1.0,yes,yes,,open ground,60,
 community,sniper_challenge,1024,Conquest+Ctf,7,6,974,57,123,64,5,0,36,18,0.85,yes,yes,,open ground,60,
 community,strasbourg,2048,Conquest+Ctf+Tdm,6,4,1453,39,41,19,1,0,11,10,0.76,yes,yes,,open ground,60,
 community,The_AirPort,2048,Conquest+Ctf+Tdm,5,4,1488,48,49,13,23,0,2,11,0.78,yes,yes,,open ground,60,
 dc_final,Coral_sea,2048,Conquest,0,,,1,10,4,0,2,4,0,1.0,no,no,eod fh fhsweurope,arena: no control points,60,no control points
-desertcombat,DC_Al_Khafji_Docks,1024,Conquest+Ctf,6,4,673,32,21,11,0,3,2,5,0.76,yes,yes,,open ground,60,
-desertcombat,DC_Battle_of_73_Easting,1024,Conquest,4,2,975,40,50,20,0,10,12,8,0.84,yes,yes,,open ground,60,
-desertcombat,DC_Medina_Ridge,1024,Conquest,4,3,840,36,112,20,3,10,4,75,0.33,yes,yes,,open ground,60,
-desertcombat,DC_Oil_Fields,2048,Conquest+Ctf+Tdm,8,7,1348,56,60,15,7,16,11,11,0.82,yes,yes,,open ground,60,
-desertcombat,DC_Operation_Bragg,2048,Conquest+Ctf+Tdm,5,3,1434,44,72,19,5,17,9,22,0.69,yes,yes,,open ground,60,
-desertcombat,DC_Urban_Siege,2048,Conquest,7,6,1316,43,37,21,1,5,5,5,0.86,yes,yes,,open ground,60,
-desertcombat,Inshallah_Valley,1024,Conquest+Ctf+Tdm,5,5,633,27,33,5,3,4,16,5,0.85,yes,yes,,open ground,60,
+desertcombat,DC_Al_Khafji_Docks,1024,Conquest+Ctf,6,4,673,32,21,11,0,3,2,5,0.76,yes,yes,,open ground,60,phase C census: on foot no fight / with vehicles no fight / lint: a side sealed in
+desertcombat,DC_Battle_of_73_Easting,1024,Conquest,4,2,975,40,50,20,0,10,12,8,0.84,yes,yes,,open ground,60,phase C census: on foot alive / with vehicles no fight / lint: a side sealed in
+desertcombat,DC_Medina_Ridge,1024,Conquest,4,3,840,36,112,20,3,10,4,75,0.33,yes,yes,,open ground,60,phase C census: on foot no fight / with vehicles no fight / lint: no flag a soldier can stand in and a side that can reach no flag
+desertcombat,DC_Oil_Fields,2048,Conquest+Ctf+Tdm,8,7,1348,56,60,15,7,16,11,11,0.82,yes,yes,,open ground,60,phase C census: on foot no fight / with vehicles no fight / lint: no flag a soldier can stand in and a side that can reach no flag and a side sealed in
+desertcombat,DC_Operation_Bragg,2048,Conquest+Ctf+Tdm,5,3,1434,44,72,19,5,17,9,22,0.69,yes,yes,,open ground,60,phase C census: on foot no fight / with vehicles no fight / lint: no flag a soldier can stand in and a side that can reach no flag and a side sealed in
+desertcombat,DC_Urban_Siege,2048,Conquest,7,6,1316,43,37,21,1,5,5,5,0.86,yes,yes,,open ground,60,phase C census: on foot no fight / with vehicles no fight
+desertcombat,Inshallah_Valley,1024,Conquest+Ctf+Tdm,5,5,633,27,33,5,3,4,16,5,0.85,yes,yes,,open ground,60,phase C census: on foot no fight / with vehicles alive / judged with vehicles: no-better-than-nothing
 xpack2,Raid_on_Agheila,2048,Conquest,7,5,920,35,59,24,5,0,15,15,0.75,yes,yes,,open ground,60,
 bf1918,aberdeen,1024,Conquest,7,,,49,70,52,0,0,18,0,1.0,no,no,eod,not exported: small world,57,
 dc_final,Aberdeen,1024,Conquest+Ctf,7,,,49,70,48,0,4,18,0,1.0,no,no,eod,not exported: small world,57,
 fh,Aberdeen,1024,Conquest,7,,,49,120,29,0,0,14,77,0.36,no,no,eod,not exported: small world,57,
 fh,In_The_Hell_Of_Bocage-1944,1024,Conquest+Ctf,7,,,27,95,49,1,0,6,39,0.59,no,no,fhsweurope,not exported: small world,57,
 fh,Ramelle_Neuville-1944,1024,Conquest,8,,,30,48,4,0,0,2,42,0.12,no,no,fhsweurope,not exported: small world,57,
-bf1918,tabuaeran,4096,Conquest+ObjectiveMode,4,1,1358,35,39,4,3,5,20,7,0.82,no,yes,,open ground,56,
+bf1918,tabuaeran,4096,Conquest+ObjectiveMode,4,1,1358,35,39,4,3,5,20,7,0.82,no,yes,,open ground,56,phase C census: on foot no fight / with vehicles no fight / lint: a side sealed in
 community,Tanquilizer,1024,Conquest+Ctf+Tdm,3,1,1119,10,30,28,0,0,2,0,1.0,yes,yes,,open ground,56,
 bf1942,Aberdeen,1024,Conquest,7,7,1137,49,33,26,0,0,7,0,1.0,yes,yes,eod,open ground,52,
 bf1942,Invasion_of_the_Philippines,2048,Conquest,6,6,1242,30,50,11,2,9,24,4,0.92,yes,yes,eod fh fhsw fhsweurope,open ground,52,
 bf1942,Liberation_of_Caen,2048,Conquest,6,5,848,30,36,16,0,2,18,0,1.0,yes,yes,eod fh fhsw fhsweurope,open ground,52,
 community,The_Bridge,1024,Conquest+Ctf,3,3,694,15,8,8,0,0,0,0,1.0,yes,yes,eod,open ground,52,
-fh,Omaha_Charlie-Sector-1944,2048,Conquest,5,5,745,27,67,6,0,0,32,29,0.57,yes,yes,fhsweurope,open ground,52,
-fh,Seelow-Heights-1945,2048,Conquest,6,5,1438,22,101,20,5,0,21,55,0.46,yes,yes,fhsweurope,open ground,52,
+fh,Omaha_Charlie-Sector-1944,2048,Conquest,5,5,745,27,67,6,0,0,32,29,0.57,yes,yes,fhsweurope,open ground,52,phase C census: on foot alive / with vehicles no fight / lint: a side with no spawn at the start
+fh,Seelow-Heights-1945,2048,Conquest,6,5,1438,22,101,20,5,0,21,55,0.46,yes,yes,fhsweurope,open ground,52,phase C census: on foot alive / with vehicles no fight / lint: a side sealed in
 fhsw,Aberdeen,1024,Conquest,7,5,1137,55,69,36,0,0,7,26,0.62,yes,yes,eod,open ground,52,
 fhsw,Battle_at_River_Don,2048,Conquest,8,6,1188,28,99,26,0,0,15,58,0.41,yes,yes,fhsweurope,open ground,52,
 fhsw,Battle_of_Angaur,2048,Conquest,8,7,1228,30,152,23,1,10,57,61,0.6,yes,yes,fhsweurope,open ground,52,

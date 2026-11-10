@@ -1,37 +1,55 @@
 {
  "level": "_o_jka__",
  "verdict": "fail",
- "outcome": "no-better-than-nothing",
- "generatorVersion": 3,
+ "outcome": "no-fight",
+ "config": "with vehicles",
+ "generatorVersion": 4,
  "inputs": {
   "controlPoints": "113c779f4b66e2796932803f7d1c5d9f53af7b2b8cf9dbd4c3717db7ab13d572",
   "infantryMap": "20fd81e562592de845a9f6777dacd62fb723258a242f8db7a628d71a94c406ed",
   "template": "43f8a790471528016570235f76e97dbb2045732458781a5139f37fed68bf98c0"
  },
- "baseline": "DICE layers on foot: berlin, stalingrad, kharkov, bocage; seeds 1..10, 600 s, --no-vehicles",
+ "baseline": "DICE layers with vehicles: berlin, stalingrad, kharkov, bocage; seeds 1..10, 600 s",
  "seeds": 10,
  "sizes": {
   "8": {
    "verdict": "fail",
    "failed": [
     "idleShare",
-    "routeFailuresPerBotMinute"
+    "routeFailuresPerBotMinute",
+    "enemyKillsPerBotMinute",
+    "flagCoverage",
+    "bothSidesCapture",
+    "bothSidesKill",
+    "ticketsBleed",
+    "routeFailuresPerBotMinuteWorseSide"
    ],
    "winners": [
-    9,
-    1,
-    0
+    0,
+    0,
+    10
    ]
   },
   "16": {
    "verdict": "fail",
    "failed": [
-    "idleShare"
+    "idleShare",
+    "routeFailuresPerBotMinute",
+    "capturesTotal",
+    "enemyKillsPerBotMinute",
+    "flagCoverage",
+    "bothSidesCapture",
+    "bothSidesKill",
+    "ticketsBleed",
+    "routeFailuresPerBotMinuteWorseSide",
+    "nonEnemyDeathShareWorseSide",
+    "hullStuckSecondsPerDrivingMinute",
+    "hullStuckSecondsPerDrivingMinuteWorseSide"
    ],
    "winners": [
-    10,
     0,
-    0
+    0,
+    10
    ]
   }
  },

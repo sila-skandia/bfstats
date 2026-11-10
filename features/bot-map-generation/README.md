@@ -13,6 +13,12 @@ floors), none of the six passes at both sizes, and three are better than the
 same level with no layer (shigaisen_B, The_Maze, HOP). Section 17 is how a
 layer goes live and what is live: shigaisen_B and The_Maze, both accepted
 short of the bar and tagged EXPERIMENTAL BOTS in the Community Maps list.
+Phase C (section 18) added a route probe and a judge that reads each side,
+republished The_Maze with two flags out of play, and judged the mods with
+their vehicles in: 47 botless levels of Desert Combat, Forgotten Hope,
+BF1918 and FHSW censused, four run through the full matrix, none passing.
+The owner accepted, the same day, that the stacked-floor community arenas
+get no bots, and asked for the mods next.
 
 **Owner decisions, 2026-11-10.** Any level without bots is a candidate, in
 every mod and in the community maps, not only FHSW. The priority is on-foot
@@ -2103,7 +2109,12 @@ says why it is shut. They are 630 KB and can be deleted at no cost but that.
 | Level | Outcome | Accepted short of | Published |
 |---|---|---|---|
 | shigaisen_B | better-than-nothing | redeploys at 16 a side, 0.1298 against 0.129 | 2026-11-10 |
-| The_Maze | better-than-nothing | route failures and redeploys at both sizes | 2026-11-10 |
+| The_Maze | better-than-nothing | idle share at 8 a side, 0.547 against 0.526 | 2026-11-10, twice |
+
+The_Maze was published twice on the day. The first layer (generator 3,
+accepted short of route failures and redeploys at both sizes) is the one
+17.3 watched. The one live now is generator 4's, with flags 3 and 4 out of
+play (18.1, 18.3), accepted short of the one check above.
 
 ### 17.3 The live check found what the verdict only counted
 
@@ -2112,13 +2123,19 @@ had 15 deaths, 4 of them Allied kills. The other 11 were the page's
 no-progress redeploy, shown to the player as "<name> is no more" and a score
 of -2: one side killing itself.
 
-A traced headless match says why. Flags 3 and 4 stand at the top of long
-narrow ramps, 7.7 m over the ground. The walk test calls them reachable and
+A traced headless match says where. Flags 3 and 4 stand at the end of long
+narrow ways, 7.7 m over the ground. The walk test calls them reachable and
 the lint says no flag is cut off, both by cell connectivity. A bot ordered to
-flag 4 walks to the ramp's foot at (397.9, -712.2), its leg search never
-closes, and it is redeployed twelve seconds later: 107 of 167 route failures
-in that match are at that one place, and neither flag is taken in twenty
-matches.
+flag 4 walks to (397.9, -712.2), its leg search never closes, and it is
+redeployed twelve seconds later: 107 of 167 route failures in that match are
+at that one place, and neither flag is taken in twenty matches.
+
+The first reading of that, a ramp the route code cannot climb, was wrong.
+On the bare map every route to both flags closes on the first plan. Every
+failed leg carried an obstacle circle, most of them a teammate's: a bot
+stops in the passage, each bot behind plants the 2 m circle the engine's
+avoidance rule gives a still body of their own side, and in a passage three
+or four cells wide that circle is the passage (18.1).
 
 A scratch copy of the layer with areas 3 and 4 written as the generator
 writes an unreachable area (measured, `botbatch matrix`, ten seeds):
@@ -2132,9 +2149,525 @@ writes an unreachable area (measured, `botbatch matrix`, ten seeds):
 | winners, Axis : Allies | 9 : 1 | 7 : 3 | 9 : 1 | 7 : 3 |
 | checks passed | 13 of 15 | 14 of 15 (idle 0.547 against 0.526) | 13 of 15 | 15 of 15 |
 
-Two things follow. Connectivity of cells is not reachability for a bot: the
-generator and the lint need a route probe that runs the page's own route code
-from each side's base to each flag, and excludes a flag neither side can
-route to. And a count that sits just over a bar can hide a fault a player
-sees at once, so every level is watched before it is called done.
+Two things follow. Connectivity of cells is not reachability for a side of
+bots: the generator and the lint now run a route probe (18.1) that plans
+each way with the page's own route code and counts the places one standing
+teammate shuts it, and take out a flag no side has an open way to. And a
+count that sits just over a bar can hide a fault a player sees at once, so
+every level is watched before it is called done.
 
+**The second watch**, the generator 4 layer, three minutes at 8 a side: the
+Axis side had 2 deaths, both Allied kills; the Allies had 3, none of them an
+enemy's (not looked into). The fight is slow: 3 kills in 3 minutes.
+
+## 18. Phase C, 2026-11-10: the route probe, the judge by side, and the mods with vehicles
+
+Three things, in the order they were asked for. The_Maze was accepted,
+published and watched (section 17), and one side was seen killing itself:
+the generator now asks the page's own route code whether a bot can get to a
+flag, and the judge reads each movement rate by side. Then the mods the
+owner named (Desert Combat, Forgotten Hope, BF1918, FHSW), judged the way
+they are played, with their vehicles in. Nothing was accepted and nothing
+published.
+
+### 18.1 The route probe
+
+`sim/routeprobe.mjs`, called by the generator (version 4) and by the lint.
+
+**What the fault was.** Flags 3 and 4 of The_Maze were reachable by the walk
+test and by the map's connectivity, and were not taken in twenty matches.
+The page's own planner was run from every usable base spawn to every flag
+(`viewer/nav-search.js findStrategicPath`, then each leg as
+`viewer/bot-route.js extendRoute` searches it: the box, six wider tries,
+the next route's box wider for each of the last three failures): on the
+bare map every route to 3 and 4 closes on the first plan. A traced match
+with the obstacle circles of every failed leg logged then showed where they
+fail: 167 of 167 failed legs carried at least one circle, 331 of them a
+teammate's, 14 a contact circle, and none failed on the bare map. A soldier
+plants a circle on a body of their own side standing still in their way
+(`predictObstacles`, the engine's `BBAvoid::calculateUrgency`): the two
+radii summed, 2 m. A bot stops in the crossing at 397.9, -713.9 (to fire,
+or beside a post), each teammate behind plants a circle on them, and in a
+passage three or four cells wide that circle is the passage. The leg never
+closes, widenings and all, until the no-progress redeploy.
+
+So it is not the ramp, not the leg search on the map and not the paint. A
+stricter paint was tried and dropped: with three quarters of a cell asked
+for, route failures stay where they were (3.4 a bot-minute at 8 a side);
+with the whole cell, 18. Narrower corridors on the map choke sooner. The
+planner was left alone: the rule is the engine's, and no DICE trace argues
+for changing it.
+
+**What the probe asks.** Two things of every way from a side's usable
+spawns to a flag's order position, and between neighbouring flags:
+
+1. Does the planner close it on the bare map (`probeRoute`)? It reports the
+   stage it stops at (the strategic search, or a leg) and how many failed
+   plans it takes.
+2. How much of it does one standing teammate shut (`chokePoints`)? For each
+   point 3 m along the planned route a 2 m circle is stood on it and the
+   follower's own search is run from 6 m short of it to 6 m past, widenings
+   and all. A point where it does not close is a choke point.
+
+The bar for the second is DICE's. On the shipped maps of the four baseline
+levels, every side to every capturable flag, the best route has at most 4
+choke points (Stalingrad's city flag, both sides; Kharkov 1; Berlin at most
+1; Bocage 0): `CHOKE_MAX`. The_Maze's flags 3 and 4 have 16 to 20 from
+either side, 48 to 60 m of single file. shigaisen_B's worst is 3.
+
+A way is open when it closes and has no more choke points than that. A
+side reaches a flag by an open way from one of its spawns, or from a flag
+it reaches to a neighbour. Then:
+
+| Finding | Generator | Lint |
+|---|---|---|
+| No side has an open way to a flag | the flag is taken out of play as an unreachable one is, `unreachableReasons` says "route probe", `routeProbe.stops` says where each side's way stops | error if such a flag is still in play |
+| One side only | kept; `routeProbe.oneSided` names the side | warning that names the side |
+| A side has an open way to no flag | | error, a dead level (`no-route`) |
+| A way closes only after failed plans | `routeProbe.late` | warning |
+
+INVENTION, all of it: the engine orders its bots to any area a side may
+take and lets them fail. Tests: `tests/test_route_probe.py`, on a map
+written by hand (a field, a passage two cells wide and a hundred metres
+long, one nine cells wide, a room nothing joins). On that map too the
+narrow passage closes on the bare map and is shut by the teammate.
+
+### 18.2 The judge by side
+
+`sim/detect.mjs sideFigures`, `sim/judge.mjs WORSE_SIDE`. A rate taken over
+both sides halves a fault one side has: 16 of 19 redeploys in the traced
+The_Maze match were the Axis side's.
+
+For stuck seconds, spawn traps, route failures and redeploys the row keeps
+each side's count and its rate over that side's own bot-minutes, and the
+worse side's rate as a field of its own. One more field is what the
+scoreboard shows: the share of a side's deaths no enemy caused (redeploys,
+self deaths, team kills, over those plus enemy kills), worse side. Each is
+judged like the two-side rates: the median over seeds against the DICE
+runs' own worse-side p90.
+
+| Worse side, p10 / p50 / p90 | 8 a side | 16 a side |
+|---|---|---|
+| Stuck seconds a bot-minute | 0.46 / 1.69 / 3.82 | 0.30 / 1.46 / 3.59 |
+| Spawn traps a bot-minute | 0.013 / 0.133 / 0.212 | 0.006 / 0.030 / 0.109 |
+| Route failures a bot-minute | 0 / 0 / 0.77 | 0.007 / 0.20 / 2.93 |
+| Redeploys a bot-minute | 0.056 / 0.143 / 0.368 | 0.031 / 0.103 / 0.198 |
+| Share of deaths no enemy caused | 0.107 / 0.231 / 0.478 | 0.105 / 0.246 / 0.406 |
+
+Stalingrad's Axis side sets the redeploy and death-share bars at 8 a side.
+The baseline was rebuilt for the new fields; no DICE trace changed, and all
+281 values the file held before are byte for byte the same. A row or a
+baseline without the fields reads "not measured" and does not fail, so an
+old run folder can still be read.
+
+In the trace a redeploy is its own event and spends no ticket; it is not a
+kill line and `perBot.deaths` does not count it. The page's code at the
+commit this was read at has no path that prints one as a death
+(`bot-referee.js` calls `env.onRedeploy`, which `map.html` does not pass),
+so the "is no more" lines and the score of -2 seen live are not explained
+by what was read. Open.
+
+The old layer's rows, recomputed from the run summaries where the summary
+allows (redeploys, route failures and the death share; stuck time and spawn
+traps by side need the trace, which is not kept), and the six judged levels
+run again with the new detector:
+
+| Level | 8 a side, worse side | 16 a side, worse side |
+|---|---|---|
+| The_Maze, published layer | redeploys 0.389 (0.368) fail, route failures 4.44 (0.77) fail, death share 0.43 (0.48) | redeploys 0.350 (0.198) fail, route failures 6.42 (2.93) fail, death share 0.50 (0.41) fail |
+| The_Maze, generator 4 | redeploys 0.075, route failures 0.40, death share 0.17: all pass | redeploys 0.084, route failures 1.16, death share 0.19: all pass |
+| shigaisen_b | all five pass (redeploys 0.188, death share 0.18) | all five pass (redeploys 0.146, death share 0.25) |
+| hop | stuck 3.93 (3.82), spawn traps 0.220 (0.212), route failures 2.78 (0.77) fail | spawn traps 0.408 (0.109), route failures 6.06 (2.93), redeploys 0.209 (0.198) fail |
+| _o_jka__big | all five pass | all five pass |
+| _o_jka__ | all five pass (route failures 0.772 against 0.773) | route failures 3.42 (2.93), death share 0.44 (0.41) fail |
+| omaturi_channel_sniper | stuck 7.32 (3.82), spawn traps 0.252 (0.212) fail | stuck 4.33, spawn traps 0.139, death share 1.0 fail |
+
+Nothing changes in the outcomes of section 16.5 but The_Maze's.
+
+### 18.3 The_Maze again
+
+Generator 4 takes flags 3 and 4 out ("route probe"), which leaves three in
+play. Ten seeds, 600 s, on foot; the published layer against the new one:
+
+| | 8 a side | 16 a side |
+|---|---|---|
+| Route failures a bot-minute | 2.73 to 0.27 (bar 0.38) | 4.22 to 0.92 (2.10) |
+| Redeploys a bot-minute | 0.230 to 0.053 (0.198) | 0.203 to 0.069 (0.129) |
+| Stuck seconds a bot-minute | 1.45 to 0.17 | 1.26 to 0.14 |
+| Captures a match | 3 to 6.5 | 2 to 9 |
+| Enemy kills a bot-minute | 0.53 to 0.39 (floor 0.30) | 0.43 to 0.42 (0.17) |
+| Winners, Axis to Allies | 9:1 to 7:3 | 9:1 to 7:3 |
+| Checks failed | route failures, redeploys to idle share | route failures, redeploys to none |
+
+**16 a side passes all twenty checks. 8 a side fails one: idle share 0.547
+against 0.526.** Outcome better-than-nothing. The tool withdrew the
+acceptance by its own rule (a check fails now that did not fail then); the
+coordinator has since recorded a new one in the layer's `verdict.json`.
+
+The idle share is home guards. In a traced match 59 % of alive bot time is
+Scout or Idle with no target, and 71 % of that is bots ordered to their own
+base, which no enemy can take: the Allies spend 55 % of their time ordered
+to AlliedBase, the Axis 30 % to AxisBase. With three flags in play
+Kharkov's strategies keep half a side at home. The two _o_jka__ levels
+failed the same way in 16.5. It is the template's doing, not a route fault.
+
+shigaisen_b through the probe: no flag is taken out and no way is shut. Its
+layer was not rewritten; the generator would write a version of 4 and a
+`routeProbe` block in `generated.json` and nothing else.
+
+### 18.4 What a mod's level needed
+
+**The trees.** A mod's levels are in its own maps tree and its own models
+tree; the runner, the generator and `patch_scene.py --layer ai --mod <Mod>`
+take them as they are, and a layer is kept under
+`bot-layers/<mod, lower case>/<level>/`. Nothing had to change for that.
+
+**The engine's own maps are not practical for a mod.** `engine_search_maps.py`
+now links a mod the lab's server lacks from the game install (and every mod
+its `init.con` names), and the engine does write its maps for a mod's
+level. They are not usable:
+
+| Level | Time | Infantry map free | Tank map free |
+|---|---|---|---|
+| Desert Combat, DC_Basrah_Nights | 2 min | 0.78 % | 81 cells |
+| BF1918, baghdad | 6.3 min | 143 cells | 4 cells |
+| Forgotten Hope, Pegasus | 3.1 min | 5.9 % | 4.5 % |
+
+The flood reaches a little way from the spawns and stops: painted before
+the statics load, Baghdad is 5 % and 9 % free, so it is the mod's statics
+that close it. Desert Combat's infantry map also differs between two runs
+(7,456 and 8,189 free cells), and three starts in a row died within six
+seconds. The step is kept (a vanilla level's maps are byte for byte what
+they were) and not used for the mods.
+
+**So a mod's maps are painted from the level as baked** (generator 4, when
+the layer holds no engine map):
+
+* the infantry map from the walk test, as for an arena the engine's map
+  does not hold (16.3), with the route probe on top. `walkMap.engine` is
+  `none`. Where the walk flood runs out of room before the ground does (a
+  wide level), no map is written and the page paints its own, as it does
+  with no layer (`walkMap.source` `page painter`).
+* the land vehicles' map from the page's own painter, written out as the
+  layer's `Tank0` (`botgen.mjs paintedVehicleMap`), at the widest brush that
+  keeps the level in one piece: DICE's 3 m first, then 2.5, 2 and 1.5, the
+  one that puts as many flags and spawners on one piece of the map as any
+  of them. The piece is the one with most flags on it, not the largest: a
+  walled town has more open ground outside its wall than inside (Mauerfall,
+  where the largest piece holds no flag at any brush). The layer's
+  `AIpathFinding.con` declares the brush, so the page reads that map for its
+  hulls. On DC_Basrah_Nights 3 m leaves the map in nineteen pieces with two
+  flags of five and one spawner of eight on the best of them, and with
+  vehicles on the two drivers sit still all match (throttle on 0 % and 4 %
+  of the time, their two cars holding ten of the sixteen bots, one
+  capture); at 1.5 m all five flags are on one piece, a driver covers
+  206 m and the match has four captures.
+* an order position for a hull in each area (`setOrderPosition Tank`): the
+  free cell of that map nearest the flag, within 40 m. Without one a hull
+  ordered to a flag inside a building is sent to the flag itself. Written
+  only for a level that places something to crew.
+
+All three are INVENTION and labelled so. A drive test on the collider in
+the manner of the walk test was not built: the page's painter with a
+narrower brush joined the levels tried, and a hull's own steering in a
+street is the next limit, not the map (18.7).
+
+**The configuration a verdict is for.** `botbatch` takes `--vehicles` on
+`baseline`, `matrix`, `level` and `census`: the level's vehicles and guns
+are in, the runs go to their own folders (`v8`, `v16`), each row and the
+verdict say `with vehicles`, and the judge reads
+`sim/baselines/vehicles-dice.json`. The marker records what a level places
+(`objectSpawners`), and the bake's gate (`bf42/ai_level.py
+generated_layer_gate`) opens a layer whose level places anything only on a
+verdict `with vehicles`: a pass or an acceptance of on-foot matches does
+not say what a player meets. `publish_bot_layers.py` reads the same gate,
+so it follows with no change. A marker older than the count asks for
+nothing (shigaisen_b, and The_Maze as published, both of which place
+nothing).
+
+**FHSW.** FHSW and FHSWEurope are installed on this Mac (8.7 GB and 143
+level archives; 1.9 GB and 275), so their levels go through the ordinary
+path. `patch_scene.py --layer ai --no-archives` exists all the same, for a
+machine without them: the published `scene.json` answers whether the level
+ships its own AI (an `ai` block with no `generated` marker is left alone),
+the layer goes through the same gate, and the `pathfinding/` folder is
+written from the layer's own maps. What it cannot write is
+`ai.coverValues`, which come from the mod's object library (9 templates on
+Edson's Ridge, 60 on FHSW's Pegasus); without them a bot takes low ground
+for cover instead of an object. `publish_bot_layers.py` does not pass the
+flag (four lines, not written: the archives are here).
+
+### 18.5 The bar with vehicles
+
+`sim/baselines/vehicles-dice.json`: the four levels the on-foot bar is
+built on (Berlin, Stalingrad, Kharkov, Bocage), run with their vehicles in,
+the same ten seeds, 600 s, 8 and 16 a side, the same statistics. They place
+4, 6, 18 and 14 land and air hulls, which is the range of the mod levels
+judged here, and taking the same four keeps the two bars apart by the
+configuration alone.
+
+A first set was chosen by the rule that classes a level "contained with
+vehicles" in `candidates.csv` (flags within 600 m, more than 8 land and air
+hulls), which gives Kharkov, Battleaxe and Wake. It was dropped before any
+level was judged against it: Battleaxe's median is no capture at all and
+Wake's Axis side has no route off its landing craft (route failures p90
+81.8 a bot-minute at 8 a side), so two of its three levels have no fight by
+this tool's own rule and its bars held nothing (captures at least 0, enemy
+kills at least 0). That file is kept in scratch, not in the repo.
+
+With vehicles the page's bots are a different thing from the same bots on
+foot, on DICE's own levels:
+
+| p10 / p50 / p90, 8 a side | With vehicles | On foot |
+|---|---|---|
+| Enemy kills a bot-minute | 0.062 / 0.111 / 0.335 | 0.298 / 0.596 / 1.408 |
+| Captures a match | 0 / 3 / 5.1 | 1 / 4 / 8.1 |
+| Stuck seconds a bot-minute (on foot) | 0 / 0.15 / 0.68 | 0.33 / 0.96 / 2.06 |
+| Route failures a bot-minute | 0 / 0.026 / 0.307 | 0 / 0 / 0.382 |
+| Redeploys a bot-minute | 0 / 0.010 / 0.052 | 0.034 / 0.104 / 0.198 |
+| Idle share | 0.31 / 0.42 / 0.70 | 0.16 / 0.36 / 0.53 |
+| Share of deaths no enemy caused, worse side | 0.12 / 0.34 / 0.76 | 0.11 / 0.23 / 0.48 |
+| Mounted share of alive time | 0.57 / 0.84 / 0.90 | |
+
+A side kills a fifth as often and is seated five sixths of the time. The
+floor for captures at 8 a side is none (Stalingrad's median is 0), and
+Stalingrad at 8 a side fails the tool's own "each side kills in every seed"
+in two seeds of ten. So "no-fight" with vehicles is a line one of DICE's
+four levels does not clear at one size; it is reported as measured.
+
+The vehicle detectors (`sim/detect.mjs vehicleFigures`), each kept only
+where the DICE runs give it a bar:
+
+| Detector | What it is | DICE p90, 8 / 16 a side | Kept |
+|---|---|---|---|
+| Hull stuck | a driver with the throttle on whose hull moves under 2 m in 10 s, seconds a driving minute; and the worse side's | 3.25 / 2.15; worse side 5.03 / 3.38 | yes |
+| Units never used | the share of the level's units no bot ever sat in | 0.41 / 0.22 | yes |
+| Tank that never fires | seatings of 60 s or more in an armed tank seat with no shot | 0.50 / 0.31 | yes |
+| Team kills from a seat | per bot-minute | 0 / 0.006 at p90 | no: one in sixty matches, no bar |
+| Bots run over by their own side | | | no: the runner has no path where a hull hurts a soldier of its own side |
+| Mounted share | | 0.90 / 0.83 | context only |
+
+Two limits, stated: the trace's header gives a count of units and not
+their kinds, so "never used" counts fixed guns with hulls (a level of
+thirty emplaced guns fails it by construction); and an armed seat is known
+only once it fires in the same trace. Both want `units: [{id, template,
+kind}]` in the header (`sim/match.mjs`), not done.
+
+**Desert Combat's own botted levels, for context** (one match each, 8 a
+side, 300 s, with vehicles): DC_Basrahs_Edge 2 and 6 kills, 2 captures,
+mounted share 0.75, 6 hulls destroyed; DC_DesertShield 7 and 3, 2 captures,
+0.95, 18; DC's Kharkov 2 and 5, 2 captures, 0.83, 8. Most drivers cover
+several hundred metres. In kills that is 0.09 to 0.13 a bot-minute, at
+DICE's median with vehicles; their route failures are far past it (295,
+502 and 18 in the match, 3.7, 6.3 and 0.2 a bot-minute against a p90 of
+0.31). A mod's own layer would not pass this bar on route failures either.
+
+### 18.6 The census of the mods
+
+Every published level of Desert Combat, Forgotten Hope and BF1918 that
+ships no bots and is not classed out as wide, naval or without soldier
+spawns, and the twelve contained FHSW candidates: 47 levels, each once on
+foot and once with vehicles (`botbatch census`, and `--vehicles`; 300 s, 8 a
+side, seed 1). "Units" is what the runner places for a crew, guns included.
+"Seated share" is the share of alive bot time spent in a seat, with
+vehicles. Tunis is from the pass before the last (it was in the matrix
+while the last one ran).
+
+| Mod | Level | Class in candidates.csv | Units | On foot: alive, kills, captures | With vehicles: alive, kills, captures | Seated share | Map | Lint |
+|---|---|---|---|---|---|---|---|---|
+| DC | dc_al_khafji_docks | open ground | 18 | dead, 0/0, 0 | dead, 0/0, 0 | 0.23 | walk test | a side sealed in |
+| DC | dc_basrah_nights | contained on-foot | 8 | alive, 27/39, 2 | alive, 6/3, 4 | 0.44 | walk test | clean |
+| DC | dc_battle_of_73_easting | open ground | 48 | alive, 9/5, 2 | dead, 0/3, 1 | 0.38 | page painter | a side sealed in |
+| DC | dc_lostvillage | contained on-foot | 6 | alive, 2/1, 0 | dead, 0/0, 0 | 0.48 | walk test | clean |
+| DC | dc_medina_ridge | open ground | 40 | dead, 0/0, 0 | dead, 0/0, 0 | 0.84 | page painter | no flag standable; a side reaches no flag |
+| DC | dc_oil_fields | open ground | 56 | dead, 0/0, 0 | dead, 0/0, 0 | 0.90 | page painter | no flag standable; a side reaches no flag; a side sealed in |
+| DC | dc_operation_bragg | open ground | 62 | dead, 0/0, 1 | dead, 0/0, 0 | 0.88 | page painter | no flag standable; a side reaches no flag; a side sealed in |
+| DC | dc_sea_rigs | contained on-foot | 18 | dead, 0/0, 0 | dead, 0/0, 0 | 0.16 | walk test | no flag standable; a side reaches no flag; a side with no spawn; stacked |
+| DC | dc_urban_siege | open ground | 41 | dead, 0/0, 2 | dead, 3/0, 0 | 0.83 | page painter | clean |
+| DC | dc_weapon_bunkers | arena: fixed bases only | 20 | dead, 0/0, 0 | dead, 0/0, 0 | 0.55 | walk test | a side with no spawn |
+| DC | inshallah_valley | open ground | 32 | dead, 0/0, 1 | alive, 11/3, 3 | 0.73 | walk test | clean |
+| FH | omaha_charlie-sector-1944 | open ground | 39 | alive, 5/5, 1 | dead, 0/0, 0 | 0.83 | walk test | a side with no spawn |
+| FH | pegasus | contained on-foot | 18 | alive, 17/9, 0 | dead, 0/0, 1 | 0.53 | walk test | clean |
+| FH | seelow-heights-1945 | open ground | 59 | alive, 8/2, 1 | dead, 0/0, 1 | 0.66 | page painter | a side sealed in |
+| BF1918 | baghdad | contained with vehicles | 55 | dead, 1/0, 0 | dead, 0/0, 0 | 0.58 | walk test | a side reaches no flag |
+| BF1918 | battle_of_cambrai | contained with vehicles | 53 | alive, 4/5, 2 | dead, 0/0, 0 | 0.77 | walk test | clean |
+| BF1918 | battle_of_the_vosges | contained with vehicles | 51 | dead, 0/0, 0 | dead, 0/0, 0 | 0.00 | page painter | a side with no spawn |
+| BF1918 | cantigny | contained on-foot | 54 | dead, 1/0, 0 | alive, 7/2, 0 | 0.12 | walk test | a side sealed in |
+| BF1918 | carriere | contained with vehicles | 35 | alive, 9/18, 2 | dead, 0/0, 0 | 0.60 | walk test | stacked |
+| BF1918 | chemin_des_dames | contained on-foot | 36 | dead, 0/0, 2 | dead, 0/0, 1 | 0.67 | walk test | clean |
+| BF1918 | dawnville | contained on-foot | 14 | alive, 5/1, 1 | dead, 0/1, 0 | 0.81 | walk test | clean |
+| BF1918 | deulemont | contained on-foot | 24 | dead, 0/0, 2 | dead, 0/0, 0 | 0.23 | walk test | a side sealed in |
+| BF1918 | fht_meuse_argonne_offensive | open ground | 89 | alive, 1/22, 3 | dead, 0/2, 0 | 0.79 | page painter | clean |
+| BF1918 | hindenburg_line | open ground | 41 | alive, 2/6, 2 | dead, 0/0, 0 | 0.70 | walk test | clean |
+| BF1918 | liberation_of_roeselare | contained on-foot | 38 | alive, 2/4, 3 | dead, 0/0, 0 | 0.22 | walk test | a side sealed in |
+| BF1918 | lutte_de_honneur | contained on-foot | 61 | dead, 1/0, 0 | dead, 1/0, 0 | 0.55 | walk test | clean |
+| BF1918 | mauerfall | contained with vehicles | 48 | alive, 16/27, 1 | dead, 0/0, 0 | 0.67 | walk test | clean |
+| BF1918 | operation_gericht | open ground | 38 | alive, 3/2, 1 | dead, 1/0, 0 | 0.60 | walk test | clean |
+| BF1918 | raid_on_fort_pontisse | open ground | 62 | dead, 0/0, 4 | dead, 1/0, 2 | 0.28 | page painter | a side sealed in; stacked |
+| BF1918 | roye | open ground | 71 | alive, 1/4, 1 | dead, 0/0, 0 | 0.90 | page painter | clean |
+| BF1918 | saint_quentin_canal | open ground | 79 | alive, 4/5, 2 | dead, 2/0, 0 | 0.73 | page painter | clean |
+| BF1918 | sanaga_river | contained with vehicles | 30 | dead, 0/10, 1 | dead, 0/0, 1 | 0.58 | walk test | clean |
+| BF1918 | scimitar_hill | open ground | 39 | alive, 9/13, 2 | dead, 0/0, 1 | 0.46 | walk test | clean |
+| BF1918 | somme_gasattack | contained on-foot | 22 | dead, 0/0, 0 | dead, 0/1, 0 | 0.67 | walk test | a side with no spawn |
+| BF1918 | tabuaeran | open ground | 42 | dead, 0/0, 0 | dead, 0/0, 0 | 0.34 | walk test | a side sealed in |
+| FHSW | battle_for_ortona-1943 | contained with vehicles | 61 | alive, 7/8, 2 | dead, 0/0, 0 | 0.91 | walk test | clean |
+| FHSW | battle_of_edson_s_ridge | contained on-foot | 4 | dead, 0/0, 0 | dead, 0/0, 0 | 0.24 | walk test | clean |
+| FHSW | battle_of_pavlov-1942 | contained on-foot | 13 | dead, 0/0, 0 | dead, 0/0, 0 | 0.46 | walk test | no flag standable; a side reaches no flag; stacked |
+| FHSW | berlin-1945-outskirts | contained with vehicles | 46 | alive, 24/6, 1 | alive, 11/1, 0 | 0.57 | walk test | a side reaches no flag |
+| FHSW | berlin-1945-streets | contained with vehicles | 29 | dead, 0/0, 1 | dead, 0/0, 0 | 0.56 | walk test | clean |
+| FHSW | bizerte-1943 | contained with vehicles | 39 | alive, 9/2, 0 | dead, 0/0, 0 | 0.96 | walk test | clean |
+| FHSW | monte_cassino-1944 | contained with vehicles | 38 | alive, 8/6, 2 | dead, 0/0, 0 | 0.75 | walk test | clean |
+| FHSW | pegasus | contained with vehicles | 19 | alive, 3/5, 0 | alive, 3/2, 0 | 0.54 | walk test | clean |
+| FHSW | stalingrad_redsquare | contained on-foot | 7 | alive, 4/1, 4 | dead, 1/0, 0 | 0.32 | walk test | clean |
+| FHSW | stalingrad_urban_area-1942 | contained on-foot | 10 | dead, 0/0, 2 | dead, 0/0, 0 | 0.49 | walk test | clean |
+| FHSW | tunis-1943 | contained with vehicles | 57 | alive, 7/9, 4 | alive, 5/2, 6 | 0.77 | walk test | clean |
+| FHSW | warsaw_uprising | contained with vehicles | 28 | alive, 3/2, 2 | dead, 0/0, 0 | 0.80 | walk test | clean |
+
+**On foot 25 of 47 are alive, with vehicles 6.** Lint clean and alive with
+vehicles, which is what the matrix asks for: DC_Basrah_Nights,
+Inshallah_Valley, FHSW's Pegasus and Tunis. All four were run (18.7).
+
+The classes, from the table (the six alive with vehicles apart):
+
+* **Alive on foot, no fight with vehicles** (16: Mauerfall,
+  battle_of_cambrai, dawnville, DC_LostVillage, FH's Pegasus, FHSW's Ortona,
+  Bizerte, Monte Cassino, Red Square and Warsaw, and six of BF1918's open
+  levels). The bots take seats and nobody kills: the seated share is 0.3 to
+  0.96 and a match has no kill or a handful. 18.8 has what they do there.
+* **A side sealed in, with no spawn, or with no route to a flag** (14):
+  BF1918's deulemont, liberation_of_roeselare, baghdad, somme_gasattack and
+  tabuaeran, five of DC's wide levels, FH's Seelow Heights, and three levels
+  whose published data gives a side no spawn point (battle_of_the_vosges,
+  FH's Omaha Charlie, DC_Weapon_Bunkers).
+* **Stacked** (4): DC_Sea_Rigs, carriere, raid_on_fort_pontisse, FHSW's
+  Battle of Pavlov; classed out as in section 16.
+* **No fight either way with a clean lint** (7): FHSW's Edson's Ridge has no
+  contact at all in five minutes; FHSW's Berlin streets and Stalingrad urban
+  area, DC_Urban_Siege, chemin_des_dames, lutte_de_honneur, sanaga_river.
+  Not diagnosed further.
+
+Of the six alive with vehicles, cantigny and FHSW's Berlin outskirts have a
+lint error (a side sealed in; a side with a route to no flag) and are not
+run.
+
+Two things the census found were fixed in the walk test on the way, both
+about water. A soldier wades to the depth a swimmer stands up in (1.35 m)
+and no deeper, where the infantry map's own limit of 1.5 m had been used:
+deeper they swim, and a swimmer's Armor takes the water-damage tick. And
+the depth is now asked of a bed met from under the surface too: a bank
+that shelves gently had let the flood walk on down a channel of any depth,
+so FH's Pegasus canal, 5 to 7 m deep, was painted as ground and 26 of a
+match's 29 deaths were bots sent across it. With both, FH's Pegasus on
+foot goes from one kill to 17 and 9. Tests: `test_the_walk_test_wades_and_
+does_not_swim`.
+
+### 18.7 The verdicts with vehicles
+
+Ten seeds, 600 s, Conquest, with the level's vehicles and guns in, 8 and 16
+a side, the level with no layer and with the generated one, against
+`vehicles-dice.json`. Medians; the bar in brackets.
+
+| Level | 8 a side | 16 a side | Outcome |
+|---|---|---|---|
+| DC_Basrah_Nights | fails 4 of 24: enemy kills 0.060 (0.062), a side with no kill in 3 seeds, units never used 0.75 (0.41) | fails 7: no capture, enemy kills 0.019 (0.119), idle 0.634 (0.6335), death share 0.67 (0.46), units never used | no-fight |
+| FHSW Pegasus | fails 8 of 24: route failures 2.5 (0.306), enemy kills 0.022 (0.062), flag coverage 0 (0.333), a side never captures, a side with no kill in some seed, a side loses no ticket in some seed, route failures, worse side 4.67 (0.549), units never used 0.684 (0.412) | fails 12 of 24: idle 0.647 (0.633), route failures 1.74 (0.546), captures 0 (1), enemy kills 0.016 (0.119), flag coverage 0 (0.333), a side never captures, a side with no kill in some seed, route failures, worse side 2.65 (1.04), death share 0.644 (0.464), hull stuck 27.37 (2.15), hull stuck, worse side 29.25 (3.38), units never used 0.553 (0.217) | no-fight |
+| FHSW Tunis | fails 6 of 24: route failures 5.08 (0.306), enemy kills 0.019 (0.062), a side with no kill in some seed, a side loses no ticket in some seed, route failures, worse side 5.92 (0.549), units never used 0.754 (0.412) | fails 6 of 24: route failures 5.88 (0.546), enemy kills 0 (0.119), a side with no kill in some seed, a side loses no ticket in some seed, route failures, worse side 11.16 (1.04), units never used 0.789 (0.217) | no-fight |
+| DC Inshallah_Valley | fails 2 of 24: route failures 1.43 (0.306), route failures, worse side 2.02 (0.549) | fails 7 of 24: route failures 2.08 (0.546), redeploys 0.1 (0.093), route failures, worse side 2.88 (1.04), redeploys, worse side 0.175 (0.164), death share 0.648 (0.464), hull stuck, worse side 3.95 (3.38), units never used 0.344 (0.217) | no-better-than-nothing |
+| _o_jka__big (community) | fails 2: route failures 2.98 (0.31), worse side 4.77 (0.55) | fails 4: route failures 3.35 (0.55), worse side 4.50 (1.04), self deaths 0.0292 (0.0288), silent tanks 0.37 (0.31) | no-better-than-nothing |
+| _o_jka__ (community) | fails 8: no kill, no capture, idle 0.87 (0.70), route failures 5.4 | fails 12 | no-fight |
+| hop (community) | fails 10: stuck 2.07 (0.68), route failures 3.02 (0.31), redeploys 0.134 (0.052), spawn traps, team kills, one side never captures | fails 5: stuck 1.65 (1.36), route failures 4.38 (0.55), redeploys 0.115 (0.093), no capture | better-than-nothing |
+
+No level passes with vehicles. Three of the four mod levels have no fight
+(a side with no kill in some seed, enemy kills a tenth to a third of DICE's
+floor). The fourth has one: **DC's Inshallah_Valley** has both sides
+killing in every seed with the layer and without, passes 22 of 24 checks at
+8 a side with the layer, and fails on route failures alone (1.43 a
+bot-minute against 0.31). The tool calls it no-better-than-nothing because
+its captures fall (5 a match to 4 at 8 a side, 6 to 3.5 at 16) and stuck
+time on foot rises from next to nothing, while route failures fall from
+13.2 to 1.4 and the kill rate doubles. What the layer changes, level by
+level:
+
+| Level, 8 a side | Route failures, no layer to generated | Enemy kills a bot-minute | Captures |
+|---|---|---|---|
+| DC_Basrah_Nights | 5.67 to 0.21 | 0.013 to 0.060 | 0 to 2 |
+| FHSW Tunis | 16.29 to 5.08 | 0.006 to 0.019 | 1 to 4.5 |
+| FHSW Pegasus | 0.867 to 2.5 | 0.044 to 0.022 | 0 to 0 |
+| DC Inshallah_Valley | 13.22 to 1.43 | 0.142 to 0.318 | 5 to 4 |
+| hop | 55.1 to 3.0 | 0 to 0.83 | 0 to 0 |
+| _o_jka__big | 1.29 to 2.98 | 0.40 to 0.23 | 3 to 2.5 |
+
+The three community levels are here because they place something to crew
+(hop two guns, the _o_jka__ pair 10 and 22 spawners), so the gate now asks
+them for a verdict with vehicles and their on-foot verdicts of 16.5 no
+longer open anything. _o_jka__big fails on route failures alone at 8 a
+side too, and is worse with the layer than without it. On _o_jka__
+everybody is seated 99 % of the time and nobody kills, with the layer or
+without.
+
+The two FHSW layers were judged twice: once before the walk test's water
+rule was corrected (18.6) and once after, on the layers as they now stand.
+The outcome is the same and the figures above are the second run's.
+
+### 18.8 What a mod's level still needs before it can go live
+
+In the order the measurements put them:
+
+1. **Bots that fight from a seat.** With vehicles on, three of the four
+   mod levels judged have no fight, and it is not the layer: with no layer
+   the same levels have none either (0.006 to 0.044 enemy kills a
+   bot-minute). On DICE's four levels a seated side still kills (0.11
+   a bot-minute at the median); on these the figure is 0.01 to 0.06. BF1918
+   places twenty to thirty-five emplaced guns a level and the bots take
+   them: on lutte_de_honneur a match's bots fire 6,473 gun rounds for one
+   kill and no rifle shot at all. On Mauerfall six bots sit in one A7V that
+   covers 153 m in five minutes, and every bot left on foot spends the
+   whole match trying to board (Change and Avoid, 100 % of their time). The
+   Change behaviour's share of alive time is 0.03 to 0.13 on DICE's levels
+   with vehicles and up to 0.60 here. That is bot behaviour (when to leave
+   a gun with nothing to shoot, when to stop wanting a seat), to be argued
+   on DICE traces with a baseline rebuild, not a generator change.
+2. **A hull's steering in a street.** FHSW's Pegasus is the measure: at 16
+   a side hulls are stuck 27 s of every driving minute against a bar of
+   2.2. The 1.5 m brush joins the map; the hull then has to keep to it.
+   Inshallah_Valley, open ground with a 2 m brush, is at the bar (0.98 and
+   2.08 s) and is the level to start from.
+3. **The level's own data.** battle_of_the_vosges is published with no side
+   on its bases (teams 0 and a value that is not a team), so neither side
+   has a spawn; FH's Omaha Charlie and DC_Weapon_Bunkers have a side whose
+   only spawns are on vehicles. Those are the `controlPoints` and `spawns`
+   layers of the bake, not this feature.
+4. **The wide levels.** On a 2048 m level with flags a kilometre apart the
+   walk flood runs out of room, no map is written and the page paints its
+   own. They are the "open ground" class and were censused, not worked on.
+5. **A template by flag count** (16.7, and The_Maze's idle share).
+6. **Cover values** where a level is patched with `--no-archives`.
+
+### 18.9 Open, and not verified
+
+1. Nothing in this phase was looked at in a browser, and no mod level was
+   played.
+2. The with-vehicles traces of Bocage, Kharkov, Stalingrad and El Alamein
+   differ from the ones section 16.4 records (seed 3, 8 a side, 300 s). The
+   committed viewer alone reproduces today's, so it is other work on
+   vehicles committed since, not this phase: the one viewer edit here
+   exports five constants from `bot-route.js`. The on-foot traces are byte
+   for byte the same. The vehicle baseline was built on the tree as it
+   stands and will move when vehicle code does; the on-foot one has not.
+3. A soldier who drowns leaves no kill line in the trace, so the share of
+   deaths no enemy caused does not count them. Found on FH's Pegasus (the
+   canal). The walk test no longer sends anyone through water a soldier
+   would swim in; the detector gap is open.
+4. The redeploy line seen live ("is no more", -2) is not explained by the
+   code read (18.2).
+5. `CHOKE_MAX`, the brushes tried, the 40 m search for a hull's order
+   position and the 3 m and 6 m of the choke test are this tool's choices;
+   only the first is measured from DICE's levels.
+6. The unused-unit and silent-tank detectors cannot tell a gun from a
+   hull or name an armed seat that never fired (18.5).
+7. Whether retail's bots queue in a corridor the same way was not looked
+   at in the lab.
+8. The engine's maps for a mod were tried on three levels, one per mod.
+9. `publish_bot_layers.py` was read, not run, for a mod's layer.
+10. From 16.7, still open: the stacked-floor figures, the stand-in for a
+    person, the strategic maps, `createHomogenousCondition`.

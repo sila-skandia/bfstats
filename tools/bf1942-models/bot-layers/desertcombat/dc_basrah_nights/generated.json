@@ -1,0 +1,271 @@
+{
+ "generator": "botgen",
+ "version": 4,
+ "mod": "DesertCombat",
+ "level": "dc_basrah_nights",
+ "objectSpawners": 8,
+ "template": "symmetric",
+ "templateSource": "DICE, bf1942 Kharkov (1.6 patch archives): AI/Strategies.con, AI/conditions.con, AI/prerequisites.con, unchanged",
+ "scope": "an infantry map painted from the walk test, a Tank0 map from the page painter, infantry order positions, no strategic maps, no co-op layer",
+ "unreachable": [],
+ "unreachableReasons": {},
+ "botSpawnsExcluded": [],
+ "walkMap": {
+  "source": "walk test",
+  "engine": "none",
+  "vehicleMap": "page painter",
+  "vehicleBrush": 1.5,
+  "vehicleBrushes": [
+   {
+    "brush": 3,
+    "flagsOn": 2,
+    "spawnersOn": 1,
+    "pieces": 19,
+    "main": 6072
+   },
+   {
+    "brush": 2.5,
+    "flagsOn": 4,
+    "spawnersOn": 4,
+    "pieces": 14,
+    "main": 13287
+   },
+   {
+    "brush": 2,
+    "flagsOn": 4,
+    "spawnersOn": 4,
+    "pieces": 16,
+    "main": 14212
+   },
+   {
+    "brush": 1.5,
+    "flagsOn": 5,
+    "spawnersOn": 4,
+    "pieces": 12,
+    "main": 19463
+   }
+  ],
+  "opened": [
+   [
+    333,
+    579
+   ],
+   [
+    333,
+    580
+   ],
+   [
+    336,
+    581
+   ],
+   [
+    337,
+    581
+   ],
+   [
+    344,
+    581
+   ],
+   [
+    344,
+    582
+   ],
+   [
+    384,
+    647
+   ],
+   [
+    384,
+    648
+   ],
+   [
+    384,
+    649
+   ],
+   [
+    384,
+    650
+   ],
+   [
+    384,
+    651
+   ],
+   [
+    384,
+    652
+   ],
+   [
+    384,
+    653
+   ],
+   [
+    384,
+    654
+   ],
+   [
+    384,
+    655
+   ],
+   [
+    384,
+    656
+   ],
+   [
+    384,
+    657
+   ],
+   [
+    391,
+    716
+   ],
+   [
+    391,
+    717
+   ],
+   [
+    391,
+    718
+   ],
+   [
+    391,
+    719
+   ],
+   [
+    391,
+    720
+   ],
+   [
+    391,
+    721
+   ],
+   [
+    393,
+    722
+   ],
+   [
+    393,
+    723
+   ],
+   [
+    393,
+    724
+   ],
+   [
+    396,
+    725
+   ],
+   [
+    397,
+    725
+   ],
+   [
+    404,
+    725
+   ],
+   [
+    404,
+    726
+   ]
+  ],
+  "ways": [
+   {
+    "who": "iraqspawn_spawn1",
+    "kind": "spawn",
+    "way": "walk",
+    "opened": 4
+   },
+   {
+    "who": "USspawn_spawn4",
+    "kind": "spawn",
+    "way": "walk",
+    "opened": 6
+   },
+   {
+    "who": "iraqspawn_spawn4",
+    "kind": "spawn",
+    "way": "walk",
+    "opened": 9
+   },
+   {
+    "who": "centerspawn_spawn2",
+    "kind": "spawn",
+    "way": "walk",
+    "opened": 11
+   },
+   {
+    "who": "centerspawn_spawn3",
+    "kind": "spawn",
+    "way": "walk",
+    "opened": 0
+   }
+  ],
+  "cover": 0.92,
+  "floors": {
+   "stacked": false,
+   "twoFloorShare": 0.037,
+   "raised": [],
+   "reason": null
+  }
+ },
+ "routeProbe": {
+  "chokeMax": 4,
+  "unreachable": [],
+  "stops": {},
+  "oneSided": {},
+  "sides": {
+   "1": {
+    "spawns": 7,
+    "flags": [
+     "USspawn",
+     "centerspawn",
+     "iraqspawn",
+     "leftspawn",
+     "rightspawn"
+    ]
+   },
+   "2": {
+    "spawns": 7,
+    "flags": [
+     "USspawn",
+     "centerspawn",
+     "iraqspawn",
+     "leftspawn",
+     "rightspawn"
+    ]
+   }
+  },
+  "chokes": {
+   "centerspawn:1": 0,
+   "centerspawn:2": 1,
+   "USspawn:1": 0,
+   "USspawn:2": 0,
+   "iraqspawn:1": 0,
+   "iraqspawn:2": 0,
+   "leftspawn:1": 4,
+   "leftspawn:2": 4,
+   "rightspawn:1": 0,
+   "rightspawn:2": 0
+  },
+  "late": {},
+  "shutLinks": []
+ },
+ "inputs": {
+  "controlPoints": "8ae304b8b42cdc5d2748c571ced417bf53f7737387caff378e764cb9577ebb59",
+  "infantryMap": "dfde3ec49a308a6e2476ceffbf56b3ba941322a600fa9386319ff6421d808f46",
+  "template": "43f8a790471528016570235f76e97dbb2045732458781a5139f37fed68bf98c0"
+ },
+ "files": {
+  "AI.con": "dd71e55154a1b2ce567d9659ed0466e04531bb64d3ea31a16d22370371ea6f64",
+  "AIpathFinding.con": "9d8080cdfa7605961969aa126519b03be9691bd604ac76aef50166d81215edd2",
+  "AI/StrategicAreas.con": "bebe5f6decd8aeb91db6912019f228ffb0151b587b5a0f07972770907a7d2668",
+  "AI/Strategies.con": "4ce0be59a0d6c5cd530db002fb062c4be8d936bc6ae59bd188803ccaf7869a8d",
+  "AI/conditions.con": "68a0c7a8aec69954063147b60fae560b2874884285737aa085efa76597d395aa",
+  "AI/prerequisites.con": "4c1f313bc285b228fd6ad03bfd1f44c5b15c8703c31f802eb605bc5f00f88bb5",
+  "Pathfinding/Infantry1Level0Map.raw": "6397d0d4a97bca01907adb8fbf42110e1ca72cfa5ac9cf3c914f68e50106fb82",
+  "Pathfinding/Infantry1Level1Map.raw": "cbbd98fed8bb7844a3e76e213c3ed58f328b7d72d20b1d804a0c9ac11cd7e2e1",
+  "Pathfinding/Infantry1Level2Map.raw": "a3309b933cc13682703907c4bf06fdbf8c136761120dd4cfc719ef13a2a04de7",
+  "Pathfinding/Tank0Level0Map.raw": "ea7252f1347a313d395f2d318b969697a7dd1e5ec4b9e3e48fc4aa301ba98032",
+  "Pathfinding/Tank0Level1Map.raw": "8ccd7d68143d1c790cbe9adadeddbfdc6ca7362ad41fd44a48bb2a13482fecc9",
+  "Pathfinding/Tank0Level2Map.raw": "ce1dfe62bca9ab1f4b2659221a34ec6d29e675d0b265dd8cbab1baf00d285cf1"
+ }
+}

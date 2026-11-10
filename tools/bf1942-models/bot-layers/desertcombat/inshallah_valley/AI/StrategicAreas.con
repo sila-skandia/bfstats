@@ -1,0 +1,49 @@
+rem *** Strategic areas: one per control point (botgen) ***
+
+aiStrategicArea.create OpenSpawnPoint_Village 537.2/354.7 557.2/374.7 300
+aiStrategicArea.addNeighbour Small_Village
+aiStrategicArea.addNeighbour US_Base
+aiStrategicArea.addNeighbour Outpost
+aiStrategicArea.addObjectTypeFlag Centre
+aiStrategicArea.addObjectTypeFlag StrongPoint
+aiStrategicArea.addObjectTypeFlag ControlPoint
+aiStrategicArea.setOrderPosition Tank 558.5/376.5
+aiStrategicArea.setOrderPosition Infantry 557.5/375.5
+
+aiStrategicArea.create Small_Village 509.6/233.4 524.6/248.4 150
+aiStrategicArea.addNeighbour OpenSpawnPoint_Village
+aiStrategicArea.addNeighbour Iraq_Base
+aiStrategicArea.addNeighbour Outpost
+aiStrategicArea.addObjectTypeFlag Flank
+aiStrategicArea.addObjectTypeFlag ControlPoint
+aiStrategicArea.setOrderPosition Tank 526.5/247.5
+aiStrategicArea.setOrderPosition Infantry 524.5/247.5
+aiStrategicArea.setSide 1
+
+aiStrategicArea.create US_Base 842.4/580.1 862.4/600.1 200
+aiStrategicArea.addNeighbour OpenSpawnPoint_Village
+aiStrategicArea.addNeighbour Outpost
+aiStrategicArea.addObjectTypeFlag Centre
+aiStrategicArea.addObjectTypeFlag ControlPoint
+aiStrategicArea.setOrderPosition Tank 860.5/601.5
+aiStrategicArea.setOrderPosition Infantry 861.5/600.5
+aiStrategicArea.setSide 2
+
+aiStrategicArea.create Iraq_Base 283.7/283.3 303.7/303.3 150
+aiStrategicArea.addNeighbour Small_Village
+aiStrategicArea.addNeighbour Outpost
+aiStrategicArea.addObjectTypeFlag Flank
+aiStrategicArea.addObjectTypeFlag ControlPoint
+aiStrategicArea.setOrderPosition Tank 305.5/302.5
+aiStrategicArea.setOrderPosition Infantry 304.5/303.5
+aiStrategicArea.setSide 1
+
+aiStrategicArea.create Outpost 419/607.2 434/622.2 150
+aiStrategicArea.addNeighbour OpenSpawnPoint_Village
+aiStrategicArea.addNeighbour Small_Village
+aiStrategicArea.addNeighbour US_Base
+aiStrategicArea.addNeighbour Iraq_Base
+aiStrategicArea.addObjectTypeFlag Flank
+aiStrategicArea.addObjectTypeFlag ControlPoint
+aiStrategicArea.setOrderPosition Tank 431.5/623.5
+aiStrategicArea.setOrderPosition Infantry 434.5/621.5

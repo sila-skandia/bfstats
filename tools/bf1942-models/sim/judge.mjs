@@ -3,12 +3,44 @@
 // bar is the baseline's spread, fixed here before any level is judged:
 // a rate must be no worse than the baseline's 90th percentile, a count no
 // lower than its 10th, and the outcome checks must hold.
+//
+// A rate over both sides halves a fault only one side has, so the rates a
+// side can be told apart on are also judged on the worse side's figure,
+// against the baseline's own worse-side spread (`WORSE_SIDE`).
 
 export const LOWER_IS_BETTER = [
   'stuckSecondsPerBotMinute', 'idleShare', 'oscillationsPerBotMinute', 'selfDeathsPerBotMinute',
   'spawnTrapsPerBotMinute', 'routeFailuresPerBotMinute', 'redeploysPerBotMinute', 'teamKillsPerBotMinute',
 ];
 export const HIGHER_IS_BETTER = ['capturesTotal', 'enemyKillsPerBotMinute'];
+/**
+ * The worse side's figure of each movement rate, and of the share of a
+ * side's deaths and redeploys that no enemy caused (`detect.mjs
+ * sideFigures`). Lower is better; the bar is the 90th percentile of the
+ * baseline runs' own worse-side figures.
+ */
+export const WORSE_SIDE = [
+  'stuckSecondsPerBotMinuteWorseSide', 'spawnTrapsPerBotMinuteWorseSide', 'routeFailuresPerBotMinuteWorseSide',
+  'redeploysPerBotMinuteWorseSide', 'nonEnemyDeathShareWorseSide',
+];
+/**
+ * The figures of a match played with the level's vehicles in (`detect.mjs
+ * vehicleFigures`) that are judged, lower is better, by the same rule and
+ * only against a baseline that carries them (`baselines/vehicles-dice.json`).
+ */
+export const VEHICLE_LOWER = [
+  'hullStuckSecondsPerDrivingMinute', 'hullStuckSecondsPerDrivingMinuteWorseSide', 'unitsNeverUsedShare', 'tankSilentShare',
+];
+/**
+ * Kept in a vehicles baseline for the reader and never judged. The mounted
+ * share is context. Team kills from a seat have no bar to be held to: the
+ * DICE runs made one in sixty matches (0 at the 10th, 50th and 90th
+ * percentile at both sizes), and a bar of nothing with no spread fails a
+ * level for a single one.
+ */
+export const VEHICLE_CONTEXT = ['mountedTeamKillsPerBotMinute', 'mountedShare'];
+/** The most a share can be. A bar there can never fail, so it is no bar. */
+export const SHARE_CEILING = 1;
 
 export function quantile(sorted, q) {
   if (!sorted.length) return null;
@@ -52,13 +84,16 @@ export function buildBaseline(rows, note = '') {
     const mine = rows.filter(r => r.botsPerSide === size);
     const levels = [...new Set(mine.map(r => r.level))].sort();
     const metrics = {};
-    for (const k of [...LOWER_IS_BETTER, ...HIGHER_IS_BETTER, 'firstCapture']) metrics[k] = spread(mine.map(r => r[k]));
+    for (const k of [...LOWER_IS_BETTER, ...HIGHER_IS_BETTER, 'firstCapture', ...WORSE_SIDE]) metrics[k] = spread(mine.map(r => r[k]));
+    // The vehicle figures only where a match has them: an on-foot baseline carries none, and none is judged against it.
+    const vehicle = [...VEHICLE_LOWER, ...VEHICLE_CONTEXT].filter(k => mine.some(r => Number.isFinite(r[k])));
+    for (const k of vehicle) metrics[k] = spread(mine.map(r => r[k]));
     const perLevel = Object.fromEntries(levels.map(l => {
       const lr = mine.filter(r => r.level === l);
       return [l, {
         matches: lr.length, flagCoverage: unionCoverage(lr)?.coverage ?? null, never: unionCoverage(lr)?.never ?? [],
         winners: balance(lr).split, oneSided: balance(lr).oneSided,
-        medians: Object.fromEntries([...LOWER_IS_BETTER, ...HIGHER_IS_BETTER].map(k => [k, spread(lr.map(r => r[k])).p50])),
+        medians: Object.fromEntries([...LOWER_IS_BETTER, ...HIGHER_IS_BETTER, ...WORSE_SIDE, ...vehicle].map(k => [k, spread(lr.map(r => r[k])).p50])),
       }];
     }));
     const cov = Object.values(perLevel).map(p => p.flagCoverage).filter(Number.isFinite);
@@ -83,6 +118,37 @@ export function aliveChecks(rows) {
   ];
 }
 
+/**
+ * One worse-side or vehicle check: the median over the seeds that have the
+ * figure must be no worse than the baseline's 90th percentile of the same
+ * figure.
+ *
+ * It is not measured, and does not fail, when there is nothing to hold it
+ * to: the rows are from before the detector kept the figure (an old
+ * detect.json) or from a match without vehicles, the baseline is, or no seed
+ * has a figure (the death share on a level where nobody dies or redeploys,
+ * which the alive checks fail on their own lines; the silent share on a
+ * level where no tank seat is held a minute), or the baseline's bar for a
+ * share is the whole of it. The bar's text says which.
+ */
+export function worseSideCheck(k, rows, band) {
+  const bar = band?.metrics?.[k]?.p90 ?? null;
+  const s = spread(rows.map(r => r[k]));
+  // A share whose baseline bar is the whole of it holds nothing to anything:
+  // Wake's Axis with vehicles, every one of whose deaths is by no enemy's hand.
+  const ceiling = /Share/.test(k) && bar !== null && bar >= SHARE_CEILING;
+  const why = bar === null ? 'the baseline has no band for it'
+    : ceiling ? "the baseline's bar is the measure's ceiling"
+    : !rows.some(r => r[k] !== undefined) ? `no row carries the field, a detect.json from before it${VEHICLE_LOWER.includes(k) ? ' or a match without vehicles' : ''}`
+    : !s.n ? 'neither side has a figure in any seed' : null;
+  if (why) return { metric: k, median: null, bar: `${bar === null ? 'no bar' : `<= ${bar}`} (not measured: ${why})`, measured: false, pass: true };
+  // In how many seeds each side was the worse one: the side a player would be watching.
+  const by = /WorseSide$/.test(k) ? rows.map(r => r[k.replace(/WorseSide$/, 'BySide')]).filter(Boolean) : null;
+  const worse = side => by.filter(b => Number.isFinite(b[side]) && (!Number.isFinite(b[3 - side]) || b[side] > b[3 - side])).length;
+  return { metric: k, median: s.p50, min: s.min, max: s.max, bar: `<= ${bar}${s.n < rows.length ? ` (over the ${s.n} of ${rows.length} seeds that have it)` : ''}`,
+           baselineP50: band.metrics[k].p50, measured: true, seeds: s.n, ...(by ? { worseSideSeeds: { 1: worse(1), 2: worse(2) } } : {}), pass: s.p50 <= bar };
+}
+
 /** Judge one level's rows (one side size) against the baseline. */
 export function judge(rows, baseline, { unreachable = [] } = {}) {
   const size = rows[0]?.botsPerSide;
@@ -102,6 +168,9 @@ export function judge(rows, baseline, { unreachable = [] } = {}) {
   const side = s => rows.some(r => (r.captures?.[s] ?? 0) > 0);
   checks.push({ metric: 'bothSidesCapture', median: side(1) && side(2) ? 1 : 0, bar: 'each side captures in at least one seed', pass: side(1) && side(2) });
   checks.push(...aliveChecks(rows));
+  for (const k of WORSE_SIDE) checks.push(worseSideCheck(k, rows, band));
+  // The vehicle checks, against a baseline of matches played with vehicles only.
+  for (const k of VEHICLE_LOWER) if (band.metrics[k]) checks.push(worseSideCheck(k, rows, band));
   const winners = rows.map(r => r.winner ?? 0);
   // Balance is reported, not judged: DICE's own levels show one-sided rounds (Berlin at 16 a side).
   return { verdict: checks.every(c => c.pass) ? 'pass' : 'fail', size, seeds: rows.length, failed: checks.filter(c => !c.pass).map(c => c.metric), checks, winners, balance: balance(rows) };

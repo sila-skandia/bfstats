@@ -47,6 +47,19 @@ full `extract_map.py` bake writes the same layers through the same functions
 `--all` takes the levels that already have a `scene.json` in the tree, so a
 pack's tree (which holds only the pack's own levels) is never widened with the
 vanilla levels its archives inherit. `--mod EoD` is accepted like any mod.
+
+`--no-archives`, for `--layer ai` alone, applies a generated bot layer
+(features/bot-map-generation) on a machine that does not hold the mod:
+
+    python3 patch_scene.py --layer ai --no-archives --mod FHSW --tree <maps tree> pegasus
+
+The game folder is never opened. The published `scene.json` says whether the
+level ships its own AI (an `ai` block with no `generated` marker): such a
+level is left alone, with a message. Any other level takes its generated
+layer through the same gate as ever (`bf42/ai_level.py generated_layer_gate`),
+and its `pathfinding/` folder is written from the layer's own maps. Left out,
+because only the archives hold them: `ai.coverValues` on a level that had no
+generated block yet (an existing block's are kept).
 """
 from __future__ import annotations
 
@@ -66,10 +79,14 @@ from extract_models import DEFAULT_GAME_DIR  # noqa: E402
 MAPS = HERE / "viewer" / "maps"
 
 
-def patch_level(game_dir: Path, mod: str, level_dir: Path, layers: list[str], *,
+def patch_level(game_dir: Path | None, mod: str, level_dir: Path, layers: list[str], *,
                 tree: Path, shared_sounds: Path | None = None,
-                audio_format: str = "mp3", dry_run: bool = False) -> dict:
-    """Patch one level. Returns {"level", "changed": [keys], "written": bool}."""
+                audio_format: str = "mp3", dry_run: bool = False,
+                no_archives: bool = False) -> dict:
+    """Patch one level. Returns {"level", "changed": [keys], "written": bool}.
+
+    `no_archives` (the `ai` layer alone) never opens `game_dir`: see
+    `patch_level_ai_without_archives`."""
     scene = level_dir / "scene.json"
     original = scene.read_text()
     report = json.loads(original)
@@ -77,6 +94,9 @@ def patch_level(game_dir: Path, mod: str, level_dir: Path, layers: list[str], *,
         # Not the extractor's serialisation, so a rewrite would reformat keys
         # nobody asked to touch. Refuse rather than churn a published file.
         raise ValueError(f"{scene} does not round-trip through indent=2 json")
+    if no_archives:
+        return patch_level_ai_without_archives(mod, level_dir, layers, scene, original,
+                                               report, dry_run=dry_run)
     ctx = scene_layers.LevelContext(
         game_dir, mod, report.get("level") or level_dir.name, out=tree,
         shared_sounds=shared_sounds, audio_format=audio_format)
@@ -111,6 +131,36 @@ def patch_level(game_dir: Path, mod: str, level_dir: Path, layers: list[str], *,
         tmp.replace(scene)
     return {"level": level_dir.name, "changed": changed, "written": written,
             "warnings": warnings}
+
+
+def patch_level_ai_without_archives(mod: str, level_dir: Path, layers: list[str],
+                                    scene: Path, original: str, report: dict, *,
+                                    dry_run: bool = False) -> dict:
+    """`patch_level` for `--no-archives`: the `ai` layer from the level's
+    generated bot layer and its published `scene.json`, the game folder never
+    opened (`scene_layers.layer_ai_without_archives` says what that leaves
+    out). A `scene.json` carrying a shipped `ai` block is returned untouched,
+    its `pathfinding/` folder too."""
+    if layers != ["ai"]:
+        raise ValueError("--no-archives patches the ai layer alone")
+    name = str(report.get("level") or level_dir.name)
+    if name.lower() != level_dir.name.lower():
+        raise ValueError(f"{level_dir.name}: its scene.json answers as {name}")
+    if scene_layers.ships_own_ai(report):
+        return {"level": level_dir.name, "changed": [], "written": False, "warnings": [],
+                "notes": ["left alone: its scene.json carries the level's own ai layer"]}
+    top, modes, notes = scene_layers.layer_ai_without_archives(mod, name, level_dir, report)
+    merged = scene_layers.merge(report, layers, top, modes)
+    text = scene_layers.dump(merged)
+    changed = sorted(k for k in set(report) | set(merged)
+                     if json.dumps(report.get(k)) != json.dumps(merged.get(k)))
+    written = text != original
+    if written and not dry_run:
+        tmp = scene.with_suffix(".json.tmp")
+        tmp.write_text(text)
+        tmp.replace(scene)
+    return {"level": level_dir.name, "changed": changed, "written": written,
+            "warnings": [], "notes": notes}
 
 
 def refresh_vehicle_sounds(game_dir: Path, mod: str, tree: Path, *,
@@ -152,6 +202,14 @@ def main(argv: list[str] | None = None) -> int:
                     choices=[*scene_layers.LAYERS, "all"])
     ap.add_argument("--mod", default="bf1942")
     ap.add_argument("--game-dir", type=Path, default=DEFAULT_GAME_DIR)
+    ap.add_argument("--no-archives", action="store_true",
+                    help="--layer ai alone: never open the game folder. The "
+                         "published scene.json says whether the level ships "
+                         "its own AI (then it is left alone); otherwise its "
+                         "generated bot layer is applied through the usual "
+                         "gate and pathfinding/ written from the layer's "
+                         "maps. Cover values need the archives: an existing "
+                         "generated block's are kept, a new one gets none.")
     ap.add_argument("--out", type=Path, default=MAPS,
                     help="the maps root (default viewer/maps); a mod's levels "
                          "are under <out>/mods/<mod>. See --tree.")
@@ -168,6 +226,9 @@ def main(argv: list[str] | None = None) -> int:
     args = ap.parse_args(argv)
 
     names = list(scene_layers.LAYERS) if "all" in args.layer else list(args.layer)
+    if args.no_archives and set(names) != {"ai"}:
+        ap.error("--no-archives is for --layer ai alone: every other layer is "
+                 "read from the game archives")
     layers = scene_layers.expand(names)
     if layers != [n for n in scene_layers.LAYERS if n in names]:
         print(f"layers:   {' '.join(layers)} (with what reads them)", file=sys.stderr)
@@ -200,7 +261,8 @@ def main(argv: list[str] | None = None) -> int:
         try:
             result = patch_level(game_dir, args.mod, level_dir, layers, tree=tree,
                                  shared_sounds=args.shared_sounds,
-                                 audio_format=args.audio_format, dry_run=args.dry_run)
+                                 audio_format=args.audio_format, dry_run=args.dry_run,
+                                 no_archives=args.no_archives)
         except (Exception, SystemExit) as exc:  # noqa: BLE001 - one level, not the run
             print(f"{name}: FAILED {exc}", file=sys.stderr)
             rc = 1
@@ -211,6 +273,8 @@ def main(argv: list[str] | None = None) -> int:
         print(f"{result['level']}: {what} ({time.time() - t0:.1f} s)")
         for warning in result["warnings"]:
             print(f"  warning: {warning}")
+        for note in result.get("notes", ()):
+            print(f"  no archives: {note}")
     if "sounds" in layers:
         rc = refresh_vehicle_sounds(game_dir, args.mod, tree,
                                     shared_sounds=args.shared_sounds,

@@ -10,6 +10,7 @@ aiStrategicArea.setTakeable 2 0
 aiStrategicArea.create AlliedBase 574.1/649.1 579.1/654.1 50
 aiStrategicArea.addNeighbour New_Control_Point1
 aiStrategicArea.addObjectTypeFlag Base
+aiStrategicArea.setOrderPosition Tank 576.5/655.5
 aiStrategicArea.setOrderPosition Infantry 578.5/654.5
 aiStrategicArea.setSide 2
 aiStrategicArea.setTakeable 1 0

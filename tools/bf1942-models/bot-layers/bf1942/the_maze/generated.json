@@ -1,12 +1,20 @@
 {
  "generator": "botgen",
- "version": 3,
+ "version": 4,
  "mod": "bf1942",
  "level": "the_maze",
+ "objectSpawners": 0,
  "template": "symmetric",
  "templateSource": "DICE, bf1942 Kharkov (1.6 patch archives): AI/Strategies.con, AI/conditions.con, AI/prerequisites.con, unchanged",
  "scope": "on foot: an infantry map painted from the walk test, the engine's own Tank0 map, infantry order positions, no strategic maps, no co-op layer",
- "unreachable": [],
+ "unreachable": [
+  "3",
+  "4"
+ ],
+ "unreachableReasons": {
+  "3": "route probe",
+  "4": "route probe"
+ },
  "botSpawnsExcluded": [],
  "walkMap": {
   "source": "walk test",
@@ -21,6 +29,124 @@
    "reason": null
   }
  },
+ "routeProbe": {
+  "chokeMax": 4,
+  "unreachable": [
+   "3",
+   "4"
+  ],
+  "stops": {
+   "3": {
+    "1": {
+     "stage": "choke",
+     "points": 20,
+     "metres": 60,
+     "first": [
+      [
+       458.8,
+       -634.6
+      ],
+      [
+       317.8,
+       -639.5
+      ],
+      [
+       318,
+       -636.5
+      ]
+     ]
+    },
+    "2": {
+     "stage": "choke",
+     "points": 19,
+     "metres": 57,
+     "first": [
+      [
+       317.8,
+       -639.5
+      ],
+      [
+       318,
+       -636.5
+      ],
+      [
+       318.3,
+       -633.5
+      ]
+     ]
+    }
+   },
+   "4": {
+    "1": {
+     "stage": "choke",
+     "points": 16,
+     "metres": 48,
+     "first": [
+      [
+       397.4,
+       -713.7
+      ],
+      [
+       400.3,
+       -714.4
+      ],
+      [
+       402.4,
+       -714
+      ]
+     ]
+    },
+    "2": {
+     "stage": "choke",
+     "points": 16,
+     "metres": 48,
+     "first": [
+      [
+       397.4,
+       -713.7
+      ],
+      [
+       400.3,
+       -714.4
+      ],
+      [
+       402.4,
+       -714
+      ]
+     ]
+    }
+   }
+  },
+  "oneSided": {},
+  "sides": {
+   "1": {
+    "spawns": 4,
+    "flags": [
+     "1",
+     "2",
+     "center"
+    ]
+   },
+   "2": {
+    "spawns": 4,
+    "flags": [
+     "1",
+     "2",
+     "center"
+    ]
+   }
+  },
+  "chokes": {
+   "1:1": 0,
+   "1:2": 12,
+   "2:1": 0,
+   "2:2": 0,
+   "center:1": 1,
+   "center:2": 0
+  },
+  "late": {},
+  "shutLinks": []
+ },
  "inputs": {
   "controlPoints": "629be50a9e4e76f5ad512cb94b21c8973298658156d807b3a348706a470c413a",
   "infantryMap": "e9e21a38c3105cd2850a2c6b6dcd8eac4482e6f89da1e0468012bfbddaf6963b",
@@ -29,7 +155,7 @@
  "files": {
   "AI.con": "3dc94f663ac7545695a38d3670752432e4a5e64efe048dc4b26d578aece3748c",
   "AIpathFinding.con": "714499ad831a139560e4913e729aee4c62a23457be02e0c36c73af18f4bb31cb",
-  "AI/StrategicAreas.con": "16e1bee178ea4d99edc93724b7218db4517b3ef96e8641f92112693db2674239",
+  "AI/StrategicAreas.con": "e01a772cf3d29678dc6cc934c8a8757dcbd1050d98eb498f7f2b992473e018ed",
   "AI/Strategies.con": "4ce0be59a0d6c5cd530db002fb062c4be8d936bc6ae59bd188803ccaf7869a8d",
   "AI/conditions.con": "68a0c7a8aec69954063147b60fae560b2874884285737aa085efa76597d395aa",
   "AI/prerequisites.con": "4c1f313bc285b228fd6ad03bfd1f44c5b15c8703c31f802eb605bc5f00f88bb5",

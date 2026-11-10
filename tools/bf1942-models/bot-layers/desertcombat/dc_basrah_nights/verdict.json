@@ -1,0 +1,50 @@
+{
+ "level": "dc_basrah_nights",
+ "verdict": "fail",
+ "outcome": "no-fight",
+ "config": "with vehicles",
+ "generatorVersion": 4,
+ "inputs": {
+  "controlPoints": "8ae304b8b42cdc5d2748c571ced417bf53f7737387caff378e764cb9577ebb59",
+  "infantryMap": "dfde3ec49a308a6e2476ceffbf56b3ba941322a600fa9386319ff6421d808f46",
+  "template": "43f8a790471528016570235f76e97dbb2045732458781a5139f37fed68bf98c0"
+ },
+ "baseline": "DICE layers with vehicles: berlin, stalingrad, kharkov, bocage; seeds 1..10, 600 s",
+ "seeds": 10,
+ "sizes": {
+  "8": {
+   "verdict": "fail",
+   "failed": [
+    "enemyKillsPerBotMinute",
+    "bothSidesKill",
+    "ticketsBleed",
+    "unitsNeverUsedShare"
+   ],
+   "winners": [
+    3,
+    6,
+    1
+   ]
+  },
+  "16": {
+   "verdict": "fail",
+   "failed": [
+    "idleShare",
+    "capturesTotal",
+    "enemyKillsPerBotMinute",
+    "flagCoverage",
+    "bothSidesCapture",
+    "nonEnemyDeathShareWorseSide",
+    "unitsNeverUsedShare"
+   ],
+   "winners": [
+    2,
+    6,
+    2
+   ]
+  }
+ },
+ "oneSided": null,
+ "unreachable": [],
+ "lintErrors": []
+}

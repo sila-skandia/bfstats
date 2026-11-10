@@ -17,8 +17,9 @@
 import { existsSync, readFileSync, writeFileSync } from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
-import { loadForBots, levelWalkFacts, flagsOf, nearestFree, ORDER_SEARCH } from './botgen.mjs';
+import { loadForBots, levelWalkFacts, flagsOf, spawnsOf, nearestFree, ORDER_SEARCH } from './botgen.mjs';
 import { components, STOREY } from './walkflood.mjs';
+import { CHOKE_MAX, probeLevel, probeTools, wayStop } from './routeprobe.mjs';
 
 export { components };
 
@@ -36,7 +37,7 @@ function inBox(area, x, z, grow = 0) {
  * `ground(x, z)` the map's own tests, `spawns` `[x, z]` soldier spawn points,
  * `defined` extra condition names the layer's own script defines.
  */
-export function lintLayer({ ai, flags, grid = null, isWalkable = null, ground = null, spawns = [], defined = [], pathIndex = null, walk = null }) {
+export function lintLayer({ ai, flags, grid = null, isWalkable = null, ground = null, spawns = [], defined = [], pathIndex = null, walk = null, probe = null }) {
   const errors = [], warnings = [];
   // `dead`: the class of a finding that predicts a level nobody fights on (`DEAD_CLASSES`).
   const err = (check, text, dead = null) => errors.push({ check, text, ...(dead ? { dead } : {}) });
@@ -96,6 +97,7 @@ export function lintLayer({ ai, flags, grid = null, isWalkable = null, ground = 
     if (marked && !flags.some(f => inBox(a, f.x, f.z))) err('coverage', `area ${a.name} is flagged for a control point and holds none`);
   }
   const facts = { areas: areas.length, controlPoints: flags.length, capturable: capturable.length };
+  if (probe) Object.assign(facts, lintProbe({ probe, err, warn }));
   if (!grid || !isWalkable) return { errors, warnings, facts };
   // Order positions.
   for (const a of areas) {
@@ -150,6 +152,47 @@ export const DEAD_CLASSES = {
   'no-route': 'a side that can reach no flag', 'no-flag': 'no flag a soldier can stand in',
   refused: 'spawns on ground the page refuses to climb',
 };
+
+/**
+ * The route probe's findings on the layer as applied (`routeprobe.mjs
+ * probeLevel` over the areas that carry an order position, `lintLevel`):
+ * a flag in play no side's bots have an open way to is an error (the
+ * generator takes such a flag out of play, so this is a layer made some
+ * other way, or a stale one); a flag one side alone has a way to is a
+ * warning that names the side; a side with a way to no flag is a dead
+ * level.
+ *
+ * INVENTION, as the probe is.
+ */
+function lintProbe({ probe, err, warn }) {
+  const stop = w => {
+    const s = wayStop(w);
+    return s.stage === 'choke' ? `${s.metres} m of it is shut by one teammate standing still (${s.points} choke points, DICE's levels have at most ${CHOKE_MAX})`
+      : s.stage === 'strategic' ? 'the strategic search has no answer'
+        : s.stage === 'leg' ? `the leg search from ${s.from.join(', ')} to ${s.to.join(', ')} never closes` : s.stage;
+  };
+  const names = Object.keys(probe.flags);
+  const shut = [];
+  for (const name of names) {
+    const f = probe.flags[name];
+    if (f.sides.length === 0) { shut.push(name); err('route', `control point ${name}: no bot's route to it is open (side 1: ${stop(f.direct[1])}; side 2: ${stop(f.direct[2])})`); }
+    else if (f.sides.length === 1) {
+      const other = f.sides[0] === 1 ? 2 : 1;
+      warn('route', `control point ${name}: only side ${f.sides[0]}'s bots have an open route to it (side ${other}: ${stop(f.direct[other])})`);
+    }
+    for (const side of f.sides) {
+      const w = f.direct[side];
+      if (w?.open && w.failures > 0) warn('route', `control point ${name}: side ${side}'s route closes only after ${w.failures} failed plan${w.failures > 1 ? 's' : ''}`);
+    }
+  }
+  if (names.length) {
+    for (const side of [1, 2]) {
+      if (probe.sides[side].spawns && !probe.sides[side].flags.length) err('route', `side ${side}'s bots have an open route to none of the ${names.length} flags in play`, 'no-route');
+    }
+  }
+  for (const l of probe.links) if (!l.open) warn('route', `the way from ${l.from} to its neighbour ${l.to} is not open: ${stop(l.way)}`);
+  return { routeShut: shut, routeSides: { 1: probe.sides[1].flags, 2: probe.sides[2].flags } };
+}
 
 /** The classes of dead level a lint result predicts: `[]` for none. */
 export function predictedDead(lint) {
@@ -234,7 +277,20 @@ export function definedConditions(text) {
 export async function lintLevel({ maps, models = null, map, source = null }) {
   const loaded = await loadForBots({ maps, models, map, layerDir: source });
   const { nav, grid, extras, world } = loaded;
-  const walk = slimFacts(await levelWalkFacts(loaded));
+  const fullWalk = await levelWalkFacts(loaded);
+  const walk = slimFacts(fullWalk);
+  // The route probe on the layer as applied: its areas' own infantry order positions, each side's usable spawns.
+  let probe = null;
+  if (extras.ai?.strategicAreas?.length) {
+    const fixed = new Set(flagsOf(extras).filter(f => f.fixed).map(f => f.name.toLowerCase()));
+    const order = a => Object.entries(a.orderPositions ?? {}).find(([type]) => /^infant/i.test(type))?.[1] ?? null;
+    const inPlay = extras.ai.strategicAreas.filter(a => !fixed.has(a.name.toLowerCase()) && order(a))
+      .map(a => ({ name: a.name, order: order(a), neighbours: a.neighbours ?? [] }));
+    const sideOf = new Map(spawnsOf(extras).map(sp => [sp.name, sp]));
+    const starts = fullWalk.spawns.filter(sp => sp.usable && sp.over < STOREY && (sp.side === 1 || sp.side === 2) && sideOf.has(sp.name))
+      .map(sp => ({ side: sp.side, x: sideOf.get(sp.name).x, z: sideOf.get(sp.name).z }));
+    probe = probeLevel(await probeTools(), grid, { areas: inPlay, spawns: starts });
+  }
   const file = source ? path.join(source, 'AI', 'conditions.con') : null;
   const indexFile = path.join(maps, map, 'pathfinding', 'index.json');
   const spawns = (extras.soldierSpawns ?? []).filter(s => s.position).map(s => [s.position[0], s.position[2]]);
@@ -244,7 +300,7 @@ export async function lintLevel({ maps, models = null, map, source = null }) {
     ai: extras.ai, flags: flagsOf(extras), grid, isWalkable: nav.isWalkable, ground, spawns,
     defined: file && existsSync(file) ? definedConditions(readFileSync(file, 'latin1')) : [],
     pathIndex: existsSync(indexFile) ? JSON.parse(readFileSync(indexFile, 'utf8')) : null,
-    walk,
+    walk, probe,
   });
   return { level: map, generated: extras.ai?.generated ?? null, mapSource: grid.source, ...res, walk };
 }

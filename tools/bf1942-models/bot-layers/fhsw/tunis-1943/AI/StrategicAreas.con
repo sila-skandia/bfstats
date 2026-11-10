@@ -1,0 +1,83 @@
+rem *** Strategic areas: one per control point (botgen) ***
+
+aiStrategicArea.create axisbase 719.3/27 729.3/37 50
+aiStrategicArea.addNeighbour axisbase2
+aiStrategicArea.addNeighbour tunisia2
+aiStrategicArea.addNeighbour tunisia3
+aiStrategicArea.addObjectTypeFlag Base
+aiStrategicArea.setOrderPosition Tank 729.5/39.5
+aiStrategicArea.setOrderPosition Infantry 730.5/36.5
+aiStrategicArea.setSide 1
+aiStrategicArea.setTakeable 2 0
+
+aiStrategicArea.create axisbase2 641.6/207.7 649.6/215.7 50
+aiStrategicArea.addNeighbour axisbase
+aiStrategicArea.addNeighbour tunisia3
+aiStrategicArea.addNeighbour tunisia4
+aiStrategicArea.addObjectTypeFlag Base
+aiStrategicArea.setOrderPosition Tank 649.5/219.5
+aiStrategicArea.setOrderPosition Infantry 649.5/216.5
+aiStrategicArea.setSide 1
+aiStrategicArea.setTakeable 2 0
+
+aiStrategicArea.create tunisia1 271.7/94.5 279.7/102.5 150
+aiStrategicArea.addNeighbour alliedbase
+aiStrategicArea.addNeighbour tunisia2
+aiStrategicArea.addNeighbour tunisia3
+aiStrategicArea.addNeighbour tunisia4
+aiStrategicArea.addObjectTypeFlag Flank
+aiStrategicArea.addObjectTypeFlag ControlPoint
+aiStrategicArea.setOrderPosition Tank 281.5/102.5
+aiStrategicArea.setOrderPosition Infantry 280.5/102.5
+aiStrategicArea.setSide 2
+
+aiStrategicArea.create alliedbase 269.2/362.4 274.2/367.4 50
+aiStrategicArea.addNeighbour tunisia1
+aiStrategicArea.addNeighbour tunisia4
+aiStrategicArea.addObjectTypeFlag Base
+aiStrategicArea.setOrderPosition Tank 274.5/365.5
+aiStrategicArea.setOrderPosition Infantry 274.5/366.5
+aiStrategicArea.setSide 2
+aiStrategicArea.setTakeable 1 0
+
+aiStrategicArea.create tunisia2 413.1/30.3 421.1/38.3 150
+aiStrategicArea.addNeighbour axisbase
+aiStrategicArea.addNeighbour tunisia1
+aiStrategicArea.addNeighbour tunisia3
+aiStrategicArea.addNeighbour tunisia4
+aiStrategicArea.addObjectTypeFlag Flank
+aiStrategicArea.addObjectTypeFlag ControlPoint
+aiStrategicArea.setOrderPosition Tank 421.5/36.5
+aiStrategicArea.setOrderPosition Infantry 421.5/37.5
+aiStrategicArea.setSide 1
+
+aiStrategicArea.create tunisia3 524.4/123.3 532.4/131.3 150
+aiStrategicArea.addNeighbour axisbase
+aiStrategicArea.addNeighbour axisbase2
+aiStrategicArea.addNeighbour tunisia1
+aiStrategicArea.addNeighbour tunisia2
+aiStrategicArea.addNeighbour tunisia4
+aiStrategicArea.addObjectTypeFlag Flank
+aiStrategicArea.addObjectTypeFlag Close
+aiStrategicArea.addObjectTypeFlag ControlPoint
+aiStrategicArea.setOrderPosition Tank 534.5/131.5
+aiStrategicArea.setOrderPosition Infantry 531.5/131.5
+aiStrategicArea.setSide 1
+
+aiStrategicArea.create tunisia4 448.2/232.4 456.2/240.4 300
+aiStrategicArea.addNeighbour axisbase2
+aiStrategicArea.addNeighbour tunisia1
+aiStrategicArea.addNeighbour alliedbase
+aiStrategicArea.addNeighbour tunisia2
+aiStrategicArea.addNeighbour tunisia3
+aiStrategicArea.addObjectTypeFlag Centre
+aiStrategicArea.addObjectTypeFlag StrongPoint
+aiStrategicArea.addObjectTypeFlag Close
+aiStrategicArea.addObjectTypeFlag ControlPoint
+aiStrategicArea.setOrderPosition Tank 454.5/240.5
+aiStrategicArea.setOrderPosition Infantry 455.5/240.5
+aiStrategicArea.setSide 2
+
+aiStrategicArea.create tunisia5 407.8/133.3 412.8/138.3 10
+aiStrategicArea.setTakeable 1 0
+aiStrategicArea.setTakeable 2 0

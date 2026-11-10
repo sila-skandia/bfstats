@@ -1,12 +1,14 @@
 {
  "generator": "botgen",
- "version": 3,
+ "version": 4,
  "mod": "bf1942",
  "level": "hop",
+ "objectSpawners": 2,
  "template": "symmetric",
  "templateSource": "DICE, bf1942 Kharkov (1.6 patch archives): AI/Strategies.con, AI/conditions.con, AI/prerequisites.con, unchanged",
  "scope": "on foot: an infantry map painted from the walk test, the engine's own Tank0 map, infantry order positions, no strategic maps, no co-op layer",
  "unreachable": [],
+ "unreachableReasons": {},
  "botSpawnsExcluded": [],
  "walkMap": {
   "source": "walk test",
@@ -164,6 +166,40 @@
    "raised": [],
    "reason": null
   }
+ },
+ "routeProbe": {
+  "chokeMax": 4,
+  "unreachable": [],
+  "stops": {},
+  "oneSided": {
+   "AxisBase": 1,
+   "AlliedBase": 2
+  },
+  "sides": {
+   "1": {
+    "spawns": 2,
+    "flags": [
+     "AxisBase"
+    ]
+   },
+   "2": {
+    "spawns": 2,
+    "flags": [
+     "AlliedBase"
+    ]
+   }
+  },
+  "chokes": {
+   "AxisBase:1": 0,
+   "AxisBase:2": 5,
+   "AlliedBase:1": 5,
+   "AlliedBase:2": 0
+  },
+  "late": {},
+  "shutLinks": [
+   "AxisBase>AlliedBase",
+   "AlliedBase>AxisBase"
+  ]
  },
  "inputs": {
   "controlPoints": "9a2c8aed0e23458fce46b65b98c340d52e4a3e32caead5c451e97e0fe59f2a33",

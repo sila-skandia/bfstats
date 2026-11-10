@@ -1,0 +1,59 @@
+{
+ "level": "pegasus",
+ "verdict": "fail",
+ "outcome": "no-fight",
+ "config": "with vehicles",
+ "generatorVersion": 4,
+ "inputs": {
+  "controlPoints": "42cee693392cf5f00dc2d935292cd801fabab0bd8bcd693ae3f17dca40a7f26f",
+  "infantryMap": "355e36802f8f484dcd6b28ca359630a10cbdce51ebdae11284f43647e3b8ee18",
+  "template": "43f8a790471528016570235f76e97dbb2045732458781a5139f37fed68bf98c0"
+ },
+ "baseline": "DICE layers with vehicles: berlin, stalingrad, kharkov, bocage; seeds 1..10, 600 s",
+ "seeds": 10,
+ "sizes": {
+  "8": {
+   "verdict": "fail",
+   "failed": [
+    "routeFailuresPerBotMinute",
+    "enemyKillsPerBotMinute",
+    "flagCoverage",
+    "bothSidesCapture",
+    "bothSidesKill",
+    "ticketsBleed",
+    "routeFailuresPerBotMinuteWorseSide",
+    "unitsNeverUsedShare"
+   ],
+   "winners": [
+    5,
+    3,
+    2
+   ]
+  },
+  "16": {
+   "verdict": "fail",
+   "failed": [
+    "idleShare",
+    "routeFailuresPerBotMinute",
+    "capturesTotal",
+    "enemyKillsPerBotMinute",
+    "flagCoverage",
+    "bothSidesCapture",
+    "bothSidesKill",
+    "routeFailuresPerBotMinuteWorseSide",
+    "nonEnemyDeathShareWorseSide",
+    "hullStuckSecondsPerDrivingMinute",
+    "hullStuckSecondsPerDrivingMinuteWorseSide",
+    "unitsNeverUsedShare"
+   ],
+   "winners": [
+    2,
+    7,
+    1
+   ]
+  }
+ },
+ "oneSided": null,
+ "unreachable": [],
+ "lintErrors": []
+}

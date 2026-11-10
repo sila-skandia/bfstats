@@ -2,7 +2,8 @@
  "level": "omaturi_channel_sniper",
  "verdict": "fail",
  "outcome": "no-fight",
- "generatorVersion": 3,
+ "config": "on foot",
+ "generatorVersion": 4,
  "inputs": {
   "controlPoints": "010feb4eb74e46952ce9d34aea2114b6810afc5f94e2bb2227181f6728f5e18e",
   "infantryMap": "52767c30ea4d73334b4bf04a45ccc7bd5a1af579fb642287dfe124853a1294da",
@@ -18,7 +19,9 @@
     "idleShare",
     "enemyKillsPerBotMinute",
     "bothSidesKill",
-    "ticketsBleed"
+    "ticketsBleed",
+    "stuckSecondsPerBotMinuteWorseSide",
+    "spawnTrapsPerBotMinuteWorseSide"
    ],
    "winners": [
     0,
@@ -33,7 +36,10 @@
     "enemyKillsPerBotMinute",
     "bothSidesCapture",
     "bothSidesKill",
-    "ticketsBleed"
+    "ticketsBleed",
+    "stuckSecondsPerBotMinuteWorseSide",
+    "spawnTrapsPerBotMinuteWorseSide",
+    "nonEnemyDeathShareWorseSide"
    ],
    "winners": [
     0,

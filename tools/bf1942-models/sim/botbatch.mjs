@@ -34,6 +34,11 @@ import { aliveChecks, buildBaseline, judge, spread, unionCoverage } from './judg
 
 const HERE = path.dirname(fileURLToPath(import.meta.url));
 export const BASELINE_FILE = path.join(HERE, 'baselines', 'onfoot-dice.json');
+/** The bar for a match played with the level's vehicles in (`--vehicles`): DICE's levels, run the same way. */
+export const VEHICLE_BASELINE_FILE = path.join(HERE, 'baselines', 'vehicles-dice.json');
+/** The two ways a match is played, as a verdict names them. */
+export const CONFIG = { foot: 'on foot', vehicles: 'with vehicles' };
+export const baselineFileFor = vehicles => (vehicles ? VEHICLE_BASELINE_FILE : BASELINE_FILE);
 /** The classes of `candidates.csv` version one of the generator covers: on foot. */
 export const IN_SCOPE = ['contained on-foot'];
 /** `candidates.csv`'s tree column to the mod folder whose tree holds the level. */
@@ -49,9 +54,10 @@ function runOne(args, cwd) {
 }
 
 /** Run the seeded matrix for one level; returns its detector rows. */
-export async function runMatrix({ maps, models, level, out, seeds = 10, sizes = [8, 16], time = 600, traceEvery = 30, jobs = Math.max(1, Math.min(8, os.cpus().length - 2)), keepTraces = false, force = false }) {
+export async function runMatrix({ maps, models, level, out, seeds = 10, sizes = [8, 16], time = 600, traceEvery = 30, jobs = Math.max(1, Math.min(8, os.cpus().length - 2)), keepTraces = false, force = false, vehicles = false }) {
   const tasks = [];
-  for (const size of sizes) for (let seed = 1; seed <= seeds; seed++) tasks.push({ size, seed, dir: path.join(out, level, `b${size}`, `s${seed}`) });
+  // `b8` on foot, `v8` with the level's vehicles: the two never share a folder, so neither resumes from the other.
+  for (const size of sizes) for (let seed = 1; seed <= seeds; seed++) tasks.push({ size, seed, dir: path.join(out, level, `${vehicles ? 'v' : 'b'}${size}`, `s${seed}`) });
   const rows = [];
   let next = 0;
   await Promise.all(Array.from({ length: jobs }, async () => {
@@ -61,9 +67,9 @@ export async function runMatrix({ maps, models, level, out, seeds = 10, sizes = 
       if (!force && existsSync(rowFile)) { rows.push(JSON.parse(readFileSync(rowFile, 'utf8'))); continue; }
       mkdirSync(t.dir, { recursive: true });
       await runOne([path.join(HERE, 'run.mjs'), '--map', level, '--maps', maps, ...(models ? ['--models', models] : []),
-                    '--bots', String(t.size), '--time', String(time), '--seed', String(t.seed), '--no-vehicles',
+                    '--bots', String(t.size), '--time', String(time), '--seed', String(t.seed), ...(vehicles ? [] : ['--no-vehicles']),
                     '--trace-every', String(traceEvery), '--quiet', '--out', t.dir], path.join(HERE, '..'));
-      const row = await detectRun(t.dir);
+      const row = { ...await detectRun(t.dir), config: vehicles ? CONFIG.vehicles : CONFIG.foot };
       writeFileSync(rowFile, JSON.stringify(row) + '\n');
       if (!keepTraces) rmSync(path.join(t.dir, 'trace.jsonl'), { force: true });
       rows.push(row);
@@ -264,7 +270,7 @@ function parseArgs(argv) {
   const a = { _: [] };
   for (let i = 0; i < argv.length; i++) {
     const k = argv[i];
-    if (k === '--force' || k === '--keep-traces' || k === '--no-generate' || k === '--no-match' || k === '--despite-lint') a[k.slice(2)] = true;
+    if (k === '--force' || k === '--keep-traces' || k === '--no-generate' || k === '--no-match' || k === '--despite-lint' || k === '--vehicles') a[k.slice(2)] = true;
     else if (k.startsWith('--')) a[k.slice(2)] = argv[++i];
     else a._.push(k);
   }
@@ -290,6 +296,7 @@ async function main() {
     console.error('usage: node sim/botbatch.mjs <baseline|matrix|level|census> --maps <tree> [--models <tree>] --levels a,b | --candidates <csv> [--classes c1;c2]\n'
       + '       census: one 300 s match a level, 8 a side [--time 300] [--bots 8] [--seed 1] [--no-match] [--no-generate]\n'
       + '       node sim/botbatch.mjs accept --levels a,b --reason "<why>" [--mod bf1942] [--layers <dir>]\n'
+      + '       [--vehicles] the vehicles of the level in, judged against baselines/vehicles-dice.json (default: on foot)\n'
       + '       [--mod bf1942] [--game-dir <dir>] [--archives <dir of level .rfa>] [--out <dir>] [--seeds 10] [--sizes 8,16] [--time 600] [--jobs N] [--baseline <file>] [--force] [--keep-traces] [--no-generate]\n'
       + '       level: a level with a lint error is not run (outcome "unsuitable") unless --despite-lint');
     process.exit(2);
@@ -297,16 +304,17 @@ async function main() {
   const maps = path.resolve(a.maps), models = a.models ? path.resolve(a.models) : null;
   const out = path.resolve(a.out ?? path.join(HERE, '..', 'out', 'bot-layers', cmd));
   const opts = { maps, models, out, seeds: Number(a.seeds ?? 10), sizes: String(a.sizes ?? '8,16').split(',').map(Number), time: Number(a.time ?? 600),
-                 force: !!a.force, keepTraces: !!a['keep-traces'], ...(a.jobs ? { jobs: Number(a.jobs) } : {}) };
+                 force: !!a.force, keepTraces: !!a['keep-traces'], vehicles: !!a.vehicles, ...(a.jobs ? { jobs: Number(a.jobs) } : {}) };
+  const config = opts.vehicles ? CONFIG.vehicles : CONFIG.foot;
   let levels = a.levels ? a.levels.split(',').map(l => ({ level: l.toLowerCase(), mod: a.mod ?? 'bf1942' })) : [];
   if (a.candidates) levels = candidateLevels(path.resolve(a.candidates), (a.classes ?? IN_SCOPE.join(';')).split(';'));
   levels = levels.filter(l => existsSync(path.join(maps, l.level, 'scene.json')) || (console.error(`skip ${l.level}: not in ${maps}`), false));
   if (cmd === 'baseline') {
     const rows = [];
     for (const l of levels) { console.error(`baseline ${l.level}`); rows.push(...await runMatrix({ ...opts, level: l.level })); }
-    const file = path.resolve(a.baseline ?? BASELINE_FILE);
+    const file = path.resolve(a.baseline ?? baselineFileFor(opts.vehicles));
     mkdirSync(path.dirname(file), { recursive: true });
-    const slim = buildBaseline(rows, `DICE layers on foot: ${levels.map(l => l.level).join(', ')}; seeds 1..${opts.seeds}, ${opts.time} s, --no-vehicles`);
+    const slim = buildBaseline(rows, `DICE layers ${config}: ${levels.map(l => l.level).join(', ')}; seeds 1..${opts.seeds}, ${opts.time} s${opts.vehicles ? '' : ', --no-vehicles'}`);
     writeFileSync(file, JSON.stringify(slim, null, 1) + '\n');
     console.log(`baseline: ${rows.length} matches -> ${file}`);
     return;
@@ -340,7 +348,7 @@ async function main() {
         const item = prepared[next++];
         if (item.error || a['no-match']) continue;
         try {
-          const rows = await runMatrix({ maps, models, out, level: item.level, seeds: seed, sizes: [bots], time, jobs: 1, force: true });
+          const rows = await runMatrix({ maps, models, out, level: item.level, seeds: seed, sizes: [bots], time, jobs: 1, force: true, vehicles: opts.vehicles });
           item.row = rows.find(r => r.seed === seed) ?? rows[rows.length - 1];
         } catch (e) { item.error = e.message.slice(0, 200); }
       }
@@ -351,13 +359,13 @@ async function main() {
         marker: existsSync(markerFile) ? JSON.parse(readFileSync(markerFile, 'utf8')) : null });
     });
     mkdirSync(out, { recursive: true });
-    writeFileSync(path.join(out, 'census.json'), JSON.stringify({ time, bots, seed, rows }, null, 1) + '\n');
+    writeFileSync(path.join(out, 'census.json'), JSON.stringify({ time, bots, seed, config, rows }, null, 1) + '\n');
     console.log(censusTable(rows));
     console.log(`census: ${rows.length} levels, ${rows.filter(r => r.alive).length} alive, ${rows.filter(r => r.alive === false).length} dead, `
       + `lint wrong on ${rows.filter(r => r.lintAgrees === false).length} -> ${path.join(out, 'census.json')}`);
     return;
   }
-  const baseline = JSON.parse(readFileSync(path.resolve(a.baseline ?? BASELINE_FILE), 'utf8'));
+  const baseline = JSON.parse(readFileSync(path.resolve(a.baseline ?? baselineFileFor(opts.vehicles)), 'utf8'));
   let failed = 0;
   for (const l of levels) {
     let lint = null, none = null;
@@ -387,13 +395,13 @@ async function main() {
       }
     }
     const rows = refused ? [] : await runMatrix({ ...opts, out: cmd === 'level' ? path.join(out, l.level, 'generated') : out, level: l.level });
-    const v = refused ?? verdictOf(l.level, rows, baseline, lint, none);
+    const v = { ...(refused ?? verdictOf(l.level, rows, baseline, lint, none)), config };
     mkdirSync(path.join(out, l.level), { recursive: true });
     writeFileSync(path.join(out, l.level, 'verdict.json'), JSON.stringify(v, null, 1) + '\n');
     if (cmd === 'level') {
       // The layer's own record, which the bake's gate reads (`bf42/ai_level.py generated_layer_gate`).
       const marker = JSON.parse(readFileSync(path.join(layerDir, 'generated.json'), 'utf8'));
-      const short = { level: l.level, verdict: v.verdict, outcome: v.outcome, generatorVersion: marker.version, inputs: marker.inputs,
+      const short = { level: l.level, verdict: v.verdict, outcome: v.outcome, config, generatorVersion: marker.version, inputs: marker.inputs,
                       baseline: baseline.note, seeds: opts.seeds, sizes: Object.fromEntries(Object.entries(v.sizes).map(([s, j]) => [s, { verdict: j.verdict, failed: j.failed, winners: j.balance?.split }])),
                       oneSided: v.oneSided, unreachable: v.unreachable, lintErrors: lint.errors.map(e => e.text) };
       const file = path.join(layerDir, 'verdict.json');
