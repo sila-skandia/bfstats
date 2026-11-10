@@ -57,9 +57,14 @@ export function lintLayer({ ai, flags, grid = null, isWalkable = null, ground = 
   const warn = (check, text) => warnings.push({ check, text });
   const areas = ai?.strategicAreas ?? [];
   if (!areas.length) { err('loads', 'no strategic areas'); return { errors, warnings, facts: {} }; }
-  for (const m of [...(pathIndex?.maps ?? []), ...(pathIndex?.strategic ?? [])]) {
-    if (!m.loaded) err('loads', `${m.name}: ${m.reason ?? 'does not load'}`);
+  for (const m of pathIndex?.maps ?? []) if (!m.loaded) err('loads', `${m.name}: ${m.reason ?? 'does not load'}`);
+  // The engine aborts before it writes a generated layer's strategic maps
+  // (section 13); the page then plans on its own coarse layer.
+  for (const m of pathIndex?.strategic ?? []) {
+    if (!m.loaded) (ai.generated ? warn : err)('loads', `strategic map ${m.name}: ${m.reason ?? 'does not load'}`);
   }
+  const excluded = new Set((ai.generated?.unreachable ?? []).map(n => n.toLowerCase()));
+  const unreachable = [];
   // References.
   const byName = new Map(areas.map(a => [a.name.toLowerCase(), a]));
   if (byName.size !== areas.length) err('references', 'two areas share a name');
@@ -124,7 +129,12 @@ export function lintLayer({ ai, flags, grid = null, isWalkable = null, ground = 
     if (!p) { (f.fixed ? warn : err)('reach', `control point ${f.name}: no free cell within ${ORDER_SEARCH} m`); continue; }
     if (ground && !f.fixed) {
       const lift = f.y - ground(p[0], p[1]);
-      if (lift > f.radius) err('reach', `control point ${f.name} is ${lift.toFixed(1)} m above the ground a soldier stands on, further than its ${f.radius} m radius`);
+      if (lift > f.radius) {
+        unreachable.push(f.name);
+        const text = `control point ${f.name} is ${lift.toFixed(1)} m above the ground a soldier stands on, further than its ${f.radius} m radius`;
+        if (excluded.has(f.name.toLowerCase())) warn('reach', `${text}: unreachable on foot, excluded`);
+        else err('reach', text);
+      }
     }
   }
   const tally = new Map();
@@ -132,7 +142,7 @@ export function lintLayer({ ai, flags, grid = null, isWalkable = null, ground = 
   const main = [...tally.entries()].sort((p, q) => q[1] - p[1] || sizes[q[0]] - sizes[p[0]])[0]?.[0] ?? 0;
   for (const f of flags) {
     const c = where.get(f.name);
-    if (c && c !== main) (f.fixed ? warn : err)('reach', `control point ${f.name} is cut off on foot: its ground is a pocket of ${sizes[c]} cells apart from the main ${sizes[main]}`);
+    if (c && c !== main) (f.fixed || excluded.has(f.name.toLowerCase()) ? warn : err)('reach', `control point ${f.name} is cut off on foot: its ground is a pocket of ${sizes[c]} cells apart from the main ${sizes[main]}`);
   }
   let cut = 0;
   for (const s of spawns) {
@@ -140,7 +150,7 @@ export function lintLayer({ ai, flags, grid = null, isWalkable = null, ground = 
     if (!p || id[cellOf(grid, p[0], p[1])] !== main) cut++;
   }
   if (cut) warn('reach', `${cut} of ${spawns.length} soldier spawns stand off the main walkable ground`);
-  Object.assign(facts, { freeCells: sizes.reduce((s, v) => s + v, 0), mainComponent: sizes[main] ?? 0, pockets: sizes.length - 2 < 0 ? 0 : sizes.length - 2, spawnsCutOff: cut, spawns: spawns.length });
+  Object.assign(facts, { unreachable, freeCells: sizes.reduce((s, v) => s + v, 0), mainComponent: sizes[main] ?? 0, pockets: sizes.length - 2 < 0 ? 0 : sizes.length - 2, spawnsCutOff: cut, spawns: spawns.length });
   return { errors, warnings, facts };
 }
 
@@ -150,7 +160,7 @@ export function definedConditions(text) {
 }
 
 export async function lintLevel({ maps, models = null, map, source = null }) {
-  const { nav, grid, extras, world } = await loadForBots({ maps, models, map });
+  const { nav, grid, extras, world } = await loadForBots({ maps, models, map, layerDir: source });
   const file = source ? path.join(source, 'AI', 'conditions.con') : null;
   const indexFile = path.join(maps, map, 'pathfinding', 'index.json');
   const spawns = (extras.soldierSpawns ?? []).filter(s => s.position).map(s => [s.position[0], s.position[2]]);

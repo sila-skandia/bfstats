@@ -3,6 +3,7 @@
 // data this reads.
 
 import { INFANTRY_TYPE } from './strategic-layer.js';
+import { captureRadius, captureStandRadius } from './control-point-law.js';
 import { LANDING, landingZonesOf, beachTarget, beachLandingOrder } from './doctrine-landing.js';
 
 // ---------------------------------------------------------------------------
@@ -537,6 +538,12 @@ export class StrategicAI {
       const area = b.area ?? this.layer.nearestArea(p[0], p[2]);
       if (area) this._order(b, area, side);
     }
+    // INVENTION (`_captureRing`): a ring order whose bot found no route to
+    // the flag is drawn again, now the engine's way.
+    for (const b of myBots) {
+      const o = b.waypoints;
+      if (o?.captureFlag && b.ringless?.has(o.captureFlag)) this._order(b, o.area, side);
+    }
     this._reorderArrived(myBots, side);
   }
 
@@ -579,8 +586,11 @@ export class StrategicAI {
     const bounding = unit?.radius ?? SAI.unitRadius;
     const R = Math.max(SAI.waypointRadiusMin,
                        this.layer.sideRadius(area, side) * SAI.waypointRadiusFraction + 2 * bounding);
-    let point = null;
-    for (let i = 0; i < 20; i++) {
+    // INVENTION (the capture ring, `_captureRing`): on foot, to a flag
+    // narrower than this order's own arrival distance, the point is the flag.
+    const ring = this._captureRing(bot, area, side, unit, R, valid);
+    let point = ring?.point ?? null;
+    for (let i = 0; !point && i < 20; i++) {
       const cand = this.layer.randomizePos(area, SAI.randomizeFraction, this.random);
       if (!valid || valid(cand[0], cand[1])) { point = cand; break; }
     }
@@ -591,7 +601,15 @@ export class StrategicAI {
       kind: 'WPMoveTo',
       area,
       point,
-      radius: R,
+      // The plan's arrival radius (bot-plans.js `planMoveTo`): the engine's
+      // R, or the ring's when the order is bound to a flag's.
+      radius: ring ? ring.radius : R,
+      /** The flag whose capture ring this order ends in, else null. */
+      captureFlag: ring?.flag ?? null,
+      /** The bot's routes to the ring's point keep failing (bot-decision.js
+       *  `urgencyMoveTo`): it stops asking for this flag's ring, and the
+       *  next pass draws its order again (`_distribute`). */
+      noRoute() { if (ring) (bot.ringless ??= new Set()).add(ring.flag); },
       unitType: type,
       owned: () => layer.ownerOf(area) === side,
       /** Whether a point is in the ordered area: `AIStrategicArea::isInside`
@@ -612,6 +630,17 @@ export class StrategicAI {
         const Rr = Math.round(R) + pathRadius;
         const R2 = Rr * Rr;
         let d2 = (x - point[0]) ** 2 + (z - point[1]) ** 2;
+        // INVENTION (`_captureRing`): while the flag is still to take, the
+        // order has arrived only inside its ring, and between the ring and
+        // R' it keeps the urgency the engine's order has at R' (0.25 x 2),
+        // so the last metres are asked for as firmly as the approach was.
+        // Once the side holds the flag the engine's rule below reads the
+        // same point, and a bot in the ring is inside R'.
+        if (ring?.wanted()) {
+          if (d2 < ring.radius * ring.radius) { this.arrived = true; return 0; }
+          this.arrived = false;
+          return Math.min(1, Math.max(0.25, d2 / (4 * R2))) * 2.0;
+        }
         if (d2 < R2) { this.arrived = true; return 0; }
         let factor;
         if (!this.owned()) factor = 2.0;
@@ -623,6 +652,71 @@ export class StrategicAI {
       arrived: false,
     };
     return bot.waypoints;
+  }
+
+  /**
+   * INVENTION, labelled (the engine has no such rule; `orderNormalBot` and
+   * `WPMoveTo::getUrgency` never read a control point's radius): a bot on
+   * foot ordered to a flag ends inside its capture ring.
+   *
+   * The engine's order has arrived inside R' = round(R) + the path radius of
+   * a random point of the area's box, R at least 5, so 6 m on foot at the
+   * least. A capture counts a body inside the flag's own radius
+   * (control-point-law.js). Where that radius is under R', even a point
+   * drawn on the pole stops the bot outside the ring: at a 5 m flag
+   * (Stalingrad's `Railroads`, seven of the community map shigaisen_B's
+   * eight) bots stopped 5 to 7 m out, scouted there and took nothing but
+   * what a route happened to cross. DICE's wider flags hide it.
+   *
+   * So for a soldier, when the area holds a control point that can change
+   * hands, whose radius is under this order's R', and which the side does
+   * not hold or is losing (the lose timer running, state 2), the order's
+   * point is the flag itself (the nearest point of the bot's own map inside
+   * the ring when the flag's cell is blocked, as the engine tests its own
+   * draws) and it has arrived only within `captureStandRadius` of the flag.
+   * Returns `{ flag, point, radius, wanted() }`, or null and the engine's
+   * order stands untouched: every flag at least R' wide, a held flag, an
+   * area with no point, a flag no cell of the map reaches.
+   *
+   * Two things keep a ring that cannot be stood in from being ordered. A
+   * pole the ground does not reach: where the unit knows the ground
+   * (`unit.groundAt`, the terrain) and a body on it at the ring's edge would
+   * still be outside the flag's 3D radius, the engine's order stands. Two of
+   * Stalingrad's three flags are on an upper floor, 13.5 m over the street;
+   * bound to their rings, bots failed 31 routes in 300 s where they had
+   * failed none, walked at the walls and were redeployed. And a valid cell
+   * is not a route: a bot whose routes to the ring's point fail twice running
+   * gives that flag's ring up for the match (`noRoute`, the record's
+   * `ringless`) and is ordered again the engine's way on the next pass.
+   *
+   * Not a mounted bot: a hull's R' carries twice its bounding radius, which
+   * is wider than most flags, and a ring is no promise of room for a hull at
+   * the pole; it keeps the engine's order.
+   */
+  _captureRing(bot, area, side, unit, R, valid) {
+    if (unit?.mounted) return null;
+    const arrive = Math.round(R) + SAI.unitRadius;
+    const wanted = flag => flag.team !== side || flag._cp?.state === 2;
+    for (const flag of area.controlPoints) {
+      if (!flag.position || flag.uncapturable || bot.ringless?.has(flag)) continue;
+      if (captureRadius(flag) >= arrive || !wanted(flag)) continue;
+      const stand = captureStandRadius(flag);
+      const [fx, fz] = [flag.position[0], flag.position[2]];
+      const ground = unit?.groundAt?.(fx, fz);
+      if (Number.isFinite(ground) && Math.hypot(stand, flag.position[1] - ground) > captureRadius(flag)) continue;
+      // The flag's own cell, else the nearest valid one on rings 1 m apart,
+      // keeping at least 1 m of arrival radius about the point.
+      let point = !valid || valid(fx, fz) ? [fx, fz] : null;
+      let off = 0;
+      for (let d = 1; !point && d <= stand - 1; d++) {
+        for (let k = 0; !point && k < 8; k++) {
+          const x = fx + d * Math.cos(k * Math.PI / 4), z = fz + d * Math.sin(k * Math.PI / 4);
+          if (valid(x, z)) { point = [x, z]; off = d; }
+        }
+      }
+      if (point) return { flag, point, radius: stand - off, wanted: () => wanted(flag) };
+    }
+    return null;
   }
 
   /**

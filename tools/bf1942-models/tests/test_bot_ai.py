@@ -53,6 +53,8 @@ _MODULE_NAMES = [
     "bomb-release", "torpedo-run",
     # bot.js's own imports.
     "deviation", "nav-grid", "nav-map", "nav-search", "nav-baked", "strategic-map",
+    # bot-decision.js and strategic-ai.js read a flag's capture radius.
+    "control-point-law",
 ]
 MODULES = {f"{name}.js": VIEWER / f"{name}.js" for name in _MODULE_NAMES}
 MODULES["world.mjs"] = VIEWER / "world.js"
@@ -504,6 +506,30 @@ class BotAiTests(unittest.TestCase):
 
     def test_the_winner_is_moveto_with_no_target(self) -> None:
         self.assertEqual(self.results["moveTo"]["behaviour"], "MoveTo")
+
+    def test_the_fallback_walks_into_a_5_m_flags_ring(self) -> None:
+        # INVENTION (bot-decision.js `fallbackRadius`): a flag narrower than
+        # the fallback's arrival distance (R 5 + a soldier's 1) is walked
+        # into, to its radius less a body's; R left the bot on its edge.
+        n = self.results["captureRing"]["narrow"]
+        self.assertEqual(n["arrive"], 4)
+        self.assertLess(n["stopped"], 4)
+        self.assertTrue(n["arrived"], n)
+        self.assertTrue(n["goalReached"], n)
+
+    def test_the_fallback_at_a_wide_flag_stops_where_it_did(self) -> None:
+        # 10 m, and the template's default 8 m: R = 5 as before, the bot
+        # stopping inside it (the body runs on about a metre once the plan
+        # lets go), in the same place for both (to a few centimetres: the
+        # harness does not seed its random stream) and short of the narrow
+        # flag's bot.
+        c = self.results["captureRing"]
+        for key in ("wide", "unset"):
+            self.assertEqual(c[key]["arrive"], 5, key)
+            self.assertLess(c[key]["stopped"], 5, key)
+            self.assertGreater(c[key]["stopped"], 3.5, key)
+        self.assertAlmostEqual(c["wide"]["stopped"], c["unset"]["stopped"], delta=0.25)
+        self.assertLess(c["narrow"]["stopped"], c["wide"]["stopped"] - 0.5)
 
     def test_the_bot_walks_toward_the_objective(self) -> None:
         move = self.results["moveTo"]

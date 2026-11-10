@@ -71,10 +71,16 @@ export function addPlayer(world, playerId, { team = null, flag = null, spawnInde
  * the world steps them, they move, they can cap flags.
  * Returns the player record.
  */
+/** The spawn points a generated bot layer keeps bots off (`ai.generated.botSpawnsExcluded`); null for a human. */
+function botAvoid(world, player) {
+  return player?.bot ? world.extras?.ai?.generated?.botSpawnsExcluded ?? null : null;
+}
+
 export function addBotPlayer(world, playerId, { team = null, flag = null, spawnIndex = 0 } = {}) {
   const soldier = new Soldier({ collider: world.collider, worldSize: world.extras?.worldSize || 0 });
   const player = {
     id: playerId,
+    bot: true,
     team: team ?? null,
     soldier,
     armor: null,
@@ -157,7 +163,7 @@ export function spawnPlayer(world, playerId, {
   // stand him on first (a resumed life, `spawning.js` `resumeServerLife`).
   if (served && flag && !flag.captureOnly) {
     const at = (point && flag.spawns?.includes(point) ? point : null)
-      ?? pickSpawn(flag, player.spawnIndex, { groundAt: world.groundHeight, group: flag.vehicle ? (group ?? player.team) : group })
+      ?? pickSpawn(flag, player.spawnIndex, { groundAt: world.groundHeight, group: flag.vehicle ? (group ?? player.team) : group, avoid: botAvoid(world, player) })
       ?? flag.spawns?.find(p => p?.position)
       ?? (servedAt ? { position: servedAt, rotation: [0, 0, 0] } : null);
     if (at?.position) {
@@ -191,6 +197,7 @@ export function spawnPlayer(world, playerId, {
   const target = pick ?? flags[0];
   if (advance) player.spawnIndex++;
   const spawn = point && target.spawns?.includes(point) ? point : pickSpawn(target, player.spawnIndex, {
+    avoid: botAvoid(world, player),
     groundAt: world.groundHeight,
     // A control point's group only when the caller chose one of its rings
     // (`spawning.js`, both groups on its side, SPAWNGRP-10); a bot's `group`

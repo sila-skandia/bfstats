@@ -74,15 +74,22 @@ for (let t = 0; t <= 40; t++) {
   det.feed(d, { k: 'tick', t, bot: 'bot_0', alive: true, pos: [x, 0, -10], beh: 'MoveTo', ctl: [1, 0, 0, 0, 0], area: 'A', target: null });
   det.feed(d, { k: 'tick', t, bot: 'bot_1', alive: true, pos: [50, 0, -10], beh: 'Idle', ctl: [0, 0, 0, 0, 0], area: t < 10 ? 'A' : t < 20 ? 'B' : 'A', target: null });
 }
+// bot_5 dies between A and B and again before A: one objective per life, no flip.
+for (const [t, alive, area] of [[1, true, 'A'], [2, false, null], [3, true, 'B'], [4, false, null], [5, true, 'A']]) {
+  det.feed(d, alive ? { k: 'tick', t, bot: 'bot_5', alive: true, pos: [90, 0, -90], beh: 'Fire', ctl: [0, 0, 0, 0, 0], area, target: 'x' } : { k: 'tick', t, bot: 'bot_5', alive: false });
+}
 det.feed(d, { k: 'ev', t: 41, type: 'respawn', bot: 'bot_1', pos: [60, 0, -10] });
 det.feed(d, { k: 'ev', t: 44, type: 'kill', killer: null, victim: 'bot_1', pos: [61, 0, -10] });
+det.feed(d, { k: 'ev', t: 44.5, type: 'kill', killer: 'bot_0', killerSide: 1, victim: 'bot_2', victimSide: 1, pos: [0, 0, 0] });
+det.feed(d, { k: 'ev', t: 44.6, type: 'kill', killer: 'bot_0', killerSide: 1, victim: 'bot_3', victimSide: 2, pos: [0, 0, 0] });
 det.feed(d, { k: 'ev', t: 45, type: 'capture', flag: 'F', to: 2 });
 out.detect = det.finish(d, { result: { winner: 2, reason: 'time', tickets: { 1: 90, 2: 95 } }, metrics: { routeFailures: { total: 3 }, redeploys: 1, botErrors: 0 } }, 45);
 
 // --- the judge -------------------------------------------------------------------
 const row = (o = {}) => ({ level: 'dice', botsPerSide: 8, seed: 1, capturable: 2, flagsNeverChanged: [], capturesTotal: 4, captures: { 1: 2, 2: 2 },
   stuckSecondsPerBotMinute: 1, idleShare: 0.1, oscillationsPerBotMinute: 0, selfDeathsPerBotMinute: 0, spawnTrapsPerBotMinute: 0,
-  routeFailuresPerBotMinute: 1, redeploysPerBotMinute: 0.1, botErrors: 0, ticketsBled: { 1: 5, 2: 5 }, winner: 1, firstCapture: 30, ...o });
+  routeFailuresPerBotMinute: 1, redeploysPerBotMinute: 0.1, botErrors: 0, ticketsBled: { 1: 5, 2: 5 }, winner: 1, firstCapture: 30,
+  teamKillsPerBotMinute: 0.01, enemyKillsPerBotMinute: 0.5, enemyKills: { 1: 3, 2: 4 }, ...o });
 const base = jud.buildBaseline([row(), row({ seed: 2, stuckSecondsPerBotMinute: 3, capturesTotal: 2 }), row({ seed: 3, stuckSecondsPerBotMinute: 2 })], 'test');
 out.baselineBand = base.sizes[8].metrics.stuckSecondsPerBotMinute;
 out.judgePass = jud.judge([row({ level: 'x' }), row({ level: 'x', seed: 2 })], base);
@@ -90,6 +97,11 @@ out.judgeStuck = jud.judge([row({ level: 'x', stuckSecondsPerBotMinute: 9 }), ro
 out.judgeFlag = jud.judge([row({ level: 'x', flagsNeverChanged: ['F'] }), row({ level: 'x', seed: 2, flagsNeverChanged: ['F'] })], base).failed;
 out.judgeOneSide = jud.judge([row({ level: 'x', captures: { 1: 4, 2: 0 } })], base).failed;
 out.judgeNoBaseline = jud.judge([row({ botsPerSide: 32 })], base).verdict;
+out.judgeTeamKills = jud.judge([row({ level: 'x', teamKillsPerBotMinute: 0.4 })], base).failed;
+out.judgeNoFight = jud.judge([row({ level: 'x', enemyKillsPerBotMinute: 0.01, enemyKills: { 1: 2, 2: 0 } })], base).failed;
+const high = [row({ level: 'x', flagsNeverChanged: ['F'] }), row({ level: 'x', seed: 2, flagsNeverChanged: ['F'] })];
+out.judgeUnreachable = jud.judge(high, base, { unreachable: ['f'] }).checks.find(c => c.metric === 'flagCoverage');
+out.judgeBalance = [jud.judge([row({ level: 'x' }), row({ level: 'x', seed: 2 })], base).balance, jud.judge([row({ level: 'x' }), row({ level: 'x', seed: 2, winner: 2 })], base).balance];
 
 // --- the painter's doorways --------------------------------------------------------
 function box(x0, x1, y0, y1, z0, z1) {
@@ -113,5 +125,14 @@ out.door = {
   tankDoor: [cell(tank, 19, 20), cell(tank, 20, 20)],
 };
 
+const sf = await imp('viewer/spawn-flags.js');
+const twoSpawns = { name: 'F', team: 1, spawns: [{ name: 'top', position: [0, 20, 0], group: 1 }, { name: 'foot', position: [2, 0, 0], group: 1 }] };
+out.avoid = [sf.pickSpawn(twoSpawns, 0)?.name, sf.pickSpawn(twoSpawns, 0, { avoid: ['top'] })?.name, sf.pickSpawn(twoSpawns, 0, { avoid: ['top', 'foot'] })?.name ?? null];
+out.excluded = gen.excludedSpawns([{ name: 'top', position: [0, 20, 0] }, { name: 'floor', position: [1, 0.9, 0] }, { name: 'sealed', position: [50, 0, 0] }],
+  { free: (x) => x < 40, ground: () => 0 });
+const tall = gen.buildAreas([...flags.slice(0, 3), { name: 'Mill', x: 220, y: 30, z: -230, radius: 5, team: 1, fixed: false }], { ...hooks, ground: () => 10 });
+out.mill = tall.find(a => a.name === 'Mill');
+out.millCon = gen.areasCon(tall);
+out.pathCon = gen.pathFindingCon();
 out.tags = [menu.levelTag({ singlePlayer: false }), menu.levelTag({ singlePlayer: false, generatedBots: true }), menu.levelTag({ singlePlayer: true }), menu.levelTag({})];
 console.log(JSON.stringify(out));

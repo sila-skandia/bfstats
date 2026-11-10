@@ -22,7 +22,9 @@ VIEWER = ROOT / "viewer"
 HARNESS = Path(__file__).resolve().parent / "doctrine_harness.mjs"
 MODULES = ("strategic.js", "strategic-layer.js", "strategic-ai.js", "doctrine.js", "doctrine-squad.js", "doctrine-garrison.js", "doctrine-landing.js",
            # `doctrine.js` reads the crew rule from the bots' vehicle code.
-           "bot-vehicle.js", "bot-behaviours.js")
+           "bot-vehicle.js", "bot-behaviours.js",
+           # `strategic-ai.js` reads a flag's capture radius for its orders.
+           "control-point-law.js")
 
 
 def run_harness() -> dict:

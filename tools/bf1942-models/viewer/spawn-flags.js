@@ -536,10 +536,18 @@ export function spawnOffered(flag, options) {
  */
 export function pickSpawn(flag, index = 0, {
   groundAt = null, airborne = 12, group = null, world = null, enter = false,
-  ai = false, seatFor = null, outsideArea = null,
+  ai = false, seatFor = null, outsideArea = null, avoid = null,
 } = {}) {
   let pool = spawnPool(flag, { enter, ai, seatFor });
   if (!pool.length) return null;
+  // Points a generated bot layer found no walking route from (a windmill's
+  // top, features/bot-map-generation): a bot is not stood on one while the
+  // flag has another. Only the caller of a bot's spawn passes `avoid`; a
+  // player's list is untouched.
+  if (avoid?.length) {
+    const kept = pool.filter(spawn => !avoid.includes(spawn.name));
+    if (kept.length) pool = kept;
+  }
   // A seat point is taken as it is, with no walk to somewhere a body can
   // stand (FHR-10).
   if (ai && seatFor) {

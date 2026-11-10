@@ -33,6 +33,7 @@ import { playerPosition, SOLDIER_RADIUS } from './bot-sense.js';
 import { TAKE_COVER, MEDIC } from './bot-behaviours.js';
 import { airAvoid } from './bot-pilot.js';
 import { isArtilleryDriver } from './bot-perception.js';
+import { captureRadius, captureStandRadius } from './control-point-law.js';
 
 /**
  * Behaviour names matching AIbehaviours.con §4.1, in registration order.
@@ -97,6 +98,21 @@ export const IDLE_FLOOR = 1e-3;
 /** No strategic data: a bot walks to the nearest enemy flag with this
  *  waypoint radius (INVENTION). */
 const FALLBACK_WAYPOINT_RADIUS = 5.0;
+/**
+ * The fallback's arrival radius at one flag. INVENTION, the capture ring
+ * (strategic-ai.js `_captureRing` has the reasons): a flag narrower than the
+ * fallback's own arrival distance, R + a soldier's path radius, is walked
+ * into, to within `captureStandRadius` of the pole; a 5 m flag's bot stopped
+ * on its edge at 5 m and, a step up or down from the pole, outside the 3D
+ * ring. Any flag at least that wide keeps R.
+ */
+function fallbackRadius(flag) {
+  return captureRadius(flag) < FALLBACK_WAYPOINT_RADIUS + SOLDIER_RADIUS
+    ? captureStandRadius(flag) : FALLBACK_WAYPOINT_RADIUS;
+}
+/** Route failures in a row before a bot hands back an order into a flag's
+ *  capture ring (INVENTION, `urgencyMoveTo`). */
+const RING_ROUTE_FAILURES = 2;
 /** How long with no *net* progress toward the goal before the page redeploys
  *  the bot to another spawn point (s). INVENTION: the engine has no such
  *  test (ledger AI-101). Its stuck handling is the obstruction counters
@@ -126,7 +142,7 @@ export function updateObjectiveReadout(bot, dt) {
     const flag = bot._nearestEnemyFlag();
     bot.objective = flag;
     bot.objectiveGoal = flag ? [flag.position[0], flag.position[1], flag.position[2]] : null;
-    bot.goalReached = !!bot.objectiveGoal && bot._distTo(bot.objectiveGoal) < FALLBACK_WAYPOINT_RADIUS;
+    bot.goalReached = !!bot.objectiveGoal && bot._distTo(bot.objectiveGoal) < fallbackRadius(flag);
   }
   // Progress is measured per order: a new order (a new waypoint object, or
   // the nearest enemy flag changing without one) starts the best distance
@@ -261,6 +277,12 @@ export function urgencyMoveTo(bot, mod) {
   const u = wp.urgency(bot.position[0], bot.position[2], bot._pathRadius(), bot.position[1]);
   bot.changedTarget.MoveTo = wp !== bot._lastWaypointObject;
   bot._lastWaypointObject = wp;
+  // INVENTION (strategic-ai.js `_captureRing`): an order into a flag's
+  // capture ring whose route has failed twice running is handed back, and
+  // the next strategic pass orders the bot the engine's way.
+  const route = bot.route;
+  if (wp.captureFlag && route?.failed && bot._pathFailures >= RING_ROUTE_FAILURES
+      && Math.hypot(route.goal[0] - wp.point[0], route.goal[1] - wp.point[1]) < 0.5) wp.noRoute();
   // `BBMoveToFixed::calculateUrgency` 0x08575680 (the Fixed rows: a seat
   // that does not drive) publishes the order's urgency to the bot and
   // returns 0: a gunner or a fixed gun never walks.
@@ -281,12 +303,15 @@ export function fallbackWaypoint(bot) {
   if (bot._fallback?.flag === flag) return bot._fallback;
   const point = [flag.position[0], flag.position[2]];
   const R = FALLBACK_WAYPOINT_RADIUS;
+  // The plan stops at `radius` (bot-plans.js `planMoveTo`): R, or the ring's
+  // for a flag narrower than the fallback's arrival (`fallbackRadius`).
+  const radius = fallbackRadius(flag);
   bot._fallback = {
-    kind: 'WPMoveTo', flag, area: null, point, radius: R, arrived: false,
+    kind: 'WPMoveTo', flag, area: null, point, radius, arrived: false,
     urgency(x, z, r = SOLDIER_RADIUS) {
       const Rr = R + r;
       const d2 = (x - point[0]) ** 2 + (z - point[1]) ** 2;
-      this.arrived = d2 < 2 * Rr * Rr;
+      this.arrived = radius < R ? d2 < radius * radius : d2 < 2 * Rr * Rr;
       return Math.min(1, Math.max(0.1, d2 / (4 * Rr * Rr))) * 2.0;
     },
   };

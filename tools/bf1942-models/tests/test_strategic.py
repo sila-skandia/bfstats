@@ -31,7 +31,9 @@ def run_harness(scene: Path | None) -> dict:
         shutil.copyfile(VIEWER / "strategic.js", work / "strategic.js")
         # `strategic.js` re-exports the layer, the AI and the doctrines.
         for name in ("strategic-layer.js", "strategic-ai.js", "doctrine.js", "doctrine-squad.js", "doctrine-garrison.js", "doctrine-landing.js",
-                     "bot-vehicle.js", "bot-behaviours.js"):
+                     "bot-vehicle.js", "bot-behaviours.js",
+                     # `strategic-ai.js` reads a flag's capture radius for its orders.
+                     "control-point-law.js"):
             shutil.copyfile(VIEWER / name, work / name)
         shutil.copyfile(HARNESS, work / "harness.mjs")
         (work / "package.json").write_text('{"type":"module"}\n')
@@ -155,6 +157,69 @@ class StrategicFixtureTests(unittest.TestCase):
         p = self.results["pins"]
         self.assertTrue(p["keptAt30"])
         self.assertTrue(p["movedAt36"])
+
+    # --- INVENTION: the capture ring (`_captureRing`) -------------------------
+
+    def test_a_soldier_ordered_to_a_5_m_flag_ends_inside_its_ring(self) -> None:
+        # R' is 7 m on foot here and the flag 5 m: the order's point is the
+        # pole, it has arrived only 4 m from it (the radius less a body's),
+        # and the walk ends inside the 5 m the capture law measures.
+        n = self.results["pins"]["captureRing"]["narrow"]
+        self.assertEqual(n["point"], [106, -100])
+        self.assertEqual(n["radius"], 4)
+        self.assertEqual(n["flag"], "Pole")
+        self.assertLess(n["endToFlag"], 4)
+        self.assertTrue(n["arrived"])
+        # 4.5 m out, inside the engine's R': still asked for, at the urgency
+        # the engine's order has at R' (0.25 x 2).
+        self.assertEqual(n["outsideRing"], 0.5)
+        self.assertFalse(n["outsideArrived"])
+        # The flag taken: the engine's rule on the same point, arrived in R'.
+        self.assertEqual(n["heldInsideRr"], 0)
+        self.assertTrue(n["heldArrived"])
+
+    def test_a_wide_flags_order_is_the_engines_own(self) -> None:
+        # A 10 m flag (>= R'), and one with the template's default 8 m: the
+        # engine's random point, its R, and arrival inside R' of that point.
+        c = self.results["pins"]["captureRing"]
+        for key in ("wide", "unset"):
+            self.assertEqual(c[key]["point"], c["engineDraw"], key)
+            self.assertAlmostEqual(c[key]["radius"], 5.536, places=3, msg=key)
+            self.assertIsNone(c[key]["flag"], key)
+        self.assertLess(c["wide"]["endToPoint"], c["engineRr"])
+        self.assertGreater(c["wide"]["endToPoint"], c["engineRr"] - 0.25)
+
+    def test_a_held_flag_and_a_hull_keep_the_engines_order(self) -> None:
+        # The ring is for a soldier and a flag still to take; a held flag
+        # whose lose timer runs (state 2) is one.
+        c = self.results["pins"]["captureRing"]
+        for key in ("held", "hull"):
+            self.assertEqual(c[key]["point"], c["engineDraw"], key)
+            self.assertIsNone(c[key]["flag"], key)
+        self.assertAlmostEqual(c["hull"]["radius"], 9.536, places=3)
+        self.assertEqual(c["losing"], {"point": [106, -100], "radius": 4, "flag": "Pole"})
+
+    def test_a_blocked_pole_takes_the_nearest_valid_point_of_its_ring(self) -> None:
+        # The only free cell 2 m from the pole: the point, with the 2 m left
+        # of the 4 m stand radius. No free cell within it: the engine's order.
+        c = self.results["pins"]["captureRing"]
+        self.assertEqual(c["beside"], {"point": [108, -100], "radius": 2, "flag": "Pole"})
+        self.assertIsNone(c["walled"])
+
+    def test_a_pole_the_ground_does_not_reach_keeps_the_engines_order(self) -> None:
+        # A body on the ground at the ring's edge (4 m out) must be inside
+        # the 5 m the law measures in 3D: 2.5 m under the pole it is, 13.5 m
+        # under it (Stalingrad's upper-floor flags) it never is.
+        c = self.results["pins"]["captureRing"]
+        self.assertEqual(c["groundNear"], "Pole")
+        self.assertIsNone(c["groundFar"])
+
+    def test_a_ring_no_route_reaches_is_handed_back(self) -> None:
+        # `noRoute` (bot-decision.js, two route failures running): the bot's
+        # next order to that flag's area is the engine's.
+        a = self.results["pins"]["captureRing"]["afterNoRoute"]
+        self.assertEqual(a["point"], self.results["pins"]["captureRing"]["engineDraw"])
+        self.assertIsNone(a["flag"])
 
     def test_each_side_picks_a_strategy_and_attacks_the_middle(self) -> None:
         for side in ("1", "2"):

@@ -505,6 +505,43 @@ def generated_layer_dir(mod: str, level: str, root: Path | None = None) -> Path 
     return folder if (folder / "generated.json").is_file() else None
 
 
+def generated_layer_files(mod: str, level: str, root: Path | None = None):
+    """The layer folder as `find` / `read` files (its `Pathfinding/*.raw` too), or None."""
+    folder = generated_layer_dir(mod, level, root)
+    return _FolderFiles(folder) if folder is not None else None
+
+
+def generated_layer_gate(folder: Path) -> tuple[bool, str]:
+    """Whether a bake may read the layer in `folder`: its `verdict.json`
+    (written by `sim/botbatch.mjs`) says `pass`, or it carries an explicit
+    `accepted` reason. `BOT_LAYERS_UNVERIFIED=1` lets a scratch tree take an
+    unjudged or failing layer for the test that judges it."""
+    import json
+    import os
+
+    if os.environ.get("BOT_LAYERS_OFF") == "1":
+        return False, "BOT_LAYERS_OFF"
+    if os.environ.get("BOT_LAYERS_UNVERIFIED") == "1":
+        return True, "BOT_LAYERS_UNVERIFIED"
+    file = folder / "verdict.json"
+    if not file.is_file():
+        return False, "no verdict"
+    doc = json.loads(file.read_text())
+    if doc.get("verdict") == "pass":
+        return True, "pass"
+    accepted = doc.get("accepted")
+    if isinstance(accepted, dict) and str(accepted.get("reason") or "").strip():
+        return True, "accepted: " + str(accepted["reason"]).strip()
+    return False, f"verdict {doc.get('verdict')}"
+
+
+def generated_layer_live(mod: str, level: str, root: Path | None = None) -> bool:
+    """Whether `level` has a generated layer a bake would read: the menu's
+    question (`extract_menu_layout.py`), answered by the bake's own gate."""
+    folder = generated_layer_dir(mod, level, root)
+    return folder is not None and generated_layer_gate(folder)[0]
+
+
 def load_generated_ai(mod: str, level: str, root: Path | None = None) -> LevelAi | None:
     """A generated bot layer, read with the parsers a shipped one is read
     with, its marker on `generated`. The caller asks only when the level's
@@ -515,12 +552,18 @@ def load_generated_ai(mod: str, level: str, root: Path | None = None) -> LevelAi
     folder = generated_layer_dir(mod, level, root)
     if folder is None:
         return None
+    allowed, why = generated_layer_gate(folder)
+    if not allowed:
+        import sys
+        print(f"bot layer {mod.lower()}/{level.lower()} not read: {why}", file=sys.stderr)
+        return None
     ai = load_level_ai(_FolderFiles(folder))
     if ai is None:
         return None
     marker = json.loads((folder / "generated.json").read_text())
-    ai.generated = {k: marker[k] for k in ("generator", "version", "template", "scope", "inputs", "files")
+    ai.generated = {k: marker[k] for k in ("generator", "version", "template", "scope", "unreachable", "botSpawnsExcluded", "inputs", "files")
                     if k in marker}
+    ai.generated["gate"] = why
     return ai
 
 

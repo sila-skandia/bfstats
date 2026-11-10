@@ -224,6 +224,82 @@ const salerno = new StrategicLayer({ strategicAreas: [
   { name: 'HILL_424', controlPointName: 'The_top', position: [447.602, 144.248, -492.623], team: 2, captureOnly: true },
   { name: 'FIELD', controlPointName: 'Field', position: [340, 100, -545], team: 2, captureOnly: true },
 ]);
+// INVENTION under test (strategic-ai.js `_captureRing`): a soldier ordered
+// to a flag narrower than the order's own arrival distance ends inside its
+// capture ring. `Yard` is a 20 x 20 m box about (100, -100): side radius
+// 14.1, R = max(5, 3.5 + 2) = 5.5, R' = round(5.5) + 1 = 7 on foot. The flag
+// is 6 m from the middle, and `seq` is the random stream of each order.
+const yardOf = (radius, team = 0) => new StrategicLayer({ strategicAreas: [
+  { name: 'Yard', min: [90, -100], max: [100, -90], radius: 50, neighbours: [], flags: ['ControlPoint'],
+    orderPositions: {}, side: null, takeable: {} },
+] }, [{ name: 'Pole', position: [106, 3, -100], team, uncapturable: false, ...(radius ? { radius } : {}) }]);
+const seq = () => { let i = 0; return () => [0.9, 0.1, 0.3, 0.7][i++ % 4]; };
+const ringOrder = (layer, opt = {}) => {
+  const sai = new StrategicAI(layer, { random: seq(), ...opt });
+  sai.addBot('s', 1);
+  const rec = sai.bots.get('s');
+  return { sai, rec, wp: sai._order(rec, layer.areas[0], 1), flag: layer.flags[0] };
+};
+// Walk the order: 0.25 m a step at the point while the order still asks.
+const walkOrder = (wp, from) => {
+  const p = [...from];
+  for (let i = 0; i < 400 && wp.urgency(p[0], p[1]) > 0; i++) {
+    const d = Math.hypot(wp.point[0] - p[0], wp.point[1] - p[1]);
+    p[0] += (wp.point[0] - p[0]) / d * 0.25; p[1] += (wp.point[1] - p[1]) / d * 0.25;
+  }
+  return p;
+};
+const toFlag = (p, flag) => +Math.hypot(p[0] - flag.position[0], p[1] - flag.position[2]).toFixed(3);
+const narrow = ringOrder(yardOf(5));
+const narrowEnd = walkOrder(narrow.wp, [60, -100]);
+const narrowPins = {
+  point: narrow.wp.point, radius: narrow.wp.radius, flag: narrow.wp.captureFlag?.name ?? null,
+  endToFlag: toFlag(narrowEnd, narrow.flag), arrived: narrow.wp.arrived,
+  // Inside the engine's R' (7 m) and outside the ring: still asked for, at
+  // the urgency the engine's order has at R' (0.25 x 2).
+  outsideRing: narrow.wp.urgency(106 - 4.5, -100), outsideArrived: narrow.wp.arrived,
+};
+// The flag taken: the engine's rule reads the same point, arrived inside R'.
+narrow.flag.team = 1;
+narrowPins.heldInsideRr = narrow.wp.urgency(106 - 6.5, -100);
+narrowPins.heldArrived = narrow.wp.arrived;
+// A wide flag (10 m >= R'), one with the template's default radius, a held
+// narrow one and a hull at a narrow one: the engine's order, draw for draw.
+const engineDraw = yardOf(10).randomizePos(yardOf(10).areas[0], SAI.randomizeFraction, seq());
+const plain = o => ({ point: o.wp.point, radius: +o.wp.radius.toFixed(3), flag: o.wp.captureFlag?.name ?? null });
+const wide = ringOrder(yardOf(10));
+const wideEnd = walkOrder(wide.wp, [60, -100]);
+const hull = ringOrder(yardOf(5), { unitOf: () => ({ type: 'Tank', isWalkable: null, radius: 3.0, mounted: true }) });
+const losing = yardOf(5, 1);
+losing.flags[0]._cp = { state: 2 };
+// The flag's own cell blocked: the nearest valid point of the ring, with what
+// is left of the stand radius; nothing valid inside it: the engine's order.
+const onlyAt = (x, z) => (px, pz) => Math.abs(px - x) < 1e-6 && Math.abs(pz - z) < 1e-6;
+const beside = ringOrder(yardOf(5), { unitOf: () => ({ type: 'Infantery', isWalkable: onlyAt(108, -100), radius: 1.0, mounted: false }) });
+const walled = ringOrder(yardOf(5), { unitOf: () => ({ type: 'Infantery', isWalkable: (x, z) => Math.hypot(x - 106, z + 100) > 4.5, radius: 1.0, mounted: false }) });
+// A pole the ground does not reach (Stalingrad's upper-floor flags): with
+// the flag at y = 3 and a 5 m ring stood in at 4 m, ground within 3 m of it
+// keeps the ring and ground 13.5 m under it leaves the engine's order.
+const onGround = y => ringOrder(yardOf(5), { unitOf: () => ({ type: 'Infantery', isWalkable: null, radius: 1.0, mounted: false,
+                                                             groundAt: () => y }) });
+// No route: the bot hands the ring back and the next pass orders it the
+// engine's way, for that flag only.
+const lost = ringOrder(yardOf(5));
+lost.wp.noRoute();
+const afterNoRoute = lost.sai._order(lost.rec, lost.sai.layer.areas[0], 1);
+const captureRing = {
+  narrow: narrowPins,
+  engineDraw, engineRr: Math.round(wide.wp.radius) + 1,
+  wide: { ...plain(wide), endToPoint: +Math.hypot(wideEnd[0] - wide.wp.point[0], wideEnd[1] - wide.wp.point[1]).toFixed(3) },
+  unset: plain(ringOrder(yardOf(null))),
+  held: plain(ringOrder(yardOf(5, 1))),
+  losing: plain(ringOrder(losing)),
+  hull: plain(hull),
+  beside: plain(beside),
+  walled: plain(walled).flag,
+  groundNear: plain(onGround(0.5)).flag, groundFar: plain(onGround(-10.5)).flag,
+  afterNoRoute: { point: afterNoRoute.point, flag: afterNoRoute.captureFlag?.name ?? null },
+};
 const bindings = layer => layer.areas.map(a => [a.name, a.controlPoints.map(f => f.name), layer.ownerOf(a)]);
 const captureOnly = {
   midway: bindings(midway),
@@ -231,7 +307,7 @@ const captureOnly = {
   salerno: bindings(salerno),
 };
 const pins = {
-  air, orderInside, prereq, presence, airHold, captureOnly,
+  air, orderInside, prereq, presence, airHold, captureOnly, captureRing,
   corner: ia.corner, centre: ia.centre, min: ia.min, max: ia.max, sideRadius: +ia.sideRadius.toFixed(3),
   cpInside: island.isInside(ia, 838, -722), r0, r1: r1.map(v => +v.toFixed(3)),
   tankRadius: +wpTank.radius.toFixed(3), inR, inRArrived, outU,

@@ -15,6 +15,20 @@ export function captureRadius(flag) {
 }
 
 /**
+ * INVENTION (the engine has no such figure; it is the bots' own, read by
+ * strategic-ai.js `_captureRing` and bot-decision.js `fallbackRadius`): how
+ * far from a flag a bot sent to take it may stop. The capture radius less a
+ * body's radius (1 m), never under half of it: the bot's orders measure
+ * across the ground and the law below in 3D, so the metre is also what keeps
+ * a bot standing up to 3 m above or below a 5 m flag inside its ring.
+ */
+export const CAPTURE_STAND_MARGIN = 1.0;
+export function captureStandRadius(flag) {
+  const r = captureRadius(flag);
+  return Math.max(0.5 * r, r - CAPTURE_STAND_MARGIN);
+}
+
+/**
  * Seconds on a flag to take it: its `timeToGetControl`, else the fallback.
  * `ControlPoint::handleFrameUpdate` 0x08283b00 runs `gettingControl`
  * 0x08283f20 (the get timer +0x16c less the frame) only while the timer is

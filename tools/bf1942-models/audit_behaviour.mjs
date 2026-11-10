@@ -6,7 +6,8 @@
 //     node audit_behaviour.mjs --mod <id> --levels all|<a,b> --json out.json \
 //          [--quick] [--port 5310 | --url http://localhost:5310] \
 //          [--only vehicles,kits,flags,spawns,bots] [--accepted file.json] \
-//          [--vehicle <regex>] [--max-vehicles N] [--bots-seconds 60]
+//          [--vehicle <regex>] [--max-vehicles N] [--bots-seconds 60] \
+//          [--viewer-dir <folder>]
 //
 // Nothing in here names a mod, a level, a vehicle or a kit: the levels come
 // from `viewer/maps[/mods/<id>]/maps.json`, the vehicles from what the level
@@ -22,6 +23,11 @@
 // One headless Chromium at a time (the caller wraps the run in flock). The
 // server, when `--url` is absent, is `serve_viewer.py <port>` started and
 // stopped here. Never 5273.
+//
+// `--viewer-dir <folder>` audits another viewer folder than `viewer/` (a
+// scratch folder of links with its own `maps/`, say): the level list, the
+// scenes and the tables are read from it, and the server started here serves
+// it. With `--url`, name the folder that server serves.
 
 import { chromium } from '../../ui/node_modules/playwright/index.mjs';
 import { GPU_ARGS } from './gpu_args.mjs';
@@ -60,8 +66,11 @@ const W = 320, H = 200;
 // axis dead (`testSeatsAndGuns`).
 const SLOW_AIM_ROUNDS = 5;
 
-const mapsRoot = (MOD === 'bf1942' || MOD === 'vanilla')
-  ? resolve(HERE, 'viewer/maps') : resolve(HERE, `viewer/maps/mods/${MOD}`);
+const VIEWER_DIR_ARG = arg('viewer-dir', null);
+const VIEWER_DIR = VIEWER_DIR_ARG ? resolve(VIEWER_DIR_ARG) : resolve(HERE, 'viewer');
+const VANILLA_TREE = MOD === 'bf1942' || MOD === 'vanilla';
+const mapsRoot = VANILLA_TREE ? resolve(VIEWER_DIR, 'maps') : resolve(VIEWER_DIR, `maps/mods/${MOD}`);
+const modelsRoot = VANILLA_TREE ? resolve(VIEWER_DIR, 'models') : resolve(VIEWER_DIR, `models/mods/${MOD}`);
 const modParam = MOD === 'vanilla' ? 'bf1942' : MOD;
 
 const sleep = ms => new Promise(r => setTimeout(r, ms));
@@ -119,9 +128,8 @@ let modelNames = new Set();
  *  stand on the deck of (`botPhase`, `deck`). */
 let seaTemplates = new Set();
 async function loadManifest() {
-  const root = mapsRoot.replace('/maps', '/models');
   try {
-    const m = JSON.parse(await readFile(`${root}/models.json`, 'utf8'));
+    const m = JSON.parse(await readFile(`${modelsRoot}/models.json`, 'utf8'));
     for (const e of m) modelNames.add(String(e.name).toLowerCase());
     for (const e of m) if (!e.cockpit && e.glb) noCockpit.add(e.glb.replace(/\.glb$/, '.cockpit.glb').toLowerCase());
     for (const e of m) if (e.category === 'sea') seaTemplates.add(String(e.name).toLowerCase());
@@ -2127,8 +2135,7 @@ async function rigExtras(s, rig) {
   }
   if (!out) {
     try {
-      const root = mapsRoot.replace('/maps', '/models');
-      const buf = await readFile(`${root}/viewmodels/${rig}.fp.glb`);
+      const buf = await readFile(`${modelsRoot}/viewmodels/${rig}.fp.glb`);
       const n = buf.readUInt32LE(12);
       const j = JSON.parse(buf.subarray(20, 20 + n).toString('utf8'));
       out = rigFamilies(j.extras?.clips ?? {}, j.extras?.weaponStats ?? null);
@@ -2904,7 +2911,9 @@ async function main() {
     // pose index and a machine may hold vanilla's tree only in part. The
     // mod's own tree stays local only.
     const remote = (MOD === 'bf1942' || MOD === 'vanilla') ? '--remote-store-only' : '--remote-vanilla';
-    server = spawn('python3', [resolve(HERE, 'serve_viewer.py'), String(PORT), remote], { stdio: 'ignore' });
+    // serve_viewer.py's folder is its second positional; the default stays its own.
+    const folder = VIEWER_DIR_ARG ? [VIEWER_DIR] : [];
+    server = spawn('python3', [resolve(HERE, 'serve_viewer.py'), String(PORT), ...folder, remote], { stdio: 'ignore' });
     await sleep(1200);
   }
   await loadManifest();

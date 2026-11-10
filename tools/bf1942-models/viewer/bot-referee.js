@@ -1187,8 +1187,10 @@ export function createBotReferee(env) {
     const bot = botOf(id);
     const m = bot?.vehicle;
     if (!m) {
+      // `groundAt`: the ground under a flag's pole, for the capture ring
+      // (strategic-ai.js `_captureRing`, INVENTION).
       return { type: 'Infantery', isWalkable: referee.navGrid ? (x, z) => isWalkable(referee.navGrid, x, z) : null,
-               radius: 1.0, mounted: false };
+               radius: 1.0, mounted: false, groundAt: bot ? (x, z) => bot._groundAt(x, z) : null };
     }
     // The hull's own search type where the level lists them (bot-units.js
     // `typeNav`: a vanilla jeep is a `Tank` unit), else by drive kind.

@@ -1045,8 +1045,8 @@ def level_record(name: str, paths: list[Path], thumb_dir: Path | None,
     # (`bot-layers/`, features/bot-map-generation): the page starts it with
     # bots and tags it experimental. Written only when true.
     if paths and not record["singlePlayer"]:
-        from bf42.ai_level import generated_layer_dir
-        if generated_layer_dir(paths[-1].parents[3].name, name) is not None:
+        from bf42.ai_level import generated_layer_live
+        if generated_layer_live(paths[-1].parents[3].name, name):
             record["generatedBots"] = True
     return record
 

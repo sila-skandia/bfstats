@@ -10,6 +10,7 @@ import json
 import shutil
 import subprocess
 import sys
+import tempfile
 import unittest
 from argparse import Namespace
 from pathlib import Path
@@ -20,6 +21,9 @@ ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT))
 
 import audit_behaviour  # noqa: E402
+
+# The harness imports Playwright from the UI's install; a run of it needs that.
+PLAYWRIGHT = ROOT.parents[1] / "ui" / "node_modules" / "playwright" / "index.mjs"
 
 
 class AuditBehaviourContract(unittest.TestCase):
@@ -43,10 +47,50 @@ class AuditBehaviourContract(unittest.TestCase):
         # asset.404 for blobs mesh.bfstats.io serves. Same server as the
         # pipeline's (mod_pipeline.py).
         text = (ROOT / "audit_behaviour.mjs").read_text()
-        self.assertIn("'serve_viewer.py'), String(PORT), remote]", text)
+        self.assertIn("'serve_viewer.py'), String(PORT), ...folder, remote]", text)
         # 2026-11-10: a mod's run fetches vanilla's files as well, never its own.
         self.assertIn("? '--remote-store-only' : '--remote-vanilla'", text)
         self.assertNotIn("'--no-remote'", text)
+
+    def test_viewer_dir_defaults_to_the_viewer_beside_the_harness(self):
+        # 2026-11-10: a generated bot layer is tried in a scratch viewer folder
+        # (links to `viewer/`'s files, its own `maps/`), and the harness read
+        # `viewer/maps/maps.json` whatever `--url` served: ENOENT on a machine
+        # whose real tree holds no vanilla level. `--viewer-dir` names the
+        # folder; without it nothing moves.
+        text = (ROOT / "audit_behaviour.mjs").read_text()
+        self.assertIn("VIEWER_DIR_ARG ? resolve(VIEWER_DIR_ARG) : resolve(HERE, 'viewer')", text)
+        self.assertIn("const folder = VIEWER_DIR_ARG ? [VIEWER_DIR] : [];", text)
+        # Both trees hang off the one folder: no path is rewritten by name.
+        self.assertNotIn("mapsRoot.replace(", text)
+        self.assertNotIn("resolve(HERE, 'viewer/maps", text)
+
+    @unittest.skipUnless(shutil.which("node") and PLAYWRIGHT.exists(), "node or ui/node_modules/playwright missing")
+    def test_viewer_dir_is_where_the_level_list_is_read(self):
+        # No browser: a level list that matches nothing ends the run (status 2,
+        # "no levels matched") before Chromium starts, and `--url` keeps the
+        # harness from starting a server. The list it read is the folder's.
+        def run(viewer, mod, levels):
+            return subprocess.run(
+                ["node", str(ROOT / "audit_behaviour.mjs"), "--mod", mod, "--levels", levels,
+                 "--url", "http://localhost:9", "--viewer-dir", str(viewer)],
+                capture_output=True, text=True, timeout=60)
+
+        with tempfile.TemporaryDirectory() as tmp:
+            viewer = Path(tmp) / "scratch-viewer"
+            (viewer / "maps" / "mods" / "somemod").mkdir(parents=True)
+            row = {"name": "Level_One", "report": "level_one/scene.json"}
+            (viewer / "maps" / "maps.json").write_text(json.dumps([row]))
+            (viewer / "maps" / "mods" / "somemod" / "maps.json").write_text(json.dumps([row]))
+            for mod in ("bf1942", "somemod"):
+                proc = run(viewer, mod, "no_such_level")
+                self.assertEqual(2, proc.returncode, proc.stderr)
+                self.assertIn("no levels matched", proc.stderr)
+                self.assertNotIn("ENOENT", proc.stderr)
+            # A folder with no list is still refused, by its own path.
+            proc = run(Path(tmp) / "absent", "bf1942", "no_such_level")
+            self.assertEqual(2, proc.returncode, proc.stderr)
+            self.assertIn(str(Path("absent") / "maps" / "maps.json"), proc.stderr)
 
     def test_no_mod_or_level_names_in_the_harness(self):
         text = (ROOT / "audit_behaviour.mjs").read_text().lower()

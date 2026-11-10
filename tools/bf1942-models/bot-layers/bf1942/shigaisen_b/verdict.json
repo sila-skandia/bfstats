@@ -1,0 +1,40 @@
+{
+ "level": "shigaisen_b",
+ "verdict": "fail",
+ "outcome": "better-than-nothing",
+ "generatorVersion": 2,
+ "inputs": {
+  "controlPoints": "2720d5f12a6c88964f1415fae2491a207c0b8a81f0a2ee4812510f859b3d3d97",
+  "infantryMap": "82c12fcc51b113577767e8b7926a57445224e48a16790bd81d29b08268debaa9",
+  "template": "43f8a790471528016570235f76e97dbb2045732458781a5139f37fed68bf98c0"
+ },
+ "baseline": "DICE layers on foot: berlin, stalingrad, kharkov, bocage; seeds 1..10, 600 s, --no-vehicles",
+ "seeds": 10,
+ "sizes": {
+  "8": {
+   "verdict": "pass",
+   "failed": [],
+   "winners": [
+    0,
+    10,
+    0
+   ]
+  },
+  "16": {
+   "verdict": "fail",
+   "failed": [
+    "redeploysPerBotMinute"
+   ],
+   "winners": [
+    0,
+    10,
+    0
+   ]
+  }
+ },
+ "oneSided": 2,
+ "unreachable": [
+  "windmill_west"
+ ],
+ "lintErrors": []
+}

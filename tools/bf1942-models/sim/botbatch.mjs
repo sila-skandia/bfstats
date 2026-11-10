@@ -13,14 +13,14 @@
 // size; the verdict per level is written to <out>/<level>/verdict.json.
 
 import { spawn, spawnSync } from 'node:child_process';
-import { existsSync, mkdirSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
+import { existsSync, mkdirSync, readdirSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { generate, LAYERS_ROOT } from './botgen.mjs';
 import { lintLevel } from './botlint.mjs';
 import { detectRun } from './detect.mjs';
-import { buildBaseline, judge } from './judge.mjs';
+import { buildBaseline, judge, spread, unionCoverage } from './judge.mjs';
 
 const HERE = path.dirname(fileURLToPath(import.meta.url));
 export const BASELINE_FILE = path.join(HERE, 'baselines', 'onfoot-dice.json');
@@ -62,12 +62,45 @@ export async function runMatrix({ maps, models, level, out, seeds = 10, sizes = 
   return rows.sort((a, b) => a.botsPerSide - b.botsPerSide || a.seed - b.seed);
 }
 
-export function verdictOf(level, rows, baseline, lint = null) {
+/** The four movement rates the "better than nothing" comparison reads. */
+export const MOVEMENT = ['stuckSecondsPerBotMinute', 'routeFailuresPerBotMinute', 'redeploysPerBotMinute', 'spawnTrapsPerBotMinute'];
+
+/**
+ * A layer that fails the bar against the same level with no layer, per side
+ * size: it is better than nothing when it captures at least as much, at
+ * least two movement rates fall by a quarter, and none rises by a quarter.
+ */
+export function betterThanNothing(rows, none) {
   const sizes = [...new Set(rows.map(r => r.botsPerSide))];
-  const judged = Object.fromEntries(sizes.map(s => [s, judge(rows.filter(r => r.botsPerSide === s), baseline)]));
+  const detail = {};
+  let all = sizes.length > 0;
+  for (const size of sizes) {
+    const g = rows.filter(r => r.botsPerSide === size), n = none.filter(r => r.botsPerSide === size);
+    if (!n.length) { all = false; continue; }
+    const med = (set, k) => spread(set.map(r => r[k])).p50;
+    const improved = MOVEMENT.filter(k => med(g, k) <= 0.75 * med(n, k));
+    const worsened = MOVEMENT.filter(k => med(g, k) >= 1.25 * med(n, k) && med(g, k) > 0);
+    const captures = med(g, 'capturesTotal') >= med(n, 'capturesTotal');
+    detail[size] = { improved, worsened, captures: [med(g, 'capturesTotal'), med(n, 'capturesTotal')] };
+    if (!(captures && improved.length >= 2 && worsened.length === 0)) all = false;
+  }
+  return { better: all, detail };
+}
+
+export function verdictOf(level, rows, baseline, lint = null, none = null) {
+  const sizes = [...new Set(rows.map(r => r.botsPerSide))];
+  const unreachable = lint?.facts?.unreachable ?? [];
+  const judged = Object.fromEntries(sizes.map(s => [s, judge(rows.filter(r => r.botsPerSide === s), baseline, { unreachable })]));
   const lintOk = !lint || lint.errors.length === 0;
   const verdict = lintOk && Object.values(judged).every(j => j.verdict === 'pass') ? 'pass' : 'fail';
-  return { level, verdict, lint: lint ? { errors: lint.errors, warnings: lint.warnings.length, facts: lint.facts } : null, sizes: judged };
+  // Balance: reported at every size, flagged when one side takes every seed at every size.
+  const sides = Object.values(judged).map(j => j.balance?.oneSided ?? null);
+  const oneSided = sides.length && sides.every(s => s && s === sides[0]) ? sides[0] : null;
+  const versus = none && none.length ? betterThanNothing(rows, none) : null;
+  const outcome = verdict === 'pass' ? 'pass' : versus ? (versus.better ? 'better-than-nothing' : 'no-better-than-nothing') : 'fail';
+  return { level, verdict, outcome, oneSided, unreachable,
+           lint: lint ? { errors: lint.errors, warnings: lint.warnings.map(w => w.text), facts: lint.facts } : null,
+           sizes: judged, versusNothing: versus };
 }
 
 function candidateLevels(file, classes) {
@@ -94,7 +127,7 @@ async function main() {
   const cmd = a._[0];
   if (!['baseline', 'matrix', 'level'].includes(cmd) || !a.maps) {
     console.error('usage: node sim/botbatch.mjs <baseline|matrix|level> --maps <tree> [--models <tree>] --levels a,b | --candidates <csv> [--classes c1;c2]\n'
-      + '       [--mod bf1942] [--game-dir <dir>] [--out <dir>] [--seeds 10] [--sizes 8,16] [--time 600] [--jobs N] [--baseline <file>] [--force] [--keep-traces] [--no-generate]');
+      + '       [--mod bf1942] [--game-dir <dir>] [--archives <dir of level .rfa>] [--out <dir>] [--seeds 10] [--sizes 8,16] [--time 600] [--jobs N] [--baseline <file>] [--force] [--keep-traces] [--no-generate]');
     process.exit(2);
   }
   const maps = path.resolve(a.maps), models = a.models ? path.resolve(a.models) : null;
@@ -117,23 +150,48 @@ async function main() {
   const baseline = JSON.parse(readFileSync(path.resolve(a.baseline ?? BASELINE_FILE), 'utf8'));
   let failed = 0;
   for (const l of levels) {
-    let lint = null;
+    let lint = null, none = null;
+    const layerDir = path.join(a.layers ? path.resolve(a.layers) : LAYERS_ROOT, l.mod.toLowerCase(), l.level);
+    const patch = env => spawnSync('python3', [path.join(HERE, '..', 'patch_scene.py'), '--layer', 'ai', '--mod', l.mod, '--tree', maps,
+                                              ...(a['game-dir'] ? ['--game-dir', path.resolve(a['game-dir'])] : []), l.level],
+                                   { encoding: 'utf8', env: { ...process.env, ...env } });
     if (cmd === 'level') {
+      // The level with no layer first: the arm a failing layer is compared with.
+      const off = patch({ BOT_LAYERS_OFF: '1' });
+      if (off.status !== 0) { console.error(`${l.level}: patch_scene failed: ${(off.stderr || off.stdout).slice(-300)}`); failed++; continue; }
+      none = await runMatrix({ ...opts, out: path.join(out, l.level, 'none'), level: l.level });
+      // The engine's own search maps, when the level's archive is at hand and the layer has none.
+      if (a.archives && !existsSync(path.join(layerDir, 'Pathfinding', 'Infantry1Level0Map.raw'))) {
+        const hit = readdirSync(path.resolve(a.archives)).find(f => f.toLowerCase() === `${l.level}.rfa`);
+        if (hit) {
+          const eng = spawnSync('python3', [path.join(HERE, '..', 'engine_search_maps.py'), '--mod', l.mod, '--archive', path.join(path.resolve(a.archives), hit),
+                                            '--out', layerDir], { encoding: 'utf8' });
+          console.error(`${l.level}: ${(eng.stdout || eng.stderr).trim().split('\n').pop()}`);
+        }
+      }
       if (!a['no-generate']) {
         const g = await generate({ maps, models, map: l.level, mod: l.mod, out: a.layers ? path.resolve(a.layers) : LAYERS_ROOT });
         console.error(`${l.level}: generated ${g.dir} (${g.changed.length ? g.changed.length + ' files written' : 'up to date'})`);
       }
-      const patch = spawnSync('python3', [path.join(HERE, '..', 'patch_scene.py'), '--layer', 'ai', '--mod', l.mod, '--tree', maps,
-                                          ...(a['game-dir'] ? ['--game-dir', path.resolve(a['game-dir'])] : []), l.level], { encoding: 'utf8' });
-      if (patch.status !== 0) { console.error(`${l.level}: patch_scene failed: ${(patch.stderr || patch.stdout).slice(-300)}`); failed++; continue; }
-      lint = await lintLevel({ maps, models, map: l.level, source: path.join(a.layers ? path.resolve(a.layers) : LAYERS_ROOT, l.mod.toLowerCase(), l.level) });
+      // The scratch tree takes the layer whatever its last verdict: this run is what judges it.
+      const on = patch({ BOT_LAYERS_UNVERIFIED: '1' });
+      if (on.status !== 0) { console.error(`${l.level}: patch_scene failed: ${(on.stderr || on.stdout).slice(-300)}`); failed++; continue; }
+      lint = await lintLevel({ maps, models, map: l.level, source: layerDir });
     }
-    const rows = await runMatrix({ ...opts, level: l.level });
-    const v = verdictOf(l.level, rows, baseline, lint);
+    const rows = await runMatrix({ ...opts, out: cmd === 'level' ? path.join(out, l.level, 'generated') : out, level: l.level });
+    const v = verdictOf(l.level, rows, baseline, lint, none);
     mkdirSync(path.join(out, l.level), { recursive: true });
     writeFileSync(path.join(out, l.level, 'verdict.json'), JSON.stringify(v, null, 1) + '\n');
+    if (cmd === 'level') {
+      // The layer's own record, which the bake's gate reads (`bf42/ai_level.py generated_layer_gate`).
+      const marker = JSON.parse(readFileSync(path.join(layerDir, 'generated.json'), 'utf8'));
+      const short = { level: l.level, verdict: v.verdict, outcome: v.outcome, generatorVersion: marker.version, inputs: marker.inputs,
+                      baseline: baseline.note, seeds: opts.seeds, sizes: Object.fromEntries(Object.entries(v.sizes).map(([s, j]) => [s, { verdict: j.verdict, failed: j.failed, winners: j.balance?.split }])),
+                      oneSided: v.oneSided, unreachable: v.unreachable, lintErrors: lint.errors.map(e => e.text) };
+      writeFileSync(path.join(layerDir, 'verdict.json'), JSON.stringify(short, null, 1) + '\n');
+    }
     if (v.verdict !== 'pass') failed++;
-    console.log(`${l.level}: ${v.verdict}` + (lint ? `, lint ${lint.errors.length} errors` : '')
+    console.log(`${l.level}: ${v.outcome}` + (lint ? `, lint ${lint.errors.length} errors` : '')
       + Object.entries(v.sizes).map(([s, j]) => `; ${s} a side ${j.verdict}${j.failed?.length ? ' (' + j.failed.join(', ') + ')' : ''}`).join(''));
   }
   process.exit(failed ? 1 : 0);

@@ -237,6 +237,39 @@ the contest. From 40 m: `1600 / 1764 = 0.907`, urgency 1.81, contest 2.72.
 Inside 21 m: arrived, 0. `AlliedBase` (p1 50 x 100 m from p2) gives `R =
 29.95`.
 
+**The capture ring (INVENTION, `_captureRing`).** The engine's order never
+reads a control point's radius: it has arrived inside `Rr` of a random point
+of the box, 6 m on foot at the least, while a capture counts a body inside the
+flag's own radius in 3D. A flag narrower than `Rr` is therefore not entered
+even by an order drawn on its pole: Stalingrad's 5 m `Railroads`, seven of the
+community map shigaisen_B's eight. So for a bot on foot, when the area holds a
+control point that can change hands, whose radius is under the order's `Rr`,
+and which the side does not hold or is losing (lose timer running):
+
+```
+point  = the flag's x/z (blocked on the bot's map: the nearest valid point on
+         rings 1 m apart, inside the stand radius less 1 m; none: the engine's order)
+radius = captureStandRadius(flag) - |point - flag|,   stand = max(r / 2, r - 1)
+while the flag is still to take:
+  d² < radius²:  arrived, urgency 0
+  else:          urgency = clamp(d² / (4 Rr²), 0.25, 1) x 2   (0.5 inside Rr, the engine's value at Rr)
+once the side holds it: the engine's table above, on the same point
+```
+
+Every flag at least `Rr` wide, a held flag, an area with no point and a
+mounted bot keep the engine's order unchanged (a hull's `Rr` carries twice
+its bounding radius, and a ring is no promise of room for a hull at the
+pole). So does a pole the ground does not reach: where a body on the terrain
+at the ring's edge would still be outside the 3D radius (`hypot(stand, flag y
+- ground) > r`; the page's `strategicUnit` hands a soldier's unit `groundAt`),
+as under Stalingrad's two upper-floor flags, 13.5 m over the street. And a
+bot whose route to the ring's point fails twice running hands the ring back
+for that flag for the match (`noRoute`, bot-decision.js `urgencyMoveTo`); the
+next pass orders it the engine's way. Seed 3, 8 a side, 300 s: Bocage,
+Kharkov, Berlin and El Alamein trace byte for byte as before, with vehicles
+and without; Stalingrad's `Railroads` is taken at 64 s on foot, where it was
+at 180 s, with no route failure in either run.
+
 **Regression (since `ee729113`).** The order no longer carries the
 `inside(x, z)` the bot reads for "inside the ordered area"
 (`bot.js _insideOrderedArea`, the medic's `insideMyArea`, the vehicle
@@ -431,4 +464,6 @@ human on the now-Allied point runs it to neutral in 10 s.
 
 `bot.js _fallbackWaypoint`: the nearest flag the bot's side does not hold,
 as a `WPMoveTo` with `R = 5` (INVENTION) and factor 2, rebuilt when the
-nearest flag changes.
+nearest flag changes. Its plan stops at `R` from the pole; for a flag narrower
+than `R + 1` it stops at `captureStandRadius(flag)` instead (the capture ring,
+section 6; `bot-decision.js fallbackRadius`).

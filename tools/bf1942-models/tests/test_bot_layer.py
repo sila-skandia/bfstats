@@ -12,6 +12,9 @@ from __future__ import annotations
 
 import hashlib
 import json
+import os
+import shutil
+import tempfile
 import subprocess
 import sys
 import unittest
@@ -70,6 +73,24 @@ class GeneratorTests(unittest.TestCase):
             for other in area["neighbours"]:
                 self.assertIn(name, self.areas[other]["neighbours"])
 
+    def test_a_flag_no_soldier_can_stand_inside_is_kept_inert(self) -> None:
+        mill = self.out["mill"]
+        self.assertTrue(mill["unreachable"])
+        self.assertEqual((mill["flags"], mill["neighbours"]), ([], []))
+        block = self.out["millCon"].split("aiStrategicArea.create Mill")[1]
+        self.assertIn("aiStrategicArea.setTakeable 1 0\r\naiStrategicArea.setTakeable 2 0", block)
+        self.assertNotIn("setOrderPosition", block)
+
+    def test_a_spawn_with_no_way_down_or_no_ground_is_kept_from_bots(self) -> None:
+        self.assertEqual(self.out["excluded"], ["top", "sealed"])
+        first, avoided, none_left = self.out["avoid"]
+        self.assertEqual((first, avoided), ("top", "foot"))
+        self.assertIsNotNone(none_left)
+
+    def test_the_engines_maps_are_declared_in_dices_order(self) -> None:
+        text = self.out["pathCon"]
+        self.assertLess(text.index("ai.addSearchType Tank 0 0"), text.index("ai.addSearchType Infantry 1 0"))
+
     def test_the_same_inputs_give_the_same_bytes(self) -> None:
         self.assertTrue(self.out["conAgain"])
 
@@ -113,9 +134,12 @@ class DetectorTests(unittest.TestCase):
         self.assertAlmostEqual(self.row["stuckPlaces"][0]["seconds"], 26, delta=2)
 
     def test_idle_oscillation_self_death_and_spawn_trap_are_counted(self) -> None:
-        self.assertAlmostEqual(self.row["idleShare"], 0.5, delta=0.01)
-        self.assertGreater(self.row["oscillationsPerBotMinute"], 0)
+        self.assertAlmostEqual(self.row["idleShare"], 41 / 85, delta=0.01)
+        # bot_1's A, B, A counts; bot_5's, with a death between each, does not.
+        self.assertEqual(self.row["oscillations"], 1)
         self.assertEqual(self.row["selfDeaths"], 1)
+        self.assertEqual(self.row["teamKills"], 1)
+        self.assertEqual(self.row["enemyKills"], {"1": 1, "2": 0})
         self.assertEqual(self.row["spawnTraps"], 1)
 
     def test_flag_coverage_and_outcome(self) -> None:
@@ -140,6 +164,21 @@ class JudgeTests(unittest.TestCase):
         self.assertEqual(self.out["judgeFlag"], ["flagCoverage"])
         self.assertIn("bothSidesCapture", self.out["judgeOneSide"])
         self.assertEqual(self.out["judgeNoBaseline"], "no-baseline")
+
+    def test_team_kills_and_a_side_that_never_scores_fail_on_their_own_lines(self) -> None:
+        self.assertEqual(self.out["judgeTeamKills"], ["teamKillsPerBotMinute"])
+        self.assertEqual(self.out["judgeNoFight"], ["enemyKillsPerBotMinute", "bothSidesKill"])
+
+    def test_a_flag_nobody_can_stand_in_is_reported_apart_and_not_counted(self) -> None:
+        check = self.out["judgeUnreachable"]
+        self.assertEqual(check["unreachable"], ["F"])
+        self.assertEqual(check["median"], 1)
+        self.assertTrue(check["pass"])
+
+    def test_balance_is_reported_and_a_one_sided_set_is_flagged(self) -> None:
+        one, mixed = self.out["judgeBalance"]
+        self.assertEqual(one, {"split": [2, 0, 0], "oneSided": 1})
+        self.assertEqual(mixed, {"split": [1, 1, 0], "oneSided": None})
 
 
 class DoorwayTests(unittest.TestCase):
@@ -167,13 +206,45 @@ class MenuTagTests(unittest.TestCase):
 
 class BakeHookTests(unittest.TestCase):
     def test_a_generated_layer_is_read_with_the_shipped_parsers_and_marked(self) -> None:
-        ai = ai_level.load_generated_ai("bf1942", "shigaisen_B")
+        with mock.patch.dict(os.environ, {"BOT_LAYERS_UNVERIFIED": "1"}):
+            ai = ai_level.load_generated_ai("bf1942", "shigaisen_B")
         self.assertIsNotNone(ai)
         doc = ai.to_json()
         self.assertEqual(len(doc["strategicAreas"]), 8)
         self.assertEqual(doc["generated"]["generator"], "botgen")
         self.assertIn("infantryMap", doc["generated"]["inputs"])
+        self.assertEqual([m["name"] for m in doc["searchMaps"]], ["Tank0", "Infantry1"])
+        self.assertEqual(doc["generated"]["unreachable"], ["windmill_west"])
         self.assertEqual(doc["sideStrategies"]["1"], ["normal", "bridge", "finalPush", "breakOut"])
+
+    def test_a_bake_reads_only_a_layer_that_passed_or_was_accepted_with_a_reason(self) -> None:
+        src = LAYERS / "bf1942" / "shigaisen_b"
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            folder = root / "bf1942" / "shigaisen_b"
+            shutil.copytree(src, folder)
+            verdict = folder / "verdict.json"
+            env = {k: v for k, v in os.environ.items() if not k.startswith("BOT_LAYERS_")}
+            with mock.patch.dict(os.environ, env, clear=True):
+                verdict.unlink(missing_ok=True)
+                self.assertIsNone(ai_level.load_generated_ai("bf1942", "shigaisen_B", root))
+                verdict.write_text(json.dumps({"verdict": "fail"}))
+                self.assertIsNone(ai_level.load_generated_ai("bf1942", "shigaisen_B", root))
+                verdict.write_text(json.dumps({"verdict": "fail", "accepted": {"reason": ""}}))
+                self.assertIsNone(ai_level.load_generated_ai("bf1942", "shigaisen_B", root))
+                verdict.write_text(json.dumps({"verdict": "fail", "accepted": {"reason": "owner played it"}}))
+                self.assertEqual(ai_level.load_generated_ai("bf1942", "shigaisen_B", root).generated["gate"],
+                                 "accepted: owner played it")
+                self.assertTrue(ai_level.generated_layer_live("bf1942", "shigaisen_B", root))
+                verdict.write_text(json.dumps({"verdict": "fail"}))
+                self.assertFalse(ai_level.generated_layer_live("bf1942", "shigaisen_B", root))
+                verdict.write_text(json.dumps({"verdict": "pass"}))
+                self.assertEqual(ai_level.load_generated_ai("bf1942", "shigaisen_B", root).generated["gate"], "pass")
+            with mock.patch.dict(os.environ, {**env, "BOT_LAYERS_OFF": "1"}, clear=True):
+                self.assertIsNone(ai_level.load_generated_ai("bf1942", "shigaisen_B", root))
+            verdict.write_text(json.dumps({"verdict": "fail"}))
+            with mock.patch.dict(os.environ, {**env, "BOT_LAYERS_UNVERIFIED": "1"}, clear=True):
+                self.assertIsNotNone(ai_level.load_generated_ai("bf1942", "shigaisen_B", root))
 
     def test_a_shipped_layer_carries_no_marker(self) -> None:
         self.assertNotIn("generated", ai_level.LevelAi().to_json())
@@ -198,7 +269,8 @@ class BakeHookTests(unittest.TestCase):
                 out, _ = scene_layers.layer_ai(ctx)
                 generated.assert_not_called()
                 self.assertNotIn("generated", out["ai"])
-            with mock.patch.object(scene_layers, "load_level_ai", return_value=None):
+            with mock.patch.object(scene_layers, "load_level_ai", return_value=None), \
+                 mock.patch.dict(os.environ, {"BOT_LAYERS_UNVERIFIED": "1"}):
                 out, _ = scene_layers.layer_ai(ctx)
                 self.assertEqual(out["ai"]["generated"]["generator"], "botgen")
             ctx.level = "a_level_with_no_layer"

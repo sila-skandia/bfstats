@@ -3,9 +3,11 @@
 Status: research and approach, 2026-11-10, with a follow-up the same day
 (sections 12 and 13), then phase A of the build (section 14): the generator,
 the lint, the detectors and the judge exist, and shigaisen_B has a generated
-layer kept as source. That layer does not clear the DICE bar (stuck time,
-spawn traps, route failures, redeploys); section 14.6 says why. Nothing was
-published and no tree but a scratch one was touched.
+layer kept as source. Phase A2 (section 15) fixed the three causes section
+14.6 named: shigaisen_B now passes every check at 8 a side and misses one at
+16 a side by 0.0008 redeploys a bot-minute, so its verdict is still a fail
+and the batch was not run. Nothing was published and no tree but a scratch
+one was touched.
 
 **Owner decisions, 2026-11-10.** Any level without bots is a candidate, in
 every mod and in the community maps, not only FHSW. The priority is on-foot
@@ -1523,3 +1525,232 @@ that links community-mappack-by-michaels/shigaisen_B.rfa into its levels>
 6. Phase B (the batch over the shortlist) should wait for item 1: the other
    contained levels place the same buildings, and the verdict would be the
    same four detectors.
+
+## 15. Phase A2, 2026-11-10: the three causes fixed, the judge widened
+
+The owner's goal for the session: add bots for maps without them, with tools
+that verify the bots are good enough for a single-player game. Section 14
+ended on a failed gate with three named causes. This section is what fixed
+each, what the judge measures now, and where shigaisen_B stands. Section
+14's tables are the "before"; nothing in them was re-scored.
+
+### 15.1 What fixed each cause
+
+| Cause (14.6) | Fix | Evidence |
+|---|---|---|
+| Spawns and interiors blocked on the painted map | The engine's own search maps for the level, from the lab's Linux server (`engine_search_maps.py`), kept in the layer and declared by a generated `AIpathFinding.con` | On the painted map 12 of 23 soldier spawns stood off the main walkable ground and two flags were off it. On the engine's map 22 are on it, one is within 3 m, none is off, and every flag is on it or (the windmill) beside it. Stuck time fell from 7.85 to 1.83 seconds a bot-minute at 8 a side |
+| A bot stops outside a 5 m capture ring | In the bot code (`viewer/strategic-ai.js _captureRing`, `bot-decision.js`, `control-point-law.js captureStandRadius`): a soldier ordered to a flag narrower than the order's arrival distance, which their side does not hold, is sent to the flag itself and has arrived only inside the ring less a metre. Labelled INVENTION. On foot only; a pole more than about 3 m off the ground keeps the engine's order; after two route failures running a bot hands that ring back | Unit tests in `test_strategic.py` and `test_bot_ai.py`. Flags that ever change hands on shigaisen_B: 4 of 5 reachable, against 1 of 6 with no layer |
+| windmill_west cannot be taken on foot | The generator marks a capturable flag whose pole is further above the ground a soldier stands on than its radius reaches: its area is kept (so the flag stays bound to it), carries no flag, no neighbour and no order position, and `setTakeable` 0 for both sides. The marker lists it, the lint says "unreachable on foot, excluded", the judge reports it apart and leaves it out of the coverage count. Bots are also kept off spawn points with no free ground within 3 m or more than 8 m above the ground (`ai.generated.botSpawnsExcluded`, honoured in `viewer/spawn-flags.js pickSpawn` for bots only; a player's list is untouched): here the spawn on top of the windmill | Lint: 0 errors. No bot respawned above 140 m in the traced round |
+
+What the ring fix did to shipped layers (seeded traces, 8 a side, 300 s, seed
+3, with vehicles and on foot): Bocage, Kharkov, Berlin and El Alamein are
+byte-identical before and after. Stalingrad changed (its Railroads flag is
+first taken at 64 s where it was 180 s), so the baseline was rebuilt with the
+fix in place. Its bars moved little: stuck seconds p90 1.97 to 2.06 at 8 a
+side and 2.19 to 1.99 at 16; redeploys p90 0.192 to 0.198 and 0.136 to 0.129;
+captures and flag coverage per level unchanged.
+
+### 15.2 The engine's maps as a step
+
+```bash
+python3 engine_search_maps.py --mod bf1942 --archive ../../community-mappack-by-michaels/shigaisen_B.rfa
+```
+
+It builds a private instance in the lab folder (links to the server's
+archives, its own rebuilt copy of the level archive), starts the level in
+co-op with a script layer made for the run (the level's Conquest script as
+`Coop.con`, a minimal `AI.con`, an `AIpathFinding.con` declaring `Tank0` and
+`Infantry1`, seeding the flood with the level's soldier spawns and calling
+`ai.createAllMaps` after `run StaticObjects`), collects the maps and removes
+the instance. The source archive is read, never written. Measured on
+shigaisen_B: two minutes, six files, 48,960 bytes (level 0 of each map is
+13,856 bytes; the page reads only those two, 27.7 KB a level). The archive
+writer keeps the source's 148-byte block and trailer and stores added files
+as literal-only LZO; it worked first time on a community archive.
+
+Limits, stated: all three pyramid levels are stored, because the bake's
+loader applies the engine's rule that a map with a level missing does not
+load; the server aborts before the strategic maps, so the page plans on its
+own coarse layer over the baked map; the lab's server source holds vanilla
+and the two expansion packs only, so a mod level needs the mod's archives
+linked into the instance first (not done); a level's numbered patch
+archives are not merged into the run.
+
+### 15.3 What the judge measures now
+
+Added after the coordinator's review, each with its bar from the same DICE
+runs:
+
+| Check | Rule | DICE, 8 a side | DICE, 16 a side |
+|---|---|---|---|
+| Team kills per bot-minute | at most the 90th percentile | 0.061 | 0.040 |
+| Enemy kills per bot-minute | at least the 10th percentile | 0.30 | 0.17 |
+| Each side kills an enemy in every seed | must hold | | |
+| Balance | reported per size; a level where one side wins every seed at every size is flagged, not failed (Berlin's Axis wins ten of ten at 16 a side in the baseline) | | |
+| Unreachable flags | listed apart, out of the coverage denominator | | |
+
+Two detector definitions were corrected, for the baseline and the level
+alike, and the baseline rebuilt each time. An order flip (A, B, A within
+60 s) is now keyed on the flag the order's point is at, so the walk into a
+narrow ring and the area order on the same flag are one objective; and a
+bot's history starts again with each life, so dying on the way to A,
+standing up at B and going back to A is not a change of mind. The first
+version counted both and scored shigaisen_B at 0.70 flips a bot-minute; a
+traced round showed 53 flips of which the most common were an attacker's
+objective and the area the bot had just respawned in.
+
+The stand-in for a person (a scripted soldier holding still in a contested
+ring, noticed and shot within a bounded time) was not built: the runner has
+no non-bot soldier, and adding one is real work in `sim/match.mjs`. Open.
+
+### 15.4 shigaisen_B now
+
+Ten seeds, 600 s, Conquest, on foot; medians, with the lowest and highest
+seed for the generated arm. "No layer" is the published level on the same
+viewer (ring fix included).
+
+**8 a side: every check passes.**
+
+| Check | No layer | Generated | Bar |
+|---|---|---|---|
+| Captures a match | 2 | 3 (0 to 6) | at least 1 |
+| Captures by side over the seeds | Axis 3, Allies 18 | Axis 10, Allies 15 | each side |
+| Reachable flags that ever changed hands | | 4 of 5 | at least a third |
+| Stuck seconds per bot-minute | 12.97 | 1.83 (0.72 to 2.95) | at most 2.06 |
+| Route failures per bot-minute | 12.80 | 0.34 (0 to 1.32) | at most 0.38 |
+| Redeploys per bot-minute | 0.87 | 0.158 (0.07 to 0.21) | at most 0.198 |
+| Spawn traps per bot-minute | 0.41 | 0.108 | at most 0.143 |
+| Idle share | 0.02 | 0.31 | at most 0.53 |
+| Order flips per bot-minute | 0.06 | 0.006 | at most 0.32 |
+| Team kills per bot-minute | 0.052 | 0.051 | at most 0.061 |
+| Enemy kills per bot-minute | 1.00 | 1.09 | at least 0.30 |
+| Each side kills in every seed, both lose tickets, no bot error | | yes | |
+| Winner by seed | Axis 9, Allies 1 | Allies 10 | flagged |
+
+**16 a side: one check fails.**
+
+| Check | No layer | Generated | Bar |
+|---|---|---|---|
+| Captures a match | 2 | 2 (0 to 8) | at least 1 |
+| Captures by side over the seeds | Axis 2, Allies 19 | Axis 11, Allies 18 | each side |
+| Reachable flags that ever changed hands | | 4 of 5 | at least a third |
+| Stuck seconds per bot-minute | 14.74 | 1.78 (1.06 to 3.47) | at most 1.99 |
+| Route failures per bot-minute | 16.20 | 0.65 | at most 2.10 |
+| Redeploys per bot-minute | 0.97 | **0.1298** (0.065 to 0.21) | at most 0.129 |
+| Spawn traps per bot-minute | 0.49 | 0.068 | at most 0.079 |
+| Idle share | 0.01 | 0.41 | at most 0.72 |
+| Order flips per bot-minute | 0.08 | 0.007 | at most 0.38 |
+| Team kills per bot-minute | 0.105 | 0.030 | at most 0.040 |
+| Enemy kills per bot-minute | 1.11 | 0.61 | at least 0.17 |
+| Each side kills in every seed, both lose tickets, no bot error | | yes | |
+| Winner by seed | Axis 10 | Allies 10 | flagged |
+
+**Verdict: fail, by 0.0008 redeploys a bot-minute at 16 a side. Outcome
+class: better than nothing** (all four movement rates down by more than a
+quarter at both sizes, captures no lower). No threshold was moved. The
+layer's `verdict.json` says so, and the bake's gate (15.5) does not read it.
+
+What is left is the level's, named:
+
+* **Two flags sit inside huts.** The busiest stuck place at 16 a side is
+  684, -288 to -292 (1,373 bot-seconds over ten rounds): the supply hut that
+  holds southBridge_east, whose door is 1.25 m wide. The next are 624, -348
+  and 716, -372 (by minka_northeast, which no side takes in any seed). A bot
+  ordered into the ring has to thread the door; those that miss it are the
+  redeploys.
+* **Why the Allies win every round with the layer** (1d): not kills (456 to
+  384 over ten rounds at 8 a side) and not the layer's sides, which are
+  symmetric at the start (each side's flags are worth 103, so both bleed).
+  The attack target Kharkov's `finalPush` picks is the enemy's `Close` flag.
+  For the Allies that is minka_south, in the open, taken in 8 seeds of 10;
+  for the Axis it is southBridge_east, inside the hut, taken in 5 or 6. The
+  side whose target is in the open stops its own bleed first. With no layer
+  the Axis wins nine or ten of ten instead, because four of the Allied
+  base's five spawns are on a barracks floor the painted map blocks.
+* A variant that sent bots standing at the windmill to an order position at
+  its foot was run and dropped: stuck time rose from 1.83 to 2.39 at 8 a
+  side and captures fell from 3 to 1.
+
+### 15.5 The guard
+
+`sim/botbatch.mjs level` writes `verdict.json` into the layer's folder
+(verdict, outcome, the failing checks per size, the winners' split, the
+unreachable flags, the generator version and input hashes).
+`bf42/ai_level.py generated_layer_gate` lets a bake read a layer only when
+that verdict is `pass`, or the file carries `"accepted": {"reason": "..."}`
+with a non-empty reason. A layer with no verdict or a failing one is left
+alone and the bake prints why. `BOT_LAYERS_UNVERIFIED=1` lets a scratch tree
+take the layer for the run that judges it, and `BOT_LAYERS_OFF=1` forces the
+no-layer arm; the batch sets both itself. A test covers each case. So
+shigaisen_B's layer sits in the repo and no `patch_scene.py --layer ai` on a
+real tree picks it up.
+
+To take it live after a decision to accept it as it is (publishing is the
+coordinator's): add an `accepted` reason to
+`bot-layers/bf1942/shigaisen_b/verdict.json`, then from
+`tools/bf1942-models`, with a game folder that holds the level's archive:
+
+```bash
+python3 patch_scene.py --layer ai --mod bf1942 --game-dir <game folder> shigaisen_b
+python3 extract_menu_layout.py --game-dir <game folder>       # the EXPERIMENTAL BOTS row
+```
+
+### 15.6 Loose ends from phase A
+
+* **`carveDoors` on painted maps.** The first proof used levels with baked
+  maps, where it never runs. On three levels that play on a painted map
+  (five seeds, the version of 14.7 against the commit before it):
+  attack_on_pearl_harbor identical; dc_basrah_nights no clear change;
+  FHSW's battle_of_edson_s_ridge slightly worse (median route failures 1 to
+  12), because all seven cells it opened there were notches in solid
+  blocks, not doors. The rule was tightened: the ground on both sides of a
+  doorway must be ground the brush leaves free. Re-measured over ten seeds
+  on Edson's Ridge and Basrah Nights against the commit before any doorway
+  code: captures, deaths, route failures and redeploys are identical, median
+  for median. The synthetic door test still passes. Whether the tightened
+  rule still opens the real door it was written for was not re-checked: with
+  the engine's map shigaisen_B no longer uses the painted one.
+* **Instant Battle end to end.** With vanilla's menu rows regenerated into a
+  scratch copy of the viewer, a headless page was driven with real clicks:
+  the shigaisen_B row reads EXPERIMENTAL BOTS, and START requests
+  `map.html?map=shigaisen_B&team=2&mode=Conquest&botCount=16&botSkill=0.75`.
+  The navigation was intercepted there, so the level was not loaded from
+  that click. That run predates the gate: `extract_menu_layout.py` now asks
+  the bake's own gate (`generated_layer_live`), so with a failing verdict
+  the row reads NO BOTS until the layer passes or is accepted.
+* **`audit_behaviour.mjs`** has a `--viewer-dir` option (default unchanged),
+  with tests. Against the scratch viewer, `--only bots,flags,spawns
+  --bots-seconds 60`: 0 findings at every severity over 8 flags, 23 spawns
+  and 8 bots. It ran on the phase A layer, before the engine's maps.
+
+### 15.7 The batch: not run
+
+The condition was that shigaisen_B passes. It does not, by a hair, so the
+batch was not started. It is one command when it is wanted, with a scratch
+maps tree holding the fetched levels and a game folder linking their
+archives:
+
+```bash
+node sim/botbatch.mjs level --maps <scratch maps> --models <models> --mod bf1942 \
+     --game-dir <game folder> --archives ../../community-mappack-by-michaels \
+     --candidates ../../features/bot-map-generation/candidates.csv --out <out>
+```
+
+Per level it runs the no-layer arm, the engine's maps (about two minutes),
+the generator, the bake's `ai` layer on the scratch tree, the lint, the
+seeded matrix and the judge, and writes the three-way outcome (`pass`,
+`better-than-nothing`, `no-better-than-nothing`) to `<out>` and the layer's
+own `verdict.json`. About 13 minutes a level on this machine. Twenty
+community levels (15 contained on-foot, 5 contained with vehicles) are
+fetched and linked in the scratch tree, ready. Not built: the meeting-area
+rule for flagless and air arenas, and engine maps for a mod's levels.
+
+### 15.8 Open
+
+1. The 16 a side redeploy margin on shigaisen_B: bots threading a 1.25 m hut
+   door. A bot-movement question (how the page's soldier takes a doorway),
+   to be argued on a DICE level with a door, not from this one.
+2. The stand-in for a person in the runner (15.3).
+3. Engine maps for mod levels; the strategic maps; numbered patch archives.
+4. The meeting-area rule; the batch.
+5. `createHomogenousCondition` in the reader (14.7).

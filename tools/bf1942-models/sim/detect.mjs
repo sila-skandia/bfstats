@@ -25,9 +25,27 @@ export function newDetector(header) {
   return {
     header, bots: new Map(), dt: (header.traceEvery ?? 1) / (header.tickHz ?? 30),
     aliveSeconds: 0, idleSeconds: 0, stuck: [], oscillations: 0, selfDeaths: 0, deaths: 0, traps: [],
+    teamKills: 0, enemyKills: { 1: 0, 2: 0 },
     changed: new Set(), captures: { 1: 0, 2: 0 }, firstCapture: null, heat: new Map(), spawns: new Map(),
     behaviour: {},
   };
+}
+
+/** How near an order's point must be to a flag to count as that flag's, metres. */
+export const OBJECTIVE_REACH = 25;
+
+function objectiveOf(d, o) {
+  const p = o.order?.point;
+  if (p) {
+    let best = null, bestD = OBJECTIVE_REACH;
+    for (const f of d.header.flags ?? []) {
+      if (!f.pos) continue;
+      const dist = Math.hypot(f.pos[0] - p[0], f.pos[2] - p[1]);
+      if (dist < bestD) { bestD = dist; best = f.name; }
+    }
+    if (best) return 'flag:' + best;
+  }
+  return o.area ?? (p ? p.map(v => Math.round(v)).join('/') : null);
 }
 
 function botState(d, id) {
@@ -50,7 +68,9 @@ function closeStuck(d, id, b, t) {
 export function feed(d, o) {
   if (o.k === 'tick') {
     const b = botState(d, o.bot);
-    if (!o.alive) { closeStuck(d, o.bot, b, o.t); b.track.length = 0; return; }
+    // A new life is a new run of decisions: dying on the way to A, standing
+    // up at B and going back to A is one objective, not a change of mind.
+    if (!o.alive) { closeStuck(d, o.bot, b, o.t); b.track.length = 0; b.orders.length = 0; b.lastKey = null; return; }
     d.aliveSeconds += d.dt;
     d.behaviour[o.beh] = (d.behaviour[o.beh] ?? 0) + d.dt;
     if (IDLE.has(o.beh) && !o.target) d.idleSeconds += d.dt;
@@ -71,7 +91,10 @@ export function feed(d, o) {
       } else closeStuck(d, o.bot, b, o.t);
     }
     // Oscillation: the order's target goes A, B, A.
-    const okey = o.area ?? (o.order?.point ? o.order.point.map(v => Math.round(v)).join('/') : null);
+    // The objective is the flag the order's point is at, whatever kind of
+    // order names it (an area's, or the walk into a narrow flag's ring);
+    // else the area, else the point. A bot with no order has none.
+    const okey = objectiveOf(d, o);
     if (okey && okey !== b.lastKey) {
       b.orders.push([o.t, okey]);
       if (b.orders.length > 3) b.orders.shift();
@@ -85,6 +108,9 @@ export function feed(d, o) {
       d.deaths++;
       const self = !o.killer || o.killer === o.victim;
       if (self) d.selfDeaths++;
+      // A kill of a soldier on the killer's own side is a team kill, not a fight.
+      else if (o.killerSide === o.victimSide) d.teamKills++;
+      else d.enemyKills[o.killerSide] = (d.enemyKills[o.killerSide] ?? 0) + 1;
       const sp = d.spawns.get(o.victim);
       if (sp && o.t - sp.t <= TRAP_SECONDS && o.pos && Math.hypot(o.pos[0] - sp.pos[0], o.pos[2] - sp.pos[2]) <= TRAP_METRES) {
         d.traps.push({ bot: o.victim, t: sp.t, kind: self ? 'self-death' : 'killed', pos: sp.pos });
@@ -128,9 +154,12 @@ export function finish(d, summary = null, endT = null) {
     stuckSecondsPerBotMinute: +(d.stuck.reduce((s, e) => s + e.seconds, 0) / minutes).toFixed(3),
     stuckPlaces: [...places.values()].sort((p, q) => q.seconds - p.seconds).slice(0, 12).map(p => ({ ...p, seconds: +p.seconds.toFixed(1) })),
     idleShare: +(d.idleSeconds / Math.max(1e-9, d.aliveSeconds)).toFixed(4),
-    oscillationsPerBotMinute: +(d.oscillations / minutes).toFixed(4),
+    oscillations: d.oscillations, oscillationsPerBotMinute: +(d.oscillations / minutes).toFixed(4),
     selfDeaths: d.selfDeaths, selfDeathsPerBotMinute: +(d.selfDeaths / minutes).toFixed(4),
     deaths: d.deaths,
+    teamKills: d.teamKills, teamKillsPerBotMinute: +(d.teamKills / minutes).toFixed(4),
+    enemyKills: { 1: d.enemyKills[1] ?? 0, 2: d.enemyKills[2] ?? 0 },
+    enemyKillsPerBotMinute: +(((d.enemyKills[1] ?? 0) + (d.enemyKills[2] ?? 0)) / minutes).toFixed(4),
     spawnTraps: d.traps.length, spawnTrapsPerBotMinute: +(d.traps.length / minutes).toFixed(4),
     routeFailuresPerBotMinute: +(total(m.routeFailures) / minutes).toFixed(3),
     redeploysPerBotMinute: +(total(m.redeploys) / minutes).toFixed(4),

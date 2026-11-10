@@ -133,6 +133,27 @@ function moveToScenario() {
   };
 }
 
+/** The fallback at a flag 30 m off whose capture radius is `radius` (null:
+ *  the template's default): where the bot stops, against the ring the capture
+ *  law measures. INVENTION under test: bot-decision.js `fallbackRadius`. */
+function captureRingScenario(radius) {
+  const flagAt = [HOME[0], 0, HOME[2] - 30];
+  const world = new World({ collider, extras: { ...EXTRAS, controlPoints: [
+    EXTRAS.controlPoints[0], { name: 'Enemy', spawnGroupId: 2, team: 1, position: flagAt, ...(radius ? { radius } : {}) },
+  ] } });
+  world.addBotPlayer('bot_0', { team: 2, flag: world.flags[0] });
+  const bot = new BotController({ playerId: 'bot_0', world, botSkill: 0.75 });
+  bot.navGrid = null;
+  for (let i = 0; i < 600; i++) {
+    bot.tick(WORLD_TICK_DT, i * WORLD_TICK_DT);
+    world.step(WORLD_TICK_DT);
+  }
+  const s = world.player('bot_0').soldier;
+  const wp = bot._fallbackWaypoint();
+  return { stopped: Math.hypot(s.x - flagAt[0], s.z - flagAt[2]), arrive: wp.radius, arrived: wp.arrived,
+           goalReached: bot.goalReached };
+}
+
 /** An axis-aligned box as twelve triangles, for the nav map's statics. */
 function box(x0, x1, y0, y1, z0, z1) {
   const v = [[x0, y0, z0], [x1, y0, z0], [x1, y1, z0], [x0, y1, z0],
@@ -1216,6 +1237,7 @@ const results = {
   aim: aimScenario(),
   friendly: friendlyScenario(),
   moveTo: moveToScenario(),
+  captureRing: { narrow: captureRingScenario(5), wide: captureRingScenario(10), unset: captureRingScenario(null) },
   avoid: avoidScenario(),
   wedged: wedgedScenario(),
   steer: steerScenario(),

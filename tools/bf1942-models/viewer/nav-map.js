@@ -255,7 +255,7 @@ export function buildNavMap(collider, worldSize, options = {}) {
         normalY[i] = 1;
       }
     }
-    if (ctx.sub) door = carveDoors(stamp, ctx.sub, blocked, width, height);
+    if (ctx.sub) door = carveDoors(stamp, ctx.sub, blocked, width, height, brushOffsets(brush / cellSize));
   }
 
   // The brush: every blocked cell, terrain or object, stamps the plus. A
@@ -487,7 +487,7 @@ function subMask(poly, n, cx0, cz0, cellSize) {
  * cells before and behind it along the strip are free ground or doorways
  * themselves. A doorway is unstamped and the brush does not close it.
  */
-function carveDoors(stamp, sub, blocked, width, height) {
+function carveDoors(stamp, sub, blocked, width, height, offsets) {
   const total = width * height;
   const FULL = (1 << DOOR_SUB) - 1;
   // Bit c set: quarter-column (dir 0) or quarter-row (dir 1) c holds no geometry.
@@ -535,7 +535,19 @@ function carveDoors(stamp, sub, blocked, width, height) {
   // A doorway leads somewhere: free ground or another doorway on both sides.
   for (let dir = 0; dir < 2; dir++) {
     const step = dir === 0 ? width : 1;        // through the wall
-    const open = j => j >= 0 && j < total && (cand[dir][j] || (!stamp[j] && blocked[j] === CELL_FREE));
+    // Free ground counts only if the brush will leave it free: a notch in a
+    // solid block opens onto cells its own walls close.
+    const closes = j => {
+      const x = j % width, z = (j - x) / width;
+      for (const [dx, dz] of offsets) {
+        const px = x + dx, pz = z + dz;
+        if (px < 0 || px >= width || pz < 0 || pz >= height) continue;
+        const n = pz * width + px;
+        if (blocked[n] !== CELL_FREE || (stamp[n] && !cand[0][n] && !cand[1][n])) return true;
+      }
+      return false;
+    };
+    const open = j => j >= 0 && j < total && (cand[dir][j] || (!stamp[j] && blocked[j] === CELL_FREE && !closes(j)));
     for (let changed = true; changed;) {
       changed = false;
       for (let i = 0; i < total; i++) {
