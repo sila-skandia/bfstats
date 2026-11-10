@@ -1,8 +1,9 @@
 # BF1918's armoured train
 
 Status: the locomotive is built and verified (2026-11-10). It runs on its guide
-rails on the real Gebirgspass bake, headless. The cars and the couplers are
-designed below and not built.
+rails on the real Gebirgspass bake, headless. The cars are vehicles of their
+own with their 15 seats (2026-11-10, SPAWN-33), kept where they were stood on
+the locomotive; their coupling as free bodies is designed below and not built.
 
 BF1918 3.4b puts an armoured train on seven levels: brusilov_offensive,
 chateau-thierry, gaza_town, gebirgspass, ramskapelle, roye and sarikamis.
@@ -65,7 +66,7 @@ Four levels carry their own copy under `objects/ArmouredTrain/`.
 | The group rule | Only rounds against statics (FF-1) | The static probe (`static-index.js` `castAmong`, `body-statics.js`) and the body pair loop (`body-contact.js` rule 5) as well |
 | The guide rails | Not baked: `StaticObjects.con`'s `run` was not followed | Baked by the exporter fix `3faae2fe5`, a separate change; the seven levels were re-baked on 2026-11-10 |
 | A spring on a static | The drive took the body world's push one tick late, so its force ran two ticks behind the pose. The train bounced off its embankment 0.8 m high | `TrackedVehicle.takeStaticPushes` stands each spring on the push at the pose it was measured at, merged with the terrain's there. The friction keeps the previous contact |
-| Cars and pullers | Baked under the locomotive and drawn riding it rigidly. They have no collision of their own, because `describeVehicleParts` skips held-spawner nodes | Unchanged (open, below) |
+| Cars and pullers | Baked under the locomotive and drawn riding it rigidly. Their 15 crew seats were in no seat row (`seat-survey.js` leaves a spawner's object out) | Each car is a vehicle of its own (`spawned-craft.js` `hullHeldCraftUnder`, `stood`): its seats, guns, armour and collision owner, kept at its stood pose on the locomotive. The pullers (no door) stay baked. The free-body coupling is open, below |
 
 These are general rules with nothing special to the train. FHSW's rail wagons
 (`PJWagen_T-34_1942_GuideWheel`, `PT16_GuideWheel`, COL-20) put guide wheels in
@@ -114,15 +115,13 @@ This is the faithful design. It is not built in this pass, because it needs
 two pieces of engine-general work, each larger than the train:
 
 1. **A land hull's baked child-spawner PCOs as objects of their own.**
-   `spawned-craft.js` `detachSpawnedCraft` splits off only sea and air craft
-   (`spawnedCraftUnder`) and the craft a static's spawner holds. The cars are
-   `VCLand`, unheld, and baked under a hull that is itself under the
-   `spawners` group, so they stay baked. The rule is SPAWN-30's: every child
-   spawner of every hull stands an object of its own. It should apply to them
-   as it does to a deck aircraft. The pullers then take the existing hold
-   (`hull-bodies.js` `holdSpawned` / `holdSpawnedCraft`, AI-121), with a land
-   hull as the host. `hostPointVelocity` must read a parked host's body too,
-   not only a driven one's drive state.
+   Done for the cars on 2026-11-10 (SPAWN-33, `hullHeldCraftUnder`), with one
+   stand-in: a car is kept at its stood pose on the locomotive (`stood` on its
+   hold) instead of being let go, because of item 2. Left: let a stood car go
+   (drop `stood` once item 2 is in), and split off the pullers, which have no
+   door and so stay baked: they need the same split with the existing hold
+   (AI-121, the host a land hull), and `hostPointVelocity` must read a parked
+   host's body too, not only a driven one's drive state.
 2. **A parked body against the static world.** A car nobody is in is a parked
    body. A parked body meets no static at all (`body-world.js`: "Driven only,
    for now", deferred in features/viewer-ground-hull-collision because hulls
@@ -140,7 +139,7 @@ car with the mass shares (COL-2). The pair filter needs the holder rule:
 and away from rounds.
 
 Until then the cars ride rigidly 13 m ahead of the locomotive and 7 m behind
-it. On Gebirgspass's gentle bends that offsets them well under a metre. On a
+it, now as vehicles of their own on the hold rather than baked parts. On Gebirgspass's gentle bends that offsets them well under a metre. On a
 100 m-radius bend the gun car would sit about 0.85 m off its rails.
 
 Also open, all small:

@@ -166,7 +166,8 @@ def placed_and_carried(nodes: list[dict]):
 
     Placed: the `spawners` group's children, plus what `spawned-craft.js`
     `detachSpawnedCraft` splits off (a ship's VCSea/VCAir PCO with mass; a
-    static's held PCO with mass). Carried: a nested PCO with `heldSpawner`
+    land or air hull's spawned PCO with mass and a door, `hullHeldCraftUnder`;
+    a static's held PCO with mass). Carried: a nested PCO with `heldSpawner`
     that stays baked inside its host -- a retail root object of its own."""
     parent: dict[int, int] = {}
     for i, n in enumerate(nodes):
@@ -204,6 +205,20 @@ def placed_and_carried(nodes: list[dict]):
                     and phys.get("vehicleCategory") in ("VCSea", "VCAir")):
                 placed.append(j)
                 detached.add(j)
+        if (ext(top).get("physics") or {}).get("vehicleCategory") == "VCSea":
+            continue
+        stack = list(nodes[top].get("children", []))
+        while stack:
+            j = stack.pop()
+            e = ext(j)
+            if (e.get("templateKind") == "PlayerControlObject" and e.get("heldSpawner")
+                    and ((e.get("physics") or {}).get("mass") or 0) > 0
+                    and any(ext(k).get("templateKind") == "EntryPoint" for k in subtree(j))):
+                if j not in detached:
+                    placed.append(j)
+                    detached.add(j)
+                continue
+            stack.extend(nodes[j].get("children", []))
     for i in range(len(nodes)):
         e = ext(i)
         if e.get("templateKind") != "PlayerControlObject" or not e.get("heldSpawner"):

@@ -1,11 +1,14 @@
-// A ship's baked landing craft and deck aircraft, split off as vehicles of
-// their own before the level's scene is indexed. Split out of `seats.js`,
+// A ship's baked landing craft and deck aircraft, and what a static's or a
+// land or air hull's spawner holds, split off as vehicles of their own before
+// the level's scene is indexed. Split out of `seats.js`,
 // which re-exports it.
 
 /** Detached deck aircraft -> the hold `ObjectSpawner` keeps on them. */
 const spawnHolds = new WeakMap();
 /** The craft a static's spawner holds (never a ship's). */
 const staticHeld = new WeakSet();
+/** The craft a land or air hull's spawner holds (`hullHeldCraftUnder`). */
+const hullHeld = new WeakSet();
 /** A static's held craft -> every craft its spawner can have alive at once,
  *  the baked one first (`heldSlotsOf`). */
 const heldSlots = new WeakMap();
@@ -34,6 +37,10 @@ const heldSlots = new WeakMap();
  * hold (`spawnHoldOf`): its ship and its pose on her. Returns the objects
  * moved.
  *
+ * What a land or air hull's own spawner holds (`hullHeldCraftUnder`) is split
+ * off the same way, its hull the hold's host (`onHull`), in the room's world
+ * too (`shipCraft: false` still leaves a ship's alone).
+ *
  * A static's spawner with `MaxNrOfObjectSpawned` above 1 has that many
  * objects alive at once (the `+0x110` slot vector `ObjectSpawner::
  * ObjectSpawner` 0x08312910 sizes from template +0x168, SPAWN-9), and the
@@ -61,6 +68,18 @@ export function detachSpawnedCraft(root, { clone = o => o.clone(true), shipCraft
     for (const o of spawnedCraftUnder(top)) {
       craft.push(o);
       hosts.set(o, top);
+    }
+  }
+  // What a land or air hull's own spawner holds (`hullHeldCraftUnder`):
+  // BF1918's Kolossal carries its MG platform and commander that way, the
+  // Zeppelin its two extra gondola gunners, EoD's CH-47 a Land Rover. The
+  // hull is the hold's host, as a ship is her deck aircraft's.
+  for (const top of spawners.children) {
+    for (const o of hullHeldCraftUnder(top)) {
+      if (hosts.has(o)) continue;
+      craft.push(o);
+      hosts.set(o, top);
+      hullHeld.add(o);
     }
   }
   // A static's spawner holds a craft too: FH's "flying spawn" is a static
@@ -108,6 +127,17 @@ export function detachSpawnedCraft(root, { clone = o => o.clone(true), shipCraft
         twins.push(twin);
       }
       for (const slot of slots) heldSlots.set(slot, slots);
+      continue;
+    }
+    if (hullHeld.has(o)) {
+      // `onHull`: the hold lasts as long as the hull stands it, and a craft
+      // still on the hold of a hull its pad has not stood is not in the
+      // world either (`level-statics.js` `vehicleSpawnActive`). `stood`: a
+      // spawner that does not hold (`hullHeldCraftUnder`), kept where it was
+      // stood until the page can let it go.
+      const stood = o.userData.heldSpawner.holdObject !== true;
+      spawnHolds.set(o, { host, local: heldLocal(host, o), released: false, onHull: true, stood });
+      spawners.attach(o);
       continue;
     }
     // `ObjectTemplate.holdObject 0` on the spawner (the exporter's
@@ -163,6 +193,68 @@ export function spawnedCraftUnder(top) {
 }
 
 /**
+ * The objects a land or air hull's own spawners hold, baked under `top` (a
+ * hull under the level's `spawners` group, or a `models/<Hull>.glb`'s root):
+ * every nested PlayerControlObject the exporter stamped with its spawner
+ * (`heldSpawner`), with a body of its own (`physics.mass`) and a door of its
+ * own (an `EntryPoint` in its own tree). `top` itself and anything under a
+ * craft already taken are excepted; a ship yields none.
+ *
+ * The engine makes each an object of its own, held at its spawner (AI-121,
+ * SPAWN-30): `spawnObject` 0x083140a0 stands it parented to nothing and the
+ * hold puts it back every frame while its engine's revs are under 0.1. A
+ * seat PCO carries no mass and no stamp, so the hull's own seats are never
+ * here. BF1918 leans on it to pass the six-PCO limit its Zeppelin's file
+ * names: the Kolossal's MG platform (`KolossalMgGunnerExtra`, four MGs and
+ * the commander) and the Zeppelin's two gondola gunners
+ * (`ZeppelinL30GunnerZusatz`) each carry a dummy Engine nothing turns, so
+ * they ride their hull for its life. Before this rule nothing took them: the
+ * hull's seat row leaves a held object out (`seat-survey.js`) and the ship
+ * and static rules above never look under a land or air hull, so five of the
+ * Kolossal's twelve crew positions could not be manned.
+ *
+ * A spawner that does not hold (no `holdObject 1`, the engine's default 0)
+ * stands its object once, free (SPAWN-30). BF1918's armoured train stands
+ * its three cars so, each with four or five crew seats, and the engine's
+ * couplers (`TrainPuller`, held by the locomotive and the front infantry car,
+ * no door) push them along the rails by contact (COL-25). The page has no
+ * parked body that meets the rails and their guide walls yet
+ * (`body-world.js`, "Driven only, for now") and no puller body, so a car is
+ * kept where it was stood on its hull (`stood` on its hold, never let go by
+ * the throttle rule): the rigid ride the bake drew before, now with its own
+ * seats, guns and armour (features/bf1918-armoured-train).
+ *
+ * Not taken: a held object with no door, which no soldier can enter and the
+ * hold pins for ever (FHSW's bombers' attitude indicator, mass 1, drawn as a
+ * map mark of its hull's, `map-friendlies.js`); and what a ship holds that is
+ * not her deck craft (EoD's LCT's tanks and jeep), since a land drive has no
+ * moving deck to stand on once the hold lets it go (`hull-bodies.js`
+ * `shipDeckAt` serves aircraft and parked bodies only).
+ */
+export function hullHeldCraftUnder(top) {
+  const craft = [];
+  if (!top || top.userData?.physics?.vehicleCategory === 'VCSea') return craft;
+  const walk = o => {
+    if (o !== top && isHullHeld(o)) {
+      craft.push(o);
+      return;
+    }
+    for (const child of o.children) walk(child);
+  };
+  walk(top);
+  return craft;
+}
+
+function isHullHeld(o) {
+  const data = o.userData;
+  if (data?.templateKind !== 'PlayerControlObject' || !data.heldSpawner) return false;
+  if (!(data.physics?.mass > 0)) return false;
+  let door = false;
+  o.traverse(child => { if (!door && child.userData?.templateKind === 'EntryPoint') door = true; });
+  return door;
+}
+
+/**
  * A template's model as a server draws it: every object its spawners field
  * taken out of it, in place. Returns how many went.
  *
@@ -208,6 +300,20 @@ export function stripSpawnedCraft(top) {
  */
 export function spawnHoldOf(node) {
   return spawnHolds.get(node) ?? null;
+}
+
+/**
+ * Whether a craft a hull's own spawner holds (`hullHeldCraftUnder`) is in the
+ * world, or null for any other node. On the hold it stands exactly while its
+ * hull does (`active(host)`, the page's `vehicleSpawnActive`): a pad's
+ * other-side Kolossal, not yet stood, has its platform on it, and the
+ * platform goes when the hull's wreck clears and comes back with the next
+ * one. Let go, it is an object of its own (true).
+ */
+export function hullHeldActive(node, active) {
+  const hold = spawnHolds.get(node);
+  if (!hold?.onHull) return null;
+  return hold.released !== false || !!active(hold.host);
 }
 
 /**

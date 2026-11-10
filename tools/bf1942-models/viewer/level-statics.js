@@ -9,7 +9,7 @@ import {
   SpawnerPad, calcSpawnDelay, followPadPoint, needsClearance, padControlPoint, padFromSpawn, padSides,
   preGameSetTeam, spawnClear,
 } from './deployables.js';
-import { heldSlotsOf, spawnHoldOf } from './spawned-craft.js';
+import { heldSlotsOf, hullHeldActive, spawnHoldOf } from './spawned-craft.js';
 import { bakedPadNode, padTemplateOf } from './pad-nodes.js';
 
 export { bakedPadNode, padFirstTemplate, padTemplateOf, settleGroupsOf } from './pad-nodes.js';
@@ -1204,6 +1204,13 @@ export function createLevelStatics(page) {
     if (vehicle?.userData?.cleared) return false;
     const record = padRecords.get(vehicle);
     if (record) return record.live.has(vehicle);
+    // What a hull's own spawner holds (`spawned-craft.js`
+    // `hullHeldCraftUnder`) stands with that hull: on the hold it is in the
+    // world exactly while the hull is (a pad's other-side Kolossal, not yet
+    // stood, has its MG platform on it), and once let go it is an object of
+    // its own that no flag takes back.
+    const onHull = hullHeldActive(vehicle, vehicleSpawnActive);
+    if (onHull !== null) return onHull;
     // A node no pad entry names (a scene written before `objectSpawns`): the
     // nearest flag's gate it always had.
     const name = vehicle?.userData?.controlPointName;

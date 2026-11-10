@@ -42,7 +42,7 @@ export function createHeldCraft(instance, craft) {
     const hold = spawnHoldOf(node);
     if (!hold) continue;
     records.push({ node, host: hold.host, local: hold.local, owner: instance.ownerRoots.indexOf(node),
-                   released: false, at: null, velocity: [0, 0, 0] });
+                   released: false, at: null, velocity: [0, 0, 0], stood: !!hold.stood });
   }
 
   function step() {
@@ -60,7 +60,9 @@ export function createHeldCraft(instance, craft) {
       const driver = instance.ownerToEntry?.get(rec.owner)?.driver ?? null;
       const state = driver != null ? world.player(driver)?.vehicle?.state : null;
       if (state) {
-        if (Math.abs(state.throttle ?? 0) >= HOLD_RELEASE_THROTTLE) {
+        // A car a hull stood without a hold stays on it (`spawned-craft.js`
+        // `hullHeldCraftUnder`, `stood`).
+        if (!rec.stood && Math.abs(state.throttle ?? 0) >= HOLD_RELEASE_THROTTLE) {
           // Let go, at rest (SPAWN-23).
           rec.released = true;
           state.velocity.set(v[0], v[1], v[2]);

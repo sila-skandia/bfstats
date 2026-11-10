@@ -737,7 +737,7 @@ export function createLevel(page) {
     }
     // A ship's landing craft are spawned objects of their own in the engine.
     const craft = detachSpawnedCraft(level.currentRoot, { clone: skeletonClone });
-    if (craft.length) console.log(`[vehicles] ${craft.length} landing craft split from their ships`);
+    if (craft.length) console.log(`[vehicles] ${craft.length} held or launched craft split from their hosts`);
     // An arm that carries a held craft (FH's flying spawn) turns with the
     // world's ticks, not with the mixer's frames (`held-arm.js`).
     takeArmsOffMixer(level.flagMixer, level.levelClips, level.currentRoot,

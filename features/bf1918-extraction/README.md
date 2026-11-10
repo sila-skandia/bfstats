@@ -256,3 +256,72 @@ Open:
   `vehicleFov`.
 - Bots do not share magazines across a weapon link; only the human's hand
   weapon counts rounds that way.
+
+## Held objects on a hull: the Kolossal's platform, the Zeppelin's gunners, the train's cars (2026-11-10)
+
+Testers T3 F5 and T2 F5. Five of the Kolossal's twelve crew positions (the
+`KolossalMgGunnerExtra` platform: four MGs and `KolossalCommander`) and two of
+the Zeppelin L30's eight guns (`ZeppelinL30GunnerZusatz` twice) could not be
+manned. Each is an object its hull's own `ObjectSpawner` holds (`holdObject 1`;
+the Zeppelin file says why: no more than six PCOs). The hull's seat row leaves
+a held object out (`seat-survey.js`, AI-121), and the rule that makes one a
+vehicle of its own looked only under ships and statics. The armoured train's
+three cars, 15 crew seats, were cut out the same way.
+
+Retail is SPAWN-33 (AI-121, SPAWN-23 and SPAWN-30 with no host named): the
+held object is an object of its own, put back at its spawner every frame with
+the hull's own point speed, until its engine turns. Both mods' held crew carry
+a dummy Engine with no input, so they ride for the hull's life.
+
+What changed:
+
+- `viewer/spawned-craft.js` `hullHeldCraftUnder`: under every hull of the
+  level's `spawners` group except a ship, a nested PCO with a spawner stamp,
+  mass and a door of its own is split off as a vehicle of its own, the hull its
+  hold's host (`onHull`). A held object with no door stays (FHSW's attitude
+  indicator, a map mark of its hull's), and so does a ship's held land vehicle
+  (EoD's LCT: no land drive stands on a moving deck once let go).
+- A car stood without a hold (`stood`) is the same, kept where it was stood on
+  the locomotive and never let go by the throttle rule. That is the rigid ride
+  the bake drew before, now with its own seats, guns, HUD, armour and map mark.
+  The faithful coupling is still open (below).
+- `hullHeldActive`, read by `level-statics.js` `vehicleSpawnActive`: on the
+  hold, the object is in the world exactly while its hull is (a pad's
+  other-side Kolossal not yet stood has its platform on it; a hull's cleared
+  wreck takes it until the next one stands).
+- `hull-bodies.js` `stepSinkingHulls` draws the held craft on every level, not
+  only one that floats a ship. On a level with no ship the held craft were
+  drawn on the body's tick pose, up to 0.2 m off a driven hull's drawn pose.
+  `presentHeldCraft` also draws a craft whose drive outlived its crew.
+- The room server takes the same craft (`detachSpawnedCraft` with
+  `shipCraft: false` still leaves ships' alone); `server/held-craft.mjs` keeps a
+  stood car on.
+
+Checked: `tests/test_hull_held_craft.py` (synthetic hulls, and the real
+Kolossal, Zeppelin, train and FHSW B-29 glbs); the held, deck, strip, pad and
+seat suites unchanged. Headless page on port 5401: battle_of_the_giants, every
+platform seat entered at its own door, its MG fired, the platform riding a
+Kolossal driven 17 m at offset 0; amiens, both gondola gunners entered and
+fired, riding the Zeppelin at its spawners; gebirgspass, all 15 car seats
+entered, the cars riding the driven locomotive at their stood offset, 0 mm off
+its drawn pose frame by frame.
+
+Nothing to re-extract: the glbs already carry the `heldSpawner` stamps.
+
+Open:
+
+- The train's cars as free bodies pushed by the held `TrainPuller`s
+  (features/bf1918-armoured-train "Open": a parked body against the static
+  world, puller bodies with the holder pair filter). Until then a car does not
+  lag on a bend, and a dead locomotive's cars go with its wreck instead of
+  standing where they were.
+- In retail a held object stays where its hull's wreck was removed (the
+  spawner's `destroy` drops the hold, SPAWN-30); the page takes it with the
+  wreck and brings it back on the next hull.
+- A held object with no Engine is let go on its first frame in retail
+  (AI-121); the page holds it. None of BF1918's has no Engine.
+- The room server holds the craft at rest, not at the hull's point speed. Its
+  vehicle table is built from pad rows only (`server/vehicle-table.mjs`), so a
+  hull's held craft is held in the room's world but is no table entry: in a
+  room it cannot be mounted and is not drawn (`stripSpawnedCraft` takes it off
+  the hull's model), as before this change and as FH's flying-spawn craft.

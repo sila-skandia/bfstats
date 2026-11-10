@@ -837,7 +837,10 @@ export function createHullBodies(page) {
       const scene = owner >= 0 ? bodyScene.get(owner) : null;
       if (drive?.state) {
         const s = drive.state;
-        if (Math.abs(s.throttle ?? 0) >= HOLD_RELEASE_THROTTLE) {
+        // A car a hull's spawner stood without a hold is kept on the hull as
+        // a stand-in for the coupling the page cannot push yet
+        // (`spawned-craft.js` `hullHeldCraftUnder`): no throttle lets it go.
+        if (!rec.hold?.stood && Math.abs(s.throttle ?? 0) >= HOLD_RELEASE_THROTTLE) {
           // Let go, with the ship's velocity where the craft stands.
           setReleased(rec, true);
           drive.held = false;
@@ -999,7 +1002,17 @@ export function createHullBodies(page) {
     seatTick++;
     // A carrier in the air moves every tick it is flown.
     if (riders.length) rebaseRiders();
-    if (!floatHosts.length) return;
+    if (floatHosts.length) stepFloatHosts(step);
+    // [held-arm] A turning arm where the frame's own instant has it, so a
+    // parked craft is drawn between the ticks that hold it (`held-arm.js`).
+    // On every level, not only one that floats a ship: a land or air hull
+    // holds craft too (`spawned-craft.js` `hullHeldCraftUnder`), and this
+    // pass comes after `stepVehicleBodies` has drawn each body's tick pose.
+    if (heldCraft.length && page.world) poseHeldArms(heldCraft, page.world.tickTime + page.world.alpha / 30);
+    if (heldCraft.length) presentHeldCraft();
+  }
+
+  function stepFloatHosts(step) {
     // A driven hull moves whether or not the body world ticked — a level with no
     // collision meshes has no body world at all — so the rebase is not gated on
     // `bodyTicks`; only the sinking integration is.
@@ -1031,10 +1044,6 @@ export function createHullBodies(page) {
     // owner watching the map sees the spots move with the hull exactly as the
     // game does.
     if (stirred) rebaseDeckSpawns();
-    // [held-arm] A turning arm where the frame's own instant has it, so a
-    // parked craft is drawn between the ticks that hold it (`held-arm.js`).
-    if (heldCraft.length && page.world) poseHeldArms(heldCraft, page.world.tickTime + page.world.alpha / 30);
-    if (heldCraft.length) presentHeldCraft();
   }
 
   /**
@@ -1047,7 +1056,12 @@ export function createHullBodies(page) {
    */
   function presentHeldCraft() {
     for (const rec of heldCraft) {
-      if (rec.released || heldAbsent(rec) || page.vehicles?.instanceOf?.(rec.node)?.drive) continue;
+      // A craft the render interpolation draws (the one the local player
+      // sits in) is that pass's; one whose drive outlived its crew is drawn
+      // here like a parked one, its state pinned by the tick's hold.
+      if (rec.released || heldAbsent(rec)) continue;
+      const drive = page.vehicles?.instanceOf?.(rec.node)?.drive;
+      if (drive && (!page.drawsHull || page.drawsHull(drive))) continue;
       rec.host.updateWorldMatrix(true, false);
       setNodeWorld(rec.node, withHoldOffset(_holdMatrix.multiplyMatrices(rec.host.matrixWorld, rec.local), rec));
     }
