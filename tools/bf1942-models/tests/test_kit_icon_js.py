@@ -165,6 +165,20 @@ class KitRowLabelTests(unittest.TestCase):
     def test_without_anything_the_label_is_empty_not_a_crash(self) -> None:
         self.assertEqual("", self.results["rowLabel"]["nothing"])
 
+    def test_a_kit_with_only_an_active_name_has_no_name_label(self) -> None:
+        # BF1918's kits write only `setKitActiveName`; the engine copies the
+        # unset name in as the empty string (KIT-7). A file from before the
+        # field keeps the layout's string.
+        self.assertEqual("", self.results["rowLabel"]["activeOnly"])
+        self.assertEqual("Scout", self.results["rowLabel"]["preActive"])
+
+    def test_the_active_label_is_the_kit_s_own_active_name(self) -> None:
+        a = self.results["activeLabel"]
+        self.assertEqual("ACTIVE SCOUTS", a["vanilla"])
+        self.assertEqual("Scharfschütze", a["bf1918"])
+        self.assertEqual("ACTIVE SCOUTS", a["unresolved"])
+        self.assertEqual("ACTIVE SCOUTS", a["absent"])
+
 
 class KitPhotoLoadingTests(unittest.TestCase):
     """A row waits for its kit's own photograph instead of showing the

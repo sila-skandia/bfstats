@@ -33,6 +33,7 @@ class LoadoutManifestTests(unittest.TestCase):
  ObjectTemplate.setType AT
  ObjectTemplate.setKitTeam 2
  ObjectTemplate.setKitName 2 "RESPAWN_AT"
+ ObjectTemplate.setKitActiveName 2 "RESPAWN_ACTIVE_AT"
  ObjectTemplate.addTemplate Bazooka
  ObjectTemplate.addTemplate Colt
 """)
@@ -40,6 +41,13 @@ class LoadoutManifestTests(unittest.TestCase):
 ObjectTemplate.create Kit US_Medic
 ObjectTemplate.setType Medic
 ObjectTemplate.setKitTeam 2
+ObjectTemplate.addTemplate Thompson
+""")
+        # BF1918's kits name their class in the active name alone.
+        library.add_con("Objects/Items/German_Kit/Ger_Scout/Objects.con", """
+ObjectTemplate.create Kit Ger_Scout
+ObjectTemplate.setKitTeam 1
+ObjectTemplate.setKitActiveName 0 "RESPAWN_GER_SCOUT"
 ObjectTemplate.addTemplate Thompson
 """)
         library.add_con("Objects/HandWeapons/Panzershreck/Objects.con", """
@@ -116,6 +124,24 @@ game.setKit 2 2 Us_AT
             self.assertEqual(
                 {"index": 2, "key": "RESPAWN_AT", "text": "ANTI-TANK"},
                 manifest["kits"][name]["kitName"])
+
+    def test_the_active_name_is_carried_and_resolved_beside_the_name(self) -> None:
+        # `setKitActiveName` is the label beside the row's live count
+        # (KIT-7): vanilla's "ACTIVE ANTI-TANKS", BF1918's class name with
+        # its umlaut, from the mod's own lexicon. A kit that writes none
+        # carries none.
+        manifest = self.manifest(
+            "game.setKit 1 0 Ger_Scout\ngame.setKit 2 2 Us_AT\ngame.setKit 1 2 Jap_AT\n",
+            lexicon={"RESPAWN_AT": "ANTI-TANK", "RESPAWN_ACTIVE_AT": "ACTIVE ANTI-TANKS",
+                     "RESPAWN_GER_SCOUT": "Scharfschütze"})
+        self.assertEqual(
+            {"index": 2, "key": "RESPAWN_ACTIVE_AT", "text": "ACTIVE ANTI-TANKS"},
+            manifest["kits"]["Us_AT"]["kitActiveName"])
+        self.assertIsNone(manifest["kits"]["Ger_Scout"]["kitName"])
+        self.assertEqual(
+            {"index": 0, "key": "RESPAWN_GER_SCOUT", "text": "Scharfschütze"},
+            manifest["kits"]["Ger_Scout"]["kitActiveName"])
+        self.assertIsNone(manifest["kits"]["Jap_AT"]["kitActiveName"])
 
     def test_a_kit_name_key_the_lexicon_lacks_keeps_a_null_text(self) -> None:
         # The key is still emitted — the page falls back to its own layout's

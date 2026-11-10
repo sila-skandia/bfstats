@@ -325,3 +325,72 @@ Open:
   hull's held craft is held in the room's world but is no table entry: in a
   room it cannot be mounted and is not drawn (`stripSpawnedCraft` takes it off
   the hull's model), as before this change and as FH's flying-spawn craft.
+
+## Sides, tanks, kit names and ticket flags (2026-11-10)
+
+Four tester findings (T3 F1/F2, T1 F-kitnames, T4 F6/F8, T2 F11), one cause
+each: the pipeline read BF1918 through WWII's tables.
+
+**Sides are teams (SIDE-4).** `bf42/roster.py` named a side from a nation
+label (`AXIS_NATIONS`), knew none of BF1918's soldier or kit tokens, and put
+Italy and Japan on the Axis. The engine has only team numbers, so the roster
+now records the team of every soldier a level dresses (`setTeamSkin`), every
+template it spawns (`setObjectTemplate <team>`) and everything a kit carries
+(`setKitTeam`); `sides` is those teams' (team 1 "Axis", team 2 "Allied", the
+words the schools and the Range already use), and the nation table is only
+the fallback. `models.json` rows gain `levelSides` (`{level: [sides]}`)
+because a tree-wide side pairs nothing here: the A7V is team 1's on
+Hindenburg Line and both teams' on Carriere. The BF1918 labels are added
+(Austro-Hungarian, Ottoman, Bulgarian, Serbian, Romanian, Russian, ANZAC,
+Belgian, Senegalese, ...). Roster diff over every template: vanilla, XPack1,
+XPack2 unchanged; FH two (its unresolved `FMGermanSoldier`, now Axis);
+Desert Combat, DC Final and EoD move their team-1 armies to "Axis" (SIDE-2).
+The vanilla schools' arenas are identical.
+
+**The tank school.** `tank-arena.js` `tankRow` takes BF1918's `HeavyTank`
+and `LightTank` rows (not `UnarmedTank`), and `arenasFrom` (and the dogfight
+school's) pairs by `sidesOn(row, level)`. Over the patched catalogue BF1918
+offers 17 arenas: Hindenburg Line Mark IV v A7V, Aube de Soiree Chamond v
+A7V, Battle of the Vosges FT-17 v Beute FT-17, Bocage, Chemin des Dames ...
+
+**Kit names (KIT-7).** The deploy screen's row has two labels, both the
+kit's: `setKitName` (`Kit/Strings/KitName<n>`) and `setKitActiveName`
+(`Kit/Strings/ActiveKitName<n>`, the word beside the count: vanilla's
+"ACTIVE SCOUTS"). BF1918 writes only the second, with its class names, so
+`con.py` now reads it, `extract_loadouts.py` carries `kitActiveName` resolved
+through the chain lexicon (all 383 bound kits resolve; umlauts survive:
+UTF-16 lexicon, latin-1 .con keys such as `RESPAWN_SCHARFSCHÜTZE`), and the
+deploy screen draws it beside the count. The row name of a kit with no
+`setKitName` is blank, as `SpawnInterface::update` copies the empty string
+(read in the Mac build; not yet in our BF1942.exe). EoD's "Active Riflemen"
+and DC's "Active Heavy Assault" now show too.
+
+**Ticket flags.** The briefing card, the chat rows and the replay's side
+flag built `flag_ticket_<nation>` themselves; they now ask
+`mapSurfaces.ticketFlag(team)` (`nation.js` `ticketFlagKey`), the soldier's
+own `setTicketIcon` the in-game counter already used (HUD-11). Every BF1918
+soldier a level fields has its `conp_*` in the pack; `GreekSoldier`,
+`PolishSoldier` and `UkrSoldier` point at `flag_ticket_bel/pol/Ukr`, which
+the mod does not ship, but no level dresses a side in them.
+
+What must re-run in the bf1918 tree: `models` (the roster: `sides`,
+`levelSides`, factions; `extract_models.py`, or the models step), `loadouts`
+(`kitActiveName`), `kits` (`kits.json` `side` follows a kit's `setKitTeam`:
+BF1918's Italian and Japanese kits read Allied) and `tank_school` (its
+sheet, now with the BF1918 tanks).
+`extract_pose.py --match-side` reads the same sides but no pipeline step
+passes it. Every other tree picks up `levelSides` and the active names
+on its next models and loadouts run; nothing breaks before then (the page
+falls back to `sides` and the layout's strings).
+
+Checked in the page (port 5403, the patched `models.json`, `loadouts.json`
+and a `mods.json` with bf1918's counts served by request interception; the
+live registry still counts bf1918 at 0 models / 0 maps, so `tanks.html?mod=
+bf1918` falls back to vanilla until the registry step runs): `tanks.html?
+mod=bf1918` opens on Bocage, Chamond / Schneider / FT-17 v A7V / Beute FT-17;
+fao_landing's briefing shows the Ottoman and British flags with no 404; its
+deploy screen reads "0 CombatPatrol / Regular / Medic / Officer / Pioneer"
+(Entente: Patrol, Regular, Medic, Officer, Engineer); gebirgspass reads
+Scharfschütze, Kaiserschütze, Richtschütze, Offizier, Kaiserjaeger (umlauts
+drawn by the bitmap font) and the Russians' Metki-Strelok, Pekhotinec ...;
+vanilla Kharkov's deploy screen is unchanged.

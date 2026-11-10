@@ -1272,10 +1272,16 @@ class ObjectTemplate:
     # RESPAWN_CHOPPERPILOT, and its own lexicon even re-points
     # RESPAWN_SCOUT at "Sniper"). The key is stored raw; the mod chain's
     # lexicon resolves it at extraction time (extract_loadouts.py), the
-    # same code the SkirmishMenu titles run through. A companion
-    # `setKitActiveName` exists for the selected-row highlight and is not
-    # read: the deploy screen labels the row, not the highlight.
+    # same code the SkirmishMenu titles run through.
     kit_name: tuple[int, str] | None = None
+    # `setKitActiveName <slot> "<LEXICON_KEY>"`: the row's other label, the
+    # one beside the live count (vanilla's RESPAWN_ACTIVE_SCOUT, "ACTIVE
+    # SCOUTS"). `SpawnInterface::update` copies each row's kit name, active
+    # name and icon into the menu's `Kit/Strings/KitName<n>`,
+    # `Kit/Strings/ActiveKitName<n>` and the kit icon (ledger KIT-7). BF1918
+    # writes only this one, with its class names (`RESPAWN_GER_SCOUT`,
+    # "Scharfschütze"), so its rows carry no `setKitName` at all.
+    kit_active_name: tuple[int, str] | None = None
     kit_weapon_icons: list[str] = field(default_factory=list)
 
     # -- Soldier constants ----------------------------------------------------#
@@ -2997,10 +3003,11 @@ class ObjectLibrary:
                             continue
                         if icon := tokens[1].strip().strip('"'):
                             obj.kit_icon = (index, icon)
-                elif cmd == "setkitname":
+                elif cmd in ("setkitname", "setkitactivename"):
                     # Same shape as `setkiticon`: an authored index and a
                     # quoted lexicon key. The key is a lexicon word, not a
-                    # display string, so it is kept raw (see `kit_name`).
+                    # display string, so it is kept raw (see `kit_name`,
+                    # `kit_active_name`).
                     tokens = args.split(None, 1)
                     if len(tokens) == 2:
                         try:
@@ -3008,7 +3015,10 @@ class ObjectLibrary:
                         except ValueError:
                             continue
                         if key := tokens[1].strip().strip('"'):
-                            obj.kit_name = (index, key)
+                            if cmd == "setkitname":
+                                obj.kit_name = (index, key)
+                            else:
+                                obj.kit_active_name = (index, key)
                 elif cmd == "addweaponicon":
                     if token := args.strip().strip('"'):
                         obj.kit_weapon_icons.append(token)

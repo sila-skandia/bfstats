@@ -887,6 +887,7 @@ export function createHandWeapon(page) {
   Object.assign(soldierKit, {
     DEG_TO_RAD: fire.DEG_TO_RAD,
     KIT_ROW_KEYS: loadout.KIT_ROW_KEYS,
+    KIT_ACTIVE_ROW_KEYS: loadout.KIT_ACTIVE_ROW_KEYS,
     WEAPON_ICON_VARS,
     altFireDemolitions,
     botKitFor: loadout.botKitFor,
@@ -908,6 +909,7 @@ export function createHandWeapon(page) {
     kitLoadout,
     kitSide: loadout.kitSide,
     kitRowLabelFor: loadout.kitRowLabelFor,
+    kitActiveLabelFor: loadout.kitActiveLabelFor,
     kitRowLayoutText: loadout.kitRowLayoutText,
     loadoutsLoad: loadout.loadoutsLoad,
     localWeaponSoundRadius: loadout.localWeaponSoundRadius,

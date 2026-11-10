@@ -44,6 +44,19 @@ export function soldierNation(soldiers, soldier) {
   return soldierArt(soldiers, soldier)?.nation || null;
 }
 
+/** The sprite a side's ticket flag is, as the pack keys it: the soldier's
+ *  own `setTicketIcon` (`art.ticket`, BF1942.exe 0x006ac8a6, HUD-11:
+ *  BF1918's `conp_Tu.tga` -> `conp_tu`), else vanilla's family,
+ *  `flag_ticket_<nation>`. Every page surface that draws a side's ticket
+ *  flag (the briefing card, the chat rows, the replay's side) asks this,
+ *  so a mod whose soldiers fly their own art never asks for a vanilla
+ *  sprite it does not have (BF1918 ships no `flag_ticket_*`). Null with
+ *  neither. */
+export function ticketFlagKey(art, nation) {
+  if (art?.ticket) return iconKey(art.ticket);
+  return nation && nation !== 'unknown' ? `flag_ticket_${nation}` : null;
+}
+
 /** `flagus_m1` -> `us` through `nations` (`hud.json`'s own `flagMeshNation`).
  *  `null` for a mesh the table has never heard of -- Pathet Lao's
  *  `flagpl_m1`, which no installed `menu.rfa` ships a `conp_pl` for. */

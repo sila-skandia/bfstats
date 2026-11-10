@@ -844,7 +844,7 @@ const level = createLevel(bag(
     settlePlacedVehicles setupVehicleBodies`),
   from(() => localLook, `capturePresentationTick rebuildVehicleInterp`),
   from(() => localPlayer, `forgetSoldier leaveOnFoot leavePilot soldier soldierDead`),
-  from(() => mapSurfaces, `fullmapMeta fullmapName loadMapArt teamNation toggleFullMap`),
+  from(() => mapSurfaces, `fullmapMeta fullmapName loadMapArt teamNation ticketFlag toggleFullMap`),
   from(() => pageAudio, `disposeSounds setupSounds`),
   from(() => pageConsole, `logToConsole`),
   from(() => pageInput, `capture`),
@@ -2954,7 +2954,7 @@ const deployScreen = createDeployScreen(bag(
   from(() => room, `spawnCountdown serverPreGame statusPlate`),
   from(() => mapSurfaces, `bfmap cameraHeading drawFullMap fullmapBox fullmapCanvas teamNation`),
   from(() => scoreboard, `scoreFromSpawn setScoreboard`),
-  from(() => soldierKit, `KIT_ROW_KEYS kitLoadout kitRowLabelFor loadouts loadoutsLoad`),
+  from(() => soldierKit, `KIT_ROW_KEYS KIT_ACTIVE_ROW_KEYS kitLoadout kitRowLabelFor kitActiveLabelFor loadouts loadoutsLoad`),
   from(() => spawning, `deployCommitted deployHoverBtn deployHoverVar deployKit deployRejoin deployTeamId
     deployUnchosen updateKitAriaLabels watchCommitted`),
   from(() => ticketFeed, `feedTicketVars`),
@@ -2999,7 +2999,7 @@ const spawning = createSpawning(bag(
   from(() => pageConsole, `logToConsole`),
   from(() => scoreboard, `setScoreboard`),
   from(() => soldierKit, `currentKit disposeHandWeapon drawWeapon ensureHandWeapon equipKit
-    kitRowLabelFor kitRowLayoutText loadouts soldierMaxHp`),
+    kitRowLabelFor kitActiveLabelFor kitRowLayoutText loadouts soldierMaxHp`),
   from(() => vehicleEntry, `enterVehicle spawnSeat`),
   {
     get LOCAL_PLAYER() { return LOCAL_PLAYER; }, get params() { return params; },
@@ -3146,7 +3146,7 @@ const comms = createComms(bag(
   from(() => flagCapture, `flags`),
   from(() => hudFeed, `sprite`),
   from(() => level, `extras`),
-  from(() => mapSurfaces, `gridRef teamNation`),
+  from(() => mapSurfaces, `gridRef teamNation ticketFlag`),
   from(() => pageAudio, `audioBufferCache audioListener audioLoader ensureAudioContext
     masterVolume`),
   from(() => soldierKit, `teamVoice`),
@@ -3799,7 +3799,7 @@ replayController = createReplayController({
   // way the HUD washes the player's, and the replay's keys stand aside while
   // the console, the Escape menu or the briefing has the keyboard.
   comms,
-  teamFlag: team => hudFeed.sprite(`flag_ticket_${mapSurfaces.teamNation(team)}`)?.src ?? null,
+  teamFlag: team => { const key = mapSurfaces.ticketFlag(team); return key ? hudFeed.sprite(key)?.src ?? null : null; },
   triggerHitIndicator: (octant, alpha) => soldierHud.triggerHitIndicator(octant, alpha),
   // The HUD's variables, which a replay's first person feeds (replay-hud.js)
   // and takes back when it closes.

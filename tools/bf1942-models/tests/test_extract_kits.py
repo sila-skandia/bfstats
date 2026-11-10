@@ -358,5 +358,19 @@ class LevelBagGlb(unittest.TestCase):
         self.assertIsNone(level_bag_glb(self.EXPORTED, set(), "Kit_AK74", "latakia-2016"))
 
 
+class SideLabelTests(unittest.TestCase):
+    """A kit's side word is its own team's where it writes one (SIDE-4)."""
+
+    def test_the_kit_s_team_decides(self) -> None:
+        from extract_kits import side_label
+        # BF1918's Italian kits are team 2; WWII's are team 1.
+        self.assertEqual("Allied", side_label("Italian", 2))
+        self.assertEqual("Axis", side_label("Italian", 1))
+        self.assertEqual("Axis", side_label("German Elite", None))
+        self.assertEqual("Allied", side_label("US", None))
+        # Outside the WWII table there is still no word.
+        self.assertIsNone(side_label("Viet Cong", 1))
+
+
 if __name__ == "__main__":
     unittest.main()

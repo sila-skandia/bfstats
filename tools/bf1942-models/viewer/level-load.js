@@ -909,12 +909,17 @@ export function createLevel(page) {
     // answer, drawn from the hud pack with its mod overrides). The screen
     // itself goes up at `load.end()`, over the live level.
     const brief = report.briefing || {};
-    const briefingFlag = nation => {
-      if (!nation || nation === 'unknown') return null;
+    const briefingFlag = team => {
+      // The briefing screen's own flag: the ticket counter's sprite, not the
+      // spawn screen's pole flag (icon_flag_*). That is the side's soldier's
+      // own `setTicketIcon` (`mapSurfaces.ticketFlag`, HUD-11), so a mod's
+      // nations fly their own art: BF1918's soldiers write `conp_Tu.tga`
+      // and the mod ships no `flag_ticket_*` at all.
+      const key = page.ticketFlag ? page.ticketFlag(team)
+        : ((n => (n && n !== 'unknown' ? `flag_ticket_${n}` : null))(page.teamNation(team)));
+      if (!key) return null;
       try {
-        // The briefing screen's own flag: the ticket counter's waving sprite,
-        // not the spawn screen's pole flag (icon_flag_*).
-        return `${page.hudPaths.url(`flag_ticket_${nation}.png`)}${page.bust()}`;
+        return `${page.hudPaths.url(`${key}.png`)}${page.bust()}`;
       } catch (_) {
         return null;
       }
@@ -925,7 +930,7 @@ export function createLevel(page) {
       ...(page.briefingWords?.(brief) ?? {}),
       displayName: loading.title || level.extras.level || entry.name,
       gameType: level.extras.gameplayMode || 'Conquest',
-      flags: [briefingFlag(page.teamNation(1)), briefingFlag(page.teamNation(2))],
+      flags: [briefingFlag(1), briefingFlag(2)],
     });
 
     // Every texture this level needs has been queued by now, so a queue that is

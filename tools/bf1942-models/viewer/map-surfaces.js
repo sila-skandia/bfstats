@@ -11,7 +11,7 @@
 // its recording's instead, both sides of them (`replay-minimap.js`).
 
 import * as THREE from 'three';
-import { heldNation, soldierArt, teamNation as teamNationRule } from './nation.js';
+import { heldNation, soldierArt, teamNation as teamNationRule, ticketFlagKey } from './nation.js';
 import {
   BfMap, mapRect, pinPlayerMarker, coverRect, surfaceArtMatrix, surfacePoint, zoomTarget,
 } from './bfmap.js';
@@ -145,6 +145,13 @@ export function createMapSurfaces(page) {
       teamArtMemo[team] = soldierArt(soldiers, page.kitLoadout?.(team)?.soldier);
     }
     return teamArtMemo[team];
+  }
+
+  /** The pack's sprite name for `team`'s ticket flag (`nation.js`
+   *  `ticketFlagKey`): its soldier's own ticket art where the pack knows
+   *  the soldier, else `flag_ticket_<teamNation>`. */
+  function ticketFlag(team) {
+    return ticketFlagKey(teamArt(team), teamNation(team));
   }
 
   function teamNation(team) {
@@ -1040,6 +1047,7 @@ export function createMapSurfaces(page) {
     teamArt,
     teamClothNation,
     teamNation,
+    ticketFlag,
     /** Every control point's sprite as the surfaces draw it, for the hooks. */
     controlPointSprites: () => (page.extras.controlPoints || [])
       .map(cp => ({ name: cp.name, team: cp.team, sprite: controlPointSprite(cp) })),

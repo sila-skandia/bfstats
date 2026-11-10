@@ -781,7 +781,9 @@ export function createComms(page) {
     for (const row of rows) {
       const g = rowGeometry(chatLayout, row.row);
       if (row.team === 1 || row.team === 2) {
-        const flag = page.sprite?.(`flag_ticket_${page.teamNation?.(row.team)}`);
+        // The side's ticket flag: its soldier's own art (`ticketFlag`).
+        const key = page.ticketFlag ? page.ticketFlag(row.team) : `flag_ticket_${page.teamNation?.(row.team)}`;
+        const flag = key ? page.sprite?.(key) : null;
         if (flag) ctx.drawImage(flag, ...g.flag);
       }
       if (font) text(ctx, row.text, g.textX, g.baseline, lineColor(chatLayout, row), true);

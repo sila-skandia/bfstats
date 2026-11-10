@@ -5,7 +5,7 @@
 // file the page loads, byte for byte. The module touches no DOM and no
 // `three` import, so it runs under plain node with no shimming.
 
-import { kitIconCandidates, resolveKitIcon, kitRowLabel, kitPhotoSprite, spriteState } from './kit-icon.js';
+import { kitIconCandidates, resolveKitIcon, kitRowLabel, kitActiveLabel, kitPhotoSprite, spriteState } from './kit-icon.js';
 
 const results = {};
 
@@ -86,6 +86,18 @@ results.rowLabel = {
   classFallback: kitRowLabel(null, null, 'Anti-tank'),
   // And nothing at all: the empty string, not a crash.
   nothing: kitRowLabel(null, null, null),
+  // A kit that writes only setKitActiveName (BF1918's): its name label is
+  // the empty string the engine copies in, not vanilla's class word.
+  activeOnly: kitRowLabel(null, 'Scout', 'Scout', { index: 0, key: 'RESPAWN_GER_SCOUT', text: 'Scharfsch\u00fctze' }),
+  // A file from before kitActiveName: the layout's string as before.
+  preActive: kitRowLabel(null, 'Scout', 'Scout', undefined),
+};
+
+results.activeLabel = {
+  vanilla: kitActiveLabel({ index: 0, key: 'RESPAWN_ACTIVE_SCOUT', text: 'ACTIVE SCOUTS' }, 'ACTIVE SCOUTS'),
+  bf1918: kitActiveLabel({ index: 0, key: 'RESPAWN_GER_SCOUT', text: 'Scharfsch\u00fctze' }, 'ACTIVE SCOUTS'),
+  unresolved: kitActiveLabel({ index: 0, key: 'RESPAWN_ACTIVE_RIFLEMAN', text: null }, 'ACTIVE SCOUTS'),
+  absent: kitActiveLabel(null, 'ACTIVE SCOUTS'),
 };
 
 // --- a photograph still loading ------------------------------------------

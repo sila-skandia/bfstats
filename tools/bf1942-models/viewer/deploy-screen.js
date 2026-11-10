@@ -16,7 +16,8 @@ import { respawnPlateLabel } from './spawn-timer.js';
  * `bfmap`, `bust`, `cameraHeading`, `deployHoverBtn`, `deployHoverVar`,
  * `deployKit`, `deployRejoin`, `deployTeamId`, `drawFullMap`,
  * `feedTicketVars`, `fullmapBox`, `fullmapCanvas`, `hudPack`, `hudPaths`, `respawnHud`,
- * `KIT_ROW_KEYS`, `kitLoadout`, `kitRowLabelFor`, `loadouts`, `loadoutsLoad`,
+ * `KIT_ROW_KEYS`, `KIT_ACTIVE_ROW_KEYS`, `kitLoadout`, `kitRowLabelFor`,
+ * `kitActiveLabelFor`, `loadouts`, `loadoutsLoad`,
  * `scoreFromSpawn`, `setScoreboard`, `sprite`, `teamNation`,
  * `updateKitAriaLabels`, `worldReady`.
  */
@@ -318,6 +319,10 @@ export function createDeployScreen(page) {
     // the row's kit (and its name) without touching the menu.
     const role = page.KIT_ROW_KEYS[el.key];
     if (role) return page.kitRowLabelFor(role, el.text);
+    // The label beside each row's live count (`Kit/Strings/ActiveKitName<n>`):
+    // the kit's own `setKitActiveName`, which is BF1918's class name.
+    const activeRole = page.KIT_ACTIVE_ROW_KEYS?.[el.key];
+    if (activeRole && page.kitActiveLabelFor) return page.kitActiveLabelFor(activeRole, el.text);
     // A bound string the page actually feeds wins over the layout's own sample
     // ("300"/"500" on the ticket counters). Only values this page wrote count:
     // `deployVars()` seeds the table from those same samples, so an untouched

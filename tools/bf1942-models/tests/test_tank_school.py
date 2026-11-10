@@ -101,6 +101,18 @@ class TankSchoolTests(unittest.TestCase):
         self.assertEqual(self.out["m36Gun"], "M36GunBarrelAP")
         self.assertEqual(self.out["aiGun"], "OddTankBarrelThing")
 
+    def test_bf1918_s_heavy_and_light_tanks_pair_level_by_level(self) -> None:
+        # BF1918's `HeavyTank` and `LightTank` rows are tanks, its
+        # `UnarmedTank` is not; a side is the level's own team (SIDE-1), so
+        # the A7V both teams drive on Carriere is out there and in on the
+        # two levels where only team 1 has it.
+        self.assertEqual(self.out["wwiTanks"], ["A7V", "Mark4", "FT17"])
+        self.assertEqual(self.out["wwiArenas"], [
+            {"map": "bocage", "allied": ["FT17"], "axis": ["A7V"]},
+            {"map": "hindenburg_line", "allied": ["Mark4"], "axis": ["A7V"]},
+        ])
+        self.assertEqual(self.out["sidesOn"], {"own": ["Allied", "Axis"], "fallback": ["Allied"]})
+
     def test_the_main_gun_is_a_real_round_past_an_ammunition_switch(self) -> None:
         # FHSW's ammunition switch fires a stand-in under the main gun's name;
         # the armour-piercing sibling is the gun.

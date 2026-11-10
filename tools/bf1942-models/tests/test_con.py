@@ -2024,9 +2024,21 @@ ObjectTemplate.addTemplate Colt
         kit = library.object("US_Medic")
 
         self.assertEqual((2, "RESPAWN_MEDIC"), kit.kit_name)
-        # `setKitActiveName` is not read: the deploy screen labels the row,
-        # not the selected-row highlight.
-        self.assertIsNone(getattr(kit, "kit_active_name", None))
+        # `setKitActiveName` is the row's other label, beside the live count
+        # (`Kit/Strings/ActiveKitName<n>`, KIT-7), kept the same raw way.
+        self.assertEqual((2, "RESPAWN_ACTIVE_MEDIC"), kit.kit_active_name)
+
+    def test_a_kit_may_write_only_its_active_name(self) -> None:
+        # BF1918's kits name their class in the active name alone.
+        library = self.library(
+            "Objects/Items/German_Kit/Ger_Scout/Objects.con",
+            """
+ ObjectTemplate.create Kit  Ger_Scout
+ ObjectTemplate.setKitActiveName 0 "RESPAWN_GER_SCOUT"
+""")
+        kit = library.object("Ger_Scout")
+        self.assertIsNone(kit.kit_name)
+        self.assertEqual((0, "RESPAWN_GER_SCOUT"), kit.kit_active_name)
 
     def test_a_kit_without_setkitname_reports_none(self) -> None:
         library = self.library(

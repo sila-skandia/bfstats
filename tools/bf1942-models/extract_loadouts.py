@@ -235,6 +235,15 @@ def kit_row(library: con_mod.ObjectLibrary, kit: kit_mod.Kit, soldier: str | Non
              "key": kit_template.kit_name[1],
              "text": (lexicon or {}).get(kit_template.kit_name[1])}
             if kit_template and kit_template.kit_name else None),
+        # The row's other label, beside the live count: `setKitActiveName`
+        # (KIT-7), resolved the same way. Vanilla's is the count's word
+        # ("ACTIVE SCOUTS"); BF1918's kits write only this one, with the
+        # class name ("Scharfschütze").
+        "kitActiveName": (
+            {"index": kit_template.kit_active_name[0],
+             "key": kit_template.kit_active_name[1],
+             "text": (lexicon or {}).get(kit_template.kit_active_name[1])}
+            if kit_template and kit_template.kit_active_name else None),
         "weaponIcons": (
             list(kit_template.kit_weapon_icons)
             if kit_template else []),

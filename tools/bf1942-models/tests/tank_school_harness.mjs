@@ -113,6 +113,29 @@ const aiRows = [row('Sherman', 'Allied', ['El_Alamein'], 100, ['ShermanGunBarrel
   // The hull's own name with `Gun` on it is its gun (EoD's T-54); a towed
   // anti-tank gun so named is not a tank (FH's pak38, no AI record).
   row('T54', 'Axis', ['El_Alamein'], 105, ['Coaxial_PK', 'DSHK', 'T54Gun']), row('pak38', 'Axis', ['El_Alamein'], 100, ['pak38Gun'])];
+// BF1918 splits its tank row by weight (`HeavyTank` row 0, `LightTank` row
+// 1); its armoured carrier is an `UnarmedTank`. A side is the level's own
+// (`levelSides`): the A7V is team 1's on one level and both teams' on
+// another, the Mark IV team 2's, so the tree-wide `sides` (both) pair
+// nothing while each level pairs its own.
+const wwiAi = {
+  A7V: { class: 'Land', equipmentType: 0, equipment: 'HeavyTank', aiWeapons: { A7VMainGun: { strength: { HeavyArmour: 7 } } } },
+  FT17: { class: 'Land', equipmentType: 1, equipment: 'LightTank', aiWeapons: { FT17MainGun: { strength: { HeavyArmour: 4 } } } },
+  Mark4: { class: 'Land', equipmentType: 0, equipment: 'HeavyTank', aiWeapons: { Mark4MainGun: { strength: { HeavyArmour: 7 } } } },
+  MarkISupply: { class: 'Land', equipmentType: 2, equipment: 'UnarmedTank', aiWeapons: { X: { strength: { HeavyArmour: 3 } } } },
+};
+const wwi = (name, levelSides, weapons) => ({ name, category: 'land', sides: [...new Set(Object.values(levelSides).flat())].sort(),
+  levels: Object.keys(levelSides), levelSides, hitpoints: 150, weapons });
+const wwiRows = [
+  wwi('A7V', { hindenburg_line: ['Axis'], carriere: ['Allied', 'Axis'], bocage: ['Axis'] }, ['A7VGunBarrel']),
+  wwi('Mark4', { hindenburg_line: ['Allied'], carriere: ['Allied'] }, ['Mark4GunBarrel']),
+  wwi('FT17', { bocage: ['Allied'] }, ['FT17GunBarrel']),
+  wwi('MarkISupply', { hindenburg_line: ['Allied'] }, ['MarkIGunBarrel']),
+];
+out.wwiTanks = wwiRows.filter(r => A.isTank(r, wwiAi)).map(r => r.name);
+out.wwiArenas = A.arenasFrom(wwiRows, null, wwiAi).filter(a => !a.every)
+  .map(a => ({ map: a.map, allied: a.allied.map(t => t.template), axis: a.axis.map(t => t.template) }));
+out.sidesOn = { own: A.sidesOn(wwiRows[0], 'carriere'), fallback: A.sidesOn(rows[0], 'El_Alamein') };
 out.m36Gun = A.mainGunName(aiRows[5], ai);
 out.aiTanks = aiRows.filter(r => A.isTank(r, ai)).map(r => r.name);
 out.aiGun = A.mainGunName(aiRows[3], ai);

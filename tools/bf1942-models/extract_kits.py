@@ -100,10 +100,17 @@ WWII_NATIONS = roster_mod.AXIS_NATIONS | {
 EXTRA_AXIS = {"German Elite"}
 
 
-def side_label(nation: str | None) -> str | None:
+def side_label(nation: str | None, team: int | None = None) -> str | None:
+    """The side word for a kit of a nation the WWII table knows: its own
+    `setKitTeam` where it writes one (SIDE-4: BF1918's Italian kits are team
+    2), else the nation's."""
+    if nation not in WWII_NATIONS and nation not in EXTRA_AXIS:
+        return None
+    if team in roster_mod.TEAM_SIDES:
+        return roster_mod.TEAM_SIDES[team]
     if nation in EXTRA_AXIS:
         return "Axis"
-    return roster_mod.side_of(nation) if nation in WWII_NATIONS else None
+    return roster_mod.side_of(nation)
 
 
 def export_part(name: str, make_assembler, out: Path,
@@ -773,7 +780,7 @@ def main() -> int:
             "template": kit.template,
             "nation": kit.nation,
             "class": kit.kit_class,
-            "side": side_label(kit.nation),
+            "side": side_label(kit.nation, kit.team),
             "theatre": theatre_label(kit.theatre),
             "unit": kit.unit,
             "team": kit.team,

@@ -619,8 +619,11 @@ export function createSpawning(page) {
   function updateKitAriaLabels() {
     for (const hit of page.deployKitHits) {
       const role = hit.dataset.kit;
+      // A kit with no name of its own (BF1918's) is called by its active
+      // name, the class word its row shows beside the count.
       if (role) hit.setAttribute('aria-label',
-        page.kitRowLabelFor(role, page.kitRowLayoutText(role)));
+        page.kitRowLabelFor(role, page.kitRowLayoutText(role))
+          || page.kitActiveLabelFor?.(role, '') || role);
     }
   }
 

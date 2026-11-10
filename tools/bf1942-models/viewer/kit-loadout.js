@@ -7,7 +7,7 @@
 // (features/vehicle-instance-refactor).
 
 import { packSpec } from './rocket-pack.js';
-import { kitRowLabel } from './kit-icon.js';
+import { kitActiveLabel, kitRowLabel } from './kit-icon.js';
 import { heldItem, peekKit, resolveKitRow, rollKit } from './random-items.js';
 import { soldierTemplateValue } from './soldier-death.js';
 import { flagSide } from './spawn-flags.js';
@@ -273,8 +273,22 @@ export function createKitLoadout(page) {
    *  kit buttons' aria-labels, so both say the same. */
   function kitRowLabelFor(role, layoutText) {
     const { kit } = kitLoadout(page.deployTeamId, role);
-    const name = kit ? loadout.loadouts?.kits?.[kit]?.kitName : null;
-    return kitRowLabel(name, layoutText, KIT_CLASS[role] || role);
+    const row = kit ? loadout.loadouts?.kits?.[kit] : null;
+    return kitRowLabel(row?.kitName ?? null, layoutText, KIT_CLASS[role] || role, row?.kitActiveName);
+  }
+
+  // The rows' other labels, beside the live counts: the layout's
+  // `Kit/Strings/ActiveKitName1..5` defaults, by their own lexicon keys.
+  const KIT_ACTIVE_ROW_KEYS = {
+    RESPAWN_ACTIVE_SCOUT: 'scout', RESPAWN_ACTIVE_ASSAULT: 'assault', RESPAWN_ACTIVE_AT: 'antitank',
+    RESPAWN_ACTIVE_MEDIC: 'medic', RESPAWN_ACTIVE_ENGINEER: 'engineer',
+  };
+
+  /** The label beside the row `role`'s live count on the current deploy
+   *  team: the level's kit's own `setKitActiveName` (`kitActiveLabel`). */
+  function kitActiveLabelFor(role, layoutText) {
+    const { kit } = kitLoadout(page.deployTeamId, role);
+    return kitActiveLabel(kit ? loadout.loadouts?.kits?.[kit]?.kitActiveName : null, layoutText);
   }
 
   /** `kitRowLabelFor`'s fallback, for the callers without the leaf in hand
@@ -454,6 +468,7 @@ export function createKitLoadout(page) {
 
   Object.assign(loadout, {
     KIT_ROW_KEYS,
+    KIT_ACTIVE_ROW_KEYS,
     adoptKitRolls,
     botKitFor,
     currentKit,
@@ -461,6 +476,7 @@ export function createKitLoadout(page) {
     kitRowFor,
     kitSide,
     kitRowLabelFor,
+    kitActiveLabelFor,
     kitRowLayoutText,
     kitSlotsFor,
     loadoutsLoad,

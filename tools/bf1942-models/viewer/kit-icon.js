@@ -110,10 +110,32 @@ export function kitPhotoSprite(icon, fallback, pack) {
  * resolved from the menu's lexicon at extract time -- and only a missing
  * layout falls through to `classLabel`, the page's own class word.
  */
-export function kitRowLabel(kitName, layoutText, classLabel) {
+export function kitRowLabel(kitName, layoutText, classLabel, kitActiveName = undefined) {
   if (kitName && typeof kitName.text === 'string' && kitName.text) {
     return kitName.text;
   }
+  // A kit that writes only `setKitActiveName` (every BF1918 kit) has no name
+  // for this label at all: `SpawnInterface::update` copies the kit's name
+  // into `Kit/Strings/KitName<n>` whether or not it set one, and an unset
+  // one is the empty string (ledger KIT-7). Its class name is the other
+  // label's (`kitActiveLabel`).
+  if (!kitName && kitActiveName && typeof kitActiveName === 'object') return '';
   if (typeof layoutText === 'string' && layoutText) return layoutText;
   return classLabel || '';
+}
+
+/**
+ * The display string for a kit row's other label, the one beside the live
+ * count (the layout's `RESPAWN_ACTIVE_*` leaf, bound to
+ * `Kit/Strings/ActiveKitName<n>`): the kit's own `setKitActiveName`
+ * resolved through the mod chain's lexicon (`loadouts.kits[kit]
+ * .kitActiveName.text`). Vanilla's reads "ACTIVE SCOUTS", EoD's "Active
+ * Riflemen", BF1918's the class name ("Scharfschütze"). A key the lexicon
+ * lacks, or a file from before the field, keeps the layout's own string.
+ */
+export function kitActiveLabel(kitActiveName, layoutText) {
+  if (kitActiveName && typeof kitActiveName.text === 'string' && kitActiveName.text) {
+    return kitActiveName.text;
+  }
+  return typeof layoutText === 'string' ? layoutText : '';
 }

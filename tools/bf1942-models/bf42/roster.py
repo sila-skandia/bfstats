@@ -92,6 +92,33 @@ NATION_LABELS = {
     "italiandesert": "Italian",
     "pol": "Polish",
     "polish": "Polish",
+    # BF1918 spells its armies two ways, as the WWII games do: a soldier
+    # template's prefix (`KukSoldier`, `TurSoldier`, `EngSoldier`) and a kit
+    # folder (`Austrian_Kit`, `Turkish_Kit`, `English_Kit`). Imperial Russia
+    # is not the Soviet Union. WWI Japan (`JapanSoldier`, team 2) shares
+    # WWII's label, which is why a side is read off the teams first
+    # (`Roster.sides`), never off a label the level data contradicts.
+    "anz": "ANZAC",
+    "bel": "Belgian",
+    "belgian": "Belgian",
+    "bulgarian": "Bulgarian",
+    "bulgaria": "Bulgarian",
+    "eng": "British",
+    "english": "British",
+    "frz": "French",
+    "japan": "Japanese",
+    "kan": "Canadian",
+    "kuk": "Austro-Hungarian",
+    "austrian": "Austro-Hungarian",
+    "romanian": "Romanian",
+    "romania": "Romanian",
+    "rus": "Russian",
+    "senegal": "Senegalese",
+    "serb": "Serbian",
+    "serbia": "Serbian",
+    "tur": "Ottoman",
+    "turkish": "Ottoman",
+    "usa": "US",
 }
 
 # `side_of` reads every label absent from this set as Allied, so a label that
@@ -99,8 +126,22 @@ NATION_LABELS = {
 # right: Secret Weapons' `GerEliteKit` resolves to "German Elite", which shares
 # no string with "German" and so put the whole elite-soldier kit line — its
 # rifles, its knife, the soldier himself — on the Allied side.
+#
+# This is the fallback only. The engine has no sides, only teams (SIDE-1): a
+# level dresses team 1 and team 2 (`game.setTeamSkin`), spawns vehicles per
+# team (`setObjectTemplate <team>`), and a kit names its team (`setKitTeam`).
+# `Roster.sides` reads that number first (`TEAM_SIDES`). Italy and Japan are
+# team 1 in WWII and team 2 in BF1918, so no table of nations answers both.
+# The Central Powers are listed for a template that only a kit with no
+# `setKitTeam` reaches.
 AXIS_NATIONS = {"German", "German Elite", "Japanese", "Italian", "Hungarian",
-                "Finnish"}
+                "Finnish", "Austro-Hungarian", "Ottoman", "Bulgarian"}
+
+# What the viewer calls each team. Team 1 is "Axis" and team 2 "Allied"
+# everywhere downstream (`dogfight-arena.js` `teamOf`, `proving-ground.js`,
+# `tank-arena.js`), whatever the mod's war: in BF1918 "Axis" is the Central
+# Powers and "Allied" the Entente.
+TEAM_SIDES = {1: "Axis", 2: "Allied"}
 
 # `GB_AT` and `Canadian_Assault` spell their class differently to the folder that
 # holds them; the folder is the one that is consistent.
@@ -231,19 +272,52 @@ class Roster:
     kit_classes: dict[str, set[str]] = field(default_factory=dict)
     levels: dict[str, set[str]] = field(default_factory=dict)
     theatres: dict[str, set[str]] = field(default_factory=dict)
+    # The teams that field a template: the one a kit names with `setKitTeam`
+    # (for the kit and everything it carries), the team a level dresses in a
+    # soldier, and the team a level spawns a template for.
+    teams: dict[str, set[int]] = field(default_factory=dict)
+    # The same, level by level: template -> level -> teams. A side is per
+    # level (SIDE-1): BF1918 spawns the A7V for team 1 on Hindenburg Line and
+    # for both teams on Carriere, so only a level says who drives it there.
+    level_teams: dict[str, dict[str, set[int]]] = field(default_factory=dict)
 
-    def _add(self, table: dict[str, set[str]], template: str, value: str) -> None:
+    def _add(self, table: dict, template: str, value) -> None:
         table.setdefault(template.lower(), set()).add(value)
+
+    def _add_level_team(self, template: str, level: str, team: int) -> None:
+        self._add(self.teams, template, team)
+        self.level_teams.setdefault(template.lower(), {}).setdefault(level, set()).add(team)
+
+    def level_sides(self, template: str) -> dict[str, list[str]]:
+        """The sides that field `template` on each level that spawns or
+        dresses it, by level name."""
+        out = {}
+        for level, teams in sorted(self.level_teams.get(template.lower(), {}).items()):
+            sides = sorted({TEAM_SIDES[t] for t in teams if t in TEAM_SIDES})
+            if sides:
+                out[level] = sides
+        return out
+
+    def sides(self, template: str) -> list[str]:
+        """The sides that field `template`: every team the data puts it on
+        (a kit laid on the other team's pad is both teams'), else, for a
+        template no team names, its nations' (`side_of`)."""
+        key = template.lower()
+        sides = {TEAM_SIDES[t] for t in self.teams.get(key, set()) if t in TEAM_SIDES}
+        if sides:
+            return sorted(sides)
+        return sorted({side_of(nation) for nation in self.factions.get(key, set())})
 
     def entry(self, template: str) -> dict[str, list[str]]:
         key = template.lower()
         factions = sorted(self.factions.get(key, set()))
         return {
             "factions": factions,
-            "sides": sorted({side_of(nation) for nation in factions}),
+            "sides": self.sides(template),
             "kitClasses": sorted(self.kit_classes.get(key, set())),
             "levels": sorted(self.levels.get(key, set())),
             "theatres": sorted(self.theatres.get(key, set())),
+            "levelSides": self.level_sides(template),
         }
 
 
@@ -282,10 +356,13 @@ def add_kits(roster: Roster, library: con_mod.ObjectLibrary) -> int:
         if nation is None:
             continue
         kits += 1
+        team = template.kit_team
         for carried in _descend(library, template.name):
             if nation:
                 roster._add(roster.factions, carried, nation)
             roster._add(roster.kit_classes, carried, kit_class)
+            if team in TEAM_SIDES:
+                roster._add(roster.teams, carried, team)
     return kits
 
 
@@ -327,6 +404,7 @@ def add_levels(roster: Roster, level_paths: list[tuple[str, Path]]) -> int:
             nation = nation_label(match.group(1)) if match else None
             if nation:
                 roster._add(roster.factions, skin, nation)
+            roster._add_level_team(skin, level_name, team)
             roster._add(roster.levels, skin, level_name)
             roster._add(roster.theatres, skin, theatre)
 
@@ -341,6 +419,7 @@ def add_levels(roster: Roster, level_paths: list[tuple[str, Path]]) -> int:
                 nation = nation_label(match.group(1)) if match else None
                 if nation:
                     roster._add(roster.factions, vehicle, nation)
+                roster._add_level_team(vehicle, level_name, team)
                 roster._add(roster.levels, vehicle, level_name)
                 roster._add(roster.theatres, vehicle, theatre)
     return read

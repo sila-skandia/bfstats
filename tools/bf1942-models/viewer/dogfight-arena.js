@@ -12,6 +12,7 @@
 
 import { fighterRank } from './dogfight-lessons.js';
 import { provingGroundUrl } from './proving-ground.js';
+import { sidesOn } from './tank-arena.js';
 
 /** The battle that stands for an arena, first listed first. */
 export const ARENA_ORDER = ['Battle_of_Britain', 'Kursk', 'Market_Garden', 'Midway', 'El_Alamein', 'Coral_sea', 'Berlin', 'Kharkov'];
@@ -34,10 +35,12 @@ export function arenasFrom(rows, levels) {
   const byLevel = new Map();
   for (const row of rows ?? []) {
     if (row?.category !== 'air') continue;
-    const sides = row.sides ?? [];
-    // A plane both sides fly (a B-17 in the captured-plane maps) is neither's.
-    if (sides.length !== 1) continue;
     for (const level of row.levels ?? []) {
+      // A plane both sides fly there (a B-17 in the captured-plane maps) is
+      // neither's. The level's own teams decide where the catalogue has
+      // them (`levelSides`, `tank-arena.js` `sidesOn`): a side is per level.
+      const sides = sidesOn(row, level);
+      if (sides.length !== 1) continue;
       const map = held.get(String(level).toLowerCase());
       if (!map) continue;
       if (!byLevel.has(map)) byLevel.set(map, []);

@@ -196,6 +196,15 @@ class SoldierArtTests(unittest.TestCase):
                           "icon_elitebrit_soldier_lying", "scope_blank"],
                          self.soldier["keys"])
 
+    def test_a_side_s_ticket_flag_is_its_soldier_s_ticket_icon(self) -> None:
+        # The briefing card, the chat rows and the replay ask this: BF1918's
+        # Ottoman soldier flies `conp_Tu.tga`, so no `flag_ticket_tu` 404.
+        flag = run_harness()["ticketFlag"]
+        self.assertEqual("conp_tu", flag["bf1918"])
+        self.assertEqual("flag_ticket_ger", flag["vanilla"])
+        self.assertEqual("flag_ticket_us", flag["noArt"])
+        self.assertIsNone(flag["nothing"])
+
 
 class NationParityTests(unittest.TestCase):
     """The round's own requirement: the flag-mesh table and the rule built

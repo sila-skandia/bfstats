@@ -53,11 +53,13 @@ export function armourWeapon(entry) {
 /** Whether the AI files a unit as a tank: its `equipmentType` row is called
  *  `Tank` or `AmphibiousTank` in the mod's own `AIbehaviours.con` (EoD's
  *  PT-76 and V-100 are row 18, `AmphibiousTank`; its BMP-1 is an
- *  `AmphibiousCar` and its BTR-60 an `AmphibiousAPC`). The rows are each
- *  mod's to number, so the name decides; a table extracted before the names
- *  were carried falls back to vanilla's row 0. */
+ *  `AmphibiousCar` and its BTR-60 an `AmphibiousAPC`). BF1918 splits the
+ *  row by weight: `HeavyTank` (row 0: A7V, Mark IV, Chamond) and
+ *  `LightTank` (row 1: FT-17). An `UnarmedTank` (an armoured carrier) is
+ *  not one. The rows are each mod's to number, so the name decides; a table
+ *  extracted before the names were carried falls back to vanilla's row 0. */
 export function tankRow(entry) {
-  if (entry?.equipment != null) return /^(amphibious)?tank$/i.test(String(entry.equipment));
+  if (entry?.equipment != null) return /^(amphibious|heavy|light|medium)?tank$/i.test(String(entry.equipment));
   return Number(entry?.equipmentType) === 0;
 }
 
@@ -119,6 +121,17 @@ export function prettyTank(template) {
   return t.replace(/_/g, ' ').replace(/([a-z])([A-Z0-9])/g, '$1 $2');
 }
 
+/** The sides that field a catalogue row on `level`: the level's own teams
+ *  (`levelSides`, roster.py: team 1 "Axis", team 2 "Allied"), else the
+ *  row's sides over every level. A side is the level's (ledger SIDE-1):
+ *  BF1918's A7V is team 1's on Hindenburg Line and both teams' on
+ *  Carriere, and its Mark IV team 2's on Hindenburg Line and both teams'
+ *  on Battle of Cambrai, so a row's sides over the tree pair nothing. */
+export function sidesOn(row, level) {
+  const own = row?.levelSides?.[level];
+  return Array.isArray(own) ? own : (row?.sides ?? []);
+}
+
 const levelWords = map => String(map).replace(/_/g, ' ').replace(/\bof the\b/gi, m => m.toLowerCase());
 
 /**
@@ -133,10 +146,10 @@ export function arenasFrom(rows, levels = null, ai = null) {
   const byLevel = new Map();
   for (const row of rows ?? []) {
     if (!isTank(row, ai)) continue;
-    const sides = row.sides ?? [];
-    // A tank both sides drive (a captured one) is neither's.
-    if (sides.length !== 1) continue;
     for (const level of row.levels ?? []) {
+      // A tank both sides drive there (a captured one) is neither's.
+      const sides = sidesOn(row, level);
+      if (sides.length !== 1) continue;
       const name = held ? held.get(String(level).toLowerCase()) : level;
       if (!name) continue;
       const entry = byLevel.get(name) ?? { Allied: new Map(), Axis: new Map() };

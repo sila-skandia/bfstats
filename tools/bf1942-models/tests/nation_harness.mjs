@@ -8,7 +8,7 @@
 // `team_nation_from_level` is fed in the Python-side test that runs
 // alongside this one.
 
-import { flagMeshNation, cpNation, heldNation, iconKey, soldierArt, soldierNation, teamNation } from './nation.js';
+import { flagMeshNation, cpNation, heldNation, iconKey, soldierArt, soldierNation, teamNation, ticketFlagKey } from './nation.js';
 
 const results = {};
 
@@ -196,6 +196,17 @@ results.soldier = {
   midwayAllied: teamNation([], 2, VANILLA, 'brit', soldierNation(DC_SOLDIERS, 'USSoldier')),
   keys: [iconKey('Soldier/Icon_us_marine_standing.tga'), iconKey('conp_ger.tga'),
          iconKey('Soldier\\icon_EliteBrit_soldier_lying.dds'), iconKey('scope_blank')],
+};
+
+// --- ticketFlagKey: the side's ticket flag sprite ------------------------------
+// BF1918's soldiers fly their own art (`conp_Tu.tga`) and the mod ships no
+// `flag_ticket_*`; vanilla's write `flag_ticket_ger.tga`. With no soldier art
+// the vanilla family stands; with neither, no sprite.
+results.ticketFlag = {
+  bf1918: ticketFlagKey({ ticket: 'conp_Tu.tga', nation: 'tu' }, 'tu'),
+  vanilla: ticketFlagKey({ ticket: 'flag_ticket_ger.tga', nation: 'ger' }, 'ger'),
+  noArt: ticketFlagKey(null, 'us'),
+  nothing: ticketFlagKey(null, 'unknown'),
 };
 
 console.log(JSON.stringify(results, null, 1));

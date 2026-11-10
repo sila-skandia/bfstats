@@ -311,5 +311,102 @@ class AddLevelsPatchTests(unittest.TestCase):
         self.assertEqual(["US Marines"], roster.entry("USMarineSoldier")["factions"])
 
 
+class TeamSideTests(unittest.TestCase):
+    """A side is the team the data puts a template on (SIDE-1), not its
+    nation's WWII alignment: BF1918 fields Italy and Japan as team 2."""
+
+    def setUp(self) -> None:
+        self._tmp = tempfile.TemporaryDirectory()
+        self.levels_dir = Path(self._tmp.name)
+
+    def tearDown(self) -> None:
+        self._tmp.cleanup()
+
+    def _levels(self, content: dict[str, tuple[bytes, bytes]]) -> Roster:
+        archives = {}
+        for name, (init, spawns) in content.items():
+            (self.levels_dir / f"{name}.rfa").touch()
+            archives[f"{name}.rfa"] = {
+                f"bf1942/levels/{name}/Init.con": init,
+                f"bf1942/levels/{name}/Conquest/ObjectSpawnTemplates.con": spawns,
+            }
+        roster = Roster()
+        with mock.patch("bf42.rfa.RfaArchive", _fake_archives(archives)):
+            add_levels(roster, [(n, self.levels_dir / f"{n}.rfa") for n in content])
+        return roster
+
+    @staticmethod
+    def _spawner(name: str, team1: str | None, team2: str | None) -> bytes:
+        lines = [f"ObjectTemplate.create ObjectSpawner {name}"]
+        if team1:
+            lines.append(f"ObjectTemplate.setObjectTemplate 1 {team1}")
+        if team2:
+            lines.append(f"ObjectTemplate.setObjectTemplate 2 {team2}")
+        return ("\n".join(lines) + "\n").encode()
+
+    def test_the_bf1918_nations_resolve(self) -> None:
+        self.assertEqual("Austro-Hungarian", nation_label("kuk"))
+        self.assertEqual("Austro-Hungarian", nation_label("Austrian_"))
+        self.assertEqual("Ottoman", nation_label("Tur"))
+        self.assertEqual("British", nation_label("Eng"))
+        self.assertEqual("Russian", nation_label("Rus_"))
+        self.assertEqual("Japanese", nation_label("Japan_"))
+
+    def test_a_vehicle_s_side_is_its_team_s(self) -> None:
+        roster = self._levels({
+            # Italy is team 2 in BF1918, so the FT-17 its army drives is Allied.
+            "Isonzo": (b"game.setTeamSkin 1 KukSoldier\ngame.setTeamSkin 2 ItaSoldier\n",
+                       self._spawner("tank", None, "FT17")),
+            "Gallipoli": (b"game.setTeamSkin 1 TurSoldier\ngame.setTeamSkin 2 AnzSoldier\n",
+                          self._spawner("car", "Ehrhardt", "RollsRoyce")),
+        })
+        self.assertEqual(["Allied"], roster.entry("FT17")["sides"])
+        self.assertEqual(["Italian"], roster.entry("FT17")["factions"])
+        self.assertEqual(["Axis"], roster.entry("Ehrhardt")["sides"])
+        self.assertEqual(["Ottoman"], roster.entry("Ehrhardt")["factions"])
+        self.assertEqual(["Axis"], roster.entry("KukSoldier")["sides"])
+        self.assertEqual(["Allied"], roster.entry("ItaSoldier")["sides"])
+
+    def test_a_side_is_also_kept_level_by_level(self) -> None:
+        roster = self._levels({
+            "hindenburg_line": (b"game.setTeamSkin 1 GerSoldier\ngame.setTeamSkin 2 EngSoldier\n",
+                                self._spawner("tank", "A7V", "Mark4")),
+            # A pad both teams spawn the A7V from: both teams' there.
+            "carriere": (b"game.setTeamSkin 1 GerSoldier\ngame.setTeamSkin 2 FrzSoldier\n",
+                         self._spawner("tank", "A7V", "A7V")),
+        })
+        a7v = roster.entry("A7V")
+        self.assertEqual(["Allied", "Axis"], a7v["sides"])
+        self.assertEqual({"carriere": ["Allied", "Axis"], "hindenburg_line": ["Axis"]}, a7v["levelSides"])
+        self.assertEqual({"hindenburg_line": ["Allied"]}, roster.entry("Mark4")["levelSides"])
+
+    def test_a_kit_s_own_team_sides_what_it_carries(self) -> None:
+        library = ObjectLibrary()
+        library.add_con(
+            "Objects/Items/Italian_Kit/Ita_Scout/Objects.con",
+            """
+ObjectTemplate.create Kit Ita_Scout
+ObjectTemplate.setKitTeam 2
+ObjectTemplate.addTemplate Carcano
+""")
+        roster = Roster()
+        add_kits(roster, library)
+        self.assertEqual(["Italian"], roster.entry("Carcano")["factions"])
+        self.assertEqual(["Allied"], roster.entry("Carcano")["sides"])
+
+    def test_a_template_no_team_names_falls_back_to_its_nation(self) -> None:
+        library = ObjectLibrary()
+        library.add_con(
+            "Objects/Items/Turkish_Kit/Tur_Scout/Objects.con",
+            """
+ObjectTemplate.create Kit Tur_Scout
+ObjectTemplate.addTemplate Mauser
+""")
+        roster = Roster()
+        add_kits(roster, library)
+        self.assertEqual(["Axis"], roster.entry("Mauser")["sides"])
+        self.assertEqual({}, roster.entry("Mauser")["levelSides"])
+
+
 if __name__ == "__main__":
     unittest.main()

@@ -269,9 +269,11 @@ ObjectTemplate.setType Medic
 """)
         return library
 
-    def test_a_kit_filed_outside_the_convention_is_collected_without_a_nation(self) -> None:
+    def test_a_kit_filed_outside_the_convention_is_collected(self) -> None:
         kit = collect(self.library())["kuk_officer2"]
-        self.assertIsNone(kit.nation)
+        # The period folder still names its army: `Austrian_` resolves
+        # (roster.NATION_LABELS, SIDE-3).
+        self.assertEqual("Austro-Hungarian", kit.nation)
         self.assertEqual("Assault", kit.kit_class)
         self.assertEqual(["Steyr_M1912"], kit.carried)
 
