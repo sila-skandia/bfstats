@@ -7,6 +7,9 @@ air still holds them (`jetUpAndOver`, `jetUoAce`, `jetUoAceSharp` in
 come straight back down. The lesson's words (`viewer/dogfight-jet-up-and-over.js`)
 say what that fight does, every number in them held here. The Dip is the shot
 as they pull, then past them as they come back down and away (`jetUoDip`).
+Every jet pilot flies under the roof (`stepPilot`, `underRoof`), so the
+follower levels off under the top of the sky too; the ace opts its pull, its
+loop and its recovery out of it (`roof: false`).
 
 `move` and `counter` are flown from the harness's nine starts (your start x
 -30/0/+30 m by speed -3/0/+3 m/s, `dogfight_jet_harness.mjs`); the Dip, the
@@ -25,7 +28,7 @@ import subprocess
 import unittest
 from pathlib import Path
 
-from jet_school import jet_lesson, shot_down
+from jet_school import jet_lesson, jet_tops, shot_down
 
 TOOLS = Path(__file__).resolve().parent.parent
 LESSON = "up-and-over"
@@ -104,7 +107,8 @@ for (const d of L.demos.filter(d => d.kind)) {
     return { ...s, yourHeightAt0: B[i0].p[1], aceTop: A[ace.top].p[1], aceTopAt: A[ace.top].t,
              acePeak: ace.peak, aceSlow: ace.slow,
              yourTop: Math.max(...B.map(k => k.p[1])), yourSlowEnd: Math.min(...B.slice(-Math.round(10 / r.dt)).map(k => k.v)),
-             yourHitsAfter: hitTimes(r, 1).filter(t => t >= s.t0), ace: ev(0), you: ev(1) };
+             yourHitsAfter: hitTimes(r, 1).filter(t => t >= s.t0), ace: ev(0), you: ev(1),
+             yourSlowAfter: s.t0 === null ? null : Math.min(...B.slice(i0).map(k => k.v)) };
   });
 }
 out.verdicts = await movesOn(L, { makePlane, runDuel, demoSides });
@@ -143,8 +147,8 @@ def span(values) -> tuple[float, float]:
 
 
 class TheJetAceTests(unittest.TestCase):
-    """The ace respects the top of the sky: over the top at 550 m, never over
-    the lift ceiling, never slow after the top, from every start of every demo."""
+    """The ace respects the top of the sky: over the top at 550 m, the loop
+    under 800 m, nobody over 860 m, from every start of every demo."""
 
     def _all(self, plane: str):
         m = measure(plane)
@@ -156,19 +160,52 @@ class TheJetAceTests(unittest.TestCase):
         self.assertEqual("jetUoAce", w["flyAce"])
         self.assertEqual({"jetUoAceSharp"}, {w["demos"][d]["ace"] for d in ("dip", "flip", "ninja")})
 
-    def test_never_over_the_ceiling_and_never_slow_after_the_top_on_the_f16(self) -> None:
+    def test_the_loop_and_the_top_on_the_f16(self) -> None:
         fights, moves = self._all("F16")
-        for r in fights + moves:
-            self.assertLess(r["acePeak"], 925, r["acePeak"])
-            self.assertGreaterEqual(r["aceSlow"], 68, r["aceSlow"])
         for r in fights:
+            self.assertAlmostEqual(725, r["top"][0], delta=3)
             self.assertGreaterEqual(r["climbSpeed"][0], 71)
-
-    def test_never_over_the_ceiling_and_never_slow_after_the_top_on_the_mig29(self) -> None:
-        fights, moves = self._all("Mig29")
+        for r in moves:
+            self.assertAlmostEqual(725, r["aceTop"], delta=3)
         for r in fights + moves:
-            self.assertLess(r["acePeak"], 1000, r["acePeak"])
-            self.assertGreaterEqual(r["aceSlow"], 82, r["aceSlow"])
+            self.assertLess(r["acePeak"], 845, r["acePeak"])
+        # Never slower than 76 m/s after its first top, but in one Dip start
+        # (its zoom after the pass slows it to 45 m/s, and it noses down for
+        # speed: the recovery, out of the roof) and one Flip start (65 m/s).
+        slow = sorted(r["aceSlow"] for r in fights + moves)
+        self.assertTrue(44 <= slow[0] < 46, slow[0])
+        self.assertTrue(64.5 <= slow[1] < 66, slow[1])
+        self.assertGreaterEqual(slow[2], 75.5)
+        dip = sorted(r["aceSlow"] for r in measure("F16")["moves"]["dip"])
+        self.assertEqual(slow[0], dip[0])
+
+    def test_the_loop_and_the_top_on_the_mig29(self) -> None:
+        fights, moves = self._all("Mig29")
+        for r in fights:
+            self.assertTrue(772 <= r["top"][0] <= 777, r["top"])
+        for r in moves:
+            self.assertTrue(772 <= r["aceTop"] <= 777, r["aceTop"])
+        for r in fights + moves:
+            self.assertLess(r["acePeak"], 855, r["acePeak"])
+            self.assertGreaterEqual(r["aceSlow"], 57, r["aceSlow"])
+
+    def test_nobody_tops_860_m(self) -> None:
+        # The harness's own nine starts, every demo and move: the highest
+        # either plane went, real metres. The F-16's 840 and the MiG-29's 852
+        # are both planes levelled off by the roof, not the ace's loop.
+        for plane, cap in (("F16", 845), ("Mig29", 855)):
+            tops = jet_tops(plane, LESSON)[LESSON]
+            self.assertEqual({"move", "counter", "dip", "flip", "ninja"}, set(tops))
+            for demo, t in tops.items():
+                self.assertLess(max(t["top"]), cap, (plane, demo, t))
+                self.assertEqual([0, 0], t["past"], (plane, demo, t))
+
+    def test_the_ace_opts_out_of_the_roof_only_where_it_means_to(self) -> None:
+        # The pull, the loop (and its back half on their back), the recovery.
+        src = (TOOLS / "viewer" / "dogfight-jet-plan-up-and-over.js").read_text()
+        self.assertNotIn("underRoof(", src)
+        self.assertEqual(4, src.count("roof: false }"))
+        self.assertIn("const OVER_AT = 550;", src)
 
     def test_the_ceiling_is_read_over_the_pace_the_context_gives(self) -> None:
         # "1,000 m real is 781 in the F-16 pilot's numbers and 667 in the MiG-29's"
@@ -205,40 +242,54 @@ class TheClimbOnAJetTests(unittest.TestCase):
             # "go over the top at 550 m, 4 s later"
             self.assertAlmostEqual(550, y, delta=5)
             self.assertAlmostEqual(4.2, t - r["pullAt"], delta=0.3)
-            # "a loop that tops out at 725 m at 75 m/s, 9 s in"
+            # "a loop that tops out at 725 m at 76 m/s, 9 s in"
             top_y, top_t, top_v = r["top"]
             self.assertAlmostEqual(725, top_y, delta=3)
             self.assertAlmostEqual(9, top_t, delta=0.3)
-            self.assertAlmostEqual(75, top_v, delta=1.5)
+            self.assertAlmostEqual(76, top_v, delta=1)
             # "and brings them straight back down at you"
             self.assertIsNotNone(r["pounceAt"])
             self.assertLessEqual(r["pounceAt"], 12.5)
 
 
 class FollowingThemUpOnAJetTests(unittest.TestCase):
-    """Story, third paragraph: following them up gets nobody anything."""
+    """Story, third paragraph: following them up gets you nothing, and gives
+    them a pass as they come over."""
 
     @classmethod
     def setUpClass(cls) -> None:
         cls.runs = measure()["fights"]["move"]
 
-    def test_you_do_not_hang_and_they_come_back_down_past_you(self) -> None:
+    def test_you_level_off_under_the_top_slow(self) -> None:
+        # "49 to 58 m under them as they go over"
         lo, hi = span(r["underAtTop"] for r in self.runs)
-        self.assertGreaterEqual(lo, 37.5)
-        self.assertLessEqual(hi, 53.5)
-        self.assertGreaterEqual(min(r["yourSlowestClimb"] for r in self.runs), 60)
-        # "80 m away at the closest"
-        lo, hi = span(r["closest"] for r in self.runs)
-        self.assertTrue(77 <= lo and hi <= 87, (lo, hi))
+        self.assertTrue(48.5 <= lo and hi <= 58.5, (lo, hi))
+        # "you level off under the top of the sky, at 785 to 835 m"
+        lo, hi = span(r["yourTop"] for r in self.runs)
+        self.assertTrue(784 <= lo and hi <= 835.5, (lo, hi))
+        # "down to 30 to 53 m/s"
+        lo, hi = span(r["yourSlowestClimb"] for r in self.runs)
+        self.assertTrue(29.5 <= lo and hi <= 53, (lo, hi))
 
-    def test_nobody_is_shot_down(self) -> None:
+    def test_they_get_a_pass_and_nobody_is_shot_down(self) -> None:
+        # "they hit you once 9 s in from five of the nine starts (and once
+        # more 33 s in, in one of them)"
+        hit = [r["aceHits"] for r in self.runs if r["aceHits"]]
+        self.assertEqual(5, len(hit))
+        for h in hit:
+            self.assertAlmostEqual(9.2, h[0], delta=0.2)
+        self.assertEqual([1, 1, 1, 1, 2], sorted(len(h) for h in hit))
+        self.assertAlmostEqual(33, max(h[-1] for h in hit), delta=0.5)
+        # "the only round you landed, in two of the nine, was fired before
+        # they pulled up"
+        yours = [r["yourHits"] for r in self.runs if r["yourHits"]]
+        self.assertEqual(2, len(yours))
+        self.assertTrue(all(len(h) == 1 and h[0] < 1.5 for h in yours), yours)
         for r in self.runs:
             self.assertIsNone(r["winner"])
-            self.assertEqual([], r["aceHits"])
-            self.assertLessEqual(len(r["yourHits"]), 2)
         runs = jet_lesson(LESSON, demo="move")["demos"]["move"]
         self.assertEqual(0, shot_down(runs, 0) + shot_down(runs, 1))
-        self.assertTrue(all("hang" not in r["phases"][1] for r in runs))
+        self.assertEqual([1, 1, 0, 0, 0, 1, 1, 2, 0], [r["hits"][0] for r in runs])
 
 
 class FollowingShallowOnAJetTests(unittest.TestCase):
@@ -252,8 +303,8 @@ class FollowingShallowOnAJetTests(unittest.TestCase):
         pulled = [r for r in self.runs if any(t > r["pullAt"] for t in r["yourHits"])]
         self.assertEqual(7, len(pulled))
         for r in pulled:
-            self.assertTrue(all(4.6 <= t <= 5.8 for t in r["yourHits"]), r["yourHits"])
-            self.assertTrue(6 <= len(r["yourHits"]) <= 12)
+            burst = [t for t in r["yourHits"] if 4.6 <= t <= 5.8]
+            self.assertTrue(6 <= len(burst) <= 12, r["yourHits"])
             # "as their nose comes up through 62 to 65 degrees they fly through
             # your sight 390 to 430 m out"
             self.assertTrue(61.5 <= r["firstHit"]["hisPitch"] <= 65.5, r["firstHit"])
@@ -264,24 +315,25 @@ class FollowingShallowOnAJetTests(unittest.TestCase):
         self.assertEqual([(30, 0), (30, 3)], missed)
 
     def test_their_guns_find_you_twice_and_one_burst_is_not_enough(self) -> None:
-        # "Their guns found you twice in the nine: 3 hits 18.5 s in, and 1 hit 41.5 s in"
+        # "Their guns found you twice in the nine: 3 hits 13 s in, and 1 hit 45 s in"
         hit = {(r["dx"], r["dv"]): r["aceHits"] for r in self.runs if r["aceHits"]}
-        self.assertEqual({(30, -3), (30, 0)}, set(hit))
-        self.assertEqual(3, len(hit[(30, 0)]))
-        self.assertAlmostEqual(18.5, hit[(30, 0)][0], delta=0.1)
+        self.assertEqual({(30, -3), (30, 3)}, set(hit))
+        self.assertEqual(3, len(hit[(30, 3)]))
+        self.assertAlmostEqual(13.2, hit[(30, 3)][0], delta=0.2)
         self.assertEqual(1, len(hit[(30, -3)]))
-        self.assertAlmostEqual(41.5, hit[(30, -3)][0], delta=0.1)
+        self.assertAlmostEqual(45, hit[(30, -3)][0], delta=0.3)
         for r in self.runs:
             self.assertIsNone(r["winner"])
         runs = jet_lesson(LESSON, demo="counter")["demos"]["counter"]
-        self.assertEqual([12, 8, 8, 7, 7, 7, 6, 1, 1], [r["hits"][1] for r in runs])
+        self.assertEqual([13, 8, 8, 7, 7, 7, 8, 1, 1], [r["hits"][1] for r in runs])
         self.assertEqual(0, shot_down(runs, 0) + shot_down(runs, 1))
 
-    def test_keep_climbing_and_you_go_up_alone(self) -> None:
-        # "to 1,150 to 1,320 m"
+    def test_climb_on_and_you_level_off_at_830_m(self) -> None:
+        # "climb on after them and you level off at about 830 m, under the top
+        # of the sky, slow"
         lo, hi = span(r["yourTop"] for r in self.runs)
-        self.assertGreaterEqual(lo, 1150)
-        self.assertLessEqual(hi, 1320)
+        self.assertTrue(825 <= lo and hi <= 835, (lo, hi))
+        self.assertLess(max(r["yourSlowestClimb"] for r in self.runs), 42)
 
 
 class TheMovesOnAJetTests(unittest.TestCase):
@@ -304,36 +356,50 @@ class TheMovesOnAJetTests(unittest.TestCase):
         hits = [len(r["yourHitsAfter"]) for r in runs]
         self.assertEqual(10, max(hits))
         self.assertEqual(1, hits.count(0))
+        let_go = []
         for r in runs:
             self.assertAlmostEqual(725, r["aceTop"], delta=3)
             self.assertEqual(["chase", "dip-shot", "dip-pass", "dip-run"], [ph for _, ph in r["you"]])
             passed = next(t for t, ph in r["you"] if ph == "dip-pass")
             self.assertAlmostEqual(9, passed, delta=0.4)
-            chase = next(t for t, ph in r["ace"] if ph == "chase")
-            let_go = next(t for t, ph in r["ace"] if ph == "let-go")
-            # "chase you for 6 to 7 s and let you go 24 to 27 s in"
-            self.assertTrue(5.9 <= let_go - chase <= 7.4, (chase, let_go))
-            self.assertTrue(23.7 <= let_go <= 27, let_go)
-            self.assertTrue(2300 <= r["endRange"] <= 2900 and r["opening"] > 0, r["endRange"])
+            # "the pass carries you up to about 780 m, where you level off
+            # slow, 24 to 34 m/s"
+            self.assertTrue(778 <= r["yourTop"] <= 785, r["yourTop"])
+            self.assertTrue(24 <= r["yourSlowAfter"] <= 34.5, r["yourSlowAfter"])
+            let_go.append(next(t for t, ph in r["ace"] if ph == "let-go"))
+            # "at 35 s you are 1.85 to 1.96 km apart and opening"
+            self.assertTrue(1850 <= r["endRange"] <= 1965 and r["opening"] > 0, r["endRange"])
+        # "They turn round at you and let you go 17 to 18 s in (in one, after
+        # chasing you for 7 s, 26 s in)"
+        late = [t for t in let_go if t > 18]
+        self.assertEqual(1, len(late))
+        self.assertTrue(all(17 <= t <= 18 for t in let_go if t <= 18), let_go)
+        chased = next(r for r in runs if any(ph == "chase" for _, ph in r["ace"]))
+        chase = next(t for t, ph in chased["ace"] if ph == "chase")
+        self.assertTrue(6.5 <= late[0] - chase <= 7.5 and 25.5 <= late[0] <= 26, (chase, late))
 
-    def test_the_flip_never_starts(self) -> None:
+    def test_the_flip_is_flown_and_never_gets_behind_them_in_time(self) -> None:
         runs = self.m["moves"]["flip"]
-        self.assertTrue(all(r["t0"] is None for r in runs))
-        lo, hi = span(r["yourTop"] for r in runs)
-        self.assertGreaterEqual(lo, 754.5)
-        self.assertLessEqual(hi, 790)
+        # "You slow to 54 m/s levelling off at 690 to 700 m, 9 s in"
+        for r in runs:
+            self.assertTrue(9.1 <= r["t0"] <= 9.5, r["t0"])
+            self.assertTrue(690 <= r["yourHeightAt0"] <= 700, r["yourHeightAt0"])
+        # "you get in behind them in only two of the nine, 23 to 27 s later"
+        behind = [r["flipAt"] - r["t0"] for r in runs if r["flipAt"] is not None]
+        self.assertEqual(2, len(behind))
+        self.assertTrue(all(23 <= t <= 27 for t in behind), behind)
 
     def test_the_ninja_climbs_on_alone(self) -> None:
         runs = self.m["moves"]["ninja"]
         self.assertTrue(all("ninja-shoot" not in [ph for _, ph in r["you"]] for r in runs))
-        self.assertTrue(all(r["yourHitsAfter"] == [] for r in runs))
-        # "in four of the nine they hit you, 1 to 11 times"
-        self.assertEqual([1, 1, 11, 2], [r["hitsOnMe"] for r in runs if r["hitsOnMe"]])
+        # "You land a round in two of the nine; they never hit you"
+        self.assertEqual([1, 1], [r["hitsOnHim"] for r in runs if r["hitsOnHim"]])
+        self.assertTrue(all(r["hitsOnMe"] == 0 for r in runs))
+        # "level off at about 830 m, under the top of the sky, slowing to 25 to 60 m/s"
         lo, hi = span(r["yourTop"] for r in runs)
-        self.assertGreaterEqual(lo, 1285)
-        self.assertLessEqual(hi, 1590)
-        lo, hi = span(r["yourSlowEnd"] for r in runs)
-        self.assertTrue(21.5 <= lo and hi <= 37.5, (lo, hi))
+        self.assertTrue(825 <= lo and hi <= 835, (lo, hi))
+        lo, hi = span(r["yourSlowAfter"] for r in runs)
+        self.assertTrue(24.5 <= lo and hi <= 60.5, (lo, hi))
 
 
 class TheWordsOnAJetTests(unittest.TestCase):
@@ -353,6 +419,13 @@ class TheWordsOnAJetTests(unittest.TestCase):
         self.assertIn("9 of 9", line)
         self.assertIn("(0 of 9)", line)
         self.assertIn("6 to 12 hits in seven of nine", line)
+        self.assertIn("in five of nine", line)
+
+    def test_no_word_says_you_go_up_alone_past_the_roof(self) -> None:
+        # Before the roof your seat coasted on up to 1,150 to 1,590 m.
+        text = json.dumps(words())
+        for gone in ("1,150", "1,290", "1,320", "1,590", "2.3 to 2.9 km"):
+            self.assertNotIn(gone, text)
 
     def test_the_dip_steps_are_the_phases_flown(self) -> None:
         steps = [s["phase"] for s in words()["demos"]["dip"]["steps"]["steps"]]
@@ -360,19 +433,40 @@ class TheWordsOnAJetTests(unittest.TestCase):
 
 
 class OnTheMig29Tests(unittest.TestCase):
-    """The same fight on the MiG-29 (pace 1.5): the same lesson."""
+    """The same fight on the MiG-29 (pace 1.5): the same lesson, its loop
+    under 800 m too."""
+
+    @classmethod
+    def setUpClass(cls) -> None:
+        cls.m = measure("Mig29")
 
     def test_the_mig_goes_up_and_over_the_same_way(self) -> None:
-        m = measure("Mig29")
-        for r in m["fights"]["move"]:
-            self.assertGreaterEqual(r["climbSpeed"][0], 91)
+        for r in self.m["fights"]["move"] + self.m["fights"]["counter"]:
+            self.assertGreaterEqual(r["climbSpeed"][0], 90.5)
+            # The pull is out of the roof: up to 53 degrees, over at 551 m,
+            # the top at 774 m 7.7 s in.
+            self.assertAlmostEqual(53, r["pullPitch"], delta=1)
             self.assertAlmostEqual(550, r["overAt"][1], delta=5)
-            self.assertTrue(805 <= r["top"][0] <= 820, r["top"])
+            self.assertTrue(772 <= r["top"][0] <= 777 and 7.5 <= r["top"][1] <= 8, r["top"])
+            self.assertIsNotNone(r["pounceAt"])
             self.assertIsNone(r["winner"])
-        counter = [len(r["yourHits"]) for r in m["fights"]["counter"]]
-        self.assertEqual([9, 7, 9, 2, 6, 3, 3, 1, 1], counter)
-        self.assertTrue(all(r["aceHits"] == [] for r in m["fights"]["move"]))
-        self.assertEqual({"dip": 9, "flip": 0, "ninja": 0}, {k: v["works"] for k, v in m["verdicts"].items()})
+
+    def test_following_up_and_following_shallow(self) -> None:
+        move = self.m["fights"]["move"]
+        self.assertEqual(2, sum(1 for r in move if r["aceHits"]))
+        self.assertTrue(all(r["yourHits"] == [] for r in move))
+        counter = [len(r["yourHits"]) for r in self.m["fights"]["counter"]]
+        self.assertEqual([8, 8, 11, 3, 3, 1, 1, 0, 1], counter)
+        self.assertEqual(1, sum(1 for r in self.m["fights"]["counter"] if r["aceHits"]))
+
+    def test_the_moves(self) -> None:
+        self.assertEqual({"dip": 9, "flip": 0, "ninja": 0}, {k: v["works"] for k, v in self.m["verdicts"].items()})
+        dip = self.m["moves"]["dip"]
+        self.assertTrue(all(r["hitsOnMe"] == 0 for r in dip))
+        lo, hi = span(r["endRange"] for r in dip)
+        self.assertTrue(2050 <= lo and hi <= 3750, (lo, hi))
+        # Your own seat stays faster on the MiG-29: 60 m/s or more in the Dip.
+        self.assertGreaterEqual(min(r["yourSlowAfter"] for r in dip), 60)
 
 
 if __name__ == "__main__":

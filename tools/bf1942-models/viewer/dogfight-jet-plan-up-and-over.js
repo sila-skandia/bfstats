@@ -7,8 +7,8 @@
 // top while the air still holds it, and comes straight back down at you.
 
 import { PLANS, INTENTS, go, heading, climbing, leadPursuit, easedClimb, turnToward } from './dogfight-pilot.js';
-import { pointNose, sub, add, unit, pitchOf } from './dogfight-flight.js';
-import { seenHeight, atRoof, roofClimb, underRoof } from './dogfight-jet-ceiling.js';
+import { pointNose, sub, add, unit, pitchOf, bankOf } from './dogfight-flight.js';
+import { seenHeight, atRoof } from './dogfight-jet-ceiling.js';
 
 /**
  * THE DIP, for a jet: the shot as they pull, past them as they come down,
@@ -69,10 +69,23 @@ INTENTS.jetUoDip = { chase: 'attack', 'dip-shot': 'attack', 'dip-pass': 'defend'
 // Spitfire's size. A jet never gets that slow going up: it went on to 1,180
 // m, past where a wing makes anything, and wallowed back down at 15 to 60
 // m/s, full aft stick and no air. The jet's ace goes over the top while the
-// air still holds it (`OVER_AT` real metres, `dogfight-jet-ceiling.js`),
-// turns over the top of a climb the roof has levelled in a wingover, not a
-// loop, keeps every other climb under the roof, and never hangs: slow and
+// air still holds it (`OVER_AT` real metres), turns over the top of a climb
+// the roof has levelled in a wingover, not a loop, and never hangs: slow and
 // not diving, the nose goes down until the speed is back.
+//
+// Every jet pilot's answer goes under the roof in `stepPilot`
+// (`dogfight-jet-ceiling.js` `underRoof`), so this plan no longer puts its
+// own answers under it. It opts out (`roof: false`) where the roof would
+// spoil what it means to do:
+//   - the pull, which ends at `OVER_AT`, under the roof anyway. The roof's
+//     lead held the MiG-29's pull to 46 degrees, and a loop from that shallow
+//     a climb went up to 883 m; left alone it pulls to 53 degrees and tops
+//     out at 775 m. The F-16's pull reaches 72 degrees either way.
+//   - the loop, from `over` until it is out of its back half (`pounce` while
+//     still on its back). Rolled upright at the top by the roof, the MiG-29
+//     did not come back down at all and flew on level at 850 m.
+//   - the recovery, nose 35 degrees down. The roof cut its throttle and put
+//     the nose on the climb it allows, and the ace fell to 27 m/s.
 
 /** The real height the pull goes over the top at, metres (`mem.overAt`,
  *  also real metres: it is where the air is, not a size of the fight). */
@@ -101,20 +114,24 @@ function jetUp(name) {
       if (mem.jetSlow && c.g.mySpeed > JET_AGAIN) mem.jetSlow = false;
       const out = base.step(c);
       if (mem.jetSlow && loose.includes(mem.phase)) {
-        return { ...pointNose(me, climbing(heading(me.velocity), -35), { fine: 10, push: 0.7 }), throttle: 1, aimed: false, say: RECOVER };
+        return { ...pointNose(me, climbing(heading(me.velocity), -35), { fine: 10, push: 0.7 }), throttle: 1, aimed: false, say: RECOVER, roof: false };
       }
-      if (mem.phase !== 'over') { mem.jetLoop = undefined; return underRoof(c, out); }
+      if (mem.phase === 'pull') return { ...out, roof: false };
+      // Coming out of the top of the loop on their back: still the loop.
+      if (mem.phase === 'pounce' && mem.jetLoop && bankOf(me.orientation).inverted) return { ...out, roof: false };
+      if (mem.phase !== 'over') { mem.jetLoop = undefined; return out; }
       // A steep climb no higher than the pull's goes over the top in the
-      // loop; any other turns back to them level or nose down.
+      // loop; any other turns back to them level or nose down (the shared
+      // roof over it).
       mem.jetLoop ??= pitch >= 45 && y <= seenHeight(c, overAt + 60);
       if (mem.jetLoop) return { ...out, roof: false };
       const to = sub(c.him.position, me.position);
-      return underRoof(c, { ...turnToward(c, to, { maxUp: Math.max(0, roofClimb(c, 25)), maxDown: 45 }), throttle: 1 });
+      return { ...turnToward(c, to, { maxUp: 25, maxDown: 45 }), throttle: 1 };
     },
   };
 }
 
-/** `upAndOver`, `uoAce` and `uoAceSharp` under the roof. */
+/** `upAndOver`, `uoAce` and `uoAceSharp` on a jet. */
 PLANS.jetUpAndOver = jetUp('upAndOver');
 PLANS.jetUoAce = jetUp('uoAce');
 PLANS.jetUoAceSharp = jetUp('uoAceSharp');
