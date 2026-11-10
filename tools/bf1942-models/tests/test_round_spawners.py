@@ -218,6 +218,10 @@ class EffectSpawnerTests(unittest.TestCase):
         self.assertEqual(0, fire["roundsAt65"])
         self.assertIsNone(fire["inRoom"])
 
+    def test_a_round_that_dies_this_tick_still_stands_what_is_due(self) -> None:
+        # BF1918's gas grenade: a 4 s delay on a 4.05 s round.
+        self.assertEqual({"beforeEnd": 0, "after": 1, "rounds": 0}, self.out["gasLastFrame"])
+
 
 if __name__ == "__main__":
     unittest.main()

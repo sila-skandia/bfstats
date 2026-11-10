@@ -462,12 +462,26 @@ const step = (s, seconds) => { for (let i = 0; i < Math.round(seconds * 30); i++
   const roundsAt2 = s.state().rounds.length;
   step(s, 4.5);
   out.effectFire = {
-    handle: !!handle, before, after: depots.length, entries, atStand, afterSweep,
+    handle: !!handle, before, after: depots.length, entries: [...entries], atStand, afterSweep,
     roundsAt2, roundsAt65: s.state().rounds.length, launched: s.state().launched,
   };
   // A joined room stands nothing.
   page.roomJoined = true;
   out.effectFire.inRoom = s.onEffect([FIRE], frame, 6);
+
+  // The gas grenade: 4 s at start on a round of 4.05 s. The round goes on
+  // its 122nd tick (guns.advance, before the spawners), the pad's delay
+  // reached 0 on the 121st, so the stand is on the dying round's last frame.
+  page.roomJoined = false;
+  const GAS = { ...FIRE, template: 'GasGrenadeDamageSpawner', minSpawnDelay: 4, maxSpawnDelay: 4,
+                templates: { 1: 'FireDamage', 2: 'FireDamage' } };
+  const s2 = createRoundSpawners(page);
+  const gas = s2.onRound({}, [GAS], makeShot([10, 0, 10], 0));
+  for (let i = 0; i < 121; i++) s2.tick(1 / 30);
+  const beforeEnd = s2.state().stood;
+  gas.end();
+  s2.tick(1 / 30);
+  out.gasLastFrame = { beforeEnd, after: s2.state().stood, rounds: s2.state().rounds.length };
 }
 
 console.log(JSON.stringify(out));

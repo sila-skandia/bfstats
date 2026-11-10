@@ -170,7 +170,8 @@ What retail does, from the ledger:
 | Question | Answer | Row |
 |---|---|---|
 | Where is a depot under a bundle? | At its own absolute position every cycle. BF1918's rotator pitches down at 100 deg/s to its -90 stop, so the depot starts 70.7 m off and 50 m up and sits on the object's origin from 0.9 s (inside the gas's 8 m from 0.81 s). The trick delays the damage about a second | SUP-23 (with GUN-2, GUN-20, MLK-17) |
-| How long does the cloud live? | `hpLostWhileCriticalDamage` unwritten is 1.0 a second. `GasGrenadeDamage` (25 at 25) is destroyed at 25 s, so it hurts from about 4.9 s to 29 s after the throw. The drawn `GasEffect` cloud (60 at 60) goes at 60 s. `FireDamage` (3 at 3) lives 3 s | HP-22, HP-17 |
+| How long does the cloud live? | `hpLostWhileCriticalDamage` unwritten is 1.0 a second, and the spawner goes with its 4.05 s round, so the abandon clock (`TimeToLive 1`, then 1 a second with no spawner) bills a second HP a second. `GasGrenadeDamage` (25 at 25) lasts about 13 s, hurting from about 4.9 s to 17 s after the throw; the drawn `GasEffect` cloud (60 at 60) about 30 s. `FireDamage` (3 at 3) stands beside its live spawner, so it only bleeds: 3 s | HP-22, HP-17, SPAWN-13 |
+| When do the grenade's objects appear? | `SpawnDelayAtStart 4` on a 4.05 s round. The pad law spawns the frame after the delay reaches 0 (SPAWN-11), the 122nd at 30 Hz, the frame the round dies; the page gives a dying round's spawners that frame. That retail does the same is inferred from the mod's own timing (without it nothing would ever stand), not read | SPAWN-11 |
 | Does the fire need anything special? | An ObjectSpawner inside an EffectBundle is built with it and runs where it plays. A dedicated server plays no collision effect at all (`dedicatedServer`), so in retail the burning ground hurts only in a game that is its own server: single player, or a locally hosted round | EMT-14 |
 | Do materials 256 and up reach the effect lookup? | Yes. `damage.json` keys attackers by string; row `256` against the ground is `e_BurningFlameEffect` (last-wins over `e_FlamefuelGrnd`) | IMP-2 |
 
@@ -195,6 +196,17 @@ What was built:
   `vehicle-damage.js`, `supply.js` `heldObjectLife` and
   `deployables-page.js` (the human's `GasEffect` cloud).
 
+Checked in the page (2026-11-10, amiens, headless Chrome on the worktree's
+own server, the six gas glbs, amiens' `scene.glb` and `_shared/effects.glb`
+patched into a worktree-only overlay of the asset links): a `Ger_Flamer`
+burst at the ground 1.75 m ahead stood two `FireDamage` 1 s after the hits,
+each 3 s, a second pair at 4-6.5 s, and none after the bundle's 6 s; the
+man lost 30 -> 22.5 HP, 1 HP/s a fire. A `Hand-Gasbombe` at his feet stood
+`GasGrenadeDamage` and `GasEffect` at 4 s; his HP fell from 5.3 s at 3 HP/s
+and he died at 11.5 s; the damage object went at about 16 s, the cloud at
+about 31 s. Parked pool nodes of both bleed while parked and are passed over
+once destroyed; the pool grows a fresh one.
+
 Tests: `tests/test_bf1918_area_damage.py` (the extractor, from the mod's own
 words), `test_round_spawners.py` `EffectSpawnerTests`, `test_supply.py`.
 
@@ -208,9 +220,15 @@ glbs).
 
 Open:
 
-- Bots' gas clouds are not drawn: `GasEffect` draws, and the pool only
-  parks drawn objects a placed gun throws. The damage stands for bots and
-  the human alike.
+- `GasEffect` and `GasGrenadeDamage` are stood from the nodes the level
+  parked for its kit nodes, so a level whose `scene.glb` was not patched
+  stands a `GasGrenadeDamage` with no depot: the patch must reach the
+  scenes as well as the models. A level with no kit node carrying a gas
+  grenade parks no `GasEffect`, and then no cloud is drawn (the damage
+  still stands, from a logic mould).
+- `deployables-page.js` placed nothing for the human's throw in the page
+  check (`__deployables.placed()` empty); round-spawners stood the cloud.
+  Not looked into.
 - `GasDamage` (the trench mortar) is 20 at 19.9 and starts above its
   threshold, so it lives until `hpLostWhileUpSideDown` or a hit takes it
   under; the page does not bill the upside-down rate on a stood object.

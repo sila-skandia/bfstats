@@ -88,8 +88,8 @@ export function heldObjectLife(armor) {
 /** `hpLostWhileCriticalDamage` where the `.con` never says it: the
  *  `SimpleObjectTemplate` constructor's 1.0 a second (HP-22; `armor.js` has
  *  the same constant, this file imports nothing). BF1918's gas grenade's
- *  `GasGrenadeDamage` (25 at 25) is gone at 25 s, its flamethrower's
- *  `FireDamage` (3 at 3) at 3 s. */
+ *  `GasGrenadeDamage` (25 at 25) bleeds out in 25 s, its flamethrower's
+ *  `FireDamage` (3 at 3) in 3 s. */
 const HP_LOST_WHILE_CRITICAL_DEFAULT = 1;
 
 export class SupplyDepot {

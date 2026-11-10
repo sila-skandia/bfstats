@@ -206,8 +206,8 @@ export function createDeployablesPage(page) {
       hp: spec.hitpoints ?? spec.maxHitpoints ?? 10,
       maxHp: spec.maxHitpoints ?? spec.hitpoints ?? 10,
       // HP-17's critical bleed, `Armor+0xe8`'s one-second bank: BF1918's
-      // `GasEffect` cloud (60 at 60, the word unwritten so 1 a second,
-      // HP-22) is gone at 60 s.
+      // `GasEffect` cloud (60 at 60, the word unwritten,
+      // HP-22) bleeds 1 a second; the abandon clock bills the rest.
       critical: Number.isFinite(spec.criticalDamage) ? spec.criticalDamage : null,
       bleed: Number.isFinite(spec.hpLostWhileCriticalDamage) ? spec.hpLostWhileCriticalDamage : 1,
       bank: 0,

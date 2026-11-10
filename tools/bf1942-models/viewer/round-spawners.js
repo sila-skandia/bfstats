@@ -559,7 +559,16 @@ export function createRoundSpawners(page) {
       // killer rounds live 0.05 to 0.1 s (`timeToLive CRD_UNIFORM/0.05/0.1`),
       // and their spawner stands its `*_dummyRepairObjRepairObj` on its first
       // frame (no `spawnDelayAtStart`).
-      if (round.ended && !round.ticked) tickRound(round, dt);
+      // So does a round that went in this tick (`guns.advance` runs before
+      // this): BF1918's gas grenade lives 4.05 s and its spawners stand at
+      // 4 s, which the pad law (a delay that reaches 0 spawns on the next
+      // frame, SPAWN-11) meets 4.067 s in, the frame the round dies. That
+      // the dying round's spawner still gets that frame is inferred from
+      // the mod's own timing, not read (`features/bf1918-extraction`).
+      if (round.ended && !round.finalTick) {
+        round.finalTick = true;
+        tickRound(round, dt);
+      }
       if (round.ended) {
         for (const entry of round.entries) {
           if (entry.pad.nrToSpawn !== 0 && entry.pad.delay > 0 && !entry.pad.lastSpawned) {
