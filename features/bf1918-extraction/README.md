@@ -684,7 +684,9 @@ for what their own data does not do. Each is now judged by the hull's data.
 - **`spawn.not-on-ground` on broodseinde.** `__soldier().ground` is the higher
   of the terrain and the sea. The two trench spawns stand on the terrain
   (73.57 and 73.20) in 1.4 m of the level's 75 m sea, as T4 found. The check
-  now compares feet with the heightfield alone (`__heightfield`, new).
+  now compares feet with the heightfield alone (`__heightfield`, new). A
+  soldier wading over that floor (not `grounded` in the page, no fall) counts
+  as standing.
 - **`veh.off-its-pad` on TsarTankSpawn (+4.3 m).** The spawner stands the
   origin at the pad (SPAWN-28). The 9 m wheels reach under it and the terrain
   lifts the hull onto them. Its lowest part is 0.35 m into the ground at the

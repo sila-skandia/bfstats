@@ -2568,7 +2568,12 @@ async function spawnPhase(s, level, scene, summary) {
     if (![a.y, b.y].every(Number.isFinite)) why = 'non-finite height';
     else if (fell > 1.5) why = `fell ${fell.toFixed(1)} m in 0.3 s (spawn hangs in the air)`;
     else if (b.y < b.ground - 1.0) why = `feet ${b.y.toFixed(1)} m are under the terrain ${b.ground.toFixed(1)} m`;
-    else if (!b.grounded) why = 'not grounded after settling';
+    // In water over its floor the soldier wades and the page does not call
+    // that grounded: the trench spawns stood on their terrain floor, under
+    // 1.4 m of sea, and did not move (T4).
+    else if (!b.grounded && !(Number.isFinite(b.sea) && b.y < b.sea && Math.abs(b.y - b.ground) <= 0.5 && fell <= 0.5)) {
+      why = 'not grounded after settling';
+    }
     if (why) {
       bad++;
       add({ check: 'spawn.ground', level, template_or_kit: sp.name ?? sp.spawner ?? `spawn@${x.toFixed(0)},${z.toFixed(0)}`,
