@@ -1,11 +1,16 @@
 {
  "generator": "botgen",
- "version": 4,
+ "version": 5,
  "mod": "FHSW",
  "level": "tunis-1943",
  "objectSpawners": 115,
  "template": "symmetric",
  "templateSource": "DICE, bf1942 Kharkov (1.6 patch archives): AI/Strategies.con, AI/conditions.con, AI/prerequisites.con, unchanged",
+ "templateChoice": {
+  "name": "symmetric",
+  "inPlay": 4,
+  "rule": "4 capturable flags in play, more than 3"
+ },
  "scope": "an infantry map painted from the walk test, a Tank0 map from the page painter, infantry order positions, no strategic maps, no co-op layer",
  "unreachable": [
   "tunisia5"

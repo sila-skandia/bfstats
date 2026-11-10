@@ -28,8 +28,9 @@ a new layer; shigaisen_B is not and was taken off the page; no mod level
 reaches better-than-nothing, on DICE's bar or its own mod's.
 
 **What is live, 2026-11-11:** The_Maze (Community Maps), which fails the
-page check on team kills and says so in its acceptance, and Desert Combat's
-DC_LostVillage, which passes it. A level now goes to the page without its
+page check on team kills and says so in its acceptance, and two mod levels
+that pass it: Desert Combat's DC_LostVillage and FHSW's Tunis-1943. A level
+now goes to the page without its
 menu flag, is played there three times against a bar from DICE's levels
 played the same way, and gets the flag after ([page-matches.md](page-matches.md),
 section 6).
@@ -2129,6 +2130,7 @@ says why it is shut. They are 630 KB and can be deleted at no cost but that.
 | shigaisen_B | better-than-nothing | redeploys at 16 a side, 0.1298 against 0.129 | 2026-11-10; **taken down 2026-11-11** |
 | The_Maze | better-than-nothing | idle share at 8 a side, 0.547 against 0.526 | 2026-11-10, twice; again 2026-11-11 |
 | Desert Combat DC_LostVillage | better-than-nothing | redeploys, flag coverage, the worse side's share of deaths no enemy caused; one-sided | 2026-11-11, after a page check |
+| FHSW Tunis-1943 | better-than-nothing | enemy kills, route failures, the worse side's share of deaths no enemy caused, units never used | 2026-11-11, after a page check |
 
 Both rows are the verdicts of 2026-11-10, which were measured with a
 stand-in weapon under the wrong doctrine (19.1, 19.2). Judged again,

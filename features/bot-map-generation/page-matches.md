@@ -231,6 +231,7 @@ acceptance names what it fails. The result is kept beside the verdict as
 |---|---|---|---|
 | The_Maze (generator 5) | **fails team kills** | 0.144, 0, 0.36, 0.36 | 35:67, 68:11, 62:29 |
 | Desert Combat DC_LostVillage | passes | 0, 0.056, 0.37, 0.22 | 99:27, 113:50, 71:37 |
+| FHSW Tunis-1943 | passes | 0, 0.013, 0.14, 0.17 | 29:91, 74:54, 23:82 |
 
 DC_LostVillage is the first mod level live (2026-11-11): better than
 nothing on Desert Combat's own bar and on DICE's (README section 20), no
@@ -238,6 +239,17 @@ fight at all with no layer. What the page shows of it: the Axis side ahead
 on tickets in all three matches, as the runner's ten seeds said it would be
 (10 of 10), one quiet match of the three (0.05 enemy kills a bot-minute),
 and 4, 4 and 9 captures. Its menu tag was published after the check.
+
+FHSW's Tunis-1943 followed the same day, the same way: better than nothing
+on DICE's bar (no FHSW bar yet), no fight with no layer, wins split 5:5 and
+7:3 in the runner. On the page its three matches had 13, 6 and 6 captures
+and 0.09, 0.24 and 0.17 enemy kills a bot-minute, with one team kill in
+thirty minutes. The runner had it at 0.066 a bot-minute at 8 a side, under
+the page bar's floor; the page has it over.
+
+BF1918's hindenburg_line also reached better-than-nothing and was **not**
+accepted: 95 to 97 % of the worse side's losses in the runner are redeploys
+of bots stuck where they stand, and the Axis side wins every seed.
 
 ## 7. What is not verified
 

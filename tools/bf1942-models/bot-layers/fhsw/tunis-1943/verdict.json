@@ -1,15 +1,20 @@
 {
  "level": "tunis-1943",
  "verdict": "fail",
- "outcome": "no-fight",
+ "outcome": "better-than-nothing",
  "config": "with vehicles",
- "generatorVersion": 4,
+ "doctrine": "garrison",
+ "generatorVersion": 5,
  "inputs": {
   "controlPoints": "d52be914e1e13d3864d219c00899819dcecbc3073dd3316db43d0a7570b635d1",
   "infantryMap": "bae8a44d4fda55e8e0ccf9cae005b8339e6b21b6934beadd46a3f9651e4becee",
   "template": "43f8a790471528016570235f76e97dbb2045732458781a5139f37fed68bf98c0"
  },
- "baseline": "DICE layers with vehicles: berlin, stalingrad, kharkov, bocage; seeds 1..10, 600 s",
+ "baseline": "DICE layers with vehicles, garrison doctrine: berlin, stalingrad, kharkov, bocage; seeds 1..10, 600 s",
+ "bar": {
+  "against": "dice",
+  "why": "no bar of fhsw's own: DICE's"
+ },
  "seeds": 10,
  "sizes": {
   "8": {
@@ -17,9 +22,8 @@
    "failed": [
     "routeFailuresPerBotMinute",
     "enemyKillsPerBotMinute",
-    "bothSidesKill",
-    "ticketsBleed",
     "routeFailuresPerBotMinuteWorseSide",
+    "nonEnemyDeathShareWorseSide",
     "unitsNeverUsedShare"
    ],
    "winners": [
@@ -33,19 +37,35 @@
    "failed": [
     "routeFailuresPerBotMinute",
     "enemyKillsPerBotMinute",
-    "bothSidesKill",
-    "ticketsBleed",
     "routeFailuresPerBotMinuteWorseSide",
+    "nonEnemyDeathShareWorseSide",
     "unitsNeverUsedShare"
    ],
    "winners": [
-    0,
-    10,
+    7,
+    3,
     0
    ]
   }
  },
  "oneSided": null,
  "unreachable": [],
- "lintErrors": []
+ "lintErrors": [],
+ "accepted": {
+  "reason": "With no layer the level has no fight (no seed with both sides killing at 8 a side); with it both sides kill in every seed, take 3 flags a match and split the wins 5:5 and 7:3. Short of DICE's bar on enemy kills (0.066 and 0.110 a bot-minute against floors of 0.179 and 0.375), route failures (2.11 and 6.62), the worse side's share of deaths no enemy caused (0.58) and units never used. Published to be checked on the page; it gets its menu flag only if the page check holds.",
+  "date": "2026-11-10",
+  "outcome": "better-than-nothing",
+  "failed": [
+   "8:routeFailuresPerBotMinute",
+   "8:enemyKillsPerBotMinute",
+   "8:routeFailuresPerBotMinuteWorseSide",
+   "8:nonEnemyDeathShareWorseSide",
+   "8:unitsNeverUsedShare",
+   "16:routeFailuresPerBotMinute",
+   "16:enemyKillsPerBotMinute",
+   "16:routeFailuresPerBotMinuteWorseSide",
+   "16:nonEnemyDeathShareWorseSide",
+   "16:unitsNeverUsedShare"
+  ]
+ }
 }
