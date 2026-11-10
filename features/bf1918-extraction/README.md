@@ -562,3 +562,20 @@ measure: she came to rest at y 69.333, a float-plane depth of 21.97 m for a
 | Load music | bf1918 Galicia | `extract_loading_assets.py --mod bf1918` (writes `_shared/music/vehicle3.mp3` and the row) |
 | Submarine HUD | the bf1918 pack | `extract_hud_mods.py --mod bf1918`, which now keeps its own `hud-layout.json` |
 | Dive wake | none | page code |
+
+### How it was checked
+
+Unit tests: `tests/test_level_declares_first.py` (one emitter for a
+level-declared template and child, the sky by name, `include`, the second
+flare create), `test_extract_loading_assets` (Galicia's cue),
+`test_hud_layout.Bf1918SubmarineGroupTests`, `test_ship_dive` (the key wakes a
+sleeping root; stopped under water she holds and climbs). Pages, headless, off
+a scratch overlay of the shared tree (scratch sounds patch, ramskapelle bake,
+loading run, BF1918 layout): Battle of Leget 48 `water1` + 33 `birds` and no
+`_static`; Ramskapelle draws `Sky_Elala_m1` with its clouds; Galicia's loading
+screen fetches `vehicle3.mp3`; on falkland_islands the M1uboot dived from rest
+on Arrow Up alone, held 13.1 m (keel 19.0) stopped and awake, at 30.5 m showed
+the deep view (the red cockpit picture framing the map) with the air
+draining, and on Arrow Down climbed back to her surface draft (keel 7.85 m,
+air refilling); at 13 m the periscope ring, bearing scale and depth tapes
+draw. Montblainville's `lensFlare` stays null.
