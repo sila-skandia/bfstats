@@ -24,6 +24,8 @@ export default {
   ],
   survival: { verdict: 'no', line: 'No way out on a jet: while it lasts they get a tenth of a second at a time (one hit in 45 s, in 3 of 9), but leave at a crossing and they shoot you down (9 of 9); fly it slower than them and you never get behind them; go up and you get the height and no shot (0 of 9 each).' },
   ace: { plan: 'jetScissors', memory: { lead: 0.8 } },
+  // FLY IT's ace on a jet: the lesson's `scAce`, its scissors led.
+  flyAce: 'jetScAce',
   you: { memory: { lead: 0.8, fast: false, band: [42, 46] } },
   demos: {
     move: { seat: 'jetScissors', note: 'You scissor too, on the brakes, but a little faster than them: about 53 m/s to their 47.' },

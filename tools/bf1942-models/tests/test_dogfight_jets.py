@@ -12,7 +12,7 @@ from __future__ import annotations
 
 import unittest
 
-from jet_school import jet_fit, jet_lesson, shot_down
+from jet_school import jet_fit, jet_lesson, jet_steps, shot_down
 
 
 class FitTests(unittest.TestCase):
@@ -76,8 +76,35 @@ class BoomAndZoomOnAJetTests(unittest.TestCase):
         jet = jet_lesson("boom-and-zoom", demo="counter")
         self.assertEqual("jet", jet["era"])
         self.assertIsNone(jet_lesson("boom-and-zoom", demo="counter", base=True)["era"])
-        # A lesson with no jet file yet is flown as written.
-        self.assertIsNone(jet_lesson("scissors", demo="move")["era"])
+        # A lesson with no jet file is flown as written.
+        self.assertIsNone(jet_lesson("falling-leaf", demo="move")["era"])
+
+
+class JetStepsTests(unittest.TestCase):
+    """A move's step list on a jet (`dogfight-steps.js` `stepsOf`): the jet
+    file's own where it re-flew the move, and none where it did not. The
+    Spitfire's lists carry the Spitfire's distances."""
+
+    def test_a_move_the_jet_file_re_flew_has_its_own_steps_and_each_one_comes(self) -> None:
+        tail = jet_steps("on-his-tail")
+        self.assertEqual(["close", "dip-out"], [s["phase"] for s in tail["steps"]["dip"]])
+        over = jet_steps("up-and-over")
+        self.assertEqual(["chase", "dip-shot", "dip-run"], [s["phase"] for s in over["steps"]["dip"]])
+        for card in (tail["steps"]["dip"], over["steps"]["dip"]):
+            times = [s["t"] for s in card]
+            self.assertTrue(all(t is not None for t in times), card)
+            self.assertEqual(sorted(times), times)
+
+    def test_a_move_flown_as_written_shows_no_spitfire_steps_on_a_jet(self) -> None:
+        for lesson in ("on-his-tail", "up-and-over", "boom-and-zoom"):
+            got = jet_steps(lesson)
+            self.assertEqual("jet", got["era"])
+            # The Spitfire has a list for each of the three moves...
+            self.assertTrue(all(got["spitfires"][m] for m in ("dip", "flip", "ninja")), lesson)
+            # ...and the jet shows only its own.
+            self.assertNotIn("flip", got["steps"], lesson)
+            self.assertNotIn("ninja", got["steps"], lesson)
+        self.assertEqual({}, jet_steps("boom-and-zoom")["steps"])
 
 
 if __name__ == "__main__":

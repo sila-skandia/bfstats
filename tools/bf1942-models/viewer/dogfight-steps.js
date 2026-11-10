@@ -210,8 +210,23 @@ export function moveLabel(demo) {
   return `${info.name}: ${String(demo.label).replace(/^The (Dip|Flip|Ninja)\s*[:\-]\s*/i, '')}`;
 }
 
-/** A demo's steps and why it fails, or null for a demo that is not a move. */
-export const stepsOf = (lessonId, demoId) => STEPS[`${lessonId}/${demoId}`] ?? null;
+/**
+ * A demo's steps and why it fails, or null for a demo that is not a move.
+ * `lesson` is a lesson or its id. A demo may carry a card of its own
+ * (`steps: { why, steps }`), which is how a lesson's jet file gives a move
+ * it re-flew its steps (`dogfight-lessons.js` `lessonFor`). A jet lesson's
+ * other moves have none: the lists here are the Spitfire's, their distances
+ * and speeds its own, and a jet's verdict line says what the move does there.
+ */
+export function stepsOf(lesson, demoId) {
+  if (lesson && typeof lesson === 'object') {
+    const own = lesson.demos?.find(d => d.id === demoId)?.steps;
+    if (own) return own;
+    if (lesson.era === 'jet') return null;
+    return STEPS[`${lesson.id}/${demoId}`] ?? null;
+  }
+  return STEPS[`${lesson}/${demoId}`] ?? null;
+}
 
 /**
  * When each step happens in a flown fight: the first tick of `track` (the

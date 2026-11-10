@@ -122,17 +122,15 @@ swung 98 degrees and was 515-874 m apart. Dip 0/9 (shot down in 8 of 9 L9,
 
 ## Needed in shared files
 
-- `tests/test_dogfight_jets.py`, `BoomAndZoomOnAJetTests.test_the_jet_file_is_laid_over_the_lesson`,
-  line 80: `self.assertIsNone(jet_lesson("scissors", demo="move")["era"])`
-  ("a lesson with no jet file yet is flown as written") now fails, because
-  scissors has one. It needs a lesson that still has none, or to go once all
-  nine are re-tuned. The only failure in that file.
+- Done at the merge: `tests/test_dogfight_jets.py` asserted that scissors
+  had no jet file ("a lesson with no jet file is flown as written"); it now
+  reads the falling leaf, which has none.
 
 ## Open
 
-- FLY IT (`flyAce: 'scAce'`) is not fitted (README, "The live fight"): its
-  ace would fly the unled scissors on a jet. `jetScAce` is the one to give
-  it once the live fight is fitted.
+- FLY IT is fitted to a jet ([live-fight.md](live-fight.md)) and its ace
+  here is `jetScAce` (`flyAce` in the jet file), so the scissors you fly
+  against is the led one. Nobody has flown it by hand.
 - The Dip, Flip and Ninja are all 0 of 9. Whether any way out exists on a
   jet: it would need 550 m or more before the ace is round (`scAce` lets go
   past its gun range plus 30 m, 430 m in the Spitfire's units), which a

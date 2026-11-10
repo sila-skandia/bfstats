@@ -27,6 +27,11 @@ export default {
     dip: {
       seat: 'jetUoDip',
       label: 'The Dip: the shot as they pull, then on under them',
+      steps: { steps: [
+        { phase: 'chase', say: 'Stay on their tail until they pull up' },
+        { phase: 'dip-shot', say: 'They pull: hold 25° up on their bearing for 2.5 s and shoot as they cross your sight (Space)' },
+        { phase: 'dip-run', say: 'Do not climb after them: roll out and go on under them, full throttle (W), nose 6° down' },
+      ] },
       note: 'Hold 25 degrees on their bearing for 2.5 s as they pull and take the shot. Then do not climb after them: roll out on the heading you had and go on under them, full throttle, the nose 6 degrees down. They are going up to where a wing does nothing.',
       verdict: { works: 9, of: 9, line: 'In all nine, never hit. The shot as they pull lands up to 10 hits (none from one start). They top out at 1,180 m 15 s in, chase you for 6 s and let you go 20.7 s in; at 35 s you are 1.9 to 2.1 km apart and opening.' },
     },

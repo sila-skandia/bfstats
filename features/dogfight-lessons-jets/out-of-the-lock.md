@@ -115,8 +115,9 @@ MiG-29's flat, counter and without.
 
 ## Open
 
-- The live fight (FLY IT, `flyAce: 'olAce'`) is not fitted.
+- The live fight (FLY IT, `flyAce: 'olAce'`) is fitted to a jet ([live-fight.md](live-fight.md)); nobody has flown this lesson in it by hand.
 - The step guides `out-of-the-lock/dip|flip|ninja` in `dogfight-steps.js`
-  are the Spitfire's; on a jet they describe moves that do not work.
+  are the Spitfire's. A jet lesson no longer shows them (`stepsOf`): a move
+  the jet file re-flew carries its own `steps`, and these three have none.
 - No jet version of the Dip, Flip or Ninja was attempted: against an equal
   jet that holds its speed, a small change does not make any of them work.

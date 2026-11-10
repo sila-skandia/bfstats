@@ -101,9 +101,9 @@ and 124 m/s, goes 763 m straight up to 1433 m and hangs there at 8 m/s
 - **The Ninja on a jet** has no working answer here (above). A dive started
   from further back and lower, with the lead on where they come out, is
   untried.
-- **FLY IT** (`dogfight-live.js`) is not fitted: its ace flies the
-  Spitfire's start on a jet. The jet coach lines (`coach`) are written for
-  the jet regardless.
+- **FLY IT** is fitted to a jet ([live-fight.md](live-fight.md)) and reads
+  this file, the split-S demo's nearer start with it; nobody has flown this
+  lesson in it by hand.
 - **Heights.** The lesson's Immelmanns start at 352 to 378 m and the
   split-S at 589 m, all inside the band where each completes on the F-16;
   on the MiG-29 the split-S starts at 690 m.

@@ -120,8 +120,8 @@ Ninja 0. The words' numbers are the F-16's.
   the second half of every fight more honest. It needs a change to the ace
   the Range's other demos share (`upAndOver`, `uoAce`, `uoAceSharp` in
   `dogfight-pilot.js`), or jet copies of all three; not done.
-- **The live fight** (FLY IT, `flyAce: 'uoAce'`) is not fitted, as for every
-  lesson (README, "Open").
+- **The live fight** (FLY IT, `flyAce: 'uoAce'`) is fitted to a jet
+  ([live-fight.md](live-fight.md)); nobody has flown this lesson in it by hand.
 - **The Flip and the Ninja** are 0 of 9 and not re-tuned: both wait for a
   slow moment over the top that a jet never gives. A jet Ninja would have to
   be built on the pull's shot and the ace's descent; with the ace's recovery

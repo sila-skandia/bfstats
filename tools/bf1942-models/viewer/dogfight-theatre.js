@@ -16,7 +16,7 @@ import { runDuel, fitAirframe } from './dogfight-duel.js';
 import { gunOf } from './dogfight-pilot.js';
 import { leadPoint } from './dogfight-flight.js';
 import { COURSES } from './dogfight-rings.js';
-import { LESSONS, demoSides, fightSides, lessonById, setEra, RULES, jetName } from './dogfight-lessons.js';
+import { LESSONS, demoSides, fightSides, lessonById, setEra, eraNow, RULES, jetName } from './dogfight-lessons.js';
 import { runFight } from './dogfight-fight.js';
 import { recordedFight, fightLine, pilotTable, inThirdPerson } from './dogfight-recorded.js';
 import { VIEWER_ROOT } from './viewer-root.js';
@@ -129,6 +129,9 @@ const ROUND_LIFE = gunOf({}).reach / gunOf({}).speed;
 const MOVE_NAMES = Object.fromEntries(Object.entries(MOVE_INFO).map(([k, m]) => [k, m.name]));
 /** A move's name with the school's nickname, as the notes say it. */
 const moveFull = kind => `${MOVE_INFO[kind].name} (${MOVE_INFO[kind].nick})`;
+/** A lesson's answer to "can you survive it?", as the list's badge. */
+const survivalBadge = sv => `<em class="dfs-surv" data-verdict="${esc(sv.verdict)}">${sv.verdict === 'yes' ? 'Survivable' : sv.verdict === 'partly' ? 'Sometimes survivable' : 'No way out'}</em>`;
+
 /** What a lesson's survival verdict reads as. */
 const SURVIVAL_WORDS = { yes: 'Yes', partly: 'Partly', no: 'No' };
 /** What "worked" means for each move, as `tests/dogfight_dfn_measure.mjs`
@@ -859,7 +862,7 @@ export function createDogfightTheatre({ host, makePlane, planeVisual = () => nul
     if (!(v && rule)) { line.textContent = ''; return; }
     const { works, of = 9 } = demo.verdict;
     const info = MOVE_INFO[demo.kind];
-    const card = stepsOf(state.lesson?.id, demo.id);
+    const card = stepsOf(state.lesson, demo.id);
     ui.score.dataset.verdict = v;
     ui.score.querySelector('.dfs-card-name').textContent = `${info.name} · ${info.nick}`.toUpperCase();
     ui.score.querySelector('.dfs-card-best').hidden = bestMove((state.lesson?.demos ?? []).map(d => withAir(state.lesson, d))) !== demo.id;
@@ -878,7 +881,7 @@ export function createDogfightTheatre({ host, makePlane, planeVisual = () => nul
    * A step that never comes in the part shown is left out.
    */
   function drawSteps(fight) {
-    const card = fight && !fight.recorded && state.demo ? stepsOf(state.lesson?.id, state.demo.id) : null;
+    const card = fight && !fight.recorded && state.demo ? stepsOf(state.lesson, state.demo.id) : null;
     const end = fight ? fight.duration : 0;
     const steps = card ? stepTimes(fight.tracks[1], card.steps, state.startAt ?? 0).filter(s => s.t != null && s.t <= end) : [];
     state.steps = steps.map(s => {
@@ -944,7 +947,7 @@ export function createDogfightTheatre({ host, makePlane, planeVisual = () => nul
     const name = MOVE_NAMES[demo.kind]?.toLowerCase();
     ui.fly.textContent = name ? `Practise the ${name}` : 'Fly it yourself';
     ui.flyNote.textContent = name
-      ? `You fly the green plane (YOU), set up as this fight starts, against the ace it was measured against. The guide and the instructor (I) fly the ${name}: follow the green rings, and the numbered steps on the move card. ${demo.note}`
+      ? `You fly the green plane (YOU), set up as this fight starts, against the ace it was measured against. The guide and the instructor (I) fly the ${name}: follow the green rings${stepsOf(lesson, demo.id) ? ', and the numbered steps on the move card' : ''}. ${demo.note}`
       : 'You fly the green plane (YOU), in the air, against the ace flying this move. The coach tells you what they are doing and what beats it.';
     ui.tc.classList.add('is-shown');
     clearTimeout(pickDemo.timer);
@@ -1024,7 +1027,20 @@ export function createDogfightTheatre({ host, makePlane, planeVisual = () => nul
     if (world) return;
     let jet = false;
     try { jet = fitAirframe(makePlane(), makePlane).pace > 1; } catch { jet = false; }
+    const was = eraNow();
     setEra(jet ? 'jet' : null);
+    if (eraNow() !== was) labelLessons();
+  }
+  /** The list's rows in the era's words: a lesson's jet file may say another
+   *  thing in a line, and give another answer to "can you survive it?". */
+  function labelLessons() {
+    ui.lessons.querySelectorAll('.dfs-row[data-lesson]').forEach(row => {
+      const l = lessonById(row.dataset.lesson);
+      if (!l) return;
+      row.querySelector('small').textContent = l.tagline;
+      row.querySelector('.dfs-surv')?.remove();
+      if (l.survival) row.querySelector('small').insertAdjacentHTML('afterend', survivalBadge(l.survival));
+    });
   }
 
   function pickLesson(id) {
@@ -2860,7 +2876,7 @@ export function createDogfightTheatre({ host, makePlane, planeVisual = () => nul
   // --- input ------------------------------------------------------------------------
   ui.lessons.innerHTML = LESSONS.map((l, i) => `
     <li data-section="lessons">${ROW} data-lesson="${l.id}"><span class="dfs-n">${String(i + 1).padStart(2, '0')}</span>
-      <b>${esc(l.title)}</b><small>${esc(l.tagline)}</small>${l.survival ? `<em class="dfs-surv" data-verdict="${esc(l.survival.verdict)}">${l.survival.verdict === 'yes' ? 'Survivable' : l.survival.verdict === 'partly' ? 'Sometimes survivable' : 'No way out'}</em>` : ''}</div></li>`).join('')
+      <b>${esc(l.title)}</b><small>${esc(l.tagline)}</small>${l.survival ? survivalBadge(l.survival) : ''}</div></li>`).join('')
     // The ring courses: stick and rudder, nobody shooting. Each flies
     // straight away.
     + (onFlyCourse ? `<li class="dfs-group" data-section="courses"><span>RING COURSES</span><small>Fly through the rings against the clock</small></li>`

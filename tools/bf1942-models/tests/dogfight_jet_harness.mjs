@@ -11,6 +11,9 @@
 //       one fight's timeline as text (start 0..8 of the nine; 4 is the
 //       lesson's own), every `step` seconds, then each side's phases
 //
+//   node tests/dogfight_jet_harness.mjs <lesson> --steps
+//       when each step of the jet lesson's own step lists comes, flown once
+//
 // `--base` flies the lesson as written (no jet file); `--text` prints the
 // nine starts a line a demo, to read instead of parse.
 import path from 'node:path';
@@ -163,6 +166,22 @@ if (opt('--trace')) {
   }
   console.log(`end ${JSON.stringify(r.end)} hits ace ${r.hits?.[0]} you ${r.hits?.[1]}`);
   for (const s of [0, 1]) console.log(`${s ? 'you' : 'ace'}: ${r.events.filter(e => e.side === s).map(e => `${e.t.toFixed(1)} ${e.phase}`).join(', ')}`);
+  process.exit(0);
+}
+
+if (flag('--steps')) {
+  // Every demo of the jet lesson with a step list of its own (`steps`),
+  // flown from the lesson's own start: when each step comes
+  // (`dogfight-steps.js` `stepTimes`), null for one that never does.
+  const { stepsOf, stepTimes } = await load('dogfight-steps.js');
+  const out = { lesson: L.id, era: L.era ?? null, steps: {}, spitfires: {} };
+  for (const demo of L.demos) {
+    const card = stepsOf(L, demo.id);
+    out.spitfires[demo.id] = stepsOf(L.id, demo.id) !== null;
+    if (!card) continue;
+    out.steps[demo.id] = stepTimes(fly(demo, 4).tracks[1], card.steps).map(s => ({ phase: s.phase, t: s.t === null ? null : r1(s.t) }));
+  }
+  console.log(JSON.stringify(out));
   process.exit(0);
 }
 

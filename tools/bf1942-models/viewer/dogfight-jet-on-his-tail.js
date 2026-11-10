@@ -35,6 +35,10 @@ export default {
     },
     dip: {
       label: 'The Dip: not into their circle', seat: 'jetOtLeave',
+      steps: { steps: [
+        { phase: 'close', say: 'Come in on their tail 15 to 18 m/s faster than them' },
+        { phase: 'dip-out', say: 'They break: do not turn after them. Wings level, full throttle (W), nose 6° down, and keep going' },
+      ] },
       note: 'Arrive 15 to 18 m/s faster than them. When they break, do not turn after them: hold your line, wings level, full throttle, nose 6 degrees down. You go past them while they turn into you, and you are gone before their nose is round.',
       verdict: { works: 9, of: 9, line: 'Out in all nine and never hit: you passed them 75 to 97 m off, their guns never had you, they never came after you, and at 40 s you were 2603 to 3193 m apart and opening. Leaving the Spitfire\'s way, when they are across their circle going away, was shot down in all nine, 13 to 16 s after leaving.' },
     },

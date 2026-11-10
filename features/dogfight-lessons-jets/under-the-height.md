@@ -108,5 +108,6 @@ number; on the MiG-29 the counter is safe but not a win.
 - **The Flip and the Ninja** were not re-tuned: no small change in the lesson's
   data makes them work (the reversal waits for a slow overshoot the jet diver never
   gives; the ascendancy's passes are the Spitfire's). 0 of 9 is the verdict.
-- **The live fight** (FLY IT) is not fitted, so the coach's jet tips are read
-  against the Spitfire-handed ace there.
+- **The live fight** (FLY IT) is fitted to a jet
+  ([live-fight.md](live-fight.md)); the coach's jet tips have not been read
+  against it by a person flying.

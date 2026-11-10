@@ -90,4 +90,4 @@ F-16: shot down in six of nine, 17 to 22 rounds in eight. Not tuned for it.
   real) with a cannon that lands from 512 m. A hunter that fired at its
   cannon's reach would shoot down the Dip and the out-and-back far more
   often; the words would then say so. Not changed.
-- The live fight (FLY IT) is not fitted, as for every lesson.
+- The live fight (FLY IT) is fitted to a jet ([live-fight.md](live-fight.md)) and reads this file; nobody has flown this lesson in it by hand.

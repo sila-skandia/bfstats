@@ -66,7 +66,7 @@ export function briefingFor(entry) {
   if (entry.kind === 'move' && lesson && MOVE_INFO[moveDemo?.kind]) {
     const info = MOVE_INFO[moveDemo.kind];
     const demo = moveDemo;
-    const card = stepsOf(lesson.id, entry.move);
+    const card = stepsOf(lesson, entry.move);
     const v = demo?.verdict;
     return {
       kicker: `Practise a move · ${lesson.title}`,

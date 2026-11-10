@@ -125,15 +125,16 @@ are the F-16's.
   before you are clear"), and a jet lesson has no way to give its own. The
   jet Dip's steps would be: arrive a little faster than them; when they
   break, do not turn after them; wings level, full throttle, nose a little
-  down; keep going. A `steps` override in the jet file merged by
-  `lessonFor`, or a jet table in `dogfight-steps.js`, would carry them.
+  down; keep going. Done since: a jet demo carries its own `steps`
+  (`dogfight-steps.js` `stepsOf`), the jet Dip has these, and a jet lesson
+  shows no Spitfire list for a move it did not re-fly.
 - The doctrine cards that point at `['on-his-tail', 'move']`
   (`dogfight-doctrine.js`, `dogfight-doctrine-1991.js` "Lead to shoot, lag
   to stay") are untouched; on a jet the move still shows what they say.
 
 ## Open
 
-- The live fight (FLY IT) is not fitted (README, "Open").
+- The live fight (FLY IT) is fitted to a jet ([live-fight.md](live-fight.md)) and reads this file; nobody has flown this lesson in it by hand.
 - The tuning is the F-16's; on the MiG-29 the Dip is 7 of 9, not 9.
 - A breaker that chased a man who goes straight past it would make the jet
   Dip a race (both jets top out alike); `otBreaker`'s chase rule, keyed on
