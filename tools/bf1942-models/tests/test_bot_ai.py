@@ -894,6 +894,19 @@ class StalemateTests(unittest.TestCase):
         self.assertEqual(g["unseenNoOrderEngine"], "enemy")
         self.assertEqual(g["rule"], ["engaged", None, "engaged", None])
 
+    def test_a_seated_bot_scores_a_unit_as_it_would_on_foot(self) -> None:
+        # calculateVehicleUrgency 0x08583b10 is the unit's own score, seated
+        # or not: x2.5 on the move term when a bot already moves the hull,
+        # age / 15 for a hull left or spawned within 15 s. Desert Combat's
+        # Pickup drivers got out for a passenger seat they no longer wanted
+        # on foot (63 from the seat, 44 on the ground).
+        s = self.s["seatedScore"]
+        for key in ("free", "movedByBot", "justLeft", "justSpawned"):
+            self.assertEqual(s[key]["id"], "Bp", msg=key)
+            self.assertAlmostEqual(s[key]["u"], s["expect"][key], places=6, msg=key)
+        self.assertLess(s["movedByBot"]["u"], s["free"]["u"])
+        self.assertAlmostEqual(s["justLeft"]["u"] / s["free"]["u"], 9 / 15, places=6)
+
 
 class RoundGravityTests(unittest.TestCase):
     """A bot aims with its round's own `gravityModifier`, 1.0 when undeclared:

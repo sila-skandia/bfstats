@@ -653,10 +653,15 @@ def holds_key_axis(template: con_mod.ObjectTemplate, spec: dict) -> bool:
     and AA guns through 180 degrees on `c_PIThrottle` (W/S), with the HUD
     needle and the sight shield on the same key. Mirrors the viewer's
     `vehicle-base.js` `holdsAngle`.
+
+    A free axis (min and max both 0) is held too: it spins while its key is
+    held and stops where it is (GUN-2's wrap gate, ledger GUN-25). A horse's
+    galloping legs are this (`horse_leg_FL1_rot1`, c_PIThrottle at 900
+    deg/s), on a hull whose springs are all invisible, so the browse model
+    of every BF1918 and FH horse lost its leg rigs here and stood still.
     """
     return (template.kind.lower() == "rotationalbundle"
             and not template.automatic_reset
-            and not spec.get("free")
             and spec.get("driver") != "rate")
 
 # Declared engine speeds span 1 deg/s (DC's AH64 tail, plainly a data typo) to

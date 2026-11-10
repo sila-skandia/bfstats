@@ -87,6 +87,7 @@ import hashlib
 import json
 import os
 import re
+import secrets
 import struct
 import subprocess
 import sys
@@ -226,7 +227,10 @@ class Volume:
         (the same closed-stream failure that kills long upload legs).
         """
         dest = f"/mnt/assets/mesh/{tree}"
-        tmp = f"/tmp/mesh-{tree}-listing.txt"
+        # Per run, not per tree: two publishes at once (two sessions sending
+        # models) wrote one `/tmp/mesh-models-listing.txt` over each other, so
+        # each read back the other's count and refused ("96948 of 39030").
+        tmp = f"/tmp/mesh-{tree}-listing-{os.getpid()}-{secrets.token_hex(4)}.txt"
         counted = self.run("sh", "-c", f"mkdir -p '{dest}' && cd '{dest}' && "
                            f"find . -type f -exec stat -c '%s %n' {{}} + > {tmp}; wc -l < {tmp}",
                            text=True).stdout.strip()

@@ -104,4 +104,32 @@ for (const [pitch, seconds] of [[-1, 0.4], [0, 0.6], [0, 1], [-1, 3], [0, 2], [1
   for (let t = 0; t < seconds - 1e-9; t += 1 / 30) guard.advanceSurfaces(1 / 30);
   waterguard.push(+angleOf(guard, 'FordGPAWaterguard', 'pitch').toFixed(1));
 }
-process.stdout.write(JSON.stringify({ land: run(land, steps), air: run(air, steps), horse: gait, waterguard }));
+// A free leg of BF1918's `Cavalry_K88` (`horse_leg_FL1_rot1`: yaw on
+// c_PIThrottle, no range, `setMaxSpeed 900/0/0`, `setAcceleration 1000/0/0`)
+// and the one under it turning back (`horse_leg_FL1_rot2`, `-1000`). GUN-2:
+// held, the speed register ramps to 900 deg/s and the angle turns without
+// end, wrapped at +-180; released, it slows at 1000 deg/s^2 and stays put.
+function cavalry() {
+  const root = new THREE.Group();
+  root.name = 'Cavalry_K88';
+  root.userData = { control: 'Cavalry_K88' };
+  for (const [name, direction] of [['horse_leg_FL1_rot1', 1], ['horse_leg_FL1_rot2', -1]]) {
+    const n = new THREE.Group(); n.name = name;
+    n.userData = { templateKind: 'rotationalbundle', rig: { automaticReset: false, control: 'Cavalry_K88',
+      axes: { yaw: { input: 'c_PIThrottle', min: null, max: null, free: true, driver: 'position',
+        maxSpeed: 900, direction, acceleration: 1000 * direction } } } };
+    root.add(n);
+  }
+  return root;
+}
+const leg = new Vehicle(cavalry(), null, { cockpit: false });
+const spin = [];
+for (const [throttle, seconds] of [[1, 2], [0, 2]]) {
+  leg.setInput('c_PIThrottle', throttle);
+  for (let t = 0; t < seconds - 1e-9; t += 1 / 30) {
+    leg.advanceSurfaces(1 / 30);
+    spin.push([+angleOf(leg, 'horse_leg_FL1_rot1', 'yaw').toFixed(2),
+      +angleOf(leg, 'horse_leg_FL1_rot2', 'yaw').toFixed(2)]);
+  }
+}
+process.stdout.write(JSON.stringify({ land: run(land, steps), air: run(air, steps), horse: gait, waterguard, spin }));
