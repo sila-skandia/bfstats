@@ -399,6 +399,23 @@ class JudgeTests(unittest.TestCase):
         self.assertEqual(live["detail"]["8"]["worsened"], ["spawnTrapsPerBotMinute"])
         self.assertNotIn("notCompared", live["detail"]["8"])
 
+    def test_a_fight_where_the_level_with_no_layer_has_none_is_better_than_nothing(self) -> None:
+        # DC_Basrah_Nights: with no layer nobody kills and nobody moves, so
+        # nobody is stuck. A layer that brings a fight and captures is not
+        # "worse" for the stuck time of bots that now walk.
+        fight = self.out["versusStill"]["fight"]
+        self.assertTrue(fight["better"])
+        self.assertIs(fight["detail"]["8"]["fightOnlyWithLayer"], True)
+        self.assertIn("stuckSecondsPerBotMinute", fight["detail"]["8"]["worsened"])
+        # It still has to capture at least as much...
+        fewer = self.out["versusStill"]["fewerCaptures"]
+        self.assertFalse(fewer["better"])
+        self.assertEqual(fewer["detail"]["8"]["captures"], [1, 3])
+        # ...and to have a fight of its own.
+        neither = self.out["versusStill"]["noFightEither"]
+        self.assertFalse(neither["better"])
+        self.assertNotIn("fightOnlyWithLayer", neither["detail"]["8"])
+
     def test_an_acceptance_is_recorded_only_for_a_layer_better_than_nothing(self) -> None:
         a = self.out["accept"]
         self.assertEqual(a["taken"], {"reason": "one check short", "date": "2026-11-10",

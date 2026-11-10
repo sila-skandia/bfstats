@@ -189,6 +189,17 @@ out.versusDead = {
   dead: batch.betterThanNothing([trapped({}), trapped({ seed: 2 })], [deadNone({}), deadNone({ seed: 2 })]),
   live: batch.betterThanNothing([trapped({}), trapped({ seed: 2 })], [liveNone({}), liveNone({ seed: 2 })]),
 };
+// The level with no layer has no fight and its bots do not move: no stuck time, no redeploys. A layer
+// that brings a fight and captures is better than it, whatever its own movement rates are; one that
+// captures less is not, and neither is one whose own matches have no fight.
+const still = o => row({ level: 'x', stuckSecondsPerBotMinute: 0.1, routeFailuresPerBotMinute: 0, redeploysPerBotMinute: 0.02, spawnTrapsPerBotMinute: 0,
+                         enemyKills: { 1: 0, 2: 0 }, ticketsBled: { 1: 0, 2: 0 }, capturesTotal: 0, ...o });
+const moving = o => row({ level: 'x', stuckSecondsPerBotMinute: 1.6, routeFailuresPerBotMinute: 0.4, redeploysPerBotMinute: 0.12, capturesTotal: 6, ...o });
+out.versusStill = {
+  fight: batch.betterThanNothing([moving({}), moving({ seed: 2 })], [still({}), still({ seed: 2 })]),
+  fewerCaptures: batch.betterThanNothing([moving({ capturesTotal: 1 }), moving({ seed: 2, capturesTotal: 1 })], [still({ capturesTotal: 3 }), still({ seed: 2, capturesTotal: 3 })]),
+  noFightEither: batch.betterThanNothing([moving({ enemyKills: { 1: 0, 2: 3 } }), moving({ seed: 2 })], [still({}), still({ seed: 2 })]),
+};
 // --- the walk test (sim/walkflood.mjs) on a world of boxes -----------------------
 // The flood asks a collider two things: the surface straight down from a
 // point, and whether a sphere swept along a line meets anything. Here both

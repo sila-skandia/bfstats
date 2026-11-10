@@ -153,6 +153,18 @@ export const NEEDS_A_FIGHT = ['spawnTrapsPerBotMinute'];
  * to. The same reasoning as `no-fight` on the layer's side (`verdictOf`).
  * The_Maze is the case: no kill in twenty matches with no layer, and 0.011
  * spawn traps a bot-minute with one read as "worse".
+ *
+ * And where the level with no layer has no fight at that size while the
+ * layer's matches have one (they pass `aliveChecks`), the layer is better
+ * at that size once it captures at least as much: a fight against none.
+ * No movement rate decides there (`fightOnlyWithLayer`; `improved` and
+ * `worsened` are still reported). Bots that do not move do not get stuck
+ * or redeploy, so their near-zero is not a standard either. DC_Basrah_Nights is the case: with no layer no side
+ * kills in 7 seeds of 10 and nobody captures; with one, both sides kill in
+ * every seed at DICE's median rate and take 5 to 6 flags a match, and the
+ * rise of stuck time from 0.15 to 1.64 s a bot-minute read as "worse".
+ * What the layer's matches fail against the bar is still in the verdict,
+ * and an acceptance still names it.
  */
 export function betterThanNothing(rows, none) {
   const sizes = [...new Set(rows.map(r => r.botsPerSide))];
@@ -167,9 +179,11 @@ export function betterThanNothing(rows, none) {
     const improved = compared.filter(k => med(g, k) <= 0.75 * med(n, k));
     const worsened = compared.filter(k => med(g, k) >= 1.25 * med(n, k) && med(g, k) > 0);
     const captures = med(g, 'capturesTotal') >= med(n, 'capturesTotal');
+    const fightOnlyWithLayer = !noneAlive && aliveChecks(g).every(c => c.pass);
     detail[size] = { improved, worsened, captures: [med(g, 'capturesTotal'), med(n, 'capturesTotal')],
-                     ...(noneAlive ? {} : { notCompared: MOVEMENT.filter(k => !compared.includes(k)) }) };
-    if (!(captures && improved.length >= 2 && worsened.length === 0)) all = false;
+                     ...(noneAlive ? {} : { notCompared: MOVEMENT.filter(k => !compared.includes(k)) }),
+                     ...(fightOnlyWithLayer ? { fightOnlyWithLayer: true } : {}) };
+    if (!(captures && (fightOnlyWithLayer || (improved.length >= 2 && worsened.length === 0)))) all = false;
   }
   return { better: all, detail };
 }

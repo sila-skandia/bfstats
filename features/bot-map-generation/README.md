@@ -3080,6 +3080,23 @@ out spawn traps against a dead no-layer level (`NEEDS_A_FIGHT`) but not
 stuck time or redeploys. That is the judge's rule as it stands, reported,
 not changed.
 
+**Changed afterwards, the same day, by the coordinator**
+(`botbatch.mjs betterThanNothing`, `fightOnlyWithLayer`): at a side size
+where the level with no layer has no fight by the alive checks and the
+layer's matches have one, the layer is better at that size once it
+captures at least as much, and no movement rate decides. It is the
+reasoning `NEEDS_A_FIGHT` already wrote down, taken to its end: bots that
+do not move do not get stuck. Re-judged from the same matches,
+DC_Basrah_Nights is better at 8 a side by that rule (no side kills in 7
+seeds of 10 with no layer) and **still not at 16**, where the level with no
+layer passes the alive checks on 0.020 enemy kills a bot-minute and no
+capture, and the old comparison counts the layer's stuck time, redeploys
+and spawn traps against it. So its outcome stands: no-better-than-nothing.
+Whether a level that goes from 0.02 kills and no capture to 0.36 kills and
+5 captures should be called better is a question about the rule, left for
+the owner. Tests: `test_a_fight_where_the_level_with_no_layer_has_none_is_
+better_than_nothing`.
+
 **The unused units**: the level places eight. Four are fixed guns
 (`Stationary_browning` on `machinegunspawner`, two at leftspawn and two at
 rightspawn), four are cars (a Technical and a Humvee on the bases' scout
