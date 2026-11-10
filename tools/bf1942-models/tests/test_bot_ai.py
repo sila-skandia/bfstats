@@ -884,6 +884,16 @@ class StalemateTests(unittest.TestCase):
         self.assertEqual(g["quiet"][0], "strategic")
         self.assertFalse(g["quiet"][1])
 
+    def test_the_gun_rule_holds_between_orders(self) -> None:
+        # A unit change drops the order until the next pass (SAI
+        # handleChangingBot); the side's standing rule covers those seconds,
+        # so a bot that mounted a horse does not weigh the base's gun by the
+        # engine's open rule and get straight off for it.
+        g = self.s["guns"]
+        self.assertFalse(g["unseenNoOrderEngaged"])
+        self.assertEqual(g["unseenNoOrderEngine"], "enemy")
+        self.assertEqual(g["rule"], ["engaged", None, "engaged", None])
+
 
 class RoundGravityTests(unittest.TestCase):
     """A bot aims with its round's own `gravityModifier`, 1.0 when undeclared:

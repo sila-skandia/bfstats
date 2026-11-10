@@ -383,6 +383,26 @@ const farExit = [];
 ORDER_KINDS.get('WPPost').tick(far, { id: 'x', position: [100, 0, -100], command: { sai: { time: 0 } },
   candidates: () => [{ id: 'B:gun', kind: 'gun', pos: [100, 0, -100], entry: [101, -100], occupiedBy: 'x' }],
   actuators: { exit: id => farExit.push(id) } });
+// The post's own boarding is a unit change: its order (still `board`) and
+// posted record stand until the next pass, so his Change does not take him
+// out of the post's gun; another bot's order goes, as the engine's SAI drops
+// it, and the side's standing gun rule covers him. The 'sai' doctrine has none.
+const kw = garrisonWorld('axis=garrison', [{ ...gun, id: 'K:gun', vehicleId: 'K', occupiedBy: null }]);
+kw.cmd.update(2, galive());
+const kPost = kw.cmd.waypointsOf('g1_0');
+kw.cmd.update(1 / 30, galive({ g1_0: [411.5, 0, -410] }));
+const kBoard = kw.cmd.waypointsOf('g1_0');
+kw.cmd.botChangedUnit('g1_0');
+kw.cmd.botChangedUnit('g1_1');
+const kept = {
+  phase: kBoard?.phase ?? null,
+  postKept: kw.cmd.waypointsOf('g1_0') === kBoard && kPost?.kind === 'WPPost',
+  postRecord: (({ free, post }) => ({ free, post: post?.name ?? null }))(kw.sai.bots.get('g1_0')),
+  otherOrder: kw.cmd.waypointsOf('g1_1'),
+  rule: [kw.cmd.gunsRuleOf('g1_1'), garrisonWorld('axis=sai').cmd.gunsRuleOf('g1_0')],
+};
+garrison.unitChange.kept = kept;
+
 garrison.gun = {
   first: gunLeg ? { phase: gunLeg.phase, point: gunLeg.point.map(round), gunId: gunLeg.gunId } : null,
   entered: boarded,

@@ -30,7 +30,7 @@ import { approachAimValid, backOffGoal, backOffPoint, ARTILLERY_DRIVER } from '.
 import { fireMode, isArtilleryDriver } from './bot-perception.js';
 import { tankTurnTowards } from './bot-vehicle.js';
 import { curveOf } from './bot-decision.js';
-import { fixedAimable, planChange, execEnterVehicle, behindUnit, urgencyChangeTeleport, bailAllowedAt, changeArrive } from './bot-mount.js';
+import { fixedAimable, gunsRule, planChange, execEnterVehicle, behindUnit, urgencyChangeTeleport, bailAllowedAt, changeArrive } from './bot-mount.js';
 import { updateObjectiveReadout } from './bot-decision.js';
 import { footingAt } from './bot-pose.js';
 
@@ -1409,6 +1409,14 @@ function stalemateScenario() {
     spottedNear: [fixedAimable(gunBot(null, [[0, 0, 200]]), gunCand), fixedAimable(gunBot('engaged', [[0, 0, 200]]), gunCand)],
     spottedFar: [fixedAimable(gunBot(null, [[0, 0, 400]]), gunCand), fixedAimable(gunBot('engaged', [[0, 0, 400]]), gunCand)],
     quiet: [fixedAimable(quietBot(null), gunCand), fixedAimable(quietBot('engaged'), gunCand)],
+    // Between a unit change and the next pass the bot holds no order: the
+    // side's standing rule (`bot.gunsRule`) stands in, so the gun he weighs
+    // seated is weighed as he weighed it on foot (BF1918's horse loop).
+    unseenNoOrderEngaged: fixedAimable({ ...gunBot(null, []), gunsRule: 'engaged' }, gunCand),
+    unseenNoOrderEngine: fixedAimable({ ...gunBot(null, []), gunsRule: null }, gunCand),
+    // An order's own flag wins over the side's: a post (no `guns`) is the engine's.
+    rule: [gunsRule({ waypoints: { guns: 'engaged' }, gunsRule: null }), gunsRule({ waypoints: { kind: 'WPPost' }, gunsRule: 'engaged' }),
+           gunsRule({ waypoints: null, gunsRule: 'engaged' }), gunsRule({ waypoints: null })],
   };
   return {
     settle, outside, guns,

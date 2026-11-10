@@ -35,8 +35,19 @@
 //    (bot-mount.js): his post seats him.
 //  - A bot not on a post takes a fixed gun only for an enemy he has spotted
 //    inside its range and traverse, and gets out of one once he has none
-//    (`guns: 'engaged'` on his order; bot-mount.js `fixedAimable` and the
-//    seated Change): the base's guns stay empty until something comes.
+//    (`guns: 'engaged'` on his order, and the side's `gunsRule` while he
+//    holds none; bot-mount.js `fixedAimable` and the seated Change): the
+//    base's guns stay empty until something comes.
+//  - The post's own boarding keeps its order (`unitChanged`, an order in its
+//    `board` phase): the SAI drops a bot's order when his unit changes
+//    (`SAI::handleChangingBot`), and a post that had just seated its man at
+//    the flag's gun was gone until the next pass; with it gone, his Change took him out and the pass seated him
+//    again, over and over (2026-11-10, aube_de_soiree's PomPom_Static). Any
+//    other order still goes, as the engine's does, and the side's
+//    `gunsRule` covers him until the pass orders him again: without it a bot
+//    who mounted a horse saw the base's field gun with the engine's open
+//    rule, got off for it, saw it with the garrison's rule on foot, and took
+//    the horse again (features/bf1918-extraction, "Bots and horses").
 
 import { registerDoctrine, registerOrderKind } from './doctrine.js';
 
@@ -296,6 +307,19 @@ registerDoctrine('garrison', ({ side, sai, layer, random, command }) => {
   const opts = { garrison: { post: assignPosts } };
   return {
     name: 'garrison',
+    // The standing rule for a bot between a unit change and the next pass.
+    gunsRule: 'engaged',
+    unitChanged(id, previous) {
+      // Only the post's own boarding: the man it walked to the flag's gun
+      // and pressed Use for. A guard who changes unit any other way gives
+      // the post up, for its last guard at the next pass, as before.
+      if (previous?.kind !== 'WPPost' || previous.phase !== 'board') return null;
+      // The record stays posted with the order (`SAI.botChangedUnit` moved
+      // the post to `lastPost`): every post order is a posted record's.
+      const b = sai.bots.get(id);
+      if (b) { b.post = previous.post.area; b.free = false; }
+      return previous;
+    },
     orders(view) {
       sai.sidePass(side, view.alive, opts);
       const out = new Map();

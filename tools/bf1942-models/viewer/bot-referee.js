@@ -404,6 +404,9 @@ export function createBotReferee(env) {
       if (referee.respawnTick(bot, dt)) continue;   // dead and waiting out its timer
       bot.pathBudget = PATH_BUDGET_OFF ? null : referee.pathBudget;
       bot.waypoints = strategy?.waypointsOf(bot.playerId) ?? null;
+      // The side's standing gun rule (doctrine.js `gunsRuleOf`), for the
+      // seconds between a unit change and the next pass.
+      bot.gunsRule = strategy?.gunsRuleOf?.(bot.playerId) ?? null;
       if (env.tickBot) env.tickBot(bot, dt, referee.clock);
       else bot.tick(dt, referee.clock);
       env.afterBotTick?.(bot, dt);

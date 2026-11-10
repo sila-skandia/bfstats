@@ -219,3 +219,16 @@ class GarrisonTests(unittest.TestCase):
         # that is not posted.
         self.assertLessEqual(u["worstPosts"], 1)
         self.assertEqual(u["strayPosts"], 0)
+
+    def test_a_post_keeps_its_order_through_a_unit_change(self) -> None:
+        # The post's man boards the flag's gun: his order and posted record
+        # stand until the next pass, so his Change does not take him out of
+        # the post's own gun (aube_de_soiree's PomPom_Static loop); another
+        # bot's order goes, as the engine's SAI drops it, and the side's
+        # standing gun rule covers him; the 'sai' doctrine has none.
+        k = self.g["unitChange"]["kept"]
+        self.assertEqual(k["phase"], "board")
+        self.assertTrue(k["postKept"])
+        self.assertEqual(k["postRecord"], {"free": False, "post": "West"})
+        self.assertIsNone(k["otherOrder"])
+        self.assertEqual(k["rule"], ["engaged", None])

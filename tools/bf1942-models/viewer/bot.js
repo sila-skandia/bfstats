@@ -200,6 +200,8 @@ export class BotController {
     // --- Orders and navigation ---
     /** The strategic AI's order (`WPMoveTo`), or null. */
     this.waypoints = null;
+    /** The side's standing gun rule while no order is held (doctrine.js `gunsRuleOf`). */
+    this.gunsRule = null;
     /** The current move goal `[x, y, z]` from the active plan. */
     this.waypoint = null;
     /** The bot's own team, cached for filters. */

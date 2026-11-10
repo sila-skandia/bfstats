@@ -908,3 +908,14 @@ Rus76er, Frz37Inf, Type 38, both Tsar Tank cannons and the Garford-Putilov
 gun lose the reticule, every C view keeps it, nothing else moves. FHSW's
 leFH18 and ZiS-2 (`[0.1]`, 0.1) behave the same. A page fix: nothing
 re-extracted.
+
+## Bots and horses (2026-11-10)
+
+The owner: bots get on horses and off at once, over and over. Measured on
+aube_de_soiree (16 bots, 180 s): 53 rides under 2 s on `CavalryFHSW` before,
+none after. The cause was the garrison doctrine's gun rule lapsing for the
+seconds between a unit change and the next order, which made the base's
+field gun worth 25 on foot and 155 in the saddle; `features/bot-garrison`,
+"The rule between orders", has the mechanism, the fix and the counts. Open:
+DC's `Pickup` still loops (14 short rides in 150 s on Basrah's Edge), a
+separate cause.

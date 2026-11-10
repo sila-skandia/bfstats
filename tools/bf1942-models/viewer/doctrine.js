@@ -53,9 +53,15 @@
 // The returned map sets the order of every id it names; an id it leaves out
 // keeps the order it holds. Returning the same object again keeps the bot's
 // arrival state (the bots mark `arrived` on the object). The optional hooks
-// `botDied(id)` and `unitChanged(id)` hear the referee's events (the command
-// has already dropped the bot's order), and `stats()` returns whatever the
-// doctrine counts, for the runner's summary.
+// `botDied(id)` and `unitChanged(id, previous)` hear the referee's events (the
+// command has already dropped the bot's order, as the engine's SAI does on a
+// unit change); `unitChanged` may return the order the bot keeps until the
+// next pass (a garrison post's, whose gun the bot has just boarded). A
+// doctrine's own standing rules ride on `gunsRule` (the side's, which
+// `gunsRuleOf(id)` hands the bots): the rule a bot follows while it holds no
+// order between a unit change and the next pass, so an invented rule does not
+// lapse for those seconds. `stats()` returns whatever the doctrine counts,
+// for the runner's summary.
 //
 // The SAI's pass is split so a doctrine sits between its halves:
 // `sai.beginPass(alive)` (the areas, both sides, everyone counted) runs once,
@@ -432,14 +438,22 @@ export class StrategicCommand {
   }
 
   botChangedUnit(id) {
+    const previous = this.orders.get(id) ?? null;
     this.orders.delete(id);
     this.sai.botChangedUnit(id);
     const side = this.roster.get(id);
-    this.doctrines[side]?.unitChanged?.(id);
+    const keep = this.doctrines[side]?.unitChanged?.(id, previous);
+    if (keep) this.orders.set(id, keep);
   }
 
   waypointsOf(id) {
     return this.orders.get(id) ?? null;
+  }
+
+  /** The bot's side's standing gun rule (a doctrine's `gunsRule`), or null:
+   *  what `bot-mount.js` reads while the bot holds no order. */
+  gunsRuleOf(id) {
+    return this.doctrines[this.roster.get(id)]?.gunsRule ?? null;
   }
 
   /**

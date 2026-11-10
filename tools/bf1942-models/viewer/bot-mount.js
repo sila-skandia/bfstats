@@ -103,6 +103,18 @@ export function mount(bot, m, now = bot._now ?? 0) {
   bot.poseRequest?.reset(); bot.stanceInput = 'stand';
 }
 
+/**
+ * The gun rule the bot follows: its order's (`guns`), or, while it holds
+ * none (the seconds between a unit change and the next pass, when the SAI
+ * has dropped it), its side's doctrine's standing rule (`bot.gunsRule`,
+ * doctrine.js `gunsRuleOf`). The garrison's 'engaged' read off the order
+ * alone lapsed for exactly those seconds, so a bot weighed a fixed gun by
+ * the garrison's rule on foot and by the engine's once seated.
+ */
+export function gunsRule(bot) {
+  return bot.waypoints ? (bot.waypoints.guns ?? null) : (bot.gunsRule ?? null);
+}
+
 /** The page unseats the bot (destroyed, or bailed). */
 export function dismount(bot, now = bot._now ?? 0) {
   const left = bot.vehicle;
@@ -200,7 +212,7 @@ export function urgencyChange(bot, mod, now) {
     // bunker MG42, refused the bail before AI-147's exemption; the engine
     // never did.) He steps out at the gun's own `setSoldierExitLocation`
     // (bot-units.js `units.leave`).
-    if (bot.waypoints?.guns === 'engaged' && m.kind === 'gun' && !bot._fixedAimable()) {
+    if (gunsRule(bot) === 'engaged' && m.kind === 'gun' && !bot._fixedAimable()) {
       staying = 0;
       bailAllowed = true;
     }
@@ -442,7 +454,7 @@ export function fixedAimable(bot, c = null) {
   // and traverse: not for one somewhere in range he has not seen (the
   // engine's `getEnemyObjects` branch below, which on Bocage covered most of
   // the map from the bridges' AA guns), nor for the strategic direction.
-  if (bot.waypoints?.guns === 'engaged') {
+  if (gunsRule(bot) === 'engaged') {
     return spotted.some(m => canPoint(dirTo(m.pos)) && Math.hypot(m.pos[0] - from[0], m.pos[2] - from[2]) <= range)
       ? 'enemy' : false;
   }

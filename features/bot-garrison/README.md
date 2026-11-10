@@ -80,6 +80,35 @@ flag; both bridges and the sawmill were each guarded when held. The gunners
 left with no target are mostly bots that took a gun for an enemy they had
 spotted and are held in it by the Change law's 15 s ramp.
 
+## The rule between orders (2026-11-10)
+
+The engine's SAI drops a bot's order when his unit changes
+(`SAI::handleChangingBot` 0x08631450, `strategic-ai.js` `botChangedUnit`) and
+orders him again at the next pass. The garrison's `guns: 'engaged'` rode on
+the order alone, so for those seconds a bot weighed a fixed gun by the
+engine's open rule (any enemy inside its range, AI-59) instead of the
+garrison's (a spotted one). On BF1918's aube_de_soiree that was a loop: on
+foot the base's Frz155er was worth its base 25 and a horse 12 m off won (85);
+mounted, the order gone, the gun was worth 155 against 106 for staying, so
+he got off; on foot, ordered again, the horse won. The same lapse threw a
+post's man out of the gun his post had just seated him in, and the next pass
+seated him again (PomPom_Static).
+
+* The side's doctrine carries its standing rule (`gunsRule`, `doctrine.js`
+  `gunsRuleOf`), which the referee hands each bot every tick; `bot-mount.js`
+  `gunsRule(bot)` reads the order's flag, or the side's while he holds none.
+* A doctrine's `unitChanged(id, previous)` may return the order the bot keeps
+  until the next pass: the garrison keeps a post's own boarding (an order in
+  its `board` phase) and its posted record; any other unit change drops the
+  order and the post, as before.
+* Measured, 16 bots, team 2 / team 1: aube_de_soiree 180 s, rides shorter
+  than 2 s 50 / 63 before (18 / 53 on horses), 1 / 3 after (none on a horse);
+  El Alamein three 120 s runs each, 71 boardings and 2 short rides before, 67
+  and 2 after; DC Basrah's Edge 150 s, 28 short before, 14 after (all
+  `Pickup`, a separate loop still open). `tests/test_doctrine.py`
+  `test_a_post_keeps_its_order_through_a_unit_change`, `tests/test_bot_ai.py`
+  `test_the_gun_rule_holds_between_orders`.
+
 ## Knobs
 
 `GARRISON` in `doctrine-garrison.js` (KNOBS.md, "garrison" rows).
