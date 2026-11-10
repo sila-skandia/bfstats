@@ -55,7 +55,7 @@
 //    two (`thirds`: an aimed round, rule 3, from anyone else at that plane
 //    while the fight ran): two on one.
 
-import { isReplicated, teamAt, nameAt, flownPositionAt, flownRotationAt, flownGapAt } from './replay-recording.js';
+import { isReplicated, teamAt, nameAt, flownPositionAt, flownRotationAt, flownGapAt, controlledAt, rootOf } from './replay-recording.js';
 
 export const RULES = Object.freeze({
   version: 3,
@@ -538,6 +538,19 @@ export function sampleFight(rec, fight, { dt = 0.1, round = true } = {}) {
       if (f.nid !== null && f.nid !== undefined && f.nid !== fight.life[s].nid) continue;
       const v = velAt(fight.life[s], f.t);
       shots.push({ side: s, t: Math.round((f.t - fight.t0) * 1000) / 1000, pos: f.pos.map(r1), dir: f.dir.map(r4), pv: v.map(r1), weapon: f.weapon });
+    }
+    // The plane's gunners: a round from the same plane fired by whoever sat
+    // in another of its seats then (a two-seater's rear gun, a bomber's
+    // turrets). Drawn, never evidence: the rules above weigh the pilots'.
+    const life = fight.life[s];
+    for (const f of rec.fires) {
+      if (f.nid !== life.nid || f.pid === pilot.pid || f.pid === null || f.pid === undefined) continue;
+      if (f.t < fight.t0 || f.t > fight.t1 || f.press || f.feedOnly || !f.pos || !f.dir || NOT_GUNS.test(f.weapon ?? '')) continue;
+      const seat = rootOf(rec, controlledAt(rec, f.pid, f.t), f.t, f.pid);
+      if (seat?.life?.nid !== life.nid || !(seat.seat > 0)) continue;
+      const v = velAt(life, f.t);
+      shots.push({ side: s, t: Math.round((f.t - fight.t0) * 1000) / 1000, pos: f.pos.map(r1), dir: f.dir.map(r4), pv: v.map(r1),
+                   weapon: f.weapon, gunner: true });
     }
   }
   shots.sort((a, b) => a.t - b.t);

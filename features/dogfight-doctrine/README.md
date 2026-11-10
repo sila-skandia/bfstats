@@ -2,7 +2,9 @@
 
 Status: **steps 1 to 7 of the build plan built** (2026-11-10, after the
 owner's go: "The BF1918 arena", "The lessons on other airframes", "The
-falling leaf", "More than two planes", "The two-seater"); steps 8 and 9 wait
+falling leaf", "More than two planes", "The two-seater"); the two-seater's
+gunner read off each plane's own model in every pack and mod the school
+flies (2026-11-11, "The gunners from the planes' own data"); steps 8 and 9 wait
 on data the recordings do not yet hold (the build plan says why). Steps 1 to
 3: the rules measured over any fight and reported over the 303
 recorded fights, the school's Rules tab, the coach's rule lines and the end
@@ -160,21 +162,107 @@ Rule 8's Rules row opens the wingman's fight. Held by
 
 ## The two-seater (step 7, rule 5)
 
-A two-seater's rear gunner is a turret in `runFight` (`side.gunner`,
-`GUNNER`): BF1918's arc (70 degrees either side of astern, 5 below the tail
-line to 40 above), 400 m, 0.8 s to react, a degree of wander. Lesson
-*Two-seaters: from beneath the tail* (`two-seater`, watch only), a
-two-seater flying straight at 50 m/s, from the nine starts:
+Lesson *Two-seaters: from beneath the tail* (`two-seater`, watch only): a
+two-seater flying straight at 50 m/s, its rear gunner firing at whoever is
+in their gun's arc. Since 2026-11-11 the two-seater is a real one, flown on
+its own airframe, and its gunner fires its own gun on its own arc (next
+section). Against the Stuka (`fixtures/two-seaters.json`), from the nine
+starts:
 
 | Fight | Nine starts |
 |---|---|
-| From behind, level (`chaser`) | you are shot down in 7, the two-seater in 6: a trade |
-| From beneath the tail (`PLANS.underTail`: close on a point 90 m under the tail and 160 m behind, pull up into them, fire, drop back) | never shot down, hit in 3 of 9 (once 6 rounds, when the climb carried you into the arc), 2 to 6 rounds landed every time, shots on the way in taken |
+| From behind, level (`chaser`) | hit in every one, 3 to 14 MG 42 rounds a fight, never shot down; the Stuka down every time |
+| From beneath the tail (`PLANS.underTail`: close on a point 90 m under the tail and 160 m behind, pull up into them, fire, drop back) | never hit; 2 to 14 rounds landed every time |
 
-Mannock's rule holds on BF1918's own gunner arcs. Not modelled: a gunner
-who can be killed before the pilot (Richthofen's rule), since a plane here
-has one pool of hit points; and the two-seater does not manoeuvre.
-Held by `test_a_two_seater_is_attacked_from_beneath_its_tail`.
+Mannock's rule holds on the planes' own gun mounts: none of the two-seaters
+below fires down past its tail. Not modelled: a gunner who can be killed
+before the pilot (Richthofen's rule), since a plane here has one pool of hit
+points; and the two-seater does not manoeuvre. Held by
+`test_a_two_seater_is_attacked_from_beneath_its_tail`.
+
+The first version (2026-11-10) flew the lesson on the arena's fighter with
+a typed-in BF1918 arc (70 degrees either side, 5 below to 40 above, a round
+every tick at 400 m/s): you were shot down in 7 of 9 from behind. The Stuka's
+real MG 42 turns only 40 degrees, rises 33 and does not depress at all, so a
+chaser level with or a little under its tail is often outside the arc.
+
+## The gunners from the planes' own data (2026-11-11)
+
+A user asked for "rear gunner shots for planes that have an active one" in
+the school. Every gun the school's gunners fire is now read off the plane's
+own model, the way the play front end wires that seat; nothing is typed in
+per plane.
+
+- **`viewer/dogfight-gunner-seats.js` `gunnersOf(root)`** surveys the plane
+  with the play page's own seat survey (`seat-survey.js` `surveyVehicle`):
+  each seat other than the pilot's whose FireArms is on the fire key, fires
+  a bullet and hangs under the seat's mouse-aimed RotationalBundles (GUN-2)
+  is a gunner, one entry per gun (a Ju 88's rear seat has two). Its arc is
+  measured, not read off the limits: the seat's own `TurretRig` (the rig the
+  mouse drives in play, and the round replay lays from recorded rounds) is
+  pointed along every direction of a 3-degree sphere round the plane
+  (`pointAlong`), and the directions its line of fire comes within 2 degrees
+  of are the arc. The rate (`roundOfFire`), muzzle speed (`velocity`), the
+  round's life and drop, the tracer interval and the least deviation are the
+  FireArms' and its projectile's own.
+- **`viewer/dogfight-gunners.js`** is the plain half the fight runs in node:
+  the arc as a grid (`inArc`, `arcExtent`), and `GUNNER`, which is the
+  gunner, not the gun: opens fire inside 400 m, 0.8 s after the enemy comes
+  into the arc, the aim wandering 1.2 degrees on top of the gun's cone.
+- **`runFight`** (`side.gunners`, `side.make`) fires each gunner at the
+  nearest enemy in its arc at its gun's rate on whole ticks (GUN-13, so the
+  MG 42's 12 a second is a round every 3rd tick), leading with its own muzzle
+  speed; a round the lead would carry out of the arc is not fired. Each round
+  carries `gunner`, `weapon` and `life`.
+- **The school's page** (`dogfight-school-page.js` `loadSeater`) finds the
+  arena's two-seater: the arena's planes, the ace's side and the planes that
+  are not fighters first, then the other arenas' bombers; the first with one
+  gunner's seat flies the lesson, else the first with any. The Range does
+  the same over the battle's parked planes (`proving-ground-page.js`
+  `findRangeSeater`). An arena with none flies the lesson's airframe with an
+  empty back seat, and nothing fires aft; the story says so. The lesson's
+  "Here" line names the plane and its gun's arc as measured.
+- **The theatre** draws a gunner's rounds as that FireArms' own tracer
+  streak (`dogfight-plane-look.js` `tracerGunOf(root, weapon)`), on its own
+  interval, and a flash at the gun's muzzle.
+
+The arcs measured (`test_each_gunners_arc_is_its_own_mount`; degrees either
+side of astern, then up and down off the tail line, astern):
+
+| Plane | Gun | Rate, speed | Arc |
+|---|---|---|---|
+| Stuka, BF110 (vanilla, Road to Rome) | `MG42_Air` | 12/s, 1000 m/s, tracer every 2nd | 42, +33, 0 |
+| SBD, Il-2 | `SBD-6_guns`, `Ilyushin_Rearguns` | 10/s, 400 m/s | 60, +42, 0 |
+| Albatros C.III (BF1918) | `AlbatrossC3MG` | 8/s, 400 m/s, tracer every 3rd | 69, +45, -3 |
+| DH.4 (BF1918) | `AircoDH4BritMG` | 8/s, 400 m/s | all round, +45, 0 |
+
+Which planes carry a gunner, by a census of every aircraft placed on an
+exported level (the published glbs' own seats, read 2026-11-11):
+
+| Tree | Planes with a gunner's gun |
+|---|---|
+| bf1942 | AichiVal, Aichival-T, B17, Ilyushin, Ju88A, SBD, SBD-T, Stuka (8 of 14) |
+| xpack1 | the same less Ju88A, plus BF110 (8 of 15) |
+| xpack2 | the same as bf1942 less Ju88A, plus C47 (8 of 19) |
+| bf1918 | AircoDH4 (Brit, US), AlbatrossC3 (and Turk), Breguet14 (and Blank), Caudron (and BR), Felixstowe (three), Gotha (and BR), HandleyPage, HansaW29, Lebaudy, TaubeBomb, taube, ZeppelinL30 (19 of 40) |
+| desertcombat | AC-130, B17 (fixed wing); AH64, MH-53, Mi24D (helicopters) |
+| eod | B52, C47, IL-28, SR71, Stuka (fixed wing); the Hueys, CH-47, Cobra, Loach |
+| fh | B17, B26, G4M2-E, IL2, IL2-B, Ju87D, Ju87G, SBD, Stuka (9 of 20) |
+| fhsw | 71 of 212, among them the Ju87s, Bf110-C7, Defiant, Ki-45s, SBD, Swordfish, Il-2s and every bomber |
+| fhsweurope | 117 of 305 |
+
+The school's arenas leave out helicopters (`isRotary`), so the helicopters'
+door gunners fire nowhere in it; the DC co-pilots' `CallArtillary` seat has
+no muzzle speed and is not a gunner. Every other plane in the table flies
+the lesson with its own gun when an arena (or the Range's battle) has it.
+
+Checked headless (Chrome, the local viewer over the published trees):
+vanilla Coral Sea flies the Stuka (`MG42_Air`, the gun's own tracer mesh,
+3 to 13 gunner streaks in the air through the burst), Battle of Britain the
+Il-2, BF1918 Amiens the Albatros C.III (`AlbatrossC3MG`, its own streak).
+Tests: `test_dogfight_doctrine.py` (`test_the_gunner_fires_the_planes_own_gun`,
+`test_nobody_in_the_back_fires_nothing`, `test_each_gunners_arc_is_its_own_mount`),
+`test_dogfight_gunners.py` (a recorded gunner, features/dogfight-recordings).
 
 ## The lessons on other airframes
 

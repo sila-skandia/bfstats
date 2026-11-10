@@ -19,36 +19,60 @@
 // when a team has nobody left, or at `seconds`.
 
 import { createPilot, gunOf } from './dogfight-pilot.js';
-import { stateOf, gunSolution, energyHeight, len, sub, add, scale, unit, dot, basis, leadPoint } from './dogfight-flight.js';
+import { stateOf, gunSolution, energyHeight, len, sub, add, scale, unit, rotate, leadPoint } from './dogfight-flight.js';
+import { GUNNER, inArc, toBody } from './dogfight-gunners.js';
+import { fireTicks } from './fire-timer.js';
 import { placePlane, stage, applyStick, fireRound, segmentNear, strikesAirframe, fitAirframe, paced, pilotView, HIT_RADIUS, KILL_HITS, DUEL_DT } from './dogfight-duel.js';
 
 /** A target is kept unless another enemy is this much nearer. */
 const SWITCH = 0.67;
 
-/**
- * A two-seater's rear gunner (`side.gunner`): a turret that fires aft at
- * the nearest enemy inside its arc and range, after `react` seconds of
- * having him there. The arc is BF1918's (features/dogfight-doctrine,
- * "Research notes"): `yaw` degrees either side of astern, `down` below the
- * tail line to `up` above it; his aim wanders `spread` degrees.
- */
-export const GUNNER = { yaw: 70, down: 5, up: 40, range: 400, react: 0.8, spread: 1.2, speed: 400 };
+/** A gunner's wander and their gun's own cone, as one spread in radians:
+ *  `GUNNER.spread` degrees, plus the FireArms' least deviation (hundredths
+ *  of a radian, DEV-11). */
+const spreadOf = gun => GUNNER.spread * Math.PI / 180 + (gun.deviation || 0) / 100;
 
-/** Whether `p` is inside a gunner's arc on plane `st`, and how far. */
-export function inGunnerArc(st, p, arc = GUNNER) {
-  const { F, U } = basis(st.orientation);
-  const rel = sub(p, st.position), d = len(rel);
-  if (d > arc.range || d < 1) return null;
-  const los = scale(rel, 1 / d), aft = scale(F, -1);
-  const up = Math.asin(Math.max(-1, Math.min(1, dot(los, U)))) * 180 / Math.PI;
-  const flat = sub(los, scale(U, dot(los, U)));
-  const off = Math.acos(Math.max(-1, Math.min(1, dot(unit(flat), aft)))) * 180 / Math.PI;
-  return off <= arc.yaw && up >= -arc.down && up <= arc.up ? { d, off, up } : null;
+/**
+ * One tick of a plane's gunners (`side.gunners`, `dogfight-gunners.js`):
+ * each fires at the nearest enemy inside its gun's own arc and `GUNNER.range`
+ * of its muzzle, once it has had them there `GUNNER.react` seconds, at its
+ * gun's own rate (whole ticks, GUN-13), with the lead its muzzle speed asks.
+ * A round the rig could not lay (the lead carried it out of the arc) is not
+ * fired. Each round carries its gunner (`gunner`, the index), its weapon
+ * and its own life. Returns whether any of them fired.
+ */
+function gunnersTick({ gunners, mem, me, enemies, t, k, i, dt, rand, rounds }) {
+  mem.gunners ??= gunners.map(() => ({ seen: 0, next: 0 }));
+  let fired = false;
+  for (const [gi, gun] of gunners.entries()) {
+    const gm = mem.gunners[gi];
+    const muzzle = add(me.position, rotate(me.orientation, gun.at));
+    let best = null;
+    for (const e of enemies) {
+      const rel = sub(e.state.position, muzzle), d = len(rel);
+      if (d > GUNNER.range || d < 1 || !inArc(gun, toBody(me.orientation, rel))) continue;
+      if (!best || d < best.d) best = { e, d };
+    }
+    gm.seen = best ? gm.seen + dt : 0;
+    if (!best || gm.seen < GUNNER.react || k < gm.next) continue;
+    const lp = leadPoint({ position: muzzle, velocity: me.velocity }, best.e.state, { speed: gun.speed, gravity: gun.gravity });
+    const w = spreadOf(gun);
+    const dir = unit(add(unit(sub(lp, muzzle)), [(rand() - 0.5) * 2 * w, (rand() - 0.5) * 2 * w, (rand() - 0.5) * 2 * w]));
+    if (!inArc(gun, toBody(me.orientation, dir))) continue;
+    gm.next = k + fireTicks(gun.rate);
+    rounds.push({ side: i, t, p: muzzle, start: muzzle, v: add(me.velocity, scale(dir, gun.speed)), age: 0, done: false, hit: false,
+                  gunner: gi, weapon: gun.weapon, life: gun.life });
+    fired = true;
+  }
+  return fired;
 }
 
 /**
  * Fly a fight. `sides` is `{ plan, start, skill, team, memory }` each (team
- * any value; equal is friendly). Returns `{ tracks, events, rounds, hits,
+ * any value; equal is friendly), and may carry its own airframe (`make()`,
+ * in place of `makePlane`) and its plane's gunners (`gunners`,
+ * `dogfight-gunners.js`: a two-seater's rear gun, off its own model).
+ * Returns `{ tracks, events, rounds, hits,
  * hitsOn, hitsBy, downs, end, teamEnd, dt, teams }`: a track per plane (the
  * duel's sample, plus `target`), `hits[i]` the rounds plane i landed,
  * `hitsOn[j]` the rounds in plane j, `hitsBy[i][j]` the rounds plane i put
@@ -65,9 +89,10 @@ export function runFight({ makePlane, sides, seconds = 60, origin = [0, 0, 0], g
   // pace, and for a jet its own cannon and the fight seen at the Spitfire's
   // size.
   const fitted = [];
+  const make = (side, i) => (sides[i]?.make ? sides[i].make() : makePlane(side, i));
   const planes = sides.map((side, i) => {
-    const plane = makePlane(side, i);
-    const fit = fitted[i] = fitAirframe(plane, makePlane, i);
+    const plane = make(side, i);
+    const fit = fitted[i] = fitAirframe(plane, make, i);
     plane.groundHeight = (x, z) => groundAt(x, z);
     placePlane(plane, stage(origin, paced(side.start, fit.pace)));
     return plane;
@@ -130,22 +155,13 @@ export function runFight({ makePlane, sides, seconds = 60, origin = [0, 0, 0], g
         mem.eyes[cur.i] = mem.eye;
       }
       applyStick(planes[i], out);
-      // The rear gunner, on his own: the nearest enemy in his arc.
-      if (sides[i].gunner && enemies.length) {
-        const arc = { ...GUNNER, ...sides[i].gunner };
+      // The plane's gunners, on their own: each the nearest enemy in its arc.
+      if (sides[i].gunners?.length && enemies.length) {
         const mem2 = pilots[i].mem;
-        const seen = enemies.map(e => ({ e, a: inGunnerArc(me, e.state.position, arc) })).filter(x => x.a).sort((x, y) => x.a.d - y.a.d)[0];
-        mem2.gunnerT = seen ? (mem2.gunnerT ?? 0) + dt : 0;
-        if (seen && mem2.gunnerT >= arc.react) {
-          const lp = leadPoint(me, seen.e.state, { speed: arc.speed });
-          const j = (rand() - 0.5) * 2 * arc.spread * Math.PI / 180, j2 = (rand() - 0.5) * 2 * arc.spread * Math.PI / 180;
-          const dir = unit(add(unit(sub(lp, me.position)), [j, j2, -j]));
-          const v = add(me.velocity, scale(dir, arc.speed));
-          const p0 = add(me.position, scale(dir, 4));
-          rounds.push({ side: i, t, p: p0, start: p0, v, age: 0, done: false, hit: false, gunner: true });
-          if (!mem2.gunnerFiring) events.push({ t, side: i, phase: 'gunner', say: 'The gunner opens fire', intent: 'defend' });
-          mem2.gunnerFiring = true;
-        } else mem2.gunnerFiring = false;
+        const firing = gunnersTick({ gunners: sides[i].gunners, mem: mem2, me, enemies, t, k, i, dt, rand, rounds });
+        if (firing && mem2.gunnerFiring === undefined) events.push({ t, side: i, phase: 'gunner', say: 'The gunner opens fire', intent: 'defend' });
+        if (firing) mem2.gunnerFiring = t;
+        else if (mem2.gunnerFiring !== undefined && t - mem2.gunnerFiring > 1) mem2.gunnerFiring = undefined;
       }
       const him = targets[i].i >= 0 && alive[targets[i].i] ? states[targets[i].i] : null;
       const sol = him ? gunSolution(me, him, { ...guns[i], width: 5 }) : { fire: false, dist: Infinity, off: 180 };
@@ -188,7 +204,7 @@ export function runFight({ makePlane, sides, seconds = 60, origin = [0, 0, 0], g
           break;
         }
       }
-      if (!r.done && r.age > (guns[r.side].reach ?? 600) / guns[r.side].speed) r.done = true;
+      if (!r.done && r.age > (r.life ?? (guns[r.side].reach ?? 600) / guns[r.side].speed)) r.done = true;
     }
   }
   const first = downs.find(d => d.i === 0 || d.i === 1);

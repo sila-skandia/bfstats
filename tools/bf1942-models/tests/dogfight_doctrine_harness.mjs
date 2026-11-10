@@ -8,6 +8,10 @@ import { doctrineOf, usefulRange, damageAt, falloffOf, RULES } from './dogfight-
 import { movesOn, STARTS, nudge } from './dogfight-measure.js';
 import { runFight } from './dogfight-fight.js';
 import { fightSides } from './dogfight-lessons.js';
+import { readFileSync } from 'node:fs';
+import { gunnersOf } from './dogfight-gunner-seats.js';
+import { arcExtent } from './dogfight-gunners.js';
+import { airframeTree, jetMaker } from './jet_airframes.mjs';
 
 const DEMOS = ['boom-and-zoom/move', 'boom-and-zoom/counter', 'under-the-height/move', 'under-the-height/counter',
   'on-his-tail/move', 'out-of-the-lock/flat', 'break-turn/without', 'the-circle/circle', 'up-and-over/ninja'];
@@ -123,18 +127,41 @@ const pair = {};
     });
   }
 }
-// The two-seater (rule 5, Mannock's rule), from the nine starts.
-const twoSeater = {};
+// The two-seaters' gunners, off their own models (`fixtures/two-seaters.json`,
+// `dogfight-gunner-seats.js`): each gun's seat, weapon, rate, speed, life,
+// tracer and arc, as the school reads them.
+const seaters = JSON.parse(readFileSync(new URL('./two-seaters.json', import.meta.url), 'utf8'));
+const arcs = {};
+for (const [name, row] of Object.entries(seaters.airframes)) {
+  arcs[name] = gunnersOf(airframeTree(THREE, row)).map(g => ({ seat: g.seat, weapon: g.weapon, rate: g.rate, speed: g.speed,
+    life: g.life, tracer: g.tracer, at: g.at, cells: g.arc.reduce((a, b) => a + b, 0), ...arcExtent(g) }));
+}
+// A fighter's own seat carries no gunner.
+arcs.Spitfire = gunnersOf(spitfireNode());
+// The two-seater (rule 5, Mannock's rule), from the nine starts: the Stuka
+// on its own airframe, its gunner on its own MG 42; and the same fights with
+// nobody in the back.
+const stuka = { make: jetMaker(THREE, Aircraft, seaters, 'Stuka'), gunners: gunnersOf(airframeTree(THREE, seaters.airframes.Stuka)) };
+const empty = { make: jetMaker(THREE, Aircraft, seaters, 'Stuka'), gunners: [] };
+const twoSeater = {}, emptySeat = {};
 {
   const LT = LESSONS.find(l => l.id === 'two-seater');
+  const fly = (d, st, plane) => {
+    const sides = fightSides(LT, d, plane);
+    sides[1] = { ...sides[1], start: nudge(sides[1].start, st) };
+    return runFight({ makePlane, seconds: d.seconds ?? LT.seconds, groundAt: () => 0, sides });
+  };
   for (const d of LT.demos) {
     twoSeater[d.id] = STARTS.map(st => {
-      const sides = fightSides(LT, d);
-      sides[1] = { ...sides[1], start: nudge(sides[1].start, st) };
-      const r = runFight({ makePlane, seconds: d.seconds ?? LT.seconds, groundAt: () => 0, sides });
+      const r = fly(d, st, stuka);
+      const g = r.rounds.filter(x => x.gunner !== undefined);
+      const gaps = g.slice(1).map((x, j) => Math.round((x.t - g[j].t) * 30)).filter(n => n > 0 && n < 10);
       return { youDown: r.downs.some(x => x.i === 1), heDown: r.downs.some(x => x.i === 0), onYou: r.hitsOn[1], onHim: r.hitsOn[0],
-        gunnerRounds: r.rounds.filter(x => x.gunner).length };
+        gunnerRounds: g.length, gunnerHits: g.filter(x => x.hit).length, weapons: [...new Set(g.map(x => x.weapon))],
+        gap: gaps.length ? Math.min(...gaps) : null,
+        life: g[0]?.life ?? null, cruise: Math.round(r.tracks[0].at(-1).v) };
     });
+    emptySeat[d.id] = STARTS.map(st => fly(d, st, empty).rounds.filter(x => x.gunner !== undefined).length);
   }
 }
-console.log(JSON.stringify({ demos, guns, damage, rules: RULES.map(r => r.n), coach: coachCases, gunnery, onSpitfire, leaf, pair, twoSeater }));
+console.log(JSON.stringify({ demos, guns, damage, rules: RULES.map(r => r.n), coach: coachCases, gunnery, onSpitfire, leaf, pair, twoSeater, emptySeat, arcs }));

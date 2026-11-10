@@ -187,7 +187,9 @@ for (const file of files) {
       closest: sampled.closest,
       kill: sampled.kill ? { side: sampled.kill.side, t: sampled.kill.t, weapon: sampled.kill.weapon } : null,
       end: sampled.end ?? null,
-      sides: sampled.sides.map(s => ({ name: s.name, team: s.team, tmpl: s.tmpl, aimed: s.aimed, hits: s.hits, turned: s.turned })),
+      sides: sampled.sides.map((s, i) => ({ name: s.name, team: s.team, tmpl: s.tmpl, aimed: s.aimed, hits: s.hits, turned: s.turned,
+        // Rounds the plane's gunners fired (`sampleFight`), where it had any.
+        ...(sampled.shots.some(x => x.side === i && x.gunner) ? { gunner: sampled.shots.filter(x => x.side === i && x.gunner).length } : {}) })),
     };
     rows.push(row);
     tally.fights++;
@@ -197,7 +199,8 @@ for (const file of files) {
       const [a, b] = row.sides;
       console.log(`${id} ${meta.level} t=${Math.round(row.t0)} ${row.duration.toFixed(0)}s ${row.kind}${row.mutual ? ' mutual' : ''}`
         + ` ${a.name} (${a.tmpl}, ${a.aimed} aimed, ${a.hits} hits) v ${b.name} (${b.tmpl}, ${b.aimed} aimed, ${b.hits} hits)`
-        + ` closest ${row.closest} m${row.kill ? ` KILL by ${row.sides[row.kill.side].name}` : ''}`);
+        + ` closest ${row.closest} m${row.kill ? ` KILL by ${row.sides[row.kill.side].name}` : ''}`
+        + row.sides.map(x => (x.gunner ? ` [${x.tmpl}'s gunners: ${x.gunner} rounds]` : '')).join(''));
     } else {
       let clip = null;
       if (clips === 'all' || (clips === 'dogfights' && sampled.kind === 'dogfight')) {

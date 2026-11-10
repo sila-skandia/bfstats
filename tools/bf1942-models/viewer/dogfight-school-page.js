@@ -27,6 +27,7 @@ import { VIEWER_ROOT } from './viewer-root.js';
 import { loadMods, stored as storedMod, remember, trees, VANILLA } from './mods.js';
 import * as jetAge from './dogfight-doctrine-1991.js';
 import { measureAirframe } from './dogfight-airframe.js';
+import { findTwoSeater } from './dogfight-gunner-seats.js';
 
 const params = new URLSearchParams(location.search);
 const ARENA_KEY_VANILLA = 'dogfight-school:arena';
@@ -124,6 +125,42 @@ async function loadModels() {
   models.mine = airframeRoot(m) ?? models.fighter;
   models.ace = airframeRoot(a) ?? models.fighter;
   return true;
+}
+
+// --- the two-seater -------------------------------------------------------------
+// The two-seater lesson's plane (features/dogfight-doctrine, "The gunners
+// from the planes' own data"): the arena's own two-seater, its gunners off
+// its own model. The arena's planes first, the ace's side and the planes
+// that are not fighters before the rest, then the other arenas' bombers and
+// two-seaters; the first that carries a gunner flies the lesson.
+const seater = { arena: null, value: null, searching: false };
+function seaterCandidates() {
+  const me = mine();
+  const aceSide = me?.side === 'Axis' ? 'Allied' : 'Axis';
+  const rank = p => (p.fighter ? 2 : 0) + (p.side === aceSide ? 0 : 1);
+  const here = [...arena.planes].sort((a, b) => rank(a) - rank(b));
+  const seen = new Set(here.map(p => p.template));
+  const elsewhere = arenas.flatMap(a => a.planes).filter(p => !p.fighter && !seen.has(p.template) && seen.add(p.template));
+  return [...here, ...elsewhere].map(p => ({
+    template: p.template,
+    root: async () => airframeRoot(await loadPlaneModel(p.template, modId(arenaMod))),
+  }));
+}
+async function loadSeater() {
+  const at = arena;
+  if (seater.arena === at) return;
+  seater.arena = at;
+  seater.value = null;
+  seater.searching = true;
+  const found = await findTwoSeater(seaterCandidates()).catch(e => { console.warn('dogfight school: two-seater', e); return null; });
+  if (seater.arena !== at) return;
+  seater.searching = false;
+  seater.value = found && {
+    template: found.template, name: pretty(found.template), mod: modId(arenaMod), gunners: found.gunners,
+    make: () => new Aircraft(found.root.clone(true), null, frame),
+    visual: () => planeVisual(found.root),
+  };
+  theatre?.planesChanged();
 }
 
 say(`Fuelling the ${pretty(mine()?.template)} and the ${pretty(aceAgainst(arena, mine())?.template)}`);
@@ -238,6 +275,8 @@ const theatre = createDogfightTheatre({
     store(PLANE_KEY, template);
     loadModels().then(on => { if (on) theatre.planesChanged(); });
   },
+  // The two-seater lesson's plane and its gunners (`loadSeater`).
+  twoSeater: () => (seater.value ?? (seater.searching ? { searching: true, gunners: [] } : null)),
   mods: {
     list: () => offered.map(m => ({ id: m.id, name: m.name || m.short || m.id, short: m.short || m.name || m.id,
       icon: new URL(m.icon || `icons/mods/${m.id}.png`, VIEWER_ROOT).href })),
@@ -267,14 +306,22 @@ const theatre = createDogfightTheatre({
       if (!arena.planes.some(p => p.template === choice)) choice = null;
       theatre.redrawChoices();
       loadModels().then(on => { if (on) theatre.planesChanged(); });
+      loadSeater();
     },
   },
 });
+loadSeater();
 wait.hidden = true;
 theatre.open(params.get('lesson') || null, { demo: params.get('demo'), fight: params.get('fight') });
 // The test hook, as the Range's is `window.__provingGround`.
 window.__dogfightSchool = { theatre, arenas, get arena() { return arena.map; }, get plane() { return mine()?.template ?? null; },
   get rules() { const card = rulesCard(); return card ? card.rules.map(r => ({ id: r.id, status: r.verdict.status, words: r.verdict.words })) : null; },
   get fight() { return rulesCard()?.fight ?? null; },
+  /** The two-seater lesson's plane and its gunners, as read off its model. */
+  get twoSeater() {
+    const v = seater.value;
+    return v ? { template: v.template, gunners: v.gunners.map(g => ({ seat: g.seat, weapon: g.weapon, rate: g.rate, speed: g.speed, life: g.life, tracer: g.tracer, at: g.at })) }
+      : { searching: seater.searching };
+  },
   /** What the flight law does with each airframe measured so far, by `<mod>:<template>`. */
   get laws() { return Object.fromEntries(laws); } };

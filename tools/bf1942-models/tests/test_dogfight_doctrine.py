@@ -40,6 +40,9 @@ def run() -> dict:
             shutil.copyfile(source, target)
         (work / "node_modules" / "three" / "package.json").write_text(THREE_PACKAGE)
         (work / "package.json").write_text('{"type":"module"}\n')
+        # The two-seaters' own node trees (`surveys/airframe_fixture.py`).
+        shutil.copyfile(HERE / "jet_airframes.mjs", work / "jet_airframes.mjs")
+        shutil.copyfile(HERE / "fixtures" / "two-seaters.json", work / "two-seaters.json")
         (work / "d.mjs").write_text(head + "\n" + SCRIPT.read_text())
         proc = subprocess.run(["node", str(work / "d.mjs")], capture_output=True, text=True, timeout=600, env={**os.environ})
     if proc.returncode != 0:
@@ -193,15 +196,58 @@ class DoctrineTests(unittest.TestCase):
         self.assertIn("shoot", pair["weave"][0]["phases"])
 
     def test_a_two_seater_is_attacked_from_beneath_its_tail(self) -> None:
+        # The Stuka on its own airframe, its gunner on its own MG 42
+        # (features/dogfight-doctrine, "The gunners from the planes' own data").
         behind, under = self.out["twoSeater"]["move"], self.out["twoSeater"]["counter"]
-        # From behind and level: into the gunner's ring, shot down in most.
-        self.assertGreaterEqual(sum(r["youDown"] for r in behind), 6, behind)
-        self.assertTrue(all(r["gunnerRounds"] > 100 for r in behind), behind)
-        # From beneath the tail: never shot down, hit in a few, and landing
-        # rounds every time.
-        self.assertFalse(any(r["youDown"] for r in under), under)
-        self.assertLessEqual(sum(1 for r in under if r["onYou"] > 0), 3, under)
-        self.assertTrue(all(r["onHim"] >= 1 for r in under), under)
+        # From behind and level: into the gunner's arc, hit in every fight,
+        # 3 to 14 rounds; the Stuka still comes down each time.
+        self.assertTrue(all(r["onYou"] >= 3 for r in behind), behind)
+        self.assertTrue(all(r["gunnerRounds"] > 50 for r in behind), behind)
+        self.assertTrue(all(r["heDown"] for r in behind), behind)
+        # From beneath the tail: never hit, and landing rounds every time.
+        self.assertTrue(all(r["onYou"] == 0 and not r["youDown"] for r in under), under)
+        self.assertTrue(all(r["onHim"] >= 2 for r in under), under)
+
+    def test_the_gunner_fires_the_planes_own_gun(self) -> None:
+        behind = self.out["twoSeater"]["move"]
+        for r in behind:
+            # The MG 42's own: MG42_Air, 12 rounds a second on the 30 Hz
+            # tick (a round every 3rd tick, GUN-13), its rounds living 3 s.
+            self.assertEqual(["MG42_Air"], r["weapons"])
+            self.assertEqual(3, r["gap"])
+            self.assertEqual(3, r["life"])
+            # Every hit on you was the gunner's: the Stuka's pilot flies
+            # straight and never points at you.
+            self.assertEqual(r["onYou"], r["gunnerHits"])
+
+    def test_nobody_in_the_back_fires_nothing(self) -> None:
+        # The same Stuka with its rear seat empty, and a fighter's seat.
+        for demo, counts in self.out["emptySeat"].items():
+            self.assertEqual([0] * 9, counts, demo)
+        self.assertEqual([], self.out["arcs"]["Spitfire"])
+
+    def test_each_gunners_arc_is_its_own_mount(self) -> None:
+        arcs = self.out["arcs"]
+        one = {name: rows[0] for name, rows in arcs.items() if rows}
+        # Seat, weapon, rate and muzzle speed are the FireArms' own.
+        self.assertEqual(("StukaRearGunControl", "MG42_Air", 12, 1000), (one["Stuka"]["seat"], one["Stuka"]["weapon"], one["Stuka"]["rate"], one["Stuka"]["speed"]))
+        self.assertEqual(("SBD_PCO1", "SBD-6_guns", 10, 400), (one["SBD"]["seat"], one["SBD"]["weapon"], one["SBD"]["rate"], one["SBD"]["speed"]))
+        self.assertEqual(("AlbatrossC3MG", 8, 1.5), (one["AlbatrossC3"]["weapon"], one["AlbatrossC3"]["rate"], one["AlbatrossC3"]["life"]))
+        self.assertEqual({"interval": 2, "scaler": 50}, one["Stuka"]["tracer"])
+        self.assertEqual({"interval": 3, "scaler": 60}, one["AlbatrossC3"]["tracer"])
+        # How far round from astern each turns (yaw rigs of 40, 60 and 70
+        # degrees, and the DH.4's ring all the way), on a 3-degree grid.
+        self.assertAlmostEqual(40, one["Stuka"]["side"], delta=3)
+        self.assertAlmostEqual(60, one["SBD"]["side"], delta=3)
+        self.assertAlmostEqual(70, one["AlbatrossC3"]["side"], delta=3)
+        self.assertEqual(180, one["AircoDH4_Brit"]["side"])
+        # Up over the tail and never down past it: the gap under the tail
+        # Mannock's rule attacks through.
+        for name in ("Stuka", "SBD", "BF110", "AlbatrossC3", "AircoDH4_Brit"):
+            self.assertGreaterEqual(one[name]["up"], 30, name)
+            self.assertGreaterEqual(one[name]["down"], -5, name)
+        # The gun sits behind the pilot, on the plane's back.
+        self.assertGreater(one["Stuka"]["at"][2], 0.5)
 
 
 class RecordedDoctrineTests(unittest.TestCase):

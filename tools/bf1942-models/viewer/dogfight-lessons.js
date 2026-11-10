@@ -606,26 +606,29 @@ export const LESSONS = [
   {
     // Boelcke's rule 5 against a two-seater (features/dogfight-doctrine):
     // Mannock's "two-seaters from beneath their tails", Richthofen's "kill
-    // the gunner first". The gunner's arc is BF1918's own.
+    // the gunner first". The two-seater is the arena's own, flown on its own
+    // airframe, and its gunner fires its own gun on its own arc
+    // (`ace.twoSeater`, `dogfight-gunners.js`); the counts below are the
+    // Stuka's (`test_a_two_seater_is_attacked_from_beneath_its_tail`).
     id: 'two-seater',
     title: 'Two-seaters: from beneath the tail',
     tagline: 'A two-seater has a gunner facing aft. From behind it is a duel; from under the tail it is not.',
     story: [
-      'A two-seater on a photo run, flying straight at 50 m/s, with a gunner on a ring facing aft. Come in from behind and level, the way you would on a scout, and you are flying into his guns: flown from nine starts, the gunner shot you down in 7 and you took the two-seater down in 6. A trade, not a kill.',
-      'The gunner\'s arc is BF1918\'s own: 70 degrees either side of the tail, from 40 degrees above the tail line to only 5 below it. On the Albatros C.III, the DH.4 and the Breguet 14 alike, nothing fires down past the tail.',
+      'A two-seater on a photo run, flying straight, with a gunner facing aft. Come in from behind and level, the way you would on a scout, and you are flying into their gun: from nine starts against the Stuka, its gunner hit you in every one, 3 to 14 rounds a fight. You brought the Stuka down each time, but only by flying through its fire.',
+      'The gunner\'s arc is the plane\'s own, read off its gun\'s mount: the Stuka\'s MG 42 turns 40 degrees either side of the tail and rises 33 above the tail line, the Dauntless\'s twin guns 60 and 42, the Albatros C.III\'s 70 and 45. None of them fires down past its own tail.',
     ],
     counterStory: [
-      'Mannock\'s rule (1917): attack two-seaters from beneath their tails. Close on a point 90 m under the tail and 160 m behind it, where the ring cannot depress, pull up into them, fire, drop back under, and go again.',
-      'From the same nine starts you were never shot down, hit in 3 of 9 (once 6 times, when the climb carried you up into the arc), and you landed 2 to 6 rounds every time: slower, and safe. Richthofen\'s rule for the rest: the gunner is the first target.',
+      'Mannock\'s rule (1917): attack two-seaters from beneath their tails. Close on a point 90 m under the tail and 160 m behind it, where the gun cannot depress, pull up into them, fire, drop back under, and go again.',
+      'From the same nine starts against the Stuka you were never hit, and you landed 2 to 14 rounds every time: slower, and safe. Richthofen\'s rule for the rest: the gunner is the first target.',
     ],
     watchOnly: true,
-    ace: { plan: 'cruiser', gunner: {}, start: { at: [0, 420, -350], headingDeg: 0, speed: 50 } },
+    ace: { plan: 'cruiser', twoSeater: true, start: { at: [0, 420, -350], headingDeg: 0, speed: 50 } },
     you: { start: { at: [0, 400, 0], headingDeg: 0, speed: 62 } },
     demos: [
       { id: 'move', label: 'From behind, level', seat: 'chaser', skill: 0.9, aceSkill: 1, extra: [],
-        note: 'Straight in behind them, as on a scout: into the gunner\'s ring.' },
+        note: 'Straight in behind them, as on a scout: into the gunner\'s arc.' },
       { id: 'counter', label: 'From beneath the tail', seat: 'underTail', skill: 0.9, aceSkill: 1, extra: [],
-        note: 'Under the tail, where the ring cannot depress; up into them, fire, and down again.' },
+        note: 'Under the tail, where the gun cannot depress; up into them, fire, and down again.' },
     ],
     seconds: 45,
     coach: {
@@ -777,12 +780,17 @@ export function flightOf(lesson, demoId = null) {
  * memory, team }` (team `'you'`, the default, or `'ace'`), as `runFight`
  * takes them, after the two `demoSides` (teams: the ace 'ace', you 'you').
  * Empty for a duel.
+ *
+ * A lesson whose ace is a two-seater (`ace.twoSeater`) flies the plane
+ * `twoSeater` names (`{ make, gunners }`: its own airframe, and its gunners
+ * off its own model, `dogfight-gunners.js`); with none, the ace flies the
+ * lesson's airframe with nobody in the back, and no gun fires aft.
  */
-export function fightSides(lesson, demo) {
+export function fightSides(lesson, demo, twoSeater = null) {
   const [ace, you] = demoSides(lesson, demo);
-  // A two-seater's rear gunner rides on the ace (`ace.gunner`, `runFight`).
-  const gunner = lesson.ace.gunner ? { gunner: lesson.ace.gunner } : {};
-  return [{ ...ace, ...gunner, team: 'ace' }, { ...you, team: 'you' },
+  const back = lesson.ace.twoSeater && twoSeater
+    ? { ...(twoSeater.make ? { make: twoSeater.make } : {}), gunners: twoSeater.gunners ?? [] } : {};
+  return [{ ...ace, ...back, team: 'ace' }, { ...you, team: 'you' },
     ...(demo.extra ?? []).map(x => ({ skill: 0.85, ...x, team: x.team ?? 'you' }))];
 }
 

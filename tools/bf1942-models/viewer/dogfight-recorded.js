@@ -118,7 +118,8 @@ export function recordedFight(raw) {
   const state = (s, i) => ({ position: P[s][i], velocity: V[s][i], orientation: { x: Q[s][i][0], y: Q[s][i][1], z: Q[s][i][2], w: Q[s][i][3] } });
   const shotsAt = raw.sides.map((_, s) => {
     const ticks = new Set();
-    for (const sh of raw.shots) if (sh.side === s) ticks.add(Math.round(sh.t / dt));
+    // The pilot's own guns: a gunner's rounds (`gunner`) are not the pilot firing.
+    for (const sh of raw.shots) if (sh.side === s && !sh.gunner) ticks.add(Math.round(sh.t / dt));
     return ticks;
   });
   const hitTicks = raw.sides.map((_, s) => new Set(raw.evidence.filter(e => e.side === s && e.kind === 'hit').map(e => Math.round(e.t / dt))));
@@ -169,6 +170,10 @@ export function recordedFight(raw) {
     const pv = viewP(...(sh.pv ?? [0, 0, 0]));
     const v = d.map((c, k) => c / dl * ROUND_SPEED + pv[k]);
     const r = { side: sh.side, t: sh.t, start, p: start, v, age: 0, done: true, hit: false, weapon: sh.weapon };
+    // A gunner's round, from the same plane's other seat (`sampleFight`):
+    // drawn as that gun's own tracer, at its own muzzle speed once the
+    // theatre has the plane's model (`timeGunnerRounds`).
+    if (sh.gunner) Object.assign(r, { gunner: true, dir: d.map(c => c / dl), pv });
     for (let tau = 0; tau <= ROUND_LIFE && sh.t + tau <= (n - 1) * dt; tau += 0.02) {
       const q = at(1 - sh.side, sh.t + tau);
       const x = [start[0] + v[0] * tau, start[1] + v[1] * tau, start[2] + v[2] * tau];

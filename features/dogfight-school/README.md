@@ -90,7 +90,10 @@ is published: no asset is involved.
   then closer* is a target that never shoots back, scored on range. *The
   falling leaf* is rule 4's ruse. A BF1918 arena pairs the WWI scouts by
   their levels' spawners; *The pair* and *Two-seaters* fly three planes or
-  a rear gunner (`dogfight-fight.js`); and every move's count on the tabs is now flown on
+  a rear gunner (`dogfight-fight.js`), the two-seater the arena's own with
+  its gunner's gun and arc read off its model (2026-11-11,
+  `features/dogfight-doctrine`, "The gunners from the planes' own data");
+  and every move's count on the tabs is now flown on
   the plane the lessons fly on, the Spitfire's beside it where they differ
   (`features/dogfight-doctrine`, "The lessons on other airframes").
 

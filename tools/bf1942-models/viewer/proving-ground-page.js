@@ -1657,8 +1657,35 @@ export function createProvingGroundPage(page) {
       onFlyCourse: id => flyRings(id),
       onClose: () => page.capture?.(),
       planes, plane: () => templateOf(myPlane()), onPlane: setPlane,
+      // The two-seater lesson's plane: the battle's own parked two-seater,
+      // its gunners off its model (features/dogfight-doctrine, "The gunners
+      // from the planes' own data").
+      twoSeater: () => rangeSeater,
     });
+    findRangeSeater(Aircraft, visual);
     return school;
+  }
+
+  /** The two-seater lesson's plane on this battle (`twoSeater`): searching
+   *  until the parked planes have been read, then the first that carries a
+   *  gunner (the enemy's and the planes that are not fighters first), or
+   *  null when none does. */
+  let rangeSeater = { searching: true, gunners: [] };
+  async function findRangeSeater(Aircraft, visual) {
+    const { findTwoSeater } = await import('./dogfight-gunner-seats.js');
+    const seen = new Set();
+    const parked = airfieldNodes()
+      .filter(n => (n.userData?.provingGround === 'airfield' || n.userData?.provingGround === 'enemyAir') && !page.isWreck?.(n))
+      .filter(n => !seen.has(templateOf(n)) && seen.add(templateOf(n)))
+      .sort((a, b) => (fighterRank(templateOf(a)) < 100) - (fighterRank(templateOf(b)) < 100)
+        || (a.userData.provingGround === 'enemyAir' ? 0 : 1) - (b.userData.provingGround === 'enemyAir' ? 0 : 1));
+    const found = await findTwoSeater(parked.map(n => ({ template: templateOf(n), root: () => visual(n) }))).catch(() => null);
+    rangeSeater = found && {
+      template: found.template, name: planeWords(found.template), gunners: found.gunners,
+      make: () => new Aircraft(found.root.clone(true), null, schoolFrame()),
+      visual: () => found.root.clone(true),
+    };
+    school?.planesChanged();
   }
 
   // A plane's own model by template, for the recorded fights: loaded once,

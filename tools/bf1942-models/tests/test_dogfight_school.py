@@ -54,6 +54,13 @@ MODULES = {
     "dogfight-doctrine.js": VIEWER / "dogfight-doctrine.js",
     "dogfight-measure.js": VIEWER / "dogfight-measure.js",
     "dogfight-fight.js": VIEWER / "dogfight-fight.js",
+    # A two-seater's gunners: their arcs off the model (`dogfight-gunner-seats.js`,
+    # with the play front end's seat survey and aim rig), fired by the fight.
+    "dogfight-gunners.js": VIEWER / "dogfight-gunners.js",
+    "dogfight-gunner-seats.js": VIEWER / "dogfight-gunner-seats.js",
+    "seat-survey.js": VIEWER / "seat-survey.js",
+    "turret-rig.js": VIEWER / "turret-rig.js",
+    "fire-timer.js": VIEWER / "fire-timer.js",
     "dogfight-rings.js": VIEWER / "dogfight-rings.js",
     "dogfight-guide.js": VIEWER / "dogfight-guide.js",
     "dogfight-steps.js": VIEWER / "dogfight-steps.js",

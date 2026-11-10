@@ -813,6 +813,45 @@ aimed count, the kill, and the theatre's frame and reading of it.
   client recordings prove them by hit points, which only the client's
   replicated objects carry.
 
+## The gunners' rounds (2026-11-11)
+
+A two-seater's or a bomber's gunner fires from the pilot's own plane, and
+the recorder writes each of their rounds as it does the pilot's: an `f` row
+naming the plane's root object (`id`), the gunner's pid and the FireArms
+(`w`), with the muzzle and the line. So their fire is in the data.
+
+- **The round replay already drew it.** `replay.js` `fireShot` fires every
+  recorded round through the hull's own gun group of that name
+  (`replay-hulls.js` `fire`), seat or not. Checked headless on Coral Sea
+  (recording `cfpgwfjku8`, 1613 to 1619 s): an Aichi Val with pid 26 flying
+  and pid 15 in its rear seat. The file holds 57 `MG42_Air` rounds from that
+  seat; played through, the Val's own `MG42_Air` group fired 50 of them in
+  the window, every one with a streak and every second one the gun's own
+  tracer mesh (its interval 2), 3 to 6 of them in the air at each sample,
+  with the muzzle flash at the rear cockpit. Not in the data: nothing.
+- **The school's recorded fights did not.** `sampleFight` kept the two
+  pilots' rounds only, so a gunner's fire was in the recording and not in
+  the fight file. It now adds every round fired from the same plane by
+  whoever sat in another of its seats then (`rootOf` on the shooter's
+  controlled object), marked `gunner: true`; the detector's evidence still
+  weighs the pilots' aimed shots alone. `recordedFight` makes them rounds
+  that are not the pilot firing, and the theatre draws them as that gun's own
+  tracer at its own muzzle speed, read off the plane drawn
+  (`timeGunnerRounds`), with a flash at the muzzle. The index row counts them
+  (`sides[i].gunner`), and `--report` prints them.
+- Over the cached recordings (37), six fights carry gunner fire: El Alamein
+  (`558jj8m4nb-73`, a Yak 9 on a Stuka, 40 rounds), Rush to Baghdad (a BF110
+  against a Defiant, both gunners firing, 70 and 89), Bocage twice (a B-17's
+  gunners, 211 and 67), Battle of Makin twice (a Ki-45b's gunner, 93 and 75).
+  The El Alamein fight is the test fixture
+  (`tests/fixtures/gunner_stuka_558jj8m4nb.ndjson.gz`,
+  `test_dogfight_gunners.py`); headless in the school, its Stuka's gunner
+  draws 2 to 3 `MG42_Air` streaks in the air through the burst, the gun's own
+  mesh at 1000 m/s.
+- The live list gains them when the refresh job next rebuilds it: the job
+  fingerprints the image's code version, so the first run after this deploy
+  rebuilds every fight.
+
 ## Next: what wins
 
 Done: the manoeuvres are named (checked against the lessons) and scored
