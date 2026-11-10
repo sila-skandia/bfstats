@@ -17,7 +17,7 @@
 // Pure: no DOM, no renderer, so the theatre, the live fight and the tests
 // share it.
 
-import { runDuel } from './dogfight-duel.js';
+import { runDuel, fitAirframe } from './dogfight-duel.js';
 
 const DEG = 180 / Math.PI;
 
@@ -324,11 +324,18 @@ export function resultWords(s) {
 export async function extendFrom(fight, side, i0, { states, mems = [{}, {}], throttles = [1, 1], opponent, makePlanes, seconds = DEADLOCK.seconds,
                                                       origin = [0, 0, 0], groundAt = () => origin[1], gun = {}, arena = null, skill = 0.85, yieldTo = null, rules = DEADLOCK } = {}) {
   const turn = turnDirOf(fight.tracks[side], i0);
+  // A way out holds the height it began at, and a pilot's memory is in the
+  // pilot's own space: a jet's pilot sees the fight at the Spitfire's size
+  // (`dogfight-duel.js` `pilotView`), so its height is the real one over the
+  // airframe's pace. Seeded with the real height, a jet's way out aimed
+  // pace times too high.
+  let pace = 1;
+  try { pace = fitAirframe(makePlanes[side](), makePlanes[side]).pace; } catch { pace = 1; }
   const results = [];
   for (const way of WAYS) {
     const sides = [];
     sides[side] = { plan: way.plan, state: states[side], throttle: throttles[side], skill,
-                    memory: { after: 0, pick: true, side: turn, dir: turn, y0: states[side].position[1] } };
+                    memory: { after: 0, pick: true, side: turn, dir: turn, y0: states[side].position[1] / pace } };
     sides[1 - side] = { plan: opponent.plan, state: states[1 - side], throttle: throttles[1 - side], skill: opponent.skill ?? 1,
                         memory: opponent.memory ?? mems[1 - side] ?? {} };
     let flown;

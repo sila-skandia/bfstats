@@ -93,14 +93,12 @@ the ace's (0) and your (1) airframes.
 
 ## Open
 
-- **A way out's memory in `extendFrom`.** `dogfight-deadlock.js` line 331
-  seeds the way's pilot with `y0: states[side].position[1]`, a real height,
-  inside a duel whose pilot sees heights shrunk. On a jet, every way out
-  that holds `y0` aims about `pace` times too high. This affects the
-  theatre's extended scene and the live card alike. The fix belongs in
-  `extendFrom` (`y0` from `pilotView(fit.pace).see(state)`), which was
-  outside this change's files. The way flown live afterwards (`flyChosen`)
-  is fitted.
+- **Fixed since: a way out's memory in `extendFrom`.**
+  `dogfight-deadlock.js` seeded a way's pilot with `y0`, the real height,
+  inside a duel whose pilot sees heights shrunk, so on a jet every way out
+  that holds its height aimed about `pace` times too high, in the theatre's
+  extended scene and on the live card alike. It now divides the height by
+  the airframe's pace (`fitAirframe`), as the way flown live already did.
 - **The coach's own numbers.** `dogfight-coach.js` judges real ranges and
   speeds against Spitfire thresholds: a stall under 28 m/s, "closing fast"
   under 250 m, the 300 to 900 m approach. That is correct for the screen but
