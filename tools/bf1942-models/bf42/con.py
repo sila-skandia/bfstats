@@ -624,6 +624,22 @@ def curve(token: str, channels: int = 1) -> list[list[float]] | None:
     return ramp
 
 
+
+def canonical_class_word(word: str) -> str:
+    """`ObjectTemplate.create <word>`'s class word in the class's own spelling
+    when the word names a class whole, case blind: BF1918 writes `engine`,
+    `wing`, `lodobject`, `playercontrolobject` (its Eindecker, Taube, SE5 and
+    five more), which the engine reads case blind (LOAD-19), and every reader
+    here and in the page compares the canonical spelling. A word that only
+    starts a class name (`Simple`, `TimerObjective`) or names none is kept as
+    written; `template_table.template_class` is the full prefix rule."""
+    from .template_table import TEMPLATE_CLASSES
+    lowered = word.lower()
+    for _cid, name in TEMPLATE_CLASSES:
+        if name.lower() == lowered:
+            return name
+    return word
+
 @dataclass
 class ChildRef:
     """One `addTemplate` — a named template placed at an offset in its parent."""
@@ -2475,7 +2491,8 @@ class ObjectLibrary:
                     parts = args.split()
                     if len(parts) < 2:
                         continue
-                    obj = ObjectTemplate(name=parts[1], kind=parts[0], source=path)
+                    obj = ObjectTemplate(name=parts[1], kind=canonical_class_word(parts[0]),
+                                         source=path)
                     self.objects.setdefault(parts[1].lower(), obj)
                     geom, child = None, None
                 elif obj is None:

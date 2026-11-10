@@ -75,3 +75,20 @@ class TruecolourFontAtlas(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+class ClassWordCase(unittest.TestCase):
+    """`ObjectTemplate.create engine ...`: the engine reads the class word case
+    blind (LOAD-19); BF1918's Eindecker, Taube, SE5 and five more write
+    `engine` and `wing` and flew the page's fallback table."""
+
+    def test_a_lowercase_class_is_the_class(self):
+        from bf42.con import canonical_class_word as c
+        self.assertEqual(("Engine", "Wing", "PlayerControlObject", "LodObject", "RotationalBundle"),
+                         (c("engine"), c("wing"), c("playercontrolobject"), c("lodObject"),
+                          c("rotationalBundle")))
+
+    def test_a_prefix_or_a_typo_is_kept_as_written(self):
+        from bf42.con import canonical_class_word as c
+        self.assertEqual(("Simple", "SimepleObject", "TimerObjective"),
+                         (c("Simple"), c("SimepleObject"), c("TimerObjective")))
