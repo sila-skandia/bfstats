@@ -184,4 +184,5 @@ script (`explodeNearEnemyDistance`; dogfight-doctrine, "Research notes").
 - **Not flown by a person.** Checked headless (Chrome, 1440 px): the card on
   three arenas, the fight's button, FLY IT into Desert Shield (the F-16
   airborne against the ace), the list's screenshot looked at, no page
-  errors.
+  errors. Live on play.bfstats.io since 2026-11-10 (the page opens on
+  Desert Shield, F-16 against MiG-29, with the twelve rules).

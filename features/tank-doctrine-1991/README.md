@@ -150,3 +150,5 @@ smoke grenade its slowest-first order put there.
   published, so nobody has seen it there.
 - **Not looked at by a person.** Checked headless (Chrome, 1440 px): five
   pairings' verdicts read, the card's screenshot looked at, no page errors.
+  Live on play.bfstats.io since 2026-11-10 (the page opens on the 73
+  Easting, M1A1 against T-72, with the twelve rules).
