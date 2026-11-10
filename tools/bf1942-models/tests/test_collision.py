@@ -380,6 +380,26 @@ class CollisionModuleTests(unittest.TestCase):
         self.assertEqual(6.0, r["raisedAgain"])
         self.assertEqual(1, r["movedEntries"])
 
+    def test_a_part_swung_on_a_hull_that_never_moved_moves_its_collision(self) -> None:
+        # BF1918's Bunkertuer: the door stands where the level put it and its
+        # leaf swings on the arrows (`WorldCollider.syncRigParts`).
+        r = self.results["rigSwing"]
+        self.assertEqual(6.0, r["shut"])
+        # Swung but not re-asked: the bake's leaf still stands (the old limit).
+        self.assertEqual(6.0, r["swungUnsynced"])
+        # Re-asked: the doorway is open to a ray and a soldier's sweep,
+        self.assertIsNone(r["swungAhead"])
+        self.assertIsNone(r["swungSweep"])
+        # the leaf stands where it swung to, the hull's floor where it was,
+        self.assertEqual(0.0, r["swungLeaf"]["y"])
+        self.assertEqual(r["swungLeaf"]["owner"], r["floorStays"]["owner"])
+        self.assertEqual(0.0, r["floorStays"]["y"])
+        # and the hull itself never left the index proper.
+        self.assertFalse(r["ownerMoved"])
+        # Shut again: the leaf is back and its own frame retired.
+        self.assertEqual(6.0, r["shutAgain"])
+        self.assertEqual(0, r["movedEntries"])
+
     def test_a_triangle_passed_over_in_one_cell_is_still_met_in_the_next(self) -> None:
         # `cast` rejects a triangle against the ray's box over the cell it is
         # walking. A triangle rejected there and listed in the next cell too

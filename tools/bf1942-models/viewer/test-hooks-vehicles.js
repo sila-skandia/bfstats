@@ -151,7 +151,10 @@ export function installVehicleHooks(page) {
   window.__aimSeat = (angles = {}) => {
     const rig = page.localPlayer.occupancy?.turret;
     if (!rig) return null;
-    for (const axis of rig.axes) {
+    // A seat's key levers (a door's swing on the arrows) are laid the same
+    // way, by their axis name, and listed with `lever: true`.
+    const all = [...rig.axes, ...(rig.keyAxes ?? [])];
+    for (const axis of all) {
       const want = Number(angles[axis.axisName]);
       if (!Number.isFinite(want)) continue;
       axis.angle = want;
@@ -162,7 +165,8 @@ export function installVehicleHooks(page) {
     // The servo's own words beside the angle, so a check can tell an axis its
     // data holds still (no `maxSpeed`, or a non-wrapping range of zero width)
     // from a dead one.
-    return rig.axes.map(a => ({ axis: a.axisName, angle: a.angle,
+    return all.map(a => ({ axis: a.axisName, angle: a.angle,
+      lever: !rig.axes.includes(a), input: a.spec?.input ?? null,
       maxSpeed: a.spec?.maxSpeed ?? 0, continuous: a.spec?.continuousRotation ?? 0,
       free: !!a.spec?.free, min: a.spec?.min ?? 0, max: a.spec?.max ?? 0,
       automaticReset: !!a.spec?.automaticReset }));

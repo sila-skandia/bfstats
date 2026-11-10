@@ -1482,4 +1482,38 @@ function cadenceRig(stats) {
   };
 }
 
+// --- a door on the arrows (BF1918's Bunkertuer, Schranke1): no gun, no mouse ---
+{
+  const mk = () => {
+    const leaf = node('BunkertuerGunBase', {
+      templateKind: 'RotationalBundle', control: 'Bunkertuer',
+      rig: { axes: { yaw: { input: 'c_PIPitch', min: 0, max: 90, free: false, driver: 'position',
+        maxSpeed: 20, direction: 1, acceleration: 50 } }, automaticReset: false, control: 'Bunkertuer' },
+    });
+    const camera = node('BunkertuerGunnerCamera', { templateKind: 'Camera', control: 'Bunkertuer' });
+    const root = node('Bunkertuer', { templateKind: 'PlayerControlObject', control: 'Bunkertuer', physics: {} },
+      node('BunkertuerComplex', { templateKind: 'Bundle', control: 'Bunkertuer' }, leaf, camera));
+    return { root, leaf };
+  };
+  const yaw = n => round(new THREE.Euler().setFromQuaternion(n.quaternion, 'YXZ').y * 180 / Math.PI, 1);
+  const { root, leaf } = mk();
+  const occ = new VehicleOccupancy(root);
+  const rig = occ.setActiveSeat(occ.rootId);
+  const rows = [];
+  if (rig) {
+    for (const [pitch, ticks] of [[1, 30], [1, 150], [0, 30], [-1, 300]]) {
+      for (let i = 0; i < ticks; i++) { rig.aim(5, 5, 0); rig.keys({ c_PIPitch: pitch }); rig.step(1 / 30); }
+      rows.push(Math.abs(yaw(leaf)));
+    }
+  }
+  results.doorLever = {
+    rootKind: occ.rootKind,
+    seatKind: occ.seatKind(occ.rootId),
+    rig: !!rig,
+    aimAxes: rig ? rig.axes.length : null,
+    keyAxes: rig ? rig.keyAxes.map(a => `${a.node.name}/${a.axisName}`) : null,
+    rows,
+  };
+}
+
 process.stdout.write(JSON.stringify(results, null, 2));

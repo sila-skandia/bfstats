@@ -647,7 +647,11 @@ export function createLocalLook(page) {
     // test is now "is there a turret" rather than "is this a gunner". A
     // drivetrain seat with no turret — a jeep, an aircraft — still falls
     // through to `view.turn` below and swings the camera as it always did.
-    if (page.optPilot.checked && page.occupancy?.turret) {
+    // A rig with only key levers (a door, a barrier) takes no mouse: its
+    // seat's view keeps it.
+    const rig = page.occupancy?.turret;
+    const leversOnly = Array.isArray(rig?.axes) && rig.axes.length === 0 && !rig.carriage;
+    if (page.optPilot.checked && rig && !leversOnly) {
       // Not applied here any more: the counts go into the input stage and the
       // frame's pump turns them into one axis pair that every tick of that frame
       // reads (`stepTurret`). Several `mousemove` events between two frames

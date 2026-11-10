@@ -460,12 +460,48 @@ export class WorldCollider {
 
   /** The owner is back where it was baked (a respawn), or gone (a wreck). */
   clearMovedOwner(owner, { enable = true } = {}) {
-    if (!this.moved.delete(owner)) return;
+    const had = this.moved.delete(owner);
+    // Its swung parts go too, also those of a hull that never moved but
+    // whose rig did (`syncRigParts`).
     for (const id of this._subsByOwner?.get(owner) ?? []) {
       this.moved.delete(`sub:${id}`);
       this.statics._subActive[id] = 0;
     }
+    if (!had) return;
     if (enable) this.statics?.enableOwner?.(owner);
+  }
+
+  /**
+   * A hull's rig has turned a part of it (`TurretRig.step`): re-ask its
+   * articulated sub-parts where they now stand. A hull that has moved is
+   * re-asked on its own record; one still where the index baked it (a
+   * stationary gun, BF1918's `Bunkertuer` door and `Schranke1` barrier) is
+   * answered by the index proper, and only a swung part takes an entry of
+   * its own, framed `On * inv(Ob)` so the owner's own triangles stay where
+   * they are. Before this only a hull that moved ever re-asked its parts,
+   * so a door swung open kept its leaf's triangles standing shut across the
+   * doorway (`features/articulated-hull-collision`, Limits).
+   */
+  syncRigParts(owner, radius = 5) {
+    if (!(owner >= 0) || !this.statics?.subParts?.length) return;
+    const m = this.moved.get(owner);
+    if (m) { this.#syncSubParts(owner, m); return; }
+    const node = this.statics.ownerNodes?.[owner];
+    const part = this.statics.subParts.find(p => p.owner === owner);
+    if (!node?.matrixWorld || !part) return;
+    const still = this._still ??= { fwd: new Float64Array(16), inv: new Float64Array(16),
+                                    x: 0, y: 0, z: 0, radius: 0, sub: -1 };
+    invert4(part.ownerBaked, _tmpA);
+    mul4(node.matrixWorld.elements, _tmpA, still.fwd);
+    invert4(still.fwd, still.inv);
+    const e = node.matrixWorld.elements;
+    still.x = e[12]; still.y = e[13]; still.z = e[14];
+    still.radius = radius;
+    if (this.statics && !this.statics.movedPass) {
+      this.statics.movedPass = (ox, oy, oz, dx, dy, dz, best, skipOwner, out, groups = 0, ownHits = 0) =>
+        this.castMoved(ox, oy, oz, dx, dy, dz, best, skipOwner, out, groups, ownHits);
+    }
+    this.#syncSubParts(owner, still);
   }
 
   /**

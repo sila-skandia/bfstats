@@ -498,6 +498,44 @@ results.surfaceHeight = {
   results.articulated = r;
 }
 
+// The same hull standing where it was baked, its ramp swung by its own rig
+// with the hull never moved (`WorldCollider.syncRigParts`): BF1918's
+// `Bunkertuer` door and `Schranke1` barrier, a stationary gun's traverse.
+{
+  const RAISED = [1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1, 0, 5, 0, 0, 1];
+  const LOWERED = [0, -1, 0, 0, 1, 0, 0, 0, 0, 0, 1, 0, 5, 0, 0, 1];
+  const floor = fakeMesh([0, 0, -1, 5, 0, -1, 5, 0, 1, 0, 0, 1],
+                         { index: [0, 1, 2, 0, 2, 3], material: 85 });
+  const wall = fakeMesh([0, 0, -1, 0, 3, -1, 0, 3, 1, 0, 0, 1],
+                        { index: [0, 1, 2, 0, 2, 3], material: 85, matrix: RAISED });
+  const ramp = group([wall]);
+  ramp.name = 'Leaf';
+  ramp.userData = { rig: { axes: { yaw: { input: 'c_PIPitch', driver: 'position' } } } };
+  ramp.matrixWorld = { elements: RAISED.slice() };
+  const hull = group([floor, ramp]);
+  hull.matrixWorld = { elements: IDENTITY };
+  const door = buildCollisionIndex(group([hull]), { ownerRoots: [hull] });
+  const w = new WorldCollider({ statics: door });
+  const owner = door.ownerOf(hull);
+  const ahead = () => w.cast(-1, 1, 0, 1, 0, 0, 20, -1);
+  const r = { shut: ahead() && round(ahead().t) };
+  ramp.matrixWorld.elements = LOWERED.slice();
+  r.swungUnsynced = ahead() && round(ahead().t);
+  w.syncRigParts(owner, 10);
+  r.swungAhead = ahead();
+  r.swungSweep = w.sweepSphere(-1, 1, 0, 1, 0, 0, 20, 0.3, -1);
+  const down = w.cast(6.5, 5, 0.2, 0, -1, 0, 20, -1);
+  r.swungLeaf = down && { y: round(down.y), owner: down.owner };
+  const floorHit = w.cast(2.5, 5, 0.2, 0, -1, 0, 20, -1);
+  r.floorStays = floorHit && { y: round(floorHit.y), owner: floorHit.owner };
+  r.ownerMoved = w.moved.has(owner);
+  ramp.matrixWorld.elements = RAISED.slice();
+  w.syncRigParts(owner, 10);
+  r.shutAgain = ahead() && round(ahead().t);
+  r.movedEntries = w.moved.size;
+  results.rigSwing = r;
+}
+
 // --- a triangle listed in more than one cell --------------------------------
 
 // `cast` walks the grid a cell at a time and throws a triangle out against the

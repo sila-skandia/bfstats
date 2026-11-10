@@ -98,6 +98,50 @@ def run_pads(loadouts: dict, scenes: list[dict]) -> dict:
         return _node(work, "pads.mjs", str(work / "input.json"))
 
 
+def run_pose() -> dict:
+    """`deployed_pose_harness.mjs`: an object a round places on a hill."""
+    if shutil.which("node") is None:
+        raise unittest.SkipTest("node is not installed")
+    three = VIEWER / "vendor" / "three.module.js"
+    if not three.exists():
+        raise unittest.SkipTest("three.module.js is not vendored")
+    with tempfile.TemporaryDirectory() as tmp:
+        work = Path(tmp)
+        (work / "package.json").write_text('{"type":"module"}\n')
+        for name in PAGE_MODULES:
+            shutil.copyfile(VIEWER / name, work / name)
+        (work / "node_modules" / "three").mkdir(parents=True)
+        shutil.copyfile(three, work / "node_modules" / "three" / "three.module.js")
+        (work / "node_modules" / "three" / "package.json").write_text(THREE_PACKAGE)
+        shutil.copyfile(TESTS / "deployed_pose_harness.mjs", work / "pose.mjs")
+        return _node(work, "pose.mjs")
+
+
+class DeployedPoseTests(unittest.TestCase):
+    """BF1918's DeployedStokes on a hill: `hasMobilePhysics 0`, so it stands at
+    the spawner's point turned as the spawner is (SPAWN-28, AI-121), not on
+    the slope; stood on a 48-degree slope's normal its barrel put its rounds
+    behind the gunner (features/bf1918-extraction)."""
+
+    @classmethod
+    def setUpClass(cls) -> None:
+        cls.results = run_pose()
+
+    def test_a_static_object_is_turned_as_the_round_left_the_hand(self) -> None:
+        f = self.results["fixed"]
+        self.assertTrue(f["placed"])
+        self.assertEqual(f["view"], f["fwd"])
+        self.assertAlmostEqual(0.985, f["up"][1], places=3)
+
+    def test_a_static_object_does_not_fall(self) -> None:
+        f = self.results["fixed"]
+        self.assertEqual(f["recordY"], f["y"])
+
+    def test_a_mobile_object_still_stands_on_the_slope(self) -> None:
+        # The page's settle (a viewer simplification): up the 40-degree normal.
+        self.assertEqual([0, 0.766, 0.643], self.results["mobile"]["up"])
+
+
 class DeployablesTests(unittest.TestCase):
     results: dict
 

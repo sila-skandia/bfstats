@@ -111,14 +111,20 @@ export class VehicleOccupancy {
    *  seat model. */
   rigFor(id) {
     const seat = this.seatInfo(id);
-    if (!seat || !hasAimAxes(seat)) return null;
+    if (!seat) return null;
+    // A drivetrain's root seat leaves its levers to the drive
+    // (`advanceSurfaces`); every other seat's rig steps its own.
+    const keys = !(id === this.rootId && DRIVE_KINDS.includes(this.rootKind));
+    // A seat whose only bundles are levers on the keys is a rig too:
+    // `RotationalBundle::handlePlayerInput` reads whatever PlayerInput the
+    // bundle is bound to (GUN-2), mouse or key. BF1918's `Bunkertuer` swings
+    // its door on `c_PIPitch` (the land map's arrows, 0..90 deg) and
+    // `Schranke1` lifts its barrier the same way, with no gun and no
+    // mouse-look axis under either; with no rig the leaf never moved.
+    if (!hasAimAxes(seat) && !(keys && seat.keyAxes?.length)) return null;
     let rig = this.turrets.get(id);
     if (!rig) {
-      // A drivetrain's root seat leaves its levers to the drive
-      // (`advanceSurfaces`); every other seat's rig steps its own.
-      rig = new TurretRig(seat, {
-        keys: !(id === this.rootId && DRIVE_KINDS.includes(this.rootKind)),
-      });
+      rig = new TurretRig(seat, { keys });
       this.turrets.set(id, rig);
     }
     // The nodes have been sitting wherever `applyRig` left them while this

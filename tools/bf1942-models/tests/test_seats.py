@@ -901,5 +901,24 @@ class SeatsModuleTests(unittest.TestCase):
         self.assertEqual(0, k["driveRootKeyAxes"])
 
 
+    # --- a door on the arrows (BF1918's Bunkertuer) ---------------------------
+
+    def test_a_seat_whose_only_bundle_is_a_key_lever_has_a_rig(self) -> None:
+        d = self.results["doorLever"]
+        self.assertEqual("seat", d["seatKind"])
+        self.assertTrue(d["rig"])
+        self.assertEqual(0, d["aimAxes"])
+        self.assertEqual(["BunkertuerGunBase/yaw"], d["keyAxes"])
+
+    def test_the_door_swings_on_its_key_and_stays(self) -> None:
+        # Arrow up 1 s: on its way; 6 s: open at its 90 deg stop; let go: it
+        # stays (no automaticReset); arrow down 10 s: shut. The mouse moves
+        # nothing (the rig has no aim axis).
+        rows = self.results["doorLever"]["rows"]
+        self.assertGreater(rows[0], 0)
+        self.assertLess(rows[0], 90)
+        self.assertEqual([90, 90, 0], [round(r) for r in rows[1:]])
+
+
 if __name__ == "__main__":
     unittest.main()

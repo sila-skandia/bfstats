@@ -16,7 +16,10 @@
 // the page already runs for a placed emplacement runs for it, E and all. It
 // falls to the ground under where it appeared, facing the way the round flew,
 // upright on the surface (the engine lets its springs settle it: a viewer
-// simplification). Its abandoned clock is `AbandonClock`; at 0 hit points it
+// simplification). An object with no mobile physics (BF1918's deployed
+// Stokes, Werfer16 and Hotchkiss) neither falls nor settles: it stands at
+// the spawner's point, turned as the round left the hand (`poseObject`).
+// Its abandoned clock is `AbandonClock`; at 0 hit points it
 // plays its armour's death effects and is gone (`timeToLiveAfterDeath 0`).
 // Rounds and blasts do not reach it: it is in no collision index the page
 // builds at load.
@@ -167,8 +170,32 @@ export function createDeployablesPage(page) {
 
   /** Stand `node` at `record`'s landing: up the surface normal, its -Z (the
    *  engine's forward, through `bf42/gltf.py`'s Z mirror) down the round's
-   *  heading. */
+   *  heading. An object whose PCO has no mobile physics (`record.fixed`)
+   *  stands where the spawner put it, turned as the spawner is. */
   function poseObject(node, record) {
+    if (record.fixed) {
+      // `spawnObject` 0x083140a0 creates the object at the spawner's
+      // position with the rotation of its absolute transformation (AI-121,
+      // SPAWN-28), which rides the round, and nothing turns a round with no
+      // response physics (`deployables.js` `launchBomb`): the thrower's view
+      // frame. A `hasMobilePhysics 0` PCO is a StaticPhysicsNode, so no
+      // gravity takes it down and no terrain contact stands it on the slope
+      // (`StaticResponsePhysics::checkVsTerrain` is empty, HP-21). BF1918's
+      // DeployedStokes, DeployedWerfer16 and DeployedHotchkiss_MG are such:
+      // stood on the slope's normal, a Stokes thrown up a hill sat 48 degrees
+      // nose-up and its barrel, 60 degrees up the mortar's own front, put its
+      // rounds behind the gunner.
+      const f = record.entry.bomb.frame;
+      sideAxis.set(f.right[0], f.right[1], f.right[2]);
+      upAxis.set(f.up[0], f.up[1], f.up[2]);
+      // +Z of the node is the engine's backward.
+      fwdAxis.set(-f.forward[0], -f.forward[1], -f.forward[2]);
+      basis.makeBasis(sideAxis, upAxis, fwdAxis);
+      node.quaternion.setFromRotationMatrix(basis);
+      node.position.set(record.x, record.y, record.z);
+      node.updateMatrixWorld(true);
+      return;
+    }
     const field = page.collider?.heightfield;
     if (field) {
       field.normal(record.x, record.z, normalScratch);
@@ -196,7 +223,7 @@ export function createDeployablesPage(page) {
     const f = entry.bomb.frame.forward;
     const record = {
       id: nextObject++, template, spec, entry,
-      x: at[0], y: at[1], z: at[2], fallSpeed: 0,
+      x: at[0], y: at[1], z: at[2], fallSpeed: 0, spawnY: at[1], fixed: false,
       heading: [f[0], 0, f[2]],
       ground: surfaceAt(at[0], at[2], at[1] + 0.5),
       clock: new AbandonClock({
@@ -240,6 +267,14 @@ export function createDeployablesPage(page) {
       void wearPagePaint(node);
       (page.spawnersRoot ?? root)?.add(node);
       record.node = node;
+      // A PCO with no mobile physics does not fall (see `poseObject`): back to
+      // the spawner's point, whatever the fall did while the glb loaded.
+      if (node.userData?.physics?.hasMobilePhysics === false) {
+        record.fixed = true;
+        record.ground = null;
+        record.y = record.spawnY;
+        record.fallSpeed = 0;
+      }
       poseObject(node, record);
       page.dropEntryPoints?.();
     });

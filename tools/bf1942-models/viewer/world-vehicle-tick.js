@@ -346,7 +346,12 @@ export function vehicleTick(world, player, dt, integrators) {
       c_PIPitch: keyed ? input.pitch : 0,
       c_PIRoll: keyed ? input.roll : 0,
     });
+    const before = rigAngles(occ.turret);
     occ.turret.step(dt);
+    // A part the rig swung takes its triangles with it (`WorldCollider.
+    // syncRigParts`): a door's leaf, a barrier's pole, a gun's traverse on a
+    // hull that never moves. A driven hull's are re-asked with its body too.
+    if (rigAngles(occ.turret) !== before) syncRigCollision(world, occ);
   }
 
   // Kept unconditional for the same reason the page's copies are: a
@@ -382,6 +387,35 @@ export function vehicleTick(world, player, dt, integrators) {
     if (!group) continue;
     world.guns?.setFiring(group, trigger && state.canFire);
   }
+}
+
+/** A rig's angles summed, enough to tell whether a tick moved any of them. */
+function rigAngles(rig) {
+  let sum = 0;
+  for (const axis of rig.axes ?? []) sum += axis.angle;
+  for (const axis of rig.keyAxes ?? []) sum += axis.angle;
+  if (rig.carriage) sum += rig.carriage.angle;
+  return sum;
+}
+
+const rigOwners = new WeakMap();
+
+/** Re-ask the swung parts of the hull `occ` sits in, where they stand now. */
+function syncRigCollision(world, occ) {
+  const collider = world.collider;
+  const root = occ.root;
+  if (!collider?.syncRigParts || !root) return;
+  const statics = collider.statics;
+  // The owner id is a walk of the index's owner list: once per hull and index.
+  let cached = rigOwners.get(root);
+  if (!cached || cached.statics !== statics) {
+    cached = { statics, owner: statics?.ownerOf?.(root) ?? -1 };
+    rigOwners.set(root, cached);
+  }
+  const owner = cached.owner;
+  if (owner < 0) return;
+  root.updateMatrixWorld(true);
+  collider.syncRigParts(owner, root.userData?.cullRadius ?? 5);
 }
 
 /** The channels a dead crew member's hands leave at zero. */
