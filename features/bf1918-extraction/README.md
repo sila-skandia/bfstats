@@ -923,3 +923,30 @@ separate cause, since fixed: a seated bot scored another hull without
 ramps, so a Pickup's driver left for another Pickup's passenger seat (63 from
 the seat, 44 on foot) and walked to a Shilka instead; `features/bot-garrison`,
 "One unit urgency, seated or on foot".
+
+separate cause.
+
+## Horses gallop: a free key axis spins (2026-11-10)
+
+The owner: our horses glide; retail's move their legs (the rifle floating
+over a riderless horse is retail's too, and stays). A horse is a land hull
+whose legs are chains of RotationalBundles on `c_PIThrottle`; the free ones
+(no range) turn without end while W is held and the 15-degree tilt of the
+child makes each lower leg sweep a cone. The page clipped a free key axis to
+a position, so every leg stood still (ledger GUN-25). `vehicle-base.js`
+`holdsAngle` / `heldAxisStep` now run GUN-2's wrap law on it.
+
+* Measured on aube_de_soiree's `Cavalry_K88` at a gallop: before, each lower
+  leg fixed against the hull; after, each sweeps about 0.6 m fore and aft and
+  lifts about 0.2 m, out of phase. Works for every tree's horses with no data
+  change: the level bakes already carried the axes.
+* The same law reaches BF1918's other free key axes (102 levels; none in
+  vanilla, the packs or the community maps): mortar and gun bases traverse
+  and hold instead of snapping back, the bicycle's pedals and wheel, the
+  RussoBalt's crankshaft and the Maxim's wheels turn on their keys.
+* Model files: `holds_key_axis` keeps a free key axis on a spring-less
+  browse model; `patch_held_axes.py --mod bf1918` put it back in 25 BF1918
+  model glbs (8 Cavalry_*, Horse, Horse_spear, the deployed Stokes, Werfer16
+  and Hotchkiss, the mortars, Maxims, bicycle), published. FH, FHSW and
+  FHSWEurope's horse model glbs (browse page and replays only) still lack it:
+  `patch_held_axes.py --mod <tree>` on a machine holding those trees.

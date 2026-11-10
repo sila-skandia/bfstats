@@ -157,7 +157,7 @@ function axisDirection(spec) {
  * turret's mouse-look axis is aimed by the seat, not here.
  */
 function holdsAngle(kind, spec) {
-  if (kind !== 'rotationalbundle' || spec.free || spec.driver === 'rate') return false;
+  if (kind !== 'rotationalbundle' || spec.driver === 'rate') return false;
   return HOLDING_INPUTS.has(spec.input);
 }
 
@@ -186,6 +186,32 @@ function heldBounds(spec) {
  * `reg = {value, speed}`.
  */
 export function heldAxisStep(spec, reg, raw, dt) {
+  // A free axis (min and max both 0, GUN-2's wrap gate) is a deflection of
+  // FREE_RANGE degrees per unit (`axisAngle`), and its angle is not clipped
+  // but wrapped once at +-180: a held key spins it for as long as it is
+  // held. FH's and BF1918's horses gallop on it: each leg is a chain of
+  // RotationalBundles on `c_PIThrottle`, the free ones turning at 900 deg/s
+  // (`horse_leg_FL1_rot1`, `setMaxSpeed 900/0/0`, `setAcceleration
+  // 1000/0/0`) about a child tilted 15 degrees, so the leg sweeps a cone, and
+  // the next one turning back (`-1000`) keeps the hoof upright. Clipped at a
+  // bound like a ranged axis, every leg froze at its first stop and the
+  // horse slid along on still legs (ledger GUN-25).
+  if (spec.free) {
+    const rate = Math.abs(spec.maxSpeed || 0) / FREE_RANGE;
+    const target = Math.max(-1, Math.min(1, raw || 0)) * rate;
+    const accel = Math.abs(spec.acceleration || 0) / FREE_RANGE;
+    if (!(accel > 0)) reg.speed = target;
+    else {
+      const step = accel * dt;
+      reg.speed += Math.max(-step, Math.min(step, target - reg.speed));
+    }
+    let value = reg.value + reg.speed * dt;
+    // One +-360 correction a tick, as `calculateAndClipAngle` makes it.
+    if (value > 1) value -= 2;
+    else if (value < -1) value += 2;
+    reg.value = value;
+    return reg;
+  }
   const span = Math.max(Math.abs(spec.min ?? 0), Math.abs(spec.max ?? 0)) || 1;
   const rate = Math.abs(spec.maxSpeed || span) / span;
   const target = Math.max(-1, Math.min(1, raw || 0)) * rate;

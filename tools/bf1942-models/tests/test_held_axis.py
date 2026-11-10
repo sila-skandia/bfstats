@@ -61,8 +61,37 @@ class HeldAxisTests(unittest.TestCase):
         self.assertLess(guard[6], guard[5])
         self.assertGreater(guard[6], 100)
 
-    def test_the_free_part_on_that_key_still_follows_the_key(self) -> None:
-        self.assertEqual([row[2] for row in self.r["horse"]][1], 0)
+    def test_a_free_part_on_that_key_spins_while_held_and_stops_where_it_is(self) -> None:
+        # GUN-2's wrap gate (min and max both 0): `Horse_wheelshake` has no
+        # range, so it does not follow the key to a position. S held for
+        # 0.5 s turned it, and released it slowed and stayed where it stopped
+        # (ledger GUN-25); it used to snap back to 0.
+        shake = [row[2] for row in self.r["horse"]]
+        self.assertNotEqual(shake[0], 0)
+        self.assertNotEqual(shake[1], 0)
+
+    def test_a_free_leg_turns_without_end_while_held(self) -> None:
+        # BF1918's `horse_leg_FL1_rot1` (900 deg/s, 1000 deg/s^2): the angle
+        # changes every tick for the whole 2 s hold, past +-180 (it wraps),
+        # at 30 deg a tick (900 deg/s) once the register is up to speed; the
+        # child turning back (`-1000`) runs the other way at the same rate.
+        spin = self.r["spin"][:60]
+        steps = []
+        for (a, _), (b, _) in zip(spin, spin[1:]):
+            d = (b - a + 180) % 360 - 180
+            steps.append(d)
+        self.assertTrue(all(d > 0 for d in steps), steps[:5])
+        self.assertAlmostEqual(steps[-1], 30.0, delta=0.5)
+        self.assertGreater(max(a for a, _ in spin), 150)
+        self.assertLessEqual(min(a for a, _ in spin[30:]), -150)
+        back = [((b - a + 180) % 360 - 180) for (_, a), (_, b) in zip(spin, spin[1:])]
+        self.assertAlmostEqual(back[-1], -30.0, delta=0.5)
+
+    def test_a_released_free_leg_slows_and_holds(self) -> None:
+        rest = [a for a, _ in self.r["spin"][60:]]
+        # 900 deg/s at 1000 deg/s^2 is 0.9 s, 27 ticks, to a stop; held after.
+        self.assertNotEqual(rest[0], rest[10])
+        self.assertEqual(rest[-1], rest[-10])
 
 
 if __name__ == "__main__":

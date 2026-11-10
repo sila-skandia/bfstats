@@ -1766,17 +1766,31 @@ class BrowseRigTests(unittest.TestCase):
         self.assertEqual("c_PIYaw", rig["axes"]["yaw"]["input"])
         self.assertEqual((-30.0, 30.0), (rig["axes"]["yaw"]["min"], rig["axes"]["yaw"]["max"]))
 
-    def test_a_reset_lever_and_a_free_axis_still_go(self) -> None:
+    def test_a_reset_lever_goes(self) -> None:
         lever = ObjectTemplate(name="Elco_ThrottleR", kind="RotationalBundle")
         lever.min_rotation = (0.0, -30.0, 0.0)
         lever.max_rotation = (0.0, 30.0, 0.0)
         lever.inputs = {"pitch": "c_PIThrottle"}
         lever.automatic_reset = True
-        crank = ObjectTemplate(name="Crank", kind="RotationalBundle")
-        crank.inputs = {"yaw": "c_PIYaw"}
 
         self.assertIsNone(browse_rig(lever, has_visible_springs=False))
-        self.assertIsNone(browse_rig(crank, has_visible_springs=False))
+
+    def test_a_free_held_axis_stays_without_springs(self) -> None:
+        """BF1918's `Cavalry_K88` hides every Spring, and its galloping legs
+        are free RotationalBundles on c_PIThrottle (`horse_leg_FL1_rot1`:
+        no range, 900 deg/s, 1000 deg/s^2). A free axis that is not
+        `setAutomaticReset` spins while held (GUN-2's wrap gate, GUN-25), so
+        it is a held key axis like a ranged one, and the browse model keeps
+        it; before, the horse stood still on its legs."""
+        leg = ObjectTemplate(name="horse_leg_FL1_rot1", kind="rotationalbundle")
+        leg.max_speed = (900.0, 0.0, 0.0)
+        leg.acceleration = (1000.0, 0.0, 0.0)
+        leg.inputs = {"yaw": "c_PIThrottle"}
+
+        rig = browse_rig(leg, has_visible_springs=False)
+
+        self.assertTrue(rig["axes"]["yaw"]["free"])
+        self.assertEqual("c_PIThrottle", rig["axes"]["yaw"]["input"])
 
     def test_aircraft_engine_keeps_throttle_without_springs(self) -> None:
         engine = ObjectTemplate(name="StukaEngine", kind="Engine")
