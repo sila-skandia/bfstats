@@ -112,3 +112,21 @@ seated him again (PomPom_Static).
 ## Knobs
 
 `GARRISON` in `doctrine-garrison.js` (KNOBS.md, "garrison" rows).
+
+## One unit urgency, seated or on foot (2026-11-10)
+
+The `Pickup` loop left open above had its own cause. `BBChange::calculateUrgency`
+0x0855e0c0 scores every unit around through `calculateVehicleUrgency`
+0x08583b10, seated or not (`features/bf1942-ai-research-2026-09-21/bot-behaviours.md`
+section 8; `features/bf1942-ai-spec/KNOBS.md`: the x2.5 move factor when a bot
+already sits in the unit, the 15 s ramps after the bot left it and after it
+spawned). `bot-mount.js` `urgencyChange` gave those three terms to the
+candidates on foot only. Seated, a Pickup's driver scored another Pickup's
+passenger seat, its driver a bot, at 63 (x4 on the move term); on foot the same
+seat was 44, so he walked to a Shilka (48), and from the Shilka's seat the
+Pickup was 63 again. The seated loop now scores a unit exactly as the foot
+branch does. `tests/test_bot_ai.py` `test_a_seated_bot_scores_a_unit_as_it_would_on_foot`.
+
+Rides shorter than 2 s, 16 bots, before -> after: DC Basrah's Edge 150 s, four
+runs 9, 4, 11, 3 -> three runs 0, 0, 0; FHSW Battle_Of_Orel-1943 150 s 4 -> 1;
+El Alamein 120 s 2 -> 0; BF1918 aube_de_soiree 180 s 0 -> 0.

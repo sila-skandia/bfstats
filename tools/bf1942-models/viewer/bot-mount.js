@@ -272,8 +272,17 @@ export function urgencyChange(bot, mod, now) {
       if (c.vehicleId === m.vehicleId) continue;          // the same hull is the teleport's business
       if (c.kind === 'air' && !candidateRunwayClear(bot, c)) continue;
       // `modifyForDriver` 0x0855f7d0 scales a secondary seat's whole urgency.
+      // The unit's own urgency is `calculateVehicleUrgency` 0x08583b10 as
+      // on foot, with its x2.5 move factor when a bot already moves it and
+      // its 15 s ramps after the bot left it or it spawned: the same unit
+      // scored higher from a seat than from the ground, so a bot drove a
+      // Pickup, got out for another Pickup's passenger seat (63 from the
+      // seat, 44 on foot), and walked to a Shilka instead, over and over.
+      const leftAge = bot._leftVehicle?.id === c.vehicleId ? now - bot._leftVehicle.at : Infinity;
       const u = unitUrgency({ health: c.health ?? 1, fire: bot._candidateFire(c),
-                              maxSpeed: c.maxSpeed ?? 0, value: c.value ?? 0, orderSplit: split }) * (c.seatFactor ?? 1);
+                              maxSpeed: c.maxSpeed ?? 0, value: c.value ?? 0, orderSplit: split,
+                              occupiedByBot: !!c.movedByBot,
+                              spawnAge: c.spawnAge ?? Infinity, leftAge }) * (c.seatFactor ?? 1);
       const f = Math.min(0.5, (CHANGE.searchRadius ** 2 - d * d) / CHANGE.searchRadius ** 2);
       const v = u * (f + 0.5);
       if (v > bestU) { best = { id: c.id, u: v, dist: d, cand: c }; bestU = v; bail = false; }

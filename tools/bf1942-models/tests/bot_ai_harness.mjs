@@ -30,7 +30,7 @@ import { approachAimValid, backOffGoal, backOffPoint, ARTILLERY_DRIVER } from '.
 import { fireMode, isArtilleryDriver } from './bot-perception.js';
 import { tankTurnTowards } from './bot-vehicle.js';
 import { curveOf } from './bot-decision.js';
-import { fixedAimable, gunsRule, planChange, execEnterVehicle, behindUnit, urgencyChangeTeleport, bailAllowedAt, changeArrive } from './bot-mount.js';
+import { fixedAimable, gunsRule, planChange, execEnterVehicle, behindUnit, urgencyChangeTeleport, bailAllowedAt, changeArrive, urgencyChange } from './bot-mount.js';
 import { updateObjectiveReadout } from './bot-decision.js';
 import { footingAt } from './bot-pose.js';
 
@@ -1418,8 +1418,46 @@ function stalemateScenario() {
     rule: [gunsRule({ waypoints: { guns: 'engaged' }, gunsRule: null }), gunsRule({ waypoints: { kind: 'WPPost' }, gunsRule: 'engaged' }),
            gunsRule({ waypoints: null, gunsRule: 'engaged' }), gunsRule({ waypoints: null })],
   };
+  // A seated bot scores another hull's seat with the unit urgency it would
+  // give it on foot (`calculateVehicleUrgency` 0x08583b10): x2.5 instead of
+  // x4 on the move term when a bot already moves that hull, and age / 15
+  // for a hull it left or that spawned within 15 s. Desert Combat's Pickups
+  // looped without it (63 from the seat, 44 on foot).
+  const seatedChange = (cand, leftAt = null) => {
+    const now = 100;
+    const mine = { id: 'A', vehicleId: 'A', pos: [0, 0, 0], seats: [{ isRoot: true, occupied: true }], value: 0 };
+    const bot = {
+      playerId: 'me', team: 1, position: [0, 0, 0], waypoints: null, navGrid: null,
+      vehicleCandidates: [mine, cand], changedTarget: {}, _lastChangeAt: -100, _changeResult: null,
+      _leftVehicle: leftAt === null ? null : { id: cand.vehicleId, at: leftAt },
+      // A hull that stands still and fires nothing: staying is 0, so the
+      // candidate's own score is what comes back.
+      vehicle: { id: 'A', vehicleId: 'A', drives: true, maxSpeed: 0, kind: 'ground', template: 'Pickup' },
+      world: { armorOf: () => null, occupiedDamageable: () => null },
+      _fireStrengthOf: () => 0, _seatStrengths: () => ({}), _otherSeats: () => [], _myType: () => 'Infantry',
+      _fixedAimable: () => true, _candidateFire: () => 0, _urgencyChangeTeleport: () => null,
+      _insideOrderedArea: () => true,
+    };
+    urgencyChange(bot, 1, now);
+    const best = bot._changeResult?.best ?? null;
+    return best ? { id: best.id, u: best.u } : null;
+  };
+  const passenger = { id: 'Bp', vehicleId: 'B', pos: [0, 0, 10], maxSpeed: 25, value: 0, health: 1, kind: 'ground', seatFactor: 1 };
+  const distF = Math.min(0.5, (CHANGE.searchRadius ** 2 - 100) / CHANGE.searchRadius ** 2) + 0.5;
+  const seatedScore = {
+    free: seatedChange({ ...passenger }),
+    movedByBot: seatedChange({ ...passenger, movedByBot: true }),
+    justLeft: seatedChange({ ...passenger }, 91),
+    justSpawned: seatedChange({ ...passenger, spawnAge: 6 }),
+    expect: {
+      free: unitUrgency({ maxSpeed: 25 }) * distF,
+      movedByBot: unitUrgency({ maxSpeed: 25, occupiedByBot: true }) * distF,
+      justLeft: unitUrgency({ maxSpeed: 25, leftAge: 9 }) * distF,
+      justSpawned: unitUrgency({ maxSpeed: 25, spawnAge: 6 }) * distF,
+    },
+  };
   return {
-    settle, outside, guns,
+    settle, outside, guns, seatedScore,
     flatDown12: approachAimValid(botAt(null), down12),
     noseDown10Down12: approachAimValid(botAt(pitched(-10)), down12),
     flatUp11: approachAimValid(botAt(null), up11),

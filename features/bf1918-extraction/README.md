@@ -918,4 +918,8 @@ seconds between a unit change and the next order, which made the base's
 field gun worth 25 on foot and 155 in the saddle; `features/bot-garrison`,
 "The rule between orders", has the mechanism, the fix and the counts. Open:
 DC's `Pickup` still loops (14 short rides in 150 s on Basrah's Edge), a
-separate cause.
+separate cause, since fixed: a seated bot scored another hull without
+`calculateVehicleUrgency`'s x2.5 for a hull a bot already moves and its 15 s
+ramps, so a Pickup's driver left for another Pickup's passenger seat (63 from
+the seat, 44 on foot) and walked to a Shilka instead; `features/bot-garrison`,
+"One unit urgency, seated or on foot".
