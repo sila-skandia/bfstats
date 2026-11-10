@@ -847,6 +847,19 @@ Key lnxded anchors (named): `HandFireArms::updateDeviation` 0x08293e80,
 
 ## 7. Open items
 
+- **A lateral 3.9 cm the exporter added, found and removed (2026-11-10,
+  ledger VIEW-17).** The rig held `Bip01` and `Spine Root` at their parsed
+  rests under the clip world's half-turn, which drew every first-person rig
+  twice `Spine Root`'s lateral rest (3.9 cm on `UsSoldier.ske`) right of the
+  engine. Zoomed, every rifle's front post sat 3.9-4.0 cm right of the eye;
+  placed at `ROOT_ALIGN` · (raw chain) it lands within a millimetre, which
+  the per-rifle `soldierZoomPosition` x values (tuned to the millimetre)
+  and the owner's retail check both say is right. The numbers below were
+  taken with the 3.9 cm in: it moves the chain's hip right hand ~55 px left
+  of (819, 615), out of the capture's box, and the front sight ~28 px left
+  of (700, 415). So the small-state capture now disagrees laterally too;
+  the item below stays open with that.
+
 - **The ~5° residual at the far end of the rig, and its ~20 px drift with
   pitch, are not the animation.** Closed on the animation side (§3, third
   pass): the upper-body machine holds the current state's 1P clip at a

@@ -274,36 +274,55 @@ def _under_grip(rt: pose_mod.RT) -> pose_mod.RT:
     )
 
 
+# The fixed change of frame from the engine's raw skeleton world to the rig's:
+# the clip world's half-turn against mesh world, no translation -- the same
+# `baf.ROOT_ALIGN` the third-person poses put on a clip's root track. The
+# viewer mounts the rig so that a rig point (x, y, z) lands in camera space at
+# (-x, z, y) (`viewer/arms-rig.js`: the half-turn about Y over the exporter's
+# Z-up pitch and glTF flip), and the engine draws a raw skeleton point at
+# rotate90aroundX . (x, y, z) = (x, -z, y) (ledger VIEW-17); this is the one
+# matrix that makes the two agree, so B . E drawn by the viewer is E drawn by
+# the engine.
+RAW_TO_RIG = baf.ROOT_ALIGN[0]
+
+
 def first_person_locals(skeleton: ske_mod.Skeleton,
                         locals_by_name: dict[str, pose_mod.RT],
                         held: set[str] | frozenset[str] = frozenset(),
                         ) -> dict[str, pose_mod.RT]:
-    """A 1P clip's locals, with any skeleton-root track in the rig's frame.
+    """A 1P clip's locals, with the bones above the arms placed as the engine
+    places them.
 
-    A first-person rig holds the bones above the arms that the idle does not
-    key (`Bip01`, and `Spine Root` under it) at their parsed `.ske` rests in
-    every family, and every bone a clip keys at the clip's raw value: the
-    idle's base pose is built that way and no vanilla 1P clip keys the root.
-    The engine multiplies the clip's raw values throughout, so the rig draws
-    the engine's raw world left-multiplied by K = parsed(chain) . raw(chain)^-1,
-    the chain being those bones from the root down to the first one the idle
-    keys (`held`). A clip that keys the root therefore has the chain's engine
-    product E (its own tracks, the raw rest where it has none) placed as
-    root = K . E . parsed(chain below the root)^-1 over the parsed rests, so
-    the arms' world is K times the engine's, as in every other family.
-    `pose.align_clip_roots`'s ROOT_ALIGN is the third-person answer, where
-    every clip keys the root.
+    The clip keys the arms (`Bip01 Spine` and up) at their raw values, which
+    the engine multiplies over the `.ske` rest of the bones it does not key
+    (`Bip01`, and `Spine Root` under it; BFSoldier::setFirstPerson restores
+    them, lnxded 0x0826d3d9). The rig holds the bones below the root at their
+    parsed rests, so the root is written as
+    root = RAW_TO_RIG . E . parsed(chain below the root)^-1, E being the
+    engine's product of the chain from the root down to the first bone the
+    idle keys (`held`): the clip's own tracks where it keys one, the raw rest
+    where it does not. The arms' world is then RAW_TO_RIG times the engine's,
+    in every family and every frame.
+
+    Until 2026-11-10 a clip that did not key the root left the root at its
+    parsed rest, which is K . E with K = parsed(chain) . raw(chain)^-1. For
+    `UsSoldier.ske` (every soldier of every tree) K is RAW_TO_RIG plus a
+    translation of -0.0392 m along x: twice `Spine Root`'s lateral rest,
+    which the half-turn flips and the parsed rest does not. It drew every
+    first-person rig 3.9 cm right of where the engine draws it, so a zoomed
+    rifle's sights sat right of the screen centre the round leaves from
+    (ledger VIEW-17).
 
     Two installed 1P clips key the root: FH's `1PFireFG42.baf` (Bip01 on its
     raw rest) and XPack2's `1PDeployGewehr42.baf` (Bip01 and Spine Root
-    turned 40 degrees, easing back). Under ROOT_ALIGN the FG42 jumped 1.24 m
-    out of the view on each shot where the files move it 7 cm.
+    turned 40 degrees, easing back). `pose.align_clip_roots` alone, which
+    turns only the root track and leaves the spine root at its parsed rest,
+    jumped the FG42 1.24 m out of the view on each shot where the files move
+    it 7 cm; here the whole held chain is the engine's, then turned.
     """
     out = dict(locals_by_name)
     bones = skeleton.bones
     names = [ske_mod.canonical(bone.name) for bone in bones]
-    if not any(bone.parent < 0 and names[i] in out for i, bone in enumerate(bones)):
-        return out
     hand = names.index("bip01 r hand") if "bip01 r hand" in names else None
     if hand is None:
         return out
@@ -318,19 +337,17 @@ def first_person_locals(skeleton: ske_mod.Skeleton,
         if names[index] in held:
             break
         chain.append(index)
-    if not chain or names[chain[0]] not in out:
+    if not chain:
         return out
     identity = ((1.0, 0.0, 0.0), (0.0, 1.0, 0.0), (0.0, 0.0, 1.0)), (0.0, 0.0, 0.0)
-    parsed = raw = engine = below = identity
+    engine = below = identity
     for depth, index in enumerate(chain):
         rest = (bones[index].rotation, bones[index].translation)
-        parsed = pose_mod.rt_mul(parsed, rest)
-        raw = pose_mod.rt_mul(raw, _conjugate(rest))
         engine = pose_mod.rt_mul(engine, out.get(names[index], _conjugate(rest)))
         if depth:
             below = pose_mod.rt_mul(below, rest)
             out[names[index]] = rest
-    to_rig = pose_mod.rt_mul(parsed, pose_mod.rt_inverse(raw))
+    to_rig = (RAW_TO_RIG, (0.0, 0.0, 0.0))
     out[names[chain[0]]] = pose_mod.rt_mul(
         pose_mod.rt_mul(to_rig, engine), pose_mod.rt_inverse(below))
     return out
