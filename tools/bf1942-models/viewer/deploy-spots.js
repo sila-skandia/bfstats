@@ -91,6 +91,8 @@ export function flagMapSpots(flag, served = null) {
     if (spots.length || hidden) return spots;
   }
   if (!flag?.position) return [];
+  const split = flag.vehicle ? null : offeredGroupSpots(flag, table, team);
+  if (split) return split;
   if (!flag.vehicle && table?.live) {
     const ids = flagGroupIds(flag);
     const said = ids.map(id => [id, servedDraws(table, id, team)]).filter(([, d]) => d != null);
@@ -100,6 +102,47 @@ export function flagMapSpots(flag, served = null) {
     }
   }
   return [{ group: null, position: flag.position }];
+}
+
+/**
+ * A control point whose two groups both spawn its side: one ring per group,
+ * at the average of that group's points, or null for a flag offering one
+ * group (or none), which keeps its one ring at the flag.
+ *
+ * The screen lists groups, not control points (SPAWNGRP-10:
+ * `getGroupsForTeam` offers each group of the side, `BFSpawnGroup::calcNewPos`
+ * puts its ring at the mean of its active points, and a spawn on it draws
+ * `rand() %` among that group's points alone). A point holding a side enables
+ * one of its groups and leaves the other on its `groupTeam` (SPAWNGRP-4), so
+ * both can be the owner's: BF1918's Toska Airbattle `Entente_Base` (groups 2
+ * and 3, both `groupTeam 2`) is the French base and, 1.4 km off, the French
+ * airfield with its Caudrons and Spad. One ring at the flag put every French
+ * spawn at the base (t2 F9). Vanilla's one such case is Kasserine Pass
+ * SinglePlayer's `axis_base` (1 and 6, both Axis at the start).
+ */
+function offeredGroupSpots(flag, table, team) {
+  const spawns = flag?.spawns;
+  if (!Array.isArray(spawns) || !spawns.length) return null;
+  const byGroup = new Map();
+  for (const p of spawns) {
+    if (!Number.isInteger(p?.group) || !p.position) continue;
+    if (!byGroup.has(p.group)) byGroup.set(p.group, []);
+    byGroup.get(p.group).push(p);
+  }
+  if (byGroup.size < 2) return null;
+  const spots = [];
+  for (const [group, points] of byGroup) {
+    const draws = servedDraws(table, group, team);
+    if (draws === false || (draws == null && points.every(p => p.inactive) && points.length)) continue;
+    // A human's screen skips an `OnlyForAI` group (`spawn-flags.js`, the
+    // carried flags' rule).
+    if (points.every(p => p.onlyForAI)) continue;
+    const live = points.some(p => !p.inactive) ? points.filter(p => !p.inactive) : points;
+    const at = [0, 0, 0];
+    for (const p of live) { at[0] += p.position[0]; at[1] += p.position[1]; at[2] += p.position[2]; }
+    spots.push({ group, position: at.map(v => v / live.length) });
+  }
+  return spots.length > 1 ? spots : null;
 }
 
 /** Whether a human can spawn on none of `group`'s points: the group is off

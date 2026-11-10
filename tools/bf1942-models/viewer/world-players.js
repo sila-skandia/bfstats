@@ -157,7 +157,7 @@ export function spawnPlayer(world, playerId, {
   // stand him on first (a resumed life, `spawning.js` `resumeServerLife`).
   if (served && flag && !flag.captureOnly) {
     const at = (point && flag.spawns?.includes(point) ? point : null)
-      ?? pickSpawn(flag, player.spawnIndex, { groundAt: world.groundHeight, group: flag.vehicle ? (group ?? player.team) : null })
+      ?? pickSpawn(flag, player.spawnIndex, { groundAt: world.groundHeight, group: flag.vehicle ? (group ?? player.team) : group })
       ?? flag.spawns?.find(p => p?.position)
       ?? (servedAt ? { position: servedAt, rotation: [0, 0, 0] } : null);
     if (at?.position) {
@@ -192,7 +192,10 @@ export function spawnPlayer(world, playerId, {
   if (advance) player.spawnIndex++;
   const spawn = point && target.spawns?.includes(point) ? point : pickSpawn(target, player.spawnIndex, {
     groundAt: world.groundHeight,
-    group: target.vehicle ? (group ?? player.team) : null,
+    // A control point's group only when the caller chose one of its rings
+    // (`spawning.js`, both groups on its side, SPAWNGRP-10); a bot's `group`
+    // here is its team.
+    group: target.vehicle ? (group ?? player.team) : (ai ? null : group),
     // The collider, so a point inside a model is walked past rather than
     // stood on (`spawn-safety.js`). Absent on a page with no world
     // geometry, and then the pick is the authored point as before.

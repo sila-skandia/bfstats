@@ -79,6 +79,21 @@ class DeploySpotShapeTests(unittest.TestCase):
         self.assertIsNone(spots[0]["group"])
         self.assertEqual([100, 0, 100], spots[0]["position"])
 
+    def test_two_groups_on_the_owners_side_draw_a_ring_each(self) -> None:
+        # BF1918 Toska Airbattle's French base and airfield (t2 F9): one ring
+        # per group at its points' mean, the group on it (SPAWNGRP-10).
+        spots = self.results["bothGroupsOwn"]
+        self.assertEqual([2, 3], [s["group"] for s in spots])
+        self.assertEqual([303, 84, -314], spots[0]["position"])
+        self.assertEqual([1738, 83, -458], spots[1]["position"])
+        # The server drawing one of them leaves the one ring it draws.
+        self.assertEqual([2], [s["group"] for s in self.results["bothGroupsOneServed"]])
+        # One group offered: the flag's own ring, as before.
+        one = self.results["oneGroupOwn"]
+        self.assertEqual(1, len(one))
+        self.assertIsNone(one[0]["group"])
+        self.assertEqual([300, 130, -300], one[0]["position"])
+
     def test_a_standalone_base_row_draws_one_ring(self) -> None:
         spots = self.results["standalone"]
         self.assertEqual(1, len(spots))

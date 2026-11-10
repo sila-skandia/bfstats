@@ -135,7 +135,11 @@ export function createSpawning(page) {
     // `spawnPlayer` refuses a group of another side at 0x0814cb3e).
     const seatTeam = flagSide(flag) || spawning.deployTeamId;
     const spawned = page.world.spawnPlayer(page.LOCAL_PLAYER, {
-      flag, advance, group: flag.vehicle ? (activeDeployGroup(flag) ?? firstSpotGroup(flag)) : null, enter: true, served,
+      // A ship's deck ring, or one of a control point's two rings when both
+      // groups spawn its side (`deploy-spots.js` `offeredGroupSpots`): the
+      // spawn draws among that group's points alone (SPAWNGRP-10).
+      flag, advance, group: (flag.vehicle || deploySpots(flag).some(s => s.group != null))
+        ? (activeDeployGroup(flag) ?? firstSpotGroup(flag)) : null, enter: true, served,
       servedAt: served ? servedAt : null,
       seatFor: spawn => page.spawnSeat(spawn, { team: seatTeam }) });
     if (!spawned) return false;

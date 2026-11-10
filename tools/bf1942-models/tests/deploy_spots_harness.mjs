@@ -47,6 +47,13 @@ const allSeats = deck([1, 2], [{ group: 1, enterOnSpawn: true }, { group: 2, ent
 const allSeatsOneOn = deck([1, 2], [
   { group: 1, enterOnSpawn: true, inactive: true }, { group: 2, enterOnSpawn: true },
 ]);
+const baseAndField = {
+  name: 'Base', team: 2, group: 2, groups: [2, 3], position: [300, 130, -300],
+  spawns: [
+    { group: 2, position: [300, 84, -310] }, { group: 2, position: [306, 84, -318] },
+    { group: 3, position: [1727, 83, -440] }, { group: 3, position: [1749, 83, -476] },
+  ],
+};
 const empty = { name: 'Nowhere', team: 0, group: 99, groups: [99], position: null, spawns: [] };
 const flagless = { name: 'Ghost', team: null, spawns: [] };
 
@@ -62,6 +69,13 @@ const results = {
   empty: flagMapSpots(empty).map(spotOf),
   flagless: flagMapSpots(flagless).map(spotOf),
   missing: flagMapSpots(null).map(spotOf),
+  // A control point whose two groups both spawn its side (SPAWNGRP-4): a
+  // ring per group at its points' mean (SPAWNGRP-10); one offered group, or
+  // the server's word against one of them, is the flag's one ring again.
+  bothGroupsOwn: flagMapSpots(baseAndField).map(spotOf),
+  bothGroupsOneServed: flagMapSpots(baseAndField, { team: 2, table: {
+    live: true, team: () => 2, active: (g) => (g === 2 ? 1 : 0) } }).map(spotOf),
+  oneGroupOwn: flagMapSpots({ ...baseAndField, spawns: baseAndField.spawns.slice(0, 2) }).map(spotOf),
   // A ship flag whose deck list somehow carries no positions still gets its
   // one ring at the hull position: a malformed deck must never take the
   // whole flag off the map.
