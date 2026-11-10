@@ -18,14 +18,48 @@ import { PARACHUTE_DRAG, PARACHUTE_SPEED } from './parachute.js';
  * (forward, not-forward): standing 6 and 4, crouching 2 and 2, prone 1 and 1.
  * Note what the index actually tests — *no forward input at all* takes the
  * second slot, so standing still and walking backwards share a number.
+ *
+ * These are vanilla's values, and the tables are the engine's globals, not
+ * constants: `Soldier.setForwardSpeed <pose> <forward> <back>` writes a pose's
+ * pair (BF1942.exe `0x004f0f8e`/`0x004f0f95`, ledger PHY-40), and BF1918's
+ * `CommonSoldierData.inc` does for all three poses. So the arrays are written
+ * in place by `setSoldierMovement` and everything that reads them at call time
+ * moves at the tree's speeds, the human and the bots alike.
  */
-export const DIRECTIONAL_SPEED = Object.freeze([6, 4, 2, 2, 1, 1]);
+export const DIRECTIONAL_SPEED = [6, 4, 2, 2, 1, 1];
 
-/** `BFSoldierTemplate::strafeSpeed[3]` at `0x009581cc`, by pose. */
-export const STRAFE_SPEED = Object.freeze([4, 2, 1]);
+/** `BFSoldierTemplate::strafeSpeed[3]` at `0x009581cc`, by pose;
+ *  `Soldier.setStrafeSpeed <pose> <speed>` writes it (`0x004f1187`, PHY-41). */
+export const STRAFE_SPEED = [4, 2, 1];
 
-/** `BFSoldierTemplate::walkSpeedFactor` at `0x009581d8`: the walk toggle. */
-export const WALK_SPEED_FACTOR = 1 / 3;
+/** `BFSoldierTemplate::walkSpeedFactor` at `0x009581d8`: the walk toggle;
+ *  `Soldier.setWalkSpeedFactor` writes it (`0x004f1302`, PHY-42). */
+export let WALK_SPEED_FACTOR = 1 / 3;
+
+const VANILLA_MOVEMENT = Object.freeze({
+  forwardSpeed: [[6, 4], [2, 2], [1, 1]],
+  strafeSpeed: [4, 2, 1],
+  walkSpeedFactor: 1 / 3,
+});
+
+/**
+ * The tree's `Soldier.*` movement globals (`gaits.json`
+ * `soldierBody.movement`, `bf42/con.py` `read_soldier_global`) into the
+ * tables above, in place; null (a tree that writes none: vanilla) puts
+ * vanilla's back. A malformed entry keeps the table's own value.
+ */
+export function setSoldierMovement(movement = null) {
+  const m = movement ?? VANILLA_MOVEMENT;
+  for (let pose = 0; pose < 3; pose++) {
+    const pair = m.forwardSpeed?.[pose] ?? VANILLA_MOVEMENT.forwardSpeed[pose];
+    if (Number.isFinite(pair?.[0])) DIRECTIONAL_SPEED[pose * 2] = pair[0];
+    if (Number.isFinite(pair?.[1])) DIRECTIONAL_SPEED[pose * 2 + 1] = pair[1];
+    const strafe = m.strafeSpeed?.[pose] ?? VANILLA_MOVEMENT.strafeSpeed[pose];
+    if (Number.isFinite(strafe)) STRAFE_SPEED[pose] = strafe;
+  }
+  WALK_SPEED_FACTOR = Number.isFinite(m.walkSpeedFactor)
+    ? m.walkSpeedFactor : VANILLA_MOVEMENT.walkSpeedFactor;
+}
 
 /** Top speed for a pose and a forward input, before the walk toggle. */
 export function directionalSpeed(pose, forward) {

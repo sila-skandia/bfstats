@@ -199,6 +199,24 @@ class SoldierModuleTests(unittest.TestCase):
                             ("strafe", 4.0), ("crouchStrafe", 2.0)):
             self.assertAlmostEqual(table * over * clear, travel[gait], delta=0.015, msg=gait)
 
+    def test_a_mods_soldier_globals_move_him_at_its_tables(self) -> None:
+        # PHY-40..PHY-43: BF1918's `Soldier.setForwardSpeed` / `setStrafeSpeed`
+        # / `setWalkSpeedFactor` overwrite the engine's tables, so the same
+        # runs cover its numbers: a 3 m/s backpedal, a 2.5 / 1.25 crouch, a
+        # 0.75 crawl and a 0.45 x 6 = 2.7 m/s walk. A pure strafe is still
+        # held to the not-forward slot's 3 (PHY-34's cap), not its own 4.
+        # Putting vanilla's back restores vanilla's.
+        travel = self.results["travelBf1918"]
+        clear = 1.0 - self.results["rampDeficitSeconds"]
+        over = self.results["cruiseFactor"]
+        for gait, table in (("run", 6.0), ("back", 3.0), ("walk", 2.7),
+                            ("crouch", 2.5), ("crouchBack", 1.25), ("prone", 0.75)):
+            self.assertAlmostEqual(table * over * clear, travel[gait], delta=0.015, msg=gait)
+        self.assertGreater(travel["strafe"], 3.0 * over * clear - 0.015)
+        self.assertLess(travel["strafe"], 3.0 * over)
+        self.assertEqual(self.results["travel"]["run"], self.results["travelRestored"]["run"])
+        self.assertEqual(self.results["travel"]["back"], self.results["travelRestored"]["back"])
+
     def test_dropping_prone_at_a_run_slides_the_length_of_the_dive_clip(self) -> None:
         # PHY-7. `Lb_RunStandToLie` is the state a soldier enters when he
         # presses Z while not moving backward, and it declares

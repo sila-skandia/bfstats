@@ -44,6 +44,7 @@
 import { buildHeightfield } from './heightfield.js';
 import { buildCollisionIndex } from './static-index.js';
 import { WorldCollider } from './world-collider.js';
+import { setSoldierMovement } from './soldier-locomotion.js';
 import {
   Soldier, spawnFlags, pickSpawn, spawnYaw,
   EYE, HEIGHT, GAIT_SPEED, BODY_RADIUS, STEP_HEIGHT, MAX_GROUND_SLOPE,
@@ -285,6 +286,23 @@ const runway = () => fresh(4, 0.5, RUNWAY_Z, NORTH);
     strafe: sideways({}),
     crouchStrafe: sideways({ crouch: true }),
   };
+  // BF1918's `Soldier.*` globals (ledger PHY-40..PHY-43), as `gaits.json`
+  // carries them: the same runs on its tables, then vanilla's back.
+  setSoldierMovement({
+    forwardSpeed: [[6, 3], [2.5, 1.25], [0.75, 0.4]],
+    strafeSpeed: [4, 2, 1], walkSpeedFactor: 0.45,
+  });
+  results.travelBf1918 = {
+    run: measure({}),
+    back: -measure({ forward: -1 }),
+    walk: measure({ walk: true }),
+    crouch: measure({ crouch: true }),
+    crouchBack: -measure({ forward: -1, crouch: true }),
+    prone: measureProne({}),
+    strafe: sideways({}),
+  };
+  setSoldierMovement(null);
+  results.travelRestored = { run: measure({}), back: -measure({ forward: -1 }) };
   // The prone dive itself (PHY-7): a soldier at a saturated run who presses Z.
   // `setSpeed 6.0` against the prone table's 1 m/s is the standing run exactly,
   // so the dive covers `DIVE_DURATION * 6` and then the crawl takes over.

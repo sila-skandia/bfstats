@@ -81,7 +81,7 @@ export {
   POSE_TRANSITION,
 } from './soldier-pose.js';
 export {
-  DIRECTIONAL_SPEED, STRAFE_SPEED, WALK_SPEED_FACTOR, directionalSpeed,
+  DIRECTIONAL_SPEED, STRAFE_SPEED, WALK_SPEED_FACTOR, directionalSpeed, setSoldierMovement,
   ENGINE_TICK_RATE, RAMP_ACCEL, RAMP_DECEL, RAMP_LIMIT, RAMP_SCALE,
   RAMP_TO_FULL_SECONDS, RAMP_TO_STOP_SECONDS,
   applyMovementFactors, rampedDirectionalSpeed, rampedStrafeSpeed,

@@ -2426,6 +2426,91 @@ class GeometryTemplate:
         return self.file or self.name
 
 
+#: The engine's own soldier movement tables, which the `Soldier.*` console
+#: commands overwrite (ledger PHY-6, PHY-40..PHY-43): `BFSoldierTemplate::
+#: directionalSpeed` at 0x009581b4 (forward, not-forward by pose: stand,
+#: crouch, prone), `strafeSpeed` at 0x009581cc, `walkSpeedFactor` at
+#: 0x009581d8, and the lower-body bob's `cameraShakeFactor` global (CS-1,
+#: `DAT_0099000c`, 0 until something writes it).
+SOLDIER_GLOBAL_DEFAULTS = {
+    "forwardSpeed": [[6.0, 4.0], [2.0, 2.0], [1.0, 1.0]],
+    "strafeSpeed": [4.0, 2.0, 1.0],
+    "walkSpeedFactor": 1.0 / 3.0,
+    "cameraShakeFactor": 0.0,
+}
+
+
+def read_soldier_global(out: dict, cmd: str, args: str) -> None:
+    """One `Soldier.<cmd> <args>` line into `out`: the words BF1942.exe's
+    console executes as writes to its process-wide movement tables (ledger
+    PHY-40..PHY-43; the tables in `SOLDIER_GLOBAL_DEFAULTS`):
+
+        Soldier.setForwardSpeed <pose> <forward> <back>   (0x004f0f70)
+        Soldier.setStrafeSpeed <pose> <speed>             (0x004f1187)
+        Soldier.setWalkSpeedFactor <factor>               (0x004f1302)
+        Soldier.cameraShakeFactor <factor>
+
+    Only what the file writes lands in `out`; `resolved_soldier_globals`
+    fills the rest from the defaults. `setMoveAccelerationDeacceleration`
+    is not a command BF1942.exe registers and is left out (it does nothing,
+    PHY-43). A pose outside 0..2 or a word that does not parse is skipped.
+    """
+    parts = args.split()
+
+    def number(i: int) -> float | None:
+        try:
+            return float(parts[i])
+        except (IndexError, ValueError):
+            return None
+
+    def pose() -> int | None:
+        try:
+            p = int(parts[0])
+        except (IndexError, ValueError):
+            return None
+        return p if 0 <= p <= 2 else None
+
+    if cmd == "setforwardspeed":
+        p, fwd, back = pose(), number(1), number(2)
+        if p is None or fwd is None or back is None:
+            return
+        out.setdefault("forwardSpeed", [None, None, None])[p] = [fwd, back]
+    elif cmd == "setstrafespeed":
+        p, speed = pose(), number(1)
+        if p is None or speed is None:
+            return
+        out.setdefault("strafeSpeed", [None, None, None])[p] = speed
+    elif cmd == "setwalkspeedfactor":
+        if (v := number(0)) is not None:
+            out["walkSpeedFactor"] = v
+    elif cmd == "camerashakefactor":
+        # The setter clamps to -1..1 (BF1942.exe 0x004f148e..0x004f14bd).
+        if (v := number(0)) is not None:
+            out["cameraShakeFactor"] = max(-1.0, min(1.0, v))
+
+
+def resolved_soldier_globals(written: dict) -> dict | None:
+    """`written` (`ObjectLibrary.soldier_globals`) laid over the engine's
+    defaults, or None when the tree writes none of them (vanilla, whose page
+    keeps its own tables)."""
+    if not written:
+        return None
+    out = {
+        "forwardSpeed": [list(pair) for pair in SOLDIER_GLOBAL_DEFAULTS["forwardSpeed"]],
+        "strafeSpeed": list(SOLDIER_GLOBAL_DEFAULTS["strafeSpeed"]),
+        "walkSpeedFactor": SOLDIER_GLOBAL_DEFAULTS["walkSpeedFactor"],
+        "cameraShakeFactor": SOLDIER_GLOBAL_DEFAULTS["cameraShakeFactor"],
+    }
+    for key, value in written.items():
+        if isinstance(value, list):
+            for i, v in enumerate(value):
+                if v is not None:
+                    out[key][i] = list(v) if isinstance(v, list) else v
+        else:
+            out[key] = value
+    return out
+
+
 class ObjectLibrary:
     """Every template in an archive set, addressed case-insensitively."""
 
@@ -2443,6 +2528,9 @@ class ObjectLibrary:
         # The TakeCover behaviour scores cover as `coverValue / distance`.
         self.ai_cover: dict[str, float] = {}
         self.ai_control: dict[str, AiControlInfo] = {}
+        # The `Soldier.*` console globals (`read_soldier_global`): one
+        # engine-wide table each, not a template's, so the last line read wins.
+        self.soldier_globals: dict = {}
 
     def add_con(self, path: str, text: str) -> None:
         text = strip_comments(text)
@@ -3583,6 +3671,9 @@ class ObjectLibrary:
                         while len(geom.lod_distances) <= index:
                             geom.lod_distances.append(None)
                         geom.lod_distances[index] = metres
+
+            elif ns == "soldier":
+                read_soldier_global(self.soldier_globals, cmd, args)
 
             elif ns == "weapontemplate":
                 if cmd == "create":

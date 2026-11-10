@@ -2989,5 +2989,54 @@ ObjectTemplate.SpawnDelayAtStart 0
         self.assertNotIn("spawnDelayAtStart", library.objects["deck_spawner"].spawner_record())
 
 
+class SoldierGlobalsTests(unittest.TestCase):
+    """`Soldier.*` console globals (ledger PHY-40..PHY-43, CS-6): BF1918's
+    `CommonSoldierData.inc` overwrites the engine's movement tables and the
+    lower-body bob's factor; vanilla writes none."""
+
+    BF1918_INC = """
+ObjectTemplate.create Soldier KukSoldier
+ObjectTemplate.healDistance 10.0
+Soldier.setForwardSpeed 0 6 3
+Soldier.setForwardSpeed 1 2.5 1.25
+Soldier.setForwardSpeed 2 0.75 0.4
+Soldier.setStrafeSpeed 0 4.0
+Soldier.setWalkSpeedFactor 0.45
+Soldier.setMoveAccelerationDeacceleration 0.04 0.02
+Soldier.cameraShakeFactor 0.8
+"""
+
+    def test_the_include_overwrites_the_tables(self) -> None:
+        from bf42.con import ObjectLibrary, resolved_soldier_globals
+        library = ObjectLibrary()
+        library.add_con("Soldiers/Common/CommonSoldierData.inc", self.BF1918_INC)
+        self.assertEqual({
+            "forwardSpeed": [[6.0, 3.0], [2.5, 1.25], [0.75, 0.4]],
+            "strafeSpeed": [4.0, 2.0, 1.0],
+            "walkSpeedFactor": 0.45,
+            "cameraShakeFactor": 0.8,
+        }, resolved_soldier_globals(library.soldier_globals))
+        # The template's own words are untouched by the globals.
+        self.assertEqual(10.0, library.object("KukSoldier").heal_distance)
+
+    def test_a_tree_that_writes_none_keeps_the_engine_tables(self) -> None:
+        from bf42.con import ObjectLibrary, resolved_soldier_globals
+        library = ObjectLibrary()
+        library.add_con("Soldiers/Common/CommonSoldierData.inc",
+                        "ObjectTemplate.create Soldier GerSoldier\n")
+        self.assertIsNone(resolved_soldier_globals(library.soldier_globals))
+
+    def test_the_last_write_wins_and_the_bob_is_clamped(self) -> None:
+        from bf42.con import ObjectLibrary, resolved_soldier_globals
+        library = ObjectLibrary()
+        library.add_con("a.con", "Soldier.setWalkSpeedFactor 0.5\nSoldier.cameraShakeFactor 3\n")
+        library.add_con("b.con", "Soldier.setWalkSpeedFactor 0.6\nSoldier.setForwardSpeed 7 1 1\n")
+        resolved = resolved_soldier_globals(library.soldier_globals)
+        self.assertEqual(0.6, resolved["walkSpeedFactor"])
+        self.assertEqual(1.0, resolved["cameraShakeFactor"])
+        # A pose the table does not have is skipped.
+        self.assertEqual([[6.0, 4.0], [2.0, 2.0], [1.0, 1.0]], resolved["forwardSpeed"])
+
+
 if __name__ == "__main__":
     unittest.main()

@@ -19,6 +19,8 @@ import { poseBases } from './pose-bases.js';
 import { createPoseComposer, ungraft } from './pose-compose.js';
 import { byName } from './model-file.js';
 import { wearPagePaint } from './level-skin.js';
+import { setSoldierMovement } from './soldier-locomotion.js';
+import { CAMERA_SHAKE_FACTOR, setCameraShakeFactorGlobal } from './soldier.js';
 
 /**
  * Built once by the page, where this code used to sit. `page` hands in
@@ -107,6 +109,16 @@ export function createFootBody(page) {
    *  the same root (`footBundle`, the canopy). */
   footBodies.gaitsBase = null;
 
+  /** The tree's `Soldier.*` globals (`soldierBody.movement`, ledger
+   *  PHY-40..PHY-43 and CS-6): the speed tables every soldier walks by, the
+   *  bots' as well as the human's, and the lower-body bob's factor. A tree
+   *  that writes none (vanilla) runs the engine's own. */
+  function applySoldierMovement(body) {
+    const movement = body?.movement ?? null;
+    setSoldierMovement(movement);
+    setCameraShakeFactorGlobal(movement?.cameraShakeFactor ?? CAMERA_SHAKE_FACTOR);
+  }
+
   function footGaits() {
     if (!footBodies.footGaitsManifest) {
       // The mod's own gait tree, then vanilla's (`pose-bases.js`): a mod
@@ -119,6 +131,7 @@ export function createFootBody(page) {
             const json = await r.json();
             footBodies.gaitsBase = base;
             footBodies.soldierBody = json?.soldierBody ?? null;
+            applySoldierMovement(footBodies.soldierBody);
             return json;
           } catch { /* the next root */ }
         }

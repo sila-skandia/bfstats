@@ -1499,6 +1499,14 @@ def write_die_assets(machine: animstates.StateMachine, meshes: ArchivePool,
                     if t is not None and soldier_template_values(t)
                 },
             }
+            # The `Soldier.*` console globals the soldier includes write
+            # (bf1918's `CommonSoldierData.inc`: its own speed tables, walk
+            # factor and bob, ledger PHY-40..PHY-43): engine-wide, not the
+            # template's, resolved over the engine's defaults. Absent when
+            # the tree writes none (vanilla), so the page keeps its own.
+            movement = con_mod.resolved_soldier_globals(library.soldier_globals)
+            if movement:
+                changed["soldierBody"]["movement"] = movement
             break
     write_gaits_manifest(out, changed)
     return {"body": body, "soldierBody": changed.get("soldierBody")}
