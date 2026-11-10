@@ -1318,6 +1318,9 @@ namespace api.Migrations
 
                     b.HasIndex("MapName");
 
+                    b.HasIndex("MapName", "StartTime")
+                        .HasDatabaseName("IX_Rounds_MapName_StartTime");
+
                     b.HasIndex("ServerGuid")
                         .HasFilter("IsActive = 1");
 

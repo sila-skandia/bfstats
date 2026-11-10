@@ -278,6 +278,7 @@ public sealed class TeamMapStatsAggregatorTests : IDisposable
             ('Rounds', 'IX_Rounds_IsActive', '1345060 295'),
             ('Rounds', 'IX_Rounds_IsActive_SyncedToNeo4jAt_StartTime', '1345060 295 295 2'),
             ('Rounds', 'IX_Rounds_MapName', '1345060 24'),
+            ('Rounds', 'IX_Rounds_MapName_StartTime', '1345060 24 1'),
             ('Rounds', 'IX_Rounds_ServerGuid', '190 1'),
             ('Rounds', 'IX_Rounds_ServerGuid_EndTime', '1345060 48 1'),
             ('Rounds', 'IX_Rounds_ServerGuid_IsActive', '1345060 48 48'),

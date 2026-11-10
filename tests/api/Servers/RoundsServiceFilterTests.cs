@@ -212,6 +212,67 @@ public sealed class RoundsServiceFilterTests : IDisposable
         Assert.Equal("operation_coronet", round.MapName);
     }
 
+    [Fact]
+    public async Task GetRounds_GlobalMapName_PagesByStartTime()
+    {
+        SeedServer("a-guid", "Alpha");
+        SeedServer("b-guid", "Bravo");
+        SeedRound("r-bocage-new", "a-guid", "Alpha", new DateTime(2026, 11, 10, 3, 0, 0, DateTimeKind.Utc), "bocage");
+        SeedRound("r-wake", "b-guid", "Bravo", new DateTime(2026, 11, 10, 2, 0, 0, DateTimeKind.Utc), "Wake");
+        SeedRound("r-bocage-old", "b-guid", "Bravo", new DateTime(2026, 11, 9, 12, 0, 0, DateTimeKind.Utc), "bocage");
+        await _dbContext.SaveChangesAsync();
+
+        var result = await _service.GetRounds(
+            1, 2, "startTime", "desc",
+            new RoundFilters { MapName = "bocage" });
+
+        Assert.Equal(2, result.TotalItems);
+        Assert.Equal(new[] { "r-bocage-new", "r-bocage-old" }, result.Items.Select(r => r.RoundId).ToArray());
+    }
+
+    [Fact]
+    public async Task GetRounds_GlobalMapName_CountUsesMapNameIndex()
+    {
+        await UseListingStatisticsAsync();
+
+        var steps = await PlanAsync(
+            """SELECT COUNT(*) FROM "Rounds" AS "r" WHERE "r"."MapName" = $map""",
+            ("$map", "bocage"));
+
+        Assert.Contains(
+            steps,
+            step => step.Contains("IX_Rounds_MapName", StringComparison.Ordinal));
+        Assert.DoesNotContain(steps, step => step.StartsWith("SCAN r", StringComparison.Ordinal));
+    }
+
+    [Fact]
+    public async Task GetRounds_GlobalMapName_PageUsesMapNameStartTimeIndex()
+    {
+        await UseListingStatisticsAsync();
+
+        var steps = await PlanAsync(
+            """
+            SELECT "r0"."RoundId"
+            FROM (
+                SELECT "r"."RoundId", "r"."StartTime", "r"."ServerGuid"
+                FROM "Rounds" AS "r"
+                WHERE "r"."MapName" = $map
+                ORDER BY "r"."StartTime" DESC
+                LIMIT $take OFFSET $skip
+            ) AS "r0"
+            INNER JOIN "Servers" AS "s" ON "r0"."ServerGuid" = "s"."Guid"
+            ORDER BY "r0"."StartTime" DESC
+            """,
+            ("$map", "bocage"), ("$take", 2), ("$skip", 0));
+
+        Assert.Contains(
+            steps,
+            step => step.Contains("IX_Rounds_MapName_StartTime", StringComparison.Ordinal));
+        Assert.DoesNotContain(
+            steps,
+            step => step.Contains("USE TEMP B-TREE FOR ORDER BY", StringComparison.Ordinal));
+    }
+
     private void SeedServer(
         string guid,
         string name,
@@ -248,5 +309,40 @@ public sealed class RoundsServiceFilterTests : IDisposable
             ParticipantCount = 16,
             IsActive = false
         });
+    }
+
+    private async Task UseListingStatisticsAsync()
+    {
+        await _dbContext.Database.ExecuteSqlRawAsync("ANALYZE");
+        await _dbContext.Database.ExecuteSqlRawAsync("DELETE FROM sqlite_stat1");
+        await _dbContext.Database.ExecuteSqlRawAsync("""
+            INSERT INTO sqlite_stat1 (tbl, idx, stat) VALUES
+            ('Rounds', 'IX_Rounds_IsActive', '1345060 295'),
+            ('Rounds', 'IX_Rounds_IsActive_SyncedToNeo4jAt_StartTime', '1345060 295 295 2'),
+            ('Rounds', 'IX_Rounds_MapName', '1345060 24'),
+            ('Rounds', 'IX_Rounds_MapName_StartTime', '1345060 24 1'),
+            ('Rounds', 'IX_Rounds_ServerGuid', '190 1'),
+            ('Rounds', 'IX_Rounds_ServerGuid_EndTime', '1345060 48 1'),
+            ('Rounds', 'IX_Rounds_ServerGuid_IsActive', '1345060 48 48'),
+            ('Rounds', 'IX_Rounds_ServerGuid_StartTime', '1345060 48 1'),
+            ('Rounds', 'sqlite_autoindex_Rounds_1', '1345060 1')
+            """);
+        await _dbContext.Database.ExecuteSqlRawAsync("ANALYZE sqlite_schema");
+    }
+
+    private async Task<List<string>> PlanAsync(string sql, params (string Name, object Value)[] parameters)
+    {
+        await using var command = _connection.CreateCommand();
+#pragma warning disable CA2100
+        command.CommandText = "EXPLAIN QUERY PLAN " + sql;
+#pragma warning restore CA2100
+        foreach (var (name, value) in parameters)
+            command.Parameters.AddWithValue(name, value);
+
+        var steps = new List<string>();
+        await using var reader = await command.ExecuteReaderAsync();
+        while (await reader.ReadAsync())
+            steps.Add(reader.GetString(3));
+        return steps;
     }
 }
