@@ -117,9 +117,15 @@ wrong in the page, and is fixed since ("Checked in a page").
   Combat that is always an F-16, so the live fight is F-16 against F-16
   whatever you fly. The fits follow the hull actually flown, so this is a
   question of which jet, not of a wrong fit.
-- **The scissors' guide is the Spitfire's Ninja** (`scNinja`, the lesson's
-  counter), which the jet file's own measures put at 0 of 9. In the page
-  the instructor flying it took your F-16 up to about 1,000 m and down to 27 m/s.
+- **Fixed since: the scissors' guide was the Spitfire's Ninja** (`scNinja`),
+  which the jet file's own measures put at 0 of 9: in the page the
+  instructor flying it took your F-16 up to about 1,000 m and down to
+  27 m/s. With no counter demo, `flightOf` gives the guide the lesson's best
+  move by the count, and with every move at 0 of 9 that is the first of
+  them. The jet scissors and the jet circle now name their guide (`guide`
+  in the jet file): `jetScissors`, stay in the braid, and `ciCircle`, hold
+  the circle. `tests/test_dogfight_jets.py` `JetGuideTests` holds that no
+  jet lesson's guide is a move at 0 of 9. Not re-run in a page.
 - **Not flown by hand.** The runs below fly your seat with the instructor
   (I), not a person with a stick.
 

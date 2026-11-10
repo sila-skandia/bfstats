@@ -54,6 +54,12 @@ def jet_lesson(lesson: str, plane: str = "F16", demo: str | None = None, base: b
 
 
 @functools.lru_cache(maxsize=None)
+def jet_guides() -> dict:
+    """What FLY IT flies for each jet lesson: `{lesson: {"ace", "guide", "works", "known"}}`."""
+    return _run("--guides")
+
+
+@functools.lru_cache(maxsize=None)
 def jet_steps(lesson: str) -> dict:
     """The jet lesson's own step lists, each step timed on one flight:
     `{"steps": {demo: [{"phase", "t"}]}, "spitfires": {demo: bool}}`."""

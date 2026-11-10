@@ -22,6 +22,9 @@ export default {
     'Do not go into the circle with an equal jet. Inside it nobody is hit; out of it, they are behind you.',
   ],
   survival: { verdict: 'no', line: 'No: on the F-16 nothing gets you out. Leaving, going straight up, out and back, the throttle chop, reversing the turn and the nose-low turn all fail (0 of 9 each). Leaving puts them 285 to 361 m behind you with their guns on you, and out and back gets you shot down in two of nine. The circle itself never hurts you: nobody has a shot in it.' },
+  // FLY IT's guide and instructor: hold the circle, where nobody has a shot.
+  // By the count the best way out would be the zoom, at 0 of 9.
+  guide: 'ciCircle',
   demos: {
     circle: {
       note: 'The deadlock: half a turn apart on one circle, both turning as hard as it goes, both speeding up to 85 to 90 m/s. Watch the gun lines: neither nose ever comes round onto the other.',

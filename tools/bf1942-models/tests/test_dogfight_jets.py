@@ -12,7 +12,7 @@ from __future__ import annotations
 
 import unittest
 
-from jet_school import jet_fit, jet_lesson, jet_steps, shot_down
+from jet_school import jet_fit, jet_guides, jet_lesson, jet_steps, shot_down
 
 
 class FitTests(unittest.TestCase):
@@ -105,6 +105,24 @@ class JetStepsTests(unittest.TestCase):
             self.assertNotIn("flip", got["steps"], lesson)
             self.assertNotIn("ninja", got["steps"], lesson)
         self.assertEqual({}, jet_steps("boom-and-zoom")["steps"])
+
+
+class JetGuideTests(unittest.TestCase):
+    """What FLY IT's guide and instructor fly on a jet (`flightOf`)."""
+
+    def test_the_guide_never_flies_a_move_that_does_not_work_on_a_jet(self) -> None:
+        guides = jet_guides()
+        self.assertEqual(9, len(guides))
+        for lesson, g in guides.items():
+            self.assertTrue(g["known"], (lesson, g))
+            # The lesson's counter or its own guide (no count), or a move
+            # that works there: never the best of several at 0 of 9.
+            self.assertTrue(g["works"] is None or g["works"] > 0, (lesson, g))
+
+    def test_where_nothing_gets_you_out_the_guide_stays_in(self) -> None:
+        guides = jet_guides()
+        self.assertEqual(("jetScAce", "jetScissors"), (guides["scissors"]["ace"], guides["scissors"]["guide"]))
+        self.assertEqual("ciCircle", guides["the-circle"]["guide"])
 
 
 if __name__ == "__main__":

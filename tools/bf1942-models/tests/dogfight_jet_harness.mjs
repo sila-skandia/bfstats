@@ -11,6 +11,8 @@
 //       one fight's timeline as text (start 0..8 of the nine; 4 is the
 //       lesson's own), every `step` seconds, then each side's phases
 //
+//   node tests/dogfight_jet_harness.mjs --guides
+//       the ace and the guide FLY IT gives each jet lesson
 //   node tests/dogfight_jet_harness.mjs <lesson> --steps
 //       when each step of the jet lesson's own step lists comes, flown once
 //
@@ -52,6 +54,25 @@ if (flag('--fit')) {
     view: { see: view.see({ position: [128, 256, -64], velocity: [0, 0, -128], orientation: { x: 0, y: 0, z: 0, w: 1 }, angularVelocity: [1, 2, 3] }),
             gun: view.gun({ speed: 1000, reach: 5000 }), arena: view.arena({ centre: [128, 0], radius: 1280 }), ground: view.ground((x, z) => x + z)(100, 28) },
     same: pilotView(1).see === pilotView(1).see ? null : pilotView(1).see('x') }));
+  process.exit(0);
+}
+
+if (flag('--guides')) {
+  // What FLY IT puts in the air for each lesson with a jet file
+  // (`dogfight-lessons.js` `flightOf`): the ace's plan, and the plan the
+  // guide and the instructor fly, with how often that plan works when it is
+  // one of the lesson's moves (null when it is not).
+  const { flightOf } = await load('dogfight-lessons.js');
+  const { PLANS } = await load('dogfight-pilot.js');
+  const out = {};
+  for (const base of LESSONS) {
+    const L = lessonFor(base, 'jet');
+    if (L.era !== 'jet') continue;
+    const f = flightOf(L);
+    const move = L.demos.find(d => d.seat === f.guide && d.verdict);
+    out[L.id] = { ace: f.ace.plan, guide: f.guide, works: move ? move.verdict.works : null, known: !!PLANS[f.guide] && !!PLANS[f.ace.plan] };
+  }
+  console.log(JSON.stringify(out));
   process.exit(0);
 }
 

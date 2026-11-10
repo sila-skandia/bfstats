@@ -26,6 +26,9 @@ export default {
   ace: { plan: 'jetScissors', memory: { lead: 0.8 } },
   // FLY IT's ace on a jet: the lesson's `scAce`, its scissors led.
   flyAce: 'jetScAce',
+  // FLY IT's guide and instructor: stay in it. No way out works on a jet,
+  // and the lesson's best move by the count would be a Ninja at 0 of 9.
+  guide: 'jetScissors',
   you: { memory: { lead: 0.8, fast: false, band: [42, 46] } },
   demos: {
     move: { seat: 'jetScissors', note: 'You scissor too, on the brakes, but a little faster than them: about 53 m/s to their 47.' },
