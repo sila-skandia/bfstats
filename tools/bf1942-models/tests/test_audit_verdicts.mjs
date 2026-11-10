@@ -6,7 +6,7 @@
 import assert from 'node:assert/strict';
 import { rightTurn, steerVerdict, SETTLE_RATE, heldByData, deployVerdict, rigFamilies, weldDeviation,
   weldVerdict, padGroundVerdict, rollsFreely, botHolding, roundEnded, releaseSpeed, airDiverges,
-  RELEASE_MIN, RELEASE_MAX } from '../audit_verdicts.mjs';
+  RELEASE_MIN, RELEASE_MAX, staticSoundTable, staticSoundExplains, airAxisRole } from '../audit_verdicts.mjs';
 
 let failures = 0;
 const test = (name, fn) => {
@@ -258,6 +258,8 @@ test('a bot on a ship deck holds; one that wants to move on land is stalled', ()
   assert.equal(botHolding({ behaviour: 'Scout', goalReached: false, vehicle: null, deck: null }), false);
   assert.equal(botHolding({ behaviour: 'Scout', goalReached: true, vehicle: null, deck: null }), true);
   assert.equal(botHolding({ behaviour: 'Fire', goalReached: false, vehicle: 'Flak38', deck: null }), true);
+  // champagne: a soldier firing on foot from where it met the enemy.
+  assert.equal(botHolding({ behaviour: 'Fire', goalReached: false, vehicle: null, deck: null }), true);
 });
 
 // FHSWEurope operation_kikusui_day2, 2026-10-28: the CoOp round ended under
@@ -288,6 +290,50 @@ test('a phugoid peak is not a divergence; a nose that stays up is', () => {
   const dive = [0, -0.3, -0.5, -0.7, -0.8, -0.9, -0.9, -0.95, -0.97];
   assert.equal(airDiverges({ noseY: dive, dy7: -100 }), true);
   assert.equal(airDiverges({ noseY: [0, 0, 0], dy7: -300 }), true);
+});
+
+// BF1918's M1uboot: its engine script and its torpedo's are both in no archive
+// (static/sound.json, the engine row first). Keyed one row a subject, the
+// torpedo's replaced the engine's and the silent engine read as unexplained.
+test('a hull silent twice over is explained for its engine and for its gun', () => {
+  const table = staticSoundTable([
+    { audit: 'sound', subject: 'M1uboot', cause: 'engine-script-unusable-in-install', detail: "['absent']" },
+    { audit: 'sound', subject: 'M1uboot', cause: 'weapon-script-unusable-in-install', detail: 'TorpedTubBundle' },
+    { audit: 'flags', subject: 'Other', cause: 'engine-without-script' },
+  ]);
+  const engine = staticSoundExplains(table, { check: 'veh.engine-sound', template_or_kit: 'M1uboot',
+    evidence: 'engine audio null, engineControl M1uboot' });
+  assert.equal(engine?.cause, 'engine-script-unusable-in-install');
+  const gun = staticSoundExplains(table, { check: 'veh.fire-sound', template_or_kit: 'M1uboot#seat0(M1uboot)',
+    evidence: 'no fire sound' });
+  assert.equal(gun?.cause, 'weapon-script-unusable-in-install');
+  assert.equal(staticSoundExplains(table, { check: 'veh.engine-sound', template_or_kit: 'Other', evidence: '' }), null);
+  assert.equal(staticSoundExplains(table, { check: 'veh.fire', template_or_kit: 'M1uboot', evidence: '' }), null);
+});
+
+// BF1918's towed 18pdr on falkland_islands (pipeline pass 2): its trail wheel
+// 2 m aft swings the nose left for the first half second, its differential
+// brings it round right over the press.
+test('a hull D brings round right over the press is not reversed by its first half second', () => {
+  const lead = steerVerdict({ preRate: -0.02, turnA: -0.18, dtA: 0.5, turned: 0.99, speed: 3.8, net: 0.99 });
+  assert.equal(lead.verdict, 'ok');
+  assert.equal(lead.lead, 'left');
+  // Without the whole press it still reads reversed, and a net left turn is reversed.
+  assert.equal(steerVerdict({ preRate: -0.02, turnA: -0.18, dtA: 0.5, turned: 0.99, speed: 3.8 }).verdict, 'reversed');
+  assert.equal(steerVerdict({ preRate: 0, turnA: -0.25, dtA: 0.5, turned: 0.9, speed: 8, net: -0.9 }).verdict, 'reversed');
+});
+
+// BF1918's airships, from their glbs: the Lebaudy (VCLand) binds c_PIPitch to
+// its lift engine's throttle and nothing to c_PIRoll; the balloon tilts its
+// hover engine's bundle on both; a Caudron's ailerons are Wings.
+test('a stick axis is judged by what the hull binds to it', () => {
+  assert.equal(airAxisRole(undefined), 'unbound');
+  assert.equal(airAxisRole([]), 'unbound');
+  assert.equal(airAxisRole([{ node: 'LebaudyEngineupdown', kind: 'Engine', engine: true }]), 'thrust');
+  assert.equal(airAxisRole([{ node: 'Balloon_HoveringEngineBundle', kind: 'RotationalBundle', engine: true }]), 'vectored');
+  assert.equal(airAxisRole([{ node: 'CaudronFlapLeftOuter', kind: 'Wing', engine: false }]), 'surface');
+  assert.equal(airAxisRole([{ node: 'Rotor', kind: 'RotationalBundle', engine: true },
+    { node: 'Tail', kind: 'Wing', engine: false }]), 'surface');
 });
 
 if (failures) { console.log(`${failures} failed`); process.exit(1); }

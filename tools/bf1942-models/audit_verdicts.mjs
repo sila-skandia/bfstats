@@ -32,9 +32,18 @@ export const SETTLE_RATE = 0.2;
  * Returns { verdict: 'ok'|'reversed'|'no-steer'|'unsettled'|'slow', induced }.
  * `induced` is the right turn D added to what the hull was already doing.
  */
-export function steerVerdict({ preRate = 0, turnA, dtA = 1, turned, speed, loadedShare = 1 }) {
+export function steerVerdict({ preRate = 0, turnA, dtA = 1, turned, speed, loadedShare = 1,
+  net = null, dtNet = 2.5 }) {
   const induced = turnA - preRate * dtA;
   if (!(speed > 1.5 || turned > 0.05)) return { verdict: 'slow', induced };
+  // `net`: the whole press's signed turn, summed a quarter second at a time
+  // (so a spin past 180 degrees still counts). A hull that D brings round to
+  // the right over the press steers right, whatever its first half second
+  // did: BF1918's towed 18pdr steers its trail wheel 2 m aft of the axle on
+  // c_PIYaw (the data's sign, as a car's front wheel), which swings the nose
+  // left at first, while its c_ETTank differential on the same input turns
+  // it right; 0.5 s in it had turned -0.17 rad, after 2.5 s +58 degrees.
+  if (net != null && net - preRate * dtNet > 0.3) return { verdict: 'ok', induced, lead: induced < -0.15 ? 'left' : null };
   if (speed > 3 && Math.abs(turnA) > 0.1 && induced < -0.15) {
     // A hull with wheels off the ground when D went down steers on nothing:
     // BF1918's Daimler truck pulling away up amiens's 13-degree pad had both
@@ -271,6 +280,13 @@ const STILL_PLANS = new Set(['Idle', 'Scout', 'TakeCover', 'Fire']);
  */
 export function botHolding(d) {
   if (d?.deck) return true;
+  // A soldier in the Fire plan stands where it is to shoot, wherever its
+  // order points: `createFirePlan` takes a pose (prone, crouch, stand), turns
+  // and fires, walks only to close past 0.9 of its weapon's range, and has
+  // no strafing (bot-behaviours.md section 3). Three of champagne's bots
+  // fired 20 s from the spot they met the enemy on, Fire's urgency 5.2..6.6
+  // over MoveTo's 3, and read as stalled (pipeline pass 2, 2026-11-10).
+  if (d?.behaviour === 'Fire') return true;
   return STILL_PLANS.has(d?.behaviour) && (d.goalReached === true || !!d.vehicle);
 }
 
@@ -327,4 +343,66 @@ export function airDiverges({ noseY = [], dy7 = 0 } = {}) {
   if (noseY.length < 3) return false;
   const tail = noseY.slice(Math.floor((noseY.length * 2) / 3));
   return tail.every(y => Math.abs(y) > 0.6);
+}
+
+/**
+ * What a flight stick's input does on this hull, from what its own parts bind
+ * (`__inputBindings()[input]`, rows `{ kind, engine }`):
+ *
+ *  'unbound'   nothing binds it: the key does nothing in retail either. The
+ *              Lebaudy and the Zeppelin are `VCLand` hulls on the LandSea map,
+ *              and nothing of theirs binds c_PIRoll.
+ *  'surface'   a Wing binds it: a control surface, judged on the turn.
+ *  'thrust'    only Engines bind it, on their throttle axis: the key runs an
+ *              engine, the Lebaudy's `LebaudyEngineupdown` on c_PIPitch, and
+ *              is judged on the push (the hull moved), not on the nose.
+ *  'vectored'  a bundle that carries an Engine: the key tilts a thrust line
+ *              (the balloon's `Balloon_HoveringEngineBundle` on c_PIPitch and
+ *              c_PIRoll), which may turn the hull or push it, and either
+ *              answers it.
+ */
+export function airAxisRole(bindings) {
+  const rows = Array.isArray(bindings) ? bindings : [];
+  if (!rows.length) return 'unbound';
+  if (rows.some(r => r.kind === 'Wing')) return 'surface';
+  if (rows.every(r => r.kind === 'Engine')) return 'thrust';
+  if (rows.some(r => r.engine)) return 'vectored';
+  return 'surface';
+}
+
+/**
+ * The static sound audit's rows (`static/sound.json`) as a table from the
+ * lower-case subject to every row it has. A hull can be silent twice over:
+ * BF1918's M1uboot has an engine script and a torpedo script that are both in
+ * no archive. Keyed one row a subject, the torpedo's row replaced the engine's
+ * and its silent engine read as unexplained (2026-11-10).
+ */
+export function staticSoundTable(rows) {
+  const table = new Map();
+  for (const r of Array.isArray(rows) ? rows : (rows?.findings ?? [])) {
+    if (r?.audit !== 'sound' || !r.subject) continue;
+    const key = String(r.subject).toLowerCase();
+    if (!table.has(key)) table.set(key, []);
+    table.get(key).push({ cause: r.cause_key ?? r.cause, detail: r.detail ?? '' });
+  }
+  return table;
+}
+
+/**
+ * The static row that explains a silent-hull finding, or null. An engine
+ * finding (`veh.engine-sound`) takes an `engine-*` cause of its own template;
+ * a gun finding (`veh.fire-sound`) a `weapon-*` cause of its template or of a
+ * subject its evidence names (the FireArms).
+ */
+export function staticSoundExplains(table, f) {
+  if (f.check !== 'veh.engine-sound' && f.check !== 'veh.fire-sound') return null;
+  const want = f.check === 'veh.engine-sound' ? /^engine-/ : /^weapon-/;
+  const hay = `${f.template_or_kit} ${f.evidence}`.toLowerCase();
+  const base = String(f.template_or_kit).toLowerCase().replace(/#.*$/, '');
+  for (const [subject, rows] of table) {
+    if (base !== subject && !(f.check === 'veh.fire-sound' && hay.includes(subject))) continue;
+    const row = rows.find(r => want.test(r.cause ?? ''));
+    if (row) return { subject, ...row };
+  }
+  return null;
 }

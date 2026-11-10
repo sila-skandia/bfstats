@@ -356,6 +356,32 @@ class ServeViewerFallback(Tree):
         self.assertEqual((200, b"blob"), self.get(f"{base}/glbs/{self.blob_sha}.glb"))
         self.assertEqual(404, self.get(f"{base}/maps/bocage/scene.glb")[0])
 
+    def test_a_mods_server_fetches_vanilla_files_and_never_the_mods(self) -> None:
+        # 2026-11-10: the pipeline's quick behaviour run on BF1918 reported 14
+        # asset.404s, every one a vanilla file (the HUD layout, its fonts, the
+        # pose and viewmodel indexes) that the machine's partial vanilla tree
+        # lacked and mesh.bfstats.io serves.
+        write(self.volume_root / "maps" / "_shared" / "hud" / "hud-layout.json", b"{}")
+        write(self.volume_root / "maps" / "mods" / "bf1918" / "x" / "scene.json", b"{}")
+        write(self.volume_root / "models" / "mods" / "bf1918" / "poses" / "index.json", b"{}")
+        cache = serve_viewer.RemoteCache(self.mesh, self.cache, trees=serve_viewer.VANILLA_TREES,
+                                         exclude=serve_viewer.MOD_TREES)
+        handler = type("H", (serve_viewer.Handler,), {"remote": cache, "log_message": lambda *a: None})
+        base = self.serve(self.viewer, handler)
+        self.assertEqual((200, b"{}"), self.get(f"{base}/maps/_shared/hud/hud-layout.json"))
+        self.assertEqual((200, b"blob"), self.get(f"{base}/glbs/{self.blob_sha}.glb"))
+        self.assertEqual(404, self.get(f"{base}/maps/mods/bf1918/x/scene.json")[0])
+        self.assertEqual(404, self.get(f"{base}/models/mods/bf1918/poses/index.json")[0])
+        # The registry over every tree is the mod run's, never fetched: the
+        # volume's listed BF1918 with no maps, and the page opened a vanilla level.
+        write(self.volume_root / "models" / "mods.json", b"[]")
+        self.assertEqual(404, self.get(f"{base}/models/mods.json")[0])
+
+    def test_the_pipeline_fetches_vanilla_only_for_a_mods_run(self) -> None:
+        import mod_pipeline
+        self.assertEqual(["--remote-store-only"], mod_pipeline.viewer_remote_args("bf1942"))
+        self.assertEqual(["--remote-vanilla"], mod_pipeline.viewer_remote_args("bf1918"))
+
     def test_a_cached_scene_that_disagrees_with_the_marker_is_fetched_again(self) -> None:
         self.evict("bf1942", "bocage")
         write(self.cache / "maps" / "bocage" / "scene.glb", b"stale")

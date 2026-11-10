@@ -93,6 +93,13 @@ export function installTestHooks(page) {
     // chose and what the world last consumed. `__bots()` reads the same objects
     // the AI tick writes.
     window.__terrain = (x, z) => page.world?.collider?.surfaceHeight?.(x, z) ?? null;
+    // The heightfield alone, the sea left out (`surfaceHeight` answers the
+    // higher of the two): a flooded trench's floor stands under the water
+    // plane and over the terrain (BF1918's broodseinde, its 75 m sea).
+    window.__heightfield = (x, z) => {
+      const h = (page.collider ?? page.world?.collider)?.heightfield?.height?.(x, z);
+      return Number.isFinite(h) ? h : null;
+    };
     window.__worldExtras = () => ({ worldSize: page.world?.extras?.worldSize, water: page.world?.collider?.waterLevel });
     // The bot navigation map itself (nav-grid.js), for a headless check to
     // count or draw its cells.

@@ -1083,13 +1083,27 @@ def run_argv(argv: list[str], *, log: Path, guard: bool, min_free_gb: float,
     return rc
 
 
-class ViewerServer:
-    """`serve_viewer.py` on a port of the pipeline's own, stopped on exit."""
+def viewer_remote_args(mod: str) -> list[str]:
+    """What the pipeline's viewer server may fetch from the volume: store
+    blobs always (`evict_glbs.py`), and for a mod's run vanilla's files too.
+    Vanilla's own run keeps its tree local only, so a file its bake missed is
+    an asset.404 there."""
+    return ["--remote-store-only"] if mod == "bf1942" else ["--remote-vanilla"]
 
-    def __init__(self, port: int):
+
+class ViewerServer:
+    """`serve_viewer.py` on a port of the pipeline's own, stopped on exit.
+
+    `mod` is the tree under audit. For any tree but vanilla's the server
+    also fetches vanilla's missing files from the volume (`--remote-vanilla`):
+    a mod's page reads vanilla's HUD layout, fonts and pose index, which a
+    machine may hold only in part, and the mod's own tree stays local only."""
+
+    def __init__(self, port: int, mod: str = "bf1942"):
         if port == OWNER_PORT:
             raise SystemExit("port 5273 is the owner's: pick another with --port")
         self.port = port
+        self.mod = mod
         self.proc: subprocess.Popen | None = None
 
     def __enter__(self):
@@ -1103,9 +1117,10 @@ class ViewerServer:
                 raise SystemExit(f"port {self.port} is already serving (another "
                                  "pipeline run or audit?): pick another with --port")
         self.proc = subprocess.Popen(
-            # Local files only: a remote-only level is skipped by the audits
-            # with a count, never fetched into the cache behind their back.
-            ["python3", "serve_viewer.py", str(self.port), "--remote-store-only"], cwd=HERE,
+            # The tree under audit is local files only: a remote-only level is
+            # skipped by the audits with a count, never fetched into the cache
+            # behind their back (`viewer_remote_args`).
+            ["python3", "serve_viewer.py", str(self.port), *viewer_remote_args(self.mod)], cwd=HERE,
             stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL, start_new_session=True)
         for _ in range(50):
             if self.proc.poll() is not None:
@@ -1537,15 +1552,16 @@ class _ViewerHolder:
     """The `serve_viewer.py` the chromium steps shoot: started by the first of
     them, stopped when the run ends."""
 
-    def __init__(self, port: int):
+    def __init__(self, port: int, mod: str = "bf1942"):
         self.port = port
+        self.mod = mod
         self.server: ViewerServer | None = None
         self.lock = threading.Lock()
 
     def ensure(self) -> None:
         with self.lock:
             if self.server is None:
-                self.server = ViewerServer(self.port).__enter__()
+                self.server = ViewerServer(self.port, self.mod).__enter__()
 
     def close(self) -> None:
         if self.server is not None:
@@ -1692,7 +1708,7 @@ def run_steps(steps: list[Step], ctx: Context, state: State, *, dry_run: bool,
     held: set[str] = set()
     cores = 0
     stopping = False
-    viewer = _ViewerHolder(ctx.port)
+    viewer = _ViewerHolder(ctx.port, ctx.cfg.id)
     try:
         with ThreadPoolExecutor(max_workers=max(1, len(steps))) as pool:
             while True:
@@ -3425,7 +3441,7 @@ def run_behaviour_new(ctx: Context) -> None:
         gate, port = sharded_behaviour(qctx, work, names, ctx.behaviour_shards)
     else:
         port = free_viewer_port()
-        with ViewerServer(port) as srv:
+        with ViewerServer(port, ctx.cfg.id) as srv:
             if srv.proc is None or srv.proc.poll() is not None:
                 raise RuntimeError(f"serve_viewer.py exited on port {port}")
             gate = gate_behaviour(qctx, work, srv.url, levels=names, out_name=BEHAVIOUR_NEW_OUT,
@@ -3491,7 +3507,7 @@ def sharded_behaviour(ctx: Context, work: Path, names: list[str], shards: int):
         servers = []
         for _ in range(min(shards, len(names))):
             port = free_viewer_port()
-            srv = stack.enter_context(ViewerServer(port))
+            srv = stack.enter_context(ViewerServer(port, ctx.cfg.id))
             if srv.proc is None or srv.proc.poll() is not None:
                 raise RuntimeError(f"serve_viewer.py exited on port {port}")
             first_port = first_port or port
@@ -3704,7 +3720,7 @@ def run_gates(ctx: Context, work: Path, wanted: Iterable[str], *, need_server: b
         gates["corpus"] = gate_corpus(ctx, work)
     browser = [g for g in ("render", "behaviour") if g in wanted]
     if browser:
-        with ViewerServer(ctx.port) as srv:
+        with ViewerServer(ctx.port, ctx.cfg.id) as srv:
             if "render" in browser:
                 gates["render"] = gate_render(ctx, work, srv.url)
             if "behaviour" in browser:

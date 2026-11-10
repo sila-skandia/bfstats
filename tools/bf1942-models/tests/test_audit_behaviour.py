@@ -43,7 +43,9 @@ class AuditBehaviourContract(unittest.TestCase):
         # asset.404 for blobs mesh.bfstats.io serves. Same server as the
         # pipeline's (mod_pipeline.py).
         text = (ROOT / "audit_behaviour.mjs").read_text()
-        self.assertIn("'serve_viewer.py'), String(PORT), '--remote-store-only']", text)
+        self.assertIn("'serve_viewer.py'), String(PORT), remote]", text)
+        # 2026-11-10: a mod's run fetches vanilla's files as well, never its own.
+        self.assertIn("? '--remote-store-only' : '--remote-vanilla'", text)
         self.assertNotIn("'--no-remote'", text)
 
     def test_no_mod_or_level_names_in_the_harness(self):

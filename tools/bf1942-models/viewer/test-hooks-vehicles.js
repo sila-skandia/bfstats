@@ -395,6 +395,29 @@ export function installVehicleHooks(page) {
   // Where it stands is also the point a blast measures its distance to (HP-9:
   // the transform origin, not a bounding box). Owners come in `damageVisuals`
   // order, as before, and any the damage set holds without a visual follow.
+  // The world height of the lowest drawn part of a hull (its own meshes, a
+  // held object's left out), or null: where its wheels or keel meet what is
+  // under it, which a hull's origin is not. BF1918's TsarTank stands its
+  // origin 4.3 m over its pad on wheels 9 m across.
+  window.__hullBottom = owner => {
+    const node = page.damageVisuals.get(owner)?.node;
+    if (!node) return null;
+    node.updateWorldMatrix(true, true);
+    const box = new THREE.Box3(), part = new THREE.Box3();
+    const visit = o => {
+      if (o !== node && o.userData?.heldSpawner) return;
+      // Every LOD alternative counts (a far one may be the one shown), the
+      // collision meshes (`collision 0`) do not.
+      if (/^collision/i.test(o.name || '')) return;
+      if (o.isMesh && o.geometry) {
+        if (!o.geometry.boundingBox) o.geometry.computeBoundingBox();
+        box.union(part.copy(o.geometry.boundingBox).applyMatrix4(o.matrixWorld));
+      }
+      for (const c of o.children) visit(c);
+    };
+    visit(node);
+    return box.isEmpty() ? null : box.min.y;
+  };
   window.__vehicles = () => {
     const owners = [...page.damageVisuals.keys()];
     for (const owner of page.vehicleDamage.byOwner.keys()) {
@@ -701,6 +724,34 @@ export function installVehicleHooks(page) {
                 materials: page.guns?.materials ?? null, modifiers: page.guns?.modifiers ?? null },
     };
   };
+  // What each input of the occupied hull's own control drives: the input
+  // (lower case) -> the parts whose rig binds it, `{ node, kind, axis,
+  // engine }`, `kind` the template kind (`Wing`, `Engine`,
+  // `RotationalBundle`) and `engine` whether an Engine rides on the part (a
+  // tilting lift engine's bundle). A gunner's own PCO under the hull is
+  // another control and is left out. What a stick is judged on follows from
+  // it: BF1918's armoured train binds no c_PIYaw at all (its guide rails
+  // steer it), the Lebaudy's c_PIPitch is the throttle of its lift engine
+  // and nothing binds its c_PIRoll, and the balloon's arrows tilt its hover
+  // engine's bundle (ledger MLK-14).
+  window.__inputBindings = () => {
+    const root = page.localPlayer.occupancy?.root;
+    if (!root) return null;
+    const control = root.userData?.control || root.name;
+    const out = {};
+    root.traverse(node => {
+      const data = node.userData || {};
+      if ((data.control || control) !== control) return;
+      for (const [axis, a] of Object.entries(data.rig?.axes || {})) {
+        const input = String(a?.input || '').toLowerCase();
+        if (!input || input === 'c_pinone') continue;
+        let engine = data.templateKind === 'Engine';
+        if (!engine) node.traverse(c => { if (c.userData?.templateKind === 'Engine') engine = true; });
+        (out[input] ??= []).push({ node: node.name, kind: data.templateKind ?? null, axis, engine });
+      }
+    });
+    return out;
+  };
   window.__hull = () => {
     const seat = page.localPlayer.occupancy;
     if (!seat) return null;
@@ -725,6 +776,9 @@ export function installVehicleHooks(page) {
       hp: hullArmour(seat.root).hp,
       guns: [...seat.groups.driven, ...seat.groups.manned]
         .map(g => ({ name: g.node.name, firing: g.firing, shots: g.shots,
+          // A marker weapon (magType 2, ledger SPOT-1) fires no round: each
+          // press places a scout camera instead (`gun-cycle.js`), counted here.
+          marker: g.stats?.magType === 2, marks: g.marks ?? 0,
           // Whether it drops a round that stands a drawn object, and what its
           // dropped killer charge takes off this hull (FHX-24, FHX-30).
           ...deployRole(g.stats, hullArmour(seat.root).armour),

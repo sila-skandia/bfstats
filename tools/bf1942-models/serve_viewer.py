@@ -23,7 +23,9 @@ written. A cached scene is checked against the level's `scene.remote.json`
 are kept until the cache is removed (`rm -rf ~/.cache/bfstats-mesh-remote`).
 `--no-remote` (or `BF_VIEWER_REMOTE=off`) turns it off: the pipeline's and
 the audits' own servers run that way, so they never fill the cache and
-report remote-only levels as skipped instead.
+report remote-only levels as skipped instead. `--remote-store-only` fetches
+store blobs alone; `--remote-vanilla` (a mod's audit server) also fetches the
+vanilla tree's files, never a mod tree's.
 
 The fetch asks for the plain URL, which the edge caches; a file the volume
 lacks comes back 404 and is remembered as missing for the life of the server.
@@ -50,6 +52,21 @@ from bf42 import remote_scene  # noqa: E402
 
 REMOTE = "https://mesh.bfstats.io"
 REMOTE_TREES = ("maps", "models", "glbs", "textures")
+# `--remote-vanilla`: what a mod's audit server may fetch, and the mod trees
+# it never does. The tree under audit stays local only, so a file its bake
+# failed to write is still an asset.404; vanilla is not the tree under audit,
+# and a page of the mod reads its shared HUD, fonts and pose index as
+# production serves them. On a machine whose vanilla tree is partial (the
+# owner's laptop holds four vanilla model entries), the pipeline's quick
+# behaviour run on BF1918 reported 14 asset.404s, every one of them a vanilla
+# file mesh.bfstats.io serves (2026-11-10). The texture store is content
+# addressed, so a fetched texture is the very bytes its name promises.
+# `models/mods.json` is no vanilla file: it is the registry over every tree,
+# which the mod's own run rewrites (`build_mods_manifest.py`). Production's
+# listed BF1918 with no maps yet, and a page given it opened vanilla's first
+# level (aberdeen) in place of toska_airbattle.
+VANILLA_TREES = ("glbs", "textures", "maps", "models")
+MOD_TREES = ("maps/mods/", "models/mods/", "models/mods.json")
 CACHE = Path.home() / ".cache" / "bfstats-mesh-remote"
 STORE_BLOB = re.compile(r"glbs/([0-9a-f]{64})\.glb")
 TIMEOUT_S = 60
@@ -58,10 +75,14 @@ TIMEOUT_S = 60
 class RemoteCache:
     """Missing files under the asset trees, fetched once from the volume."""
 
-    def __init__(self, base: str, cache: Path, trees: tuple[str, ...] = REMOTE_TREES) -> None:
+    def __init__(self, base: str, cache: Path, trees: tuple[str, ...] = REMOTE_TREES,
+                 exclude: tuple[str, ...] = ()) -> None:
         self.base = base.rstrip("/")
         self.cache = cache
         self.trees = trees
+        # Path prefixes never fetched, whatever their tree (`--remote-vanilla`
+        # keeps a mod's own `maps/mods/` and `models/mods/` local only).
+        self.exclude = exclude
         self.missing: set[str] = set()
         self.locks: dict[str, threading.Lock] = {}
         self.guard = threading.Lock()
@@ -69,7 +90,7 @@ class RemoteCache:
     def eligible(self, rel: str) -> bool:
         parts = rel.split("/")
         return len(parts) > 1 and parts[0] in self.trees and all(
-            p not in ("", ".", "..") for p in parts)
+            p not in ("", ".", "..") for p in parts) and not rel.startswith(self.exclude)
 
     @staticmethod
     def store_sha(rel: str) -> str | None:
@@ -170,10 +191,17 @@ def main() -> None:
                     help="fetch only missing glbs/<sha>.glb store blobs (checked against "
                          "their sha), every other tree local only: the pipeline's servers, "
                          "which audit the local trees but whose store may be evicted")
+    ap.add_argument("--remote-vanilla", action="store_true",
+                    help="--remote-store-only, and also the vanilla tree's missing maps/ and "
+                         "models/ files (not maps/mods/ or models/mods/): a mod's audit server, "
+                         "whose page loads vanilla's HUD layout, fonts, pose and viewmodel "
+                         "indexes from a vanilla tree this machine may hold only in part")
     ap.add_argument("--remote", default=REMOTE, help=f"where missing assets come from ({REMOTE})")
     ap.add_argument("--cache", type=Path, default=CACHE, help=f"fetched files ({CACHE})")
     args = ap.parse_args()
-    if args.remote_store_only:
+    if args.remote_vanilla:
+        remote = RemoteCache(args.remote, args.cache, trees=VANILLA_TREES, exclude=MOD_TREES)
+    elif args.remote_store_only:
         remote = RemoteCache(args.remote, args.cache, trees=("glbs",))
     else:
         remote = RemoteCache(args.remote, args.cache) if remote_enabled(args.no_remote) else None

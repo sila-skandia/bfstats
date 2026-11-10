@@ -31,7 +31,8 @@ import { spawn } from 'node:child_process';
 import { dirname, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { rightTurn, steerVerdict, SETTLE_RATE, heldByData, deployVerdict, rigFamilies, weldDeviation,
-  weldVerdict, padGroundVerdict, rollsFreely, botHolding, roundEnded, releaseSpeed, airDiverges } from './audit_verdicts.mjs';
+  weldVerdict, padGroundVerdict, rollsFreely, botHolding, roundEnded, releaseSpeed, airDiverges,
+  staticSoundTable, staticSoundExplains, airAxisRole } from './audit_verdicts.mjs';
 
 const HERE = dirname(fileURLToPath(import.meta.url));
 const arg = (n, d) => { const i = process.argv.indexOf(`--${n}`); return i > -1 ? process.argv[i + 1] : d; };
@@ -80,27 +81,14 @@ const STATIC_FILE = arg('static', [
   resolve(HERE, `out/mod-pipeline/${MOD}/static/sound.json`),
   resolve(HERE, `out/mod-pipeline/${MOD}/gates/static.json`),
 ].find(existsSync) ?? resolve(HERE, `out/mod-pipeline/${MOD}/gates/static.json`));
-const staticSound = new Map();     // lower-case subject -> { cause, detail }
+// Every row a subject has (`staticSoundTable`).
+let staticSound = new Map();     // lower-case subject -> [{ cause, detail }]
 if (existsSync(STATIC_FILE)) {
   try {
-    const rows = JSON.parse(await readFile(STATIC_FILE, 'utf8'));
-    for (const r of Array.isArray(rows) ? rows : (rows.findings ?? [])) {
-      if (r.audit === 'sound' && r.subject) staticSound.set(String(r.subject).toLowerCase(), { cause: r.cause_key ?? r.cause, detail: r.detail ?? '' });
-    }
+    staticSound = staticSoundTable(JSON.parse(await readFile(STATIC_FILE, 'utf8')));
   } catch { /* a malformed static file is ignored */ }
 }
-function staticExplains(f) {
-  if (f.check !== 'veh.engine-sound' && f.check !== 'veh.fire-sound') return null;
-  const hay = `${f.template_or_kit} ${f.evidence}`.toLowerCase();
-  for (const [subject, row] of staticSound) {
-    const engineCause = /^engine-/.test(row.cause), weaponCause = /^weapon-/.test(row.cause);
-    if (f.check === 'veh.engine-sound' && !engineCause) continue;
-    if (f.check === 'veh.fire-sound' && !weaponCause) continue;
-    const base = f.template_or_kit.toLowerCase().replace(/#.*$/, '');
-    if (base === subject || (f.check === 'veh.fire-sound' && hay.includes(subject))) return { subject, ...row };
-  }
-  return null;
-}
+const staticExplains = f => staticSoundExplains(staticSound, f);
 const accepted = existsSync(ACCEPTED_FILE) ? JSON.parse(await readFile(ACCEPTED_FILE, 'utf8')) : [];
 function isAccepted(f) {
   return accepted.find(a => a.evidence && a.check === f.check
@@ -189,6 +177,21 @@ async function silentGuns() {
     silentGunTable = new Map();
   }
   return silentGunTable;
+}
+// The marker weapons of the tree (`_shared/vehicle-spotting.json`
+// `markerWeapons`, extract_vehicle_spotting.py): FireArms of magType 2, which
+// place a scout camera and fire no round (ledger SPOT-1). Keyed by FireArms
+// name, lower case. Empty where the tree has no spotting table.
+let markerWeaponTable = null;
+async function markerWeapons() {
+  if (markerWeaponTable) return markerWeaponTable;
+  try {
+    const doc = JSON.parse(await readFile(`${mapsRoot}/_shared/vehicle-spotting.json`, 'utf8'));
+    markerWeaponTable = new Set((doc.markerWeapons || []).map(r => String(r.template).toLowerCase()));
+  } catch {
+    markerWeaponTable = new Set();
+  }
+  return markerWeaponTable;
 }
 function pickMode(scene) {
   if (GAMETYPE) return GAMETYPE;
@@ -639,6 +642,22 @@ async function testGround(s, tpl, level, rec, cls) {
   const mirror = gear === 'KeyS' ? -1 : 1;
   // Wheels: nodes that look like wheels must have turned.
   const wheels = await s.ev(() => window.__wheelSpin?.());
+  // A hull whose own parts bind no yaw input is not asked to steer: its
+  // driver has nothing to turn it with. BF1918's armoured train is pushed
+  // by an air-screw Engine with the throttle on its roll axis and is
+  // steered by its guide rails alone (features/bf1918-armoured-train,
+  // ledger COL-25); D held 2.5 s at 11 m/s moved its heading 0.0 degrees
+  // and read as a hull whose steering was dead. The census skips it the
+  // same way (`surveys/census_ground_drive.mjs`, `weak-turn`).
+  const bindings = await s.ev(() => window.__inputBindings?.() ?? null);
+  const yawBound = bindings ? (bindings.c_piyaw ?? []).length : null;
+  rec.yaw_bound = yawBound;
+  if (yawBound === 0) {
+    await s.ev(gear => window.__keys.delete(gear), gear);
+    rec.steer = 'no part of the hull binds c_PIYaw: not judged on its turn';
+    rec.wheels = await s.ev(() => window.__wheelSpin?.());
+    return;
+  }
   // Steering: D is right. The hull's own yaw rate is read first (W still
   // held, no D), and the press waits up to 3 s for a swing left over from a
   // knock to die away: a horse that ran into something slewed left on its own
@@ -689,7 +708,13 @@ async function testGround(s, tpl, level, rec, cls) {
   const turned = Math.abs(turnedSum);
   rec.steer_turned_deg = +(turned * 57.3).toFixed(1);
   const turnA = mirror * rightTurn(f0, fA);
-  const v = steerVerdict({ preRate, turnA, dtA: 0.5, turned, speed: sp, loadedShare });
+  // The signed first half second of D and the whole press, for the record.
+  rec.steer_turn_a = +turnA.toFixed(3);
+  rec.steer_turned_signed_deg = +(mirror * turnedSum * 57.3).toFixed(1);
+  rec.steer_gear = gear;
+  const v = steerVerdict({ preRate, turnA, dtA: 0.5, turned, speed: sp, loadedShare,
+    net: mirror * turnedSum, dtNet: 2.5 });
+  if (v.lead) rec.steer_lead = v.lead;
   if (v.verdict === 'reversed') {
     add({ check: 'veh.steer', level, template_or_kit: tpl, severity: 'major', cause_key: 'veh.steer-reversed',
       evidence: `D (right) turned the nose ${turnA.toFixed(2)} rad in 0.5 s at a prior yaw rate of ${preRate.toFixed(2)} rad/s (D's own share ${v.induced.toFixed(2)})` });
@@ -944,10 +969,62 @@ async function testAir(s, tpl, level, rec) {
       rec.failed = true;
     }
   };
-  flagC('ArrowDown (back stick)', pitchDown, 1, 'pitch');
-  flagC('ArrowRight (roll right)', rollRight, -1, 'roll');
-  flagC('D (rudder right)', yawRight, 1, 'yaw', 0.003);
+  await judgeAirControls(s, tpl, level, rec, fresh, flagC, [
+    ['ArrowDown (back stick)', pitchDown, 1, 'pitch', 0.01, 'c_pipitch'],
+    ['ArrowRight (roll right)', rollRight, -1, 'roll', 0.01, 'c_piroll'],
+    ['D (rudder right)', yawRight, 1, 'yaw', 0.003, 'c_piyaw'],
+  ]);
   await s.ev(() => { for (const k of [...window.__keys]) window.__keys.delete(k); });
+}
+
+/** How far a key pushes the craft in 2.25 s against the same start with no
+ *  key (`fresh` puts it back level at 80 m/s first), in metres. */
+async function airPush(s, fresh, key, frames = 135) {
+  const run = async k => {
+    await fresh();
+    const b = await s.ev(() => window.__plane().state().position);
+    if (k) await s.ev(x => window.__keys.add(x), k);
+    await s.step(frames);
+    const a = await s.ev(() => window.__plane().state().position);
+    if (k) await s.ev(x => window.__keys.delete(x), k);
+    return [a.x - b.x, a.y - b.y, a.z - b.z];
+  };
+  const on = await run(key), off = await run(null);
+  return Math.hypot(on[0] - off[0], on[1] - off[1], on[2] - off[2]);
+}
+
+/** Metres a thrust key must push the craft by in 2.25 s, over hands off. */
+const AIR_PUSH_M = 0.5;
+
+/**
+ * The stick's three axes, each judged by what the hull's own parts bind to
+ * its input (`audit_verdicts.mjs` `airAxisRole`), not as a fixed stick: a
+ * control surface on the turn, an engine's throttle on the push, a tilted
+ * thrust line on either, and an input nothing binds not at all. A `VCLand`
+ * airship flies the LandSea map: the Lebaudy's arrows run its lift engine
+ * and nothing binds its roll, and the balloon's tilt its hover engine, so
+ * both read as dead sticks on toska_airbattle, belgrade and Siege_of_Antwerp.
+ * `rows`: [label, turn measured, expected sign, name, minimum, input].
+ */
+async function judgeAirControls(s, tpl, level, rec, fresh, flagC, rows) {
+  const bindings = await s.ev(() => window.__inputBindings?.() ?? null);
+  const keyOf = label => label.split(' ')[0] === 'D' ? 'KeyD' : label.split(' ')[0];
+  for (const [label, turn, expect, name, minAbs, input] of rows) {
+    const role = bindings ? airAxisRole(bindings[input]) : 'surface';
+    if (role === 'surface') { flagC(label, turn, expect, name, minAbs); continue; }
+    (rec.control_roles ??= {})[name] = role;
+    if (role === 'unbound') continue;
+    if (role === 'vectored' && Math.abs(turn) >= minAbs) { flagC(label, turn, expect, name, minAbs); continue; }
+    const pushed = await airPush(s, fresh, keyOf(label));
+    (rec.control_push ??= {})[name] = +pushed.toFixed(2);
+    if (pushed < AIR_PUSH_M) {
+      add({ check: 'air.controls', level, template_or_kit: tpl, severity: 'major',
+        cause_key: `air.${name}-dead`,
+        evidence: `${label} drives ${(bindings[input] || []).map(b => b.node).join(', ')} (${role}): `
+          + `in 2.25 s it turned the ${name} by ${turn.toFixed(4)} and pushed the craft ${pushed.toFixed(2)} m` });
+      rec.failed = true;
+    }
+  }
 }
 
 async function testShip(s, tpl, level, rec) {
@@ -1117,7 +1194,9 @@ async function testSeatsAndGuns(s, tpl, level, rec, cls) {
       killerHp: Math.max(0, ...window.__hull().guns.map(g => g.killerHp ?? 0)),
       depotGuns: window.__hull().guns.map(g => g.depots > 0),
       depotRounds: window.__roundDepots?.() ?? null,
-      hp: window.__hull().hp, launched: window.__roundSpawners?.()?.launched ?? null }));
+      hp: window.__hull().hp, launched: window.__roundSpawners?.()?.launched ?? null,
+      marks: window.__hull().guns.map(g => g.marks ?? 0),
+      markerTop: Math.max(-1, ...(window.__spotter?.()?.markers || []).map(m => m.id)) }));
     // FH's mobile guns' deploy seat (FHX-24): one right-button press throws
     // the deploy round, whose spawner stands the static gun 4 s later, and a
     // killer charge that bursts at 3 s on its own clock and destroys the
@@ -1223,9 +1302,13 @@ async function testSeatsAndGuns(s, tpl, level, rec, cls) {
       fxPlays = Math.max(fxPlays, st.fx);
     }
     await s.ev(() => window.__setSeatFire(false, false));
-    const post = await s.ev(() => ({ g: window.__hull()?.guns.map(g => g.shots) ?? null, fx: JSON.stringify(window.__effects()),
+    const post = await s.ev(top => ({ g: window.__hull()?.guns.map(g => g.shots) ?? null, fx: JSON.stringify(window.__effects()),
       launched: window.__roundSpawners?.()?.launched ?? null,
-      depotRounds: window.__roundDepots?.() ?? null }));
+      depotRounds: window.__roundDepots?.() ?? null,
+      marks: window.__hull()?.guns.map(g => g.marks ?? 0) ?? null,
+      markerGuns: window.__hull()?.guns.map(g => !!g.marker) ?? null,
+      newMarkers: (window.__spotter?.()?.markers || []).filter(m => m.id > top)
+        .map(m => ({ hit: !!m.hit, owner: m.owner })) }), pre.markerTop);
     if (!post.g) post.g = lastShots;
     const shots = post.g.reduce((a, b) => a + b, 0) - pre.g.reduce((a, b) => a + b, 0);
     rec[`fire_${seat.index}`] = { shots, maxProj, fx: pre.fx !== post.fx, effectSound: effectSeen,
@@ -1250,11 +1333,29 @@ async function testSeatsAndGuns(s, tpl, level, rec, cls) {
     // A marker weapon (magType 2, ledger SPOT-1) places a scout camera on the
     // press and fires no round, so the gun counter stays 0 in retail too:
     // BF1918's trench periscope `Scherenfernrohr` fires `ScherenfernrohrMarker`.
-    // A fresh marker of the player's is the proof it worked.
-    const freshMarker = shots <= 0 && await s.ev(() => (window.__spotter?.()?.markers || [])
-      .some(m => m.owner === 'local' && (m.remaining == null || m.remaining > 100)));
-    if (freshMarker) {
-      rec[`fire_${seat.index}`].marker = true;      // an artillery spotter's seat: it marked
+    // A seat is a marker seat when every gun it has is one: by the page's own
+    // stats (magType 2) or by the tree's marker table
+    // (`_shared/vehicle-spotting.json` `markerWeapons`, extract_vehicle_spotting.py),
+    // so a seat is known up front and not by its name: the ships' lookouts
+    // (`SMSDresdenLookoutMarker`, `SuffrenLookoutMarker`) matched no observer
+    // word. Its proof is the press placing a marker, hit or miss: a pull at
+    // the sky lists one with no owner (`spotter.js` `place`, SPOT-1), and
+    // asking for an owned one read the trench periscope on fao_landing and
+    // the Lebaudy's marker on toska_airbattle as guns that never fired.
+    const markerTable = await markerWeapons();
+    const names = gunNames ? gunNames.split(',') : [];
+    const markerSeat = shots <= 0 && names.length > 0 && names.every((n, i) =>
+      post.markerGuns?.[i] || markerTable.has(n.toLowerCase()));
+    const presses = (post.marks ?? []).reduce((a, n, i) => a + n - (pre.marks[i] ?? 0), 0);
+    if (markerSeat && post.newMarkers.length > 0) {
+      // An artillery spotter's seat: it marked.
+      rec[`fire_${seat.index}`].marker = { presses, placed: post.newMarkers.length,
+        hit: post.newMarkers.filter(m => m.hit).length };
+    } else if (markerSeat) {
+      add({ check: 'veh.fire', level, template_or_kit: tag, severity: 'major', cause_key: 'veh.marker-no-mark',
+        evidence: `marker weapon ${names.join(',')} (magType 2): trigger held 1.5 s, presses ${presses}, `
+          + `markers placed ${post.newMarkers.length}` });
+      rec.failed = true;
     } else if (shots <= 0 && /binoc|binos|spotter|periscope/i.test(`${tpl}${seat.node}${gunNames}${tag}`)) {
       rec[`fire_${seat.index}`].optic = true;       // an observer's seat: nothing to shoot
     } else if (shots <= 0 && allTools) {
@@ -1690,7 +1791,7 @@ async function vehiclePhase(s, level, team, summary, scene) {
   const pads = (scene.modes?.[layer]?.objectSpawns ?? scene.objectSpawns ?? []).filter(p => Array.isArray(p.position));
   // A ship rides at her draught, metres under the spawner that fields her.
   const afloat = new Set(await s.ev(() => (window.__ships?.() ?? []).map(x => String(x.control).toLowerCase())).catch(() => []));
-  const offPad = new Map(), buried = new Map(), aloft = new Map(), rolls = new Map();
+  const offPad = new Map(), buried = new Map(), aloft = new Map(), rolls = new Map(), lifted = new Map();
   for (const v of now) {
     // A held spawn stands where its host (a carrier's deck, an LCT's well)
     // puts it, never on a level pad: a Hellcat on
@@ -1749,6 +1850,38 @@ async function vehiclePhase(s, level, team, summary, scene) {
         continue;
       }
     }
+    // Stood over its pad and lifted by its own depth: a spawner stands the
+    // hull's origin at its own pose, and a hull whose wheels reach further
+    // under its origin than the pad stands over the ground is born with them
+    // in the terrain and pushed out onto them (SPAWN-28). It then rests right
+    // over the pad with its lowest part on what is under it. BF1918's
+    // TsarTankSpawn on battle_of_the_giants: 0.4 m from its pad, +4.3 m, on
+    // wheels 9 m across.
+    // A hull on the sea rests on the water the same way: a flying boat's pad
+    // at the sea's surface, its floats carrying it to their draught.
+    let lift = null;
+    if (best.dh <= 1.5 && best.dy > 0) {
+      const bottom = await s.ev(o => window.__hullBottom?.(o) ?? null, v.owner).catch(() => null);
+      const ground = await s.ev(([x, y, z]) => {
+        const g = window.__groundAt?.(x, z) ?? null;
+        const f = window.__staticTopAt?.(x, y, z) ?? null;
+        return Number.isFinite(f) && (g == null || f > g) ? f : g;
+      }, v.pos);
+      const sea = Number.isFinite(scene?.water?.level) ? scene.water.level : -Infinity;
+      const here = Number.isFinite(ground) ? Math.max(ground, sea) : null;
+      if (VERBOSE) log('lift', v.name, bottom, ground, sea, here);
+      if (Number.isFinite(bottom) && Number.isFinite(here)) {
+        lift = { bottom, here, onWater: sea >= ground };
+        const rests = lift.onWater ? bottom - here >= -2 && bottom - here <= 1 : Math.abs(bottom - here) <= 1;
+        if (rests && best.pad.position[1] - here <= 1.5) {
+          if (!lifted.has(key)) lifted.set(key, []);
+          lifted.get(key).push(`${v.name}: ${best.dh.toFixed(1)} m from ${best.spawner}, +${best.dy.toFixed(1)} m, `
+            + `its lowest part ${(bottom - here).toFixed(2)} m from the ${lift.onWater ? 'sea' : 'ground'} (${here.toFixed(1)}): `
+            + `lifted onto its ${lift.onWater ? 'floats' : 'wheels'} out of a pad at ${lift.onWater ? 'sea' : 'ground'} level (SPAWN-28)`);
+          continue;
+        }
+      }
+    }
     // Wheels that roll whoever is in the seat (RollGrip, AIRGND-2): a hull
     // on a slope rolls off its pad and goes on rolling, as in retail.
     if (rollsFreely(v.grips) && Math.abs(best.dy) <= 1.5) {
@@ -1758,7 +1891,8 @@ async function vehiclePhase(s, level, team, summary, scene) {
       continue;
     }
     if (!offPad.has(key)) offPad.set(key, []);
-    offPad.get(key).push(`${v.name} ${best.dh.toFixed(1)} m from ${best.spawner}, ${best.dy >= 0 ? '+' : ''}${best.dy.toFixed(1)} m`);
+    offPad.get(key).push(`${v.name} ${best.dh.toFixed(1)} m from ${best.spawner}, ${best.dy >= 0 ? '+' : ''}${best.dy.toFixed(1)} m`
+      + (lift ? ` (lowest part ${(lift.bottom - lift.here).toFixed(1)} m over the ${lift.onWater ? 'sea' : 'ground'})` : ''));
   }
   for (const [key, rows] of offPad) {
     add({ check: 'veh.settle', level, template_or_kit: tplOf(now.find(v => tplOf(v).toLowerCase() === key)),
@@ -1773,6 +1907,11 @@ async function vehiclePhase(s, level, team, summary, scene) {
   for (const [key, rows] of aloft) {
     add({ check: 'veh.settle', level, template_or_kit: tplOf(now.find(v => tplOf(v).toLowerCase() === key)),
       severity: 'info', cause_key: 'veh.pad-over-ground', retail_faithful: true,
+      evidence: rows.slice(0, 4).join('; ') });
+  }
+  for (const [key, rows] of lifted) {
+    add({ check: 'veh.settle', level, template_or_kit: tplOf(now.find(v => tplOf(v).toLowerCase() === key)),
+      severity: 'info', cause_key: 'veh.lifted-onto-its-wheels', retail_faithful: true,
       evidence: rows.slice(0, 4).join('; ') });
   }
   for (const [key, rows] of buried) {
@@ -2389,7 +2528,13 @@ async function spawnPhase(s, level, scene, summary) {
     await s.ev(([x, y, z]) => { window.__teleport(x, y, z, 0); }, [x, y, z]);
     const a = await s.ev(() => { const q = window.__soldier?.(); return q && { y: q.y, ground: q.ground, grounded: q.grounded }; });
     await s.step(20);
-    const b = await s.ev(() => { const q = window.__soldier?.(); return q && { y: q.y, ground: q.ground, grounded: q.grounded, swim: q.swimming, hp: q.hp }; });
+    // `ground` is the higher of the terrain and the sea (`surfaceHeight`):
+    // the terrain alone is what feet can be under. Broodseinde's flooded
+    // trench spawns stand on the terrain at 73.6 m in 1.4 m of its 75 m sea,
+    // and read as feet 1.4 m under the ground.
+    const b = await s.ev(() => { const q = window.__soldier?.(); return q && { y: q.y, ground: q.ground, grounded: q.grounded, swim: q.swimming, hp: q.hp,
+      terrain: window.__heightfield?.(q.x, q.z) ?? null }; });
+    if (b && Number.isFinite(b.terrain) && b.terrain < b.ground) { b.sea = b.ground; b.ground = b.terrain; }
     if (!a || !b) {
       // Dead on the point: the depot there is the kill-trap check's, not the
       // ground's. Gone with the round: the end game emptied the field.
@@ -2727,7 +2872,13 @@ async function main() {
     // --remote-store-only: a glbs/<sha>.glb blob evict_glbs.py left on the
     // volume alone is fetched (and refused unless it hashes to its name), so
     // an evicted blob is not an asset.404; every other tree stays local only.
-    server = spawn('python3', [resolve(HERE, 'serve_viewer.py'), String(PORT), '--remote-store-only'], { stdio: 'ignore' });
+    // A mod's run takes --remote-vanilla, as the pipeline's own server does
+    // (`mod_pipeline.py` `viewer_remote_args`): vanilla's missing files are
+    // fetched too, since a mod's page reads vanilla's HUD layout, fonts and
+    // pose index and a machine may hold vanilla's tree only in part. The
+    // mod's own tree stays local only.
+    const remote = (MOD === 'bf1942' || MOD === 'vanilla') ? '--remote-store-only' : '--remote-vanilla';
+    server = spawn('python3', [resolve(HERE, 'serve_viewer.py'), String(PORT), remote], { stdio: 'ignore' });
     await sleep(1200);
   }
   await loadManifest();
