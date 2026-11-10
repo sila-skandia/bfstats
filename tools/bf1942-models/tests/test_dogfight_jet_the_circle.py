@@ -19,7 +19,7 @@ import tempfile
 import unittest
 from pathlib import Path
 
-from jet_school import jet_lesson, shot_down
+from jet_school import jet_lesson, jet_tops, shot_down
 
 HERE = Path(__file__).resolve().parent
 TOOLS = HERE.parent
@@ -119,20 +119,28 @@ class CircleOnAJetTests(unittest.TestCase):
         rows = self.rows("zoom")
         for s in rows:
             self.assertIn("follow", s["acePhases"], s)
-            self.assertEqual([0, 0], s["hits"], s)
             self.assertEqual(0, s["myShot"], s)
-        # "you go on through it to about 1,420 m" (1,416 to 1,426: the verdict) ... You end 324 to 554 m over
-        # them, but down to 52 to 54 m/s"; "at 30 s you are still 45 to 509 m
-        # above them". The ceiling guard (880 m real) cannot level a 60-degree
-        # jet climb, and the follower goes through it too.
-        self.assertEqual((98, 99), span(rows, "fastest"))
-        self.assertEqual((324, 554), span(rows, "highest"))
-        self.assertEqual((52, 54), span(rows, "slowest"))
-        self.assertEqual((45, 509), span(rows, "endDy"))
-        self.assertEqual((1416, 1426), (min(s["top"][1] for s in rows), max(s["top"][1] for s in rows)))
-        # "They follow you up, to 920 to 1,368 m, and never as high."
-        self.assertEqual((920, 1368), (min(s["top"][0] for s in rows), max(s["top"][0] for s in rows)))
-        self.assertTrue(all(s["top"][0] < s["top"][1] for s in rows), [s["top"] for s in rows])
+        # "you are levelled off at the top of the sky, 822 to 832 m, and they
+        # follow you up to 802 to 835 m" (the roof every jet's pilot flies
+        # under, `dogfight-jet-ceiling.js`).
+        self.assertEqual((822, 832), (min(s["top"][1] for s in rows), max(s["top"][1] for s in rows)))
+        self.assertEqual((802, 835), (min(s["top"][0] for s in rows), max(s["top"][0] for s in rows)))
+        # "At most you are 134 to 175 m over them, down to 38 to 46 m/s; only
+        # in two do you start over the top, and you never come down onto them."
+        self.assertEqual((134, 175), span(rows, "highest"))
+        self.assertEqual((38, 46), span(rows, "slowest"))
+        self.assertEqual(2, sum(1 for s in rows if s["overTop"] is not None))
+        self.assertEqual(0, max(s["bestQuarter"] for s in rows))
+        # "At 30 s you are level with them, 12 m under to 69 m over, at 120 to
+        # 125 m/s, and in three they have just let you go."
+        self.assertEqual((-12, 69), span(rows, "endDy"))
+        self.assertEqual((120, 125), span(rows, "endSpeed"))
+        late = [s["letGo"] for s in rows if s["letGo"] is not None]
+        self.assertEqual(3, len(late))
+        self.assertTrue(all(28 <= t <= 30 for t in late), late)
+        # "in one of nine one round of theirs lands on you."
+        self.assertEqual([0] * 8 + [1], sorted(s["hits"][0] for s in rows))
+        self.assertTrue(all(s["hits"][1] == 0 for s in rows))
 
     def test_out_and_back_is_a_head_on_pass_and_they_are_behind_you_again(self) -> None:
         rows = self.rows("back")
@@ -153,8 +161,8 @@ class CircleOnAJetTests(unittest.TestCase):
             self.assertEqual([0, 0], s["shots"], s)
             self.assertEqual(0, s["bestQuarter"], s)
         self.assertEqual((37, 38), span(rows, "slowest"))
-        self.assertEqual((-320, -272), span(rows, "lowest"))
-        self.assertEqual((-563, -514), span(rows, "endEdge"))
+        self.assertEqual((-323, -277), span(rows, "lowest"))
+        self.assertEqual((-644, -510), span(rows, "endEdge"))
 
     def test_reversing_just_turns_the_circle_the_other_way(self) -> None:
         rows = self.rows("reverse")
@@ -173,10 +181,19 @@ class CircleOnAJetTests(unittest.TestCase):
         self.assertEqual({82, 83}, {u["v"] for u in ups})
         for s in rows:
             self.assertEqual([0, 0], s["hits"], s)
-            self.assertEqual(0, s["myShot"], s)
+        # "the nose is on them for 0.13 s in one, and never in the other eight"
+        self.assertEqual([0] * 8 + [0.13], sorted(s["myShot"] for s in rows))
+        # "In three you sit in their rear quarter at last, 33 to 36 s in"
         late = [s["flipAt"] for s in rows if s["flipAt"] is not None]
-        self.assertEqual(7, len(late))
-        self.assertTrue(all(36.5 <= t <= 40 for t in late), late)
+        self.assertEqual(3, len(late))
+        self.assertTrue(all(33 <= t <= 36 for t in late), late)
+
+    def test_nobody_goes_over_the_roof(self) -> None:
+        # Under the roof (800 m) and the guard (880 m): nine starts of every
+        # demo and try, the highest either plane went.
+        for demo, x in jet_tops("F16", "the-circle")["the-circle"].items():
+            self.assertLess(max(x["top"]), 860, demo)
+        self.assertEqual(836, max(max(s["top"]) for d in self.shape["demos"].values() for s in d["scores"]))
 
 
 class CircleFromTheHarnessStartsTests(unittest.TestCase):
@@ -198,6 +215,20 @@ class CircleFromTheHarnessStartsTests(unittest.TestCase):
             self.assertTrue(all(r["hits"] == [0, 0] for r in demos[demo_id]), demo_id)
         self.assertTrue(all("let-go" not in r["phases"][0] for r in demos["dip"]))
         self.assertEqual(6, shot_down(demos["back"], 1))
+        hit = sorted(r["hits"][0] for r in demos["back"] if r["hits"][0])
+        self.assertEqual((8, 17, 22), (len(hit), hit[0], hit[-1]))
+        # Apart at the end: the Dip at 40 s, the zoom and the chop at 30 s.
+        self.assertEqual((383, 482), (min(r["apart"] for r in demos["dip"]), max(r["apart"] for r in demos["dip"])))
+        self.assertEqual((252, 358), (min(r["apart"] for r in demos["zoom"]), max(r["apart"] for r in demos["zoom"])))
+        self.assertEqual((735, 850), (min(r["apart"] for r in demos["chop"]), max(r["apart"] for r in demos["chop"])))
+
+    def test_the_mig29_under_the_roof(self) -> None:
+        tops = jet_tops("Mig29", "the-circle")["the-circle"]
+        self.assertEqual(854, max(max(x["top"]) for x in tops.values()))
+        self.assertTrue(all(x["past"] == [0, 0] for x in tops.values()))
+        # Every way out still fails on the MiG-29 too.
+        for demo_id in TRIES:
+            self.assertEqual(0, scored("Mig29")["demos"][demo_id]["measured"]["works"], demo_id)
 
 
 if __name__ == "__main__":

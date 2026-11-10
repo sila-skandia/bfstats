@@ -6,9 +6,10 @@
 // Spitfire's way out, fails because an equal jet behind you never falls
 // back: they sit 285 to 361 m behind with their guns bearing, and only the
 // hunter's habit of holding fire outside 150 m (192 m on the jet) keeps you
-// alive. Going straight up, a jet climbs on through the top of the sky and
-// hangs above them with no way back down onto them. The words say so; no
-// fight is changed.
+// alive. Going straight up, the roof every jet's pilot flies under
+// (`dogfight-jet-ceiling.js`) levels you off at the top of the sky, they
+// follow you up, and you fly on along it level with them. The words say so;
+// no fight is changed.
 export default {
   note: 'Nothing breaks it. Flown nine times on the F-16, none of the six ways out landed a round or got clear: an equal jet follows you up, down and away, and run from them and they sit 285 to 361 m behind you with their guns on you.',
   tagline: 'Two equal jets turning round each other: nobody gets a shot. Six ways to break it, and none does.',
@@ -19,7 +20,7 @@ export default {
   ],
   counterStory: [
     'Leaving, the Spitfire\'s way out, does not work here. Roll out while they are across the circle, full throttle, nose down, and they turn after you and settle 285 to 361 m behind you, nose on you, their guns bearing for 16 to 23 s of the 32. They never let you go. Only the hunter\'s habit of holding fire outside 190 m keeps you alive; turn back at them and the pass is head-on, they are behind you again, and in two of nine they shoot you down.',
-    'Straight up, a 60-degree jet climb cannot be levelled off at the top of the sky: you go on through it to about 1,420 m. They follow you up, 920 to 1,370 m, but never as high. You end 324 to 554 m over them, but down to 52 to 54 m/s, with no lift to come down onto them. The throttle back only slows you to 37 m/s and sinks you 272 to 320 m under them. Reversing the turn just turns the circle the other way, with no pass at all. Nose low you come round behind them and the jet climbs back up to them at 82 m/s, but the nose never comes onto them.',
+    'Straight up, you are levelled off at the top of the sky, 822 to 832 m, and they follow you up to the same air, 802 to 835 m. At most you are 134 to 175 m over them, down to 38 to 46 m/s; then the jets speed up along the top together and at 30 s you are level with them, never having come over the top onto them. The throttle back only slows you to 37 m/s and sinks you 277 to 323 m under them. Reversing the turn just turns the circle the other way, with no pass at all. Nose low you come round behind them and the jet climbs back up to them at 82 m/s, but the nose is on them for 0.13 s in one flight of nine, and in no other.',
     'Do not go into the circle with an equal jet. Inside it nobody is hit; out of it, they are behind you.',
   ],
   survival: { verdict: 'no', line: 'No: on the F-16 nothing gets you out. Leaving, going straight up, out and back, the throttle chop, reversing the turn and the nose-low turn all fail (0 of 9 each). Leaving puts them 285 to 361 m behind you with their guns on you, and out and back gets you shot down in two of nine. The circle itself never hurts you: nobody has a shot in it.' },
@@ -36,8 +37,8 @@ export default {
       verdict: { works: 0, of: 9, line: 'In all nine they turn after you and settle 285 to 361 m behind you, nose on you, their guns bearing for 16 to 23 s of the 32. They never let you go and never fire: the school\'s hunter holds their fire outside 190 m. You are not hit, and you are not out.' },
     },
     zoom: {
-      note: 'Going vertical: out of the circle straight up at 60 degrees, to come over the top and down on them. A jet keeps its speed going up. What you see is it failing anyway: you climb on through the top of the sky, where the nose will not come down, and hang there above them.',
-      verdict: { works: 0, of: 9, line: 'In all nine you climb on through the top of the sky to 1,416 to 1,426 m: from 60 degrees up a jet\'s nose will not come down there. They follow you up, to 920 to 1,368 m, and never as high. You end 324 to 554 m over them at 52 to 54 m/s, and at 30 s you are still 45 to 509 m above them, coming over the top with no shot. Nobody lands a round.' },
+      note: 'Going vertical: out of the circle straight up at 60 degrees, to come over the top and down on them. A jet keeps its speed going up. What you see is it failing anyway: you are levelled off at the top of the sky, they follow you up into the same air, and you fly on along it beside them.',
+      verdict: { works: 0, of: 9, line: 'In all nine you are levelled off at the top of the sky, 822 to 832 m, and they follow you up to 802 to 835 m. At most you are 134 to 175 m over them, down to 38 to 46 m/s; only in two do you start over the top, and you never come down onto them. At 30 s you are level with them, 12 m under to 69 m over, at 120 to 125 m/s, and in three they have just let you go. You never have a shot; in one of nine one round of theirs lands on you.' },
     },
     back: {
       note: 'Leave as the Dip does, run 22 s, then turn back and come in under their tail for a burst. What you see is it failing: they never let you go, so turning back is a head-on pass, and then they are behind you again.',
@@ -45,15 +46,15 @@ export default {
     },
     chop: {
       note: 'The throttle back (S) in the circle, to turn inside them. What you see is it failing: a slower jet turns no tighter here, only slower, and sinks.',
-      verdict: { works: 0, of: 9, line: 'In all nine you slow to 37 or 38 m/s, sink 272 to 320 m under them, end 514 to 563 m of energy behind them, and never come behind them. Nobody has a shot.' },
+      verdict: { works: 0, of: 9, line: 'In all nine you slow to 37 or 38 m/s, sink 277 to 323 m under them, end 510 to 644 m of energy behind them, and never come behind them. Nobody has a shot.' },
     },
     reverse: {
       note: 'Roll out of the circle into the opposite turn, so that you meet them. What you see is it failing: the circle simply turns the other way, with no pass and no shot.',
       verdict: { works: 0, of: 9, line: 'You never have a shot. In none of the nine is there a head-on pass: the circle turns the other way, 98 to 160 m apart at the closest, and nobody fires.' },
     },
     low: {
-      note: 'The circle flown nose low, to gain on them round the circle, then up into them from below. What you see is it nearly working: you get round behind them and the jet climbs back up to them at speed, but the nose never comes onto them.',
-      verdict: { works: 0, of: 9, line: 'In all nine you come round behind them (100 to 131 degrees round behind their heading, seen from above) 14 to 16 s in, 114 to 134 m under them, and start up at 82 or 83 m/s. No round lands in any: the nose never comes onto them. In seven you sit in their rear quarter at last, 37 to 40 s in, too late and with no shot.' },
+      note: 'The circle flown nose low, to gain on them round the circle, then up into them from below. What you see is it nearly working: you get round behind them and the jet climbs back up to them at speed, but the nose hardly comes onto them.',
+      verdict: { works: 0, of: 9, line: 'In all nine you come round behind them (100 to 131 degrees round behind their heading, seen from above) 14 to 16 s in, 114 to 134 m under them, and start up at 82 or 83 m/s. No round lands in any: the nose is on them for 0.13 s in one, and never in the other eight. In three you sit in their rear quarter at last, 33 to 36 s in, too late and with no shot.' },
     },
   },
   coach: {
