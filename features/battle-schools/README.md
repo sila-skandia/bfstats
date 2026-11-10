@@ -12,6 +12,12 @@ off on 2026-11-09 while the school is built. Its lessons, GUNNERY and DRIVE
 IT are not built. The fights index is built by the `bfstats-dogfights`
 CronJob beside the dogfights (2026-11-09), into `mesh/replays/tankfights`.
 
+**BF1918 (2026-11-10):** on a BF1918 arena the MATCHUP board's card 06
+holds the rules of 1917-18, each checked on the pairing, and the
+Villers-Bretonneux duel ([tank-doctrine-1918](../tank-doctrine-1918/README.md)).
+The same change prices a shell's blast on the hull it strikes, thrown
+charges and pickups in ON FOOT, and a bullet's falloff with range.
+
 The owner's brief (2026-11-09): research how the dogfight school could apply
 to other battle types, tank against tank above all. "I'm a fly boy, not a
 tank commander... whereas in a dog fight it's about manoeuvring, I feel like

@@ -282,3 +282,102 @@ class OnFootTests(unittest.TestCase):
         self.assertAlmostEqual(z["x"], -0.167, places=6)
         self.assertAlmostEqual(z["y"], -1.756, places=6)
         self.assertAlmostEqual(z["z"], -0.2, places=6)
+
+
+class BlastAndArcTests(unittest.TestCase):
+    """A round's blast on the hull it strikes (HP-9), a thrown charge's, and
+    where a hull's main gun can point (`gunArcs`)."""
+
+    @classmethod
+    def setUpClass(cls) -> None:
+        cls.out = run_harness()
+
+    def test_a_shell_s_blast_adds_to_its_hit(self) -> None:
+        b = self.out["blast"]
+        # Front 40 a hit alone, 3 to kill 100; with the 75 mm's burst 3.1 m
+        # from the origin (17.5 x (1 - 3.1/12) = 13) it takes 2.
+        self.assertEqual(b["front"], [3, 2])
+        self.assertEqual(b["atFront"], 13)
+        # The rear's one-shot stays one shot.
+        self.assertEqual(b["rear"], [1, 1])
+        self.assertEqual(b["splashMaterial"], 47)
+
+    def test_no_cell_no_blast_and_a_fuse_charge_has_no_impact_burst(self) -> None:
+        b = self.out["blast"]
+        # Vanilla's pairing: no cell for the round's material2 on armour (DMG-2).
+        self.assertIsNone(b["noCell"])
+        # A charge with no `hasCollisionEffect` bursts on its fuse, not on contact.
+        self.assertIsNone(b["noImpact"])
+
+    def test_a_thrown_charge_hurts_by_its_blast_alone(self) -> None:
+        # Its own material does nothing to any plate; going off against the
+        # hull, 25 x (1 - d/20) a charge: 5 from the front and the side.
+        self.assertEqual(self.out["blast"]["thrown"], [5, 5])
+        t = self.out["thrownCharge"]
+        self.assertFalse(t["placed"])
+        self.assertEqual(t["damage"]["material2"], 231)
+        self.assertEqual(t["rof"], 0.5)
+
+    def test_where_the_gun_points(self) -> None:
+        a = self.out["arcs"]
+        self.assertEqual(a["mark4"], [[-90, 15], [-15, 90]])
+        # The Mark IV's two sponsons: 181 degrees between them, both only
+        # within 15 degrees of the nose.
+        self.assertEqual(a["mark4Cover"], {"round": False, "any": 181, "all": [-15, 15]})
+        self.assertEqual(a["a7v"]["all"], [-10, 10])
+        self.assertTrue(a["ft17"]["round"])
+        self.assertIsNone(a["none"])
+
+    def test_the_wwi_names(self) -> None:
+        self.assertEqual(self.out["wwiNames"], ["Mark IV", "Saint-Chamond", "Beute FT-17", "77 mm field gun", "Sherman"])
+
+
+class DoctrineTests(unittest.TestCase):
+    """The rules of 1917-18 on a BF1918 pairing (`viewer/tank-doctrine-1918.js`,
+    features/tank-doctrine-1918): a Mark IV against an A7V in the numbers the
+    page measured on Villers-Bretonneux."""
+
+    @classmethod
+    def setUpClass(cls) -> None:
+        cls.d = run_harness()["doctrine"]
+
+    def test_eleven_rules_each_sourced(self) -> None:
+        self.assertEqual(len(self.d["ids"]), 11)
+        self.assertTrue(self.d["sources"])
+        # A few of the source's own words, never a passage.
+        self.assertTrue(all(n < 15 for n in self.d["quotes"]))
+
+    def test_where_the_game_parts_from_the_manual(self) -> None:
+        st = self.d["status"]
+        # SS 203 told tanks to fire on the move; the hull's speed rides on the
+        # shell, 5.39 m/s x 2 s = 11 m off at 200 m, and Mitchell stopped.
+        self.assertEqual(st["halt-to-fire"], "differs")
+        self.assertAlmostEqual(self.d["halt"]["drift"], 10.78, places=2)
+        self.assertIn("11 m off at 200 m", self.d["words"]["halt-to-fire"])
+        # A WWI hull is armoured alike all round: the rear buys nothing.
+        self.assertEqual(st["from-the-rear"], "differs")
+        for rule in ("keep-moving", "guns-kill-tanks", "bundled-charges", "anti-tank-rifle", "bring-to-bear"):
+            self.assertEqual(st[rule], "holds", rule)
+
+    def test_the_numbers_in_the_words(self) -> None:
+        w = self.d["words"]
+        self.assertIn("16 m on, 2 lengths", w["keep-moving"])
+        self.assertIn("only within 15 deg of the nose do both bear", w["bring-to-bear"])
+        self.assertIn("aimed with the tracks", self.d["arcsA7V"])
+        self.assertIn("Geballte Ladung needs 4 throws", w["bundled-charges"])
+        self.assertIn("stick grenade 10", w["bundled-charges"])
+        self.assertIn("about 20 hits", w["anti-tank-rifle"])
+        self.assertIn("picked up", w["anti-tank-rifle"])
+        self.assertIn("would need 400 hits", w["guns-kill-tanks"])
+
+    def test_without_data_a_rule_says_so(self) -> None:
+        e = self.d["empty"]
+        for rule in ("keep-moving", "spread-out", "guns-kill-tanks", "no-rifle-fire", "bundled-charges", "anti-tank-rifle"):
+            self.assertEqual(e[rule], "not here", rule)
+        self.assertEqual(e["halt-to-fire"], "partly")
+
+    def test_villers_bretonneux_on_this_engine(self) -> None:
+        duel = self.d["duel"]
+        self.assertIn("needs 4 hits on the A7V", duel[0])
+        self.assertIn("about 25 of its 100 hit points", duel[0])
+        self.assertIn("501 hits", duel[2])

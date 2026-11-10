@@ -30,6 +30,7 @@ const R = await load('tank-armour.js');
 const W = await load('tank-words.js');
 const L = await load('tank-launchers.js');
 const V = await load('tank-sight-view.js');
+const D = await load('tank-doctrine-1918.js');
 
 const out = {};
 const r1 = v => Math.round(v * 10) / 10;
@@ -278,5 +279,68 @@ const index = { rigs: ['BritishSoldier__Piat', 'FMGermanSoldier__Panzerfaust30',
 out.rigs = [V.rigStemFor(index, 'VolkssturmSoldier', 'Panzerfaust30'), V.rigStemFor(index, 'BritishSoldier', 'piat'),
   V.rigStemFor(index, 'GermanSoldier', 'Panzerfaust30'), V.rigStemFor(index, 'GermanSoldier', 'Bazooka'), V.rigStemFor(['USSoldier__Bazooka'], 'USSoldier', 'Bazooka')];
 out.zoomPose = V.zoomPose({ center1pHands: [-0.06, -1.56, 0.1], soldierZoomPosition: [-0.107, -0.196, 0.1] });
+
+// --- a round's blast on the hull it strikes (HP-9) ---------------------------------
+// The same box hull, its origin at its middle, splash material 47: an
+// impact round bursts 0.1 m off the plate it strikes, and the burst reaches
+// the origin 3.1 m in from the front plate.
+hull.userData.armor = { hitpoints: 100, splashMaterial: 47 };
+const blastTables = {
+  materials: { ...tables.materials, 276: { damage: 10, attGroup: 276, defGroup: 276 }, 70: { damage: 0, attGroup: 70, defGroup: 70 }, 231: { damage: 10, attGroup: 231, defGroup: 231 }, 47: { defGroup: 47 } },
+  modifiers: { ...tables.modifiers, 276: { 47: 1.75 }, 231: { 47: 2.5 } },
+};
+const shell = { material2: 276, radius: 12, damageType: 1, hasCollisionEffect: true };
+const blast = R.blastOf(blastTables, shell, hull);
+const sh = (r, b) => (r[b].share > 0 ? r[b].hurtShots : null);
+const plain = R.bearingShots(hull, price, 100, { bearings: [0, 90, 180], step: 0.1 });
+const blasted = R.bearingShots(hull, price, 100, { bearings: [0, 90, 180], step: 0.1, blast });
+const charge = { material2: 231, radius: 20, damageType: 1, hasCollisionEffect: false };
+const thrown = R.bearingShots(hull, R.pricer(blastTables, 70), 100, { bearings: [0, 90], step: 0.1, blast: R.blastOf(blastTables, charge, hull, { atContact: true }) });
+out.blast = {
+  front: [sh(plain, 0), sh(blasted, 0)], side: [sh(plain, 90), sh(blasted, 90)], rear: [sh(plain, 180), sh(blasted, 180)],
+  atFront: r1(blast(new THREE.Vector3(0, 0, -3), new THREE.Vector3(0, 0, -1))),
+  noCell: R.blastOf(tables, shell, hull), noImpact: R.blastOf(blastTables, charge, hull),
+  thrown: [sh(thrown, 0), sh(thrown, 90)],
+  splashMaterial: R.splashMaterialOf(hull),
+};
+// --- where the gun points ------------------------------------------------------------
+const rigged = (name, yaw) => { const base = new THREE.Group(); base.userData.rig = { axes: { yaw } }; const g = new THREE.Group(); g.name = name; base.add(g); return g; };
+const mark4 = [rigged('Mark4Gun', { min: -90, max: 15 }), rigged('Mark4Gun_1', { min: -15, max: 90 }), rigged('Mark4FrontLewis', { min: -30, max: 30 })];
+const ft17 = [rigged('FT17Cannon', { free: true, min: null, max: null })];
+out.arcs = {
+  mark4: A.gunArcs(mark4, 'Mark4Gun'), mark4Cover: A.arcCover(A.gunArcs(mark4, 'Mark4Gun')),
+  a7v: A.arcCover(A.gunArcs([rigged('A7VCannon', { min: -10, max: 10 })], 'A7VCannon')),
+  ft17: A.arcCover(A.gunArcs(ft17, 'FT17Cannon')), none: A.arcCover([]),
+};
+out.thrownCharge = L.launcherOf('GeballteLadung', { nodes: [{ name: 'GeballteLadung', extras: { fireArms: { velocity: 10, roundOfFire: 0.5, projectile: { kind: 'shell', material: 70, timeToLive: 5, damage: charge } } } }] });
+out.wwiNames = ["Mark4", "Chamond", "FT17_Beute", "Ger77er", "Sherman"].map(A.prettyTank);
+
+// --- the rules of 1917-18 (tank-doctrine-1918.js) -------------------------------------
+// A Mark IV against an A7V in BF1918's own numbers (Villers-Bretonneux, as
+// the page measured them): each hull's clock from the other's gun.
+const clock = (f, sd, r) => ({ 0: { shots: f }, 90: { shots: sd }, 180: { shots: r } });
+const mk4 = { name: 'Mark IV', hp: 80, lengthM: 8.2, heightM: 3, exposed: 1.1, shots: clock(4, 3, 3),
+  gun: { speed: 100, gravity: 0.35, reload: 4, arcs: [[-90, 15], [-15, 90]] },
+  sheet: { drive: { top: 5.39, turnFromRest: 6 }, steady: { hardStop: { peak: 1.59, still: 2.5 } } } };
+const a7v = { name: 'A7V', hp: 100, lengthM: 7.3, heightM: 3.5, exposed: 1.3, shots: clock(4, 4, 4),
+  gun: { speed: 100, gravity: 0.35, reload: 4, arcs: [[-10, 10]] }, sheet: { drive: { top: 6.13 } } };
+const doctrineCtx = {
+  you: mk4, them: a7v, mg: { label: "A7V's machine gun", shots: clock(492, 400, 403) },
+  fieldGuns: [{ label: '77 mm field gun', speed: 100, gravity: 0.3, reload: 3.33, radius: 12, shots: clock(2, 2, 2) }],
+  foot: [{ label: 'Geballte Ladung', charge: true, fuse: 5, shots: clock(4, 4, 4) }, { label: 'stick grenade', charge: true, fuse: 5, shots: clock(10, 10, 10) },
+    { label: 'Tankgewehr', charge: false, pickup: true, full: 100, min: 150, floor: 0.3, shots: clock(7, 6, 6) }],
+};
+const verdicts = D.rulesOn(doctrineCtx);
+out.doctrine = {
+  ids: verdicts.map(r => r.id),
+  status: Object.fromEntries(verdicts.map(r => [r.id, r.verdict.status])),
+  words: Object.fromEntries(verdicts.map(r => [r.id, r.verdict.words])),
+  sources: verdicts.every(r => r.source?.doc && /^https:\/\//.test(r.source.url)),
+  quotes: verdicts.filter(r => r.quote).map(r => r.quote.split(/\s+/).length),
+  empty: Object.fromEntries(D.rulesOn({ you: { ...mk4, sheet: null }, them: a7v, mg: null, fieldGuns: [], foot: [] }).map(r => [r.id, r.verdict.status])),
+  duel: D.VILLERS_BRETONNEUX.duel({ you: mk4, them: a7v, femaleMg: { shots: clock(501, 501, 501) } }),
+  halt: D.haltMeasure(mk4),
+  arcsA7V: D.arcWords(a7v).words,
+};
 
 console.log(JSON.stringify(out));

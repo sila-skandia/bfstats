@@ -10,7 +10,10 @@
 // .HeavyArmour > 0`). A tree whose loadouts carry no AI table (EoD's) keeps
 // the items of its `Anti-tank` kits instead. The weapon's own glb then says
 // what it fires; one whose round leaves slower than `PLACED` m/s is set
-// down, not fired (FHSW's Haft-Hohlladung, 3 m/s), and left out.
+// down, not fired (FHSW's Haft-Hohlladung, 3 m/s), and left out. A charge
+// thrown at 8 to 10 m/s (BF1918's Geballte Ladung and dynamite) is a throw,
+// and is kept: it hurts by its blast (`damage`, priced by
+// `tank-armour.js` `blastOf`), not by what it strikes.
 //
 // The round. A hand weapon's `FireArms` node carries `fireArms.velocity`
 // and its projectile's `gravity`, `material` and `timeToLive`, and flies the
@@ -32,7 +35,7 @@ import { reach as reachAt, timeTo, elevationFor } from './tank-ballistics.js';
 /** A side's team number in `loadouts.json`. */
 export const TEAM = { Axis: '1', Allied: '2' };
 /** Below this muzzle speed (m/s) a weapon is placed, not fired. */
-export const PLACED = 10;
+export const PLACED = 5;
 const AT_CLASS = /anti.?tank/i;
 
 /** A kit by name, the level's own first. */
@@ -52,8 +55,11 @@ function heavyRating(loadouts, name) {
 
 /**
  * The anti-tank items `side` carries on `levels` (raw level names; empty or
- * null for every level the loadouts know): `[{ name, kits, kitClasses }]`,
- * one per weapon, in the order first met.
+ * null for every level the loadouts know): `[{ name, kits, kitClasses,
+ * rated, pickup }]`, one per weapon, in the order first met. A kit the
+ * level lays on a pad (`loadouts.pads`, a pickup) counts for its own side
+ * (`team`, `setKitTeam`), or either side where it names none (0); `pickup` is
+ * a weapon only a pad hands out (BF1918's Tankgewehr, the `ger_tank` kit).
  */
 export function sideWeapons(loadouts, levels, side) {
   const team = TEAM[side];
@@ -64,9 +70,13 @@ export function sideWeapons(loadouts, levels, side) {
   for (const l of want) {
     const level = lower[l];
     const slots = level && loadouts.levels[level]?.[team]?.slots;
-    for (const kitName of Object.values(slots ?? {})) {
+    const chosen = Object.values(slots ?? {}).map(k => [k, false]);
+    const padded = (level ? loadouts.pads?.[level] ?? [] : []).map(k => [k, true]);
+    for (const [kitName, pad] of [...chosen, ...padded]) {
       const kit = kitOf(loadouts, level, kitName);
       if (!kit) continue;
+      // Team 0 is no team: either side takes it.
+      if (pad && Number(kit.team) > 0 && String(kit.team) !== team) continue;
       const items = [...(kit.items ?? []), ...(kit.random ?? []).flatMap(r => r.variants ?? [])];
       for (const item of items) {
         const rating = heavyRating(loadouts, item);
@@ -74,8 +84,9 @@ export function sideWeapons(loadouts, levels, side) {
         if (!anti) continue;
         const key = String(item).toLowerCase();
         // `rated`: the game's AI table says so, not only the kit's class.
-        if (!out.has(key)) out.set(key, { name: item, kits: [], kitClasses: new Set(), rated: rating != null });
+        if (!out.has(key)) out.set(key, { name: item, kits: [], kitClasses: new Set(), rated: rating != null, pickup: pad });
         const w = out.get(key);
+        if (!pad) w.pickup = false;
         if (!w.kits.includes(kitName)) w.kits.push(kitName);
         if (kit.class) w.kitClasses.add(kit.class);
       }
@@ -96,14 +107,15 @@ export function glbJson(bytes) {
 
 /**
  * A hand weapon's round and spread from its glb JSON, or null for one that
- * fires nothing: `{ name, gun: { speed, gravity }, material, ttl, reload,
- * spread: { still, moving, declared } }`. `still` and `moving` are the
+ * fires nothing: `{ name, gun: { speed, gravity }, material, ttl, damage,
+ * reload, spread: { still, moving, declared } }`. `still` and `moving` are the
  * cone's half-width per axis in hundredths of a radian (DEV-9), standing.
  */
 export function launcherOf(name, json) {
   const nodes = (json?.nodes ?? []).filter(n => n?.extras?.fireArms?.projectile?.material != null);
   if (!nodes.length) return null;
-  const own = nodes.find(n => String(n.name).toLowerCase() === String(name).toLowerCase()) ?? nodes[0];
+  const own = nodes.find(n => String(n.name).toLowerCase() === String(name).toLowerCase())
+    ?? nodes.find(n => n.extras.fireArms.projectile.kind === 'shell') ?? nodes[0];
   const fa = own.extras.fireArms;
   const pr = fa.projectile;
   const speed = Number(fa.velocity) || 0;
@@ -120,7 +132,12 @@ export function launcherOf(name, json) {
     gun: { speed, gravity: Number.isFinite(g) ? g : 1 },
     material: Number(pr.material),
     ttl: Number(pr.timeToLive) || 10,
+    kind: pr.kind ?? null,
+    // The blast: `material2`, `radius`, `damageType`, `hasCollisionEffect`.
+    damage: pr.damage ?? null,
     reload: Number(fa.reloadTime) || null,
+    // Rounds a second; a crewed gun's reload is whole ticks of it (GUN-13).
+    rof: Number(fa.roundOfFire) || null,
     placed: speed < PLACED,
     spread: { still: min, moving: min + walk * stand, declared },
     // What the HUD does with it: the zoom (`zoomFov`, `soldierZoomFov`, and

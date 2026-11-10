@@ -172,6 +172,7 @@ folder answers.
 | [dogfight-recordings](dogfight-recordings/README.md) | build | How are real dogfights found in the round recordings players upload, and played back in the dogfight school's theatre to learn which manoeuvres win? |
 | [dogfight-school](dogfight-school/README.md) | build | How do I learn a dogfighting move and its counter: watch it flown on BF1942's own flight law, then fly against a bot ace who uses it? |
 | [battle-schools](battle-schools/README.md) | build | How would the dogfight school's approach carry over to tank against tank, infantry and the other match-ups; how does the tank school's MATCHUP show where to aim, the two guns and how steady each hull is, on any mod; and which real tank fights do the recordings hold? |
+| [tank-doctrine-1918](tank-doctrine-1918/README.md) | build | Which written rules did WWI tank crews and the men who fought tanks get in 1917-18, which of them does BF1918's engine reward, and how does the tank school's RULES card read each on a pairing, Villers-Bretonneux first? |
 | [bot-garrison](bot-garrison/README.md) | build | Why do bots post one guard per flag, and where is it tuned? |
 | [bot-weapons](bot-weapons/README.md) | build | Why did bots never reload or show rockets, and how do bot triggers fire? |
 | [bot-gunner-aim](bot-gunner-aim/README.md) | build | How do retail bots aim and fire mounted guns, and why do AA bots miss? |

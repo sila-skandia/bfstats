@@ -666,3 +666,19 @@ marks it as thrown. The sight view draws the target front-on, so the lead
 shows in the words and not on the picture. FHSW's Arnhem is not an arena
 (the school has no tank pair there), so its Panzerfaust 100 is reached on
 Westwall, Hungary Forest or the Seelow Heights.
+
+## The blast, charges and pickups (2026-11-10)
+
+Built with the BF1918 rules ([tank-doctrine-1918](../tank-doctrine-1918/README.md),
+"Found and fixed on the way"):
+
+- **Every clock now adds the round's blast** on the hull it strikes (HP-9),
+  burst 0.1 m off the plate, measured to the hull's origin. No vanilla
+  pairing moves (DMG-2: no cell against armour). BF1918's 75 mm and 77 mm
+  take a Mark IV from 3 hits to 2; 58 of Desert Combat's 210 pairings and
+  121 of EoD's 420 change.
+- **ON FOOT prices thrown charges and grenades by their blast**, says them
+  as throws on a fuse, and follows a bullet's falloff with the distance
+  slider. A kit a level lays on a pad (`loadouts.json` `pads`) counts, and
+  its chip says "pickup".
+

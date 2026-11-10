@@ -312,6 +312,14 @@ ObjectTemplate.maxhitpoints {hitpoints}
 
     def test_without_pads_it_has_none(self) -> None:
         self.assertNotIn("US_Sniper_hvy", self.build(None)["kits"])
+        self.assertNotIn("pads", self.build(None))
+
+    def test_each_level_s_pads_are_listed(self) -> None:
+        # What a soldier picks up on the level, beside its slots: BF1918's
+        # Tankgewehr reaches German soldiers no other way (`ger_tank`).
+        manifest = self.build({"Aaa": {"us_sniper_hvy": "US_Sniper_Hvy", "ust": "UST"},
+                               "Zzz": {"us_sniper": "US_Sniper"}})
+        self.assertEqual({"aaa": ["US_Sniper_hvy"], "zzz": ["US_Sniper"]}, manifest["pads"])
 
     def test_a_bound_kit_keeps_its_slots_row(self) -> None:
         # A pad on an earlier level does not change the row the slot gives:
@@ -803,18 +811,21 @@ class DeltaMergeTests(unittest.TestCase):
                 "levels": {"old": {"1": {"soldier": "S", "slots": {"0": "A"}}},
                            "gone": {"1": {"soldier": "S", "slots": {"0": "A"}}}},
                 "levelKits": {"gone": {"A": {"items": ["y"]}}},
+                "pads": {"old": ["A"], "gone": ["A"]},
                 "aiWeapons": {"x": {"aiTemplate": "X"}}}
 
     def test_new_levels_merge_and_existing_rows_win(self):
         fresh = {"kits": {"A": {"items": ["changed"]}, "B": {"items": ["z"]}},
                  "levels": {"new": {"1": {"soldier": "T", "slots": {"0": "B"}}}},
                  "levelKits": {"new": {"B": {"items": ["w"]}}},
+                 "pads": {"new": ["B"]},
                  "aiWeapons": {"z": {"aiTemplate": "Z"}, "x": {"aiTemplate": "other"}}}
         out = merge_delta(self.previous(), fresh, {"old", "new"})
         self.assertEqual(list(out["levels"]), ["new", "old"])
         self.assertEqual(out["kits"]["A"], {"items": ["x"]})
         self.assertIn("B", out["kits"])
         self.assertEqual(out["levelKits"], {"new": {"B": {"items": ["w"]}}})
+        self.assertEqual(out["pads"], {"new": ["B"], "old": ["A"]})
         self.assertEqual(out["aiWeapons"]["x"], {"aiTemplate": "X"})
         self.assertIn("z", out["aiWeapons"])
 
@@ -822,6 +833,7 @@ class DeltaMergeTests(unittest.TestCase):
         out = merge_delta(self.previous(), None, {"old"})
         self.assertEqual(list(out["levels"]), ["old"])
         self.assertNotIn("levelKits", out)
+        self.assertEqual(out["pads"], {"old": ["A"]})
 
     def test_the_previous_file_is_not_modified(self):
         prev = self.previous()

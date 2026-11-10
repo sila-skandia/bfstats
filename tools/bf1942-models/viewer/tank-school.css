@@ -335,3 +335,34 @@
 .tks-foot-label { fill: #f2f0e6; font: 600 12px var(--mm-font-mono); paint-order: stroke; stroke: #0c0c0c; stroke-width: 3px; }
 .tks-foot-sight-wait { position: absolute; left: 10px; bottom: 8px; color: #f2f0e6; font: 400 10.5px var(--mm-font-mono); letter-spacing: 0.1em; text-transform: uppercase; }
 .tks-foot-sight svg.tks-foot-hud { max-width: none; height: 100%; border-radius: 0; }
+
+/* 06: the rules of 1917-18 (BF1918). */
+.tks-rules-jump { align-self: flex-start; color: var(--mm-accent); font: 500 10.5px/1.6 var(--mm-font-mono); letter-spacing: 0.12em; text-transform: uppercase; text-decoration: none; border-bottom: 1px solid color-mix(in srgb, var(--mm-accent) 40%, transparent); }
+.tks-rules-jump:hover { color: var(--mm-ink); }
+.tks-duel { display: flex; gap: 18px; align-items: flex-start; justify-content: space-between; padding: 14px 16px; border: 1px solid var(--mm-rule); border-left: 3px solid var(--mm-accent); border-radius: 3px; background: color-mix(in srgb, var(--mm-accent) 5%, transparent); }
+.tks-duel-text { display: flex; flex-direction: column; gap: 8px; max-width: 80ch; min-width: 0; }
+.tks-duel h3 { margin: 0; font-size: 16px; font-weight: 600; }
+.tks-duel-story p { margin: 0 0 6px; color: var(--mm-ink-soft); font-size: 13px; line-height: 1.5; }
+.tks-duel-words:empty { display: none; }
+.tks-duel-src { margin: 0; font: 400 10.5px/1.5 var(--mm-font-mono); color: var(--mm-ink-muted); }
+.tks-duel-src a, .tks-rule-src a { color: inherit; }
+.tks-duel-go { flex: none; white-space: nowrap; text-decoration: none; }
+.tks-rule-list { margin: 0; padding: 0; list-style: none; display: grid; grid-template-columns: repeat(auto-fit, minmax(min(100%, 420px), 1fr)); gap: 10px 24px; }
+.tks-rule-head { grid-column: 1 / -1; margin-top: 6px; color: var(--mm-ink-muted); font: 500 10px/1.4 var(--mm-font-mono); letter-spacing: 0.14em; text-transform: uppercase; }
+.tks-rule { display: flex; gap: 12px; padding: 10px 0; border-top: 1px solid var(--mm-rule); min-width: 0; }
+.tks-rule-n { flex: none; width: 24px; height: 24px; display: grid; place-items: center; border: 1px solid var(--mm-rule-strong); border-radius: 50%; font: 600 11px/1 var(--mm-font-mono); color: var(--mm-ink-soft); }
+.tks-rule-body { display: flex; flex-direction: column; gap: 5px; min-width: 0; }
+.tks-rule-body > b { font-size: 13.5px; }
+.tks-rule-plain { margin: 0; color: var(--mm-ink-soft); font-size: 13px; line-height: 1.45; }
+.tks-rule q { color: var(--mm-ink-muted); font-size: 12.5px; font-style: italic; line-height: 1.45; }
+.tks-rule-src { color: var(--mm-ink-faint); font: 400 10.5px/1.5 var(--mm-font-mono); }
+.tks-rule-here { margin: 2px 0 0; color: var(--mm-ink); font-size: 13px; line-height: 1.5; }
+.tks-rule-here em { display: inline-block; margin-right: 8px; padding: 1px 6px; border-radius: 2px; font: 600 9.5px/1.6 var(--mm-font-mono); font-style: normal; letter-spacing: 0.12em; text-transform: uppercase; vertical-align: 1px; background: var(--mm-rule); color: var(--mm-ink-soft); }
+.tks-rule.is-holds .tks-rule-here em { background: var(--mm-success-bg); color: var(--tks-you); }
+.tks-rule.is-differs .tks-rule-here em { background: color-mix(in srgb, var(--tks-them) 20%, transparent); color: var(--tks-them); }
+.tks-rule.is-partly .tks-rule-here em { background: color-mix(in srgb, var(--mm-accent) 18%, transparent); color: var(--mm-accent); }
+.tks-rule.is-not-here { opacity: 0.8; }
+.tks-rule-see { align-self: flex-start; color: var(--mm-ink-muted); font: 500 10px/1.6 var(--mm-font-mono); letter-spacing: 0.12em; text-transform: uppercase; text-decoration: none; }
+.tks-rule-see:hover { color: var(--mm-ink); }
+.tks-rules-wait { margin: 0; color: var(--mm-ink-muted); font: 400 11px/1.5 var(--mm-font-mono); }
+@media (max-width: 760px) { .tks-duel { flex-direction: column; } }

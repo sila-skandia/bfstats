@@ -14,10 +14,13 @@
 // shots to kill" did: a grid across the silhouette from each bearing, the
 // first collision face each ray meets priced at its own angle, the hits
 // averaged; shots are `ceil(HP / mean)`, and the best spot `ceil(HP / max)`.
+// A round whose blast reaches armour adds it to each hit (`blastOf`, HP-9):
+// vanilla's do not (DMG-2), BF1918's 75 mm and 77 mm shells do.
 
 import * as THREE from 'three';
 import { damageMath, shotsFor } from './armour-damage.js';
 import { angleFactor } from './crash-damage.js';
+import { splashSpec, splashDamage, blastDistance } from './projectile-damage.js';
 
 /** Bands of shots to kill, most dangerous first, in the site's tints (the
  *  model browser's armour ramp: kill, busy, khaki, olive, poor grey). */
@@ -81,13 +84,53 @@ export function angleModOf(root) {
   return Number.isFinite(v) ? v : 0;
 }
 
+/** The hull's `splashMaterial`, which a blast is priced against (HP-9). */
+export function splashMaterialOf(root) {
+  let m = null;
+  root.traverse(o => { if (m == null && o.userData?.armor?.splashMaterial != null) m = Number(o.userData.armor.splashMaterial); });
+  return Number.isFinite(m) ? m : null;
+}
+
+/**
+ * What a round's blast adds to its hit, on the hull it struck: `blast(point,
+ * normal)` in hit points, or null for a round with no blast that reaches this
+ * hull. The engine bursts an impact round 0.1 m off the plate along its
+ * normal and sweeps every object in reach, the struck hull with the rest
+ * (HP-9: only the shooter's own Armor is left out), so a direct hit costs
+ * the plate's price plus the blast at the hull's origin's distance:
+ * `materialDamage(material2) x damageMod(material2, splashMaterial) x (1 -
+ * d / radius)`, with only the height scaled by `YModOnExplosion`. Vanilla's
+ * tank rounds have no cell against armour (DMG-2), so this is null for every
+ * vanilla pairing; BF1918's 75 mm and field-gun shells reach 17.5 hit points
+ * at the origin. `damage` is the round's `projectile.damage` block.
+ * `atContact`: a charge that lies where it lands and bursts on its fuse, its
+ * blast at the touching point itself.
+ */
+export function blastOf(tables, damage, root, { atContact = false } = {}) {
+  const spec = splashSpec(damage);
+  if (!spec || !(atContact ? spec.endOfLife : spec.impact)) return null;
+  const splashMaterial = splashMaterialOf(root);
+  if (splashMaterial == null || !tables?.materials) return null;
+  if (!(splashDamage(spec.material2, splashMaterial, 0, spec.radius, tables.materials, tables.modifiers) > 0)) return null;
+  root.updateMatrixWorld(true);
+  const origin = new THREE.Vector3().setFromMatrixPosition(root.matrixWorld);
+  const at = new THREE.Vector3();
+  return (point, normal = null) => {
+    at.copy(point);
+    if (normal && !atContact) at.addScaledVector(normal, 0.1);
+    const d = blastDistance(at.x - origin.x, at.y - origin.y, at.z - origin.z, spec.yMod);
+    return splashDamage(spec.material2, splashMaterial, d, spec.radius, tables.materials, tables.modifiers);
+  };
+}
+
 /**
  * Shots to kill from each bearing: `{ [bearing]: { mean, max, shots,
  * bestShots, area } }`. Bearing 0 is from straight ahead, 90 from the right,
  * 180 from behind; `elevation` lifts the shooter (degrees). `root` stands at
- * its rest pose; its world matrices are used as they are.
+ * its rest pose; its world matrices are used as they are. `blast`, from
+ * `blastOf`, adds the round's own burst to every hit it makes.
  */
-export function bearingShots(root, price, hitpoints, { bearings = [0, 30, 60, 90, 120, 150, 180], elevation = 0, step = 0.15 } = {}) {
+export function bearingShots(root, price, hitpoints, { bearings = [0, 30, 60, 90, 120, 150, 180], elevation = 0, step = 0.15, blast = null } = {}) {
   const tris = worldTriangles(root);
   if (!tris.length) return null;
   const box = new THREE.Box3();
@@ -107,7 +150,11 @@ export function bearingShots(root, price, hitpoints, { bearings = [0, 30, 60, 90
     const r2 = new THREE.Vector3().crossVectors(r1, dir);
     const n = Math.ceil(R / step);
     let sum = 0, max = 0, hits = 0;
-    const hurting = [];
+    // `hurting`: hits on a plate the round itself gets through. A blast also
+    // reaches the plates it does not, a little; those count only for a round
+    // that gets through no plate on this side (a thrown charge), or every
+    // immune plate would pull the median down to its blast alone.
+    const hurting = [], blastOnly = [];
     // The grid sits half a step off the hull's middle, so no ray runs
     // exactly along a plate's edge.
     for (let i = -n; i < n; i++) {
@@ -122,9 +169,13 @@ export function bearingShots(root, price, hitpoints, { bearings = [0, 30, 60, 90
           if (d < bestT) { bestT = d; best = t; }
         }
         if (!best) continue;
-        const d = price(best.material) * angleFactor(Math.abs(best.normal.dot(dir)), angleMod);
+        // The burst sits on the side of the plate the round came from.
+        const direct = price(best.material) * angleFactor(Math.abs(best.normal.dot(dir)), angleMod);
+        const d = direct
+          + (blast ? blast(point.copy(ray.origin).addScaledVector(dir, Math.sqrt(bestT)), best.normal.dot(dir) > 0 ? best.normal.clone().negate() : best.normal) : 0);
         sum += d; max = Math.max(max, d); hits++;
-        if (d > 0) hurting.push(d);
+        if (direct > 0) hurting.push(d);
+        else if (d > 0) blastOnly.push(d);
       }
     }
     const mean = hits ? sum / hits : 0;
@@ -134,6 +185,7 @@ export function bearingShots(root, price, hitpoints, { bearings = [0, 30, 60, 90
     // average, misses on plates the gun cannot hurt included: on a hull of
     // mixed thickness (FHSW's T95, 25 to 250 mm) it reads 12 head-on and 40
     // at 30 degrees while a 3-shot plate shows from every side.
+    if (!hurting.length) hurting.push(...blastOnly);
     hurting.sort((x, y) => x - y);
     const median = hurting.length ? hurting[Math.floor((hurting.length - 1) / 2)] : 0;
     out[az] = {

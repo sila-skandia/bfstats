@@ -191,7 +191,10 @@ export function steadyWords(name, trace, summary = null, { range = 200, reload =
 /**
  * A soldier's anti-tank weapon against a tank, at R m (the ON FOOT panel):
  * `w` is `{ name, reach, aim: { elevation, t }, drop, spread: { still,
- * moving, declared }, stillM, movingM }` (`tank-launchers.js`), `target` is
+ * moving, declared }, stillM, movingM, charge, falloff }` (`tank-launchers.js`;
+ * `charge` `{ fuse, radius }` for a thrown charge that bursts on its fuse,
+ * `falloff` `{ factor, full, min, floor }` for a round that has lost damage
+ * by R), `target` is
  * `{ name, heightM, lengthM, top, shots }` with `top` its top speed (m/s, or
  * null) and `shots` its clock (`{ 0, 90, 180: { shots, share } }`).
  */
@@ -199,12 +202,15 @@ export function launcherWords(w, target, R) {
   const out = [];
   const reach = Math.round(w.reach.range);
   const ends = w.reach.fuse ? 'its fuse runs out' : 'it lands';
+  // A thrown charge leaves the hand, not a tube.
+  const up = e => (w.charge ? `thrown ${n1(e)} deg up` : `with the tube ${n1(e)} deg up`);
   if (w.aim.elevation == null) {
-    out.push(`The ${w.name} cannot reach ${R} m: ${ends} ${reach} m out at most, with the tube ${n1(w.reach.elevation)} deg up. Get within ${reach} m.`);
+    out.push(`The ${w.name} cannot reach ${R} m: ${ends} ${reach} m out at most, ${up(w.reach.elevation)}. Get within ${reach} m.`);
   } else {
     const e = w.aim.elevation, h = target.heightM;
     if (w.drop < 0) out.push(`Aim straight at them: the round climbs on its launch and barely falls, ${n1(-w.drop)} m above the line by ${R} m.`);
     else if (w.drop < h * 0.5) out.push(`Aim straight at them: by ${R} m the round falls ${n1(w.drop)} m, less than half their height.`);
+    else if (w.charge) out.push(`At ${R} m throw it ${n1(e)} deg above them: it falls ${n1(w.drop)} m on the way. It goes ${reach} m at most.`);
     else out.push(`At ${R} m point the tube ${n1(e)} deg above them: the round falls ${n1(w.drop)} m on the way, ${n1(w.drop / h)} times their height. It goes ${reach} m at most.`);
     const t = w.aim.t;
     if (target.top) {
@@ -215,13 +221,24 @@ export function launcherWords(w, target, R) {
       out.push(`It takes ${n1(t)} s to get there: lead a moving tank by its speed times that.`);
     }
   }
+  if (w.falloff) {
+    out.push(`Past ${Math.round(w.falloff.full)} m its round loses damage: at ${R} m it does ${Math.round(w.falloff.factor * 100)}% of a close hit, `
+      + `and ${Math.round(w.falloff.floor * 100)}% from ${Math.round(w.falloff.min)} m. Get inside ${Math.round(w.falloff.full)} m.`);
+  }
+  if (w.charge) {
+    const gone = target.top ? target.top * w.charge.fuse : null;
+    out.push(`A charge, not a round: it goes off on its fuse, ${n1(w.charge.fuse)} s after it leaves your hand, wherever it lies then, and its blast reaches ${Math.round(w.charge.radius)} m, falling away to nothing at the edge.`
+      + (gone ? ` In ${n1(w.charge.fuse)} s the ${target.name} can drive ${Math.round(gone)} m: throw it at a tank that has stopped, or onto the ground it is driving over.` : ''));
+  }
   if (!w.spread.declared || w.spread.still === 0) {
-    out.push('No spread: the game sends the round exactly where the tube points. A miss is the drop or the lead, never luck.');
+    out.push(w.charge ? 'No spread: it goes exactly where you throw it. A miss is the throw or the lead, never luck.'
+      : 'No spread: the game sends the round exactly where the tube points. A miss is the drop or the lead, never luck.');
   } else {
     out.push(`Standing still it strays up to ${n1(w.stillM)} m from where you point at ${R} m, on each axis; walking, up to ${n1(w.movingM)} m. Stop before you fire.`);
   }
   const f = shotsAt(target, 0), sd = shotsAt(target, 90), r = shotsAt(target, 180);
   if (![f, sd, r].some(v => v != null)) out.push(`Its warhead cannot hurt the ${target.name} from any side.`);
+  else if (w.charge && plain(f, sd, r)) out.push(`Throws to kill, each going off against the hull: front ${f}, side ${sd}, rear ${r}.`);
   else if (plain(f, sd, r)) out.push(`Hits to kill on a plate it gets through: front ${f}, side ${sd}, rear ${r}.`);
   else out.push(faces3('Hits to kill', f, sd, r));
   return out;

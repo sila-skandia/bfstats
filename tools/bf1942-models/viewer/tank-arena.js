@@ -116,7 +116,17 @@ export function tankRank(a, b) {
 /** A template as a crew says it: `PanzerIV` "Panzer IV", `T34-85` "T-34-85". */
 export function prettyTank(template) {
   const t = String(template ?? '');
-  const named = { PanzerIV: 'Panzer IV', T34: 'T-34', 'T34-85': 'T-34-85', 'Chi-ha': 'Chi-ha', M10: 'M10' };
+  const named = { PanzerIV: 'Panzer IV', T34: 'T-34', 'T34-85': 'T-34-85', 'Chi-ha': 'Chi-ha', M10: 'M10',
+    // BF1918's, as their crews knew them; `_Beute` is a captured one.
+    Mark4: 'Mark IV', Mark4_beute: 'Beute Mark IV', Mark8: 'Mark VIII', Chamond: 'Saint-Chamond', Schneider_ca1: 'Schneider CA1',
+    FT17: 'FT-17', FT17MG: 'FT-17 machine gun', FT17_Beute: 'Beute FT-17', FT17MG_Beute: 'Beute FT-17 machine gun',
+    Kolossal: 'K-Wagen', KolossalSpawn: 'K-Wagen', TreffAs: 'Treff-As', Whippet_Fire: 'Whippet', TsarTank: 'Tsar Tank',
+    Ger77er: '77 mm field gun', Frz75er: '75 mm field gun', '18pdr_france': '18-pounder', Kuk75er: 'Austrian 75 mm field gun',
+    Ita75er: 'Italian 75 mm field gun', Rus76er: 'Russian 76 mm field gun', GunCarrier: 'Gun Carrier', GeballteLadung: 'Geballte Ladung',
+    GeballteLadungBig: 'heavy Geballte Ladung', Tankgewehr: 'Tankgewehr', PomPom: 'pom-pom', Schneider1913er: 'Schneider 105 mm',
+    GrenadeGer: 'stick grenade', GrenadeGerGunner: 'stick grenade', GrenadeGerStormtrooper: 'stick grenade', DosenGrenade: 'Dosen grenade',
+    MillsBomb: 'Mills bomb', MillsBombGunner: 'Mills bomb', MillsBombBomber: 'Mills bomb', GrenadeFrz: 'French grenade', GrenadeFrzGunner: 'French grenade',
+    F1Gren: 'F1 grenade', F1GrenGunner: 'F1 grenade', F1GrenBomber: 'F1 grenade', Kugel_Grenade13: 'ball grenade', Kugel_Grenade15: 'ball grenade' };
   if (named[t]) return named[t];
   return t.replace(/_/g, ' ').replace(/([a-z])([A-Z0-9])/g, '$1 $2');
 }
@@ -132,7 +142,15 @@ export function sidesOn(row, level) {
   return Array.isArray(own) ? own : (row?.sides ?? []);
 }
 
-const levelWords = map => String(map).replace(/_/g, ' ').replace(/\bof the\b/gi, m => m.toLowerCase());
+// A level's name in words. BF1918 names its levels in lower case
+// (`villers_bretonneux`, `chemin_des_dames`): those are given capitals, the
+// small words of a place name left small.
+const SMALL = new Set(['of', 'the', 'de', 'des', 'du', 'd', 'la', 'le', 'les', 'and', 'a', 'to', 'in', 'on', 'am', 'an', 'der', 'die']);
+const levelWords = map => {
+  const words = String(map).replace(/_/g, ' ').replace(/\bof the\b/gi, m => m.toLowerCase());
+  if (/[A-Z]/.test(words)) return words;
+  return words.split(' ').map((w, i) => (i && SMALL.has(w) ? w : w.charAt(0).toUpperCase() + w.slice(1))).join(' ');
+};
 
 /**
  * The arenas, from the catalogue's rows (`rows`) over the levels the viewer
@@ -253,4 +271,43 @@ export function pickMainGun(nodes, wanted) {
   return own.find(n => n.name.toLowerCase() === base)
     ?? own.find(n => /_ap$/i.test(n.name)) ?? own.find(n => /_ap/i.test(n.name))
     ?? own.find(n => !/canister|_he$|heat|smoke/i.test(n.name)) ?? own[0] ?? guns[0];
+}
+
+/**
+ * Where a hull's main gun can point, from its rig: one arc per gun of that
+ * name (a Mark IV carries two 6-pounders, one in each sponson), each the
+ * yaw limits of the first yawing part above it, in degrees right of the
+ * nose (`[-90, 15]` for the Mark IV's left sponson, `[-10, 10]` for the
+ * A7V's bow gun), or null for a turret that turns all the way round.
+ * `nodes` are the hull's FireArms nodes; `name` the main gun's.
+ */
+export function gunArcs(nodes, name) {
+  const out = [];
+  // three's loader gives a second node of one name a `_1` (the Mark IV's
+  // right sponson is `Mark4Gun_1` once loaded).
+  const base = String(name ?? '').toLowerCase().replace(/_\d+$/, '');
+  for (const n of nodes) {
+    if (String(n.name).toLowerCase().replace(/_\d+$/, '') !== base) continue;
+    let arc;
+    for (let a = n.parent; a; a = a.parent) {
+      const yaw = a.userData?.rig?.axes?.yaw;
+      if (!yaw) continue;
+      arc = yaw.free || yaw.min == null || yaw.max == null ? null : [Number(yaw.min), Number(yaw.max)];
+      break;
+    }
+    if (arc !== undefined) out.push(arc);
+  }
+  return out;
+}
+
+/** The bearings (degrees right of the nose, -180 to 180) at least one arc
+ *  covers, and those every arc covers: `{ any: width, all: [lo, hi] | null,
+ *  round }`. `round` is a turret that turns all the way. */
+export function arcCover(arcs) {
+  if (!arcs.length) return null;
+  if (arcs.some(a => a == null)) return { round: true, any: 360, all: null };
+  const all = [Math.max(...arcs.map(a => a[0])), Math.min(...arcs.map(a => a[1]))];
+  const steps = [];
+  for (let b = -180; b < 180; b += 1) if (arcs.some(a => b >= a[0] && b <= a[1])) steps.push(b);
+  return { round: false, any: steps.length, all: all[0] <= all[1] ? all : null };
 }

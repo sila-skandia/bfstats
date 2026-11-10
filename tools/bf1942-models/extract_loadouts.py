@@ -25,7 +25,8 @@ LOAD-2, LOAD-5): its row goes in `levelKits[<level>][<kit>]`, beside the mod's
 in `kits` (`build_manifest`, `read_chain_levels`).
 
 A kit a level's ObjectSpawners lay on a pad (`kit.level_pads`) gets a row in
-`kits` too, though no deploy-screen slot names it: Desert Combat 0.7 hands out
+`kits` too, though no deploy-screen slot names it, and its name in
+`pads[<level>]`: Desert Combat 0.7 hands out
 its M82 (`US_Sniper_hvy`) and Stinger (`US_AA`) kits only that way, and the
 page makes a pad only for a kit this file knows (`deployables-page.js`). So
 does a kit a placed object's own spawners stand (`kit.spawner_laid_kits`):
@@ -315,6 +316,10 @@ def build_manifest(library: con_mod.ObjectLibrary, kits: dict[str, kit_mod.Kit],
     row_library: dict[str, con_mod.ObjectLibrary] = {}
     level_kits: dict[str, dict[str, dict]] = {}
     levels: dict[str, dict] = {}
+    # The kits each level lays on its pads, by the spelling of `kits`: what a
+    # soldier of either side picks up there, beside what the deploy screen
+    # offers (BF1918's Tankgewehr comes only this way, the `ger_tank` kit).
+    level_pads: dict[str, list[str]] = {}
     # The soldier as his `create` line spells him, not as `setTeamSkin` does:
     # every pose, rig and viewmodel is named after the former.
     kit_mod.spell_soldiers(loadouts, library)
@@ -365,6 +370,9 @@ def build_manifest(library: con_mod.ObjectLibrary, kits: dict[str, kit_mod.Kit],
             kit = kits.get(key)
             if kit is None:
                 continue
+            on_pad = level_pads.setdefault(level_name.lower(), [])
+            if kit.template not in on_pad:
+                on_pad.append(kit.template)
             side = teams.get(kit.team) if kit.team is not None else None
             soldier = side.soldier if side is not None else next(
                 (name for name in fielded if name), None)
@@ -422,6 +430,8 @@ def build_manifest(library: con_mod.ObjectLibrary, kits: dict[str, kit_mod.Kit],
     if level_kits:
         manifest["levelKits"] = {level: dict(sorted(own_rows.items()))
                                  for level, own_rows in sorted(level_kits.items())}
+    if level_pads:
+        manifest["pads"] = {level: sorted(names) for level, names in sorted(level_pads.items())}
     return manifest
 
 
@@ -589,24 +599,28 @@ def merge_delta(previous: dict, fresh: dict | None, wanted: set[str]) -> dict:
     pass (no --delta, `--force-steps` in the pipeline) rebuilds the file."""
     out = copy.deepcopy(previous)
     out["levels"] = {k: v for k, v in out["levels"].items() if k in wanted}
-    if "levelKits" in out:
-        out["levelKits"] = {k: v for k, v in out["levelKits"].items() if k in wanted}
-        if not out["levelKits"]:
-            del out["levelKits"]
+    for key in ("levelKits", "pads"):
+        if key in out:
+            out[key] = {k: v for k, v in out[key].items() if k in wanted}
+            if not out[key]:
+                del out[key]
     if fresh is not None:
         out["levels"].update(fresh.get("levels") or {})
         for name, row in (fresh.get("kits") or {}).items():
             out["kits"].setdefault(name, row)
         for level, rows in (fresh.get("levelKits") or {}).items():
             out.setdefault("levelKits", {})[level] = rows
+        for level, names in (fresh.get("pads") or {}).items():
+            out.setdefault("pads", {})[level] = names
         ai = out.setdefault("aiWeapons", {})
         for name, row in (fresh.get("aiWeapons") or {}).items():
             ai.setdefault(name, row)
     out["levels"] = dict(sorted(out["levels"].items()))
     out["kits"] = dict(sorted(out["kits"].items()))
     out["aiWeapons"] = dict(sorted((out.get("aiWeapons") or {}).items()))
-    if "levelKits" in out:
-        out["levelKits"] = dict(sorted(out["levelKits"].items()))
+    for key in ("levelKits", "pads"):
+        if key in out:
+            out[key] = dict(sorted(out[key].items()))
     return out
 
 
