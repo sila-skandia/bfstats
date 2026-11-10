@@ -10,12 +10,18 @@
 // either side are one arena (El Alamein's and Gazala's are both Spitfire v
 // Bf 109); `ARENA_ORDER` says which battle stands for them.
 
-import { fighterRank } from './dogfight-lessons.js';
+import { fighterRank, isRotary } from './dogfight-lessons.js';
 import { provingGroundUrl } from './proving-ground.js';
-import { sidesOn } from './tank-arena.js';
+import { sidesOn, levelWords } from './tank-arena.js';
 
 /** The battle that stands for an arena, first listed first. */
 export const ARENA_ORDER = ['Battle_of_Britain', 'Kursk', 'Market_Garden', 'Midway', 'El_Alamein', 'Coral_sea', 'Berlin', 'Kharkov'];
+/** The same for a tree paired by its levels' own teams (`arenasFromTeams`):
+ *  Desert Combat's own battles lead, since it flies its jets over vanilla's
+ *  maps too. The F-16 against the MiG-29 over Desert Shield, then the No Fly
+ *  Zone's whole cast. No vanilla name is here: BF1918 has a Midway of its own. */
+export const TEAMS_ORDER = ['DC_DesertShield', 'DC_No_Fly_Zone', 'DC_No_Fly_Zone_Day2', 'DC_Operation_Bragg'];
+const arenaOrder = map => { const i = TEAMS_ORDER.findIndex(x => x.toLowerCase() === String(map).toLowerCase()); return i < 0 ? 99 : i; };
 
 /** The side of the Range's construct a plane's side flies for: team 1 is the
  *  Axis, team 2 the Allies (`proving-ground.js` `team`). */
@@ -34,7 +40,7 @@ export function arenasFrom(rows, levels) {
   const held = new Map((levels ?? []).map(l => [String(l).toLowerCase(), l]));
   const byLevel = new Map();
   for (const row of rows ?? []) {
-    if (row?.category !== 'air') continue;
+    if (row?.category !== 'air' || isRotary(row.name)) continue;
     for (const level of row.levels ?? []) {
       // A plane both sides fly there (a B-17 in the captured-plane maps) is
       // neither's. The level's own teams decide where the catalogue has
@@ -68,8 +74,9 @@ export function arenasFrom(rows, levels) {
 /**
  * The arenas from a tree's `dogfight-arenas.json` (`extract_dogfight_arenas.py`):
  * each level's aircraft by team, as its object spawners field them. For a
- * mod whose teams change from level to level (BF1918), where the
- * catalogue's WWII sides pair nothing. Team 1 flies as the construct's
+ * mod whose teams change from level to level (BF1918) or whose nations the
+ * catalogue's WWII sides do not know (Desert Combat's MiG-29 is "Allied"
+ * there), where the catalogue pairs nothing. Team 1 flies as the construct's
  * team 1 ('Axis'), team 2 as 'Allied' (`teamOf`); the arena's planes are
  * the level's, one arena per pair of fighter sets, as `arenasFrom`.
  */
@@ -82,6 +89,8 @@ export function arenasFromTeams(index, levels) {
     const planes = [];
     for (const [team, side] of [['1', 'Axis'], ['2', 'Allied']]) {
       for (const template of teams[team] ?? []) {
+        // A helicopter stays on the ground: the lessons fly the fixed-wing law.
+        if (isRotary(template)) continue;
         if (!planes.some(p => p.template === template)) planes.push({ template, side, fighter: isFighter(template) });
       }
     }
@@ -92,9 +101,11 @@ export function arenasFromTeams(index, levels) {
     if (!allied.length || !axis.length) continue;
     const key = `${allied.join('+')}|${axis.join('+')}`;
     const have = out.get(key);
-    if (!have || map < have.map) out.set(key, { map, name: map.replace(/_/g, ' '), planes, allied, axis });
+    if (!have || arenaOrder(map) < arenaOrder(have.map) || (arenaOrder(map) === arenaOrder(have.map) && map < have.map)) {
+      out.set(key, { map, name: levelWords(map), planes, allied, axis });
+    }
   }
-  return [...out.values()].sort((a, b) => a.name.localeCompare(b.name));
+  return [...out.values()].sort((a, b) => arenaOrder(a.map) - arenaOrder(b.map) || a.name.localeCompare(b.name));
 }
 
 /** The plane you fly in `arena`: `choice` when the arena has it, else its

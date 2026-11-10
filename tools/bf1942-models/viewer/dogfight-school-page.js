@@ -20,11 +20,13 @@
 
 import { Aircraft } from './aircraft.js';
 import { createDogfightTheatre } from './dogfight-theatre.js';
-import { fighterRank } from './dogfight-lessons.js';
+import { fighterRank, jetName } from './dogfight-lessons.js';
 import { arenasFrom, arenasFromTeams, planeIn, aceAgainst, arenaUrl } from './dogfight-arena.js';
 import { loadPlaneModel, airframeRoot, planeVisual } from './plane-models.js';
 import { VIEWER_ROOT } from './viewer-root.js';
 import { loadMods, stored as storedMod, remember, trees, VANILLA } from './mods.js';
+import * as jetAge from './dogfight-doctrine-1991.js';
+import { measureAirframe } from './dogfight-airframe.js';
 
 const params = new URLSearchParams(location.search);
 const ARENA_KEY_VANILLA = 'dogfight-school:arena';
@@ -33,8 +35,8 @@ const PLANE_KEY = 'dogfight-school:plane';
 const stored = key => { try { return localStorage.getItem(key); } catch { return null; } };
 const store = (key, value) => { try { localStorage.setItem(key, value); } catch { /* private window */ } };
 
-/** A template as a pilot says it: `BF109` "Bf 109", `Yak9` "Yak 9". */
-const pretty = t => String(t ?? '').replace(/^BF(\d)/, 'Bf $1').replace(/([a-z])([A-Z])/g, '$1 $2').replace(/([a-z])(\d)/g, '$1 $2').replace(/_/g, ' ');
+/** A template as a pilot says it: `BF109` "Bf 109", `Yak9` "Yak 9", `Mig29` "MiG-29". */
+const pretty = t => jetName(t) ?? String(t ?? '').replace(/^BF(\d)/, 'Bf $1').replace(/([a-z])([A-Z])/g, '$1 $2').replace(/([a-z])(\d)/g, '$1 $2').replace(/_/g, ' ');
 
 const wait = document.querySelector('.dsp-wait');
 const say = text => { wait.querySelector('span').textContent = text; };
@@ -117,6 +119,60 @@ if (!models.fighter) {
   throw new Error('dogfight school: no plane model');
 }
 
+// --- the rules card of the mod's own war ---------------------------------------------
+// On Desert Combat the Rules tab holds the jet age's rules
+// (features/dogfight-doctrine-1991), each read on the two jets on stage:
+// their weapons off their own models, and what the page's flight law does
+// with each airframe, measured once a type (about a tenth of a second).
+const JET_TREES = /^(desertcombat|dc_final)$/i;
+const laws = new Map();
+function lawOf(template, root) {
+  const key = `${arenaMod.id}:${template}`;
+  if (!laws.has(key)) laws.set(key, root ? measureAirframe(() => new Aircraft(root.clone(true), null, { cockpit: false })) : null);
+  return laws.get(key);
+}
+/** An address that names an arena follows the one picked, so a reload
+ *  does not go back to the one it was opened on. */
+function arenaInUrl() {
+  const u = new URL(location.href);
+  if (!u.searchParams.has('arena')) return;
+  u.searchParams.set('arena', arena.map);
+  history.replaceState(history.state, '', u);
+}
+/** The arena that stages the card's fight: both its planes, theirs the ace's. */
+const fightArena = f => arenas.find(a => a.planes.some(p => p.template === f.yours && p.side === 'Allied') && a.axis[0] === f.theirs) ?? null;
+function rulesCard() {
+  if (!JET_TREES.test(arenaMod.id)) return null;
+  const me = mine(), ace = aceAgainst(arena, me);
+  if (!me || !ace) return null;
+  const ctx = {
+    you: jetAge.jetOf(models.mine, pretty(me.template), lawOf(me.template, models.mine)),
+    them: jetAge.jetOf(models.ace, pretty(ace.template), lawOf(ace.template, models.ace)),
+  };
+  const f = jetAge.FIGHT, there = fightArena(f);
+  const here = me.template === f.yours && ace.template === f.theirs;
+  return {
+    ...jetAge.CARD,
+    rules: jetAge.rulesOn(ctx),
+    fight: {
+      eyebrow: f.eyebrow, title: f.title, story: f.story, sources: f.sources,
+      words: here ? f.words(ctx) : [],
+      go: there ? f.go : null,
+      // Its arena and its planes, then the lesson that is its shape.
+      onGo: () => {
+        if (!there) return;
+        arena = there;
+        store(ARENA_KEY, arena.map);
+        arenaInUrl();
+        choice = f.yours;
+        store(PLANE_KEY, choice);
+        theatre.redrawChoices();
+        loadModels().then(on => { if (on) { theatre.planesChanged(); theatre.show(f.lesson[0], f.lesson[1]); } });
+      },
+    },
+  };
+}
+
 /** Into the arena: the lesson (or ring course) flown in your plane. */
 function fly({ lesson = null, move = null, course = null }) {
   const me = mine();
@@ -157,6 +213,7 @@ const theatre = createDogfightTheatre({
   // The address follows what is on stage, so a lesson, a scenario or a
   // fight can be linked to.
   url: true,
+  rules: rulesCard,
   planes,
   plane: () => mine()?.template ?? null,
   onPlane: template => {
@@ -188,6 +245,7 @@ const theatre = createDogfightTheatre({
       if (!next || next === arena) return;
       arena = next;
       store(ARENA_KEY, arena.map);
+      arenaInUrl();
       // A plane the new arena does not have gives way to its own.
       if (!arena.planes.some(p => p.template === choice)) choice = null;
       theatre.redrawChoices();
@@ -198,4 +256,8 @@ const theatre = createDogfightTheatre({
 wait.hidden = true;
 theatre.open(params.get('lesson') || null, { demo: params.get('demo'), fight: params.get('fight') });
 // The test hook, as the Range's is `window.__provingGround`.
-window.__dogfightSchool = { theatre, arenas, get arena() { return arena.map; }, get plane() { return mine()?.template ?? null; } };
+window.__dogfightSchool = { theatre, arenas, get arena() { return arena.map; }, get plane() { return mine()?.template ?? null; },
+  get rules() { const card = rulesCard(); return card ? card.rules.map(r => ({ id: r.id, status: r.verdict.status, words: r.verdict.words })) : null; },
+  get fight() { return rulesCard()?.fight ?? null; },
+  /** What the flight law does with each airframe measured so far, by `<mod>:<template>`. */
+  get laws() { return Object.fromEntries(laws); } };

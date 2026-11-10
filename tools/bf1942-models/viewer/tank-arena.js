@@ -22,8 +22,11 @@
 // 5, towed and AA guns 4, artillery batteries 13 and self-propelled guns 14.
 // The catalogue's rule is the fallback for a template the AI data lacks.
 
-/** The battle that stands for an arena, first listed first. */
-export const ARENA_ORDER = ['Kursk', 'El_Alamein', 'Battle_of_the_Bulge', 'Gazala', 'Kharkov', 'Berlin',
+/** The battle that stands for an arena, first listed first. Desert Combat's
+ *  own battles lead: it also plays vanilla's maps with its armour on them,
+ *  and its M1A1 against its T-72 is 73 Easting's fight, not Kursk's. */
+export const ARENA_ORDER = ['DC_Battle_of_73_Easting', 'DC_Medina_Ridge', 'DC_DesertShield', 'DC_Operation_Bragg',
+  'Kursk', 'El_Alamein', 'Battle_of_the_Bulge', 'Gazala', 'Kharkov', 'Berlin',
   'Market_Garden', 'Bocage', 'Aberdeen', 'Battleaxe', 'GuadalCanal', 'Iwo_Jima'];
 
 /** What each arena is called, by the battle that stands for it. */
@@ -105,12 +108,26 @@ export function mainGunName(row, ai = null) {
 }
 
 /** Heavier first: the AI's own worth of the vehicle (`basicTemp`, 30 for a
- *  Tiger or an M10, 12 for a Sherman) where the AI data gives it, then hit
- *  points, then name. Used for the defaults: your side's first, theirs'
- *  heaviest. */
+ *  Tiger or an M10, 12 for a Sherman) where the AI data gives it, then how
+ *  hard the AI rates its weapons against armour (`punch`: Desert Combat
+ *  gives the M1A1, the Bradley and the Vulcan one worth, 12, and rates
+ *  their guns 7, 6 and 1), then hit points, then name. Used for the
+ *  defaults: your side's first, theirs' heaviest. */
 export function tankRank(a, b) {
-  return (Number(b.worth) || 0) - (Number(a.worth) || 0)
+  return (Number(b.worth) || 0) - (Number(a.worth) || 0) || (Number(b.punch) || 0) - (Number(a.punch) || 0)
     || (Number(b.hitpoints) || 0) - (Number(a.hitpoints) || 0) || String(a.name).localeCompare(String(b.name));
+}
+
+/** The most the AI rates any of a vehicle's weapons against armour. */
+export function armourPunch(entry) {
+  const weapons = [entry?.aiWeapons, ...Object.values(entry?.seatsAi ?? {}).map(s => s?.aiWeapons)];
+  return Math.max(0, ...weapons.flatMap(ws => Object.values(ws ?? {}).map(w => Number(w?.strength?.HeavyArmour) || 0)));
+}
+/** A catalogue row with the AI's worth and punch on it, for `tankRank`. */
+function ranked(row, ai) {
+  const entry = ai?.[row.name];
+  const worth = Number(entry?.basicTemp);
+  return Number.isFinite(worth) ? { ...row, worth, punch: armourPunch(entry) } : row;
 }
 
 /** A template as a crew says it: `PanzerIV` "Panzer IV", `T34-85` "T-34-85". */
@@ -124,6 +141,9 @@ export function prettyTank(template) {
     Ger77er: '77 mm field gun', Frz75er: '75 mm field gun', '18pdr_france': '18-pounder', Kuk75er: 'Austrian 75 mm field gun',
     Ita75er: 'Italian 75 mm field gun', Rus76er: 'Russian 76 mm field gun', GunCarrier: 'Gun Carrier', GeballteLadung: 'Geballte Ladung',
     GeballteLadungBig: 'heavy Geballte Ladung', Tankgewehr: 'Tankgewehr', PomPom: 'pom-pom', Schneider1913er: 'Schneider 105 mm',
+    // Desert Combat's, by their designations.
+    T72: 'T-72', BMP2: 'BMP-2', M2A3: 'M2A3 Bradley', M163: 'M163 Vulcan', Shilka: 'ZSU-23-4 Shilka', 'EE-9': 'EE-9 Cascavel',
+    BRDM2: 'BRDM-2', BRDM2_Spandrel: 'BRDM-2 Spandrel', Humvee_TOW: 'Humvee TOW', RPG7: 'RPG-7', SA7: 'SA-7',
     GrenadeGer: 'stick grenade', GrenadeGerGunner: 'stick grenade', GrenadeGerStormtrooper: 'stick grenade', DosenGrenade: 'Dosen grenade',
     MillsBomb: 'Mills bomb', MillsBombGunner: 'Mills bomb', MillsBombBomber: 'Mills bomb', GrenadeFrz: 'French grenade', GrenadeFrzGunner: 'French grenade',
     F1Gren: 'F1 grenade', F1GrenGunner: 'F1 grenade', F1GrenBomber: 'F1 grenade', Kugel_Grenade13: 'ball grenade', Kugel_Grenade15: 'ball grenade' };
@@ -146,8 +166,11 @@ export function sidesOn(row, level) {
 // (`villers_bretonneux`, `chemin_des_dames`): those are given capitals, the
 // small words of a place name left small.
 const SMALL = new Set(['of', 'the', 'de', 'des', 'du', 'd', 'la', 'le', 'les', 'and', 'a', 'to', 'in', 'on', 'am', 'an', 'der', 'die']);
-const levelWords = map => {
-  const words = String(map).replace(/_/g, ' ').replace(/\bof the\b/gi, m => m.toLowerCase());
+// Desert Combat marks its own with `DC_` and runs two words together
+// (`DC_DesertShield`): the mark comes off and the words apart.
+export const levelWords = map => {
+  const words = String(map).replace(/^DC_(.+)$/i, (_, rest) => rest.replace(/([a-z])([A-Z])/g, '$1 $2'))
+    .replace(/_/g, ' ').replace(/\bof the\b/gi, m => m.toLowerCase());
   if (/[A-Z]/.test(words)) return words;
   return words.split(' ').map((w, i) => (i && SMALL.has(w) ? w : w.charAt(0).toUpperCase() + w.slice(1))).join(' ');
 };
@@ -171,8 +194,7 @@ export function arenasFrom(rows, levels = null, ai = null) {
       const name = held ? held.get(String(level).toLowerCase()) : level;
       if (!name) continue;
       const entry = byLevel.get(name) ?? { Allied: new Map(), Axis: new Map() };
-      const worth = Number(ai?.[row.name]?.basicTemp);
-      entry[sides[0]]?.set(row.name, Number.isFinite(worth) ? { ...row, worth } : row);
+      entry[sides[0]]?.set(row.name, ranked(row, ai));
       byLevel.set(name, entry);
     }
   }
@@ -214,8 +236,7 @@ export function arenasFrom(rows, levels = null, ai = null) {
   for (const row of rows ?? []) {
     if (!isTank(row, ai) || all.has(row.name)) continue;
     if (held && !(row.levels ?? []).some(l => held.has(String(l).toLowerCase()))) continue;
-    const worth = Number(ai?.[row.name]?.basicTemp);
-    all.set(row.name, Number.isFinite(worth) ? { ...row, worth } : row);
+    all.set(row.name, ranked(row, ai));
   }
   if (all.size >= 2) {
     const sorted = [...all.values()].sort(tankRank);

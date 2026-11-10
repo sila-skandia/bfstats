@@ -408,5 +408,29 @@ ObjectTemplate.addTemplate Mauser
         self.assertEqual({}, roster.entry("Mauser")["levelSides"])
 
 
+class PatchRosterTests(unittest.TestCase):
+    """`patch_roster.py`: a finished catalogue's `sides` and `levelSides`
+    brought to today's roster, the rest of each row left as extracted."""
+
+    def test_only_the_sides_move_and_a_second_run_moves_nothing(self) -> None:
+        import patch_roster
+        roster = Roster()
+        # Desert Combat's 73 Easting: the T-72 is team 1's, the M1A1 team 2's.
+        roster._add_level_team("T72", "DC_Battle_of_73_Easting", 1)
+        roster._add_level_team("M1A1", "DC_Battle_of_73_Easting", 2)
+        rows = [
+            {"name": "T72", "sides": ["Allied"], "levels": ["DC_Battle_of_73_Easting", "Kursk"], "factions": ["Iraqi"], "glb": "T72.glb"},
+            {"name": "M1A1", "sides": ["Allied"], "levelSides": {"DC_Battle_of_73_Easting": ["Allied"]}, "levels": []},
+            {"name": "Crate", "sides": [], "levelSides": {}},
+        ]
+        moved = patch_roster.patch_rows(rows, roster)
+        self.assertEqual([("T72", "sides"), ("T72", "levelSides")], moved)
+        self.assertEqual((["Axis"], {"DC_Battle_of_73_Easting": ["Axis"]}), (rows[0]["sides"], rows[0]["levelSides"]))
+        # What the install's level set decides stays as it was extracted.
+        self.assertEqual((["DC_Battle_of_73_Easting", "Kursk"], ["Iraqi"], "T72.glb"),
+                         (rows[0]["levels"], rows[0]["factions"], rows[0]["glb"]))
+        self.assertEqual([], patch_roster.patch_rows(rows, roster))
+
+
 if __name__ == "__main__":
     unittest.main()

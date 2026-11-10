@@ -23,6 +23,12 @@ Villers-Bretonneux duel ([tank-doctrine-1918](../tank-doctrine-1918/README.md)).
 The same change prices a shell's blast on the hull it strikes, thrown
 charges and pickups in ON FOOT, and a bullet's falloff with range.
 
+**Desert Combat (2026-11-10):** on a Desert Combat arena card 06 holds the
+rules of 1991, each checked on the pairing, and the 73 Easting
+([tank-doctrine-1991](../tank-doctrine-1991/README.md)). Desert Combat has
+tank arenas of its own since the same change: Battle of 73 Easting first,
+M1A1 against T-72.
+
 The owner's brief (2026-11-09): research how the dogfight school could apply
 to other battle types, tank against tank above all. "I'm a fly boy, not a
 tank commander... whereas in a dog fight it's about manoeuvring, I feel like

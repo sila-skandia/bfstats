@@ -1137,8 +1137,8 @@ their controls? I think that would be very cool": it does.
   first (the recordings' MOD chip already followed `?mod=`). On 2026-11-09
   the trees give: BF1942 5 arenas (20 levels), RtR and SW theirs, EoD 2 levels, FH 1,
   FHSW 12 arenas (El Alamein's Spitfire Ib v Bf 109-F first), FHSWEurope 16 levels. Desert
-  Combat has none (its jets are not in `FIGHTERS`): the lessons keep
-  BF1942's arenas and a line under the header says so.
+  Combat had none until 2026-11-10 ("Desert Combat's arenas", below); a mod
+  with none keeps BF1942's arenas and a line under the header says so.
 - **A fight link carries its mod.** `?fight=<id>` with no `?mod=` opens the
   page on that fight's mod (the dogfight index's `mod`), so the pill, the
   arenas and the fights list agree.
@@ -1150,6 +1150,54 @@ their controls? I think that would be very cool": it does.
   line, and Tulagi Island's map with the school over it: the logo opened
   `dogfight.html?fight=zejq6ugy69-1&mod=fhsweurope` in the same tab. FLY IT
   into a mod's arena was not flown.
+
+## Desert Combat's arenas (2026-11-10)
+
+The owner, on `dogfight.html?lesson=scissors&demo=move` with Desert Combat
+picked: "it is presenting vanilla options for the planes. I'd expect it to
+show me the modern fights." Two causes, both the school reading Desert
+Combat through WWII's tables.
+
+- **No jet was a fighter.** `FIGHTERS` (`dogfight-lessons.js`) picks fighters
+  by name and held none of DC's. It now ends with `f16`, `mig29`, `f15`,
+  `mirage`, `f14`, `av8`, the harder turners first, after every propeller
+  name so a WWII template that happens to hold one is still found as what it
+  is. The A-10 and the Su-25 fly but are no fighters. A helicopter
+  (`isRotary`: AH-64, AH-6, MH-6, MH-500, OH-6, UH-60, Mi-8, Mi-24, SA-342)
+  is left out of an arena: the school's pilots fly the fixed-wing law.
+- **No battle had two sides.** DC's catalogue called every vehicle "Allied"
+  (its nations are not WWII's; the roster's fix for that, SIDE-4, had not
+  reached the DC tree). Its arenas now come from each level's own spawners,
+  as BF1918's do (`dogfight-arenas.json`). DC lays out a jet on a pad that
+  names one template for both teams, which the exporter writes with no
+  `templates` block: `extract_dogfight_arenas.py` now gives such a pad's
+  plane to the team the pad is placed for (BF1918 gains three planes on two
+  levels by the same rule: Nebelberg's `Lebaudy`, Toska's two Halberstadts).
+  `--fetch <url>` reads a published tree's levels, for a tree whose bakes are
+  not on this machine (DC's are not).
+- **Seven arenas**, DC's own first (`TEAMS_ORDER`): Desert Shield (F-16 v
+  MiG-29), No Fly Zone (F-16, F-15C, F-14B, AV-8 v MiG-29, Mirage), No Fly
+  Zone Day 2 and Operation Bragg (F-15C v Mirage), then El Alamein, Bocage
+  and Gazala with DC's jets over vanilla's maps. A jet is named by its
+  designation (`jetName`: `Mig29` "MiG-29", `F16` "F-16"), and `DC_` comes
+  off a level's name.
+- **The lessons are the school's WWII ones, flown on the jet on stage.**
+  Every move's count on the tabs is flown on it, as on any airframe since
+  2026-11-10. On the F-16 the Extension works from seven starts of nine or
+  more in five lessons of nine, and no Reversal or Bounce works in any: the
+  plans' speeds and thresholds are a propeller fighter's. The jets' own
+  rules are on the Rules tab
+  ([dogfight-doctrine-1991](../dogfight-doctrine-1991/README.md)).
+- **An address that names an arena follows the one picked**
+  (`arenaInUrl`): `?arena=` used to stay on the arena the page was opened
+  on, so a reload went back to it.
+- **Checked** headless (Chrome, the local viewer over the published DC
+  tree): the school opens on Desert Shield, "F-16 v MiG-29", both drawn from
+  DC's models; FLY IT loads `map.html?proving=1&map=DC_DesertShield&mod=
+  desertcombat&arena=dogfight` and seats you in the F-16 against the ace in
+  the MiG-29. Tests: `test_dogfight_arena.py` (the jets rank, the
+  helicopters stay out, DC's own battle stands for a pair, a one-template
+  pad).
 
 ## Reviewed against the real tactics (2026-11-07)
 
@@ -1370,8 +1418,11 @@ above.
   counts his rounds on you and a banner says when 22 would have brought you
   down (`KILL_HITS`, the duel's number, not read from the damage tables).
 - **Mods** pick fighters by name (`FIGHTERS`): a mod whose fighters are
-  named otherwise (Desert Combat's jets) has no arena, and FLY IT into a
-  mod's arena has not been flown.
+  named otherwise (EoD's Phantoms and MiG-17s) has no arena of its own.
+  FLY IT into Desert Combat's arena loads and seats you; nobody has flown a
+  fight there by hand.
+- **Helicopters** are in no arena: the pilots and the lessons are
+  fixed-wing. A gunship lesson needs the helicopter law in the duel.
 - **The guide follows one counter.** It is the lesson's counter pilot, so in
   the free fight against the ace it flies *You meet the dive* whatever he
   does. A guide that picks the counter to the ace's phase is the next step.

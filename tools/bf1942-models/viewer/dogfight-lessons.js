@@ -770,16 +770,45 @@ export const FIGHTERS = ['spitfire', 'bf109', 'mustang', 'yak9', 'zero', 'corsai
   // BF1918's single seaters (features/dogfight-doctrine, "The BF1918
   // arena"), in the order the flight law ranks them: the SE5 and the D.VII
   // carry five times the others' body drag and top out at 42 m/s.
-  'spad', 'fokker', 'sopwith', 'albatross', 'neuport', 'nieuport', 'aircodh2', 'halberstadt', 'eindekker', 'morane', 'd7a', 'se5'];
+  'spad', 'fokker', 'sopwith', 'albatross', 'neuport', 'nieuport', 'aircodh2', 'halberstadt', 'eindekker', 'morane', 'd7a', 'se5',
+  // Desert Combat's jets (features/dogfight-doctrine-1991, "The arenas"), the
+  // harder turners first. They come after every propeller name, so a WWII
+  // template that happens to hold one of these (a Bf 109 F-14) is still
+  // found as what it is.
+  'f16', 'mig29', 'f15', 'mirage', 'f14', 'av8'];
 /** Two-seaters, bombers and airships, checked before the fighters: the
  *  Albatros C.III is not the Albatros scout. */
 const NOT_FIGHTERS = /b17|ju88|c47|lancaster|heinkel|he111|betty|ac130|transport|albatrossc|aircodh4|breguet|caudron|gotha|handleypage|felixstowe|hansaw|taube|bleriot|zeppelin|lebaudy|balloon/;
+/** Helicopters, by the designations the mods use (AH-64, MH-6, UH-60, OH-6,
+ *  CH-47, Mi-8, Mi-24, SA-342). */
+const ROTARY = /^(ah|mh|oh|uh|ch)\d|^mi(8|17|24)|^sa3[14]\d/;
+const plain = name => String(name ?? '').toLowerCase().replace(/[^a-z0-9]/g, '');
+
+/** True for a helicopter. The school's pilots fly the fixed-wing law, so an
+ *  arena leaves these on the ground. */
+export const isRotary = name => ROTARY.test(plain(name));
+
+/**
+ * A jet's designation as it is written, from a template's name: `F16`
+ * "F-16", `Mig29` "MiG-29", `SU-25` "Su-25", `A10_B` "A-10", `AV-8H`
+ * "AV-8". Null for any other name, which the caller words its own way.
+ */
+export function jetName(template) {
+  const t = String(template ?? '');
+  let m;
+  if ((m = /^mig-?(\d+)/i.exec(t))) return `MiG-${m[1]}`;
+  if ((m = /^su-?(\d+)/i.exec(t))) return `Su-${m[1]}`;
+  if ((m = /^f-?(14|15|16|18)([a-e])?$/i.exec(t))) return `F-${m[1]}${(m[2] ?? '').toUpperCase()}`;
+  if (/^a-?10(_[a-z])?$/i.test(t)) return 'A-10';
+  if (/^av-?8[a-z]?$/i.test(t)) return 'AV-8';
+  return null;
+}
 
 /** How fighter-like a template is: 0 for the best, a large number for a
  *  bomber or anything unknown. */
 export function fighterRank(name) {
-  const n = String(name ?? '').toLowerCase().replace(/[^a-z0-9]/g, '');
-  if (NOT_FIGHTERS.test(n)) return 900;
+  const n = plain(name);
+  if (NOT_FIGHTERS.test(n) || ROTARY.test(n)) return 900;
   const i = FIGHTERS.findIndex(f => n.includes(f));
   if (i >= 0) return i;
   return 100;

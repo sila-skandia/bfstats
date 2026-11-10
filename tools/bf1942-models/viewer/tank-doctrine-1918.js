@@ -280,4 +280,17 @@ export const VILLERS_BRETONNEUX = {
   },
 };
 
+/** The fight the card opens with, as the page asks every war's module. */
+export const FIGHT = VILLERS_BRETONNEUX;
+
+/** The card's own words on the page. */
+export const CARD = {
+  head: 'The rules of 1917-18',
+  jump: 'The rules of 1917-18, on this pairing',
+  intro: 'What the British, American and German manuals of 1917 and 1918 told tank crews, and the gunners and infantry who fought them, each rule in our words with a few of its own, and what BF1918\'s own data says of it in this pairing. Where the game and the manual part, it says so.',
+  eyebrow: 'The first tank against tank fight',
+  go: 'Fight it: Mark IV against A7V',
+  wait: 'Pricing their field guns and their soldiers\' weapons against your tank',
+};
+
 export { n1 };

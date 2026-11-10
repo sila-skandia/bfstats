@@ -106,6 +106,27 @@ export function glbJson(bytes) {
 }
 
 /**
+ * Every weapon a vehicle's glb JSON carries that fires a round with an
+ * armour material: `[{ node, template, kind, gun: { speed, gravity },
+ * material, ttl, damage, reload, rof, mag, mags }]`, in the file's order. A
+ * round a level bake stands in for a designator (no material) is left out.
+ */
+export function armsOf(json) {
+  return (json?.nodes ?? []).filter(n => n?.extras?.fireArms?.projectile?.material != null).map(n => {
+    const fa = n.extras.fireArms, pr = fa.projectile;
+    const g = Number(pr.gravity);
+    return { node: n.name, template: pr.template ?? null, kind: pr.kind ?? null,
+      // A launcher that declares no velocity fires at the FireArms default,
+      // 200 m/s (FA-3): Desert Combat's Spandrel left the BRDM-2 at 200.5
+      // on the lab server (features/desert-combat-parity, "Rounds in flight").
+      gun: { speed: fa.velocity == null ? 200 : Number(fa.velocity) || 0, gravity: Number.isFinite(g) ? g : 1 },
+      material: Number(pr.material), ttl: Number(pr.timeToLive) || null, damage: pr.damage ?? null,
+      reload: Number(fa.reloadTime) || null, rof: Number(fa.roundOfFire) || null,
+      mag: Number(fa.magSize) || null, mags: Number(fa.numOfMag) || null };
+  });
+}
+
+/**
  * A hand weapon's round and spread from its glb JSON, or null for one that
  * fires nothing: `{ name, gun: { speed, gravity }, material, ttl, damage,
  * reload, spread: { still, moving, declared } }`. `still` and `moving` are the

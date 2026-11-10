@@ -345,6 +345,73 @@ out.doctrine = {
   arcsA7V: D.arcWords(a7v).words,
 };
 
+// --- the rules of 1991 (tank-doctrine-1991.js) ----------------------------------------
+// An M1A1 against a T-72 in Desert Combat's own numbers (73 Easting, as the
+// page measured them on the published tree): both guns 250 m/s, 2 s a round,
+// three hits all round; the sabot lives 4 s and the T-72's shell 10.
+const D91 = await load('tank-doctrine-1991.js');
+const rose91 = (f, sd, r, spot = null) => ({ 0: { shots: f, bestShots: f }, 90: { shots: sd, bestShots: spot ?? sd }, 180: { shots: r, bestShots: r } });
+const m1a1 = { name: 'M1A1', hp: 100, lengthM: 9.74, shots: rose91(3, 3, 3, 1), shellDamage: { radius: 3 },
+  gun: { speed: 250, gravity: 1, reload: 2, round: 'Sabot_Projectile', ttl: 4, mag: 30, magReload: 0.1, up: 20 },
+  sheet: { drive: { top: 14.85 }, steady: { hardStop: { peak: 0.61, still: 2.17 } } } };
+const t72 = { name: 'T-72', hp: 100, lengthM: 9.19, shots: rose91(3, 3, 3), shellDamage: { radius: 5 },
+  gun: { speed: 250, gravity: 1, reload: 2, round: 'T72Projectile', ttl: 10, mag: 30, magReload: 0.1, up: 20 },
+  sheet: { drive: { top: 14.86 }, steady: { hardStop: { peak: 1.32, still: 2.7 } } } };
+const bradley = { name: 'M2A3 Bradley', hp: 100, lengthM: 5.94, shots: rose91(1, 1, 1),
+  gun: { speed: 100, gravity: 0, reload: 1, round: 'TOW_Projectile', ttl: 10, mag: 2, magReload: 6, up: 25 }, sheet: { drive: { top: 14.86 } } };
+const ctx91 = {
+  you: m1a1, them: t72, mg: { label: "T-72's machine gun", shots: clock(null, 201, null) }, ownMg: null, fieldGuns: [],
+  foot: [{ label: 'RPG-7', charge: false, speed: 100, gravity: 0.4, shots: clock(4, 3, 3) }, { label: 'Smoke Grenade', charge: false, speed: 20, gravity: 1, shots: clock(2271, 2000, 2001) }],
+  air: [
+    { vehicle: 'Mi24D', label: 'Mi-24', weapon: 'AT-2', kind: 'rocket', gun: { speed: 350, gravity: 0 }, ttl: 50, rof: 2, shots: clock(2, 2, 2) },
+    { vehicle: 'SU-25', label: 'Su-25', weapon: '30 mm gun', kind: 'bullet', gun: { speed: 900, gravity: 0 }, ttl: 5, rof: 20, shots: clock(8, 7, 7) },
+    { vehicle: 'SU-25', label: 'Su-25', weapon: 'bombs', kind: 'shell', gun: { speed: 1, gravity: 1 }, ttl: 20, rof: 3, shots: clock(1, 1, 1) },
+    { vehicle: 'A10_C', label: 'A-10', weapon: 'bombs', kind: 'bullet', gun: { speed: 15, gravity: 1 }, ttl: 10, rof: 2, shots: clock(2, 2, 2) },
+  ],
+  carriers: [{ vehicle: 'BRDM2_Spandrel', label: 'BRDM-2 Spandrel', weapon: 'AT-5', kind: 'shell', gun: { speed: 200, gravity: 0 }, ttl: 5, mag: 5, reload: 10, shots: clock(3, 2, 3) }],
+};
+const v91 = D91.rulesOn(ctx91);
+out.doctrine1991 = {
+  ids: v91.map(r => r.id),
+  status: Object.fromEntries(v91.map(r => [r.id, r.verdict.status])),
+  words: Object.fromEntries(v91.map(r => [r.id, r.verdict.words])),
+  sources: v91.every(r => r.source?.doc && /^https:\/\//.test(r.source.url)),
+  quotes: v91.map(r => r.quote.split(/\s+/).length),
+  empty: Object.fromEntries(D91.rulesOn({ you: { ...m1a1, sheet: null }, them: t72, mg: null, fieldGuns: [], foot: [], air: [], carriers: [] }).map(r => [r.id, r.verdict.status])),
+  bradley: Object.fromEntries(D91.rulesOn({ ...ctx91, you: bradley, them: t72, ownMg: { label: 'automatic gun', shots: clock(74, 67, 70) } }).map(r => [r.id, r.verdict])),
+  againstBradley: D91.rulesOn({ ...ctx91, you: t72, them: bradley, carriers: [] }).find(r => r.id === 'missile').verdict.words,
+  duel: D91.FIGHT.duel({ you: m1a1, them: t72 }),
+  fight: [D91.FIGHT.arena, D91.FIGHT.yours, D91.FIGHT.theirs],
+  threats: D91.threats(ctx91).map(x => `${x.label} ${x.hits}`),
+  names: ['AH64', 'Mi24D', 'A10_B', 'SU-25', 'Humvee_Tow', 'T72'].map(D91.vehicleWords),
+  weapons: ['AH64HellfireRack', 'Mi24D_AT2Arms', 'BMP2_AT5', 'BRDM2_Span_Launcher', 'A10Guns', 'T72Projectile', 'Sabot_Projectile'].map(n => D91.weaponWords(n)),
+  card: D91.CARD,
+};
+// A vehicle's every weapon from its glb JSON (`armsOf`): a launcher that
+// declares no velocity fires at the engine's 200 m/s (FA-3); a designator
+// (no material) is left out.
+out.armsOf = L.armsOf({ nodes: [
+  { name: 'BRDM2_Span_Launcher', extras: { fireArms: { roundOfFire: 0.5, magSize: 5, reloadTime: 10, projectile: { template: 'Spandrel_Projectile', kind: 'shell', material: 751, gravity: 0, timeToLive: 5 } } } },
+  { name: 'CallArtillary', extras: { fireArms: { projectile: { template: 'BinocularsProjectile', kind: 'bullet', timeToLive: 120 } } } },
+  { name: 'M2A3_TOW', extras: { fireArms: { velocity: 100, magSize: 2, reloadTime: 6, projectile: { template: 'TOW_Projectile', kind: 'shell', material: 718, gravity: 0, timeToLive: 10 } } } },
+] }).map(a => [a.node, a.gun.speed, a.ttl, a.mag]);
+// Desert Combat's arenas: its own battle stands for a pair before a vanilla
+// map it borrows, the gun tank leads its side over an anti-aircraft hull of
+// the same worth, and `DC_` comes off the name.
+const dcAi = Object.fromEntries([['M1A1', 12, 7], ['M163', 12, 1], ['M2A3', 12, 6], ['T72', 30, 6], ['Shilka', 12, 2]].map(([n, worth, punch]) =>
+  [n, { class: 'land', equipment: 'Tank', basicTemp: worth, fireArms: { [`${n}GunBarrel`]: `${n}MainGun` }, aiWeapons: { [`${n}MainGun`]: { strength: { HeavyArmour: punch } } } }]));
+const dcRow = (name, levelSides) => ({ name, category: 'land', hitpoints: 100, weapons: [`${name}GunBarrel`], sides: ['Allied', 'Axis'], levels: Object.keys(levelSides), levelSides });
+const dcArenas = A.arenasFrom([
+  dcRow('M163', { Kursk: ['Allied'], DC_Battle_of_73_Easting: ['Allied'], DC_DesertShield: ['Allied'] }),
+  dcRow('M1A1', { Kursk: ['Allied'], DC_Battle_of_73_Easting: ['Allied'], DC_DesertShield: ['Allied'] }),
+  dcRow('M2A3', { Kursk: ['Allied'], DC_Battle_of_73_Easting: ['Allied'], DC_DesertShield: ['Allied'] }),
+  dcRow('T72', { Kursk: ['Axis'], DC_Battle_of_73_Easting: ['Axis'], DC_DesertShield: ['Axis'] }),
+  dcRow('Shilka', { Kursk: ['Axis'], DC_Battle_of_73_Easting: ['Axis'], DC_DesertShield: ['Axis'] }),
+], null, dcAi).filter(a => !a.every);
+out.dcArenas = dcArenas.map(a => ({ map: a.map, name: a.name, allied: a.allied.map(t => t.template), axis: a.axis.map(t => t.template) }));
+out.dcNames = ['T72', 'BMP2', 'M2A3', 'Shilka', 'RPG7'].map(A.prettyTank);
+out.levelWords = ['DC_Battle_of_73_Easting', 'DC_DesertShield', 'El_Alamein', 'villers_bretonneux'].map(A.levelWords);
+
 // --- STUDY: a recorded fight taken apart (tank-duel.js) --------------------------------
 // Side 0 stands still at the origin; side 1 drives east at 5 m/s, 200 m to
 // the north. 0.2 s samples over 6 s.

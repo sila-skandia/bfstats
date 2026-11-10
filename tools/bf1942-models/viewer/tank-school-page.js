@@ -33,16 +33,18 @@ import { modelUrls } from './pose-bases.js';
 import { modelFileStem } from './model-file.js';
 import { VIEWER_ROOT } from './viewer-root.js';
 import { loadMods, stored as storedMod, remember, trees, treeOf, VANILLA } from './mods.js';
-import { arenasFrom, tankIn, enemyOf, prettyTank, mainGunName, pickMainGun, gunArcs, armourWeapon } from './tank-arena.js';
+import { arenasFrom, tankIn, enemyOf, prettyTank, mainGunName, pickMainGun, gunArcs, armourWeapon, sidesOn, isTank } from './tank-arena.js';
 import { gunOf, reach, degreesPer100, dropAt, timeTo, elevationFor, positionAt } from './tank-ballistics.js';
-import { sideWeapons, launcherOf, glbJson, reachOf, aimFor, strayAt } from './tank-launchers.js';
+import { sideWeapons, launcherOf, armsOf, glbJson, reachOf, aimFor, strayAt } from './tank-launchers.js';
 import { resolveGlb } from './glb-store.js';
 import { BANDS, IMMUNE, CATCHER, bandOf, faceName, pricer, collisionFaces, bearingShots, faceTable, angleModOf, blastOf } from './tank-armour.js';
 import { splashSpec, damageFactor } from './projectile-damage.js';
 import { matchupWords, missAt, steadyWords, launcherWords, NO_ANSWER, hurtsAtAll, answers, sayShots } from './tank-words.js';
 import { snapshots } from './tank-snapshots.js';
 import { createSightView, rigStemFor } from './tank-sight-view.js';
-import { rulesOn, VILLERS_BRETONNEUX } from './tank-doctrine-1918.js';
+import * as doctrine1918 from './tank-doctrine-1918.js';
+import * as doctrine1991 from './tank-doctrine-1991.js';
+import { weaponWords, vehicleWords } from './tank-doctrine-1991.js';
 import { STUDY_HTML, mountStudy } from './tank-study-page.js';
 import { decodePlayerName } from './vehicle-players.js';
 import { angleFactor } from './crash-damage.js';
@@ -194,6 +196,13 @@ function readTank(template, scene, row, ai = null) {
     shellDamage: fa.projectile?.damage ?? null,
     gun: {
       ...ballistic,
+      // What it fires and how far it flies: the round's template, its life
+      // and its magazine (a Bradley's "main gun" against a tank is its TOW:
+      // two in the launcher, then `magReload` seconds).
+      round: fa.projectile?.template ?? null,
+      ttl: Number(fa.projectile?.timeToLive) || null,
+      mag: Number(fa.magSize) || null,
+      magReload: Number(fa.reloadTime) || null,
       // Whole ticks between shots (GUN-13).
       reload: Math.ceil(30 / rof - 1e-9) / 30,
       traverse,
@@ -274,7 +283,7 @@ root.innerHTML = `
       <small class="mm-eyebrow">Matchup</small>
       <h1><span class="tks-you-name"></span> <i>against</i> <span class="tks-them-name"></span></h1>
       <p class="tks-headline"></p>
-      <a class="tks-rules-jump" href="#tks-h-rules" hidden>The rules of 1917-18, on this pairing</a>
+      <a class="tks-rules-jump" href="#tks-h-rules" hidden></a>
     </header>
     <section class="tks-card tks-armour" aria-labelledby="tks-h-armour">
       <header class="tks-card-head"><small>01</small><h2 id="tks-h-armour">Where to aim, where you are exposed</h2></header>
@@ -357,12 +366,12 @@ root.innerHTML = `
       <p class="tks-foot-empty" hidden></p>
     </section>
     <section class="tks-card tks-rules" aria-labelledby="tks-h-rules" hidden>
-      <header class="tks-card-head"><small>06</small><h2 id="tks-h-rules">The rules of 1917-18</h2></header>
-      <p class="tks-intro">What the British, American and German manuals of 1917 and 1918 told tank crews, and the gunners and infantry who fought them, each rule in our words with a few of its own, and what BF1918's own data says of it in this pairing. Where the game and the manual part, it says so.</p>
-      <div class="tks-duel"><div class="tks-duel-text"><small class="mm-eyebrow">The first tank against tank fight</small><h3></h3><div class="tks-duel-story"></div><ul class="tks-words tks-duel-words"></ul><p class="tks-duel-src"></p></div>
-        <a class="tks-toggle tks-duel-go" hidden>Fight it: Mark IV against A7V</a></div>
+      <header class="tks-card-head"><small>06</small><h2 id="tks-h-rules"></h2></header>
+      <p class="tks-intro tks-rules-intro"></p>
+      <div class="tks-duel"><div class="tks-duel-text"><small class="mm-eyebrow tks-duel-eyebrow"></small><h3></h3><div class="tks-duel-story"></div><ul class="tks-words tks-duel-words"></ul><p class="tks-duel-src"></p></div>
+        <a class="tks-toggle tks-duel-go" hidden></a></div>
       <ol class="tks-rule-list" role="list"></ol>
-      <p class="tks-rules-wait" hidden>Pricing their field guns and their soldiers' weapons against your tank</p>
+      <p class="tks-rules-wait" hidden></p>
     </section>
     <footer class="tks-foot tks-board-foot">Every number is the game's own: the damage tables from <code>Game.rfa</code>, each gun's <code>Weapons.con</code>, the tanks' collision faces, and the server's per-tick tank law driven in node (<code>surveys/tank_school_sheet.mjs</code>). Notes: <code>features/battle-schools</code>.</footer>
   </main>
@@ -388,6 +397,7 @@ const ui = {
   footSight: q('.tks-sight.is-foot'), footClock: q('.tks-clock.is-foot > div'), footWords: q('.tks-foot-words'),
   footMore: q('.tks-foot-more'), footTable: q('.tks-foot-table'), footEmpty: q('.tks-foot-empty'),
   rules: q('.tks-rules'), ruleList: q('.tks-rule-list'), rulesJump: q('.tks-rules-jump'), rulesWait: q('.tks-rules-wait'),
+  rulesHead: q('#tks-h-rules'), rulesIntro: q('.tks-rules-intro'),
   duel: q('.tks-duel'), duelGo: q('.tks-duel-go'),
   board: q('.tks-board'), fights: q('.tks-fights'), study: q('.tks-study'), fightList: q('.tks-fight-list'), fightCount: q('.tks-fight-count'), fightMore: q('.tks-fight-more'),
 };
@@ -1087,6 +1097,49 @@ function fieldGunsOf(side, kind = 'field') {
   return fieldGunCache.get(key);
 }
 
+/** A catalogue row's glb JSON (no textures), from whichever tree holds it. */
+async function rowJson(row) {
+  if (!row?.glb) return null;
+  for (const url of modelUrls(arenaMod.paths.models, row.glb)) {
+    try {
+      const res = await fetch((await resolveGlb(url)).url);
+      if (res.ok) return glbJson(await res.arrayBuffer());
+    } catch { /* the next tree */ }
+  }
+  return null;
+}
+/** A side's vehicles of a kind on the arena's battles, and what each fires
+ *  that carries an armour material (`armsOf`), for the 1991 card: `air`, its
+ *  aircraft, every weapon of each (the rule prices them and keeps the ones
+ *  that hurt); or `carrier`, its land vehicles that are no tank and mount a
+ *  missile
+ *  (a BRDM-2 with Spandrels, a Humvee with a TOW). Each `{ vehicle, label,
+ *  weapon, kind, gun, material, damage, ttl, reload, rof, mag }`. */
+const armsCache = new Map();
+function armsOfSide(side, kind) {
+  const key = `${arenaMod.id}|${arena.map}|${side}|${kind}`;
+  if (!armsCache.has(key)) {
+    armsCache.set(key, (async () => {
+      const [rows, ai] = await Promise.all([catalogueOf(arenaMod), vehicleAi(arenaMod)]);
+      const want = arena.every ? null : arena.levels ?? [];
+      const on = row => (want ? want.some(l => (row.levels ?? []).includes(l) && sidesOn(row, l).includes(side)) : (row.sides ?? []).includes(side));
+      // An anti-tank missile by its launcher's name (a SCUD's is no such thing).
+      const launcher = w => /tow|span|sagger|at-?\d|atgm/i.test(String(w)) && !/scud/i.test(String(w));
+      const picked = rows.filter(row => on(row) && (kind === 'air' ? row.category === 'air'
+        : row.category === 'land' && !isTank(row, ai) && (row.weapons ?? []).some(launcher)));
+      const out = [];
+      for (const row of picked) {
+        for (const a of armsOf(await rowJson(row))) {
+          if (kind === 'carrier' && !launcher(a.node)) continue;
+          out.push({ ...a, vehicle: row.name, label: vehicleWords(row.name), weapon: weaponWords(a.node, a.template) });
+        }
+      }
+      return out;
+    })());
+  }
+  return armsCache.get(key);
+}
+
 const footRoses = new Map();
 /** A weapon's blast on the target: an impact round's where it strikes; a
  *  thrown charge's (no impact burst, a fuse) where it comes to rest against
@@ -1145,7 +1198,7 @@ async function drawFoot() {
     window.__tankSchool.foot = { side, target: target.template, weapons: [] };
     return;
   }
-  const pick = ws.find(w => w.name === foot.pick) ?? ws.find(w => /faust|bazooka|schreck|piat|rpg|law|rocket/i.test(w.name)) ?? ws[0];
+  const pick = ws.find(w => w.name === foot.pick) ?? ws.find(w => /faust|bazooka|schreck|piat|rpg|law|rocket|smaw|at-?4|javelin|dragon/i.test(w.name)) ?? ws[0];
   foot.pick = pick.name;
   ui.footPicks.innerHTML = ws.map(w => `<button type="button" class="dfs-chip" role="radio" aria-checked="${w === pick}" data-weapon="${esc(w.name)}">`
     + `<b>${esc(w.label)}</b><small>${n1(w.gun.speed)} m/s${w.pickup ? ' · pickup' : ''}</small></button>`).join('')
@@ -1377,10 +1430,17 @@ ui.footPicks.addEventListener('click', e => {
 ui.footRange.addEventListener('input', () => { drawFootPick(); if (ui.footMore.open) drawFootTable(); });
 ui.footMore.addEventListener('toggle', () => { if (ui.footMore.open) drawFootTable(); });
 
-// --- 06: the rules of 1917-18 (BF1918) ---------------------------------------------------
+// --- 06: the rules of the mod's own war ---------------------------------------------------
 
-/** The rules card shows on a WWI tree only. */
-const RULES_TREE = /^bf1918$/i;
+/** The rules card, by tree: BF1918's are 1917-18's (features/tank-doctrine-
+ *  1918), Desert Combat's 1991's (features/tank-doctrine-1991). Each module
+ *  gives `CARD` (the card's words), `rulesOn(ctx)` and `FIGHT`, the fight of
+ *  its war the card opens with. Any other tree shows no card. */
+const DOCTRINES = [
+  { tree: /^bf1918$/i, ...doctrine1918 },
+  { tree: /^(desertcombat|dc_final)$/i, ...doctrine1991 },
+];
+const doctrineOf = m => DOCTRINES.find(d => d.tree.test(m?.id ?? '')) ?? null;
 const CARD_ANCHOR = { '01': 'tks-h-armour', '02': 'tks-h-guns', '03': 'tks-h-steady', '04': 'tks-h-drive', '05': 'tks-h-foot' };
 const STATUS_WORD = { holds: 'Holds', differs: 'The game differs', partly: 'In part', 'not here': 'Not in the school yet' };
 let rulesTicket = 0;
@@ -1401,10 +1461,16 @@ function exposedOf(entry) {
 
 async function drawRules(youW, themW) {
   const ticket = ++rulesTicket;
-  const on = RULES_TREE.test(arenaMod.id);
-  ui.rules.hidden = !on;
-  ui.rulesJump.hidden = !on;
-  if (!on) { window.__tankSchool.rules = null; return; }
+  const pack = doctrineOf(arenaMod);
+  ui.rules.hidden = !pack;
+  ui.rulesJump.hidden = !pack;
+  if (!pack) { window.__tankSchool.rules = null; return; }
+  ui.rulesHead.textContent = pack.CARD.head;
+  ui.rulesIntro.textContent = pack.CARD.intro;
+  ui.rulesJump.textContent = pack.CARD.jump;
+  ui.rulesWait.textContent = pack.CARD.wait;
+  q('.tks-duel-eyebrow').textContent = pack.CARD.eyebrow;
+  ui.duelGo.textContent = pack.CARD.go;
   const [them, you] = current.entries;
   const theirSide = theirs().side;
   const youT = { ...youW, lengthM: you.snaps.side.widthM, heightM: you.snaps.side.heightM, exposed: exposedOf(you) };
@@ -1412,10 +1478,13 @@ async function drawRules(youW, themW) {
   // The first pass, with what is at hand; the field guns and the soldiers'
   // weapons are fetched and priced, then the card is drawn again.
   const mg = them.tank.mg ? { label: `${them.tank.name}'s machine gun`, shots: shotsOn(you, them.tank.mg.material, them.tank.mg.damage) } : null;
-  const ctx = { you: youT, them: themT, mg, fieldGuns: null, foot: null };
-  paintRules(ctx);
+  // Your own hull's automatic gun on theirs (a Bradley's 25 mm beside its TOW).
+  const ownMg = you.tank.mg ? { label: `${you.tank.name}'s automatic gun`, shots: shotsOn(them, you.tank.mg.material, you.tank.mg.damage) } : null;
+  const ctx = { you: youT, them: themT, mg, ownMg, fieldGuns: null, foot: null, air: null, carriers: null };
+  paintRules(ctx, pack);
   ui.rulesWait.hidden = false;
-  const [guns, mgs, loadouts] = await Promise.all([fieldGunsOf(theirSide), ctx.mg ? [] : fieldGunsOf(theirSide, 'mg'), loadoutsOf()]);
+  const [guns, mgs, loadouts, air, carriers] = await Promise.all([fieldGunsOf(theirSide), ctx.mg ? [] : fieldGunsOf(theirSide, 'mg'), loadoutsOf(),
+    pack.CARD.air ? armsOfSide(theirSide, 'air') : [], pack.CARD.carriers ? armsOfSide(theirSide, 'carrier') : []]);
   const names = sideWeapons(loadouts, arena.every ? [] : arena.levels, theirSide);
   const carried = (await Promise.all(names.map(n => weaponOf(n.name).then(w => (w ? { ...w, pickup: n.pickup } : null))))).filter(w => w && !w.placed);
   if (ticket !== rulesTicket) return;
@@ -1432,14 +1501,19 @@ async function drawRules(youW, themW) {
     const d = w.damage ?? {};
     const falls = Number(d.minDamage) < 1 && Number(d.distToStartLoseDamage) > 0;
     return { label: w.label, charge, pickup: Boolean(w.pickup), fuse: charge ? w.ttl : null, shots: footShots(footRose(you, w, 0)),
+      speed: w.gun.speed, gravity: w.gun.gravity,
       full: falls ? Number(d.distToStartLoseDamage) : null, min: falls ? Number(d.distToMinDamage) : null, floor: falls ? Number(d.minDamage) : null };
   });
+  // Their aircraft's weapons and their missile carriers, each priced on your hull.
+  const priced = list => list.map(w => ({ ...w, shots: shotsOn(you, w.material, w.damage) }));
+  ctx.air = priced(air);
+  ctx.carriers = priced(carriers);
   ui.rulesWait.hidden = true;
-  paintRules(ctx);
+  paintRules(ctx, pack);
 }
 
-function paintRules(ctx) {
-  const rules = rulesOn(ctx);
+function paintRules(ctx, pack) {
+  const rules = pack.rulesOn(ctx);
   const head = side => `<li class="tks-rule-head">${side === 'crew' ? 'For the tank crew' : 'For fighting a tank'}</li>`;
   let html = '', last = null;
   for (const r of rules) {
@@ -1453,20 +1527,22 @@ function paintRules(ctx) {
       + `<p class="tks-rule-here"><em>${esc(STATUS_WORD[v.status] ?? v.status)}</em>${esc(v.words)}</p>${see}</div></li>`;
   }
   ui.ruleList.innerHTML = html;
-  paintDuel(ctx);
+  paintDuel(ctx, pack);
   window.__tankSchool.rules = rules.map(r => ({ id: r.id, status: r.verdict.status, words: r.verdict.words }));
 }
 
-/** Villers-Bretonneux: the story, and on its own pairing what the engine
- *  makes of it; elsewhere a way there. */
-function paintDuel(ctx) {
-  const vb = VILLERS_BRETONNEUX;
+/** The pack's fight (Villers-Bretonneux, 73 Easting): the story, and on its
+ *  own pairing what the engine makes of it; elsewhere a way there. */
+const fightArena = vb => arenas.find(a => a.map === vb.arena)
+  ?? arenas.find(a => a.tanks.some(t => t.template === vb.yours) && a.tanks.some(t => t.template === vb.theirs));
+function paintDuel(ctx, pack) {
+  const vb = pack.FIGHT;
   const box = ui.duel;
   box.querySelector('h3').textContent = vb.title;
   box.querySelector('.tks-duel-story').innerHTML = vb.story.map(p => `<p>${esc(p)}</p>`).join('');
   box.querySelector('.tks-duel-src').innerHTML = vb.sources.map(x => `<a href="${esc(x.url)}" target="_blank" rel="noopener">${esc(x.doc)}</a>`).join(' · ');
   const here = yours().template === vb.yours && theirs().template === vb.theirs;
-  const there = arenas.find(a => a.map === vb.arena) ?? arenas.find(a => a.tanks.some(t => t.template === vb.yours) && a.tanks.some(t => t.template === vb.theirs));
+  const there = fightArena(vb);
   const go = ui.duelGo;
   go.hidden = here || !there;
   if (there) {
@@ -1479,15 +1555,16 @@ function paintDuel(ctx) {
   let words = [];
   if (here) {
     const [them, you] = current.entries;
+    // Your own hull's machine gun on theirs (Villers-Bretonneux's females).
     const femaleMg = you.tank.mg ? { shots: shotsOn(them, you.tank.mg.material, you.tank.mg.damage) } : null;
-    words = vb.duel({ you: ctx.you, them: ctx.them, femaleMg });
+    words = vb.duel({ ...ctx, femaleMg });
   }
   box.querySelector('.tks-duel-words').innerHTML = words.map(w => `<li>${esc(w)}</li>`).join('');
 }
 ui.duelGo.addEventListener('click', e => {
   e.preventDefault();
-  const vb = VILLERS_BRETONNEUX;
-  const there = arenas.find(a => a.map === vb.arena) ?? arenas.find(a => a.tanks.some(t => t.template === vb.yours) && a.tanks.some(t => t.template === vb.theirs));
+  const vb = doctrineOf(arenaMod)?.FIGHT;
+  const there = vb && fightArena(vb);
   if (!there) return;
   arena = there;
   store(ARENA_KEY, arena.map);

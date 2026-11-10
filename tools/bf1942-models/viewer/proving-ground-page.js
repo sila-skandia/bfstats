@@ -36,7 +36,7 @@
 import * as THREE from 'three';
 import { PG, PG_COLOURS } from './proving-ground.js';
 import { createSilhouetteRange, SILHOUETTE, SILHOUETTE_LANE_X } from './proving-targets.js';
-import { fighterRank, lessonById } from './dogfight-lessons.js';
+import { fighterRank, lessonById, jetName } from './dogfight-lessons.js';
 
 /** Where the kit bench stands: at the firing range's point, a step behind the line. */
 export const BENCH = Object.freeze({ x: SILHOUETTE_LANE_X, z: PG.LINE_Z + 7, height: 0.86, spacing: 1.6, depth: 1.2 });
@@ -1528,13 +1528,15 @@ export function createProvingGroundPage(page) {
     if (seat?.userData?.provingGround === 'airfield' && !nodes.includes(seat)) nodes.push(seat);
     return nodes;
   }
+  /** A plane's name: a jet by its designation (`Mig29` "MiG-29"). */
+  const planeWords = template => jetName(template) ?? prettyName(template);
   /** The battle's aircraft you can fly, one row a type. */
   function planes() {
     const seen = new Map();
     for (const node of airfieldNodes()) {
       if (node.userData?.provingGround !== 'airfield') continue;
       const template = templateOf(node);
-      if (!seen.has(template)) seen.set(template, { template, name: prettyName(template), fighter: fighterRank(template) < 100 });
+      if (!seen.has(template)) seen.set(template, { template, name: planeWords(template), fighter: fighterRank(template) < 100 });
     }
     return [...seen.values()].sort((a, b) => fighterRank(a.template) - fighterRank(b.template) || a.name.localeCompare(b.name));
   }
@@ -1548,7 +1550,7 @@ export function createProvingGroundPage(page) {
     planeChoice = template;
     try { localStorage.setItem(PLANE_KEY, template); } catch { /* private window */ }
   }
-  const planeName = () => prettyName(templateOf(myPlane()));
+  const planeName = () => planeWords(templateOf(myPlane()));
   /** Straight into your plane: stood up on the line first if the spawn
    *  screen is up or he is dead (no flag to pick, no READY), then seated. */
   function seatInPlane() {
@@ -1573,7 +1575,7 @@ export function createProvingGroundPage(page) {
     if (school) return school;
     const fighter = fighterOn('airfield') ?? fighterOn('enemyAir');
     const enemy = fighterOn('enemyAir') ?? fighter;
-    const name = fighter ? prettyName(fighter.name.replace(/_\d+$/, '')) : 'Spitfire';
+    const name = fighter ? planeWords(fighter.name.replace(/_\d+$/, '')) : 'Spitfire';
     const visual = node => {
       if (!node) return null;
       const copy = node.clone(true);

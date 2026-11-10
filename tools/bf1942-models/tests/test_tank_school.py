@@ -383,6 +383,100 @@ class DoctrineTests(unittest.TestCase):
         self.assertIn("501 hits", duel[2])
 
 
+class Doctrine1991Tests(unittest.TestCase):
+    """The rules of 1991 on a Desert Combat pairing (`viewer/tank-doctrine-1991.js`,
+    features/tank-doctrine-1991): an M1A1 against a T-72 in the numbers the
+    page measured on the Battle of 73 Easting."""
+
+    @classmethod
+    def setUpClass(cls) -> None:
+        out = run_harness()
+        cls.d, cls.out = out["doctrine1991"], out
+
+    def test_twelve_rules_each_sourced(self) -> None:
+        self.assertEqual(len(self.d["ids"]), 12)
+        self.assertEqual(len(set(self.d["ids"])), 12)
+        self.assertTrue(self.d["sources"])
+        # A few of the source's own words, never a passage.
+        self.assertTrue(all(0 < n < 15 for n in self.d["quotes"]))
+        self.assertEqual(["DC_Battle_of_73_Easting", "M1A1", "T72"], self.d["fight"])
+        self.assertTrue(self.d["card"]["air"] and self.d["card"]["carriers"])
+
+    def test_where_the_game_parts_from_the_manual(self) -> None:
+        st, w = self.d["status"], self.d["words"]
+        # No thermal sight, one round a tank, a slow dart that drops, no
+        # stabiliser, a front worth no more than a rear, and a missile
+        # nobody steers: six rules of 1991 the mod's data does not reward.
+        for rule in ("see-first", "sabot-or-heat", "battlesight", "fire-on-the-move", "front-and-flank", "missile"):
+            self.assertEqual(st[rule], "differs", rule)
+        for rule in ("most-dangerous", "rpg", "air"):
+            self.assertEqual(st[rule], "holds", rule)
+        self.assertEqual(st["reverse-slope"], "not here")
+        # 250 m/s: 0.8 s to 200 m; 14.85 m/s across rides on the shell.
+        self.assertIn("lands 12 m off at 200 m", w["fire-on-the-move"])
+        self.assertIn("at Eagle 66's 20 mph, 7 m", w["fire-on-the-move"])
+        self.assertIn("0.8 s to cross 200 m", w["battlesight"])
+        # The sabot lives 4 s: the manual's 1,200 m battlesight is out of reach.
+        self.assertIn("1,000 m at most: 1,200 m is out of its reach", w["battlesight"])
+        self.assertIn("front 3, side 3, rear 3", w["front-and-flank"])
+        self.assertIn("a place on the side that takes 1", w["front-and-flank"])
+
+    def test_the_numbers_in_the_words(self) -> None:
+        w = self.d["words"]
+        # The T-72's shell outlives the M1A1's dart: Medina Ridge the other way round.
+        self.assertIn("your M1A1's round lives 4 s, 1,000 m at most, their T-72's 10 s, 2,500 m", w["reverse-slope"])
+        self.assertIn("Here they outreach you", w["reverse-slope"])
+        self.assertIn("flies straight at 200 m/s", w["missile"])
+        self.assertIn("is 37 m on", w["missile"])
+        self.assertIn("4 hits on your front, 3 on the side and 3 on the rear: the flank is worth a round", w["rpg"])
+        self.assertIn("45 m on", w["rpg"])
+        self.assertIn("Mi-24's AT-2 needs 2 hits", w["air"])
+        self.assertIn("30 mm gun needs 7 rounds and fires 20 a second", w["air"])
+        # A cluster's bomblets are bombs, not a gun.
+        self.assertNotIn("bombs needs", w["air"])
+        self.assertEqual(["their Su-25's bombs 1", "their BRDM-2 Spandrel's AT-5 2"], self.d["threats"][:2])
+        self.assertIn("machine gun for last: it needs 201 hits", w["most-dangerous"])
+
+    def test_a_bradley_fights_a_tank_with_its_missile(self) -> None:
+        b = self.d["bradley"]
+        self.assertEqual("holds", b["sabot-or-heat"]["status"])
+        self.assertIn("the TOW for armour", b["sabot-or-heat"]["words"])
+        self.assertIn("no answer to a tank: 67 hits", b["sabot-or-heat"]["words"])
+        self.assertIn("flies flat at 100 m/s", b["battlesight"]["words"])
+        # Against a Bradley, its own TOW is the missile: two in the launcher.
+        self.assertIn("Their M2A3 Bradley's TOW needs 3 hits on your T-72. 2 in the launcher, then 6 s to load", self.d["againstBradley"])
+        self.assertIn("74 m on", self.d["againstBradley"])
+
+    def test_without_data_a_rule_says_so(self) -> None:
+        e = self.d["empty"]
+        for rule in ("missile", "rpg", "air", "reverse-slope"):
+            self.assertEqual(e[rule], "not here", rule)
+        self.assertEqual(e["fire-on-the-move"], "partly")
+
+    def test_73_easting_on_this_engine(self) -> None:
+        duel = self.d["duel"]
+        self.assertIn("an even fight at best", duel[0])
+        self.assertIn("three leave in 4 s", duel[1])
+        self.assertIn("at 1,420 m, cannot be made: the dart lives 4 s, 1,000 m", duel[2])
+        self.assertIn("lands 14 m off", duel[3])
+
+    def test_names_and_a_launcher_with_no_velocity(self) -> None:
+        self.assertEqual(["AH-64", "Mi-24", "A-10", "Su-25", "Humvee TOW", "T-72"], self.d["names"])
+        self.assertEqual(["Hellfire", "AT-2", "AT-5", "AT-5", "30 mm gun", "shell", "sabot"], self.d["weapons"])
+        # FA-3: no `velocity` is 200 m/s; the designator has no material.
+        self.assertEqual([["BRDM2_Span_Launcher", 200, 5, 5], ["M2A3_TOW", 100, 10, 2]], self.out["armsOf"])
+
+    def test_desert_combats_own_battle_stands_for_the_pair(self) -> None:
+        arenas = self.out["dcArenas"]
+        self.assertEqual(1, len(arenas))
+        self.assertEqual(("DC_Battle_of_73_Easting", "Battle of 73 Easting"), (arenas[0]["map"], arenas[0]["name"]))
+        # The M1A1 leads its side: the AI rates its gun 7, the Bradley's 6
+        # and the Vulcan's 1, at one worth.
+        self.assertEqual((["M1A1", "M2A3", "M163"], ["T72", "Shilka"]), (arenas[0]["allied"], arenas[0]["axis"]))
+        self.assertEqual(["T-72", "BMP-2", "M2A3 Bradley", "ZSU-23-4 Shilka", "RPG-7"], self.out["dcNames"])
+        self.assertEqual(["Battle of 73 Easting", "Desert Shield", "El Alamein", "Villers Bretonneux"], self.out["levelWords"])
+
+
 class StudyTests(unittest.TestCase):
     """The STUDY view's numbers (`viewer/tank-duel.js`, features/battle-schools,
     "Studying a fight"): a still tank firing at one driving east at 5 m/s,

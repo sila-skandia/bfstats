@@ -46,9 +46,22 @@ const teams = A.arenasFromTeams({ version: 1, levels: {
   galicia: { 1: ['Albatross', 'AlbatrossC3'], 2: ['AircoDH4_Brit'] },
   elsewhere: { 1: ['Fokker'], 2: ['Spad7', 'neuport11'] },
 } }, ['Montfaucon', 'battle_of_the_vosges', 'nebelberg', 'galicia']);
-const ranks = Object.fromEntries(['Spad7', 'FokkerRed', 'Sopwith', 'AlbatrossC3', 'Albatross', 'AircoDH4_Brit', 'Gotha', 'Spitfire', 'se5']
+const ranks = Object.fromEntries(['Spad7', 'FokkerRed', 'Sopwith', 'AlbatrossC3', 'Albatross', 'AircoDH4_Brit', 'Gotha', 'Spitfire', 'se5',
+  'F16', 'Mig29', 'F-15C', 'Mirage', 'F-14B', 'AV-8H', 'A10_B', 'SU-25', 'AH64', 'Mi24D', 'UH-60Q', 'SA-342G', 'MH-6', 'Mi8', 'BF109', 'Mitsubishi']
   .map(n => [n, L.fighterRank(n)]));
+// Desert Combat's index (features/dogfight-doctrine-1991): jets against
+// jets, with gunships and attack planes on the same airfields. Desert
+// Shield stands first; a battle with only helicopters is no arena.
+const jets = A.arenasFromTeams({ version: 1, levels: {
+  bocage: { 1: ['Mig29', 'SA-342G', 'SU-25'], 2: ['AH-6', 'AV-8B', 'F-15C'] },
+  dc_desertshield: { 1: ['Mi24D', 'Mi8', 'Mig29', 'SU-25'], 2: ['A10_B', 'AH-6', 'AH64', 'F16'] },
+  wake: { 1: ['Mi24D', 'Mig29', 'SU-25'], 2: ['A10_B', 'AH64', 'F16'] },
+  dc_medina_ridge: { 1: ['Mi24D'], 2: ['UH-60L'] },
+} }, ['Bocage', 'DC_DesertShield', 'Wake', 'DC_Medina_Ridge']);
+const jetNames = Object.fromEntries(['F16', 'Mig29', 'F-15C', 'F-14B', 'SU-25', 'A10_B', 'AV-8H', 'Mirage', 'Spitfire', 'BF109'].map(n => [n, L.jetName(n)]));
 console.log(JSON.stringify({
+  jets: jets.map(a => ({ map: a.map, name: a.name, allied: a.allied, axis: a.axis, planes: a.planes.map(p => p.template) })), jetNames,
+  rotary: Object.fromEntries(['AH64', 'Mi24D', 'UH-60Q', 'SA-342G', 'MH-500', 'OH-6', 'Mi8', 'F16', 'Mig29', 'Mirage', 'Mitsubishi', 'Mosquito'].map(n => [n, L.isRotary(n)])),
   teams: teams.map(a => ({ map: a.map, allied: a.allied, axis: a.axis, planes: a.planes.map(p => p.template) })), ranks,
   arenas: arenas.map(a => ({ map: a.map, allied: a.allied, axis: a.axis, planes: a.planes.map(p => p.template) })),
   planeIn: { chosen: A.planeIn(bob, 'BF109')?.template, missing: A.planeIn(bob, 'Zero')?.template },

@@ -2183,6 +2183,21 @@ a { color: var(--accent); }
 .dfs-lessons .dfs-rule-go { grid-column: 2; font-style: normal; font-family: var(--mm-font-mono); font-size: 10px; letter-spacing: 0.08em; text-transform: uppercase; color: var(--mm-accent-soft); }
 .dfs-lessons [data-unbuilt] .dfs-rule-go { color: var(--mm-ink-faint); }
 .dfs-lessons [data-unbuilt] { cursor: default; }
+/* An era's own card (Desert Combat's jets): each rule's source, a few of its
+   words, and a verdict on the planes on stage, as the tank school's card 06. */
+.dfs-lessons .dfs-rule-quote { grid-column: 2; color: var(--mm-ink-muted); font-size: 12px; font-style: italic; line-height: 1.45; }
+.dfs-lessons .dfs-rule-src { grid-column: 2; color: var(--mm-ink-faint); font: 400 10.5px/1.5 var(--mm-font-mono); }
+.dfs-lessons .dfs-rule-src a { color: inherit; }
+.dfs-lessons .dfs-rule-here[data-status] { color: var(--mm-ink-soft); font-size: 12px; line-height: 1.5; }
+.dfs-lessons .dfs-rule-here em { display: inline-block; margin-right: 6px; padding: 1px 6px; border-radius: 2px; font: 600 9.5px/1.6 var(--mm-font-mono); font-style: normal; letter-spacing: 0.12em; text-transform: uppercase; vertical-align: 1px; background: var(--mm-rule); color: var(--mm-ink-soft); }
+.dfs-lessons .dfs-rule-here[data-status="holds"] em { background: var(--mm-success-bg); color: var(--mm-success); }
+.dfs-lessons .dfs-rule-here[data-status="differs"] em { background: color-mix(in srgb, var(--mm-kill) 20%, transparent); color: var(--mm-kill); }
+.dfs-lessons .dfs-rule-here[data-status="partly"] em { background: color-mix(in srgb, var(--mm-accent) 18%, transparent); color: var(--mm-accent); }
+.dfs-lessons .dfs-rule-fight { display: flex; flex-direction: column; gap: 6px; padding: 14px 16px; }
+.dfs-lessons .dfs-rule-fight p { margin: 0; color: var(--mm-ink-soft); font-size: 12.5px; line-height: 1.5; }
+.dfs-lessons .dfs-rule-fight p.dfs-rule-here { color: var(--mm-ink); }
+.dfs-lessons .dfs-rule-eyebrow { font: 500 10px/1.4 var(--mm-font-mono); letter-spacing: 0.14em; text-transform: uppercase; color: var(--mm-ink-muted); }
+.dfs-lessons .dfs-rule-fly { align-self: flex-start; margin-top: 4px; }
 .dfs-end-acts small { flex-basis: 100%; color: var(--mm-ink-soft); font-size: 12px; line-height: 1.4; }
 /* The one bar under the picture: play and the clock, the lesson's fights as
    tabs, then the speed and camera menus, the notes and FLY IT. */

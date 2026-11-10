@@ -645,6 +645,19 @@ at a glb instead of its built Spitfire.
 | F-15C | DC | 112.2 | 32.2 (109) | 46.6 (7.7, 113) | never | 124 | 128 |
 | Mirage | DC | 129.1 | 70.4 at 45 deg (146) | 54.8 (6.6, 121) | never | 137 | 175 |
 
+**The jets' rows disagree with the page** (noted 2026-11-10, later the same
+day). The page's own measures of Desert Combat's jets are in
+[dogfight-doctrine-1991](../dogfight-doctrine-1991/README.md), "Measured on
+the pair on stage": level at 300 m the F-16 makes 94 m/s, the MiG-29 102,
+the F-15C 93 and the Mirage 117, against 111, 130, 112 and 129 here. Two
+things can move a number flown under node. The law's box drag needs the
+airframe's geometry box, and a tree built from a glb's JSON alone
+(`server/glb-scene.mjs`) has none unless the collision meshes are passed:
+the same published F-14B then levels at 201 m/s, and at 99 in the page. And
+level speed rises with height on this law, so a top speed means little
+without the height it was flown at, which this table does not give. Read
+the jets' rows here as leads; the propeller rows were not re-flown.
+
 Re-measured on the BF1918 tree as re-extracted at 10:41 on 2026-11-10, after
 the class-word fix ("Found on the way"); the first pass had the Eindecker and
 the SE5 on the fallback table and an older Albatros.
@@ -728,8 +741,11 @@ recast [25].
 - **BF1918 (WWI):** the period the Dicta were written for, and the mod
   where rule 3 is harshest (full damage only inside 100 m). Its two-seaters
   carry the rear gun that Mannock's and Richthofen's rules are about.
-- **Desert Combat (jets):** the school has no DC arena (`FIGHTERS` holds no
-  jets). On the law the jets do not run out of speed going up (the table),
+- **Desert Combat (jets):** the school had no DC arena when this was written
+  (`FIGHTERS` held no jets); it has seven since 2026-11-10
+  ([dogfight-school](../dogfight-school/README.md), "Desert Combat's
+  arenas"), and the jets' own rules are in
+  [dogfight-doctrine-1991](../dogfight-doctrine-1991/README.md). On the law the jets do not run out of speed going up (the table),
   so the energy fight becomes a fight for position under a 1000 m ceiling.
   The F-16's gun is a 30 mm round with a 3 m blast and 5 s of flight; its
   AIM-9, read from DC's own cons, flies straight and bursts within 7 m of a
