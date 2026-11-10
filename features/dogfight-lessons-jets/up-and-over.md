@@ -1,11 +1,13 @@
 # Up and over, on a jet
 
-Status: **re-tuned** (2026-11-10). The fight is flown as written and its
-words rewritten for the jet; the Dip is re-flown with a jet plan of its own.
-Files: `tools/bf1942-models/viewer/dogfight-jet-up-and-over.js`,
-`viewer/dogfight-jet-plan-up-and-over.js` (`jetUoDip`),
-`tests/test_dogfight_jet_up_and_over.py`. The Spitfire's version:
-[vertical.md](../dogfight-school/reviews/vertical.md),
+Status: **re-tuned** (2026-11-10), and **re-flown against a jet ace**
+(2026-11-11): the ace goes over the top while the air still holds it, the
+words say what that fight does, and the Dip is re-flown for it. Files:
+`tools/bf1942-models/viewer/dogfight-jet-up-and-over.js`,
+`viewer/dogfight-jet-plan-up-and-over.js` (`jetUoDip`, `jetUpAndOver`,
+`jetUoAce`, `jetUoAceSharp`), `viewer/dogfight-jet-ceiling.js` (the roof,
+shared with under-the-height), `tests/test_dogfight_jet_up_and_over.py`. The
+Spitfire's version: [vertical.md](../dogfight-school/reviews/vertical.md),
 [loop.md](../dogfight-school/reviews/loop.md),
 [dfn-uo.md](../dogfight-school/reviews/dfn-uo.md).
 
@@ -15,57 +17,68 @@ The Spitfire lesson rests on the follower running out of speed first:
 straight up, a Spitfire loses 10 to 14 m/s a second, the leader goes over
 the top at 46 m/s and the follower hangs at 13 m/s under them. A jet does
 not run out of speed. Flown on the F-16 from the lesson's start (paced 1.28:
-the ace at 100 m/s, you at 64, 358 m up):
+the ace at 100 m/s, you at 64, 358 m up), the ace pulls at 1.5 s and with
+its nose over 60 degrees never drops below 71 m/s.
 
-- The ace pulls at 1.5 s, nose to 76 degrees, and never drops below 77 m/s;
-  it reaches 1,000 m 10 s after the pull at 88 m/s, and is faster at the top
-  of the climb than in the middle of it (77 to 90 m/s with the nose over 60
-  degrees).
-- What stops it is the air. `aircraft.js` `medium`: every surface's lift is
-  multiplied by `1 - clamp(y / 1000, 0, 1)`, so half at 500 m and nothing
-  at 1,000 m. `upAndOver` waits for `OVER_SPEED` (46 m/s at the Spitfire's
-  size, 59 real) before going over the top, which never comes; its pull
-  times out at 10 s, at about 1,000 m, and it tops out at 1,182 m 14.7 s in, 11.4 s
-  above 900 m, back under 700 m only at 25.8 s.
-- A loop is not the problem: flown from level at 100 m/s with full aft
-  stick (a scratch plan, not kept), the F-16 goes round in about 5 s, the top
-  only 120 m above the bottom, 71 to 75 m/s over it. A jet pilot who goes
-  over the top below the thin air is never slow there either. Tried as an
-  ace (`upAndOver` sent over the top after 1 to 6 s or above a height): the
-  loop came out at the ace's height plus the climb, but its pounce, flown
-  with the Spitfire's numbers, landed 0 to 22 hits even on a pilot flying
-  straight and level, and following them up or shallow still landed 0 to 13
-  either way. Not kept: the lesson's ace is the one who pulls straight up,
-  and on a jet that pilot goes to the ceiling.
+What stops a jet is the air. `aircraft.js` `medium`: every surface's lift is
+multiplied by `1 - clamp(y / 1000, 0, 1)`, so half at 500 m and nothing at
+1,000 m.
 
-So (b) of RETUNING.md: the jet makes the claim false in a way that is itself
-the lesson. The fight is kept, the words say what it does.
+## The ace (2026-11-11)
+
+Flown as written, the ace was the Spitfire's `upAndOver`, which waits for
+`OVER_SPEED` (46 m/s at the Spitfire's size, 59 real) before going over the
+top. That never comes on a jet: its pull timed out at 10 s, at about 1,000 m,
+it topped out at 1,182 m 14.7 s in, took 11 s to fall back under 700 m and
+wallowed at 15 to 60 m/s for 20 s or more (full aft stick at low speed, `over`
+and `zoom` cycling under `OVER_SPEED`), even down at 300 m. An ace that falls
+out of the sky is not an ace.
+
+The jet's ace (`jetUp` in `dogfight-jet-plan-up-and-over.js`, wrapping
+`upAndOver`, `uoAce` and `uoAceSharp` as `jetUpAndOver`, `jetUoAce`,
+`jetUoAceSharp`):
+
+- **Over the top at 550 m.** The pull goes `over` at `OVER_AT` real metres
+  (`mem.overAt`), a loop while the air still turns the nose. Measured from the
+  lesson's start: over at 650 m the F-16 cannot pull its nose over in the
+  thin air and goes on up to 1,190 m; at 600, to 965 m; at 550 it loops, the
+  top at 725 m.
+- **Every other climb under the roof** (`underRoof`, `ROOF` 800 m, the same
+  as under-the-height's ace), and a zoom the roof has levelled goes `over` as
+  a turn back to them, level or nose down (`turnToward` capped by the roof),
+  not a loop: a loop from level at the roof went up to 1,330 m.
+- **Never hangs.** In `over`, `pounce` or `zoom`, slower than 45 m/s (the
+  Spitfire's size, 58 real) and not diving, the nose goes 35 degrees down
+  until the speed is back over 60.
+- How it knows the ceiling for the airframe it is on (`paceOf`, the pilot's
+  cannon shown at its muzzle speed over the pace): see
+  [under-the-height.md](under-the-height.md), "The ace that knows where the
+  top is".
+
+From every start of every demo: the F-16's ace never goes above 918 m and
+never flies slower than 68 m/s after its first top; the MiG-29's never above
+970 m, never slower than 89 m/s.
 
 ## What the follower should do
 
-Tried on the F-16 against the as-written ace, scratch plans:
+Against the jet ace, nine starts each:
 
-| follower | hits on them, nine starts | why |
-|---|---|---|
-| follow them up (`followStraightUp`, the lesson's `move`) | 0 (1 in two, in the opening chase) | you keep your speed, 93 to 110 m under them as they top out; nobody's nose bears |
-| follow shallow at 25 degrees (`shallowFollow`, `counter`) | 6 to 12 in seven, 1 in two | not at the top: as their nose comes up through 62 to 65 degrees they cross your sight 388 to 426 m out, 4.7 to 5.7 s in |
-| the same line at 10, 15, 20 degrees | 0 to 1 | they never cross the nose |
-| at 30, 35, 40 degrees | 1 to 7 | a shorter crossing |
-| lead pursuit on the pull, nose capped at 30 to 60 | 0 to 13, mostly 0 to 2 | the F-16's nose answers in 0.83 s; chasing the climb with it lands nothing |
-| shallow, then stay under 350 to 550 m (at the Spitfire's size) and wait | as shallow, plus 1 to 5 late hits in two of nine | the second shot hardly comes |
+| follower | what happens |
+|---|---|
+| follow them up (`followStraightUp`, the lesson's `move`) | you keep your speed (never under 60 m/s), 38 to 53 m under them as they go over; they come straight back down past you, 78 to 86 m at the closest; nobody shot down, they land nothing, you 2 rounds at most |
+| follow shallow at 25 degrees (`shallowFollow`, `counter`) | the shot as their nose comes up through 62 to 65 degrees, 387 to 426 m out, 4.8 to 5.7 s in: 6 to 12 hits in seven, none in two; then, climbing on at 25 degrees, you go up alone to 1,071 to 1,396 m |
+| the old jet Dip: the shot, then straight on under them | 0 of 9: their loop brings them back down behind you at 400 m and they chase at your speed, firing (shot down in three) |
+| the Spitfire's Dip (`uoDip`: follow at 30, pass, run) | 9 of 9 |
+| the shot at 25, then past them as they come down, then away | 9 of 9: `jetUoDip` |
 
-What works is the snap shot on the 25 degree line, then not following them
-into the thin air at all. `jetUoDip`: chase; when their nose comes up, hold
-25 degrees on their bearing for 2.5 s (the shot), then roll out on the
-heading you had and go on under them, full throttle, the nose 6 degrees
-down to level between 240 and 180 m at the Spitfire's size (307 and 230
-real). 9 of 9 clear, never hit.
-
-Not relied on anywhere: after the top, the ace flown as written wallows at
-15 to 60 m/s for 20 s or more (the Spitfire plan's full aft stick at low
-speed, `over` and `zoom` cycling under `OVER_SPEED`). A jet pilot falling
-out of the ceiling would put the nose down and be fast again in seconds, so
-no word on screen says they come down slow.
+So the Dip is re-flown with its steps (`jetUoDip`, four phases): chase; when
+their nose comes up, climb after them at 25 degrees on their bearing, never
+into their climb, and take the shot as they pull (`dip-shot`); when they come
+back over the top at you, or their nose has come down past 30 degrees, past
+them, 80 m beside and 30 m under their dive (`dip-pass`); then full throttle
+straight away from them, the nose 6 degrees down to level between 240 and 180 m
+at the Spitfire's size (`dip-run`). `tests/test_dogfight_jets.py`
+`JetStepsTests` holds the four phases, each timed.
 
 ## The nine starts, before and after (F-16)
 
@@ -73,61 +86,47 @@ no word on screen says they come down slow.
 by speed -3/0/+3 m/s; hits theirs/yours). The moves from the school's own
 nine (`dogfight-measure.js` `STARTS`, the L9 over x, z, height and speed),
 scored with `scoreMove` and `movesOn` exactly as the theatre counts them.
+"Before" is the jet file of 2026-11-10 against the Spitfire's ace.
 
-| demo | before (as written) | after |
+| demo | before (the Spitfire's ace) | after (the jet ace) |
 |---|---|---|
-| move | 0/0 x7, 0/1 x2 | the same (words only) |
-| counter | 0/12, 0/8, 0/8, 0/7, 0/7, 0/7, 0/6, 0/1, 0/1 | the same (words only) |
-| dip | 0/1 to 0/7, never hit; **1 of 9** works (the run is slow and short: you climbed after them to 30 degrees for 11 s into the thin air, 28 to 73 m/s at 35 s, 567 to 1,463 m apart) | `jetUoDip`: **9 of 9**, never hit; the pull's shot lands 0 to 10; they top out 14.7 s in, chase for 6 s, let go at 20.7 s; 1,919 to 2,053 m apart at 35 s, opening |
-| flip | 0/0, 0/1 x2; **0 of 9** | the same, **0 of 9** (words and verdict) |
-| ninja | 0/0, 0/1 once; **0 of 9** | the same, **0 of 9** (words and verdict) |
-
-The Flip on the jet: following them up you never slow to `UO.upOff` (42 at
-the Spitfire's size, 54 real) until 16.8 to 22.3 s in, 1,084 to 1,288 m
-up; best 0.93 s in their rear quarter; nobody lands a round after the climb.
-The Ninja: its shot "as they slow over the top" never comes (no
-`ninja-shoot` phase in any of the nine); a burst (0.3 s of landing shot) in
-two, 3 hits in one at 48.7 s; never hit; in eight they turn in and you
-leave.
+| move | 0/0 x7, 0/1 x2; the ace to 1,182 m | 0/2, 0/0, 0/2, 0/0, 0/0, 0/0, 0/0, 0/1, 0/2; nobody shot down; the ace over at 552 m, top 725 m at 8.9 s |
+| counter | 0/12, 0/8, 0/8, 0/7, 0/7, 0/7, 0/6, 0/1, 0/1 | 0/12, 0/8, 0/8, 0/7, 0/7, 0/7, 0/6, 3/1, 0/1: the same shot; in one (30 m right, as fast) they hit you 3 times at 18.5 s |
+| dip | `jetUoDip` (shot, then on under them): **9 of 9**; they top out at 1,180 m, let go at 20.7 s, 1.9 to 2.1 km at 35 s | the old `jetUoDip`: 0 of 9. The new one: **9 of 9**, never hit; the shot lands 0 to 10; you pass them at 8.7 s; they chase 6.0 to 7.3 s and let go 23.8 to 26.8 s; 2.3 to 2.9 km apart at 35 s, opening |
+| flip | **0 of 9**: you slow to 54 m/s only at 17 to 22 s, 1,084 to 1,288 m up | **0 of 9**: following them up you top out at 755 to 786 m, never slow; the move's 54 m/s never comes, so it is never flown |
+| ninja | **0 of 9**: no `ninja-shoot`; 3 hits in one | **0 of 9**: no `ninja-shoot`; you climb on alone at 24 degrees to 1,230 to 1,355 m and slow there under 30 m/s; you land nothing; hit 4 times in one |
 
 Claims, one by one:
 
-- "Following them up gets nothing": **holds**, for another reason. Rewritten:
-  you do not hang, you go up with them, and nobody lands a round.
-- "Following shallow gets the hits": **holds, about half** (6 to 12 in seven
-  against the Spitfire's 12 a fight). Rewritten: the shot is the pull, not
-  the top; one burst, no kill (22 hits needed), no second.
-- "They hang slow at the top inside your guns", "the trick buys them the
-  height and four seconds of you helpless": **false** on a jet. Rewritten.
-- Survival: **yes**, more easily: the Dip 9 of 9.
-- The coach's `over` and `zoom` lines ("they are slow up there") were false;
-  the jet coach says where the air runs out and to stay low and fast.
+- "Following them up gets nothing": **holds**, for the jet's reason: you do not
+  hang, and they are over the top and back down before you are slow.
+- "Following shallow gets the hits": **holds, about half**, as before: the
+  shot is the pull, not the top; one burst, no kill, no second.
+- "They hang slow at the top inside your guns": **false** on a jet, and still
+  rewritten. The 2026-11-10 words ("they go on up to 1,180 m ... take 11 s to
+  fall back") were the Spitfire ace's fall and are gone.
+- Survival: **yes**, the new Dip 9 of 9.
+- The coach's `over`, `pounce` and `zoom` lines say they come straight back
+  down, and to go past them and away.
 
 ## On the MiG-29 (pace 1.5)
 
-The same lesson. The ace climbs at 98 to 104 m/s, reaches 1,000 m 9.2 s in
-and tops out at 1,268 m; following them up lands nothing either way (0/0 in
-all nine), and the follower goes on to 1,780 to 1,895 m and is above 900 m
-for 32 to 35 of the 45 s. Following shallow lands 1 to 11 (10, 6, 11, 1, 5,
-1, 2, 4, 1), always 4.8 to 5.7 s in, 460 to 521 m out. Dip 9 of 9, Flip 0,
-Ninja 0. The words' numbers are the F-16's.
+The same lesson. The ace climbs at 91 to 103 m/s, its nose to 52 degrees, goes
+over at 551 m 3 s after the pull and tops out at 808 to 818 m 8.2 to 9.2 s in.
+Following them up, nobody is shot down (they hit you 3 times in one; you go on
+to 1,031 to 1,037 m). Following shallow lands 9, 7, 9, 2, 6, 3, 2, 1, 1. Dip 9
+of 9, Flip 0, Ninja 0. The words' numbers are the F-16's.
 
 ## Open
 
-- **The ace's recovery** from the ceiling is the Spitfire plan's: full aft
-  stick at low speed keeps it wallowing for 20 s or more. A jet version of
-  `upAndOver` (`over` that unloads and dives once out of the air) would make
-  the second half of every fight more honest. It needs a change to the ace
-  the Range's other demos share (`upAndOver`, `uoAce`, `uoAceSharp` in
-  `dogfight-pilot.js`), or jet copies of all three; not done.
-- **The live fight** (FLY IT, `flyAce: 'uoAce'`) is fitted to a jet
+- **The live fight** (FLY IT, `flyAce: 'jetUoAce'`) is fitted to a jet
   ([live-fight.md](live-fight.md)); nobody has flown this lesson in it by hand.
 - **The Flip and the Ninja** are 0 of 9 and not re-tuned: both wait for a
-  slow moment over the top that a jet never gives. A jet Ninja would have to
-  be built on the pull's shot and the ace's descent; with the ace's recovery
-  as it is, anything that worked would be working on the wallow.
-- **Shared files.** None changed. The harness prints only end states, so the
-  test flies the same fights itself (`MEASURE` in the test, the harness's
-  setup and the school's `scoreMove` / `movesOn`); a `--measure` in
-  `tests/dogfight_jet_harness.mjs` that printed tops, hit times and move
-  scores would let every lesson's test share it.
+  slow moment over the top that a jet never gives. A jet Ninja would be built
+  on the pull's shot and the ace's descent.
+- **The pace in the step context**, and the shared guard's 880 m in the pilot's
+  numbers: see [under-the-height.md](under-the-height.md), "Open".
+- **Sensitivity.** The fights move with the ace's numbers: with `OVER_AT` 450 the
+  old Dip worked 8 of 9 and following shallow landed 8, 7, 9, 2, 6, 2, 4, 1, 1;
+  at 500 the old Dip failed in all nine. 550 keeps following shallow's shot as it
+  was and is the highest the F-16's loop still comes round from.

@@ -89,7 +89,7 @@ class JetStepsTests(unittest.TestCase):
         tail = jet_steps("on-his-tail")
         self.assertEqual(["close", "dip-out"], [s["phase"] for s in tail["steps"]["dip"]])
         over = jet_steps("up-and-over")
-        self.assertEqual(["chase", "dip-shot", "dip-run"], [s["phase"] for s in over["steps"]["dip"]])
+        self.assertEqual(["chase", "dip-shot", "dip-pass", "dip-run"], [s["phase"] for s in over["steps"]["dip"]])
         for card in (tail["steps"]["dip"], over["steps"]["dip"]):
             times = [s["t"] for s in card]
             self.assertTrue(all(t is not None for t in times), card)

@@ -47,6 +47,8 @@ MODULES = {
     **{f"dogfight-jet-{i}.js": VIEWER / f"dogfight-jet-{i}.js" for i in JET_LESSON_IDS},
     "dogfight-jet-plans.js": VIEWER / "dogfight-jet-plans.js",
     **{f"dogfight-jet-plan-{i}.js": VIEWER / f"dogfight-jet-plan-{i}.js" for i in JET_LESSON_IDS},
+    # The top of the sky, shared by the under-the-height and up-and-over jet aces.
+    "dogfight-jet-ceiling.js": VIEWER / "dogfight-jet-ceiling.js",
     "dogfight-coach.js": VIEWER / "dogfight-coach.js",
     "dogfight-live.js": VIEWER / "dogfight-live.js",
     "dogfight-doctrine.js": VIEWER / "dogfight-doctrine.js",
