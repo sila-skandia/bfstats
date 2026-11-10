@@ -889,6 +889,11 @@ export function trackOwnRounds(bot, now) {
       } else if (hitsTarget(bot, hit, targetId)) {
         rec.round = null; rec.resolved = true; rec.fresh = false; rec.hits++;   // event_shotHit on the target
       } else {
+        // The round's last step is its impact (`landRound`): the engine's
+        // `updateBotProjectiles` follows a round to where it struck, and the
+        // tick-sampled watch here would otherwise judge a round that flew past
+        // the target into the wall behind it by a point a tick's flight short.
+        landRound(round, hit.point);
         observe(rec, round, round.passed);                // event_shotMissed
       }
     }
@@ -911,6 +916,32 @@ function roundFate(bot, guns, group, round, head) {
     if (d < bestD) { bestD = d; best = h; }
   }
   return best;
+}
+
+/**
+ * The watched round's last step, to the point it struck. `updateBotProjectiles`
+ * 0x084650e0 moves the pre point with the round and marks it passed once its
+ * ground distance from the start reaches the target's (ledger AI-105); the
+ * engine steps the round to its collision before `handleProjectileMiss` reads
+ * the record. The viewer watches from the bot's 30 Hz tick, and a round at
+ * 800 to 1000 m/s covers 27 to 33 m a tick: most rounds at a target inside
+ * 60 m are seen once, at the muzzle, and gone the next tick. Read off that
+ * first position, a round that flew past a crouched soldier into the wall
+ * behind him was "short" by most of the range, and `correctAim` lifted the
+ * aim 0.1 m a metre of it: 1.5 to 2 m a round, until the barrel no longer met
+ * the precision and the gun held for the 10 s idle and the decay (Stalingrad,
+ * seed 3, 8 a side: a PanzerIV and its bow MG on one soldier 50 m off, one
+ * round every 14.4 s for 150 s; features/bot-map-generation/seat-behaviour.md).
+ * Taking the impact as the last step is the engine's continuous law sampled
+ * at the one point that matters. Exported for the tests.
+ */
+export function landRound(round, point) {
+  if (!round || !point) return round;
+  round.maxHeight = Math.max(round.maxHeight, point[1]);
+  if (distXZ2(round.start, point) >= round.dist2) { round.passed = true; round.post = [...point]; }
+  else round.pre = [...point];
+  round.last = [...point];
+  return round;
 }
 
 /** `event_shotHit` 0x08526a40 compares the struck object with the record's
