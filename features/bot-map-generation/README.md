@@ -10,8 +10,9 @@ and the batch was not run. Phase B (section 16) took a census of the twenty
 fetched community levels and judged the six that could be judged: fourteen
 are classed out before a match is run (eleven of them arenas of stacked
 floors), none of the six passes at both sizes, and three are better than the
-same level with no layer (shigaisen_B, The_Maze, HOP). Nothing was published
-and no tree but a scratch one was touched.
+same level with no layer (shigaisen_B, The_Maze, HOP). Section 17 is how a
+layer goes live and what is live: shigaisen_B and The_Maze, both accepted
+short of the bar and tagged EXPERIMENTAL BOTS in the Community Maps list.
 
 **Owner decisions, 2026-11-10.** Any level without bots is a candidate, in
 every mod and in the community maps, not only FHSW. The priority is on-foot
@@ -2074,3 +2075,66 @@ says why it is shut. They are 630 KB and can be deleted at no cost but that.
 10. From 15.8, still open: the stand-in for a person, engine maps for mod
     levels, strategic maps, numbered patch archives, the meeting-area rule,
     `createHomogenousCondition`.
+
+## 17. Going live, 2026-11-10: shigaisen_B and The_Maze
+
+### 17.1 The path
+
+1. `node sim/botbatch.mjs level ...` writes the layer's `verdict.json`.
+2. A layer that fails the bar and is `better-than-nothing` goes live only
+   with a recorded reason: `node sim/botbatch.mjs accept --levels <level>
+   --reason "<why>"`. The reason and the checks it is short of are kept in
+   the verdict; a later run that fails a new check withdraws it.
+3. `python3 publish_bot_layers.py --root <scratch> --game-dir <game folder>`
+   stages every layer the bake's gate lets through. The community maps are in
+   the vanilla tree and that tree is not on every PC, so it fetches each
+   level's published `scene.json`, patches the `ai` layer into it with
+   `patch_scene.py`, writes the level's `pathfinding/` folder, and sets
+   `generatedBots` on the level's row of the published `menu-levels.json`.
+4. `scripts/publish-mesh-delta.py maps --hash --list --root <scratch>
+   --hash-manifest <scratch>/hashes-maps.json`, dry run first. It sends only
+   what differs and deletes nothing. Keep the fetched originals: they are the
+   rollback.
+5. Look at it on play.bfstats.io: `?mod=community`, Instant Battle, the level
+   carries the tag EXPERIMENTAL BOTS, START plays it with bots.
+
+### 17.2 What is live
+
+| Level | Outcome | Accepted short of | Published |
+|---|---|---|---|
+| shigaisen_B | better-than-nothing | redeploys at 16 a side, 0.1298 against 0.129 | 2026-11-10 |
+| The_Maze | better-than-nothing | route failures and redeploys at both sizes | 2026-11-10 |
+
+### 17.3 The live check found what the verdict only counted
+
+The_Maze was watched for two and a half minutes at 8 a side. The Axis side
+had 15 deaths, 4 of them Allied kills. The other 11 were the page's
+no-progress redeploy, shown to the player as "<name> is no more" and a score
+of -2: one side killing itself.
+
+A traced headless match says why. Flags 3 and 4 stand at the top of long
+narrow ramps, 7.7 m over the ground. The walk test calls them reachable and
+the lint says no flag is cut off, both by cell connectivity. A bot ordered to
+flag 4 walks to the ramp's foot at (397.9, -712.2), its leg search never
+closes, and it is redeployed twelve seconds later: 107 of 167 route failures
+in that match are at that one place, and neither flag is taken in twenty
+matches.
+
+A scratch copy of the layer with areas 3 and 4 written as the generator
+writes an unreachable area (measured, `botbatch matrix`, ten seeds):
+
+| The_Maze, median | 8 a side, live | 8 a side, 3 and 4 excluded | 16 a side, live | 16 a side, 3 and 4 excluded |
+|---|---|---|---|---|
+| route failures a bot-minute | 2.73 | 0.27 | 4.22 | 0.92 |
+| redeploys a bot-minute | 0.230 | 0.053 | 0.203 | 0.069 |
+| stuck seconds a bot-minute | 1.45 | 0.17 | 1.26 | 0.14 |
+| captures | 3 | 6.5 | 2 | 9 |
+| winners, Axis : Allies | 9 : 1 | 7 : 3 | 9 : 1 | 7 : 3 |
+| checks passed | 13 of 15 | 14 of 15 (idle 0.547 against 0.526) | 13 of 15 | 15 of 15 |
+
+Two things follow. Connectivity of cells is not reachability for a bot: the
+generator and the lint need a route probe that runs the page's own route code
+from each side's base to each flag, and excludes a flag neither side can
+route to. And a count that sits just over a bar can hide a fault a player
+sees at once, so every level is watched before it is called done.
+

@@ -38,5 +38,16 @@
  },
  "oneSided": null,
  "unreachable": [],
- "lintErrors": []
+ "lintErrors": [],
+ "accepted": {
+  "reason": "Passes thirteen of fifteen checks against the DICE bar at both sizes, with kills and captures above it and stuck time under it; the level with no layer has no kill in twenty matches. Short on route failures (2.73 a bot-minute against 0.38 at 8 a side, 4.22 against 2.10 at 16) and redeploys (0.230 against 0.198, 0.203 against 0.129).",
+  "date": "2026-11-10",
+  "outcome": "better-than-nothing",
+  "failed": [
+   "8:routeFailuresPerBotMinute",
+   "8:redeploysPerBotMinute",
+   "16:routeFailuresPerBotMinute",
+   "16:redeploysPerBotMinute"
+  ]
+ }
 }
