@@ -21,11 +21,12 @@ const jetNode = ({ hp, rounds, missile, rack, racks }) => {
   ];
   return { traverse: fn => nodes.forEach(fn) };
 };
-// What the page measured on the published tree's two jets (2026-11-10).
-const f16Law = { level: 94.3, pull: [{ speed: 60, rate: 50.2, radius: 68 }, { speed: 100, rate: 80, radius: 72 }, { speed: 140, rate: 104.9, radius: 76 }],
-  up: { stalls: false, at: null, gained: 705, speed: 79.7 } };
-const migLaw = { level: 101.6, pull: [{ speed: 60, rate: 32, radius: 107 }, { speed: 100, rate: 59.5, radius: 96 }, { speed: 140, rate: 83.6, radius: 96 }],
-  up: { stalls: false, at: null, gained: 703, speed: 75.1 } };
+// What the page measures on the published tree's two jets, built with the
+// tree's collision meshes (2026-11-10; `fixtures/dc-jets.json` measures the same).
+const f16Law = { level: 97.1, pull: [{ speed: 60, rate: 53.5, radius: 64 }, { speed: 100, rate: 83, radius: 69 }, { speed: 140, rate: 108.7, radius: 74 }],
+  up: { stalls: false, at: null, gained: 730, speed: 83.6 } };
+const migLaw = { level: 113.6, pull: [{ speed: 60, rate: 39.1, radius: 88 }, { speed: 100, rate: 67, radius: 86 }, { speed: 140, rate: 91.1, radius: 88 }],
+  up: { stalls: false, at: null, gained: 823, speed: 89.7 } };
 const f16 = J.jetOf(jetNode({ hp: 125, rounds: 500, missile: 'Aim9', rack: 8, racks: 2 }), 'F-16', f16Law);
 const mig = J.jetOf(jetNode({ hp: 150, rounds: 500, missile: 'AA-10', rack: 6, racks: 2 }), 'MiG-29', migLaw);
 const say = list => Object.fromEntries(list.map(r => [r.id, r.verdict]));

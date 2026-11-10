@@ -86,9 +86,9 @@ class JetRulesTests(unittest.TestCase):
             self.assertEqual("holds", v[rule]["status"], rule)
         self.assertEqual("not here", v["yo-yo"]["status"])
         self.assertIn("500 rounds, 25 s of fire at 20 a second and 16 AIM-9s", v["commit"]["words"])
-        self.assertIn("still makes 80 m/s after 10 s and is 705 m higher", v["energy"]["words"])
-        self.assertIn("50 deg/s at 60 m/s, 80 deg/s at 100 m/s, 105 deg/s at 140 m/s", v["corner"]["words"])
-        self.assertIn("close at 196 m/s", v["sight"]["words"])
+        self.assertIn("still makes 84 m/s after 10 s and is 730 m higher", v["energy"]["words"])
+        self.assertIn("54 deg/s at 60 m/s, 83 deg/s at 100 m/s, 109 deg/s at 140 m/s", v["corner"]["words"])
+        self.assertIn("close at 211 m/s", v["sight"]["words"])
 
     def test_the_missile_is_the_lab_servers(self) -> None:
         f = self.out["flown"]
@@ -100,18 +100,18 @@ class JetRulesTests(unittest.TestCase):
         w = self.out["verdicts"]["envelope"]["words"]
         self.assertIn("no seeker here: it flies straight and bursts within 7 m of an aircraft", w)
         self.assertIn("275 m in the first second, 406 in two", w)
-        # Slower than a MiG-29 flying level (102 m/s) after 2.6 s.
-        self.assertIn("After 2.6 s it is slower than their MiG-29", w)
+        # Slower than a MiG-29 flying level (114 m/s) after 2 s.
+        self.assertIn("After 2 s it is slower than their MiG-29", w)
 
     def test_the_plan_follows_the_two_jets(self) -> None:
         v, m = self.out["verdicts"], self.out["asMig"]
         self.assertIn("You out-turn them and cannot outrun them", v["plan"]["words"])
         self.assertIn("Turn across them (one circle)", v["circles"]["words"])
-        self.assertIn("they are 7 m/s the faster: you cannot leave them behind", v["leave"]["words"])
+        self.assertIn("they are 17 m/s the faster: you cannot leave them behind", v["leave"]["words"])
         # From the other cockpit the same numbers say the opposite.
         self.assertIn("You are the faster jet and the worse turner", m["plan"]["words"])
         self.assertIn("Turn the same way as them (two circles)", m["circles"]["words"])
-        self.assertIn("you are 7 m/s the faster: you can leave when you choose", m["leave"]["words"])
+        self.assertIn("you are 17 m/s the faster: you can leave when you choose", m["leave"]["words"])
 
     def test_without_a_model_or_a_measure_a_rule_says_so(self) -> None:
         b = self.out["bare"]

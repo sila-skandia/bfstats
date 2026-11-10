@@ -52,17 +52,17 @@ the rule of 1916 each carries on.
 | # | Rule (source) | Boelcke | Verdict | Desert Combat's numbers |
 |---|---|---|---|---|
 | 1 | Go in to win (Blesse, offense 22) | 2 | holds | 500 rounds, 25 s of fire at 20 a second, and 16 AIM-9s: enough to finish every pass |
-| 2 | Speed is life (Boyd, part II) | 1 | **the game differs** | Height is nearly free: standing on its tail from level speed the F-16 still makes 80 m/s after 10 s, 705 m higher. A propeller fighter on the same law is out of speed in about ten. The wings stop lifting at 1,000 m |
-| 3 | Lose sight, lose the fight (AFTTP 3-3 vol. 5, 4.3.10.5.7.4) | 4 | holds | No enemy on the minimap, a name only under the crosshair, no radar. Head on the two close at 196 m/s: 1,000 m in 5.1 s |
-| 4 | Know your best turning speed (AFTTP 3-3 vol. 5, 4.3.4) | new | **the game differs** | No g limit, no blackout, so no corner speed: a full pull turns the F-16 50 deg/s at 60 m/s, 80 at 100, 105 at 140. Faster is faster. The circle stays 68 to 76 m in radius |
-| 5 | One circle or two (Shaw, chapter 2) | new | holds | At 100 m/s the F-16 pulls 80 deg/s on a 72 m circle, the MiG-29 60 on 96 m: turn across them (one circle) |
-| 6 | Lead to shoot, lag to stay (Boyd, part II) | 5 | holds | In full: nothing fires over the shoulder. At 300 m a round takes 0.3 s, in which a jet crossing at 102 m/s moves 30 m |
+| 2 | Speed is life (Boyd, part II) | 1 | **the game differs** | Height is nearly free: standing on its tail from level speed the F-16 still makes 84 m/s after 10 s, 730 m higher. A propeller fighter on the same law is out of speed in about ten. The wings stop lifting at 1,000 m |
+| 3 | Lose sight, lose the fight (AFTTP 3-3 vol. 5, 4.3.10.5.7.4) | 4 | holds | No enemy on the minimap, a name only under the crosshair, no radar. Head on the two close at 211 m/s: 1,000 m in 4.7 s |
+| 4 | Know your best turning speed (AFTTP 3-3 vol. 5, 4.3.4) | new | **the game differs** | No g limit, no blackout, so no corner speed: a full pull turns the F-16 54 deg/s at 60 m/s, 83 at 100, 109 at 140. Faster is faster. The circle stays 64 to 74 m in radius |
+| 5 | One circle or two (Shaw, chapter 2) | new | holds | At 100 m/s the F-16 pulls 83 deg/s on a 69 m circle, the MiG-29 67 on 86 m: turn across them (one circle) |
+| 6 | Lead to shoot, lag to stay (Boyd, part II) | 5 | holds | In full: nothing fires over the shoulder. At 300 m a round takes 0.3 s, in which a jet crossing at 114 m/s moves 34 m |
 | 7 | Do not overshoot: go up (Boyd, the high-speed yo-yo) | new | not in the school yet | The pilots fly no yo-yo. Going up is cheap here (rule 2), so the high one is always open |
-| 8 | Shoot only a shot that counts (AFTTP 3-3 vol. 5, 4.3.1.2.1) | 3 | **the game differs** | The AIM-9 has no seeker: it flies straight and bursts within 7 m of an aircraft. 499 m/s off the rail, 154 a second later, 110 after two: 275 m in the first second, 406 in two. After 2.6 s it is slower than a MiG-29 flying level |
-| 9 | Attacked: turn into it (Boyd, the defensive turn) | 6 | holds | Every weapon needs lead; the F-16 comes round 80 deg/s at 100 m/s. Their AA-10 has no seeker to break, only a 7 m burst to stay out of |
+| 8 | Shoot only a shot that counts (AFTTP 3-3 vol. 5, 4.3.1.2.1) | 3 | **the game differs** | The AIM-9 has no seeker: it flies straight and bursts within 7 m of an aircraft. 499 m/s off the rail, 154 a second later, 110 after two: 275 m in the first second, 406 in two. After 2 s it is slower than a MiG-29 flying level |
+| 9 | Attacked: turn into it (Boyd, the defensive turn) | 6 | holds | Every weapon needs lead; the F-16 comes round 83 deg/s at 100 m/s. Their AA-10 has no seeker to break, only a 7 m burst to stay out of |
 | 10 | Fight as a pair: one engaged, one free (AFTTP 3-3 vol. 5, 4.4.5) | 8 | holds | The pair's lesson flies on any airframe. The missile's fuse tests no side (PROX-5): a friend crossing its path sets it off |
-| 11 | Fly your jet's fight, not theirs (Blesse, offense 14; Shaw) | 1 | holds | Level at 300 m: F-16 94 m/s, MiG-29 102. At 100 m/s: 80 deg/s against 60. The F-16 out-turns and cannot outrun: fight for angles |
-| 12 | Leave on your own terms (Boyd, flight tactics) | 7 | in part | No fuel here. What runs out is the cannon, 25 s. They are 7 m/s the faster: go only when they point the other way |
+| 11 | Fly your jet's fight, not theirs (Blesse, offense 14; Shaw) | 1 | holds | Level at 300 m: F-16 97 m/s, MiG-29 114. At 100 m/s: 83 deg/s against 67. The F-16 out-turns and cannot outrun: fight for angles |
+| 12 | Leave on your own terms (Boyd, flight tactics) | 7 | in part | No fuel here. What runs out is the cannon, 25 s. They are 17 m/s the faster: go only when they point the other way |
 
 Three part from the books, and they are the three the real jet age was
 built on: energy (height is nearly free, and capped), the turn (no g limit,
@@ -93,10 +93,11 @@ flew into the desert. One list calls it the war's only turning fight
 (research.md 2.1 A, with the three heights the sources give).
 
 On this engine, as the card says it with the F-15C and the MiG-29 on stage:
-the F-15C makes 93 m/s level and pulls 53 deg/s at 100 m/s, the MiG-29 102
-and 60, so on this flight law the MiG is the better jet in both, which is
-not how the day went; the MiG's last move needs about 192 m of height at
-100 m/s; and the whole fight is flown under 1,000 m, where his ended.
+both make 114 m/s level and pull 67 deg/s at 100 m/s. Desert Combat's F-15C
+is its MiG-29 under another skin: the two carry one set of flight data and
+one geometry box, and measure alike to the last decimal. So here the fight
+is a mirror match, the MiG's last move needs about 172 m of height at
+100 m/s, and the whole fight is flown under 1,000 m, where his ended.
 
 ## Measured on the pair on stage
 
@@ -114,20 +115,26 @@ models (2026-11-10):
 
 | Aircraft | Level at 300 m, m/s | Full pull, deg/s at 60 / 100 / 140 m/s | Circle at 100 m/s, m | Straight up after 10 s | Cannon | Missile |
 |---|---|---|---|---|---|---|
-| F-16 | 94 | 50 / 80 / 105 | 72 | 80 m/s, +705 m | 500 rounds, 25 s | 16 AIM-9 |
-| MiG-29 | 102 | 32 / 60 / 84 | 96 | 75 m/s, +703 m | 500 rounds, 25 s | 12 AA-10 |
-| F-15C | 93 | 28 / 53 / 77 | 108 | 62 m/s, +613 m | 940 rounds, 47 s | 16 AIM-9 |
-| Mirage | 117 | 39 / 60 / 78 | 95 | 112 m/s, +942 m | 750 rounds, 38 s | 8 Magic |
-| F-14B | 99 | 24 / 41 / 55 | 140 | 59 m/s, +676 m | 800 rounds, 40 s | 8 AIM-9 |
-| AV-8 | 85 | 27 / 43 / 59 | 133 | 51 m/s, +575 m | 500 rounds, 33 s | rockets |
-| A-10 | 87 | 33 / 53 / 73 | 108 | 72 m/s, +622 m | 1,350 rounds, 68 s | none |
+| F-16 | 97 | 54 / 83 / 109 | 69 | 84 m/s, +730 m | 500 rounds, 25 s | 16 AIM-9 |
+| MiG-29 | 114 | 39 / 67 / 91 | 86 | 90 m/s, +823 m | 500 rounds, 25 s | 12 AA-10 |
+| F-15C | 114 | 39 / 67 / 91 | 86 | 90 m/s, +823 m | 940 rounds, 47 s | 16 AIM-9 |
+| Mirage | 113 | 40 / 60 / 78 | 95 | 106 m/s, +900 m | 750 rounds, 38 s | 8 Magic |
+| F-14B | 128 | 28 / 46 / 62 | 125 | 81 m/s, +910 m | 800 rounds, 40 s | 8 AIM-9 |
+| AV-8 | 104 | 29 / 46 / 63 | 126 | 69 m/s, +743 m | 500 rounds, 33 s | rockets |
+| A-10 | 87 | 33 / 53 / 73 | 108 | 72 m/s, +620 m | 1,350 rounds, 68 s | none |
 | Su-25 | 89 | 36 / 50 / 67 | 115 | 63 m/s, +575 m | 1,000 rounds, 50 s | none |
+
+Measured with each airframe built on the tree's collision meshes, so its box
+is the `.sm` header's, the one the arena's plane flies on (the first pass of
+this page measured the drawn mesh's box, and read the MiG-29 at 102 m/s:
+dogfight-lessons-jets, "The lesson's plane is now the plane you fly"). The
+F-15C and the MiG-29 are one airframe in this mod.
 
 These sit near what the lab server measured in the real game with bots at
 the stick (desert-combat-parity, lab-ground-truth.md: level, 95th
 percentile, MiG-29 96, F-15C 86, F-14B 116, A-10 78, Su-25 76 m/s). The
-F-16 is the turner of the cast and the Mirage the runner; the F-14B turns
-worst. None runs out of speed going up.
+F-16 is the turner of the cast and the F-14B the runner, and the worst
+turner. None runs out of speed going up.
 
 **The missiles are the real game's.** The page's own rocket law is not what
 the card quotes. `LAB_FLIGHT` is the lab server's recording of the mod
@@ -156,20 +163,18 @@ script (`explodeNearEnemyDistance`; dogfight-doctrine, "Research notes").
   sit on pads the arena index did not read: both in dogfight-school,
   "Desert Combat's arenas", and tank-doctrine-1991, "Desert Combat's tank
   arenas".
+- **The F-15C is the MiG-29.** One set of flight data and one geometry box
+  under two skins: every measure agrees to the last decimal. An arena that
+  pits them (Bocage, the No Fly Zone) is a mirror match on this law.
 
 ## Open
 
-- **The lessons are WWII's.** They are flown on the jet on stage and each
-  move's count is the jet's own, but the plans' speeds and thresholds are a
-  propeller fighter's (starts at 60 to 92 m/s). On the F-16 the Extension
-  works from seven starts of nine or more in five lessons of nine, and no
-  Reversal or Bounce works in any. Lessons re-tuned for jets, flown and held
-  from the nine starts on their own airframe, are the honest next step; the
-  same is still owed to BF1918.
-- **The duel's guns are the school's.** A lesson's fight is flown with the
-  Spitfire's guns, not the jet's cannon or its missiles. A missile in the
-  duel, on the lab's curve with its 7 m fuse, would let rule 8 be flown, not
-  only read.
+- **The lessons.** Since 2026-11-10 a duel fits itself to a jet (its hands,
+  its pace, its own cannon) and each lesson can carry a jet version; where
+  each stands is [dogfight-lessons-jets](../dogfight-lessons-jets/README.md).
+- **No missile in the duel.** A lesson's fight is flown with the jet's
+  cannon. A missile on the lab's curve with its 7 m fuse would let rule 8 be
+  flown, not only read.
 - **The yo-yos** (rule 7) are not flown by any pilot here.
 - **No helicopters.** The arenas leave them on the ground. The research has
   the doctrine (section 3: J-CATCH, the Army's guidance, Swain's A-10 gun
