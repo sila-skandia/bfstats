@@ -25,6 +25,11 @@ the rifle's stock above it, the rows as stored; its two type 10 sights with
 the top-left bit set (`RifleGrenadeSight_35M`, `_SG44`) were already upright.
 So it is the engine's TGA reader and not the mesh loader's alone. Vanilla and
 the two expansion packs ship no type 10 file in `menu.rfa`.
+
+The menu art and the level thumbnails follow it too (`extract_menu_layout.py`,
+`extract_main_menu_layout.py`, 2026-11-10): BF1918's `Menu/Background.tga`
+(type 10, bottom-left), the two airmen under the logo, drew upside down and
+mirrored through the origin bit alone. Ledger TGA-1.
 """
 from __future__ import annotations
 

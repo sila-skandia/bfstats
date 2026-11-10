@@ -64,7 +64,7 @@ from extract_menu_layout import (  # noqa: E402
 )
 from extract_spawn_layout import load_chain_lexicon  # noqa: E402
 from extract_map_images import decode_dds, encode_png  # noqa: E402
-from extract_hud_assets import decode_tga  # noqa: E402
+from extract_hud_pack import decode_tga  # noqa: E402  (the engine's row rule, bf42/meshtga.py)
 from bf42.modmenu import MenuSources  # noqa: E402
 
 #: `Navigation/Level3/Level3`, the Y the strip rests at over a sub-tab's own

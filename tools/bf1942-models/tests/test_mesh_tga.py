@@ -65,6 +65,20 @@ class MeshTgaTests(unittest.TestCase):
         self.assertEqual(first(tga(10, 0b101000, [TOP, BOTTOM])), (255, 0, 0, 255))
         self.assertEqual(first(tga(2, 0b1000, [BOTTOM, TOP])), (255, 0, 0, 255))
 
+    def test_the_menu_extractors_read_a_picture_the_same_way(self):
+        # BF1918's `Menu/Texture/Menu/Background.tga` (type 10, bottom-left,
+        # the two airmen under the logo) came out upside down through the
+        # origin bit alone: the menu layout and the main menu layout now read
+        # with the HUD pack's rule. Each origin, and a type 2 file unchanged.
+        import extract_main_menu_layout as emml
+        import extract_menu_layout as eml
+        for decode in (eml.decode_tga, emml.decode_tga):
+            first = lambda raw: tuple(decode(raw)[2][:4])  # noqa: E731
+            self.assertEqual(first(tga(10, 0b1000, [BOTTOM, TOP])), (0, 0, 255, 255))
+            self.assertEqual(first(tga(10, 0b101000, [TOP, BOTTOM])), (255, 0, 0, 255))
+            self.assertEqual(first(tga(2, 0b1000, [BOTTOM, TOP])), (255, 0, 0, 255))
+            self.assertEqual(first(tga(2, 0b101000, [TOP, BOTTOM])), (255, 0, 0, 255))
+
     def test_short_input_is_not_stored_rows(self):
         self.assertFalse(mesh_tga_rows_as_stored(b"\x00" * 10))
 
