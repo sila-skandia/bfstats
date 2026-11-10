@@ -32,10 +32,15 @@ export const SETTLE_RATE = 0.2;
  * Returns { verdict: 'ok'|'reversed'|'no-steer'|'unsettled'|'slow', induced }.
  * `induced` is the right turn D added to what the hull was already doing.
  */
-export function steerVerdict({ preRate = 0, turnA, dtA = 1, turned, speed }) {
+export function steerVerdict({ preRate = 0, turnA, dtA = 1, turned, speed, loadedShare = 1 }) {
   const induced = turnA - preRate * dtA;
   if (!(speed > 1.5 || turned > 0.05)) return { verdict: 'slow', induced };
   if (speed > 3 && Math.abs(turnA) > 0.1 && induced < -0.15) {
+    // A hull with wheels off the ground when D went down steers on nothing:
+    // BF1918's Daimler truck pulling away up amiens's 13-degree pad had both
+    // front springs at load 0 and slid left on its rear wheels, which read as
+    // a reversed D (it turns right on D once the front touches down).
+    if (loadedShare < 0.75) return { verdict: 'unsettled', induced, airborne: true };
     // A hull still slewing hard left when D went down: the left swing can
     // outlast the press however the steering works, so the press proves
     // nothing either way. Reported for a rerun, not as a reversed steer.

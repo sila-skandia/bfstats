@@ -652,6 +652,12 @@ async function testGround(s, tpl, level, rec, cls) {
     if (Math.abs(preRate) < SETTLE_RATE) break;
   }
   rec.pre_yaw_rate = +preRate.toFixed(3);
+  // The share of springs carrying load when D goes down (`steerVerdict`).
+  const loadedShare = await s.ev(() => {
+    const w = window.__drive?.()?.state?.()?.wheels || [];
+    return w.length ? w.filter(x => +x.load > 0).length / w.length : 1;
+  });
+  rec.steer_loaded_share = +loadedShare.toFixed(2);
   await s.ev(() => window.__keys.add('KeyD'));
   const hD = await s.ev(() => window.__hull());
   const f0 = hD.axes;
@@ -683,14 +689,16 @@ async function testGround(s, tpl, level, rec, cls) {
   const turned = Math.abs(turnedSum);
   rec.steer_turned_deg = +(turned * 57.3).toFixed(1);
   const turnA = mirror * rightTurn(f0, fA);
-  const v = steerVerdict({ preRate, turnA, dtA: 0.5, turned, speed: sp });
+  const v = steerVerdict({ preRate, turnA, dtA: 0.5, turned, speed: sp, loadedShare });
   if (v.verdict === 'reversed') {
     add({ check: 'veh.steer', level, template_or_kit: tpl, severity: 'major', cause_key: 'veh.steer-reversed',
       evidence: `D (right) turned the nose ${turnA.toFixed(2)} rad in 0.5 s at a prior yaw rate of ${preRate.toFixed(2)} rad/s (D's own share ${v.induced.toFixed(2)})` });
     rec.failed = true;
   } else if (v.verdict === 'unsettled') {
     add({ check: 'veh.steer', level, template_or_kit: tpl, severity: 'info', cause_key: 'veh.steer-unsettled',
-      evidence: `still slewing left at ${preRate.toFixed(2)} rad/s after 3 s with no D; the press turned ${turnA.toFixed(2)} rad and proves nothing` });
+      evidence: v.airborne
+        ? `only ${(loadedShare * 100).toFixed(0)}% of the springs carried load when D went down; the press turned ${turnA.toFixed(2)} rad and proves nothing`
+        : `still slewing left at ${preRate.toFixed(2)} rad/s after 3 s with no D; the press turned ${turnA.toFixed(2)} rad and proves nothing` });
   } else if (v.verdict === 'no-steer') {
     add({ check: 'veh.steer', level, template_or_kit: tpl, severity: 'major', cause_key: 'veh.no-steer',
       evidence: `D held 2.5 s at ${sp.toFixed(1)} m/s${gear === 'KeyS' ? ' in reverse' : ''}: heading moved ${(turned * 57.3).toFixed(1)} deg` });
@@ -1202,7 +1210,15 @@ async function testSeatsAndGuns(s, tpl, level, rec, cls) {
       ? ((await s.ev(() => window.__occupancy?.fireArms ?? [])) || []) : [];
     const allTools = tools.length > 0 && tools.every(f => f.built === false);
     // A mod may spell it short (`<Vehicle>VehicleBinos` on `<Vehicle>_Binos_PCO3`).
-    if (shots <= 0 && /binoc|binos|spotter|periscope/i.test(`${tpl}${seat.node}${gunNames}${tag}`)) {
+    // A marker weapon (magType 2, ledger SPOT-1) places a scout camera on the
+    // press and fires no round, so the gun counter stays 0 in retail too:
+    // BF1918's trench periscope `Scherenfernrohr` fires `ScherenfernrohrMarker`.
+    // A fresh marker of the player's is the proof it worked.
+    const freshMarker = shots <= 0 && await s.ev(() => (window.__spotter?.()?.markers || [])
+      .some(m => m.owner === 'local' && (m.remaining == null || m.remaining > 100)));
+    if (freshMarker) {
+      rec[`fire_${seat.index}`].marker = true;      // an artillery spotter's seat: it marked
+    } else if (shots <= 0 && /binoc|binos|spotter|periscope/i.test(`${tpl}${seat.node}${gunNames}${tag}`)) {
       rec[`fire_${seat.index}`].optic = true;       // an observer's seat: nothing to shoot
     } else if (shots <= 0 && allTools) {
       rec[`fire_${seat.index}`].tool = tools.map(f => f.name);

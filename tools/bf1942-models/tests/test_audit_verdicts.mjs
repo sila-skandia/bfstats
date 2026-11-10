@@ -34,6 +34,14 @@ test('a hull that turns left under D from a steady heading is reversed', () => {
   assert.equal(v.verdict, 'reversed');
 });
 
+// BF1918's Daimler truck pulling away up amiens's 13-degree pad: both front
+// springs at load 0, sliding left on its rear wheels when D went down.
+test('a hull with its wheels off the ground is unsettled, not reversed', () => {
+  const v = steerVerdict({ preRate: 0, turnA: -0.25, dtA: 0.5, turned: 0.9, speed: 8, loadedShare: 0.5 });
+  assert.equal(v.verdict, 'unsettled');
+  assert.equal(v.airborne, true);
+});
+
 // The Prokhorovka Cavalry_Nagant: struck something, slewing left with no key
 // down; D's right turn is smaller than the slew, so the nose still goes left.
 test('a left slew that outlasts the press, with D turning right, is not reversed', () => {
