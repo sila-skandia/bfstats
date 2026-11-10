@@ -55,6 +55,8 @@ _MODULE_NAMES = [
     "deviation", "nav-grid", "nav-map", "nav-search", "nav-baked", "strategic-map",
     # bot-decision.js and strategic-ai.js read a flag's capture radius.
     "control-point-law",
+    # bot-plans.js's hold-fire for a teammate in the line.
+    "friendly-fire",
 ]
 MODULES = {f"{name}.js": VIEWER / f"{name}.js" for name in _MODULE_NAMES}
 MODULES["world.mjs"] = VIEWER / "world.js"

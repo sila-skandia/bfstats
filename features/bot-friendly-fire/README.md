@@ -109,11 +109,33 @@ this change.
 
 ## Decisions to know about
 
-- **No avoidance was added.** The engine has none (FF-7), so a bot that fires
-  with a teammate in its line hits him. Staying out of each other's way is up
-  to movement and formation. If a viewer-only behaviour (a squad walking in
-  file, say) puts friends in each other's line far more often than retail
-  does, fix that behaviour, not the round.
+- **A hold-fire was added, 2026-11-11 (INVENTION; superseding the September
+  decision below).** Measured on the page
+  ([hold-fire.md](../bot-map-generation/hold-fire.md),
+  [page-matches.md](../bot-map-generation/page-matches.md) section 3): on the
+  generated corridor level The_Maze 0.12 to 0.18 team kills a bot-minute, one
+  side losing about half its deaths to its own rifles, and 93 of 99 victims
+  with a known line standing in it. The owner's decision is that playability
+  wins: a person playing with these bots was shot in the back in any
+  corridor. So a bot keeps its trigger up while a living teammate's body is
+  within 0.6 m of the line from its muzzle to the target, at least a metre
+  nearer than the target and inside 40 m (`friendly-fire.js` `HOLD_FIRE`,
+  `friendInLine`; `bot-plans.js` `holdFireFor` in `execTrigger`). It keeps
+  aiming and fires the tick the line clears; on foot, after a second of
+  holding, it strafes away from the friend for 0.75 s. Hand weapons, a
+  seat's guns and a tank's main gun hold; aircraft, healing, indirect and
+  thrown weapons do not (a blast near friends is unchanged). Teammates only,
+  no terrain ray. The round itself is untouched: a friend who walks into a
+  round already in flight is still hit, as FF-1 says. Off with `?holdfire=0`
+  on the page and `--hold-fire off` in the runner, and off by default in a
+  runner match with the SAI on both sides, whose seeded traces are the
+  engine-parity ones (`sim/match.mjs` `holdFire`).
+- **(September, superseded above) No avoidance was added.** The engine has
+  none (FF-7), so a bot that fires with a teammate in its line hits him.
+  Staying out of each other's way is up to movement and formation. If a
+  viewer-only behaviour (a squad walking in file, say) puts friends in each
+  other's line far more often than retail does, fix that behaviour, not the
+  round.
 - **One existing invention withholds fire through a hull.** The stalemate
   fix's `muzzleClear` (a30103aa, `bot-plans.js` `execFireApproach`) holds a
   driven tank's fire while any hull or static blocks the barrel's line,
