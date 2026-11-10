@@ -796,3 +796,42 @@ is now 0 from the first frame. An offline scan of the rigs finds the same
 ending in 213 of BF1918's 312 rigs (cases, rounds, grenade rings and pins), in
 FHSW's No4s, and in vanilla's Thompson reload (the `flerp`, 0.125 m), which now
 snaps home too. Guard: `tests/test_weapon_part_pose.py`.
+
+## What the BF1918 exporter fixes change in vanilla, the packs and the community maps (measured 2026-11-10)
+
+Measured, not re-extracted. Two detached worktrees, one at `c8a4f09f7` (the
+commit before the first BF1918 fix) and one at `a386fc164`, each extracted
+vanilla (21 levels), XPack1 (29), XPack2 (32) and the 77 community levels
+into its own empty tree: levels, models, kits, loadouts, kit and shared
+poses, effects, loading, HUD layout, deployables and first-person rigs. Then
+the two trees were diffed file by file, with each glb's nodes matched by
+name path rather than index. The scripts are `treediff.py` and `glbsem.py`
+in the session scratchpad `vimpact/`.
+
+**Unchanged in every tree.** Every `scene.json` (flags, spawns, tickets,
+modes, fog, damage), every soldier pose, every first-person rig, the HUD
+layouts, `deployables.json`, the loading blocks and `maps.json`. Community
+Shigaisen D's `damage.projectiles` count moved 80 -> 81, but that is bake
+order under `-j 4`: the final `damage.json` tables are identical.
+
+**What changes when they are rebuilt.**
+
+| Change | Where | In the page |
+|---|---|---|
+| A projectile-less `FireArms` is exported (FA-25): the horn | Willy (Battle of Britain's and Raid on Agheila's own copies), BlackMedal, Lynx, KettenKrad; XPack2's HD_XA42 and R75; community Kubelwagen, M3A1, Hanomag, Vespa | The driver's fire key honks. Battle of Britain, local page: 2 pulls in 1.5 s, no round, the jeep drives (24.6 m), and the HUD shows no new panel (only `Ammo/MaxPrimaryAmmo` -1, `PrimaryMag` 0, `ReloadTime` 1 appear). 16 bots for 120 s: 227 bot samples in jeeps, none firing, the same as live |
+| `dontClearTeamOnExit` exported (SEAT-27) | every carrier, destroyer, battleship and submarine (vanilla 57 model files; Midway, Coral Sea, Wake, Iwo Jima, Guadalcanal, Omaha, Philippines, Husky; community Pearl Harbor, Oahu, Umi, Waterworld ...) | An abandoned ship stays its last crew's side and an enemy is refused at its door, as in retail. Not driven in a page: the code path is the one BF1918's horses and ships already use live |
+| Class words in their class spelling (LOAD-19) | `controlpoint` -> `ControlPoint`, `bundle` -> `Bundle`, `simpleobject` ... on 34 vanilla scripts | Nothing: no page or tool compares those words case-sensitively |
+| `vehicleFov 1.5`, `destroyOnExit` (VIEW-16, SEAT-38) | XPack2's WasserfallRocket only | The guided rocket's view takes its own FOV; leaving it destroys it |
+| `levelSides` in `models.json` | all three trees | Only the tank-school and dogfight arenas read it; vanilla's vehicles are one side's everywhere |
+| `kitActiveName` in `loadouts.json` | every kit | "ACTIVE SCOUTS" ..., the text the layout already shows |
+
+Live vanilla is otherwise as built: every model in `models.json` has its
+`sha`, and the plain `/models/<name>.glb` URLs 404 by design (the store,
+`bf42/glbstore.py`). A first screenshot of the live jeep with no windscreen
+was the cockpit blob still downloading.
+
+**Found on the way, not from these fixes.** `fireOnce` is not exported for a
+seat gun and `gun-cycle.js` does not read it, so a held trigger keeps firing
+at `roundOfFire`. Retail fires once per press. It touches the horns above and
+vanilla's `Elco80_Torpedos`, `Type38_Torpedos` and `FloatingMineLauncher`
+today.
