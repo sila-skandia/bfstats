@@ -830,8 +830,14 @@ Live vanilla is otherwise as built: every model in `models.json` has its
 `bf42/glbstore.py`). A first screenshot of the live jeep with no windscreen
 was the cockpit blob still downloading.
 
-**Found on the way, not from these fixes.** `fireOnce` is not exported for a
-seat gun and `gun-cycle.js` does not read it, so a held trigger keeps firing
-at `roundOfFire`. Retail fires once per press. It touches the horns above and
-vanilla's `Elco80_Torpedos`, `Type38_Torpedos` and `FloatingMineLauncher`
-today.
+**Found on the way, not from these fixes, and fixed.** `fireOnce` was not
+exported for a seat gun and `gun-cycle.js` did not read it, so a held trigger
+kept firing at `roundOfFire`, where retail fires once a press (GUN-22, the
+`FireArms` class every seat gun is). The exporter writes it now and
+`gun-cycle.js` latches a group collected with `SEAT_GUN_OPTIONS.fireOnce`
+(`tests/test_seat_fire_once.py`; a hand weapon's press stays `hand-fire.js`'s
+click pulse). Checked in a page on re-baked levels: Battle of Britain's
+Willy, held 4 s, one honk; three taps, three. Invasion of the Philippines'
+Elco80, held, one torpedo, where a held trigger had emptied both tubes in
+0.29 s. Vanilla's `FloatingMineLauncher` is not `fireOnce` (its only line is
+a `rem`'d `altfireOnce`).

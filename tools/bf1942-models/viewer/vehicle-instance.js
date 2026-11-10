@@ -65,6 +65,8 @@ export const SEAT_GUN_OPTIONS = {
   tracerLength: 'data',
   // A seat gun's own `fireDelay` (FA-13): `gun-cycle.js` holds the round.
   fireDelay: true,
+  // And its `fireOnce` (GUN-22): `gun-cycle.js` takes one round a press.
+  fireOnce: true,
 };
 
 /**

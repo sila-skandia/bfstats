@@ -168,13 +168,20 @@ export function advanceGroups(guns, dt) {
     // only a group collected with `fireDelay: true` (`SEAT_GUN_OPTIONS`)
     // takes it here.
     const delay = group.fireDelay > 0 ? group.fireDelay : 0;
+    // A `fireOnce` gun takes a press on the tick its trigger first reads
+    // held, or never (GUN-22): a press inside the fire cycle is refused and
+    // not fired when the cycle runs out, held or let go. A horn honks once a
+    // press, an Elco80 launches one torpedo. Only a group collected with
+    // `fireOnce: true` (`SEAT_GUN_OPTIONS`): a hand weapon's is `hand-fire.js`'s.
+    const pressTaken = !(group.fireOnce && group.onceHeld);
+    if (group.fireOnce) group.onceHeld = !!group.firing;
     if (group.firing) {
       active = true;
       // `handleMessage` marks the trigger held (`+0x225`) on every tick the
       // fire message passes the reload and overheat gates, round or no round
       // (`0x08289907`): a held trigger never releases between its rounds.
       group.soundHeld = true;
-      if (group.cooldown <= 0 && hasRound(guns, group)) {
+      if (pressTaken && group.cooldown <= 0 && hasRound(guns, group)) {
         if (delay > 0) {
           // Message 6 reaches `Fire` every tick the trigger is held (GUN-18);
           // while the shot is pending each only flags it again.

@@ -98,6 +98,7 @@ export function collectGroups(guns, root, options = {}) {
     aimRay = null,
     spreadDeg = null,
     fireDelay = false,
+    fireOnce = false,
   } = options;
   if (replace) {
     guns.clear();
@@ -330,6 +331,12 @@ export function collectGroups(guns, root, options = {}) {
       // `throw`. A hand weapon's delay is `hand-fire.js`'s, so its group
       // carries 0 here.
       fireDelay: fireDelay ? Math.max(0, +(stats.throw?.fireDelay ?? 0) || 0) : 0,
+      // The template's `fireOnce` (GUN-22): one round a press, which
+      // `gun-cycle.js` latches for a group collected with `fireOnce: true`
+      // (a seat's gun). A hand weapon's press is `hand-fire.js`'s click
+      // pulse, so its group carries false here.
+      fireOnce: fireOnce && stats.fireOnce === true,
+      onceHeld: false,
       delayPending: false,
       delayLeft: 0,
       // Seconds of kick left (the engine's `FireArms+0x250`, GUN-12): 0 is

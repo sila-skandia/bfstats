@@ -2826,6 +2826,8 @@ ObjectTemplate.gravityModifier 0
             {"template": "PlaneProjectile", "kind": "bullet", "trail": None,
              "timeToLive": 3.0, "gravity": 0.0},
             fire["projectile"])
+        # Not `fireOnce`: no key, and a held trigger keeps its rate.
+        self.assertNotIn("fireOnce", fire)
         self.assertNotIn("PlaneGuns projectile", nodes)
 
     def test_a_horn_with_no_projectile_keeps_its_fire_extras(self) -> None:
@@ -2856,6 +2858,8 @@ ObjectTemplate.roundOfFire 10
         self.assertNotIn("projectile", fire)
         self.assertEqual(10.0, fire["roundOfFire"])
         self.assertEqual("c_PIFire", fire["input"])
+        # One ring a press (GUN-22): `gun-cycle.js` latches a seat gun on it.
+        self.assertIs(True, fire["fireOnce"])
         self.assertIn("bicycle_bell muzzle 1", nodes)
         self.assertIn("[vehicle] bicycle_bell: 1 muzzle(s), 10 rps", report.fire_arms)
         self.assertNotIn("fireArms", nodes.get("MedPack", {}).get("extras", {}))

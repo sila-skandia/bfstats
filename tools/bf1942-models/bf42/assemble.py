@@ -3032,6 +3032,12 @@ class Assembler:
             # page can tell this export from one made before the word was
             # read (which carries no key, and keeps one round a pull).
             "blastAmmoCount": bool(template.blast_ammo_count),
+            # One round a press, a press inside the cycle refused (GUN-22,
+            # `FireArms::handleMessage`, the class every seat gun is): the
+            # horns, vanilla's Elco80 and Type38 torpedoes and its mine
+            # launcher. Absent when the template does not say it, so a held
+            # trigger keeps firing at `roundOfFire` as before.
+            "fireOnce": True if template.fire_once else None,
             # `projectilePosition` is where the round leaves when a template
             # declares no `addFireArmsPosition`, and the muzzle list below
             # already falls back to it. When BOTH are declared the barrels win
