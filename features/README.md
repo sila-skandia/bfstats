@@ -74,6 +74,7 @@ folder answers.
 
 | Folder | Kind | The question it answers |
 |---|---|---|
+| [mesh-viewer-advanced-tab](mesh-viewer-advanced-tab/README.md) | build | Where are the model viewer's textures off, opacity, wireframe and hit-region overlay, and how is the overlay drawn? |
 | [mesh-viewer-fidelity-defects](mesh-viewer-fidelity-defects/README.md) | research | What does retail do for tree collision, sniper fire/scope and tank driving/HUD? |
 | [mesh-viewer-neutral-depth](mesh-viewer-neutral-depth/README.md) | build | What maps each mock element to code, and how do crew stations work? |
 | [tree-foliage-billboards](tree-foliage-billboards/README.md) | fix | Why did trees render as bare sticks, and how are far billboards drawn? |

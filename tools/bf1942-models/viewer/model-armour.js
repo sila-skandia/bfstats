@@ -7,23 +7,37 @@
 import * as THREE from 'three';
 import { damageMath, distanceMod, hasDistanceFalloff, shotsFor, formatHp, weaponLabel } from './armour-damage.js';
 import { angleFactor as engineAngleFactor } from './crash-damage.js';
+import { REGION_MODES, regionModeOf, regionSettings } from './model-display-state.js';
+
+// The layer the collision hulls and the shot markers live on. index.html's
+// `renderFrame` draws it in a second pass over the model with the depth
+// cleared, which is what lets "Over model" show the regions through the paint.
+export const REGION_LAYER = 1;
+// How much fainter an unranked or immune face draws than a ranked one.
+const MUTED_REGION = .35;
 
 /**
  * Built once by the page, where this code used to sit. `page` hands in
  * what it reads of the rest of the page, as getters (a binding the page
  * reassigns is read live):
- * `camera`, `controls`, `current`, `framing`, `invalidate`, `main`,
- * `MODELS_BASE`, `renderer`, `renderHints`, `scene`, `syncRange`.
+ * `applyDisplay`, `camera`, `controls`, `current`, `framing`, `invalidate`,
+ * `main`, `MODELS_BASE`, `renderer`, `renderHints`, `scene`, `syncRange`.
  */
 export async function createArmourInspector(page) {
   const armour = {
-    // Whether the view is on, for the stage hints. `setCollision` changes it.
+    // Whether the view is on, for the stage hints. `setRegionMode` changes it.
     get collision() { return state.collision; },
+    // "Regions only" hides the model itself (model-display.js reads this).
+    get hideModel() { return regionSettings(state.mode).hideModel; },
+    get regionMode() { return state.mode; },
   };
 
-  // Whether the armour view is on, and the one material it isolates.
+  // The Hit regions mode ('off', 'overlay', 'only'), the hulls' opacity, and
+  // the one material it isolates.
   const state = {
-    collision: false,
+    mode: 'off',
+    regionOpacity: null,   // null: the mode's own default
+    get collision() { return this.mode !== 'off'; },
     collisionMaterial: null,
   };
 
@@ -90,8 +104,19 @@ export async function createArmourInspector(page) {
   angleHandle.visible = false;
   angleArc.visible = false;
   page.scene.add(hitMarker, hitNormal, shotArrow, shotShaft, angleHandle, angleArc);
+  for (const marker of [hitMarker, hitNormal, shotArrow, shotShaft, angleHandle, angleArc]) {
+    // Blended, so they sort after the translucent hulls (renderOrder 100 > 20)
+    // in the region pass and sit on top of them.
+    marker.traverse(obj => {
+      obj.layers.set(REGION_LAYER);
+      if (obj.material) obj.material.transparent = true;
+    });
+  }
 
-  const collisionCheckbox = document.getElementById('collision');
+  const regionsSeg = document.getElementById('regions-seg');
+  const regionOpacityRow = document.getElementById('region-opacity-row');
+  const regionOpacityRange = document.getElementById('region-opacity');
+  const regionOpacityOutput = document.getElementById('region-opacity-output');
   const collisionLegend = document.getElementById('collision-legend');
   const legendMaterials = document.getElementById('legend-materials');
   const weaponSelect = document.getElementById('weapon');
@@ -322,10 +347,15 @@ export async function createArmourInspector(page) {
 
     for (const obj of collisionTargets) {
       const materialId = obj.geometry.userData.defenseMaterial;
-      const color = collisionStyles.get(materialId)?.color || new THREE.Color(0x444444);
+      const style = collisionStyles.get(materialId);
+      const color = style?.color || new THREE.Color(0x444444);
+      // Unranked and immune faces are the grey of the legend: drawn fainter,
+      // so over the paint they do not muddy the regions that matter.
+      obj.userData.regionMuted = !style || Boolean(style.immune) || style.color.getHex() === 0x444444;
       for (const material of [obj.material].flat()) {
         material.color.copy(color);
-        if (material.emissive) material.emissive.copy(color).multiplyScalar(.12);
+        // Lit, but lit enough to read over a dark hull's paint.
+        if (material.emissive) material.emissive.copy(color).multiplyScalar(.45);
         material.needsUpdate = true;
       }
     }
@@ -350,9 +380,22 @@ export async function createArmourInspector(page) {
   }
 
   function applyCollisionState() {
+    const region = regionSettings(state.mode, state.regionOpacity);
     for (const root of collisionRoots) {
       root.visible = state.collision;
     }
+    for (const target of collisionTargets) {
+      const opacity = region.opacity * (target.userData.regionMuted ? MUTED_REGION : 1);
+      for (const material of [target.material].flat()) material.opacity = opacity;
+    }
+    for (const button of regionsSeg.querySelectorAll('[data-mode]')) {
+      button.setAttribute('aria-pressed', String(button.dataset.mode === state.mode));
+      button.disabled = !collisionRoots.length && button.dataset.mode !== 'off';
+    }
+    regionOpacityRow.hidden = !state.collision;
+    regionOpacityRange.value = String(region.opacity);
+    regionOpacityOutput.value = `${Math.round(region.opacity * 100)}%`;
+    page.syncRange(regionOpacityRange);
     for (const target of collisionTargets) {
       target.visible = state.collision
         && (state.collisionMaterial === null
@@ -366,6 +409,7 @@ export async function createArmourInspector(page) {
     }
     legendMaterials.dataset.filtered = String(state.collisionMaterial !== null);
     page.main.dataset.collision = String(state.collision);
+    page.main.dataset.regionMode = state.mode;
     collisionLegend.hidden = !state.collision || !collisionRoots.length;
     if (!state.collision) clearHit();
     page.renderHints();
@@ -389,9 +433,10 @@ export async function createArmourInspector(page) {
         if (!isCollisionMesh(obj)) return;
         obj.userData.collisionRoot = node;
         obj.renderOrder = 20;
+        obj.layers.set(REGION_LAYER);
         for (const material of [obj.material].flat()) {
           material.transparent = true;
-          material.opacity = .58;
+          material.opacity = regionSettings(state.mode, state.regionOpacity).opacity;
           material.depthWrite = false;
           material.side = THREE.DoubleSide;
           material.needsUpdate = true;
@@ -399,9 +444,22 @@ export async function createArmourInspector(page) {
         collisionTargets.push(obj);
       });
     });
-    collisionCheckbox.disabled = !collisionRoots.length;
-    if (!collisionRoots.length) state.collision = false;
-    collisionCheckbox.checked = state.collision;
+    // A depth-only copy of each hull, drawn first in the region pass, so a
+    // translucent hull shows its nearest face rather than every face behind
+    // it stacked. Added after the walk so it never walks itself.
+    for (const target of collisionTargets) {
+      const prepass = new THREE.Mesh(target.geometry, new THREE.MeshBasicMaterial({
+        colorWrite: false, side: THREE.DoubleSide,
+      }));
+      prepass.name = `${target.name || 'collision'}__prepass`;
+      prepass.userData.displayHelper = 'prepass';
+      prepass.raycast = () => {};
+      prepass.matrixAutoUpdate = false;
+      prepass.renderOrder = 19;
+      prepass.layers.set(REGION_LAYER);
+      target.add(prepass);
+    }
+    if (!collisionRoots.length) state.mode = 'off';
     configureCollisionLegend(report);
     applyCollisionState();
   }
@@ -735,11 +793,49 @@ export async function createArmourInspector(page) {
     renderHitPanel();
   }
 
-  collisionCheckbox.addEventListener('change', e => {
-    state.collision = e.target.checked;
+  /** Off, over the model, or the hulls on their own. */
+  function setRegionMode(mode) {
+    const next = regionModeOf(mode);
+    if (next !== 'off' && !collisionRoots.length) return;
+    const changed = next !== state.mode;
+    state.mode = next;
+    if (changed) state.regionOpacity = null;   // each mode starts at its own strength
+    // The model's own visibility depends on the mode, so the Display side
+    // redraws (and calls back into applyCollisionState).
+    if (page.applyDisplay) page.applyDisplay();
+    else applyCollisionState();
+    page.invalidate();
+  }
+
+  regionsSeg.addEventListener('click', event => {
+    const button = event.target.closest('[data-mode]');
+    if (button && !button.disabled) setRegionMode(button.dataset.mode);
+  });
+  regionOpacityRange.addEventListener('input', () => {
+    state.regionOpacity = Number(regionOpacityRange.value);
     applyCollisionState();
     page.invalidate();
   });
+
+  /**
+   * The second pass: the hulls and the shot markers, over whatever the first
+   * pass drew, with the depth buffer cleared so the model's paint does not
+   * hide them. The hulls' own depth copies keep them to their nearest face.
+   */
+  function renderRegions(renderer, scene, camera) {
+    if (!state.collision) return;
+    const { autoClear } = renderer;
+    const background = scene.background;
+    const mask = camera.layers.mask;
+    renderer.autoClear = false;
+    scene.background = null;
+    renderer.clearDepth();
+    camera.layers.set(REGION_LAYER);
+    renderer.render(scene, camera);
+    camera.layers.mask = mask;
+    scene.background = background;
+    renderer.autoClear = autoClear;
+  }
   legendMaterials.addEventListener('click', event => {
     const button = event.target.closest('[data-material]');
     if (!button) return;
@@ -750,6 +846,7 @@ export async function createArmourInspector(page) {
   });
 
   const raycaster = new THREE.Raycaster();
+  raycaster.layers.set(REGION_LAYER);   // the hulls and the angle handle
   const pointer = new THREE.Vector2();
   armour.pointerStart = null;
 
@@ -835,12 +932,7 @@ export async function createArmourInspector(page) {
   }
 
   // The armour view's `?shots` hooks (window.__modelInspector).
-  const setCollision = enabled => {
-    state.collision = Boolean(enabled);
-    collisionCheckbox.checked = state.collision;
-    applyCollisionState();
-    page.invalidate();
-  };
+  const setCollision = enabled => setRegionMode(regionModeOf(enabled));
 
   const pickCenterHit = () => {
     const visible = collisionTargets.filter(obj => obj.visible);
@@ -873,6 +965,9 @@ export async function createArmourInspector(page) {
     }
     return {
       enabled: state.collision,
+      mode: state.mode,
+      modes: REGION_MODES,
+      opacity: regionSettings(state.mode, state.regionOpacity).opacity,
       roots: collisionRoots.length,
       targets: collisionTargets.length,
       visibleTargets: collisionTargets.filter(target => target.visible).length,
@@ -890,7 +985,9 @@ export async function createArmourInspector(page) {
     getCollision,
     isCollisionMesh,
     pickCenterHit,
+    renderRegions,
     setCollision,
+    setRegionMode,
     setCollisionMaterial,
     setHitAngle,
     setWeapon,
