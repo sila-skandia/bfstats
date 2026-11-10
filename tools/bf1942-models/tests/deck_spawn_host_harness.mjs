@@ -164,4 +164,37 @@ const out = {
   };
 }
 
+// BF1918's Felixstowe, a `VCAir` flying boat with floats and no springs, on
+// a pad at the sea level: it rests at the float law's draft, as a ship does
+// (t2 F6), where the parked settle stood it 7.5 m up. The same hull on a pad
+// over land (x < 0 here) and one with a wheel `Spring` are left alone.
+{
+  const boat = (name, x, spring = false) => {
+    const node = hull(name, {}, [x, WATER, 0], { count: 8, hullHeight: 2, lift: 2, relY: -1, scale: 0.2 });
+    node.userData.physics.vehicleCategory = 'VCAir';
+    node.rotation.y = 0;
+    if (spring) {
+      const s = new THREE.Group();
+      s.userData = { templateKind: 'Spring' };
+      node.add(s);
+    }
+    return node;
+  };
+  const seaBoat = boat('Felixstowe_blau', 100);
+  const landBoat = boat('Felixstowe_rot', -100);
+  const wheeled = boat('Gotha_BR', 300, true);
+  const fRoot = new THREE.Group();
+  fRoot.add(seaBoat, landBoat, wheeled);
+  fRoot.updateMatrixWorld(true);
+  const fPage = { extras: { waterLevel: WATER },
+                  collider: { heightfield: { height: x => (x < 0 ? WATER + 1 : WATER - 10) } } };
+  const fBodies = createHullBodies(fPage);
+  fBodies.floatPlacedVehicles([seaBoat, landBoat, wheeled], WATER);
+  out.flyingBoat = {
+    sea: +(seaBoat.position.y - WATER).toFixed(3),
+    land: +(landBoat.position.y - WATER).toFixed(3),
+    wheeled: +(wheeled.position.y - WATER).toFixed(3),
+  };
+}
+
 console.log(JSON.stringify(out));

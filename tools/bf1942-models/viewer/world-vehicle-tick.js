@@ -62,6 +62,36 @@ function killLift(vehicle) {
   }
 }
 
+/**
+ * The sink a falling wreck is held to: `FALL_MIN_SINK`, or the hull's own
+ * terminal speed falling flat under its drag, whichever is slower.
+ *
+ * The floor is there to out-vote an airframe's glide, and a fighter's box
+ * drag lets it fall far faster than 30 m/s, so it keeps the floor. A hull
+ * whose own drag holds it to less must not be pushed past it: BF1918's
+ * Zeppelin L30 (`drag 5`, mass 16000, a 150 m envelope) falls flat at about
+ * 5 m/s, and held at 30 its box drag and its up/down engine's propeller
+ * term (`e = revs - v.fwd / noPropellerEffectAtSpeed`, a brake at revs 0)
+ * threw it upward every tick faster than the floor pulled it down: a
+ * destroyed airship (and the observation balloon) climbed at 7..13 m/s to
+ * 400 m (t2 F4). The terminal speed is `sqrt(g m / (drag A_y))` under the
+ * box law (`Aircraft.applyBoxDrag`, the flat face `pi/4 DX DZ`), `g / drag`
+ * under the linear one.   [HOUSE RULE, the floor's own bound]
+ */
+export function fallSinkFloor(vehicle) {
+  const k = vehicle?.spec;
+  const g = Math.abs(k?.gravity ?? 0);
+  if (!(k?.drag > 0) || !(g > 0)) return FALL_MIN_SINK;
+  let terminal = Infinity;
+  if (k.dragLaw === 'box' && Array.isArray(k.size) && k.mass > 0) {
+    const area = (Math.PI / 4) * k.size[0] * k.size[2];
+    if (area > 0) terminal = Math.sqrt(g * k.mass / (k.drag * area));
+  } else if (k.dragLaw !== 'box') {
+    terminal = g / k.drag;
+  }
+  return Math.min(FALL_MIN_SINK, terminal);
+}
+
 /** Undo `killLift`, for a hull the spawner puts back. */
 export function restoreLift(vehicle) {
   for (const surface of vehicle?.surfaces ?? []) {
@@ -135,7 +165,12 @@ export function stepFallingWrecks(world, dt) {
     // The spool state itself, not just its target: `#vacate` pinned it when
     // the seat emptied, and a wreck's engine is dead rather than idling.
     vehicle.state.throttle = 0;
+    // TemplateMessage 0x15 stops every Engine under the PCO and latches it
+    // (PHY-14): the revs are forced to 0, an idle floor (`setMinRotation`,
+    // the observation balloon's hover engines at 40%) included.
+    if ('engineRunning' in vehicle) vehicle.engineRunning = false;
     killLift(vehicle);
+    const sink = fallSinkFloor(vehicle);
     // Sink first, integrate second. `aircraft.js` computes lift from the flow
     // over the wing, so a wreck already moving down gets its "lift" downward:
     // clamping AFTER the integration left the airframe's own lift to fight the
@@ -144,14 +179,14 @@ export function stepFallingWrecks(world, dt) {
     const velocity = vehicle.state.velocity;
     const bleed = Math.max(0, 1 - FALL_DRAG * dt);
     if (velocity) {
-      if (velocity.y > -FALL_MIN_SINK) velocity.y = -FALL_MIN_SINK;
+      if (velocity.y > -sink) velocity.y = -sink;
       velocity.x *= bleed;
       velocity.z *= bleed;
     }
     vehicle.integrate(dt);
     // And again after: the floor holds even if the tick's own forces pushed the
     // hull back up.
-    if (velocity && velocity.y > -FALL_MIN_SINK) velocity.y = -FALL_MIN_SINK;
+    if (velocity && velocity.y > -sink) velocity.y = -sink;
   }
 }
 

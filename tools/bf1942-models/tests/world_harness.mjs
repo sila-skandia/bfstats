@@ -309,7 +309,29 @@ worldG.falling.clear();
 driveCalls.length = 0;
 worldG.step(1 / 30);
 const afterClear = driveCalls.length;
-const falling = { oneTick, noTick, fourTicks, afterClear };
+// A dead hull's engines stop (PHY-14), and the sink it is held to is no
+// faster than its own drag lets it fall flat: BF1918's Zeppelin L30 (drag 5,
+// mass 16000, 26.9 x 208.2 m) and a fighter (BF109's numbers).
+const { fallSinkFloor } = await import('./world-vehicle-tick.js');
+const zeppelinSpec = { dragLaw: 'box', drag: 5, mass: 16000, gravity: 14.73, size: [26.9, 20, 208.2] };
+const fighterSpec = { dragLaw: 'box', drag: 0.105, mass: 2500, gravity: 14.73, size: [10.6, 3, 9.5] };
+const deadAirship = {
+  spec: zeppelinSpec, engineRunning: true,
+  state: { throttle: 0, velocity: { x: 0, y: 0, z: 0 } },
+  setInput() {},
+  integrate() { this.state.velocity.y += 2; },   // its floats and drag push it up
+};
+worldG.falling.add(deadAirship);
+worldG.step(1 / 30);
+worldG.falling.clear();
+const sinkFloors = {
+  zeppelin: fallSinkFloor({ spec: zeppelinSpec }),
+  fighter: fallSinkFloor({ spec: fighterSpec }),
+  noSpec: fallSinkFloor({}),
+  deadEngineRunning: deadAirship.engineRunning,
+  deadVy: deadAirship.state.velocity.y,
+};
+const falling = { oneTick, noTick, fourTicks, afterClear, sinkFloors };
 
 // --- scenario 10: the depots' one pass a tick -------------------------------
 // Two soldiers of one side at a neutral medical locker, and an empty F-14

@@ -103,6 +103,15 @@ class DeckSpawnHostTests(unittest.TestCase):
         self.assertEqual(sc["online"][0], {"inactive": False, "carrierDown": False, "served": sc["ring68"]})
         self.assertEqual(sc["online"][1], {"inactive": True, "carrierDown": True, "served": None})
 
+    def test_a_flying_boat_on_the_sea_rests_at_its_draft(self):
+        # t2 F6: a VCAir hull with floats and no springs is born at its pad
+        # and its floats settle it, as a ship's do (SHIP-1); over land, or on
+        # wheels, it is the settle's as before.
+        boat = self.out["flyingBoat"]
+        self.assertAlmostEqual(boat["sea"], 1.773, places=2)
+        self.assertEqual(boat["land"], 0)
+        self.assertEqual(boat["wheeled"], 0)
+
 
 if __name__ == "__main__":
     unittest.main()

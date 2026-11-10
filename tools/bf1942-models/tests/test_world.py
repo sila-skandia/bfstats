@@ -293,6 +293,19 @@ class WorldTests(unittest.TestCase):
         ])
         self.assertEqual(falling["oneTick"]["throttle"], 0)
 
+    def test_a_falling_wreck_sinks_no_faster_than_its_own_drag(self) -> None:
+        """A destroyed airship climbed to 400 m: held at a 30 m/s sink its box
+        drag and its up/down engine's propeller term threw it up every tick
+        (t2 F4). The floor is the hull's own flat-fall terminal speed when that
+        is slower, a fighter keeps 30, and the engines of a dead hull stop
+        (PHY-14), so the balloon's 40% hover floor lifts nothing."""
+        floors = self.results["falling"]["sinkFloors"]
+        self.assertAlmostEqual(floors["zeppelin"], 3.32, places=1)
+        self.assertEqual(floors["fighter"], 30)
+        self.assertEqual(floors["noSpec"], 30)
+        self.assertFalse(floors["deadEngineRunning"])
+        self.assertAlmostEqual(floors["deadVy"], -floors["zeppelin"], places=6)
+
     def test_an_empty_falling_list_is_skipped(self) -> None:
         # The world's own guard: the pass runs only when something is in the
         # list, so a level with no wrecks in the air pays a length check.

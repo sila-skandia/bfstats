@@ -158,6 +158,60 @@ export function createHullBodies(page) {
     return seaHulls.get(node);
   }
 
+  /** The heightfield of the level now loading, from its settle on: what
+   *  `floatsOnTheSea` asks before the collider exists. */
+  let loadHeightfield = null;
+  const mooredFloaters = new WeakMap();
+  /** How far over the sea a moored hull's pad may be, m: the Felixstowes'
+   *  are 0..1.9 m over it on the eight levels that place them.   [free] */
+  const MOORED_REACH = 20;
+
+  /**
+   * A hull of another category that the sea carries where the level put it:
+   * `FloatingBundle`s, no `Spring` to stand on, placed over water. BF1918's
+   * Felixstowe flying boats (`VCAir`, twenty floats, no undercarriage) on
+   * Bombing Albion, Midway, Tabuaeran and five more. The engine has no
+   * category rule for this: every mobile hull is born awake at its pad and
+   * its floats settle it (`PhysicsFloatingBundle::updatePhysics`, SHIP-1), so
+   * a flying boat rests at the float law's draft as a ship does. The load
+   * settle's world has no water (`settleSome`), and stood it on the hulls'
+   * lowest vertices 7.5 m over the sea, where its parked body slept (t2 F6).
+   * So the settle leaves it alone and `floatPlacedVehicles` gives it the
+   * ship's closed-form draft (`equilibriumRootY`); it stays a parked body
+   * and an aircraft when taken, whose drive floats it (`aircraft.js`
+   * `bodyForces`). A hull with wheels (a Gotha on floats and springs, an
+   * amphibian) settles on its springs as before, and one placed over land (a
+   * seaplane on a slipway, Amiens' Hansa W29) is left to the settle.
+   */
+  function floatsOnTheSea(node) {
+    if (!node || isSeaHull(node) || isStaticRoot(node)) return false;
+    if (!node.userData?.physics?.vehicleCategory) return false;
+    if (mooredFloaters.has(node)) return mooredFloaters.get(node);
+    const waterLevel = page.extras?.waterLevel;
+    const field = loadHeightfield ?? page.collider?.heightfield;
+    if (!Number.isFinite(waterLevel) || typeof field?.height !== 'function') return false;
+    let floats = false;
+    let springs = false;
+    const visit = child => {
+      const kind = child.userData?.templateKind;
+      if (kind === 'FloatingBundle' && child.userData?.physics?.hullHeight > 0) floats = true;
+      else if (kind === 'Spring') springs = true;
+      for (const c of child.children ?? []) visit(c);
+    };
+    visit(node);
+    let afloat = floats && !springs;
+    if (afloat) {
+      node.updateWorldMatrix(true, false);
+      const e = node.matrixWorld.elements;
+      const ground = field.height(e[12], e[14]);
+      // On the water, not an airship moored in the sky over it: the
+      // Zeppelin's floats (`hullHeight 300000`) carry it at any height.
+      afloat = Number.isFinite(ground) && ground < waterLevel && e[13] - waterLevel < MOORED_REACH;
+    }
+    mooredFloaters.set(node, afloat);
+    return afloat;
+  }
+
   /**
    * The contact friction scalar for the sea bed under (x, z).
    *
@@ -567,6 +621,7 @@ export function createHullBodies(page) {
     }
     if (!Number.isFinite(waterLevel)) { pinHeldCraft(); return; }
     for (const node of ownerRoots) {
+      if (floatsOnTheSea(node)) { floatToDraft(node, waterLevel); continue; }
       if (!isSeaHull(node)) continue;
       // A static hull (DC's `Nimitz_Static*`) stays at its authored pose,
       // and her deck is still a deck (`shipDeckAt`).
@@ -607,6 +662,19 @@ export function createHullBodies(page) {
     }
     // The deck aircraft go with their ships, before the index bakes them.
     pinHeldCraft();
+  }
+
+  /** Only `y`, to the float law's rest (`equilibriumRootY`); left where it
+   *  was put when its floats cannot carry it. */
+  function floatToDraft(node, waterLevel) {
+    const floats = floatNodesOf(node);
+    if (!floats.length) return;
+    node.updateWorldMatrix(true, false);
+    const y = equilibriumRootY(floats, waterLevel);
+    if (!Number.isFinite(y)) return;
+    node.position.y += y - node.matrixWorld.elements[13];
+    node.updateMatrix();
+    node.updateMatrixWorld(true);
   }
 
   /**
@@ -1202,6 +1270,7 @@ export function createHullBodies(page) {
 
   function settlePlacedVehicles(ownerRoots, heightfield, { probes = null } = {}) {
     levelStaticTop = probes?.staticTop ?? null;
+    loadHeightfield = heightfield ?? null;
     if (!hullBodies.collisionMeshes || !page.damageTables || !heightfield) return;
     // The hulls the round opens with settle together; every other node of a
     // pad (its other side's vehicle, `loadPadVariants`, or one its live side
@@ -1240,6 +1309,8 @@ export function createHullBodies(page) {
       // A deck aircraft is held at its spawner's pose, not dropped onto the
       // heightfield under its ship (`holdSpawnedCraft`).
       if (spawnHoldOf(node)) return;
+      // A flying boat on the sea is floated, not settled (`floatsOnTheSea`).
+      if (floatsOnTheSea(node)) return;
       const spec = node?.userData?.armor ? bodySpecFor(node) : null;
       if (!spec) return;
       const pose = bodyPoseOf(node);
