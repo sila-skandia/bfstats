@@ -2129,6 +2129,12 @@ stand-in weapon under the wrong doctrine (19.1, 19.2). Judged again,
 shigaisen_B is no better than the level with no layer and came off the page;
 The_Maze was accepted again short of route failures and republished (19.4).
 
+The_Maze's layer was then replaced by generator 5's (19.5), which the
+runner prefers. Played on the page it takes as many flags and has the Axis
+side killing about half its own dead ([page-matches.md](page-matches.md),
+section 5): the runner under-counts team kills, and a page match is not yet
+part of the gate. It is live with that fault named in its acceptance.
+
 The_Maze was published twice on the day. The first layer (generator 3,
 accepted short of route failures and redeploys at both sizes) is the one
 17.3 watched. The one live now is generator 4's, with flags 3 and 4 out of

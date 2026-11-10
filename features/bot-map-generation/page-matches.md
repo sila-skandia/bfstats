@@ -164,6 +164,39 @@ fight is fierce (1.8 to 2.0 enemy kills a bot-minute), but nobody takes a
 flag, so by the tool's own rule it is not better than nothing. It can go
 back on a verdict that says otherwise.
 
+### The_Maze's new layer on the page: one side shooting itself
+
+The same day the generator's version 5 layer (DICE's Kursk template, chosen
+because three flags are in play; README 19.5) replaced version 4 on the
+page. The runner prefers it: every check passed at 8 a side, route failures
+at 16 a side down from 3.20 a bot-minute to 1.49. Four ten-minute matches of
+it on the page, against the four of version 4 above:
+
+| The_Maze on the page, 8 a side | Version 4 (four matches, 5 to 10 min) | Version 5 (four matches, 10 min) |
+|---|---|---|
+| Captures in ten minutes (the two ten-minute matches of version 4) | 21, 11 | 16, 12, 14, 17 |
+| Enemy kills a bot-minute (the same two) | 0.24, 0.33 | 0.25, 0.33, 0.29, 0.28 |
+| Team kills a bot-minute | 0.09, 0.10, 0.10, 0.11 | 0.15, 0.18, 0.17, 0.12 |
+| Team kills by side, Axis and Allies (the same two) | 6 and 9, 7 and 11 | 21 and 3, 21 and 8, 19 and 8, 11 and 8 |
+| Deaths no enemy caused, worse side (the same two) | 0.43, 0.32 | 0.53, 0.47, 0.49, 0.30 |
+| Victims standing in the shooter's line | 16 of 18 | 93 of 99 |
+
+**On the page the new layer has the Axis side losing about half its deaths
+to its own rifles in three matches of four, two team kills a minute.** The
+runner's team-kill check passes the same layer (0.057 a bot-minute against a
+bar of 0.076 at 8 a side for version 4; version 5 passes too). DICE's four
+levels on the same page are at 0 to 0.06. So the runner under-counts team
+kills against the page by a factor of two to three on this level, and that
+is the difference between passing the check and failing it.
+
+The level was left live on version 5: it is still far better than the level
+with no layer (no kill in any seed), it is the only generated level on the
+page, and it is tagged EXPERIMENTAL BOTS. Its acceptance names the team
+kills. What it shows about the tools is the larger point: **a verdict from
+the runner alone is not enough to put a level live.** A page match belongs
+in the gate, with a bar from DICE's levels played the same way, and it is
+not there yet.
+
 ## 6. What is not verified
 
 1. One match a level, unseeded. The page figures are samples, not medians.

@@ -43,7 +43,7 @@
  "unreachable": [],
  "lintErrors": [],
  "accepted": {
-  "reason": "Judged with the published kits under the garrison, the doctrine the page plays, on the generator 5 layer: better than the level with no layer (which has no kill in any seed), every check passed at 8 a side, and short of DICE's bar at 16 a side on route failures alone, 1.49 a bot-minute against 0.51 (worse side 1.88). The layer it replaces had 3.20.",
+  "reason": "Judged with the published kits under the garrison on the generator 5 layer: better than the level with no layer (no kill in any seed), every runner check passed at 8 a side, short of DICE's bar at 16 a side on route failures alone (1.49 a bot-minute against 0.51). Known fault the runner does not see: on the page, four ten-minute matches had 0.12 to 0.18 team kills a bot-minute, most of them the Axis side's, against 0 to 0.06 on DICE's levels (features/bot-map-generation/page-matches.md, section 5).",
   "date": "2026-11-10",
   "outcome": "better-than-nothing",
   "failed": [
