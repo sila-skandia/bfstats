@@ -1,20 +1,22 @@
 # When they have the height, on a jet
 
-Status: **re-measured under the roof** (2026-11-11). Every jet pilot now
-levels off by 800 m and the ace starts at 735 m on the F-16; nobody is fired
-at in any of the three demos, both climbs end level with the ace under the
-top of the sky, turning flat loses, and the Dip is the jet's own
-(`jetUhDip`): 9 of 9. Flip 0, Ninja 0. Files:
+Status: **re-measured on the reworked roof** (2026-11-11). Every jet pilot's
+pull toward the sky is capped by 800 m and the ace starts at 735 m on the
+F-16; nobody climbs over 780 m. Climbing between their dives is never fired
+at and ends level with them, a kilometre apart; climbing straight is never
+fired at but ends with them sitting behind you and you 12 to 86 m of energy
+behind; turning flat is the one demo they fire in. Dip 9 of 9 (the lesson's
+own `uhDip`), Flip 0, Ninja 0. Files:
 `tools/bf1942-models/viewer/dogfight-jet-under-the-height.js` (the jet block),
-`viewer/dogfight-jet-plan-under-the-height.js` (`jetBoomAndZoom`, `jetUhAce`,
-`jetUhDip`), `viewer/dogfight-jet-ceiling.js` (the roof, shared),
+`viewer/dogfight-jet-plan-under-the-height.js` (`jetBoomAndZoom`, `jetUhAce`),
+`viewer/dogfight-jet-ceiling.js` (the roof, shared),
 `tools/bf1942-models/tests/test_dogfight_jet_under_the_height.py` (every number the
 words make, the ace's roof and slowest speed, and the tops of both planes).
 
 History: re-tuned for jets 2026-11-10 (RETUNING.md); re-flown 2026-11-11
 against a jet ace that levelled off under the top of the sky, then with every
-pilot's ceiling guard read over the pace; re-measured the same day once every
-jet pilot flies under the roof (below).
+pilot's ceiling guard read over the pace; re-measured the same day on the
+first shared roof, and again on the reworked one (below).
 
 ## What was found
 
@@ -25,125 +27,128 @@ flown as written from the nine starts, **nobody is fired at, in any of the three
 The diver cannot catch a jet that climbs: nose 30 degrees up at full throttle,
 the F-16 *gains* speed as it climbs. The Spitfire's trap was the speed bleeding
 away in the climb; a jet has the thrust not to bleed. That still holds under
-the roof.
+the roof, but the roof changes how the climbs end.
 
 ## Under the roof (2026-11-11)
 
-Commit `8d616bcc2` (`jet-roof`) put every jet pilot under a roof: whatever a
-plan answers on an airframe paced as a jet goes through `underRoof` in
-`stepPilot`, which levels the climb off by 800 m real, and paced start heights
-are bent over toward 760 m (`pacedHeight`). For this lesson that moved two
-things:
-
-- **The ace starts lower.** 735 m real on the F-16 (750 on the MiG-29), not
-  896: 505 m over you at 230 m, not 666. Their dive starts 1.04 to 1.05 km
-  out.
-- **Nobody can climb past about 840 m.** The roof holds both planes; the guard
-  (880 m) and the top of the sky (1,000 m) are never reached.
+The roof (`dogfight-jet-ceiling.js` `underRoof`, applied in `stepPilot` to
+every pilot of an airframe paced as a jet, `868247883`) caps how hard a plan
+may pull toward the sky: in the plane's own pitch plane, over the share of the
+lift that points up, less the pitch rate already under way, so the climb
+allowed comes down to level by 800 m real. Wherever the plan asks for less it
+is flown as asked; roll, rudder and trigger are always the plan's. A pull
+taking the plane over a loop that fits under the roof is left alone, an
+inverted plane may pull through, and the throttle comes off while the nose is
+more than 15 degrees over the allowed climb. Paced start heights are bent over
+toward 760 m (`pacedHeight`), so the ace starts at 735 m on the F-16 (750 on
+the MiG-29), 505 m over you, 1.04 to 1.05 km out.
 
 What is flown now, on the F-16:
 
-- **There is no trap.** Climbing straight you are at their height 13.3 to 13.5 s
-  in, going from 72 to 125 m/s. Their one dive starts at 10 s; at 13.6 to 13.8 s
-  they pull out of it 409 to 448 m behind you and 5 to 8 m under you, without
-  firing. They never dive again.
-- **The roof takes the rest of their edge.** You level off at 829 to 836 m, they
-  at 829 to 837; their energy edge is gone at 28.5 to 32.6 s, and at 55 s both
-  are at 828 to 829 m at 125 m/s, 0 to 2 m of energy apart. The old claim, "the
-  straight climb levels off at 950 m and ends 100 to 180 m ahead", is gone: the
-  950 m was over the roof, and the lead came from the ace levelling 80 m lower.
-- **Climbing between their dives ends the same.** One break, at 436 to 484 m;
-  their height at 24.0 to 25.0 s, about 11 s after the straight climb; 67 to
-  100 m of energy ahead for a moment at 26.5 to 30.9 s; then the roof evens it:
-  828 m at 125 m/s, 0 to 1 m apart. The old "120 to 130 m ahead, 50 m above
-  them" is gone for the same reason.
-- **Turning flat still loses.** Three dives (four in one), never fired at; you
-  climb 126 to 128 m and end at 357 to 358 m at 83 m/s, 345 to 571 m of energy
-  behind; they top out at 753 to 754 m.
+- **No trap in the climb.** Climbing straight you are at their height 13.4 to
+  13.7 s in. Their one dive starts at 10 s; at 13.6 to 13.8 s they pull out of
+  it 411 to 449 m behind you and 2 to 5 m under you, without firing.
+- **But the straight climb ends with them behind you.** You have the energy
+  for a moment, 70 to 92 m of it at 25 s; then, flying straight on in front of
+  them, they come up behind: for 8 to 38 s of the fight they sit inside 450 m
+  with their nose on you. The boom-and-zoomer with no height to dive from never
+  fires, and you, turning to look for them, end 12 to 86 m of energy behind, at
+  752 to 768 m and 118 to 127 m/s.
+- **Climbing between their dives ends level and apart.** One break, at 436 to
+  484 m; their height at 24.4 to 26.0 s; 42 to 90 m of energy ahead for a moment
+  at 26 to 28 s; at 55 s both at 767 to 768 m and 127 m/s, you 1 to 2 m ahead,
+  1.05 to 1.11 km apart. They are never behind you.
+- **Turning flat is the one they fire in.** Three dives (four in five); in
+  three of the nine the third dive, 40 to 41 s in, gets a burst off from 300 to
+  360 m and one round lands in two of them. You climb 126 to 128 m and end at
+  357 to 358 m at 83 m/s, 340 to 416 m of energy behind.
 
-So the lesson on a jet: their height is worth about 13 s against a straight
-climb at full throttle, and neither of you can get above the other once you are
-both under the top of the sky. Climb, either way; only turning flat gives them
-the sky.
+So the lesson on a jet: their height is worth seconds against a full-throttle
+climb, and under the top of the sky neither of you gets above the other. Climb
+between their dives and break the one that commits; that is the climb that
+ends level and clear of them.
 
-### The Dip on a jet (`jetUhDip`)
+### What moved from the first roof
 
-The lesson's Dip (`uhDip`) runs once their height is spent and you have 50 m
-of energy on them. Under the roof nobody gets 50 m: both planes end at the roof
-at the same speed. Flown with the roof and no jet file change, the run started
-in two of nine, and both turned back at the ace: **0 of 9**, the lesson's way
-out gone. The jet's Dip is `uhDip` with two changes:
+The first shared roof (`8d616bcc2`) put the nose on the allowed climb itself
+and, in a bank, turned it 35 degrees round the turn, replacing the plan's
+roll. Above 800 m any level flight set it off, so a plane up there could not
+roll out: both planes ended circling at 828 m, dead even in every climb, and
+the lesson's Dip could not run straight (0 of 9: the plan commanded full roll,
+the bank stayed at -44 to -47 degrees for 10 s). This page then carried a jet
+Dip (`jetUhDip`) that ran once even and opted out of the roof (`roof: false`)
+over 780 m. On the reworked roof the lesson's own `uhDip` runs straight and
+gets clear 9 of 9, so `jetUhDip` is gone, and with it the `roof: false`.
 
-- **Run once even** (`EVEN`, 10 m in the Spitfire's units): level with them, the
-  energy within 10 m, their nose more than 90 degrees off you and you flying
-  away from them (more than 120 degrees off your nose).
-- **Down off the roof first**: 5 degrees nose down until under 780 m real, then
-  the Spitfire's 2 degrees. While over 780 m the answer says `roof: false`: up
-  there, flown level, `underRoof` holds the nose and keeps a bank going round
-  (below), so a run begun in a turn kept turning, back at them.
+### The Dip
 
-From the nine starts: never fired at, never on your tail; the run starts 27.7
-to 37.0 s in, they let you go 36.9 to 45.8 s in, and at 70 s you are 4.6 to 6.0
-km apart at 120 to 125 m/s. **9 of 9.** It has its own step list (climb, break,
-run), each step coming in order.
+`uhDip` as written: climb between their dives, break their dive and their
+chase, and once their height is spent and you have 50 m of energy on them (in
+the Spitfire's units, about 65 m real), run, the nose 2 degrees down. Never
+fired at, never on your tail; the run starts 35.5 to 61.9 s in; in seven they
+let you go 38.9 to 64.0 s in; at 70 s you are 1.06 to 8.71 km apart and
+opening, at 116 to 124 m/s. Turned onto them on the way (they fly in front of
+you), you land 1 to 3 rounds in five. **9 of 9.** The jet file gives it its own
+step list (climb, break inside about 490 m, run), each step coming in order.
 
-### The wrapper
+### The aces
 
-`jetBoomAndZoom` and `jetUhAce` used to put their own answer through
-`underRoof`; `stepPilot` now does it for every jet pilot, so that call is gone.
-Every number of the nine starts of all six demos was the same without it
-(`underRoof` is idempotent: the second pass computes the same allowed climb and
-nose from the same state). The `atRoof` -> `reverse` hand-over stays: without
-it the zoom waits to be slow, which a jet under the roof is not.
+`jetBoomAndZoom` and `jetUhAce` are the Spitfire's aces with one change: the
+zoom is over once the roof holds it level (`atRoof`), and they go over the top
+from there. On the F-16 that hand-over never fires (every number of all six
+demos is the same without it); on the MiG-29 it does: without it the straight
+climb ends 85 to 155 m behind instead of 5 to 6 m ahead. It stays. The aces no
+longer call `underRoof` themselves; `stepPilot` does.
 
 ## What the jet file says
 
 `note`, `story`, `counterStory`, the notes of all six demos, jet `verdict`s for
 the Dip, the Flip and the Ninja, the Dip's `steps`, `survival`, `coach`, and the
 aces (`ace.plan` `jetBoomAndZoom`; the Dip, the Flip, the Ninja and FLY IT's
-`flyAce` `jetUhAce`; the Dip's seat `jetUhDip`). The claims, one by one:
+`flyAce` `jetUhAce`). The claims, one by one:
 
-- "Climbing straight is fatal": **false** on a jet. Never fired at; at their
-  height in 13.5 s; level with them at the end.
-- "Turning flat is safe and buys nothing": **holds**, the jet's numbers.
-- "Climbing between their dives wins the height back, never hit": **holds**, but
-  no better than the straight climb: it gets their height about 11 s later and
-  ends at the same place.
+- "Climbing straight is fatal": **false** on a jet, never fired at; but it ends
+  with them behind you and a little ahead on energy.
+- "Turning flat is safe and buys nothing": **buys nothing holds; safe does
+  not quite**: shots in three of nine, a round landing in two.
+- "Climbing between their dives wins the height back, never hit": **holds**: it
+  ends level with them, apart, never with them behind you.
 - The coach's "380 m" is the plans' threshold in the Spitfire's units, 486 m
-  real: "about 490 m". The climb and zoom tips say level off by 800 m.
+  real: "about 490 m". The climb and zoom tips say level off under 800 m.
 
 ## The nine starts on the F-16
 
-"Before the roof" is this page's previous measure (the jet ace with the guard,
-perch 896 m); "under the roof" is now. Harness starts (sideways -30/0/30 by
-speed -3/0/+3) for the first three; the school's L9 starts (`dogfight-measure.js`
+"First roof" is this page's previous measure (`8d616bcc2`, with `jetUhDip`);
+"now" is the reworked roof. Harness starts (sideways -30/0/30 by speed
+-3/0/+3) for the first three; the school's L9 starts (`dogfight-measure.js`
 `STARTS`) for the moves, each scored by `scoreMove` as `movesOn` scores them.
 
-| Demo | Before the roof | Under the roof |
+| Demo | First roof | Now |
 |---|---|---|
-| move, climb straight | 0/0; their height 10.6-10.7 s; you level at 946-949 m, the ace at 869-871; ends +99 to +179 m | 0/0, never fired at; their height 13.3-13.5 s; they pull out 409-448 m behind you at 13.6-13.8 s; you top 829-836 m, they 829-837; ends 828-829 m at 125 m/s, 0 to +2 m |
-| flat, turn flat | three dives; ends 357-358 m at 83 m/s, -391 to -487 m | three dives (four in one), never fired at; climbs 126-128 m, ends 357-358 m at 83 m/s, -345 to -571 m |
-| counter, climb between | one break at 483-486 m; their height 23.9-24.1 s; ends 912-915 m, +120 to +130 m | one break at 436-484 m; their height 24.0-25.0 s; +67 to +100 m at 26.5-30.9 s; ends 828-829 m at 125 m/s, 0 to +1 m |
-| dip | **9 of 9** (`uhDip`) | `uhDip`: **0 of 9** (the run starts in two, and turns back). `jetUhDip`: **9 of 9**, never fired at; run 27.7-37.0 s; let go 36.9-45.8 s; 4.6-6.0 km apart at 70 s, 120-125 m/s |
-| flip | **0 of 9**: the reversal flown once | **0 of 9**: the reversal flown in two (27.5, 50.4 s), no shot |
-| ninja | **0 of 9**: the energy yours in all nine, never a shot | **0 of 9**: the energy never yours by the margin it waits for, in any of the nine; never fired at |
+| move, climb straight | never fired at; their height 13.3-13.5 s; both circle at 828-829 m, 125 m/s; 0 to +2 m | never fired at; their height 13.4-13.7 s; +70 to +92 m at 25 s; they sit behind you inside 450 m for 8-38 s; ends 752-768 m at 118-127 m/s, -12 to -86 m |
+| flat, turn flat | three dives (four in one), never fired at; ends 357 m at 83 m/s, -345 to -571 m | three or four dives; fired at in three (40-41 s, 300-360 m), one round in two; ends 357 m at 83 m/s, -340 to -416 m |
+| counter, climb between | one break at 436-484 m; their height 24.0-25.0 s; ends 828 m at 125 m/s, 0 to +1 m | one break at 436-484 m; their height 24.4-26.0 s; ends 767-768 m at 127 m/s, +1 to +2 m, 1.05-1.11 km apart, never behind you |
+| dip | `uhDip` 0 of 9; `jetUhDip` 9 of 9 | `uhDip` **9 of 9**, never fired at; run 35.5-61.9 s; let go in seven, 38.9-64.0 s; 1.06-8.71 km apart at 70 s, 116-124 m/s; 1 to 3 rounds of yours land in five |
+| flip | **0 of 9**: the reversal flown in two, no shot | **0 of 9**: the reversal never flown |
+| ninja | **0 of 9**: never the energy edge | **0 of 9**: never the energy edge; 1 to 3 rounds of yours land in five; never fired at |
 
-The ace from 5 s on, every start of every demo: never over 837 m, never slower
-than 83 m/s. `jet_tops`: nobody tops 840 m in any demo or move; the test holds
-both planes under 860 m.
+The ace from 5 s on, every start of every demo: never over 778 m, never slower
+than 83 m/s. `jet_tops`: nobody tops 780 m in any demo or move; the test also
+holds the 860 m the school asks.
 
 ## The MiG-29 (pace 1.5), the same jet file
 
-The words are the F-16's. The MiG-29's ace starts at 750 m, 480 m over you at
-270 m and 1.17 to 1.19 km out, climbs no higher than 852 m and never flies
-slower than 109 m/s. Nobody is hit in any of the three; the ace fires in one
-flat turn of nine and misses. The straight climb is at their height at 12.4 to
-12.8 s and ends 9 m ahead, both at 847 to 851 m and 154 m/s; climbing between
-breaks once at 333 to 353 m and ends 1 m behind, both at 847 m; turning flat
-climbs 142 to 145 m and ends 900 to 914 m behind. Dip 5 of 9 (never hit, 2.2 to
-4.3 km apart at 70 s; the four that do not count pass within 15 m of the ace,
-which the score counts as a collision), Flip 0 of 9 (the reversal flown in six,
-no shot), Ninja 0 of 9. Tops: 847 to 852 m in every demo and move.
+The words are the F-16's. The ace starts at 750 m, 480 m over you at 270 m
+and 1.17 to 1.19 km out, climbs no higher than 785 m and never flies slower
+than 103 m/s. Nobody is hit in the three demos; the ace fires in one flat turn
+of nine and misses. The straight climb ends 5 to 6 m ahead, both at 784 to 785
+m and 161 to 162 m/s, with them behind you for 3.7 to 5.7 s; climbing between
+ends 3 to 4 m ahead (28 m behind in one), at least 2.4 km apart, never behind
+you; turning flat ends 442 to 551 m behind. Dip 8 of 9, Flip 0, Ninja 0. From
+the lesson's own start (the fifth of the school's nine) they get onto your
+tail in all three moves: six rounds land in the Dip, and in the Ninja you are shot
+down. The other eight Dips are never hit and end 9.0 to 10.3 km apart.
+The highest either plane goes is 777 to 785 m in every demo and move.
 
 ## Tried and not shipped
 
@@ -152,27 +157,23 @@ no shot), Ninja 0 of 9. Tops: 847 to 852 m in every demo and move.
 - **A roof at 900 m**: at a tenth of the lift the ace cannot hold level there
   and wallows. 800 m flies level.
 - **Reading the pace off gravity**: the side force swamps it (0.49 for 1.28).
-- **The jet Dip without `roof: false`** over 780 m: 0 of 9. The run is begun
-  banked at 828 m, the roof holds the bank (the plan's full roll command leaves
-  it at -44 to -47 degrees for 10 s), and you circle back at them.
+- **The jet Dip `jetUhDip`** (run once even, down off the roof first with
+  `roof: false`): needed on the first roof, not on the reworked one, where the
+  lesson's own Dip works 9 of 9.
 
 ## Open
 
-- **The roof holds a bank above 800 m.** `underRoof` acts whenever the path is
-  above the allowed climb plus 2 degrees, which above the roof is any level
-  flight, and in a bank it puts the nose 35 degrees round the turn, replacing the
-  plan's roll. A plan flying level above 800 m cannot roll out. Measured in the
-  Dip, start 0: from 35.8 s, roll 1 commanded, the bank stays at -44 to -47
-  degrees for 10 s; with `roof: false` it rolls level in 1 s. It is likely why
-  both planes in this lesson circle at 828 m once there, and it may touch other
-  lessons. A
-  shared fix (not rolling round when the plan is rolling out, or not acting on
-  a level or descending path) would be a re-measure of the school.
-- **Near misses.** In the counter the diver passes 58 to 87 m from you; in the
-  straight climb the two planes come within 5 to 73 m of each other in eight of
-  nine. The duel does not model a collision.
+- **The ace behind you does not shoot.** In the straight climb they sit inside
+  450 m with their nose on you for up to 38 s and never fire: `jetBoomAndZoom`'s
+  climb phase holds its fire, waiting for 150 m of height that the roof never
+  gives it. A boom-and-zoomer who would take that shot makes the straight climb
+  the trap again; it would be a new ace, not a re-measure.
+- **The MiG-29 from the lesson's own start** loses the moves to the ace's
+  guns (the Ninja shot down); the F-16 is never hit in any move.
+- **Near misses.** In the counter the diver passes 56 to 80 m from you. The
+  duel does not model a collision.
 - **The Flip and the Ninja** were not re-tuned: the reversal waits for a slow
-  overshoot the jet diver almost never gives; the ascendancy waits for an
-  energy edge the roof never allows. 0 of 9 is the verdict.
+  overshoot the jet diver never gives; the ascendancy waits for an energy edge
+  the roof never allows. 0 of 9 is the verdict.
 - **The live fight** (FLY IT) flies `jetUhAce` ([live-fight.md](live-fight.md));
   nobody has flown it by hand.
