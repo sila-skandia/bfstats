@@ -372,7 +372,7 @@ class Sharded(unittest.TestCase):
 
         ports = iter(range(5350, 5360))
 
-        def server(port):
+        def server(port, mod="bf1942"):
             srv = mock.MagicMock()
             srv.__enter__.return_value = SimpleNamespace(
                 proc=SimpleNamespace(poll=lambda: None), url=f"http://127.0.0.1:{port}")
