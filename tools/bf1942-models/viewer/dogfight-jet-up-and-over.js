@@ -20,8 +20,8 @@ export default {
   ],
   counterStory: [
     'Follow them, but shallow: 25 degrees on their bearing, nose under them, full throttle. Do not point your nose at them: a jet\'s nose answers slowly, and chasing their climb with it lands nothing.',
-    'The shot is not at the top, because they are never slow there. It is the pull: as their nose comes up through 62 to 65 degrees they fly through your sight 390 to 430 m out, inside your cannon\'s reach. From the same nine starts that second landed 6 to 12 hits in seven; in the other two, 30 m to the right and as fast or 3 m/s faster, it never came, and in one of them their guns found you once, 3 hits 18.5 s in.',
-    'One burst does not bring them down, and there is no second: keep climbing at 25 degrees and you go on up alone, to 1,070 to 1,400 m, into the thin air, while they loop back down. So take the shot and keep climbing after them only until they come back over the top. Then fly past them, beside and under their dive, and away, full throttle, the nose a little down. They turn round after you, chase you for 6 to 7 s and let you go; at 35 s you are 2.3 to 2.9 km apart, never hit.',
+    'The shot is not at the top, because they are never slow there. It is the pull: as their nose comes up through 62 to 65 degrees they fly through your sight 390 to 430 m out, inside your cannon\'s reach. From the same nine starts that second landed 6 to 12 hits in seven; in the other two, 30 m to the right and as fast or 3 m/s faster, it never came. Their guns found you twice in the nine, never for long: 3 hits 18.5 s in, and 1 hit 41.5 s in.',
+    'One burst does not bring them down, and there is no second: keep climbing at 25 degrees and you go on up alone, to 1,150 to 1,320 m, into the thin air, while they loop back down. So take the shot and keep climbing after them only until they come back over the top. Then fly past them, beside and under their dive, and away, full throttle, the nose a little down. They turn round after you, chase you for 6 to 7 s and let you go; at 35 s you are 2.3 to 2.9 km apart, never hit.',
   ],
   flyAce: 'jetUoAce',
   ace: { plan: 'jetUpAndOver' },
@@ -49,7 +49,7 @@ export default {
     ninja: {
       ace: 'jetUoAceSharp',
       note: 'Never follow them up and never circle with them. Climb after them at 24 degrees and wait to shoot as they slow over the top. On a jet they do not slow: they loop and come back down, and you climb on alone.',
-      verdict: { works: 0, of: 9, line: 'No. The shot as they slow over the top never comes, because they never slow there. You climb on alone at 24 degrees to 1,230 to 1,360 m, into the thin air, and slow there to under 30 m/s. You never land a round; in one of the nine they hit you 4 times.' },
+      verdict: { works: 0, of: 9, line: 'No. The shot as they slow over the top never comes, because they never slow there. You climb on alone at 24 degrees to 1,290 to 1,590 m, into the thin air, and slow there to 22 to 37 m/s. You never land a round; in four of the nine they hit you, 1 to 11 times.' },
     },
   },
   survival: { verdict: 'yes', line: 'Yes, and more easily than on a Spitfire: going up buys them nothing. Following shallow, the shot as they pull lands 6 to 12 hits in seven of nine. Then go past them as they come back down, and away: clear in 9 of 9, never hit. Following them up is not fatal, just useless: nobody is shot down. Getting on top of them does not follow (0 of 9).' },

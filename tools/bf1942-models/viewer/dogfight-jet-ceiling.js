@@ -11,14 +11,15 @@
 // A plan sees the fight at the Spitfire's size (`dogfight-duel.js`
 // `pilotView`): heights and speeds divided by the airframe's pace. So the
 // ceiling in the pilot's numbers is 1,000 m over the pace: 781 on the F-16
-// (1.28), 667 on the MiG-29 (1.5). The step context carries no pace, and a
-// pilot cannot weigh it off its own flight (the plane's accelerations do
-// not separate gravity from lift and thrust cleanly enough), but one thing
-// it is handed is shrunk by it: its gun. A jet fights with its own cannon
-// (`ownGun`), one barrel on the nose (no convergence), and is shown it at
-// its muzzle speed over the pace; the school's wing guns converge. So the
-// pace is the cannon's real muzzle speed over the one the pilot is shown,
-// or a pace the context gives (`c.pace`) where one does.
+// (1.28), 667 on the MiG-29 (1.5). The step context carries the pace
+// (`c.pace`: `runDuel`, `runFight`, the live `stepSeat`), the same one the
+// shared guard (`dogfight-pilot.js` `guard`) reads its 880 m over. A context
+// without one (the school harness's own Spitfire steps) is pace 1.
+//
+// The guard is the last word: past 880 m real and still climbing, it puts
+// the nose on the horizon. What this module adds is the levelling off before
+// it, so the jet aces fly a level roof at 800 m instead of being caught by the
+// guard on the way through, and an over-the-top height for the loop.
 
 import { heading, climbing } from './dogfight-pilot.js';
 import { pointNose, clamp, pitchOf } from './dogfight-flight.js';
@@ -27,21 +28,10 @@ const DEG = Math.PI / 180;
 
 /** Where a wing makes no lift at all, real metres (the flight law's). */
 export const LIFT_CEILING = 1000;
-/** The muzzle speed of a jet's own cannon (m/s): every published Desert
- *  Combat jet's (`tests/fixtures/dc-jets.json`), the F-16's and the MiG-29's. */
-export const JET_CANNON = 1000;
-/** The school's wing guns (`dogfight-pilot.js` `gunOf`). */
-const SCHOOL_GUN = 400;
 
-/** The airframe's pace as its pilot's numbers show it: `c.pace` where the
- *  context gives one, else read off the gun it thinks with. Never under 1. */
-export function paceOf(c) {
-  if (Number.isFinite(c.pace) && c.pace >= 1) return c.pace;
-  const g = c.gun ?? c.pilot?.gun;
-  if (!g || !(g.speed > 0)) return 1;
-  const own = !(g.converge > 0.05);
-  return Math.max(1, (own ? JET_CANNON : SCHOOL_GUN) / g.speed);
-}
+/** The airframe's pace as its pilot's numbers show it (`c.pace`), 1 where
+ *  the context gives none. */
+export const paceOf = c => (Number.isFinite(c.pace) && c.pace >= 1 ? c.pace : 1);
 
 /** A real height (metres) in the pilot's numbers. */
 export const seenHeight = (c, real) => real / paceOf(c);

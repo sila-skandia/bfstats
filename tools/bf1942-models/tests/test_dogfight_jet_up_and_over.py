@@ -168,12 +168,13 @@ class TheJetAceTests(unittest.TestCase):
         fights, moves = self._all("Mig29")
         for r in fights + moves:
             self.assertLess(r["acePeak"], 1000, r["acePeak"])
-            self.assertGreaterEqual(r["aceSlow"], 85, r["aceSlow"])
+            self.assertGreaterEqual(r["aceSlow"], 82, r["aceSlow"])
 
-    def test_the_ceiling_is_read_off_the_airframe(self) -> None:
+    def test_the_ceiling_is_read_over_the_pace_the_context_gives(self) -> None:
         # "1,000 m real is 781 in the F-16 pilot's numbers and 667 in the MiG-29's"
         src = (TOOLS / "viewer" / "dogfight-jet-ceiling.js").read_text()
         self.assertIn("export const LIFT_CEILING = 1000;", src)
+        self.assertIn("c.pace", src)
         self.assertNotIn("1.28", src.split("export const LIFT_CEILING")[1])
 
 
@@ -262,12 +263,14 @@ class FollowingShallowOnAJetTests(unittest.TestCase):
         missed = [(r["dx"], r["dv"]) for r in self.runs if r not in pulled]
         self.assertEqual([(30, 0), (30, 3)], missed)
 
-    def test_their_guns_find_you_once_and_one_burst_is_not_enough(self) -> None:
-        # "in one of them their guns found you once, 3 hits 18.5 s in"
-        hit = [r for r in self.runs if r["aceHits"]]
-        self.assertEqual([(30, 0)], [(r["dx"], r["dv"]) for r in hit])
-        self.assertEqual(3, len(hit[0]["aceHits"]))
-        self.assertAlmostEqual(18.5, hit[0]["aceHits"][0], delta=0.1)
+    def test_their_guns_find_you_twice_and_one_burst_is_not_enough(self) -> None:
+        # "Their guns found you twice in the nine: 3 hits 18.5 s in, and 1 hit 41.5 s in"
+        hit = {(r["dx"], r["dv"]): r["aceHits"] for r in self.runs if r["aceHits"]}
+        self.assertEqual({(30, -3), (30, 0)}, set(hit))
+        self.assertEqual(3, len(hit[(30, 0)]))
+        self.assertAlmostEqual(18.5, hit[(30, 0)][0], delta=0.1)
+        self.assertEqual(1, len(hit[(30, -3)]))
+        self.assertAlmostEqual(41.5, hit[(30, -3)][0], delta=0.1)
         for r in self.runs:
             self.assertIsNone(r["winner"])
         runs = jet_lesson(LESSON, demo="counter")["demos"]["counter"]
@@ -275,10 +278,10 @@ class FollowingShallowOnAJetTests(unittest.TestCase):
         self.assertEqual(0, shot_down(runs, 0) + shot_down(runs, 1))
 
     def test_keep_climbing_and_you_go_up_alone(self) -> None:
-        # "to 1,070 to 1,400 m"
+        # "to 1,150 to 1,320 m"
         lo, hi = span(r["yourTop"] for r in self.runs)
-        self.assertGreaterEqual(lo, 1065)
-        self.assertLessEqual(hi, 1400)
+        self.assertGreaterEqual(lo, 1150)
+        self.assertLessEqual(hi, 1320)
 
 
 class TheMovesOnAJetTests(unittest.TestCase):
@@ -324,11 +327,13 @@ class TheMovesOnAJetTests(unittest.TestCase):
         runs = self.m["moves"]["ninja"]
         self.assertTrue(all("ninja-shoot" not in [ph for _, ph in r["you"]] for r in runs))
         self.assertTrue(all(r["yourHitsAfter"] == [] for r in runs))
-        self.assertEqual([4], [r["hitsOnMe"] for r in runs if r["hitsOnMe"]])
+        # "in four of the nine they hit you, 1 to 11 times"
+        self.assertEqual([1, 1, 11, 2], [r["hitsOnMe"] for r in runs if r["hitsOnMe"]])
         lo, hi = span(r["yourTop"] for r in runs)
-        self.assertGreaterEqual(lo, 1225)
-        self.assertLessEqual(hi, 1360)
-        self.assertTrue(all(r["yourSlowEnd"] < 30 for r in runs))
+        self.assertGreaterEqual(lo, 1285)
+        self.assertLessEqual(hi, 1590)
+        lo, hi = span(r["yourSlowEnd"] for r in runs)
+        self.assertTrue(21.5 <= lo and hi <= 37.5, (lo, hi))
 
 
 class TheWordsOnAJetTests(unittest.TestCase):
@@ -365,7 +370,8 @@ class OnTheMig29Tests(unittest.TestCase):
             self.assertTrue(805 <= r["top"][0] <= 820, r["top"])
             self.assertIsNone(r["winner"])
         counter = [len(r["yourHits"]) for r in m["fights"]["counter"]]
-        self.assertEqual([9, 7, 9, 2, 6, 3, 2, 1, 1], counter)
+        self.assertEqual([9, 7, 9, 2, 6, 3, 3, 1, 1], counter)
+        self.assertTrue(all(r["aceHits"] == [] for r in m["fights"]["move"]))
         self.assertEqual({"dip": 9, "flip": 0, "ninja": 0}, {k: v["works"] for k, v in m["verdicts"].items()})
 
 

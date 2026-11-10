@@ -73,8 +73,8 @@ same jet. Each row's own page has the measures, the MiG-29 and what is open;
 | Lesson | As written, on the F-16 | Now | What changed |
 |---|---|---|---|
 | Boom and zoom | Two clean passes, 12 to 18 hits, nobody down in 55 s | The pilot who never looks up is shot down in 8 of 9; the one who meets the dive is never hit | Tuned: the burst 1.1 s, the fight 60 s |
-| [When they have the height](under-the-height.md) | Climbing straight is never hit: a jet does not run out of speed going up | Words rewritten. Nobody is fired at in any of the three; the trap is the top of the sky (no lift at 1,000 m): the straight climb goes into it at 21.5 s and falls to 480 to 590 m at 27 to 33 m/s, while the diver levels off under it at 865 m. Climbing between dives ends 240 to 250 m ahead and over their roof. Dip 9 of 9, Flip 0, Ninja 0 | A jet ace that levels every climb off under the roof (`jetBoomAndZoom`, `jetUhAce`, `dogfight-jet-ceiling.js`) |
-| [Up and over](up-and-over.md) | Following up: nothing either way. Following shallow: 1 to 12 hits | Words rewritten: they never hang slow at the top, they go over it at 550 m while the air holds them, top out at 725 m and come straight back down. The shot is as they pull, 390 to 430 m out: 6 to 12 hits in seven. Dip 9 of 9, Flip 0, Ninja 0 | A jet ace that loops under the thin air (`jetUpAndOver`, `jetUoAce`, `jetUoAceSharp`); a jet Dip (`jetUoDip`: the shot as they pull, past them as they come down, away) |
+| [When they have the height](under-the-height.md) | Climbing straight is never hit: a jet does not run out of speed going up | Words rewritten: on a jet there is no trap. Nobody is fired at in any of the three. The straight climb levels off at 950 m, short of the top of the sky (the guard), and ends 100 to 180 m of energy ahead; climbing between dives ends 120 to 130 m ahead; only turning flat loses (390 to 490 m behind). The diver levels off under the top at 860 to 870 m. Dip 9 of 9, Flip 0, Ninja 0 | A jet ace that levels every climb off under the roof (`jetBoomAndZoom`, `jetUhAce`, `dogfight-jet-ceiling.js`) |
+| [Up and over](up-and-over.md) | Following up: nothing either way. Following shallow: 1 to 12 hits | Words rewritten: they never hang slow at the top, they go over it at 550 m while the air holds them, top out at 725 m and come straight back down. The shot is as they pull, 390 to 430 m out: 6 to 12 hits in seven; their guns find you twice in nine, 1 and 3 hits. Dip 9 of 9, Flip 0, Ninja 0 | A jet ace that loops under the thin air (`jetUpAndOver`, `jetUoAce`, `jetUoAceSharp`); a jet Dip (`jetUoDip`: the shot as they pull, past them as they come down, away) |
 | [Out of their lock](out-of-the-lock.md) | Turning hard: shot down in 1 of 9 | Turning hard and turn-then-chop: no hit in 9 of 9. Flying straight: down in 9 of 9. Survival "no": the Dip is never hit and never gets away, Flip and Ninja 0 | The look-behind turn keeps the Spitfire's rate, not its 20 degrees of bank (`jetOlHardTurn`, `jetOlChop`) |
 | [On their tail](on-his-tail.md) | Nobody's kill; the Dip shot down in 9 of 9 | The rush is still nobody's kill (they break 436 to 543 m out). Dip 9 of 9, never hit | A jet Dip (`jetOtLeave`: not into their circle, straight on at full throttle) |
 | [The break turn](break-turn.md) | Flying straight is shot down in 1 of 9 | Flying straight: down in 9 of 9. The break: never down, 0 to 4 hits, all in the first 3.5 s. Dip 9 of 9, Flip 0, Ninja 0 | The target cruises at 68 m/s (Spitfire's units), the fight 45 s. The break comes at once: their cannon reaches 500 m |
@@ -89,10 +89,9 @@ the lessons were written on:
   law gives a wing no lift at 1,000 m, and a jet held nose up climbs into
   that and falls out of it. Every Spitfire move that waits for "slow over
   the top" (most Flips and Ninjas) waits for something a jet never gives.
-  The jet aces of "When they have the height" and "Up and over" know where
-  the top is (`dogfight-jet-ceiling.js`: level off by 800 m, loop at 550 m),
-  reading the ceiling in their own numbers off the pace their cannon is
-  shown at; the other lessons' aces are still the Spitfire's.
+  Every pilot now noses over before it (below); the jet aces of "When they
+  have the height" and "Up and over" also level off under it
+  (`dogfight-jet-ceiling.js`: by 800 m, and over the top at 550 m).
 - **Its cannon reaches twice as far.** One barrel, no crossing point, rounds
   at 1,000 m/s: a pilot opens fire from about 500 m, so breaks come early
   and a hunter does not give a chase up until you are 550 m away.
@@ -103,6 +102,16 @@ the lessons were written on:
   full throttle, nose a little down. Up and over's first gets past them as
   they come back down (their loop points them the way they came), then runs.
 
+**The pilots' ceiling guard is read over the pace.** Every plan's `guard`
+(`dogfight-pilot.js`) puts the nose on the horizon above 880 m while climbing.
+A jet's pilot sees heights divided by its pace, so the guard used to wait for
+1,126 m real on the F-16, past where a wing lifts at all; the step context now
+carries the pace (`runDuel`, `runFight`, `stepSeat`) and the guard reads its
+880 m over it, so every ace, guide and instructor on a jet noses over at 880 m
+real. Boom and zoom's ace now stays at or under its 870 m perch and its Ninja
+tops out at 934 m. The guard only catches a climb once past 880 m, so the two
+lessons' aces keep their roof, which levels them off before it.
+
 **A move's steps on a jet.** The step lists (`dogfight-steps.js`) are the
 Spitfire's, with its distances. A jet demo carries its own (`steps` in the
 jet file; the two re-flown Dips have them), and a jet lesson shows none for
@@ -112,17 +121,12 @@ follow the era too (`dogfight-theatre.js` `labelLessons`).
 
 ## Open
 
-- **The pace in the step context.** The two lessons' jet aces now stay under
-  the top of the sky (2026-11-11; F-16 never over 918 m, never under 68 m/s
-  after their zoom). They read the ceiling off the pace their cannon is shown
-  at (`paceOf`, the cannon's real 1,000 m/s), because no plan is handed the
-  pace; a `pace` in the step context (`runDuel`, `runFight`, `stepSeat`) would
-  make it exact for any airframe. The shared `guard` noses a pilot down above
-  880 m in the pilot's numbers, 1,126 m real on the F-16. Boom and zoom's ace
-  (`boomAndZoom`, `bzAceMeet`) still zooms over 1,000 m on the F-16 (1,020 to
-  1,030 m against the pilot who meets the dive, coming back at 18 to 62 m/s;
-  up to 1,390 m in its Ninja); its words (the two passes and the burst) do
-  not depend on it, so it was left.
+- **The MiG-29 near the top.** The two lessons' jet aces stay under the top of
+  the sky with the guard (F-16: never over 877 m, never under 68 m/s after their
+  zoom), reading it over `c.pace`. The MiG-29's up-and-over ace still reaches
+  989 m in one start: its zoom carries more, and a roof that anticipates by the
+  pace holds it under 905 m but breaks the MiG-29's Dip (4 of 9), so it is not
+  shipped.
 - **Flips and Ninjas.** Almost every one is 0 of 9 on a jet and says so. A
   jet's own versions (a pass that does not wait for a slow top) would be new
   moves, not re-tunes.

@@ -1,7 +1,8 @@
 # When they have the height, on a jet
 
 Lesson `under-the-height`, re-tuned for jets 2026-11-10 (RETUNING.md), and
-re-flown 2026-11-11 against a jet ace that respects the top of the sky. Files:
+re-flown 2026-11-11 against a jet ace that respects the top of the sky, then
+again once every pilot's ceiling guard was read over the pace. Files:
 `tools/bf1942-models/viewer/dogfight-jet-under-the-height.js` (the jet block),
 `viewer/dogfight-jet-plan-under-the-height.js` (`jetBoomAndZoom`, `jetUhAce`),
 `viewer/dogfight-jet-ceiling.js` (the roof, shared with up-and-over),
@@ -22,12 +23,13 @@ Why, from the traces (`--trace move --step 1`):
   of m/s; it never gets inside 275 m (the ace opens fire at `open: 300`, 384 m
   real), and they pull out without firing. The Spitfire's trap was the speed
   bleeding away in the climb; a jet has the thrust not to bleed.
-- **The top of the sky is the trap instead.** The flight law takes every
-  surface's lift to zero at 1,000 m (`aircraft.js` `AIR_DENSITY_ZERO_AT_HEIGHT`,
-  `medium()`): wing and tail alike, so the nose cannot be held either. The
-  lesson's perch is paced to 896 m, 100 m under it, and the straight climb
-  reaches 990 m at 21.4 to 21.7 s, tops out at 1,043 to 1,050 m and the nose falls
-  through.
+- **The top of the sky was the trap instead, until the guard.** The flight law
+  takes every surface's lift to zero at 1,000 m (`aircraft.js`
+  `AIR_DENSITY_ZERO_AT_HEIGHT`, `medium()`): wing and tail alike. The lesson's
+  perch is paced to 896 m, 100 m under it. While the pilots' guard waited for
+  1,126 m real, the straight climb reached 990 m at 21.5 s, topped out at 1,050 m
+  and fell out of it. With the guard read over the pace it levels off at 950 m
+  and keeps the height (below).
 
 ## The ace that knows where the top is (2026-11-11)
 
@@ -51,24 +53,30 @@ The jet's ace is the same plan with a roof (`dogfight-jet-plan-under-the-height.
   top from there, still fast, in the plan's own wingover.
 - **How a plan knows the real ceiling.** A plan sees the fight at the Spitfire's
   size (`pilotView`): heights and speeds divided by the pace, so 1,000 m is 781 in
-  the F-16 pilot's numbers and 667 in the MiG-29's. The step context carries no
-  pace, the arena is null in the lessons, and the fit (`fitAirframe`) is not
-  reachable from a plan. A pilot cannot weigh it off its own flight either: tried
-  (the plane's lateral acceleration against gravity), the side force swamps it
-  and it reads 0.49 for 1.28. What the pilot *is* handed shrunk by the pace is its
-  gun: a jet fights with its own cannon (`ownGun`, one barrel, no convergence) and
-  is shown its muzzle speed over the pace. So `paceOf(c)` is `c.pace` where a
-  context gives one, else the cannon's real 1,000 m/s (every published Desert
-  Combat jet's) over `c.gun.speed`, or the school's 400 m/s wing guns where the
-  gun converges. That gives 1.28 and 1.5 exactly. The clean fix is shared: the
-  duel, the fight and the live seat could put the pace in the step context
-  (`runDuel`, `runFight`, `stepSeat`, one field each); `paceOf` already reads it
-  first.
+  the F-16 pilot's numbers and 667 in the MiG-29's. Since `726b12eb6` the step
+  context carries the pace (`c.pace`: `runDuel`, `runFight`, the live
+  `stepSeat`), and `paceOf(c)` reads it, 1 where a context gives none. The only
+  caller left without it is the school harness's own Spitfire steps
+  (`tests/dogfight_school_harness.mjs`), where 1 is right, so the first cut's
+  fallback (the pace read off the cannon's 1,000 m/s over the speed the pilot is
+  shown) is gone. Reading it off gravity was tried and does not work (the side
+  force swamps it: 0.49 for 1.28).
 
-Flown from every start of every demo: off the perch it starts on (896 m), the
-ace never climbs higher (its highest from 5 s on is 846 to 892 m) and never flies
-slower than 81 m/s. It levels off at 860 to 870 m under a climber, 694 to 743 m over a pilot
-turning flat.
+## The guard, and what the roof still does (2026-11-11)
+
+The shared `guard` (`dogfight-pilot.js`) now reads its 880 m over `c.pace`:
+every pilot on a jet, the ace and your seat alike, puts the nose on the horizon
+past 880 m real while climbing (it was 1,126 m on the F-16). The roof was flown
+with the guard alone (`ROOF` out of reach): the ace's zooms run on to 963 to 984
+m (1,156 m in one Ninja) before the guard catches them, in a quarter of the lift.
+With the roof they level off at 850 to 870 m. So all of `dogfight-jet-ceiling.js`
+stays except the gun fallback: `underRoof` and `atRoof` level the ace off before
+the guard has to, and the guard is the last word.
+
+From every start of every demo: off the perch it starts on (896 m), the ace never
+climbs higher (from 5 s on, 871 m at most) and never flies slower
+than 81 m/s. It levels off at 860 to 870 m under a climber, 694 to 743 m over a
+pilot turning flat.
 
 ## What the jet file says
 
@@ -77,68 +85,54 @@ the Dip, the Flip and the Ninja, `survival`, `coach`, and the aces (`ace.plan`
 `jetBoomAndZoom`; the Dip, the Flip, the Ninja and FLY IT's `flyAce`
 `jetUhAce`). The claims, one by one:
 
-- "Climbing straight is fatal": **false** on a jet, and the words say what it
-  does: never fired at, their height in 11 s, their energy at 16 s, into the top of
-  the sky at 21.5 s and out of it, down to 480 to 590 m and 27 to 33 m/s, while the
-  diver levels off under it fast and comes again at 48 to 52 s.
+- "Climbing straight is fatal": **false** on a jet. With the guard your own climb
+  levels off at 946 to 949 m, short of the top, and never falls out of it: never
+  fired at, their height in 11 s, their energy at 16 s, and 99 to 179 m of energy
+  ahead at 55 s. Before the guard (the first cut of this page) the climb went on to
+  1,050 m and fell to 480 to 590 m at 27 to 33 m/s; that claim is gone.
 - "Turning flat is safe and buys nothing": **holds**, the jet's numbers.
-- "Climbing between their dives wins the height back, never hit": **holds**, by
-  less: 240 to 250 m of energy ahead, not 980 to 1,360. The words now say why it
-  holds on a jet: once you are over their roof they cannot get above you again
-  without climbing into the thin air.
+- "Climbing between their dives wins the height back, never hit": **holds**, and
+  the straight climb does about as well: 120 to 130 m ahead. On a jet the lesson
+  is: climb, either way, and level off under the top; only turning flat loses.
 - The coach's "380 m" is the plans' threshold in the Spitfire's units, 486 m
   real: "about 490 m". The zoom tip says they level off under the top.
 
-## The nine starts on the F-16, before and after
+## The nine starts on the F-16
 
-"Before" is the lesson's jet version against the Spitfire's ace (2026-11-10);
-"after" against the jet ace. Harness starts (sideways -30/0/30 by speed -3/0/+3)
-for the first three; the school's L9 starts (`dogfight-measure.js` `STARTS`) for
-the moves, each scored by `scoreMove` as `movesOn` scores them.
+"The Spitfire's ace" is the lesson's jet version of 2026-11-10; "jet ace" the
+first cut of this page; "with the guard" now. Harness starts (sideways -30/0/30 by
+speed -3/0/+3) for the first three; the school's L9 starts (`dogfight-measure.js`
+`STARTS`) for the moves, each scored by `scoreMove` as `movesOn` scores them.
 
-| Demo | Before (the Spitfire's ace) | After (the jet ace) |
-|---|---|---|
-| move, climb straight | 0/0 in 9; closest 410-442 m; top at 20.6-20.9 s, falls 332-333 m; ends 683-700 m at 31-44 m/s, -842 to -883 m of energy | 0/0 in 9, never fired at; closest 276-390 m; their height 10.6-10.7 s, their energy 15.8-16.1 s; top at 21.4-21.7 s (1,043-1,050 m), down to 480-587 m at 27-33 m/s; the ace at 865-869 m, never under 104 m/s, dives again at 48.3-51.8 s; ends 772-997 m, -163 to +280 m of energy |
-| flat, turn flat | 0/0 in 9; three dives; climbs 126-128 m; ends -407 to -620 m | 0/0 in 9; three dives; climbs 126-128 m; ends 357-358 m at 83 m/s, -391 to -487 m |
-| counter, climb between | 0/0 in 9; 2-3 breaks; climbs 681-732 m; the ace over 1,000 m and down at 15-34 m/s; ends +976 to +1,357 m | 0/0 in 9; one dive, broken at 483-486 m; their height at 23.9-24.1 s; climbs 730 m to 961 m at 143 m/s; the ace levels at 860-862 m, 128 m/s; ends +239 to +248 m, 99-108 m above them |
-| dip | **9 of 9**: run 26.8-38.1 s, let go 35.6-53.6 s, 3.7-7.5 km at 70 s | **9 of 9**: never fired at; run 32.5-34.2 s; let go 38.2-43.5 s; 8.4-9.4 km apart at 70 s at 129-130 m/s |
-| flip | **0 of 9**: the reversal never flown | **0 of 9**: the reversal flown once (29.5 s), 0.2 s of a shot, no hit; never fired at |
-| ninja | **0 of 9**: a landing shot in four, 1 and 2 rounds | **0 of 9**: the energy yours in all nine, 35.1-42.0 s; never a shot; never fired at, never on your tail |
+| Demo | The Spitfire's ace | Jet ace, no guard | Jet ace with the guard |
+|---|---|---|---|
+| move, climb straight | 0/0 in 9; falls 332 m from the top; ends -842 to -883 m | 0/0; top 1,043-1,050 m at 21.5 s, down to 480-587 m at 27-33 m/s; ace dives again at 48-52 s; ends -163 to +280 m | 0/0; closest 281-321 m; their height 10.6-10.7 s, their energy 15.8-16.1 s; you level at 946-949 m, end 908-948 m at 132-138 m/s; the ace at 869-871 m, dives once; ends +99 to +179 m |
+| flat, turn flat | three dives; ends -407 to -620 m | three dives; ends -391 to -487 m | the same: climbs 126-128 m, ends 357-358 m at 83 m/s, -391 to -487 m |
+| counter, climb between | 2-3 breaks; ends +976 to +1,357 m (the ace's fall) | one break at 483-486 m; you to 961 m at 143 m/s; ends +239 to +248 m | one break at 483-486 m; their height at 23.9-24.1 s; climbs 681-685 m to 912-915 m at 135-136 m/s; the ace at 861-864 m; ends +120 to +130 m, 50-56 m above them |
+| dip | **9 of 9** | **9 of 9** | **9 of 9**: never fired at; run 32.5-35.3 s; let go 38.2-43.5 s; 8.3-9.4 km apart at 70 s, 128-129 m/s |
+| flip | **0 of 9** | **0 of 9** | **0 of 9**: the reversal flown once (29.5 s), no shot |
+| ninja | **0 of 9** | **0 of 9** | **0 of 9**: the energy yours in all nine, 36.2-40.5 s; never a shot; never fired at, never on your tail |
 
 ## The MiG-29 (pace 1.5), the same jet file
 
 The words are the F-16's. The MiG-29's ace starts at 900 m (the paced perch stops
-at `PACE.roof`), climbs no higher than 904 m from 5 s on and never flies slower
-than 85 m/s. Nobody is fired at in any of the three. The straight climb is at their
-height at 12.3 to 12.6 s, tops out at 1,023 m at 16.5 to 17 s and falls 276 to 285
-m, ending 150 to 389 m behind; turning flat climbs 142 to 145 m and ends 333 to 572
-m behind; climbing between breaks once at 465 to 525 m, touches the top (995 to
-1,003 m) and falls 74 to 103 m, and ends 43 m behind to 312 m ahead. Dip 9 of 9,
-Flip 0 of 9 (the reversal flown in three), Ninja 0 of 9.
+at `PACE.roof`), climbs no higher than 915 m from 5 s on and never flies slower
+than 106 m/s. Nobody is fired at in any of the three. The straight climb is at
+their height at 12.3 to 12.6 s and levels off at 975 m, ending 67 m behind to 105
+m ahead; turning flat climbs 142 to 145 m and ends 333 to 572 m behind; climbing
+between breaks once at 465 to 525 m, levels at 938 to 945 m and ends 89 to 357 m
+ahead. Dip 9 of 9, Flip 0 of 9 (the reversal flown in two), Ninja 0 of 9.
 
 ## Tried and not shipped
 
-- **A climb that levels under the top** for you (a prototype jet plan, 30 degrees
-  easing to level by 717, 845 or 922 m; three of the nine starts each), flown
-  against the Spitfire's ace: never fired at, no fall, ends 79 to 409 m behind.
-  The jet's right answer to "climb straight", but it is not this lesson's trap
-  demo, and the lesson has no slot for a fourth main demo without changing
-  `lessonFor` (it maps only the lesson's own demos).
+- **The guard alone**, no roof: see above.
 - **A roof at 900 m** (`PACE.roof`, where the paced perch stops): at a tenth of the
   lift the ace cannot hold level there and wallows, which is what the roof is for.
   800 m flies level at 105 to 130 m/s.
-- **Reading the pace off gravity** (`paceOf`): see above.
+- **Reading the pace off gravity**: see above.
 
 ## Open
 
-- **The pace in the step context.** `paceOf` reads the cannon (`JET_CANNON`,
-  1,000 m/s): true of both published jets, not of an airframe whose cannon is
-  another speed. A `pace` in the context (`dogfight-duel.js` `runDuel`,
-  `dogfight-fight.js` `runFight`, `dogfight-live.js` `stepSeat`) would make it
-  exact for any airframe.
-- **The shared guard** (`dogfight-pilot.js` `guard`) noses a pilot down above 880
-  m in the pilot's numbers, which is 1,126 m real on the F-16: over the ceiling.
-  Every Spitfire plan flown on a jet has it.
 - **Near misses.** In the counter, the diver passes 82 to 87 m from you at the
   break. The duel does not model a collision.
 - **The Flip and the Ninja** were not re-tuned: the reversal waits for a slow

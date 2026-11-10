@@ -50,14 +50,20 @@ The jet's ace (`jetUp` in `dogfight-jet-plan-up-and-over.js`, wrapping
 - **Never hangs.** In `over`, `pounce` or `zoom`, slower than 45 m/s (the
   Spitfire's size, 58 real) and not diving, the nose goes 35 degrees down
   until the speed is back over 60.
-- How it knows the ceiling for the airframe it is on (`paceOf`, the pilot's
-  cannon shown at its muzzle speed over the pace): see
+- How it knows the ceiling for the airframe it is on: `paceOf` reads the pace
+  the step context now carries (`c.pace`); see
   [under-the-height.md](under-the-height.md), "The ace that knows where the
-  top is".
+  top is" and "The guard, and what the roof still does".
+- **The guard is not enough on its own.** Every pilot on a jet now noses over
+  at 880 m real (`guard`, read over the pace). Flown with the guard and no roof,
+  this ace's zooms carry it to 1,440 to 1,640 m (1,016 m in one Dip start) and
+  it comes down at 31 to 49 m/s: the guard only puts the nose on the horizon once past 880 m,
+  and a loop is past it going straight up. The over-the-top height and the roof
+  stay.
 
-From every start of every demo: the F-16's ace never goes above 918 m and
-never flies slower than 68 m/s after its first top; the MiG-29's never above
-970 m, never slower than 89 m/s.
+From every start of every demo, with the guard: the F-16's ace never goes above
+877 m and never flies slower than 68 m/s after its first top; the MiG-29's never
+above 989 m, never slower than 83 m/s.
 
 ## What the follower should do
 
@@ -66,7 +72,7 @@ Against the jet ace, nine starts each:
 | follower | what happens |
 |---|---|
 | follow them up (`followStraightUp`, the lesson's `move`) | you keep your speed (never under 60 m/s), 38 to 53 m under them as they go over; they come straight back down past you, 78 to 86 m at the closest; nobody shot down, they land nothing, you 2 rounds at most |
-| follow shallow at 25 degrees (`shallowFollow`, `counter`) | the shot as their nose comes up through 62 to 65 degrees, 387 to 426 m out, 4.8 to 5.7 s in: 6 to 12 hits in seven, none in two; then, climbing on at 25 degrees, you go up alone to 1,071 to 1,396 m |
+| follow shallow at 25 degrees (`shallowFollow`, `counter`) | the shot as their nose comes up through 62 to 65 degrees, 387 to 426 m out, 4.8 to 5.7 s in: 6 to 12 hits in seven, none in two; then, climbing on at 25 degrees, you go up alone to 1,151 to 1,316 m (your guard levels you, but slowly at 25 degrees) |
 | the old jet Dip: the shot, then straight on under them | 0 of 9: their loop brings them back down behind you at 400 m and they chase at your speed, firing (shot down in three) |
 | the Spitfire's Dip (`uoDip`: follow at 30, pass, run) | 9 of 9 |
 | the shot at 25, then past them as they come down, then away | 9 of 9: `jetUoDip` |
@@ -91,10 +97,10 @@ scored with `scoreMove` and `movesOn` exactly as the theatre counts them.
 | demo | before (the Spitfire's ace) | after (the jet ace) |
 |---|---|---|
 | move | 0/0 x7, 0/1 x2; the ace to 1,182 m | 0/2, 0/0, 0/2, 0/0, 0/0, 0/0, 0/0, 0/1, 0/2; nobody shot down; the ace over at 552 m, top 725 m at 8.9 s |
-| counter | 0/12, 0/8, 0/8, 0/7, 0/7, 0/7, 0/6, 0/1, 0/1 | 0/12, 0/8, 0/8, 0/7, 0/7, 0/7, 0/6, 3/1, 0/1: the same shot; in one (30 m right, as fast) they hit you 3 times at 18.5 s |
+| counter | 0/12, 0/8, 0/8, 0/7, 0/7, 0/7, 0/6, 0/1, 0/1 | 0/12, 0/8, 0/8, 0/7, 0/7, 0/7, 1/6, 3/1, 0/1: the same shot; they hit you twice in the nine, 3 at 18.5 s (30 m right, as fast) and 1 at 41.5 s (30 m right, 3 m/s slower) |
 | dip | `jetUoDip` (shot, then on under them): **9 of 9**; they top out at 1,180 m, let go at 20.7 s, 1.9 to 2.1 km at 35 s | the old `jetUoDip`: 0 of 9. The new one: **9 of 9**, never hit; the shot lands 0 to 10; you pass them at 8.7 s; they chase 6.0 to 7.3 s and let go 23.8 to 26.8 s; 2.3 to 2.9 km apart at 35 s, opening |
 | flip | **0 of 9**: you slow to 54 m/s only at 17 to 22 s, 1,084 to 1,288 m up | **0 of 9**: following them up you top out at 755 to 786 m, never slow; the move's 54 m/s never comes, so it is never flown |
-| ninja | **0 of 9**: no `ninja-shoot`; 3 hits in one | **0 of 9**: no `ninja-shoot`; you climb on alone at 24 degrees to 1,230 to 1,355 m and slow there under 30 m/s; you land nothing; hit 4 times in one |
+| ninja | **0 of 9**: no `ninja-shoot`; 3 hits in one | **0 of 9**: no `ninja-shoot`; you climb on alone at 24 degrees to 1,289 to 1,584 m and slow there to 22 to 37 m/s; you land nothing; hit in four, 1, 1, 11 and 2 times |
 
 Claims, one by one:
 
@@ -113,9 +119,9 @@ Claims, one by one:
 
 The same lesson. The ace climbs at 91 to 103 m/s, its nose to 52 degrees, goes
 over at 551 m 3 s after the pull and tops out at 808 to 818 m 8.2 to 9.2 s in.
-Following them up, nobody is shot down (they hit you 3 times in one; you go on
-to 1,031 to 1,037 m). Following shallow lands 9, 7, 9, 2, 6, 3, 2, 1, 1. Dip 9
-of 9, Flip 0, Ninja 0. The words' numbers are the F-16's.
+Following them up, nobody lands a round on anyone (you go on to 950 to 1,883 m).
+Following shallow lands 9, 7, 9, 2, 6, 3, 3, 1, 1; they hit you once in one.
+Dip 9 of 9, Flip 0, Ninja 0. The words' numbers are the F-16's.
 
 ## Open
 
@@ -124,8 +130,10 @@ of 9, Flip 0, Ninja 0. The words' numbers are the F-16's.
 - **The Flip and the Ninja** are 0 of 9 and not re-tuned: both wait for a
   slow moment over the top that a jet never gives. A jet Ninja would be built
   on the pull's shot and the ace's descent.
-- **The pace in the step context**, and the shared guard's 880 m in the pilot's
-  numbers: see [under-the-height.md](under-the-height.md), "Open".
+- **The MiG-29's ace tops out at 989 m** in one Dip start, under the ceiling but
+  close: its zoom carries more. Stretching the roof's lead time by the pace
+  holds it to 905 m but drops the MiG-29's Dip to 4 of 9 and lets the F-16's ace
+  hit you more following shallow, so it was not shipped.
 - **Sensitivity.** The fights move with the ace's numbers: with `OVER_AT` 450 the
   old Dip worked 8 of 9 and following shallow landed 8, 7, 9, 2, 6, 2, 4, 1, 1;
   at 500 the old Dip failed in all nine. 550 keeps following shallow's shot as it
