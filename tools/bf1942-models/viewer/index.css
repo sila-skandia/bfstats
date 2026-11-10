@@ -425,6 +425,139 @@ button.browse kbd { border-color: rgba(0, 0, 0, .45); color: var(--mm-highlight-
   overflow-wrap: anywhere;
 }
 
+/* --- Model tools: the Hit regions, Display and Model tabs ----------------
+   features/mesh-viewer-advanced-tab. The strip is the dogfight school's
+   fight tabs (map.css .dfs-demos: ink-soft text, the selected one ink with
+   a 2px olive underline); the multi-way choices are its segmented chips
+   (.dfs-speeds / .dfs-chip: a rule-strong box of mono caps, pressed is ink
+   on bg); the on/off options keep this page's own olive .toggle. The strip
+   sticks to the top of the column so a long legend or part tree never
+   scrolls the tabs away. */
+
+.workbench { padding-top: 0; }
+.wb-tabs {
+  position: sticky;
+  top: -14px;
+  z-index: 3;
+  display: flex;
+  margin: 0 0 4px;
+  background: var(--mm-bg);
+  border-bottom: 1px solid var(--mm-rule);
+}
+.wb-tab {
+  position: relative;
+  flex: 1 1 0;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+  min-width: 0;
+  padding: 12px 2px 11px;
+  background: transparent;
+  border: 0;
+  color: var(--mm-ink-soft);
+  font: 400 12.5px/1.2 var(--mm-font-display);
+  white-space: nowrap;
+  cursor: pointer;
+  transition: color .15s ease;
+}
+.wb-tab:hover { color: var(--mm-ink); }
+.wb-tab:focus-visible { outline: 1px solid var(--mm-accent); outline-offset: -1px; }
+.wb-tab[aria-selected="true"] { color: var(--mm-ink); }
+.wb-tab[aria-selected="true"]::after {
+  content: '';
+  position: absolute;
+  left: 0;
+  right: 0;
+  bottom: -1px;
+  height: 2px;
+  background: var(--mm-accent);
+}
+.wb-ico {
+  flex: none;
+  width: 14px;
+  height: 14px;
+  fill: none;
+  stroke: currentColor;
+  stroke-width: 1.5;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+  color: var(--mm-ink-muted);
+  transition: color .15s ease;
+}
+.wb-ico .is-thin { stroke-width: 1.1; opacity: .7; }
+.wb-tab[aria-selected="true"] .wb-ico { color: var(--mm-accent-soft); }
+.wb-panel[hidden] { display: none; }
+.wb-group { padding: 12px 0; }
+.wb-group + .wb-group { border-top: 1px solid var(--mm-rule); }
+.wb-label {
+  margin: 0 0 8px;
+  color: var(--mm-ink-muted);
+  font-size: 9.5px;
+  letter-spacing: .14em;
+  text-transform: uppercase;
+}
+.wb-seg {
+  display: flex;
+  border: 1px solid var(--mm-rule-strong);
+  border-radius: 2px;
+  overflow: hidden;
+}
+.wb-chip {
+  flex: 1 1 0;
+  min-width: 0;
+  min-height: 28px;
+  padding: 5px 6px;
+  background: transparent;
+  border: 0;
+  border-right: 1px solid var(--mm-rule-strong);
+  color: var(--mm-ink-muted);
+  font: 400 10.5px/1.3 var(--mm-font-mono);
+  letter-spacing: .08em;
+  text-transform: uppercase;
+  white-space: nowrap;
+  cursor: pointer;
+  transition: background-color .15s ease, color .15s ease;
+}
+.wb-chip:last-child { border-right: 0; }
+.wb-chip:hover { color: var(--mm-ink); }
+.wb-chip:focus-visible { outline: 1px solid var(--mm-accent); outline-offset: -2px; }
+.wb-chip[aria-pressed="true"] { background: var(--mm-ink); color: var(--mm-bg); }
+.wb-chip:disabled { color: var(--mm-ink-faint); cursor: default; }
+.wb-group .range-row { margin-top: 8px; }
+.wb-range-name {
+  flex: none;
+  white-space: nowrap;
+  color: var(--mm-ink-soft);
+  font-size: 11px;
+}
+.wb-group .toggle { padding: 4px 0; }
+.wb-group .note { margin-top: 6px; }
+.wb-group > .field:first-child + .weapon-summary { margin-top: 8px; }
+/* The faded surface is the point of the slider: its readout goes olive
+   once it is below opaque, and the textures chip says what Off draws. */
+#wb-display[data-faded="true"] #texture-opacity-output { color: var(--mm-accent-soft); }
+.wb-reset {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  margin-top: 4px;
+  min-height: 26px;
+  padding: 3px 10px;
+  background: transparent;
+  border: 1px solid var(--mm-rule-strong);
+  border-radius: 2px;
+  color: var(--mm-ink);
+  font-size: 10.5px;
+  letter-spacing: .06em;
+  cursor: pointer;
+  transition: border-color .15s ease, color .15s ease;
+}
+.wb-reset svg { width: 12px; height: 12px; fill: none; stroke: currentColor; stroke-width: 1.5; stroke-linecap: round; stroke-linejoin: round; }
+.wb-reset:hover:not(:disabled), .wb-reset:focus-visible { border-color: var(--mm-ink); outline: none; }
+.wb-reset:disabled { color: var(--mm-ink-faint); border-color: var(--mm-rule); cursor: default; }
+#wb-model .wb-group:first-child { padding-top: 8px; }
+
 /* Model */
 .model-details { margin-top: 9px; }
 .detail-label {
@@ -1584,6 +1717,11 @@ button.scale-figure .scale-box {
   .panel-title {
     margin: 0 0 6px;
   }
+  .workbench { padding-top: 0; }
+  .wb-tabs { top: -10px; }
+  .wb-tab { padding: 13px 2px 12px; }
+  .wb-chip { min-height: 34px; }
+  .wb-group .toggle { padding: 6px 0; }
   #current-card {
     padding: 6px 8px;
     margin-bottom: 6px;

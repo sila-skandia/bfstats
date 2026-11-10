@@ -10,8 +10,9 @@
 // mesh.bfstats.io has no map page (mesh/nginx.conf sends it to play.bfstats.io),
 // so its bar drops the Maps tab (shell.css). Set before the bar paints.
 if (location.hostname === 'mesh.bfstats.io') document.documentElement.classList.add('shell-no-maps');
-// The controls built for testing the extracts (wireframe, axes, part trees and
-// the like) stay out of a visitor's way; `?dev=1` brings them back (shell.css).
+// `?dev=1` shows anything a page marks `data-dev` (shell.css). This page has
+// none left: its display options and part tree are the Display and Model tabs
+// (features/mesh-viewer-advanced-tab).
 if (new URLSearchParams(location.search).get('dev') === '1') document.documentElement.classList.add('shell-dev');
 </script>
 <link rel="stylesheet" href="./tokens.css">
@@ -65,63 +66,112 @@ if (new URLSearchParams(location.search).get('dev') === '1') document.documentEl
     <div id="variant-summary" class="callout"></div>
   </section>
 
-  <section class="panel" id="display-panel" data-dev>
-    <h2 class="panel-title">Display</h2>
-    <div class="toggle-row">
-      <label class="toggle"><input type="checkbox" id="spin"><span>auto-rotate</span></label>
-      <label class="toggle"><input type="checkbox" id="axes" checked><span>axes + ground grid</span></label>
+  <section class="panel workbench" id="workbench" data-tab="regions" aria-label="Model tools">
+    <div class="wb-tabs" id="wb-tabs" role="tablist" aria-label="Model tools">
+      <button type="button" role="tab" class="wb-tab" id="wb-tab-regions" data-tab="regions" aria-controls="wb-regions" aria-selected="true">
+        <svg class="wb-ico" viewBox="0 0 16 16" aria-hidden="true"><path d="M8 1.8 13.5 4v4.1c0 3-2.3 5.3-5.5 6.2-3.2-.9-5.5-3.2-5.5-6.2V4L8 1.8Z"/><path class="is-thin" d="M8 1.8v12.5M2.5 8h11"/></svg>
+        <span>Hit regions</span>
+      </button>
+      <button type="button" role="tab" class="wb-tab" id="wb-tab-display" data-tab="display" aria-controls="wb-display" aria-selected="false" tabindex="-1">
+        <svg class="wb-ico" viewBox="0 0 16 16" aria-hidden="true"><path d="M8 1.8 13.8 5v6L8 14.2 2.2 11V5L8 1.8Z"/><path class="is-thin" d="M2.2 5 8 8.2 13.8 5M8 8.2v6"/></svg>
+        <span>Display</span>
+      </button>
+      <button type="button" role="tab" class="wb-tab" id="wb-tab-model" data-tab="model" aria-controls="wb-model" aria-selected="false" tabindex="-1">
+        <svg class="wb-ico" viewBox="0 0 16 16" aria-hidden="true"><path d="M2.5 3h4M2.5 8h4M2.5 13h4"/><path class="is-thin" d="M8.5 3h5M10.5 8h3M10.5 13h3M8.5 3v10h2M8.5 8h2"/></svg>
+        <span>Model</span>
+      </button>
     </div>
-    <label class="field" id="envmap-field" hidden>
-      <span>Reflected sky</span><select id="envmap-level" class="select"></select>
-    </label>
-    <div id="envmap-summary" class="note" hidden></div>
-    <details class="disclosure">
-      <summary>Technical display options</summary>
-      <div class="disclosure-body">
-        <label class="toggle"><input type="checkbox" id="wireframe"><span>wireframe</span></label>
-        <label class="toggle"><input type="checkbox" id="untextured"><span>flat grey</span></label>
-        <label class="toggle"><input type="checkbox" id="doubleside"><span>force double-sided</span></label>
-        <label class="toggle"><input type="checkbox" id="explode"><span>explode parts</span></label>
+
+    <div class="wb-panel" id="wb-regions" role="tabpanel" aria-labelledby="wb-tab-regions">
+      <div class="wb-group">
+        <div class="wb-label" id="regions-label">Show hit regions</div>
+        <div class="wb-seg" id="regions-seg" role="group" aria-labelledby="regions-label">
+          <button type="button" class="wb-chip" data-mode="off" aria-pressed="true">Off</button>
+          <button type="button" class="wb-chip" data-mode="overlay" aria-pressed="false">Over model</button>
+          <button type="button" class="wb-chip" data-mode="only" aria-pressed="false">Regions only</button>
+        </div>
+        <div class="range-row" id="region-opacity-row" hidden>
+          <label class="wb-range-name" for="region-opacity">Region opacity</label>
+          <input type="range" class="range" id="region-opacity" min="0.1" max="1" step="0.01" value="0.5">
+          <output id="region-opacity-output" for="region-opacity">50%</output>
+        </div>
+      </div>
+      <div class="wb-group">
+        <label class="field"><span>Enemy weapon</span><select id="weapon" class="select"></select></label>
+        <div id="weapon-summary" class="weapon-summary"></div>
+        <div id="collision-legend" hidden>
+          <div class="ramp" aria-hidden="true"><span></span><span></span><span></span><span></span><span></span></div>
+          <div class="ramp-labels"><span>Vulnerable</span><span>Protected</span></div>
+          <div id="legend-materials"></div>
+          <div class="legend-hint" id="legend-hint">Select a material to isolate it; select it again to show all.</div>
+        </div>
+        <p class="note" id="collision-note">
+          Colours show inferred relative protection. Pick a weapon to colour by its
+          actual damage table. Click a region, then drag the shot arrow or use the angle control.
+        </p>
+        <div id="hit-details" aria-live="polite">
+          <div class="empty">No collision face selected.</div>
+        </div>
+      </div>
+    </div>
+
+    <div class="wb-panel" id="wb-display" role="tabpanel" aria-labelledby="wb-tab-display" hidden>
+      <div class="wb-group">
+        <div class="wb-label" id="textures-label">Textures</div>
+        <div class="wb-seg" id="textures-seg" role="group" aria-labelledby="textures-label">
+          <button type="button" class="wb-chip" data-value="on" aria-pressed="true">On</button>
+          <button type="button" class="wb-chip" data-value="off" aria-pressed="false">Off, flat grey</button>
+        </div>
+        <div class="range-row">
+          <label class="wb-range-name" for="texture-opacity">Texture opacity</label>
+          <input type="range" class="range" id="texture-opacity" min="0" max="1" step="0.01" value="1">
+          <output id="texture-opacity-output" for="texture-opacity">100%</output>
+        </div>
+        <p class="note">Fade the surface to see how the paint lies over the edges. Turn the wireframe on with it.</p>
+      </div>
+      <div class="wb-group">
+        <div class="wb-label">Edges and faces</div>
+        <label class="toggle"><input type="checkbox" id="wireframe"><span>Wireframe</span></label>
+        <label class="toggle"><input type="checkbox" id="see-through"><span>Back faces and hidden edges</span></label>
+        <label class="toggle"><input type="checkbox" id="doubleside"><span>Force double-sided</span></label>
+      </div>
+      <div class="wb-group">
+        <div class="wb-label">Parts</div>
+        <label class="toggle"><input type="checkbox" id="explode"><span>Explode parts</span></label>
         <div class="range-row" id="explode-row" hidden>
           <input type="range" class="range" id="explode-amount" min="0" max="1" step="0.01" value="0.5" aria-label="Explode distance">
           <output id="explode-output" title="Furthest any part has moved from its assembled position">0.00 m</output>
         </div>
       </div>
-    </details>
-  </section>
-
-  <section class="panel" id="armour-panel">
-    <h2 class="panel-title">Armour</h2>
-    <label class="toggle"><input type="checkbox" id="collision"><span>show armour regions</span></label>
-    <label class="field"><span>Enemy weapon</span><select id="weapon" class="select"></select></label>
-    <div id="weapon-summary" class="weapon-summary"></div>
-    <div id="collision-legend" hidden>
-      <div class="ramp" aria-hidden="true"><span></span><span></span><span></span><span></span><span></span></div>
-      <div class="ramp-labels"><span>Vulnerable</span><span>Protected</span></div>
-      <div id="legend-materials"></div>
-      <div class="legend-hint" id="legend-hint">Select a material to isolate it; select it again to show all.</div>
+      <div class="wb-group">
+        <div class="wb-label">Stage</div>
+        <label class="toggle"><input type="checkbox" id="spin"><span>Auto-rotate</span></label>
+        <label class="toggle"><input type="checkbox" id="axes" checked><span>Axes and ground grid</span></label>
+        <label class="field" id="envmap-field" hidden>
+          <span>Reflected sky</span><select id="envmap-level" class="select"></select>
+        </label>
+        <div id="envmap-summary" class="note" hidden></div>
+      </div>
+      <button type="button" class="wb-reset" id="display-reset" disabled>
+        <svg viewBox="0 0 16 16" aria-hidden="true"><path d="M3 8a5 5 0 1 0 1.5-3.6M3 2.5v2.8h2.8"/></svg>
+        <span>Reset display</span>
+      </button>
     </div>
-    <p class="note" id="collision-note">
-      Colours show inferred relative protection. Pick a weapon to colour by its
-      actual damage table. Click a region, then drag the shot arrow or use the angle control.
-    </p>
-    <div id="hit-details" aria-live="polite">
-      <div class="empty">No collision face selected.</div>
-    </div>
-  </section>
 
-  <section class="panel" id="model-panel" data-dev>
-    <h2 class="panel-title">Model</h2>
-    <details class="disclosure">
-      <summary>Model details</summary>
-      <div class="model-details">
+    <div class="wb-panel" id="wb-model" role="tabpanel" aria-labelledby="wb-tab-model" hidden>
+      <div class="wb-group">
+        <div class="wb-label">Details</div>
         <div id="stats"></div>
-        <div class="detail-label">Missing textures</div>
+      </div>
+      <div class="wb-group">
+        <div class="wb-label">Missing textures</div>
         <ul class="missing" id="missing"></ul>
-        <div class="detail-label">Part tree</div>
+      </div>
+      <div class="wb-group">
+        <div class="wb-label">Part tree</div>
         <div id="tree"></div>
       </div>
-    </details>
+    </div>
   </section>
 </aside>
 <div class="stage">
@@ -219,6 +269,7 @@ import { selectMod } from './mods.js';
 import { createArmourInspector } from './model-armour.js';
 import { createEnvReflection } from './model-envmap.js';
 import { createModelDisplay } from './model-display.js';
+import { installWorkbenchTabs } from './model-workbench.js';
 import { createModelRig, keyOf } from './model-rig.js';
 import { createEngineClips } from './model-clips.js';
 import { createGunTriggers } from './model-guns.js';
@@ -364,8 +415,16 @@ function invalidate() {
   requestAnimationFrame(() => {
     renderScheduled = false;
     controls.update();
-    renderer.render(scene, camera);
+    renderFrame();
   });
+}
+
+/** The model, then the hit regions over it in their own pass (model-armour.js). */
+// A frame can be asked for while the armour module is still loading its tables.
+let renderRegions = () => {};
+function renderFrame() {
+  renderer.render(scene, camera);
+  renderRegions(renderer, scene, camera);
 }
 
 /**
@@ -391,7 +450,7 @@ function startAnimating() {
     // controls.update() returns true while damping or auto-rotate is still
     // moving the camera, false once it has settled.
     const controlsMoving = controls.update();
-    renderer.render(scene, camera);
+    renderFrame();
 
     // Keep animating only while at least one continuous source is active.
     const hasRates = rig.rigged.some(part =>
@@ -413,6 +472,7 @@ function startAnimating() {
 }
 
 const armour = await createArmourInspector({
+  get applyDisplay() { return display.applyState; },
   get camera() { return camera; }, get controls() { return controls; },
   get current() { return current; }, get framing() { return framing; },
   get invalidate() { return invalidate; }, get main() { return main; },
@@ -421,15 +481,19 @@ const armour = await createArmourInspector({
   get syncRange() { return syncRange; },
 });
 
+renderRegions = armour.renderRegions;
+
 const envReflection = await createEnvReflection({
   get activeMod() { return activeMod; }, get startAnimating() { return startAnimating; },
 });
 
 const display = createModelDisplay({
   get applyCollisionState() { return armour.applyCollisionState; },
-  get current() { return current; }, get invalidate() { return invalidate; },
+  get current() { return current; }, get hideModel() { return armour.hideModel; },
+  get invalidate() { return invalidate; },
   get isCollisionMesh() { return armour.isCollisionMesh; }, get syncRange() { return syncRange; },
 });
+const workbench = installWorkbenchTabs();
 document.getElementById('axes').addEventListener('change', e => { helpers.visible = e.target.checked; invalidate(); });
 document.getElementById('spin').addEventListener('change', e => {
   controls.autoRotate = e.target.checked;
@@ -696,6 +760,8 @@ const testHooks = installTestHooks({
   get seatViews() { return seatCams.seatViews; }, get setCameraView() { return setCameraView; },
   get setCollision() { return armour.setCollision; },
   get setCollisionMaterial() { return armour.setCollisionMaterial; },
+  get setRegionMode() { return armour.setRegionMode; },
+  get display() { return display; }, get workbench() { return workbench; },
   get setCrewInput() { return crewConsole.setCrewInput; },
   get setHitAngle() { return armour.setHitAngle; }, get setWeapon() { return armour.setWeapon; },
   get showVariant() { return showVariant; }, get startFiring() { return gunTriggers.startFiring; },

@@ -16,7 +16,8 @@ import { GEAR_INPUT } from './model-rig.js';
  * `fireGroups`, `getCollision`, `guns`, `helpers`, `invalidate`, `manifest`,
  * `pickCenterHit`, `PORTRAIT_DISTANCE`, `PORTRAIT_OFFSET`, `portraitExtent`,
  * `scene`, `seatViews`, `setCameraView`, `setCollision`,
- * `setCollisionMaterial`, `setCrewInput`, `setHitAngle`, `setWeapon`,
+ * `setCollisionMaterial`, `setCrewInput`, `setRegionMode`, `display`,
+ * `workbench`, `setHitAngle`, `setWeapon`,
  * `showVariant`, `startFiring`, `stationRole`, `stopFiring`.
  */
 export function installTestHooks(page) {
@@ -130,6 +131,14 @@ export function installTestHooks(page) {
       page.invalidate();
     },
     setCollision: page.setCollision,
+    // The Hit regions tab's mode ('off', 'overlay', 'only'), the Display
+    // tab's state (`setDisplay({ opacity: .4, wireframe: true })`) and the
+    // tab strip (features/mesh-viewer-advanced-tab).
+    setRegionMode: page.setRegionMode,
+    setDisplay: patch => page.display.set(patch),
+    getDisplay: () => page.display.getState(),
+    selectTab: name => page.workbench.select(name),
+    getTab: () => page.workbench.current(),
     setImpactAngle: page.setHitAngle,
     setCollisionMaterial: page.setCollisionMaterial,
     setWeapon: page.setWeapon,
