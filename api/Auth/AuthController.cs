@@ -1,3 +1,4 @@
+using System.Diagnostics;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.AspNetCore.Authorization;
@@ -7,6 +8,7 @@ using Microsoft.Extensions.Configuration;
 using api.PlayerTracking;
 using Microsoft.Extensions.Logging;
 using api.Caching;
+using api.StatsCollectors;
 using System.Text.RegularExpressions;
 
 namespace api.Auth;
@@ -27,6 +29,15 @@ public class AuthController(
     IConfiguration configuration) : ControllerBase
 {
     private const int MaxBulkPlayerNames = 1000;
+
+    // The hourly incremental holds the one SQLite writer for ~1-2 min.
+    // CommandTimeout(60) parks LastLoggedIn / RefreshTokens behind it until
+    // the Slow page fires, then 500s; 5s matches busy_timeout and the
+    // request returns 503 instead. LastLoggedIn is bookkeeping — skip it
+    // after 1s and still try to issue the session.
+    internal const int WriteCommandTimeoutSeconds = 5;
+    internal const int LastLoginCommandTimeoutSeconds = 1;
+    private const string DatabaseBusyMessage = "The stats database is busy updating; try again in a minute";
 
     [HttpPost("login")]
     public async Task<IActionResult> Login([FromBody] LoginRequest request)
@@ -58,20 +69,8 @@ public class AuthController(
                     return Unauthorized(new { message = "Invalid username or password" });
                 }
 
-                pwUser.LastLoggedIn = DateTime.UtcNow;
-                pwUser.IsActive = true;
-                await context.SaveChangesAsync();
-
-                var (pwAccess, pwExpires) = tokenService.CreateAccessToken(pwUser);
-                var (pwRawRefresh, pwRtEntity) = await refreshTokenService.CreateAsync(pwUser, ipAddress, Request.Headers.UserAgent.ToString());
-                refreshTokenService.SetCookie(Response, pwRawRefresh, pwRtEntity.ExpiresAt);
-
-                return Ok(new LoginResponse
-                {
-                    User = new UserDto { Id = pwUser.Id, Email = MaskEmail(pwUser.Email), Name = pwUser.Username ?? request.Username },
-                    AccessToken = pwAccess,
-                    ExpiresAt = pwExpires
-                });
+                await TryTouchLastLoginAsync(pwUser);
+                return await CompleteLoginAsync(pwUser, ipAddress, MaskEmail(pwUser.Email), pwUser.Username ?? request.Username);
             }
             else if ((configuration["ASPNETCORE_ENVIRONMENT"] == "Development" || string.Equals(configuration["Auth:AllowDevLogin"], "true", StringComparison.OrdinalIgnoreCase)) && request.DevBypass == true)
             {
@@ -84,22 +83,17 @@ public class AuthController(
             }
 
             var user = await CreateOrUpdateUserAsync(email, name);
-
-            var (accessToken, expiresAt) = tokenService.CreateAccessToken(user);
-            var (rawRefresh, rtEntity) = await refreshTokenService.CreateAsync(user, ipAddress, Request.Headers.UserAgent.ToString());
-            refreshTokenService.SetCookie(Response, rawRefresh, rtEntity.ExpiresAt);
-
-            return Ok(new LoginResponse
-            {
-                User = new UserDto { Id = user.Id, Email = user.Email, Name = name },
-                AccessToken = accessToken,
-                ExpiresAt = expiresAt
-            });
+            return await CompleteLoginAsync(user, ipAddress, user.Email, name);
         }
         catch (UnauthorizedAccessException ex)
         {
             logger.LogWarning(ex, "Authentication failed");
             return Unauthorized(new { message = "Invalid authentication credentials" });
+        }
+        catch (Exception ex) when (SqliteBusy.IsBusy(ex))
+        {
+            logger.LogWarning("Login write locked");
+            return DatabaseBusy();
         }
         catch (Exception ex)
         {
@@ -1067,19 +1061,102 @@ public class AuthController(
                 IsActive = true
             };
             context.Users.Add(user);
-            await context.SaveChangesAsync();
+            await SaveLoginWriteAsync();
             // Log the id, never the address — see DiscordAuthService.
             logger.LogInformation("Created new user {UserId}", user.Id);
             return user;
         }
 
-        user.LastLoggedIn = now;
-        user.IsActive = true;
         logger.LogDebug("Updating last login for user {UserId}", user.Id);
-
-        await context.SaveChangesAsync();
+        await TryTouchLastLoginAsync(user);
         return user;
     }
+
+    private async Task TryTouchLastLoginAsync(User user)
+    {
+        user.LastLoggedIn = DateTime.UtcNow;
+        user.IsActive = true;
+        var started = Stopwatch.GetTimestamp();
+        try
+        {
+            await SaveLoginWriteAsync(LastLoginCommandTimeoutSeconds);
+            logger.LogInformation("Login write last-login: {ElapsedMs}ms",
+                (int)Stopwatch.GetElapsedTime(started).TotalMilliseconds);
+        }
+        catch (Exception ex) when (SqliteBusy.IsBusy(ex))
+        {
+            logger.LogWarning("Login write last-login locked after {ElapsedMs}ms; continuing",
+                (int)Stopwatch.GetElapsedTime(started).TotalMilliseconds);
+            context.Entry(user).Property(u => u.LastLoggedIn).IsModified = false;
+            context.Entry(user).Property(u => u.IsActive).IsModified = false;
+        }
+    }
+
+    private async Task<IActionResult> CompleteLoginAsync(User user, string? ipAddress, string displayEmail, string displayName)
+    {
+        var (accessToken, expiresAt) = tokenService.CreateAccessToken(user);
+        var started = Stopwatch.GetTimestamp();
+        try
+        {
+            var (rawRefresh, rtEntity) = await WithLoginWriteTimeoutAsync(() =>
+                refreshTokenService.CreateAsync(user, ipAddress, Request.Headers.UserAgent.ToString()));
+            refreshTokenService.SetCookie(Response, rawRefresh, rtEntity.ExpiresAt);
+            logger.LogInformation("Login write refresh: {ElapsedMs}ms",
+                (int)Stopwatch.GetElapsedTime(started).TotalMilliseconds);
+            return Ok(new LoginResponse
+            {
+                User = new UserDto { Id = user.Id, Email = displayEmail, Name = displayName },
+                AccessToken = accessToken,
+                ExpiresAt = expiresAt
+            });
+        }
+        catch (Exception ex) when (SqliteBusy.IsBusy(ex))
+        {
+            logger.LogWarning("Login write refresh locked after {ElapsedMs}ms",
+                (int)Stopwatch.GetElapsedTime(started).TotalMilliseconds);
+            return DatabaseBusy();
+        }
+    }
+
+    private async Task SaveLoginWriteAsync(int timeoutSeconds = WriteCommandTimeoutSeconds)
+    {
+        if (!context.Database.IsSqlite())
+        {
+            await context.SaveChangesAsync();
+            return;
+        }
+
+        var previous = context.Database.GetCommandTimeout();
+        context.Database.SetCommandTimeout(timeoutSeconds);
+        try
+        {
+            await context.SaveChangesAsync();
+        }
+        finally
+        {
+            context.Database.SetCommandTimeout(previous);
+        }
+    }
+
+    private async Task<T> WithLoginWriteTimeoutAsync<T>(Func<Task<T>> write)
+    {
+        if (!context.Database.IsSqlite())
+            return await write();
+
+        var previous = context.Database.GetCommandTimeout();
+        context.Database.SetCommandTimeout(WriteCommandTimeoutSeconds);
+        try
+        {
+            return await write();
+        }
+        finally
+        {
+            context.Database.SetCommandTimeout(previous);
+        }
+    }
+
+    private ObjectResult DatabaseBusy() =>
+        StatusCode(503, new { message = DatabaseBusyMessage });
 
     private string GetClientIpAddress()
     {
