@@ -5,8 +5,10 @@ Status: **re-tuned on the F-16** (2026-11-10), **re-measured under the roof**
 Its way out does not: on a jet, leaving their circle the Spitfire's way gets
 you shot down from all nine starts, so the Dip now flies the jet's way out
 (never go in), and the words say why. The Flip and the Ninja get no shot on
-a jet either, and say so. Nobody in any demo or move goes over 836 m on the
-F-16 (852 m on the MiG-29).
+a jet either, and say so. Re-measured on the reworked roof (commit
+`868247883`): every F-16 count holds (Dip 9 of 9, Flip and Ninja 0 of 9,
+survival "yes"); on the MiG-29 the Dip fell to 5 of 9. Nobody in any demo or
+move goes over 766 m on the F-16 (805 m on the MiG-29).
 
 **2026-11-11, the ceiling guard.** Every pilot noses over above 880 m; on a
 jet that guard waited for 1,126 m real until commit `726b12eb6` read the
@@ -49,7 +51,7 @@ a lesson on the airframe on stage.
 | `move` You rush in | `- 0/2 - 0/2 - 0/2 - 0/1 - 0/0 - 0/0 - 0/3 - 0/1 - 0/0` | unchanged fight, words rewritten |
 | `dip` | `otDip`, leave across their circle: `ACE@30-32 22/0-2` in all nine; L9 0 of 9, shot down in all nine | `jetOtLeave`: `- 0/0` in all nine; L9 **9 of 9** |
 | `flip` high yo-yo | `- 0/0-2` in all nine; L9 0 of 9 | unchanged fight, jet verdict 0 of 9 |
-| `ninja` climb beside | `- 0/0` in all nine; L9 0 of 9 | unchanged plan, jet verdict 0 of 9, label and note rewritten. Under the roof (2026-11-11): `- 0/0` in all nine, tops 805 to 836 m; L9 0 of 9 |
+| `ninja` climb beside | `- 0/0` in all nine; L9 0 of 9 | unchanged plan, jet verdict 0 of 9, label and note rewritten. Under the roof (2026-11-11, reworked): `- 0/0` in eight, `- 2/0` in one, tops 749 to 766 m; L9 0 of 9 |
 
 ### You rush in (claim held, numbers rewritten)
 
@@ -83,10 +85,10 @@ The jet's way out (`jetOtLeave`, the decision (b) plus (a)): `otDip`'s run-in
 break) and, at their break, straight on: wings level, full throttle, nose 6
 degrees down to 140 m. You pass them 80 to 91 m off while they turn into you
 (75 to 97 m on the L9), they are never round in time, never chase (their
-phases are watch, break, chop), and at 40 s you are 2603 to 3193 m apart and
+phases are watch, break, chop), and at 40 s you are 2601 to 3360 m apart and
 opening, never hit, their guns never on you. L9: 9 of 9.
 
-Sensitivity, L9: leaving 1 or 2 s after the break 9 and 7 of 9, 4 s after it
+Sensitivity, L9 (measured before the roof): leaving 1 or 2 s after the break 9 and 7 of 9, 4 s after it
 0 of 9; nose 0 or 3 degrees down 9 of 9, 10 degrees down 5 of 9; running
 opposite their heading instead of straight on 1 of 9.
 
@@ -100,20 +102,21 @@ is `otBreaker` as written for every airframe, not something tuned here.
 From the pull-up on you are never hit and your guns never have them; in
 their rear quarter with your nose on them 1.33 s at most (the measure asks
 2 s). The 0 to 2 rounds you land come in their circle before it, at 242 to
-260 m. Unlike the Spitfire you keep your speed over the top (80 to 83 m/s at
+260 m. Unlike the Spitfire you keep your speed over the top (80 to 88 m/s at
 the end), but you get no higher than them in any of the nine.
 
 ### The Ninja (claim false on a jet: 0 of 9)
 
 On the Spitfire the climb beside their break gave one pass from above (3 of
 9 kills). On the F-16 they come up too (`otAce`'s climb, or turning after
-you), and under the roof both level off between 805 and 836 m, fast (you
+you), and under the roof both level off between 749 and 766 m, fast (you
 125 m/s at the end of the default start), with nobody in a place to shoot:
-`- 0/0` in all nine. Up there they come round onto your tail (in the default
-start 350 m back at 12 s, closing to 208 m by 48 s at your speed, their nose
-about 18 degrees off you), never with a shot that would land. L9: no kill, 2 rounds landed (in one), 0.17 s of
-landing shot; their shot never, no round on you, on your tail for 13 to 38 s
-in 7 of 9.
+`- 0/0` in eight starts, and in one they land 2 rounds on you. Up there they
+come round onto your tail (in the default start 364 m back at 18 s, closing
+to 274 m by 48 s at your speed, their nose 4 to 12 degrees off you, firing
+at 42 s without a hit). L9: no kill, 2
+rounds landed (in one), 0.17 s of landing shot; on your tail for 4.7 to 38 s
+in 8 of 9, their landing shot 0.93 s at most, 1 round on you once.
 
 Tried and dropped before the roof (L9, 0 of 9 each): leaving at the break
 for 6 to 12 s, flat or climbing 10 to 20 degrees, then `ascend` or `otNinja`
@@ -129,38 +132,66 @@ is fatal and that nothing gets you on top.
 The same file: the rush 0 to 5 rounds, nobody down; the old exit shot down
 from all nine; `jetOtLeave` 7 of 9 on the L9 (the two it loses, they chase
 and shoot you down 18 s after the break). Flip and Ninja 0 of 9. The words
-are the F-16's. Under the roof (2026-11-11) all of that holds; the Ninja
-tops 852 m (was 887 to 1,995 m with the guard alone), nobody hit in the nine
-starts, still 0 of 9. The highest anyone goes in any demo or move is 852 m.
+are the F-16's.
+
+On the reworked roof (2026-11-11): `jetOtLeave` is **5 of 9** on the L9,
+"partly" on the MiG-29 (the F-16's survival "yes" is unchanged). Two are
+the same shot-downs as before (17.8 and 18.3 s after the break); in two more
+they come after you and are still closing at 40 s, though 2,866 and 3,084 m
+back, so the measure's "opening" fails. The Ninja is 0 of 9 and on the
+MiG-29 it is dangerous: level under the roof you fly on at 158 m/s with them
+behind you inside their cannon's 600 m, and they land rounds in 6 of the
+nine starts and shoot you down in 2 (for example dx -30, dv +3: 450 m back,
+nose 0.4 degrees off, 51 and 60 rounds fired at 42-46 s, down at 44.9 s).
+The highest anyone goes is 805 m (the breaker in the Dip; the Ninja 784).
 
 ## Under the roof (2026-11-11)
 
-Commit `8d616bcc2` puts every jet pilot's plan through `underRoof`
-(`dogfight-jet-ceiling.js`, from `dogfight-pilot.js` `stepPilot`): the climb
-is levelled off by 800 m real. This lesson's starts are all under 600 m real,
-so `pacedHeight` leaves them where they were.
+Every jet pilot's plan goes through `underRoof` (`dogfight-jet-ceiling.js`,
+from `dogfight-pilot.js` `stepPilot`). The roof as it is now (commit
+`868247883`, which replaced the first roof of `8d616bcc2`) takes one thing
+from a plan: how hard it may pull the nose toward the sky. The pull that
+would put the path on the allowed climb (which falls to level by 800 m real)
+is worked out in the plane's own pitch plane over the share of its lift that
+points up, less the pitch rate under way; the plan's own pull is flown
+wherever it asks for less. Roll, rudder and trigger stay the plan's; a loop
+that fits under the roof is left alone; the throttle comes off while the
+nose is more than 15 degrees over the allowed climb. It starts to act once
+the allowed climb is under 60 degrees, about 270 m under the roof on the
+F-16. This lesson's starts are all under 600 m real, so `pacedHeight` leaves
+them where they were.
 
-What moved, F-16, nine starts (`--tops`):
+The first roof, above 800 m, took every answer over and held whatever bank
+the plane had: the Ninja's both-at-805-to-836-m, no-shot fight was flown
+inside that, and is gone.
 
-| Demo | Highest, ace / you, before | Under the roof |
-|---|---|---|
-| `move` | 504 / 490 m | unchanged |
-| `dip` | 739 / 410 m | unchanged |
-| `flip` | 640 / 598 m | unchanged |
-| `ninja` | 1,688 / 1,574 m; `- 0/0` in eight, `- 2/0` in one | 833 / 836 m; `- 0/0` in all nine |
+F-16, nine starts (`--tops`, ace / you):
 
-The rush, the Dip, the old exit and the Flip are the same fights to the
-metre, and their verdicts hold (the Dip 9 of 9, the Flip 0 of 9). Only the
-Ninja moved, and its count did not: 0 of 9, as before. What changed in it is
-the shape: instead of both going on up through the top of the sky, slow, the
-two level off under the roof and the breaker sits on your tail, fast,
-without a shot (before: their shot 0.23 s at most, 1 round on you once, on
-your tail 7.4 s at most; now no shot, no round, on your tail 13 to 38 s in
-7 of 9). Survival stays "yes", by the Dip. Nothing was tuned: the Ninja's
-part in the lesson is to show that the Spitfire's way on top does not work
-on a jet, and it still does not. The words for the Ninja (its note and
-verdict line, and the counter-story's sentence that quoted 910 to 1,690 m)
-are rewritten for what it now does.
+| Demo | Before any roof | First roof | Reworked roof |
+|---|---|---|---|
+| `move` | 504 / 490 m | unchanged | unchanged |
+| `dip` | 739 / 410 m | unchanged | 733 / 410 m |
+| `flip` | 640 / 598 m | unchanged | 640 / 591 m |
+| `ninja` | 1,688 / 1,574 m; `- 0/0` x8, `- 2/0` x1 | 833 / 836 m; `- 0/0` x9 | 764 / 766 m; `- 0/0` x8, `- 2/0` x1 |
+
+Moves, L9, F-16:
+
+| Move | Before any roof | First roof | Reworked roof |
+|---|---|---|---|
+| Dip | 9 of 9, 2603-3193 m apart at 40 s | the same | 9 of 9, 2601-3360 m apart |
+| Flip | 0 of 9, end 80-83 m/s | the same | 0 of 9, end 80-88 m/s |
+| Ninja | 0 of 9; their shot 0.23 s, 1 round on you, your six 7.4 s at most | 0 of 9; no shot, no round, your six 13-38 s in 7 of 9 | 0 of 9; their shot 0.93 s, 1 round on you once, your six 4.7-38 s in 8 of 9 |
+
+The rush did not move. The Dip and the Flip are the same fights to within a
+few metres (the breaker's climb after their break now feels the roof, so the
+Dip ends a little further apart and the Flip a little faster); their counts
+hold. The Ninja's count holds too; its shape is what moved: both level off
+under the roof, at 749 to 766 m, and the breaker comes round onto your tail
+there, with a short shot now and then. Survival stays "yes", by the Dip.
+Nothing was tuned: the Ninja's part in the lesson is to show that the
+Spitfire's way on top does not work on a jet, and it still does not. The
+words for the Ninja (note, verdict, counter-story sentence) and the Dip's
+and Flip's verdict numbers are rewritten for what they now do.
 
 ## Shared files (not changed here)
 
@@ -179,7 +210,8 @@ are rewritten for what it now does.
 ## Open
 
 - The live fight (FLY IT) is fitted to a jet ([live-fight.md](live-fight.md)) and reads this file; nobody has flown this lesson in it by hand.
-- The tuning is the F-16's; on the MiG-29 the Dip is 7 of 9, not 9.
+- The tuning is the F-16's; on the MiG-29 the Dip is 5 of 9 on the reworked
+  roof (7 before), and its Ninja is shot down in 2 of the nine starts.
 - A breaker that chased a man who goes straight past it would make the jet
   Dip a race (both jets top out alike); `otBreaker`'s chase rule, keyed on
   the gun's reach, is what lets the leaver go.
