@@ -617,7 +617,7 @@ class SingleRigIndex(unittest.TestCase):
         rows = {"AnzSoldier__No12": {"rig": "AnzSoldier__no12"},
                 "EngSoldier__No12": {"rig": "AnzSoldier__no12"}}
         self.assertEqual(0, ev.remove_superseded_rigs(self.out, rows))
-        self.assertIn("AnzSoldier__no12.fp.glb", os.listdir(self.out))
+        self.assertTrue((self.out / "AnzSoldier__no12.fp.glb").is_file())
 
 
 class SkinsDecisionDelta(unittest.TestCase):
