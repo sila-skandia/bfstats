@@ -579,3 +579,58 @@ the deep view (the red cockpit picture framing the map) with the air
 draining, and on Arrow Down climbed back to her surface draft (keel 7.85 m,
 air refilling); at 13 m the periscope ring, bearing scale and depth tapes
 draw. Montblainville's `lensFlare` stays null.
+
+## Airships, flying boats and the air audit (2026-11-10, t2 F1/F4/F6/F8/F9/F10, Q1)
+
+- **The Zeppelin's spawn groups** (F1, F8). `Vehicles/Air/ZeppelinL30/Objects.con`
+  binds its own groups 41/42 to the Axis, and so does `Common/Objects.con` for
+  the Felixstowes' AI seat groups 122/123: a `spawnPointManager` line in any
+  `objects/` script runs at load like every console word (SPAWNGRP-14). The
+  exporter now reads them (`extract_map.py` `TemplateIndex.spawn_groups`,
+  `bind_object_spawn_groups`, laid under each layer in `scene_layers.py`).
+  Amiens' Axis deploy screen shows two Zeppelin rings (gondola V and H), a
+  spawn stands on each at y 149, and a respawned Axis bot is seated by the
+  `setAIEnterOnSpawn` point and flies the airship (round 5 of forced
+  respawns: bots pick a random own flag, the Zeppelin's is one of eight).
+- **A dead airship climbed** (F4). The falling-wreck floor held every dead
+  air hull at 30 m/s down; the Zeppelin's own box drag (drag 5, a 208 m
+  envelope) and its up/down engine's propeller term at revs 0 pushed it up
+  harder every tick, so it climbed at 7..13 m/s. The floor is now the hull's
+  own flat-fall terminal speed where that is slower (`world-vehicle-tick.js`
+  `fallSinkFloor`: Zeppelin 3.3 m/s, balloon 13.7, every plane checked 30),
+  and a falling wreck's engines are stopped (PHY-14). Amiens: the Zeppelin
+  goes down at 3.1 m/s; Ramskapelle: the balloon falls from 123 m and lands
+  in 8 s. Not drawn: the burning `e_wreck_Zeppelin` hull (`ZeppelinFusWreck`,
+  `gravityModifier 0`, 80 s), which no tree carries as a wreck glb.
+- **Flying boats parked 7.5 m over the sea** (F6, SHIP-8). A hull with floats,
+  no spring and its pad over water now rests at the float law's draft
+  (`hull-bodies.js` `floatsOnTheSea`, `floatToDraft`): Bombing Albion's
+  Felixstowe at 56.88 (was 62.52), taxis off at 46 m/s as before. Amiens'
+  Hansa W29 (pad over land) is unchanged.
+- **Toska Airbattle's French airfield** (F9). A control point whose two groups
+  are both its owner's draws a ring per group at its points' mean and spawns
+  on the clicked group alone (`deploy-spots.js` `offeredGroupSpots`,
+  `spawning.js`, `world-players.js`; SPAWNGRP-4, SPAWNGRP-10): `Entente_Base`
+  is now the base (294/84/-335) and the airfield (1738/83/-458), and group 3
+  spawns at `frz_flugplatz_1`. Vanilla's one such case, Kasserine Pass
+  SinglePlayer's `axis_base` (1 and 6, both Axis at the start), gets two
+  rings too.
+- **The audit's air checks** (Q1, F10). The level-flight release is 1.3 times
+  the speed the airframe lifted off at on its own roll, within 30..70 m/s
+  (`audit_verdicts.mjs` `releaseSpeed`), and "diverges" is a nose past 0.6
+  through the last third of 15 s hands off, or 250 m lost in 7 s
+  (`airDiverges`). Amiens: Caudron lifts off at 29, released at 37.7, nose
+  0.29 after 15 s (was `air.diverges` from 70); Breguet 14, Albatros C3 pass.
+  F10's deaths at 400 m were the combat area (`combatTick`, 5 HP/s after
+  10 s outside, CA-2): the probes fly hands off from the pad for half a
+  minute. The audit now suspends the bleed while an aircraft is tested and
+  restores it after. F10's roll damage is a collision with the plane parked
+  ahead (Montfaucon: Albatros C3 into the FokkerRed 15.5 m ahead, 6 HP, then
+  51 HP off the ground it bounced onto), HP-6, not a page fault. F10 (c),
+  Basra's AlbatrossC3Turk dying on entry, did not reproduce (entered, rolled
+  6 s, no damage). Vanilla and FHSW planes were not re-run: their trees are
+  not on this machine; a fighter lifting off at 54 m/s or more keeps its 70.
+
+What has to re-run: `patch_scene.py --layer spawns --mod bf1918` for amiens,
+battle_of_liege, bombing_albion, gaza_town, midway, tabuaeran and tobruk (or
+`--all`; the other 126 do not change). The rest is viewer code.
