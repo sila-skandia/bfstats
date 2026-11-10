@@ -5,7 +5,7 @@ held on the F-16 from the nine starts. The demos' plain results come from
 `jet_lesson`; what each turnaround costs (the ace's height and speed through
 it), the Dip, Flip and Ninja as the school scores them over its `STARTS`,
 and the lone turnarounds the story quotes (a flat turn round, an Immelmann
-from 640 and 770 m, a split-S from 380 to 640 m) come from `FLY` below, which
+from 190 to 770 m, a split-S from 380 to 640 m) come from `FLY` below, which
 flies the same airframes through the same modules.
 """
 
@@ -18,7 +18,7 @@ import subprocess
 import unittest
 from pathlib import Path
 
-from jet_school import jet_lesson, shot_down
+from jet_school import jet_lesson, jet_tops, shot_down
 
 TOOLS = Path(__file__).resolve().parents[1]
 
@@ -39,7 +39,7 @@ const { runDuel } = await load('dogfight-duel.js');
 const { LESSONS, lessonFor, demoSides } = await load('dogfight-lessons.js');
 const { STARTS, nudge, scoreMove, noseOf } = await load('dogfight-measure.js');
 const { PLANS, INTENTS, go, heading } = await load('dogfight-pilot.js');
-const { hardTurn, dot } = await load('dogfight-flight.js');
+const { hardTurn, dot, bankOf } = await load('dogfight-flight.js');
 const { jetMaker } = await import(pathToFileURL(path.join(TOOLS, 'tests', 'jet_airframes.mjs')).href);
 const fixture = JSON.parse(readFileSync(path.join(TOOLS, 'tests', 'fixtures', 'dc-jets.json'), 'utf8'));
 const makePlane = jetMaker(THREE, Aircraft, fixture, PLANE);
@@ -75,7 +75,7 @@ for (const demo of L.demos) {
     const n = Math.min(r.tracks[0].length, r.tracks[1].length);
     let closest = 1e9; for (let i = 0; i < n; i++) closest = Math.min(closest, sep(r, i));
     const Y = r.tracks[1];
-    return { ace: turn(r.tracks[0], r.dt), you: { vmin: Math.round(Math.min(...Y.map(k => k.v))), shot: r1(Y.filter(k => k.o).length * r.dt) },
+    return { ace: turn(r.tracks[0], r.dt), you: { y0: Math.round(Y[0].p[1]), vmin: Math.round(Math.min(...Y.map(k => k.v))), shot: r1(Y.filter(k => k.o).length * r.dt) },
       hisShot: r1(r.tracks[0].filter(k => k.o).length * r.dt), closest: Math.round(closest), hits: r.hits };
   });
   if (!demo.kind) continue;
@@ -109,7 +109,10 @@ PLANS.taJetSolo = {
   },
 };
 INTENTS.taJetSolo = { wait: 'setup', flat: 'setup' };
-const SOLO = [['flat', 300, 75], ...[45, 55, 65, 75].map(v => ['immelmann', 500, v]), ['immelmann', 600, 45], ['immelmann', 600, 75],
+// Immelmanns from 192 to 704 m real (150 to 600 at the Spitfire's size,
+// paced and bent over by `pacedHeight`), and one from 768 m, a height no
+// paced start reaches (a start already over the roof is kept as it is).
+const SOLO = [['flat', 300, 75], ...[150, 200, 250, 300, 350, 400, 450, 500, 600, 768].flatMap(y => [45, 60, 75].map(v => ['immelmann', y, v])),
   ...[45, 60, 75].map(v => ['split', 300, v]), ['split', 350, 75], ['split', 400, 75], ['split', 500, 75]];
 for (const [kind, y, speed] of SOLO) {
   const r = runDuel({ makePlane, seconds: 14, groundAt: () => 0, sides: [
@@ -120,6 +123,20 @@ for (const [kind, y, speed] of SOLO) {
   let peak = 0; for (const k of T) peak = Math.max(peak, k.p[1] - T[0].p[1]);
   out.solo.push({ kind, y, speed, height: Math.round(T[0].p[1]), out: Math.round(T.at(-1).p[1] - T[0].p[1]), peak: Math.round(peak), ...t });
 }
+// The Ninja diving sooner, as their wings pass 90 degrees rolled (the
+// verdict line's "Diving sooner, as they roll over").
+const ninja = L.demos.find(d => d.id === 'ninja');
+PLANS.taJetNinjaSooner = { ...PLANS.taNinja, step(c) {
+  if (c.mem.phase === 'wait' && Math.abs(bankOf(c.him.orientation).bank) > 90 && c.g.above < -20) { c.mem.taAim = undefined; go(c, 'dive'); }
+  return PLANS.taNinja.step(c);
+} };
+INTENTS.taJetNinjaSooner = INTENTS.taNinja;
+out.sooner = STARTS.map(st => {
+  const sides = demoSides(L, ninja);
+  sides[1] = { ...sides[1], plan: 'taJetNinjaSooner', start: nudge(sides[1].start, st) };
+  const r = runDuel({ makePlane, seconds: ninja.seconds ?? L.seconds, groundAt: () => 0, sides });
+  return { ...scoreMove(r, 'ninja', 1), why: r.end?.why ?? null, winner: r.end?.winner ?? null };
+});
 console.log(JSON.stringify(out));
 """
 
@@ -174,19 +191,35 @@ class TurnaroundsOnAJetTests(unittest.TestCase):
         self.assertEqual(79, flat["vEnd"])
         self.assertLessEqual(abs(flat["dyEnd"]), 10)
 
-    def test_high_up_the_immelmann_is_long_and_from_770_m_never_closes(self) -> None:
-        at640 = solo("immelmann", 500)
-        self.assertTrue(all(s["height"] == 640 and s["done"] for s in at640))
-        # "climbs 230 to 270 m and takes 7 to 8 seconds"
-        between(self, (s["up"] for s in at640), 230, 272, "climbs from 640 m")
-        between(self, (s["dur"] for s in at640), 6.9, 8.2, "takes from 640 m")
-        at770 = solo("immelmann", 600)
-        # "more than 700 m straight up ... hangs there at 30 to 40 m/s, still
-        # not round 14 seconds later" (the pilot's 880 m guard cannot bring a
-        # jet's nose down out of a near-vertical climb in that air).
-        self.assertTrue(all(s["height"] == 768 and s["peak"] >= 700 and not s["done"] for s in at770), at770)
-        between(self, (s["vmin"] for s in at770), 30, 40, "slowest from 770 m")
-        between(self, (s["turned"] for s in at770), 0, 150, "turned from 770 m")
+    def test_low_down_a_lone_immelmann_is_round_and_comes_out_fast(self) -> None:
+        low = [s for y in (150, 200, 250, 300, 350) for s in solo("immelmann", y)]
+        self.assertEqual([192, 256, 320, 384, 448], sorted({round(s["height"] / 64) * 64 for s in low}))
+        self.assertTrue(all(s["done"] for s in low))
+        between(self, (s["dur"] for s in low), 4.4, 6.3, "takes, 190 to 450 m")
+        between(self, (s["up"] for s in low), 108, 149, "climbs, 190 to 450 m")
+        between(self, (s["vEnd"] for s in low), 73, 86, "out at, 190 to 450 m")
+        # "from 450 m the loop is still round in 5 to 6 seconds"
+        between(self, (s["dur"] for s in solo("immelmann", 350)), 5.1, 6.3, "takes from 450 m")
+        # From 60 m/s it comes out faster.
+        self.assertTrue(all(s["vEnd"] > s["v0"] for s in low if s["speed"] == 45))
+
+    def test_high_up_the_roof_pushes_the_immelmann_off_its_loop(self) -> None:
+        # "from 510 m the climb is levelled off before the top, and they roll
+        # out 265 to 290 m higher after 9 to 10 seconds, only 92 to 122
+        # degrees round" (the roof, `dogfight-jet-ceiling.js` `underRoof`:
+        # the turnarounds plan does not answer `roof: false`).
+        at510 = solo("immelmann", 400)
+        self.assertTrue(all(s["height"] == 512 and s["done"] for s in at510), at510)
+        between(self, (s["up"] for s in at510), 265, 290, "climbs from 510 m")
+        between(self, (s["dur"] for s in at510), 8.9, 10.1, "takes from 510 m")
+        between(self, (s["turned"] for s in at510), 92, 122, "round from 510 m")
+        # "From 580 m up they never go over the top at all: the loop is
+        # flattened at 816 to 831 m, and 14 seconds later they are still up
+        # there, not round."
+        high = [s for y in (450, 500, 600, 768) for s in solo("immelmann", y)]
+        self.assertEqual({576, 635, 704, 768}, {s["height"] for s in high})
+        self.assertTrue(all(not s["done"] for s in high), high)
+        between(self, (s["height"] + s["peak"] for s in high), 816, 831, "flattened at")
 
     def test_chasing_them_up_you_keep_your_speed_and_get_a_snap(self) -> None:
         demo = self.f["demos"]["immelmann"]
@@ -219,7 +252,8 @@ class TurnaroundsOnAJetTests(unittest.TestCase):
         between(self, (a["vEnd"] for a in ace), 96, 96, "out at")
         between(self, (a["dur"] for a in ace), 5.3, 5.3, "seconds")
         between(self, (a["turned"] for a in ace), 179, 180, "turned round")
-        # Let go: nobody fires, and you were 180 m above them.
+        # Let go: nobody fires, and you were 115 m above them.
+        between(self, (r["you"]["y0"] - r["ace"]["y0"] for r in self.f["demos"]["split"]), 115, 115, "you above them")
         runs = self.runs["split"]
         self.assertTrue(all(r["winner"] is None and r["hits"] == [0, 0] for r in runs))
         self.assertTrue(all(r["shots"] == [0, 0] for r in runs))
@@ -274,11 +308,16 @@ class TurnaroundsOnAJetTests(unittest.TestCase):
         self.assertTrue(all(m["ace"]["kind"] == "split" for m in moves))
         dives = [next(e for e in m["events"] if e["side"] == 1 and e["phase"] == "dive") for m in moves]
         between(self, (e["t"] for e in dives), 3.5, 3.7, "dive at")
-        between(self, (e["range"] for e in dives), 267, 309, "dive from")
+        between(self, (e["range"] for e in dives), 237, 298, "dive from")
         outs = [next(e for e in m["events"] if e["side"] == 1 and e["phase"] == "dip-out") for m in moves]
         between(self, (o["t"] - d["t"] for o, d in zip(outs, dives)), 1.4, 1.6, "off them after")
-        between(self, (m["minRange"] for m in moves), 215, 272, "closest")
+        between(self, (m["minRange"] for m in moves), 148, 227, "closest")
         self.assertTrue(all(m["myShot"] == 0 and m["hisShot"] == 0 for m in moves))
+        # "Diving sooner, as they roll over, put you in front of them as they
+        # came out: shot down in all nine."
+        sooner = self.f["sooner"]
+        self.assertEqual(0, sum(m["ok"] for m in sooner))
+        self.assertTrue(all(m["why"] == "shot down" and m["winner"] == 0 for m in sooner), sooner)
 
     def test_the_verdicts_are_the_counts(self) -> None:
         for demo, verdict in self.f["verdicts"].items():
@@ -290,9 +329,59 @@ class TurnaroundsOnAJetTests(unittest.TestCase):
         for demo, runs in self.runs.items():
             self.assertEqual(0, shot_down(runs, 0) + shot_down(runs, 1), demo)
 
+    def test_nobody_goes_over_the_roof(self) -> None:
+        tops = jet_tops("F16", "turnarounds")["turnarounds"]
+        for demo, x in tops.items():
+            self.assertLess(max(x["top"]), 860, demo)
+            self.assertEqual([0, 0], x["past"], demo)
+        # The Flip's turning fight is the highest; the lesson's Immelmanns
+        # top out at 479 to 535 m.
+        self.assertEqual(838, max(max(x["top"]) for x in tops.values()))
+        self.assertEqual([479, 535], tops["immelmann"]["top"])
+
     def test_the_jet_file_is_laid_over_the_lesson(self) -> None:
         self.assertEqual("jet", jet_lesson("turnarounds")["era"])
         self.assertIsNone(jet_lesson("turnarounds", base=True)["era"])
+
+
+class TurnaroundsOnTheMig29Tests(unittest.TestCase):
+    """The MiG-29 (pace 1.5) flies the same file. Its Immelmanns start at
+    414 to 456 m, where the roof flattens its loop: the Dip fails."""
+
+    @classmethod
+    def setUpClass(cls) -> None:
+        cls.f = flown("Mig29")
+
+    def test_the_roof_flattens_the_lessons_immelmann_and_the_dip_fails(self) -> None:
+        self.assertEqual({"dip": 0, "flip": 0, "ninja": 0}, {d: sum(m["ok"] for m in ms) for d, ms in self.f["moves"].items()})
+        ace = [m["ace"] for m in self.f["moves"]["dip"]]
+        between(self, (a["y0"] for a in ace), 455, 456, "from")
+        between(self, (a["dur"] for a in ace), 9.1, 9.1, "takes")
+        between(self, (a["up"] for a in ace), 337, 338, "climbs")
+        between(self, (a["vmin"] for a in ace), 41, 41, "slowest")
+        between(self, (a["turned"] for a in ace), 116, 117, "round")
+        between(self, (m["hitsOnMe"] for m in self.f["moves"]["dip"]), 0, 5, "hits on you in the Dip")
+        self.assertEqual(7, sum(1 for m in self.f["moves"]["dip"] if m["hitsOnMe"]))
+        between(self, (m["endRange"] for m in self.f["moves"]["dip"]), 459, 544, "apart at 32 s")
+
+    def test_the_demos(self) -> None:
+        imm = [r["ace"] for r in self.f["demos"]["immelmann"]]
+        between(self, (a["y0"] for a in imm), 414, 414, "from")
+        between(self, (a["up"] for a in imm), 234, 234, "climbs")
+        between(self, (a["vEnd"] for a in imm), 91, 91, "out at")
+        between(self, (a["turned"] for a in imm), 151, 151, "round")
+        split = [r["ace"] for r in self.f["demos"]["split"]]
+        between(self, (a["y0"] for a in split), 669, 669, "split-S from")
+        between(self, (a["down"] for a in split), 226, 226, "lost")
+        between(self, (a["vEnd"] for a in split), 117, 117, "out at")
+        runs = jet_lesson("turnarounds", plane="Mig29")["demos"]
+        for demo, rs in runs.items():
+            self.assertEqual(0, shot_down(rs, 0) + shot_down(rs, 1), demo)
+
+    def test_under_the_roof(self) -> None:
+        tops = jet_tops("Mig29", "turnarounds")["turnarounds"]
+        self.assertEqual(851, max(max(x["top"]) for x in tops.values()))
+        self.assertTrue(all(x["past"] == [0, 0] for x in tops.values()))
 
 
 @functools.lru_cache(maxsize=None)
