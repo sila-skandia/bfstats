@@ -161,6 +161,28 @@ function legPoint(leg, point, out, angle = leg.steer.angle) {
   return out;
 }
 
+const _probe = new THREE.Vector3();
+/**
+ * The world point a leg's collision pass drops on the ground at `pos`/`quat`,
+ * into `out`: its col0 vertex 0 where the layer has three vertices or fewer
+ * (every vanilla plane's wheel), else the lowest of all of them, since
+ * `checkVsTerrain` 0x0825a960 then tests every vertex (TANK-20; the ground
+ * drive's `wheelContactDepths` takes the lowest too). BF1918's Spad7 wheel is
+ * a 24-vertex ring 0.39 m across: vertex 0, at the axle's height, left its
+ * main wheels 0.39 m over the ground on boarding, and the plane fell onto its
+ * fuselage and lost 65 of its 90 hit points on the rock it parks on.
+ */
+function legProbe(leg, pos, quat, out, angle = leg.steer.angle) {
+  const many = leg.spec.vertices;
+  if (!many?.length) return legPoint(leg, leg.spec.vertex, out, angle).applyQuaternion(quat).add(pos);
+  let low = Infinity;
+  for (const v of many) {
+    legPoint(leg, v, _probe, angle).applyQuaternion(quat).add(pos);
+    if (_probe.y < low) { low = _probe.y; out.copy(_probe); }
+  }
+  return out;
+}
+
 /** Each steering bundle's servo for one tick (`RotationalBundle::handleUpdate`). */
 export function stepSteering(law, yaw, dt) {
   for (const leg of law.legs) {
@@ -342,7 +364,7 @@ export function collideWheels(plane, law, s, occupied, g) {
   law.last.pos.copy(s.position);
   law.last.quat.copy(q);
   for (const leg of law.legs) {
-    legPoint(leg, leg.spec.vertex, _vert).applyQuaternion(q).add(s.position);
+    legProbe(leg, s.position, q, _vert);
     legPoint(leg, leg.spec.anchor, _anchor).applyQuaternion(q).add(s.position);
     leg.contact = false;
     if (!groundAt(plane, _vert.x, _vert.z, _anchor.y + 0.5, _ground, _n)) continue;
@@ -420,7 +442,7 @@ export function settleLegs(plane, law, s) {
   const q = s.orientation;
   for (const leg of law.legs) {
     leg.push.set(0, 0, 0);
-    legPoint(leg, leg.spec.vertex, _vert).applyQuaternion(q).add(s.position);
+    legProbe(leg, s.position, q, _vert);
     legPoint(leg, leg.spec.anchor, _anchor).applyQuaternion(q).add(s.position);
     if (groundAt(plane, _vert.x, _vert.z, _anchor.y + 0.5, _ground, _n)) {
       const depth = _vert.y - _ground.y;
@@ -434,7 +456,7 @@ export function settleLegs(plane, law, s) {
  *  Spring branch, geometry only), into `out`. */
 function pushAt(plane, leg, pos, quat, angle, out) {
   out.set(0, 0, 0);
-  legPoint(leg, leg.spec.vertex, _vert, angle).applyQuaternion(quat).add(pos);
+  legProbe(leg, pos, quat, _vert, angle);
   legPoint(leg, leg.spec.anchor, _anchor, angle).applyQuaternion(quat).add(pos);
   if (!groundAt(plane, _vert.x, _vert.z, _anchor.y + 0.5, _ground, _n)) return out;
   const depth = _vert.y - _ground.y;

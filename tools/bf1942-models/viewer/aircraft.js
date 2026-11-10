@@ -914,14 +914,28 @@ function surveyAircraft(root, physics, options) {
       _rel.multiplyMatrices(_relInv, node.matrixWorld).decompose(_relPos, _relQuat, _relScale);
       const anchor = [_relPos.x, _relPos.y, _relPos.z];
       let vertex = anchor;
+      // Every col0 vertex where the layer has more than three: `checkVsTerrain`
+      // tests them all and the law drops the lowest (`aircraft-ground-law.js`
+      // `legProbe`). BF1918's wheels are 24-vertex rings.
+      let vertices = null;
       if (col0) {
-        _wheelV.fromBufferAttribute(col0.geometry.attributes.position, 0)
-          .applyMatrix4(_rel.multiplyMatrices(_relInv, col0.matrixWorld));
+        _rel.multiplyMatrices(_relInv, col0.matrixWorld);
+        const attr = col0.geometry.attributes.position;
+        _wheelV.fromBufferAttribute(attr, 0).applyMatrix4(_rel);
         vertex = [_wheelV.x, _wheelV.y, _wheelV.z];
+        // Counted as the layer's own vertices: a buffer may repeat one per face.
+        const seen = new Map();
+        for (let i = 0; i < attr.count; i++) {
+          _wheelV.fromBufferAttribute(attr, i);
+          const key = `${_wheelV.x.toFixed(5)},${_wheelV.y.toFixed(5)},${_wheelV.z.toFixed(5)}`;
+          if (!seen.has(key)) seen.set(key, _wheelV.clone().applyMatrix4(_rel));
+        }
+        if (seen.size > 3) vertices = [...seen.values()].map(p => [p.x, p.y, p.z]);
       }
       wheels.push({
         anchor,
         vertex,
+        ...(vertices ? { vertices } : {}),
         strength: part?.strength ?? 0,
         damping: part?.damping ?? 0,
         id: node.name,
