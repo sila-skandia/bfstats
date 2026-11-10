@@ -1,0 +1,5 @@
+duckdb
+pyarrow
+numpy
+scikit-learn
+matplotlib

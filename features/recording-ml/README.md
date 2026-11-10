@@ -1,8 +1,8 @@
 # Machine learning on round recordings
 
-Status: research, 2026-11-10. Nothing is built. This page is the approach: what
-the recordings hold, how much there is, what to model and with what, and the
-first experiment worth running.
+Status: **parked**, 2026-11-10. The approach is below; the first slice was run
+the same day ([Trial run](#trial-run-2026-11-10)) and is one command to run
+again. The rest waits for more recordings: [Parked](#parked) says for what.
 
 The owner's goals: learn from the recordings how good pilots fly, how good tank
 commanders position and aim, and which tactics win a round on each map. The
@@ -15,6 +15,41 @@ Every claim below carries its source:
 - **(R)** read from the repo, with the path
 - **(W)** found on the web on 2026-11-10, with the URL
 - **(I)** inference, mine
+
+## Parked
+
+The recorder is only just in players' hands; the corpus is 39 rounds. The
+trial took what that supports. Everything else waits on a count, and the
+re-run prints the counts:
+
+```bash
+tools/recording-ml/run.sh
+```
+
+It fetches what is new, rebuilds the tables, re-runs the trial's models and
+ends with this table (`tools/recording-ml/status.py`; under a minute when
+nothing is new). If no trigger is met, there is nothing to pick up.
+
+| Trigger | 2026-11-10 (M) | Needed | Then |
+|---|---|---|---|
+| A server recording of a round with 16 or more human players, 10 minutes or longer | 0 | 1 | Check the inferred hits and first shots against the server's own rows; re-run everything on a file that sees both sides. Worth doing the day it arrives |
+| Air encounters decided by a kill between the two | 182 | 500 | The approach model with more than three features and by plane type (task 6 again, task 14) |
+| Of those, with both planes recorded 20 s before the first shot | 41 | 150 | Settle the early-energy finding: an interval of about 8 points either way |
+| Decided air encounters of the most common plane pair | 37 | 100 | Plane-pair tables |
+| Pilots with 12 or more decided air encounters | 3 | 20 | An engagement rating as a covariate (task 13) |
+| Tank fights decided by a kill between the two | 217 | 800 | Tank findings by weight-class match-up; start the terrain and line-of-sight work (tasks 7 to 9) |
+| Decided conquest rounds on the most-recorded map | 2 | 20 | Per-map tactics and tank positions (tasks 10, 12); 50 for a per-map win model |
+| Decided conquest rounds | 28 | 200 | A pooled win-probability model with map effects |
+| Hours inside detected air fights | 1.84 | 100 | A sequence model of flying (task 18); not before |
+
+At about 6 rounds a week the air and tank triggers are roughly three to four
+months away and the per-map ones are not in sight; a server recorder on a public
+server would bring all of them forward (I). The thresholds are judgement:
+change them in `status.py` and here together.
+
+Not waiting on recordings, and still open: the round priors from a copy of
+the stats database (task 11), the parser's two unread fields (task 2), and
+the local LLM layer (task 15), which the owner set aside for now.
 
 ## Summary and recommendation
 
@@ -57,6 +92,13 @@ Every claim below carries its source:
    own hits, impacts, winner and capture timers. None of the 2026-11-01 records
    (`hg`, `i`, `ps`, `cpt`, `hm`, the winner on `gameStatus`) is in any public
    file yet (M).
+7. **The trial bore this out.** The first slice ran end to end in under three
+   minutes on DuckDB and scikit-learn. Its finding, with intervals: who fires
+   first is settled by position taken in the last six seconds; whether that
+   shot becomes a kill goes with energy held ten or more seconds earlier. A
+   three-feature model added nothing over a one-line rule beyond five seconds
+   out, which is the case against a bigger model at this volume
+   ([Trial run](#trial-run-2026-11-10)).
 
 ## What a recording holds
 
@@ -216,7 +258,7 @@ seat and 1,307 from a pilot's seat. 36 pilots have 10 or more air-seat kills,
 
 Run on all 42 files, counted on the 39 round leads (M):
 
-| | Air (`dogfight-detect.js`, rules v2) | Tank (`tank-fights-detect.js`, rules v1) |
+| | Air (`dogfight-detect.js`, rules v2; v3 by the trial run, same counts) | Tank (`tank-fights-detect.js`, rules v1) |
 |---|---|---|
 | Fights | 361 (212 dogfights, 149 bounces) | 425 |
 | Decided by a kill between the two | 122 | 217 |
@@ -637,7 +679,7 @@ At 2 Hz the `samples` table for all 418 player-hours is about 3 million rows
 (I); the whole store fits in memory many times over.
 
 **Versioning and reproducibility.** Key every derived row by the recording's
-content hash, the repo commit, and each rule set's version (`RULES.version` 2
+content hash, the repo commit, and each rule set's version (`RULES.version` 3
 for air, 1 for tanks, `M_RULES` 1 for manoeuvres). Changing a detector bumps
 its version and re-derives only its tables. Seeds fixed; splits grouped by
 recording and by player key, stored as a table, never re-drawn.
@@ -653,8 +695,11 @@ last hitter on `a` rows (both already written by the server recorder).
 
 ## Local stack for the trial
 
-The trial machine today: Apple M5 Max, 48 GB, Python 3.13; no numpy, DuckDB,
-uv or Ollama installed (M).
+The trial machine on the morning of 2026-11-10: Apple M5 Max, 48 GB, Python
+3.13; no numpy, DuckDB, uv or Ollama installed (M). The trial run then made a
+virtualenv under `~/.cache/bfstats-recml/venv` with DuckDB, PyArrow, NumPy,
+scikit-learn and Matplotlib; nothing was installed system-wide and no LLM was
+pulled.
 
 **Numeric work, which is all of the modelling.**
 
@@ -828,30 +873,264 @@ the opening states in the what-if harness.
 Done means: the table and chart exist, the grouped-validation numbers are
 written down, and the finding is stated with its interval or withdrawn.
 
+Run on 2026-11-10: the next section. Two things changed in the doing: the
+type pair and height above ground were left out of the model (182 decided
+encounters cannot carry them, and the terrain work is parked), and "leave one
+pilot out" became "leave both of the row's pilots out", the stricter test.
+
+## Trial run (2026-11-10)
+
+The first slice, run on the 42 public recordings. Everything in this section
+is (M): produced by `tools/recording-ml/run.sh` on the day, at the commit the
+tables carry.
+
+### What was built
+
+| Piece | Where | Does |
+|---|---|---|
+| Sync | `tools/recording-ml/sync.py` | Pages the feed, keeps each recording as stored, writes a manifest: content hash (SHA-256 of the unpacked file), round, lead recording. Incremental; removes what the feed no longer lists. All 42 earlier downloads were reused by size, none fetched |
+| Exporter | `tools/bf1942-models/export_recording_tables.mjs` | The viewer's parser and the dogfight detector, written as JSONL: `recordings`, `players`, `kills`, `tickets`, `captures`, `accuracy`, `air_fights`, `air_encounters`, `air_ticks`. Names become keys here (HMAC-SHA256 under a local key file); chat is left out |
+| Tank tables | `extract_tank_fights.mjs` unchanged, then `tools/recording-ml/flatten_tank_fights.py` | `tank_fights`, `tank_shots`, each shell with its range, miss, the shooter's and target's speed and whether it was credited a hit |
+| Store | `tools/recording-ml/build_tables.py` | DuckDB to one Parquet file a table, and `splits` (a stable five-fold assignment by round and by player key) |
+| Models | `approach_model.py`, `tank_first_shots.py` | The tables below, as Markdown and JSON, and the chart |
+| Triggers | `status.py` | The [Parked](#parked) table |
+| Test | `tools/bf1942-models/tests/test_recording_tables.py` | A written round with one fight and one fly-past: the encounter rules, the 20 s lead-in, incremental export, and that no table holds a name or a chat line |
+
+One command, `tools/recording-ml/run.sh`; the steps one by one are in
+`tools/recording-ml/README.md`. Data, the name key, tables, the virtualenv and
+reports are under `~/.cache/bfstats-recml/`, outside the repository. The
+virtualenv holds DuckDB 2.0.0, PyArrow 26.0.1, NumPy 2.5.4, scikit-learn 1.9.1
+and Matplotlib 3.11.2. No LLM was installed.
+
+Cost: the export of all 42 files takes 32 s, the tank extract 30 to 70 s, the
+models 21 s; a run on an unchanged corpus re-exports nothing and takes 54 s.
+1.04 GB of recordings became 312 MB of JSONL and 18 MB of Parquet; the tick
+table is 1.02 million rows in 17.7 MB.
+
+Every count below is over the lead recording of each round and human pilots
+or drivers. Every interval is 95%, from resampling whole rounds 2,000 times.
+
+### Encounters: the passes the detector leaves out
+
+An encounter is two opposed, piloted aircraft within 1000 m of each other,
+both live in the recording, whether or not anyone fires (the rules are at the
+top of the exporter). There are 3,876 in 19 rounds, flown by 249 pilots;
+every one of the detector's fights lies inside one.
+
+| Of the 3,876 encounters | Count | Share (interval) |
+|---|---|---|
+| An aimed shot by either pilot | 536 | 14% (11 to 21) |
+| A fight by the detector's rules (three aimed shots) | 346 | 9% (6 to 14) |
+| A kill between the two | 182 | 5% (3 to 9) |
+| One of the two killed by someone else, no kill between them | 810 | 21% |
+
+So 86% of the times two enemy aircraft come within a kilometre, neither gets
+an aimed shot. 60 of the 182 decided encounters are not detector fights: the
+kill took fewer than three aimed shots.
+
+### First to fire, with the passes where nobody died
+
+| Where someone fired an aimed shot (536) | Count | Share (interval) |
+|---|---|---|
+| The first shooter killed the other | 158 | 29% (25 to 38) |
+| The first shooter was killed by the other | 20 | 4% (2 to 5) |
+| Neither killed the other | 358 | 67% (58 to 72) |
+
+"The first to fire wins" was 93% counted over decided fights. It is 89% (85
+to 94; 158 of 178) over decided encounters, and that figure hides the larger
+fact: two shots in three decide nothing. What firing first buys is safety
+from that opponent (4% lose to them) and a three-in-ten chance of the kill.
+
+### How early is it decided
+
+The state N seconds before the first aimed shot, kept only where the recording
+has both planes live, flown and above 30 m/s at that moment. That requirement
+thins the rows with distance: an enemy 20 s out is often beyond the recording
+player's range.
+
+The eventual winner of a decided encounter:
+
+| Seconds before | Rows | Had more energy height | Had the smaller angle-off |
+|---|---|---|---|
+| 1 | 154 | 67% (59 to 75) | 88% (84 to 93) |
+| 2 | 148 | 70% (60 to 79) | 87% (84 to 91) |
+| 4 | 122 | 63% (53 to 73) | 78% (73 to 86) |
+| 6 | 105 | 65% (57 to 75) | 62% (57 to 72) |
+| 10 | 75 | 65% (58 to 77) | 44% (33 to 60) |
+| 15 | 49 | 65% (54 to 78) | 39% (20 to 53) |
+| 20 | 41 | 76% (62 to 90) | 46% (31 to 62) |
+
+The eventual first shooter, in any encounter with an aimed shot:
+
+| Seconds before | Rows | Had more energy height | Had the smaller angle-off |
+|---|---|---|---|
+| 1 | 416 | 55% (48 to 64) | 97% (96 to 98) |
+| 2 | 388 | 54% (48 to 64) | 95% (92 to 97) |
+| 4 | 326 | 55% (48 to 65) | 84% (82 to 89) |
+| 6 | 287 | 57% (48 to 68) | 69% (65 to 76) |
+| 10 | 209 | 58% (49 to 69) | 48% (40 to 56) |
+| 15 | 143 | 54% (44 to 68) | 46% (37 to 54) |
+| 20 | 137 | 55% (44 to 67) | 49% (39 to 57) |
+
+![Share of eventual winners and first shooters with more energy and the smaller angle-off, by seconds before the first aimed shot](approach-lead-times.png)
+
+The first shooter's kill, by who had the energy before the shot:
+
+| Seconds before | Shooter had more energy: went on to kill | Shooter had less: went on to kill |
+|---|---|---|
+| 2 | 94 of 211, 45% (35 to 55) | 38 of 177, 21% (15 to 32) |
+| 6 | 65 of 164, 40% (30 to 48) | 34 of 123, 28% (20 to 37) |
+| 10 | 48 of 121, 40% (31 to 51) | 24 of 88, 27% (18 to 35) |
+
+Without the most-recorded pilot (in 297 of the encounters and 33 of the
+decided ones) every row of the two lead-time tables moves by three points or
+fewer (the dotted lines in the chart), and the conversion gap stands: 41%
+against 20% at 2 s.
+
+### The models
+
+Regularised logistic regression on three differences between the two planes
+(energy height, angle-off, speed), each encounter seen from both sides, scored
+only on rows the fit never saw: once leaving the row's round out, once leaving
+out every encounter of either of the row's pilots.
+
+Who wins a decided encounter:
+
+| Seconds before | Rows | Round left out: accuracy, log loss, AUC (interval) | Both pilots left out | Rule "more energy" | Rule "smaller angle-off" |
+|---|---|---|---|---|---|
+| 2 | 148 | 84%, 0.401, 0.90 (0.84 to 0.95) | 83%, 0.404, 0.89 | 70% | 87% |
+| 5 | 113 | 69%, 0.580, 0.77 (0.69 to 0.86) | 69%, 0.567, 0.78 | 60% | 70% |
+| 10 | 75 | 67%, 0.710, 0.65 (0.53 to 0.83) | 68%, 0.670, 0.67 | 65% | 44% |
+| 15 | 49 | 67%, 0.620, 0.73 (0.65 to 0.85) | 67%, 0.625, 0.73 | 65% | 39% |
+| 20 | 41 | 78%, 0.516, 0.82 (0.67 to 0.96) | 78%, 0.500, 0.83 | 76% | 46% |
+
+Who fires the first aimed shot:
+
+| Seconds before | Rows | Round left out: accuracy, log loss, AUC (interval) | Both pilots left out | Rule "more energy" | Rule "smaller angle-off" |
+|---|---|---|---|---|---|
+| 2 | 388 | 94%, 0.129, 0.99 (0.98 to 1.00) | 94%, 0.131, 0.99 | 54% | 95% |
+| 5 | 305 | 77%, 0.518, 0.83 (0.77 to 0.90) | 79%, 0.494, 0.84 | 55% | 76% |
+| 10 | 209 | 53%, 0.723, 0.51 (0.41 to 0.61) | 52%, 0.709, 0.51 | 58% | 48% |
+| 15 | 143 | 47%, 0.726, 0.43 (0.32 to 0.58) | 48%, 0.714, 0.46 | 54% | 46% |
+| 20 | 137 | 42%, 0.752, 0.39 (0.30 to 0.53) | 45%, 0.721, 0.41 | 55% | 49% |
+
+A coin's log loss is 0.693. Read plainly:
+
+- Inside five seconds the model is the angle-off rule with decimals.
+- At ten seconds and beyond it has nothing on who fires first (AUC 0.51,
+  0.43, 0.39), and on who wins it matches the one-line energy rule (67%
+  against 65% at 10 s) with a log loss worse than a coin's at 10 s.
+- Leaving both pilots out changes nothing, so this is not a few pilots'
+  habits being memorised.
+
+### Did the hypothesis hold
+
+The hypothesis was "energy is the early signal, position is taken in the last
+six seconds".
+
+**Position: held.** Ten seconds before the first aimed shot the pilot who
+will fire it has the smaller angle-off 48% of the time (40 to 56): no
+advantage. At six seconds 69% (65 to 76), at four 84%, at two 95%. The
+eventual winner shows the same shape on fewer rows: 44% (33 to 60) at ten
+seconds, 62% at six, 87% at two.
+
+**Energy: held for who wins, not for who shoots, and narrower than stated.**
+
+- The eventual winner had more energy height at every lead time, 63 to 76%,
+  and every interval's lower end is above 50% (53% at 4 s is the lowest). At
+  10, 15 and 20 s that rests on 75, 49 and 41 encounters.
+- The eventual first shooter did not: 54 to 58% at every lead time, every
+  interval including 50%. Energy does not say who gets the shot.
+- What energy does is convert the shot. A first shooter with more energy two
+  seconds before went on to kill 45% of the time (35 to 55), one with less
+  21% (15 to 32). Ten seconds before: 40% (31 to 51) against 27% (18 to 35).
+
+So the finding as it stands: **position, taken in the last six seconds,
+decides who shoots; energy, held ten or more seconds out, goes with whether
+the shot becomes a kill.** The position half is solid at this volume. The
+energy half is supported and still provisional beyond six seconds: one
+[trigger](#parked) is the 150 early-recorded decided encounters that would
+settle it.
+
+Limits that could move it:
+
+- Energy height here is mostly height (the winner was simply higher 61 to 73%
+  of the time), measured above map zero, not above the ground.
+- The early rows are the encounters the recording saw early, which favours
+  fights near the recording player.
+- A kill is the score line between the two; a plane finished by a third
+  party, or flown into the ground, counts as undecided.
+- Hits are not used; shots are "aimed" by the detector's geometric rule, not
+  by the server's word.
+
+### One tank table: does the first aimed shell hit
+
+From the tank school's extract as it is: 2,395 main-gun shots in 425 fights,
+1,341 of them aimed (flown within 5 m of an enemy hull), 769 credited a hit
+(of the detector's 777; the rest could not be matched back to one shell).
+
+Each side's first aimed shell of a fight:
+
+| Range | Hit | Shooter still (under 0.5 m/s) | Shooter moving |
+|---|---|---|---|
+| under 50 m | 68 of 100, 68% (56 to 78) | 9 of 16, 56% (29 to 79) | 59 of 84, 70% (57 to 81) |
+| 50 to 100 m | 127 of 187, 68% (59 to 76) | 34 of 52, 65% (49 to 87) | 93 of 135, 69% (61 to 77) |
+| 100 to 200 m | 120 of 237, 51% (47 to 56) | 47 of 88, 53% (46 to 60) | 73 of 149, 49% (43 to 57) |
+| 200 m and over | 23 of 66, 35% (22 to 44) | 19 of 45, 42% (29 to 53) | 4 of 21, 19% (5 to 33) |
+| any | 338 of 590, 57% (52 to 63) | 109 of 201, 54% (48 to 63) | 229 of 389, 59% (53 to 64) |
+
+A first aimed shell hits two times in three inside 100 m, half the time from
+100 to 200 m and a third of the time beyond. Standing still shows no gain
+inside 200 m; beyond it the still shooters hit 42% against 19%, on 45 and 21
+shells, with intervals that just overlap. A target crossing at 2 m/s or more
+is hit 53% (44 to 62) of the time against 59% (54 to 64). These are rates
+among shells that were close enough to count as aimed, so a wild miss is not
+in the denominator, and in a player recording a hit is a drop in hit points.
+The terrain and line-of-sight work was not started.
+
+### What it does to the recommendation
+
+- **No neural network, confirmed on data.** Past five seconds a regularised
+  three-feature model is no better than a one-line rule and is miscalibrated
+  at ten seconds. More features on 75 rows would be worse. Counting with
+  intervals is the right tool until the triggers are met.
+- **The encounter table earns its place.** It has ten times the rows of the
+  fight table and it changed the headline: "first to fire wins" became "two
+  shots in three decide nothing". Any later model of air combat should start
+  from encounters, not fights.
+- **The stack held.** The viewer's parser in node, JSONL, DuckDB and Parquet:
+  the whole corpus in under three minutes and 18 MB. Nothing here needs more
+  than a laptop, or will at ten times the data.
+- **For the dogfight school and the bots, as a lead and not yet a lesson:**
+  arrive with height, expect the position fight in the last six seconds, and
+  take the first shot when it is there, since it rarely costs the shooter.
+  Nothing in the school or `PLANS` was changed.
+- **Parked**, with the triggers at the top of this page.
+
 ## Task list
 
 Sizes: S half a day, M one to two days, L three to five days.
 
-| # | Task | Size | Needs |
-|---|---|---|---|
-| 1 | Corpus sync with manifest and per-round choice | S | |
-| 2 | Parser: read `bodypart` and the `a` row's last hitter | S | |
-| 3 | Node exporter: core tables to JSONL (`recordings`, `rounds`, `players`, `seat_spans`, `samples`, `kills`, `shots`, `captures`, `tickets`, `accuracy`) | M | 1 |
-| 4 | DuckDB load, Parquet layout, version keys, split table | S | 3 |
-| 5 | Air: per-tick feature writer and the encounter finder | M | 3 |
-| 6 | **First slice**: approach model, chart, table | M | 4, 5 |
-| 7 | Terrain glue: level load, height under position, line-of-sight casts | M | 3 |
-| 8 | Tank features: aspect, turret readiness, exposure, hull-down, per-shot table | L | 7 |
-| 9 | Tank findings: first-shot hit curve, aspect at hit, first-fire decomposition | M | 8 |
-| 10 | Round state table and the mechanistic ticket projection | M | 3 |
-| 11 | Round priors from a stats database copy: map and side, player imbalance, roster strength | M | a database copy |
-| 12 | Per-map descriptive tactics: capture order, hold times, fronts | M | 10 |
-| 13 | Engagement ratings with shrinkage, as a covariate | S | 5, 8 |
-| 14 | Manoeuvre discovery by segment clustering, against the named set | L | 5 |
-| 15 | Local LLM layer: text-to-SQL and report writer, with a 30-question test | M | 4 |
-| 16 | Occupancy and fire-position grids for the bot-support work | M | 3, 7 |
-| 17 | Aircraft built from glbs in node, so the flight law covers every type | L | |
-| 18 | Sequence model or behavioural cloning | L | about 100 h of engaged traces; not before |
+| # | Task | Size | Needs | State on 2026-11-10 |
+|---|---|---|---|---|
+| 1 | Corpus sync with manifest and per-round choice | S | | Done (`sync.py`). The lead is the server's file, else the longest; merging a round's two recordings first is open |
+| 2 | Parser: read `bodypart` and the `a` row's last hitter | S | | Open; not waiting on data |
+| 3 | Node exporter: core tables to JSONL (`recordings`, `rounds`, `players`, `seat_spans`, `samples`, `kills`, `shots`, `captures`, `tickets`, `accuracy`) | M | 1 | Done for what the slice needed: `recordings` (with the round's result), `players`, `kills`, `tickets`, `captures`, `accuracy`. `seat_spans`, `samples` and `shots` are parked with the work that needs them |
+| 4 | DuckDB load, Parquet layout, version keys, split table | S | 3 | Done (`build_tables.py`) |
+| 5 | Air: per-tick feature writer and the encounter finder | M | 3 | Done (`air_ticks`, `air_encounters`) |
+| 6 | **First slice**: approach model, chart, table | M | 4, 5 | Done; re-run on each trigger |
+| 7 | Terrain glue: level load, height under position, line-of-sight casts | M | 3 | Parked: 800 decided tank fights |
+| 8 | Tank features: aspect, turret readiness, exposure, hull-down, per-shot table | L | 7 | Parked with 7. The per-shot table exists (`tank_shots`) |
+| 9 | Tank findings: first-shot hit curve, aspect at hit, first-fire decomposition | M | 8 | The first-shot hit curve is done; the rest parked with 8 |
+| 10 | Round state table and the mechanistic ticket projection | M | 3 | Parked: 20 decided rounds on one map |
+| 11 | Round priors from a stats database copy: map and side, player imbalance, roster strength | M | a database copy | Open; not waiting on recordings |
+| 12 | Per-map descriptive tactics: capture order, hold times, fronts | M | 10 | Parked with 10 |
+| 13 | Engagement ratings with shrinkage, as a covariate | S | 5, 8 | Parked: 20 pilots with 12 decided encounters |
+| 14 | Manoeuvre discovery by segment clustering, against the named set | L | 5 | Parked: 500 decided air encounters |
+| 15 | Local LLM layer: text-to-SQL and report writer, with a 30-question test | M | 4 | Set aside by the owner; the tables it would query exist |
+| 16 | Occupancy and fire-position grids for the bot-support work | M | 3, 7 | Parked with 7; needs `samples` |
+| 17 | Aircraft built from glbs in node, so the flight law covers every type | L | | Open; not waiting on data |
+| 18 | Sequence model or behavioural cloning | L | about 100 h of engaged traces; not before | Parked: 100 hours inside air fights |
 
 Outside this list, and worth more than any item on it: a server recorder on a
 public server with human players.
@@ -895,5 +1174,12 @@ uploaded, changed or deleted.
   with and without `mapName=bocage`, reading `totalItems`.
 - **Machine.** `sysctl hw.memsize machdep.cpu.brand_string`; `python3
   --version`; import checks.
+- **Trial run.** `tools/recording-ml/run.sh` at the day's commit; the
+  reports it writes to `~/.cache/bfstats-recml/out/` are the source of every
+  number in [Trial run](#trial-run-2026-11-10), and the chart is
+  `approach_model.py --chart`. The lead-time shares in the first-slice
+  paragraph above it came from the earlier throwaway run on detector fights
+  only, with the first shot taken from each fight's evidence; the trial's
+  encounter tables supersede them.
 - **Web.** A search-and-read survey on the day; URLs are inline. Versions come
   from the PyPI JSON API and the projects' release pages.
