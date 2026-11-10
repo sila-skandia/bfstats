@@ -6,6 +6,12 @@ circle the Spitfire's way gets you shot down from all nine starts, so the
 Dip now flies the jet's way out (never go in), and the words say why. The
 Flip and the Ninja get no shot on a jet either, and say so.
 
+**2026-11-11, the ceiling guard.** Every pilot noses over above 880 m; on a
+jet that guard waited for 1,126 m real until commit `726b12eb6` read the
+880 m over the airframe's pace. Re-flown with it in, only the Ninja moved
+(below): the rush, the Dip, the old exit and the Flip are the same fights to
+the metre, and every verdict holds (the Dip 9 of 9, Flip and Ninja 0 of 9).
+
 Files: `viewer/dogfight-jet-on-his-tail.js` (the words, the Dip's seat, the
 verdicts, survival, coach), `viewer/dogfight-jet-plan-on-his-tail.js`
 (`jetOtLeave`), `tests/test_dogfight_jet_on_his_tail.py` (every number the
@@ -41,7 +47,7 @@ a lesson on the airframe on stage.
 | `move` You rush in | `- 0/2 - 0/2 - 0/2 - 0/1 - 0/0 - 0/0 - 0/3 - 0/1 - 0/0` | unchanged fight, words rewritten |
 | `dip` | `otDip`, leave across their circle: `ACE@30-32 22/0-2` in all nine; L9 0 of 9, shot down in all nine | `jetOtLeave`: `- 0/0` in all nine; L9 **9 of 9** |
 | `flip` high yo-yo | `- 0/0-2` in all nine; L9 0 of 9 | unchanged fight, jet verdict 0 of 9 |
-| `ninja` climb beside | `- 0/0` in all nine; L9 0 of 9 | unchanged fight, jet verdict 0 of 9, label and note rewritten |
+| `ninja` climb beside | `- 0/0` in all nine; L9 0 of 9 | unchanged plan, jet verdict 0 of 9, label and note rewritten. With the guard in (2026-11-11): `- 0/0` in eight, `- 2/0` in one; L9 0 of 9 |
 
 ### You rush in (claim held, numbers rewritten)
 
@@ -99,10 +105,20 @@ the end), but you get no higher than them in any of the nine.
 
 On the Spitfire the climb beside their break gave one pass from above (3 of
 9 kills). On the F-16 they come up too (`otAce`'s climb, or turning after
-you), both go over the top between 980 and 1,460 m, you down to 12 to 32
-m/s, and nobody has a place to shoot from. L9: no kill, 2 rounds at most (in
-two), 0.17 s of landing shot; they had you once for 0.23 s (3 rounds) and on
-your tail for up to 5.1 s. Tried and dropped (L9, 0 of 9 each): leaving at
+you), both go over the top between 910 and 1,690 m, you down to 16 to 20
+m/s, and nobody has a place to shoot from, though in one start of nine they
+land 2 rounds on you on the way up (22 to 26 s in, climbing through 900 to
+1,230 m behind you). L9: no kill, 2 rounds landed (in one), 0.17 s of
+landing shot; their shot 0.23 s at most, 1 round on you once, on your tail
+for up to 7.4 s.
+
+Before the guard fix the tops were 980 to 1,460 m, you at 12 to 32 m/s; on
+the L9 your 2 rounds came in two starts, theirs were 3 in one, and they sat
+on your tail 5.1 s at most. The guard now noses over at 880 m real, but a jet
+in a 70-degree zoom cannot get its nose down there (the wing lifts 12% of
+its sea-level lift at 880 m and nothing at 1,000) and, while the guard flies
+it, the plan's own pull-over waits: both climb on, about 150 to 230 m
+higher than before. Tried and dropped (L9, 0 of 9 each): leaving at
 the break for 6 to 12 s, flat or climbing 10 to 20 degrees, then `ascend` or
 `otNinja` back onto them.
 
@@ -116,7 +132,8 @@ is fatal and that nothing gets you on top.
 The same file: the rush 0 to 5 rounds, nobody down; the old exit shot down
 from all nine; `jetOtLeave` 7 of 9 on the L9 (the two it loses, they chase
 and shoot you down 18 s after the break). Flip and Ninja 0 of 9. The words
-are the F-16's.
+are the F-16's. Re-flown with the guard fix (2026-11-11): all of that holds;
+only the Ninja moves (tops 887 to 1,995 m, was 947 to 1,351; still 0 of 9).
 
 ## Shared files (not changed here)
 

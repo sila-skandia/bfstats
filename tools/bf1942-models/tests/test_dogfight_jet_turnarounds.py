@@ -177,11 +177,16 @@ class TurnaroundsOnAJetTests(unittest.TestCase):
     def test_high_up_the_immelmann_is_long_and_from_770_m_never_closes(self) -> None:
         at640 = solo("immelmann", 500)
         self.assertTrue(all(s["height"] == 640 and s["done"] for s in at640))
-        between(self, (s["up"] for s in at640), 230, 265, "climbs from 640 m")
-        between(self, (s["dur"] for s in at640), 6.9, 8.6, "takes from 640 m")
+        # "climbs 230 to 270 m and takes 7 to 8 seconds"
+        between(self, (s["up"] for s in at640), 230, 272, "climbs from 640 m")
+        between(self, (s["dur"] for s in at640), 6.9, 8.2, "takes from 640 m")
         at770 = solo("immelmann", 600)
-        # 500 m straight up, and out of the top at under 25 m/s.
-        self.assertTrue(all(s["height"] == 768 and s["peak"] >= 500 and s["vmin"] <= 25 for s in at770), at770)
+        # "more than 700 m straight up ... hangs there at 30 to 40 m/s, still
+        # not round 14 seconds later" (the pilot's 880 m guard cannot bring a
+        # jet's nose down out of a near-vertical climb in that air).
+        self.assertTrue(all(s["height"] == 768 and s["peak"] >= 700 and not s["done"] for s in at770), at770)
+        between(self, (s["vmin"] for s in at770), 30, 40, "slowest from 770 m")
+        between(self, (s["turned"] for s in at770), 0, 150, "turned from 770 m")
 
     def test_chasing_them_up_you_keep_your_speed_and_get_a_snap(self) -> None:
         demo = self.f["demos"]["immelmann"]

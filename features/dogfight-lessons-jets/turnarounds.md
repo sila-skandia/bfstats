@@ -16,8 +16,8 @@ turnarounds flown by the lesson's own `turnarounds` phases from a level start
 | Flat turn round, full pull | 96 m/s, 384 m | 3.0 s | 79 m/s, same height | about 5 s |
 | Immelmann (the lesson's) | 95 m/s, 378 m | 4.8 s, 166 deg | +130 m at 83 m/s; slowest 69; 4 s on +109 m at 89 | 74 -> 37 m/s, +107 m |
 | Immelmann, lone, 192 to 576 m | 60 to 97 m/s | 4.4 to 7.3 s | +63 to +172 m at 73 to 94 m/s: from 60 m/s it comes out *faster* | |
-| Immelmann, lone, 640 m | 61 to 97 m/s | 6.9 to 8.6 s | climbs 232 to 264 m | |
-| Immelmann, lone, 768 m | 62 or 98 m/s | never round | 500 m straight up, the nose stuck at 85 deg, out of the top at 19 to 24 m/s | |
+| Immelmann, lone, 640 m | 61 to 97 m/s | 6.9 to 8.2 s | climbs 232 to 272 m | |
+| Immelmann, lone, 768 m | 62 or 98 m/s | never round | 721 to 769 m straight up, slowest 31 to 39 m/s, 91 to 138 deg round at 14 s | |
 | Split-S (the lesson's, new stage) | 58 m/s, 589 m | 5.3 s, 180 deg | -163 m at 96 m/s | 51 -> 68 m/s, -145 m |
 | Split-S, lone, 448 to 640 m, from cruise | 97 m/s | 4.5 to 4.8 s | -139 to -168 m at 91 to 101 m/s | |
 | Split-S, lone, 384 m | 60 to 96 m/s | | the floor (`guard`) pulls it out 131 to 139 deg round | |
@@ -30,6 +30,24 @@ is tight (it ends 19 to 54 m *behind* where it pulled up). **The split-S is
 for the moment a jet is slow and high**: it still trades height for speed
 (163 m for 38 m/s), but from cruise it buys nothing, and it needs about
 500 m under it.
+
+### The ceiling guard (2026-11-11)
+
+Commit `726b12eb6` reads every pilot's 880 m ceiling guard over the
+airframe's pace, so on the F-16 it noses over at 880 m real, not 1,126.
+It moved only the lone high Immelmanns: from 640 m the loop climbs 232 to
+272 m in 6.9 to 8.2 s (was 232 to 264 m in 6.9 to 8.6 s); from 768 m the
+guard takes the stick above 880 m but cannot bring a near-vertical jet's
+nose down in that air, and the plan's own loop is no longer flown there, so
+it goes 721 to 769 m up (was 522 to 562), slowest 31 to 39 m/s (was 19 to
+24), and is 91 to 138 deg round at 14 s. The story now says "230 to 270 m,
+7 to 8 seconds" and "more than 700 m straight up ... hangs there at 30 to
+40 m/s, still not round 14 seconds later". Every demo and every move is
+the same fight to the decimal except the Flip, whose nine starts end
+further apart in three (1013 to 1494 m, was 147 to 415) with the same
+verdict, 0 of 9, and the same quoted numbers; its harness demo's slowest
+is now 19 to 67 m/s (was 29 to 67), which no words quote. No verdict
+flipped: Dip 9, Flip 0, Ninja 0.
 
 ## What the nine F-16 flights showed, before and after
 
@@ -75,7 +93,7 @@ Hits are "ace/you", rounds each side landed.
 | `immelmann` | Immelmann from 114 m/s at 414 m: +184 m, out at 94; nobody down, 0/0 to 0/1 |
 | `immelmann-counter` | from 112 m/s, +194 m at 96; landing fire 0.1-1.3 s, 0/5 to 0/16, nobody down: the head-on snap lands more on the MiG |
 | `split` | split-S from 690 m at 69 m/s: -233 m, out at 118, 5.8 s; nobody fires |
-| `dip` / `flip` / `ninja` | 9 / 0 / 0 of 9 |
+| `dip` / `flip` / `ninja` | 9 / 0 / 0 of 9 (unchanged by the ceiling guard; the lone Immelmanns from 750 m now go 908 to 1,107 m up, slowest 60 to 62 m/s, where they went 563 to 674 m) |
 
 As written (no jet file) the MiG-29's `split` demo shows the high
 Immelmann's failure for real: too fast to split-S, the ace pulls up at 670 m

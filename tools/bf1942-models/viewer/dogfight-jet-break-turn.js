@@ -10,6 +10,14 @@
 // jet's cruise, 86 m/s, the attacker settles 25 to 30 m behind and shoots
 // it down every time, 30 to 40 s in, so the fight runs 45 s.
 //
+// There is no way out of the circle on a jet. The Dip, the Flip and the
+// Ninja go up for the hunter to follow and slow; a jet does not slow in a
+// 70 degree climb, and with every pilot nosing over at the sky's 880 m
+// (the ceiling guard read over the pace) the hunter stays under the top of
+// the sky, fast, while the one who zooms goes on up through it to 1,600 m.
+// The Dip's 9 of 9 before the guard fix came from the hunter following up
+// past 1,000 m and wallowing there.
+//
 // Starts are in the Spitfire's units (68 m/s is 87 on the F-16); the words
 // give the F-16's own numbers, measured from the nine starts.
 export default {
@@ -23,8 +31,8 @@ export default {
     'Their sight cannot follow you round, and they come past your tail 4 to 7 s later, 40 to 75 m from you. As they cross, reverse: turn into them again.',
     'Do not expect them to fly out in front of you. A hard-turning F-16 goes round a circle about 135 m across at 70 to 80 m/s, and they swing back in behind you, about 110 m back. But while you keep turning into them their nose stays 45 degrees or more off you: they have no shot, and their extra speed is gone (both of you at 70 to 85 m/s).',
     'Flown nine times from slightly different starts, the pilot who flew straight was shot down every time, 30 to 40 s in. The one who broke never was, and took 0 to 4 hits, all in the first 3.5 s, before the attacker came past.',
-    'The break saves you, but it leaves you both in a circle neither of you wins. The way out is not to let the circle start: turn into them at once, 640 m out. Once they are past, go up: they follow you up and slow to about 60 m/s. From over the top go straight away from them, full throttle: they chase, cannot close, and give up 32 to 33 s in. On a jet that run is slow: for about 20 s you are at 10 to 50 m/s, and it costs 520 to 630 m of height.',
-    'The upper hand is another matter. Over the top you are above them, but their nose never leaves you, so there is never a moment to come down on them that is not nose to nose. Stay in the circle to zoom out of it and they never sit close behind you to zoom from: they hang 110 to 750 m away and 20 to 140 m above you, until a head-on pass 44 to 46 s in.',
+    'The break saves you, but it leaves you both in a circle neither of you wins, and on a jet there is no way out of it here. The Spitfire\'s way is to go up once they are past, for them to follow and slow. A jet climbing at 70 degrees does not slow, and above 880 m, where the wings are dying, its nose will not come down: you go on up to about 1,600 m and hang over the top at 34 to 44 m/s. They level off under the top of the sky, at about 950 m and never slower than 95 m/s, give the chase up 31 to 33 s in and turn back the way they came, which is toward you. You come down from the top at 35 m/s, 1.2 to 1.5 km from them and closing.',
+    'The upper hand is not to be had either. Over the top their nose does come off you, 30 to 32 s in, but they are more than a kilometre away and below: the dive never gets near a shot. Stay in the circle to zoom out of it and they never sit close behind you to zoom from: they hang 110 to 860 m away, from 100 m below you to 120 m above, until a head-on pass 40 to 45 s in.',
   ],
   counterStory: [
     'As the attacker: when they break, do not pull after them into their circle. You will come past their tail and end up sitting in their turn without a shot.',
@@ -33,21 +41,21 @@ export default {
     'Flown nine times, the patient attacker never came within 59 m of the breaker, and after the first 1.2 s neither of them landed a hit.',
   ],
   demos: {
-    move: { note: 'They break the moment you are in reach, 460 m out, and turn hard into you. You come past their tail; they reverse into you. From here it is a circle nobody wins: the three fights after this one are what to do instead, and whether the circle can be turned round.' },
+    move: { note: 'They break the moment you are in reach, 460 m out, and turn hard into you. You come past their tail; they reverse into you. From here it is a circle nobody wins: the three fights after this one try the way out of it and the upper hand, and on a jet none of them works.' },
     dip: {
-      note: 'Do not wait for them to sit on your tail. Turn into them at once, 640 m out. Once they are past, go up at 70 degrees: they follow you up and slow. From over the top, go straight away from them, full throttle, the nose a little down: they turn after you, cannot close, and give up the chase. On a jet the run from the top starts slow and stays slow for about 20 s.',
-      verdict: { works: 9, of: 9, line: 'In all nine their guns never have you and none of their rounds lands: they follow you up and slow to 57 to 65 m/s, chase your run without closing and give it up 32 to 33 s in; at 50 s you are 1.2 to 1.4 km apart and opening. The run is slow on a jet: over the top you are down to 40 m/s, then 10 to 50 m/s for about 20 s, sinking 520 to 630 m.' },
+      note: 'The Spitfire\'s way out: turn into them at once, 640 m out, and once they are past go up at 70 degrees for them to follow and slow. On a jet they do not: the climb does not slow you, its nose will not come down above 880 m, and you go on up to 1,600 m while they level off under the top of the sky, fast. They give the chase up; you come down from the top slow, toward them.',
+      verdict: { works: 0, of: 9, line: 'No: their guns never have you and none of their rounds lands, but you never get away. You go over the top at 1,590 to 1,600 m at 34 to 44 m/s, 26 s in; they level off at 950 m (1,030 m in one), never under 95 m/s, and give the chase up 31 to 33 s in, turning back the way they came, toward you. You leave from the top 44 to 47 s in at 35 m/s: at 50 s you are 1.2 to 1.5 km apart and closing, and in one they turn to meet you and land 2 rounds as you leave.' },
     },
     flip: {
       note: 'Break at 460 m and hold your height in the circle. With them dead astern inside 155 m, zoom out of it at 70 degrees until 67 m/s are left; they follow you up and slow. Over the top, down on them with the lead, off them before the pass, and when they break with you close a high yo-yo up out of their turn: you never follow their break round in the flat.',
-      verdict: { works: 0, of: 9, line: 'No: on a jet you never get to zoom. In the circle they hang 110 to 750 m away and 20 to 140 m above you, never dead astern inside 155 m, until a head-on pass 44 to 46 s in; the zoom starts 46 to 48 s in, with no time left to come back down. Nobody lands a round.' },
+      verdict: { works: 0, of: 9, line: 'No: on a jet you barely get to zoom. In the circle they hang 110 to 860 m away, from 100 m below you to 120 m above, never dead astern inside 155 m, until a head-on pass 40 to 45 s in; the zoom starts 44 to 45 s in, in three of the nine, with no time left to come back down. Their rounds never land; yours land once, 1 round in the head-on pass.' },
     },
     ninja: {
-      note: 'The Dip\'s way in, waiting for the dive: turn into them at once, 640 m out, and go up once they are past; they follow and slow. Over the top you wait for their nose to come off you. It never does, so there is no dive to make: after 8 s you leave from the top while they are slow.',
-      verdict: { works: 0, of: 9, line: 'No: in all 9 their guns never have you and none of their rounds lands, but over the top their nose never leaves you, so the dive never comes and you never fire; once they sit on your six for 1.4 to 1.6 s without a shot. You leave, and they give the chase up 32 to 33 s in: 1.2 to 1.4 km apart at 50 s.' },
+      note: 'The Dip\'s way in, waiting for the dive: turn into them at once, 640 m out, and go up once they are past. On a jet they do not follow: you go on up to 1,600 m and they stay under the top of the sky. Their nose comes off you as they give the chase up, and the dive comes, but from more than a kilometre away.',
+      verdict: { works: 0, of: 9, line: 'No: you never fire. You go over the top at 1,590 to 1,600 m, 26 s in; they level off at 950 m and give the chase up 31 to 33 s in, and as their nose comes off you, 30 to 32 s in, you dive, 1.2 to 1.3 km from them and 550 to 620 m above. They sit on your six 1.5 to 1.8 s once, as you go up, without a shot. You leave from the top 44 to 47 s in, slow; at 50 s you are 1.2 to 1.5 km apart and closing, and in one they turn to meet you and land 2 rounds.' },
     },
   },
-  survival: { verdict: 'yes', line: 'Yes, and early: turn into them at once, go up once they are past, and leave from the top while they are slow: they give up the chase 32 to 33 s in (9 of 9), though on a jet the run from the top is slow, 10 to 50 m/s for about 20 s. The upper hand is not to be had: over the top their nose never leaves you, so no dive comes (0 of 9), and in the circle they never sit close enough behind you to zoom from (0 of 9).' },
+  survival: { verdict: 'no', line: 'No, not on a jet: the break is never shot down, but nothing gets you out of the circle or on top of it. Up once they are past, you go on through the top of the sky to 1,600 m while they stay under it, fast, and you come down slow toward them (0 of 9); over the top the dive comes from more than a kilometre away and never fires (0 of 9); and in the circle they never sit close enough behind you to zoom from until 44 s in (0 of 9).' },
   coach: {
     watch: { line: 'They are flying straight, watching you close', tip: 'They break the moment you are in reach, about 550 m out. Ease the throttle (S) early, it takes seconds to bite.', keys: ['S'] },
     break: { line: 'They broke: a hard turn into you', tip: 'Do not pull after them into their circle. Pull UP out of their turn and stay above it, at their speed.', keys: ['Mouse', 'Arrows', 'S'] },

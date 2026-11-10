@@ -6,8 +6,9 @@
 // Spitfire's way out, fails because an equal jet behind you never falls
 // back: they sit 285 to 361 m behind with their guns bearing, and only the
 // hunter's habit of holding fire outside 150 m (192 m on the jet) keeps you
-// alive. Going straight up costs a jet nothing, and costs them nothing
-// either. The words say so; no fight is changed.
+// alive. Going straight up, a jet climbs on through the top of the sky and
+// hangs above them with no way back down onto them. The words say so; no
+// fight is changed.
 export default {
   note: 'Nothing breaks it. Flown nine times on the F-16, none of the six ways out landed a round or got clear: an equal jet follows you up, down and away, and run from them and they sit 285 to 361 m behind you with their guns on you.',
   tagline: 'Two equal jets turning round each other: nobody gets a shot. Six ways to break it, and none does.',
@@ -18,7 +19,7 @@ export default {
   ],
   counterStory: [
     'Leaving, the Spitfire\'s way out, does not work here. Roll out while they are across the circle, full throttle, nose down, and they turn after you and settle 285 to 361 m behind you, nose on you, their guns bearing for 16 to 23 s of the 32. They never let you go. Only the hunter\'s habit of holding fire outside 190 m keeps you alive; turn back at them and the pass is head-on, they are behind you again, and in two of nine they shoot you down.',
-    'Straight up you top out 274 to 322 m over them still at 105 m/s, but they come up after you just as cheaply, and at the ceiling there is no more up: you hang at 25 to 29 m/s and fall away under them. The throttle back only slows you to 37 m/s and sinks you 272 to 320 m under them. Reversing the turn just turns the circle the other way, with no pass at all. Nose low you come round behind them and the jet climbs back up to them at 82 m/s, but the nose never comes onto them.',
+    'Straight up, a 60-degree jet climb cannot be levelled off at the top of the sky: you go on through it to about 1,420 m. They follow you up, 920 to 1,370 m, but never as high. You end 324 to 554 m over them, but down to 52 to 54 m/s, with no lift to come down onto them. The throttle back only slows you to 37 m/s and sinks you 272 to 320 m under them. Reversing the turn just turns the circle the other way, with no pass at all. Nose low you come round behind them and the jet climbs back up to them at 82 m/s, but the nose never comes onto them.',
     'Do not go into the circle with an equal jet. Inside it nobody is hit; out of it, they are behind you.',
   ],
   survival: { verdict: 'no', line: 'No: on the F-16 nothing gets you out. Leaving, going straight up, out and back, the throttle chop, reversing the turn and the nose-low turn all fail (0 of 9 each). Leaving puts them 285 to 361 m behind you with their guns on you, and out and back gets you shot down in two of nine. The circle itself never hurts you: nobody has a shot in it.' },
@@ -35,8 +36,8 @@ export default {
       verdict: { works: 0, of: 9, line: 'In all nine they turn after you and settle 285 to 361 m behind you, nose on you, their guns bearing for 16 to 23 s of the 32. They never let you go and never fire: the school\'s hunter holds their fire outside 190 m. You are not hit, and you are not out.' },
     },
     zoom: {
-      note: 'Going vertical: out of the circle straight up at 60 degrees, to come over the top and down on them. A jet keeps its speed going up. What you see is it failing anyway: they come up after you just as cheaply.',
-      verdict: { works: 0, of: 9, line: 'In all nine you top out 274 to 322 m over them still at 105 to 106 m/s, but they follow you up and you reach the ceiling first: you hang there at 25 to 29 m/s and fall away, 423 to 618 m under them at 30 s. Nobody lands a round, and you never have a shot.' },
+      note: 'Going vertical: out of the circle straight up at 60 degrees, to come over the top and down on them. A jet keeps its speed going up. What you see is it failing anyway: you climb on through the top of the sky, where the nose will not come down, and hang there above them.',
+      verdict: { works: 0, of: 9, line: 'In all nine you climb on through the top of the sky to 1,416 to 1,426 m: from 60 degrees up a jet\'s nose will not come down there. They follow you up, to 920 to 1,368 m, and never as high. You end 324 to 554 m over them at 52 to 54 m/s, and at 30 s you are still 45 to 509 m above them, coming over the top with no shot. Nobody lands a round.' },
     },
     back: {
       note: 'Leave as the Dip does, run 22 s, then turn back and come in under their tail for a burst. What you see is it failing: they never let you go, so turning back is a head-on pass, and then they are behind you again.',

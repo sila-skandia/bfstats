@@ -262,26 +262,30 @@ class OnTheirTailOnAJetTests(unittest.TestCase):
 
     def test_climbing_beside_their_break_gets_nothing_they_climb_too(self) -> None:
         # "they come up too, after you or away from you, and the two of you go
-        # over the top between 980 and 1,460 m, you at 12 to 32 m/s".
+        # on up through the top of the sky, over the top between 910 and 1,690
+        # m, you at 16 to 20 m/s ... once in nine they land 2 rounds on you on
+        # the way up". The pilots' guard noses over at 880 m, but a jet in a
+        # steep climb cannot get its nose down there and climbs on.
         rows = self.nine("ninja")
         self.assertTrue(all(r["winner"] is None for r in rows))
-        self.assertTrue(all(980 <= h <= 1460 for r in rows for h in r["top"]), [r["top"] for r in rows])
+        tops = [h for r in rows for h in r["top"]]
+        self.assertEqual((910, 1688), (min(tops), max(tops)), [r["top"] for r in rows])
         self.assertTrue(all({"climb", "reverse"} & set(r["acePhases"]) for r in rows), [r["acePhases"] for r in rows])
-        self.assertEqual((12, 32), (min(r["slowest"][1] for r in rows), max(r["slowest"][1] for r in rows)))
-        # "None of the nine: no kill, 2 rounds landed at most, in two of the
-        # nine, and 0.17 s of a shot that would land. They had you once for
-        # 0.23 s (3 rounds) and sat on your tail for up to 5.1 s."
+        self.assertEqual((16, 20), (min(r["slowest"][1] for r in rows), max(r["slowest"][1] for r in rows)))
+        self.assertEqual([[2, 0]], [r["hits"] for r in rows if r["hits"] != [0, 0]])
+        # "None of the nine: no kill, 2 rounds landed, in one of the nine, and
+        # 0.17 s of a shot that would land. They had you for 0.23 s at most,
+        # landed 1 round on you once, and sat on your tail for up to 7.4 s."
         ninja = self.l9("ninja")
         self.assertEqual(0, ninja["measured"]["works"])
         self.assertEqual(ninja["declared"]["works"], ninja["measured"]["works"])
         scores = ninja["scores"]
         self.assertFalse(any(s["killed"] for s in scores))
-        self.assertEqual(2, max(s["hitsOnHim"] for s in scores))
-        self.assertEqual(2, sum(1 for s in scores if s["hitsOnHim"] > 0))
+        self.assertEqual([2], [s["hitsOnHim"] for s in scores if s["hitsOnHim"]])
         self.assertEqual(0.17, max(s["myShot"] for s in scores))
-        self.assertEqual([3], [s["hitsOnMe"] for s in scores if s["hitsOnMe"]])
+        self.assertEqual([1], [s["hitsOnMe"] for s in scores if s["hitsOnMe"]])
         self.assertEqual(0.23, max(s["hisShot"] for s in scores))
-        self.assertEqual(5.1, max(s["sixLost"] for s in scores))
+        self.assertAlmostEqual(7.4, max(s["sixLost"] for s in scores), delta=0.05)
 
     def test_the_survival_verdict_follows_from_the_three(self) -> None:
         verdicts = [d["measured"]["verdict"] for d in self.jet["l9"].values()]

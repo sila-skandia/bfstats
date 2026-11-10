@@ -40,7 +40,12 @@ installModuleHooks(viewer);
 const load = name => import(pathToFileURL(path.join(viewer, name)).href);
 const THREE = await load('vendor/three.module.js');
 const {{ Aircraft }} = await load('aircraft.js');
-const {{ runDuel }} = await load('dogfight-duel.js');
+const {{ runDuel: flyDuel }} = await load('dogfight-duel.js');
+// Each fight's highest point, side by side (real metres), laid on its row.
+const TOPS = [];
+const runDuel = o => {{ const r = flyDuel(o); TOPS.push(r.tracks.map(t => Math.round(Math.max(...t.map(k => k.p[1]))))); return r; }};
+const print = console.log;
+console.log = s => {{ const o = JSON.parse(s); let i = 0; for (const d of Object.values(o.demos)) for (const row of d.scores) row.top = TOPS[i++]; print(JSON.stringify(o)); }};
 const LB = await load('dogfight-lessons.js');
 const {{ demoSides }} = LB;
 const {{ scoreMove, verdictOf, STARTS, nudge, noseOf }} = await load('dogfight-measure.js');
@@ -116,10 +121,18 @@ class CircleOnAJetTests(unittest.TestCase):
             self.assertIn("follow", s["acePhases"], s)
             self.assertEqual([0, 0], s["hits"], s)
             self.assertEqual(0, s["myShot"], s)
-        self.assertEqual((105, 106), span(rows, "fastest"))
-        self.assertEqual((274, 322), span(rows, "highest"))
-        self.assertEqual((25, 29), span(rows, "slowest"))
-        self.assertEqual((-618, -423), span(rows, "endDy"))
+        # "you go on through it to about 1,420 m" (1,416 to 1,426: the verdict) ... You end 324 to 554 m over
+        # them, but down to 52 to 54 m/s"; "at 30 s you are still 45 to 509 m
+        # above them". The ceiling guard (880 m real) cannot level a 60-degree
+        # jet climb, and the follower goes through it too.
+        self.assertEqual((98, 99), span(rows, "fastest"))
+        self.assertEqual((324, 554), span(rows, "highest"))
+        self.assertEqual((52, 54), span(rows, "slowest"))
+        self.assertEqual((45, 509), span(rows, "endDy"))
+        self.assertEqual((1416, 1426), (min(s["top"][1] for s in rows), max(s["top"][1] for s in rows)))
+        # "They follow you up, to 920 to 1,368 m, and never as high."
+        self.assertEqual((920, 1368), (min(s["top"][0] for s in rows), max(s["top"][0] for s in rows)))
+        self.assertTrue(all(s["top"][0] < s["top"][1] for s in rows), [s["top"] for s in rows])
 
     def test_out_and_back_is_a_head_on_pass_and_they_are_behind_you_again(self) -> None:
         rows = self.rows("back")
