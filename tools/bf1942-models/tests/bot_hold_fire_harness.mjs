@@ -23,6 +23,7 @@ out.tube = {
   atTarget: friendInLine(origin, aim, [f('a', [0.3, 0, 40])]),
   justInFrontOfTarget: friendInLine(origin, aim, [f('a', [0, 0, 39.5])]),
   behindShooter: friendInLine(origin, aim, [f('a', [0, 0, -3])]),
+  atTheMuzzle: friendInLine(origin, aim, [f('a', [0.15, 0, -0.1])]),
   proneUnderLine: friendInLine(origin, [0, 1.65, 40], [f('a', [0, 0, 5], 'prone')]),
   pastReach: friendInLine(origin, [0, 1.0, 80], [f('a', [0, 0, 50])]),
   nearestOfTwo: friendInLine(origin, aim, [f('far', [0, 0, 20]), f('near', [0.2, 0, 3])]),

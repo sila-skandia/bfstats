@@ -114,6 +114,9 @@ export const HOLD_FIRE = Object.freeze({
   radius: 0.6,
   reach: 40.0,
   clearOfTarget: 1.0,
+  /** A body whose axis is up to this far behind the muzzle, horizontally, is
+   *  still in the line: it overlaps the muzzle. */
+  behind: 0.3,
   bodyBottom: 0.1,
   bodyTop: Object.freeze({ stand: 1.8, walk: 1.8, crouch: 1.25, prone: 0.5, lie: 0.5, seated: 1.2 }),
   /** The step aside (bot-plans.js `holdFireStep`): after holding this long on
@@ -187,8 +190,12 @@ export function friendInLine(origin, aim, friends, opts = HOLD_FIRE) {
     const top = tops[f.stance] ?? tops.stand;
     const r = segmentDistance(origin, end, [p[0], p[1] + bottom, p[2]], [p[0], p[1] + top, p[2]]);
     if (r.dist > radius) continue;
+    // A friend whose body overlaps the muzzle counts (the page logged victims
+    // 0.2 m from it, one 0.12 m behind it); one wholly behind the bot does not.
+    const ahead = ((p[0] - origin[0]) * dx + (p[2] - origin[2]) * dz) / h;
+    if (ahead < -(opts.behind ?? HOLD_FIRE.behind)) continue;
     const along = r.s * limit;
-    if (along <= 1e-3 || (best && along >= best.along)) continue;
+    if (best && along >= best.along) continue;
     const lateral = ((p[0] - origin[0]) * dz - (p[2] - origin[2]) * dx) / h;
     best = { id: f.id, along, offset: r.dist, side: lateral >= 0 ? 1 : -1 };
   }

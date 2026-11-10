@@ -56,6 +56,8 @@ class HoldFireTubeTests(unittest.TestCase):
         self.assertAlmostEqual(5.0, t["inTube"]["along"], places=2)
         self.assertEqual("a", t["offByHalf"]["id"])
         self.assertEqual("a", t["justInFrontOfTarget"]["id"])
+        # A body overlapping the muzzle (the page logged victims 0.2 m off it).
+        self.assertEqual("a", t["atTheMuzzle"]["id"])
 
     def test_a_friend_beside_the_line_or_beyond_the_target_is_not(self) -> None:
         t = self.results["tube"]
