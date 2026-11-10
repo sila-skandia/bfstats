@@ -1,12 +1,14 @@
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.AspNetCore.Authorization;
+using System.Diagnostics;
 using System.Security.Claims;
 using api.Auth.Models;
 using Microsoft.Extensions.Configuration;
 using api.PlayerTracking;
 using Microsoft.Extensions.Logging;
 using api.Caching;
+using api.StatsCollectors;
 using System.Text.RegularExpressions;
 
 namespace api.Auth;
@@ -27,6 +29,14 @@ public class AuthController(
     IConfiguration configuration) : ControllerBase
 {
     private const int MaxBulkPlayerNames = 1000;
+
+    // LastLoggedIn / new-user INSERT / refresh-token INSERT share the one SQLite
+    // writer with the hourly incremental. CommandTimeout(60) sits until Slow pages
+    // and, after Discord has already spent the code, returns 500. Required writes
+    // use 5s (busy_timeout); LastLoggedIn is telemetry and gives up in 2s so the
+    // two writes together stay under the 10s Slow page.
+    internal const int WriteCommandTimeoutSeconds = 5;
+    private const int LastLoginWriteTimeoutSeconds = 2;
 
     [HttpPost("login")]
     public async Task<IActionResult> Login([FromBody] LoginRequest request)
@@ -60,18 +70,10 @@ public class AuthController(
 
                 pwUser.LastLoggedIn = DateTime.UtcNow;
                 pwUser.IsActive = true;
-                await context.SaveChangesAsync();
+                if (!await TrySaveLoginWriteAsync("last-login", LastLoginWriteTimeoutSeconds))
+                    context.Entry(pwUser).State = EntityState.Unchanged;
 
-                var (pwAccess, pwExpires) = tokenService.CreateAccessToken(pwUser);
-                var (pwRawRefresh, pwRtEntity) = await refreshTokenService.CreateAsync(pwUser, ipAddress, Request.Headers.UserAgent.ToString());
-                refreshTokenService.SetCookie(Response, pwRawRefresh, pwRtEntity.ExpiresAt);
-
-                return Ok(new LoginResponse
-                {
-                    User = new UserDto { Id = pwUser.Id, Email = MaskEmail(pwUser.Email), Name = pwUser.Username ?? request.Username },
-                    AccessToken = pwAccess,
-                    ExpiresAt = pwExpires
-                });
+                return await CompleteLoginAsync(pwUser, pwUser.Username ?? request.Username, MaskEmail(pwUser.Email), ipAddress);
             }
             else if ((configuration["ASPNETCORE_ENVIRONMENT"] == "Development" || string.Equals(configuration["Auth:AllowDevLogin"], "true", StringComparison.OrdinalIgnoreCase)) && request.DevBypass == true)
             {
@@ -84,17 +86,11 @@ public class AuthController(
             }
 
             var user = await CreateOrUpdateUserAsync(email, name);
-
-            var (accessToken, expiresAt) = tokenService.CreateAccessToken(user);
-            var (rawRefresh, rtEntity) = await refreshTokenService.CreateAsync(user, ipAddress, Request.Headers.UserAgent.ToString());
-            refreshTokenService.SetCookie(Response, rawRefresh, rtEntity.ExpiresAt);
-
-            return Ok(new LoginResponse
-            {
-                User = new UserDto { Id = user.Id, Email = user.Email, Name = name },
-                AccessToken = accessToken,
-                ExpiresAt = expiresAt
-            });
+            return await CompleteLoginAsync(user, name, user.Email, ipAddress);
+        }
+        catch (LoginDatabaseBusyException)
+        {
+            return StatusCode(503, new { message = "The stats database is busy updating; try again in a minute" });
         }
         catch (UnauthorizedAccessException ex)
         {
@@ -1067,7 +1063,11 @@ public class AuthController(
                 IsActive = true
             };
             context.Users.Add(user);
-            await context.SaveChangesAsync();
+            if (!await TrySaveLoginWriteAsync("create-user"))
+            {
+                context.Entry(user).State = EntityState.Detached;
+                throw new LoginDatabaseBusyException();
+            }
             // Log the id, never the address — see DiscordAuthService.
             logger.LogInformation("Created new user {UserId}", user.Id);
             return user;
@@ -1077,8 +1077,84 @@ public class AuthController(
         user.IsActive = true;
         logger.LogDebug("Updating last login for user {UserId}", user.Id);
 
-        await context.SaveChangesAsync();
+        if (!await TrySaveLoginWriteAsync("last-login", LastLoginWriteTimeoutSeconds))
+            context.Entry(user).State = EntityState.Unchanged;
+
         return user;
+    }
+
+    private async Task<IActionResult> CompleteLoginAsync(User user, string displayName, string emailForDto, string ipAddress)
+    {
+        var (accessToken, expiresAt) = tokenService.CreateAccessToken(user);
+
+        var started = Stopwatch.GetTimestamp();
+        var previous = BeginWriteTimeout(WriteCommandTimeoutSeconds);
+        try
+        {
+            var (rawRefresh, rtEntity) = await refreshTokenService.CreateAsync(user, ipAddress, Request.Headers.UserAgent.ToString());
+            logger.LogInformation("Login write refresh-token: {ElapsedMs}ms", (int)Stopwatch.GetElapsedTime(started).TotalMilliseconds);
+            refreshTokenService.SetCookie(Response, rawRefresh, rtEntity.ExpiresAt);
+        }
+        catch (Exception ex) when (SqliteBusy.IsBusy(ex))
+        {
+            logger.LogWarning("Login write refresh-token locked after {ElapsedMs}ms", (int)Stopwatch.GetElapsedTime(started).TotalMilliseconds);
+            return StatusCode(503, new { message = "The stats database is busy updating; try again in a minute" });
+        }
+        finally
+        {
+            EndWriteTimeout(previous);
+        }
+
+        return Ok(new LoginResponse
+        {
+            User = new UserDto { Id = user.Id, Email = emailForDto, Name = displayName },
+            AccessToken = accessToken,
+            ExpiresAt = expiresAt
+        });
+    }
+
+    private async Task<bool> TrySaveLoginWriteAsync(string action, int timeoutSeconds = WriteCommandTimeoutSeconds)
+    {
+        var started = Stopwatch.GetTimestamp();
+        var previous = BeginWriteTimeout(timeoutSeconds);
+        try
+        {
+            await context.SaveChangesAsync();
+            logger.LogInformation("Login write {Action}: {ElapsedMs}ms", action, (int)Stopwatch.GetElapsedTime(started).TotalMilliseconds);
+            return true;
+        }
+        catch (Exception ex) when (SqliteBusy.IsBusy(ex))
+        {
+            logger.LogWarning("Login write {Action} locked after {ElapsedMs}ms", action, (int)Stopwatch.GetElapsedTime(started).TotalMilliseconds);
+            return false;
+        }
+        finally
+        {
+            EndWriteTimeout(previous);
+        }
+    }
+
+    // InMemory tests have no CommandTimeout; production SQLite does.
+    private int? BeginWriteTimeout(int timeoutSeconds)
+    {
+        if (!context.Database.IsRelational())
+            return null;
+        var previous = context.Database.GetCommandTimeout();
+        context.Database.SetCommandTimeout(timeoutSeconds);
+        return previous;
+    }
+
+    private void EndWriteTimeout(int? previous)
+    {
+        if (context.Database.IsRelational())
+            context.Database.SetCommandTimeout(previous);
+    }
+
+    private sealed class LoginDatabaseBusyException : Exception
+    {
+        public LoginDatabaseBusyException() { }
+        public LoginDatabaseBusyException(string message) : base(message) { }
+        public LoginDatabaseBusyException(string message, Exception innerException) : base(message, innerException) { }
     }
 
     private string GetClientIpAddress()
