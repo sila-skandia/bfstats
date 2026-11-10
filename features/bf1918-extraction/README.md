@@ -634,3 +634,98 @@ draw. Montblainville's `lensFlare` stays null.
 What has to re-run: `patch_scene.py --layer spawns --mod bf1918` for amiens,
 battle_of_liege, bombing_albion, gaza_town, midway, tabuaeran and tobruk (or
 `--all`; the other 126 do not change). The rest is viewer code.
+
+## The quick behaviour check's pass 2, triaged (2026-11-10)
+
+The pipeline's `audit_behaviour.mjs --quick` on the re-extracted tree raised
+41 unaccepted majors over 62 levels. Most were the audit asking BF1918's hulls
+for what their own data does not do. Each is now judged by the hull's data.
+
+- **The armoured train's `veh.no-steer`.** Nothing of `ArmouredTrain_GILI`
+  binds `c_PIYaw`: its guide rails steer it (`features/bf1918-armoured-train`,
+  COL-25). `testGround` reads the hull's bindings (`__inputBindings()`, new in
+  `test-hooks-vehicles.js`) and does not judge the turn of a hull that binds no
+  yaw. Every car, horse, gun and tank of the mod binds one.
+- **Marker seats' `veh.gun-no-fire`.** `Scherenfernrohr` seat 0, the Lebaudy's
+  pilot and the lookouts of SMSDresden (seat 2) and Suffren (seat 5) fire a
+  `magType 2` weapon (SPOT-1). The earlier check wanted a fresh marker owned by
+  the player, but a pull that hits nothing lists one with no owner
+  (`spotter.js` `place`). A seat whose guns are all marker weapons (the page's
+  stats, or the tree's `vehicle-spotting.json` `markerWeapons`) now passes on
+  any marker its press placed. Checked: fao_landing, toska_airbattle,
+  falkland_islands, each with one marker placed, hit 0.
+- **Airships' `air.pitch-dead` and `air.roll-dead`.** Each stick axis is
+  judged by what binds its input (`audit_verdicts.mjs` `airAxisRole`). A Wing
+  is judged on the turn. An Engine's throttle is judged on the push: the
+  Lebaudy's c_PIPitch runs `LebaudyEngineupdown`, and it pushed the craft
+  5.45 m over hands off in 2.25 s. A bundle carrying an engine passes on
+  either: the balloon's hover bundle pushed it 8.1 m on pitch and 6.0 m on
+  roll. An input nothing binds is not judged (the Lebaudy's c_PIRoll).
+  `testAir` itself only calls `judgeAirControls`.
+- **M1uboot's `veh.no-engine-sound`.** The static sound table was keyed one
+  row per subject, so M1uboot's torpedo row replaced its engine row
+  (`engine-script-unusable-in-install`). `staticSoundTable` keeps every row.
+  It is accepted now.
+- **`asset.404` on vanilla files.** All 14 were vanilla paths:
+  `maps/_shared/hud/*`, the fonts, `models/poses/index.json` and
+  `models/viewmodels/index.json`. This Mac's vanilla tree is four entries;
+  mesh.bfstats.io serves all of them. The `GerSoldier__PassengerInWilly-SitInBench`
+  requests were the page guessing a vanilla path because the vanilla pose
+  index 404'd. With production's index the pair is not asked. The fix is in
+  the server, not the audit. `serve_viewer.py --remote-vanilla` fetches any
+  missing file outside `maps/mods/`, `models/mods/` and the registry
+  `models/mods.json`, and the pipeline's servers use it for every tree but
+  vanilla's (`mod_pipeline.py` `viewer_remote_args`). That is more faithful
+  than marking the rows as environment: the page then runs with the HUD,
+  fonts and poses production gives it, and a mod file its bake failed to write
+  still 404s. The registry is excluded because production lists BF1918 with no
+  maps, and a page given that registry opened vanilla's aberdeen in place of
+  toska_airbattle.
+- **`spawn.not-on-ground` on broodseinde.** `__soldier().ground` is the higher
+  of the terrain and the sea. The two trench spawns stand on the terrain
+  (73.57 and 73.20) in 1.4 m of the level's 75 m sea, as T4 found. The check
+  now compares feet with the heightfield alone (`__heightfield`, new).
+- **`veh.off-its-pad` on TsarTankSpawn (+4.3 m).** The spawner stands the
+  origin at the pad (SPAWN-28). The 9 m wheels reach under it and the terrain
+  lifts the hull onto them. Its lowest part is 0.35 m into the ground at the
+  pad. This is info `veh.lifted-onto-its-wheels` now (`__hullBottom`, new).
+  Felixstowe_blau's +7.5 m was a real defect; it is fixed on main
+  (`fix(air): ... a flying boat rests at its draft`).
+- **`veh.steer-reversed` on 18pdr_france.** The gun's steering bundle is its
+  trail wheel, 2 m aft. On D it swings the nose left for half a second
+  (-0.17 rad) while the c_ETTank differential turns the gun right (+58 degrees
+  over the press). Three runs agree. The verdict now takes the whole press,
+  summed a quarter second at a time, and a hull D brings round right is not
+  reversed. That is the data's own sign, not a defect.
+- **`bots.stalled` on champagne.** Three of the four were in the Fire plan
+  (urgency 5.2 to 6.6 against MoveTo 3). `createFirePlan` stands, turns and
+  fires, and has no strafing (bot-behaviours.md section 3). A firing bot is
+  holding now. The fourth, bot_6 in MoveTo, is a single minor `bots.stuck`.
+- **`ship.immobile` on BarkasseTransport (tabuaeran, from T3).** Seven landing
+  boats are moored 8 to 10 m apart at a beach, and the first pushes against
+  the others at revs 0.22. Astern it moved 5.7 m in 5 s. The ship check now
+  backs a held hull off before calling it immobile, as `testGround` does.
+- **The Spad7's 65 HP on entry (toska_airbattle, from the air agent).** This
+  was a page defect. The aircraft law dropped each wheel's col0 vertex 0, but
+  BF1918's wheels are 24-vertex rings, and vertex 0 is at the axle's height. On
+  boarding the main wheels hung 0.39 m up, and the plane fell onto its
+  fuselage at 1.47 m/s on rock. `checkVsTerrain` tests every vertex of a
+  layer with more than three (TANK-20). The law now stands each leg on its
+  lowest (AIRGND-13). All three Spad7s keep their 90 HP and their parked
+  height to the centimetre. El Alamein's Spitfires and BF109 (3-vertex
+  wheels) are unchanged, and `test_air_law` is green. Vanilla's Il-2
+  (26- and 30-vertex wheels) changes the same way, by the same rule.
+- **Not fixed: `Caudron_BR` silent (mont_kemmel, from T3).** Its
+  `CaudronEngine.ssc` is in `objects.rfa` and in the sound table. The page
+  classes the hull `static`, because its two Engines are `c_ETRocket` (always
+  at full thrust, PHY-20) on a `VCAir` root with no `c_ETPlane`, so it gets no
+  drive and no engine audio. Flying it needs the flight model to take rocket
+  engines on a plane, which `aircraft.js` does not do. Its twelve floats
+  (`hullHeight 80`) are part of the same open question.
+- **Tooling.** `audit_render.mjs --levels a,b` renders those levels only, and
+  the model pass draws only what they place. `--levels` on its own still
+  means every baked level (`audit_render_rules.mjs` `levelFilter`).
+
+Nothing in the asset tree has to be re-extracted for this. It is audit, server
+and viewer code. The pipeline's own quick check picks it up once these
+commits are on its checkout.
