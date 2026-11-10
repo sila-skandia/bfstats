@@ -996,6 +996,16 @@ def export_one(name: str, meshes: ArchivePool, textures: ArchivePool,
                           # inside the vehicle's own hull.
                           include_collision=not first_person)
     assembler.engine_textures = engine_textures
+    # One object made, so the random children it holds roll the engine's one
+    # counter in creation order from one start (ledger KIT-2, LOAD-6):
+    # consecutive values, wrapping at each child's own N. The start
+    # is the export's (retail's differs per spawn); 0 makes the first rolled
+    # child its variant 1, which is what a model glb always drew for a lone
+    # random child. Drawing variant 1 for every child broke what a mod's
+    # authors ordered for the walk: BF1918's horses pair a body and eight
+    # legs of one coat through `Random1..11` names laid out so ten
+    # consecutive values give one coat whatever the start.
+    assembler.random_counter = 0
     suffix = variant_suffix(configuration, lod, level_label, first_person)
     file_stem = f"{model_file_stem(name)}{suffix}"
     try:

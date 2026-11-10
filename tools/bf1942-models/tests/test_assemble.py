@@ -1590,6 +1590,88 @@ GeometryTemplate.create StandardMesh Lada_1P
         self.assertEqual([["LadaCockpitExternal1"], ["LadaCockpitExternal1"]],
                          self._lada_hulls(model, library, 2))
 
+    HORSE_COATS_CON = """
+ObjectTemplate.create PlayerControlObject Horse
+ObjectTemplate.addTemplate horse_hullRandom
+ObjectTemplate.setRandomGeometries 3
+ObjectTemplate.addTemplate horse_legRandom
+ObjectTemplate.setRandomGeometries 3
+
+ObjectTemplate.create SimpleObject horse_hullRandom1
+ObjectTemplate.geometry Body1
+ObjectTemplate.create SimpleObject horse_hullRandom2
+ObjectTemplate.geometry Body2
+ObjectTemplate.create SimpleObject horse_hullRandom3
+ObjectTemplate.geometry Body3
+ObjectTemplate.create SimpleObject horse_legRandom1
+ObjectTemplate.geometry Leg3
+ObjectTemplate.create SimpleObject horse_legRandom2
+ObjectTemplate.geometry Leg1
+ObjectTemplate.create SimpleObject horse_legRandom3
+ObjectTemplate.geometry Leg2
+
+GeometryTemplate.create StandardMesh Body1
+GeometryTemplate.create StandardMesh Body2
+GeometryTemplate.create StandardMesh Body3
+GeometryTemplate.create StandardMesh Leg1
+GeometryTemplate.create StandardMesh Leg2
+GeometryTemplate.create StandardMesh Leg3
+"""
+
+    def test_a_model_export_walks_its_random_children_from_one_start(self) -> None:
+        # BF1918's horses: a body and its legs are each `setRandomGeometries`,
+        # and the authors name the variants so the engine's one counter
+        # (KIT-2), bumped once per random child in creation order, lands one
+        # coat on all of them: here the body's variant k wears coat k and the
+        # leg's variant k+1 does. A model export starts the walk at 0
+        # (`extract_models.export_one`), so its first random child is
+        # variant 1 and the next variant 2: one coat. Variant 1 throughout
+        # (no counter) is a body of coat 1 on legs of coat 3.
+        library = ObjectLibrary()
+        library.add_con("Objects/Vehicles/Land/Horse/Objects.con", self.HORSE_COATS_CON)
+        pool = ArchivePool()
+
+        def parts(assembler):
+            builder = gltf.GlbBuilder()
+            stub_meshes(assembler, builder, "Body1", "Body2", "Body3", "Leg1", "Leg2", "Leg3")
+            root = assembler.build_node(builder, "Horse", Report(
+                root="Horse", configuration="complex", lod=0))
+            document = glb_document(builder.build([root], extras={}))
+            return sorted(node["name"] for node in document["nodes"]
+                          if node["name"].startswith("horse_"))
+
+        walked = Assembler(pool, pool, pool, library, include_collision=False)
+        walked.random_counter = 0
+        self.assertEqual(["horse_hullRandom1", "horse_legRandom2"], parts(walked))
+        unrolled = Assembler(pool, pool, pool, library, include_collision=False)
+        self.assertEqual(["horse_hullRandom1", "horse_legRandom1"], parts(unrolled))
+
+    def test_export_one_starts_the_walk_per_model(self) -> None:
+        # Every model glb is one object made: the counter starts fresh.
+        import extract_models
+
+        seen = []
+
+        class Probe:
+            def __init__(self, *args, **kwargs):
+                self.random_counter = None
+                self.engine_textures = False
+
+            def export(self, name):
+                seen.append(self.random_counter)
+                raise RuntimeError("probe")
+
+        original = extract_models.Assembler
+        extract_models.Assembler = Probe
+        try:
+            with unittest.mock.patch("sys.stderr"):
+                self.assertIsNone(extract_models.export_one(
+                    "Horse", None, None, None, None, configuration="complex",
+                    lod=0, max_texture=0, out=Path(".")))
+        finally:
+            extract_models.Assembler = original
+        self.assertEqual([0], seen)
+
     def test_a_roll_onto_an_undeclared_paint_builds_no_hull(self) -> None:
         # KIT-3: a variant the data never declared is a template not found,
         # and the engine adds no child at all.
@@ -2745,6 +2827,38 @@ ObjectTemplate.gravityModifier 0
              "timeToLive": 3.0, "gravity": 0.0},
             fire["projectile"])
         self.assertNotIn("PlaneGuns projectile", nodes)
+
+    def test_a_horn_with_no_projectile_keeps_its_fire_extras(self) -> None:
+        # Vanilla's `WillyHorn`, bf1918's `bicycle_bell`: a FireArms with its
+        # `projectileTemplate` commented out still fires (its sound script's
+        # Fire slot, SND-13), so it keeps a muzzle and its firing extras with
+        # no projectile. A HandFireArms with none (the MedPack) is the
+        # soldier's pack, dispatched by name (SUP-27), and stays out.
+        document, report = self._assemble("""
+ObjectTemplate.create Bundle Bike
+ObjectTemplate.addTemplate bicycle_bell
+ObjectTemplate.addTemplate MedPack
+
+ObjectTemplate.create FireArms bicycle_bell
+ObjectTemplate.loadSoundScript Sounds/bicycle_bell.ssc
+ObjectTemplate.magSize -1
+ObjectTemplate.numOfMag 1
+ObjectTemplate.fireonce 1
+ObjectTemplate.roundOfFire 10
+
+ObjectTemplate.create HandFireArms MedPack
+ObjectTemplate.magType 1
+ObjectTemplate.magSize 1800
+ObjectTemplate.roundOfFire 10
+""".replace("Bike", "PlaneComplex"))
+        nodes = {node["name"]: node for node in document["nodes"]}
+        fire = nodes["bicycle_bell"]["extras"]["fireArms"]
+        self.assertNotIn("projectile", fire)
+        self.assertEqual(10.0, fire["roundOfFire"])
+        self.assertEqual("c_PIFire", fire["input"])
+        self.assertIn("bicycle_bell muzzle 1", nodes)
+        self.assertIn("[vehicle] bicycle_bell: 1 muzzle(s), 10 rps", report.fire_arms)
+        self.assertNotIn("fireArms", nodes.get("MedPack", {}).get("extras", {}))
 
     def test_magazine_and_heat_words_ride_on_the_firearms_extras(self) -> None:
         # Vanilla's Coaxial_Browning shape: a magazine and a heat mechanic
