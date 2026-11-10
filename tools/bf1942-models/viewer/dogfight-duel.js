@@ -142,11 +142,6 @@ export function fitAirframe(plane, makePlane, key = 0) {
 }
 
 /**
- * A side's start at an airframe's pace: the lesson's fight made larger by
- * `pace`, its speed and its place about the fight's centre alike. Heights
- * grow too, as far as the roof lets them (`pacedHeight`).
- */
-/**
  * A paced start's height, real metres: as paced up to `PACE.knee`, and from
  * there bent over toward `PACE.roof`, which it never reaches. The lessons'
  * perches (680 and 700 m at the Spitfire's size, 870 and 896 on the F-16)
@@ -160,9 +155,17 @@ export function pacedHeight(h) {
   return h <= PACE.knee ? h : PACE.knee + span * (1 - Math.exp(-(h - PACE.knee) / span));
 }
 
-export function paced(start, pace = 1) {
+/**
+ * A side's start at an airframe's pace: the lesson's fight made larger by
+ * `pace`, its speed and its place about the fight's centre alike. Heights
+ * grow too, as far as the roof lets them (`pacedHeight`). The roof is the
+ * sky's, so over ground at `base` m (the fight's origin: a level's own
+ * ground under the Range's arena) a start is bent by where it will be in
+ * the sky, not by its height over that ground.
+ */
+export function paced(start, pace = 1, base = 0) {
   if (pace === 1 || !start) return start;
-  const at = start.at ? [start.at[0] * pace, Math.max(start.at[1], pacedHeight(start.at[1] * pace)), start.at[2] * pace] : start.at;
+  const at = start.at ? [start.at[0] * pace, pacedHeight(base + start.at[1] * pace) - base, start.at[2] * pace] : start.at;
   return { ...start, at, speed: (start.speed ?? 55) * pace };
 }
 
@@ -343,7 +346,7 @@ export function runDuel({ makePlane, sides, seconds = 60, origin = [0, 0, 0], gr
     const fit = fitted[i] = fitAirframe(plane, makePlane, i);
     plane.groundHeight = (x, z) => groundAt(x, z);
     if (side.state) setPlaneState(plane, side.state, side.throttle ?? 1);
-    else placePlane(plane, stage(origin, paced(side.start, fit.pace)));
+    else placePlane(plane, stage(origin, paced(side.start, fit.pace, origin[1])));
     return plane;
   });
   // An airframe paced as a jet fights with its own cannon, and its pilot

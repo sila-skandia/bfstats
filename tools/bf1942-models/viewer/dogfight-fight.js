@@ -94,7 +94,7 @@ export function runFight({ makePlane, sides, seconds = 60, origin = [0, 0, 0], g
     const plane = make(side, i);
     const fit = fitted[i] = fitAirframe(plane, make, i);
     plane.groundHeight = (x, z) => groundAt(x, z);
-    placePlane(plane, stage(origin, paced(side.start, fit.pace)));
+    placePlane(plane, stage(origin, paced(side.start, fit.pace, origin[1])));
     return plane;
   });
   const guns = sides.map((_, i) => gunOf(fitted[i].gun ?? gun));

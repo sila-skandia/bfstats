@@ -229,9 +229,10 @@ export function createDogfightLive(page) {
     const gy = page.groundAt(cx, cz);
     const origin = [cx, gy, cz];
     const f = live.flight;
-    // Each at its own airframe's pace: a jet starts the fight larger.
-    placePlane(drive, stage(origin, paced(f.you.start, live.fits[1].pace)));
-    placePlane(aceDrive, stage(origin, paced(f.ace.start, live.fits[0].pace)));
+    // Each at its own airframe's pace: a jet starts the fight larger, and
+    // under the roof whatever the ground's height here.
+    placePlane(drive, stage(origin, paced(f.you.start, live.fits[1].pace, gy)));
+    placePlane(aceDrive, stage(origin, paced(f.ace.start, live.fits[0].pace, gy)));
     for (const d of [drive, aceDrive]) {
       if (d.state) d.state.grounded = false;
       d.state?.angularVelocity?.set?.(0, 0, 0);

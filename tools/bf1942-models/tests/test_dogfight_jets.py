@@ -52,6 +52,10 @@ class FitTests(unittest.TestCase):
             self.assertEqual(hs, sorted(set(hs)))
             self.assertLess(hs[-1], 760)
         self.assertEqual([730.5, 734.8], f16[-2:])
+        # Over a level's own ground the perch is bent by its height in the
+        # sky: the Range's arena over ground at 40 or 150 m starts no higher.
+        self.assertEqual(730.5, self.f["overGround"][0])
+        self.assertEqual([730.5, 737.0, 748.4], self.f["overGround"])
 
     def test_a_jet_fights_with_its_own_cannon(self) -> None:
         for name in ("F16", "Mig29"):
