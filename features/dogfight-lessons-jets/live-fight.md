@@ -125,7 +125,10 @@ wrong in the page, and is fixed since ("Checked in a page").
   them. The jet scissors and the jet circle now name their guide (`guide`
   in the jet file): `jetScissors`, stay in the braid, and `ciCircle`, hold
   the circle. `tests/test_dogfight_jets.py` `JetGuideTests` holds that no
-  jet lesson's guide is a move at 0 of 9. Not re-run in a page.
+  jet lesson's guide is a move at 0 of 9. Re-run in the page the same day
+  (the scissors, the instructor on from the first second of the fight): the
+  guide is `jetScissors`, you braid at 50 to 59 m/s against their 47 to 55
+  for 34 s, the ace going reverse, cross, reverse, and nobody is hit.
 - **Not flown by hand.** The runs below fly your seat with the instructor
   (I), not a person with a stick.
 
