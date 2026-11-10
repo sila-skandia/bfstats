@@ -61,5 +61,24 @@ class ModelVerdicts(unittest.TestCase):
                                                   {"m": tank, "row": row(5000, white=0.1)}]))
 
 
+class LevelFilter(unittest.TestCase):
+    def filter_of(self, values: list) -> list:
+        if shutil.which("node") is None:
+            raise unittest.SkipTest("node is not installed")
+        script = (f"import {{ levelFilter }} from {json.dumps(RULES.as_uri())};\n"
+                  f"const vals = {json.dumps(values)};\n"
+                  "console.log(JSON.stringify(vals.map(v => { const s = levelFilter(v); "
+                  "return s ? [...s].sort() : null; })));\n")
+        proc = subprocess.run(["node", "--input-type=module", "-e", script],
+                              capture_output=True, text=True, timeout=60)
+        self.assertEqual(0, proc.returncode, proc.stderr)
+        return json.loads(proc.stdout)
+
+    def test_a_list_scopes_the_levels_and_the_bare_flag_is_all(self):
+        # 2026-11-10: `--levels a,b` rendered every baked level (T3's report).
+        self.assertEqual([["amiens", "bocage"], None, None, None],
+                         self.filter_of(["Bocage, amiens", None, "--out", ""]))
+
+
 if __name__ == "__main__":
     unittest.main()

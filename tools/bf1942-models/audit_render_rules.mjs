@@ -26,3 +26,16 @@ export function modelFlagged(m, row, { white, magenta, black }) {
   const tiny = row.model < 200 && m.tris > 0 && m.extent < 80;
   return tiny || row.white > white || row.magenta > magenta || row.black > black;
 }
+
+/**
+ * The levels `--levels` names: null for the bare flag (every baked level, as
+ * the pipeline's render gate asks), else the lower-case set of a comma list.
+ * `value` is what follows the flag on the command line, if anything. Before
+ * 2026-11-10 a list was read as the bare flag, and a tester asking for two
+ * levels got every baked level after a model pass.
+ */
+export function levelFilter(value) {
+  if (value == null || String(value).startsWith('--')) return null;
+  const names = String(value).split(',').map(s => s.trim().toLowerCase()).filter(Boolean);
+  return names.length ? new Set(names) : null;
+}

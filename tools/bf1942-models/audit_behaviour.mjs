@@ -1041,9 +1041,23 @@ async function testShip(s, tpl, level, rec) {
       evidence: 'non-finite position under throttle' });
     rec.failed = true;
   } else if (moved < 5 && !h1.aground) {
-    add({ check: 'ship.sail', level, template_or_kit: tpl, severity: 'major', cause_key: 'ship.immobile',
-      evidence: `full throttle 8 s: moved ${moved.toFixed(1)} m, revs ${h1.revs}, speed ${h1.speed}` });
-    rec.failed = true;
+    // Held bow-on: a hull moored nose to a beach or to the next boat backs
+    // off first, as a player would, and the drive under test is the same.
+    // tabuaeran parks seven BarkasseTransport landing boats 8 to 10 m apart
+    // at a beach; the first pushed against its neighbours at revs 0.22.
+    await s.ev(() => window.__keys.add('KeyS'));
+    await s.step(300);
+    const h2 = await s.ev(() => window.__helm());
+    await s.ev(() => window.__keys.delete('KeyS'));
+    const back = h2 && finite([h2.x, h2.z]) ? Math.hypot(h2.x - h1.x, h2.z - h1.z) : 0;
+    rec.reverse_m = +back.toFixed(1);
+    if (back >= 3) {
+      rec.blocked = `full throttle 8 s moved ${moved.toFixed(1)} m (revs ${h1.revs}); astern 5 s ${back.toFixed(1)} m`;
+    } else {
+      add({ check: 'ship.sail', level, template_or_kit: tpl, severity: 'major', cause_key: 'ship.immobile',
+        evidence: `full throttle 8 s: moved ${moved.toFixed(1)} m, revs ${h1.revs}, speed ${h1.speed}; astern 5 s ${back.toFixed(1)} m` });
+      rec.failed = true;
+    }
   }
   if (ship0 && Math.abs(ship0.y - ship0.target) > 2) {
     add({ check: 'ship.float', level, template_or_kit: tpl, severity: 'major', cause_key: 'ship.draft-wrong',

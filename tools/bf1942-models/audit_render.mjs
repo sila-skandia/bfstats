@@ -2,7 +2,7 @@
 // pixels that say "something is wrong".
 //
 //   flock /tmp/claude-1000/chromium.lock \
-//     node audit_render.mjs --mod fh --url http://localhost:5303 [--levels] [--max 400]
+//     node audit_render.mjs --mod fh --url http://localhost:5303 [--levels [a,b]] [--max 400]
 //
 // Models: every vehicle template a baked level places (and, with `--all`, the
 // whole manifest) is shown on the model page and its frame read back. A model's
@@ -12,7 +12,7 @@
 // (one triangle under 0.25 m: FHSW's killer cages, spawn breakers and ammo-box
 // depots, the invisible hard mine) is not drawn and not flagged; the rules are
 // `audit_render_rules.mjs`.
-// Levels (`--levels`): three fixed vantage points per baked level (the three
+// Levels (`--levels`, or `--levels a,b` for those alone): three fixed vantage points per baked level (the three
 // first control points, 45 m up, looking at the flag) on `map.html?shots=1`.
 // The frame is the 3D canvas read back directly (the drawing buffer is kept
 // under `?shots`), so the briefing card and HUD are never in it. It is flagged
@@ -30,7 +30,7 @@ import { chromium } from '../../ui/node_modules/playwright/index.mjs';
 import { GPU_ARGS } from './gpu_args.mjs';
 import { readFile, mkdir, writeFile } from 'node:fs/promises';
 import { existsSync, readdirSync } from 'node:fs';
-import { isPlaceholderModel, modelFlagged } from './audit_render_rules.mjs';
+import { isPlaceholderModel, modelFlagged, levelFilter } from './audit_render_rules.mjs';
 
 const arg = (n, d) => { const i = process.argv.indexOf(`--${n}`); return i > -1 ? process.argv[i + 1] : d; };
 const flag = n => process.argv.includes(`--${n}`);
@@ -49,10 +49,19 @@ const FRAME_MAGENTA = Number(arg('frame-magenta', 0.005));
 const FRAME_BLACK = Number(arg('frame-black', 0.35));
 
 const mapsRoot = mod === 'bf1942' ? 'viewer/maps' : `viewer/maps/mods/${mod}`;
-const levels = existsSync(mapsRoot)
+// `--levels` alone is every baked level; `--levels a,b` those levels only (a
+// level's directory name, any case), and the model pass then draws only the
+// vehicles they place. Before, a list was read as the bare flag: a tester
+// asking for two levels got a model pass and every baked level.
+const levelList = levelFilter(arg('levels', null));
+const levels = (existsSync(mapsRoot)
   ? readdirSync(mapsRoot, { withFileTypes: true })
       .filter(d => d.isDirectory() && existsSync(`${mapsRoot}/${d.name}/scene.json`)).map(d => d.name)
-  : [];
+  : []).filter(name => !levelList || levelList.has(name.toLowerCase()));
+if (levelList) {
+  const missing = [...levelList].filter(n => !levels.some(l => l.toLowerCase() === n));
+  if (missing.length) console.log(`no baked level named ${missing.join(', ')} under ${mapsRoot}`);
+}
 
 const placed = new Set();
 for (const lv of levels) {
