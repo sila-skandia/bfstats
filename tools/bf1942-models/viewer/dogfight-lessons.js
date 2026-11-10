@@ -529,6 +529,34 @@ export const LESSONS = [
       follow: { line: 'They are following you up, shallow', tip: 'Do not hang at the top: tip over before you are slow.', keys: ['Mouse'] },
     },
   },
+  {
+    // Boelcke's rule 3 as a drill (features/dogfight-doctrine): a target
+    // that never shoots back, and the score is range.
+    id: 'gunnery',
+    title: 'Gunnery: close, then closer',
+    tagline: 'A target that never shoots back. Hold fire until you are close.',
+    story: [
+      'Boelcke\'s third rule (1916): fire only at close range, and only with the target properly in your sights. In the players\' recorded fights, 25 rounds in 100 hit from inside 100 m, 13 from 300 to 400 m, and 1 from farther out.',
+      'In vanilla BF1942 the two wing guns\' streams part past the target\'s wingtips beyond about 270 m. In BF1918 a machine-gun round does full damage only to 100 m and 30% from 150 m; in Forgotten Hope the rounds weaken from the muzzle.',
+      'The target flies straight, turns gently, jinks and climbs, round and round. The score under the coach counts your rounds, your hits, and how many you fired past your guns\' useful range.',
+    ],
+    counterStory: [
+      'Close to the useful range before you fire: the coach says when. Fire short bursts while the target flies straight or turns steadily; hold your fire while it jinks.',
+    ],
+    ace: { plan: 'target', start: { at: [0, 330, -500], headingDeg: 0, speed: 50 } },
+    you: { start: { at: [0, 300, 0], headingDeg: 0, speed: 60 } },
+    demos: [],
+    seconds: 90,
+    drill: 'gunnery',
+    // The guide and the instructor close in behind it and shoot.
+    guide: 'chaser',
+    coach: {
+      straight: { line: 'The target is flying straight', tip: 'The easy shot: close in behind it, then a short burst.', keys: ['Mouse', 'Space'] },
+      turn: { line: 'The target is turning', tip: 'Lead it: put the sight a little ahead, inside its turn.', keys: ['Mouse', 'Space'] },
+      jink: { line: 'The target is jinking', tip: 'Hold your fire until it steadies. Stay close.', keys: ['Mouse'] },
+      climb: { line: 'The target is climbing round', tip: 'Lead it up and round. Keep your speed.', keys: ['Mouse', 'W'] },
+    },
+  },
 ];
 
 export const lessonById = id => LESSONS.find(l => l.id === id) ?? null;
@@ -609,7 +637,7 @@ export function flightOf(lesson, demoId = null) {
     demo: null, move: null,
     ace: { plan: lesson.flyAce ?? lesson.ace.plan, start: lesson.ace.start, memory: lesson.ace.memory },
     you: { start: lesson.you.start, memory: lesson.you.memory },
-    guide: lesson.demos.find(d => d.id === 'counter')?.seat ?? best?.seat ?? 'meetTheDive',
+    guide: lesson.guide ?? lesson.demos.find(d => d.id === 'counter')?.seat ?? best?.seat ?? 'meetTheDive',
   };
 }
 

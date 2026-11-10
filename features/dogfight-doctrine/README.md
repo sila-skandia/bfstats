@@ -1,7 +1,11 @@
 # Dogfight doctrine: Boelcke's rules in the dogfight school
 
-Status: **research and proposal** (2026-11-10). Nothing is built. Per the
-owner's standing rule, nothing below is built until they say go.
+Status: **steps 1 to 3 of the build plan built** (2026-11-10, after the
+owner's go): the rules measured over any fight and reported over the 303
+recorded fights, the school's Rules tab, the coach's rule lines and the end
+card's verdicts, and the gunnery drill. Steps 4 to 9 are proposals still.
+See "Built" and "What the recordings say" below; the research and the plan
+follow them unchanged.
 
 A community member, seeing BF1918 come into the viewer, suggested the Dicta
 Boelcke, the first written rules of air fighting (1916), as a way to teach
@@ -10,6 +14,86 @@ WWII and Desert Combat. This page reads the rules and what followed them,
 checks each against what the Refractor flight law and the mods' own data
 actually reward, says what the school can already measure and what it
 cannot, and ends with a ranked build plan.
+
+## Built (2026-11-10)
+
+- **`viewer/dogfight-doctrine.js`** (pure): over a fight in the theatre's
+  shape, flown or recorded, each pilot's **attacks** (begun when the nose is
+  within 30 degrees, inside 700 m and not opening; ended when the nose has
+  been off for 2 s or the range opens past 900 m), each with the energy lead,
+  whether the target saw the attacker, the aspect, the sun angle when given,
+  the first burst, the hits, and whether it was carried through, spoiled (the
+  target turned to face it), threatened or abandoned; each **burst**, every
+  round counted at the range it left at against the plane's **useful range**
+  (`usefulRange`: inside the guns' reach, and where the falloff still does
+  half damage: vanilla 269 m, BF1918 136 m, FHSW 7.92 mm 284 m, FHSW 20 mm
+  501 m); **sight** (the duel's `sees`, or `perceive` run over a recording's
+  tracks); the **dives** on a pilot, met or run from (judged at the
+  attacker's first burst or closest point: off the tail by 90 degrees is met,
+  inside 45 is run); and a verdict per rule 1 to 6 (`RULES` holds the eight in
+  plain words with what this engine does with each). `DOCTRINE` holds every
+  number.
+- **`dogfight_doctrine_report.mjs`**: the rules over every extracted fight,
+  with `--suns features/dogfight-doctrine/suns.json` (the seven recorded
+  vanilla levels' `sunDirection`, read from their `scene.json` on
+  mesh.bfstats.io) and `--without <pilot>`. The fights are on play.bfstats.io
+  under `/replays/dogfights/`; the local checkout holds only the index.
+- **The Rules tab** (the school's rail, fourth beside Lessons, Rings and
+  Fights): the eight rules, each with what the engine and the recordings say
+  and the lesson that shows it (rule 6 opens *When they have the height* on
+  *You climb between their dives*). Rules 7 and 8 say "Not in the school yet".
+- **The end card**: each rule in play kept (green) or broken (red), with its
+  numbers: yours in a lesson, both pilots' in a recording.
+- **The coach** (`dogfight-coach.js`): five lines tagged with their rule.
+  Hold fire past your plane's useful range, read from your own plane's
+  FireArms (`gunFromNode`) (3); no advantage going in (1); committed to a
+  dive (2); lost sight of them for 2 s (4); head on or from the side (5).
+  When the lesson's own line is on top, the rule rides in its own row under
+  it ("BOELCKE 3 · Hold fire: ..."), so the lesson's words keep their place.
+  Without a useful range the coach is as it was.
+- **The gunnery drill** (lesson *Gunnery: close, then closer*, `gunnery`):
+  a target (`PLANS.target`) that flies straight, turns, jinks and climbs in a
+  27 s loop at 50 m/s, never shoots, never breaks, never looks round. The
+  rule's row keeps the score: hits, rounds, hits per 100, the average range
+  of a hit, and the share fired past your useful range. The guide and the
+  instructor fly a chaser.
+- **Tests:** `tests/test_dogfight_doctrine.py` (15): the measures on the
+  school's own lessons (the boom-and-zoom ace keeps rules 1, 2, 3 and 5; the
+  pilot who meets the dive meets every one, the one who climbs straight runs;
+  a dive met head on is broken off, not abandoned; the circle has no attack;
+  the pilot who never looks back loses sight), a recorded fight with no eyes
+  (a hunter dead astern is never seen), the useful ranges, the coach's
+  lines, and the target. `test_dogfight_steps.py` lets the drill off its
+  "every lesson names a best move", as it does *Against the ace*.
+
+## What the recordings say
+
+`node tools/bf1942-models/dogfight_doctrine_report.mjs <fights> --suns
+features/dogfight-doctrine/suns.json`, the 303 fights published on
+2026-11-08 (290 vanilla). Every finding held with Chief-H.E.M.P's 53 fights
+left out (the pilot in the most fights, see `dogfight-recordings`).
+
+| Rule | Measure | Kept | Broken |
+|---|---|---|---|
+| 1 Advantage | attacks begun with 50 m of energy or unseen, against the rest | won 33%, lost 5% (245) | won 17%, lost 9% (251); from 100 m below: 9% and 18% (45) |
+| 1 The sun | the attacker within 20 degrees of the sun as the target sees him | landed a shot 70%, won 35% (20) | elsewhere: landed 52%, won 23% (387) |
+| 2 Carry it through | attacks that landed a shot, against those turned away from unspoiled | won 39%, lost 3% (261) | won 7%, lost 9% (69) |
+| 3 Close range | hits per 100 rounds by range as they left | 25.5 inside 100 m, 23.3 to 200, 19.8 to 300 | 13.3 to 400, 1.0 to 700, 0 beyond |
+| 4 Sight | the share of the fight each had the other in sight | winners 95% | losers 82% (105 fights with a kill) |
+| 5 From behind | the first burst within 45 degrees of their tail / 45 to 90 / their front half | won 36%, lost 3% (107) / 41%, 2% (120) | 18%, 7% (154) |
+| 6 Meet the dive | dived on from 100 m above: met / ran | lost 28% of those fights, 5.4 hits taken (29) | lost 62%, 11.2 hits taken (21) |
+
+What it adds to the proposal:
+
+- **Rules 1, 3, 4, 5 and 6 pay in real players' fights**, by margins the
+  sample carries. Rule 5 is really "not from their front half": the beam
+  does as well as dead astern.
+- **The sun looks like it pays, on 20 attacks.** The school's eyes do not
+  model it, so whatever the sun did, it did to the humans. Twenty is too few
+  to build the glare cone on (step 8): it waits for more recordings.
+- **Rule 2's abandoned attacks are not the losing ones**: 7% won, 9% lost,
+  about the base rate. The spoiled ones are (lost 20%), which is rule 6 seen
+  from the other side.
 
 ## The answer, short
 
@@ -445,9 +529,9 @@ Sizes are rough: S a day or less, M a few days, L a week or more.
 
 | # | Step | Rules | Size | Needs |
 |---|---|---|---|---|
-| 1 | **Doctrine measures over any fight** | 1, 2, 3, 4, 5, 8 | M | nothing |
-| 2 | **The Boelcke cards and the coach's cues** | 1 to 6 | S | 1 |
-| 3 | **The gunnery drill** | 3 | M | 1 |
+| 1 | **Doctrine measures over any fight** (built; rule 8's company is not) | 1, 2, 3, 4, 5, 8 | M | nothing |
+| 2 | **The Boelcke cards and the coach's cues** (built) | 1 to 6 | S | 1 |
+| 3 | **The gunnery drill** (built) | 3 | M | 1 |
 | 4 | **A BF1918 arena** | all, period-correct | M | the lowercase-class fix |
 | 5 | **The falling leaf** (the ruse) | 4 | S | 1, and 4 for the period |
 | 6 | **More than two planes in a duel**, then *The pair* and the Thach weave | 8 | L | 1 |
@@ -471,7 +555,9 @@ theatre's shape, flown or recorded:
   share of time the opponent is on the screen.
 - *Company*: friendly and enemy fighters within 1.5 km, and two on one
   (two shooters' aimed rounds at one target inside 5 s), from the recording's
-  other planes.
+  other planes. Not built: an extracted fight holds its two planes only, so
+  the extractor (`extract_dogfights.mjs`) would have to keep the others near
+  it first.
 
 Then the report: what each rule's measure says about the 303 recorded fights
 (does an attack begun with the advantage win more; does a pilot who fires

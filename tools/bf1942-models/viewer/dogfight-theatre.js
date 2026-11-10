@@ -25,6 +25,7 @@ import { MOVE_INFO, stepsOf, stepTimes, bestMove, moveLabel } from './dogfight-s
 import { whatIf, chasedAt, spliceFight } from './dogfight-whatif.js';
 import { deadlockSpans, deadlockIn, extendFrom, momentOf, trackState, resultWords, RESULT_TAGS, KIND_WORDS } from './dogfight-deadlock.js';
 import { makeTracer, poseTracer, propellersOf, tracerGunOf, tracerRounds, turnPropellers } from './dogfight-plane-look.js';
+import { RULES as BOELCKE, doctrineOf } from './dogfight-doctrine.js';
 
 /** A Neutral Depth token's value (tokens.css): the theatre's 3D colours
  *  are the site's, read where the page defines them, never written here. */
@@ -53,6 +54,7 @@ const ICON = {
   lessons: svg('<path d="M9 6h11M9 12h11M9 18h11"/><path d="M4 5.5h1.5v2M4 11h2l-2 2.5h2M4 17h2l-1 1 1 1H4" class="is-thin"/>'),
   rings: svg('<circle cx="12" cy="12" r="8.5"/><circle cx="12" cy="12" r="4"/><path d="M12 1.5v3M12 19.5v3"/>'),
   fights: svg('<path d="M2.5 18c5-1.5 5.5-11 10.5-10.5S17 15 21.5 5"/><path d="M2.5 9.5c4.5 1 7.5 9 11.5 6.5s4-7 7.5-4" class="is-alt"/>'),
+  rules: svg('<path d="M6 3.5h9.5l3 3V20.5H6z"/><path d="M9 10h6.5M9 13.5h6.5M9 17h4" class="is-thin"/><path d="M15.5 3.5v3h3" class="is-thin"/>'),
   fold: svg('<path d="M14.5 6l-6 6 6 6"/><path d="M19.5 4v16" class="is-thin"/>'),
   caret: svg('<path d="M7 10l5 5 5-5"/>', ' data-caret'),
   cam: svg('<path d="M3 8.5h4l2-2.5h6l2 2.5h4V19H3z"/><circle cx="12" cy="13" r="3.2"/>'),
@@ -231,6 +233,7 @@ export function createDogfightTheatre({ host, makePlane, planeVisual = () => nul
           <button type="button" class="dfs-rail-btn" data-section="lessons" title="Lessons (L)">${ICON.lessons}<span>Lessons</span></button>
           <button type="button" class="dfs-rail-btn" data-section="courses" title="Ring courses">${ICON.rings}<span>Rings</span></button>
           <button type="button" class="dfs-rail-btn" data-section="recordings" title="Recordings: fights real players flew">${ICON.fights}<span>Fights</span></button>
+          <button type="button" class="dfs-rail-btn" data-section="rules" title="Boelcke's rules: the first written rules of air fighting (1916)">${ICON.rules}<span>Rules</span></button>
         </div>
         <button type="button" class="dfs-rail-btn dfs-list-toggle" aria-expanded="true" title="Hide the list (L)">${ICON.fold}<span>Hide</span></button>
       </nav>
@@ -269,7 +272,7 @@ export function createDogfightTheatre({ host, makePlane, planeVisual = () => nul
           <p class="dfs-cap is-ace"><b>ACE</b><i class="dfs-intent"></i><span></span></p>
           <p class="dfs-cap is-you"><b>YOU</b><i class="dfs-intent"></i><span></span></p>
         </div>
-        <div class="dfs-endcard" hidden><b></b><span></span><div class="dfs-end-acts"></div></div>
+        <div class="dfs-endcard" hidden><b></b><span></span><ol class="dfs-end-rules" hidden></ol><div class="dfs-end-acts"></div></div>
         <div class="dfs-helper" hidden data-step=""><small class="dfs-helper-kicker"></small><b class="dfs-helper-title"></b><span class="dfs-helper-words"></span><ol class="dfs-helper-ways"></ol><div class="dfs-helper-acts"></div></div>
         <button type="button" class="dfs-layer" hidden>
           <span class="dfs-layer-art"><img alt="" hidden>
@@ -1417,7 +1420,24 @@ export function createDogfightTheatre({ host, makePlane, planeVisual = () => nul
         + sides.map(side => `<button type="button" class="dfs-chip" data-extend="run" data-side="${side}" data-t="${t}">${fight.recorded ? `Extend for ${esc(fight.names[side])}` : 'Extend the scene'}</button>`).join('');
     } else acts.innerHTML = '';
     acts.hidden = !open;
+    drawEndRules(fight);
     ui.end.hidden = false;
+  }
+
+  /** Boelcke's rules kept and broken in the fight that ended: yours in a
+   *  lesson, both pilots' in a recording (`dogfight-doctrine.js`). */
+  function drawEndRules(fight) {
+    const list = ui.end.querySelector('.dfs-end-rules');
+    let doc = null;
+    try { doc = fight.extended ? null : doctrineOf(fight, { guns: [gunOf({}), gunOf({})] }); } catch { doc = null; }
+    const sides = !doc ? [] : fight.recorded ? [0, 1] : [1];
+    const rows = sides.flatMap(s => doc.sides[s].rules.filter(v => v.kept !== null).map(v => {
+      const name = BOELCKE.find(b => b.n === v.n)?.name ?? '';
+      const who = fight.recorded ? `${esc(fight.names[s])}: ` : '';
+      return `<li data-kept="${v.kept}"><i>${v.n}</i><span>${who}${esc(name)}</span><small>${esc(v.words)}</small></li>`;
+    }));
+    list.innerHTML = rows.length ? `<li class="dfs-end-rules-head">BOELCKE'S RULES</li>${rows.join('')}` : '';
+    list.hidden = !rows.length;
   }
 
   /** Where both fighters were over the From-above window ending at `t`:
@@ -2708,7 +2728,17 @@ export function createDogfightTheatre({ host, makePlane, planeVisual = () => nul
     + `<button type="button" class="dfs-chip" data-filter="all">Every attack</button></div>`
     + `<div class="dfs-recs-bar"><button type="button" class="dfs-chip" data-group="duration" title="Longest first; again for shortest first">Duration</button>`
     + `<button type="button" class="dfs-chip" data-group="date" title="Newest first; again for oldest first">Date</button><button type="button" class="dfs-chip" data-group="pilot">By pilot</button>`
-    + `<small class="dfs-recs-count">loading</small></div><ol role="list"></ol></li>`;
+    + `<small class="dfs-recs-count">loading</small></div><ol role="list"></ol></li>`
+    // Boelcke's rules (features/dogfight-doctrine): each in plain words,
+    // what this engine does with it, and the lesson that shows it.
+    + `<li class="dfs-group" data-section="rules"><span>BOELCKE'S RULES · 1916</span><small>The first written rules of air fighting, and what BF1942's engine and its players' fights say about each</small></li>`
+    + BOELCKE.map(b => {
+      const L = b.lesson ? lessonById(b.lesson[0]) : null;
+      const at = L ? `data-rule-lesson="${L.id}"${b.lesson[1] ? ` data-rule-demo="${esc(b.lesson[1])}"` : ''}` : 'data-unbuilt';
+      return `<li data-section="rules">${ROW} ${at}><span class="dfs-n">${b.n}</span><b>${esc(b.name)}</b><small>${esc(b.plain)}</small>`
+        + `<small class="dfs-rule-here">${esc(b.here)}</small>`
+        + `<em class="dfs-rule-go">${L ? `Shown in: ${esc(L.title)}` : 'Not in the school yet'}</em></div></li>`;
+    }).join('');
   ui.sections.addEventListener('click', e => {
     const b = e.target.closest('button[data-section]');
     if (!b) return;
@@ -2721,6 +2751,7 @@ export function createDogfightTheatre({ host, makePlane, planeVisual = () => nul
   // the recorded fights.
   if (!onFlyCourse || world) ui.sections.querySelector('[data-section="courses"]')?.remove();
   if (world) ui.sections.querySelector('[data-section="lessons"]')?.remove();
+  if (world) ui.sections.querySelector('[data-section="rules"]')?.remove();
   showSection(world ? 'recordings' : 'lessons');
   // A row's keys: Enter or Space opens it, as a button's would (and Space
   // is not the school's play and pause here).
@@ -2771,6 +2802,14 @@ export function createDogfightTheatre({ host, makePlane, planeVisual = () => nul
     if (r) { pickRecorded(r.dataset.recorded); if (narrow()) setList(false); return; }
     const c = e.target.closest('[data-course]');
     if (c && onFlyCourse) { close(false); onFlyCourse(c.dataset.course); return; }
+    // A rule's row opens its lesson on the fight that shows it.
+    const rl = e.target.closest('[data-rule-lesson]');
+    if (rl) {
+      pickLesson(rl.dataset.ruleLesson);
+      if (state.lesson?.demos.some(d => d.id === rl.dataset.ruleDemo)) pickDemo(state.lesson, rl.dataset.ruleDemo);
+      if (narrow()) setList(false);
+      return;
+    }
     const b = e.target.closest('[data-lesson]');
     if (b) { pickLesson(b.dataset.lesson); if (narrow()) setList(false); }
   });

@@ -82,6 +82,12 @@ is published: no asset is involved.
   the next course, **I** the instructor, **G** the guide, **O** end.
 - **The instructor:** I hands your seat to the pilot the guide follows. Touch
   any control and you have it back ("YOU HAVE CONTROL").
+- **Boelcke's rules** (2026-11-10, `features/dogfight-doctrine`): the rail's
+  **Rules** tab lists the eight rules of 1916, each with what this engine and
+  the recorded fights say and the lesson that shows it; the end card marks
+  each rule kept or broken in the fight; the coach's rule lines ride in their
+  own row ("BOELCKE 3 · Hold fire: ..."); and the lesson *Gunnery: close,
+  then closer* is a target that never shoots back, scored on range.
 
 ## The hunter
 

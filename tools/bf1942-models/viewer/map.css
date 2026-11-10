@@ -1873,7 +1873,8 @@ a { color: var(--accent); }
 /* The list in three parts, one shown at a time (the rail's buttons). */
 .dfs-lessons[data-show="lessons"] > li:not([data-section="lessons"]),
 .dfs-lessons[data-show="courses"] > li:not([data-section="courses"]),
-.dfs-lessons[data-show="recordings"] > li:not([data-section="recordings"]) { display: none; }
+.dfs-lessons[data-show="recordings"] > li:not([data-section="recordings"]),
+.dfs-lessons[data-show="rules"] > li:not([data-section="rules"]) { display: none; }
 .dfs-lessons .dfs-group { display: flex; flex-direction: column; gap: 2px; padding: 14px 16px 8px; border-bottom: 1px solid var(--mm-rule); }
 .dfs-lessons .dfs-group span { font: 500 10px/1.4 var(--mm-font-mono); letter-spacing: 0.14em; color: var(--mm-accent-soft); }
 .dfs-lessons .dfs-group small { font-size: 11.5px; }
@@ -2168,6 +2169,20 @@ a { color: var(--accent); }
 /* No kill: the scene extended from the end, offered on the card itself. */
 .dfs-end-acts { display: flex; flex-wrap: wrap; gap: 6px; align-items: center; margin-top: 6px; padding-top: 8px; border-top: 1px solid var(--mm-rule); }
 .dfs-end-acts[hidden] { display: none; }
+/* Boelcke's rules kept and broken in the fight (features/dogfight-doctrine). */
+.dfs-end-rules { list-style: none; margin: 6px 0 0; padding: 8px 0 0; border-top: 1px solid var(--mm-rule); display: grid; gap: 3px; }
+.dfs-end-rules[hidden] { display: none; }
+.dfs-end-rules li { display: grid; grid-template-columns: 16px auto 1fr; gap: 6px; align-items: baseline; font-size: 12px; }
+.dfs-end-rules .dfs-end-rules-head { display: block; font: 500 9.5px/1.4 var(--mm-font-mono); letter-spacing: 0.14em; color: var(--mm-ink-muted); }
+.dfs-end-rules i { font-style: normal; font-family: var(--mm-font-mono); font-size: 10.5px; text-align: center; border-radius: 2px; }
+.dfs-end-rules li[data-kept="true"] i { color: var(--mm-success); }
+.dfs-end-rules li[data-kept="false"] i { color: var(--mm-kill); }
+.dfs-end-rules span { color: var(--mm-ink); }
+.dfs-end-rules small { color: var(--mm-ink-muted); }
+.dfs-lessons .dfs-rule-here { grid-column: 2; color: var(--mm-ink-faint); font-size: 11.5px; }
+.dfs-lessons .dfs-rule-go { grid-column: 2; font-style: normal; font-family: var(--mm-font-mono); font-size: 10px; letter-spacing: 0.08em; text-transform: uppercase; color: var(--mm-accent-soft); }
+.dfs-lessons [data-unbuilt] .dfs-rule-go { color: var(--mm-ink-faint); }
+.dfs-lessons [data-unbuilt] { cursor: default; }
 .dfs-end-acts small { flex-basis: 100%; color: var(--mm-ink-soft); font-size: 12px; line-height: 1.4; }
 /* The one bar under the picture: play and the clock, the lesson's fights as
    tabs, then the speed and camera menus, the notes and FLY IT. */
@@ -2618,6 +2633,9 @@ a { color: var(--accent); }
 .dfl-tip { display: block; font-size: 13.5px; color: var(--mm-ink-soft); line-height: 1.4; }
 .dfl-keys { display: flex; gap: 6px; justify-content: center; flex-wrap: wrap; margin-top: 6px; }
 .dfl-keys:empty { display: none; }
+.dfl-rule { display: block; margin-top: 6px; padding-top: 6px; border-top: 1px solid var(--mm-rule); font-size: 12px; line-height: 1.4; color: var(--mm-ink-muted); }
+.dfl-rule[hidden] { display: none; }
+.dfl-rule i { font-style: normal; font-family: var(--mm-font-mono); font-size: 9.5px; letter-spacing: 0.14em; color: var(--mm-accent-soft); margin-right: 6px; }
 .dfl-mark {
   position: absolute; left: 0; top: 0;
   width: 0; height: 0;

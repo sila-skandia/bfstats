@@ -31,6 +31,7 @@ import { createGuide, token } from './dogfight-guide.js';
 import { MOVE_INFO, moveLabel } from './dogfight-steps.js';
 import { seatCover } from './dogfight-cover.js';
 import { createTacticalSphere } from './dogfight-sphere.js';
+import { usefulRange, gunFromNode } from './dogfight-doctrine.js';
 
 /** The moves' names as the coach says them: the pilot's name for each
  *  (`dogfight-steps.js`), as the theatre's tabs and move card say it. */
@@ -87,6 +88,7 @@ export function createDogfightLive(page) {
       <b class="dfl-line"></b>
       <span class="dfl-tip"></span>
       <span class="dfl-keys"></span>
+      <span class="dfl-rule" hidden><i></i><span></span></span>
       <div class="dfl-score"><span>the ace's hits on you <b class="dfl-his">0</b></span><span>yours on the ace <b class="dfl-yours">0</b></span><span>kills <b class="dfl-kills">0 : 0</b></span></div>
     </div>
     <div class="dfl-mark" hidden><i></i><span></span></div>
@@ -106,7 +108,7 @@ export function createDogfightLive(page) {
   const cover = seatCover(hud);
   const q = s => hud.querySelector(s);
   const ui = {
-    coach: q('.dfl-coach'), lesson: q('.dfl-lesson'), line: q('.dfl-line'), tip: q('.dfl-tip'), keys: q('.dfl-keys'),
+    coach: q('.dfl-coach'), lesson: q('.dfl-lesson'), line: q('.dfl-line'), tip: q('.dfl-tip'), keys: q('.dfl-keys'), rule: q('.dfl-rule'),
     mark: q('.dfl-mark'), markText: q('.dfl-mark span'),
     view: q('.dfl-view'), svg: q('.dfl-view-svg'), pinYou: q('.dfl-pin.is-you'), pinHim: q('.dfl-pin.is-him'),
     range: q('.dfl-range'), above: q('.dfl-above'), scale: q('.dfl-scale'), said: q('.dfl-said'),
@@ -127,6 +129,9 @@ export function createDogfightLive(page) {
     watch: createDeadlockWatch(), deadlock: null, extend: null, extendWay: null,
     // The sphere, built on first use (its colours are the page's tokens).
     sphere: null,
+    // Boelcke's rules in the coach (features/dogfight-doctrine): your guns'
+    // useful range and falloff, and how long he has been off your screen.
+    myGun: null, offScreen: 0,
   };
 
   function banner(text, seconds = 2.5, tone = 'info') {
@@ -204,6 +209,16 @@ export function createDogfightLive(page) {
     bot._airborne = true;
     live.pilot = createPilot(f.ace.plan, { gun: page.gunOf?.(bot) ?? {} });
     Object.assign(live.pilot.mem, structuredClone(f.ace.memory ?? {}));
+    {
+      // Your guns: your plane's own round and its falloff (its FireArms'
+      // extras), inside the ace's convergence.
+      const mine = gunFromNode(page.playerRoot?.());
+      live.myGun = { falloff: mine?.falloff ?? null, rate: mine?.rate ?? 12, useful: usefulRange({ range: live.pilot.gun.range, falloff: mine?.falloff }) };
+    }
+    // The gunnery drill's score (Boelcke's rule 3): rounds fired, how many
+    // past the useful range, and every hit with its range.
+    live.drill = lesson.drill === 'gunnery' ? { rounds: 0, past: 0, hits: [] } : null;
+    live.offScreen = 0;
     live.moveDone = false;
     live.quarterFor = 0;
     live.guidePilot = null;
@@ -254,8 +269,13 @@ export function createDogfightLive(page) {
   }
 
   /** The instructor's hands on the player's seat: the lesson's counter, until
-   *  the player moves a control himself. */
+   *  the player moves a control himself. `live.firing` is the trigger that
+   *  goes to the guns, yours or the instructor's: what the drill counts. */
   function flightOverride(input) {
+    applyOverride(input);
+    live.firing = !!input.fire;
+  }
+  function applyOverride(input) {
     live.lastInput = { roll: input.roll, pitch: input.pitch, rudder: input.rudder, throttle: input.forwardKeys, fire: input.fire };
     if (live.frozen) { input.fire = false; return; }
     if (!live.instructor || live.phase !== 'fight') return;
@@ -298,7 +318,10 @@ export function createDogfightLive(page) {
         banner('THE ACE WOULD HAVE SHOT YOU DOWN · Y to go again', 4, 'danger');
       }
     }
-    if (live.aceRoot && isUnder(struck, live.aceRoot) && firerId === page.localId) live.yourHits++;
+    if (live.aceRoot && isUnder(struck, live.aceRoot) && firerId === page.localId) {
+      live.yourHits++;
+      if (live.drill && live.you && live.him) live.drill.hits.push(Math.round(len(sub(live.him.position, live.you.position))));
+    }
   }
 
   function frame(dt) {
@@ -378,19 +401,22 @@ export function createDogfightLive(page) {
       const way = live.extendWay;
       const move = live.flight?.demo && live.guideOut ? { name: MOVE_WORDS[live.flight.move], say: guideToYou(live.guideOut.say), phase: live.guideOut.phase }
         : way && live.guideOut ? { name: `WAY OUT · ${way.name.toUpperCase()}`, say: guideToYou(live.guideOut.say), phase: live.guideOut.phase } : null;
-      const words = coach(live.lesson, live.aceOut, you, him, { ground: page.groundAt(you.position[0], you.position[2]), move });
+      const words = coach(live.lesson, live.aceOut, you, him, { ground: page.groundAt(you.position[0], you.position[2]), move,
+        useful: live.myGun?.useful ?? null, falloff: live.myGun?.falloff ?? null,
+        seen: live.pilot?.mem?.eye ? !!live.pilot.mem.eye.sees : null, offScreen: live.offScreen });
       // A deadlock: the coach names it and offers the scene extended, unless
       // the ground or a stall comes first, or a way out is being flown.
       const floor = words.line === 'GROUND' || words.line.startsWith('Slow');
       if (live.deadlock && !floor && !way) {
-        Object.assign(words, { tone: TONE.warn, line: `Deadlock: ${KIND_WORDS[live.deadlock.kind]}`,
+        Object.assign(words, { rule: null, tone: TONE.warn, line: `Deadlock: ${KIND_WORDS[live.deadlock.kind]}`,
           tip: `Nobody has had a shot for ${Math.round(live.deadlock.since)} s. X freezes the fight and flies the school's ways out from here.`, keys: ['X'] });
       }
       const rc = page.rangeCentre?.();
       if (rc && Math.hypot(you.position[0] - rc[0], you.position[2] - rc[1]) > LEAVING) {
-        Object.assign(words, { tone: TONE.warn, line: 'You are leaving the range', tip: 'Turn back toward the floor: the fight goes on there.', keys: ['Mouse', 'Arrows'] });
+        Object.assign(words, { rule: null, tone: TONE.warn, line: 'You are leaving the range', tip: 'Turn back toward the floor: the fight goes on there.', keys: ['Mouse', 'Arrows'] });
       }
       setCoach(words);
+      if (live.drill) drawDrill();
       ui.said.textContent = live.aceOut?.say ? `"${toYou(live.aceOut.say)}"` : '';
       ui.his.textContent = String(live.hisHits);
       ui.yours.textContent = String(live.yourHits);
@@ -406,6 +432,11 @@ export function createDogfightLive(page) {
     live.you = you;
     live.him = him;
     markHim(you, him);
+    if (live.drill && live.firing && !live.frozen) {
+      const n = (live.myGun?.rate ?? 12) * dt;
+      live.drill.rounds += n;
+      if (len(sub(him.position, you.position)) > (live.myGun?.useful ?? 268)) live.drill.past += n;
+    }
     // The guide: the counter's pilot flies your seat in his head, a frame
     // at a time, and his stick, smoothed, is what the guide says.
     if (!live.guidePilot) live.guidePilot = guidePilot();
@@ -796,7 +827,28 @@ export function createDogfightLive(page) {
   }
 
   let coachKey = '';
+  /** The gunnery drill's running score, in the rule's row. */
+  function drawDrill() {
+    const d = live.drill, rounds = Math.round(d.rounds);
+    const per = rounds ? (100 * d.hits.length / rounds).toFixed(1) : '0';
+    const past = rounds ? Math.round(100 * d.past / d.rounds) : 0;
+    const near = d.hits.length ? Math.round(d.hits.reduce((a, b) => a + b, 0) / d.hits.length) : null;
+    ui.rule.hidden = false;
+    ui.rule.querySelector('i').textContent = 'BOELCKE 3 · GUNNERY';
+    ui.rule.querySelector('span').textContent = `${d.hits.length} hits in ${rounds} rounds (${per} per 100)`
+      + `${near !== null ? `, from ${near} m on average` : ''}. Fired past ${Math.round(live.myGun?.useful ?? 268)} m: ${past}%.`;
+  }
+
   function setCoach(w) {
+    // Boelcke's rule in play, when the top line is not one: its own quiet
+    // row, so the lesson's words keep their place.
+    const rule = w.rule ? null : w.ruleLine ?? null;
+    ui.rule.hidden = !rule && !w.rule;
+    const shown = w.rule ? w : rule;
+    if (shown) {
+      ui.rule.querySelector('i').textContent = `BOELCKE ${shown.rule}`;
+      ui.rule.querySelector('span').textContent = w.rule ? '' : `${shown.line}: ${shown.tip}`;
+    }
     const key = `${w.tone}|${w.line}|${w.tip}`;
     if (key === coachKey) return;
     coachKey = key;
@@ -826,6 +878,10 @@ export function createDogfightLive(page) {
     const ahead = _c.z < 0;
     _p.set(him.position[0], him.position[1], him.position[2]).project(cam);
     const onScreen = ahead && Math.abs(_p.x) < 0.92 && Math.abs(_p.y) < 0.86;
+    // How long he has been off the screen (rule 4's measure), on the
+    // page's clock.
+    live.offScreen = onScreen ? 0 : live.offScreen + Math.max(0, live.clock - (live.markAt ?? live.clock));
+    live.markAt = live.clock;
     const range = Math.round(len(sub(him.position, you.position)));
     ui.mark.hidden = false;
     ui.mark.classList.toggle('is-edge', !onScreen);

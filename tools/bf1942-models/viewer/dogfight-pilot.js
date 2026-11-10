@@ -119,6 +119,7 @@ export const INTENTS = {
   unaware: { cruise: 'setup' },
   circler: { turn: 'defend' },
   cruiser: { cruise: 'setup' },
+  target: { straight: 'setup', turn: 'setup', jink: 'defend', climb: 'setup' },
   meetTheDive: { climb: 'setup', face: 'defend', pass: 'defend', extend: 'setup' },
   bzDip: { climb: 'setup', face: 'defend', pass: 'defend', extend: 'setup', 'dip-run': 'defend' },
   bzAce: { climb: 'setup', perch: 'setup', dive: 'attack', zoom: 'setup', reverse: 'setup', 'let-go': 'setup' },
@@ -426,7 +427,7 @@ function reflex(c, def) {
 const CLEAR = { bank: 60, for: 6, every: 4 };
 /** The school's pilots who by design never look round: the man flying
  *  straight and level under attack, and the one who never looks up. */
-const NEVER_CLEARS = new Set(['cruiser', 'unaware']);
+const NEVER_CLEARS = new Set(['cruiser', 'unaware', 'target']);
 function clearTurn(c) {
   const { g, mem, me } = c;
   if (NEVER_CLEARS.has(c.pilot.plan)) return null;
@@ -2378,6 +2379,47 @@ PLANS.circler = {
   step(c) {
     if (c.mem.side === undefined) c.mem.side = c.mem.dir ?? 1;
     return { ...hardTurn(c.me, c.mem.side, { climb: 0, maxBank: 72 }), throttle: 1 };
+  },
+};
+
+/**
+ * The gunnery drill's target (features/dogfight-doctrine, Boelcke's rule 3):
+ * a towed sleeve's course that never shoots, never breaks and never looks
+ * round. Straight, a gentle turn, straight, a jink, straight, a climbing
+ * turn, and round again, each turn the other way from the last, at a
+ * steady 50 m/s. Every round aimed at it is the pilot's lesson in range.
+ */
+const TARGET = { cruise: 50, order: ['straight', 'turn', 'straight', 'jink', 'straight', 'climb'],
+  seconds: { straight: 4, turn: 6, jink: 4, climb: 5 } };
+PLANS.target = {
+  title: 'The target', first: 'straight',
+  says: {
+    straight: 'Flying straight: the easy shot, once you are close',
+    turn: 'A gentle turn: lead them',
+    jink: 'Jinking: wait for them to steady',
+    climb: 'A climbing turn: lead them up',
+  },
+  step(c) {
+    const { me, mem } = c;
+    mem.k ??= 0;
+    mem.side ??= 1;
+    if (mem.since > TARGET.seconds[mem.phase]) {
+      mem.k = (mem.k + 1) % TARGET.order.length;
+      if (TARGET.order[mem.k] !== 'straight') mem.side = -mem.side;
+      mem.dir = null;
+      go(c, TARGET.order[mem.k]);
+    }
+    const throttle = holdSpeed(c, TARGET.cruise);
+    let k;
+    switch (mem.phase) {
+      case 'turn': k = hardTurn(me, mem.side, { pull: 0.45, maxBank: 40 }); break;
+      case 'climb': k = hardTurn(me, mem.side, { climb: 12, pull: 0.5, maxBank: 45 }); break;
+      case 'jink': k = bankAndPull(me, (Math.floor(mem.since / 0.8) % 2 ? 1 : -1) * mem.side * 45, 0.35); break;
+      default:
+        mem.dir ??= heading(me.velocity);
+        k = pointNose(me, climbing(mem.dir, 0), { fine: 6 });
+    }
+    return { ...k, throttle, aimed: false };
   },
 };
 
