@@ -927,7 +927,7 @@ function roundFate(bot, guns, group, round, head) {
  * 800 to 1000 m/s covers 27 to 33 m a tick: most rounds at a target inside
  * 60 m are seen once, at the muzzle, and gone the next tick. Read off that
  * first position, a round that flew past a crouched soldier into the wall
- * behind him was "short" by most of the range, and `correctAim` lifted the
+ * behind them was "short" by most of the range, and `correctAim` lifted the
  * aim 0.1 m a metre of it: 1.5 to 2 m a round, until the barrel no longer met
  * the precision and the gun held for the 10 s idle and the decay (Stalingrad,
  * seed 3, 8 a side: a PanzerIV and its bow MG on one soldier 50 m off, one
