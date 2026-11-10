@@ -125,7 +125,7 @@ export function runFight({ makePlane, sides, seconds = 60, origin = [0, 0, 0], g
         mem.eyes ??= {};
         mem.eye = mem.eyes[cur.i];
         const seen = x => ({ ...x, state: views[i].see(x.state) });
-        out = pilots[i].step({ me: views[i].see(me), him: views[i].see(states[cur.i]), dt, t, groundAt: grounds[i], ceilingBase: 0, arena: fences[i],
+        out = pilots[i].step({ me: views[i].see(me), him: views[i].see(states[cur.i]), dt, t, groundAt: grounds[i], ceilingBase: 0, arena: fences[i], pace: fitted[i].pace,
                                team: { index: i, target: cur.i, friends: friends.map(seen), enemies: enemies.map(seen) } });
         mem.eyes[cur.i] = mem.eye;
       }

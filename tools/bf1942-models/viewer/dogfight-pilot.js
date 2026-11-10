@@ -388,7 +388,11 @@ export function go(c, phase) {
  * The floor and the ceiling. Below what the sink would eat in three seconds
  * (and never below 60 m) the pilot rolls upright and pulls; above 880 m,
  * where the wings are dying (the lift ceiling is 1000 m, flight-model.md),
- * the nose comes down to the horizon.
+ * the nose comes down to the horizon. The 880 m is the sky's, not the
+ * airframe's: a pilot shown the fight at the Spitfire's size
+ * (`dogfight-duel.js` `pilotView`) reads it over its pace (`c.pace`), or a
+ * jet's guard would wait for 1,126 m real on the F-16, past where a wing
+ * lifts at all.
  */
 function guard(c) {
   const { me } = c;
@@ -399,7 +403,7 @@ function guard(c) {
     const k = pointNose(me, climbing(len(h) > 0 ? h : basis(me.orientation).F, 25), { fine: 30 });
     return { ...k, throttle: 1, say: 'pulling out' };
   }
-  if (me.position[1] - (c.ceilingBase ?? 0) > 880 && vy > 0) {
+  if (me.position[1] - (c.ceilingBase ?? 0) > 880 / (c.pace >= 1 ? c.pace : 1) && vy > 0) {
     return { ...pointNose(me, heading(me.velocity), { fine: 20 }), throttle: 1, say: 'too high: the wings are dying' };
   }
   return null;

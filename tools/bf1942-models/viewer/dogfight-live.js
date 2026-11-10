@@ -1110,7 +1110,7 @@ export function seatPilot(plan, fit, { gun = {}, skill, seed, memory } = {}) {
 export function stepSeat(pilot, fits, { me, him, dt, t, groundAt, arena = null }) {
   const view = pilotView(fits[0].pace);
   return pilot.step({ me: view.see(handed(me, fits[0])), him: view.see(handed(him, fits[1])), dt, t,
-                      groundAt: view.ground(groundAt), ceilingBase: 0, arena: view.arena(arena) });
+                      groundAt: view.ground(groundAt), ceilingBase: 0, arena: view.arena(arena), pace: fits[0].pace });
 }
 
 /** Verbs that do not lose an -s after "you": "he has" is "you have". */

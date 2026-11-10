@@ -361,7 +361,7 @@ export function runDuel({ makePlane, sides, seconds = 60, origin = [0, 0, 0], gr
       const out = held
         ? { stick: { pitch: held.pitch ?? 0, roll: held.roll ?? 0, rudder: held.rudder ?? 0 }, throttle: held.throttle ?? 1,
             fire: false, phase: 'hold', say: 'Holding the stick where it is', move: 'Holding on', intent: 'setup' }
-        : pilots[i].step({ me: views[i].see(me), him: views[i].see(him), dt, t, groundAt: grounds[i], ceilingBase: 0, arena: fences[i] });
+        : pilots[i].step({ me: views[i].see(me), him: views[i].see(him), dt, t, groundAt: grounds[i], ceilingBase: 0, arena: fences[i], pace: fitted[i].pace });
       applyStick(planes[i], out);
       const sol = gunSolution(me, him, { ...guns[i], width: 5 });
       const hit = out.fire && sol.fire;
