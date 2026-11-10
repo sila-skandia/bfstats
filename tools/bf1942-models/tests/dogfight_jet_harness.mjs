@@ -11,6 +11,9 @@
 //       one fight's timeline as text (start 0..8 of the nine; 4 is the
 //       lesson's own), every `step` seconds, then each side's phases
 //
+//   node tests/dogfight_jet_harness.mjs --tops [--plane Mig29] [--lesson <id>] [--text]
+//       the highest each plane went in every demo and move of every jet
+//       lesson, nine starts each: the roof, school-wide
 //   node tests/dogfight_jet_harness.mjs --guides
 //       the ace and the guide FLY IT gives each jet lesson
 //   node tests/dogfight_jet_harness.mjs <lesson> --steps
@@ -30,7 +33,7 @@ installModuleHooks(viewer);
 const load = name => import(pathToFileURL(path.join(viewer, name)).href);
 const THREE = await load('vendor/three.module.js');
 const { Aircraft } = await load('aircraft.js');
-const { runDuel, fitAirframe, pilotView, paced, PACE } = await load('dogfight-duel.js');
+const { runDuel, fitAirframe, pilotView, paced, pacedHeight, PACE } = await load('dogfight-duel.js');
 const { runFight } = await load('dogfight-fight.js');
 const { LESSONS, lessonFor, demoSides, fightSides, demoById } = await load('dogfight-lessons.js');
 const { HAND } = await load('dogfight-flight.js');
@@ -51,6 +54,9 @@ if (flag('--fit')) {
   const view = pilotView(1.28);
   console.log(JSON.stringify({ fits: out, hand: HAND, pace: PACE,
     paced: paced({ at: [-350, 680, 300], headingDeg: 0, speed: 58 }, 1.28), unpaced: paced({ at: [1, 2, 3], speed: 50 }, 1),
+    // The lessons' start heights (the Spitfire's size) as each jet starts at them.
+    heights: Object.fromEntries([['F16', 1.28], ['Mig29', 1.5]].map(([n, k]) => [n, [230, 300, 460, 476, 600, 620, 680, 700].map(h => r1(paced({ at: [0, h, 0] }, k).at[1]))])),
+    bent: [500, 600, 700, 900, 2000].map(h => r1(pacedHeight(h))),
     view: { see: view.see({ position: [128, 256, -64], velocity: [0, 0, -128], orientation: { x: 0, y: 0, z: 0, w: 1 }, angularVelocity: [1, 2, 3] }),
             gun: view.gun({ speed: 1000, reach: 5000 }), arena: view.arena({ centre: [128, 0], radius: 1280 }), ground: view.ground((x, z) => x + z)(100, 28) },
     same: pilotView(1).see === pilotView(1).see ? null : pilotView(1).see('x') }));
@@ -181,7 +187,49 @@ if (flag('--live')) {
   process.exit(0);
 }
 
-const lessonId = args.find(a => !a.startsWith('--') && a !== opt('--plane') && a !== opt('--demo') && a !== opt('--seconds') && a !== opt('--trace') && a !== opt('--step') && a !== opt('--start'));
+if (flag('--tops')) {
+  // The top of the sky, school-wide: every demo of every lesson with a jet
+  // version (the moves too), nine starts each, and the highest either plane
+  // went (real metres) with how many of the nine went over `--over` (the
+  // ceiling guard's 880 by default). `--lesson <id>` for one.
+  const over = Number(opt('--over', 880));
+  const makePlane = jetMaker(THREE, Aircraft, fixture, opt('--plane', 'F16'));
+  const out = { plane: opt('--plane', 'F16'), over, lessons: {} };
+  for (const base of LESSONS) {
+    if (opt('--lesson') && base.id !== opt('--lesson')) continue;
+    const L = lessonFor(base, 'jet');
+    if (L.era !== 'jet') continue;
+    const rows = {};
+    for (const demo of L.demos) {
+      const top = [0, 0], past = [0, 0], start = [0, 0];
+      for (const dx of [-30, 0, 30]) for (const dv of [-3, 0, 3]) {
+        const seconds = demo.seconds ?? L.seconds;
+        let r;
+        if (demo.extra || demo.wing) r = runFight({ makePlane, seconds, groundAt: () => 0, sides: fightSides(L, demo) });
+        else {
+          const sides = demoSides(L, demo);
+          sides[1] = { ...sides[1], start: { ...sides[1].start, at: [sides[1].start.at[0] + dx, sides[1].start.at[1], sides[1].start.at[2]], speed: sides[1].start.speed + dv } };
+          r = runDuel({ makePlane, seconds, groundAt: () => 0, sides });
+        }
+        r.tracks.slice(0, 2).forEach((tr, i) => {
+          const hi = Math.max(...tr.map(k => k.p[1]));
+          top[i] = Math.max(top[i], hi); if (hi > over) past[i]++;
+          start[i] = Math.max(start[i], tr[0].p[1]);
+        });
+      }
+      rows[demo.id] = { top: top.map(Math.round), past, start: start.map(Math.round) };
+    }
+    out.lessons[L.id] = rows;
+  }
+  if (flag('--text')) {
+    for (const [id, rows] of Object.entries(out.lessons)) for (const [d, x] of Object.entries(rows)) {
+      console.log(`${id}/${d}`.padEnd(40), `ace ${String(x.top[0]).padStart(5)} (${x.past[0]}/9, from ${x.start[0]})  you ${String(x.top[1]).padStart(5)} (${x.past[1]}/9, from ${x.start[1]})`);
+    }
+  } else console.log(JSON.stringify(out));
+  process.exit(0);
+}
+
+const lessonId = args.find(a => !a.startsWith('--') && a !== opt('--plane') && a !== opt('--demo') && a !== opt('--seconds') && a !== opt('--trace') && a !== opt('--step') && a !== opt('--start') && a !== opt('--lesson') && a !== opt('--over'));
 const base = LESSONS.find(l => l.id === lessonId);
 if (!base) { console.error(`no lesson ${lessonId}: ${LESSONS.map(l => l.id).join(', ')}`); process.exit(2); }
 const L = flag('--base') ? base : lessonFor(base, 'jet');

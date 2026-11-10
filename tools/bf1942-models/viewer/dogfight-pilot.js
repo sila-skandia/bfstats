@@ -9,6 +9,7 @@
 // (AI-60) cannot loop, zoom or reverse. The airframe is the engine's, flown
 // through the four channels a human has.
 
+import { underRoof } from './dogfight-jet-ceiling.js';
 import { G, clamp, dot, cross, len, sub, add, scale, unit, basis, bodyRates, energyHeight, bankOf,
          pitchOf, pointNose, pullLift, hardTurn, bankAndPull, leadPoint, gunSolution, angleBetween } from './dogfight-flight.js';
 
@@ -358,6 +359,11 @@ function stepPilot(pilot, def, ctx) {
   const search = !safe ? clearTurn(c) : null;
   const evade = !safe && !search && def.reflex ? reflex(c, def) : null;
   let out = safe ?? search ?? evade ?? def.step(c) ?? hold(c);
+  // A jet's pilot knows where the top of the sky is: whatever his plan
+  // answers is kept under the roof (`dogfight-jet-ceiling.js`), unless it is
+  // going over the top of a loop (`roof: false`). The Spitfire's (pace 1)
+  // never get there and are not touched.
+  if (!safe && c.pace > 1 && out.roof !== false) out = underRoof(c, out);
   if (safe) out.phase = mem.phase;
   const fire = shoot(c, out.aimed !== false);
   pilot.fire = fire;

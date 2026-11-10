@@ -107,7 +107,7 @@ function jetUp(name) {
       // A steep climb no higher than the pull's goes over the top in the
       // loop; any other turns back to them level or nose down.
       mem.jetLoop ??= pitch >= 45 && y <= seenHeight(c, overAt + 60);
-      if (mem.jetLoop) return out;
+      if (mem.jetLoop) return { ...out, roof: false };
       const to = sub(c.him.position, me.position);
       return underRoof(c, { ...turnToward(c, to, { maxUp: Math.max(0, roofClimb(c, 25)), maxDown: 45 }), throttle: 1 });
     },

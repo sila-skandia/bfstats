@@ -63,7 +63,7 @@ export function pitchLag(plane) {
  * fight faster by that ratio, its `pace`: a jet set off at a Spitfire's
  * cruise is not in the fight the lesson describes.
  */
-export const PACE = Object.freeze({ height: 300, from: 90, seconds: 60, over: 10, ref: 75.6, slack: 1.15, roof: 900 });
+export const PACE = Object.freeze({ height: 300, from: 90, seconds: 60, over: 10, ref: 75.6, slack: 1.15, knee: 600, roof: 760 });
 
 /** An airframe's level speed at full throttle (m/s): held at `PACE.height`
  *  by a slow nose hold for `PACE.seconds`, the last `PACE.over` averaged. */
@@ -144,11 +144,25 @@ export function fitAirframe(plane, makePlane, key = 0) {
 /**
  * A side's start at an airframe's pace: the lesson's fight made larger by
  * `pace`, its speed and its place about the fight's centre alike. Heights
- * grow too, and stop `PACE.roof` m under where the wings stop lifting.
+ * grow too, as far as the roof lets them (`pacedHeight`).
  */
+/**
+ * A paced start's height, real metres: as paced up to `PACE.knee`, and from
+ * there bent over toward `PACE.roof`, which it never reaches. The lessons'
+ * perches (680 and 700 m at the Spitfire's size, 870 and 896 on the F-16)
+ * would sit in air with a tenth of its lift, above the roof every jet's
+ * pilot flies under (`dogfight-jet-ceiling.js` `ROOF`, 800 m): bent over,
+ * the highest start is 735 m on the F-16 and 750 on the MiG-29, and two
+ * starts that differ in height still do.
+ */
+export function pacedHeight(h) {
+  const span = PACE.roof - PACE.knee;
+  return h <= PACE.knee ? h : PACE.knee + span * (1 - Math.exp(-(h - PACE.knee) / span));
+}
+
 export function paced(start, pace = 1) {
   if (pace === 1 || !start) return start;
-  const at = start.at ? [start.at[0] * pace, Math.min(start.at[1] * pace, Math.max(start.at[1], PACE.roof)), start.at[2] * pace] : start.at;
+  const at = start.at ? [start.at[0] * pace, Math.max(start.at[1], pacedHeight(start.at[1] * pace)), start.at[2] * pace] : start.at;
   return { ...start, at, speed: (start.speed ?? 55) * pace };
 }
 

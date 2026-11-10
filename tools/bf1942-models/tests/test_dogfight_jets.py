@@ -12,7 +12,7 @@ from __future__ import annotations
 
 import unittest
 
-from jet_school import jet_fit, jet_guides, jet_lesson, jet_steps, shot_down
+from jet_school import jet_fit, jet_guides, jet_lesson, jet_steps, jet_tops, shot_down
 
 
 class FitTests(unittest.TestCase):
@@ -31,13 +31,27 @@ class FitTests(unittest.TestCase):
         # Level at 300 m: the Spitfire 75.6 m/s, the F-16 97, the MiG-29 114.
         self.assertEqual(1.28, self.f["fits"]["F16"]["pace"])
         self.assertEqual(1.5, self.f["fits"]["Mig29"]["pace"])
-        # The fight is made larger, speed and place alike; a height stops
-        # under where the wings stop lifting.
+        # The fight is made larger, speed and place alike; a height is bent
+        # over under the roof every jet's pilot flies under.
         paced = self.f["paced"]
         self.assertAlmostEqual(74.24, paced["speed"], places=2)
-        self.assertEqual([-448, 870.4, 384], [round(v, 1) for v in paced["at"]])
-        self.assertLessEqual(paced["at"][1], self.f["pace"]["roof"])
+        self.assertEqual([-448, 730.5, 384], [round(v, 1) for v in paced["at"]])
+        self.assertLess(paced["at"][1], self.f["pace"]["roof"])
         self.assertEqual({"at": [1, 2, 3], "speed": 50}, self.f["unpaced"])
+
+    def test_a_start_height_is_bent_over_under_the_roof(self) -> None:
+        # Up to 600 m as paced; from there toward 760 m, never reached.
+        self.assertEqual({"knee": 600, "roof": 760}, {k: self.f["pace"][k] for k in ("knee", "roof")})
+        self.assertEqual([500, 600, 674.4, 735.5, 760.0], self.f["bent"])
+        # The lessons' heights (230 to 700 m at the Spitfire's size): the
+        # low ones as paced, the perches under 760, and no two the same.
+        f16, mig = self.f["heights"]["F16"], self.f["heights"]["Mig29"]
+        self.assertEqual([294.4, 384.0, 588.8], f16[:3])
+        self.assertEqual([345.0, 450.0], mig[:2])
+        for hs in (f16, mig):
+            self.assertEqual(hs, sorted(set(hs)))
+            self.assertLess(hs[-1], 760)
+        self.assertEqual([730.5, 734.8], f16[-2:])
 
     def test_a_jet_fights_with_its_own_cannon(self) -> None:
         for name in ("F16", "Mig29"):
@@ -78,6 +92,27 @@ class BoomAndZoomOnAJetTests(unittest.TestCase):
         self.assertIsNone(jet_lesson("boom-and-zoom", demo="counter", base=True)["era"])
         # A lesson with no jet file is flown as written.
         self.assertIsNone(jet_lesson("falling-leaf", demo="move")["era"])
+
+
+class TheRoofTests(unittest.TestCase):
+    """Every pilot of a jet flies under the roof (`dogfight-jet-ceiling.js`
+    `underRoof`, in `stepPilot`): nine starts of every demo and move of
+    every lesson with a jet version, and the highest either plane went."""
+
+    def test_nobody_on_the_f16_reaches_the_ceiling_guard(self) -> None:
+        tops = jet_tops()
+        self.assertEqual(9, len(tops))
+        for lesson, demos in tops.items():
+            for demo, x in demos.items():
+                # The roof is 800 m; the guard, 880, is never reached, and
+                # the wings stop lifting at 1,000.
+                self.assertLess(max(x["top"]), 860, f"{lesson}/{demo}")
+                self.assertEqual([0, 0], x["past"], f"{lesson}/{demo}")
+
+    def test_every_fight_starts_under_the_roof(self) -> None:
+        for lesson, demos in jet_tops().items():
+            for demo, x in demos.items():
+                self.assertLess(max(x["start"]), 760, f"{lesson}/{demo}")
 
 
 class JetStepsTests(unittest.TestCase):
