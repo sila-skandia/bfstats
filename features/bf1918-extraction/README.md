@@ -53,6 +53,18 @@ behaviour check over all 133 (pass 3, four headless pages): **0 blockers**,
   `c_ETRocket` on a `VCAir` hull and `aircraft.js` has no rocket engine, so the
   page classes it static.
 
+**Live (16:40).** The tree is on the volume (9.7 GB) and `models/mods.json`
+carries BF1918's counts (575 models, 133 maps, 1,236 poses; the live registry
+was spliced, not replaced). Checked on play.bfstats.io on gebirgspass, amiens,
+Galicia, belleau_wood, falkland_islands and toska_airbattle: the loading music
+streams and the loading picture loads; the team tab switches; a spawn is
+chosen and the soldier stands up (on falkland_islands on SMS Emden's deck);
+he walks 3.5 to 18.6 m in 3 s; his rifle fires (Mannlicher or M98, one round
+out of the magazine); standing on a flag takes it in 21 to 25 s (toska has two
+`unableToChangeTeam` bases and nothing to take); with 12 bots, 7 to 12 of
+them travel past 20 m in 90 s and bots take flags (Galicia: Stockpile and
+Train_Wreck; belleau_wood: forester taken and retaken). No page errors.
+
 Four adversarial testers (cavalry and infantry, air, armour and artillery,
 naval and world) each took a quarter of the levels plus a theme; nine fix
 agents fixed what they found. Their write-ups follow.
