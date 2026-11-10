@@ -222,7 +222,10 @@ export function levelWords(level) {
 
 /** A Short's title from its facts: `Tiger_Late kills M36B1 at 279 m`.
  *  `display` turns a template into the game's words. */
-export function titleOf(c, display = s => s) {
+export function titleOf(c, shown = s => s) {
+  // A mod's display name can carry a trailing space (FHSW's "Type 97 Sniper
+  // Rifle "), which put two spaces in "418 m Type 97 Sniper Rifle  shot".
+  const display = s => String(shown(s) ?? s).trim();
   const kv = c.killerVehicle ? display(c.killerVehicle) : null;
   const vv = c.victimVehicle ? display(c.victimVehicle) : null;
   const m = `${c.distance} m`;

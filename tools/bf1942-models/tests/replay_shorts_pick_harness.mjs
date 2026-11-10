@@ -85,7 +85,7 @@ console.log(JSON.stringify({
     P.titleOf({ kind: 'air-to-air', killerVehicle: 'Mustang', victimVehicle: 'Bf109', distance: 410 }),
     P.titleOf({ kind: 'tank-to-air', killerVehicle: 'IS2', victimVehicle: 'Ki-67', distance: 431 }, s => (s === 'IS2' ? 'IS-2' : s === 'Ki-67' ? 'Ki-67 Hiryu' : s)),
     P.titleOf({ kind: 'ground-to-air', killerVehicle: null, victimVehicle: 'Bf109', weapon: 'Bazooka', distance: 120 }),
-    P.titleOf({ kind: 'long-shot', weapon: 'K98Sniper', distance: 412, level: 'bocage-1944' }),
+    P.titleOf({ kind: 'long-shot', weapon: 'K98Sniper', distance: 412, level: 'bocage-1944' }, s => `${s} `),
     P.titleOf({ kind: 'tank-buster', weapon: 'Piat', victimVehicle: 'Tiger', distance: 43 }),
     P.titleOf({ kind: 'long-shot', weapon: null, distance: 206, level: 'omaha_beach' }),
     P.titleOf({ kind: 'own-goal', cause: 'crash', air: true, victimVehicle: 'Spitfire', level: 'battle_of_britain' }),
