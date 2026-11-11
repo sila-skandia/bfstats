@@ -320,6 +320,7 @@ Rollout levels, one match each on the page (the bar is DICE's rebuilt one;
 | FHSW the_great_pursuit | yes | passes | 0, 0, 0.21 | 3 | 123:109 |
 | BF1918 scimitar_hill | yes | fails enemy kills | 0, 0, 0.08 | 3 | 99:100 |
 | BF1918 lutte_de_honneur | yes, barely | fails two | 0, 0.33, 0.06 | 1 | 100:100 |
+| FHSW Battle_for_ortona-1943 | yes | passes | 0, 0.13, 0.18 | 0 | 103:70 |
 | BF1918 Mauerfall | yes | fails enemy kills | 0.013, 0.23, 0.17 | 0 | 89:93 |
 | BF1918 hindenburg_line, two matches | yes, on the second | fails enemy kills | 0 and 0.006, 0.25 and 0.50, 0.07 and 0.07 | 0 and 4 | 102:12, 96:13 |
 | FHSW Pegasus, two matches | **no**: no capture, little killing | fails two | 0 and 0.006, 0.50 and 0.50, 0.02 and 0.09 | 0 and 0 | 104:104, 102:90 |
