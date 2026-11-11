@@ -12,6 +12,30 @@ kills and 0 captures, every bot ordered to its own base for the whole match.
 This note measures how far that goes across the 64 generated layers, sets
 out the rule now in the page's strategic AI, and gives the before and after.
 
+**Superseded in part the same day by [flag-binding.md](flag-binding.md).**
+The flag binding of section 1 is fixed. Edson's Ridge then plays on the SAI:
+the Axis attack the two Allied flags and the fallback never holds them (3
+seeds, 8 a side: 344 kills before, 366 after, captures 3 to 6, own-hand
+deaths 18 to 3).
+
+The fallback is now `_holdOnlyFallback`. It takes a generated layer's side
+whose strategy has no attack target while there is a flag for it to take.
+With no strategy scoring, any capturable flag counts, as here. With a live
+strategy, it must be a flag in play. Knife Championship's, Omaturi Channel
+Cannon's and The Corridor's sides start with a live strategy and nothing to
+attack, and the first form left them at home.
+
+The `ControlPoint` count was found not to be the engine's, and left as it is
+for a measured reason (flag-binding.md section 5). Does the fallback still
+fire? Yes, on 9 of 64 levels in the census match. Knife Championship,
+Omaturi Channel Cannon, The Corridor, The Fortress, DC_Urban_Siege and Fall
+of Berlin have a side whose own areas touch no flag it could take (a gap in
+the generated area graph). Roye, Koh and FH Pegasus have a side with no
+strategy scoring and no target for part of the match, the rule's first form,
+as before. Over seeds,
+DC_Basrah_Nights joins them for part of a match. The
+tables below are as measured before that change.
+
 ## 1. What the engine does, and what was really holding Edson's Ridge
 
 **Retail.** `SAI::chooseStrategy` 0x08631cd0 (ledger AI-38;

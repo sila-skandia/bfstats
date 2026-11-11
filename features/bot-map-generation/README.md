@@ -32,7 +32,11 @@ reaches better-than-nothing, on DICE's bar or its own mod's.
 qualifies. Where that side also has nothing to attack, the page now gives a
 generated layer's bots the no-layer order (INVENTION, gated to generated
 layers): Battle of Edson's Ridge went from 0 kills to a fight. The lint
-warns for every such side.
+warns for every such side. Later the same day
+([flag-binding.md](flag-binding.md)): the page's stand-in flags no longer
+take a control point's area, the fallback takes any generated layer's side
+the SAI can only order to hold, and the `ControlPoint` state is found to
+differ from the engine's (left as it is, for a measured reason).
 
 **What is live, 2026-11-11:** The_Maze (Community Maps), which failed the
 page check on team kills until the bots' hold-fire went live the same day
