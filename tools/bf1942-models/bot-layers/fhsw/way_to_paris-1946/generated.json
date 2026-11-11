@@ -1,0 +1,125 @@
+{
+ "generator": "botgen",
+ "version": 5,
+ "mod": "FHSW",
+ "level": "way_to_paris-1946",
+ "objectSpawners": 77,
+ "template": "symmetric",
+ "templateSource": "DICE, bf1942 Kharkov (1.6 patch archives): AI/Strategies.con, AI/conditions.con, AI/prerequisites.con, unchanged",
+ "templateChoice": {
+  "name": "symmetric",
+  "inPlay": 4,
+  "rule": "4 capturable flags in play, more than 3"
+ },
+ "scope": "on foot: infantry order positions only, no search maps, no co-op layer",
+ "unreachable": [
+  "alliesbase",
+  "under_station"
+ ],
+ "unreachableReasons": {
+  "alliesbase": "walk test",
+  "under_station": "walk test"
+ },
+ "botSpawnsExcluded": [
+  "city_5",
+  "alliesbase_spawn1",
+  "alliesbase_spawn2",
+  "alliesbase_spawn3",
+  "alliesbase_spawn4",
+  "alliesbase_spawn5",
+  "alliesbase_spawn6",
+  "alliesbase_spawn7",
+  "alliesbase_spawn9",
+  "firstbunker_spawn1",
+  "firstbunker_spawn2",
+  "firstbunker_spawn3",
+  "firstbunker_spawn4",
+  "firstbunker_spawn5",
+  "east_city_spawn9",
+  "east_city_spawn10",
+  "central_com_spawn1",
+  "central_com_spawn5",
+  "central_com_spawn8",
+  "repro_factory_spawn1",
+  "repro_factory_spawn2",
+  "repro_factory_spawn3",
+  "repro_factory_spawn5",
+  "repro_factory_spawn6",
+  "repro_factory_spawn7",
+  "repro_factory_spawn8",
+  "repro_factory_spawn9",
+  "repro_factory_spawn10",
+  "under_station_spawn1",
+  "under_station_spawn2",
+  "under_station_spawn3",
+  "under_station_spawn4",
+  "under_station_spawn5"
+ ],
+ "walkMap": {
+  "source": "page painter",
+  "engine": "none",
+  "opened": [],
+  "ways": [],
+  "cover": 0.844,
+  "floors": {
+   "stacked": false,
+   "twoFloorShare": 0.005,
+   "raised": [],
+   "reason": null
+  },
+  "capped": true,
+  "joined": 2
+ },
+ "routeProbe": {
+  "chokeMax": 4,
+  "unreachable": [],
+  "stops": {},
+  "oneSided": {},
+  "sides": {
+   "1": {
+    "spawns": 9,
+    "flags": [
+     "central_com",
+     "east_city",
+     "firstbunker",
+     "repro_factory"
+    ]
+   },
+   "2": {
+    "spawns": 23,
+    "flags": [
+     "central_com",
+     "east_city",
+     "firstbunker",
+     "repro_factory"
+    ]
+   }
+  },
+  "chokes": {
+   "firstbunker:1": 4,
+   "firstbunker:2": 4,
+   "east_city:1": 0,
+   "east_city:2": 0,
+   "central_com:1": 2,
+   "central_com:2": 4,
+   "repro_factory:1": 0,
+   "repro_factory:2": 0
+  },
+  "late": {},
+  "shutLinks": [
+   "firstbunker>east_city"
+  ]
+ },
+ "inputs": {
+  "controlPoints": "eb9362e2b85827cb29b9e3cd1a2c9d0aa8eca8884dd8c2069c8d2db9d4f657c2",
+  "infantryMap": "a1ee4e9c1fd7a14ef77028623cc295e7b1c60d005162358dcfaf789a44d1ec5c",
+  "template": "43f8a790471528016570235f76e97dbb2045732458781a5139f37fed68bf98c0"
+ },
+ "files": {
+  "AI.con": "a2fad3051206e3d3f666b1fb3e806c55dd3859a4be72318366134e5f428bdf50",
+  "AI/StrategicAreas.con": "9b56af05c1752363c87caf8fc34c60666d7af6ea66eff7a5f84d553fc5d6c25c",
+  "AI/Strategies.con": "4ce0be59a0d6c5cd530db002fb062c4be8d936bc6ae59bd188803ccaf7869a8d",
+  "AI/conditions.con": "68a0c7a8aec69954063147b60fae560b2874884285737aa085efa76597d395aa",
+  "AI/prerequisites.con": "4c1f313bc285b228fd6ad03bfd1f44c5b15c8703c31f802eb605bc5f00f88bb5"
+ }
+}

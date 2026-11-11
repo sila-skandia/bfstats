@@ -1,0 +1,60 @@
+rem *** Strategic areas: one per control point (botgen) ***
+
+aiStrategicArea.create alliedbase 1186.5/437.4 1191.5/442.4 50
+aiStrategicArea.addNeighbour pasir_panjang
+aiStrategicArea.addObjectTypeFlag Base
+aiStrategicArea.setOrderPosition Infantry 1191.5/448.5
+aiStrategicArea.setSide 2
+aiStrategicArea.setTakeable 1 0
+
+aiStrategicArea.create axisbase 814.4/1570.5 819.4/1575.5 50
+aiStrategicArea.addNeighbour opium_hill
+aiStrategicArea.addNeighbour point_226_firebase
+aiStrategicArea.addNeighbour rice_fields
+aiStrategicArea.addObjectTypeFlag Base
+aiStrategicArea.setOrderPosition Infantry 818.5/1581.5
+aiStrategicArea.setSide 1
+aiStrategicArea.setTakeable 2 0
+
+aiStrategicArea.create opium_hill 1071.9/1292 1106.9/1327 150
+aiStrategicArea.addNeighbour axisbase
+aiStrategicArea.addNeighbour pasir_panjang
+aiStrategicArea.addNeighbour rice_fields
+aiStrategicArea.addObjectTypeFlag Flank
+aiStrategicArea.addObjectTypeFlag Close
+aiStrategicArea.addObjectTypeFlag ControlPoint
+aiStrategicArea.setOrderPosition Infantry 1104.5/1326.5
+aiStrategicArea.setSide 2
+
+aiStrategicArea.create point_226_firebase 613.7/1196.3 633.7/1216.3 150
+aiStrategicArea.addNeighbour axisbase
+aiStrategicArea.addNeighbour rice_fields
+aiStrategicArea.addObjectTypeFlag Flank
+aiStrategicArea.addObjectTypeFlag ControlPoint
+aiStrategicArea.setOrderPosition Infantry 632.5/1215.5
+aiStrategicArea.setSide 2
+
+aiStrategicArea.create pasir_panjang 878.3/776.8 898.3/796.8 150
+aiStrategicArea.addNeighbour alliedbase
+aiStrategicArea.addNeighbour opium_hill
+aiStrategicArea.addNeighbour rice_fields
+aiStrategicArea.addObjectTypeFlag Flank
+aiStrategicArea.addObjectTypeFlag Close
+aiStrategicArea.addObjectTypeFlag ControlPoint
+aiStrategicArea.setOrderPosition Infantry 900.5/794.5
+aiStrategicArea.setSide 2
+
+aiStrategicArea.create underground_commandpost 464.3/978.4 484.3/998.4 10
+aiStrategicArea.setSide 2
+aiStrategicArea.setTakeable 1 0
+aiStrategicArea.setTakeable 2 0
+
+aiStrategicArea.create rice_fields 833.8/991.2 853.8/1011.2 150
+aiStrategicArea.addNeighbour axisbase
+aiStrategicArea.addNeighbour opium_hill
+aiStrategicArea.addNeighbour point_226_firebase
+aiStrategicArea.addNeighbour pasir_panjang
+aiStrategicArea.addObjectTypeFlag Flank
+aiStrategicArea.addObjectTypeFlag ControlPoint
+aiStrategicArea.setOrderPosition Infantry 854.5/1010.5
+aiStrategicArea.setSide 2

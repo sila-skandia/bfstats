@@ -1,0 +1,59 @@
+rem *** Strategic areas: one per control point (botgen) ***
+
+aiStrategicArea.create axisbase 142.2/209.2 147.2/214.2 50
+aiStrategicArea.addObjectTypeFlag Base
+aiStrategicArea.setOrderPosition Infantry 146.5/213.5
+aiStrategicArea.setSide 1
+aiStrategicArea.setTakeable 2 0
+
+aiStrategicArea.create alliesbase 763.2/838.7 768.2/843.7 50
+aiStrategicArea.addObjectTypeFlag Base
+aiStrategicArea.setOrderPosition Infantry 767.5/844.5
+aiStrategicArea.setSide 2
+aiStrategicArea.setTakeable 1 0
+
+aiStrategicArea.create the_top 437.6/482.6 447.6/492.6 300
+aiStrategicArea.addNeighbour allied_midpoint
+aiStrategicArea.addNeighbour axis_midpoint
+aiStrategicArea.addNeighbour allied_midpoint2template
+aiStrategicArea.addNeighbour axis_midpointtemplate
+aiStrategicArea.addObjectTypeFlag Centre
+aiStrategicArea.addObjectTypeFlag StrongPoint
+aiStrategicArea.addObjectTypeFlag ControlPoint
+aiStrategicArea.setOrderPosition Infantry 444.5/492.5
+
+aiStrategicArea.create allied_midpoint 452.2/699.2 462.2/709.2 150
+aiStrategicArea.addNeighbour the_top
+aiStrategicArea.addNeighbour allied_midpoint2template
+aiStrategicArea.addNeighbour axis_midpointtemplate
+aiStrategicArea.addObjectTypeFlag Flank
+aiStrategicArea.addObjectTypeFlag Close
+aiStrategicArea.addObjectTypeFlag ControlPoint
+aiStrategicArea.setOrderPosition Infantry 463.5/708.5
+aiStrategicArea.setSide 2
+
+aiStrategicArea.create axis_midpoint 483.3/312.8 493.3/322.8 150
+aiStrategicArea.addNeighbour the_top
+aiStrategicArea.addNeighbour allied_midpoint2template
+aiStrategicArea.addNeighbour axis_midpointtemplate
+aiStrategicArea.addObjectTypeFlag Flank
+aiStrategicArea.addObjectTypeFlag Close
+aiStrategicArea.addObjectTypeFlag ControlPoint
+aiStrategicArea.setOrderPosition Infantry 492.5/323.5
+aiStrategicArea.setSide 1
+
+aiStrategicArea.create allied_midpoint2template 346.3/525.7 356.3/535.7 200
+aiStrategicArea.addNeighbour the_top
+aiStrategicArea.addNeighbour allied_midpoint
+aiStrategicArea.addNeighbour axis_midpoint
+aiStrategicArea.addObjectTypeFlag Centre
+aiStrategicArea.addObjectTypeFlag ControlPoint
+aiStrategicArea.setOrderPosition Infantry 355.5/536.5
+
+aiStrategicArea.create axis_midpointtemplate 565.6/442 575.6/452 150
+aiStrategicArea.addNeighbour the_top
+aiStrategicArea.addNeighbour allied_midpoint
+aiStrategicArea.addNeighbour axis_midpoint
+aiStrategicArea.addObjectTypeFlag Flank
+aiStrategicArea.addObjectTypeFlag ControlPoint
+aiStrategicArea.setOrderPosition Infantry 576.5/450.5

@@ -1,0 +1,115 @@
+{
+ "generator": "botgen",
+ "version": 5,
+ "mod": "FHSW",
+ "level": "in_the_hell_of_bocage-1944",
+ "objectSpawners": 69,
+ "template": "symmetric",
+ "templateSource": "DICE, bf1942 Kharkov (1.6 patch archives): AI/Strategies.con, AI/conditions.con, AI/prerequisites.con, unchanged",
+ "templateChoice": {
+  "name": "symmetric",
+  "inPlay": 4,
+  "rule": "4 capturable flags in play, more than 3"
+ },
+ "scope": "on foot: infantry order positions only, no search maps, no co-op layer",
+ "unreachable": [],
+ "unreachableReasons": {},
+ "botSpawnsExcluded": [
+  "small_farm1",
+  "small_farm2",
+  "big_farm1",
+  "big_farm2",
+  "big_farm3",
+  "windmill1",
+  "windmill2",
+  "windmill3",
+  "village_south1",
+  "village_south2",
+  "village_south3",
+  "village_south4",
+  "village_north1",
+  "village_north2",
+  "village_north3",
+  "village_north4",
+  "axis_home_base2",
+  "axis_home_base3",
+  "axis_home_base4",
+  "allied_home_base1",
+  "allied_home_base3",
+  "allied_home_base4",
+  "gerriver1",
+  "gerriver2",
+  "gerriver3",
+  "gerriver4"
+ ],
+ "walkMap": {
+  "source": "page painter",
+  "engine": "none",
+  "opened": [],
+  "ways": [],
+  "cover": 0.928,
+  "floors": {
+   "stacked": false,
+   "twoFloorShare": 0.003,
+   "raised": [
+    "small_farmtemplate"
+   ],
+   "reason": null
+  },
+  "capped": true,
+  "joined": 1
+ },
+ "routeProbe": {
+  "chokeMax": 4,
+  "unreachable": [],
+  "stops": {},
+  "oneSided": {},
+  "sides": {
+   "1": {
+    "spawns": 1,
+    "flags": [
+     "big_farm",
+     "small_farmtemplate",
+     "village_north",
+     "village_south"
+    ]
+   },
+   "2": {
+    "spawns": 1,
+    "flags": [
+     "big_farm",
+     "small_farmtemplate",
+     "village_north",
+     "village_south"
+    ]
+   }
+  },
+  "chokes": {
+   "big_farm:1": 3,
+   "big_farm:2": 0,
+   "village_north:1": 7,
+   "village_north:2": 5,
+   "small_farmtemplate:1": 3,
+   "small_farmtemplate:2": 0,
+   "village_south:1": 6,
+   "village_south:2": 3
+  },
+  "late": {},
+  "shutLinks": [
+   "village_north>village_south",
+   "village_south>village_north"
+  ]
+ },
+ "inputs": {
+  "controlPoints": "f9657a837b7dd1374aaf2172126fb9a1d80e1be770cb3b5bf9382e39875178cc",
+  "infantryMap": "0d56b1da57ef45e9d57b9b4125d98310002e76bd59de044a8c7a344e228a440c",
+  "template": "43f8a790471528016570235f76e97dbb2045732458781a5139f37fed68bf98c0"
+ },
+ "files": {
+  "AI.con": "84b54fdbafe161fd3682345ddef4b1a2f08529643491b9fc45c06500a5cc4522",
+  "AI/StrategicAreas.con": "2aa082cfb9406261d5e90533bdf2c573253354682fc86b143a4ecdb086738804",
+  "AI/Strategies.con": "4ce0be59a0d6c5cd530db002fb062c4be8d936bc6ae59bd188803ccaf7869a8d",
+  "AI/conditions.con": "68a0c7a8aec69954063147b60fae560b2874884285737aa085efa76597d395aa",
+  "AI/prerequisites.con": "4c1f313bc285b228fd6ad03bfd1f44c5b15c8703c31f802eb605bc5f00f88bb5"
+ }
+}

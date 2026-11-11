@@ -24,10 +24,12 @@
     "verdict": "fail",
     "failed": [
      "stuckSecondsPerBotMinute",
-     "selfDeathsPerBotMinute",
      "routeFailuresPerBotMinute",
      "redeploysPerBotMinute",
+     "capturesTotal",
      "enemyKillsPerBotMinute",
+     "flagCoverage",
+     "bothSidesCapture",
      "bothSidesKill",
      "ticketsBleed",
      "stuckSecondsPerBotMinuteWorseSide",
@@ -43,21 +45,18 @@
     "verdict": "fail",
     "failed": [
      "stuckSecondsPerBotMinute",
-     "selfDeathsPerBotMinute",
+     "idleShare",
+     "oscillationsPerBotMinute",
      "routeFailuresPerBotMinute",
      "redeploysPerBotMinute",
      "enemyKillsPerBotMinute",
-     "flagCoverage",
-     "bothSidesCapture",
-     "bothSidesKill",
      "stuckSecondsPerBotMinuteWorseSide",
      "routeFailuresPerBotMinuteWorseSide",
      "redeploysPerBotMinuteWorseSide",
      "nonEnemyDeathShareWorseSide",
      "hullStuckSecondsPerDrivingMinute",
      "hullStuckSecondsPerDrivingMinuteWorseSide",
-     "unitsNeverUsedShare",
-     "tankSilentShare"
+     "unitsNeverUsedShare"
     ]
    }
   }
@@ -68,19 +67,22 @@
    "verdict": "fail",
    "failed": [
     "stuckSecondsPerBotMinute",
-    "oscillationsPerBotMinute",
-    "selfDeathsPerBotMinute",
-    "redeploysPerBotMinute",
+    "routeFailuresPerBotMinute",
     "enemyKillsPerBotMinute",
+    "flagCoverage",
+    "bothSidesCapture",
     "bothSidesKill",
     "ticketsBleed",
     "stuckSecondsPerBotMinuteWorseSide",
+    "routeFailuresPerBotMinuteWorseSide",
+    "redeploysPerBotMinuteWorseSide",
     "nonEnemyDeathShareWorseSide",
+    "hullStuckSecondsPerDrivingMinuteWorseSide",
     "unitsNeverUsedShare"
    ],
    "winners": [
-    0,
     2,
+    0,
     0
    ]
   },
@@ -88,17 +90,15 @@
    "verdict": "fail",
    "failed": [
     "stuckSecondsPerBotMinute",
-    "selfDeathsPerBotMinute",
-    "redeploysPerBotMinute",
+    "idleShare",
+    "oscillationsPerBotMinute",
+    "routeFailuresPerBotMinute",
     "enemyKillsPerBotMinute",
-    "bothSidesCapture",
-    "bothSidesKill",
     "stuckSecondsPerBotMinuteWorseSide",
+    "routeFailuresPerBotMinuteWorseSide",
     "redeploysPerBotMinuteWorseSide",
     "nonEnemyDeathShareWorseSide",
-    "hullStuckSecondsPerDrivingMinute",
-    "unitsNeverUsedShare",
-    "tankSilentShare"
+    "unitsNeverUsedShare"
    ],
    "winners": [
     2,
@@ -107,7 +107,7 @@
    ]
   }
  },
- "oneSided": null,
+ "oneSided": 1,
  "unreachable": [],
  "lintErrors": []
 }

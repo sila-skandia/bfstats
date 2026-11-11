@@ -1,0 +1,55 @@
+rem *** Strategic areas: one per control point (botgen) ***
+
+aiStrategicArea.create allied_main 998.6/167 1003.6/172 50
+aiStrategicArea.addNeighbour bongyaun
+aiStrategicArea.addNeighbour hinthaw_airfield
+aiStrategicArea.addNeighbour rubber_plantation
+aiStrategicArea.addObjectTypeFlag Base
+aiStrategicArea.setOrderPosition Infantry 1002.5/173.5
+aiStrategicArea.setSide 2
+aiStrategicArea.setTakeable 1 0
+
+aiStrategicArea.create inywa 882.3/1320.2 907.3/1345.2 10
+aiStrategicArea.setSide 1
+aiStrategicArea.setTakeable 1 0
+aiStrategicArea.setTakeable 2 0
+
+aiStrategicArea.create bongyaun 771.9/754.5 791.9/774.5 150
+aiStrategicArea.addNeighbour allied_main
+aiStrategicArea.addNeighbour rubber_plantation
+aiStrategicArea.addNeighbour yindaik
+aiStrategicArea.addObjectTypeFlag Flank
+aiStrategicArea.addObjectTypeFlag ControlPoint
+aiStrategicArea.setOrderPosition Infantry 791.5/772.5
+aiStrategicArea.setSide 1
+
+aiStrategicArea.create hinthaw_airfield 1385.9/1059.5 1405.9/1079.5 50
+aiStrategicArea.addNeighbour allied_main
+aiStrategicArea.addNeighbour rubber_plantation
+aiStrategicArea.addNeighbour yindaik
+aiStrategicArea.addObjectTypeFlag Base
+aiStrategicArea.setOrderPosition Infantry 1402.5/1079.5
+aiStrategicArea.setSide 1
+aiStrategicArea.setTakeable 2 0
+
+aiStrategicArea.create rubber_plantation 1094.8/458.1 1113.8/477.1 300
+aiStrategicArea.addNeighbour allied_main
+aiStrategicArea.addNeighbour bongyaun
+aiStrategicArea.addNeighbour hinthaw_airfield
+aiStrategicArea.addNeighbour yindaik
+aiStrategicArea.addObjectTypeFlag Centre
+aiStrategicArea.addObjectTypeFlag StrongPoint
+aiStrategicArea.addObjectTypeFlag Close
+aiStrategicArea.addObjectTypeFlag ControlPoint
+aiStrategicArea.setOrderPosition Infantry 1111.5/478.5
+aiStrategicArea.setSide 1
+
+aiStrategicArea.create yindaik 906.7/999 925.7/1018 150
+aiStrategicArea.addNeighbour bongyaun
+aiStrategicArea.addNeighbour hinthaw_airfield
+aiStrategicArea.addNeighbour rubber_plantation
+aiStrategicArea.addObjectTypeFlag Flank
+aiStrategicArea.addObjectTypeFlag Close
+aiStrategicArea.addObjectTypeFlag ControlPoint
+aiStrategicArea.setOrderPosition Infantry 923.5/1015.5
+aiStrategicArea.setSide 1

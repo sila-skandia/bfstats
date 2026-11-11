@@ -1,0 +1,70 @@
+rem *** Strategic areas: one per control point (botgen) ***
+
+aiStrategicArea.create russian_position 1243.2/839.9 1263.2/859.9 50
+aiStrategicArea.addNeighbour no_3_position
+aiStrategicArea.addNeighbour no_2
+aiStrategicArea.addNeighbour no1
+aiStrategicArea.addObjectTypeFlag Base
+aiStrategicArea.setOrderPosition Infantry 1262.5/861.5
+aiStrategicArea.setSide 2
+aiStrategicArea.setTakeable 1 0
+
+aiStrategicArea.create no_3_position 606.2/902.2 611.2/907.2 150
+aiStrategicArea.addNeighbour russian_position
+aiStrategicArea.addNeighbour no_2
+aiStrategicArea.addNeighbour no1
+aiStrategicArea.addNeighbour north_position
+aiStrategicArea.addNeighbour axis_base
+aiStrategicArea.addObjectTypeFlag Flank
+aiStrategicArea.addObjectTypeFlag ControlPoint
+aiStrategicArea.setOrderPosition Infantry 610.5/906.5
+aiStrategicArea.setSide 1
+
+aiStrategicArea.create no_2 794.8/1026.6 799.8/1031.6 300
+aiStrategicArea.addNeighbour russian_position
+aiStrategicArea.addNeighbour no_3_position
+aiStrategicArea.addNeighbour no1
+aiStrategicArea.addObjectTypeFlag Centre
+aiStrategicArea.addObjectTypeFlag StrongPoint
+aiStrategicArea.addObjectTypeFlag Close
+aiStrategicArea.addObjectTypeFlag ControlPoint
+aiStrategicArea.setOrderPosition Infantry 800.5/1032.5
+aiStrategicArea.setSide 1
+
+aiStrategicArea.create no1 848.8/1374.6 853.8/1379.6 150
+aiStrategicArea.addNeighbour russian_position
+aiStrategicArea.addNeighbour no_3_position
+aiStrategicArea.addNeighbour no_2
+aiStrategicArea.addNeighbour north_position
+aiStrategicArea.addObjectTypeFlag Flank
+aiStrategicArea.addObjectTypeFlag ControlPoint
+aiStrategicArea.setOrderPosition Infantry 852.5/1380.5
+aiStrategicArea.setSide 1
+
+aiStrategicArea.create gunsite 502.6/1375.3 507.6/1380.3 10
+aiStrategicArea.setSide 1
+aiStrategicArea.setTakeable 1 0
+aiStrategicArea.setTakeable 2 0
+
+aiStrategicArea.create north_position 695/1606 700/1611 150
+aiStrategicArea.addNeighbour no_3_position
+aiStrategicArea.addNeighbour no1
+aiStrategicArea.addNeighbour axis_base
+aiStrategicArea.addObjectTypeFlag Flank
+aiStrategicArea.addObjectTypeFlag Close
+aiStrategicArea.addObjectTypeFlag ControlPoint
+aiStrategicArea.setOrderPosition Infantry 699.5/1613.5
+aiStrategicArea.setSide 1
+
+aiStrategicArea.create japan_position 432.2/1603.2 437.2/1608.2 10
+aiStrategicArea.setSide 1
+aiStrategicArea.setTakeable 1 0
+aiStrategicArea.setTakeable 2 0
+
+aiStrategicArea.create axis_base 86.8/1677.1 91.8/1682.1 50
+aiStrategicArea.addNeighbour no_3_position
+aiStrategicArea.addNeighbour north_position
+aiStrategicArea.addObjectTypeFlag Base
+aiStrategicArea.setOrderPosition Infantry 92.5/1683.5
+aiStrategicArea.setSide 1
+aiStrategicArea.setTakeable 2 0

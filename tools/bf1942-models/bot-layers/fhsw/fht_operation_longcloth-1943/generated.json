@@ -1,0 +1,126 @@
+{
+ "generator": "botgen",
+ "version": 5,
+ "mod": "FHSW",
+ "level": "fht_operation_longcloth-1943",
+ "objectSpawners": 229,
+ "template": "few",
+ "templateSource": "DICE, bf1942 Kursk (1.6 patch archives, Kursk_003.rfa): AI/Strategies.con, AI/conditions.con, AI/prerequisites.con, unchanged",
+ "templateChoice": {
+  "name": "few",
+  "inPlay": 3,
+  "rule": "3 capturable flags in play, at most 3"
+ },
+ "scope": "on foot: infantry order positions only, no search maps, no co-op layer",
+ "unreachable": [
+  "inywa"
+ ],
+ "unreachableReasons": {
+  "inywa": "walk test"
+ },
+ "botSpawnsExcluded": [
+  "allied_main1",
+  "inywa_spawn1",
+  "yindaik_spawn1",
+  "hinthaw_spawn1",
+  "allied_main2",
+  "allied_main4",
+  "allied_main6",
+  "allied_main7",
+  "allied_main8",
+  "allied_main10",
+  "allied_main13",
+  "allied_main17",
+  "allied_main21",
+  "rubber_plantation_spawn2",
+  "rubber_plantation_spawn4",
+  "rubber_plantation_spawn5",
+  "rubber_plantation_spawn6",
+  "bongyaung_spawn2",
+  "bongyaung_spawn3",
+  "bongyaung_spawn4",
+  "bongyaung_spawn5",
+  "bongyaung_spawn6",
+  "bongyaung_spawn8",
+  "yindaik_spawn2",
+  "yindaik_spawn3",
+  "yindaik_spawn4",
+  "yindaik_spawn7",
+  "yindaik_spawn8",
+  "inywa_spawn6",
+  "inywa_spawn7",
+  "inywa_spawn8",
+  "hinthaw_spawn3",
+  "hinthaw_spawn4",
+  "hinthaw_spawn5",
+  "hinthaw_spawn6",
+  "hinthaw_spawn7",
+  "hinthaw_spawn8",
+  "axisbase_west_spawn1",
+  "axisbase_west_spawn2",
+  "axisbase_west_spawn3"
+ ],
+ "walkMap": {
+  "source": "page painter",
+  "engine": "none",
+  "opened": [],
+  "ways": [],
+  "cover": 0.824,
+  "floors": {
+   "stacked": false,
+   "twoFloorShare": 0.005,
+   "raised": [
+    "inywa"
+   ],
+   "reason": null
+  },
+  "capped": true,
+  "joined": 1
+ },
+ "routeProbe": {
+  "chokeMax": 4,
+  "unreachable": [],
+  "stops": {},
+  "oneSided": {},
+  "sides": {
+   "1": {
+    "spawns": 13,
+    "flags": [
+     "bongyaun",
+     "rubber_plantation",
+     "yindaik"
+    ]
+   },
+   "2": {
+    "spawns": 14,
+    "flags": [
+     "bongyaun",
+     "rubber_plantation",
+     "yindaik"
+    ]
+   }
+  },
+  "chokes": {
+   "bongyaun:1": 1,
+   "bongyaun:2": 4,
+   "rubber_plantation:1": 0,
+   "rubber_plantation:2": 4,
+   "yindaik:1": 0,
+   "yindaik:2": 4
+  },
+  "late": {},
+  "shutLinks": []
+ },
+ "inputs": {
+  "controlPoints": "eb4117025eacce972f3b92c8099b530d2cb1e3d3980697e8cff44da361c4a976",
+  "infantryMap": "5870c446bc6be176168e16b9d64dd80667b8c4e43eefe5709903c4c1e93754e2",
+  "template": "bdc0e455f47f91b7e7724e71d7c0c196e839b36946ac3abb7663d725944081e5"
+ },
+ "files": {
+  "AI.con": "9b22e83889ee475b19b5aaa9a293f648818d67ae43b4074c9288d11e89f0be83",
+  "AI/StrategicAreas.con": "7ab12db4861a47c1aabe43bf637b3630efd128631e423d65c685e0a1de99f771",
+  "AI/Strategies.con": "13da4dc35872dd4b5798a066f4425bdc824cfd61f31093d1808e1202644de52e",
+  "AI/conditions.con": "248a04b727c08d696bf0fa9c162bc22c43cde3c75f695892fe1e0f5141519c49",
+  "AI/prerequisites.con": "c96168b5f69860e578f5d26728fd2a2092c4c436e1da49b7d6f4009b65735398"
+ }
+}

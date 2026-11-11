@@ -1,0 +1,55 @@
+rem *** Strategic areas: one per control point (botgen) ***
+
+aiStrategicArea.create city 1663.7/1029 1668.7/1034 50
+aiStrategicArea.addNeighbour firstbunker
+aiStrategicArea.addNeighbour repro_factory
+aiStrategicArea.addObjectTypeFlag Base
+aiStrategicArea.setOrderPosition Infantry 1669.5/1035.5
+aiStrategicArea.setSide 1
+aiStrategicArea.setTakeable 2 0
+
+aiStrategicArea.create alliesbase 197.8/990.2 202.8/995.2 10
+aiStrategicArea.setSide 2
+aiStrategicArea.setTakeable 1 0
+aiStrategicArea.setTakeable 2 0
+
+aiStrategicArea.create firstbunker 1348.2/1058.8 1356.2/1066.8 200
+aiStrategicArea.addNeighbour city
+aiStrategicArea.addNeighbour east_city
+aiStrategicArea.addObjectTypeFlag Centre
+aiStrategicArea.addObjectTypeFlag Close
+aiStrategicArea.addObjectTypeFlag ControlPoint
+aiStrategicArea.setOrderPosition Infantry 1352.5/1067.5
+aiStrategicArea.setSide 2
+
+aiStrategicArea.create east_city 1087.6/1016.4 1092.6/1021.4 300
+aiStrategicArea.addNeighbour firstbunker
+aiStrategicArea.addNeighbour central_com
+aiStrategicArea.addNeighbour repro_factory
+aiStrategicArea.addObjectTypeFlag Centre
+aiStrategicArea.addObjectTypeFlag StrongPoint
+aiStrategicArea.addObjectTypeFlag ControlPoint
+aiStrategicArea.setOrderPosition Infantry 1092.5/1023.5
+aiStrategicArea.setSide 2
+
+aiStrategicArea.create central_com 846.8/1022.4 851.8/1027.4 200
+aiStrategicArea.addNeighbour east_city
+aiStrategicArea.addNeighbour repro_factory
+aiStrategicArea.addObjectTypeFlag Centre
+aiStrategicArea.addObjectTypeFlag ControlPoint
+aiStrategicArea.setOrderPosition Infantry 851.5/1024.5
+aiStrategicArea.setSide 2
+
+aiStrategicArea.create repro_factory 685.4/966.5 690.4/971.5 200
+aiStrategicArea.addNeighbour city
+aiStrategicArea.addNeighbour east_city
+aiStrategicArea.addNeighbour central_com
+aiStrategicArea.addObjectTypeFlag Centre
+aiStrategicArea.addObjectTypeFlag ControlPoint
+aiStrategicArea.setOrderPosition Infantry 692.5/973.5
+aiStrategicArea.setSide 2
+
+aiStrategicArea.create under_station 391.7/976.6 396.7/981.6 10
+aiStrategicArea.setSide 2
+aiStrategicArea.setTakeable 1 0
+aiStrategicArea.setTakeable 2 0

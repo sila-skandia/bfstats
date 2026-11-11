@@ -45,7 +45,7 @@
     "flagCoverage",
     "bothSidesCapture",
     "routeFailuresPerBotMinuteWorseSide",
-    "nonEnemyDeathShareWorseSide",
+    "hullStuckSecondsPerDrivingMinute",
     "unitsNeverUsedShare",
     "tankSilentShare"
    ],
@@ -85,6 +85,9 @@
    "16:unitsNeverUsedShare",
    "16:tankSilentShare"
   ],
-  "by": "owner"
+  "by": "owner",
+  "alsoFails": [
+   "16:hullStuckSecondsPerDrivingMinute"
+  ]
  }
 }

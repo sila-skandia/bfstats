@@ -1,7 +1,7 @@
 {
  "level": "aberdeen",
  "verdict": "fail",
- "outcome": "no-fight",
+ "outcome": "no-better-than-nothing",
  "config": "with vehicles",
  "doctrine": "garrison",
  "generatorVersion": 5,
@@ -20,19 +20,15 @@
   "8": {
    "verdict": "fail",
    "failed": [
-    "idleShare",
-    "selfDeathsPerBotMinute",
     "routeFailuresPerBotMinute",
     "enemyKillsPerBotMinute",
-    "bothSidesCapture",
-    "bothSidesKill",
     "routeFailuresPerBotMinuteWorseSide",
     "nonEnemyDeathShareWorseSide",
     "unitsNeverUsedShare"
    ],
    "winners": [
-    2,
-    0,
+    1,
+    1,
     0
    ]
   },
@@ -40,13 +36,12 @@
    "verdict": "fail",
    "failed": [
     "idleShare",
-    "selfDeathsPerBotMinute",
     "enemyKillsPerBotMinute",
-    "bothSidesCapture",
-    "bothSidesKill",
-    "ticketsBleed",
     "nonEnemyDeathShareWorseSide",
-    "unitsNeverUsedShare"
+    "hullStuckSecondsPerDrivingMinute",
+    "hullStuckSecondsPerDrivingMinuteWorseSide",
+    "unitsNeverUsedShare",
+    "tankSilentShare"
    ],
    "winners": [
     2,
@@ -55,7 +50,27 @@
    ]
   }
  },
- "oneSided": 1,
+ "oneSided": null,
  "unreachable": [],
- "lintErrors": []
+ "lintErrors": [],
+ "accepted": {
+  "reason": "Owner's rollout, 2026-11-11: after playing Tunis-1943 against its generated bots the owner asked for every level with a fight to go live. Two or more seeds at 8 and 16 a side, the garrison; the checks it fails are listed with this verdict, and a match on the page decides whether it keeps its menu flag.",
+  "date": "2026-11-11",
+  "outcome": "no-better-than-nothing",
+  "failed": [
+   "8:routeFailuresPerBotMinute",
+   "8:enemyKillsPerBotMinute",
+   "8:routeFailuresPerBotMinuteWorseSide",
+   "8:nonEnemyDeathShareWorseSide",
+   "8:unitsNeverUsedShare",
+   "16:idleShare",
+   "16:enemyKillsPerBotMinute",
+   "16:nonEnemyDeathShareWorseSide",
+   "16:hullStuckSecondsPerDrivingMinute",
+   "16:hullStuckSecondsPerDrivingMinuteWorseSide",
+   "16:unitsNeverUsedShare",
+   "16:tankSilentShare"
+  ],
+  "by": "owner"
+ }
 }

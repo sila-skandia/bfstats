@@ -1,0 +1,53 @@
+rem *** Strategic areas: one per control point (botgen) ***
+
+aiStrategicArea.create allied_base_2 858.1/876.7 863.1/881.7 50
+aiStrategicArea.addNeighbour north_defence_line
+aiStrategicArea.addObjectTypeFlag Base
+aiStrategicArea.setOrderPosition Infantry 864.5/882.5
+aiStrategicArea.setSide 2
+aiStrategicArea.setTakeable 1 0
+
+aiStrategicArea.create alliedbase 452/34.6 457/39.6 50
+aiStrategicArea.addNeighbour barack_area
+aiStrategicArea.addNeighbour south_defence_line
+aiStrategicArea.addObjectTypeFlag Base
+aiStrategicArea.setOrderPosition Infantry 458.5/40.5
+aiStrategicArea.setSide 2
+aiStrategicArea.setTakeable 1 0
+
+aiStrategicArea.create north_defence_line 653.1/705.2 658.1/710.2 150
+aiStrategicArea.addNeighbour allied_base_2
+aiStrategicArea.addNeighbour flak18_area
+aiStrategicArea.addObjectTypeFlag Flank
+aiStrategicArea.addObjectTypeFlag Close
+aiStrategicArea.addObjectTypeFlag ControlPoint
+aiStrategicArea.setOrderPosition Infantry 659.5/709.5
+aiStrategicArea.setSide 1
+
+aiStrategicArea.create flak18_area 512/562.5 517/567.5 150
+aiStrategicArea.addNeighbour north_defence_line
+aiStrategicArea.addNeighbour barack_area
+aiStrategicArea.addNeighbour south_defence_line
+aiStrategicArea.addObjectTypeFlag Flank
+aiStrategicArea.addObjectTypeFlag ControlPoint
+aiStrategicArea.setOrderPosition Infantry 518.5/566.5
+aiStrategicArea.setSide 1
+
+aiStrategicArea.create barack_area 432.5/423.6 437.5/428.6 150
+aiStrategicArea.addNeighbour alliedbase
+aiStrategicArea.addNeighbour flak18_area
+aiStrategicArea.addNeighbour south_defence_line
+aiStrategicArea.addObjectTypeFlag Flank
+aiStrategicArea.addObjectTypeFlag ControlPoint
+aiStrategicArea.setOrderPosition Infantry 433.5/426.5
+aiStrategicArea.setSide 1
+
+aiStrategicArea.create south_defence_line 527/403 532/408 150
+aiStrategicArea.addNeighbour alliedbase
+aiStrategicArea.addNeighbour flak18_area
+aiStrategicArea.addNeighbour barack_area
+aiStrategicArea.addObjectTypeFlag Flank
+aiStrategicArea.addObjectTypeFlag Close
+aiStrategicArea.addObjectTypeFlag ControlPoint
+aiStrategicArea.setOrderPosition Infantry 530.5/409.5
+aiStrategicArea.setSide 1

@@ -1,0 +1,103 @@
+{
+ "generator": "botgen",
+ "version": 5,
+ "mod": "FHSW",
+ "level": "aberdeen",
+ "objectSpawners": 69,
+ "template": "symmetric",
+ "templateSource": "DICE, bf1942 Kharkov (1.6 patch archives): AI/Strategies.con, AI/conditions.con, AI/prerequisites.con, unchanged",
+ "templateChoice": {
+  "name": "symmetric",
+  "inPlay": 5,
+  "rule": "5 capturable flags in play, more than 3"
+ },
+ "scope": "on foot: infantry order positions only, no search maps, no co-op layer",
+ "unreachable": [],
+ "unreachableReasons": {},
+ "botSpawnsExcluded": [
+  "AxisSpawnPoint_8",
+  "alliesSpawnPoint_9",
+  "OpenSpawnPoint_south_desert_6",
+  "OpenSpawnPoint_south_desert_7",
+  "watersupply_1",
+  "watersupply_5",
+  "north_desert_1",
+  "East_village_5",
+  "city_1",
+  "city_2",
+  "city_3",
+  "city_4",
+  "city_5",
+  "city_6",
+  "city_7"
+ ],
+ "walkMap": {
+  "source": "page painter",
+  "engine": "none",
+  "opened": [],
+  "ways": [],
+  "cover": 0.888,
+  "floors": {
+   "stacked": false,
+   "twoFloorShare": 0.001,
+   "raised": [],
+   "reason": null
+  },
+  "capped": true,
+  "joined": 2
+ },
+ "routeProbe": {
+  "chokeMax": 4,
+  "unreachable": [],
+  "stops": {},
+  "oneSided": {},
+  "sides": {
+   "1": {
+    "spawns": 9,
+    "flags": [
+     "City",
+     "East_Village",
+     "South_Desert",
+     "north_Desert",
+     "openbase_watersupply"
+    ]
+   },
+   "2": {
+    "spawns": 9,
+    "flags": [
+     "City",
+     "East_Village",
+     "South_Desert",
+     "north_Desert",
+     "openbase_watersupply"
+    ]
+   }
+  },
+  "chokes": {
+   "South_Desert:1": 0,
+   "South_Desert:2": 0,
+   "openbase_watersupply:1": 0,
+   "openbase_watersupply:2": 0,
+   "north_Desert:1": 0,
+   "north_Desert:2": 0,
+   "East_Village:1": 0,
+   "East_Village:2": 0,
+   "City:1": 0,
+   "City:2": 0
+  },
+  "late": {},
+  "shutLinks": []
+ },
+ "inputs": {
+  "controlPoints": "099d2765baaefa61a0e5c9df14551a274496102fb450f6bf74274bd2d28d7c92",
+  "infantryMap": "fc1250eefef44ba5074fda7669ff9af74d29312ea1d12e68c171ac4930f8939a",
+  "template": "43f8a790471528016570235f76e97dbb2045732458781a5139f37fed68bf98c0"
+ },
+ "files": {
+  "AI.con": "84b54fdbafe161fd3682345ddef4b1a2f08529643491b9fc45c06500a5cc4522",
+  "AI/StrategicAreas.con": "dde4d1c7286db7e6ccf4eede7b90b5ff14d605c6476c3a175fdb49a1ecb2a7ef",
+  "AI/Strategies.con": "4ce0be59a0d6c5cd530db002fb062c4be8d936bc6ae59bd188803ccaf7869a8d",
+  "AI/conditions.con": "68a0c7a8aec69954063147b60fae560b2874884285737aa085efa76597d395aa",
+  "AI/prerequisites.con": "4c1f313bc285b228fd6ad03bfd1f44c5b15c8703c31f802eb605bc5f00f88bb5"
+ }
+}

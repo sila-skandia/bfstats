@@ -1,0 +1,32 @@
+if v_arg1 == host
+rem ----- Host 
+rem ---------------------------------------------------------------------------- 
+
+rem *** Create Conditions ***
+
+rem *** Kharkov ***
+
+rem ** common **
+aiStrategy.createConstantCondition timeCond Fuzzy EqualSmaller Friendly StartTime 180
+aiStrategy.setConditionStrength AdvisoryNegative
+aiStrategy.setIsAbortCondition 1
+
+rem ** normal **
+aiStrategy.createConstantCondition constantCond Crisp Equal Enemy UnitConstant 1
+aiStrategy.setConditionStrength Required
+
+rem ** bridge **
+aiStrategy.createConstantCondition max2CPCond Crisp Equal Friendly ControlPoint 1
+aiStrategy.setConditionStrength Required
+
+rem ** finalPush **
+aiStrategy.createConstantCondition min4CpCond Crisp EqualGreater Friendly ControlPoint 3
+aiStrategy.setConditionStrength Required
+
+rem ** breakOut **
+aiStrategy.createConstantCondition oneCPOrLessCond Crisp Equal Friendly ControlPoint 0
+aiStrategy.setConditionStrength Required
+
+rem ----------------------------------------------------------------------------
+endIf
+

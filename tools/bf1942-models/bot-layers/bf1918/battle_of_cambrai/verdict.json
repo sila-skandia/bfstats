@@ -52,6 +52,7 @@
      "enemyKillsPerBotMinute",
      "flagCoverage",
      "bothSidesCapture",
+     "bothSidesKill",
      "stuckSecondsPerBotMinuteWorseSide",
      "routeFailuresPerBotMinuteWorseSide",
      "redeploysPerBotMinuteWorseSide",
@@ -81,7 +82,8 @@
     "nonEnemyDeathShareWorseSide",
     "hullStuckSecondsPerDrivingMinute",
     "hullStuckSecondsPerDrivingMinuteWorseSide",
-    "unitsNeverUsedShare"
+    "unitsNeverUsedShare",
+    "tankSilentShare"
    ],
    "winners": [
     2,
@@ -97,6 +99,7 @@
     "routeFailuresPerBotMinute",
     "enemyKillsPerBotMinute",
     "bothSidesCapture",
+    "bothSidesKill",
     "stuckSecondsPerBotMinuteWorseSide",
     "routeFailuresPerBotMinuteWorseSide",
     "redeploysPerBotMinuteWorseSide",

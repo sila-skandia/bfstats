@@ -1,0 +1,126 @@
+{
+ "generator": "botgen",
+ "version": 5,
+ "mod": "FHSW",
+ "level": "gazaps-1945",
+ "objectSpawners": 178,
+ "template": "symmetric",
+ "templateSource": "DICE, bf1942 Kharkov (1.6 patch archives): AI/Strategies.con, AI/conditions.con, AI/prerequisites.con, unchanged",
+ "templateChoice": {
+  "name": "symmetric",
+  "inPlay": 4,
+  "rule": "4 capturable flags in play, more than 3"
+ },
+ "scope": "on foot: infantry order positions only, no search maps, no co-op layer",
+ "unreachable": [],
+ "unreachableReasons": {},
+ "botSpawnsExcluded": [
+  "AxisSpawnPoint_supplydep",
+  "AxisSpawnPoint_hospital",
+  "AxisSpawnPoint_barrack",
+  "AxisSpawnPoint_landrep1",
+  "AxisSpawnPoint_bunker",
+  "AxisSpawnPoint_airfield_knut_1",
+  "AxisSpawnPoint_airfield_knut_2",
+  "AxisSpawnPoint_airfield_knut_3",
+  "alliesSpawnPoint_hospital",
+  "alliesSpawnPoint_barrack",
+  "alliesSpawnPoint_supplydepot",
+  "alliesSpawnPoint_hangar1",
+  "alliesSpawnPoint_landrep1",
+  "alliesSpawnPoint_new1",
+  "alliesSpawnPoint_new2",
+  "AlliesSpawnPoint_airfield_bernt_1",
+  "AlliesSpawnPoint_airfield_bernt_2",
+  "AlliesSpawnPoint_airfield_bernt_3",
+  "alliesSpawnPoint_village_landrep1",
+  "alliesSpawnPoint_village_1",
+  "alliesSpawnPoint_village_2",
+  "alliesSpawnPoint_village_3",
+  "AxisSpawnPoint_village_afrohouse2",
+  "AxisSpawnPoint_village_1",
+  "AxisSpawnPoint_village_2",
+  "AxisSpawnPoint_village_3",
+  "OpenSpawnPoint_road_smdh",
+  "OpenSpawnPoint_road_smdh",
+  "OpenSpawnPoint_road_1",
+  "OpenSpawnPoint_road_2",
+  "OpenSpawnPoint_road_3",
+  "OpenSpawnPoint_road_4",
+  "OpenSpawnPoint_road_5",
+  "OpenSpawnPoint_crossing1",
+  "OpenSpawnPoint_crossing4",
+  "OpenSpawnPoint_crossing5",
+  "OpenSpawnPoint_crossing7",
+  "controlpoint_fortress_spawn3",
+  "controlpoint_fortress_spawn5",
+  "controlpoint_fortress_spawn6"
+ ],
+ "walkMap": {
+  "source": "page painter",
+  "engine": "none",
+  "opened": [],
+  "ways": [],
+  "cover": 0.638,
+  "floors": {
+   "stacked": false,
+   "twoFloorShare": 0.003,
+   "raised": [
+    "controlpoint_fortress"
+   ],
+   "reason": null
+  },
+  "capped": true,
+  "joined": 4
+ },
+ "routeProbe": {
+  "chokeMax": 4,
+  "unreachable": [],
+  "stops": {},
+  "oneSided": {},
+  "sides": {
+   "1": {
+    "spawns": 3,
+    "flags": [
+     "0PEN_BASE_ROAD",
+     "ALLIES_village",
+     "AXIS_village",
+     "controlpoint_fortress"
+    ]
+   },
+   "2": {
+    "spawns": 12,
+    "flags": [
+     "0PEN_BASE_ROAD",
+     "ALLIES_village",
+     "AXIS_village",
+     "controlpoint_fortress"
+    ]
+   }
+  },
+  "chokes": {
+   "ALLIES_village:1": 1,
+   "ALLIES_village:2": 0,
+   "AXIS_village:1": 0,
+   "AXIS_village:2": 0,
+   "0PEN_BASE_ROAD:1": 0,
+   "0PEN_BASE_ROAD:2": 0,
+   "controlpoint_fortress:1": 0,
+   "controlpoint_fortress:2": 1
+  },
+  "late": {},
+  "shutLinks": []
+ },
+ "inputs": {
+  "controlPoints": "b4f17783a48d16f6051c8a506d0e39e642373f1dbf1f1f7e6975ecf08ec17bb3",
+  "infantryMap": "7c4e67f7ea5b2556fa81f1431d427f6de93fb80724383ca7296b51939f69e7a5",
+  "template": "43f8a790471528016570235f76e97dbb2045732458781a5139f37fed68bf98c0"
+ },
+ "files": {
+  "AI.con": "6add06fce9aa94cfe94d211bd067d741e04433e1f1c464973e40b7b389dd13d7",
+  "AI/StrategicAreas.con": "39d455bf439d3ac46b15e3f70dbe4515fd6ba1ee9f8874fc70b132e24c3df85a",
+  "AI/Strategies.con": "4ce0be59a0d6c5cd530db002fb062c4be8d936bc6ae59bd188803ccaf7869a8d",
+  "AI/conditions.con": "68a0c7a8aec69954063147b60fae560b2874884285737aa085efa76597d395aa",
+  "AI/prerequisites.con": "4c1f313bc285b228fd6ad03bfd1f44c5b15c8703c31f802eb605bc5f00f88bb5"
+ }
+}

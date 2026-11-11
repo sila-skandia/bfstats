@@ -1,0 +1,161 @@
+{
+ "generator": "botgen",
+ "version": 5,
+ "mod": "FHSW",
+ "level": "fht_pasir_panjang-1942",
+ "objectSpawners": 241,
+ "template": "symmetric",
+ "templateSource": "DICE, bf1942 Kharkov (1.6 patch archives): AI/Strategies.con, AI/conditions.con, AI/prerequisites.con, unchanged",
+ "templateChoice": {
+  "name": "symmetric",
+  "inPlay": 4,
+  "rule": "4 capturable flags in play, more than 3"
+ },
+ "scope": "on foot: infantry order positions only, no search maps, no co-op layer",
+ "unreachable": [
+  "underground_commandpost"
+ ],
+ "unreachableReasons": {
+  "underground_commandpost": "walk test"
+ },
+ "botSpawnsExcluded": [
+  "axismain_spawn1",
+  "rice_fieldsspawn1",
+  "rice_fieldsspawn2",
+  "rice_fieldsspawn5",
+  "rice_fieldsspawn6",
+  "rice_fieldsspawn7",
+  "opium_hill_spawn5",
+  "opium_hill_spawn6",
+  "opium_hill_spawn7",
+  "opium_hill_spawn8",
+  "pasir_panjangspawn1",
+  "pasir_panjangspawn2",
+  "pasir_panjangspawn3",
+  "pasir_panjangspawn4",
+  "pasir_panjangspawn6",
+  "pasir_panjangspawn7",
+  "pasir_panjangspawn8",
+  "underground_spawn1",
+  "underground_spawn2",
+  "underground_spawn3",
+  "underground_spawn5",
+  "underground_spawn7",
+  "underground_spawn8",
+  "point226_spawn1",
+  "point226_spawn2",
+  "point226_spawn5",
+  "point226_spawn6",
+  "point226_spawn8",
+  "axismain_spawn2",
+  "axismain_spawn4",
+  "axismain_spawn5",
+  "axismain_spawn6",
+  "axismain_spawn7",
+  "axismain_spawn9",
+  "axismain_spawn10",
+  "axismain_spawn12",
+  "axismain_spawn13",
+  "axismain_spawn14",
+  "axismain_spawn16",
+  "axismain_spawn18",
+  "axismain_spawn19",
+  "axismain_spawn20",
+  "axismain_spawn21",
+  "axismain_spawn22",
+  "axismain_spawn23",
+  "axismain_spawn24",
+  "alliedbase_spawn2",
+  "alliedbase_spawn4",
+  "alliedbase_spawn5",
+  "alliedbase_spawn9",
+  "alliedbase_spawn10",
+  "alliedbase_spawn11",
+  "alliedbase_spawn12",
+  "alliedbase_spawn13",
+  "alliedbase_spawn14",
+  "alliedbase_spawn15",
+  "alliedbase_spawn16",
+  "alliedbase_spawn17",
+  "alliedbase_spawn18",
+  "alliedbase_spawn19",
+  "alliedbase_spawn20",
+  "alliedbase_spawn21",
+  "alliedbase_spawn22",
+  "alliedbase_spawn23",
+  "alliedbase_spawn24"
+ ],
+ "walkMap": {
+  "source": "page painter",
+  "engine": "none",
+  "opened": [],
+  "ways": [],
+  "cover": 0.711,
+  "floors": {
+   "stacked": false,
+   "twoFloorShare": 0.004,
+   "raised": [
+    "pasir_panjang",
+    "underground_commandpost"
+   ],
+   "reason": null
+  },
+  "capped": true,
+  "joined": 3
+ },
+ "routeProbe": {
+  "chokeMax": 4,
+  "unreachable": [],
+  "stops": {},
+  "oneSided": {},
+  "sides": {
+   "1": {
+    "spawns": 5,
+    "flags": [
+     "opium_hill",
+     "pasir_panjang",
+     "point_226_firebase",
+     "rice_fields"
+    ]
+   },
+   "2": {
+    "spawns": 18,
+    "flags": [
+     "opium_hill",
+     "pasir_panjang",
+     "point_226_firebase",
+     "rice_fields"
+    ]
+   }
+  },
+  "chokes": {
+   "opium_hill:1": 0,
+   "opium_hill:2": 0,
+   "point_226_firebase:1": 1,
+   "point_226_firebase:2": 0,
+   "pasir_panjang:1": 6,
+   "pasir_panjang:2": 0,
+   "rice_fields:1": 6,
+   "rice_fields:2": 1
+  },
+  "late": {},
+  "shutLinks": [
+   "opium_hill>pasir_panjang",
+   "opium_hill>rice_fields",
+   "pasir_panjang>opium_hill",
+   "rice_fields>opium_hill"
+  ]
+ },
+ "inputs": {
+  "controlPoints": "62a87133e1386d1dbeb1f17b2d4bd8cb88ab3d578fdc84dfecf08ea305bd6008",
+  "infantryMap": "9af4d58a7279fcbfb574fc931deae599c990a3fd78b122cf66a8811f28cee648",
+  "template": "43f8a790471528016570235f76e97dbb2045732458781a5139f37fed68bf98c0"
+ },
+ "files": {
+  "AI.con": "6add06fce9aa94cfe94d211bd067d741e04433e1f1c464973e40b7b389dd13d7",
+  "AI/StrategicAreas.con": "66230b8ac93d40253f66f39d366bb66b77ad13438703aa52548a8320b759c050",
+  "AI/Strategies.con": "4ce0be59a0d6c5cd530db002fb062c4be8d936bc6ae59bd188803ccaf7869a8d",
+  "AI/conditions.con": "68a0c7a8aec69954063147b60fae560b2874884285737aa085efa76597d395aa",
+  "AI/prerequisites.con": "4c1f313bc285b228fd6ad03bfd1f44c5b15c8703c31f802eb605bc5f00f88bb5"
+ }
+}

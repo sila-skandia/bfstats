@@ -1,0 +1,62 @@
+rem *** Strategic areas: one per control point (botgen) ***
+
+aiStrategicArea.create axisbase 51.9/958.1 56.9/963.1 50
+aiStrategicArea.addNeighbour village_north
+aiStrategicArea.addNeighbour small_farmtemplate
+aiStrategicArea.addObjectTypeFlag Base
+aiStrategicArea.setOrderPosition Infantry 56.9/963.1
+aiStrategicArea.setSide 1
+aiStrategicArea.setTakeable 2 0
+
+aiStrategicArea.create alliedbase 706.4/114.7 711.4/119.7 50
+aiStrategicArea.addNeighbour big_farm
+aiStrategicArea.addNeighbour small_farmtemplate
+aiStrategicArea.addNeighbour village_south
+aiStrategicArea.addObjectTypeFlag Base
+aiStrategicArea.setOrderPosition Infantry 711.4/119.7
+aiStrategicArea.setSide 2
+aiStrategicArea.setTakeable 1 0
+
+aiStrategicArea.create big_farm 488.9/534.1 503.9/549.1 200
+aiStrategicArea.addNeighbour alliedbase
+aiStrategicArea.addNeighbour village_north
+aiStrategicArea.addNeighbour small_farmtemplate
+aiStrategicArea.addNeighbour village_south
+aiStrategicArea.addObjectTypeFlag Centre
+aiStrategicArea.addObjectTypeFlag Close
+aiStrategicArea.addObjectTypeFlag ControlPoint
+aiStrategicArea.setOrderPosition Infantry 502.5/548.5
+aiStrategicArea.setSide 1
+
+aiStrategicArea.create village_north 136.9/484.1 141.9/489.1 150
+aiStrategicArea.addNeighbour axisbase
+aiStrategicArea.addNeighbour big_farm
+aiStrategicArea.addNeighbour small_farmtemplate
+aiStrategicArea.addNeighbour village_south
+aiStrategicArea.addObjectTypeFlag Flank
+aiStrategicArea.addObjectTypeFlag Close
+aiStrategicArea.addObjectTypeFlag ControlPoint
+aiStrategicArea.setOrderPosition Infantry 140.5/490.5
+aiStrategicArea.setSide 1
+
+aiStrategicArea.create small_farmtemplate 351.1/553.5 366.1/568.5 300
+aiStrategicArea.addNeighbour axisbase
+aiStrategicArea.addNeighbour alliedbase
+aiStrategicArea.addNeighbour big_farm
+aiStrategicArea.addNeighbour village_north
+aiStrategicArea.addNeighbour village_south
+aiStrategicArea.addObjectTypeFlag Centre
+aiStrategicArea.addObjectTypeFlag StrongPoint
+aiStrategicArea.addObjectTypeFlag ControlPoint
+aiStrategicArea.setOrderPosition Infantry 368.5/568.5
+aiStrategicArea.setSide 1
+
+aiStrategicArea.create village_south 158/370.6 163/375.6 150
+aiStrategicArea.addNeighbour alliedbase
+aiStrategicArea.addNeighbour big_farm
+aiStrategicArea.addNeighbour village_north
+aiStrategicArea.addNeighbour small_farmtemplate
+aiStrategicArea.addObjectTypeFlag Flank
+aiStrategicArea.addObjectTypeFlag ControlPoint
+aiStrategicArea.setOrderPosition Infantry 161.5/376.5
+aiStrategicArea.setSide 1

@@ -1,0 +1,65 @@
+rem *** Strategic areas: one per control point (botgen) ***
+
+aiStrategicArea.create allied_garisson 344.5/106.9 349.5/111.9 50
+aiStrategicArea.addNeighbour west_pak
+aiStrategicArea.addNeighbour east_pak
+aiStrategicArea.addObjectTypeFlag Base
+aiStrategicArea.setOrderPosition Tank 347.5/111.5
+aiStrategicArea.setOrderPosition Infantry 348.5/111.5
+aiStrategicArea.setSide 2
+aiStrategicArea.setTakeable 1 0
+
+aiStrategicArea.create west_pak 330.6/405.5 345.6/420.5 300
+aiStrategicArea.addNeighbour allied_garisson
+aiStrategicArea.addNeighbour east_trench
+aiStrategicArea.addNeighbour west_trench
+aiStrategicArea.addNeighbour east_pak
+aiStrategicArea.addObjectTypeFlag Centre
+aiStrategicArea.addObjectTypeFlag StrongPoint
+aiStrategicArea.addObjectTypeFlag Close
+aiStrategicArea.addObjectTypeFlag ControlPoint
+aiStrategicArea.setOrderPosition Tank 345.5/422.5
+aiStrategicArea.setOrderPosition Infantry 346.5/420.5
+aiStrategicArea.setSide 1
+
+aiStrategicArea.create east_trench 444.8/647.9 454.8/657.9 200
+aiStrategicArea.addNeighbour west_pak
+aiStrategicArea.addNeighbour west_trench
+aiStrategicArea.addNeighbour east_pak
+aiStrategicArea.addNeighbour village
+aiStrategicArea.addObjectTypeFlag Centre
+aiStrategicArea.addObjectTypeFlag ControlPoint
+aiStrategicArea.setOrderPosition Tank 452.5/657.5
+aiStrategicArea.setOrderPosition Infantry 455.5/657.5
+aiStrategicArea.setSide 1
+
+aiStrategicArea.create west_trench 350.2/637.7 360.2/647.7 200
+aiStrategicArea.addNeighbour west_pak
+aiStrategicArea.addNeighbour east_trench
+aiStrategicArea.addNeighbour east_pak
+aiStrategicArea.addNeighbour village
+aiStrategicArea.addObjectTypeFlag Centre
+aiStrategicArea.addObjectTypeFlag ControlPoint
+aiStrategicArea.setOrderPosition Tank 358.5/647.5
+aiStrategicArea.setOrderPosition Infantry 360.5/648.5
+aiStrategicArea.setSide 1
+
+aiStrategicArea.create east_pak 446.1/414.3 461.1/429.3 150
+aiStrategicArea.addNeighbour allied_garisson
+aiStrategicArea.addNeighbour west_pak
+aiStrategicArea.addNeighbour east_trench
+aiStrategicArea.addNeighbour west_trench
+aiStrategicArea.addObjectTypeFlag Flank
+aiStrategicArea.addObjectTypeFlag ControlPoint
+aiStrategicArea.setOrderPosition Tank 461.5/431.5
+aiStrategicArea.setOrderPosition Infantry 461.5/428.5
+aiStrategicArea.setSide 1
+
+aiStrategicArea.create village 406/819.3 411/824.3 200
+aiStrategicArea.addNeighbour east_trench
+aiStrategicArea.addNeighbour west_trench
+aiStrategicArea.addObjectTypeFlag Centre
+aiStrategicArea.addObjectTypeFlag ControlPoint
+aiStrategicArea.setOrderPosition Tank 410.5/822.5
+aiStrategicArea.setOrderPosition Infantry 410.5/823.5
+aiStrategicArea.setSide 1

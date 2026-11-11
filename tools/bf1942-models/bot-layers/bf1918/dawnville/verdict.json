@@ -1,7 +1,7 @@
 {
  "level": "dawnville",
  "verdict": "fail",
- "outcome": "better-than-nothing",
+ "outcome": "no-fight",
  "config": "with vehicles",
  "doctrine": "garrison",
  "generatorVersion": 5,
@@ -17,10 +17,31 @@
  },
  "againstDice": {
   "verdict": "fail",
-  "outcome": "better-than-nothing",
+  "outcome": "no-fight",
   "baseline": "DICE layers with vehicles, garrison doctrine: berlin, stalingrad, kharkov, bocage; seeds 1..10, 600 s",
   "sizes": {
    "8": {
+    "verdict": "fail",
+    "failed": [
+     "stuckSecondsPerBotMinute",
+     "routeFailuresPerBotMinute",
+     "redeploysPerBotMinute",
+     "capturesTotal",
+     "enemyKillsPerBotMinute",
+     "flagCoverage",
+     "bothSidesCapture",
+     "bothSidesKill",
+     "ticketsBleed",
+     "stuckSecondsPerBotMinuteWorseSide",
+     "routeFailuresPerBotMinuteWorseSide",
+     "redeploysPerBotMinuteWorseSide",
+     "nonEnemyDeathShareWorseSide",
+     "hullStuckSecondsPerDrivingMinute",
+     "hullStuckSecondsPerDrivingMinuteWorseSide",
+     "tankSilentShare"
+    ]
+   },
+   "16": {
     "verdict": "fail",
     "failed": [
      "stuckSecondsPerBotMinute",
@@ -34,21 +55,8 @@
      "redeploysPerBotMinuteWorseSide",
      "nonEnemyDeathShareWorseSide",
      "hullStuckSecondsPerDrivingMinute",
-     "hullStuckSecondsPerDrivingMinuteWorseSide"
-    ]
-   },
-   "16": {
-    "verdict": "fail",
-    "failed": [
-     "stuckSecondsPerBotMinute",
-     "redeploysPerBotMinute",
-     "enemyKillsPerBotMinute",
-     "stuckSecondsPerBotMinuteWorseSide",
-     "redeploysPerBotMinuteWorseSide",
-     "nonEnemyDeathShareWorseSide",
-     "hullStuckSecondsPerDrivingMinute",
      "hullStuckSecondsPerDrivingMinuteWorseSide",
-     "unitsNeverUsedShare"
+     "tankSilentShare"
     ]
    }
   }
@@ -61,7 +69,10 @@
     "enemyKillsPerBotMinute",
     "flagCoverage",
     "bothSidesCapture",
-    "nonEnemyDeathShareWorseSide"
+    "bothSidesKill",
+    "ticketsBleed",
+    "nonEnemyDeathShareWorseSide",
+    "hullStuckSecondsPerDrivingMinuteWorseSide"
    ],
    "winners": [
     2,
@@ -73,19 +84,22 @@
    "verdict": "fail",
    "failed": [
     "stuckSecondsPerBotMinute",
+    "routeFailuresPerBotMinute",
     "redeploysPerBotMinute",
+    "enemyKillsPerBotMinute",
+    "bothSidesCapture",
     "stuckSecondsPerBotMinuteWorseSide",
-    "redeploysPerBotMinuteWorseSide",
+    "routeFailuresPerBotMinuteWorseSide",
     "nonEnemyDeathShareWorseSide"
    ],
    "winners": [
-    2,
-    0,
+    1,
+    1,
     0
    ]
   }
  },
- "oneSided": 1,
+ "oneSided": null,
  "unreachable": [],
  "lintErrors": []
 }

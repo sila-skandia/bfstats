@@ -22,6 +22,7 @@
    "failed": [
     "routeFailuresPerBotMinute",
     "redeploysPerBotMinute",
+    "capturesTotal",
     "enemyKillsPerBotMinute",
     "flagCoverage",
     "bothSidesCapture",
@@ -35,27 +36,28 @@
     "unitsNeverUsedShare"
    ],
    "winners": [
-    2,
+    1,
     0,
-    0
+    1
    ]
   },
   "16": {
    "verdict": "fail",
    "failed": [
     "stuckSecondsPerBotMinute",
-    "oscillationsPerBotMinute",
     "routeFailuresPerBotMinute",
     "redeploysPerBotMinute",
     "enemyKillsPerBotMinute",
+    "bothSidesCapture",
     "routeFailuresPerBotMinuteWorseSide",
     "redeploysPerBotMinuteWorseSide",
     "nonEnemyDeathShareWorseSide",
+    "hullStuckSecondsPerDrivingMinuteWorseSide",
     "unitsNeverUsedShare"
    ],
    "winners": [
-    1,
-    1,
+    2,
+    0,
     0
    ]
   }

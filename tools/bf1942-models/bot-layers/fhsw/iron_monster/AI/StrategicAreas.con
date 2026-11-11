@@ -1,0 +1,61 @@
+rem *** Strategic areas: one per control point (botgen) ***
+
+aiStrategicArea.create axisbase 836.6/101.7 841.6/106.7 50
+aiStrategicArea.addNeighbour road
+aiStrategicArea.addNeighbour town_south
+aiStrategicArea.addObjectTypeFlag Base
+aiStrategicArea.setOrderPosition Infantry 842.5/107.5
+aiStrategicArea.setSide 1
+aiStrategicArea.setTakeable 2 0
+
+aiStrategicArea.create axis_base2 665.4/804.1 670.4/809.1 50
+aiStrategicArea.addNeighbour road
+aiStrategicArea.addNeighbour town_south
+aiStrategicArea.addObjectTypeFlag Base
+aiStrategicArea.setOrderPosition Infantry 669.5/810.5
+aiStrategicArea.setSide 1
+aiStrategicArea.setTakeable 2 0
+
+aiStrategicArea.create road 755.9/431.2 770.9/446.2 200
+aiStrategicArea.addNeighbour axisbase
+aiStrategicArea.addNeighbour axis_base2
+aiStrategicArea.addNeighbour town_south
+aiStrategicArea.addObjectTypeFlag Centre
+aiStrategicArea.addObjectTypeFlag Close
+aiStrategicArea.addObjectTypeFlag ControlPoint
+aiStrategicArea.setOrderPosition Infantry 772.5/445.5
+
+aiStrategicArea.create town_church 471/366 476/371 300
+aiStrategicArea.addNeighbour town_south
+aiStrategicArea.addNeighbour town_north
+aiStrategicArea.addObjectTypeFlag Centre
+aiStrategicArea.addObjectTypeFlag StrongPoint
+aiStrategicArea.addObjectTypeFlag ControlPoint
+aiStrategicArea.setOrderPosition Infantry 474.5/372.5
+aiStrategicArea.setSide 2
+
+aiStrategicArea.create town_south 569.1/396 574.1/401 200
+aiStrategicArea.addNeighbour axisbase
+aiStrategicArea.addNeighbour axis_base2
+aiStrategicArea.addNeighbour road
+aiStrategicArea.addNeighbour town_church
+aiStrategicArea.addObjectTypeFlag Centre
+aiStrategicArea.addObjectTypeFlag ControlPoint
+aiStrategicArea.setOrderPosition Infantry 575.5/399.5
+aiStrategicArea.setSide 2
+
+aiStrategicArea.create town_north 327/343 332/348 200
+aiStrategicArea.addNeighbour town_church
+aiStrategicArea.addNeighbour tank_base
+aiStrategicArea.addObjectTypeFlag Centre
+aiStrategicArea.addObjectTypeFlag Close
+aiStrategicArea.addObjectTypeFlag ControlPoint
+aiStrategicArea.setOrderPosition Infantry 330.5/349.5
+aiStrategicArea.setSide 2
+
+aiStrategicArea.create tank_base 45.2/344.7 50.2/349.7 50
+aiStrategicArea.addNeighbour town_north
+aiStrategicArea.addObjectTypeFlag Base
+aiStrategicArea.setOrderPosition Infantry 51.5/350.5
+aiStrategicArea.setSide 2
+aiStrategicArea.setTakeable 1 0
