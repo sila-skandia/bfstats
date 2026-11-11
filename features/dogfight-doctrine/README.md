@@ -226,6 +226,16 @@ from the muzzle; and the wingman's tag says ONTO THE HUNTER while they cover.
 The story says when its numbers were the school's Spitfire's and the planes
 on stage are others.
 
+The captions follow each plane: the wingman's row and tag say STATION,
+COMING BACK (`rejoin`, more than 250 m off their spot), BREAKING ONTO THE
+HUNTER (`cover`) and FIRING ON THE HUNTER (`shoot`, on its tail with the
+nose on it); a plane whose gunner is firing shows GUNNER FIRING BACK in its
+row, and "The gunner opens fire" gives way to the pilot's own line a second
+after the last round. *Your wingman covers you* and the weave open on a
+camera that keeps all three planes in the picture (`trio`: off your side, a
+little behind and above, back as far as the three need), and over your
+shoulder your tag sits on your plane.
+
 ### The hunter on every arena (2026-11-11)
 
 Flown first on every arena (the page's own, each on its best fighter), the
@@ -280,23 +290,34 @@ arenas' planes in `tests/fixtures/arena-airframes.json.gz`):
 | BF1918 (22) | every arena, 11.8 to 30.2 s in | none | 0 to 7 / 0 to 19 | nobody |
 | Desert Combat (7) | every arena, 11.7 to 15.4 s in | none | 0 / 0 to 1 | nobody |
 | Forgotten Hope (1) | 18.6 s in | none | 0 / 0 | nobody |
-| FHSW (12) | 11 arenas, 11.9 to 42.8 s in; Operation Spring Awakening 21 of 22 rounds | none on 11; shot down on Gazala | 0 / 0 to 3 | nobody |
+| FHSW (12) | every arena | none | 0 / 0 to 3 | nobody |
 
 Each arena flies its own two planes (yours its best Allied fighter, the
-hunter the other side's best). Two are left where the lesson's point does
-not play out in full, both FHSW, both in `test_dogfight_arena_hunter.py`:
+hunter the other side's best). Two FHSW arenas did not play out, and were
+fixed from the pair's own performance:
 
-- **Gazala** (a Hurricane against the faster Bf 109): your wingman, flying
-  your type, meets the hunter head-on, is carried 500 m past, and their turn
-  back takes longer than the hunter's run on you; they arrive a second
-  late. A wingman now turns back hard and level once the hunter is behind
-  their beam (`PAIR.turnBack`, 90 degrees), which saved Apennines and
-  Remagen (a P-47 against a Bf 109-G6 and an Me 262); a threshold that saves
-  Gazala loses Remagen and moves vanilla's nine starts.
-- **Operation Spring Awakening** (a Yak 9 against a Bf 109-G10, paced 1 and
-  1.3): the hunter sits 40 m behind you firing its one cannon for 16 s and
-  lands 21 of the 22 rounds the school counts as a kill, then loses its
-  line and never gets it back in the minute.
+- **Gazala** (a Hurricane against the faster Bf 109): your wingman met the
+  hunter nose to nose, was carried 500 m past, and came back a second late.
+  A wingman whose hunter's type flies faster level than their own (each
+  fight hands every pilot the planes' level speeds, `fitAirframe`'s
+  `level`, `PAIR.faster` 3%) now holds their place on your wing, heading
+  and full throttle, while the hunter is still coming at them, and goes for
+  it once it is past their beam. Between equal types (vanilla's Spitfires,
+  Kursk's Yak 9 and Bf 109, 0.5% apart) nothing changes.
+- **Operation Spring Awakening** (a Yak 9 against a Bf 109-G10): the hunter
+  sat 40 m behind you for 16 s with its nose 2 to 8 degrees off and landed
+  21 of the 22 rounds. The roll hand's lighter touch (`hand.gain`) was on
+  all three axes; it is now the roll's and the rudder's only, and the pull
+  keeps its gain: the G10 holds its sight on and shoots you down.
+- **The SE5 weaving into the ground** (BF1918's 42 m/s scout, once the pull
+  had its gain back): the weave's hard turn climbs under 112 m
+  (`WEAVE.floor`), where vanilla's Spitfires never weave.
+
+A wingman also turns back hard and level once the hunter is behind their
+beam (`PAIR.turnBack`, 90 degrees), which saved Apennines and Remagen (a
+P-47 against a Bf 109-G6 and an Me 262). Vanilla's nine starts are as they
+were: alone you go down 16.3 to 28.6 s in, turning hard 3 rounds on you and
+8 on them, the wingman takes 0 to 2, the weave 11 on the hunter.
 
 The hand changes every lesson flown on those airframes, and the tabs show
 each move's count flown on the airframe on stage, so their counts moved.

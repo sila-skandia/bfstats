@@ -149,9 +149,11 @@ export function runFight({ makePlane, sides, seconds = 60, origin = [0, 0, 0], g
         // His eyes on this enemy, kept apart from his eyes on the others.
         mem.eyes ??= {};
         mem.eye = mem.eyes[cur.i];
-        const seen = x => ({ ...x, state: views[i].see(x.state) });
+        // Each plane as he sees it, and how fast its type flies level
+        // (`fitAirframe`): what a wingman weighs a faster hunter by.
+        const seen = x => ({ ...x, state: views[i].see(x.state), level: fitted[x.i]?.level ?? null });
         out = pilots[i].step({ me: views[i].see(me), him: views[i].see(states[cur.i]), dt, t, groundAt: grounds[i], ceilingBase: 0, arena: fences[i], pace: fitted[i].pace,
-                               team: { index: i, target: cur.i, friends: friends.map(seen), enemies: enemies.map(seen) } });
+                               team: { index: i, target: cur.i, friends: friends.map(seen), enemies: enemies.map(seen), level: fitted[i].level ?? null } });
         mem.eyes[cur.i] = mem.eye;
       }
       applyStick(planes[i], out);

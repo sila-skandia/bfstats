@@ -124,7 +124,7 @@ export const INTENTS = {
   leafAce: { cruise: 'setup', fall: 'defend', recover: 'setup', attack: 'attack' },
   leafFooled: { chase: 'attack', done: 'setup' },
   leafFollow: { chase: 'attack', follow: 'setup', pounce: 'attack' },
-  wingman: { station: 'setup', cover: 'attack' },
+  wingman: { station: 'setup', rejoin: 'setup', cover: 'attack', shoot: 'attack' },
   weaver: { abreast: 'setup', weave: 'defend', shoot: 'attack' },
   underTail: { approach: 'setup', climb: 'attack', drop: 'setup' },
   meetTheDive: { climb: 'setup', face: 'defend', pass: 'defend', extend: 'setup' },
@@ -2522,12 +2522,13 @@ PLANS.leafFollow = {
  * `PAIR.cover` metres is his target until it is gone or off the tail.
  * Needs the fight's `c.team` (`dogfight-fight.js` `runFight`).
  */
-const PAIR = { abeam: 180, behind: 60, cover: 800, tailCone: 60, hold: 4, holdCone: 90, turnBack: 90 };
+const PAIR = { abeam: 180, behind: 60, cover: 800, tailCone: 60, hold: 4, holdCone: 90, turnBack: 90, rejoin: 250, faster: 1.03 };
 PLANS.wingman = {
   title: 'The wingman', first: 'station',
   // Said under the wingman's own caption row, the leader being you: the
   // words name "your" tail, which no third-person rewrite touches.
-  says: { station: 'Off your wing, a little behind, watching your tail', cover: 'Someone is on your tail: turning onto them' },
+  says: { station: 'Off your wing, a little behind, watching your tail', rejoin: 'Coming back to your wing',
+          cover: 'Breaking onto the plane on your tail', shoot: 'On their tail, going for the shot' },
   step(c) {
     const { me, mem, team } = c;
     const lead = team?.friends.find(f => f.i === (mem.leader ?? f.i)) ?? team?.friends[0];
@@ -2539,7 +2540,7 @@ PLANS.wingman = {
     // after for `PAIR.hold` seconds while its nose is still near the
     // leader's way: back on station he would be half a kilometre out when it
     // came back.
-    const holding = mem.phase === 'cover' && mem.t - (mem.coverAt ?? -Infinity) < PAIR.hold;
+    const holding = (mem.phase === 'cover' || mem.phase === 'shoot') && mem.t - (mem.coverAt ?? -Infinity) < PAIR.hold;
     const threat = (team.enemies ?? []).map(e => {
       const rel = sub(L.position, e.state.position), d = len(rel);
       const ef = basis(e.state.orientation).F;
@@ -2552,7 +2553,24 @@ PLANS.wingman = {
     if (threat) {
       if (!threat.held) mem.coverAt = mem.t;
       mem.target = threat.e.i;
-      go(c, 'cover');
+      const T = threat.e.state;
+      // On its tail, nose on it: the shot. Else still breaking onto it.
+      const fromIt = sub(me.position, T.position), dIt = len(fromIt);
+      const onTail = dIt < 600 && angleBetween(scale(basis(T.orientation).F, -1), fromIt) < 60
+        && angleBetween(basis(me.orientation).F, scale(fromIt, -1)) < 30;
+      go(c, onTail ? 'shoot' : 'cover');
+      // A hunter whose type flies faster than his own (the pair's own gap,
+      // `team.level`: a Bf 109 on a Hurricane's tail), met nose to nose,
+      // would be past him at a closing speed he cannot turn back from in
+      // time. While it is still coming at him he holds his place on the
+      // leader's wing, his heading, full throttle, and lets it come by: once
+      // it is past his beam he is behind it, and goes for it.
+      const faster = threat.e.level > 0 && team.level > 0 && threat.e.level > team.level * PAIR.faster;
+      const ahead = angleBetween(basis(me.orientation).F, scale(fromIt, -1)) < PAIR.turnBack;
+      const facing = angleBetween(basis(T.orientation).F, fromIt) < 90;
+      if (!onTail && faster && facing && ahead) {
+        return { ...pointNose(me, climbing(heading(L.velocity), 0), { fine: 8 }), throttle: 1, aimed: false };
+      }
       // Past it, behind his beam (`PAIR.turnBack` degrees off his heading):
       // come round level and hard (`turnToward`) rather than chase the nose
       // round a point over his shoulder, which on FHSW's P-47 flew him
@@ -2565,7 +2583,6 @@ PLANS.wingman = {
       return { ...pointNose(me, sub(threat.e.state.position, me.position), { fine: 8 }), throttle: 1, aimed: false };
     }
     mem.target = null;
-    go(c, 'station');
     // His station: abeam the leader on the side he is already on, a little
     // behind, at the leader's height.
     const lr = basis(L.orientation).R;
@@ -2573,6 +2590,8 @@ PLANS.wingman = {
     const spot = add(add(L.position, scale(lr, side * PAIR.abeam)), scale(lf, -PAIR.behind));
     const toSpot = sub(add(spot, scale(L.velocity, 2)), me.position);
     const gap = dot(sub(spot, me.position), lf);
+    // Far off it (back from a fight) he says so: he is coming back.
+    go(c, len(sub(spot, me.position)) > PAIR.rejoin ? 'rejoin' : 'station');
     return { ...pointNose(me, toSpot, { fine: 8 }), throttle: clamp(0.6 + gap * 0.02, -1, 1), aimed: false };
   },
 };
@@ -2584,7 +2603,7 @@ PLANS.wingman = {
  * is dragged across the other's nose. At each crossing they reverse, toward
  * each other again. Whoever has the attacker across his nose shoots.
  */
-const WEAVE = { tail: 900, tailCone: 50, shootRange: 600, shootCone: 35 };
+const WEAVE = { tail: 900, tailCone: 50, shootRange: 600, shootCone: 35, floor: 112 };
 PLANS.weaver = {
   title: 'The weave', first: 'abreast',
   says: { abreast: 'Two abreast, each watching the other\'s tail', weave: 'Someone is on a tail: turning in toward the other plane', shoot: 'They are across my nose: shooting' },
@@ -2610,7 +2629,12 @@ PLANS.weaver = {
       // Past each other (he is now on the other side): reverse, toward him again.
       if (mem.phase === 'weave' && side !== mem.weaveSide && mem.since > 2) { mem.weaveSide = side; mem.since = 0; }
       go(c, 'weave');
-      return { ...hardTurn(me, mem.weaveSide, { maxBank: 80 }), throttle: 1, aimed: false };
+      // Under `WEAVE.floor` metres the turn climbs: BF1918's SE5, 42 m/s
+      // level, sinks in every hard turn and otherwise weaves itself into the
+      // ground inside the minute.
+      const low = WEAVE.floor - c.agl;
+      const climb = low > 0 ? clamp(low * 0.1, 0, 4) : 0;
+      return { ...hardTurn(me, mem.weaveSide, { maxBank: 80, climb }), throttle: 1, aimed: false };
     }
     go(c, 'abreast');
     mem.dir ??= heading(me.velocity);

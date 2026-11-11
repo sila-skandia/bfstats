@@ -204,7 +204,7 @@ export function fitAirframe(plane, makePlane, key = 0) {
         const tried = ROLL_HANDS.find(h => noseSettle(makePlane(null, key), { ...hands, ...h }, speed) <= SETTLE.within) ?? ROLL_HANDS.at(-1);
         hands = Object.freeze({ ...hands, ...tried });
       }
-      fit = Object.freeze({ hand: hands, pace, gun: pace > 1 ? ownGun(plane) : null });
+      fit = Object.freeze({ hand: hands, pace, gun: pace > 1 ? ownGun(plane) : null, level: Math.round(level * 10) / 10 });
     } catch { fit = NEUTRAL; }
     fits.set(sig, fit);
   }

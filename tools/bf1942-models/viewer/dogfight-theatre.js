@@ -116,6 +116,7 @@ const CAMERAS = [
   { id: 'sight-you', label: 'Your gunsight' },
   { id: 'top', label: 'From above' },
   { id: 'shoulder', label: 'Over your shoulder' },
+  { id: 'trio', label: 'All three' },
 ];
 /** What each intent reads as on screen (`dogfight-pilot.js` `INTENTS`). */
 const INTENT_WORDS = { attack: 'Going for the shot', defend: 'Evading', setup: 'Setting up' };
@@ -417,8 +418,8 @@ export function createDogfightTheatre({ host, makePlane, planeVisual = () => nul
   /** A wingman's tag: what they are doing, in a word or three. */
   function wingTag(phase) {
     const ace = aceWord().toUpperCase();
-    return phase === 'cover' ? `WINGMAN · ONTO THE ${ace}` : phase === 'weave' ? 'WINGMAN · TURNING IN'
-      : phase === 'shoot' ? `WINGMAN · ON THE ${ace}` : 'WINGMAN';
+    return phase === 'cover' ? `WINGMAN · BREAKING ONTO THE ${ace}` : phase === 'shoot' ? `WINGMAN · FIRING ON THE ${ace}`
+      : phase === 'rejoin' ? 'WINGMAN · COMING BACK' : phase === 'weave' ? 'WINGMAN · TURNING IN' : 'WINGMAN';
   }
   /** A side mid-sentence: a recording's pilot by name, a lesson's as "the
    *  ace" or "the other pilot". */
@@ -920,12 +921,21 @@ export function createDogfightTheatre({ host, makePlane, planeVisual = () => nul
 
   /** What a side said last by time `t`. */
   function sayingAt(fight, side, t) {
-    let last = null;
+    let last = null, before = null;
     for (const e of fight.events) {
       if (e.t > t) break;
-      if (e.side === side && e.phase !== 'kill') last = e;
+      if (e.side !== side || e.phase === 'kill') continue;
+      if (e.phase !== 'gunner') before = e;
+      last = e;
     }
+    // "The gunner opens fire" lasts while they fire: a second after their
+    // last round the pilot's own line is back.
+    if (last?.phase === 'gunner' && !gunnerFiringAt(fight, side, t, 1)) return before;
     return last;
+  }
+  /** Whether a side's gunner has fired within `within` seconds of `t`. */
+  function gunnerFiringAt(fight, side, t, within = 0.35) {
+    return fight.rounds.some(r => r.side === side && isGunnerRound(r) && r.t <= t && t - r.t < within);
   }
 
   /** The manoeuvres each pilot flew (`dogfight-manoeuvres.js`), named once
@@ -1443,10 +1453,14 @@ export function createDogfightTheatre({ host, makePlane, planeVisual = () => nul
       a.drop.computeLineDistances();
       // The meters are the two pilots'; a wingman has their tag, trail, gun
       // line, and a caption row of their own.
-      const intent = kk.in ?? 'setup';
+      // A gunner firing is what the plane is doing, whatever its pilot's
+      // plan: the row says so.
+      const backFire = !fight.recorded && gunnerFiringAt(fight, i, state.t);
+      const intent = backFire ? 'attack' : kk.in ?? 'setup';
+      const intentWords = backFire ? 'Gunner firing back' : INTENT_WORDS[intent];
       if (i > 1) {
         if (!ui.caps[i]) continue;
-        ui.intents[i].textContent = INTENT_WORDS[intent];
+        ui.intents[i].textContent = intentWords;
         ui.intents[i].dataset.intent = intent;
         const said = sayingAt(fight, i, state.t);
         const other = Number.isInteger(kk.target) && kk.target >= 0 && kk.target !== i ? kk.target : 0;
@@ -1454,7 +1468,7 @@ export function createDogfightTheatre({ host, makePlane, planeVisual = () => nul
         if (ui.caps[i].textContent !== text) ui.caps[i].textContent = text;
         continue;
       }
-      ui.intents[i].textContent = INTENT_WORDS[intent];
+      ui.intents[i].textContent = intentWords;
       ui.intents[i].dataset.intent = intent;
       const m = ui.meters[i];
       // His plan or plane, and the manoeuvre he is flying now.
@@ -1613,8 +1627,10 @@ export function createDogfightTheatre({ host, makePlane, planeVisual = () => nul
     }
     // The name tags over the fighters.
     for (const [i, a] of s.actors.entries()) {
-      // Over your shoulder your plane is close: its tag sits just over it.
-      _m.copy(a.plane.position).add(_u.set(0, state.camera === 'shoulder' && i === 1 ? 5 : 14, 0)).project(view);
+      // Over your shoulder your plane is close: its tag sits just over it,
+      // a fifth of a span up the picture from its middle, wherever the camera is.
+      if (state.camera === 'shoulder' && i === 1) _m.copy(a.plane.position).add(_u.set(0, 1, 0).applyQuaternion(view.quaternion).multiplyScalar((a.span ?? 11) * 0.2)).project(view);
+      else _m.copy(a.plane.position).add(_u.set(0, 14, 0)).project(view);
       const tag = ui.tags[i];
       const on = _m.z < 1 && Math.abs(_m.x) < 1.1 && Math.abs(_m.y) < 1.1;
       tag.style.opacity = on ? '1' : '0';
@@ -1858,6 +1874,25 @@ export function createDogfightTheatre({ host, makePlane, planeVisual = () => nul
       const side = new THREE.Vector3(-along.z, 0, along.x).normalize();
       pos = b.clone().addScaledVector(along, 48 * size).addScaledVector(side, 20 * size).add(_u.set(0, 14 * size, 0));
       look = b.clone().lerp(a, Math.min(0.45, 140 / Math.max(1, span)));
+    } else if (state.camera === 'trio') {
+      // All three (or however many): off your side, a little behind and
+      // above, looking at their middle, back as far as keeps every plane in
+      // the picture, so the hunter coming up behind you and your wingman
+      // swinging onto it read left to right, not stacked down the lens.
+      const pts = s.actors.map((_, j) => new THREE.Vector3(k[j].p[0] - o[0], k[j].p[1] - o[1], k[j].p[2] - o[2]));
+      const c = pts.reduce((m, v) => m.add(v), new THREE.Vector3()).multiplyScalar(1 / pts.length);
+      const reach = Math.max(60, ...pts.map(v => v.distanceTo(c)));
+      _f.set(0, 0, -1).applyQuaternion(k[1].q);
+      const ahead = new THREE.Vector3(_f.x, 0, _f.z);
+      if (ahead.lengthSq() < 1e-6) ahead.set(0, 0, -1);
+      ahead.normalize();
+      // The side away from the wingman's start, so they come toward you.
+      const side = new THREE.Vector3(-ahead.z, 0, ahead.x);
+      const off = side.clone().multiplyScalar(state.trioSide ??= 1).addScaledVector(ahead, -0.45).normalize();
+      const d = reach * 1.9 + 90;
+      pos = c.clone().addScaledVector(off, d).add(_u.set(0, d * 0.5, 0));
+      pos.y = Math.max(pos.y, 25);
+      look = c.clone();
     } else if (state.camera === 'top') {
       // Straight down as a flat map, the start's heading up the screen,
       // framed on the last TOP_WINDOW seconds of the fight (the first ones at
@@ -1933,7 +1968,7 @@ export function createDogfightTheatre({ host, makePlane, planeVisual = () => nul
       pos.y = Math.max(pos.y, 25);
       look = mid.clone();
     }
-    const far = state.camera === 'wide' || state.camera === 'top';
+    const far = state.camera === 'wide' || state.camera === 'top' || state.camera === 'trio';
     // A plane about a fifteenth of the picture's height across, wherever
     // the wide camera stands, up to five times life.
     state.drawScale = far ? Math.max(1, Math.min(5, pos.distanceTo(mid) / 125)) : 1;
