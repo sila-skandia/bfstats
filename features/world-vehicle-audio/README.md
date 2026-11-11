@@ -124,6 +124,16 @@ cache, the listener/limiter, and the player's ambient duck (still
 player-centric — ducking the surf because a *bot's* tank is nearby would be
 wrong).
 
+## The loop seam (2026-11-11)
+
+Owner's report on FHSW Tunis 1943: the jeep's driving loop "cuts back to the
+start". Retail does nothing special at the wrap (ledger SND-46). The page's
+seam came from the encoder padding in the published MP3s: WebKit leaves that
+padding in the decoded buffer, which put 26 to 143 ms of near-silence into
+every pass of every loop. `viewer/gapless-decode.js` cuts the buffer back to
+the wav's own length. [`loop-seam.md`](loop-seam.md) has the retail reading,
+the before and after measurements, and the count of affected sounds by tree.
+
 ## Still open
 
 * **Which seats start the engine in the binary.** The rack starts the note

@@ -17,6 +17,7 @@ import { environmentPlays, scriptVolume } from './environment-sound.js';
 import { entryInMode } from './game-modes.js';
 import { ScrapeVoices } from './obstacle.js';
 import { nationStems } from './radio.js';
+import { decodeGapless, gaplessAudioLoader } from './gapless-decode.js';
 
 /** A place a panner can take: Web Audio throws on a position that is not all
  *  numbers, and a one-shot at no position is better not played than a frame
@@ -75,7 +76,11 @@ export function createPageAudio(page) {
     if (!pageAudio.audioListener) {
       pageAudio.audioListener = new THREE.AudioListener();
       page.camera.add(pageAudio.audioListener);
-      pageAudio.audioLoader = new THREE.AudioLoader();
+      // Not three's `AudioLoader`: a browser that ignores an MP3's gapless
+      // header (Safari) hands back the encoder's padding with the samples,
+      // and the heartbeat's loop wrapped through it (`gapless-decode.js`).
+      const listener = pageAudio.audioListener;
+      pageAudio.audioLoader = gaplessAudioLoader(() => listener.context);
       const ctx = pageAudio.audioListener.context;
       try {
         const limiter = ctx.createDynamicsCompressor();
@@ -161,7 +166,10 @@ export function createPageAudio(page) {
       if (!reply.ok) throw new Error(`HTTP ${reply.status} for ${url}`);
       const bytes = await reply.arrayBuffer();
       const ctx = ensureListener()?.context ?? THREE.AudioContext.getContext();
-      return await ctx.decodeAudioData(bytes);
+      // Cut to the wav's own frames: a loop wraps at the buffer's end, and a
+      // buffer Safari left carrying the MP3 encoder's padding put 30 to 50 ms
+      // of near-silence into every pass of every loop (`gapless-decode.js`).
+      return await decodeGapless(ctx, bytes);
     } finally {
       if (ctl && loadControllers.get(key) === ctl) loadControllers.delete(key);
     }
