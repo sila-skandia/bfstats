@@ -16,6 +16,8 @@ levels' hull-stuck time in seed 1.
 (`trackObstruction`, INVENTION like the rule it corrects) and plants the
 hull's obstructed circle at the end its map gives the shorter run
 (`onObstructed`), so a hull nosed into a pocket is backed out of it.
+
+Once out of the pocket the same tractor met cause 2 (`HullBounceTests`).
 """
 
 from __future__ import annotations
@@ -32,9 +34,10 @@ sys.path.insert(0, str(Path(__file__).resolve().parent))
 from test_bot_ai import MODULES, THREE_PACKAGE  # noqa: E402
 
 HARNESS = Path(__file__).resolve().parent / "bot_hull_shuffle_harness.mjs"
+BOUNCE_HARNESS = Path(__file__).resolve().parent / "bot_hull_bounce_harness.mjs"
 
 
-def run_harness() -> dict:
+def run_harness(harness: Path = HARNESS) -> dict:
     if shutil.which("node") is None:
         raise unittest.SkipTest("node is not installed")
     with tempfile.TemporaryDirectory() as tmp:
@@ -47,7 +50,7 @@ def run_harness() -> dict:
             shutil.copyfile(source, target)
         (work / "node_modules" / "three" / "package.json").write_text(THREE_PACKAGE)
         (work / "package.json").write_text('{"type":"module"}\n')
-        shutil.copyfile(HARNESS, work / "harness.mjs")
+        shutil.copyfile(harness, work / "harness.mjs")
         proc = subprocess.run(["node", str(work / "harness.mjs")], capture_output=True, text=True, timeout=300)
     if proc.returncode != 0:
         raise AssertionError(f"harness failed:\n{proc.stderr}")
@@ -87,6 +90,45 @@ class HullShuffleTests(unittest.TestCase):
         self.assertIsNotNone(r["arrivedAt"], f"never arrived: ended at {r['end']}")
         self.assertLess(r["arrivedAt"], 75.0)
         self.assertGreaterEqual(r["circles"], 1)
+
+
+class HullBounceTests(unittest.TestCase):
+    """Cause 2: a hull pressed on a wall the map leaves open bounces on it,
+    its velocity 0.5 to 2 m/s while it stays put, and the count and the
+    touch rule (both "under 1 m/s") were zeroed every second or two. They
+    now read `hullTravelSpeed`: the lower of the velocity and the ground
+    covered over the last second (INVENTION, the soldier's `travelSpeed`
+    counterpart)."""
+
+    results: dict
+
+    @classmethod
+    def setUpClass(cls) -> None:
+        cls.results = run_harness(BOUNCE_HARNESS)
+
+    def test_the_travel_speed_is_the_ground_covered(self) -> None:
+        r = self.results["speed"]
+        self.assertEqual(r["first"], 0.7, "the body's speed until the window fills")
+        self.assertEqual(r["atWindow"], 0.0)
+        self.assertEqual(r["last"], 0.0)
+        self.assertEqual(r["moving"], 3.0, "a hull under way reads its speed")
+        self.assertEqual(r["fresh"], 1.8, "a new seat starts afresh")
+
+    def test_a_bouncing_hull_is_counted_and_touched(self) -> None:
+        self.assertEqual(self.results["pressedVelocity"], {"flaggedAt": None, "touchedAt": None})
+        r = self.results["pressedTravel"]
+        self.assertIsNotNone(r["flaggedAt"])
+        self.assertLess(r["flaggedAt"], 200)
+        self.assertIsNotNone(r["touchedAt"])
+        self.assertLess(r["touchedAt"], 60)
+
+    def test_a_hull_on_a_wall_the_map_does_not_show_gets_round_it(self) -> None:
+        r = self.results["toyWall"]
+        self.assertGreater(r["ticksOnWall"], 0, "the straight line does meet the wall")
+        self.assertGreaterEqual(r["circles"], 1)
+        self.assertIsNotNone(r["arrivedAt"], f"never arrived: ended at {r['end']}")
+        self.assertLess(r["arrivedAt"], 40.0)
+        self.assertLess(r["heldMax"], 5.0)
 
 
 if __name__ == "__main__":

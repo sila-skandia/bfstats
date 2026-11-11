@@ -746,6 +746,39 @@ export function trackObstruction(bot, speed, dt = 1 / 30) {
   return false;
 }
 
+/** The window a driven hull's ground speed is measured over (`hullTravelSpeed`). */
+export const HULL_TRAVEL_WINDOW = 1.0;
+
+/**
+ * The speed the obstruction rules read for a driven hull: the lower of its
+ * body's speed now and the ground it covered over the last
+ * `HULL_TRAVEL_WINDOW` seconds (INVENTION, the soldier's `travelSpeed`
+ * counterpart: a soldier's speed has long been the ground he covered, since
+ * his velocity is re-set to the command every grounded tick). A hull pressed
+ * nose-first on a wall the map left open bounces on it: its velocity reads
+ * 0.5 to 2 m/s tick to tick while it stays put, so `trackObstruction`'s
+ * count was zeroed every second or two and `trackHullContact` never held.
+ * FH's Pegasus RedTractor sat so for 342 s at (503.5, -599.9) in state 2,
+ * its throttle full and its speed 0.7 m/s on the trace
+ * (features/bot-map-generation/hull-steering.md, cause 2). Until the window
+ * has filled (a new seat) the body's speed stands.
+ */
+export function hullTravelSpeed(bot, speed) {
+  const now = bot._now ?? 0;
+  const id = bot.vehicle?.vehicleId ?? null;
+  let tr = bot._hullTravel;
+  // A new seat, or a gap in the move's ticks (another plan ran), starts afresh.
+  if (!tr || tr.id !== id || !(now >= tr.last) || now - tr.last > 0.25) tr = bot._hullTravel = { id, last: now, samples: [] };
+  tr.last = now;
+  const s = tr.samples;
+  s.push([now, bot.position[0], bot.position[2]]);
+  while (s.length > 2 && now - s[1][0] >= HULL_TRAVEL_WINDOW) s.shift();
+  const span = now - s[0][0];
+  if (span < HULL_TRAVEL_WINDOW * 0.75) return speed;
+  const ground = Math.hypot(bot.position[0] - s[0][1], bot.position[2] - s[0][2]) / span;
+  return Math.min(speed, ground);
+}
+
 /** Plant a potential obstacle where the body is stuck and re-plan. */
 export function onObstructed(bot) {
   if (bot.vehicle) return onHullObstructed(bot);
@@ -1021,7 +1054,7 @@ export function execInfantryMoveTo(bot, action, dt) {
   // tick, so a body wedged under a ramp read a full run and never stalled.
   const soldier = bot._player()?.soldier;
   const hullV = bot.vehicle?.drive?.state?.velocity;
-  const bodySpeed = hullV ? Math.hypot(hullV.x, hullV.z)
+  const bodySpeed = hullV ? hullTravelSpeed(bot, Math.hypot(hullV.x, hullV.z))
     : (soldier?.travelSpeed ?? soldier?.speed ?? 0);
   bot.moveForward = bot._lastThrottle ?? 0;
   if (!bot.vehicle) {
