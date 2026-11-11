@@ -314,6 +314,21 @@ Rollout levels, one match each on the page (the bar is DICE's rebuilt one;
 | HOP (community) | yes | passes | 0, 0, 0.46 | 0 | 75:64 |
 | KoH (community) | yes | passes | 0, 0.22, 0.27 | 11 | 70:83 |
 | shigaisen_B (community) | yes | fails enemy kills | 0, 0, 0.06 | 4 | 67:100 |
+| Beinbrekkbakken (community) | yes | passes | 0, 0, 0.19 | 6 | 98:84 |
+| FH Pegasus | yes | fails suicides and death share | 0.025, 0.50, 0.33 | 3 | 75:75 |
+| The_Bridge (community), two matches | **no**: too quiet | fails enemy kills | 0, 0, 0.03 and 0.04 | 2 and 2 | 23:51, 27:48 |
+| Aberdeen (vanilla), two matches | **no**: the worse side dies by its own hand | fails three | 0, 0.72 and 0.97, 0.11 and 0.08 | 5 and 6 | 88:77, 94:73 |
+
+**The rollout's page floor** (the coordinator's rule under the owner's
+decision, `pagebatch.sh` in scratch): a level keeps its menu flag when a
+match on the page shows real killing (at least 0.15 enemy kills a
+bot-minute), or flag play (at least 3 captures), or some of both (0.05 and
+1 capture); no more than half of the worse side's deaths not the enemy's;
+and no page error. A level that fails is played once more before it is
+turned down, and its acceptance is then withdrawn in `verdict.json` with
+the reason; its layer stays on the volume, unflagged. The runner no longer
+decides: the owner liked Tunis-1943, which the runner calls no-fight at 8
+a side (0.038 enemy kills a bot-minute against 0.17 on the page).
 
 ## 7. What is not verified
 
