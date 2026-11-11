@@ -95,6 +95,13 @@ if (new URLSearchParams(location.search).get('dev') === '1') document.documentEl
           <input type="range" class="range" id="region-opacity" min="0.1" max="1" step="0.01" value="0.5">
           <output id="region-opacity-output" for="region-opacity">50%</output>
         </div>
+        <div class="wb-pick" id="pick-row" hidden>
+          <div class="wb-label" id="pick-label">A click on the model</div>
+          <div class="wb-seg" id="pick-seg" role="group" aria-labelledby="pick-label">
+            <button type="button" class="wb-chip" data-pick="shots" aria-pressed="true">Places a shot</button>
+            <button type="button" class="wb-chip" data-pick="parts" aria-pressed="false">Picks a part</button>
+          </div>
+        </div>
       </div>
       <div class="wb-group">
         <label class="field"><span>Enemy weapon</span><select id="weapon" class="select"></select></label>
@@ -104,6 +111,7 @@ if (new URLSearchParams(location.search).get('dev') === '1') document.documentEl
           <div class="ramp-labels"><span>Vulnerable</span><span>Protected</span></div>
           <div id="legend-materials"></div>
           <div class="legend-hint" id="legend-hint">Select a material to isolate it; select it again to show all.</div>
+          <div id="legend-parts" class="legend-parts" hidden></div>
         </div>
         <p class="note" id="collision-note">
           Colours show inferred relative protection. Pick a weapon to colour by its
@@ -159,6 +167,24 @@ if (new URLSearchParams(location.search).get('dev') === '1') document.documentEl
     </div>
 
     <div class="wb-panel" id="wb-model" role="tabpanel" aria-labelledby="wb-tab-model" hidden>
+      <div class="wb-group part-card" id="part-card" hidden aria-live="polite"></div>
+      <div class="wb-group">
+        <div class="wb-label-row">
+          <span class="wb-label">Parts</span>
+          <button type="button" class="wb-reset" data-builder aria-pressed="false" title="Every part flies out, root first, then back">
+            <svg viewBox="0 0 16 16" aria-hidden="true"><path d="M5 5 2 2M11 5l3-3M5 11l-3 3M11 11l3 3"/><rect x="5.5" y="5.5" width="5" height="5" rx=".5"/></svg>
+            <span>Builder view</span>
+          </button>
+        </div>
+        <label class="wb-search">
+          <svg viewBox="0 0 16 16" aria-hidden="true"><circle cx="7" cy="7" r="4.5"/><path d="m10.5 10.5 3 3"/></svg>
+          <input id="part-search" type="search" autocomplete="off" spellcheck="false"
+                 placeholder="Template, mesh, texture or material number" aria-label="Search parts">
+        </label>
+        <div id="part-results" class="part-results" hidden></div>
+        <p class="note">Hover the model to name a part; click it, or a row, to pull it out. Esc puts it back.</p>
+        <div id="tree" class="part-tree"></div>
+      </div>
       <div class="wb-group">
         <div class="wb-label">Details</div>
         <div id="stats"></div>
@@ -167,10 +193,6 @@ if (new URLSearchParams(location.search).get('dev') === '1') document.documentEl
         <div class="wb-label">Missing textures</div>
         <ul class="missing" id="missing"></ul>
       </div>
-      <div class="wb-group">
-        <div class="wb-label">Part tree</div>
-        <div id="tree"></div>
-      </div>
     </div>
   </section>
 </aside>
@@ -178,6 +200,11 @@ if (new URLSearchParams(location.search).get('dev') === '1') document.documentEl
   <main>
     <div id="crumb" hidden></div>
     <div id="banner" hidden></div>
+    <div id="part-tag" class="part-tag" hidden aria-live="polite"></div>
+    <button type="button" class="stage-builder-btn" data-builder aria-pressed="false" title="Every part flies out, root first, then back (Esc to stop)">
+      <svg viewBox="0 0 16 16" width="14" height="14" aria-hidden="true"><path d="M5 5 2 2M11 5l3-3M5 11l-3 3M11 11l3 3"/><rect x="5.5" y="5.5" width="5" height="5" rx=".5"/></svg>
+      <span>Builder view</span>
+    </button>
     <button type="button" class="stage-touchpad-toggle" id="stage-touchpad-toggle" aria-label="Toggle touchpad control" aria-pressed="false" hidden>
       <svg viewBox="0 0 16 16" width="14" height="14" fill="none" stroke="currentColor" stroke-width="1.5"><circle cx="8" cy="8" r="6"/><circle cx="8" cy="8" r="2.5"/><path d="M8 2v2M8 12v2M2 8h2M12 8h2"/></svg>
       <span>Pad</span>
@@ -319,6 +346,7 @@ import { createArmourInspector } from './model-armour.js';
 import { createEnvReflection } from './model-envmap.js';
 import { createModelDisplay } from './model-display.js';
 import { installWorkbenchTabs } from './model-workbench.js';
+import { createPartInspector } from './model-parts.js';
 import { createModelRig, keyOf } from './model-rig.js';
 import { createEngineClips } from './model-clips.js';
 import { createGunTriggers } from './model-guns.js';
@@ -493,6 +521,7 @@ function startAnimating() {
     const gearMoving = crewConsole.advanceGear(dt);
     const hasFire = gunTriggers.guns.advance(dt);
     const hasPad = touchpad.advanceTouchpad(dt);
+    const partsMoving = parts.advance(dt);
     if (engineClips.mixer && (engineClips.engineRunning || engineClips.ambientActions.length)) engineClips.mixer.update(dt);
     // Engine-tail propellers and rotors turn on the engine's own revs.
     const lodsMoving = engineClips.hasEngine && engineClips.advanceLods(dt);
@@ -512,7 +541,7 @@ function startAnimating() {
     const hasClips = Boolean(engineClips.mixer && (engineClips.engineRunning || engineClips.ambientActions.length))
       || lodsMoving || (engineClips.hasEngine && engineClips.engineRunning);
 
-    if (hasRates || hasScroll || hasClips || hasFire || gearMoving || seatCams.cameraGlide || controlsMoving || hasPad) {
+    if (hasRates || hasScroll || hasClips || hasFire || gearMoving || seatCams.cameraGlide || controlsMoving || hasPad || partsMoving) {
       requestAnimationFrame(tick);
     } else {
       animating = false;
@@ -522,6 +551,7 @@ function startAnimating() {
 
 const armour = await createArmourInspector({
   get applyDisplay() { return display.applyState; },
+  get onCollisionMaterial() { return parts.onCollisionMaterial; },
   get camera() { return camera; }, get controls() { return controls; },
   get current() { return current; }, get framing() { return framing; },
   get invalidate() { return invalidate; }, get main() { return main; },
@@ -543,6 +573,13 @@ const display = createModelDisplay({
   get isCollisionMesh() { return armour.isCollisionMesh; }, get syncRange() { return syncRange; },
 });
 const workbench = installWorkbenchTabs();
+const parts = createPartInspector({
+  get armour() { return armour; }, get camera() { return camera; }, get controls() { return controls; },
+  get display() { return display; }, get framing() { return framing; },
+  get invalidate() { return invalidate; }, get main() { return main; },
+  get renderer() { return renderer; }, get scene() { return scene; },
+  get startAnimating() { return startAnimating; }, get workbench() { return workbench; },
+});
 document.getElementById('axes').addEventListener('change', e => { helpers.visible = e.target.checked; invalidate(); });
 document.getElementById('spin').addEventListener('change', e => {
   controls.autoRotate = e.target.checked;
@@ -602,6 +639,7 @@ const touchpad = createTouchpad({
 function renderHints() {
   const hints = ['Drag orbit', 'Scroll zoom', 'Right-drag pan'];
   if (armour.collision) hints.push('Click a face to place a shot');
+  if (!armour.ownsClicks) hints.push('Click a part to pull it out');
   hints.push('/ armoury');
   document.getElementById('hints').innerHTML =
     hints.map(hint => `<span>${hint}</span>`).join('<span class="sep">·</span>');
@@ -745,10 +783,8 @@ async function show(entry, variant) {
       + `${resolvedCount}/${texturesTotal} textures</span>`);
   }
 
-  document.getElementById('tree').innerHTML = (report.partTree || [])
-    .slice().reverse()
-    .map(l => l.replace(/\[(.*?)\]/, '<b>[$1]</b>'))
-    .join('\n');
+  // The Model tab's part tree, search and card (model-parts.js).
+  parts.adoptModel(current, report);
 
   const banner = document.getElementById('banner');
   if (entry.textureFallbacks && entry.textureFallbacks.length) {
@@ -810,6 +846,7 @@ const testHooks = installTestHooks({
   get setCollision() { return armour.setCollision; },
   get setCollisionMaterial() { return armour.setCollisionMaterial; },
   get setRegionMode() { return armour.setRegionMode; },
+  get setPickMode() { return armour.setPickMode; }, get parts() { return parts; },
   get display() { return display; }, get workbench() { return workbench; },
   get setCrewInput() { return crewConsole.setCrewInput; },
   get setHitAngle() { return armour.setHitAngle; }, get setWeapon() { return armour.setWeapon; },

@@ -132,6 +132,123 @@ paint to 40% with the wireframe on and the regions underneath read through.
 
 The old hooks still work: `setCollision(true)` is Over model, `false` is Off.
 
+## Part inspector
+
+The owner's brief (2026-11-12), from a modder: click a part (say material 23 on
+a ship) and see where it comes from on the model, "like the Lego Movie master
+builders seeing every piece in 3D before the whole".
+
+Nothing new is extracted: the glbs already carry it. A template node has the
+exporter's extras in `userData` (`templateKind`, `geometry` = the .sm file,
+`control`, `rig`, `seat`, `physics`, `fireArms`); its collision mesh is a child
+node with `collision` and `sourceTemplate`, each collision primitive's geometry
+has `defenseMaterial`; render materials are named `<mesh>_Material<N>` and map
+a texture named after its .dds. The report adds `animatedParts` (the radar's
+"continuous yaw 30 deg/s").
+
+### Using it
+
+- **Hover** the model: the part under the cursor (its template node, not a
+  triangle) is tinted, boxed, and named in a tag with its kind and mesh file.
+- **Click** it: it pops out of the model, away from the model's centre through
+  the part's own centre with a little lift, 22% of the model's size; its
+  children come with it; the rest of the model fades to a ghost. The Model tab
+  opens on its card. **Esc**, the card's close button, or a click on empty space
+  puts it back. **Frame** points the camera at it.
+- **The card**: the template and its chain back to the root (each a link), the
+  mesh file, triangles and collision triangles, the render materials
+  (`Material7` and its texture, with a 28 px thumbnail drawn from the texture
+  already in memory), the armour materials on its hull with the current
+  weapon's head-on damage, what moves it ("Yaws with the mouse, left and right:
+  -120 to 120 deg at 45 deg/s", "Continuous yaw 30 deg/s"), its seat or gun,
+  and its children.
+- **The part tree** (Model tab) is the scene's template nodes, expandable;
+  hovering a row tints the part on the model, clicking pops it out. A pick on
+  the model marks the row and scrolls the tree (which scrolls on its own, so
+  the column stays on the card). A template placed twice shows its own name
+  and `#2` (three makes node names unique with `_1`).
+- **Search** above the tree: a number matches armour material IDs and render
+  material numbers exactly (57 is not Material7); any text matches template
+  names, mesh files and texture names. Results are grouped with a kind badge
+  (Armour material, Render material, Template, Mesh file, Texture); a group's
+  header pops all its parts out, a row one part. Enter takes the first group.
+  Collision-only parts (a ladder with no render mesh) are searched too.
+- **Material chips** (Hit regions): a chip still isolates its regions, and now
+  also lists the parts that carry it under the legend and pops them out.
+  Clicking it again puts them back.
+- **Builder view** (the stage's top-right pill, and the Model tab): every part
+  with a mesh flies out along its own direction, staggered by how many
+  mesh-carrying parts sit above it (the hull stays, its turrets leave first,
+  their barrels after), holds, then comes home deepest last. Esc or the button
+  again skips to the reassembly.
+- **Shots and parts**: while the regions are on, a click places a shot, as
+  before. A "A click on the model: Places a shot / Picks a part" chip under
+  Region opacity hands the click to the inspector instead. With the regions
+  off there is no shot to place, so a click always picks.
+- **Phone**: a tap selects (there is no hover); the tag shows under the
+  breadcrumb rather than under the finger; rows and links are taller; the
+  builder pill sits bottom right.
+
+### How it works
+
+`model-parts-index.js` (no three.js; `tests/test_model_parts.py` runs it under
+node) builds the index once per model: every template node that is not a viewer
+effect (muzzle flashes, tracers, projectiles), parents first, and a map from
+every visual and collision mesh to its part, its nearest ancestor with a
+`templateKind`. A collision node has none, so its mesh lands on the template it
+hangs off. It also holds the search, the plain-words rig description and the
+pop-out and builder timing.
+
+`model-parts.js` is the page side:
+
+- **Picking** tests the ray against each candidate mesh's own bounding box in
+  its local frame (so nothing goes stale while turrets turn and parts pop),
+  then runs the triangle test only on the boxes it went through, nearest
+  first, stopping as soon as the next box starts behind the best hit. Hover is
+  one pick per animation frame. On the Yamato (232 meshes) a pick takes about
+  0.1 ms in headless Chromium. Collision meshes are picked only while the
+  regions are drawn; a hidden LOD or effect is never picked.
+- **The pop-out** writes `userData.popOffset` (in the parent's frame) and
+  `popT` on the template node; `model-display.js` `applyPositions` (the code
+  the explode spread already used) puts every node at `home * spread +
+  popOffset * popT`. At rest that is `home * spread`, so a part goes back to
+  its authored position exactly, not to a sum of animation steps.
+- **The ghost** is the texture-opacity machinery (`model-display.js`
+  `setGhost`): every mesh not shown fades to 14% through the same rules as the
+  slider, so it keeps its depth copy (one skin, not a stack of back faces) and
+  its cut-outs. Materials are shared between parts (a ship's hull material is
+  on every turret), so the meshes kept solid get their own copies of their
+  materials while the ghost is up, each copied from the original's snapshot,
+  and are given back when it lifts.
+- The hover tint is a child mesh sharing the geometry (a blended olive pass
+  with a negative polygon offset), on the mesh's own layer so a collision
+  hull's tint draws in the region pass; the selection boxes are one
+  `Box3Helper` per part, so a search for a turret armour shows each turret.
+
+### Checked
+
+`node tools/bf1942-models/tests/model_parts_page.mjs --url http://localhost:5391 --out <dir>`
+(with `serve_viewer.py` on 5391) on the Fletcher, the Yamato and the Sherman:
+
+- a turret hovers with its name; a click pops it out with the rest ghosted and
+  opens its card; Esc puts it back with every template node within 1e-6 of
+  where it was and the turrets exactly on `userData.home` (the radar's baked
+  clip writes float32 copies of the same numbers, hence the tolerance);
+- a tree row hovers and selects; the radar's card says it spins;
+- a search for 57 lists armour material 57 first and pops the four turrets;
+  "Fletch_canon_m1", "Fle_base", "Radar" and "7" each find their kinds;
+- chip 57 lists and pops its parts; again puts them back;
+- the builder view runs and reassembles with nothing moved;
+- 200 picks on the Yamato average 0.1 ms;
+- on the Sherman with the regions on, a click still places a shot and picks no
+  part; with "Picks a part" the same click selects a part;
+- at 390 px: a tap selects and shows the tag, the card and tree fit with no
+  sideways scroll, and the builder view runs.
+
+Frames: `desktop-fletcher-hover`, `-selected`, `-selected-framed`,
+`-tree-radar`, `-search-armour-57`, `-chip-57`, `-builder`,
+`desktop-sherman-pick-part`, `phone-fletcher-tap`, `-card`, `-tree`, `-builder`.
+
 ## Files
 
 | File | What |
@@ -142,6 +259,10 @@ The old hooks still work: `setCollision(true)` is Over model, `false` is Off.
 | `viewer/model-display.js` | the Display tab on the materials; depth copies and edges overlay |
 | `viewer/model-armour.js` | region modes and opacity, the region layer and its pass |
 | `viewer/model-workbench.js` | the tab strip (ARIA tablist, arrow keys, remembered tab) |
+| `viewer/model-parts-index.js` | the part inspector's index: mesh to template, materials, search, rig words, pop and builder timing |
+| `viewer/model-parts.js` | the part inspector on the page: picking, hover, pop-out and ghost, card, tree, search, chips, builder view |
+| `tests/test_model_parts.py` + `model_parts_harness.mjs` | the index, search and timing under node; the click hand-off |
+| `tests/model_parts_page.mjs` | the inspector in the real page, every state, frames (run by hand, needs models) |
 | `viewer/model-test-hooks.js` | `setRegionMode`, `setDisplay`, `getDisplay`, `selectTab`, `getTab` |
 | `tests/test_model_workbench.py` + `model_workbench_harness.mjs` | the rules under node, and the markup |
 | `tests/model_workbench_page.mjs` | the real page headless, every state, screenshots (run by hand, needs models) |
@@ -166,6 +287,11 @@ It asserts each control and writes a screenshot of each state:
   scroll, Hide shows the Controls button and it brings the tabs back.
 
 ## Open
+
+- On a phone the crew stations bar takes most of the stage's height on a
+  vehicle with many stations (the Fletcher has six), leaving the model a strip
+  about 90 px tall. Collapsing the bar (its chevron) gives the stage back; it
+  is not collapsed by default because the bar is the vehicle's controls.
 
 - At 40% a dark hull over the near-black stage is dim by nature; the edges are
   kept at 40% strength so they do not wash the paint out. If modders want the

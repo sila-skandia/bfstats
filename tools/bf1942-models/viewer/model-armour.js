@@ -30,12 +30,18 @@ export async function createArmourInspector(page) {
     // "Regions only" hides the model itself (model-display.js reads this).
     get hideModel() { return regionSettings(state.mode).hideModel; },
     get regionMode() { return state.mode; },
+    // What a click on the stage does while the regions are on: 'shots'
+    // places a shot (the default), 'parts' hands it to the part inspector.
+    get pickMode() { return state.pick; },
+    // Whether a click on the stage is the armour's own (placing a shot).
+    get ownsClicks() { return state.collision && state.pick === 'shots'; },
   };
 
   // The Hit regions mode ('off', 'overlay', 'only'), the hulls' opacity, and
   // the one material it isolates.
   const state = {
     mode: 'off',
+    pick: 'shots',
     regionOpacity: null,   // null: the mode's own default
     get collision() { return this.mode !== 'off'; },
     collisionMaterial: null,
@@ -114,6 +120,12 @@ export async function createArmourInspector(page) {
   }
 
   const regionsSeg = document.getElementById('regions-seg');
+  const pickRow = document.getElementById('pick-row');
+  const pickSeg = document.getElementById('pick-seg');
+  pickSeg.addEventListener('click', event => {
+    const button = event.target.closest('[data-pick]');
+    if (button) setPickMode(button.dataset.pick);
+  });
   const regionOpacityRow = document.getElementById('region-opacity-row');
   const regionOpacityRange = document.getElementById('region-opacity');
   const regionOpacityOutput = document.getElementById('region-opacity-output');
@@ -393,6 +405,11 @@ export async function createArmourInspector(page) {
       button.disabled = !collisionRoots.length && button.dataset.mode !== 'off';
     }
     regionOpacityRow.hidden = !state.collision;
+    pickRow.hidden = !state.collision;
+    for (const button of pickSeg.querySelectorAll('[data-pick]')) {
+      button.setAttribute('aria-pressed', String(button.dataset.pick === state.pick));
+    }
+    page.main.dataset.pick = state.collision ? state.pick : 'parts';
     regionOpacityRange.value = String(region.opacity);
     regionOpacityOutput.value = `${Math.round(region.opacity * 100)}%`;
     page.syncRange(regionOpacityRange);
@@ -418,6 +435,31 @@ export async function createArmourInspector(page) {
   function setCollisionMaterial(material) {
     state.collisionMaterial = material === null ? null : Number(material);
     clearHit();
+    applyCollisionState();
+    page.invalidate();
+    // The part inspector lists the parts that carry it and pops them out.
+    page.onCollisionMaterial?.(state.collisionMaterial);
+  }
+
+  /** One armour material as the legend has it, for the part inspector's card. */
+  function materialInfo(id) {
+    const style = collisionStyles.get(Number(id));
+    const weapon = damageState.weapon;
+    return {
+      id: Number(id),
+      kind: collisionMaterialClass(Number(id)),
+      label: style?.label || 'Not in this model\'s legend',
+      colour: style ? `#${style.color.getHexString()}` : '#444444',
+      weapon: weapon?.name || null,
+      damage: weapon ? (style?.damage ?? null) : undefined,
+      immune: Boolean(weapon && style?.immune),
+    };
+  }
+
+  /** Shots or parts: what a click does while the regions are on. */
+  function setPickMode(mode) {
+    state.pick = mode === 'parts' ? 'parts' : 'shots';
+    if (state.pick === 'parts') clearHit();
     applyCollisionState();
     page.invalidate();
   }
@@ -895,7 +937,7 @@ export async function createArmourInspector(page) {
     armour.pointerStart = { x: event.clientX, y: event.clientY };
   });
   page.renderer.domElement.addEventListener('pointerup', event => {
-    if (!state.collision || !armour.pointerStart) return;
+    if (!armour.ownsClicks || !armour.pointerStart) return;
     const movement = Math.hypot(
       event.clientX - armour.pointerStart.x,
       event.clientY - armour.pointerStart.y,
@@ -985,8 +1027,10 @@ export async function createArmourInspector(page) {
     getCollision,
     isCollisionMesh,
     pickCenterHit,
+    materialInfo,
     renderRegions,
     setCollision,
+    setPickMode,
     setRegionMode,
     setCollisionMaterial,
     setHitAngle,

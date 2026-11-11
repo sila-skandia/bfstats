@@ -16,7 +16,7 @@ import { GEAR_INPUT } from './model-rig.js';
  * `fireGroups`, `getCollision`, `guns`, `helpers`, `invalidate`, `manifest`,
  * `pickCenterHit`, `PORTRAIT_DISTANCE`, `PORTRAIT_OFFSET`, `portraitExtent`,
  * `scene`, `seatViews`, `setCameraView`, `setCollision`,
- * `setCollisionMaterial`, `setCrewInput`, `setRegionMode`, `display`,
+ * `setCollisionMaterial`, `setCrewInput`, `setRegionMode`, `setPickMode`, `parts`, `display`,
  * `workbench`, `setHitAngle`, `setWeapon`,
  * `showVariant`, `startFiring`, `stationRole`, `stopFiring`.
  */
@@ -135,6 +135,10 @@ export function installTestHooks(page) {
     // tab's state (`setDisplay({ opacity: .4, wireframe: true })`) and the
     // tab strip (features/mesh-viewer-advanced-tab).
     setRegionMode: page.setRegionMode,
+    setPickMode: page.setPickMode,
+    // The part inspector (model-parts.js): `parts.getState()`, `parts.selectNamed(name)`,
+    // `parts.search(q)`, `parts.startBuilder()`, `parts.deselect()`, `parts.pickAt(x, y)`.
+    parts: page.parts,
     setDisplay: patch => page.display.set(patch),
     getDisplay: () => page.display.getState(),
     selectTab: name => page.workbench.select(name),

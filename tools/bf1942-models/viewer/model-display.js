@@ -14,6 +14,8 @@ import { DISPLAY_DEFAULTS, clampOpacity, opacityLabel, snapshotMaterial,
 // The edges' colour: --mm-ink-soft, light enough to read over olive drab,
 // desert tan and the flat grey alike.
 const WIRE_COLOUR = 0xd8d8d0;
+// How faint the rest of the model goes while the part inspector shows a part.
+const GHOST_OPACITY = 0.14;
 
 /**
  * Built once by the page, where this code used to sit. `page` hands in
@@ -65,18 +67,22 @@ export function createModelDisplay(page) {
   function applyState() {
     if (!page.current) return;
     const hideModel = Boolean(page.hideModel);
-    const wire = wireSettings(state, { hideModel });
-    const k = explodeFactor();
+    // The part inspector's ghost: every mesh it is not showing fades to
+    // GHOST_OPACITY, through the same rules as the slider (depth copy,
+    // cut-outs scaled), without its edges.
+    const ghostState = { ...state, opacity: Math.min(clampOpacity(state.opacity), GHOST_OPACITY), wireframe: false };
     // Whether anything on the tab touches the materials at all.
     const active = hideModel || !state.textures || state.doubleside || state.wireframe
-      || clampOpacity(state.opacity) < 1;
+      || clampOpacity(state.opacity) < 1 || Boolean(ghostKeep);
 
     for (const mesh of visualMeshes()) {
+      const meshState = ghostKeep && !ghostKeep.has(mesh) ? ghostState : state;
+      const wire = wireSettings(meshState, { hideModel });
       const materials = [mesh.material].flat();
       const settings = materials.map(m => {
         // An untouched material is as the page left it: snapshot it fresh.
         if (!snapshots.has(m) || (active && !touched.has(m))) snapshots.set(m, snapshotMaterial(m));
-        return surfaceSettings(snapshots.get(m), state, { hideModel });
+        return surfaceSettings(snapshots.get(m), meshState, { hideModel });
       });
       materials.forEach((m, i) => {
         // The model as extracted is never touched: a muzzle flash or a
@@ -137,25 +143,8 @@ export function createModelDisplay(page) {
           em.side = THREE.DoubleSide;
         }
       }
-
-      if (mesh.userData.home) {
-        const h = mesh.userData.home;
-        mesh.position.set(h.x * k, h.y * k, h.z * k);
-      }
     }
-    // Groups and empties carry the parts' offsets too.
-    page.current.traverse(obj => {
-      if (obj.isMesh || !obj.userData.home) return;
-      const h = obj.userData.home;
-      obj.position.set(h.x * k, h.y * k, h.z * k);
-    });
-    if (state.explode) {
-      let furthest = 0;
-      page.current.traverse(obj => {
-        if (obj.userData.home) furthest = Math.max(furthest, obj.userData.home.length() * (k - 1));
-      });
-      document.getElementById('explode-output').value = `${furthest.toFixed(2)} m`;
-    }
+    applyPositions();
     syncControls();
     page.applyCollisionState();
     page.invalidate();
@@ -163,6 +152,88 @@ export function createModelDisplay(page) {
 
   // Half-way is the old fixed 2.2x spread.
   const explodeFactor = () => (state.explode ? 1 + state.explodeAmount * 2.4 : 1);
+
+  /**
+   * Every part where the explode spread and the part inspector put it: its
+   * authored position (`userData.home`) scaled by the spread, plus its
+   * pop-out (`userData.popOffset`, in its parent's frame, times
+   * `userData.popT`). With both at rest that is the authored position,
+   * exactly. Collision hulls move with the node they hang off, as before.
+   */
+  function applyPositions() {
+    if (!page.current) return;
+    const k = explodeFactor();
+    let furthest = 0;
+    page.current.traverse(obj => {
+      const h = obj.userData.home;
+      if (!h || obj.userData.displayHelper) return;
+      if (obj.isMesh && page.isCollisionMesh(obj)) return;
+      const pop = obj.userData.popOffset;
+      const t = pop ? (obj.userData.popT ?? 0) : 0;
+      if (t) {
+        obj.position.set(h.x * k + pop.x * t, h.y * k + pop.y * t, h.z * k + pop.z * t);
+      } else {
+        obj.position.set(h.x * k, h.y * k, h.z * k);
+      }
+      if (state.explode) furthest = Math.max(furthest, h.length() * (k - 1));
+    });
+    if (state.explode) document.getElementById('explode-output').value = `${furthest.toFixed(2)} m`;
+    page.invalidate();
+  }
+
+  // --- The part inspector's ghost ------------------------------------------
+  //
+  // Materials are shared between parts (a ship's hull material is on every
+  // turret), so the meshes kept solid get their own copies while the ghost
+  // is up, and the originals fade. Each copy starts from its original's
+  // snapshot, so whatever the tab had done to the original is not copied.
+
+  let ghostKeep = null;
+
+  function ownMaterials(mesh) {
+    if (mesh.userData.ghostOriginal) return;
+    const original = mesh.material;
+    const copies = [original].flat().map(m => {
+      const snap = touched.has(m) ? snapshots.get(m) : snapshotMaterial(m);
+      const copy = m.clone();
+      copy.map = snap.map;
+      copy.color.setHex(snap.color);
+      copy.transparent = snap.transparent;
+      copy.opacity = snap.opacity;
+      copy.depthWrite = snap.depthWrite;
+      copy.alphaTest = snap.alphaTest;
+      copy.side = snap.side;
+      copy.visible = true;
+      copy.onBeforeCompile = m.onBeforeCompile;
+      copy.customProgramCacheKey = m.customProgramCacheKey;
+      snapshots.set(copy, snap);
+      return copy;
+    });
+    mesh.userData.ghostOriginal = original;
+    mesh.material = Array.isArray(original) ? copies : copies[0];
+  }
+
+  function dropOwnMaterials(mesh) {
+    const original = mesh.userData.ghostOriginal;
+    if (!original) return;
+    const copies = [mesh.material].flat();
+    mesh.material = original;
+    delete mesh.userData.ghostOriginal;
+    copies.forEach(copy => { touched.delete(copy); copy.dispose(); });
+  }
+
+  /**
+   * Ghost everything but `keep` (a Set of meshes), or clear the ghost with
+   * null. Called by the part inspector on select and deselect.
+   */
+  function setGhost(keep) {
+    const next = keep && keep.size ? keep : null;
+    for (const mesh of visualMeshes()) {
+      if (next?.has(mesh)) ownMaterials(mesh); else dropOwnMaterials(mesh);
+    }
+    ghostKeep = next;
+    applyState();
+  }
 
   // --- The tab's controls -------------------------------------------------
 
@@ -241,11 +312,19 @@ export function createModelDisplay(page) {
 
   syncControls();
 
+  /** A new model: the old one's ghost set is gone with it. */
+  function forgetGhost() { ghostKeep = null; }
+
   Object.assign(display, {
+    applyPositions,
+    forgetGhost,
     applyState,
     getState,
+    setGhost,
     rememberMap,
     set,
   });
+  // A getter, not a copied value: Object.assign would read it once.
+  Object.defineProperty(display, 'ghosted', { get: () => Boolean(ghostKeep) });
   return display;
 }
