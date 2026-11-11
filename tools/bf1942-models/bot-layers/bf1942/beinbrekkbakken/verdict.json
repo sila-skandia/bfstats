@@ -1,0 +1,78 @@
+{
+ "level": "beinbrekkbakken",
+ "verdict": "fail",
+ "outcome": "no-better-than-nothing",
+ "config": "with vehicles",
+ "doctrine": "garrison",
+ "generatorVersion": 5,
+ "inputs": {
+  "controlPoints": "92c8a35b9a16ee2992319d2dfbd70a719d7a7df42e0a1e66cd4c8071c0f4a2e2",
+  "infantryMap": "30c22a69ef96003a8ac8cdfaa1975a7b474e9c4aea22706010ccb8fc31940462",
+  "template": "bdc0e455f47f91b7e7724e71d7c0c196e839b36946ac3abb7663d725944081e5"
+ },
+ "baseline": "DICE layers with vehicles, garrison doctrine: berlin, stalingrad, kharkov, bocage; seeds 1..10, 600 s",
+ "bar": {
+  "against": "dice",
+  "why": "a vanilla or community level: DICE's bar"
+ },
+ "seeds": 3,
+ "sizes": {
+  "8": {
+   "verdict": "fail",
+   "failed": [
+    "routeFailuresPerBotMinute",
+    "routeFailuresPerBotMinuteWorseSide",
+    "hullStuckSecondsPerDrivingMinute",
+    "hullStuckSecondsPerDrivingMinuteWorseSide"
+   ],
+   "winners": [
+    3,
+    0,
+    0
+   ]
+  },
+  "16": {
+   "verdict": "fail",
+   "failed": [
+    "spawnTrapsPerBotMinute",
+    "routeFailuresPerBotMinute",
+    "spawnTrapsPerBotMinuteWorseSide",
+    "routeFailuresPerBotMinuteWorseSide",
+    "hullStuckSecondsPerDrivingMinute",
+    "hullStuckSecondsPerDrivingMinuteWorseSide",
+    "unitsNeverUsedShare",
+    "tankSilentShare"
+   ],
+   "winners": [
+    2,
+    1,
+    0
+   ]
+  }
+ },
+ "oneSided": null,
+ "unreachable": [
+  "Klokketorne"
+ ],
+ "lintErrors": [],
+ "accepted": {
+  "reason": "Owner's rollout, 2026-11-11: after playing Tunis-1943 against its generated bots the owner asked for every level with a fight to go live. Two or three seeds at 8 and 16 a side, the garrison; the checks it fails are listed with this verdict, and a match on the page decides whether it keeps its menu flag.",
+  "date": "2026-11-11",
+  "outcome": "no-better-than-nothing",
+  "failed": [
+   "8:routeFailuresPerBotMinute",
+   "8:routeFailuresPerBotMinuteWorseSide",
+   "8:hullStuckSecondsPerDrivingMinute",
+   "8:hullStuckSecondsPerDrivingMinuteWorseSide",
+   "16:spawnTrapsPerBotMinute",
+   "16:routeFailuresPerBotMinute",
+   "16:spawnTrapsPerBotMinuteWorseSide",
+   "16:routeFailuresPerBotMinuteWorseSide",
+   "16:hullStuckSecondsPerDrivingMinute",
+   "16:hullStuckSecondsPerDrivingMinuteWorseSide",
+   "16:unitsNeverUsedShare",
+   "16:tankSilentShare"
+  ],
+  "by": "owner"
+ }
+}
