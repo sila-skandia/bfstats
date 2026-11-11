@@ -1,0 +1,25 @@
+rem *** Strategic areas: one per control point (botgen) ***
+
+aiStrategicArea.create Nazi 174/239.7 214/279.7 200
+aiStrategicArea.addNeighbour The_Bridge
+aiStrategicArea.addObjectTypeFlag Centre
+aiStrategicArea.addObjectTypeFlag ControlPoint
+aiStrategicArea.setOrderPosition Tank 215.5/282.5
+aiStrategicArea.setOrderPosition Infantry 214.5/280.5
+aiStrategicArea.setSide 1
+
+aiStrategicArea.create USA 672.4/722.6 712.4/762.6 200
+aiStrategicArea.addNeighbour The_Bridge
+aiStrategicArea.addObjectTypeFlag Centre
+aiStrategicArea.addObjectTypeFlag ControlPoint
+aiStrategicArea.setOrderPosition Tank 711.5/765.5
+aiStrategicArea.setOrderPosition Infantry 712.5/763.5
+aiStrategicArea.setSide 2
+
+aiStrategicArea.create The_Bridge 458.8/514.6 468.8/524.6 300
+aiStrategicArea.addNeighbour Nazi
+aiStrategicArea.addNeighbour USA
+aiStrategicArea.addObjectTypeFlag Centre
+aiStrategicArea.addObjectTypeFlag StrongPoint
+aiStrategicArea.addObjectTypeFlag ControlPoint
+aiStrategicArea.setOrderPosition Infantry 469.5/524.5
