@@ -59,6 +59,16 @@ if [[ ${ASMR_WEEKLY:-0} == 1 && ! -e $STAMP ]]; then
   if grep -q 'uploaded .*Battlefield ASMR' "$ASMR_LOG"; then touch "$STAMP"; fi
 fi
 
+# Retention (the owner, 2026-11-12: "for any short >= week old with 0-1 views
+# we get rid of", rolls too; "do the pruning via a re-usable job, it can sit
+# in the short scheduled job"): after tonight's uploads, every Short and roll
+# 7 days old or more with 0 or 1 views goes, a player's own share excepted.
+# SHORTS_PRUNE=0 skips it.
+if [[ ${SHORTS_PRUNE:-1} == 1 ]]; then
+  echo "--- retention ---"
+  SHORTS_UPLOAD_KEY=$(tr -d '\n' < "$KEY_FILE") node scripts/shorts-prune.mjs || echo "the prune failed (exit $?)"
+fi
+
 # Keep two weeks of filmed videos on disk; the API has the uploaded copies.
 # The meta files stay: a meta.rejected.json keeps a turned-down kill unfilmed.
 find "$OUT" -mindepth 3 -maxdepth 3 \( -name short.mp4 -o -name poster.jpg -o -name sheet.jpg \) -mtime +14 -delete 2>/dev/null || true

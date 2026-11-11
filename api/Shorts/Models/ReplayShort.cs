@@ -35,6 +35,10 @@ public class ReplayShort
     public string Level { get; set; } = "";
     public string Mod { get; set; } = "";
     public long VideoBytes { get; set; }
+
+    /// <summary>The optional HD copy's size (<c>shorts/&lt;slug&gt;.hd.mp4</c>), 0 when there is
+    /// none: an action roll's 1080p take beside its 4K one.</summary>
+    public long HdVideoBytes { get; set; }
     public long PosterBytes { get; set; }
     public Instant CreatedAt { get; set; }
 
@@ -43,6 +47,12 @@ public class ReplayShort
     public long CreatedAtMs { get; set; }
 
     public int Views { get; set; }
+
+    /// <summary>When retention took it down for want of views (<c>POST /stats/shorts/prune</c>),
+    /// null while it is live. A pruned row is a tombstone: its files are gone and its sizes 0,
+    /// every read leaves it out, but <c>/stats/shorts/keys</c> still names its key, so the
+    /// nightly render job does not film that kill again.</summary>
+    public Instant? PrunedAt { get; set; }
 
     /// <summary>The signed-in player who shared it from the studio, and his linked in-game
     /// name; null for the render job's (features/replay-shorts, "Creators share").</summary>

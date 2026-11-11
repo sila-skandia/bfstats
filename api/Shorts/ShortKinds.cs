@@ -21,14 +21,24 @@ public static class ShortKinds
     public const string Streak = "streak";
     /// <summary>A round's best-sounding fire, over the shooter's shoulder at 1x.</summary>
     public const string Asmr = "asmr";
+    /// <summary>An action roll (features/action-roll): a 60-90 s 16:9 take through one round,
+    /// shown in the strip "for now" (the owner, 2026-11-12). Its key is
+    /// <c>{recordingSlug}:{start:F2}:-10</c>, the round second it starts and victim pid
+    /// <see cref="RollVictimPid"/>, so one roll per start.</summary>
+    public const string Roll = "roll";
+    /// <summary>The victim pid a roll's key carries: no kill, one take.</summary>
+    public const int RollVictimPid = -10;
     /// <summary>A clip a creator cut in the studio and shared.</summary>
     public const string Creator = "creator";
     public const string Other = "other";
 
     public static readonly IReadOnlySet<string> All = new HashSet<string>(StringComparer.Ordinal)
     {
-        AirToAir, TankToAir, GroundToAir, TankToTank, TankBuster, LongShot, OwnGoal, SpawnDeath, Streak, Asmr, Creator, Other,
+        AirToAir, TankToAir, GroundToAir, TankToTank, TankBuster, LongShot, OwnGoal, SpawnDeath, Streak, Asmr, Roll, Creator, Other,
     };
+
+    /// <summary>Whether a Short of this kind is 16:9 rather than 9:16.</summary>
+    public static bool IsLandscape(string kind) => kind == Roll;
 
     /// <summary><c>{recordingSlug}:{killTime:F2}:{victimPid}</c>, the same on every machine.</summary>
     public static string Key(string recordingSlug, double killTime, int victimPid) =>

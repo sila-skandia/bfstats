@@ -50,7 +50,7 @@ public sealed class ShortService(
         days = Math.Clamp(days, 1, MaxDays);
         var since = (clock.GetCurrentInstant() - Duration.FromDays(days)).ToUnixTimeMilliseconds();
         var rows = await db.ReplayShortPlayers.AsNoTracking()
-            .Where(p => p.Short.CreatedAtMs >= since)
+            .Where(p => p.Short.CreatedAtMs >= since && p.Short.PrunedAt == null)
             .GroupBy(p => p.Name)
             .Select(g => new
             {
@@ -78,7 +78,7 @@ public sealed class ShortService(
         pageSize = Math.Clamp(pageSize, 1, MaxPageSize);
         var since = (clock.GetCurrentInstant() - Duration.FromDays(days)).ToUnixTimeMilliseconds();
 
-        var query = db.ReplayShorts.AsNoTracking().Where(s => s.CreatedAtMs >= since);
+        var query = db.ReplayShorts.AsNoTracking().Where(s => s.CreatedAtMs >= since && s.PrunedAt == null);
         if (!string.IsNullOrWhiteSpace(kind))
         {
             string[] kinds = [.. kind.Split(',', StringSplitOptions.TrimEntries | StringSplitOptions.RemoveEmptyEntries)
@@ -125,10 +125,11 @@ public sealed class ShortService(
         [.. new[] { name, PlayerNameDecoder.ToRecording(name) }.Distinct(StringComparer.Ordinal)];
 
     public async Task<ShortDto?> GetAsync(string slug, CancellationToken ct) =>
-        await db.ReplayShorts.AsNoTracking().FirstOrDefaultAsync(s => s.Slug == slug, ct) is { } row
+        await db.ReplayShorts.AsNoTracking().FirstOrDefaultAsync(s => s.Slug == slug && s.PrunedAt == null, ct) is { } row
             ? ShortDto.From(row)
             : null;
 
+    /// <summary>Pruned Shorts' keys too: a kill taken down for want of views is not filmed again.</summary>
     public async Task<ShortKeysDto> KeysAsync(string? recordingSlug, CancellationToken ct)
     {
         var slug = (recordingSlug ?? "").Trim();
@@ -144,7 +145,7 @@ public sealed class ShortService(
     public async Task<(int Id, int Views)?> WatchableAsync(string slug, CancellationToken ct)
     {
         var row = await db.ReplayShorts.AsNoTracking()
-            .Where(s => s.Slug == slug)
+            .Where(s => s.Slug == slug && s.PrunedAt == null)
             .Select(s => new { s.Id, s.Views })
             .FirstOrDefaultAsync(ct);
         return row is null ? null : (row.Id, row.Views);
@@ -168,9 +169,58 @@ public sealed class ShortService(
         return true;
     }
 
+    public async Task<ShortPruneDto> PruneUnwatchedAsync(bool dryRun, CancellationToken ct)
+    {
+        var limits = options.Value;
+        var now = clock.GetCurrentInstant();
+        var cutoff = (now - Duration.FromDays(limits.RetentionDays)).ToUnixTimeMilliseconds();
+        // Never a creator's share (CreatorUserId set): that is a player's own clip from the
+        // studio, theirs to take down, not the render job's to tidy away.
+        var stale = await db.ReplayShorts
+            .Where(s => s.PrunedAt == null && s.CreatedAtMs <= cutoff && s.Views <= limits.RetentionMaxViews
+                && s.CreatorUserId == null)
+            .OrderBy(s => s.CreatedAtMs)
+            .ToListAsync(ct);
+        var taken = new List<PrunedShortDto>(stale.Count);
+        foreach (var s in stale)
+        {
+            var ageDays = Math.Round((now - s.CreatedAt).TotalDays, 1);
+            if (dryRun)
+            {
+                taken.Add(new PrunedShortDto(s.Slug, s.Kind, ageDays, s.Views));
+                continue;
+            }
+            // A tombstone, not a delete: the row keeps its key, which /keys still names, so the
+            // nightly render job does not film the kill again. Its files go and its sizes are 0,
+            // so the volume's sum stops counting them.
+            try
+            {
+                storage.Delete(s.Slug);
+            }
+            catch (Exception ex) when (ex is IOException or UnauthorizedAccessException)
+            {
+                logger.LogWarning(ex, "Retention could not remove Short {Slug}'s files; the next run tries again", s.Slug);
+                continue;
+            }
+            s.PrunedAt = now;
+            s.VideoBytes = 0;
+            s.HdVideoBytes = 0;
+            s.PosterBytes = 0;
+            await db.SaveChangesAsync(ct);
+            taken.Add(new PrunedShortDto(s.Slug, s.Kind, ageDays, s.Views));
+            logger.LogInformation("Retention took down Short {Slug} ({Kind}), {AgeDays:0.0} days old with {Views} views",
+                s.Slug, s.Kind, ageDays, s.Views);
+        }
+        var swept = dryRun ? 0 : storage.SweepStaleParts(TimeSpan.FromHours(limits.PartsMaxAgeHours));
+        logger.LogInformation(
+            "Retention {Verb} {Count} Shorts {Days} days old or more with {MaxViews} views or fewer, and swept {Parts} unjoined parts",
+            dryRun ? "would take down" : "took down", taken.Count, limits.RetentionDays, limits.RetentionMaxViews, swept);
+        return new ShortPruneDto(dryRun, taken, swept);
+    }
+
     public async Task<ShortDto?> SetPosterAsync(string slug, Stream body, CancellationToken ct)
     {
-        var row = await db.ReplayShorts.FirstOrDefaultAsync(s => s.Slug == slug, ct);
+        var row = await db.ReplayShorts.FirstOrDefaultAsync(s => s.Slug == slug && s.PrunedAt == null, ct);
         if (row is null) return null;
         string? posterFile = storage.IncomingPath();
         try
@@ -193,7 +243,7 @@ public sealed class ShortService(
 
     public async Task<ShortDto?> FlattenVideoAsync(string slug, CancellationToken ct)
     {
-        var row = await db.ReplayShorts.FirstOrDefaultAsync(s => s.Slug == slug, ct);
+        var row = await db.ReplayShorts.FirstOrDefaultAsync(s => s.Slug == slug && s.PrunedAt == null, ct);
         if (row is null) return null;
         var path = storage.VideoPath(row.Slug);
         if (flattener is not null && File.Exists(path) && await flattener.FlattenAsync(path, ct))
@@ -205,7 +255,7 @@ public sealed class ShortService(
     }
 
     public Task<ShortUploadResult> UploadAsync(string? contentType, Stream body, long? contentLength, CancellationToken ct) =>
-        ReceiveAsync(contentType, body, contentLength, flatten: false, meta => Task.FromResult(Describe(meta)), ct);
+        ReceiveAsync(contentType, body, contentLength, flatten: false, meta => Task.FromResult(Describe(meta)), ct, rollsAllowed: true);
 
     public async Task<ShortUploadResult> ShareAsync(string? contentType, Stream body, long? contentLength, int userId, CancellationToken ct)
     {
@@ -235,20 +285,33 @@ public sealed class ShortService(
     public Task<bool> SharedByAsync(string slug, int userId, CancellationToken ct) =>
         db.ReplayShorts.AsNoTracking().AnyAsync(s => s.Slug == slug && s.CreatorUserId == userId, ct);
 
+    /// <summary>The largest upload body for a Short of <paramref name="kind"/>: its video, HD
+    /// copy and poster, and the framing round them.</summary>
+    internal static long BodyLimit(ShortsOptions limits, string? kind) =>
+        limits.VideoLimit(kind) + limits.HdVideoLimit(kind) + limits.MaxPosterBytes + MultipartOverhead;
+
     /// <summary>An upload received; <paramref name="flatten"/> rewrites a fragmented MP4 (a
-    /// studio share's, from the browser's recorder) as a plain one.</summary>
+    /// studio share's, from the browser's recorder) as a plain one. <paramref name="rollsAllowed"/>
+    /// is the render job's way in, which may send an action roll (<see cref="ShortKinds.Roll"/>)
+    /// and its larger video; until the meta part says what kind it is, a part is held to the
+    /// largest limit the way in allows, and to its kind's once that is known.</summary>
     private async Task<ShortUploadResult> ReceiveAsync(string? contentType, Stream body, long? contentLength, bool flatten,
-        Func<ShortUploadMeta, Task<ReplayShort>> describe, CancellationToken ct)
+        Func<ShortUploadMeta, Task<ReplayShort>> describe, CancellationToken ct, bool rollsAllowed = false)
     {
         var limits = options.Value;
         var boundary = Boundary(contentType);
-        if (contentLength > limits.MaxVideoBytes + limits.MaxPosterBytes + MultipartOverhead)
+        var widest = rollsAllowed ? ShortKinds.Roll : null;
+        if (contentLength > BodyLimit(limits, widest))
         {
-            throw TooBig(limits.MaxVideoBytes, "A Short's video");
+            throw TooBig(limits.VideoLimit(widest), "A Short's video");
         }
 
         string? videoFile = null;
+        string? hdVideoFile = null;
         string? posterFile = null;
+        string? videoUpload = null;
+        string? hdVideoUpload = null;
+        string? kind = widest;
         try
         {
             ShortUploadMeta? meta = null;
@@ -259,10 +322,24 @@ public sealed class ShortService(
                 {
                     case "meta" when meta is null:
                         meta = await ReadMetaAsync(section.Body, ct);
+                        if (rollsAllowed) kind = (meta.Kind ?? "").Trim();
+                        if (contentLength > BodyLimit(limits, kind)) throw TooBig(limits.VideoLimit(kind), "A Short's video");
                         break;
-                    case "video" when videoFile is null:
+                    // A chunked upload's id in place of the file (the render job's way in only):
+                    // joined below, once the meta says what kind it is.
+                    case "videoUpload" when rollsAllowed && videoFile is null && videoUpload is null:
+                        videoUpload = await ReadUploadIdAsync(section.Body, ct);
+                        break;
+                    case "videoHdUpload" when rollsAllowed && hdVideoFile is null && hdVideoUpload is null:
+                        hdVideoUpload = await ReadUploadIdAsync(section.Body, ct);
+                        break;
+                    case "video" when videoFile is null && videoUpload is null:
                         videoFile = storage.IncomingPath();
-                        await ReceiveAsync(section.Body, videoFile, limits.MaxVideoBytes, "A Short's video", ct);
+                        await ReceiveAsync(section.Body, videoFile, limits.VideoLimit(kind), "A Short's video", ct);
+                        break;
+                    case "videoHd" when hdVideoFile is null && hdVideoUpload is null:
+                        hdVideoFile = storage.IncomingPath();
+                        await ReceiveAsync(section.Body, hdVideoFile, limits.HdVideoLimit(kind), "A Short's HD video", ct);
                         break;
                     case "poster" when posterFile is null:
                         posterFile = storage.IncomingPath();
@@ -273,20 +350,50 @@ public sealed class ShortService(
                 }
             }
             if (meta is null) throw new RecordingRejectedException("The upload has no meta part.");
-            if (videoFile is null) throw new RecordingRejectedException("The upload has no video part.");
+            if (videoFile is null && videoUpload is null) throw new RecordingRejectedException("The upload has no video part.");
             if (posterFile is null) throw new RecordingRejectedException("The upload has no poster part.");
 
             var row = await describe(meta);
+            if (videoUpload is not null)
+            {
+                videoFile = storage.IncomingPath();
+                await JoinAsync(videoUpload, videoFile, limits.VideoLimit(row.Kind), "A Short's video", ct);
+            }
+            if (hdVideoUpload is not null)
+            {
+                hdVideoFile = storage.IncomingPath();
+                await JoinAsync(hdVideoUpload, hdVideoFile, limits.HdVideoLimit(row.Kind), "A Short's HD video", ct);
+            }
+            if (videoFile is null) throw new RecordingRejectedException("The upload has no video part.");
+            // A part sent before the meta was held to the widest limit: now to its kind's.
+            if (new FileInfo(videoFile).Length > limits.VideoLimit(row.Kind)) throw TooBig(limits.VideoLimit(row.Kind), "A Short's video");
+            if (hdVideoFile is not null && new FileInfo(hdVideoFile).Length > limits.HdVideoLimit(row.Kind))
+            {
+                throw TooBig(limits.HdVideoLimit(row.Kind), "A Short's HD video");
+            }
             if (!await IsMp4Async(videoFile, ct)) throw new RecordingRejectedException("The video is not an MP4 file.");
+            if (hdVideoFile is not null && !await IsMp4Async(hdVideoFile, ct))
+            {
+                throw new RecordingRejectedException("The HD video is not an MP4 file.");
+            }
             if (!await IsJpegAsync(posterFile, ct)) throw new RecordingRejectedException("The poster is not a JPEG file.");
-            if (flatten && flattener is not null) await flattener.FlattenAsync(videoFile, ct);
+            if (flatten && flattener is not null)
+            {
+                await flattener.FlattenAsync(videoFile, ct);
+                if (hdVideoFile is not null) await flattener.FlattenAsync(hdVideoFile, ct);
+            }
             row.VideoBytes = new FileInfo(videoFile).Length;
+            row.HdVideoBytes = hdVideoFile is null ? 0 : new FileInfo(hdVideoFile).Length;
             row.PosterBytes = new FileInfo(posterFile).Length;
 
-            var (saved, created) = await CommitAsync(row, videoFile, posterFile);
+            var (saved, created) = await CommitAsync(row, videoFile, hdVideoFile, posterFile);
+            // Joined, the parts are spent either way: in place, or the kill's Short already there.
+            DiscardParts(videoUpload);
+            DiscardParts(hdVideoUpload);
             if (created)
             {
                 videoFile = null;
+                hdVideoFile = null;
                 posterFile = null;
                 logger.LogInformation(
                     "Short {Slug} uploaded: {Key} ({Kind}), {Bytes} bytes", saved.Slug, saved.Key, saved.Kind, saved.VideoBytes);
@@ -296,7 +403,7 @@ public sealed class ShortService(
         catch (BadHttpRequestException ex) when (ex.StatusCode == StatusCodes.Status413PayloadTooLarge)
         {
             throw new RecordingRejectedException(
-                TooBig(limits.MaxVideoBytes, "A Short's video").Message, StatusCodes.Status413PayloadTooLarge);
+                TooBig(limits.VideoLimit(kind), "A Short's video").Message, StatusCodes.Status413PayloadTooLarge);
         }
         catch (InvalidDataException ex)
         {
@@ -311,13 +418,15 @@ public sealed class ShortService(
         finally
         {
             Discard(videoFile);
+            Discard(hdVideoFile);
             Discard(posterFile);
         }
     }
 
     /// <summary>The kill clipped already is the Short there; else this one, weighed against the
     /// room the volume has, moved into place and recorded.</summary>
-    private async Task<(ReplayShort Short, bool Created)> CommitAsync(ReplayShort row, string videoFile, string posterFile)
+    private async Task<(ReplayShort Short, bool Created)> CommitAsync(ReplayShort row, string videoFile, string? hdVideoFile,
+        string posterFile)
     {
         var ct = CancellationToken.None;
         await Commit.WaitAsync(ct);
@@ -327,7 +436,7 @@ public sealed class ShortService(
             {
                 return (existing, false);
             }
-            if (storage.RoomFor(await StoredBytesAsync(ct), row.VideoBytes + row.PosterBytes) is { } full)
+            if (storage.RoomFor(await StoredBytesAsync(ct), row.VideoBytes + row.HdVideoBytes + row.PosterBytes) is { } full)
             {
                 throw new RecordingRejectedException(full, StatusCodes.Status507InsufficientStorage);
             }
@@ -335,6 +444,7 @@ public sealed class ShortService(
             storage.Promote(videoFile, storage.VideoPath(row.Slug));
             try
             {
+                if (hdVideoFile is not null) storage.Promote(hdVideoFile, storage.HdVideoPath(row.Slug));
                 storage.Promote(posterFile, storage.PosterPath(row.Slug));
                 db.ReplayShorts.Add(row);
                 await db.SaveChangesAsync(ct);
@@ -384,6 +494,8 @@ public sealed class ShortService(
         {
             throw new RecordingRejectedException("distance must be a number of metres, 0 or more.");
         }
+        // A roll is one take, not a kill: its key is the second it starts and the roll's pid.
+        var victimPid = kind == ShortKinds.Roll ? ShortKinds.RollVictimPid : meta.VictimPid;
         var now = clock.GetCurrentInstant();
         var killer = RecordingText.Name(meta.Killer, MaxName);
         var victim = RecordingText.Name(meta.Victim, MaxName);
@@ -392,8 +504,8 @@ public sealed class ShortService(
             Players = PlayersOf(killer, [victim, .. meta.Victims ?? []]),
             RecordingSlug = recordingSlug,
             KillTime = meta.KillTime,
-            VictimPid = meta.VictimPid,
-            Key = ShortKinds.Key(recordingSlug, meta.KillTime, meta.VictimPid),
+            VictimPid = victimPid,
+            Key = ShortKinds.Key(recordingSlug, meta.KillTime, victimPid),
             Kind = kind,
             Title = title,
             // Names stay as stored (raw); the client decodes them for display.
@@ -440,7 +552,83 @@ public sealed class ShortService(
     }
 
     /// <summary>Everything on the volume: the recordings and the Shorts share its quota.</summary>
-    private Task<long> StoredBytesAsync(CancellationToken ct) => VolumeUsage.StoredBytesAsync(db, ct);
+    private async Task<long> StoredBytesAsync(CancellationToken ct) =>
+        await VolumeUsage.StoredBytesAsync(db, ct) + storage.PendingPartBytes();
+
+    public async Task<ShortPartDto> ReceivePartAsync(string? upload, int index, Stream body, long? contentLength, CancellationToken ct)
+    {
+        var limits = options.Value;
+        if (!ShortStorage.IsUploadId(upload)) throw new RecordingRejectedException("upload must be 16 to 32 of a-z and 0-9.");
+        if (index < 0 || index >= limits.MaxParts)
+        {
+            throw new RecordingRejectedException($"index must be 0 to {limits.MaxParts - 1}.");
+        }
+        if (contentLength > limits.MaxPartBytes) throw TooBig(limits.MaxPartBytes, "A part");
+        // Weighed as it arrives: everything stored, every part waiting, and this one.
+        if (storage.RoomFor(await StoredBytesAsync(ct), contentLength ?? limits.MaxPartBytes) is { } full)
+        {
+            throw new RecordingRejectedException(full, StatusCodes.Status507InsufficientStorage);
+        }
+        string? partFile = storage.IncomingPath();
+        try
+        {
+            await ReceiveAsync(body, partFile, limits.MaxPartBytes, "A part", ct);
+            var bytes = new FileInfo(partFile).Length;
+            storage.PlacePart(partFile, upload!, index);
+            partFile = null;
+            logger.LogInformation("Short upload {Upload} part {Index} received, {Bytes} bytes", upload, index, bytes);
+            return new ShortPartDto(upload!, index, bytes);
+        }
+        catch (BadHttpRequestException ex) when (ex.StatusCode == StatusCodes.Status413PayloadTooLarge)
+        {
+            throw new RecordingRejectedException(TooBig(limits.MaxPartBytes, "A part").Message, StatusCodes.Status413PayloadTooLarge);
+        }
+        catch (IOException ex) when (ex is not FileNotFoundException)
+        {
+            logger.LogWarning(ex, "Short upload {Upload} part {Index} broke off", upload, index);
+            throw new RecordingRejectedException("The part broke off before it all arrived. Send it again.", ex);
+        }
+        finally
+        {
+            Discard(partFile);
+        }
+    }
+
+    /// <summary>Joins a chunked upload's parts, 0 to n-1 with none missing, into
+    /// <paramref name="path"/>, held to <paramref name="maxBytes"/>.</summary>
+    private async Task JoinAsync(string upload, string path, long maxBytes, string what, CancellationToken ct)
+    {
+        var parts = storage.Parts(upload);
+        if (parts.Count == 0) throw new RecordingRejectedException($"No parts were sent for upload {upload}.");
+        if (parts.Select((p, i) => p.Index != i).Any(gap => gap))
+        {
+            var missing = Enumerable.Range(0, parts[^1].Index + 1).Except(parts.Select(p => p.Index)).First();
+            throw new RecordingRejectedException($"Upload {upload} is missing part {missing}.");
+        }
+        if (parts.Sum(p => new FileInfo(p.Path).Length) > maxBytes) throw TooBig(maxBytes, what);
+        await using var joined = new FileStream(path, FileMode.CreateNew, FileAccess.Write, FileShare.None, CopyBytes, useAsync: true);
+        foreach (var (_, partPath) in parts)
+        {
+            await using var part = new FileStream(partPath, FileMode.Open, FileAccess.Read, FileShare.Read, CopyBytes, useAsync: true);
+            await part.CopyToAsync(joined, CopyBytes, ct);
+        }
+    }
+
+    private void DiscardParts(string? upload)
+    {
+        if (upload is null) return;
+        foreach (var (_, path) in storage.Parts(upload)) Discard(path);
+    }
+
+    private static async Task<string> ReadUploadIdAsync(Stream part, CancellationToken ct)
+    {
+        var buffer = new byte[65];
+        var read = await part.ReadAtLeastAsync(buffer, buffer.Length, throwOnEndOfStream: false, ct);
+        var id = System.Text.Encoding.ASCII.GetString(buffer, 0, read).Trim();
+        return ShortStorage.IsUploadId(id)
+            ? id
+            : throw new RecordingRejectedException("A chunked upload's id must be 16 to 32 of a-z and 0-9.");
+    }
 
     /// <summary>An MP4 (ISO BMFF) file opens with its <c>ftyp</c> box: a size, then the type.</summary>
     internal static async Task<bool> IsMp4Async(string path, CancellationToken ct)

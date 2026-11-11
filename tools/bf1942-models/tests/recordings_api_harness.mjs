@@ -275,6 +275,26 @@ results.shorts = {
   addressClosed: shorts.shortAddress('https://play.bfstats.io/play/index.html?tab=replay&short=shortslug1', null),
   filters: shorts.SHORT_FILTERS.map(f => [f.id, f.kinds?.join(',') ?? null, f.plate]),
   filterOf: ['vehicle', 'nonsense', null].map(id => shorts.shortFilter(id).id),
+  // An action roll (features/replay-shorts, "Rolls in the strip"): 16:9, 4K or HD.
+  roll: (() => {
+    const roll = { kind: 'roll', landscape: true, videoUrl: '/r/4k.mp4', hdVideoUrl: '/r/hd.mp4', killTime: 312.4, lengthSeconds: 72.6 };
+    const old = { ...roll, hdVideoUrl: null };
+    return {
+      landscape: [roll, { kind: 'tank-to-tank', landscape: false }, { landscape: true }, null].map(shorts.isLandscape),
+      label: shorts.shortKindLabel('roll'),
+      length: [72.6, 90, 0, null].map(shorts.shortLength),
+      quality: [
+        shorts.rollQuality(roll, { screenWidth: 1440, pixelRatio: 2 }),
+        shorts.rollQuality(roll, { screenWidth: 1440, pixelRatio: 1 }),
+        shorts.rollQuality(roll, { screenWidth: 390, pixelRatio: 3 }),
+        shorts.rollQuality(roll, { screenWidth: 3840, pixelRatio: 1, saveData: true }),
+        shorts.rollQuality(old, { screenWidth: 390, pixelRatio: 1 }),
+        shorts.rollQuality(aShort, { screenWidth: 390, pixelRatio: 1 }),
+      ],
+      source: [shorts.shortSource(roll, 'hd'), shorts.shortSource(roll, '4k'), shorts.shortSource(old, 'hd'), shorts.shortSource(aShort, null)],
+      watchAt: [shorts.shortWatchTime(roll), shorts.shortWatchTime(aShort)],
+    };
+  })(),
   filterAddress: [
     shorts.shortsFilterAddress('https://play.bfstats.io/play/index.html?tab=replay', { filter: 'air' }),
     shorts.shortsFilterAddress('https://play.bfstats.io/play/index.html?tab=replay&shorts=air', { filter: 'streak', player: 'Jo & Ann' }),

@@ -2715,6 +2715,9 @@ namespace api.Migrations
                     b.Property<double>("Distance")
                         .HasColumnType("REAL");
 
+                    b.Property<long>("HdVideoBytes")
+                        .HasColumnType("INTEGER");
+
                     b.Property<string>("Key")
                         .IsRequired()
                         .HasColumnType("TEXT");
@@ -2746,6 +2749,9 @@ namespace api.Migrations
 
                     b.Property<long>("PosterBytes")
                         .HasColumnType("INTEGER");
+
+                    b.Property<string>("PrunedAt")
+                        .HasColumnType("TEXT");
 
                     b.Property<string>("RecordingSlug")
                         .IsRequired()

@@ -72,7 +72,8 @@ public sealed class ShortsControllerTests : IDisposable
         }
     }
 
-    private ShortsController Controller(string? key = null, ClaimsPrincipal? user = null, string configuredKey = UploadKey)
+    private ShortsController Controller(string? key = null, ClaimsPrincipal? user = null, string configuredKey = UploadKey,
+        IShortService? with = null)
     {
         var context = new DefaultHttpContext();
         if (key is not null) context.Request.Headers[ShortsController.KeyHeader] = key;
@@ -82,7 +83,7 @@ public sealed class ShortsControllerTests : IDisposable
             .BuildServiceProvider();
         context.RequestServices = services;
         return new ShortsController(
-            service, storage, counter, new ConfigurationBuilder().Build(),
+            with ?? service, storage, counter, new ConfigurationBuilder().Build(),
             MsOptions.Create(new ShortsOptions { UploadKey = configuredKey }),
             MsOptions.Create(new RecordingsOptions()))
         {
@@ -112,13 +113,28 @@ public sealed class ShortsControllerTests : IDisposable
         mod = "bf1942",
     };
 
-    private static async Task Body(ShortsController controller, object meta, byte[]? video = null, byte[]? poster = null)
+    private static async Task Body(ShortsController controller, object meta, byte[]? video = null, byte[]? poster = null,
+        byte[]? videoHd = null, string? videoUpload = null, string? videoHdUpload = null)
     {
         var content = new MultipartFormDataContent();
         content.Add(new StringContent(JsonSerializer.Serialize(meta), Encoding.UTF8, "application/json"), "meta");
-        var v = new ByteArrayContent(video ?? Mp4);
-        v.Headers.ContentType = new MediaTypeHeaderValue("video/mp4");
-        content.Add(v, "video", "short.mp4");
+        if (videoUpload is not null)
+        {
+            content.Add(new StringContent(videoUpload), "videoUpload");
+        }
+        else
+        {
+            var v = new ByteArrayContent(video ?? Mp4);
+            v.Headers.ContentType = new MediaTypeHeaderValue("video/mp4");
+            content.Add(v, "video", "short.mp4");
+        }
+        if (videoHdUpload is not null) content.Add(new StringContent(videoHdUpload), "videoHdUpload");
+        if (videoHd is not null)
+        {
+            var hd = new ByteArrayContent(videoHd);
+            hd.Headers.ContentType = new MediaTypeHeaderValue("video/mp4");
+            content.Add(hd, "videoHd", "short.hd.mp4");
+        }
         var p = new ByteArrayContent(poster ?? Jpeg);
         p.Headers.ContentType = new MediaTypeHeaderValue("image/jpeg");
         content.Add(p, "poster", "short.jpg");
@@ -129,10 +145,10 @@ public sealed class ShortsControllerTests : IDisposable
         request.Body = new MemoryStream(bytes);
     }
 
-    private async Task<ShortDto> UploadAsync(object? meta = null)
+    private async Task<ShortDto> UploadAsync(object? meta = null, byte[]? videoHd = null)
     {
         var controller = Controller(UploadKey);
-        await Body(controller, meta ?? Meta());
+        await Body(controller, meta ?? Meta(), videoHd: videoHd);
         var result = await controller.Upload(default);
         var created = Assert.IsType<CreatedAtActionResult>(result.Result);
         Assert.Equal(StatusCodes.Status201Created, created.StatusCode);
@@ -822,6 +838,291 @@ public sealed class ShortsControllerTests : IDisposable
         {
             System.Globalization.CultureInfo.CurrentCulture = culture;
         }
+    }
+
+    /// <summary>An MP4 head padded to <paramref name="bytes"/>.</summary>
+    private static byte[] Mp4Of(int bytes)
+    {
+        var file = new byte[bytes];
+        Mp4.CopyTo(file, 0);
+        return file;
+    }
+
+    [Fact]
+    public async Task Upload_WithAnHdCopy_ServesIt_AndLinksIt_ARollIsLandscape()
+    {
+        var plain = await UploadAsync();
+        Assert.Null(plain.HdVideoUrl);
+        Assert.False(plain.Landscape);
+        Assert.IsType<NotFoundResult>(Controller().HdVideo(plain.Slug));
+
+        var hd = Mp4Of(40);
+        var roll = await UploadAsync(Meta(killTime: 61.5, victimPid: 3, kind: ShortKinds.Roll, title: "Bocage, 60 s"), hd);
+
+        Assert.Equal($"{RecordingSlug}:61.50:-10", roll.Key);
+        Assert.Equal(ShortKinds.RollVictimPid, roll.VictimPid);
+        Assert.True(roll.Landscape);
+        Assert.Equal($"/stats/shorts/{roll.Slug}.hd.mp4?v={hd.Length}", roll.HdVideoUrl);
+        Assert.Equal(hd, await File.ReadAllBytesAsync(storage.HdVideoPath(roll.Slug)));
+        Assert.Equal(hd.Length, (await db.ReplayShorts.AsNoTracking().SingleAsync(s => s.Slug == roll.Slug)).HdVideoBytes);
+        Assert.Equal(roll.HdVideoUrl, Value<ShortDto>(await Controller().Get(roll.Slug, default)).HdVideoUrl);
+
+        var controller = Controller();
+        controller.HttpContext.Request.Method = "GET";
+        controller.HttpContext.Request.Headers.Range = "bytes=4-7";
+        var body = new MemoryStream();
+        controller.HttpContext.Response.Body = body;
+        var result = Assert.IsType<PhysicalFileResult>(controller.HdVideo(roll.Slug));
+        Assert.True(result.EnableRangeProcessing);
+        Assert.Equal("video/mp4", result.ContentType);
+        await result.ExecuteResultAsync(controller.ControllerContext);
+        Assert.Equal(StatusCodes.Status206PartialContent, controller.HttpContext.Response.StatusCode);
+        Assert.Equal("ftyp"u8.ToArray(), body.ToArray());
+        Assert.Contains("immutable", controller.HttpContext.Response.Headers.CacheControl.ToString());
+        Assert.Empty(Directory.GetFiles(Path.Combine(directory, ".incoming")));
+    }
+
+    [Fact]
+    public async Task Upload_AnHdCopyNotAnMp4_IsRefused()
+    {
+        var controller = Controller(UploadKey);
+        await Body(controller, Meta(kind: ShortKinds.Roll), videoHd: Jpeg);
+        var refused = Assert.IsType<ObjectResult>((await controller.Upload(default)).Result);
+        Assert.Equal(StatusCodes.Status400BadRequest, refused.StatusCode);
+        Assert.Equal(0, await db.ReplayShorts.CountAsync());
+        Assert.Empty(ShortFiles());
+    }
+
+    [Fact]
+    public async Task Upload_ARollMayBeLarger_ThanAnotherKind()
+    {
+        var limits = new ShortsOptions { UploadKey = UploadKey, MaxVideoBytes = 32, MaxRollVideoBytes = 128, MaxHdVideoBytes = 64 };
+        var small = new ShortService(db, storage, clock, MsOptions.Create(limits), NullLogger<ShortService>.Instance);
+        async Task<int?> Send(object meta, int video, int? hd = null)
+        {
+            var controller = Controller(UploadKey, with: small);
+            await Body(controller, meta, Mp4Of(video), videoHd: hd is { } h ? Mp4Of(h) : null);
+            var result = (await controller.Upload(default)).Result;
+            return result is ObjectResult o ? o.StatusCode : null;
+        }
+
+        Assert.Equal(StatusCodes.Status413PayloadTooLarge, await Send(Meta(killTime: 1), 100));
+        Assert.Equal(StatusCodes.Status201Created, await Send(Meta(killTime: 2, kind: ShortKinds.Roll), 100, 60));
+        Assert.Equal(StatusCodes.Status413PayloadTooLarge, await Send(Meta(killTime: 3, kind: ShortKinds.Roll), 200));
+        Assert.Equal(StatusCodes.Status413PayloadTooLarge, await Send(Meta(killTime: 4, kind: ShortKinds.Roll), 100, 100));
+        // Another kind's HD copy is held to its video's limit.
+        Assert.Equal(StatusCodes.Status413PayloadTooLarge, await Send(Meta(killTime: 5), 20, 60));
+        Assert.Equal(1, await db.ReplayShorts.CountAsync());
+        Assert.Empty(Directory.GetFiles(Path.Combine(directory, ".incoming")));
+    }
+
+    [Fact]
+    public async Task Delete_TakesTheHdCopyToo_AndTheVolumeCountsIt()
+    {
+        var before = await VolumeUsage.StoredBytesAsync(db, default);
+        var dto = await UploadAsync(Meta(kind: ShortKinds.Roll), Mp4Of(50));
+        Assert.Equal(before + Mp4.Length + 50 + Jpeg.Length, await VolumeUsage.StoredBytesAsync(db, default));
+        Assert.True(File.Exists(storage.HdVideoPath(dto.Slug)));
+
+        Assert.IsType<NoContentResult>(await Controller(UploadKey).Delete(dto.Slug, default));
+        Assert.False(File.Exists(storage.HdVideoPath(dto.Slug)));
+        Assert.Empty(ShortFiles());
+    }
+
+    [Fact]
+    public async Task Retention_TakesDownTheUnwatchedWeekOld_KeepsTheWatchedTheYoungAndCreatorsShares()
+    {
+        db.Users.Add(new User { Id = 7, Email = "creator@example.com" });
+        db.Recordings.Add(new Recording { Slug = RecordingSlug, UploaderUserId = 7 });
+        db.UserPlayerNames.Add(new UserPlayerName { UserId = 7, PlayerName = "skandia", CreatedAt = DateTime.UtcNow });
+        await db.SaveChangesAsync();
+        var unseen = await UploadAsync(Meta(killTime: 1, kind: ShortKinds.Roll), Mp4Of(30));
+        var once = await UploadAsync(Meta(killTime: 2));
+        var twice = await UploadAsync(Meta(killTime: 3));
+        var share = Assert.IsType<ShortDto>(Assert.IsType<CreatedAtActionResult>((await ShareAsync(ShareMeta(), User(false))).Result).Value);
+        clock.Now += Duration.FromDays(1);
+        var young = await UploadAsync(Meta(killTime: 4));
+        await db.ReplayShorts.Where(s => s.Slug == once.Slug).ExecuteUpdateAsync(set => set.SetProperty(s => s.Views, 1));
+        await db.ReplayShorts.Where(s => s.Slug == twice.Slug).ExecuteUpdateAsync(set => set.SetProperty(s => s.Views, 2));
+        db.ChangeTracker.Clear();
+
+        // Six days on, the first four are 7 days old; the young one is 6.
+        clock.Now += Duration.FromDays(6);
+        Assert.Equal(StatusCodes.Status200OK, await SendPart("staleupload000002", 0, Mp4Of(20)));
+        File.SetLastWriteTimeUtc(storage.PartPath("staleupload000002", 0), DateTime.UtcNow.AddHours(-25));
+        var before = await VolumeUsage.StoredBytesAsync(db, default);
+
+        // A dry run lists what it would take, and changes nothing.
+        var dry = Value<ShortPruneDto>(await Controller(UploadKey).Prune(dryRun: true, default));
+        Assert.True(dry.DryRun);
+        Assert.Equal([(unseen.Slug, ShortKinds.Roll, 7.0, 0), (once.Slug, ShortKinds.AirToAir, 7.0, 1)],
+            dry.Pruned.Select(p => (p.Slug, p.Kind, p.AgeDays, p.Views)).ToList());
+        Assert.Equal(0, dry.PartsSwept);
+        Assert.Equal(0, await db.ReplayShorts.CountAsync(s => s.PrunedAt != null));
+        Assert.True(File.Exists(storage.HdVideoPath(unseen.Slug)));
+        Assert.Single(storage.Parts("staleupload000002"));
+        Assert.Equal(before, await VolumeUsage.StoredBytesAsync(db, default));
+
+        var run = Value<ShortPruneDto>(await Controller(UploadKey).Prune(dryRun: false, default));
+        Assert.False(run.DryRun);
+        Assert.Equal(dry.Pruned, run.Pruned);
+        Assert.Equal(1, run.PartsSwept);
+        Assert.Empty(storage.Parts("staleupload000002"));
+        db.ChangeTracker.Clear();
+
+        // Tombstones: the rows stay, pruned and weighing nothing, their keys still in /keys.
+        var pruned = await db.ReplayShorts.AsNoTracking().Where(s => s.PrunedAt != null).ToListAsync();
+        Assert.Equal(new[] { unseen.Slug, once.Slug }.Order(), pruned.Select(s => s.Slug).Order());
+        Assert.All(pruned, s => Assert.Equal((clock.Now, 0L, 0L, 0L), (s.PrunedAt!.Value, s.VideoBytes, s.HdVideoBytes, s.PosterBytes)));
+        Assert.Equal(before - (Mp4.Length + 30 + Jpeg.Length) - (Mp4.Length + Jpeg.Length), await VolumeUsage.StoredBytesAsync(db, default));
+        var keys = Value<ShortKeysDto>(await Controller().Keys(RecordingSlug, default)).Keys;
+        Assert.Contains(unseen.Key, keys);
+        Assert.Contains(once.Key, keys);
+
+        // Every read leaves them out.
+        var listed = Value<PagedShortsDto>(await Controller().List(days: 30, ct: default));
+        Assert.Equal(new[] { twice.Slug, share.Slug, young.Slug }.Order(), listed.Items.Select(s => s.Slug).Order());
+        Assert.Equal(3, listed.Total);
+        Assert.IsType<NotFoundResult>((await Controller().Get(unseen.Slug, default)).Result);
+        Assert.IsType<NotFoundResult>((await Controller().View(once.Slug, default)).Result);
+        Assert.IsType<NotFoundResult>(Controller().Video(unseen.Slug));
+        Assert.IsType<NotFoundResult>(Controller().HdVideo(unseen.Slug));
+        Assert.IsType<NotFoundResult>(Controller().Poster(once.Slug));
+        // Rut is killed in all five; the three live ones count.
+        Assert.Equal(3, Value<ShortPlayersDto>(await Controller().Players(30, default)).Items.Single(p => p.Name == "Rut").Shorts);
+
+        // The render job sending the kill again writes nothing.
+        var again = Controller(UploadKey);
+        await Body(again, Meta(killTime: 2));
+        Assert.IsType<OkObjectResult>((await again.Upload(default)).Result);
+        Assert.False(File.Exists(storage.VideoPath(once.Slug)));
+        Assert.Equal(5, await db.ReplayShorts.CountAsync());
+
+        // An explicit delete still takes the row.
+        Assert.IsType<NoContentResult>(await Controller(UploadKey).Delete(once.Slug, default));
+        Assert.Equal(4, await db.ReplayShorts.CountAsync());
+
+        Assert.False(File.Exists(storage.VideoPath(unseen.Slug)));
+        Assert.False(File.Exists(storage.HdVideoPath(unseen.Slug)));
+        Assert.False(File.Exists(storage.PosterPath(unseen.Slug)));
+        Assert.False(File.Exists(storage.VideoPath(once.Slug)));
+        Assert.True(File.Exists(storage.VideoPath(share.Slug)));
+        Assert.Empty((await service.PruneUnwatchedAsync(dryRun: false, default)).Pruned);
+    }
+
+    [Fact]
+    public async Task Prune_WithoutTheKeyOrAnAdmin_IsRefused_AsTheUploadIs()
+    {
+        await UploadAsync();
+        clock.Now += Duration.FromDays(8);
+
+        Assert.Equal(StatusCodes.Status401Unauthorized, Assert.IsType<ObjectResult>((await Controller().Prune(false, default)).Result).StatusCode);
+        Assert.Equal(StatusCodes.Status401Unauthorized,
+            Assert.IsType<ObjectResult>((await Controller("wrong-key").Prune(false, default)).Result).StatusCode);
+        Assert.Equal(StatusCodes.Status403Forbidden,
+            Assert.IsType<ObjectResult>((await Controller(user: User(false)).Prune(false, default)).Result).StatusCode);
+        Assert.Equal(0, await db.ReplayShorts.CountAsync(s => s.PrunedAt != null));
+
+        Assert.Single(Value<ShortPruneDto>(await Controller(user: User(true)).Prune(true, default)).Pruned);
+    }
+
+    private async Task<int?> SendPart(string upload, int index, byte[] bytes)
+    {
+        var controller = Controller(UploadKey);
+        controller.HttpContext.Request.ContentType = "application/octet-stream";
+        controller.HttpContext.Request.ContentLength = bytes.Length;
+        controller.HttpContext.Request.Body = new MemoryStream(bytes);
+        var result = (await controller.Part(upload, index, default)).Result;
+        return result is ObjectResult o ? o.StatusCode ?? StatusCodes.Status200OK : null;
+    }
+
+    [Fact]
+    public async Task Upload_ARollInParts_JoinsThemInOrder_AndServesIt()
+    {
+        var whole = Mp4Of(3000);
+        for (var i = 16; i < whole.Length; i++) whole[i] = (byte)(i * 31);
+        var hd = Mp4Of(1200);
+        const string upload = "rollpartsabc12345";
+        const string hdUpload = "rollhdparts000001";
+        // Out of order, and part 1 sent twice: the last try is the part.
+        Assert.Equal(StatusCodes.Status200OK, await SendPart(upload, 2, whole[2000..]));
+        Assert.Equal(StatusCodes.Status200OK, await SendPart(upload, 1, new byte[7]));
+        Assert.Equal(StatusCodes.Status200OK, await SendPart(upload, 0, whole[..1000]));
+        Assert.Equal(StatusCodes.Status200OK, await SendPart(upload, 1, whole[1000..2000]));
+        Assert.Equal(StatusCodes.Status200OK, await SendPart(hdUpload, 0, hd));
+        Assert.Equal(StatusCodes.Status400BadRequest, await SendPart("SHOUTING-ID-0000000", 0, hd));
+        Assert.Equal(StatusCodes.Status400BadRequest, await SendPart(upload, -1, hd));
+        Assert.Equal(StatusCodes.Status401Unauthorized, (await Controller().Part(upload, 0, default)).Result is ObjectResult o ? o.StatusCode : 0);
+
+        var controller = Controller(UploadKey);
+        await Body(controller, Meta(killTime: 40, kind: ShortKinds.Roll), videoUpload: upload, videoHdUpload: hdUpload);
+        var dto = Assert.IsType<ShortDto>(Assert.IsType<CreatedAtActionResult>((await controller.Upload(default)).Result).Value);
+
+        Assert.Equal(whole, await File.ReadAllBytesAsync(storage.VideoPath(dto.Slug)));
+        Assert.Equal(hd, await File.ReadAllBytesAsync(storage.HdVideoPath(dto.Slug)));
+        Assert.Equal($"/stats/shorts/{dto.Slug}.mp4?v={whole.Length}", dto.VideoUrl);
+        Assert.Equal($"/stats/shorts/{dto.Slug}.hd.mp4?v={hd.Length}", dto.HdVideoUrl);
+        Assert.IsType<PhysicalFileResult>(Controller().Video(dto.Slug));
+        Assert.Empty(storage.Parts(upload));
+        Assert.Empty(storage.Parts(hdUpload));
+        Assert.Empty(Directory.GetFiles(Path.Combine(directory, ".incoming")));
+    }
+
+    [Fact]
+    public async Task Upload_InParts_WithAMissingIndex_OrNone_IsRefused_ThePartsLeftToFinish()
+    {
+        const string upload = "gappyupload000001";
+        Assert.Equal(StatusCodes.Status200OK, await SendPart(upload, 0, Mp4Of(100)));
+        Assert.Equal(StatusCodes.Status200OK, await SendPart(upload, 2, new byte[100]));
+
+        var controller = Controller(UploadKey);
+        await Body(controller, Meta(kind: ShortKinds.Roll), videoUpload: upload);
+        var refused = Assert.IsType<ObjectResult>((await controller.Upload(default)).Result);
+        Assert.Equal(StatusCodes.Status400BadRequest, refused.StatusCode);
+        Assert.Contains("missing part 1", refused.Value!.ToString());
+
+        var none = Controller(UploadKey);
+        await Body(none, Meta(kind: ShortKinds.Roll), videoUpload: "neversentupload01");
+        Assert.Equal(StatusCodes.Status400BadRequest, Assert.IsType<ObjectResult>((await none.Upload(default)).Result).StatusCode);
+
+        Assert.Equal(0, await db.ReplayShorts.CountAsync());
+        Assert.Equal(2, storage.Parts(upload).Count);
+        Assert.Empty(Directory.GetFiles(Path.Combine(directory, ".incoming")));
+    }
+
+    [Fact]
+    public async Task Upload_InParts_IsHeldToTheKindsLimit()
+    {
+        var limits = new ShortsOptions { UploadKey = UploadKey, MaxVideoBytes = 32, MaxRollVideoBytes = 128, MaxHdVideoBytes = 64, MaxPartBytes = 50 };
+        var small = new ShortService(db, storage, clock, MsOptions.Create(limits), NullLogger<ShortService>.Instance);
+        async Task<int?> Part(string upload, int index, byte[] bytes)
+        {
+            var c = Controller(UploadKey, with: small);
+            c.HttpContext.Request.ContentLength = bytes.Length;
+            c.HttpContext.Request.Body = new MemoryStream(bytes);
+            return (await c.Part(upload, index, default)).Result is ObjectResult o ? o.StatusCode : null;
+        }
+        Assert.Equal(StatusCodes.Status413PayloadTooLarge, await Part("toobigapart000001", 0, Mp4Of(51)));
+        Assert.Equal(StatusCodes.Status200OK, await Part("notarollupload001", 0, Mp4Of(40)));
+
+        var controller = Controller(UploadKey, with: small);
+        await Body(controller, Meta(), videoUpload: "notarollupload001");
+        Assert.Equal(StatusCodes.Status413PayloadTooLarge, Assert.IsType<ObjectResult>((await controller.Upload(default)).Result).StatusCode);
+    }
+
+    [Fact]
+    public async Task StaleParts_AreSweptAfterADay_AFreshUploadIsLeft()
+    {
+        Assert.Equal(StatusCodes.Status200OK, await SendPart("staleupload000001", 0, Mp4Of(20)));
+        Assert.Equal(StatusCodes.Status200OK, await SendPart("staleupload000001", 1, new byte[10]));
+        Assert.Equal(StatusCodes.Status200OK, await SendPart("freshupload000001", 0, Mp4Of(20)));
+        // The stale upload began 25 hours ago; its last part came in just now.
+        File.SetLastWriteTimeUtc(storage.PartPath("staleupload000001", 0), DateTime.UtcNow.AddHours(-25));
+
+        Assert.Equal(2, storage.SweepStaleParts(TimeSpan.FromHours(24)));
+        Assert.Empty(storage.Parts("staleupload000001"));
+        Assert.Single(storage.Parts("freshupload000001"));
+        Assert.Equal(20, storage.PendingPartBytes());
     }
 
     private static T Value<T>(ActionResult<T> result) =>

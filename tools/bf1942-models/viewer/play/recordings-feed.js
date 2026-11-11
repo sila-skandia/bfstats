@@ -772,7 +772,12 @@ export function createReplayFeed({ root = '../', onWatchFile = null, playerName 
 
   // The week's Shorts (features/replay-shorts): a strip above the cards, and
   // their player. They wait on the API the feed finds.
-  const shorts = createShorts({ root, api: async () => { await start(); return state.api; } });
+  const shorts = createShorts({
+    root,
+    api: async () => { await start(); return state.api; },
+    // A roll's card names its level as the feed does.
+    levelTitle: (mod, level) => artFor(mod, level).then(art => art.title),
+  });
 
   // --- the API and who is signed in --------------------------------------------
 

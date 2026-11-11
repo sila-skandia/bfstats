@@ -1065,6 +1065,117 @@ the load overlay began, with no page errors. (The browser pane has no WebGL:
 there map.html's renderer throws, and the error rule ends the scene, which
 is that rule working.)
 
+### Rolls and retention (2026-11-12)
+
+**Rolls.** An action roll (`features/action-roll`) is a 60-90 s 16:9 take
+through one round, rendered as a 4K MP4 (320-450 MB) and a 1080p one
+(80-110 MB). The owner wants them in this strip "for now", in 4K or HD only,
+so they ride the Shorts API as kind `roll`:
+
+- Key `<recordingSlug>:<start:F2>:-10`: `killTime` is the round second the
+  roll starts and the victim pid is always -10 (`ShortKinds.RollVictimPid`,
+  forced on upload), so one roll per start, by the same unique key.
+- An optional HD copy. The upload takes a fourth multipart part, `videoHd`
+  (MP4, checked as `video` is), stored as `shorts/<slug>.hd.mp4` and served at
+  `GET /stats/shorts/{slug}.hd.mp4` like the video (ranges, a year's
+  immutable cache). `ReplayShort.HdVideoBytes` (0 when none; migration
+  `AddShortHdVideoAndPrunedAt`) is counted by `VolumeUsage` and the room check, and a
+  delete removes the file. Any kind may send one.
+- The DTO gains `hdVideoUrl` (`/stats/shorts/<slug>.hd.mp4?v=<bytes>`, null
+  when none) and `landscape` (true for `roll`).
+- Limits: a roll's `video` up to 600 MiB (`MaxRollVideoBytes`), its `videoHd`
+  up to 200 MiB (`MaxHdVideoBytes`); every other kind keeps 90 MiB for each.
+  The render job's `POST /stats/shorts` takes up to 803 MiB of body; a studio
+  share stays under 183 MiB. A part sent before `meta` is held to the widest
+  limit and checked against its kind's once `meta` is read.
+- The edge: bfstats.io comes in through the Cloudflare tunnel and HAProxy,
+  not the nginx ingress (`deploy/app/ingress.yaml`'s `proxy-body-size: 50m`
+  is not on that path). Cloudflare passes at most 100 MB in one request, so a
+  4K roll cannot be uploaded through `https://bfstats.io` in one request.
+- Chunked uploads, so it can (and a nightly job needs no kubectl):
+  `POST /stats/shorts/parts?upload=<id>&index=<n>` with `X-Shorts-Key`, a raw
+  body of at most 90 MiB (`MaxPartBytes`), `id` a client-made `[a-z0-9]{16,32}`
+  token and `n` 0-63. Each part lands in `.incoming/shorts-parts/<id>.<n>.part`
+  (a subfolder: the recordings' sweep takes loose `.incoming/*.part` after two
+  hours), weighed by the room check with every waiting part; a part sent again
+  replaces the last try. The multipart upload then carries a text part
+  `videoUpload=<id>` (or `videoHdUpload=<id>`) instead of the file: the parts
+  are joined in index order, a gap refused (400, "missing part n"), and the
+  join checked as a sent file is (MP4 head, the kind's limit). Parts not joined
+  24 h (`PartsMaxAgeHours`) after their first one are swept by the prune
+  below.
+
+**Retention.** The owner, 2026-11-11: "for any short >= week old with 0-1
+views we get rid of ... for these new rolls ... we can also delete them if
+they have 0-1 views >= week old". Retention runs from the nightly Shorts job,
+never by itself (the owner, 2026-11-12: "do the pruning via a re-usable job,
+it can sit in the short scheduled job"): nothing prunes on start-up or on a
+timer. The job calls `POST /stats/shorts/prune?dryRun=<bool>` with
+`X-Shorts-Key` (or as an admin; anonymous is 401, a signed-in non-admin 403),
+which answers `{ dryRun, pruned: [{ slug, kind, ageDays, views }], partsSwept }`.
+Every Short whose `CreatedAt` is `RetentionDays` (7) or more ago with
+`RetentionMaxViews` (1) views or fewer loses its files (video, HD copy,
+poster), each one logged with its slug, kind, age and views, then a summary;
+the same run sweeps chunked uploads left unjoined `PartsMaxAgeHours` (24).
+`dryRun=true` lists what it would take and changes nothing, sweep included.
+A taken Short's row stays as a tombstone: `PrunedAt` set, its sizes 0 (so
+`VolumeUsage` stops counting it), left out of the list, detail, players,
+views and the share link, but its key still in `/stats/shorts/keys`, because
+the nightly runner skips the kills those keys name and reads recordings older
+than a week: a deleted row would free the key and the kill would be filmed
+again the next night. The delete endpoint still removes a row outright. A
+creator's share (`CreatorUserId` set) is never taken: it is a player's own
+clip.
+
+### Rolls in the strip (2026-11-12)
+
+The front end for the rolls above (the owner: "lets incorporate everything
+into the main strip for now", "either 4k or HD"). All in
+`viewer/play/replay-shorts.js`; a roll is `kind: "roll"` or `landscape: true`
+(`isLandscape`).
+
+- **The card** is 16:9 at the strip's card height, so (16/9)^2 a Short's
+  width (493 px beside 156 px), in the strip's normal order. The row is a
+  flex row now (it was a grid of equal columns) so cards can differ in width;
+  `--rs-card-w` is a Short's width, the phone's 2.15-a-row width as before.
+  A roll's card is never wider than the strip shows at once: on a phone
+  (390 px) it is 318x179, shorter than the Shorts' 233, centred on the row,
+  and the row still scrolls sideways. It shows the poster, a ROLL badge (gold
+  dot, like the other kinds), its length top right (`shortLength`, m:ss),
+  the level's title (the feed's `artFor`, passed in as `levelTitle`; the
+  level's words until it answers), the title and views. Its hover preview
+  plays the HD source.
+- **Rolls** is a filter chip (`kind=roll`), drawn as an inline SVG strip of
+  film: no radio plate in the HUD pack says "a reel".
+- **The player.** A roll's slide is the whole screen with the picture
+  letterboxed in it (`object-fit: contain`, never cropped): the full width on
+  a wide screen (1440x810 at 1440x900), the width and centred on a phone in
+  portrait, where its words sit in the black under the picture and cover
+  none of it. Where the words do sit over the picture (a screen wider than
+  tall), they fade after 2.6 s of untouched play and come back on a pointer
+  move, a key, focus or a pause: a roll draws its own player captions bottom
+  left, and the two collided. Up and down step across Shorts and rolls as
+  before; the slide is one screen tall either way.
+- **Watch the round** opens the recording at `killTime` itself
+  (`shortWatchTime`): for a roll that is where the take starts, and there is
+  no kill to lead into, so no 5 s lead-in.
+- **Quality.** `rollQuality`: HD when `screen.width * devicePixelRatio` is
+  under 2560 or `navigator.connection.saveData` is set, else 4K; 4K, with no
+  toggle, when a roll has no `hdVideoUrl`. A pill beside Share ("HD 4K", the
+  one playing in gold; a button, so Tab and Enter reach it) swaps the source
+  where it was, playing or paused, and the choice holds for the visit
+  (`sessionStorage` `bf42-rolls-quality`). Shorts have one source and no pill.
+
+Verified: `tests/test_recordings_api.py` (kind, length, the quality rule,
+the source, where Watch opens, the Rolls filter); and Playwright (Chrome)
+on the viewer served locally, `/stats/shorts` answered with the live week
+plus one roll (the v6 Gazala 1080p take as both sources, a poster cut from
+it with ffmpeg, recording `qu3znew633`), at 1440x900 and 390x844: card
+sizes as above, the player picture 1440x810 (desktop) and 390x219 at y 312
+with the words from y 683 (phone), the quality swap by keyboard kept the
+time and kept playing, ArrowDown and ArrowUp stepped roll -> Short -> roll
+-> Short, Rolls showed only the roll, no page errors.
+
 ## What already exists
 
 | Need | Already in the viewer |

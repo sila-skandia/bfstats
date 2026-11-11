@@ -300,6 +300,18 @@ about.
   meshes. Measure frame times per round-cam state in the page before
   blaming sample rates.
 
+- **Retention: unwatched Shorts go after a week** (2026-11-12: "for any
+  short >= week old with 0-1 views we get rid of"; rolls too). The nightly
+  job runs `scripts/shorts-prune.mjs` after its uploads (`POST
+  /stats/shorts/prune`, the upload key; `--dry-run` lists and changes
+  nothing; `SHORTS_PRUNE=0` skips it). A player's studio share is never
+  pruned. A pruned Short stays as a tombstone (`PrunedAt`, files gone, bytes
+  0) so `/keys` still returns its kill and the runner never films it again.
+  Never prune by hand outside the nightly unless the owner asks.
+- **Action rolls share the strip** (kind `roll`, 16:9, 4K plus an HD copy,
+  `features/action-roll`): made by `scripts/action-roll.mjs`, not this
+  runner; uploaded in 80 MiB parts because Cloudflare passes 100 MB a request.
+
 ## On the Mac (2026-11-07)
 
 The owner's machine is now an M5 Max MacBook Pro: no systemd (the nightly

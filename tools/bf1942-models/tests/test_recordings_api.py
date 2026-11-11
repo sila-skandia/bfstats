@@ -139,6 +139,7 @@ class RecordingsApiTests(unittest.TestCase):
             ["streak", "streak", "icon_attacking"],
             ["asmr", "asmr", "icon_fire"],
             ["creators", "creator", "icon_follow"],
+            ["rolls", "roll", None],
         ])
         self.assertEqual(shorts["filterOf"], ["vehicle", "all", "all"])
         # The owner, 2026-11-04: a filter shows in the address, to share it.
@@ -163,6 +164,18 @@ class RecordingsApiTests(unittest.TestCase):
     def test_a_studio_clip_is_offered_as_a_short_when_it_can_be_one(self) -> None:
         # A Short is 9:16, an MP4 the API takes, and of a round the feed has.
         self.assertEqual(self.results["share"], [True, False, False, False])
+
+    def test_an_action_roll_is_landscape_and_plays_4k_or_hd(self) -> None:
+        # features/replay-shorts, "Rolls in the strip (2026-11-12)": HD under
+        # 2560 device pixels across or with Save-Data, else 4K; 4K with no HD.
+        roll = self.results["shorts"]["roll"]
+        self.assertEqual(roll["landscape"], [True, False, True, False])
+        self.assertEqual(roll["label"], "Roll")
+        self.assertEqual(roll["length"], ["1:12", "1:30", "", ""])
+        self.assertEqual(roll["quality"], ["4k", "hd", "hd", "hd", "4k", None])
+        self.assertEqual(roll["source"], ["/r/hd.mp4", "/r/4k.mp4", "/r/4k.mp4", None])
+        # A roll's round opens where the roll starts, not five seconds before.
+        self.assertEqual(roll["watchAt"], [312.4, 407.8])
 
     def test_a_shorts_kill_is_said_with_its_names_decoded(self) -> None:
         shorts = self.results["shorts"]

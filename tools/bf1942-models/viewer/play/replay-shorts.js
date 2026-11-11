@@ -12,7 +12,7 @@
 // The Shorts are a nicety: a Shorts call that fails leaves the feed as it was,
 // with no strip.
 
-import { ago, count, shortShareHref, watchHref } from '../recordings-api.js';
+import { ago, clock, count, shortShareHref, watchHref } from '../recordings-api.js';
 import { decodePlayerName } from '../vehicle-players.js';
 import { createShortLoader, endBootShortLoader } from './short-loader.js';
 
@@ -38,6 +38,7 @@ const LEAD_IN = 5;
 const MUTE_KEY = 'bf42-shorts-sound';
 const FILTER_KEY = 'bf42-shorts-filter';
 const PLAYER_KEY = 'bf42-shorts-player';
+const QUALITY_KEY = 'bf42-rolls-quality';
 
 /** The strip's filters (the owner, 2026-11-04): each the kinds it pages
  *  through and the game's own radio-menu plate for it (`menu/Texture/Radio`,
@@ -51,6 +52,9 @@ export const SHORT_FILTERS = Object.freeze([
   Object.freeze({ id: 'streak', label: 'Streak', kinds: ['streak'], plate: 'icon_attacking' }),
   Object.freeze({ id: 'asmr', label: 'ASMR', kinds: ['asmr'], plate: 'icon_fire' }),
   Object.freeze({ id: 'creators', label: 'Creators', kinds: ['creator'], plate: 'icon_follow' }),
+  // The action rolls (features/action-roll): no radio plate says "a reel", so
+  // a strip of film, drawn.
+  Object.freeze({ id: 'rolls', label: 'Rolls', kinds: ['roll'], plate: null, glyph: 'reel' }),
 ]);
 /** A filter by its id; anything else is All. */
 export const shortFilter = id => SHORT_FILTERS.find(f => f.id === id) ?? SHORT_FILTERS[0];
@@ -68,8 +72,48 @@ const KINDS = {
   streak: 'Streak',
   creator: 'Creator',
   asmr: 'ASMR',
+  roll: 'Roll',
 };
 export const shortKindLabel = kind => KINDS[kind] ?? 'Kill';
+
+/** Whether `short` is a landscape item, an action roll (features/action-roll,
+ *  "Rolls in the strip"): 16:9 on its card and in the player. */
+export const isLandscape = short => Boolean(short?.landscape) || short?.kind === 'roll';
+
+/** A roll's length on its card, `1:12`; '' when it does not say. */
+export function shortLength(seconds) {
+  const s = Number(seconds);
+  return Number.isFinite(s) && s > 0 ? clock(s) : '';
+}
+
+/** Below this many device pixels across, a roll plays its 1080p source. */
+const HD_BELOW = 2560;
+
+/** The quality a roll opens in: `'hd'` on a screen under 2560 device pixels
+ *  across or with Save-Data on, else `'4k'`; always `'4k'` (its only source)
+ *  when it has no HD. `null` for a Short, which has one source. */
+export function rollQuality(short, { screenWidth = 0, pixelRatio = 1, saveData = false } = {}) {
+  if (!isLandscape(short)) return null;
+  if (!short.hdVideoUrl) return '4k';
+  return saveData || screenWidth * (pixelRatio || 1) < HD_BELOW ? 'hd' : '4k';
+}
+
+/** The video for `short` at `quality` (`rollQuality`): the HD MP4 when asked
+ *  for and there, else `videoUrl`. */
+export const shortSource = (short, quality) => (quality === 'hd' && short?.hdVideoUrl ? short.hdVideoUrl : short?.videoUrl);
+
+/** This screen, for `rollQuality`. */
+function screenNow() {
+  return {
+    screenWidth: Number(globalThis.screen?.width) || 0,
+    pixelRatio: Number(globalThis.devicePixelRatio) || 1,
+    saveData: Boolean(globalThis.navigator?.connection?.saveData),
+  };
+}
+
+/** `Gazala` for `gazala`, `El Alamein` for `el_alamein`: a level's name when
+ *  the feed has not said its title. */
+const levelWords = level => String(level || '').replace(/[_-]+/g, ' ').replace(/\b\w/g, c => c.toUpperCase()).trim();
 
 /** `192 m`, or '' where no distance was measured. */
 export function shortDistance(metres) {
@@ -85,10 +129,15 @@ export function shortMeta(short, now = Date.now()) {
 /** Where in its round Watch the round opens a Short: a few seconds before the kill. */
 export const shortWatchAt = killTime => Math.max(0, (Number(killTime) || 0) - LEAD_IN);
 
+/** Where Watch the round opens `short`: a few seconds before a Short's kill,
+ *  and a roll where it starts (`killTime` is the round second its take
+ *  begins; there is no one kill to lead into). */
+export const shortWatchTime = short => (isLandscape(short) ? Math.max(0, Number(short.killTime) || 0) : shortWatchAt(short?.killTime));
+
 /** The replay page for a Short's round at the kill: the feed's own Watch for
  *  its recording (the API's recording, fetched by `recordingSlug`). */
 export function shortWatchHref(short, recording, { root, fileUrl = path => path }) {
-  return watchHref(recording, { root, fileUrl, at: shortWatchAt(short.killTime) });
+  return watchHref(recording, { root, fileUrl, at: shortWatchTime(short) });
 }
 
 /** The page's address with `short` open in the player, or none (`null`). */
@@ -149,6 +198,8 @@ const ICONS = {
   bin: '<path d="M2.8 4.4h10.4M6.2 4.4V2.9h3.6v1.5M4.2 4.4l.7 8.7h6.2l.7-8.7M6.8 6.8v4M9.2 6.8v4" fill="none" stroke="currentColor" stroke-width="1.4" stroke-linecap="round" stroke-linejoin="round"/>',
   // The kill: the killer's weapon pointing at the victim.
   arrow: '<path d="M2 8h10.2M8.8 4.6 12.2 8l-3.4 3.4" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"/>',
+  // A roll: a strip of film, its sprocket holes along both edges.
+  reel: '<rect x="1.6" y="3.4" width="12.8" height="9.2" rx="1.2" fill="none" stroke="currentColor" stroke-width="1.4"/><path d="M4.4 3.4v9.2M11.6 3.4v9.2" fill="none" stroke="currentColor" stroke-width="1.1"/><path d="M2.4 5.2h1.2M2.4 7.4h1.2M2.4 9.6h1.2M12.4 5.2h1.2M12.4 7.4h1.2M12.4 9.6h1.2" fill="none" stroke="currentColor" stroke-width="1.1" stroke-linecap="round"/><path d="M6.8 6.2v3.6L9.8 8z" fill="currentColor"/>',
 };
 const icon = name => `<svg viewBox="0 0 16 16" aria-hidden="true">${ICONS[name] ?? ''}</svg>`;
 
@@ -167,6 +218,9 @@ const STYLE = `
   transition: border-color .15s ease, background-color .15s ease, color .15s ease; }
 .rs-filter.plain { padding: 0 12px; }
 .rs-filter img { width: 44px; height: 22px; image-rendering: pixelated; opacity: .78; transition: opacity .15s ease; }
+.rs-filter.glyph { padding: 0 11px 0 9px; }
+.rf-root .rs-filter.glyph svg, .rs-filter.glyph svg { width: 18px; height: 18px; flex: none; opacity: .78; transition: opacity .15s ease; }
+.rs-filter.glyph:hover svg, .rs-filter.glyph[aria-pressed="true"] svg { opacity: 1; }
 .rs-filter:hover { border-color: var(--rf-edge-strong); }
 .rs-filter:hover img { opacity: 1; }
 .rs-filter[aria-pressed="true"] { border-color: var(--rf-gold); background: rgba(232, 195, 90, .12); color: var(--rf-gold);
@@ -196,15 +250,19 @@ const STYLE = `
 .rs-toast button { flex: none; margin-left: 4px; padding: 0; border: 0; background: none; color: inherit; opacity: .6; cursor: pointer; }
 .rs-toast button:hover, .rs-toast button:focus-visible { opacity: 1; outline: none; }
 @media (prefers-reduced-motion: reduce) { .rs-toast { transition: opacity .2s ease; transform: translate(-50%, 0); } }
-.rs-none { grid-column: 1 / -1; align-self: center; padding: 26px 4px; white-space: nowrap; color: var(--rf-ink); opacity: .7;
+.rs-none { flex: 1 0 auto; align-self: center; padding: 26px 4px; white-space: nowrap; color: var(--rf-ink); opacity: .7;
   font: 700 12px/1.4 'Trebuchet MS', 'Segoe UI', sans-serif; letter-spacing: .06em; }
 .rs-frame { position: relative; }
-.rs-row { display: grid; grid-auto-flow: column; grid-auto-columns: 156px; gap: 10px; padding: 12px; overflow-x: auto; overflow-y: hidden;
+/* Cards in a row at one height: a Short's 9:16 card is --rs-card-w across, a
+   roll's 16:9 card as tall and so (16/9)^2 as wide, but never wider than the
+   strip shows at once (then shorter, centred on the row). */
+.rs-row { --rs-card-w: 156px; display: flex; align-items: center; gap: 10px; padding: 12px; overflow-x: auto; overflow-y: hidden;
   scroll-snap-type: x mandatory; scroll-padding: 0 12px; overscroll-behavior-x: contain; scrollbar-width: none; }
 .rs-row::-webkit-scrollbar { display: none; }
-.rs-card { position: relative; display: block; aspect-ratio: 9 / 16; border-radius: 6px; overflow: hidden; scroll-snap-align: start;
+.rs-card { position: relative; display: block; flex: none; width: var(--rs-card-w); aspect-ratio: 9 / 16; border-radius: 6px; overflow: hidden; scroll-snap-align: start;
   background: #0d0d0b; border: 1px solid var(--rf-edge); color: #f4f1dc; text-decoration: none; isolation: isolate;
   transition: border-color .15s ease, transform .2s cubic-bezier(.2, .8, .2, 1); }
+.rs-card.landscape { width: calc(var(--rs-card-w) * 256 / 81); max-width: calc(100% - 8px); aspect-ratio: 16 / 9; }
 .rs-card:hover { border-color: var(--rf-edge-strong); }
 .rs-card:focus-visible { outline: 1px solid var(--rf-gold); outline-offset: 1px; }
 .rs-card img, .rs-card video { position: absolute; inset: 0; width: 100%; height: 100%; object-fit: cover; }
@@ -229,6 +287,11 @@ const STYLE = `
 .rs-kind-streak { --rs-kind: #e2793f; }
 .rs-kind-creator { --rs-kind: #7fd0b4; }
 .rs-kind-asmr { --rs-kind: #b7a6e8; }
+.rs-kind-roll { --rs-kind: #e8c35a; }
+.rs-length { position: absolute; top: 7px; right: 7px; z-index: 2; height: 18px; padding: 0 6px; border-radius: 4px; background: rgba(0, 0, 0, .78);
+  color: #f4f1dc; font: 700 10.5px/18px ui-monospace, 'SF Mono', Menlo, monospace; letter-spacing: .02em; }
+.rs-level { color: rgba(238, 236, 217, .86); font: 800 10px/1.2 'Trebuchet MS', 'Segoe UI', sans-serif; letter-spacing: .12em; text-transform: uppercase;
+  white-space: nowrap; overflow: hidden; text-overflow: ellipsis; text-shadow: 0 1px 3px rgba(0, 0, 0, .9); }
 .rs-by { margin: 0 0 6px; font: 700 12.5px/1.3 'Trebuchet MS', 'Segoe UI', sans-serif; opacity: .85; }
 .rs-text { position: absolute; left: 8px; right: 8px; bottom: 8px; z-index: 2; display: grid; gap: 4px; }
 .rs-title { display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden; overflow-wrap: anywhere;
@@ -250,7 +313,7 @@ const STYLE = `
   .rs-card:hover { transform: translateY(-2px); }
 }
 @container rf (max-width: 560px) {
-  .rs-row { grid-auto-columns: calc((100% - 24px - 20px) / 2.15); gap: 10px; }
+  .rs-row { --rs-card-w: calc((100% - 24px - 20px) / 2.15); gap: 10px; }
   .rs-card .rs-badge { gap: 4px; padding: 0 5px 0 4px; font-size: 8px; letter-spacing: .06em; }
 }
 
@@ -268,6 +331,26 @@ const STYLE = `
 .rs-slide { position: relative; height: 100%; display: grid; place-items: center; scroll-snap-align: start; scroll-snap-stop: always; }
 .rs-screen { position: relative; height: 100%; aspect-ratio: 9 / 16; max-width: 100%; overflow: hidden; background: #000 center / contain no-repeat; }
 .rs-screen video { position: absolute; inset: 0; width: 100%; height: 100%; object-fit: contain; background: transparent; }
+/* A roll's slide is the whole screen, its 16:9 picture letterboxed in it: the
+   full width on a wide screen, the width and centred on a phone, where its
+   words sit in the black under the picture rather than over it. */
+.rs-slide.landscape .rs-screen { width: 100%; aspect-ratio: auto; }
+.rs-slide.landscape .rs-screen::after { background: linear-gradient(to top, rgba(0, 0, 0, .78), rgba(0, 0, 0, .15) 22%, rgba(0, 0, 0, 0) 34%); }
+.rs-slide.landscape .rs-info { max-width: 640px; transition: opacity .45s ease; }
+.rs-slide.landscape .rs-screen::after { transition: opacity .45s ease; }
+/* Where the words sit over the picture (a screen wider than tall), they go
+   while a roll plays untouched, as a video player's controls do, and come
+   back on a move, a key or a pause: the roll draws its own captions there. */
+@media (min-aspect-ratio: 1/1) {
+  .rs-player.rs-idle .rs-slide.landscape .rs-info,
+  .rs-player.rs-idle .rs-slide.landscape .rs-screen::after { opacity: 0; pointer-events: none; }
+  .rs-player.rs-idle { cursor: none; }
+}
+.rs-btn.rs-quality { display: inline-flex; align-items: center; width: auto; min-width: 42px; padding: 0 13px; border-radius: 21px; white-space: nowrap; font: 800 11px/1 'Trebuchet MS', 'Segoe UI', sans-serif;
+  letter-spacing: .1em; }
+.rs-quality[hidden] { display: none; }
+.rs-quality b { color: var(--rf-gold); font-weight: 800; }
+.rs-quality span { opacity: .55; margin-left: 6px; }
 .rs-screen::after { content: ''; position: absolute; inset: 0; pointer-events: none;
   background: linear-gradient(to top, rgba(0, 0, 0, .82), rgba(0, 0, 0, .2) 30%, rgba(0, 0, 0, 0) 44%); }
 .rs-paused { position: absolute; left: 50%; top: 50%; z-index: 2; display: grid; place-items: center; width: 64px; height: 64px;
@@ -398,8 +481,10 @@ function rememberPlayer(name) {
  * @param {() => Promise<object|null>} options.api  the feed's recordings-api.js
  *        client, once found (null when the API was not reached)
  * @param {string} options.root  the viewer root, for Watch the round
+ * @param {(mod: string, level: string) => Promise<string>} [options.levelTitle]
+ *        a level's title as the feed says it, for a roll's card
  */
-export function createShorts({ api: apiOf, root = '../' }) {
+export function createShorts({ api: apiOf, root = '../', levelTitle = null }) {
   if (!document.getElementById('rs-style')) {
     const style = el('style');
     style.id = 'rs-style';
@@ -440,7 +525,7 @@ export function createShorts({ api: apiOf, root = '../' }) {
   filters.setAttribute('role', 'group');
   filters.setAttribute('aria-label', 'Show Shorts of');
   for (const f of SHORT_FILTERS) {
-    const b = el('button', `rs-filter${f.plate ? '' : ' plain'}`);
+    const b = el('button', `rs-filter${f.plate ? '' : f.glyph ? ' glyph' : ' plain'}`);
     b.type = 'button';
     b.dataset.filter = f.id;
     b.setAttribute('aria-pressed', String(f === state.filter));
@@ -452,6 +537,8 @@ export function createShorts({ api: apiOf, root = '../' }) {
       // The plate is a nicety: without it the button is its words.
       img.addEventListener('error', () => img.remove(), { once: true });
       b.append(img);
+    } else if (f.glyph) {
+      b.insertAdjacentHTML('beforeend', icon(f.glyph));
     }
     b.append(document.createTextNode(f.label));
     b.addEventListener('click', () => choose(f));
@@ -564,12 +651,13 @@ export function createShorts({ api: apiOf, root = '../' }) {
     next.disabled = row.scrollLeft + row.clientWidth >= row.scrollWidth - 2 && state.items.length >= state.total;
   }
 
-  /** A row's worth sideways, by whole cards. */
+  /** A row's worth sideways: the cards wholly in view go by, and the row
+   *  snaps to the next card's edge (a roll's card is wider than a Short's). */
   function page(direction) {
-    const card = row.querySelector('.rs-card');
+    const card = row.querySelector('.rs-card:not(.landscape)') ?? row.querySelector('.rs-card');
     const step = card ? card.getBoundingClientRect().width + 10 : 166;
-    const cards = Math.max(1, Math.floor((row.clientWidth - 24) / step));
-    row.scrollBy({ left: direction * cards * step, behavior: 'smooth' });
+    const left = Math.max(step, row.clientWidth - 24 - step * 0.5);
+    row.scrollBy({ left: direction * left, behavior: 'smooth' });
     if (direction > 0) more();
   }
 
@@ -671,12 +759,21 @@ export function createShorts({ api: apiOf, root = '../' }) {
     return state.loading;
   }
 
+  /** A level's title for a roll's card: the feed's, else the level's words. */
+  function titleOf(short, node) {
+    node.textContent = levelWords(short.level);
+    if (!levelTitle || !short.level) return;
+    Promise.resolve(levelTitle(short.mod, short.level)).then(title => { if (title) node.textContent = title; }, () => {});
+  }
+
   function card(short) {
-    const a = el('a', 'rs-card');
+    const wide = isLandscape(short);
+    const a = el('a', `rs-card${wide ? ' landscape' : ''}`);
     a.setAttribute('role', 'listitem');
     a.href = shortAddress(location.href, short.slug);
     a.dataset.slug = short.slug;
-    a.setAttribute('aria-label', `Play the Short: ${short.title}, ${count(short.views, 'view')}`);
+    const length = wide ? shortLength(short.lengthSeconds) : '';
+    a.setAttribute('aria-label', `Play the ${wide ? 'roll' : 'Short'}: ${short.title}${length ? `, ${length}` : ''}, ${count(short.views, 'view')}`);
     if (short.posterUrl) {
       const img = el('img');
       img.alt = '';
@@ -690,8 +787,14 @@ export function createShorts({ api: apiOf, root = '../' }) {
     const views = el('span', 'rs-views');
     views.innerHTML = icon('eye');
     views.append(count(short.views, 'view'));
+    if (wide && short.level) {
+      const level = el('span', 'rs-level');
+      titleOf(short, level);
+      text.append(level);
+    }
     text.append(el('span', 'rs-title', short.title), views);
     a.append(badge(short.kind), text);
+    if (length) a.append(el('span', 'rs-length', length));
     a.addEventListener('click', e => {
       if (e.button !== 0 || e.metaKey || e.ctrlKey || e.shiftKey) return;
       e.preventDefault();
@@ -708,7 +811,8 @@ export function createShorts({ api: apiOf, root = '../' }) {
         video.setAttribute('muted', '');
         video.setAttribute('playsinline', '');
         video.setAttribute('aria-hidden', 'true');
-        video.src = media(short.videoUrl);
+        // A roll previews its lighter source: the card is a few hundred pixels across.
+        video.src = media(wide ? shortSource(short, 'hd') : short.videoUrl);
         video.addEventListener('playing', () => { if (a.matches(':hover')) a.classList.add('previewing'); });
         a.insertBefore(video, a.querySelector('.rs-badge'));
       }
@@ -757,8 +861,13 @@ export function createShorts({ api: apiOf, root = '../' }) {
     takeDown.innerHTML = icon('bin');
     takeDown.append(el('span', '', 'Take down'));
     takeDown.addEventListener('click', () => takeDownActive());
+    // A roll's quality, 4K or HD (features/replay-shorts, "Rolls in the strip").
+    const quality = el('button', 'rs-btn rs-quality');
+    quality.type = 'button';
+    quality.hidden = true;
+    quality.addEventListener('click', () => swapQuality());
     const tools = el('div', 'rs-tools');
-    tools.append(takeDown, share, mute);
+    tools.append(takeDown, quality, share, mute);
     top.append(close, tools);
     const nav = el('div', 'rs-nav');
     const up = iconButton('rs-btn', 'Previous Short', () => go(active - 1), 'up');
@@ -777,6 +886,61 @@ export function createShorts({ api: apiOf, root = '../' }) {
     let sound = soundWanted();
     let counted = new Set();
     const recordings = new Map();   // recordingSlug -> Promise<recording>
+    // The quality picked with the button this visit, for every roll after.
+    let qualityPicked = null;
+    try { qualityPicked = globalThis.sessionStorage?.getItem(QUALITY_KEY) || null; } catch {}
+    /** The quality `s` (a roll's slide) plays in. */
+    const qualityOf = s => {
+      if (!isLandscape(s.short)) return null;
+      if (!s.short.hdVideoUrl) return '4k';
+      return s.quality ?? qualityPicked ?? rollQuality(s.short, screenNow());
+    };
+
+    // A roll's words go after a moment's play untouched (the CSS says where).
+    let idleTimer = 0;
+    function wake() {
+      overlay.classList.remove('rs-idle');
+      clearTimeout(idleTimer);
+      idleTimer = setTimeout(() => {
+        const s = slides[active];
+        if (!overlay.hidden && s && isLandscape(s.short) && s.video && !s.video.paused) overlay.classList.add('rs-idle');
+      }, 2600);
+    }
+    overlay.addEventListener('pointermove', wake, { passive: true });
+    overlay.addEventListener('pointerdown', wake, { passive: true });
+    overlay.addEventListener('focusin', wake);
+
+    function renderQuality(s) {
+      const q = s && isLandscape(s.short) && s.short.hdVideoUrl ? qualityOf(s) : null;
+      quality.hidden = !q;
+      if (!q) return;
+      const other = q === '4k' ? 'HD' : '4K';
+      quality.replaceChildren(el('b', '', q === '4k' ? '4K' : 'HD'), el('span', '', other));
+      quality.setAttribute('aria-label', `Playing in ${q === '4k' ? '4K' : 'HD'}: switch to ${other}`);
+      quality.title = `Playing in ${q === '4k' ? '4K (2160p)' : 'HD (1080p)'}. Switch to ${other}`;
+    }
+
+    /** The open roll in its other quality, where it was and as it was. */
+    function swapQuality() {
+      const s = slides[active];
+      if (!s || !isLandscape(s.short) || !s.short.hdVideoUrl) return;
+      const next = qualityOf(s) === '4k' ? 'hd' : '4k';
+      s.quality = next;
+      qualityPicked = next;
+      try { globalThis.sessionStorage?.setItem(QUALITY_KEY, next); } catch {}
+      renderQuality(s);
+      const video = s.video;
+      if (!video) return;
+      const at = video.currentTime;
+      const playing = !video.paused;
+      // A new src loads by itself; the time and play state wait for its metadata.
+      video.src = media(shortSource(s.short, next));
+      video.addEventListener('loadedmetadata', () => {
+        try { video.currentTime = Math.min(at, Math.max(0, (video.duration || at) - 0.05)); } catch {}
+        if (playing) play(s);
+      }, { once: true });
+      if (playing) showWait(s, 250);
+    }
 
     // The loader over the active Short's poster until its video plays
     // (short-loader.js), and again if it stalls for more than a moment.
@@ -919,7 +1083,8 @@ export function createShorts({ api: apiOf, root = '../' }) {
     }
 
     function slide(short) {
-      const node = el('div', 'rs-slide');
+      const wide = isLandscape(short);
+      const node = el('div', `rs-slide${wide ? ' landscape' : ''}`);
       node.dataset.slug = short.slug;
       const screen = el('div', 'rs-screen');
       if (short.posterUrl) screen.style.backgroundImage = `url("${media(short.posterUrl)}")`;
@@ -956,7 +1121,9 @@ export function createShorts({ api: apiOf, root = '../' }) {
       const watch = el('a', 'rs-watch');
       watch.innerHTML = icon('round');
       watch.append('Watch the round');
-      watch.setAttribute('aria-label', `Watch the round from ${Math.floor(shortWatchAt(short.killTime))} seconds in, just before the kill`);
+      watch.setAttribute('aria-label', wide
+        ? `Watch the round from ${Math.floor(shortWatchTime(short))} seconds in, where the roll starts`
+        : `Watch the round from ${Math.floor(shortWatchTime(short))} seconds in, just before the kill`);
       watch.setAttribute('aria-disabled', 'true');
       const sub = el('div', 'rs-sub', shortMeta(short));
       // A compilation's player, by name: his other Shorts.
@@ -968,7 +1135,16 @@ export function createShorts({ api: apiOf, root = '../' }) {
       // A creator's Short says whose edit it is.
       const by = short.creatorName ? el('p', 'rs-by') : null;
       if (by) by.append('Shared by ', who(short.creatorName, decodePlayerName(short.creatorName)));
-      info.append(badge(short.kind), el('h2', '', short.title), ...(by ? [by] : []), kill, sub, watch);
+      // A roll says where and how long, in place of a kill.
+      const where = wide ? el('div', 'rs-sub rs-where') : null;
+      if (where) {
+        const level = el('span');
+        if (short.level) titleOf(short, level);
+        where.append(level);
+        const length = shortLength(short.lengthSeconds);
+        if (length) where.append(`${short.level ? ' · ' : ''}${length}`);
+      }
+      info.append(badge(short.kind), el('h2', '', short.title), ...(by ? [by] : []), ...(where ? [where] : []), kill, sub, watch);
       screen.append(paused, info);
       node.append(screen);
       // A click on the picture pauses and plays; the info's links are their own.
@@ -979,7 +1155,7 @@ export function createShorts({ api: apiOf, root = '../' }) {
         if (s.video.paused) play(s);
         else s.video.pause();
       });
-      return { node, short, screen, watch, sub, video: null };
+      return { node, short, screen, watch, sub, video: null, quality: null };
     }
 
     /** The slide's video, loaded with `preload`. */
@@ -990,12 +1166,12 @@ export function createShorts({ api: apiOf, root = '../' }) {
         Object.assign(video, { loop: true, playsInline: true, muted: true, preload });
         video.setAttribute('playsinline', '');
         video.disablePictureInPicture = true;
-        video.src = media(s.short.videoUrl);
+        video.src = media(shortSource(s.short, qualityOf(s)));
         video.addEventListener('play', () => s.node.classList.remove('paused'));
         video.addEventListener('playing', () => { if (slides[active] === s) hideWait(); });
         // A stall mid-clip: the loader, unless it clears up at once.
         video.addEventListener('waiting', () => { if (slides[active] === s) showWait(s, 400); });
-        video.addEventListener('pause', () => { if (slides[active] === s) { s.node.classList.add('paused'); hideWait(); } });
+        video.addEventListener('pause', () => { if (slides[active] === s) { s.node.classList.add('paused'); hideWait(); wake(); } });
         video.addEventListener('timeupdate', () => {
           if (slides[active] === s && video.currentTime >= VIEW_AFTER) countView(s);
         });
@@ -1075,6 +1251,8 @@ export function createShorts({ api: apiOf, root = '../' }) {
       if (!isPlaying(s.video)) showWait(s, 250);
       linkWatch(s);
       syncTakeDown(s);
+      renderQuality(s);
+      wake();
       // The next one loads while this one plays; the one before stays ready.
       arm(slides[index + 1], 'auto');
       if (slides[index + 1]) linkWatch(slides[index + 1]);
@@ -1127,6 +1305,7 @@ export function createShorts({ api: apiOf, root = '../' }) {
     // page's own keys wait.
     window.addEventListener('keydown', e => {
       if (overlay.hidden) return;
+      wake();
       const typing = /^(INPUT|TEXTAREA|SELECT)$/.test(e.target?.tagName ?? '');
       if (e.key === 'Escape') shut();
       else if (typing) return;
@@ -1222,6 +1401,7 @@ export function createShorts({ api: apiOf, root = '../' }) {
       hideWait();
       slides.forEach(disarm);
       slides = [];
+      renderQuality(null);
       track.replaceChildren();
       active = -1;
       if (!fromHistory) {

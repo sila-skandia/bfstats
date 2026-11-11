@@ -39,8 +39,17 @@ public class ShortsController(
     /// <summary>A poster alone, as <see cref="ShortsOptions.MaxPosterBytes"/> takes it.</summary>
     private const long PosterLimitBytes = 2L * 1024 * 1024 + 1;
 
-    /// <summary>The whole upload body: the largest video and poster, and the framing round them.</summary>
-    private const long UploadLimitBytes = 95L * 1024 * 1024;
+    /// <summary>A studio share's whole body: the largest video, HD copy and poster
+    /// (<see cref="ShortsOptions"/>), and the framing round them.</summary>
+    private const long ShareLimitBytes = (90L + 90 + 2 + 1) * 1024 * 1024;
+
+    /// <summary>One part of a chunked upload: <see cref="ShortsOptions.MaxPartBytes"/> and a little.</summary>
+    private const long PartLimitBytes = 90L * 1024 * 1024 + 64 * 1024;
+
+    /// <summary>The render job's whole body: an action roll's 600 MiB video, its 200 MiB HD copy
+    /// and the poster, and the framing round them. <see cref="ShortService"/> holds each kind to
+    /// its own limits.</summary>
+    private const long UploadLimitBytes = (600L + 200 + 2 + 1) * 1024 * 1024;
 
     [HttpGet]
     [EnableCors(RecordingsController.PublicReadCors)]
@@ -99,6 +108,12 @@ public class ShortsController(
     [EnableCors(RecordingsController.PublicReadCors)]
     public IActionResult Video(string slug) => Serve(slug, storage.VideoPath, "video/mp4");
 
+    /// <summary>The HD copy, when the Short has one (an action roll's 1080p take), served as the
+    /// video is.</summary>
+    [HttpGet("{slug:length(10)}.hd.mp4")]
+    [EnableCors(RecordingsController.PublicReadCors)]
+    public IActionResult HdVideo(string slug) => Serve(slug, storage.HdVideoPath, "video/mp4");
+
     [HttpGet("{slug:length(10)}.jpg")]
     [EnableCors(RecordingsController.PublicReadCors)]
     public IActionResult Poster(string slug) => Serve(slug, storage.PosterPath, "image/jpeg");
@@ -123,13 +138,32 @@ public class ShortsController(
         }
     }
 
+    /// <summary>One part of a chunked upload, the raw body, at most 90 MiB: a 4K roll goes up in
+    /// pieces under the edge's 100 MB a request, then <see cref="Upload"/> names it with a
+    /// <c>videoUpload</c> or <c>videoHdUpload</c> part. 200 with what was kept.</summary>
+    [HttpPost("parts")]
+    [RequestSizeLimit(PartLimitBytes)]
+    [DisableFormValueModelBinding]
+    public async Task<ActionResult<ShortPartDto>> Part([FromQuery] string? upload, [FromQuery] int? index, CancellationToken ct)
+    {
+        if (Refusal() is { } refusal) return refusal;
+        try
+        {
+            return Ok(await shorts.ReceivePartAsync(upload, index ?? -1, Request.Body, Request.ContentLength, ct));
+        }
+        catch (RecordingRejectedException ex)
+        {
+            return StatusCode(ex.StatusCode, new { message = ex.Message });
+        }
+    }
+
     /// <summary>A signed-in player's clip from the studio, live at once under his linked in-game
     /// name (the owner, 2026-11-04: "allow creators to create clips and share them as shorts").
     /// 201 with the Short.</summary>
     [HttpPost("share")]
     [Authorize]
     [EnableRateLimiting(ShareLimit)]
-    [RequestSizeLimit(UploadLimitBytes)]
+    [RequestSizeLimit(ShareLimitBytes)]
     [DisableFormValueModelBinding]
     public async Task<ActionResult<ShortDto>> Share(CancellationToken ct)
     {
@@ -182,6 +216,18 @@ public class ShortsController(
         if (RecordingStorage.CleanSlug(slug) is not { } clean) return NotFound();
         if (await MayChangeAsync(clean, ct) is { } refusal) return refusal;
         return await shorts.FlattenVideoAsync(clean, ct) is { } dto ? Ok(dto) : NotFound();
+    }
+
+    /// <summary>Retention, for the nightly Shorts job (never by itself): takes down the Shorts a
+    /// week old or more with 0-1 views, leaving their rows as tombstones whose keys
+    /// <c>/keys</c> still names, and sweeps chunked uploads left unjoined a day. With
+    /// <c>dryRun=true</c> it lists what it would take and changes nothing. For the key or an
+    /// admin, as the upload is.</summary>
+    [HttpPost("prune")]
+    public async Task<ActionResult<ShortPruneDto>> Prune([FromQuery] bool dryRun = false, CancellationToken ct = default)
+    {
+        if (Refusal() is { } refusal) return refusal;
+        return Ok(await shorts.PruneUnwatchedAsync(dryRun, ct));
     }
 
     /// <summary>Null when the request may change or take down the Short: the key, an admin, or

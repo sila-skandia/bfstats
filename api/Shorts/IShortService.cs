@@ -19,11 +19,17 @@ public interface IShortService
 
     /// <summary>
     /// Reads a <c>multipart/form-data</c> body: <c>meta</c> (JSON, <see cref="ShortUploadMeta"/>),
-    /// <c>video</c> (MP4) and <c>poster</c> (JPEG). A kill clipped already is the Short there,
+    /// <c>video</c> (MP4), optionally <c>videoHd</c> (MP4, a smaller copy), either video as a chunked
+    /// upload's id instead (<c>videoUpload</c>, <c>videoHdUpload</c>), and <c>poster</c> (JPEG). A kill clipped already is the Short there,
     /// and nothing is written. Throws <see cref="api.Recordings.RecordingRejectedException"/>
     /// with the reason for anything it will not keep.
     /// </summary>
     Task<ShortUploadResult> UploadAsync(string? contentType, Stream body, long? contentLength, CancellationToken ct);
+
+    /// <summary>One part of a chunked upload, the raw bytes in <paramref name="body"/>, kept as
+    /// <c>&lt;upload&gt;.&lt;index&gt;.part</c> until an upload's <c>videoUpload</c> or
+    /// <c>videoHdUpload</c> part names it (<see cref="UploadAsync"/>).</summary>
+    Task<ShortPartDto> ReceivePartAsync(string? upload, int index, Stream body, long? contentLength, CancellationToken ct);
 
     /// <summary>A signed-in player's clip from the studio, shared as a Short under his linked
     /// in-game name (<see cref="ShortKinds.Creator"/>), live at once.</summary>
@@ -42,6 +48,14 @@ public interface IShortService
 
     /// <summary>Takes a Short down, row and files. False when there is none.</summary>
     Task<bool> DeleteAsync(string slug, CancellationToken ct);
+
+    /// <summary>Takes down every Short <see cref="ShortsOptions.RetentionDays"/> days old or more
+    /// with <see cref="ShortsOptions.RetentionMaxViews"/> views or fewer, except a creator's share:
+    /// its files go, and its row stays as a tombstone (<see cref="Models.ReplayShort.PrunedAt"/>)
+    /// whose key <see cref="KeysAsync"/> still names. Then sweeps the chunked uploads left
+    /// unjoined for <see cref="ShortsOptions.PartsMaxAgeHours"/>. On a dry run it only lists what
+    /// it would take, and sweeps nothing. Never runs by itself: the nightly Shorts job calls it.</summary>
+    Task<ShortPruneDto> PruneUnwatchedAsync(bool dryRun, CancellationToken ct);
 
     /// <summary>A Short's id and its views as counted so far, or null when there is none.</summary>
     Task<(int Id, int Views)?> WatchableAsync(string slug, CancellationToken ct);

@@ -1638,6 +1638,9 @@ public class PlayerTrackerDbContext : DbContext
             s.Property(x => x.Slug).HasMaxLength(10);
             s.Property(x => x.RecordingSlug).HasMaxLength(10);
             s.Property(x => x.CreatedAt).HasConversion(v => FormatInstant(v), v => ParseInstant(v));
+            s.Property(x => x.PrunedAt).HasConversion(
+                v => v.HasValue ? FormatInstant(v.Value) : null,
+                v => v != null ? ParseInstant(v) : null);
         });
 
         modelBuilder.Entity<ReplayShortPlayer>(p =>
