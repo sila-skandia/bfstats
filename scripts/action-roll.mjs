@@ -60,7 +60,8 @@ const AUDIO_RATE = 38400;
 const AUDIO_SPAN = 1200;
 const STEP_TIMEOUT = 60 * 1000;
 const LOAD_TIMEOUT = 8 * 60 * 1000;
-if (!SLUG) throw new Error('--recording=<slug> is required');
+const UPLOAD_TAKE = opt('upload-take', null);
+if (!SLUG && !UPLOAD_TAKE) throw new Error('--recording=<slug> is required');
 
 const log = (...a) => console.log(new Date().toISOString().slice(11, 19), ...a);
 const withTimeout = (p, ms, what) => Promise.race([p, new Promise((_, no) => setTimeout(() => no(new Error(`${what} took over ${ms / 1000} s`)), ms))]);
@@ -142,6 +143,8 @@ const ROLL = Object.freeze({
   wallLiftStep: 3,
   wallLiftMax: 70,
   lensNear: 2.5,
+  // A wall or rail this near the lens, low in the view, is climbed over.
+  railNear: 1.6,
   fly: 4.4,
   slow: 0.4,
   slowEase: 0.35,
@@ -451,6 +454,35 @@ const ROLL_SRC = String.raw`window.__roll = (() => {
     c.dynamicCast = null;
     try { const h = c.cast(a.x, a.y, a.z, d.x, d.y, d.z, dist - 0.4, -1, 0, 0); return Boolean(h) && h.kind !== 'water'; } finally { c.dynamicCast = moving; }
   };
+  // Nothing solid within railNear m of the lens in the lower half of the
+  // view: a wall, a fence's base rail, sandbags (Meuse, 2026-11-12: a rail
+  // swept across the frame for half a second).
+  const lensClear = (pos, look) => {
+    const fwd = look.clone().sub(pos).normalize();
+    const right = new V3().crossVectors(fwd, new V3(0, 1, 0)).normalize();
+    const up = new V3().crossVectors(right, fwd).normalize();
+    const half = Math.tan((cfg.fov / 2) * Math.PI / 180);
+    for (const [x, y] of [[0, -1], [-1.6, -1], [1.6, -1], [-1.6, -0.4], [1.6, -0.4], [0, -0.5], [0, 0]]) {
+      const dir = fwd.clone().addScaledVector(right, x * half).addScaledVector(up, y * half).normalize();
+      if (blocked(pos, pos.clone().addScaledVector(dir, cfg.railNear))) return false;
+    }
+    return true;
+  };
+  // A settled camera with something at its lens: closer in, or a little
+  // higher, whichever is clear first; never a climb (a lift that rose while
+  // anything was near ran up onto a roof and lost the man).
+  const clearLens = (subject, pos, look) => {
+    if (lensClear(pos, look)) return pos;
+    for (const k of [0.8, 0.62, 0.45]) {
+      const p = subject.clone().lerp(pos, k);
+      if (!blocked(subject, p) && lensClear(p, look)) return p;
+    }
+    for (const h of [1, 2]) {
+      const p = pos.clone().add(new V3(0, h, 0));
+      if (!blocked(subject, p) && lensClear(p, look)) return p;
+    }
+    return pos;
+  };
   // Pull the camera toward the subject until it sees him (a spring arm).
   const unblock = (subject, want) => {
     if (!blocked(subject, want)) return want;
@@ -630,6 +662,8 @@ const ROLL_SRC = String.raw`window.__roll = (() => {
           if (Number.isFinite(gq) && q.y < gq + 0.05) { hit = true; break; }
         }
         if (hit) break;
+        const dir2 = fwd.clone().addScaledVector(right, x * half).addScaledVector(up, y * half).normalize();
+        if (blocked(pos, pos.clone().addScaledVector(dir2, 0.7))) { hit = true; break; }
       }
       if (!hit) hit = blocked(pos, pos.clone().addScaledVector(fwd, 0.8));
       if (hit) { qa.lens++; bad = 'lens'; }
@@ -832,7 +866,10 @@ const ROLL_SRC = String.raw`window.__roll = (() => {
       st.want = want(b, seek ?? t) ?? st.want;
       if (st.want && !b.fly || st.blend >= 1) {
         // Seen through walls nowhere: the spring arm on the man it films.
-        if (st.want?.subject) st.want.pos = unblock(st.want.subject, keepAbove(st.want.pos.clone(), 0.8));
+        if (st.want?.subject) {
+          st.want.pos = unblock(st.want.subject, keepAbove(st.want.pos.clone(), 0.8));
+          if (cfg.clear) st.want.pos = clearLens(st.want.subject, st.want.pos, st.want.look);
+        }
       }
       const since = st.screen - b.screenAt;
       const caption = { name: name(b.pid), weapon: b.act.f?.weapon ?? b.act.weapon ?? '', alpha: Math.max(0, Math.min(1, (since - 0.3) / 0.4, (3.2 - since) / 0.5)) };
@@ -952,6 +989,57 @@ async function json(u) {
       await new Promise(ok => setTimeout(ok, 2000 * (i + 1)));
     }
   }
+}
+
+/**
+ * A filmed take to the strip (api/Shorts, kind "roll"): the 4K and the HD
+ * from its folder with its poster and meta.json. SHORTS_UPLOAD_KEY as the
+ * Shorts runner; --to=<api> for another API. --upload films and sends;
+ * --upload-take=<folder> sends a take filmed before.
+ */
+async function uploadTake(dir) {
+  const meta = JSON.parse(fs.readFileSync(path.join(dir, 'meta.json'), 'utf8'));
+  const mp4 = path.join(dir, 'roll-2160p.mp4');
+  const poster = path.join(dir, 'poster.jpg');
+  const key = process.env.SHORTS_UPLOAD_KEY ?? '';
+  if (!key) throw new Error('--upload needs SHORTS_UPLOAD_KEY');
+  const to = opt('to', API);
+  // Through Cloudflare a request carries at most 100 MB, and a 4K roll is
+  // 300-450: each video goes up in parts first (POST /stats/shorts/parts),
+  // and the upload names them (videoUpload / videoHdUpload).
+  const PART = 80 * 1024 * 1024;
+  const sendParts = async file => {
+    const id = createHash('sha256').update(`${file}:${Date.now()}:${Math.random()}`).digest('hex').slice(0, 24);
+    const bytes = fs.readFileSync(file);
+    for (let i = 0, n = 0; i < bytes.length; i += PART, n++) {
+      for (let tryNo = 0; ; tryNo++) {
+        const r = await fetch(`${to}/stats/shorts/parts?upload=${id}&index=${n}`, {
+          method: 'POST', body: bytes.subarray(i, i + PART), headers: { 'X-Shorts-Key': key, 'Content-Type': 'application/octet-stream' },
+        }).catch(e => ({ ok: false, status: 0, text: async () => e.message }));
+        if (r.ok) break;
+        if (tryNo >= 3) throw new Error(`part ${n} of ${path.basename(file)}: ${r.status} ${(await r.text()).slice(0, 200)}`);
+        await new Promise(ok => setTimeout(ok, 3000 * (tryNo + 1)));
+      }
+    }
+    log(`  sent ${path.basename(file)} in ${Math.ceil(bytes.length / PART)} parts`);
+    return id;
+  };
+  const hd = path.join(dir, 'roll-1080p.mp4');
+  const form = new FormData();
+  form.append('meta', JSON.stringify(meta));
+  form.append('videoUpload', await sendParts(mp4));
+  if (fs.existsSync(hd) && hd !== mp4) form.append('videoHdUpload', await sendParts(hd));
+  form.append('poster', new Blob([fs.readFileSync(poster)], { type: 'image/jpeg' }), 'poster.jpg');
+  const res = await fetch(`${to}/stats/shorts`, { method: 'POST', body: form, headers: { 'X-Shorts-Key': key } });
+  const body = await res.text();
+  if (!res.ok) throw new Error(`upload ${res.status}: ${body.slice(0, 300)}`);
+  const made = JSON.parse(body);
+  fs.writeFileSync(path.join(dir, 'uploaded.json'), JSON.stringify(made, null, 2));
+  log(`uploaded ${made.slug}: ${API}/replay/s/${made.slug}`);
+}
+if (UPLOAD_TAKE) {
+  await uploadTake(UPLOAD_TAKE);
+  process.exit(0);
 }
 const rec = await json(`${API}/stats/recordings/${SLUG}`);
 
@@ -1170,24 +1258,8 @@ try {
     victims: [...new Set(beats.map(b => b.name).filter(Boolean))],
   };
   fs.writeFileSync(path.join(dir, 'meta.json'), JSON.stringify(meta, null, 2));
-  // --upload: the 4K and the HD to the strip (SHORTS_UPLOAD_KEY, as the
-  // Shorts runner); --to=<api> for another API.
-  if (args.includes('--upload')) {
-    const key = process.env.SHORTS_UPLOAD_KEY ?? '';
-    if (!key) throw new Error('--upload needs SHORTS_UPLOAD_KEY');
-    const hd = path.join(dir, 'roll-1080p.mp4');
-    const form = new FormData();
-    form.append('meta', JSON.stringify(meta));
-    form.append('video', new Blob([fs.readFileSync(mp4)], { type: 'video/mp4' }), 'roll.mp4');
-    if (fs.existsSync(hd) && hd !== mp4) form.append('videoHd', new Blob([fs.readFileSync(hd)], { type: 'video/mp4' }), 'roll-hd.mp4');
-    form.append('poster', new Blob([fs.readFileSync(poster)], { type: 'image/jpeg' }), 'poster.jpg');
-    const res = await fetch(`${opt('to', API)}/stats/shorts`, { method: 'POST', body: form, headers: { 'X-Shorts-Key': key } });
-    const body = await res.text();
-    if (!res.ok) throw new Error(`upload ${res.status}: ${body.slice(0, 300)}`);
-    const made = JSON.parse(body);
-    fs.writeFileSync(path.join(dir, 'uploaded.json'), JSON.stringify(made, null, 2));
-    log(`uploaded ${made.slug}: ${API}/replay/s/${made.slug}`);
-  }
+  if (args.includes('--upload')) await uploadTake(dir);
+
   fs.rmSync(frames, { recursive: true, force: true });
   log('wrote', mp4);
 } finally {

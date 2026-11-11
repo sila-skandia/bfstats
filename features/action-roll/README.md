@@ -105,6 +105,17 @@ real bug").
     regenerate it or not"). Film from a committed tool, or the script says
     "+edits" and no later run can match it.
 
+20. **Nothing solid at the lens.** A settled camera with a wall, fence
+    rail or sandbag within 1.6 m low in its view moves in toward its man,
+    or up 1-2 m, whichever is clear first (`clearLens`). Never a climb: a
+    lift that rose while anything was near ran up onto a roof and lost the
+    man (Meuse, 2026-11-12, a fence's base rail across the frame).
+21. **Uploads go up in parts.** Cloudflare passes at most 100 MB a request
+    and a 4K roll is 300-480 MB: each video is sent in 80 MiB parts to
+    `POST /stats/shorts/parts`, then the upload names them (`videoUpload`,
+    `videoHdUpload`). `--upload` films and sends; `--upload-take=<folder>`
+    sends a take filmed before.
+
 ## How the trials are made
 
 `scripts/action-roll.mjs` films through the live play page the way the
