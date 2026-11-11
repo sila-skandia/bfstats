@@ -1,0 +1,51 @@
+rem *** Strategic areas: one per control point (botgen) ***
+
+aiStrategicArea.create AxisBase 460.8/283.9 465.8/288.9 50
+aiStrategicArea.addNeighbour Axisbase2
+aiStrategicArea.addNeighbour allied_flag
+aiStrategicArea.addObjectTypeFlag Base
+aiStrategicArea.setOrderPosition Tank 463.5/288.5
+aiStrategicArea.setOrderPosition Infantry 466.5/289.5
+aiStrategicArea.setSide 1
+aiStrategicArea.setTakeable 2 0
+
+aiStrategicArea.create AlliedBase 470.5/483.1 475.5/488.1 300
+aiStrategicArea.addNeighbour allied_flag2
+aiStrategicArea.addNeighbour allied_flag
+aiStrategicArea.addObjectTypeFlag Centre
+aiStrategicArea.addObjectTypeFlag StrongPoint
+aiStrategicArea.addObjectTypeFlag ControlPoint
+aiStrategicArea.setOrderPosition Tank 475.5/483.5
+aiStrategicArea.setOrderPosition Infantry 474.5/488.5
+aiStrategicArea.setSide 2
+
+aiStrategicArea.create Axisbase2 306.8/403 311.8/408 50
+aiStrategicArea.addNeighbour AxisBase
+aiStrategicArea.addNeighbour allied_flag2
+aiStrategicArea.addObjectTypeFlag Base
+aiStrategicArea.setOrderPosition Tank 313.5/407.5
+aiStrategicArea.setOrderPosition Infantry 312.5/407.5
+aiStrategicArea.setSide 1
+aiStrategicArea.setTakeable 2 0
+
+aiStrategicArea.create allied_flag2 407.9/439.2 412.9/444.2 150
+aiStrategicArea.addNeighbour AlliedBase
+aiStrategicArea.addNeighbour Axisbase2
+aiStrategicArea.addNeighbour allied_flag
+aiStrategicArea.addObjectTypeFlag Flank
+aiStrategicArea.addObjectTypeFlag Close
+aiStrategicArea.addObjectTypeFlag ControlPoint
+aiStrategicArea.setOrderPosition Tank 415.5/444.5
+aiStrategicArea.setOrderPosition Infantry 411.5/444.5
+aiStrategicArea.setSide 2
+
+aiStrategicArea.create allied_flag 470.9/396.1 475.9/401.1 150
+aiStrategicArea.addNeighbour AxisBase
+aiStrategicArea.addNeighbour AlliedBase
+aiStrategicArea.addNeighbour allied_flag2
+aiStrategicArea.addObjectTypeFlag Flank
+aiStrategicArea.addObjectTypeFlag Close
+aiStrategicArea.addObjectTypeFlag ControlPoint
+aiStrategicArea.setOrderPosition Tank 475.5/405.5
+aiStrategicArea.setOrderPosition Infantry 475.5/402.5
+aiStrategicArea.setSide 2

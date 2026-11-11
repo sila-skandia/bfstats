@@ -1,0 +1,74 @@
+{
+ "level": "dc_battle_of_73_easting",
+ "verdict": "fail",
+ "outcome": "better-than-nothing",
+ "config": "with vehicles",
+ "doctrine": "garrison",
+ "generatorVersion": 5,
+ "inputs": {
+  "controlPoints": "780d4b595f0e4a9b539152064601e1431606e295afea26589713dffbc50eb22e",
+  "infantryMap": "5465fd22161c76a39e6b4ad68a3e987f46c454689bb152d87a881357ee872273",
+  "template": "bdc0e455f47f91b7e7724e71d7c0c196e839b36946ac3abb7663d725944081e5"
+ },
+ "baseline": "desertcombat's own layers with vehicles, garrison doctrine: berlin, dc_desertshield, kharkov, kursk, stalingrad; seeds 1..10, 600 s; dropped, no fight: dc_basrahs_edge",
+ "bar": {
+  "against": "desertcombat",
+  "why": "desertcombat's own bar, built from 5 of its levels that are alive (berlin, dc_desertshield, kharkov, kursk, stalingrad)"
+ },
+ "againstDice": {
+  "verdict": "fail",
+  "outcome": "better-than-nothing",
+  "baseline": "DICE layers with vehicles, garrison doctrine: berlin, stalingrad, kharkov, bocage; seeds 1..10, 600 s",
+  "sizes": {
+   "8": {
+    "verdict": "fail",
+    "failed": [
+     "idleShare",
+     "routeFailuresPerBotMinute",
+     "enemyKillsPerBotMinute",
+     "routeFailuresPerBotMinuteWorseSide",
+     "unitsNeverUsedShare"
+    ]
+   },
+   "16": {
+    "verdict": "fail",
+    "failed": [
+     "idleShare",
+     "routeFailuresPerBotMinute",
+     "enemyKillsPerBotMinute",
+     "routeFailuresPerBotMinuteWorseSide",
+     "unitsNeverUsedShare",
+     "tankSilentShare"
+    ]
+   }
+  }
+ },
+ "seeds": 2,
+ "sizes": {
+  "8": {
+   "verdict": "fail",
+   "failed": [
+    "unitsNeverUsedShare"
+   ],
+   "winners": [
+    0,
+    2,
+    0
+   ]
+  },
+  "16": {
+   "verdict": "fail",
+   "failed": [
+    "tankSilentShare"
+   ],
+   "winners": [
+    0,
+    2,
+    0
+   ]
+  }
+ },
+ "oneSided": 2,
+ "unreachable": [],
+ "lintErrors": []
+}

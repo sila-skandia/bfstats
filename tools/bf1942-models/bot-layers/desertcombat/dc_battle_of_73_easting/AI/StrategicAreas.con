@@ -1,0 +1,36 @@
+rem *** Strategic areas: one per control point (botgen) ***
+
+aiStrategicArea.create norfolk 250/690 280/720 150
+aiStrategicArea.addNeighbour 73rdeastings
+aiStrategicArea.addNeighbour alliesbase
+aiStrategicArea.addNeighbour axisbase
+aiStrategicArea.addObjectTypeFlag Flank
+aiStrategicArea.addObjectTypeFlag ControlPoint
+aiStrategicArea.setOrderPosition Infantry 278.5/721.5
+aiStrategicArea.setSide 1
+
+aiStrategicArea.create 73rdeastings 592/351 622/381 150
+aiStrategicArea.addNeighbour norfolk
+aiStrategicArea.addNeighbour alliesbase
+aiStrategicArea.addNeighbour axisbase
+aiStrategicArea.addObjectTypeFlag Flank
+aiStrategicArea.addObjectTypeFlag Close
+aiStrategicArea.addObjectTypeFlag ControlPoint
+aiStrategicArea.setOrderPosition Infantry 620.5/382.5
+aiStrategicArea.setSide 1
+
+aiStrategicArea.create alliesbase 175/115 180/120 50
+aiStrategicArea.addNeighbour norfolk
+aiStrategicArea.addNeighbour 73rdeastings
+aiStrategicArea.addObjectTypeFlag Base
+aiStrategicArea.setOrderPosition Infantry 178.5/121.5
+aiStrategicArea.setSide 2
+aiStrategicArea.setTakeable 1 0
+
+aiStrategicArea.create axisbase 802.1/861.3 807.1/866.3 50
+aiStrategicArea.addNeighbour norfolk
+aiStrategicArea.addNeighbour 73rdeastings
+aiStrategicArea.addObjectTypeFlag Base
+aiStrategicArea.setOrderPosition Infantry 808.5/865.5
+aiStrategicArea.setSide 1
+aiStrategicArea.setTakeable 2 0
