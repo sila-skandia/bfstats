@@ -1,0 +1,119 @@
+{
+ "generator": "botgen",
+ "version": 5,
+ "mod": "FHSW",
+ "level": "eagles_nest-1946",
+ "objectSpawners": 97,
+ "template": "few",
+ "templateSource": "DICE, bf1942 Kursk (1.6 patch archives, Kursk_003.rfa): AI/Strategies.con, AI/conditions.con, AI/prerequisites.con, unchanged",
+ "templateChoice": {
+  "name": "few",
+  "inPlay": 3,
+  "rule": "3 capturable flags in play, at most 3"
+ },
+ "scope": "on foot: infantry order positions only, no search maps, no co-op layer",
+ "unreachable": [
+  "AXIS_compound",
+  "AXIS_Tunnel",
+  "AXIS_EaglesNest"
+ ],
+ "unreachableReasons": {
+  "AXIS_compound": "walk test",
+  "AXIS_Tunnel": "walk test",
+  "AXIS_EaglesNest": "walk test"
+ },
+ "botSpawnsExcluded": [
+  "alliesSpawnPoint_BASE_1",
+  "alliesSpawnPoint_BASE_3",
+  "alliesSpawnPoint_BASE_6",
+  "alliesSpawnPoint_BASE_7",
+  "AxisSpawnPoint_Bridge_1",
+  "AxisSpawnPoint_Bridge_2",
+  "AxisSpawnPoint_Bridge_3",
+  "AxisSpawnPoint_Bridge_4",
+  "AxisSpawnPoint_Bridge_5",
+  "AxisSpawnPoint_Bridge_6",
+  "AxisSpawnPoint_Bridge_7",
+  "AxisSpawnPoint_Compound_1",
+  "AxisSpawnPoint_Compound_2",
+  "AxisSpawnPoint_Compound_3",
+  "AxisSpawnPoint_Compound_4",
+  "AxisSpawnPoint_Compound_6",
+  "AxisSpawnPoint_Compound_7",
+  "AxisSpawnPoint_House_1",
+  "AxisSpawnPoint_House_2",
+  "AxisSpawnPoint_House_3",
+  "AxisSpawnPoint_House_4",
+  "AxisSpawnPoint_House_5",
+  "AxisSpawnPoint_BASE_1",
+  "AxisSpawnPoint_BASE_2",
+  "AxisSpawnPoint_BASE_3",
+  "AxisSpawnPoint_BASE_4",
+  "AxisSpawnPoint_BASE_5",
+  "AxisSpawnPoint_BASE_6",
+  "AxisSpawnPoint_BASE_7"
+ ],
+ "walkMap": {
+  "source": "page painter",
+  "engine": "none",
+  "opened": [],
+  "ways": [],
+  "cover": 0.346,
+  "floors": {
+   "stacked": false,
+   "twoFloorShare": 0.003,
+   "raised": [
+    "AXIS_Tunnel",
+    "AXIS_EaglesNest"
+   ],
+   "reason": null
+  },
+  "capped": true
+ },
+ "routeProbe": {
+  "chokeMax": 4,
+  "unreachable": [],
+  "stops": {},
+  "oneSided": {},
+  "sides": {
+   "1": {
+    "spawns": 3,
+    "flags": [
+     "AXIS_GoeringsHouse",
+     "AXIS_Mountain_Pass",
+     "AXIS_bridge"
+    ]
+   },
+   "2": {
+    "spawns": 3,
+    "flags": [
+     "AXIS_GoeringsHouse",
+     "AXIS_Mountain_Pass",
+     "AXIS_bridge"
+    ]
+   }
+  },
+  "chokes": {
+   "AXIS_bridge:1": 0,
+   "AXIS_bridge:2": 0,
+   "AXIS_GoeringsHouse:1": 0,
+   "AXIS_GoeringsHouse:2": 0,
+   "AXIS_Mountain_Pass:1": 0,
+   "AXIS_Mountain_Pass:2": 0
+  },
+  "late": {},
+  "shutLinks": []
+ },
+ "inputs": {
+  "controlPoints": "3af359818030b433366f22d5ed36fab35a7a91c9f43edc93632615f1a8dce871",
+  "infantryMap": "adf40f09c516d62b71cadbbaf14b9225bd9d84f7e42dd6dc9e7e0dd5b29fe157",
+  "template": "bdc0e455f47f91b7e7724e71d7c0c196e839b36946ac3abb7663d725944081e5"
+ },
+ "files": {
+  "AI.con": "4273795de48751f9dd85de84bda769f3ab21d91be76a3c84a194297ecc4d2347",
+  "AI/StrategicAreas.con": "8aea5294cea8da33e89dc3cd856bdb732e911fdfb7de032019446dc1e5171e40",
+  "AI/Strategies.con": "13da4dc35872dd4b5798a066f4425bdc824cfd61f31093d1808e1202644de52e",
+  "AI/conditions.con": "248a04b727c08d696bf0fa9c162bc22c43cde3c75f695892fe1e0f5141519c49",
+  "AI/prerequisites.con": "c96168b5f69860e578f5d26728fd2a2092c4c436e1da49b7d6f4009b65735398"
+ }
+}

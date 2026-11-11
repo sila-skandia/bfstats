@@ -103,28 +103,9 @@
   "French_Bunker"
  ],
  "lintErrors": [],
- "accepted": {
-  "reason": "Owner's rollout, 2026-11-11: after playing Tunis-1943 against its generated bots the owner asked for every level with a fight to go live. Two or more seeds at 8 and 16 a side, the garrison; the checks it fails are listed with this verdict, and a match on the page decides whether it keeps its menu flag.",
+ "acceptanceWithdrawn": {
+  "because": "page match 2026-11-11: 0.075 enemy kills a bot-minute, no capture, tickets 13:89; under the rollout's page floor",
   "date": "2026-11-11",
-  "outcome": "better-than-nothing",
-  "failed": [
-   "8:stuckSecondsPerBotMinute",
-   "8:enemyKillsPerBotMinute",
-   "8:flagCoverage",
-   "8:bothSidesCapture",
-   "8:nonEnemyDeathShareWorseSide",
-   "8:hullStuckSecondsPerDrivingMinute",
-   "8:hullStuckSecondsPerDrivingMinuteWorseSide",
-   "8:tankSilentShare",
-   "16:stuckSecondsPerBotMinute",
-   "16:redeploysPerBotMinute",
-   "16:enemyKillsPerBotMinute",
-   "16:bothSidesCapture",
-   "16:stuckSecondsPerBotMinuteWorseSide",
-   "16:redeploysPerBotMinuteWorseSide",
-   "16:nonEnemyDeathShareWorseSide",
-   "16:hullStuckSecondsPerDrivingMinute"
-  ],
-  "by": "owner"
+  "was": "Owner's rollout, 2026-11-11: after playing Tunis-1943 against its generated bots"
  }
 }

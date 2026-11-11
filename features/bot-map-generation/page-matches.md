@@ -336,8 +336,8 @@ Rollout levels, one match each on the page (the bar is DICE's rebuilt one;
 **The rollout's page floor** (the coordinator's rule under the owner's
 decision, `pagebatch.sh` in scratch): a level keeps its menu flag when a
 match on the page shows real killing (at least 0.15 enemy kills a
-bot-minute), or flag play (at least 3 captures), or some of both (0.05 and
-1 capture); no more than 0.10 deaths a bot-minute by a bot's own or its
+bot-minute), or flag play with some killing (at least 3 captures and 0.03),
+or some of both (0.05 and 1 capture); no more than 0.10 deaths a bot-minute by a bot's own or its
 side's hand (suicides and team kills together; DICE's worst match shows
 0.056 and 0.025); and no page error.
 
@@ -398,6 +398,34 @@ captures a flag and its kill rate sits at the floor; it waits for the
 no-live-strategy fallback. DC_LostVillage's suicides (0.088 a bot-minute)
 are higher than before the fix (0.056 at the median of three), on two
 matches: not explained.
+
+### After the no-live-strategy fallback (2026-11-11, 20:07)
+
+[no-live-strategy.md](no-live-strategy.md): on a generated layer a side
+with no strategy scoring and no attack target takes the no-layer order.
+Twelve levels that had not been on the page were published without flags
+and played once (enemy kills a bot-minute, captures, own-hand deaths a
+bot-minute, tickets):
+
+| Level | Figures | Now |
+|---|---|---|
+| FHSW Aberdeen | 0.31, 6, 0.03, 81:77; passes DICE's page bar | live |
+| FHSWEurope aberdeen | 0.17, 14, 0.02, 100:82 | live |
+| FHSW Earned_in_Blood | 0.14, 2, 0.01, 80:32 | live |
+| FHSW Battle_of_Edson_s_Ridge | 0.10, 1, 0, 100:67 (dead before the fallback) | live |
+| FHSW Salerno-1943 | 0.08, 4, 0.07, 108:72 | live |
+| Desert Combat DC_Urban_Siege | 0.06, 9, 0, 96:102 | live |
+| Liberation_of_Caen (community) | 0.06, 1, 0.05, 85:89 | live, barely |
+| _o_Jka__BIG (community) | 0.44, 5, 0.12, 30:5 | own-hand deaths just over the cap; played again |
+| FHSW Fall_of_Berlin-1945 | 0, 7, 0.01, 222:170 | off: flags and no fight |
+| BF1918 operation_gericht | 0.08, 0, 0.08, 13:89 | off |
+| BF1918 sanaga_river | 0.06, 0, 0, 102:101 | off |
+| FH Seelow-Heights-1945 | 0, 0, 0.01, 127:126 | off |
+
+Fall of Berlin took 7 flags without one enemy kill, and the floor as
+written let that through on captures alone. It now asks for some killing
+in every case: 0.15 enemy kills a bot-minute, or 0.03 with 3 captures, or
+0.05 with 1.
 
 ## 7. What is not verified
 

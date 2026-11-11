@@ -24,12 +24,12 @@
     "idleShare",
     "routeFailuresPerBotMinute",
     "enemyKillsPerBotMinute",
-    "flagCoverage",
     "bothSidesCapture",
     "bothSidesKill",
     "stuckSecondsPerBotMinuteWorseSide",
     "routeFailuresPerBotMinuteWorseSide",
     "nonEnemyDeathShareWorseSide",
+    "hullStuckSecondsPerDrivingMinuteWorseSide",
     "unitsNeverUsedShare"
    ],
    "winners": [
@@ -41,10 +41,10 @@
   "16": {
    "verdict": "fail",
    "failed": [
-    "stuckSecondsPerBotMinute",
     "idleShare",
     "routeFailuresPerBotMinute",
     "enemyKillsPerBotMinute",
+    "flagCoverage",
     "bothSidesCapture",
     "routeFailuresPerBotMinuteWorseSide",
     "nonEnemyDeathShareWorseSide",

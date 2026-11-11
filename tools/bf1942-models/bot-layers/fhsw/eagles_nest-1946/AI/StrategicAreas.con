@@ -1,0 +1,49 @@
+rem *** Strategic areas: one per control point (botgen) ***
+
+aiStrategicArea.create ALLIESBASE 845.5/410.2 850.5/415.2 50
+aiStrategicArea.addNeighbour AXIS_bridge
+aiStrategicArea.addObjectTypeFlag Base
+aiStrategicArea.setOrderPosition Infantry 849.5/415.5
+aiStrategicArea.setSide 2
+aiStrategicArea.setTakeable 1 0
+
+aiStrategicArea.create AXIS_bridge 625.8/540.8 635.8/550.8 150
+aiStrategicArea.addNeighbour ALLIESBASE
+aiStrategicArea.addNeighbour AXIS_GoeringsHouse
+aiStrategicArea.addNeighbour AXIS_Mountain_Pass
+aiStrategicArea.addObjectTypeFlag Flank
+aiStrategicArea.addObjectTypeFlag Close
+aiStrategicArea.addObjectTypeFlag ControlPoint
+aiStrategicArea.setOrderPosition Infantry 636.5/554.5
+
+aiStrategicArea.create AXIS_compound 387.1/431.1 405.1/449.1 10
+aiStrategicArea.setSide 1
+aiStrategicArea.setTakeable 1 0
+aiStrategicArea.setTakeable 2 0
+
+aiStrategicArea.create AXIS_GoeringsHouse 256.6/428.4 261.6/433.4 150
+aiStrategicArea.addNeighbour AXIS_bridge
+aiStrategicArea.addNeighbour AXIS_Mountain_Pass
+aiStrategicArea.addObjectTypeFlag Flank
+aiStrategicArea.addObjectTypeFlag ControlPoint
+aiStrategicArea.setOrderPosition Infantry 262.5/434.5
+aiStrategicArea.setSide 1
+
+aiStrategicArea.create AXIS_Tunnel 294.9/739.3 300.9/745.3 10
+aiStrategicArea.setSide 1
+aiStrategicArea.setTakeable 1 0
+aiStrategicArea.setTakeable 2 0
+
+aiStrategicArea.create AXIS_EaglesNest 172.3/613.3 182.3/623.3 10
+aiStrategicArea.setSide 1
+aiStrategicArea.setTakeable 1 0
+aiStrategicArea.setTakeable 2 0
+
+aiStrategicArea.create AXIS_Mountain_Pass 345.5/599.8 350.5/604.8 300
+aiStrategicArea.addNeighbour AXIS_bridge
+aiStrategicArea.addNeighbour AXIS_GoeringsHouse
+aiStrategicArea.addObjectTypeFlag Centre
+aiStrategicArea.addObjectTypeFlag StrongPoint
+aiStrategicArea.addObjectTypeFlag ControlPoint
+aiStrategicArea.setOrderPosition Infantry 349.5/605.5
+aiStrategicArea.setSide 1
