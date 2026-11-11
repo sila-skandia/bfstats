@@ -102,17 +102,19 @@ export function roundPasses(world, firerId, targetId) {
  *    shoulders (about 0.25 m each side) plus the cone's spread inside the
  *    reach. 93 of the page's 99 team-kill victims with a known line stood
  *    within a metre of it.
- *  - `reach` 40 m: most victims stood 1 to 7 m from the muzzle with the
- *    target 27 to 120 m beyond; past 40 m a friend in the tube is no longer
- *    the close file a corridor makes, and the cone spreads the rounds round
- *    him.
+ *  - `reach` 100 m: most of the page's victims stood 1 to 7 m from the
+ *    muzzle, but 5 of 24 on The_Maze stood 46 to 64 m down the line, and
+ *    with a 40 m reach the runner's remaining team kills had a median range
+ *    of 25 m and a quarter past 43 m (rifles and snipers: the cone does not
+ *    spread a rifle's round round a body at 60 m). Past 100 m the round has
+ *    usually met the target or the ground, and a friend there is no file.
  *  - `clearOfTarget` 1.0 m: a friend must be at least this much nearer than
  *    the target, so one at the target's own spot does not silence the bot.
  *  - `bodyBottom` 0.1 m and `bodyTop` by stance (standing 1.8, crouched 1.25,
  *    prone 0.5; seated 1.2 over the seat): the body's vertical axis. */
 export const HOLD_FIRE = Object.freeze({
   radius: 0.6,
-  reach: 40.0,
+  reach: 100.0,
   clearOfTarget: 1.0,
   /** A body whose axis is up to this far behind the muzzle, horizontally, is
    *  still in the line: it overlaps the muzzle. */

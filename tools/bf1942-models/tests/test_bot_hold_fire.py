@@ -48,7 +48,9 @@ class HoldFireTubeTests(unittest.TestCase):
     def test_the_tube_is_a_body_wide_and_bounded(self) -> None:
         t = self.results["tube"]
         self.assertEqual(0.6, t["radius"])
-        self.assertEqual(40, t["reach"])
+        self.assertEqual(100, t["reach"])
+        # The page logged victims 46 to 64 m down the line on The_Maze.
+        self.assertEqual("a", t["farInReach"]["id"])
 
     def test_a_friend_in_the_tube_is_found(self) -> None:
         t = self.results["tube"]
