@@ -1,0 +1,46 @@
+rem *** Strategic areas: one per control point (botgen) ***
+
+aiStrategicArea.create Camp 411.9/727 416.9/732 150
+aiStrategicArea.addNeighbour Basis_der_Schutztruppe
+aiStrategicArea.addObjectTypeFlag Flank
+aiStrategicArea.addObjectTypeFlag Close
+aiStrategicArea.addObjectTypeFlag ControlPoint
+aiStrategicArea.setOrderPosition Tank 412.5/731.5
+aiStrategicArea.setOrderPosition Infantry 417.5/731.5
+aiStrategicArea.setSide 2
+
+aiStrategicArea.create Urwaldlager 320.4/477.7 325.4/482.7 10
+aiStrategicArea.setSide 1
+aiStrategicArea.setTakeable 1 0
+aiStrategicArea.setTakeable 2 0
+
+aiStrategicArea.create Basis_der_Schutztruppe 541.9/254.9 556.9/269.9 150
+aiStrategicArea.addNeighbour Camp
+aiStrategicArea.addNeighbour Insel
+aiStrategicArea.addObjectTypeFlag Flank
+aiStrategicArea.addObjectTypeFlag ControlPoint
+aiStrategicArea.setOrderPosition Tank 550.5/269.5
+aiStrategicArea.setOrderPosition Infantry 557.5/269.5
+aiStrategicArea.setSide 1
+
+aiStrategicArea.create Landungsboot 513/682.6 518/687.6 50
+aiStrategicArea.addObjectTypeFlag Base
+aiStrategicArea.setSide 2
+aiStrategicArea.setTakeable 1 0
+
+aiStrategicArea.create Gouverneurshaus 702.7/630.3 707.7/635.3 150
+aiStrategicArea.addNeighbour Insel
+aiStrategicArea.addObjectTypeFlag Flank
+aiStrategicArea.addObjectTypeFlag ControlPoint
+aiStrategicArea.setOrderPosition Tank 709.5/638.5
+aiStrategicArea.setOrderPosition Infantry 704.5/635.5
+aiStrategicArea.setSide 1
+
+aiStrategicArea.create Insel 591.4/507.6 611.4/527.6 150
+aiStrategicArea.addNeighbour Basis_der_Schutztruppe
+aiStrategicArea.addNeighbour Gouverneurshaus
+aiStrategicArea.addObjectTypeFlag Flank
+aiStrategicArea.addObjectTypeFlag ControlPoint
+aiStrategicArea.setOrderPosition Tank 608.5/528.5
+aiStrategicArea.setOrderPosition Infantry 610.5/527.5
+aiStrategicArea.setSide 1

@@ -1,0 +1,187 @@
+{
+ "generator": "botgen",
+ "version": 5,
+ "mod": "FHSW",
+ "level": "warsaw_uprising",
+ "objectSpawners": 172,
+ "template": "symmetric",
+ "templateSource": "DICE, bf1942 Kharkov (1.6 patch archives): AI/Strategies.con, AI/conditions.con, AI/prerequisites.con, unchanged",
+ "templateChoice": {
+  "name": "symmetric",
+  "inPlay": 5,
+  "rule": "5 capturable flags in play, more than 3"
+ },
+ "scope": "an infantry map painted from the walk test, a Tank0 map from the page painter, infantry order positions, no strategic maps, no co-op layer",
+ "unreachable": [],
+ "unreachableReasons": {},
+ "botSpawnsExcluded": [
+  "apartment_spawn3",
+  "apartment_spawn4",
+  "apartment_spawn5",
+  "factory_spawn2",
+  "factory_spawn3",
+  "factory_spawn5",
+  "crash_point_spawn3",
+  "crash_point_spawn5",
+  "reproduction_factory_spawn2",
+  "reproduction_factory_spawn3",
+  "reproduction_factory_spawn4",
+  "reproduction_factory_spawn5",
+  "reproduction_factory_spawn7",
+  "warehouse_spawn1",
+  "warehouse_spawn2",
+  "warehouse_spawn3",
+  "warehouse_spawn4",
+  "warehouse_spawn5"
+ ],
+ "walkMap": {
+  "source": "walk test",
+  "engine": "none",
+  "vehicleMap": "page painter",
+  "vehicleBrush": 1.5,
+  "vehicleBrushes": [
+   {
+    "brush": 3,
+    "flagsOn": 1,
+    "spawnersOn": 9,
+    "pieces": 64,
+    "main": 5448
+   },
+   {
+    "brush": 2.5,
+    "flagsOn": 1,
+    "spawnersOn": 9,
+    "pieces": 62,
+    "main": 7263
+   },
+   {
+    "brush": 2,
+    "flagsOn": 1,
+    "spawnersOn": 9,
+    "pieces": 60,
+    "main": 7671
+   },
+   {
+    "brush": 1.5,
+    "flagsOn": 2,
+    "spawnersOn": 16,
+    "pieces": 49,
+    "main": 14407
+   }
+  ],
+  "opened": [
+   [
+    1621,
+    1333
+   ],
+   [
+    1622,
+    1333
+   ],
+   [
+    1621,
+    1334
+   ],
+   [
+    1620,
+    1335
+   ],
+   [
+    1621,
+    1335
+   ],
+   [
+    1628,
+    1619
+   ]
+  ],
+  "ways": [
+   {
+    "who": "factory_spawn1",
+    "kind": "spawn",
+    "way": "walk",
+    "opened": 1
+   },
+   {
+    "who": "reproduction_factory_spawn2",
+    "kind": "spawn",
+    "way": "drop",
+    "opened": 5
+   },
+   {
+    "who": "reproduction_factory_spawn4",
+    "kind": "spawn",
+    "way": "none",
+    "opened": 0
+   }
+  ],
+  "cover": 0.961,
+  "floors": {
+   "stacked": false,
+   "twoFloorShare": 0.015,
+   "raised": [],
+   "reason": null
+  }
+ },
+ "routeProbe": {
+  "chokeMax": 4,
+  "unreachable": [],
+  "stops": {},
+  "oneSided": {},
+  "sides": {
+   "1": {
+    "spawns": 4,
+    "flags": [
+     "apartment",
+     "crash_point",
+     "factory",
+     "reproduction_factory",
+     "warehouse"
+    ]
+   },
+   "2": {
+    "spawns": 10,
+    "flags": [
+     "apartment",
+     "crash_point",
+     "factory",
+     "reproduction_factory",
+     "warehouse"
+    ]
+   }
+  },
+  "chokes": {
+   "apartment:1": 0,
+   "apartment:2": 3,
+   "factory:1": 0,
+   "factory:2": 1,
+   "crash_point:1": 0,
+   "crash_point:2": 0,
+   "reproduction_factory:1": 0,
+   "reproduction_factory:2": 1,
+   "warehouse:1": 0,
+   "warehouse:2": 0
+  },
+  "late": {},
+  "shutLinks": []
+ },
+ "inputs": {
+  "controlPoints": "2fcd176365b36269e2800d09e518accd137d30ad210ed7e84d469e4d7553c0db",
+  "infantryMap": "b6f787fa70cb84df5343de368a62394ecb5424decf6360eb9a41917790858958",
+  "template": "43f8a790471528016570235f76e97dbb2045732458781a5139f37fed68bf98c0"
+ },
+ "files": {
+  "AI.con": "7ceea5f5530b260accc5b5502c7d8069ea59ceb785841e89d5711417db1a7644",
+  "AIpathFinding.con": "9d8080cdfa7605961969aa126519b03be9691bd604ac76aef50166d81215edd2",
+  "AI/StrategicAreas.con": "7fa3d10a21379f55341accb878f918faf41c28915d658f5ade68014d1badf4d1",
+  "AI/Strategies.con": "4ce0be59a0d6c5cd530db002fb062c4be8d936bc6ae59bd188803ccaf7869a8d",
+  "AI/conditions.con": "68a0c7a8aec69954063147b60fae560b2874884285737aa085efa76597d395aa",
+  "AI/prerequisites.con": "4c1f313bc285b228fd6ad03bfd1f44c5b15c8703c31f802eb605bc5f00f88bb5",
+  "Pathfinding/Infantry1Level0Map.raw": "b4a224122d4441499034ed00e53cfa9b98eba623329b9e4c42d96c93d8d5fa00",
+  "Pathfinding/Infantry1Level1Map.raw": "99668d7a137d4f6cfb91adf1f4967314404f83f3d149f50dbbb472418a19fbeb",
+  "Pathfinding/Infantry1Level2Map.raw": "3f99d6d28dde2c570e58493a9521609c66b20c3a626cc1e21add10e4fa0589f0",
+  "Pathfinding/Tank0Level0Map.raw": "f489fc3d6aebbb1f6c16d3fd02759e235844b09ae2ff39843f89059429449b9f",
+  "Pathfinding/Tank0Level1Map.raw": "efc7ed29c4a6191f045320c8a9b834496005df9d192c33b8322c558e3f6aa7c6",
+  "Pathfinding/Tank0Level2Map.raw": "532feb8face1254c8546c7580357195003b199ffe65a52801ff2ea31a198c9ca"
+ }
+}

@@ -1,0 +1,79 @@
+rem *** Strategic areas: one per control point (botgen) ***
+
+aiStrategicArea.create apartment 1549.6/1569 1554.6/1574 150
+aiStrategicArea.addNeighbour factory
+aiStrategicArea.addNeighbour warehouse
+aiStrategicArea.addNeighbour turningpointpol
+aiStrategicArea.addObjectTypeFlag Flank
+aiStrategicArea.addObjectTypeFlag ControlPoint
+aiStrategicArea.setOrderPosition Tank 1556.5/1574.5
+aiStrategicArea.setOrderPosition Infantry 1555.5/1574.5
+aiStrategicArea.setSide 2
+
+aiStrategicArea.create factory 1703.6/1639.4 1711.6/1647.4 200
+aiStrategicArea.addNeighbour apartment
+aiStrategicArea.addNeighbour crash_point
+aiStrategicArea.addNeighbour axis_base
+aiStrategicArea.addNeighbour warehouse
+aiStrategicArea.addObjectTypeFlag Centre
+aiStrategicArea.addObjectTypeFlag Close
+aiStrategicArea.addObjectTypeFlag ControlPoint
+aiStrategicArea.setOrderPosition Tank 1723.5/1632.5
+aiStrategicArea.setOrderPosition Infantry 1711.5/1646.5
+aiStrategicArea.setSide 2
+
+aiStrategicArea.create crash_point 1777.5/1507.5 1782.5/1512.5 200
+aiStrategicArea.addNeighbour factory
+aiStrategicArea.addNeighbour reproduction_factory
+aiStrategicArea.addNeighbour axis_base
+aiStrategicArea.addNeighbour warehouse
+aiStrategicArea.addNeighbour turningpointpol
+aiStrategicArea.addObjectTypeFlag Centre
+aiStrategicArea.addObjectTypeFlag ControlPoint
+aiStrategicArea.setOrderPosition Tank 1782.5/1510.5
+aiStrategicArea.setOrderPosition Infantry 1782.5/1511.5
+aiStrategicArea.setSide 2
+
+aiStrategicArea.create reproduction_factory 1712.4/1346.7 1717.4/1351.7 200
+aiStrategicArea.addNeighbour crash_point
+aiStrategicArea.addNeighbour warehouse
+aiStrategicArea.addNeighbour turningpointpol
+aiStrategicArea.addObjectTypeFlag Centre
+aiStrategicArea.addObjectTypeFlag Close
+aiStrategicArea.addObjectTypeFlag ControlPoint
+aiStrategicArea.setOrderPosition Tank 1715.5/1351.5
+aiStrategicArea.setOrderPosition Infantry 1716.5/1351.5
+aiStrategicArea.setSide 2
+
+aiStrategicArea.create axis_base 1788.9/1738.7 1793.9/1743.7 50
+aiStrategicArea.addNeighbour factory
+aiStrategicArea.addNeighbour crash_point
+aiStrategicArea.addObjectTypeFlag Base
+aiStrategicArea.setOrderPosition Tank 1793.5/1745.5
+aiStrategicArea.setOrderPosition Infantry 1793.5/1744.5
+aiStrategicArea.setSide 1
+aiStrategicArea.setTakeable 2 0
+
+aiStrategicArea.create warehouse 1655/1510 1660/1515 300
+aiStrategicArea.addNeighbour apartment
+aiStrategicArea.addNeighbour factory
+aiStrategicArea.addNeighbour crash_point
+aiStrategicArea.addNeighbour reproduction_factory
+aiStrategicArea.addNeighbour turningpointpol
+aiStrategicArea.addObjectTypeFlag Centre
+aiStrategicArea.addObjectTypeFlag StrongPoint
+aiStrategicArea.addObjectTypeFlag ControlPoint
+aiStrategicArea.setOrderPosition Tank 1660.5/1512.5
+aiStrategicArea.setOrderPosition Infantry 1660.5/1513.5
+aiStrategicArea.setSide 2
+
+aiStrategicArea.create turningpointpol 1610.9/1198 1615.9/1203 50
+aiStrategicArea.addNeighbour apartment
+aiStrategicArea.addNeighbour crash_point
+aiStrategicArea.addNeighbour reproduction_factory
+aiStrategicArea.addNeighbour warehouse
+aiStrategicArea.addObjectTypeFlag Base
+aiStrategicArea.setOrderPosition Tank 1613.5/1202.5
+aiStrategicArea.setOrderPosition Infantry 1614.5/1202.5
+aiStrategicArea.setSide 2
+aiStrategicArea.setTakeable 1 0

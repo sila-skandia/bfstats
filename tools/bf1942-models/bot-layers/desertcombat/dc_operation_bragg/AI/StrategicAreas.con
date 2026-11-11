@@ -1,0 +1,45 @@
+rem *** Strategic areas: one per control point (botgen) ***
+
+aiStrategicArea.create us_airbase 417.9/353.7 430.9/366.7 50
+aiStrategicArea.addNeighbour us_armor_hq
+aiStrategicArea.addNeighbour oil_pump_station
+aiStrategicArea.addObjectTypeFlag Base
+aiStrategicArea.setOrderPosition Infantry 429.5/367.5
+aiStrategicArea.setSide 2
+aiStrategicArea.setTakeable 1 0
+
+aiStrategicArea.create us_armor_hq 1094.6/693.9 1109.6/708.9 150
+aiStrategicArea.addNeighbour us_airbase
+aiStrategicArea.addNeighbour oil_pump_station
+aiStrategicArea.addNeighbour khamisiyah
+aiStrategicArea.addObjectTypeFlag Flank
+aiStrategicArea.addObjectTypeFlag ControlPoint
+aiStrategicArea.setOrderPosition Infantry 1110.5/707.5
+
+aiStrategicArea.create oil_pump_station 495.8/920.7 513.8/938.7 300
+aiStrategicArea.addNeighbour us_airbase
+aiStrategicArea.addNeighbour us_armor_hq
+aiStrategicArea.addNeighbour jalibah
+aiStrategicArea.addNeighbour khamisiyah
+aiStrategicArea.addObjectTypeFlag Centre
+aiStrategicArea.addObjectTypeFlag StrongPoint
+aiStrategicArea.addObjectTypeFlag Close
+aiStrategicArea.addObjectTypeFlag ControlPoint
+aiStrategicArea.setOrderPosition Infantry 514.5/939.5
+
+aiStrategicArea.create jalibah 1000.9/1639.4 1030.9/1669.4 50
+aiStrategicArea.addNeighbour oil_pump_station
+aiStrategicArea.addNeighbour khamisiyah
+aiStrategicArea.addObjectTypeFlag Base
+aiStrategicArea.setOrderPosition Infantry 1029.5/1668.5
+aiStrategicArea.setSide 1
+aiStrategicArea.setTakeable 2 0
+
+aiStrategicArea.create khamisiyah 1073/1183.9 1091/1201.9 150
+aiStrategicArea.addNeighbour us_armor_hq
+aiStrategicArea.addNeighbour oil_pump_station
+aiStrategicArea.addNeighbour jalibah
+aiStrategicArea.addObjectTypeFlag Flank
+aiStrategicArea.addObjectTypeFlag Close
+aiStrategicArea.addObjectTypeFlag ControlPoint
+aiStrategicArea.setOrderPosition Infantry 1092.5/1200.5

@@ -1,0 +1,109 @@
+{
+ "generator": "botgen",
+ "version": 5,
+ "mod": "DesertCombat",
+ "level": "dc_operation_bragg",
+ "objectSpawners": 72,
+ "template": "few",
+ "templateSource": "DICE, bf1942 Kursk (1.6 patch archives, Kursk_003.rfa): AI/Strategies.con, AI/conditions.con, AI/prerequisites.con, unchanged",
+ "templateChoice": {
+  "name": "few",
+  "inPlay": 3,
+  "rule": "3 capturable flags in play, at most 3"
+ },
+ "scope": "on foot: infantry order positions only, no search maps, no co-op layer",
+ "unreachable": [],
+ "unreachableReasons": {},
+ "botSpawnsExcluded": [
+  "airbase",
+  "oil_1",
+  "oil_2",
+  "oil_3",
+  "oil_4",
+  "oil_5",
+  "oil_6",
+  "oil_8",
+  "oil_9",
+  "oil_10",
+  "airbase3",
+  "airbase4",
+  "airbase5",
+  "airbase7",
+  "airbase9",
+  "jalibah5",
+  "jalibah9",
+  "jalibah10",
+  "kam1",
+  "kam3",
+  "kam4",
+  "usahq1",
+  "usahq2",
+  "usahq3",
+  "usahq4",
+  "usahq5",
+  "usahq6",
+  "airbase16",
+  "rhibarea1"
+ ],
+ "walkMap": {
+  "source": "page painter",
+  "engine": "none",
+  "opened": [],
+  "ways": [],
+  "cover": 0.816,
+  "floors": {
+   "stacked": false,
+   "twoFloorShare": 0.003,
+   "raised": [],
+   "reason": null
+  },
+  "capped": true,
+  "joined": 4
+ },
+ "routeProbe": {
+  "chokeMax": 4,
+  "unreachable": [],
+  "stops": {},
+  "oneSided": {},
+  "sides": {
+   "1": {
+    "spawns": 8,
+    "flags": [
+     "khamisiyah",
+     "oil_pump_station",
+     "us_armor_hq"
+    ]
+   },
+   "2": {
+    "spawns": 6,
+    "flags": [
+     "khamisiyah",
+     "oil_pump_station",
+     "us_armor_hq"
+    ]
+   }
+  },
+  "chokes": {
+   "us_armor_hq:1": 2,
+   "us_armor_hq:2": 5,
+   "oil_pump_station:1": 0,
+   "oil_pump_station:2": 3,
+   "khamisiyah:1": 2,
+   "khamisiyah:2": 3
+  },
+  "late": {},
+  "shutLinks": []
+ },
+ "inputs": {
+  "controlPoints": "360891446efa8f140508aff376de192b5c80a466558576407794233e92472a19",
+  "infantryMap": "cec8469ac6f819f82b66e6ef5d32096f41c3ee8a07d2534e25d7596eb566b7b8",
+  "template": "bdc0e455f47f91b7e7724e71d7c0c196e839b36946ac3abb7663d725944081e5"
+ },
+ "files": {
+  "AI.con": "ff65da5cf781f265a28875b6cbca3063a01ed39073ce89fcfbb96af7a80600f7",
+  "AI/StrategicAreas.con": "2bbaa1101a116e870c88d1e2bc70de2ab5df26b19b2a6ed44b06befdb54f03ff",
+  "AI/Strategies.con": "13da4dc35872dd4b5798a066f4425bdc824cfd61f31093d1808e1202644de52e",
+  "AI/conditions.con": "248a04b727c08d696bf0fa9c162bc22c43cde3c75f695892fe1e0f5141519c49",
+  "AI/prerequisites.con": "c96168b5f69860e578f5d26728fd2a2092c4c436e1da49b7d6f4009b65735398"
+ }
+}

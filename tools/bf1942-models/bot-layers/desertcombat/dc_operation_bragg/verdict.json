@@ -1,0 +1,102 @@
+{
+ "level": "dc_operation_bragg",
+ "verdict": "fail",
+ "outcome": "no-fight",
+ "config": "with vehicles",
+ "doctrine": "garrison",
+ "generatorVersion": 5,
+ "inputs": {
+  "controlPoints": "360891446efa8f140508aff376de192b5c80a466558576407794233e92472a19",
+  "infantryMap": "cec8469ac6f819f82b66e6ef5d32096f41c3ee8a07d2534e25d7596eb566b7b8",
+  "template": "bdc0e455f47f91b7e7724e71d7c0c196e839b36946ac3abb7663d725944081e5"
+ },
+ "baseline": "desertcombat's own layers with vehicles, garrison doctrine: berlin, dc_desertshield, kharkov, kursk, stalingrad; seeds 1..10, 600 s; dropped, no fight: dc_basrahs_edge",
+ "bar": {
+  "against": "desertcombat",
+  "why": "desertcombat's own bar, built from 5 of its levels that are alive (berlin, dc_desertshield, kharkov, kursk, stalingrad)"
+ },
+ "againstDice": {
+  "verdict": "fail",
+  "outcome": "no-fight",
+  "baseline": "DICE layers with vehicles, garrison doctrine: berlin, stalingrad, kharkov, bocage; seeds 1..10, 600 s",
+  "sizes": {
+   "8": {
+    "verdict": "fail",
+    "failed": [
+     "routeFailuresPerBotMinute",
+     "capturesTotal",
+     "enemyKillsPerBotMinute",
+     "bothSidesCapture",
+     "bothSidesKill",
+     "routeFailuresPerBotMinuteWorseSide",
+     "nonEnemyDeathShareWorseSide",
+     "hullStuckSecondsPerDrivingMinute",
+     "hullStuckSecondsPerDrivingMinuteWorseSide",
+     "unitsNeverUsedShare",
+     "tankSilentShare"
+    ]
+   },
+   "16": {
+    "verdict": "fail",
+    "failed": [
+     "idleShare",
+     "selfDeathsPerBotMinute",
+     "routeFailuresPerBotMinute",
+     "enemyKillsPerBotMinute",
+     "bothSidesKill",
+     "routeFailuresPerBotMinuteWorseSide",
+     "nonEnemyDeathShareWorseSide",
+     "hullStuckSecondsPerDrivingMinute",
+     "hullStuckSecondsPerDrivingMinuteWorseSide",
+     "unitsNeverUsedShare",
+     "tankSilentShare"
+    ]
+   }
+  }
+ },
+ "seeds": 2,
+ "sizes": {
+  "8": {
+   "verdict": "fail",
+   "failed": [
+    "routeFailuresPerBotMinute",
+    "capturesTotal",
+    "enemyKillsPerBotMinute",
+    "bothSidesCapture",
+    "bothSidesKill",
+    "routeFailuresPerBotMinuteWorseSide",
+    "nonEnemyDeathShareWorseSide",
+    "hullStuckSecondsPerDrivingMinute",
+    "hullStuckSecondsPerDrivingMinuteWorseSide",
+    "unitsNeverUsedShare",
+    "tankSilentShare"
+   ],
+   "winners": [
+    0,
+    2,
+    0
+   ]
+  },
+  "16": {
+   "verdict": "fail",
+   "failed": [
+    "selfDeathsPerBotMinute",
+    "enemyKillsPerBotMinute",
+    "bothSidesKill",
+    "nonEnemyDeathShareWorseSide",
+    "hullStuckSecondsPerDrivingMinute",
+    "hullStuckSecondsPerDrivingMinuteWorseSide",
+    "unitsNeverUsedShare",
+    "tankSilentShare"
+   ],
+   "winners": [
+    1,
+    1,
+    0
+   ]
+  }
+ },
+ "oneSided": null,
+ "unreachable": [],
+ "lintErrors": []
+}
