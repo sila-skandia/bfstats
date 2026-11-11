@@ -169,11 +169,11 @@ export function segmentDistance(p0, p1, q0, q1) {
  * The nearest friend whose body is in the line of fire, or null.
  * `origin` is where the round leaves, `aim` the point it is fired at (the
  * target's), `friends` `[{ id, pos: [x, y, z] (feet), stance }]`: the living
- * teammates the round could meet (the firer and his own hull's crew left
+ * teammates the round could meet (the firer and their own hull's crew left
  * out, as `roundPasses` passes them). Returns `{ id, along, offset, side }`:
  * how far down the line the friend is, how far off it, and on which side of
  * it: +1 along (dz, -dx) of the line's x/z (+x for a line down +z, which is
- * a soldier's left: his strafe +1 runs along (-cos yaw, sin yaw),
+ * a soldier's left: their strafe +1 runs along (-cos yaw, sin yaw),
  * walking-body.js), -1 the other way.
  */
 export function friendInLine(origin, aim, friends, opts = HOLD_FIRE) {

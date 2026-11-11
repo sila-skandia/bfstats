@@ -132,7 +132,7 @@ this change.
   runner match with the SAI on both sides, whose seeded traces are the
   engine-parity ones (`sim/match.mjs` `holdFire`).
 - **(September, superseded above) No avoidance was added.** The engine has
-  none (FF-7), so a bot that fires with a teammate in its line hits him.
+  none (FF-7), so a bot that fires with a teammate in its line hits them.
   Staying out of each other's way is up to movement and formation. If a
   viewer-only behaviour (a squad walking in file, say) puts friends in each
   other's line far more often than retail does, fix that behaviour, not the
