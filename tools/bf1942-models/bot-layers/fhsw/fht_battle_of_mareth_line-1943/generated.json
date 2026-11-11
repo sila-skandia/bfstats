@@ -1,0 +1,147 @@
+{
+ "generator": "botgen",
+ "version": 5,
+ "mod": "FHSW",
+ "level": "fht_battle_of_mareth_line-1943",
+ "objectSpawners": 218,
+ "template": "symmetric",
+ "templateSource": "DICE, bf1942 Kharkov (1.6 patch archives): AI/Strategies.con, AI/conditions.con, AI/prerequisites.con, unchanged",
+ "templateChoice": {
+  "name": "symmetric",
+  "inPlay": 5,
+  "rule": "5 capturable flags in play, more than 3"
+ },
+ "scope": "on foot: infantry order positions only, no search maps, no co-op layer",
+ "unreachable": [
+  "southpicket",
+  "dak_base_south"
+ ],
+ "unreachableReasons": {
+  "southpicket": "route probe",
+  "dak_base_south": "walk test"
+ },
+ "botSpawnsExcluded": [
+  "ffa_west_base_spawn5",
+  "fortress_spawn1",
+  "fortress_spawn2",
+  "fortress_spawn3",
+  "fortress_spawn4",
+  "fortress_spawn5",
+  "fortress_spawn6",
+  "fortress_spawn7",
+  "fortress_spawn9",
+  "fortress_spawn10",
+  "eastpicket_spawn1",
+  "eastpicket_spawn3",
+  "eastpicket_spawn5",
+  "eastpicket_spawn6",
+  "eastpicket_spawn7",
+  "southpicket_spawn1",
+  "southpicket_spawn2",
+  "southpicket_spawn3",
+  "southpicket_spawn4",
+  "southpicket_spawn5",
+  "southpicket_spawn7",
+  "southpicket_spawn8",
+  "southpicket_spawn9",
+  "sidra_defence_spawn1",
+  "sidra_defence_spawn2",
+  "sidra_defence_spawn3",
+  "sidra_defence_spawn4",
+  "sidra_defence_spawn5",
+  "docks_spawn1",
+  "docks_spawn3",
+  "docks_spawn4",
+  "docks_spawn5",
+  "docks_spawn6",
+  "docks_spawn7",
+  "docks_spawn8",
+  "docks_spawn9",
+  "docks_spawn10",
+  "GabesAllied_2",
+  "GabesAllied_3",
+  "GabesAllied_4",
+  "GabesAllied_7",
+  "GabesAllied_8"
+ ],
+ "walkMap": {
+  "source": "page painter",
+  "engine": "none",
+  "opened": [],
+  "ways": [],
+  "cover": 0.866,
+  "floors": {
+   "stacked": false,
+   "twoFloorShare": 0.004,
+   "raised": [],
+   "reason": null
+  },
+  "capped": true,
+  "joined": 4
+ },
+ "routeProbe": {
+  "chokeMax": 4,
+  "unreachable": [
+   "southpicket"
+  ],
+  "stops": {
+   "southpicket": {
+    "1": {
+     "stage": "strategic"
+    },
+    "2": {
+     "stage": "strategic"
+    }
+   }
+  },
+  "oneSided": {},
+  "sides": {
+   "1": {
+    "spawns": 15,
+    "flags": [
+     "dak_base",
+     "eastpicket",
+     "fortress",
+     "sidra_defence",
+     "sidra_docks"
+    ]
+   },
+   "2": {
+    "spawns": 9,
+    "flags": [
+     "dak_base",
+     "eastpicket",
+     "fortress",
+     "sidra_defence",
+     "sidra_docks"
+    ]
+   }
+  },
+  "chokes": {
+   "fortress:1": 0,
+   "fortress:2": 0,
+   "eastpicket:1": 1,
+   "eastpicket:2": 0,
+   "sidra_defence:1": 0,
+   "sidra_defence:2": 1,
+   "sidra_docks:1": 1,
+   "sidra_docks:2": 0,
+   "dak_base:1": 0,
+   "dak_base:2": 0
+  },
+  "late": {},
+  "shutLinks": []
+ },
+ "inputs": {
+  "controlPoints": "ad1b0b28123a284be7708cfcc36525dd686f453c7fc7984eb74424a75842937e",
+  "infantryMap": "914157c78bc8820241b408329fa0813060f8b745c0d0ca273649e4f7e8b269b6",
+  "template": "43f8a790471528016570235f76e97dbb2045732458781a5139f37fed68bf98c0"
+ },
+ "files": {
+  "AI.con": "6add06fce9aa94cfe94d211bd067d741e04433e1f1c464973e40b7b389dd13d7",
+  "AI/StrategicAreas.con": "25049e74026dd7398c378c03b0f84276614d8e16862ca5f5c48a6f4788919b06",
+  "AI/Strategies.con": "4ce0be59a0d6c5cd530db002fb062c4be8d936bc6ae59bd188803ccaf7869a8d",
+  "AI/conditions.con": "68a0c7a8aec69954063147b60fae560b2874884285737aa085efa76597d395aa",
+  "AI/prerequisites.con": "4c1f313bc285b228fd6ad03bfd1f44c5b15c8703c31f802eb605bc5f00f88bb5"
+ }
+}

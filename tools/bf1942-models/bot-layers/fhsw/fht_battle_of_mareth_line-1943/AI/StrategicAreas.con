@@ -1,0 +1,67 @@
+rem *** Strategic areas: one per control point (botgen) ***
+
+aiStrategicArea.create ffa_west_base 171.8/475.1 176.8/480.1 50
+aiStrategicArea.addNeighbour fortress
+aiStrategicArea.addNeighbour eastpicket
+aiStrategicArea.addObjectTypeFlag Base
+aiStrategicArea.setOrderPosition Infantry 179.5/480.5
+aiStrategicArea.setSide 2
+aiStrategicArea.setTakeable 1 0
+
+aiStrategicArea.create fortress 592.9/524.8 602.9/534.8 300
+aiStrategicArea.addNeighbour ffa_west_base
+aiStrategicArea.addNeighbour sidra_defence
+aiStrategicArea.addNeighbour sidra_docks
+aiStrategicArea.addObjectTypeFlag Centre
+aiStrategicArea.addObjectTypeFlag StrongPoint
+aiStrategicArea.addObjectTypeFlag Close
+aiStrategicArea.addObjectTypeFlag ControlPoint
+aiStrategicArea.setOrderPosition Infantry 604.5/535.5
+aiStrategicArea.setSide 1
+
+aiStrategicArea.create eastpicket 973.5/367.2 983.5/377.2 150
+aiStrategicArea.addNeighbour ffa_west_base
+aiStrategicArea.addNeighbour sidra_defence
+aiStrategicArea.addNeighbour sidra_docks
+aiStrategicArea.addNeighbour dak_base
+aiStrategicArea.addObjectTypeFlag Flank
+aiStrategicArea.addObjectTypeFlag ControlPoint
+aiStrategicArea.setOrderPosition Infantry 982.5/376.5
+aiStrategicArea.setSide 1
+
+aiStrategicArea.create southpicket 621.7/321.3 641.7/341.3 10
+aiStrategicArea.setSide 1
+aiStrategicArea.setTakeable 1 0
+aiStrategicArea.setTakeable 2 0
+
+aiStrategicArea.create sidra_defence 843.2/563.8 848.2/568.8 200
+aiStrategicArea.addNeighbour fortress
+aiStrategicArea.addNeighbour eastpicket
+aiStrategicArea.addNeighbour sidra_docks
+aiStrategicArea.addObjectTypeFlag Centre
+aiStrategicArea.addObjectTypeFlag ControlPoint
+aiStrategicArea.setOrderPosition Infantry 849.5/569.5
+aiStrategicArea.setSide 1
+
+aiStrategicArea.create sidra_docks 830/742 835/747 150
+aiStrategicArea.addNeighbour fortress
+aiStrategicArea.addNeighbour eastpicket
+aiStrategicArea.addNeighbour sidra_defence
+aiStrategicArea.addNeighbour dak_base
+aiStrategicArea.addObjectTypeFlag Flank
+aiStrategicArea.addObjectTypeFlag ControlPoint
+aiStrategicArea.setOrderPosition Infantry 833.5/748.5
+aiStrategicArea.setSide 1
+
+aiStrategicArea.create dak_base_south 1062.6/818.4 1067.6/823.4 10
+aiStrategicArea.setSide 1
+aiStrategicArea.setTakeable 1 0
+aiStrategicArea.setTakeable 2 0
+
+aiStrategicArea.create dak_base 992/990 997/995 150
+aiStrategicArea.addNeighbour eastpicket
+aiStrategicArea.addNeighbour sidra_docks
+aiStrategicArea.addObjectTypeFlag Flank
+aiStrategicArea.addObjectTypeFlag ControlPoint
+aiStrategicArea.setOrderPosition Infantry 995.5/996.5
+aiStrategicArea.setSide 1

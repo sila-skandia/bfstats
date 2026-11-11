@@ -1,0 +1,134 @@
+{
+ "generator": "botgen",
+ "version": 5,
+ "mod": "FHSW",
+ "level": "fht_battle_of_kohima-1944",
+ "objectSpawners": 168,
+ "template": "few",
+ "templateSource": "DICE, bf1942 Kursk (1.6 patch archives, Kursk_003.rfa): AI/Strategies.con, AI/conditions.con, AI/prerequisites.con, unchanged",
+ "templateChoice": {
+  "name": "few",
+  "inPlay": 3,
+  "rule": "3 capturable flags in play, at most 3"
+ },
+ "scope": "on foot: infantry order positions only, no search maps, no co-op layer",
+ "unreachable": [
+  "west_city"
+ ],
+ "unreachableReasons": {
+  "west_city": "route probe"
+ },
+ "botSpawnsExcluded": [
+  "naga_spawn1",
+  "garrison_spawn1",
+  "monastery_1",
+  "monastery_5",
+  "westcity_1",
+  "fsd_2",
+  "fsd_3",
+  "southcity_2",
+  "southcity_6",
+  "kohima_3",
+  "kohima_5",
+  "kohima_6",
+  "kohima_7",
+  "garrison_2",
+  "garrison_3",
+  "garrison_5",
+  "garrison_7",
+  "west_city_spawn1",
+  "west_city_spawn3",
+  "west_city_spawn4",
+  "monestery_spawn1",
+  "monestery_spawn2",
+  "factory_spawn1",
+  "factory_spawn2"
+ ],
+ "walkMap": {
+  "source": "page painter",
+  "engine": "none",
+  "opened": [],
+  "ways": [],
+  "cover": 0.453,
+  "floors": {
+   "stacked": false,
+   "twoFloorShare": 0.018,
+   "raised": [],
+   "reason": null
+  },
+  "capped": true
+ },
+ "routeProbe": {
+  "chokeMax": 4,
+  "unreachable": [
+   "west_city"
+  ],
+  "stops": {
+   "west_city": {
+    "1": {
+     "stage": "leg",
+     "leg": 0,
+     "from": [
+      468.1,
+      -591.8
+     ],
+     "to": [
+      481.5,
+      -590.5
+     ]
+    },
+    "2": {
+     "stage": "strategic"
+    }
+   }
+  },
+  "oneSided": {
+   "tennis_court": 1
+  },
+  "sides": {
+   "1": {
+    "spawns": 15,
+    "flags": [
+     "factory",
+     "south_city",
+     "tennis_court"
+    ]
+   },
+   "2": {
+    "spawns": 4,
+    "flags": [
+     "factory",
+     "south_city"
+    ]
+   }
+  },
+  "chokes": {
+   "tennis_court:1": 2,
+   "tennis_court:2": 5,
+   "south_city:1": 1,
+   "south_city:2": 0,
+   "factory:1": 0,
+   "factory:2": 0
+  },
+  "late": {},
+  "shutLinks": [
+   "tennis_court>south_city",
+   "south_city>tennis_court",
+   "south_city>factory",
+   "factory>tennis_court",
+   "factory>south_city"
+  ]
+ },
+ "inputs": {
+  "controlPoints": "28f95f454516fb23b018ceaf5103d853c80aa80420c398dc56b96496d945b58f",
+  "infantryMap": "0b394ca1e7c431bb62fe74def8a44ca88a4f0d12e776edfeca265dcdf4f559f1",
+  "template": "bdc0e455f47f91b7e7724e71d7c0c196e839b36946ac3abb7663d725944081e5"
+ },
+ "files": {
+  "AI.con": "759fbf8a53b5ccb4322963f7c01cfb41c35092aba0a7ca116c6a9aaf80c213a2",
+  "AI/StrategicAreas.con": "f3a3cdbf0fd870e7882c0b0ef6a8a150a8b60fb30c87c411b3041d7a27a30921",
+  "AI/Strategies.con": "13da4dc35872dd4b5798a066f4425bdc824cfd61f31093d1808e1202644de52e",
+  "AI/conditions.con": "248a04b727c08d696bf0fa9c162bc22c43cde3c75f695892fe1e0f5141519c49",
+  "AI/prerequisites.con": "c96168b5f69860e578f5d26728fd2a2092c4c436e1da49b7d6f4009b65735398"
+ }
+}
