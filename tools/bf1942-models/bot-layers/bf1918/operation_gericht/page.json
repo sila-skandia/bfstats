@@ -6,37 +6,46 @@
  "bar": "DICE levels on the page, 3 matches each of 600 s, 16 bots: Berlin, Stalingrad, Kharkov, Bocage; 2026-11-11",
  "verdict": "fail",
  "failed": [
-  "suicidesPerBotMinute",
   "nonEnemyDeathShareWorseSide",
   "enemyKillsPerBotMinute"
  ],
  "checks": [
   {
    "metric": "teamKillsPerBotMinute",
-   "median": 0.0062,
+   "median": 0,
    "bar": "<= 0.025",
    "pass": true
   },
   {
    "metric": "suicidesPerBotMinute",
-   "median": 0.0687,
+   "median": 0.0375,
    "bar": "<= 0.0562",
-   "pass": false
+   "pass": true
   },
   {
    "metric": "nonEnemyDeathShareWorseSide",
-   "median": 0.647,
+   "median": 0.6,
    "bar": "<= 0.308",
    "pass": false
   },
   {
    "metric": "enemyKillsPerBotMinute",
-   "median": 0.075,
+   "median": 0.0562,
    "bar": ">= 0.175",
    "pass": false
   }
  ],
  "matches": 1,
+ "rollout": {
+  "pass": false,
+  "floor": {
+   "kills": 0.15,
+   "killsWithFlags": 0.03,
+   "flags": 3,
+   "killsWithAFlag": 0.05,
+   "ownHand": 0.1
+  }
+ },
  "runs": [
   {
    "generated": {
@@ -45,17 +54,26 @@
    },
    "minutes": 10,
    "tickets": {
-    "1": 13,
-    "2": 89
+    "1": 15,
+    "2": 96
    },
    "capturesTotal": 0,
-   "teamKillsPerBotMinute": 0.0062,
-   "suicidesPerBotMinute": 0.0687,
-   "nonEnemyDeathShareWorseSide": 0.647,
-   "enemyKillsPerBotMinute": 0.075,
+   "teamKillsPerBotMinute": 0,
+   "suicidesPerBotMinute": 0.0375,
+   "nonEnemyDeathShareWorseSide": 0.6,
+   "enemyKillsPerBotMinute": 0.0562,
+   "rollout": {
+    "pass": false,
+    "why": [
+     "activity"
+    ],
+    "enemyKills": 0.0562,
+    "captures": 0,
+    "ownHand": 0.0375
+   },
    "teamKillsBySide": {
     "1": 0,
-    "2": 1
+    "2": 0
    }
   }
  ]

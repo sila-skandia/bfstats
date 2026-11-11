@@ -1,0 +1,77 @@
+{
+ "level": "dawnVille",
+ "mod": "bf1918",
+ "url": "https://play.bfstats.io/map.html?map=dawnVille&team=2&mode=Conquest&mod=bf1918&botCount=16&botSkill=0.75&mute&shots",
+ "date": "2026-11-11",
+ "bar": "DICE levels on the page, 3 matches each of 600 s, 16 bots: Berlin, Stalingrad, Kharkov, Bocage; 2026-11-11",
+ "verdict": "fail",
+ "failed": [
+  "enemyKillsPerBotMinute"
+ ],
+ "checks": [
+  {
+   "metric": "teamKillsPerBotMinute",
+   "median": 0,
+   "bar": "<= 0.025",
+   "pass": true
+  },
+  {
+   "metric": "suicidesPerBotMinute",
+   "median": 0.0125,
+   "bar": "<= 0.0562",
+   "pass": true
+  },
+  {
+   "metric": "nonEnemyDeathShareWorseSide",
+   "median": 0.125,
+   "bar": "<= 0.308",
+   "pass": true
+  },
+  {
+   "metric": "enemyKillsPerBotMinute",
+   "median": 0.1062,
+   "bar": ">= 0.175",
+   "pass": false
+  }
+ ],
+ "matches": 1,
+ "rollout": {
+  "pass": true,
+  "floor": {
+   "kills": 0.15,
+   "killsWithFlags": 0.03,
+   "flags": 3,
+   "killsWithAFlag": 0.05,
+   "ownHand": 0.1
+  }
+ },
+ "runs": [
+  {
+   "generated": {
+    "version": 5,
+    "template": "symmetric"
+   },
+   "minutes": 10,
+   "tickets": {
+    "1": 95,
+    "2": 86
+   },
+   "capturesTotal": 7,
+   "teamKillsPerBotMinute": 0,
+   "suicidesPerBotMinute": 0.0125,
+   "nonEnemyDeathShareWorseSide": 0.125,
+   "enemyKillsPerBotMinute": 0.1062,
+   "rollout": {
+    "pass": true,
+    "why": [],
+    "enemyKills": 0.1062,
+    "captures": 7,
+    "ownHand": 0.0125
+   },
+   "teamKillsBySide": {
+    "1": 0,
+    "2": 0
+   }
+  }
+ ]
+}

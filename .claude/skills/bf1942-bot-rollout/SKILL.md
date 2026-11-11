@@ -224,22 +224,28 @@ Every generated level live runs the page's bot code, and so do DICE's.
 
 ## Where it stood on 2026-11-12
 
-29 levels live (`python3 $S/live.py`). Judged and waiting for a page match
-after the flag-binding fix went live: the levels the runner calls
-`no-fight` (bf1918 battle_of_cambrai, chemin_des_dames, dawnville,
-saint_quentin_canal; desertcombat dc_medina_ridge, dc_operation_bragg;
-fhsw berlin-1945-streets, fht_battle_of_kohima-1944,
-in_the_hell_of_bocage-1944, monte_cassino-1944,
-stalingrad_urban_area-1942, ural_mountains-1947, warsaw_uprising,
-way_to_paris-1946) and the last FHSW verdicts (eagles_nest-1946,
+40 levels live (`python3 $S/live.py`): FHSW 17, the vanilla tree 8 (6
+community, Aberdeen), Desert Combat 6, BF1918 6, FH 2, FHSWEurope 1. Every
+level that has a layer folder has been played on the page; nothing is
+waiting.
+
+Turned down on the page, with the figures in each `verdict.json`
+(`acceptanceWithdrawn`) and `page.json`. Each is worth another match only
+after a fix that could help it (they are quiet: bots that barely meet):
+bf1942 the_bridge; fhsw pegasus, bizerte-1943, gazaps-1945, westwall-1945,
+ramelle_neuville-1944, berlin-1945-streets, fht_battle_of_kohima-1944,
+in_the_hell_of_bocage-1944, ural_mountains-1947, warsaw_uprising,
 fht_dinant-1940, fht_operation_longcloth-1943, fht_pasir_panjang-1942,
-gazaps-1945, hungary_forest-1945, iron_monster, manchuria-1945,
-ramelle_neuville-1944, westwall-1945). Turned down on the page and worth
-another match after any fix that could help them: the_bridge, fhsw
-pegasus, mauerfall, roye, bizerte-1943, fht_meuse_argonne_offensive,
-sanaga_river, operation_gericht, seelow-heights-1945,
-fall_of_berlin-1945. Each has its layer folder and verdict in the repo:
-start at step 3.
+way_to_paris-1946; desertcombat dc_medina_ridge, dc_operation_bragg;
+bf1918 mauerfall, battle_of_cambrai, saint_quentin_canal,
+fht_meuse_argonne_offensive, sanaga_river, operation_gericht. To retry
+one: `pagebatch.sh` (its layer is still on the volume), and if it passes
+`rollout.sh` to accept it again, then `menus.sh`.
+
+The marginal ones live, to look at first if the owner finds a level not
+worth having: fhsw stalingrad_redsquare, manchuria-1945,
+monte_cassino-1944; bf1918 lutte_de_honneur, chemin_des_dames,
+hindenburg_line (a walkover); community liberation_of_caen.
 
 Not started: Road to Rome, Secret Weapons and EoD. FHSWEurope ships AI
 for 260 of its 274 levels; of its 13 botless ones eleven are 8 km naval

@@ -442,6 +442,38 @@ fht_battle_of_mareth_line-1943 0.06, 1, 101:73; DC_Urban_Siege 0.04, 6,
 (0.31 to 0.41, tickets within 30): one unseeded match, and the runner has
 it identical before and after the change. Not explained.
 
+### The last batch, with the skill's scripts (2026-11-12)
+
+The 24 judged levels that had not been on the page, and another match for
+the 10 turned down before the fallback and the flag binding, played with
+`bf1942-bot-rollout`'s `rollout.sh`, `pagebatch.sh` and `menus.sh`. Eleven
+went live, which makes 40 (enemy kills a bot-minute, captures):
+
+| Level | Figures | Note |
+|---|---|---|
+| FHSW Hungary_Forest-1945 | 0.16, 3 | |
+| BF1918 dawnVille | 0.08, 0 then 0.11, 7 | on its second match |
+| FHSW Iron_Monster | 0.09, 2 | |
+| BF1918 roye | 0.08, 2 | turned down twice before the two fixes |
+| FHSW Eagles_Nest-1946 | 0.07, 2 | |
+| FH Seelow-Heights-1945 | 0.06, 2 | no kill at all before |
+| FHSW Fall_of_Berlin-1945 | 0.06, 6 | flags and no kill before |
+| FHSW Stalingrad_urban_area-1942 | 0.04, 1 then 0.06, 3 | on its second match |
+| BF1918 chemin_des_dames | 0.03, 1 then 0.06, 1 | on its second match, barely |
+| FHSW Manchuria-1945 | 0.05, 2 | barely |
+| FHSW Monte_Cassino-1944 | 0.04, 3 | barely |
+
+Turned down, each with its figures in its `verdict.json`
+(`acceptanceWithdrawn`) and `page.json`: FHSW gazaps-1945, westwall-1945,
+ramelle_neuville-1944, berlin-1945-streets, fht_battle_of_kohima-1944,
+in_the_hell_of_bocage-1944, ural_mountains-1947, warsaw_uprising,
+fht_dinant-1940, fht_operation_longcloth-1943, fht_pasir_panjang-1942,
+way_to_paris-1946 (two matches); Desert Combat dc_medina_ridge and
+dc_operation_bragg (two matches); BF1918 battle_of_cambrai and
+saint_quentin_canal. Still off after another match: the_bridge, FHSW
+pegasus and bizerte-1943, BF1918 mauerfall, fht_meuse_argonne_offensive,
+sanaga_river and operation_gericht.
+
 ## 7. What is not verified
 
 1. One match a level in sections 2 to 5, three in section 6, all unseeded:

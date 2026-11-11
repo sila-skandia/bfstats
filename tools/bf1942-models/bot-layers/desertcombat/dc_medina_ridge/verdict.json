@@ -99,5 +99,10 @@
   "oasis_town",
   "outpost_pass"
  ],
- "lintErrors": []
+ "lintErrors": [],
+ "acceptanceWithdrawn": {
+  "because": "page match 2026-11-12, after the flag binding: under the rollout floor (0.013 enemy kills, no capture, in two matches)",
+  "date": "2026-11-12",
+  "was": "Owner's rollout, 2026-11-11: after playing Tunis-1943 against its generated bots"
+ }
 }

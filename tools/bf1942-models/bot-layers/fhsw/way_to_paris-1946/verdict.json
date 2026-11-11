@@ -74,5 +74,10 @@
   "alliesbase",
   "under_station"
  ],
- "lintErrors": []
+ "lintErrors": [],
+ "acceptanceWithdrawn": {
+  "because": "page matches 2026-11-12: 0.025 enemy kills a bot-minute with 2 captures, then 0.013 with 1; under the rollout floor in both",
+  "date": "2026-11-12",
+  "was": "Owner's rollout, 2026-11-11: after playing Tunis-1943 against its generated bots"
+ }
 }

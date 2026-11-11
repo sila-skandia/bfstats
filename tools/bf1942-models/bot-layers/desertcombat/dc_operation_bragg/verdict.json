@@ -98,5 +98,10 @@
  },
  "oneSided": null,
  "unreachable": [],
- "lintErrors": []
+ "lintErrors": [],
+ "acceptanceWithdrawn": {
+  "because": "page matches 2026-11-12: no enemy kill with 3 captures, then 0.019 with 2; under the rollout floor in both",
+  "date": "2026-11-12",
+  "was": "Owner's rollout, 2026-11-11: after playing Tunis-1943 against its generated bots"
+ }
 }

@@ -51,9 +51,11 @@ section 6).
 (`.claude/skills/bf1942-bot-rollout/`) is the procedure as scripts: list a
 mod's botless levels, mirror and screen them in the runner, publish
 without the menu flag, play them on the live page against the rollout
-floor (`sim/pagematch.mjs rolloutFloor`), tag what passes. 29 levels were
-live when it was written, 2026-11-12; its last section lists what was
-judged and still waits for a page match.
+floor (`sim/pagematch.mjs rolloutFloor`), tag what passes. 40 levels are
+live as of 2026-11-12 (`scripts/live.py` in the skill lists them): FHSW 17,
+the vanilla tree 8, Desert Combat 6, BF1918 6, FH 2, FHSWEurope 1. Every
+level judged has been played on the page; the skill's last section lists
+the ones turned down.
 
 **The owner's rollout, 2026-11-11.** After playing Tunis-1943 against its
 generated bots the owner asked for every level with a fight to go live. A

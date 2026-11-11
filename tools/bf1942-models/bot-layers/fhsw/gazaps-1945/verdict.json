@@ -63,5 +63,10 @@
  },
  "oneSided": 2,
  "unreachable": [],
- "lintErrors": []
+ "lintErrors": [],
+ "acceptanceWithdrawn": {
+  "because": "page match 2026-11-12, after the flag binding: under the rollout floor (no enemy kill, 1 capture)",
+  "date": "2026-11-12",
+  "was": "Owner's rollout, 2026-11-11: after playing Tunis-1943 against its generated bots"
+ }
 }

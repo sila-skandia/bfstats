@@ -12,13 +12,13 @@
  "checks": [
   {
    "metric": "teamKillsPerBotMinute",
-   "median": 0.0062,
+   "median": 0,
    "bar": "<= 0.025",
    "pass": true
   },
   {
    "metric": "suicidesPerBotMinute",
-   "median": 0.0312,
+   "median": 0.0062,
    "bar": "<= 0.0562",
    "pass": true
   },
@@ -30,12 +30,22 @@
   },
   {
    "metric": "enemyKillsPerBotMinute",
-   "median": 0.0875,
+   "median": 0.0187,
    "bar": ">= 0.175",
    "pass": false
   }
  ],
  "matches": 1,
+ "rollout": {
+  "pass": false,
+  "floor": {
+   "kills": 0.15,
+   "killsWithFlags": 0.03,
+   "flags": 3,
+   "killsWithAFlag": 0.05,
+   "ownHand": 0.1
+  }
+ },
  "runs": [
   {
    "generated": {
@@ -44,16 +54,25 @@
    },
    "minutes": 10,
    "tickets": {
-    "1": 102,
-    "2": 90
+    "1": 104,
+    "2": 104
    },
    "capturesTotal": 0,
-   "teamKillsPerBotMinute": 0.0062,
-   "suicidesPerBotMinute": 0.0312,
+   "teamKillsPerBotMinute": 0,
+   "suicidesPerBotMinute": 0.0062,
    "nonEnemyDeathShareWorseSide": 0.5,
-   "enemyKillsPerBotMinute": 0.0875,
+   "enemyKillsPerBotMinute": 0.0187,
+   "rollout": {
+    "pass": false,
+    "why": [
+     "activity"
+    ],
+    "enemyKills": 0.0187,
+    "captures": 0,
+    "ownHand": 0.0062
+   },
    "teamKillsBySide": {
-    "1": 1,
+    "1": 0,
     "2": 0
    }
   }
