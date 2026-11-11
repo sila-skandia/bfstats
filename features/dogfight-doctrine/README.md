@@ -140,8 +140,9 @@ another is a third nearer), sees each enemy through eyes of his own, and is
 handed the whole fight (`c.team`) for the plans that work as a pair. Every
 round is flown against every plane; a plane down leaves the fight. The
 theatre flies a demo with `extra` planes through it and draws every plane
-(the extra ones with a tag, trail and gun line, in their team's colour;
-the meters and captions stay the two pilots').
+(the extra ones with a tag, trail and gun line, in their team's colour,
+and a caption row of their own under the two pilots'; the meters stay the
+two pilots').
 
 Lesson *The pair: your wingman* (`the-pair`, watch only: the live fight puts
 one plane up each side), a hunter 350 m behind you, from the nine starts:
@@ -159,6 +160,64 @@ weave was invented against a better turner (the Zero against the Wildcat);
 between equal airframes, on this law, it is a coin the geometry tosses.
 Rule 8's Rules row opens the wingman's fight. Held by
 `test_dogfight_doctrine.py` `test_a_wingman_keeps_the_hunter_off_your_tail`.
+
+### What the pair showed, and what it shows now (2026-11-11)
+
+The owner opened the pair on vanilla and saw "the Stuka flying straight
+without ever firing back", with no idea what it was for. Measured headless
+(`dogfight.html?mute&lesson=the-pair`, the live page and this checkout's
+code over the live assets):
+
+- **The Stuka was the plane chosen under YOUR PLANE**, not anything the pair
+  or the two-seater change picked. Every lesson is flown on the arena's best
+  fighter's airframe (Kursk: the Bf 109), but the page drew you as the plane
+  chosen (`models.mine`), so a Stuka or an Il-2 picked there flew a
+  fighter's moves in its own paint, its rear gun silent because nobody was
+  in the back of the airframe that actually flew. The kicker said "STUKA
+  AGAINST STUKA": it named your plane twice. Now a lesson draws you on your
+  side's best fighter when the plane picked is not one
+  (`dogfight-arena.js` `lessonPlane`; FLY IT still puts you in the plane you
+  picked), and the kicker names the ace's plane (`aceName`): "BF 109 AGAINST
+  YAK 9". Held by `test_dogfight_arena.py`
+  `test_a_lesson_draws_you_on_your_sides_fighter`.
+- **The gunner wiring is any side's.** `runFight` gives every side its own
+  gunners; only `fightSides` hands them to the ace, for the two-seater
+  lesson. Flown with the Stuka (its own airframe and MG 42) as the hunted
+  plane, flying straight, its gunner fires 150 to 282 rounds at the hunter
+  and hits 9 to 17 from the nine starts (`test_a_two_seaters_gunner_fires_back_from_any_side`).
+  So nothing was broken in the wiring: the demo had no two-seater in it.
+- **The hunter does fire.** On every vanilla arena, alone and flying straight,
+  the hunter opens fire 20 to 24 s in and shoots you down 22 to 26 s in
+  (Battle of Britain 25.7 s, Kursk and Market Garden 22.3, Midway 24.0);
+  the nine Spitfire starts still give 16 to 30 s. But the first 20 s were
+  the slow close from 350 m, which is what the owner watched. The demo now
+  opens 8 s in (`startAt`), with the first round at least 4 s later
+  (`test_alone_and_straight_the_hunter_fires_and_hits_after_the_demo_opens`).
+- **The words.** The plane against you is called the hunter on its tag,
+  meter, captions, cameras and shot card (`lesson.aceRole`); the wingman has
+  a caption row (`Off your wing, a little behind, watching your tail`, then
+  `Someone is on your tail: turning onto them`); and each demo's note says
+  who is who and what happens.
+
+Every arena, alone and flying straight (2026-11-11, the page's own
+arenas, each flown on its best fighter):
+
+| Tree | Shot down | Where it is not |
+|---|---|---|
+| vanilla, Road to Rome, Secret Weapons | every arena, 22 to 26 s in | |
+| Desert Combat | every arena, 13.7 to 13.8 s in | |
+| BF1918 | 26 arenas, 16.6 to 21.8 s in | Brusilov Offensive and Straits Field (the Albatros airframe), Chateau-Thierry (the D.VII): the hunter never closes |
+| Forgotten Hope (Iwo Jima), FHSW (all 12 arenas) | none | the hunter closes to 50 to 150 m and fires from 12 to 59 s in, landing 0 to 9 rounds; in 9 of FHSW's 36 other demos the hunter flies into the ground |
+
+Where it fails it is the hunter's pursuit, not this lesson: on those
+airframes `leadPursuit` porpoises, the pitch stick swinging from stop to
+stop every few seconds. On the Albatros and the D.VII that bleeds the
+hunter 15 to 20 m/s below a cruiser on the same airframe at full throttle;
+on FHSW's fighters it sits behind you and never holds the sight on. The
+same hunter flies *Out of their lock* and the jet lessons' tails, so the
+fix is the pursuit's gains per airframe, measured across every lesson, and
+is open. On FHSW the wingman's cover fails too (El Alamein: you are shot
+down 29 s in).
 
 ## The two-seater (step 7, rule 5)
 

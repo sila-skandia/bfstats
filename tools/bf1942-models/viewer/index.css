@@ -1187,6 +1187,21 @@ button.browser-close:focus-visible kbd { border-color: rgba(0, 0, 0, .4); color:
   grid-template-columns: repeat(auto-fill, minmax(168px, 1fr));
   gap: 10px;
 }
+/* The frame between the click and the first render, and the wait for the
+   catalogue on a page still loading (features/mesh-viewer-performance). */
+.card-skeleton {
+  aspect-ratio: 1 / 1.24;
+  border: 1px solid var(--mm-rule);
+  border-top-width: 2px;
+  border-radius: 2px;
+  background: linear-gradient(100deg, var(--mm-bg) 30%, var(--mm-bg-soft) 50%, var(--mm-bg) 70%)
+    0 0 / 300% 100%;
+  animation: card-skeleton-sweep 1.4s ease-in-out infinite;
+}
+@keyframes card-skeleton-sweep { from { background-position: 100% 0; } to { background-position: 0 0; } }
+@media (prefers-reduced-motion: reduce) { .card-skeleton { animation: none; } }
+/* Under the list: coming within reach of the bottom builds the next chunk. */
+.browser-sentinel { height: 1px; }
 button.card {
   display: grid;
   /* Both of these matter: min-width keeps the button from refusing to shrink

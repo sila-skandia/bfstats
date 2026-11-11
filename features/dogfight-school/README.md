@@ -96,6 +96,15 @@ is published: no asset is involved.
   and every move's count on the tabs is now flown on
   the plane the lessons fly on, the Spitfire's beside it where they differ
   (`features/dogfight-doctrine`, "The lessons on other airframes").
+- **A lesson draws you on a fighter** (2026-11-11): every lesson is flown on
+  the arena's best fighter, and a bomber or two-seater picked under YOUR
+  PLANE (the owner's Stuka in *The pair*) is now drawn as your side's best
+  fighter in the lessons (`dogfight-arena.js` `lessonPlane`), with the
+  kicker naming the ace's plane rather than yours twice; FLY IT still flies
+  the plane you picked. *The pair* calls the plane against you the hunter
+  (`lesson.aceRole`), gives the wingman a caption row, and opens *Alone,
+  flying straight* 8 s in (`features/dogfight-doctrine`, "What the pair
+  showed, and what it shows now").
 
 ## The hunter
 

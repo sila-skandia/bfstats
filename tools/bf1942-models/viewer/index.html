@@ -255,6 +255,55 @@ if (new URLSearchParams(location.search).get('dev') === '1') document.documentEl
   <div id="browser-body"></div>
 </div>
 
+<script>
+// Until the page module and the catalogue have loaded (FHSW's is 8 MB), the
+// armoury's own handlers are not attached and a click on Browse used to do
+// nothing. This opens the shell straight away instead, with a skeleton, and
+// model-browser.js takes over (dispose) and fills it once it can
+// (features/mesh-viewer-performance, "Armoury browser open").
+(() => {
+  const browser = document.getElementById('browser');
+  const search = document.getElementById('browser-search');
+  const open = () => {
+    browser.hidden = false;
+    const body = document.getElementById('browser-body');
+    if (!body.firstChild) {
+      document.getElementById('browser-count').textContent = 'Loading the catalogue';
+      body.innerHTML = '<div class="card-grid is-skeleton" aria-hidden="true">'
+        + '<div class="card-skeleton"></div>'.repeat(12) + '</div>';
+    }
+    search.focus();
+  };
+  const close = () => { browser.hidden = true; };
+  const onKey = event => {
+    const typing = /^(INPUT|TEXTAREA|SELECT)$/.test(event.target.tagName);
+    if (event.key === 'Escape' && !browser.hidden) {
+      event.preventDefault();
+      close();
+    } else if (!typing && (event.key === '/' || (event.key === 'k' && (event.metaKey || event.ctrlKey)))) {
+      event.preventDefault();
+      open();
+    }
+  };
+  const buttons = ['browse-open', 'shell-search', 'browse-close'].map(id => document.getElementById(id));
+  buttons[0].addEventListener('click', open);
+  buttons[1].addEventListener('click', open);
+  buttons[2].addEventListener('click', close);
+  addEventListener('keydown', onKey);
+  // Maps and Kits link here with ?browse; the module clears the parameter.
+  if (new URLSearchParams(location.search).has('browse')) open();
+  window.__armouryEarly = {
+    dispose() {
+      buttons[0].removeEventListener('click', open);
+      buttons[1].removeEventListener('click', open);
+      buttons[2].removeEventListener('click', close);
+      removeEventListener('keydown', onKey);
+      delete window.__armouryEarly;
+    },
+  };
+})();
+</script>
+
 <!-- The vendored example loaders import three by bare specifier. -->
 <script type="importmap">
 { "imports": { "three": "./vendor/three.module.js" } }
