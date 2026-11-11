@@ -330,8 +330,7 @@ public sealed class RecordingUploadService(
         }
     }
 
-    private Task<long> StoredBytesAsync(CancellationToken ct) =>
-        db.Recordings.Where(r => !r.FileMissing).SumAsync(r => r.RecordingBytes + r.ServerLogBytes + r.ThumbnailBytes, ct);
+    private Task<long> StoredBytesAsync(CancellationToken ct) => VolumeUsage.StoredBytesAsync(db, ct);
 
     /// <summary>
     /// Streams one part to <paramref name="path"/> as it comes: gzipped by a browser with

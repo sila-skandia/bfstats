@@ -112,7 +112,7 @@ public sealed class RecordingService(
             .ToListAsync(ct);
         var byCard = rows.GroupBy(r => r.RoundId ?? r.Id).ToDictionary(g => g.Key, g => g.ToList());
         var leads = keys.Where(byCard.ContainsKey).Select(k => Lead(byCard[k])).ToList();
-        var used = await StorageUsedAsync(shared, ct);
+        var used = await StorageUsedAsync(ct);
         var players = await PlayersAsync(leads.Select(r => r.UploaderName), ct);
         var roundsOf = await RoundsAsync([.. leads.Where(r => byCard[r.RoundId ?? r.Id].Count > 1).Select(r => r.Id)], actor, ct);
         return new PagedRecordingsDto(
@@ -167,13 +167,13 @@ public sealed class RecordingService(
 
     internal const string StorageUsedKey = "recordings:storage-used";
 
-    /// <summary>The space the recordings take: everyone's, whatever the feed is narrowed to. A
-    /// sum over every recording, so it is kept a minute rather than read for every page of every
-    /// server's and player's list; the upload's own quota check reads it fresh.</summary>
-    private async Task<long> StorageUsedAsync(IQueryable<Recording> shared, CancellationToken ct)
+    /// <summary>The space the volume holds (<see cref="VolumeUsage"/>): everyone's recordings and
+    /// the Shorts, whatever the feed is narrowed to. Kept a minute rather than read for every page
+    /// of every server's and player's list; the upload's own quota check reads it fresh.</summary>
+    private async Task<long> StorageUsedAsync(CancellationToken ct)
     {
         if (cache?.TryGetValue(StorageUsedKey, out long cached) == true) return cached;
-        var used = await shared.SumAsync(r => r.RecordingBytes + r.ServerLogBytes + r.ThumbnailBytes, ct);
+        var used = await VolumeUsage.StoredBytesAsync(db, ct);
         cache?.Set(StorageUsedKey, used, TimeSpan.FromMinutes(1));
         return used;
     }
@@ -363,8 +363,7 @@ public sealed class RecordingService(
         if (recording is null || recording.FileMissing) return null;
         Manage(recording, actor);
         var jpeg = await RecordingThumbnails.NormalizeAsync(body, ct);
-        var stored = await db.Recordings.Where(r => !r.FileMissing)
-            .SumAsync(r => r.RecordingBytes + r.ServerLogBytes + r.ThumbnailBytes, ct);
+        var stored = await VolumeUsage.StoredBytesAsync(db, ct);
         if (storage.RoomFor(stored - recording.ThumbnailBytes, jpeg.Length) is { } full)
         {
             throw new RecordingRejectedException(full, StatusCodes.Status507InsufficientStorage);

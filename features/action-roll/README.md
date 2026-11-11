@@ -196,3 +196,48 @@ round's acts, 74 of 203 went on Gazala, 94 of 324 on Omaha and 256 of 644
 on Bocage, where the recorder saw less of a spread-out map. With fewer
 acts to pass between, more hand-overs are flights or clock jumps (Omaha:
 4 jumps), and the camera still dips into the ground on some glides.
+
+## On the site: review of the REPLAY tab (2026-11-11)
+
+The owner: "feel free to upload them to the site. We can make them part of
+the regular recordings. But perhaps it's worth a UI review to find a way to
+present shorts, recordings and these longer form recordings."
+
+How the tab is today (play.bfstats.io `?tab=replay`, headless at 1440x900
+and 390x844):
+
+- Desktop: header and counts, one row of controls (sort, scope, server and
+  uploader menus, storage meter, Record / Watch a file / Share), the
+  "Shorts this week" strip (kind filters, Find a player, ~8 portrait
+  cards), then a 5-column grid of round cards. The strip reads best.
+- Phone: the header and controls wrap to five rows, 36% of the first
+  screen; 2.3 Shorts fit; the first round card starts at the fold, one
+  round per screen after that.
+- A Short links to its round ("Watch the round", a few seconds before the
+  kill). A round never links to its Shorts, and the strip disappears as soon
+  as a server or uploader filter is set.
+- Nowhere takes a 16:9 video.
+
+Options:
+
+- **A (recommended). An "Action rolls" row between the Shorts strip and
+  the round grid.** 16:9 cards (poster, length, level), the newest a double
+  hero on desktop; a one-card swipe row on a phone. Plays in the Shorts
+  overlay at 16:9 with a quality menu (Auto picks 1080p on a phone, 1440p
+  wide, 2160p only when chosen). Under the player: the round's Shorts and
+  "Watch the round"; the beats as chapter ticks that open the replay at
+  that second. Round cards gain a "Roll" badge and an "N Shorts" link. A
+  resource of its own (`api/Rolls/`, `rolls/<slug>-{1080,1440,2160}.mp4`
+  and `.jpg`, `GET /stats/rolls...`), not a Shorts kind: Shorts are one
+  9:16 file keyed by a kill.
+- B. A "Videos" sub-tab beside the rounds: clears the phone's controls, but
+  hides the Shorts from the first view.
+- C. The roll as its round card's cover, playing muted in view: no new
+  layout, but rolls cannot be found and autoplaying 1080p grids are heavy
+  on the one node.
+
+Storage: the meter counted recordings only (241 MB) while the volume held
+about 3.3 GB with the Shorts; fixed the same day (`VolumeUsage`). A 75 s roll
+is 0.6-0.7 GB at three qualities (2160p 320-420 MB): one a night fills the
+20 GiB volume in about a month. Keep three qualities for 14 days, then 1080p
+only (about 7 GB a year at one a night), and serve 1080p unless asked.

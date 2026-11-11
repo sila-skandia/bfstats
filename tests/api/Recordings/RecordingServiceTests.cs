@@ -145,6 +145,27 @@ public sealed class RecordingServiceTests : IDisposable
         Assert.Equal(everything.Storage.UsedBytes, none.Storage.UsedBytes);
     }
 
+    [Fact]
+    public async Task List_StorageCountsTheShortsOnTheVolume()
+    {
+        // The Shorts live under the recordings root and share its quota; the meter once left them
+        // out and showed 241 MB of a volume holding about 3.3 GB (2026-11-11).
+        var shared = await Share("meter");
+        var before = await VolumeUsage.StoredBytesAsync(fixture.Db, default);
+        fixture.Db.ReplayShorts.Add(new api.Shorts.Models.ReplayShort
+        {
+            Slug = "abcdefghij", RecordingSlug = shared.Slug, Key = "k", Kind = "sniper",
+            VideoBytes = 7_000_000, PosterBytes = 50_000, CreatedAt = Instant.FromUnixTimeSeconds(1_800_000_000),
+        });
+        await fixture.Db.SaveChangesAsync();
+
+        var after = await VolumeUsage.StoredBytesAsync(fixture.Db, default);
+        var page = await fixture.Service.ListAsync(null, 1, 24, RecordingFilter.None, null, default);
+
+        Assert.Equal(before + 7_050_000, after);
+        Assert.Equal(after, page.Storage.UsedBytes);
+    }
+
     /// <summary>Gives a recording these players, in its list and in the rows a player's page finds it by.</summary>
     private async Task WithPlayers(string slug, params string[] players)
     {

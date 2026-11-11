@@ -440,13 +440,7 @@ public sealed class ShortService(
     }
 
     /// <summary>Everything on the volume: the recordings and the Shorts share its quota.</summary>
-    private async Task<long> StoredBytesAsync(CancellationToken ct)
-    {
-        var recordings = await db.Recordings.Where(r => !r.FileMissing)
-            .SumAsync(r => r.RecordingBytes + r.ServerLogBytes + r.ThumbnailBytes, ct);
-        var shorts = await db.ReplayShorts.SumAsync(s => s.VideoBytes + s.PosterBytes, ct);
-        return recordings + shorts;
-    }
+    private Task<long> StoredBytesAsync(CancellationToken ct) => VolumeUsage.StoredBytesAsync(db, ct);
 
     /// <summary>An MP4 (ISO BMFF) file opens with its <c>ftyp</c> box: a size, then the type.</summary>
     internal static async Task<bool> IsMp4Async(string path, CancellationToken ct)
