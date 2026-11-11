@@ -208,9 +208,10 @@ ground's height, `underRoof` in `stepSeat`'s pilot), the instructor flying
 your seat, F-16 against F-16 over Desert Shield (ground 40 m under the
 arena):
 
-- **When they have the height.** The ace starts at 740 m and you at 271.
-  Both level off at 763 to 769 m and hold it for the rest of the 50 s;
-  before the roof the instructor took your seat to 907 m and the ace began
+- **When they have the height.** The ace starts at 735 m and you at 231,
+  the heights the lesson is measured at. The ace dives at 10 s and zooms
+  back to 716 m; the instructor climbs between and levels off at 763 m.
+  Before the roof the instructor took your seat to 907 m and the ace began
   at 936.
 - **Boom and zoom.** The run found two things. Lifted over the ground whole,
   the perch was bent to 338 m over you (372 as measured) and the ace sat in
