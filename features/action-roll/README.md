@@ -96,3 +96,49 @@ Known, not fixed yet:
   balance between "stay local" and "go where it's happening" is the
   owner's call.
 - `--bpm` is built but untried: no song yet.
+
+## Review of the trials (owner, 2026-11-11)
+
+> they're really great. Only nit pick is there is some footage filmed right
+> on the edge of the range. So in all clips there was at least one clip
+> showing the green model indicating they're out of range, as well as
+> stuttery gameplay, meaning we have low fidelity play back, and should
+> drop those.
+
+> if we glide to a fight, show it for a bit, that's an excellent idea, if
+> we're just gliding to someone not doing much or missing their shot just
+> stay shortly. It does cut a fair bit, I think people will love it or hate
+> it, so for now it's nice.
+
+What changed:
+
+- **Only men the recorder saw whole.** Every man a beat films is sampled
+  every 0.2 s over the time it films him (the shooter from the glide in to
+  the end of his beat; his target or victim from 0.8 s before the hit): at
+  each sample whatever he is in (on foot, then a tank) must be replicated,
+  and each of those lives must pass the Shorts picker's `continuityOf` (no
+  hop of 15 m across a gap) over its own part. Sampling by moment matters:
+  tested life by life over the whole window, a man who climbed into a tank
+  failed because his soldier is not replicated while he rides. On Gazala's
+  365 shooters, 62 were out of view (mostly pilots far off) and 19 hopped;
+  with long-range targets as well, about a third of the round's acts go.
+- **A miss is let go, a fight is stayed in.** A shot that neither kills nor
+  lands within reach of its man (3.5 m, a hull's radius plus 4) ends 0.35 s
+  after it lands, with no slow motion. A hit or a kill with two more acts
+  (a burst counts half) within 80 m in the next 5 s holds 1.5 s longer.
+  `beats.json` and the log mark each beat MISS or FIGHT and how long it held.
+- **Misses known before they are chosen.** Every life carries its recorded
+  health, so a shot or burst is marked as landing when its man's hull or
+  body loses health (or dies) within 2.5 s. A miss weighs 0.3 of a hit
+  when the next man is chosen, so the camera rarely glides to one; when it
+  does, the beat ends 0.35 s after. v5 had chosen Omaha's Tiger five times,
+  all misses.
+- **No waiting on a man.** The next act is looked for 5 s ahead (was 6),
+  and its weight halves every 1.25 s it would keep the camera waiting
+  (`soon`).
+
+Re-filmed as `v6-*` (the copies at the repo root are these now). Of each
+round's acts, 74 of 203 went on Gazala, 94 of 324 on Omaha and 256 of 644
+on Bocage, where the recorder saw less of a spread-out map. With fewer
+acts to pass between, more hand-overs are flights or clock jumps (Omaha:
+4 jumps), and the camera still dips into the ground on some glides.

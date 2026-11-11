@@ -86,9 +86,16 @@ const ROLL = Object.freeze({
   ride: 3,
   near: 120,
   far: 700,
-  look: 6,
+  look: 5,
+  // Seconds a man's act may keep the camera waiting, as a decay.
+  soon: 1.8,
+  // A shot or burst that hurts nobody, against one that does.
+  missWeight: 0.3,
   lead: { shot: 1.8, kill: 2.4, bomb: 3.2, fire: 1.0 },
-  after: { shot: 1.3, kill: 1.4, fire: 0.5 },
+  after: { shot: 1.3, kill: 1.6, fire: 0.5, miss: 0.35 },
+  // A fight worth staying in: `acts` more acts (a burst counts half)
+  // within `near` m in the next `within` s holds the beat `stay` s longer.
+  busy: { acts: 2, near: 80, within: 5, stay: 1.5 },
   // A burst: trigger presses (one recorded fire each) no more than `burstGap` s apart, at least `burstMin`,
   // aimed within `fireAimed` m of a man inside `fireReach` m.
   burstGap: 1.2,
@@ -188,6 +195,21 @@ const ROLL_SRC = String.raw`window.__roll = (() => {
     }
     return best;
   };
+  // Whether pid was hurt in (t, t + within]: his hull's or his own health
+  // dropped (each life's recorded hp), or he died.
+  const hurt = (pid, t, within) => {
+    const w = B.whereIs(r.rec, pid, t, r.kills ?? r.rec.kills);
+    const life = w?.life;
+    if (!life?.hp?.length) return false;
+    let at = null;
+    for (const h of life.hp) {
+      if (h.t <= t) { at = h.hp; continue; }
+      if (h.t > t + within) break;
+      if (at !== null && h.hp < at - 0.5) return true;
+      at = h.hp;
+    }
+    return life.diedAt !== undefined && life.diedAt > t && life.diedAt <= t + within;
+  };
   // Under a roof: a man whose sky is shut 20 m up.
   const roofed = p => blocked(p.clone().add(new V3(0, 0.3, 0)), p.clone().add(new V3(0, 20, 0)));
 
@@ -202,7 +224,9 @@ const ROLL_SRC = String.raw`window.__roll = (() => {
       const bomb = isBomb(f);
       const target = bomb ? null : aimedAt(f, pids);
       if (!bomb && !target) continue;
-      acts.push({ kind: 'shot', t: f.t, pid: f.pid, f, w: k * (target?.hull ? 1.4 : 1), bomb, target: target?.pid ?? null });
+      // A shot that hurts its man is the one to ride; a miss rarely is.
+      const lands = target ? hurt(target.pid, f.t, 2.5) : null;
+      acts.push({ kind: 'shot', t: f.t, pid: f.pid, f, w: k * (target?.hull ? 1.4 : 1) * (lands === false ? cfg.missWeight : 1), bomb, target: target?.pid ?? null, lands });
     }
     // Bursts of small-arms and MG fire at someone: the men in range of the
     // last action, firing, are what the camera passes along.
@@ -221,7 +245,8 @@ const ROLL_SRC = String.raw`window.__roll = (() => {
         if (b.n < cfg.burstMin) continue;
         const target = aimedAt(b.f, pids, cfg.fireReach, cfg.fireAimed);
         if (!target) continue;
-        acts.push({ kind: 'fire', t: b.t, tEnd: Math.min(b.tEnd, b.t + 4), pid, f: b.f, w: cfg.fireWeight, target: target.pid });
+        const lands = hurt(target.pid, b.t, Math.min(b.tEnd, b.t + 4) - b.t + 0.5);
+        acts.push({ kind: 'fire', t: b.t, tEnd: Math.min(b.tEnd, b.t + 4), pid, f: b.f, w: cfg.fireWeight * (lands ? 1.4 : cfg.missWeight), target: target.pid, lands });
       }
     }
     for (const k of r.rec.kills) {
@@ -237,6 +262,38 @@ const ROLL_SRC = String.raw`window.__roll = (() => {
         if (a.kind === 'fire' && a.pid === k.killer && k.t - a.tEnd < 1.5 && k.t - a.t > -0.5) acts.splice(i, 1);
       }
     }
+    // Only what the recorder saw whole (the owner, 2026-11-11: footage "right
+    // on the edge of the range ... the green model indicating they're out of
+    // range, as well as stuttery gameplay"). Everyone a beat films must be
+    // replicated, with no hop between samples, for as long as it films him:
+    // the shooter from the glide in to the end, his target or victim round
+    // the hit. The Shorts picker's own test, continuityOf.
+    // Sampled: whatever he is in at each moment (on foot, then a tank) must
+    // be replicated then, and each life hop-free over its own part.
+    const seen = (pid, t0, t1) => {
+      if (pid === null || pid === undefined) return true;
+      const spans = new Map();
+      for (let t = t0; t <= t1 + 1e-6; t += 0.2) {
+        const w = B.whereIs(r.rec, pid, t, r.kills ?? r.rec.kills);
+        if (w.state === 'dead') break;
+        if (!w.life || !w.fresh) return false;
+        const sp = spans.get(w.life);
+        if (sp) sp[1] = t; else spans.set(w.life, [t, t]);
+      }
+      if (!spans.size) return false;
+      for (const [life, [a, b]] of spans) if (!window.__pick.continuityOf(life, a, b).ok) return false;
+      return true;
+    };
+    const before = acts.length;
+    acts = acts.filter(a => {
+      const t0 = a.t - cfg.leadOf(a) - cfg.glide;
+      const t1 = a.kind === 'fire' ? a.tEnd + cfg.after.fire : a.t + (a.kind === 'shot' ? cfg.ride * 0.5 + cfg.after.shot : cfg.after.kill);
+      if (!seen(a.pid, t0, Math.min(t1, a.kind === 'kill' ? a.t : t1))) return false;
+      const others = [a.victim, a.target, ...(a.kills ?? []).map(k => k.victim)];
+      // A victim is seen up to his death; after it the replay draws his body.
+      return others.every(v => v === undefined || v === null || seen(v, a.t - 0.8, a.kind === 'kill' ? a.t - 0.05 : a.t + 1.5));
+    });
+    cfg.dropped = before - acts.length;
     acts.sort((a, b) => a.t - b.t);
   };
   const actsIn = (t0, t1) => {
@@ -263,7 +320,8 @@ const ROLL_SRC = String.raw`window.__roll = (() => {
       if (d > cfg.far) continue;
       const near = d <= cfg.near;
       if (a.kind === 'fire' && !near) continue;
-      let s = a.w * Math.exp(-(a.t - T) / 3) * (near ? Math.exp(-d / 90) : 0.12 * Math.exp(-d / 300));
+      // Soon: a man who would keep the camera waiting is "not doing much".
+      let s = a.w * Math.exp(-(a.t - T) / cfg.soon) * (near ? Math.exp(-d / 90) : 0.12 * Math.exp(-d / 300));
       // The man it hit, firing back; the man who fired at the one before.
       if (prev?.victims?.includes(a.pid)) s *= 2.2;
       if (a.victim !== undefined && a.victim === prev?.pid) s *= 1.6;
@@ -513,7 +571,7 @@ const ROLL_SRC = String.raw`window.__roll = (() => {
       rand = () => { s ^= s << 13; s >>>= 0; s ^= s >> 17; s ^= s << 5; s >>>= 0; return s / 4294967296; };
       buildActs();
       r.camera.setRig(placeRig);
-      return { acts: acts.length, shots: acts.filter(a => a.kind === 'shot').length, kills: acts.filter(a => a.kind === 'kill').length, fire: acts.filter(a => a.kind === 'fire').length };
+      return { acts: acts.length, shots: acts.filter(a => a.kind === 'shot').length, kills: acts.filter(a => a.kind === 'kill').length, fire: acts.filter(a => a.kind === 'fire').length, dropped: cfg.dropped };
     },
     // The busiest stretch of the round to open on: the most act weight in
     // 40 s, from someone's heavy shot.
@@ -545,7 +603,8 @@ const ROLL_SRC = String.raw`window.__roll = (() => {
         if (b.kind === 'shot') { b.phase = 'round'; b.firedAt = t; }
         else if (b.kind === 'fire') {
           b.phase = 'firing';
-          b.end = b.act.tEnd + cfg.after.fire;
+          b.end = b.act.lands ? b.act.tEnd + cfg.after.fire : Math.min(b.act.tEnd, t + 1.2) + cfg.after.miss;
+          b.landed = Boolean(b.act.lands);
         }
         else { b.phase = 'down'; b.landedAt = t; b.end = t + cfg.after.kill; }
       }
@@ -562,6 +621,30 @@ const ROLL_SRC = String.raw`window.__roll = (() => {
           b.phase = 'impact'; b.landedAt = t; b.end = t + 0.6;
         }
       }
+      // How it landed (the owner, 2026-11-11: "if we glide to a fight, show
+      // it for a bit ... if we're just gliding to someone not doing much or
+      // missing their shot just stay shortly"). A shot that kills or lands
+      // on its man is held; a miss is let go at once, with no slow motion.
+      if (b.phase === 'impact' && b.landed === undefined) {
+        const v = b.act.target !== null && b.act.target !== undefined ? where(b.act.target, t) : null;
+        const reach = v ? (v.hull ? v.radius + 4 : 3.5) : 0;
+        b.landed = Boolean(b.act.kills?.length) || b.bomb || b.act.lands === true || Boolean(v && st.impact && st.impact.distanceTo(v.hull ? v.pos : v.eye) < reach);
+        if (!b.landed) { b.end = t + cfg.after.miss; b.slowed = true; }
+      }
+      // A fight: more going on round here in the next few seconds is
+      // worth staying for, once.
+      if (b.end !== null && !b.lingered && (b.landed || b.kind === 'kill')) {
+        b.lingered = true;
+        const P = st.impact ?? where(b.pid, t)?.eye;
+        let busy = 0;
+        if (P) for (const a of actsIn(t, t + cfg.busy.within)) {
+          if (a === b.act) continue;
+          const w = where(a.pid, t);
+          if (w && w.pos.distanceTo(P) < cfg.busy.near) busy += a.kind === 'fire' ? 0.5 : 1;
+        }
+        b.busy = busy;
+        if (busy >= cfg.busy.acts) b.end += cfg.busy.stay;
+      }
       // Slow at the hit.
       if ((b.phase === 'impact' || b.phase === 'down') && !b.slowed) {
         b.slowed = true;
@@ -574,6 +657,8 @@ const ROLL_SRC = String.raw`window.__roll = (() => {
       if (b.end !== null && t >= b.end && (!cfg.bar || st.screen >= cfg.nextBar(b.screenAt + 0.5))) {
         if (b.kind === 'fire') st.impact = where(b.act.target, t)?.eye ?? where(b.pid, t)?.eye ?? st.impact;
         const P = st.impact?.clone() ?? where(b.pid, t)?.eye ?? st.pos.clone();
+        const log = st.beats[st.beats.length - 1];
+        if (log) { log.landed = b.landed ?? null; log.busy = b.busy ?? 0; log.held = Math.round((st.screen - b.screenAt) * 10) / 10; }
         const pick = choose(t, P, b);
         if (pick) {
           const nb = startBeat(pick, t, b.victims.length ? 'after the kill' : 'after the hit');
@@ -730,6 +815,7 @@ try {
   const info = await page.evaluate(async ({ src, cfg }) => {
     window.__rb = await import(new URL('replay-battles.js', location.href).href);
     window.__vp = await import(new URL('vehicle-players.js', location.href).href);
+    window.__pick = await import(new URL('replay-shorts-pick.js', location.href).href);
     const cm = await import(new URL('replay-camera.js', location.href).href);
     window.__hullRadius = cm.hullRadius;
     (0, eval)(src);
@@ -741,7 +827,7 @@ try {
     src: ROLL_SRC,
     cfg: { ...ROLL, heavy: ROLL.heavy.map(([re, k]) => [re.source, k]), notHeavy: ROLL.notHeavy.source, planted: ROLL.planted.source, fps: FPS, fov: 62, seed: SEED, barLen: BPM ? 240 / BPM : 0 },
   });
-  log(`acts ${info.acts} (${info.shots} heavy shots, ${info.kills} kills, ${info.fire} bursts); busiest 40 s from ${info.opening?.t?.toFixed(1)}`);
+  log(`acts ${info.acts} (${info.shots} heavy shots, ${info.kills} kills, ${info.fire} bursts; ${info.dropped} dropped as out of range or stuttering); busiest 40 s from ${info.opening?.t?.toFixed(1)}`);
   const start = FROM !== null ? Number(FROM) : Math.max(0, (info.opening?.t ?? 60) - 4);
   await page.evaluate(start => {
     const r = window.replay;
@@ -817,7 +903,7 @@ try {
   log(`filmed ${total} frames in ${Math.round((Date.now() - t0) / 1000)} s`);
   const beats = await page.evaluate(() => window.__roll.beats());
   fs.writeFileSync(path.join(dir, 'beats.json'), JSON.stringify({ recording: SLUG, title: rec.title, start, seed: SEED, bpm: BPM, beats }, null, 2));
-  for (const b of beats) log(`  ${b.screen.toFixed(1)}s  ${b.how.padEnd(5)} ${b.name} ${b.kind} ${b.weapon ?? ''}${b.victims.length ? ` -> ${b.victims.join(', ')}` : ''}${b.dist !== null ? ` (${b.dist} m)` : ''}`);
+  for (const b of beats) log(`  ${b.screen.toFixed(1)}s  ${b.how.padEnd(5)} ${b.name} ${b.kind} ${b.weapon ?? ''}${b.victims.length ? ` -> ${b.victims.join(', ')}` : ''}${b.dist !== null ? ` (${b.dist} m)` : ''}${b.landed === false ? ' MISS' : ''}${b.busy >= ROLL.busy.acts ? ' FIGHT' : ''}${b.held !== undefined ? ` held ${b.held}s` : ''}`);
   const mp4 = path.join(dir, 'roll.mp4');
   const silent = SOUND ? path.join(dir, 'silent.mp4') : mp4;
   execFileSync('ffmpeg', ['-y', '-loglevel', 'error', '-framerate', String(FPS), '-i', path.join(frames, 'f%05d.jpg'),
