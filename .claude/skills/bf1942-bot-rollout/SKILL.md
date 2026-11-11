@@ -75,9 +75,16 @@ S=.claude/skills/bf1942-bot-rollout/scripts
 **1. See what there is.**
 
 ```bash
-bash $S/fetch.sh fhsweurope            # every level: shipped / generated / botless, size, flags, vehicles
-python3 $S/live.py                     # what carries the tag on the live site now
+python3 $S/status.py maps/mods/fhsweurope   # every level with no AI of its own: live, turned down, out, judged, not screened
+python3 $S/status.py                        # the same for every published tree (a few minutes)
+bash $S/fetch.sh fhsweurope                 # every level: shipped / generated / botless, size, flags, vehicles
+python3 $S/live.py                          # what carries the tag on the live site now
 ```
+
+`status.py` is the work list: `not screened` rows have no verdict in the
+repo yet, `judged` rows have one and have not been on the page. A level the
+lint refuses still gets its layer folder and verdict from `screen.sh`, so
+it shows as `out` with the reason and is never looked at twice.
 
 Pick the `botless` rows. Drop the ones out of scope by inspection: world
 8192 with few soldier spawns is a naval level; 0 capturable flags is not

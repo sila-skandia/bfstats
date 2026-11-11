@@ -3,10 +3,13 @@
 #   screen.sh <mod folder> <level>[,<level>...]      e.g. screen.sh fhsweurope adak_race,kursk-1943
 # Writes tools/bf1942-models/bot-layers/<layers>/<level>/ (the layer, generated.json, verdict.json).
 # SEEDS (default 2) and JOBS (default 6) may be set. A level on foot only: FOOT=1.
+# DESPITE_LINT=1 runs the matches though the lint has errors: only for a level whose one error is
+# "stacked floors" and that plainly has open ground to fight on (Raid on Agheila). The page still decides.
 . "$(dirname "$0")/env.sh"; mod_of "$1" || exit 2
 levels=$2; [ -n "$levels" ] || { echo "screen.sh <mod folder> <levels>"; exit 2; }
 cd "$TOOLS" || exit 1
 veh=(--vehicles); [ -n "$FOOT" ] && veh=()
+[ -n "$DESPITE_LINT" ] && veh+=(--despite-lint)
 for level in ${levels//,/ }; do
   [ -f "$MAPS/$level/scene.glb" ] || { echo "$level: not in $MAPS; run fetch.sh $1 $level first"; continue; }
   echo "== $level start $(date +%H:%M)"
