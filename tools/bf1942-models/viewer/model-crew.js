@@ -453,25 +453,38 @@ export function createCrewConsole(page) {
   addEventListener('blur', releaseCrewKeys);
 
   const CREW_COLLAPSED_KEY = 'bf42-mesh-crew-collapsed';
-  function setCrewCollapsed(collapsed) {
+  // On a phone the open console takes most of the stage's height (a ship's
+  // six stations leave the model a strip), so it starts collapsed there and
+  // a tap on its head opens it (features/mesh-viewer-advanced-tab).
+  const narrow = () => matchMedia('(max-width: 720px)').matches;
+  function setCrewCollapsed(collapsed, { remember = true } = {}) {
     crewEl.dataset.collapsed = String(collapsed);
     const button = document.getElementById('crew-collapse');
     button.setAttribute('aria-expanded', String(!collapsed));
     button.setAttribute('aria-label', collapsed ? 'Expand crew stations' : 'Collapse crew stations');
+    if (!remember) return;
     try {
-      if (collapsed) localStorage.setItem(CREW_COLLAPSED_KEY, '1');
-      else localStorage.removeItem(CREW_COLLAPSED_KEY);
-    } catch { /* private mode: the console just opens expanded next time */ }
+      localStorage.setItem(CREW_COLLAPSED_KEY, collapsed ? '1' : '0');
+    } catch { /* private mode: the console just opens at its default next time */ }
   }
-  try {
-    if (localStorage.getItem(CREW_COLLAPSED_KEY)) setCrewCollapsed(true);
-  } catch { /* unreadable storage: default expanded */ }
+  let stored = null;
+  try { stored = localStorage.getItem(CREW_COLLAPSED_KEY); } catch { /* unreadable storage */ }
+  if (stored === '1' || (stored === null && narrow())) setCrewCollapsed(true, { remember: false });
+  /** Give the stage back on a phone while the part inspector is in use; not remembered. */
+  function collapseForStage() {
+    if (narrow() && crewEl.dataset.collapsed !== 'true') setCrewCollapsed(true, { remember: false });
+  }
+  // The console's head is the way back: a tap anywhere on it opens it.
+  crewEl.querySelector('.crew-title')?.addEventListener('click', () => {
+    if (crewEl.dataset.collapsed === 'true') setCrewCollapsed(false);
+  });
   document.getElementById('crew-collapse').addEventListener('click', () =>
     setCrewCollapsed(crewEl.dataset.collapsed !== 'true'));
   document.getElementById('view-orbit').addEventListener('click', page.orbitView);
 
   Object.assign(crewConsole, {
     advanceGear,
+    collapseForStage,
     buildCrew,
     crew,
     markActiveView,

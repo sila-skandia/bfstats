@@ -214,6 +214,22 @@ class PageWiringTests(unittest.TestCase):
         html = PAGE.read_text()
         self.assertEqual(["shots", "parts"], re.findall(r'data-pick="(\w+)"', html))
 
+    def test_closing_the_card_is_the_whole_model(self) -> None:
+        parts = PARTS.read_text()
+        # The card's close button and the stage's Whole model crumb are one action.
+        self.assertIn("if (event.target.closest('[data-close]')) { wholeModel(); return; }", parts)
+        self.assertIn("if (step.dataset.crumb === 'whole') { wholeModel(); return; }", parts)
+        # One place changes the view, so every exit restores the same way.
+        self.assertEqual(1, parts.count("function go(next"))
+        self.assertIn('id="part-crumbs"', PAGE.read_text())
+
+    def test_a_throw_in_a_frame_does_not_freeze_the_canvas(self) -> None:
+        # A frame that threw used to leave `animating` on, so nothing drew
+        # again until a reload ("the model went blank").
+        html = PAGE.read_text()
+        self.assertIn("more = frameWork();", html)
+        self.assertIn("console.error('frame failed', error);", html)
+
     def test_the_pop_out_and_explode_share_the_position_code(self) -> None:
         display = DISPLAY.read_text()
         self.assertIn("function applyPositions()", display)

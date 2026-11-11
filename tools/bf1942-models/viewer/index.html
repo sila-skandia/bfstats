@@ -171,9 +171,9 @@ if (new URLSearchParams(location.search).get('dev') === '1') document.documentEl
       <div class="wb-group">
         <div class="wb-label-row">
           <span class="wb-label">Parts</span>
-          <button type="button" class="wb-reset" data-builder aria-pressed="false" title="Every part flies out, root first, then back">
+          <button type="button" class="wb-reset" data-builder aria-pressed="false" title="Spread the model's pieces out and keep them there">
             <svg viewBox="0 0 16 16" aria-hidden="true"><path d="M5 5 2 2M11 5l3-3M5 11l-3 3M11 11l3 3"/><rect x="5.5" y="5.5" width="5" height="5" rx=".5"/></svg>
-            <span>Builder view</span>
+            <span>Take apart</span>
           </button>
         </div>
         <label class="wb-search">
@@ -182,7 +182,7 @@ if (new URLSearchParams(location.search).get('dev') === '1') document.documentEl
                  placeholder="Template, mesh, texture or material number" aria-label="Search parts">
         </label>
         <div id="part-results" class="part-results" hidden></div>
-        <p class="note">Hover the model to name a part; click it, or a row, to pull it out. Esc puts it back.</p>
+        <p class="note">Hover the model to name a part; click it, or a row, to pull it out. Take apart spreads the pieces out and keeps them there; pick a piece and Take apart again to go inside it. Esc steps back one level, Whole model puts everything back.</p>
         <div id="tree" class="part-tree"></div>
       </div>
       <div class="wb-group">
@@ -201,9 +201,10 @@ if (new URLSearchParams(location.search).get('dev') === '1') document.documentEl
     <div id="crumb" hidden></div>
     <div id="banner" hidden></div>
     <div id="part-tag" class="part-tag" hidden aria-live="polite"></div>
-    <button type="button" class="stage-builder-btn" data-builder aria-pressed="false" title="Every part flies out, root first, then back (Esc to stop)">
+    <nav id="part-crumbs" class="part-crumbs" hidden aria-label="Where you are in the model"></nav>
+    <button type="button" class="stage-builder-btn" data-builder aria-pressed="false" title="Spread the model's pieces out and keep them there">
       <svg viewBox="0 0 16 16" width="14" height="14" aria-hidden="true"><path d="M5 5 2 2M11 5l3-3M5 11l-3 3M11 11l3 3"/><rect x="5.5" y="5.5" width="5" height="5" rx=".5"/></svg>
-      <span>Builder view</span>
+      <span>Take apart</span>
     </button>
     <button type="button" class="stage-touchpad-toggle" id="stage-touchpad-toggle" aria-label="Toggle touchpad control" aria-pressed="false" hidden>
       <svg viewBox="0 0 16 16" width="14" height="14" fill="none" stroke="currentColor" stroke-width="1.5"><circle cx="8" cy="8" r="6"/><circle cx="8" cy="8" r="2.5"/><path d="M8 2v2M8 12v2M2 8h2M12 8h2"/></svg>
@@ -491,17 +492,24 @@ function invalidate() {
   renderScheduled = true;
   requestAnimationFrame(() => {
     renderScheduled = false;
-    controls.update();
-    renderFrame();
+    try {
+      controls.update();
+      renderFrame();
+    } catch (error) {
+      console.error('frame failed', error);
+    }
   });
 }
 
 /** The model, then the hit regions over it in their own pass (model-armour.js). */
 // A frame can be asked for while the armour module is still loading its tables.
 let renderRegions = () => {};
+let renderFocus = () => {};
 function renderFrame() {
   renderer.render(scene, camera);
   renderRegions(renderer, scene, camera);
+  // The part inspector's shown part, last, over the ghost and the regions.
+  renderFocus(renderer, scene, camera);
 }
 
 /**
@@ -513,7 +521,11 @@ function startAnimating() {
   animating = true;
   renderScheduled = false;          // superseded by the continuous loop
   clock.getDelta();                 // reset the clock so the first dt is clean
-  (function tick() {
+  // One frame's work; true while anything still moves. A throw in it ends
+  // this loop cleanly instead of leaving `animating` stuck on, which froze
+  // the canvas on whatever frame was last drawn (a part inspector exit
+  // reported as "the model went blank", 2026-11-12).
+  function frameWork() {
     const dt = Math.min(clock.getDelta(), 0.1);
     rig.advanceRates(dt);
     rig.advanceScroll(dt);
@@ -541,7 +553,17 @@ function startAnimating() {
     const hasClips = Boolean(engineClips.mixer && (engineClips.engineRunning || engineClips.ambientActions.length))
       || lodsMoving || (engineClips.hasEngine && engineClips.engineRunning);
 
-    if (hasRates || hasScroll || hasClips || hasFire || gearMoving || seatCams.cameraGlide || controlsMoving || hasPad || partsMoving) {
+    return Boolean(hasRates || hasScroll || hasClips || hasFire || gearMoving || seatCams.cameraGlide
+      || controlsMoving || hasPad || partsMoving);
+  }
+  (function tick() {
+    let more = false;
+    try {
+      more = frameWork();
+    } catch (error) {
+      console.error('frame failed', error);
+    }
+    if (more) {
       requestAnimationFrame(tick);
     } else {
       animating = false;
@@ -579,7 +601,9 @@ const parts = createPartInspector({
   get invalidate() { return invalidate; }, get main() { return main; },
   get renderer() { return renderer; }, get scene() { return scene; },
   get startAnimating() { return startAnimating; }, get workbench() { return workbench; },
+  get onInspect() { return crewConsole.collapseForStage; },
 });
+renderFocus = parts.renderFocus;
 document.getElementById('axes').addEventListener('change', e => { helpers.visible = e.target.checked; invalidate(); });
 document.getElementById('spin').addEventListener('change', e => {
   controls.autoRotate = e.target.checked;
@@ -639,7 +663,7 @@ const touchpad = createTouchpad({
 function renderHints() {
   const hints = ['Drag orbit', 'Scroll zoom', 'Right-drag pan'];
   if (armour.collision) hints.push('Click a face to place a shot');
-  if (!armour.ownsClicks) hints.push('Click a part to pull it out');
+  if (!armour.ownsClicks) hints.push('Click a part to pull it out', 'Double-click to take it apart');
   hints.push('/ armoury');
   document.getElementById('hints').innerHTML =
     hints.map(hint => `<span>${hint}</span>`).join('<span class="sep">·</span>');
