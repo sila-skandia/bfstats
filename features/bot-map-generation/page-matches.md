@@ -416,7 +416,7 @@ bot-minute, tickets):
 | FHSW Salerno-1943 | 0.08, 4, 0.07, 108:72 | live |
 | Desert Combat DC_Urban_Siege | 0.06, 9, 0, 96:102 | live |
 | Liberation_of_Caen (community) | 0.06, 1, 0.05, 85:89 | live, barely |
-| _o_Jka__BIG (community) | 0.44, 5, 0.12, 30:5 | own-hand deaths just over the cap; played again |
+| _o_Jka__BIG (community) | 0.44, 5, 0.12, 30:5; again 0.26, 9, 0.08, 52:27 | live on the second match |
 | FHSW Fall_of_Berlin-1945 | 0, 7, 0.01, 222:170 | off: flags and no fight |
 | BF1918 operation_gericht | 0.08, 0, 0.08, 13:89 | off |
 | BF1918 sanaga_river | 0.06, 0, 0, 102:101 | off |
