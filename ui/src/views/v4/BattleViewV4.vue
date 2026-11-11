@@ -9,18 +9,17 @@ import {
   feedHref,
   fetchRecordings,
   levelName,
-  recordingWatchHref,
   watchHref,
   type RecordingSummary,
 } from '@/services/recordingsService'
 import { formatLocalTooltip, formatRelativeTime } from '@/utils/timeUtils'
 import MmShortsStrip from '@/components/v4/MmShortsStrip.vue'
-import MmArticleHero from '@/components/v4/article/MmArticleHero.vue'
+import MmHeroVideo from '@/components/v4/article/MmHeroVideo.vue'
 import MmCodeBlock from '@/components/v4/article/MmCodeBlock.vue'
 import MmLightbox from '@/components/v4/article/MmLightbox.vue'
 import MmMediaFrame from '@/components/v4/article/MmMediaFrame.vue'
 import type { ArticleMedia as Media } from '@/components/v4/article/media'
-import heroShot from '@/assets/battleview/battleaxe-dogfight.jpg'
+import { HERO_LABEL, HERO_POSTER, HERO_RENDITIONS } from '@/seo/battleViewHero'
 import bulletChase from '@/assets/battleview/bullet-chase.mp4'
 import bulletChasePoster from '@/assets/battleview/bullet-chase-poster.jpg'
 import shermanKill from '@/assets/battleview/sherman-kill.mp4'
@@ -89,15 +88,9 @@ const OSES: { id: Os; label: string }[] = [
   { id: 'windows', label: 'Windows server' },
 ]
 const os = ref<Os>('linux')
-// Straight to the feed and the viewer: replay.bfstats.io and its short links are for
-// sharing, and each would cost a redirect before anything loads.
+// Straight to the feed: replay.bfstats.io and its short links are for
+// sharing, and would cost a redirect before anything loads.
 const REPLAY_SITE = feedHref({})
-const HERO_RECORDING = recordingWatchHref({
-  mod: 'bf1942',
-  level: 'battleaxe',
-  recordingUrl: '/stats/recordings/ymdy248edr.ndjson',
-  serverLogUrl: null,
-})
 
 // Watch now opens the replays home; beside it, the newest shared round has its own link.
 const latest = ref<RecordingSummary | null>(null)
@@ -187,12 +180,12 @@ const snippets = {
       </a>
     </div>
 
-    <MmArticleHero
-      :href="HERO_RECORDING"
-      :src="heroShot"
-      alt="A Spitfire chasing a Bf 109 over the desert, from a recorded round of Operation Battleaxe"
-      title="Operation Battleaxe on MoonGamers.com"
-      meta="Recorded with BF42++ · 30 min · Watch the round"
+    <MmHeroVideo
+      :renditions="HERO_RENDITIONS"
+      :poster="HERO_POSTER.src"
+      :label="HERO_LABEL"
+      title="BattleView trailer"
+      meta="Thanks Black Mamba for the trailer"
     />
 
     <MmShortsStrip :count="6" :spacing="36" />

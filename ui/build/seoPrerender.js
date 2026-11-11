@@ -1,6 +1,6 @@
 /**
  * Static HTML for the featured server pages (/bf1942-servers and each
- * community), written next to index.html after `vite build`.
+ * community) and /battleview, written next to index.html after `vite build`.
  *
  * The app is client-rendered, so without this every URL answers with the same
  * index.html: one title, one description, an empty #app. A crawler that does not
@@ -12,6 +12,9 @@
  * nginx serves dist/<path>/index.html for /<path> (ui/nginx.conf). The pages are
  * also added to dist/sitemap.xml at the <!-- featured-servers --> marker.
  * features/seo-featured-servers/README.md
+ *
+ * /battleview also carries its hero video as og:video, the tags Discord plays in a
+ * chat when the link is pasted (features/battleview-install-page, "Hero video").
  */
 import { mkdirSync, readFileSync, writeFileSync } from 'node:fs'
 import { join, resolve } from 'node:path'
@@ -26,6 +29,7 @@ import {
   serverDetailPath,
   COUNTRY_LABELS,
 } from '../src/seo/featuredServers.ts'
+import { HERO_EMBED, HERO_LABEL, HERO_POSTER, HERO_SECONDS } from '../src/seo/battleViewHero.ts'
 
 const esc = s =>
   String(s).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;')
@@ -46,7 +50,7 @@ function setMeta(html, attr, key, content) {
 }
 
 /** index.html, re-headed and with `body` inside #app, for one page. Exported for the test. */
-export function renderPage(baseHtml, { path, title, description, jsonLd, body }) {
+export function renderPage(baseHtml, { path, title, description, jsonLd, body, meta = [] }) {
   const url = `${SITE}${path}`
   let html = baseHtml.replace(/<title>[^<]*<\/title>/, `<title>${esc(title)}</title>`)
   html = setMeta(html, 'name', 'description', description)
@@ -55,6 +59,7 @@ export function renderPage(baseHtml, { path, title, description, jsonLd, body })
   html = setMeta(html, 'property', 'og:url', url)
   html = setMeta(html, 'name', 'twitter:title', title)
   html = setMeta(html, 'name', 'twitter:description', description)
+  for (const [attr, key, content] of meta) html = setMeta(html, attr, key, content)
   html = html.replace(/<link rel="canonical" href="[^"]*">/, `<link rel="canonical" href="${url}">`)
   // `<` escaped so a name can never close the script element.
   const ld = JSON.stringify(jsonLd).replace(/</g, '\\u003c')
@@ -108,6 +113,59 @@ ${items}
 <p>Every server, live: <a href="/v4/servers/bf1942">the full Battlefield 1942 server list</a>.</p>`
 }
 
+const BATTLEVIEW = {
+  path: '/battleview',
+  // As the route's meta (src/router/index.ts), which the live page sets.
+  title: 'BattleView, the BF1942 3D recorder · bfstats.io',
+  description: 'Record Battlefield 1942 rounds with BF42++ or the server recorder, and watch them back in 3D.',
+}
+
+/**
+ * og:type video.other with og:video (and its secure_url, type and size) is what Discord
+ * plays inline, the poster its still before a click: the pattern the Shorts' share
+ * links use (api/Shorts/ShortLink.cs). The rest of the unfurlers get the poster.
+ */
+function battleViewMeta() {
+  const [w, h] = [String(HERO_EMBED.width), String(HERO_EMBED.height)]
+  return [
+    ['property', 'og:type', 'video.other'],
+    ['property', 'og:image', HERO_POSTER.src],
+    ['property', 'og:image:type', 'image/jpeg'],
+    ['property', 'og:image:width', String(HERO_POSTER.width)],
+    ['property', 'og:image:height', String(HERO_POSTER.height)],
+    ['property', 'og:image:alt', HERO_LABEL],
+    ['property', 'og:video', HERO_EMBED.src],
+    ['property', 'og:video:url', HERO_EMBED.src],
+    ['property', 'og:video:secure_url', HERO_EMBED.src],
+    ['property', 'og:video:type', 'video/mp4'],
+    ['property', 'og:video:width', w],
+    ['property', 'og:video:height', h],
+    ['name', 'twitter:card', 'summary_large_image'],
+    ['name', 'twitter:image', HERO_POSTER.src],
+  ]
+}
+
+function battleViewJsonLd() {
+  return {
+    '@context': 'https://schema.org',
+    '@type': 'VideoObject',
+    name: 'BattleView trailer',
+    description: HERO_LABEL,
+    thumbnailUrl: HERO_POSTER.src,
+    contentUrl: HERO_EMBED.src,
+    uploadDate: '2026-11-11',
+    duration: `PT${HERO_SECONDS}S`,
+    url: `${SITE}${BATTLEVIEW.path}`,
+  }
+}
+
+function battleViewBody() {
+  return `
+<h1>Try BattleView</h1>
+<p>BattleView records Battlefield 1942 rounds with BF42++ or the server recorder, and plays them back in 3D in your browser.</p>
+<p><a href="${esc(HERO_EMBED.src)}">Watch the BattleView trailer</a> · <a href="https://play.bfstats.io/play/?tab=replay">Watch recorded rounds</a></p>`
+}
+
 /** Every prerendered page: path and contents. Exported for the test. */
 export function pages() {
   return [
@@ -119,6 +177,7 @@ export function pages() {
       jsonLd: communityJsonLd(c),
       body: communityBody(c),
     })),
+    { ...BATTLEVIEW, jsonLd: battleViewJsonLd(), body: battleViewBody(), meta: battleViewMeta() },
   ]
 }
 

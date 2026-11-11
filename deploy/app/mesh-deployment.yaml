@@ -52,6 +52,12 @@ spec:
               mountPath: /usr/share/nginx/html/replays
               subPath: assets/mesh/replays
               readOnly: true
+            # Site media: the BattleView hero video and its poster, named by
+            # content hash (features/battleview-install-page, "Hero video").
+            - name: assets-data
+              mountPath: /usr/share/nginx/html/media
+              subPath: assets/mesh/media
+              readOnly: true
           # nginx handing out static files; the client does all the WebGL work.
           # Measured at 19.6Mi steady and 23.2Mi peak while serving concurrent
           # 2.5MB .glb transfers — and that was with 22 workers, where this node's
