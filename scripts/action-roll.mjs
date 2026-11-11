@@ -1299,7 +1299,10 @@ try {
   execFileSync('ffmpeg', ['-y', '-loglevel', 'error', '-i', path.join(frames, `f${String(posterAt).padStart(5, '0')}.jpg`), '-vf', 'scale=1920:-2', '-q:v', '3', poster]);
   // The strip's meta (api/Shorts: kind "roll", keyed by the round second it
   // starts, victim -10).
-  const levelName = String(rec.title ?? rec.level).split(' on ')[0];
+  // "Arnhem-1944" reads "Arnhem 1944", "omaha_beach" "Omaha Beach".
+  const levelName = String(rec.title ?? rec.level).split(' on ')[0]
+    .replace(/[-_](\d{4})$/, ' $1').replace(/_/g, ' ')
+    .split(' ').map(w => (w === w.toUpperCase() ? w : w.charAt(0).toUpperCase() + w.slice(1))).join(' ');
   const meta = {
     recordingSlug: SLUG, killTime: Number(start.toFixed(2)), victimPid: -10, kind: 'roll',
     title: `Action roll: ${levelName}`, killer: '', victim: '', weapon: '', killerVehicle: null, victimVehicle: null,

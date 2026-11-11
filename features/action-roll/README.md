@@ -293,3 +293,17 @@ about 3.3 GB with the Shorts; fixed the same day (`VolumeUsage`). A 75 s roll
 is 0.6-0.7 GB at three qualities (2160p 320-420 MB): one a night fills the
 20 GiB volume in about a month. Keep three qualities for 14 days, then 1080p
 only (about 7 GB a year at one a night), and serve 1080p unless asked.
+
+## On the site (2026-11-12)
+
+The six re-filmed rolls (r9: Arnhem 1944, Meuse River Line 1944, Manchuria
+1945, Gazala, Omaha Beach, Bocage CTF; 90 s each, 4K and HD, filmed from the
+committed tool, so each `roll.script.json` can say whether it can be filmed
+again exactly) are in the REPLAY tab's Shorts strip as kind `roll`. Each went
+up with `--upload-take`: about 480 MB of 4K in six 80 MiB parts and 105-130 MB
+of HD in two. Titles read "Action roll: <level>", the level's name tidied
+(`Arnhem-1944` reads "Arnhem 1944").
+
+A take's process could hang closing the browser after its files were written
+(Arnhem, six minutes); the close now gets ten seconds and the process exits,
+so a batch moves on.
