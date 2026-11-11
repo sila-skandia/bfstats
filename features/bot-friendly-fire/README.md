@@ -118,7 +118,8 @@ this change.
   with a known line standing in it. The owner's decision is that playability
   wins: a person playing with these bots was shot in the back in any
   corridor. So a bot keeps its trigger up while a living teammate's body is
-  within 0.6 m of the line from its muzzle to the target, at least a metre
+  within 0.6 m of the line from its muzzle to the target (wider by the
+  bot's own deviation cone at the friend's distance, at most 2 m), at least a metre
   nearer than the target and inside 100 m (`friendly-fire.js` `HOLD_FIRE`,
   `friendInLine`; `bot-plans.js` `holdFireFor` in `execTrigger`). It keeps
   aiming and fires the tick the line clears; on foot, after a second of
