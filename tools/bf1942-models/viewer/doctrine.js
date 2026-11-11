@@ -453,7 +453,16 @@ export class StrategicCommand {
   /** The bot's side's standing gun rule (a doctrine's `gunsRule`), or null:
    *  what `bot-mount.js` reads while the bot holds no order. */
   gunsRuleOf(id) {
+    if (this.noLayerOrder(id)) return null;
     return this.doctrines[this.roster.get(id)]?.gunsRule ?? null;
+  }
+
+  /** Whether the bot's side is held by the no-live-strategy fallback
+   *  (strategic-ai.js `_noLiveStrategyFallback`, INVENTION): the bot takes
+   *  the order a level with no layer gives (bot-decision.js
+   *  `fallbackWaypoint`), and the side's doctrine's gun rule is off. */
+  noLayerOrder(id) {
+    return !!this.sai.sides[this.roster.get(id)]?.fallback;
   }
 
   /**
@@ -474,6 +483,13 @@ export class StrategicCommand {
           if (this.roster.get(id) !== side) continue;
           if (order) this.orders.set(id, checkOrder(order));
           else this.orders.delete(id);
+        }
+        // INVENTION (strategic-ai.js `_noLiveStrategyFallback`): a generated
+        // layer's side with no live strategy holds no order, whatever its
+        // doctrine made of the pass (a squad's followers, a garrison post),
+        // and its bots take the no-layer order (`noLayerOrder`).
+        if (sai.sides[side]?.fallback) {
+          for (const [id, s] of this.roster) if (s === side) this.orders.delete(id);
         }
       }
       this.passes++;

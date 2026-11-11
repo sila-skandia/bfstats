@@ -463,6 +463,8 @@ export function createBotReferee(env) {
       if (referee.respawnTick(bot, dt)) continue;   // dead and waiting out its timer
       bot.pathBudget = PATH_BUDGET_OFF ? null : referee.pathBudget;
       bot.waypoints = strategy?.waypointsOf(bot.playerId) ?? null;
+      // A generated layer's side with no live strategy (doctrine.js `noLayerOrder`).
+      bot.noLayerOrder = !!strategy?.noLayerOrder?.(bot.playerId);
       // The side's standing gun rule (doctrine.js `gunsRuleOf`), for the
       // seconds between a unit change and the next pass.
       bot.gunsRule = strategy?.gunsRuleOf?.(bot.playerId) ?? null;

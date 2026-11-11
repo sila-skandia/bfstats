@@ -27,6 +27,13 @@ both bars rebuilt, The_Maze is still better than nothing and stays live on
 a new layer; shigaisen_B is not and was taken off the page; no mod level
 reaches better-than-nothing, on DICE's bar or its own mod's.
 
+**A side with no live strategy, 2026-11-11** ([no-live-strategy.md](no-live-strategy.md)):
+22 of the 64 generated layers start with a side none of whose strategies
+qualifies. Where that side also has nothing to attack, the page now gives a
+generated layer's bots the no-layer order (INVENTION, gated to generated
+layers): Battle of Edson's Ridge went from 0 kills to a fight. The lint
+warns for every such side.
+
 **What is live, 2026-11-11:** The_Maze (Community Maps), which failed the
 page check on team kills until the bots' hold-fire went live the same day
 ([hold-fire.md](hold-fire.md)) and passes it since, and four mod levels
