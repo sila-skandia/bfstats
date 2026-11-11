@@ -522,7 +522,7 @@ function regionAt(nav, R, gx, gz, radius) {
  * free metre of each region nearest its cell's centre, starting at the start
  * and ending at the exact goal; or null.
  */
-export function findStrategicPath(nav, fromX, fromZ, toX, toZ, { fallbackStart = null, stats = null } = {}) {
+export function findStrategicPath(nav, fromX, fromZ, toX, toZ, { fallbackStart = null, stats = null, nearest = false } = {}) {
   if (stats) stats.strategic++;
   if (nav.strategic) return engineStrategicPath(nav, fromX, fromZ, toX, toZ, fallbackStart);
   const c = nav.coarse;
@@ -530,13 +530,14 @@ export function findStrategicPath(nav, fromX, fromZ, toX, toZ, { fallbackStart =
   const cs = nav.cellSize, per = c.cellsPer;
   const s = regionAt(nav, R, Math.floor(fromX / cs), Math.floor(-fromZ / cs), per);
   const e = regionAt(nav, R, Math.floor(toX / cs), Math.floor(-toZ / cs), per * 2);
-  if (s < 0 || e < 0) return null;
+  if (s < 0 || (e < 0 && !nearest)) return null;
   const n = R.total;
   const g = new Float32Array(n).fill(Infinity);
   const f = new Float32Array(n).fill(Infinity);
   const came = new Int32Array(n).fill(-1);
   const closed = new Uint8Array(n);
-  const ecx = R.cellOf[e] % c.width, ecz = Math.floor(R.cellOf[e] / c.width);
+  const ecx = e >= 0 ? R.cellOf[e] % c.width : Math.floor(toX / cs / per);
+  const ecz = e >= 0 ? Math.floor(R.cellOf[e] / c.width) : Math.floor(-toZ / cs / per);
   const heur = r => {
     const cx = R.cellOf[r] % c.width, cz = Math.floor(R.cellOf[r] / c.width);
     const dx = Math.abs(cx - ecx), dz = Math.abs(cz - ecz);
@@ -565,16 +566,32 @@ export function findStrategicPath(nav, fromX, fromZ, toX, toZ, { fallbackStart =
       }
     }
   }
-  if (came[e] === -1 && e !== s) return null;
+  let end = e, ex = toX, ez = toZ;
+  if (e < 0 || (came[e] === -1 && e !== s)) {
+    if (!nearest) return null;
+    // `nearest` (a driven hull, bot-route.js `ensureRoute`, INVENTION): a goal
+    // whose region the start's cannot reach is approached as far as the map
+    // goes, to the reached region nearest it, rather than not at all.
+    let best = s, bestH = heur(s);
+    for (let r = 0; r < n; r++) {
+      if (!(g[r] < Infinity)) continue;
+      const h = heur(r);
+      if (h < bestH || (h === bestH && g[r] < g[best])) { best = r; bestH = h; }
+    }
+    if (best === s) return null;
+    end = best;
+    ex = (R.repX[best] + 0.5) * cs; ez = -((R.repZ[best] + 0.5) * cs);
+  }
   const regions = [];
-  for (let r = e; r !== -1; r = came[r]) regions.push(r);
+  for (let r = end; r !== -1; r = came[r]) regions.push(r);
   regions.reverse();
   const path = [[fromX, fromZ]];
   for (let k = 1; k < regions.length - 1; k++) {
     const r = regions[k];
     path.push([(R.repX[r] + 0.5) * cs, -((R.repZ[r] + 0.5) * cs)]);
   }
-  path.push([toX, toZ]);
+  path.push([ex, ez]);
+  if (end !== e) path.short = true;
   return path;
 }
 

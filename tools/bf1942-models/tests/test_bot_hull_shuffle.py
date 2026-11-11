@@ -139,6 +139,18 @@ class HullBounceTests(unittest.TestCase):
         self.assertEqual(self.results["walledOnce"], {"left": 6, "route": False})
         self.assertEqual(self.results["walledTwice"], {"left": 2, "route": True})
 
+    def test_a_goal_the_map_cannot_reach_is_approached_by_a_hull(self) -> None:
+        # Cause 5: the painted coarse layer has no path across the wall; with
+        # `nearest` it ends at the region nearest the goal on the start's
+        # side (west of the wall at x 60), and only a hull's route asks so.
+        r = self.results["nearest"]
+        self.assertIsNone(r["plain"])
+        self.assertTrue(r["short"])
+        self.assertLess(r["end"][0], 60.0)
+        self.assertGreater(r["end"][0], 40.0)
+        self.assertTrue(r["hullRoute"])
+        self.assertFalse(r["soldierRoute"])
+
     def test_a_hull_on_a_wall_the_map_does_not_show_gets_round_it(self) -> None:
         r = self.results["toyWall"]
         self.assertGreater(r["ticksOnWall"], 0, "the straight line does meet the wall")

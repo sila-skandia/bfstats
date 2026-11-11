@@ -497,7 +497,13 @@ export function ensureRoute(bot, goal) {
   // does (INVENTION).
   if (nav.strategic || Math.hypot(goal[0] - bx, goal[2] - bz) > COARSE_CELL * 2) {
     const valid = bot._validPos?.nav === nav ? bot._validPos.pos : null;
-    coarse = findStrategicPath(nav, bx, bz, goal[0], goal[2], { fallbackStart: valid, stats: bot.pathBudget ?? null });
+    // A driven hull whose goal the painted coarse layer cannot reach from
+    // where it stands is sent as near as the map goes (`nearest`, INVENTION):
+    // FH's Pegasus tractor, out of its pocket at last, was handed an order
+    // point by Cafe Gondree that its map does not join to the bridge, and
+    // stood with its throttle off and every route failing for 549 s
+    // (hull-steering.md, cause 5). A soldier's route is as it was.
+    coarse = findStrategicPath(nav, bx, bz, goal[0], goal[2], { fallbackStart: valid, stats: bot.pathBudget ?? null, nearest: !!bot.vehicle });
     if (!coarse) {
       bot._pathFailures++;
       // A goal the strategic map cannot reach is not asked again every tick:

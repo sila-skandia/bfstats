@@ -11,7 +11,8 @@
 
 import { trackObstruction, trackHullContact, onObstructed, ensureRoute, extendRoute, popPassed, lookAhead,
          execInfantryMoveTo, steerToward, hullTravelSpeed, HULL_TRAVEL_WINDOW, backOutDecision } from './bot-route.js';
-import { CELL_FREE } from './nav-map.js';
+import { CELL_FREE, CELL_OBJECT, COARSE_CELL } from './nav-map.js';
+import { findStrategicPath } from './nav-search.js';
 
 const out = {};
 const r3 = v => Math.round(v * 1000) / 1000;
@@ -126,6 +127,36 @@ function walled(failures) {
 }
 out.walledOnce = walled(1);
 out.walledTwice = walled(2);
+
+// --- A goal the map cannot reach, approached as far as it goes (cause 5) ---------------
+//
+// A 128 m painted map cut in two by a wall at x 60..68: from (20.5, -60.5)
+// the goal (100.5, -60.5) is on the other side. Asked plainly the coarse
+// layer has no path; with `nearest` it ends in the region nearest the goal
+// on the start's side; and a hull's route takes it, a soldier's does not.
+{
+  const size = 128, n = size * size;
+  const blocked = new Uint8Array(n).fill(CELL_FREE);
+  for (let gz = 0; gz < size; gz++) for (let gx = 60; gx <= 68; gx++) blocked[gz * size + gx] = CELL_OBJECT;
+  const per = COARSE_CELL, cw = Math.ceil(size / per), ch = Math.ceil(size / per);
+  const free = new Uint8Array(cw * ch), freeCount = new Uint16Array(cw * ch);
+  for (let gz = 0; gz < size; gz++) for (let gx = 0; gx < size; gx++) {
+    if (blocked[gz * size + gx] !== CELL_FREE) continue;
+    const c = Math.floor(gz / per) * cw + Math.floor(gx / per);
+    free[c] = 1; freeCount[c]++;
+  }
+  const nav = { width: size, height: size, cellSize: 1, blocked, heights: new Float32Array(n), normalY: new Float32Array(n).fill(1),
+                coarse: { free, freeCount, width: cw, height: ch, cellsPer: per, cellSize: per }, strategic: null };
+  const plain = findStrategicPath(nav, 20.5, -60.5, 100.5, -60.5);
+  const near = findStrategicPath(nav, 20.5, -60.5, 100.5, -60.5, { nearest: true });
+  const hull = hullBot(nav, 20.5, -60.5, Math.PI / 2);
+  const route = ensureRoute(hull, [100.5, 0, -60.5]);
+  const soldier = hullBot(nav, 20.5, -60.5, Math.PI / 2);
+  soldier.vehicle = null;
+  const walk = ensureRoute(soldier, [100.5, 0, -60.5]);
+  const last = near ? near[near.length - 1] : null;
+  out.nearest = { plain, end: last ? last.map(r3) : null, short: !!near?.short, hullRoute: !!route && !route.failed, soldierRoute: !!walk && !walk.failed };
+}
 
 // --- The loop: a toy hull on a wall the map does not show ---------------------------
 //
