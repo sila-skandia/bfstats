@@ -11,8 +11,19 @@ before and after.
 Tools (scratch, not in the repo): `stuck.mjs` (every hull-stuck episode of a
 trace by `detect.mjs`'s own rule, with the driver's `actionStatusDecision`
 states, pedal, plan, route and nearest hull over it), `mapat.mjs` (the baked
-`Tank0` map around a point), and per-tick reads of the trace's `drv` block
-(`sim/match.mjs`: state, drive, angle, steering point, speed).
+`Tank0` map around a point), `stopped.mjs` (seconds a driver in MoveTo sat
+with its throttle off and no live route, which the hull-stuck detector
+cannot see), `boot.py` (a bootstrap of a pooled median's change), an
+env-gated probe printed from `bot-route.js` while debugging (removed), and
+per-tick reads of the trace's `drv` block (`sim/match.mjs`: state, drive,
+angle, steering point, speed).
+
+In short: five causes, five fixes, all in `viewer/bot-route.js` and
+`viewer/nav-search.js`, all INVENTION around the engine's own
+`actionStatusDecision` and driving law, which are unchanged. Hull-stuck
+time on the two Pegasus levels falls from 20 to 25 s a driving minute to
+1 to 2 (section 4); DICE's four levels move inside their seed spread; on
+foot nothing moves.
 
 ## 1. Where the stuck time is
 
@@ -100,10 +111,9 @@ What it is, one piece at a time:
   for other reasons (a new goal, a route failed elsewhere); on FHSW it
   never did.
 
-**Fix** (`viewer/bot-route.js`, INVENTION, both the rule it corrects's
-own): a hull's throttle counts either way (`Math.abs`), a soldier's is
-unchanged (his is never negative, so his traces are byte for byte the
-same). And the circle `onHullObstructed` plants goes at the end of the
+**Fix** (`viewer/bot-route.js`, INVENTION, as the rule it corrects is): a
+hull's throttle counts either way (`Math.abs`), a soldier's is unchanged
+(theirs is never negative, so their traces are byte for byte the same). And the circle `onHullObstructed` plants goes at the end of the
 hull its map gives the shorter run (`freeRun` ahead and astern, to 4 R),
 not the end the pedal pointed at on the flag's tick: the flag can fall in
 either half of the shuffle, and a circle astern of a hull nosed into a
@@ -249,22 +259,52 @@ seed after it: 13 seated route failures of 181, and the seconds a driver
 in MoveTo sits with the throttle off and no live route (`stopped.mjs`,
 scratch) 7 against 681, and 48 on the code before any of this.
 
-### 2.5 A street corner the tractor cannot make (not fixed)
+### 2.5 An order point the hull's map cannot reach left it standing (fixed)
 
-Out of its pocket and past the object, the RedTractor's next stop on FH is
+With 2.4, FH's matrix had three matches of ten at 8 a side where a driver
+sat 400 to 550 s with its throttle off and no route (`stopped.mjs`; the
+hull-stuck detector sees none of it): the RedTractor at (504.9, -600.9)
+(seed 3) and at (516, -576) (seed 6), the Opelblitz at (260, -684) (seed
+4). A probe on each route request, seed 3:
+
+```
+ 47.6 from 508.8,-594.0 walkable  goal 390.6,-555.8  coarse 15 legs
+ 50.5 from 506.5,-597.5 walkable  goal 396.3,-547.4  coarse null
+ 52.1 ... every 1.5 s to the match's end: coarse null, circles 0
+```
+
+The order's point moved 10 m, inside the Cafe Gondree area, and the new
+one is in a part of the painted coarse layer (FH's Pegasus ships no
+strategic map) that the hull's region does not join: `findStrategicPath`
+returns no path, the route stands failed, and a hull with a map and no
+route stops. The circles are not it (2.4 had dropped them).
+
+**Fix** (`viewer/nav-search.js findStrategicPath`'s `nearest`, asked by
+`bot-route.js ensureRoute` for a driven hull only, INVENTION): when the
+goal's region is not reached, the path ends in the reached region nearest
+the goal. A soldier's routes and the engine's strategic map (every DICE
+level ships one) are unchanged: Berlin 8 a side seed 7 with vehicles is
+byte for byte the same trace with and without this part. The same three
+seeds after it: stopped 54, 0 and 31 s (were 549, 433, 494); hull stuck
+1.97, 0.83, 1.20 s a driving minute.
+
+### 2.6 A street corner the tractor cannot make (not fixed)
+
+Out of its pocket and past the object, another RedTractor stop on FH is
 the street from the bridge to Cafe Gondree, where the vehicle map's free
 paint is 2 to 5 cells wide and turns 90 deg at (472, -568) (`mapat.mjs`
 on FH's `Tank0`). FH 8 a side seed 8, after 2.4: the tractor noses into
 the corner, the touch rule backs it out 4 to 5 m down the street, it
-drives into the corner again, every 12 s for 80 s or more, 109 s of the match with its
-throttle off between route retries. The hull-stuck detector sees 10 s of
-it: the retry pauses (1.5 s, throttle off) restart its 10 s window. The
-route cuts a corner a 5 m turn radius cannot make in a street the paint
-says a hull's centre fits; the fix is the map's (2.6), or a route search
+drives into the corner again, every 12 s for 80 s or more, 109 s of the
+match with its throttle off between route retries. The hull-stuck
+detector sees 10 s of it: the retry pauses (1.5 s, throttle off) restart
+its 10 s window. The route cuts a corner a 5 m turn radius cannot make in
+a street the paint says a hull's centre fits; the fix is the map's (2.7),
+or a route search
 that knows the hull's turn radius, which the engine's does not
 (`AStarLocalSearch` searches cells, AI-30) and which was not tried.
 
-### 2.6 The vehicle map's corridor and the hull (not the page's: the generator's)
+### 2.7 The vehicle map's corridor and the hull (not the page's: the generator's)
 
 The pocket is free paint because FH's and FHSW's generated `Tank0` maps are
 painted with a 1.5 m brush (`index.json`), where DICE's levels paint
@@ -275,13 +315,13 @@ level parks it in is a place it cannot turn in. The README (18.8) chose
 1.5 m because 3.0 closes the level's streets. Not changed here (the
 generator is not this work's file); what it could do is in section 5.
 
-### 2.7 Hulls blocking each other, and a hull parked on the route
+### 2.8 Hulls blocking each other, and a hull parked on the route
 
 Not seen on these two levels: Pegasus has one drivable hull on FHSW, and on
 FH the nearest hull to a stuck one over every episode of seed 1 was a fixed
 MG 20 m or more away (`stuck.mjs nearHull`). Nothing to separate.
 
-### 2.8 Route failures are the soldiers'
+### 2.9 Route failures are the soldiers'
 
 Of 3,850 route failures in FH's 8-a-side seed 1 match, 42 were a seated
 bot's; on FHSW none of 931 and 3,172. Most are soldiers on the bridge
@@ -313,7 +353,99 @@ other cases are unchanged and pass.
 
 ## 4. Before and after
 
-PENDING
+Ten seeds, 600 s, 8 and 16 a side, garrison doctrine, `botbatch matrix
+--vehicles` (the Pegasus levels, on copies of the generated trees) and
+`botbatch baseline --vehicles --baseline <scratch>` (DICE's four), each
+built from a frozen copy of the code: "before" is the branch's start
+(2c6aef45f), "after" the branch's last code commit (all five fixes).
+Median (p90) over the ten matches.
+
+### The two Pegasus levels
+
+| FH Pegasus | 8 a side before | after | 16 a side before | after |
+|---|---|---|---|---|
+| hull stuck s a driving minute | 21.5 (28.1) | 1.04 (2.44) | 25.4 (56.0) | 1.11 (4.25) |
+| hull stuck, worse side | 28.0 (29.7) | 1.45 (4.04) | 30.0 (56.2) | 1.24 (10.9) |
+| route failures a bot-minute | 24.8 (33.8) | 23.6 (34.2) | 6.52 (20.3) | 9.86 (23.9) |
+| enemy kills a bot-minute | 0.115 (0.149) | 0.154 (0.205) | 0.099 (0.158) | 0.111 (0.233) |
+| captures | 2 (4) | 2 (3.2) | 1.5 (2) | 2 (2) |
+| stuck s a bot-minute (on foot) | 0.99 (1.48) | 1.02 (1.24) | 0.41 (0.63) | 0.38 (1.11) |
+| redeploys a bot-minute | 0.067 (0.090) | 0.068 (0.077) | 0.024 (0.035) | 0.027 (0.056) |
+
+| FHSW Pegasus | 8 a side before | after | 16 a side before | after |
+|---|---|---|---|---|
+| hull stuck s a driving minute | 21.8 (29.0) | 2.07 (3.37) | 19.5 (22.3) | 1.59 (2.29) |
+| hull stuck, worse side | 21.8 (29.0) | 3.14 (8.72) | 19.8 (59.6) | 1.76 (2.38) |
+| route failures a bot-minute | 6.27 (10.8) | 6.30 (12.7) | 7.95 (10.8) | 6.16 (9.02) |
+| enemy kills a bot-minute | 0.111 (0.211) | 0.160 (0.323) | 0.177 (0.340) | 0.122 (0.235) |
+| captures | 0 (0) | 0 (0) | 0 (0) | 0 (0) |
+| stuck s a bot-minute (on foot) | 1.82 (2.14) | 0.42 (1.89) | 0.49 (1.15) | 0.39 (0.98) |
+| redeploys a bot-minute | 0.246 (0.274) | 0.032 (0.226) | 0.032 (0.111) | 0.026 (0.090) |
+
+The seconds a driver in MoveTo sat with its throttle off and no live route
+(`stopped.mjs`, what the detector cannot see, 2.4 to 2.6), a driving
+minute, median / mean / worst of ten, after: FH 2.0 / 2.3 / 7.8 at 8 a
+side and 0.44 / 1.15 / 6.0 at 16; FHSW 0 / 0 / 0 and 0 / 0.03 / 0.27.
+With fixes 1 to 4 but not 5 FH read 3.4 / 7.4 / 20.2 and 3.9 / 7.1 / 19.7.
+Before, seed 1 only (the before matrix kept no traces): FH 4.96 and 1.02,
+FHSW 0 and 0, the tractor then never leaving its pocket to meet a street.
+
+The hulls now drive; the levels' fight does not change with it. Route
+failures are the soldiers' (2.9) and stay where they were; enemy kills
+move inside the seed spread, FHSW has no capture before or after. What
+keeps these two levels off the site is now on foot, not in a seat.
+
+### DICE's four levels with vehicles
+
+Pooled, 40 matches a side size; "change" is a bootstrap 90 % interval of
+the median's change (`boot.py`, scratch):
+
+| 8 a side | before p50 (p90), mean | after p50 (p90), mean | change of the median |
+|---|---|---|---|
+| hull stuck s a driving minute | 0.60 (3.97), 1.42 | 0.72 (1.93), 0.95 | -0.46 to +0.49 |
+| hull stuck, worse side | 1.03 (6.57), 2.49 | 1.22 (2.85), 1.70 | -0.46 to +0.78 |
+| stuck s a bot-minute | 0.34 (1.20), 0.53 | 0.39 (1.33), 0.59 | -0.12 to +0.34 |
+| route failures a bot-minute | 0.115 (0.505), 0.204 | 0.072 (0.186), 0.120 | -0.070 to +0.021 |
+| redeploys a bot-minute | 0.033 (0.074), 0.039 | 0.036 (0.080), 0.044 | -0.011 to +0.027 |
+| enemy kills a bot-minute | 0.315 (0.637), 0.376 | 0.361 (0.709), 0.402 | -0.023 to +0.094 |
+| captures | 2.5 (7), 3.15 | 3 (6.1), 3.10 | -1.5 to +2 |
+
+| 16 a side | before p50 (p90), mean | after p50 (p90), mean | change of the median |
+|---|---|---|---|
+| hull stuck s a driving minute | 0.46 (4.33), 1.47 | 0.69 (3.64), 1.44 | -0.78 to +0.65 |
+| hull stuck, worse side | 0.80 (5.86), 2.25 | 1.03 (5.98), 2.26 | -0.94 to +1.02 |
+| stuck s a bot-minute | 0.63 (2.85), 1.07 | 0.56 (2.83), 1.05 | -0.71 to +0.48 |
+| route failures a bot-minute | 0.195 (1.62), 0.535 | 0.119 (1.09), 0.417 | -0.163 to +0.036 |
+| redeploys a bot-minute | 0.039 (0.158), 0.063 | 0.045 (0.164), 0.065 | -0.022 to +0.028 |
+| enemy kills a bot-minute | 0.458 (0.740), 0.504 | 0.490 (0.851), 0.541 | -0.017 to +0.070 |
+| captures | 2 (5.1), 2.70 | 2 (5.1), 2.68 | -1 to +1 |
+
+Hull stuck by level, median at 8 / 16 a side, before and after: Berlin
+0.94 / 2.13 and 0.94 / 2.28; Bocage 0.08 / 0.17 and 0.18 / 0.28; Kharkov
+0.60 / 0.33 and 0.67 / 0.40; Stalingrad 2.54 / 2.48 and 1.10 / 1.03.
+
+Read plainly: every interval holds 0, so no figure moved beyond the seed
+spread on DICE's levels. The tail of hull-stuck time is cut (p90 3.97 to
+1.93 at 8 a side, the mean 1.42 to 0.95; Stalingrad's median halves);
+the medians of hull stuck rise 0.1 to 0.2 s a driving minute on three
+levels where they were already low, which the tables report rather than
+argue away. Route failures fall at both sizes. Fix 5 cannot reach DICE's
+levels (each ships a strategic map): Berlin 8 a side seed 7's trace with
+vehicles is byte for byte the same with and without it, so these DICE
+matches, built before fix 5, stand for the final code.
+
+On-foot traces of the four levels (seed 1, 8 and 16 a side, 600 s,
+`--no-vehicles`) are byte for byte the same on the branch's start and its
+last code commit, and after every fix in between.
+
+### The page
+
+`sim/pagematch.mjs` against `serve_viewer.py` on the changed viewer, 420 s,
+16 bots, one match each (the page is not seeded): Berlin 0.491 enemy kills
+a bot-minute, no capture; Kharkov 0.357, 5 captures; no page errors in
+either. On the branch's start, the same way: Berlin 0.313 and 0.277; with
+fixes 1 to 3, Berlin 0.402 and Stalingrad 0.357. The seat-behaviour note's
+page figures for the published code were Berlin 0.40, Kharkov 0.34.
 
 ## 5. What the generator could paint differently (described, not done)
 
@@ -321,7 +453,7 @@ The generator's files are not this work's; these are what the traces argue
 for, for whoever owns `sim/botgen.mjs`:
 
 1. **A hull map painted for the hull.** The 1.5 m brush lets a hull's
-   centre stand where its body does not fit (2.1, 2.2, 2.5, 2.6). DICE's
+   centre stand where its body does not fit (2.1, 2.2, 2.6, 2.7). DICE's
    `Tank0` maps use 3.0. Where 3.0 closes a street the level needs, paint
    the streets at 3.0 and open only the cells a corridor check (the
    hull's half width plus a margin either side, along the street's axis)
@@ -340,25 +472,27 @@ for, for whoever owns `sim/botgen.mjs`:
 
 ## 6. Open, and not verified
 
-1. **Not looked at in a browser by a person.** Four headless page matches
-   on the changed viewer (Berlin twice, Kharkov, Stalingrad; 420 s, 16
-   bots) had no page errors; their kill rates are in section 4. The page
-   is not seeded, so one match a level is one sample.
+1. **Not looked at in a browser by a person.** Headless page matches only
+   (section 4): two on the final viewer, more on earlier steps and on the
+   branch's start, none with a page error. The page is not seeded, so one
+   match a level is one sample, and no mod level was played on the page
+   (a mod level needs its row in the local `maps.json`).
 2. **The hull-stuck detector misses a hull that stops between retries**
-   (2.4, 2.5): a driver whose throttle goes to 0 during a route's 1.5 s
+   (2.4, 2.5, 2.6): a driver whose throttle goes to 0 during a route's 1.5 s
    retry pause restarts its 10 s window. `stopped.mjs` (scratch) counts
    those seconds; it is not in `sim/detect.mjs` (not this work's file).
 3. **Every fix is an INVENTION.** The engine's own state machine
    (`actionStatusDecision`, AI-85) and driving law are unchanged; what
    changed is the viewer's own obstruction handling around them: the
    count's pedal, the speed it reads, the circle's end, the back-out point
-   and its reverse, and forgetting a hull's own circles. None of it was
+   and its reverse, forgetting a hull's own circles, and a hull's route to
+   the nearest reachable region. None of it was
    checked against the real game in the lab; whether retail's bots free a
    tractor from that pocket at all was not looked at.
 4. **The PanzerIVH's wall at (462, -564.5) on FH** (2.3) was not
    identified, and the part of the fix aimed at it was not separated by a
    trace of its own.
-5. **The street corner (2.5) is left.** It holds most of FH's residual.
+5. **The street corner (2.6) is left.** It holds most of FH's residual.
 6. **DICE's traces with vehicles moved** (section 4), as any change to a
    hull's handling moves them; on-foot traces of the four levels (seed 1,
    8 and 16 a side, 600 s) are byte for byte the same before and after

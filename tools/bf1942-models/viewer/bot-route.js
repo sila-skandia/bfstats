@@ -799,8 +799,8 @@ export const HULL_TRAVEL_WINDOW = 1.0;
  * The speed the obstruction rules read for a driven hull: the lower of its
  * body's speed now and the ground it covered over the last
  * `HULL_TRAVEL_WINDOW` seconds (INVENTION, the soldier's `travelSpeed`
- * counterpart: a soldier's speed has long been the ground he covered, since
- * his velocity is re-set to the command every grounded tick). A hull pressed
+ * counterpart: a soldier's speed has long been the ground they covered,
+ * since their velocity is re-set to the command every grounded tick). A hull pressed
  * nose-first on a wall the map left open bounces on it: its velocity reads
  * 0.5 to 2 m/s tick to tick while it stays put, so `trackObstruction`'s
  * count was zeroed every second or two and `trackHullContact` never held.
