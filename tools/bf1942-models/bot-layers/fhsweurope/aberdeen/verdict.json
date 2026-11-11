@@ -1,0 +1,61 @@
+{
+ "level": "aberdeen",
+ "verdict": "fail",
+ "outcome": "no-fight",
+ "config": "with vehicles",
+ "doctrine": "garrison",
+ "generatorVersion": 5,
+ "inputs": {
+  "controlPoints": "099d2765baaefa61a0e5c9df14551a274496102fb450f6bf74274bd2d28d7c92",
+  "infantryMap": "fc1250eefef44ba5074fda7669ff9af74d29312ea1d12e68c171ac4930f8939a",
+  "template": "43f8a790471528016570235f76e97dbb2045732458781a5139f37fed68bf98c0"
+ },
+ "baseline": "DICE layers with vehicles, garrison doctrine: berlin, stalingrad, kharkov, bocage; seeds 1..10, 600 s",
+ "bar": {
+  "against": "dice",
+  "why": "no bar of fhsweurope's own: DICE's"
+ },
+ "seeds": 2,
+ "sizes": {
+  "8": {
+   "verdict": "fail",
+   "failed": [
+    "idleShare",
+    "selfDeathsPerBotMinute",
+    "routeFailuresPerBotMinute",
+    "enemyKillsPerBotMinute",
+    "bothSidesCapture",
+    "bothSidesKill",
+    "routeFailuresPerBotMinuteWorseSide",
+    "nonEnemyDeathShareWorseSide",
+    "unitsNeverUsedShare"
+   ],
+   "winners": [
+    2,
+    0,
+    0
+   ]
+  },
+  "16": {
+   "verdict": "fail",
+   "failed": [
+    "idleShare",
+    "selfDeathsPerBotMinute",
+    "enemyKillsPerBotMinute",
+    "bothSidesCapture",
+    "bothSidesKill",
+    "ticketsBleed",
+    "nonEnemyDeathShareWorseSide",
+    "unitsNeverUsedShare"
+   ],
+   "winners": [
+    2,
+    0,
+    0
+   ]
+  }
+ },
+ "oneSided": 1,
+ "unreachable": [],
+ "lintErrors": []
+}

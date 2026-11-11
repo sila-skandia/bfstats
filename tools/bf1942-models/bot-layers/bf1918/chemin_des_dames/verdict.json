@@ -10,10 +10,10 @@
   "infantryMap": "e547be78b690a198352ce25d7520ea876df35e4ac84d8fa3822a4bc9fc792f68",
   "template": "43f8a790471528016570235f76e97dbb2045732458781a5139f37fed68bf98c0"
  },
- "baseline": "bf1918's own layers with vehicles, garrison doctrine: battle_of_cer, battle_of_mons, belleau_wood; seeds 1..10, 600 s; dropped, no fight: argonnerwald, krakau",
+ "baseline": "bf1918's own layers with vehicles, garrison doctrine: argonnerwald, battle_of_cer, battle_of_mons, belleau_wood; seeds 1..10, 600 s; dropped, no fight: krakau",
  "bar": {
   "against": "bf1918",
-  "why": "bf1918's own bar, built from 3 of its levels that are alive (battle_of_cer, battle_of_mons, belleau_wood)"
+  "why": "bf1918's own bar, built from 4 of its levels that are alive (argonnerwald, battle_of_cer, battle_of_mons, belleau_wood)"
  },
  "againstDice": {
   "verdict": "fail",
@@ -24,13 +24,10 @@
     "verdict": "fail",
     "failed": [
      "stuckSecondsPerBotMinute",
-     "oscillationsPerBotMinute",
      "selfDeathsPerBotMinute",
      "routeFailuresPerBotMinute",
      "redeploysPerBotMinute",
      "enemyKillsPerBotMinute",
-     "flagCoverage",
-     "bothSidesCapture",
      "bothSidesKill",
      "ticketsBleed",
      "stuckSecondsPerBotMinuteWorseSide",
@@ -65,7 +62,7 @@
    }
   }
  },
- "seeds": 10,
+ "seeds": 2,
  "sizes": {
   "8": {
    "verdict": "fail",
@@ -75,19 +72,16 @@
     "selfDeathsPerBotMinute",
     "redeploysPerBotMinute",
     "enemyKillsPerBotMinute",
-    "flagCoverage",
-    "bothSidesCapture",
     "bothSidesKill",
     "ticketsBleed",
     "stuckSecondsPerBotMinuteWorseSide",
-    "redeploysPerBotMinuteWorseSide",
     "nonEnemyDeathShareWorseSide",
     "unitsNeverUsedShare"
    ],
    "winners": [
-    6,
-    3,
-    1
+    0,
+    2,
+    0
    ]
   },
   "16": {
@@ -97,19 +91,17 @@
     "selfDeathsPerBotMinute",
     "redeploysPerBotMinute",
     "enemyKillsPerBotMinute",
-    "flagCoverage",
     "bothSidesCapture",
     "bothSidesKill",
     "stuckSecondsPerBotMinuteWorseSide",
     "redeploysPerBotMinuteWorseSide",
     "nonEnemyDeathShareWorseSide",
     "hullStuckSecondsPerDrivingMinute",
-    "hullStuckSecondsPerDrivingMinuteWorseSide",
     "unitsNeverUsedShare",
     "tankSilentShare"
    ],
    "winners": [
-    10,
+    2,
     0,
     0
    ]
