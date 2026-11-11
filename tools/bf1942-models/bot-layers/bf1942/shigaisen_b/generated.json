@@ -1,14 +1,23 @@
 {
  "generator": "botgen",
- "version": 3,
+ "version": 5,
  "mod": "bf1942",
  "level": "shigaisen_b",
+ "objectSpawners": 0,
  "template": "symmetric",
  "templateSource": "DICE, bf1942 Kharkov (1.6 patch archives): AI/Strategies.con, AI/conditions.con, AI/prerequisites.con, unchanged",
+ "templateChoice": {
+  "name": "symmetric",
+  "inPlay": 5,
+  "rule": "5 capturable flags in play, more than 3"
+ },
  "scope": "on foot: the engine's own Tank0 and Infantry1 search maps, infantry order positions, no strategic maps, no co-op layer",
  "unreachable": [
   "windmill_west"
  ],
+ "unreachableReasons": {
+  "windmill_west": "walk test"
+ },
  "botSpawnsExcluded": [
   "New_Control_Point5_Spawn2"
  ],
@@ -16,15 +25,60 @@
   "source": "engine",
   "opened": [],
   "ways": [],
-  "cover": 0.811,
+  "cover": 0.854,
   "floors": {
    "stacked": false,
-   "twoFloorShare": 0.013,
+   "twoFloorShare": 0.009,
    "raised": [
     "windmill_west"
    ],
    "reason": null
   }
+ },
+ "routeProbe": {
+  "chokeMax": 4,
+  "unreachable": [],
+  "stops": {},
+  "oneSided": {},
+  "sides": {
+   "1": {
+    "spawns": 11,
+    "flags": [
+     "centerBridge_east",
+     "minka_northeast",
+     "minka_south",
+     "northBridge_west",
+     "southBridge_east"
+    ]
+   },
+   "2": {
+    "spawns": 11,
+    "flags": [
+     "centerBridge_east",
+     "minka_northeast",
+     "minka_south",
+     "northBridge_west",
+     "southBridge_east"
+    ]
+   }
+  },
+  "chokes": {
+   "centerBridge_east:1": 0,
+   "centerBridge_east:2": 0,
+   "northBridge_west:1": 0,
+   "northBridge_west:2": 2,
+   "minka_northeast:1": 6,
+   "minka_northeast:2": 0,
+   "minka_south:1": 0,
+   "minka_south:2": 0,
+   "southBridge_east:1": 4,
+   "southBridge_east:2": 0
+  },
+  "late": {},
+  "shutLinks": [
+   "northBridge_west>minka_northeast",
+   "minka_northeast>northBridge_west"
+  ]
  },
  "inputs": {
   "controlPoints": "2720d5f12a6c88964f1415fae2491a207c0b8a81f0a2ee4812510f859b3d3d97",

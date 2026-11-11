@@ -1,0 +1,99 @@
+{
+ "generator": "botgen",
+ "version": 5,
+ "mod": "bf1942",
+ "level": "liberation_of_caen",
+ "objectSpawners": 36,
+ "template": "symmetric",
+ "templateSource": "DICE, bf1942 Kharkov (1.6 patch archives): AI/Strategies.con, AI/conditions.con, AI/prerequisites.con, unchanged",
+ "templateChoice": {
+  "name": "symmetric",
+  "inPlay": 4,
+  "rule": "4 capturable flags in play, more than 3"
+ },
+ "scope": "on foot: infantry order positions only, no search maps, no co-op layer",
+ "unreachable": [
+  "Church"
+ ],
+ "unreachableReasons": {
+  "Church": "walk test"
+ },
+ "botSpawnsExcluded": [
+  "South_River_3",
+  "South_River_5",
+  "Pegasus_Bridge_2",
+  "Pegasus_Bridge_4",
+  "Pegasus_Bridge_5",
+  "Church_1",
+  "Church_2",
+  "Church_3",
+  "Church_4",
+  "Church_5",
+  "Park_2",
+  "German_HQ_1"
+ ],
+ "walkMap": {
+  "source": "page painter",
+  "engine": "none",
+  "opened": [],
+  "ways": [],
+  "cover": 0.87,
+  "floors": {
+   "stacked": false,
+   "twoFloorShare": 0.002,
+   "raised": [],
+   "reason": null
+  },
+  "capped": true
+ },
+ "routeProbe": {
+  "chokeMax": 4,
+  "unreachable": [],
+  "stops": {},
+  "oneSided": {},
+  "sides": {
+   "1": {
+    "spawns": 13,
+    "flags": [
+     "German_Headquarters",
+     "Park",
+     "Pegasus_Bridge_CP",
+     "South_River"
+    ]
+   },
+   "2": {
+    "spawns": 5,
+    "flags": [
+     "German_Headquarters",
+     "Park",
+     "Pegasus_Bridge_CP",
+     "South_River"
+    ]
+   }
+  },
+  "chokes": {
+   "South_River:1": 0,
+   "South_River:2": 1,
+   "Pegasus_Bridge_CP:1": 0,
+   "Pegasus_Bridge_CP:2": 0,
+   "Park:1": 2,
+   "Park:2": 3,
+   "German_Headquarters:1": 0,
+   "German_Headquarters:2": 0
+  },
+  "late": {},
+  "shutLinks": []
+ },
+ "inputs": {
+  "controlPoints": "09a76c8806729e88631d2659a86513b9abe5b21202ecdf7f026308828e9bb5b4",
+  "infantryMap": "da478c880cfa907f71e4510c81ff8f9b91037d368ea128d643b602bf24f7a891",
+  "template": "43f8a790471528016570235f76e97dbb2045732458781a5139f37fed68bf98c0"
+ },
+ "files": {
+  "AI.con": "04b93532b84f08d585fc57a6eac9faa603abca20c05b6663120a3aac54faecd2",
+  "AI/StrategicAreas.con": "ed7cdb5055a5398e1318f8e3f9ba9a8f59ff6243ba611abcb14e5f2b57dacd31",
+  "AI/Strategies.con": "4ce0be59a0d6c5cd530db002fb062c4be8d936bc6ae59bd188803ccaf7869a8d",
+  "AI/conditions.con": "68a0c7a8aec69954063147b60fae560b2874884285737aa085efa76597d395aa",
+  "AI/prerequisites.con": "4c1f313bc285b228fd6ad03bfd1f44c5b15c8703c31f802eb605bc5f00f88bb5"
+ }
+}

@@ -1,11 +1,16 @@
 {
  "generator": "botgen",
- "version": 4,
+ "version": 5,
  "mod": "bf1942",
  "level": "hop",
  "objectSpawners": 2,
- "template": "symmetric",
- "templateSource": "DICE, bf1942 Kharkov (1.6 patch archives): AI/Strategies.con, AI/conditions.con, AI/prerequisites.con, unchanged",
+ "template": "few",
+ "templateSource": "DICE, bf1942 Kursk (1.6 patch archives, Kursk_003.rfa): AI/Strategies.con, AI/conditions.con, AI/prerequisites.con, unchanged",
+ "templateChoice": {
+  "name": "few",
+  "inPlay": 2,
+  "rule": "2 capturable flags in play, at most 3"
+ },
  "scope": "on foot: an infantry map painted from the walk test, the engine's own Tank0 map, infantry order positions, no strategic maps, no co-op layer",
  "unreachable": [],
  "unreachableReasons": {},
@@ -204,15 +209,15 @@
  "inputs": {
   "controlPoints": "9a2c8aed0e23458fce46b65b98c340d52e4a3e32caead5c451e97e0fe59f2a33",
   "infantryMap": "0329ef915541d905c70b55a1dbe42af1bc9f89727332f8a2272e0bdf76b2c0db",
-  "template": "43f8a790471528016570235f76e97dbb2045732458781a5139f37fed68bf98c0"
+  "template": "bdc0e455f47f91b7e7724e71d7c0c196e839b36946ac3abb7663d725944081e5"
  },
  "files": {
-  "AI.con": "3dc94f663ac7545695a38d3670752432e4a5e64efe048dc4b26d578aece3748c",
+  "AI.con": "39c086362b6dcfd68c98d0a970906aadd87bd9696ae330b3fadd5b90b8bfb447",
   "AIpathFinding.con": "714499ad831a139560e4913e729aee4c62a23457be02e0c36c73af18f4bb31cb",
   "AI/StrategicAreas.con": "0f6c52bf677ea5616b8c0afe79754a4ab6363e02efeed51b559daa222821c7ba",
-  "AI/Strategies.con": "4ce0be59a0d6c5cd530db002fb062c4be8d936bc6ae59bd188803ccaf7869a8d",
-  "AI/conditions.con": "68a0c7a8aec69954063147b60fae560b2874884285737aa085efa76597d395aa",
-  "AI/prerequisites.con": "4c1f313bc285b228fd6ad03bfd1f44c5b15c8703c31f802eb605bc5f00f88bb5",
+  "AI/Strategies.con": "13da4dc35872dd4b5798a066f4425bdc824cfd61f31093d1808e1202644de52e",
+  "AI/conditions.con": "248a04b727c08d696bf0fa9c162bc22c43cde3c75f695892fe1e0f5141519c49",
+  "AI/prerequisites.con": "c96168b5f69860e578f5d26728fd2a2092c4c436e1da49b7d6f4009b65735398",
   "Pathfinding/Infantry1Level0Map.raw": "700e1b1c483b6e2f81b4a7282177c57a8db43c9f7738d6d8bbe12c31d76ae5d9",
   "Pathfinding/Infantry1Level1Map.raw": "601f60678ce4f0da75e483e56bfe2d26989264cc48f7122dd157d4cf3cd3c9f9",
   "Pathfinding/Infantry1Level2Map.raw": "92ef61f7e97fd5804ae111dba01825b985239d94c5951be958675d0308baa6ee",

@@ -1,0 +1,70 @@
+{
+ "level": "koh",
+ "verdict": "fail",
+ "outcome": "no-better-than-nothing",
+ "config": "with vehicles",
+ "doctrine": "garrison",
+ "generatorVersion": 5,
+ "inputs": {
+  "controlPoints": "b43e21b962a87627730fef7e6f31574d91263d4d48903746bc9597ef47bad62c",
+  "infantryMap": "08a2db1ee783a110e91616dcd0761532cbd43c53a736f8091ca86d5e15d247dc",
+  "template": "bdc0e455f47f91b7e7724e71d7c0c196e839b36946ac3abb7663d725944081e5"
+ },
+ "baseline": "DICE layers with vehicles, garrison doctrine: berlin, stalingrad, kharkov, bocage; seeds 1..10, 600 s",
+ "bar": {
+  "against": "dice",
+  "why": "a vanilla or community level: DICE's bar"
+ },
+ "seeds": 3,
+ "sizes": {
+  "8": {
+   "verdict": "fail",
+   "failed": [
+    "routeFailuresPerBotMinute",
+    "enemyKillsPerBotMinute",
+    "routeFailuresPerBotMinuteWorseSide",
+    "nonEnemyDeathShareWorseSide",
+    "unitsNeverUsedShare"
+   ],
+   "winners": [
+    3,
+    0,
+    0
+   ]
+  },
+  "16": {
+   "verdict": "fail",
+   "failed": [
+    "idleShare",
+    "enemyKillsPerBotMinute",
+    "unitsNeverUsedShare",
+    "tankSilentShare"
+   ],
+   "winners": [
+    0,
+    3,
+    0
+   ]
+  }
+ },
+ "oneSided": null,
+ "unreachable": [],
+ "lintErrors": [],
+ "accepted": {
+  "reason": "Owner's rollout, 2026-11-11: after playing Tunis-1943 against its generated bots the owner asked for every level with a fight to go live. Three seeds at 8 and 16 a side, the garrison; the checks it fails against DICE's bar are listed with this verdict.",
+  "date": "2026-11-11",
+  "outcome": "no-better-than-nothing",
+  "failed": [
+   "8:routeFailuresPerBotMinute",
+   "8:enemyKillsPerBotMinute",
+   "8:routeFailuresPerBotMinuteWorseSide",
+   "8:nonEnemyDeathShareWorseSide",
+   "8:unitsNeverUsedShare",
+   "16:idleShare",
+   "16:enemyKillsPerBotMinute",
+   "16:unitsNeverUsedShare",
+   "16:tankSilentShare"
+  ],
+  "by": "owner"
+ }
+}

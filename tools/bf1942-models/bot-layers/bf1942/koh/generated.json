@@ -1,0 +1,149 @@
+{
+ "generator": "botgen",
+ "version": 5,
+ "mod": "bf1942",
+ "level": "koh",
+ "objectSpawners": 35,
+ "template": "few",
+ "templateSource": "DICE, bf1942 Kursk (1.6 patch archives, Kursk_003.rfa): AI/Strategies.con, AI/conditions.con, AI/prerequisites.con, unchanged",
+ "templateChoice": {
+  "name": "few",
+  "inPlay": 2,
+  "rule": "2 capturable flags in play, at most 3"
+ },
+ "scope": "an infantry map painted from the walk test, a Tank0 map from the page painter, infantry order positions, no strategic maps, no co-op layer",
+ "unreachable": [
+  "North_Hill"
+ ],
+ "unreachableReasons": {
+  "North_Hill": "route probe"
+ },
+ "botSpawnsExcluded": [
+  "Hill_Top_Spawn3",
+  "Hill_Top_Spawn4",
+  "AlliedBase_Spawn2",
+  "AlliedBase_Spawn4",
+  "AxisBase_Spawn4"
+ ],
+ "walkMap": {
+  "source": "walk test",
+  "engine": "none",
+  "vehicleMap": "page painter",
+  "vehicleBrush": 1.5,
+  "vehicleBrushes": [
+   {
+    "brush": 3,
+    "flagsOn": 4,
+    "spawnersOn": 6,
+    "pieces": 17,
+    "main": 666647
+   },
+   {
+    "brush": 2.5,
+    "flagsOn": 5,
+    "spawnersOn": 16,
+    "pieces": 13,
+    "main": 716228
+   },
+   {
+    "brush": 2,
+    "flagsOn": 5,
+    "spawnersOn": 16,
+    "pieces": 11,
+    "main": 734874
+   },
+   {
+    "brush": 1.5,
+    "flagsOn": 4,
+    "spawnersOn": 20,
+    "pieces": 11,
+    "main": 772973
+   }
+  ],
+  "opened": [
+   [
+    642,
+    168
+   ],
+   [
+    642,
+    169
+   ]
+  ],
+  "ways": [
+   {
+    "who": "AxisBase_Spawn5",
+    "kind": "spawn",
+    "way": "walk",
+    "opened": 2
+   }
+  ],
+  "cover": 0.994,
+  "floors": {
+   "stacked": false,
+   "twoFloorShare": 0,
+   "raised": [],
+   "reason": null
+  }
+ },
+ "routeProbe": {
+  "chokeMax": 4,
+  "unreachable": [
+   "North_Hill"
+  ],
+  "stops": {
+   "North_Hill": {
+    "1": {
+     "stage": "strategic"
+    },
+    "2": {
+     "stage": "strategic"
+    }
+   }
+  },
+  "oneSided": {},
+  "sides": {
+   "1": {
+    "spawns": 8,
+    "flags": [
+     "Hill_Top",
+     "South_Hill"
+    ]
+   },
+   "2": {
+    "spawns": 6,
+    "flags": [
+     "Hill_Top",
+     "South_Hill"
+    ]
+   }
+  },
+  "chokes": {
+   "South_Hill:1": 0,
+   "South_Hill:2": 0,
+   "Hill_Top:1": 0,
+   "Hill_Top:2": 0
+  },
+  "late": {},
+  "shutLinks": []
+ },
+ "inputs": {
+  "controlPoints": "b43e21b962a87627730fef7e6f31574d91263d4d48903746bc9597ef47bad62c",
+  "infantryMap": "08a2db1ee783a110e91616dcd0761532cbd43c53a736f8091ca86d5e15d247dc",
+  "template": "bdc0e455f47f91b7e7724e71d7c0c196e839b36946ac3abb7663d725944081e5"
+ },
+ "files": {
+  "AI.con": "39c086362b6dcfd68c98d0a970906aadd87bd9696ae330b3fadd5b90b8bfb447",
+  "AIpathFinding.con": "9d8080cdfa7605961969aa126519b03be9691bd604ac76aef50166d81215edd2",
+  "AI/StrategicAreas.con": "0155b8f82a20a50b5cd688455113fa8347b8c8f76e23d88e7465d54780460a72",
+  "AI/Strategies.con": "13da4dc35872dd4b5798a066f4425bdc824cfd61f31093d1808e1202644de52e",
+  "AI/conditions.con": "248a04b727c08d696bf0fa9c162bc22c43cde3c75f695892fe1e0f5141519c49",
+  "AI/prerequisites.con": "c96168b5f69860e578f5d26728fd2a2092c4c436e1da49b7d6f4009b65735398",
+  "Pathfinding/Infantry1Level0Map.raw": "5fee34e1239932fa3ee732806715637b03b95724c360423eb924a176c2e5127a",
+  "Pathfinding/Infantry1Level1Map.raw": "1614ea74d6c29d8e9b901f2eacbcb2ec27fbf5ae32448811a904a0ee0a6a787f",
+  "Pathfinding/Infantry1Level2Map.raw": "dff1bad1d91167d2c0a20f6db18a61470f6fb3a5c6b0764d16a885601887bcdb",
+  "Pathfinding/Tank0Level0Map.raw": "72477ccd9aec037eb4a5fd3ad8e0956176b1faa24e33f1535ceb793ea9db750d",
+  "Pathfinding/Tank0Level1Map.raw": "eecde8114e5f77d65c6e2d3cfbed152ee7dcf2dc7813dfcf40cf58046ad77fdf",
+  "Pathfinding/Tank0Level2Map.raw": "71a35688fdc1ac8cfe9f57943216eed039e7722ec5d00df71049a41954215649"
+ }
+}

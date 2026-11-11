@@ -1,0 +1,50 @@
+rem *** Strategic areas: one per control point (botgen) ***
+
+aiStrategicArea.create Canadian_Base 964.9/617.5 979.9/632.5 50
+aiStrategicArea.addNeighbour South_River
+aiStrategicArea.addNeighbour Pegasus_Bridge_CP
+aiStrategicArea.addObjectTypeFlag Base
+aiStrategicArea.setOrderPosition Infantry 978.5/631.5
+aiStrategicArea.setSide 2
+aiStrategicArea.setTakeable 1 0
+
+aiStrategicArea.create South_River 1212.7/1039.5 1232.7/1059.5 150
+aiStrategicArea.addNeighbour Canadian_Base
+aiStrategicArea.addNeighbour Pegasus_Bridge_CP
+aiStrategicArea.addObjectTypeFlag Flank
+aiStrategicArea.addObjectTypeFlag Close
+aiStrategicArea.addObjectTypeFlag ControlPoint
+aiStrategicArea.setOrderPosition Infantry 1233.5/1058.5
+aiStrategicArea.setSide 1
+
+aiStrategicArea.create Pegasus_Bridge_CP 953.7/1239 969.7/1255 300
+aiStrategicArea.addNeighbour Canadian_Base
+aiStrategicArea.addNeighbour South_River
+aiStrategicArea.addNeighbour Park
+aiStrategicArea.addNeighbour German_Headquarters
+aiStrategicArea.addObjectTypeFlag Centre
+aiStrategicArea.addObjectTypeFlag StrongPoint
+aiStrategicArea.addObjectTypeFlag ControlPoint
+aiStrategicArea.setOrderPosition Infantry 970.5/1256.5
+aiStrategicArea.setSide 1
+
+aiStrategicArea.create Church 877.2/1386.4 892.2/1401.4 10
+aiStrategicArea.setSide 1
+aiStrategicArea.setTakeable 1 0
+aiStrategicArea.setTakeable 2 0
+
+aiStrategicArea.create Park 1052.9/1406.4 1067.9/1421.4 200
+aiStrategicArea.addNeighbour Pegasus_Bridge_CP
+aiStrategicArea.addNeighbour German_Headquarters
+aiStrategicArea.addObjectTypeFlag Centre
+aiStrategicArea.addObjectTypeFlag ControlPoint
+aiStrategicArea.setOrderPosition Infantry 1066.5/1420.5
+aiStrategicArea.setSide 1
+
+aiStrategicArea.create German_Headquarters 963.9/1465.4 978.9/1480.4 200
+aiStrategicArea.addNeighbour Pegasus_Bridge_CP
+aiStrategicArea.addNeighbour Park
+aiStrategicArea.addObjectTypeFlag Centre
+aiStrategicArea.addObjectTypeFlag ControlPoint
+aiStrategicArea.setOrderPosition Infantry 977.5/1479.5
+aiStrategicArea.setSide 1
