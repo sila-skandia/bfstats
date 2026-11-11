@@ -75,6 +75,36 @@ real bug").
     45/24/12 Mbit/s, the same sound in each). The overlay is laid out for
     1080 lines and scaled.
 
+15. **Never stand still.** When nothing the recorder saw whole is left in
+    reach, the director looks to the end of the round and jumps there; with
+    nothing at all left, the take fades out early. Meuse (2026-11-12) found
+    nothing in 60 s and held one beat 26 s: "the camera gets stuck at that
+    position and never moves again".
+16. **No round into empty sky.** A shell aimed at a plane (its man 20 m or
+    more over the ground) is not an act unless it kills: Manchuria's opening
+    rode a dual-purpose gun's round toward a far plane for 9 s, "a weird
+    chase but there's nothing out there".
+17. **Paced to watch, not to make you dizzy** (2026-11-12: "it's cutting too
+    hard. It makes me dizzy, I'd like to either hold on the action longer,
+    or make the glides slower"). Lead-in 2.4 s before a shot (3 a kill, 3.6
+    a bomb), 2.4-2.8 s held after, a miss 0.9; a fight 2.5 s more. A glide
+    takes 2.3 s (was 1.25), a flight 4.4 (was 3.2); the settled camera
+    follows and turns more gently (3.2 and 4 per second, were 5.5 and 7).
+18. **4K and HD only** (2026-11-12: "either 4k or HD is enough"):
+    `roll-2160p.mp4` and `roll-1080p.mp4`.
+19. **Every take carries its script** (`roll.script.json`): the recording's
+    SHA-256, the roll tool's last commit (and whether it had edits on top),
+    a SHA-256 over the viewer modules the replay runs, the take's settings
+    and every beat (kind, man, the act's round second, glide/fly/jump).
+    `--script=<file>` films it again. It says whether it can: all three the
+    same is the same take; otherwise it names what changed and refuses, and
+    `--force` films it anyway, taking each scripted beat where the act is
+    still there and choosing afresh where it is not. Versions are only
+    compared, never supported side by side (the owner: "I'm not interested
+    in keeping version support, but it would at least tell us if we could
+    regenerate it or not"). Film from a committed tool, or the script says
+    "+edits" and no later run can match it.
+
 ## How the trials are made
 
 `scripts/action-roll.mjs` films through the live play page the way the

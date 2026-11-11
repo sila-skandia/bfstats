@@ -23,20 +23,29 @@ import { execFileSync } from 'node:child_process';
 import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
+import { createHash } from 'node:crypto';
 import { fileURLToPath } from 'node:url';
 
 const REPO = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
 const { chromium } = createRequire(path.join(REPO, 'ui/package.json'))('playwright');
 
 const args = process.argv.slice(2);
-const opt = (n, d) => args.find(a => a.startsWith(`--${n}=`))?.slice(n.length + 3) ?? d;
+// --script=<roll.script.json>: film a take again from its script (below,
+// "The script"). Its settings stand in for the options it recorded.
+const SCRIPT_PATH = args.find(a => a.startsWith('--script='))?.slice(9) ?? null;
+const SCRIPT = SCRIPT_PATH ? JSON.parse(fs.readFileSync(SCRIPT_PATH, 'utf8')) : null;
+const fromScript = {
+  recording: SCRIPT?.recording?.slug, from: SCRIPT?.take?.from, length: SCRIPT?.take?.length, seed: SCRIPT?.take?.seed,
+  bpm: SCRIPT?.take?.bpm, res: SCRIPT?.take?.res,
+};
+const opt = (n, d) => args.find(a => a.startsWith(`--${n}=`))?.slice(n.length + 3) ?? (fromScript[n] !== undefined && fromScript[n] !== null ? String(fromScript[n]) : d);
 const API = opt('api', 'https://bfstats.io');
 const PLAY = opt('play', 'https://play.bfstats.io');
 const SLUG = opt('recording', null);
 const FROM = opt('from', null);
 const LENGTH = Number(opt('length', 75));
 const OUT = opt('out', path.join(os.homedir(), '.cache/bfstats-roll'));
-const SOUND = args.includes('--sound');
+const SOUND = args.includes('--sound') || Boolean(SCRIPT?.take?.sound);
 const BPM = Number(opt('bpm', 0)) || 0;
 const SEED = Number(opt('seed', 1));
 // Rendered at --res lines (2160 by default: the owner, 2026-11-11, "1080p
@@ -44,7 +53,9 @@ const SEED = Number(opt('seed', 1));
 const RES = Number(opt('res', 2160));
 const H = RES, W = Math.round(RES * 16 / 9 / 2) * 2, FPS = 30;
 /** The qualities written: lines, x264 CRF, peak rate. */
-const QUALITIES = [[2160, 19, '45M'], [1440, 20, '24M'], [1080, 21, '12M']].filter(([h]) => h <= RES);
+// 4K and HD only (the owner, 2026-11-12: "either 4k or HD is enough").
+const QUALITIES = [[2160, 19, '45M'], [1080, 21, '12M']].filter(([h]) => h <= RES);
+if (!QUALITIES.length) QUALITIES.push([RES, 21, '12M']);
 const AUDIO_RATE = 38400;
 const AUDIO_SPAN = 1200;
 const STEP_TIMEOUT = 60 * 1000;
@@ -91,6 +102,10 @@ const ROLL = Object.freeze({
   // the other side within `aimed` m of its line, inside `reach` m.
   aimed: 6,
   reach: 260,
+  // A shot at a plane from the ground is a round into empty sky (Manchuria,
+  // 2026-11-12: "a weird chase but there's nothing out there"): not an act
+  // unless it kills. `airborne` m over the ground is a plane.
+  airborne: 20,
   // The longest a round is ridden before the camera lets it go.
   ride: 3,
   near: 120,
@@ -100,11 +115,14 @@ const ROLL = Object.freeze({
   soon: 1.8,
   // A shot or burst that hurts nobody, against one that does.
   missWeight: 0.3,
-  lead: { shot: 1.8, kill: 2.4, bomb: 3.2, fire: 1.0 },
-  after: { shot: 1.3, kill: 1.6, fire: 0.5, miss: 0.35 },
+  // Paced so it does not make you dizzy (the owner, 2026-11-12: "it's
+  // cutting too hard ... hold on the action longer, or make the glides
+  // slower"): longer on each man before and after, slower hand-overs.
+  lead: { shot: 2.4, kill: 3.0, bomb: 3.6, fire: 1.6 },
+  after: { shot: 2.4, kill: 2.8, fire: 1.4, miss: 0.9 },
   // A fight worth staying in: `acts` more acts (a burst counts half)
   // within `near` m in the next `within` s holds the beat `stay` s longer.
-  busy: { acts: 2, near: 80, within: 5, stay: 1.5 },
+  busy: { acts: 2, near: 80, within: 5, stay: 2.5 },
   // A burst: trigger presses (one recorded fire each) no more than `burstGap` s apart, at least `burstMin`,
   // aimed within `fireAimed` m of a man inside `fireReach` m.
   burstGap: 1.2,
@@ -112,7 +130,7 @@ const ROLL = Object.freeze({
   fireReach: 140,
   fireAimed: 3,
   fireWeight: 0.45,
-  glide: 1.25,
+  glide: 2.3,
   // A flight's rise over the straight line: under the fog.
   arcMax: 55,
   // Clearances, metres: over the ground mid-flight (thinning to 0 at the
@@ -124,7 +142,7 @@ const ROLL = Object.freeze({
   wallLiftStep: 3,
   wallLiftMax: 70,
   lensNear: 2.5,
-  fly: 3.2,
+  fly: 4.4,
   slow: 0.4,
   slowEase: 0.35,
   slowHold: 0.45,
@@ -132,8 +150,8 @@ const ROLL = Object.freeze({
   hull: [2.4, 0.9, 0.5],
   plane: [3.2, 0.9, 0],
   round: [7, 2.2, 2.6],
-  follow: 5.5,
-  aim: 7,
+  follow: 3.2,
+  aim: 4,
 });
 
 /** The director, in the page: whom the camera is on, how it got there, and
@@ -195,7 +213,7 @@ const ROLL_SRC = String.raw`window.__roll = (() => {
   // Who a heavy shot is aimed at: the nearest man of the other side within
   // cfg.aimed m of its line (more for a hull), or null.
   const teamOf = (pid, t) => B.whereIs(r.rec, pid, t, r.kills ?? r.rec.kills)?.team;
-  const aimedAt = (f, pids, reach = cfg.reach, aimed = cfg.aimed) => {
+  const aimedAt = (f, pids, reach = cfg.reach, aimed = cfg.aimed, ground = true) => {
     const o = [f.pos[0], f.pos[1], -f.pos[2]];
     const d = [f.dir[0], f.dir[1], -f.dir[2]];
     const n = Math.hypot(...d) || 1;
@@ -211,6 +229,10 @@ const ROLL_SRC = String.raw`window.__roll = (() => {
       const off = Math.sqrt(Math.max(0, v[0] ** 2 + v[1] ** 2 + v[2] ** 2 - along * along));
       const hull = w.state === 'vehicle';
       if (off > aimed * (hull ? 1.5 : 1)) continue;
+      if (ground) {
+        const g = r.ctx.groundHeight?.(w.pos[0], w.pos[2]);
+        if (Number.isFinite(g) && w.pos[1] - g > cfg.airborne) continue;
+      }
       if (!best || off < best.off) best = { pid, off, hull, along };
     }
     return best;
@@ -359,13 +381,28 @@ const ROLL_SRC = String.raw`window.__roll = (() => {
     if (best) return best;
     // Nothing in reach: the next heavy act anywhere, a flight away, the
     // clock jumped forward while the camera is high.
-    for (const a of actsIn(T + 0.6, T + 60)) {
+    // To the end of the round: Meuse (2026-11-12) had nothing the recorder
+    // saw whole for over a minute, and the camera stood still for 26 s.
+    for (const a of actsIn(T + 0.6, r.rec.duration ?? T + 3600)) {
       if (prev && a.pid === prev.pid) continue;
       if (a.kind === 'fire') continue;
       const s = a.w * Math.exp(-(a.t - T) / 12);
       if (!best || s > best.s) best = { a, s, d: Infinity, near: false, skip: a.t - cfg.leadOf(a) - cfg.fly * 0.5 > T + 2 };
     }
     return best;
+  };
+
+  // A scripted take: the act its script names for beat i, taken as it was
+  // (glide, flight or jump). One that is not there any more is reported
+  // and the director chooses again from there.
+  const forcedPick = (i, T, P) => {
+    const f = cfg.forced?.[i];
+    if (!f) return null;
+    const a = acts.find(x => x.kind === f.kind && x.pid === f.pid && Math.abs(x.t - f.tAct) < 0.05);
+    if (!a) { (st.diverged ??= []).push(i); return null; }
+    const w = where(a.pid, T);
+    const d = P && w ? w.pos.distanceTo(P) : 0;
+    return { a, near: f.how === 'glide', d, skip: f.how === 'jump' };
   };
 
   const beatOf = (pick, T) => {
@@ -712,7 +749,7 @@ const ROLL_SRC = String.raw`window.__roll = (() => {
       if (!b) {
         const ok = a => { const w = where(a.pid, t); return w && (w.plane || !roofed(w.eye)); };
         const first = acts.find(a => a.t >= t + cfg.leadOf(a) && a.kind === 'shot' && ok(a)) ?? acts.find(a => a.t >= t && a.kind !== 'fire' && ok(a));
-        b = startBeat({ a: first, near: true, d: 0 }, t, 'opening');
+        b = startBeat(forcedPick(0, t, null) ?? { a: first, near: true, d: 0 }, t, 'opening');
         st.blend = 1;
       }
       // Beat phases: lead -> (round -> impact) | down -> done.
@@ -776,7 +813,8 @@ const ROLL_SRC = String.raw`window.__roll = (() => {
         const P = st.impact?.clone() ?? where(b.pid, t)?.eye ?? st.pos.clone();
         const log = st.beats[st.beats.length - 1];
         if (log) { log.landed = b.landed ?? null; log.busy = b.busy ?? 0; log.held = Math.round((st.screen - b.screenAt) * 10) / 10; }
-        const pick = choose(t, P, b);
+        let pick = null;
+        try { pick = forcedPick(st.beats.length, t, P) ?? (cfg.forced && st.beats.length >= cfg.forced.length ? null : choose(t, P, b)); } catch (e) { st.err = 'choose: ' + e.message + ' ' + (e.stack ?? '').split('\n').slice(1, 3).join(' | '); }
         if (pick) {
           const nb = startBeat(pick, t, b.victims.length ? 'after the kill' : 'after the hit');
           if (pick.skip) {
@@ -785,7 +823,7 @@ const ROLL_SRC = String.raw`window.__roll = (() => {
             nb.jumpTo = nb.t0 - cfg.fly * 0.55;
           }
           b = nb;
-        } else b.end = t + 1;
+        } else st.done = true;
       }
       if (b.jumpAt !== undefined && st.screen >= b.jumpAt && !b.jumped) {
         b.jumped = true;
@@ -798,10 +836,11 @@ const ROLL_SRC = String.raw`window.__roll = (() => {
       }
       const since = st.screen - b.screenAt;
       const caption = { name: name(b.pid), weapon: b.act.f?.weapon ?? b.act.weapon ?? '', alpha: Math.max(0, Math.min(1, (since - 0.3) / 0.4, (3.2 - since) / 0.5)) };
-      return { seek, speed: st.speed, caption, phase: b.phase, beat: st.beats.length - 1 };
+      return { seek, speed: st.speed, caption, phase: b.phase, beat: st.beats.length - 1, end: b.end, err: st.err ?? null, done: Boolean(st.done) };
     },
     beats: () => st.beats,
     qa: () => qa,
+    diverged: () => st.diverged ?? [],
     stop() { r.camera.setRig(null); },
   };
 })();`;
@@ -915,6 +954,34 @@ async function json(u) {
   }
 }
 const rec = await json(`${API}/stats/recordings/${SLUG}`);
+
+// --- The script (the owner, 2026-11-12: a script with each video "that
+// allows us to re-record something ... versioned ... I'm not interested in
+// keeping version support, but it would at least tell us if we could
+// regenerate it or not"). A take is the same take again only when three
+// things are: the recording (its bytes), this tool (its last commit, and
+// no edits on top), and the viewer that drew it (a hash of the modules the
+// replay runs). The script names all three and every beat in order.
+const SCRIPT_FORMAT = 'bfstats-roll-script';
+const SCRIPT_VERSION = 1;
+const git = (...a) => { try { return execFileSync('git', a, { cwd: REPO, encoding: 'utf8' }).trim(); } catch { return null; } };
+const toolId = {
+  commit: git('log', '-1', '--format=%H', '--', 'scripts/action-roll.mjs'),
+  edited: Boolean(git('status', '--porcelain', '--', 'scripts/action-roll.mjs')),
+};
+const recordingBytes = Buffer.from(await (await fetch(`${API}${rec.recordingUrl}`)).arrayBuffer());
+const recordingId = { slug: SLUG, title: rec.title, mod: rec.mod, level: rec.level, sha256: createHash('sha256').update(recordingBytes).digest('hex'), bytes: recordingBytes.length };
+/** The viewer's modules the take depends on, hashed in the page. */
+const VIEWER_MODULES = ['replay.js', 'replay-camera.js', 'replay-battles.js', 'replay-recording.js', 'replay-hulls.js', 'replay-shorts-pick.js',
+  'replay-gunfire.js', 'gunfire.js', 'round-launch.js', 'map.html'];
+if (SCRIPT) {
+  if (SCRIPT.format !== SCRIPT_FORMAT || SCRIPT.version !== SCRIPT_VERSION) throw new Error(`${SCRIPT_PATH} is not a version ${SCRIPT_VERSION} roll script`);
+  const differs = [];
+  if (SCRIPT.recording.sha256 !== recordingId.sha256) differs.push(`the recording's file changed (${SCRIPT.recording.bytes} bytes then, ${recordingId.bytes} now)`);
+  if (SCRIPT.tool.commit !== toolId.commit || SCRIPT.tool.edited || toolId.edited) differs.push(`the roll tool changed (${SCRIPT.tool.commit?.slice(0, 9)}${SCRIPT.tool.edited ? '+edits' : ''} then, ${toolId.commit?.slice(0, 9)}${toolId.edited ? '+edits' : ''} now)`);
+  // The viewer is checked once the page is up (below).
+  global.__scriptDiffers = differs;
+}
 const name = opt('name', `${SLUG}-${FROM ?? 'auto'}-s${SEED}${BPM ? `-${BPM}bpm` : ''}`);
 const dir = path.join(OUT, name);
 const frames = path.join(dir, 'frames');
@@ -940,12 +1007,27 @@ try {
     const r = window.replay;
     r.creator?.toggle?.(false);
     const n = window.__roll.install(cfg);
-    return { ...n, opening: window.__roll.opening(), duration: r.rec.duration };
+    // The viewer as it is now: one hash over the modules the take runs.
+    const parts = [];
+    for (const m of cfg.viewerModules) parts.push(m + '\n' + await (await fetch(new URL(m, location.href).href, { cache: 'no-store' })).text());
+    const digest = await crypto.subtle.digest('SHA-256', new TextEncoder().encode(parts.join('\n')));
+    const viewer = [...new Uint8Array(digest)].map(b => b.toString(16).padStart(2, '0')).join('');
+    return { ...n, opening: window.__roll.opening(), duration: r.rec.duration, viewer };
   }, {
     src: ROLL_SRC,
-    cfg: { ...ROLL, heavy: ROLL.heavy.map(([re, k]) => [re.source, k]), notHeavy: ROLL.notHeavy.source, planted: ROLL.planted.source, fps: FPS, fov: 62, seed: SEED, clear: !args.includes('--no-clear'), barLen: BPM ? 240 / BPM : 0 },
+    cfg: { ...ROLL, heavy: ROLL.heavy.map(([re, k]) => [re.source, k]), notHeavy: ROLL.notHeavy.source, planted: ROLL.planted.source, fps: FPS, fov: 62, seed: SEED, clear: !args.includes('--no-clear'), barLen: BPM ? 240 / BPM : 0,
+      viewerModules: VIEWER_MODULES, forced: SCRIPT ? SCRIPT.beats.map(b => ({ kind: b.kind, pid: b.pid, tAct: b.tAct, how: b.how })) : null },
   });
   log(`acts ${info.acts} (${info.shots} heavy shots, ${info.kills} kills, ${info.fire} bursts; ${info.dropped} dropped as out of range or stuttering); busiest 40 s from ${info.opening?.t?.toFixed(1)}`);
+  if (SCRIPT) {
+    const differs = global.__scriptDiffers;
+    if (SCRIPT.viewer.sha256 !== info.viewer) differs.push('the viewer that draws it changed');
+    if (differs.length) {
+      log(`cannot regenerate this take exactly: ${differs.join('; ')}`);
+      if (!args.includes('--force')) throw new Error('refusing to re-record a changed take (--force films it anyway, following its beats where it can)');
+      log('--force: filming it anyway, following its beats where it can');
+    } else log('the recording, the tool and the viewer are all as they were: this is the same take');
+  }
   const start = FROM !== null ? Number(FROM) : Math.max(0, (info.opening?.t ?? 60) - 4);
   await page.evaluate(start => {
     const r = window.replay;
@@ -963,7 +1045,7 @@ try {
   }
   const from = await page.evaluate(() => window.__audioT?.() ?? null);
   const paces = [];
-  const total = Math.round(LENGTH * FPS);
+  let total = Math.round(LENGTH * FPS);
   const t0 = Date.now();
   let last = null;
   for (let k = 0; k < total; k++) {
@@ -1011,10 +1093,13 @@ try {
       // In from black, out to black.
       const fade = Math.min(1, k / 18, (total - 1 - k) / 30);
       if (fade < 1) { g.fillStyle = 'rgba(0,0,0,' + (1 - Math.max(0, fade)) + ')'; g.fillRect(0, 0, W, H); }
-      return { url: cv.toDataURL('image/jpeg', 0.9), speed: tk.speed, t: r.time, phase: tk.phase, beat: tk.beat };
+      return { url: cv.toDataURL('image/jpeg', 0.9), speed: tk.speed, t: r.time, phase: tk.phase, beat: tk.beat, end: tk.end, err: tk.err, done: tk.done };
     }, { W, H, FPS, k, total });
     fs.writeFileSync(path.join(frames, `f${String(k).padStart(5, '0')}.jpg`), Buffer.from(res.url.split(',')[1], 'base64'));
     paces.push(res.speed);
+    // Nothing left the recorder saw whole: fade out here rather than hold.
+    if (res.done && total > k + 31) { total = k + 31; log(`  nothing left to film after ${(k / FPS).toFixed(1)} s: ending the take`); }
+    if (args.includes('--trace') && k % FPS === 0) log(`  t ${res.t.toFixed(2)} phase ${res.phase} speed ${res.speed.toFixed(2)} beat ${res.beat} end ${res.end?.toFixed?.(2)} ${res.err ?? ''}`);
     if (res.beat !== last) {
       last = res.beat;
       log(`  frame ${k} (${(k / FPS).toFixed(1)} s): beat ${res.beat}, round ${res.t.toFixed(1)}`);
@@ -1023,6 +1108,10 @@ try {
   log(`filmed ${total} frames in ${Math.round((Date.now() - t0) / 1000)} s`);
   const beats = await page.evaluate(() => window.__roll.beats());
   const qa = await page.evaluate(() => window.__roll.qa());
+  if (SCRIPT) {
+    const diverged = await page.evaluate(() => window.__roll.diverged());
+    log(diverged.length ? `the script's beats ${diverged.join(', ')} were not found; the director chose there` : `every one of the script's ${SCRIPT.beats.length} beats was filmed as written`);
+  }
   const runs = [];
   for (const [t, why] of qa.at) {
     const last = runs.at(-1);
@@ -1030,6 +1119,13 @@ try {
     else runs.push({ from: t, to: t, why });
   }
   log(`clipping: ${qa.under} frames under the ground, ${qa.lens} with the lens in terrain or a wall, ${qa.boxed} boxed in, of ${qa.frames}${runs.length ? `; at ${runs.map(x => `${x.from}${x.to > x.from ? `-${x.to}` : ''}s ${x.why}`).join(', ')}` : ''}`);
+  fs.writeFileSync(path.join(dir, 'roll.script.json'), JSON.stringify({
+    format: SCRIPT_FORMAT, version: SCRIPT_VERSION, made: new Date().toISOString(),
+    recording: recordingId, tool: toolId, viewer: { site: PLAY, sha256: info.viewer, modules: VIEWER_MODULES },
+    take: { from: start, length: LENGTH, res: RES, fps: FPS, seed: SEED, bpm: BPM, sound: SOUND, clear: !args.includes('--no-clear') },
+    beats: beats.map(b => ({ screen: b.screen, t: b.t, tAct: b.tAct, kind: b.kind, pid: b.pid, name: b.name, weapon: b.weapon, how: b.how })),
+    rerecord: `node scripts/action-roll.mjs --script=<this file> --gpu --channel=chrome`,
+  }, null, 2));
   fs.writeFileSync(path.join(dir, 'beats.json'), JSON.stringify({ recording: SLUG, title: rec.title, start, seed: SEED, bpm: BPM, clipping: { ...qa, at: undefined, runs }, beats }, null, 2));
   for (const b of beats) log(`  ${b.screen.toFixed(1)}s  ${b.how.padEnd(5)} ${b.name} ${b.kind} ${b.weapon ?? ''}${b.victims.length ? ` -> ${b.victims.join(', ')}` : ''}${b.dist !== null ? ` (${b.dist} m)` : ''}${b.landed === false ? ' MISS' : ''}${b.busy >= ROLL.busy.acts ? ' FIGHT' : ''}${b.held !== undefined ? ` held ${b.held}s` : ''}`);
   let wavPath = null;
@@ -1059,6 +1155,39 @@ try {
   }
   const mp4 = path.join(dir, `roll-${QUALITIES[0][0]}p.mp4`);
   log('qualities:', written.join(', '));
+  // The poster: the first hit or kill held on, else a third of the way in.
+  const landedBeat = beats.find(b => b.landed || b.kind === 'kill');
+  const posterAt = Math.min(total - 1, Math.max(0, Math.round(((landedBeat ? landedBeat.screen + (landedBeat.held ?? 4) * 0.7 : total / FPS / 3)) * FPS)));
+  const poster = path.join(dir, 'poster.jpg');
+  execFileSync('ffmpeg', ['-y', '-loglevel', 'error', '-i', path.join(frames, `f${String(posterAt).padStart(5, '0')}.jpg`), '-vf', 'scale=1920:-2', '-q:v', '3', poster]);
+  // The strip's meta (api/Shorts: kind "roll", keyed by the round second it
+  // starts, victim -10).
+  const levelName = String(rec.title ?? rec.level).split(' on ')[0];
+  const meta = {
+    recordingSlug: SLUG, killTime: Number(start.toFixed(2)), victimPid: -10, kind: 'roll',
+    title: `Action roll: ${levelName}`, killer: '', victim: '', weapon: '', killerVehicle: null, victimVehicle: null,
+    distance: 0, lengthSeconds: Math.round((total / FPS) * 10) / 10, level: rec.level, mod: rec.mod,
+    victims: [...new Set(beats.map(b => b.name).filter(Boolean))],
+  };
+  fs.writeFileSync(path.join(dir, 'meta.json'), JSON.stringify(meta, null, 2));
+  // --upload: the 4K and the HD to the strip (SHORTS_UPLOAD_KEY, as the
+  // Shorts runner); --to=<api> for another API.
+  if (args.includes('--upload')) {
+    const key = process.env.SHORTS_UPLOAD_KEY ?? '';
+    if (!key) throw new Error('--upload needs SHORTS_UPLOAD_KEY');
+    const hd = path.join(dir, 'roll-1080p.mp4');
+    const form = new FormData();
+    form.append('meta', JSON.stringify(meta));
+    form.append('video', new Blob([fs.readFileSync(mp4)], { type: 'video/mp4' }), 'roll.mp4');
+    if (fs.existsSync(hd) && hd !== mp4) form.append('videoHd', new Blob([fs.readFileSync(hd)], { type: 'video/mp4' }), 'roll-hd.mp4');
+    form.append('poster', new Blob([fs.readFileSync(poster)], { type: 'image/jpeg' }), 'poster.jpg');
+    const res = await fetch(`${opt('to', API)}/stats/shorts`, { method: 'POST', body: form, headers: { 'X-Shorts-Key': key } });
+    const body = await res.text();
+    if (!res.ok) throw new Error(`upload ${res.status}: ${body.slice(0, 300)}`);
+    const made = JSON.parse(body);
+    fs.writeFileSync(path.join(dir, 'uploaded.json'), JSON.stringify(made, null, 2));
+    log(`uploaded ${made.slug}: ${API}/replay/s/${made.slug}`);
+  }
   fs.rmSync(frames, { recursive: true, force: true });
   log('wrote', mp4);
 } finally {
