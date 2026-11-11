@@ -98,6 +98,8 @@ const out = {
   // The same with every flag out of play: a flag out of play still counts, as
   // on a level with no layer.
   outOfPlay: run(true, { cut: true, outOfPlay: true }),
+  // A live strategy and every flag out of play: nothing in play to take, the SAI keeps them.
+  liveOutOfPlay: run(true, { cut: true, outOfPlay: true, live: true }),
   // The Axis hold every capturable flag: nothing to take, the SAI keeps them.
   allHeld: run(true, { cut: true, allHeld: true }),
   // The same with no `generated` marker: the engine's rule.

@@ -251,15 +251,20 @@ export class StrategicAI {
    * layer gives (bot-decision.js `fallbackWaypoint`: the nearest flag the side
    * does not hold), and goes back to the SAI at
    * the first pass where it can attack again. A side holds-only when its
-   * strategy (live, or the one kept with none scoring) has no attack target
-   * (no area above `SAI.candidateMin`, or NumberOfAttacks 0) while a
-   * capturable flag it does not hold still stands: the flag the no-layer
-   * order would walk it to. A side that holds every capturable flag is left
-   * to the SAI. A flag the generator took out of play (`setTakeable <side>
-   * 0`, "unreachable" by the walk test) counts, as it does on a level with no
-   * layer: on the street levels every flag is out of play and both sides held
-   * all match, and a flag the walk test calls unreachable is not always one
-   * nobody takes (FH Pegasus' Axis took them; flag-binding.md).
+   * strategy has no attack target (no area above `SAI.candidateMin`, or
+   * NumberOfAttacks 0) while there is a flag for it to take:
+   *
+   *  - with no strategy scoring (the strategy kept): any capturable flag it
+   *    does not hold, one the generator took out of play (`setTakeable
+   *    <side> 0`, "unreachable" by the walk test) included. This is the
+   *    rule's first form, unchanged (no-live-strategy.md).
+   *  - with a live strategy: a capturable flag it does not hold in an area
+   *    it may take, a flag in play. Counting the flags out of play here too
+   *    took The Maze's sides at times (its flags `3` and `4` are out of
+   *    play) and doubled its own-hand deaths over three seeds
+   *    (flag-binding.md).
+   *
+   * A side that holds every such flag is defending, and is left to the SAI.
    *
    * Why: a generated layer copies DICE's strategy template unchanged and its
    * area graph from the walk test. Where a side's own areas touch no area it
@@ -290,9 +295,16 @@ export class StrategicAI {
    */
   _holdOnlyFallback(side) {
     const S = this.sides[side];
-    const on = !!this.layer.ai?.generated && S.containers.length > 0
-      && ((S.active?.strategy.attacks ?? 1) <= 0 || !this.layer.areas.some(a => this._attackValue(a, side) > SAI.candidateMin))
-      && this.layer.flags.some(f => f.position && !f.uncapturable && f.team !== side);
+    const noTarget = (S.active?.strategy.attacks ?? 1) <= 0
+      || !this.layer.areas.some(a => this._attackValue(a, side) > SAI.candidateMin);
+    const live = S.containers.some(c => c.score > 0);
+    const toTake = f => f.position && !f.uncapturable && f.team !== side;
+    const on = !!this.layer.ai?.generated && S.containers.length > 0 && noTarget
+      && (live
+        // A live strategy: a flag in play it could take (an area it may take).
+        ? this.layer.areas.some(a => this.layer.takeableBy(a, side) && a.controlPoints.some(toTake))
+        // None scoring: any capturable flag it does not hold (the rule's first form).
+        : this.layer.flags.some(toTake));
     S.fallback = on;
     if (!on) return false;
     S.attacks = [];

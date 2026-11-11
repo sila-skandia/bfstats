@@ -1,11 +1,12 @@
 """The hold-only fallback (features/bot-map-generation/no-live-strategy.md, flag-binding.md).
 
-On a generated layer (`ai.generated`) a side whose strategy (live, or kept
-with none scoring) finds nothing to attack, while a capturable flag it does
-not hold stands, holds no order and its bots walk to the nearest flag they
-do not hold, as on a level with no layer; at the first pass where a target
-appears the SAI orders them again. A side that still has a target, or holds
-every capturable flag, keeps the SAI, and a layer
+On a generated layer (`ai.generated`) a side whose strategy finds nothing to
+attack, while there is a flag for it to take (with no strategy scoring, any
+capturable flag it does not hold; with a live strategy, one in an area it may
+take), holds no order and its bots walk to the nearest flag they do not hold,
+as on a level with no layer; at the first pass where a target
+appears the SAI orders them again. A side that still has a target, or has no
+such flag, keeps the SAI, and a layer
 without the marker keeps the engine's rule (`SAI::chooseStrategy` keeps the
 strategy it has). INVENTION, labelled in `viewer/strategic-ai.js`
 `_holdOnlyFallback` and in `features/bf1942-ai-spec/KNOBS.md`. Also the
@@ -87,6 +88,15 @@ class NoLiveStrategyTests(unittest.TestCase):
         p = self.out["outOfPlay"]["before"]["1"]
         self.assertTrue(p["fallback"])
         self.assertEqual(p["orders"], [None] * 4)
+
+    def test_a_live_strategy_with_every_flag_out_of_play_keeps_the_sai(self) -> None:
+        # The Maze's case once a side holds every flag in play: its out of
+        # play flags are not what a live strategy is sent at.
+        for phase in ("before", "after"):
+            p = self.out["liveOutOfPlay"][phase]["1"]
+            self.assertTrue(p["live"])
+            self.assertFalse(p["fallback"])
+            self.assertTrue(all(p["orders"]))
 
     def test_a_side_holding_every_capturable_flag_keeps_the_sai(self) -> None:
         for phase in ("before", "after"):
