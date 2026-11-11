@@ -163,6 +163,12 @@ class ShortsPickTests(unittest.TestCase):
         # counting two, and the reel still counts six.
         self.assertEqual(self.r["playerReel"], [{"total": 6, "parts": [[241.83, 1], [290.86, 2], [763.06, 2], [771.4, 1]]}])
 
+    def test_an_air_kill_he_never_fired_for_is_not_a_volley(self) -> None:
+        # A crash credited to the last man who hit him, far off and silent:
+        # the volley camera behind him showed only his own plane flying on
+        # (the owner, 2026-11-11, hj24y7v6zr on Market Garden).
+        self.assertEqual(self.r["volley"], [[8, 2]])
+
     # Battlefield ASMR under fire (the owner, 2026-11-07): the rounds going
     # past a man's head, heard where he is, from many guns.
 

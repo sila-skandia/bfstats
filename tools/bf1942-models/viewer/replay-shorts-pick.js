@@ -294,6 +294,9 @@ export function shortCandidates(rec, { models, slug = '', kills = rec.kills } = 
     const hullDied = Boolean(hull && hull.killedAt !== undefined && Math.abs(hull.killedAt - k.t) <= HULL_DIED);
     const kind = kindOfKill(killer, victim, f.distance, weapon, { hullDied });
     if (!kind) continue;
+    // Air to air is filmed as his volley: a kill he fired no guns for (a bomb
+    // on a plane parked on a deck, cj4z37wab2 on Coral Sea) shows only him.
+    if (kind === 'air-to-air' && !volleyHeard(rec, k)) continue;
     // The recording must hold both men whole over what the Short shows.
     const [w0, w1] = [k.t - WINDOW.before, k.t + WINDOW.after];
     if (!continuityOf(lifeOf(rec, k.killer, at), w0, w1).ok) continue;
@@ -375,6 +378,7 @@ export function vehicleKillsOf(rec, { models, kills = rec.kills } = {}) {
     const air = killer.kind === 'air' && victim.kind === 'air';
     // A vehicle kill is filmed as the bullet chase, which needs its round.
     if (!air && !f.round?.f) continue;
+    if (air && !volleyHeard(rec, k)) continue;
     out.push({
       t: k.t, killer: k.killer, victim: k.victim, air, flying: killer?.kind === 'air', victimFlying: victim?.kind === 'air', killerVehicle: killer.tmpl, victimVehicle: victim.tmpl,
       killerName: nameAt(rec, k.killer, k.t), victimName: nameAt(rec, k.victim, k.t), weapon: k.weapon ?? null,
@@ -497,6 +501,17 @@ export function heardShot(rec, k) {
   return (rec.fires ?? []).some(f => f.pid === k.killer && f.t <= k.t + 0.05 && f.t >= k.t - HEARD_SHOT);
 }
 
+/** Whether an air kill was his volley: his trigger within HEARD_SHOT of it.
+ *  A pilot who crashes after being hit is credited to the last man who hit
+ *  him, often far off and not firing (2026-11-11, hj24y7v6zr on Market
+ *  Garden: Tavington 282 m away and silent for 3 s as OWLCAT's Spitfire went
+ *  into a hill), and the volley camera behind him showed only his own plane
+ *  flying on. Every real air kill measured fired within 0.05 s of it. A
+ *  recording with no fires at all (an old one) is let through. */
+export function volleyHeard(rec, k) {
+  return !rec.fires?.length || heardShot(rec, k);
+}
+
 function filmablePart(rec, facts, k, models, { roundless = false } = {}) {
   const f = facts.get(k);
   if (!f?.fresh) return null;
@@ -508,6 +523,7 @@ function filmablePart(rec, facts, k, models, { roundless = false } = {}) {
   const victim = mountOf(rec, k.victim, at, models);
   const air = killer?.kind === 'air' && victim?.kind === 'air';
   const noRound = !air && !f.round?.f;
+  if (air && !volleyHeard(rec, k)) return null;
   // Without a round the page has only his recorded trigger to play: a kill
   // nobody heard fire is not filmed (the owner, 2026-11-10, g5e45cdyby on
   // Arnhem: "no sound when the player fires"; the recording had no rounds

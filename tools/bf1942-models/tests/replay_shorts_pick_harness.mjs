@@ -138,6 +138,32 @@ console.log(JSON.stringify({
     const reels = P.playerReelsOf([k(241.83, 18), k(290.86, 11), k(290.86, 24), k(763.06, 18), k(763.06, 15), k(771.4, 13)], { slug: 's' });
     return reels.map(r => ({ total: r.total, parts: r.parts.map(p => [p.t, p.count]) }));
   })(),
+  volley: (() => {
+    // A Bf109 (1) downs one Mustang (2) at 8 s with its guns firing from 6 s;
+    // the other Mustang (3) flies into the ground 300 m off at 15 s and the
+    // kill line credits the Bf109, silent since 8 s (hj24y7v6zr, 2026-11-11).
+    const lines = [];
+    const L = o => lines.push(JSON.stringify(o));
+    L({ k: 'h', v: 5 });
+    const planes = { 1: ['Bf109', 1, [0, 100, 0]], 2: ['Mustang', 2, [40, 100, 0]], 3: ['Mustang', 2, [300, 100, 0]] };
+    for (const [pid, [tmpl, team, pos]] of Object.entries(planes)) {
+      const nid = 100 * Number(pid);
+      L({ k: 'e', t: 0.2, e: 'createPlayer', pid: Number(pid), name: `P${pid}`, team, ai: 0 });
+      L({ k: 'e', t: 1, e: 'createObject', netId: nid, tmpl, tid: 1700 + team, pos, rot: [0, 0, 0] });
+      L({ k: 'o', t: 1, id: nid, tmpl, tid: 1700 + team, team, maxhp: 60 });
+      L({ k: 'p', t: 1, p: [[Number(pid), team, nid]] });
+    }
+    for (let i = 10; i <= 200; i++) {
+      const t = i / 10;
+      L({ k: 's', t, o: Object.entries(planes).map(([pid, [, , p]]) => [100 * Number(pid), p[0] + t * 50, p[1], p[2], 0, 0, 0, 1]) });
+    }
+    for (let i = 0; i < 20; i++) L({ k: 'f', t: 6 + i * 0.1, pid: 1, id: 100, w: 'Bf109', p: [0, 100, 0], d: [1, 0, 0] });
+    L({ k: 'e', t: 8, e: 'score', kind: 3, pid: 1, victim: 2, weaponName: 'Bf109' });
+    L({ k: 'e', t: 15, e: 'score', kind: 3, pid: 1, victim: 3, weaponName: 'Bf109' });
+    L({ k: 's', t: 20, o: [] });
+    const rec = R.parseRecording(lines.join('\n'));
+    return P.vehicleKillsOf(rec, { models }).map(k => [k.t, k.victim]);
+  })(),
   underFire: (() => {
     // Ruud (2) stands 100 m down +x from Omen (1) and Kar (3); Omen's MP40
     // puts 20 rounds 2 m past his head from 5 s (its dummy FireArms beside

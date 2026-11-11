@@ -286,6 +286,15 @@ about.
   streak or compilation) and read which camera state went under. The
   director's poses now stay `groundClear` over the ground too (Delta74's
   428 m battery shot, 17.6 m under its pit, 2026-11-10).
+- **An air kill he never fired for is not a volley** (2026-11-11,
+  `hj24y7v6zr`: "the first kill doesn't show, it's just them flying around").
+  A pilot who crashes after being hit is credited to the last man who hit
+  him: Tavington was 282 m off and silent for 3 s as OWLCAT's Spitfire went
+  into a hill, and the volley camera behind him showed his own plane flying
+  on. Every real air kill measured fired within 0.05 s of it.
+  `volleyHeard` (his trigger within 1.5 s) gates every air part and single
+  air Short. Of 301 live, it took down that compilation (4 real kills left)
+  and `cj4z37wab2` (an SBD's bomb on a Zero parked on a carrier deck).
 - **The editor's chase at 5 fps was the hull cast**, not the recording
   (2026-11-10): `replay-gunfire.js` now tests a hull's sphere before its
   meshes. Measure frame times per round-cam state in the page before
