@@ -1,0 +1,44 @@
+rem *** Strategic areas: one per control point (botgen) ***
+
+aiStrategicArea.create Iraqi_Hq 252.1/214.6 257.1/219.6 50
+aiStrategicArea.addNeighbour Highrise
+aiStrategicArea.addObjectTypeFlag Base
+aiStrategicArea.setOrderPosition Infantry 258.5/220.5
+aiStrategicArea.setSide 1
+aiStrategicArea.setTakeable 2 0
+
+aiStrategicArea.create Docks 997.5/1273.9 1017.5/1293.9 10
+aiStrategicArea.setSide 2
+aiStrategicArea.setTakeable 1 0
+aiStrategicArea.setTakeable 2 0
+
+aiStrategicArea.create Market 1161.9/857.1 1181.9/877.1 10
+aiStrategicArea.setTakeable 1 0
+aiStrategicArea.setTakeable 2 0
+
+aiStrategicArea.create TradeCenter 866/1058.2 876/1068.2 200
+aiStrategicArea.addNeighbour Tower
+aiStrategicArea.addObjectTypeFlag Centre
+aiStrategicArea.addObjectTypeFlag ControlPoint
+aiStrategicArea.setOrderPosition Infantry 876.5/1074.5
+
+aiStrategicArea.create DownTown 979.4/895.1 989.4/905.1 10
+aiStrategicArea.setTakeable 1 0
+aiStrategicArea.setTakeable 2 0
+
+aiStrategicArea.create Highrise 744.7/662.2 764.7/682.2 300
+aiStrategicArea.addNeighbour Iraqi_Hq
+aiStrategicArea.addNeighbour Tower
+aiStrategicArea.addObjectTypeFlag Centre
+aiStrategicArea.addObjectTypeFlag StrongPoint
+aiStrategicArea.addObjectTypeFlag Close
+aiStrategicArea.addObjectTypeFlag ControlPoint
+aiStrategicArea.setOrderPosition Infantry 765.5/681.5
+aiStrategicArea.setSide 1
+
+aiStrategicArea.create Tower 990/1034 1000/1044 200
+aiStrategicArea.addNeighbour TradeCenter
+aiStrategicArea.addNeighbour Highrise
+aiStrategicArea.addObjectTypeFlag Centre
+aiStrategicArea.addObjectTypeFlag ControlPoint
+aiStrategicArea.setOrderPosition Infantry 998.5/1045.5

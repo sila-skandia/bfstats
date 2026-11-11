@@ -1,0 +1,51 @@
+rem *** Strategic areas: one per control point (botgen) ***
+
+aiStrategicArea.create AxisBase_1_Cpoint 514.7/318.1 519.7/323.1 200
+aiStrategicArea.addNeighbour hillbase_3_Cpoint
+aiStrategicArea.addObjectTypeFlag Centre
+aiStrategicArea.addObjectTypeFlag ControlPoint
+aiStrategicArea.setOrderPosition Tank 520.5/322.5
+aiStrategicArea.setOrderPosition Infantry 520.5/323.5
+aiStrategicArea.setSide 1
+
+aiStrategicArea.create AlliesBase_2_Cpoint 612.3/889.6 617.3/894.6 50
+aiStrategicArea.addNeighbour hillbase_1_Cpoint
+aiStrategicArea.addObjectTypeFlag Base
+aiStrategicArea.setOrderPosition Tank 618.5/892.5
+aiStrategicArea.setOrderPosition Infantry 617.5/893.5
+aiStrategicArea.setSide 2
+aiStrategicArea.setTakeable 1 0
+
+aiStrategicArea.create hillbase_1_Cpoint 567.4/713.2 572.4/718.2 300
+aiStrategicArea.addNeighbour AlliesBase_2_Cpoint
+aiStrategicArea.addNeighbour hillbase_2_Cpoint
+aiStrategicArea.addObjectTypeFlag Centre
+aiStrategicArea.addObjectTypeFlag StrongPoint
+aiStrategicArea.addObjectTypeFlag Close
+aiStrategicArea.addObjectTypeFlag ControlPoint
+aiStrategicArea.setOrderPosition Tank 570.5/718.5
+aiStrategicArea.setOrderPosition Infantry 571.5/718.5
+aiStrategicArea.setSide 1
+
+aiStrategicArea.create hillbase_2_Cpoint 567.7/566.1 572.7/571.1 200
+aiStrategicArea.addNeighbour hillbase_1_Cpoint
+aiStrategicArea.addNeighbour hillbase_3_Cpoint
+aiStrategicArea.addObjectTypeFlag Centre
+aiStrategicArea.addObjectTypeFlag ControlPoint
+aiStrategicArea.setOrderPosition Tank 574.5/571.5
+aiStrategicArea.setOrderPosition Infantry 573.5/571.5
+aiStrategicArea.setSide 1
+
+aiStrategicArea.create hillbase_3_Cpoint 527/485.1 532/490.1 200
+aiStrategicArea.addNeighbour AxisBase_1_Cpoint
+aiStrategicArea.addNeighbour hillbase_2_Cpoint
+aiStrategicArea.addObjectTypeFlag Centre
+aiStrategicArea.addObjectTypeFlag ControlPoint
+aiStrategicArea.setOrderPosition Tank 532.5/487.5
+aiStrategicArea.setOrderPosition Infantry 531.5/489.5
+aiStrategicArea.setSide 1
+
+aiStrategicArea.create cassinobase_1_Cpoint 544/395.6 554/405.6 10
+aiStrategicArea.setSide 1
+aiStrategicArea.setTakeable 1 0
+aiStrategicArea.setTakeable 2 0

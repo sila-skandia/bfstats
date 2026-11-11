@@ -1,0 +1,159 @@
+{
+ "generator": "botgen",
+ "version": 5,
+ "mod": "FHSW",
+ "level": "monte_cassino-1944",
+ "objectSpawners": 69,
+ "template": "symmetric",
+ "templateSource": "DICE, bf1942 Kharkov (1.6 patch archives): AI/Strategies.con, AI/conditions.con, AI/prerequisites.con, unchanged",
+ "templateChoice": {
+  "name": "symmetric",
+  "inPlay": 4,
+  "rule": "4 capturable flags in play, more than 3"
+ },
+ "scope": "an infantry map painted from the walk test, a Tank0 map from the page painter, infantry order positions, no strategic maps, no co-op layer",
+ "unreachable": [
+  "cassinobase_1_Cpoint"
+ ],
+ "unreachableReasons": {
+  "cassinobase_1_Cpoint": "walk test"
+ },
+ "botSpawnsExcluded": [
+  "AxisSpawnPoint_1_4",
+  "hillbase1SpawnPoint_3_10"
+ ],
+ "walkMap": {
+  "source": "walk test",
+  "engine": "none",
+  "vehicleMap": "page painter",
+  "vehicleBrush": 1.5,
+  "vehicleBrushes": [
+   {
+    "brush": 3,
+    "flagsOn": 2,
+    "spawnersOn": 9,
+    "pieces": 31,
+    "main": 143446
+   },
+   {
+    "brush": 2.5,
+    "flagsOn": 2,
+    "spawnersOn": 15,
+    "pieces": 24,
+    "main": 151305
+   },
+   {
+    "brush": 2,
+    "flagsOn": 2,
+    "spawnersOn": 16,
+    "pieces": 23,
+    "main": 154222
+   },
+   {
+    "brush": 1.5,
+    "flagsOn": 4,
+    "spawnersOn": 20,
+    "pieces": 14,
+    "main": 301949
+   }
+  ],
+  "opened": [
+   [
+    521,
+    322
+   ],
+   [
+    522,
+    322
+   ],
+   [
+    523,
+    322
+   ],
+   [
+    524,
+    322
+   ]
+  ],
+  "ways": [
+   {
+    "who": "hillbase1SpawnPoint_3_10",
+    "kind": "spawn",
+    "way": "none",
+    "opened": 0
+   },
+   {
+    "who": "AxisBase_1_Cpoint",
+    "kind": "flag",
+    "way": "walk",
+    "opened": 4
+   }
+  ],
+  "cover": 0.991,
+  "floors": {
+   "stacked": false,
+   "twoFloorShare": 0.005,
+   "raised": [
+    "cassinobase_1_Cpoint"
+   ],
+   "reason": null
+  }
+ },
+ "routeProbe": {
+  "chokeMax": 4,
+  "unreachable": [],
+  "stops": {},
+  "oneSided": {},
+  "sides": {
+   "1": {
+    "spawns": 14,
+    "flags": [
+     "AxisBase_1_Cpoint",
+     "hillbase_1_Cpoint",
+     "hillbase_2_Cpoint",
+     "hillbase_3_Cpoint"
+    ]
+   },
+   "2": {
+    "spawns": 7,
+    "flags": [
+     "AxisBase_1_Cpoint",
+     "hillbase_1_Cpoint",
+     "hillbase_2_Cpoint",
+     "hillbase_3_Cpoint"
+    ]
+   }
+  },
+  "chokes": {
+   "AxisBase_1_Cpoint:1": 4,
+   "AxisBase_1_Cpoint:2": 3,
+   "hillbase_1_Cpoint:1": 0,
+   "hillbase_1_Cpoint:2": 0,
+   "hillbase_2_Cpoint:1": 0,
+   "hillbase_2_Cpoint:2": 0,
+   "hillbase_3_Cpoint:1": 0,
+   "hillbase_3_Cpoint:2": 0
+  },
+  "late": {},
+  "shutLinks": []
+ },
+ "inputs": {
+  "controlPoints": "be7c2ebd291b359f17b41c1cc0ed934cb97ef47b66d26c8ba184219f2a0abe48",
+  "infantryMap": "d98fb7524640e8b303fb3e2dd919593228cbfaf02357e10475722e5e1800cdb7",
+  "template": "43f8a790471528016570235f76e97dbb2045732458781a5139f37fed68bf98c0"
+ },
+ "files": {
+  "AI.con": "0fbd1e2c5d49bd5b34d36334f9a0f96454db482d155e3274f8bf655285b9964e",
+  "AIpathFinding.con": "9d8080cdfa7605961969aa126519b03be9691bd604ac76aef50166d81215edd2",
+  "AI/StrategicAreas.con": "1681fd936a711c193a8ae08b06d635d0cc321045016b32d41d4434933906d42a",
+  "AI/Strategies.con": "4ce0be59a0d6c5cd530db002fb062c4be8d936bc6ae59bd188803ccaf7869a8d",
+  "AI/conditions.con": "68a0c7a8aec69954063147b60fae560b2874884285737aa085efa76597d395aa",
+  "AI/prerequisites.con": "4c1f313bc285b228fd6ad03bfd1f44c5b15c8703c31f802eb605bc5f00f88bb5",
+  "Pathfinding/Infantry1Level0Map.raw": "a265b836a0ddda96bd265dede080e9dc82c9b5838d1be2e0b95da173d50751f3",
+  "Pathfinding/Infantry1Level1Map.raw": "04e4cc40cffe3b8a2ac6c036acf493bac72098662d992d72fc3c22e039c50c43",
+  "Pathfinding/Infantry1Level2Map.raw": "7a4ea7a19b6deea19f52b744c5570484c949cc33c0adba34f335ba9c8ba25b71",
+  "Pathfinding/Tank0Level0Map.raw": "47c0f8f25ca5e44ffbd7e55e5ba54196bc986eae2d5ab82a3e8672351cec7fa2",
+  "Pathfinding/Tank0Level1Map.raw": "a27f5e9b134327f2650048d55fec3949f810c1dd4b7440fe05bfd58dd3d5970f",
+  "Pathfinding/Tank0Level2Map.raw": "d9fcf8c112fae8f52b13fdf7ae4ff12fe53876c86d6bb6f0b7f10f87a6f656f2"
+ }
+}
