@@ -321,12 +321,13 @@ Rollout levels, one match each on the page (the bar is DICE's rebuilt one;
 | BF1918 scimitar_hill | yes | fails enemy kills | 0, 0, 0.08 | 3 | 99:100 |
 | BF1918 lutte_de_honneur | yes, barely | fails two | 0, 0.33, 0.06 | 1 | 100:100 |
 | FHSW Battle_for_ortona-1943 | yes | passes | 0, 0.13, 0.18 | 0 | 103:70 |
+| FHSW Moscow_Outskirts-1941 | yes, by the rate | fails two | 0, 0.70, 0.14 | 11 | 138:128 |
 | BF1918 Mauerfall | yes | fails enemy kills | 0.013, 0.23, 0.17 | 0 | 89:93 |
 | BF1918 hindenburg_line, two matches | yes, on the second | fails enemy kills | 0 and 0.006, 0.25 and 0.50, 0.07 and 0.07 | 0 and 4 | 102:12, 96:13 |
 | FHSW Pegasus, two matches | **no**: no capture, little killing | fails two | 0 and 0.006, 0.50 and 0.50, 0.02 and 0.09 | 0 and 0 | 104:104, 102:90 |
 | BF1918 roye, one match | **no**: the worse side dies by its own hand | fails two | 0, 1.00, 0.03 | 2 | 96:104 |
-| Desert Combat DC_Oil_Fields, two matches | **no**: the worse side dies by its own hand | fails two | 0, 0.63 and 0.71, 0.06 and 0.04 | 3 and 8 | 97:55, 99:56 |
-| FHSW Stalingrad_RedSquare, two matches | **no**: the worse side dies by its own hand | fails two | 0, 1.00 and 1.00, 0.05 and 0.04 | 2 and 3 | 88:106, 89:105 |
+| Desert Combat DC_Oil_Fields, two matches | yes, by the rate (see below) | fails two | 0, 0.63 and 0.71, 0.06 and 0.04 | 3 and 8 | 97:55, 99:56 |
+| FHSW Stalingrad_RedSquare, two matches | yes, by the rate (see below), barely | fails two | 0, 1.00 and 1.00, 0.05 and 0.04 | 2 and 3 | 88:106, 89:105 |
 | BF1918 fht_meuse_argonne_offensive, one match | **no** | fails two | 0, 0.60, 0.05 | 0 | 118:122 |
 | FHSW Bizerte-1943, one match | **no** | fails two | 0, 0.64, 0.03 | 0 | 92:63 |
 | The_Bridge (community), two matches | **no**: too quiet | fails enemy kills | 0, 0, 0.03 and 0.04 | 2 and 2 | 23:51, 27:48 |
@@ -336,8 +337,20 @@ Rollout levels, one match each on the page (the bar is DICE's rebuilt one;
 decision, `pagebatch.sh` in scratch): a level keeps its menu flag when a
 match on the page shows real killing (at least 0.15 enemy kills a
 bot-minute), or flag play (at least 3 captures), or some of both (0.05 and
-1 capture); no more than half of the worse side's deaths not the enemy's;
-and no page error. A level that fails is played once more before it is
+1 capture); no more than 0.10 deaths a bot-minute by a bot's own or its
+side's hand (suicides and team kills together; DICE's worst match shows
+0.056 and 0.025); and no page error.
+
+The cap was first written on the worse side's SHARE of deaths not the
+enemy's (at most half), and that was wrong: with few deaths the share is
+noise. Red Square read 1.00 on a side that lost one soldier in ten
+minutes, and one of DC_Basrah_Nights' three matches (the liveliest level
+live: 0.53 enemy kills a bot-minute, 19 captures) reads 0.72. By the rate,
+Moscow_Outskirts-1941 (0.044, 11 captures), DC_Oil_Fields (0.050, 3 and 8
+captures) and Stalingrad_RedSquare (0.006, 2 and 3 captures) pass on the
+matches already played and went live on 2026-11-11; vanilla Aberdeen
+(0.21) still fails, and Roye, Bizerte and Meuse-Argonne fail on activity.
+The share stays in `page.json` and in DICE's bar as a record. A level that fails is played once more before it is
 turned down, and its acceptance is then withdrawn in `verdict.json` with
 the reason; its layer stays on the volume, unflagged. The runner no longer
 decides: the owner liked Tunis-1943, which the runner calls no-fight at 8

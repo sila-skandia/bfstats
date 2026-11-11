@@ -58,9 +58,27 @@
   "front_point"
  ],
  "lintErrors": [],
- "acceptanceWithdrawn": {
-  "because": "page matches 2026-11-11: every death of the worse side not the enemy's in both (2 and 3 captures, 0.05 and 0.04 enemy kills a bot-minute); to be judged again after the fix for bots dying without an enemy (wide-levels.md)",
+ "accepted": {
+  "reason": "Owner's rollout, 2026-11-11: after playing Tunis-1943 against its generated bots the owner asked for every level with a fight to go live. Two seeds at 8 and 16 a side, the garrison; the checks it fails are listed with this verdict. On the page it takes flags and its bots die by their own hand no more often than on DICE's levels (page.json).",
   "date": "2026-11-11",
-  "was": "Owner's rollout, 2026-11-11: after playing Tunis-1943 against its generated bots"
+  "outcome": "no-fight",
+  "failed": [
+   "8:stuckSecondsPerBotMinute",
+   "8:routeFailuresPerBotMinute",
+   "8:redeploysPerBotMinute",
+   "8:enemyKillsPerBotMinute",
+   "8:flagCoverage",
+   "8:bothSidesKill",
+   "8:stuckSecondsPerBotMinuteWorseSide",
+   "8:routeFailuresPerBotMinuteWorseSide",
+   "8:nonEnemyDeathShareWorseSide",
+   "16:stuckSecondsPerBotMinute",
+   "16:routeFailuresPerBotMinute",
+   "16:redeploysPerBotMinute",
+   "16:enemyKillsPerBotMinute",
+   "16:routeFailuresPerBotMinuteWorseSide",
+   "16:nonEnemyDeathShareWorseSide"
+  ],
+  "by": "owner"
  }
 }
