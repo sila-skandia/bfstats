@@ -319,6 +319,7 @@ Rollout levels, one match each on the page (the bar is DICE's rebuilt one;
 | BF1918 Mauerfall | yes | fails enemy kills | 0.013, 0.23, 0.17 | 0 | 89:93 |
 | BF1918 hindenburg_line, two matches | yes, on the second | fails enemy kills | 0 and 0.006, 0.25 and 0.50, 0.07 and 0.07 | 0 and 4 | 102:12, 96:13 |
 | FHSW Pegasus, two matches | **no**: no capture, little killing | fails two | 0 and 0.006, 0.50 and 0.50, 0.02 and 0.09 | 0 and 0 | 104:104, 102:90 |
+| BF1918 roye, one match | **no**: the worse side dies by its own hand | fails two | 0, 1.00, 0.03 | 2 | 96:104 |
 | The_Bridge (community), two matches | **no**: too quiet | fails enemy kills | 0, 0, 0.03 and 0.04 | 2 and 2 | 23:51, 27:48 |
 | Aberdeen (vanilla), two matches | **no**: the worse side dies by its own hand | fails three | 0, 0.72 and 0.97, 0.11 and 0.08 | 5 and 6 | 88:77, 94:73 |
 
