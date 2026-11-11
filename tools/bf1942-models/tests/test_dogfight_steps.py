@@ -90,10 +90,9 @@ class MoveStepsTests(unittest.TestCase):
         # Every lesson is survivable by one move at least (README, "What
         # the eight lessons show"), and the tabs mark it.
         for lesson, best in self.shape["best"].items():
-            # Lessons with no Dip, Flip or Ninja: the ace, the gunnery
-            # drill's target, the falling leaf, the pair and the two-seater
-            # (features/dogfight-doctrine).
-            if lesson in ("free", "gunnery", "falling-leaf", "the-pair", "two-seater"):
+            # Lessons with no Dip, Flip or Ninja: the falling leaf, the pair
+            # and the two-seater (features/dogfight-doctrine).
+            if lesson in ("falling-leaf", "the-pair", "two-seater"):
                 continue
             with self.subTest(lesson):
                 self.assertIsNotNone(best)

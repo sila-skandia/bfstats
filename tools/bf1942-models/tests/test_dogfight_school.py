@@ -448,8 +448,9 @@ class LessonTests(_Harness):
 
 class AceTests(_Harness):
     def test_the_ace_out_hits_the_school_and_is_never_shot_down(self) -> None:
-        # "Flown against every other pilot in the school from ten starts
-        # each, he landed 128 hits and took 82" (Against the ace).
+        # Flown against every other pilot in the school from ten starts
+        # each, the ace (the plan the lessons' moves are scored against)
+        # out-hits them and is never shot down.
         bench = self.results["aceBench"]
         self.assertEqual(0, sum(r["losses"] for r in bench.values()), bench)
         by = sum(r["hitsBy"] for r in bench.values())

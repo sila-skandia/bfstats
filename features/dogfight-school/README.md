@@ -87,7 +87,8 @@ is published: no asset is involved.
   the recorded fights say and the lesson that shows it; the end card marks
   each rule kept or broken in the fight; the coach's rule lines ride in their
   own row ("BOELCKE 3 · Hold fire: ..."); and the lesson *Gunnery: close,
-  then closer* is a target that never shoots back, scored on range. *The
+  then closer* was a target that never shot back, scored on range (taken out
+  2026-11-12). *The
   falling leaf* is rule 4's ruse. A BF1918 arena pairs the WWI scouts by
   their levels' spawners; *The pair* and *Two-seaters* fly three planes or
   a rear gunner (`dogfight-fight.js`), the two-seater the arena's own with
@@ -468,7 +469,6 @@ its reason, are in `reviews/<fixer>.md`.
 | The break turn | *He flies straight* (retired from the tabs 2026-11-07; the tests still fly it) / *They break* / *You stay patient* | shot down 9/9 / breaks at 298 m into him, he passes your tail 33-36 m behind, you reverse within 2 s; he stays 50 m back with no lead / a high yo-yo 0.8 s after the break, 70 m above, never inside 83 m, no hits | `reviews/break.md` |
 | The flat scissors | *Scissoring* | a braid along one line, a crossing every 4.5-6 s, flat, never more than 200 m apart; the full-throttle pilot drifts ahead and the slower ace gets snap shots | above |
 | The Immelmann and the split-S | *You follow them up* / *You meet them at the top* / *You let them go* / *You dive on him* | a half loop in its plane, 172 degrees round, 107 m up, 37 m/s on top; you hang under it / 261-279 m off at his top, nose on it, fire in 7 of 9 / a split-S: 180 degrees, 145 m down, 51 to 69 m/s / dive on him as he rolls over, fire in 9 of 9 | `reviews/loop.md` |
-| Against the ace | none: fly it | | |
 
 What the review found about the engine, which every lesson had to live with:
 
@@ -1368,7 +1368,7 @@ start but one while the other never has one.
 
 ## The ace
 
-*Against the ace* is a sparring partner who picks his own moves
+The ace (the lesson *Against the ace* until 2026-11-12) is a sparring partner who picks his own moves
 (`PLANS.ace`), all of them ones the lessons' fights proved: never let a
 target run (past 900 m, straight after him, height spent on speed); a target
 going away is no threat, so go for him; anyone pointing at him from out of
@@ -1514,9 +1514,9 @@ above.
   The Thach weave is in *The pair* since 2026-11-10 (`runFight`,
   `features/dogfight-doctrine`, "More than two planes"), as a try: between
   equal airframes it trades shots rather than winning them.
-- **Against the ace** has no fight in the theatre: his fights end without a
-  kill, which makes a dull reconstruction. He is the live fight's sparring
-  partner.
+- **Against the ace** and **Gunnery: close, then closer** were taken out of
+  the lessons on 2026-11-12: neither had a fight in the 3D theatre. The ace
+  (`PLANS.ace`) is still what every lesson's moves are scored against.
 - **One airframe both sides.** The theatre flies the battle's best fighter in
   both seats, so only the flying differs. The live ace takes whatever fighter
   the enemy airfield has first (`fighterRank`); a Bf 109 against your

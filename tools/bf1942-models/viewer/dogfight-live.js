@@ -307,9 +307,6 @@ export function createDogfightLive(page) {
       const mine = gunFromNode(page.playerRoot?.());
       live.myGun = { falloff: mine?.falloff ?? null, rate: mine?.rate ?? 12, useful: usefulRange({ range: live.aceGun.range, falloff: mine?.falloff }) };
     }
-    // The gunnery drill's score (Boelcke's rule 3): rounds fired, how many
-    // past the useful range, and every hit with its range.
-    live.drill = lesson.drill === 'gunnery' ? { rounds: 0, past: 0, hits: [] } : null;
     live.offScreen = 0;
     live.moveDone = false;
     live.quarterFor = 0;
@@ -502,7 +499,7 @@ export function createDogfightLive(page) {
 
   /** The instructor's hands on the player's seat: the lesson's counter, until
    *  the player moves a control himself. `live.firing` is the trigger that
-   *  goes to the guns, yours or the instructor's: what the drill counts. */
+   *  goes to the guns, yours or the instructor's. */
   function flightOverride(input) {
     applyOverride(input);
     live.firing = !!input.fire;
@@ -584,7 +581,6 @@ export function createDogfightLive(page) {
     }
     if (live.aceRoot && isUnder(struck, live.aceRoot) && firerId === page.localId) {
       live.yourHits++;
-      if (live.drill && live.you && live.him) live.drill.hits.push(Math.round(len(sub(live.him.position, live.you.position))));
     }
   }
 
@@ -691,7 +687,6 @@ export function createDogfightLive(page) {
           tip: 'They took it off your tail. Turn back and get behind it while it chases them.', keys: ['Mouse', 'Arrows'] });
       }
       setCoach(words);
-      if (live.drill) drawDrill();
       ui.said.textContent = live.aceOut?.say
         ? `"${onWing ? aboutWing(live.aceOut.say) : toYou(live.aceOut.say)}"` : '';
       ui.his.textContent = String(live.hisHits);
@@ -709,11 +704,6 @@ export function createDogfightLive(page) {
     live.him = him;
     markHim(you, him);
     drawWing(you);
-    if (live.drill && live.firing && !live.frozen) {
-      const n = (live.myGun?.rate ?? 12) * dt;
-      live.drill.rounds += n;
-      if (len(sub(him.position, you.position)) > (live.myGun?.useful ?? 268)) live.drill.past += n;
-    }
     // The guide: the counter's pilot flies your seat in his head, a frame
     // at a time, and his stick, smoothed, is what the guide says.
     if (!live.guidePilot) live.guidePilot = guidePilot();
@@ -1106,18 +1096,6 @@ export function createDogfightLive(page) {
   }
 
   let coachKey = '';
-  /** The gunnery drill's running score, in the rule's row. */
-  function drawDrill() {
-    const d = live.drill, rounds = Math.round(d.rounds);
-    const per = rounds ? (100 * d.hits.length / rounds).toFixed(1) : '0';
-    const past = rounds ? Math.round(100 * d.past / d.rounds) : 0;
-    const near = d.hits.length ? Math.round(d.hits.reduce((a, b) => a + b, 0) / d.hits.length) : null;
-    ui.rule.hidden = false;
-    ui.rule.querySelector('i').textContent = 'BOELCKE 3 · GUNNERY';
-    ui.rule.querySelector('span').textContent = `${d.hits.length} hits in ${rounds} rounds (${per} per 100)`
-      + `${near !== null ? `, from ${near} m on average` : ''}. Fired past ${Math.round(live.myGun?.useful ?? 268)} m: ${past}%.`;
-  }
-
   function setCoach(w) {
     // Boelcke's rule in play, when the top line is not one: its own quiet
     // row, so the lesson's words keep their place.

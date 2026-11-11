@@ -505,33 +505,6 @@ export const LESSONS = [
     },
   },
   {
-    id: 'free',
-    title: 'Against the ace',
-    tagline: 'No script: they pick their own moves. Use everything.',
-    story: [
-      'The school\'s ace picks from the moves its fights proved. Behind you, they never let you run. Coming at them, they turn to face you instead of climbing away. With you on their tail, they break into you, and if you stay close they chop their throttle to make you fly past. With height over you, they bounce you and zoom back up. When you climb away, they follow shallow.',
-      'Flown against every other pilot in the school from ten starts each, the ace landed 128 hits and took 82. The ace it replaced landed 9 and took 178.',
-      'The coach tells you which move they are on and what beats it.',
-    ],
-    counterStory: [
-      'Keep your speed above 50 m/s. Turn to face every dive. When they climb away, follow shallow. If they break, do not sit 50 m behind them in their circle: they will chop their throttle and you will be in front. Lose sight, lose the fight.',
-    ],
-    ace: { plan: 'ace', start: { at: [0, 360, -900], headingDeg: 180, speed: 60 } },
-    you: { start: { at: [0, 300, 0], headingDeg: 0, speed: 58 } },
-    demos: [],
-    seconds: 60,
-    coach: {
-      climb: { line: 'They are climbing round you, out of reach', tip: 'Climb too, shallow, and keep them in sight. Do not let them get above you for free.', keys: ['W'] },
-      dive: { line: 'They are diving on you', tip: 'Turn to face them: make it head on.', keys: ['Mouse', 'Arrows'] },
-      zoom: { line: 'They are zooming back up', tip: 'Follow shallow. Stay fast.', keys: ['W'] },
-      over: { line: 'They are going over the top', tip: 'They are slow up there: nose on them and shoot.', keys: ['Mouse', 'Space'] },
-      break: { line: 'They broke into you', tip: 'Do not sit close behind them in their circle: pull up out of it, or they chop their throttle and you fly past.', keys: ['Mouse', 'S'] },
-      meet: { line: 'They turned to face you', tip: 'A head-on pass: shoot early, then turn the way they are going.', keys: ['Space', 'Mouse'] },
-      attack: { line: 'They are behind you, closing', tip: 'Break turn into them, hard, before they are inside 270 m.', keys: ['Mouse', 'Arrows'] },
-      follow: { line: 'They are following you up, shallow', tip: 'Do not hang at the top: tip over before you are slow.', keys: ['Mouse'] },
-    },
-  },
-  {
     // Boelcke's rule 4 (features/dogfight-doctrine): never let yourself be
     // deceived by ruses; his second version, follow a damaged enemy down to
     // be sure he is not faking.
@@ -573,7 +546,8 @@ export const LESSONS = [
       'In the players\' recorded fights, a pilot with more enemies than friends near won 7% and lost 26%; one shot at by a third plane went down 42% of the time. The group is the largest effect in the data.',
     ],
     counterStory: [
-      'Boelcke wrote it in 1916, and Mölders made it the pair in Spain in 1938: a leader and a wingman, the wingman\'s whole job the leader\'s tail. Here your wingman flies off your beam, a little behind; the moment the hunter closes on your tail, they turn onto the hunter. Flying straight, with your wingman there, you took no hit in any of the nine starts; the hunter turned on your wingman and landed 0 to 2.',
+      'Boelcke wrote it in 1916, and Mölders made it the pair in Spain in 1938: a leader and a wingman. A hunter on one tail is a hunter in front of the other gun. Drag and bag: the one being hunted is the bait. Do not run and do not break; hold full throttle and turn gently toward your wingman, so the hunter, cutting inside your turn to follow you, is drawn across your wingman\'s nose. Your wingman turns onto it and shoots; when it leaves your tail to deal with them, you reverse onto it, and it is between two guns.',
+      'From the nine starts you were never hit, and the hunter was hit in seven, 45 rounds in all (up to 11 in a fight), 31 of them your wingman\'s; the first landed 9 to 27 s in. Neither of you fires with the other in the line of fire.',
       'The Thach weave, tried: two abreast turning in toward each other whenever someone is on a tail, so the hunter following one is dragged across the other\'s nose. It was invented against a Zero that out-turned a Wildcat. From these nine starts the pair was never hit and the hunter took 0 to 7 rounds; but it rests on the geometry: with the hunter\'s start moved instead of yours, the pair took 3 to 4 rounds a fight as well as giving them. Between equal planes it trades shots more than it wins them.',
     ],
     // Flown live with your wingman off your wing on your own type (the
@@ -595,10 +569,10 @@ export const LESSONS = [
       { id: 'flat', label: 'Alone, turning hard', seat: 'flatTurn', skill: 0.85,
         intro: 'No wingman, but you have seen them: you turn as hard as the plane goes, and the hunter follows you round.',
         note: 'Alone, you turn as hard as the plane will go. The hunter follows you round: they hardly hit you, and you cannot get away from them or turn onto them. Nobody wins.' },
-      { id: 'counter', label: 'Your wingman covers you', seat: 'cruiser', skill: 0.85, camera: 'trio',
-        extra: [{ plan: 'wingman', start: { at: [-180, 400, 60], headingDeg: 0, speed: 60 }, memory: { leader: 1 } }],
-        intro: 'Your wingman (green) flies off your wing. As the hunter closes on your tail, watch them peel off onto it.',
-        note: 'You fly straight, as before, with your wingman (green, WINGMAN) off your wing. As the hunter closes on your tail, your wingman turns onto them, and the hunter has to deal with your wingman instead: you are not hit.' },
+      { id: 'counter', label: 'Drag and bag', seat: 'dragger', skill: 0.85, camera: 'trio', seconds: 50,
+        extra: [{ plan: 'bagger', start: { at: [-180, 400, 60], headingDeg: 0, speed: 60 } }],
+        intro: 'You are the bait: drag the hunter round in a gentle turn toward your wingman (green), who turns onto it and shoots.',
+        note: 'The hunter (red) settles on your tail. You do not run and you do not break: full throttle, a gentle turn toward your wingman (green, WINGMAN). Cutting inside your turn to follow you, the hunter crosses your wingman\'s nose, and they turn onto it and fire. When it leaves your tail to deal with them, you reverse onto it: it is between two guns.' },
       { id: 'weave', label: 'Two abreast: the Thach weave, tried', seat: 'weaver', skill: 0.85, camera: 'trio',
         aceStart: { at: [60, 430, 380], headingDeg: 0, speed: 66 },
         extra: [{ plan: 'weaver', start: { at: [-320, 400, 0], headingDeg: 0, speed: 60 } }],
@@ -646,34 +620,6 @@ export const LESSONS = [
     seconds: 45,
     coach: {
       cruise: { line: 'A two-seater, flying straight', tip: 'Not from behind and level: the gunner faces you. Get under their tail.', keys: ['Mouse', 'S'] },
-    },
-  },
-  {
-    // Boelcke's rule 3 as a drill (features/dogfight-doctrine): a target
-    // that never shoots back, and the score is range.
-    id: 'gunnery',
-    title: 'Gunnery: close, then closer',
-    tagline: 'A target that never shoots back. Hold fire until you are close.',
-    story: [
-      'Boelcke\'s third rule (1916): fire only at close range, and only with the target properly in your sights. In the players\' recorded fights, 25 rounds in 100 hit from inside 100 m, 13 from 300 to 400 m, and 1 from farther out.',
-      'In vanilla BF1942 the two wing guns\' streams part past the target\'s wingtips beyond about 270 m. In BF1918 a machine-gun round does full damage only to 100 m and 30% from 150 m; in Forgotten Hope the rounds weaken from the muzzle.',
-      'The target flies straight, turns gently, jinks and climbs, round and round. The score under the coach counts your rounds, your hits, and how many you fired past your guns\' useful range.',
-    ],
-    counterStory: [
-      'Close to the useful range before you fire: the coach says when. Fire short bursts while the target flies straight or turns steadily; hold your fire while it jinks.',
-    ],
-    ace: { plan: 'target', start: { at: [0, 330, -500], headingDeg: 0, speed: 50 } },
-    you: { start: { at: [0, 300, 0], headingDeg: 0, speed: 60 } },
-    demos: [],
-    seconds: 90,
-    drill: 'gunnery',
-    // The guide and the instructor close in behind it and shoot.
-    guide: 'chaser',
-    coach: {
-      straight: { line: 'The target is flying straight', tip: 'The easy shot: close in behind it, then a short burst.', keys: ['Mouse', 'Space'] },
-      turn: { line: 'The target is turning', tip: 'Lead it: put the sight a little ahead, inside its turn.', keys: ['Mouse', 'Space'] },
-      jink: { line: 'The target is jinking', tip: 'Hold your fire until it steadies. Stay close.', keys: ['Mouse'] },
-      climb: { line: 'The target is climbing round', tip: 'Lead it up and round. Keep your speed.', keys: ['Mouse', 'W'] },
     },
   },
 ];

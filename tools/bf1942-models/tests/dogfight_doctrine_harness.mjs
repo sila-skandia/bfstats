@@ -65,21 +65,6 @@ const coachCases = {
   committed: said(coach(null, null, at([0, 800, 0], [-s15, 0, 0, c15], 70), at([0, 550, -500]), { seen: true })),
   fromSide: said(coach(null, null, at([0, 500, 0]), at([0, 500, -500], [0, -r2, 0, r2]))),
 };
-// The gunnery drill: the lesson's target against a chaser, 60 s.
-const GL = LESSONS.find(l => l.id === 'gunnery');
-const gr = runDuel({ makePlane, seconds: 60, groundAt: () => 0, sides: [
-  { plan: GL.ace.plan, start: GL.ace.start, skill: 1 }, { plan: 'chaser', start: GL.you.start, skill: 0.9 }] });
-const gdoc = doctrineOf(gr, { guns: [gunOf({}), gunOf({})] });
-// Its pattern, flown with nobody near it.
-const lone = runDuel({ makePlane, seconds: 60, groundAt: () => 0, sides: [
-  { plan: GL.ace.plan, start: GL.ace.start, skill: 1 }, { plan: 'cruiser', start: { at: [2500, 300, 2500], headingDeg: 90, speed: 50 }, skill: 1 }] });
-const gunnery = {
-  targetRounds: gr.rounds.filter(r => r.side === 0).length, chaserRounds: gr.rounds.filter(r => r.side === 1).length, hits: gr.hits,
-  phases: [...new Set(lone.events.filter(e => e.side === 0).map(e => e.phase))], loneRounds: lone.rounds.filter(r => r.side === 0).length,
-  minY: Math.round(Math.min(...lone.tracks[0].map(k => k.p[1]))), maxY: Math.round(Math.max(...lone.tracks[0].map(k => k.p[1]))),
-  speeds: [Math.round(Math.min(...lone.tracks[0].map(k => k.v))), Math.round(Math.max(...lone.tracks[0].map(k => k.v)))],
-  chaserBursts: gdoc.sides[1].bursts.length, coachPhases: Object.keys(GL.coach),
-};
 // Every lesson's moves on the school's own Spitfire, as the theatre scores
 // the airframe on stage: they must be the counts the lessons declare.
 const onSpitfire = {};
@@ -125,6 +110,7 @@ const pair = {};
         aceDown: !!r.downs?.some(x => x.i === 0), onYou: on[1],
         firstShot: r.rounds.find(x => x.side === 0)?.t ?? null,
         opens: d.startRange ? (r.tracks[0].find((k, j) => Math.hypot(...k.p.map((v, c) => v - r.tracks[1][j].p[c])) <= d.startRange)?.t ?? 0) : 0, onAce: on[0], onWing: on[2] ?? null,
+        byWing: r.hitsBy?.[2]?.[0] ?? null, youPhases: [...new Set(r.events.filter(e => e.side === 1).map(e => e.phase))],
         phases: [...new Set(r.events.filter(e => e.side === 2).map(e => e.phase))] };
     });
   }
@@ -192,4 +178,4 @@ const youSeater = {};
   const r0 = runFight({ makePlane, seconds: LP.seconds, groundAt: () => 0, sides: sp });
   youSeater.spitfireSpeeds = r0.tracks[1].slice(0, 450).filter((_, k) => k % 30 === 0).map(k => Math.round(k.v * 10) / 10);
 }
-console.log(JSON.stringify({ demos, guns, damage, rules: RULES.map(r => r.n), coach: coachCases, gunnery, onSpitfire, leaf, pair, twoSeater, emptySeat, arcs, youSeater }));
+console.log(JSON.stringify({ demos, guns, damage, rules: RULES.map(r => r.n), coach: coachCases, onSpitfire, leaf, pair, twoSeater, emptySeat, arcs, youSeater }));

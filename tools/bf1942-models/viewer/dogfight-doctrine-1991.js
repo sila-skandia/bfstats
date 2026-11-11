@@ -204,7 +204,7 @@ export const RULES = [
     },
   },
   {
-    n: 8, id: 'envelope', name: 'Shoot only a shot that counts', boelcke: 3, lesson: ['gunnery', null],
+    n: 8, id: 'envelope', name: 'Shoot only a shot that counts', boelcke: 3, lesson: ['boom-and-zoom', 'move'],
     plain: 'Get inside the weapon\'s envelope, then fire. For the gun that still means close.',
     quote: 'Maneuver the aircraft into weapons parameters to employ ordnance.',
     source: { doc: 'USAF, AFTTP 3-3 Volume 5, para 4.3.1.2.1', date: 'April 1999', url: 'https://archive.org/details/vol-05_202208' },
@@ -246,7 +246,7 @@ export const RULES = [
     check({ you }) {
       const m = you?.missile;
       const fuse = m && FUSE[m.key] ? ` One reason is this engine's own: the ${m.label}'s fuse tests no side, so a friend crossing its path sets it off. The free fighter stays out of the engaged one's line of fire.` : '';
-      return verdict('holds', `The school flies the pair on any airframe: a wingman on your beam keeps a hunter off your tail.${fuse}`);
+      return verdict('holds', `The school flies the pair on any airframe: you drag the hunter across your wingman\'s nose, and the free fighter takes the shot.${fuse}`);
     },
   },
   {

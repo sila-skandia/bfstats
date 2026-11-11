@@ -7,7 +7,8 @@ pick". The sentence these tests defend:
     Secret Weapons, BF1918, Desert Combat, Forgotten Hope, FHSW), with the
     two planes the school page puts up by default, each on its own
     airframe: alone and flying straight you are shot down, seconds after the
-    demo opens; with your wingman you are not; the hunter tracks you steadily rather than rocking its wings from
+    demo opens; dragging the hunter for your wingman you are not, and on
+    vanilla and its packs the pair puts rounds in it; the hunter tracks you steadily rather than rocking its wings from
     stop to stop; and no plane in any of the four demos flies into the
     ground.
 
@@ -74,10 +75,16 @@ class HunterOnEveryArenaTests(unittest.TestCase):
                 self.assertGreaterEqual(move["firstShot"], move["opens"] + 3, move)
                 self.assertLess(move["youDown"], 60, move)
 
-    def test_your_wingman_covers_you_on_every_arena(self) -> None:
+    def test_drag_and_bag_never_gets_you_shot_down_on_every_arena(self) -> None:
         for arena, _, pair in self.each_arena():
             with self.subTest(arena=arena):
                 self.assertIsNone(pair["counter"]["youDown"], pair["counter"])
+        # On vanilla and its two packs, every pair puts rounds in the hunter.
+        for mod in ("bf1942", "xpack1", "xpack2"):
+            for row in self.arenas[mod]:
+                c = self.out["pairs"][f"{row['you']}|{row['ace']}"]["pair"]["counter"]
+                with self.subTest(mod=mod, arena=row["map"]):
+                    self.assertGreater(c["onHunter"], 0, c)
         # FHSW's El Alamein, where the owner's check found you shot down, and
         # Gazala, where a Hurricane's wingman met the faster Bf 109 nose to
         # nose and was carried past (`PAIR.faster`).

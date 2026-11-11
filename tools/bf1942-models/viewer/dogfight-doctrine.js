@@ -62,7 +62,7 @@ export const RULES = [
     plain: 'Once you go in, finish the pass: fire, then get out.', lesson: ['boom-and-zoom', 'ninja'],
     here: 'The upper hand is the first pass, and the pass spends it. Break off a pass they have turned to meet; finish one they have not.' },
   { n: 3, id: 'close', name: 'Close, then closer', rule: 'Fire only at close range and only when your opponent is properly in your sights.',
-    plain: 'Hold your fire until they are close and in the sight.', lesson: ['gunnery', null],
+    plain: 'Hold your fire until they are close and in the sight.', lesson: ['boom-and-zoom', 'move'],
     here: 'In the recordings, 25 hits in 100 rounds inside 100 m, 13 at 300 to 400 m, 1 beyond. BF1918 rounds do full damage only to 100 m; FHSW rounds weaken from the muzzle.' },
   { n: 4, id: 'sight', name: 'Keep them in sight', rule: 'Always keep your eye on your opponent, and never let yourself be deceived by ruses.',
     plain: 'Never lose sight of them. A plane falling away may be faking.', lesson: ['falling-leaf', 'counter'],
@@ -78,7 +78,7 @@ export const RULES = [
     here: 'Your airfield repairs and rearms, your AA covers it, and the combat area burns a plane that strays out of it. Not in the school yet: its arena has no airfields.' },
   { n: 8, id: 'team', name: 'Fight as a team', rule: 'Attack on principle in groups of four or six. Avoid two aircraft attacking the same opponent.',
     plain: 'Fight as a group, and never two of you on one of them.', lesson: ['the-pair', 'counter'],
-    here: 'Outnumbered, a recorded pilot won 7% and lost 26%; shot at by a third plane, 42% went down. A wingman on your beam kept a hunter off your tail in every start.' },
+    here: 'Outnumbered, a recorded pilot won 7% and lost 26%; shot at by a third plane, 42% went down. Drag and bag: the hunted one drags the hunter across the wingman\'s nose, and the pair put rounds in it from seven of nine starts without either being hit.' },
 ];
 
 /**

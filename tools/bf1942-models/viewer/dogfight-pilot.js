@@ -120,12 +120,13 @@ export const INTENTS = {
   unaware: { cruise: 'setup' },
   circler: { turn: 'defend' },
   cruiser: { cruise: 'setup' },
-  target: { straight: 'setup', turn: 'setup', jink: 'defend', climb: 'setup' },
   leafAce: { cruise: 'setup', fall: 'defend', recover: 'setup', attack: 'attack' },
   leafFooled: { chase: 'attack', done: 'setup' },
   leafFollow: { chase: 'attack', follow: 'setup', pounce: 'attack' },
   wingman: { station: 'setup', rejoin: 'setup', cover: 'attack', shoot: 'attack' },
   weaver: { abreast: 'setup', weave: 'defend', shoot: 'attack' },
+  dragger: { cruise: 'setup', drag: 'defend', reverse: 'attack' },
+  bagger: { station: 'setup', swing: 'setup', bag: 'attack' },
   underTail: { approach: 'setup', climb: 'attack', drop: 'setup' },
   meetTheDive: { climb: 'setup', face: 'defend', pass: 'defend', extend: 'setup' },
   bzDip: { climb: 'setup', face: 'defend', pass: 'defend', extend: 'setup', 'dip-run': 'defend' },
@@ -452,7 +453,7 @@ function reflex(c, def) {
 const CLEAR = { bank: 60, for: 6, every: 4 };
 /** The school's pilots who by design never look round: the man flying
  *  straight and level under attack, and the one who never looks up. */
-const NEVER_CLEARS = new Set(['cruiser', 'unaware', 'target', 'leafFooled']);
+const NEVER_CLEARS = new Set(['cruiser', 'unaware', 'leafFooled']);
 function clearTurn(c) {
   const { g, mem, me } = c;
   if (NEVER_CLEARS.has(c.pilot.plan)) return null;
@@ -2408,47 +2409,6 @@ PLANS.circler = {
 };
 
 /**
- * The gunnery drill's target (features/dogfight-doctrine, Boelcke's rule 3):
- * a towed sleeve's course that never shoots, never breaks and never looks
- * round. Straight, a gentle turn, straight, a jink, straight, a climbing
- * turn, and round again, each turn the other way from the last, at a
- * steady 50 m/s. Every round aimed at it is the pilot's lesson in range.
- */
-const TARGET = { cruise: 50, order: ['straight', 'turn', 'straight', 'jink', 'straight', 'climb'],
-  seconds: { straight: 4, turn: 6, jink: 4, climb: 5 } };
-PLANS.target = {
-  title: 'The target', first: 'straight',
-  says: {
-    straight: 'Flying straight: the easy shot, once you are close',
-    turn: 'A gentle turn: lead them',
-    jink: 'Jinking: wait for them to steady',
-    climb: 'A climbing turn: lead them up',
-  },
-  step(c) {
-    const { me, mem } = c;
-    mem.k ??= 0;
-    mem.side ??= 1;
-    if (mem.since > TARGET.seconds[mem.phase]) {
-      mem.k = (mem.k + 1) % TARGET.order.length;
-      if (TARGET.order[mem.k] !== 'straight') mem.side = -mem.side;
-      mem.dir = null;
-      go(c, TARGET.order[mem.k]);
-    }
-    const throttle = holdSpeed(c, TARGET.cruise);
-    let k;
-    switch (mem.phase) {
-      case 'turn': k = hardTurn(me, mem.side, { pull: 0.45, maxBank: 40 }); break;
-      case 'climb': k = hardTurn(me, mem.side, { climb: 12, pull: 0.5, maxBank: 45 }); break;
-      case 'jink': k = bankAndPull(me, (Math.floor(mem.since / 0.8) % 2 ? 1 : -1) * mem.side * 45, 0.35); break;
-      default:
-        mem.dir ??= heading(me.velocity);
-        k = pointNose(me, climbing(mem.dir, 0), { fine: 6 });
-    }
-    return { ...k, throttle, aimed: false };
-  },
-};
-
-/**
  * The falling leaf (features/dogfight-doctrine, Boelcke's rule 4: never be
  * deceived by ruses). A pilot with an enemy settled on his tail chops his
  * throttle and drops away in a spiral, as a plane that has been hit falls;
@@ -2662,6 +2622,112 @@ PLANS.weaver = {
     go(c, 'abreast');
     mem.dir ??= heading(me.velocity);
     return { ...pointNose(me, climbing(mem.dir, 0), { fine: 6 }), throttle: holdSpeed(c, 60), aimed: false };
+  },
+};
+
+/**
+ * Drag and bag, the bait's half (features/dogfight-doctrine, Boelcke's rule
+ * 8): with a hunter on the tail the leader neither runs nor breaks. The
+ * leader drags: full throttle, a gentle turn (`BAG.dragRate`) toward the
+ * wingman's side, so the hunter, cutting inside to follow, is drawn across
+ * the wingman's nose. When the hunter leaves the tail (it has turned on
+ * the wingman, or the wingman's rounds are in it) the leader reverses onto
+ * it and the hunter is between two guns: the sandwich. Measured from the
+ * nine starts and on every arena (features/dogfight-doctrine, "Drag and
+ * bag"): turning away from the wingman instead left the wingman chasing
+ * from outside the turn, and a hunter fixed on the bait alone (no target
+ * switch) was never caught at all, everyone at full throttle.
+ */
+const BAG = { tail: 900, tailCone: 50, dragRate: 0.18, reverseAfter: 1.5, behind: 170, bagRange: 650, bagCone: 40, floor: 150, swingRate: 0.8, swingDown: 5, friendCone: 10, friendNear: 80, leadCone: 100 };
+const onTailOf = (st, enemies) => (enemies ?? []).some(e => {
+  const rel = sub(st.position, e.state.position), d = len(rel);
+  const nose = Math.acos(clamp(dot(basis(e.state.orientation).F, scale(rel, 1 / Math.max(d, 1e-6))))) / DEG;
+  return d < BAG.tail && nose < BAG.tailCone;
+});
+/** Whether a friend sits in the line of fire to the target: inside
+ *  `BAG.friendCone` degrees of it and nearer, or tangled with the target
+ *  inside `BAG.friendNear` metres. A round strikes the first plane in its
+ *  path, a friend's as well. */
+const friendInLine = c => (c.team?.friends ?? []).some(f => {
+  const to = sub(f.state.position, c.me.position), aim = sub(c.him.position, c.me.position);
+  return (len(to) < len(aim) + 30 && angleBetween(to, aim) < BAG.friendCone)
+    || len(sub(f.state.position, c.him.position)) < BAG.friendNear;
+});
+PLANS.dragger = {
+  title: 'Drag and bag: the bait', first: 'cruise',
+  says: { cruise: 'Flying straight, the wingman off my wing', drag: 'They are on my tail: dragging them across my wingman\'s nose',
+          reverse: 'They are off my tail: turning back onto them' },
+  step(c) {
+    const { me, mem, team, g } = c;
+    const mate = team?.friends[0];
+    const tailed = onTailOf(me, team?.enemies);
+    if (tailed && mem.phase !== 'reverse') go(c, 'drag');
+    else if (!tailed && mem.phase === 'drag' && mem.since > BAG.reverseAfter) go(c, 'reverse');
+    if (mem.phase === 'reverse') {
+      if (tailed && mem.since > 6) go(c, 'drag');
+      else if (g.ata > 60) return { ...turnToward(c, sub(c.him.position, me.position)), throttle: 1, aimed: false };
+      else return { ...leadPursuit(c, { pull: 1, push: 0.6 }), throttle: 1, aimed: !friendInLine(c) };
+    }
+    mem.dir ??= heading(me.velocity);
+    if (mem.phase === 'drag') {
+      // Toward the wingman's side of the horizon, the side picked once.
+      mem.dragSide ??= mate ? sideOf(basis(me.orientation), sub(mate.state.position, me.position)) : 1;
+      // A gentle turn still sinks; under `BAG.floor` metres it climbs a
+      // little, as the weave does, so the bait is never dragged into the ground.
+      const low = BAG.floor + 100 - c.agl;
+      return { ...climbingTurn(c, mem.dragSide, low > 0 ? clamp(low * 0.05, 0, 6) : 0, BAG.dragRate), throttle: 1, aimed: false };
+    }
+    go(c, 'cruise');
+    return { ...pointNose(me, climbing(mem.dir, 0), { fine: 6 }), throttle: holdSpeed(c, 60), aimed: false };
+  },
+};
+
+/**
+ * Drag and bag, the shooter's half: off the leader's beam until a hunter
+ * settles on the leader's tail; then not onto it nose to nose, as the
+ * covering wingman goes, but round toward a point `BAG.behind` metres back
+ * along its path in a sustained turn, and once it is anywhere in front
+ * (`BAG.leadCone`) onto it with lead, cutting the corner of the bait's
+ * turn, for the shot while it is still busy with the bait. Never through a
+ * friend (`friendInLine`).
+ */
+PLANS.bagger = {
+  title: 'Drag and bag: the shooter', first: 'station',
+  says: { station: 'Off your wing, a little behind, watching your tail', swing: 'Swinging round onto the plane on your tail',
+          bag: 'On them, going for the shot' },
+  step(c) {
+    const { me, mem, team, g, him } = c;
+    const lead = team?.friends[0];
+    if (!lead) return { ...leadPursuit(c, { pull: 1 }), throttle: 1 };
+    const L = lead.state;
+    const busy = onTailOf(L, team.enemies);
+    if (busy || mem.phase === 'bag' || mem.phase === 'swing') {
+      const hf = basis(him.orientation).F;
+      if (g.range < BAG.bagRange && g.ata < BAG.bagCone && g.aspect < 70) go(c, 'bag');
+      else if (mem.phase !== 'bag' || g.ata > 70) go(c, 'swing');
+      if (mem.phase === 'bag') return { ...leadPursuit(c, { pull: 1, push: 0.6 }), throttle: 1, aimed: !friendInLine(c) };
+      // The hunter in front of me, coming across inside the bait's turn: cut
+      // the corner onto it with lead rather than fly round to its tail.
+      if (g.ata < BAG.leadCone) return { ...leadPursuit(c, { pull: 1, push: 0.6 }), throttle: 1, aimed: !friendInLine(c) };
+      const spot = add(sub(him.position, scale(hf, BAG.behind)), scale(him.velocity, 1.5));
+      const to = sub(spot, me.position);
+      to[1] = Math.max(to[1], (c.ground ?? 0) + BAG.floor - me.position[1]);
+      // Round to it in a sustained turn, nose a little down (`BAG.swingRate`,
+      // `BAG.swingDown`), not a break: a hard turn bled the wingman from 60 to
+      // 45 m/s, and the hunter it was after drew away at 70.
+      const h = heading(me.velocity), flat = heading(to);
+      if (angleBetween(h, flat) > 30) {
+        const side = Math.sign(dot([-h[2], 0, h[0]], flat)) || 1;
+        return { ...climbingTurn(c, side, -BAG.swingDown, BAG.swingRate), throttle: 1, aimed: false };
+      }
+      return { ...turnToward(c, to), throttle: 1, aimed: false };
+    }
+    const lf = basis(L.orientation).F, lr = basis(L.orientation).R;
+    const side = Math.sign(dot(sub(me.position, L.position), lr)) || 1;
+    const spot = add(add(L.position, scale(lr, side * PAIR.abeam)), scale(lf, -PAIR.behind));
+    const toSpot = sub(add(spot, scale(L.velocity, 2)), me.position);
+    go(c, 'station');
+    return { ...pointNose(me, toSpot, { fine: 8 }), throttle: clamp(0.6 + dot(sub(spot, me.position), lf) * 0.02, -1, 1), aimed: false };
   },
 };
 

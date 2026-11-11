@@ -56,20 +56,17 @@ cannot, and ends with a ranked build plan.
   When the lesson's own line is on top, the rule rides in its own row under
   it ("BOELCKE 3 · Hold fire: ..."), so the lesson's words keep their place.
   Without a useful range the coach is as it was.
-- **The gunnery drill** (lesson *Gunnery: close, then closer*, `gunnery`):
-  a target (`PLANS.target`) that flies straight, turns, jinks and climbs in a
-  27 s loop at 50 m/s, never shoots, never breaks, never looks round. The
-  rule's row keeps the score: hits, rounds, hits per 100, the average range
-  of a hit, and the share fired past your useful range. The guide and the
-  instructor fly a chaser.
+- **The gunnery drill** (lesson *Gunnery: close, then closer*) was taken
+  out on 2026-11-12 with *Against the ace*: neither had a fight in the 3D
+  theatre, so neither had anything to show. Rule 3's Rules row now opens
+  the boom-and-zoom ace's pass, a short burst from inside 130 m.
 - **Tests:** `tests/test_dogfight_doctrine.py` (15): the measures on the
   school's own lessons (the boom-and-zoom ace keeps rules 1, 2, 3 and 5; the
   pilot who meets the dive meets every one, the one who climbs straight runs;
   a dive met head on is broken off, not abandoned; the circle has no attack;
   the pilot who never looks back loses sight), a recorded fight with no eyes
   (a hunter dead astern is never seen), the useful ranges, the coach's
-  lines, and the target. `test_dogfight_steps.py` lets the drill off its
-  "every lesson names a best move", as it does *Against the ace*.
+  lines.
 
 ## The BF1918 arena (step 4, 2026-11-10)
 
@@ -151,15 +148,45 @@ one plane up each side), a hunter 350 m behind you, from the nine starts:
 |---|---|
 | Alone, flying straight | shot down every time, 16 to 30 s in |
 | Alone, turning hard | alive every time, nobody wins: 3 rounds on you in all, 8 of yours on them |
-| Your wingman covers you (`PLANS.wingman`: off your beam, onto any enemy closing on your tail) | never hit, every time; the hunter turns on your wingman and lands 0 to 2 |
+| Drag and bag (`PLANS.dragger` and `PLANS.bagger`, since 2026-11-12; see below) | never hit; the hunter hit in 7 of 9, 45 rounds in all, 31 of them the wingman's |
 | Two abreast: the Thach weave, tried (`PLANS.weaver`) | from these starts the pair is never hit and the hunter takes 0 to 7 (11 in all); with the hunter's start moved instead of yours the pair took 3 to 4 a fight as well: it trades shots between equals |
 
-The wingman is the strongest single result the school has: the same pilot,
-flying straight, goes from shot down nine times in nine to never hit. The
-weave was invented against a better turner (the Zero against the Wildcat);
-between equal airframes, on this law, it is a coin the geometry tosses.
-Rule 8's Rules row opens the wingman's fight. Held by
-`test_dogfight_doctrine.py` `test_a_wingman_keeps_the_hunter_off_your_tail`.
+The weave was invented against a better turner (the Zero against the
+Wildcat); between equal airframes, on this law, it is a coin the geometry
+tosses. Rule 8's Rules row opens drag and bag. Held by
+`test_dogfight_doctrine.py` `test_the_pair_gets_a_shot_on_the_hunter`.
+
+### Drag and bag (2026-11-12)
+
+The owner on the Rules row: "This is dogfight school, not bail out school."
+Rule 8 opened *Your wingman covers you* (`PLANS.wingman`), in which the
+wingman turned onto the hunter head on, the hunter turned to meet it, and
+you flew away. Measured from the nine starts, the hunter took **0 rounds in
+all nine**: it was the wingman drawing it off, never a shot at it.
+
+The counter demo is now drag and bag, the two-ship attack on a bandit who has
+one of you: the hunted one (`PLANS.dragger`) holds full throttle and turns
+gently (`BAG.dragRate`) toward the wingman; the hunter, cutting inside to
+follow, crosses the wingman's nose; the wingman (`PLANS.bagger`) swings round
+in a sustained turn and, once the hunter is anywhere in front, onto it with
+lead; when the hunter leaves the bait's tail the bait reverses onto it (the
+sandwich). Neither fires with the other in the line of fire
+(`friendInLine`): without it, the reversing leader put 4 rounds in their own
+wingman on vanilla's Spitfire. The demo runs 50 s.
+
+What was tried and dropped, all on the nine starts and on every arena pair:
+
+| Variant | Arena pairs with rounds in the hunter (of 47) | Why not |
+|---|---|---|
+| Bait turns away from the wingman, wingman to a point behind the hunter | 25 | the wingman chases from outside the turn and, after a hard break, at 45 m/s against the hunter's 70 |
+| The same with a sustained swing, wingman 120 m further back | 32 | went to 25 once the friendly-fire check was in; one BF1918 pair traded kills |
+| A hunter fixed on the bait (`mem.target`, no switch to the nearer plane) | 15 to 21 | everyone at full throttle and nobody closes: 0 to 2 rounds from the nine starts |
+| The bait breaks (`reflex`) when the hunter is in range | 10 | the drag never draws the hunter across |
+| **Bait turns toward the wingman, wingman cuts in with lead (shipped)** | 28, and every vanilla, Road to Rome and Secret Weapons pair | 60 s let the Yak 9's hunter shoot the bait down at 50 s; 45 s cut too many late shots |
+
+Not shot down on any arena, nobody into the ground
+(`test_dogfight_arena_hunter.py`). The live fight (*Fly it*) still flies
+`PLANS.wingman` beside you: a player is not a scripted bait.
 
 ### What the pair showed, and what it shows now (2026-11-11)
 

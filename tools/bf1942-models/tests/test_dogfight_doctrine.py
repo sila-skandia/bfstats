@@ -138,19 +138,6 @@ class DoctrineTests(unittest.TestCase):
         self.assertEqual({"line": "Lost sight · 3 s", "rule": 4}, c["lostSight"]["ruleLine"])
         self.assertTrue(c["lostSight"]["line"].startswith("They are on your tail"))
 
-    def test_the_gunnery_target_flies_its_pattern_and_never_shoots_back(self) -> None:
-        g = self.out["gunnery"]
-        self.assertEqual(["straight", "turn", "jink", "climb"], g["phases"])
-        self.assertEqual(set(g["phases"]), set(g["coachPhases"]))
-        self.assertEqual(0, g["targetRounds"])
-        self.assertEqual(0, g["loneRounds"])
-        # It holds its height and its cruise: a target, not a fighter.
-        self.assertGreater(g["minY"], 200)
-        self.assertLess(g["maxY"], 450)
-        self.assertGreater(g["speeds"][0], 30)
-        # And it can be shot.
-        self.assertGreater(g["hits"][1], 0)
-
     def test_the_moves_scored_on_the_spitfire_are_the_counts_the_lessons_declare(self) -> None:
         # The theatre scores a lesson's moves on the airframe on stage
         # (`dogfight-measure.js` `movesOn`); on the school's own Spitfire it
@@ -180,16 +167,27 @@ class DoctrineTests(unittest.TestCase):
         # The price the lesson states: their pull-out answers in three of nine.
         self.assertEqual(3, sum(1 for r in follow if r["hisHits"] > 0))
 
-    def test_a_wingman_keeps_the_hunter_off_your_tail(self) -> None:
+    def test_the_pair_gets_a_shot_on_the_hunter(self) -> None:
         pair = self.out["pair"]
         # Alone and flying straight: shot down from every start.
         self.assertTrue(all(r["youDown"] is not None for r in pair["move"]), pair["move"])
         # Alone and turning hard: alive, and nobody wins.
         self.assertTrue(all(r["youDown"] is None and not r["aceDown"] for r in pair["flat"]), pair["flat"])
-        # Your wingman covers you: flying straight, never hit.
-        self.assertTrue(all(r["onYou"] == 0 and r["youDown"] is None for r in pair["counter"]), pair["counter"])
-        self.assertIn("cover", pair["counter"][0]["phases"])
-        self.assertLessEqual(max(r["onWing"] for r in pair["counter"]), 2)
+        # Drag and bag: you drag, your wingman cuts in on the hunter and
+        # shoots, you reverse onto it. Never hit, and the hunter is hit from
+        # most starts, mostly by your wingman, and none of your own rounds
+        # strike your wingman (`friendInLine`).
+        bag = pair["counter"]
+        self.assertTrue(all(r["onYou"] == 0 and r["youDown"] is None for r in bag), bag)
+        self.assertGreaterEqual(sum(r["onAce"] > 0 for r in bag), 7, bag)
+        self.assertGreaterEqual(sum(r["onAce"] for r in bag), 40, bag)
+        self.assertGreater(sum(r["byWing"] for r in bag), sum(r["onAce"] for r in bag) / 2, bag)
+        self.assertEqual(0, sum(r["onWing"] for r in bag), bag)
+        self.assertIn("bag", bag[0]["phases"])
+        self.assertIn("reverse", bag[0]["youPhases"])
+        # Far more than the turn alone, or the weave, put on it.
+        self.assertGreater(sum(r["onAce"] for r in bag), 3 * sum(r["onAce"] for r in pair["flat"]))
+        self.assertGreater(sum(r["onAce"] for r in bag), sum(r["onAce"] for r in pair["weave"]))
         # The weave, from these starts: the pair never hit, the hunter hit.
         self.assertTrue(all(r["onYou"] == 0 and r["onWing"] == 0 for r in pair["weave"]), pair["weave"])
         self.assertGreater(sum(r["onAce"] for r in pair["weave"]), sum(r["onAce"] for r in pair["flat"]))
