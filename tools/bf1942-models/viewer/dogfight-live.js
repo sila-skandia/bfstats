@@ -82,23 +82,34 @@ const esc = s => String(s ?? '').replace(/[&<>"]/g, c => ({ '&': '&amp;', '<': '
  * `releaseMouse()` and `captureMouse()` (the pointer lock, let go for the
  * ways-out card and taken again when a way is flown).
  */
+/** The lesson's keys, as buttons too: on a phone there is no keyboard, and
+ *  a tap sends the key the page already answers. */
+const ACTS = [['KeyP', 'P', 'pause'], ['KeyX', 'X', 'extend the scene'], ['KeyG', 'G', 'guide'], ['KeyI', 'I', 'instructor'],
+              ['KeyY', 'Y', 'again'], ['KeyV', 'V', 'school'], ['KeyO', 'O', 'end']];
+const actButtons = () => ACTS.map(([code, k, word]) => `<button type="button" data-k="${code}"><kbd>${k}</kbd> ${word}</button>`).join('');
+
+/** What the edge marks keep clear of besides the school's own panels: the
+ *  minimap, the touch controls (map.html's `mobile-*`) and the arena's bar. */
+const MARK_CLEAR = '.pg-arena, #minimap-canvas, .mobile-action-btn, .mobile-band-btn, .mobile-use-btn, .mobile-thr-wrap, .mobile-rud-wrap, .mobile-rud-word, #mobile-map-hit, .mobile-claw-btn, #mobile-pad-ring, #mobile-pad-right-ring, #mobile-pad-right-label';
+
 export function createDogfightLive(page) {
   const hud = document.createElement('div');
   hud.className = 'dfl';
   hud.hidden = true;
   hud.innerHTML = `
-    <div class="dfl-coach" data-tone="info">
+    <div class="dfl-coach" data-tone="info" aria-expanded="false">
       <span class="dfl-lesson"></span>
       <b class="dfl-line"></b>
       <span class="dfl-tip"></span>
       <span class="dfl-keys"></span>
       <span class="dfl-rule" hidden><i></i><span></span></span>
       <div class="dfl-wingrow" hidden><b>WINGMAN</b><i class="dfl-wing-state"></i><span class="dfl-wing-said"></span></div>
-      <div class="dfl-score"><span>the ace's hits on you <b class="dfl-his">0</b></span><span>yours on the ace <b class="dfl-yours">0</b></span><span>kills <b class="dfl-kills">0 : 0</b></span></div>
+      <div class="dfl-score"><span><i class="dfl-acename">the ace</i>'s hits on you <b class="dfl-his">0</b></span><span>yours on <i class="dfl-acename">the ace</i> <b class="dfl-yours">0</b></span><span>kills <b class="dfl-kills">0 : 0</b></span></div>
+      <div class="dfl-acts">${actButtons()}</div>
     </div>
     <div class="dfl-mark" hidden><i></i><span></span></div>
     <div class="dfl-mark is-wing" hidden><i></i><span></span></div>
-    <div class="dfr-end dfl-end" hidden><small class="dfl-end-kicker"></small><b class="dfl-end-title"></b><span class="dfl-end-lines"></span><span class="dfr-end-keys">Y to fly it again · O back to the school</span></div>
+    <div class="dfr-end dfl-end" hidden><small class="dfl-end-kicker"></small><b class="dfl-end-title"></b><span class="dfl-end-lines"></span><span class="dfr-end-keys"><button type="button" data-k="KeyY"><kbd>Y</kbd> fly it again</button> · <button type="button" data-k="KeyO"><kbd>O</kbd> back to the school</button></span></div>
     <div class="dfl-view">
       <svg class="dfl-view-svg" aria-hidden="true">
         <g class="dfl-pin is-you"><text dy="14">YOU</text></g>
@@ -109,8 +120,22 @@ export function createDogfightLive(page) {
     <div class="dfl-shottag" hidden></div>
     <div class="dfl-extend" hidden><small class="dfl-extend-kicker"></small><b class="dfl-extend-title"></b><ol class="dfl-extend-list"></ol><div class="dfl-extend-acts"></div><span class="dfl-extend-foot"></span></div>
     <div class="dfl-banner" hidden></div>
-    <div class="dfl-foot"><kbd>P</kbd> pause <kbd>X</kbd> extend the scene <kbd>G</kbd> guide <kbd>I</kbd> instructor <kbd>Y</kbd> again <kbd>V</kbd> school <kbd>O</kbd> end</div>`;
+    <div class="dfl-foot">${actButtons()}</div>`;
   page.stage.appendChild(hud);
+  // A key's button sends the key; a tap on the coach on a phone, where it is
+  // one line, opens it to the whole of what it says and the keys.
+  hud.addEventListener('click', e => {
+    const b = e.target.closest('[data-k]');
+    if (b) {
+      e.stopPropagation();
+      window.dispatchEvent(new KeyboardEvent('keydown', { code: b.dataset.k, bubbles: true }));
+      return;
+    }
+    if (e.target.closest('.dfl-coach')) {
+      const open = ui.coach.classList.toggle('is-open');
+      ui.coach.setAttribute('aria-expanded', String(open));
+    }
+  });
   const guide = createGuide(hud);
   const cover = seatCover(hud);
   const q = s => hud.querySelector(s);
@@ -192,6 +217,11 @@ export function createDogfightLive(page) {
     const move = live.flight.demo;
     ui.lesson.textContent = `DOGFIGHT SCHOOL · ${lesson.title.toUpperCase()}${move ? ` · ${moveLabel(move).toUpperCase()}` : ''}${page.planeName ? ` · YOUR ${page.planeName().toUpperCase()}` : ''}`;
     banner(move ? moveLabel(move).toUpperCase() : lesson.title.toUpperCase(), 3);
+    // What the lesson calls the plane against you (`aceRole`: the pair's
+    // hunter), wherever the flown view names it.
+    live.aceWord = lesson.aceRole ?? 'ace';
+    hud.querySelectorAll('.dfl-acename').forEach(el => { el.textContent = `the ${live.aceWord}`; });
+    ui.pinHim.querySelector('text').textContent = live.aceWord.toUpperCase();
     return true;
   }
 
@@ -348,7 +378,7 @@ export function createDogfightLive(page) {
    *  its gun laid on where the hunter will be when the rounds get there
    *  (`bot._aimLook`, the seat's own rig) and fired inside `GUNNER.range`
    *  when it is on, as the demos' gunners fire (`dogfight-gunners.js`). */
-  function flyGunner(bot) {
+  function flyGunner(bot, dt, now = live.clock) {
     const g = live.gunner;
     if (!g || bot !== g.bot || !live.lesson || live.phase !== 'fight') { bot.ace = null; return; }
     bot.isFiring = false;
@@ -360,7 +390,13 @@ export function createDogfightLive(page) {
     const o = frame.origin;
     const rel = [ace.position[0] - o[0], ace.position[1] - o[1], ace.position[2] - o[2]];
     const d = len(rel);
-    if (d > GUNNER.range * 1.5) return;
+    if (d > GUNNER.range * 1.5) { g.since = null; return; }
+    // The hunter is the gunner's target, held since they first had it: a
+    // bot's aim settles the longer it tracks one target (`deviation.js`
+    // `setAIDeviation`), and with none it stays at its widest.
+    g.since ??= now;
+    bot.firingTarget = live.bot.playerId;
+    bot.firingTargetTime = g.since;
     // The lead: where the hunter is going in the round's time of flight.
     const tof = d / (frame.speed || 760);
     const mine = stateOf(page.playerDrive()?.state);
@@ -449,7 +485,8 @@ export function createDogfightLive(page) {
     let target = him;
     const wingUp = live.wing?.bot && !live.wing.down ? stateOf(live.wing.bot.vehicle?.drive?.state) : null;
     if (live.wing) {
-      live.aceTarget = huntTarget(live.aceTarget, me, him, wingUp);
+      // The tests can keep the hunter on you (`script(kind, { onYou })`).
+      live.aceTarget = live.scriptOnYou ? 1 : huntTarget(live.aceTarget, me, him, wingUp);
       if (live.aceTarget === 2 && wingUp) target = wingUp;
     }
     const out = stepSeat(live.pilot, [live.fits[0], live.fits[1]], { me, him: target, dt, t: live.t, groundAt: page.groundAt, arena: arena() });
@@ -520,7 +557,7 @@ export function createDogfightLive(page) {
         live.wouldHaveDied = true;
         live.kills[1]++;
         if (live.wing) showEnd('you');
-        else banner('THE ACE WOULD HAVE SHOT YOU DOWN · Y to go again', 4, 'danger');
+        else banner(`THE ${(live.aceWord ?? 'ace').toUpperCase()} WOULD HAVE SHOT YOU DOWN · Y to go again`, 4, 'danger');
       }
     }
     // The pair flown: the range prices no bot's round, so the school counts
@@ -577,7 +614,7 @@ export function createDogfightLive(page) {
         if (live.clock - live.seatAsked > 3) { live.seatAsked = live.clock; page.seatPlayer?.(); }
         setCoach({ tone: TONE.info, line: 'Getting you into a fighter', tip: '', keys: [] });
       } else if (!bot.vehicle?.drive || bot.vehicle.kind !== 'air') {
-        setCoach({ tone: TONE.info, line: 'The ace is climbing into their aircraft', tip: '', keys: [] });
+        setCoach({ tone: TONE.info, line: `The ${live.aceWord ?? 'ace'} is climbing into their aircraft`, tip: '', keys: [] });
       } else if (live.phase === 'down' && live.clock - live.downAt < (live.end ? 6 : 3.5)) {
         // a pause on the kill (the pair's end card held longer)
       } else if (!seatWingmen()) {
@@ -605,7 +642,7 @@ export function createDogfightLive(page) {
       live.downAt = live.clock;
       if (bot) bot.ace = null;
       if (live.wing) showEnd('ace', live.aceDownBy ?? 'you');
-      else banner('YOU SHOT THE ACE DOWN', 3.5, 'go');
+      else banner(`YOU SHOT THE ${(live.aceWord ?? 'ace').toUpperCase()} DOWN`, 3.5, 'go');
       return;
     }
     if (!drive) {
@@ -631,8 +668,8 @@ export function createDogfightLive(page) {
     if (live.clock - live.coachAt > 0.12) {
       live.coachAt = live.clock;
       const way = live.extendWay;
-      const move = live.flight?.demo && live.guideOut ? { name: MOVE_WORDS[live.flight.move], say: guideToYou(live.guideOut.say), phase: live.guideOut.phase }
-        : way && live.guideOut ? { name: `WAY OUT · ${way.name.toUpperCase()}`, say: guideToYou(live.guideOut.say), phase: live.guideOut.phase } : null;
+      const move = live.flight?.demo && live.guideOut ? { name: MOVE_WORDS[live.flight.move], say: guideToYou(live.guideOut.say, live.aceWord), phase: live.guideOut.phase }
+        : way && live.guideOut ? { name: `WAY OUT · ${way.name.toUpperCase()}`, say: guideToYou(live.guideOut.say, live.aceWord), phase: live.guideOut.phase } : null;
       const words = coach(live.lesson, live.aceOut, you, him, { ground: page.groundAt(you.position[0], you.position[2]), move,
         useful: live.myGun?.useful ?? null, falloff: live.myGun?.falloff ?? null,
         seen: live.pilot?.mem?.eye ? !!live.pilot.mem.eye.sees : null, offScreen: live.offScreen });
@@ -1108,6 +1145,7 @@ export function createDogfightLive(page) {
    */
   const _p = new THREE.Vector3(), _c = new THREE.Vector3();
   function markHim(you, him) {
+    markBoxes.length = 0;
     const seen = placeMark(ui.mark, ui.markText, you, him, '');
     // How long he has been off the screen (rule 4's measure), on the
     // page's clock.
@@ -1129,7 +1167,7 @@ export function createDogfightLive(page) {
     }
     const st = w.down ? null : stateOf(w.bot.vehicle?.drive?.state);
     const words = w.down ? wingWords('down') : wingWords(w.out?.phase);
-    if (st) placeMark(ui.wingMark, ui.wingMarkText, you, st, `WINGMAN · ${wingShort(w.out?.phase)} · `);
+    if (st) placeMark(ui.wingMark, ui.wingMarkText, you, st, `WINGMAN · ${wingShort(w.out?.phase)} · `, 'WINGMAN · ');
     else ui.wingMark.hidden = true;
     ui.wingRow.hidden = false;
     ui.wingRow.dataset.state = w.down ? 'down' : w.out?.phase ?? 'station';
@@ -1145,7 +1183,7 @@ export function createDogfightLive(page) {
   /** A mark on `other` in the main view, or an arrow at the screen's edge
    *  pointing the way to it, with its range and `label`. True when it is on
    *  the screen. */
-  function placeMark(mark, text, you, other, label) {
+  function placeMark(mark, text, you, other, label, short = label) {
     const cam = page.camera?.();
     const el = page.stage;
     if (!cam || !el || !other) { mark.hidden = true; return false; }
@@ -1160,8 +1198,11 @@ export function createDogfightLive(page) {
     mark.hidden = false;
     mark.classList.toggle('is-edge', !onScreen);
     if (onScreen) {
-      mark.style.transform = `translate(${(_p.x * 0.5 + 0.5) * w}px, ${(-_p.y * 0.5 + 0.5) * h}px)`;
+      const x = (_p.x * 0.5 + 0.5) * w, y = (-_p.y * 0.5 + 0.5) * h;
+      mark.style.transform = `translate(${x}px, ${y}px)`;
+      text.style.left = text.style.top = '';
       text.textContent = `${label}${range} m`;
+      markBoxes.push({ x: x - 16, y: y - 16, r: x + 18 + text.offsetWidth, b: y + 16 });
       return true;
     }
     // Off the screen: an arrow on its edge, pointing the way it is. Behind
@@ -1172,11 +1213,83 @@ export function createDogfightLive(page) {
     const l = Math.hypot(dx, dy) || 1;
     dx /= l; dy /= l;
     const k = Math.min(0.9 / Math.max(Math.abs(dx), 1e-3), 0.8 / Math.max(Math.abs(dy), 1e-3));
-    const ex = dx * k, ey = dy * k;
-    mark.style.transform = `translate(${(ex * 0.5 + 0.5) * w}px, ${(-ey * 0.5 + 0.5) * h}px)`;
+    // The whole words where they fit clear of everything, else the short
+    // ones (the coach's wingman row still says what they are doing).
+    const said = [`${label}${range} m${ahead ? '' : ' behind'}`, `${short}${range} m`];
+    let at = null;
+    for (let i = 0; i < said.length && !at; i++) {
+      text.textContent = said[i];
+      at = clearSpot(dx * k, dy * k, w, h, text.offsetWidth, text.offsetHeight, mark === ui.wingMark, i === said.length - 1);
+    }
+    mark.style.transform = `translate(${at.x}px, ${at.y}px)`;
+    text.style.left = `${at.left}px`;
+    text.style.top = `${at.top}px`;
     mark.style.setProperty('--a', `${Math.atan2(-dy, dx)}rad`);
-    text.textContent = `${label}${range} m${ahead ? '' : ' behind'}`;
     return false;
+  }
+
+  /**
+   * Where an edge arrow and its words go: on the screen's edge the way it
+   * points, or, where a panel, a touch control or the other mark is there,
+   * drawn in along the same line toward the middle until both are clear.
+   * The words sit under the arrow (the wingman's over it) or the other
+   * side when that is clear, and never off the screen's sides.
+   */
+  const markBoxes = [];
+  const BEARINGS = [0, ...Array.from({ length: 11 }, (_, i) => [(i + 1) * 8, -(i + 1) * 8]).flat()];
+  let clearRects = [], clearAt = -Infinity;
+  const overlaps = (a, b) => a.x < b.r && b.x < a.r && a.y < b.b && b.y < a.b;
+  function obstacles() {
+    const now = performance.now();
+    if (now - clearAt < 400) return clearRects;
+    clearAt = now;
+    const sr = page.stage.getBoundingClientRect();
+    const els = [ui.coach, hud.querySelector('.dfl-guide'), ui.view, hud.querySelector('.dfl-view-foot'), hud.querySelector('.dfl-foot'),
+                 ...document.querySelectorAll(MARK_CLEAR)];
+    clearRects = [];
+    for (const el of els) {
+      if (!el || el.closest('[hidden]')) continue;
+      const r = el.getBoundingClientRect();
+      if (r.width < 2 || r.height < 2 || r.width * r.height > sr.width * sr.height * 0.4 || getComputedStyle(el).visibility === 'hidden') continue;
+      clearRects.push({ x: r.left - sr.left - 6, y: r.top - sr.top - 6, r: r.right - sr.left + 6, b: r.bottom - sr.top + 6 });
+    }
+    // The game's own HUD along the top (the F keys, the tickets) and the
+    // bottom (the soldier, the gauges, the ammunition), drawn on its canvas.
+    clearRects.push({ x: 0, y: 0, r: sr.width, b: 44 }, { x: 0, y: sr.height - 96, r: sr.width, b: sr.height });
+    return clearRects;
+  }
+  function clearSpot(ex, ey, w, h, tw, th, wing, last = true) {
+    const rects = obstacles();
+    const tops = wing ? [-26, 14] : [14, -26];
+    const free = box => !rects.some(r => overlaps(box, r)) && !markBoxes.some(r => overlaps(box, r));
+    const at = (x, y, top) => {
+      const left = Math.min(Math.max(-20, 6 - x), w - 6 - tw - x);
+      return { x, y, left, top, arrow: { x: x - 12, y: y - 12, r: x + 12, b: y + 12 },
+               words: { x: x + left, y: y + top, r: x + left + tw, b: y + top + th } };
+    };
+    // From the edge inward; at each depth the true bearing first, then
+    // further either side of it (up to a right angle) where a panel or a
+    // control sits on the line.
+    const a0 = Math.atan2(ey, ex);
+    for (let s = 1; s >= 0.15; s -= 0.05) {
+      for (const d of BEARINGS) {
+        const a = a0 + d * Math.PI / 180;
+        const cx = Math.cos(a), cy = Math.sin(a);
+        const k = Math.min(0.9 / Math.max(Math.abs(cx), 1e-3), 0.8 / Math.max(Math.abs(cy), 1e-3)) * s;
+        const x = (cx * k * 0.5 + 0.5) * w, y = (-cy * k * 0.5 + 0.5) * h;
+        if (!free({ x: x - 12, y: y - 12, r: x + 12, b: y + 12 })) continue;
+        for (const top of tops) {
+          const spot = at(x, y, top);
+          if (spot.words.y < 0 || spot.words.b > h || !free(spot.words)) continue;
+          markBoxes.push(spot.arrow, spot.words);
+          return spot;
+        }
+      }
+    }
+    if (!last) return null;
+    const spot = at((ex * 0.25 * 0.5 + 0.5) * w, (-ey * 0.25 * 0.5 + 0.5) * h, tops[0]);
+    markBoxes.push(spot.arrow, spot.words);
+    return spot;
   }
 
   /**
@@ -1274,7 +1387,7 @@ export function createDogfightLive(page) {
   return {
     start, stop, frame, key, flightOverride, noteImpact, toggleInstructor, renderInset, togglePause,
     /** For the tests: hands on your stick, 'straight' or 'turn' (null lets go). */
-    script: kind => { live.script = kind || null; live.scriptDir = null; },
+    script: (kind, { onYou = false } = {}) => { live.script = kind || null; live.scriptDir = null; live.scriptOnYou = !!onYou; },
     get active() { return !!live.lesson; },
     get state() {
       return {
@@ -1401,9 +1514,10 @@ export function toYou(say) {
 const GUIDE_WORDS = { 'i am': 'you are', "i'm": 'you are', 'i have': 'you have', i: 'you', me: 'you', my: 'your', mine: 'yours',
   myself: 'yourself', we: 'you both', our: 'your', he: 'the ace', him: 'the ace', himself: 'the ace', his: "the ace's" };
 
-export function guideToYou(say) {
+export function guideToYou(say, ace = 'ace') {
   if (!say) return say;
-  const out = String(say).replace(/\b(I am|I'm|I have|I|me|my|mine|myself|we|our|he|him|himself|his)\b/gi, w => GUIDE_WORDS[w.toLowerCase()]);
+  const out = String(say).replace(/\b(I am|I'm|I have|I|me|my|mine|myself|we|our|he|him|himself|his)\b/gi,
+    w => GUIDE_WORDS[w.toLowerCase()].replace(/the ace/, `the ${ace}`));
   return out.charAt(0).toUpperCase() + out.slice(1);
 }
 

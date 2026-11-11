@@ -16,11 +16,12 @@ Kursk's Bf 109 against the Yak 9, Kursk with the Stuka picked, and FHSW's El
 Alamein (`fixtures/arena-airframes.json.gz`, `fixtures/two-seaters.json`).
 """
 
-# watches: tools/bf1942-models/viewer/dogfight-live-wing.js tools/bf1942-models/viewer/dogfight-live.js tools/bf1942-models/viewer/dogfight-pilot.js tools/bf1942-models/viewer/dogfight-fight.js tools/bf1942-models/viewer/dogfight-duel.js tools/bf1942-models/viewer/dogfight-flight.js tools/bf1942-models/viewer/dogfight-lessons.js
+# watches: tools/bf1942-models/viewer/dogfight-live-wing.js tools/bf1942-models/viewer/dogfight-live.js tools/bf1942-models/viewer/dogfight-pilot.js tools/bf1942-models/viewer/dogfight-fight.js tools/bf1942-models/viewer/dogfight-duel.js tools/bf1942-models/viewer/dogfight-flight.js tools/bf1942-models/viewer/dogfight-lessons.js tools/bf1942-models/viewer/map.html tools/bf1942-models/viewer/map.css tools/bf1942-models/viewer/proving-ground-page.js
 
 from __future__ import annotations
 
 import json
+import re
 import shutil
 import subprocess
 import unittest
@@ -91,6 +92,44 @@ class LiveWingTests(unittest.TestCase):
             for hands, r in rows.items():
                 with self.subTest(arena=arena, hands=hands):
                     self.assertEqual([], r["crashed"], r)
+
+
+class LiveHudTests(unittest.TestCase):
+    """The flown view's furniture, read from the page's own files: the edge
+    marks keep clear of controls that still exist, and the hunter is called
+    the hunter."""
+
+    VIEWER = HERE.parent / "viewer"
+
+    def test_the_edge_marks_keep_clear_of_controls_the_page_still_has(self) -> None:
+        live = (self.VIEWER / "dogfight-live.js").read_text()
+        page = (self.VIEWER / "map.html").read_text() + (self.VIEWER / "proving-ground-page.js").read_text()
+        clear = re.search(r"const MARK_CLEAR = '([^']+)'", live)
+        self.assertIsNotNone(clear)
+        for sel in (s.strip() for s in clear.group(1).split(",")):
+            name = sel[1:]
+            if sel.startswith("#"):
+                self.assertIn(f'id="{name}"', page, sel)
+            else:
+                self.assertRegex(page, rf"""class(Name)?\s*=\s*["'][^"']*\b{re.escape(name)}\b""", sel)
+
+    def test_the_phone_layouts_fold_the_coach_to_one_line(self) -> None:
+        css = (self.VIEWER / "map.css").read_text()
+        for query in ("@media (max-width: 760px) {", "@media (max-height: 500px) and (orientation: landscape) {"):
+            block = css[css.index(query, css.index("/* A phone, upright")):]
+            block = block[: block.index("\n}\n")]
+            self.assertIn(".dfl-coach:not(.is-open) .dfl-line", block, query)
+            self.assertIn(".dfl-foot { display: none; }", block, query)
+            self.assertIn(":has(> .dfl:not([hidden])) > .pg-arena { display: none; }", block, query)
+
+    def test_the_pair_calls_the_plane_against_you_the_hunter(self) -> None:
+        live = (self.VIEWER / "dogfight-live.js").read_text()
+        lessons = (self.VIEWER / "dogfight-lessons.js").read_text()
+        self.assertIn("aceRole: 'hunter'", lessons)
+        # Every line the flown view writes about the plane against you goes
+        # through its role: none says "the ace" outright.
+        for line in re.findall(r"(?:banner|setCoach)\((.*)", live):
+            self.assertNotRegex(line, r"[`'\"][^`'\"]*\b(the ace|THE ACE)\b", line)
 
 
 if __name__ == "__main__":

@@ -1271,6 +1271,40 @@ your own type and the hunter coming in behind, as in the demos.
   Stuka's gunner laid within 1 to 3 degrees of the lead and firing.
 - **The Thach weave** stays watch-only: flown, your weave partner would need
   you to turn in on cue, which the live fight cannot ask of a player.
+- **The gunner's rounds land in the page too** (2026-11-11). With the
+  hunter sat on the Stuka's tail (the test hook `script('straight',
+  { onYou: true })`), the gunner fired continuously, laid within 0 to 3
+  degrees, and scored 1 hit in 60 s: a bot's aim spreads widest until it
+  has held a target for a while (`deviation.js` `setAIDeviation`, keyed on
+  `bot.firingTarget` and how long it has had it), and the gunner's bot was
+  never given one. `flyGunner` now names the hunter as its target from the
+  moment it is in reach; the same run scores 6, each counted by the school
+  (`noteImpact`) and on the hunter's hull.
+- **Words.** The plane against you is the hunter everywhere in the flown
+  view (`aceRole`): the radar's pin, the score line, the banners, the
+  coach's lines and the end card.
+- **Marks off the edge keep clear.** An edge arrow and its words are
+  drawn in along their own bearing, and up to a right angle either side of
+  it, until both clear the coach, the stick's words, the sphere and its
+  foot, the key row, the arena's bar, the touch controls, the game's HUD
+  bands and the other mark (`clearSpot`); where the wingman's whole label
+  fits nowhere it shortens to WINGMAN and the range. The touch controls it
+  avoids are named in `MARK_CLEAR`, and a test fails if one of them leaves
+  the page.
+- **On a phone.** Upright (up to 760 px wide) the coach is one line under
+  the minimap with the wingman's state under it, and opens on a tap to the
+  whole of what it says, the score and the keys as buttons (pause, extend,
+  guide, instructor, again, school, end); the stick's words and the sphere
+  share the band above the touch controls side by side, the stick's gate
+  dropped. On its side (up to 500 px tall) the coach and the stick's words
+  run along the top between the corner buttons and the minimap, and the
+  sphere sits under the left corner's buttons with its range along its
+  foot. The arena's bar, which says what the coach says, is hidden while
+  the fight is up, and wraps inside the screen when it shows. The key row
+  and the end card's keys are buttons on every screen. Checked headless at
+  390x844, 375x667, 844x390, 667x375 and two desktop sizes, with touch on
+  for the phones: nothing of the school's overlaps another panel, a mark or
+  a touch control in any frame.
 
 ## Reviewed against the real tactics (2026-11-07)
 
