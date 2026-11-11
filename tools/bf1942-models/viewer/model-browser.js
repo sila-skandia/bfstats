@@ -41,7 +41,9 @@ export function createArmouryBrowser(page) {
     { id: 'side', title: 'Side', values: entry => entry.sides || [] },
     { id: 'faction', title: 'Faction', values: entry => entry.factions || [] },
     { id: 'theatre', title: 'Theatre', values: entry => entry.theatres || [] },
-    { id: 'kit', title: 'Kit', values: entry => entry.kitClasses || [] },
+    // FHSW names 2,203 kit classes; drawn whole, that is 9,000 nodes of
+    // checkboxes on every open (features/mesh-viewer-performance).
+    { id: 'kit', title: 'Kit', values: entry => entry.kitClasses || [], limit: 10 },
     { id: 'build', title: 'Build',
       values: entry => unique(entry.variants.map(variant => variant.configuration)),
       label: configurationLabel },
@@ -124,9 +126,32 @@ export function createArmouryBrowser(page) {
   // keystroke against every entry.
   for (const entry of page.manifest) entry.haystack = searchCorpus(entry);
 
+  /**
+   * An entry's values for one facet, worked out once: a render asks for every
+   * facet of every entry about ten times over, and FHSW's catalogue is 4,091
+   * entries.
+   */
+  function valuesOf(entry, facet) {
+    const cache = entry.facetValues ||= {};
+    return cache[facet.id] ||= facet.values(entry);
+  }
+
+  /** Every value a facet takes anywhere in the catalogue, in first-seen order. */
+  const facetUniverse = new Map();
+  function universeOf(facet) {
+    if (!facetUniverse.has(facet.id)) {
+      const values = new Set();
+      for (const entry of page.manifest) {
+        for (const value of valuesOf(entry, facet)) values.add(value);
+      }
+      facetUniverse.set(facet.id, [...values]);
+    }
+    return facetUniverse.get(facet.id);
+  }
+
   function matchesFacet(entry, facet, chosen) {
     if (!chosen.size) return true;
-    return facet.values(entry).some(value => chosen.has(value));
+    return valuesOf(entry, facet).some(value => chosen.has(value));
   }
 
   function matchesQuery(entry) {
@@ -146,8 +171,11 @@ export function createArmouryBrowser(page) {
     return passing(null);
   }
 
+  // localeCompare with no locale is this collator; making one per comparison
+  // is most of a 4,091-entry sort's time.
+  const collate = new Intl.Collator().compare;
   const SORTS = {
-    name: (a, b) => a.name.localeCompare(b.name),
+    name: (a, b) => collate(a.name, b.name),
     triangles: (a, b) => b.triangles - a.triangles,
     parts: (a, b) => b.parts - a.parts,
     length: (a, b) => (b.dimensions?.length || 0) - (a.dimensions?.length || 0),
@@ -160,7 +188,7 @@ export function createArmouryBrowser(page) {
   function sorted(entries) {
     const compare = SORTS[browseState.sort] || SORTS.name;
     // Name is the stable tiebreak, so equal metrics never reorder between renders.
-    return [...entries].sort((a, b) => compare(a, b) || a.name.localeCompare(b.name));
+    return [...entries].sort((a, b) => compare(a, b) || collate(a.name, b.name));
   }
 
   function renderFacets() {
@@ -178,14 +206,9 @@ export function createArmouryBrowser(page) {
     const sections = FACETS.map(facet => {
       const chosen = browseState.selected.get(facet.id);
       const pool = passing(facet.id);
-      const counts = new Map();
-      for (const entry of page.manifest) {
-        for (const value of facet.values(entry)) {
-          if (!counts.has(value)) counts.set(value, 0);
-        }
-      }
+      const counts = new Map(universeOf(facet).map(value => [value, 0]));
       for (const entry of pool) {
-        for (const value of facet.values(entry)) {
+        for (const value of valuesOf(entry, facet)) {
           counts.set(value, (counts.get(value) || 0) + 1);
         }
       }
@@ -260,80 +283,152 @@ export function createArmouryBrowser(page) {
     ].filter(Boolean).join(' · ');
   }
 
+  // --- Progressive rendering ----------------------------------------------
+  //
+  // FHSW's armoury is 4,091 cards. Built at once they cost the click 1.6 s at a
+  // 4x CPU throttle, nearly all of it style and layout forced by the search
+  // box's focus (features/mesh-viewer-performance, "Armoury browser open").
+  // A render builds the first screen and a little more; the rest follows a
+  // chunk at a time as a sentinel under the list comes within reach of the
+  // scroller's bottom edge.
+
+  /** Cards (or lineup rows) a render builds before anything is scrolled. */
+  const FIRST_CHUNK = 48;
+  /** How many more each time the sentinel comes into range. */
+  const CHUNK = 96;
+  /** The first screen's thumbnails load eagerly; the rest wait to be seen. */
+  const EAGER_THUMBS = 24;
+  let feed = null;
+
+  function stopFeed() {
+    feed?.disconnect();
+    feed = null;
+  }
+
+  /**
+   * Appends `build(item, i)` for `items` to `host`: FIRST_CHUNK now, then a
+   * CHUNK whenever the sentinel nears view. Returns the sentinel to place under
+   * `host`, or null when everything fit in the first chunk.
+   */
+  function feedInto(host, items, build) {
+    stopFeed();
+    let next = 0;
+    const append = count => {
+      const end = Math.min(items.length, next + count);
+      const fragment = document.createDocumentFragment();
+      for (; next < end; next++) fragment.appendChild(build(items[next], next));
+      host.appendChild(fragment);
+    };
+    append(FIRST_CHUNK);
+    if (next >= items.length) return null;
+
+    const sentinel = document.createElement('div');
+    sentinel.className = 'browser-sentinel';
+    sentinel.setAttribute('aria-hidden', 'true');
+    const observer = new IntersectionObserver(records => {
+      if (feed !== observer || !records.some(record => record.isIntersecting)) return;
+      append(CHUNK);
+      if (next >= items.length) {
+        stopFeed();
+        sentinel.remove();
+        return;
+      }
+      // An observer only reports changes; a tall window or a fast fling can
+      // leave the sentinel in range after the append. Observing afresh reports
+      // where it is now.
+      observer.unobserve(sentinel);
+      observer.observe(sentinel);
+    }, { root: browserBody, rootMargin: '0px 0px 1200px 0px' });
+    feed = observer;
+    observer.observe(sentinel);
+    return sentinel;
+  }
+
+  function thumbImage(source, index) {
+    const image = document.createElement('img');
+    image.alt = '';
+    image.decoding = 'async';
+    if (index < EAGER_THUMBS) image.fetchPriority = 'high';
+    else image.loading = 'lazy';
+    image.src = source;
+    return image;
+  }
+
   function renderGrid(entries) {
     const grid = document.createElement('div');
     grid.className = 'card-grid';
-    for (const entry of entries) {
-      const card = document.createElement('button');
-      card.type = 'button';
-      card.className = `card ${sideClass(entry)}`;
-      card.dataset.modelIndex = String(entry.index);
-      if (page.currentEntry && page.currentEntry.index === entry.index) {
-        card.setAttribute('aria-current', 'true');
-      }
+    const sentinel = feedInto(grid, entries, buildCard);
+    if (!sentinel) return grid;
+    const wrap = document.createElement('div');
+    wrap.append(grid, sentinel);
+    return wrap;
+  }
 
-      const art = document.createElement('div');
-      art.className = 'card-art';
-      const source = thumbFor(entry);
-      if (source) {
-        const image = document.createElement('img');
-        image.src = source;
-        image.alt = '';
-        image.loading = 'lazy';
-        art.appendChild(image);
-      } else {
-        const placeholder = document.createElement('span');
-        placeholder.className = 'no-art';
-        placeholder.textContent = 'no thumbnail';
-        art.appendChild(placeholder);
-      }
-
-      const flags = document.createElement('div');
-      flags.className = 'card-flags';
-      const note = variantNote(entry);
-      if (note) {
-        const badge = document.createElement('span');
-        badge.className = 'card-flag';
-        badge.textContent = note;
-        flags.appendChild(badge);
-      }
-      if (entry.texturesMissing.length) {
-        const badge = document.createElement('span');
-        badge.className = 'card-flag is-warn';
-        badge.textContent = `${entry.texturesMissing.length} unresolved`;
-        badge.title = entry.texturesMissing.join('\n');
-        flags.appendChild(badge);
-      }
-      art.appendChild(flags);
-
-      const body = document.createElement('div');
-      body.className = 'card-body';
-      const name = document.createElement('div');
-      name.className = 'card-name';
-      name.textContent = entry.name;
-      const sub = document.createElement('div');
-      sub.className = 'card-sub';
-      const side = document.createElement('span');
-      side.className = 'is-side';
-      const factions = entry.factions || [];
-      // Engineer kit is carried by every army in the game; naming all seven reads
-      // as noise, so the count stands in and the full list is in the tooltip.
-      side.textContent = factions.length > 2 ? `${factions.length} nations`
-        : factions.join(', ')
-        || CATEGORY_LABELS[entry.category] || entry.category || '';
-      side.title = factions.join(', ');
-      const size = document.createElement('span');
-      size.textContent = entry.dimensions
-        ? `${entry.dimensions.length.toFixed(1)} m`
-        : `${entry.triangles.toLocaleString()} tris`;
-      sub.append(side, size);
-      body.append(name, sub);
-
-      card.append(art, body);
-      card.addEventListener('click', () => pick(entry));
-      grid.appendChild(card);
+  function buildCard(entry, index) {
+    const card = document.createElement('button');
+    card.type = 'button';
+    card.className = `card ${sideClass(entry)}`;
+    card.dataset.modelIndex = String(entry.index);
+    if (page.currentEntry && page.currentEntry.index === entry.index) {
+      card.setAttribute('aria-current', 'true');
     }
-    return grid;
+
+    const art = document.createElement('div');
+    art.className = 'card-art';
+    const source = thumbFor(entry);
+    if (source) {
+      art.appendChild(thumbImage(source, index));
+    } else {
+      const placeholder = document.createElement('span');
+      placeholder.className = 'no-art';
+      placeholder.textContent = 'no thumbnail';
+      art.appendChild(placeholder);
+    }
+
+    const flags = document.createElement('div');
+    flags.className = 'card-flags';
+    const note = variantNote(entry);
+    if (note) {
+      const badge = document.createElement('span');
+      badge.className = 'card-flag';
+      badge.textContent = note;
+      flags.appendChild(badge);
+    }
+    if (entry.texturesMissing.length) {
+      const badge = document.createElement('span');
+      badge.className = 'card-flag is-warn';
+      badge.textContent = `${entry.texturesMissing.length} unresolved`;
+      badge.title = entry.texturesMissing.join('\n');
+      flags.appendChild(badge);
+    }
+    art.appendChild(flags);
+
+    const body = document.createElement('div');
+    body.className = 'card-body';
+    const name = document.createElement('div');
+    name.className = 'card-name';
+    name.textContent = entry.name;
+    const sub = document.createElement('div');
+    sub.className = 'card-sub';
+    const side = document.createElement('span');
+    side.className = 'is-side';
+    const factions = entry.factions || [];
+    // Engineer kit is carried by every army in the game; naming all seven reads
+    // as noise, so the count stands in and the full list is in the tooltip.
+    side.textContent = factions.length > 2 ? `${factions.length} nations`
+      : factions.join(', ')
+      || CATEGORY_LABELS[entry.category] || entry.category || '';
+    side.title = factions.join(', ');
+    const size = document.createElement('span');
+    size.textContent = entry.dimensions
+      ? `${entry.dimensions.length.toFixed(1)} m`
+      : `${entry.triangles.toLocaleString()} tris`;
+    sub.append(side, size);
+    body.append(name, sub);
+
+    card.append(art, body);
+    card.addEventListener('click', () => pick(entry));
+    return card;
   }
 
   function renderScale(entries) {
@@ -385,7 +480,9 @@ export function createArmouryBrowser(page) {
     const FLOOR = 6;
     let clamped = 0;
 
-    for (const entry of ordered) {
+    const rows = document.createElement('div');
+    rows.className = 'scale-rows';
+    const buildRow = (entry, index) => {
       const row = document.createElement('div');
       row.className = `scale-row ${sideClass(entry)}`;
 
@@ -402,7 +499,6 @@ export function createArmouryBrowser(page) {
 
       const share = entry.dimensions.maxExtent / biggest.dimensions.maxExtent;
       const isClamped = share * MAX < FLOOR;
-      if (isClamped) clamped++;
 
       const lane = document.createElement('div');
       lane.className = 'scale-lane';
@@ -417,10 +513,7 @@ export function createArmouryBrowser(page) {
         : `${entry.name} — ${entry.dimensions.length.toFixed(2)} m long`;
       const source = thumbFor(entry);
       if (source) {
-        const image = document.createElement('img');
-        image.src = source;
-        image.alt = '';
-        image.loading = 'lazy';
+        const image = thumbImage(source, index);
         // Full square, pulled up by half the cropped-off height, so the window
         // sits over the middle of the frame where the model is.
         image.style.width = `${side.toFixed(1)}px`;
@@ -436,8 +529,15 @@ export function createArmouryBrowser(page) {
       lane.appendChild(figure);
 
       row.append(label, lane);
-      wrap.appendChild(row);
+      return row;
+    };
+    // Counted over the whole lineup, not just the rows built so far.
+    for (const entry of ordered) {
+      if ((entry.dimensions.maxExtent / biggest.dimensions.maxExtent) * MAX < FLOOR) clamped++;
     }
+    const sentinel = feedInto(rows, ordered, buildRow);
+    wrap.appendChild(rows);
+    if (sentinel) wrap.appendChild(sentinel);
 
     note.textContent = `True scale against ${biggest.name}. `
       + (clamped
@@ -575,7 +675,13 @@ export function createArmouryBrowser(page) {
     return String(Math.round(value * 10) / 10);
   }
 
+  // True once the body shows the current state; reopening then only moves
+  // the current-model mark instead of rebuilding.
+  let fresh = false;
+
   function renderBrowser() {
+    fresh = true;
+    stopFeed();
     renderFacets();
     const entries = sorted(filtered());
     countLabel.textContent = entries.length === page.manifest.length
@@ -604,9 +710,60 @@ export function createArmouryBrowser(page) {
     void page.showVariant(entry.index);
   }
 
+  /** A few grey cards for the frame between the click and the first render. */
+  function skeleton() {
+    const grid = document.createElement('div');
+    grid.className = 'card-grid is-skeleton';
+    grid.setAttribute('aria-hidden', 'true');
+    for (let i = 0; i < 12; i++) {
+      const card = document.createElement('div');
+      card.className = 'card-skeleton';
+      grid.appendChild(card);
+    }
+    return grid;
+  }
+
+  // The render a click asks for runs after the frame that shows the shell:
+  // a rAF callback runs before that frame paints, a task queued from it after.
+  let renderQueued = false;
+  function renderAfterPaint() {
+    if (renderQueued) return;
+    renderQueued = true;
+    requestAnimationFrame(() => setTimeout(() => {
+      renderQueued = false;
+      if (!fresh) renderBrowser();
+    }, 0));
+  }
+
+  /** Moves the current-model mark on a body built before the model changed. */
+  function syncCurrent() {
+    for (const card of browserBody.querySelectorAll('.card[aria-current]')) {
+      card.removeAttribute('aria-current');
+    }
+    if (page.currentEntry) {
+      browserBody.querySelector(`.card[data-model-index="${page.currentEntry.index}"]`)
+        ?.setAttribute('aria-current', 'true');
+    }
+  }
+
+  /**
+   * Shows the shell at once and fills it after that frame has painted
+   * (features/mesh-viewer-performance, "Armoury browser open").
+   */
   function openBrowser() {
     browser.hidden = false;
-    renderBrowser();
+    // The plot's firepower axis reads the damage tables, which may have
+    // arrived since it was drawn.
+    if (browseState.layout === 'plot') fresh = false;
+    if (fresh) {
+      syncCurrent();
+    } else {
+      if (!browserBody.querySelector('.card, .scale-row, .plot-wrap, .browser-empty')) {
+        countLabel.textContent = `${page.manifest.length} models`;
+        browserBody.replaceChildren(skeleton());
+      }
+      renderAfterPaint();
+    }
     searchInput.focus();
     searchInput.select();
   }
@@ -708,6 +865,22 @@ export function createArmouryBrowser(page) {
       if (first) pick(first);
     }
   });
+
+  // The page's inline shim opens the shell for a click (or `/`, or `?browse`)
+  // that lands before this module and the catalogue have loaded. Take over
+  // from it, keeping whatever was typed meanwhile.
+  window.__armouryEarly?.dispose();
+  if (searchInput.value.trim()) browseState.query = searchInput.value.trim().toLowerCase();
+  if (!browser.hidden) renderAfterPaint();
+
+  // Build the first screen while the page is idle, so the first open finds
+  // it ready: hidden, it costs no layout, and its eager thumbnails load into
+  // the cache. Not on a connection asking to save data.
+  if (!navigator.connection?.saveData) {
+    (window.requestIdleCallback || (callback => setTimeout(callback, 1000)))(() => {
+      if (!fresh && browser.hidden) renderBrowser();
+    });
+  }
 
   Object.assign(armoury, {
     browser,

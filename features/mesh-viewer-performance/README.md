@@ -962,6 +962,95 @@ cause rule 6 was built for); no `webglcontextlost` event. So the freeze is not
 an accumulating page-state leak — it is a throw or a driver-level stall, and
 the page now always says which.
 
+## Armoury browser open (Models page, 2026-11-11)
+
+Reported as "Browse armoury is slow, badly so on large mods"; wanted: the dialog
+on the click's frame, then content filling in. Measured headless with
+`tests/armoury_open_bench.mjs` (Chromium, 1440x900, DPR 1, CDP
+`Emulation.setCPUThrottlingRate` 4x, `serve_viewer.py` fetching the live
+catalogues and thumbnails), click by real input, timings from the Event Timing
+API (`duration` is input to the next paint).
+
+### Where the time went
+
+Not the catalogue. `index.html` fetches `models.json` at page load, before the
+armoury's handlers exist, so a click never fetched or parsed anything. FHSW's
+catalogue is 8.25 MB (1.16 MB gzipped on the wire) and parses in 55 ms at 4x;
+vanilla's in 2 ms. The click itself, profiled on FHSW (4,091 models):
+
+- **1,249 ms in `focus`, 1,153 ms of "(program)"**: style and layout of the
+  whole armoury, forced by `searchInput.focus()` right after `renderBrowser()`
+  had built every card. 4,091 cards are about 50,000 nodes.
+- **The Kit facet drew 2,203 checkboxes** (FHSW's kit classes, no fold), another
+  9,000 nodes laid out in the same pass.
+- About 300 ms of JS: building the cards, and `renderFacets` running ten
+  catalogue-wide filter passes that re-derived every entry's facet values
+  (`unique(variants.map(...))`) each time.
+- A warm open was no cheaper (2.3 s): every open rebuilt everything.
+- **A click before the page module and the catalogue had loaded did nothing.**
+  The handlers are attached after the top-level `await` of the catalogue, so
+  the click was simply dropped and had to be repeated.
+
+### What changed
+
+- `model-browser.js` renders progressively: a render builds the first 48 cards
+  (or lineup rows), and a sentinel under the list, watched by an
+  IntersectionObserver rooted on the scroller with a 1,200 px bottom margin,
+  adds 96 more each time it comes within reach. The plot is still drawn whole.
+- `openBrowser()` no longer renders. It shows the shell, focuses the search box
+  and, if the body is not current, puts up a skeleton and renders after that
+  frame has painted (`requestAnimationFrame` then `setTimeout`). If the body is
+  current it only moves the current-model mark (`syncCurrent`); the plot
+  always redraws, since the damage tables behind its firepower axis can arrive
+  later.
+- The first screen is built at idle after page load (`requestIdleCallback`,
+  not under Save-Data), hidden, so it costs no layout, and its first 24
+  thumbnails (eager, `fetchpriority=high`) land in the cache. The rest are
+  `loading=lazy`; all are `decoding=async`.
+- Facet values are computed once per entry and facet (`valuesOf`), the set of
+  values each facet takes once per page (`universeOf`), and sorting uses one
+  `Intl.Collator` instead of `localeCompare` per comparison.
+- The Kit facet folds at 10, like Skin and Appears on.
+- An inline classic script in `index.html`, ahead of the module scripts, opens
+  the shell with a skeleton for a click on Browse or the bar's search pill, `/`,
+  Ctrl/Cmd+K or `?browse`, while the module and catalogue are still loading;
+  Escape and Close shut it. The module disposes of it on creation, keeps what
+  was typed, and fills the open shell.
+
+`models.json` is unchanged: at 55 ms of parse it is not worth reshaping for
+every reader (play front end, kits page, extractors, tests).
+
+### Before / after
+
+4x CPU throttle. "dialog" is click to the frame that showed it; "thumbs" is
+click until every thumbnail in the first screen has decoded; "cards" is cards
+in the DOM after the click.
+
+| | vanilla (111) before | vanilla after | FHSW (4,091) before | FHSW after |
+|---|---|---|---|---|
+| first open: click task | 59 ms | 24 ms | 1,583 ms | 26 ms |
+| first open: dialog | 128 ms | 88 ms | 1,896 ms | 96 ms |
+| first open: thumbs | 186 ms | 106 ms | 2,354 ms | 110 ms |
+| second open: dialog | 72 ms | 40 ms | 2,184 ms | 40 ms |
+| second open: thumbs | 99 ms | 50 ms | 2,807 ms | 51 ms |
+| cards built | 111 | 48 | 4,091 | 48 |
+| click while the page loads | dropped | dialog in 64 ms, cards at 550 ms | dropped | dialog in 56 ms, cards at 973 ms |
+
+The early click's card time is the page's own load (module graph, catalogue),
+served locally; on the live site it is that plus the catalogue's transfer.
+
+### The standing check
+
+`tests/test_armoury_browser.py` runs `tests/armoury_browser_harness.mjs`:
+`index.html`'s markup, stylesheets and inline shim, plus `model-browser.js`,
+in headless Chromium with a synthetic 4,000-model catalogue. It pins that a
+click before the module opens the shell with a skeleton and focus, the module
+takes over keeping the typed query, a click builds at most the first chunk,
+scrolling builds the rest in order up to all 4,000, the Kit facet folds,
+search, Enter and a card's click pick the right model, the lineup is chunked,
+the plot draws every dot, and at phone width the feed stops within reach. It
+skips without node, Playwright or a Chromium that starts.
+
 ## Open items
 
 - **A new `Vehicle` takes a parked vehicle's current rig pose for its rest pose.**
