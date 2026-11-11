@@ -576,7 +576,9 @@ export const LESSONS = [
       'Boelcke wrote it in 1916, and Mölders made it the pair in Spain in 1938: a leader and a wingman, the wingman\'s whole job the leader\'s tail. Here your wingman flies off your beam, a little behind; the moment the hunter closes on your tail, they turn onto the hunter. Flying straight, with your wingman there, you took no hit in any of the nine starts; the hunter turned on your wingman and landed 0 to 2.',
       'The Thach weave, tried: two abreast turning in toward each other whenever someone is on a tail, so the hunter following one is dragged across the other\'s nose. It was invented against a Zero that out-turned a Wildcat. From these nine starts the pair was never hit and the hunter took 0 to 7 rounds; but it rests on the geometry: with the hunter\'s start moved instead of yours, the pair took 3 to 4 rounds a fight as well as giving them. Between equal planes it trades shots more than it wins them.',
     ],
-    watchOnly: true,
+    // Flown live with your wingman off your wing on your own type (the
+    // counter's), the hunter coming in behind (`dogfight-live.js`).
+    flyWith: [{ plan: 'wingman', start: { at: [-180, 400, 60], headingDeg: 0, speed: 60 }, memory: { leader: 1, careful: true }, skill: 0.85 }],
     // The plane against you is called the hunter here, on its tag, meter and
     // caption: there is no ace in this lesson, only someone on your tail.
     aceRole: 'hunter',

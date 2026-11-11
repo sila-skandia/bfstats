@@ -128,9 +128,12 @@ export function aceAgainst(arena, mine) {
  * planes), and straight into a lesson (`lesson`, with a Dip, Flip or Ninja to
  * practise as `move`) or a ring course (`course`).
  */
-export function arenaUrl(root, { map, mod = null, side = 'Allied', lesson = null, move = null, course = null, base = globalThis.location?.href }) {
-  const url = new URL(provingGroundUrl(root, { map, team: teamOf(side), soldiers: 1, mod, spawn: 'FiringLine', base }));
+export function arenaUrl(root, { map, mod = null, side = 'Allied', lesson = null, move = null, course = null, wingmen = 0,
+                                 base = globalThis.location?.href }) {
+  const url = new URL(provingGroundUrl(root, { map, team: teamOf(side), soldiers: 1 + wingmen, mod, spawn: 'FiringLine', base }));
   url.searchParams.set('arena', 'dogfight');
+  // The pair flown: your side's bots, a wingman (and your gunner).
+  if (wingmen) url.searchParams.set('wingmen', String(wingmen));
   if (lesson) url.searchParams.set('dogfight', lesson);
   if (lesson && move) url.searchParams.set('move', move);
   if (course) url.searchParams.set('course', course);

@@ -1220,6 +1220,58 @@ Combat through WWII's tables.
   helicopters stay out, DC's own battle stands for a pair, a one-template
   pad).
 
+## Fly the pair (2026-11-11)
+
+*The pair: your wingman* is flown live now, not only watched. FLY IT puts
+you in the plane you picked, with a computer-flown wingman off your wing on
+your own type and the hunter coming in behind, as in the demos.
+
+- **Who flies what.** The Range's construct, opened with `?wingmen=N`,
+  spawns N bots on your side after the enemy's one (`map.html`
+  `provingTeams`) and parks a row of your side's aircraft again behind the
+  airfield for each (`proving-ground.js` `wingAir`). The live fight seats
+  the first in a plane of your type and, when your plane has a gunner's
+  seat, the second in your own back seat (`page.seatWing`). The live runner
+  (`dogfight-live.js`) is the one-on-one fight extended, not a fork: the
+  hunter is the same bot flown by the same `flyAce`, now going after the
+  nearer of you and your wingman (`huntTarget`, the demos' rule); the
+  wingman's bot flies the `wingman` plan handed the fight (`stepWing`,
+  `dogfight-live-wing.js`), on your type's fitted airframe and roll hand;
+  your gunner's bot lays its own gun on the hunter's lead with the seat's
+  own aim rig (`aimAlong`) and fires inside 400 m when it is on. A lesson
+  without `flyWith` is flown exactly as before.
+- **Who can be shot down.** The range prices no bot's round, so the school
+  counts them: the hunter's on your wingman, your wingman's and your
+  gunner's on the hunter; a plane that has taken a kill's worth (22) is
+  brought down (`page.downBot`). Your own rounds are the world's, as ever.
+- **On screen.** Your wingman's mark in the view (green, with their range
+  and what they are doing: ON YOUR WING, BREAKING, FIRING, COMING BACK,
+  DOWN, an arrow at the edge when they are off it) and their row in the
+  coach's box with their own words; the coach says when they break onto
+  the hunter, and when the hunter has gone after them instead of you. The
+  end card (the hunter down, you shot down, or the lesson's minute over)
+  says who shot whom, whether your wingman saved you, and when.
+- **Measured** (`test_dogfight_live_wing.py`, the fight the live runner
+  flies, from the nine starts): flying straight and level, alone you are
+  shot down from all nine on Kursk (the Bf 109 against the Yak 9), Kursk
+  with the Stuka picked and FHSW's El Alamein; with your wingman, from
+  none. Turning hard you come through all nine either way. The Stuka's
+  gunner fires 540 to 1,570 rounds over the nine and hits 31 to 166 times,
+  bringing the hunter down in 6 to 8 of nine with a wingman. Nobody flies
+  into the ground: a wingman keeping station on a leader turning hard
+  stalled into it, so the live wingman flies careful (`mem.careful`): their
+  station stays 150 m up with a 10-degree climb back at most, and their
+  pull-out (`guard`) climbs less when slow and starts higher when rolled
+  past the vertical. The demos' pilots fly as before (tried on all of them,
+  it moved twenty lesson counts).
+- **Checked in the page**, headless on this checkout's code over the live
+  assets (vanilla Kursk with the Bf 109 and with the Stuka, FHSW El
+  Alamein): the wingman seated in your type, breaking onto the hunter at
+  the start, the hunter turning on them, the end card at the minute; the
+  Stuka's gunner laid within 1 to 3 degrees of the lead and firing.
+- **The Thach weave** stays watch-only: flown, your weave partner would need
+  you to turn in on cue, which the live fight cannot ask of a player.
+
 ## Reviewed against the real tactics (2026-11-07)
 
 The owner watched the flat scissors and saw "after the contact both planes

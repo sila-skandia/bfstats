@@ -142,7 +142,7 @@ function footprint(node) {
  * aircraft park at the far end. A ship has no water to float in and is left
  * out.
  */
-export function provingGroundLayout(vehicles, { team = 1, rows = PG.ROWS } = {}) {
+export function provingGroundLayout(vehicles, { team = 1, rows = PG.ROWS, wingAir = 0 } = {}) {
   const enemy = team === 1 ? 2 : 1;
   const land = vehicles.filter(v => v.cls === 'land').slice(0, PG.ROW_MAX);
   const air = vehicles.filter(v => v.cls === 'air').slice(0, PG.ROW_MAX);
@@ -160,6 +160,10 @@ export function provingGroundLayout(vehicles, { team = 1, rows = PG.ROWS } = {})
   // line walks straight to it.
   row(land, PG.LINE_Z - 18, 'garage', team, 0, 5, PG.LINE_X - 40);
   row(air, PG.LINE_Z + 10, 'airfield', team, 0, 8, PG.LINE_X + 300);
+  // The dogfight school's wingmen (`wingAir`, the pair lesson flown): a row
+  // of the player's side's aircraft again behind the airfield for each, so a
+  // wingman has a plane of the player's own type to take.
+  for (let k = 0; k < wingAir; k++) row(air, PG.LINE_Z + 40 + 30 * k, 'wingAir', team, 0, 8, PG.LINE_X + 300);
   for (const range of rows) row(land, PG.LINE_Z - range, 'target', enemy, 180, 10, PG.LINE_X);
   // The enemy's aircraft at the far end, nose toward the firing line: an
   // enemy pilot's plane to shoot down (a bot spawning there takes one,
@@ -501,7 +505,7 @@ export async function loadVehicles(templates, load) {
  */
 export function provingGroundEntry(source, { mapsBase, bust = () => '', team = 1,
                                              fetchJson = url => fetch(url).then(r => r.json()),
-                                             catalogue = async () => [], only = null } = {}) {
+                                             catalogue = async () => [], only = null, wingAir = 0 } = {}) {
   let battle = null;
   let report = null;
   return {
@@ -533,7 +537,7 @@ export function provingGroundEntry(source, { mapsBase, bust = () => '', team = 1
           try { return await load(template); } finally { progress(++done, templates.length); }
         };
         const { models, list } = await loadVehicles(templates, counted);
-        const placed = provingGroundLayout(list, { team });
+        const placed = provingGroundLayout(list, { team, wingAir });
         const full = provingGroundReport(battle, placed, { team });
         const minimap = provingGroundMinimap(placed, { team });
         for (const target of new Set([report, extras])) {

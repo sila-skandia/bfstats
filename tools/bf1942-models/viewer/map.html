@@ -1923,6 +1923,10 @@ const soldierHud = createSoldierHud(bag(
 const LOCAL_PLAYER = 'local';
 /** Bot parameters from the URL (skirmish.js passes ?botCount= and ?botSkill=). */
 const BOT_COUNT = Math.max(0, Math.min(32, Number(params.get('botCount')) || 0));
+/** The dogfight school's wingmen on the proving ground (`?wingmen=`): bots on
+ *  the player's side after the enemy's one, flown by the school (the pair
+ *  lesson flown, features/dogfight-school). */
+const WINGMEN = Math.max(0, Math.min(3, Number(params.get('wingmen')) || 0));
 const BOT_SKILL = Math.max(0.10, Math.min(1.0, Number(params.get('botSkill')) || 0.75));
 /**
  * A campaign mission (play/campaign.js `launchUrl`, features/single-player-
@@ -2545,6 +2549,14 @@ function botNamerForLevel() {
  * Spawn bots on both sides, the way the engine's bot manager tops up each
  * team. Called once per level load, after the world is built.
  */
+/** The proving ground's bots by side: the enemy's (down range, the school's
+ *  ace first), then `WINGMEN` on the player's side. */
+function provingTeams() {
+  const enemy = level.extras?.provingGround?.team === 2 ? 1 : 2;
+  const mine = enemy === 1 ? 2 : 1;
+  if (!WINGMEN) return [enemy];
+  return [enemy, ...Array(WINGMEN).fill(mine), ...Array(Math.max(0, BOT_COUNT - 1 - WINGMEN)).fill(enemy)].slice(0, Math.max(1, BOT_COUNT));
+}
 function spawnBotsForLevel() {
   botBodies.disposeBotVisuals();
   referee.clock = 0;
@@ -2565,7 +2577,7 @@ function spawnBotsForLevel() {
     // On the proving ground every bot is down range, the construct's other
     // side (the spawn screen's tab is not settled when the level loads).
     // A campaign's difficulty deals the enemy its share (`?enemyBots=`).
-    teams: PROVING ? [level.extras?.provingGround?.team === 2 ? 1 : 2]
+    teams: PROVING ? provingTeams()
       : ENEMY_BOTS == null ? [friendly, enemy] : botTeams(BOT_COUNT, ENEMY_BOTS, friendly, enemy),
     // `BotSpawner::findKitDiff` is 1 for every allowed kit in practice, so
     // the kit is uniform among the side's kits; its items' AI weapon
@@ -3320,6 +3332,40 @@ const provingPage = PROVING ? createProvingGroundPage({
   get aircraft() { return localPlayer.aircraft; },
   localId: LOCAL_PLAYER,
   aceBot: () => referee.bots[0] ?? null,
+  // The school's wingmen: the player's side's bots (`?wingmen=`).
+  wingBots: () => referee.bots.filter(b => b.team !== (level.extras?.provingGround?.team === 2 ? 1 : 2)),
+  // A wingman into a seat: `pilot` of a free aircraft of `template` (one of
+  // the player's side's, a `wingAir` row's first), or `gunner`, a free
+  // gunner's seat of the hull `root` (the player's own two-seater). True
+  // when seated.
+  seatWing: (bot, { seat = 'pilot', template = null, root = null } = {}) => {
+    if (!level.world || !bot || bot.vehicle) return false;
+    const armor = level.world.armorOf?.(bot.playerId);
+    if (!armor || armor.destroyed) return false;
+    const nodes = new Map((level.spawnersRoot?.children ?? []).map(n => [n.uuid, n]));
+    const tmpl = n => String(n?.name ?? '').replace(/_\d+$/, '').toLowerCase();
+    const free = botUnits.candidates().filter(c => !c.occupiedBy);
+    let cand = null;
+    if (seat === 'gunner') {
+      cand = free.find(c => !c.isRoot && root && c.vehicleId === root.uuid) ?? null;
+    } else {
+      const role = n => n?.userData?.provingGround;
+      const ok = c => c.isRoot && ['wingAir', 'airfield'].includes(role(nodes.get(c.vehicleId)));
+      const want = String(template ?? '').toLowerCase();
+      const list = free.filter(ok).sort((a, b) => (role(nodes.get(a.vehicleId)) === 'wingAir' ? 0 : 1) - (role(nodes.get(b.vehicleId)) === 'wingAir' ? 0 : 1));
+      cand = list.find(c => tmpl(nodes.get(c.vehicleId)) === want) ?? list[0] ?? null;
+    }
+    return !!cand && referee.enterVehicle(bot, cand);
+  },
+  wingmen: WINGMEN,
+  // A bot's aircraft shot down by the school's count (the range prices no
+  // bot's round): its hull given a kill's worth of damage.
+  downBot: bot => {
+    const hull = bot && level.world?.occupiedDamageable?.(bot.playerId);
+    if (!hull) return false;
+    hull.damage(1e6, null, { weapon: null, splash: false });
+    return true;
+  },
   deployNow: () => deployAt('FiringLine'),
   reopenWith: extra => {
     const next = new URLSearchParams(location.search);
@@ -3342,9 +3388,11 @@ const provingPage = PROVING ? createProvingGroundPage({
     if (!planes.size) return 0;
     const free = botUnits.candidates().filter(c => !c.occupiedBy && c.isRoot && planes.has(c.vehicleId));
     let seated = 0;
+    const enemy = level.extras?.provingGround?.team === 2 ? 1 : 2;
     for (const bot of referee.bots) {
       if (!free.length) break;
-      if (bot.vehicle) continue;
+      // The player's side's bots are the school's wingmen (`seatWing`).
+      if (bot.vehicle || bot.team !== enemy) continue;
       const armor = level.world.armorOf?.(bot.playerId);
       if (!armor || armor.destroyed) continue;
       const p = bot.getPosition?.();
@@ -3541,6 +3589,8 @@ if (!manifest.length) {
       mapsBase: MAPS_BASE, bust, team: Number(params.get('team')) === 2 ? 2 : 1,
       // The dogfight arena (`?arena=dogfight`): the battle's aircraft alone.
       only: params.get('arena') === 'dogfight' ? 'air' : null,
+      // The school's wingmen (`?wingmen=`): a plane of the player's type each.
+      wingAir: WINGMEN,
       // Every models tree the page draws from, the mod's first: what the
       // battle fields beyond its pads (a carrier's aircraft).
       catalogue: () => Promise.all(poseBases(MODELS_BASE).map(base => fetch(`${base}/models.json${bust()}`)

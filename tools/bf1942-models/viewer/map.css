@@ -2681,6 +2681,28 @@ a { color: var(--accent); }
   transform: rotate(var(--a));
 }
 .dfl-mark.is-edge span { left: -20px; top: 14px; }
+/* The pair flown: your wingman's mark (green, their state beside it) and
+   their caption row under the coach. */
+.dfl-mark.is-wing i { border-color: var(--dfs-you); }
+.dfl-mark.is-wing span { color: var(--dfs-you); }
+.dfl-mark.is-wing.is-edge i { background: var(--dfs-you); }
+/* Both behind you, the two arrows meet at the bottom edge: the wingman's
+   words sit above theirs. */
+.dfl-mark.is-wing.is-edge span { top: -26px; }
+.dfl-wingrow {
+  display: flex; gap: 10px; align-items: baseline; justify-content: center; flex-wrap: wrap;
+  margin-top: 6px; padding: 5px 10px;
+  background: rgba(255, 255, 255, 0.03); border-left: 2px solid var(--dfs-you);
+  font-size: 13px; line-height: 1.35; text-align: left;
+}
+.dfl-wingrow[hidden] { display: none; }
+.dfl-wingrow b { flex: none; font: 500 10px/1.4 var(--mm-font-mono); letter-spacing: 0.14em; color: var(--dfs-you); }
+.dfl-wingrow i { flex: none; font: 500 10px/1.4 var(--mm-font-mono); letter-spacing: 0.1em; text-transform: uppercase; font-style: normal; color: var(--mm-ink-muted); }
+.dfl-wingrow[data-state="cover"] i, .dfl-wingrow[data-state="shoot"] i { color: var(--mm-load-busy); }
+.dfl-wingrow[data-state="down"] { border-left-color: var(--mm-danger); }
+.dfl-wingrow[data-state="down"] i { color: var(--mm-danger); }
+.dfl-wingrow span { color: var(--mm-ink-soft); min-width: 0; }
+.dfl-end { z-index: 3; }
 .dfl-view {
   position: absolute;
   right: 16px; bottom: 190px;
