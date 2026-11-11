@@ -3310,6 +3310,567 @@ to. Both are open; the second is a viewer change for the other agent.
     seat or vehicle code moves, and want a rebuild with DICE's whenever it
     does.
 
+## 20. Phase E, 2026-11-11: the mod levels again, under the garrison
+
+Section 18.6's census of the 47 botless mod levels was run under the SAI
+on the viewer before the seat fixes. Under the garrison (19.2) a level can
+change class outright: DC_Basrah_Nights had no fight then and 0.35 enemy
+kills a bot-minute in 19.8. So the census was run again, then the matrix
+for the levels it found alive, best first. Nothing was accepted or
+published here.
+
+### 20.1 The census under the garrison
+
+Every level of 18.6's table, with vehicles, under the garrison, kits
+dealt (every level has a row in its tree's loadouts), each layer
+regenerated with generator 5. One match a level, 300 s, 8 a side, seed 1,
+with the generated layer; then the same match with no layer for every
+level the lint does not refuse (`botbatch census --no-layer`, new: the
+level patched with `BOT_LAYERS_OFF`, no generation and no lint). Census
+rows now carry the kill rate, the mounted share and the doctrine.
+"Alive" is the batch's rule (each side kills, both lose tickets, no bot
+error). Kills are enemy kills a bot-minute.
+
+| Mod | Level | Layer: alive | kills | captures | No layer: alive | kills | captures | Lint |
+|---|---|---|---|---|---|---|---|---|
+| DC | dc_al_khafji_docks | no | 0.000 | 1 | - | - | - | a side sealed in |
+| DC | dc_basrah_nights | yes | 0.772 | 2 | no | 0.025 | 0 | clean |
+| DC | dc_battle_of_73_easting | yes | 0.076 | 0 | - | - | - | a side sealed in |
+| DC | dc_lostvillage | yes | 0.274 | 2 | no | 0.000 | 0 | clean |
+| DC | dc_medina_ridge | no | 0.000 | 0 | - | - | - | no flag a soldier can stand in; a side that can reach no flag |
+| DC | dc_oil_fields | no | 0.000 | 0 | - | - | - | no flag a soldier can stand in; a side that can reach no flag; a side sealed in |
+| DC | dc_operation_bragg | no | 0.000 | 0 | - | - | - | no flag a soldier can stand in; a side that can reach no flag; a side sealed in |
+| DC | dc_sea_rigs | no | 0.000 | 0 | - | - | - | no flag a soldier can stand in; a side that can reach no flag; a side with no spawn at the start; stacked floors (classed out) |
+| DC | dc_urban_siege | no | 0.000 | 0 | no | 0.000 | 0 | clean |
+| DC | dc_weapon_bunkers | no | 0.000 | 0 | - | - | - | a side with no spawn at the start |
+| DC | inshallah_valley | yes | 0.368 | 2 | yes | 0.101 | 4 | clean |
+| FH | omaha_charlie-sector-1944 | no | 0.000 | 0 | - | - | - | a side with no spawn at the start |
+| FH | pegasus | yes | 0.114 | 1 | no | 0.000 | 2 | clean |
+| FH | seelow-heights-1945 | no | 0.025 | 0 | - | - | - | a side sealed in |
+| FHSW | battle_for_ortona-1943 | yes | 0.101 | 1 | no | 0.000 | 0 | clean |
+| FHSW | battle_of_edson_s_ridge | no | 0.000 | 0 | yes | 1.358 | 1 | clean |
+| FHSW | battle_of_pavlov-1942 | yes | 0.453 | 0 | - | - | - | no flag a soldier can stand in; a side that can reach no flag; stacked floors (classed out) |
+| FHSW | berlin-1945-outskirts | yes | 0.077 | 0 | - | - | - | a side that can reach no flag |
+| FHSW | berlin-1945-streets | no | 0.000 | 0 | no | 0.000 | 0 | clean |
+| FHSW | bizerte-1943 | no | 0.013 | 0 | no | 0.000 | 0 | clean |
+| FHSW | monte_cassino-1944 | no | 0.013 | 0 | no | 0.000 | 1 | clean |
+| FHSW | pegasus | yes | 0.395 | 0 | yes | 0.153 | 0 | clean |
+| FHSW | stalingrad_redsquare | yes | 0.166 | 0 | no | 0.000 | 0 | clean |
+| FHSW | stalingrad_urban_area-1942 | no | 0.000 | 0 | no | 0.000 | 0 | clean |
+| FHSW | tunis-1943 | yes | 0.025 | 1 | no | 0.013 | 1 | clean |
+| FHSW | warsaw_uprising | no | 0.000 | 0 | no | 0.000 | 0 | clean |
+| BF1918 | baghdad | no | 0.000 | 0 | - | - | - | a side that can reach no flag |
+| BF1918 | battle_of_cambrai | no | 0.000 | 0 | no | 0.000 | 0 | clean |
+| BF1918 | battle_of_the_vosges | no | 0.000 | 0 | - | - | - | a side with no spawn at the start |
+| BF1918 | cantigny | yes | 0.141 | 0 | - | - | - | a side sealed in |
+| BF1918 | carriere | no | 0.000 | 0 | - | - | - | stacked floors (classed out) |
+| BF1918 | chemin_des_dames | yes | 0.052 | 0 | no | 0.013 | 1 | clean |
+| BF1918 | dawnville | yes | 0.038 | 1 | no | 0.000 | 0 | clean |
+| BF1918 | deulemont | no | 0.000 | 0 | - | - | - | a side sealed in |
+| BF1918 | fht_meuse_argonne_offensive | no | 0.013 | 0 | no | 0.013 | 0 | clean |
+| BF1918 | hindenburg_line | yes | 0.114 | 1 | no | 0.013 | 0 | clean |
+| BF1918 | liberation_of_roeselare | no | 0.013 | 1 | - | - | - | a side sealed in |
+| BF1918 | lutte_de_honneur | yes | 0.038 | 0 | no | 0.000 | 0 | clean |
+| BF1918 | mauerfall | yes | 0.128 | 0 | no | 0.000 | 0 | clean |
+| BF1918 | operation_gericht | no | 0.013 | 0 | yes | 0.025 | 0 | clean |
+| BF1918 | raid_on_fort_pontisse | yes | 0.025 | 2 | - | - | - | a side sealed in; stacked floors (classed out) |
+| BF1918 | roye | no | 0.051 | 1 | yes | 0.101 | 2 | clean |
+| BF1918 | saint_quentin_canal | no | 0.000 | 0 | yes | 0.025 | 0 | clean |
+| BF1918 | sanaga_river | no | 0.013 | 1 | no | 0.000 | 0 | clean |
+| BF1918 | scimitar_hill | no | 0.038 | 3 | no | 0.025 | 2 | clean |
+| BF1918 | somme_gasattack | no | 0.000 | 0 | - | - | - | a side with no spawn at the start |
+| BF1918 | tabuaeran | no | 0.000 | 0 | - | - | - | a side sealed in |
+
+**With vehicles, 18 of 47 are alive with the layer under the garrison;
+under the SAI it was 6.** Of the 27 the lint passes, 13 are alive with
+the layer and 6 without. Five levels the lint refuses fight all the same
+in this one seed (DC_Battle_of_73_Easting, FHSW's Battle of Pavlov and
+Berlin outskirts, BF1918's Cantigny and Raid on Fort Pontisse): a kill
+on each side in one seed says nothing yet about captures, which is what
+the lint's refusals (a side sealed in, a side that reaches no flag, a
+stacked floor) are about. They were not run further.
+
+Four levels fight with no layer and not with one: FHSW's Edson's Ridge
+(1.36 enemy kills a bot-minute with no layer, none with the layer: the
+highest rate in the table) and three BF1918 levels at a low rate
+(Operation Gericht, Roye, Saint Quentin Canal, 0.025 to 0.10). One seed
+each; not diagnosed.
+
+### 20.2 The matrix for the levels alive in the census (superseded by 20.9)
+
+Run before the hold-fire and the hull steering merged and on the bars of
+section 19; every level here was judged again in 20.9.
+
+`botbatch level --vehicles`, 10 seeds, 600 s, 8 and 16 a side, the
+garrison, generator 5, the layer kept in `bot-layers/<mod>/<level>/` with
+its verdict. Best first by the census's kills and captures. DC_Basrah_Nights
+and Inshallah_Valley were judged this way in 19.7 and 19.8 and were not run
+again. Each cell: enemy kills a bot-minute with the layer (no layer);
+captures a match with the layer (no layer); checks failed of 24; Axis to
+Allies wins.
+
+| Mod | Level | 8 a side | 16 a side | Outcome |
+|---|---|---|---|---|
+| DC | dc_lostvillage | 0.205 (0.000); 5 (0); fails 4; 10:0 | 0.204 (0.003); 3 (0); fails 5; 10:0 | better-than-nothing against desertcombat |
+| FHSW | pegasus | 0.111 (0.050); 0 (0); fails 15; 9:0 | 0.177 (0.014); 0 (0); fails 10; 9:1 | no-better-than-nothing against dice |
+| FHSW | stalingrad_redsquare | 0.174 (0.000); 2 (0); fails 10; 10:0 | 0.114 (0.149); 2 (2); fails 7; 10:0 | no-fight against dice |
+| FH | pegasus | 0.115 (0.016); 2 (2); fails 7; 0:10 | 0.099 (0.019); 1.5 (2); fails 8; 4:6 | no-better-than-nothing against dice |
+| BF1918 | mauerfall | 0.095 (0.000); 0 (0); fails 10; 6:4 | 0.202 (0.002); 0 (0); fails 8; 4:6 | no-fight against dice |
+| BF1918 | hindenburg_line | 0.108 (0.006); 1 (0); fails 9; 10:0 | 0.102 (0.008); 1 (0); fails 9; 10:0 | better-than-nothing against dice |
+| FHSW | battle_for_ortona-1943 | 0.013 (0.000); 0 (0); fails 9; 10:0 | 0.014 (0.000); 1 (0); fails 8; 10:0 | no-fight against dice |
+| FHSW | tunis-1943 | 0.066 (0.006); 3 (1); fails 5; 5:5 | 0.110 (0.003); 3 (1); fails 5; 7:3 | better-than-nothing against dice |
+| BF1918 | chemin_des_dames | 0.019 (0.006); 1 (1); fails 17; 6:3 | 0.006 (0.000); 1 (1); fails 16; 10:0 | no-fight against dice |
+| BF1918 | dawnville | 0.028 (0.006); 1 (0); fails 12; 10:0 | 0.083 (0.047); 1 (0); fails 5; 7:3 | no-fight against dice |
+| BF1918 | lutte_de_honneur | 0.016 (0.000); 0 (0); fails 16; 5:3 | 0.038 (0.002); 0.5 (0); fails 14; 5:4 | no-fight against dice |
+
+DICE's medians under the garrison are 0.32 and 0.46 enemy kills a
+bot-minute (19.3). No level comes near: the best rate here is 0.20.
+
+**Three are better-than-nothing**, all by the rule that a fight only with
+the layer counts once it captures at least as much (`fightOnlyWithLayer`,
+19.8): with no layer none of the three has a side that kills in every
+seed.
+
+* **DC_LostVillage** (against DC's own bar): fails redeploys, flag
+  coverage (0.4 and 0.6 against DC's 1.0), the share of the worse side's
+  deaths no enemy caused (0.64 and 0.73) and, at 16 a side, self deaths
+  0.087 (0.047). Against DICE's it fails 7 and 6, among them enemy kills
+  0.204 (0.375) at 16 a side. The Axis wins all twenty matches, with the
+  layer and without.
+* **FHSW Tunis** (DICE's bar, FHSW having none): fails enemy kills (0.066
+  and 0.110), route failures (2.11 and 6.62), the worse side's non-enemy
+  death share (0.58), and units never used (0.70 and 0.57). Balanced: 5:5
+  and 7:3. Its SAI verdict of 18.7 (no-fight) is replaced.
+* **BF1918 Hindenburg_Line** (DICE's bar): fails 9 at each size, and the
+  figures are poor: 95 to 97 % of the worse side's deaths are not enemy
+  kills (redeploys run at 0.99 and 0.55 a bot-minute against 0.11 and 0.10
+  enemy kills), stuck time is 13.3 and 8.4 s a bot-minute, the Axis wins all
+  twenty. It is better than nothing only in the sense the rule gives.
+
+Each was reported to the coordinator when it finished. FHSW's Pegasus,
+also carrying an SAI verdict, is now no-better-than-nothing: it fights
+(0.11 and 0.18) and its median match has no capture.
+
+The rest: FH's Pegasus fights (0.10 to 0.12) with hulls stuck 21 to 25 s
+of every driving minute and route failures of 24.8 a bot-minute at 8 a
+side; Mauerfall, Ortona, Red Square, Chemin des Dames, Dawnville and
+Lutte d'Honneur have a side with no kill in some seed: no-fight. A kill on
+each side in the census's one seed was a poor predictor: 6 of the 11 run
+here have no fight over ten seeds.
+
+### 20.3 The bars of BF1918 and FHSW (BF1918's rebuilt in 20.8)
+
+**BF1918** (`vehicles-bf1918.json`): five of BF1918's 111 published botted
+levels, all 1024 m with 28 to 58 units, fetched to the scratch tree:
+Battle_of_Cer, Battle_of_Mons, Krakau, Argonnerwald, Belleau_Wood. Two are
+dropped for no fight (Argonnerwald, a side with no kill in two seeds at 8
+a side; Krakau, the same and a side that loses no ticket). Kept: Cer, Mons,
+Belleau Wood, so BF1918's bar judges. Per level, enemy kills a bot-minute
+8 / 16 a side: Cer 0.141 / 0.280, Mons 0.236 / 0.265, Belleau Wood 0.229 /
+0.487 (Krakau 0.098, Argonnerwald 0.057 and 0.135).
+
+| Garrison, with vehicles, p10 / p50 / p90 | DICE 8 | BF1918 8 | DICE 16 | BF1918 16 |
+|---|---|---|---|---|
+| Enemy kills a bot-minute | 0.18 / 0.32 / 0.64 | 0.07 / 0.21 / 0.39 | 0.38 / 0.46 / 0.74 | 0.20 / 0.29 / 0.53 |
+| Captures a match | 1 / 2.5 / 7 | 0 / 1 / 7 | 1 / 2 / 5.1 | 0 / 2 / 6 |
+| Route failures a bot-minute | p90 0.50 | p90 4.70 | p90 1.62 | p90 4.78 |
+
+**Read it as a low bar**: BF1918's own levels fight at two thirds of
+DICE's median and fail routes nine times as often at the p90. On it the
+five BF1918 levels of 20.2 come out as they did on DICE's: Hindenburg_Line
+better-than-nothing (failing 8 and 10 checks: stuck 13.3 and 8.4 s a
+bot-minute against 1.54 and 1.98, redeploys 0.99 and 0.55 against 0.22
+and 0.20, enemy kills 0.102 against 0.203 at 16 a side, among them), the
+other four no-fight.
+
+**FHSW**: five botted 1024 m levels (Falaise Pocket, Kharkov Winter,
+Operation Nordwind, The Storm, Counterattack, 50 to 200 vehicles each)
+were fetched for its bar. A match there took about nine minutes on the
+shared machine; the bar was paused at 10 of 100 matches so the census
+could have the cores, and then dropped when the rollout (20.7) made the
+reduced matrix against DICE's bar the working measure. FHSW has no bar.
+
+The FH bar of 19.10 holds no level, so FH's levels are on DICE's.
+
+### 20.4 Every judged level under the `fewerFailed` rule
+
+After the coordinator added the third way to be better than nothing (a
+layer whose matches have a fight and fail fewer of the bar's checks than
+the level with no layer, `fewerFailed`), every level of sections 19 and
+20 was judged again from its existing rows (`level --no-generate` on the
+same run folders, no match replayed), apart from Inshallah_Valley and
+DC_Basrah_Nights, which the coordinator had re-judged (both now
+better-than-nothing). No outcome changed: DC_LostVillage, FHSW Tunis,
+BF1918 Hindenburg_Line, The_Maze and hop stay better-than-nothing;
+FHSW and FH Pegasus, shigaisen_B and _o_jka__big stay
+no-better-than-nothing; the rest stay no-fight. The acceptances recorded
+on The_Maze, DC_LostVillage and Tunis carried.
+
+### 20.5 The open-ground levels and FHSWEurope, under the garrison
+
+The candidates classed "open ground" in `candidates.csv` (section 18.6's
+census covered DC's, FH's and BF1918's; under the SAI) and FHSWEurope's
+botless levels: 38 of FHSW, 7 community, 3 vanilla, one of Secret
+Weapons, and FHSWEurope's Aberdeen (its other botless levels are classed
+out: naval, air, race or ObjectiveMode only). All fetched to the scratch
+tree with `getlevel2.py`. Strasbourg could not be run: its level archive is
+not on this machine, so the bake cannot apply a layer to it. Census as in
+20.1.
+
+| Mod | Level | Layer: alive | kills | captures | No layer: alive | kills | captures | Lint |
+|---|---|---|---|---|---|---|---|---|
+| community/vanilla | beinbrekkbakken | yes | 0.038 | 1 | yes | 0.091 | 2 | clean |
+| community/vanilla | koh | yes | 0.287 | 3 | no | 0.102 | 4 | clean |
+| community/vanilla | sniper_challenge | no | 0.000 | 0 | - | - | - | a side sealed in |
+| community/vanilla | the_airport | no | 0.000 | 0 | - | - | - | a side sealed in |
+| community/vanilla | tanquilizer | no | 0.000 | 0 | - | - | - | no flag a soldier can stand in; a side that can reach no flag; a side sealed in |
+| community/vanilla | the_bridge | yes | 0.089 | 1 | no | 0.013 | 1 | clean |
+| community/vanilla | invasion_of_the_philippines | no | 0.000 | 0 | - | - | - | a side with no spawn at the start |
+| community/vanilla | liberation_of_caen | yes | 0.063 | 2 | no | 0.025 | 1 | clean |
+| community/vanilla | aberdeen | no | 0.000 | 0 | - | - | - | a side sealed in |
+| XPack2 | raid_on_agheila | no | 0.000 | 0 | - | - | - | a side sealed in |
+| FHSWEurope | aberdeen | no | 0.000 | 0 | - | - | - | a side sealed in |
+| FHSW | battle_at_river_don | no | 0.000 | 0 | - | - | - | a side that can reach no flag; a side sealed in |
+| FHSW | battle_of_angaur | no | 0.000 | 0 | - | - | - | a side with no spawn at the start |
+| FHSW | battle_of_iwo_jima | no | 0.000 | 0 | - | - | - | a side with no spawn at the start |
+| FHSW | battle_over_hokkaido-1945 | no | 0.000 | 0 | - | - | - | no flag a soldier can stand in; a side that can reach no flag; a side sealed in |
+| FHSW | eagles_nest-1946 | yes | 0.050 | 1 | no | 0.000 | 1 | clean |
+| FHSW | earned_in_blood | yes | 0.166 | 1 | no | 0.000 | 0 | clean |
+| FHSW | fall_of_berlin-1945 | no | 0.000 | 0 | no | 0.000 | 1 | clean |
+| FHSW | fall_of_singapore | no | 0.013 | 0 | - | - | - | a side sealed in |
+| FHSW | fht_battle_of_kohima-1944 | no | 0.000 | 0 | no | 0.000 | 0 | clean |
+| FHSW | fht_battle_of_mareth_line-1943 | no | 0.013 | 0 | - | - | - | a side sealed in |
+| FHSW | fht_dinant-1940 | no | 0.000 | 0 | - | - | - | a side sealed in |
+| FHSW | fht_hong_kong-1941 | no | 0.000 | 0 | - | - | - | a side sealed in |
+| FHSW | fht_operation_dracula-1945 | no | 0.000 | 0 | - | - | - | a side sealed in |
+| FHSW | fht_operation_longcloth-1943 | no | 0.000 | 0 | - | - | - | a side sealed in |
+| FHSW | fht_pasir_panjang-1942 | no | 0.000 | 0 | no | 0.000 | 0 | clean |
+| FHSW | fht_siege_of_zeeland-1940 | no | 0.000 | 0 | - | - | - | a side sealed in |
+| FHSW | gazaps-1945 | no | 0.000 | 0 | - | - | - | a side sealed in |
+| FHSW | hungary_forest-1945 | yes | 0.140 | 1 | yes | 0.114 | 2 | clean |
+| FHSW | in_the_hell_of_bocage-1944 | no | 0.000 | 0 | - | - | - | a side sealed in |
+| FHSW | iron_monster | yes | 0.101 | 3 | yes | 0.051 | 2 | clean |
+| FHSW | juno_beach | no | 0.000 | 0 | - | - | - | a side with no spawn at the start |
+| FHSW | kakazu_ridge-1945 | no | 0.000 | 0 | - | - | - | no flag a soldier can stand in; a side that can reach no flag; a side sealed in; stacked floors (classed out) |
+| FHSW | manchuria-1945 | no | 0.013 | 0 | - | - | - | a side sealed in |
+| FHSW | moscow_outskirts-1941 | yes | 0.234 | 1 | yes | 0.051 | 2 | clean |
+| FHSW | omaha_charlie-sector-1944 | no | 0.000 | 0 | - | - | - | a side with no spawn at the start |
+| FHSW | pakfront | no | 0.000 | 0 | - | - | - | a side sealed in; stacked floors (classed out) |
+| FHSW | ramelle_neuville-1944 | no | 0.000 | 0 | no | 0.000 | 0 | clean |
+| FHSW | raseiniai | yes | 0.051 | 1 | - | - | - | a side sealed in |
+| FHSW | salerno-1943 | no | 0.000 | 3 | yes | 0.025 | 6 | clean |
+| FHSW | seelow-heights-1945 | no | 0.025 | 0 | - | - | - | a side sealed in |
+| FHSW | siegfried_line-1945 | no | 0.051 | 2 | - | - | - | a side sealed in |
+| FHSW | the_great_pursuit | yes | 0.272 | 5 | yes | 0.063 | 6 | clean |
+| FHSW | transcarpathia-1944 | no | 0.013 | 0 | - | - | - | a side sealed in |
+| FHSW | ural_mountains-1947 | no | 0.000 | 0 | - | - | - | a side sealed in |
+| FHSW | way_to_paris-1946 | yes | 0.063 | 0 | - | - | - | a side sealed in |
+| FHSW | westminster-1942 | yes | 0.025 | 1 | no | 0.000 | 0 | clean |
+| FHSW | westwall-1945 | no | 0.000 | 0 | - | - | - | a side sealed in |
+| FHSW | aberdeen | no | 0.000 | 0 | - | - | - | a side sealed in |
+
+Of 49 levels the lint refuses 33, nearly all for a side sealed in or a
+side with no spawn; why so many open-ground levels read as sealed in was
+not separated (the wide ones paint with the page's painter, 18.4). Of the 16 it passes, 11 are
+alive with the layer in the one census seed and 6 without. Two refused
+levels fight all the same (FHSW Raseiniai, Way to Paris), not run.
+
+Three of them were run through the ten-seed matrix (as 20.2) before the
+walk test fault (20.6) and the bot fixes stopped that work: KoH
+no-better-than-nothing (it fights with no layer too: 0.17 and 0.26 enemy
+kills a bot-minute against 0.24 and 0.22 with the layer), Liberation of
+Caen no-fight, The Bridge no-fight. The Great Pursuit was stopped part
+way when it turned out to be capped. All four were judged again in 20.9.
+
+### 20.6 The 51 capped levels, censused again
+
+The coordinator found that the walk test had run out of room on 51 of the
+96 layers censused in 20.1 and 20.5 (`walkMap.capped: true` in
+`generated.json`) and fixed it (1ad35b5a6); the fault and the fix are
+section 21. What it means here: **the census rows of 20.1 and 20.5 are
+wrong for those 51 levels**, among them every "a side sealed in" row on
+open ground and fourteen that read "clean"; the classes of section 16.2
+and the census of section 19 are wrong the same way for any capped level.
+Those sections are not rewritten.
+
+**The 51 again** (generator 5 with the fix, one match of 300 s, 8 a side,
+with vehicles, the garrison; the no-layer arm does not depend on the walk
+test and is the row of 20.1 or 20.5, where the lint let one be run).
+Kills are enemy kills a bot-minute. The BF1918 rows were played before
+the hold-fire merge (749e61c35, 11:59), every other row after it; the
+hold-fire changes the matches, not the walk test.
+
+| Mod | Level | Before: kills / captures | Before: lint | After: alive | kills | captures | idle | After: lint | No layer: kills / captures |
+|---|---|---|---|---|---|---|---|---|---|
+| bf1918 | battle_of_the_vosges | 0.000 / 0 | a side with no spawn at the start | no | 0.000 | 0 | 0.89 | a side with no spawn at the start | - / None |
+| bf1918 | fht_meuse_argonne_offensive | 0.013 / 0 | clean | no | 0.013 | 0 | 0.27 | clean | 0.013 / 0 |
+| bf1918 | raid_on_fort_pontisse | 0.025 / 2 | a side sealed in; stacked floors (classed out) | yes | 0.025 | 2 | 0.28 | a side sealed in; stacked floors (classed out) | - / None |
+| bf1918 | roye | 0.051 / 1 | clean | no | 0.051 | 1 | 0.26 | clean | 0.101 / 2 |
+| bf1918 | saint_quentin_canal | 0.000 / 0 | clean | no | 0.000 | 0 | 0.25 | clean | 0.025 / 0 |
+| desertcombat | dc_battle_of_73_easting | 0.076 / 0 | a side sealed in | yes | 0.180 | 2 | 0.41 | clean | - / None |
+| desertcombat | dc_medina_ridge | 0.000 / 0 | no flag a soldier can stand in; a side that can reach no flag | no | 0.063 | 0 | 0.52 | clean | - / None |
+| desertcombat | dc_oil_fields | 0.000 / 0 | no flag a soldier can stand in; a side that can reach no flag; a side sealed in | no | 0.000 | 1 | 0.23 | clean | - / None |
+| desertcombat | dc_operation_bragg | 0.000 / 0 | no flag a soldier can stand in; a side that can reach no flag; a side sealed in | no | 0.000 | 0 | 0.38 | clean | - / None |
+| desertcombat | dc_urban_siege | 0.000 / 0 | clean | no | 0.000 | 0 | 0.27 | clean | 0.000 / 0 |
+| fh | seelow-heights-1945 | 0.025 / 0 | a side sealed in | no | 0.025 | 0 | 0.37 | clean | - / None |
+| fhsw | battle_at_river_don | 0.000 / 0 | a side that can reach no flag; a side sealed in | no | 0.000 | 0 | 0.65 | a side that can reach no flag; a side sealed in | - / None |
+| fhsw | battle_over_hokkaido-1945 | 0.000 / 0 | no flag a soldier can stand in; a side that can reach no flag; a side sealed in | no | 0.000 | 0 | 0.93 | no flag a soldier can stand in; a side that can reach no flag | - / None |
+| fhsw | eagles_nest-1946 | 0.050 / 1 | clean | no | 0.000 | 1 | 0.44 | clean | 0.000 / 1 |
+| fhsw | earned_in_blood | 0.166 / 1 | clean | no | 0.038 | 2 | 0.42 | clean | 0.000 / 0 |
+| fhsw | fall_of_berlin-1945 | 0.000 / 0 | clean | no | 0.000 | 0 | 0.07 | clean | 0.000 / 1 |
+| fhsw | fall_of_singapore | 0.013 / 0 | a side sealed in | no | 0.013 | 0 | 0.37 | a side sealed in | - / None |
+| fhsw | fht_battle_of_kohima-1944 | 0.000 / 0 | clean | no | 0.000 | 0 | 0.57 | clean | 0.000 / 0 |
+| fhsw | fht_battle_of_mareth_line-1943 | 0.013 / 0 | a side sealed in | yes | 0.063 | 1 | 0.16 | clean | - / None |
+| fhsw | fht_dinant-1940 | 0.000 / 0 | a side sealed in | no | 0.000 | 0 | 0.27 | clean | - / None |
+| fhsw | fht_hong_kong-1941 | 0.000 / 0 | a side sealed in | no | 0.000 | 0 | 0.40 | a side sealed in | - / None |
+| fhsw | fht_operation_dracula-1945 | 0.000 / 0 | a side sealed in | no | 0.000 | 0 | 0.25 | a side sealed in | - / None |
+| fhsw | fht_operation_longcloth-1943 | 0.000 / 0 | a side sealed in | no | 0.000 | 0 | 0.06 | clean | - / None |
+| fhsw | fht_pasir_panjang-1942 | 0.000 / 0 | clean | no | 0.013 | 0 | 0.40 | clean | 0.000 / 0 |
+| fhsw | fht_siege_of_zeeland-1940 | 0.000 / 0 | a side sealed in | no | 0.000 | 0 | 0.28 | a side sealed in | - / None |
+| fhsw | gazaps-1945 | 0.000 / 0 | a side sealed in | no | 0.025 | 1 | 0.50 | clean | - / None |
+| fhsw | in_the_hell_of_bocage-1944 | 0.000 / 0 | a side sealed in | no | 0.000 | 0 | 0.40 | clean | - / None |
+| fhsw | iron_monster | 0.101 / 3 | clean | no | 0.140 | 3 | 0.29 | clean | 0.051 / 2 |
+| fhsw | juno_beach | 0.000 / 0 | a side with no spawn at the start | no | 0.000 | 0 | 0.21 | a side with no spawn at the start | - / None |
+| fhsw | kakazu_ridge-1945 | 0.000 / 0 | no flag a soldier can stand in; a side that can reach no flag; a side sealed in; stacked floors (classed out) | no | 0.038 | 1 | 0.41 | stacked floors (classed out) | - / None |
+| fhsw | manchuria-1945 | 0.013 / 0 | a side sealed in | no | 0.038 | 0 | 0.36 | clean | - / None |
+| fhsw | omaha_charlie-sector-1944 | 0.000 / 0 | a side with no spawn at the start | no | 0.000 | 0 | 0.47 | a side with no spawn at the start | - / None |
+| fhsw | pakfront | 0.000 / 0 | a side sealed in; stacked floors (classed out) | no | 0.000 | 0 | 0.69 | a side sealed in; stacked floors (classed out) | - / None |
+| fhsw | ramelle_neuville-1944 | 0.000 / 0 | clean | no | 0.000 | 0 | 0.62 | clean | 0.000 / 0 |
+| fhsw | raseiniai | 0.051 / 1 | a side sealed in | no | 0.013 | 1 | 0.41 | a side sealed in | - / None |
+| fhsw | salerno-1943 | 0.000 / 3 | clean | no | 0.000 | 3 | 0.60 | clean | 0.025 / 6 |
+| fhsw | seelow-heights-1945 | 0.025 / 0 | a side sealed in | no | 0.025 | 0 | 0.32 | clean | - / None |
+| fhsw | siegfried_line-1945 | 0.051 / 2 | a side sealed in | no | 0.000 | 0 | 0.41 | stacked floors (classed out) | - / None |
+| fhsw | the_great_pursuit | 0.272 / 5 | clean | yes | 0.299 | 2 | 0.19 | clean | 0.063 / 6 |
+| fhsw | transcarpathia-1944 | 0.013 / 0 | a side sealed in | no | 0.000 | 0 | 0.39 | a side that can reach no flag | - / None |
+| fhsw | ural_mountains-1947 | 0.000 / 0 | a side sealed in | no | 0.000 | 0 | 0.14 | clean | - / None |
+| fhsw | way_to_paris-1946 | 0.063 / 0 | a side sealed in | no | 0.050 | 1 | 0.24 | clean | - / None |
+| fhsw | westwall-1945 | 0.000 / 0 | a side sealed in | yes | 0.038 | 0 | 0.32 | clean | - / None |
+| fhsw | aberdeen | 0.000 / 0 | a side sealed in | no | 0.013 | 4 | 0.34 | clean | - / None |
+| fhsweurope | aberdeen | 0.000 / 0 | a side sealed in | no | 0.000 | 4 | 0.30 | clean | - / None |
+| vanilla/community | aberdeen | 0.000 / 0 | a side sealed in | no | 0.026 | 2 | 0.18 | clean | - / None |
+| vanilla/community | invasion_of_the_philippines | 0.000 / 0 | a side with no spawn at the start | no | 0.000 | 0 | 0.76 | a side with no spawn at the start | - / None |
+| vanilla/community | liberation_of_caen | 0.063 / 2 | clean | yes | 0.050 | 2 | 0.39 | clean | 0.025 / 1 |
+| vanilla/community | tanquilizer | 0.000 / 0 | no flag a soldier can stand in; a side that can reach no flag; a side sealed in | no | 0.000 | 0 | 0.94 | no flag a soldier can stand in; a side that can reach no flag | - / None |
+| vanilla/community | the_airport | 0.000 / 0 | a side sealed in | no | 0.000 | 0 | 0.31 | a side sealed in | - / None |
+| xpack2 | raid_on_agheila | 0.000 / 0 | a side sealed in | yes | 0.341 | 1 | 0.24 | stacked floors (classed out) | - / None |
+
+Before the fix 14 of the 51 linted clean; after it, 32. Seven are alive in
+the one seed with the layer: DC_Battle_of_73_Easting, FHSW Mareth Line,
+The Great Pursuit, Westwall, Liberation of Caen, and two the lint still
+refuses as stacked or sealed (Raid on Agheila, Raid on Fort Pontisse).
+
+**The 600 s second look.** On a level a kilometre wide where the sides
+start a kilometre apart, 300 s is short for a kill on each side. So every
+capped level that lints clean and either is alive or has captures in its
+300 s layer match was played again for 600 s, with the layer and with no
+layer. Each call below says which figure it rests on.
+
+| Mod | Level | Layer: alive | kills | captures | idle | No layer: alive | kills | captures |
+|---|---|---|---|---|---|---|---|---|
+| DC | dc_battle_of_73_easting | yes | 0.147 | 4 | 0.45 | no | 0.000 | 0 |
+| DC | dc_oil_fields | no | 0.000 | 1 | 0.24 | no | 0.019 | 1 |
+| vanilla | aberdeen | yes | 0.158 | 2 | 0.22 | no | 0.000 | 1 |
+| vanilla | liberation_of_caen | yes | 0.025 | 2 | 0.38 | no | 0.013 | 1 |
+| FHSWEurope | aberdeen | no | 0.000 | 5 | 0.43 | yes | 0.025 | 3 |
+| FHSW | the_great_pursuit | yes | 0.259 | 2 | 0.24 | yes | 0.044 | 4 |
+| FHSW | fht_battle_of_mareth_line-1943 | yes | 0.044 | 1 | 0.19 | yes | 0.050 | 4 |
+| FHSW | westwall-1945 | yes | 0.019 | 0 | 0.38 | no | 0.000 | 0 |
+| FHSW | iron_monster | yes | 0.153 | 1 | 0.30 | yes | 0.076 | 4 |
+| FHSW | salerno-1943 | yes | 0.090 | 3 | 0.45 | yes | 0.076 | 12 |
+| FHSW | earned_in_blood | yes | 0.108 | 3 | 0.45 | no | 0.050 | 1 |
+| FHSW | aberdeen | no | 0.006 | 5 | 0.48 | no | 0.026 | 5 |
+| FHSW | eagles_nest-1946 | yes | 0.057 | 1 | 0.50 | yes | 0.057 | 2 |
+| FHSW | gazaps-1945 | yes | 0.019 | 1 | 0.54 | no | 0.031 | 5 |
+| FHSW | way_to_paris-1946 | yes | 0.044 | 0 | 0.36 | no | 0.025 | 0 |
+
+Twelve of the fifteen are alive with the layer at 600 s, against five at
+300 s: the calls rest on "alive" (each side kills, both lose tickets) at
+600 s where a level is alive, and on captures and an idle share under
+0.55 where it is not (FHSW's and FHSWEurope's Aberdeen: five captures, no
+kill on one side; DC_Oil_Fields: one capture). Ranked by the layer's kills
+and captures: The Great Pursuit, vanilla Aberdeen, Iron Monster,
+DC_Battle_of_73_Easting, Earned in Blood, Salerno, Eagle's Nest, Mareth
+Line, Way to Paris, Liberation of Caen, Westwall, Gazaps. With no layer
+the 600 s match is alive on five of them (The Great Pursuit, Mareth Line,
+Iron Monster, Salerno, Eagle's Nest) and on FHSWEurope's Aberdeen.
+
+### 20.7 The rollout: the owner's decision and the coordinator's rules
+
+**The owner's decision** (2026-11-11, after playing FHSW's Tunis-1943 on
+the page): "the bots you added to Tunis are fine... I think it's a huge
+improvement on what we have. Might as well roll them out." The goal
+changed from proving each level beats a bar to getting every level that
+has a fight onto the page.
+
+**The coordinator's rules under it**, in the order they were set:
+
+1. A level goes live when its lint has no error and its verdict is `pass`,
+   `better-than-nothing` or `no-better-than-nothing` (the last two
+   accepted with `accept --owner`). The verdict comes from a **reduced
+   matrix**: three seeds a size (`--seeds 3`), both sizes, 600 s, layer
+   and no-layer arms, the garrison, vehicles where the level places any,
+   the mod's own bar where one holds three alive levels, else DICE's.
+   From the third batch on, two seeds (`--seeds 2`), breadth over a third
+   seed; each verdict records its seeds.
+2. The floor: such a level goes live unless, at both side sizes with the
+   layer, enemy kills are under 0.05 a bot-minute or the worse side's
+   share of deaths no enemy caused is over 0.6 (Tunis sat at 0.066 in the
+   runner and plays well on the page; the death-share cap keeps a level
+   like Liberation of Caen off).
+3. Then, after Tunis came out `no-fight` on three seeds (one 8-a-side seed
+   with a side that never kills; 0.038 enemy kills a bot-minute in the
+   runner against 0.17 on the page): `no-fight` is owner-acceptable too,
+   and the **page match judges the fight**. The coordinator publishes a
+   layer without its menu flag, plays one match on the live page, and
+   flags it when the page shows at least 0.05 enemy kills a bot-minute or
+   3 captures, a worse-side non-enemy death share of at most 0.5 and no
+   page error. The runner's job is to weed out the levels with no life at
+   all: a level is sent on when its layer arm shows kills and captures at
+   either size, and marked DEAD only with no kills or no captures at both
+   sizes, or with a lint error.
+
+In the tables below each level carries the runner's outcome word and the
+mark by rule 3 (LIFE or DEAD), with rule 2's mark (LIVE-OK or HOLD) as
+advice.
+
+### 20.8 The bars on today's code
+
+All five runner bars rebuilt after the hold-fire (749e61c35) and the hull
+steering (569a9debe) merged, on 469bb2eac, under the garrison, 10 seeds,
+600 s. Enemy kills a bot-minute, median at 8 / 16 a side:
+
+| Bar | Levels kept | Dropped for no fight | Kills, 8 / 16 |
+|---|---|---|---|
+| DICE on foot | Berlin, Stalingrad, Kharkov, Bocage | | 0.874 / 0.965 |
+| DICE with vehicles | the same four | | 0.363 / 0.511 |
+| Desert Combat | Berlin, DC_DesertShield, Kharkov, Kursk, Stalingrad | DC_Basrahs_Edge | 0.420 / 0.536 |
+| BF1918 | Argonnerwald, Battle of Cer, Battle of Mons, Belleau Wood | Krakau | 0.166 / 0.298 |
+| Forgotten Hope | none | Goodwood, Prokhorovka, Gold Beach | |
+
+FHSW has no bar (its five botted levels were not finished, 20.3), so its
+levels, and FH's, are judged on DICE's. Four of DC's five are its remakes
+of DICE's levels; BF1918's bar is a low one, under half of DICE's.
+
+### 20.9 The reduced matrix on today's code, level by level
+
+Every level with a layer folder and every level lint-clean after the walk
+test fix, generated again on 469bb2eac (generator 5, the walk test fix,
+the hold-fire, the hull steering) and judged on the bars of 20.8: the
+first ten batches on three seeds a size, the rest on two (each
+`verdict.json` records `seeds`), 600 s, 8 and 16 a side, with the layer
+and with no layer, the garrison, vehicles in. Each layer and verdict is in
+`bot-layers/<mod>/<level>/`, committed and pushed batch by batch for the
+coordinator to accept, page-check and publish; nothing was accepted here.
+
+Each cell, with the layer: enemy kills a bot-minute / captures a match /
+the worse side's share of deaths no enemy caused (medians over the
+seeds). "Mark" is rule 3 of 20.7 (LIFE: kills and captures at either
+size; DEAD: neither at both sizes, or a lint error); "floor" is rule 2,
+advice only, and only for an outcome the rollout accepts.
+
+| Mod | Level | Outcome | Bar | Seeds | 8 a side | 16 a side | Mark | Floor |
+|---|---|---|---|---|---|---|---|---|
+| community/vanilla | shigaisen_b | better-than-nothing | dice | 3 | 1.793 / 1 / 0.16 | 2.009 / 0 / 0.20 | LIFE | LIVE-OK |
+| community/vanilla | the_maze | better-than-nothing | dice | 3 | 0.834 / 11 / 0.13 | 0.921 / 9 / 0.19 | LIFE | LIVE-OK |
+| DC | inshallah_valley | no-better-than-nothing | desertcombat | 2 | 0.376 / 3 / 0.38 | 0.473 / 2 / 0.36 | LIFE | LIVE-OK |
+| DC | dc_lostvillage | better-than-nothing | desertcombat | 2 | 0.300 / 9 / 0.60 | 0.381 / 3.5 / 0.56 | LIFE | LIVE-OK |
+| FHSW | the_great_pursuit | no-better-than-nothing | dice | 2 | 0.281 / 2.5 / 0.14 | 0.260 / 3.5 / 0.17 | LIFE | LIVE-OK |
+| community/vanilla | beinbrekkbakken | no-better-than-nothing | dice | 3 | 0.280 / 3 / 0.25 | 0.812 / 4 / 0.10 | LIFE | LIVE-OK |
+| BF1918 | mauerfall | better-than-nothing | bf1918 | 2 | 0.267 / 0.5 / 0.19 | 0.292 / 0 / 0.19 | LIFE | LIVE-OK |
+| community/vanilla | aberdeen (after the outside-map fix) | no-better-than-nothing | dice | 2 | 0.259 / 2 / 0.19 | 0.182 / 2.5 / 0.17 | LIFE | LIVE-OK |
+| DC | dc_basrah_nights | better-than-nothing | desertcombat | 2 | 0.252 / 6.5 / 0.35 | 0.381 / 6.5 / 0.50 | LIFE | LIVE-OK |
+| community/vanilla | the_bridge | better-than-nothing | dice | 3 | 0.230 / 2 / 0.67 | 0.123 / 1 / 0.40 | LIFE | LIVE-OK |
+| FHSW | moscow_outskirts-1941 | no-better-than-nothing | dice | 2 | 0.212 / 2.5 / 0.79 | 0.150 / 5 / 0.76 | LIFE | HOLD |
+| DC | dc_battle_of_73_easting | better-than-nothing | desertcombat | 2 | 0.203 / 5.5 / 0.35 | 0.219 / 3 / 0.25 | LIFE | LIVE-OK |
+| FHSW | stalingrad_redsquare | no-fight | dice | 2 | 0.197 / 3.5 / 0.83 | 0.247 / 6.5 / 0.94 | LIFE | - |
+| community/vanilla | koh | no-better-than-nothing | dice | 3 | 0.180 / 7 / 0.46 | 0.247 / 6 / 0.40 | LIFE | LIVE-OK |
+| FH | pegasus | better-than-nothing | dice | 2 | 0.176 / 1 / 0.76 | 0.290 / 2 / 0.58 | LIFE | LIVE-OK |
+| FHSW | fht_battle_of_mareth_line-1943 | no-better-than-nothing | dice | 2 | 0.124 / 1 / 0.81 | 0.108 / 1.5 / 0.61 | LIFE | HOLD |
+| BF1918 | hindenburg_line | better-than-nothing | bf1918 | 2 | 0.102 / 5 / 0.95 | 0.076 / 0.5 / 0.96 | LIFE | HOLD |
+| FHSW | battle_for_ortona-1943 | better-than-nothing | dice | 2 | 0.099 / 1.5 / 0.71 | 0.134 / 0.5 / 0.54 | LIFE | LIVE-OK |
+| BF1918 | lutte_de_honneur | no-better-than-nothing | bf1918 | 2 | 0.069 / 0 / 0.95 | 0.084 / 0.5 / 0.86 | LIFE | HOLD |
+| FHSW | bizerte-1943 (after the outside-map fix) | better-than-nothing | dice | 2 | 0.060 / 0 / 0.66 | 0.168 / 0.5 / 0.69 | LIFE | HOLD |
+| BF1918 | fht_meuse_argonne_offensive (after the outside-map fix) | better-than-nothing | bf1918 | 2 | 0.057 / 0 / 0.82 | 0.071 / 0.5 / 0.62 | LIFE | HOLD |
+| BF1918 | roye (after the outside-map fix) | better-than-nothing | bf1918 | 2 | 0.057 / 1 / 0.47 | 0.070 / 1.5 / 0.47 | LIFE | LIVE-OK |
+| BF1918 | sanaga_river (after the outside-map fix) | no-better-than-nothing | bf1918 | 2 | 0.047 / 0 / 0.94 | 0.050 / 0.5 / 0.78 | LIFE | HOLD |
+| BF1918 | scimitar_hill | better-than-nothing | bf1918 | 2 | 0.038 / 3 / 0.96 | 0.121 / 3 / 0.90 | LIFE | HOLD |
+| FHSW | tunis-1943 | no-fight | dice | 3 | 0.038 / 2 / 0.44 | 0.147 / 2 / 0.74 | LIFE | - |
+| BF1918 | dawnville | better-than-nothing | bf1918 | 2 | 0.028 / 1 / 0.93 | 0.172 / 2 / 0.86 | LIFE | HOLD |
+| DC | dc_oil_fields | no-better-than-nothing | desertcombat | 2 | 0.028 / 4 / 0.95 | 0.070 / 3.5 / 0.89 | LIFE | HOLD |
+| FH | seelow-heights-1945 (after the outside-map fix) | no-fight | dice | 2 | 0.028 / 1 / 0.98 | 0.039 / 1 / 0.96 | LIFE | - |
+| community/vanilla | liberation_of_caen | no-better-than-nothing | dice | 3 | 0.025 / 1 / 0.96 | 0.073 / 1 / 0.90 | LIFE | HOLD |
+| FHSW | stalingrad_urban_area-1942 | no-fight | dice | 2 | 0.019 / 1 / 1.00 | 0.080 / 2 / 0.88 | LIFE | - |
+| BF1918 | battle_of_cambrai | no-fight | bf1918 | 2 | 0.016 / 0.5 / 0.98 | 0.042 / 1 / 0.92 | LIFE | - |
+| BF1918 | chemin_des_dames | no-fight | bf1918 | 2 | 0.016 / 1.5 / 0.99 | 0.008 / 1 / 1.00 | LIFE | - |
+| DC | dc_urban_siege (after the outside-map fix) | no-fight | desertcombat | 2 | 0.016 / 0.5 / 0.81 | 0.032 / 1 / 0.82 | LIFE | - |
+| DC | dc_operation_bragg | no-fight | desertcombat | 2 | 0.013 / 0.5 / 1.00 | 0.013 / 2 / 1.00 | LIFE | - |
+| FHSW | monte_cassino-1944 | no-fight | dice | 2 | 0.006 / 1 / 0.93 | 0.067 / 1.5 / 0.84 | LIFE | - |
+| community/vanilla | hop | better-than-nothing | dice | 3 | 1.503 / 0 / 0.20 | 1.027 / 0 / 0.18 | DEAD | - |
+| FHSW | pegasus | no-better-than-nothing | dice | 2 | 0.227 / 0 / 0.81 | 0.247 / 0 / 0.65 | DEAD | - |
+| DC | dc_medina_ridge | no-fight | desertcombat | 2 | 0.040 / 0 / 0.77 | 0.168 / 0 / 0.45 | DEAD | - |
+| BF1918 | operation_gericht | better-than-nothing | bf1918 | 2 | 0.038 / 0 / 0.95 | 0.052 / 0 / 0.92 | DEAD | - |
+| FHSW | ural_mountains-1947 | no-fight | dice | 2 | 0.006 / 0 / 1.00 | 0.019 / 0 / 0.97 | DEAD | - |
+| BF1918 | saint_quentin_canal | no-fight | bf1918 | 2 | 0.000 / 0 / 1.00 | 0.006 / 0 / 0.98 | DEAD | - |
+| FHSW | battle_of_edson_s_ridge | no-fight | dice | 2 | 0.000 / 0 / 0.00 | 0.000 / 0 / 0.50 | DEAD | - |
+| FHSW | berlin-1945-streets (after the outside-map fix) | no-fight | dice | 2 | 0.000 / 0.5 / 1.00 | 0.000 / 1 / 1.00 | DEAD | - |
+| FHSW | fall_of_berlin-1945 (after the outside-map fix) | no-fight | dice | 2 | 0.000 / 0 / 1.00 | 0.000 / 0.5 / 1.00 | DEAD | - |
+| FHSW | fht_battle_of_kohima-1944 | no-fight | dice | 2 | 0.000 / 0 / 1.00 | 0.000 / 0 / 1.00 | DEAD | - |
+| FHSW | warsaw_uprising | no-fight | dice | 2 | 0.000 / 0 / 1.00 | 0.006 / 0 / 0.99 | DEAD | - |
+| FHSWEurope | aberdeen | no-fight | dice | 2 | 0.000 / 5 / 1.00 | 0.000 / 5 / 1.00 | DEAD | - |
+
+Of the 47 levels judged so far, 35 are LIFE and 12 DEAD by rule 3; by the
+runner's own word 17 are better-than-nothing, 12 no-better-than-nothing
+and 18 no-fight, and none passes. The queue was still running when this
+was written (FHSW's and FHSWEurope's Aberdeen, Medina Ridge, Way to
+Paris, Earned in Blood and the remaining clean FHSW levels); their
+verdicts land in their layer folders as each finishes.
+
+Levels marked "(after the outside-map fix)" were played after the bots'
+maps began blocking the combat area's outside-map ground (1c2dadc74,
+section 21 and `wide-levels.md`); the rest before it. Aberdeen (vanilla)
+shows what that fix does: the worse side's non-enemy share 0.83 and 0.69
+before it, 0.19 and 0.17 after, enemy kills 0.126 and 0.172 before, 0.259
+and 0.182 after. The coordinator publishes and page-checks the LIFE
+levels; which are live is the coordinator's record, not this table's.
+
+### 20.10 Alive but classed out as stacked floors
+
+The lint refuses these for "stacked floors (classed out)" and they had a
+fight in the census; not matrixed, as asked. Census figures (one match,
+300 s, 8 a side, with the layer):
+
+| Mod | Level | Lint | Enemy kills a bot-minute | Captures | Idle share |
+|---|---|---|---|---|---|
+| Secret Weapons | Raid_on_Agheila | stacked floors (classed out), after the walk test fix; before it, "a side sealed in" | 0.341 | 1 | 0.24 |
+| BF1918 | Raid_on_Fort_Pontisse | a side sealed in; stacked floors (classed out) | 0.025 | 2 | 0.28 |
+
+FHSW's Kakazu Ridge, Pakfront and Siegfried Line are classed out the same
+way and had no fight in the census.
+
+### 20.11 Open, and not verified
+
+1. The runner under-reads a level with vehicles against the page: FHSW
+   Tunis is no-fight at 8 a side in the runner (0.038 enemy kills a
+   bot-minute) and plays at 0.17 on the page. That is why the page match
+   decides the rollout (20.7); the runner's figures here are a screen.
+2. Most of the held levels share one figure: the worse side's share of
+   deaths no enemy caused is 0.8 to 1.0 (Hindenburg Line, Lutte d'Honneur,
+   Chemin des Dames, Scimitar Hill, Dawnville, Oil Fields, Moscow
+   Outskirts, Red Square, Seelow Heights, the Aberdeens). The coordinator
+   has an agent on why bots die without an enemy on wide levels; every
+   such level wants judging again after that fix.
+3. Hulls stuck 10 to 40 s a driving minute on BF1918's Lutte d'Honneur,
+   Scimitar Hill, Sanaga River, Operation Gericht and Cambrai, and on DC's
+   Oil Fields, after the hull steering fix.
+4. FHSW has no bar of its own (20.3); its levels are judged on DICE's.
+5. Two seeds is a screen, not a verdict to set a bar by; the ten-seed
+   matrices of 20.2 were on code and bars this section replaced.
+6. FHSW's Edson's Ridge has a fight with no layer in the first census
+   (1.36 enemy kills a bot-minute) and none with the layer, in the census
+   and the reduced matrix. Not diagnosed.
+7. Strasbourg (community) was not run: its archive is not on this
+   machine.
+
 ## 21. 2026-11-11: the walk test ran out of room on every wide level
 
 Written by the coordinator, ahead of section 20 (the widened census, which
