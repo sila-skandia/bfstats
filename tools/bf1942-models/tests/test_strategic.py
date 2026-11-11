@@ -129,13 +129,17 @@ class StrategicFixtureTests(unittest.TestCase):
         # lie in no box: the nearest-centre rule would have bound North_Midway
         # to SouthSea and South_Midway to NorthSea, handing NorthSea to the
         # Axis. The Axis still count both among their control points
-        # (`getNumberOfControlPoints` 0x085e4f80 counts every point): the
-        # state is a side's flags plus its owned areas with the type flag.
+        # (`getNumberOfControlPoints` 0x085e4f80 counts every point whose
+        # team is the side's), and that count alone is the `ControlPoint`
+        # state: `SAI::updateStates` counts the area type flags 1..5, 0xc,
+        # 0xf and 0x11..0x14 into their own slots and not `ControlPoint`
+        # (0x10), so an owned area typed `ControlPoint` adds nothing
+        # (features/bot-map-generation/flag-binding.md).
         c = self.results["pins"]["captureOnly"]
         self.assertEqual([["Base", ["Airfield"], 0], ["OutPost", ["Coastal_Defences"], 0],
                           ["NorthSea", [], 2], ["SouthSea", [], 1]], c["midway"])
-        self.assertEqual([1, 1], c["controlPoints"]["neutralSeas"])
-        self.assertEqual([3, 1], c["controlPoints"]["axisSeas"])
+        self.assertEqual([0, 0], c["controlPoints"]["neutralSeas"])
+        self.assertEqual([2, 0], c["controlPoints"]["axisSeas"])
         self.assertEqual([["hillnest", ["HILL_424"], 2], ["supply_left", [], 0]], c["salerno"])
 
     def test_an_aircraft_does_not_hold_an_area_its_gunner_seat_does(self) -> None:

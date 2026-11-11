@@ -49,6 +49,16 @@ export function areaGeometry(a) {
   };
 }
 
+/**
+ * Whether a world flag is one of the page's stand-ins rather than a control
+ * point (spawn-flags.js `spawnFlags`): a spawn group no control point claims
+ * (`standalone`) or a carrier's deck groups (`vehicle`). The engine has no
+ * such object: its SAI sees control points only.
+ */
+export function isStandIn(flag) {
+  return !!(flag?.standalone || flag?.vehicle);
+}
+
 export class StrategicLayer {
   /**
    * @param {object|null} ai   `extras.ai`
@@ -104,12 +114,32 @@ export class StrategicLayer {
   bindFlags(flags) {
     this.flags = flags ?? [];
     for (const a of this.areas) a.controlPoints = [];
+    // Control points first, then the stand-ins (`isStandIn`: a spawn group no
+    // control point claims, a ship's deck groups), and a stand-in only into
+    // an area that holds no control point. The engine binds an area to a
+    // control point alone (`AIStrategicArea::update` 0x0863d6d0 ->
+    // `BFEnvironment::findControlPoint` 0x085e53a0 over the control point
+    // vector); a stand-in is the page's own flag (spawn-flags.js), and an
+    // area holding none of the engine's points is held by presence
+    // (`updatePresenceOwner`). Bound in the flags' order, the stand-ins came
+    // first (spawn-flags.js lists capture-only points last) and took the
+    // areas of the capture-only points beside them, which then lay in no
+    // area: FHSW Edson's Ridge's two Allied flags, nothing to attack
+    // (features/bot-map-generation/flag-binding.md). Giving a stand-in an
+    // area at all is INVENTION, kept for an area with no point (Guadalcanal's
+    // airfield groups), as before.
+    const standIns = [];
     for (const flag of this.flags) {
       if (!flag?.position) continue;
+      if (isStandIn(flag)) { standIns.push(flag); continue; }
       const area = flag.captureOnly
         ? this.controlPointAreaAt(flag.position[0], flag.position[2])
         : this.areaAt(flag.position[0], flag.position[2]);
       if (area) area.controlPoints.push(flag);
+    }
+    for (const flag of standIns) {
+      const area = this.areaAt(flag.position[0], flag.position[2]);
+      if (area && !area.controlPoints.some(f => !isStandIn(f))) area.controlPoints.push(flag);
     }
   }
 

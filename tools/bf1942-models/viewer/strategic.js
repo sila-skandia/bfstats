@@ -22,7 +22,7 @@
 // A doctrine or an order kind added later registers itself the same way and
 // is imported here (features/bot-doctrines/README.md).
 
-export { INFANTRY_TYPE, areaGeometry, StrategicLayer } from './strategic-layer.js';
+export { INFANTRY_TYPE, areaGeometry, isStandIn, StrategicLayer } from './strategic-layer.js';
 export { compareCondition, SAI, StrategicAI } from './strategic-ai.js';
 export {
   StrategicCommand, DOCTRINES, ORDER_KINDS, registerDoctrine, registerOrderKind, checkOrder,

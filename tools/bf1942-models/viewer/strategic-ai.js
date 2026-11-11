@@ -2,7 +2,7 @@
 // `strategic.js`, which re-exports it beside `strategic-layer.js`, the area
 // data this reads.
 
-import { INFANTRY_TYPE } from './strategic-layer.js';
+import { INFANTRY_TYPE, isStandIn } from './strategic-layer.js';
 import { captureReach, captureStandRadius } from './control-point-law.js';
 import { LANDING, landingZonesOf, beachTarget, beachLandingOrder } from './doctrine-landing.js';
 
@@ -146,7 +146,7 @@ export class StrategicAI {
         states: new Map(),
         attacks: [],
         defences: [],
-        /** The no-live-strategy fallback holds the side (`_noLiveStrategyFallback`). */
+        /** The hold-only fallback holds the side (`_holdOnlyFallback`). */
         fallback: false,
       };
       if (this.sides[side].containers.length) this.sides[side].active = this.sides[side].containers[0];
@@ -239,51 +239,60 @@ export class StrategicAI {
     this._updateStates(side);
     this._chooseStrategy(side);
     this._updateTemperatures(side);
-    if (this._noLiveStrategyFallback(side)) return;
+    if (this._holdOnlyFallback(side)) return;
     this._distribute(side, alive, opts);
   }
 
   /**
-   * INVENTION, labelled (features/bot-map-generation/no-live-strategy.md;
-   * KNOBS.md "no live strategy"): on a GENERATED layer (`ai.generated`, the
-   * marker the bake copies from `generated.json`), a side none of whose
-   * strategies scores above 0 at this pass, AND whose kept strategy gives it
-   * no attack target (no area above the 0.1 threshold, or NumberOfAttacks 0),
-   * while a flag it could take still stands, gives every bot the order a
-   * level with no layer gives (bot-decision.js `fallbackWaypoint`: the
-   * nearest flag the side does not hold), and goes back to the SAI at the
-   * first pass where either holds no longer.
+   * INVENTION, labelled (features/bot-map-generation/no-live-strategy.md and
+   * flag-binding.md; KNOBS.md "hold-only side"): on a GENERATED layer
+   * (`ai.generated`, the marker the bake copies from `generated.json`), a side
+   * the SAI can only order to hold, gives every bot the order a level with no
+   * layer gives (bot-decision.js `fallbackWaypoint`: the nearest flag the side
+   * does not hold, passing over one out of play), and goes back to the SAI at
+   * the first pass where it can attack again. A side holds-only when its
+   * strategy (live, or the one kept with none scoring) has no attack target
+   * (no area above `SAI.candidateMin`, or NumberOfAttacks 0) while a flag it
+   * could take still stands.
    *
-   * Why the attack-target clause: with no strategy scoring the SAI keeps the
-   * one it has and still attacks whatever that strategy finds, and on the
-   * live generated levels that play is the one players like. Without the
-   * clause the fallback took over The Maze for 56 % (Axis) and 78 % (Allies)
-   * of the match and its kills fell from 68 to 29 in the census match;
-   * DC_Basrah_Nights' from 52 to 36. The fault is the side ordered only to
-   * hold; that is what this catches (no-live-strategy.md, the table).
+   * "A flag it could take" is a capturable point the side does not hold in an
+   * area it may take: a flag the generator took out of play (`setTakeable
+   * <side> 0`, an unreachable flag) is none. A side that holds every flag in
+   * play is defending, and is left to the SAI.
    *
-   * The engine has no such rule. `SAI::chooseStrategy` 0x08631cd0 with
-   * nothing positive keeps the strategy it has (AI-38; ai-spec strategic.md
-   * section 3), and the side is distributed on that strategy's modifiers. A
-   * generated layer copies DICE's strategy template unchanged (Kursk's or
-   * Kharkov's), tuned to a start where each side holds its base alone: on a
-   * level that starts otherwise (Edson's Ridge: the Axis on two fixed bases,
-   * the Allies on every flag) no strategy qualifies for either side, the
-   * kept first strategy finds no attack target (both flag areas hold only
-   * uncapturable spawn stand-ins, `StrategicLayer.bindFlags`), and both sides
-   * stood at their bases for the whole match. A layer DICE or a mod team wrote is
-   * never touched: what the retail engine does there is what it does.
+   * Why: a generated layer copies DICE's strategy template unchanged and its
+   * area graph from the walk test. Where a side's own areas touch no area it
+   * could take (FHSW Edson's Ridge before the flag binding was put right,
+   * `StrategicLayer.bindFlags`; The Fortress, whose Axis base links to no
+   * area; Knife Championship, The Corridor and Omaturi Channel Cannon), the
+   * SAI orders every bot to hold where it stands for the whole match. The
+   * first form of the rule (2026-11-11) also asked for no strategy to score;
+   * once the `ControlPoint` state counted as the engine counts it, strategies
+   * came alive on those levels with still nothing to attack, and that clause
+   * kept their sides at home (no-live-strategy.md, flag-binding.md).
+   *
+   * Why the attack-target clause: a side with a target is the SAI's to play,
+   * live strategy or not. Without it the fallback took over The Maze for 56 %
+   * (Axis) and 78 % (Allies) of the match and its kills fell from 68 to 29
+   * in the census match; DC_Basrah_Nights' from 52 to 36.
+   *
+   * The engine has no such rule: `SAI::chooseStrategy` 0x08631cd0 keeps the
+   * strategy it has when none scores (AI-38; ai-spec strategic.md section 3),
+   * and a side with no attack target holds (`retainBot`). A layer DICE or a
+   * mod team wrote is never touched: what the retail engine does there is
+   * what it does.
    *
    * Sets `sides[side].fallback`; true when it holds, after releasing every
    * bot of the side (no order, no assignment, a garrison post given up to
    * `lastPost`) and clearing the side's targets. `StrategicCommand` then
    * drops the side's orders, whatever its doctrine.
    */
-  _noLiveStrategyFallback(side) {
+  _holdOnlyFallback(side) {
     const S = this.sides[side];
-    const on = !!this.layer.ai?.generated && S.containers.length > 0 && !S.containers.some(c => c.score > 0)
+    const on = !!this.layer.ai?.generated && S.containers.length > 0
       && ((S.active?.strategy.attacks ?? 1) <= 0 || !this.layer.areas.some(a => this._attackValue(a, side) > SAI.candidateMin))
-      && this.layer.flags.some(f => f.position && !f.uncapturable && f.team !== side);
+      && this.layer.areas.some(a => this.layer.takeableBy(a, side)
+        && a.controlPoints.some(f => !f.uncapturable && f.team !== side));
     S.fallback = on;
     if (!on) return false;
     S.attacks = [];
@@ -354,8 +363,22 @@ export class StrategicAI {
     const other = side === 1 ? 2 : 1;
     const f = new Map(), e = new Map();
     const inc = (m, k, v = 1) => m.set(k, (m.get(k) ?? 0) + v);
-    inc(f, 'ControlPoint', this.layer.flags.filter(fl => fl.team === side).length);
-    inc(e, 'ControlPoint', this.layer.flags.filter(fl => fl.team === other).length);
+    // `ControlPoint` (state slot 0x12) is `IAIEnvironment` vt+0x94 for the
+    // side: `BFEnvironment::getNumberOfControlPoints(team)` (0x085e4f80), the
+    // control points in the object manager's vector whose team (+0x174) is
+    // the side's. Control points only: a stand-in (a spawn group no point
+    // claims, a ship's decks; strategic-layer.js `isStandIn`) is none, and
+    // the area type flag `ControlPoint` is not counted into it (the flag loop
+    // below counts type flags 1..5, 0xc, 0xf, 0x11..0x14 only, and
+    // ControlPoint is 0x10). Read from the third-party decompile of the
+    // 1.61 Linux server and the Mac client (`getNumberOfControlPoints`
+    // 0x085ebff0 there, `SAI::updateStates`); features/bot-map-generation/
+    // flag-binding.md. The page counted every flag and each owned area typed
+    // `ControlPoint` again: a side holding three flags held six, Edson's
+    // Ridge's Allies fourteen.
+    const points = this.layer.flags.filter(fl => !isStandIn(fl));
+    inc(f, 'ControlPoint', points.filter(fl => fl.team === side).length);
+    inc(e, 'ControlPoint', points.filter(fl => fl.team === other).length);
     inc(f, 'Time', this.time);
     inc(f, 'StartTime', S.active ? this.time - S.active.chosenAt : 0);
     inc(f, 'Attacks', S.attacks.length);
@@ -375,6 +398,9 @@ export class StrategicAI {
         if (this._hasNeighbourWithStatus(area, side, 'Owned')) inc(f, 'FrontNeutral');
       }
       for (const flag of area.flags) {
+        // The type flag `ControlPoint` shares its name with the state slot
+        // above and is not counted (`SAI::updateStates`, see above).
+        if (flag === 'ControlPoint') continue;
         // Flag counts are per ownership: an owned area with the flag counts
         // for the friendly array, a hostile one for the enemy's.
         const target = st.status === 'Owned' ? f : st.status === 'Hostile' ? e : null;
