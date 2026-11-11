@@ -202,7 +202,7 @@ export function predictedDead(lint) {
 /** The walk test's facts as the lint and the census keep them: no flood, no per-cell arrays. */
 export function slimFacts(facts) {
   return {
-    cover: facts.cover, capped: facts.capped, mainPlaces: facts.mainPlaces, regions: facts.regions.length, objectFloor: facts.objectFloor,
+    cover: facts.cover, capped: facts.capped, joined: facts.joined ?? 0, mainPlaces: facts.mainPlaces, regions: facts.regions.length, objectFloor: facts.objectFloor,
     sidesMeet: facts.sidesMeet, ladders: facts.ladders,
     floors: facts.floors,
     spawns: facts.spawns.map(s => ({ name: s.name, side: s.side, landed: s.landed, onMainGround: s.onMainGround, usable: s.usable, refused: s.refused, fall: s.fall, over: s.over, under: s.under })),
@@ -226,7 +226,7 @@ function lintWalk({ walk, flags, excluded, err, warn }) {
   const unreachable = [];
   const serves = s => s.usable && s.over < STOREY;
   const takeable = f => f.reachable && f.over < STOREY;
-  if (walk.capped) warn('reach', 'the walk test ran out of room before the ground did: its findings cover part of the level');
+  if (walk.capped) warn('reach', `the walk test ran out of room before the ground did: its findings cover part of the level${walk.joined ? `, and ${walk.joined} of its unfinished grounds are joined through the walk map` : ''}`);
   if (walk.floors?.stacked) err('floors', `the play surface is stacked floors (${walk.floors.reason}): a one-floor walk map cannot hold it`);
   for (const f of walk.flags) {
     if (f.fixed || takeable(f)) {

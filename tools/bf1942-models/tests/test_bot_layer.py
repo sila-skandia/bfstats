@@ -167,6 +167,17 @@ class WalkTestTests(unittest.TestCase):
         self.assertEqual(facts["flags"]["Tower"], [False, False, 0])
         self.assertEqual(facts["flags"]["Patch"], [False, True, 0])
 
+    def test_a_capped_floods_unfinished_grounds_are_joined_through_the_walk_map(self) -> None:
+        capped = self.out["cappedFlood"]
+        self.assertTrue(capped["capped"])
+        self.assertEqual(capped["apart"], 3)
+        self.assertEqual(capped["joined"], 1)
+        self.assertTrue(capped["sidesMeet"])
+        # The room with no door is ground the flood finished: the map's free cells do not open it.
+        self.assertEqual(capped["usable"], {"a1": True, "b1": True, "in": False})
+        self.assertEqual([capped["splitJoined"], capped["splitMeet"]], [0, False])
+        self.assertEqual([capped["wholeCapped"], capped["wholeJoined"], capped["wholeMeet"]], [False, 0, True])
+
     def test_two_floors_over_each_other_are_stacked(self) -> None:
         self.assertEqual(self.out["stacked"], {"stacked": True, "share": True, "over": 3.3, "unreachable": True})
         self.assertFalse(self.out["walkFacts"]["stacked"])

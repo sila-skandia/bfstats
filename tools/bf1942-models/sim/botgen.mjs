@@ -699,8 +699,10 @@ export async function generate({ maps, models, map, mod, out = LAYERS_ROOT, temp
       // The walk test found no main ground to paint (no spawn lands, or the flood ran out of room): no map is
       // written and the page paints its own, as it does for a level with no layer.
       for (const f of Object.keys(rawFiles)) delete rawFiles[f];
-      facts = walkFacts({ collider: world.collider, grid, flags, spawns, body });
-      walkMap = { source: 'page painter', engine: 'none', opened: [], ways: [], cover: facts.cover, floors: facts.floors, capped: !!walk.facts.capped };
+      // The same flood, asked of the page's own map: a capped flood's unfinished regions are joined through it.
+      facts = walkFacts({ collider: world.collider, grid, flags, spawns, body, ground: walk.facts.flood });
+      walkMap = { source: 'page painter', engine: 'none', opened: [], ways: [], cover: facts.cover, floors: facts.floors, capped: !!walk.facts.capped,
+                  ...(facts.joined ? { joined: facts.joined } : {}) };
     } else {
       const pyramid = encodePyramid(walk.pixels, size);
       for (const level of [0, 1, 2]) rawFiles[`Pathfinding/${WALK_MAP}Level${level}Map.raw`] = pyramid[level];

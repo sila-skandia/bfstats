@@ -28,12 +28,19 @@ a new layer; shigaisen_B is not and was taken off the page; no mod level
 reaches better-than-nothing, on DICE's bar or its own mod's.
 
 **What is live, 2026-11-11:** The_Maze (Community Maps), which fails the
-page check on team kills and says so in its acceptance, and two mod levels
+page check on team kills and says so in its acceptance, and four mod levels
 that pass it: Desert Combat's DC_LostVillage, DC_Basrah_Nights and
 Inshallah_Valley, and FHSW's Tunis-1943. A level now goes to the page without its
 menu flag, is played there three times against a bar from DICE's levels
 played the same way, and gets the flag after ([page-matches.md](page-matches.md),
 section 6).
+
+**A verifier fault, 2026-11-11 (section 21).** The walk test stops at half
+a square kilometre, and on every level wider than that it read the bases
+as sealed off from each other: 51 of the 96 layers generated for the
+widened census, most of the "a side sealed in" class. Fixed; those levels
+are being censused again, and the census figures for wide levels in
+sections 16 and 19 predate the fix.
 
 **Owner decisions, 2026-11-10.** Any level without bots is a candidate, in
 every mod and in the community maps, not only FHSW. The priority is on-foot
@@ -3283,3 +3290,88 @@ to. Both are open; the second is a viewer change for the other agent.
 10. The mod bars inherit the runner's vehicle behaviour; they move when
     seat or vehicle code moves, and want a rebuild with DICE's whenever it
     does.
+
+## 21. 2026-11-11: the walk test ran out of room on every wide level
+
+Written by the coordinator, ahead of section 20 (the widened census, which
+is being run again because of this).
+
+### 21.1 The fault
+
+The widened census classed 38 of 106 levels "a side sealed in": every
+spawn of a side with no way on foot to the main ground, on levels that are
+open desert (Aberdeen, Raid on Agheila, DC's 73 Easting). The lint's own
+warning beside each said why: "the walk test ran out of room before the
+ground did".
+
+`walkflood.mjs walkFlood` grows every spawn at once, one 0.25 m cell at a
+time, and stops at `maxCells`, 8 million cells, half a square kilometre.
+With 49 spawns that is a disc about 50 m across for each. Two bases a
+kilometre apart never meet, so they read as two grounds; a flag far from
+every spawn has no walked place inside its ring; and the rules built on
+those facts all fire: the lint's "sealed", "no-route" and "no-flag"
+errors, the generator's exclusion of every such flag, the route probe
+(which starts from usable spawns and finds none), and the template choice
+(`few`, for "0 capturable flags in play"). The layer that comes out has
+nothing to attack, and the census match shows bots idle for 94 % of it.
+
+`generated.json` `walkMap.capped` marks each such layer: **51 of the 96**
+layers generated for the census, among them most of FHSW's open-ground
+levels and several that read "clean" with no fight. None of the five live
+layers is one.
+
+### 21.2 The fix
+
+Two rules, both in `walkflood.mjs`, both INVENTION (a verifier's rules,
+with no counterpart in the engine):
+
+1. **A capped flood is run again with the flags as starts** after the
+   spawns (`walkedGround`), so the ground under every flag is looked at.
+2. **The grounds the cap left unfinished are joined through the walk
+   map** (`joinThroughMap`, called by `walkFacts`): two unfinished regions
+   that each stand on one component of the map (at least `JOIN_SHARE`,
+   a tenth, of their places and `JOIN_PLACES`, 64) are one ground. The
+   map is the one the bots route on, the page's painter's for a level the
+   engine wrote none for, so "the map joins them" is the question a route
+   asks; the route probe then plans the routes themselves. A region the
+   flood finished is never joined: its edge is where the ground stops,
+   whatever a one-bit map says (a room with no door stays shut:
+   `test_a_capped_floods_unfinished_grounds_are_joined_through_the_walk_map`).
+
+A flood the cap did not end is untouched, so every layer generated on one
+is byte for byte what it was. `facts.joined`, the lint's warning and
+`generated.json` `walkMap.joined` say how many grounds were joined.
+
+Raising the cap instead was weighed and left: the flood's arrays hold the
+whole box (39 bytes a fine cell, 2.5 GB for a level 2 km square, 10 GB for
+4 km), and a coarser cell breaks the step rule on slopes.
+
+### 21.3 Aberdeen, before and after
+
+Vanilla Aberdeen (no bots in retail), 8 a side, 300 s, seed 1, the
+garrison, with vehicles:
+
+| | before | after |
+|---|---|---|
+| lint errors | 2 (both sides sealed) | 0 |
+| flags excluded | 7 of 7 | 1 (City, on a roof) |
+| template | `few`, 0 flags in play | `symmetric`, 6 in play |
+| spawns cut off | 28 of 49 | 14 of 49 |
+| sides meet | no | yes |
+| idle share | 0.94 | 0.18 |
+| mounted share | 0.99 | 0.70 |
+| enemy kills, captures | 0, 0 | 2, 2 |
+
+It is still not "alive" by the census rule (one side has no kill in
+300 s): on a level where the bases stand a kilometre apart, 300 s at 8 a
+side is mostly the drive. The capped levels are being censused again with
+a 600 s match for those that move and take flags (section 20).
+
+### 21.4 Not verified
+
+1. Only Aberdeen was run by hand; the other 50 are the agent's re-census.
+2. The join trusts the walk map across the ground the flood did not
+   walk. A wall the painter's map misses there is caught only if a probed
+   route crosses it.
+3. Generating a capped level now takes about two minutes (two floods and
+   a route probe that has routes to plan), against twenty seconds.

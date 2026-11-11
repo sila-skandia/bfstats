@@ -318,6 +318,26 @@ const brief = f => ({ spawns: Object.fromEntries(f.spawns.map(s => [s.name, s.us
   flags: Object.fromEntries(f.flags.map(g => [g.name, [g.reachable, !!g.inRing, g.poleLift]])), stacked: f.floors.stacked, regions: f.regions.length });
 out.walkFacts = brief(facts);
 const prep = gen.prepareWalkMap({ collider: level, size: SIZE, flags: wFlags, spawns: wSpawns, body, engine: enginePixels });
+
+// A flood the cap ends before the ground does: the two bases' discs never meet, though it is one open
+// ground. The discs it had not finished are joined through the walk map; the room with no door, which it
+// had finished, is not, whatever the map says.
+{
+  const three = wSpawns.slice(0, 3);
+  const open = new Uint8Array(SIZE * SIZE);
+  const cut = () => wf.walkFlood(level, three.map(s => [s.x, s.y, s.z]), body, { twoWay: true, bounds: wf.floodBounds([...three, ...wFlags], SIZE), maxCells: 9000 });
+  const ground = cut();
+  const apart = new Set(ground.startRegion).size;
+  const f = wf.walkFacts({ collider: level, grid: gridOf(open), flags: [wFlags[0]], spawns: three, body, ground });
+  // The same flood against a map that keeps the two bases apart: nothing is joined.
+  const split = Uint8Array.from(open);
+  for (let z = 0; z < SIZE; z++) split[z * SIZE + 30] = 1;
+  const g = wf.walkFacts({ collider: level, grid: gridOf(split), flags: [wFlags[0]], spawns: three, body, ground: cut() });
+  // A flood that ran out of ground is left as it is.
+  const whole = wf.walkFacts({ collider: level, grid: gridOf(open), flags: [wFlags[0]], spawns: three, body });
+  out.cappedFlood = { capped: f.capped, apart, joined: f.joined, sidesMeet: f.sidesMeet, usable: Object.fromEntries(f.spawns.map(s => [s.name, s.usable])),
+    splitJoined: g.joined, splitMeet: g.sidesMeet, wholeCapped: whole.capped, wholeJoined: whole.joined, wholeMeet: whole.sidesMeet };
+}
 const again = gen.prepareWalkMap({ collider: level, size: SIZE, flags: wFlags, spawns: wSpawns, body, engine: prep.pixels, previous: { source: prep.source, opened: prep.opened } });
 out.walkMap = {
   source: prep.source, ways: prep.ways, opened: prep.opened.length,

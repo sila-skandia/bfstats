@@ -120,7 +120,8 @@ const LAYERS = 3;
  * `cells` the number of standing places found, `path` the places `[x, z, y]`
  * from a start to the goal, `at(x, z)` the heights found over a point
  * (highest first), `each(fn)` every place as `fn(x, z, y, region)`, `capped`
- * true when `maxCells` ended it before the ground ran out.
+ * true when `maxCells` ended it before the ground ran out, `open()` the
+ * regions it had not finished then, and `join(p, q)` makes two regions one.
  *
  * A place carries the start it was reached from, and two starts whose
  * floods touch are one region: with `drop` no more than the step every move
@@ -142,7 +143,7 @@ export function walkFlood(collider, starts, body, { goal = null, jump = false, t
   const group = starts.map((_, i) => i);
   const find = i => { while (group[i] !== i) { group[i] = group[group[i]]; i = group[i]; } return i; };
   const queue = new Int32Array(Math.min(w * h * LAYERS, maxCells + starts.length + 8));
-  let head = 0, tail = 0, cells = 0, goalAt = -1, capped = false;
+  let head = 0, tail = 0, cells = 0, goalAt = -1, capped = false, full = false;
   const r = body.radius, climb = jump ? body.jump : body.step;
   const top = body.height - r;
   const xOf = c => ((c % w) + ox + 0.5) * cell, zOf = c => (Math.floor(c / w) + oz + 0.5) * cell;
@@ -159,7 +160,7 @@ export function walkFlood(collider, starts, body, { goal = null, jump = false, t
     let s = -1;
     for (let k = 0; k < LAYERS && s < 0; k++) if (Number.isNaN(ys[c * LAYERS + k])) s = c * LAYERS + k;
     if (s < 0) return;
-    if (tail >= queue.length) { capped = true; return; }
+    if (tail >= queue.length) { capped = true; full = true; return; }
     ys[s] = f.y; steep[s] = isSteep(f); parent[s] = from; label[s] = mark; queue[tail++] = s; cells++;
   };
   const startRegion = starts.map(() => -1);
@@ -240,7 +241,14 @@ export function walkFlood(collider, starts, body, { goal = null, jump = false, t
     const s = found(iz * w + ix, y);
     return s < 0 ? -1 : find(label[s]);
   };
-  return { reached: goalAt >= 0, cells, path: route, capped, at, each, regionOf, cell, jump,
+  // What the cap left unfinished: the regions of the places still waiting to be grown from (the one the cap
+  // stopped on with them). A region not among them ran out of ground, and its edge is the ground's own.
+  const waiting = [];
+  if (capped) for (let q = Math.max(0, head - 1); q < tail; q++) waiting.push(label[queue[q]]);
+  const open = () => (full ? [...new Set(group.map((_, i) => find(i)))] : [...new Set(waiting.map(find))]);
+  /** Make two regions one (`walkFacts` does, for unfinished regions a walk map joins). */
+  const join = (p, q) => { if (p >= 0 && q >= 0) group[find(p)] = find(q); };
+  return { reached: goalAt >= 0, cells, path: route, capped, at, each, regionOf, cell, jump, open, join,
            get startRegion() { return startRegion.map(n => (n < 0 ? -1 : find(n))); } };
 }
 
@@ -319,7 +327,58 @@ export function floodBounds(points, worldSize = Infinity) {
  * ground whose places all reach each other. `spawns` `[{ x, y, z }]`.
  */
 export function walkedGround(collider, spawns, flags, body, worldSize = Infinity) {
-  return walkFlood(collider, spawns.map(s => [s.x, s.y, s.z]), body, { twoWay: true, bounds: floodBounds([...spawns, ...flags], worldSize) });
+  const starts = spawns.map(s => [s.x, s.y, s.z]);
+  const options = { twoWay: true, bounds: floodBounds([...spawns, ...flags], worldSize) };
+  const flood = walkFlood(collider, starts, body, options);
+  if (!flood.capped || !flags.length) return flood;
+  // The cap ended it with ground left (a level wider than `maxCells` fine cells): each start has walked a
+  // disc of its own, and a flag far from every spawn stands in none. Flood again with the flags as starts
+  // after the spawns, so every flag's ground is looked at; `walkFacts` joins the discs through the walk map.
+  return walkFlood(collider, [...starts, ...flags.map(f => [f.x, f.y, f.z])], body, options);
+}
+
+/** An unfinished region is on a walk map's component when this share of its places, and this many, stand on
+ *  the component's free cells. */
+export const JOIN_SHARE = 0.1, JOIN_PLACES = 64;
+
+/**
+ * Join the regions a capped flood had not finished through the walk map
+ * `grid` (`id` its components): two unfinished regions standing on one
+ * component of the map are one ground. Returns how many regions it joined.
+ *
+ * The flood grows every start at once, so the cap leaves each spawn with a
+ * disc about 50 m across on a level a kilometre wide, and two bases that
+ * are one open desert read as two grounds, each "sealed in" (Aberdeen:
+ * both sides, 7 of 7 spawns; 51 of the 96 levels censused on 2026-11-10
+ * were capped). The map is the one the bots route on, so "the map joins
+ * them" is the question a route asks; the route probe then plans the
+ * routes themselves. A region the flood finished is not joined: its edge
+ * is where the ground stops, whatever a one-bit map says.
+ *
+ * INVENTION: a verifier's rule, with no counterpart in the engine.
+ */
+export function joinThroughMap(flood, grid, id) {
+  if (!flood.capped) return 0;
+  const open = new Set(flood.open());
+  if (open.size < 2) return 0;
+  const on = new Map();
+  flood.each((x, z, y, r) => {
+    if (!open.has(r)) return;
+    let o = on.get(r);
+    if (!o) { o = { places: 0, free: new Map() }; on.set(r, o); }
+    o.places++;
+    const c = cellIndex(grid, x, z);
+    if (c >= 0 && id[c]) o.free.set(id[c], (o.free.get(id[c]) ?? 0) + 1);
+  });
+  const first = new Map();
+  let joined = 0;
+  for (const [r, o] of on) {
+    for (const [component, n] of o.free) {
+      if (n < JOIN_PLACES || n < JOIN_SHARE * o.places) continue;
+      if (first.has(component)) { flood.join(r, first.get(component)); joined++; } else first.set(component, r);
+    }
+  }
+  return joined;
 }
 
 /**
@@ -348,7 +407,9 @@ export function walkedGround(collider, spawns, flags, body, worldSize = Infinity
 export function walkFacts({ collider, grid, flags, spawns, body, ground = null }) {
   const flood = ground ?? walkedGround(collider, spawns, flags, body, grid.width * grid.cellSize);
   const { id, sizes } = components(grid);
-  const startRegion = flood.startRegion;
+  const joined = joinThroughMap(flood, grid, id);
+  // The starts after the spawns are a capped flood's flags (`walkedGround`): they are not spawns.
+  const startRegion = flood.startRegion.slice(0, spawns.length);
   const fine = flood.cell;
   /** Places within `reach` (horizontal) of a point, as `{ x, z, y, d, region, component }`. */
   const near = (px, pz, reach) => {
@@ -434,7 +495,7 @@ export function walkFacts({ collider, grid, flags, spawns, body, ground = null }
   const stacked = share >= STACKED_SHARE || pointShare >= STACKED_FLAGS;
   const landed = spawnFacts.filter(s => s.landed);
   return {
-    flood, capped: flood.capped, components: { id, sizes }, mainComponent, cover: +cover.toFixed(3),
+    flood, capped: flood.capped, joined, components: { id, sizes }, mainComponent, cover: +cover.toFixed(3),
     mainRegion: main ? main.id : -1, mainPlaces: main ? main.places : 0,
     regions: [...regions.values()].map(o => ({ id: o.id, places: o.places, spawns: o.spawns, flags: o.flags })).sort((p, q) => q.places - p.places),
     objectFloor: landed.length ? +(landed.filter(s => s.objectFloor).length / landed.length).toFixed(2) : 0,
