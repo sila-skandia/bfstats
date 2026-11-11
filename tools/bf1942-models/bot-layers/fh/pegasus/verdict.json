@@ -1,7 +1,7 @@
 {
  "level": "pegasus",
  "verdict": "fail",
- "outcome": "no-better-than-nothing",
+ "outcome": "better-than-nothing",
  "config": "with vehicles",
  "doctrine": "garrison",
  "generatorVersion": 5,
@@ -29,22 +29,26 @@
    }
   }
  },
- "seeds": 10,
+ "seeds": 2,
  "sizes": {
   "8": {
    "verdict": "fail",
    "failed": [
+    "stuckSecondsPerBotMinute",
     "routeFailuresPerBotMinute",
+    "redeploysPerBotMinute",
     "enemyKillsPerBotMinute",
+    "bothSidesCapture",
+    "stuckSecondsPerBotMinuteWorseSide",
     "routeFailuresPerBotMinuteWorseSide",
+    "redeploysPerBotMinuteWorseSide",
     "nonEnemyDeathShareWorseSide",
     "hullStuckSecondsPerDrivingMinute",
-    "hullStuckSecondsPerDrivingMinuteWorseSide",
-    "unitsNeverUsedShare"
+    "hullStuckSecondsPerDrivingMinuteWorseSide"
    ],
    "winners": [
+    2,
     0,
-    10,
     0
    ]
   },
@@ -53,21 +57,42 @@
    "failed": [
     "routeFailuresPerBotMinute",
     "enemyKillsPerBotMinute",
-    "bothSidesCapture",
     "routeFailuresPerBotMinuteWorseSide",
     "nonEnemyDeathShareWorseSide",
-    "hullStuckSecondsPerDrivingMinute",
-    "hullStuckSecondsPerDrivingMinuteWorseSide",
-    "unitsNeverUsedShare"
+    "hullStuckSecondsPerDrivingMinute"
    ],
    "winners": [
-    4,
-    6,
+    2,
+    0,
     0
    ]
   }
  },
- "oneSided": null,
+ "oneSided": 1,
  "unreachable": [],
- "lintErrors": []
+ "lintErrors": [],
+ "accepted": {
+  "reason": "Owner's rollout, 2026-11-11: after playing Tunis-1943 against its generated bots the owner asked for every level with a fight to go live. Two or three seeds at 8 and 16 a side, the garrison; the checks it fails are listed with this verdict, and a match on the page decides whether it keeps its menu flag.",
+  "date": "2026-11-11",
+  "outcome": "better-than-nothing",
+  "failed": [
+   "8:stuckSecondsPerBotMinute",
+   "8:routeFailuresPerBotMinute",
+   "8:redeploysPerBotMinute",
+   "8:enemyKillsPerBotMinute",
+   "8:bothSidesCapture",
+   "8:stuckSecondsPerBotMinuteWorseSide",
+   "8:routeFailuresPerBotMinuteWorseSide",
+   "8:redeploysPerBotMinuteWorseSide",
+   "8:nonEnemyDeathShareWorseSide",
+   "8:hullStuckSecondsPerDrivingMinute",
+   "8:hullStuckSecondsPerDrivingMinuteWorseSide",
+   "16:routeFailuresPerBotMinute",
+   "16:enemyKillsPerBotMinute",
+   "16:routeFailuresPerBotMinuteWorseSide",
+   "16:nonEnemyDeathShareWorseSide",
+   "16:hullStuckSecondsPerDrivingMinute"
+  ],
+  "by": "owner"
+ }
 }

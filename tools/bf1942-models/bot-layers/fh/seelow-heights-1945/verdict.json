@@ -1,0 +1,89 @@
+{
+ "level": "seelow-heights-1945",
+ "verdict": "fail",
+ "outcome": "no-fight",
+ "config": "with vehicles",
+ "doctrine": "garrison",
+ "generatorVersion": 5,
+ "inputs": {
+  "controlPoints": "7a63600c0c87cf13a593f4c05e67228c4acbf08ca00b3035189b1a60138cfa00",
+  "infantryMap": "1bb97c943091c21ad1255ea169c0180fb891492a27c6a0fde99153a5dca8d4f6",
+  "template": "43f8a790471528016570235f76e97dbb2045732458781a5139f37fed68bf98c0"
+ },
+ "baseline": "DICE layers with vehicles, garrison doctrine: berlin, stalingrad, kharkov, bocage; seeds 1..10, 600 s",
+ "bar": {
+  "against": "dice",
+  "why": "fh's own bar holds 0 alive levels, fewer than 3: DICE's"
+ },
+ "againstOwnMod": {
+  "mod": "fh",
+  "verdict": "fail",
+  "outcome": "no-better-than-nothing",
+  "levelsAlive": [],
+  "sizes": {
+   "8": {
+    "verdict": "no-baseline"
+   },
+   "16": {
+    "verdict": "no-baseline"
+   }
+  }
+ },
+ "seeds": 2,
+ "sizes": {
+  "8": {
+   "verdict": "fail",
+   "failed": [
+    "stuckSecondsPerBotMinute",
+    "idleShare",
+    "routeFailuresPerBotMinute",
+    "redeploysPerBotMinute",
+    "capturesTotal",
+    "enemyKillsPerBotMinute",
+    "flagCoverage",
+    "bothSidesCapture",
+    "bothSidesKill",
+    "ticketsBleed",
+    "stuckSecondsPerBotMinuteWorseSide",
+    "routeFailuresPerBotMinuteWorseSide",
+    "redeploysPerBotMinuteWorseSide",
+    "nonEnemyDeathShareWorseSide",
+    "unitsNeverUsedShare"
+   ],
+   "winners": [
+    1,
+    1,
+    0
+   ]
+  },
+  "16": {
+   "verdict": "fail",
+   "failed": [
+    "stuckSecondsPerBotMinute",
+    "idleShare",
+    "routeFailuresPerBotMinute",
+    "redeploysPerBotMinute",
+    "enemyKillsPerBotMinute",
+    "flagCoverage",
+    "bothSidesCapture",
+    "bothSidesKill",
+    "stuckSecondsPerBotMinuteWorseSide",
+    "routeFailuresPerBotMinuteWorseSide",
+    "redeploysPerBotMinuteWorseSide",
+    "nonEnemyDeathShareWorseSide",
+    "unitsNeverUsedShare",
+    "tankSilentShare"
+   ],
+   "winners": [
+    0,
+    2,
+    0
+   ]
+  }
+ },
+ "oneSided": null,
+ "unreachable": [
+  "axisbase"
+ ],
+ "lintErrors": []
+}
