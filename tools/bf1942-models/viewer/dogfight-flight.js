@@ -165,6 +165,16 @@ export function pointNose(state, dir, opts = {}) {
   return { pitch: -up, roll, rudder, off };
 }
 
+/** The roll stick for a bank error's push (`want`) less the roll rate's
+ *  damping (`damp`), through the airframe's roll hand (`HAND`): a slow
+ *  roller's roll damped `hand.roll` times as hard and handled `hand.gain`
+ *  as lightly, or it rolls past the bank asked for, on into a dive (the
+ *  Thach weave's 80-degree turns went inverted on FHSW's Yak 9). */
+function rollStick(state, want, damp) {
+  const h = state.hand;
+  return clamp((h?.gain ?? 1) * (want - damp * (h?.roll ?? 1)));
+}
+
 /**
  * Roll the lift onto `liftDir` (a world direction, taken square to the nose)
  * and hold `pull` of aft stick: a loop, a break turn, the pull of a yo-yo.
@@ -175,7 +185,7 @@ export function pullLift(state, liftDir, pull = 1, { rollGain = 2.4, rollDamp = 
   const rates = bodyRates(q, state.angularVelocity);
   const L = sub(liftDir, scale(F, dot(liftDir, F)));
   const ang = len(L) > 1e-6 ? Math.atan2(dot(R, L), dot(U, L)) : 0;
-  const roll = clamp(rollGain * ang - rollDamp * rates.roll);
+  const roll = rollStick(state, rollGain * ang, rollDamp * rates.roll);
   const ready = clamp(1 - Math.max(0, Math.abs(ang) / DEG - 45) / 60, 0.1, 1);
   return { pitch: -clamp(pull * ready, -1, 1), roll, rudder: clamp(-0.3 * rates.yaw), off: 0 };
 }
@@ -190,7 +200,7 @@ export function bankAndPull(state, bankDeg, pull = 1, { rollGain = 2.6, rollDamp
   let err = bankDeg - bankOf(q).bank;
   if (err > 180) err -= 360;
   if (err < -180) err += 360;
-  const roll = clamp(rollGain * err * DEG - rollDamp * rates.roll);
+  const roll = rollStick(state, rollGain * err * DEG, rollDamp * rates.roll);
   // Rolling a long way first, the pull waits.
   const ready = clamp(1 - Math.max(0, Math.abs(err) - 30) / 60, 0.2, 1);
   return { pitch: -clamp(pull * ready, -1, 1), roll, rudder: clamp(-0.3 * rates.yaw), off: Math.abs(err) };

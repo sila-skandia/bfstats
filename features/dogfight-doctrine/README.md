@@ -230,16 +230,30 @@ cannot fly at the pair's 60 m/s start, the hunted plane flew level at full
 throttle as fast as the hunter could: the pair's cruise is capped at 0.6
 throttle (`mem.cruiseCap`), which moves vanilla's shoot-down by 0.2 s.
 
+**The Thach weave went into the ground** on FHSW's Yak 9 (both of the pair,
+36 and 58 s in). The weave's turn-in is `hardTurn` at an 80-degree bank,
+flown by `bankAndPull`, whose roll had its own gains and no roll hand: on
+the Yak 9 it rolled on past the bank asked for to 140 and 176 degrees,
+inverted, pulling, and the split-S that followed took the turn under the
+floor faster than the pull-out (`guard`) could roll it upright. Both
+`bankAndPull` and `pullLift` now roll through the airframe's roll hand
+(`rollStick`), as `pointNose` does. That made FHSW's hunter turn better
+too, and on the P-47 it got back on your tail while your wingman, who
+dropped the cover the moment it swung off the tail, was back on station:
+the wingman now stays after a hunter they are already after for 4 s while
+its nose is within 90 degrees of yours (`PAIR.hold`). Vanilla's nine
+starts: the wingman still takes 0 to 2 rounds, you none.
+
 The pair on every arena now (`test_dogfight_arena_hunter.py`, the 59
 arenas' airframes in `tests/fixtures/arena-airframes.json.gz`):
 
-| Tree (arenas) | Alone, straight: shot down | Wingman: rounds on you | Hunter into the ground |
-|---|---|---|---|
-| vanilla (5), Road to Rome (7), Secret Weapons (5) | every arena, 22.3 to 25.5 s in | none | never |
-| BF1918 (22) | every arena, 16.6 to 31.5 s in | none | never |
-| Desert Combat (7) | every arena, 13.7 to 13.8 s in | none | never |
-| Forgotten Hope (1) | 18.9 s in | none | never |
-| FHSW (12) | every arena, 12.5 to 17.1 s in | 0 to 17, never shot down | never |
+| Tree (arenas) | Alone, straight: shot down | Wingman: rounds on you | Thach weave: on you / on the hunter | Into the ground |
+|---|---|---|---|---|
+| vanilla (5), Road to Rome (7), Secret Weapons (5) | every arena, 22.3 to 25.5 s in | none | 0 / 0 to 3 | nobody |
+| BF1918 (22) | every arena, 16.6 to 31.5 s in | none | 0 to 8 / 0 to 12 | nobody |
+| Desert Combat (7) | every arena, 13.7 to 13.8 s in | none | 0 / 0 | nobody |
+| Forgotten Hope (1) | 18.9 s in | none | 0 / 2 | nobody |
+| FHSW (12) | every arena, 12.5 to 17.1 s in | 0 to 12, never shot down | 0 to 3 / 0 | nobody |
 
 The hand changes every lesson flown on those airframes, and the tabs show
 each move's count flown on the airframe on stage, so their counts moved.
@@ -249,26 +263,25 @@ that score 0 on all of them left out):
 
 | Move | Albatros | D.VII | FH Mustang | Spitfire Ib | Bf 109-G6 | Spitfire 22 | Spitfire I | Bf 109 | Spitfire Vb | Bf 109-G10 | Yak 9 | P-47 | Bf 109-G10R6 |
 |---|---|---|---|---|---|---|---|---|---|---|---|---|---|
-| boom-and-zoom / dip | 6 > 1 | 2 > 4 | 5 > 3 | 2 > 0 | 4 > 0 | 3 > 0 | 2 > 0 | 0 | 2 > 0 | 1 > 0 | 3 > 0 | 5 > 0 | 5 > 0 |
-| under-the-height / dip | 7 > 9 | 1 > 0 | 4 > 1 | 9 > 3 | 5 > 3 | 9 > 3 | 7 > 3 | 9 > 4 | 9 > 7 | 3 > 6 | 2 > 4 | 8 > 0 | 8 > 3 |
-| under-the-height / ninja | 1 > 3 | 0 | 0 | 0 | 0 | 0 | 0 | 0 | 0 | 0 | 0 | 0 | 0 |
-| up-and-over / dip | 5 > 8 | 3 | 8 > 9 | 8 > 9 | 8 > 6 | 7 > 8 | 9 | 7 > 9 | 6 | 4 > 2 | 6 > 2 | 4 > 7 | 5 > 7 |
-| out-of-the-lock / dip | 5 > 0 | 0 | 0 | 0 | 0 | 0 | 0 | 2 > 0 | 0 | 0 | 0 | 0 | 0 |
-| out-of-the-lock / flip | 0 > 1 | 0 | 0 | 0 | 0 | 0 | 0 | 0 | 0 | 0 | 0 | 0 | 0 |
-| on-his-tail / dip | 4 > 0 | 3 | 9 > 7 | 8 > 7 | 7 > 3 | 6 | 8 > 7 | 9 | 9 > 5 | 8 | 6 > 4 | 8 | 9 > 6 |
-| on-his-tail / flip | 0 | 0 | 0 | 0 > 1 | 0 | 0 | 0 | 0 | 0 > 2 | 0 | 0 | 0 | 0 |
-| on-his-tail / ninja | 0 > 1 | 0 | 0 | 0 | 0 | 0 | 0 | 0 | 0 | 0 | 0 | 0 | 0 |
-| break-turn / dip | 2 > 3 | 1 | 5 | 6 > 8 | 5 > 1 | 7 > 4 | 4 > 8 | 6 > 2 | 7 > 3 | 8 > 3 | 2 > 7 | 2 > 1 | 5 > 4 |
+| boom-and-zoom / dip | 6 > 0 | 2 | 5 > 0 | 2 > 0 | 4 > 0 | 3 > 0 | 2 > 0 | 0 | 2 > 0 | 1 > 0 | 3 > 0 | 5 > 0 | 5 > 0 |
+| under-the-height / dip | 7 > 9 | 1 > 0 | 4 > 0 | 9 > 1 | 5 > 0 | 9 > 0 | 7 > 9 | 9 > 7 | 9 > 6 | 3 > 0 | 2 > 5 | 8 > 0 | 8 > 0 |
+| under-the-height / ninja | 1 | 0 | 0 | 0 | 0 | 0 | 0 | 0 | 0 | 0 | 0 | 0 | 0 |
+| up-and-over / dip | 5 > 8 | 3 > 5 | 8 | 8 > 9 | 8 > 9 | 7 > 8 | 9 | 7 > 9 | 6 > 5 | 4 > 9 | 6 > 1 | 4 > 5 | 5 > 7 |
+| out-of-the-lock / dip | 5 > 0 | 0 | 0 | 0 > 9 | 0 > 2 | 0 | 0 > 9 | 2 > 9 | 0 > 9 | 0 | 0 > 9 | 0 > 9 | 0 > 9 |
+| on-his-tail / dip | 4 > 0 | 3 > 0 | 9 > 0 | 8 | 7 > 9 | 6 > 9 | 8 > 7 | 9 > 7 | 9 | 8 | 6 > 9 | 8 > 9 | 9 |
+| on-his-tail / ninja | 0 > 2 | 0 | 0 | 0 | 0 | 0 | 0 | 0 | 0 | 0 | 0 | 0 | 0 |
+| break-turn / dip | 2 > 1 | 1 > 4 | 5 > 1 | 6 > 9 | 5 > 6 | 7 > 5 | 4 > 8 | 6 | 7 > 9 | 8 > 0 | 2 > 9 | 2 > 6 | 5 > 8 |
 | break-turn / flip | 1 > 2 | 0 | 0 | 0 | 0 | 0 | 0 | 0 | 0 | 0 | 0 | 0 | 0 |
-| scissors / dip | 1 > 2 | 1 > 0 | 3 > 5 | 3 | 5 | 1 > 2 | 5 > 2 | 7 | 2 > 1 | 3 > 6 | 0 > 3 | 6 > 3 | 4 > 5 |
-| turnarounds / dip | 6 > 8 | 0 | 9 > 6 | 9 | 9 | 9 | 9 | 9 | 9 | 9 | 0 > 8 | 9 | 9 |
-| the-circle / dip | 9 > 5 | 4 > 0 | 7 | 9 | 9 > 8 | 9 > 7 | 9 | 9 | 9 | 9 | 2 > 9 | 8 > 9 | 9 > 8 |
-| **Lessons survivable / partly** | 2/7 > 3/5 | 0/3 | 4/8 > 3/7 | 5/7 | 4/8 > 2/6 | 5/7 > 3/6 | 5/7 > 5/6 | 6/7 > 5/6 | 5/6 > 3/6 | 4/7 > 3/6 | 0/3 > 3/6 | 4/7 > 4/5 | 4/8 > 3/7 |
+| scissors / dip | 1 > 0 | 1 > 3 | 3 > 1 | 3 > 7 | 5 > 1 | 1 > 0 | 5 > 6 | 7 | 2 > 7 | 3 > 0 | 0 > 6 | 6 > 2 | 4 > 1 |
+| turnarounds / dip | 6 > 9 | 0 > 6 | 9 | 9 | 9 | 9 > 2 | 9 | 9 | 9 | 9 | 0 > 9 | 9 | 9 > 7 |
+| turnarounds / flip | 0 > 1 | 0 | 0 | 0 | 0 | 0 | 0 | 0 | 0 | 0 | 0 | 0 | 0 |
+| the-circle / dip | 9 > 6 | 4 > 0 | 7 > 0 | 9 > 3 | 9 > 0 | 9 > 2 | 9 > 4 | 9 > 8 | 9 > 3 | 9 > 0 | 2 > 5 | 8 > 1 | 9 > 0 |
+| **Lessons survivable / partly** | 2/7 > 3/4 | 0/3 > 0/4 | 4/8 > 2/2 | 5/7 > 6/7 | 4/8 > 3/4 | 5/7 > 2/3 | 5/7 > 6/8 | 6/7 > 7/8 | 5/6 > 5/8 | 4/7 > 3/3 | 0/3 > 4/7 | 4/7 > 3/5 | 4/8 > 5/5 |
 
 The ways out that lean on the attacker missing (boom and zoom's Extension,
-the falling-back Dips) count lower, because the attacker, flown by the same
-hands, now holds its sight on; the ones that out-fly it (*Up and over*'s,
-the turnarounds') count higher. The lessons' words are the Spitfire's and
+the circle's) count lower, because the attacker, flown by the same hands,
+now holds its sight on; the ones that out-fly it (*Out of their lock*'s,
+*Up and over*'s, the break turn's on most FHSW fighters) count higher. The lessons' words are the Spitfire's and
 unchanged; the tabs say each airframe's count. The "lessons on other
 airframes" table above was flown before the roll hand: its `Albatross` and
 FHSW Bf 109-F columns are superseded here (the Bf 109-F flies no arena's
