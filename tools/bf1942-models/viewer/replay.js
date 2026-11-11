@@ -57,6 +57,7 @@ import { ReplayFeed } from './replay-feed.js';
 import { dynamicCast } from './replay-gunfire.js';
 import { ReplayHull, modelKind } from './replay-hulls.js';
 import { ReplaySoldiers } from './replay-bodies.js';
+import { ReplayMatchup } from './replay-matchup-view.js';
 import { addStandIns } from './replay-standins.js';
 import { ReplayProps, networkedRounds, weaponOfProjectile } from './replay-props.js';
 import { ReplayFlights } from './replay-flights.js';
@@ -247,6 +248,23 @@ class ReplayPlayer {
     // The creator view: picking, the round cam, a player's highlights, clips
     // and camera keys, for a signed-in player (features/replay-creator-view).
     this.creator = extra('the creator view', () => new ReplayCreator(this)) ?? null;
+    // The match-up: the round frozen on two that fought, taken apart side by
+    // side (features/replay-matchup). Opened from the bar's menu only.
+    this.matchup = extra('the match-up', () => new ReplayMatchup(this)) ?? null;
+  }
+
+  /** The match-up's turn in a frame, switched off the way the highlights'
+   *  is if it throws. */
+  withMatchup(fn) {
+    if (!this.matchup) return;
+    try {
+      fn(this.matchup);
+    } catch (error) {
+      console.warn('replay: the match-up threw and is switched off', error);
+      const matchup = this.matchup;
+      this.matchup = null;
+      extra('taking the match-up down', () => matchup.dispose());
+    }
   }
 
   /** The creator view's turn in a frame, switched off the way the
@@ -1147,6 +1165,7 @@ class ReplayPlayer {
     guard.run('the bar', () => this.ui.update(t, dt));
     this.withHighlights(h => h.update(t, dt));
     this.withCreator(c => c.update(t, dt));
+    this.withMatchup(m => m.update(t, dt));
   }
 
   /**
@@ -1264,6 +1283,7 @@ class ReplayPlayer {
     extra('taking the message log back', () => this.feed.dispose());
     extra('taking the highlights down', () => this.highlights?.dispose());
     extra('taking the creator view down', () => this.creator?.dispose());
+    extra('taking the match-up down', () => this.matchup?.dispose());
     extra('taking the bar down', () => this.ui.dispose());
     extra('taking the debriefing down', () => this.debrief?.dispose());
     extra('taking the scout view down', () => this.spotting?.dispose());

@@ -148,6 +148,8 @@ const ICON = {
   auto: '<path d="M1.5 4.5h9v7h-9z" fill="none" stroke="currentColor" stroke-width="1.4"/><path d="M10.5 7l4-2.5v7l-4-2.5z"/><circle cx="6" cy="8" r="1.6"/>',
   flame: '<path d="M8 1c1.9 2.7 4.1 4.3 3.7 8-.3 2.8-2 5-3.7 5-2 0-3.8-1.7-3.8-4.1 0-2.1 1.3-3.1 2.2-4.6.4 1.6 1 2.3 1.8 2.6.4-2 .1-4.4-.2-6.9z"/>',
   crown: '<path d="M1.8 12.5h12.4l1-7.6-3.9 3L8 2.5 4.7 7.9l-3.9-3z"/>',
+  // Two tanks, guns laid at each other: the match-up.
+  matchup: '<path d="M.8 12.6h5.6v-2H5.1l-.7-1.5H2.1l-.6 1.5H.8zM15.2 12.6H9.6v-2h1.3l.7-1.5h2.3l.6 1.5h.7z"/><path d="M4.2 9.6h3.1v.9H4.2zM11.8 9.6H8.7v.9h3.1z"/><path d="M6.2 4.5 8 2.8l1.8 1.7M8 2.8v3.4" fill="none" stroke="currentColor" stroke-width="1.2" stroke-linecap="round"/>',
 };
 const svg = name => `<svg viewBox="0 0 16 16" aria-hidden="true">${ICON[name] ?? ''}</svg>`;
 
@@ -811,21 +813,7 @@ export class ReplayUi {
     this.moreMenu.setAttribute('role', 'menu');
     this.moreWhen = el('div', 'rp-more-when');
     this.moreMenu.append(this.moreWhen);
-    const item = (className, icon, text, key, onClick, check = false) => {
-      const b = el('button', `rp-mi ${className}`.trim());
-      b.type = 'button';
-      b.setAttribute('role', check ? 'menuitemcheckbox' : 'menuitem');
-      b.innerHTML = `${svg(icon)}<span>${esc(text)}</span>${check ? '<b></b>' : ''}${key ? `<kbd class="rp-keys-only">${key}</kbd>` : ''}`;
-      b.addEventListener('click', e => {
-        e.stopPropagation();
-        quietly(text, onClick);
-        // A switch shows its new state; anything else is done with the menu.
-        if (check) quietly(text, () => this.syncMore());
-        else quietly(text, () => this.closeMore());
-      });
-      this.moreMenu.append(b);
-      return b;
-    };
+    const item = (...args) => this.menuItem(...args);
     this.moreItems = {
       tags: item('', 'tags', 'Name tags', 'N', () => this.toggleTags(), true),
       markers: item('', 'markers', 'Battle markers', 'B', () => this.player.highlights?.toggleMarkers(), true),
@@ -835,6 +823,24 @@ export class ReplayUi {
       bare: item('', 'hide', 'Hide the HUD', 'H', () => this.setBare(true)),
     };
     this.moreWrap.append(this.moreBtn, this.moreMenu);
+  }
+
+  /** One row of the menu: a switch (`check`) shows its state, anything else
+   *  closes the menu. The replay's extras add theirs (the match-up). */
+  menuItem(className, icon, text, key, onClick, check = false) {
+    const b = el('button', `rp-mi ${className}`.trim());
+    b.type = 'button';
+    b.setAttribute('role', check ? 'menuitemcheckbox' : 'menuitem');
+    b.innerHTML = `${svg(icon)}<span>${esc(text)}</span>${check ? '<b></b>' : ''}${key ? `<kbd class="rp-keys-only">${key}</kbd>` : ''}`;
+    b.addEventListener('click', e => {
+      e.stopPropagation();
+      quietly(text, onClick);
+      // A switch shows its new state; anything else is done with the menu.
+      if (check) quietly(text, () => this.syncMore());
+      else quietly(text, () => this.closeMore());
+    });
+    this.moreMenu.append(b);
+    return b;
   }
 
   toggleMore() {
@@ -1730,8 +1736,11 @@ export class ReplayUi {
       if (once) this.toggle('help-open');
       return true;
     }
-    // The creator view's keys (features/replay-creator-view), then the battle
+    // The match-up's while it is open (features/replay-matchup), then the
+    // creator view's keys (features/replay-creator-view), then the battle
     // map, the markers, the Auto camera and the reel's.
+    const frozen = player.matchup?.key(e, once);
+    if (frozen !== undefined) return frozen;
     const mine = player.creator?.key(e, once);
     if (mine !== undefined) return mine;
     const taken = player.highlights?.key(e, once);

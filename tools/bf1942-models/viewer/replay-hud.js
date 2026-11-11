@@ -342,6 +342,9 @@ export class ReplayHud {
         const weapons = weaponTableFrom(doc, this.player.rec?.level || this.player.ctx.levelName?.() || null);
         if (!weapons.size) return;
         this.weapons = weapons;
+        // Its material tables too, for the match-up when the level's own
+        // have not landed (replay-matchup-strike.js `tablesOf`).
+        this.damageTables = doc?.materials && doc?.modifiers ? { materials: doc.materials, modifiers: doc.modifiers } : null;
         this.hitMarks = null;
       })
       // A tree without one times the marks at a stock speed.

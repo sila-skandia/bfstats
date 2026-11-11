@@ -129,6 +129,13 @@ export function weaponTableFrom(doc, level = null) {
       radius: Number.isFinite(w.radius) ? w.radius : null, category, owner: lower(w.owner),
       // The round's `timeToLive`, seconds: with its speed, how far it flies.
       life: w.timeToLive > 0 ? w.timeToLive : null,
+      // What it costs whatever it strikes (the match-up, replay-matchup.js):
+      // its attacker material and its falloff with range (DMG-3).
+      material: Number.isFinite(w.material) ? w.material : null,
+      material2: Number.isFinite(w.material2) ? w.material2 : null,
+      minDamage: Number.isFinite(w.minDamage) ? w.minDamage : null,
+      distToStartLoseDamage: Number.isFinite(w.distToStartLoseDamage) ? w.distToStartLoseDamage : null,
+      distToMinDamage: Number.isFinite(w.distToMinDamage) ? w.distToMinDamage : null,
     });
   }
   return out;
