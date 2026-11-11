@@ -12,25 +12,25 @@
  "checks": [
   {
    "metric": "teamKillsPerBotMinute",
-   "median": 0,
+   "median": 0.0062,
    "bar": "<= 0.025",
    "pass": true
   },
   {
    "metric": "suicidesPerBotMinute",
-   "median": 0.05,
+   "median": 0.0562,
    "bar": "<= 0.0562",
    "pass": true
   },
   {
    "metric": "nonEnemyDeathShareWorseSide",
-   "median": 0.714,
+   "median": 0.778,
    "bar": "<= 0.308",
    "pass": false
   },
   {
    "metric": "enemyKillsPerBotMinute",
-   "median": 0.0375,
+   "median": 0.0625,
    "bar": ">= 0.175",
    "pass": false
   }
@@ -44,16 +44,16 @@
    },
    "minutes": 10,
    "tickets": {
-    "1": 99,
-    "2": 56
+    "1": 95,
+    "2": 54
    },
-   "capturesTotal": 8,
-   "teamKillsPerBotMinute": 0,
-   "suicidesPerBotMinute": 0.05,
-   "nonEnemyDeathShareWorseSide": 0.714,
-   "enemyKillsPerBotMinute": 0.0375,
+   "capturesTotal": 12,
+   "teamKillsPerBotMinute": 0.0062,
+   "suicidesPerBotMinute": 0.0562,
+   "nonEnemyDeathShareWorseSide": 0.778,
+   "enemyKillsPerBotMinute": 0.0625,
    "teamKillsBySide": {
-    "1": 0,
+    "1": 1,
     "2": 0
    }
   }

@@ -356,6 +356,33 @@ the reason; its layer stays on the volume, unflagged. The runner no longer
 decides: the owner liked Tunis-1943, which the runner calls no-fight at 8
 a side (0.038 enemy kills a bot-minute against 0.17 on the page).
 
+### After the outside-map ground was blocked (2026-11-11, 18:12)
+
+[wide-levels.md](wide-levels.md): tanks were burning on the ground outside
+the map, which the bots' maps showed as open. With the fix live, the held
+levels and every live level were played once more on the page (25 matches,
+five at a time).
+
+| Held level | Before | After | Now |
+|---|---|---|---|
+| Aberdeen (vanilla) | 0.11 and 0.08 enemy kills, 0.21 own-hand deaths a bot-minute | 0.24 enemy kills, 4 captures, 82:84; passes DICE's page bar | live |
+| FHSW fht_battle_of_mareth_line-1943 | not played | 0.11 enemy kills, 3 captures, 99:62 | live |
+| BF1918 roye | 0.03, 2 captures | 0.03, 1 capture | off (too quiet) |
+| BF1918 fht_meuse_argonne_offensive | 0.05, no capture | 0.04, no capture | off |
+| FHSW Bizerte-1943 | 0.03, no capture | 0.14, no capture | off (just under the floor) |
+
+The live levels, one match each after the fix (enemy kills a bot-minute,
+captures, tickets): The_Maze 0.31, 19, 65:63; shigaisen_B 0.26, 0, 44:49;
+HOP 0.59, 0, 55:63; KoH 0.28, 12, 77:83; Beinbrekkbakken 0.15, 13, 92:91;
+Inshallah_Valley 0.48, 10, 84:43; DC_Battle_of_73_Easting 0.18, 7, 89:88;
+DC_Oil_Fields 0.06, 12, 95:54; Tunis-1943 0.21, 3, 71:69; the_great_pursuit
+0.16, 7, 133:107; Battle_for_ortona-1943 0.14, 1, 90:91;
+Moscow_Outskirts-1941 0.17, 4, 130:132; Stalingrad_RedSquare 0.05, 3,
+88:102; FH Pegasus 0.22, 4, 63:94; hindenburg_line 0.07, 2, 101:12;
+scimitar_hill 0.08, 6, 96:103; lutte_de_honneur 0.07, 1, 103:98. All of
+these clear the floor. Three did not in this match and were played again
+(below): DC_Basrah_Nights, DC_LostVillage and Mauerfall.
+
 ## 7. What is not verified
 
 1. One match a level in sections 2 to 5, three in section 6, all unseeded:

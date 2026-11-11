@@ -27,7 +27,7 @@
   },
   {
    "metric": "enemyKillsPerBotMinute",
-   "median": 0.4562,
+   "median": 0.5875,
    "bar": ">= 0.175",
    "pass": true
   }
@@ -41,14 +41,14 @@
    },
    "minutes": 10,
    "tickets": {
-    "1": 75,
-    "2": 64
+    "1": 55,
+    "2": 63
    },
    "capturesTotal": 0,
    "teamKillsPerBotMinute": 0,
    "suicidesPerBotMinute": 0,
    "nonEnemyDeathShareWorseSide": 0,
-   "enemyKillsPerBotMinute": 0.4562,
+   "enemyKillsPerBotMinute": 0.5875,
    "teamKillsBySide": {
     "1": 0,
     "2": 0

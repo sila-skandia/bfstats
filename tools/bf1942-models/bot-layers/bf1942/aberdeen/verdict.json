@@ -52,5 +52,23 @@
  "unreachable": [
   "City"
  ],
- "lintErrors": []
+ "lintErrors": [],
+ "accepted": {
+  "reason": "Owner's rollout, 2026-11-11. Turned down on the page twice the same day (0.72 and 0.97 of the worse side's deaths not the enemy's): hulls were burning on the ground outside the map, which the bots' maps showed as open (wide-levels.md). With that ground blocked it passes DICE's own page bar: 0.24 enemy kills a bot-minute, 4 captures, tickets 82:84.",
+  "date": "2026-11-11",
+  "outcome": "no-better-than-nothing",
+  "failed": [
+   "8:routeFailuresPerBotMinute",
+   "8:flagCoverage",
+   "8:routeFailuresPerBotMinuteWorseSide",
+   "8:hullStuckSecondsPerDrivingMinute",
+   "8:hullStuckSecondsPerDrivingMinuteWorseSide",
+   "8:unitsNeverUsedShare",
+   "16:enemyKillsPerBotMinute",
+   "16:flagCoverage",
+   "16:unitsNeverUsedShare",
+   "16:tankSilentShare"
+  ],
+  "by": "owner"
+ }
 }

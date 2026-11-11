@@ -1,38 +1,38 @@
 {
- "level": "tunis-1943",
+ "level": "Tunis-1943",
  "mod": "fhsw",
- "url": "https://play.bfstats.io/map.html?map=tunis-1943&team=2&mode=Conquest&mod=fhsw&botCount=16&botSkill=0.75&mute&shots",
- "date": "2026-11-10",
- "bar": "DICE levels on the page, 3 matches each of 600 s, 16 bots: Berlin, Stalingrad, Kharkov, Bocage; 2026-11-10",
+ "url": "https://play.bfstats.io/map.html?map=Tunis-1943&team=2&mode=Conquest&mod=fhsw&botCount=16&botSkill=0.75&mute&shots",
+ "date": "2026-11-11",
+ "bar": "DICE levels on the page, 3 matches each of 600 s, 16 bots: Berlin, Stalingrad, Kharkov, Bocage; 2026-11-11",
  "verdict": "pass",
  "failed": [],
  "checks": [
   {
    "metric": "teamKillsPerBotMinute",
    "median": 0,
-   "bar": "<= 0.0812",
+   "bar": "<= 0.025",
    "pass": true
   },
   {
    "metric": "suicidesPerBotMinute",
    "median": 0.0125,
-   "bar": "<= 0.1",
+   "bar": "<= 0.0562",
    "pass": true
   },
   {
    "metric": "nonEnemyDeathShareWorseSide",
-   "median": 0.143,
-   "bar": "<= 0.5",
+   "median": 0.083,
+   "bar": "<= 0.308",
    "pass": true
   },
   {
    "metric": "enemyKillsPerBotMinute",
-   "median": 0.1687,
-   "bar": ">= 0.1125",
+   "median": 0.2125,
+   "bar": ">= 0.175",
    "pass": true
   }
  ],
- "matches": 3,
+ "matches": 1,
  "runs": [
   {
    "generated": {
@@ -41,54 +41,14 @@
    },
    "minutes": 10,
    "tickets": {
-    "1": 29,
-    "2": 91
+    "1": 71,
+    "2": 69
    },
-   "capturesTotal": 13,
+   "capturesTotal": 3,
    "teamKillsPerBotMinute": 0,
    "suicidesPerBotMinute": 0.0125,
-   "nonEnemyDeathShareWorseSide": 0.6,
-   "enemyKillsPerBotMinute": 0.0937,
-   "teamKillsBySide": {
-    "1": 0,
-    "2": 0
-   }
-  },
-  {
-   "generated": {
-    "version": 5,
-    "template": "symmetric"
-   },
-   "minutes": 10,
-   "tickets": {
-    "1": 74,
-    "2": 54
-   },
-   "capturesTotal": 6,
-   "teamKillsPerBotMinute": 0.0062,
-   "suicidesPerBotMinute": 0.0187,
-   "nonEnemyDeathShareWorseSide": 0.143,
-   "enemyKillsPerBotMinute": 0.2375,
-   "teamKillsBySide": {
-    "1": 0,
-    "2": 1
-   }
-  },
-  {
-   "generated": {
-    "version": 5,
-    "template": "symmetric"
-   },
-   "minutes": 10,
-   "tickets": {
-    "1": 23,
-    "2": 82
-   },
-   "capturesTotal": 6,
-   "teamKillsPerBotMinute": 0,
-   "suicidesPerBotMinute": 0.0062,
-   "nonEnemyDeathShareWorseSide": 0.077,
-   "enemyKillsPerBotMinute": 0.1687,
+   "nonEnemyDeathShareWorseSide": 0.083,
+   "enemyKillsPerBotMinute": 0.2125,
    "teamKillsBySide": {
     "1": 0,
     "2": 0

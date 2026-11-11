@@ -4,10 +4,8 @@
  "url": "https://play.bfstats.io/map.html?map=shigaisen_B&team=2&mode=Conquest&mod=community&botCount=16&botSkill=0.75&mute&shots",
  "date": "2026-11-11",
  "bar": "DICE levels on the page, 3 matches each of 600 s, 16 bots: Berlin, Stalingrad, Kharkov, Bocage; 2026-11-11",
- "verdict": "fail",
- "failed": [
-  "enemyKillsPerBotMinute"
- ],
+ "verdict": "pass",
+ "failed": [],
  "checks": [
   {
    "metric": "teamKillsPerBotMinute",
@@ -29,9 +27,9 @@
   },
   {
    "metric": "enemyKillsPerBotMinute",
-   "median": 0.0625,
+   "median": 0.2562,
    "bar": ">= 0.175",
-   "pass": false
+   "pass": true
   }
  ],
  "matches": 1,
@@ -43,14 +41,14 @@
    },
    "minutes": 10,
    "tickets": {
-    "1": 67,
-    "2": 100
+    "1": 44,
+    "2": 49
    },
-   "capturesTotal": 4,
+   "capturesTotal": 0,
    "teamKillsPerBotMinute": 0,
    "suicidesPerBotMinute": 0,
    "nonEnemyDeathShareWorseSide": 0,
-   "enemyKillsPerBotMinute": 0.0625,
+   "enemyKillsPerBotMinute": 0.2562,
    "teamKillsBySide": {
     "1": 0,
     "2": 0
