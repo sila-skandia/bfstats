@@ -1703,6 +1703,8 @@ export function createProvingGroundPage(page) {
   async function buildDogfight() {
     if (dogfight) return dogfight;
     const { createDogfightLive, Aircraft } = await loadSchool();
+    // A two-seater's gunner is aimed through the seat's own rig.
+    const { aimAlong } = await import('./bot-aim.js');
     if (dogfight) return dogfight;
     // The lines' airframes: the ace's (0) and yours (1), flown off the page
     // four times a second. Fresh each flight: an airframe reused carries its
@@ -1731,6 +1733,15 @@ export function createProvingGroundPage(page) {
       seatPlayer: seatInPlane,
       aceBot: () => page.aceBot?.() ?? null,
       aceRoot: bot => bot?.vehicle?.node ?? null,
+      // The pair flown (`lesson.flyWith`): your side's bots, seated as your
+      // wingman and your gunner, and a plane the school's count has shot
+      // down taken out of the sky.
+      wingBots: () => page.wingBots?.() ?? [],
+      seatWing: (bot, opts) => !!page.seatWing?.(bot, opts),
+      downBot: bot => !!page.downBot?.(bot),
+      // A gunner's barrel turned along a direction, through the seat's own
+      // aim rig (`bot-aim.js` `aimAlong`).
+      aimAlong: (bot, dir, frame) => aimAlong(bot, dir, frame),
       gunOf: bot => liveGun(bot),
       snapPresentation: () => page.snapPresentation?.(),
       isWreck: node => !!node && !!page.isWreck?.(node),
@@ -1839,11 +1850,24 @@ export function createProvingGroundPage(page) {
     else seatInPlane();
   }
 
+  /** How many of your side's bots a lesson flown wants: its wingmen
+   *  (`flyWith`), and one more for your plane's gunner when it has one. */
+  async function wingmenFor(lesson) {
+    const n = lesson?.flyWith?.length ?? 0;
+    if (!n) return 0;
+    const me = myPlane();
+    const { hasGunner } = await import('./dogfight-gunner-seats.js');
+    return n + (me && hasGunner(me) ? 1 : 0);
+  }
+
   async function flyLesson(id, move = null) {
     if (!lessonById(id)) return;
     course?.stop();
-    if (!page.aceBot?.()) {
-      page.reopenWith?.({ dogfight: id, botCount: 1, ...(move ? { move } : {}) });
+    // The pair flown wants your side's bots too: a wingman, and a gunner for
+    // your own plane's back seat when it has one.
+    const wingmen = await wingmenFor(lessonById(id));
+    if (!page.aceBot?.() || (page.wingBots?.()?.length ?? 0) < wingmen) {
+      page.reopenWith?.({ dogfight: id, botCount: 1 + wingmen, ...(wingmen ? { wingmen } : {}), ...(move ? { move } : {}) });
       return;
     }
     if (!inMyPlane()) seatInPlane();

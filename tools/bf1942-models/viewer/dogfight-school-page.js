@@ -20,7 +20,7 @@
 
 import { Aircraft } from './aircraft.js';
 import { createDogfightTheatre } from './dogfight-theatre.js';
-import { fighterRank, jetName } from './dogfight-lessons.js';
+import { fighterRank, jetName, lessonById } from './dogfight-lessons.js';
 import { arenasFrom, arenasFromTeams, planeIn, aceAgainst, arenaUrl } from './dogfight-arena.js';
 import { loadPlaneModel, airframeRoot, planeVisual } from './plane-models.js';
 import { VIEWER_ROOT } from './viewer-root.js';
@@ -234,7 +234,10 @@ function rulesCard() {
 /** Into the arena: the lesson (or ring course) flown in your plane. */
 function fly({ lesson = null, move = null, course = null }) {
   const me = mine();
-  location.href = arenaUrl(VIEWER_ROOT.href, { map: arena.map, mod: modId(arenaMod), side: me?.side ?? 'Allied', lesson, move, course, base: location.href });
+  // The pair flown: a wingman, and a gunner for your plane's back seat.
+  const wanted = lessonById(lesson)?.flyWith?.length ?? 0;
+  const wingmen = wanted ? wanted + (models.mineGunners.length ? 1 : 0) : 0;
+  location.href = arenaUrl(VIEWER_ROOT.href, { map: arena.map, mod: modId(arenaMod), side: me?.side ?? 'Allied', lesson, move, course, wingmen, base: location.href });
 }
 
 const theatre = createDogfightTheatre({

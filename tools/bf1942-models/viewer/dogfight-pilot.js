@@ -403,10 +403,19 @@ export function go(c, phase) {
 function guard(c) {
   const { me } = c;
   const vy = me.velocity[1];
-  const floor = 70 + Math.max(0, -vy) * 3.2;
+  // A careful pilot (`mem.careful`, the pair's wingman flown live) starts
+  // the pull-out higher when rolled past the vertical, where it first has
+  // to roll back upright (a Stuka banked 140 degrees in a wingman's turn
+  // went in from 120 m), and climbs less out of it when slow.
+  const careful = !!c.mem.careful;
+  const floor = 70 + Math.max(0, -vy) * 3.2 + (careful && Math.abs(bankOf(me.orientation).bank) > 100 ? 90 : 0);
   if (c.agl < floor) {
     const h = heading(me.velocity);
-    const k = pointNose(me, climbing(len(h) > 0 ? h : basis(me.orientation).F, 25), { fine: 30 });
+    // Careful and slow, the pull-out climbs less: 25 degrees at 42 m/s and
+    // over, level by 30, so a plane low and slow gathers speed instead of
+    // stalling back into the ground.
+    const up = careful ? clamp((len(me.velocity) - 30) * 25 / 12, 0, 25) : 25;
+    const k = pointNose(me, climbing(len(h) > 0 ? h : basis(me.orientation).F, up), { fine: 30 });
     return { ...k, throttle: 1, say: 'pulling out' };
   }
   if (me.position[1] - (c.ceilingBase ?? 0) > 880 / (c.pace >= 1 ? c.pace : 1) && vy > 0) {
@@ -2522,7 +2531,7 @@ PLANS.leafFollow = {
  * `PAIR.cover` metres is his target until it is gone or off the tail.
  * Needs the fight's `c.team` (`dogfight-fight.js` `runFight`).
  */
-const PAIR = { abeam: 180, behind: 60, cover: 800, tailCone: 60, hold: 4, holdCone: 90, turnBack: 90, rejoin: 250, faster: 1.03 };
+const PAIR = { abeam: 180, behind: 60, cover: 800, tailCone: 60, hold: 4, holdCone: 90, turnBack: 90, rejoin: 250, faster: 1.03, floor: 150, slow: 38 };
 PLANS.wingman = {
   title: 'The wingman', first: 'station',
   // Said under the wingman's own caption row, the leader being you: the
@@ -2588,7 +2597,21 @@ PLANS.wingman = {
     const lr = basis(L.orientation).R;
     const side = Math.sign(dot(sub(me.position, L.position), lr)) || 1;
     const spot = add(add(L.position, scale(lr, side * PAIR.abeam)), scale(lf, -PAIR.behind));
+    // A careful wingman (`mem.careful`, flown live beside a player who may
+    // turn hard and sink): not below `PAIR.floor` over the ground, however
+    // low the leader goes, a shallow climb back to it at most (10 degrees),
+    // and level when slow. Keeping station on a sinking leader stalled a
+    // wingman into the ground.
+    const careful = !!mem.careful;
+    if (careful) {
+      spot[1] = Math.max(spot[1], (c.ground ?? 0) + PAIR.floor);
+      if (c.g.mySpeed < PAIR.slow) spot[1] = Math.min(spot[1], me.position[1]);
+    }
     const toSpot = sub(add(spot, scale(L.velocity, 2)), me.position);
+    if (careful) {
+      toSpot[1] = Math.min(toSpot[1], Math.hypot(toSpot[0], toSpot[2]) * 0.18);
+      if (c.g.mySpeed < PAIR.slow) toSpot[1] = Math.min(toSpot[1], 0);
+    }
     const gap = dot(sub(spot, me.position), lf);
     // Far off it (back from a fight) he says so: he is coming back.
     go(c, len(sub(spot, me.position)) > PAIR.rejoin ? 'rejoin' : 'station');

@@ -32,6 +32,10 @@ import { MOVE_INFO, moveLabel } from './dogfight-steps.js';
 import { seatCover } from './dogfight-cover.js';
 import { createTacticalSphere } from './dogfight-sphere.js';
 import { usefulRange, gunFromNode } from './dogfight-doctrine.js';
+import { GUNNER } from './dogfight-gunners.js';
+import { stepWing, huntTarget, wingWords, wingShort, pairEnd, aboutWing } from './dogfight-live-wing.js';
+import { bankAndPull, pointNose } from './dogfight-flight.js';
+import { heading, climbing } from './dogfight-pilot.js';
 
 /** The moves' names as the coach says them: the pilot's name for each
  *  (`dogfight-steps.js`), as the theatre's tabs and move card say it. */
@@ -89,9 +93,12 @@ export function createDogfightLive(page) {
       <span class="dfl-tip"></span>
       <span class="dfl-keys"></span>
       <span class="dfl-rule" hidden><i></i><span></span></span>
+      <div class="dfl-wingrow" hidden><b>WINGMAN</b><i class="dfl-wing-state"></i><span class="dfl-wing-said"></span></div>
       <div class="dfl-score"><span>the ace's hits on you <b class="dfl-his">0</b></span><span>yours on the ace <b class="dfl-yours">0</b></span><span>kills <b class="dfl-kills">0 : 0</b></span></div>
     </div>
     <div class="dfl-mark" hidden><i></i><span></span></div>
+    <div class="dfl-mark is-wing" hidden><i></i><span></span></div>
+    <div class="dfr-end dfl-end" hidden><small class="dfl-end-kicker"></small><b class="dfl-end-title"></b><span class="dfl-end-lines"></span><span class="dfr-end-keys">Y to fly it again · O back to the school</span></div>
     <div class="dfl-view">
       <svg class="dfl-view-svg" aria-hidden="true">
         <g class="dfl-pin is-you"><text dy="14">YOU</text></g>
@@ -109,7 +116,10 @@ export function createDogfightLive(page) {
   const q = s => hud.querySelector(s);
   const ui = {
     coach: q('.dfl-coach'), lesson: q('.dfl-lesson'), line: q('.dfl-line'), tip: q('.dfl-tip'), keys: q('.dfl-keys'), rule: q('.dfl-rule'),
-    mark: q('.dfl-mark'), markText: q('.dfl-mark span'),
+    mark: q('.dfl-mark:not(.is-wing)'), markText: q('.dfl-mark:not(.is-wing) span'),
+    wingMark: q('.dfl-mark.is-wing'), wingMarkText: q('.dfl-mark.is-wing span'),
+    wingRow: q('.dfl-wingrow'), wingState: q('.dfl-wing-state'), wingSaid: q('.dfl-wing-said'),
+    end: q('.dfl-end'), endKicker: q('.dfl-end-kicker'), endTitle: q('.dfl-end-title'), endLines: q('.dfl-end-lines'),
     view: q('.dfl-view'), svg: q('.dfl-view-svg'), pinYou: q('.dfl-pin.is-you'), pinHim: q('.dfl-pin.is-him'),
     range: q('.dfl-range'), above: q('.dfl-above'), scale: q('.dfl-scale'), said: q('.dfl-said'),
     his: q('.dfl-his'), yours: q('.dfl-yours'), kills: q('.dfl-kills'),
@@ -135,6 +145,9 @@ export function createDogfightLive(page) {
     // Each seat's airframe as the school fits it (`fitSeats`): 0 the ace's,
     // 1 yours; and the ace's gun as the world fires it, in real metres.
     fits: [NEUTRAL_FIT, NEUTRAL_FIT], aceGun: null, era: null,
+    // The pair flown (`lesson.flyWith`): your wingman's bot, pilot and
+    // counts, your gunner's bot, whom the hunter is after, and the end.
+    wing: null, gunner: null, aceTarget: 1, end: null, script: null,
   };
 
   function banner(text, seconds = 2.5, tone = 'info') {
@@ -165,6 +178,12 @@ export function createDogfightLive(page) {
     live.kills = [0, 0];
     live.instructor = false;
     live.seatAsked = 0;
+    // The pair flown: a wingman (and your gunner, in a two-seater) to seat.
+    live.wing = lesson.flyWith?.length ? { want: lesson.flyWith[0], bot: null, pilot: null, out: null, hits: 0, hitsOn: 0,
+                                           down: false, engaged: false, asked: -Infinity, since: live.clock } : null;
+    live.gunner = null;
+    live.end = null;
+    ui.end.hidden = true;
     live.trails = { you: [], him: [] };
     hud.hidden = false;
     // Dark from now until the plane is in the air: the seat is found on the
@@ -182,6 +201,11 @@ export function createDogfightLive(page) {
     cover.hide();
     hideLines();
     if (live.bot) live.bot.ace = null;
+    if (live.wing?.bot) live.wing.bot.ace = null;
+    live.wing = null;
+    live.gunner = null;
+    live.end = null;
+    ui.end.hidden = ui.wingRow.hidden = ui.wingMark.hidden = true;
     live.bot = null;
     live.lesson = null;
     live.flight = null;
@@ -233,7 +257,11 @@ export function createDogfightLive(page) {
     // the heights in the sky its lesson was measured at (`paced`).
     placePlane(drive, stage(origin, paced(f.you.start, live.fits[1].pace, gy)));
     placePlane(aceDrive, stage(origin, paced(f.ace.start, live.fits[0].pace, gy)));
-    for (const d of [drive, aceDrive]) {
+    // Your wingman off your beam, on your type (`lesson.flyWith`), as the
+    // pair's demos stage them.
+    const wingDrive = live.wing?.bot?.vehicle?.drive ?? null;
+    if (wingDrive) placePlane(wingDrive, stage(origin, paced(live.wing.want.start, live.fits[1].pace, gy)));
+    for (const d of [drive, aceDrive, wingDrive].filter(Boolean)) {
       if (d.state) d.state.grounded = false;
       d.state?.angularVelocity?.set?.(0, 0, 0);
     }
@@ -270,11 +298,137 @@ export function createDogfightLive(page) {
     live.lineAt = -Infinity;
     hideLines();
     live.sphere?.reset();
+    if (live.wing) {
+      const wb = live.wing.bot;
+      Object.assign(live.wing, { hits: 0, hitsOn: 0, down: false, engaged: false, out: null, sayUntil: 0 });
+      live.wing.pilot = wb ? seatPilot(live.wing.want.plan, live.fits[1], { gun: page.gunOf?.(wb) ?? worldGun, skill: live.wing.want.skill ?? 0.85,
+                                                                         memory: live.wing.want.memory ?? {} }) : null;
+      if (wb) { wb._airborne = true; wb.ace = flyWing; }
+    }
+    if (live.gunner) { live.gunner.hits = 0; live.gunner.bot.ace = flyGunner; }
+    live.aceTarget = 1;
+    live.aceDownBy = null;
+    live.end = null;
+    ui.end.hidden = true;
     page.snapPresentation?.();
     live.phase = 'fight';
     cover.clear();
     bot.ace = flyAce;
     return true;
+  }
+
+  /** Your wingman's seat, a tick at a time (`bot.js` calls it after the
+   *  plan): the `wingman` plan, handed the fight (`stepWing`). */
+  function flyWing(bot, dt) {
+    const w = live.wing;
+    if (!w || !live.lesson || live.phase !== 'fight' || bot !== w.bot || w.down || !w.pilot) { bot.ace = null; return; }
+    if (live.frozen) { bot.isFiring = false; return; }
+    const me = stateOf(bot.vehicle?.drive?.state);
+    if (!me) return;
+    const you = stateOf(page.playerDrive()?.state);
+    const aceUp = live.bot?.vehicle?.kind === 'air' && !page.isWreck?.(live.aceRoot);
+    const ace = aceUp ? stateOf(live.bot.vehicle.drive.state) : null;
+    const out = stepWing(w.pilot, live.fits[1], { me, you, ace, aceLevel: live.fits[0].level ?? null, dt, t: live.t,
+                                                  groundAt: page.groundAt, arena: arena() });
+    w.out = out;
+    bot._airInput = { power: out.throttle, throttle: out.throttle, roll: out.stick.roll, pitch: out.stick.pitch, rudder: out.stick.rudder };
+    bot._airborne = true;
+    const guns = (bot.weapons ?? []).findIndex(x => x?.weaponFire !== 'PIAltFire');
+    if (guns >= 0) bot.weaponIndex = guns;
+    bot.isFiring = !!out.fire;
+    // The moment they go for the hunter, said once: the point of a wingman.
+    if (!w.engaged && (out.phase === 'cover' || out.phase === 'shoot')) {
+      w.engaged = true;
+      w.sayUntil = live.clock + 4;
+      banner('YOUR WINGMAN IS BREAKING ONTO THE HUNTER', 2.5, 'go');
+    }
+  }
+
+  /** Your gunner, a tick at a time: the bot in your two-seater's back seat,
+   *  its gun laid on where the hunter will be when the rounds get there
+   *  (`bot._aimLook`, the seat's own rig) and fired inside `GUNNER.range`
+   *  when it is on, as the demos' gunners fire (`dogfight-gunners.js`). */
+  function flyGunner(bot) {
+    const g = live.gunner;
+    if (!g || bot !== g.bot || !live.lesson || live.phase !== 'fight') { bot.ace = null; return; }
+    bot.isFiring = false;
+    if (live.frozen) return;
+    const aceUp = live.bot?.vehicle?.kind === 'air' && !page.isWreck?.(live.aceRoot);
+    const ace = aceUp ? stateOf(live.bot.vehicle.drive.state) : null;
+    const frame = gunnerFrame(bot);
+    if (!ace || !frame) return;
+    const o = frame.origin;
+    const rel = [ace.position[0] - o[0], ace.position[1] - o[1], ace.position[2] - o[2]];
+    const d = len(rel);
+    if (d > GUNNER.range * 1.5) return;
+    // The lead: where the hunter is going in the round's time of flight.
+    const tof = d / (frame.speed || 760);
+    const mine = stateOf(page.playerDrive()?.state);
+    const rv = mine ? sub(ace.velocity, mine.velocity) : ace.velocity;
+    const aim = unit([rel[0] + rv[0] * tof, rel[1] + rv[1] * tof, rel[2] + rv[2] * tof]);
+    // The seat's own aim rig turns to it (`bot-aim.js` `aimAlong`, the page's).
+    page.aimAlong?.(bot, aim, frame);
+    const off = Math.acos(clamp(dot(frame.f, aim), -1, 1)) * 180 / Math.PI;
+    g.off = Math.round(off);
+    if (d < GUNNER.range && off < 4) {
+      const guns = (bot.weapons ?? []).findIndex(x => x?.weaponFire !== 'PIAltFire');
+      if (guns >= 0) bot.weaponIndex = guns;
+      bot.isFiring = true;
+    }
+  }
+
+  /** The gunner's barrel as `bot-aim.js` `barrelFrame` reads a mounted gun's,
+   *  which leaves an aircraft's seats to the pilot's stick: its muzzle's
+   *  direction, the level right and up from it, its round's speed. */
+  function gunnerFrame(bot) {
+    const group = bot.vehicle?.manned?.find(m => m?.muzzles?.length) ?? bot.vehicle?.manned?.[0] ?? null;
+    const node = group?.muzzles?.[0] ?? group?.node;
+    if (!node?.matrixWorld) return null;
+    node.updateWorldMatrix?.(true, false);
+    const e = node.matrixWorld.elements;
+    const f = unit([-e[8], -e[9], -e[10]]);
+    const r0 = [f[1] * 0 - f[2] * 1, f[2] * 0 - f[0] * 0, f[0] * 1 - f[1] * 0];
+    const r = len(r0) > 1e-6 ? unit(r0) : [1, 0, 0];
+    const u = [r[1] * f[2] - r[2] * f[1], r[2] * f[0] - r[0] * f[2], r[0] * f[1] - r[1] * f[0]];
+    return { origin: [e[12], e[13], e[14]], f, r, u, group, speed: Number(group?.stats?.velocity) || 760 };
+  }
+
+  /** Your wingman's bot and your gunner's, seated (`page.seatWing`): the
+   *  wingman in a plane of your type, the gunner in your own plane's back
+   *  seat when it has one. True once the wingman is in the air, or when
+   *  there is none to wait for. */
+  function seatWingmen() {
+    const w = live.wing;
+    if (!w) return true;
+    const bots = page.wingBots?.() ?? [];
+    if (!bots.length) return true;
+    if (live.clock - w.asked > 2) {
+      w.asked = live.clock;
+      const root = page.playerRoot?.();
+      if (!bots[0].vehicle) page.seatWing?.(bots[0], { seat: 'pilot', template: typeOf(root) });
+      if (bots[1] && !bots[1].vehicle && root) page.seatWing?.(bots[1], { seat: 'gunner', root });
+    }
+    if (bots[1]?.vehicle) {
+      live.gunner = { bot: bots[1], hits: live.gunner?.hits ?? 0 };
+      bots[1].ace = flyGunner;
+    }
+    if (bots[0].vehicle?.kind === 'air') { w.bot = bots[0]; return true; }
+    // A range with no plane left for them: the fight goes on without.
+    return live.clock - w.since > 15;
+  }
+
+  /** The end card of the pair flown (`pairEnd`): shown until you go again. */
+  function showEnd(how, by = null) {
+    if (!live.wing || live.end) return;
+    const e = pairEnd({ how, by, t: live.t, onYou: live.hisHits, onWing: live.wing.hitsOn, wingOnAce: live.wing.hits,
+                        gunnerOnAce: live.gunner?.hits ?? 0, youOnAce: live.yourHits, wingDown: live.wing.down,
+                        wingEngaged: live.wing.engaged });
+    live.end = { how, by, t: +live.t.toFixed(1), title: e.title, lines: e.lines, saved: e.saved };
+    ui.end.dataset.tone = e.tone;
+    ui.endKicker.textContent = `${live.lesson.title.toUpperCase()} · ${Math.round(live.t)} S`;
+    ui.endTitle.textContent = e.title;
+    ui.endLines.innerHTML = e.lines.map(l => esc(l)).join('<br>');
+    ui.end.hidden = false;
   }
 
   /** The bot's seat, a tick at a time (`bot.js` calls it after the plan). */
@@ -291,7 +445,14 @@ export function createDogfightLive(page) {
       bot.isFiring = false;
       return;
     }
-    const out = stepSeat(live.pilot, [live.fits[0], live.fits[1]], { me, him, dt, t: live.t, groundAt: page.groundAt, arena: arena() });
+    // With a wingman up, the hunter goes after the nearer of the two of you.
+    let target = him;
+    const wingUp = live.wing?.bot && !live.wing.down ? stateOf(live.wing.bot.vehicle?.drive?.state) : null;
+    if (live.wing) {
+      live.aceTarget = huntTarget(live.aceTarget, me, him, wingUp);
+      if (live.aceTarget === 2 && wingUp) target = wingUp;
+    }
+    const out = stepSeat(live.pilot, [live.fits[0], live.fits[1]], { me, him: target, dt, t: live.t, groundAt: page.groundAt, arena: arena() });
     live.aceOut = out;
     bot._airInput = { power: out.throttle, throttle: out.throttle, roll: out.stick.roll, pitch: out.stick.pitch,
                       rudder: out.stick.rudder };
@@ -310,6 +471,15 @@ export function createDogfightLive(page) {
     live.firing = !!input.fire;
   }
   function applyOverride(input) {
+    // The tests' hands (`script`): fly straight, or turn hard.
+    if (live.script && live.phase === 'fight' && !live.frozen) {
+      const you = stateOf(page.playerDrive()?.state);
+      // Straight: level on the heading you had when the script took over.
+      if (you && !live.scriptDir) live.scriptDir = heading(you.velocity);
+      const k = !you ? { roll: 0, pitch: 0, rudder: 0 } : live.script === 'turn' ? bankAndPull(you, 75, 0.9)
+        : pointNose(you, climbing(live.scriptDir, 0), { fine: 6 });
+      input.roll = k.roll; input.pitch = k.pitch; input.rudder = k.rudder; input.fire = false;
+    }
     live.lastInput = { roll: input.roll, pitch: input.pitch, rudder: input.rudder, throttle: input.forwardKeys, fire: input.fire };
     if (live.frozen) { input.fire = false; return; }
     if (!live.instructor || live.phase !== 'fight') return;
@@ -349,8 +519,31 @@ export function createDogfightLive(page) {
       if (live.hisHits >= KILL_HITS && !live.wouldHaveDied) {
         live.wouldHaveDied = true;
         live.kills[1]++;
-        banner('THE ACE WOULD HAVE SHOT YOU DOWN · Y to go again', 4, 'danger');
+        if (live.wing) showEnd('you');
+        else banner('THE ACE WOULD HAVE SHOT YOU DOWN · Y to go again', 4, 'danger');
       }
+    }
+    // The pair flown: the range prices no bot's round, so the school counts
+    // them, and a plane that has taken a kill's worth goes down.
+    const w = live.wing;
+    const wingRoot = w?.bot?.vehicle?.node ?? null;
+    if (w && !w.down && firerId === live.bot.playerId && wingRoot && isUnder(struck, wingRoot)) {
+      w.hitsOn++;
+      if (w.hitsOn >= KILL_HITS) {
+        w.down = true;
+        w.bot.ace = null;
+        page.downBot?.(w.bot);
+        banner('YOUR WINGMAN IS DOWN · you are alone', 3, 'danger');
+      }
+    }
+    const onAce = live.aceRoot && isUnder(struck, live.aceRoot);
+    if (w && onAce && w.bot && firerId === w.bot.playerId) {
+      w.hits++;
+      if (w.hits >= KILL_HITS && !live.aceDownBy) { live.aceDownBy = 'wingman'; page.downBot?.(live.bot); }
+    }
+    if (onAce && live.gunner?.bot && firerId === live.gunner.bot.playerId) {
+      live.gunner.hits++;
+      if (live.gunner.hits >= KILL_HITS && !live.aceDownBy) { live.aceDownBy = 'gunner'; page.downBot?.(live.bot); }
     }
     if (live.aceRoot && isUnder(struck, live.aceRoot) && firerId === page.localId) {
       live.yourHits++;
@@ -377,7 +570,7 @@ export function createDogfightLive(page) {
     if (live.phase === 'seating' || live.phase === 'down') {
       // The kill's pause is shown; from then until the plane is in the air
       // the picture is dark.
-      if (!(live.phase === 'down' && live.clock - live.downAt < 3.5)) cover.show();
+      if (!(live.phase === 'down' && live.clock - live.downAt < (live.end ? 6 : 3.5))) cover.show();
       if (!bot) {
         setCoach({ tone: TONE.warn, line: 'Waiting for the enemy pilot', tip: 'They are walking to their aircraft.', keys: [] });
       } else if (!drive) {
@@ -385,8 +578,10 @@ export function createDogfightLive(page) {
         setCoach({ tone: TONE.info, line: 'Getting you into a fighter', tip: '', keys: [] });
       } else if (!bot.vehicle?.drive || bot.vehicle.kind !== 'air') {
         setCoach({ tone: TONE.info, line: 'The ace is climbing into their aircraft', tip: '', keys: [] });
-      } else if (live.phase === 'down' && live.clock - live.downAt < 3.5) {
-        // a pause on the kill
+      } else if (live.phase === 'down' && live.clock - live.downAt < (live.end ? 6 : 3.5)) {
+        // a pause on the kill (the pair's end card held longer)
+      } else if (!seatWingmen()) {
+        setCoach({ tone: TONE.info, line: 'Your wingman is climbing into their aircraft', tip: '', keys: [] });
       } else {
         place();
         banner('FIGHT', 1.6, 'go');
@@ -409,7 +604,8 @@ export function createDogfightLive(page) {
       live.phase = 'down';
       live.downAt = live.clock;
       if (bot) bot.ace = null;
-      banner('YOU SHOT THE ACE DOWN', 3.5, 'go');
+      if (live.wing) showEnd('ace', live.aceDownBy ?? 'you');
+      else banner('YOU SHOT THE ACE DOWN', 3.5, 'go');
       return;
     }
     if (!drive) {
@@ -420,6 +616,8 @@ export function createDogfightLive(page) {
       return;
     }
     if (bot.ace !== flyAce) bot.ace = flyAce;
+    // The pair flown ends with the lesson's minute if nobody has fallen.
+    if (live.wing && !live.end && live.t > (live.lesson.seconds ?? 60)) showEnd('time');
     const you = stateOf(drive.state), him = stateOf(bot.vehicle.drive.state);
     // The watch: whether the two of you are deadlocked (nobody's shot for
     // six seconds, both turning), judged on both guns' solutions.
@@ -449,9 +647,16 @@ export function createDogfightLive(page) {
       if (rc && Math.hypot(you.position[0] - rc[0], you.position[2] - rc[1]) > LEAVING) {
         Object.assign(words, { rule: null, tone: TONE.warn, line: 'You are leaving the range', tip: 'Turn back toward the floor: the fight goes on there.', keys: ['Mouse', 'Arrows'] });
       }
+      // The pair flown: the hunter gone after your wingman is not on you.
+      const onWing = live.wing && live.aceTarget === 2 && !live.wing.down;
+      if (onWing && words.line !== 'GROUND' && !words.line.startsWith('Slow')) {
+        Object.assign(words, { rule: null, ruleLine: null, tone: TONE.go, line: 'The hunter has gone after your wingman',
+          tip: 'They took it off your tail. Turn back and get behind it while it chases them.', keys: ['Mouse', 'Arrows'] });
+      }
       setCoach(words);
       if (live.drill) drawDrill();
-      ui.said.textContent = live.aceOut?.say ? `"${toYou(live.aceOut.say)}"` : '';
+      ui.said.textContent = live.aceOut?.say
+        ? `"${onWing ? aboutWing(live.aceOut.say) : toYou(live.aceOut.say)}"` : '';
       ui.his.textContent = String(live.hisHits);
       ui.yours.textContent = String(live.yourHits);
       ui.kills.textContent = `${live.kills[0]} : ${live.kills[1]}`;
@@ -466,6 +671,7 @@ export function createDogfightLive(page) {
     live.you = you;
     live.him = him;
     markHim(you, him);
+    drawWing(you);
     if (live.drill && live.firing && !live.frozen) {
       const n = (live.myGun?.rate ?? 12) * dt;
       live.drill.rounds += n;
@@ -902,30 +1108,64 @@ export function createDogfightLive(page) {
    */
   const _p = new THREE.Vector3(), _c = new THREE.Vector3();
   function markHim(you, him) {
-    const cam = page.camera?.();
-    const el = page.stage;
-    if (!cam || !el) { ui.mark.hidden = true; return; }
-    const w = el.clientWidth, h = el.clientHeight;
-    // Where he is in the camera's own frame: x right, y up, z back.
-    cam.updateMatrixWorld();
-    _c.set(him.position[0], him.position[1], him.position[2]).applyMatrix4(cam.matrixWorldInverse);
-    const ahead = _c.z < 0;
-    _p.set(him.position[0], him.position[1], him.position[2]).project(cam);
-    const onScreen = ahead && Math.abs(_p.x) < 0.92 && Math.abs(_p.y) < 0.86;
+    const seen = placeMark(ui.mark, ui.markText, you, him, '');
     // How long he has been off the screen (rule 4's measure), on the
     // page's clock.
-    live.offScreen = onScreen ? 0 : live.offScreen + Math.max(0, live.clock - (live.markAt ?? live.clock));
+    live.offScreen = seen ? 0 : live.offScreen + Math.max(0, live.clock - (live.markAt ?? live.clock));
     live.markAt = live.clock;
-    const range = Math.round(len(sub(him.position, you.position)));
-    ui.mark.hidden = false;
-    ui.mark.classList.toggle('is-edge', !onScreen);
-    if (onScreen) {
-      ui.mark.style.transform = `translate(${(_p.x * 0.5 + 0.5) * w}px, ${(-_p.y * 0.5 + 0.5) * h}px)`;
-      ui.markText.textContent = `${range} m`;
-      return;
+  }
+
+  /** Your wingman on screen: their mark with range and what they are
+   *  doing, and their caption row; after their first break, the coach
+   *  says so for a few seconds. */
+  function drawWing(you) {
+    const w = live.wing;
+    if (!w?.bot) { ui.wingMark.hidden = ui.wingRow.hidden = true; return; }
+    // Out of their plane (into the ground, or out of the sky): down.
+    if (!w.down && (w.bot.vehicle?.kind !== 'air' || page.isWreck?.(w.bot.vehicle?.node))) {
+      w.down = true;
+      w.bot.ace = null;
+      banner('YOUR WINGMAN IS DOWN · you are alone', 3, 'danger');
     }
-    // Off the screen: an arrow on its edge, pointing the way he is. Behind
-    // you, the arrow leans to the bottom edge however little he is off the
+    const st = w.down ? null : stateOf(w.bot.vehicle?.drive?.state);
+    const words = w.down ? wingWords('down') : wingWords(w.out?.phase);
+    if (st) placeMark(ui.wingMark, ui.wingMarkText, you, st, `WINGMAN · ${wingShort(w.out?.phase)} · `);
+    else ui.wingMark.hidden = true;
+    ui.wingRow.hidden = false;
+    ui.wingRow.dataset.state = w.down ? 'down' : w.out?.phase ?? 'station';
+    if (ui.wingState.textContent !== words) ui.wingState.textContent = words;
+    const said = w.down ? 'Shot down' : w.out?.say ?? '';
+    if (ui.wingSaid.textContent !== said) ui.wingSaid.textContent = said;
+    if (w.engaged && live.clock < (w.sayUntil ?? 0) && !w.down) {
+      setCoach({ tone: TONE.go ?? TONE.info, line: 'Your wingman is onto the hunter',
+                 tip: 'Keep flying: they are dragging the hunter off your tail. Stay where they can reach you.', keys: [] });
+    }
+  }
+
+  /** A mark on `other` in the main view, or an arrow at the screen's edge
+   *  pointing the way to it, with its range and `label`. True when it is on
+   *  the screen. */
+  function placeMark(mark, text, you, other, label) {
+    const cam = page.camera?.();
+    const el = page.stage;
+    if (!cam || !el || !other) { mark.hidden = true; return false; }
+    const w = el.clientWidth, h = el.clientHeight;
+    // Where it is in the camera's own frame: x right, y up, z back.
+    cam.updateMatrixWorld();
+    _c.set(other.position[0], other.position[1], other.position[2]).applyMatrix4(cam.matrixWorldInverse);
+    const ahead = _c.z < 0;
+    _p.set(other.position[0], other.position[1], other.position[2]).project(cam);
+    const onScreen = ahead && Math.abs(_p.x) < 0.92 && Math.abs(_p.y) < 0.86;
+    const range = Math.round(len(sub(other.position, you.position)));
+    mark.hidden = false;
+    mark.classList.toggle('is-edge', !onScreen);
+    if (onScreen) {
+      mark.style.transform = `translate(${(_p.x * 0.5 + 0.5) * w}px, ${(-_p.y * 0.5 + 0.5) * h}px)`;
+      text.textContent = `${label}${range} m`;
+      return true;
+    }
+    // Off the screen: an arrow on its edge, pointing the way it is. Behind
+    // you, the arrow leans to the bottom edge however little it is off the
     // tail, so "behind" always reads as down.
     let dx = _c.x, dy = _c.y;
     if (!ahead) dy -= Math.abs(_c.z) * 0.6;
@@ -933,9 +1173,10 @@ export function createDogfightLive(page) {
     dx /= l; dy /= l;
     const k = Math.min(0.9 / Math.max(Math.abs(dx), 1e-3), 0.8 / Math.max(Math.abs(dy), 1e-3));
     const ex = dx * k, ey = dy * k;
-    ui.mark.style.transform = `translate(${(ex * 0.5 + 0.5) * w}px, ${(-ey * 0.5 + 0.5) * h}px)`;
-    ui.mark.style.setProperty('--a', `${Math.atan2(-dy, dx)}rad`);
-    ui.markText.textContent = `${range} m${ahead ? '' : ' behind'}`;
+    mark.style.transform = `translate(${(ex * 0.5 + 0.5) * w}px, ${(-ey * 0.5 + 0.5) * h}px)`;
+    mark.style.setProperty('--a', `${Math.atan2(-dy, dx)}rad`);
+    text.textContent = `${label}${range} m${ahead ? '' : ' behind'}`;
+    return false;
   }
 
   /**
@@ -1011,6 +1252,14 @@ export function createDogfightLive(page) {
       live.frozen = null;
       live.guidePilot = null;
       clearExtend(true);
+      // A wingman shot down is seated again before the fight starts again.
+      if (live.wing && (live.wing.down || live.wing.bot?.vehicle?.kind !== 'air')) {
+        live.wing.bot = null;
+        live.wing.since = live.clock;
+        live.wing.asked = -Infinity;
+        live.phase = 'seating';
+        return true;
+      }
       if (live.phase === 'fight' && place()) banner('AGAIN', 1.4, 'go');
       else live.phase = 'seating';
       return true;
@@ -1024,6 +1273,8 @@ export function createDogfightLive(page) {
 
   return {
     start, stop, frame, key, flightOverride, noteImpact, toggleInstructor, renderInset, togglePause,
+    /** For the tests: hands on your stick, 'straight' or 'turn' (null lets go). */
+    script: kind => { live.script = kind || null; live.scriptDir = null; },
     get active() { return !!live.lesson; },
     get state() {
       return {
@@ -1047,6 +1298,14 @@ export function createDogfightLive(page) {
                                 results: (live.extend.results ?? []).map(r => ({ id: r.way.id, result: r.score?.result ?? null, words: r.score ? resultWords(r.score) : null, error: r.error ?? null })) } : null,
         extendWay: live.extendWay?.id ?? null,
         sphere: live.sphere?.state ?? null,
+        // The pair flown: your wingman and gunner, whom the hunter is after,
+        // and the end card.
+        wing: live.wing ? { bot: live.wing.bot?.playerId ?? null, phase: live.wing.out?.phase ?? null, words: ui.wingState.textContent,
+                            hits: live.wing.hits, hitsOn: live.wing.hitsOn, down: live.wing.down, engaged: live.wing.engaged,
+                            type: typeOf(live.wing.bot?.vehicle?.node),
+                            position: stateOf(live.wing.bot?.vehicle?.drive?.state)?.position?.map(Math.round) ?? null } : null,
+        gunner: live.gunner ? { bot: live.gunner.bot?.playerId ?? null, hits: live.gunner.hits, seated: !!live.gunner.bot?.vehicle, firing: !!live.gunner.bot?.isFiring, off: live.gunner.off ?? null } : null,
+        aceTarget: live.aceTarget, end: live.end,
         lines: live.lineRun ? { you: live.lineRun.tracks[1].length, rings: live.lines ? live.lines.rings.filter(r => r.visible).length : 0, seconds: +(live.lineRun.tracks[1].at(-1).t).toFixed(1), shot: live.lineShot ? { t: +live.lineShot.t.toFixed(1), range: live.lineShot.range } : null,
                                 inScene: !!live.lines?.group.parent, tag: ui.shotTag.hidden ? null : ui.shotTag.textContent } : null,
       };

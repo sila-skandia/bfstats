@@ -51,6 +51,8 @@ MODULES = {
     "dogfight-jet-ceiling.js": VIEWER / "dogfight-jet-ceiling.js",
     "dogfight-coach.js": VIEWER / "dogfight-coach.js",
     "dogfight-live.js": VIEWER / "dogfight-live.js",
+    # The pair flown: the live fight's wingman (`dogfight-live-wing.js`).
+    "dogfight-live-wing.js": VIEWER / "dogfight-live-wing.js",
     "dogfight-doctrine.js": VIEWER / "dogfight-doctrine.js",
     "dogfight-measure.js": VIEWER / "dogfight-measure.js",
     "dogfight-fight.js": VIEWER / "dogfight-fight.js",

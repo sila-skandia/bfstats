@@ -1076,6 +1076,7 @@ export function createDogfightTheatre({ host, makePlane, planeVisual = () => nul
     ui.fly.textContent = name ? `Practise the ${name}` : 'Fly it yourself';
     ui.flyNote.textContent = name
       ? `You fly the green plane (YOU), set up as this fight starts, against the ace it was measured against. The guide and the instructor (I) fly the ${name}: follow the green rings${stepsOf(lesson, demo.id) ? ', and the numbered steps on the move card' : ''}. ${demo.note}`
+      : lesson.flyWith ? 'You fly the green plane (YOU), with your wingman off your wing on your own type and the hunter coming in behind. Your wingman breaks onto anyone on your tail; the coach says when.'
       : 'You fly the green plane (YOU), in the air, against the ace flying this move. The coach tells you what they are doing and what beats it.';
     ui.tc.classList.add('is-shown');
     clearTimeout(pickDemo.timer);
