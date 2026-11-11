@@ -58,22 +58,29 @@
  "oneSided": null,
  "unreachable": [],
  "lintErrors": [],
- "acceptanceWithdrawn": {
-  "reason": "With no layer the level has no fight (no seed with both sides killing at 8 a side); with it both sides kill in every seed, take 3 flags a match and split the wins 5:5 and 7:3. Short of DICE's bar on enemy kills (0.066 and 0.110 a bot-minute against floors of 0.179 and 0.375), route failures (2.11 and 6.62), the worse side's share of deaths no enemy caused (0.58) and units never used. Published to be checked on the page; it gets its menu flag only if the page check holds.",
-  "date": "2026-11-10",
-  "outcome": "better-than-nothing",
+ "accepted": {
+  "reason": "The owner played it on the page on 2026-11-11 and said its bots are fine: 'they rushed to the spawn point, germans counter attacked. I think it's a huge improvement on what we have.' The runner's three seeds call it no-fight at 8 a side (0.038 enemy kills a bot-minute); on the page it had 0.09, 0.24 and 0.17 with 13, 6 and 6 captures.",
+  "date": "2026-11-11",
+  "outcome": "no-fight",
   "failed": [
+   "8:idleShare",
    "8:routeFailuresPerBotMinute",
    "8:enemyKillsPerBotMinute",
+   "8:bothSidesKill",
+   "8:ticketsBleed",
    "8:routeFailuresPerBotMinuteWorseSide",
    "8:nonEnemyDeathShareWorseSide",
+   "8:hullStuckSecondsPerDrivingMinute",
+   "8:hullStuckSecondsPerDrivingMinuteWorseSide",
    "8:unitsNeverUsedShare",
    "16:routeFailuresPerBotMinute",
    "16:enemyKillsPerBotMinute",
    "16:routeFailuresPerBotMinuteWorseSide",
    "16:nonEnemyDeathShareWorseSide",
+   "16:hullStuckSecondsPerDrivingMinute",
+   "16:hullStuckSecondsPerDrivingMinuteWorseSide",
    "16:unitsNeverUsedShare"
   ],
-  "because": "now also fails 8:idleShare, 8:bothSidesKill, 8:ticketsBleed, 8:hullStuckSecondsPerDrivingMinute, 8:hullStuckSecondsPerDrivingMinuteWorseSide, 16:hullStuckSecondsPerDrivingMinute, 16:hullStuckSecondsPerDrivingMinuteWorseSide"
+  "by": "owner"
  }
 }
