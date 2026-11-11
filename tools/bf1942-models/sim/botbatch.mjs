@@ -265,10 +265,17 @@ export const ACCEPTABLE = ['better-than-nothing'];
 /**
  * What the owner may accept (`accept --owner`): also a layer the comparison
  * does not call better than the level with no layer, when they have looked
- * at what it does and said it goes up. Never a level with no fight or one
- * the lint refuses. DC_Basrah_Nights is the case (README 19.8).
+ * at what it does and said it goes up (DC_Basrah_Nights, README 19.8), and,
+ * since the owner's rollout of 2026-11-11, a level the runner calls
+ * `no-fight`. FHSW's Tunis-1943 is that case: the owner played it on the
+ * page and called it "a huge improvement on what we have", and the runner's
+ * three seeds at 8 a side have one in which a side never kills (0.038 enemy
+ * kills a bot-minute against 0.17 on the page). The runner under-reads a
+ * level with vehicles, so for the rollout the page match is the judge of a
+ * fight (page-matches.md, section 6). Never a level the lint refuses or one
+ * that is `unsuitable`.
  */
-export const OWNER_ACCEPTABLE = ['better-than-nothing', 'no-better-than-nothing'];
+export const OWNER_ACCEPTABLE = ['better-than-nothing', 'no-better-than-nothing', 'no-fight'];
 
 const failedChecks = short => Object.entries(short.sizes ?? {}).flatMap(([size, j]) => (j.failed ?? []).map(f => `${size}:${f}`));
 

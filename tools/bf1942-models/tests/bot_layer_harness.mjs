@@ -176,7 +176,8 @@ const owned = batch.acceptVerdict(noBetterShort, 'the owner looked at it', '2026
 out.ownerAcceptance = {
   refusedWithout: refuse(() => batch.acceptVerdict(noBetterShort, 'why', '2026-11-11')),
   by: owned.accepted.by, outcome: owned.accepted.outcome,
-  noFight: refuse(() => batch.acceptVerdict(short({ outcome: 'no-fight' }), 'why', '2026-11-11', { owner: true })),
+  noFight: batch.acceptVerdict(short({ outcome: 'no-fight' }), 'why', '2026-11-11', { owner: true }).accepted.outcome,
+  unsuitable: refuse(() => batch.acceptVerdict(short({ outcome: 'unsuitable' }), 'why', '2026-11-11', { owner: true })),
   carried: batch.carryAccepted(noBetterShort, owned).accepted?.by ?? null,
   worse: batch.carryAccepted(short({ outcome: 'no-fight' }), owned).acceptanceWithdrawn?.because ?? null,
   ordinaryDoesNotCarry: batch.carryAccepted(noBetterShort, batch.acceptVerdict(short(), 'why', '2026-11-11')).acceptanceWithdrawn?.because ?? null,

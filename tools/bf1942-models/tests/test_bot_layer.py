@@ -444,7 +444,9 @@ class JudgeTests(unittest.TestCase):
         own = self.out["ownerAcceptance"]
         self.assertIn("the owner may", own["refusedWithout"])
         self.assertEqual((own["by"], own["outcome"]), ("owner", "no-better-than-nothing"))
-        self.assertIn("no-fight", own["noFight"])
+        # Since the rollout the owner may also put up a level the runner calls no fight; never an unsuitable one.
+        self.assertEqual(own["noFight"], "no-fight")
+        self.assertIn("unsuitable", own["unsuitable"])
         # It stands at the outcome accepted, and goes when the level gets worse.
         self.assertEqual(own["carried"], "owner")
         self.assertEqual(own["worse"], "now no-fight")
