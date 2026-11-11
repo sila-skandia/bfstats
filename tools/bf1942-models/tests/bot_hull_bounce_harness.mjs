@@ -10,7 +10,7 @@
 // the lower of the velocity and the ground covered over the last second.
 
 import { trackObstruction, trackHullContact, onObstructed, ensureRoute, extendRoute, popPassed, lookAhead,
-         execInfantryMoveTo, steerToward, hullTravelSpeed, HULL_TRAVEL_WINDOW } from './bot-route.js';
+         execInfantryMoveTo, steerToward, hullTravelSpeed, HULL_TRAVEL_WINDOW, backOutDecision } from './bot-route.js';
 import { CELL_FREE } from './nav-map.js';
 
 const out = {};
@@ -85,6 +85,27 @@ function pressed(useTravel) {
 out.pressedVelocity = pressed(false);
 out.pressedTravel = pressed(true);
 
+// --- The back-out, astern (cause 3) ------------------------------------------------
+//
+// A hull heading -z with its back-out point 5 m astern and a little to its
+// right reverses to it; with the point ahead, or a plain route point astern,
+// the turn in the box decides as before (null).
+{
+  const nav = flatNav();
+  const b = hullBot(nav, 100.5, -100.5, Math.PI);
+  const astern = [101.5, -95.6];
+  b.route = { goal: [100.5, -140.5], points: [astern, [100.5, -140.5]], backOut: astern, coarse: [], failed: false };
+  const f = b._vehicleForward();
+  const v = { x: 0, y: 0, z: 0 };
+  const back = backOutDecision(b, astern[0] - 100.5, astern[1] + 100.5, f, v);
+  const ahead = [100.5, -105.5];
+  b.route = { goal: [100.5, -140.5], points: [ahead, [100.5, -140.5]], backOut: ahead, coarse: [], failed: false };
+  const fwd = backOutDecision(b, 0, -5, f, v);
+  b.route = { goal: [100.5, -140.5], points: [astern, [100.5, -140.5]], backOut: null, coarse: [], failed: false };
+  const plain = backOutDecision(b, astern[0] - 100.5, astern[1] + 100.5, f, v);
+  out.backOut = { drive: back?.drive ?? null, angle: back ? r3(back.angle) : null, ahead: fwd, plain };
+}
+
 // --- The loop: a toy hull on a wall the map does not show ---------------------------
 //
 // The straight line from (100.5, -100.5) to (100.5, -130.5) runs into a 6 m
@@ -97,9 +118,12 @@ function toyWall(seconds = 60) {
   const goal = [100.5, 0, -130.5];
   const action = { type: 'InfanteryMoveTo', waypoint: goal, arrive: 3 };
   const HW = 1.5, HL = 3.0, DT = 1 / 30;
-  const wallHit = (x, z, yaw) => {
+  // `lead` 1 or -1 tests only the end the hull moves toward: a body is not
+  // held by a wall it backs away from.
+  const wallHit = (x, z, yaw, lead = 0) => {
     const f = [Math.sin(yaw), Math.cos(yaw)], l = [f[1], -f[0]];
     for (const [a, c] of [[HL, HW], [HL, -HW], [-HL, HW], [-HL, -HW], [HL, 0], [-HL, 0], [0, HW], [0, -HW]]) {
+      if (lead && !(a * lead > 0)) continue;
       const px = x + a * f[0] + c * l[0], pz = z + a * f[1] + c * l[1];
       if (pz < -107.5 && pz > -108.5 && px > 97.5 && px < 103.5) return [px, pz];
     }
@@ -118,7 +142,7 @@ function toyWall(seconds = 60) {
     if (!wallHit(x, z, ny)) h.yaw = ny;
     const f = [Math.sin(h.yaw), Math.cos(h.yaw)];
     const nx = x + f[0] * h.speed * DT, nz = z + f[1] * h.speed * DT;
-    const hit = wallHit(nx, nz, h.yaw);
+    const hit = wallHit(nx, nz, h.yaw, Math.sign(h.speed));
     let reported = h.speed;
     if (!hit) { x = nx; z = nz; } else { reported = Math.sign(h.speed || 1) * bounce(t); ticksOnWall++; }
     b.position = [x, 0, z];

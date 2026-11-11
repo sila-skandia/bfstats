@@ -122,6 +122,16 @@ class HullBounceTests(unittest.TestCase):
         self.assertIsNotNone(r["touchedAt"])
         self.assertLess(r["touchedAt"], 60)
 
+    def test_a_back_out_point_astern_is_reversed_to(self) -> None:
+        # Cause 3: the hull reverses straight to its back-out point when it
+        # lies astern (the angle is state 8's, -asin(n . dir)); a point ahead,
+        # or a plain route point, is the turn in the box's as before.
+        r = self.results["backOut"]
+        self.assertEqual(r["drive"], -1)
+        self.assertAlmostEqual(abs(r["angle"]), 0.201, places=2)
+        self.assertIsNone(r["ahead"])
+        self.assertIsNone(r["plain"])
+
     def test_a_hull_on_a_wall_the_map_does_not_show_gets_round_it(self) -> None:
         r = self.results["toyWall"]
         self.assertGreater(r["ticksOnWall"], 0, "the straight line does meet the wall")

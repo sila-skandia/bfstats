@@ -515,11 +515,34 @@ export function ensureRoute(bot, goal) {
   // beside it was popped inside the hull's 3 m radius, the first point the
   // hull steered at lay ahead, through the obstacle, and
   // `actionStatusDecision` drove forward into it for good.
+  //
+  // A hull's point is first sought straight away from the circle it was
+  // just held by, a turn radius off where the map and the circles allow,
+  // else nearer (INVENTION): the nearest free point is often half a metre
+  // off, the edge of a circle the hull barely stands in, and a hull that
+  // backs half a metre has no more room to turn than before. FH's Pegasus
+  // RedTractor, wedged on an object's corner at (512, -566.5), backed 0.3 m
+  // to such a point, drove ahead on full lock into the same corner, and did
+  // that for 508 s (hull-steering.md, cause 3). Only when that line has no
+  // free point outside every circle does the nearest one stand.
   let backOut = null;
   if (bot.vehicle && bot._backOut) {
     bot._backOut = false;
-    const p = resolveClearStart(nav, bx, bz, bot.obstacles);
-    if (p && Math.hypot(p[0] - bx, p[1] - bz) > 0.25) backOut = p;
+    const held = bot.obstacles[bot.obstacles.length - 1];
+    const dh = held ? Math.hypot(bx - held.x, bz - held.z) : 0;
+    if (held && dh > 1e-3) {
+      const ux = (bx - held.x) / dh, uz = (bz - held.z) / dh;
+      const want = bot.vehicle.turnRadius ?? TANK.defaultTurnRadius;
+      const outside = (x, z) => bot.obstacles.every(o => Math.hypot(x - o.x, z - o.z) >= o.r);
+      for (let s = want; s >= 1; s -= 0.5) {
+        const x = bx + ux * s, z = bz + uz * s;
+        if (outside(x, z) && isWalkable(nav, x, z) && traceClear(nav, bx, bz, x, z, bot.obstacles)) { backOut = [x, z]; break; }
+      }
+    }
+    if (!backOut) {
+      const p = resolveClearStart(nav, bx, bz, bot.obstacles);
+      if (p && Math.hypot(p[0] - bx, p[1] - bz) > 0.25) backOut = p;
+    }
   }
   bot.route = {
     goal: [goal[0], goal[2]],
@@ -687,10 +710,13 @@ export function popPassed(bot) {
     const dx = bot.position[0] - front[0];
     const dz = bot.position[2] - front[1];
     if (r.backOut && front === r.backOut) {
-      // A wedged hull's back-out point goes once the hull is on it or clear
-      // of every circle at its full radius (INVENTION, `ensureRoute`).
-      const clear = bot.obstacles.every(o => Math.hypot(bot.position[0] - o.x, bot.position[2] - o.z) >= o.r);
-      if (!clear && dx * dx + dz * dz >= BOT_RADIUS * BOT_RADIUS) break;
+      // A wedged hull's back-out point goes once the hull is on it or has
+      // passed it along the line it backed out on (INVENTION, `ensureRoute`).
+      // It used to go as soon as the hull stood clear of every circle, which
+      // is often half a metre from where it wedged: too little to turn in.
+      const from = r.lastPassed ?? front;
+      const passed = (front[0] - from[0]) * dx + (front[1] - from[1]) * dz >= 0;
+      if (!passed && dx * dx + dz * dz >= BOT_RADIUS * BOT_RADIUS) break;
       r.backOut = null;
       r.lastPassed = front;
       r.points.shift();
@@ -776,7 +802,8 @@ export function hullTravelSpeed(bot, speed) {
   const span = now - s[0][0];
   if (span < HULL_TRAVEL_WINDOW * 0.75) return speed;
   const ground = Math.hypot(bot.position[0] - s[0][1], bot.position[2] - s[0][2]) / span;
-  return Math.min(speed, ground);
+  tr.speed = Math.min(speed, ground);
+  return tr.speed;
 }
 
 /** Plant a potential obstacle where the body is stuck and re-plan. */
@@ -803,7 +830,11 @@ export function onObstructed(bot) {
  */
 function onHullObstructed(bot) {
   const v = bot.vehicle?.drive?.state?.velocity;
-  const speed = v ? Math.hypot(v.x, v.z) : 0;
+  let speed = v ? Math.hypot(v.x, v.z) : 0;
+  // The ground it covered, when the move has measured it (`hullTravelSpeed`):
+  // a hull bouncing on what holds it reads a speed it is not making.
+  const tr = bot._hullTravel;
+  if (tr && Number.isFinite(tr.speed) && tr.last === (bot._now ?? 0)) speed = Math.min(speed, tr.speed);
   if (speed < MOVING_SPEED) {
     const f = bot._vehicleForward();
     const R = bot._radius();
@@ -827,6 +858,39 @@ function onHullObstructed(bot) {
   }
   bot._replanKeepsCount = true;
   if (bot.route) bot.route.failed = true;
+}
+
+/**
+ * A wedged hull's back-out (INVENTION, with `trackHullContact`,
+ * `onHullObstructed` and `ensureRoute`'s back-out point): while the hull
+ * steers at its route's back-out point and that point lies behind its beam,
+ * it reverses straight to it, its tail steered at it the way state 8 of
+ * `actionStatusDecision` steers a reverse (`-asin(n . dir)`), instead of
+ * handing the point to the turn in the box. The box machine sees only the
+ * map and the circles, and from inside a circle planted on what holds the
+ * hull it reads the way ahead as open: it answered a point astern with state
+ * 9 (ahead on full lock) or a turn in place, which a wheeled hull makes by
+ * driving ahead, into what holds it. FH's Pegasus RedTractor, wedged on the
+ * corner of a 3 x 4 m object at (511, -565) with its back-out point 3 m
+ * astern, did that for 508 s (features/bot-map-generation/hull-steering.md,
+ * cause 3). Returns `{ state, drive, angle, sign }` as the decision does, or
+ * null when the point is not a back-out point astern.
+ */
+export function backOutDecision(bot, dx, dz, f, v) {
+  const r = bot.route;
+  const bo = r?.backOut;
+  if (!bo || r.points[0] !== bo) return null;
+  if (Math.abs(bot.position[0] + dx - bo[0]) > 1e-6 || Math.abs(bot.position[2] + dz - bo[1]) > 1e-6) return null;
+  const len = Math.hypot(dx, dz);
+  if (!(len > 1e-6)) return null;
+  // The engine's frame (z negated), as `hullDecision` hands the machine.
+  const fx = f[0], fz = -f[1];
+  const ux = dx / len, uz = -dz / len;
+  if (fx * ux + fz * uz >= 0) return null;
+  const nl = Math.hypot(fz, fx) || 1;
+  const side = Math.asin(Math.max(-1, Math.min(1, (fz * ux - fx * uz) / nl)));
+  const velSign = v ? v.x * f[0] + v.z * f[1] : 0;
+  return { state: 0, drive: -1, angle: -side, sign: velSign > 0 ? 1 : velSign < 0 ? -1 : 0 };
 }
 
 /**
@@ -899,6 +963,13 @@ export function hullDecision(bot, dx, dz, minLevel = 0) {
     return { x: o.x, z: -o.z, r: ds < o.r ? Math.max(0, ds - (nav?.cellSize ?? 1) * 0.5) : o.r };
   });
   const asd = bot._asd ?? (bot._asd = { state: 0 });
+  const back = backOutDecision(bot, dx, dz, f, v);
+  if (back) {
+    asd.state = 0;
+    bot._dbgMoveStatus = 'back';
+    bot._dbgBox = box;
+    return back;
+  }
   const d = actionStatusDecision({
     state: asd.state, dir: [dx / len, -dz / len], pos, forward: [f[0], -f[1]],
     velSign: v ? v.x * f[0] + v.z * f[1] : 0,
