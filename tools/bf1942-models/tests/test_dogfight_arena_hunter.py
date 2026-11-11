@@ -75,11 +75,15 @@ class HunterOnEveryArenaTests(unittest.TestCase):
         el = next(r["airframe"] for r in self.arenas["fhsw"] if r["map"] == "El_Alamein")
         self.assertIsNone(self.out[el]["pair"]["counter"]["youDown"])
 
-    def test_the_hunter_never_flies_into_the_ground(self) -> None:
+    def test_nobody_flies_into_the_ground(self) -> None:
+        # The hunter, you, and your wingman or weave partner, in all four
+        # demos. On FHSW's Yak 9 the Thach weave's 80-degree turns rolled on
+        # past the bank asked for, inverted, and both of the pair went in.
         for arena, a in self.each_arena():
             for demo, r in a["pair"].items():
                 with self.subTest(arena=arena, demo=demo):
-                    self.assertNotEqual("flew into the ground", r["hunterDown"], r)
+                    for who in ("hunterDown", "youWhy", "wingDown"):
+                        self.assertNotEqual("flew into the ground", r[who], (who, r))
 
     def test_the_hunter_tracks_you_without_rocking_its_wings(self) -> None:
         # Stop to stop on the roll stick, a second, while it tracks you

@@ -2522,7 +2522,7 @@ PLANS.leafFollow = {
  * `PAIR.cover` metres is his target until it is gone or off the tail.
  * Needs the fight's `c.team` (`dogfight-fight.js` `runFight`).
  */
-const PAIR = { abeam: 180, behind: 60, cover: 800, tailCone: 60 };
+const PAIR = { abeam: 180, behind: 60, cover: 800, tailCone: 60, hold: 4, holdCone: 90 };
 PLANS.wingman = {
   title: 'The wingman', first: 'station',
   // Said under the wingman's own caption row, the leader being you: the
@@ -2534,14 +2534,23 @@ PLANS.wingman = {
     if (!lead) { mem.target = null; return { ...leadPursuit(c, { pull: 1 }), throttle: 1 }; }
     const L = lead.state, lf = basis(L.orientation).F;
     // An enemy on the leader's tail: behind him, inside the cone, closing.
+    // One he is already after, that has swung off the tail for a moment (a
+    // hunter weaving behind a slow-rolling leader, FHSW's P-47), he stays
+    // after for `PAIR.hold` seconds while its nose is still near the
+    // leader's way: back on station he would be half a kilometre out when it
+    // came back.
+    const holding = mem.phase === 'cover' && mem.t - (mem.coverAt ?? -Infinity) < PAIR.hold;
     const threat = (team.enemies ?? []).map(e => {
       const rel = sub(L.position, e.state.position), d = len(rel);
       const ef = basis(e.state.orientation).F;
       const nose = Math.acos(clamp(dot(ef, scale(rel, 1 / Math.max(d, 1e-6))))) / DEG;
       const behind = Math.acos(clamp(dot(lf, scale(rel, 1 / Math.max(d, 1e-6))))) / DEG;
-      return { e, d, ok: d < PAIR.cover && nose < PAIR.tailCone && behind < 70 };
+      const ok = d < PAIR.cover && nose < PAIR.tailCone && behind < 70;
+      const held = !ok && holding && e.i === mem.target && d < PAIR.cover && nose < PAIR.holdCone && behind < PAIR.holdCone;
+      return { e, d, ok: ok || held, held };
     }).filter(x => x.ok).sort((a, b) => a.d - b.d)[0];
     if (threat) {
+      if (!threat.held) mem.coverAt = mem.t;
       mem.target = threat.e.i;
       go(c, 'cover');
       // The target this tick may still be another: point at the threat
