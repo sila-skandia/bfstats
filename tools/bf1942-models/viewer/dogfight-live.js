@@ -1084,7 +1084,9 @@ export function createDogfightLive(page) {
     const you = stateOf(page.playerDrive()?.state), him = stateOf(live.bot?.vehicle?.drive?.state);
     if (!you || !him) return;
     live.frozen = { you, him };
-    banner('PAUSED · the lines are up · P to go', 2.5, 'info');
+    // A phone has no P key: it resumes from the pause button in the opened coach.
+    const touch = typeof matchMedia === 'function' && matchMedia('(pointer: coarse)').matches;
+    banner(`PAUSED · the lines are up · ${touch ? 'tap pause to go' : 'P to go'}`, 2.5, 'info');
   }
 
   /** Both airframes held at the frozen moment: put back every frame. */
