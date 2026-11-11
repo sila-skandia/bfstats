@@ -908,7 +908,9 @@ export function createHullBodies(page) {
         // A car a hull's spawner stood without a hold is kept on the hull as
         // a stand-in for the coupling the page cannot push yet
         // (`spawned-craft.js` `hullHeldCraftUnder`): no throttle lets it go.
-        if (!rec.hold?.stood && Math.abs(s.throttle ?? 0) >= HOLD_RELEASE_THROTTLE) {
+        // The revs are the engine the spawner finds (`Aircraft.holdRevs`),
+        // not the first engine's: GCMOD's lift engines turn the other way.
+        if (!rec.hold?.stood && (drive.holdRevs ?? Math.abs(s.throttle ?? 0)) >= HOLD_RELEASE_THROTTLE) {
           // Let go, with the ship's velocity where the craft stands.
           setReleased(rec, true);
           drive.held = false;

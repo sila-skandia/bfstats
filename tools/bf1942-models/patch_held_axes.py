@@ -17,6 +17,10 @@ It took a wheel's steering with them too: every Spring of FHSWEurope's ski and
 went and full lock turned them 0 degrees (`surveys/census_ground_drive.mjs`,
 2026-10-28). A RotationalBundle with a Spring among its children gets it back.
 
+And a thrust rack's: GCMOD's `ImpGunship` and `ImpSkiff` yaw by rolling their
+hover-engine racks on `c_PIYaw` over hidden roll wheels, and D did nothing
+(2026-11-12). A RotationalBundle with a plane Engine under it gets its axes back.
+
 A rig is JSON in the glb's first chunk; nothing it draws or places moves. So
 this rewrites that chunk only, on the nodes a fresh extract would rig, to what
 `browse_rig` gives them now (the template is looked up by name in the mod's
@@ -73,6 +77,24 @@ def is_rotational(extras: dict) -> bool:
     return str(extras.get("templateKind") or "").lower() == "rotationalbundle"
 
 
+def carries_engine(nodes: list, node: dict, depth: int = 0) -> bool:
+    """Whether a plane Engine (`c_ETPlane`) hangs anywhere under `node`: an
+    aircraft's thrust rack, never a ship's screw or an outboard motor."""
+    if depth > 24:
+        return False
+    for c in node.get("children") or []:
+        if not 0 <= c < len(nodes):
+            continue
+        child = nodes[c]
+        extras = child.get("extras") or {}
+        if (str(extras.get("templateKind") or "").lower() == "engine"
+                and str((extras.get("physics") or {}).get("engineType") or "").lower() == "c_etplane"):
+            return True
+        if carries_engine(nodes, child, depth + 1):
+            return True
+    return False
+
+
 def patch_doc(doc: dict, library) -> int:
     """Add the held key axes a fresh extract gives each node; how many nodes
     changed. Mutates `doc`."""
@@ -95,7 +117,8 @@ def patch_doc(doc: dict, library) -> int:
         nodes = doc.get("nodes", [])
         steers = any(str(((nodes[c].get("extras") or {}).get("templateKind") or "")).lower() == "spring"
                      for c in node.get("children") or [] if 0 <= c < len(nodes))
-        fresh = browse_rig(template, has_visible_springs=False, steers_spring=steers)
+        fresh = browse_rig(template, has_visible_springs=False, steers_spring=steers,
+                           carries_engine=carries_engine(nodes, node))
         if not fresh:
             continue
         rig = extras.get("rig")

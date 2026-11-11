@@ -233,11 +233,16 @@ export function weldVerdict(dev, authored, tol) {
  * pads").
  */
 export function padGroundVerdict({ padY, padGround, hullY, hullGround, dh, dy,
-  padFloor = null, hullFloor = null }) {
+  padFloor = null, hullFloor = null, hullBottom = null }) {
   if (![padY, padGround, hullY, hullGround, dh, dy].every(Number.isFinite)) return null;
   const under = (floor, y, ground) => Number.isFinite(floor) && floor > ground && floor <= y + 0.5;
   const hullSurface = under(hullFloor, hullY, hullGround) ? hullFloor : hullGround;
-  const onGround = hullY - hullSurface <= 4 && hullY - hullSurface >= -1;
+  // On the ground: its origin within 4 m over what is under it, or (given
+  // `hullBottom`, the lowest point of its meshes) its feet on it. A walker's
+  // origin is at its hips: GCMOD's AT-ST on Hoth rests on its feet 5 to 6 m
+  // under a pad in the air, its origin far over the 4 m (2026-11-12).
+  const feet = Number.isFinite(hullBottom) && Math.abs(hullBottom - hullSurface) <= 1;
+  const onGround = feet || (hullY - hullSurface <= 4 && hullY - hullSurface >= -1);
   if (!onGround || dh > 15) return null;
   if (padY < padGround - 0.3) return 'under-ground';
   const padSurface = under(padFloor, padY, padGround) ? padFloor : padGround;
@@ -323,8 +328,13 @@ export function roundEnded(round, mark = null) {
  */
 export const RELEASE_MIN = 30;
 export const RELEASE_MAX = 70;
-export function releaseSpeed(liftOff) {
-  if (!(liftOff > 0)) return RELEASE_MAX;
+export function releaseSpeed(liftOff, { vectored = false } = {}) {
+  // A craft with lift engines (`Aircraft.vectored`: an Engine off the nose,
+  // which hovers) leaves the ground on its engines, so its lift-off speed is
+  // no measure of its wings. GCMOD's A-Wing clones and TIE fighter lifted off
+  // at 1 to 20 m/s, were released at the floor, and fell 258 to 296 m in
+  // 7 s at a speed no wing of theirs flies: read as `air.diverges` (2026-11-12).
+  if (vectored || !(liftOff > 0)) return RELEASE_MAX;
   return Math.min(RELEASE_MAX, Math.max(RELEASE_MIN, 1.3 * liftOff));
 }
 
@@ -360,6 +370,12 @@ export function airDiverges({ noseY = [], dy7 = 0 } = {}) {
  *              (the balloon's `Balloon_HoveringEngineBundle` on c_PIPitch and
  *              c_PIRoll), which may turn the hull or push it, and either
  *              answers it.
+ *  'cosmetic'  only bundles that carry neither an Engine nor a Wing: the key
+ *              turns geometry and nothing that pushes. GCMOD's podracers bind
+ *              c_PIPitch and c_PIRoll to their cockpit, cable and turbine
+ *              tilts and nothing else; the hull does not answer in retail
+ *              either. A row without the `wing` field (an older page) is a
+ *              surface, as before.
  */
 export function airAxisRole(bindings) {
   const rows = Array.isArray(bindings) ? bindings : [];
@@ -367,6 +383,7 @@ export function airAxisRole(bindings) {
   if (rows.some(r => r.kind === 'Wing')) return 'surface';
   if (rows.every(r => r.kind === 'Engine')) return 'thrust';
   if (rows.some(r => r.engine)) return 'vectored';
+  if (rows.every(r => r.wing === false)) return 'cosmetic';
   return 'surface';
 }
 

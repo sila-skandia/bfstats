@@ -388,6 +388,29 @@ class ServeViewerFallback(Tree):
         base = self.local(remote=True)
         self.assertEqual((200, self.scene), self.get(f"{base}/maps/bocage/scene.glb"))
 
+    def test_an_old_cached_manifest_is_fetched_again(self) -> None:
+        # 2026-11-12: a viewmodels/index.json cached on Nov 5 named rigs by
+        # shas the volume had since replaced, and GCMOD's quick behaviour run
+        # read 39 asset.404s. A manifest past its age is revalidated; a fresh
+        # one, and a store blob of any age, is served from the cache.
+        import os
+        import time
+        rel = Path("models") / "viewmodels" / "index.json"
+        write(self.volume_root / rel, b'{"new": 1}')
+        write(self.cache / rel, b'{"old": 1}')
+        old = time.time() - serve_viewer.MANIFEST_MAX_AGE_S - 60
+        os.utime(self.cache / rel, (old, old))
+        base = self.local(remote=True)
+        self.assertEqual((200, b'{"new": 1}'), self.get(f"{base}/{rel.as_posix()}"))
+        write(self.volume_root / rel, b'{"newer": 1}')
+        self.assertEqual((200, b'{"new": 1}'), self.get(f"{base}/{rel.as_posix()}"))
+        # Gone from the volume: the old copy is dropped, not served.
+        gone = Path("models") / "poses" / "index.json"
+        write(self.cache / gone, b"{}")
+        os.utime(self.cache / gone, (old, old))
+        self.assertEqual(404, self.get(f"{base}/{gone.as_posix()}")[0])
+        self.assertFalse((self.cache / gone).exists())
+
     def test_no_remote_serves_local_files_only(self) -> None:
         self.evict("bf1942", "bocage")
         base = self.local(remote=False)

@@ -749,7 +749,11 @@ export function installVehicleHooks(page) {
         if (!input || input === 'c_pinone') continue;
         let engine = data.templateKind === 'Engine';
         if (!engine) node.traverse(c => { if (c.userData?.templateKind === 'Engine') engine = true; });
-        (out[input] ??= []).push({ node: node.name, kind: data.templateKind ?? null, axis, engine });
+        // A Wing under it makes a bundle a control surface; neither under it,
+        // the key turns geometry alone (`airAxisRole` 'cosmetic').
+        let wing = data.templateKind === 'Wing';
+        if (!wing) node.traverse(c => { if (c.userData?.templateKind === 'Wing') wing = true; });
+        (out[input] ??= []).push({ node: node.name, kind: data.templateKind ?? null, axis, engine, wing });
       }
     });
     return out;

@@ -1068,6 +1068,19 @@ export class Aircraft extends Vehicle {
     this.rotorEngine = this.engineLaw
       ? (this.lawEngines[this.spec.engines.findIndex(engine => engine.spins)] ?? this.lawEngines[0])
       : null;
+    /**
+     * The engine a holding spawner reads (`hull-bodies.js`
+     * `holdSpawnedCraft`, AI-121's `getEngineFromChildsAndSiblings`): the
+     * airframe's Engine nearest its root, the first in order among equals.
+     * That the walk takes the shallowest is INFERRED from its name (children
+     * and siblings, then down), not read. It is not `rotorEngine`: GCMOD's
+     * A-Wing family nests a lift engine (`AWingVTOLEngine`, throttle wound
+     * backwards, `setAcceleration 500/0/-10000` clipped to 0..100) in a rack
+     * ahead of the main one, so W left the first engine at 0 revs and every
+     * escape pod and fighter in a capital ship's hangar sat on its hold for
+     * good on GC_Taskforce, GC_Vanguard and GC_Tanaab (2026-11-12).
+     */
+    this.holdEngine = this.engineLaw ? this.#shallowestEngine() : null;
     /** The engine each gear asks its revs of: the one it hangs under. */
     this.gearEngines = this.gears.map(gear => (this.engineLaw
       ? (this.lawEngines.find(engine => engine.id === gear.engine) ?? null) : null));
@@ -1231,6 +1244,27 @@ export class Aircraft extends Vehicle {
    * read, in the order `applyRig` multiplies them. A part the page has no rig
    * for (a table flown without its tree) stays at rest.
    */
+  /** `holdEngine`: the law engine whose node has the fewest ancestors under
+   *  the airframe's root, the first in spec order among equals. */
+  #shallowestEngine() {
+    let best = null;
+    let bestDepth = Infinity;
+    this.spec.engines.forEach((engine, i) => {
+      let depth = 0;
+      let node = this.node?.getObjectByName?.(engine.id) ?? null;
+      if (!node) depth = Infinity - 1;
+      while (node && node !== this.node) { depth++; node = node.parent; }
+      if (depth < bestDepth) { bestDepth = depth; best = this.lawEngines[i] ?? null; }
+    });
+    return best ?? this.lawEngines[0] ?? null;
+  }
+
+  /** `|revs|` a holding spawner tests against 0.1 (`holdEngine`'s), or
+   *  undefined off the engine law, where `state.throttle` stands in. */
+  get holdRevs() {
+    return this.holdEngine ? Math.abs(this.holdEngine.revs) : undefined;
+  }
+
   #bindPosedMounts() {
     for (const [i, surface] of this.surfaces.entries()) {
       const mount = this.spec.surfaces[i].posedMount;

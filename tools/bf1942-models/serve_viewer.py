@@ -40,6 +40,7 @@ import re
 import shutil
 import sys
 import threading
+import time
 import urllib.error
 import urllib.parse
 import urllib.request
@@ -70,6 +71,14 @@ MOD_TREES = ("maps/mods/", "models/mods/", "models/mods.json")
 CACHE = Path.home() / ".cache" / "bfstats-mesh-remote"
 STORE_BLOB = re.compile(r"glbs/([0-9a-f]{64})\.glb")
 TIMEOUT_S = 60
+# A cached manifest (`.json`) is mutable on the volume: `viewmodels/index.json`
+# names rigs by store sha, and a republish moves those shas. A copy cached
+# forever kept asking for blobs production had replaced, and GCMOD's quick
+# behaviour run (2026-11-12) read 39 asset.404s, every one a vanilla rig the
+# live index names under a newer sha. Store blobs and textures are content
+# addressed and never go stale; a manifest is fetched again once it is this
+# old, and the stale copy serves only when that fetch fails.
+MANIFEST_MAX_AGE_S = 3600
 
 
 class RemoteCache:
@@ -117,8 +126,12 @@ class RemoteCache:
         with self.guard:
             lock = self.locks.setdefault(rel, threading.Lock())
         with lock:
+            stale = None
             if target.is_file() and (want is None or target.stat().st_size == want):
-                return target
+                if not (rel.endswith(".json")
+                        and time.time() - target.stat().st_mtime > MANIFEST_MAX_AGE_S):
+                    return target
+                stale = target
             url = f"{self.base}/{urllib.parse.quote(rel)}"
             request = urllib.request.Request(url, headers={"User-Agent": "bfstats-serve-viewer"})
             target.parent.mkdir(parents=True, exist_ok=True)
@@ -143,14 +156,18 @@ class RemoteCache:
             except urllib.error.HTTPError as exc:
                 exc.close()
                 tmp.unlink(missing_ok=True)
-                if exc.code == 404:
-                    self.missing.add(rel)
                 print(f"remote {rel}: HTTP {exc.code}", file=sys.stderr)
-                return None
+                if exc.code == 404:
+                    # Gone from the volume: the cached copy is gone too.
+                    self.missing.add(rel)
+                    if stale is not None:
+                        stale.unlink(missing_ok=True)
+                    return None
+                return stale
             except (OSError, urllib.error.URLError) as exc:
                 tmp.unlink(missing_ok=True)
                 print(f"remote {rel}: {exc}", file=sys.stderr)
-                return None
+                return stale
             print(f"remote {rel}: fetched {got / 1e6:,.1f} MB into {self.cache}", file=sys.stderr)
             return target
 

@@ -199,6 +199,12 @@ ACCEPTED: dict[str, str] = {
         "the level script authors the spawn point under the ground: retail "
         "lifts the soldier onto the ground on his first tick and the page's "
         "`spawn-safety.js` does too (SPAWN-28, FHX-18). The detail names the line",
+    "land-no-collision-immobile":
+        "a hull with no collision whose tree holds no Engine, Spring, Wing or "
+        "FloatingBundle: nothing moves it, so there is nothing to drive (GCMOD "
+        "Endor's Lift_Cabine, a lift's seats and HUD)",
+    "air-no-collision-immobile": "as land-no-collision-immobile",
+    "sea-no-collision-immobile": "as land-no-collision-immobile",
     "land-no-seats-authored":
         "the chain declares the template with no EntryPoint or SeatObject "
         "anywhere in its tree: nobody can enter it in retail either (FHSW's "
@@ -2336,7 +2342,13 @@ def audit_models(tree: Tree, game: Game, ctx: dict) -> list[Finding]:
                 pass
         if cat in ("land", "air", "sea") and name.lower() in spawned_hulls \
                 and not (rep or {}).get("collisionParts"):
-            out.append(Finding("models", f"{cat}-no-collision", name))
+            # Nothing in its tree can move it (no Engine, Spring, Wing or
+            # FloatingBundle): a seat a level stands somewhere, which nobody
+            # drives in retail either (GCMOD Endor's Lift_Cabine, a lift's
+            # cabin with three seats and a HUD).
+            moves = any(re.search(r"\((Engine|Spring|Wing|FloatingBundle)\)", str(row))
+                        for row in (rep or {}).get("partTree") or [])
+            out.append(Finding("models", f"{cat}-no-collision" + ("" if moves or not rep else "-immobile"), name))
         if cat in ("land", "air", "sea", "emplacement"):
             icon = e.get("vehicleIcon")
             low = name.lower()

@@ -1685,6 +1685,23 @@ def export_canopy(machine: animstates.StateMachine, meshes: ArchivePool,
     """
     result: dict = {"asset": None, "clips": {}, "errors": {}}
     template = library.object(CANOPY_TEMPLATE)
+    declared = any(
+        ref.template.lower() == CANOPY_TEMPLATE.lower()
+        for candidate in library.objects.values()
+        if candidate.kind.lower() == "bfsoldier"
+        for ref in candidate.children)
+    empty = (template is not None and not template.skeleton
+             and not template.geometry and not template.children)
+    if (template is None and not declared) or empty:
+        # A mod with no chute to draw: none declared, or (GCMOD) a `Parachute`
+        # AnimatedBundle kept by name with no skeleton, geometry or children,
+        # which the game draws as nothing. The viewer draws no canopy when
+        # `gaits.json` names none.
+        result["absent"] = ("Parachute template is empty" if empty else
+                            "no soldier declares a Parachute and no template exists")
+        # Still reported: the step passes on `absent`, the log says why.
+        result["errors"][CANOPY_TEMPLATE] = f"absent: {result['absent']}"
+        return result
     if template is None or not template.skeleton:
         result["errors"][CANOPY_TEMPLATE] = "no such template, or no skeleton"
         return result
@@ -4043,6 +4060,10 @@ def main() -> int:
         print(f"canopy: {len(chute['canopy'].get('clips', {}))} clips, attach "
               f"{chute['canopy'].get('attach')} -> "
               f"{chute['canopy'].get('asset')}", file=sys.stderr)
+        for name, why in sorted((chute["canopy"].get("errors") or {}).items()):
+            print(f"  error:  canopy {name}: {why}", file=sys.stderr)
+        if chute["canopy"].get("absent"):
+            print(f"  absent: canopy: {chute['canopy']['absent']}", file=sys.stderr)
         swim = write_swim_assets(machine, meshes, library, soldiers, args.out)
         swim_body = swim["body"] or {}
         print(f"swim body clips: {len(swim_body.get('clips', {}))} "
@@ -4059,7 +4080,8 @@ def main() -> int:
         hit = write_hit_assets(machine, meshes, library, soldiers, args.out)
         hit_body = report_body("hit", hit["body"])
         return 0 if (shared and body.get("asset")
-                     and chute["canopy"].get("asset")
+                     and (chute["canopy"].get("asset")
+                          or chute["canopy"].get("absent"))
                      and swim_body.get("asset")
                      and die_body.get("asset")
                      and blast_body.get("asset")
@@ -4143,7 +4165,8 @@ def main() -> int:
               file=sys.stderr)
         for name, why in sorted((canopy.get("errors") or {}).items()):
             print(f"  error:  {name}: {why}", file=sys.stderr)
-        return 0 if (body.get("asset") and canopy.get("asset")) else 1
+        return 0 if (body.get("asset")
+                     and (canopy.get("asset") or canopy.get("absent"))) else 1
 
     if args.graft:
         args.out.mkdir(parents=True, exist_ok=True)

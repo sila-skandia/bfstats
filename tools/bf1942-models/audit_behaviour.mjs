@@ -841,7 +841,9 @@ async function testAir(s, tpl, level, rec) {
   while (liftOff == null && rollFrames < 1560) await rollSample();
   delete rec.lift_off_candidate;
   rec.lift_off = liftOff == null ? null : +liftOff.toFixed(1);
-  const release = releaseSpeed(liftOff);
+  const vectored = await s.ev(() => !!window.__plane()?.craft?.vectored);
+  rec.vectored = vectored;
+  const release = releaseSpeed(liftOff, { vectored });
   rec.release = +release.toFixed(1);
   const sp1 = Math.hypot(g1.velocity.x, g1.velocity.y, g1.velocity.z);
   const rolled = Math.hypot(g1.position.x - g0.s.position.x, g1.position.z - g0.s.position.z);
@@ -1021,7 +1023,7 @@ async function judgeAirControls(s, tpl, level, rec, fresh, flagC, rows) {
     const role = bindings ? airAxisRole(bindings[input]) : 'surface';
     if (role === 'surface') { flagC(label, turn, expect, name, minAbs); continue; }
     (rec.control_roles ??= {})[name] = role;
-    if (role === 'unbound') continue;
+    if (role === 'unbound' || role === 'cosmetic') continue;
     if (role === 'vectored' && Math.abs(turn) >= minAbs) { flagC(label, turn, expect, name, minAbs); continue; }
     const pushed = await airPush(s, fresh, keyOf(label));
     (rec.control_push ??= {})[name] = +pushed.toFixed(2);
@@ -1852,8 +1854,11 @@ async function vehiclePhase(s, level, team, summary, scene) {
         .catch(() => null);
       const padFloor = await floorAt(best.pad.position);
       const hullFloor = await floorAt(v.pos);
+      const hullBottom = await s.ev(o => window.__hullBottom?.(o) ?? null, v.owner).catch(() => null);
       const why = padGroundVerdict({ padY: best.pad.position[1], padGround: ground, hullY: v.pos[1],
-        hullGround: here, dh: best.dh, dy: best.dy, padFloor, hullFloor });
+        hullGround: here, dh: best.dh, dy: best.dy, padFloor, hullFloor, hullBottom });
+      if (VERBOSE) log('pad-verdict', v.name, JSON.stringify({ padY: best.pad.position[1], ground, hullY: v.pos[1],
+        here, dh: best.dh, dy: best.dy, padFloor, hullFloor, hullBottom, why }));
       if (why === 'under-ground') {
         if (!buried.has(key)) buried.set(key, []);
         buried.get(key).push(`${v.name}: ${best.spawner} at y ${best.pad.position[1].toFixed(1)} is `

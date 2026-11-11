@@ -49,5 +49,29 @@
   "level": "tgw_stalemate",
   "retail_faithful": true,
   "evidence": "A spawn point in the rubble of ruin_suburbhouse_1_M1 (BF1918 tgw_stalemate, Conquest SoldierSpawns). The quick check's settle reads it as not grounded, but standing there in the page the soldier is grounded and walks out 5-11 m in every direction (BF1918 world tester, 2026-11-10, scratchpad t4 findings). The rubble's uneven top is the authored ground; nothing to fix."
+ },
+ {
+  "check": "veh.engine-sound",
+  "cause_key": "veh.no-engine-sound",
+  "template_or_kit": "CrateTransporter",
+  "level": "GC_Alaris_Prime",
+  "retail_faithful": true,
+  "evidence": "Silent engine in retail: CrateTransporter is a level template in GCMOD GC_Alaris_Prime.rfa (Objects/CrateTransporter/Objects.con). Its Engine CrateTransporterEngine loads Sounds/CrateTransporterEngine.ssc, and the level's Sounds/ folder ships only CrateTransporterEngineNla.ssc; no GCMOD archive carries the named script, so the engine has no patch to play (checked 2026-11-12)."
+ },
+ {
+  "check": "air.controls",
+  "cause_key": "air.pitch-dead",
+  "template_or_kit": "Carrack",
+  "level": "GC_Taskforce",
+  "retail_faithful": true,
+  "evidence": "A capital ship's lift in retail: GCMOD's Carrack cruiser (objects.rfa Vehicles/Air/Carrack) masses 100000 with inertiaModifier 1000/5/1000, and its c_PIPitch binds only CarrackVEngine's throttle axis (setTorque 1, setDifferential 1, rev span -600..600): a vertical thruster, no control surface. Its 2.25 s push of 0.35 m from rest is that engine on that mass, under the audit's 0.5 m bar for a fighter (checked 2026-11-12)."
+ },
+ {
+  "check": "air.fly",
+  "cause_key": "air.diverges",
+  "template_or_kit": "Speederbike",
+  "level": "GC_Mos_Eisley",
+  "retail_faithful": true,
+  "evidence": "A hover bike with no lifting surface: GCMOD's Speederbike (objects.rfa Vehicles/Land/Speederbike) carries four c_ETPlane engines and two Wings, SpeederbikeRudderFront and SpeederbikeRudderRear, which declare setFlapLift 3 and no setWingLift. Placed level 500 m up by the audit's flight check it has nothing to hold it and falls (366 m in 7 s); it rides on its engines near the ground (checked 2026-11-12)."
  }
 ]

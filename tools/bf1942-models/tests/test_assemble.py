@@ -1766,6 +1766,23 @@ class BrowseRigTests(unittest.TestCase):
         self.assertEqual("c_PIYaw", rig["axes"]["yaw"]["input"])
         self.assertEqual((-30.0, 30.0), (rig["axes"]["yaw"]["min"], rig["axes"]["yaw"]["max"]))
 
+    def test_a_thrust_rack_keeps_its_yaw_without_visible_springs(self) -> None:
+        """GCMOD's `ImpGunship` yaws by rolling `GunShipEngineRack1`, which
+        carries a plane Engine, on `c_PIYaw` over hidden roll wheels. The
+        filter took the axis from the model glb and D did nothing on
+        Corellia (2026-11-12)."""
+        rack = ObjectTemplate(name="GunShipEngineRack1", kind="RotationalBundle")
+        rack.min_rotation = (-20.0, -20.0, -20.0)
+        rack.max_rotation = (20.0, 20.0, 20.0)
+        rack.max_speed = (150.0, 150.0, -150.0)
+        rack.acceleration = (150.0, 150.0, -150.0)
+        rack.inputs = {"roll": "c_PIYaw", "pitch": "c_PIPitch"}
+        rack.automatic_reset = True
+
+        self.assertEqual(["pitch"], sorted(browse_rig(rack, has_visible_springs=False)["axes"]))
+        rig = browse_rig(rack, has_visible_springs=False, carries_engine=True)
+        self.assertEqual("c_PIYaw", rig["axes"]["roll"]["input"])
+
     def test_a_reset_lever_goes(self) -> None:
         lever = ObjectTemplate(name="Elco_ThrottleR", kind="RotationalBundle")
         lever.min_rotation = (0.0, -30.0, 0.0)

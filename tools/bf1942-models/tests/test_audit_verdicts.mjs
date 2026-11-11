@@ -193,6 +193,13 @@ test('a hull fallen straight down from a pad in the air is the level\'s, not a f
   assert.equal(padGroundVerdict({ padY: 46.78, padGround: 40.2, hullY: 42.3, hullGround: 40.2, dh: 0.2, dy: -4.5 }),
     'over-ground');
 });
+// GCMOD Hoth's AT-ST: its origin at the hips, 7 m over its feet.
+test('a walker on its feet under a pad in the air is the level\'s too', () => {
+  const at = { padY: 60, padGround: 47, hullY: 54.2, hullGround: 47, dh: 0.2, dy: -5.8 };
+  assert.equal(padGroundVerdict(at), null);
+  assert.equal(padGroundVerdict({ ...at, hullBottom: 47.1 }), 'over-ground');
+  assert.equal(padGroundVerdict({ ...at, hullBottom: 50 }), null);
+});
 // Operation Rattrap's RatteSpawner: 16 m over the ground, no static under it.
 test('the Ratte dropped 15 m from its pad in the air is the level\'s too', () => {
   assert.equal(padGroundVerdict({ padY: 55, padGround: 39, hullY: 39.86, hullGround: 39, dh: 0.0, dy: -15.1 }),
@@ -280,6 +287,7 @@ test('a level-flight release is 1.3 lift-off speeds, inside its bounds', () => {
   assert.equal(releaseSpeed(60), RELEASE_MAX);               // a fighter keeps 70
   assert.equal(releaseSpeed(10), RELEASE_MIN);               // off a deck's edge
   assert.equal(releaseSpeed(null), RELEASE_MAX);             // no lift-off seen
+  assert.equal(releaseSpeed(2.5, { vectored: true }), RELEASE_MAX); // lifted on its engines
 });
 
 test('a phugoid peak is not a divergence; a nose that stays up is', () => {
@@ -334,6 +342,9 @@ test('a stick axis is judged by what the hull binds to it', () => {
   assert.equal(airAxisRole([{ node: 'CaudronFlapLeftOuter', kind: 'Wing', engine: false }]), 'surface');
   assert.equal(airAxisRole([{ node: 'Rotor', kind: 'RotationalBundle', engine: true },
     { node: 'Tail', kind: 'Wing', engine: false }]), 'surface');
+  assert.equal(airAxisRole([{ node: 'Gasgano_cockpit_rot', kind: 'RotationalBundle', engine: false, wing: false }]),
+    'cosmetic');
+  assert.equal(airAxisRole([{ node: 'Old', kind: 'RotationalBundle', engine: false }]), 'surface');
 });
 
 if (failures) { console.log(`${failures} failed`); process.exit(1); }
