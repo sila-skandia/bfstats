@@ -4,7 +4,8 @@
 The engine binds an area to a control point only (`AIStrategicArea::update`
 0x0863d6d0, `BFEnvironment::findControlPoint` 0x085e53a0). The page's
 stand-ins (a spawn group no point claims, a ship's decks) are bound after
-every control point and only into an area that holds none. The
+every control point and only into an area that holds none, on a generated layer only (a retail layer
+binds in the flags' order, as it always has). The
 `ControlPoint` state is still the page's sum, which the engine's
 (`BFEnvironment::getNumberOfControlPoints` 0x085e4f80 through
 `SAI::updateStates` 0x086348c0) is not: section 5 of the write-up says why
@@ -42,6 +43,12 @@ class FlagBindingTests(unittest.TestCase):
         self.assertEqual(self.out["bound"]["West"], ["West"])
         self.assertEqual(self.out["bound"]["East"], ["East"])
         self.assertEqual(self.out["bound"]["AxisBase"], ["AxisBase"])
+
+    def test_a_retail_layer_binds_as_it_always_has(self) -> None:
+        # Gated to generated layers: with no marker the stand-ins bound first
+        # take West's and East's areas, and the capture-only points lie in none.
+        self.assertEqual(self.out["retailBound"]["West"], ["sbWest"])
+        self.assertEqual(self.out["retailBound"]["East"], ["ship"])
 
     def test_a_stand_in_still_holds_an_area_with_no_point(self) -> None:
         self.assertEqual(self.out["bound"]["Pass"], ["sbPass"])

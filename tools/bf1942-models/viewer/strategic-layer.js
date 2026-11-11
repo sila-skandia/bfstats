@@ -128,6 +128,27 @@ export class StrategicLayer {
     // (features/bot-map-generation/flag-binding.md). Giving a stand-in an
     // area at all is INVENTION, kept for an area with no point (Guadalcanal's
     // airfield groups), as before.
+    //
+    // Gated to generated layers (`ai.generated`): a layer DICE or a mod team
+    // wrote binds in the flags' order, as it always has. On retail the order
+    // moves Midway (five Japanese deck groups shared OutPost with
+    // Coastal_Defences; one seed of six changed, its hulls stuck 26 % longer),
+    // Market Garden (an Allied paradrop group shared City with Arnhem: before,
+    // the Axis could never hold City; not runnable here, no scene.glb in the
+    // local tree) and Gazala (the airfield groups left the bases: traces
+    // identical), and Guadalcanal, Pearl Harbor, the Philippines and the
+    // expansion packs' levels could not be checked at all
+    // (features/bot-map-generation/flag-binding.md, section 6).
+    if (!this.ai?.generated) {
+      for (const flag of this.flags) {
+        if (!flag?.position) continue;
+        const area = flag.captureOnly
+          ? this.controlPointAreaAt(flag.position[0], flag.position[2])
+          : this.areaAt(flag.position[0], flag.position[2]);
+        if (area) area.controlPoints.push(flag);
+      }
+      return;
+    }
     const standIns = [];
     for (const flag of this.flags) {
       if (!flag?.position) continue;

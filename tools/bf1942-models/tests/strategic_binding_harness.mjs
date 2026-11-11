@@ -28,6 +28,7 @@ const ai = {
   conditions: [], prerequisites: [],
   strategies: [{ name: 'push', aggression: 1, attacks: 2, defences: 0, modifiers: [] }],
   sideStrategies: { 1: ['push'], 2: ['push'] },
+  generated: { generator: 'botgen' },
 };
 // In spawn-flags.js order: points with spawns, the stand-ins, then the
 // capture-only points.
@@ -50,7 +51,11 @@ for (const side of [1, 2]) {
                    enemyControlPoint: sai.sides[side].states.enemy.get('ControlPoint') ?? 0 };
 }
 sai._updateTemperatures(1);
+// The same layer with no `generated` marker (a retail layer): the flags' order, as before.
+const { generated, ...shipped } = ai;
+const retail = new StrategicLayer(shipped, flags);
 const out = {
+  retailBound: Object.fromEntries(retail.areas.map(a => [a.name, a.controlPoints.map(f => f.name)])),
   bound: Object.fromEntries(layer.areas.map(a => [a.name, a.controlPoints.map(f => f.name)])),
   owners: Object.fromEntries(layer.areas.map(a => [a.name, layer.ownerOf(a)])),
   axisTargets: layer.areas.filter(a => sai._attackValue(a, 1) > 0.1).map(a => a.name),
