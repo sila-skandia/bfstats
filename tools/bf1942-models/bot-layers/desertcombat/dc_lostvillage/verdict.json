@@ -74,21 +74,17 @@
  "oneSided": 1,
  "unreachable": [],
  "lintErrors": [],
- "acceptanceWithdrawn": {
-  "reason": "With no layer the level has no fight (no seed with both sides killing at 8 a side); with it both sides kill in every seed (0.20 enemy kills a bot-minute) and take 5 and 3 flags a match. Short of Desert Combat's own bar on redeploys, flag coverage and the share of the worse side's deaths no enemy caused (0.64 and 0.73), and one-sided: the Axis side wins every seed, with the layer and without. Published to be checked on the page; it stays only if the page check holds.",
-  "date": "2026-11-10",
+ "accepted": {
+  "reason": "Owner's rollout, 2026-11-11. Live since 2026-11-11 and passed the page check then (three matches: 0.22 enemy kills a bot-minute at the median, the Axis side ahead each time); re-judged on two seeds with the hold-fire and hull steering in, better than nothing on Desert Combat's own bar.",
+  "date": "2026-11-11",
   "outcome": "better-than-nothing",
   "failed": [
-   "8:redeploysPerBotMinute",
-   "8:flagCoverage",
-   "8:redeploysPerBotMinuteWorseSide",
+   "8:selfDeathsPerBotMinute",
    "8:nonEnemyDeathShareWorseSide",
    "16:selfDeathsPerBotMinute",
    "16:redeploysPerBotMinute",
-   "16:flagCoverage",
-   "16:redeploysPerBotMinuteWorseSide",
    "16:nonEnemyDeathShareWorseSide"
   ],
-  "because": "now also fails 8:selfDeathsPerBotMinute"
+  "by": "owner"
  }
 }
