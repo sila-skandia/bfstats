@@ -1,0 +1,88 @@
+{
+ "generator": "botgen",
+ "version": 5,
+ "mod": "FHSWEurope",
+ "level": "adak_race",
+ "objectSpawners": 51,
+ "template": "few",
+ "templateSource": "DICE, bf1942 Kursk (1.6 patch archives, Kursk_003.rfa): AI/Strategies.con, AI/conditions.con, AI/prerequisites.con, unchanged",
+ "templateChoice": {
+  "name": "few",
+  "inPlay": 0,
+  "rule": "0 capturable flags in play, at most 3"
+ },
+ "scope": "on foot: infantry order positions only, no search maps, no co-op layer",
+ "unreachable": [
+  "goal"
+ ],
+ "unreachableReasons": {
+  "goal": "walk test"
+ },
+ "botSpawnsExcluded": [
+  "axisbase_spawn1",
+  "axisbase_spawn2",
+  "axisbase_spawn3",
+  "axisbase_spawn4",
+  "axisbase_spawn5",
+  "axisbase_spawn6",
+  "axisbase_spawn7",
+  "axisbase_spawn8",
+  "axisbase_spawn9",
+  "axisbase_spawn10",
+  "usbase_spawn1",
+  "usbase_spawn2",
+  "usbase_spawn3",
+  "usbase_spawn4",
+  "usbase_spawn5",
+  "usbase_spawn6",
+  "usbase_spawn7",
+  "usbase_spawn8",
+  "usbase_spawn9",
+  "usbase_spawn10"
+ ],
+ "walkMap": {
+  "source": "page painter",
+  "engine": "none",
+  "opened": [],
+  "ways": [],
+  "cover": 0,
+  "floors": {
+   "stacked": false,
+   "twoFloorShare": 0,
+   "raised": [],
+   "reason": null
+  },
+  "capped": true
+ },
+ "routeProbe": {
+  "chokeMax": 4,
+  "unreachable": [],
+  "stops": {},
+  "oneSided": {},
+  "sides": {
+   "1": {
+    "spawns": 0,
+    "flags": []
+   },
+   "2": {
+    "spawns": 0,
+    "flags": []
+   }
+  },
+  "chokes": {},
+  "late": {},
+  "shutLinks": []
+ },
+ "inputs": {
+  "controlPoints": "b1f83bbf5faf778a63282bc50c2ad7ae954010d89cb4e8e8ae49e89851fd62ca",
+  "infantryMap": "41c2e1bb421ba32e9f7cb4873d5fe3fc9643332e32eb710cb0c19d1836c4222e",
+  "template": "bdc0e455f47f91b7e7724e71d7c0c196e839b36946ac3abb7663d725944081e5"
+ },
+ "files": {
+  "AI.con": "ff65da5cf781f265a28875b6cbca3063a01ed39073ce89fcfbb96af7a80600f7",
+  "AI/StrategicAreas.con": "a6a1f0de6a940ff17872ca0e442ad779da5163c3b6234af3636cde8b4462fd5d",
+  "AI/Strategies.con": "13da4dc35872dd4b5798a066f4425bdc824cfd61f31093d1808e1202644de52e",
+  "AI/conditions.con": "248a04b727c08d696bf0fa9c162bc22c43cde3c75f695892fe1e0f5141519c49",
+  "AI/prerequisites.con": "c96168b5f69860e578f5d26728fd2a2092c4c436e1da49b7d6f4009b65735398"
+ }
+}

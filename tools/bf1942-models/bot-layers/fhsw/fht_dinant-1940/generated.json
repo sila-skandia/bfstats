@@ -1,0 +1,129 @@
+{
+ "generator": "botgen",
+ "version": 5,
+ "mod": "FHSW",
+ "level": "fht_dinant-1940",
+ "objectSpawners": 211,
+ "template": "few",
+ "templateSource": "DICE, bf1942 Kursk (1.6 patch archives, Kursk_003.rfa): AI/Strategies.con, AI/conditions.con, AI/prerequisites.con, unchanged",
+ "templateChoice": {
+  "name": "few",
+  "inPlay": 1,
+  "rule": "1 capturable flag in play, at most 3"
+ },
+ "scope": "on foot: infantry order positions only, no search maps, no co-op layer",
+ "unreachable": [
+  "dinant_city_hall",
+  "storage"
+ ],
+ "unreachableReasons": {
+  "dinant_city_hall": "route probe",
+  "storage": "walk test"
+ },
+ "botSpawnsExcluded": [
+  "crossroad_spawn1",
+  "crossroad_spawn2",
+  "crossroad_spawn8",
+  "crossroad_spawn9",
+  "kge_hq_spawn5",
+  "kge_hq_spawn4",
+  "kge_hq_spawn3",
+  "kge_hq_spawn2",
+  "kge_hq_spawn1",
+  "kge_hq_spawn10",
+  "kge_hq_spawn11",
+  "dinant_city_hall_spawn3",
+  "dinant_city_hall_spawn4",
+  "dinant_bridge_head_spawn1",
+  "dinant_bridge_head_spawn2",
+  "dinant_bridge_head_spawn3",
+  "dinant_bridge_head_spawn4",
+  "dinant_bridge_head_spawn5",
+  "dinant_bridge_head_spawn6",
+  "dinant_bridge_head_spawn7",
+  "dinant_bridge_head_spawn10",
+  "factory_spawn5",
+  "factory_spawn6",
+  "factory_spawn7",
+  "storage_spawn1",
+  "storage_spawn2",
+  "storage_spawn3",
+  "storage_spawn4",
+  "storage_spawn6"
+ ],
+ "walkMap": {
+  "source": "page painter",
+  "engine": "none",
+  "opened": [],
+  "ways": [],
+  "cover": 0.868,
+  "floors": {
+   "stacked": false,
+   "twoFloorShare": 0.005,
+   "raised": [
+    "storage"
+   ],
+   "reason": null
+  },
+  "capped": true,
+  "joined": 1
+ },
+ "routeProbe": {
+  "chokeMax": 4,
+  "unreachable": [
+   "dinant_city_hall"
+  ],
+  "stops": {
+   "dinant_city_hall": {
+    "1": {
+     "stage": "strategic"
+    },
+    "2": {
+     "stage": "leg",
+     "leg": 0,
+     "from": [
+      1235.5,
+      -358.6
+     ],
+     "to": [
+      1250.5,
+      -367.5
+     ]
+    }
+   }
+  },
+  "oneSided": {},
+  "sides": {
+   "1": {
+    "spawns": 18,
+    "flags": [
+     "dinant_bridge_head"
+    ]
+   },
+   "2": {
+    "spawns": 10,
+    "flags": [
+     "dinant_bridge_head"
+    ]
+   }
+  },
+  "chokes": {
+   "dinant_bridge_head:1": 2,
+   "dinant_bridge_head:2": 2
+  },
+  "late": {},
+  "shutLinks": []
+ },
+ "inputs": {
+  "controlPoints": "89e6333db5507080c44354dddce26763c9557286cccb34b2fae228f215ee1246",
+  "infantryMap": "0473fc9364fa03a4a7dc9326572b644ace931ec12276567b7d86244e49fc22fe",
+  "template": "bdc0e455f47f91b7e7724e71d7c0c196e839b36946ac3abb7663d725944081e5"
+ },
+ "files": {
+  "AI.con": "86a16152606aa01619e6829a14cb6f305c16d38865d7a4c7b7bc91e47ece2a76",
+  "AI/StrategicAreas.con": "7cc100ceaf0b0d2bdc971efdc9ff65fda69aef4a9cad74076c12bd5fad6fd27b",
+  "AI/Strategies.con": "13da4dc35872dd4b5798a066f4425bdc824cfd61f31093d1808e1202644de52e",
+  "AI/conditions.con": "248a04b727c08d696bf0fa9c162bc22c43cde3c75f695892fe1e0f5141519c49",
+  "AI/prerequisites.con": "c96168b5f69860e578f5d26728fd2a2092c4c436e1da49b7d6f4009b65735398"
+ }
+}

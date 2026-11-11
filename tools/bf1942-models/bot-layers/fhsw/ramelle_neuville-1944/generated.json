@@ -1,0 +1,108 @@
+{
+ "generator": "botgen",
+ "version": 5,
+ "mod": "FHSW",
+ "level": "ramelle_neuville-1944",
+ "objectSpawners": 82,
+ "template": "few",
+ "templateSource": "DICE, bf1942 Kursk (1.6 patch archives, Kursk_003.rfa): AI/Strategies.con, AI/conditions.con, AI/prerequisites.con, unchanged",
+ "templateChoice": {
+  "name": "few",
+  "inPlay": 1,
+  "rule": "1 capturable flag in play, at most 3"
+ },
+ "scope": "on foot: infantry order positions only, no search maps, no co-op layer",
+ "unreachable": [
+  "ammunition_dump",
+  "bridge",
+  "church",
+  "courtyard",
+  "the_orchard"
+ ],
+ "unreachableReasons": {
+  "ammunition_dump": "walk test",
+  "bridge": "walk test",
+  "church": "walk test",
+  "courtyard": "walk test",
+  "the_orchard": "walk test"
+ },
+ "botSpawnsExcluded": [
+  "the_school_spawn4",
+  "amunition_dump_spawn1",
+  "amunition_dump_spawn2",
+  "amunition_dump_spawn3",
+  "amunition_dump_spawn4",
+  "german_farm_spawn1",
+  "german_farm_spawn4",
+  "church_spawn1",
+  "church_spawn2",
+  "church_spawn3",
+  "church_spawn4",
+  "courtyard_spawn2",
+  "courtyard_spawn3",
+  "courtyard_spawn4",
+  "the_orchard_1",
+  "the_orchard_2",
+  "the_orchard_3",
+  "amunition_dump_spawn5",
+  "amunition_dump_spawn6",
+  "amunition_dump_spawn7",
+  "amunition_dump_spawn8",
+  "amunition_dump_spawn9",
+  "amunition_dump_spawn10"
+ ],
+ "walkMap": {
+  "source": "page painter",
+  "engine": "none",
+  "opened": [],
+  "ways": [],
+  "cover": 0.901,
+  "floors": {
+   "stacked": false,
+   "twoFloorShare": 0.003,
+   "raised": [
+    "courtyard"
+   ],
+   "reason": null
+  },
+  "capped": true
+ },
+ "routeProbe": {
+  "chokeMax": 4,
+  "unreachable": [],
+  "stops": {},
+  "oneSided": {},
+  "sides": {
+   "1": {
+    "spawns": 2,
+    "flags": [
+     "the_school"
+    ]
+   },
+   "2": {
+    "spawns": 7,
+    "flags": [
+     "the_school"
+    ]
+   }
+  },
+  "chokes": {
+   "the_school:1": 4,
+   "the_school:2": 0
+  },
+  "late": {},
+  "shutLinks": []
+ },
+ "inputs": {
+  "controlPoints": "6a0d93f1c8b78657b755d773ad563ffb42232c1d053860270eca3b37cb278e61",
+  "infantryMap": "3a8ba5e4df98be2c4b4b5acf8eca1b9d653b232ccd14061a9f4552c07d73f468",
+  "template": "bdc0e455f47f91b7e7724e71d7c0c196e839b36946ac3abb7663d725944081e5"
+ },
+ "files": {
+  "AI.con": "22f7ab56d545c776827ad11a503c9588f2b21a7712bf23b9685d83f7f7ce6b03",
+  "AI/StrategicAreas.con": "2708498a3fc905f7c165ed99ce228caf70f68efd19824c92c1ba2fbfe03d6637",
+  "AI/Strategies.con": "13da4dc35872dd4b5798a066f4425bdc824cfd61f31093d1808e1202644de52e",
+  "AI/conditions.con": "248a04b727c08d696bf0fa9c162bc22c43cde3c75f695892fe1e0f5141519c49",
+  "AI/prerequisites.con": "c96168b5f69860e578f5d26728fd2a2092c4c436e1da49b7d6f4009b65735398"
+ }
+}

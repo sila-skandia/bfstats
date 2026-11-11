@@ -107,5 +107,23 @@ class Url(unittest.TestCase):
         # No row at all, a match with kills, a match with captures only: captures do not make a match.
         self.assertEqual(run_harness()["voids"], [True, False, True])
 
+class RolloutFloor(unittest.TestCase):
+    def test_a_fight_or_flag_play_with_some_killing_passes(self) -> None:
+        f = run_harness()["floor"]
+        self.assertTrue(f["fight"]["pass"])
+        self.assertTrue(f["flags"]["pass"])
+        self.assertTrue(f["both"]["pass"])
+
+    def test_flags_alone_and_a_quiet_match_do_not(self) -> None:
+        f = run_harness()["floor"]
+        self.assertEqual(f["flagsOnly"]["why"], ["activity"])
+        self.assertEqual(f["quiet"]["why"], ["activity"])
+
+    def test_own_hand_deaths_and_page_errors_fail_a_lively_match(self) -> None:
+        f = run_harness()["floor"]
+        self.assertEqual(f["ownHand"]["why"], ["ownHand"])
+        self.assertEqual(f["ownHand"]["ownHand"], 0.119)
+        self.assertEqual(f["error"]["why"], ["pageErrors"])
+
 if __name__ == "__main__":
     unittest.main()

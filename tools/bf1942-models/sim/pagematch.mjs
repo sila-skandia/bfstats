@@ -230,6 +230,33 @@ export function judgePage(matches, pageBar) {
   return { verdict: failed.length ? 'fail' : 'pass', failed, checks, matches: matches.length };
 }
 
+/**
+ * The owner's rollout floor (2026-11-11, features/bot-map-generation/
+ * page-matches.md section 6): whether one page match shows enough of a fight
+ * for a generated layer to keep its menu flag. INVENTION, the coordinator's
+ * rule under the owner's "roll them out":
+ *  - some killing always, and either real killing (0.15 enemy kills a
+ *    bot-minute), or flag play with a little (3 captures and 0.03), or some
+ *    of both (0.05 and 1 capture). Flags alone are not a fight: FHSW's Fall
+ *    of Berlin took 7 with no enemy kill;
+ *  - at most 0.10 deaths a bot-minute by a bot's own or its side's hand
+ *    (suicides and team kills; DICE's worst match shows 0.056 and 0.025).
+ *    Not the worse side's SHARE of such deaths: with few deaths that is
+ *    noise (Red Square read 1.00 on one death);
+ *  - no page error.
+ * `{ pass, why }`, `why` the clauses it fails.
+ */
+export const ROLLOUT_FLOOR = Object.freeze({ kills: 0.15, killsWithFlags: 0.03, flags: 3, killsWithAFlag: 0.05, ownHand: 0.10 });
+export function rolloutFloor(m, floor = ROLLOUT_FLOOR) {
+  const k = m.enemyKillsPerBotMinute ?? 0, c = m.capturesTotal ?? 0;
+  const own = (m.suicidesPerBotMinute ?? 0) + (m.teamKillsPerBotMinute ?? 0);
+  const why = [];
+  if (!(k >= floor.kills || (k >= floor.killsWithFlags && c >= floor.flags) || (k >= floor.killsWithAFlag && c >= 1))) why.push('activity');
+  if (own > floor.ownHand) why.push('ownHand');
+  if ((m.pageErrors ?? []).length) why.push('pageErrors');
+  return { pass: !why.length, why, enemyKills: k, captures: c, ownHand: +own.toFixed(4) };
+}
+
 /** `n` matches of one URL, a few at a time (each is a browser playing in real time). */
 async function playMany(url, n, seconds, parallel = 3) {
   const out = [];
@@ -266,8 +293,11 @@ if (process.argv[1] && path.resolve(process.argv[1]) === fileURLToPath(import.me
     const url = matchUrl({ site: a.site ?? SITE, map: a.map, mod: a.mod ?? null, mode: a.mode ?? 'Conquest', bots: Number(a.bots ?? 16) });
     const bar = JSON.parse(readFileSync(path.resolve(a.bar ?? BAR_FILE), 'utf8'));
     const matches = (await playMany(url, Number(a.matches ?? 3), Number(a.seconds ?? 600))).map(slim);
+    // The rollout floor is asked of each match; the level keeps its flag when any one passes (page-matches.md, section 6).
     const result = { level: a.map, mod: a.mod ?? 'bf1942', url, date: new Date().toISOString().slice(0, 10), bar: bar.note, ...judgePage(matches, bar),
+                     rollout: { pass: matches.some(m => rolloutFloor(m).pass), floor: ROLLOUT_FLOOR },
                      runs: matches.map(m => ({ generated: m.generated, minutes: m.minutes, tickets: m.tickets, capturesTotal: m.capturesTotal, ...Object.fromEntries(PAGE_CHECKS.map(([k]) => [k, m[k]])),
+                                               rollout: rolloutFloor(m), ...(m.replayed ? { replayed: true } : {}), ...(m.pageErrors?.length ? { pageErrors: m.pageErrors } : {}),
                                                teamKillsBySide: Object.fromEntries(Object.entries(m.sides).map(([t, s]) => [t, s.teamKills])) })) };
     if (a.out) writeFileSync(path.resolve(a.out), JSON.stringify(result, null, 1) + '\n');
     console.log(JSON.stringify(result, null, 1));

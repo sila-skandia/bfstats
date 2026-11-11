@@ -334,7 +334,7 @@ Rollout levels, one match each on the page (the bar is DICE's rebuilt one;
 | Aberdeen (vanilla), two matches | **no**: the worse side dies by its own hand | fails three | 0, 0.72 and 0.97, 0.11 and 0.08 | 5 and 6 | 88:77, 94:73 |
 
 **The rollout's page floor** (the coordinator's rule under the owner's
-decision, `pagebatch.sh` in scratch): a level keeps its menu flag when a
+decision; `sim/pagematch.mjs rolloutFloor`, run by the `bf1942-bot-rollout` skill's `pagebatch.sh`): a level keeps its menu flag when a
 match on the page shows real killing (at least 0.15 enemy kills a
 bot-minute), or flag play with some killing (at least 3 captures and 0.03),
 or some of both (0.05 and 1 capture); no more than 0.10 deaths a bot-minute by a bot's own or its

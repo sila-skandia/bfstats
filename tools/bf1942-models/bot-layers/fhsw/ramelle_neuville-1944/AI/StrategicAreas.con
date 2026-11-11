@@ -1,0 +1,51 @@
+rem *** Strategic areas: one per control point (botgen) ***
+
+aiStrategicArea.create german_farm 119.4/812.4 159.4/852.4 50
+aiStrategicArea.addNeighbour the_school
+aiStrategicArea.addNeighbour ramelle_fields
+aiStrategicArea.addObjectTypeFlag Base
+aiStrategicArea.setOrderPosition Infantry 161.5/852.5
+aiStrategicArea.setSide 1
+aiStrategicArea.setTakeable 2 0
+
+aiStrategicArea.create ammunition_dump 450/537.1 463/550.1 10
+aiStrategicArea.setSide 2
+aiStrategicArea.setTakeable 1 0
+aiStrategicArea.setTakeable 2 0
+
+aiStrategicArea.create the_school 552.1/562 569.1/579 150
+aiStrategicArea.addNeighbour german_farm
+aiStrategicArea.addNeighbour ramelle_fields
+aiStrategicArea.addObjectTypeFlag Flank
+aiStrategicArea.addObjectTypeFlag Close
+aiStrategicArea.addObjectTypeFlag ControlPoint
+aiStrategicArea.setOrderPosition Infantry 570.5/580.5
+aiStrategicArea.setSide 2
+
+aiStrategicArea.create bridge 506.4/487.2 517.4/498.2 10
+aiStrategicArea.setSide 2
+aiStrategicArea.setTakeable 1 0
+aiStrategicArea.setTakeable 2 0
+
+aiStrategicArea.create church 467.2/429.5 479.2/441.5 10
+aiStrategicArea.setSide 2
+aiStrategicArea.setTakeable 1 0
+aiStrategicArea.setTakeable 2 0
+
+aiStrategicArea.create courtyard 493.8/359.6 505.8/371.6 10
+aiStrategicArea.setSide 2
+aiStrategicArea.setTakeable 1 0
+aiStrategicArea.setTakeable 2 0
+
+aiStrategicArea.create the_orchard 398.9/322.8 414.9/338.8 10
+aiStrategicArea.setSide 2
+aiStrategicArea.setTakeable 1 0
+aiStrategicArea.setTakeable 2 0
+
+aiStrategicArea.create ramelle_fields 438.5/63.3 478.5/103.3 50
+aiStrategicArea.addNeighbour german_farm
+aiStrategicArea.addNeighbour the_school
+aiStrategicArea.addObjectTypeFlag Base
+aiStrategicArea.setOrderPosition Infantry 478.5/103.3
+aiStrategicArea.setSide 2
+aiStrategicArea.setTakeable 1 0

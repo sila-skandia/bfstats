@@ -1,5 +1,5 @@
 // tests/test_page_match.py: the pure parts of sim/pagematch.mjs (no browser).
-import { buildPageBar, isVoid, judgePage, matchUrl, onTheLine, summarise } from '../sim/pagematch.mjs';
+import { buildPageBar, isVoid, judgePage, matchUrl, onTheLine, rolloutFloor, summarise } from '../sim/pagematch.mjs';
 
 const counts = [
   { id: 'bot_0', team: 1, kills: 3, deaths: 2, teamKills: 0, suicides: 0, captures: 1, score: 5 },
@@ -16,6 +16,15 @@ console.log(JSON.stringify({
   pageNoBar: judgePage([m('x', 0.5, 0.01, 0.9)], null),
   summary: summarise(counts, 16, 10),
   empty: summarise([], 16, 10),
+  floor: {
+    fight: rolloutFloor({ enemyKillsPerBotMinute: 0.2, capturesTotal: 0, suicidesPerBotMinute: 0.02, teamKillsPerBotMinute: 0 }),
+    flags: rolloutFloor({ enemyKillsPerBotMinute: 0.04, capturesTotal: 8 }),
+    both: rolloutFloor({ enemyKillsPerBotMinute: 0.06, capturesTotal: 1 }),
+    flagsOnly: rolloutFloor({ enemyKillsPerBotMinute: 0, capturesTotal: 7 }),
+    quiet: rolloutFloor({ enemyKillsPerBotMinute: 0.04, capturesTotal: 2 }),
+    ownHand: rolloutFloor({ enemyKillsPerBotMinute: 0.4, capturesTotal: 5, suicidesPerBotMinute: 0.094, teamKillsPerBotMinute: 0.025 }),
+    error: rolloutFloor({ enemyKillsPerBotMinute: 0.4, capturesTotal: 5, pageErrors: ['TypeError'] }),
+  },
   voids: [isVoid(summarise([], 16, 10)), isVoid(summarise(counts, 16, 10)), isVoid(summarise([{ id: 'bot_9', team: 0, captures: 2, score: 4 }], 16, 10))],
   unsided: summarise([counts[0], { id: 'bot_9', team: 0, captures: 2, score: 4 }], 16, 10),
   ahead: onTheLine([0, 0, 0], [0, 0, 100], [0.3, 0, 12]),

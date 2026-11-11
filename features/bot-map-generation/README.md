@@ -47,6 +47,14 @@ menu flag, is played there three times against a bar from DICE's levels
 played the same way, and gets the flag after ([page-matches.md](page-matches.md),
 section 6).
 
+**How to do this again.** The `bf1942-bot-rollout` skill
+(`.claude/skills/bf1942-bot-rollout/`) is the procedure as scripts: list a
+mod's botless levels, mirror and screen them in the runner, publish
+without the menu flag, play them on the live page against the rollout
+floor (`sim/pagematch.mjs rolloutFloor`), tag what passes. 29 levels were
+live when it was written, 2026-11-12; its last section lists what was
+judged and still waits for a page match.
+
 **The owner's rollout, 2026-11-11.** After playing Tunis-1943 against its
 generated bots the owner asked for every level with a fight to go live. A
 level now goes up on a three-seed verdict of `better-than-nothing` or
