@@ -581,7 +581,7 @@ export const LESSONS = [
     // caption: there is no ace in this lesson, only someone on your tail.
     aceRole: 'hunter',
     ace: { plan: 'hunter', start: { at: [60, 430, 350], headingDeg: 0, speed: 66 } },
-    you: { start: { at: [0, 400, 0], headingDeg: 0, speed: 60 } },
+    you: { start: { at: [0, 400, 0], headingDeg: 0, speed: 60 }, memory: { cruiseCap: 0.6 } },
     demos: [
       // Opens 8 s in, the hunter still well out: the first seconds are a
       // slow close from 350 m that showed nothing happening.

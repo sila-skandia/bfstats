@@ -55,6 +55,61 @@ export function pitchLag(plane) {
   return most > 0 && at >= 0 ? (at + 1) * DUEL_DT : HAND.ref;
 }
 
+/** How long an airframe's roll takes to answer the stick, as `pitchLag`:
+ *  full roll stick, wings level at `HAND.speed`. The Spitfire: 0.53 s. */
+export function rollLag(plane) {
+  plane.groundHeight = () => 0;
+  placePlane(plane, { at: [0, 400, 0], speed: HAND.speed });
+  const rates = [];
+  for (let i = 0; i < Math.round(HAND.seconds / DUEL_DT); i++) {
+    plane.setInput('c_PIRoll', 1);
+    plane.setInput('c_PIThrottle', 1);
+    plane.integrate(DUEL_DT);
+    const s = stateOf(plane.state);
+    rates.push(Math.abs(bodyRates(s.orientation, s.angularVelocity).roll));
+  }
+  const most = Math.max(...rates);
+  const at = rates.findIndex(r => r >= HAND.share * most);
+  return most > 0 && at >= 0 ? (at + 1) * DUEL_DT : HAND.rollRef;
+}
+
+/**
+ * The roll hands tried on an airframe whose nose does not settle, in order:
+ * the roll damping times the Spitfire's (`roll`), then the hand on all
+ * three axes (`gain`), each the least change from the one before. The
+ * first under which the nose settles is the airframe's.
+ */
+export const ROLL_HANDS = Object.freeze([[2, 1], [3, 1], [3, 0.8], [4, 0.8], [4, 0.65], [6, 0.65], [6, 0.5]]
+  .map(([roll, gain]) => Object.freeze({ roll, gain })));
+/** Settled: the nose's mean error over the last `over` seconds of `seconds`,
+ *  put on a direction `side` degrees off and `down` below at `speed`. */
+export const SETTLE = Object.freeze({ side: 10, down: 4, seconds: 8, over: 2, within: 3, speed: 64 });
+
+/**
+ * How far an airframe's nose is still off a direction `SETTLE.side` degrees
+ * to one side and `SETTLE.down` below, `SETTLE.seconds` after the hands
+ * (`pointNose`, with `hand`) were put to it: the mean over the last
+ * `SETTLE.over`. Flown at `speed`, the speed the lessons fly it at.
+ */
+export function noseSettle(plane, hand, speed = SETTLE.speed) {
+  plane.groundHeight = () => 0;
+  placePlane(plane, { at: [0, 600, 0], speed });
+  if (hand) plane.state.hand = hand;
+  const r = SETTLE.side * Math.PI / 180, d = SETTLE.down * Math.PI / 180;
+  const dir = [Math.sin(r) * Math.cos(d), -Math.sin(d), -Math.cos(r) * Math.cos(d)];
+  const mem = {};
+  const ticks = Math.round(SETTLE.seconds / DUEL_DT), tail = Math.round(SETTLE.over / DUEL_DT);
+  let sum = 0;
+  for (let i = 0; i < ticks; i++) {
+    const k = pointNose(stateOf(plane.state), dir, { fine: 8, mem, dt: DUEL_DT });
+    plane.setInput('c_PIPitch', k.pitch); plane.setInput('c_PIRoll', k.roll); plane.setInput('c_PIYaw', k.rudder);
+    plane.setInput('c_PIThrottle', 1);
+    plane.integrate(DUEL_DT);
+    if (i >= ticks - tail) sum += k.off;
+  }
+  return sum / tail;
+}
+
 /**
  * What a lesson's speeds are measured against. The lessons were written on
  * the school's Spitfire, which flies level at `ref` m/s at `height` m, and
@@ -129,9 +184,27 @@ export function fitAirframe(plane, makePlane, key = 0) {
       const hand = lag > HAND.slack ? Object.freeze({ pitch: Math.round(lag * 100) / 100 }) : null;
       const scratch = makePlane(null, key);
       if (hand) scratch.state.hand = hand;
-      const ratio = levelSpeed(scratch) / PACE.ref;
+      const level = levelSpeed(scratch);
+      const ratio = level / PACE.ref;
       const pace = ratio > PACE.slack ? Math.round(ratio * 100) / 100 : 1;
-      fit = Object.freeze({ hand, pace, gun: pace > 1 ? ownGun(plane) : null });
+      // The roll: tried at the speed the lessons start it at, or a little
+      // under its own level speed if it cannot fly that fast (BF1918's D.VII).
+      const speed = Math.min(SETTLE.speed * pace, 0.85 * level);
+      // A roll slower to answer than the Spitfire's by more than the slack
+      // is damped by the square of how much slower, flown by the wings'
+      // small banks over that much wider a cone, and handled that much more
+      // lightly (`pointNose`).
+      const rl = rollLag(makePlane(null, key)) / HAND.rollRef;
+      let hands = rl > HAND.slack
+        ? Object.freeze({ ...hand, roll: Math.round(rl * rl * 10) / 10, fine: Math.round(rl * 100) / 100, gain: Math.round(100 / Math.sqrt(rl)) / 100 })
+        : hand;
+      // And one whose nose still rocks round a point off to the side takes
+      // the first of `ROLL_HANDS` under which it settles.
+      if (noseSettle(makePlane(null, key), hands, speed) > SETTLE.within) {
+        const tried = ROLL_HANDS.find(h => noseSettle(makePlane(null, key), { ...hands, ...h }, speed) <= SETTLE.within) ?? ROLL_HANDS.at(-1);
+        hands = Object.freeze({ ...hands, ...tried });
+      }
+      fit = Object.freeze({ hand: hands, pace, gun: pace > 1 ? ownGun(plane) : null });
     } catch { fit = NEUTRAL; }
     fits.set(sig, fit);
   }

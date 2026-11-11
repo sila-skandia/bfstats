@@ -33,8 +33,21 @@
  * the Spitfire carries `state.hand.pitch`, its lag over the Spitfire's, and
  * the pull is damped by that much more (`pointNose`). An airframe with no
  * `hand` is flown as the Spitfire is, to the last decimal.
+ *
+ * The roll is fitted the same way, from the airframe's own flight
+ * (`fitAirframe`). A roll slower to answer than the Spitfire's (0.53 s to
+ * 63% of its rate at `speed`) by more than `slack`, as every Forgotten Hope
+ * fighter's is (about 1 s, at a third of the Spitfire's rate), carries
+ * `hand.roll`, the roll damping times the square of that ratio, `hand.fine`,
+ * the cone of small corrective banks widened by it, and `hand.gain`, a
+ * lighter hand on all three axes. Without them the hands rolled the lift
+ * round a point a few degrees off the nose, past it and back, stop to stop,
+ * and a hunter never held its sight on. An airframe whose nose still does
+ * not settle on a direction 10 degrees off to one side and 4 below
+ * (`noseSettle`: BF1918's Albatros and D.VII, whose roll coasts on past the
+ * bank asked for) takes the first of `ROLL_HANDS` under which it does.
  */
-export const HAND = Object.freeze({ speed: 100, seconds: 1.5, share: 0.63, ref: 1 / 3, slack: 1.25 });
+export const HAND = Object.freeze({ speed: 100, seconds: 1.5, share: 0.63, ref: 1 / 3, rollRef: 0.53, slack: 1.25 });
 
 /** The engine's gravity (`BasicPhysicsSystem`, flight-model.md 2c). */
 export const G = 14.7295379;
@@ -99,7 +112,13 @@ export const pitchOf = q => Math.asin(clamp(rotate(q, [0, 0, -1])[1])) / DEG;
  * scales the whole response.
  */
 export function pointNose(state, dir, opts = {}) {
-  const { pull = 1, push = 0.3, fine = 10, upright = [0, 1, 0], gain = 1, rollGain = 2.4, rollDamp = 0.6 } = opts;
+  const { pull = 1, push = 0.3, upright = [0, 1, 0], rollGain = 2.4 } = opts;
+  const fine = (opts.fine ?? 10) * (state.hand?.fine ?? 1);
+  // An airframe whose roll coasts on past the bank it was asked for (its
+  // `hand.roll`, `hand.gain`, fitted by `fitAirframe` from how its nose
+  // settles) is rolled with that much more damping and a lighter hand.
+  const gain = (opts.gain ?? 1) * (state.hand?.gain ?? 1);
+  const rollDamp = (opts.rollDamp ?? 0.6) * (state.hand?.roll ?? 1);
   const q = state.orientation;
   const { F, U, R } = basis(q);
   const rates = bodyRates(q, state.angularVelocity);

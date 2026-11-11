@@ -6,6 +6,8 @@ box its drag and inertia are taken from, with no geometry.
         --out tests/fixtures/dc-jets.json
     python3 surveys/airframe_fixture.py bf1942 Stuka SBD bf1918:AlbatrossC3 \\
         --tracers --out tests/fixtures/two-seaters.json
+    python3 surveys/airframe_fixture.py bf1942 bf1918:Albatross fhsw:P47 ... \\
+        --qualified --out tests/fixtures/arena-airframes.json
 
 The dogfight school's tests fly a Spitfire built by hand from El Alamein's
 table (`tests/dogfight_school_harness.mjs`). A jet is too many parts to
@@ -102,6 +104,8 @@ def main() -> None:
     ap.add_argument("mod", help="the tree's id under models/mods and maps/mods")
     ap.add_argument("templates", nargs="+", help="a template of the tree, or <mod>:<template> of another")
     ap.add_argument("--tracers", action="store_true", help="keep each FireArms' tracer interval and scaler")
+    ap.add_argument("--qualified", action="store_true",
+                    help="key every airframe as <mod>:<template>, for templates two trees share (BF109)")
     ap.add_argument("--out", type=Path, required=True)
     args = ap.parse_args()
     cache: dict[str, tuple[str, dict, dict]] = {}
@@ -119,8 +123,9 @@ def main() -> None:
         mod, _, name = spec.rpartition(":")
         mod = mod or args.mod
         models, rows, collision = tree(mod)
-        airframes[name] = airframe(models, rows[name], collision, args.tracers)
-        mods[name] = mod
+        key = f"{mod}:{name}" if args.qualified else name
+        airframes[key] = airframe(models, rows[name], collision, args.tracers)
+        mods[key] = mod
     out = {"mod": args.mod, "source": SITE, "airframes": airframes}
     if any(m != args.mod for m in mods.values()):
         out["mods"] = mods
