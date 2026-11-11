@@ -39,6 +39,25 @@ PLANS.jetBzAceMeet = {
 };
 INTENTS.jetBzAceMeet = { ...INTENTS.bzAceMeet };
 
+/**
+ * FLY IT's ace on a jet: `bzAce` (the lesson's ace with the school's one
+ * give-up rule) diving the same way, as soon as you are `mem.perchDown`
+ * degrees under its horizon. Over a level's own ground the Range starts the
+ * perch lower still (338 m over you above Desert Shield's 40 m), and a
+ * pilot who climbs to meet the dive was level with `bzAce` before it had
+ * the 35 degrees it waits for: its perch timed out and no dive came.
+ */
+PLANS.jetBzAce = {
+  ...PLANS.bzAce,
+  step(c) {
+    const { mem, g } = c;
+    const lookDown = Math.asin(clamp(-g.los[1])) / DEG;
+    if (mem.perchDown && mem.phase === 'perch' && lookDown > mem.perchDown) go(c, 'dive');
+    return PLANS.bzAce.step(c);
+  },
+};
+INTENTS.jetBzAce = { ...INTENTS.bzAce };
+
 /** The climb, degrees, the jet Dip runs at: up to the top of the sky. */
 const RUN_CLIMB = 3;
 

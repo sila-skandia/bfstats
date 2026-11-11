@@ -52,10 +52,11 @@ class FitTests(unittest.TestCase):
             self.assertEqual(hs, sorted(set(hs)))
             self.assertLess(hs[-1], 760)
         self.assertEqual([730.5, 734.8], f16[-2:])
-        # Over a level's own ground the perch is bent by its height in the
-        # sky: the Range's arena over ground at 40 or 150 m starts no higher.
-        self.assertEqual(730.5, self.f["overGround"][0])
-        self.assertEqual([730.5, 737.0, 748.4], self.f["overGround"])
+        # Over a level's own ground a jet's fight keeps its heights in the
+        # sky (the Range over Desert Shield's 40 m flies the fight that was
+        # measured); over ground higher than 80 m the rest is bent.
+        self.assertEqual([730.5, 730.5, 740.9], self.f["overGround"])
+        self.assertEqual([294.4, 294.4, 364.4], self.f["lowOverGround"])
 
     def test_a_jet_fights_with_its_own_cannon(self) -> None:
         for name in ("F16", "Mig29"):
@@ -102,10 +103,19 @@ class TheRoofTests(unittest.TestCase):
                 self.assertLess(max(x["top"]), 860, f"{lesson}/{demo}")
                 self.assertEqual([0, 0], x["past"], f"{lesson}/{demo}")
 
-    def test_every_fight_starts_under_the_roof(self) -> None:
-        for lesson, demos in jet_tops().items():
+    def test_nobody_on_the_mig29_reaches_it_either(self) -> None:
+        # The MiG-29 flies the F-16's files, a fifth faster: its zooms carry
+        # further, and it too stays under the guard.
+        for lesson, demos in jet_tops("Mig29").items():
             for demo, x in demos.items():
-                self.assertLess(max(x["start"]), 760, f"{lesson}/{demo}")
+                self.assertLess(max(x["top"]), 870, f"{lesson}/{demo}")
+                self.assertEqual([0, 0], x["past"], f"{lesson}/{demo}")
+
+    def test_every_fight_starts_under_the_roof(self) -> None:
+        for plane in ("F16", "Mig29"):
+            for lesson, demos in jet_tops(plane).items():
+                for demo, x in demos.items():
+                    self.assertLess(max(x["start"]), 760, f"{plane} {lesson}/{demo}")
 
 
 class JetStepsTests(unittest.TestCase):
@@ -118,7 +128,9 @@ class JetStepsTests(unittest.TestCase):
         self.assertEqual(["close", "dip-out"], [s["phase"] for s in tail["steps"]["dip"]])
         over = jet_steps("up-and-over")
         self.assertEqual(["chase", "dip-shot", "dip-pass", "dip-run"], [s["phase"] for s in over["steps"]["dip"]])
-        for card in (tail["steps"]["dip"], over["steps"]["dip"]):
+        boom = jet_steps("boom-and-zoom")
+        self.assertEqual(["climb", "face", "dip-run"], [s["phase"] for s in boom["steps"]["dip"]])
+        for card in (tail["steps"]["dip"], over["steps"]["dip"], boom["steps"]["dip"]):
             times = [s["t"] for s in card]
             self.assertTrue(all(t is not None for t in times), card)
             self.assertEqual(sorted(times), times)
@@ -132,7 +144,7 @@ class JetStepsTests(unittest.TestCase):
             # ...and the jet shows only its own.
             self.assertNotIn("flip", got["steps"], lesson)
             self.assertNotIn("ninja", got["steps"], lesson)
-        self.assertEqual({}, jet_steps("boom-and-zoom")["steps"])
+        self.assertEqual(["dip"], list(jet_steps("boom-and-zoom")["steps"]))
 
 
 class JetGuideTests(unittest.TestCase):
@@ -151,6 +163,14 @@ class JetGuideTests(unittest.TestCase):
         guides = jet_guides()
         self.assertEqual(("jetScAce", "jetScissors"), (guides["scissors"]["ace"], guides["scissors"]["guide"]))
         self.assertEqual("ciCircle", guides["the-circle"]["guide"])
+
+    def test_the_jet_aces_fly_it_puts_up_are_the_roofs_own(self) -> None:
+        # Boom and zoom's dives as soon as you are 30 degrees under it (a
+        # pilot climbing to meet it was level with `bzAce` before it dived);
+        # the Immelmann's loops only where the loop fits under the roof.
+        guides = jet_guides()
+        self.assertEqual("jetBzAce", guides["boom-and-zoom"]["ace"])
+        self.assertEqual("jetTaAce", guides["turnarounds"]["ace"])
 
 
 if __name__ == "__main__":

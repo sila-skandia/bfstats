@@ -18,9 +18,11 @@ What a jet is to the school, and where each lesson stands, is in
    the lesson's tests), its review notes in
    `features/dogfight-school/reviews/`, and its `tests/test_dogfight_dfn_*.py`
    and `test_dogfight_shape_*.py`.
-5. The lesson already done, as the pattern:
-   `viewer/dogfight-jet-boom-and-zoom.js` and `BoomAndZoomOnAJetTests` in
-   `tests/test_dogfight_jets.py`.
+5. A lesson already done, as the pattern:
+   `viewer/dogfight-jet-boom-and-zoom.js`, its plans in
+   `viewer/dogfight-jet-plan-boom-and-zoom.js`,
+   `tests/test_dogfight_jet_boom_and_zoom.py` and
+   [boom-and-zoom.md](boom-and-zoom.md).
 
 ## Do
 
@@ -31,8 +33,15 @@ Make the lesson true on the F-16, and say so with numbers.
   each demo; `--trace <demo> [--step 1] [--start 0..8]` one fight's timeline;
   `--demo <demo>` one demo (a retired demo the stories quote, such as `move`
   or `without`, is reached this way); `--base` the lesson as written;
-  `--plane Mig29` the other jet. Understand why each fight goes as it does
-  before changing anything.
+  `--plane Mig29` the other jet; `--moves` the Dip, Flip and Ninja scored as
+  the school scores them, each of its nine starts with its measures;
+  `--tops --lesson <id>` how high each plane went. Understand why each fight
+  goes as it does before changing anything.
+- **Every jet pilot flies under a roof** ([README.md](README.md), "The
+  roof"): a climb levels off by 800 m real, whatever the plan asks, and no
+  start is over 760 m. A plan that loops from a height of its own says so
+  in its answer (`roof: false`). Hold the lesson's tops in its test
+  (`jet_tops`).
 - **Then decide, claim by claim.**
   (a) If the claim is true of a jet once the fight is set up for one, tune
   it until it holds from the nine starts: a side's or a demo's `memory`

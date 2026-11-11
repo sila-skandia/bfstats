@@ -200,3 +200,28 @@ After the fix, F-16 against F-16:
   while the ace starts at 1.28; the era is the ace's, jet. `refit` at
   `place` reads the airframes the two sit in, so the seats differ and both
   are right.
+
+## Under the roof, in a page (2026-11-11)
+
+The same headless run on the roof branch's served tree (`paced` with the
+ground's height, `underRoof` in `stepSeat`'s pilot), the instructor flying
+your seat, F-16 against F-16 over Desert Shield (ground 40 m under the
+arena):
+
+- **When they have the height.** The ace starts at 740 m and you at 271.
+  Both level off at 763 to 769 m and hold it for the rest of the 50 s;
+  before the roof the instructor took your seat to 907 m and the ace began
+  at 936.
+- **Boom and zoom.** The run found two things. Lifted over the ground whole,
+  the perch was bent to 338 m over you (372 as measured) and the ace sat in
+  `perch` as the instructor climbed up to it: no dive in 30 s. A jet's fight
+  is now staged at the heights in the sky it was measured at (you 359 m, the
+  ace 730), and FLY IT's ace is `jetBzAce`, which dives once you are 30
+  degrees under it. Run again: it dives at 1 s, zooms at 4, and by 21 s the
+  two are level at 740 m, nobody hit.
+- **The Immelmann and the split-S.** The jet ace (`jetTaAce`) pulls up at
+  418 m, is over the top at 563 m and rolled out by 6.5 s.
+- No page errors in any of the runs. The school's page on Desert Combat
+  shows the re-flown Dips with their own steps and counts (the break turn's
+  four steps, 9 of 9; boom and zoom's three, 9 of 9).
+

@@ -63,7 +63,7 @@ export function pitchLag(plane) {
  * fight faster by that ratio, its `pace`: a jet set off at a Spitfire's
  * cruise is not in the fight the lesson describes.
  */
-export const PACE = Object.freeze({ height: 300, from: 90, seconds: 60, over: 10, ref: 75.6, slack: 1.15, knee: 600, roof: 760 });
+export const PACE = Object.freeze({ height: 300, from: 90, seconds: 60, over: 10, ref: 75.6, slack: 1.15, knee: 600, roof: 760, sink: 80 });
 
 /** An airframe's level speed at full throttle (m/s): held at `PACE.height`
  *  by a slow nose hold for `PACE.seconds`, the last `PACE.over` averaged. */
@@ -158,14 +158,21 @@ export function pacedHeight(h) {
 /**
  * A side's start at an airframe's pace: the lesson's fight made larger by
  * `pace`, its speed and its place about the fight's centre alike. Heights
- * grow too, as far as the roof lets them (`pacedHeight`). The roof is the
- * sky's, so over ground at `base` m (the fight's origin: a level's own
- * ground under the Range's arena) a start is bent by where it will be in
- * the sky, not by its height over that ground.
+ * grow too, as far as the roof lets them (`pacedHeight`).
+ *
+ * The roof and the air are the sky's, not the ground's. Over ground at
+ * `base` m (the fight's origin: a level's own ground under the Range's
+ * arena) a jet's fight is staged at the heights it was measured at, in the
+ * sky, so it sits that much nearer the ground, by up to `PACE.sink` m;
+ * over higher ground than that the rest is bent under the roof like any
+ * other height. Lifted whole instead, a perch over Desert Shield's 40 m
+ * was bent 34 m nearer its target, and boom and zoom's ace never had the
+ * angle to dive.
  */
 export function paced(start, pace = 1, base = 0) {
   if (pace === 1 || !start) return start;
-  const at = start.at ? [start.at[0] * pace, pacedHeight(base + start.at[1] * pace) - base, start.at[2] * pace] : start.at;
+  const lift = Math.max(0, base - PACE.sink);
+  const at = start.at ? [start.at[0] * pace, pacedHeight(lift + start.at[1] * pace) - base, start.at[2] * pace] : start.at;
   return { ...start, at, speed: (start.speed ?? 55) * pace };
 }
 

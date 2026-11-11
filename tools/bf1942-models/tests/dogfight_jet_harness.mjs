@@ -62,6 +62,7 @@ if (flag('--fit')) {
     bent: [500, 600, 700, 900, 2000].map(h => r1(pacedHeight(h))),
     // The same perch over ground at 0, 40 and 150 m: its height in the sky.
     overGround: [0, 40, 150].map(g => r1(g + paced({ at: [0, 680, 0] }, 1.28, g).at[1])),
+    lowOverGround: [0, 40, 150].map(g => r1(g + paced({ at: [0, 230, 0] }, 1.28, g).at[1])),
     view: { see: view.see({ position: [128, 256, -64], velocity: [0, 0, -128], orientation: { x: 0, y: 0, z: 0, w: 1 }, angularVelocity: [1, 2, 3] }),
             gun: view.gun({ speed: 1000, reach: 5000 }), arena: view.arena({ centre: [128, 0], radius: 1280 }), ground: view.ground((x, z) => x + z)(100, 28) },
     same: pilotView(1).see === pilotView(1).see ? null : pilotView(1).see('x') }));

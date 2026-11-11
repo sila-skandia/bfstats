@@ -36,7 +36,10 @@ export default {
     'Flown nine times from slightly different starts, the pilot who never looked up was shot down every time, in one pass or two, 13 to 52 s in. The one who met the dive was not hit once.',
   ],
   seconds: 60,
-  ace: { memory: { burst: 1.1 } },
+  // FLY IT's ace dives once you are 30 degrees under it (`jetBzAce`); the
+  // lesson's own (`boomAndZoom`) does not read `perchDown`.
+  flyAce: 'jetBzAce',
+  ace: { memory: { burst: 1.1, perchDown: 30 } },
   demos: {
     counter: {
       note: 'You climb shallow, turn to face their dive and never chase their zoom. On a jet they dive once: after it you are as high as they are, under the top of the sky, and they never get above you again.',
@@ -44,6 +47,11 @@ export default {
     dip: {
       label: 'The Dip: meet them, then up and away', seat: 'jetBzDip',
       ace: 'jetBzAceMeet', aceMemory: { phase: 'perch', burst: 1.1, perchDown: 30 },
+      steps: { steps: [
+        { phase: 'climb', say: 'Climb shallow at full throttle (W) and keep them in sight' },
+        { phase: 'face', say: 'They dive: turn to face them, flat, nose no more than 15° up' },
+        { phase: 'dip-run', say: 'They zoom away: do not follow. Straight on, full throttle, nose 3° up, to the top of the sky' },
+      ] },
       note: 'Meet their first dive head on, then straight on out of the pass the way it left you while their zoom takes them the other way: full throttle, the nose 3 degrees up. Not down low, as a Spitfire runs: a jet is fastest at the top of the sky, and there they have no height over you to dive with.',
       verdict: { works: 9, of: 9, line: 'Out in all nine and never hit: their guns never bore on you. They dive after you once more, 16 s in, from 1.7 to 1.8 km back and only 146 to 189 m above you, never get within 798 m, and give up the chase 19.5 to 20.4 s in. At 90 s you are 16.8 to 17.3 km apart, you at 770 m and 128 m/s.' },
     },
