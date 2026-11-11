@@ -80,5 +80,24 @@
  "unreachable": [
   "Ballonflagge"
  ],
- "lintErrors": []
+ "lintErrors": [],
+ "accepted": {
+  "reason": "Owner's rollout, 2026-11-11: after playing Tunis-1943 against its generated bots the owner asked for every level with a fight to go live. Two seeds at 8 and 16 a side, the garrison, BF1918's own bar; the checks it fails are listed with this verdict, and a match on the page decides whether it keeps its menu flag.",
+  "date": "2026-11-11",
+  "outcome": "no-better-than-nothing",
+  "failed": [
+   "8:oscillationsPerBotMinute",
+   "8:selfDeathsPerBotMinute",
+   "8:enemyKillsPerBotMinute",
+   "8:bothSidesCapture",
+   "8:unitsNeverUsedShare",
+   "8:tankSilentShare",
+   "16:idleShare",
+   "16:selfDeathsPerBotMinute",
+   "16:enemyKillsPerBotMinute",
+   "16:bothSidesCapture",
+   "16:unitsNeverUsedShare"
+  ],
+  "by": "owner"
+ }
 }
