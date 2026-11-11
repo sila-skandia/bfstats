@@ -477,6 +477,17 @@ export function ensureRoute(bot, goal) {
     const now = bot._now ?? 0;
     if (now < (bot._routeRetryAt ?? -Infinity)) return null;
     bot._routeRetryAt = now + ROUTE_RETRY_AFTER;
+    // A hull whose searches keep failing among the circles it planted on
+    // itself forgets them (INVENTION): they are dropped only once the hull
+    // is 25.5 m off (`ageObstacles`), and a hull they wall in never gets
+    // there. On Berlin (8 a side, seed 7) a T34 held by its own circles at
+    // its base sat with its throttle off and every route failing for 410 s,
+    // 700 route failures (hull-steering.md, cause 4).
+    if (bot.vehicle && (bot._pathFailures ?? 0) >= HULL_FORGET_AFTER_FAILURES) {
+      const unit = bot.vehicle.vehicleId ?? null;
+      const kept = bot.obstacles.filter(o => o.unit === undefined || o.unit !== unit);
+      if (kept.length !== bot.obstacles.length) bot.obstacles = kept;
+    }
   }
   const [bx, bz] = [bot.position[0], bot.position[2]];
   let coarse = null;
@@ -771,6 +782,9 @@ export function trackObstruction(bot, speed, dt = 1 / 30) {
   }
   return false;
 }
+
+/** A hull's failed searches in a row after which it forgets its own circles (`ensureRoute`, INVENTION). */
+export const HULL_FORGET_AFTER_FAILURES = 2;
 
 /** The window a driven hull's ground speed is measured over (`hullTravelSpeed`). */
 export const HULL_TRAVEL_WINDOW = 1.0;

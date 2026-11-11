@@ -106,6 +106,27 @@ out.pressedTravel = pressed(true);
   out.backOut = { drive: back?.drive ?? null, angle: back ? r3(back.angle) : null, ahead: fwd, plain };
 }
 
+// --- A hull walled in by its own circles forgets them (cause 4) ------------------------
+//
+// Four of its circles round it and a failed route: at the second failure in
+// a row its own circles go when the route is retried; a soldier's and a
+// predicted circle stay. One failure is not enough.
+function walled(failures) {
+  const nav = flatNav();
+  const b = hullBot(nav, 100.5, -100.5, Math.PI);
+  for (const [dx, dz] of [[4, 0], [-4, 0], [0, 4], [0, -4]]) b.obstacles.push({ x: 100.5 + dx, z: -100.5 + dz, r: 4.5, age: 0, unit: 'hull-1' });
+  b.obstacles.push({ x: 120, z: -120, r: 2.5, age: 0, id: 'p:x', unit: null });
+  b.obstacles.push({ x: 130, z: -130, r: 1.5, age: 0 });
+  b.route = { goal: [100.5, -125.5], points: [], coarse: [], failed: true };
+  b._pathFailures = failures;
+  b._now = 10;
+  b._routeRetryAt = 0;
+  const route = ensureRoute(b, [100.5, 0, -125.5]);
+  return { left: b.obstacles.length, route: !!route && !route.failed && route.points.length > 0 };
+}
+out.walledOnce = walled(1);
+out.walledTwice = walled(2);
+
 // --- The loop: a toy hull on a wall the map does not show ---------------------------
 //
 // The straight line from (100.5, -100.5) to (100.5, -130.5) runs into a 6 m

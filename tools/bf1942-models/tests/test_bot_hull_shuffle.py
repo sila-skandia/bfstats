@@ -132,6 +132,13 @@ class HullBounceTests(unittest.TestCase):
         self.assertIsNone(r["ahead"])
         self.assertIsNone(r["plain"])
 
+    def test_a_hull_walled_in_by_its_own_circles_forgets_them(self) -> None:
+        # Cause 4: one failure keeps them (the route stays shut); the second
+        # in a row drops the hull's four and keeps the predicted and the
+        # soldier-sized circle, and the route opens.
+        self.assertEqual(self.results["walledOnce"], {"left": 6, "route": False})
+        self.assertEqual(self.results["walledTwice"], {"left": 2, "route": True})
+
     def test_a_hull_on_a_wall_the_map_does_not_show_gets_round_it(self) -> None:
         r = self.results["toyWall"]
         self.assertGreater(r["ticksOnWall"], 0, "the straight line does meet the wall")
