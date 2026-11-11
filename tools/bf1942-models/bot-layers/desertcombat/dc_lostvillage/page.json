@@ -2,37 +2,40 @@
  "level": "DC_LostVillage",
  "mod": "desertcombat",
  "url": "https://play.bfstats.io/map.html?map=DC_LostVillage&team=2&mode=Conquest&mod=desertcombat&botCount=16&botSkill=0.75&mute&shots",
- "date": "2026-11-10",
- "bar": "DICE levels on the page, 3 matches each of 600 s, 16 bots: Berlin, Stalingrad, Kharkov, Bocage; 2026-11-10",
- "verdict": "pass",
- "failed": [],
+ "date": "2026-11-11",
+ "bar": "DICE levels on the page, 3 matches each of 600 s, 16 bots: Berlin, Stalingrad, Kharkov, Bocage; 2026-11-11",
+ "verdict": "fail",
+ "failed": [
+  "suicidesPerBotMinute",
+  "nonEnemyDeathShareWorseSide"
+ ],
  "checks": [
   {
    "metric": "teamKillsPerBotMinute",
-   "median": 0,
-   "bar": "<= 0.0812",
+   "median": 0.0062,
+   "bar": "<= 0.025",
    "pass": true
   },
   {
    "metric": "suicidesPerBotMinute",
-   "median": 0.0562,
-   "bar": "<= 0.1",
-   "pass": true
+   "median": 0.0875,
+   "bar": "<= 0.0562",
+   "pass": false
   },
   {
    "metric": "nonEnemyDeathShareWorseSide",
-   "median": 0.368,
-   "bar": "<= 0.5",
-   "pass": true
+   "median": 0.378,
+   "bar": "<= 0.308",
+   "pass": false
   },
   {
    "metric": "enemyKillsPerBotMinute",
-   "median": 0.2187,
-   "bar": ">= 0.1125",
+   "median": 0.2562,
+   "bar": ">= 0.175",
    "pass": true
   }
  ],
- "matches": 3,
+ "matches": 1,
  "runs": [
   {
    "generated": {
@@ -41,56 +44,16 @@
    },
    "minutes": 10,
    "tickets": {
-    "1": 99,
-    "2": 27
+    "1": 97,
+    "2": 26
    },
-   "capturesTotal": 4,
-   "teamKillsPerBotMinute": 0.0312,
+   "capturesTotal": 8,
+   "teamKillsPerBotMinute": 0.0062,
    "suicidesPerBotMinute": 0.0875,
-   "nonEnemyDeathShareWorseSide": 0.368,
-   "enemyKillsPerBotMinute": 0.2187,
+   "nonEnemyDeathShareWorseSide": 0.378,
+   "enemyKillsPerBotMinute": 0.2562,
    "teamKillsBySide": {
-    "1": 4,
-    "2": 1
-   }
-  },
-  {
-   "generated": {
-    "version": 5,
-    "template": "symmetric"
-   },
-   "minutes": 10,
-   "tickets": {
-    "1": 113,
-    "2": 50
-   },
-   "capturesTotal": 4,
-   "teamKillsPerBotMinute": 0,
-   "suicidesPerBotMinute": 0.0562,
-   "nonEnemyDeathShareWorseSide": 0.643,
-   "enemyKillsPerBotMinute": 0.05,
-   "teamKillsBySide": {
-    "1": 0,
-    "2": 0
-   }
-  },
-  {
-   "generated": {
-    "version": 5,
-    "template": "symmetric"
-   },
-   "minutes": 10,
-   "tickets": {
-    "1": 71,
-    "2": 37
-   },
-   "capturesTotal": 9,
-   "teamKillsPerBotMinute": 0,
-   "suicidesPerBotMinute": 0.025,
-   "nonEnemyDeathShareWorseSide": 0.108,
-   "enemyKillsPerBotMinute": 0.3312,
-   "teamKillsBySide": {
-    "1": 0,
+    "1": 1,
     "2": 0
    }
   }

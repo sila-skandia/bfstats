@@ -104,8 +104,8 @@ class Url(unittest.TestCase):
 
 
     def test_a_match_that_counted_nothing_is_void(self) -> None:
-        # No row at all, a match with kills, a match with captures only.
-        self.assertEqual(run_harness()["voids"], [True, False, False])
+        # No row at all, a match with kills, a match with captures only: captures do not make a match.
+        self.assertEqual(run_harness()["voids"], [True, False, True])
 
 if __name__ == "__main__":
     unittest.main()

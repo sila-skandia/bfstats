@@ -134,13 +134,19 @@ function installSampler() {
 }
 
 /**
- * A match in which the round counted nothing for anyone: no kill, no
- * death, no capture. On a level with a fight that is a round that never
- * began (the READY click landed before the button did), so `pageMatch`
- * plays it once more and says so (`replayed`); a level that is void twice
- * is void, and its figures stand.
+ * A match in which nobody was killed and nobody died by any hand in ten
+ * minutes. On a level with a fight that is a round that never got going
+ * (the READY click landed before the button did, or the page stalled with
+ * several matches playing side by side), so `pageMatch` plays it once more
+ * and says so (`replayed`); a level that is void twice is void, and its
+ * figures stand.
+ *
+ * Captures do not make a match: DC_Basrah_Nights, the liveliest generated
+ * level live, once showed 2 captures, no kill and tickets untouched at
+ * 106:106 in a match played beside four others, and 0.75 enemy kills a
+ * bot-minute with 13 captures when played again (2026-11-11).
  */
-export const isVoid = m => !m.capturesTotal && !m.enemyKillsPerBotMinute && !m.teamKillsPerBotMinute && !m.suicidesPerBotMinute;
+export const isVoid = m => !m.enemyKillsPerBotMinute && !m.teamKillsPerBotMinute && !m.suicidesPerBotMinute;
 
 export async function pageMatch(options) {
   const first = await playOnce(options);

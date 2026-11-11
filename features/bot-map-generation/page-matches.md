@@ -383,6 +383,22 @@ scimitar_hill 0.08, 6, 96:103; lutte_de_honneur 0.07, 1, 103:98. All of
 these clear the floor. Three did not in this match and were played again
 (below): DC_Basrah_Nights, DC_LostVillage and Mauerfall.
 
+| Level | First match after the fix | Played again | Now |
+|---|---|---|---|
+| DC_Basrah_Nights | no kill, 2 captures, tickets untouched at 106:106 | 0.75 enemy kills, 13 captures, 34:54; passes DICE's page bar | live |
+| DC_LostVillage | 0.10 enemy kills, 5 captures, own-hand deaths over 0.10 | 0.26 enemy kills, 8 captures, own-hand deaths 0.094 | live, near the cap |
+| BF1918 Mauerfall | 0.03 enemy kills, no capture | 0.13 enemy kills, no capture | taken down (0.17 before the fix; under the floor in two of three) |
+
+Basrah's first match was not the fix's doing: the runner on the fixed code
+has it at 0.71 enemy kills a bot-minute with 5 captures in five minutes.
+It was a match that never got going, played beside four others, and
+`isVoid` now replays any match with no kill and no death in it, captures
+or not. Why a page match can stall that way was not found. Mauerfall never
+captures a flag and its kill rate sits at the floor; it waits for the
+no-live-strategy fallback. DC_LostVillage's suicides (0.088 a bot-minute)
+are higher than before the fix (0.056 at the median of three), on two
+matches: not explained.
+
 ## 7. What is not verified
 
 1. One match a level in sections 2 to 5, three in section 6, all unseeded:
