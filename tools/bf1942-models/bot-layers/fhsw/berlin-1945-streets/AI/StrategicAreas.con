@@ -1,0 +1,33 @@
+rem *** Strategic areas: one per control point (botgen) ***
+
+aiStrategicArea.create bergmann_strasse 1336.4/1139.9 1341.4/1144.9 10
+aiStrategicArea.setSide 1
+aiStrategicArea.setTakeable 1 0
+aiStrategicArea.setTakeable 2 0
+
+aiStrategicArea.create st_paulus 993.3/836 998.3/841 50
+aiStrategicArea.addNeighbour hotel_alsterhof
+aiStrategicArea.addObjectTypeFlag Base
+aiStrategicArea.setOrderPosition Tank 1000.5/839.5
+aiStrategicArea.setOrderPosition Infantry 999.5/840.5
+aiStrategicArea.setSide 2
+aiStrategicArea.setTakeable 1 0
+
+aiStrategicArea.create hotel_alsterhof 1005.9/977 1022.9/994 150
+aiStrategicArea.addNeighbour st_paulus
+aiStrategicArea.addObjectTypeFlag Flank
+aiStrategicArea.addObjectTypeFlag Close
+aiStrategicArea.addObjectTypeFlag ControlPoint
+aiStrategicArea.setOrderPosition Tank 1022.5/996.5
+aiStrategicArea.setOrderPosition Infantry 1021.5/994.5
+aiStrategicArea.setSide 1
+
+aiStrategicArea.create wolf_platz 1106.2/1027.1 1121.2/1042.1 10
+aiStrategicArea.setSide 1
+aiStrategicArea.setTakeable 1 0
+aiStrategicArea.setTakeable 2 0
+
+aiStrategicArea.create bauman_strasse 1171/1126.9 1188/1143.9 10
+aiStrategicArea.setSide 1
+aiStrategicArea.setTakeable 1 0
+aiStrategicArea.setTakeable 2 0

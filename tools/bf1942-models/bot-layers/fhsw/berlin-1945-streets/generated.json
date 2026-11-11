@@ -1,0 +1,280 @@
+{
+ "generator": "botgen",
+ "version": 5,
+ "mod": "FHSW",
+ "level": "berlin-1945-streets",
+ "objectSpawners": 86,
+ "template": "few",
+ "templateSource": "DICE, bf1942 Kursk (1.6 patch archives, Kursk_003.rfa): AI/Strategies.con, AI/conditions.con, AI/prerequisites.con, unchanged",
+ "templateChoice": {
+  "name": "few",
+  "inPlay": 1,
+  "rule": "1 capturable flag in play, at most 3"
+ },
+ "scope": "an infantry map painted from the walk test, a Tank0 map from the page painter, infantry order positions, no strategic maps, no co-op layer",
+ "unreachable": [
+  "bergmann_strasse",
+  "wolf_platz",
+  "bauman_strasse"
+ ],
+ "unreachableReasons": {
+  "bergmann_strasse": "walk test",
+  "wolf_platz": "walk test",
+  "bauman_strasse": "walk test"
+ },
+ "botSpawnsExcluded": [
+  "alliedbase_spawn3",
+  "hotel_alsterhof_spawn1",
+  "hotel_alsterhof_spawn2",
+  "wolf_platz_spawn1",
+  "wolf_platz_spawn2",
+  "wolf_platz_spawn3",
+  "wolf_platz_spawn4",
+  "wolf_platz_spawn5",
+  "wolf_platz_spawn6",
+  "wolf_platz_spawn7",
+  "bauman_strasse_spawn1",
+  "bauman_strasse_spawn2",
+  "bauman_strasse_spawn3",
+  "bauman_strasse_spawn4",
+  "bauman_strasse_spawn5",
+  "bauman_strasse_spawn6",
+  "bauman_strasse_spawn7",
+  "bergmann_strasse_spawn1",
+  "bergmann_strasse_spawn2",
+  "bergmann_strasse_spawn3",
+  "bergmann_strasse_spawn4",
+  "bergmann_strasse_spawn5",
+  "bergmann_strasse_spawn6",
+  "bergmann_strasse_spawn7",
+  "hotel_alsterhof_spawn11"
+ ],
+ "walkMap": {
+  "source": "walk test",
+  "engine": "none",
+  "vehicleMap": "page painter",
+  "vehicleBrush": 1.5,
+  "vehicleBrushes": [
+   {
+    "brush": 3,
+    "flagsOn": 1,
+    "spawnersOn": 2,
+    "pieces": 43,
+    "main": 258
+   },
+   {
+    "brush": 2.5,
+    "flagsOn": 1,
+    "spawnersOn": 3,
+    "pieces": 56,
+    "main": 740
+   },
+   {
+    "brush": 2,
+    "flagsOn": 1,
+    "spawnersOn": 3,
+    "pieces": 63,
+    "main": 1128
+   },
+   {
+    "brush": 1.5,
+    "flagsOn": 1,
+    "spawnersOn": 5,
+    "pieces": 58,
+    "main": 1528
+   }
+  ],
+  "opened": [
+   [
+    985,
+    874
+   ],
+   [
+    1011,
+    993
+   ]
+  ],
+  "ways": [
+   {
+    "who": "hotel_alsterhof_spawn8",
+    "kind": "spawn",
+    "way": "walk",
+    "opened": 1
+   },
+   {
+    "who": "alliedbase_spawn3",
+    "kind": "spawn",
+    "way": "drop",
+    "opened": 1
+   },
+   {
+    "who": "hotel_alsterhof_spawn1",
+    "kind": "spawn",
+    "way": "none",
+    "opened": 0
+   },
+   {
+    "who": "hotel_alsterhof_spawn2",
+    "kind": "spawn",
+    "way": "none",
+    "opened": 0
+   },
+   {
+    "who": "wolf_platz_spawn1",
+    "kind": "spawn",
+    "way": "none",
+    "opened": 0
+   },
+   {
+    "who": "wolf_platz_spawn2",
+    "kind": "spawn",
+    "way": "none",
+    "opened": 0
+   },
+   {
+    "who": "wolf_platz_spawn3",
+    "kind": "spawn",
+    "way": "jump",
+    "opened": 0
+   },
+   {
+    "who": "wolf_platz_spawn4",
+    "kind": "spawn",
+    "way": "none",
+    "opened": 0
+   },
+   {
+    "who": "wolf_platz_spawn5",
+    "kind": "spawn",
+    "way": "none",
+    "opened": 0
+   },
+   {
+    "who": "wolf_platz_spawn6",
+    "kind": "spawn",
+    "way": "none",
+    "opened": 0
+   },
+   {
+    "who": "wolf_platz_spawn7",
+    "kind": "spawn",
+    "way": "none",
+    "opened": 0
+   },
+   {
+    "who": "bauman_strasse_spawn1",
+    "kind": "spawn",
+    "way": "none",
+    "opened": 0
+   },
+   {
+    "who": "bauman_strasse_spawn2",
+    "kind": "spawn",
+    "way": "none",
+    "opened": 0
+   },
+   {
+    "who": "bauman_strasse_spawn3",
+    "kind": "spawn",
+    "way": "none",
+    "opened": 0
+   },
+   {
+    "who": "bauman_strasse_spawn4",
+    "kind": "spawn",
+    "way": "none",
+    "opened": 0
+   },
+   {
+    "who": "bauman_strasse_spawn5",
+    "kind": "spawn",
+    "way": "none",
+    "opened": 0
+   },
+   {
+    "who": "bauman_strasse_spawn6",
+    "kind": "spawn",
+    "way": "none",
+    "opened": 0
+   },
+   {
+    "who": "bauman_strasse_spawn7",
+    "kind": "spawn",
+    "way": "none",
+    "opened": 0
+   },
+   {
+    "who": "bergmann_strasse_spawn2",
+    "kind": "spawn",
+    "way": "none",
+    "opened": 0
+   },
+   {
+    "who": "bergmann_strasse_spawn4",
+    "kind": "spawn",
+    "way": "none",
+    "opened": 0
+   },
+   {
+    "who": "bergmann_strasse_spawn5",
+    "kind": "spawn",
+    "way": "none",
+    "opened": 0
+   }
+  ],
+  "cover": 0.846,
+  "floors": {
+   "stacked": false,
+   "twoFloorShare": 0.051,
+   "raised": [
+    "bergmann_strasse"
+   ],
+   "reason": null
+  }
+ },
+ "routeProbe": {
+  "chokeMax": 4,
+  "unreachable": [],
+  "stops": {},
+  "oneSided": {},
+  "sides": {
+   "1": {
+    "spawns": 9,
+    "flags": [
+     "hotel_alsterhof"
+    ]
+   },
+   "2": {
+    "spawns": 11,
+    "flags": [
+     "hotel_alsterhof"
+    ]
+   }
+  },
+  "chokes": {
+   "hotel_alsterhof:1": 0,
+   "hotel_alsterhof:2": 0
+  },
+  "late": {},
+  "shutLinks": []
+ },
+ "inputs": {
+  "controlPoints": "0923c9f78bca10c94039883af70f21fe4fe829cf75e41446d2efbc993c71f099",
+  "infantryMap": "b5e861b3f9eddcd6307946712805cfb3b26174fba58ac0a9465129fd1ec29d08",
+  "template": "bdc0e455f47f91b7e7724e71d7c0c196e839b36946ac3abb7663d725944081e5"
+ },
+ "files": {
+  "AI.con": "de8557a50d18f51c5190a1f673ac40a2d490bf605c694e9ae876462b5dc6ee71",
+  "AIpathFinding.con": "9d8080cdfa7605961969aa126519b03be9691bd604ac76aef50166d81215edd2",
+  "AI/StrategicAreas.con": "8c42e10c5fdb48ae5ee23ffc4bfb135ec79fba9c6aba03bfa91870fb79ed4843",
+  "AI/Strategies.con": "13da4dc35872dd4b5798a066f4425bdc824cfd61f31093d1808e1202644de52e",
+  "AI/conditions.con": "248a04b727c08d696bf0fa9c162bc22c43cde3c75f695892fe1e0f5141519c49",
+  "AI/prerequisites.con": "c96168b5f69860e578f5d26728fd2a2092c4c436e1da49b7d6f4009b65735398",
+  "Pathfinding/Infantry1Level0Map.raw": "e3f456b1974205dfce8309d27d3408bc22782c3e708d3aeb17b103ed4d380247",
+  "Pathfinding/Infantry1Level1Map.raw": "dd55df16043f6a2d5ebbc23bb796112568c37c1cb3d01fe33695bb0265957c01",
+  "Pathfinding/Infantry1Level2Map.raw": "d4d1eb2e6bdbfb42583dfc4277c90348cd748e5be3c188e52dc5fc968f56e32f",
+  "Pathfinding/Tank0Level0Map.raw": "52a7f3d10cc91e67afdb674f915e97521b6968759e7177ca50ac3fd56522edf1",
+  "Pathfinding/Tank0Level1Map.raw": "d0b94795fc61697109cd65e78f978c2eab8c8ed9ed449148280235f35db01c24",
+  "Pathfinding/Tank0Level2Map.raw": "d2926c16eaedbb30113fa5fd0bdfaa392807d4be89e3118f31a80350bdf409f0"
+ }
+}

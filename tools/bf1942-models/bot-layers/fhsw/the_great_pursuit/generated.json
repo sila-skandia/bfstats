@@ -1,0 +1,110 @@
+{
+ "generator": "botgen",
+ "version": 5,
+ "mod": "FHSW",
+ "level": "the_great_pursuit",
+ "objectSpawners": 123,
+ "template": "symmetric",
+ "templateSource": "DICE, bf1942 Kharkov (1.6 patch archives): AI/Strategies.con, AI/conditions.con, AI/prerequisites.con, unchanged",
+ "templateChoice": {
+  "name": "symmetric",
+  "inPlay": 6,
+  "rule": "6 capturable flags in play, more than 3"
+ },
+ "scope": "on foot: infantry order positions only, no search maps, no co-op layer",
+ "unreachable": [
+  "AxisBase"
+ ],
+ "unreachableReasons": {
+  "AxisBase": "walk test"
+ },
+ "botSpawnsExcluded": [
+  "the_railroad_bridge_spawn1",
+  "the_railroads_spawn1",
+  "the_barracks_spawn2",
+  "axisbase_spawn3",
+  "axisbase_spawn4",
+  "axisbase_spawn6",
+  "axisbase_spawn7",
+  "axisbase_spawn8",
+  "2nd_line_north_spawn1",
+  "2nd_line_north_spawn2",
+  "1st_line_center_spawn2",
+  "axisbase_spawn9",
+  "axisbase_spawn10"
+ ],
+ "walkMap": {
+  "source": "page painter",
+  "engine": "none",
+  "opened": [],
+  "ways": [],
+  "cover": 0.857,
+  "floors": {
+   "stacked": false,
+   "twoFloorShare": 0.005,
+   "raised": [
+    "AxisBase"
+   ],
+   "reason": null
+  },
+  "capped": true
+ },
+ "routeProbe": {
+  "chokeMax": 4,
+  "unreachable": [],
+  "stops": {},
+  "oneSided": {},
+  "sides": {
+   "1": {
+    "spawns": 18,
+    "flags": [
+     "1st_Line_Center",
+     "1st_Line_North",
+     "1st_Line_South",
+     "2nd_Line_North",
+     "2nd_Line_South",
+     "3rd_Line"
+    ]
+   },
+   "2": {
+    "spawns": 10,
+    "flags": [
+     "1st_Line_Center",
+     "1st_Line_North",
+     "1st_Line_South",
+     "2nd_Line_North",
+     "2nd_Line_South",
+     "3rd_Line"
+    ]
+   }
+  },
+  "chokes": {
+   "2nd_Line_South:1": 0,
+   "2nd_Line_South:2": 3,
+   "1st_Line_North:1": 0,
+   "1st_Line_North:2": 3,
+   "1st_Line_Center:1": 0,
+   "1st_Line_Center:2": 3,
+   "1st_Line_South:1": 0,
+   "1st_Line_South:2": 3,
+   "2nd_Line_North:1": 0,
+   "2nd_Line_North:2": 3,
+   "3rd_Line:1": 0,
+   "3rd_Line:2": 3
+  },
+  "late": {},
+  "shutLinks": []
+ },
+ "inputs": {
+  "controlPoints": "e9a8b623afdc8dc3609940b1b8c35484e72b0a1843dda84aa7c1e9be579ff16a",
+  "infantryMap": "403c82bdfa3e6065fd8a9c7d546d02dc797794b876ae01fe6da1ed5fb379c8f3",
+  "template": "43f8a790471528016570235f76e97dbb2045732458781a5139f37fed68bf98c0"
+ },
+ "files": {
+  "AI.con": "a2fad3051206e3d3f666b1fb3e806c55dd3859a4be72318366134e5f428bdf50",
+  "AI/StrategicAreas.con": "a44a17dfa6c845488f920869041557bd9c43c481e287a1f8c4d2a856bba9f347",
+  "AI/Strategies.con": "4ce0be59a0d6c5cd530db002fb062c4be8d936bc6ae59bd188803ccaf7869a8d",
+  "AI/conditions.con": "68a0c7a8aec69954063147b60fae560b2874884285737aa085efa76597d395aa",
+  "AI/prerequisites.con": "4c1f313bc285b228fd6ad03bfd1f44c5b15c8703c31f802eb605bc5f00f88bb5"
+ }
+}

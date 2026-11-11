@@ -1,0 +1,59 @@
+{
+ "level": "the_great_pursuit",
+ "verdict": "fail",
+ "outcome": "no-better-than-nothing",
+ "config": "with vehicles",
+ "doctrine": "garrison",
+ "generatorVersion": 5,
+ "inputs": {
+  "controlPoints": "e9a8b623afdc8dc3609940b1b8c35484e72b0a1843dda84aa7c1e9be579ff16a",
+  "infantryMap": "403c82bdfa3e6065fd8a9c7d546d02dc797794b876ae01fe6da1ed5fb379c8f3",
+  "template": "43f8a790471528016570235f76e97dbb2045732458781a5139f37fed68bf98c0"
+ },
+ "baseline": "DICE layers with vehicles, garrison doctrine: berlin, stalingrad, kharkov, bocage; seeds 1..10, 600 s",
+ "bar": {
+  "against": "dice",
+  "why": "no bar of fhsw's own: DICE's"
+ },
+ "seeds": 2,
+ "sizes": {
+  "8": {
+   "verdict": "fail",
+   "failed": [
+    "routeFailuresPerBotMinute",
+    "bothSidesCapture",
+    "routeFailuresPerBotMinuteWorseSide",
+    "hullStuckSecondsPerDrivingMinute",
+    "hullStuckSecondsPerDrivingMinuteWorseSide",
+    "unitsNeverUsedShare"
+   ],
+   "winners": [
+    2,
+    0,
+    0
+   ]
+  },
+  "16": {
+   "verdict": "fail",
+   "failed": [
+    "idleShare",
+    "routeFailuresPerBotMinute",
+    "enemyKillsPerBotMinute",
+    "bothSidesCapture",
+    "routeFailuresPerBotMinuteWorseSide",
+    "unitsNeverUsedShare",
+    "tankSilentShare"
+   ],
+   "winners": [
+    2,
+    0,
+    0
+   ]
+  }
+ },
+ "oneSided": 1,
+ "unreachable": [
+  "AxisBase"
+ ],
+ "lintErrors": []
+}
