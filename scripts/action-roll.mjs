@@ -1312,5 +1312,9 @@ try {
   fs.rmSync(frames, { recursive: true, force: true });
   log('wrote', mp4);
 } finally {
-  await browser.close();
+  // A close can hang once the page has rendered a long offline sound
+  // (Arnhem, 2026-11-12: six minutes after its files were written); the
+  // take is on disk by then, so it is given ten seconds.
+  await Promise.race([browser.close(), new Promise(ok => setTimeout(ok, 10_000))]);
 }
+process.exit(process.exitCode ?? 0);
