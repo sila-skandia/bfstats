@@ -110,7 +110,8 @@ class NoLiveStrategyTests(unittest.TestCase):
         self.assertFalse(s["live"])
         self.assertEqual(s["attackTargets"], [])
         self.assertEqual(s["controlPoint"], 1)
-        self.assertEqual(s["enemyControlPoint"], 3)
+        # Three points and the two middle areas typed `ControlPoint`.
+        self.assertEqual(s["enemyControlPoint"], 5)
         self.assertEqual(self.out["lintErrors"], 0)
         self.assertEqual(len(self.out["lintWarnings"]), 1)
         self.assertIn("side 1 has no live strategy at the start", self.out["lintWarnings"][0])

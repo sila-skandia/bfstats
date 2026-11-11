@@ -367,15 +367,14 @@ export class StrategicAI {
     // side: `BFEnvironment::getNumberOfControlPoints(team)` (0x085e4f80), the
     // control points in the object manager's vector whose team (+0x174) is
     // the side's. Control points only: a stand-in (a spawn group no point
-    // claims, a ship's decks; strategic-layer.js `isStandIn`) is none, and
-    // the area type flag `ControlPoint` is not counted into it (the flag loop
-    // below counts type flags 1..5, 0xc, 0xf, 0x11..0x14 only, and
-    // ControlPoint is 0x10). Read from the third-party decompile of the
-    // 1.61 Linux server and the Mac client (`getNumberOfControlPoints`
-    // 0x085ebff0 there, `SAI::updateStates`); features/bot-map-generation/
-    // flag-binding.md. The page counted every flag and each owned area typed
-    // `ControlPoint` again: a side holding three flags held six, Edson's
-    // Ridge's Allies fourteen.
+    // claims, a ship's decks; strategic-layer.js `isStandIn`) is none. Read
+    // from the third-party decompile of the 1.61 Linux server and the Mac
+    // client (`getNumberOfControlPoints` 0x085ebff0 there,
+    // `SAI::updateStates`); features/bot-map-generation/flag-binding.md. The
+    // page counted every flag: Edson's Ridge's Allies, eleven of them
+    // stand-ins, held fourteen. The engine also leaves the area type flag
+    // `ControlPoint` out of this slot; the page still adds it (the flag loop
+    // below, where the reason is).
     const points = this.layer.flags.filter(fl => !isStandIn(fl));
     inc(f, 'ControlPoint', points.filter(fl => fl.team === side).length);
     inc(e, 'ControlPoint', points.filter(fl => fl.team === other).length);
@@ -398,9 +397,15 @@ export class StrategicAI {
         if (this._hasNeighbourWithStatus(area, side, 'Owned')) inc(f, 'FrontNeutral');
       }
       for (const flag of area.flags) {
-        // The type flag `ControlPoint` shares its name with the state slot
-        // above and is not counted (`SAI::updateStates`, see above).
-        if (flag === 'ControlPoint') continue;
+        // NOT the engine's, kept: the type flag `ControlPoint` shares its name
+        // with the state slot above, and so an owned area typed
+        // `ControlPoint` adds one to the side's `ControlPoint` again. The
+        // engine's `SAI::updateStates` counts that type flag into no slot
+        // (see above). Taking it out moves every layer whose conditions read
+        // `ControlPoint`, DICE's four among them and every bar and verdict
+        // measured on them, and on the live generated levels it cost
+        // DC_LostVillage a third of its captures and Tunis 39 %
+        // (flag-binding.md, section 5): its own change, not made here.
         // Flag counts are per ownership: an owned area with the flag counts
         // for the friendly array, a hostile one for the enemy's.
         const target = st.status === 'Owned' ? f : st.status === 'Hostile' ? e : null;

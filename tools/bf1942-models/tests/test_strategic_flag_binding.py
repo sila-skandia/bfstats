@@ -3,12 +3,13 @@
 
 The engine binds an area to a control point only (`AIStrategicArea::update`
 0x0863d6d0, `BFEnvironment::findControlPoint` 0x085e53a0) and its
-`ControlPoint` state is the side's control points
+`ControlPoint` state counts control points only
 (`BFEnvironment::getNumberOfControlPoints` 0x085e4f80 through
-`SAI::updateStates` 0x086348c0, which counts the area type flag
-`ControlPoint`, 0x10, into no slot). The page's stand-ins (a spawn group no
+`SAI::updateStates` 0x086348c0). The page's stand-ins (a spawn group no
 point claims, a ship's decks) are bound after every control point and only
-into an area that holds none, and are no control point.
+into an area that holds none, and are no control point. (The page still adds
+the side's owned areas typed `ControlPoint`, which the engine does not:
+section 5 of the write-up.)
 `tests/strategic_binding_harness.mjs` runs the node half on Edson's Ridge's
 shape.
 """
@@ -50,11 +51,12 @@ class FlagBindingTests(unittest.TestCase):
     def test_the_axis_have_a_flag_to_attack(self) -> None:
         self.assertEqual(self.out["axisTargets"], ["West"])
 
-    def test_control_point_counts_control_points_alone(self) -> None:
-        # The Allies: AlliedBase, West and East. Not the three stand-ins, and
-        # not their three owned areas typed `ControlPoint` again.
-        self.assertEqual(self.out["states"]["2"], {"controlPoint": 3, "enemyControlPoint": 1})
-        self.assertEqual(self.out["states"]["1"], {"controlPoint": 1, "enemyControlPoint": 3})
+    def test_control_point_counts_no_stand_in(self) -> None:
+        # The Allies: AlliedBase, West and East, plus their three owned areas
+        # typed `ControlPoint` (the page's sum, kept; the engine adds no area,
+        # flag-binding.md section 5). Not the three stand-ins.
+        self.assertEqual(self.out["states"]["2"], {"controlPoint": 6, "enemyControlPoint": 2})
+        self.assertEqual(self.out["states"]["1"], {"controlPoint": 2, "enemyControlPoint": 6})
         self.assertEqual(self.out["standIns"], ["sbWest", "sbPass", "ship"])
 
 
