@@ -156,7 +156,14 @@ class SyntheticWedgeTests(unittest.TestCase):
         self.assertTrue(r["steersAtIt"])
         self.assertTrue(r["keptInside"], "not popped inside the hull's 3 m radius")
         self.assertTrue(r["droppedOnceClear"])
-        self.assertEqual(r["resolvedStart"], r["first"])
+        # Straight away from the circle's centre, a turn radius (5 m) off the
+        # hull where the map and the circles allow, not the nearest free
+        # point (hull-steering.md, cause 3); that one is the fallback.
+        hx, hz, cx, cz = 100.5, -100.5, 101.7, -103.4
+        fx, fz = r["first"]
+        self.assertAlmostEqual(((fx - hx) ** 2 + (fz - hz) ** 2) ** 0.5, 5.0, places=2)
+        self.assertAlmostEqual((fx - hx) * (hz - cz) - (fz - hz) * (hx - cx), 0.0, places=2)
+        self.assertNotEqual(r["resolvedStart"], r["first"])
         # Only a wedge asks for one.
         self.assertIsNone(r["noBackOutAsked"])
 
