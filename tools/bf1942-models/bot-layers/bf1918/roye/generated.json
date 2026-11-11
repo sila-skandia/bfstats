@@ -1,0 +1,120 @@
+{
+ "generator": "botgen",
+ "version": 5,
+ "mod": "bf1918",
+ "level": "roye",
+ "objectSpawners": 72,
+ "template": "few",
+ "templateSource": "DICE, bf1942 Kursk (1.6 patch archives, Kursk_003.rfa): AI/Strategies.con, AI/conditions.con, AI/prerequisites.con, unchanged",
+ "templateChoice": {
+  "name": "few",
+  "inPlay": 1,
+  "rule": "1 capturable flag in play, at most 3"
+ },
+ "scope": "on foot: infantry order positions only, no search maps, no co-op layer",
+ "unreachable": [
+  "Bahnhof",
+  "Bauernhof",
+  "Ballonflagge"
+ ],
+ "unreachableReasons": {
+  "Bahnhof": "route probe",
+  "Bauernhof": "route probe",
+  "Ballonflagge": "walk test"
+ },
+ "botSpawnsExcluded": [
+  "Bahnhof_Spawn1",
+  "Flugfeld_Spawn1",
+  "Flugfeld_Spawn5",
+  "Flugfeld_Spawn6",
+  "Flugfeld_Spawn7",
+  "Bahnhof_Spawn2",
+  "Bahnhof_Spawn3",
+  "Bahnhof_Spawn4",
+  "Bahnhof_Spawn6",
+  "Bahnhof_Spawn9",
+  "AlliedBase_Spawn3",
+  "AlliedBase_Spawn4",
+  "AxisBase_Spawn10",
+  "AxisBase_Spawn11",
+  "Bauernhof_Spawn2",
+  "Bauernhof_Spawn3",
+  "Bauernhof_Spawn4",
+  "Bahnhof_Spawn7"
+ ],
+ "walkMap": {
+  "source": "page painter",
+  "engine": "none",
+  "opened": [],
+  "ways": [],
+  "cover": 0.947,
+  "floors": {
+   "stacked": false,
+   "twoFloorShare": 0.003,
+   "raised": [
+    "Bahnhof"
+   ],
+   "reason": null
+  },
+  "capped": true,
+  "joined": 2
+ },
+ "routeProbe": {
+  "chokeMax": 4,
+  "unreachable": [
+   "Bahnhof",
+   "Bauernhof"
+  ],
+  "stops": {
+   "Bahnhof": {
+    "1": {
+     "stage": "strategic"
+    },
+    "2": {
+     "stage": "strategic"
+    }
+   },
+   "Bauernhof": {
+    "1": {
+     "stage": "strategic"
+    },
+    "2": {
+     "stage": "strategic"
+    }
+   }
+  },
+  "oneSided": {},
+  "sides": {
+   "1": {
+    "spawns": 9,
+    "flags": [
+     "Flugfeld"
+    ]
+   },
+   "2": {
+    "spawns": 4,
+    "flags": [
+     "Flugfeld"
+    ]
+   }
+  },
+  "chokes": {
+   "Flugfeld:1": 0,
+   "Flugfeld:2": 0
+  },
+  "late": {},
+  "shutLinks": []
+ },
+ "inputs": {
+  "controlPoints": "5c0672fc5d823e9c872993c666f67c307c8d023f90d50b5cc3362c0cc0008ff8",
+  "infantryMap": "d1dc20842a30dcca23b1ace5142314374a2ddf424b1eabf054012f6386f04063",
+  "template": "bdc0e455f47f91b7e7724e71d7c0c196e839b36946ac3abb7663d725944081e5"
+ },
+ "files": {
+  "AI.con": "0f5d86745f412c4b55c9c49ba16ac50147328dfca5e164e9048f49356c8ad4f7",
+  "AI/StrategicAreas.con": "bea751223e9587e6d019db55f24fbb1045c9d772062299faec3cc093f8eb6f35",
+  "AI/Strategies.con": "13da4dc35872dd4b5798a066f4425bdc824cfd61f31093d1808e1202644de52e",
+  "AI/conditions.con": "248a04b727c08d696bf0fa9c162bc22c43cde3c75f695892fe1e0f5141519c49",
+  "AI/prerequisites.con": "c96168b5f69860e578f5d26728fd2a2092c4c436e1da49b7d6f4009b65735398"
+ }
+}

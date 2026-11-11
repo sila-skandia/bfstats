@@ -10,10 +10,10 @@
   "infantryMap": "dfde3ec49a308a6e2476ceffbf56b3ba941322a600fa9386319ff6421d808f46",
   "template": "43f8a790471528016570235f76e97dbb2045732458781a5139f37fed68bf98c0"
  },
- "baseline": "desertcombat's own layers with vehicles, garrison doctrine: berlin, dc_desertshield, kharkov, kursk; seeds 1..10, 600 s; dropped, no fight: dc_basrahs_edge, stalingrad",
+ "baseline": "desertcombat's own layers with vehicles, garrison doctrine: berlin, dc_desertshield, kharkov, kursk, stalingrad; seeds 1..10, 600 s; dropped, no fight: dc_basrahs_edge",
  "bar": {
   "against": "desertcombat",
-  "why": "desertcombat's own bar, built from 4 of its levels that are alive (berlin, dc_desertshield, kharkov, kursk)"
+  "why": "desertcombat's own bar, built from 5 of its levels that are alive (berlin, dc_desertshield, kharkov, kursk, stalingrad)"
  },
  "againstDice": {
   "verdict": "fail",
@@ -23,23 +23,22 @@
    "8": {
     "verdict": "fail",
     "failed": [
-     "stuckSecondsPerBotMinute",
      "idleShare",
-     "redeploysPerBotMinute",
-     "teamKillsPerBotMinute",
-     "stuckSecondsPerBotMinuteWorseSide",
      "routeFailuresPerBotMinuteWorseSide",
      "redeploysPerBotMinuteWorseSide",
-     "nonEnemyDeathShareWorseSide",
      "unitsNeverUsedShare"
     ]
    },
    "16": {
     "verdict": "fail",
     "failed": [
+     "stuckSecondsPerBotMinute",
      "idleShare",
+     "spawnTrapsPerBotMinute",
      "redeploysPerBotMinute",
+     "teamKillsPerBotMinute",
      "enemyKillsPerBotMinute",
+     "spawnTrapsPerBotMinuteWorseSide",
      "routeFailuresPerBotMinuteWorseSide",
      "redeploysPerBotMinuteWorseSide",
      "nonEnemyDeathShareWorseSide",
@@ -48,34 +47,35 @@
    }
   }
  },
- "seeds": 10,
+ "seeds": 2,
  "sizes": {
   "8": {
    "verdict": "fail",
    "failed": [
-    "stuckSecondsPerBotMinute",
     "idleShare",
-    "teamKillsPerBotMinute",
-    "stuckSecondsPerBotMinuteWorseSide",
     "redeploysPerBotMinuteWorseSide",
     "unitsNeverUsedShare"
    ],
    "winners": [
-    7,
-    3,
+    1,
+    1,
     0
    ]
   },
   "16": {
    "verdict": "fail",
    "failed": [
+    "stuckSecondsPerBotMinute",
     "idleShare",
+    "redeploysPerBotMinute",
+    "teamKillsPerBotMinute",
     "redeploysPerBotMinuteWorseSide",
+    "nonEnemyDeathShareWorseSide",
     "unitsNeverUsedShare"
    ],
    "winners": [
-    7,
-    3,
+    1,
+    1,
     0
    ]
   }
@@ -84,18 +84,19 @@
  "unreachable": [],
  "lintErrors": [],
  "accepted": {
-  "reason": "The owner's decision, 2026-11-11. With no layer the level barely fights (0.013 and 0.020 enemy kills a bot-minute, no capture); with it 0.35 and 0.36, and 6 and 5 flags a match. The comparison calls it no better at 16 a side because bots that now move are sometimes stuck (1.64 s a bot-minute against 0.15) and redeploy. Short of Desert Combat's own bar on idle share, stuck time, redeploys and units never used (four of its eight are fixed guns).",
-  "date": "2026-11-10",
-  "outcome": "no-better-than-nothing",
+  "reason": "The owner's decision, 2026-11-10, and the owner's rollout of 2026-11-11. Live since then and the liveliest of them on the page (0.53 to 0.65 enemy kills a bot-minute, 14 to 23 captures in ten minutes, tickets level); re-judged on two seeds with the hold-fire and hull steering in: better than nothing on Desert Combat's own bar.",
+  "date": "2026-11-11",
+  "outcome": "better-than-nothing",
   "failed": [
-   "8:stuckSecondsPerBotMinute",
    "8:idleShare",
-   "8:teamKillsPerBotMinute",
-   "8:stuckSecondsPerBotMinuteWorseSide",
    "8:redeploysPerBotMinuteWorseSide",
    "8:unitsNeverUsedShare",
+   "16:stuckSecondsPerBotMinute",
    "16:idleShare",
+   "16:redeploysPerBotMinute",
+   "16:teamKillsPerBotMinute",
    "16:redeploysPerBotMinuteWorseSide",
+   "16:nonEnemyDeathShareWorseSide",
    "16:unitsNeverUsedShare"
   ],
   "by": "owner"

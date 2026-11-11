@@ -1,0 +1,37 @@
+rem *** Strategic areas: one per control point (botgen) ***
+
+aiStrategicArea.create AxisBase 1231.9/541.9 1236.9/546.9 50
+aiStrategicArea.addNeighbour AlliedBase
+aiStrategicArea.addNeighbour Flugfeld
+aiStrategicArea.addObjectTypeFlag Base
+aiStrategicArea.setOrderPosition Infantry 1235.5/548.5
+aiStrategicArea.setSide 1
+aiStrategicArea.setTakeable 2 0
+
+aiStrategicArea.create AlliedBase 514.5/462.3 519.5/467.3 50
+aiStrategicArea.addNeighbour AxisBase
+aiStrategicArea.addNeighbour Flugfeld
+aiStrategicArea.addObjectTypeFlag Base
+aiStrategicArea.setOrderPosition Infantry 518.5/466.5
+aiStrategicArea.setSide 2
+aiStrategicArea.setTakeable 1 0
+
+aiStrategicArea.create Bahnhof 725.6/504.8 740.6/519.8 10
+aiStrategicArea.setTakeable 1 0
+aiStrategicArea.setTakeable 2 0
+
+aiStrategicArea.create Flugfeld 912.9/384.5 952.9/424.5 150
+aiStrategicArea.addNeighbour AxisBase
+aiStrategicArea.addNeighbour AlliedBase
+aiStrategicArea.addObjectTypeFlag Flank
+aiStrategicArea.addObjectTypeFlag Close
+aiStrategicArea.addObjectTypeFlag ControlPoint
+aiStrategicArea.setOrderPosition Infantry 951.5/425.5
+
+aiStrategicArea.create Bauernhof 943/571.4 953/581.4 10
+aiStrategicArea.setTakeable 1 0
+aiStrategicArea.setTakeable 2 0
+
+aiStrategicArea.create Ballonflagge 709.9/916.3 749.9/956.3 10
+aiStrategicArea.setTakeable 1 0
+aiStrategicArea.setTakeable 2 0
