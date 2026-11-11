@@ -1,0 +1,47 @@
+rem *** Strategic areas: one per control point (botgen) ***
+
+aiStrategicArea.create US_Marine_Base 537.2/1227.4 547.2/1237.4 150
+aiStrategicArea.addNeighbour West_Harbor
+aiStrategicArea.addNeighbour Islands
+aiStrategicArea.addObjectTypeFlag Flank
+aiStrategicArea.addObjectTypeFlag ControlPoint
+aiStrategicArea.setOrderPosition Infantry 548.5/1236.5
+aiStrategicArea.setSide 2
+
+aiStrategicArea.create West_Harbor 547.5/767.3 558.5/778.3 200
+aiStrategicArea.addNeighbour US_Marine_Base
+aiStrategicArea.addNeighbour Islands
+aiStrategicArea.addObjectTypeFlag Centre
+aiStrategicArea.addObjectTypeFlag ControlPoint
+aiStrategicArea.setOrderPosition Infantry 559.5/777.5
+aiStrategicArea.setSide 2
+
+aiStrategicArea.create Airfield 1071.9/1098.9 1088.9/1115.9 300
+aiStrategicArea.addNeighbour Point_Boyington
+aiStrategicArea.addNeighbour Islands
+aiStrategicArea.addObjectTypeFlag Centre
+aiStrategicArea.addObjectTypeFlag StrongPoint
+aiStrategicArea.addObjectTypeFlag ControlPoint
+aiStrategicArea.setOrderPosition Infantry 1090.5/1117.5
+aiStrategicArea.setSide 2
+
+aiStrategicArea.create Point_Boyington 1122.2/1321.6 1134.2/1333.6 200
+aiStrategicArea.addNeighbour Airfield
+aiStrategicArea.addObjectTypeFlag Centre
+aiStrategicArea.addObjectTypeFlag ControlPoint
+aiStrategicArea.setOrderPosition Infantry 1135.5/1334.5
+aiStrategicArea.setSide 2
+
+aiStrategicArea.create East_Harbor 1553/1487.6 1568/1502.6 10
+aiStrategicArea.setSide 2
+aiStrategicArea.setTakeable 1 0
+aiStrategicArea.setTakeable 2 0
+
+aiStrategicArea.create Islands 816/983.2 836/1003.2 200
+aiStrategicArea.addNeighbour US_Marine_Base
+aiStrategicArea.addNeighbour West_Harbor
+aiStrategicArea.addNeighbour Airfield
+aiStrategicArea.addObjectTypeFlag Centre
+aiStrategicArea.addObjectTypeFlag ControlPoint
+aiStrategicArea.setOrderPosition Infantry 837.5/1002.5
+aiStrategicArea.setSide 2

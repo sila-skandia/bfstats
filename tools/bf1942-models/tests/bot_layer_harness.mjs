@@ -178,6 +178,10 @@ out.ownerAcceptance = {
   by: owned.accepted.by, outcome: owned.accepted.outcome,
   noFight: batch.acceptVerdict(short({ outcome: 'no-fight' }), 'why', '2026-11-11', { owner: true }).accepted.outcome,
   unsuitable: refuse(() => batch.acceptVerdict(short({ outcome: 'unsuitable' }), 'why', '2026-11-11', { owner: true })),
+  // A level run despite a stacked-floors lint error may be accepted by the owner; any other lint error, or anyone else, may not.
+  stacked: batch.acceptVerdict({ ...short(), lintErrors: ['the play surface is stacked floors (3 of 5 capturable flags stand a storey over another)'] }, 'why', '2026-11-12', { owner: true }).accepted.by,
+  stackedNotOwner: refuse(() => batch.acceptVerdict({ ...short(), lintErrors: ['the play surface is stacked floors (x)'] }, 'why', '2026-11-12')),
+  sealed: refuse(() => batch.acceptVerdict({ ...short(), lintErrors: ['side 1 has no spawn with a route to any flag it must take'] }, 'why', '2026-11-12', { owner: true })),
   carried: batch.carryAccepted(noBetterShort, owned).accepted?.by ?? null,
   worse: batch.carryAccepted(short({ outcome: 'no-fight' }), owned).acceptanceWithdrawn?.because ?? null,
   // A level that rises, or fails a check it did not fail then, keeps the owner's acceptance, the new checks noted.

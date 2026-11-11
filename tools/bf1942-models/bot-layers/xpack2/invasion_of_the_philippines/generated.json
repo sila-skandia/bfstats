@@ -1,0 +1,101 @@
+{
+ "generator": "botgen",
+ "version": 5,
+ "mod": "XPack2",
+ "level": "invasion_of_the_philippines",
+ "objectSpawners": 50,
+ "template": "symmetric",
+ "templateSource": "DICE, bf1942 Kharkov (1.6 patch archives): AI/Strategies.con, AI/conditions.con, AI/prerequisites.con, unchanged",
+ "templateChoice": {
+  "name": "symmetric",
+  "inPlay": 5,
+  "rule": "5 capturable flags in play, more than 3"
+ },
+ "scope": "on foot: infantry order positions only, no search maps, no co-op layer",
+ "unreachable": [
+  "East_Harbor"
+ ],
+ "unreachableReasons": {
+  "East_Harbor": "walk test"
+ },
+ "botSpawnsExcluded": [
+  "US_Marine_Base2",
+  "US_Marine_Base3",
+  "US_Marine_Base4",
+  "West_Harbor1",
+  "Airfield1",
+  "Airfield3",
+  "Shallows1",
+  "Shallows2",
+  "Shallows3",
+  "East_Harbor1",
+  "East_Harbor2",
+  "East_Harbor3",
+  "East_Harbor4",
+  "East_Harbor5",
+  "Islands1"
+ ],
+ "walkMap": {
+  "source": "page painter",
+  "engine": "none",
+  "opened": [],
+  "ways": [],
+  "cover": 0.384,
+  "floors": {
+   "stacked": false,
+   "twoFloorShare": 0.002,
+   "raised": [],
+   "reason": null
+  },
+  "capped": true
+ },
+ "routeProbe": {
+  "chokeMax": 4,
+  "unreachable": [],
+  "stops": {},
+  "oneSided": {
+   "US_Marine_Base": 2,
+   "West_Harbor": 2,
+   "Airfield": 2,
+   "Point_Boyington": 2,
+   "Islands": 2
+  },
+  "sides": {
+   "1": {
+    "spawns": 0,
+    "flags": []
+   },
+   "2": {
+    "spawns": 15,
+    "flags": [
+     "Airfield",
+     "Islands",
+     "Point_Boyington",
+     "US_Marine_Base",
+     "West_Harbor"
+    ]
+   }
+  },
+  "chokes": {
+   "US_Marine_Base:2": 1,
+   "West_Harbor:2": 3,
+   "Airfield:2": 0,
+   "Point_Boyington:2": 0,
+   "Islands:2": 2
+  },
+  "late": {},
+  "shutLinks": []
+ },
+ "inputs": {
+  "controlPoints": "7ada2dd1f4006044a61473be7168e5d057f6ad0e8b84fa73adb0df734d36602d",
+  "infantryMap": "3c00a3f5ba82803d738c447f7e1e32022d786eb1e7a7e9579fb3d1f63363934f",
+  "template": "43f8a790471528016570235f76e97dbb2045732458781a5139f37fed68bf98c0"
+ },
+ "files": {
+  "AI.con": "6add06fce9aa94cfe94d211bd067d741e04433e1f1c464973e40b7b389dd13d7",
+  "AI/StrategicAreas.con": "1e8d5a80dd0c9bd3613a5c07c6abb2617b2ff5b9408b8881d00c9638bd176b15",
+  "AI/Strategies.con": "4ce0be59a0d6c5cd530db002fb062c4be8d936bc6ae59bd188803ccaf7869a8d",
+  "AI/conditions.con": "68a0c7a8aec69954063147b60fae560b2874884285737aa085efa76597d395aa",
+  "AI/prerequisites.con": "4c1f313bc285b228fd6ad03bfd1f44c5b15c8703c31f802eb605bc5f00f88bb5"
+ }
+}

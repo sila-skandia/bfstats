@@ -1,0 +1,56 @@
+rem *** Strategic areas: one per control point (botgen) ***
+
+aiStrategicArea.create AxisBase 73.5/120.4 78.5/125.4 200
+aiStrategicArea.addNeighbour South_Desert
+aiStrategicArea.addNeighbour openbase_watersupply
+aiStrategicArea.addObjectTypeFlag Centre
+aiStrategicArea.addObjectTypeFlag ControlPoint
+aiStrategicArea.setOrderPosition Infantry 79.5/124.5
+aiStrategicArea.setSide 1
+
+aiStrategicArea.create AlliesBase 892.3/908.9 897.3/913.9 200
+aiStrategicArea.addNeighbour north_Desert
+aiStrategicArea.addNeighbour East_Village
+aiStrategicArea.addObjectTypeFlag Centre
+aiStrategicArea.addObjectTypeFlag ControlPoint
+aiStrategicArea.setOrderPosition Infantry 896.5/912.5
+aiStrategicArea.setSide 2
+
+aiStrategicArea.create South_Desert 631.9/205.4 651.9/225.4 150
+aiStrategicArea.addNeighbour AxisBase
+aiStrategicArea.addNeighbour openbase_watersupply
+aiStrategicArea.addNeighbour East_Village
+aiStrategicArea.addObjectTypeFlag Flank
+aiStrategicArea.addObjectTypeFlag ControlPoint
+aiStrategicArea.setOrderPosition Infantry 650.5/224.5
+
+aiStrategicArea.create openbase_watersupply 374.2/423.3 384.2/433.3 300
+aiStrategicArea.addNeighbour AxisBase
+aiStrategicArea.addNeighbour South_Desert
+aiStrategicArea.addNeighbour north_Desert
+aiStrategicArea.addNeighbour East_Village
+aiStrategicArea.addObjectTypeFlag Centre
+aiStrategicArea.addObjectTypeFlag StrongPoint
+aiStrategicArea.addObjectTypeFlag ControlPoint
+aiStrategicArea.setOrderPosition Infantry 385.5/432.5
+
+aiStrategicArea.create north_Desert 390.4/758.9 400.4/768.9 150
+aiStrategicArea.addNeighbour AlliesBase
+aiStrategicArea.addNeighbour openbase_watersupply
+aiStrategicArea.addNeighbour East_Village
+aiStrategicArea.addObjectTypeFlag Flank
+aiStrategicArea.addObjectTypeFlag ControlPoint
+aiStrategicArea.setOrderPosition Infantry 399.5/767.5
+
+aiStrategicArea.create East_Village 637.1/548.1 647.1/558.1 200
+aiStrategicArea.addNeighbour AlliesBase
+aiStrategicArea.addNeighbour South_Desert
+aiStrategicArea.addNeighbour openbase_watersupply
+aiStrategicArea.addNeighbour north_Desert
+aiStrategicArea.addObjectTypeFlag Centre
+aiStrategicArea.addObjectTypeFlag ControlPoint
+aiStrategicArea.setOrderPosition Infantry 648.5/559.5
+
+aiStrategicArea.create City 521.5/466.8 526.5/471.8 10
+aiStrategicArea.setTakeable 1 0
+aiStrategicArea.setTakeable 2 0

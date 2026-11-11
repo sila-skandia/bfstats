@@ -447,6 +447,9 @@ class JudgeTests(unittest.TestCase):
         # Since the rollout the owner may also put up a level the runner calls no fight; never an unsuitable one.
         self.assertEqual(own["noFight"], "no-fight")
         self.assertIn("unsuitable", own["unsuitable"])
+        self.assertEqual(own["stacked"], "owner")
+        self.assertIn("lint errors", own["stackedNotOwner"])
+        self.assertIn("lint errors", own["sealed"])
         # It stands at the outcome accepted, and goes when the level gets worse.
         self.assertEqual(own["carried"], "owner")
         self.assertEqual(own["worse"], "now no-fight")

@@ -295,7 +295,12 @@ export function acceptVerdict(short, reason, date, { owner = false } = {}) {
     throw new Error(`${short.level} is ${short.outcome}: only ${allowed.join(', ')} can be accepted`
       + (!owner && OWNER_ACCEPTABLE.includes(short.outcome) ? ' (the owner may: --owner)' : ''));
   }
-  if (short.lintErrors?.length) throw new Error(`${short.level} has lint errors`);
+  // A lint error closes a layer to acceptance, with one exception for the owner's rollout: a level whose only
+  // error is "stacked floors" and that was run despite it (`level --despite-lint`) and came out with a fight.
+  // Secret Weapons' Raid on Agheila is the case: three of its five flags stand over bunkers, and the rest of it
+  // is open desert the bots fight over. The page match still decides whether it keeps its menu flag.
+  const onlyStacked = owner && (short.lintErrors ?? []).every(e => /stacked floors/.test(e));
+  if (short.lintErrors?.length && !onlyStacked) throw new Error(`${short.level} has lint errors`);
   const { acceptanceWithdrawn, ...rest } = short;
   return { ...rest, accepted: { reason: String(reason).trim(), date, outcome: short.outcome, failed: failedChecks(short), ...(owner ? { by: 'owner' } : {}) } };
 }

@@ -1,0 +1,24 @@
+{
+ "level": "invasion_of_the_philippines",
+ "verdict": "fail",
+ "outcome": "unsuitable",
+ "config": "with vehicles",
+ "doctrine": "garrison",
+ "generatorVersion": 5,
+ "inputs": {
+  "controlPoints": "7ada2dd1f4006044a61473be7168e5d057f6ad0e8b84fa73adb0df734d36602d",
+  "infantryMap": "3c00a3f5ba82803d738c447f7e1e32022d786eb1e7a7e9579fb3d1f63363934f",
+  "template": "43f8a790471528016570235f76e97dbb2045732458781a5139f37fed68bf98c0"
+ },
+ "baseline": "DICE layers with vehicles, garrison doctrine: berlin, stalingrad, kharkov, bocage; seeds 1..10, 600 s",
+ "bar": null,
+ "seeds": 2,
+ "sizes": {},
+ "oneSided": null,
+ "unreachable": [
+  "East_Harbor"
+ ],
+ "lintErrors": [
+  "side 1 holds no spawn point at the start of the round"
+ ]
+}

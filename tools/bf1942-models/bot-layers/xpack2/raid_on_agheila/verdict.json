@@ -1,0 +1,80 @@
+{
+ "level": "raid_on_agheila",
+ "verdict": "fail",
+ "outcome": "better-than-nothing",
+ "config": "with vehicles",
+ "doctrine": "garrison",
+ "generatorVersion": 5,
+ "inputs": {
+  "controlPoints": "5697b193e9f6219fd6c53cb059eacffc4426ad57ee5e0ec0c3893e0299c55ed7",
+  "infantryMap": "20d5af9e11e9d028a41bcdbb9e9245a8b0e5a55b53b74a61b8ba0a134da0bf14",
+  "template": "bdc0e455f47f91b7e7724e71d7c0c196e839b36946ac3abb7663d725944081e5"
+ },
+ "baseline": "DICE layers with vehicles, garrison doctrine: berlin, stalingrad, kharkov, bocage; seeds 1..10, 600 s",
+ "bar": {
+  "against": "dice",
+  "why": "no bar of xpack2's own: DICE's"
+ },
+ "seeds": 2,
+ "sizes": {
+  "8": {
+   "verdict": "fail",
+   "failed": [
+    "routeFailuresPerBotMinute",
+    "enemyKillsPerBotMinute",
+    "routeFailuresPerBotMinuteWorseSide",
+    "nonEnemyDeathShareWorseSide",
+    "unitsNeverUsedShare"
+   ],
+   "winners": [
+    1,
+    1,
+    0
+   ]
+  },
+  "16": {
+   "verdict": "fail",
+   "failed": [
+    "routeFailuresPerBotMinute",
+    "enemyKillsPerBotMinute",
+    "bothSidesCapture",
+    "routeFailuresPerBotMinuteWorseSide",
+    "nonEnemyDeathShareWorseSide",
+    "unitsNeverUsedShare"
+   ],
+   "winners": [
+    0,
+    2,
+    0
+   ]
+  }
+ },
+ "oneSided": null,
+ "unreachable": [
+  "South_Base",
+  "North_Base",
+  "Centre_Base"
+ ],
+ "lintErrors": [
+  "the play surface is stacked floors (3 of 5 capturable flags stand a storey over or under another walked floor): a one-floor walk map cannot hold it"
+ ],
+ "accepted": {
+  "reason": "Owner's rollout, 2026-11-11: after playing Tunis-1943 against its generated bots the owner asked for every level with a fight to go live. Two or more seeds at 8 and 16 a side, the garrison; the checks it fails are listed with this verdict, and a match on the page decides whether it keeps its menu flag.",
+  "date": "2026-11-11",
+  "outcome": "better-than-nothing",
+  "failed": [
+   "8:routeFailuresPerBotMinute",
+   "8:enemyKillsPerBotMinute",
+   "8:routeFailuresPerBotMinuteWorseSide",
+   "8:nonEnemyDeathShareWorseSide",
+   "8:unitsNeverUsedShare",
+   "16:routeFailuresPerBotMinute",
+   "16:enemyKillsPerBotMinute",
+   "16:bothSidesCapture",
+   "16:routeFailuresPerBotMinuteWorseSide",
+   "16:nonEnemyDeathShareWorseSide",
+   "16:unitsNeverUsedShare"
+  ],
+  "by": "owner"
+ }
+}

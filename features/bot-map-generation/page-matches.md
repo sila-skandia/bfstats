@@ -474,6 +474,26 @@ saint_quentin_canal. Still off after another match: the_bridge, FHSW
 pegasus and bizerte-1943, BF1918 mauerfall, fht_meuse_argonne_offensive,
 sanaga_river and operation_gericht.
 
+### Road to Rome and Secret Weapons (2026-11-12)
+
+The two packs carry their own copies of the 1.6 patch levels. Screened and
+played with the skill; all five went live, which makes 45:
+
+| Level | Enemy kills a bot-minute, captures, tickets |
+|---|---|
+| Road to Rome Aberdeen | 0.28, 2, 80:83 |
+| Road to Rome Liberation_of_Caen | 0.07, 4, 85:92 |
+| Secret Weapons Aberdeen | 0.16, 3, 92:90 |
+| Secret Weapons Liberation_of_Caen | 0.04, 5, 89:90 |
+| Secret Weapons Raid_on_Agheila | 0.18, 8, 94:66 |
+
+Raid on Agheila is the first level live against a lint error: three of its
+five flags stand over bunkers ("stacked floors"), the rest is open desert.
+It was run with `--despite-lint`, came out better than nothing, and the
+owner's rollout may accept a level whose only lint error is that one
+(`acceptVerdict`). Invasion of the Philippines is out in both packs: a
+side holds no spawn at the start.
+
 ## 7. What is not verified
 
 1. One match a level in sections 2 to 5, three in section 6, all unseeded:

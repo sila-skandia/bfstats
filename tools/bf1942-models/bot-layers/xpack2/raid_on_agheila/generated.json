@@ -1,0 +1,98 @@
+{
+ "generator": "botgen",
+ "version": 5,
+ "mod": "XPack2",
+ "level": "raid_on_agheila",
+ "objectSpawners": 59,
+ "template": "few",
+ "templateSource": "DICE, bf1942 Kursk (1.6 patch archives, Kursk_003.rfa): AI/Strategies.con, AI/conditions.con, AI/prerequisites.con, unchanged",
+ "templateChoice": {
+  "name": "few",
+  "inPlay": 2,
+  "rule": "2 capturable flags in play, at most 3"
+ },
+ "scope": "on foot: infantry order positions only, no search maps, no co-op layer",
+ "unreachable": [
+  "South_Base",
+  "North_Base",
+  "Centre_Base"
+ ],
+ "unreachableReasons": {
+  "South_Base": "walk test",
+  "North_Base": "walk test",
+  "Centre_Base": "walk test"
+ },
+ "botSpawnsExcluded": [
+  "South_Base_3",
+  "West_Base_2",
+  "East_Base_3",
+  "North_Base_1",
+  "North_Base_5",
+  "Centre_Base_1",
+  "Centre_Base_2",
+  "Centre_Base_3",
+  "Centre_Base_4",
+  "Centre_Base_5"
+ ],
+ "walkMap": {
+  "source": "page painter",
+  "engine": "none",
+  "opened": [],
+  "ways": [],
+  "cover": 0.509,
+  "floors": {
+   "stacked": true,
+   "twoFloorShare": 0.009,
+   "raised": [
+    "South_Base",
+    "North_Base",
+    "Centre_Base"
+   ],
+   "reason": "3 of 5 capturable flags stand a storey over or under another walked floor"
+  },
+  "capped": true,
+  "joined": 2
+ },
+ "routeProbe": {
+  "chokeMax": 4,
+  "unreachable": [],
+  "stops": {},
+  "oneSided": {},
+  "sides": {
+   "1": {
+    "spawns": 5,
+    "flags": [
+     "East_Base",
+     "West_Base"
+    ]
+   },
+   "2": {
+    "spawns": 5,
+    "flags": [
+     "East_Base",
+     "West_Base"
+    ]
+   }
+  },
+  "chokes": {
+   "West_Base:1": 3,
+   "West_Base:2": 3,
+   "East_Base:1": 0,
+   "East_Base:2": 0
+  },
+  "late": {},
+  "shutLinks": []
+ },
+ "inputs": {
+  "controlPoints": "5697b193e9f6219fd6c53cb059eacffc4426ad57ee5e0ec0c3893e0299c55ed7",
+  "infantryMap": "20d5af9e11e9d028a41bcdbb9e9245a8b0e5a55b53b74a61b8ba0a134da0bf14",
+  "template": "bdc0e455f47f91b7e7724e71d7c0c196e839b36946ac3abb7663d725944081e5"
+ },
+ "files": {
+  "AI.con": "ff65da5cf781f265a28875b6cbca3063a01ed39073ce89fcfbb96af7a80600f7",
+  "AI/StrategicAreas.con": "92eb59e819af4615cfcb00284e288556cc22357b8ef75b224357375366695dd8",
+  "AI/Strategies.con": "13da4dc35872dd4b5798a066f4425bdc824cfd61f31093d1808e1202644de52e",
+  "AI/conditions.con": "248a04b727c08d696bf0fa9c162bc22c43cde3c75f695892fe1e0f5141519c49",
+  "AI/prerequisites.con": "c96168b5f69860e578f5d26728fd2a2092c4c436e1da49b7d6f4009b65735398"
+ }
+}
