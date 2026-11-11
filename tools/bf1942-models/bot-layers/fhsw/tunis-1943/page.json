@@ -4,35 +4,47 @@
  "url": "https://play.bfstats.io/map.html?map=Tunis-1943&team=2&mode=Conquest&mod=fhsw&botCount=16&botSkill=0.75&mute&shots",
  "date": "2026-11-11",
  "bar": "DICE levels on the page, 3 matches each of 600 s, 16 bots: Berlin, Stalingrad, Kharkov, Bocage; 2026-11-11",
- "verdict": "pass",
- "failed": [],
+ "verdict": "fail",
+ "failed": [
+  "teamKillsPerBotMinute"
+ ],
  "checks": [
   {
    "metric": "teamKillsPerBotMinute",
-   "median": 0,
+   "median": 0.0312,
    "bar": "<= 0.025",
-   "pass": true
+   "pass": false
   },
   {
    "metric": "suicidesPerBotMinute",
-   "median": 0.0125,
+   "median": 0.025,
    "bar": "<= 0.0562",
    "pass": true
   },
   {
    "metric": "nonEnemyDeathShareWorseSide",
-   "median": 0.083,
+   "median": 0.24,
    "bar": "<= 0.308",
    "pass": true
   },
   {
    "metric": "enemyKillsPerBotMinute",
-   "median": 0.2125,
+   "median": 0.275,
    "bar": ">= 0.175",
    "pass": true
   }
  ],
  "matches": 1,
+ "rollout": {
+  "pass": true,
+  "floor": {
+   "kills": 0.15,
+   "killsWithFlags": 0.03,
+   "flags": 3,
+   "killsWithAFlag": 0.05,
+   "ownHand": 0.1
+  }
+ },
  "runs": [
   {
    "generated": {
@@ -41,17 +53,24 @@
    },
    "minutes": 10,
    "tickets": {
-    "1": 71,
-    "2": 69
+    "1": 50,
+    "2": 46
    },
-   "capturesTotal": 3,
-   "teamKillsPerBotMinute": 0,
-   "suicidesPerBotMinute": 0.0125,
-   "nonEnemyDeathShareWorseSide": 0.083,
-   "enemyKillsPerBotMinute": 0.2125,
+   "capturesTotal": 13,
+   "teamKillsPerBotMinute": 0.0312,
+   "suicidesPerBotMinute": 0.025,
+   "nonEnemyDeathShareWorseSide": 0.24,
+   "enemyKillsPerBotMinute": 0.275,
+   "rollout": {
+    "pass": true,
+    "why": [],
+    "enemyKills": 0.275,
+    "captures": 13,
+    "ownHand": 0.0562
+   },
    "teamKillsBySide": {
-    "1": 0,
-    "2": 0
+    "1": 2,
+    "2": 3
    }
   }
  ]

@@ -427,6 +427,21 @@ written let that through on captures alone. It now asks for some killing
 in every case: 0.15 enemy kills a bot-minute, or 0.03 with 3 captures, or
 0.05 with 1.
 
+### After the flag binding (2026-11-12, 05:42)
+
+[flag-binding.md](flag-binding.md): on a generated layer control points
+bind first, and a side left only holding goes for a flag. The nine live
+levels it moves in the runner were played once on the page with the
+skill's `pagebatch.sh`; all nine clear the floor (enemy kills a
+bot-minute, captures, tickets): Tunis-1943 0.28, 13, 50:46;
+DC_Basrah_Nights 0.57, 23, 50:52; Battle_for_ortona-1943 0.22, 1, 94:74;
+the_great_pursuit 0.18, 2, 129:107; Moscow_Outskirts-1941 0.15, 4,
+135:135; Battle_of_Edson_s_Ridge 0.10, 1, 97:68; The_Maze 0.10, 5, 17:100;
+fht_battle_of_mareth_line-1943 0.06, 1, 101:73; DC_Urban_Siege 0.04, 6,
+90:100. The_Maze's match is quieter and more one-sided than any before it
+(0.31 to 0.41, tickets within 30): one unseeded match, and the runner has
+it identical before and after the change. Not explained.
+
 ## 7. What is not verified
 
 1. One match a level in sections 2 to 5, three in section 6, all unseeded:
