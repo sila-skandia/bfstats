@@ -1,0 +1,65 @@
+rem *** Strategic areas: one per control point (botgen) ***
+
+aiStrategicArea.create AxisBase 517.1/838.2 522.1/843.2 50
+aiStrategicArea.addNeighbour German_Trench
+aiStrategicArea.addObjectTypeFlag Base
+aiStrategicArea.setOrderPosition Tank 522.5/845.5
+aiStrategicArea.setOrderPosition Infantry 522.5/842.5
+aiStrategicArea.setSide 1
+aiStrategicArea.setTakeable 2 0
+
+aiStrategicArea.create AlliedBase 506.9/196.9 516.9/206.9 50
+aiStrategicArea.addNeighbour Hill_West
+aiStrategicArea.addNeighbour Hill_East
+aiStrategicArea.addObjectTypeFlag Base
+aiStrategicArea.setOrderPosition Tank 515.5/201.5
+aiStrategicArea.setOrderPosition Infantry 517.5/206.5
+aiStrategicArea.setSide 2
+aiStrategicArea.setTakeable 1 0
+
+aiStrategicArea.create Hill_West 385.1/441.4 390.1/446.4 150
+aiStrategicArea.addNeighbour AlliedBase
+aiStrategicArea.addNeighbour French_Trench
+aiStrategicArea.addNeighbour Hill_East
+aiStrategicArea.addObjectTypeFlag Flank
+aiStrategicArea.addObjectTypeFlag ControlPoint
+aiStrategicArea.setOrderPosition Tank 392.5/453.5
+aiStrategicArea.setOrderPosition Infantry 390.5/445.5
+aiStrategicArea.setSide 2
+
+aiStrategicArea.create German_Trench 446.4/662.8 451.4/667.8 200
+aiStrategicArea.addNeighbour AxisBase
+aiStrategicArea.addNeighbour French_Trench
+aiStrategicArea.addObjectTypeFlag Centre
+aiStrategicArea.addObjectTypeFlag Close
+aiStrategicArea.addObjectTypeFlag ControlPoint
+aiStrategicArea.setOrderPosition Tank 451.5/656.5
+aiStrategicArea.setOrderPosition Infantry 451.5/665.5
+aiStrategicArea.setSide 1
+
+aiStrategicArea.create French_Trench 446.6/549 451.6/554 200
+aiStrategicArea.addNeighbour Hill_West
+aiStrategicArea.addNeighbour German_Trench
+aiStrategicArea.addNeighbour Hill_East
+aiStrategicArea.addObjectTypeFlag Centre
+aiStrategicArea.addObjectTypeFlag ControlPoint
+aiStrategicArea.setOrderPosition Tank 449.5/563.5
+aiStrategicArea.setOrderPosition Infantry 451.5/555.5
+aiStrategicArea.setSide 2
+
+aiStrategicArea.create Hill_East 522.9/447.2 527.9/452.2 300
+aiStrategicArea.addNeighbour AlliedBase
+aiStrategicArea.addNeighbour Hill_West
+aiStrategicArea.addNeighbour French_Trench
+aiStrategicArea.addObjectTypeFlag Centre
+aiStrategicArea.addObjectTypeFlag StrongPoint
+aiStrategicArea.addObjectTypeFlag Close
+aiStrategicArea.addObjectTypeFlag ControlPoint
+aiStrategicArea.setOrderPosition Tank 527.5/450.5
+aiStrategicArea.setOrderPosition Infantry 527.5/451.5
+aiStrategicArea.setSide 2
+
+aiStrategicArea.create French_Bunker 512/316.8 517/321.8 10
+aiStrategicArea.setSide 2
+aiStrategicArea.setTakeable 1 0
+aiStrategicArea.setTakeable 2 0

@@ -1,0 +1,308 @@
+{
+ "generator": "botgen",
+ "version": 5,
+ "mod": "bf1918",
+ "level": "operation_gericht",
+ "objectSpawners": 53,
+ "template": "symmetric",
+ "templateSource": "DICE, bf1942 Kharkov (1.6 patch archives): AI/Strategies.con, AI/conditions.con, AI/prerequisites.con, unchanged",
+ "templateChoice": {
+  "name": "symmetric",
+  "inPlay": 4,
+  "rule": "4 capturable flags in play, more than 3"
+ },
+ "scope": "an infantry map painted from the walk test, a Tank0 map from the page painter, infantry order positions, no strategic maps, no co-op layer",
+ "unreachable": [
+  "French_Bunker"
+ ],
+ "unreachableReasons": {
+  "French_Bunker": "walk test"
+ },
+ "botSpawnsExcluded": [
+  "AxisBase_Spawn1",
+  "French_Bunker_Spawn1",
+  "French_Bunker_Spawn2",
+  "AlliedBase_Spawn3",
+  "AlliedBase_Spawn6",
+  "French_Bunker_Spawn8",
+  "French_Bunker_Spawn9",
+  "French_Bunker_Spawn10",
+  "French_Bunker_Spawn11",
+  "Hill_West_Spawn2",
+  "French_Trench_Spawn2",
+  "French_Trench_Spawn3",
+  "French_Trench_Spawn4",
+  "French_Trench_Spawn5",
+  "Deutscher_Graben_Spawn2",
+  "Deutscher_Graben_Spawn3",
+  "Deutscher_Graben_Spawn4",
+  "Deutscher_Graben_Spawn5",
+  "Deutscher_Graben_Spawn6",
+  "Deutscher_Graben_Spawn7",
+  "Deutscher_Graben_Spawn8",
+  "Deutscher_Graben_Spawn9",
+  "Deutscher_Graben_Spawn10",
+  "Deutscher_Graben_Spawn11",
+  "AxisBase_Spawn8",
+  "AxisBase_Spawn9",
+  "AxisBase_Spawn10",
+  "AxisBase_Spawn11",
+  "French_Bunker_Spawn12",
+  "French_Bunker_Spawn13"
+ ],
+ "walkMap": {
+  "source": "walk test",
+  "engine": "none",
+  "vehicleMap": "page painter",
+  "vehicleBrush": 1.5,
+  "vehicleBrushes": [
+   {
+    "brush": 3,
+    "flagsOn": 3,
+    "spawnersOn": 5,
+    "pieces": 18,
+    "main": 363876
+   },
+   {
+    "brush": 2.5,
+    "flagsOn": 4,
+    "spawnersOn": 6,
+    "pieces": 21,
+    "main": 660972
+   },
+   {
+    "brush": 2,
+    "flagsOn": 6,
+    "spawnersOn": 6,
+    "pieces": 16,
+    "main": 727500
+   },
+   {
+    "brush": 1.5,
+    "flagsOn": 5,
+    "spawnersOn": 12,
+    "pieces": 19,
+    "main": 757463
+   }
+  ],
+  "opened": [],
+  "ways": [
+   {
+    "who": "French_Bunker_Spawn1",
+    "kind": "spawn",
+    "way": "none",
+    "opened": 0
+   },
+   {
+    "who": "French_Bunker_Spawn2",
+    "kind": "spawn",
+    "way": "none",
+    "opened": 0
+   },
+   {
+    "who": "AlliedBase_Spawn3",
+    "kind": "spawn",
+    "way": "jump",
+    "opened": 0
+   },
+   {
+    "who": "AlliedBase_Spawn6",
+    "kind": "spawn",
+    "way": "none",
+    "opened": 0
+   },
+   {
+    "who": "French_Bunker_Spawn8",
+    "kind": "spawn",
+    "way": "none",
+    "opened": 0
+   },
+   {
+    "who": "French_Bunker_Spawn9",
+    "kind": "spawn",
+    "way": "none",
+    "opened": 0
+   },
+   {
+    "who": "French_Bunker_Spawn10",
+    "kind": "spawn",
+    "way": "none",
+    "opened": 0
+   },
+   {
+    "who": "French_Bunker_Spawn11",
+    "kind": "spawn",
+    "way": "none",
+    "opened": 0
+   },
+   {
+    "who": "French_Trench_Spawn2",
+    "kind": "spawn",
+    "way": "none",
+    "opened": 0
+   },
+   {
+    "who": "French_Trench_Spawn3",
+    "kind": "spawn",
+    "way": "none",
+    "opened": 0
+   },
+   {
+    "who": "French_Trench_Spawn4",
+    "kind": "spawn",
+    "way": "none",
+    "opened": 0
+   },
+   {
+    "who": "French_Trench_Spawn5",
+    "kind": "spawn",
+    "way": "none",
+    "opened": 0
+   },
+   {
+    "who": "Deutscher_Graben_Spawn2",
+    "kind": "spawn",
+    "way": "none",
+    "opened": 0
+   },
+   {
+    "who": "Deutscher_Graben_Spawn3",
+    "kind": "spawn",
+    "way": "none",
+    "opened": 0
+   },
+   {
+    "who": "Deutscher_Graben_Spawn4",
+    "kind": "spawn",
+    "way": "none",
+    "opened": 0
+   },
+   {
+    "who": "Deutscher_Graben_Spawn5",
+    "kind": "spawn",
+    "way": "none",
+    "opened": 0
+   },
+   {
+    "who": "Deutscher_Graben_Spawn6",
+    "kind": "spawn",
+    "way": "none",
+    "opened": 0
+   },
+   {
+    "who": "Deutscher_Graben_Spawn7",
+    "kind": "spawn",
+    "way": "none",
+    "opened": 0
+   },
+   {
+    "who": "Deutscher_Graben_Spawn8",
+    "kind": "spawn",
+    "way": "none",
+    "opened": 0
+   },
+   {
+    "who": "Deutscher_Graben_Spawn9",
+    "kind": "spawn",
+    "way": "none",
+    "opened": 0
+   },
+   {
+    "who": "Deutscher_Graben_Spawn10",
+    "kind": "spawn",
+    "way": "none",
+    "opened": 0
+   },
+   {
+    "who": "Deutscher_Graben_Spawn11",
+    "kind": "spawn",
+    "way": "jump",
+    "opened": 0
+   },
+   {
+    "who": "AxisBase_Spawn10",
+    "kind": "spawn",
+    "way": "none",
+    "opened": 0
+   },
+   {
+    "who": "AxisBase_Spawn11",
+    "kind": "spawn",
+    "way": "none",
+    "opened": 0
+   },
+   {
+    "who": "French_Bunker_Spawn12",
+    "kind": "spawn",
+    "way": "drop",
+    "opened": 0
+   }
+  ],
+  "cover": 0.988,
+  "floors": {
+   "stacked": false,
+   "twoFloorShare": 0.003,
+   "raised": [
+    "French_Bunker"
+   ],
+   "reason": null
+  }
+ },
+ "routeProbe": {
+  "chokeMax": 4,
+  "unreachable": [],
+  "stops": {},
+  "oneSided": {},
+  "sides": {
+   "1": {
+    "spawns": 11,
+    "flags": [
+     "French_Trench",
+     "German_Trench",
+     "Hill_East",
+     "Hill_West"
+    ]
+   },
+   "2": {
+    "spawns": 24,
+    "flags": [
+     "French_Trench",
+     "German_Trench",
+     "Hill_East",
+     "Hill_West"
+    ]
+   }
+  },
+  "chokes": {
+   "Hill_West:1": 0,
+   "Hill_West:2": 0,
+   "German_Trench:1": 0,
+   "German_Trench:2": 0,
+   "French_Trench:1": 0,
+   "French_Trench:2": 0,
+   "Hill_East:1": 0,
+   "Hill_East:2": 0
+  },
+  "late": {},
+  "shutLinks": []
+ },
+ "inputs": {
+  "controlPoints": "13286398a5848283e564dfbb17158be54253d380a5b7ccfe61cddafb539afa36",
+  "infantryMap": "9d25c196ad5c3c7d3d24562acf349756ab98a7645b339b15138c8658eb649a26",
+  "template": "43f8a790471528016570235f76e97dbb2045732458781a5139f37fed68bf98c0"
+ },
+ "files": {
+  "AI.con": "4b7249592acb21ed7f0228e003702058758a5fced6c76f7e9eeb10bbc54e7748",
+  "AIpathFinding.con": "9d8080cdfa7605961969aa126519b03be9691bd604ac76aef50166d81215edd2",
+  "AI/StrategicAreas.con": "aae401c046241bc936ad5898159450d9380aec81313091dfe3c3850fe6483fc5",
+  "AI/Strategies.con": "4ce0be59a0d6c5cd530db002fb062c4be8d936bc6ae59bd188803ccaf7869a8d",
+  "AI/conditions.con": "68a0c7a8aec69954063147b60fae560b2874884285737aa085efa76597d395aa",
+  "AI/prerequisites.con": "4c1f313bc285b228fd6ad03bfd1f44c5b15c8703c31f802eb605bc5f00f88bb5",
+  "Pathfinding/Infantry1Level0Map.raw": "e9e6cb92fa8a37684e7f120d395427c154451f1dba7cff3470dc54cd33965a9d",
+  "Pathfinding/Infantry1Level1Map.raw": "bbddeaafc42e5c4a04528f71f4f56ccd05f87940c4d3aa1c21d17d115a19a2c1",
+  "Pathfinding/Infantry1Level2Map.raw": "7786698b550086643a8baa1302215f80be09b18f7fb52bd6b14397736938cd3c",
+  "Pathfinding/Tank0Level0Map.raw": "3474431d80a6cc6e0b62f378f852f2dd2a2a50bba7b46e8dd8087c79886a8f02",
+  "Pathfinding/Tank0Level1Map.raw": "facb310fadb84bbb74a8460b1d825db0558afde75c77294ee9411798fa7f10a9",
+  "Pathfinding/Tank0Level2Map.raw": "c2fd256f695161e1f6a8ba5f2f938ad2d9fb85948ed7d15d1b330d0ea7830156"
+ }
+}

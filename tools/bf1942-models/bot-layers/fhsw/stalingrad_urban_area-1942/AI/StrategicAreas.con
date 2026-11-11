@@ -1,0 +1,64 @@
+rem *** Strategic areas: one per control point (botgen) ***
+
+aiStrategicArea.create lenin 1696.7/1193.9 1711.7/1208.9 150
+aiStrategicArea.addNeighbour street
+aiStrategicArea.addNeighbour park
+aiStrategicArea.addNeighbour apart
+aiStrategicArea.addObjectTypeFlag Flank
+aiStrategicArea.addObjectTypeFlag ControlPoint
+aiStrategicArea.setOrderPosition Tank 1713.5/1208.5
+aiStrategicArea.setOrderPosition Infantry 1712.5/1208.5
+aiStrategicArea.setSide 1
+
+aiStrategicArea.create street 1740.1/983.1 1755.1/998.1 150
+aiStrategicArea.addNeighbour lenin
+aiStrategicArea.addNeighbour park
+aiStrategicArea.addNeighbour apart
+aiStrategicArea.addObjectTypeFlag Flank
+aiStrategicArea.addObjectTypeFlag ControlPoint
+aiStrategicArea.setOrderPosition Tank 1755.5/1000.5
+aiStrategicArea.setOrderPosition Infantry 1754.5/997.5
+aiStrategicArea.setSide 1
+
+aiStrategicArea.create atack 1639.2/795 1649.2/805 300
+aiStrategicArea.addNeighbour yard
+aiStrategicArea.addNeighbour park
+aiStrategicArea.addNeighbour apart
+aiStrategicArea.addObjectTypeFlag Centre
+aiStrategicArea.addObjectTypeFlag StrongPoint
+aiStrategicArea.addObjectTypeFlag ControlPoint
+aiStrategicArea.setOrderPosition Tank 1643.5/808.5
+aiStrategicArea.setOrderPosition Infantry 1648.5/805.5
+aiStrategicArea.setSide 2
+
+aiStrategicArea.create yard 1544.5/735.6 1574.5/765.6 200
+aiStrategicArea.addNeighbour atack
+aiStrategicArea.addNeighbour park
+aiStrategicArea.addNeighbour apart
+aiStrategicArea.addObjectTypeFlag Centre
+aiStrategicArea.addObjectTypeFlag ControlPoint
+aiStrategicArea.setOrderPosition Tank 1573.5/767.5
+aiStrategicArea.setOrderPosition Infantry 1574.5/766.5
+aiStrategicArea.setSide 2
+
+aiStrategicArea.create park 1713.9/876.9 1723.9/886.9 150
+aiStrategicArea.addNeighbour lenin
+aiStrategicArea.addNeighbour street
+aiStrategicArea.addNeighbour atack
+aiStrategicArea.addNeighbour yard
+aiStrategicArea.addNeighbour apart
+aiStrategicArea.addObjectTypeFlag Flank
+aiStrategicArea.addObjectTypeFlag ControlPoint
+aiStrategicArea.setOrderPosition Tank 1721.5/886.5
+aiStrategicArea.setOrderPosition Infantry 1724.5/887.5
+
+aiStrategicArea.create apart 1621.5/981.3 1631.5/991.3 150
+aiStrategicArea.addNeighbour lenin
+aiStrategicArea.addNeighbour street
+aiStrategicArea.addNeighbour atack
+aiStrategicArea.addNeighbour yard
+aiStrategicArea.addNeighbour park
+aiStrategicArea.addObjectTypeFlag Flank
+aiStrategicArea.addObjectTypeFlag ControlPoint
+aiStrategicArea.setOrderPosition Tank 1635.5/991.5
+aiStrategicArea.setOrderPosition Infantry 1631.5/990.5

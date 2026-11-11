@@ -1,0 +1,66 @@
+{
+ "level": "stalingrad_urban_area-1942",
+ "verdict": "fail",
+ "outcome": "no-fight",
+ "config": "with vehicles",
+ "doctrine": "garrison",
+ "generatorVersion": 5,
+ "inputs": {
+  "controlPoints": "45bb56fa050fe8d81b40b58558d79fb019ac81076d1ac249999c37e6ca7891af",
+  "infantryMap": "bb8922e9a6d4e556d59e99d222b1c4098598c4102970a090e4fba55259ce7cb1",
+  "template": "43f8a790471528016570235f76e97dbb2045732458781a5139f37fed68bf98c0"
+ },
+ "baseline": "DICE layers with vehicles, garrison doctrine: berlin, stalingrad, kharkov, bocage; seeds 1..10, 600 s",
+ "bar": {
+  "against": "dice",
+  "why": "no bar of fhsw's own: DICE's"
+ },
+ "seeds": 2,
+ "sizes": {
+  "8": {
+   "verdict": "fail",
+   "failed": [
+    "routeFailuresPerBotMinute",
+    "redeploysPerBotMinute",
+    "enemyKillsPerBotMinute",
+    "flagCoverage",
+    "bothSidesCapture",
+    "bothSidesKill",
+    "ticketsBleed",
+    "routeFailuresPerBotMinuteWorseSide",
+    "redeploysPerBotMinuteWorseSide",
+    "nonEnemyDeathShareWorseSide",
+    "hullStuckSecondsPerDrivingMinute",
+    "hullStuckSecondsPerDrivingMinuteWorseSide",
+    "unitsNeverUsedShare"
+   ],
+   "winners": [
+    2,
+    0,
+    0
+   ]
+  },
+  "16": {
+   "verdict": "fail",
+   "failed": [
+    "stuckSecondsPerBotMinute",
+    "oscillationsPerBotMinute",
+    "routeFailuresPerBotMinute",
+    "redeploysPerBotMinute",
+    "enemyKillsPerBotMinute",
+    "routeFailuresPerBotMinuteWorseSide",
+    "redeploysPerBotMinuteWorseSide",
+    "nonEnemyDeathShareWorseSide",
+    "unitsNeverUsedShare"
+   ],
+   "winners": [
+    1,
+    1,
+    0
+   ]
+  }
+ },
+ "oneSided": null,
+ "unreachable": [],
+ "lintErrors": []
+}

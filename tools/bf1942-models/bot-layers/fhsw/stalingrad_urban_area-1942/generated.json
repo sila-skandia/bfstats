@@ -1,0 +1,353 @@
+{
+ "generator": "botgen",
+ "version": 5,
+ "mod": "FHSW",
+ "level": "stalingrad_urban_area-1942",
+ "objectSpawners": 50,
+ "template": "symmetric",
+ "templateSource": "DICE, bf1942 Kharkov (1.6 patch archives): AI/Strategies.con, AI/conditions.con, AI/prerequisites.con, unchanged",
+ "templateChoice": {
+  "name": "symmetric",
+  "inPlay": 6,
+  "rule": "6 capturable flags in play, more than 3"
+ },
+ "scope": "an infantry map painted from the walk test, a Tank0 map from the page painter, infantry order positions, no strategic maps, no co-op layer",
+ "unreachable": [],
+ "unreachableReasons": {},
+ "botSpawnsExcluded": [
+  "lenin_Spawn5",
+  "street_Spawn2",
+  "street_Spawn4",
+  "apart_Spawn3",
+  "apart_Spawn4",
+  "park_Spawn2",
+  "park_Spawn4",
+  "park_Spawn5"
+ ],
+ "walkMap": {
+  "source": "walk test",
+  "engine": "none",
+  "vehicleMap": "page painter",
+  "vehicleBrush": 1.5,
+  "vehicleBrushes": [
+   {
+    "brush": 3,
+    "flagsOn": 1,
+    "spawnersOn": 2,
+    "pieces": 43,
+    "main": 268
+   },
+   {
+    "brush": 2.5,
+    "flagsOn": 1,
+    "spawnersOn": 4,
+    "pieces": 40,
+    "main": 599
+   },
+   {
+    "brush": 2,
+    "flagsOn": 1,
+    "spawnersOn": 5,
+    "pieces": 42,
+    "main": 748
+   },
+   {
+    "brush": 1.5,
+    "flagsOn": 1,
+    "spawnersOn": 9,
+    "pieces": 37,
+    "main": 3648
+   }
+  ],
+  "opened": [
+   [
+    1739,
+    880
+   ],
+   [
+    1739,
+    881
+   ],
+   [
+    1739,
+    882
+   ],
+   [
+    1739,
+    883
+   ],
+   [
+    1736,
+    884
+   ],
+   [
+    1737,
+    884
+   ],
+   [
+    1737,
+    885
+   ],
+   [
+    1751,
+    965
+   ],
+   [
+    1754,
+    966
+   ],
+   [
+    1748,
+    967
+   ],
+   [
+    1751,
+    967
+   ],
+   [
+    1752,
+    967
+   ],
+   [
+    1748,
+    968
+   ],
+   [
+    1750,
+    968
+   ],
+   [
+    1748,
+    969
+   ],
+   [
+    1748,
+    970
+   ],
+   [
+    1640,
+    971
+   ],
+   [
+    1641,
+    971
+   ],
+   [
+    1747,
+    971
+   ],
+   [
+    1748,
+    971
+   ],
+   [
+    1639,
+    972
+   ],
+   [
+    1640,
+    972
+   ],
+   [
+    1643,
+    973
+   ],
+   [
+    1648,
+    996
+   ],
+   [
+    1742,
+    1020
+   ],
+   [
+    1742,
+    1021
+   ],
+   [
+    1742,
+    1022
+   ],
+   [
+    1742,
+    1024
+   ],
+   [
+    1743,
+    1024
+   ],
+   [
+    1729,
+    1184
+   ],
+   [
+    1729,
+    1185
+   ],
+   [
+    1743,
+    1213
+   ],
+   [
+    1743,
+    1214
+   ]
+  ],
+  "ways": [
+   {
+    "who": "lenin_Spawn2",
+    "kind": "spawn",
+    "way": "walk",
+    "opened": 2
+   },
+   {
+    "who": "lenin_Spawn5",
+    "kind": "spawn",
+    "way": "none",
+    "opened": 0
+   },
+   {
+    "who": "lenin_Spawn7",
+    "kind": "spawn",
+    "way": "walk",
+    "opened": 2
+   },
+   {
+    "who": "lenin_Spawn8",
+    "kind": "spawn",
+    "way": "walk",
+    "opened": 0
+   },
+   {
+    "who": "street_Spawn2",
+    "kind": "spawn",
+    "way": "none",
+    "opened": 0
+   },
+   {
+    "who": "street_Spawn3",
+    "kind": "spawn",
+    "way": "walk",
+    "opened": 5
+   },
+   {
+    "who": "street_Spawn4",
+    "kind": "spawn",
+    "way": "drop",
+    "opened": 10
+   },
+   {
+    "who": "street_Spawn5",
+    "kind": "spawn",
+    "way": "walk",
+    "opened": 1
+   },
+   {
+    "who": "apart_Spawn2",
+    "kind": "spawn",
+    "way": "walk",
+    "opened": 1
+   },
+   {
+    "who": "apart_Spawn3",
+    "kind": "spawn",
+    "way": "drop",
+    "opened": 5
+   },
+   {
+    "who": "park_Spawn4",
+    "kind": "spawn",
+    "way": "drop",
+    "opened": 7
+   },
+   {
+    "who": "park_Spawn5",
+    "kind": "spawn",
+    "way": "none",
+    "opened": 0
+   }
+  ],
+  "cover": 0.954,
+  "floors": {
+   "stacked": false,
+   "twoFloorShare": 0.009,
+   "raised": [],
+   "reason": null
+  }
+ },
+ "routeProbe": {
+  "chokeMax": 4,
+  "unreachable": [],
+  "stops": {},
+  "oneSided": {
+   "atack": 2
+  },
+  "sides": {
+   "1": {
+    "spawns": 10,
+    "flags": [
+     "apart",
+     "lenin",
+     "park",
+     "street",
+     "yard"
+    ]
+   },
+   "2": {
+    "spawns": 10,
+    "flags": [
+     "apart",
+     "atack",
+     "lenin",
+     "park",
+     "street",
+     "yard"
+    ]
+   }
+  },
+  "chokes": {
+   "lenin:1": 0,
+   "lenin:2": 1,
+   "street:1": 2,
+   "street:2": 3,
+   "atack:1": 8,
+   "atack:2": 0,
+   "yard:1": 3,
+   "yard:2": 0,
+   "park:1": 2,
+   "park:2": 1,
+   "apart:1": 3,
+   "apart:2": 1
+  },
+  "late": {},
+  "shutLinks": [
+   "atack>yard",
+   "yard>atack",
+   "yard>park",
+   "yard>apart",
+   "park>atack",
+   "park>yard",
+   "apart>atack",
+   "apart>yard"
+  ]
+ },
+ "inputs": {
+  "controlPoints": "45bb56fa050fe8d81b40b58558d79fb019ac81076d1ac249999c37e6ca7891af",
+  "infantryMap": "bb8922e9a6d4e556d59e99d222b1c4098598c4102970a090e4fba55259ce7cb1",
+  "template": "43f8a790471528016570235f76e97dbb2045732458781a5139f37fed68bf98c0"
+ },
+ "files": {
+  "AI.con": "4f53a6694a89647ffc0c434dc752a95d68be6eefc8709a951a733ddfae80ee29",
+  "AIpathFinding.con": "9d8080cdfa7605961969aa126519b03be9691bd604ac76aef50166d81215edd2",
+  "AI/StrategicAreas.con": "ef6428f4426caddbb31017303e443925fd7fd1091e31283f9c1627104c223400",
+  "AI/Strategies.con": "4ce0be59a0d6c5cd530db002fb062c4be8d936bc6ae59bd188803ccaf7869a8d",
+  "AI/conditions.con": "68a0c7a8aec69954063147b60fae560b2874884285737aa085efa76597d395aa",
+  "AI/prerequisites.con": "4c1f313bc285b228fd6ad03bfd1f44c5b15c8703c31f802eb605bc5f00f88bb5",
+  "Pathfinding/Infantry1Level0Map.raw": "c060fb0fd932ef7e5717c1643f3fc684c13fb02e0be82e221299beab0eb3fb45",
+  "Pathfinding/Infantry1Level1Map.raw": "b6ae3ff54b200e0cdc002cee097e409290d458a3b291942c812318eb92c6552d",
+  "Pathfinding/Infantry1Level2Map.raw": "5473ac65d94162b726e0d16e01273bed511d6346e86920be51bdfc92c8d2d342",
+  "Pathfinding/Tank0Level0Map.raw": "a71955eddcc6297eb86567abb64f680fe83c3b613bc7bdcfef19cd3d4f54fb85",
+  "Pathfinding/Tank0Level1Map.raw": "7b01fb5565b0178541bb15c5e026b7d68e318cb17c2ec4dc78024d43e3acdcfb",
+  "Pathfinding/Tank0Level2Map.raw": "96746e91e31e4622feb5baaa3029c16f0c6f4826f72a4fb7e652423da2fdd27a"
+ }
+}
