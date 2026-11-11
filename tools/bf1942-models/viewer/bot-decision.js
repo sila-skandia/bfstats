@@ -330,9 +330,9 @@ export function pathRadius(bot) {
 
 export function fallbackWaypoint(bot) {
   // A level with a layer orders its bots through the SAI; the exception is a
-  // generated layer's side with no live strategy (`bot.noLayerOrder`, the
+  // generated layer's side the SAI could only order to hold (`bot.noLayerOrder`, the
   // referee's copy of doctrine.js `noLayerOrder`; INVENTION, strategic-ai.js
-  // `_noLiveStrategyFallback`), which walks as a level with no layer does.
+  // `_holdOnlyFallback`), which walks as a level with no layer does.
   if (bot.world?.extras?.ai?.strategicAreas?.length && !bot.noLayerOrder) return null;
   const flag = bot._nearestEnemyFlag();
   if (!flag) return null;

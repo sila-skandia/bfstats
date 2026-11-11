@@ -129,8 +129,11 @@ class StrategicFixtureTests(unittest.TestCase):
         # lie in no box: the nearest-centre rule would have bound North_Midway
         # to SouthSea and South_Midway to NorthSea, handing NorthSea to the
         # Axis. The Axis still count both among their control points
-        # (`getNumberOfControlPoints` 0x085e4f80 counts every point): the
-        # state is a side's flags plus its owned areas with the type flag.
+        # (`getNumberOfControlPoints` 0x085e4f80 counts every point whose
+        # team is the side's). The page's state is that plus its owned areas
+        # typed `ControlPoint`, which the engine's `SAI::updateStates` does
+        # not add (the type flag 0x10 has no slot); kept, and pinned here as
+        # the page's (features/bot-map-generation/flag-binding.md, section 5).
         c = self.results["pins"]["captureOnly"]
         self.assertEqual([["Base", ["Airfield"], 0], ["OutPost", ["Coastal_Defences"], 0],
                           ["NorthSea", [], 2], ["SouthSea", [], 1]], c["midway"])

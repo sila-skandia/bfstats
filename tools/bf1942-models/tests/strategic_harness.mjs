@@ -206,8 +206,9 @@ const midway = new StrategicLayer({ strategicAreas: [
   { name: 'SOUTH_SEA_AREA', controlPointName: 'South_Midway', position: [2033.56, 19.8993, -1032.48], team: 1,
     captureOnly: true },
 ]);
-// A side's `ControlPoint` state: its flags plus its owned areas with the
-// type flag (`_updateStates`), with the sea areas neutral and then the Axis's.
+// A side's `ControlPoint` state: the control points it holds plus its owned
+// areas with the type flag (`_updateStates`, the page's sum), with the sea
+// areas neutral and then the Axis's.
 const controlPointStates = () => {
   const sai = new StrategicAI(midway, { random: () => 0.5 });
   sai.beginPass(new Map());

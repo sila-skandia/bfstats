@@ -457,8 +457,8 @@ export class StrategicCommand {
     return this.doctrines[this.roster.get(id)]?.gunsRule ?? null;
   }
 
-  /** Whether the bot's side is held by the no-live-strategy fallback
-   *  (strategic-ai.js `_noLiveStrategyFallback`, INVENTION): the bot takes
+  /** Whether the bot's side is held by the hold-only fallback
+   *  (strategic-ai.js `_holdOnlyFallback`, INVENTION): the bot takes
    *  the order a level with no layer gives (bot-decision.js
    *  `fallbackWaypoint`), and the side's doctrine's gun rule is off. */
   noLayerOrder(id) {
@@ -484,8 +484,8 @@ export class StrategicCommand {
           if (order) this.orders.set(id, checkOrder(order));
           else this.orders.delete(id);
         }
-        // INVENTION (strategic-ai.js `_noLiveStrategyFallback`): a generated
-        // layer's side with no live strategy holds no order, whatever its
+        // INVENTION (strategic-ai.js `_holdOnlyFallback`): a generated
+        // layer's side the SAI could only order to hold holds no order, whatever its
         // doctrine made of the pass (a squad's followers, a garrison post),
         // and its bots take the no-layer order (`noLayerOrder`).
         if (sai.sides[side]?.fallback) {

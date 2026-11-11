@@ -1,0 +1,70 @@
+"""How the strategic layer binds flags to areas, and what `ControlPoint` counts
+(features/bot-map-generation/flag-binding.md).
+
+The engine binds an area to a control point only (`AIStrategicArea::update`
+0x0863d6d0, `BFEnvironment::findControlPoint` 0x085e53a0). The page's
+stand-ins (a spawn group no point claims, a ship's decks) are bound after
+every control point and only into an area that holds none, on a generated layer only (a retail layer
+binds in the flags' order, as it always has). The
+`ControlPoint` state is still the page's sum, which the engine's
+(`BFEnvironment::getNumberOfControlPoints` 0x085e4f80 through
+`SAI::updateStates` 0x086348c0) is not: section 5 of the write-up says why
+it is kept.
+`tests/strategic_binding_harness.mjs` runs the node half on Edson's Ridge's
+shape.
+"""
+
+from __future__ import annotations
+
+import json
+import shutil
+import subprocess
+import unittest
+from pathlib import Path
+
+HARNESS = Path(__file__).resolve().parent / "strategic_binding_harness.mjs"
+
+
+class FlagBindingTests(unittest.TestCase):
+    out: dict
+
+    @classmethod
+    def setUpClass(cls) -> None:
+        if shutil.which("node") is None:
+            raise unittest.SkipTest("node is not installed")
+        proc = subprocess.run(["node", str(HARNESS)], capture_output=True, text=True, timeout=120)
+        if proc.returncode != 0:
+            raise AssertionError(proc.stderr[-2000:])
+        cls.out = json.loads(proc.stdout)
+
+    def test_a_capture_only_point_keeps_its_area_from_a_stand_in(self) -> None:
+        # Bound in the flags' order, sbWest took West's area and the ship
+        # East's, and both Allied flags lay in no area.
+        self.assertEqual(self.out["bound"]["West"], ["West"])
+        self.assertEqual(self.out["bound"]["East"], ["East"])
+        self.assertEqual(self.out["bound"]["AxisBase"], ["AxisBase"])
+
+    def test_a_retail_layer_binds_as_it_always_has(self) -> None:
+        # Gated to generated layers: with no marker the stand-ins bound first
+        # take West's and East's areas, and the capture-only points lie in none.
+        self.assertEqual(self.out["retailBound"]["West"], ["sbWest"])
+        self.assertEqual(self.out["retailBound"]["East"], ["ship"])
+
+    def test_a_stand_in_still_holds_an_area_with_no_point(self) -> None:
+        self.assertEqual(self.out["bound"]["Pass"], ["sbPass"])
+        self.assertEqual(self.out["owners"]["Pass"], 2)
+
+    def test_the_axis_have_a_flag_to_attack(self) -> None:
+        self.assertEqual(self.out["axisTargets"], ["West"])
+
+    def test_control_point_is_still_the_pages_sum(self) -> None:
+        # Not the engine's (flag-binding.md section 5, kept): every world flag
+        # the side holds, the three stand-ins with them, plus its owned areas
+        # typed `ControlPoint` (West, East, AlliedBase).
+        self.assertEqual(self.out["states"]["2"], {"controlPoint": 9, "enemyControlPoint": 2})
+        self.assertEqual(self.out["states"]["1"], {"controlPoint": 2, "enemyControlPoint": 9})
+        self.assertEqual(self.out["standIns"], ["sbWest", "sbPass", "ship"])
+
+
+if __name__ == "__main__":
+    unittest.main()
