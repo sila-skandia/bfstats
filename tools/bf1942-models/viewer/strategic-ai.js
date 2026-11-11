@@ -146,6 +146,8 @@ export class StrategicAI {
         states: new Map(),
         attacks: [],
         defences: [],
+        /** The no-live-strategy fallback holds the side (`_noLiveStrategyFallback`). */
+        fallback: false,
       };
       if (this.sides[side].containers.length) this.sides[side].active = this.sides[side].containers[0];
     }
@@ -237,7 +239,62 @@ export class StrategicAI {
     this._updateStates(side);
     this._chooseStrategy(side);
     this._updateTemperatures(side);
+    if (this._noLiveStrategyFallback(side)) return;
     this._distribute(side, alive, opts);
+  }
+
+  /**
+   * INVENTION, labelled (features/bot-map-generation/no-live-strategy.md;
+   * KNOBS.md "no live strategy"): on a GENERATED layer (`ai.generated`, the
+   * marker the bake copies from `generated.json`), a side none of whose
+   * strategies scores above 0 at this pass, AND whose kept strategy gives it
+   * no attack target (no area above the 0.1 threshold, or NumberOfAttacks 0),
+   * while a flag it could take still stands, gives every bot the order a
+   * level with no layer gives (bot-decision.js `fallbackWaypoint`: the
+   * nearest flag the side does not hold), and goes back to the SAI at the
+   * first pass where either holds no longer.
+   *
+   * Why the attack-target clause: with no strategy scoring the SAI keeps the
+   * one it has and still attacks whatever that strategy finds, and on the
+   * live generated levels that play is the one players like. Without the
+   * clause the fallback took over The Maze for 56 % (Axis) and 78 % (Allies)
+   * of the match and its kills fell from 68 to 29 in the census match;
+   * DC_Basrah_Nights' from 52 to 36. The fault is the side ordered only to
+   * hold; that is what this catches (no-live-strategy.md, the table).
+   *
+   * The engine has no such rule. `SAI::chooseStrategy` 0x08631cd0 with
+   * nothing positive keeps the strategy it has (AI-38; ai-spec strategic.md
+   * section 3), and the side is distributed on that strategy's modifiers. A
+   * generated layer copies DICE's strategy template unchanged (Kursk's or
+   * Kharkov's), tuned to a start where each side holds its base alone: on a
+   * level that starts otherwise (Edson's Ridge: the Axis on two fixed bases,
+   * the Allies on every flag) no strategy qualifies for either side, the
+   * kept first strategy finds no attack target (both flag areas hold only
+   * uncapturable spawn stand-ins, `StrategicLayer.bindFlags`), and both sides
+   * stood at their bases for the whole match. A layer DICE or a mod team wrote is
+   * never touched: what the retail engine does there is what it does.
+   *
+   * Sets `sides[side].fallback`; true when it holds, after releasing every
+   * bot of the side (no order, no assignment, a garrison post given up to
+   * `lastPost`) and clearing the side's targets. `StrategicCommand` then
+   * drops the side's orders, whatever its doctrine.
+   */
+  _noLiveStrategyFallback(side) {
+    const S = this.sides[side];
+    const on = !!this.layer.ai?.generated && S.containers.length > 0 && !S.containers.some(c => c.score > 0)
+      && ((S.active?.strategy.attacks ?? 1) <= 0 || !this.layer.areas.some(a => this._attackValue(a, side) > SAI.candidateMin))
+      && this.layer.flags.some(f => f.position && !f.uncapturable && f.team !== side);
+    S.fallback = on;
+    if (!on) return false;
+    S.attacks = [];
+    S.defences = [];
+    for (const b of this.bots.values()) {
+      if (b.side !== side) continue;
+      b.assignedTo = null; b.free = true; b.isAttack = false; b.waypoints = null;
+      if (b.post) { b.lastPost = b.post; b.post = null; }
+    }
+    for (const [, st] of this.areaState) { st[side].assigned.clear(); st[side].isAttack = false; }
+    return true;
   }
 
   // --- the area pass --------------------------------------------------------

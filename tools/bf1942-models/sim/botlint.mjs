@@ -10,6 +10,11 @@
 // capturable flag is reachable in 3D, and when the play surface is stacked
 // floors a one-floor walk map cannot hold.
 //
+// It warns when a side has no live strategy at the start of the round (every
+// strategy scores 0, `liveStrategiesAtStart`), naming what the kept strategy
+// attacks: the template does not fit the level's start, and on a generated
+// layer a side with nothing to attack plays the no-layer order.
+//
 //   node sim/botlint.mjs --map shigaisen_b --maps <maps tree> [--models <tree>] [--source <layer folder>] [--json out.json]
 //
 // Exit 1 when it finds an error. `lintLayer` is the pure half the tests call.
@@ -37,13 +42,30 @@ function inBox(area, x, z, grow = 0) {
  * `ground(x, z)` the map's own tests, `spawns` `[x, z]` soldier spawn points,
  * `defined` extra condition names the layer's own script defines.
  */
-export function lintLayer({ ai, flags, grid = null, isWalkable = null, ground = null, spawns = [], defined = [], pathIndex = null, walk = null, probe = null }) {
+export function lintLayer({ ai, flags, grid = null, isWalkable = null, ground = null, spawns = [], defined = [], pathIndex = null, walk = null, probe = null, startStrategies = null }) {
   const errors = [], warnings = [];
   // `dead`: the class of a finding that predicts a level nobody fights on (`DEAD_CLASSES`).
   const err = (check, text, dead = null) => errors.push({ check, text, ...(dead ? { dead } : {}) });
   const warn = (check, text) => warnings.push({ check, text });
   const areas = ai?.strategicAreas ?? [];
   if (!areas.length) { err('loads', 'no strategic areas'); return { errors, warnings, facts: {} }; }
+  // A side none of whose strategies scores above 0 at the start of the round
+  // (`liveStrategiesAtStart`). A warning, not an error: the SAI keeps its
+  // first strategy, and where that finds nothing to attack the page gives a
+  // generated layer's side the no-layer order (viewer/strategic-ai.js
+  // `_noLiveStrategyFallback`, INVENTION), so the level still plays; the
+  // template simply does not fit its start.
+  for (const side of ['1', '2']) {
+    const s = startStrategies?.[side];
+    if (!s || s.live) continue;
+    const held = s.attackTargets?.length
+      ? `; the SAI keeps ${s.kept}, which attacks ${s.attackTargets.join(', ')}`
+      : `; the SAI keeps ${s.kept}, which finds nothing to attack`
+        + (!s.toTake ? ' (the side holds every flag it can take)'
+          : ai.generated ? ', so its bots take the no-layer order until a strategy qualifies or a target appears' : ', so its bots hold where they are');
+    warn('strategy', `side ${side} has no live strategy at the start of the round: every one of ${s.names.join(', ')} scores 0 `
+      + `(it holds ${s.controlPoint} control points, the enemy ${s.enemyControlPoint})${held}`);
+  }
   for (const m of pathIndex?.maps ?? []) if (!m.loaded) err('loads', `${m.name}: ${m.reason ?? 'does not load'}`);
   // The engine aborts before it writes a generated layer's strategic maps
   // (section 13); the page then plans on its own coarse layer.
@@ -144,6 +166,35 @@ export function lintLayer({ ai, flags, grid = null, isWalkable = null, ground = 
   if (cut) warn('reach', `${cut} of ${spawns.length} soldier spawns stand off the main walkable ground`);
   Object.assign(facts, { unreachable, freeCells: sizes.reduce((s, v) => s + v, 0), mainComponent: sizes[main] ?? 0, pockets: sizes.length - 2 < 0 ? 0 : sizes.length - 2, spawnsCutOff: cut, spawns: spawns.length });
   return { errors, warnings, facts };
+}
+
+/**
+ * Each side's strategies as the page's SAI scores them at the start of the
+ * round, before any bot is counted: `{ 1: { live, names, scores, kept,
+ * attackTargets, controlPoint, enemyControlPoint }, 2: ... }`, `live` when
+ * one scores above 0, `kept` the strategy the SAI holds with none scoring
+ * (its first), `attackTargets` the areas that strategy would attack (above
+ * `SAI.candidateMin`). `StrategicLayer` and `StrategicAI` are the viewer's
+ * (strategic.js); `flags` the world's flags (`world.flags`, the ones the SAI
+ * counts).
+ */
+export function liveStrategiesAtStart({ StrategicLayer, StrategicAI, ai, flags, candidateMin = 0.1 }) {
+  const layer = new StrategicLayer(ai, flags);
+  const sai = new StrategicAI(layer, { random: () => 0.5 });
+  sai.beginPass(new Map());
+  const out = {};
+  for (const side of [1, 2]) {
+    sai._updateStates(side);
+    const S = sai.sides[side];
+    const scores = Object.fromEntries(S.containers.map(c => [c.strategy.name, Math.max(0, sai._evaluatePrerequisite(side, c.strategy, c === S.active))]));
+    sai._updateTemperatures(side);
+    const targets = (S.active?.strategy.attacks ?? 1) > 0 ? layer.areas.filter(a => sai._attackValue(a, side) > candidateMin) : [];
+    out[side] = { live: Object.values(scores).some(v => v > 0), names: S.containers.map(c => c.strategy.name), scores,
+                  kept: S.active?.strategy.name ?? null, attackTargets: targets.map(a => a.name),
+                  toTake: layer.flags.filter(f => f.position && !f.uncapturable && f.team !== side).length,
+                  controlPoint: S.states.friendly.get('ControlPoint') ?? 0, enemyControlPoint: S.states.enemy.get('ControlPoint') ?? 0 };
+  }
+  return out;
 }
 
 /** The lint's errors that predict a dead level, by class, as the census names them. */
@@ -296,7 +347,7 @@ export function kitsDealt(loadouts, map) {
 
 export async function lintLevel({ maps, models = null, map, source = null }) {
   const loaded = await loadForBots({ maps, models, map, layerDir: source });
-  const { nav, grid, extras, world } = loaded;
+  const { M, nav, grid, extras, world } = loaded;
   const fullWalk = await levelWalkFacts(loaded);
   const walk = slimFacts(fullWalk);
   // The route probe on the layer as applied: its areas' own infantry order positions, each side's usable spawns.
@@ -321,6 +372,9 @@ export async function lintLevel({ maps, models = null, map, source = null }) {
     defined: file && existsSync(file) ? definedConditions(readFileSync(file, 'latin1')) : [],
     pathIndex: existsSync(indexFile) ? JSON.parse(readFileSync(indexFile, 'utf8')) : null,
     walk, probe,
+    startStrategies: extras.ai?.strategicAreas?.length && M?.StrategicLayer && M?.StrategicAI
+      ? liveStrategiesAtStart({ StrategicLayer: M.StrategicLayer, StrategicAI: M.StrategicAI, ai: extras.ai, flags: world.flags, candidateMin: M.SAI?.candidateMin ?? 0.1 })
+      : null,
   });
   // The kits: a level whose bots would hold the stand-in weapon is not judged.
   const loadoutsFile = path.join(maps, '_shared', 'loadouts.json');
