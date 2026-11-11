@@ -66,6 +66,13 @@ class HoldFireTubeTests(unittest.TestCase):
         for case in ("beside", "beyondTarget", "atTarget", "behindShooter", "proneUnderLine", "pastReach"):
             self.assertIsNone(t[case], case)
 
+    def test_the_tube_widens_with_the_cone_up_to_a_cap(self) -> None:
+        t = self.results["tube"]
+        self.assertIsNone(t["wideNoSpread"])
+        self.assertEqual("a", t["wideWithSpread"]["id"])
+        self.assertEqual(2.0, t["radiusMax"])
+        self.assertIsNone(t["wideCapped"])
+
     def test_the_nearest_friend_and_its_side(self) -> None:
         t = self.results["tube"]
         self.assertEqual("near", t["nearestOfTwo"]["id"])

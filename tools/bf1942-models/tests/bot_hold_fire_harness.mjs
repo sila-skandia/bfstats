@@ -30,7 +30,13 @@ out.tube = {
   nearestOfTwo: friendInLine(origin, aim, [f('far', [0, 0, 20]), f('near', [0.2, 0, 3])]),
   plusX: friendInLine(origin, aim, [f('a', [0.3, 0, 5])]),
   minusX: friendInLine(origin, aim, [f('a', [-0.3, 0, 5])]),
-  radius: HOLD_FIRE.radius, reach: HOLD_FIRE.reach,
+  // The tube widens with the cone: 1 m off at 60 m is outside a bare 0.6 m
+  // tube, inside one widened by a 1 cm-a-metre cone, and the widening stops at
+  // `radiusMax`.
+  wideNoSpread: friendInLine(origin, [0, 1.0, 120], [f('a', [1.0, 0, 60])]),
+  wideWithSpread: friendInLine(origin, [0, 1.0, 120], [f('a', [1.0, 0, 60])], { ...HOLD_FIRE, spread: 0.01 }),
+  wideCapped: friendInLine(origin, [0, 1.0, 120], [f('a', [2.5, 0, 60])], { ...HOLD_FIRE, spread: 0.1 }),
+  radius: HOLD_FIRE.radius, reach: HOLD_FIRE.reach, radiusMax: HOLD_FIRE.radiusMax,
 };
 
 // --- the trigger --------------------------------------------------------------

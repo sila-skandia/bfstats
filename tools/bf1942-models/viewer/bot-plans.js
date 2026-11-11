@@ -1184,7 +1184,10 @@ export function holdFireFor(bot, action, targetPos) {
     if (!pos) continue;
     friends.push({ id, pos, stance: p.occupancy?.root ? 'seated' : (p.soldier?.stance ?? 'stand') });
   }
-  const friend = friendInLine(origin, aim, friends);
+  // The tube widens with the bot's own cone (`aimDeviation`, hundredths of a
+  // radian: round-launch.js `deviate`).
+  const dev = Number(bot.aimDeviation);
+  const friend = friendInLine(origin, aim, friends, { ...HOLD_FIRE, spread: Number.isFinite(dev) ? dev / 100 : 0 });
   const now = bot._now ?? 0;
   if (!friend) {
     bot._holdFire = null;

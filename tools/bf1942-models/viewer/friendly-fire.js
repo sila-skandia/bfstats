@@ -121,6 +121,12 @@ export const HOLD_FIRE = Object.freeze({
   behind: 0.3,
   bodyBottom: 0.1,
   bodyTop: Object.freeze({ stand: 1.8, walk: 1.8, crouch: 1.25, prone: 0.5, lie: 0.5, seated: 1.2 }),
+  /** The tube widens with the bot's own deviation cone: `spread` is the
+   *  cone's half-width in radians (the bot's `aimDeviation` / 100, a square
+   *  of that reach on each axis: round-launch.js `deviate`), added at the
+   *  friend's distance down the line, the whole radius capped at `radiusMax`
+   *  so a wild machine gun is not silenced by every friend in front. */
+  radiusMax: 2.0,
   /** The step aside (bot-plans.js `holdFireStep`): after holding this long on
    *  foot the bot strafes away from the friend for `stepSeconds`, then looks
    *  again; it keeps aiming throughout. */
@@ -171,6 +177,7 @@ export function segmentDistance(p0, p1, q0, q1) {
  * walking-body.js), -1 the other way.
  */
 export function friendInLine(origin, aim, friends, opts = HOLD_FIRE) {
+  // `opts` may name only what it changes (`spread`): the rest are HOLD_FIRE's.
   const dx = aim[0] - origin[0], dy = aim[1] - origin[1], dz = aim[2] - origin[2];
   const len = Math.hypot(dx, dy, dz);
   if (!(len > 1e-6) || !friends) return null;
@@ -179,6 +186,10 @@ export function friendInLine(origin, aim, friends, opts = HOLD_FIRE) {
   const k = limit / len;
   const end = [origin[0] + dx * k, origin[1] + dy * k, origin[2] + dz * k];
   const radius = opts.radius ?? HOLD_FIRE.radius;
+  const spread = Math.max(0, opts.spread ?? 0);
+  const radiusMax = opts.radiusMax ?? HOLD_FIRE.radiusMax;
+  // The box cut's margin: the widest the tube gets.
+  const margin = Math.min(radiusMax, radius + spread * limit);
   const tops = opts.bodyTop ?? HOLD_FIRE.bodyTop;
   const bottom = opts.bodyBottom ?? HOLD_FIRE.bodyBottom;
   const h = Math.hypot(dx, dz) || 1;
@@ -187,11 +198,11 @@ export function friendInLine(origin, aim, friends, opts = HOLD_FIRE) {
     const p = f?.pos;
     if (!p) continue;
     // The cheap cut: the foot point against the line's x/z box.
-    if (p[0] < Math.min(origin[0], end[0]) - radius || p[0] > Math.max(origin[0], end[0]) + radius
-        || p[2] < Math.min(origin[2], end[2]) - radius || p[2] > Math.max(origin[2], end[2]) + radius) continue;
+    if (p[0] < Math.min(origin[0], end[0]) - margin || p[0] > Math.max(origin[0], end[0]) + margin
+        || p[2] < Math.min(origin[2], end[2]) - margin || p[2] > Math.max(origin[2], end[2]) + margin) continue;
     const top = tops[f.stance] ?? tops.stand;
     const r = segmentDistance(origin, end, [p[0], p[1] + bottom, p[2]], [p[0], p[1] + top, p[2]]);
-    if (r.dist > radius) continue;
+    if (r.dist > Math.min(radiusMax, radius + spread * r.s * limit)) continue;
     // A friend whose body overlaps the muzzle counts (the page logged victims
     // 0.2 m from it, one 0.12 m behind it); one wholly behind the bot does not.
     const ahead = ((p[0] - origin[0]) * dx + (p[2] - origin[2]) * dz) / h;
