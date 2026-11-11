@@ -15,7 +15,7 @@
   "against": "dice",
   "why": "no bar of fhsw's own: DICE's"
  },
- "seeds": 10,
+ "seeds": 2,
  "sizes": {
   "8": {
    "verdict": "fail",
@@ -24,15 +24,14 @@
     "routeFailuresPerBotMinute",
     "redeploysPerBotMinute",
     "enemyKillsPerBotMinute",
+    "flagCoverage",
     "bothSidesKill",
-    "ticketsBleed",
     "stuckSecondsPerBotMinuteWorseSide",
     "routeFailuresPerBotMinuteWorseSide",
-    "redeploysPerBotMinuteWorseSide",
     "nonEnemyDeathShareWorseSide"
    ],
    "winners": [
-    10,
+    2,
     0,
     0
    ]
@@ -40,16 +39,15 @@
   "16": {
    "verdict": "fail",
    "failed": [
+    "stuckSecondsPerBotMinute",
     "routeFailuresPerBotMinute",
+    "redeploysPerBotMinute",
     "enemyKillsPerBotMinute",
-    "flagCoverage",
-    "bothSidesKill",
-    "ticketsBleed",
     "routeFailuresPerBotMinuteWorseSide",
     "nonEnemyDeathShareWorseSide"
    ],
    "winners": [
-    10,
+    2,
     0,
     0
    ]

@@ -1,0 +1,105 @@
+{
+ "level": "scimitar_hill",
+ "verdict": "fail",
+ "outcome": "better-than-nothing",
+ "config": "with vehicles",
+ "doctrine": "garrison",
+ "generatorVersion": 5,
+ "inputs": {
+  "controlPoints": "7537b109d7748682b69dfdb7444784085b39864f46b1e19865cc0e2979efed63",
+  "infantryMap": "e0c9aa976d24d20725d07056ada7032f4da480d7e64500d3e9e725be490d1e4c",
+  "template": "43f8a790471528016570235f76e97dbb2045732458781a5139f37fed68bf98c0"
+ },
+ "baseline": "bf1918's own layers with vehicles, garrison doctrine: argonnerwald, battle_of_cer, battle_of_mons, belleau_wood; seeds 1..10, 600 s; dropped, no fight: krakau",
+ "bar": {
+  "against": "bf1918",
+  "why": "bf1918's own bar, built from 4 of its levels that are alive (argonnerwald, battle_of_cer, battle_of_mons, belleau_wood)"
+ },
+ "againstDice": {
+  "verdict": "fail",
+  "outcome": "no-better-than-nothing",
+  "baseline": "DICE layers with vehicles, garrison doctrine: berlin, stalingrad, kharkov, bocage; seeds 1..10, 600 s",
+  "sizes": {
+   "8": {
+    "verdict": "fail",
+    "failed": [
+     "stuckSecondsPerBotMinute",
+     "routeFailuresPerBotMinute",
+     "redeploysPerBotMinute",
+     "enemyKillsPerBotMinute",
+     "flagCoverage",
+     "stuckSecondsPerBotMinuteWorseSide",
+     "routeFailuresPerBotMinuteWorseSide",
+     "redeploysPerBotMinuteWorseSide",
+     "nonEnemyDeathShareWorseSide",
+     "hullStuckSecondsPerDrivingMinute",
+     "hullStuckSecondsPerDrivingMinuteWorseSide",
+     "unitsNeverUsedShare",
+     "tankSilentShare"
+    ]
+   },
+   "16": {
+    "verdict": "fail",
+    "failed": [
+     "stuckSecondsPerBotMinute",
+     "routeFailuresPerBotMinute",
+     "redeploysPerBotMinute",
+     "enemyKillsPerBotMinute",
+     "flagCoverage",
+     "stuckSecondsPerBotMinuteWorseSide",
+     "redeploysPerBotMinuteWorseSide",
+     "nonEnemyDeathShareWorseSide",
+     "hullStuckSecondsPerDrivingMinute",
+     "hullStuckSecondsPerDrivingMinuteWorseSide",
+     "unitsNeverUsedShare",
+     "tankSilentShare"
+    ]
+   }
+  }
+ },
+ "seeds": 2,
+ "sizes": {
+  "8": {
+   "verdict": "fail",
+   "failed": [
+    "stuckSecondsPerBotMinute",
+    "redeploysPerBotMinute",
+    "enemyKillsPerBotMinute",
+    "flagCoverage",
+    "stuckSecondsPerBotMinuteWorseSide",
+    "redeploysPerBotMinuteWorseSide",
+    "nonEnemyDeathShareWorseSide",
+    "unitsNeverUsedShare",
+    "tankSilentShare"
+   ],
+   "winners": [
+    0,
+    2,
+    0
+   ]
+  },
+  "16": {
+   "verdict": "fail",
+   "failed": [
+    "stuckSecondsPerBotMinute",
+    "redeploysPerBotMinute",
+    "enemyKillsPerBotMinute",
+    "stuckSecondsPerBotMinuteWorseSide",
+    "redeploysPerBotMinuteWorseSide",
+    "nonEnemyDeathShareWorseSide",
+    "hullStuckSecondsPerDrivingMinute",
+    "hullStuckSecondsPerDrivingMinuteWorseSide",
+    "unitsNeverUsedShare",
+    "tankSilentShare"
+   ],
+   "winners": [
+    1,
+    1,
+    0
+   ]
+  }
+ },
+ "oneSided": null,
+ "unreachable": [],
+ "lintErrors": []
+}

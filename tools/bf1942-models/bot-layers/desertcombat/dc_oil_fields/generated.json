@@ -1,0 +1,128 @@
+{
+ "generator": "botgen",
+ "version": 5,
+ "mod": "DesertCombat",
+ "level": "dc_oil_fields",
+ "objectSpawners": 60,
+ "template": "symmetric",
+ "templateSource": "DICE, bf1942 Kharkov (1.6 patch archives): AI/Strategies.con, AI/conditions.con, AI/prerequisites.con, unchanged",
+ "templateChoice": {
+  "name": "symmetric",
+  "inPlay": 6,
+  "rule": "6 capturable flags in play, more than 3"
+ },
+ "scope": "on foot: infantry order positions only, no search maps, no co-op layer",
+ "unreachable": [
+  "refinerycomplex"
+ ],
+ "unreachableReasons": {
+  "refinerycomplex": "walk test"
+ },
+ "botSpawnsExcluded": [
+  "coalition_hq_spawn1",
+  "coalition_hq_spawn2",
+  "coalition_hq_spawn5",
+  "coalition_hq_spawn6",
+  "refineriecomplex_spawn2",
+  "refineriecomplex_spawn5",
+  "refineriecomplex_spawn6",
+  "refineriecomplex_spawn7",
+  "ainzalah_spawn1",
+  "ainzalah_spawn2",
+  "ainzalah_spawn3",
+  "ainzalah_spawn4",
+  "ainzalah_spawn5",
+  "ainzalah_spawn6",
+  "northernoilfields_spawn2",
+  "northernoilfields_spawn5",
+  "northernoilfields_spawn6",
+  "refineriecomplex_spawn8",
+  "refineriecomplex_spawn9",
+  "refineriecomplex_spawn10",
+  "refineriecomplex_spawn11",
+  "refineriecomplex_spawn13",
+  "SouthCheckPoint_Spawn4",
+  "SouthCheckPoint_Spawn6",
+  "Village_Spawn1",
+  "Village_Spawn2",
+  "Village_Spawn3",
+  "NorthCheckPoint_Spawn2",
+  "NorthCheckPoint_Spawn3",
+  "RefineryComplex_Spawn1"
+ ],
+ "walkMap": {
+  "source": "page painter",
+  "engine": "none",
+  "opened": [],
+  "ways": [],
+  "cover": 0.798,
+  "floors": {
+   "stacked": false,
+   "twoFloorShare": 0.003,
+   "raised": [
+    "refinerycomplex"
+   ],
+   "reason": null
+  },
+  "capped": true,
+  "joined": 7
+ },
+ "routeProbe": {
+  "chokeMax": 4,
+  "unreachable": [],
+  "stops": {},
+  "oneSided": {},
+  "sides": {
+   "1": {
+    "spawns": 15,
+    "flags": [
+     "NorthCheckPoint",
+     "SouthCheckPoint",
+     "Village",
+     "ainzalah",
+     "checkpoint",
+     "northernoilfields"
+    ]
+   },
+   "2": {
+    "spawns": 2,
+    "flags": [
+     "NorthCheckPoint",
+     "SouthCheckPoint",
+     "Village",
+     "ainzalah",
+     "checkpoint",
+     "northernoilfields"
+    ]
+   }
+  },
+  "chokes": {
+   "ainzalah:1": 0,
+   "ainzalah:2": 0,
+   "checkpoint:1": 0,
+   "checkpoint:2": 0,
+   "northernoilfields:1": 0,
+   "northernoilfields:2": 0,
+   "SouthCheckPoint:1": 0,
+   "SouthCheckPoint:2": 0,
+   "Village:1": 0,
+   "Village:2": 0,
+   "NorthCheckPoint:1": 1,
+   "NorthCheckPoint:2": 0
+  },
+  "late": {},
+  "shutLinks": []
+ },
+ "inputs": {
+  "controlPoints": "00aa15d59013ecead235d65b2c234d3a844e18e97c60b63139ced60e42752922",
+  "infantryMap": "16992e60d93d25376151883d39c6c27f31aeb16af1fd01d787ec9d19eeb205fe",
+  "template": "43f8a790471528016570235f76e97dbb2045732458781a5139f37fed68bf98c0"
+ },
+ "files": {
+  "AI.con": "6d2e17eb45002fbd1073266df96b104811a7e05c63b9ccedacec5fba2bbe057e",
+  "AI/StrategicAreas.con": "3c14f654604f7a3ebe3b7db846c71ab07b388599935d2e52862a84737dcc9619",
+  "AI/Strategies.con": "4ce0be59a0d6c5cd530db002fb062c4be8d936bc6ae59bd188803ccaf7869a8d",
+  "AI/conditions.con": "68a0c7a8aec69954063147b60fae560b2874884285737aa085efa76597d395aa",
+  "AI/prerequisites.con": "4c1f313bc285b228fd6ad03bfd1f44c5b15c8703c31f802eb605bc5f00f88bb5"
+ }
+}

@@ -1,0 +1,92 @@
+rem *** Strategic areas: one per control point (botgen) ***
+
+aiStrategicArea.create West_Hill 355.5/507.8 367.5/519.8 150
+aiStrategicArea.addNeighbour Turk_Left
+aiStrategicArea.addNeighbour UK_Right
+aiStrategicArea.addNeighbour UK_Left
+aiStrategicArea.addNeighbour Middle_Hill
+aiStrategicArea.addNeighbour TUR_base
+aiStrategicArea.addObjectTypeFlag Flank
+aiStrategicArea.addObjectTypeFlag ControlPoint
+aiStrategicArea.setOrderPosition Tank 367.5/521.5
+aiStrategicArea.setOrderPosition Infantry 367.5/520.5
+
+aiStrategicArea.create Turk_Left 415.9/713.3 425.9/723.3 200
+aiStrategicArea.addNeighbour West_Hill
+aiStrategicArea.addNeighbour Turk_Right
+aiStrategicArea.addNeighbour Middle_Hill
+aiStrategicArea.addNeighbour TUR_base
+aiStrategicArea.addObjectTypeFlag Centre
+aiStrategicArea.addObjectTypeFlag Close
+aiStrategicArea.addObjectTypeFlag ControlPoint
+aiStrategicArea.setOrderPosition Tank 425.5/729.5
+aiStrategicArea.setOrderPosition Infantry 425.5/724.5
+aiStrategicArea.setSide 1
+
+aiStrategicArea.create Turk_Right 551.5/681.4 561.5/691.4 150
+aiStrategicArea.addNeighbour Turk_Left
+aiStrategicArea.addNeighbour UK_Right
+aiStrategicArea.addNeighbour Middle_Hill
+aiStrategicArea.addNeighbour TUR_base
+aiStrategicArea.addObjectTypeFlag Flank
+aiStrategicArea.addObjectTypeFlag ControlPoint
+aiStrategicArea.setOrderPosition Tank 554.5/684.5
+aiStrategicArea.setOrderPosition Infantry 563.5/693.5
+aiStrategicArea.setSide 1
+
+aiStrategicArea.create UK_Right 546.5/393.9 556.5/403.9 200
+aiStrategicArea.addNeighbour West_Hill
+aiStrategicArea.addNeighbour Turk_Right
+aiStrategicArea.addNeighbour UK_Left
+aiStrategicArea.addNeighbour UK_Base
+aiStrategicArea.addNeighbour Middle_Hill
+aiStrategicArea.addObjectTypeFlag Centre
+aiStrategicArea.addObjectTypeFlag ControlPoint
+aiStrategicArea.setOrderPosition Tank 563.5/398.5
+aiStrategicArea.setOrderPosition Infantry 555.5/405.5
+aiStrategicArea.setSide 2
+
+aiStrategicArea.create UK_Left 448.1/320.9 458.1/330.9 200
+aiStrategicArea.addNeighbour West_Hill
+aiStrategicArea.addNeighbour UK_Right
+aiStrategicArea.addNeighbour UK_Base
+aiStrategicArea.addNeighbour Middle_Hill
+aiStrategicArea.addObjectTypeFlag Centre
+aiStrategicArea.addObjectTypeFlag Close
+aiStrategicArea.addObjectTypeFlag ControlPoint
+aiStrategicArea.setOrderPosition Tank 460.5/341.5
+aiStrategicArea.setOrderPosition Infantry 458.5/331.5
+aiStrategicArea.setSide 2
+
+aiStrategicArea.create UK_Base 513.7/174.6 518.7/179.6 50
+aiStrategicArea.addNeighbour UK_Right
+aiStrategicArea.addNeighbour UK_Left
+aiStrategicArea.addObjectTypeFlag Base
+aiStrategicArea.setOrderPosition Tank 520.5/179.5
+aiStrategicArea.setOrderPosition Infantry 519.5/179.5
+aiStrategicArea.setSide 2
+aiStrategicArea.setTakeable 1 0
+
+aiStrategicArea.create Middle_Hill 520.3/536.1 530.3/546.1 300
+aiStrategicArea.addNeighbour West_Hill
+aiStrategicArea.addNeighbour Turk_Left
+aiStrategicArea.addNeighbour Turk_Right
+aiStrategicArea.addNeighbour UK_Right
+aiStrategicArea.addNeighbour UK_Left
+aiStrategicArea.addNeighbour TUR_base
+aiStrategicArea.addObjectTypeFlag Centre
+aiStrategicArea.addObjectTypeFlag StrongPoint
+aiStrategicArea.addObjectTypeFlag ControlPoint
+aiStrategicArea.setOrderPosition Tank 535.5/553.5
+aiStrategicArea.setOrderPosition Infantry 530.5/545.5
+
+aiStrategicArea.create TUR_base 454.1/855.7 459.1/860.7 50
+aiStrategicArea.addNeighbour West_Hill
+aiStrategicArea.addNeighbour Turk_Left
+aiStrategicArea.addNeighbour Turk_Right
+aiStrategicArea.addNeighbour Middle_Hill
+aiStrategicArea.addObjectTypeFlag Base
+aiStrategicArea.setOrderPosition Tank 459.5/862.5
+aiStrategicArea.setOrderPosition Infantry 459.5/861.5
+aiStrategicArea.setSide 1
+aiStrategicArea.setTakeable 2 0

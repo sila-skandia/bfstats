@@ -1,0 +1,256 @@
+{
+ "generator": "botgen",
+ "version": 5,
+ "mod": "bf1918",
+ "level": "scimitar_hill",
+ "objectSpawners": 38,
+ "template": "symmetric",
+ "templateSource": "DICE, bf1942 Kharkov (1.6 patch archives): AI/Strategies.con, AI/conditions.con, AI/prerequisites.con, unchanged",
+ "templateChoice": {
+  "name": "symmetric",
+  "inPlay": 6,
+  "rule": "6 capturable flags in play, more than 3"
+ },
+ "scope": "an infantry map painted from the walk test, a Tank0 map from the page painter, infantry order positions, no strategic maps, no co-op layer",
+ "unreachable": [],
+ "unreachableReasons": {},
+ "botSpawnsExcluded": [
+  "UK_Right_Spawn1",
+  "UK_Right_Spawn2",
+  "UK_Right_Spawn3",
+  "UK_Right_Spawn4",
+  "UK_Right_Spawn5",
+  "UK_Right_Spawn7",
+  "Turk_Left_Spawn1",
+  "Turk_Left_Spawn2",
+  "Turk_Left_Spawn6",
+  "Turk_Right_Spawn1",
+  "Turk_Right_Spawn2",
+  "Turk_Right_Spawn3",
+  "Turk_Right_Spawn4",
+  "Turk_Right_Spawn7",
+  "Middle_Hill_Spawn1",
+  "Middle_Hill_Spawn2",
+  "Middle_Hill_Spawn5",
+  "Middle_Hill_Spawn6"
+ ],
+ "walkMap": {
+  "source": "walk test",
+  "engine": "none",
+  "vehicleMap": "page painter",
+  "vehicleBrush": 1.5,
+  "vehicleBrushes": [
+   {
+    "brush": 3,
+    "flagsOn": 6,
+    "spawnersOn": 2,
+    "pieces": 16,
+    "main": 825030
+   },
+   {
+    "brush": 2.5,
+    "flagsOn": 7,
+    "spawnersOn": 2,
+    "pieces": 16,
+    "main": 846395
+   },
+   {
+    "brush": 2,
+    "flagsOn": 7,
+    "spawnersOn": 2,
+    "pieces": 17,
+    "main": 858054
+   },
+   {
+    "brush": 1.5,
+    "flagsOn": 6,
+    "spawnersOn": 4,
+    "pieces": 17,
+    "main": 874221
+   }
+  ],
+  "opened": [],
+  "ways": [
+   {
+    "who": "UK_Right_Spawn1",
+    "kind": "spawn",
+    "way": "none",
+    "opened": 0
+   },
+   {
+    "who": "UK_Right_Spawn2",
+    "kind": "spawn",
+    "way": "jump",
+    "opened": 0
+   },
+   {
+    "who": "UK_Right_Spawn3",
+    "kind": "spawn",
+    "way": "none",
+    "opened": 0
+   },
+   {
+    "who": "UK_Right_Spawn4",
+    "kind": "spawn",
+    "way": "none",
+    "opened": 0
+   },
+   {
+    "who": "UK_Right_Spawn5",
+    "kind": "spawn",
+    "way": "none",
+    "opened": 0
+   },
+   {
+    "who": "UK_Right_Spawn7",
+    "kind": "spawn",
+    "way": "none",
+    "opened": 0
+   },
+   {
+    "who": "Turk_Left_Spawn1",
+    "kind": "spawn",
+    "way": "jump",
+    "opened": 0
+   },
+   {
+    "who": "Turk_Left_Spawn2",
+    "kind": "spawn",
+    "way": "jump",
+    "opened": 0
+   },
+   {
+    "who": "Turk_Left_Spawn6",
+    "kind": "spawn",
+    "way": "jump",
+    "opened": 0
+   },
+   {
+    "who": "Turk_Right_Spawn1",
+    "kind": "spawn",
+    "way": "jump",
+    "opened": 0
+   },
+   {
+    "who": "Turk_Right_Spawn2",
+    "kind": "spawn",
+    "way": "jump",
+    "opened": 0
+   },
+   {
+    "who": "Turk_Right_Spawn3",
+    "kind": "spawn",
+    "way": "jump",
+    "opened": 0
+   },
+   {
+    "who": "Turk_Right_Spawn4",
+    "kind": "spawn",
+    "way": "jump",
+    "opened": 0
+   },
+   {
+    "who": "Turk_Right_Spawn7",
+    "kind": "spawn",
+    "way": "jump",
+    "opened": 0
+   },
+   {
+    "who": "Middle_Hill_Spawn1",
+    "kind": "spawn",
+    "way": "none",
+    "opened": 0
+   },
+   {
+    "who": "Middle_Hill_Spawn2",
+    "kind": "spawn",
+    "way": "none",
+    "opened": 0
+   },
+   {
+    "who": "Middle_Hill_Spawn5",
+    "kind": "spawn",
+    "way": "none",
+    "opened": 0
+   },
+   {
+    "who": "Middle_Hill_Spawn6",
+    "kind": "spawn",
+    "way": "jump",
+    "opened": 0
+   }
+  ],
+  "cover": 0.984,
+  "floors": {
+   "stacked": false,
+   "twoFloorShare": 0.008,
+   "raised": [],
+   "reason": null
+  }
+ },
+ "routeProbe": {
+  "chokeMax": 4,
+  "unreachable": [],
+  "stops": {},
+  "oneSided": {},
+  "sides": {
+   "1": {
+    "spawns": 11,
+    "flags": [
+     "Middle_Hill",
+     "Turk_Left",
+     "Turk_Right",
+     "UK_Left",
+     "UK_Right",
+     "West_Hill"
+    ]
+   },
+   "2": {
+    "spawns": 18,
+    "flags": [
+     "Middle_Hill",
+     "Turk_Left",
+     "Turk_Right",
+     "UK_Left",
+     "UK_Right",
+     "West_Hill"
+    ]
+   }
+  },
+  "chokes": {
+   "West_Hill:1": 0,
+   "West_Hill:2": 0,
+   "Turk_Left:1": 0,
+   "Turk_Left:2": 0,
+   "Turk_Right:1": 0,
+   "Turk_Right:2": 0,
+   "UK_Right:1": 0,
+   "UK_Right:2": 0,
+   "UK_Left:1": 0,
+   "UK_Left:2": 0,
+   "Middle_Hill:1": 0,
+   "Middle_Hill:2": 0
+  },
+  "late": {},
+  "shutLinks": []
+ },
+ "inputs": {
+  "controlPoints": "7537b109d7748682b69dfdb7444784085b39864f46b1e19865cc0e2979efed63",
+  "infantryMap": "e0c9aa976d24d20725d07056ada7032f4da480d7e64500d3e9e725be490d1e4c",
+  "template": "43f8a790471528016570235f76e97dbb2045732458781a5139f37fed68bf98c0"
+ },
+ "files": {
+  "AI.con": "4b7249592acb21ed7f0228e003702058758a5fced6c76f7e9eeb10bbc54e7748",
+  "AIpathFinding.con": "9d8080cdfa7605961969aa126519b03be9691bd604ac76aef50166d81215edd2",
+  "AI/StrategicAreas.con": "dff827348828048f2687cd060e5ce8ac68d82bd7ffd193ebd0426d9236dd4b2a",
+  "AI/Strategies.con": "4ce0be59a0d6c5cd530db002fb062c4be8d936bc6ae59bd188803ccaf7869a8d",
+  "AI/conditions.con": "68a0c7a8aec69954063147b60fae560b2874884285737aa085efa76597d395aa",
+  "AI/prerequisites.con": "4c1f313bc285b228fd6ad03bfd1f44c5b15c8703c31f802eb605bc5f00f88bb5",
+  "Pathfinding/Infantry1Level0Map.raw": "b16eb4dd6e68b0660a63e89c3c82c11c82c6dfaba71ff73888626703eb00e086",
+  "Pathfinding/Infantry1Level1Map.raw": "09c729c5502d60a4f7d856a644ce4234780b32db4efdfb7a99fe7da6268ab0e1",
+  "Pathfinding/Infantry1Level2Map.raw": "84077054b03c54eeb477a6a57f0cf1c3b66008b8c6e9e8bf8ff59098bb9bbd91",
+  "Pathfinding/Tank0Level0Map.raw": "03d810d615fcdd95480d7b99bf5f5ddb99c6f29a8f87f155c3918d511eb6a391",
+  "Pathfinding/Tank0Level1Map.raw": "287d133b8251f22f95b542f67ee86d8121f94feb8fc306a546783bea0973447d",
+  "Pathfinding/Tank0Level2Map.raw": "67368b86cfb0db3679f9e38399bb235fa7a98f6542f16fec564c44f4d608cec7"
+ }
+}

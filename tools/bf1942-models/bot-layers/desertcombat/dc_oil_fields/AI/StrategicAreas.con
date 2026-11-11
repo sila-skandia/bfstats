@@ -1,0 +1,72 @@
+rem *** Strategic areas: one per control point (botgen) ***
+
+aiStrategicArea.create coalition_hq 264.4/1178.7 304.4/1218.7 50
+aiStrategicArea.addNeighbour checkpoint
+aiStrategicArea.addNeighbour SouthCheckPoint
+aiStrategicArea.addNeighbour Village
+aiStrategicArea.addObjectTypeFlag Base
+aiStrategicArea.setOrderPosition Infantry 303.5/1219.5
+aiStrategicArea.setSide 2
+aiStrategicArea.setTakeable 1 0
+
+aiStrategicArea.create refinerycomplex 1480/640 1500/660 10
+aiStrategicArea.setSide 1
+aiStrategicArea.setTakeable 1 0
+aiStrategicArea.setTakeable 2 0
+
+aiStrategicArea.create ainzalah 1154.8/1018.4 1184.8/1048.4 200
+aiStrategicArea.addNeighbour checkpoint
+aiStrategicArea.addNeighbour northernoilfields
+aiStrategicArea.addNeighbour SouthCheckPoint
+aiStrategicArea.addNeighbour NorthCheckPoint
+aiStrategicArea.addObjectTypeFlag Centre
+aiStrategicArea.addObjectTypeFlag ControlPoint
+aiStrategicArea.setOrderPosition Infantry 1185.5/1047.5
+aiStrategicArea.setSide 1
+
+aiStrategicArea.create checkpoint 852.2/844.1 882.2/874.1 150
+aiStrategicArea.addNeighbour coalition_hq
+aiStrategicArea.addNeighbour ainzalah
+aiStrategicArea.addNeighbour SouthCheckPoint
+aiStrategicArea.addNeighbour Village
+aiStrategicArea.addObjectTypeFlag Flank
+aiStrategicArea.addObjectTypeFlag ControlPoint
+aiStrategicArea.setOrderPosition Infantry 881.5/875.5
+
+aiStrategicArea.create northernoilfields 1389.7/1493.2 1409.7/1513.2 150
+aiStrategicArea.addNeighbour ainzalah
+aiStrategicArea.addNeighbour NorthCheckPoint
+aiStrategicArea.addObjectTypeFlag Flank
+aiStrategicArea.addObjectTypeFlag ControlPoint
+aiStrategicArea.setOrderPosition Infantry 1410.5/1512.5
+aiStrategicArea.setSide 1
+
+aiStrategicArea.create SouthCheckPoint 846.3/402.1 866.3/422.1 150
+aiStrategicArea.addNeighbour coalition_hq
+aiStrategicArea.addNeighbour ainzalah
+aiStrategicArea.addNeighbour checkpoint
+aiStrategicArea.addNeighbour Village
+aiStrategicArea.addObjectTypeFlag Flank
+aiStrategicArea.addObjectTypeFlag ControlPoint
+aiStrategicArea.setOrderPosition Infantry 865.5/423.5
+aiStrategicArea.setSide 1
+
+aiStrategicArea.create Village 711.1/1226.7 731.1/1246.7 300
+aiStrategicArea.addNeighbour coalition_hq
+aiStrategicArea.addNeighbour checkpoint
+aiStrategicArea.addNeighbour SouthCheckPoint
+aiStrategicArea.addNeighbour NorthCheckPoint
+aiStrategicArea.addObjectTypeFlag Centre
+aiStrategicArea.addObjectTypeFlag StrongPoint
+aiStrategicArea.addObjectTypeFlag Close
+aiStrategicArea.addObjectTypeFlag ControlPoint
+aiStrategicArea.setOrderPosition Infantry 732.5/1247.5
+
+aiStrategicArea.create NorthCheckPoint 1092/1727.3 1112/1747.3 150
+aiStrategicArea.addNeighbour ainzalah
+aiStrategicArea.addNeighbour northernoilfields
+aiStrategicArea.addNeighbour Village
+aiStrategicArea.addObjectTypeFlag Flank
+aiStrategicArea.addObjectTypeFlag ControlPoint
+aiStrategicArea.setOrderPosition Infantry 1113.5/1746.5
+aiStrategicArea.setSide 1

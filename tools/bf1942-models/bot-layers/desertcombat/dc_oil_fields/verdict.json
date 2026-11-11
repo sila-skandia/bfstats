@@ -1,0 +1,105 @@
+{
+ "level": "dc_oil_fields",
+ "verdict": "fail",
+ "outcome": "no-better-than-nothing",
+ "config": "with vehicles",
+ "doctrine": "garrison",
+ "generatorVersion": 5,
+ "inputs": {
+  "controlPoints": "00aa15d59013ecead235d65b2c234d3a844e18e97c60b63139ced60e42752922",
+  "infantryMap": "16992e60d93d25376151883d39c6c27f31aeb16af1fd01d787ec9d19eeb205fe",
+  "template": "43f8a790471528016570235f76e97dbb2045732458781a5139f37fed68bf98c0"
+ },
+ "baseline": "desertcombat's own layers with vehicles, garrison doctrine: berlin, dc_desertshield, kharkov, kursk, stalingrad; seeds 1..10, 600 s; dropped, no fight: dc_basrahs_edge",
+ "bar": {
+  "against": "desertcombat",
+  "why": "desertcombat's own bar, built from 5 of its levels that are alive (berlin, dc_desertshield, kharkov, kursk, stalingrad)"
+ },
+ "againstDice": {
+  "verdict": "fail",
+  "outcome": "no-better-than-nothing",
+  "baseline": "DICE layers with vehicles, garrison doctrine: berlin, stalingrad, kharkov, bocage; seeds 1..10, 600 s",
+  "sizes": {
+   "8": {
+    "verdict": "fail",
+    "failed": [
+     "stuckSecondsPerBotMinute",
+     "routeFailuresPerBotMinute",
+     "redeploysPerBotMinute",
+     "enemyKillsPerBotMinute",
+     "stuckSecondsPerBotMinuteWorseSide",
+     "routeFailuresPerBotMinuteWorseSide",
+     "redeploysPerBotMinuteWorseSide",
+     "nonEnemyDeathShareWorseSide",
+     "hullStuckSecondsPerDrivingMinute",
+     "hullStuckSecondsPerDrivingMinuteWorseSide",
+     "unitsNeverUsedShare"
+    ]
+   },
+   "16": {
+    "verdict": "fail",
+    "failed": [
+     "stuckSecondsPerBotMinute",
+     "routeFailuresPerBotMinute",
+     "redeploysPerBotMinute",
+     "enemyKillsPerBotMinute",
+     "stuckSecondsPerBotMinuteWorseSide",
+     "routeFailuresPerBotMinuteWorseSide",
+     "redeploysPerBotMinuteWorseSide",
+     "nonEnemyDeathShareWorseSide",
+     "hullStuckSecondsPerDrivingMinute",
+     "hullStuckSecondsPerDrivingMinuteWorseSide",
+     "unitsNeverUsedShare",
+     "tankSilentShare"
+    ]
+   }
+  }
+ },
+ "seeds": 2,
+ "sizes": {
+  "8": {
+   "verdict": "fail",
+   "failed": [
+    "stuckSecondsPerBotMinute",
+    "redeploysPerBotMinute",
+    "enemyKillsPerBotMinute",
+    "stuckSecondsPerBotMinuteWorseSide",
+    "redeploysPerBotMinuteWorseSide",
+    "nonEnemyDeathShareWorseSide",
+    "hullStuckSecondsPerDrivingMinute",
+    "hullStuckSecondsPerDrivingMinuteWorseSide",
+    "unitsNeverUsedShare"
+   ],
+   "winners": [
+    2,
+    0,
+    0
+   ]
+  },
+  "16": {
+   "verdict": "fail",
+   "failed": [
+    "selfDeathsPerBotMinute",
+    "redeploysPerBotMinute",
+    "enemyKillsPerBotMinute",
+    "stuckSecondsPerBotMinuteWorseSide",
+    "redeploysPerBotMinuteWorseSide",
+    "nonEnemyDeathShareWorseSide",
+    "hullStuckSecondsPerDrivingMinute",
+    "hullStuckSecondsPerDrivingMinuteWorseSide",
+    "unitsNeverUsedShare",
+    "tankSilentShare"
+   ],
+   "winners": [
+    2,
+    0,
+    0
+   ]
+  }
+ },
+ "oneSided": 1,
+ "unreachable": [
+  "refinerycomplex"
+ ],
+ "lintErrors": []
+}
