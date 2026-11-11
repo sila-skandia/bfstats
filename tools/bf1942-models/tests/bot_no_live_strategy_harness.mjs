@@ -1,9 +1,9 @@
 // Pins the no-live-strategy fallback (features/bot-map-generation/no-live-strategy.md;
 // INVENTION, viewer/strategic-ai.js `_holdOnlyFallback`): on a generated
 // layer a side none of whose strategies scores above 0, whose kept strategy
-// finds nothing to attack, and which has a flag in play to take, holds no
+// finds nothing to attack, and which has a capturable flag to take, holds no
 // order and its bots take the no-layer order; a side that still has a target,
-// or has nothing in play to take, keeps the SAI; a layer
+// or holds every capturable flag, keeps the SAI; a layer
 // without the `generated` marker keeps the engine's rule (the strategy it
 // has). Also the lint's warning (`sim/botlint.mjs liveStrategiesAtStart`).
 // Run by `tests/test_bot_no_live_strategy.py`. One JSON object on stdout.
@@ -48,10 +48,10 @@ function level(generated, { cut = false, outOfPlay = false, live = false } = {})
     ...(generated ? { generated: { generator: 'botgen', template: 'few' } } : {}),
   };
 }
-const flagsAt = ({ cut = false } = {}) => [
+const flagsAt = ({ cut = false, allHeld = false } = {}) => [
   { name: 'AxisBase', controlPointName: 'AxisBase', position: [150, 0, -150], team: 1, uncapturable: true },
-  { name: 'West', controlPointName: 'West', position: [450, 0, -550], team: cut ? 2 : 1, uncapturable: false },
-  { name: 'East', controlPointName: 'East', position: [650, 0, -550], team: 2, uncapturable: false },
+  { name: 'West', controlPointName: 'West', position: [450, 0, -550], team: allHeld ? 1 : cut ? 2 : 1, uncapturable: false },
+  { name: 'East', controlPointName: 'East', position: [650, 0, -550], team: allHeld ? 1 : 2, uncapturable: false },
   { name: 'AlliedBase', controlPointName: 'AlliedBase', position: [950, 0, -950], team: 2, uncapturable: true },
 ];
 
@@ -95,24 +95,23 @@ const out = {
   cut: run(true, { cut: true }),
   // The Axis' strategy live, and still nothing to attack: the fallback too.
   liveCut: run(true, { cut: true, live: true }),
-  // The same with every flag out of play: nothing to take, the SAI keeps them.
+  // The same with every flag out of play: a flag out of play still counts, as
+  // on a level with no layer.
   outOfPlay: run(true, { cut: true, outOfPlay: true }),
+  // The Axis hold every capturable flag: nothing to take, the SAI keeps them.
+  allHeld: run(true, { cut: true, allHeld: true }),
   // The same with no `generated` marker: the engine's rule.
   shippedCut: run(false, { cut: true }),
 };
 
 // The bot's side of it: `fallbackWaypoint` answers on a level with areas only
-// while `noLayerOrder` holds, and then with the nearest flag it does not hold,
-// passing over a flag the generator took out of play.
+// while `noLayerOrder` holds, and then with the nearest flag it does not hold.
 const world = { extras: { ai: { strategicAreas: [{ name: 'x' }], generated: { unreachable: [] } } }, flags: flagsAt(), collider: null };
 const bot = { world, team: 1, position: [400, 0, -560], _fallback: null };
 bot._nearestEnemyFlag = () => decision.nearestEnemyFlag(bot);
 out.waypointWithLayer = decision.fallbackWaypoint(bot)?.flag?.name ?? null;
 bot.noLayerOrder = true;
 out.waypointNoLayerOrder = decision.fallbackWaypoint(bot)?.flag?.name ?? null;
-world.extras.ai.generated.unreachable = ['East'];
-bot._fallback = null;
-out.waypointOutOfPlay = decision.fallbackWaypoint(bot)?.flag?.name ?? null;
 
 // The lint.
 const startOf = (opts, flags = flagsAt(opts)) => lint.liveStrategiesAtStart({ StrategicLayer, StrategicAI, ai: level(true, opts), flags });
@@ -124,7 +123,7 @@ out.lintErrors = lint.lintLayer({ ai: level(true, { cut: true }), flags: [], sta
 out.lintTargetWarnings = warningsOf(startOf({}));
 out.lintLiveCutWarnings = lint.lintLayer({ ai: level(true, { cut: true, live: true }), flags: [], startStrategies: startOf({ cut: true, live: true }) }).warnings
   .filter(w => w.check === 'strategy' || w.check === 'target').map(w => `${w.check}: ${w.text}`);
-out.lintOutOfPlayWarnings = warningsOf(startOf({ cut: true, outOfPlay: true }), { cut: true, outOfPlay: true });
+out.lintAllHeldWarnings = warningsOf(startOf({ cut: true, allHeld: true }), { cut: true });
 const liveFlags = flagsAt(); liveFlags.find(f => f.name === 'East').team = 1;
 out.lintLiveWarnings = warningsOf(startOf({}, liveFlags));
 

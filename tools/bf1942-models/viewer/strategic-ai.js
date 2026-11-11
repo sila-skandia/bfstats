@@ -2,7 +2,7 @@
 // `strategic.js`, which re-exports it beside `strategic-layer.js`, the area
 // data this reads.
 
-import { INFANTRY_TYPE, isStandIn } from './strategic-layer.js';
+import { INFANTRY_TYPE } from './strategic-layer.js';
 import { captureReach, captureStandRadius } from './control-point-law.js';
 import { LANDING, landingZonesOf, beachTarget, beachLandingOrder } from './doctrine-landing.js';
 
@@ -249,16 +249,17 @@ export class StrategicAI {
    * (`ai.generated`, the marker the bake copies from `generated.json`), a side
    * the SAI can only order to hold, gives every bot the order a level with no
    * layer gives (bot-decision.js `fallbackWaypoint`: the nearest flag the side
-   * does not hold, passing over one out of play), and goes back to the SAI at
+   * does not hold), and goes back to the SAI at
    * the first pass where it can attack again. A side holds-only when its
    * strategy (live, or the one kept with none scoring) has no attack target
-   * (no area above `SAI.candidateMin`, or NumberOfAttacks 0) while a flag it
-   * could take still stands.
-   *
-   * "A flag it could take" is a capturable point the side does not hold in an
-   * area it may take: a flag the generator took out of play (`setTakeable
-   * <side> 0`, an unreachable flag) is none. A side that holds every flag in
-   * play is defending, and is left to the SAI.
+   * (no area above `SAI.candidateMin`, or NumberOfAttacks 0) while a
+   * capturable flag it does not hold still stands: the flag the no-layer
+   * order would walk it to. A side that holds every capturable flag is left
+   * to the SAI. A flag the generator took out of play (`setTakeable <side>
+   * 0`, "unreachable" by the walk test) counts, as it does on a level with no
+   * layer: on the street levels every flag is out of play and both sides held
+   * all match, and a flag the walk test calls unreachable is not always one
+   * nobody takes (FH Pegasus' Axis took them; flag-binding.md).
    *
    * Why: a generated layer copies DICE's strategy template unchanged and its
    * area graph from the walk test. Where a side's own areas touch no area it
@@ -291,8 +292,7 @@ export class StrategicAI {
     const S = this.sides[side];
     const on = !!this.layer.ai?.generated && S.containers.length > 0
       && ((S.active?.strategy.attacks ?? 1) <= 0 || !this.layer.areas.some(a => this._attackValue(a, side) > SAI.candidateMin))
-      && this.layer.areas.some(a => this.layer.takeableBy(a, side)
-        && a.controlPoints.some(f => !f.uncapturable && f.team !== side));
+      && this.layer.flags.some(f => f.position && !f.uncapturable && f.team !== side);
     S.fallback = on;
     if (!on) return false;
     S.attacks = [];
@@ -363,21 +363,25 @@ export class StrategicAI {
     const other = side === 1 ? 2 : 1;
     const f = new Map(), e = new Map();
     const inc = (m, k, v = 1) => m.set(k, (m.get(k) ?? 0) + v);
-    // `ControlPoint` (state slot 0x12) is `IAIEnvironment` vt+0x94 for the
-    // side: `BFEnvironment::getNumberOfControlPoints(team)` (0x085e4f80), the
+    // `ControlPoint` (state slot 0x12). NOT the engine's count, kept. The
+    // engine's is `IAIEnvironment` vt+0x94 for the side,
+    // `BFEnvironment::getNumberOfControlPoints(team)` (0x085e4f80): the
     // control points in the object manager's vector whose team (+0x174) is
-    // the side's. Control points only: a stand-in (a spawn group no point
-    // claims, a ship's decks; strategic-layer.js `isStandIn`) is none. Read
-    // from the third-party decompile of the 1.61 Linux server and the Mac
-    // client (`getNumberOfControlPoints` 0x085ebff0 there,
-    // `SAI::updateStates`); features/bot-map-generation/flag-binding.md. The
-    // page counted every flag: Edson's Ridge's Allies, eleven of them
-    // stand-ins, held fourteen. The engine also leaves the area type flag
-    // `ControlPoint` out of this slot; the page still adds it (the flag loop
-    // below, where the reason is).
-    const points = this.layer.flags.filter(fl => !isStandIn(fl));
-    inc(f, 'ControlPoint', points.filter(fl => fl.team === side).length);
-    inc(e, 'ControlPoint', points.filter(fl => fl.team === other).length);
+    // the side's, so no stand-in (a spawn group no point claims, a ship's
+    // decks; strategic-layer.js `isStandIn`), and `SAI::updateStates` adds no
+    // area type flag to it (read from the third-party decompile of the 1.61
+    // Linux server and the Mac client). The page counts every world flag the
+    // side holds, stand-ins with them, and (the flag loop below) each owned
+    // area typed `ControlPoint` again. Either change moves the strategy a
+    // generated layer's template chooses on every level that has stand-ins
+    // or such areas: with both, DC_LostVillage lost a third of its captures
+    // and Tunis 39 %; with the stand-ins alone out, Battle for Ortona lost
+    // half its kills, three seeds each; DICE's four levels and every bar and
+    // verdict measured on them move with the area term
+    // (features/bot-map-generation/flag-binding.md, section 5). Its own
+    // change, with the generator's template choice beside it: not made here.
+    inc(f, 'ControlPoint', this.layer.flags.filter(fl => fl.team === side).length);
+    inc(e, 'ControlPoint', this.layer.flags.filter(fl => fl.team === other).length);
     inc(f, 'Time', this.time);
     inc(f, 'StartTime', S.active ? this.time - S.active.chosenAt : 0);
     inc(f, 'Attacks', S.attacks.length);
@@ -399,13 +403,9 @@ export class StrategicAI {
       for (const flag of area.flags) {
         // NOT the engine's, kept: the type flag `ControlPoint` shares its name
         // with the state slot above, and so an owned area typed
-        // `ControlPoint` adds one to the side's `ControlPoint` again. The
-        // engine's `SAI::updateStates` counts that type flag into no slot
-        // (see above). Taking it out moves every layer whose conditions read
-        // `ControlPoint`, DICE's four among them and every bar and verdict
-        // measured on them, and on the live generated levels it cost
-        // DC_LostVillage a third of its captures and Tunis 39 %
-        // (flag-binding.md, section 5): its own change, not made here.
+        // `ControlPoint` adds one to the side's `ControlPoint` again; the
+        // engine counts that type flag into no slot (see above for why it is
+        // kept).
         // Flag counts are per ownership: an owned area with the flag counts
         // for the friendly array, a hostile one for the enemy's.
         const target = st.status === 'Owned' ? f : st.status === 'Hostile' ? e : null;

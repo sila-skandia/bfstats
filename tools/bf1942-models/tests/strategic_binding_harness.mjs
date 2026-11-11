@@ -2,7 +2,8 @@
 // the SAI counts as a side's control points (features/bot-map-generation/
 // flag-binding.md): control points first, the page's stand-ins (a spawn group
 // no point claims, a ship's decks) after and only into an area that holds no
-// control point; `ControlPoint` is the side's control points alone. The shape
+// control point. `ControlPoint` is still the page's sum (stand-ins and owned
+// areas typed `ControlPoint` with the points); pinned as it is. The shape
 // is FHSW Edson's Ridge's: the Allies' flags own no spawn (capture-only), and
 // their orphan spawn groups stand beside them. Run by
 // `tests/test_strategic_flag_binding.py`. One JSON object on stdout.

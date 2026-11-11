@@ -13,9 +13,9 @@
 // It warns when a side has no live strategy at the start of the round (every
 // strategy scores 0, `liveStrategiesAtStart`), naming what the kept strategy
 // attacks: the template does not fit the level's start. It warns too when a
-// side has nothing to attack while a flag in play it could take stands (the
-// area graph does not reach it); on a generated layer that side plays the
-// no-layer order.
+// side has nothing to attack while a capturable flag it does not hold stands
+// (the area graph does not reach it, or it is out of play); on a generated
+// layer that side plays the no-layer order.
 //
 //   node sim/botlint.mjs --map shigaisen_b --maps <maps tree> [--models <tree>] [--source <layer folder>] [--json out.json]
 //
@@ -55,11 +55,11 @@ export function lintLayer({ ai, flags, grid = null, isWalkable = null, ground = 
   // warnings, never errors. `strategy`: a side none of whose strategies
   // scores above 0 (the SAI keeps its first): the template does not fit the
   // level's start. `target`: a side whose strategy finds nothing to attack
-  // while a flag in play it could take stands, which the SAI can only order to
-  // hold: on a generated layer the page gives it the no-layer order
+  // while a capturable flag it does not hold stands, which the SAI can only
+  // order to hold: on a generated layer the page gives it the no-layer order
   // (viewer/strategic-ai.js `_holdOnlyFallback`, INVENTION), so the level
-  // still plays; it says the layer's area graph does not reach those flags
-  // from the side's own areas.
+  // still plays; the layer's area graph does not reach those flags from the
+  // side's own areas, or the generator took them out of play.
   const fallback = ai.generated ? ', so its bots take the no-layer order until a target appears' : ', so its bots hold where they are';
   for (const side of ['1', '2']) {
     const s = startStrategies?.[side];
@@ -69,12 +69,12 @@ export function lintLayer({ ai, flags, grid = null, isWalkable = null, ground = 
       const held = s.attackTargets?.length
         ? `; the SAI keeps ${s.kept}, which attacks ${s.attackTargets.join(', ')}`
         : `; the SAI keeps ${s.kept}, which finds nothing to attack`
-          + (!s.toTake ? ' (no flag in play it does not hold)' : fallback);
+          + (!s.toTake ? ' (it holds every capturable flag)' : fallback);
       warn('strategy', `side ${side} has no live strategy at the start of the round: every one of ${s.names.join(', ')} scores 0 `
         + `(it holds ${s.controlPoint} control points, the enemy ${s.enemyControlPoint})${held}`);
     } else if (stuck) {
-      warn('target', `side ${side} has nothing to attack at the start of the round though ${s.toTake} flag area${s.toTake > 1 ? 's' : ''} in play it could take stand: `
-        + `no area it holds neighbours one${fallback}`);
+      warn('target', `side ${side} has nothing to attack at the start of the round though ${s.toTake} capturable flag${s.toTake > 1 ? 's' : ''} it does not hold stand: `
+        + `no area it holds neighbours one it may take${fallback}`);
     }
   }
   for (const m of pathIndex?.maps ?? []) if (!m.loaded) err('loads', `${m.name}: ${m.reason ?? 'does not load'}`);
@@ -202,8 +202,8 @@ export function liveStrategiesAtStart({ StrategicLayer, StrategicAI, ai, flags, 
     const targets = (S.active?.strategy.attacks ?? 1) > 0 ? layer.areas.filter(a => sai._attackValue(a, side) > candidateMin) : [];
     out[side] = { live: Object.values(scores).some(v => v > 0), names: S.containers.map(c => c.strategy.name), scores,
                   kept: S.active?.strategy.name ?? null, attackTargets: targets.map(a => a.name),
-                  // Flags in play the side could take: as the fallback reads them (strategic-ai.js `_holdOnlyFallback`).
-                  toTake: layer.areas.filter(a => layer.takeableBy(a, side) && a.controlPoints.some(f => !f.uncapturable && f.team !== side)).length,
+                  // Capturable flags the side does not hold: as the fallback reads them (strategic-ai.js `_holdOnlyFallback`).
+                  toTake: layer.flags.filter(f => f.position && !f.uncapturable && f.team !== side).length,
                   controlPoint: S.states.friendly.get('ControlPoint') ?? 0, enemyControlPoint: S.states.enemy.get('ControlPoint') ?? 0 };
   }
   return out;

@@ -1,12 +1,11 @@
 """The hold-only fallback (features/bot-map-generation/no-live-strategy.md, flag-binding.md).
 
 On a generated layer (`ai.generated`) a side whose strategy (live, or kept
-with none scoring) finds nothing to attack, while it has a flag in play to
-take, holds no order and its bots walk to the nearest flag they do
-not hold, as on a level with no layer, passing over a flag the generator
-took out of play; at the first pass where a target
-appears the SAI orders them again. A side that still has a target, or has
-nothing in play to take, keeps the SAI, and a layer
+with none scoring) finds nothing to attack, while a capturable flag it does
+not hold stands, holds no order and its bots walk to the nearest flag they
+do not hold, as on a level with no layer; at the first pass where a target
+appears the SAI orders them again. A side that still has a target, or holds
+every capturable flag, keeps the SAI, and a layer
 without the marker keeps the engine's rule (`SAI::chooseStrategy` keeps the
 strategy it has). INVENTION, labelled in `viewer/strategic-ai.js`
 `_holdOnlyFallback` and in `features/bf1942-ai-spec/KNOBS.md`. Also the
@@ -83,10 +82,15 @@ class NoLiveStrategyTests(unittest.TestCase):
             self.assertTrue(all(p["orders"]))
             self.assertEqual(p["noLayer"], [False] * 4)
 
-    def test_nothing_in_play_to_take_keeps_the_sai(self) -> None:
-        # The flags the generator took out of play are nothing to take.
+    def test_a_flag_out_of_play_still_counts(self) -> None:
+        # The street levels' case: every flag out of play, both sides held.
+        p = self.out["outOfPlay"]["before"]["1"]
+        self.assertTrue(p["fallback"])
+        self.assertEqual(p["orders"], [None] * 4)
+
+    def test_a_side_holding_every_capturable_flag_keeps_the_sai(self) -> None:
         for phase in ("before", "after"):
-            p = self.out["outOfPlay"][phase]["1"]
+            p = self.out["allHeld"][phase]["1"]
             self.assertFalse(p["fallback"])
             self.assertTrue(all(p["orders"]))
 
@@ -102,8 +106,6 @@ class NoLiveStrategyTests(unittest.TestCase):
     def test_the_bot_takes_the_no_layer_order_only_when_told(self) -> None:
         self.assertIsNone(self.out["waypointWithLayer"])
         self.assertEqual(self.out["waypointNoLayerOrder"], "East")
-        # East out of play, West the bot's own: no flag to walk to.
-        self.assertIsNone(self.out["waypointOutOfPlay"])
 
     def test_the_lint_warns_per_side_and_never_errs(self) -> None:
         s = self.out["lintStart"]["1"]
@@ -117,7 +119,8 @@ class NoLiveStrategyTests(unittest.TestCase):
         self.assertIn("side 1 has no live strategy at the start", self.out["lintWarnings"][0])
         self.assertIn("finds nothing to attack", self.out["lintWarnings"][0])
         self.assertIn("no-layer order", self.out["lintWarnings"][0])
-        self.assertIn("no flag in play", self.out["lintOutOfPlayWarnings"][0])
+        # Holding every capturable flag is no warning for the Axis.
+        self.assertFalse([w for w in self.out["lintAllHeldWarnings"] if w.startswith("side 1")])
         # With a target the warning says what the kept strategy attacks.
         self.assertIn("which attacks East", self.out["lintTargetWarnings"][0])
         # East taken by the Axis at the start: only the Allies are named.

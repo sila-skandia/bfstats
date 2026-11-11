@@ -334,10 +334,7 @@ export function fallbackWaypoint(bot) {
   // referee's copy of doctrine.js `noLayerOrder`; INVENTION, strategic-ai.js
   // `_holdOnlyFallback`), which walks as a level with no layer does.
   if (bot.world?.extras?.ai?.strategicAreas?.length && !bot.noLayerOrder) return null;
-  // Held by the fallback, the bot passes over a flag the generator took out
-  // of play (`generated.unreachable`: no soldier can stand in it), which a
-  // level with no layer does not know of.
-  const flag = bot.noLayerOrder ? nearestEnemyFlag(bot, outOfPlay(bot)) : bot._nearestEnemyFlag();
+  const flag = bot._nearestEnemyFlag();
   if (!flag) return null;
   if (bot._fallback?.flag === flag) return bot._fallback;
   const point = [flag.position[0], flag.position[2]];
@@ -364,21 +361,13 @@ export function fallbackWaypoint(bot) {
   return bot._fallback;
 }
 
-/** The names of the control points a generated layer took out of play. */
-function outOfPlay(bot) {
-  const names = bot.world?.extras?.ai?.generated?.unreachable;
-  return names?.length ? new Set(names.map(n => String(n).toLowerCase())) : null;
-}
-
-/** The nearest flag this bot's team does not hold, or null; `skip` a set of
- *  lower-case control point names to pass over. */
-export function nearestEnemyFlag(bot, skip = null) {
+/** The nearest flag this bot's team does not hold, or null. */
+export function nearestEnemyFlag(bot) {
   const flags = bot.world?.flags;
   if (!flags?.length) return null;
   let best = null, bestDist = Infinity;
   for (const flag of flags) {
     if (!flag.position || flag.uncapturable || flag.team === bot.team) continue;
-    if (skip && (skip.has(String(flag.controlPointName ?? '').toLowerCase()) || skip.has(String(flag.name ?? '').toLowerCase()))) continue;
     const d = Math.hypot(flag.position[0] - bot.position[0], flag.position[2] - bot.position[2]);
     if (d < bestDist) { bestDist = d; best = flag; }
   }
