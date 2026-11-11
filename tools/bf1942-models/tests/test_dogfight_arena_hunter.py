@@ -7,8 +7,7 @@ pick". The sentence these tests defend:
     Secret Weapons, BF1918, Desert Combat, Forgotten Hope, FHSW), with the
     two planes the school page puts up by default, each on its own
     airframe: alone and flying straight you are shot down, seconds after the
-    demo opens, but on the one arena named below; with your wingman you are
-    not, but on the one named below; the hunter tracks you steadily rather than rocking its wings from
+    demo opens; with your wingman you are not; the hunter tracks you steadily rather than rocking its wings from
     stop to stop; and no plane in any of the four demos flies into the
     ground.
 
@@ -30,17 +29,6 @@ from pathlib import Path
 HERE = Path(__file__).resolve().parent
 HARNESS = HERE / "dogfight_arena_hunter_harness.mjs"
 FIXTURE = HERE / "fixtures" / "arena-airframes.json.gz"
-
-# Where your wingman, flying your own type, does not get back in time:
-# they meet the hunter head-on, are carried 500 m past, and their turn back
-# on a slow-rolling Hurricane takes longer than the faster Bf 109's run on you.
-WINGMAN_LATE = {"fhsw/Gazala"}
-# Where the hunter does not finish you alone: the Bf 109-G10, paced at 1.3
-# against your Yak 9's 1 (each side staged at its own pace, as the live
-# fight stages it), fires its one cannon from 40 m and lands 21 of the 22
-# rounds the school counts as a kill before it loses its line on you.
-HUNTER_SHORT = {"fhsw/Operation_SpringAwakening"}
-
 
 def run() -> dict:
     if shutil.which("node") is None:
@@ -78,9 +66,6 @@ class HunterOnEveryArenaTests(unittest.TestCase):
     def test_alone_and_flying_straight_you_are_shot_down_on_every_arena(self) -> None:
         for arena, _, pair in self.each_arena():
             move = pair["move"]
-            if arena in HUNTER_SHORT:
-                self.assertGreaterEqual(move["onYou"], 18, move)
-                continue
             with self.subTest(arena=arena):
                 self.assertEqual("shot down", move["youWhy"], move)
                 self.assertGreaterEqual(move["onYou"], 22, move)
@@ -89,14 +74,16 @@ class HunterOnEveryArenaTests(unittest.TestCase):
                 self.assertGreaterEqual(move["firstShot"], move["opens"] + 3, move)
                 self.assertLess(move["youDown"], 60, move)
 
-    def test_your_wingman_covers_you(self) -> None:
-        late = set()
+    def test_your_wingman_covers_you_on_every_arena(self) -> None:
         for arena, _, pair in self.each_arena():
-            if pair["counter"]["youDown"] is not None:
-                late.add(arena)
-        self.assertEqual(WINGMAN_LATE, late)
-        # FHSW's El Alamein, where the owner's check found you shot down.
-        self.assertNotIn("fhsw/El_Alamein", late)
+            with self.subTest(arena=arena):
+                self.assertIsNone(pair["counter"]["youDown"], pair["counter"])
+        # FHSW's El Alamein, where the owner's check found you shot down, and
+        # Gazala, where a Hurricane's wingman met the faster Bf 109 nose to
+        # nose and was carried past (`PAIR.faster`).
+        for name in ("El_Alamein", "Gazala"):
+            row = next(r for r in self.arenas["fhsw"] if r["map"] == name)
+            self.assertIsNone(self.out["pairs"][f"{row['you']}|{row['ace']}"]["pair"]["counter"]["youDown"], name)
 
     def test_nobody_flies_into_the_ground(self) -> None:
         # The hunter, you, and your wingman or weave partner, in all four

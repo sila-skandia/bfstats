@@ -117,7 +117,9 @@ export function pointNose(state, dir, opts = {}) {
   // An airframe whose roll coasts on past the bank it was asked for (its
   // `hand.roll`, `hand.gain`, fitted by `fitAirframe` from how its nose
   // settles) is rolled with that much more damping and a lighter hand.
-  const gain = (opts.gain ?? 1) * (state.hand?.gain ?? 1);
+  const gain = opts.gain ?? 1;
+  // The roll hand's lighter touch is the roll's: the pull keeps its gain.
+  const rollHand = gain * (state.hand?.gain ?? 1);
   const rollDamp = (opts.rollDamp ?? 0.6) * (state.hand?.roll ?? 1);
   const q = state.orientation;
   const { F, U, R } = basis(q);
@@ -149,7 +151,7 @@ export function pointNose(state, dir, opts = {}) {
   const { kBank = 2.5, kBankI = 0, kPitchI = 2.0, kPitch = 2.5 } = opts;
   const fineBank = clamp(kBank * sideErr + kBankI * (mem?.iS ?? 0), -70 * DEG, 70 * DEG);
   const rollErr = w * toward + (1 - w) * (level + fineBank);
-  const roll = clamp(gain * (rollGain * rollErr - rollDamp * rates.roll));
+  const roll = clamp(rollHand * (rollGain * rollErr - rollDamp * rates.roll));
   // The pull: the angle to the target in the plane of the wings' lift, less
   // the pitch rate already under way. Rolling a long way first, the pull
   // waits (a pilot unloads, rolls, then pulls).
@@ -161,7 +163,7 @@ export function pointNose(state, dir, opts = {}) {
   if (off > fine * 1.6) up = Math.max(up, 0) * rollingFirst + Math.min(up, 0) * rollingFirst;
   up = clamp(up * gain, -push, pull);
   // The rudder trims the last few degrees sideways.
-  const rudder = off < fine * 2 ? clamp(gain * (2.4 * sideErr + 2 * (mem?.iS ?? 0) - 0.4 * rates.yaw)) : clamp(-0.3 * rates.yaw);
+  const rudder = off < fine * 2 ? clamp(rollHand * (2.4 * sideErr + 2 * (mem?.iS ?? 0) - 0.4 * rates.yaw)) : clamp(-0.3 * rates.yaw);
   return { pitch: -up, roll, rudder, off };
 }
 

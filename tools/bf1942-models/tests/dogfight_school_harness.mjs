@@ -434,7 +434,7 @@ out.intentOf = { evade: intentOf('ace', 'evade'), recovering: intentOf('ace', 'a
   }
   const s0 = stateOf(planes[0].state);
   out.liveSeats = {
-    fits, ticks, same,
+    fits: fits.map(f => ({ hand: f.hand, pace: f.pace, gun: f.gun })), level: fits.map(f => f.level), ticks, same,
     startsAsWritten: sides.every((side, i) => paced(side.start, fits[i].pace) === side.start),
     gun: JSON.stringify(seatGun(fits[0], { speed: 400, reach: 600 })) === JSON.stringify(gunOf({ speed: 400, reach: 600 })),
     pilotGun: JSON.stringify(seatPilot('ace', fits[0], { gun: { speed: 400, reach: 600 } }).gun) === JSON.stringify(createPilot('ace', { gun: { speed: 400, reach: 600 } }).gun),
