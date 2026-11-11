@@ -1,0 +1,26 @@
+rem *** Strategic areas: one per control point (botgen) ***
+
+aiStrategicArea.create oasis_town 873.5/607.8 878.5/612.8 10
+aiStrategicArea.setSide 1
+aiStrategicArea.setTakeable 1 0
+aiStrategicArea.setTakeable 2 0
+
+aiStrategicArea.create outpost_pass 423.9/889.3 428.9/894.3 10
+aiStrategicArea.setSide 1
+aiStrategicArea.setTakeable 1 0
+aiStrategicArea.setTakeable 2 0
+
+aiStrategicArea.create opposition_base 193.3/631.1 198.3/636.1 150
+aiStrategicArea.addNeighbour us_headquarters
+aiStrategicArea.addObjectTypeFlag Flank
+aiStrategicArea.addObjectTypeFlag Close
+aiStrategicArea.addObjectTypeFlag ControlPoint
+aiStrategicArea.setOrderPosition Infantry 198.3/636.1
+aiStrategicArea.setSide 1
+
+aiStrategicArea.create us_headquarters 795.3/136.4 800.3/141.4 50
+aiStrategicArea.addNeighbour opposition_base
+aiStrategicArea.addObjectTypeFlag Base
+aiStrategicArea.setOrderPosition Infantry 800.3/141.4
+aiStrategicArea.setSide 2
+aiStrategicArea.setTakeable 1 0

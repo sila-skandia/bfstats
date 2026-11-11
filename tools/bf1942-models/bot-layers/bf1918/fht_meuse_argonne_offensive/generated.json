@@ -1,0 +1,101 @@
+{
+ "generator": "botgen",
+ "version": 5,
+ "mod": "bf1918",
+ "level": "fht_meuse_argonne_offensive",
+ "objectSpawners": 108,
+ "template": "symmetric",
+ "templateSource": "DICE, bf1942 Kharkov (1.6 patch archives): AI/Strategies.con, AI/conditions.con, AI/prerequisites.con, unchanged",
+ "templateChoice": {
+  "name": "symmetric",
+  "inPlay": 5,
+  "rule": "5 capturable flags in play, more than 3"
+ },
+ "scope": "on foot: infantry order positions only, no search maps, no co-op layer",
+ "unreachable": [],
+ "unreachableReasons": {},
+ "botSpawnsExcluded": [
+  "axisbase_spawn1",
+  "brabant_spawn1",
+  "artillery_hill_spawn1",
+  "axisbase_spawn2",
+  "alliedbase_spawn2",
+  "brabant_spawn2",
+  "brabant_spawn3",
+  "brabant_spawn4",
+  "brabant_spawn5",
+  "brabant_spawn6",
+  "brabant_spawn7",
+  "consenvoye_spawn4",
+  "consenvoye_spawn6",
+  "artillery_hill_spawn2"
+ ],
+ "walkMap": {
+  "source": "page painter",
+  "engine": "none",
+  "opened": [],
+  "ways": [],
+  "cover": 0.943,
+  "floors": {
+   "stacked": false,
+   "twoFloorShare": 0.003,
+   "raised": [],
+   "reason": null
+  },
+  "capped": true
+ },
+ "routeProbe": {
+  "chokeMax": 4,
+  "unreachable": [],
+  "stops": {},
+  "oneSided": {},
+  "sides": {
+   "1": {
+    "spawns": 13,
+    "flags": [
+     "artillery_hill",
+     "bois_de_forge",
+     "brabant",
+     "consenvoye",
+     "cote_288"
+    ]
+   },
+   "2": {
+    "spawns": 9,
+    "flags": [
+     "artillery_hill",
+     "bois_de_forge",
+     "brabant",
+     "consenvoye",
+     "cote_288"
+    ]
+   }
+  },
+  "chokes": {
+   "brabant:1": 0,
+   "brabant:2": 0,
+   "consenvoye:1": 0,
+   "consenvoye:2": 0,
+   "bois_de_forge:1": 0,
+   "bois_de_forge:2": 0,
+   "cote_288:1": 0,
+   "cote_288:2": 0,
+   "artillery_hill:1": 0,
+   "artillery_hill:2": 0
+  },
+  "late": {},
+  "shutLinks": []
+ },
+ "inputs": {
+  "controlPoints": "d01bec0e63d447bbb03901788518738cd96e498c97b5d9f7750ae0edd2730349",
+  "infantryMap": "c21cab80e6fa0649f8f293ebca10d3c424b939d4bab479554fc830130398a9b5",
+  "template": "43f8a790471528016570235f76e97dbb2045732458781a5139f37fed68bf98c0"
+ },
+ "files": {
+  "AI.con": "84b54fdbafe161fd3682345ddef4b1a2f08529643491b9fc45c06500a5cc4522",
+  "AI/StrategicAreas.con": "ea85a782a5264185a4bca9292a09ef6fa2afa414028363b8382ebbe63fa759db",
+  "AI/Strategies.con": "4ce0be59a0d6c5cd530db002fb062c4be8d936bc6ae59bd188803ccaf7869a8d",
+  "AI/conditions.con": "68a0c7a8aec69954063147b60fae560b2874884285737aa085efa76597d395aa",
+  "AI/prerequisites.con": "4c1f313bc285b228fd6ad03bfd1f44c5b15c8703c31f802eb605bc5f00f88bb5"
+ }
+}

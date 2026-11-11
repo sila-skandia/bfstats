@@ -1,0 +1,103 @@
+{
+ "level": "dc_medina_ridge",
+ "verdict": "fail",
+ "outcome": "no-fight",
+ "config": "with vehicles",
+ "doctrine": "garrison",
+ "generatorVersion": 5,
+ "inputs": {
+  "controlPoints": "c48e8bf91cdb898427b59daa7598b0b0ce6a79002246e6c6f220fbb964b14f22",
+  "infantryMap": "b2891e59d4e9b9aa33bea4f1122a3df901343946d5ebc49807af53ffa42f1d93",
+  "template": "bdc0e455f47f91b7e7724e71d7c0c196e839b36946ac3abb7663d725944081e5"
+ },
+ "baseline": "desertcombat's own layers with vehicles, garrison doctrine: berlin, dc_desertshield, kharkov, kursk, stalingrad; seeds 1..10, 600 s; dropped, no fight: dc_basrahs_edge",
+ "bar": {
+  "against": "desertcombat",
+  "why": "desertcombat's own bar, built from 5 of its levels that are alive (berlin, dc_desertshield, kharkov, kursk, stalingrad)"
+ },
+ "againstDice": {
+  "verdict": "fail",
+  "outcome": "no-fight",
+  "baseline": "DICE layers with vehicles, garrison doctrine: berlin, stalingrad, kharkov, bocage; seeds 1..10, 600 s",
+  "sizes": {
+   "8": {
+    "verdict": "fail",
+    "failed": [
+     "stuckSecondsPerBotMinute",
+     "idleShare",
+     "routeFailuresPerBotMinute",
+     "redeploysPerBotMinute",
+     "capturesTotal",
+     "enemyKillsPerBotMinute",
+     "flagCoverage",
+     "bothSidesCapture",
+     "bothSidesKill",
+     "stuckSecondsPerBotMinuteWorseSide",
+     "routeFailuresPerBotMinuteWorseSide",
+     "redeploysPerBotMinuteWorseSide",
+     "nonEnemyDeathShareWorseSide",
+     "unitsNeverUsedShare"
+    ]
+   },
+   "16": {
+    "verdict": "fail",
+    "failed": [
+     "idleShare",
+     "enemyKillsPerBotMinute",
+     "flagCoverage",
+     "bothSidesCapture",
+     "nonEnemyDeathShareWorseSide",
+     "unitsNeverUsedShare",
+     "tankSilentShare"
+    ]
+   }
+  }
+ },
+ "seeds": 2,
+ "sizes": {
+  "8": {
+   "verdict": "fail",
+   "failed": [
+    "idleShare",
+    "capturesTotal",
+    "enemyKillsPerBotMinute",
+    "flagCoverage",
+    "bothSidesCapture",
+    "bothSidesKill",
+    "stuckSecondsPerBotMinuteWorseSide",
+    "redeploysPerBotMinuteWorseSide",
+    "nonEnemyDeathShareWorseSide",
+    "unitsNeverUsedShare"
+   ],
+   "winners": [
+    2,
+    0,
+    0
+   ]
+  },
+  "16": {
+   "verdict": "fail",
+   "failed": [
+    "idleShare",
+    "capturesTotal",
+    "enemyKillsPerBotMinute",
+    "flagCoverage",
+    "bothSidesCapture",
+    "nonEnemyDeathShareWorseSide",
+    "unitsNeverUsedShare",
+    "tankSilentShare"
+   ],
+   "winners": [
+    2,
+    0,
+    0
+   ]
+  }
+ },
+ "oneSided": 1,
+ "unreachable": [
+  "oasis_town",
+  "outpost_pass"
+ ],
+ "lintErrors": []
+}

@@ -1,0 +1,61 @@
+rem *** Strategic areas: one per control point (botgen) ***
+
+aiStrategicArea.create AlliedBase 625.3/332.5 635.3/342.5 50
+aiStrategicArea.addNeighbour mosque
+aiStrategicArea.addNeighbour Bar
+aiStrategicArea.addNeighbour hospital
+aiStrategicArea.addObjectTypeFlag Base
+aiStrategicArea.setOrderPosition Tank 633.5/343.5
+aiStrategicArea.setOrderPosition Infantry 634.5/342.5
+aiStrategicArea.setSide 2
+aiStrategicArea.setTakeable 1 0
+
+aiStrategicArea.create mosque 434.6/290.9 444.6/300.9 150
+aiStrategicArea.addNeighbour AlliedBase
+aiStrategicArea.addNeighbour Bar
+aiStrategicArea.addNeighbour hospital
+aiStrategicArea.addObjectTypeFlag Flank
+aiStrategicArea.addObjectTypeFlag ControlPoint
+aiStrategicArea.setOrderPosition Tank 447.5/300.5
+aiStrategicArea.setOrderPosition Infantry 445.5/300.5
+aiStrategicArea.setSide 1
+
+aiStrategicArea.create Bar 569/444.2 579/454.2 150
+aiStrategicArea.addNeighbour AlliedBase
+aiStrategicArea.addNeighbour mosque
+aiStrategicArea.addNeighbour East_Ship
+aiStrategicArea.addNeighbour West_Ship
+aiStrategicArea.addNeighbour hospital
+aiStrategicArea.addObjectTypeFlag Flank
+aiStrategicArea.addObjectTypeFlag Close
+aiStrategicArea.addObjectTypeFlag ControlPoint
+aiStrategicArea.setOrderPosition Tank 578.5/452.5
+aiStrategicArea.setOrderPosition Infantry 578.5/453.5
+aiStrategicArea.setSide 1
+
+aiStrategicArea.create East_Ship 638.9/577.8 648.9/587.8 150
+aiStrategicArea.addNeighbour Bar
+aiStrategicArea.addObjectTypeFlag Flank
+aiStrategicArea.addObjectTypeFlag ControlPoint
+aiStrategicArea.setOrderPosition Tank 648.5/585.5
+aiStrategicArea.setOrderPosition Infantry 649.5/588.5
+aiStrategicArea.setSide 1
+
+aiStrategicArea.create West_Ship 331.6/494.4 341.6/504.4 150
+aiStrategicArea.addNeighbour Bar
+aiStrategicArea.addNeighbour hospital
+aiStrategicArea.addObjectTypeFlag Flank
+aiStrategicArea.addObjectTypeFlag ControlPoint
+aiStrategicArea.setOrderPosition Tank 341.5/502.5
+aiStrategicArea.setOrderPosition Infantry 341.5/503.5
+aiStrategicArea.setSide 1
+
+aiStrategicArea.create hospital 408.1/410 418.1/420 150
+aiStrategicArea.addNeighbour AlliedBase
+aiStrategicArea.addNeighbour mosque
+aiStrategicArea.addNeighbour Bar
+aiStrategicArea.addNeighbour West_Ship
+aiStrategicArea.addObjectTypeFlag Flank
+aiStrategicArea.addObjectTypeFlag ControlPoint
+aiStrategicArea.setOrderPosition Tank 422.5/413.5
+aiStrategicArea.setOrderPosition Infantry 419.5/420.5

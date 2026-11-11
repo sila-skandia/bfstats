@@ -1,0 +1,246 @@
+{
+ "generator": "botgen",
+ "version": 5,
+ "mod": "FHSW",
+ "level": "bizerte-1943",
+ "objectSpawners": 89,
+ "template": "symmetric",
+ "templateSource": "DICE, bf1942 Kharkov (1.6 patch archives): AI/Strategies.con, AI/conditions.con, AI/prerequisites.con, unchanged",
+ "templateChoice": {
+  "name": "symmetric",
+  "inPlay": 5,
+  "rule": "5 capturable flags in play, more than 3"
+ },
+ "scope": "an infantry map painted from the walk test, a Tank0 map from the page painter, infantry order positions, no strategic maps, no co-op layer",
+ "unreachable": [],
+ "unreachableReasons": {},
+ "botSpawnsExcluded": [
+  "AlliedBase_Spawn5",
+  "mosque_Spawn4",
+  "Bar_Spawn1"
+ ],
+ "walkMap": {
+  "source": "walk test",
+  "engine": "none",
+  "vehicleMap": "page painter",
+  "vehicleBrush": 1.5,
+  "vehicleBrushes": [
+   {
+    "brush": 3,
+    "flagsOn": 2,
+    "spawnersOn": 7,
+    "pieces": 29,
+    "main": 13846
+   },
+   {
+    "brush": 2.5,
+    "flagsOn": 4,
+    "spawnersOn": 17,
+    "pieces": 28,
+    "main": 22400
+   },
+   {
+    "brush": 2,
+    "flagsOn": 4,
+    "spawnersOn": 18,
+    "pieces": 29,
+    "main": 23912
+   },
+   {
+    "brush": 1.5,
+    "flagsOn": 5,
+    "spawnersOn": 39,
+    "pieces": 25,
+    "main": 37595
+   }
+  ],
+  "opened": [
+   [
+    453,
+    395
+   ],
+   [
+    410,
+    414
+   ],
+   [
+    410,
+    419
+   ],
+   [
+    411,
+    421
+   ],
+   [
+    412,
+    422
+   ],
+   [
+    413,
+    423
+   ],
+   [
+    418,
+    423
+   ],
+   [
+    414,
+    424
+   ],
+   [
+    417,
+    424
+   ],
+   [
+    416,
+    425
+   ],
+   [
+    706,
+    552
+   ],
+   [
+    706,
+    553
+   ],
+   [
+    706,
+    554
+   ],
+   [
+    706,
+    555
+   ],
+   [
+    703,
+    563
+   ],
+   [
+    701,
+    592
+   ],
+   [
+    704,
+    596
+   ]
+  ],
+  "ways": [
+   {
+    "who": "East_Ship_Spawn4",
+    "kind": "spawn",
+    "way": "walk",
+    "opened": 2
+   },
+   {
+    "who": "East_Ship_Spawn5",
+    "kind": "spawn",
+    "way": "walk",
+    "opened": 5
+   },
+   {
+    "who": "hospital_Spawn2",
+    "kind": "spawn",
+    "way": "walk",
+    "opened": 1
+   },
+   {
+    "who": "hospital_Spawn6",
+    "kind": "spawn",
+    "way": "walk",
+    "opened": 8
+   },
+   {
+    "who": "hospital_Spawn7",
+    "kind": "spawn",
+    "way": "walk",
+    "opened": 1
+   },
+   {
+    "who": "hospital_Spawn8",
+    "kind": "spawn",
+    "way": "walk",
+    "opened": 0
+   },
+   {
+    "who": "hospital_Spawn9",
+    "kind": "spawn",
+    "way": "walk",
+    "opened": 0
+   },
+   {
+    "who": "hospital_Spawn10",
+    "kind": "spawn",
+    "way": "walk",
+    "opened": 0
+   }
+  ],
+  "cover": 0.949,
+  "floors": {
+   "stacked": false,
+   "twoFloorShare": 0.009,
+   "raised": [],
+   "reason": null
+  }
+ },
+ "routeProbe": {
+  "chokeMax": 4,
+  "unreachable": [],
+  "stops": {},
+  "oneSided": {},
+  "sides": {
+   "1": {
+    "spawns": 18,
+    "flags": [
+     "Bar",
+     "East_Ship",
+     "West_Ship",
+     "hospital",
+     "mosque"
+    ]
+   },
+   "2": {
+    "spawns": 6,
+    "flags": [
+     "Bar",
+     "East_Ship",
+     "West_Ship",
+     "hospital",
+     "mosque"
+    ]
+   }
+  },
+  "chokes": {
+   "mosque:1": 0,
+   "mosque:2": 2,
+   "Bar:1": 3,
+   "Bar:2": 0,
+   "East_Ship:1": 0,
+   "East_Ship:2": 0,
+   "West_Ship:1": 0,
+   "West_Ship:2": 0,
+   "hospital:1": 1,
+   "hospital:2": 2
+  },
+  "late": {},
+  "shutLinks": []
+ },
+ "inputs": {
+  "controlPoints": "4b4e6e9244b2285c360cae0a0c8b060ae897324e3dfb2932634bb27d277decca",
+  "infantryMap": "09760b5eb8b3283968b764d8b987ce83a03fb94cd184dc28932ff84443b1a998",
+  "template": "43f8a790471528016570235f76e97dbb2045732458781a5139f37fed68bf98c0"
+ },
+ "files": {
+  "AI.con": "26a4968a932cb02f5560de800c61804de753d63024b7306accd1c363ba784669",
+  "AIpathFinding.con": "9d8080cdfa7605961969aa126519b03be9691bd604ac76aef50166d81215edd2",
+  "AI/StrategicAreas.con": "43c12f9116a8c201619e06a47f63915bef65d3bcd2de3a8e47ef11f8ceaf3eed",
+  "AI/Strategies.con": "4ce0be59a0d6c5cd530db002fb062c4be8d936bc6ae59bd188803ccaf7869a8d",
+  "AI/conditions.con": "68a0c7a8aec69954063147b60fae560b2874884285737aa085efa76597d395aa",
+  "AI/prerequisites.con": "4c1f313bc285b228fd6ad03bfd1f44c5b15c8703c31f802eb605bc5f00f88bb5",
+  "Pathfinding/Infantry1Level0Map.raw": "362ec449377bd8a679ded80eed19a4058f34089013768cfcb6c0af386760eb0f",
+  "Pathfinding/Infantry1Level1Map.raw": "041a49f819bfae2f8805dd7e357a937bab145e74c75c50267a0ff319aa10f4ce",
+  "Pathfinding/Infantry1Level2Map.raw": "c8bd4ce0b3cda032370d16df6e8e6eb24d512b3b229fd1358c4b5847d5743343",
+  "Pathfinding/Tank0Level0Map.raw": "5c3a300ee37a3e7c4b89c9a5411cb639e539bebd040b70a355f4de53be2e1b01",
+  "Pathfinding/Tank0Level1Map.raw": "424573dd61832ab9754ce19f499dcfb53351c5180eb11ad545030d8d2ca88206",
+  "Pathfinding/Tank0Level2Map.raw": "553d0aa1cb2de128bea4bf208980e61ded902c429f4697bb65cd66759f1fba7b"
+ }
+}

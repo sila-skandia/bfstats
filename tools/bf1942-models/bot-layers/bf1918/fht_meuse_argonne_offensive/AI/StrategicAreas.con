@@ -1,0 +1,71 @@
+rem *** Strategic areas: one per control point (botgen) ***
+
+aiStrategicArea.create axisbase 475.7/925 490.7/940 50
+aiStrategicArea.addNeighbour consenvoye
+aiStrategicArea.addNeighbour cote_288
+aiStrategicArea.addNeighbour artillery_hill
+aiStrategicArea.addObjectTypeFlag Base
+aiStrategicArea.setOrderPosition Infantry 491.5/941.5
+aiStrategicArea.setSide 1
+aiStrategicArea.setTakeable 2 0
+
+aiStrategicArea.create alliedbase 507.3/96.7 512.3/101.7 50
+aiStrategicArea.addNeighbour brabant
+aiStrategicArea.addNeighbour bois_de_forge
+aiStrategicArea.addObjectTypeFlag Base
+aiStrategicArea.setOrderPosition Infantry 511.5/100.5
+aiStrategicArea.setSide 2
+aiStrategicArea.setTakeable 1 0
+
+aiStrategicArea.create brabant 551.5/346 566.5/361 300
+aiStrategicArea.addNeighbour alliedbase
+aiStrategicArea.addNeighbour consenvoye
+aiStrategicArea.addNeighbour bois_de_forge
+aiStrategicArea.addNeighbour cote_288
+aiStrategicArea.addNeighbour artillery_hill
+aiStrategicArea.addObjectTypeFlag Centre
+aiStrategicArea.addObjectTypeFlag StrongPoint
+aiStrategicArea.addObjectTypeFlag Close
+aiStrategicArea.addObjectTypeFlag ControlPoint
+aiStrategicArea.setOrderPosition Infantry 567.5/362.5
+aiStrategicArea.setSide 2
+
+aiStrategicArea.create consenvoye 563.8/667.9 578.8/682.9 200
+aiStrategicArea.addNeighbour axisbase
+aiStrategicArea.addNeighbour brabant
+aiStrategicArea.addNeighbour bois_de_forge
+aiStrategicArea.addNeighbour cote_288
+aiStrategicArea.addNeighbour artillery_hill
+aiStrategicArea.addObjectTypeFlag Centre
+aiStrategicArea.addObjectTypeFlag Close
+aiStrategicArea.addObjectTypeFlag ControlPoint
+aiStrategicArea.setOrderPosition Infantry 577.5/681.5
+aiStrategicArea.setSide 1
+
+aiStrategicArea.create bois_de_forge 278.1/397.1 293.1/412.1 150
+aiStrategicArea.addNeighbour alliedbase
+aiStrategicArea.addNeighbour brabant
+aiStrategicArea.addNeighbour consenvoye
+aiStrategicArea.addNeighbour cote_288
+aiStrategicArea.addObjectTypeFlag Flank
+aiStrategicArea.addObjectTypeFlag ControlPoint
+aiStrategicArea.setOrderPosition Infantry 294.5/411.5
+aiStrategicArea.setSide 2
+
+aiStrategicArea.create cote_288 288.1/649.1 303.1/664.1 150
+aiStrategicArea.addNeighbour axisbase
+aiStrategicArea.addNeighbour brabant
+aiStrategicArea.addNeighbour consenvoye
+aiStrategicArea.addNeighbour bois_de_forge
+aiStrategicArea.addObjectTypeFlag Flank
+aiStrategicArea.addObjectTypeFlag ControlPoint
+aiStrategicArea.setOrderPosition Infantry 302.5/663.5
+aiStrategicArea.setSide 1
+
+aiStrategicArea.create artillery_hill 788.2/503.5 803.2/518.5 150
+aiStrategicArea.addNeighbour axisbase
+aiStrategicArea.addNeighbour brabant
+aiStrategicArea.addNeighbour consenvoye
+aiStrategicArea.addObjectTypeFlag Flank
+aiStrategicArea.addObjectTypeFlag ControlPoint
+aiStrategicArea.setOrderPosition Infantry 802.5/513.5
