@@ -281,6 +281,31 @@ now clicks READY until a bot has moved, and plays a match that counted
 nothing once more, marked `replayed` (`isVoid`). No earlier check in the
 table above had such a match (every one has kills and moved tickets).
 
+### The page bar rebuilt, and the owner's rollout
+
+With the hold-fire and the hull steering both live, DICE's four levels were
+played again (twelve matches, 2026-11-11 13:00) and the bar is tighter on
+every figure:
+
+| Figure | The bar before | The bar now (DICE's worst match) | DICE's median now |
+|---|---|---|---|
+| Team kills a bot-minute | at most 0.081 | at most 0.025 | 0.006 |
+| Suicides a bot-minute | at most 0.10 | at most 0.056 | 0.025 |
+| Deaths no enemy caused, worse side | at most 0.50 | at most 0.31 | 0.16 |
+| Enemy kills a bot-minute | at least 0.11 | at least 0.175 | 0.30 |
+
+The same day the owner played Tunis-1943 against its generated bots ("they
+rushed to the spawn point, germans counter attacked. I think it's a huge
+improvement on what we have. Might as well roll them out"). So the page
+check no longer decides whether a level gets its menu flag. A level gets
+the flag when the page plays it: a match that is not void (`isVoid`) and
+throws no page error. The check against DICE's bar is still run and kept in
+`page.json`, as the record of how far a level is from DICE's own.
+
+A level whose bot layer is generated now says so on its briefing screen,
+under COMMENTS: "Bot support added by skandia | bfstats.io"
+(`briefing-screen.js commentsWithBotCredit`, the owner's wording).
+
 ## 7. What is not verified
 
 1. One match a level in sections 2 to 5, three in section 6, all unseeded:

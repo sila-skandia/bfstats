@@ -44,6 +44,24 @@ const OUTLINE = [0.078, 0.078, 0.078];  // the body text's dark edge
 
 const FONT_IDS = ['trebuchet_ms18', 'trebuchet_ms11', 'trebuchet_ms8', 'standard6'];
 
+/** The line a level whose bot layer was generated carries under COMMENTS. */
+export const GENERATED_BOTS_CREDIT = 'Bot support added by skandia | bfstats.io';
+
+/**
+ * The COMMENTS text for a level: its own words, and under them the credit
+ * when its bot layer is a generated one (`scene.json` `ai.generated`, the
+ * marker the bake copies from the layer's `generated.json`; a level DICE or a
+ * mod team wrote the AI for has none). `comments` is what the briefing
+ * already had, `ai` the level's `extras.ai`. The briefing wraps on spaces
+ * and has no line break, so the two are joined with a spaced bar.
+ * INVENTION: the retail screen has no such line.
+ */
+export function commentsWithBotCredit(comments, ai) {
+  const own = String(comments ?? '').trim();
+  if (!ai?.generated) return own;
+  return own ? `${own} | ${GENERATED_BOTS_CREDIT}` : GENERATED_BOTS_CREDIT;
+}
+
 export function createBriefingScreen({
   hudPaths, mapsBase = 'maps', vanillaMapsBase = 'maps', bust = () => '',
 } = {}) {

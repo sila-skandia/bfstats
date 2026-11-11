@@ -31,6 +31,7 @@ import { restoreLoadedRounds } from './loaded-rounds.js';
 import { SupplyDepot, heldObjectLife } from './supply.js';
 import { World } from './world.js';
 import { artCandidates } from './level-art.js';
+import { commentsWithBotCredit } from './briefing-screen.js';
 import { VANILLA } from './mods.js';
 import { CombatArea } from './combat-area.js';
 import { VehicleDamageSet } from './vehicle-damage.js';
@@ -924,10 +925,13 @@ export function createLevel(page) {
         return null;
       }
     };
+    const words = { ...brief, ...(page.briefingWords?.(brief) ?? {}) };
     load.briefing({
       ...brief,
       // A campaign mission's side's own words over the multiplayer trio.
       ...(page.briefingWords?.(brief) ?? {}),
+      // A level whose bots are a generated layer says so under COMMENTS.
+      comments: commentsWithBotCredit(words.comments, level.extras.ai),
       displayName: loading.title || level.extras.level || entry.name,
       gameType: level.extras.gameplayMode || 'Conquest',
       flags: [briefingFlag(1), briefingFlag(2)],
