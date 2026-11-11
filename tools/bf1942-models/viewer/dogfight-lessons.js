@@ -577,20 +577,25 @@ export const LESSONS = [
       'The Thach weave, tried: two abreast turning in toward each other whenever someone is on a tail, so the hunter following one is dragged across the other\'s nose. It was invented against a Zero that out-turned a Wildcat. From these nine starts the pair was never hit and the hunter took 0 to 7 rounds; but it rests on the geometry: with the hunter\'s start moved instead of yours, the pair took 3 to 4 rounds a fight as well as giving them. Between equal planes it trades shots more than it wins them.',
     ],
     watchOnly: true,
+    // The plane against you is called the hunter here, on its tag, meter and
+    // caption: there is no ace in this lesson, only someone on your tail.
+    aceRole: 'hunter',
     ace: { plan: 'hunter', start: { at: [60, 430, 350], headingDeg: 0, speed: 66 } },
     you: { start: { at: [0, 400, 0], headingDeg: 0, speed: 60 } },
     demos: [
-      { id: 'move', label: 'Alone, flying straight', seat: 'cruiser', skill: 0.85,
-        note: 'Nobody watching your tail: they close and shoot you down.' },
+      // Opens 8 s in, the hunter still well out: the first seconds are a
+      // slow close from 350 m that showed nothing happening.
+      { id: 'move', label: 'Alone, flying straight', seat: 'cruiser', skill: 0.85, startAt: 8,
+        note: 'The hunter (red) is behind you, closing on your tail. Alone, flying straight, you never look back and nobody else is watching: they open fire from 150 m and shoot you down.' },
       { id: 'flat', label: 'Alone, turning hard', seat: 'flatTurn', skill: 0.85,
-        note: 'You turn as hard as it goes: they cannot hit you, and you cannot get away.' },
+        note: 'Alone, you turn as hard as the plane will go. The hunter follows you round: they hardly hit you, and you cannot get away from them or turn onto them. Nobody wins.' },
       { id: 'counter', label: 'Your wingman covers you', seat: 'cruiser', skill: 0.85,
         extra: [{ plan: 'wingman', start: { at: [-180, 400, 60], headingDeg: 0, speed: 60 }, memory: { leader: 1 } }],
-        note: 'Your wingman flies off your beam; the moment they close on your tail, your wingman turns onto them.' },
+        note: 'You fly straight, as before, with your wingman (green, WINGMAN) off your wing. As the hunter closes on your tail, your wingman turns onto them, and the hunter has to deal with your wingman instead: you are not hit.' },
       { id: 'weave', label: 'Two abreast: the Thach weave, tried', seat: 'weaver', skill: 0.85,
         aceStart: { at: [60, 430, 380], headingDeg: 0, speed: 66 },
         extra: [{ plan: 'weaver', start: { at: [-320, 400, 0], headingDeg: 0, speed: 60 } }],
-        note: 'Whenever someone is on a tail, both turn in toward each other: the hunter is dragged across the other\'s nose, and shots go both ways.' },
+        note: 'You and your wingman fly two abreast. Whenever the hunter is on either tail, both turn in toward each other: following one of you round drags the hunter across the other\'s nose, and shots go both ways.' },
     ],
     seconds: 60,
     coach: {

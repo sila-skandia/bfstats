@@ -2525,7 +2525,9 @@ PLANS.leafFollow = {
 const PAIR = { abeam: 180, behind: 60, cover: 800, tailCone: 60 };
 PLANS.wingman = {
   title: 'The wingman', first: 'station',
-  says: { station: 'On my leader\'s wing, watching his tail', cover: 'Someone is on my leader\'s tail: going for them' },
+  // Said under the wingman's own caption row, the leader being you: the
+  // words name "your" tail, which no third-person rewrite touches.
+  says: { station: 'Off your wing, a little behind, watching your tail', cover: 'Someone is on your tail: turning onto them' },
   step(c) {
     const { me, mem, team } = c;
     const lead = team?.friends.find(f => f.i === (mem.leader ?? f.i)) ?? team?.friends[0];
@@ -2570,7 +2572,7 @@ PLANS.wingman = {
 const WEAVE = { tail: 900, tailCone: 50, shootRange: 600, shootCone: 35 };
 PLANS.weaver = {
   title: 'The weave', first: 'abreast',
-  says: { abreast: 'Abreast of my partner, watching both our tails', weave: 'Someone is on a tail: turning in toward my partner', shoot: 'They are across my nose: shooting' },
+  says: { abreast: 'Two abreast, each watching the other\'s tail', weave: 'Someone is on a tail: turning in toward the other plane', shoot: 'They are across my nose: shooting' },
   step(c) {
     const { me, mem, team, g } = c;
     const mate = team?.friends[0];

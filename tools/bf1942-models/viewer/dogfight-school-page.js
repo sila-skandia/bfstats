@@ -21,7 +21,7 @@
 import { Aircraft } from './aircraft.js';
 import { createDogfightTheatre } from './dogfight-theatre.js';
 import { fighterRank, jetName } from './dogfight-lessons.js';
-import { arenasFrom, arenasFromTeams, planeIn, aceAgainst, arenaUrl } from './dogfight-arena.js';
+import { arenasFrom, arenasFromTeams, planeIn, aceAgainst, lessonPlane, arenaUrl } from './dogfight-arena.js';
 import { loadPlaneModel, airframeRoot, planeVisual } from './plane-models.js';
 import { VIEWER_ROOT } from './viewer-root.js';
 import { loadMods, stored as storedMod, remember, trees, VANILLA } from './mods.js';
@@ -107,6 +107,9 @@ let choice = stored(PLANE_KEY);
 /** The planes of the arena as the theatre lists them. */
 const planes = () => arena.planes.map(p => ({ template: p.template, name: pretty(p.template), fighter: p.fighter }));
 const mine = () => planeIn(arena, choice);
+/** The plane the lessons draw as you: yours, or your side's fighter when you
+ *  picked a bomber or a two-seater (`lessonPlane`); FLY IT is still yours. */
+const drawnMine = () => lessonPlane(arena, mine());
 
 /** The models the theatre draws and flies: the arena's best fighter (the
  *  lessons' airframe, as on the Range), yours, and the ace's. */
@@ -117,7 +120,7 @@ let loading = 0;
 async function loadModels() {
   const ticket = ++loading;
   const best = [...arena.planes].sort((a, b) => fighterRank(a.template) - fighterRank(b.template))[0];
-  const me = mine(), ace = aceAgainst(arena, me);
+  const me = drawnMine(), ace = aceAgainst(arena, me);
   const [f, m, a] = await Promise.all([best, me, ace].map(p => (p ? loadPlaneModel(p.template, modId(arenaMod)) : null)));
   if (ticket !== loading) return false;
   models.fighter = airframeRoot(f) ?? models.fighter;
@@ -232,7 +235,9 @@ function fly({ lesson = null, move = null, course = null }) {
 
 const theatre = createDogfightTheatre({
   host: document.body,
-  planeName: () => pretty(mine()?.template),
+  // The planes drawn: yours as a fighter (`drawnMine`), and the ace's.
+  planeName: () => pretty(drawnMine()?.template),
+  aceName: () => pretty(aceAgainst(arena, drawnMine())?.template),
   // The plane the lessons fly on (the arena's best fighter): every move's
   // count on the tabs is flown on it (features/dogfight-doctrine).
   airframe: () => (models.fighterName ? { key: `${modId(arenaMod)}:${models.fighterName}`, name: pretty(models.fighterName) } : null),

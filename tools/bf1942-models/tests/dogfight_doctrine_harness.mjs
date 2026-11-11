@@ -122,7 +122,8 @@ const pair = {};
         : runDuel({ makePlane, seconds: d.seconds ?? LP.seconds, groundAt: () => 0, sides: sides.slice(0, 2) });
       const on = r.hitsOn ?? [r.hits[1], r.hits[0]];
       return { youDown: r.end?.why === 'shot down' && r.end.winner !== 1 && r.end.winner !== 2 ? r.end.t : null,
-        aceDown: !!r.downs?.some(x => x.i === 0), onYou: on[1], onAce: on[0], onWing: on[2] ?? null,
+        aceDown: !!r.downs?.some(x => x.i === 0), onYou: on[1],
+        firstShot: r.rounds.find(x => x.side === 0)?.t ?? null, onAce: on[0], onWing: on[2] ?? null,
         phases: [...new Set(r.events.filter(e => e.side === 2).map(e => e.phase))] };
     });
   }
@@ -164,4 +165,21 @@ const twoSeater = {}, emptySeat = {};
     emptySeat[d.id] = STARTS.map(st => fly(d, st, empty).rounds.filter(x => x.gunner !== undefined).length);
   }
 }
-console.log(JSON.stringify({ demos, guns, damage, rules: RULES.map(r => r.n), coach: coachCases, gunnery, onSpitfire, leaf, pair, twoSeater, emptySeat, arcs }));
+// A two-seater as "you" (the side the hunter is after, flying straight) with
+// its gunner in the back: the gunner fires at the hunter on its tail, as a
+// two-seater on the ace's side does. The pair lesson flies a fighter; this is
+// the wiring held for any side (`runFight` gives every side its gunners).
+const youSeater = {};
+{
+  const LP = LESSONS.find(l => l.id === 'the-pair');
+  const d = demoById(LP, 'move');
+  youSeater.rows = STARTS.map(st => {
+    const sides = fightSides(LP, d);
+    sides[1] = { ...sides[1], make: stuka.make, gunners: stuka.gunners, start: nudge(sides[1].start, st) };
+    const r = runFight({ makePlane, seconds: LP.seconds, groundAt: () => 0, sides });
+    const g = r.rounds.filter(x => x.gunner !== undefined);
+    return { side: [...new Set(g.map(x => x.side))], gunnerRounds: g.length, gunnerHits: g.filter(x => x.hit).length,
+      gunnerEvent: r.events.some(e => e.side === 1 && e.phase === 'gunner') };
+  });
+}
+console.log(JSON.stringify({ demos, guns, damage, rules: RULES.map(r => r.n), coach: coachCases, gunnery, onSpitfire, leaf, pair, twoSeater, emptySeat, arcs, youSeater }));

@@ -195,6 +195,21 @@ class DoctrineTests(unittest.TestCase):
         self.assertGreater(sum(r["onAce"] for r in pair["weave"]), sum(r["onAce"] for r in pair["flat"]))
         self.assertIn("shoot", pair["weave"][0]["phases"])
 
+    def test_alone_and_straight_the_hunter_fires_and_hits_after_the_demo_opens(self) -> None:
+        # The owner saw this demo as a plane flying straight with nothing
+        # happening: the hunter fires and lands its rounds from every start,
+        # and its first round comes well after the 8 s the demo opens at.
+        rows = self.out["pair"]["move"]
+        self.assertTrue(all(r["onYou"] >= 20 for r in rows), rows)
+        self.assertTrue(all(r["firstShot"] is not None and r["firstShot"] > 8 + 4 for r in rows), rows)
+
+    def test_a_two_seaters_gunner_fires_back_from_any_side(self) -> None:
+        # A two-seater flown as the hunted plane, its gunner in the back,
+        # fires at the hunter on its tail and hits, from every start: the
+        # fight's gunners are any side's, not only the ace's.
+        rows = self.out["youSeater"]["rows"]
+        self.assertTrue(all(r["side"] == [1] and r["gunnerRounds"] > 50 and r["gunnerHits"] > 0 and r["gunnerEvent"] for r in rows), rows)
+
     def test_a_two_seater_is_attacked_from_beneath_its_tail(self) -> None:
         # The Stuka on its own airframe, its gunner on its own MG 42
         # (features/dogfight-doctrine, "The gunners from the planes' own data").

@@ -50,6 +50,13 @@ class ArenaTests(unittest.TestCase):
         self.assertEqual(self.out["planeIn"], {"chosen": "BF109", "missing": "Spitfire"})
         self.assertEqual(self.out["ace"], {"againstAxis": "Spitfire", "againstAllied": "BF109"})
 
+    def test_a_lesson_draws_you_on_your_sides_fighter(self) -> None:
+        # The pair lesson drew a Stuka picked in the chooser, flying a Bf 109's
+        # moves with its rear gun silent: a lesson draws a fighter.
+        self.assertEqual(self.out["lessonPlane"], {
+            "Battle_of_Britain:Ju88A": "BF109", "Battle_of_Britain:BF109": "BF109", "Battle_of_Britain:Spitfire": "Spitfire",
+            "Kursk:Ilyushin": "Yak9", "Kursk:Yak9": "Yak9"})
+
     def test_the_address_is_the_range_as_an_arena(self) -> None:
         q = self.out["url"]
         self.assertEqual(self.out["path"], "/map.html")

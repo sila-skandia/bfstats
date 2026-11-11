@@ -161,7 +161,7 @@ const esc = s => String(s ?? '').replace(/[&<>"]/g, c => ({ '&': '&amp;', '<': '
  * Build the theatre over `host` (the page's stage). `makePlane()` is an
  * airframe for the duels, `planeVisual()` the drawn fighter (a clone of the
  * battle's own, or null for the school's plain one), `planeName` what it is
- * called, `onFly(lessonId, moveDemoId)` puts the player in the air against
+ * called (`aceName` the ace's, when it is another type), `onFly(lessonId, moveDemoId)` puts the player in the air against
  * the lesson's ace, practising a Dip, Flip or Ninja when one is picked, `onFlyCourse(courseId)` starts a ring course (`dogfight-course.js`),
  * `onClose()` hands the page back its pointer. `planes()` lists the aircraft
  * you can fly (`{ template, name, fighter }`), `plane()` is the one chosen
@@ -211,7 +211,7 @@ export function createDogfightTheatre({ host, makePlane, planeVisual = () => nul
                                         recordings = new URL('replays/dogfights/index.json', VIEWER_ROOT).href, planeVisualFor = () => null,
                                         makePlaneFor = null, world = null, embed = null, arenas = null,
                                         mods = null, siteHref = schoolPage(), siteTitle = 'Back to the school', url = false,
-                                        rules = null, twoSeater = () => null }) {
+                                        rules = null, twoSeater = () => null, aceName = null }) {
   // The brand links: the school's own page, or the page that owns this one
   // (the front end's Range tab), in this tab; another site in a new one.
   const siteExternal = /^https?:/.test(siteHref) && !siteHref.startsWith(location.origin);
@@ -369,11 +369,14 @@ export function createDogfightTheatre({ host, makePlane, planeVisual = () => nul
   const state = { open: false, lesson: null, demo: null, fight: null, moveShown: [null, null], planLabels: ["", ""], t: 0, playing: true, speed: 1, camera: 'wide', drawScale: 1, slowOnShots: true, explain: true, hold: 0, explained: new Set(),
                   orbit: { az: -0.9, el: 0.32, zoom: 1 }, rule: 0 };
   /** A side's name on screen: the pilot's own in a recorded fight. */
-  const nameOf = i => (state.fight?.recorded ? state.fight.names[i] : i === 0 ? 'ACE' : 'YOU');
+  /** What a lesson calls the plane against you: "ace", or its own word
+   *  (`lesson.aceRole`: the pair's "hunter"). */
+  const aceWord = () => (state.fight?.lesson ?? state.lesson)?.aceRole ?? 'ace';
+  const nameOf = i => (state.fight?.recorded ? state.fight.names[i] : i === 0 ? aceWord().toUpperCase() : 'YOU');
   /** A side as a sentence starts it. */
   /** A plane beyond the two: a wingman, on your side or the ace's. */
   const wingOf = i => (state.fight?.teams?.[i] === state.fight?.teams?.[1] ? 'your wingman' : 'their wingman');
-  const whoOf = i => (state.fight?.recorded ? state.fight.names[i] : i === 0 ? 'The ace' : i === 1 ? 'You' : wingOf(i).replace(/^./, c => c.toUpperCase()));
+  const whoOf = i => (state.fight?.recorded ? state.fight.names[i] : i === 0 ? `The ${aceWord()}` : i === 1 ? 'You' : wingOf(i).replace(/^./, c => c.toUpperCase()));
   // --- the moves' verdicts on the airframe on stage --------------------------
   // A lesson's counts were measured on the school's Spitfire, and they do not
   // carry to another plane (features/dogfight-doctrine, "The lessons on
@@ -407,7 +410,7 @@ export function createDogfightTheatre({ host, makePlane, planeVisual = () => nul
   }
   /** A side mid-sentence: a recording's pilot by name, a lesson's as "the
    *  ace" or "the other pilot". */
-  const partyOf = i => (state.fight?.recorded ? state.fight.names[i] : i === 0 ? 'the ace' : i === 1 ? 'you' : wingOf(i));
+  const partyOf = i => (state.fight?.recorded ? state.fight.names[i] : i === 0 ? `the ${aceWord()}` : i === 1 ? 'you' : wingOf(i));
   /** A pilot's caption about the two of them, both named (`inThirdPerson`). */
   const said3 = (text, i, other = 1 - i) => inThirdPerson(text, partyOf(i), partyOf(other));
   /** Write the sides' names everywhere the picture carries them. */
@@ -419,13 +422,14 @@ export function createDogfightTheatre({ host, makePlane, planeVisual = () => nul
       ui.capNames[i].textContent = name;
     }
     const rec = state.fight?.recorded;
-    const label = { ace: rec ? `Behind ${nameOf(0)}` : 'Behind the ace', you: rec ? `Behind ${nameOf(1)}` : 'Behind you',
-                    'sight-ace': rec ? `${nameOf(0)}'s gunsight` : 'Ace\'s gunsight', 'sight-you': rec ? `${nameOf(1)}'s gunsight` : 'Your gunsight' };
+    const ace = aceWord();
+    const label = { ace: rec ? `Behind ${nameOf(0)}` : `Behind the ${ace}`, you: rec ? `Behind ${nameOf(1)}` : 'Behind you',
+                    'sight-ace': rec ? `${nameOf(0)}'s gunsight` : `${ace.replace(/^./, c => c.toUpperCase())}'s gunsight`, 'sight-you': rec ? `${nameOf(1)}'s gunsight` : 'Your gunsight' };
     ui.cams.querySelectorAll('button[data-cam]').forEach(b => { if (label[b.dataset.cam]) b.textContent = label[b.dataset.cam]; });
     ui.camNow.textContent = ui.cams.querySelector(`button[data-cam="${state.camera}"]`)?.textContent ?? '';
-    ui.legendNames[0].textContent = `${rec ? nameOf(0) : 'ace'}'s energy`;
+    ui.legendNames[0].textContent = `${rec ? nameOf(0) : ace}'s energy`;
     ui.legendNames[1].textContent = rec ? `${nameOf(1)}'s energy` : 'your energy';
-    ui.legendShots[0].textContent = `${rec ? nameOf(0) : 'ace'} has the shot`;
+    ui.legendShots[0].textContent = `${rec ? nameOf(0) : ace} has the shot`;
     ui.legendShots[1].textContent = rec ? `${nameOf(1)} has the shot` : 'you have the shot';
   }
   /** Fights flown once per lesson and demo, kept for the session. */
@@ -597,8 +601,11 @@ export function createDogfightTheatre({ host, makePlane, planeVisual = () => nul
   function ensureTags(fight) {
     const box = ui.tags[0].parentElement;
     for (const el of box.querySelectorAll('.is-extra')) el.remove();
+    for (const el of ui.caps[0].closest('.dfs-captions').querySelectorAll('.is-extra')) el.remove();
     ui.tags.length = 2;
     ui.guns.length = 2;
+    ui.caps.length = 2;
+    ui.intents.length = 2;
     for (let i = 2; i < fight.tracks.length; i++) {
       const mine = fight.teams?.[i] === fight.teams?.[1];
       const tag = document.createElement('span');
@@ -609,6 +616,13 @@ export function createDogfightTheatre({ host, makePlane, planeVisual = () => nul
       box.append(tag, guns);
       ui.tags.push(tag);
       ui.guns.push(guns);
+      // Their own caption row under the two pilots': what the wingman is doing.
+      const cap = document.createElement('p');
+      cap.className = `dfs-cap ${mine ? 'is-you' : 'is-ace'} is-extra`;
+      cap.innerHTML = '<b>WINGMAN</b><i class="dfs-intent"></i><span></span>';
+      ui.caps[0].closest('.dfs-captions').append(cap);
+      ui.caps.push(cap.querySelector('span'));
+      ui.intents.push(cap.querySelector('.dfs-intent'));
     }
   }
 
@@ -1000,7 +1014,9 @@ export function createDogfightTheatre({ host, makePlane, planeVisual = () => nul
     stageLesson(fight, { at: state.startAt });
     const plane = String(typeof planeName === 'function' ? planeName() : planeName).toUpperCase();
     // A two-seater lesson's ace flies the two-seater it found.
-    const theirs = fight.twoSeater?.name ? String(fight.twoSeater.name).toUpperCase() : plane;
+    // Otherwise the plane drawn as the ace (`aceName`), when the page knows it.
+    const aceNow = typeof aceName === 'function' ? aceName() : aceName;
+    const theirs = String(fight.twoSeater?.name || aceNow || plane).toUpperCase();
     ui.tcKicker.textContent = `${lesson.title.toUpperCase()} · ${plane} AGAINST ${theirs}`;
     // A move's title is its pilot's name for it; what it does is on its
     // card, and the measured detail is in the notes.
@@ -1372,10 +1388,19 @@ export function createDogfightTheatre({ host, makePlane, planeVisual = () => nul
       d.set([a.plane.position.x, a.plane.position.y, a.plane.position.z, a.plane.position.x, 1, a.plane.position.z]);
       a.drop.geometry.attributes.position.needsUpdate = true;
       a.drop.computeLineDistances();
-      // The meters, intents and captions are the two pilots'; a wingman
-      // has his tag, trail and gun line only.
-      if (i > 1) continue;
+      // The meters are the two pilots'; a wingman has their tag, trail, gun
+      // line, and a caption row of their own.
       const intent = kk.in ?? 'setup';
+      if (i > 1) {
+        if (!ui.caps[i]) continue;
+        ui.intents[i].textContent = INTENT_WORDS[intent];
+        ui.intents[i].dataset.intent = intent;
+        const said = sayingAt(fight, i, state.t);
+        const other = Number.isInteger(kk.target) && kk.target >= 0 && kk.target !== i ? kk.target : 0;
+        const text = said3(said?.say ?? '', i, other);
+        if (ui.caps[i].textContent !== text) ui.caps[i].textContent = text;
+        continue;
+      }
       ui.intents[i].textContent = INTENT_WORDS[intent];
       ui.intents[i].dataset.intent = intent;
       const m = ui.meters[i];
@@ -1622,7 +1647,7 @@ export function createDogfightTheatre({ host, makePlane, planeVisual = () => nul
     }
     const e = fight.tracks.map(tr => Math.round(tr.at(-1).e));
     const shots = fight.shotTime.map(v => v.toFixed(1));
-    sp.textContent = `Kill shots: the ace had ${shots[0]} s of them, you ${shots[1]} s. Hits: ace ${aceHits}, you ${youHits}. Energy at the end: ace ${e[0]} m, you ${e[1]} m.`;
+    sp.textContent = `Kill shots: the ${aceWord()} had ${shots[0]} s of them, you ${shots[1]} s. Hits: ${aceWord()} ${aceHits}, you ${youHits}. Energy at the end: ${aceWord()} ${e[0]} m, you ${e[1]} m.`;
     // A wingman's rounds, in a fight of more than two.
     if (fight.hits.length > 2) sp.textContent += ` ${fight.hits.slice(2).map((h, j) => `${whoOf(j + 2)}: ${h} hits`).join('. ')}.`;
     if (said) {
@@ -1643,7 +1668,7 @@ export function createDogfightTheatre({ host, makePlane, planeVisual = () => nul
       const sides = fight.recorded ? [0, 1] : [1];
       const dl = deadlockIn(fight.deadlocks, t) ?? fight.deadlocks?.at(-1) ?? null;
       acts.innerHTML = `<small>${dl ? `${KIND_WORDS[dl.kind][0].toUpperCase()}${KIND_WORDS[dl.kind].slice(1)} at the end: nobody had a shot.` : 'Nobody won.'} `
-        + `Extend the scene from the end to see the school's ways out, each flown from here against ${fight.recorded ? 'the other pilot' : 'the ace'} as they stand.</small>`
+        + `Extend the scene from the end to see the school's ways out, each flown from here against ${fight.recorded ? 'the other pilot' : `the ${aceWord()}`} as they stand.</small>`
         + sides.map(side => `<button type="button" class="dfs-chip" data-extend="run" data-side="${side}" data-t="${t}">${fight.recorded ? `Extend for ${esc(fight.names[side])}` : 'Extend the scene'}</button>`).join('');
     } else acts.innerHTML = '';
     acts.hidden = !open;
@@ -3343,7 +3368,7 @@ export function createDogfightTheatre({ host, makePlane, planeVisual = () => nul
       return {
         open: state.open, lesson: state.lesson?.id ?? null, demo: state.demo?.id ?? null, t: state.t,
         playing: state.playing, camera: state.camera, speed: state.speed,
-        fight: f ? { duration: f.duration, end: f.end, hits: f.hits, rounds: f.rounds.length, events: f.events.length, bursts: f.bursts } : null,
+        fight: f ? { duration: f.duration, end: f.end, hits: f.hits, hitsOn: f.hitsOn ?? null, downs: f.downs ?? null, rounds: f.rounds.length, events: f.events.length, bursts: f.bursts } : null,
         guns: ui.guns.map(g => (g.classList.contains('is-on') ? g.textContent : null)),
         shots: f ? f.shots : null, shotTime: f ? f.shotTime : null, hold: state.hold,
         shotCard: ui.shot.hidden ? null : ui.shot.textContent,

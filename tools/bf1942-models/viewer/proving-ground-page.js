@@ -1615,6 +1615,8 @@ export function createProvingGroundPage(page) {
     school = createDogfightTheatre({
       host: page.stage,
       planeName: name,
+      // The ace's own type, which the kicker names against yours.
+      aceName: enemy ? planeWords(templateOf(enemy)) : name,
       // The plane the lessons fly on: the moves' counts are flown on it.
       airframe: fighter ? { key: `range:${templateOf(fighter)}`, name } : null,
       // The theatre's fights are flown over a floor at 0, as the school's
