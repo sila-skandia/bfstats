@@ -16,6 +16,7 @@ import {
   BfMap, mapRect, pinPlayerMarker, coverRect, surfaceArtMatrix, surfacePoint, zoomTarget,
 } from './bfmap.js';
 import { createCanvasFit } from './map-canvas-fit.js';
+import { artContentRect, artToSurface, fullMapWindow, surfaceToArt, WHOLE_ART } from './map-art-frame.js';
 import { createMapSprites } from './map-sprites.js';
 import { createMapFriendlies } from './map-friendlies.js';
 import { createMapSonar } from './map-sonar.js';
@@ -174,8 +175,31 @@ export function createMapSurfaces(page) {
   }
 
 
+  /** The open map's window on the art (`map-art-frame.js`): the art's
+   *  content, centred and square. The whole art until the art has decoded,
+   *  and whenever its pixels cannot be read. */
+  function frameOpenMap(img) {
+    let rect = null;
+    try {
+      const w = img.naturalWidth, h = img.naturalHeight;
+      const c = document.createElement('canvas');
+      c.width = w;
+      c.height = h;
+      const cx = c.getContext('2d', { willReadFrequently: true });
+      cx.drawImage(img, 0, 0);
+      rect = artContentRect(cx.getImageData(0, 0, w, h).data, w, h);
+    } catch {
+      // A cross-origin art the page may not read: framed whole, as retail.
+      rect = null;
+    }
+    mapSurfaces.artContent = rect;
+    mapSurfaces.openMapWindow = fullMapWindow(rect);
+  }
+
   function loadMapArt(dir) {
     mapSurfaces.mapArt = null;
+    mapSurfaces.artContent = null;
+    mapSurfaces.openMapWindow = WHOLE_ART;
     const token = ++mapSurfaces.mapArtToken;
     const rel = page.extras.minimap?.image;
     minimapBox.hidden = !page.extras.minimap;
@@ -183,6 +207,7 @@ export function createMapSurfaces(page) {
     const img = new Image();
     img.onload = () => {
       if (token !== mapSurfaces.mapArtToken) return;
+      frameOpenMap(img);
       mapSurfaces.mapArt = img;
       // The deploy screen may already be up over a half-decoded art: repaint
       // rather than wait for the 250 ms staleness gate.
@@ -194,6 +219,14 @@ export function createMapSurfaces(page) {
     // A level built in the page draws its own (`proving-ground.js`) and hands
     // it over as a URL; a baked level's is a file in its folder.
     img.src = page.extras.minimap.url ?? `${page.MAPS_BASE}/${dir}/${rel}${page.bust()}`;
+  }
+
+  /** A world position as fractions of the open map's box (`fx`, `fy`, 0..1
+   *  from its top left): `projectToArt` through the open map's window. What
+   *  a click on the deploy map is measured against. */
+  function projectToOpenMap(x, z) {
+    const p = projectToArt(x, z);
+    return p && artToSurface(p.u, p.v, mapSurfaces.openMapWindow ?? WHOLE_ART);
   }
 
   function projectToArt(x, z) {
@@ -279,7 +312,10 @@ export function createMapSurfaces(page) {
       // 0x009576f8), so what lies past an edge is the neighbouring copy, never
       // a backdrop. Each copy's source is grown to cover the turned square's
       // corners and cut to the art.
-      for (const [dx, dy] of ART_COPIES) {
+      // The open map's window can hang past the art when it centres a map
+      // drawn in a band (`map-art-frame.js`); what lies past the edge there
+      // is the pane's backdrop, not the neighbouring copy.
+      for (const [dx, dy] of opts.wrap === false ? [[0, 0]] : ART_COPIES) {
         const cover = coverRect(u0 - dx, v0 - dy, span, size, rot);
         if (!cover) continue;
         ctx.drawImage(art,
@@ -936,7 +972,11 @@ export function createMapSurfaces(page) {
     // shows a 16 px flag at about a fifth of a grid square, and so does this
     // one whatever the canvas's CSS size came out as.
     const css = cssWidthOf(fullmapCanvas) || 610;
-    paintMap(fullmapCanvas, 0, 0, 1, {
+    // The art's content, centred and square (`map-art-frame.js`, an
+    // INVENTION): the whole art on a level drawn edge to edge, as retail.
+    const win = mapSurfaces.openMapWindow ?? WHOLE_ART;
+    paintMap(fullmapCanvas, win.u0, win.v0, win.span, {
+      wrap: false,
       scale: Math.min(2, Math.max(0.8, css / 610)),
       dim: deploy,
       spawnRings: deploy,
@@ -1014,9 +1054,10 @@ export function createMapSurfaces(page) {
     // on the art stands the man there (`onMapPick`), and the map closes.
     if (page.onMapPick) {
       const r = fullmapCanvas.getBoundingClientRect();
-      const u = (event.clientX - r.left) / r.width;
-      const v = (event.clientY - r.top) / r.height;
-      if (u >= 0 && u <= 1 && v >= 0 && v <= 1) {
+      const fx = (event.clientX - r.left) / r.width;
+      const fy = (event.clientY - r.top) / r.height;
+      if (fx >= 0 && fx <= 1 && fy >= 0 && fy <= 1) {
+        const { u, v } = surfaceToArt(fx, fy, mapSurfaces.openMapWindow ?? WHOLE_ART);
         const w = artToWorld(u, v);
         if (w) page.onMapPick(w.x, w.z);
       }
@@ -1044,6 +1085,7 @@ export function createMapSurfaces(page) {
     loadMapArt,
     localMapTeam,
     projectToArt,
+    projectToOpenMap,
     teamArt,
     teamClothNation,
     teamNation,

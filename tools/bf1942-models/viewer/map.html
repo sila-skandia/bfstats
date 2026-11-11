@@ -2995,7 +2995,7 @@ const spawning = createSpawning(bag(
   from(() => localLook, `snapPresentation`),
   from(() => localPlayer, `discardSoldier leavePilot markOnFoot prone revive setOnFoot soldier
     soldierDead supplyTarget toggleProne`),
-  from(() => mapSurfaces, `drawFullMap fullmapBox fullmapCanvas projectToArt toggleFullMap`),
+  from(() => mapSurfaces, `drawFullMap fullmapBox fullmapCanvas projectToArt projectToOpenMap toggleFullMap`),
   from(() => pageInput, `capture`),
   from(() => room, `netReconciler netSendAction netTickPoses noteServerSpawnAsked roomJoined
     serverOwnsSpawn serverSpawnGroups spawnCountdown`),
@@ -4458,7 +4458,7 @@ const testHooks = installTestHooks(bag(
   from(() => localPlayer, `applyDamageToPlayer frameInputLast holdDeploy parachuteLog soldier soldierArmor
     soldierDead supplyTarget switchSeat`),
   from(() => mapSurfaces, `bfmap controlPointSprites friendlyMapUnits friendlyVehicleNodes fullmapCanvas mapSonar
-    localMapTeam mapGate mapVehicleMarks MINIMAP_TEAM_TINT projectToArt setMapGate`),
+    localMapTeam mapGate mapVehicleMarks MINIMAP_TEAM_TINT projectToArt projectToOpenMap setMapGate`),
   from(() => pageAudio, `activeAreaAudios ambientAudio audioLimiter audioListener ensureWorldFire
     pendingSounds vehicleAudio worldFire`),
   from(() => pageInput, `aimHeld captured KBLOCK KBLOCK_KEYS kbLockState kbSession keys pressTrigger
