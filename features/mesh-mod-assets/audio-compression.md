@@ -387,7 +387,16 @@ browser, decoding the shipped `.mp3` and the same sample extracted with
 | `Environment20` (27.3 s ambient bed) | 1,310,151 | 1,310,151 | **0** | 28.2 dB |
 
 Zero delta, and zero leading silent samples on the engine layer. The loop seam
-risk is closed.
+risk is closed in Chromium.
+
+**Not in WebKit (2026-11-11).** WebKit ignores the LAME header. It decodes
+every frame, with the signal 576 samples in and the padding left at the end,
+so in Safari every loop carried 26 to 143 ms of near-silence a pass. The owner
+heard it as the jeep's engine "cutting back to the start". The page now reads
+the header itself and cuts the buffer (`viewer/gapless-decode.js`), so the
+MP3s stay as they are. The tag-stripping warning above matters twice over:
+the header is now what the cut reads. See
+`features/world-vehicle-audio/loop-seam.md`.
 
 Two levels as a smoke test: A_Shau 47 MB → 34 MB, Aberdeen 33 MB → 25 MB, with
 80 shared samples totalling 4.5 MB where the wavs had been roughly 7 MB *per
