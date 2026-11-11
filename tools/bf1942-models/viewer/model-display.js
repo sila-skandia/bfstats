@@ -113,6 +113,7 @@ export function createModelDisplay(page) {
       if (wantsPrepass || mesh.userData.displayPrepass) {
         const prepass = helperFor(mesh, 'prepass', () => new THREE.MeshBasicMaterial({ colorWrite: false }));
         prepass.visible = wantsPrepass;
+        prepass.layers.mask = mesh.layers.mask;   // the part inspector's focus pass moves meshes
         [prepass.material].flat().forEach((pm, i) => {
           const p = settings[i]?.prepass;
           pm.visible = Boolean(p);
@@ -136,6 +137,7 @@ export function createModelDisplay(page) {
           color: WIRE_COLOUR, wireframe: true, transparent: true, depthWrite: false,
         }));
         edges.visible = wire.visible;
+        edges.layers.mask = mesh.layers.mask;
         edges.renderOrder = 5;    // after the blended surface it sits on
         for (const em of [edges.material].flat()) {
           em.depthTest = wire.depthTest;

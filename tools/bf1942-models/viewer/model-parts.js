@@ -2,7 +2,7 @@
 // hover a part of the model to see its template, click to select it and pop
 // it out of a ghosted model, read where it comes from on the Model tab's
 // card, walk the part tree, search by template, mesh, texture or material,
-// and watch the whole model come apart in the builder view.
+// and take the model apart, piece by piece, down its hierarchy.
 //
 // The map of the model (which template every mesh belongs to, what it is
 // made of, the search) is `model-parts-index.js`; the ghost and the part
@@ -11,10 +11,16 @@
 // and cut-out handling.
 
 import * as THREE from 'three';
-import { BUILDER, buildPartIndex, builderDuration, builderProgress, chainOf, describePart,
+import { BUILDER, buildPartIndex, chainOf, describePart,
          hasGeometry, partsWithArmour, popVector, searchParts, subtreeOf, textureLabel } from './model-parts-index.js';
 
 const TINT = 0xb4c060;          // --mm-kd-elite: the hover tint and the selection box
+const RIM = 0x9aa666;           // --mm-accent-soft: the outline round a shown part
+
+// The layer the shown part draws on: `renderFocus` draws it last, over the
+// ghost and the regions, with the depth cleared, so a popped part can never
+// sit behind the ghost's depth copy or a hull.
+export const FOCUS_LAYER = 2;
 const POP_SECONDS = 0.45;
 const BACK_SECONDS = 0.35;
 
@@ -37,7 +43,6 @@ export function createPartInspector(page) {
   let selected = [];            // the parts shown, popped out
   let selectionLabel = '';
   const moving = new Map();     // part -> { from, to, start, seconds }
-  let builder = null;           // { start, maxDepth, parts: [{ part, depth }] }
 
   const tag = document.getElementById('part-tag');
   const card = document.getElementById('part-card');
@@ -116,6 +121,7 @@ export function createPartInspector(page) {
       helper.material.dispose();
       helper.material = boxLine;
       helper.renderOrder = 9;
+      helper.layers.set(FOCUS_LAYER);
       helper.raycast = () => {};
       helper.visible = false;
       page.scene.add(helper);
@@ -162,12 +168,13 @@ export function createPartInspector(page) {
     const focus = (selected.length ? selected : hovered ? [hovered] : []).slice(0, MAX_BOXES);
     box.makeEmpty();
     focus.forEach((part, i) => {
+      part.node.updateWorldMatrix(true, true);
       const helper = boxHelperAt(i);
       helper.box.makeEmpty();
       for (const p of subtreeOf(part)) {
         for (const mesh of meshesOf(p)) if (shown(mesh)) helper.box.expandByObject(mesh, false);
       }
-      helper.visible = !helper.box.isEmpty() && !builder;
+      helper.visible = !helper.box.isEmpty();
       box.union(helper.box);
     });
     for (let i = focus.length; i < boxes.length; i += 1) boxes[i].visible = false;
@@ -182,7 +189,7 @@ export function createPartInspector(page) {
     tag.hidden = false;
     // A finger covers the spot it tapped, and a phone's stage is short: the
     // tag goes under the breadcrumb instead of over the part.
-    if (corner) { tag.style.transform = 'translate(12px, 34px)'; return; }
+    if (corner) { tag.style.transform = `translate(12px, ${crumbs.hidden ? 34 : 34 + crumbs.offsetHeight + 6}px)`; return; }
     const left = Math.min(Math.max(8, x - rect.left + 14), rect.width - tag.offsetWidth - 8);
     const top = Math.min(Math.max(8, y - rect.top + 16), rect.height - tag.offsetHeight - 8);
     tag.style.transform = `translate(${left}px, ${top}px)`;
@@ -192,7 +199,11 @@ export function createPartInspector(page) {
 
   // A tag pinned by a tap or click stops pointing at its part once the camera
   // moves.
-  page.controls.addEventListener('change', () => { if (!pending) tag.hidden = true; });
+  let cameraByUs = false;
+  page.controls.addEventListener('change', () => {
+    // A tag pinned to the corner (a tap) names the pick wherever the camera goes.
+    if (!pending && !(cameraByUs && tag.dataset.corner === 'true')) tag.hidden = true;
+  });
 
   const canvas = page.renderer.domElement;
   let pending = null;
@@ -201,7 +212,7 @@ export function createPartInspector(page) {
   function hoverFrame() {
     const at = pending;
     pending = null;
-    if (!at || builder) return;
+    if (!at) return;
     const part = pickAt(at.x, at.y);
     setHover(part);
     if (part) showTag(part, at.x, at.y);
@@ -227,24 +238,152 @@ export function createPartInspector(page) {
     const moved = Math.hypot(event.clientX - downAt.x, event.clientY - downAt.y);
     const touch = downAt.touch || event.pointerType === 'touch';
     downAt = null;
-    if (moved > 5 || page.armour.ownsClicks || builder) return;
+    if (moved > 5 || page.armour.ownsClicks) return;
     const part = pickAt(event.clientX, event.clientY);
     if (!part) { deselect(); return; }
-    select([part], { source: 'model' });
+    // Picking the part already picked is not a new history step.
+    if (!(selected.length === 1 && selected[0] === part)) select([part], { source: 'model' });
     showTag(part, event.clientX, event.clientY, { corner: touch });
   });
+  // A double-click on a part takes it apart.
+  canvas.addEventListener('dblclick', event => {
+    if (page.armour.ownsClicks) return;
+    const part = pickAt(event.clientX, event.clientY);
+    if (part) takeApartAction(part);
+  });
   addEventListener('keydown', event => {
-    if (event.key !== 'Escape' || !(selected.length || builder)) return;
     if (!document.getElementById('browser')?.hidden) return;
-    if (/^(INPUT|TEXTAREA|SELECT)$/.test(event.target.tagName) && event.target !== search) return;
-    if (builder) stopBuilder(); else deselect();
+    const typing = /^(INPUT|TEXTAREA|SELECT)$/.test(event.target.tagName);
+    if (event.key === 'Escape' && (selected.length || context || apart)) {
+      if (typing && event.target !== search) return;
+      upOneLevel();
+    } else if (event.altKey && !typing && (event.key === 'ArrowLeft' || event.key === 'ArrowRight')) {
+      if (!history.length) return;
+      event.preventDefault();
+      if (event.key === 'ArrowLeft') back(); else forward();
+    }
   });
 
-  // --- Select and pop out ---------------------------------------------------
+  // --- The shown part's own pass ---------------------------------------------
+  //
+  // What is selected draws in a pass of its own after everything else, depth
+  // cleared, so it is the brightest thing on screen whatever the ghost or the
+  // regions are doing: its meshes (on their own material copies, so the ghost
+  // never touches them), an olive rim (a back-face shell pushed out along the
+  // normals), and the selection boxes. A part with no render mesh (a ladder
+  // that is all collision) shows its hull through a lit stand-in, since the
+  // hull itself is hidden while the regions are off.
+
+  for (const light of (() => { const l = []; page.scene.traverse(o => { if (o.isLight) l.push(o); }); return l; })()) {
+    light.layers.enable(FOCUS_LAYER);
+  }
+  const rimMaterial = new THREE.MeshBasicMaterial({ color: RIM, side: THREE.BackSide });
+  let focused = [];          // meshes moved onto the focus layer
+  let proxies = [];          // stand-ins for collision-only parts
+
+  function rimFor(mesh, width) {
+    if (!mesh.geometry?.attributes?.normal) return null;
+    let rim = mesh.userData.partRim;
+    if (!rim) {
+      // Its own material per mesh: the width is in the mesh's own units.
+      const material = rimMaterial.clone();
+      material.onBeforeCompile = shader => {
+        shader.uniforms.rimWidth = { value: material.userData.width };
+        shader.vertexShader = shader.vertexShader
+          .replace('#include <common>', '#include <common>\nuniform float rimWidth;')
+          .replace('#include <begin_vertex>', '#include <begin_vertex>\ntransformed += normalize( normal ) * rimWidth;');
+      };
+      rim = new THREE.Mesh(mesh.geometry, material);
+      rim.userData.displayHelper = 'rim';
+      rim.raycast = () => {};
+      rim.matrixAutoUpdate = false;
+      rim.renderOrder = -1;
+      mesh.userData.partRim = rim;
+      mesh.add(rim);
+    }
+    rim.material.userData.width = width;
+    rim.material.needsUpdate = true;
+    rim.visible = true;
+    return rim;
+  }
+
+  function setFocus(meshes, collisionOnly) {
+    for (const mesh of focused) {
+      mesh.traverse(o => { if (o === mesh || o.userData.displayHelper) o.layers.mask = 1; });
+      if (mesh.userData.partRim) mesh.userData.partRim.visible = false;
+    }
+    for (const proxy of proxies) { proxy.parent?.remove(proxy); proxy.material.dispose(); }
+    focused = [];
+    proxies = [];
+    const radius = page.framing?.radius || 10;
+    const worldWidth = Math.min(Math.max(radius * 0.0025, 0.012), 0.12);
+    for (const mesh of meshes) {
+      mesh.updateWorldMatrix(true, false);
+      const scale = mesh.matrixWorld.getMaxScaleOnAxis() || 1;
+      rimFor(mesh, worldWidth / scale);
+      mesh.traverse(o => { if (o === mesh || o.userData.displayHelper) o.layers.set(FOCUS_LAYER); });
+      focused.push(mesh);
+    }
+    for (const part of collisionOnly) {
+      part.node.updateWorldMatrix(true, true);
+      const toPart = new THREE.Matrix4().copy(part.node.matrixWorld).invert();
+      for (const hull of part.collisionMeshes) {
+        const id = hull.geometry?.userData?.defenseMaterial;
+        const colour = new THREE.Color(page.armour.materialInfo(id).colour);
+        const proxy = new THREE.Mesh(hull.geometry, new THREE.MeshStandardMaterial({
+          color: colour.lerp(new THREE.Color(0xc8c8c8), 0.35), roughness: 0.8, side: THREE.DoubleSide,
+        }));
+        proxy.matrixAutoUpdate = false;
+        proxy.matrix.multiplyMatrices(toPart, hull.matrixWorld);
+        proxy.userData.displayHelper = 'proxy';
+        proxy.raycast = () => {};
+        proxy.layers.set(FOCUS_LAYER);
+        part.node.add(proxy);
+        proxies.push(proxy);
+      }
+    }
+    page.invalidate();
+  }
+
+  /** The last pass: the shown part and its boxes, over everything. */
+  function renderFocus(renderer, scene, camera) {
+    if (!focused.length && !proxies.length && !boxHelper.visible) return;
+    const { autoClear } = renderer;
+    const background = scene.background;
+    const mask = camera.layers.mask;
+    renderer.autoClear = false;
+    scene.background = null;
+    renderer.clearDepth();
+    camera.layers.set(FOCUS_LAYER);
+    renderer.render(scene, camera);
+    camera.layers.mask = mask;
+    scene.background = background;
+    renderer.autoClear = autoClear;
+  }
+
+  // --- The view: what is shown, what is taken apart, what is picked ---------
+  //
+  // One state, set in one place (`go`), so every way back to the whole model
+  // (the card's close button, Whole model, the root crumb, Esc from the top,
+  // history) is the same call with the same result:
+  //
+  //   context   null for the whole model, or the part whose pieces alone are
+  //             shown (everything outside it is hidden, not ghosted)
+  //   apart     whether the context is taken apart (always, inside a part)
+  //   selected  the picked parts: popped out of a ghosted model while it is
+  //             assembled; outlined and boxed in place while it is apart
+  //
+  // Every step is kept in a history (the card's arrows, Alt+Left and Right).
 
   const tmp = new THREE.Vector3();
   const tmp2 = new THREE.Vector3();
   const partBox = new THREE.Box3();
+  let context = null;
+  let apart = false;
+  let hiddenMasks = new Map();   // object -> its layer mask before the context hid it
+  let history = [];
+  let at = -1;
+  let cameraHome = null;         // where the camera was before a context framed it
 
   /** Whether popping `part` would lift the whole model (a root or a hull with everything on it). */
   function isWholeModel(part) {
@@ -253,28 +392,38 @@ export function createPartInspector(page) {
     return total > 0 && mine >= total * 0.9;
   }
 
-  /** The pop-out offset of `part` in its parent's frame, from where it sits now at rest. */
-  function popOffsetOf(part, share) {
+  /** The box of `parts`' shown meshes, with their subtrees, as they sit now. */
+  function boxOf(parts, into = new THREE.Box3()) {
+    into.makeEmpty();
+    for (const part of parts) {
+      part.node.updateWorldMatrix(true, true);
+      for (const p of subtreeOf(part)) for (const mesh of meshesOf(p)) {
+        if (mesh.layers.mask !== 0 && shown(mesh)) into.expandByObject(mesh, false);
+      }
+    }
+    return into;
+  }
+
+  /** `part`'s pop-out in its parent's frame, away from `centre` by `share` of `size`. */
+  function popOffsetOf(part, share, centre = page.framing?.centre, size = page.framing?.radius) {
     const node = part.node;
-    const framing = page.framing;
-    if (!framing || !node.parent) return null;
+    if (!centre || !node.parent) return null;
     partBox.makeEmpty();
     for (const mesh of meshesOf(part)) partBox.expandByObject(mesh, false);
-    if (partBox.isEmpty()) for (const p of subtreeOf(part)) for (const m of meshesOf(p)) partBox.expandByObject(m, false);
+    if (partBox.isEmpty()) boxOf([part], partBox);
     if (partBox.isEmpty()) return null;
-    // Measured where the part is now; take its current pop back out.
-    const centre = partBox.getCenter(tmp);
-    const v = popVector(framing.centre.toArray(), centre.toArray(), framing.radius, share);
+    const middle = partBox.getCenter(tmp);
+    const v = popVector(centre.toArray(), middle.toArray(), size, share);
     node.parent.updateWorldMatrix(true, false);
-    const start = node.parent.worldToLocal(tmp2.copy(centre));
-    const end = node.parent.worldToLocal(centre.clone().add(new THREE.Vector3(...v)));
+    const start = node.parent.worldToLocal(tmp2.copy(middle));
+    const end = node.parent.worldToLocal(middle.clone().add(new THREE.Vector3(...v)));
     return end.sub(start);
   }
 
-  function moveTo(part, to, seconds) {
+  function moveTo(part, to, seconds, delay = 0) {
     const from = part.node.userData.popT ?? 0;
     if (from === to && !moving.has(part)) return;
-    moving.set(part, { from, to, start: performance.now(), seconds });
+    moving.set(part, { from, to, start: performance.now() + delay * 1000, seconds });
     page.startAnimating();
   }
 
@@ -283,122 +432,364 @@ export function createPartInspector(page) {
     delete part.node.userData.popT;
   }
 
-  /**
-   * Show `parts`: pop each out of the model (unless it is the whole model)
-   * and ghost everything else. `source` says where the pick came from: a pick
-   * on the model opens the Model tab and its card; the tree, search and the
-   * armour chips keep the tab they are on.
-   */
-  function select(parts, { source = 'model', label = '' } = {}) {
-    if (builder) stopBuilder(true);
-    const next = [...new Set(parts.filter(Boolean))];
-    for (const part of selected) if (!next.includes(part)) moveTo(part, 0, BACK_SECONDS);
-    selected = next;
-    selectionLabel = label;
-    for (const part of selected) {
-      if (isWholeModel(part)) continue;
-      if (!part.node.userData.popOffset) {
-        const offset = popOffsetOf(part, selected.length > 1 ? 0.16 : 0.22);
-        if (!offset) continue;
-        part.node.userData.popOffset = offset;
-        part.node.userData.popT = 0;
-      }
-      moveTo(part, 1, POP_SECONDS);
+  /** Every part home at once, nothing in flight. */
+  function settleAll() {
+    moving.clear();
+    for (const part of index.parts) if (part.node.userData.popOffset) settle(part);
+    page.display.applyPositions();
+  }
+
+  // --- Hiding what is outside the context ------------------------------------
+
+  function unhide() {
+    for (const [obj, mask] of hiddenMasks) obj.layers.mask = mask;
+    hiddenMasks = new Map();
+  }
+
+  function hideOutside(part) {
+    const keep = new Set(subtreeOf(part));
+    for (const [mesh, owner] of index.partOfMesh) {
+      if (keep.has(owner)) continue;
+      mesh.traverse(o => {
+        if (o !== mesh && !o.userData.displayHelper) return;
+        if (!hiddenMasks.has(o)) hiddenMasks.set(o, o.layers.mask);
+        o.layers.mask = 0;
+      });
     }
+  }
+
+  /**
+   * The pieces a context comes apart into: every shown part with a mesh in
+   * it, and how many mesh-carrying parts sit between it and the context. The
+   * ones at 0 stay put (a ship's hull, a turret's own housing); the rest fly
+   * out, nearer pieces first.
+   */
+  function piecesOf(ctx) {
+    const pieces = [];
+    const top = ctx ? subtreeOf(ctx) : index.parts;
+    for (const part of top) {
+      if (!part.shown || !part.meshes.length) continue;
+      let depth = 0;
+      for (let p = part.parent; p && p !== ctx?.parent; p = p.parent) if (p.meshes.length) depth += 1;
+      // A context with no mesh of its own (a gunner's seat group) spreads its
+      // top pieces apart too.
+      if (ctx && !ctx.meshes.length) depth += 1;
+      pieces.push({ part, depth });
+    }
+    // Several pieces side by side at the top (a plane: fuselage, wings,
+    // tailplanes, gear legs, all siblings): the biggest stays as the anchor
+    // and the rest spread from it, with what hangs off them a step further.
+    const tops = pieces.filter(p => p.depth === 0);
+    if (tops.length > 1) {
+      const anchor = tops.reduce((a, b) => (b.part.triangles > a.part.triangles ? b : a));
+      const shifted = new Set();
+      for (const top of tops) if (top !== anchor) for (const q of subtreeOf(top.part)) shifted.add(q);
+      for (const piece of pieces) if (shifted.has(piece.part)) piece.depth += 1;
+    }
+    return pieces;
+  }
+
+  function takeApart(ctx) {
+    page.display.applyPositions();
+    const pieces = piecesOf(ctx);
+    const whole = boxOf(ctx ? [ctx] : index.parts.filter(p => !p.parent));
+    if (whole.isEmpty()) return;
+    const centre = whole.getCenter(new THREE.Vector3());
+    // A whole ship spreads by a share of its size; a turret taken apart on
+    // its own spreads further for its size, so a barrel clears its housing.
+    const size = whole.getSize(new THREE.Vector3()).length() * (ctx ? 1 : 0.6);
+    for (const { part, depth } of pieces) {
+      if (depth === 0) continue;
+      const share = ctx ? 0.3 + 0.1 * Math.min(depth, 3) : 0.14 + 0.06 * Math.min(depth, 4);
+      const offset = popOffsetOf(part, share, centre, size);
+      if (!offset) continue;
+      part.node.userData.popOffset = offset;
+      part.node.userData.popT = 0;
+      moveTo(part, 1, BUILDER.fly, (depth - 1) * BUILDER.stagger);
+    }
+  }
+
+  function frameBox(target, spread = 1) {
+    if (target.isEmpty()) return;
+    const centre = target.getCenter(new THREE.Vector3());
+    const size = target.getSize(new THREE.Vector3()).length() * spread;
+    const camera = page.camera;
+    const dir = camera.position.clone().sub(page.controls.target).normalize();
+    page.controls.target.copy(centre);
+    camera.position.copy(centre).addScaledVector(dir, Math.max(size * 1.15, 1.5));
+    cameraByUs = true;
+    page.controls.update();
+    cameraByUs = false;
+    page.invalidate();
+  }
+
+  /**
+   * Go to a state: `{ context, apart, selected, label }`. Pushes a history
+   * step unless `push` is false. The only place the view changes.
+   */
+  function go(next, { push = true, source = 'model' } = {}) {
+    const nextContext = next.context || null;
+    const nextApart = Boolean(next.apart || nextContext);
+    const nextSelected = [...new Set((next.selected || []).filter(Boolean))];
+    const viewChanged = nextContext !== context || nextApart !== apart;
+
+    if (viewChanged) {
+      // Back to a clean model first: nothing popped, nothing ghosted, nothing hidden.
+      selected = [];
+      setFocus([], []);
+      page.display.setGhost(null);
+      settleAll();
+      unhide();
+      if (nextContext) hideOutside(nextContext);
+      if (nextContext && !context && !cameraHome) {
+        cameraHome = { position: page.camera.position.clone(), target: page.controls.target.clone() };
+      }
+      context = nextContext;
+      apart = nextApart;
+      if (apart) takeApart(context);
+      if (context) {
+        // Framed with room for the pieces once they are out.
+        frameBox(boxOf([context]), 1.5);
+      } else if (cameraHome) {
+        page.camera.position.copy(cameraHome.position);
+        page.controls.target.copy(cameraHome.target);
+        page.controls.update();
+        cameraHome = null;
+      }
+    }
+
+    // The selection.
+    for (const part of selected) {
+      if (!nextSelected.includes(part) && !apart) moveTo(part, 0, BACK_SECONDS);
+    }
+    selected = nextSelected;
+    selectionLabel = next.label || '';
+    if (!apart) {
+      for (const part of selected) {
+        if (isWholeModel(part)) continue;
+        if (!part.node.userData.popOffset) {
+          const offset = popOffsetOf(part, selected.length > 1 ? 0.16 : 0.22);
+          if (!offset) continue;
+          part.node.userData.popOffset = offset;
+          part.node.userData.popT = 0;
+        }
+        moveTo(part, 1, POP_SECONDS);
+      }
+    }
+    // What stays solid: each part with what hangs off it, except a part that
+    // is the whole model (a ship's hull carries every turret): then only its
+    // own meshes, so the hull plates stand out from the ghosted turrets.
     const keep = new Set();
-    for (const part of selected) for (const p of subtreeOf(part)) for (const mesh of p.meshes) keep.add(mesh);
-    page.display.setGhost(selected.length && keep.size ? keep : null);
+    for (const part of selected) {
+      const owned = isWholeModel(part) ? [part] : subtreeOf(part);
+      for (const p of owned) for (const mesh of p.meshes) keep.add(mesh);
+    }
+    page.display.setGhost(!apart && selected.length && keep.size ? keep : null);
+    // A small part picked on the assembled model is hard to see from where
+    // the whole ship is framed: once it is out, the camera comes in on it
+    // (and goes back when the pick is dropped).
+    frameAfterPop = false;
+    if (!apart && selected.length && source === 'model' && looksSmall(selected)) {
+      if (!cameraHome) cameraHome = { position: page.camera.position.clone(), target: page.controls.target.clone() };
+      frameAfterPop = true;
+    }
+    if (!selected.length && !context && cameraHome && !viewChanged) {
+      page.camera.position.copy(cameraHome.position);
+      page.controls.target.copy(cameraHome.target);
+      page.controls.update();
+      cameraHome = null;
+    }
+    setFocus([...keep], selected.filter(part => !part.meshes.length && part.collisionMeshes.length));
+    if (!selected.length && !moving.size) page.display.setGhost(null);
+
+    if (push) {
+      history = history.slice(0, at + 1);
+      history.push(snapshotState());
+      if (history.length > 80) history.shift();
+      at = history.length - 1;
+    }
+
     page.main.dataset.partSelected = String(selected.length > 0);
+    page.main.dataset.builder = String(apart);
+    page.main.dataset.context = context ? 'part' : 'whole';
+    if (selected.length || apart) page.onInspect?.();
+    if (!selected.length) tag.hidden = true;
     renderCard();
+    renderCrumbs();
     markTree();
+    syncApartButtons();
     if (source === 'model' && selected.length) page.workbench.select('model', { remember: false });
     if (selected.length) revealRow(selected[0]);
+    else if (context) revealRow(context);
     if (source === 'model' && selected.length) showCard();
     updateBox();
     page.invalidate();
   }
 
+  const snapshotState = () => ({
+    context: context?.id ?? null, apart, selected: selected.map(p => p.id), label: selectionLabel,
+  });
+  const stateOf = entry => ({
+    context: entry.context === null ? null : index.parts[entry.context],
+    apart: entry.apart,
+    selected: entry.selected.map(id => index.parts[id]),
+    label: entry.label,
+  });
+
+  let frameAfterPop = false;
+
+  /** Whether `parts` cover less than a sixth of the stage's height as framed now. */
+  function looksSmall(parts) {
+    const b = boxOf(parts);
+    if (b.isEmpty()) return false;
+    const size = b.getSize(new THREE.Vector3()).length();
+    const distance = page.camera.position.distanceTo(b.getCenter(new THREE.Vector3()));
+    const view = 2 * distance * Math.tan((page.camera.fov * Math.PI) / 360);
+    return size / view < 1 / 6;
+  }
+
+  /** The lowest part that holds both the context and `part`: where the view must go to show it. */
+  function holderOf(part, ctx) {
+    if (!ctx || subtreeOf(ctx).includes(part)) return ctx;
+    const mine = new Set(chainOf(part));
+    for (let p = ctx.parent; p; p = p.parent) {
+      if (mine.has(p) && p.meshes.length) return p;
+      if (mine.has(p)) {
+        // A holder with no mesh of its own is still a fine place to stand,
+        // unless it is the model's root.
+        return p.parent ? p : null;
+      }
+    }
+    return null;
+  }
+
+  /** Pick `parts`: in the current view, or the nearest one up that shows them all. */
+  function select(parts, { source = 'model', label = '' } = {}) {
+    const list = [...new Set(parts.filter(Boolean))];
+    let ctx = context;
+    for (const part of list) ctx = holderOf(part, ctx);
+    go({ context: ctx, apart: apart || Boolean(ctx), selected: list, label }, { source });
+  }
+
+  /** A click on nothing: drop the pick, stay where you are. */
   function deselect() {
     if (!selected.length) { tag.hidden = true; return; }
-    for (const part of selected) moveTo(part, 0, BACK_SECONDS);
-    selected = [];
-    selectionLabel = '';
-    page.main.dataset.partSelected = 'false';
-    tag.hidden = true;
-    renderCard();
-    markTree();
-    updateBox();
-    // The ghost lifts once the parts are home (`advance`).
-    if (!moving.size) page.display.setGhost(null);
+    go({ context, apart, selected: [] });
   }
 
-  // --- The builder view -------------------------------------------------------
-
-  /** Parts with geometry, each with how many geometry-carrying parts sit above it. */
-  function builderParts() {
-    const out = [];
-    let maxDepth = 0;
-    for (const part of index.parts) {
-      if (!part.shown || !part.meshes.length) continue;
-      let depth = 0;
-      for (let at = part.parent; at; at = at.parent) if (at.meshes.length) depth += 1;
-      maxDepth = Math.max(maxDepth, depth);
-      out.push({ part, depth });
-    }
-    return { parts: out, maxDepth };
+  /** The whole model, assembled, nothing picked, nothing hidden. The card's close button. */
+  function wholeModel() {
+    if (!context && !apart && !selected.length) { tag.hidden = true; return; }
+    go({ context: null, apart: false, selected: [] });
   }
 
-  function startBuilder() {
-    if (builder) { stopBuilder(); return; }
-    deselect();
-    for (const part of [...moving.keys()]) { settle(part); moving.delete(part); }
-    page.display.setGhost(null);
-    const { parts, maxDepth } = builderParts();
-    if (!parts.length || maxDepth === 0) return;
-    // Measured with everything home, from the root outward.
-    page.display.applyPositions();
-    for (const { part, depth } of parts) {
-      if (depth === 0) continue;
-      const offset = popOffsetOf(part, 0.12 + 0.04 * Math.min(depth, 4));
-      if (offset) { part.node.userData.popOffset = offset; part.node.userData.popT = 0; }
-    }
-    builder = { start: performance.now(), maxDepth, parts };
-    page.main.dataset.builder = 'true';
-    for (const b of builderButtons) b.setAttribute('aria-pressed', 'true');
-    setHover(null);
-    tag.hidden = true;
-    updateBox();
-    page.startAnimating();
-  }
-
-  function stopBuilder(now = false) {
-    if (!builder) return;
-    if (now) {
-      for (const { part } of builder.parts) settle(part);
-      builder = null;
-      page.display.applyPositions();
+  /** Take apart: the picked part if there is one, else the current view. */
+  function takeApartAction(part = selected.length === 1 ? selected[0] : null) {
+    if (part && part !== context && subtreeOf(part).some(p => p !== part && p.meshes.length && p.shown)) {
+      go({ context: part, apart: true, selected: [] });
+    } else if (apart) {
+      wholeModel();
     } else {
-      // Skip to the reassembly.
-      const t = (performance.now() - builder.start) / 1000;
-      const full = builderDuration(builder.maxDepth);
-      const back = full - ((builder.maxDepth - 1) * BUILDER.stagger + BUILDER.back);
-      if (t < back) builder.start -= (back - t) * 1000;
-      page.startAnimating();
+      go({ context: null, apart: true, selected: [] });
+    }
+  }
+
+  /** Esc: drop the pick; with none, go up one level; at the top, put it back together. */
+  function upOneLevel() {
+    if (selected.length) { go({ context, apart, selected: [] }); return; }
+    if (context) {
+      const crumbs = crumbChain(context);
+      const parent = crumbs.length > 1 ? crumbs[crumbs.length - 2] : null;
+      go({ context: parent, apart: true, selected: [context] });
       return;
     }
-    page.main.dataset.builder = 'false';
-    for (const b of builderButtons) b.setAttribute('aria-pressed', 'false');
-    updateBox();
+    if (apart) wholeModel();
   }
 
-  for (const b of builderButtons) b.addEventListener('click', startBuilder);
+  function back() {
+    if (at <= 0) return;
+    at -= 1;
+    go(stateOf(history[at]), { push: false, source: 'history' });
+  }
+  function forward() {
+    if (at >= history.length - 1) return;
+    at += 1;
+    go(stateOf(history[at]), { push: false, source: 'history' });
+  }
 
-  /** One animation frame: the pops in flight and the builder. True while anything moves. */
+  /** The selected part's next or previous sibling that draws something. */
+  function sibling(step) {
+    const part = selected[0];
+    if (!part?.parent) return;
+    const kin = part.parent.children.filter(p => p.shown && subtreeOf(p).some(hasGeometry));
+    const i = kin.indexOf(part);
+    if (kin.length < 2 || i < 0) return;
+    select([kin[(i + step + kin.length) % kin.length]], { source: 'card' });
+  }
+
+  /** The crumbs from the root to `part`: the parts with a mesh, the way a modder thinks of it. */
+  function crumbChain(part) {
+    return chainOf(part).filter(p => p.meshes.length || p === part);
+  }
+
+  // --- The stage's breadcrumb and the take-apart buttons -----------------------
+
+  const crumbs = document.getElementById('part-crumbs');
+  const HOME = '<svg viewBox="0 0 12 12" aria-hidden="true"><path d="M1.5 6 6 2l4.5 4M3 5v5h6V5"/></svg>';
+
+  function renderCrumbs() {
+    const show = Boolean(context || apart || selected.length);
+    crumbs.hidden = !show;
+    if (!show) { crumbs.innerHTML = ''; return; }
+    const trail = context ? crumbChain(context) : [];
+    const items = [`<button type="button" class="pcr-home" data-crumb="whole" title="Back to the whole model, put together">${HOME}<span>Whole model</span></button>`];
+    if (apart && !context) items.push('<span class="pcr-here">taken apart</span>');
+    trail.forEach((part, i) => {
+      const last = i === trail.length - 1;
+      items.push(last
+        ? `<span class="pcr-here" title="Taken apart here">${esc(part.label)}</span>`
+        : `<button type="button" class="pcr-step" data-crumb="${part.id}" title="Take ${esc(part.label)} apart">${esc(part.label)}</button>`);
+    });
+    if (selected.length === 1 && selected[0] !== context) {
+      items.push(`<span class="pcr-pick">${esc(selected[0].label)}</span>`);
+    } else if (selected.length > 1) {
+      items.push(`<span class="pcr-pick">${selected.length} parts</span>`);
+    }
+    crumbs.innerHTML = items.join(CHEVRON);
+  }
+
+  crumbs.addEventListener('click', event => {
+    const step = event.target.closest('[data-crumb]');
+    if (!step) return;
+    if (step.dataset.crumb === 'whole') { wholeModel(); return; }
+    const part = index.parts[Number(step.dataset.crumb)];
+    if (part) go({ context: part, apart: true, selected: [] });
+  });
+
+  function syncApartButtons() {
+    const target = selected.length === 1 && selected[0] !== context
+      && subtreeOf(selected[0]).some(p => p !== selected[0] && p.meshes.length && p.shown) ? selected[0] : null;
+    const label = target ? 'Take apart' : apart ? 'Put back together' : 'Take apart';
+    const title = target
+      ? `Show only ${target.label}, its pieces spread out (double-click a part does the same)`
+      : apart ? 'Put the whole model back together (Esc steps back one level)'
+        : 'Spread the model\'s pieces out and keep them there; click a piece, then Take apart again to go inside it';
+    for (const b of apartButtons) {
+      b.querySelector('span').textContent = label;
+      b.title = title;
+      b.setAttribute('aria-pressed', String(apart && !target));
+    }
+  }
+
+  const apartButtons = builderButtons;
+  for (const b of apartButtons) b.addEventListener('click', () => takeApartAction());
+
+  /** One animation frame: the pieces in flight. True while anything moves. */
   function advance() {
-    if (!moving.size && !builder) return false;
+    if (!moving.size) return false;
     const now = performance.now();
     for (const [part, m] of moving) {
-      const k = Math.min(1, (now - m.start) / 1000 / m.seconds);
+      const k = Math.min(1, Math.max(0, (now - m.start) / 1000 / m.seconds));
       const eased = m.to > m.from ? easeOut(k) : easeInOut(k);
       part.node.userData.popT = m.from + (m.to - m.from) * eased;
       if (k >= 1) {
@@ -406,23 +797,28 @@ export function createPartInspector(page) {
         if (m.to === 0) settle(part);
       }
     }
-    if (builder) {
-      const t = (now - builder.start) / 1000;
-      for (const { part, depth } of builder.parts) {
-        if (part.node.userData.popOffset) part.node.userData.popT = builderProgress(depth, builder.maxDepth, t);
-      }
-      if (t >= builderDuration(builder.maxDepth)) stopBuilder(true);
-    }
     page.display.applyPositions();
     if (!moving.size && !selected.length && page.display.ghosted) page.display.setGhost(null);
+    if (!moving.size && frameAfterPop && selected.length) {
+      frameAfterPop = false;
+      frameBox(boxOf(selected), 2.2);
+    }
     if (boxHelper.visible) updateBox();
-    return moving.size > 0 || Boolean(builder);
+    return moving.size > 0;
   }
 
   // --- The card ---------------------------------------------------------------
 
   const CLOSE = '<svg viewBox="0 0 12 12" aria-hidden="true"><path d="M3 3l6 6M9 3 3 9"/></svg>';
   const FRAME = '<svg viewBox="0 0 12 12" aria-hidden="true"><path d="M1 4V1h3M8 1h3v3M11 8v3H8M4 11H1V8"/><circle cx="6" cy="6" r="1.4"/></svg>';
+  const ARROW_L = '<svg viewBox="0 0 12 12" aria-hidden="true"><path d="M7.5 2.5 4 6l3.5 3.5"/></svg>';
+  const ARROW_R = '<svg viewBox="0 0 12 12" aria-hidden="true"><path d="M4.5 2.5 8 6l-3.5 3.5"/></svg>';
+  const UP = '<svg viewBox="0 0 12 12" aria-hidden="true"><path d="M2.5 7.5 6 4l3.5 3.5"/></svg>';
+  const DOWN = '<svg viewBox="0 0 12 12" aria-hidden="true"><path d="M2.5 4.5 6 8l3.5-3.5"/></svg>';
+  const APART = '<svg viewBox="0 0 16 16" aria-hidden="true"><path d="M5 5 2 2M11 5l3-3M5 11l-3 3M11 11l3 3"/><rect x="5.5" y="5.5" width="5" height="5" rx=".5"/></svg>';
+  const siblingsOf = part => (part?.parent ? part.parent.children.filter(p => p.shown && subtreeOf(p).some(hasGeometry)).length : 0);
+  const canTakeApart = part => Boolean(part) && part !== context
+    && subtreeOf(part).some(p => p !== part && p.meshes.length && p.shown);
   const CHEVRON = '<svg viewBox="0 0 10 10" aria-hidden="true"><path d="M3.5 1.5 7 5l-3.5 3.5"/></svg>';
 
   function thumb(map) {
@@ -460,7 +856,14 @@ export function createPartInspector(page) {
     card.hidden = false;
     if (selected.length > 1) {
       card.innerHTML = `<div class="pc-head"><span class="wb-label">${esc(selectionLabel || 'Selected parts')}</span>`
-        + `<span class="pc-actions"><button type="button" class="pc-frame" data-frame title="Point the camera at it">${FRAME}<span>Frame</span></button><button type="button" class="pc-close" data-close aria-label="Put the parts back">${CLOSE}</button></span></div>`
+        + `<span class="pc-actions"><button type="button" class="pc-frame" data-frame title="Point the camera at it">${FRAME}<span>Frame</span></button><button type="button" class="pc-close" data-close title="Whole model" aria-label="Back to the whole model">${CLOSE}</button></span></div>`
+        + `<nav class="pc-nav" aria-label="Parts visited">`
+        + `<button type="button" class="pc-arrow" data-nav="back" title="Back (Alt+Left)" aria-label="Back"${at > 0 ? '' : ' disabled'}>${ARROW_L}</button>`
+        + `<button type="button" class="pc-arrow" data-nav="forward" title="Forward (Alt+Right)" aria-label="Forward"${at < history.length - 1 ? '' : ' disabled'}>${ARROW_R}</button>`
+        + (siblingsOf(selected[0]) > 1 ? `<span class="pc-sib"><button type="button" class="pc-arrow" data-nav="prev" title="Previous part beside it" aria-label="Previous sibling">${UP}</button>`
+          + `<button type="button" class="pc-arrow" data-nav="next" title="Next part beside it" aria-label="Next sibling">${DOWN}</button></span>` : '')
+        + (canTakeApart(selected[0]) ? `<button type="button" class="pc-frame pc-apart" data-apart title="Show only this part, its pieces spread out">${APART}<span>Take apart</span></button>` : '')
+        + `</nav>`
         + `<div class="pc-name">${selected.length} parts</div>`
         + `<ul class="pc-list">${selected.map(p => `<li>${partButton(p, `<small>${esc(p.kind)}</small>`)}</li>`).join('')}</ul>`;
       return;
@@ -482,7 +885,14 @@ export function createPartInspector(page) {
         + `<small>${esc(m.texture ? textureLabel(m.texture) : 'no texture')}</small></span></li>`;
     }).join('');
     card.innerHTML = `<div class="pc-head"><span class="wb-label">Part</span>`
-      + `<span class="pc-actions"><button type="button" class="pc-frame" data-frame title="Point the camera at it">${FRAME}<span>Frame</span></button><button type="button" class="pc-close" data-close aria-label="Put the part back">${CLOSE}</button></span></div>`
+      + `<span class="pc-actions"><button type="button" class="pc-frame" data-frame title="Point the camera at it">${FRAME}<span>Frame</span></button><button type="button" class="pc-close" data-close title="Whole model" aria-label="Back to the whole model">${CLOSE}</button></span></div>`
+      + `<nav class="pc-nav" aria-label="Parts visited">`
+        + `<button type="button" class="pc-arrow" data-nav="back" title="Back (Alt+Left)" aria-label="Back"${at > 0 ? '' : ' disabled'}>${ARROW_L}</button>`
+        + `<button type="button" class="pc-arrow" data-nav="forward" title="Forward (Alt+Right)" aria-label="Forward"${at < history.length - 1 ? '' : ' disabled'}>${ARROW_R}</button>`
+        + (siblingsOf(selected[0]) > 1 ? `<span class="pc-sib"><button type="button" class="pc-arrow" data-nav="prev" title="Previous part beside it" aria-label="Previous sibling">${UP}</button>`
+          + `<button type="button" class="pc-arrow" data-nav="next" title="Next part beside it" aria-label="Next sibling">${DOWN}</button></span>` : '')
+        + (canTakeApart(selected[0]) ? `<button type="button" class="pc-frame pc-apart" data-apart title="Show only this part, its pieces spread out">${APART}<span>Take apart</span></button>` : '')
+        + `</nav>`
       + `<div class="pc-name">${esc(part.label)}${part.copy > 1 ? ` <i>copy ${part.copy}</i>` : ''}</div>`
       + `<div class="pc-kind">${esc(part.kind)}</div>`
       + `<nav class="pc-chain" aria-label="Parents">${chain}</nav>`
@@ -495,8 +905,15 @@ export function createPartInspector(page) {
   }
 
   function onPanelClick(event) {
-    if (event.target.closest('[data-close]')) { deselect(); return; }
+    // Closing the card is the same as Whole model, always.
+    if (event.target.closest('[data-close]')) { wholeModel(); return; }
     if (event.target.closest('[data-frame]')) { frameSelection(); return; }
+    if (event.target.closest('[data-apart]')) { takeApartAction(); return; }
+    const nav = event.target.closest('[data-nav]');
+    if (nav) {
+      ({ back, forward, prev: () => sibling(-1), next: () => sibling(1) })[nav.dataset.nav]();
+      return;
+    }
     const link = event.target.closest('[data-part]');
     if (link) {
       const part = index.parts[Number(link.dataset.part)];
@@ -542,8 +959,17 @@ export function createPartInspector(page) {
   }
 
   function markTree() {
-    for (const row of tree.querySelectorAll('.pt-row.is-selected')) row.classList.remove('is-selected');
+    for (const row of tree.querySelectorAll('.pt-row.is-selected, .pt-row.is-context, .pt-row.is-outside')) {
+      row.classList.remove('is-selected', 'is-context', 'is-outside');
+    }
     for (const part of selected) rowOf(part)?.classList.add('is-selected');
+    if (context) {
+      const inside = new Set(subtreeOf(context));
+      for (const row of tree.querySelectorAll('.pt-row')) {
+        if (!inside.has(index.parts[Number(row.dataset.part)])) row.classList.add('is-outside');
+      }
+      rowOf(context)?.classList.add('is-context');
+    }
   }
 
   function revealRow(part) {
@@ -667,8 +1093,15 @@ export function createPartInspector(page) {
   // --- A new model ----------------------------------------------------------------
 
   function adoptModel(root, nextReport) {
-    builder = null;
+    focused = [];
+    proxies = [];
     moving.clear();
+    hiddenMasks = new Map();
+    context = null;
+    apart = false;
+    history = [];
+    at = -1;
+    cameraHome = null;
     selected = [];
     selectionLabel = '';
     hovered = null;
@@ -677,10 +1110,10 @@ export function createPartInspector(page) {
     index = buildPartIndex(root);
     page.main.dataset.partSelected = 'false';
     page.main.dataset.builder = 'false';
-    for (const b of builderButtons) {
-      b.setAttribute('aria-pressed', 'false');
-      b.disabled = builderParts().maxDepth === 0;
-    }
+    page.main.dataset.context = 'whole';
+    for (const b of apartButtons) b.disabled = !piecesOf(null).some(p => p.depth > 0);
+    syncApartButtons();
+    renderCrumbs();
     tag.hidden = true;
     boxHelper.visible = false;
     renderCard();
@@ -700,7 +1133,12 @@ export function createPartInspector(page) {
       hovered: at(hovered),
       selected: selected.map(at),
       moving: moving.size,
-      builder: Boolean(builder),
+      builder: apart,
+      apart,
+      context: context ? { id: context.id, name: context.name, label: context.label } : null,
+      hidden: hiddenMasks.size,
+      history: history.length,
+      historyAt: at,
       ghosted: page.display.ghosted,
       tagShown: !tag.hidden,
       cardShown: !card.hidden,
@@ -710,11 +1148,17 @@ export function createPartInspector(page) {
   Object.assign(inspector, {
     adoptModel,
     advance,
+    back,
     deselect,
+    forward,
+    takeApart: takeApartAction,
+    upOneLevel,
+    wholeModel,
     getState,
     onCollisionMaterial,
     frameSelection,
     pickAt,
+    renderFocus,
     search: q => { search.value = q; runSearch(); return lastGroups; },
     select,
     selectNamed: name => {
@@ -723,8 +1167,9 @@ export function createPartInspector(page) {
       return Boolean(part);
     },
     setHover,
-    startBuilder,
-    stopBuilder,
+    // The old builder-view names, for the page's own checks.
+    startBuilder: () => takeApartAction(null),
+    stopBuilder: () => wholeModel(),
   });
   // A getter, not a copied value: Object.assign would read it once.
   Object.defineProperty(inspector, 'index', { get: () => index });

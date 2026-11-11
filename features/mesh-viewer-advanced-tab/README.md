@@ -176,18 +176,48 @@ a texture named after its .dds. The report adds `animatedParts` (the radar's
 - **Material chips** (Hit regions): a chip still isolates its regions, and now
   also lists the parts that carry it under the legend and pops them out.
   Clicking it again puts them back.
-- **Builder view** (the stage's top-right pill, and the Model tab): every part
-  with a mesh flies out along its own direction, staggered by how many
-  mesh-carrying parts sit above it (the hull stays, its turrets leave first,
-  their barrels after), holds, then comes home deepest last. Esc or the button
-  again skips to the reassembly.
+- **Take apart** (the stage's pill, the Model tab, the card, or a
+  double-click on a part) is a toggle that stays on. With nothing picked it
+  spreads the whole model: the biggest top piece (a ship's hull, a plane's
+  fuselage) stays as the anchor, the rest fly out staggered, nearer pieces
+  first, and stay out. With a part picked it takes **that part** apart: only
+  it and what hangs off it are shown (the rest is hidden, not ghosted), the
+  camera frames it, its pieces spread. Pick a piece and Take apart again to go
+  one level further down (Fletcher: the hull, then a turret, whose barrel
+  comes off its housing). The same pill then reads **Put back together**.
+- **Where you are**: a breadcrumb on the stage, `Whole model > FletcherComplex
+  > Fletcher_cannon`, with the pick after it in italics. A crumb goes back up
+  to that level, still taken apart; **Whole model** is the assembled model
+  with nothing hidden. Esc steps up one level (the pick first). Picking a part
+  in the tree or the search outside what is shown moves up to the lowest
+  level that holds it; the tree marks the level "taken apart" and dims what is
+  outside it.
+- **Back and forward**: every pick and every level is a step; the card's
+  arrows (and Alt+Left / Alt+Right) walk them, and the up and down arrows step
+  through the part's siblings. Clicking another part on the ghosted model, in
+  the tree, or in the card's chain or children switches straight to it.
+- **One way home**: the card's close button, the Whole model crumb and Esc
+  from the top all end in the same state, set in one place (`go`): nothing
+  picked, popped, ghosted or hidden, every material the model's own.
 - **Shots and parts**: while the regions are on, a click places a shot, as
   before. A "A click on the model: Places a shot / Picks a part" chip under
   Region opacity hands the click to the inspector instead. With the regions
   off there is no shot to place, so a click always picks.
-- **Phone**: a tap selects (there is no hover); the tag shows under the
-  breadcrumb rather than under the finger; rows and links are taller; the
-  builder pill sits bottom right.
+- **Picked parts are the brightest thing on screen**: the picked meshes
+  move onto a layer of their own (`FOCUS_LAYER`) drawn last with the depth
+  cleared, so neither the ghost's depth copy nor a hull can hide them, with
+  their own material copies (never ghosted), lit, and an olive rim (a
+  back-face shell pushed out along the normals). A collision-only part shows a
+  lit stand-in of its hull. A small part picked on a far-framed model brings
+  the camera in once it is out, and the camera goes back when the pick is
+  dropped.
+- **Phone**: a tap selects (there is no hover); the tag sits under the
+  breadcrumb rather than under the finger; rows, arrows and crumbs are taller;
+  Take apart sits bottom right. The crew stations bar starts collapsed under
+  720 px (a tap on its head opens it, and the choice is remembered) and
+  collapses again on a pick or Take apart, and while the inspector is in use
+  the stage takes 56% of the screen's height: 52% measured at 390x844, 50% at
+  375x667, 40-42% before any pick.
 
 ### How it works
 
@@ -238,16 +268,36 @@ pop-out and builder timing.
 - a search for 57 lists armour material 57 first and pops the four turrets;
   "Fletch_canon_m1", "Fle_base", "Radar" and "7" each find their kinds;
 - chip 57 lists and pops its parts; again puts them back;
-- the builder view runs and reassembles with nothing moved;
+- every exit from a pick (the card's close button, Esc, a click on empty
+  space, the Whole model crumb, the back arrow) leaves every mesh exactly as it
+  was before the pick (shown, layer, the same material objects with the same
+  visibility, opacity, blending, depth write and side) and every node where it
+  was, on the Fletcher and the Spitfire, desktop and phone;
+- the round trip: pick, switch on the ghosted model, back, close;
+- Take apart holds after 2.6 s; a part taken apart hides the rest; two levels
+  down on the Fletcher (hull, then turret); a crumb goes back up still apart;
+  Whole model puts it all back exactly;
+- the cannon, the radar, the hull and a collision-only part each picked are on
+  the focus pass, solid and outlined;
 - 200 picks on the Yamato average 0.1 ms;
 - on the Sherman with the regions on, a click still places a shot and picks no
   part; with "Picks a part" the same click selects a part;
-- at 390 px: a tap selects and shows the tag, the card and tree fit with no
-  sideways scroll, and the builder view runs.
+- at 390x844 and 375x667 on the Fletcher, the Spitfire and the Yamato: a tap
+  picks, the stage keeps 50% or more, the crew bar is collapsed, Whole model is
+  on the stage and the card's arrows are reachable below, no sideways scroll.
 
-Frames: `desktop-fletcher-hover`, `-selected`, `-selected-framed`,
-`-tree-radar`, `-search-armour-57`, `-chip-57`, `-builder`,
-`desktop-sherman-pick-part`, `phone-fletcher-tap`, `-card`, `-tree`, `-builder`.
+Why the model "went blank" (owner, 2026-11-12): not reproduced headless in
+Chromium or WebKit, where every exit restored the model. What would freeze it
+that way is a throw inside an animation frame: the loop then never cleared
+`animating`, so `invalidate()` refused every later frame and the canvas kept
+the ghosted frame until a reload. A frame that throws now ends the loop
+cleanly (`frameWork` in index.html), and every exit goes through `go`.
+
+Frames: `desktop-fletcher-hover`, `-selected-<part>`, `-framed-<part>`,
+`desktop-<ship|plane>-1-pick`, `-2-switch`, `-3-back`, `-4-whole-model`,
+`-apart-1-whole`, `-apart-2-<part>`, `-apart-3-<part>`, `-apart-4-crumb-up`,
+`-apart-5-whole-model`, the same with `phone-<model>-390x844-`, and
+`phone-<model>-<size>-tap` and `-card`.
 
 ## Files
 
@@ -288,10 +338,11 @@ It asserts each control and writes a screenshot of each state:
 
 ## Open
 
-- On a phone the crew stations bar takes most of the stage's height on a
-  vehicle with many stations (the Fletcher has six), leaving the model a strip
-  about 90 px tall. Collapsing the bar (its chevron) gives the stage back; it
-  is not collapsed by default because the bar is the vehicle's controls.
+- Back and forward are the card's arrows and Alt+Left/Right, not the
+  browser's own back button: the page's hash already names the model, and a
+  history entry per pick would make the browser's back leave the model.
+- A plane's hierarchy is shallow: the gear leg holding its wheel is as deep as
+  Take apart goes on the Spitfire.
 
 - At 40% a dark hull over the near-black stage is dim by nature; the edges are
   kept at 40% strength so they do not wash the paint out. If modders want the
