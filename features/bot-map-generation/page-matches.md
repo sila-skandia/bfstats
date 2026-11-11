@@ -326,6 +326,8 @@ Rollout levels, one match each on the page (the bar is DICE's rebuilt one;
 | BF1918 roye, one match | **no**: the worse side dies by its own hand | fails two | 0, 1.00, 0.03 | 2 | 96:104 |
 | Desert Combat DC_Oil_Fields, two matches | **no**: the worse side dies by its own hand | fails two | 0, 0.63 and 0.71, 0.06 and 0.04 | 3 and 8 | 97:55, 99:56 |
 | FHSW Stalingrad_RedSquare, two matches | **no**: the worse side dies by its own hand | fails two | 0, 1.00 and 1.00, 0.05 and 0.04 | 2 and 3 | 88:106, 89:105 |
+| BF1918 fht_meuse_argonne_offensive, one match | **no** | fails two | 0, 0.60, 0.05 | 0 | 118:122 |
+| FHSW Bizerte-1943, one match | **no** | fails two | 0, 0.64, 0.03 | 0 | 92:63 |
 | The_Bridge (community), two matches | **no**: too quiet | fails enemy kills | 0, 0, 0.03 and 0.04 | 2 and 2 | 23:51, 27:48 |
 | Aberdeen (vanilla), two matches | **no**: the worse side dies by its own hand | fails three | 0, 0.72 and 0.97, 0.11 and 0.08 | 5 and 6 | 88:77, 94:73 |
 
