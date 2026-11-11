@@ -59,5 +59,10 @@
  "unreachable": [
   "City"
  ],
- "lintErrors": []
+ "lintErrors": [],
+ "acceptanceWithdrawn": {
+  "because": "page match 2026-11-11: 0.72 of the worse side's deaths were not the enemy's (suicides), over the rollout's page floor of 0.5; 0.11 enemy kills a bot-minute and 5 captures",
+  "date": "2026-11-11",
+  "was": "Owner's rollout, 2026-11-11: after playing Tunis-1943 against its generated bots"
+ }
 }
