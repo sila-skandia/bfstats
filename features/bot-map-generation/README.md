@@ -27,8 +27,9 @@ both bars rebuilt, The_Maze is still better than nothing and stays live on
 a new layer; shigaisen_B is not and was taken off the page; no mod level
 reaches better-than-nothing, on DICE's bar or its own mod's.
 
-**What is live, 2026-11-11:** The_Maze (Community Maps), which fails the
-page check on team kills and says so in its acceptance, and four mod levels
+**What is live, 2026-11-11:** The_Maze (Community Maps), which failed the
+page check on team kills until the bots' hold-fire went live the same day
+([hold-fire.md](hold-fire.md)) and passes it since, and four mod levels
 that pass it: Desert Combat's DC_LostVillage, DC_Basrah_Nights and
 Inshallah_Valley, and FHSW's Tunis-1943. A level now goes to the page without its
 menu flag, is played there three times against a bar from DICE's levels

@@ -133,7 +133,22 @@ function installSampler() {
   }, 200);
 }
 
-export async function pageMatch({ url, seconds = 600, loadTimeout = 240 }) {
+/**
+ * A match in which the round counted nothing for anyone: no kill, no
+ * death, no capture. On a level with a fight that is a round that never
+ * began (the READY click landed before the button did), so `pageMatch`
+ * plays it once more and says so (`replayed`); a level that is void twice
+ * is void, and its figures stand.
+ */
+export const isVoid = m => !m.capturesTotal && !m.enemyKillsPerBotMinute && !m.teamKillsPerBotMinute && !m.suicidesPerBotMinute;
+
+export async function pageMatch(options) {
+  const first = await playOnce(options);
+  if (!isVoid(first)) return first;
+  return { ...await playOnce(options), replayed: true };
+}
+
+async function playOnce({ url, seconds = 600, loadTimeout = 240 }) {
   const require = createRequire(path.join(HERE, '..', '..', '..', 'ui', 'package.json'));
   const { chromium } = require('playwright');
   const browser = await chromium.launch({ headless: true, args: ['--use-angle=metal', '--ignore-gpu-blocklist', '--enable-gpu', '--mute-audio'] });
@@ -148,7 +163,15 @@ export async function pageMatch({ url, seconds = 600, loadTimeout = 240 }) {
       const w = window.__world?.();
       return { level: w?.extras?.level ?? null, generated: w?.extras?.ai?.generated ?? null };
     });
-    await page.mouse.click(392, 438);            // READY: the local player stays on the deploy screen
+    // READY: the local player stays on the deploy screen. The round waits for it, so the click is made again
+    // until a bot has moved (a click that lands before the button is drawn starts nothing).
+    const where = () => page.evaluate(() => JSON.stringify(window.__bots().map(b => b.pos ?? null)));
+    for (let tries = 0; tries < 4; tries++) {
+      const before = await where();
+      await page.mouse.click(392, 438);
+      await page.waitForTimeout(8000);
+      if (await where() !== before) break;
+    }
     await page.evaluate(installSampler);
     await page.waitForTimeout(seconds * 1000);
     const raw = await page.evaluate(() => {

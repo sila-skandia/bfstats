@@ -103,5 +103,9 @@ class Url(unittest.TestCase):
         self.assertIn("botCount=32", out["mod"])
 
 
+    def test_a_match_that_counted_nothing_is_void(self) -> None:
+        # No row at all, a match with kills, a match with captures only.
+        self.assertEqual(run_harness()["voids"], [True, False, False])
+
 if __name__ == "__main__":
     unittest.main()

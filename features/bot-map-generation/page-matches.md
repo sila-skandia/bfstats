@@ -230,6 +230,7 @@ acceptance names what it fails. The result is kept beside the verdict as
 | Level | Page check | Medians: team kills, suicides, death share, enemy kills | Tickets at ten minutes, Axis : Allies |
 |---|---|---|---|
 | The_Maze (generator 5) | **fails team kills** | 0.144, 0, 0.36, 0.36 | 35:67, 68:11, 62:29 |
+| The_Maze, with the hold-fire live (2026-11-11) | passes | 0.019, 0, 0.17, 0.27 | 29:88, 19:85, 55:26 |
 | Desert Combat DC_LostVillage | passes | 0, 0.056, 0.37, 0.22 | 99:27, 113:50, 71:37 |
 | FHSW Tunis-1943 | passes | 0, 0.013, 0.14, 0.17 | 29:91, 74:54, 23:82 |
 | Desert Combat DC_Basrah_Nights | passes | 0.075, 0.019, 0.25, 0.61 | 39:52, 49:50, 50:42 |
@@ -259,6 +260,26 @@ fault, not the level's; it now counts the bar's checks each arm fails
 BF1918's hindenburg_line also reached better-than-nothing and was **not**
 accepted: 95 to 97 % of the worse side's losses in the runner are redeploys
 of bots stuck where they stand, and the Axis side wins every seed.
+
+### The hold-fire on the live page
+
+The bots' hold-fire for a teammate in the line ([hold-fire.md](hold-fire.md))
+reached the live site on 2026-11-11 at 12:11, and The_Maze was checked
+again on it: team kills 0.031, 0.019 and 0.006 a bot-minute against 0.144
+before, enemy kills 0.27, 0.23 and 0.41, and 7, 14 and 9 captures. It now
+passes the page check; `page.json` holds these three matches. The bar it
+was held to is still DICE's from before the hold-fire (at most 0.081 team
+kills a bot-minute), which is looser than DICE's levels will show with it:
+the page bar is to be rebuilt once the hull steering fix is in too, and the
+live levels checked against that.
+
+A first run of this check had a third match in which nothing happened at
+all: tickets 106:106 after ten minutes, no kill, no death, no capture. The
+round had never begun; the three matches of a check play side by side, and
+that browser's READY click landed before the button was drawn. `pageMatch`
+now clicks READY until a bot has moved, and plays a match that counted
+nothing once more, marked `replayed` (`isVoid`). No earlier check in the
+table above had such a match (every one has kills and moved tickets).
 
 ## 7. What is not verified
 
