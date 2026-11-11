@@ -75,9 +75,16 @@ class OutsideMapTests(unittest.TestCase):
         self.assertEqual(self.r["deckWithout"], self.r["codes"]["CELL_FREE"])
         self.assertEqual(self.r["deckWith"], self.r["codes"]["CELL_MATERIAL"])
 
-    def test_a_levels_baked_map_is_taken_as_it_is(self) -> None:
+    def test_a_loaded_map_that_leaves_it_free_has_it_blocked(self) -> None:
+        # A generated layer's pathfinding/ (Tunis-1943's Tank0 left 77 % of it free).
         self.assertEqual(self.r["bakedSource"], "baked")
-        self.assertEqual(self.r["bakedTongue"], self.r["codes"]["CELL_FREE"])
+        self.assertEqual(self.r["bakedTongue"], self.r["codes"]["CELL_MATERIAL"])
+        self.assertEqual(self.r["bakedPlain"], self.r["codes"]["CELL_FREE"])
+        self.assertEqual(self.r["bakedWithout"], self.r["codes"]["CELL_FREE"])
+
+    def test_a_map_that_blocks_it_already_is_unchanged(self) -> None:
+        # Every DICE map blocks all of it: not one cell moves.
+        self.assertTrue(self.r["diceUnchanged"])
 
     def test_the_route_goes_round_the_tongue(self) -> None:
         self.assertTrue(self.r["routeWithout"]["crosses"])

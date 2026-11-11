@@ -213,6 +213,14 @@ export function buildNavMap(collider, worldSize, options = {}) {
         }
       }
     }
+    // A loaded map that leaves the material free was not painted by the
+    // engine: every DICE map blocks all of it (`OUTSIDE_MAP_MATERIAL`), so on
+    // theirs this changes no cell. A generated layer's `pathfinding/` (the
+    // generator's walk test and page painter, sim/botgen.mjs) is loaded the
+    // same way and left Tunis-1943's ground outside the map 77 % free on its
+    // Tank0 map: there it is blocked as the engine would have. No brush: a
+    // loaded map's pixels are what the bots get (INVENTION).
+    if (!waterMap) blockMaterial(blocked, width, height, cellSize, collider, impassableMaterial);
     const coarse = buildCoarse(blocked, width, height, cellSize, coarseSize);
     return {
       blocked, heights, normalY, width, height, cellSize, worldSize, coarse,
@@ -286,16 +294,7 @@ export function buildNavMap(collider, worldSize, options = {}) {
   // deck over it frees nothing: the combat area reads the terrain's material
   // under a man on a deck as under one on the ground (CA-5). The brush below
   // dilates it as it does every terrain cell. A water map has no such test.
-  const hf = collider?.heightfield;
-  if (!waterMap && Number.isInteger(impassableMaterial) && hf?.materials && typeof hf.material === 'function') {
-    for (let gz = 0; gz < height; gz++) {
-      const wz = -(gz * cellSize + half);
-      for (let gx = 0; gx < width; gx++) {
-        const idx = gz * width + gx;
-        if (blocked[idx] === CELL_FREE && hf.material(gx * cellSize + half, wz) === impassableMaterial) blocked[idx] = CELL_MATERIAL;
-      }
-    }
-  }
+  if (!waterMap) blockMaterial(blocked, width, height, cellSize, collider, impassableMaterial);
 
   // The brush: every blocked cell, terrain or object, stamps the plus. A
   // water map's brush is a hull's width off the shore (125 m on `Boat2`):
@@ -332,6 +331,21 @@ export function buildNavMap(collider, worldSize, options = {}) {
     source: 'painted', searchMap: null, level: 0, maxLevel: null,
     strategic: strategic || null,
   };
+}
+
+/** Every free cell whose terrain is `material` blocked (`CELL_MATERIAL`); a
+ *  level with no material map, or no material asked for, is left as it is. */
+function blockMaterial(blocked, width, height, cellSize, collider, material) {
+  const hf = collider?.heightfield;
+  if (!Number.isInteger(material) || !hf?.materials || typeof hf.material !== 'function') return;
+  const half = cellSize / 2;
+  for (let gz = 0; gz < height; gz++) {
+    const wz = -(gz * cellSize + half);
+    for (let gx = 0; gx < width; gx++) {
+      const idx = gz * width + gx;
+      if (blocked[idx] === CELL_FREE && hf.material(gx * cellSize + half, wz) === material) blocked[idx] = CELL_MATERIAL;
+    }
+  }
 }
 
 /**

@@ -52,11 +52,19 @@ const deck = buildNavMap(deckCollider, SIZE, { maxSlopeDeg: 30, brush: 1, lowCli
 const deckPlain = buildNavMap(deckCollider, SIZE, { maxSlopeDeg: 30, brush: 1, lowClip: 0.3, hiClip: 2.5, strategic: false });
 out.deckWith = gridAt(deck, 55.5, -55.5);
 out.deckWithout = gridAt(deckPlain, 55.5, -55.5);
-// A baked map: every pixel free; the rule is the painter's, so the level's own map is what it says.
+// A loaded map that leaves the material free (a generated layer's) has it
+// blocked; one that blocks it already (every DICE map) is unchanged, cell
+// for cell; without the option a loaded map is what it says.
 const baked = { pixelSize: 1, params: { name: 'Infantry1' }, level: 0, mapIndex: 0, blocked: () => false };
 const bakedNav = buildNavMap(collider, SIZE, { searchMap: baked, impassableMaterial: OUTSIDE_MAP_MATERIAL, strategic: false });
 out.bakedSource = bakedNav.source;
 out.bakedTongue = gridAt(bakedNav, 60.5, -100.5);
+out.bakedPlain = gridAt(bakedNav, 20.5, -100.5);
+out.bakedWithout = gridAt(buildNavMap(collider, SIZE, { searchMap: baked, strategic: false }), 60.5, -100.5);
+const dice = { ...baked, blocked: (px, pz) => onTongue(px + 0.5, -(pz + 0.5)) };
+const diceWith = buildNavMap(collider, SIZE, { searchMap: dice, impassableMaterial: OUTSIDE_MAP_MATERIAL, strategic: false });
+const diceWithout = buildNavMap(collider, SIZE, { searchMap: dice, strategic: false });
+out.diceUnchanged = diceWith.blocked.every((v, i) => v === diceWithout.blocked[i]);
 // The route from west of the tongue to east of it, both 20 m from its tip.
 const maxZ = p => Math.max(...p.map(q => q[1]));
 // Every half metre along every leg, not only the corners.
