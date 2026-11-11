@@ -1,0 +1,49 @@
+rem *** Strategic areas: one per control point (botgen) ***
+
+aiStrategicArea.create cambrai 521.9/711 529.9/719 200
+aiStrategicArea.addNeighbour Betongraben
+aiStrategicArea.addNeighbour Front
+aiStrategicArea.addObjectTypeFlag Centre
+aiStrategicArea.addObjectTypeFlag ControlPoint
+aiStrategicArea.setOrderPosition Tank 537.5/725.5
+aiStrategicArea.setOrderPosition Infantry 530.5/719.5
+aiStrategicArea.setSide 1
+
+aiStrategicArea.create zone_neutre 612.3/392.6 637.3/417.6 300
+aiStrategicArea.addNeighbour Betongraben
+aiStrategicArea.addNeighbour Front
+aiStrategicArea.addNeighbour french
+aiStrategicArea.addObjectTypeFlag Centre
+aiStrategicArea.addObjectTypeFlag StrongPoint
+aiStrategicArea.addObjectTypeFlag Close
+aiStrategicArea.addObjectTypeFlag ControlPoint
+aiStrategicArea.setOrderPosition Tank 637.5/415.5
+aiStrategicArea.setOrderPosition Infantry 636.5/417.5
+
+aiStrategicArea.create Betongraben 536.1/582.8 541.1/587.8 200
+aiStrategicArea.addNeighbour cambrai
+aiStrategicArea.addNeighbour zone_neutre
+aiStrategicArea.addNeighbour Front
+aiStrategicArea.addObjectTypeFlag Centre
+aiStrategicArea.addObjectTypeFlag ControlPoint
+aiStrategicArea.setOrderPosition Tank 541.5/597.5
+aiStrategicArea.setOrderPosition Infantry 543.5/586.5
+aiStrategicArea.setSide 1
+
+aiStrategicArea.create Front 662.6/587.1 670.6/595.1 150
+aiStrategicArea.addNeighbour cambrai
+aiStrategicArea.addNeighbour zone_neutre
+aiStrategicArea.addNeighbour Betongraben
+aiStrategicArea.addObjectTypeFlag Flank
+aiStrategicArea.addObjectTypeFlag ControlPoint
+aiStrategicArea.setOrderPosition Tank 678.5/598.5
+aiStrategicArea.setOrderPosition Infantry 671.5/595.5
+aiStrategicArea.setSide 1
+
+aiStrategicArea.create french 779.4/174.9 784.4/179.9 50
+aiStrategicArea.addNeighbour zone_neutre
+aiStrategicArea.addObjectTypeFlag Base
+aiStrategicArea.setOrderPosition Tank 782.5/179.5
+aiStrategicArea.setOrderPosition Infantry 783.5/179.5
+aiStrategicArea.setSide 2
+aiStrategicArea.setTakeable 1 0

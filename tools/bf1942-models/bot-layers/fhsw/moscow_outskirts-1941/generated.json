@@ -1,0 +1,271 @@
+{
+ "generator": "botgen",
+ "version": 5,
+ "mod": "FHSW",
+ "level": "moscow_outskirts-1941",
+ "objectSpawners": 114,
+ "template": "symmetric",
+ "templateSource": "DICE, bf1942 Kharkov (1.6 patch archives): AI/Strategies.con, AI/conditions.con, AI/prerequisites.con, unchanged",
+ "templateChoice": {
+  "name": "symmetric",
+  "inPlay": 5,
+  "rule": "5 capturable flags in play, more than 3"
+ },
+ "scope": "an infantry map painted from the walk test, a Tank0 map from the page painter, infantry order positions, no strategic maps, no co-op layer",
+ "unreachable": [],
+ "unreachableReasons": {},
+ "botSpawnsExcluded": [
+  "alliedbase_spawn2",
+  "alliedbase_spawn3",
+  "alliedbase_spawn4",
+  "alliedbase_spawn5",
+  "new_control_point1_spawn3",
+  "Orthodox_Church_Spawn1",
+  "Orthodox_Church_Spawn2",
+  "Orthodox_Church_Spawn3"
+ ],
+ "walkMap": {
+  "source": "walk test",
+  "engine": "none",
+  "vehicleMap": "page painter",
+  "vehicleBrush": 1.5,
+  "vehicleBrushes": [
+   {
+    "brush": 3,
+    "flagsOn": 5,
+    "spawnersOn": 37,
+    "pieces": 5,
+    "main": 758343
+   },
+   {
+    "brush": 2.5,
+    "flagsOn": 6,
+    "spawnersOn": 40,
+    "pieces": 8,
+    "main": 778470
+   },
+   {
+    "brush": 2,
+    "flagsOn": 5,
+    "spawnersOn": 45,
+    "pieces": 9,
+    "main": 787322
+   },
+   {
+    "brush": 1.5,
+    "flagsOn": 6,
+    "spawnersOn": 56,
+    "pieces": 6,
+    "main": 807185
+   }
+  ],
+  "opened": [
+   [
+    976,
+    562
+   ],
+   [
+    976,
+    563
+   ],
+   [
+    976,
+    564
+   ],
+   [
+    976,
+    565
+   ],
+   [
+    977,
+    565
+   ],
+   [
+    976,
+    567
+   ],
+   [
+    977,
+    567
+   ],
+   [
+    976,
+    568
+   ],
+   [
+    976,
+    569
+   ],
+   [
+    976,
+    570
+   ],
+   [
+    975,
+    575
+   ],
+   [
+    975,
+    576
+   ],
+   [
+    975,
+    577
+   ],
+   [
+    974,
+    578
+   ],
+   [
+    975,
+    578
+   ],
+   [
+    974,
+    579
+   ],
+   [
+    974,
+    580
+   ],
+   [
+    975,
+    580
+   ],
+   [
+    975,
+    581
+   ],
+   [
+    975,
+    582
+   ],
+   [
+    975,
+    583
+   ],
+   [
+    786,
+    612
+   ],
+   [
+    791,
+    612
+   ],
+   [
+    796,
+    612
+   ],
+   [
+    797,
+    612
+   ]
+  ],
+  "ways": [
+   {
+    "who": "alliedbase_spawn2",
+    "kind": "spawn",
+    "way": "drop",
+    "opened": 5
+   },
+   {
+    "who": "alliedbase_spawn3",
+    "kind": "spawn",
+    "way": "drop",
+    "opened": 6
+   },
+   {
+    "who": "alliedbase_spawn4",
+    "kind": "spawn",
+    "way": "drop",
+    "opened": 5
+   },
+   {
+    "who": "alliedbase_spawn5",
+    "kind": "spawn",
+    "way": "drop",
+    "opened": 5
+   },
+   {
+    "who": "new_control_point1_spawn3",
+    "kind": "spawn",
+    "way": "jump",
+    "opened": 0
+   },
+   {
+    "who": "Orthodox_Church",
+    "kind": "flag",
+    "way": "walk",
+    "opened": 4
+   }
+  ],
+  "cover": 0.98,
+  "floors": {
+   "stacked": false,
+   "twoFloorShare": 0.001,
+   "raised": [],
+   "reason": null
+  }
+ },
+ "routeProbe": {
+  "chokeMax": 4,
+  "unreachable": [],
+  "stops": {},
+  "oneSided": {},
+  "sides": {
+   "1": {
+    "spawns": 5,
+    "flags": [
+     "New_Control_Point4",
+     "Orthodox_Church",
+     "new_control_point1",
+     "new_control_point2",
+     "new_control_point3"
+    ]
+   },
+   "2": {
+    "spawns": 25,
+    "flags": [
+     "New_Control_Point4",
+     "Orthodox_Church",
+     "new_control_point1",
+     "new_control_point2",
+     "new_control_point3"
+    ]
+   }
+  },
+  "chokes": {
+   "new_control_point3:1": 0,
+   "new_control_point3:2": 0,
+   "new_control_point2:1": 0,
+   "new_control_point2:2": 0,
+   "New_Control_Point4:1": 0,
+   "New_Control_Point4:2": 0,
+   "new_control_point1:1": 0,
+   "new_control_point1:2": 0,
+   "Orthodox_Church:1": 3,
+   "Orthodox_Church:2": 0
+  },
+  "late": {},
+  "shutLinks": []
+ },
+ "inputs": {
+  "controlPoints": "a5d030461e2b0d4f3a08ccfab4017f185f05e4f140b71bf040a50b3a3d7f1791",
+  "infantryMap": "2bfd5395b3a1ec8b1e1802967ccc26735ef33eef9dcad9e79db98b7c2d91c14f",
+  "template": "43f8a790471528016570235f76e97dbb2045732458781a5139f37fed68bf98c0"
+ },
+ "files": {
+  "AI.con": "0fbd1e2c5d49bd5b34d36334f9a0f96454db482d155e3274f8bf655285b9964e",
+  "AIpathFinding.con": "9d8080cdfa7605961969aa126519b03be9691bd604ac76aef50166d81215edd2",
+  "AI/StrategicAreas.con": "c9d75e8847bd4e1faa8ca778a7e28814622463a0d2617cc9e3664c87a3e252fe",
+  "AI/Strategies.con": "4ce0be59a0d6c5cd530db002fb062c4be8d936bc6ae59bd188803ccaf7869a8d",
+  "AI/conditions.con": "68a0c7a8aec69954063147b60fae560b2874884285737aa085efa76597d395aa",
+  "AI/prerequisites.con": "4c1f313bc285b228fd6ad03bfd1f44c5b15c8703c31f802eb605bc5f00f88bb5",
+  "Pathfinding/Infantry1Level0Map.raw": "df40b2cd90fd82ea8fe23ce297da781cf8010e1949c0345f57f6bc3416a6693d",
+  "Pathfinding/Infantry1Level1Map.raw": "b98a14223ff99c565a123165fe304ea1211c3e09804e95604832be2b477ad393",
+  "Pathfinding/Infantry1Level2Map.raw": "338ec4db395b2aee364efc5ff0a95ced6f8ca39a8833f60b1d3b20f31b4aa79f",
+  "Pathfinding/Tank0Level0Map.raw": "77c5d7d542e7a8855922bc836b0ded255c206b9e3e624e81816768cbcdf8482c",
+  "Pathfinding/Tank0Level1Map.raw": "47852c73241618a222c593841c3f27a37aad42bf548d9849667d7ceacb639f49",
+  "Pathfinding/Tank0Level2Map.raw": "b6549e40fc63b17d9eeeebc89a17a162d0aa2281137895d1a25d2029986cdbbe"
+ }
+}

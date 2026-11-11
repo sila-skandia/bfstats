@@ -1,0 +1,142 @@
+{
+ "generator": "botgen",
+ "version": 5,
+ "mod": "FHSW",
+ "level": "fall_of_berlin-1945",
+ "objectSpawners": 206,
+ "template": "few",
+ "templateSource": "DICE, bf1942 Kursk (1.6 patch archives, Kursk_003.rfa): AI/Strategies.con, AI/conditions.con, AI/prerequisites.con, unchanged",
+ "templateChoice": {
+  "name": "few",
+  "inPlay": 2,
+  "rule": "2 capturable flags in play, at most 3"
+ },
+ "scope": "on foot: infantry order positions only, no search maps, no co-op layer",
+ "unreachable": [
+  "Moltke_BridgeTemplate",
+  "Main_StreetTemplate",
+  "SquareTemplate",
+  "Reichstag_ChamberTemplate",
+  "reichstag_rooftopTemplate"
+ ],
+ "unreachableReasons": {
+  "Moltke_BridgeTemplate": "walk test",
+  "Main_StreetTemplate": "walk test",
+  "SquareTemplate": "walk test",
+  "Reichstag_ChamberTemplate": "walk test",
+  "reichstag_rooftopTemplate": "walk test"
+ },
+ "botSpawnsExcluded": [
+  "ru_base1_1",
+  "ru_base1_2",
+  "ru_base1_3",
+  "ru_base1_4",
+  "ru_base1_5",
+  "ru_base1_6",
+  "ru_base1_7",
+  "ru_base2_1",
+  "ru_base2_2",
+  "ru_base2_3",
+  "ru_base2_4",
+  "ru_base2_5",
+  "ru_base2_6",
+  "ru_base2_7",
+  "ru_base2_8",
+  "moltke_bridge_1",
+  "moltke_bridge_2",
+  "moltke_bridge_3",
+  "moltke_bridge_4",
+  "moltke_bridge_6",
+  "moltke_bridge_7",
+  "moltke_bridge_8",
+  "main_street1",
+  "main_street2",
+  "main_street3",
+  "main_street4",
+  "main_street5",
+  "main_street6",
+  "main_street7",
+  "main_street8",
+  "kroll_opera_house1",
+  "kroll_opera_house2",
+  "kroll_opera_house5",
+  "kroll_opera_house6",
+  "kroll_opera_house8",
+  "trench1",
+  "trench6",
+  "square1",
+  "square2",
+  "square3",
+  "square4",
+  "square5",
+  "square6",
+  "square7",
+  "square8",
+  "de_base2_1",
+  "de_base2_2",
+  "de_base2_3",
+  "de_base2_4",
+  "de_base2_5",
+  "de_base2_6",
+  "de_base2_7",
+  "de_base2_8"
+ ],
+ "walkMap": {
+  "source": "page painter",
+  "engine": "none",
+  "opened": [],
+  "ways": [],
+  "cover": 0.587,
+  "floors": {
+   "stacked": false,
+   "twoFloorShare": 0.009,
+   "raised": [
+    "Main_StreetTemplate"
+   ],
+   "reason": null
+  },
+  "capped": true
+ },
+ "routeProbe": {
+  "chokeMax": 4,
+  "unreachable": [],
+  "stops": {},
+  "oneSided": {},
+  "sides": {
+   "1": {
+    "spawns": 10,
+    "flags": [
+     "Kroll_Opera_HouseTemplate",
+     "TrenchTemplate"
+    ]
+   },
+   "2": {
+    "spawns": 1,
+    "flags": [
+     "Kroll_Opera_HouseTemplate",
+     "TrenchTemplate"
+    ]
+   }
+  },
+  "chokes": {
+   "Kroll_Opera_HouseTemplate:1": 0,
+   "Kroll_Opera_HouseTemplate:2": 0,
+   "TrenchTemplate:1": 0,
+   "TrenchTemplate:2": 0
+  },
+  "late": {},
+  "shutLinks": []
+ },
+ "inputs": {
+  "controlPoints": "9f70dab8ff1f345e022b0736b23506ba4edf5721bce721fcd68cc0e93a60d879",
+  "infantryMap": "92d15069a77226e69d8fd4b4b2c3f940a55e91042be78ab98a23f7a795bbb4cd",
+  "template": "bdc0e455f47f91b7e7724e71d7c0c196e839b36946ac3abb7663d725944081e5"
+ },
+ "files": {
+  "AI.con": "4273795de48751f9dd85de84bda769f3ab21d91be76a3c84a194297ecc4d2347",
+  "AI/StrategicAreas.con": "a242b04b58d9622c7bf328de70a1453561c78906719bb09712ca293c5ac757e9",
+  "AI/Strategies.con": "13da4dc35872dd4b5798a066f4425bdc824cfd61f31093d1808e1202644de52e",
+  "AI/conditions.con": "248a04b727c08d696bf0fa9c162bc22c43cde3c75f695892fe1e0f5141519c49",
+  "AI/prerequisites.con": "c96168b5f69860e578f5d26728fd2a2092c4c436e1da49b7d6f4009b65735398"
+ }
+}

@@ -1,0 +1,69 @@
+rem *** Strategic areas: one per control point (botgen) ***
+
+aiStrategicArea.create axisbase 46.9/379 51.9/384 50
+aiStrategicArea.addNeighbour new_control_point3
+aiStrategicArea.addObjectTypeFlag Base
+aiStrategicArea.setOrderPosition Tank 49.5/383.5
+aiStrategicArea.setOrderPosition Infantry 50.5/383.5
+aiStrategicArea.setSide 1
+aiStrategicArea.setTakeable 2 0
+
+aiStrategicArea.create new_control_point3 238.1/490 263.1/515 200
+aiStrategicArea.addNeighbour axisbase
+aiStrategicArea.addNeighbour new_control_point2
+aiStrategicArea.addNeighbour New_Control_Point4
+aiStrategicArea.addObjectTypeFlag Centre
+aiStrategicArea.addObjectTypeFlag Close
+aiStrategicArea.addObjectTypeFlag ControlPoint
+aiStrategicArea.setOrderPosition Tank 265.5/515.5
+aiStrategicArea.setOrderPosition Infantry 262.5/514.5
+aiStrategicArea.setSide 2
+
+aiStrategicArea.create new_control_point2 521.4/588.8 546.4/613.8 150
+aiStrategicArea.addNeighbour new_control_point3
+aiStrategicArea.addNeighbour New_Control_Point4
+aiStrategicArea.addNeighbour new_control_point1
+aiStrategicArea.addObjectTypeFlag Flank
+aiStrategicArea.addObjectTypeFlag ControlPoint
+aiStrategicArea.setOrderPosition Tank 544.5/613.5
+aiStrategicArea.setOrderPosition Infantry 545.5/613.5
+aiStrategicArea.setSide 2
+
+aiStrategicArea.create New_Control_Point4 520.1/515.3 545.1/540.3 300
+aiStrategicArea.addNeighbour new_control_point3
+aiStrategicArea.addNeighbour new_control_point2
+aiStrategicArea.addNeighbour new_control_point1
+aiStrategicArea.addObjectTypeFlag Centre
+aiStrategicArea.addObjectTypeFlag StrongPoint
+aiStrategicArea.addObjectTypeFlag ControlPoint
+aiStrategicArea.setOrderPosition Tank 546.5/538.5
+aiStrategicArea.setOrderPosition Infantry 545.5/539.5
+aiStrategicArea.setSide 2
+
+aiStrategicArea.create new_control_point1 640/565.1 650/575.1 200
+aiStrategicArea.addNeighbour new_control_point2
+aiStrategicArea.addNeighbour New_Control_Point4
+aiStrategicArea.addNeighbour Orthodox_Church
+aiStrategicArea.addObjectTypeFlag Centre
+aiStrategicArea.addObjectTypeFlag ControlPoint
+aiStrategicArea.setOrderPosition Tank 657.5/575.5
+aiStrategicArea.setOrderPosition Infantry 650.5/574.5
+aiStrategicArea.setSide 2
+
+aiStrategicArea.create Orthodox_Church 781/607.1 786/612.1 200
+aiStrategicArea.addNeighbour new_control_point1
+aiStrategicArea.addNeighbour alliedbase
+aiStrategicArea.addObjectTypeFlag Centre
+aiStrategicArea.addObjectTypeFlag Close
+aiStrategicArea.addObjectTypeFlag ControlPoint
+aiStrategicArea.setOrderPosition Tank 783.5/612.5
+aiStrategicArea.setOrderPosition Infantry 786/612.1
+aiStrategicArea.setSide 2
+
+aiStrategicArea.create alliedbase 928.6/558.9 953.6/583.9 50
+aiStrategicArea.addNeighbour Orthodox_Church
+aiStrategicArea.addObjectTypeFlag Base
+aiStrategicArea.setOrderPosition Tank 942.5/583.5
+aiStrategicArea.setOrderPosition Infantry 945.5/583.5
+aiStrategicArea.setSide 2
+aiStrategicArea.setTakeable 1 0
