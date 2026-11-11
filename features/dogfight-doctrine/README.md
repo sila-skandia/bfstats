@@ -188,7 +188,7 @@ code over the live assets):
   So nothing was broken in the wiring: the demo had no two-seater in it.
 - **The hunter does fire.** On every vanilla arena, alone and flying straight,
   the hunter opens fire 20 to 24 s in and shoots you down 22 to 26 s in
-  (Battle of Britain 25.7 s, Kursk and Market Garden 22.3, Midway 24.0);
+  (Battle of Britain 25.5 s, Kursk and Market Garden 22.3, Midway 23.6, with the cruise capped below);
   the nine Spitfire starts still give 16 to 30 s. But the first 20 s were
   the slow close from 350 m, which is what the owner watched. The demo now
   opens 8 s in (`startAt`), with the first round at least 4 s later
@@ -199,25 +199,80 @@ code over the live assets):
   `Someone is on your tail: turning onto them`); and each demo's note says
   who is who and what happens.
 
-Every arena, alone and flying straight (2026-11-11, the page's own
-arenas, each flown on its best fighter):
+### The hunter on every arena (2026-11-11)
 
-| Tree | Shot down | Where it is not |
-|---|---|---|
-| vanilla, Road to Rome, Secret Weapons | every arena, 22 to 26 s in | |
-| Desert Combat | every arena, 13.7 to 13.8 s in | |
-| BF1918 | 26 arenas, 16.6 to 21.8 s in | Brusilov Offensive and Straits Field (the Albatros airframe), Chateau-Thierry (the D.VII): the hunter never closes |
-| Forgotten Hope (Iwo Jima), FHSW (all 12 arenas) | none | the hunter closes to 50 to 150 m and fires from 12 to 59 s in, landing 0 to 9 rounds; in 9 of FHSW's 36 other demos the hunter flies into the ground |
+Flown first on every arena (the page's own, each on its best fighter), the
+pair failed on three BF1918 arenas (Brusilov Offensive and Straits Field on
+the Albatros, Chateau-Thierry on the D.VII) and on every Forgotten Hope and
+FHSW arena: alone and flying straight, the hunter never shot you down, and
+on FHSW it flew into the ground in 9 of the other 36 demos and shot you
+down past your wingman on El Alamein. The cause was the hands, not the
+lesson. On those airframes the hunter's `leadPursuit` rolled the lift
+round a point a few degrees off its nose, past it and back, the roll stick
+from stop to stop every second or two: Forgotten Hope's fighters roll at a
+third of the Spitfire's rate and take twice as long to get there (0.97 to
+1.07 s to 63% of their rate at 100 m/s, against the Spitfire's 0.53), and
+the Albatros's and the D.VII's roll coasts on past the bank asked for.
 
-Where it fails it is the hunter's pursuit, not this lesson: on those
-airframes `leadPursuit` porpoises, the pitch stick swinging from stop to
-stop every few seconds. On the Albatros and the D.VII that bleeds the
-hunter 15 to 20 m/s below a cruiser on the same airframe at full throttle;
-on FHSW's fighters it sits behind you and never holds the sight on. The
-same hunter flies *Out of their lock* and the jet lessons' tails, so the
-fix is the pursuit's gains per airframe, measured across every lesson, and
-is open. On FHSW the wingman's cover fails too (El Alamein: you are shot
-down 29 s in).
+**The fix: a roll hand, fitted from each airframe's own flight**
+(`dogfight-duel.js` `fitAirframe`, beside the pitch hand of the jets). An
+airframe whose roll answers more than 1.25 times slower than the
+Spitfire's (`rollLag`) carries `hand.roll` (the roll damping times the
+square of that ratio), `hand.fine` (the cone of small corrective banks
+widened by it) and `hand.gain` (a lighter hand on all three axes,
+`pointNose`); one whose nose still does not settle on a direction 10
+degrees to one side and 4 below (`noseSettle`) takes the first of
+`ROLL_HANDS` under which it does. FHSW's Spitfire Ib: roll 3.6, fine 1.89,
+gain 0.73; the Albatros: roll 2; the D.VII: roll 6, gain 0.5. Vanilla's,
+Road to Rome's, Secret Weapons', Desert Combat's and BF1918's other scouts
+settle as they are and are flown exactly as before. And since the D.VII
+cannot fly at the pair's 60 m/s start, the hunted plane flew level at full
+throttle as fast as the hunter could: the pair's cruise is capped at 0.6
+throttle (`mem.cruiseCap`), which moves vanilla's shoot-down by 0.2 s.
+
+The pair on every arena now (`test_dogfight_arena_hunter.py`, the 59
+arenas' airframes in `tests/fixtures/arena-airframes.json.gz`):
+
+| Tree (arenas) | Alone, straight: shot down | Wingman: rounds on you | Hunter into the ground |
+|---|---|---|---|
+| vanilla (5), Road to Rome (7), Secret Weapons (5) | every arena, 22.3 to 25.5 s in | none | never |
+| BF1918 (22) | every arena, 16.6 to 31.5 s in | none | never |
+| Desert Combat (7) | every arena, 13.7 to 13.8 s in | none | never |
+| Forgotten Hope (1) | 18.9 s in | none | never |
+| FHSW (12) | every arena, 12.5 to 17.1 s in | 0 to 17, never shot down | never |
+
+The hand changes every lesson flown on those airframes, and the tabs show
+each move's count flown on the airframe on stage, so their counts moved.
+Every move scored from the nine starts, before the roll hand and after
+(`MOVES=1 node tests/dogfight_arena_hunter_harness.mjs <airframe>`; moves
+that score 0 on all of them left out):
+
+| Move | Albatros | D.VII | FH Mustang | Spitfire Ib | Bf 109-G6 | Spitfire 22 | Spitfire I | Bf 109 | Spitfire Vb | Bf 109-G10 | Yak 9 | P-47 | Bf 109-G10R6 |
+|---|---|---|---|---|---|---|---|---|---|---|---|---|---|
+| boom-and-zoom / dip | 6 > 1 | 2 > 4 | 5 > 3 | 2 > 0 | 4 > 0 | 3 > 0 | 2 > 0 | 0 | 2 > 0 | 1 > 0 | 3 > 0 | 5 > 0 | 5 > 0 |
+| under-the-height / dip | 7 > 9 | 1 > 0 | 4 > 1 | 9 > 3 | 5 > 3 | 9 > 3 | 7 > 3 | 9 > 4 | 9 > 7 | 3 > 6 | 2 > 4 | 8 > 0 | 8 > 3 |
+| under-the-height / ninja | 1 > 3 | 0 | 0 | 0 | 0 | 0 | 0 | 0 | 0 | 0 | 0 | 0 | 0 |
+| up-and-over / dip | 5 > 8 | 3 | 8 > 9 | 8 > 9 | 8 > 6 | 7 > 8 | 9 | 7 > 9 | 6 | 4 > 2 | 6 > 2 | 4 > 7 | 5 > 7 |
+| out-of-the-lock / dip | 5 > 0 | 0 | 0 | 0 | 0 | 0 | 0 | 2 > 0 | 0 | 0 | 0 | 0 | 0 |
+| out-of-the-lock / flip | 0 > 1 | 0 | 0 | 0 | 0 | 0 | 0 | 0 | 0 | 0 | 0 | 0 | 0 |
+| on-his-tail / dip | 4 > 0 | 3 | 9 > 7 | 8 > 7 | 7 > 3 | 6 | 8 > 7 | 9 | 9 > 5 | 8 | 6 > 4 | 8 | 9 > 6 |
+| on-his-tail / flip | 0 | 0 | 0 | 0 > 1 | 0 | 0 | 0 | 0 | 0 > 2 | 0 | 0 | 0 | 0 |
+| on-his-tail / ninja | 0 > 1 | 0 | 0 | 0 | 0 | 0 | 0 | 0 | 0 | 0 | 0 | 0 | 0 |
+| break-turn / dip | 2 > 3 | 1 | 5 | 6 > 8 | 5 > 1 | 7 > 4 | 4 > 8 | 6 > 2 | 7 > 3 | 8 > 3 | 2 > 7 | 2 > 1 | 5 > 4 |
+| break-turn / flip | 1 > 2 | 0 | 0 | 0 | 0 | 0 | 0 | 0 | 0 | 0 | 0 | 0 | 0 |
+| scissors / dip | 1 > 2 | 1 > 0 | 3 > 5 | 3 | 5 | 1 > 2 | 5 > 2 | 7 | 2 > 1 | 3 > 6 | 0 > 3 | 6 > 3 | 4 > 5 |
+| turnarounds / dip | 6 > 8 | 0 | 9 > 6 | 9 | 9 | 9 | 9 | 9 | 9 | 9 | 0 > 8 | 9 | 9 |
+| the-circle / dip | 9 > 5 | 4 > 0 | 7 | 9 | 9 > 8 | 9 > 7 | 9 | 9 | 9 | 9 | 2 > 9 | 8 > 9 | 9 > 8 |
+| **Lessons survivable / partly** | 2/7 > 3/5 | 0/3 | 4/8 > 3/7 | 5/7 | 4/8 > 2/6 | 5/7 > 3/6 | 5/7 > 5/6 | 6/7 > 5/6 | 5/6 > 3/6 | 4/7 > 3/6 | 0/3 > 3/6 | 4/7 > 4/5 | 4/8 > 3/7 |
+
+The ways out that lean on the attacker missing (boom and zoom's Extension,
+the falling-back Dips) count lower, because the attacker, flown by the same
+hands, now holds its sight on; the ones that out-fly it (*Up and over*'s,
+the turnarounds') count higher. The lessons' words are the Spitfire's and
+unchanged; the tabs say each airframe's count. The "lessons on other
+airframes" table above was flown before the roll hand: its `Albatross` and
+FHSW Bf 109-F columns are superseded here (the Bf 109-F flies no arena's
+lessons, and was not re-flown).
 
 ## The two-seater (step 7, rule 5)
 
@@ -245,6 +300,15 @@ every tick at 400 m/s): you were shot down in 7 of 9 from behind. The Stuka's
 real MG 42 turns only 40 degrees, rises 33 and does not depress at all, so a
 chaser level with or a little under its tail is often outside the arc.
 
+
+**Battle of Britain's two-seater is Kursk's Il-2, by choice** (checked
+2026-11-11). The Ju 88's model carries three manned gun seats
+(`Ju88A_NoseGunner_PCO`, `Ju88A_RearGunner_PCO` with twin guns,
+`Ju88A_BellyGunner_PCO`), and `gunnersOf` reads all four guns with their
+arcs. `findTwoSeater` prefers a plane with one gunner's seat, a pilot and a
+gunner, over a bomber's turrets, and looks at the other arenas' planes
+before settling for one; Battle of Britain has no two-seater, so it flies
+the Il-2. Nothing is missed in the extraction or the detection.
 ## The gunners from the planes' own data (2026-11-11)
 
 A user asked for "rear gunner shots for planes that have an active one" in

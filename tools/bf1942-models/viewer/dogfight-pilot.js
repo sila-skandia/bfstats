@@ -2638,8 +2638,12 @@ PLANS.cruiser = {
   step(c) {
     // Cruising, as the break turn's pilot does before he breaks: the speed
     // he started at, not the throttle against the stop.
+    // An airframe that cannot fly that fast (BF1918's D.VII tops out at
+    // 42 m/s) would hold its throttle on the stop for good, as fast as
+    // anything chasing it; a lesson can cap the cruise (`mem.cruiseCap`).
     if (!c.mem.dir) { c.mem.dir = heading(c.me.velocity); c.mem.cruise = c.g.mySpeed; }
-    return { ...pointNose(c.me, climbing(c.mem.dir, 0), { fine: 6 }), throttle: holdSpeed(c, c.mem.cruise) };
+    return { ...pointNose(c.me, climbing(c.mem.dir, 0), { fine: 6 }),
+             throttle: Math.min(holdSpeed(c, c.mem.cruise), c.mem.cruiseCap ?? 1) };
   },
 };
 

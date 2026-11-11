@@ -104,7 +104,12 @@ is published: no asset is involved.
   the plane you picked. *The pair* calls the plane against you the hunter
   (`lesson.aceRole`), gives the wingman a caption row, and opens *Alone,
   flying straight* 8 s in (`features/dogfight-doctrine`, "What the pair
-  showed, and what it shows now").
+  showed, and what it shows now"). Every arena's airframe now flies it:
+  an airframe whose roll answers slowly (every Forgotten Hope fighter) or
+  coasts past the bank asked (BF1918's Albatros and D.VII) is fitted a roll
+  hand from its own flight, so the hunter holds its sight on instead of
+  rocking its wings (`features/dogfight-doctrine`, "The hunter on every
+  arena").
 
 ## The hunter
 
