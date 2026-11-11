@@ -306,6 +306,15 @@ A level whose bot layer is generated now says so on its briefing screen,
 under COMMENTS: "Bot support added by skandia | bfstats.io"
 (`briefing-screen.js commentsWithBotCredit`, the owner's wording).
 
+Rollout levels, one match each on the page (the bar is DICE's rebuilt one;
+"plays" is the rollout's rule):
+
+| Level | Plays | Against DICE's bar | Team kills, death share, enemy kills | Captures | Tickets, Axis : Allies |
+|---|---|---|---|---|---|
+| HOP (community) | yes | passes | 0, 0, 0.46 | 0 | 75:64 |
+| KoH (community) | yes | passes | 0, 0.22, 0.27 | 11 | 70:83 |
+| shigaisen_B (community) | yes | fails enemy kills | 0, 0, 0.06 | 4 | 67:100 |
+
 ## 7. What is not verified
 
 1. One match a level in sections 2 to 5, three in section 6, all unseeded:

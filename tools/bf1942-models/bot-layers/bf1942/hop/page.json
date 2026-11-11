@@ -1,0 +1,58 @@
+{
+ "level": "HOP",
+ "mod": "community",
+ "url": "https://play.bfstats.io/map.html?map=HOP&team=2&mode=Conquest&mod=community&botCount=16&botSkill=0.75&mute&shots",
+ "date": "2026-11-11",
+ "bar": "DICE levels on the page, 3 matches each of 600 s, 16 bots: Berlin, Stalingrad, Kharkov, Bocage; 2026-11-11",
+ "verdict": "pass",
+ "failed": [],
+ "checks": [
+  {
+   "metric": "teamKillsPerBotMinute",
+   "median": 0,
+   "bar": "<= 0.025",
+   "pass": true
+  },
+  {
+   "metric": "suicidesPerBotMinute",
+   "median": 0,
+   "bar": "<= 0.0562",
+   "pass": true
+  },
+  {
+   "metric": "nonEnemyDeathShareWorseSide",
+   "median": 0,
+   "bar": "<= 0.308",
+   "pass": true
+  },
+  {
+   "metric": "enemyKillsPerBotMinute",
+   "median": 0.4562,
+   "bar": ">= 0.175",
+   "pass": true
+  }
+ ],
+ "matches": 1,
+ "runs": [
+  {
+   "generated": {
+    "version": 5,
+    "template": "few"
+   },
+   "minutes": 10,
+   "tickets": {
+    "1": 75,
+    "2": 64
+   },
+   "capturesTotal": 0,
+   "teamKillsPerBotMinute": 0,
+   "suicidesPerBotMinute": 0,
+   "nonEnemyDeathShareWorseSide": 0,
+   "enemyKillsPerBotMinute": 0.4562,
+   "teamKillsBySide": {
+    "1": 0,
+    "2": 0
+   }
+  }
+ ]
+}

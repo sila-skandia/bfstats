@@ -36,6 +36,16 @@ menu flag, is played there three times against a bar from DICE's levels
 played the same way, and gets the flag after ([page-matches.md](page-matches.md),
 section 6).
 
+**The owner's rollout, 2026-11-11.** After playing Tunis-1943 against its
+generated bots the owner asked for every level with a fight to go live. A
+level now goes up on a three-seed verdict of `better-than-nothing` or
+`no-better-than-nothing` (accepted `by: owner`), unless at both side sizes
+its enemy kills are under 0.05 a bot-minute or over 0.6 of the worse side's
+deaths are not the enemy's; it keeps its menu flag when one match on the
+page plays ([page-matches.md](page-matches.md), section 6; the levels and
+their figures are section 20's). First batch: shigaisen_B (back up), HOP
+and KoH, Community Maps; liberation_of_caen held back.
+
 **A verifier fault, 2026-11-11 (section 21).** The walk test stops at half
 a square kilometre, and on every level wider than that it read the bases
 as sealed off from each other: 51 of the 96 layers generated for the
