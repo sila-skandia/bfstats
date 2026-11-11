@@ -20,6 +20,9 @@ re-measures every generated layer.
    right: the hold-only side, and the change to the fallback that follows
    from it.
 
+Everything here is gated to generated layers. A layer DICE or a mod team
+wrote binds, counts and plays exactly as before (section 6).
+
 ## 1. What the engine does
 
 **Binding.** `AIStrategicArea::update` 0x0863d6d0 binds an area to a control
@@ -64,9 +67,9 @@ added to the ledger.
   (`isStandIn`: `standalone` or `vehicle`). A stand-in binds only into its
   nearest area, and only when that area holds no control point. An area with
   no point keeps its stand-in as before (INVENTION, kept). This is the
-  engine's binding, for every layer. DICE's four levels place no stand-in,
-  so they cannot move (section 6). A shipped level with ship decks can:
-  Midway, Wake and Coral Sea are named but were not run.
+  engine's binding. **It applies to generated layers only (`ai.generated`).**
+  A retail layer binds in the flags' order, as before, because the new order
+  moves retail levels that could not all be shown harmless (section 6).
 - `strategic-ai.js _updateStates`: no change to the count. The comment now
   gives the engine's reading and the measured reason it is kept (section 5).
 - `strategic-ai.js _holdOnlyFallback`, which was `_noLiveStrategyFallback`:
@@ -435,19 +438,63 @@ values: `max2CPCond` is `Equal 1`, `min4CpCond` is `EqualGreater 3`, and
 Retail's DICE may have counted something besides the control points, or the
 names may simply be stale. Not settled.
 
-## 6. DICE's four levels
+## 6. Retail levels
 
-Berlin, Stalingrad, Kharkov and Bocage, on foot and with vehicles, 8 and 16
-a side, seeds 1 to 3, 300 s, garrison, sampling every 10th tick: **48 of 48
-traces byte-identical** before and after (sha256 of `trace.jsonl`). Every
-tick sampled, with vehicles, 8 a side, seed 1, 300 s: **4 of 4
-identical.**
+**Which retail levels the new order moves.** I compared `bindFlags` before
+and after, statically, on every level in the local trees that has an AI
+layer. The trees are the mesh cache's vanilla tree and its XPack1 and
+XPack2 trees, 16 retail levels in all:
+Battle of Britain, Battle of the Bulge, Battleaxe, Berlin, Bocage, El
+Alamein, Gazala, Iwo Jima, Kharkov, Kursk, Market Garden, Midway, Omaha
+Beach, Stalingrad, Wake (vanilla) and Hellendoorn (XPack2).
 
-The binding moves only a level that places a stand-in, and DICE's four place
-none. The fallback is gated on `ai.generated`. The `ControlPoint` count is
-unchanged. The levels that could move are DICE's with ship decks (Midway,
-Wake, Coral Sea, Iwo Jima, Guadalcanal's airfield groups). There a stand-in
-no longer joins an area that holds a control point. They were not run.
+Missing locally, so not checked at all:
+- Guadalcanal, Attack on Pearl Harbor, Invasion of the Philippines, Tobruk,
+  Kasserine Pass, Liberation of Caen and Operation Aberdeen: their folders
+  are empty.
+- XPack1 and XPack2 except Hellendoorn: no `scene.json`. XPack2's Aberdeen
+  has no AI layer.
+- Coral Sea: no AI layer.
+
+Three levels bind differently in the new order:
+
+| Level | What changes | Before / after, 3 seeds, 600 s, garrison, vehicles |
+|---|---|---|
+| Gazala | each side's airfield spawn group leaves its own base area (same team, uncapturable) | 8 and 16 a side: 6 of 6 traces identical |
+| Midway | five Japanese deck groups no longer share OutPost with Coastal_Defences | 16 a side: 3 of 3 identical. 8 a side: 2 of 3 identical; the third seed's enemy kills 1 to 3 and hull stuck seconds 58 to 122 (all seeds: 13 to 15 kills, 245 to 309 hull stuck seconds) |
+| Market Garden | the Allied paradrop group no longer shares City with Arnhem; before, City was split while the Axis held Arnhem, so the Axis could never hold it | not runnable: the local tree has no `scene.glb` |
+
+Midway got worse on hull stuck time in one seed. Market Garden changes how
+a live retail flag is owned and could not be run. Seven retail levels could
+not be checked at all. So the new order is **gated to
+generated layers**, and a retail layer binds exactly as before. The comment
+in `bindFlags` names these levels. After the gate, the static comparison
+finds no binding change on any of the 16 retail levels.
+
+**Traces with the gate** (before: origin/main's viewer; after: this branch):
+
+| level | a side | kills before / after | captures | own-hand deaths | hull stuck seconds | traces identical |
+|---|---|---|---|---|---|---|
+| gazala | 8 | 55 / 55 | 24 / 24 | 9 / 9 | 156.4 / 156.4 | 3 of 3 |
+| gazala | 16 | 120 / 120 | 22 / 22 | 37 / 37 | 457.9 / 457.9 | 3 of 3 |
+| midway | 8 | 13 / 13 | 8 / 8 | 7 / 7 | 245.0 / 245.0 | 3 of 3 |
+| midway | 16 | 41 / 41 | 8 / 8 | 17 / 17 | 1375.2 / 1375.2 | 3 of 3 |
+
+DICE's four levels (Berlin, Stalingrad, Kharkov, Bocage), on foot and with
+vehicles, 8 and 16 a side, seeds 1 to 3, 300 s, sampling every 10th tick:
+**48 of 48 traces byte-identical**. Every tick sampled, with vehicles, 8 a
+side, seed 1: **4 of 4 identical**. Gazala and Midway: **12 of 12 identical**
+each. Kills are enemy kills; hull stuck seconds are `sim/detect.mjs`'s
+`hullStuckSecondsBySide`, summed.
+
+**Everything else on the branch** is gated, or changes no code path:
+- `_holdOnlyFallback` starts with `!!this.layer.ai?.generated`.
+- `noLayerOrder`, `gunsRuleOf` and `bot.noLayerOrder` follow its `fallback`
+  flag, which stays false on a retail layer.
+- `fallbackWaypoint` answers on a level with areas only while
+  `bot.noLayerOrder` holds.
+- The `ControlPoint` count is unchanged; only its comment is new.
+- `sim/botlint.mjs` is a tool, and does not touch play.
 
 ## 7. The page
 
@@ -493,7 +540,7 @@ Berlin's strategic play is the same code path before and after
   its kills, and The Great Pursuit traded captures for kills (6 to 3, 69 to
   91), both from the binding. Roye's own-hand deaths rose under the
   fallback.
-- **Ship decks on DICE's levels** (section 6): not run.
+- **The engine's binding on retail layers** (section 6). It is gated off. Taking the gate off needs Market Garden, Guadalcanal, Pearl Harbor, the Philippines and the expansion packs' levels in a local tree, and Midway's hull stuck time explained.
 
 ## 9. Not verified
 
