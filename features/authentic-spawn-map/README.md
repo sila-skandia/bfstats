@@ -1359,3 +1359,97 @@ mid-open frame is half-turned and the open map north-up.
 over the world and changes nothing else" is the owner's captures. MMAP-2's
 "holds still for the frame when z < 0.8 and `playerManager` byte +0xa9 is
 clear" is not modelled.
+
+## 19. A map drawn in part of its art is framed on what is drawn (2026-11-11)
+
+**Report.** The owner on FHSW's Tunis 1943 (play.bfstats.io, British side):
+the spawn screen's map was not centred, a black band filled the top of the
+pane, and only rows 5 to 8 of the grid showed, the map sitting low as if cut
+off.
+
+**Cause.** Nothing is cut off: the art is drawn that way. Tunis's
+`Textures/ingamemap.dds` is a 512x512 uncompressed DDS (1,048,704 bytes, read
+from `Mods/FHSW/Archives/bf1942/levels/Tunis-1943.rfa`) whose upper half is
+solid black. Its artists drew the ground (columns A-H, rows 5-8 of the
+world's 8x8 grid, 64 px cells) into the lower half under a combat area of the
+whole world (`game.setActiveCombatArea 0 0 1024 1024`, worldSize 1024), so
+`worldToImage` is the plain `x / 1024` and every marker is right. The page
+drew the whole art into the spawn map's square rect (MEME-13), exactly what
+retail does with the same texture, so the band and the low map are retail's
+too; the 16:9 stretch (sx > sy) only flattens it. The fault is in the data,
+and it is common.
+
+**Census** (every row of each tree's `maps.json` on mesh.bfstats.io, FHSW and
+FHSWEurope only the rows with a `loading` block; a line of the art is margin
+when 99% of its texels have every channel at or under 12; a level counts when
+the margin trims at least 1/32 of the art from some edge). Every one of the
+990 arts read is 512x512: no non-square art, no image size disagreeing with
+`pixels`.
+
+| tree | levels | with a margin | of those already centred | all-black art |
+|---|---|---|---|---|
+| `maps` (23 vanilla, 77 community) | 100 | 2 (community: shigaisen_G, The_Room) | 0 | 5 (community) |
+| xpack1 | 29 | 0 | | |
+| xpack2 | 32 | 0 | | |
+| desertcombat | 35 | 0 | | |
+| bf1918 | 133 | 36 | 6 | |
+| eod | 239 | 33 | 4 | |
+| fh | 10 | 3 | 0 | |
+| fhsw | 140 | 22 | 2 | |
+| fhsweurope | 274 (2 without a scene.json: odessa_streets, omaha_beach) | 68 | 7 | |
+| **all** | **992** | **164** | **19** | **5** |
+
+Vanilla and both expansion packs are all edge to edge. The margins run from a
+band (Tunis, the_great_pursuit, Lam_Son: one half or third black) through a
+quarter-size map in a corner (Warsaw_Uprising) to a map an eighth of the art
+across (Battle_of_Edson_s_Ridge, content 0.25 x 0.25). The full list with
+each content rect is the census script's output; the scripts are not kept in
+the tree (scratch work, re-runnable from the description above).
+
+**Fix (INVENTION).** `viewer/map-art-frame.js` reads the decoded art once per
+level (`artContentRect`: trim margin rows and columns from each edge) and
+builds the open map's window (`fullMapWindow`): a square of art the content's
+longer side across, centred on the content. The deploy screen and the M map
+paint through that window (`map-surfaces.js` `drawFullMap`, with the art's
+nine wrap copies off so a window hanging past the art shows the dim backdrop,
+not the art's other edge), and the ring click (`spawning.js`) and the
+`__deploy.ringAt` hook measure through it (`projectToOpenMap`). Tunis's window
+is `v0 -0.25, span 1`: the lower-half map in the middle of the pane with the
+backdrop a quarter above and below; Warsaw_Uprising's is half the art, so its
+corner map fills the pane. An art with less than 1/32 trimmed everywhere, an
+all-black art, or one the page cannot read is framed whole, so every
+edge-to-edge level draws exactly as before. Retail was not seen doing this:
+it is the owner's ask, labelled INVENTION in the module.
+
+The HUD widget is unchanged. Its window is the engine's own moving window and
+clamp (MMAP-6), which keeps it inside the art, not inside the drawn part, so
+on Tunis it still shows black above the map near the north edge, as retail
+does. Clamping it to the content would be a second invention against a
+confirmed ledger row; left for the owner to ask for.
+
+**Checked.** `tests/test_map_art_frame.py` (the trim against DXT noise and
+stray texels, a one-texel seam left alone, the windows for a band, a corner, a
+column, an all-black art, and the surface-to-art round trip). Headless
+Chromium (Playwright, SwiftShader) at 1920x1080, the deploy screen after
+READY, the old and new viewer each served by `serve_viewer.py` with the live
+mesh behind it, `__world().extras.level` confirming each level:
+
+| level | before | after |
+|---|---|---|
+| fhsw Tunis-1943 | black band over the top 48% of the pane, rows 5-8 at its bottom edge | the A-H x 5-8 map centred, backdrop above and below |
+| fhsw Warsaw_Uprising | a map in the pane's top-right quarter | fills the pane, F-H x 1-4, centred |
+| fhsw Battle_of_Edson_s_Ridge | a map an eighth of the pane across | fills the pane, C-D x 5-6 (four times the art's texels, soft) |
+| eod Lam_Son | map in the lower two thirds | centred, its name strip whole |
+| vanilla El_Alamein, fhsw Aberdeen (edge to edge) | | pane pixel-identical to before |
+
+Every offered ring was clicked with the mouse at the spot `__deploy.ringAt`
+reports (now through `projectToOpenMap`), on the drawn ring, and selected
+its flag: Tunis 3 of 3 by index; on Warsaw and Edson's Ridge the count of
+clicks landing on the ring's own group matched before and after (5/10,
+8/9; the rest are flags whose rings carry no group of their own).
+
+**Not verified.** No retail capture of an FH or FHSW spawn screen exists in
+the repo, so what retail shows for a margin is read from the code path (the
+texture drawn whole), not seen. The phone layout, the plain M map, the
+proving ground's map pick and a real GPU were not screenshotted or clicked;
+they share `drawFullMap` and `surfaceToArt`.

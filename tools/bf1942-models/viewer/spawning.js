@@ -23,7 +23,7 @@ import { flagSide } from './spawn-flags.js';
  * `markOnFoot`, `netReconciler`, `netSendAction`, `netTickPoses`, `logToConsole`,
  * `noteServerSpawnAsked`, `serverOwnsSpawn`,
  * `paintDeployChrome`, `paintDeploySoon`, `params`, `placeCamera`,
- * `projectToArt`, `prone`, `rebaseDeckSpawns`, `refreshFlags`,
+ * `projectToOpenMap`, `prone`, `rebaseDeckSpawns`, `refreshFlags`,
  * `revive`, `roomJoined`, `round`, `setOnFoot`, `setScoreboard`, `shipFlagInactive`,
  * `snapPresentation`, `soldier`, `soldierDead`, `soldierMaxHp`,
  * `spawnFlagSelect`, `spawnSeat`, `spawnLayout`, `supplyTarget`, `toggleFullMap`, `toggleProne`,
@@ -906,9 +906,11 @@ export function createSpawning(page) {
     for (const index of deployFlagIndices()) {
       for (const spot of deploySpots(page.flags[index])) {
         if (!spot.position) continue;
-        const p = page.projectToArt(spot.position[0], spot.position[2]);
+        // Through the open map's window (`map-art-frame.js`), the frame the
+        // rings were drawn in.
+        const p = page.projectToOpenMap(spot.position[0], spot.position[2]);
         if (!p) continue;
-        const d = Math.hypot((p.u - u) * rect.width, (p.v - v) * rect.height);
+        const d = Math.hypot((p.fx - u) * rect.width, (p.fy - v) * rect.height);
         if (d < bestDist) {
           bestDist = d;
           best = index;

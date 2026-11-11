@@ -34,6 +34,7 @@ PAGE_FILES = [
     "control-point-law.js",
     "map-surfaces.js",
     "map-canvas-fit.js",
+    "map-art-frame.js",
     "map-sprites.js",
     "map-friendlies.js",
     "map-vehicle-marks.js",

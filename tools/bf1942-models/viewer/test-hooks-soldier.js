@@ -9,7 +9,7 @@
  * `captureVoiceKind`, `chooseKit`, `chooseTeam`, `collider`, `crosshairAim`,
  * `crosshairEl`, `currentDir`, `cycleKitWeapon`, `deployActive`,
  * `deployChoice`, `deployChoiceIndex`, `deployCommitted`, `deployFlagIndices`, `deployKit`,
- * `deploySpawn`, `deploySpots`, `deployTeamId`, `deployUnchosen`, `fullmapCanvas`, `projectToArt`, `serverSpawnGroups`,
+ * `deploySpawn`, `deploySpots`, `deployTeamId`, `deployUnchosen`, `fullmapCanvas`, `projectToArt`, `projectToOpenMap`, `serverSpawnGroups`,
  * `detonatorTemplate`, `effects`, `explosivesTemplate`, `flags`,
  * `foot3pRel`, `footAimDistance`, `footAimEye`, `footBody`, `footCanopy`, `footView3p`, `forceHideFootBody`,
  * `gameHud`, `groundHeight`, `guns`, `handSlot`, `handWeapon`, `holdDeploy`, `hud`,
@@ -132,10 +132,10 @@ export function installSoldierHooks(page) {
       const spots = page.deploySpots(page.flags[index]);
       const spot = group == null ? spots[0] : spots.find(s => s.group === group);
       if (!spot?.position) return null;
-      const p = page.projectToArt(spot.position[0], spot.position[2]);
+      const p = page.projectToOpenMap(spot.position[0], spot.position[2]);
       const rect = page.fullmapCanvas.getBoundingClientRect();
       if (!p || !rect.width) return null;
-      return { x: rect.left + p.u * rect.width, y: rect.top + p.v * rect.height, group: spot.group };
+      return { x: rect.left + p.fx * rect.width, y: rect.top + p.fy * rect.height, group: spot.group };
     },
     // The first ring the tab draws, for a script that needs to be somewhere
     // and does not care where: the flag of the side with points that is not
