@@ -18,6 +18,7 @@ import { tankTurnTowards } from './bot-vehicle.js';
 import { isArtilleryDriver } from './bot-perception.js';
 import { BEHAVIOUR } from './bot-decision.js';
 import { planAirAvoid, execPlaneAvoid, weaponGroup } from './bot-pilot.js';
+import { friendInLine, roundPasses, HOLD_FIRE } from './friendly-fire.js';
 
 /**
  * Plan action types for infantry (§4.2), the interpreter entries the viewer
@@ -1123,10 +1124,12 @@ export function execTrigger(bot, action, now) {
     // AI-125). Other mounted gunners keep the line test (INVENTION).
     const approach = bot.currentPlan?.find?.(a => a.type === PLAN_ACTION.FireApproach);
     if (approach) {
-      if (holds && approach.holds) bot.isFiring = true;
+      // The tank's main gun and its coax (INVENTION, the hold-fire below).
+      if (holds && approach.holds && !holdFireFor(bot, action, pos)) bot.isFiring = true;
       return false;
     }
-    if (holds && bot._lineClear(bot._eye(), [pos[0], pos[1] + 1.0, pos[2]])) bot.isFiring = true;
+    if (holds && bot._lineClear(bot._eye(), [pos[0], pos[1] + 1.0, pos[2]])
+        && !holdFireFor(bot, action, pos)) bot.isFiring = true;
     return false;
   }
   const s = bot.vehicle?.kind === 'air' ? bot._noseReference() : bot._aimReference();
@@ -1135,10 +1138,104 @@ export function execTrigger(bot, action, now) {
   const dp = s && s.pitch === null ? 0 : want.pitch - (s?.pitch ?? bot.pitch);
   const tol = Math.max(action.tolerance ?? LOOK_TOLERANCE, LOOK_TOLERANCE);
   const aligned = Math.hypot(dy, dp) < tol;
-  if (aligned && bot._lineClear(bot._eye(), [pos[0], pos[1] + 1.0, pos[2]])) {
+  if (aligned && bot._lineClear(bot._eye(), [pos[0], pos[1] + 1.0, pos[2]])
+      && !holdFireFor(bot, action, pos)) {
     bot.isFiring = true;
   }
   return false;
+}
+
+/**
+ * The hold-fire (INVENTION, 2026-11-11; `friendly-fire.js` `HOLD_FIRE`,
+ * features/bot-friendly-fire "Decisions"): true while a living teammate's
+ * body lies in the line from the bot's muzzle to `targetPos`'s aim point,
+ * nearer than the target, so the trigger stays up and the aim goes on. The
+ * engine has no such test (FF-7). On foot, a bot that has held for
+ * `HOLD_FIRE.stepAfter` s steps aside, away from the friend, for
+ * `stepSeconds` (`holdFireStep`), so a file of bots behind the first one
+ * does not all stand silent.
+ *
+ * Not held: a bot whose `holdFire` is off (the runner's engine-parity runs,
+ * the page's `?holdfire=0`), an aircraft (its line runs down at the ground
+ * from far above, and its bombs are not aimed down it), a healing weapon or a
+ * friend as the target (the medic's plan), an indirect weapon and a thrown
+ * one (the round arcs over the friend: a grenade or a satchel; a blast near
+ * friends is left as it was).
+ */
+export function holdFireFor(bot, action, targetPos) {
+  const state = bot._holdFire;
+  const off = bot.holdFire === false || bot.vehicle?.kind === 'air' || !targetPos
+    || bot.weaponAi?.healing || bot.weaponAi?.indirect
+    || (!bot.vehicle && thrownWeapon(bot));
+  const w = bot.world;
+  const me = w?.player?.(bot.playerId);
+  const target = action?.targetId != null ? w?.players?.get(action.targetId) : null;
+  if (off || !w?.players || !me || (target && target.team === me.team)) {
+    if (state) bot._holdFire = null;
+    return false;
+  }
+  const origin = bot.vehicle ? (bot._aimOrigin?.() ?? bot._eye()) : bot._eye();
+  const aim = [targetPos[0], targetPos[1] + 1.0, targetPos[2]];
+  const friends = [];
+  for (const [id, p] of w.players) {
+    if (id === action?.targetId || p.team !== me.team || roundPasses(w, bot.playerId, id)) continue;
+    if (w.armorOf?.(id)?.destroyed) continue;
+    const pos = playerPosition(p);
+    if (!pos) continue;
+    friends.push({ id, pos, stance: p.occupancy?.root ? 'seated' : (p.soldier?.stance ?? 'stand') });
+  }
+  // The tube widens with the bot's own cone (`aimDeviation`, hundredths of a
+  // radian: round-launch.js `deviate`).
+  const dev = Number(bot.aimDeviation);
+  const friend = friendInLine(origin, aim, friends, { ...HOLD_FIRE, spread: Number.isFinite(dev) ? dev / 100 : 0 });
+  const now = bot._now ?? 0;
+  if (!friend) {
+    bot._holdFire = null;
+    return false;
+  }
+  if (!state || state.targetId !== (action?.targetId ?? null)) {
+    bot._holdFire = { targetId: action?.targetId ?? null, since: now, friendId: friend.id, side: friend.side,
+                      stepUntil: -Infinity, held: 0 };
+  }
+  const h = bot._holdFire;
+  h.friendId = friend.id;
+  h.held++;
+  bot._holdFireTicks = (bot._holdFireTicks ?? 0) + 1;
+  if (!bot.vehicle) holdFireStep(bot, h, friend, now);
+  return true;
+}
+
+/** The held weapon is thrown: its FireArms winds up (`fireDelay`, filed
+ *  under `throw`, bot-referee.js `throwDelayOf`). */
+function thrownWeapon(bot) {
+  const name = bot.weaponAi?.name ?? bot.kitPrimary ?? null;
+  return (bot.weaponData?.[name]?.throw?.fireDelay ?? 0) > 0;
+}
+
+/**
+ * The step aside (INVENTION, `holdFireFor`): after `HOLD_FIRE.stepAfter` s
+ * of holding, a strafe away from the friend's side of the line for
+ * `stepSeconds`, then a look again; a side whose cell `stepProbe` m off is
+ * not walkable is swapped for the other, and with neither the bot stays.
+ * The soldier's strafe +1 runs along (-cos yaw, sin yaw) (walking-body.js,
+ * its right row), the opposite of `friendInLine`'s +1 side, so the step's
+ * sign is the friend's side.
+ */
+export function holdFireStep(bot, h, friend, now) {
+  if (now < h.stepUntil) { bot.moveStrafe = h.stepSign; return; }
+  if (now - h.since < HOLD_FIRE.stepAfter) return;
+  const nav = bot._nav?.() ?? bot.navGrid ?? null;
+  const [x, , z] = bot.position;
+  const sx = -Math.cos(bot.yaw), sz = Math.sin(bot.yaw);
+  const free = sign => !nav || isWalkable(nav, x + sign * sx * HOLD_FIRE.stepProbe, z + sign * sz * HOLD_FIRE.stepProbe);
+  let sign = friend.side;
+  if (!free(sign)) sign = -sign;
+  if (!free(sign)) { h.since = now; return; }
+  h.stepSign = sign;
+  h.stepUntil = now + HOLD_FIRE.stepSeconds;
+  h.since = now + HOLD_FIRE.stepSeconds;
+  bot._holdFireSteps = (bot._holdFireSteps ?? 0) + 1;
+  bot.moveStrafe = sign;
 }
 
 /**

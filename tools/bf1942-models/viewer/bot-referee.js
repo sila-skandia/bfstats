@@ -234,6 +234,8 @@ export function lineOfSight(collider, from, to) {
  *  - `debug`: log hits, heals and seats to the console (the page's `?botDebug`);
  *  - `friendlyFire`: the server's friendly-fire percentages
  *    (`friendly-fire.js`); absent, the shipped `ServerSettings.con`'s;
+ *  - `holdFire`: false turns off the bots' hold-fire for a teammate in the
+ *    line (INVENTION, bot-plans.js `holdFireFor`); absent, it is on;
  *  - hooks, all optional: `beforeBots()`, `tickBot(bot, dt, now)` (replaces
  *    `bot.tick`), `afterBotTick(bot, dt)`, `onRedeploy(bot, flag)`,
  *    `onRespawned(bot, flag)`, `onShot(bot, at)` (once per round, a flown
@@ -351,6 +353,10 @@ export function createBotReferee(env) {
       bot.covers = referee.covers;
       bot.unitInfoOf = id => referee.unitInfo(id);
       bot.vehicleCandidates = [];
+      // The hold-fire for a teammate in the line (INVENTION, bot-plans.js
+      // `holdFireFor`): on unless the caller turns it off (`env.holdFire`
+      // false: the runner's engine-parity runs, the page's `?holdfire=0`).
+      bot.holdFire = env.holdFire !== false;
       referee.strategy?.addBot(bot.playerId, bot.team);
       // The world steps bots, so each needs the Armor the soldier tick and
       // the combat area read (`#soldierTick`, `#combatTick`).

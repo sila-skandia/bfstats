@@ -107,6 +107,9 @@ export class BotController {
 
     /** Whether the bot is currently firing (the trigger channel is down). */
     this.isFiring = false;
+    /** The hold-fire for a teammate in the line (INVENTION, bot-plans.js
+     *  `holdFireFor`); the referee sets it from `env.holdFire`. */
+    this.holdFire = true;
     /** `firingTargetTime`: when the current firing target was set. */
     this.firingTargetTime = -Infinity;
     /** Seconds since the bot last acquired a target (deviation correction). */
