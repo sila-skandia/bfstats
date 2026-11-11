@@ -198,17 +198,23 @@ class DoctrineTests(unittest.TestCase):
     def test_alone_and_straight_the_hunter_fires_and_hits_after_the_demo_opens(self) -> None:
         # The owner saw this demo as a plane flying straight with nothing
         # happening: the hunter fires and lands its rounds from every start,
-        # and its first round comes well after the 8 s the demo opens at.
+        # and its first round comes seconds after the demo opens, the hunter
+        # 280 m back (`startRange`).
         rows = self.out["pair"]["move"]
         self.assertTrue(all(r["onYou"] >= 20 for r in rows), rows)
-        self.assertTrue(all(r["firstShot"] is not None and r["firstShot"] > 8 + 4 for r in rows), rows)
+        self.assertTrue(all(r["firstShot"] is not None and r["firstShot"] >= r["opens"] + 4 for r in rows), rows)
 
-    def test_a_two_seaters_gunner_fires_back_from_any_side(self) -> None:
-        # A two-seater flown as the hunted plane, its gunner in the back,
-        # fires at the hunter on its tail and hits, from every start: the
-        # fight's gunners are any side's, not only the ace's.
-        rows = self.out["youSeater"]["rows"]
+    def test_the_picked_two_seater_flies_as_itself_and_its_gunner_fires_back(self) -> None:
+        # The owner picked the Stuka and watched it fly straight "without
+        # ever firing back". Picked, it flies on its own airframe and its rear
+        # gunner fires at the hunter on its tail and hits, from every start.
+        out = self.out["youSeater"]
+        rows = out["rows"]
+        self.assertTrue(all(r["flownByFight"] for r in rows), rows)
         self.assertTrue(all(r["side"] == [1] and r["gunnerRounds"] > 50 and r["gunnerHits"] > 0 and r["gunnerEvent"] for r in rows), rows)
+        # A Stuka's cruise, not the Spitfire's: at the same throttle it is
+        # 2 to 3 m/s slower 14 s in (59 against 56).
+        self.assertTrue(all(r["youSpeeds"][-1] <= out["spitfireSpeeds"][-1] - 2 for r in rows), (out["spitfireSpeeds"], rows))
 
     def test_a_two_seater_is_attacked_from_beneath_its_tail(self) -> None:
         # The Stuka on its own airframe, its gunner on its own MG 42

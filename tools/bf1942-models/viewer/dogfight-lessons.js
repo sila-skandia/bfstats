@@ -580,21 +580,27 @@ export const LESSONS = [
     // The plane against you is called the hunter here, on its tag, meter and
     // caption: there is no ace in this lesson, only someone on your tail.
     aceRole: 'hunter',
+    // The hunter's range to the plane it is after, on its tag, counting down.
+    rangeTag: true,
     ace: { plan: 'hunter', start: { at: [60, 430, 350], headingDeg: 0, speed: 66 } },
     you: { start: { at: [0, 400, 0], headingDeg: 0, speed: 60 }, memory: { cruiseCap: 0.6 } },
     demos: [
-      // Opens 8 s in, the hunter still well out: the first seconds are a
-      // slow close from 350 m that showed nothing happening.
-      { id: 'move', label: 'Alone, flying straight', seat: 'cruiser', skill: 0.85, startAt: 8,
+      // Opens with the hunter 280 m back and closing, over your shoulder: the
+      // first seconds were a slow close from 350 m that showed nothing.
+      { id: 'move', label: 'Alone, flying straight', seat: 'cruiser', skill: 0.85, startRange: 280, camera: 'shoulder',
+        intro: 'No wingman: the hunter (red) closes on your tail from behind, and you never see them coming.',
         note: 'The hunter (red) is behind you, closing on your tail. Alone, flying straight, you never look back and nobody else is watching: they open fire from 150 m and shoot you down.' },
       { id: 'flat', label: 'Alone, turning hard', seat: 'flatTurn', skill: 0.85,
+        intro: 'No wingman, but you have seen them: you turn as hard as the plane goes, and the hunter follows you round.',
         note: 'Alone, you turn as hard as the plane will go. The hunter follows you round: they hardly hit you, and you cannot get away from them or turn onto them. Nobody wins.' },
       { id: 'counter', label: 'Your wingman covers you', seat: 'cruiser', skill: 0.85,
         extra: [{ plan: 'wingman', start: { at: [-180, 400, 60], headingDeg: 0, speed: 60 }, memory: { leader: 1 } }],
+        intro: 'Your wingman (green) flies off your wing. As the hunter closes on your tail, watch them peel off onto it.',
         note: 'You fly straight, as before, with your wingman (green, WINGMAN) off your wing. As the hunter closes on your tail, your wingman turns onto them, and the hunter has to deal with your wingman instead: you are not hit.' },
       { id: 'weave', label: 'Two abreast: the Thach weave, tried', seat: 'weaver', skill: 0.85,
         aceStart: { at: [60, 430, 380], headingDeg: 0, speed: 66 },
         extra: [{ plan: 'weaver', start: { at: [-320, 400, 0], headingDeg: 0, speed: 60 } }],
+        intro: 'Two abreast. When the hunter gets on either tail, you both turn in toward each other and drag it across the other\'s guns.',
         note: 'You and your wingman fly two abreast. Whenever the hunter is on either tail, both turn in toward each other: following one of you round drags the hunter across the other\'s nose, and shots go both ways.' },
     ],
     seconds: 60,
@@ -790,14 +796,34 @@ export function flightOf(lesson, demoId = null) {
  * `twoSeater` names (`{ make, gunners }`: its own airframe, and its gunners
  * off its own model, `dogfight-gunners.js`); with none, the ace flies the
  * lesson's airframe with nobody in the back, and no gun fires aft.
+ *
+ * `gunnersFor(i)` is each side's own plane's gunners (the page's: you picked
+ * a Stuka, and its rear gunner fires at the hunter on its tail): any side
+ * that has some fights with them. Without it nobody has a gunner but the
+ * two-seater lesson's ace.
  */
-export function fightSides(lesson, demo, twoSeater = null) {
+export function fightSides(lesson, demo, twoSeater = null, gunnersFor = null) {
   const [ace, you] = demoSides(lesson, demo);
   const back = lesson.ace.twoSeater && twoSeater
     ? { ...(twoSeater.make ? { make: twoSeater.make } : {}), gunners: twoSeater.gunners ?? [] } : {};
-  return [{ ...ace, ...back, team: 'ace' }, { ...you, team: 'you' },
+  const sides = [{ ...ace, ...back, team: 'ace' }, { ...you, team: 'you' },
     ...(demo.extra ?? []).map(x => ({ skill: 0.85, ...x, team: x.team ?? 'you' }))];
+  return gunnersFor ? withGunners(sides, gunnersFor) : sides;
 }
+
+/** `sides` with each side's own gunners (`gunnersFor(i)`) where it has some
+ *  and none of its own already. */
+export function withGunners(sides, gunnersFor) {
+  return sides.map((s, i) => {
+    if (s.gunners) return s;
+    const g = gunnersFor?.(i);
+    return g?.length ? { ...s, gunners: g } : s;
+  });
+}
+
+/** Whether a fight has a gunner in it, so it is flown by `runFight` (the
+ *  duel has no back seat). */
+export const hasGunners = sides => sides.some(s => s.gunners?.length);
 
 export function demoSides(lesson, demo) {
   return [

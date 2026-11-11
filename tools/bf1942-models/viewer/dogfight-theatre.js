@@ -16,7 +16,7 @@ import { runDuel, fitAirframe } from './dogfight-duel.js';
 import { gunOf } from './dogfight-pilot.js';
 import { leadPoint } from './dogfight-flight.js';
 import { COURSES } from './dogfight-rings.js';
-import { LESSONS, demoSides, fightSides, lessonById, setEra, eraNow, RULES, jetName } from './dogfight-lessons.js';
+import { LESSONS, demoSides, fightSides, withGunners, hasGunners, lessonById, setEra, eraNow, RULES, jetName } from './dogfight-lessons.js';
 import { runFight } from './dogfight-fight.js';
 import { recordedFight, fightLine, pilotTable, inThirdPerson } from './dogfight-recorded.js';
 import { VIEWER_ROOT } from './viewer-root.js';
@@ -115,6 +115,7 @@ const CAMERAS = [
   { id: 'sight-ace', label: 'Ace\'s gunsight' },
   { id: 'sight-you', label: 'Your gunsight' },
   { id: 'top', label: 'From above' },
+  { id: 'shoulder', label: 'Over your shoulder' },
 ];
 /** What each intent reads as on screen (`dogfight-pilot.js` `INTENTS`). */
 const INTENT_WORDS = { attack: 'Going for the shot', defend: 'Evading', setup: 'Setting up' };
@@ -211,7 +212,7 @@ export function createDogfightTheatre({ host, makePlane, planeVisual = () => nul
                                         recordings = new URL('replays/dogfights/index.json', VIEWER_ROOT).href, planeVisualFor = () => null,
                                         makePlaneFor = null, world = null, embed = null, arenas = null,
                                         mods = null, siteHref = schoolPage(), siteTitle = 'Back to the school', url = false,
-                                        rules = null, twoSeater = () => null, aceName = null }) {
+                                        rules = null, twoSeater = () => null, aceName = null, gunners = null }) {
   // The brand links: the school's own page, or the page that owns this one
   // (the front end's Range tab), in this tab; another site in a new one.
   const siteExternal = /^https?:/.test(siteHref) && !siteHref.startsWith(location.origin);
@@ -398,7 +399,12 @@ export function createDogfightTheatre({ host, makePlane, planeVisual = () => nul
     if (onAirframe.get(a.key)?.has(lesson.id) || scoring.has(tag)) return;
     scoring.add(tag);
     try {
-      const got = await movesOn(lesson, { makePlane, runDuel, demoSides, yieldTo: () => new Promise(res => setTimeout(res, 0)) });
+      // Flown as the stage flies them: a plane with a gunner fights with it.
+      const duel = opts => {
+        const sides = withGunners(opts.sides, gunners);
+        return hasGunners(sides) ? runFight({ ...opts, sides }) : runDuel(opts);
+      };
+      const got = await movesOn(lesson, { makePlane, runDuel: duel, demoSides, yieldTo: () => new Promise(res => setTimeout(res, 0)) });
       if (!onAirframe.has(a.key)) onAirframe.set(a.key, new Map());
       onAirframe.get(a.key).set(lesson.id, got);
       if (state.lesson === lesson && airOf()?.key === a.key) { drawTabs(lesson); if (state.demo) drawScore(state.demo); }
@@ -407,6 +413,12 @@ export function createDogfightTheatre({ host, makePlane, planeVisual = () => nul
     } finally {
       scoring.delete(tag);
     }
+  }
+  /** A wingman's tag: what they are doing, in a word or three. */
+  function wingTag(phase) {
+    const ace = aceWord().toUpperCase();
+    return phase === 'cover' ? `WINGMAN · ONTO THE ${ace}` : phase === 'weave' ? 'WINGMAN · TURNING IN'
+      : phase === 'shoot' ? `WINGMAN · ON THE ${ace}` : 'WINGMAN';
   }
   /** A side mid-sentence: a recording's pilot by name, a lesson's as "the
    *  ace" or "the other pilot". */
@@ -633,6 +645,7 @@ export function createDogfightTheatre({ host, makePlane, planeVisual = () => nul
       s.scene.remove(a.plane, a.trail, a.shadow, a.drop, a.marker, a.gun);
       if (a.flash) { s.scene.remove(a.flash); a.flash.geometry.dispose(); }
       if (a.gunFlash) { s.scene.remove(a.gunFlash); a.gunFlash.geometry.dispose(); }
+      if (a.rearFire) { s.scene.remove(a.rearFire); a.rearFire.geometry.dispose(); }
       for (const m of a.streaks) s.scene.remove(m);
       for (const list of a.gunnerStreaks?.values() ?? []) for (const m of list) s.scene.remove(m);
       a.trail.geometry.dispose();
@@ -789,6 +802,15 @@ export function createDogfightTheatre({ host, makePlane, planeVisual = () => nul
       a.gunFlash.frustumCulled = false;
       a.gunFlash.visible = false;
       s.scene.add(a.gunFlash);
+      // A gunner's stream of fire, muzzle to the newest round in the air,
+      // bright: the tracers alone are a thread at a hunter 200 m back.
+      const rg = new THREE.BufferGeometry();
+      rg.setAttribute('position', new THREE.BufferAttribute(new Float32Array(6), 3));
+      a.rearFire = new THREE.Line(rg, new THREE.LineBasicMaterial({ color: C.hit, transparent: true, opacity: 0.9, depthWrite: false,
+        blending: THREE.AdditiveBlending }));
+      a.rearFire.frustumCulled = false;
+      a.rearFire.visible = false;
+      s.scene.add(a.rearFire);
     }
     // Each side's gunner rounds, in time order, for the flash.
     s.gunnerRounds = s.actors.map((_, i) => fight.rounds.filter(r => r.side === i && isGunnerRound(r)));
@@ -829,8 +851,11 @@ export function createDogfightTheatre({ host, makePlane, planeVisual = () => nul
     // A two-seater lesson's ace is the arena's own two-seater, its gunners
     // its own (`twoSeater`, the page's; `dogfight-gunners.js`).
     const seater = lesson.ace.twoSeater ? twoSeater?.() ?? null : null;
-    const r = demo.extra
-      ? runFight({ makePlane, seconds: demo.seconds ?? lesson.seconds, origin, groundAt: () => groundY, sides: fightSides(lesson, demo, seater) })
+    // Each plane's own gunners (`gunners`, the page's): a Stuka picked as
+    // yours fires its rear gun at the hunter on its tail, in every lesson.
+    const sides = fightSides(lesson, demo, seater, gunners);
+    const r = demo.extra || hasGunners(sides)
+      ? runFight({ makePlane, seconds: demo.seconds ?? lesson.seconds, origin, groundAt: () => groundY, sides })
       : runDuel({ makePlane, seconds: demo.seconds ?? lesson.seconds, origin, groundAt: () => groundY, sides: demoSides(lesson, demo) });
     // A demo can stop where its move has played out (`endAt`, seconds),
     // while the move is still scored over the whole fight it flies; a kill
@@ -1010,7 +1035,12 @@ export function createDogfightTheatre({ host, makePlane, planeVisual = () => nul
     if (state.extend && state.extend.base !== fight) clearExtend();
     // A long move can open where it starts to matter (`startAt`, seconds);
     // the scrub bar still reaches back to 0.
-    state.startAt = Math.max(0, Math.min(fight.duration - 1, demo.startAt ?? 0));
+    // Or where the ace has closed to `startRange` metres of you: the pair's
+    // hunter, its first seconds a slow close that shows nothing.
+    // A paced airframe's fight is that much larger (`dogfight-duel.js` `paced`).
+    let pace = 1;
+    if (demo.startRange) { try { pace = Math.max(...[0, 1].map(i => fitAirframe(makePlane(null, i), makePlane, i).pace)); } catch { pace = 1; } }
+    state.startAt = Math.max(0, Math.min(fight.duration - 1, demo.startRange ? closedTo(fight, demo.startRange * pace) : demo.startAt ?? 0));
     stageLesson(fight, { at: state.startAt });
     const plane = String(typeof planeName === 'function' ? planeName() : planeName).toUpperCase();
     // A two-seater lesson's ace flies the two-seater it found.
@@ -1022,7 +1052,15 @@ export function createDogfightTheatre({ host, makePlane, planeVisual = () => nul
     // card, and the measured detail is in the notes.
     const info = MOVE_INFO[demo.kind];
     ui.tcTitle.textContent = moveLabel(demo);
-    ui.tcNote.textContent = info ? info.what : demo.verdict?.line ? `${demo.note} ${demo.verdict.line}` : demo.note;
+    // A demo with an `intro` opens on it, in plain words, and with what the
+    // plane on stage adds: a two-seater's gunner firing back.
+    const backSeat = (gunners?.(1) ?? []).length ? ` Your ${plane.toLowerCase().replace(/(^|\s)\S/g, c => c.toUpperCase())}'s rear gunner fires back at anything in their arc.` : '';
+    ui.tcNote.textContent = demo.intro ? `${demo.intro}${backSeat}`
+      : info ? info.what : demo.verdict?.line ? `${demo.note} ${demo.verdict.line}` : demo.note;
+    // A demo can open on the camera that shows it best (`demo.camera`); the
+    // next demo without one goes back to the wide shot.
+    if (demo.camera) { state.camera = demo.camera; state.demoCamera = true; markChips(); }
+    else if (state.demoCamera) { state.camera = 'wide'; state.demoCamera = false; markChips(); }
     // FLY IT practises the move on its tab, or flies the lesson.
     const name = MOVE_NAMES[demo.kind]?.toLowerCase();
     ui.fly.textContent = name ? `Practise the ${name}` : 'Fly it yourself';
@@ -1031,7 +1069,16 @@ export function createDogfightTheatre({ host, makePlane, planeVisual = () => nul
       : 'You fly the green plane (YOU), in the air, against the ace flying this move. The coach tells you what they are doing and what beats it.';
     ui.tc.classList.add('is-shown');
     clearTimeout(pickDemo.timer);
-    pickDemo.timer = setTimeout(() => ui.tc.classList.remove('is-shown'), 3200);
+    pickDemo.timer = setTimeout(() => ui.tc.classList.remove('is-shown'), demo.intro ? 6500 : 3200);
+  }
+
+  /** The first moment the ace is within `range` metres of you, seconds. */
+  function closedTo(fight, range) {
+    const [a, b] = fight.tracks;
+    for (let j = 0; j < Math.min(a.length, b.length); j++) {
+      if (Math.hypot(a[j].p[0] - b[j].p[0], a[j].p[1] - b[j].p[1], a[j].p[2] - b[j].p[2]) <= range) return a[j].t;
+    }
+    return 0;
   }
 
   /** A lesson's fight on stage (the demo's own, or one extended from it),
@@ -1106,7 +1153,7 @@ export function createDogfightTheatre({ host, makePlane, planeVisual = () => nul
   function syncEra() {
     if (world) return;
     let jet = false;
-    try { jet = fitAirframe(makePlane(), makePlane).pace > 1; } catch { jet = false; }
+    try { jet = fitAirframe(makePlane(null, 1), makePlane, 1).pace > 1; } catch { jet = false; }
     const was = eraNow();
     setEra(jet ? 'jet' : null);
     if (eraNow() !== was) labelLessons();
@@ -1159,7 +1206,13 @@ export function createDogfightTheatre({ host, makePlane, planeVisual = () => nul
     state.recording = null;
     // On a jet, what the nine flights on it showed comes before the story.
     const jetNote = lesson.era === 'jet' && lesson.note ? `<p class="dfs-era-note"><b>On a jet</b> ${esc(lesson.note)}</p>` : '';
-    ui.move.innerHTML = jetNote + lesson.story.map(p => `<p>${esc(p)}</p>`).join('') + seaterNote(lesson);
+    // The story's numbers were flown with the school's Spitfire on both
+    // sides; on other planes they are not this fight's, and say so.
+    const air = airOf();
+    const other = air && !(air.name === 'Spitfire' && (air.ace ?? air.name) === 'Spitfire');
+    const measuredNote = other && lesson.era !== 'jet'
+      ? `<p class="dfs-era-note"><b>Measured on</b> ${esc(`the school's Spitfire, on both sides: the numbers below are its fights. On stage it is the ${air.name}${air.ace ? ` against the ${air.ace}` : ''}, each on its own airframe, and the end card says how this fight went.`)}</p>` : '';
+    ui.move.innerHTML = jetNote + measuredNote + lesson.story.map(p => `<p>${esc(p)}</p>`).join('') + seaterNote(lesson);
     ui.counter.innerHTML = lesson.counterStory.map(p => `<p>${esc(p)}</p>`).join('');
     drawTabs(lesson);
     scoreAirframe(lesson);
@@ -1349,7 +1402,7 @@ export function createDogfightTheatre({ host, makePlane, planeVisual = () => nul
       a.marker.quaternion.copy(view.quaternion);
       const n = Math.max(1, k.i + 1);
       // Behind a tail, that tail's own newest ribbon would fill the picture.
-      const chased = (state.camera === 'ace' && i === 0) || (state.camera === 'you' && i === 1);
+      const chased = (state.camera === 'ace' && i === 0) || ((state.camera === 'you' || state.camera === 'shoulder') && i === 1);
       if (world) {
         // A contrail: the last few seconds, up to the plane.
         const from = Math.max(0, n - 1 - Math.round(MAP_TRAIL.seconds / fight.dt));
@@ -1371,7 +1424,7 @@ export function createDogfightTheatre({ host, makePlane, planeVisual = () => nul
       // draws them; true size behind a tail.
       a.plane.scale.setScalar(state.drawScale);
       a.marker.scale.setScalar(state.drawScale * (state.intro ? state.intro.pulse : 1));
-      a.marker.visible = !((state.camera === 'ace' && i === 0) || (state.camera === 'you' && i === 1));
+      a.marker.visible = !((state.camera === 'ace' && i === 0) || ((state.camera === 'you' || state.camera === 'shoulder') && i === 1));
       a.plane.visible = !(state.camera === `sight-${i === 0 ? 'ace' : 'you'}`);
       // The gun line: faint while the other is out of it, his colour when he
       // is in the kill zone, the hit colour when the shot would land.
@@ -1478,7 +1531,9 @@ export function createDogfightTheatre({ host, makePlane, planeVisual = () => nul
       const speed = _u.length();
       _u.divideScalar(speed || 1);
       const mpp = pxFlat || pxAt1m * _m.distanceTo(view.position);
-      poseTracer(mesh, look, _m, _u, speed * age, state.drawScale, mpp);
+      // A gunner's return fire is the point of a two-seater on stage: drawn
+      // three times life over the schematic, so it reads from any camera.
+      poseTracer(mesh, look, _m, _u, speed * age, gunner && !world ? Math.max(3, state.drawScale) : state.drawScale, mpp);
     }
     for (const [i, a] of s.actors.entries()) {
       for (let j = used[i]; j < a.streaks.length; j++) a.streaks[j].visible = false;
@@ -1498,6 +1553,24 @@ export function createDogfightTheatre({ host, makePlane, planeVisual = () => nul
       a.flash.visible = !world && firing && Math.sin(performance.now() * 0.09 + i) > -0.3;
       // A gunner's flash at their muzzle while their rounds leave it.
       const shot = gunnerShotAt(s.gunnerRounds?.[i], state.t);
+      if (a.rearFire) {
+        // The newest gunner round still in the air, its line from the muzzle.
+        const list = s.gunnerRounds?.[i] ?? [];
+        let r = null;
+        for (let j = list.length - 1; j >= 0; j--) {
+          const age = state.t - list[j].t;
+          if (age < 0) continue;
+          if (age <= (list[j].hit ? list[j].hitT - list[j].t : (list[j].life ?? ROUND_LIFE)) && age < 0.6) r = list[j];
+          break;
+        }
+        a.rearFire.visible = !world && !!r;
+        if (r) {
+          const age = state.t - r.t;
+          a.rearFire.geometry.attributes.position.array.set([r.start[0] - o[0], r.start[1] - o[1], r.start[2] - o[2],
+            r.start[0] + r.v[0] * age - o[0], r.start[1] + r.v[1] * age - o[1], r.start[2] + r.v[2] * age - o[2]]);
+          a.rearFire.geometry.attributes.position.needsUpdate = true;
+        }
+      }
       if (a.gunFlash) {
         a.gunFlash.visible = !world && !!shot && Math.sin(performance.now() * 0.11 + i) > -0.3;
         if (shot) {
@@ -1540,22 +1613,33 @@ export function createDogfightTheatre({ host, makePlane, planeVisual = () => nul
     }
     // The name tags over the fighters.
     for (const [i, a] of s.actors.entries()) {
-      _m.copy(a.plane.position).add(_u.set(0, 14, 0)).project(view);
+      // Over your shoulder your plane is close: its tag sits just over it.
+      _m.copy(a.plane.position).add(_u.set(0, state.camera === 'shoulder' && i === 1 ? 5 : 14, 0)).project(view);
       const tag = ui.tags[i];
       const on = _m.z < 1 && Math.abs(_m.x) < 1.1 && Math.abs(_m.y) < 1.1;
       tag.style.opacity = on ? '1' : '0';
       if (on) tag.style.transform = `translate(${(_m.x * 0.5 + 0.5) * w}px, ${(-_m.y * 0.5 + 0.5) * h}px) translate(-50%, -100%)`;
+      // The plane he is after: the other of the two, or his own target in a
+      // fight of more than two, and how far off it is.
+      const tgt = Number.isInteger(now2[i].k?.target) && now2[i].k.target >= 0 && now2[i].k.target !== i ? now2[i].k.target : (i < 2 ? 1 - i : 0);
+      const at = now2[tgt] ?? now2[1 - Math.min(i, 1)];
+      const range = Math.hypot(now2[i].p[0] - at.p[0], now2[i].p[1] - at.p[1], now2[i].p[2] - at.p[2]);
+      // A lesson that teaches a closing threat (`rangeTag`, the pair) puts
+      // the ace's range on its tag, counting down as it closes; a wingman's
+      // tag says what they are doing.
+      if (!fight.recorded && i === 0 && fight.lesson?.rangeTag) tag.textContent = `${nameOf(0)} · ${Math.round(range)} M`;
+      if (!fight.recorded && i > 1) tag.textContent = wingTag(now2[i].k?.ph);
       // GUNS, with the range he is firing from, and HIT when a round of his
-      // has just struck: the shot the move bought.
+      // has just struck: the shot the move bought. A gunner's return fire
+      // the same, as GUNNER.
       const guns = ui.guns[i];
       const firing = on && firingAt(fight, i, state.t, 0);
-      guns.classList.toggle('is-on', firing);
-      if (firing) {
-        // From the plane he is firing at: the other of the two, or a wingman's own target.
-        const at = now2[i < 2 ? 1 - i : (now2[i].k?.target ?? 0)] ?? now2[1 - Math.min(i, 1)];
-        const range = Math.hypot(now2[i].p[0] - at.p[0], now2[i].p[1] - at.p[1], now2[i].p[2] - at.p[2]);
-        const struck = fight.rounds.some(r => r.side === i && r.hit && state.t >= r.hitT && state.t < r.hitT + 0.4);
-        guns.textContent = `GUNS · ${Math.round(range)} M${struck ? ' · HIT' : ''}`;
+      const gunnerFiring = on && !firing && !!s.gunnerRounds?.[i]?.some(r => r.t <= state.t && state.t - r.t < 0.35);
+      guns.classList.toggle('is-on', firing || gunnerFiring);
+      if (firing || gunnerFiring) {
+        const struck = fight.rounds.some(r => r.side === i && r.hit && state.t >= r.hitT && state.t < r.hitT + 0.4
+          && (gunnerFiring ? isGunnerRound(r) : !isGunnerRound(r)));
+        guns.textContent = `${gunnerFiring ? 'GUNNER FIRING BACK' : 'GUNS'} · ${Math.round(range)} M${struck ? ' · HIT' : ''}`;
         guns.style.transform = `translate(${(_m.x * 0.5 + 0.5) * w}px, ${(-_m.y * 0.5 + 0.5) * h}px) translate(-50%, -230%)`;
       }
     }
@@ -1764,6 +1848,16 @@ export function createDogfightTheatre({ host, makePlane, planeVisual = () => nul
       const size = Math.min(2.5, Math.max(1, (s.actors[i]?.span ?? 11) / 11));
       pos = me.clone().addScaledVector(_f, -38 * size).add(_u.set(0, 9 * size, 0));
       look = me.clone().addScaledVector(_f, 60).lerp(other, 0.35 * Math.min(1, 150 / Math.max(1, me.distanceTo(other))));
+    } else if (state.camera === 'shoulder') {
+      // Over your shoulder: past you, on the line from the ace through you,
+      // a little up and out to the side, looking back through you at them,
+      // so the plane closing on your tail is behind yours in the picture.
+      const size = Math.min(2.5, Math.max(1, (s.actors[1]?.span ?? 11) / 11));
+      const back = _u.copy(b).sub(a);
+      const along = back.lengthSq() > 1 ? back.normalize().clone() : _f.set(0, 0, -1).applyQuaternion(k[1].q).clone();
+      const side = new THREE.Vector3(-along.z, 0, along.x).normalize();
+      pos = b.clone().addScaledVector(along, 48 * size).addScaledVector(side, 20 * size).add(_u.set(0, 14 * size, 0));
+      look = b.clone().lerp(a, Math.min(0.45, 140 / Math.max(1, span)));
     } else if (state.camera === 'top') {
       // Straight down as a flat map, the start's heading up the screen,
       // framed on the last TOP_WINDOW seconds of the fight (the first ones at
@@ -2622,7 +2716,7 @@ export function createDogfightTheatre({ host, makePlane, planeVisual = () => nul
       ground = () => groundY;
       moment = momentOf(sides, i0 * fight.dt, { makePlane, origin, groundAt: ground, dt: fight.dt });
       opponent = { plan: sides[1 - side].plan, memory: moment.mems[1 - side], skill: sides[1 - side].skill };
-      makers = [() => makePlane(), () => makePlane()];
+      makers = [() => makePlane(null, 0), () => makePlane(null, 1)];
     }
     let w;
     try {
@@ -3447,6 +3541,12 @@ export function createDogfightTheatre({ host, makePlane, planeVisual = () => nul
     /** Play a recorded fight by its id (`replays/dogfights/index.json`). */
     playRecorded: id => loadRecorded().then(() => pickRecorded(id)),
     get recorded() { return recorded; },
+    /** For the tests: each drawn plane's tracer streaks on screen now, its
+     *  pilot's and its gunners'. */
+    tracers() {
+      return (gl?.actors ?? []).map(a => ({ guns: a.streaks.filter(m => m.visible).length,
+        gunner: [...(a.gunnerStreaks?.values() ?? [])].flat().filter(m => m.visible).length }));
+    },
     /** For the tests: what each drawn fighter is made of. */
     planes() {
       return (gl?.actors ?? []).map(a => {

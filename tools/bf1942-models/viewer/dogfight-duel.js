@@ -423,11 +423,15 @@ export function runDuel({ makePlane, sides, seconds = 60, origin = [0, 0, 0], gr
   const fitted = [];
   const planes = sides.map((side, i) => {
     const plane = makePlane(side, i);
-    const fit = fitted[i] = fitAirframe(plane, makePlane, i);
+    fitted[i] = fitAirframe(plane, makePlane, i);
     plane.groundHeight = (x, z) => groundAt(x, z);
-    if (side.state) setPlaneState(plane, side.state, side.throttle ?? 1);
-    else placePlane(plane, stage(origin, paced(side.start, fit.pace, origin[1])));
     return plane;
+  });
+  // Each staged at its own pace, as the live fight stages them
+  // (`dogfight-live.js`, features/dogfight-lessons-jets).
+  sides.forEach((side, i) => {
+    if (side.state) setPlaneState(planes[i], side.state, side.throttle ?? 1);
+    else placePlane(planes[i], stage(origin, paced(side.start, fitted[i].pace, origin[1])));
   });
   // An airframe paced as a jet fights with its own cannon, and its pilot
   // sees the fight at the Spitfire's size (`pilotView`).

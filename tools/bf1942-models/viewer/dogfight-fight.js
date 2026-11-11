@@ -92,11 +92,11 @@ export function runFight({ makePlane, sides, seconds = 60, origin = [0, 0, 0], g
   const make = (side, i) => (sides[i]?.make ? sides[i].make() : makePlane(side, i));
   const planes = sides.map((side, i) => {
     const plane = make(side, i);
-    const fit = fitted[i] = fitAirframe(plane, make, i);
+    fitted[i] = fitAirframe(plane, make, i);
     plane.groundHeight = (x, z) => groundAt(x, z);
-    placePlane(plane, stage(origin, paced(side.start, fit.pace, origin[1])));
     return plane;
   });
+  sides.forEach((side, i) => placePlane(planes[i], stage(origin, paced(side.start, fitted[i].pace, origin[1]))));
   const guns = sides.map((_, i) => gunOf(fitted[i].gun ?? gun));
   const views = sides.map((_, i) => pilotView(fitted[i].pace));
   const pilots = sides.map((side, i) => createPilot(side.plan ?? 'cruiser', { skill: side.skill ?? 1, gun: views[i].gun(fitted[i].gun ?? gun), seed: i + 1 }));

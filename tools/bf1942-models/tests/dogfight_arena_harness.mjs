@@ -65,10 +65,6 @@ console.log(JSON.stringify({
   teams: teams.map(a => ({ map: a.map, allied: a.allied, axis: a.axis, planes: a.planes.map(p => p.template) })), ranks,
   arenas: arenas.map(a => ({ map: a.map, allied: a.allied, axis: a.axis, planes: a.planes.map(p => p.template) })),
   planeIn: { chosen: A.planeIn(bob, 'BF109')?.template, missing: A.planeIn(bob, 'Zero')?.template },
-  // A lesson draws you on a fighter: a bomber or two-seater picked is drawn
-  // as its side's best fighter (the lessons fly a fighter's airframe).
-  lessonPlane: Object.fromEntries([[bob, 'Ju88A'], [bob, 'BF109'], [bob, 'Spitfire'], [kursk, 'Ilyushin'], [kursk, 'Yak9']]
-    .map(([a, t]) => [`${a.map}:${t}`, A.lessonPlane(a, A.planeIn(a, t))?.template])),
   ace: { againstAxis: A.aceAgainst(bob, bf)?.template, againstAllied: A.aceAgainst(kursk, kursk.planes.find(p => p.template === 'Yak9'))?.template },
   url: Object.fromEntries(url.searchParams),
   path: url.pathname,

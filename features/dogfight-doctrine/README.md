@@ -169,35 +169,62 @@ without ever firing back", with no idea what it was for. Measured headless
 code over the live assets):
 
 - **The Stuka was the plane chosen under YOUR PLANE**, not anything the pair
-  or the two-seater change picked. Every lesson is flown on the arena's best
-  fighter's airframe (Kursk: the Bf 109), but the page drew you as the plane
-  chosen (`models.mine`), so a Stuka or an Il-2 picked there flew a
-  fighter's moves in its own paint, its rear gun silent because nobody was
-  in the back of the airframe that actually flew. The kicker said "STUKA
-  AGAINST STUKA": it named your plane twice. Now a lesson draws you on your
-  side's best fighter when the plane picked is not one
-  (`dogfight-arena.js` `lessonPlane`; FLY IT still puts you in the plane you
-  picked), and the kicker names the ace's plane (`aceName`): "BF 109 AGAINST
-  YAK 9". Held by `test_dogfight_arena.py`
-  `test_a_lesson_draws_you_on_your_sides_fighter`.
+  or the two-seater change picked. Every lesson was flown on the arena's best
+  fighter's airframe on both sides (Kursk: the Bf 109) and only drawn as the
+  planes on stage, so a Stuka picked flew a Bf 109's fight in its own
+  paint, its rear gun silent because nobody was in the back of the airframe
+  that flew. The kicker said "STUKA AGAINST STUKA". A first fix drew a
+  fighter in its place; the owner wanted the opposite, and it was reverted
+  the same day: see "The plane you pick" below.
 - **The gunner wiring is any side's.** `runFight` gives every side its own
   gunners; only `fightSides` hands them to the ace, for the two-seater
   lesson. Flown with the Stuka (its own airframe and MG 42) as the hunted
   plane, flying straight, its gunner fires 150 to 282 rounds at the hunter
-  and hits 9 to 17 from the nine starts (`test_a_two_seaters_gunner_fires_back_from_any_side`).
-  So nothing was broken in the wiring: the demo had no two-seater in it.
+  and hits 10 to 15 from the nine starts. So nothing was broken in the
+  wiring: the demo had no two-seater in it.
 - **The hunter does fire.** On every vanilla arena, alone and flying straight,
   the hunter opens fire 20 to 24 s in and shoots you down 22 to 26 s in
-  (Battle of Britain 25.5 s, Kursk and Market Garden 22.3, Midway 23.6, with the cruise capped below);
-  the nine Spitfire starts still give 16 to 30 s. But the first 20 s were
-  the slow close from 350 m, which is what the owner watched. The demo now
-  opens 8 s in (`startAt`), with the first round at least 4 s later
+  on the arena's best fighter on both sides; the nine Spitfire starts give
+  16 to 30 s. But the first 20 s were the slow close from 350 m, which is
+  what the owner watched. The demo now opens with the hunter 280 m back
+  (`startRange`), the first round at least 3 s later on every arena
   (`test_alone_and_straight_the_hunter_fires_and_hits_after_the_demo_opens`).
 - **The words.** The plane against you is called the hunter on its tag,
   meter, captions, cameras and shot card (`lesson.aceRole`); the wingman has
   a caption row (`Off your wing, a little behind, watching your tail`, then
   `Someone is on your tail: turning onto them`); and each demo's note says
   who is who and what happens.
+
+### The plane you pick (2026-11-11)
+
+The plane picked under YOUR PLANE is the plane that flies, in every lesson
+and demo: yours on its own airframe, the ace on theirs
+(`dogfight-school-page.js` `makePlane(side, i)`, side 0 the ace's, the rest
+yours, a wingman included), each with its own gunners read off its model
+(`gunnersOf`; `fightSides`'s `gunnersFor`). A fight with a gunner in it is
+flown by `runFight`, the duel having no back seat; so are the tabs' counts
+(`movesOn` through the same). Each side is staged, and sees the fight, at
+its own airframe's pace, as the live fight stages it (staging both at the
+faster one's pace was tried and parts the duel from the live fight on the
+F-16 against the MiG-29, `test_dogfight_live_jets.py`).
+
+Kursk with the Stuka picked: the hunter (a Yak 9) closes on your tail, your
+rear gunner opens up from 280 m and lands 11 rounds on it, and it shoots
+you down 17.6 s in (the Bf 109 picked: 19.9 s). From the nine starts with
+the Stuka as yours (`test_the_picked_two_seater_flies_as_itself_and_its_gunner_fires_back`):
+the gunner fires 154 to 238 rounds and hits 10 to 15 times every time, and
+the Stuka cruises 2 to 3 m/s slower than the Spitfire would.
+
+What a viewer sees (`dogfight-theatre.js`): each demo of *The pair* opens on
+a plain sentence (`demo.intro`, 6.5 s), plus "your Stuka's rear gunner fires
+back at anything in their arc" when yours has one; *Alone, flying straight*
+opens with the hunter 280 m back (`startRange`, at the fight's pace) on a
+camera over your shoulder (`shoulder`: past you on the line from the hunter,
+looking back through you at them); the hunter's tag counts its range down
+(`rangeTag`); the gunner's fire is drawn three times life with a bright line
+from the muzzle; and the wingman's tag says ONTO THE HUNTER while they cover.
+The story says when its numbers were the school's Spitfire's and the planes
+on stage are others.
 
 ### The hunter on every arena (2026-11-11)
 
@@ -245,21 +272,38 @@ its nose is within 90 degrees of yours (`PAIR.hold`). Vanilla's nine
 starts: the wingman still takes 0 to 2 rounds, you none.
 
 The pair on every arena now (`test_dogfight_arena_hunter.py`, the 59
-arenas' airframes in `tests/fixtures/arena-airframes.json.gz`):
+arenas' planes in `tests/fixtures/arena-airframes.json.gz`):
 
 | Tree (arenas) | Alone, straight: shot down | Wingman: rounds on you | Thach weave: on you / on the hunter | Into the ground |
 |---|---|---|---|---|
-| vanilla (5), Road to Rome (7), Secret Weapons (5) | every arena, 22.3 to 25.5 s in | none | 0 / 0 to 3 | nobody |
-| BF1918 (22) | every arena, 16.6 to 31.5 s in | none | 0 to 8 / 0 to 12 | nobody |
-| Desert Combat (7) | every arena, 13.7 to 13.8 s in | none | 0 / 0 | nobody |
-| Forgotten Hope (1) | 18.9 s in | none | 0 / 2 | nobody |
-| FHSW (12) | every arena, 12.5 to 17.1 s in | 0 to 12, never shot down | 0 to 3 / 0 | nobody |
+| vanilla (5), Road to Rome (7), Secret Weapons (5) | every arena, 22.6 to 25.2 s in | none | 0 / 0 | nobody |
+| BF1918 (22) | every arena, 11.8 to 30.2 s in | none | 0 to 7 / 0 to 19 | nobody |
+| Desert Combat (7) | every arena, 11.7 to 15.4 s in | none | 0 / 0 to 1 | nobody |
+| Forgotten Hope (1) | 18.6 s in | none | 0 / 0 | nobody |
+| FHSW (12) | 11 arenas, 11.9 to 42.8 s in; Operation Spring Awakening 21 of 22 rounds | none on 11; shot down on Gazala | 0 / 0 to 3 | nobody |
+
+Each arena flies its own two planes (yours its best Allied fighter, the
+hunter the other side's best). Two are left where the lesson's point does
+not play out in full, both FHSW, both in `test_dogfight_arena_hunter.py`:
+
+- **Gazala** (a Hurricane against the faster Bf 109): your wingman, flying
+  your type, meets the hunter head-on, is carried 500 m past, and their turn
+  back takes longer than the hunter's run on you; they arrive a second
+  late. A wingman now turns back hard and level once the hunter is behind
+  their beam (`PAIR.turnBack`, 90 degrees), which saved Apennines and
+  Remagen (a P-47 against a Bf 109-G6 and an Me 262); a threshold that saves
+  Gazala loses Remagen and moves vanilla's nine starts.
+- **Operation Spring Awakening** (a Yak 9 against a Bf 109-G10, paced 1 and
+  1.3): the hunter sits 40 m behind you firing its one cannon for 16 s and
+  lands 21 of the 22 rounds the school counts as a kill, then loses its
+  line and never gets it back in the minute.
 
 The hand changes every lesson flown on those airframes, and the tabs show
 each move's count flown on the airframe on stage, so their counts moved.
-Every move scored from the nine starts, before the roll hand and after
-(`MOVES=1 node tests/dogfight_arena_hunter_harness.mjs <airframe>`; moves
-that score 0 on all of them left out):
+Every move scored from the nine starts with the airframe on both sides,
+before the roll hand and after (moves that score 0 on all of them left
+out). The tabs now score the two planes on stage (`MOVES=1 node
+tests/dogfight_arena_hunter_harness.mjs <you>|<ace>`):
 
 | Move | Albatros | D.VII | FH Mustang | Spitfire Ib | Bf 109-G6 | Spitfire 22 | Spitfire I | Bf 109 | Spitfire Vb | Bf 109-G10 | Yak 9 | P-47 | Bf 109-G10R6 |
 |---|---|---|---|---|---|---|---|---|---|---|---|---|---|

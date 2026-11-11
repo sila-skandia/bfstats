@@ -21,13 +21,13 @@
 import { Aircraft } from './aircraft.js';
 import { createDogfightTheatre } from './dogfight-theatre.js';
 import { fighterRank, jetName } from './dogfight-lessons.js';
-import { arenasFrom, arenasFromTeams, planeIn, aceAgainst, lessonPlane, arenaUrl } from './dogfight-arena.js';
+import { arenasFrom, arenasFromTeams, planeIn, aceAgainst, arenaUrl } from './dogfight-arena.js';
 import { loadPlaneModel, airframeRoot, planeVisual } from './plane-models.js';
 import { VIEWER_ROOT } from './viewer-root.js';
 import { loadMods, stored as storedMod, remember, trees, VANILLA } from './mods.js';
 import * as jetAge from './dogfight-doctrine-1991.js';
 import { measureAirframe } from './dogfight-airframe.js';
-import { findTwoSeater } from './dogfight-gunner-seats.js';
+import { findTwoSeater, gunnersOf } from './dogfight-gunner-seats.js';
 
 const params = new URLSearchParams(location.search);
 const ARENA_KEY_VANILLA = 'dogfight-school:arena';
@@ -107,26 +107,30 @@ let choice = stored(PLANE_KEY);
 /** The planes of the arena as the theatre lists them. */
 const planes = () => arena.planes.map(p => ({ template: p.template, name: pretty(p.template), fighter: p.fighter }));
 const mine = () => planeIn(arena, choice);
-/** The plane the lessons draw as you: yours, or your side's fighter when you
- *  picked a bomber or a two-seater (`lessonPlane`); FLY IT is still yours. */
-const drawnMine = () => lessonPlane(arena, mine());
 
-/** The models the theatre draws and flies: the arena's best fighter (the
- *  lessons' airframe, as on the Range), yours, and the ace's. */
-const models = { fighter: null, mine: null, ace: null };
+/** The models the theatre draws and flies: yours and the ace's, each on its
+ *  own airframe, with its own gunners (a Stuka's rear gunner fires back in
+ *  every lesson, `gunnersOf`); the arena's best fighter only stands in for
+ *  a model that will not load. */
+const models = { fighter: null, mine: null, ace: null, mineGunners: [], aceGunners: [], mineName: null, aceName: null };
+const gunnersIn = root => { try { return root ? gunnersOf(root.clone(true)) : []; } catch (e) { console.warn('dogfight school: gunners', e); return []; } };
 let loading = 0;
 /** Resolves true when these models are the ones on stage; false when a later
  *  pick (clicking through the arenas) overtook it. */
 async function loadModels() {
   const ticket = ++loading;
   const best = [...arena.planes].sort((a, b) => fighterRank(a.template) - fighterRank(b.template))[0];
-  const me = drawnMine(), ace = aceAgainst(arena, me);
+  const me = mine(), ace = aceAgainst(arena, me);
   const [f, m, a] = await Promise.all([best, me, ace].map(p => (p ? loadPlaneModel(p.template, modId(arenaMod)) : null)));
   if (ticket !== loading) return false;
   models.fighter = airframeRoot(f) ?? models.fighter;
   if (airframeRoot(f)) models.fighterName = best.template;
   models.mine = airframeRoot(m) ?? models.fighter;
   models.ace = airframeRoot(a) ?? models.fighter;
+  models.mineName = airframeRoot(m) ? me.template : models.fighterName;
+  models.aceName = airframeRoot(a) ? ace.template : models.fighterName;
+  models.mineGunners = gunnersIn(models.mine);
+  models.aceGunners = gunnersIn(models.ace);
   return true;
 }
 
@@ -235,15 +239,19 @@ function fly({ lesson = null, move = null, course = null }) {
 
 const theatre = createDogfightTheatre({
   host: document.body,
-  // The planes drawn: yours as a fighter (`drawnMine`), and the ace's.
-  planeName: () => pretty(drawnMine()?.template),
-  aceName: () => pretty(aceAgainst(arena, drawnMine())?.template),
-  // The plane the lessons fly on (the arena's best fighter): every move's
-  // count on the tabs is flown on it (features/dogfight-doctrine).
-  airframe: () => (models.fighterName ? { key: `${modId(arenaMod)}:${models.fighterName}`, name: pretty(models.fighterName) } : null),
+  // The planes on stage: yours, as picked, and the ace's.
+  planeName: () => pretty(models.mineName),
+  aceName: () => pretty(models.aceName),
+  // The planes the lessons fly on, each its own airframe: every move's count
+  // on the tabs is flown on them (features/dogfight-doctrine).
+  airframe: () => (models.mineName ? { key: `${modId(arenaMod)}:${models.mineName}:${models.aceName}`, name: pretty(models.mineName),
+                                       ace: pretty(models.aceName) } : null),
   // Flown over a floor at 0, as the Range and the school's tests fly them.
   groundY: 0,
-  makePlane: () => new Aircraft(models.fighter.clone(true), null, frame),
+  // Side 0 is the ace, the rest yours (you, a wingman): each its own type.
+  makePlane: (side, i) => new Aircraft((i === 0 ? models.ace : models.mine).clone(true), null, frame),
+  // Each side's gunners: a two-seater's rear gun fires in every lesson.
+  gunners: i => (i === 0 ? models.aceGunners : models.mineGunners),
   planeVisual: i => planeVisual(i === 0 ? models.ace : models.mine),
   // A recorded fight's own types, from their trees.
   planeVisualFor: (template, mod) => loadPlaneModel(template, mod).then(scene => (scene ? planeVisual(scene) : null)),

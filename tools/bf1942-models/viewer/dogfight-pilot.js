@@ -2522,7 +2522,7 @@ PLANS.leafFollow = {
  * `PAIR.cover` metres is his target until it is gone or off the tail.
  * Needs the fight's `c.team` (`dogfight-fight.js` `runFight`).
  */
-const PAIR = { abeam: 180, behind: 60, cover: 800, tailCone: 60, hold: 4, holdCone: 90 };
+const PAIR = { abeam: 180, behind: 60, cover: 800, tailCone: 60, hold: 4, holdCone: 90, turnBack: 90 };
 PLANS.wingman = {
   title: 'The wingman', first: 'station',
   // Said under the wingman's own caption row, the leader being you: the
@@ -2553,6 +2553,12 @@ PLANS.wingman = {
       if (!threat.held) mem.coverAt = mem.t;
       mem.target = threat.e.i;
       go(c, 'cover');
+      // Past it, behind his beam (`PAIR.turnBack` degrees off his heading):
+      // come round level and hard (`turnToward`) rather than chase the nose
+      // round a point over his shoulder, which on FHSW's P-47 flew him
+      // straight on and away from the fight after a head-on pass.
+      const toThreat = sub(threat.e.state.position, me.position);
+      if (angleBetween(heading(me.velocity), heading(toThreat)) > PAIR.turnBack) return { ...turnToward(c, toThreat), throttle: 1, aimed: false };
       // The target this tick may still be another: point at the threat
       // until the fight hands him over next tick.
       if (c.team.target === threat.e.i) return { ...leadPursuit(c, { pull: 1, push: 0.6 }), throttle: 1 };

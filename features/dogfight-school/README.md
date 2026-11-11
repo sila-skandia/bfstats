@@ -96,20 +96,24 @@ is published: no asset is involved.
   and every move's count on the tabs is now flown on
   the plane the lessons fly on, the Spitfire's beside it where they differ
   (`features/dogfight-doctrine`, "The lessons on other airframes").
-- **A lesson draws you on a fighter** (2026-11-11): every lesson is flown on
-  the arena's best fighter, and a bomber or two-seater picked under YOUR
-  PLANE (the owner's Stuka in *The pair*) is now drawn as your side's best
-  fighter in the lessons (`dogfight-arena.js` `lessonPlane`), with the
-  kicker naming the ace's plane rather than yours twice; FLY IT still flies
-  the plane you picked. *The pair* calls the plane against you the hunter
-  (`lesson.aceRole`), gives the wingman a caption row, and opens *Alone,
-  flying straight* 8 s in (`features/dogfight-doctrine`, "What the pair
-  showed, and what it shows now"). Every arena's airframe now flies it:
-  an airframe whose roll answers slowly (every Forgotten Hope fighter) or
-  coasts past the bank asked (BF1918's Albatros and D.VII) is fitted a roll
-  hand from its own flight, so the hunter holds its sight on instead of
-  rocking its wings (`features/dogfight-doctrine`, "The hunter on every
-  arena").
+- **The plane you pick flies as itself** (2026-11-11): in every lesson
+  and demo yours flies on its own airframe (its flight law, its speed) and
+  the ace on theirs; a two-seater's rear gunner mans the gun and fires at
+  whoever is in its arc, with its own tracers and a bright line of fire,
+  and its GUNS callout reads GUNNER FIRING BACK. Before, every lesson flew
+  the arena's best fighter on both sides and only drew the plane picked,
+  so the owner's Stuka flew a Bf 109's fight with its rear gun silent. The
+  kicker names both planes; the story says its numbers were the school's
+  Spitfire's when the planes on stage are others; the tabs' counts are
+  flown on the planes on stage, gunners and all. *The pair* opens each demo
+  on a plain sentence of what you are about to see, *Alone, flying
+  straight* over your shoulder (the new camera) with the hunter 280 m back
+  and its range counting down on its tag, and *Your wingman covers you*
+  labels the wingman ONTO THE HUNTER as they peel off. An airframe whose
+  roll answers slowly (every Forgotten Hope fighter) or coasts past the
+  bank asked (BF1918's Albatros and D.VII) is fitted a roll hand from its
+  own flight (`features/dogfight-doctrine`, "The hunter on every arena",
+  "The plane you pick").
 
 ## The hunter
 

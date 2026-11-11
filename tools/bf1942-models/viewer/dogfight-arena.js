@@ -114,17 +114,6 @@ export function planeIn(arena, choice) {
   return arena?.planes.find(p => p.template === choice) ?? arena?.planes.find(p => p.template === arena.allied[0]) ?? null;
 }
 
-/** The plane a lesson draws as you: yours when it is a fighter, else your
- *  side's best fighter. Every lesson is flown on a fighter's airframe with
- *  nobody in the back, so a Stuka or an Il-2 drawn there would fly a
- *  fighter's moves with a rear gun that never fires. The plane you picked
- *  is still the one FLY IT puts you in. */
-export function lessonPlane(arena, mine) {
-  if (!arena || !mine || mine.fighter) return mine ?? null;
-  const ours = mine.side === 'Axis' ? arena.axis : arena.allied;
-  return arena.planes.find(p => p.template === ours[0]) ?? mine;
-}
-
 /** The ace's plane against yours: the other side's best fighter. */
 export function aceAgainst(arena, mine) {
   if (!arena) return null;

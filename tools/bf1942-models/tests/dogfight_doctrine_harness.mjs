@@ -7,7 +7,7 @@
 import { doctrineOf, usefulRange, damageAt, falloffOf, RULES } from './dogfight-doctrine.js';
 import { movesOn, STARTS, nudge } from './dogfight-measure.js';
 import { runFight } from './dogfight-fight.js';
-import { fightSides } from './dogfight-lessons.js';
+import { fightSides, hasGunners } from './dogfight-lessons.js';
 import { readFileSync } from 'node:fs';
 import { gunnersOf } from './dogfight-gunner-seats.js';
 import { arcExtent } from './dogfight-gunners.js';
@@ -123,7 +123,8 @@ const pair = {};
       const on = r.hitsOn ?? [r.hits[1], r.hits[0]];
       return { youDown: r.end?.why === 'shot down' && r.end.winner !== 1 && r.end.winner !== 2 ? r.end.t : null,
         aceDown: !!r.downs?.some(x => x.i === 0), onYou: on[1],
-        firstShot: r.rounds.find(x => x.side === 0)?.t ?? null, onAce: on[0], onWing: on[2] ?? null,
+        firstShot: r.rounds.find(x => x.side === 0)?.t ?? null,
+        opens: d.startRange ? (r.tracks[0].find((k, j) => Math.hypot(...k.p.map((v, c) => v - r.tracks[1][j].p[c])) <= d.startRange)?.t ?? 0) : 0, onAce: on[0], onWing: on[2] ?? null,
         phases: [...new Set(r.events.filter(e => e.side === 2).map(e => e.phase))] };
     });
   }
@@ -165,21 +166,30 @@ const twoSeater = {}, emptySeat = {};
     emptySeat[d.id] = STARTS.map(st => fly(d, st, empty).rounds.filter(x => x.gunner !== undefined).length);
   }
 }
-// A two-seater as "you" (the side the hunter is after, flying straight) with
-// its gunner in the back: the gunner fires at the hunter on its tail, as a
-// two-seater on the ace's side does. The pair lesson flies a fighter; this is
-// the wiring held for any side (`runFight` gives every side its gunners).
+// The plane you pick flies as itself (features/dogfight-doctrine, "The plane
+// you pick"): the Stuka picked as yours, on its own airframe (`makePlane` by
+// side, as the school page builds it) and with its own gunners
+// (`fightSides`'s `gunnersFor`), against the pair's hunter on the Spitfire.
+// Its rear gunner fires at the hunter on its tail; it flies a Stuka's speed,
+// not the Spitfire's.
 const youSeater = {};
 {
   const LP = LESSONS.find(l => l.id === 'the-pair');
   const d = demoById(LP, 'move');
+  const bySide = (side, i) => (i === 0 ? makePlane(side, i) : stuka.make());
   youSeater.rows = STARTS.map(st => {
-    const sides = fightSides(LP, d);
-    sides[1] = { ...sides[1], make: stuka.make, gunners: stuka.gunners, start: nudge(sides[1].start, st) };
-    const r = runFight({ makePlane, seconds: LP.seconds, groundAt: () => 0, sides });
+    const sides = fightSides(LP, d, null, i => (i === 0 ? [] : stuka.gunners));
+    sides[1] = { ...sides[1], start: nudge(sides[1].start, st) };
+    const r = runFight({ makePlane: bySide, seconds: LP.seconds, groundAt: () => 0, sides });
     const g = r.rounds.filter(x => x.gunner !== undefined);
+    const you = r.tracks[1];
     return { side: [...new Set(g.map(x => x.side))], gunnerRounds: g.length, gunnerHits: g.filter(x => x.hit).length,
-      gunnerEvent: r.events.some(e => e.side === 1 && e.phase === 'gunner') };
+      gunnerEvent: r.events.some(e => e.side === 1 && e.phase === 'gunner'), flownByFight: hasGunners(sides),
+      youSpeeds: you.slice(0, 450).filter((_, k) => k % 30 === 0).map(k => Math.round(k.v * 10) / 10), youDown: r.downs.some(x => x.i === 1), hunterDown: r.downs.some(x => x.i === 0) };
   });
+  // The same start on the Spitfire, for its cruise.
+  const sp = fightSides(LP, d);
+  const r0 = runFight({ makePlane, seconds: LP.seconds, groundAt: () => 0, sides: sp });
+  youSeater.spitfireSpeeds = r0.tracks[1].slice(0, 450).filter((_, k) => k % 30 === 0).map(k => Math.round(k.v * 10) / 10);
 }
 console.log(JSON.stringify({ demos, guns, damage, rules: RULES.map(r => r.n), coach: coachCases, gunnery, onSpitfire, leaf, pair, twoSeater, emptySeat, arcs, youSeater }));
