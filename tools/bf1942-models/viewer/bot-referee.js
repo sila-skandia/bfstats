@@ -35,7 +35,7 @@
 // launcher's round through `gunfire.js` (`env.launchRound`, bot-rounds.js),
 // and it meets, explodes and splashes as the human's does.
 
-import { buildNavMap, isWalkable } from './nav-grid.js';
+import { buildNavMap, isWalkable, OUTSIDE_MAP_MATERIAL } from './nav-grid.js';
 import { spawnBots } from './bot.js';
 import { newPathBudget } from './bot-route.js';
 
@@ -314,7 +314,10 @@ export function createBotReferee(env) {
       for (const spawn of flag.spawns ?? []) if (spawn?.position) seeds.push([spawn.position[0], spawn.position[2]]);
     }
     const navStarted = performance.now();
-    referee.navGrid = buildNavMap(w.collider, worldSize, { waterLevel: w.collider?.waterLevel, seeds });
+    // The outside-map material blocked as the engine's painter blocks it
+    // (AI-27, `OUTSIDE_MAP_MATERIAL`); a level with a baked map is unchanged.
+    referee.navGrid = buildNavMap(w.collider, worldSize, { waterLevel: w.collider?.waterLevel, seeds,
+      impassableMaterial: OUTSIDE_MAP_MATERIAL });
     const navMs = performance.now() - navStarted;
     referee.bots = spawnBots({ world: w, count, botSkill, teams, flags: w.flags, kitFor, nameFor, viewDistance });
     // Each bot on foot fires at an input index of its own, one a life

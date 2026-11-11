@@ -42,6 +42,25 @@ export const CELL_OBJECT = 4;
 export const CELL_UNREACHABLE = 5;
 /** A water map's dry or shallow cell (`ai.addSearchMap <name> 1 ...`). */
 export const CELL_LAND = 6;
+/** Terrain of the land map's impassable material (AI-27, AI-93). */
+export const CELL_MATERIAL = 7;
+
+/**
+ * The terrain material a land map blocks. `LocalMap::update` 0x085fe090's
+ * terrain pass blocks a land pixel of "one designated material" (AI-27,
+ * AI-93; game object 0x1d4c1 +0x2c0), whose id the binary reading left open.
+ * MEASURED here: on the three DICE levels whose terrain paints material 7
+ * (CA-5's "Reserved (Outside map)", the combat area's damaging ground), the
+ * level's own baked Tank0, Infantry1 and Car4 maps block 100 % of it (Kharkov
+ * 24,020 samples a map, Berlin 259,537, Stalingrad 60,888, one every 4 m),
+ * against 26 to 79 % of the other ground. So the id is 7, the material the
+ * combat area burns a soldier or a hull on after 10 s (CA-2, CA-5).
+ * Painted maps (a level that ships none: every generated bot layer) left it
+ * walkable, and on Aberdeen the British base's road to the East outpost ran
+ * across a tongue of it: 95 % of the bots' non-enemy deaths there were
+ * hulls burnt out on it (features/bot-map-generation/wide-levels.md).
+ */
+export const OUTSIDE_MAP_MATERIAL = 7;
 
 /** `LocalMapInfo::update` 0x08480f50 builds the brush from its float `b`:
  *  `n = round(|b|) * 2 + 1`, bit set where `(col + 0.5 - c)^2 + (row + 0.5 - c)^2
@@ -116,6 +135,11 @@ export function buildNavMap(collider, worldSize, options = {}) {
     // the one the level ships for the baked map taken; `false` for none (the
     // painted coarse layer), or one handed in.
     strategic = null,
+    // The terrain material a painted land map blocks (`OUTSIDE_MAP_MATERIAL`,
+    // the engine's own rule, measured above), or null for none. The bots'
+    // maps pass it (bot-referee.js, bot-units.js); a caller that leaves it
+    // out paints as before (the generator's walk test, sim/botgen.mjs).
+    impassableMaterial = null,
   } = options;
   const bakedMap = baked === false ? null
     : (searchMap ?? bakedFor(collider?.searchMaps, options,
@@ -189,6 +213,14 @@ export function buildNavMap(collider, worldSize, options = {}) {
         }
       }
     }
+    // A loaded map that leaves the material free was not painted by the
+    // engine: every DICE map blocks all of it (`OUTSIDE_MAP_MATERIAL`), so on
+    // theirs this changes no cell. A generated layer's `pathfinding/` (the
+    // generator's walk test and page painter, sim/botgen.mjs) is loaded the
+    // same way and left Tunis-1943's ground outside the map 77 % free on its
+    // Tank0 map: there it is blocked as the engine would have. No brush: a
+    // loaded map's pixels are what the bots get (INVENTION).
+    if (!waterMap) blockMaterial(blocked, width, height, cellSize, collider, impassableMaterial);
     const coarse = buildCoarse(blocked, width, height, cellSize, coarseSize);
     return {
       blocked, heights, normalY, width, height, cellSize, worldSize, coarse,
@@ -258,6 +290,12 @@ export function buildNavMap(collider, worldSize, options = {}) {
     if (ctx.sub) door = carveDoors(stamp, ctx.sub, blocked, width, height, brushOffsets(brush / cellSize));
   }
 
+  // --- terrain: the impassable material (AI-27). After the deck pass, so a
+  // deck over it frees nothing: the combat area reads the terrain's material
+  // under a man on a deck as under one on the ground (CA-5). The brush below
+  // dilates it as it does every terrain cell. A water map has no such test.
+  if (!waterMap) blockMaterial(blocked, width, height, cellSize, collider, impassableMaterial);
+
   // The brush: every blocked cell, terrain or object, stamps the plus. A
   // water map's brush is a hull's width off the shore (125 m on `Boat2`):
   // the same disc, drawn as a distance transform rather than 50,000
@@ -293,6 +331,21 @@ export function buildNavMap(collider, worldSize, options = {}) {
     source: 'painted', searchMap: null, level: 0, maxLevel: null,
     strategic: strategic || null,
   };
+}
+
+/** Every free cell whose terrain is `material` blocked (`CELL_MATERIAL`); a
+ *  level with no material map, or no material asked for, is left as it is. */
+function blockMaterial(blocked, width, height, cellSize, collider, material) {
+  const hf = collider?.heightfield;
+  if (!Number.isInteger(material) || !hf?.materials || typeof hf.material !== 'function') return;
+  const half = cellSize / 2;
+  for (let gz = 0; gz < height; gz++) {
+    const wz = -(gz * cellSize + half);
+    for (let gx = 0; gx < width; gx++) {
+      const idx = gz * width + gx;
+      if (blocked[idx] === CELL_FREE && hf.material(gx * cellSize + half, wz) === material) blocked[idx] = CELL_MATERIAL;
+    }
+  }
 }
 
 /**

@@ -10,7 +10,7 @@
 
 import * as THREE from 'three';
 import { classifyRoot, surveyVehicle, seatYawLimits } from './seats.js';
-import { buildNavMap, isWalkable, searchTypeMaps } from './nav-grid.js';
+import { buildNavMap, isWalkable, searchTypeMaps, OUTSIDE_MAP_MATERIAL } from './nav-grid.js';
 import { craftTipped } from './doctrine-landing.js';
 import { mayEnterHull } from './vehicle-instance.js';
 import { findEntryPoint, wantsSeat, SPAWN_SEAT_REACH_AI, SPAWN_STANDS } from './spawn-seat.js';
@@ -142,6 +142,8 @@ export function createBotUnits(env) {
       lowClip: sm?.lowClip ?? 0.3,
       hiClip: sm?.hiClip ?? 2.5,
       seeds,
+      // The engine's painter blocks the outside-map material on a land map (AI-27).
+      impassableMaterial: OUTSIDE_MAP_MATERIAL,
     });
     console.log(`[bots] vehicle nav map (${sm?.name ?? 'Tank defaults'}): ${(performance.now() - started).toFixed(0)} ms`);
     return units.navVehicle;
@@ -233,6 +235,7 @@ export function createBotUnits(env) {
         waterLevel: world.collider?.waterLevel, waterMap: !!r.waterMap,
         waterDepth: r.waterDepth, maxSlopeDeg: r.maxSlope, brush: r.brush,
         lowClip: r.lowClip, hiClip: r.hiClip, seeds, strategic: t.strategic ?? undefined,
+        impassableMaterial: OUTSIDE_MAP_MATERIAL,
       });
       console.log(`[bots] ${t.type.name} nav map (${r.name}): ${(performance.now() - started).toFixed(0)} ms`);
     }

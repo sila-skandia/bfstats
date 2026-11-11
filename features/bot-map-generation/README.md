@@ -46,6 +46,14 @@ page plays ([page-matches.md](page-matches.md), section 6; the levels and
 their figures are section 20's). First batch: shigaisen_B (back up), HOP
 and KoH, Community Maps; liberation_of_caen held back.
 
+**Wide levels, 2026-11-11 ([wide-levels.md](wide-levels.md)).** The bots'
+deaths no enemy caused on Aberdeen were hulls burnt out by the combat area
+on the ground outside the map (terrain material 7), which the page's painted
+maps left walkable and the engine's painter blocks. The bots' maps now block
+it: on Aberdeen the worse side's share fell from 0.80 to 0.12 at 8 a side
+and from 0.72 to 0.15 at 16, enemy kills more than doubled, and DICE's levels
+replay byte for byte. The generator's walk test still paints without it.
+
 **A verifier fault, 2026-11-11 (section 21).** The walk test stops at half
 a square kilometre, and on every level wider than that it read the bases
 as sealed off from each other: 51 of the 96 layers generated for the
