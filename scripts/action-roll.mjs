@@ -39,7 +39,12 @@ const OUT = opt('out', path.join(os.homedir(), '.cache/bfstats-roll'));
 const SOUND = args.includes('--sound');
 const BPM = Number(opt('bpm', 0)) || 0;
 const SEED = Number(opt('seed', 1));
-const W = 1920, H = 1080, FPS = 30;
+// Rendered at --res lines (2160 by default: the owner, 2026-11-11, "1080p
+// looks a bit dated"), then encoded at every quality at or under it.
+const RES = Number(opt('res', 2160));
+const H = RES, W = Math.round(RES * 16 / 9 / 2) * 2, FPS = 30;
+/** The qualities written: lines, x264 CRF, peak rate. */
+const QUALITIES = [[2160, 19, '45M'], [1440, 20, '24M'], [1080, 21, '12M']].filter(([h]) => h <= RES);
 const AUDIO_RATE = 38400;
 const AUDIO_SPAN = 1200;
 const STEP_TIMEOUT = 60 * 1000;
@@ -69,13 +74,17 @@ const withTimeout = (p, ms, what) => Promise.race([p, new Promise((_, no) => set
  */
 const ROLL = Object.freeze({
   heavy: [
-    [/panzershreck|bazooka|piat|rocket/i, 1.3],
+    [/panzershreck|panzerfaust|bazooka|piat|rocket/i, 1.3],
     [/gunbarrel|cannon|_gun$|barrel$/i, 1.1],
     [/bombrack|bombdummy|bomb/i, 1.4],
   ],
   // Guns no man's action is: AA fire and plane guns are a volley, not a
   // round to ride.
-  notHeavy: /aa_|flak|coax|browning|mg42|guns$|_air$|grenade|exppack|landmine|satchel|tnt/i,
+  // FHSW (2026-11-11, Manchuria): MG and AA mounts named "_Gun"
+  // (TB3_FrontMG_Gun, DShK38_V_Gun), wing cannons ("Cannons", "CannonsPrm")
+  // and the M16's quad mounts; a bore under `minBore` mm is a gun, not a shell.
+  notHeavy: /aa_|aaguns|flak|coax|browning|mg\d*|dshk|guns$|cannons|_air$|grenade|exppack|landmine|satchel|tnt|smoke|cartridge|dummy/i,
+  minBore: 37,
   // Kills with no man's action to film: a mine, a charge left behind.
   planted: /landmine|exppack|mine|satchel|tnt|^null$/i,
   // A shot is worth riding when it is aimed at someone: a man or hull of
@@ -106,6 +115,15 @@ const ROLL = Object.freeze({
   glide: 1.25,
   // A flight's rise over the straight line: under the fog.
   arcMax: 55,
+  // Clearances, metres: over the ground mid-flight (thinning to 0 at the
+  // ends), over the ground round a settled camera, and the rise per frame
+  // (at most `wallLiftMax`) while a move would pass through a wall or
+  // cliff. `lensNear` is how near terrain in the lower half of the view counts as clipping.
+  flyClear: 6,
+  groundClear: 1.1,
+  wallLiftStep: 3,
+  wallLiftMax: 70,
+  lensNear: 2.5,
   fly: 3.2,
   slow: 0.4,
   slowEase: 0.35,
@@ -130,7 +148,7 @@ const ROLL_SRC = String.raw`window.__roll = (() => {
   const VP = window.__vp;
   let cfg = null;
   let rand = null;
-  const st = { beat: null, prev: null, beats: [], pos: null, look: null, from: null, fromLook: null, blend: 1, blendDur: 1, arc: 0,
+  const st = { lift: 0, beat: null, prev: null, beats: [], pos: null, look: null, from: null, fromLook: null, blend: 1, blendDur: 1, arc: 0,
     slowLeft: 0, slowUntil: -1, screen: 0, speed: 1, round: null, roundGoneAt: null, impact: null, used: new Map() };
 
   const name = pid => {
@@ -145,6 +163,8 @@ const ROLL_SRC = String.raw`window.__roll = (() => {
     if (!f || f.soldier || f.feedOnly) return 0;
     const w = String(f.weapon ?? '');
     if (cfg.notHeavyRe.test(w)) return 0;
+    const bore = /(\d+)\s*mm/i.exec(w);
+    if (bore && Number(bore[1]) < cfg.minBore) return 0;
     for (const [re, k] of cfg.heavyRe) if (re.test(w)) return k;
     return 0;
   };
@@ -218,9 +238,14 @@ const ROLL_SRC = String.raw`window.__roll = (() => {
   const buildActs = () => {
     acts = [];
     const pids = [...r.rec.players.keys()];
+    // One shot, one act: FHSW logs a gun once per ammo it carries
+    // (StuG3GGunBarrel, ...AP and ...HE at the same instant).
+    const lastHeavy = new Map();
     for (const f of r.rec.fires) {
       const k = heavyOf(f);
       if (!k || isBot(f.pid, f.t)) continue;
+      if (f.t - (lastHeavy.get(f.pid) ?? -1) < 0.08) continue;
+      lastHeavy.set(f.pid, f.t);
       const bomb = isBomb(f);
       const target = bomb ? null : aimedAt(f, pids);
       if (!bomb && !target) continue;
@@ -524,31 +549,123 @@ const ROLL_SRC = String.raw`window.__roll = (() => {
     return b;
   };
 
+  // The ground under p and round it (a slope rises within a step of the
+  // lens): the highest of five points r m apart.
+  const floorAt = (p, r) => {
+    let g = ground(p);
+    for (const [dx, dz] of [[r, 0], [-r, 0], [0, r], [0, -r]]) {
+      const h = ground(new V3(p.x + dx, p.y, p.z + dz));
+      if (Number.isFinite(h)) g = Math.max(g, h);
+    }
+    return g;
+  };
+  // The path of a hand-over at eased share e: the straight line, risen by
+  // the arc.
+  const pathAt = (e, to) => {
+    const p = st.from.clone().lerp(to, e);
+    p.y += st.arc * Math.sin(Math.PI * e);
+    return p;
+  };
+  // Clipping, counted per frame for the log: the lens under the ground,
+  // terrain or a wall filling the lens (within lensNear m straight ahead),
+  // or walls on every side.
+  const qa = { frames: 0, under: 0, lens: 0, boxed: 0, at: [] };
+  const measure = (pos, look) => {
+    qa.frames++;
+    const fwd = look.clone().sub(pos).normalize();
+    const g = ground(pos);
+    let bad = null;
+    if (Number.isFinite(g) && pos.y < g + 0.15) { qa.under++; bad = 'under'; }
+    else {
+      // Terrain within lensNear m of the lens anywhere in the lower half of
+      // the view (straight ahead, and the frame's bottom edge and corners).
+      let hit = false;
+      const right = new V3().crossVectors(fwd, new V3(0, 1, 0)).normalize();
+      const up = new V3().crossVectors(right, fwd).normalize();
+      const half = Math.tan((cfg.fov / 2) * Math.PI / 180);
+      const rays = [[0, 0], [0, -1], [-1.6, -1], [1.6, -1], [0, -0.5]];
+      for (const [x, y] of rays) {
+        const dir = fwd.clone().addScaledVector(right, x * half).addScaledVector(up, y * half).normalize();
+        for (const d of [0.3, 0.7, 1.2, 1.8, 2.5, 3.2, 4]) {
+          if (d > cfg.lensNear) break;
+          const q = pos.clone().addScaledVector(dir, d);
+          const gq = ground(q);
+          if (Number.isFinite(gq) && q.y < gq + 0.05) { hit = true; break; }
+        }
+        if (hit) break;
+      }
+      if (!hit) hit = blocked(pos, pos.clone().addScaledVector(fwd, 0.8));
+      if (hit) { qa.lens++; bad = 'lens'; }
+      else {
+        let walls = 0;
+        for (const d of [[1, 0, 0], [-1, 0, 0], [0, 0, 1], [0, 0, -1], [0, 1, 0]]) if (blocked(pos, pos.clone().add(new V3(...d).multiplyScalar(3.4)))) walls++;
+        if (walls >= 5) { qa.boxed++; bad = 'boxed'; }
+      }
+    }
+    if (bad && qa.at.length < 400) qa.at.push([Math.round(st.screen * 10) / 10, bad]);
+  };
+
   const placeRig = {
     place(c, dt, t) {
       if (!st.want) return false;
       const { pos, look } = st.want;
       if (!st.pos) { st.pos = pos.clone(); st.look = look.clone(); }
       const sdt = 1 / cfg.fps;
+      const prev = st.pos.clone();
+      let need = 0;
       if (st.blend < 1 && st.from) {
         st.blend = Math.min(1, st.blend + sdt / st.blendDur);
         const u = st.blend;
-        const e = u * u * u * (u * (u * 6 - 15) + 10);
-        const p = st.from.clone().lerp(pos, e);
-        p.y += st.arc * Math.sin(Math.PI * e);
+        const ease = x => x * x * x * (x * (x * 6 - 15) + 10);
+        const e = ease(u);
+        const p = pathAt(e, pos);
         // The look leads the move: it turns to the new man early.
         const le = Math.min(1, e * 1.35);
         st.pos.copy(p);
         st.look.copy(st.fromLook.clone().lerp(look, le * le * (3 - 2 * le)));
+        if (cfg.clear) {
+          // Over the ground ahead as well as here, so the camera rises
+          // before a ridge, not into it. Clearance thins to nothing at the
+          // hand-over's two ends, where the cameras either side are set.
+          const edge = Math.min(1, Math.sin(Math.PI * e) * 3);
+          for (const k of [0, 0.06, 0.12, 0.2]) {
+            const q = pathAt(ease(Math.min(1, u + k)), pos);
+            need = Math.max(need, floorAt(q, 2) + cfg.flyClear * edge + 0.8 - q.y);
+          }
+        }
       } else {
         const kp = 1 - Math.exp(-sdt * cfg.follow);
         const kl = 1 - Math.exp(-sdt * cfg.aim);
         st.pos.lerp(pos, kp);
         st.look.lerp(look, kl);
       }
+      if (cfg.clear) {
+        // A slope or a step at the lens: clear of the ground round it.
+        need = Math.max(need, floorAt(st.pos, 1.2) + cfg.groundClear - st.pos.y);
+        // Terrain rising in front of the lens: up until the view is over it.
+        const fwd = st.look.clone().sub(st.pos).normalize();
+        for (const d of [0.6, 1.2, 2, 3]) {
+          const q = st.pos.clone().addScaledVector(fwd, d);
+          need = Math.max(need, ground(q) + 0.5 - q.y);
+        }
+        // Through a wall or a cliff on the way: rise while the move from the
+        // last frame passes through something.
+        if (st.blend < 1 && blocked(prev, st.pos.clone().add(new V3(0, st.lift, 0)))) st.wallLift = Math.min(cfg.wallLiftMax, (st.wallLift ?? 0) + cfg.wallLiftStep);
+        else st.wallLift = Math.max(0, (st.wallLift ?? 0) - cfg.wallLiftStep * 0.25);
+        need = Math.max(need, st.wallLift);
+        // Eased: up fast, down slow, never a pop.
+        const k = need > st.lift ? 0.55 : 0.08;
+        st.lift += (Math.max(0, need) - st.lift) * k;
+        if (st.lift < 0.01) st.lift = 0;
+        st.pos.y += st.lift;
+        // The lift is the frame's: next frame starts from the path again.
+        st.liftApplied = st.lift;
+      }
       keepAbove(st.pos, 0.6);
+      measure(st.pos, st.look);
       c.position.copy(st.pos);
-      const m = new M4().lookAt(st.pos, st.look, new V3(0, 1, 0));
+      if (cfg.clear) st.pos.y -= st.liftApplied ?? 0;
+      const m = new M4().lookAt(c.position, st.look, new V3(0, 1, 0));
       c.quaternion.setFromRotationMatrix(m);
       if (c.fov !== cfg.fov) { c.fov = cfg.fov; c.updateProjectionMatrix(); }
       c.updateMatrixWorld();
@@ -684,6 +801,7 @@ const ROLL_SRC = String.raw`window.__roll = (() => {
       return { seek, speed: st.speed, caption, phase: b.phase, beat: st.beats.length - 1 };
     },
     beats: () => st.beats,
+    qa: () => qa,
     stop() { r.camera.setRig(null); },
   };
 })();`;
@@ -825,7 +943,7 @@ try {
     return { ...n, opening: window.__roll.opening(), duration: r.rec.duration };
   }, {
     src: ROLL_SRC,
-    cfg: { ...ROLL, heavy: ROLL.heavy.map(([re, k]) => [re.source, k]), notHeavy: ROLL.notHeavy.source, planted: ROLL.planted.source, fps: FPS, fov: 62, seed: SEED, barLen: BPM ? 240 / BPM : 0 },
+    cfg: { ...ROLL, heavy: ROLL.heavy.map(([re, k]) => [re.source, k]), notHeavy: ROLL.notHeavy.source, planted: ROLL.planted.source, fps: FPS, fov: 62, seed: SEED, clear: !args.includes('--no-clear'), barLen: BPM ? 240 / BPM : 0 },
   });
   log(`acts ${info.acts} (${info.shots} heavy shots, ${info.kills} kills, ${info.fire} bursts; ${info.dropped} dropped as out of range or stuttering); busiest 40 s from ${info.opening?.t?.toFixed(1)}`);
   const start = FROM !== null ? Number(FROM) : Math.max(0, (info.opening?.t ?? 60) - 4);
@@ -863,6 +981,8 @@ try {
       const cv = (window.__rollCanvas ??= Object.assign(document.createElement('canvas'), { width: W, height: H }));
       const g = cv.getContext('2d');
       g.drawImage(window.__renderer.domElement, 0, 0, W, H);
+      // Laid out for 1080 lines, scaled to the frame.
+      const u = H / 1080;
       // Who the camera is on, low left, as it takes him.
       const c = tk.caption;
       if (c.alpha > 0 && c.name) {
@@ -871,22 +991,22 @@ try {
         g.textAlign = 'left';
         g.textBaseline = 'alphabetic';
         g.shadowColor = 'rgba(0,0,0,0.75)';
-        g.shadowBlur = 10;
+        g.shadowBlur = 10 * u;
         g.fillStyle = 'rgba(246,241,226,0.95)';
-        g.font = '800 40px system-ui, "Segoe UI", sans-serif';
-        g.fillText(c.name, 72, H - 104);
-        g.font = '600 26px system-ui, "Segoe UI", sans-serif';
+        g.font = '800 ' + 40 * u + 'px system-ui, "Segoe UI", sans-serif';
+        g.fillText(c.name, 72 * u, H - 104 * u);
+        g.font = '600 ' + 26 * u + 'px system-ui, "Segoe UI", sans-serif';
         g.fillStyle = 'rgba(232,196,120,0.95)';
         const w = window.replay.creator?.display?.(c.weapon) || c.weapon;
-        g.fillText(String(w).toUpperCase(), 74, H - 66);
+        g.fillText(String(w).toUpperCase(), 74 * u, H - 66 * u);
         g.restore();
       }
       // The site, small, top right.
       g.save();
       g.textAlign = 'right';
-      g.font = '700 24px system-ui, "Segoe UI", sans-serif';
+      g.font = '700 ' + 24 * u + 'px system-ui, "Segoe UI", sans-serif';
       g.fillStyle = 'rgba(246,241,226,0.55)';
-      g.fillText('play.bfstats.io', W - 56, 64);
+      g.fillText('play.bfstats.io', W - 56 * u, 64 * u);
       g.restore();
       // In from black, out to black.
       const fade = Math.min(1, k / 18, (total - 1 - k) / 30);
@@ -902,23 +1022,43 @@ try {
   }
   log(`filmed ${total} frames in ${Math.round((Date.now() - t0) / 1000)} s`);
   const beats = await page.evaluate(() => window.__roll.beats());
-  fs.writeFileSync(path.join(dir, 'beats.json'), JSON.stringify({ recording: SLUG, title: rec.title, start, seed: SEED, bpm: BPM, beats }, null, 2));
+  const qa = await page.evaluate(() => window.__roll.qa());
+  const runs = [];
+  for (const [t, why] of qa.at) {
+    const last = runs.at(-1);
+    if (last && last.why === why && t - last.to <= 0.15) last.to = t;
+    else runs.push({ from: t, to: t, why });
+  }
+  log(`clipping: ${qa.under} frames under the ground, ${qa.lens} with the lens in terrain or a wall, ${qa.boxed} boxed in, of ${qa.frames}${runs.length ? `; at ${runs.map(x => `${x.from}${x.to > x.from ? `-${x.to}` : ''}s ${x.why}`).join(', ')}` : ''}`);
+  fs.writeFileSync(path.join(dir, 'beats.json'), JSON.stringify({ recording: SLUG, title: rec.title, start, seed: SEED, bpm: BPM, clipping: { ...qa, at: undefined, runs }, beats }, null, 2));
   for (const b of beats) log(`  ${b.screen.toFixed(1)}s  ${b.how.padEnd(5)} ${b.name} ${b.kind} ${b.weapon ?? ''}${b.victims.length ? ` -> ${b.victims.join(', ')}` : ''}${b.dist !== null ? ` (${b.dist} m)` : ''}${b.landed === false ? ' MISS' : ''}${b.busy >= ROLL.busy.acts ? ' FIGHT' : ''}${b.held !== undefined ? ` held ${b.held}s` : ''}`);
-  const mp4 = path.join(dir, 'roll.mp4');
-  const silent = SOUND ? path.join(dir, 'silent.mp4') : mp4;
-  execFileSync('ffmpeg', ['-y', '-loglevel', 'error', '-framerate', String(FPS), '-i', path.join(frames, 'f%05d.jpg'),
-    '-c:v', 'libx264', '-preset', 'medium', '-crf', '22', '-maxrate', '14M', '-bufsize', '28M', '-pix_fmt', 'yuv420p', '-movflags', '+faststart', silent]);
+  let wavPath = null;
   if (SOUND && from !== null) {
     const adv = paces.map(p => p / FPS);
-    const wav = await page.evaluateLong(({ from, adv, spf }) => window.__audioWav(from, adv, spf), { from, adv, spf: AUDIO_RATE / FPS }, 5 * 60 * 1000);
+    // The offline render covers the whole span first: an FHSW level's runs
+    // past 5 min (Manchuria, 2026-11-11). Failing it costs the sound, never
+    // the picture.
+    const wav = await page.evaluateLong(({ from, adv, spf }) => window.__audioWav(from, adv, spf), { from, adv, spf: AUDIO_RATE / FPS }, 15 * 60 * 1000)
+      .catch(e => { log(`  no sound: ${e.message}`); return null; });
     if (wav) {
-      const wavPath = path.join(dir, 'sound.wav');
+      wavPath = path.join(dir, 'sound.wav');
       fs.writeFileSync(wavPath, Buffer.from(wav, 'base64'));
-      execFileSync('ffmpeg', ['-y', '-loglevel', 'error', '-i', silent, '-i', wavPath, '-map', '0:v', '-map', '1:a', '-c:v', 'copy',
-        '-c:a', 'aac', '-b:a', '192k', '-ar', '48000', '-af', 'afade=t=in:d=0.6,loudnorm=I=-16:TP=-1.5:LRA=11,apad', '-shortest', '-movflags', '+faststart', mp4]);
-      fs.rmSync(silent);
-    } else fs.renameSync(silent, mp4);
+    }
   }
+  // Every quality from the one set of frames, each with the sound.
+  const written = [];
+  for (const [h, crf, peak] of QUALITIES) {
+    const out = path.join(dir, `roll-${h}p.mp4`);
+    execFileSync('ffmpeg', ['-y', '-loglevel', 'error', '-framerate', String(FPS), '-i', path.join(frames, 'f%05d.jpg'),
+      ...(wavPath ? ['-i', wavPath, '-map', '0:v', '-map', '1:a'] : []),
+      '-vf', `scale=-2:${h}:flags=lanczos`, '-c:v', 'libx264', '-preset', 'medium', '-crf', String(crf), '-maxrate', peak, '-bufsize', `${parseInt(peak, 10) * 2}M`,
+      '-pix_fmt', 'yuv420p', '-profile:v', 'high',
+      ...(wavPath ? ['-c:a', 'aac', '-b:a', '192k', '-ar', '48000', '-af', 'afade=t=in:d=0.6,loudnorm=I=-16:TP=-1.5:LRA=11,apad', '-shortest'] : []),
+      '-movflags', '+faststart', out]);
+    written.push(`${h}p ${(fs.statSync(out).size / 1e6).toFixed(0)} MB`);
+  }
+  const mp4 = path.join(dir, `roll-${QUALITIES[0][0]}p.mp4`);
+  log('qualities:', written.join(', '));
   fs.rmSync(frames, { recursive: true, force: true });
   log('wrote', mp4);
 } finally {

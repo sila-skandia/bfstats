@@ -21,6 +21,60 @@ than a Short.
 Then: "just try a few yourself, before confirming with approach. I'll watch
 back what you come up with." So these are trials, not a built feature.
 
+## Rules and gotchas
+
+Every rule here came from a take that broke it. A new one is added with its
+fix; nothing is left as "known" (the owner, 2026-11-11: "keep a list of
+rules and gotchas ... and fix them. I am never going to say no to fixing a
+real bug").
+
+1. **Only men the recorder saw whole.** No green stand-in, no stutter:
+   everyone a beat films is replicated and hop-free while it films him
+   (`seen`, the Shorts picker's `continuityOf`, sampled by moment).
+2. **Never a bot**, killing, killed or aimed at.
+3. **A shot worth riding is aimed at someone** (within 6 m of a man or hull
+   of the other side) or is a bomb. Ridden 3 s at most.
+4. **No act without a shooter to film**: mines and left charges are not
+   acts, and thrown grenades are not rounds to ride.
+5. **Nobody under a roof** is handed the camera (his sky shut 20 m up).
+6. **A miss is let go, a fight is stayed in.** Recorded health says which
+   before the camera chooses; a miss weighs 0.3, ends 0.35 s after it
+   lands, no slow motion. A hit or kill with more going on within 80 m
+   holds 1.5 s longer.
+7. **No waiting on a man**: the next act's weight halves every 1.25 s it
+   would keep the camera on him first.
+8. **Stand off a blast**: 2.4 times further off a bomb's hit, 1.5 times a
+   shell's; a lens in a fireball is a lost second.
+9. **The chase sits off the round's smoke**: 7 m back, 2.2 up, 2.6 aside.
+10. **Under the fog**: a flight rises 12 m plus a tenth of its length, at
+    most 55 m. Bocage's fog whites out higher.
+11. **Never in the ground, never through a cliff** (`clear`). A hand-over
+    looks ahead along its path and rises over the highest ground there,
+    6 m clear mid-flight; a settled camera keeps 1.1 m over the ground
+    round it and rises when terrain climbs in front of the lens; a move
+    that would pass through a wall or cliff rises 3 m a frame until it
+    does not. Eased up fast, down slow, so it never pops. Each take logs
+    the frames still under the ground, with the lens in terrain or a wall,
+    or boxed in, and when (`clipping` in `beats.json`): a take with any is
+    looked at before it is shown. The first detector only tested the
+    ground under the lens and straight ahead, and logged nothing on a take
+    that skimmed a Bocage hillside with grass filling the lower half: it now
+    tests rays to the frame's bottom edge and corners within 2.5 m. On that
+    stretch, 6 frames flagged without `clear`, none with it.
+12. **One shot, one act.** FHSW logs a tank's gun once per ammo it carries
+    (`StuG3GGunBarrel`, `...AP`, `...HE` at one instant); shots by one man
+    within 0.08 s are one.
+13. **A gun is not a shell.** MG and AA mounts named `_Gun`
+    (`TB3_FrontMG_Gun`, `DShK38_V_Gun`), wing cannons (`Ki84-bomberCannons`,
+    `I195CannonsPrm`), quad AA mounts, smoke and cartridge stand-ins, and
+    any bore under 37 mm (`20mmType98_gun_barrel`) are not rounds to ride.
+14. **4K, then every quality from it** (the owner, 2026-11-11: "1080p
+    looks a bit dated ... we can record them in multiple qualities").
+    Rendered at 3840x2160 (`--res`), written as `roll-2160p.mp4`,
+    `roll-1440p.mp4` and `roll-1080p.mp4` (CRF 19/20/21, peaks
+    45/24/12 Mbit/s, the same sound in each). The overlay is laid out for
+    1080 lines and scaled.
+
 ## How the trials are made
 
 `scripts/action-roll.mjs` films through the live play page the way the
