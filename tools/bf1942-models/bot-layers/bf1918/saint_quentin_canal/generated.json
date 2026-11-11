@@ -1,0 +1,145 @@
+{
+ "generator": "botgen",
+ "version": 5,
+ "mod": "bf1918",
+ "level": "saint_quentin_canal",
+ "objectSpawners": 117,
+ "template": "few",
+ "templateSource": "DICE, bf1942 Kursk (1.6 patch archives, Kursk_003.rfa): AI/Strategies.con, AI/conditions.con, AI/prerequisites.con, unchanged",
+ "templateChoice": {
+  "name": "few",
+  "inPlay": 3,
+  "rule": "3 capturable flags in play, at most 3"
+ },
+ "scope": "on foot: infantry order positions only, no search maps, no co-op layer",
+ "unreachable": [
+  "Kriemhilde_Stellung",
+  "wotan_stellung",
+  "Siegfried_Stellung",
+  "vorposten"
+ ],
+ "unreachableReasons": {
+  "Kriemhilde_Stellung": "walk test",
+  "wotan_stellung": "walk test",
+  "Siegfried_Stellung": "walk test",
+  "vorposten": "walk test"
+ },
+ "botSpawnsExcluded": [
+  "Manchester_Hill_Spawn1",
+  "AlliedBase_Spawn4",
+  "Bahnhof_Spawn2",
+  "Bahnhof_Spawn3",
+  "Bahnhof_Spawn4",
+  "Bahnhof_Spawn5",
+  "Bahnhof_Spawn6",
+  "Bahnhof_Spawn7",
+  "Bahnhof_Spawn8",
+  "Bahnhof_Spawn9",
+  "Manchester_Hill_Spawn2",
+  "Manchester_Hill_Spawn3",
+  "Manchester_Hill_Spawn4",
+  "Manchester_Hill_Spawn5",
+  "Manchester_Hill_Spawn7",
+  "Kriemhilde_Stellung_Spawn1",
+  "Kriemhilde_Stellung_Spawn2",
+  "Kriemhilde_Stellung_Spawn3",
+  "Kriemhilde_Stellung_Spawn4",
+  "Kriemhilde_Stellung_Spawn5",
+  "Kriemhilde_Stellung_Spawn6",
+  "Kriemhilde_Stellung_Spawn7",
+  "Kriemhilde_Stellung_Spawn8",
+  "Kriemhilde_Stellung_Spawn9",
+  "Wotan_Stellung_Spawn1",
+  "Wotan_Stellung_Spawn2",
+  "Wotan_Stellung_Spawn3",
+  "Wotan_Stellung_Spawn4",
+  "Wotan_Stellung_Spawn5",
+  "Wotan_Stellung_Spawn6",
+  "Wotan_Stellung_Spawn7",
+  "Wotan_Stellung_Spawn8",
+  "Wotan_Stellung_Spawn9",
+  "Wotan_Stellung_Spawn10",
+  "Wotan_Stellung_Spawn11",
+  "Wotan_Stellung_Spawn12",
+  "Wotan_Stellung_Spawn13",
+  "Siegfried_Stellung_Spawn1",
+  "Siegfried_Stellung_Spawn2",
+  "Siegfried_Stellung_Spawn5",
+  "Siegfried_Stellung_Spawn6",
+  "Siegfried_Stellung_Spawn7",
+  "Siegfried_Stellung_Spawn8",
+  "Siegfried_Stellung_Spawn9",
+  "Siegfried_Stellung_Spawn10",
+  "Vorposten_Spawn1",
+  "Vorposten_Spawn2",
+  "Vorposten_Spawn3",
+  "Vorposten_Spawn4",
+  "Vorposten_Spawn5",
+  "Vorposten_Spawn6",
+  "Brunhilde_Stellung_Spawn1",
+  "Brunhilde_Stellung_Spawn2",
+  "Brunhilde_Stellung_Spawn5"
+ ],
+ "walkMap": {
+  "source": "page painter",
+  "engine": "none",
+  "opened": [],
+  "ways": [],
+  "cover": 0.847,
+  "floors": {
+   "stacked": false,
+   "twoFloorShare": 0.002,
+   "raised": [
+    "wotan_stellung"
+   ],
+   "reason": null
+  },
+  "capped": true
+ },
+ "routeProbe": {
+  "chokeMax": 4,
+  "unreachable": [],
+  "stops": {},
+  "oneSided": {},
+  "sides": {
+   "1": {
+    "spawns": 12,
+    "flags": [
+     "Brunhilde_Stellung",
+     "bahnhof",
+     "manchester_hill"
+    ]
+   },
+   "2": {
+    "spawns": 3,
+    "flags": [
+     "Brunhilde_Stellung",
+     "bahnhof",
+     "manchester_hill"
+    ]
+   }
+  },
+  "chokes": {
+   "bahnhof:1": 0,
+   "bahnhof:2": 0,
+   "manchester_hill:1": 1,
+   "manchester_hill:2": 0,
+   "Brunhilde_Stellung:1": 1,
+   "Brunhilde_Stellung:2": 0
+  },
+  "late": {},
+  "shutLinks": []
+ },
+ "inputs": {
+  "controlPoints": "64ebb40b7e82590b070da46e5f15770a12ff91363f50267342ed9251cd422d99",
+  "infantryMap": "e83cdeaa55f11f5a08d9fdf8b2bfc55aaf59a5ba0bc360e69970c4de889a963f",
+  "template": "bdc0e455f47f91b7e7724e71d7c0c196e839b36946ac3abb7663d725944081e5"
+ },
+ "files": {
+  "AI.con": "9b22e83889ee475b19b5aaa9a293f648818d67ae43b4074c9288d11e89f0be83",
+  "AI/StrategicAreas.con": "ea6885e410ebb659fd0d27d0d85494d3472b1cd7dd7c212d29228d8c0f06f8d5",
+  "AI/Strategies.con": "13da4dc35872dd4b5798a066f4425bdc824cfd61f31093d1808e1202644de52e",
+  "AI/conditions.con": "248a04b727c08d696bf0fa9c162bc22c43cde3c75f695892fe1e0f5141519c49",
+  "AI/prerequisites.con": "c96168b5f69860e578f5d26728fd2a2092c4c436e1da49b7d6f4009b65735398"
+ }
+}

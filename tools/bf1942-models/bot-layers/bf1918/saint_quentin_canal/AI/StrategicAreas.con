@@ -1,0 +1,57 @@
+rem *** Strategic areas: one per control point (botgen) ***
+
+aiStrategicArea.create alliedbase 613.4/210.3 618.4/215.3 50
+aiStrategicArea.addNeighbour bahnhof
+aiStrategicArea.addNeighbour Brunhilde_Stellung
+aiStrategicArea.addObjectTypeFlag Base
+aiStrategicArea.setOrderPosition Infantry 620.5/216.5
+aiStrategicArea.setSide 2
+aiStrategicArea.setTakeable 1 0
+
+aiStrategicArea.create bahnhof 556.7/541.3 561.7/546.3 150
+aiStrategicArea.addNeighbour alliedbase
+aiStrategicArea.addNeighbour manchester_hill
+aiStrategicArea.addNeighbour Brunhilde_Stellung
+aiStrategicArea.addObjectTypeFlag Flank
+aiStrategicArea.addObjectTypeFlag Close
+aiStrategicArea.addObjectTypeFlag ControlPoint
+aiStrategicArea.setOrderPosition Infantry 559.5/544.5
+aiStrategicArea.setSide 1
+
+aiStrategicArea.create manchester_hill 659/655.3 664/660.3 300
+aiStrategicArea.addNeighbour bahnhof
+aiStrategicArea.addNeighbour Brunhilde_Stellung
+aiStrategicArea.addObjectTypeFlag Centre
+aiStrategicArea.addObjectTypeFlag StrongPoint
+aiStrategicArea.addObjectTypeFlag ControlPoint
+aiStrategicArea.setOrderPosition Infantry 665.5/659.5
+aiStrategicArea.setSide 1
+
+aiStrategicArea.create Kriemhilde_Stellung 755.1/790.3 760.1/795.3 10
+aiStrategicArea.setSide 1
+aiStrategicArea.setTakeable 1 0
+aiStrategicArea.setTakeable 2 0
+
+aiStrategicArea.create Brunhilde_Stellung 825.2/940.9 830.2/945.9 200
+aiStrategicArea.addNeighbour alliedbase
+aiStrategicArea.addNeighbour bahnhof
+aiStrategicArea.addNeighbour manchester_hill
+aiStrategicArea.addObjectTypeFlag Centre
+aiStrategicArea.addObjectTypeFlag ControlPoint
+aiStrategicArea.setOrderPosition Infantry 829.5/947.5
+aiStrategicArea.setSide 1
+
+aiStrategicArea.create wotan_stellung 825.9/1047.9 833.9/1055.9 10
+aiStrategicArea.setSide 1
+aiStrategicArea.setTakeable 1 0
+aiStrategicArea.setTakeable 2 0
+
+aiStrategicArea.create Siegfried_Stellung 966.5/1043 971.5/1048 10
+aiStrategicArea.setSide 1
+aiStrategicArea.setTakeable 1 0
+aiStrategicArea.setTakeable 2 0
+
+aiStrategicArea.create vorposten 591.9/821.5 596.9/826.5 10
+aiStrategicArea.setSide 1
+aiStrategicArea.setTakeable 1 0
+aiStrategicArea.setTakeable 2 0
