@@ -14,6 +14,12 @@ climb through the top of the sky. The same day the owner said "Yes, re-tune"
 to a roof that holds every jet pilot under it ("The roof"), and all nine
 were measured again under it: six now have a way out, where four did.
 
+The roof is live there too, checked headless the same day: on Desert Combat
+the school shows six lessons "Survivable" and three "No way out", the break
+turn's re-flown Dip with its four steps at 9 of 9, the Spitfire's lessons on
+vanilla as they were, and in the Range boom and zoom's ace dives at once from
+its 730 m perch and both planes end level under 770 m, no page errors.
+
 The owner, after Desert Combat got its arenas and its rules card
 ([dogfight-doctrine-1991](../dogfight-doctrine-1991/README.md)): "Yes,
 re-tune" the lessons for jets. They were written on one airframe, the
