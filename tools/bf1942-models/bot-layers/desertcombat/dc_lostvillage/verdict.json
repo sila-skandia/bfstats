@@ -10,10 +10,10 @@
   "infantryMap": "e0f4ebf9943f4d69a20a988c018185e6546de0c71140c99b12d073b700e1f8ae",
   "template": "43f8a790471528016570235f76e97dbb2045732458781a5139f37fed68bf98c0"
  },
- "baseline": "desertcombat's own layers with vehicles, garrison doctrine: berlin, dc_desertshield, kharkov, kursk; seeds 1..10, 600 s; dropped, no fight: dc_basrahs_edge, stalingrad",
+ "baseline": "desertcombat's own layers with vehicles, garrison doctrine: berlin, dc_desertshield, kharkov, kursk, stalingrad; seeds 1..10, 600 s; dropped, no fight: dc_basrahs_edge",
  "bar": {
   "against": "desertcombat",
-  "why": "desertcombat's own bar, built from 4 of its levels that are alive (berlin, dc_desertshield, kharkov, kursk)"
+  "why": "desertcombat's own bar, built from 5 of its levels that are alive (berlin, dc_desertshield, kharkov, kursk, stalingrad)"
  },
  "againstDice": {
   "verdict": "fail",
@@ -23,12 +23,10 @@
    "8": {
     "verdict": "fail",
     "failed": [
-     "stuckSecondsPerBotMinute",
+     "selfDeathsPerBotMinute",
      "routeFailuresPerBotMinute",
      "redeploysPerBotMinute",
-     "stuckSecondsPerBotMinuteWorseSide",
      "routeFailuresPerBotMinuteWorseSide",
-     "redeploysPerBotMinuteWorseSide",
      "nonEnemyDeathShareWorseSide"
     ]
    },
@@ -45,18 +43,16 @@
    }
   }
  },
- "seeds": 10,
+ "seeds": 2,
  "sizes": {
   "8": {
    "verdict": "fail",
    "failed": [
-    "redeploysPerBotMinute",
-    "flagCoverage",
-    "redeploysPerBotMinuteWorseSide",
+    "selfDeathsPerBotMinute",
     "nonEnemyDeathShareWorseSide"
    ],
    "winners": [
-    10,
+    2,
     0,
     0
    ]
@@ -66,12 +62,10 @@
    "failed": [
     "selfDeathsPerBotMinute",
     "redeploysPerBotMinute",
-    "flagCoverage",
-    "redeploysPerBotMinuteWorseSide",
     "nonEnemyDeathShareWorseSide"
    ],
    "winners": [
-    10,
+    2,
     0,
     0
    ]
@@ -80,7 +74,7 @@
  "oneSided": 1,
  "unreachable": [],
  "lintErrors": [],
- "accepted": {
+ "acceptanceWithdrawn": {
   "reason": "With no layer the level has no fight (no seed with both sides killing at 8 a side); with it both sides kill in every seed (0.20 enemy kills a bot-minute) and take 5 and 3 flags a match. Short of Desert Combat's own bar on redeploys, flag coverage and the share of the worse side's deaths no enemy caused (0.64 and 0.73), and one-sided: the Axis side wins every seed, with the layer and without. Published to be checked on the page; it stays only if the page check holds.",
   "date": "2026-11-10",
   "outcome": "better-than-nothing",
@@ -94,6 +88,7 @@
    "16:flagCoverage",
    "16:redeploysPerBotMinuteWorseSide",
    "16:nonEnemyDeathShareWorseSide"
-  ]
+  ],
+  "because": "now also fails 8:selfDeathsPerBotMinute"
  }
 }

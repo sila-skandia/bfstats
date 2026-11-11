@@ -1,7 +1,7 @@
 {
  "level": "mauerfall",
  "verdict": "fail",
- "outcome": "no-fight",
+ "outcome": "better-than-nothing",
  "config": "with vehicles",
  "doctrine": "garrison",
  "generatorVersion": 5,
@@ -10,14 +10,14 @@
   "infantryMap": "c8457332140b6e704cc3cc9cde5fe38a775e99f7bf11f08cd3e1e269ebf6f0f4",
   "template": "bdc0e455f47f91b7e7724e71d7c0c196e839b36946ac3abb7663d725944081e5"
  },
- "baseline": "bf1918's own layers with vehicles, garrison doctrine: battle_of_cer, battle_of_mons, belleau_wood; seeds 1..10, 600 s; dropped, no fight: argonnerwald, krakau",
+ "baseline": "bf1918's own layers with vehicles, garrison doctrine: argonnerwald, battle_of_cer, battle_of_mons, belleau_wood; seeds 1..10, 600 s; dropped, no fight: krakau",
  "bar": {
   "against": "bf1918",
-  "why": "bf1918's own bar, built from 3 of its levels that are alive (battle_of_cer, battle_of_mons, belleau_wood)"
+  "why": "bf1918's own bar, built from 4 of its levels that are alive (argonnerwald, battle_of_cer, battle_of_mons, belleau_wood)"
  },
  "againstDice": {
   "verdict": "fail",
-  "outcome": "no-fight",
+  "outcome": "better-than-nothing",
   "baseline": "DICE layers with vehicles, garrison doctrine: berlin, stalingrad, kharkov, bocage; seeds 1..10, 600 s",
   "sizes": {
    "8": {
@@ -25,10 +25,7 @@
     "failed": [
      "routeFailuresPerBotMinute",
      "capturesTotal",
-     "enemyKillsPerBotMinute",
      "bothSidesCapture",
-     "bothSidesKill",
-     "ticketsBleed",
      "routeFailuresPerBotMinuteWorseSide",
      "hullStuckSecondsPerDrivingMinute",
      "hullStuckSecondsPerDrivingMinuteWorseSide",
@@ -38,43 +35,39 @@
    "16": {
     "verdict": "fail",
     "failed": [
-     "routeFailuresPerBotMinute",
-     "capturesTotal",
      "enemyKillsPerBotMinute",
-     "routeFailuresPerBotMinuteWorseSide",
+     "flagCoverage",
+     "bothSidesCapture",
      "hullStuckSecondsPerDrivingMinute",
      "hullStuckSecondsPerDrivingMinuteWorseSide",
-     "unitsNeverUsedShare",
-     "tankSilentShare"
+     "unitsNeverUsedShare"
     ]
    }
   }
  },
- "seeds": 10,
+ "seeds": 2,
  "sizes": {
   "8": {
    "verdict": "fail",
    "failed": [
     "bothSidesCapture",
-    "bothSidesKill",
-    "ticketsBleed",
     "unitsNeverUsedShare"
    ],
    "winners": [
-    6,
-    4,
-    0
+    0,
+    1,
+    1
    ]
   },
   "16": {
    "verdict": "fail",
    "failed": [
-    "enemyKillsPerBotMinute",
+    "bothSidesCapture",
     "unitsNeverUsedShare"
    ],
    "winners": [
-    4,
-    6,
+    1,
+    1,
     0
    ]
   }
