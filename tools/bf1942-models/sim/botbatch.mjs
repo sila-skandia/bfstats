@@ -276,6 +276,8 @@ export const ACCEPTABLE = ['better-than-nothing'];
  * that is `unsuitable`.
  */
 export const OWNER_ACCEPTABLE = ['better-than-nothing', 'no-better-than-nothing', 'no-fight'];
+/** The outcomes, best first. */
+const OUTCOME_ORDER = ['pass', 'better-than-nothing', 'no-better-than-nothing', 'no-fight', 'unsuitable'];
 
 const failedChecks = short => Object.entries(short.sizes ?? {}).flatMap(([size, j]) => (j.failed ?? []).map(f => `${size}:${f}`));
 
@@ -311,8 +313,15 @@ export function carryAccepted(short, previous) {
   const then = previous.doctrine ?? 'sai', now = short.doctrine ?? 'sai';
   if (then !== now) return { ...short, acceptanceWithdrawn: { ...was, because: `accepted on matches under the ${then} doctrine; these are under the ${now}` } };
   const fresh = failedChecks(short).filter(f => !(was.failed ?? []).includes(f));
-  // The owner's acceptance stands at the outcome they accepted, or a better one.
-  const still = ACCEPTABLE.includes(short.outcome) || (was.by === 'owner' && short.outcome === was.outcome);
+  // The owner's acceptance stands at the outcome they accepted, or a better one, whatever checks the level
+  // newly fails: they accepted the level as it plays, the bars are rebuilt whenever the bots change (and
+  // have only tightened), and the page match is what guards a rollout level (page-matches.md, section 6).
+  // The checks it newly fails are kept beside the acceptance. DC_Basrah_Nights lost the owner's acceptance
+  // on 2026-11-11 by rising from no-better-than-nothing to better-than-nothing against a tighter bar.
+  const rank = o => OUTCOME_ORDER.indexOf(o);
+  const owned = was.by === 'owner' && rank(short.outcome) >= 0 && rank(short.outcome) <= rank(was.outcome);
+  if (owned && !short.lintErrors?.length) return { ...short, accepted: fresh.length ? { ...was, alsoFails: fresh } : was };
+  const still = ACCEPTABLE.includes(short.outcome);
   if (still && !short.lintErrors?.length && !fresh.length) return { ...short, accepted: was };
   return { ...short, acceptanceWithdrawn: { ...was, because: fresh.length ? `now also fails ${fresh.join(', ')}` : `now ${short.outcome}${short.lintErrors?.length ? ' with lint errors' : ''}` } };
 }

@@ -450,6 +450,9 @@ class JudgeTests(unittest.TestCase):
         # It stands at the outcome accepted, and goes when the level gets worse.
         self.assertEqual(own["carried"], "owner")
         self.assertEqual(own["worse"], "now no-fight")
+        # It also stands when the level rises, or newly fails a check of a rebuilt bar: the page guards those.
+        self.assertEqual(own["better"], "owner")
+        self.assertEqual(own["alsoFails"], ["8:madeUpCheck"])
         # An ordinary acceptance still does not survive a fall to no better.
         self.assertEqual(own["ordinaryDoesNotCarry"], "now no-better-than-nothing")
 

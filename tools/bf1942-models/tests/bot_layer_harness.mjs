@@ -180,6 +180,9 @@ out.ownerAcceptance = {
   unsuitable: refuse(() => batch.acceptVerdict(short({ outcome: 'unsuitable' }), 'why', '2026-11-11', { owner: true })),
   carried: batch.carryAccepted(noBetterShort, owned).accepted?.by ?? null,
   worse: batch.carryAccepted(short({ outcome: 'no-fight' }), owned).acceptanceWithdrawn?.because ?? null,
+  // A level that rises, or fails a check it did not fail then, keeps the owner's acceptance, the new checks noted.
+  better: batch.carryAccepted(short({ outcome: 'better-than-nothing' }), owned).accepted?.by ?? null,
+  alsoFails: batch.carryAccepted({ ...noBetterShort, sizes: { ...noBetterShort.sizes, 8: { ...(noBetterShort.sizes?.[8] ?? {}), failed: [...(noBetterShort.sizes?.[8]?.failed ?? []), 'madeUpCheck'] } } }, owned).accepted?.alsoFails ?? null,
   ordinaryDoesNotCarry: batch.carryAccepted(noBetterShort, batch.acceptVerdict(short(), 'why', '2026-11-11')).acceptanceWithdrawn?.because ?? null,
 };
 // --- the outcome classes (sim/botbatch.mjs verdictOf) ----------------------------
