@@ -154,6 +154,13 @@ const ROLL = Object.freeze({
   plane: [3.2, 0.9, 0],
   round: [7, 2.2, 2.6],
   follow: 3.2,
+  // How fast the wanted place itself moves (per second): a step in it is
+  // spread over about half a second.
+  goalEase: 5,
+  // This share of the picture near white for `whiteFor` s is smoke or a
+  // blast filling the lens: the beat hands over.
+  white: 0.33,
+  whiteFor: 0.4,
   aim: 4,
 });
 
@@ -679,7 +686,21 @@ const ROLL_SRC = String.raw`window.__roll = (() => {
   const placeRig = {
     place(c, dt, t) {
       if (!st.want) return false;
-      const { pos, look } = st.want;
+      // The aim point eases rather than jumps (Arnhem, 2026-11-12: "a cut
+      // that gets interrupted ... cuts to almost the same position"): the
+      // spring arm and the lens check move the wanted place in steps when a
+      // wall comes and goes, and a step mid-glide read as a cut.
+      if (!st.goal || st.goalBeat !== st.beat) {
+        st.goal = st.want.pos.clone();
+        st.goalLook = st.want.look.clone();
+        st.goalBeat = st.beat;
+      } else {
+        const kg = 1 - Math.exp(-(1 / cfg.fps) * cfg.goalEase);
+        st.goal.lerp(st.want.pos, kg);
+        st.goalLook.lerp(st.want.look, kg);
+      }
+      const pos = st.goal;
+      const look = st.goalLook;
       if (!st.pos) { st.pos = pos.clone(); st.look = look.clone(); }
       const sdt = 1 / cfg.fps;
       const prev = st.pos.clone();
@@ -775,8 +796,9 @@ const ROLL_SRC = String.raw`window.__roll = (() => {
     },
     // Before the frame: pick and advance beats, set the clock. Returns
     // what the runner needs ({ seek, speed, caption }).
-    tick(screen) {
+    tick(screen, frame = {}) {
       st.screen = screen;
+      st.whiteRun = frame.lum > cfg.white ? (st.whiteRun ?? 0) + 1 : 0;
       const t = r.time;
       let b = st.beat;
       let seek = null;
@@ -841,6 +863,13 @@ const ROLL_SRC = String.raw`window.__roll = (() => {
       const ease = 1 / (cfg.slowEase * cfg.fps);
       const target = t < st.slowUntil ? cfg.slow : 1;
       st.speed += Math.sign(target - st.speed) * Math.min(Math.abs(target - st.speed), (1 - cfg.slow) * ease);
+      // Smoke or a blast filling the picture: move on rather than show white
+      // (Arnhem, 2026-11-12: six seconds of a smoke screen).
+      if (st.whiteRun > cfg.whiteFor * cfg.fps && b.phase !== 'round' && (b.end === null || b.end > t + 0.3) && st.blend >= 1) {
+        b.end = t;
+        b.whiteOut = true;
+        st.whiteRun = 0;
+      }
       // Done: hand over.
       if (b.end !== null && t >= b.end && (!cfg.bar || st.screen >= cfg.nextBar(b.screenAt + 0.5))) {
         if (b.kind === 'fire') st.impact = where(b.act.target, t)?.eye ?? where(b.pid, t)?.eye ?? st.impact;
@@ -1133,6 +1162,7 @@ try {
   }
   const from = await page.evaluate(() => window.__audioT?.() ?? null);
   const paces = [];
+  const whites = [];
   let total = Math.round(LENGTH * FPS);
   const t0 = Date.now();
   let last = null;
@@ -1141,7 +1171,7 @@ try {
       const r = window.replay;
       const roll = window.__roll;
       const screen = k / FPS;
-      const tk = roll.tick(screen);
+      const tk = roll.tick(screen, { lum: window.__rollLum ?? 0 });
       if (tk.seek !== null) r.seek(tk.seek);
       r.speed = tk.speed;
       r.playing = true;
@@ -1181,10 +1211,23 @@ try {
       // In from black, out to black.
       const fade = Math.min(1, k / 18, (total - 1 - k) / 30);
       if (fade < 1) { g.fillStyle = 'rgba(0,0,0,' + (1 - Math.max(0, fade)) + ')'; g.fillRect(0, 0, W, H); }
-      return { url: cv.toDataURL('image/jpeg', 0.9), speed: tk.speed, t: r.time, phase: tk.phase, beat: tk.beat, end: tk.end, err: tk.err, done: tk.done };
+      // The frame's mean brightness, for the next tick (white-out).
+      {
+        const sm = (window.__rollLumCv ??= Object.assign(document.createElement('canvas'), { width: 32, height: 18 }));
+        const sg = sm.getContext('2d', { willReadFrequently: true });
+        sg.drawImage(window.__renderer.domElement, 0, 0, 32, 18);
+        const px = sg.getImageData(0, 0, 32, 18).data;
+        // The share of the picture near white: a smoke screen or a blast
+        // covering a third of it reads as white though the mean stays low.
+        let white = 0;
+        for (let i = 0; i < px.length; i += 4) if (0.2126 * px[i] + 0.7152 * px[i + 1] + 0.0722 * px[i + 2] > 225) white++;
+        window.__rollLum = white / (px.length / 4);
+      }
+      return { lum: window.__rollLum, url: cv.toDataURL('image/jpeg', 0.9), speed: tk.speed, t: r.time, phase: tk.phase, beat: tk.beat, end: tk.end, err: tk.err, done: tk.done };
     }, { W, H, FPS, k, total });
     fs.writeFileSync(path.join(frames, `f${String(k).padStart(5, '0')}.jpg`), Buffer.from(res.url.split(',')[1], 'base64'));
     paces.push(res.speed);
+    if (res.lum > ROLL.white) whites.push(k / FPS);
     // Nothing left the recorder saw whole: fade out here rather than hold.
     if (res.done && total > k + 31) { total = k + 31; log(`  nothing left to film after ${(k / FPS).toFixed(1)} s: ending the take`); }
     if (args.includes('--trace') && k % FPS === 0) log(`  t ${res.t.toFixed(2)} phase ${res.phase} speed ${res.speed.toFixed(2)} beat ${res.beat} end ${res.end?.toFixed?.(2)} ${res.err ?? ''}`);
@@ -1200,6 +1243,12 @@ try {
     const diverged = await page.evaluate(() => window.__roll.diverged());
     log(diverged.length ? `the script's beats ${diverged.join(', ')} were not found; the director chose there` : `every one of the script's ${SCRIPT.beats.length} beats was filmed as written`);
   }
+  const whiteRuns = [];
+  for (const t of whites) {
+    const last = whiteRuns.at(-1);
+    if (last && t - last[1] <= 0.1) last[1] = t; else whiteRuns.push([t, t]);
+  }
+  log(`white: ${whites.length} frames over ${Math.round(ROLL.white * 100)}% near white${whiteRuns.length ? `; at ${whiteRuns.map(([a, b]) => `${a.toFixed(1)}-${b.toFixed(1)}s`).join(', ')}` : ''}`);
   const runs = [];
   for (const [t, why] of qa.at) {
     const last = runs.at(-1);

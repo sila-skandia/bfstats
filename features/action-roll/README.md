@@ -116,6 +116,17 @@ real bug").
     `videoHdUpload`). `--upload` films and sends; `--upload-take=<folder>`
     sends a take filmed before.
 
+22. **No step in the camera's target** (Arnhem, 2026-11-12: "a cut that
+    gets interrupted ... cuts to almost the same position, but the cut
+    seems unnecessary"). The spring arm and the lens check move the wanted
+    place in steps when a wall comes and goes; mid-glide a step read as a
+    cut. The wanted place now eases itself (`goalEase`, about half a
+    second for a step), reset only when a beat starts.
+23. **Out of the smoke.** A smoke screen or blast covering a third of the
+    picture near-white for 0.4 s ends the beat (`white`, `whiteFor`).
+    Arnhem's smoke screen held 6 s of white; with this, about 2. Each take
+    logs its near-white stretches beside its clipping.
+
 ## How the trials are made
 
 `scripts/action-roll.mjs` films through the live play page the way the
