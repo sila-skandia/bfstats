@@ -1000,3 +1000,45 @@ With FHSW and FHSWEurope installed on this Mac:
   `patch_scene.py --layer fireOnce --mod <M> --all` there finishes them.
 * **Publisher fix** (`98866dc69`): each volume listing has its own pod temp
   file, so two publishes at once no longer refuse each other's count.
+
+## The tester's last two findings: death cries and fao_landing's boats (2026-11-11)
+
+**F10, silent death cries.** Already fixed in `dfe007213` before the tester's
+code read: `page-audio.js` `playSoldierDeathSound` rolls over the stems the
+speaker's language ships (`shippedStems`, RADIO-6). Live `soldier-voices.json`
+lists `Dying9..11` missing for `gre`, `rom` and `senegal`, and the live
+`page-audio.js` carries the filter.
+
+**F7, no bot takes a landing boat (Conquest with bots, a page-only mode).** In
+Conquest the British own no control point: their points are the Gnat's
+(`setAIEnterOnSpawn`) and eleven `b_spawner1` points on the landing boats
+(`setEnterOnSpawn`). A bot's first life came from `spawnBots`, which cannot
+ask a seat: it skipped the boats' points and seated nobody, so all eight stood
+on the Gnat's point and walked about its bow. Only a respawn was seated
+(SPAWN-27). `bot-referee.js` `placeFirstLives` now redoes each first life the
+way `respawnTick` does, on the first tick the hulls have landed (they land
+after the bots), for a side that has a seat point; a side without one keeps
+its first life untouched, so no vanilla level changes (none has a seat point).
+Measured on the page, 16 bots, 240 s: 8 of 8 British bots in a hull (7 boats,
+the Gnat) where none had been. `tests/test_bot_first_life_seat.py`.
+
+**Still open: the boats beach and nobody gets out.** The helms take the boats
+south to about (575..627, -477..-505), 60 to 90 m off Fao_Beach, and stop
+there. The mod's `StrategicAreas.con` gives the `fao_beach` area one landing
+zone, `beachLanding1` (494.7..591.5, 706..777.8), which is dry land by
+Tigris, 250 m inland: no landing craft can reach it. Two readings, neither
+built:
+
+* The engine runs a seat by its `AIbehaviours.con` row. BF1918's Barkasse
+  seats are its `LandingCraft` and `LandingCraftPassenger` rows, whose
+  Change is `BBChangeLandingCraft` (out only in a zone, or tipped). The page
+  knows a landing craft by name (`LANDING_CRAFT_RE`, `lcvp|daihatsu|landing`),
+  so the Barkasse runs the ordinary Change, which refuses a bail over water.
+  Switching to the row was tried and reverted: 14 of the 17 BF1918 levels
+  that place a Barkasse have no landing zone at all (amiens, baghdad,
+  belgrade, midway, tanga ...), and there the row's rule would keep a crew
+  aboard for good. Which of the two retail does on those levels needs a
+  recording.
+* Retail never runs bots in Conquest, so fao_landing's AI data was written for
+  CoOp, where the same level plays (the tester's CoOp run: captures and 18
+  kills in 240 s, unchanged by this fix).

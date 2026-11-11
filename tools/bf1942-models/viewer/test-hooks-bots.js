@@ -116,6 +116,10 @@ export function installBotHooks(page) {
     candidates: b.senses?.lastCandidates ?? 0,
     heal: b._medicResult?.targetId ?? null,
     vehicle: b.vehicle?.template ?? null,
+    // The seat he holds and what the SAI orders it as (a helm of a landing
+    // craft is a `LandingCraft` unit, which gets the beach orders).
+    seat: b.vehicle ? { id: b.vehicle.seatId, drives: !!b.vehicle.drives, landingCraft: !!b.vehicle.landingCraft,
+                        unit: page.referee.strategicUnit?.(b.playerId)?.type ?? null, order: b.waypoints?.kind ?? null } : null,
     change: b._changeResult?.best ? { id: b._changeResult.best.cand?.template, seat: b._changeResult.best.cand?.seatId ?? null, u: +b._changeResult.best.u.toFixed(2), d: +b._changeResult.best.dist.toFixed(1), teleport: !!b._changeResult.teleport, bail: !!b._changeResult.bail } : null,
     attackPhase: b._attackPhase ?? null,
     attack: b._attackDbg ?? null,

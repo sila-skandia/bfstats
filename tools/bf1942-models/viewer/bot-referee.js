@@ -288,6 +288,7 @@ export function createBotReferee(env) {
     referee.clock = 0;
     referee.bots = [];
     referee.navGrid = null;
+    referee.firstLivesPending = false;
     referee.strategy = null;
     referee.covers = [];
     referee.enemyTables = { 1: new EnemyStrengthTables(), 2: new EnemyStrengthTables() };
@@ -364,14 +365,63 @@ export function createBotReferee(env) {
       w.setPlayerArmor(bot.playerId, env.armorFor(bot, flag));
       env.onBotCreated?.(bot);
     }
+    referee.firstLivesPending = referee.bots.length > 0;
     return navMs;
   };
+
+  /**
+   * A bot's first life is a spawn like any other (`GameServer::spawnPlayer`,
+   * SPAWN-27): a point that only seats (`setEnterOnSpawn`, fao_landing's
+   * eleven British landing boats) is somewhere to spawn while its seat is
+   * free, and a bot stood on a seat point is put in that seat. `spawnBots`
+   * cannot ask a seat, so it skips such points and seats nobody; the first
+   * life is redone here, as `respawnTick` does it, for a side that has a seat
+   * point. A side without one keeps its first life exactly as it was. Each
+   * seat is taken as it is given, so the next bot on the same point is handed
+   * the next free one.
+   *
+   * The hulls land after the bots do, so this runs on the first tick that has
+   * a seat to give (`units.candidates`), for each bot still on his first life
+   * and on foot, or gives up after `FIRST_LIFE_WAIT` seconds.
+   */
+  const FIRST_LIFE_WAIT = 15;
+  referee.placeFirstLives = () => firstLives(world());
+  function firstLives(w) {
+    const u = units();
+    const seatPoint = f => (f.spawns ?? []).some(p => wantsSeat(p, true));
+    if (!u?.spawnSeat || !w.flags.some(seatPoint) || referee.clock > FIRST_LIFE_WAIT) {
+      referee.firstLivesPending = false;
+      return;
+    }
+    if (!u.candidates().length) return;
+    referee.firstLivesPending = false;
+    const index = { 1: 0, 2: 0 };
+    for (const bot of referee.bots) {
+      if (bot.vehicle || (bot.lives ?? 0) > 0 || w.armorOf(bot.playerId)?.destroyed) continue;
+      const sideFlags = w.flags.filter(f => flagSide(f) === bot.team && !f.captureOnly);
+      if (!sideFlags.some(seatPoint)) continue;
+      const seatFor = spawn => u.spawnSeat(spawn, bot.team);
+      const offered = sideFlags.filter(f => spawnOffered(f, { ai: true, seatFor }));
+      if (!offered.length) continue;
+      const i = index[bot.team] = (index[bot.team] ?? 0) + 1;
+      const flag = offered[(i - 1) % offered.length];
+      const spawned = w.spawnPlayer(bot.playerId, { flag, advance: true, group: bot.team, ai: true, seatFor });
+      if (!spawned) continue;
+      const record = w.player(bot.playerId);
+      w.setPlayerArmor(bot.playerId, env.armorFor(bot, record?.flag ?? flag));
+      if (record?.soldier) bot.setPosition(record.soldier.x, record.soldier.y, record.soldier.z);
+      if (!wantsSeat(spawned.spawn, true)) continue;
+      const cand = seatFor(spawned.spawn);
+      if (cand && cand !== SPAWN_STANDS) referee.enterVehicle(bot, cand);
+    }
+  }
 
   /** Per frame (the page) or per tick (the runner), after the world step. */
   referee.tick = (dt) => {
     if (!referee.bots.length) return;
     const w = world();
     referee.clock += dt;
+    if (referee.firstLivesPending) referee.placeFirstLives();
     // The strategic pass (once per `SAI.updateFrequency`), then each bot's
     // order for this tick.
     const strategy = referee.strategy;
