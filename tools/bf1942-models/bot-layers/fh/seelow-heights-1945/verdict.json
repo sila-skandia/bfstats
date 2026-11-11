@@ -38,21 +38,20 @@
     "idleShare",
     "routeFailuresPerBotMinute",
     "redeploysPerBotMinute",
-    "capturesTotal",
     "enemyKillsPerBotMinute",
     "flagCoverage",
     "bothSidesCapture",
     "bothSidesKill",
-    "ticketsBleed",
     "stuckSecondsPerBotMinuteWorseSide",
     "routeFailuresPerBotMinuteWorseSide",
     "redeploysPerBotMinuteWorseSide",
     "nonEnemyDeathShareWorseSide",
-    "unitsNeverUsedShare"
+    "unitsNeverUsedShare",
+    "tankSilentShare"
    ],
    "winners": [
-    1,
-    1,
+    2,
+    0,
     0
    ]
   },
@@ -61,6 +60,7 @@
    "failed": [
     "stuckSecondsPerBotMinute",
     "idleShare",
+    "oscillationsPerBotMinute",
     "routeFailuresPerBotMinute",
     "redeploysPerBotMinute",
     "enemyKillsPerBotMinute",

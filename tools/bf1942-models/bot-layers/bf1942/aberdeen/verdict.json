@@ -1,7 +1,7 @@
 {
  "level": "aberdeen",
  "verdict": "fail",
- "outcome": "better-than-nothing",
+ "outcome": "no-better-than-nothing",
  "config": "with vehicles",
  "doctrine": "garrison",
  "generatorVersion": 5,
@@ -15,54 +15,42 @@
   "against": "dice",
   "why": "a vanilla or community level: DICE's bar"
  },
- "seeds": 3,
+ "seeds": 2,
  "sizes": {
   "8": {
    "verdict": "fail",
    "failed": [
-    "selfDeathsPerBotMinute",
     "routeFailuresPerBotMinute",
-    "enemyKillsPerBotMinute",
     "flagCoverage",
     "routeFailuresPerBotMinuteWorseSide",
-    "nonEnemyDeathShareWorseSide",
     "hullStuckSecondsPerDrivingMinute",
     "hullStuckSecondsPerDrivingMinuteWorseSide",
-    "unitsNeverUsedShare",
-    "tankSilentShare"
+    "unitsNeverUsedShare"
    ],
    "winners": [
-    3,
     0,
+    2,
     0
    ]
   },
   "16": {
    "verdict": "fail",
    "failed": [
-    "selfDeathsPerBotMinute",
     "enemyKillsPerBotMinute",
     "flagCoverage",
-    "bothSidesCapture",
-    "nonEnemyDeathShareWorseSide",
     "unitsNeverUsedShare",
     "tankSilentShare"
    ],
    "winners": [
-    3,
     0,
+    2,
     0
    ]
   }
  },
- "oneSided": 1,
+ "oneSided": 2,
  "unreachable": [
   "City"
  ],
- "lintErrors": [],
- "acceptanceWithdrawn": {
-  "because": "page match 2026-11-11: 0.72 of the worse side's deaths were not the enemy's (suicides), over the rollout's page floor of 0.5; 0.11 enemy kills a bot-minute and 5 captures",
-  "date": "2026-11-11",
-  "was": "Owner's rollout, 2026-11-11: after playing Tunis-1943 against its generated bots"
- }
+ "lintErrors": []
 }

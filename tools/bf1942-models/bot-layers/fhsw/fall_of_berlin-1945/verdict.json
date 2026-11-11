@@ -28,6 +28,7 @@
     "flagCoverage",
     "bothSidesCapture",
     "bothSidesKill",
+    "ticketsBleed",
     "stuckSecondsPerBotMinuteWorseSide",
     "routeFailuresPerBotMinuteWorseSide",
     "redeploysPerBotMinuteWorseSide",

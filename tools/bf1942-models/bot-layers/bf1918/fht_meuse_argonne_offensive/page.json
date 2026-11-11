@@ -6,7 +6,6 @@
  "bar": "DICE levels on the page, 3 matches each of 600 s, 16 bots: Berlin, Stalingrad, Kharkov, Bocage; 2026-11-11",
  "verdict": "fail",
  "failed": [
-  "nonEnemyDeathShareWorseSide",
   "enemyKillsPerBotMinute"
  ],
  "checks": [
@@ -18,19 +17,19 @@
   },
   {
    "metric": "suicidesPerBotMinute",
-   "median": 0.0375,
+   "median": 0.0062,
    "bar": "<= 0.0562",
    "pass": true
   },
   {
    "metric": "nonEnemyDeathShareWorseSide",
-   "median": 0.6,
+   "median": 0.25,
    "bar": "<= 0.308",
-   "pass": false
+   "pass": true
   },
   {
    "metric": "enemyKillsPerBotMinute",
-   "median": 0.05,
+   "median": 0.0437,
    "bar": ">= 0.175",
    "pass": false
   }
@@ -44,14 +43,14 @@
    },
    "minutes": 10,
    "tickets": {
-    "1": 118,
-    "2": 122
+    "1": 123,
+    "2": 123
    },
    "capturesTotal": 0,
    "teamKillsPerBotMinute": 0,
-   "suicidesPerBotMinute": 0.0375,
-   "nonEnemyDeathShareWorseSide": 0.6,
-   "enemyKillsPerBotMinute": 0.05,
+   "suicidesPerBotMinute": 0.0062,
+   "nonEnemyDeathShareWorseSide": 0.25,
+   "enemyKillsPerBotMinute": 0.0437,
    "teamKillsBySide": {
     "1": 0,
     "2": 0
