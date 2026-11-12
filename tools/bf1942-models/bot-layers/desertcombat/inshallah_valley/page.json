@@ -1,40 +1,42 @@
 {
  "level": "Inshallah_Valley",
  "mod": "desertcombat",
- "url": "https://play.bfstats.io/map.html?map=Inshallah_Valley&team=2&mode=Conquest&mod=desertcombat&botCount=16&botSkill=0.75&mute&shots",
+ "url": "https://play.bfstats.io/map.html?map=Inshallah_Valley&team=2&mode=Conquest&mod=desertcombat&botCount=16&botSkill=0.75&spawnTime=wave&mute&shots",
  "date": "2026-11-12",
  "bar": "DICE levels on the page, 3 matches each of 600 s, 16 bots: Berlin, Stalingrad, Kharkov, Bocage; 2026-11-11",
  "verdict": "fail",
  "failed": [
+  "teamKillsPerBotMinute",
+  "nonEnemyDeathShareWorseSide",
   "enemyKillsPerBotMinute"
  ],
  "checks": [
   {
    "metric": "teamKillsPerBotMinute",
-   "median": 0.0062,
+   "median": 0.0312,
    "bar": "<= 0.025",
-   "pass": true
+   "pass": false
   },
   {
    "metric": "suicidesPerBotMinute",
-   "median": 0.0062,
+   "median": 0.0375,
    "bar": "<= 0.0562",
    "pass": true
   },
   {
    "metric": "nonEnemyDeathShareWorseSide",
-   "median": 0.167,
+   "median": 0.348,
    "bar": "<= 0.308",
-   "pass": true
+   "pass": false
   },
   {
    "metric": "enemyKillsPerBotMinute",
-   "median": 0.1187,
+   "median": 0.1312,
    "bar": ">= 0.175",
    "pass": false
   }
  ],
- "matches": 2,
+ "matches": 3,
  "rollout": {
   "pass": true,
   "floor": {
@@ -74,7 +76,8 @@
    "teamKillsBySide": {
     "1": 0,
     "2": 0
-   }
+   },
+   "oldCode": "played before the bot code of e5003c584 went live (2026-11-12, 19:38)"
   },
   {
    "generated": {
@@ -100,6 +103,34 @@
    },
    "teamKillsBySide": {
     "1": 1,
+    "2": 0
+   },
+   "oldCode": "played before the bot code of e5003c584 went live (2026-11-12, 19:38)"
+  },
+  {
+   "generated": {
+    "version": 5,
+    "template": "symmetric"
+   },
+   "minutes": 10,
+   "tickets": {
+    "1": 83,
+    "2": 97
+   },
+   "capturesTotal": 1,
+   "teamKillsPerBotMinute": 0.0312,
+   "suicidesPerBotMinute": 0.0375,
+   "nonEnemyDeathShareWorseSide": 0.348,
+   "enemyKillsPerBotMinute": 0.1312,
+   "rollout": {
+    "pass": true,
+    "why": [],
+    "enemyKills": 0.1312,
+    "captures": 1,
+    "ownHand": 0.0687
+   },
+   "teamKillsBySide": {
+    "1": 5,
     "2": 0
    }
   }

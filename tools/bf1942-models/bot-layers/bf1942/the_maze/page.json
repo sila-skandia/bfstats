@@ -1,7 +1,7 @@
 {
  "level": "The_Maze",
  "mod": "community",
- "url": "https://play.bfstats.io/map.html?map=The_Maze&team=2&mode=Conquest&mod=community&botCount=16&botSkill=0.75&mute&shots",
+ "url": "https://play.bfstats.io/map.html?map=The_Maze&team=2&mode=Conquest&mod=community&botCount=16&botSkill=0.75&spawnTime=wave&mute&shots",
  "date": "2026-11-12",
  "bar": "DICE levels on the page, 3 matches each of 600 s, 16 bots: Berlin, Stalingrad, Kharkov, Bocage; 2026-11-11",
  "verdict": "pass",
@@ -9,7 +9,7 @@
  "checks": [
   {
    "metric": "teamKillsPerBotMinute",
-   "median": 0.0125,
+   "median": 0,
    "bar": "<= 0.025",
    "pass": true
   },
@@ -21,18 +21,18 @@
   },
   {
    "metric": "nonEnemyDeathShareWorseSide",
-   "median": 0.077,
+   "median": 0,
    "bar": "<= 0.308",
    "pass": true
   },
   {
    "metric": "enemyKillsPerBotMinute",
-   "median": 0.25,
+   "median": 0.3187,
    "bar": ">= 0.175",
    "pass": true
   }
  ],
- "matches": 1,
+ "matches": 2,
  "rollout": {
   "pass": true,
   "floor": {
@@ -40,7 +40,8 @@
    "killsWithFlags": 0.03,
    "flags": 3,
    "killsWithAFlag": 0.05,
-   "ownHand": 0.1
+   "ownHand": 0.1,
+   "ownHandOfKills": 0.3333333333333333
   }
  },
  "runs": [
@@ -68,6 +69,34 @@
    },
    "teamKillsBySide": {
     "1": 2,
+    "2": 0
+   },
+   "oldCode": "played before the bot code of e5003c584 went live (2026-11-12, 19:38)"
+  },
+  {
+   "generated": {
+    "version": 5,
+    "template": "few"
+   },
+   "minutes": 10,
+   "tickets": {
+    "1": 78,
+    "2": 56
+   },
+   "capturesTotal": 18,
+   "teamKillsPerBotMinute": 0,
+   "suicidesPerBotMinute": 0,
+   "nonEnemyDeathShareWorseSide": 0,
+   "enemyKillsPerBotMinute": 0.3187,
+   "rollout": {
+    "pass": true,
+    "why": [],
+    "enemyKills": 0.3187,
+    "captures": 18,
+    "ownHand": 0
+   },
+   "teamKillsBySide": {
+    "1": 0,
     "2": 0
    }
   }

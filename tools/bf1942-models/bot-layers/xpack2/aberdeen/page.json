@@ -1,46 +1,50 @@
 {
  "level": "Aberdeen",
  "mod": "xpack2",
- "url": "https://play.bfstats.io/map.html?map=Aberdeen&team=2&mode=Conquest&mod=xpack2&botCount=16&botSkill=0.75&mute&shots",
+ "url": "https://play.bfstats.io/map.html?map=Aberdeen&team=2&mode=Conquest&mod=xpack2&botCount=16&botSkill=0.75&spawnTime=wave&mute&shots",
  "date": "2026-11-12",
  "bar": "DICE levels on the page, 3 matches each of 600 s, 16 bots: Berlin, Stalingrad, Kharkov, Bocage; 2026-11-11",
- "verdict": "pass",
- "failed": [],
+ "verdict": "fail",
+ "failed": [
+  "teamKillsPerBotMinute",
+  "nonEnemyDeathShareWorseSide"
+ ],
  "checks": [
   {
    "metric": "teamKillsPerBotMinute",
-   "median": 0.0125,
+   "median": 0.0812,
    "bar": "<= 0.025",
-   "pass": true
+   "pass": false
   },
   {
    "metric": "suicidesPerBotMinute",
-   "median": 0.0375,
+   "median": 0.05,
    "bar": "<= 0.0562",
    "pass": true
   },
   {
    "metric": "nonEnemyDeathShareWorseSide",
-   "median": 0.167,
+   "median": 0.366,
    "bar": "<= 0.308",
-   "pass": true
+   "pass": false
   },
   {
    "metric": "enemyKillsPerBotMinute",
-   "median": 0.3125,
+   "median": 0.2812,
    "bar": ">= 0.175",
    "pass": true
   }
  ],
- "matches": 1,
+ "matches": 2,
  "rollout": {
-  "pass": true,
+  "pass": false,
   "floor": {
    "kills": 0.15,
    "killsWithFlags": 0.03,
    "flags": 3,
    "killsWithAFlag": 0.05,
-   "ownHand": 0.1
+   "ownHand": 0.1,
+   "ownHandOfKills": 0.3333333333333333
   }
  },
  "runs": [
@@ -66,6 +70,33 @@
    "teamKillsBySide": {
     "1": 2,
     "2": 0
+   },
+   "oldCode": "played before the bot code of e5003c584 went live (2026-11-12, 19:38)"
+  },
+  {
+   "generated": null,
+   "minutes": 10,
+   "tickets": {
+    "1": 65,
+    "2": 81
+   },
+   "capturesTotal": 6,
+   "teamKillsPerBotMinute": 0.0812,
+   "suicidesPerBotMinute": 0.05,
+   "nonEnemyDeathShareWorseSide": 0.366,
+   "enemyKillsPerBotMinute": 0.2812,
+   "rollout": {
+    "pass": false,
+    "why": [
+     "ownHand"
+    ],
+    "enemyKills": 0.2812,
+    "captures": 6,
+    "ownHand": 0.1312
+   },
+   "teamKillsBySide": {
+    "1": 10,
+    "2": 3
    }
   }
  ]

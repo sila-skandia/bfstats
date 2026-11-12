@@ -50,9 +50,21 @@
  "oneSided": null,
  "unreachable": [],
  "lintErrors": [],
- "acceptanceWithdrawn": {
-  "because": "not played on the page: screened on 2026-11-12 (no better than nothing in the runner, at a third of real time) and published without a flag, and the day ended before its match. Play it before anything else is decided.",
+ "accepted": {
+  "reason": "Owner's rollout: played on the page on 2026-11-12 on the bot code of e5003c584 and over the rollout floor (its second match; the first, on the code before, was under it). The checks it fails in the runner are listed with this verdict.",
   "date": "2026-11-12",
-  "was": "Owner's rollout, 2026-11-12: the owner asked for everything with a fight to go l"
+  "outcome": "no-better-than-nothing",
+  "failed": [
+   "8:routeFailuresPerBotMinute",
+   "8:routeFailuresPerBotMinuteWorseSide",
+   "8:nonEnemyDeathShareWorseSide",
+   "8:unitsNeverUsedShare",
+   "16:idleShare",
+   "16:routeFailuresPerBotMinute",
+   "16:enemyKillsPerBotMinute",
+   "16:nonEnemyDeathShareWorseSide",
+   "16:unitsNeverUsedShare"
+  ],
+  "by": "owner"
  }
 }

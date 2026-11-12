@@ -29,14 +29,14 @@
   },
   {
    "metric": "enemyKillsPerBotMinute",
-   "median": 0.075,
+   "median": 0,
    "bar": ">= 0.175",
    "pass": false
   }
  ],
- "matches": 1,
+ "matches": 2,
  "rollout": {
-  "pass": true,
+  "pass": false,
   "floor": {
    "kills": 0.15,
    "killsWithFlags": 0.03,
@@ -72,7 +72,35 @@
    "teamKillsBySide": {
     "1": 0,
     "2": 0
-   }
+   },
+   "oldCode": "played before the bot code of e5003c584 went live (2026-11-12, 19:38)"
+  },
+  {
+   "generated": {
+    "version": 6,
+    "template": "symmetric"
+   },
+   "minutes": 10,
+   "tickets": {
+    "1": 79,
+    "2": 33
+   },
+   "capturesTotal": 7,
+   "teamKillsPerBotMinute": 0,
+   "suicidesPerBotMinute": 0,
+   "nonEnemyDeathShareWorseSide": 0,
+   "enemyKillsPerBotMinute": 0,
+   "rollout": {
+    "pass": false,
+    "why": [
+     "activity"
+    ],
+    "enemyKills": 0,
+    "captures": 7,
+    "ownHand": 0
+   },
+   "replayed": true,
+   "teamKillsBySide": {}
   }
  ]
 }

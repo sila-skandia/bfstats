@@ -1,7 +1,7 @@
 {
  "level": "kushira",
  "mod": "fhsw",
- "url": "https://play.bfstats.io/map.html?map=kushira&team=2&mode=Conquest&mod=fhsw&botCount=16&botSkill=0.75&mute&shots",
+ "url": "https://play.bfstats.io/map.html?map=kushira&team=2&mode=Conquest&mod=fhsw&botCount=16&botSkill=0.75&spawnTime=wave&mute&shots",
  "date": "2026-11-12",
  "bar": "DICE levels on the page, 3 matches each of 600 s, 16 bots: Berlin, Stalingrad, Kharkov, Bocage; 2026-11-11",
  "verdict": "fail",
@@ -12,7 +12,7 @@
  "checks": [
   {
    "metric": "teamKillsPerBotMinute",
-   "median": 0.0062,
+   "median": 0.0125,
    "bar": "<= 0.025",
    "pass": true
   },
@@ -24,18 +24,18 @@
   },
   {
    "metric": "nonEnemyDeathShareWorseSide",
-   "median": 0.5,
+   "median": 0.667,
    "bar": "<= 0.308",
    "pass": false
   },
   {
    "metric": "enemyKillsPerBotMinute",
-   "median": 0.0812,
+   "median": 0.125,
    "bar": ">= 0.175",
    "pass": false
   }
  ],
- "matches": 2,
+ "matches": 3,
  "rollout": {
   "pass": true,
   "floor": {
@@ -103,6 +103,34 @@
    "teamKillsBySide": {
     "1": 0,
     "2": 1
+   },
+   "oldCode": "played before the bot code of e5003c584 went live (2026-11-12, 19:38)"
+  },
+  {
+   "generated": {
+    "version": 5,
+    "template": "symmetric"
+   },
+   "minutes": 10,
+   "tickets": {
+    "1": 120,
+    "2": 164
+   },
+   "capturesTotal": 1,
+   "teamKillsPerBotMinute": 0.0125,
+   "suicidesPerBotMinute": 0.0125,
+   "nonEnemyDeathShareWorseSide": 0.667,
+   "enemyKillsPerBotMinute": 0.125,
+   "rollout": {
+    "pass": true,
+    "why": [],
+    "enemyKills": 0.125,
+    "captures": 1,
+    "ownHand": 0.025
+   },
+   "teamKillsBySide": {
+    "1": 0,
+    "2": 2
    }
   }
  ]

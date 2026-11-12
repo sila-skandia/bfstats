@@ -291,7 +291,7 @@ if (process.argv[1] && path.resolve(process.argv[1]) === fileURLToPath(import.me
     // "<what changed>"` they are kept for the record and not counted, having been played on other bot code.
     if (!a.file) { console.error('rescore: --file <page.json> [--earlier <page.json> [--old-code "<what changed since>"]]'); process.exit(2); }
     const file = path.resolve(a.file), page = JSON.parse(readFileSync(file, 'utf8'));
-    const earlier = a.earlier ? JSON.parse(readFileSync(path.resolve(a.earlier), 'utf8')).runs.map(r => ({ ...r, ...(a['old-code'] ? { oldCode: String(a['old-code']) } : {}) })) : [];
+    const earlier = a.earlier ? JSON.parse(readFileSync(path.resolve(a.earlier), 'utf8')).runs.map(r => ({ ...r, ...(a['old-code'] && !r.oldCode ? { oldCode: String(a['old-code']) } : {}) })) : [];
     const same = (x, y) => JSON.stringify({ ...x, rollout: 0, oldCode: 0 }) === JSON.stringify({ ...y, rollout: 0, oldCode: 0 });
     page.runs = [...earlier.filter(e => !page.runs.some(r => same(e, r))), ...page.runs].map(r => ({ ...r, rollout: rolloutFloor(r) }));
     page.matches = page.runs.length;
