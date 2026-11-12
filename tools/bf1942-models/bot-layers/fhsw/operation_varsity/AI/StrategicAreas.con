@@ -3,6 +3,7 @@ rem *** Strategic areas: one per control point (botgen) ***
 aiStrategicArea.create allies_basetemplate 500.6/387.9 505.6/392.9 50
 aiStrategicArea.addNeighbour hoteltemplate
 aiStrategicArea.addObjectTypeFlag Base
+aiStrategicArea.setOrderPosition Tank 507.5/393.5
 aiStrategicArea.setOrderPosition Infantry 506.5/394.5
 aiStrategicArea.setSide 2
 aiStrategicArea.setTakeable 1 0
@@ -12,6 +13,7 @@ aiStrategicArea.addNeighbour churchtemplate
 aiStrategicArea.addNeighbour blumenkamptemplate
 aiStrategicArea.addNeighbour hoteltemplate
 aiStrategicArea.addObjectTypeFlag Base
+aiStrategicArea.setOrderPosition Tank 1774.5/1036.5
 aiStrategicArea.setOrderPosition Infantry 1773.5/1037.5
 aiStrategicArea.setSide 1
 aiStrategicArea.setTakeable 2 0
@@ -33,6 +35,7 @@ aiStrategicArea.addNeighbour hoteltemplate
 aiStrategicArea.addObjectTypeFlag Flank
 aiStrategicArea.addObjectTypeFlag Close
 aiStrategicArea.addObjectTypeFlag ControlPoint
+aiStrategicArea.setOrderPosition Tank 1215.5/1034.5
 aiStrategicArea.setOrderPosition Infantry 1215.5/1034.5
 aiStrategicArea.setSide 1
 
@@ -44,12 +47,14 @@ aiStrategicArea.addNeighbour hoteltemplate
 aiStrategicArea.addObjectTypeFlag Flank
 aiStrategicArea.addObjectTypeFlag Close
 aiStrategicArea.addObjectTypeFlag ControlPoint
+aiStrategicArea.setOrderPosition Tank 1696.5/1753.5
 aiStrategicArea.setOrderPosition Infantry 1695.5/1754.5
 aiStrategicArea.setSide 1
 
 aiStrategicArea.create allies_waco_pointtemplate 1716.8/1960.9 1736.8/1980.9 50
 aiStrategicArea.addNeighbour blumenkamptemplate
 aiStrategicArea.addObjectTypeFlag Base
+aiStrategicArea.setOrderPosition Tank 1736.5/1981.5
 aiStrategicArea.setOrderPosition Infantry 1736.5/1981.5
 aiStrategicArea.setSide 2
 aiStrategicArea.setTakeable 1 0
@@ -62,4 +67,5 @@ aiStrategicArea.addNeighbour blumenkamptemplate
 aiStrategicArea.addObjectTypeFlag Flank
 aiStrategicArea.addObjectTypeFlag Close
 aiStrategicArea.addObjectTypeFlag ControlPoint
+aiStrategicArea.setOrderPosition Tank 1237.5/735.5
 aiStrategicArea.setOrderPosition Infantry 1236.5/736.5

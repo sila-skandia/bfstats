@@ -4,10 +4,10 @@
  "outcome": "no-fight",
  "config": "with vehicles",
  "doctrine": "garrison",
- "generatorVersion": 5,
+ "generatorVersion": 6,
  "inputs": {
   "controlPoints": "2fcd176365b36269e2800d09e518accd137d30ad210ed7e84d469e4d7553c0db",
-  "infantryMap": "b6f787fa70cb84df5343de368a62394ecb5424decf6360eb9a41917790858958",
+  "infantryMap": "a39d1d763d60aba49364590dbe9546fd4ae192d462fa308a4d5d4cce7480bdb7",
   "template": "43f8a790471528016570235f76e97dbb2045732458781a5139f37fed68bf98c0"
  },
  "baseline": "DICE layers with vehicles, garrison doctrine: berlin, stalingrad, kharkov, bocage; seeds 1..10, 600 s",
@@ -15,7 +15,7 @@
   "against": "dice",
   "why": "no bar of fhsw's own: DICE's"
  },
- "seeds": 2,
+ "seeds": 1,
  "sizes": {
   "8": {
    "verdict": "fail",
@@ -40,7 +40,7 @@
    ],
    "winners": [
     0,
-    2,
+    1,
     0
    ]
   },
@@ -51,11 +51,12 @@
     "idleShare",
     "routeFailuresPerBotMinute",
     "redeploysPerBotMinute",
+    "capturesTotal",
     "enemyKillsPerBotMinute",
     "flagCoverage",
     "bothSidesCapture",
     "bothSidesKill",
-    "stuckSecondsPerBotMinuteWorseSide",
+    "ticketsBleed",
     "routeFailuresPerBotMinuteWorseSide",
     "redeploysPerBotMinuteWorseSide",
     "nonEnemyDeathShareWorseSide",
@@ -65,17 +66,16 @@
    ],
    "winners": [
     0,
-    2,
+    1,
     0
    ]
   }
  },
- "oneSided": 2,
+ "oneSided": null,
  "unreachable": [],
  "lintErrors": [],
  "acceptanceWithdrawn": {
-  "because": "page match 2026-11-12, after the flag binding: under the rollout floor (0.006 enemy kills, no capture)",
-  "date": "2026-11-12",
-  "was": "Owner's rollout, 2026-11-11: after playing Tunis-1943 against its generated bots"
+  "because": "regenerated on generator 6 and screened in the runner on 2026-11-13, one seed at 8 and 16 a side: no kill and no capture at either size; not played on the page",
+  "date": "2026-11-13"
  }
 }

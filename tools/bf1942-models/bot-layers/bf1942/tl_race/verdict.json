@@ -57,28 +57,9 @@
  "oneSided": null,
  "unreachable": [],
  "lintErrors": [],
- "accepted": {
-  "reason": "Owner's rollout, 2026-11-12: the owner asked for everything with a fight to go live (\"everything can go up if it's ready\"). Screened in the runner at 8 and 16 a side under the garrison; the checks it fails are listed with this verdict, and a match on the page decides whether it keeps its menu flag.",
-  "date": "2026-11-12",
-  "outcome": "no-better-than-nothing",
-  "failed": [
-   "8:stuckSecondsPerBotMinute",
-   "8:routeFailuresPerBotMinute",
-   "8:redeploysPerBotMinute",
-   "8:enemyKillsPerBotMinute",
-   "8:stuckSecondsPerBotMinuteWorseSide",
-   "8:routeFailuresPerBotMinuteWorseSide",
-   "8:redeploysPerBotMinuteWorseSide",
-   "8:nonEnemyDeathShareWorseSide",
-   "8:unitsNeverUsedShare",
-   "16:routeFailuresPerBotMinute",
-   "16:enemyKillsPerBotMinute",
-   "16:bothSidesCapture",
-   "16:routeFailuresPerBotMinuteWorseSide",
-   "16:nonEnemyDeathShareWorseSide",
-   "16:hullStuckSecondsPerDrivingMinute",
-   "16:unitsNeverUsedShare"
-  ],
-  "by": "owner"
+ "acceptanceWithdrawn": {
+  "because": "on the bot code of 3b1ebe45c, two page matches of 600 s with 16 bots, both under the rollout floor on deaths by their own hand: 0.33 and 0.41 enemy kills a bot-minute, 8 and 18 captures, own-hand deaths 0.15 a bot-minute in the second against a limit of 0.14 (a third of the kills); the nearest miss of the nine",
+  "date": "2026-11-13",
+  "was": "Owner's rollout, 2026-11-12: the owner asked for everything with a fight to go l"
  }
 }

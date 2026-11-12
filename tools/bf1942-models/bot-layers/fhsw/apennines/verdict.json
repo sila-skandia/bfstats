@@ -1,13 +1,13 @@
 {
  "level": "apennines",
  "verdict": "fail",
- "outcome": "no-fight",
+ "outcome": "no-better-than-nothing",
  "config": "with vehicles",
  "doctrine": "garrison",
- "generatorVersion": 5,
+ "generatorVersion": 6,
  "inputs": {
   "controlPoints": "f9b246f90bce1b7d090a6f5b756eafbddefc273f15cd67d0bbd9c757bfc319eb",
-  "infantryMap": "15e6cd432dd94bf64d54d7f55fa8b565e30d93475b57afa8caff9edd21a423ba",
+  "infantryMap": "c8892f4088cd19b434d7a749e52ebf491b75aaa2d4c47a1beefe4c566f6a91bb",
   "template": "bdc0e455f47f91b7e7724e71d7c0c196e839b36946ac3abb7663d725944081e5"
  },
  "baseline": "DICE layers with vehicles, garrison doctrine: berlin, stalingrad, kharkov, bocage; seeds 1..10, 600 s",
@@ -20,13 +20,15 @@
   "8": {
    "verdict": "fail",
    "failed": [
+    "stuckSecondsPerBotMinute",
     "idleShare",
     "routeFailuresPerBotMinute",
+    "redeploysPerBotMinute",
     "enemyKillsPerBotMinute",
-    "flagCoverage",
     "bothSidesCapture",
-    "bothSidesKill",
+    "stuckSecondsPerBotMinuteWorseSide",
     "routeFailuresPerBotMinuteWorseSide",
+    "redeploysPerBotMinuteWorseSide",
     "nonEnemyDeathShareWorseSide",
     "hullStuckSecondsPerDrivingMinute",
     "hullStuckSecondsPerDrivingMinuteWorseSide",
@@ -44,14 +46,13 @@
     "idleShare",
     "routeFailuresPerBotMinute",
     "enemyKillsPerBotMinute",
-    "flagCoverage",
     "bothSidesCapture",
-    "bothSidesKill",
     "routeFailuresPerBotMinuteWorseSide",
     "nonEnemyDeathShareWorseSide",
     "hullStuckSecondsPerDrivingMinute",
     "hullStuckSecondsPerDrivingMinuteWorseSide",
-    "unitsNeverUsedShare"
+    "unitsNeverUsedShare",
+    "tankSilentShare"
    ],
    "winners": [
     0,
@@ -65,9 +66,35 @@
   "defenceline4template"
  ],
  "lintErrors": [],
- "acceptanceWithdrawn": {
-  "because": "page matches 2026-11-12: 0.038 enemy kills a bot-minute with 3 captures before the bot code of 401826c1d, then 0.013 with 3 and 0.006 with none on it; under the rollout floor",
+ "accepted": {
+  "reason": "Regenerated on generator 6 (2026-11-13) after being turned down on generator 5: the screen shows kills or captures, so the page decides again.",
   "date": "2026-11-12",
-  "was": "Owner's rollout, 2026-11-12: the owner asked for everything with a fight to go l"
+  "outcome": "no-better-than-nothing",
+  "failed": [
+   "8:stuckSecondsPerBotMinute",
+   "8:idleShare",
+   "8:routeFailuresPerBotMinute",
+   "8:redeploysPerBotMinute",
+   "8:enemyKillsPerBotMinute",
+   "8:bothSidesCapture",
+   "8:stuckSecondsPerBotMinuteWorseSide",
+   "8:routeFailuresPerBotMinuteWorseSide",
+   "8:redeploysPerBotMinuteWorseSide",
+   "8:nonEnemyDeathShareWorseSide",
+   "8:hullStuckSecondsPerDrivingMinute",
+   "8:hullStuckSecondsPerDrivingMinuteWorseSide",
+   "8:unitsNeverUsedShare",
+   "16:idleShare",
+   "16:routeFailuresPerBotMinute",
+   "16:enemyKillsPerBotMinute",
+   "16:bothSidesCapture",
+   "16:routeFailuresPerBotMinuteWorseSide",
+   "16:nonEnemyDeathShareWorseSide",
+   "16:hullStuckSecondsPerDrivingMinute",
+   "16:hullStuckSecondsPerDrivingMinuteWorseSide",
+   "16:unitsNeverUsedShare",
+   "16:tankSilentShare"
+  ],
+  "by": "owner"
  }
 }

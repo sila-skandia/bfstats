@@ -51,10 +51,27 @@ section 6).
 (`.claude/skills/bf1942-bot-rollout/`) is the procedure as scripts: list a
 mod's botless levels, mirror and screen them in the runner, publish
 without the menu flag, play them on the live page against the rollout
-floor (`sim/pagematch.mjs rolloutFloor`), tag what passes. 64 levels are
-live at the end of 2026-11-12 (`scripts/live.py` in the skill lists them):
-the vanilla tree 19, FHSW 19, Galactic Conquest 9, Desert Combat 6, BF1918
-4, Secret Weapons 3, Road to Rome 2, FH 1, FHSWEurope 1.
+floor (`sim/pagematch.mjs rolloutFloor`), tag what passes. 68 levels are
+live on 2026-11-13 (`scripts/live.py` in the skill lists them): FHSW 24,
+the vanilla tree 16, Desert Combat 7, Galactic Conquest 7, BF1918 6,
+Secret Weapons 3, Road to Rome 2, FH 2, FHSWEurope 1.
+
+**The mods first, 2026-11-13.** The owner's priority from this day: the
+mods' levels before the community map pack, whose jeep bowls and races
+"don't sound like bot friendly maps, or at least need some custom mod
+logic to actually race". No further work goes to a community level while
+a mod's level is open.
+
+**2026-11-13: the live levels on new bot code, the turned-down levels
+regenerated.** All 66 levels then live were replayed on the bot code of
+3b1ebe45c: 57 keep their flag and 9 lost it after two failed matches. The
+26 layers turned down on generator 5 were regenerated on generator 6 and
+10 of them now pass on the page; with FHSW's Breaking Point, which a
+generator fault had refused (section 22.4, item 1), that is 11 added. The
+page match now records what a bot was in when it died by its own hand,
+which found Galactic Conquest's own-hand deaths to be one vehicle the bots
+flew as a plane. Generator 7 widens the ways it opens (section 22.4, item
+2). [page-matches.md](page-matches.md) section 6 has every match.
 
 **No more EXPERIMENTAL BOTS, 2026-11-12.** After playing Galactic
 Conquest's the owner asked for the tag to go ("just show bots"): a level
@@ -4090,18 +4107,48 @@ section 6.
 
 ### 22.4 Open
 
-1. **An order position on a blocked cell.** On regenerated capped levels an
-   area's order position can sit on the flag itself, on a cell the layer's
-   map blocks: Breaking Point's Spycker, and East Harbor on Invasion of the
-   Philippines in all three packs. The generator's nearest-free-cell search
-   found the cell free when it ran, and the map it wrote blocks it. Cause
-   not found. It is the one new lint error the fixes caused.
-2. **One-cell ways.** The way-opening frees only the walked path's own
-   cells, so every way it opens is single file, and the choke rule then
-   refuses the level (Deulemont, Roeselare). Widening each opened way by a
-   cell or two of walked ground is the next step.
-3. **River Don.** The way search reaches 150 m (`WAY_REACH`); the allied
-   base needs a longer one.
+1. **An order position on a blocked cell: found and fixed 2026-11-13**
+   (74fb6478b). The con files keep a position to one decimal. A flag within
+   5 cm of a cell edge (Westwall-1945's north mountain flag at z -1691.99,
+   Breaking Point's Spycker) was free where the generator tested it and
+   was written as -1692.0, a point in the blocked cell next door, which is
+   where the lint and the page then looked. `nearestFree` now tests the
+   position as it will be written and, when the rounding crosses into a
+   blocked cell, returns the centre of the position's own cell. Both
+   levels lint clean. Invasion of the Philippines' East Harbor was not
+   looked at again.
+2. **One-cell ways: widened 2026-11-13 (generator 7), and it was not what
+   refused the trench levels.** A way the generator opens out of a pocket
+   now also frees the walked ground within `WAY_WIDEN` (2) cells of its
+   path, so a way over open ground is five cells wide and a door stays a
+   door (`tests/test_bot_layer.py`,
+   `test_an_opened_way_is_five_cells_wide_over_open_ground_and_a_door_stays_a_door`).
+   INVENTION. On Westwall-1945 the same 130 ways open 6,977 cells instead
+   of 2,020, the station route's choke points fall from 21 to 12, and side
+   2 reaches four flags instead of three. Deulemont's fall from 70 to 30
+   and no further: what is left is a straight single-file run of 100 m with
+   no walked ground beside it, which reads as a trench. The five levels the
+   choke rule still refuses (Deulemont, Liberation of Roeselare, Somme
+   Gasattack, Baghdad, Transcarpathia-1944) were then run despite the lint,
+   one seed at 8 and 16 a side:
+
+   | Level | Chokes on the refused side's routes | Stuck seconds a bot-minute | Enemy kills a bot-minute | Captures |
+   |---|---|---|---|---|
+   | bf1918 deulemont | 30 | 23.2, 15.1 | 0.019, 0.066 | 0, 2 |
+   | bf1918 liberation_of_roeselare | 5 to 17 | 16.4, 13.8 | 0.057, 0.009 | 2, 2 |
+   | bf1918 somme_gasattack | 29 | 4.4, 2.8 | 0.039, 0.042 | 0, 0 |
+   | bf1918 baghdad | 7 to 9 | 2.7, 4.0 | 0, 0.019 | 0, 0 |
+   | fhsw transcarpathia-1944 | 13 to 15 | 0.3, 0.7 | 0.019, 0.084 | 0, 1 |
+
+   DICE's levels run to about 1 stuck second a bot-minute. On Deulemont
+   and Roeselare a bot spends a quarter of its time jammed: the choke rule
+   is right about them. It is wrong, or at least too strict, about
+   Transcarpathia. The page figures for the ones played are in
+   `page-matches.md` section 6.
+3. **River Don: not the reach.** On generator 7 it opens 25 ways (617
+   cells) and is still refused: side 2's four spawns have no way on foot to
+   the main ground and the level places six ladders, which neither the walk
+   test nor a bot climbs. Out until bots climb ladders.
 4. **`Object.setTeam` on a placement.** `extract_map.py
    _control_point_report` takes the placement's `Object.setTeam` over the
    template's team. Vosges writes `setTeam 0` on every point and `38585940`

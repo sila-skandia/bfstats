@@ -2,6 +2,7 @@ rem *** Strategic areas: one per control point (botgen) ***
 
 aiStrategicArea.create axisbase 327.8/1785.6 332.8/1790.6 50
 aiStrategicArea.addObjectTypeFlag Base
+aiStrategicArea.setOrderPosition Tank 334.5/1790.5
 aiStrategicArea.setOrderPosition Infantry 333.5/1791.5
 aiStrategicArea.setSide 1
 aiStrategicArea.setTakeable 2 0
@@ -10,6 +11,7 @@ aiStrategicArea.create alliedbase 1786.9/475.2 1791.9/480.2 50
 aiStrategicArea.addNeighbour defenceline1template
 aiStrategicArea.addNeighbour allied_airbasetemplate
 aiStrategicArea.addObjectTypeFlag Base
+aiStrategicArea.setOrderPosition Tank 1793.5/478.5
 aiStrategicArea.setOrderPosition Infantry 1790.5/479.5
 aiStrategicArea.setSide 2
 aiStrategicArea.setTakeable 1 0
@@ -21,6 +23,7 @@ aiStrategicArea.addNeighbour allied_airbasetemplate
 aiStrategicArea.addObjectTypeFlag Flank
 aiStrategicArea.addObjectTypeFlag Close
 aiStrategicArea.addObjectTypeFlag ControlPoint
+aiStrategicArea.setOrderPosition Tank 1431.5/842.5
 aiStrategicArea.setOrderPosition Infantry 1432.5/841.5
 aiStrategicArea.setSide 1
 
@@ -29,6 +32,7 @@ aiStrategicArea.addNeighbour defenceline1template
 aiStrategicArea.addNeighbour defenceline3template
 aiStrategicArea.addObjectTypeFlag Flank
 aiStrategicArea.addObjectTypeFlag ControlPoint
+aiStrategicArea.setOrderPosition Tank 1117.5/1189.5
 aiStrategicArea.setOrderPosition Infantry 1118.5/1188.5
 aiStrategicArea.setSide 1
 
@@ -38,6 +42,7 @@ aiStrategicArea.addObjectTypeFlag Centre
 aiStrategicArea.addObjectTypeFlag StrongPoint
 aiStrategicArea.addObjectTypeFlag Close
 aiStrategicArea.addObjectTypeFlag ControlPoint
+aiStrategicArea.setOrderPosition Tank 881.5/1328.5
 aiStrategicArea.setOrderPosition Infantry 880.5/1327.5
 aiStrategicArea.setSide 1
 
@@ -50,6 +55,7 @@ aiStrategicArea.create allied_airbasetemplate 956.9/412.2 976.9/432.2 50
 aiStrategicArea.addNeighbour alliedbase
 aiStrategicArea.addNeighbour defenceline1template
 aiStrategicArea.addObjectTypeFlag Base
+aiStrategicArea.setOrderPosition Tank 975.5/430.5
 aiStrategicArea.setOrderPosition Infantry 975.5/431.5
 aiStrategicArea.setSide 2
 aiStrategicArea.setTakeable 1 0

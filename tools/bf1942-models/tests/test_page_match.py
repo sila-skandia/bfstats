@@ -134,5 +134,14 @@ class RolloutFloor(unittest.TestCase):
         self.assertEqual(f["ownHandQuiet"]["why"], ["ownHand"])
         self.assertEqual(f["error"]["why"], ["pageErrors"])
 
+
+class OwnHand(unittest.TestCase):
+    def test_own_hand_deaths_are_counted_by_what_the_bot_was_in(self) -> None:
+        # Two wrecks by a jeep's driver (one of them a double), one by its passenger, one boat, one on foot.
+        out = run_harness()
+        self.assertEqual(out["ownHandIn"], {"Willy": 3, "Lcvp": 1, "on foot": 1, "Willy (passenger)": 1})
+        self.assertEqual(list(out["ownHandIn"])[0], "Willy")
+        self.assertEqual(out["ownHandInNone"], {})
+
 if __name__ == "__main__":
     unittest.main()

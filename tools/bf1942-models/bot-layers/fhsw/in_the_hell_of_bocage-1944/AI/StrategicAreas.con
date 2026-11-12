@@ -4,6 +4,7 @@ aiStrategicArea.create axisbase 51.9/958.1 56.9/963.1 50
 aiStrategicArea.addNeighbour village_north
 aiStrategicArea.addNeighbour small_farmtemplate
 aiStrategicArea.addObjectTypeFlag Base
+aiStrategicArea.setOrderPosition Tank 56.9/963.1
 aiStrategicArea.setOrderPosition Infantry 56.9/963.1
 aiStrategicArea.setSide 1
 aiStrategicArea.setTakeable 2 0
@@ -13,6 +14,7 @@ aiStrategicArea.addNeighbour big_farm
 aiStrategicArea.addNeighbour small_farmtemplate
 aiStrategicArea.addNeighbour village_south
 aiStrategicArea.addObjectTypeFlag Base
+aiStrategicArea.setOrderPosition Tank 711.4/119.7
 aiStrategicArea.setOrderPosition Infantry 711.4/119.7
 aiStrategicArea.setSide 2
 aiStrategicArea.setTakeable 1 0
@@ -25,6 +27,7 @@ aiStrategicArea.addNeighbour village_south
 aiStrategicArea.addObjectTypeFlag Centre
 aiStrategicArea.addObjectTypeFlag Close
 aiStrategicArea.addObjectTypeFlag ControlPoint
+aiStrategicArea.setOrderPosition Tank 503.5/547.5
 aiStrategicArea.setOrderPosition Infantry 502.5/548.5
 aiStrategicArea.setSide 1
 
@@ -36,6 +39,7 @@ aiStrategicArea.addNeighbour village_south
 aiStrategicArea.addObjectTypeFlag Flank
 aiStrategicArea.addObjectTypeFlag Close
 aiStrategicArea.addObjectTypeFlag ControlPoint
+aiStrategicArea.setOrderPosition Tank 141.5/491.5
 aiStrategicArea.setOrderPosition Infantry 140.5/490.5
 aiStrategicArea.setSide 1
 
@@ -48,6 +52,7 @@ aiStrategicArea.addNeighbour village_south
 aiStrategicArea.addObjectTypeFlag Centre
 aiStrategicArea.addObjectTypeFlag StrongPoint
 aiStrategicArea.addObjectTypeFlag ControlPoint
+aiStrategicArea.setOrderPosition Tank 368.5/569.5
 aiStrategicArea.setOrderPosition Infantry 368.5/568.5
 aiStrategicArea.setSide 1
 
@@ -58,5 +63,6 @@ aiStrategicArea.addNeighbour village_north
 aiStrategicArea.addNeighbour small_farmtemplate
 aiStrategicArea.addObjectTypeFlag Flank
 aiStrategicArea.addObjectTypeFlag ControlPoint
+aiStrategicArea.setOrderPosition Tank 162.5/377.5
 aiStrategicArea.setOrderPosition Infantry 161.5/376.5
 aiStrategicArea.setSide 1

@@ -1,6 +1,6 @@
 {
  "generator": "botgen",
- "version": 5,
+ "version": 7,
  "mod": "bf1918",
  "level": "carriere",
  "objectSpawners": 43,
@@ -17,15 +17,11 @@
  "botSpawnsExcluded": [
   "frz_hill1",
   "reapir2",
-  "frzhill_Spawn2",
-  "frzhill_Spawn3",
   "frzhill_Spawn4",
   "frzhill_Spawn5",
   "frzhill_Spawn6",
   "frzhill_Spawn7",
-  "frzhill_Spawn11",
-  "frzhill_Spawn12",
-  "frzhill_Spawn13"
+  "frzhill_Spawn11"
  ],
  "walkMap": {
   "source": "walk test",
@@ -68,8 +64,72 @@
     493
    ],
    [
+    598,
+    619
+   ],
+   [
+    599,
+    619
+   ],
+   [
+    600,
+    619
+   ],
+   [
+    601,
+    619
+   ],
+   [
+    602,
+    619
+   ],
+   [
+    603,
+    619
+   ],
+   [
+    596,
+    620
+   ],
+   [
+    597,
+    620
+   ],
+   [
+    598,
+    620
+   ],
+   [
+    599,
+    620
+   ],
+   [
+    600,
+    620
+   ],
+   [
     601,
     620
+   ],
+   [
+    602,
+    620
+   ],
+   [
+    603,
+    620
+   ],
+   [
+    595,
+    621
+   ],
+   [
+    596,
+    621
+   ],
+   [
+    597,
+    621
    ],
    [
     598,
@@ -82,6 +142,34 @@
    [
     601,
     621
+   ],
+   [
+    602,
+    621
+   ],
+   [
+    603,
+    621
+   ],
+   [
+    593,
+    622
+   ],
+   [
+    594,
+    622
+   ],
+   [
+    595,
+    622
+   ],
+   [
+    596,
+    622
+   ],
+   [
+    597,
+    622
    ],
    [
     598,
@@ -136,6 +224,70 @@
     623
    ],
    [
+    589,
+    624
+   ],
+   [
+    590,
+    624
+   ],
+   [
+    591,
+    624
+   ],
+   [
+    592,
+    624
+   ],
+   [
+    593,
+    624
+   ],
+   [
+    594,
+    624
+   ],
+   [
+    588,
+    625
+   ],
+   [
+    589,
+    625
+   ],
+   [
+    590,
+    625
+   ],
+   [
+    591,
+    625
+   ],
+   [
+    592,
+    625
+   ],
+   [
+    581,
+    631
+   ],
+   [
+    582,
+    631
+   ],
+   [
+    580,
+    632
+   ],
+   [
+    581,
+    632
+   ],
+   [
+    582,
+    632
+   ],
+   [
     578,
     633
    ],
@@ -148,20 +300,80 @@
     633
    ],
    [
+    581,
+    633
+   ],
+   [
+    582,
+    633
+   ],
+   [
     578,
     634
+   ],
+   [
+    579,
+    634
+   ],
+   [
+    580,
+    634
+   ],
+   [
+    581,
+    634
+   ],
+   [
+    577,
+    635
    ],
    [
     578,
     635
    ],
    [
-    578,
+    579,
+    635
+   ],
+   [
+    580,
+    635
+   ],
+   [
+    576,
+    636
+   ],
+   [
+    577,
     636
    ],
    [
     578,
+    636
+   ],
+   [
+    579,
+    636
+   ],
+   [
+    576,
     637
+   ],
+   [
+    577,
+    637
+   ],
+   [
+    578,
+    637
+   ],
+   [
+    576,
+    638
+   ],
+   [
+    577,
+    638
    ],
    [
     578,
@@ -170,6 +382,38 @@
    [
     579,
     638
+   ],
+   [
+    576,
+    639
+   ],
+   [
+    577,
+    639
+   ],
+   [
+    576,
+    640
+   ],
+   [
+    577,
+    640
+   ],
+   [
+    575,
+    644
+   ],
+   [
+    575,
+    645
+   ],
+   [
+    576,
+    645
+   ],
+   [
+    577,
+    645
    ],
    [
     575,
@@ -188,8 +432,40 @@
     646
    ],
    [
+    575,
+    647
+   ],
+   [
+    576,
+    647
+   ],
+   [
+    577,
+    647
+   ],
+   [
     578,
     647
+   ],
+   [
+    575,
+    648
+   ],
+   [
+    576,
+    648
+   ],
+   [
+    577,
+    648
+   ],
+   [
+    576,
+    649
+   ],
+   [
+    577,
+    649
    ]
   ],
   "ways": [
@@ -209,13 +485,13 @@
     "who": "frzhill_Spawn2",
     "kind": "spawn",
     "way": "drop",
-    "opened": 14
+    "opened": 45
    },
    {
     "who": "frzhill_Spawn3",
     "kind": "spawn",
     "way": "drop",
-    "opened": 3
+    "opened": 6
    },
    {
     "who": "frzhill_Spawn6",
@@ -239,13 +515,13 @@
     "who": "frzhill_Spawn12",
     "kind": "spawn",
     "way": "drop",
-    "opened": 9
+    "opened": 33
    },
    {
     "who": "frzhill_Spawn13",
     "kind": "spawn",
     "way": "drop",
-    "opened": 5
+    "opened": 17
    }
   ],
   "cover": 0.991,
@@ -278,7 +554,7 @@
     ]
    },
    "2": {
-    "spawns": 19,
+    "spawns": 23,
     "flags": [
      "assault_point",
      "center_trenches",
@@ -305,7 +581,7 @@
  },
  "inputs": {
   "controlPoints": "fe2bc3caece806e346d7a2b6df964b8988cba274cec51a8c60085f2c456cdedf",
-  "infantryMap": "362d90bea7aa77bf380eeb95094a677d3de90fd07c65ba673b41c68663d8bfff",
+  "infantryMap": "2b87bbf35a74012bdc5d4baa42ef1fb5ece836fe0f99c1488811c1528e1e7fd1",
   "template": "43f8a790471528016570235f76e97dbb2045732458781a5139f37fed68bf98c0"
  },
  "files": {
@@ -315,9 +591,9 @@
   "AI/Strategies.con": "4ce0be59a0d6c5cd530db002fb062c4be8d936bc6ae59bd188803ccaf7869a8d",
   "AI/conditions.con": "68a0c7a8aec69954063147b60fae560b2874884285737aa085efa76597d395aa",
   "AI/prerequisites.con": "4c1f313bc285b228fd6ad03bfd1f44c5b15c8703c31f802eb605bc5f00f88bb5",
-  "Pathfinding/Infantry1Level0Map.raw": "db51141acd44fdf09325eda8c967a3c49c03b55ef678bc948413b90cf6409453",
-  "Pathfinding/Infantry1Level1Map.raw": "a2efcb896875684c95468fefd383722424c1a7920ae10193aebfaddb96667c89",
-  "Pathfinding/Infantry1Level2Map.raw": "fdc6529cf7adf0beca560202f669a69e3e76aac01686be13f186f128c4abf228",
+  "Pathfinding/Infantry1Level0Map.raw": "762296bbda6d6bb42cec72cb9e05fa85846d7fb7113ca190ff696a737217d764",
+  "Pathfinding/Infantry1Level1Map.raw": "652186e6f852b360aac4fc0b2838a155219c773b6b01e9affffd18e89e76cac6",
+  "Pathfinding/Infantry1Level2Map.raw": "8f4104eb265754528d98a37338fb3bd37f6cd5a7912adee95dd02c2ced3a59dc",
   "Pathfinding/Tank0Level0Map.raw": "0fabfd5bca3d21ddfee67ac41dfc068c9ba0b8ce3f56ee49acd9fc41977b71d0",
   "Pathfinding/Tank0Level1Map.raw": "2bcec7af258d6607ac4939f52fc13e436e0465d3189907db2a03cb609b3f2f9a",
   "Pathfinding/Tank0Level2Map.raw": "beba9d991a542183f5ac16736887c9b7efb56e644abeba8539fe41c7cd04fd75"

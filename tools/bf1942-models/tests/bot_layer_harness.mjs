@@ -199,6 +199,9 @@ out.ownerAcceptance = {
   // A level run despite a stacked-floors lint error may be accepted by the owner; any other lint error, or anyone else, may not.
   stacked: batch.acceptVerdict({ ...short(), lintErrors: ['the play surface is stacked floors (3 of 5 capturable flags stand a storey over another)'] }, 'why', '2026-11-12', { owner: true }).accepted.by,
   stackedNotOwner: refuse(() => batch.acceptVerdict({ ...short(), lintErrors: ['the play surface is stacked floors (x)'] }, 'why', '2026-11-12')),
+  // So may one run despite the choke rule; not by anyone else.
+  choked: batch.acceptVerdict({ ...short(), lintErrors: ["side 2's bots have an open route to none of the 5 flags in play"] }, 'why', '2026-11-13', { owner: true }).accepted.by,
+  chokedNotOwner: refuse(() => batch.acceptVerdict({ ...short(), lintErrors: ["side 2's bots have an open route to none of the 5 flags in play"] }, 'why', '2026-11-13')),
   sealed: refuse(() => batch.acceptVerdict({ ...short(), lintErrors: ['side 1 has no spawn with a route to any flag it must take'] }, 'why', '2026-11-12', { owner: true })),
   carried: batch.carryAccepted(noBetterShort, owned).accepted?.by ?? null,
   worse: batch.carryAccepted(short({ outcome: 'no-fight' }), owned).acceptanceWithdrawn?.because ?? null,
@@ -371,6 +374,8 @@ out.walkMap = {
   after: brief(prep.facts), excluded: gen.excludedByWalk(prep.facts),
   reach: Object.fromEntries(prep.facts.flags.map(f => [f.name, gen.flagReach(f).unreachable])),
   sameAgain: Buffer.from(again.pixels).equals(Buffer.from(prep.pixels)) && JSON.stringify(again.opened) === JSON.stringify(prep.opened),
+  // How many rows each opened way spans: the patch's runs west over open ground, the hut's through its door.
+  wide: { patch: new Set(prep.opened.filter(([x]) => x >= 40).map(([, z]) => z)).size, door: new Set(prep.opened.filter(([x]) => x < 40).map(([, z]) => z)).size },
 };
 // The order position: the flag's own nearest free cell when a soldier there is inside the ring, else the cell
 // of the place that is (a pole 4.2 m up with a 5 m radius is a 2.7 m ring on the ground), else none.

@@ -6,26 +6,25 @@
  "bar": "DICE levels on the page, 3 matches each of 600 s, 16 bots: Berlin, Stalingrad, Kharkov, Bocage; 2026-11-11",
  "verdict": "fail",
  "failed": [
-  "teamKillsPerBotMinute",
   "nonEnemyDeathShareWorseSide",
   "enemyKillsPerBotMinute"
  ],
  "checks": [
   {
    "metric": "teamKillsPerBotMinute",
-   "median": 0.0375,
+   "median": 0.0187,
    "bar": "<= 0.025",
-   "pass": false
+   "pass": true
   },
   {
    "metric": "suicidesPerBotMinute",
-   "median": 0.05,
+   "median": 0.0562,
    "bar": "<= 0.0562",
    "pass": true
   },
   {
    "metric": "nonEnemyDeathShareWorseSide",
-   "median": 0.346,
+   "median": 0.45,
    "bar": "<= 0.308",
    "pass": false
   },
@@ -36,7 +35,7 @@
    "pass": false
   }
  ],
- "matches": 2,
+ "matches": 3,
  "rollout": {
   "pass": true,
   "floor": {
@@ -102,6 +101,34 @@
    "teamKillsBySide": {
     "1": 4,
     "2": 2
+   },
+   "oldCode": "played on the bot code of e5003c584 or earlier, before drivers predicted collisions with their own side (3b1ebe45c, live 2026-11-13)"
+  },
+  {
+   "generated": {
+    "version": 5,
+    "template": "few"
+   },
+   "minutes": 10,
+   "tickets": {
+    "1": 62,
+    "2": 86
+   },
+   "capturesTotal": 12,
+   "teamKillsPerBotMinute": 0.0187,
+   "suicidesPerBotMinute": 0.0562,
+   "nonEnemyDeathShareWorseSide": 0.45,
+   "enemyKillsPerBotMinute": 0.1687,
+   "rollout": {
+    "pass": true,
+    "why": [],
+    "enemyKills": 0.1687,
+    "captures": 12,
+    "ownHand": 0.0749
+   },
+   "teamKillsBySide": {
+    "1": 0,
+    "2": 3
    }
   }
  ]

@@ -3,7 +3,9 @@ rem *** Strategic areas: one per control point (botgen) ***
 aiStrategicArea.create allies_basetemplate 1430.8/430 1450.8/450 50
 aiStrategicArea.addNeighbour stationtemplate
 aiStrategicArea.addNeighbour east_mountaintemplate
+aiStrategicArea.addNeighbour towntemplate
 aiStrategicArea.addObjectTypeFlag Base
+aiStrategicArea.setOrderPosition Tank 1450.5/447.5
 aiStrategicArea.setOrderPosition Infantry 1452.5/448.5
 aiStrategicArea.setSide 2
 aiStrategicArea.setTakeable 1 0
@@ -13,18 +15,22 @@ aiStrategicArea.addNeighbour allies_basetemplate
 aiStrategicArea.addNeighbour enemy_territorytemplate
 aiStrategicArea.addNeighbour west_mountaintemplate
 aiStrategicArea.addNeighbour east_mountaintemplate
+aiStrategicArea.addNeighbour towntemplate
 aiStrategicArea.addNeighbour axis_basetemplate
 aiStrategicArea.addObjectTypeFlag Flank
 aiStrategicArea.addObjectTypeFlag Close
 aiStrategicArea.addObjectTypeFlag ControlPoint
+aiStrategicArea.setOrderPosition Tank 1055.5/1106.5
 aiStrategicArea.setOrderPosition Infantry 1054.5/1107.5
 aiStrategicArea.setSide 1
 
 aiStrategicArea.create enemy_territorytemplate 642.9/1098.5 652.9/1108.5 150
 aiStrategicArea.addNeighbour stationtemplate
 aiStrategicArea.addNeighbour west_mountaintemplate
+aiStrategicArea.addNeighbour towntemplate
 aiStrategicArea.addObjectTypeFlag Flank
 aiStrategicArea.addObjectTypeFlag ControlPoint
+aiStrategicArea.setOrderPosition Tank 652.5/1110.5
 aiStrategicArea.setOrderPosition Infantry 651.5/1109.5
 aiStrategicArea.setSide 1
 
@@ -37,6 +43,7 @@ aiStrategicArea.addNeighbour axis_basetemplate
 aiStrategicArea.addObjectTypeFlag Flank
 aiStrategicArea.addObjectTypeFlag Close
 aiStrategicArea.addObjectTypeFlag ControlPoint
+aiStrategicArea.setOrderPosition Tank 683.5/1491.5
 aiStrategicArea.setOrderPosition Infantry 682.5/1490.5
 aiStrategicArea.setSide 1
 
@@ -45,8 +52,10 @@ aiStrategicArea.addNeighbour allies_basetemplate
 aiStrategicArea.addNeighbour stationtemplate
 aiStrategicArea.addNeighbour west_mountaintemplate
 aiStrategicArea.addNeighbour north_mountaintemplate
+aiStrategicArea.addNeighbour towntemplate
 aiStrategicArea.addNeighbour axis_basetemplate
 aiStrategicArea.addObjectTypeFlag Base
+aiStrategicArea.setOrderPosition Tank 1327.5/1519.5
 aiStrategicArea.setOrderPosition Infantry 1327.5/1520.5
 aiStrategicArea.setSide 1
 aiStrategicArea.setTakeable 2 0
@@ -56,14 +65,22 @@ aiStrategicArea.addNeighbour west_mountaintemplate
 aiStrategicArea.addNeighbour east_mountaintemplate
 aiStrategicArea.addNeighbour axis_basetemplate
 aiStrategicArea.addObjectTypeFlag Base
-aiStrategicArea.setOrderPosition Infantry 1092.5/1672.5
+aiStrategicArea.setOrderPosition Tank 1092.5/1672.5
+aiStrategicArea.setOrderPosition Infantry 1092.5/1691.5
 aiStrategicArea.setSide 1
 aiStrategicArea.setTakeable 2 0
 
-aiStrategicArea.create towntemplate 1158.7/787.6 1166.7/795.6 10
+aiStrategicArea.create towntemplate 1158.7/787.6 1166.7/795.6 150
+aiStrategicArea.addNeighbour allies_basetemplate
+aiStrategicArea.addNeighbour stationtemplate
+aiStrategicArea.addNeighbour enemy_territorytemplate
+aiStrategicArea.addNeighbour east_mountaintemplate
+aiStrategicArea.addObjectTypeFlag Flank
+aiStrategicArea.addObjectTypeFlag Close
+aiStrategicArea.addObjectTypeFlag ControlPoint
+aiStrategicArea.setOrderPosition Tank 1164.5/793.5
+aiStrategicArea.setOrderPosition Infantry 1166.7/795.6
 aiStrategicArea.setSide 1
-aiStrategicArea.setTakeable 1 0
-aiStrategicArea.setTakeable 2 0
 
 aiStrategicArea.create axis_basetemplate 833.8/1663.4 853.8/1683.4 50
 aiStrategicArea.addNeighbour stationtemplate
@@ -71,6 +88,7 @@ aiStrategicArea.addNeighbour west_mountaintemplate
 aiStrategicArea.addNeighbour east_mountaintemplate
 aiStrategicArea.addNeighbour north_mountaintemplate
 aiStrategicArea.addObjectTypeFlag Base
+aiStrategicArea.setOrderPosition Tank 855.5/1683.5
 aiStrategicArea.setOrderPosition Infantry 854.5/1682.5
 aiStrategicArea.setSide 1
 aiStrategicArea.setTakeable 2 0

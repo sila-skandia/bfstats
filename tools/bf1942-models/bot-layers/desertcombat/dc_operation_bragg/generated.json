@@ -1,6 +1,6 @@
 {
  "generator": "botgen",
- "version": 5,
+ "version": 6,
  "mod": "DesertCombat",
  "level": "dc_operation_bragg",
  "objectSpawners": 72,
@@ -11,7 +11,7 @@
   "inPlay": 3,
   "rule": "3 capturable flags in play, at most 3"
  },
- "scope": "on foot: infantry order positions only, no search maps, no co-op layer",
+ "scope": "an infantry map from the page painter with the walk test's ways out opened, a Tank0 map from the page painter, infantry order positions, no strategic maps, no co-op layer",
  "unreachable": [],
  "unreachableReasons": {},
  "botSpawnsExcluded": [
@@ -19,46 +19,927 @@
   "oil_1",
   "oil_2",
   "oil_3",
-  "oil_4",
   "oil_5",
-  "oil_6",
-  "oil_8",
-  "oil_9",
-  "oil_10",
-  "airbase3",
   "airbase4",
-  "airbase5",
   "airbase7",
-  "airbase9",
-  "jalibah5",
-  "jalibah9",
   "jalibah10",
-  "kam1",
   "kam3",
-  "kam4",
-  "usahq1",
-  "usahq2",
-  "usahq3",
-  "usahq4",
-  "usahq5",
-  "usahq6",
   "airbase16",
   "rhibarea1"
  ],
  "walkMap": {
   "source": "page painter",
   "engine": "none",
-  "opened": [],
-  "ways": [],
-  "cover": 0.816,
+  "vehicleMap": "page painter",
+  "vehicleBrush": 1.5,
+  "vehicleBrushes": [
+   {
+    "brush": 3,
+    "flagsOn": 4,
+    "spawnersOn": 25,
+    "pieces": 21,
+    "main": 1446891
+   },
+   {
+    "brush": 2.5,
+    "flagsOn": 5,
+    "spawnersOn": 41,
+    "pieces": 27,
+    "main": 1783553
+   },
+   {
+    "brush": 2,
+    "flagsOn": 5,
+    "spawnersOn": 49,
+    "pieces": 20,
+    "main": 1935026
+   },
+   {
+    "brush": 1.5,
+    "flagsOn": 5,
+    "spawnersOn": 54,
+    "pieces": 21,
+    "main": 2025723
+   }
+  ],
+  "opened": [
+   [
+    515,
+    307
+   ],
+   [
+    516,
+    307
+   ],
+   [
+    517,
+    307
+   ],
+   [
+    518,
+    307
+   ],
+   [
+    519,
+    307
+   ],
+   [
+    520,
+    307
+   ],
+   [
+    520,
+    308
+   ],
+   [
+    520,
+    309
+   ],
+   [
+    471,
+    310
+   ],
+   [
+    472,
+    310
+   ],
+   [
+    473,
+    310
+   ],
+   [
+    474,
+    310
+   ],
+   [
+    477,
+    310
+   ],
+   [
+    520,
+    310
+   ],
+   [
+    474,
+    311
+   ],
+   [
+    475,
+    311
+   ],
+   [
+    476,
+    311
+   ],
+   [
+    520,
+    311
+   ],
+   [
+    520,
+    312
+   ],
+   [
+    521,
+    312
+   ],
+   [
+    522,
+    312
+   ],
+   [
+    523,
+    312
+   ],
+   [
+    524,
+    312
+   ],
+   [
+    525,
+    312
+   ],
+   [
+    526,
+    312
+   ],
+   [
+    527,
+    312
+   ],
+   [
+    528,
+    312
+   ],
+   [
+    436,
+    386
+   ],
+   [
+    436,
+    387
+   ],
+   [
+    436,
+    388
+   ],
+   [
+    1145,
+    661
+   ],
+   [
+    1145,
+    662
+   ],
+   [
+    1145,
+    663
+   ],
+   [
+    1145,
+    664
+   ],
+   [
+    1121,
+    676
+   ],
+   [
+    1121,
+    677
+   ],
+   [
+    1121,
+    678
+   ],
+   [
+    1146,
+    681
+   ],
+   [
+    1146,
+    682
+   ],
+   [
+    1146,
+    683
+   ],
+   [
+    1137,
+    702
+   ],
+   [
+    1137,
+    703
+   ],
+   [
+    1137,
+    704
+   ],
+   [
+    1099,
+    709
+   ],
+   [
+    1099,
+    710
+   ],
+   [
+    1099,
+    711
+   ],
+   [
+    1110,
+    728
+   ],
+   [
+    1110,
+    729
+   ],
+   [
+    1110,
+    730
+   ],
+   [
+    544,
+    899
+   ],
+   [
+    544,
+    900
+   ],
+   [
+    544,
+    901
+   ],
+   [
+    544,
+    902
+   ],
+   [
+    537,
+    903
+   ],
+   [
+    538,
+    903
+   ],
+   [
+    539,
+    903
+   ],
+   [
+    540,
+    903
+   ],
+   [
+    541,
+    903
+   ],
+   [
+    542,
+    903
+   ],
+   [
+    543,
+    903
+   ],
+   [
+    544,
+    903
+   ],
+   [
+    537,
+    904
+   ],
+   [
+    544,
+    904
+   ],
+   [
+    537,
+    905
+   ],
+   [
+    544,
+    905
+   ],
+   [
+    536,
+    906
+   ],
+   [
+    537,
+    906
+   ],
+   [
+    544,
+    906
+   ],
+   [
+    535,
+    907
+   ],
+   [
+    536,
+    907
+   ],
+   [
+    544,
+    907
+   ],
+   [
+    534,
+    908
+   ],
+   [
+    535,
+    908
+   ],
+   [
+    544,
+    908
+   ],
+   [
+    544,
+    909
+   ],
+   [
+    544,
+    910
+   ],
+   [
+    544,
+    911
+   ],
+   [
+    544,
+    912
+   ],
+   [
+    544,
+    913
+   ],
+   [
+    544,
+    914
+   ],
+   [
+    544,
+    915
+   ],
+   [
+    543,
+    916
+   ],
+   [
+    544,
+    916
+   ],
+   [
+    525,
+    951
+   ],
+   [
+    526,
+    951
+   ],
+   [
+    527,
+    951
+   ],
+   [
+    527,
+    952
+   ],
+   [
+    527,
+    953
+   ],
+   [
+    527,
+    954
+   ],
+   [
+    528,
+    954
+   ],
+   [
+    530,
+    954
+   ],
+   [
+    514,
+    959
+   ],
+   [
+    513,
+    960
+   ],
+   [
+    514,
+    960
+   ],
+   [
+    512,
+    961
+   ],
+   [
+    513,
+    961
+   ],
+   [
+    524,
+    961
+   ],
+   [
+    512,
+    962
+   ],
+   [
+    524,
+    962
+   ],
+   [
+    508,
+    963
+   ],
+   [
+    509,
+    963
+   ],
+   [
+    510,
+    963
+   ],
+   [
+    511,
+    963
+   ],
+   [
+    512,
+    963
+   ],
+   [
+    524,
+    963
+   ],
+   [
+    525,
+    963
+   ],
+   [
+    1072,
+    1167
+   ],
+   [
+    1073,
+    1167
+   ],
+   [
+    1070,
+    1168
+   ],
+   [
+    1071,
+    1168
+   ],
+   [
+    1072,
+    1168
+   ],
+   [
+    1073,
+    1168
+   ],
+   [
+    1074,
+    1168
+   ],
+   [
+    1074,
+    1169
+   ],
+   [
+    1045,
+    1205
+   ],
+   [
+    1046,
+    1205
+   ],
+   [
+    1047,
+    1205
+   ],
+   [
+    1048,
+    1205
+   ],
+   [
+    1049,
+    1205
+   ],
+   [
+    1045,
+    1206
+   ],
+   [
+    1045,
+    1207
+   ],
+   [
+    1045,
+    1208
+   ],
+   [
+    1045,
+    1209
+   ],
+   [
+    1045,
+    1210
+   ],
+   [
+    1045,
+    1211
+   ],
+   [
+    1045,
+    1212
+   ],
+   [
+    1045,
+    1213
+   ],
+   [
+    1045,
+    1214
+   ],
+   [
+    1045,
+    1215
+   ],
+   [
+    1045,
+    1216
+   ],
+   [
+    1045,
+    1217
+   ],
+   [
+    1045,
+    1218
+   ],
+   [
+    1045,
+    1219
+   ],
+   [
+    1045,
+    1220
+   ],
+   [
+    1045,
+    1221
+   ],
+   [
+    1058,
+    1756
+   ],
+   [
+    1058,
+    1757
+   ],
+   [
+    1059,
+    1757
+   ],
+   [
+    1059,
+    1758
+   ],
+   [
+    1059,
+    1759
+   ],
+   [
+    1059,
+    1760
+   ],
+   [
+    1059,
+    1761
+   ],
+   [
+    1059,
+    1762
+   ],
+   [
+    1059,
+    1763
+   ],
+   [
+    1059,
+    1764
+   ],
+   [
+    1059,
+    1765
+   ],
+   [
+    1059,
+    1766
+   ],
+   [
+    1059,
+    1767
+   ],
+   [
+    1059,
+    1768
+   ],
+   [
+    1059,
+    1769
+   ],
+   [
+    1059,
+    1770
+   ],
+   [
+    1060,
+    1770
+   ],
+   [
+    1060,
+    1771
+   ],
+   [
+    1061,
+    1771
+   ],
+   [
+    1062,
+    1771
+   ],
+   [
+    1063,
+    1771
+   ],
+   [
+    1064,
+    1771
+   ],
+   [
+    1065,
+    1771
+   ],
+   [
+    1066,
+    1771
+   ],
+   [
+    1067,
+    1771
+   ],
+   [
+    1068,
+    1771
+   ],
+   [
+    1069,
+    1771
+   ],
+   [
+    1070,
+    1771
+   ],
+   [
+    1071,
+    1771
+   ],
+   [
+    1110,
+    1806
+   ],
+   [
+    1111,
+    1806
+   ],
+   [
+    1112,
+    1806
+   ],
+   [
+    1113,
+    1806
+   ],
+   [
+    1109,
+    1807
+   ],
+   [
+    1110,
+    1807
+   ],
+   [
+    1109,
+    1808
+   ],
+   [
+    1109,
+    1809
+   ],
+   [
+    1109,
+    1810
+   ],
+   [
+    1109,
+    1811
+   ],
+   [
+    1109,
+    1812
+   ],
+   [
+    1109,
+    1813
+   ],
+   [
+    1110,
+    1813
+   ],
+   [
+    1111,
+    1813
+   ],
+   [
+    1112,
+    1813
+   ]
+  ],
+  "ways": [
+   {
+    "who": "airbase",
+    "kind": "spawn",
+    "way": "none",
+    "opened": 0
+   },
+   {
+    "who": "oil_3",
+    "kind": "spawn",
+    "way": "jump",
+    "opened": 0
+   },
+   {
+    "who": "oil_4",
+    "kind": "spawn",
+    "way": "walk",
+    "opened": 30
+   },
+   {
+    "who": "oil_6",
+    "kind": "spawn",
+    "way": "walk",
+    "opened": 8
+   },
+   {
+    "who": "oil_8",
+    "kind": "spawn",
+    "way": "walk",
+    "opened": 4
+   },
+   {
+    "who": "oil_9",
+    "kind": "spawn",
+    "way": "walk",
+    "opened": 11
+   },
+   {
+    "who": "oil_10",
+    "kind": "spawn",
+    "way": "walk",
+    "opened": 4
+   },
+   {
+    "who": "airbase3",
+    "kind": "spawn",
+    "way": "walk",
+    "opened": 3
+   },
+   {
+    "who": "airbase5",
+    "kind": "spawn",
+    "way": "walk",
+    "opened": 8
+   },
+   {
+    "who": "airbase7",
+    "kind": "spawn",
+    "way": "none",
+    "opened": 0
+   },
+   {
+    "who": "airbase9",
+    "kind": "spawn",
+    "way": "walk",
+    "opened": 19
+   },
+   {
+    "who": "jalibah5",
+    "kind": "spawn",
+    "way": "walk",
+    "opened": 15
+   },
+   {
+    "who": "jalibah9",
+    "kind": "spawn",
+    "way": "walk",
+    "opened": 29
+   },
+   {
+    "who": "jalibah10",
+    "kind": "spawn",
+    "way": "none",
+    "opened": 0
+   },
+   {
+    "who": "kam1",
+    "kind": "spawn",
+    "way": "walk",
+    "opened": 21
+   },
+   {
+    "who": "kam3",
+    "kind": "spawn",
+    "way": "none",
+    "opened": 0
+   },
+   {
+    "who": "kam4",
+    "kind": "spawn",
+    "way": "walk",
+    "opened": 8
+   },
+   {
+    "who": "usahq1",
+    "kind": "spawn",
+    "way": "walk",
+    "opened": 4
+   },
+   {
+    "who": "usahq2",
+    "kind": "spawn",
+    "way": "walk",
+    "opened": 3
+   },
+   {
+    "who": "usahq3",
+    "kind": "spawn",
+    "way": "walk",
+    "opened": 3
+   },
+   {
+    "who": "usahq4",
+    "kind": "spawn",
+    "way": "walk",
+    "opened": 3
+   },
+   {
+    "who": "usahq5",
+    "kind": "spawn",
+    "way": "walk",
+    "opened": 3
+   },
+   {
+    "who": "usahq6",
+    "kind": "spawn",
+    "way": "walk",
+    "opened": 3
+   },
+   {
+    "who": "airbase16",
+    "kind": "spawn",
+    "way": "none",
+    "opened": 0
+   },
+   {
+    "who": "rhibarea1",
+    "kind": "spawn",
+    "way": "none",
+    "opened": 0
+   }
+  ],
+  "cover": 0.817,
   "floors": {
    "stacked": false,
    "twoFloorShare": 0.003,
    "raised": [],
    "reason": null
   },
-  "capped": true,
-  "joined": 4
+  "capped": true
  },
  "routeProbe": {
   "chokeMax": 4,
@@ -67,7 +948,7 @@
   "oneSided": {},
   "sides": {
    "1": {
-    "spawns": 8,
+    "spawns": 10,
     "flags": [
      "khamisiyah",
      "oil_pump_station",
@@ -75,7 +956,7 @@
     ]
    },
    "2": {
-    "spawns": 6,
+    "spawns": 9,
     "flags": [
      "khamisiyah",
      "oil_pump_station",
@@ -84,11 +965,11 @@
    }
   },
   "chokes": {
-   "us_armor_hq:1": 2,
+   "us_armor_hq:1": 3,
    "us_armor_hq:2": 5,
    "oil_pump_station:1": 0,
-   "oil_pump_station:2": 3,
-   "khamisiyah:1": 2,
+   "oil_pump_station:2": 2,
+   "khamisiyah:1": 3,
    "khamisiyah:2": 3
   },
   "late": {},
@@ -96,14 +977,21 @@
  },
  "inputs": {
   "controlPoints": "360891446efa8f140508aff376de192b5c80a466558576407794233e92472a19",
-  "infantryMap": "cec8469ac6f819f82b66e6ef5d32096f41c3ee8a07d2534e25d7596eb566b7b8",
+  "infantryMap": "a8e13e0705fda3fd54680f79c141b81be4093533e07c37f287ea037468e11428",
   "template": "bdc0e455f47f91b7e7724e71d7c0c196e839b36946ac3abb7663d725944081e5"
  },
  "files": {
-  "AI.con": "ff65da5cf781f265a28875b6cbca3063a01ed39073ce89fcfbb96af7a80600f7",
-  "AI/StrategicAreas.con": "2bbaa1101a116e870c88d1e2bc70de2ab5df26b19b2a6ed44b06befdb54f03ff",
+  "AI.con": "9c2af3380f8a98fc9447bba0dd137edd65a0a9b694fc58d303e2006c8923332b",
+  "AIpathFinding.con": "9d8080cdfa7605961969aa126519b03be9691bd604ac76aef50166d81215edd2",
+  "AI/StrategicAreas.con": "857cbd7c6236f305cf06898168b6727e0875c19be0736b1f75235f9a5a994df3",
   "AI/Strategies.con": "13da4dc35872dd4b5798a066f4425bdc824cfd61f31093d1808e1202644de52e",
   "AI/conditions.con": "248a04b727c08d696bf0fa9c162bc22c43cde3c75f695892fe1e0f5141519c49",
-  "AI/prerequisites.con": "c96168b5f69860e578f5d26728fd2a2092c4c436e1da49b7d6f4009b65735398"
+  "AI/prerequisites.con": "c96168b5f69860e578f5d26728fd2a2092c4c436e1da49b7d6f4009b65735398",
+  "Pathfinding/Infantry1Level0Map.raw": "1c94c11543a031dd039d57ed29eb049cbddb6c0c5935ec88c27c33ff4668ab74",
+  "Pathfinding/Infantry1Level1Map.raw": "c6dc133b055466e98ac5faa50a4a59dcb97a928e1873a7d0986cde041bed65fc",
+  "Pathfinding/Infantry1Level2Map.raw": "3e439830d1cbf02c163fed1e6de155a7ea2e034eb5422127f16125c3d0466a36",
+  "Pathfinding/Tank0Level0Map.raw": "85893c6141f1aa861348ed457b73aff3885f8c1653272a5a05dac81459301804",
+  "Pathfinding/Tank0Level1Map.raw": "c220346c9aaddcc75425e5e672d7990dc515f6082c495fe2117ce75373831f91",
+  "Pathfinding/Tank0Level2Map.raw": "8af57b3537d21faa9bec4032fc4584d624da633eb0500025dc2f3202b324f5d9"
  }
 }

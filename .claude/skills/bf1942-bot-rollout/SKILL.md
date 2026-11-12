@@ -127,6 +127,7 @@ What to do with the outcome:
 | lint errors | stop: read the errors (below). The level is out unless the error is a tool fault |
 | `unsuitable` | out |
 | lint error is stacked floors and nothing else | run it anyway with `DESPITE_LINT=1 bash $S/screen.sh ...`; `rollout.sh` accepts it as the owner (Raid on Agheila, and GC's Endor, Corellia, Lok, Alaris Prime, Mini Hoth went this way) |
+| lint error is the choke rule and nothing else ("an open route to none of the flags in play") | run it with `DESPITE_LINT=1` too and read `stuckSecondsPerBotMinute` in `$BOT_WORK/runs/<mod>/<level>/verdict.json`: about 1 is DICE's, over 5 the bots are jammed in single file and the level is out (Deulemont 23, Roeselare 16). Under that, `rollout.sh` accepts it as the owner (Transcarpathia-1944, Somme Gasattack) |
 | no verdict, and a `run.mjs` still at work after 15 minutes | a match is hung or crawling: see "Traps" |
 | `pass`, `better-than-nothing`, `no-better-than-nothing`, `no-fight` | send it to the page (step 3), unless both side sizes show no kill at all AND no capture: that level is dead, diagnose or drop |
 
@@ -149,11 +150,14 @@ publishes. `pagebatch.sh` plays one unseeded ten-minute match of each with
   no more than a third of the match's enemy kills;
 - no page error.
 
-`pagebatch.sh` writes over a level's `page.json`. Before replaying a
-level, copy its `page.json` aside, and afterwards put the earlier match
-back in front: `node sim/pagematch.mjs rescore --file <page.json>
---earlier <the copy>` (`--old-code "<why>"` when it was played on other
-bot code and must not count).
+`pagebatch.sh` keeps a level's record: the earlier matches stay in front
+of the new one in `page.json`, and the level stands when any counted match
+passes. After a bot-code change only the new match may decide: set
+`OLD_CODE="<what changed since>"` and every earlier match is kept and
+marked `oldCode`, not counted. A match whose page never loads prints
+`NO RESULT` and leaves the record as it was: play it again. The matches
+are pinned to `spawnTime=wave`, the reinforcement wave every earlier match
+was played on; a hand-typed play link gets single player's 3 s respawn.
 
 At most five page matches at once, and run them in the background (ten
 minutes each, real time). A level that fails is played **once more**
@@ -185,8 +189,8 @@ passes were marginal.
 |---|---|
 | a side sealed in / no spawn with a route | no spawn of that side reaches the main ground on foot. Real on island and ship levels. Before 2026-11-11 it was also a tool fault on every level wider than about 700 m (README 21); that is fixed (`joinThroughMap`). If a plainly open level still reads sealed, suspect the tool first |
 | a side with no spawn at the start, or "the side starts at sea or in its vehicles" | the side's every spawn is on a ship, a landing craft or a vehicle seat when the round begins: out. Since generator 6 the lint counts what the page offers (a spawn's own team, groups no flag claims, carried spawns whose carrier stands at the start), so this is no longer said of a land base |
-| route: N choke points | every route of a side squeezes through single-file cells more often than the choke rule allows. Real on a causeway or a trench; also what a one-cell way the generator opened reads as (Deulemont, Roeselare: README 22.4) |
-| "the Infantry order position is not a free cell" | a generator fault on some capped levels, open (README 22.4): out for now |
+| route: N choke points, or "an open route to none of the flags in play" | every route of a side squeezes through single-file cells more often than the choke rule allows. Real on a causeway or a trench (BF1918's levels). Since generator 7 a way the generator opens is five cells wide over walked ground, so this is no longer the generator's own ways. See the outcome table: such a level may be run despite it |
+| "the Infantry order position is not a free cell" | was a generator fault: a flag within 5 cm of a cell edge was written, to one decimal, into the blocked cell next door. Fixed 2026-11-13 (README 22.4); regenerate the level |
 | no flag a soldier can stand in | every capturable flag is on a roof, a deck or in the air: out |
 | stacked floors (classed out) | a tenth of the play surface has a second walked floor over it: out, by the owner's decision |
 | warning: the walk test ran out of room | a wide level; its grounds were joined through the walk map. Expected, not a fault |
@@ -281,78 +285,100 @@ Every generated level live runs the page's bot code, and so do DICE's.
   0.106 enemy kills a bot-minute before, 0.100 after). Play the fails
   again before reading anything into them.
 - **mesh.bfstats.io answers 403 to a request with no User-Agent.**
+- **Never fetch level trees or publish while page matches play.** A tree
+  fetch starves the page of its assets: on 2026-11-12 fifteen matches timed
+  out in one queue. Screens are CPU only and can run beside matches, on
+  levels that are not in play (`pagebatch.sh` moves a level's `page.json`
+  aside while its match plays, so do not commit or regenerate that folder
+  until the batch has printed).
+- **`status.py` takes over two minutes.** Run it once into a file and read
+  the file.
+- **A regenerated level is a new level to the page.** Its matches on the
+  old layer are marked with `OLD_CODE` and do not count, for it or against
+  it; compare old and new only between matches on the same bot code.
+- **The repo's `verdict.json` keeps no figures.** The screen's kills and
+  captures by side size are in `$BOT_WORK/runs/<mod>/<level>/verdict.json`
+  (`sizes[n].checks[].metric` and `.median`), which is scratch.
 - **Scratch is not durable.** Anything a later session needs goes in the
   repo: layers, verdicts, page.json, scripts, notes.
 
-## Where it stood at the end of 2026-11-12
+## Where it stood on 2026-11-13
 
-64 levels live (`python3 $S/live.py`): the vanilla tree 19 (18 community,
-Aberdeen), FHSW 19, Galactic Conquest 9, Desert Combat 6, BF1918 4, Secret
-Weapons 3, Road to Rome 2, FH 1, FHSWEurope 1. Of the 248 published levels
-with no AI of their own, 59 more were played on the page and turned down
-and 125 are out with a reason. None is waiting:
-`features/bot-map-generation/status-2026-11-12.md` lists every one, and
-`python3 $S/status.py` gives today's state.
+68 levels live (`python3 $S/live.py`): FHSW 24, the vanilla tree 16 (15
+community, Aberdeen), Desert Combat 7, Galactic Conquest 7, BF1918 6,
+Secret Weapons 3, Road to Rome 2, FH 2, FHSWEurope 1. The day's record is
+`page-matches.md` section 6 ("2026-11-13"), and `python3 $S/status.py`
+gives today's state of every level.
 
-The day's record is `page-matches.md` section 6 ("The rest of
-2026-11-12"). The floor's own-hand clause changed that day: at most 0.10
-deaths a bot-minute by a bot's own or its side's hand, or no more than a
-third of the match's enemy kills (DICE's Berlin and Kharkov run to 0.31).
+**The owner's priority, said that day: the mods first, the community map
+pack later.** The community levels with odd names (the jeep bowls and
+races) "don't sound like bot friendly maps, or at least need some custom
+mod logic to actually race". Do not spend matches, diagnosis or generator
+work on a community level while a mod's level is open, and do not lead a
+report with them. The ones live and passing stay as they are.
 
 **Before anything else: more bot code is on its way.** The retail-parity
-session told this one on 2026-11-12 that a second set of bot changes was
-still local (bursts on retail's 12-tick clock, medics healing, respawns on
-the reinforcement wave, vehicle weighting, hulls running soldiers over).
-When `git log -- tools/bf1942-models/viewer/bot-*.js` shows it and it is
-live, every live generated level gets one page match on it ("When bot
-code changes", step 5) before any other result is trusted.
+session is landing one large commit (radio, repairs, seat requests,
+contact avoidance, hull TakeCover/Scout/Roam, grenade throws, sighting
+decay, and `viewer/bot-rows.js botKind`: a bot flies a hull only when its
+AI template is an aircraft's). It will message the hash. When
+`git log -- tools/bf1942-models/viewer/bot-*.js` shows it and it is live:
 
-**What to do next, best lead first.**
+1. Replay GC's Endor, BCanyon, Lok, Alaris Prime and Mini Wasteland first.
+   They failed on own-hand deaths that were one vehicle: the Speederbike
+   hovers on plane-type engines, the bots flew it as a plane and left the
+   level at 109 m/s (16 of 17 suicides on Endor, 52 of 61 on Lok). With
+   `botKind` fixed the runner's own-hand deaths on Mini Wasteland fall
+   from 0.083 to 0.025 a bot-minute. A pass gets its flag back.
+2. Then every live level once, with `OLD_CODE` set ("When bot code
+   changes", step 5).
 
-1. **Regenerate the turned-down levels on generator 6 and replay them.**
-   Generator 6 (README 22) changes the layers of wide levels a great deal:
-   BF1918's roye goes from 1 flag in play to 3 and from 18 excluded spawns
-   to 2. A run over 14 turned-down levels was stopped at the end of the
-   day and put back, so nothing of it is in the repo. Of those 14 the
-   layer's AI files changed for roye, saint_quentin_canal,
-   fht_meuse_argonne_offensive, dc_medina_ridge, dc_operation_bragg,
-   way_to_paris-1946, gazaps-1945 and pegasus (FHSW); in the runner
-   mauerfall, fht_meuse_argonne_offensive, the_bridge and FHSW's pegasus
-   read better than nothing. `screen.sh` regenerates and re-judges (a
-   level's `acceptanceWithdrawn` goes with the old verdict), then
-   `rollout.sh`, `pagebatch.sh`, `menus.sh` as for a new level. Do the
-   same for the four that lost their tags that day: chemin_des_dames, roye,
-   FHSW's monte_cassino-1944, FH's seelow-heights-1945.
-2. **Second matches never played.** Withdrawn after one failed match
-   because the day ended: FHSW's desert_hill, fht_siege_of_zeeland-1940,
-   forgotten_hometown; BF1918's battle_of_the_vosges (10 captures and 0.019
-   enemy kills: the near miss); community tanquilizer; Desert Combat's
-   dc_weapon_bunkers and dc_no_fly_zone_day2. FHSW's
-   battle_over_hokkaido-1945 is published and was never played.
-3. **Galactic Conquest's own-hand deaths.** Endor (0.14 to 0.17 enemy
-   kills, 6 to 12 captures), BCanyon, Lok and Alaris Prime fail only or
-   mainly because the bots die by their own hand at 0.16 to 0.34 a
-   bot-minute. How was not looked at (falls, craft, their own blasts).
-   Endor passes everything else. Still refused by the lint: Bespin and
-   Bespin Night (no side holds a spawn at the start), Judicator, Judicator
-   Push, Kryos, MonCal, Mini Cove, Mos Eisley (a side sealed), Dantooine
-   (no strategic areas), and the space and race levels.
-4. **Generator faults left open** (README 22.4): an order position on a
-   blocked cell (Breaking Point, Invasion of the Philippines); ways opened
-   one cell wide, which the choke rule then refuses (Deulemont,
-   Roeselare); River Don's 150 m way search; `extract_map.py` taking a
-   placement's `Object.setTeam` over the template's.
+**What to do next, best lead first. Mods only.**
+
+1. **The five mod levels refused for stacked floors and nothing else**:
+   FHSW's fht_dinant-1940, kakazu_ridge-1945, korsun_pocket and
+   siegfried_line-1945, BF1918's carriere. Their trees are fetched and a
+   `DESPITE_LINT=1` screen of each was started on 2026-11-13; read
+   `bot-layers/<mod>/<level>/verdict.json`, and send what is not dead to
+   the page.
+2. **The levels with a fight that no flag changes hands in.** FHSW's
+   tunis-1943 (0.11 to 0.14 enemy kills a bot-minute, 4 and 10 captures on
+   the earlier bot code, none on 3b1ebe45c) and the regenerated levels
+   that kill and never capture. `no-live-strategy.md` and
+   `flag-binding.md` are where to start.
+3. **Levels where a side starts at sea or in its vehicles** are the
+   largest refused class in the mods (15 in FHSW, 5 in FHSWEurope): they
+   need bots that sail a landing craft to a beach, which is page bot code,
+   not a layer.
+4. **Generator leads left** (README 22.4): River Don needs bots that climb
+   ladders; `extract_map.py` takes a placement's `Object.setTeam` over the
+   template's; Invasion of the Philippines' East Harbor was not re-linted
+   after the cell-edge fix.
 5. **A match at a third of real time** on a level with a hundred vehicles
-   (forgotten_hometown): the bots re-test a line of sight to every hull
-   they remember on every sense pass (README 22.4, item 5). It is page bot
-   code and costs a player frames too.
-6. **Strasbourg** (community) is held: its archive is not on the machine
-   (`bot-layers/bf1942/strasbourg/held.json`).
+   (forgotten_hometown; README 22.4, item 5): page bot code.
+6. **Strasbourg** (community) is held: its archive is not on the machine.
+
+**What the day settled, so it is not tried again.**
+
+- The choke rule is right about BF1918's Deulemont and Liberation of
+  Roeselare: run despite it, their bots stand stuck 14 to 23 seconds a
+  bot-minute (DICE's levels: about 1). Widening the generator's own ways
+  (generator 7, `WAY_WIDEN`) does not help them: the single file is the
+  level's trenches. Baghdad has no fight.
+- A level run despite the choke rule may be accepted under the owner's
+  rollout (`acceptVerdict`), as one with stacked floors may. Read its
+  stuck seconds first.
+- Westwall-1945 has no fight on generator 6 or 7.
+- `pagematch.mjs` records what each own-hand death was in (`suicidesIn`,
+  `teamKillsIn`). On a level that fails on own-hand deaths, read those two
+  before anything else: one vehicle template at the top is a bot-code
+  fault to hand to the parity session, not a layer fault.
 
 The marginal ones live, to look at first if the owner finds a level not
-worth having: community rennpiste_gebirge (passes one match of two by a
-hair), tl_race, liberation_of_caen; FHSW stalingrad_redsquare,
-manchuria-1945, kushira, westminster-1942; BF1918 lutte_de_honneur,
-hindenburg_line (a walkover); Desert Combat dc_lostvillage and
-dc_oil_fields (one fail in three that day); GC's Ryloth, Tatooine,
-Anchorhead and Mini Dant (flags change hands, little killing).
+worth having: FHSW stalingrad_redsquare, manchuria-1945, westminster-1942,
+operation_coronet-1946 and fht_the_breaking_point-1940 (each passes on
+about 0.05 enemy kills a bot-minute and a capture or two); BF1918
+lutte_de_honneur, hindenburg_line (a walkover) and
+fht_meuse_argonne_offensive; Desert Combat dc_lostvillage and
+dc_oil_fields; FH seelow-heights-1945; GC's Ryloth, Tatooine and
+Anchorhead (flags change hands, little killing).

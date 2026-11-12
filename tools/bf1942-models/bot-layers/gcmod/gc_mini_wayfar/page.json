@@ -1,19 +1,17 @@
 {
  "level": "GC_Mini_Wayfar",
  "mod": "gcmod",
- "url": "https://play.bfstats.io/map.html?map=GC_Mini_Wayfar&team=2&mode=Conquest&mod=gcmod&botCount=16&botSkill=0.75&mute&shots",
+ "url": "https://play.bfstats.io/map.html?map=GC_Mini_Wayfar&team=2&mode=Conquest&mod=gcmod&botCount=16&botSkill=0.75&spawnTime=wave&mute&shots",
  "date": "2026-11-12",
  "bar": "DICE levels on the page, 3 matches each of 600 s, 16 bots: Berlin, Stalingrad, Kharkov, Bocage; 2026-11-11",
- "verdict": "fail",
- "failed": [
-  "teamKillsPerBotMinute"
- ],
+ "verdict": "pass",
+ "failed": [],
  "checks": [
   {
    "metric": "teamKillsPerBotMinute",
-   "median": 0.0312,
+   "median": 0.0062,
    "bar": "<= 0.025",
-   "pass": false
+   "pass": true
   },
   {
    "metric": "suicidesPerBotMinute",
@@ -23,18 +21,18 @@
   },
   {
    "metric": "nonEnemyDeathShareWorseSide",
-   "median": 0.103,
+   "median": 0.021,
    "bar": "<= 0.308",
    "pass": true
   },
   {
    "metric": "enemyKillsPerBotMinute",
-   "median": 0.5625,
+   "median": 0.4625,
    "bar": ">= 0.175",
    "pass": true
   }
  ],
- "matches": 1,
+ "matches": 2,
  "rollout": {
   "pass": true,
   "floor": {
@@ -72,6 +70,34 @@
    "teamKillsBySide": {
     "1": 3,
     "2": 2
+   },
+   "oldCode": "played on the bot code of e5003c584 or earlier, before drivers predicted collisions with their own side (3b1ebe45c, live 2026-11-13)"
+  },
+  {
+   "generated": {
+    "version": 6,
+    "template": "symmetric"
+   },
+   "minutes": 10,
+   "tickets": {
+    "1": 31,
+    "2": 41
+   },
+   "capturesTotal": 18,
+   "teamKillsPerBotMinute": 0.0062,
+   "suicidesPerBotMinute": 0,
+   "nonEnemyDeathShareWorseSide": 0.021,
+   "enemyKillsPerBotMinute": 0.4625,
+   "rollout": {
+    "pass": true,
+    "why": [],
+    "enemyKills": 0.4625,
+    "captures": 18,
+    "ownHand": 0.0062
+   },
+   "teamKillsBySide": {
+    "1": 1,
+    "2": 0
    }
   }
  ]

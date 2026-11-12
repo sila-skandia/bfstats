@@ -1,6 +1,6 @@
 {
  "generator": "botgen",
- "version": 5,
+ "version": 6,
  "mod": "FHSW",
  "level": "in_the_hell_of_bocage-1944",
  "objectSpawners": 69,
@@ -11,42 +11,820 @@
   "inPlay": 4,
   "rule": "4 capturable flags in play, more than 3"
  },
- "scope": "on foot: infantry order positions only, no search maps, no co-op layer",
+ "scope": "an infantry map from the page painter with the walk test's ways out opened, a Tank0 map from the page painter, infantry order positions, no strategic maps, no co-op layer",
  "unreachable": [],
  "unreachableReasons": {},
  "botSpawnsExcluded": [
-  "small_farm1",
-  "small_farm2",
-  "big_farm1",
-  "big_farm2",
   "big_farm3",
-  "windmill1",
   "windmill2",
-  "windmill3",
-  "village_south1",
   "village_south2",
   "village_south3",
-  "village_south4",
   "village_north1",
-  "village_north2",
   "village_north3",
   "village_north4",
   "axis_home_base2",
-  "axis_home_base3",
   "axis_home_base4",
-  "allied_home_base1",
-  "allied_home_base3",
-  "allied_home_base4",
-  "gerriver1",
-  "gerriver2",
-  "gerriver3",
-  "gerriver4"
+  "allied_home_base1"
  ],
  "walkMap": {
   "source": "page painter",
   "engine": "none",
-  "opened": [],
-  "ways": [],
+  "vehicleMap": "page painter",
+  "vehicleBrush": 1.5,
+  "vehicleBrushes": [
+   {
+    "brush": 3,
+    "flagsOn": 4,
+    "spawnersOn": 22,
+    "pieces": 13,
+    "main": 760688
+   },
+   {
+    "brush": 2.5,
+    "flagsOn": 4,
+    "spawnersOn": 24,
+    "pieces": 9,
+    "main": 780019
+   },
+   {
+    "brush": 2,
+    "flagsOn": 4,
+    "spawnersOn": 24,
+    "pieces": 12,
+    "main": 788067
+   },
+   {
+    "brush": 1.5,
+    "flagsOn": 6,
+    "spawnersOn": 33,
+    "pieces": 13,
+    "main": 806973
+   }
+  ],
+  "opened": [
+   [
+    647,
+    50
+   ],
+   [
+    647,
+    51
+   ],
+   [
+    647,
+    52
+   ],
+   [
+    647,
+    53
+   ],
+   [
+    614,
+    112
+   ],
+   [
+    614,
+    113
+   ],
+   [
+    143,
+    360
+   ],
+   [
+    144,
+    360
+   ],
+   [
+    139,
+    361
+   ],
+   [
+    140,
+    361
+   ],
+   [
+    141,
+    361
+   ],
+   [
+    142,
+    361
+   ],
+   [
+    143,
+    361
+   ],
+   [
+    167,
+    379
+   ],
+   [
+    167,
+    380
+   ],
+   [
+    167,
+    381
+   ],
+   [
+    167,
+    382
+   ],
+   [
+    166,
+    383
+   ],
+   [
+    167,
+    383
+   ],
+   [
+    171,
+    383
+   ],
+   [
+    164,
+    384
+   ],
+   [
+    165,
+    384
+   ],
+   [
+    166,
+    384
+   ],
+   [
+    171,
+    384
+   ],
+   [
+    164,
+    385
+   ],
+   [
+    170,
+    385
+   ],
+   [
+    171,
+    385
+   ],
+   [
+    163,
+    386
+   ],
+   [
+    164,
+    386
+   ],
+   [
+    166,
+    386
+   ],
+   [
+    167,
+    386
+   ],
+   [
+    168,
+    386
+   ],
+   [
+    169,
+    386
+   ],
+   [
+    170,
+    386
+   ],
+   [
+    163,
+    387
+   ],
+   [
+    165,
+    387
+   ],
+   [
+    166,
+    387
+   ],
+   [
+    163,
+    388
+   ],
+   [
+    165,
+    388
+   ],
+   [
+    163,
+    389
+   ],
+   [
+    164,
+    389
+   ],
+   [
+    165,
+    389
+   ],
+   [
+    134,
+    497
+   ],
+   [
+    134,
+    498
+   ],
+   [
+    135,
+    498
+   ],
+   [
+    135,
+    499
+   ],
+   [
+    136,
+    499
+   ],
+   [
+    136,
+    500
+   ],
+   [
+    136,
+    501
+   ],
+   [
+    136,
+    502
+   ],
+   [
+    136,
+    503
+   ],
+   [
+    136,
+    504
+   ],
+   [
+    516,
+    504
+   ],
+   [
+    136,
+    505
+   ],
+   [
+    516,
+    505
+   ],
+   [
+    136,
+    506
+   ],
+   [
+    516,
+    506
+   ],
+   [
+    136,
+    507
+   ],
+   [
+    516,
+    507
+   ],
+   [
+    136,
+    508
+   ],
+   [
+    512,
+    508
+   ],
+   [
+    513,
+    508
+   ],
+   [
+    514,
+    508
+   ],
+   [
+    515,
+    508
+   ],
+   [
+    516,
+    508
+   ],
+   [
+    136,
+    509
+   ],
+   [
+    512,
+    509
+   ],
+   [
+    136,
+    510
+   ],
+   [
+    137,
+    510
+   ],
+   [
+    138,
+    510
+   ],
+   [
+    510,
+    510
+   ],
+   [
+    511,
+    510
+   ],
+   [
+    512,
+    510
+   ],
+   [
+    510,
+    511
+   ],
+   [
+    510,
+    512
+   ],
+   [
+    510,
+    513
+   ],
+   [
+    511,
+    513
+   ],
+   [
+    511,
+    514
+   ],
+   [
+    512,
+    514
+   ],
+   [
+    513,
+    514
+   ],
+   [
+    514,
+    514
+   ],
+   [
+    515,
+    514
+   ],
+   [
+    516,
+    514
+   ],
+   [
+    517,
+    514
+   ],
+   [
+    518,
+    514
+   ],
+   [
+    519,
+    514
+   ],
+   [
+    513,
+    554
+   ],
+   [
+    513,
+    555
+   ],
+   [
+    513,
+    556
+   ],
+   [
+    513,
+    557
+   ],
+   [
+    514,
+    557
+   ],
+   [
+    515,
+    557
+   ],
+   [
+    516,
+    557
+   ],
+   [
+    364,
+    558
+   ],
+   [
+    365,
+    558
+   ],
+   [
+    366,
+    558
+   ],
+   [
+    366,
+    559
+   ],
+   [
+    356,
+    560
+   ],
+   [
+    357,
+    560
+   ],
+   [
+    366,
+    560
+   ],
+   [
+    357,
+    561
+   ],
+   [
+    366,
+    561
+   ],
+   [
+    357,
+    562
+   ],
+   [
+    366,
+    562
+   ],
+   [
+    357,
+    563
+   ],
+   [
+    366,
+    563
+   ],
+   [
+    357,
+    564
+   ],
+   [
+    366,
+    564
+   ],
+   [
+    357,
+    565
+   ],
+   [
+    358,
+    565
+   ],
+   [
+    359,
+    565
+   ],
+   [
+    360,
+    565
+   ],
+   [
+    364,
+    565
+   ],
+   [
+    365,
+    565
+   ],
+   [
+    366,
+    565
+   ],
+   [
+    148,
+    691
+   ],
+   [
+    149,
+    691
+   ],
+   [
+    150,
+    691
+   ],
+   [
+    151,
+    691
+   ],
+   [
+    152,
+    691
+   ],
+   [
+    161,
+    703
+   ],
+   [
+    161,
+    704
+   ],
+   [
+    161,
+    705
+   ],
+   [
+    158,
+    706
+   ],
+   [
+    159,
+    706
+   ],
+   [
+    160,
+    706
+   ],
+   [
+    161,
+    706
+   ],
+   [
+    171,
+    711
+   ],
+   [
+    181,
+    711
+   ],
+   [
+    171,
+    712
+   ],
+   [
+    181,
+    712
+   ],
+   [
+    171,
+    713
+   ],
+   [
+    181,
+    713
+   ],
+   [
+    171,
+    714
+   ],
+   [
+    181,
+    714
+   ],
+   [
+    171,
+    715
+   ],
+   [
+    181,
+    715
+   ],
+   [
+    169,
+    716
+   ],
+   [
+    170,
+    716
+   ],
+   [
+    171,
+    716
+   ],
+   [
+    181,
+    716
+   ],
+   [
+    181,
+    717
+   ],
+   [
+    181,
+    718
+   ],
+   [
+    181,
+    719
+   ],
+   [
+    181,
+    720
+   ],
+   [
+    307,
+    760
+   ],
+   [
+    308,
+    760
+   ],
+   [
+    309,
+    760
+   ],
+   [
+    310,
+    760
+   ],
+   [
+    311,
+    760
+   ],
+   [
+    304,
+    761
+   ],
+   [
+    305,
+    761
+   ],
+   [
+    306,
+    761
+   ],
+   [
+    307,
+    761
+   ],
+   [
+    310,
+    761
+   ],
+   [
+    310,
+    762
+   ],
+   [
+    310,
+    763
+   ],
+   [
+    310,
+    764
+   ],
+   [
+    310,
+    765
+   ],
+   [
+    310,
+    766
+   ],
+   [
+    310,
+    767
+   ],
+   [
+    310,
+    768
+   ],
+   [
+    310,
+    769
+   ],
+   [
+    85,
+    966
+   ],
+   [
+    86,
+    966
+   ],
+   [
+    87,
+    966
+   ]
+  ],
+  "ways": [
+   {
+    "who": "small_farm1",
+    "kind": "spawn",
+    "way": "walk",
+    "opened": 22
+   },
+   {
+    "who": "small_farm2",
+    "kind": "spawn",
+    "way": "walk",
+    "opened": 0
+   },
+   {
+    "who": "big_farm1",
+    "kind": "spawn",
+    "way": "drop",
+    "opened": 7
+   },
+   {
+    "who": "big_farm2",
+    "kind": "spawn",
+    "way": "walk",
+    "opened": 26
+   },
+   {
+    "who": "windmill1",
+    "kind": "spawn",
+    "way": "walk",
+    "opened": 11
+   },
+   {
+    "who": "windmill3",
+    "kind": "spawn",
+    "way": "walk",
+    "opened": 7
+   },
+   {
+    "who": "village_south1",
+    "kind": "spawn",
+    "way": "walk",
+    "opened": 7
+   },
+   {
+    "who": "village_south4",
+    "kind": "spawn",
+    "way": "walk",
+    "opened": 29
+   },
+   {
+    "who": "village_north2",
+    "kind": "spawn",
+    "way": "walk",
+    "opened": 18
+   },
+   {
+    "who": "axis_home_base3",
+    "kind": "spawn",
+    "way": "walk",
+    "opened": 3
+   },
+   {
+    "who": "allied_home_base3",
+    "kind": "spawn",
+    "way": "walk",
+    "opened": 4
+   },
+   {
+    "who": "allied_home_base4",
+    "kind": "spawn",
+    "way": "walk",
+    "opened": 2
+   },
+   {
+    "who": "gerriver1",
+    "kind": "spawn",
+    "way": "walk",
+    "opened": 8
+   },
+   {
+    "who": "gerriver2",
+    "kind": "spawn",
+    "way": "walk",
+    "opened": 7
+   },
+   {
+    "who": "gerriver3",
+    "kind": "spawn",
+    "way": "walk",
+    "opened": 5
+   },
+   {
+    "who": "gerriver4",
+    "kind": "spawn",
+    "way": "walk",
+    "opened": 10
+   }
+  ],
   "cover": 0.928,
   "floors": {
    "stacked": false,
@@ -56,8 +834,7 @@
    ],
    "reason": null
   },
-  "capped": true,
-  "joined": 1
+  "capped": true
  },
  "routeProbe": {
   "chokeMax": 4,
@@ -66,7 +843,7 @@
   "oneSided": {},
   "sides": {
    "1": {
-    "spawns": 1,
+    "spawns": 15,
     "flags": [
      "big_farm",
      "small_farmtemplate",
@@ -75,7 +852,7 @@
     ]
    },
    "2": {
-    "spawns": 1,
+    "spawns": 7,
     "flags": [
      "big_farm",
      "small_farmtemplate",
@@ -85,14 +862,14 @@
    }
   },
   "chokes": {
-   "big_farm:1": 3,
+   "big_farm:1": 2,
    "big_farm:2": 0,
-   "village_north:1": 7,
-   "village_north:2": 5,
+   "village_north:1": 4,
+   "village_north:2": 4,
    "small_farmtemplate:1": 3,
    "small_farmtemplate:2": 0,
-   "village_south:1": 6,
-   "village_south:2": 3
+   "village_south:1": 2,
+   "village_south:2": 2
   },
   "late": {},
   "shutLinks": [
@@ -102,14 +879,21 @@
  },
  "inputs": {
   "controlPoints": "f9657a837b7dd1374aaf2172126fb9a1d80e1be770cb3b5bf9382e39875178cc",
-  "infantryMap": "0d56b1da57ef45e9d57b9b4125d98310002e76bd59de044a8c7a344e228a440c",
+  "infantryMap": "984256dc0a222e1e0a8abbb26cc91a29408379c5d53918f1b4fac556bbaa616c",
   "template": "43f8a790471528016570235f76e97dbb2045732458781a5139f37fed68bf98c0"
  },
  "files": {
-  "AI.con": "84b54fdbafe161fd3682345ddef4b1a2f08529643491b9fc45c06500a5cc4522",
-  "AI/StrategicAreas.con": "2aa082cfb9406261d5e90533bdf2c573253354682fc86b143a4ecdb086738804",
+  "AI.con": "3dc94f663ac7545695a38d3670752432e4a5e64efe048dc4b26d578aece3748c",
+  "AIpathFinding.con": "9d8080cdfa7605961969aa126519b03be9691bd604ac76aef50166d81215edd2",
+  "AI/StrategicAreas.con": "3d12b889a034396583e9dd6b4a0cdb6421da8afffc5d009ecf9b93a579740bd0",
   "AI/Strategies.con": "4ce0be59a0d6c5cd530db002fb062c4be8d936bc6ae59bd188803ccaf7869a8d",
   "AI/conditions.con": "68a0c7a8aec69954063147b60fae560b2874884285737aa085efa76597d395aa",
-  "AI/prerequisites.con": "4c1f313bc285b228fd6ad03bfd1f44c5b15c8703c31f802eb605bc5f00f88bb5"
+  "AI/prerequisites.con": "4c1f313bc285b228fd6ad03bfd1f44c5b15c8703c31f802eb605bc5f00f88bb5",
+  "Pathfinding/Infantry1Level0Map.raw": "f04458e050554e7c4128947abc13a257448de2091384a72912487f1addfb4d88",
+  "Pathfinding/Infantry1Level1Map.raw": "d82a53880d1210d8c38b25badc99971aa32665fb75416bd89ff6e2d418e1f7dd",
+  "Pathfinding/Infantry1Level2Map.raw": "4ec6f30be31ce682fc3baed942cb0d8f38d213feb791c29089234b1291d801e5",
+  "Pathfinding/Tank0Level0Map.raw": "4d3b65cdd993b84e325a0b2e2d7605e0be56b8d8f3f375a4f74ead220a0d6c02",
+  "Pathfinding/Tank0Level1Map.raw": "a50d36b50638e4a790bf9aa55ab5b40ce7092fab40ac63376896950266bca5ad",
+  "Pathfinding/Tank0Level2Map.raw": "9c9493c589d7b3a3fd2ed058f5ec3321fd96c2e44103207bb50bd4c4f07fb069"
  }
 }

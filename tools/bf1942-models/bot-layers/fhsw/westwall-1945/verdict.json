@@ -4,23 +4,22 @@
  "outcome": "no-fight",
  "config": "with vehicles",
  "doctrine": "garrison",
- "generatorVersion": 5,
+ "generatorVersion": 7,
  "inputs": {
   "controlPoints": "a46bef49b3c51198d1288cbb415177b334681490f1a6bf2c9cea47031a441517",
-  "infantryMap": "6df9ff81284384af395ae3361f5fbec378fb1fe4ba5f178bf3e175b9acb365d7",
-  "template": "bdc0e455f47f91b7e7724e71d7c0c196e839b36946ac3abb7663d725944081e5"
+  "infantryMap": "cb2e56c4539887368e340f2b639f96af92419098d211f5eb9d2f609cee810a27",
+  "template": "43f8a790471528016570235f76e97dbb2045732458781a5139f37fed68bf98c0"
  },
  "baseline": "DICE layers with vehicles, garrison doctrine: berlin, stalingrad, kharkov, bocage; seeds 1..10, 600 s",
  "bar": {
   "against": "dice",
   "why": "no bar of fhsw's own: DICE's"
  },
- "seeds": 2,
+ "seeds": 1,
  "sizes": {
   "8": {
    "verdict": "fail",
    "failed": [
-    "stuckSecondsPerBotMinute",
     "idleShare",
     "routeFailuresPerBotMinute",
     "redeploysPerBotMinute",
@@ -29,15 +28,15 @@
     "flagCoverage",
     "bothSidesCapture",
     "bothSidesKill",
-    "ticketsBleed",
-    "stuckSecondsPerBotMinuteWorseSide",
     "routeFailuresPerBotMinuteWorseSide",
     "redeploysPerBotMinuteWorseSide",
     "nonEnemyDeathShareWorseSide",
+    "hullStuckSecondsPerDrivingMinute",
+    "hullStuckSecondsPerDrivingMinuteWorseSide",
     "unitsNeverUsedShare"
    ],
    "winners": [
-    2,
+    1,
     0,
     0
    ]
@@ -45,35 +44,33 @@
   "16": {
    "verdict": "fail",
    "failed": [
-    "stuckSecondsPerBotMinute",
     "idleShare",
     "routeFailuresPerBotMinute",
-    "redeploysPerBotMinute",
+    "capturesTotal",
     "enemyKillsPerBotMinute",
     "flagCoverage",
     "bothSidesCapture",
-    "stuckSecondsPerBotMinuteWorseSide",
+    "bothSidesKill",
     "routeFailuresPerBotMinuteWorseSide",
-    "redeploysPerBotMinuteWorseSide",
     "nonEnemyDeathShareWorseSide",
+    "hullStuckSecondsPerDrivingMinute",
+    "hullStuckSecondsPerDrivingMinuteWorseSide",
     "unitsNeverUsedShare",
     "tankSilentShare"
    ],
    "winners": [
-    2,
+    1,
     0,
     0
    ]
   }
  },
- "oneSided": 1,
- "unreachable": [
-  "towntemplate"
- ],
+ "oneSided": null,
+ "unreachable": [],
  "lintErrors": [],
  "acceptanceWithdrawn": {
-  "because": "page match 2026-11-12, after the flag binding: under the rollout floor (0.006 enemy kills a bot-minute, no capture)",
-  "date": "2026-11-12",
-  "was": "Owner's rollout, 2026-11-11: after playing Tunis-1943 against its generated bots"
+  "because": "on the bot code of 3b1ebe45c, one page match on the generator 6 layer (0.013 enemy kills a bot-minute, no capture) and one on the generator 7 layer with its ways widened (no kill, no capture): both under the rollout floor; the runner showed no fight on either",
+  "date": "2026-11-13",
+  "was": "Regenerated on generator 6 with the cell-edge order fix (2026-11-13): the lint p"
  }
 }

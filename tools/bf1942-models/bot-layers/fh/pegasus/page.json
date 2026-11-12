@@ -4,37 +4,35 @@
  "url": "https://play.bfstats.io/map.html?map=Pegasus&team=2&mode=Conquest&mod=fh&botCount=16&botSkill=0.75&spawnTime=wave&mute&shots",
  "date": "2026-11-12",
  "bar": "DICE levels on the page, 3 matches each of 600 s, 16 bots: Berlin, Stalingrad, Kharkov, Bocage; 2026-11-11",
- "verdict": "fail",
- "failed": [
-  "teamKillsPerBotMinute"
- ],
+ "verdict": "pass",
+ "failed": [],
  "checks": [
   {
    "metric": "teamKillsPerBotMinute",
-   "median": 0.0375,
+   "median": 0.0125,
    "bar": "<= 0.025",
-   "pass": false
+   "pass": true
   },
   {
    "metric": "suicidesPerBotMinute",
-   "median": 0.025,
+   "median": 0.0187,
    "bar": "<= 0.0562",
    "pass": true
   },
   {
    "metric": "nonEnemyDeathShareWorseSide",
-   "median": 0.206,
+   "median": 0.167,
    "bar": "<= 0.308",
    "pass": true
   },
   {
    "metric": "enemyKillsPerBotMinute",
-   "median": 0.2812,
+   "median": 0.2187,
    "bar": ">= 0.175",
    "pass": true
   }
  ],
- "matches": 2,
+ "matches": 3,
  "rollout": {
   "pass": true,
   "floor": {
@@ -100,6 +98,34 @@
    "teamKillsBySide": {
     "1": 2,
     "2": 4
+   },
+   "oldCode": "played on the bot code of e5003c584 or earlier, before drivers predicted collisions with their own side (3b1ebe45c, live 2026-11-13)"
+  },
+  {
+   "generated": {
+    "version": 5,
+    "template": "few"
+   },
+   "minutes": 10,
+   "tickets": {
+    "1": 80,
+    "2": 100
+   },
+   "capturesTotal": 3,
+   "teamKillsPerBotMinute": 0.0125,
+   "suicidesPerBotMinute": 0.0187,
+   "nonEnemyDeathShareWorseSide": 0.167,
+   "enemyKillsPerBotMinute": 0.2187,
+   "rollout": {
+    "pass": true,
+    "why": [],
+    "enemyKills": 0.2187,
+    "captures": 3,
+    "ownHand": 0.0312
+   },
+   "teamKillsBySide": {
+    "1": 0,
+    "2": 2
    }
   }
  ]

@@ -7,38 +7,37 @@
  "verdict": "fail",
  "failed": [
   "teamKillsPerBotMinute",
-  "suicidesPerBotMinute",
   "nonEnemyDeathShareWorseSide"
  ],
  "checks": [
   {
    "metric": "teamKillsPerBotMinute",
-   "median": 0.1375,
+   "median": 0.0375,
    "bar": "<= 0.025",
    "pass": false
   },
   {
    "metric": "suicidesPerBotMinute",
-   "median": 0.0687,
+   "median": 0.0125,
    "bar": "<= 0.0562",
-   "pass": false
+   "pass": true
   },
   {
    "metric": "nonEnemyDeathShareWorseSide",
-   "median": 0.429,
+   "median": 0.533,
    "bar": "<= 0.308",
    "pass": false
   },
   {
    "metric": "enemyKillsPerBotMinute",
-   "median": 0.2937,
+   "median": 0.2,
    "bar": ">= 0.175",
    "pass": true
   }
  ],
- "matches": 3,
+ "matches": 5,
  "rollout": {
-  "pass": false,
+  "pass": true,
   "floor": {
    "kills": 0.15,
    "killsWithFlags": 0.03,
@@ -125,6 +124,57 @@
    "teamKillsBySide": {
     "1": 15,
     "2": 7
+   },
+   "oldCode": "played on the bot code of e5003c584 or earlier, before drivers predicted collisions with their own side (3b1ebe45c, live 2026-11-13)"
+  },
+  {
+   "generated": null,
+   "minutes": 10,
+   "tickets": {
+    "1": 96,
+    "2": 93
+   },
+   "capturesTotal": 0,
+   "teamKillsPerBotMinute": 0.0375,
+   "suicidesPerBotMinute": 0.0062,
+   "nonEnemyDeathShareWorseSide": 0.385,
+   "enemyKillsPerBotMinute": 0.1,
+   "rollout": {
+    "pass": false,
+    "why": [
+     "activity"
+    ],
+    "enemyKills": 0.1,
+    "captures": 0,
+    "ownHand": 0.0437
+   },
+   "teamKillsBySide": {
+    "1": 1,
+    "2": 5
+   }
+  },
+  {
+   "generated": null,
+   "minutes": 10,
+   "tickets": {
+    "1": 81,
+    "2": 91
+   },
+   "capturesTotal": 2,
+   "teamKillsPerBotMinute": 0.0375,
+   "suicidesPerBotMinute": 0.0125,
+   "nonEnemyDeathShareWorseSide": 0.533,
+   "enemyKillsPerBotMinute": 0.2,
+   "rollout": {
+    "pass": true,
+    "why": [],
+    "enemyKills": 0.2,
+    "captures": 2,
+    "ownHand": 0.05
+   },
+   "teamKillsBySide": {
+    "1": 0,
+    "2": 6
    }
   }
  ]

@@ -218,6 +218,10 @@ class WalkMapTests(unittest.TestCase):
         self.assertLessEqual(((far[0] - 30) ** 2 + (far[1] + 20) ** 2) ** 0.5, 2.8)
         self.assertIsNone(none)
 
+    def test_an_opened_way_is_five_cells_wide_over_open_ground_and_a_door_stays_a_door(self) -> None:
+        # The walked path's own cells were single file, and the choke rule refused the generator's own ways.
+        self.assertEqual(self.walk["wide"], {"patch": 5, "door": 1})
+
     def test_an_order_position_a_hair_from_a_blocked_cell_is_its_own_cells_centre(self) -> None:
         edge, free_side, inside = self.out["orderOnAnEdge"]
         self.assertEqual(edge, [12.5, -19.5])
@@ -514,6 +518,8 @@ class JudgeTests(unittest.TestCase):
         self.assertIn("unsuitable", own["unsuitable"])
         self.assertEqual(own["stacked"], "owner")
         self.assertIn("lint errors", own["stackedNotOwner"])
+        self.assertEqual(own["choked"], "owner")
+        self.assertIn("lint errors", own["chokedNotOwner"])
         self.assertIn("lint errors", own["sealed"])
         # It stands at the outcome accepted, and goes when the level gets worse.
         self.assertEqual(own["carried"], "owner")

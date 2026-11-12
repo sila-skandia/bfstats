@@ -5,29 +5,37 @@ aiStrategicArea.addNeighbour controlpoint_axis_right_coalmine
 aiStrategicArea.addNeighbour controlpoint_axis_left_village
 aiStrategicArea.addNeighbour gerarifieldnewtemplate_axisbase
 aiStrategicArea.addObjectTypeFlag Base
+aiStrategicArea.setOrderPosition Tank 294.5/968.5
 aiStrategicArea.setOrderPosition Infantry 295.5/967.5
 aiStrategicArea.setSide 1
 aiStrategicArea.setTakeable 2 0
 
-aiStrategicArea.create controlpoint_allies_middle_vallery 1382.2/887.2 1387.2/892.2 10
+aiStrategicArea.create controlpoint_allies_middle_vallery 1382.2/887.2 1387.2/892.2 200
+aiStrategicArea.addNeighbour controlpoint_axis_base_alliesbase
+aiStrategicArea.addNeighbour controlpoint_axis_right_coalmine
+aiStrategicArea.addNeighbour controlpoint_axis_left_village
+aiStrategicArea.addObjectTypeFlag Centre
+aiStrategicArea.addObjectTypeFlag Close
+aiStrategicArea.addObjectTypeFlag ControlPoint
+aiStrategicArea.setOrderPosition Tank 1387.5/894.5
+aiStrategicArea.setOrderPosition Infantry 1387.5/891.5
 aiStrategicArea.setSide 2
-aiStrategicArea.setTakeable 1 0
-aiStrategicArea.setTakeable 2 0
 
 aiStrategicArea.create controlpoint_axis_base_alliesbase 1603.9/849.3 1608.9/854.3 50
-aiStrategicArea.addNeighbour controlpoint_axis_right_coalmine
+aiStrategicArea.addNeighbour controlpoint_allies_middle_vallery
 aiStrategicArea.addObjectTypeFlag Base
-aiStrategicArea.setOrderPosition Infantry 1615.5/855.5
+aiStrategicArea.setOrderPosition Tank 1608.5/852.5
+aiStrategicArea.setOrderPosition Infantry 1609.5/853.5
 aiStrategicArea.setSide 2
 aiStrategicArea.setTakeable 1 0
 
 aiStrategicArea.create controlpoint_axis_right_coalmine 959.9/1103.5 964.9/1108.5 150
 aiStrategicArea.addNeighbour controlpoint_allies_base_axisbase
-aiStrategicArea.addNeighbour controlpoint_axis_base_alliesbase
+aiStrategicArea.addNeighbour controlpoint_allies_middle_vallery
 aiStrategicArea.addNeighbour controlpoint_axis_left_village
 aiStrategicArea.addObjectTypeFlag Flank
-aiStrategicArea.addObjectTypeFlag Close
 aiStrategicArea.addObjectTypeFlag ControlPoint
+aiStrategicArea.setOrderPosition Tank 964.5/1106.5
 aiStrategicArea.setOrderPosition Infantry 963.5/1107.5
 aiStrategicArea.setSide 2
 
@@ -38,12 +46,14 @@ aiStrategicArea.setTakeable 2 0
 
 aiStrategicArea.create controlpoint_axis_left_village 724.5/963.7 729.5/968.7 300
 aiStrategicArea.addNeighbour controlpoint_allies_base_axisbase
+aiStrategicArea.addNeighbour controlpoint_allies_middle_vallery
 aiStrategicArea.addNeighbour controlpoint_axis_right_coalmine
 aiStrategicArea.addNeighbour gerarifieldnewtemplate_axisbase
 aiStrategicArea.addObjectTypeFlag Centre
 aiStrategicArea.addObjectTypeFlag StrongPoint
 aiStrategicArea.addObjectTypeFlag Close
 aiStrategicArea.addObjectTypeFlag ControlPoint
+aiStrategicArea.setOrderPosition Tank 729.5/970.5
 aiStrategicArea.setOrderPosition Infantry 730.5/969.5
 aiStrategicArea.setSide 2
 
@@ -51,6 +61,7 @@ aiStrategicArea.create gerarifieldnewtemplate_axisbase 406.2/877.8 411.2/882.8 5
 aiStrategicArea.addNeighbour controlpoint_allies_base_axisbase
 aiStrategicArea.addNeighbour controlpoint_axis_left_village
 aiStrategicArea.addObjectTypeFlag Base
+aiStrategicArea.setOrderPosition Tank 413.5/882.5
 aiStrategicArea.setOrderPosition Infantry 412.5/883.5
 aiStrategicArea.setSide 1
 aiStrategicArea.setTakeable 2 0

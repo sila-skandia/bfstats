@@ -6,7 +6,7 @@ aiStrategicArea.addNeighbour west_deutsche_stellungtemplate
 aiStrategicArea.addNeighbour frz_supply_trenchtemplate
 aiStrategicArea.addObjectTypeFlag Base
 aiStrategicArea.setOrderPosition Tank 641.5/651.5
-aiStrategicArea.setOrderPosition Infantry 640.5/643.5
+aiStrategicArea.setOrderPosition Infantry 640.5/645.5
 aiStrategicArea.setSide 1
 aiStrategicArea.setTakeable 2 0
 

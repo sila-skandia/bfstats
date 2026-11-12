@@ -1,17 +1,20 @@
 rem *** Strategic areas: one per control point (botgen) ***
 
 aiStrategicArea.create AXIS_BASE 638/669.5 643/674.5 50
+aiStrategicArea.addNeighbour ALLIES_BASE
 aiStrategicArea.addNeighbour 0PEN_BASE_ROAD
-aiStrategicArea.addNeighbour controlpoint_fortress
 aiStrategicArea.addObjectTypeFlag Base
+aiStrategicArea.setOrderPosition Tank 643.5/672.5
 aiStrategicArea.setOrderPosition Infantry 644.5/673.5
 aiStrategicArea.setSide 1
 aiStrategicArea.setTakeable 2 0
 
 aiStrategicArea.create ALLIES_BASE 1486/1545.9 1491/1550.9 50
+aiStrategicArea.addNeighbour AXIS_BASE
 aiStrategicArea.addNeighbour ALLIES_village
-aiStrategicArea.addNeighbour controlpoint_fortress
+aiStrategicArea.addNeighbour 0PEN_BASE_crossing
 aiStrategicArea.addObjectTypeFlag Base
+aiStrategicArea.setOrderPosition Tank 1490.5/1548.5
 aiStrategicArea.setOrderPosition Infantry 1489.5/1549.5
 aiStrategicArea.setSide 2
 aiStrategicArea.setTakeable 1 0
@@ -21,10 +24,10 @@ aiStrategicArea.addNeighbour ALLIES_BASE
 aiStrategicArea.addNeighbour AXIS_village
 aiStrategicArea.addNeighbour 0PEN_BASE_ROAD
 aiStrategicArea.addNeighbour 0PEN_BASE_crossing
-aiStrategicArea.addNeighbour controlpoint_fortress
 aiStrategicArea.addObjectTypeFlag Flank
 aiStrategicArea.addObjectTypeFlag Close
 aiStrategicArea.addObjectTypeFlag ControlPoint
+aiStrategicArea.setOrderPosition Tank 1644.5/603.5
 aiStrategicArea.setOrderPosition Infantry 1643.5/602.5
 aiStrategicArea.setSide 2
 
@@ -32,9 +35,9 @@ aiStrategicArea.create AXIS_village 1238.8/256.6 1268.8/286.6 150
 aiStrategicArea.addNeighbour ALLIES_village
 aiStrategicArea.addNeighbour 0PEN_BASE_ROAD
 aiStrategicArea.addNeighbour 0PEN_BASE_crossing
-aiStrategicArea.addNeighbour controlpoint_fortress
 aiStrategicArea.addObjectTypeFlag Flank
 aiStrategicArea.addObjectTypeFlag ControlPoint
+aiStrategicArea.setOrderPosition Tank 1268.5/284.5
 aiStrategicArea.setOrderPosition Infantry 1267.5/287.5
 aiStrategicArea.setSide 2
 
@@ -43,32 +46,25 @@ aiStrategicArea.addNeighbour AXIS_BASE
 aiStrategicArea.addNeighbour ALLIES_village
 aiStrategicArea.addNeighbour AXIS_village
 aiStrategicArea.addNeighbour 0PEN_BASE_crossing
-aiStrategicArea.addNeighbour controlpoint_fortress
 aiStrategicArea.addObjectTypeFlag Flank
 aiStrategicArea.addObjectTypeFlag Close
 aiStrategicArea.addObjectTypeFlag ControlPoint
+aiStrategicArea.setOrderPosition Tank 1153.5/557.5
 aiStrategicArea.setOrderPosition Infantry 1154.5/556.5
 aiStrategicArea.setSide 2
 
 aiStrategicArea.create 0PEN_BASE_crossing 1449.2/660.5 1454.2/665.5 50
-aiStrategicArea.addNeighbour ALLIES_village
-aiStrategicArea.addNeighbour AXIS_village
-aiStrategicArea.addNeighbour 0PEN_BASE_ROAD
-aiStrategicArea.addNeighbour controlpoint_fortress
-aiStrategicArea.addObjectTypeFlag Base
-aiStrategicArea.setOrderPosition Infantry 1455.5/664.5
-aiStrategicArea.setSide 2
-aiStrategicArea.setTakeable 1 0
-
-aiStrategicArea.create controlpoint_fortress 1375.1/841.5 1390.1/856.5 150
-aiStrategicArea.addNeighbour AXIS_BASE
 aiStrategicArea.addNeighbour ALLIES_BASE
 aiStrategicArea.addNeighbour ALLIES_village
 aiStrategicArea.addNeighbour AXIS_village
 aiStrategicArea.addNeighbour 0PEN_BASE_ROAD
-aiStrategicArea.addNeighbour 0PEN_BASE_crossing
-aiStrategicArea.addObjectTypeFlag Flank
-aiStrategicArea.addObjectTypeFlag Close
-aiStrategicArea.addObjectTypeFlag ControlPoint
-aiStrategicArea.setOrderPosition Infantry 1393.5/856.5
+aiStrategicArea.addObjectTypeFlag Base
+aiStrategicArea.setOrderPosition Tank 1454.5/663.5
+aiStrategicArea.setOrderPosition Infantry 1455.5/664.5
 aiStrategicArea.setSide 2
+aiStrategicArea.setTakeable 1 0
+
+aiStrategicArea.create controlpoint_fortress 1375.1/841.5 1390.1/856.5 10
+aiStrategicArea.setSide 2
+aiStrategicArea.setTakeable 1 0
+aiStrategicArea.setTakeable 2 0

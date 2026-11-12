@@ -49,20 +49,9 @@
  "oneSided": null,
  "unreachable": [],
  "lintErrors": [],
- "accepted": {
-  "reason": "Owner's rollout, 2026-11-12: the owner asked for everything with a fight to go live (\"everything can go up if it's ready\"). Screened in the runner at 8 and 16 a side under the garrison; the checks it fails are listed with this verdict, and a match on the page decides whether it keeps its menu flag.",
-  "date": "2026-11-12",
-  "outcome": "no-fight",
-  "failed": [
-   "8:capturesTotal",
-   "8:enemyKillsPerBotMinute",
-   "8:flagCoverage",
-   "8:bothSidesCapture",
-   "8:bothSidesKill",
-   "8:ticketsBleed",
-   "16:enemyKillsPerBotMinute",
-   "16:bothSidesCapture"
-  ],
-  "by": "owner"
+ "acceptanceWithdrawn": {
+  "because": "on the bot code of 3b1ebe45c, two page matches of 600 s with 16 bots, both under the rollout floor: 0.11 and 0.05 enemy kills a bot-minute, no capture in either",
+  "date": "2026-11-13",
+  "was": "Owner's rollout, 2026-11-12: the owner asked for everything with a fight to go l"
  }
 }

@@ -4,6 +4,7 @@ aiStrategicArea.create seelow_mil_hqtemplate 404.1/1164.3 409.1/1169.3 150
 aiStrategicArea.addNeighbour axisbase
 aiStrategicArea.addObjectTypeFlag Flank
 aiStrategicArea.addObjectTypeFlag ControlPoint
+aiStrategicArea.setOrderPosition Tank 409.5/1167.5
 aiStrategicArea.setOrderPosition Infantry 410.5/1168.5
 aiStrategicArea.setSide 1
 
@@ -12,6 +13,7 @@ aiStrategicArea.addNeighbour seelow_mil_hqtemplate
 aiStrategicArea.addNeighbour seelow_outskirtstemplate
 aiStrategicArea.addObjectTypeFlag Centre
 aiStrategicArea.addObjectTypeFlag ControlPoint
+aiStrategicArea.setOrderPosition Tank 663.5/1021.5
 aiStrategicArea.setOrderPosition Infantry 664.5/1020.5
 aiStrategicArea.setSide 1
 
@@ -20,6 +22,7 @@ aiStrategicArea.addNeighbour axisbase
 aiStrategicArea.addNeighbour hill_foottemplate
 aiStrategicArea.addObjectTypeFlag Centre
 aiStrategicArea.addObjectTypeFlag ControlPoint
+aiStrategicArea.setOrderPosition Tank 841.5/1005.5
 aiStrategicArea.setOrderPosition Infantry 842.5/1004.5
 aiStrategicArea.setSide 1
 
@@ -35,12 +38,14 @@ aiStrategicArea.addObjectTypeFlag Centre
 aiStrategicArea.addObjectTypeFlag StrongPoint
 aiStrategicArea.addObjectTypeFlag Close
 aiStrategicArea.addObjectTypeFlag ControlPoint
+aiStrategicArea.setOrderPosition Tank 1269.5/1094.5
 aiStrategicArea.setOrderPosition Infantry 1251.5/1092.5
 aiStrategicArea.setSide 1
 
 aiStrategicArea.create alliedbase 1834.1/1318.5 1839.1/1323.5 50
 aiStrategicArea.addNeighbour hill_foottemplate
 aiStrategicArea.addObjectTypeFlag Base
+aiStrategicArea.setOrderPosition Tank 1839.5/1325.5
 aiStrategicArea.setOrderPosition Infantry 1840.5/1324.5
 aiStrategicArea.setSide 2
 aiStrategicArea.setTakeable 1 0

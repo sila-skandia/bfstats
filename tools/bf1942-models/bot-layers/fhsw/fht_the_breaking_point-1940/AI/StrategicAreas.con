@@ -75,5 +75,5 @@ aiStrategicArea.addNeighbour church
 aiStrategicArea.addObjectTypeFlag Centre
 aiStrategicArea.addObjectTypeFlag ControlPoint
 aiStrategicArea.setOrderPosition Tank 801.5/1315.5
-aiStrategicArea.setOrderPosition Infantry 799.5/1311.5
+aiStrategicArea.setOrderPosition Infantry 801.5/1312.5
 aiStrategicArea.setSide 2
