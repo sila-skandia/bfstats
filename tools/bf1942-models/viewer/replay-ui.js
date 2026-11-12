@@ -359,6 +359,9 @@ html:has(.rp-root.board-open) #comms-canvas { visibility: hidden !important; }
 .rp-tip-fight small { display: block; font-size: 10px; }
 .rp-tip-shot.rp-tip-school { display: inline-flex; align-items: center; border-color: var(--rp-air); color: var(--rp-air); text-decoration: none; }
 .rp-tip-shot.rp-tip-school:hover { background: var(--rp-air); color: var(--rp-khaki-ink); }
+.rp-tip-shot.rp-tip-matchup { border-color: var(--rp-fire); color: var(--rp-fire); }
+.rp-tip-shot.rp-tip-matchup:hover { background: var(--rp-fire); color: var(--rp-khaki-ink); }
+.rp-tip-shot + .rp-tip-shot { margin-left: 4px; }
 
 /* The player card. Its own width, not the half of the view left of its
    anchor, or a phone cuts the spawn countdown short. */
@@ -826,9 +829,11 @@ export class ReplayUi {
   }
 
   /** One row of the menu: a switch (`check`) shows its state, anything else
-   *  closes the menu. The replay's extras add theirs (the match-up). */
+   *  closes the menu. The replay's extras add theirs (the match-up), whose
+   *  `check` is the function that reads its state. */
   menuItem(className, icon, text, key, onClick, check = false) {
     const b = el('button', `rp-mi ${className}`.trim());
+    if (typeof check === 'function') (this.menuChecks ??= []).push([b, check]);
     b.type = 'button';
     b.setAttribute('role', check ? 'menuitemcheckbox' : 'menuitem');
     b.innerHTML = `${svg(icon)}<span>${esc(text)}</span>${check ? '<b></b>' : ''}${key ? `<kbd class="rp-keys-only">${key}</kbd>` : ''}`;
@@ -870,6 +875,7 @@ export class ReplayUi {
     };
     check(this.moreItems.tags, this.showTags);
     check(this.moreItems.shotLines, Boolean(this.player.shotLines?.on));
+    for (const [item, get] of this.menuChecks ?? []) check(item, Boolean(quietly('a menu switch', get)));
     const highlights = this.player.highlights;
     this.moreItems.markers.hidden = !highlights;
     if (highlights) check(this.moreItems.markers, highlights.showMarkers);

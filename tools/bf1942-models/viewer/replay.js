@@ -402,7 +402,8 @@ class ReplayPlayer {
   /** After the frame is rendered: the timeline keeps a frame of it when it
    *  asked for one (replay-timeline.js). */
   afterRender(canvas) {
-    this.ui.timeline.capture(canvas);
+    // A frame the match-up dulled is no frame of the round to keep.
+    if (!this.matchup?.dimmed) this.ui.timeline.capture(canvas);
     // A creator's clip cropped to its frame is drawn from the same canvas.
     this.withCreator(c => c.afterRender(canvas));
   }
@@ -1440,8 +1441,12 @@ export function createReplayController(ctx) {
       guarded("the timeline's frame", () => player.afterRender(canvas));
     },
     /** The followed player's weapon over the frame just drawn, in his first
-     *  person (replay-viewmodel.js): after the render, before `afterRender`. */
+     *  person (replay-viewmodel.js), and the match-up's spotlight under it:
+     *  after the render, before `afterRender`. */
     renderViewmodel() {
+      // The match-up's pass first: the rest dulled and the fight's two drawn
+      // over it (replay-matchup-live.js), then his arms over both.
+      guarded('the match-up', () => player.matchup?.renderSpot());
       guarded('the first-person weapon', () => player.viewmodel?.render());
     },
     /** The followed man's own camera shake (his hit shake) on the camera,

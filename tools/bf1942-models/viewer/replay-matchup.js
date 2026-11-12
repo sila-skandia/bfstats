@@ -89,83 +89,210 @@ export function labelOf(rec, life, t, pretty = s => s) {
 }
 
 /** A fight's key: the two lives, whichever way round. */
-const keyOf = (a, b) => (a.nid < b.nid || (a.nid === b.nid && a.created <= b.created)
+export const keyOf = (a, b) => (a.nid < b.nid || (a.nid === b.nid && a.created <= b.created)
   ? `${a.nid}@${a.created}|${b.nid}@${b.created}` : `${b.nid}@${b.created}|${a.nid}@${a.created}`);
+
+/** Seconds with no hit and no kill between two that end their fight: the
+ *  same two meeting again later is another fight. */
+export const FIGHT_GAP = 20;
+/** Seconds a fight is on before its first hit (the rounds that missed
+ *  first, the turret coming round) and after its last event (the wreck, the
+ *  body falling). */
+export const LEAD = 4;
+export const HOLD = 4;
+
+/**
+ * Every hit and kill between two things, by pair: `Map(key -> { x, y,
+ * events })`, each event `{ t, kind, by, people }` (`people` the pids in
+ * `by` and in the other at that moment) and a kill's `kill`. `keep(t)` says
+ * which moments count.
+ */
+function pairEvents(rec, shots, kills, keep = () => true) {
+  const pairs = new Map();
+  const pair = (x, y) => {
+    const key = keyOf(x, y);
+    if (!pairs.has(key)) pairs.set(key, { x, y, events: [] });
+    return pairs.get(key);
+  };
+  for (const s of shots ?? []) {
+    if (!s?.hit || !s.victim || !s.f || !keep(s.t)) continue;
+    const from = shooterOf(rec, s.f);
+    if (!from || from === s.victim) continue;
+    pair(from, s.victim).events.push({
+      t: s.t, kind: 'hit', by: from, people: [[from, peopleOf(rec, from, s.t)], [s.victim, peopleOf(rec, s.victim, s.t)]],
+    });
+  }
+  for (const k of kills ?? []) {
+    if (!k || (k.kind !== 'kill' && k.kind !== 'teamkill') || !keep(k.t)) continue;
+    const killer = thingOf(rec, k.killer, k.t - BEFORE_KILL) ?? thingOf(rec, k.killer, k.t);
+    const victim = thingOf(rec, k.victim, k.t - BEFORE_KILL);
+    if (!killer || !victim || killer === victim) continue;
+    pair(killer, victim).events.push({
+      t: k.t, kind: 'kill', by: killer, people: [[killer, [k.killer]], [victim, [k.victim]]],
+      kill: { t: k.t, killer, victim, weapon: k.weapon ?? null, killerPid: k.killer, victimPid: k.victim },
+    });
+  }
+  return pairs;
+}
+
+/** One fight from its events (time order): who hit whom how often, its
+ *  kill (of two, the later: a tank and the man who bailed out of it is two
+ *  fights, two men in one hull one), its span, and everyone who was in it. */
+function fightFrom(x, y, events) {
+  const hitsBy = new Map([[x, 0], [y, 0]]);
+  const people = new Map([[x, new Set()], [y, new Set()]]);
+  let kill = null;
+  for (const e of events) {
+    if (e.kind === 'hit') hitsBy.set(e.by, (hitsBy.get(e.by) ?? 0) + 1);
+    if (e.kind === 'kill' && (!kill || e.t > kill.t)) kill = e.kill;
+    for (const [life, pids] of e.people) for (const pid of pids) if (Number.isInteger(pid)) people.get(life)?.add(pid);
+  }
+  return {
+    x, y, hitsBy, people, kill, first: events[0].t, last: events[events.length - 1].t,
+    events: events.map(({ t, kind, by }) => ({ t, kind, by })),
+  };
+}
+
+/** Whether `follow` was in `raw` (a `fightFrom`), on either side. */
+export function hasPlayer(raw, follow) {
+  return Number.isInteger(follow) && Boolean(raw?.people?.get(raw.x)?.has(follow) || raw?.people?.get(raw.y)?.has(follow));
+}
+
+/**
+ * `raw` (a `fightFrom`) seen from `t`: `{ a, b, hits: { a, b }, kill,
+ * first, last, moment, score, events, raw }`. `a` is the followed player's
+ * thing where they are in the fight, else the killer's, else whoever landed
+ * more. `moment` is where the match-up freezes: the playhead when it is
+ * inside the fight, else just before its kill, else its last hit.
+ */
+export function orient(rec, raw, t, follow = null) {
+  const { x, y } = raw;
+  const followed = Number.isInteger(follow) ? thingOf(rec, follow, t) : null;
+  const hx = raw.hitsBy.get(x) ?? 0;
+  const hy = raw.hitsBy.get(y) ?? 0;
+  const theirs = side => side === followed || (Number.isInteger(follow) && raw.people.get(side)?.has(follow));
+  let a = x;
+  if (theirs(y)) a = y;
+  else if (theirs(x)) a = x;
+  else if (raw.kill) a = raw.kill.killer;
+  else if (hy > hx) a = y;
+  const b = a === x ? y : x;
+  const inside = t >= raw.first - PAD && t <= raw.last + PAD;
+  const lastHit = raw.events.filter(e => e.kind === 'hit').reduce((m, e) => Math.max(m, e.t), -Infinity);
+  const moment = inside ? t : raw.kill ? raw.kill.t - BEFORE_KILL : Number.isFinite(lastHit) ? lastHit : raw.last;
+  const both = hx > 0 && hy > 0;
+  const mine = theirs(a) || theirs(b);
+  const near = Math.min(Math.abs(t - raw.first), Math.abs(t - raw.last), inside ? 0 : Infinity);
+  // Hits count by their logarithm: a machine gun's 36 small hits on an
+  // open-topped hull are not twelve times the fight two shells make.
+  const score = Math.log2(1 + hx) + Math.log2(1 + hy) + (raw.kill ? 3 : 0) + (both ? 2 : 0) + (mine ? 4 : 0)
+    + (inside ? 4 : 0) - near / 10;
+  return {
+    a, b, hits: { a: raw.hitsBy.get(a) ?? 0, b: raw.hitsBy.get(b) ?? 0 }, kill: raw.kill,
+    first: raw.first, last: raw.last, moment, score: Math.round(score * 100) / 100,
+    events: raw.events, raw,
+  };
+}
 
 /**
  * The fights near `t`: two things that hit each other, or one of which killed
  * the other, within `window` seconds of it. `shots` are the Accuracy board's
  * (each `{ f, t, hit, victim, dist }`), `kills` the replay's kill lines.
- * Returns `[{ a, b, hits: { a, b }, kill, first, last, moment, score }]`,
- * best first: `a` is the followed player's thing where they are in the fight,
- * else the killer's, else whoever landed more. `moment` is where the
- * match-up freezes: the playhead when it is inside the fight, else just
- * before its kill, else its last hit.
+ * Returns `orient`'s fights, best first.
  */
 export function fightsNear(rec, shots, kills, t, { window = WINDOW, follow = null } = {}) {
-  const fights = new Map();
-  const fight = (x, y) => {
-    const key = keyOf(x, y);
-    if (!fights.has(key)) {
-      fights.set(key, { x, y, hitsBy: new Map([[x, 0], [y, 0]]), kill: null, first: Infinity, last: -Infinity, events: [] });
-    }
-    return fights.get(key);
-  };
-  for (const s of shots ?? []) {
-    if (!s?.hit || !s.victim || !s.f || Math.abs(s.t - t) > window) continue;
-    const from = shooterOf(rec, s.f);
-    if (!from || from === s.victim) continue;
-    const at = s.t;
-    const entry = fight(from, s.victim);
-    entry.hitsBy.set(from, (entry.hitsBy.get(from) ?? 0) + 1);
-    entry.first = Math.min(entry.first, s.t);
-    entry.last = Math.max(entry.last, at);
-    entry.events.push({ t: at, kind: 'hit', by: from });
-  }
-  for (const k of kills ?? []) {
-    if (!k || (k.kind !== 'kill' && k.kind !== 'teamkill') || Math.abs(k.t - t) > window) continue;
-    const killer = thingOf(rec, k.killer, k.t - BEFORE_KILL) ?? thingOf(rec, k.killer, k.t);
-    const victim = thingOf(rec, k.victim, k.t - BEFORE_KILL);
-    if (!killer || !victim || killer === victim) continue;
-    const entry = fight(killer, victim);
-    // Of two kills in one fight (a tank and the man who bailed out of it is
-    // two fights; two men in one hull, one), the later.
-    if (!entry.kill || k.t > entry.kill.t) entry.kill = { t: k.t, killer, victim, weapon: k.weapon ?? null, killerPid: k.killer, victimPid: k.victim };
-    entry.first = Math.min(entry.first, k.t);
-    entry.last = Math.max(entry.last, k.t);
-    entry.events.push({ t: k.t, kind: 'kill', by: killer });
-  }
-  const followed = Number.isInteger(follow) ? thingOf(rec, follow, t) : null;
   const out = [];
-  for (const f of fights.values()) {
-    const { x, y } = f;
-    const hx = f.hitsBy.get(x) ?? 0;
-    const hy = f.hitsBy.get(y) ?? 0;
-    let a = x;
-    if (followed && (y === followed || (Number.isInteger(follow) && peopleOf(rec, y, f.last).includes(follow)))) a = y;
-    else if (followed && (x === followed || (Number.isInteger(follow) && peopleOf(rec, x, f.last).includes(follow)))) a = x;
-    else if (f.kill) a = f.kill.killer;
-    else if (hy > hx) a = y;
-    const b = a === x ? y : x;
-    const inside = t >= f.first - PAD && t <= f.last + PAD;
-    const lastHit = f.events.filter(e => e.kind === 'hit').reduce((m, e) => Math.max(m, e.t), -Infinity);
-    const moment = inside ? t : f.kill ? f.kill.t - BEFORE_KILL : Number.isFinite(lastHit) ? lastHit : f.last;
-    const both = hx > 0 && hy > 0;
-    const mine = a === followed || b === followed;
-    const near = Math.min(Math.abs(t - f.first), Math.abs(t - f.last), inside ? 0 : Infinity);
-    // Hits count by their logarithm: a machine gun's 36 small hits on an
-    // open-topped hull are not twelve times the fight two shells make.
-    const score = Math.log2(1 + hx) + Math.log2(1 + hy) + (f.kill ? 3 : 0) + (both ? 2 : 0) + (mine ? 4 : 0)
-      + (inside ? 4 : 0) - near / 10;
-    out.push({
-      a, b, hits: { a: f.hitsBy.get(a) ?? 0, b: f.hitsBy.get(b) ?? 0 }, kill: f.kill,
-      first: f.first, last: f.last, moment, score: Math.round(score * 100) / 100,
-      events: f.events.sort((p, q) => p.t - q.t),
-    });
+  for (const { x, y, events } of pairEvents(rec, shots, kills, at => Math.abs(at - t) <= window).values()) {
+    out.push(orient(rec, fightFrom(x, y, events.sort((p, q) => p.t - q.t)), t, follow));
   }
   out.sort((p, q) => q.score - p.score || Math.abs(p.moment - t) - Math.abs(q.moment - t));
   return out;
 }
+
+/**
+ * Every fight of the round, in the order they began: each pair's hits and
+ * kills, split where `gap` seconds passed with neither. `fightFrom`'s raw
+ * fights, for `fightOn`, `nextFight` and `fightOfKill`.
+ */
+export function fightEpisodes(rec, shots, kills, { gap = FIGHT_GAP } = {}) {
+  const out = [];
+  for (const { x, y, events } of pairEvents(rec, shots, kills).values()) {
+    events.sort((p, q) => p.t - q.t);
+    let run = [];
+    for (const e of events) {
+      if (run.length && e.t - run[run.length - 1].t > gap) {
+        out.push(fightFrom(x, y, run));
+        run = [];
+      }
+      run.push(e);
+    }
+    if (run.length) out.push(fightFrom(x, y, run));
+  }
+  return out.sort((p, q) => p.first - q.first || p.last - q.last);
+}
+
+/** How much of a fight `raw` is, whoever is watching. */
+const weightOf = raw => {
+  const hx = raw.hitsBy.get(raw.x) ?? 0;
+  const hy = raw.hitsBy.get(raw.y) ?? 0;
+  return Math.log2(1 + hx) + Math.log2(1 + hy) + (raw.kill ? 3 : 0) + (hx > 0 && hy > 0 ? 2 : 0);
+};
+
+/** Whether `raw` is on at `t`: from LEAD before its first hit to HOLD after
+ *  its last event. */
+export const isOn = (raw, t) => t >= raw.first - LEAD && t <= raw.last + HOLD;
+
+/**
+ * The fight on at `t`, of `episodes` (`fightEpisodes`), or null. The one
+ * already shown (`current`) stays while it is on, unless it is only holding
+ * on past its last event and another is under way. Else the followed
+ * player's, else the biggest. `only`: the followed player's fights alone
+ * (the camera is on them, so a fight elsewhere would dull what is watched).
+ */
+export function fightOn(episodes, t, { follow = null, current = null, only = false } = {}) {
+  const allowed = raw => !only || hasPlayer(raw, follow);
+  const underWay = raw => t >= raw.first - 1 && t <= raw.last + 0.5;
+  let best = null;
+  let bestScore = -Infinity;
+  for (const raw of episodes ?? []) {
+    if (raw.first - LEAD > t) break;
+    if (raw === current || !isOn(raw, t) || !allowed(raw)) continue;
+    const score = weightOf(raw) + (hasPlayer(raw, follow) ? 4 : 0) + (underWay(raw) ? 2 : 0);
+    if (score > bestScore) {
+      best = raw;
+      bestScore = score;
+    }
+  }
+  if (current && isOn(current, t) && allowed(current)) {
+    if (t <= current.last + 0.5 || !best || !underWay(best)) return current;
+  }
+  return best;
+}
+
+/** The next fight to begin after `t` (the followed player's alone with
+ *  `only`), or null. */
+export function nextFight(episodes, t, { follow = null, only = false } = {}) {
+  for (const raw of episodes ?? []) {
+    if (raw.first - LEAD <= t + 0.5) continue;
+    if (!only || hasPlayer(raw, follow)) return raw;
+  }
+  return null;
+}
+
+/** The fight the kill of `victimPid` at `t` ended, or null. */
+export function fightOfKill(episodes, t, victimPid) {
+  let best = null;
+  for (const raw of episodes ?? []) {
+    const k = raw.kill;
+    if (!k || k.victimPid !== victimPid || Math.abs(k.t - t) > 0.6) continue;
+    if (!best || Math.abs(k.t - t) < Math.abs(best.kill.t - t)) best = raw;
+  }
+  return best;
+}
+
+/** Seconds before a kill the match-up freezes on it: the round still in the
+ *  air, the victim still in their seat. */
+export const KILL_FREEZE = BEFORE_KILL;
 
 /** The index of the first of `fires` (time order) at or after `t`. */
 function firstAt(fires, t) {

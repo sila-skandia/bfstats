@@ -9,9 +9,12 @@ small recordings written line by line in the harness.
 Why it exists. The owner's ask (2026-11-12): freeze a replayed round on two
 things that fought, take them apart side by side and show where each was
 vulnerable to the other, the way History's *Dogfights* paused a fight to
-compare the two planes. The page side (replay-matchup-view.js) rests on
-these functions: which two fought, which rounds were theirs, which drop each
-hit is checked against. features/replay-matchup.
+compare the two planes. Then, the same day: the freeze made them scrub to
+the exact moment, so the mode plays on with the fight at the playhead
+brought to the front, and a kill opens the breakdown. The page side
+(replay-matchup-view.js, replay-matchup-live.js) rests on these functions:
+which two fought and when, which rounds were theirs, which drop each hit is
+checked against. features/replay-matchup.
 """
 
 from __future__ import annotations
@@ -177,21 +180,82 @@ class FootTests(unittest.TestCase):
         self.assertEqual(run_harness()["foot"], [{"a": "soldier", "b": "Tiger", "hits": {"a": 1, "b": 0}, "kill": True}])
 
 
-class WiringTests(unittest.TestCase):
-    """Opt-in from the replay's controls: a row on the bar's menu, nothing
-    else running until it is chosen."""
+class EpisodeTests(unittest.TestCase):
+    """The live match-up's picks (2026-11-12, the owner: freezing made them
+    scrub to the exact moment; bring the two to the front and let it play).
+    The Sherman and the Tiger meet twice, 50 s apart; a Panther hits the
+    Sherman once in between."""
 
-    def test_the_menu_row_and_the_frame_hook(self) -> None:
+    @classmethod
+    def setUpClass(cls) -> None:
+        cls.e = run_harness()["episodes"]
+
+    def test_the_same_two_meeting_again_is_another_fight(self) -> None:
+        self.assertEqual([(f["pair"], f["first"], f["last"], f["kill"]) for f in self.e["list"]],
+                         [("Sherman-Tiger", 10, 10, False), ("Panther-Sherman", 13, 13, False), ("Sherman-Tiger", 60, 62.8, True)])
+
+    def test_the_fight_on_at_the_playhead(self) -> None:
+        self.assertEqual(self.e["on12"], "Panther-Sherman")
+        self.assertIsNone(self.e["on40"])
+
+    def test_the_next_fight(self) -> None:
+        self.assertEqual((self.e["next30"], self.e["next30at"]), ("Sherman-Tiger", 60))
+        self.assertIsNone(self.e["nextAfterAll"])
+
+    def test_a_kill_finds_the_fight_it_ended(self) -> None:
+        self.assertTrue(self.e["ofKill"])
+        self.assertIsNone(self.e["ofKillWrongVictim"])
+
+    def test_the_fight_shown_stays_while_it_goes_on(self) -> None:
+        self.assertEqual(self.e["staysWhileOn"], "Sherman-Tiger")
+        # Only holding on past its last hit, it gives way to one under way.
+        self.assertEqual(self.e["takesOver"], "Panther-Sherman")
+
+    def test_following_a_player_keeps_to_their_fights(self) -> None:
+        self.assertEqual(self.e["onlyFollowed"], "Sherman-Tiger")
+        self.assertIsNone(self.e["onlyNobody"])
+
+    def test_sides(self) -> None:
+        self.assertEqual(self.e["orientedA"], "Sherman")
+        self.assertEqual(self.e["orientedKiller"], "Tiger")
+        self.assertTrue(self.e["hasAnn"])
+        self.assertFalse(self.e["hasOde"])
+
+
+class WiringTests(unittest.TestCase):
+    """Opt-in from the replay's controls: a switch on the bar's menu, nothing
+    else running until it is on; with it on, kills in the timeline open the
+    breakdown and the frame gets the spotlight's pass."""
+
+    def test_the_menu_switch_and_the_frame_hooks(self) -> None:
         view = (VIEWER / "replay-matchup-view.js").read_text()
         replay = (VIEWER / "replay.js").read_text()
         ui = (VIEWER / "replay-ui.js").read_text()
-        self.assertIn("menuItem?.('', 'matchup', 'Match-up'", view)
+        timeline = (VIEWER / "replay-timeline.js").read_text()
+        self.assertIn("menuItem?.('', 'matchup', 'Match-up', '', () => this.toggle(), () => this.on)", view)
         self.assertIn("new ReplayMatchup(this)", replay)
         self.assertIn("this.withMatchup(m => m.update(t, dt))", replay)
+        self.assertIn("player.matchup?.renderSpot()", replay)
+        self.assertIn("if (!this.matchup?.dimmed) this.ui.timeline.capture(canvas);", replay)
         self.assertIn("menuItem(className, icon, text, key, onClick, check = false)", ui)
+        self.assertIn("typeof check === 'function'", ui)
         self.assertIn("player.matchup?.key(e, once)", ui)
-        # Nothing runs until it is opened.
+        self.assertIn("this.player.matchup.breakdownKill(ch.t, ch.victim)", timeline)
+        # Nothing runs until it is on, and the timeline's button only then.
         self.assertIn("if (!this.on) return;", view)
+        self.assertIn("this.player.matchup?.on ? 'm' : ''", timeline)
+
+    def test_the_spotlight_puts_the_frame_back(self) -> None:
+        live = (VIEWER / "replay-matchup-live.js").read_text()
+        # The two are lent to the pass's own scene, never re-parented, and
+        # everything the pass changes on the page's renderer is put back.
+        self.assertIn("spot.children = [...this.lightsOf(scene), ...this.rootsOf(fight, this.player.time), gl.overlay];", live)
+        self.assertIn("spot.matrixWorldAutoUpdate = false;", live)
+        self.assertNotIn(".add(gl.overlay)", live)
+        block = live[live.index("    } finally {"):live.index("    return true;\n  }\n\n  dispose()")]
+        for restore in ("spot.children = []", "renderer.shadowMap.autoUpdate = saved.shadowAuto", "renderer.shadowMap.needsUpdate = saved.shadowNeeds",
+                        "renderer.autoClear = saved.autoClear", "renderer.info.autoReset = saved.infoReset"):
+            self.assertIn(restore, block)
 
 
 if __name__ == "__main__":

@@ -373,7 +373,8 @@ export class ReplayTimeline {
     const frame = cluster ? this.frameOfChapter(cluster) : this.frameAt(at);
     // The content is rebuilt only when it changes: the tooltip is refreshed
     // every frame while the pointer rests on a playing timeline.
-    const key = `${cluster ? cluster.lead.i : ''}|${fights.map(f => f.id).join(',')}|${fmtClock(at)}|${frame?.id ?? ''}|${this.player.followPid}`;
+    const matchup = this.player.matchup?.on ? 'm' : '';
+    const key = `${cluster ? cluster.lead.i : ''}|${fights.map(f => f.id).join(',')}|${fmtClock(at)}|${frame?.id ?? ''}|${this.player.followPid}|${matchup}`;
     if (key !== this.tipKey) {
       this.tipKey = key;
       // The time, and the round's own clock beside it.
@@ -402,6 +403,19 @@ export class ReplayTimeline {
               e.stopPropagation();
               this.hideTip();
               try { creator.killShotAt(ch.t, ch.victim); } catch (error) { console.warn('replay: a kill shot from the timeline', error); }
+            });
+            li.append(go);
+          }
+          // With the match-up on, a kill straight to its breakdown: the fight
+          // it ended frozen just before it (features/replay-matchup).
+          if ((ch.kind === 'kill' || ch.kind === 'teamkill') && matchup) {
+            const go = el('button', 'rp-tip-shot rp-tip-matchup', 'Match-up');
+            go.type = 'button';
+            go.title = 'Break this fight down: the round frozen just before the kill, every round between the two, the two taken apart';
+            go.addEventListener('click', e => {
+              e.stopPropagation();
+              this.hideTip();
+              try { this.player.matchup.breakdownKill(ch.t, ch.victim); } catch (error) { console.warn('replay: a match-up from the timeline', error); }
             });
             li.append(go);
           }

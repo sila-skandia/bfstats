@@ -1,12 +1,15 @@
-// The replay's match-up (features/replay-matchup): the round frozen on two
-// things that fought, every round that passed between them hanging in the
-// air where it flew, and the two taken apart side by side, each painted by
-// what the other's gun does to it, with every real hit pinned where it
-// struck. Opened from the replay bar's menu (More, Match-up); nothing of it
-// runs until then.
+// The replay's match-up (features/replay-matchup). Turned on from the replay
+// bar's menu (More, Match-up), it stays on while the round plays: the fight
+// at the playhead is brought to the front, everything else dulled, the two's
+// rounds drawn as they fly (replay-matchup-live.js). Break it down on its
+// strip, or Match-up on a kill in the round's timeline, freezes the round on
+// that fight: every round that passed between the two hangs in the air where
+// it flew, and the two can be taken apart side by side, each painted by what
+// the other's gun does to it, with every real hit pinned where it struck.
+// Nothing of it runs until it is turned on.
 //
 // What it is made of:
-// - the fights near the playhead and the rounds between two things
+// - the round's fights, and the rounds between two things
 //   (replay-matchup.js, pure);
 // - where each round struck a hull, rebuilt and checked against the recorded
 //   hit points (replay-matchup-strike.js);
@@ -22,9 +25,10 @@ import * as THREE from 'three';
 import { clone as skeletonClone } from './vendor/utils/SkeletonUtils.js';
 import { OrbitControls } from './vendor/controls/OrbitControls.js';
 import {
-  BODY_PARTS, PAD, armourAgainst, aspectWords, assignDrops, bodyPartFor, endingWords, fightsNear, healthOf,
-  labelOf, peopleOf, roundsBetween, seenFrom, sideOf, sideWords, tallyOf,
+  BODY_PARTS, KILL_FREEZE, PAD, armourAgainst, aspectWords, assignDrops, bodyPartFor, endingWords, fightOfKill, fightsNear, healthOf,
+  keyOf, labelOf, orient, peopleOf, roundsBetween, seenFrom, sideOf, sideWords, tallyOf,
 } from './replay-matchup.js';
+import { MatchupLive } from './replay-matchup-live.js';
 import { HullCaster, flightOf, gunSpecOf, priceOf, tablesOf } from './replay-matchup-strike.js';
 import { BANDS, CATCHER, IMMUNE, bandOf, bearingShots, faceName } from './tank-armour.js';
 import { shotsFor } from './armour-damage.js';
@@ -66,6 +70,10 @@ const hex = n => `#${n.toString(16).padStart(6, '0')}`;
 const STYLE = `
 .rm-root { position: absolute; inset: 0; pointer-events: none; display: none; z-index: 6; }
 .rm-root.on { display: block; }
+/* The freeze's own layers, only while a fight is frozen; the replay's own
+   name tags give way to its two. */
+.rm-root:not(.frozen) .rm-vignette, .rm-root:not(.frozen) .rm-panel, .rm-root:not(.frozen) .rm-tags { display: none; }
+.rp-root.rm-open .rp-tags { opacity: 0; pointer-events: none; }
 .rm-vignette { position: absolute; inset: 0; pointer-events: none;
   background: radial-gradient(ellipse at 42% 46%, transparent 38%, rgba(8, 8, 6, .55) 100%); }
 .rm-vignette::after { content: ''; position: absolute; inset: 0;
@@ -216,7 +224,9 @@ function statusOf(r) {
 export class ReplayMatchup {
   constructor(player) {
     this.player = player;
+    // The mode, on from the menu; and a fight frozen for its breakdown.
     this.on = false;
+    this.frozen = false;
     this.fights = [];
     this.fight = null;
     this.view = null;
@@ -233,13 +243,14 @@ export class ReplayMatchup {
     this.tags = el('div', 'rm-tags');
     this.buildPanel();
     this.stage = new MatchupStage(this);
-    this.root.append(this.vignette, this.tags, this.panel, this.stage.el);
+    this.live = new MatchupLive(this);
+    this.root.append(this.vignette, this.live.tagsEl, this.tags, this.live.strip, this.panel, this.stage.el);
     player.ui.root.append(this.root);
     // Stop the replay's own input layer taking a drag or a wheel on the panel.
     for (const node of [this.panel, this.stage.el]) {
       for (const type of ['pointerdown', 'wheel', 'click', 'dblclick']) node.addEventListener(type, e => e.stopPropagation());
     }
-    this.menuItem = player.ui.menuItem?.('', 'matchup', 'Match-up', '', () => this.toggle()) ?? null;
+    this.menuItem = player.ui.menuItem?.('', 'matchup', 'Match-up', '', () => this.toggle(), () => this.on) ?? null;
   }
 
   buildPanel() {
@@ -247,41 +258,97 @@ export class ReplayMatchup {
     this.panel.setAttribute('aria-label', 'Match-up');
     const head = el('div', 'rm-head');
     head.append(el('span', '', 'MATCH-UP'), this.stamp);
-    const close = this.player.ui.button('', 'close', 'Close the match-up (Esc)', () => this.close());
+    const close = this.player.ui.button('', 'close', 'Back to the round (Esc)', () => this.close());
     head.append(close);
     this.body = el('div', 'rm-body');
     this.actions = el('div', 'rm-actions');
     this.apartBtn = this.player.ui.button('rm-go', null, 'Take them apart, side by side', () => this.takeApart(), 'Take them apart');
-    this.backBtn = this.player.ui.button('', null, 'Back to the round', () => this.close(), 'Back to the round');
+    this.backBtn = this.player.ui.button('', null, 'Back to the round, playing on from here', () => this.close(), 'Back to the round');
     this.actions.append(this.apartBtn, this.backBtn);
     this.panel.append(head, this.body, this.actions);
   }
 
   toggle() {
-    if (this.on) this.close();
-    else this.start();
+    if (this.on) this.turnOff();
+    else this.turnOn();
   }
 
-  /** Freeze the round on the best fight near the playhead. */
-  start() {
+  /** The mode on: the fight at the playhead brought to the front as the
+   *  round plays. */
+  turnOn() {
+    if (this.on) return;
+    this.on = true;
+    this.root.classList.add('on');
+    this.player.ui.root.classList.add('rm-on');
+    this.live.begin();
+    this.player.ui.syncMore?.();
+    this.player.ui.flash('Match-up on: the fight at the playhead comes to the front. Kills in the timeline break down', 3200);
+  }
+
+  turnOff() {
+    if (!this.on) return;
+    this.closeBreakdown(false);
+    this.live.end();
+    this.on = false;
+    this.root.classList.remove('on');
+    this.player.ui.root.classList.remove('rm-on');
+    this.player.ui.syncMore?.();
+    this.player.ui.flash('Match-up off');
+  }
+
+  /** The fight the live view has at the front, frozen here. */
+  breakdownLive() {
+    const fight = this.live.fight;
+    if (!fight) return;
     const p = this.player;
-    const t = p.time;
-    const board = p.accuracy?.() ?? [];
-    const shots = board.flatMap(e => e.shots ?? []);
-    this.shotOf = new Map(shots.map(s => [s.f, s]));
-    this.fights = fightsNear(p.rec, shots, p.kills, t, { follow: p.followPid }).slice(0, 8);
-    if (!this.fights.length) {
-      p.ui.flash('No fight here to match up: it needs two that hit each other, or a kill, within 30 s', 2800);
+    this.breakdown({ ...fight, moment: p.time }, p.playing);
+  }
+
+  /** The fight a kill ended, frozen just before the kill: from Match-up on
+   *  a kill in the round's timeline. */
+  breakdownKill(t, victimPid) {
+    const p = this.player;
+    if (!this.on) this.turnOn();
+    this.live.ensureEpisodes(true);
+    const raw = fightOfKill(this.live.episodes, t, victimPid);
+    let fight = raw ? orient(p.rec, raw, raw.kill.t - KILL_FREEZE, p.followPid) : null;
+    if (!fight) {
+      // A kill the episodes did not keep (its killer in nothing the
+      // recording places): the fights near it.
+      const shots = (p.accuracy?.() ?? []).flatMap(e => e.shots ?? []);
+      fight = fightsNear(p.rec, shots, p.kills, t, { follow: p.followPid })
+        .find(f => f.kill && f.kill.victimPid === victimPid && Math.abs(f.kill.t - t) <= 0.6) ?? null;
+    }
+    if (!fight) {
+      p.ui.flash('Nothing to match up for that kill: the recording places no one who fired it', 2800);
       return;
     }
-    this.on = true;
-    this.resumeAt = t;
-    // Whatever focus the page had (the dogfight school's two), back on close.
-    this.prevFocus = p.focus ? { nids: [...p.focus.nids], pids: [...p.focus.pids] } : null;
-    p.playing = false;
-    this.root.classList.add('on');
-    p.ui.root.classList.add('rm-open');
-    this.pick(this.fights[0]);
+    this.breakdown({ ...fight, moment: fight.kill.t - KILL_FREEZE }, p.playing);
+  }
+
+  /** Freeze the round on `fight` for its breakdown; `resume` plays on when
+   *  it is closed. */
+  breakdown(fight, resume = false) {
+    const p = this.player;
+    if (!this.on) this.turnOn();
+    const shots = (p.accuracy?.() ?? []).flatMap(e => e.shots ?? []);
+    this.shotOf = new Map(shots.map(s => [s.f, s]));
+    // The fight asked for first, then the others near it.
+    const key = keyOf(fight.a, fight.b);
+    this.fights = [fight, ...fightsNear(p.rec, shots, p.kills, fight.moment, { follow: p.followPid })
+      .filter(f => keyOf(f.a, f.b) !== key)].slice(0, 8);
+    if (!this.frozen) {
+      this.frozen = true;
+      this.resume = resume;
+      this.resumeAt = fight.moment;
+      // Whatever focus and camera the page had, back when it is closed.
+      this.prevFocus = p.focus ? { nids: [...p.focus.nids], pids: [...p.focus.pids] } : null;
+      this.prevCamera = this.cameraState();
+      this.live.end();
+      this.root.classList.add('frozen');
+      p.ui.root.classList.add('rm-open');
+    }
+    this.pick(fight);
   }
 
   /** Freeze on `fight`. */
@@ -300,26 +367,62 @@ export class ReplayMatchup {
     this.renderBoard();
   }
 
+  /** Back to the round from the breakdown, playing on if it was. */
   close() {
-    if (!this.on) return;
+    this.closeBreakdown(true);
+  }
+
+  closeBreakdown(resume) {
+    if (!this.frozen) return;
     const p = this.player;
-    this.on = false;
+    this.frozen = false;
     this.pending = null;
     this.stage.hide(true);
     this.clearWorld();
     p.setFocus(this.prevFocus ?? null);
     this.prevFocus = null;
-    this.root.classList.remove('on');
+    this.root.classList.remove('frozen');
     p.ui.root.classList.remove('rm-open');
     this.tags.textContent = '';
     this.tagNodes = null;
     this.fight = null;
     this.view = null;
+    this.restoreCamera(this.prevCamera);
+    this.prevCamera = null;
+    if (resume && this.resume) p.playing = true;
+    this.resume = false;
+    if (this.on) this.live.begin();
   }
 
-  /** Esc: the stage first, then the match-up. */
+  /** The camera as it stood: its mode, whom it followed, the orbit's angles. */
+  cameraState() {
+    const p = this.player;
+    const c = p.camera;
+    return { mode: c?.mode ?? null, auto: Boolean(p.highlights?.auto), follow: p.followPid, yaw: c?.yaw, pitch: c?.pitch, zoom: c?.zoom };
+  }
+
+  restoreCamera(state) {
+    const p = this.player;
+    if (!state || !p.camera) return;
+    if (Number.isInteger(state.follow) && state.follow !== p.followPid) p.follow(state.follow);
+    if (state.auto) {
+      p.ui.setMode('auto');
+      return;
+    }
+    if (state.mode && state.mode !== p.camera.mode) {
+      p.camera.setMode(state.mode);
+      p.ui.syncMode?.();
+    }
+    if (state.mode === 'orbit' && Number.isFinite(state.yaw)) {
+      p.camera.yaw = state.yaw;
+      p.camera.pitch = state.pitch;
+      p.camera.zoom = state.zoom;
+    }
+  }
+
+  /** Esc, while a fight is frozen: the stage first, then the freeze. */
   key(e, once) {
-    if (!this.on) return undefined;
+    if (!this.frozen) return undefined;
     if (e.code === 'Escape') {
       if (once) {
         if (this.stage.on) this.stage.hide();
@@ -331,14 +434,18 @@ export class ReplayMatchup {
     return undefined;
   }
 
-  /** Each frame, last in the replay's: build what waits on the frame, follow
-   *  the two with their tags, and draw the stage. Play or a seek away ends
-   *  the freeze. */
+  /** Each frame, last in the replay's. Live: the fight at the playhead to
+   *  the front. Frozen: build what waits on the frame, follow the two with
+   *  their tags, draw the stage; play or a seek away ends the freeze. */
   update(t, dt) {
     if (!this.on) return;
+    if (!this.frozen) {
+      this.live.update(t, dt);
+      return;
+    }
     const p = this.player;
     if (p.playing || (this.fight && Math.abs(t - this.fight.moment) > 0.5 && !this.pending)) {
-      this.close();
+      this.closeBreakdown(false);
       return;
     }
     if (this.pending && --this.pending.frames <= 0) {
@@ -355,6 +462,17 @@ export class ReplayMatchup {
     this.stage.frame(dt);
   }
 
+  /** After the page's render (replay.js `renderViewmodel`): the live view's
+   *  pass, the rest dulled and the two drawn over it. */
+  renderSpot() {
+    if (!this.on || this.frozen) return false;
+    return this.live.render();
+  }
+
+  /** Whether the frame just drawn was dulled. */
+  get dimmed() {
+    return this.on && !this.frozen && this.live.dimmed;
+  }
 
   /** The things' places at the moment, view frame. */
   placeOf(life, t) {
@@ -881,7 +999,10 @@ export class ReplayMatchup {
   }
 
   dispose() {
-    this.close();
+    this.closeBreakdown(false);
+    this.live.dispose();
+    this.on = false;
+    this.player.ui.root.classList.remove('rm-on');
     this.stage.dispose();
     this.root.remove();
   }

@@ -1,4 +1,4 @@
-# Replay match-up: two that fought, frozen and taken apart
+# Replay match-up: two that fought, brought to the front and taken apart
 
 The owner's idea (2026-11-12): in a replay, switch into a match-up mode where
 two things that fought (planes, tanks, soldiers) pause, their vehicles come
@@ -13,19 +13,59 @@ forensic-show look is in, its name and branding are not.
 Then: "just have a go, as long as it's opt in from the replay controls that's
 fine, we'll advertise it more broadly when it's in."
 
-Status: **built**, opt-in from the replay bar's More menu (Match-up). Checked
-headless on a real FHSW Europe tank fight (see "Checked"); not looked at by
-hand in a browser. Nothing is published: no asset is involved.
+The first cut froze the round the moment Match-up was chosen. The owner's
+verdict the same day: not intuitive, "it stops the game when I use it, so it
+means i have to precisely scrub to where I want to look at, then see the
+action." Their direction: bring the two to the front by dulling the rest of the
+scene and let the battle play; give a kill a match-up option, seen only with the
+mode on, that opens the detailed breakdown. That is the second cut (below).
+
+Status: **built**, opt-in from the replay bar's More menu (Match-up, a switch).
+Checked headless on a real FHSW Europe tank fight (see "Checked"); not looked
+at by hand in a browser. Nothing is published: no asset is involved.
 
 ## Using it
 
-- **More (...) > Match-up** on the replay bar. Nothing of it runs until then.
-- The round **freezes** on the best fight within 30 s of the playhead: two
-  things that hit each other, or one of which killed the other. The followed
-  player's own fight comes first, then fights with a kill, then the busiest.
-  Everyone else is put away (the replay's focus, as the dogfight school uses
-  it), the view gets a vignette and a FROZEN stamp with the clock, and the free
-  camera moves off to one side of the two, high enough to see the rounds' arcs.
+- **More (...) > Match-up** on the replay bar turns the mode on (the row reads
+  ON), and again off. Nothing of it runs until then.
+- **While it is on, the round plays.** Whenever a fight is on at the playhead
+  (two things that hit each other, or one that killed the other), the rest of
+  the view is dulled and the two, with whoever rides with them, stay at full
+  colour over it. Their rounds are drawn as they fly, a bright streak each:
+  orange for one that did damage, pale khaki for one that missed or did none.
+  Each hit's damage rises over whoever took it ("-88"), and DESTROYED or KILLED
+  on the round that ends it. Each of the two has a tag with their name, what
+  they are in and their hit points, kept a short way above them on the screen
+  (close to the camera, a point over a hull projects towards the horizon, over
+  whatever is beyond); one off the screen is held at its edge, above the bar
+  and the player card, with an arrow towards them. The replay's own name tags
+  give way while a fight is on.
+- **The strip** at the top: both sides, their hit points as they fall, the hits
+  each has landed and the range between them. *Break it down* freezes the round
+  there (below). With no fight on it says so and offers *Next fight*, which
+  jumps to 4 s before the next one begins. The cross turns the mode off. The
+  fronts' tabs, which sit in the same place, give way while the mode is on
+  (*Next fight* is the way to the fighting then); where the page's minimap
+  would cover the strip (a phone, a narrow window) it keeps to its left.
+- **The camera** is the viewer's. Once, as a fight comes on with the other
+  off the screen, the orbit (not Auto's director, not first person or the
+  free camera) swings round to behind the followed player, looking at who
+  they are fighting.
+- **Which fight**: with a player followed, only theirs (a fight elsewhere would
+  dull the one being watched); with the free camera, any. A fight is on from
+  4 s before its first hit to 4 s after its last event, and the one shown stays
+  while it lasts, giving way only once it is past its last hit and another is
+  under way. The same two meeting again after 20 s without a hit is a new fight.
+- **Kills in the timeline**: with the mode on, every kill in the timeline's
+  tooltip has a *Match-up* button (beside *Kill shot*, where the creator view
+  is granted). It freezes the round 0.15 s before that kill on the fight it
+  ended: the breakdown below.
+- **The breakdown** freezes the round on the fight. Everyone else is put away
+  (the replay's focus, as the dogfight school uses it), the view gets a
+  vignette and a FROZEN stamp with the clock, and the free camera moves off to
+  one side of the two, high enough to see the rounds' arcs. *Back to the
+  round* (or Esc) puts the camera back as it was and plays on if the round was
+  playing; Play, or a seek away, ends the freeze too.
 - **Every round between them hangs in the air** where it flew, on the server's
   flight law: orange for one that did damage, blue for one that struck the hull
   and did none, khaki for a miss, gold for a hit whose place could not be
@@ -52,8 +92,9 @@ hand in a browser. Nothing is published: no asset is involved.
   whether the plate's price matches the recorded drop. A click on a row pulses
   its pin. Put back together / Take apart, As they saw it (the camera back),
   and drag to orbit both.
-- **Esc** closes the stage, then the match-up. **Play** (or a seek away) ends
-  the freeze and puts the round back as it was, the page's own focus included.
+- **Esc** closes the stage, then the freeze. **Play** (or a seek away) ends
+  the freeze and puts the round back as it was, the page's own focus included,
+  with the mode still on.
 
 ## What the words say
 
@@ -76,13 +117,36 @@ what the numbers allowed, for each side:
 
 ## How it works
 
-Three modules, the pure one under node:
+Four modules, the pure one under node:
 
 | File | What |
 |---|---|
-| `viewer/replay-matchup.js` | Pure. The fights near a time (`fightsNear`), the rounds between two things (`roundsBetween`), each hit's recorded drop given once (`assignDrops`), where one was seen from the other (`seenFrom`), the body part a drop names (`bodyPartFor`), what one gun does to a hull's armour (`armourAgainst`), the tallies and the words. |
+| `viewer/replay-matchup.js` | Pure. The round's fights (`fightEpisodes`), the one on at a time (`fightOn`), the next (`nextFight`), the one a kill ended (`fightOfKill`), the fights near a time (`fightsNear`), the rounds between two things (`roundsBetween`), each hit's recorded drop given once (`assignDrops`), where one was seen from the other (`seenFrom`), the body part a drop names (`bodyPartFor`), what one gun does to a hull's armour (`armourAgainst`), the tallies and the words. |
 | `viewer/replay-matchup-strike.js` | Where a round struck a hull (`HullCaster`), the gun a round left (`gunSpecOf`), its price (`priceOf`) and flight (`flightOf`). |
-| `viewer/replay-matchup-view.js` | The page: the menu row, the freeze, the rounds in the world, the panel and its ground cut, and the stage. |
+| `viewer/replay-matchup-live.js` | The mode while the round plays: the spotlight pass, the two's tags and damage, their rounds in flight, the strip. |
+| `viewer/replay-matchup-view.js` | The page: the menu switch, the breakdown's freeze, the rounds in the world, the panel and its ground cut, and the stage. |
+
+**The spotlight** is one more pass after the page's render, before the
+followed player's arms (`replay.js` `renderViewmodel`): a dark sheet over the
+whole frame, then the two drawn again through a small scene of the pass's own.
+That scene is lent, for the one render, the two's drawn objects (their hulls'
+groups and the soldier bodies of everyone in them, `replay-bodies.js`
+`botVisuals`), the level's lights and their rounds in flight, by setting its
+`children`; no object's parent changes, and the scene does not update their
+matrices, which the page's render has just set. So it costs the two's own
+draw calls, not a walk of the level's scene (67,518 nodes on Meuse River
+Line), and draws them exactly as the page did: the camera's own layers (a nose
+the cockpit hides stays hidden), the level's fog, its shadows as already drawn.
+The depth the page's render left is kept, so a hill in front of one of them
+still hides it. The renderer's settings the pass changes are put back in a
+`finally`. The timeline keeps no thumbnail of a dulled frame.
+
+**The round's fights** are each pair's hits and kills, split where 20 s passed
+with neither (`fightEpisodes`), with everyone who was in each side at each
+event, so a followed player killed in their tank still counts as in the fight
+while it holds on. They are worked out when the mode comes on and again
+whenever the Accuracy rebuild changes (a hull's model landing names its gun's
+rounds).
 
 **A thing** is a life: a hull (whoever is in it) or a soldier on foot. A round's
 thing is the hull its FireArms hangs under, else the man (`shooterOf`); what it
@@ -163,14 +227,19 @@ when the parts fly. The parts are the model viewer's part index
 ## Checked
 
 **Unit**: `tools/bf1942-models/tests/test_replay_matchup.py` over
-`replay_matchup_harness.mjs` (24 tests): small recordings written line by
+`replay_matchup_harness.mjs` (32 tests): small recordings written line by
 line. A Sherman and a Tiger 200 m apart (the fight, its moment inside and
 outside it, the rounds between them with the 30 m one left out, each hit's own
 drop, the tallies, the bearings each was seen from); two rounds on one drop; a
 round no verdict credited that passed through the hull before an unclaimed drop,
 with a dummy round beside it; a Thompson's body parts, killing drops included;
-what one gun does to a hull's armour; the words; a soldier against a tank; and
-the wiring (the menu row, the frame hook, the key routing).
+what one gun does to a hull's armour; the words; a soldier against a tank; the
+round's fights for the live mode (the same two meeting twice 50 s apart are two
+fights, the one on at a time, the next, the one a kill ended, the one shown
+staying while it goes on and giving way once it is only holding on, a followed
+player's fights alone); and the wiring (the menu switch, the frame hooks, the
+key routing, the timeline's button, the pass lending the two to its own scene
+and putting the renderer back).
 
 **The real page**, headless Chromium, through `serve_viewer.py` on :5273 (its
 remote fallback for the FHSW Europe trees this machine has not extracted, the
@@ -208,6 +277,38 @@ in under a second after its two frames.
   row under the head, no sideways scroll.
 - No page errors, no match-up warnings in the console.
 
+**The live mode**, the same recording and page, the camera on the Jumbo's
+driver in the orbit, everything through real clicks (the menu, the strip's
+buttons, the timeline's tooltip):
+
+- At 3:06 the strip says no fight is on for them and offers the next at 3:10,
+  4 s before the Tiger's first hit at 3:14.7. *Next fight* goes there; the
+  fight comes on (hits 0 : 0, 133 m), the view dulls and the orbit swings round
+  to behind the Jumbo, the Tiger down the road in view.
+- The dulling, measured off two screenshots of 3:23.95 with the mode on and
+  off: the Jumbo's pixels are the same (mean 108.6 both), the ground round it
+  0.44 to 0.47 of its brightness, the sky 0.54. A tank between the two is
+  dulled with the rest.
+- At 3:23.62 the Jumbo's 88-point round is in the air; at 3:23.95 "-88" rises
+  over the Tiger and the strip reads 2 : 1. At 3:30.85 five rounds of the
+  Tiger's machine-gun burst are in flight at once. 31 rounds between them
+  over the fight.
+- The pass costs a median 0.6 to 0.7 ms a frame in headless Chromium's software GL
+  (90th percentile 1.7 to 1.8 ms, two runs); a first version that drew the level's scene again
+  with the camera on one layer walked all 67,518 of its nodes and cost 1.5 ms
+  (8.6 ms). After each pass its scene holds nothing and both hulls' parents are
+  the page's own.
+- *Break it down* while playing: frozen at the playhead, the panel up, the
+  free camera off to the side; *Back to the round*: the orbit back on the
+  Jumbo's driver and the round playing on.
+- The timeline at the Jumbo's death (3:47.9): the tooltip's two kills each
+  carry Match-up (the Tiger's also Kill shot). The Tiger's freezes at 3:47.7
+  on the fight it ended (29 rounds), hits 3 : 2 from 3:14 to 3:47, the Jumbo 24 to 0 of
+  142; Esc goes back to the live mode.
+- At 1:00, long before the fight, the dulling fades out and the strip offers the next
+  one again; the strip's cross turns the mode off and the menu's switch reads
+  OFF.
+
 On the same recording under node, the Tiger against the M6 heavy shows the
 inferred kill shot: the Tiger's round at 3:38.6 passed 0.9 m from the M6's
 middle just before its hit points went from 46 to 0, which the Accuracy rebuild
@@ -222,6 +323,10 @@ through the fight (+1 every 0.3 s), so its drops are net of that.
 - Planes have no airframe numbers on the stage yet (the dogfight school's
   climb, turn and gun convergence), and soldiers no figure: a soldier's column
   is words only.
-- The match-up is a pause, not a clip: the creator studio could take its freeze
-  and its stage as a beat of a Short.
+- The breakdown is a pause, not a clip: the creator studio could take its
+  freeze and its stage as a beat of a Short. The live mode's look (the dulling,
+  the rounds, the damage) is drawn into the frame, so a creator recording with
+  it on already gets it.
+- The live mode marks a soldier's body and a hull alike; a plane's fight at
+  1 km reads only by its tags.
 - What each saw is read at the frozen moment only, not per round.

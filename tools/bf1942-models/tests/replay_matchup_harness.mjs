@@ -202,4 +202,63 @@ const foot = recording(L => {
   results.foot = fs.map(f => ({ a: f.a.soldier ? 'soldier' : f.a.tmpl, b: f.b.soldier ? 'soldier' : f.b.tmpl, hits: f.hits, kill: Boolean(f.kill) }));
 }
 
+
+// --- (h) The round's fights, as the live match-up picks them --------------------------------
+//
+// The Sherman and the Tiger meet twice: a hit at 10 s, then 50 s later a hit
+// each and the Tiger kills the Sherman. Between those, at 13 s, a Panther 200 m
+// off the Sherman's side hits it once.
+const panther = [200, 0, 0];
+const again = recording(L => {
+  player(L, 1, 'Ann', 2);
+  player(L, 2, 'Kai', 1);
+  player(L, 3, 'Ode', 1);
+  hull(L, 1, 100, 'Sherman', sherman, 1, 2, 100);
+  hull(L, 1, 200, 'Tiger', tiger, 2, 1, 100);
+  hull(L, 1, 300, 'Panther', panther, 3, 1, 100);
+  for (let t = 1.1; t < 70; t += 0.1) {
+    L({ k: 's', t: Math.round(t * 10) / 10, o: [[100, ...sherman, 0, 0, 0, 1], [200, ...tiger, 0, 0, 0, 1], [300, ...panther, 0, 0, 0, 1]] });
+  }
+  fire(L, 10, 1, 100, 'ShermanGunBarrel', sherman, unit(sherman, tiger));
+  hp(L, 10.75, 200, 67);
+  fire(L, 13, 3, 300, 'PantherGunBarrel', panther, unit(panther, sherman));
+  hp(L, 13.75, 100, 70);
+  fire(L, 60, 1, 100, 'ShermanGunBarrel', sherman, unit(sherman, tiger));
+  hp(L, 60.75, 200, 34);
+  fire(L, 62, 2, 200, 'TigerGunBarrel', tiger, unit(tiger, sherman));
+  hp(L, 62.75, 100, 0);
+  kill(L, 62.8, 2, 1, 'Tiger');
+  L({ k: 'end', t: 70 });
+});
+{
+  const w = new Map(['shermangunbarrel', 'tigergunbarrel', 'panthergunbarrel'].map(k => [k, { speed: 300, category: 'land' }]));
+  const b = A.accuracyBoard(again, { weapons: w });
+  const s = b.flatMap(e => e.shots ?? []);
+  const eps = M.fightEpisodes(again, s, again.kills);
+  const name = raw => (raw ? [raw.x.tmpl, raw.y.tmpl].sort().join('-') : null);
+  const [first, panthers, second] = eps;
+  results.episodes = {
+    list: eps.map(raw => ({ pair: name(raw), first: r2(raw.first), last: r2(raw.last), kill: Boolean(raw.kill) })),
+    on12: name(M.fightOn(eps, 12)),
+    on40: name(M.fightOn(eps, 40)),
+    next30: name(M.nextFight(eps, 30)),
+    next30at: r2(M.nextFight(eps, 30)?.first ?? null),
+    nextAfterAll: name(M.nextFight(eps, 63)),
+    ofKill: M.fightOfKill(eps, 62.8, 1) === second,
+    ofKillWrongVictim: M.fightOfKill(eps, 62.8, 2),
+    // Held on past its last hit, it gives way to one under way...
+    takesOver: name(M.fightOn(eps, 13.5, { current: first })),
+    // ...and not while it is still going.
+    staysWhileOn: name(M.fightOn(eps, 10.2, { current: first })),
+    // The camera on the Tiger's driver: theirs alone.
+    onlyFollowed: name(M.fightOn(eps, 13.5, { follow: 2, only: true })),
+    onlyNobody: M.fightOn(eps, 13.5, { follow: 9, only: true }),
+    // The followed player's side first.
+    orientedA: M.orient(again, panthers, 13.5, 1).a.tmpl,
+    orientedKiller: M.orient(again, second, 70).a.tmpl,
+    hasAnn: M.hasPlayer(second, 1),
+    hasOde: M.hasPlayer(second, 3),
+  };
+}
+
 console.log(JSON.stringify(results));
