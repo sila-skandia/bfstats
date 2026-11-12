@@ -252,6 +252,12 @@ Every generated level live runs the page's bot code, and so do DICE's.
   vehicles crawls at a third of real time in the bots' line-of-sight
   re-tests (README 22.4). A run started before a fix has the old code
   loaded.
+- **Stopping a batch means stopping its workers.** Killing the script that
+  feeds `xargs -P` leaves `xargs` and its children running: on 2026-11-12 a
+  stopped regeneration went on rewriting layer folders for forty minutes
+  and seven of them were committed by mistake. After a stop, look
+  (`ps -ax | grep -E "screen.sh|botbatch.mjs level|xargs -P"`), kill what
+  is yours by PID, and check `git status bot-layers` before committing.
 - **Queue page matches in one script** that calls `pagebatch.sh` group
   after group (`( pagebatch.sh a ... & pagebatch.sh b ... & wait )` fills a
   group of five from several mods). Several scripts each waiting on
@@ -283,6 +289,14 @@ The day's record is `page-matches.md` section 6 ("The rest of
 2026-11-12"). The floor's own-hand clause changed that day: at most 0.10
 deaths a bot-minute by a bot's own or its side's hand, or no more than a
 third of the match's enemy kills (DICE's Berlin and Kharkov run to 0.31).
+
+**Before anything else: more bot code is on its way.** The retail-parity
+session told this one on 2026-11-12 that a second set of bot changes was
+still local (bursts on retail's 12-tick clock, medics healing, respawns on
+the reinforcement wave, vehicle weighting, hulls running soldiers over).
+When `git log -- tools/bf1942-models/viewer/bot-*.js` shows it and it is
+live, every live generated level gets one page match on it ("When bot
+code changes", step 5) before any other result is trusted.
 
 **What to do next, best lead first.**
 
