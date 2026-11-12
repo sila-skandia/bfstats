@@ -728,6 +728,8 @@ export class ReplayViewmodel {
       vmSun.intensity = lights.sun.intensity;
       vmSun.position.copy(lights.sun.position);
     }
+    // Remaster mode: the sky's light on the arms too (features/remaster-browser).
+    globalThis.bfRemasterHooks?.scene?.lightOverlay?.(vmScene);
     vmCamera.matrixWorld.copy(cam.matrixWorld);
     vmCamera.matrixWorldInverse.copy(cam.matrixWorld).invert();
     const lens = entry.fov1p ? (entry.fov1p * 180) / Math.PI : FOOT_FOV;

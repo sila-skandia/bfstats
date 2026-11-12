@@ -50,6 +50,13 @@ import { decodePlayerName } from './vehicle-players.js';
 import { angleFactor } from './crash-damage.js';
 import { shotsFor } from './armour-damage.js';
 
+// Remaster mode (features/remaster-browser) runs on three's WebGPU build,
+// which has no WebGLRenderer: a side view then takes a WebGPU renderer from
+// the remaster's hooks. Without `?remaster` this is the WebGLRenderer it was.
+const remasterSideRenderer = options => globalThis.bfRemasterHooks?.sideRenderer?.(options)
+  ?? new THREE.WebGLRenderer(options);
+
+
 const params = new URLSearchParams(location.search);
 const KEY = 'tank-school';
 const stored = key => { try { return localStorage.getItem(key); } catch { return null; } };
@@ -510,7 +517,7 @@ stage.scene.add(grid);
 
 function renderer() {
   if (stage.renderer) return stage.renderer;
-  stage.renderer = new THREE.WebGLRenderer({ canvas: ui.canvas, antialias: true, preserveDrawingBuffer: true });
+  stage.renderer = remasterSideRenderer({ canvas: ui.canvas, antialias: true, preserveDrawingBuffer: true });
   stage.renderer.setPixelRatio(Math.min(2, devicePixelRatio || 1));
   stage.renderer.setClearColor(0x0c0c0c);
   return stage.renderer;

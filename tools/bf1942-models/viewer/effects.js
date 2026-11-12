@@ -446,6 +446,8 @@ export class EffectPlayer {
     // of freezing at the point it started.
     let soundPosition = position;
     let follow = null;
+    // Remaster mode: a flash or blast lights what is around it for a moment.
+    remasterHooks.flash?.(name, position, attach?.object);
     // `silent` skips the sound half altogether, closures and all.
     if (attach?.object && !silent) {
       attach.object.updateWorldMatrix(true, false);

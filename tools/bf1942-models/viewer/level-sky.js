@@ -104,12 +104,9 @@ export function createLevelSky(page) {
       }));
       obj.material = Array.isArray(obj.material) ? mats : mats[0];
     });
-    // Remaster mode draws a physical sky with its own clouds
-    // (remaster-sky.js); the painted one stays loaded for the retail toggle.
-    if (remasterHooks.scene) {
-      sky.skyRoot.visible = false;
-      return;
-    }
+    // Remaster mode keeps this painted sky, lifted into its HDR frame and
+    // used for its ambient light (remaster-sky.js `paintedSky`).
+    remasterHooks.scene?.atmosphere.paintedSky(sky.skyRoot);
     setupClouds(dir);
   }
 
@@ -132,7 +129,10 @@ export function createLevelSky(page) {
       uFadeStart: { value: 400 },
       uFadeEnd: { value: 900 },
     };
-    const material = new THREE.ShaderMaterial({
+    // Remaster mode: the same layer as a node material, its uniforms the
+    // same `.value` holders this module drives (remaster-sky.js).
+    const remasterClouds = remasterHooks.cloudMaterial?.(tex, sky.cloudUniforms);
+    const material = remasterClouds ?? new THREE.ShaderMaterial({
       uniforms: sky.cloudUniforms,
       transparent: true,
       depthWrite: false,

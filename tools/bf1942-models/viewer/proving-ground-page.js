@@ -38,6 +38,13 @@ import { PG, PG_COLOURS } from './proving-ground.js';
 import { createSilhouetteRange, SILHOUETTE, SILHOUETTE_LANE_X } from './proving-targets.js';
 import { fighterRank, lessonById, jetName } from './dogfight-lessons.js';
 
+// Remaster mode (features/remaster-browser) runs on three's WebGPU build,
+// which has no WebGLRenderer: a side view then takes a WebGPU renderer from
+// the remaster's hooks. Without `?remaster` this is the WebGLRenderer it was.
+const remasterSideRenderer = options => globalThis.bfRemasterHooks?.sideRenderer?.(options)
+  ?? new THREE.WebGLRenderer(options);
+
+
 /** Where the kit bench stands: at the firing range's point, a step behind the line. */
 export const BENCH = Object.freeze({ x: SILHOUETTE_LANE_X, z: PG.LINE_Z + 7, height: 0.86, spacing: 1.6, depth: 1.2 });
 
@@ -454,7 +461,7 @@ export function createProvingGroundPage(page) {
     if (cardGl) return cardGl;
     let renderer;
     try {
-      renderer = new THREE.WebGLRenderer({ canvas: cardCanvas, alpha: true, antialias: true, powerPreference: 'low-power' });
+      renderer = remasterSideRenderer({ canvas: cardCanvas, alpha: true, antialias: true, powerPreference: 'low-power' });
     } catch { return null; }
     renderer.setPixelRatio(Math.min(window.devicePixelRatio || 1, 2));
     renderer.setSize(cardCanvas.width, cardCanvas.height, false);

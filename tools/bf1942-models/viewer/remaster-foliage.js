@@ -22,7 +22,7 @@ import {
   modelWorldMatrix, modelWorldMatrixInverse, normalize, positionLocal, sin, time,
   transformNormalToView, uv, vec2, vec3, vec4,
 } from 'three/tsl';
-import { matTexture, shadowCut } from './remaster-materials.js';
+import { copyRemasterProps, matTexture, shadowCut } from './remaster-materials.js';
 
 // One wind for the level: a direction and a gust, slowly varying.
 const WIND = vec3(0.86, 0, 0.5);
@@ -123,7 +123,7 @@ const NODE_KEYS = ['positionNode', 'colorNode', 'normalNode', 'maskShadowNode', 
 /** `Material.clone` drops the node slots of a plain material; carry them across. */
 export function carryNodes(from, to) {
   for (const k of NODE_KEYS) if (from[k] !== undefined) to[k] = from[k];
-  return to;
+  return copyRemasterProps(from, to);
 }
 
 export const remasterFoliage = { windNodes, spriteNodes, impostorNodes, carryNodes };

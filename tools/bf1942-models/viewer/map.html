@@ -432,8 +432,20 @@
 // three/tsl and the addons. Where import maps merge, the first definition
 // of a specifier wins, so the retail map's 'three' is then ignored.
 (() => {
+  // The address decides, else this tab's choice made on the menu
+  // (play/index.html, `bfRemaster`); remaster-mode.js reads it the same way.
   const p = new URLSearchParams(location.search);
-  if (!p.has('remaster') || p.get('remaster') === '0') return;
+  let on = null;
+  try {
+    if (p.has('remaster')) {
+      if (p.get('remaster') === '0') sessionStorage.removeItem('bfRemaster');
+      else sessionStorage.setItem('bfRemaster', p.get('remaster'));
+    }
+    on = sessionStorage.getItem('bfRemaster');
+  } catch {
+    on = p.has('remaster') && p.get('remaster') !== '0' ? p.get('remaster') : null;
+  }
+  if (p.get('remaster') === '0' || on === null) return;
   const map = document.createElement('script');
   map.type = 'importmap';
   map.textContent = JSON.stringify({ imports: {

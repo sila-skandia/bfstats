@@ -35,7 +35,9 @@ export function remasterWaterMaterial({ w, layer1, layer2, normal, depthTex, wor
   // Physical, for water's own reflectance (IOR 1.33: 2 % head-on).
   const mat = new THREE.MeshPhysicalNodeMaterial();
   mat.ior = 1.333;
-  mat.specularIntensity = 1;
+  // A little over water's 2 %: retail's stand-in reflection was stronger,
+  // and the sea read dark from a height against it.
+  mat.specularIntensity = 1.6;
   mat.name = 'remaster-water';
   mat.transparent = true;
   mat.depthWrite = false;
@@ -94,7 +96,7 @@ export function remasterWaterMaterial({ w, layer1, layer2, normal, depthTex, wor
   const foam = smoothstep(0.35, 0.02, bedDepth).mul(smoothstep(0.45, 0.8, foamNoise)).mul(0.5);
   // The colour the water scatters back, the level's own shallow-to-deep
   // ramp, lit by the sky.
-  const scatter = base.mul(1.15);
+  const scatter = base.mul(1.5);
   mat.colorNode = mix(vec3(0), vec3(0.8), foam);
   mat.emissiveNode = scatter.mul(float(1).sub(fresnel)).mul(float(1).sub(foam));
   mat.opacityNode = clamp(float(1).sub(seeThrough).max(fresnel).max(foam), 0.35, 0.97);

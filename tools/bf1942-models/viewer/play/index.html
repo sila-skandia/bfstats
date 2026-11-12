@@ -5,6 +5,19 @@
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>BF1942.exe</title>
 <link rel="icon" href="../favicon.ico">
+<script>
+// Remaster mode (features/remaster-browser) for this tab: `?remaster` (with
+// its flags) on the menu goes with every game the menu starts, whichever
+// way it starts it; `?remaster=0` turns it off. map.html reads the same key.
+(() => {
+  try {
+    const p = new URLSearchParams(location.search);
+    if (!p.has('remaster')) return;
+    if (p.get('remaster') === '0') sessionStorage.removeItem('bfRemaster');
+    else sessionStorage.setItem('bfRemaster', p.get('remaster'));
+  } catch { /* storage refused: the address alone decides */ }
+})();
+</script>
 <style>
 html, body { margin: 0; padding: 0; background: #000; height: 100%; overflow: hidden; }
 .screen { display: block; width: 100%; height: 100%; outline: none; }

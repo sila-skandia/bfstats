@@ -30,6 +30,13 @@ import { arcExtent } from './dogfight-gunners.js';
 import { RULES as BOELCKE, doctrineOf } from './dogfight-doctrine.js';
 import { movesOn } from './dogfight-measure.js';
 
+// Remaster mode (features/remaster-browser) runs on three's WebGPU build,
+// which has no WebGLRenderer: a side view then takes a WebGPU renderer from
+// the remaster's hooks. Without `?remaster` this is the WebGLRenderer it was.
+const remasterSideRenderer = options => globalThis.bfRemasterHooks?.sideRenderer?.(options)
+  ?? new THREE.WebGLRenderer(options);
+
+
 /** A Neutral Depth token's value (tokens.css): the theatre's 3D colours
  *  are the site's, read where the page defines them, never written here. */
 const token = (name, fallback) => {
@@ -454,7 +461,7 @@ export function createDogfightTheatre({ host, makePlane, planeVisual = () => nul
     if (gl) return gl;
     let r;
     try {
-      r = new THREE.WebGLRenderer({ canvas: ui.canvas, antialias: true, powerPreference: 'high-performance' });
+      r = remasterSideRenderer({ canvas: ui.canvas, antialias: true, powerPreference: 'high-performance' });
     } catch { return null; }
     r.setPixelRatio(Math.min(window.devicePixelRatio || 1, 2));
     r.outputColorSpace = THREE.SRGBColorSpace;

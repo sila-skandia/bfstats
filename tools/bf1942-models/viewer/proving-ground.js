@@ -326,6 +326,10 @@ export function provingGroundReport(source, placed, { team = 1 } = {}) {
 /** The floor's material: a grid in world space, finer lines every 10 m,
  *  heavier every 50 m, and the range lines counted from the firing line. */
 export function floorMaterial() {
+  // Remaster mode (features/remaster-browser): the same grid as a node
+  // material; WebGPU runs no GLSL.
+  const remasterFloor = globalThis.bfRemasterHooks?.provingFloor;
+  if (remasterFloor) return remasterFloor(PG_COLOURS, PG);
   const c = PG_COLOURS;
   const vec = a => new THREE.Vector3(a[0], a[1], a[2]);
   const mat = new THREE.ShaderMaterial({

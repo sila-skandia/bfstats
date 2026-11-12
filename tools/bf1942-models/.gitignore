@@ -18,3 +18,8 @@ viewer/play/pack-dev
 # Captures of a real server's rounds, written into whatever directory a run
 # starts from. They are large, live and machine-specific.
 /run*.ndjson
+
+# Remaster mode (features/remaster-browser): the generator venv and the
+# generated normal/roughness maps (remaster_texture_maps.py).
+.venv-remaster/
+viewer/remaster-textures/

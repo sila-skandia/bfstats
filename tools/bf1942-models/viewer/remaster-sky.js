@@ -19,12 +19,13 @@
 
 import * as THREE from 'three/webgpu';
 import {
-  cameraPosition, clamp, exp, float, max, mix, normalize, positionWorld, smoothstep,
-  uniform, vec3, vec4, output, dot, pow,
+  cameraPosition, clamp, exp, float, materialColor, max, mix, normalize, positionWorld, smoothstep,
+  uniform, vec3, vec4, output, dot, pow, texture,
 } from 'three/tsl';
 import { SkyMesh } from 'three/addons/objects/SkyMesh.js';
 import { CSMShadowNode } from 'three/addons/csm/CSMShadowNode.js';
 import { REMASTER_OFF } from './remaster-mode.js';
+import { terrainSunDir } from './remaster-materials.js';
 
 /**
  * The direction toward the sun from scene.json's `sunDirection`, which in
@@ -154,6 +155,7 @@ export function createRemasterSky({ renderer, scene, camera, sun, hemi }) {
     horizon: uniform(new THREE.Color(0.6, 0.65, 0.7)),
     glow: uniform(0.8),
     clear: uniform(45),
+    start: uniform(150),
   };
   const sky = new SkyMesh();
   sky.name = 'remaster-sky';
@@ -204,6 +206,10 @@ export function createRemasterSky({ renderer, scene, camera, sun, hemi }) {
   const shadowSize = Number(new URLSearchParams(location.search).get('shadowSize')) || 2048;
   sun.shadow.mapSize.set(shadowSize, shadowSize);
   sun.shadow.bias = -0.0004;
+  // The shadow cameras see only the shadow layer: the static casters' merged
+  // proxies and whatever moving caster enabled it (remaster-renderer.js).
+  // Set before the cascades clone this shadow.
+  if (!REMASTER_OFF.has('noproxies')) sun.shadow.camera.layers.set(1);
   sun.shadow.normalBias = 0.6;
   sun.shadow.camera.near = 1;
   sun.shadow.camera.far = 2000;
@@ -236,7 +242,11 @@ export function createRemasterSky({ renderer, scene, camera, sun, hemi }) {
     const haze = float(1).sub(exp(optical.negate()));
     // The world still ends at fogEnd: the far plane and the culling do.
     const wall = smoothstep(u.end.mul(0.8), u.end, toFrag.length());
-    const factor = clamp(max(haze, wall), 0, 1);
+    // Never less than 70 % of retail's own linear ramp (fogStart to fogEnd):
+    // from altitude the height haze is thin, and without the floor the
+    // world met the wall at 80 % of fogEnd as one hard band.
+    const ramp = clamp(toFrag.length().sub(u.start).div(max(u.end.sub(u.start), 1)), 0, 1).mul(0.7);
+    const factor = clamp(max(max(haze, ramp), wall), 0, 1);
     // The haze's colour: the sky's own horizon (computed on the CPU from
     // the same model, `apply`), tinted by the level's fog colour, with the
     // sun's forward glow. A per-pixel lookup of the sky's image-based light
@@ -248,9 +258,77 @@ export function createRemasterSky({ renderer, scene, camera, sun, hemi }) {
   }
 
   let built = false;
+  // The level's own sky (features/remaster-browser, "The sky"): its painted
+  // SkyBox mesh, or its cube of six faces, kept as the sky the player sees
+  // and the source of the ambient light. The physical sky stays only for a
+  // level that ships neither. `painted` is the level's SkyBox root (set by
+  // level-sky.js `setupSky` through `paintedSky`), `cube` its cube texture.
+  let painted = null;
+  let paintedEnv = null;
+  const horizonY = uniform(0.06);
+  const skyGain = uniform(1);
+  function paintedSky(root) {
+    painted = root;
+    if (!root) return;
+    root.visible = true;
+    root.traverse(obj => {
+      if (!obj.isMesh) return;
+      for (const m of [obj.material].flat()) {
+        if (!m || m.remasterSky) continue;
+        m.remasterSky = true;
+        // Display-referred paint, lifted into the HDR frame so it shows at
+        // its painted brightness through the exposure and tone mapping, and
+        // faded into the haze in the last few degrees above the horizon,
+        // where the fogged world meets it.
+        const dirY = normalize(positionWorld.sub(cameraPosition)).y;
+        const paint = materialColor.rgb.mul(skyGain);
+        m.colorNode = vec4(mix(paint, u.horizon, smoothstep(horizonY, horizonY.mul(-0.3), dirY)), 1);
+        m.fog = false;
+        m.needsUpdate = true;
+      }
+    });
+  }
+
+  /**
+   * The retail cloud layer (`Sky.addCloud`, level-sky.js `setupClouds`) as a
+   * node material. `U` is level-sky.js's uniform table: its entries are
+   * swapped for uniform nodes, which carry the same `.value` the module
+   * keeps writing each frame.
+   */
+  function cloudMaterial(tex, U) {
+    for (const k of ['uOffset', 'uSpan', 'uCam', 'uFadeStart', 'uFadeEnd']) U[k] = uniform(U[k].value);
+    const m = new THREE.MeshBasicNodeMaterial();
+    m.transparent = true;
+    m.depthWrite = false;
+    m.side = THREE.DoubleSide;
+    m.fog = false;
+    const c = texture(tex, positionWorld.xz.div(U.uSpan).add(U.uOffset));
+    const fade = float(1).sub(smoothstep(U.uFadeStart, U.uFadeEnd, positionWorld.xz.distance(U.uCam)));
+    m.colorNode = vec4(c.rgb.mul(skyGain), c.a.mul(fade));
+    m.remasterSky = true;
+    return m;
+  }
+
   function rebuildEnv() {
     envTarget?.dispose();
-    envTarget = pmrem.fromScene(envScene, 0, 0.5, 4000);
+    if (painted) {
+      // The painted sky at the origin of the light probe's own scene.
+      if (paintedEnv) envScene.remove(paintedEnv);
+      paintedEnv = painted.clone();
+      paintedEnv.position.set(0, 0, 0);
+      const half = painted.userData.halfExtent || 2000;
+      paintedEnv.scale.setScalar(3000 / (half * 1.7320508));
+      paintedEnv.visible = true;
+      envScene.add(paintedEnv);
+      envSky.visible = false;
+      envTarget = pmrem.fromScene(envScene, 0, 0.5, 8000);
+    } else if (scene.background?.isCubeTexture) {
+      envTarget = pmrem.fromCubemap(scene.background);
+    } else {
+      if (paintedEnv) { envScene.remove(paintedEnv); paintedEnv = null; }
+      envSky.visible = true;
+      envTarget = pmrem.fromScene(envScene, 0, 0.5, 4000);
+    }
     scene.environment = envTarget.texture;
     // `nofog`: a fog node that changes nothing, which also outranks the
     // retail THREE.Fog level-sky.js keeps setting.
@@ -287,12 +365,19 @@ export function createRemasterSky({ renderer, scene, camera, sun, hemi }) {
     u.falloff.value = a.falloff;
     u.end.value = a.fogEnd;
     u.clear.value = a.fogStart * 0.6;
+    u.start.value = a.fogStart;
     u.base.value = Number.isFinite(waterLevel) ? waterLevel : 0;
     const f = a.fogColor;
     const lum = Math.max(0.05, 0.2126 * f[0] + 0.7152 * f[1] + 0.0722 * f[2]);
     u.tint.value.setRGB(
       0.5 + 0.5 * f[0] / lum, 0.5 + 0.5 * f[1] / lum, 0.5 + 0.5 * f[2] / lum);
     u.sunDir.value.copy(toward);
+    terrainSunDir.value.copy(toward);
+    // The cascades reach the fog wall: past it nothing is drawn.
+    if (csm && !qp.get('shadowFar')) {
+      csm.maxFar = Math.min(800, a.fogEnd);
+      projectionKey = '';
+    }
     // The horizon's mean colour, a little above the line, all round.
     const params = { turbidity: a.turbidity, rayleigh: a.rayleigh, mieCoefficient: 0.005, mieDirectionalG: 0.8 };
     const h = [0, 0, 0];
@@ -312,6 +397,16 @@ export function createRemasterSky({ renderer, scene, camera, sun, hemi }) {
     const fogLum = Math.max(1e-3, 0.2126 * fogLin.r + 0.7152 * fogLin.g + 0.0722 * fogLin.b);
     const fogAt = [fogLin.r, fogLin.g, fogLin.b].map(c => c * skyLum / fogLum);
     u.horizon.value.setRGB(...skyH.map((c, i) => c / 3 + fogAt[i] * 2 / 3));
+    // A level's own sky: the haze is its fog colour at the painted sky's
+    // brightness (retail's fog was chosen to meet that paint at the
+    // horizon), and the physical sky is not drawn.
+    skyGain.value = 1 / Math.max(0.1, renderer.toneMappingExposure);
+    const own = painted || scene.background?.isCubeTexture;
+    sky.visible = !own;
+    if (own) {
+      u.horizon.value.setRGB(fogLin.r * skyGain.value, fogLin.g * skyGain.value, fogLin.b * skyGain.value);
+      scene.environmentIntensity = a.skyIntensity * 1.6;
+    }
     rebuildEnv();
     return a;
   }
@@ -357,7 +452,7 @@ export function createRemasterSky({ renderer, scene, camera, sun, hemi }) {
   }
 
   return {
-    sky, csm, apply, update, uniforms: u,
+    sky, csm, apply, update, paintedSky, cloudMaterial, uniforms: u,
     get built() { return built; },
   };
 }

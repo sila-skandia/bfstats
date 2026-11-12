@@ -19,6 +19,13 @@
 import * as THREE from 'three';
 import { sideAt, shellAt, studyFight, shotWords, timeline, samplesOf, LIFT } from './tank-duel.js';
 
+// Remaster mode (features/remaster-browser) runs on three's WebGPU build,
+// which has no WebGLRenderer: a side view then takes a WebGPU renderer from
+// the remaster's hooks. Without `?remaster` this is the WebGLRenderer it was.
+const remasterSideRenderer = options => globalThis.bfRemasterHooks?.sideRenderer?.(options)
+  ?? new THREE.WebGLRenderer(options);
+
+
 const esc = v => String(v ?? '').replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' })[c]);
 const n1 = v => (v == null || !Number.isFinite(v) ? '-' : Math.abs(v - Math.round(v)) < 0.05 ? String(Math.round(v)) : v.toFixed(1));
 const COLORS = ['var(--tks-you)', 'var(--tks-them)'];
@@ -270,7 +277,7 @@ export function mountStudy(root, deps) {
   let sight = null;
   function sightScene() {
     if (sight) return sight;
-    const renderer = new THREE.WebGLRenderer({ canvas: ui.canvas, antialias: true });
+    const renderer = remasterSideRenderer({ canvas: ui.canvas, antialias: true });
     renderer.setPixelRatio(Math.min(2, globalThis.devicePixelRatio || 1));
     const scene = new THREE.Scene();
     scene.background = new THREE.Color(0xa9b6bb);

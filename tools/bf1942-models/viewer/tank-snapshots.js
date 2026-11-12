@@ -12,6 +12,13 @@
 
 import * as THREE from 'three';
 
+// Remaster mode (features/remaster-browser) runs on three's WebGPU build,
+// which has no WebGLRenderer: a side view then takes a WebGPU renderer from
+// the remaster's hooks. Without `?remaster` this is the WebGLRenderer it was.
+const remasterSideRenderer = options => globalThis.bfRemasterHooks?.sideRenderer?.(options)
+  ?? new THREE.WebGLRenderer(options);
+
+
 let renderer = null;
 const scene = new THREE.Scene();
 {
@@ -40,7 +47,7 @@ function gunNode(root, name) {
  * in the picture's CSS pixels. `gunName` picks the main gun.
  */
 export function snapshots(source, { gunName = null, pxPerM = 34, pad = 0.5, dpr = 2 } = {}) {
-  renderer ??= new THREE.WebGLRenderer({ antialias: true, alpha: true, preserveDrawingBuffer: true });
+  renderer ??= remasterSideRenderer({ antialias: true, alpha: true, preserveDrawingBuffer: true });
   renderer.setClearColor(0x000000, 0);
   const model = source.clone(true);
   model.position.set(0, 0, 0);

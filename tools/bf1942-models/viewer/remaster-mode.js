@@ -9,14 +9,26 @@
 
 const params = typeof location === 'undefined' ? new URLSearchParams() : new URLSearchParams(location.search);
 
-/** True when the page was opened with `?remaster`. */
-export const REMASTER = params.has('remaster') && params.get('remaster') !== '0';
+/**
+ * The tab's remaster setting: the address's `?remaster` (and its flags) when
+ * it has one, else what the menu was opened with in this tab (`bfRemaster`
+ * in sessionStorage, written by play/index.html and map.html). Null is off.
+ */
+function remasterSetting() {
+  if (params.get('remaster') === '0') return null;
+  if (params.has('remaster')) return params.get('remaster');
+  try { return typeof sessionStorage === 'undefined' ? null : sessionStorage.getItem('bfRemaster'); } catch { return null; }
+}
+const SETTING = remasterSetting();
+
+/** True when this page runs in remaster mode. */
+export const REMASTER = SETTING !== null;
 
 /**
  * Parts of the remaster turned off for comparison and the frame-time table:
  * `?remaster=noao,nobloom,nofog,nowater,noshadow,nopost,nosky`.
  */
-export const REMASTER_OFF = new Set(REMASTER ? (params.get('remaster') || '').split(',').filter(Boolean) : []);
+export const REMASTER_OFF = new Set(REMASTER ? SETTING.split(',').filter(Boolean) : []);
 
 /** True when remaster rendering is on but `?remasterAudio=0` keeps the retail audio chain. */
 export const REMASTER_AUDIO = REMASTER && params.get('remasterAudio') !== '0';

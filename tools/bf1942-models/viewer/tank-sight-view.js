@@ -21,6 +21,13 @@
 
 import * as THREE from 'three';
 
+// Remaster mode (features/remaster-browser) runs on three's WebGPU build,
+// which has no WebGLRenderer: a side view then takes a WebGPU renderer from
+// the remaster's hooks. Without `?remaster` this is the WebGLRenderer it was.
+const remasterSideRenderer = options => globalThis.bfRemasterHooks?.sideRenderer?.(options)
+  ?? new THREE.WebGLRenderer(options);
+
+
 const DEG = 180 / Math.PI;
 /** The tube above the ground: the camera's height over the floor. */
 export const EYE = 1.5;
@@ -51,7 +58,7 @@ export function zoomPose(view) {
 }
 
 export function createSightView(canvas) {
-  const renderer = new THREE.WebGLRenderer({ canvas, antialias: true });
+  const renderer = remasterSideRenderer({ canvas, antialias: true });
   renderer.setPixelRatio(Math.min(2, globalThis.devicePixelRatio || 1));
   renderer.autoClear = false;
 
