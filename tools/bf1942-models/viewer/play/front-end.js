@@ -18,6 +18,7 @@ import { createReplayScreen } from './replay-screen.js';
 import { createProvingGroundScreen } from './proving-ground-screen.js';
 import { SHORT_PLAYER_EVENT } from './replay-shorts.js';
 import { bootShortLoader, endBootShortLoader } from './short-loader.js';
+import { VANILLA } from '../mods.js';
 
 const canvas = document.getElementById('screen');
 const canvasCamp = document.getElementById('screen-camp');
@@ -69,6 +70,9 @@ const MULTIPLAY_TABS = [
 ];
 
 const NAME_KEY = 'bf42-mesh-player-name';
+// The page's query, shared by every screen: a pick on CUSTOM GAME rewrites
+// its `mod` (`addressMod`), so a tab that loads after the pick reads the mod
+// picked, not the one a link opened the page on.
 const params = new URLSearchParams(location.search);
 const playerName = (() => {
   const asked = params.get('name');
@@ -86,6 +90,7 @@ const playerName = (() => {
 const screen = createSkirmishScreen({
   canvas,
   root: '../',
+  params,
   music: true,
   // `menu/Background`'s movie, behind every tab this page draws: the one
   // controller that follows the active mod starts it for all of them.
@@ -108,6 +113,7 @@ document.addEventListener(SHORT_PLAYER_EVENT, event => screen.holdMusic(Boolean(
 const campaign = createCampaignScreen({
   canvas: canvasCamp,
   root: '../',
+  params,
   tabs: SINGLEPLAY_TABS,
   onTab: id => show(tabOf(id)),
   onStatus: text => { status.textContent = text; },
@@ -117,6 +123,7 @@ const campaign = createCampaignScreen({
 const multiplay = createMultiplayScreen({
   canvas: canvasMp,
   root: '../',
+  params,
   tabs: MULTIPLAY_TABS,
   onTab: id => (id === 'create' ? multiplay.openCreate() : show(id)),
   onStatus: text => { status.textContent = text; },
@@ -125,13 +132,15 @@ multiplay.setName(playerName);
 
 // CUSTOM GAME: the mod list — which game Instant Battle is a battle in.
 // Picking one switches the mod the way it always did; the level list on the
-// Instant Battle tab follows it.
+// Instant Battle tab follows it, and the address carries it (`?mod=`), so a
+// link to the page opens on that mod.
 const customGame = createModPicker({
   canvas: canvasCg,
   root: '../',
+  params,
   tabs: TABS,
   onTab: id => show(id),
-  onMod: id => screen.chooseMod(id),
+  onMod: id => { addressMod(id); screen.chooseMod(id); },
   onStatus: text => { status.textContent = text; },
 });
 
@@ -148,6 +157,7 @@ const options = createControlsScreen({
   controls,
   profileSync,
   root: '../',
+  params,
   tabs: OPTIONS_TABS,
   onTab: id => show(id),
   onStatus: text => { status.textContent = text; },
@@ -262,6 +272,18 @@ function addressFor(id) {
   if (id !== 'replay') for (const key of ['rec', 'server', 'uploader', 'short']) url.searchParams.delete(key);
   // THE RANGE's own screen (its loadout and side) belongs to that tab alone.
   if (id !== 'proving') for (const key of ['view', 'battle', 'side']) url.searchParams.delete(key);
+  if (url.href !== location.href) history.replaceState(history.state, '', url);
+}
+
+/** The mod picked on CUSTOM GAME in the address, `?mod=<id>`; vanilla is the
+ *  page without one. Every tab keeps it (`addressFor` never drops it), so
+ *  `?tab=customgame&mod=fhsw` and `?mod=fhsw` both open on FHSW. */
+function addressMod(id) {
+  if (id === VANILLA.id) params.delete('mod');
+  else params.set('mod', id);
+  const url = new URL(location.href);
+  if (id === VANILLA.id) url.searchParams.delete('mod');
+  else url.searchParams.set('mod', id);
   if (url.href !== location.href) history.replaceState(history.state, '', url);
 }
 
