@@ -69,7 +69,7 @@ export function setTextureMaps(hashes) { mapIndex = new Set(hashes || []); }
 /** The packed map for `map`'s store texture, or null when none was generated. */
 function packedMapFor(map) {
   const hash = map?.userData?.storeHash;
-  if (!hash || !mapIndex.has(hash) || REMASTER_OFF.has('nomaps')) return null;
+  if (!hash || !mapIndex.has(hash) || !REMASTER_OFF.has('maps')) return null;
   let t = mapCache.get(hash);
   if (!t) {
     t = mapLoader.load(`./remaster-textures/${hash.slice(0, 2)}/${hash}.webp`);

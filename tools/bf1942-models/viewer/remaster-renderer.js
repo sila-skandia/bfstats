@@ -114,8 +114,8 @@ export async function createRemasterScene({ renderer, scene, camera, sun, hemi }
   const atmosphere = createRemasterSky({ renderer, scene, camera, sun, hemi });
   remasterHooks.materials = remasterMaterials;
   // The generated normal and roughness maps' index (remaster_texture_maps.py);
-  // none generated is no relief, not an error.
-  try {
+  // none generated is no relief, not an error. Asked for with `maps`.
+  if (off.has('maps')) try {
     const index = await fetch('./remaster-textures/index.json').then(r => (r.ok ? r.json() : null));
     (await import('./remaster-materials.js')).setTextureMaps(index?.hashes);
   } catch { /* no maps */ }

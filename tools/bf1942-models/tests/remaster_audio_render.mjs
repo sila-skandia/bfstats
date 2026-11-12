@@ -87,7 +87,7 @@ try {
     const pageErrors = [];
     live.on('pageerror', e => pageErrors.push(`pageerror: ${e.message}\n${(e.stack || '').split('\n').slice(0, 4).join('\n')}`));
     live.on('console', m => { if (m.type() === 'error') pageErrors.push(`console: ${m.text()}`); });
-    await live.goto(`${BASE}/map.html?map=wake&remaster&shots=1&mute`, { timeout: 120000 });
+    await live.goto(`${BASE}/map.html?map=wake&remaster&remasterAudio=1&shots=1&mute`, { timeout: 120000 });
     await live.waitForTimeout(25000);
     // A window of frames, its cost measured from a clean count.
     await live.evaluate(() => window.__remasterAudio?.()?.resetStats());
@@ -100,7 +100,7 @@ try {
     const counted = new Map();
     for (const e of pageErrors) counted.set(e.slice(0, 200), (counted.get(e.slice(0, 200)) ?? 0) + 1);
     const errors = [...counted].map(([text, count]) => ({ count, text }));
-    measurements.page = { url: 'map.html?map=wake&remaster&shots=1&mute', errors, ...snap };
+    measurements.page = { url: 'map.html?map=wake&remaster&remasterAudio=1&shots=1&mute', errors, ...snap };
     console.log('page:', JSON.stringify(measurements.page, null, 1));
   }
 } finally {

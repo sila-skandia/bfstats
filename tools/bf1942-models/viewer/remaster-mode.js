@@ -25,13 +25,20 @@ const SETTING = remasterSetting();
 export const REMASTER = SETTING !== null;
 
 /**
- * Parts of the remaster turned off for comparison and the frame-time table:
- * `?remaster=noao,nobloom,nofog,nowater,noshadow,nopost,nosky`.
+ * The remaster's flags. Parts turned off for comparison and the frame-time
+ * table: `?remaster=noao,nobloom,nofog,nowater,noshadow,nopost,nosky`. Parts
+ * left out unless asked for (the owner kept the sun and the water, and was
+ * not sold on the rest, 2026-11-12): `?remaster=maps` adds the generated
+ * normal and roughness maps.
  */
 export const REMASTER_OFF = new Set(REMASTER ? SETTING.split(',').filter(Boolean) : []);
 
-/** True when remaster rendering is on but `?remasterAudio=0` keeps the retail audio chain. */
-export const REMASTER_AUDIO = REMASTER && params.get('remasterAudio') !== '0';
+/**
+ * True when `?remasterAudio=1` adds the remaster audio chain (HRTF, occlusion,
+ * reverb). Off by default: against retail it sounded muffled, "like having
+ * headphones on" (the owner, 2026-11-12), so the retail chain plays.
+ */
+export const REMASTER_AUDIO = REMASTER && params.get('remasterAudio') === '1';
 
 /**
  * What the remaster modules hand the rest of the page, filled in by
