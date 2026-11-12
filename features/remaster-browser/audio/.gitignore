@@ -1,0 +1,3 @@
+# The rendered remaster audio scenarios (remaster_audio_render.mjs) stay local:
+# about 17 MB, sent to the owner by hand. measurements.json is kept.
+*.wav

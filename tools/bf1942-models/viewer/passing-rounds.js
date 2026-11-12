@@ -28,6 +28,7 @@
 // constructor, client 0x00578f00, writes 0xC16BAE14; ledger IMP-7). This file
 // carried Earth's 9.81 until 2026-11-12. Signed downward in `point-body.js` (re-exported by `physics.js`).
 import { GRAVITY as WORLD_GRAVITY } from './point-body.js';
+import { ds3dSpatialHook } from './ds3d-pan.js';
 const GRAVITY = -WORLD_GRAVITY;
 
 /**
@@ -64,6 +65,10 @@ export class PassingRounds {
    * early (its tracer struck something), or null when nothing was started.
    */
   fly(template, origin, dir, speed, length, gravity = 0) {
+    // Remaster mode (features/remaster-browser): the round's shock cone, heard
+    // where and when it touches the ear (`remaster-audio.js` `roundFlown`),
+    // on top of the script's own crack. No hook in the retail build.
+    ds3dSpatialHook()?.roundFlown?.(origin, dir, speed, length);
     const audio = this.effectAudio;
     if (!audio || !template || !(speed > 0) || !(length > 0) || !audio.has(template)) return null;
     // A round whose line never comes within reach of any of its script's

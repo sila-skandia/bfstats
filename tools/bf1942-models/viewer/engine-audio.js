@@ -568,12 +568,18 @@ export class EngineAudio {
    * still owns, which is what makes that safe. The stack stops at the game's
    * `INSTANCES_PER_SAMPLE`, past which the oldest tail goes.
    *
+   * `lead` (seconds, remaster mode only: `world-fire.js` hands it the part
+   * of a report's flight from the gun that falls inside this frame) starts
+   * the round's one-shots that far ahead of now and sets the clock back by
+   * as much, so its `Time` gates count from when it is heard. The retail
+   * build never passes it.
+   *
    * @returns {number} how many layers actually started.
    */
-  trigger() {
+  trigger(lead = 0) {
     if (this.relatch) return this.#press();
     if (!this.started || this.disposed || this.released) return 0;
-    return this.#fire();
+    return this.#fire(lead > 0 ? lead : 0);
   }
 
   /**
@@ -600,9 +606,9 @@ export class EngineAudio {
     return this.voices.some(voice => voice.layer.loop && voice.targetGain > 0);
   }
 
-  #fire() {
-    const now = this.ctx.currentTime;
-    this.elapsed = 0;
+  #fire(lead = 0) {
+    const now = this.ctx.currentTime + lead;
+    this.elapsed = lead > 0 ? -lead : 0;
     // A fresh alternate and a fresh pitch offset per round: `randomStartPitch`
     // is rolled once per *play* in the engine, and a one-shot voice that kept
     // the offset it was built with would give every ricochet in a burst the
