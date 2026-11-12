@@ -155,6 +155,10 @@ the part; the SBD then shows above the BF109 as it blows up.
   (`DELETE` checks `CreatorUserId`). The strip says "Shared by NAME" and
   has a Creators filter. Not tried end to end against production: that
   takes a real player's sign-in.
+  Since 2026-11-13 the studio's Post as a Short does this in one click: it
+  records the clip in 9:16 whatever frame is set and opens this dialog with
+  the title filled in (features/replay-creator-view, "Post as a Short, in
+  one click").
 - Battlefield ASMR (`asmrReelOf`, kind `asmr`), one a round: up to six
   moments of fire, two of a kind (an M1 Garand's whole clip to its ping, the
   weapons whose sound table has `eject`; a long burst of automatic fire; a

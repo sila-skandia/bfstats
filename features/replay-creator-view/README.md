@@ -2303,3 +2303,43 @@ read visible meshes alone (`drawnBox`, and `hullRadius` skips a hidden mesh):
 on Manchuria's 157 drawn hulls a tank measures 5-7 m and no box centre
 stands more than 3 m from its origin.
 
+### Post as a Short, in one click (2026-11-13)
+
+The owner: "players want to create shorts, right now you have to export it
+with the shorts camera. it's all too many steps and complicated. Can you make
+it easier to post a clip as a short". Sharing a clip as a Short was an offer
+made after Record, and only when the 9:16 frame had been picked first, the
+browser recorded MP4 and the round was shared; otherwise nothing was said.
+
+- Post as a Short, in the studio's top bar and first on the Export tab
+  (`Studio.postShort`, `creator.postShort`). The clip plays once, recorded in
+  9:16 whatever frame is set: the frame is held for the one recording
+  (`holdFrame`, `releaseFrame`), never kept, and put back when it ends, is
+  stopped or fails to start. The recording chip reads "REC for a Short".
+- The file goes to the Share dialog instead of the downloads
+  (`recorder.short`, `stopRecording`); Save the file in the dialog downloads
+  it. If the dialog cannot open the clip is saved as a file and a line says
+  why.
+- The title is filled in from the kill (`shortTitle`: "Maitland with the
+  PanzerIV on Moist Armpits"), and the Short's killer and victim are sent
+  with it (they were empty).
+- Whether it can work is said before anything is recorded (`shortBlock`: no
+  clip, a round not shared, a round read from another site, a browser that
+  records WebM): a line on the view from the top bar's button, the note under
+  the Export tab's.
+- The dialog checks the sign-in as it opens and shows Sign in at once, and
+  checks again when the tab gets the focus back.
+- Record in the 9:16 frame still downloads and offers the dialog, as before.
+
+Verified on the real page (Bocage `zz4g8tz9ph` served at
+`/stats/recordings/`, Maitland's Panzer IV on Moist Armpits at 0:34, the
+frame at 16:9, one headless Chromium at 1600 x 900): one click on the top
+bar's button recorded 506 x 898 with the monitor 506 x 900, the frame back
+at 16:9 after; the dialog opened with the title above, the sign-in line and
+Share, Sign in, Save the file, Not now; Save the file downloaded a 2.8 MB
+MP4; Escape closed it. The upload itself was not run: it needs a player's
+sign-in. `test_replay_creator` asserts `shortBlock` and `shortTitle`.
+
+The skill's probe recipe assumes :5273 serves the main checkout. On this day
+it served another session's worktree, so the page was checked on
+`serve_viewer.py 5291` from the main checkout.

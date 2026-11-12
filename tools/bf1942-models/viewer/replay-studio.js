@@ -273,13 +273,13 @@ export class Studio {
 
   /** Record from the studio: the view full size in its frame first, then
    *  the recording once the renderer has taken that size. */
-  record({ montage = false } = {}) {
+  record({ montage = false, short = false } = {}) {
     const creator = this.creator;
     if (creator.recorder) {
       creator.stopRecording(true);
       return;
     }
-    const go = () => (montage ? creator.recordMontage() : creator.record());
+    const go = () => (montage ? creator.recordMontage() : creator.record({ short }));
     if (!this.open) {
       go();
       return;
@@ -292,9 +292,19 @@ export class Studio {
         return;
       }
       go();
-      if (!creator.recorder) this.setRecording(false);
+      if (!creator.recorder) {
+        creator.releaseFrame();
+        this.setRecording(false);
+        this.place();
+      }
     };
     requestAnimationFrame(wait);
+  }
+
+  /** Post as a Short: the clip recorded once in 9:16, whatever the frame,
+   *  then the Share dialog (`creator.postShort`). */
+  postShort() {
+    this.creator.postShort({ start: () => this.record({ short: true }) });
   }
 
   setRecording(on) {
@@ -405,7 +415,7 @@ export class Studio {
     if (this.recording && this.recLabel) {
       const r = creator.recorder;
       const part = r?.count > 1 ? ` · clip ${r.count - (r.queue?.length ?? 0)} of ${r.count}` : '';
-      this.recLabel.textContent = r?.started ? `REC ${r.paused ? 'next clip' : `${fmt(Math.max(0, t - r.t0))} / ${fmt(r.t1 - r.t0)}`}${part}` : 'REC · getting ready';
+      this.recLabel.textContent = r?.started ? `${r.short ? 'REC for a Short' : 'REC'} ${r.paused ? 'next clip' : `${fmt(Math.max(0, t - r.t0))} / ${fmt(r.t1 - r.t0)}`}${part}` : 'REC · getting ready';
     }
     const cam = creator.rounds.active || creator.track ? 'clip' : creator.ui.uiMode?.() ?? creator.player.camera.mode;
     if (this.camMode !== cam) {
@@ -511,11 +521,13 @@ export class Studio {
       }, 'st-frames');
     this.thumbBtn = this.btn('Thumbnail', 'Save this frame as a PNG, for the video\'s thumbnail', () => creator.thumbnail(), 'st-ghost', 'image');
     this.recBtn = this.btn('Record', 'Record the clip to a video file, full size in its frame (Esc stops)', () => this.record(), 'st-rec-btn', 'rec');
+    this.shortBtn = this.btn('Post as a Short', SHORT_TIP, () => this.postShort(), 'st-short-btn', 'up');
+    this.shortBtn.dataset.tour = 'short';
     const done = this.btn('', 'Leave the studio (Esc)', () => this.close(), 'st-ghost st-close', 'close');
     const help = this.btn('Help', 'How the studio works', () => this.toggleHelp(), 'st-ghost', 'help');
     const clearWrap = el('span', 'st-menuwrap');
     clearWrap.append(this.clearBtn, this.clearMenu);
-    top.append(brand, this.undoBtn, this.redoBtn, clearWrap, el('span', 'st-gap'), frames, this.thumbBtn, this.recBtn, help, done);
+    top.append(brand, this.undoBtn, this.redoBtn, clearWrap, el('span', 'st-gap'), frames, this.thumbBtn, this.recBtn, this.shortBtn, help, done);
 
     // The inspector.
     const side = el('aside', 'st-side');
@@ -847,6 +859,7 @@ export class Studio {
       col('A clip in a minute', [
         'Kill shot on a kill (the round\'s timeline, or the Kills tab) opens it here, filmed and looping.',
         'Look: pick a recipe. Frag movie and Shorts are good starts.',
+        'Post as a Short (top right) records the clip vertical and puts it in the Shorts strip: one click, then a title.',
         'Export: Record the clip. It plays once and downloads.',
         'Keep the clip, open the next kill, and the Montage tab plays the kept clips together and records them as one video.',
       ]),
@@ -1517,7 +1530,15 @@ export class Studio {
       soundNote.textContent = g && s ? 'The game and the song, mixed.' : g ? 'The game\'s sound alone.'
         : s ? 'The song alone.' : 'No sound: a silent video, to lay the sound in another editor.';
     });
+    const short = this.btn('Post as a Short', SHORT_TIP, () => this.postShort(), 'st-wide st-short-btn', 'up');
+    const shortNote = this.note('');
+    this.syncs.push(() => {
+      const why = creator.shortBlocked();
+      shortNote.classList.toggle('bad', Boolean(why));
+      shortNote.textContent = why ?? 'One step: the clip plays once, recorded vertical (9:16) whatever frame is set, then you name it and it goes in the Shorts strip on the REPLAY tab.';
+    });
     page.append(
+      this.group('Post as a Short', short, shortNote),
       this.group('Sound in the file', game, song, soundNote),
       this.buildShare(),
       this.group('Export', rec, thumb, facts, this.note('Recording plays the clip in real time, slow motion included, and saves it when it ends. Keep other windows quiet while it runs.')),
@@ -1706,6 +1727,9 @@ export class Studio {
 
 // --- glyphs -------------------------------------------------------------------------------------
 
+/** What Post as a Short says it does, on both its buttons. */
+const SHORT_TIP = 'Record the clip once in 9:16 and post it to the Shorts strip: you name it, nothing else to set';
+
 const GLYPHS = Object.freeze({
   play: 'M7 4v16l13-8z',
   pause: 'M7 4h4v16H7zM13 4h4v16h-4z',
@@ -1798,6 +1822,10 @@ html.st-rec .st-recbar { position: fixed; top: 12px; left: 12px; display: flex; 
 .st-rec-btn { border-color: #c9352a; color: #fff; background: rgba(201, 53, 42, .25); }
 .st-rec-btn .st-glyph { color: #ff5b4d; fill: currentColor; stroke: none; }
 .st-rec-btn.on { background: #c9352a; }
+.st-short-btn { border-color: #e8c35a; color: #191a12; background: #e8c35a; font-weight: 700; }
+.st-short-btn:hover { background: #f2d47c; }
+.st-short-btn .st-glyph { color: #191a12; }
+.st-note.bad { color: #ff9d93; }
 .st-rec-btn.on .st-glyph { color: #fff; animation: st-blink 1s steps(2, start) infinite; }
 @keyframes st-blink { to { visibility: hidden; } }
 .st-glyph { width: 16px; height: 16px; fill: none; stroke: currentColor; stroke-width: 2; stroke-linecap: round; stroke-linejoin: round; flex: none; }

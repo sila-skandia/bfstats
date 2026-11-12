@@ -129,9 +129,11 @@ export async function posterOf(blob) {
 /**
  * Offers `blob` (a recorded clip, `mime`) as a Short, in a dialog. `clip` is
  * `{ t0, t1, kill, level, title }` from the creator: the clip's span in the
- * round, its kill (`{ t, victim }`) and a title to start from.
+ * round, its kill (`{ t, victim }`), a title to start from and the names of
+ * the two players in it. `save`, when given, is the studio's Post as a Short:
+ * the clip was not downloaded, and Save the file does it.
  */
-export function offerShare(blob, mime, clip, { frame, replayUrl = new URLSearchParams(location.search).get('replay') } = {}) {
+export function offerShare(blob, mime, clip, { frame, save = null, replayUrl = new URLSearchParams(location.search).get('replay') } = {}) {
   const can = shareable({ mime, frame, replayUrl });
   if (!can.ok) return { offered: false, why: can.why };
   const shared = sharedRecordingOf(replayUrl);
@@ -177,7 +179,19 @@ export function offerShare(blob, mime, clip, { frame, replayUrl = new URLSearchP
   signIn.hidden = true;
   const close = el('button', '', 'Not now');
   close.type = 'button';
-  row.append(share, signIn, close);
+  row.append(share, signIn);
+  if (save) {
+    const keep = el('button', '', 'Save the file');
+    keep.type = 'button';
+    keep.title = 'Download the clip as a video file too';
+    keep.addEventListener('click', () => {
+      try { save(); } catch (error) { console.warn('replay-share: saving the clip', error); }
+      keep.disabled = true;
+      keep.textContent = 'Saved';
+    });
+    row.append(keep);
+  }
+  row.append(close);
   side.append(el('h2', '', 'Share as a Short'), label, note, status, row);
   panel.append(preview, side);
   back.append(panel);
@@ -197,6 +211,7 @@ export function offerShare(blob, mime, clip, { frame, replayUrl = new URLSearchP
     back.remove();
     URL.revokeObjectURL(url);
     window.removeEventListener('keydown', onKey, true);
+    window.removeEventListener('focus', onFocus);
   };
   const onKey = e => {
     if (e.key === 'Escape') {
@@ -209,6 +224,26 @@ export function offerShare(blob, mime, clip, { frame, replayUrl = new URLSearchP
   back.addEventListener('click', e => { if (e.target === back) shut(); });
 
   let done = false;
+  // Whether they are signed in is said as the dialog opens, not after a
+  // title is typed and Share pressed; coming back from the sign-in tab
+  // clears it without another click.
+  let asked = false;
+  const checkSignIn = async () => {
+    if (done || upload || asked) return;
+    asked = true;
+    try {
+      const ok = await api.ready();
+      if (done || upload) return;
+      signIn.hidden = ok;
+      if (!ok) say('Sign in on bfstats.io first (it opens in a new tab), then come back here.', true);
+      else if (status.classList.contains('bad')) say('Signed in. Press Share.');
+    } catch { /* Share says what is wrong */ } finally {
+      asked = false;
+    }
+  };
+  const onFocus = () => { if (!signIn.hidden) checkSignIn(); };
+  window.addEventListener('focus', onFocus);
+  checkSignIn();
   share.addEventListener('click', async () => {
     if (done) return;
     const words = title.value.trim();

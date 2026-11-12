@@ -1082,7 +1082,27 @@ results.clip = {
   };
   globalThis.fetch = async () => ({ ok: false, status: 401, json: async () => ({}) });
   globalThis.sessionStorage = { getItem: () => null, setItem: () => {} };
-  const { creatorAccess, templateWords, gunWords } = await imp('replay-creator.js');
+  const { creatorAccess, templateWords, gunWords, shortBlock, shortTitle } = await imp('replay-creator.js');
+  // Post as a Short: why it cannot be, said before anything is recorded.
+  {
+    const live = { hostname: 'play.bfstats.io', origin: 'https://play.bfstats.io' };
+    const mp4 = ['video/mp4;codecs=avc1,mp4a.40.2', 'video/mp4;codecs=avc1'];
+    const slug = '/stats/recordings/zz4g8tz9ph.ndjson';
+    results.shortBlock = {
+      ok: shortBlock({ clip: true, replayUrl: slug, mimes: mp4, page: live }),
+      noClip: shortBlock({ clip: false, replayUrl: slug, mimes: mp4, page: live }),
+      file: shortBlock({ clip: true, replayUrl: 'replays/round.ndjson', mimes: mp4, page: live }),
+      elsewhere: shortBlock({ clip: true, replayUrl: `https://other.example${slug}`, mimes: mp4, page: live }),
+      webm: shortBlock({ clip: true, replayUrl: slug, mimes: ['video/webm;codecs=vp9,opus', 'video/webm'], page: live }),
+      silentWebm: shortBlock({ clip: true, replayUrl: slug, mimes: [mp4[0], null], page: live }),
+    };
+    results.shortTitle = [
+      shortTitle({ killer: 'Lagtastic', weapon: 'Bazooka', victim: 'FAVELA' }),
+      shortTitle({ killer: 'Lagtastic', weapon: '', victim: 'FAVELA' }),
+      shortTitle({ killer: 'Lagtastic', weapon: 'Bazooka', victim: '' }),
+      shortTitle({ killer: '', weapon: 'Bazooka', victim: 'FAVELA' }),
+    ];
+  }
   results.gunWords = ['Radar_AA_Allies_GunBarrel', 'AA_Allies_GunBarrel', 'AA_POW_GunBarrel2', 'Oerlikon20mm_single_GunBarrel',
     'Carrier_AA_GunBarrel', 'PrinceOW_CannonPipes4', 'MG42', 'Tiger'].map(gunWords);
   results.templateWords = ['MustangBombDummy', 'K98Sniper', 'No4Sniper', 'Bazooka', 'MG42', 'Panzer_IV', 'BARProjectile', 'SBDGuns'].map(templateWords);
