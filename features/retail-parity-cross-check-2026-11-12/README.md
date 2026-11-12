@@ -216,6 +216,11 @@ rebuilt elsewhere:
   four gt101/102 engine rig axes; FH's `pzl11ElevatorLeft`; DC's F-14 front
   hatches; and the deep-water damage words for bf1918 (137 templates), EoD
   (4) and GCMOD (3). Vanilla's SBD hatch changes nothing the viewer drives.
+- **The live generated bot levels' page check** (the bot-rollout skill's
+  "When bot code changes", step 5): the new bot law went live with 401826c1d
+  at about 12:10 on 2026-11-12, while the bot-rollout session was already
+  page-matching those layers, so the re-match of the 45 live levels was left
+  to it; a `page.json` from a match that started before then ran the old law.
 - **`setPcoId` and `setLiePointUpDownAngle`** are not extracted; the seat order
   is exact for vanilla, and the torso clamp uses the vanilla pair.
 
