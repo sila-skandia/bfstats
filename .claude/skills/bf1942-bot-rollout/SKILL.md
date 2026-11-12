@@ -335,12 +335,14 @@ AI template is an aircraft's). It will message the hash. When
 
 **What to do next, best lead first. Mods only.**
 
-1. **The five mod levels refused for stacked floors and nothing else**:
-   FHSW's fht_dinant-1940, kakazu_ridge-1945, korsun_pocket and
-   siegfried_line-1945, BF1918's carriere. Their trees are fetched and a
-   `DESPITE_LINT=1` screen of each was started on 2026-11-13; read
-   `bot-layers/<mod>/<level>/verdict.json`, and send what is not dead to
-   the page.
+1. **Three mod levels refused for stacked floors and nothing else, not
+   yet screened**: FHSW's kakazu_ridge-1945, korsun_pocket and
+   siegfried_line-1945. The screen was stopped at the end of 2026-11-13
+   and their layers put back; run `fetch.sh` and `DESPITE_LINT=1
+   screen.sh` again, and send what is not dead to the page. Of the same
+   class, fht_dinant-1940 showed no fight and BF1918's carriere was no
+   better than nothing (8 a side failing 6 checks, 16 a side 2): carriere
+   is worth a page match.
 2. **The levels with a fight that no flag changes hands in.** FHSW's
    tunis-1943 (0.11 to 0.14 enemy kills a bot-minute, 4 and 10 captures on
    the earlier bot code, none on 3b1ebe45c) and the regenerated levels
