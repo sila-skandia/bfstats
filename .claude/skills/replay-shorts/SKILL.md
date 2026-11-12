@@ -315,6 +315,8 @@ about.
   that the share link names: Discord leaves a linked video over ~50 MB as a
   bare link. A Short whose share link will not embed: check the size of
   whatever `og:video` names.
+  The nightly job films one roll a week (first night of the ISO week,
+  `scripts/roll-weekly.mjs`, `ROLL_WEEKLY=0` skips it).
 
 ## On the Mac (2026-11-07)
 

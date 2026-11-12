@@ -333,3 +333,19 @@ The strip's player still plays the 4K or HD.
 `--link-take=<folder>` makes and sends one for a roll already up (its
 `uploaded.json` names the slug). The six live rolls got theirs that way.
 
+## A roll a week (2026-11-12)
+
+The owner: "for the recurring job to film these, we only need them once a
+week". The nightly Shorts job (`scripts/shorts-nightly.sh`) now films one on
+the first night of each ISO week, stamped `roll-<week>.done` as the ASMR
+step is, so a night that uploads nothing tries again the next.
+`scripts/roll-weekly.mjs` picks the round: of the last 7 days' shared
+recordings, those 5 minutes long or more with no roll yet (the API's keys
+name a roll as `<recording>:<start>:-10`, a pruned one's too, so a round is
+never rolled twice), the most players first and the newest on a tie. It
+films 90 s with `--sound --upload` (4K, HD and the link copy) and moves on
+to the next round if a take fails, three at most. `--dry-run` lists the
+pick; `ROLL_WEEKLY=0` skips the step. Week-old takes leave the disk after
+14 days. The first dry run (2026-11-12) skipped the six rolled rounds and
+picked Midway CTF, 59 players.
+

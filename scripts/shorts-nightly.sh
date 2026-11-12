@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 # Replay Shorts, nightly (features/replay-shorts, .claude/skills/replay-shorts):
 # film the best kills of the newest shared recordings and upload them, and on
-# the first night of a week the week's Battlefield ASMR. Run by the systemd
+# the first night of a week the week's Battlefield ASMR and action roll. Run by the systemd
 # user timer bfstats-shorts.timer on Linux, or the launchd agent
 # io.bfstats.shorts on a Mac (both in deploy/shorts-nightly/), which runs it
 # from its own checkout brought up to origin/main first.
@@ -57,6 +57,25 @@ if [[ ${ASMR_WEEKLY:-0} == 1 && ! -e $STAMP ]]; then
     node scripts/shorts-runner.mjs --asmr-mix=week --recordings=10 --gpu --sound --upload --out="$OUT" ${EXTRA[@]+"${EXTRA[@]}"} \
     2>&1 | { grep --line-buffered -v '^replay: ' || true; } | tee "$ASMR_LOG" || true
   if grep -q 'uploaded .*Battlefield ASMR' "$ASMR_LOG"; then touch "$STAMP"; fi
+fi
+
+# The week's action roll (the owner, 2026-11-12: "for the recurring job to
+# film these, we only need them once a week"), on the first night of each ISO
+# week: one 90 s roll, 4K and HD with its link copy, of the week's busiest
+# round with no roll yet (scripts/roll-weekly.mjs). A stamp marks the week
+# done once it is uploaded; a night that uploads nothing tries again.
+# ROLL_WEEKLY=0 skips it.
+ROLL_STAMP=$OUT/roll-$WEEK.done
+if [[ ${ROLL_WEEKLY:-1} == 1 && ! -e $ROLL_STAMP ]]; then
+  echo "--- the week's roll ($WEEK) ---"
+  ROLL_LOG=$OUT/roll-$WEEK.log
+  ROLL_EXTRA=()
+  [[ $(uname) == Darwin ]] && ROLL_EXTRA=(--channel=chrome)
+  SHORTS_UPLOAD_KEY=$(tr -d '\n' < "$KEY_FILE") \
+    node scripts/roll-weekly.mjs ${ROLL_EXTRA[@]+"${ROLL_EXTRA[@]}"} 2>&1 | tee "$ROLL_LOG" || true
+  if grep -q "the week's rolls: [1-9]" "$ROLL_LOG"; then touch "$ROLL_STAMP"; fi
+  # A week's take is ~600 MB on disk; the API has the uploaded copies.
+  find "$HOME/.cache/bfstats-roll" -maxdepth 2 -path '*/weekly-*' -name '*.mp4' -mtime +14 -delete 2>/dev/null || true
 fi
 
 # Retention (the owner, 2026-11-12: "for any short >= week old with 0-1 views
