@@ -1,10 +1,11 @@
-// The match-up while the round plays (features/replay-matchup): the fight on
-// at the playhead brought to the front. The rest of the view is dulled and the
-// two (with whoever rides with them) are drawn again over it at full colour,
-// their rounds are drawn as they fly, coloured by what came of each, every
-// hit's damage pops up over whoever took it, and a strip over the view keeps
-// both sides' hit points as they fall. Break it down on the strip, or Match-up
-// on a kill in the round's timeline, opens the frozen breakdown
+// The replay's spotlight on a kill (features/replay-matchup): Spotlight on a
+// kill in the round's timeline jumps to just before it and plays it with the
+// two lit. The rest of the view is dulled and the killer and the one they
+// killed (with whoever rides with them) are drawn again over it at full
+// colour, their rounds fly as tracers (replay-tracers.js), every hit's damage
+// rises over whoever took it, and a strip over the view keeps both sides' hit
+// points as they fall. It lets go a few seconds after the kill. Break it down
+// on the strip freezes the round there for the match-up's breakdown
 // (replay-matchup-view.js).
 //
 // The dulling is one more pass after the page's render, before the followed
@@ -15,14 +16,11 @@
 // is kept, so a hill in front of one of them still hides it.
 
 import * as THREE from 'three';
-import {
-  HOLD, LEAD, assignDrops, fightEpisodes, fightOn, hasPlayer, healthOf, labelOf, nextFight, orient, peopleOf, roundsBetween, sideOf,
-} from './replay-matchup.js';
+import { HOLD, KILL_FREEZE, LEAD, assignDrops, fightEpisodes, fightOfKill, hasPlayer, healthOf, labelOf, orient, peopleOf, roundsBetween, sideOf } from './replay-matchup.js';
 import { flightOf, gunSpecOf } from './replay-matchup-strike.js';
 import { motionAt, poseAt } from './replay-kinematics.js';
 import { prettyTank } from './tank-arena.js';
-import { fmtClock } from './replay-timeline.js';
-import { nameAt } from './replay-recording.js';
+import { TRACER_HIT, TRACER_LIFE, TRACER_MISS, Tracers } from './replay-tracers.js';
 import { decodePlayerName } from './vehicle-players.js';
 
 /** How far the rest of the view is dulled, at full strength. */
@@ -30,32 +28,27 @@ const DIM = 0.66;
 const DIM_COLOUR = 0x15161a;
 /** How fast the dulling comes and goes, a share a second. */
 const FADE = 5;
-/** A round's streak: this many seconds of its flight, at most this long. */
-const TAIL = 0.06;
-const TAIL_MAX = 40;
+/** Seconds before the kill the spotlight starts, and at least this long
+ *  before the killing round left. */
+export const SPOT_LEAD = 5;
+const SPOT_ROUND_LEAD = 2;
 /** Seconds a round that missed flies on past the one it was fired at. */
 const MISS_ON = 0.4;
 /** Seconds a hit's damage shows over whoever took it. */
 const POP = 1.4;
-/** Rounds drawn at once. */
+/** Rounds drawn at once: a streak, its line in up to eight pieces, a flash. */
 const MAX_ROUNDS = 240;
 /** Seconds between looks at whether the Accuracy rebuild has changed. */
 const BOARD_EVERY = 1;
-/** Colours: a round that did damage, one that missed or did none. */
-const HIT = new THREE.Color(0xf0913c);
-const MISS = new THREE.Color(0xd8d2a0);
 
 const STYLE = `
 .rm-live { position: absolute; left: 50%; top: 10px; transform: translateX(-50%); display: none; align-items: center; gap: 8px;
   width: max-content; max-width: calc(100% - 24px); padding: 4px 4px 4px 10px; pointer-events: auto;
   border: 1px solid var(--rp-edge); border-radius: 8px; background: var(--rp-plate-deep);
   box-shadow: 0 8px 26px rgba(0, 0, 0, .45); backdrop-filter: blur(6px); -webkit-backdrop-filter: blur(6px); }
-.rm-root.on:not(.frozen) .rm-live { display: flex; }
+.rm-root.on:not(.frozen) .rm-live.lit { display: flex; }
 .rm-live-k { flex: none; color: var(--rp-khaki); font: 800 9px/1.2 var(--rp-font); letter-spacing: .22em; }
-.rm-live-fight { display: none; align-items: center; gap: 10px; min-width: 0; }
-.rm-live.has-fight .rm-live-fight { display: flex; }
-.rm-live-none { color: var(--rp-muted); font: 11px/1.3 var(--rp-font); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; min-width: 0; }
-.rm-live.has-fight .rm-live-none { display: none; }
+.rm-live-fight { display: flex; align-items: center; gap: 10px; min-width: 0; }
 .rm-live-side { min-width: 0; max-width: 190px; padding-left: 7px; border-left: 2px solid var(--rp-edge-strong); }
 .rm-live-side.right { padding: 0 7px 0 0; border-left: 0; border-right: 2px solid var(--rp-edge-strong); text-align: right; }
 .rm-live-side.is-axis { border-color: var(--rp-axis); }
@@ -75,11 +68,10 @@ const STYLE = `
 .rm-live .rp-btn { flex: none; height: 28px; border-color: var(--rp-edge); }
 .rm-live .rp-btn.rm-live-go { background: var(--rp-khaki); color: var(--rp-khaki-ink); border-color: var(--rp-khaki); }
 .rm-live .rp-btn[hidden] { display: none; }
-/* The replay's own name tags give way to the two's while a fight is on, and
-   the fronts' tabs (replay-highlights.js) to the strip while the mode is on:
-   Next fight is the way to the fighting then. */
+/* The replay's own name tags give way to the two's while a kill is lit, and
+   the fronts' tabs (replay-highlights.js), in the same place, to the strip. */
 .rp-root.rm-spot .rp-tags { opacity: 0; pointer-events: none; }
-.rp-root.rm-on:not(.rm-open) .rp-hl-fronts { display: none; }
+.rp-root.rm-spot .rp-hl-fronts { display: none; }
 /* Where the page's minimap would cover it (a phone, a narrow window), the
    strip keeps to its left (\`layoutStrip\`). */
 .rm-live.is-left { left: 12px; transform: none; }
@@ -106,7 +98,6 @@ const STYLE = `
   .rm-live-hp { width: 72px; }
   .rm-live .rp-btn { flex: 1 1 0; }
   .rm-live .rp-btn.rm-live-off { flex: none; }
-  .rm-live-none { flex: 1 1 100%; }
   .rm-live.is-left { left: 8px; right: auto; }
 }
 @media (prefers-reduced-motion: reduce) { .rm-live-hp em { transition: none; } }
@@ -125,29 +116,15 @@ const _v = new THREE.Vector3();
 const _a = new THREE.Vector3();
 const _b = new THREE.Vector3();
 
-/** A soft round spot for the rounds' heads. */
-function glowTexture() {
-  const canvas = document.createElement('canvas');
-  canvas.width = canvas.height = 32;
-  const g = canvas.getContext('2d');
-  const grad = g.createRadialGradient(16, 16, 0, 16, 16, 16);
-  grad.addColorStop(0, 'rgba(255,255,255,1)');
-  grad.addColorStop(0.35, 'rgba(255,255,255,.7)');
-  grad.addColorStop(1, 'rgba(255,255,255,0)');
-  g.fillStyle = grad;
-  g.fillRect(0, 0, 32, 32);
-  const texture = new THREE.CanvasTexture(canvas);
-  texture.colorSpace = THREE.SRGBColorSpace;
-  return texture;
-}
-
-export class MatchupLive {
+export class MatchupSpotlight {
   constructor(matchup) {
     this.matchup = matchup;
     this.player = matchup.player;
     this.episodes = null;
     this.board = null;
     this.boardAt = -Infinity;
+    // The kill lit: `{ raw, kill, from, until, faced }`, or null.
+    this.pin = null;
     this.raw = null;
     this.fight = null;
     this.shownFight = null;
@@ -189,19 +166,12 @@ export class MatchupLive {
     mid.append(this.score, this.midLine);
     const fight = el('div', 'rm-live-fight');
     fight.append(this.sides[0].node, mid, this.sides[1].node);
-    this.none = el('div', 'rm-live-none', 'No fight on');
+    this.againBtn = ui.button('rm-live-again', null, 'Watch it again from just before the kill', () => this.again(), 'Again');
     this.goBtn = ui.button('rm-live-go', null, 'Freeze here and break the fight down: every round, every plate, the two taken apart',
       () => this.matchup.breakdownLive(), 'Break it down');
-    this.nextBtn = ui.button('rm-live-next', null, 'Jump to just before the next fight', () => this.jumpNext(), 'Next fight');
-    const off = ui.button('rm-live-off', 'close', 'Turn the match-up off', () => this.matchup.toggle());
-    this.strip.append(el('span', 'rm-live-k', 'MATCH-UP'), fight, this.none, this.goBtn, this.nextBtn, off);
+    const off = ui.button('rm-live-off', 'close', 'Let go of this kill', () => this.release());
+    this.strip.append(el('span', 'rm-live-k', 'SPOTLIGHT'), fight, this.againBtn, this.goBtn, off);
     for (const type of ['pointerdown', 'wheel', 'click', 'dblclick']) this.strip.addEventListener(type, e => e.stopPropagation());
-  }
-
-  /** Whether a player is followed, so only their fights count. */
-  following() {
-    const p = this.player;
-    return p.camera?.mode !== 'free' && Number.isInteger(p.followPid);
   }
 
   /** The round's fights, again whenever the Accuracy rebuild has changed (a
@@ -217,26 +187,56 @@ export class MatchupLive {
     const shots = board.flatMap(e => e.shots ?? []);
     this.shotOf = new Map(shots.map(s => [s.f, s]));
     this.episodes = fightEpisodes(p.rec, shots, p.kills);
-    // The fight shown stays shown: its own object, found again.
-    if (this.raw) {
-      const same = this.episodes.find(raw => (raw.x === this.raw.x || raw.x === this.raw.y) && (raw.y === this.raw.x || raw.y === this.raw.y)
-        && raw.first <= this.raw.last + 0.01 && raw.last >= this.raw.first - 0.01);
-      this.raw = same ?? null;
-      if (same) this.setFight(same, p.time, true);
+    // The kill lit stays lit: its fight found again.
+    if (this.pin) {
+      const k = this.pin.kill;
+      const same = fightOfKill(this.episodes, k.t, k.victimPid);
+      if (same) {
+        this.pin.raw = same;
+        if (this.raw) this.setFight(same, p.time, true);
+      }
     }
   }
 
-  begin() {
+  /**
+   * Light the kill of `victimPid` at `t`: to just before it, the camera on
+   * one of the two (the one followed, else the killer), playing. False when
+   * the recording places nobody who could have made it.
+   */
+  spotlight(t, victimPid) {
+    const p = this.player;
     this.ensureEpisodes(true);
+    const raw = fightOfKill(this.episodes, t, victimPid);
+    if (!raw) return false;
+    const kill = raw.kill;
+    if (!hasPlayer(raw, p.followPid) && Number.isInteger(kill.killerPid)) p.ui.follow(kill.killerPid);
+    if (p.highlights?.auto || p.camera?.mode === 'free') p.ui.setMode('orbit');
+    this.pin = { raw, kill, from: kill.t, until: kill.t + HOLD, faced: false };
+    this.setFight(raw, kill.t - KILL_FREEZE);
+    // From before the kill, and before the round that made it.
+    const killer = this.rounds.filter(r => r.kind === 'hit' && r.at === kill.victim && r.arrival <= kill.t + 0.1).at(-1);
+    this.pin.from = Math.max(0, Math.min(kill.t - SPOT_LEAD, killer ? killer.f.t - SPOT_ROUND_LEAD : Infinity));
     this.raw = null;
-    this.fight = null;
-    this.dim = 0;
-    this.stripKey = null;
+    p.seek(this.pin.from);
+    p.playing = true;
+    return true;
   }
 
-  end() {
-    this.lit = [];
-    this.litAt = -Infinity;
+  /** The kill lit, once more from the start. */
+  again() {
+    if (!this.pin) return;
+    this.pin.faced = false;
+    this.player.seek(this.pin.from);
+    this.player.playing = true;
+  }
+
+  /** Let go of the kill: the view comes back up. */
+  release() {
+    this.pin = null;
+  }
+
+  /** The breakdown is open: nothing drawn, the kill kept. */
+  suspend() {
     this.raw = null;
     this.fight = null;
     this.shownFight = null;
@@ -245,15 +245,28 @@ export class MatchupLive {
     this.tagsEl.textContent = '';
     this.tagNodes = null;
     this.pops = [];
+    this.strip.classList.remove('lit');
     this.player.ui.root.classList.remove('rm-spot');
-    if (this.gl) this.gl.overlay.visible = false;
+    if (this.gl) this.gl.tracers.group.visible = false;
   }
 
-  /** Each frame while the mode is on and nothing is frozen. */
+  /** The switch off: the kill let go, nothing drawn. */
+  end() {
+    this.pin = null;
+    this.suspend();
+    this.lit = [];
+    this.litAt = -Infinity;
+  }
+
+  /** Each frame while the switch is on and nothing is frozen. */
   update(t, dt) {
-    this.ensureEpisodes();
-    const p = this.player;
-    const raw = fightOn(this.episodes, t, { follow: p.followPid, current: this.raw, only: this.following() });
+    const pin = this.pin;
+    // A play or a seek past the kill's last seconds lets it go; a seek back
+    // into them, or a scrub about inside, keeps it.
+    if (pin && (t > pin.until || t < pin.from - 1)) this.pin = null;
+    if (!this.pin && !this.raw && this.dim === 0) return;
+    if (this.pin) this.ensureEpisodes();
+    const raw = this.pin?.raw ?? null;
     if (raw !== this.raw) this.setFight(raw, t);
     const step = dt > 0 ? Math.min(dt, 0.1) : 1 / 60;
     this.dim += ((raw ? 1 : 0) - this.dim) * Math.min(1, step * FADE);
@@ -261,9 +274,18 @@ export class MatchupLive {
     // What is drawn is the last fight while it fades out.
     if (raw) this.shownFight = this.fight;
     else if (this.dim === 0) this.shownFight = null;
+    const p = this.player;
     p.ui.root.classList.toggle('rm-spot', Boolean(raw));
-    this.layoutStrip();
-    this.renderStrip(t);
+    this.strip.classList.toggle('lit', Boolean(raw));
+    // The orbit turns to the other once it has settled on the one it follows.
+    if (this.pin && !this.pin.faced && this.fight && --this.pin.faceIn <= 0) {
+      this.pin.faced = true;
+      this.faceOther(this.fight, t);
+    }
+    if (raw) {
+      this.layoutStrip();
+      this.renderStrip(t);
+    }
     this.placeTags(t);
     this.updateRounds(t);
   }
@@ -289,16 +311,17 @@ export class MatchupLive {
     try {
       this.rounds = this.roundsOf(this.fight, raw);
     } catch (error) {
-      console.warn('replay: the match-up could not work out the rounds between them', error);
+      console.warn('replay: the spotlight could not work out the rounds between them', error);
       this.rounds = [];
     }
     this.buildTags(this.fight, t);
-    if (!keepSides) this.faceOther(this.fight, t);
+    // Two frames on: the orbit has gone over to the one it follows.
+    if (this.pin && !this.pin.faced) this.pin.faceIn = 2;
   }
 
-  /** A fight coming on with the other off the screen: the orbit swings once
-   *  to behind the followed player, looking at who they are fighting. Only
-   *  the orbit the viewer is steering themselves, not Auto's director. */
+  /** The orbit swings once to behind the followed player, looking at the
+   *  other, when the other is off the screen. Only the orbit the viewer is
+   *  steering themselves, not Auto's director. */
   faceOther(fight, t) {
     const p = this.player;
     const c = p.camera;
@@ -327,7 +350,7 @@ export class MatchupLive {
       const platform = r.shooter && !r.shooter.soldier ? motionAt(r.shooter, r.f.t)?.velocity ?? null : null;
       r.flight = flightOf(r.f, r.spec, platform);
       r.span = Math.max(0.02, r.arrival - r.f.t) + (r.kind === 'hit' ? 0 : MISS_ON);
-      r.tail = Math.min(TAIL, TAIL_MAX / Math.max(1, r.flight.speed));
+      r.steps = r.spec?.gravity > 0 && r.span > 0.3 ? 8 : 1;
     }
     return rounds;
   }
@@ -369,28 +392,9 @@ export class MatchupLive {
   renderStrip(t) {
     const p = this.player;
     const fight = this.fight;
-    const following = this.following();
-    if (!fight) {
-      const next = nextFight(this.episodes, t, { follow: p.followPid, only: following });
-      const who = following ? shown(nameAt(p.rec, p.followPid, t)) : '';
-      const key = `none|${who}|${next ? next.first : ''}`;
-      if (key !== this.stripKey) {
-        this.stripKey = key;
-        this.strip.classList.remove('has-fight');
-        this.none.textContent = next
-          ? `No fight on${who ? ` for ${who}` : ''}`
-          : `No fight left in the round${who ? ` for ${who}` : ''}`;
-        this.nextBtn.hidden = !next;
-        if (next) this.nextBtn.lastChild.textContent = `Next fight ${fmtClock(Math.max(0, next.first - LEAD))}`;
-        this.goBtn.hidden = true;
-      }
-      return;
-    }
-    if (this.stripKey === null || !this.stripKey.startsWith('fight')) {
+    if (!fight) return;
+    if (this.stripKey !== 'fight') {
       this.stripKey = 'fight';
-      this.strip.classList.add('has-fight');
-      this.goBtn.hidden = false;
-      this.nextBtn.hidden = true;
       for (const [i, key] of ['a', 'b'].entries()) {
         const life = fight[key];
         const label = labelOf(p.rec, life, fight.first, prettyTank);
@@ -418,14 +422,6 @@ export class MatchupLive {
     if (this.score.textContent !== score) this.score.textContent = score;
     const line = range ? `HITS · ${range}` : 'HITS';
     if (this.midLine.textContent !== line) this.midLine.textContent = line;
-  }
-
-  /** To just before the next fight: the rounds that missed first, then the hits. */
-  jumpNext() {
-    const p = this.player;
-    const next = nextFight(this.episodes, p.time, { follow: p.followPid, only: this.following() });
-    if (!next) return;
-    p.seek(Math.max(0, next.first - LEAD));
   }
 
   // --- the tags over the two ------------------------------------------------------------
@@ -569,80 +565,29 @@ export class MatchupLive {
     quad.position.z = -0.5;
     quad.frustumCulled = false;
     quadScene.add(quad);
-    const overlay = new THREE.Group();
-    overlay.name = 'match-up rounds';
-    const linePositions = new THREE.BufferAttribute(new Float32Array(MAX_ROUNDS * 6), 3);
-    const lineColours = new THREE.BufferAttribute(new Float32Array(MAX_ROUNDS * 6), 3);
-    linePositions.setUsage(THREE.DynamicDrawUsage);
-    lineColours.setUsage(THREE.DynamicDrawUsage);
-    const lineGeometry = new THREE.BufferGeometry();
-    lineGeometry.setAttribute('position', linePositions);
-    lineGeometry.setAttribute('color', lineColours);
-    const lines = new THREE.LineSegments(lineGeometry, new THREE.LineBasicMaterial({
-      vertexColors: true, transparent: true, depthWrite: false, blending: THREE.AdditiveBlending, toneMapped: false,
-    }));
-    const headPositions = new THREE.BufferAttribute(new Float32Array(MAX_ROUNDS * 3), 3);
-    const headColours = new THREE.BufferAttribute(new Float32Array(MAX_ROUNDS * 3), 3);
-    headPositions.setUsage(THREE.DynamicDrawUsage);
-    headColours.setUsage(THREE.DynamicDrawUsage);
-    const headGeometry = new THREE.BufferGeometry();
-    headGeometry.setAttribute('position', headPositions);
-    headGeometry.setAttribute('color', headColours);
-    const heads = new THREE.Points(headGeometry, new THREE.PointsMaterial({
-      size: 10, sizeAttenuation: false, map: glowTexture(), vertexColors: true, transparent: true, depthWrite: false,
-      blending: THREE.AdditiveBlending, toneMapped: false,
-    }));
-    for (const node of [overlay, lines, heads]) {
-      node.frustumCulled = false;
-      node.matrixAutoUpdate = false;
-    }
-    lines.renderOrder = 10;
-    heads.renderOrder = 11;
-    overlay.add(lines, heads);
-    overlay.visible = false;
-    overlay.updateMatrixWorld(true);
+    const tracers = new Tracers(MAX_ROUNDS * 10, { name: 'spotlight rounds', size: 10 });
     // The pass's own scene: what it holds is lent to it for the one render
     // (`render`), each thing's parent left as it is.
     const spot = new THREE.Scene();
     spot.matrixWorldAutoUpdate = false;
     spot.matrixAutoUpdate = false;
-    this.gl = { quadScene, quadCam, quad, overlay, lines, heads, spot };
+    this.gl = { quadScene, quadCam, quad, tracers, spot };
     return this.gl;
   }
 
-  /** The rounds in the air at `t`: a streak each, its head a spot. */
+  /** The two's rounds at `t`, as the shot lines draw every round: in the air
+   *  a streak, then the line each left, fading. */
   updateRounds(t) {
     if (!this.gl && !this.rounds.length) return;
-    const gl = this.ensureGl();
-    const lp = gl.lines.geometry.attributes.position.array;
-    const lc = gl.lines.geometry.attributes.color.array;
-    const hp = gl.heads.geometry.attributes.position.array;
-    const hc = gl.heads.geometry.attributes.color.array;
-    let n = 0;
+    const tracers = this.ensureGl().tracers;
+    tracers.begin();
     for (const r of this.rounds) {
-      if (n >= MAX_ROUNDS) break;
       const age = t - r.f.t;
-      if (!(age >= 0) || age > r.span + r.tail) continue;
-      const head = Math.min(age, r.span);
-      const tail = Math.min(Math.max(0, age - r.tail), r.span);
-      r.flight.at(head, _a);
-      r.flight.at(tail, _b);
-      const c = r.kind === 'hit' ? HIT : MISS;
-      lp.set([_b.x, _b.y, _b.z, _a.x, _a.y, _a.z], n * 6);
-      lc.set([c.r * 0.15, c.g * 0.15, c.b * 0.15, c.r, c.g, c.b], n * 6);
-      // Past its end only the tail is left, catching up.
-      const lit = age <= r.span ? 1 : 0;
-      hp.set([_a.x, _a.y, _a.z], n * 3);
-      hc.set([c.r * lit, c.g * lit, c.b * lit], n * 3);
-      n++;
+      if (!(age >= 0) || age > r.span + TRACER_LIFE) continue;
+      const k = Math.min(1, 2 * (1 - Math.max(0, age - r.span) / TRACER_LIFE));
+      tracers.flight((s, out) => r.flight.at(s, out), r.span, age, r.kind === 'hit' ? TRACER_HIT : TRACER_MISS, { k, steps: r.steps });
     }
-    gl.lines.geometry.setDrawRange(0, n * 2);
-    gl.heads.geometry.setDrawRange(0, n);
-    gl.lines.geometry.attributes.position.needsUpdate = true;
-    gl.lines.geometry.attributes.color.needsUpdate = true;
-    gl.heads.geometry.attributes.position.needsUpdate = true;
-    gl.heads.geometry.attributes.color.needsUpdate = true;
-    gl.overlay.visible = n > 0;
+    tracers.end();
   }
 
   // --- the spotlight pass ------------------------------------------------------------------
@@ -705,7 +650,7 @@ export class MatchupLive {
     const spot = gl.spot;
     // Lent, not added: no parent is changed. The page's render has just set
     // every matrix, and this scene does not update them again.
-    spot.children = [...this.lightsOf(scene), ...this.rootsOf(fight, this.player.time), gl.overlay];
+    spot.children = [...this.lightsOf(scene), ...this.rootsOf(fight, this.player.time), gl.tracers.group];
     spot.fog = scene.fog ?? null;
     spot.environment = scene.environment ?? null;
     const saved = {
@@ -734,11 +679,9 @@ export class MatchupLive {
   dispose() {
     this.end();
     if (this.gl) {
-      for (const node of [this.gl.quad, this.gl.lines, this.gl.heads]) {
-        node.geometry.dispose();
-        node.material.map?.dispose?.();
-        node.material.dispose();
-      }
+      this.gl.quad.geometry.dispose();
+      this.gl.quad.material.dispose();
+      this.gl.tracers.dispose();
       this.gl = null;
     }
     this.strip.remove();

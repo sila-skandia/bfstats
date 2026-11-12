@@ -225,8 +225,21 @@ the traces from the muzzle of the weapon". It is the engine's `game.drawDebug`
 lines**, off by default, remembered in the browser (`localStorage`
 `bf42-replay-shot-lines`). `viewer/replay-shotlines.js`.
 
-A line runs from where a round left to where it stopped, green for a hit and
-red for a miss, and fades over its last two of four seconds of replay:
+Then, 2026-11-12, having seen the spotlight's tracers (features/replay-matchup):
+"I like the tracers, I feel like we could use that style to replace the shot
+lines we already have." So each line is now drawn as a tracer
+(`viewer/replay-tracers.js`, shared with the spotlight): the round flies from
+the muzzle at its gun's speed (the level's weapon table, by the gun's name or
+the projectile it fires; 400 m/s where neither names one), a bright streak
+with a glowing head; behind it stays the line it left, and where it ended a
+spot flashes and goes. Orange for a hit, pale khaki for a miss. What a line
+runs between, and whether it is a hit, is as before; a server collision's
+round is flown back from the moment it struck. Lines are blended normally
+with an alpha per vertex: the additive green and red were near invisible on a
+snow level.
+
+A line runs from where a round left to where it stopped, and fades over the
+last two of the four seconds of replay after its round lands:
 
 - a server recording with the server's collisions (`i`, below) draws those:
   the round's fire origin to the contact point, green when the server credited
@@ -248,7 +261,9 @@ up there rather than over a prone man's back (`replay-bodies.js` `flash`).
 
 A first try drew every round as a tracer streak ("Trace every round",
 `330cc860`): a 2 cm stand-in widened on screen, which read as rounds leaving
-from behind the shooter. It is gone.
+from behind the shooter. It is gone. Today's tracers start where the lines do,
+at the drawn muzzle, and are a line and a spot on the screen, not a stand-in
+mesh.
 
 Tests: `tests/test_replay_shotlines.py`.
 

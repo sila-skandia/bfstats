@@ -406,16 +406,16 @@ export class ReplayTimeline {
             });
             li.append(go);
           }
-          // With the match-up on, a kill straight to its breakdown: the fight
-          // it ended frozen just before it (features/replay-matchup).
+          // With the spotlight on, a kill played from just before it with the
+          // two lit and the rest dulled (features/replay-matchup).
           if ((ch.kind === 'kill' || ch.kind === 'teamkill') && matchup) {
-            const go = el('button', 'rp-tip-shot rp-tip-matchup', 'Match-up');
+            const go = el('button', 'rp-tip-shot rp-tip-matchup', 'Spotlight');
             go.type = 'button';
-            go.title = 'Break this fight down: the round frozen just before the kill, every round between the two, the two taken apart';
+            go.title = 'Play this kill from just before it, the two lit and everything else dimmed';
             go.addEventListener('click', e => {
               e.stopPropagation();
               this.hideTip();
-              try { this.player.matchup.breakdownKill(ch.t, ch.victim); } catch (error) { console.warn('replay: a match-up from the timeline', error); }
+              try { this.player.matchup.spotlightKill(ch.t, ch.victim); } catch (error) { console.warn('replay: a spotlight from the timeline', error); }
             });
             li.append(go);
           }

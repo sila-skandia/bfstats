@@ -95,9 +95,9 @@ export const keyOf = (a, b) => (a.nid < b.nid || (a.nid === b.nid && a.created <
 /** Seconds with no hit and no kill between two that end their fight: the
  *  same two meeting again later is another fight. */
 export const FIGHT_GAP = 20;
-/** Seconds a fight is on before its first hit (the rounds that missed
- *  first, the turret coming round) and after its last event (the wreck, the
- *  body falling). */
+/** Seconds before a fight's first hit its rounds are looked for from (the
+ *  ones that missed first, the turret coming round), and after its last
+ *  event the spotlight holds on (the wreck, the body falling). */
 export const LEAD = 4;
 export const HOLD = 4;
 
@@ -212,7 +212,7 @@ export function fightsNear(rec, shots, kills, t, { window = WINDOW, follow = nul
 /**
  * Every fight of the round, in the order they began: each pair's hits and
  * kills, split where `gap` seconds passed with neither. `fightFrom`'s raw
- * fights, for `fightOn`, `nextFight` and `fightOfKill`.
+ * fights, for `fightOfKill`.
  */
 export function fightEpisodes(rec, shots, kills, { gap = FIGHT_GAP } = {}) {
   const out = [];
@@ -229,54 +229,6 @@ export function fightEpisodes(rec, shots, kills, { gap = FIGHT_GAP } = {}) {
     if (run.length) out.push(fightFrom(x, y, run));
   }
   return out.sort((p, q) => p.first - q.first || p.last - q.last);
-}
-
-/** How much of a fight `raw` is, whoever is watching. */
-const weightOf = raw => {
-  const hx = raw.hitsBy.get(raw.x) ?? 0;
-  const hy = raw.hitsBy.get(raw.y) ?? 0;
-  return Math.log2(1 + hx) + Math.log2(1 + hy) + (raw.kill ? 3 : 0) + (hx > 0 && hy > 0 ? 2 : 0);
-};
-
-/** Whether `raw` is on at `t`: from LEAD before its first hit to HOLD after
- *  its last event. */
-export const isOn = (raw, t) => t >= raw.first - LEAD && t <= raw.last + HOLD;
-
-/**
- * The fight on at `t`, of `episodes` (`fightEpisodes`), or null. The one
- * already shown (`current`) stays while it is on, unless it is only holding
- * on past its last event and another is under way. Else the followed
- * player's, else the biggest. `only`: the followed player's fights alone
- * (the camera is on them, so a fight elsewhere would dull what is watched).
- */
-export function fightOn(episodes, t, { follow = null, current = null, only = false } = {}) {
-  const allowed = raw => !only || hasPlayer(raw, follow);
-  const underWay = raw => t >= raw.first - 1 && t <= raw.last + 0.5;
-  let best = null;
-  let bestScore = -Infinity;
-  for (const raw of episodes ?? []) {
-    if (raw.first - LEAD > t) break;
-    if (raw === current || !isOn(raw, t) || !allowed(raw)) continue;
-    const score = weightOf(raw) + (hasPlayer(raw, follow) ? 4 : 0) + (underWay(raw) ? 2 : 0);
-    if (score > bestScore) {
-      best = raw;
-      bestScore = score;
-    }
-  }
-  if (current && isOn(current, t) && allowed(current)) {
-    if (t <= current.last + 0.5 || !best || !underWay(best)) return current;
-  }
-  return best;
-}
-
-/** The next fight to begin after `t` (the followed player's alone with
- *  `only`), or null. */
-export function nextFight(episodes, t, { follow = null, only = false } = {}) {
-  for (const raw of episodes ?? []) {
-    if (raw.first - LEAD <= t + 0.5) continue;
-    if (!only || hasPlayer(raw, follow)) return raw;
-  }
-  return null;
 }
 
 /** The fight the kill of `victimPid` at `t` ended, or null. */

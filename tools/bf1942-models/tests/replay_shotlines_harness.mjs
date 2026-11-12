@@ -74,4 +74,36 @@ const results = {};
   };
 }
 
+
+// A round as a tracer: its flight takes its gun's speed (the level's weapon
+// table, by name), a streak with its head in the air, then the line it left
+// and a flash where it ended; a server collision's projectile finds its gun.
+{
+  const rec = recording.parseRecording([
+    line({ k: 'h', v: 5, start: '', hz: 10 }),
+    line({ k: 'f', t: 1, id: 10, pid: 3, w: 'Mp40', p: [0, 1.6, 0], d: [0, 0, 1] }),
+    line({ k: 'end', t: 10 }),
+  ].join('\n'));
+  const [f] = rec.fires;
+  const p = playerOf(rec, new Map([[f, { hit: true, point: [0, 1.6, 30] }]]));
+  p.hud = { weaponTable: () => new Map([['mp40', { speed: 300, projectile: 'mp40bullet' }]]) };
+  const lines = new ReplayShotLines(p);
+  lines.setOn(true);
+  const at = t => {
+    lines.update(t);
+    return { lines: lines.tracers.lines.geometry.drawRange.count / 2, heads: lines.tracers.heads.geometry.drawRange.count };
+  };
+  at(0.9);
+  const inAir = at(1.05);
+  results.flight = {
+    span: lines.lines[0]?.span ?? null,
+    inAir,
+    landed: at(1.2),
+    later: at(2.5),
+    gone: at(1.1 + SHOT_LINE_LIFE + 0.1),
+    bulletSpeed: lines.speedOf('Mp40Bullet'),
+    unknownSpeed: lines.speedOf('Nothing'),
+  };
+}
+
 console.log(JSON.stringify(results));

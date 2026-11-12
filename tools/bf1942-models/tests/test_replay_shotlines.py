@@ -9,6 +9,10 @@ game would have; a client recording's rounds draw with the Accuracy
 rebuild's verdict, a hit to where it met its victim, a miss to where the
 page's own round struck, from the drawn gun's muzzle once it has fired.
 
+Then (2026-11-12), having seen the spotlight's tracers: "I like the tracers,
+I feel like we could use that style to replace the shot lines we already
+have". Each line is now a tracer (replay-tracers.js): the round flies from
+the muzzle at its gun's speed, leaves its line and flashes where it ended.
 Run under node through `replay_shotlines_harness.mjs`.
 """
 
@@ -60,6 +64,22 @@ class ReplayShotLineTests(unittest.TestCase):
         lines = self.results["client"]["lines"]
         self.assertEqual(len(lines), 2)
         self.assertEqual(lines[1], {"a": [0, 1.6, 0], "b": [25, 1.6, 0], "hit": False, "muzzle": False})
+
+
+    def test_a_round_flies_as_a_tracer_at_its_guns_speed(self) -> None:
+        flight = self.results["flight"]
+        # 30 m at the table's 300 m/s.
+        self.assertAlmostEqual(flight["span"], 0.1, places=6)
+        # In the air: its streak and its head.
+        self.assertEqual(flight["inAir"], {"lines": 1, "heads": 1})
+        # Landed: the line it left, and the flash where it ended.
+        self.assertEqual(flight["landed"], {"lines": 1, "heads": 1})
+        self.assertEqual(flight["later"], {"lines": 1, "heads": 0})
+        self.assertEqual(flight["gone"], {"lines": 0, "heads": 0})
+
+    def test_a_projectile_finds_its_guns_speed(self) -> None:
+        self.assertEqual(self.results["flight"]["bulletSpeed"], 300)
+        self.assertEqual(self.results["flight"]["unknownSpeed"], 400)
 
 
 if __name__ == "__main__":

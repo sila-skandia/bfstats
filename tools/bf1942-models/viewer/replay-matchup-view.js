@@ -1,11 +1,11 @@
-// The replay's match-up (features/replay-matchup). Turned on from the replay
-// bar's menu (More, Match-up), it stays on while the round plays: the fight
-// at the playhead is brought to the front, everything else dulled, the two's
-// rounds drawn as they fly (replay-matchup-live.js). Break it down on its
-// strip, or Match-up on a kill in the round's timeline, freezes the round on
-// that fight: every round that passed between the two hangs in the air where
-// it flew, and the two can be taken apart side by side, each painted by what
-// the other's gun does to it, with every real hit pinned where it struck.
+// The replay's spotlight and match-up (features/replay-matchup). Turned on
+// from the replay bar's menu (More, Spotlight), it gives every kill in the
+// round's timeline a Spotlight button: the kill played from just before it
+// with the two lit and everything else dulled (replay-matchup-live.js).
+// Break it down on the spotlight's strip freezes the round on that fight:
+// every round that passed between the two hangs in the air where it flew,
+// and the two can be taken apart side by side, each painted by what the
+// other's gun does to it, with every real hit pinned where it struck.
 // Nothing of it runs until it is turned on.
 //
 // What it is made of:
@@ -25,10 +25,10 @@ import * as THREE from 'three';
 import { clone as skeletonClone } from './vendor/utils/SkeletonUtils.js';
 import { OrbitControls } from './vendor/controls/OrbitControls.js';
 import {
-  BODY_PARTS, KILL_FREEZE, PAD, armourAgainst, aspectWords, assignDrops, bodyPartFor, endingWords, fightOfKill, fightsNear, healthOf,
-  keyOf, labelOf, orient, peopleOf, roundsBetween, seenFrom, sideOf, sideWords, tallyOf,
+  BODY_PARTS, PAD, armourAgainst, aspectWords, assignDrops, bodyPartFor, endingWords, fightsNear, healthOf,
+  keyOf, labelOf, peopleOf, roundsBetween, seenFrom, sideOf, sideWords, tallyOf,
 } from './replay-matchup.js';
-import { MatchupLive } from './replay-matchup-live.js';
+import { MatchupSpotlight } from './replay-matchup-live.js';
 import { HullCaster, flightOf, gunSpecOf, priceOf, tablesOf } from './replay-matchup-strike.js';
 import { BANDS, CATCHER, IMMUNE, bandOf, bearingShots, faceName } from './tank-armour.js';
 import { shotsFor } from './armour-damage.js';
@@ -224,7 +224,7 @@ function statusOf(r) {
 export class ReplayMatchup {
   constructor(player) {
     this.player = player;
-    // The mode, on from the menu; and a fight frozen for its breakdown.
+    // The switch, on from the menu; and a fight frozen for its breakdown.
     this.on = false;
     this.frozen = false;
     this.fights = [];
@@ -243,14 +243,14 @@ export class ReplayMatchup {
     this.tags = el('div', 'rm-tags');
     this.buildPanel();
     this.stage = new MatchupStage(this);
-    this.live = new MatchupLive(this);
+    this.live = new MatchupSpotlight(this);
     this.root.append(this.vignette, this.live.tagsEl, this.tags, this.live.strip, this.panel, this.stage.el);
     player.ui.root.append(this.root);
     // Stop the replay's own input layer taking a drag or a wheel on the panel.
     for (const node of [this.panel, this.stage.el]) {
       for (const type of ['pointerdown', 'wheel', 'click', 'dblclick']) node.addEventListener(type, e => e.stopPropagation());
     }
-    this.menuItem = player.ui.menuItem?.('', 'matchup', 'Match-up', '', () => this.toggle(), () => this.on) ?? null;
+    this.menuItem = player.ui.menuItem?.('', 'matchup', 'Spotlight', '', () => this.toggle(), () => this.on) ?? null;
   }
 
   buildPanel() {
@@ -273,16 +273,13 @@ export class ReplayMatchup {
     else this.turnOn();
   }
 
-  /** The mode on: the fight at the playhead brought to the front as the
-   *  round plays. */
+  /** The switch on: every kill in the timeline gets its Spotlight. */
   turnOn() {
     if (this.on) return;
     this.on = true;
     this.root.classList.add('on');
-    this.player.ui.root.classList.add('rm-on');
-    this.live.begin();
     this.player.ui.syncMore?.();
-    this.player.ui.flash('Match-up on: the fight at the playhead comes to the front. Kills in the timeline break down', 3200);
+    this.player.ui.flash('Spotlight on: a kill in the timeline now plays from just before it with the two lit', 3200);
   }
 
   turnOff() {
@@ -291,39 +288,26 @@ export class ReplayMatchup {
     this.live.end();
     this.on = false;
     this.root.classList.remove('on');
-    this.player.ui.root.classList.remove('rm-on');
     this.player.ui.syncMore?.();
-    this.player.ui.flash('Match-up off');
+    this.player.ui.flash('Spotlight off');
   }
 
-  /** The fight the live view has at the front, frozen here. */
+  /** Spotlight on a kill in the timeline: the kill of `victimPid` at `t`
+   *  played from just before it, the two lit. */
+  spotlightKill(t, victimPid) {
+    if (!this.on) this.turnOn();
+    this.closeBreakdown(false);
+    if (!this.live.spotlight(t, victimPid)) {
+      this.player.ui.flash('Nothing to light for that kill: the recording places no one who made it', 2800);
+    }
+  }
+
+  /** The fight the spotlight has lit, frozen here. */
   breakdownLive() {
     const fight = this.live.fight;
     if (!fight) return;
     const p = this.player;
     this.breakdown({ ...fight, moment: p.time }, p.playing);
-  }
-
-  /** The fight a kill ended, frozen just before the kill: from Match-up on
-   *  a kill in the round's timeline. */
-  breakdownKill(t, victimPid) {
-    const p = this.player;
-    if (!this.on) this.turnOn();
-    this.live.ensureEpisodes(true);
-    const raw = fightOfKill(this.live.episodes, t, victimPid);
-    let fight = raw ? orient(p.rec, raw, raw.kill.t - KILL_FREEZE, p.followPid) : null;
-    if (!fight) {
-      // A kill the episodes did not keep (its killer in nothing the
-      // recording places): the fights near it.
-      const shots = (p.accuracy?.() ?? []).flatMap(e => e.shots ?? []);
-      fight = fightsNear(p.rec, shots, p.kills, t, { follow: p.followPid })
-        .find(f => f.kill && f.kill.victimPid === victimPid && Math.abs(f.kill.t - t) <= 0.6) ?? null;
-    }
-    if (!fight) {
-      p.ui.flash('Nothing to match up for that kill: the recording places no one who fired it', 2800);
-      return;
-    }
-    this.breakdown({ ...fight, moment: fight.kill.t - KILL_FREEZE }, p.playing);
   }
 
   /** Freeze the round on `fight` for its breakdown; `resume` plays on when
@@ -344,7 +328,7 @@ export class ReplayMatchup {
       // Whatever focus and camera the page had, back when it is closed.
       this.prevFocus = p.focus ? { nids: [...p.focus.nids], pids: [...p.focus.pids] } : null;
       this.prevCamera = this.cameraState();
-      this.live.end();
+      this.live.suspend();
       this.root.classList.add('frozen');
       p.ui.root.classList.add('rm-open');
     }
@@ -391,7 +375,6 @@ export class ReplayMatchup {
     this.prevCamera = null;
     if (resume && this.resume) p.playing = true;
     this.resume = false;
-    if (this.on) this.live.begin();
   }
 
   /** The camera as it stood: its mode, whom it followed, the orbit's angles. */
@@ -434,9 +417,9 @@ export class ReplayMatchup {
     return undefined;
   }
 
-  /** Each frame, last in the replay's. Live: the fight at the playhead to
-   *  the front. Frozen: build what waits on the frame, follow the two with
-   *  their tags, draw the stage; play or a seek away ends the freeze. */
+  /** Each frame, last in the replay's. The spotlight, while a kill is lit.
+   *  Frozen: build what waits on the frame, follow the two with their tags,
+   *  draw the stage; play or a seek away ends the freeze. */
   update(t, dt) {
     if (!this.on) return;
     if (!this.frozen) {
@@ -462,7 +445,7 @@ export class ReplayMatchup {
     this.stage.frame(dt);
   }
 
-  /** After the page's render (replay.js `renderViewmodel`): the live view's
+  /** After the page's render (replay.js `renderViewmodel`): the spotlight's
    *  pass, the rest dulled and the two drawn over it. */
   renderSpot() {
     if (!this.on || this.frozen) return false;
@@ -1002,7 +985,6 @@ export class ReplayMatchup {
     this.closeBreakdown(false);
     this.live.dispose();
     this.on = false;
-    this.player.ui.root.classList.remove('rm-on');
     this.stage.dispose();
     this.root.remove();
   }

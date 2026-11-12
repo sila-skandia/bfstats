@@ -2,7 +2,11 @@
 // "Shot lines"). Retail keeps a line from where each round left the barrel to
 // where it struck, green when it did damage and red when it did not (ledger
 // IMP-9), and draws them only on the machine that hosted the round (IMP-10).
-// Here every recorded round gets one, fading over a few seconds of replay.
+// Here every recorded round gets one, drawn as a tracer (replay-tracers.js,
+// the spotlight's look, the owner's ask of 2026-11-12): it flies from the
+// muzzle at its gun's speed, leaves its line behind and flashes where it
+// ended, orange for a round that did damage and pale khaki for one that did
+// not, the line fading over a few seconds of replay after it lands.
 //
 // Where the line ends:
 // - a server recording that carries the server's own collisions (`i`, IMP-9:
@@ -16,22 +20,24 @@
 //   page's round does not stop on a replayed soldier, so it is never the hit
 //   test here. A miss whose round struck nothing has no line, as in the game.
 //
-// Owns one LineSegments in the scene; `update(t)` each frame, `clear()` on a seek.
+// Owns one `Tracers` in the scene; `update(t)` each frame, `clear()` on a seek.
 
-import * as THREE from 'three';
+import { TRACER_HIT, TRACER_LIFE, TRACER_MISS, Tracers } from './replay-tracers.js';
 
-/** Seconds of replay a line stays, fading out over the last half. */
-export const SHOT_LINE_LIFE = 4;
+/** Seconds of replay a line stays after its round lands, fading out over the
+ *  last half. */
+export const SHOT_LINE_LIFE = TRACER_LIFE;
 /** Lines held at once; the oldest goes first. */
 const CAPACITY = 2048;
-const HIT = new THREE.Color(0x45ff6a);
+/** Metres a second for a round whose gun names no speed. */
+export const SHOT_LINE_SPEED = 400;
 /** A miss waits this long, seconds, for where its round struck. */
 const PENDING_LIFE = 4;
 /** How near a struck round's launch point must be to a waiting miss's, and
  *  how close its line to the miss's direction (cos of ~3 degrees). */
 const MATCH_REACH = 6;
 const MATCH_COS = 0.9986;
-const MISS = new THREE.Color(0xff4b3e);
+const lower = s => String(s ?? '').toLowerCase().replace(/_\d+$/, '');
 
 export class ReplayShotLines {
   constructor(player) {
@@ -43,20 +49,12 @@ export class ReplayShotLines {
     this.nextFire = 0;             // index into rec.fires not yet drawn
     this.nextImpact = 0;           // index into rec.impacts not yet drawn
     this.lastT = null;
-    const geometry = new THREE.BufferGeometry();
-    this.positions = new Float32Array(CAPACITY * 6);
-    this.colors = new Float32Array(CAPACITY * 6);
-    geometry.setAttribute('position', new THREE.BufferAttribute(this.positions, 3).setUsage(THREE.DynamicDrawUsage));
-    geometry.setAttribute('color', new THREE.BufferAttribute(this.colors, 3).setUsage(THREE.DynamicDrawUsage));
-    geometry.setDrawRange(0, 0);
-    this.mesh = new THREE.LineSegments(geometry, new THREE.LineBasicMaterial({
-      vertexColors: true, transparent: true, blending: THREE.AdditiveBlending, depthWrite: false,
-    }));
-    this.mesh.frustumCulled = false;
-    this.mesh.renderOrder = 10;
-    this.mesh.visible = false;
-    this.mesh.name = 'replay shot lines';
-    player.ctx.scene?.add(this.mesh);
+    // Each line's round, a streak and the line it leaves, and the spot where
+    // it ended: three segments and two spots at most.
+    this.tracers = new Tracers(CAPACITY * 3, { name: 'replay shot lines' });
+    this.mesh = this.tracers.lines;
+    this.speeds = null;
+    player.ctx.scene?.add(this.tracers.group);
   }
 
   /** Whether the server's own collisions are in the file to draw. */
@@ -66,8 +64,8 @@ export class ReplayShotLines {
 
   setOn(on) {
     this.on = on;
-    this.mesh.visible = on;
     this.clear();
+    this.tracers.group.visible = false;
   }
 
   /** Forget every line: a seek, or the switch going off. */
@@ -78,7 +76,23 @@ export class ReplayShotLines {
     this.pending.length = 0;
     // What the page fired before now is not this stretch's.
     for (const record of this.player.ctx.guns?.hits ?? []) this.seen.add(record);
-    this.mesh.geometry.setDrawRange(0, 0);
+    this.tracers.begin();
+    this.tracers.end();
+  }
+
+  /** A round's muzzle speed, metres a second: its gun's in the level's
+   *  weapon table (replay-hud.js `weaponTable`), by the gun's name or the
+   *  projectile it fires, else SHOT_LINE_SPEED. */
+  speedOf(name) {
+    const table = this.player.hud?.weaponTable?.() ?? null;
+    if (table && this.speeds?.table !== table) {
+      const byProjectile = new Map();
+      for (const entry of table.values()) if (entry?.projectile && entry.speed > 0 && !byProjectile.has(entry.projectile)) byProjectile.set(entry.projectile, entry.speed);
+      this.speeds = { table, byProjectile };
+    }
+    const key = lower(name);
+    const speed = table?.get(key)?.speed ?? this.speeds?.byProjectile.get(key);
+    return speed > 0 ? speed : SHOT_LINE_SPEED;
   }
 
   update(t) {
@@ -93,7 +107,8 @@ export class ReplayShotLines {
         const i = impacts[this.nextImpact++];
         if (i.t <= from || !i.origin || !i.point) continue;
         // BF1942's +Z is the page's -Z (replay-actors.js `toViewPosition`).
-        this.add(i.t, [i.origin[0], i.origin[1], -i.origin[2]], [i.point[0], i.point[1], -i.point[2]], i.dmg);
+        this.add(i.t, [i.origin[0], i.origin[1], -i.origin[2]], [i.point[0], i.point[1], -i.point[2]], i.dmg, null,
+          { landed: true, weapon: i.tmpl });
       }
     } else {
       this.fromFires(t);
@@ -148,52 +163,40 @@ export class ReplayShotLines {
     this.pending = this.pending.filter(m => t - m.t < PENDING_LIFE && m.t <= t + 0.05);
   }
 
-  /** A line from `a` to `b`. `f`, the recorded round, moves its start to
-   *  the drawn gun's muzzle as it fired once the replay has fired it
+  /** A line from `a` to `b`: the round left at `t` (or, `landed`, ended
+   *  then) and flew at its gun's speed. `f`, the recorded round, moves its
+   *  start to the drawn gun's muzzle as it fired once the replay has fired it
    *  (`shotMuzzles`, replay-bodies.js / replay-hulls.js); until then, and for
    *  a gun not drawn, it starts at the recorded launch point (the eye). */
-  add(t, a, b, hit, f = null) {
-    this.lines.push({ t, a, b, hit: Boolean(hit), f, muzzle: false });
+  add(t, a, b, hit, f = null, { landed = false, weapon = f?.weapon } = {}) {
+    const span = Math.hypot(b[0] - a[0], b[1] - a[1], b[2] - a[2]) / this.speedOf(weapon);
+    const left = landed ? t - span : t;
+    this.lines.push({ t: left, span, a, b, hit: Boolean(hit), f, muzzle: false });
     if (this.lines.length > CAPACITY) this.lines.splice(0, this.lines.length - CAPACITY);
   }
 
   draw(t) {
     // Lines of the future (a seek back) or past their life go.
-    this.lines = this.lines.filter(l => l.t <= t + 0.05 && t - l.t < SHOT_LINE_LIFE);
-    const p = this.positions;
-    const c = this.colors;
-    let n = 0;
+    this.lines = this.lines.filter(l => l.t <= t + 0.05 && t - l.t - l.span < SHOT_LINE_LIFE);
     const muzzles = this.player.shotMuzzles;
+    const tracers = this.tracers;
+    tracers.begin();
     for (const l of this.lines) {
       if (l.f && !l.muzzle) {
         const m = muzzles?.get(l.f);
         if (m) { l.a = m; l.muzzle = true; }
       }
       const age = Math.max(0, t - l.t);
-      // Full for the first half of its life, then down to nothing; additive,
-      // so a darker colour is a fainter line.
-      const k = Math.min(1, 2 * (1 - age / SHOT_LINE_LIFE));
-      const col = l.hit ? HIT : MISS;
-      const o = n * 6;
-      p[o] = l.a[0]; p[o + 1] = l.a[1]; p[o + 2] = l.a[2];
-      p[o + 3] = l.b[0]; p[o + 4] = l.b[1]; p[o + 5] = l.b[2];
-      for (let v = 0; v < 2; v++) {
-        c[o + v * 3] = col.r * k;
-        c[o + v * 3 + 1] = col.g * k;
-        c[o + v * 3 + 2] = col.b * k;
-      }
-      n++;
+      // Full for the first half of its life after it lands, then down to
+      // nothing.
+      const k = Math.min(1, 2 * (1 - Math.max(0, age - l.span) / SHOT_LINE_LIFE));
+      tracers.straight(l.a, l.b, l.span, age, l.hit ? TRACER_HIT : TRACER_MISS, { k });
     }
-    const geometry = this.mesh.geometry;
-    geometry.attributes.position.needsUpdate = true;
-    geometry.attributes.color.needsUpdate = true;
-    geometry.setDrawRange(0, n * 2);
+    tracers.end();
   }
 
   dispose() {
-    this.mesh.parent?.remove(this.mesh);
-    this.mesh.geometry.dispose();
-    this.mesh.material.dispose();
+    this.tracers.dispose();
   }
 }
 

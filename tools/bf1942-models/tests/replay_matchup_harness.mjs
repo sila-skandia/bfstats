@@ -203,7 +203,7 @@ const foot = recording(L => {
 }
 
 
-// --- (h) The round's fights, as the live match-up picks them --------------------------------
+// --- (h) The round's fights, as the spotlight finds a kill's ----------------------------------
 //
 // The Sherman and the Tiger meet twice: a hit at 10 s, then 50 s later a hit
 // each and the Tiger kills the Sherman. Between those, at 13 s, a Panther 200 m
@@ -239,20 +239,10 @@ const again = recording(L => {
   const [first, panthers, second] = eps;
   results.episodes = {
     list: eps.map(raw => ({ pair: name(raw), first: r2(raw.first), last: r2(raw.last), kill: Boolean(raw.kill) })),
-    on12: name(M.fightOn(eps, 12)),
-    on40: name(M.fightOn(eps, 40)),
-    next30: name(M.nextFight(eps, 30)),
-    next30at: r2(M.nextFight(eps, 30)?.first ?? null),
-    nextAfterAll: name(M.nextFight(eps, 63)),
     ofKill: M.fightOfKill(eps, 62.8, 1) === second,
+    ofKillNear: M.fightOfKill(eps, 62.5, 1) === second,
     ofKillWrongVictim: M.fightOfKill(eps, 62.8, 2),
-    // Held on past its last hit, it gives way to one under way...
-    takesOver: name(M.fightOn(eps, 13.5, { current: first })),
-    // ...and not while it is still going.
-    staysWhileOn: name(M.fightOn(eps, 10.2, { current: first })),
-    // The camera on the Tiger's driver: theirs alone.
-    onlyFollowed: name(M.fightOn(eps, 13.5, { follow: 2, only: true })),
-    onlyNobody: M.fightOn(eps, 13.5, { follow: 9, only: true }),
+    ofKillWrongTime: M.fightOfKill(eps, 50, 1),
     // The followed player's side first.
     orientedA: M.orient(again, panthers, 13.5, 1).a.tmpl,
     orientedKiller: M.orient(again, second, 70).a.tmpl,
