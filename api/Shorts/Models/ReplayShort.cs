@@ -39,6 +39,11 @@ public class ReplayShort
     /// <summary>The optional HD copy's size (<c>shorts/&lt;slug&gt;.hd.mp4</c>), 0 when there is
     /// none: an action roll's 1080p take beside its 4K one.</summary>
     public long HdVideoBytes { get; set; }
+
+    /// <summary>The optional link copy's size (<c>shorts/&lt;slug&gt;.link.mp4</c>), 0 when there
+    /// is none: a small 720p take for whatever unfurls the share link. Discord shows a linked
+    /// video over about 50 MB as a bare link, and a roll's 4K is 300-480 MB (2026-11-12).</summary>
+    public long LinkVideoBytes { get; set; }
     public long PosterBytes { get; set; }
     public Instant CreatedAt { get; set; }
 

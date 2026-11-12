@@ -930,6 +930,49 @@ public sealed class ShortsControllerTests : IDisposable
     }
 
     [Fact]
+    public async Task SetLinkVideo_GivesTheShareLinkASmallLandscapeCopy_TheVolumeCountsIt_DeleteTakesIt()
+    {
+        var limits = new ShortsOptions { UploadKey = UploadKey, MaxLinkVideoBytes = 64 };
+        var small = new ShortService(db, storage, clock, MsOptions.Create(limits), NullLogger<ShortService>.Instance);
+        var roll = await UploadAsync(Meta(kind: ShortKinds.Roll, title: "Action roll: Gazala"), Mp4Of(50));
+        Assert.Null(roll.LinkVideoUrl);
+        Assert.IsType<NotFoundResult>(Controller().LinkVideo(roll.Slug));
+
+        // Nobody signed in: refused. Not an MP4, or over the limit: refused, nothing kept.
+        Assert.Equal(StatusCodes.Status401Unauthorized,
+            Assert.IsType<ObjectResult>((await PosterBody(Controller(with: small), Mp4Of(40)).SetLinkVideo(roll.Slug, default)).Result).StatusCode);
+        Assert.Equal(StatusCodes.Status400BadRequest,
+            Assert.IsType<ObjectResult>((await PosterBody(Controller(UploadKey, with: small), Jpeg).SetLinkVideo(roll.Slug, default)).Result).StatusCode);
+        Assert.Equal(StatusCodes.Status413PayloadTooLarge,
+            Assert.IsType<ObjectResult>((await PosterBody(Controller(UploadKey, with: small), Mp4Of(100)).SetLinkVideo(roll.Slug, default)).Result).StatusCode);
+        Assert.False(File.Exists(storage.LinkVideoPath(roll.Slug)));
+        Assert.Empty(Directory.GetFiles(Path.Combine(directory, ".incoming")));
+
+        var before = await VolumeUsage.StoredBytesAsync(db, default);
+        var dto = Value(await PosterBody(Controller(UploadKey, with: small), Mp4Of(40)).SetLinkVideo(roll.Slug, default));
+        Assert.Equal($"/stats/shorts/{roll.Slug}.link.mp4?v=40", dto.LinkVideoUrl);
+        Assert.Equal(before + 40, await VolumeUsage.StoredBytesAsync(db, default));
+        Assert.IsType<PhysicalFileResult>(Controller().LinkVideo(roll.Slug));
+        // Sent again, it replaces the last.
+        Value(await PosterBody(Controller(UploadKey, with: small), Mp4Of(30)).SetLinkVideo(roll.Slug, default));
+        Assert.Equal(30, new FileInfo(storage.LinkVideoPath(roll.Slug)).Length);
+
+        // The share link names the small copy, 16:9, and the poster as the 1920x1080 it is.
+        var html = Assert.IsType<ContentResult>(await Controller().ShareLink(roll.Slug, default)).Content!;
+        Assert.Contains($"<meta property=\"og:video\" content=\"https://play.bfstats.io/stats/shorts/{roll.Slug}.link.mp4?v=30\">", html);
+        Assert.Contains("<meta property=\"og:video:width\" content=\"1280\">", html);
+        Assert.Contains("<meta property=\"og:video:height\" content=\"720\">", html);
+        Assert.Contains("<meta property=\"og:image:width\" content=\"1920\">", html);
+        Assert.Contains("<meta property=\"og:image:height\" content=\"1080\">", html);
+        Assert.Contains($"<meta name=\"twitter:player:stream\" content=\"https://play.bfstats.io/stats/shorts/{roll.Slug}.link.mp4?v=30\">", html);
+
+        Assert.IsType<NoContentResult>(await Controller(UploadKey).Delete(roll.Slug, default));
+        Assert.False(File.Exists(storage.LinkVideoPath(roll.Slug)));
+        Assert.Empty(ShortFiles());
+        Assert.IsType<NotFoundResult>((await PosterBody(Controller(UploadKey, with: small), Mp4Of(30)).SetLinkVideo(roll.Slug, default)).Result);
+    }
+
+    [Fact]
     public async Task Retention_TakesDownTheUnwatchedWeekOld_KeepsTheWatchedTheYoungAndCreatorsShares()
     {
         db.Users.Add(new User { Id = 7, Email = "creator@example.com" });

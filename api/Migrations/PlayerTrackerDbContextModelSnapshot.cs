@@ -2743,6 +2743,9 @@ namespace api.Migrations
                         .IsRequired()
                         .HasColumnType("TEXT");
 
+                    b.Property<long>("LinkVideoBytes")
+                        .HasColumnType("INTEGER");
+
                     b.Property<string>("Mod")
                         .IsRequired()
                         .HasColumnType("TEXT");

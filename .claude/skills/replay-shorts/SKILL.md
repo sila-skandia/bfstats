@@ -311,6 +311,10 @@ about.
 - **Action rolls share the strip** (kind `roll`, 16:9, 4K plus an HD copy,
   `features/action-roll`): made by `scripts/action-roll.mjs`, not this
   runner; uploaded in 80 MiB parts because Cloudflare passes 100 MB a request.
+  Each also carries a 720p link copy under 48 MiB (`PUT <slug>/link-video`)
+  that the share link names: Discord leaves a linked video over ~50 MB as a
+  bare link. A Short whose share link will not embed: check the size of
+  whatever `og:video` names.
 
 ## On the Mac (2026-11-07)
 

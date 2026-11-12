@@ -29,6 +29,10 @@ public record ShortsOptions
     /// Another kind's HD copy is held to <see cref="MaxVideoBytes"/> as well.</summary>
     public long MaxHdVideoBytes { get; init; } = 200 * MiB;
 
+    /// <summary>A Short's optional link copy (<c>PUT /stats/shorts/&lt;slug&gt;/link-video</c>), the
+    /// video the share link names: under what Discord embeds from a link, about 50 MB.</summary>
+    public long MaxLinkVideoBytes { get; init; } = 48 * MiB;
+
     /// <summary>One part of a chunked upload (<c>POST /stats/shorts/parts</c>): under what the
     /// edge (Cloudflare) passes in one request, 100 MB, so a 4K roll goes up in pieces.</summary>
     public long MaxPartBytes { get; init; } = 90 * MiB;

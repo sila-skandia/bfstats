@@ -44,6 +44,10 @@ public interface IShortService
 
     /// <summary>Flattens a Short's video when it is a fragmented MP4 (<see cref="IVideoFlattener"/>):
     /// the Short, its video link new when it was rewritten, or null when there is none.</summary>
+    /// <summary>Puts a small link copy beside a Short (an MP4 in the body), the video its share
+    /// link names; null when there is no such Short.</summary>
+    Task<ShortDto?> SetLinkVideoAsync(string slug, Stream body, CancellationToken ct);
+
     Task<ShortDto?> FlattenVideoAsync(string slug, CancellationToken ct);
 
     /// <summary>Takes a Short down, row and files. False when there is none.</summary>

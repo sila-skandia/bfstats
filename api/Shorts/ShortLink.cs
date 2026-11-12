@@ -19,6 +19,13 @@ public static class ShortLink
     public const int Width = 1080;
     public const int Height = 1920;
 
+    /// <summary>An action roll's link copy and poster are 16:9 (scripts/action-roll.mjs): the
+    /// copy is 1280x720, the poster 1920x1080.</summary>
+    public const int RollVideoWidth = 1280;
+    public const int RollVideoHeight = 720;
+    public const int RollPosterWidth = 1920;
+    public const int RollPosterHeight = 1080;
+
     /// <summary>The Short open in the REPLAY tab's player, root-relative on the play host.</summary>
     public static string WatchPath(string slug) => $"/play/?tab=replay&short={Uri.EscapeDataString(slug)}";
 
@@ -28,10 +35,14 @@ public static class ShortLink
     {
         var watch = playOrigin + WatchPath(s.Slug);
         var self = $"{linkOrigin}/s/{s.Slug}";
-        var video = playOrigin + s.VideoUrl;
+        // The link copy when there is one: Discord shows a linked video over about 50 MB as a
+        // bare link (2026-11-12, a roll's 479 MB 4K take).
+        var video = playOrigin + (s.LinkVideoUrl ?? s.VideoUrl);
         var poster = playOrigin + s.PosterUrl;
-        var width = Width.ToString(CultureInfo.InvariantCulture);
-        var height = Height.ToString(CultureInfo.InvariantCulture);
+        var width = Text(s.Landscape ? RollVideoWidth : Width);
+        var height = Text(s.Landscape ? RollVideoHeight : Height);
+        var posterWidth = Text(s.Landscape ? RollPosterWidth : Width);
+        var posterHeight = Text(s.Landscape ? RollPosterHeight : Height);
         var html = new StringBuilder();
         html.Append("<!doctype html>\n<html lang=\"en\">\n<head>\n<meta charset=\"utf-8\">\n");
         html.Append("<meta name=\"color-scheme\" content=\"dark light\">\n");
@@ -44,8 +55,8 @@ public static class ShortLink
         Meta(html, "property", "og:url", self);
         Meta(html, "property", "og:image", poster);
         Meta(html, "property", "og:image:type", "image/jpeg");
-        Meta(html, "property", "og:image:width", width);
-        Meta(html, "property", "og:image:height", height);
+        Meta(html, "property", "og:image:width", posterWidth);
+        Meta(html, "property", "og:image:height", posterHeight);
         Meta(html, "property", "og:video", video);
         Meta(html, "property", "og:video:url", video);
         Meta(html, "property", "og:video:secure_url", video);
@@ -83,6 +94,8 @@ public static class ShortLink
         ];
         return string.Join(" · ", parts.Where(p => !string.IsNullOrEmpty(p)));
     }
+
+    private static string Text(int value) => value.ToString(CultureInfo.InvariantCulture);
 
     private static string Or(string value, string fallback) => value.Length > 0 ? value : fallback;
 }

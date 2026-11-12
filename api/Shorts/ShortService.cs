@@ -205,6 +205,7 @@ public sealed class ShortService(
             s.PrunedAt = now;
             s.VideoBytes = 0;
             s.HdVideoBytes = 0;
+            s.LinkVideoBytes = 0;
             s.PosterBytes = 0;
             await db.SaveChangesAsync(ct);
             taken.Add(new PrunedShortDto(s.Slug, s.Kind, ageDays, s.Views));
@@ -238,6 +239,37 @@ public sealed class ShortService(
         finally
         {
             Discard(posterFile);
+        }
+    }
+
+    public async Task<ShortDto?> SetLinkVideoAsync(string slug, Stream body, CancellationToken ct)
+    {
+        var row = await db.ReplayShorts.FirstOrDefaultAsync(s => s.Slug == slug && s.PrunedAt == null, ct);
+        if (row is null) return null;
+        string? videoFile = storage.IncomingPath();
+        try
+        {
+            var limit = options.Value.MaxLinkVideoBytes;
+            await ReceiveAsync(body, videoFile, limit, "A Short's link video", ct);
+            if (!await IsMp4Async(videoFile, ct)) throw new RecordingRejectedException("The link video is not an MP4 file.");
+            if (flattener is not null) await flattener.FlattenAsync(videoFile, ct);
+            var bytes = new FileInfo(videoFile).Length;
+            if (bytes > limit) throw TooBig(limit, "A Short's link video");
+            var growth = bytes - row.LinkVideoBytes;
+            if (growth > 0 && storage.RoomFor(await StoredBytesAsync(ct), growth) is { } full)
+            {
+                throw new RecordingRejectedException(full, StatusCodes.Status507InsufficientStorage);
+            }
+            storage.ReplaceLinkVideo(videoFile, row.Slug);
+            videoFile = null;
+            row.LinkVideoBytes = bytes;
+            await db.SaveChangesAsync(ct);
+            logger.LogInformation("Short {Slug} has a link video, {Bytes} bytes", row.Slug, bytes);
+            return ShortDto.From(row);
+        }
+        finally
+        {
+            Discard(videoFile);
         }
     }
 

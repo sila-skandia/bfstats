@@ -307,3 +307,29 @@ of HD in two. Titles read "Action roll: <level>", the level's name tidied
 A take's process could hang closing the browser after its files were written
 (Arnhem, six minutes); the close now gets ten seconds and the process exits,
 so a batch moves on.
+
+## Discord embed: the link copy (2026-11-12)
+
+The owner: a roll's share link (`replay.bfstats.io/s/ee5ev32uwd`) posted on
+Discord "didn't do the embedded Discord thing, maybe file too big?". It was.
+The share page named the 4K take, 479 MB, as `og:video`, and called it
+1080x1920 portrait. Discord plays a linked video in the chat only under
+about 50 MB (community reports put the cut at 50 MiB for links and 100 MB
+for uploads); the HD copies, 107-131 MB, are over too.
+
+Each roll now has a link copy, `shorts/<slug>.link.mp4`: 720p, its bitrate
+sized from its length to land under 44 MB (`linkCopy` in the roll tool,
+`-preset slow`, AAC 128k, `+faststart`), with a second, smaller try if
+an encode overshoots 46 MB. The API takes it with
+`PUT /stats/shorts/<slug>/link-video` (the key, an admin or the share's
+creator; at most 48 MiB, `MaxLinkVideoBytes`; sent again it replaces the
+last), serves it at `<slug>.link.mp4`, counts it on the volume, and deletes
+and prunes it with the Short (`LinkVideoBytes`, migration
+`AddShortLinkVideo`). The share page names the link copy when there is one,
+and for a roll gives 1280x720 for the video and 1920x1080 for the poster.
+The strip's player still plays the 4K or HD.
+
+`--upload` and `--upload-take` send the link copy after the upload;
+`--link-take=<folder>` makes and sends one for a roll already up (its
+`uploaded.json` names the slug). The six live rolls got theirs that way.
+

@@ -39,6 +39,9 @@ public class ShortsController(
     /// <summary>A poster alone, as <see cref="ShortsOptions.MaxPosterBytes"/> takes it.</summary>
     private const long PosterLimitBytes = 2L * 1024 * 1024 + 1;
 
+    /// <summary>A link copy alone, as <see cref="ShortsOptions.MaxLinkVideoBytes"/> takes it.</summary>
+    private const long LinkVideoLimitBytes = 48L * 1024 * 1024 + 1;
+
     /// <summary>A studio share's whole body: the largest video, HD copy and poster
     /// (<see cref="ShortsOptions"/>), and the framing round them.</summary>
     private const long ShareLimitBytes = (90L + 90 + 2 + 1) * 1024 * 1024;
@@ -113,6 +116,11 @@ public class ShortsController(
     [HttpGet("{slug:length(10)}.hd.mp4")]
     [EnableCors(RecordingsController.PublicReadCors)]
     public IActionResult HdVideo(string slug) => Serve(slug, storage.HdVideoPath, "video/mp4");
+
+    /// <summary>The link copy, when the Short has one: the small take its share link names.</summary>
+    [HttpGet("{slug:length(10)}.link.mp4")]
+    [EnableCors(RecordingsController.PublicReadCors)]
+    public IActionResult LinkVideo(string slug) => Serve(slug, storage.LinkVideoPath, "video/mp4");
 
     [HttpGet("{slug:length(10)}.jpg")]
     [EnableCors(RecordingsController.PublicReadCors)]
@@ -201,6 +209,25 @@ public class ShortsController(
         try
         {
             return await shorts.SetPosterAsync(clean, Request.Body, ct) is { } dto ? Ok(dto) : NotFound();
+        }
+        catch (RecordingRejectedException ex)
+        {
+            return StatusCode(ex.StatusCode, new { message = ex.Message });
+        }
+    }
+
+    /// <summary>A small copy for the share link to name (an MP4 in the body, at most 48 MiB):
+    /// Discord embeds a linked video only under about 50 MB, and a roll's 4K is far over
+    /// (2026-11-12). For the key, an admin, or the creator who shared it.</summary>
+    [HttpPut("{slug:length(10)}/link-video")]
+    [RequestSizeLimit(LinkVideoLimitBytes)]
+    public async Task<ActionResult<ShortDto>> SetLinkVideo(string slug, CancellationToken ct)
+    {
+        if (RecordingStorage.CleanSlug(slug) is not { } clean) return NotFound();
+        if (await MayChangeAsync(clean, ct) is { } refusal) return refusal;
+        try
+        {
+            return await shorts.SetLinkVideoAsync(clean, Request.Body, ct) is { } dto ? Ok(dto) : NotFound();
         }
         catch (RecordingRejectedException ex)
         {

@@ -16,7 +16,7 @@ public static class VolumeUsage
     {
         var recordings = await db.Recordings.Where(r => !r.FileMissing)
             .SumAsync(r => r.RecordingBytes + r.ServerLogBytes + r.ThumbnailBytes, ct);
-        var shorts = await db.ReplayShorts.SumAsync(s => s.VideoBytes + s.HdVideoBytes + s.PosterBytes, ct);
+        var shorts = await db.ReplayShorts.SumAsync(s => s.VideoBytes + s.HdVideoBytes + s.LinkVideoBytes + s.PosterBytes, ct);
         return recordings + shorts;
     }
 }

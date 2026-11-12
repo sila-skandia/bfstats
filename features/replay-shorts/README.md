@@ -1298,6 +1298,9 @@ not play video shows). `twitter:card player` with `twitter:player:stream`
 is the same video for the other unfurlers that read Twitter's tags. The MP4
 is H.264 High + AAC with `+faststart` and range requests, about 11 MB, which
 Discord streams.
+A Short with a link copy (`<slug>.link.mp4`, an action roll's 720p take
+under 48 MiB) names that instead: Discord shows a linked video over about
+50 MB as a bare link (features/action-roll, "Discord embed", 2026-11-12).
 
 The player's Share button (top right, beside Unmute) copies the link; on a
 touch screen it opens the phone's share sheet. Copying the address bar

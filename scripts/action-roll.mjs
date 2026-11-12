@@ -61,7 +61,8 @@ const AUDIO_SPAN = 1200;
 const STEP_TIMEOUT = 60 * 1000;
 const LOAD_TIMEOUT = 8 * 60 * 1000;
 const UPLOAD_TAKE = opt('upload-take', null);
-if (!SLUG && !UPLOAD_TAKE) throw new Error('--recording=<slug> is required');
+const LINK_TAKE = opt('link-take', null);
+if (!SLUG && !UPLOAD_TAKE && !LINK_TAKE) throw new Error('--recording=<slug> is required');
 
 const log = (...a) => console.log(new Date().toISOString().slice(11, 19), ...a);
 const withTimeout = (p, ms, what) => Promise.race([p, new Promise((_, no) => setTimeout(() => no(new Error(`${what} took over ${ms / 1000} s`)), ms))]);
@@ -1021,6 +1022,41 @@ async function json(u) {
 }
 
 /**
+ * The link copy, roll-link.mp4: 720p sized to land under 44 MB, the video
+ * the share link names. Discord shows a linked video over about 50 MB as a
+ * bare link, and the 4K is 300-480 MB (2026-11-12). From the HD take, or
+ * the 4K when there is none; made once.
+ */
+function linkCopy(dir) {
+  const out = path.join(dir, 'roll-link.mp4');
+  if (fs.existsSync(out)) return out;
+  const from = ['roll-1080p.mp4', 'roll-2160p.mp4', 'roll.mp4'].map(f => path.join(dir, f)).find(f => fs.existsSync(f));
+  if (!from) throw new Error(`${dir}: no take to make a link copy from`);
+  const seconds = Number(execFileSync('ffprobe', ['-v', 'error', '-show_entries', 'format=duration', '-of', 'csv=p=0', from]).toString().trim());
+  const audio = 128;
+  for (const target of [44e6, 38e6, 30e6]) {
+    const video = Math.max(800, Math.floor((target * 8) / seconds / 1000 - audio));
+    execFileSync('ffmpeg', ['-y', '-loglevel', 'error', '-i', from, '-vf', 'scale=-2:720:flags=lanczos',
+      '-c:v', 'libx264', '-preset', 'slow', '-b:v', `${video}k`, '-maxrate', `${video}k`, '-bufsize', `${video * 2}k`,
+      '-pix_fmt', 'yuv420p', '-profile:v', 'high', '-c:a', 'aac', '-b:a', `${audio}k`, '-movflags', '+faststart', out]);
+    if (fs.statSync(out).size <= 46e6) break;
+  }
+  log(`  link copy ${(fs.statSync(out).size / 1e6).toFixed(1)} MB`);
+  return out;
+}
+
+/** The link copy to a Short already up (PUT /stats/shorts/<slug>/link-video). */
+async function sendLinkCopy(dir, slug, to, key) {
+  const file = linkCopy(dir);
+  const res = await fetch(`${to}/stats/shorts/${slug}/link-video`, {
+    method: 'PUT', body: fs.readFileSync(file), headers: { 'X-Shorts-Key': key, 'Content-Type': 'video/mp4' },
+  });
+  const body = await res.text();
+  if (!res.ok) throw new Error(`link video ${res.status}: ${body.slice(0, 300)}`);
+  log(`  link video on ${slug}: ${JSON.parse(body).linkVideoUrl}`);
+}
+
+/**
  * A filmed take to the strip (api/Shorts, kind "roll"): the 4K and the HD
  * from its folder with its poster and meta.json. SHORTS_UPLOAD_KEY as the
  * Shorts runner; --to=<api> for another API. --upload films and sends;
@@ -1064,10 +1100,19 @@ async function uploadTake(dir) {
   if (!res.ok) throw new Error(`upload ${res.status}: ${body.slice(0, 300)}`);
   const made = JSON.parse(body);
   fs.writeFileSync(path.join(dir, 'uploaded.json'), JSON.stringify(made, null, 2));
+  await sendLinkCopy(dir, made.slug, to, key);
   log(`uploaded ${made.slug}: ${API}/replay/s/${made.slug}`);
 }
 if (UPLOAD_TAKE) {
   await uploadTake(UPLOAD_TAKE);
+  process.exit(0);
+}
+// --link-take=<folder>: the link copy to a roll already up (its uploaded.json).
+if (LINK_TAKE) {
+  const key = process.env.SHORTS_UPLOAD_KEY ?? '';
+  if (!key) throw new Error('--link-take needs SHORTS_UPLOAD_KEY');
+  const { slug } = JSON.parse(fs.readFileSync(path.join(LINK_TAKE, 'uploaded.json'), 'utf8'));
+  await sendLinkCopy(LINK_TAKE, slug, opt('to', API), key);
   process.exit(0);
 }
 const rec = await json(`${API}/stats/recordings/${SLUG}`);

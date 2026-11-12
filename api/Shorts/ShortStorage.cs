@@ -5,7 +5,7 @@ using api.Recordings;
 namespace api.Shorts;
 
 /// <summary>
-/// Where Shorts live: <c>shorts/&lt;slug&gt;.mp4</c>, an optional HD copy <c>shorts/&lt;slug&gt;.hd.mp4</c>, and <c>shorts/&lt;slug&gt;.jpg</c> under the
+/// Where Shorts live: <c>shorts/&lt;slug&gt;.mp4</c>, an optional HD copy <c>shorts/&lt;slug&gt;.hd.mp4</c>, an optional link copy <c>shorts/&lt;slug&gt;.link.mp4</c>, and <c>shorts/&lt;slug&gt;.jpg</c> under the
 /// recordings directory, so they share its volume, its <c>.incoming/</c> (a rename puts one in
 /// place) and its room checks.
 /// </summary>
@@ -81,6 +81,8 @@ public sealed partial class ShortStorage(IRecordingStorage recordings)
 
     public string HdVideoPath(string slug) => Path.Combine(Directory, $"{Checked(slug)}.hd.mp4");
 
+    public string LinkVideoPath(string slug) => Path.Combine(Directory, $"{Checked(slug)}.link.mp4");
+
     public string PosterPath(string slug) => Path.Combine(Directory, $"{Checked(slug)}.jpg");
 
     public string IncomingPath() => recordings.IncomingPath();
@@ -94,6 +96,13 @@ public sealed partial class ShortStorage(IRecordingStorage recordings)
         recordings.Promote(incomingPath, finalPath);
     }
 
+    /// <summary>Puts a new link copy in place of the old one, if any.</summary>
+    public void ReplaceLinkVideo(string incomingPath, string slug)
+    {
+        System.IO.Directory.CreateDirectory(Directory);
+        File.Move(incomingPath, LinkVideoPath(slug), overwrite: true);
+    }
+
     /// <summary>Puts a new poster in place of the old one.</summary>
     public void ReplacePoster(string incomingPath, string slug) => File.Move(incomingPath, PosterPath(slug), overwrite: true);
 
@@ -102,6 +111,7 @@ public sealed partial class ShortStorage(IRecordingStorage recordings)
     {
         File.Delete(VideoPath(slug));
         File.Delete(HdVideoPath(slug));
+        File.Delete(LinkVideoPath(slug));
         File.Delete(PosterPath(slug));
     }
 
