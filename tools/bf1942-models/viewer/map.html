@@ -492,6 +492,7 @@ import { combatMaterial } from './world-fields.js';
 import { kitIndexOf } from './support-calls.js';
 import { createDeployScreen } from './deploy-screen.js';
 import { createSpawning } from './spawning.js';
+import { SINGLE_PLAYER_SPAWN_KEY, singlePlayerSpawnParams, singlePlayerSpawnSeconds } from './spawn-timer.js';
 import { createMapSurfaces } from './map-surfaces.js';
 import { createTicketFeed } from './ticket-feed.js';
 import {
@@ -1027,6 +1028,10 @@ window.__consoleWords = registerViewerCommands(pageConsole.gameConsole, {
   gameplayMode: () => level.extras?.gameplayMode ?? '',
   mapRows: () => mapRows,
   players: () => scoreboard.scoreboardPlayers(),
+  // `punish` / `forgive` (FF-10): an own room's server answers them; a
+  // retail relay's is not reached through this page.
+  teamKillRoom: () => (room.roomJoined && !room.serverAuthority
+    ? verb => room.netSendAction({ type: 'tk', verb }) : null),
   bfmap: () => mapSurfaces?.bfmap ?? null,
   chatLog: () => comms?.chatLog?.() ?? null,
   effectsRoot: () => effects?.root ?? null,
@@ -1940,6 +1945,22 @@ const BOT_COUNT = Math.max(0, Math.min(32, Number(params.get('botCount')) || 0))
 const WINGMEN = Math.max(0, Math.min(3, Number(params.get('wingmen')) || 0));
 const BOT_SKILL = Math.max(0.10, Math.min(1.0, Number(params.get('botSkill')) || 0.75));
 /**
+ * The owner's choice, 2026-11-12: single player respawns in 3 s by default,
+ * adjustable; retail waits for the 20 s wave (`spawn-timer.js`, the single
+ * player block). `?spawnTime=` is the Instant Battle screen's SPAWN TIME
+ * (`play/bot-settings.js`), whole seconds 0..30; a level opened without it (a
+ * campaign mission, a hand-typed URL) takes what that screen remembered, else
+ * the 3 s. The page's own player and its bots wait this flat time off a
+ * room; a room's wait is its server's, retail's wave.
+ */
+const SP_SPAWN_SECONDS = singlePlayerSpawnSeconds(params.get('spawnTime')
+  ?? (() => { try { return localStorage.getItem(SINGLE_PLAYER_SPAWN_KEY); } catch { return null; } })());
+// `?spawnTime=wave` keeps retail's wave (`sim/pagematch.mjs`: its bar was
+// recorded under it); null hands the player and the bots the wave law's own
+// defaults.
+const SP_SPAWN_PARAMS = params.get('spawnTime') === 'wave' ? null
+  : singlePlayerSpawnParams(SP_SPAWN_SECONDS);
+/**
  * A campaign mission (play/campaign.js `launchUrl`, features/single-player-
  * campaign): `?campaign=1` ends the round on the single-player plate and its
  * score rule and holds it there (no multiplayer restart); `?tickets=a,b` and
@@ -2006,6 +2027,8 @@ const referee = createBotReferee({
   // The respawn wave runs on the round's clock (SPAWN-35, `spawn-timer.js`).
   // `round` is declared further down: a read in its TDZ is no clock yet.
   roundClock: () => { try { return round?.clock; } catch { return null; } },
+  // Single player's flat respawn (the owner's choice, `SP_SPAWN_PARAMS`).
+  spawnParams: () => SP_SPAWN_PARAMS,
   // The mod's `Game/AI/radio.con` subscriptions (bot-radio.js).
   mod: () => activeMod.id ?? 'bf1942',
   get units() { return botUnits; },
@@ -2019,6 +2042,9 @@ const referee = createBotReferee({
   // (`healing-packs.js`, the human's own `kit-loadout.js` `healingPack`).
   soldierBody: () => footBodies.soldierBody,
   soldierTemplateOf: team => soldierKit.soldierTemplateFor({ team }),
+  // A crouched bot's wrench lifts the page's live mines and packs (SUP-28).
+  packRounds: () => guns.disarmRounds(),
+  retireRound: shot => guns.retireRound(shot),
   debug: BOT_DEBUG,
   doctrine: BOT_DOCTRINE,
   // `?holdfire=0`: the bots fire through a teammate in their line, as the
@@ -3066,6 +3092,9 @@ const spawning = createSpawning(bag(
   from(() => vehicleEntry, `enterVehicle spawnSeat`),
   {
     get LOCAL_PLAYER() { return LOCAL_PLAYER; }, get params() { return params; },
+    // Single player's flat respawn (the owner's choice, `SP_SPAWN_PARAMS`);
+    // `spawning.js` reads it only off a room.
+    spawnParams: () => SP_SPAWN_PARAMS,
     get spawnFlagSelect() { return spawnFlagSelect; },
     get round() { return round; },
     // A replay being watched: the deploy screen never opens over one.

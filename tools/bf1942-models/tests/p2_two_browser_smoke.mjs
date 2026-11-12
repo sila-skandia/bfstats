@@ -180,7 +180,8 @@ function bootStatic(port, root, netPort) {
 }
 
 async function main() {
-  boot(['node', SERVER, '--port', String(PORT), '--viewer', VIEWER, '--default-level', 'aberdeen'],
+  boot(['node', SERVER, '--port', String(PORT), '--viewer', VIEWER, '--default-level', 'aberdeen',
+    '--game-start-delay', '0'],
     ROOT);
   smokeStatic = bootStatic(STATIC, VIEWER, PORT);
 

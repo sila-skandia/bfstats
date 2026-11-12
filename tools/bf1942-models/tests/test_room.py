@@ -60,7 +60,7 @@ HARNESS = Path(__file__).resolve().parent / "room_harness.mjs"
 # unmodified `../viewer/...` imports resolve from `server/`.
 _VIEWER_MODULES = [
     "world", "physics", "parachute", "rocket-pack", "swim", "soldier", "ladder-climb", "spawn-flags", "spawn-safety",
-    "point-body", "fixed-step", "input-pace", "soldier-pose", "soldier-locomotion", "walking-body", "soldier-resolve",
+    "point-body", "fixed-step", "input-pace", "soldier-pose", "soldier-locomotion", "walking-body", "soldier-resolve", "deck-carry",
     "mouse-input", "fall-damage",
     "body-world", "body-statics", "body-pose", "vehicle-bodies", "geometry-search", "combat-area", "supply", "armor",
     "vehicle-damage", "seats", "seat-dots", "rigid-body", "body-contact", "airborne",
@@ -108,11 +108,18 @@ _VIEWER_MODULES = [
     "after-death",
     # room-hits.mjs prices a reported landing by the page's own law.
     "friendly-fire", "knockback", "soldier-exposure", "soldier-death", "skeleton-hit",
+    # ...and finds a seated soldier's body by the seat's anchor (seat-body.js),
+    # which poses through seat-ik.js and pose-compose.js (and its pose-bases.js
+    # and level-skin.js).
+    "seat-body", "seat-ik", "pose-compose", "pose-bases", "level-skin",
     # room-packs.mjs runs the medic bag and the wrench by the page's law, and
     # level-data.mjs finds the level's depots by the page's walk.
     "healing-packs", "supply-collect",
     "tree-foliage",
     "level-batching",
+    # level-data.mjs adds a large root's static layer (COL-22), and
+    # level-instance.mjs places a soldier by the restricted exit (SEAT-42).
+    "coarse-layer", "restricted-exit",
 ]
 MODULES = {f"viewer/{name}.js": VIEWER / f"{name}.js" for name in _VIEWER_MODULES}
 MODULES.update({
@@ -819,6 +826,17 @@ class RoomTests(unittest.TestCase):
         self.assertEqual(0, z["crouched"])
         self.assertEqual(0, z["enemyHull"])
 
+    def test_the_rooms_crouched_wrench_passes_a_lift_in_reach_to_every_page(self) -> None:
+        # `useRepairPack`'s disarm branch (0x082764ed, SUP-28): crouched, a
+        # LandmineProjectile within its radius plus disarmMinesDistance 2.0
+        # goes; the room bounds the claim and tells every page (`disarm`).
+        z = self.results["z3p"]
+        self.assertEqual({"slot": 1, "template": "LandmineProjectile", "dx": 1.5}, z["liftNear"])
+        # 5 m off and a template the wrench does not lift: no row.
+        self.assertEqual(1, z["liftRefused"])
+        # Standing, the wrench repairs and lifts nothing.
+        self.assertEqual(1, z["liftStanding"])
+
     def test_a_statics_hit_points_go_out_by_its_scene_node(self) -> None:
         z4 = self.results.get("z4")
         if z4 is None:
@@ -920,6 +938,78 @@ class RoomTests(unittest.TestCase):
         self.assertEqual([{"template": "Willy", "live": 1}, {"template": "Zero", "live": 0}],
                          self.results["preGame"])
 
+
+    # --- the round's rules (ROUND-14, FF-9..FF-11, TKT-8) ---------------------
+
+    def test_a_new_map_holds_every_spawn_for_the_pre_game(self) -> None:
+        """`gameStatusPreGame` 0x08150950 writes its clock into every player's
+        wait and plays at 0 (ROUND-14); the shipped dedicated settings' 20."""
+        r = self.results["rules"]
+        self.assertEqual({"gameStartDelay": 20, "roundStartDelay": 10, "tkPunishMode": True,
+                          "nrOfTKToKick": 5, "tkSpawnPenalty": 1}, r["rules"])
+        self.assertEqual("preGame", r["hello"]["status"])
+        self.assertEqual(20, r["hello"]["preGameIn"])
+        self.assertEqual(20, r["early"]["sw"])
+        self.assertEqual(10, r["mid"]["sw"])
+        self.assertTrue(r["roundStart"])
+        self.assertEqual("playing", r["status"])
+        self.assertEqual([True, True, True], r["spawned"])
+
+    def test_punish_mode_counts_a_team_kill_only_when_punished(self) -> None:
+        """`_giveDamage` 0x0814c1bc marks the victim; with `serverTKPunishMode 1`
+        only `TKPunish` 0x081593d0 counts it (once: the mark clears), and
+        `TKForgive` 0x081592e0 does nothing in that mode (FF-9, FF-10)."""
+        r = self.results["rules"]
+        self.assertEqual({"total": 0, "sinceDeath": 0}, r["afterTk"])
+        self.assertEqual({"total": 0, "sinceDeath": 0}, r["afterForgive"])
+        self.assertEqual({"total": 1, "sinceDeath": 1}, r["afterPunish"])
+        self.assertEqual({"slot": 1, "victim": 2, "teamKills": 1},
+                         {k: r["punishedRow"][k] for k in ("slot", "victim", "teamKills")})
+        self.assertEqual({"total": 1, "sinceDeath": 1}, r["twice"])
+
+    def test_a_team_killers_next_death_waits_a_wave_more(self) -> None:
+        """`killPlayer` 0x0814df1f..0x0814df8b: + ceil(tks * 1.0) * 25, then
+        the since-death count cleared; the total stays for the kick."""
+        r = self.results["rules"]
+        self.assertEqual(0, r["penaltyPhase"])
+        self.assertEqual(50, r["penaltyWait"])
+        self.assertEqual({"total": 1, "sinceDeath": 0}, r["afterDeath"])
+
+    def test_the_fifth_punished_team_kill_kicks(self) -> None:
+        """`TKPunish` kicks at `nrOfTKToKick` 5.0 (ctor 0x0812f8c3) through
+        `kickPlayer(id, false)` vt+0x334 (FF-11)."""
+        k = self.results["rules"]["kicked"]
+        self.assertEqual(4001, k["closed"]["code"])
+        self.assertFalse(k["inRoom"])
+        self.assertTrue(k["leave"])
+
+    def test_punish_mode_off_counts_at_once_kills_at_the_limit_and_kicks_on_spawn(self) -> None:
+        """Mode 0, the engine's default: the counts rise in `_giveDamage`
+        (0x0814c1d2..0x0814c1ee), `punish` does nothing, `forgive` takes one
+        back (0x08159349..0x08159376), the limit kills the killer (0x0814c224)
+        and `spawnPlayer` kicks them on their next spawn (0x0814d841)."""
+        o = self.results["rulesOff"]
+        self.assertEqual({"total": 1, "sinceDeath": 1}, o["afterTk"])
+        self.assertEqual({"total": 1, "sinceDeath": 1}, o["afterPunish"])
+        self.assertEqual({"total": 0, "sinceDeath": 0}, o["afterForgive"])
+        self.assertTrue(o["killerDead"])
+        self.assertEqual({"total": 2, "sinceDeath": 0}, o["atLimit"])
+        self.assertEqual(4001, o["kicked"]["closed"]["code"])
+        self.assertFalse(o["kicked"]["inRoom"])
+
+    def test_a_stranded_side_loses_in_a_room(self) -> None:
+        """TKT-5, TKT-8: with its only group's carrier gone and nobody alive,
+        Iraq bleeds at 1000 a minute, the first ticket a whole 60 / 5 = 12 s
+        after (a shut gate's refill) and the rest every 0.06 s: 17.9 s."""
+        st = self.results["stranded"]
+        self.assertEqual({"1": 100, "2": 100}, st["whole"])
+        self.assertAlmostEqual(12.0, st["first"], delta=0.1)
+        self.assertEqual(100, st["bled"])
+        self.assertEqual(0, st["last"])
+        self.assertEqual({"winner": 2, "reason": "tickets"},
+                         {k: st["end"][k] for k in ("winner", "reason")})
+        self.assertAlmostEqual(17.94, st["end"]["at"], delta=0.1)
+        self.assertEqual(0, st["us"])
 
 if __name__ == "__main__":
     unittest.main()

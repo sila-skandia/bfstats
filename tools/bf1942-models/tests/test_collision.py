@@ -614,6 +614,51 @@ class ProjectileMaterialTests(unittest.TestCase):
             self.assertNotIn("ammoTypes",
                              json.loads((Path(tmp) / "_other" / "damage.json").read_text()))
 
+    def test_the_armors_explosion_words_are_written_beside_the_rounds(self) -> None:
+        # Gap audit 2026-11-12 entries 2 and 3: `explosionRadius` /
+        # `explosionDamage` / `explosionMaterial` / `explosionForce`
+        # (ConsoleClass120..123, `SimpleObjectTemplate+0xdc..+0xe8`) and the
+        # push pair, for every template with an Armor. Only the words written;
+        # `explosionMaterial` is an `istream >> int`.
+        from extract_map import ARMOR_EXPLOSION_DEFAULTS, armor_explosions
+        library = self.library(
+            "ObjectTemplate.create PlayerControlObject Sherman\n"
+            "ObjectTemplate.hasArmor 1\n"
+            "ObjectTemplate.explosionRadius 8\n"
+            "ObjectTemplate.explosionDamage 5\n"
+            "ObjectTemplate.explosionForceMod 13\n"
+            "ObjectTemplate.create PlayerControlObject Raft\n"
+            "ObjectTemplate.hasArmor 1\n"
+            "ObjectTemplate.explosionRadius 3.0\n"
+            "ObjectTemplate.explosionMaterial 52.7\n"
+            "ObjectTemplate.explosionForce 1.0\n"
+            "ObjectTemplate.create PlayerControlObject Daihatsu\n"
+            "ObjectTemplate.hasArmor 1\n"
+            "ObjectTemplate.create SimpleObject Palm\n"
+            "ObjectTemplate.explosionDamage 3\n")
+        table = armor_explosions(library)
+        self.assertEqual({"explosionRadius": 8.0, "explosionDamage": 5.0,
+                          "explosionForceMod": 13.0}, table["sherman"])
+        self.assertEqual({"explosionRadius": 3.0, "explosionMaterial": 52,
+                          "explosionForce": 1.0}, table["raft"])
+        self.assertEqual({}, table["daihatsu"])
+        self.assertNotIn("palm", table)
+        self.assertEqual({"explosionRadius": 15.0, "explosionDamage": 10.0,
+                          "explosionMaterial": 204, "explosionForce": 150.0,
+                          "explosionForceMod": 1.0, "explosionForceMax": 300.0},
+                         ARMOR_EXPLOSION_DEFAULTS)
+
+        class Tables:
+            def as_dict(self):
+                return {"materials": {}, "modifiers": {}, "effects": {}}
+
+        with tempfile.TemporaryDirectory() as tmp:
+            shared = Path(tmp) / "_shared"
+            write_damage_tables(Tables(), shared, Path(tmp) / "a", {}, {}, {"sherman": {}})
+            write_damage_tables(Tables(), shared, Path(tmp) / "b", {}, {}, {"willy": {}})
+            payload = json.loads((shared / "damage.json").read_text())
+            self.assertEqual({"sherman": {}, "willy": {}}, payload["armors"])
+
 
 if __name__ == "__main__":
     unittest.main()

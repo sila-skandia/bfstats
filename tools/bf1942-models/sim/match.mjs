@@ -51,7 +51,7 @@ const v2 = (a) => (a ? a.map(r2) : null);
 export class Match {
   constructor({ M, level, botsPerSide = 4, botSkill = 0.75, duration = 120, seed = 1, traceEvery = 1,
                 sampleEvery = 1, vehicles = true, sink = null, doctrine = null, seats = [],
-                wreckLoader = null, maxPlayers = null, holdFire = null }) {
+                wreckLoader = null, maxPlayers = null, holdFire = null, spawnSeconds = null }) {
     this.M = M;
     /** `[{ bot, template, seat }]`: bots seated by hand at t = 0 (`--seat`). */
     this.seats = seats;
@@ -83,6 +83,14 @@ export class Match {
      *  engine's SAI on both sides, whose seeded traces are the engine-parity
      *  ones (`--hold-fire on|off` decides either way). */
     this.holdFire = holdFire ?? !this.baseline;
+    /** The bots' respawn (`--spawn-time`). The owner's choice, 2026-11-12:
+     *  single player respawns in 3 s by default, adjustable; retail waits for
+     *  the 20 s wave. The runner plays the page's Instant Battle, so it
+     *  takes the same flat wait (`spawn-timer.js` `singlePlayerSpawnParams`):
+     *  null is the 3 s default, a number that many seconds, 'wave' retail's
+     *  reinforcement wave (a room's law, for a parity trace). */
+    this.spawnParams = spawnSeconds === 'wave' ? null
+      : (M.singlePlayerSpawnParams?.(spawnSeconds ?? undefined) ?? null);
     this.hash = createHash('sha256');
     this.lines = 0;
     this.clock = 0;
@@ -172,6 +180,7 @@ export class Match {
       k: 'match', version: 1, level: level.name, seed: this.seed, botsPerSide: this.botsPerSide,
       maxPlayers: this.maxPlayers, behaviours: BEHAVIOURS,
       botSkill: this.botSkill, duration: this.duration, tickHz: Math.round(1 / M.WORLD_TICK_DT),
+      spawnSeconds: this.spawnParams ? this.spawnParams.spawnDelay : 'wave',
       traceEvery: this.traceEvery, sampleEvery: this.sampleEvery, worldSize,
       nav: { width: this.nav.width, height: this.nav.height, cellSize: this.nav.cellSize },
       strategic: this.strategy ? this.strategy.layer.areas.map(a => a.name) : null,
@@ -260,12 +269,18 @@ export class Match {
       world: () => this.world,
       // The respawn wave's clock (SPAWN-35): the round's, as on the page.
       roundClock: () => this.round?.clock,
+      // Single player's flat wait, or null for retail's wave (`spawnParams`).
+      spawnParams: () => this.spawnParams,
       doctrine: this.doctrine,
       holdFire: this.holdFire,
       // Read live: the stand-in vehicles are built after the referee.
       get units() { return stage ? stage.units : match.vehicles; },
       groundAt: (x, z, fromY) => this.groundAt(x, z, fromY),
       armorFor: (bot) => new this.M.Armor(level.kits.maxHp(bot.kit)),
+      // A crouched bot's wrench lifts the stage's live mines and packs
+      // (SUP-28, `bot-referee.js` `usePack`); a synthetic level flies none.
+      packRounds: () => stage?.guns?.disarmRounds?.() ?? [],
+      retireRound: shot => stage?.guns?.retireRound?.(shot) ?? false,
       // The page's `botRoundDamage` on a real level: the struck material and
       // the distance the round flew price it (ledger DMG-3).
       roundDamage: (stats, material, distance) => (stage
@@ -434,11 +449,28 @@ export class Match {
     };
   }
 
+  /** The page's `roundSides` (map.html), what the end of a round counts
+   *  (`round-state.js` `tick`, TKT-5, TKT-8): each side's spawn groups with
+   *  a point left, whether it could take another side's, and whether it has
+   *  a living player. Null off a world with flags or a viewer without it. */
+  roundSides() {
+    const census = this.M.spawnGroupCensus;
+    if (!census || !this.world?.flags) return null;
+    const sides = census(this.world.flags);
+    sides[1].alive = false;
+    sides[2].alive = false;
+    for (const [id, p] of this.world.players ?? []) {
+      if ((p?.team === 1 || p?.team === 2) && !this.world.armorOf?.(id)?.destroyed) sides[p.team].alive = true;
+    }
+    return sides;
+  }
+
   // --- the per-tick bot work ---------------------------------------------------
 
   step() {
     const dt = this.M.WORLD_TICK_DT;
     const report = this.world.step(dt);
+    this.stage?.afterWorldStep?.(report);
     this.clock += dt;
     this.tickIndex++;
     this.referee.tick(dt);
@@ -446,7 +478,7 @@ export class Match {
     this.referee.captureTick(dt);
     this.stage?.afterCapture(report, dt);
     if (this.stage) this.airTick();
-    this.round.tick(dt, this.roundPoints);
+    this.round.tick(dt, this.roundPoints, this.roundSides());
     for (const e of this.pendingEvents.splice(0)) {
       if (e.type === 'mount') { const s = this.stats.get(e.bot); if (s) s.mounts++; }
       this.event(e);

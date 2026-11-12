@@ -38,8 +38,10 @@
 
 import { CHARACTER_HEIGHT } from '../viewer/physics.js';
 import { FRIENDLY_FIRE_SHIPPED, friendlyDamage } from '../viewer/friendly-fire.js';
-import { BLAST_SEPARATION_MIN, Knockback, VANILLA_SOLDIER_FORCE, soldierBlastAcceleration }
-  from '../viewer/knockback.js';
+import { BLAST_SEPARATION_MIN, Knockback, VANILLA_SOLDIER_FORCE, soldierBlastAcceleration,
+  objectBlastAcceleration, blastPushPoint } from '../viewer/knockback.js';
+import { armorExplosion, deathBlastRecord } from '../viewer/vehicle-damage.js';
+import { seatAnchor } from '../viewer/seat-body.js';
 import { soldierExposure, worldBlocker } from '../viewer/soldier-exposure.js';
 import { soldierTemplateValue } from '../viewer/soldier-death.js';
 
@@ -109,8 +111,9 @@ export function createRoomHits({ room, onRow }) {
    *  `applySplash` takes them (`vehicle-hits.js` `splashTargets`). */
   function splashTargets() {
     const targets = [];
-    for (const [owner, vehicle] of world.vehicleDamage.byOwner) {
-      if (vehicle.destroyed) continue;
+    for (const [owner] of world.vehicleDamage.byOwner) {
+      // A wreck too, until it is retired: `applySplash` hands it on only for
+      // its push (`wrecks`), its own death blast's included (HP-21, KNOCK-4).
       const entry = instance.ownerToEntry?.get(owner);
       if (entry && !entry.live) continue;
       const pose = world.vehiclePose(owner);
@@ -127,7 +130,64 @@ export function createRoomHits({ room, onRow }) {
         x: s.x, y: s.y + CHARACTER_HEIGHT, z: s.z,
       });
     }
+    // The seated crews (HFD-12; `vehicle-hits.js` `crewTargets` has the
+    // addresses): a man in a seat that reaches a `SeatObject` is splashed as
+    // a soldier from that seat, one in a seat with none (a tank's driver,
+    // object flag bit 0, SEAT-37) is not.
+    for (const [slot, player] of world.players) {
+      const occ = player.occupancy;
+      if (!occ || !player.armor || player.armor.destroyed) continue;
+      if (room.authority.dead.has(slot)) continue;
+      const seat = occ.seatInfo?.(occ.activeSeatId);
+      if (!seat?.seatObjects?.length) continue;
+      const anchor = seatAnchor(seat);
+      if (!anchor?.matrixWorld) continue;
+      occ.root?.updateMatrixWorld?.(true);
+      const e = anchor.matrixWorld.elements;
+      targets.push({
+        owner: -1, armor: player.armor, soldier: true, seated: true, pose: player.soldier?.pose ?? 0,
+        playerId: slot, splashMaterial: SOLDIER_SPLASH_MATERIAL,
+        x: e[12], y: e[13], z: e[14],
+      });
+    }
     return targets;
+  }
+
+  /** The push a blast gives a hull it priced above zero (KNOCK-4, KNOCK-5;
+   *  `vehicle-hits.js` `pushHull` has the addresses), into the server's own
+   *  body for it, whose pose every page is sent. */
+  function pushHull(hit, record) {
+    const owner = hit.target?.owner;
+    if (!(owner >= 0)) return null;
+    const entry = world.bodyWorld?.get(owner);
+    const body = entry?.driven ?? entry?.parked?.body;
+    if (!body?.addAccelerationAt) return null;
+    const spec = armorExplosion(tables, hit.vehicle?.template ?? hit.vehicle?.name);
+    if (!spec) return null;
+    const [bx, by, bz] = record.splashPoint;
+    const yMod = record.splashYMod > 0 ? record.splashYMod : 1;
+    const t = hit.target;
+    let terrainNormal = null;
+    if (hit.distance < BLAST_SEPARATION_MIN) {
+      const n = [0, 1, 0];
+      instance.collider?.heightfield?.normal?.(bx, bz, n);
+      terrainNormal = { x: n[0], y: n[1], z: n[2] };
+    }
+    const push = objectBlastAcceleration({
+      force: record.splashForce ?? undefined,
+      radius: record.splashRadius,
+      distance: hit.distance,
+      offset: [t.x - bx, (t.y - by) * yMod, t.z - bz],
+      axes: body.axes,
+      forceMod: spec.explosionForceMod,
+      forceMax: spec.explosionForceMax,
+      terrainNormal,
+    });
+    if (!(push.force > 0)) return null;
+    const at = blastPushPoint([bx, by, bz], [t.x, t.y, t.z], body.boundingRadius);
+    body.wake?.();
+    body.addAccelerationAt(at, [push.x, push.y, push.z]);
+    return push;
   }
 
   /** The push the blast that just priced him gives him (KNOCK-4..KNOCK-7),
@@ -200,32 +260,82 @@ export function createRoomHits({ room, onRow }) {
       record.splashMaterial2 = Math.trunc(splash.material2);
       record.splashYMod = Number.isFinite(splash.yMod) ? clamp(splash.yMod, 0, IMPACT_LIMITS.yMod) : undefined;
       record.splashForce = Number.isFinite(splash.force) ? clamp(splash.force, 0, IMPACT_LIMITS.force) : undefined;
-      const blocked = worldBlocker(instance.collider, { skipOwner: -1 });
-      const splashed = world.vehicleDamage.applySplash(record, splashTargets(), {
-        materials: tables?.materials ?? null,
-        modifiers: tables?.modifiers ?? null,
-        exposure: (target, blast) => soldierExposure({ x: blast[0], y: blast[1], z: blast[2] },
-                                                     target, target.pose ?? 0, blocked),
-        attacker: slot,
-        scale: (amount, target) => friendlyDamage(amount, {
-          attackerTeam, splash: true, soldier: !!target.soldier,
-          victimTeam: target.soldier ? world.player(target.playerId)?.team ?? null : hullTeam(target.owner),
-          settings: FRIENDLY_FIRE_SHIPPED,
-        }),
-      });
-      for (const hit of splashed) {
-        if (hit.target?.soldier) {
-          // Who to name if it kills him: the death decree reads `lastHit`.
-          hit.target.armor.lastHit = slot;
-          throwSoldier(hit, record);
-          done.splashed.push({ slot: hit.target.playerId, lost: hit.lost });
-        } else {
-          done.splashed.push({ owner: hit.target.owner, lost: hit.lost });
-        }
-      }
+      done.splashed = applyBlast(record, slot, (amount, target) => friendlyDamage(amount, {
+        attackerTeam, splash: true, soldier: !!target.soldier,
+        victimTeam: target.soldier ? world.player(target.playerId)?.team ?? null : hullTeam(target.owner),
+        settings: FRIENDLY_FIRE_SHIPPED,
+      }));
     }
     return done;
   }
 
-  return { onImpact };
+  /**
+   * One `handleExplosion` on the room's world: the splash (HP-9, HP-10) on
+   * every hull, soldier on foot and seated crew (HFD-12) in reach, each
+   * hull's push (KNOCK-4) and each soldier on foot's (seated men are not
+   * pushed: they have a parent). `scale` is `calcDamage`, null for team -1.
+   * Returns `[{ slot | owner, lost }]`; `deaths`, when given, collects every
+   * hull it priced, for the caller to settle.
+   */
+  function applyBlast(record, attacker, scale, deaths = null) {
+    const blocked = worldBlocker(instance.collider, { skipOwner: -1 });
+    const splashed = world.vehicleDamage.applySplash(record, splashTargets(), {
+      materials: tables?.materials ?? null,
+      modifiers: tables?.modifiers ?? null,
+      exposure: (target, blast) => soldierExposure({ x: blast[0], y: blast[1], z: blast[2] },
+                                                   target, target.pose ?? 0, blocked),
+      attacker, scale, wrecks: true,
+    });
+    const out = [];
+    for (const hit of splashed) {
+      if (hit.wreck) {
+        pushHull(hit, record);
+        continue;
+      }
+      if (hit.target?.soldier) {
+        // Who to name if it kills him: the death decree reads `lastHit`.
+        hit.target.armor.lastHit = attacker ?? null;
+        if (!hit.target.seated) throwSoldier(hit, record);
+        out.push({ slot: hit.target.playerId, lost: hit.lost });
+      } else {
+        pushHull(hit, record);
+        deaths?.push(hit.vehicle);
+        out.push({ owner: hit.target.owner, lost: hit.lost });
+      }
+    }
+    return out;
+  }
+
+  /**
+   * The destroyed Armors' own blasts (gap audit entry 3; `vehicle-damage.js`
+   * `deathBlastRecord` has `Armor::status`'s call): for every hull or static
+   * the world's damage pass reports dead this tick, its blast at its origin,
+   * credited to its last hitter and never scaled (team -1). A hull that blast
+   * kills is reported into `step.damage` as the world's own pass would, and
+   * blows in its turn, the same tick, as retail's recursion through `status`
+   * does. Run before `hullDeaths`, which reads that list.
+   */
+  function deathBlasts(step) {
+    const changes = step?.damage;
+    if (!Array.isArray(changes) || !tables?.armors) return 0;
+    let blasts = 0;
+    for (let i = 0; i < changes.length; i++) {
+      const vehicle = changes[i]?.died ? changes[i].vehicle : null;
+      if (!vehicle) continue;
+      const spec = armorExplosion(tables, vehicle.template ?? vehicle.name);
+      const pose = world.vehiclePose(vehicle.owner);
+      const record = pose ? deathBlastRecord(spec, [pose.x, pose.y, pose.z]) : null;
+      if (!record) continue;
+      blasts++;
+      const priced = [];
+      applyBlast(record, vehicle.lastHitPlayer ?? null, null, priced);
+      for (const hull of priced) {
+        const change = world.reconcile(hull);
+        if (change?.died) changes.push(change);
+      }
+    }
+    return blasts;
+  }
+
+  return { onImpact, deathBlasts };
 }

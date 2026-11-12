@@ -1960,6 +1960,52 @@ def projectile_materials(library) -> dict[str, dict]:
     return out
 
 
+# `SimpleObjectTemplate::SimpleObjectTemplate` (lnxded 0x081dbc70): what an
+# Armor's death blast is when its template writes none of the four words
+# (0x081dbdf4 `0x41700000` 15.0, 0x081dbdfe `0x41200000` 10.0, 0x081dbe08
+# 204, 0x081dbe12 `0x43160000` 150.0), the two push words beside them
+# (0x081dc0ac 1.0, 0x081dc0b2 300.0). `viewer/vehicle-damage.js`
+# `ARMOR_EXPLOSION_DEFAULTS` holds the same six.
+ARMOR_EXPLOSION_DEFAULTS = {
+    "explosionRadius": 15.0, "explosionDamage": 10.0, "explosionMaterial": 204,
+    "explosionForce": 150.0, "explosionForceMod": 1.0, "explosionForceMax": 300.0,
+}
+
+
+def armor_explosions(library) -> dict[str, dict]:
+    """`template -> {its declared explosion words}` for every template that
+    carries an Armor (`hasArmor 1`, HFD-11), lower case.
+
+    Two mechanics read them. A destroyed object's own blast: `Armor::status`
+    (lnxded 0x081739e0) calls `handleExplosion` at the object's position with
+    `explosionRadius`, `explosionMaterial`, `explosionDamage` and
+    `explosionForce` whenever the damage is above 0.001 (0x08173d6b), so a
+    hull that writes none of them blows with the constructor's 10 over 15 m
+    (vanilla's Daihatsu and LCVP do). And any blast's push on a hull
+    (KNOCK-4): the victim's `explosionForceMod` times the blast's force over
+    its radius, held under `explosionForceMax`. Only the words a template
+    declares are written; the viewer fills the rest from
+    `ARMOR_EXPLOSION_DEFAULTS`, so a template missing from a table that has
+    the key is one with no Armor. Written into `damage.json` beside the
+    projectile table, the `damage` layer, so no glb is re-baked for it.
+    """
+    if library is None:
+        return {}
+    out: dict[str, dict] = {}
+    for name, template in sorted(library.objects.items()):
+        if not template.has_armor:
+            continue
+        out[name] = {key: value for key, value in {
+            "explosionRadius": template.armor_explosion_radius,
+            "explosionDamage": template.armor_explosion_damage,
+            "explosionMaterial": template.armor_explosion_material,
+            "explosionForce": template.armor_explosion_force,
+            "explosionForceMod": template.explosion_force_mod,
+            "explosionForceMax": template.explosion_force_max,
+        }.items() if value is not None}
+    return out
+
+
 def weapon_ammo_types(library) -> dict[str, int]:
     """`weapon template -> ammoType`, the tag a depot row's id must equal.
 
@@ -1983,7 +2029,8 @@ def weapon_ammo_types(library) -> dict[str, int]:
 
 def write_damage_tables(tables, shared_dir: Path, rel_base: Path,
                         projectiles: dict | None = None,
-                        ammo_types: dict | None = None) -> dict | None:
+                        ammo_types: dict | None = None,
+                        armors: dict | None = None) -> dict | None:
     """`damage.json` in the shared directory, plus the path to reach it.
 
     The MaterialManager tables are mod-wide, so they are written once beside
@@ -2006,13 +2053,15 @@ def write_damage_tables(tables, shared_dir: Path, rel_base: Path,
     # stay, and this level's own win where both have one.
     merged: dict = {}
     merged_ammo: dict = {}
+    merged_armors: dict = {}
     if target.is_file():
         try:
             previous = json.loads(target.read_text())
             merged = dict(previous.get("projectiles") or {})
             merged_ammo = dict(previous.get("ammoTypes") or {})
+            merged_armors = dict(previous.get("armors") or {})
         except (OSError, ValueError, AttributeError):
-            merged, merged_ammo = {}, {}
+            merged, merged_ammo, merged_armors = {}, {}, {}
     merged.update(projectiles or {})
     payload["projectiles"] = merged
     # The weapons' depot tags (`weapon_ammo_types`), merged the same way: a
@@ -2022,6 +2071,13 @@ def write_damage_tables(tables, shared_dir: Path, rel_base: Path,
     if ammo_types is not None:
         merged_ammo.update(ammo_types)
         payload["ammoTypes"] = merged_ammo
+    # The Armors' explosion words (`armor_explosions`), merged the same way.
+    # Always written when given, so the page can tell "this template has no
+    # Armor" from a file written before the table existed (which leaves every
+    # hull's death blast off rather than guessing).
+    if armors is not None:
+        merged_armors.update(armors)
+        payload["armors"] = merged_armors
     text = json.dumps(payload, separators=(",", ":"))
     # Rewritten only when it differs, so a layer patch that changes nothing
     # leaves the file (and its mtime) alone.

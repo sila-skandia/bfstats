@@ -32,6 +32,7 @@ import { traceValidPoint, isWalkable } from './nav-grid.js';
 import { playerPosition, SOLDIER_RADIUS } from './bot-sense.js';
 import { TAKE_COVER, MEDIC } from './bot-behaviours.js';
 import { airAvoid } from './bot-pilot.js';
+import { drivesHull, hullAvoid } from './bot-route.js';
 import { isArtilleryDriver } from './bot-perception.js';
 import { captureReach, captureStandRadius } from './control-point-law.js';
 import { footingAt } from './bot-pose.js';
@@ -582,6 +583,10 @@ export function urgencyAvoid(bot, mod, now) {
   // own-side and neutral hulls (`BBAvoid::calculateUrgency` 0x0855c650 with
   // the Mobile plug-in's look-ahead; bot-pilot.js `airAvoid`).
   if (bot.vehicle?.kind === 'air' && bot.vehicle.drives) return airAvoid(bot) * mod;
+  // A ground hull's or a boat's driver predicts the same way against the
+  // side's soldiers and hulls (`BBAvoid` on the Tank, Car and Boat rows,
+  // AI-95; bot-route.js `hullAvoid`).
+  if (drivesHull(bot)) return hullAvoid(bot) * mod;
   let best = 0, bestDir = null;
   const me = bot._player();
   for (const [id, p] of bot.world?.players ?? []) {

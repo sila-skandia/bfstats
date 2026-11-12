@@ -641,7 +641,8 @@ def layer_damage(ctx: LevelContext):
     return {"damage": em.write_damage_tables(
         ctx.damage_tables, ctx.shared_sounds.parent, ctx.final_level_dir(),
         em.projectile_materials(ctx.library),
-        (em.weapon_ammo_types(ctx.library) if ctx.library is not None else None))}, {}
+        (em.weapon_ammo_types(ctx.library) if ctx.library is not None else None),
+        (em.armor_explosions(ctx.library) if ctx.library is not None else None))}, {}
 
 
 def layer_sounds(ctx: LevelContext):

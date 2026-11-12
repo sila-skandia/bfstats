@@ -78,6 +78,8 @@ async function main() {
   const server = spawn(process.execPath, [
     'server/server.mjs', '--port', String(port),
     '--viewer', './viewer', '--default-level', 'test',
+    // No pre-game (ROUND-14): the two pages spawn as soon as they join.
+    '--game-start-delay', '0',
   ]);
   // Drain stderr on the side; the child lives for the whole test, so an
   // awaited drain would block it all.

@@ -94,7 +94,7 @@ let statics = null;
 
 function boot() {
   const child = spawn('node', [SERVER, '--port', String(PORT), '--viewer', VIEWER,
-    '--default-level', MAP], { cwd: ROOT, stdio: ['ignore', 'pipe', 'pipe'] });
+    '--default-level', MAP, '--game-start-delay', '0'], { cwd: ROOT, stdio: ['ignore', 'pipe', 'pipe'] });
   child.stdout.on('data', d => {
     const s = String(d);
     if (/listening|room /.test(s)) process.stdout.write(`[srv] ${s}`);

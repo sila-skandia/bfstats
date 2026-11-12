@@ -52,8 +52,6 @@ MODS = ("bf1942", "XPack1", "XPack2")
 ORPHAN_WORDS: dict[str, str] = {
     # -- the big ones, by how much data writes them --------------------- #
     "settooltiptype": "161x playercontrolobject | new | the HUD's tooltip for a vehicle or emplacement",
-    "explosiondamage": "52x playercontrolobject, 10x bfsoldier, 9x bundle, 6x projectile | doc | what a destroyed object's own blast does",
-    "explosionradius": "52x playercontrolobject | doc | how far that blast reaches",
     "invisibleatendeffect": "38x projectile | doc | the round stops being drawn at its end effect",
     "setboneoriginoffset": "37x animatedbundle | doc | the tank tracks' bone origin",
     "useasbone": "37x animatedbundle | doc | the tracks again: the part drives a skeleton bone",

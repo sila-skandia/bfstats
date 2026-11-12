@@ -9,7 +9,7 @@ import { recoilStep } from './recoil.js';
 import { consume } from './world-input.js';
 import { soldierCollisionDamage } from './crash-damage.js';
 import { SOLDIER_SPEED_MOD } from './fall-damage.js';
-import { runOverInputs } from './soldier-resolve.js';
+import { runOverInputs, sweepSeparation, watchHulls } from './soldier-resolve.js';
 import { KILL_MATERIAL_DAMAGE } from './soldier-locomotion.js';
 
 const DEG_TO_RAD = Math.PI / 180;
@@ -69,6 +69,10 @@ export function soldierTick(world, player, dt) {
   soldier.collider = world.collider;
   // The run row is the facing before this look, the strafe row the turned
   // one (`walking-body.js`): the body reads `turn` for the second.
+  // The world tick this step is, so a hull track not refreshed on the
+  // previous one is re-seeded (`pushOutOfHulls`): one look a tick, and a
+  // missed tick (a seat, a pause in the body's steps) is not one tick's move.
+  if (soldier.body) soldier.body.worldTick = world.ticks;
   soldier.step(dt, yaw ? { ...input, turn: yaw } : input);
   if (yaw || pitch) {
     soldier.look(yaw, pitch);
@@ -104,6 +108,115 @@ export function soldierTick(world, player, dt) {
   }
   obstacleTick(world, player, dt);
   runOverTick(world, player, dt);
+  hullReactionTick(world, player);
+}
+
+/**
+ * A seated soldier's hull tracks, kept up to date while their body is not
+ * stepped (`soldier-resolve.js` `watchHulls`): the first look after they get
+ * out measures one tick of each hull's motion. Left to stand, a track read
+ * everything a hull did while they sat as one tick's move: a Willys parked at
+ * 0.01 m/s that had crept 1.1 m billed the soldier who stepped out beside it
+ * 34 m/s and 177 HP (the driver-avoid builder's rennpiste_gebirge seed 6). A
+ * track that still misses a tick is re-seeded there.
+ */
+export function seatedHullWatch(world, player, dt) {
+  const body = player.soldier?.body;
+  if (!body?._hullSeen) return;
+  body.world = world.collider;
+  body.worldTick = world.ticks;
+  watchHulls(body, dt);
+}
+
+/**
+ * A light hull's share of the push it gave this soldier
+ * (`soldier-resolve.js` `pushOutOfHulls`, COL-2's `shareB` below the 0.95
+ * snap): the hull's own `solveImpulse` (0x08258d30), its position moved by
+ * the adjust now and the speed adjust posted as an acceleration at the
+ * contact (`addAccelerationAtAbsolutePosition` 0x08255110), on the driven
+ * hull's drive or the parked body, whichever holds it. Not woken: the
+ * position write applies to a sleeping body, and its step discards what was
+ * posted (rigid-body.js `translate`, §4.3).
+ */
+function hullReactionTick(world, player) {
+  const list = player.soldier?.body?.hullReactions;
+  if (!list?.length) return;
+  const entries = world.bodyWorld?.entries;
+  for (const r of list) {
+    const entry = entries?.get(r.owner);
+    const body = entry?.driven ?? entry?.parked?.body ?? null;
+    if (!body || body.isStatic) continue;
+    body.translate(r.push);
+    body.addAccelerationAt(r.at, r.accel);
+  }
+  list.length = 0;
+}
+
+/** `checkObjectVsObject`'s soldier pair distance: two soldiers closer than
+ *  this are pushed apart to it (the `fld1` at lnxded 0x0825a57b against
+ *  `|d|^2`, 0x0825a5be). */
+export const SOLDIER_SEPARATION = 1.0;
+/** Below this `|d|` the push is along +z (0x086c08a4 0.01, the `(0, 0, 1)`
+ *  of 0x0825a5e0..0x0825a605). */
+const SEPARATION_MIN_DIST = 0.01;
+/** The share's floor: each side's weight is at least this times `|push|`
+ *  (0x086d16c8 0.9, `fmuls` at 0x0825a78d). */
+const SEPARATION_SPEED_FLOOR = 0.9;
+
+/**
+ * Soldier against soldier: `ResponsePhysics::checkObjectVsObject` lnxded
+ * 0x08259690's branch for two `CID_SoldierTemplate` (0x9493 at 0x086c2b88;
+ * 0x082596c5 and 0x0825a4bf), read on our binary 0x0825a4c7..0x0825a8f0:
+ *
+ *   d    = posB - posA                      (3-D; 0x0825a56c..0x0825a595)
+ *   skip unless their boxes overlap in y    (A's box for both, 0x0825a510..)
+ *   skip when |d|^2 > 1.0
+ *   n    = d / |d|, or (0, 0, 1) below 0.01
+ *   push = n (1 - |d|), push.y = 0          (`fsubrp` 0x0825a60d; -0x54 := 0)
+ *   both free: sA = max(|vA . push|, 0.9 |push|), sB likewise,
+ *              wA = sA / (sA + sB)          (`fdivrp` 0x0825a7eb)
+ *              posA -= push wA; posB += push (1 - wA)
+ *   A in a vehicle (+0x50): posB += push; B in one: posA -= push; both: none
+ *
+ * Positions only: no speed is changed and nothing is damaged. The y test is
+ * implied by `|d| < 1` for any soldier box a metre or more tall, so it is
+ * not repeated here. A seated soldier is not a body in this world (their
+ * seat carries them), so only soldiers on foot meet; the dead are left out.
+ * Each pair once, in player order, each push seen by the next pair as the
+ * engine's position writes are. Run after every soldier has stepped.
+ */
+export function separateSoldiers(world) {
+  const live = _live;
+  live.length = 0;
+  for (const player of world.players.values()) {
+    if (player.occupancy || !player.soldier?.spawned || player.armor?.destroyed) continue;
+    live.push(player.soldier.body);
+  }
+  for (let i = 0; i < live.length; i++) {
+    for (let j = i + 1; j < live.length; j++) separatePair(live[i], live[j]);
+  }
+  live.length = 0;
+}
+const _live = [];
+
+function separatePair(a, b) {
+  const pa = a.body.position, pb = b.body.position;
+  const dx = pb.x - pa.x, dy = pb.y - pa.y, dz = pb.z - pa.z;
+  const d2 = dx * dx + dy * dy + dz * dz;
+  if (d2 > SOLDIER_SEPARATION * SOLDIER_SEPARATION) return;
+  const l = Math.sqrt(d2);
+  let nx = 0, nz = 1;
+  if (l >= SEPARATION_MIN_DIST) { nx = dx / l; nz = dz / l; }
+  const k = SOLDIER_SEPARATION - l;
+  const px = nx * k, pz = nz * k;
+  const m = SEPARATION_SPEED_FLOOR * Math.hypot(px, pz);
+  const va = a.body.velocity, vb = b.body.velocity;
+  const sa = Math.max(Math.abs(va.x * px + va.z * pz), m);
+  const sb = Math.max(Math.abs(vb.x * px + vb.z * pz), m);
+  if (sa === 0 && sb === 0) return;
+  const wa = sa / (sa + sb);
+  sweepSeparation(a, -px * wa, -pz * wa);
+  sweepSeparation(b, px * (1 - wa), pz * (1 - wa));
 }
 
 /**

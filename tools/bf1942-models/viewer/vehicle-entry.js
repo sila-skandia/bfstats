@@ -2,6 +2,7 @@ import * as THREE from 'three';
 import { findAllVehicleRoots, listEntryPoints, readWorldPose, surveyVehicle } from './seats.js';
 import { boundingRadius } from './entry-points.js';
 import { findEntryPoint, preferredSeat, SPAWN_ENTER_REACH, SPAWN_SEAT_REACH, SPAWN_SEAT_REACH_AI } from './spawn-seat.js';
+import { objectBlocker, restrictedExit } from './restricted-exit.js';
 
 /**
  * Walking up to a seat, getting in and getting out: the door list and the
@@ -344,20 +345,47 @@ export function createVehicleEntry(page) {
    * negated at this boundary, the same fix `rig` angles get.
    */
   function exitPose(vehicle) {
-    const declared = vehicle.node.userData?.physics?.soldierExitLocation;
-    const local = declared
-      ? new THREE.Vector3(declared.position[0], declared.position[1],
-        -declared.position[2])
-      : new THREE.Vector3(0, 0, 0);   // the template default (SEAT-35, see exitPose)
-    const position = local.applyQuaternion(vehicle.state.orientation)
-      .add(vehicle.state.position);
+    const physics = vehicle.node.userData?.physics;
+    const at = seatExitAt(physics, vehicle.state.position, vehicle.state.orientation,
+      page.collider?.statics?.ownerOf?.(vehicle.node) ?? -1);
     const fwd = page.driveFwd.set(0, 0, -1).applyQuaternion(vehicle.state.orientation);
     return {
-      x: position.x, y: position.y, z: position.z,
+      ...at,
       // The soldier's convention: forward is (sin yaw, 0, cos yaw). Stepping
       // out facing the way the vehicle faces reads right for both doors.
       yaw: Math.atan2(fwd.x, fwd.z),
     };
+  }
+
+  const exitLocalPoint = new THREE.Vector3();
+
+  /**
+   * The world point a soldier leaving the seat PCO at `origin`/`quat` steps
+   * out at, and whether he may leave at all: the declared
+   * `soldierExitLocation` (Refractor's Z negated at this boundary; the
+   * template default, the PCO's own origin, when none is declared, SEAT-35),
+   * through the restricted-exit test when the PCO's template says
+   * `hasRestrictedExit` (`restricted-exit.js`, `isAllowedToExit` 0x08317490):
+   * the line from the PCO to the door is cast against every object but the
+   * hull's own (`owner`), never the ground; blocked, the other side; both
+   * blocked, `allowed` false.
+   */
+  function seatExitAt(physics, origin, quat, owner) {
+    const declared = physics?.soldierExitLocation;
+    const local = declared && Array.isArray(declared.position)
+      ? { x: declared.position[0], y: declared.position[1], z: -declared.position[2] }
+      : { x: 0, y: 0, z: 0 };   // the template default (SEAT-35, see exitPose)
+    const toWorld = (x, y, z) => {
+      const p = exitLocalPoint.set(x, y, z).applyQuaternion(quat).add(origin);
+      return { x: p.x, y: p.y, z: p.z };
+    };
+    const choice = restrictedExit({
+      restricted: physics?.hasRestrictedExit === true,
+      local, toWorld, origin,
+      blocked: objectBlocker(page.collider, owner),
+    });
+    const p = toWorld(choice.local.x, choice.local.y, choice.local.z);
+    return { x: p.x, y: p.y, z: p.z, allowed: choice.allowed, mirrored: choice.mirrored };
   }
 
   /** Metres above the ground past which stepping out is a bail-out, not a
@@ -424,17 +452,21 @@ export function createVehicleEntry(page) {
    * or altitude-related — bailing out of a moving plane is genuine vanilla
    * behaviour, not a bug to guard against. A prior pass here gated on
    * `grounded || airspeed<3`, which the report contradicts directly; removed.
-   * The real gate (SEAT-6/SEAT-9: a room check at `soldierExitLocation`, run
-   * only when the template's `hasRestrictedExit` is set) is not implemented —
-   * `exitPose`'s placement is trusted as-is, same as it already was on the
-   * ground.
+   * The real gate is the restricted exit (`seatExitAt`, SEAT-42): on a
+   * `press` (E, the touch button) a hull whose template says
+   * `hasRestrictedExit` refuses the exit when both sides are blocked, and the
+   * press does nothing (`toggleEntryPoint` 0x0814eee3). A forced exit (the
+   * round's end, the server moving him) is not a press and is never refused,
+   * as retail's `exitPlayer` never asks `isAllowedToExit`.
    *
-   * Where he lands and how fast he is going is `stepOut`'s.
+   * Where he lands and how fast he is going is `stepOut`'s. Returns whether
+   * he left.
    */
-  function exitVehicle() {
+  function exitVehicle({ press = false } = {}) {
     const vehicle = page.aircraft || page.car;
-    if (!vehicle) return;
+    if (!vehicle) return false;
     const exit = exitPose(vehicle);
+    if (press && !exit.allowed) return false;
     const hull = hullMotion(vehicle, vehicle.node, vehicle === page.aircraft);
     // The room's control channel: capture the seat row before the seat is
     // given back.
@@ -452,6 +484,7 @@ export function createVehicleEntry(page) {
       page.placeCamera();
     }
     page.resetMobileControls();
+    return true;
   }
 
   const exitWorldPos = new THREE.Vector3();
@@ -476,30 +509,24 @@ export function createVehicleEntry(page) {
    */
   function exitPoseManned(occ) {
     const exitNode = occ.exitLocationNode();
-    const declared = exitNode?.userData?.physics?.soldierExitLocation;
-    const local = declared
-      ? new THREE.Vector3(declared.position[0], declared.position[1],
-        -declared.position[2])
-      : new THREE.Vector3(0, 0, 0);   // the template default (SEAT-35, see exitPose)
     // Use the exit node's own pose when it is a nested seat (e.g. a carrier
     // AA gun m metres above the hull), not the hull root's pose at the
     // waterline.  The root case stays as-is — a hull door offset is in the
     // root's frame by definition.
     const refNode = exitNode !== occ.root ? exitNode : occ.root;
     readWorldPose(refNode, exitWorldPos, exitWorldQuat);
-    const position = local.applyQuaternion(exitWorldQuat).add(exitWorldPos);
+    const at = seatExitAt(exitNode?.userData?.physics, exitWorldPos, exitWorldQuat,
+      occ.root ? (page.collider?.statics?.ownerOf?.(occ.root) ?? -1) : -1);
     const fwd = exitFwd.set(0, 0, -1).applyQuaternion(exitWorldQuat);
-    return {
-      x: position.x, y: position.y, z: position.z,
-      yaw: Math.atan2(fwd.x, fwd.z),
-    };
+    return { ...at, yaw: Math.atan2(fwd.x, fwd.z) };
   }
 
   /** E from a manned-only seat: a bare furniture gun, or a nested seat of a
    *  vehicle whose root seat you never drove this time. */
-  function exitManned() {
-    if (!page.occupancy) return;
+  function exitManned({ press = false } = {}) {
+    if (!page.occupancy) return false;
     const exit = exitPoseManned(page.occupancy);
+    if (press && !exit.allowed) return false;
     const hull = hullMotion(page.occupancy.drive, page.occupancy.root,
       page.occupancy.rootKind === 'air');
     const netSeat = page.netSeatRow('exit');
@@ -514,12 +541,16 @@ export function createVehicleEntry(page) {
       page.placeCamera();
     }
     page.resetMobileControls();
+    return true;
   }
 
-  function exitSeat() {
-    if (!page.occupancy) return;
-    if (!page.mannedActive() && (page.aircraft || page.car)) exitVehicle();
-    else exitManned();
+  /** Out of the seat held. `press`: the player's own Use, which a restricted
+   *  exit with both sides blocked refuses (SEAT-42); anything else is forced.
+   *  Returns whether he left. */
+  function exitSeat({ press = false } = {}) {
+    if (!page.occupancy) return false;
+    if (!page.mannedActive() && (page.aircraft || page.car)) return exitVehicle({ press });
+    return exitManned({ press });
   }
 
   Object.assign(vehicleEntry, {

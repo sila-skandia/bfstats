@@ -21,6 +21,7 @@ export function createControlChannel({ room, event }) {
     if (!row || typeof row !== 'object') return;
     if (row.type === 'spawn') onSpawn(connection, row);
     else if (row.type === 'suicide') onSuicide(connection);
+    else if (row.type === 'tk') onTeamKillVerdict(connection, row);
     else if (row.type === 'seat') onSeat(connection, row);
     else if (row.type === 'radio') onRadio(connection, row);
     else if (row.type === 'reload') onReload(connection, row);
@@ -132,9 +133,18 @@ export function createControlChannel({ room, event }) {
     }
     // `GameServer::spawnPlayer` 0x0814c990 (ROUND-11): a human spawns only
     // while the round plays, and not on a side out of tickets. The page
-    // keeps its spawn screen up and asks again.
+    // keeps its spawn screen up and asks again. In the pre-game the refusal
+    // carries the pre-game's clock, every player's wait then (ROUND-14).
     if (!room.authority.maySpawn(connection.team)) {
-      refuse();
+      const round = room.authority.round;
+      refuse(round?.status === 'preGame' ? { sw: Math.round(round.preGameIn * 100) / 100 } : {});
+      return;
+    }
+    // Past the status test and before the tickets', `spawnPlayer` kicks a
+    // player whose team kills have reached `nrOfTKToKick` (0x0814c9c8..
+    // 0x0814c9f1, `kickPlayer` vt+0x334 at 0x0814d841; FF-11).
+    if (room.authority.tkKickDue?.(slot)) {
+      room.authority.kick?.(slot);
       return;
     }
     // The reinforcement wave (SPAWN-35): a dead player's wait to the next
@@ -217,6 +227,16 @@ export function createControlChannel({ room, event }) {
     room.broadcast(eventRow('team', room.tick, { slot: connection.slot, team }), null);
   }
 
+  /** The victim's answer to a team kill, typed at the console (`game.TKPunish`
+   *  / `game.TKForgive`, the shipped aliases `punish`, `ptk`, `forgive`,
+   *  `ftk`; the client draws no prompt for it, FF-10): `GameServer::TKPunish
+   *  (int)` 0x081593d0 or `TKForgive(int)` 0x081592e0 on the sender's slot. */
+  function onTeamKillVerdict(connection, row) {
+    if (connection.slot == null) return;
+    if (row?.verb === 'punish') room.authority.tkPunish?.(connection.slot);
+    else if (row?.verb === 'forgive') room.authority.tkForgive?.(connection.slot);
+  }
+
   /** The player's Suicide (retail's is `killPlayer`): the authority's
    *  death decree takes it on the next step, with its wave (`killed`'s
    *  `sw`). Retail's SUICIDE button on the spawn screen. */
@@ -296,6 +316,11 @@ export function createControlChannel({ room, event }) {
         seat: mounted.occupancy.order.indexOf(mounted.seatId),
       });
     } else if (action === 'exit') {
+      // The page sends this row only after its own press passed the
+      // restricted-exit test (`vehicle-entry.js` `exitSeat`, SEAT-42) and it
+      // has already stepped out, so the room follows rather than refusing
+      // and leaving the two apart; `unmountFromSeat` places the soldier by
+      // the same test (the other side when the door's line is blocked).
       if (current && current === vehicle.root) unmount(connection);
     } else if (action === 'switch') {
       if (!current || current !== vehicle.root) return;

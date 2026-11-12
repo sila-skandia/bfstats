@@ -532,6 +532,10 @@ export class Soldier {
 
   /** Place the soldier's feet, facing `yaw`. Clears all motion. */
   spawn(x, y, z, yaw = 0) {
+    // Put in the level at least once: a player added before their first
+    // deploy has a body that stands nowhere, and meets nobody
+    // (`world-soldier-tick.js` `separateSoldiers`).
+    this.spawned = true;
     this.body.place(x, y, z, yaw);
     this.body.setPoseFlags(0, 0);
     this.pitch = 0;

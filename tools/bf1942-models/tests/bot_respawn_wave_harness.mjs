@@ -40,8 +40,13 @@ const collider = { waterLevel: null, surfaceHeight: () => 0, heightfield: null }
 const world = new World({ collider, extras, groundHeight: () => 0 });
 const bots = spawnBots({ world, count: 2, teams: [1, 2], flags: world.flags });
 const round = { clock: 0 };
+// `SP_SPAWN_SECONDS` (tests/test_sp_spawn_time.py): the host names single
+// player's flat wait, as `map.html` and the runner do; unset, retail's wave.
+const { singlePlayerSpawnParams } = await imp('spawn-timer.js');
+const SP = process.env.SP_SPAWN_SECONDS;
+const spawnParams = SP == null ? undefined : () => singlePlayerSpawnParams(SP === 'default' ? undefined : SP);
 const referee = createBotReferee({ world: () => world, armorFor: () => new Armor(30), units: null,
-                                   roundClock: () => round.clock });
+                                   roundClock: () => round.clock, spawnParams });
 referee.bots = bots;
 for (const bot of bots) world.setPlayerArmor(bot.playerId, new Armor(30));
 

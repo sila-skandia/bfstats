@@ -263,6 +263,7 @@ export function createRoomClient({ ws, now = null }) {
       case 'hull': return '';
       case 'object': return '';
       case 'blast': return '';
+      case 'disarm': return '';
       default: return row.text ?? row.type;
     }
   }

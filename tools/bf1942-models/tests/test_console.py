@@ -635,6 +635,15 @@ class ConsoleWordsTests(unittest.TestCase):
         # No document under node: the flare's canvas is not there.
         self.assertEqual("Error : Method is not active!", r["flareRead"][1])
 
+    def test_punish_and_forgive_reach_a_room_and_print_nothing(self) -> None:
+        """`game.TKPunish` / `game.TKForgive` (t0 a1) through the shipped
+        aliases `punish`, `ftk`: the room's server answers (FF-10), the word
+        prints nothing; off a room there is nobody to answer."""
+        t = self.results["teamKill"]
+        self.assertEqual([[], [], []], t["out"])
+        self.assertEqual(["punish", "forgive", "punish"], t["sent"])
+        self.assertEqual(["Error  (0): punish", "Error : Method is not active!"], t["solo"])
+
     def test_replay_words_are_not_active_on_the_flythrough(self) -> None:
         f = self.results["flythrough"]
         self.assertEqual(["Id:0 - skandia is local.", "Id:1 - Bot is remote  is an AI bot."], f["lp"])

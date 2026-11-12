@@ -97,6 +97,57 @@ class HealingPackTests(unittest.TestCase):
         self.assertEqual(0.15, b["standingRepair"])
         self.assertEqual(0, b["crouchedRepair"])
 
+    def test_a_crouched_bot_wrench_lifts_a_mine_and_gets_the_round_back(self) -> None:
+        b = self.r["bot"]
+        self.assertEqual({"disarmed": "LandmineProjectile", "item": 5}, b["lifted"])
+        self.assertEqual(["m"], b["retired"])
+        self.assertEqual(3, b["pouch"])
+
+    # --- the crouched wrench's disarm (SUP-28) -------------------------------
+
+    def test_a_crouched_wrench_lifts_the_first_mine_or_pack_in_reach(self) -> None:
+        d = self.r["disarm"]
+        # A mod's mine and a grenade are passed over; the pack 2.31 m off is
+        # past 0.3 + disarmMinesDistance 2.0; the mine at exactly 2.3 m is the
+        # first that passes, ahead of the nearer pack later in the list.
+        self.assertEqual({"id": "mine", "item": 5}, d["crouched"])
+        self.assertEqual({"id": "pack", "item": 4}, d["packOnly"])
+
+    def test_a_standing_wrench_lifts_nothing(self) -> None:
+        self.assertIsNone(self.r["disarm"]["standing"])
+
+    def test_the_pack_goes_back_to_item_four_and_the_mine_to_item_five(self) -> None:
+        self.assertEqual([4, 5, None, None], self.r["disarm"]["items"])
+
+    # --- the weapon's pool (FA-2) --------------------------------------------
+
+    def test_a_pack_or_mine_pool_is_twice_the_magazine_and_one(self) -> None:
+        sizes = self.r["pool"]["sizes"]
+        self.assertEqual({"expPack": 9, "landmine": 9, "lower": 7, "grenade": 0,
+                          "unlimited": 0, "none": 0}, sizes)
+
+    def test_the_tenth_mine_recycles_the_oldest(self) -> None:
+        p = self.r["pool"]
+        # Nine lays fill the pool; the tenth takes the first's object back,
+        # the eleventh the second's.
+        self.assertEqual([None] * 9 + [0, 1], p["recycled"])
+        self.assertIsNone(p["packFirst"])
+
+    def test_the_page_lifts_retires_and_counts_rounds_by_kit(self) -> None:
+        r = self.r["pageRounds"]
+        self.assertEqual([
+            {"x": 1, "radius": 0.25, "template": "LandmineProjectile", "weapon": "Landmine"},
+            {"x": 2, "radius": 0.2, "template": "ExpPackProjectile", "weapon": "ExpPack"},
+            {"x": 3, "radius": 0.2, "template": "ExpPackProjectile", "weapon": "ExpPack"},
+        ], r["rounds"])
+        # The plunger's pool is the kit's: kit A's one pack, kit B's one.
+        self.assertEqual(1, r["livePacks"])
+        self.assertEqual(1, r["otherPacks"])
+        self.assertTrue(r["retired"])
+        self.assertFalse(r["again"])
+        self.assertEqual(["p1", "p2"], r["left"])
+        self.assertEqual(1, r["pooled"])
+
     # --- the kit's rounds ----------------------------------------------------
 
     def test_a_destroyed_kit_takes_its_rounds_unexploded(self) -> None:

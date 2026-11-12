@@ -486,6 +486,11 @@ def apply_root(info: dict, root: dict | None, plugins: dict[str, dict]) -> None:
             info["turnRadius"] = p.get("turnradius")
             info["vehicleNumber"] = p.get("vehiclenumber")
             info["isTurnable"] = p.get("isturnable")
+            # `avoidCollisionLookAhead` (Mobile +0x2c, ConsoleClass539
+            # 0x085039e9): the driver's collision look-ahead; absent, the
+            # ctors' 5.0 (0x085e0bf0, 0x085e0cb0). Only big ships set it.
+            if p.get("avoidcollisionlookahead") is not None:
+                info["avoidCollisionLookAhead"] = p.get("avoidcollisionlookahead")
         elif kind == "Physical":
             info["strType"] = p.get("strType")
         elif kind == "Unit":

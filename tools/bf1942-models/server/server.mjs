@@ -123,6 +123,10 @@ function parseArgs(argv) {
     else if (flag === '--viewer' && value) out.viewer = value;
     else if (flag === '--default-level' && value) out.defaultLevel = value;
     else if (flag === '--mod' && value && /^[\w-]+$/.test(value)) out.mod = value;
+    // `game.serverGameStartDelay` / `serverGameRoundStartDelay` (NET-21,
+    // ROUND-14): the shipped 20 and 10 unless given; a test's 0 opens at once.
+    else if (flag === '--game-start-delay' && Number.isFinite(Number(value))) out.gameStartDelay = Number(value);
+    else if (flag === '--round-start-delay' && Number.isFinite(Number(value))) out.roundStartDelay = Number(value);
     else i--;
   }
   return out;
@@ -138,9 +142,13 @@ if (isMain) {
   const viewerDir = args.viewer ? String(args.viewer)
     : join(here, '..', 'viewer');
   const levels = buildLevelTable(viewerDir, args.mod);
+  const rules = {};
+  if (Number.isFinite(args.gameStartDelay)) rules.gameStartDelay = Math.max(0, args.gameStartDelay);
+  if (Number.isFinite(args.roundStartDelay)) rules.roundStartDelay = Math.max(0, args.roundStartDelay);
   const core = new RoomServerCore({
     levels,
     defaultLevel: levels.has(args.defaultLevel) ? args.defaultLevel : 'test',
+    rules,
   });
   makeServer({ core, port: args.port });
   core.start();

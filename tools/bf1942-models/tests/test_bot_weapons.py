@@ -225,6 +225,30 @@ class BotWeaponsTests(unittest.TestCase):
         self.assertFalse(p["bazookaReloading"])
         self.assertFalse(p["loaded"])
 
+    # --- isReadyToUse, the stance change's torso gate (BODY-2) -------------
+
+    def test_the_fire_timer_keeps_the_weapon_not_ready(self) -> None:
+        # `FireArms::isReadyToUse` 0x0828f510: the shot's own tick answers
+        # true (timer == 1/roundOfFire, `fucompp` 0x0828f629), then false for
+        # the rest of the 1.0 s cycle (30 ticks at roundOfFire 1.0), then true
+        # with rounds still in the magazine.
+        r = self.results["weaponReady"]["remington"]
+        self.assertEqual([1] + [0] * 29 + [1] * 10, r[:40])
+        self.assertTrue(all(r[30:]))
+
+    def test_an_empty_magazine_and_its_reload_are_not_ready(self) -> None:
+        # The Bazooka's one round: the magazine is empty from its own tick
+        # (`mags()[0] <= 0`, 0x0828f5ec), through the 1 s cycle and the 5.6 s
+        # reload, and ready again once the reload has filled it.
+        r = self.results["weaponReady"]["bazooka"]
+        first = r.index(1)
+        self.assertFalse(any(r[:first]))
+        self.assertAlmostEqual((1.0 + 5.6) * 30, first, delta=2)
+
+    def test_a_soldier_with_nothing_armed_passes_the_gate(self) -> None:
+        self.assertTrue(self.results["weaponReady"]["unarmed"])
+        self.assertTrue(self.results["weaponReady"]["nothing"])
+
 
 class BotBarrelsTests(unittest.TestCase):
     """A bot's shotgun fires every barrel (ledger XHIT-12, XHIT-16).

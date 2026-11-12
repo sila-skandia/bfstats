@@ -51,6 +51,7 @@
 //    `ObjectOccupied`, `UpdateVehicle`, and the `ChangeVehicle` instruction.
 
 import { sCurve, decleiningSlope } from './bot-behaviours.js';
+import { collisionPredicted } from './bot-vehicle-air.js';
 
 const DEG = Math.PI / 180;
 
@@ -104,6 +105,34 @@ export const TELEPORT = {
   pendingUrgency: 6.0,
   noOrderUrgency: 2.0,
   noOrderSplit: 0.05,
+};
+
+/**
+ * `BBChangeLandingCraft::calculateUrgency` 0x085602b0's seat factors, the
+ * Change of the `LandingCraft*` units (ledger AI-99): it weighs the craft's
+ * own seats with `calculateVehicleUrgency` (0x08560576) times a factor by
+ * where the bot sits, times `1 - radio` (AbandonShip 0x35 on a naval craft,
+ * BailOut 0x2a else, 0x085604c1 / 0x08560d11), and no order factor.
+ *  - In the root (the helm; `vt+0x6c` true at 0x0856047a): own 1.0
+ *    (0x08560488), every other seat 0.25 (0x08560cc1, 0x086c08ac).
+ *  - In a seat with the root occupied (`isOccupied` 0x08560d87): own 1.0,
+ *    the root 0.25 (`0x3e800000` at 0x08560da1).
+ *  - In a seat with the root free: own 0.5 and the root 1.0 for a naval
+ *    craft (0x08560dc3, 0x086b05e8), own 0.25 and the root 1.0 for an
+ *    amphibious one (0x08560de5), own 0.25 and the root 1.5 for an air one
+ *    (0x08560df8 / 0x08560dfe); the other seats 0.25 always.
+ * The urgency is `Declein(0.5 best / own) x 4.0` (0x08560a40..0x08560a61;
+ * `0.5 best` when own is 0), 0 when the best is the bot's own seat. A
+ * swap from the helm needs another seat four times the helm's: the
+ * BBChangeTeleport factors (`TELEPORT.root.other` 0.5) let a lone Daihatsu
+ * bot's inclination split swing it helm <-> gunner every 0.13 s.
+ */
+export const LANDING_TELEPORT = {
+  seatUnderDriver: { root: 0.25, self: 1.0, other: 0.25 },
+  seatShip: { root: 1.0, self: 0.5, other: 0.25 },
+  seatLand: { root: 1.0, self: 0.25, other: 0.25 },
+  seatAir: { root: 1.5, self: 0.25, other: 0.25 },
+  root: { root: 1.0, self: 1.0, other: 0.25 },
 };
 
 export const CHANGE = {
@@ -604,8 +633,13 @@ export function changeUrgency({ staying, candidates, radius = CHANGE.searchRadiu
  * when the bot keeps its seat.
  */
 export function teleportChangeUrgency({ where = 'root', rootU = 0, selfU = 0, seats = [], radio = 0,
-                                        orderFactor = 1, pending = false, attackSplit = 0.5, hasPlan = true }) {
-  const f = TELEPORT[where] ?? TELEPORT.root;
+                                        orderFactor = 1, pending = false, attackSplit = 0.5, hasPlan = true,
+                                        landing = false }) {
+  // A landing craft's seats run `BBChangeLandingCraft` (`LANDING_TELEPORT`):
+  // no order factor, and no pending or no-order urgency of its own (its
+  // 6.0 at 0x08560aaa is behind an unidentified `vt+0x18c` test, not ported).
+  const f = (landing ? LANDING_TELEPORT : TELEPORT)[where] ?? (landing ? LANDING_TELEPORT : TELEPORT).root;
+  if (landing) { orderFactor = 1; pending = false; hasPlan = true; }
   const r = 1 - radio;
   let best = null, bestU = selfU * f.self * r;
   const own = bestU;
@@ -624,4 +658,104 @@ export function teleportChangeUrgency({ where = 'root', rootU = 0, selfU = 0, se
   }
   const x = own > 0 ? 0.5 * bestU / own : 0.5 * bestU;
   return { urgency: decleiningSlope(x) * TELEPORT.urgencyScale, best };
+}
+
+/**
+ * A bot driver's collision prediction and side step: `BBAvoid` on a ground
+ * or boat row (`Avoid BBAvoid BBPAvoidCollision2d` in `AIbehaviours.con`).
+ * The constants, lnxded:
+ *  - `lookAhead`: the Mobile plug-in's `avoidCollisionLookAhead` (+0x2c), 5.0
+ *    from both `AITemplateMobile` ctors (0x085e0bf0, 0x085e0cb0; AI-119);
+ *    a template may set its own (the big ships 15, AI-95).
+ *  - `movingSpeed`: `getPotentialObstacleMaxSpeed` 1.0 (AI-176). A predicted
+ *    hit on an object at or over it adds to the urgency (`BBAvoid::
+ *    calculateUrgency` 0x0855cf1d: the term is skipped below it); one under
+ *    it, or touching now, is a pathfinding obstacle instead (0x0855cee7 ->
+ *    `addSlowMovingPathfindingObstacle` 0x0855d550; bot-route.js
+ *    `predictObstacles`).
+ *  - `frontCos` -0.2588 (0x087029c4, cos 105 deg), `turn` pi/6 (0x087029c8),
+ *    `headOnTurn` -pi/6 (0x087029cc), the clamp +-1000 (0x086b1ca8 /
+ *    0x086b1cac): `BBPAvoidCollision2d::createPlan` 0x08586420.
+ *  - `timeFactor` 1.5 (0x086be4d0, `BAPConTime(1.5 t)` at 0x08586a6e) and
+ *    `arrive` 1.0 (`BAPConPosition(point, 1.0)` at 0x08586ac2).
+ */
+export const HULL_AVOID = {
+  lookAhead: 5.0,
+  movingSpeed: 1.0,
+  frontCos: Math.fround(-0.2588),
+  turn: Math.fround(Math.PI / 6),
+  headOnTurn: -Math.fround(Math.PI / 6),
+  clamp: 1000,
+  timeFactor: 1.5,
+  arrive: 1.0,
+};
+
+/**
+ * `BBAvoid::calculateUrgency` 0x0855c650 for a bot driving a ground hull or
+ * a boat, on x/z. `self` and each of `others`: `{ id, x, z, vx, vz, r }`
+ * (`mass` on the others: `IPIPhysicalReal::getMass` 0x085ebd20, the world
+ * object's physics mass). The neighbours are the side's and the neutral
+ * grid's within `lookAhead x speed + r` (AI-95); each is tested with
+ * `collisionPredicted` 0x0855d2f0 on the two radii summed, which returns 1.0
+ * or 0.0 (0x0855d340 / 0x0855d527) and the time `t`. A predicted hit on an
+ * object moving at `movingSpeed` or more adds `mass x |relVel| / |rel|`
+ * (0x0855cf3a..0x0855cf8e, times that 1.0); the largest term names the
+ * plan's object. A hit on a slower object, or one already touching
+ * (`t = 0`), is listed in `still` for the obstacle half. The caller
+ * multiplies by the modifier.
+ */
+export function hullAvoidUrgency({ self, others, lookAhead = HULL_AVOID.lookAhead }) {
+  const speed = Math.hypot(self.vx, self.vz);
+  const reach = lookAhead * speed + self.r;
+  let sum = 0, best = null, bestTerm = 0;
+  const still = [];
+  for (const o of others ?? []) {
+    if (o.id === self.id) continue;
+    const rel = [o.x - self.x, 0, o.z - self.z];
+    const dist = Math.hypot(rel[0], rel[2]);
+    if (dist > reach + o.r) continue;
+    const relVel = [o.vx - self.vx, 0, o.vz - self.vz];
+    const hit = collisionPredicted(rel, relVel, self.r + o.r, lookAhead);
+    if (!hit) continue;
+    const oSpeed = Math.hypot(o.vx, o.vz);
+    if (hit.t === 0 || oSpeed < HULL_AVOID.movingSpeed) still.push(o);
+    if (!(oSpeed >= HULL_AVOID.movingSpeed)) continue;
+    const term = (o.mass ?? 0) * Math.hypot(relVel[0], relVel[2]) / Math.max(dist, 1e-3);
+    sum += term;
+    if (term >= bestTerm) { bestTerm = term; best = { id: o.id, t: hit.t, other: o }; }
+  }
+  return { urgency: sum, best, still };
+}
+
+/**
+ * `BBPAvoidCollision2d::createPlan` 0x08586420: the direction of the side
+ * step, in the viewer's x/z (the engine's z negated; the turn is taken in
+ * the engine's frame). `velocity` the hull's own (its heading `forward` when
+ * it stands: the matrix's z row, 0x08586ec2), `otherVelocity` and `rel` (the
+ * other less the hull) the object's. With `v` the hull's unit velocity,
+ * `n = (v.z, -v.x)` its normal and `u` the other's unit velocity (zero when
+ * it stands, `normalize` 0x083b99d0): when `v . u > -0.2588` the turn is
+ * `-sign(n . u) x pi/6` (for `v . u` of 1 or more, times the sign of `velocity
+ * . rel`), otherwise, nearly head-on, `-pi/6`; clamped to +-1000 and applied
+ * to the unnormalised velocity. Returns `{ angle, dir }`.
+ */
+export function hullAvoidTurn({ velocity, forward, otherVelocity, rel }) {
+  let vx = velocity[0], vz = -velocity[1];
+  if (vx * vx + vz * vz === 0) { vx = forward[0]; vz = -forward[1]; }
+  const [ux, uz] = normalize2(otherVelocity[0], -otherVelocity[1]);
+  const [hx, hz] = normalize2(vx, vz);
+  const nx = hz, nz = -hx;
+  const ahead = vx * rel[0] + vz * -rel[1];
+  const c = hx * ux + hz * uz;
+  const across = nx * ux + nz * uz;
+  let angle = HULL_AVOID.headOnTurn;
+  if (HULL_AVOID.frontCos < c) {
+    const s = across > 0 ? 1 : across < 0 ? -1 : 0;
+    if (c < 1) angle = -s * HULL_AVOID.turn;
+    else angle = (ahead > 0 ? 1 : ahead < 0 ? -1 : 0) * HULL_AVOID.turn * -s;
+  }
+  angle = Math.max(-HULL_AVOID.clamp, Math.min(HULL_AVOID.clamp, angle));
+  const co = Math.cos(angle), si = Math.sin(angle);
+  const dx = co * vx - vz * si, dz = vz * co + vx * si;
+  return { angle, dir: [dx, -dz] };
 }

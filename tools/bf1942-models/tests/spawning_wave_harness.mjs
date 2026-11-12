@@ -14,6 +14,10 @@ const { viewerDir, installModuleHooks } = await import(path.join(HERE, '..', 'si
 const viewer = viewerDir(path.join(HERE, '..', 'viewer'));
 installModuleHooks(viewer);
 const { createSpawning } = await import(path.join(viewer, 'spawning.js'));
+// `SP_SPAWN_SECONDS` (tests/test_sp_spawn_time.py): the page names single
+// player's flat wait, as `map.html` does; unset, retail's wave.
+const { singlePlayerSpawnParams } = await import(path.join(viewer, 'spawn-timer.js'));
+const SP = process.env.SP_SPAWN_SECONDS;
 
 globalThis.document ??= { activeElement: null, body: null, createElement: () => ({}) };
 const el = () => ({ on: {}, addEventListener(type, fn) { (this.on[type] ??= []).push(fn); }, blur() {}, classList: { add() {}, remove() {} }, dataset: {},
@@ -44,6 +48,7 @@ const page = {
   netSendAction: row => state.sent.push(row),
   LOCAL_PLAYER: 'local',
   params: new URLSearchParams(''),
+  ...(SP == null ? {} : { spawnParams: () => singlePlayerSpawnParams(SP === 'default' ? undefined : SP) }),
 };
 // Everything else the module reads is a no-op that answers anything.
 const any = new Proxy(function () {}, { get: (t, k) => (k === Symbol.toPrimitive ? () => '' : any), apply: () => undefined });

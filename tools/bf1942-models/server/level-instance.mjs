@@ -17,6 +17,7 @@
 import * as THREE from 'three';
 
 import { VehicleOccupancy, readWorldPose } from '../viewer/seats.js';
+import { objectBlocker, restrictedExit } from '../viewer/restricted-exit.js';
 import { Aircraft } from '../viewer/aircraft.js';
 import { bedGroundHeight } from '../viewer/amphibious.js';
 import { GroundVehicle } from '../viewer/wheeled-vehicle.js';
@@ -133,7 +134,8 @@ export class LevelInstance {
       _hullInv.copy(_hullFwd).invert();
       const e = _hullPose.elements;
       collider.setMovedOwner(owner, _hullFwd.elements, _hullInv.elements, e[12], e[13], e[14],
-        entry.spec?.boundingRadius ?? this.ownerRoots[owner]?.userData?.cullRadius ?? 8);
+        entry.spec?.boundingRadius ?? this.ownerRoots[owner]?.userData?.cullRadius ?? 8,
+        entry.spec?.mass);
     }
   }
 
@@ -193,6 +195,68 @@ export class LevelInstance {
 
   /** The flags the room's HELLO carries (the world owns a copy as well). */
   get flags() { return this.world.flags; }
+
+  // --- the carried points' carriers, for the end of a round (TKT-8) -------
+  //
+  // A point an object carries (`vehicleSoldierSpawns`: a ship's deck, DC
+  // Weapon Bunkers' bunkers, an airbase's hangars) leaves its group when the
+  // object is destroyed (`BFSpawnPoint::immediateDestroy` 0x08163c50). The
+  // page binds each to the placed object of its template nearest the middle
+  // of its pad's points (`hull-bodies.js` `bindCarriers`); the room binds the
+  // same way over its own owner roots and keeps the answer here, since the
+  // scene's entries are shared by every room of the level.
+
+  #carriedOwner = null;
+
+  /** Whether `spawn`'s carrier is gone in this room: its table hull not
+   *  standing (`live` false) or its Armor destroyed. False for a point no
+   *  object carries, or one the room found no carrier for. The room keeps
+   *  no static's time to live after death, so a destroyed carrier is gone at
+   *  once rather than when its wreck is removed. */
+  carriedPointGone(spawn) {
+    if (!this.#carriedOwner) this.#carriedOwner = this.#bindCarriedPoints();
+    const owner = this.#carriedOwner.get(spawn);
+    if (owner == null) return false;
+    const entry = this.ownerToEntry.get(owner);
+    if (entry && entry.live === false) return true;
+    return !!this.world.vehicleDamage?.get(owner)?.destroyed;
+  }
+
+  #bindCarriedPoints() {
+    const out = new Map();
+    const spawns = this.extras?.vehicleSoldierSpawns;
+    if (!Array.isArray(spawns) || !spawns.length) return out;
+    const roots = [];
+    const at = new THREE.Vector3();
+    for (const [owner, node] of (this.ownerRoots ?? []).entries()) {
+      if (!node) continue;
+      node.updateWorldMatrix?.(true, false);
+      node.getWorldPosition?.(at);
+      roots.push({ owner, at: [at.x, at.y, at.z],
+                   template: String(node.userData?.control || node.name || '').toLowerCase() });
+    }
+    const byPad = new Map();
+    for (const spawn of spawns) {
+      if (!spawn?.position) continue;
+      const key = `${String(spawn.vehicle ?? '').toLowerCase()}|${spawn.pad ?? spawn.spawner ?? ''}`;
+      if (!byPad.has(key)) byPad.set(key, []);
+      byPad.get(key).push(spawn);
+    }
+    for (const points of byPad.values()) {
+      const want = String(points[0].vehicle ?? '').toLowerCase();
+      if (!want) continue;
+      const mid = [0, 1, 2].map(i => points.reduce((sum, p) => sum + p.position[i], 0) / points.length);
+      let best = null;
+      let bestDist = Infinity;
+      for (const r of roots) {
+        if (r.template !== want) continue;
+        const d = Math.hypot(r.at[0] - mid[0], r.at[2] - mid[2]);
+        if (d < bestDist) { bestDist = d; best = r; }
+      }
+      if (best) for (const spawn of points) out.set(spawn, best.owner);
+    }
+    return out;
+  }
 
   /** The world owner id of the room vehicle whose seat-root is `root` — the
    *  authority's crash/water attribution lookup (one map hop over the
@@ -315,7 +379,7 @@ export class LevelInstance {
     const player = world.player(playerId);
     if (!player?.occupancy) return null;
     const occ = player.occupancy;
-    const exit = this.exitPoseOf(occ);
+    const exit = this.exitPoseOf(occ, entry?.owner ?? -1);
     const vehicle = player.vehicle;
     if (vehicle) {
       vehicle.state.velocity.set(0, 0, 0);
@@ -354,22 +418,36 @@ export class LevelInstance {
    *  waterline) — and the template default, the seat's own origin, when the
    *  `.con` declares none (SEAT-35). Until 2026-11-12 this returned the root's
    *  position and dropped the offset it had just computed, and its fallback
-   *  was an invented (-2, 0.5, 0). */
-  exitPoseOf(occ) {
+   *  was an invented (-2, 0.5, 0).
+   *
+   *  Through the page's restricted-exit test (`restricted-exit.js`, SEAT-42)
+   *  against the room's collider, `owner` (the hull's collider owner) skipped:
+   *  a `hasRestrictedExit` seat whose door line is blocked puts the soldier
+   *  out the other side. `allowed` is false when both are blocked; the room
+   *  does not refuse on it (the page's press already did, `room-control.mjs`). */
+  exitPoseOf(occ, owner = -1) {
     const exitNode = occ.exitLocationNode();
-    const declared = exitNode?.userData?.physics?.soldierExitLocation;
+    const physics = exitNode?.userData?.physics;
+    const declared = physics?.soldierExitLocation;
     const local = (declared && Array.isArray(declared.position))
-      ? new THREE.Vector3(declared.position[0], declared.position[1],
-        -declared.position[2])
-      : new THREE.Vector3(0, 0, 0);
+      ? { x: declared.position[0], y: declared.position[1], z: -declared.position[2] }
+      : { x: 0, y: 0, z: 0 };
     const refNode = exitNode && exitNode !== occ.root ? exitNode : occ.root;
     const origin = new THREE.Vector3();
     const quat = new THREE.Quaternion();
     readWorldPose(refNode, origin, quat);
-    const position = local.applyQuaternion(quat).add(origin);
+    const toWorld = (x, y, z) => {
+      const w = new THREE.Vector3(x, y, z).applyQuaternion(quat).add(origin);
+      return { x: w.x, y: w.y, z: w.z };
+    };
+    const choice = restrictedExit({
+      restricted: physics?.hasRestrictedExit === true,
+      local, toWorld, origin, blocked: objectBlocker(this.collider, owner),
+    });
+    const position = toWorld(choice.local.x, choice.local.y, choice.local.z);
     const fwd = new THREE.Vector3(0, 0, -1).applyQuaternion(quat);
     return { x: position.x, y: position.y, z: position.z,
-             yaw: Math.atan2(fwd.x, fwd.z) };
+             yaw: Math.atan2(fwd.x, fwd.z), allowed: choice.allowed };
   }
 
   /** Seat switch within the same hull: the active seat changes, the manned

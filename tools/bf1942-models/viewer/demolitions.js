@@ -11,7 +11,7 @@ import { fireCycle } from './fire-timer.js';
  * Built once by `createHandWeapon`. `page` is the narrow bag of getters it
  * builds, naming what this module reads:
  * `beginHandFire`, `deployKit`, `deployTeamId`, `dropClick`, `guns`,
- * `handWeapon`, `itemsLocked`, `kitAmmo`, `kitLoadout`, `kitWeaponSlots`,
+ * `handWeapon`, `itemsLocked`, `kitAmmo`, `kitLife`, `kitLoadout`, `kitWeaponSlots`,
  * `loadHandWeapon`, `loadouts`, `optOnFoot`, `optPilot`, `selectKitWeapon`,
  * `showWeaponBar`, `slotOf`, `soldier`, `soldierTemplateFor`.
  */
@@ -158,9 +158,21 @@ export function createDemolitions(page) {
     page.beginHandFire(hw);
     // The plunger's own fire cycle, in whole ticks (GUN-13).
     hw.cool = Math.max(hw.cool, fireCycle(hw.data?.roundOfFire));
-    if (!demolitions.thrownPackGroup) return 0;
-    const count = page.guns.detonateProjectiles(demolitions.thrownPackGroup);
-    if (!page.guns.liveProjectiles(demolitions.thrownPackGroup)) demolitions.thrownPackGroup = null;
+    // `getItemFromIndex(4)`'s pool: every live pack the kit's ExpPack laid,
+    // whoever held the kit when it was laid. A kit picked up off a dead
+    // engineer brings their packs onto this plunger, and the packs this
+    // soldier laid with the kit they dropped stay with that kit (FA-2,
+    // KITDROP-7, `gunfire.js` `detonatePool`).
+    const life = page.kitLife ?? null;
+    let count = 0;
+    if (life && demolitions.explosivesTemplate && page.guns.detonatePool) {
+      count = page.guns.detonatePool(life, demolitions.explosivesTemplate);
+    } else if (demolitions.thrownPackGroup) {
+      count = page.guns.detonateProjectiles(demolitions.thrownPackGroup);
+    }
+    if (demolitions.thrownPackGroup && !page.guns.liveProjectiles(demolitions.thrownPackGroup)) {
+      demolitions.thrownPackGroup = null;
+    }
     return count;
   }
 

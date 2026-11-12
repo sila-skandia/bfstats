@@ -98,8 +98,10 @@ class Url(unittest.TestCase):
     def test_the_hooks_need_shots_and_a_vanilla_level_names_no_mod(self):
         out = run_harness()
         self.assertEqual(out["vanilla"],
-                         "https://play.bfstats.io/map.html?map=Berlin&team=2&mode=Conquest&botCount=16&botSkill=0.75&mute&shots")
+                         "https://play.bfstats.io/map.html?map=Berlin&team=2&mode=Conquest&botCount=16&botSkill=0.75&spawnTime=wave&mute&shots")
         self.assertIn("mod=community", out["mod"])
+        # page-dice.json was recorded on retail's wave, not single player's 3 s.
+        self.assertIn("spawnTime=wave", out["mod"])
         self.assertIn("botCount=32", out["mod"])
 
 

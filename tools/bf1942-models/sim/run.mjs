@@ -19,7 +19,8 @@ const HERE = path.dirname(fileURLToPath(import.meta.url));
 function parseArgs(argv) {
   const a = { level: null, bots: 4, maxPlayers: null, time: 120, seed: 1, skill: 0.75, traceEvery: 1, sampleEvery: 1,
               vehicles: true, out: null, maps: null, models: null, viewer: null, quiet: false,
-              replay: null, why: null, trace: null, step: 30, noTrace: false, doctrine: null, seats: [], holdFire: null };
+              replay: null, why: null, trace: null, step: 30, noTrace: false, doctrine: null, seats: [], holdFire: null,
+              spawnSeconds: null };
   for (let i = 0; i < argv.length; i++) {
     const k = argv[i];
     const next = () => { if (i + 1 >= argv.length) throw new Error(`${k} needs a value`); return argv[++i]; };
@@ -39,6 +40,12 @@ function parseArgs(argv) {
       case '--no-vehicles': a.vehicles = false; break;
       case '--no-trace': a.noTrace = true; break;
       case '--doctrine': a.doctrine = next(); break;
+      case '--spawn-time': {
+        const v = next();
+        if (v !== 'wave' && !(Number(v) >= 0 && Number(v) <= 30)) throw new Error('--spawn-time is 0..30 seconds, or wave');
+        a.spawnSeconds = v === 'wave' ? 'wave' : Number(v);
+        break;
+      }
       case '--hold-fire': {
         const v = next();
         if (v !== 'on' && v !== 'off') throw new Error('--hold-fire is on or off');
@@ -98,6 +105,9 @@ match options:
   --hold-fire on|off  the bots hold fire for a teammate in their line
                     (INVENTION, viewer bot-plans.js holdFireFor); default on,
                     off under the SAI on both sides (the engine-parity traces)
+  --spawn-time N|wave  the bots' respawn: a flat N seconds, 0..30 (default 3,
+                    single player's, the owner's choice), or 'wave', retail's
+                    20 s reinforcement wave (a room's law)
   --out DIR         output directory (default sim/out/<level>-s<seed>)
   --maps DIR        the extracted maps tree (default <viewer>/maps)
   --models DIR      the extracted models tree (default <viewer>/models)
@@ -130,7 +140,8 @@ async function runMatch(a) {
   const sink = (line) => { if (fd === null) return; buffer.push(line); if (buffer.length >= 2000) flush(); };
   const match = new Match({ M, level, botsPerSide: a.bots, botSkill: a.skill, duration: a.time, seed: a.seed,
                             traceEvery: a.traceEvery, sampleEvery: a.sampleEvery, vehicles: a.vehicles, sink,
-                            doctrine: a.doctrine, seats: a.seats, maxPlayers: a.maxPlayers, holdFire: a.holdFire });
+                            doctrine: a.doctrine, seats: a.seats, maxPlayers: a.maxPlayers, holdFire: a.holdFire,
+                            spawnSeconds: a.spawnSeconds });
   const started = performance.now();
   match.setup();
   let lastReport = 0;

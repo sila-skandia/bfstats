@@ -32,6 +32,8 @@ def run_harness(scene: Path | None) -> dict:
         # `strategic.js` re-exports the layer, the AI and the doctrines.
         for name in ("strategic-layer.js", "strategic-ai.js", "doctrine.js", "doctrine-squad.js", "doctrine-garrison.js", "doctrine-landing.js",
                      "bot-vehicle.js", "bot-behaviours.js",
+                     # `bot-vehicle.js` shares `collisionPredicted` with the pilots.
+                     "bot-vehicle-air.js",
                      # `strategic-ai.js` reads a flag's capture radius for its orders.
                      "control-point-law.js"):
             shutil.copyfile(VIEWER / name, work / name)

@@ -90,6 +90,8 @@ BUILT = {
     "Game.setNameTagDistance", "Game.setMaxNameTagDistance", "Game.getNameTagDistance",
     "Game.crossHairRadius", "Game.crossHairSize", "Game.setCrossHairColor",
     "Soldier.cameraShakeFactor",
+    # console-commands.js: a room's team-kill answer (FF-10)
+    "Game.TKPunish", "Game.TKForgive",
 }
 
 # Words the viewer registers with the client's shape that answer *Method is not

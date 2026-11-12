@@ -725,9 +725,10 @@ export function installVehicleHooks(page) {
       && (seatId == null || page.localPlayer.occupancy.seatId === seatId);
   };
   // E from whatever seat the player holds, through the page's own exit.
-  window.__exitSeat = () => {
+  // `press` (default true): through the restricted-exit gate as E is (SEAT-42).
+  window.__exitSeat = ({ press = true } = {}) => {
     if (!page.localPlayer.occupancy) return false;
-    page.exitSeat();
+    page.exitSeat({ press });
     return !page.localPlayer.occupancy;
   };
   // The hull the local player rides, as its instance sees it: who holds

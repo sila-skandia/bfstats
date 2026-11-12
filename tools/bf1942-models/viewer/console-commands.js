@@ -139,6 +139,8 @@ export function setChatSizes(log, { chat, info, kill }) {
  *   levelRoot()     the level's glb root (`userData.kind` terrain/sky/water)
  *   levelName(), modId(), gameplayMode(), mapRows()
  *   players()       the play page's roster: [{ id, name, local, bot }]
+ *   teamKillRoom()  the joined room's sender, `verb => {}` taking 'punish'
+ *                   or 'forgive' (`room-control.mjs` `tk`); null off a room
  *   bfmap()         the BfMap (fullscreen map)
  *   chatLog()       the message log's ChatLog
  *   effectsRoot()   the effect player's group
@@ -286,6 +288,17 @@ export function registerViewerCommands(con, env = {}) {
       })));
     },
   });
+  // `game.TKPunish` / `game.TKForgive` (t0 a1; the shipped aliases `punish`,
+  // `punishtk`, `ptk`, `forgive`, `forgivetk`, `ftk`): the victim's answer to
+  // their last team kill, `GameServer::TKPunish(int)` 0x081593d0 /
+  // `TKForgive(int)` 0x081592e0 on the server, which decides what each does
+  // under its punish mode (FF-10). Off a room there is nobody to answer:
+  // single player's local server counts no team kill (FF-9). Both print
+  // nothing, as in the game.
+  for (const [name, verb] of [['TKPunish', 'punish'], ['TKForgive', 'forgive']]) {
+    method('Game', name, { access: 1, active: has('teamKillRoom'),
+      run: () => { get('teamKillRoom')?.(verb); } });
+  }
   method('Game', 'listMaps', {
     access: 1, returns: 'std::string',
     run: () => mapLines(get('mapRows') ?? [], { current: get('levelName') ?? '', gpm: get('gameplayMode') ?? '' }),

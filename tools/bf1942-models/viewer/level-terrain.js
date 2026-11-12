@@ -7,6 +7,7 @@
 import * as THREE from 'three';
 import { buildHeightfield, heightfieldFromSamples } from './heightfield.js';
 import { buildCollisionIndex } from './static-index.js';
+import { attachCoarseLayer } from './coarse-layer.js';
 import { addLentCollisionCopies } from './collision-meshes.js';
 import { staticProbes } from './static-settle.js';
 import { buildDrivableMask } from './drivable-mask.js';
@@ -314,7 +315,7 @@ export function createLevelTerrain(page) {
   }
 
   /** Rebuild the collider for the level now in `currentRoot`. */
-  function buildCollider(root) {
+  function buildCollider(root, { collisionMeshes = null } = {}) {
     const worldSize = page.extras?.worldSize || 0;
     // The whole heightmap where the level ships it, so an undrawn patch (the
     // sea floor of 29 levels) still has ground under it; else the lattice off
@@ -356,6 +357,10 @@ export function createLevelTerrain(page) {
     // (barbed wire, fences, palms; ledger FF-1, FF-2).
     const statics = buildCollisionIndex(root, { ownerRoots,
       collisionGroups: page.extras?.collisionGroups ?? null });
+    // A large root's layer of each two-layer static (COL-22), from the
+    // tree's `collision-meshes.json`.
+    attachCoarseLayer(statics, collisionMeshes?.staticCoarse,
+      { collisionGroups: page.extras?.collisionGroups ?? null });
     // Gap 16: the climbable ladders. `indexScene` has already composed every
     // matrix where the extract put it, so the `extras.isLadder` nodes read out
     // in world space; ship ladders ride the parked-vehicle subtrees and are

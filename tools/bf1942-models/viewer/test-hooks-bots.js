@@ -133,7 +133,14 @@ export function installBotHooks(page) {
     plan: (b.currentPlan ?? []).map(a => `${a.type}${a.done ? '*' : ''}`),
     heard: b.senses?.heard?.size ?? 0,
     strategy: page.referee.strategy ? (page.referee.strategy.sides[b.team]?.active?.strategy?.name ?? null) : null,
+    // The soldier's own speed on foot; seated it is the last one they ran at
+    // before boarding (a Bf109's pilot read 6.13 m/s through a take-off
+    // roll at 10-18 m/s), so a seat's hull speed is `hullSpeed`.
     speed: +((page.world?.player(b.playerId)?.soldier?.speed ?? 0)).toFixed(2),
+    hullSpeed: (() => {
+      const v = b.vehicle?.drive?.state?.velocity;
+      return v ? +Math.hypot(v.x, v.y, v.z).toFixed(2) : null;
+    })(),
     team: b.team,
     hp: page.world?.armorOf(b.playerId)?.hitPoints ?? null,
     dead: !!page.world?.armorOf(b.playerId)?.destroyed,

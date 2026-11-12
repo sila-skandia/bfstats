@@ -48,6 +48,12 @@ import {
 import {
   HULL_REACH, pushOutOfHulls, resolveMove, refuseSteepGround, settleFeet,
 } from './soldier-resolve.js';
+import { createDeckTrack, deckPointVelocity, rememberDecks } from './deck-carry.js';
+
+/** How near a moved hull's bounding sphere must come for a soldier to keep
+ *  its pose for the next tick's deck speed (`deck-carry.js`): a tick's fall
+ *  or jump onto it from further off still lands on a remembered deck. */
+const DECK_TRACK_REACH = 4;
 
 /** `addFriction`'s floor on a delta-v worth scaling, `|dV|^2 > 1e-6`
  *  (`0x086d139c`, PHY-2). */
@@ -215,6 +221,12 @@ export class SoldierBody {
     // last looked (its `vHull dt`).
     this.hullContacts = [];
     this._hullSeen = new Map();
+    // The moving deck under their feet (`deck-carry.js`): the hull the floor
+    // this tick belongs to (`settleFeet`, -1 for the terrain or a static),
+    // its point speed under them, and the moved hulls' poses last tick.
+    this.floorOwner = -1;
+    this.deckVelocity = { x: 0, y: 0, z: 0 };
+    this._deckTrack = createDeckTrack();
     /**
      * A blast's flight and landing (`knockback.js` `Knockback`, KNOCK-1/2/8),
      * or `null` for a body no blast has reached. Injected like `swim`, by
@@ -705,8 +717,11 @@ export class SoldierBody {
     // see because it moves only the soldier.
     pushOutOfHulls(this, dt);
     this.#refuseSteepGround();
+    this.floorOwner = -1;
     this.#settle();
     this.#contactLaw(dt, cmdX, cmdY, cmdZ);
+    rememberDecks(this._deckTrack, this.world, this.body.position.x, this.body.position.y,
+      this.body.position.z, DECK_TRACK_REACH);
     if (this.obstacleContacts.length) this.obstacleSlow = true;
     // `handleUpdate`'s own place in the tick. The pin lands inside it.
     this.#updateSwim(dt, forward, input);
@@ -840,8 +855,10 @@ export class SoldierBody {
    *       `<= 0.1`); below it N is zero and so is the budget
    *   A   the mean `materialFriction` of his material and the ground's
    *       (`impulseOn` `0x08258900`); the resistance is the same mean
-   *   V   v - vCmd (`setSurfacePositionalSpeed`, `0x08274e2f`), with one
-   *       tick of gravity added to its y; Vt is V less its N component
+   *   V   v - vDeck - vCmd (`setSurfacePositionalSpeed`, `0x08274e2f`),
+   *       with one tick of gravity added to its y; Vt is V less its N
+   *       component. vDeck is a moving hull floor's point speed under the
+   *       feet (`deck-carry.js`), zero on the terrain and on a static
    *
    * `acc -= resistance * Vt`; the wanted delta-v `-Vt` goes through the
    * static/kinetic latch (`0x0825bb72`..`0x0825bf47`): latched, past
@@ -869,13 +886,23 @@ export class SoldierBody {
       + materialValue(world?.materialFrictionById, this.contactMaterial, DEFAULT_MATERIAL_FRICTION));
     const res = 0.5 * (materialValue(world?.materialResistanceById, SOLDIER_MATERIAL, DEFAULT_MATERIAL_RESISTANCE)
       + materialValue(world?.materialResistanceById, this.contactMaterial, DEFAULT_MATERIAL_RESISTANCE));
-    const handled = v.x * v.x + v.y * v.y + v.z * v.z > SOLDIER_HANDLER_SPEED_SQ;
+    // A hull floor's own point speed under the feet (`deck-carry.js`): the
+    // contact's speed is `getTangentSpeed` of both bodies, the soldier's less
+    // the deck's (`checkObjectVsObject` 0x08259690, `impulseOn`'s mean at
+    // `+0x74`), so the friction pulls them onto the deck and `vCmd` is a speed
+    // over it; the handler's 0.1 gate is on the same relative speed. The
+    // terrain's is zero.
+    const dv = this.deckVelocity;
+    const p = body.position;
+    deckPointVelocity(this._deckTrack, this.world, this.floorOwner, p.x, p.y, p.z, dt, dv);
+    const ux = v.x - dv.x, uy = v.y - dv.y, uz = v.z - dv.z;
+    const handled = ux * ux + uy * uy + uz * uz > SOLDIER_HANDLER_SPEED_SQ;
     const c = this.contactNormal;
     const nx = handled ? c.x : 0, ny = handled ? c.y : 0, nz = handled ? c.z : 0;
     const ny5 = ny * ny * ny * ny * ny;
     const lo = A * SOLDIER_KINETIC_GRIP * dt * ny5;
     const hi = A * SOLDIER_STATIC_GRIP * dt * ny5;
-    let Vx = v.x - cmdX, Vy = v.y - cmdY + GRAVITY * body.gravityModifier * dt, Vz = v.z - cmdZ;
+    let Vx = ux - cmdX, Vy = uy - cmdY + GRAVITY * body.gravityModifier * dt, Vz = uz - cmdZ;
     const nn = nx * nx + ny * ny + nz * nz;
     if (nn > 0) {
       const into = (Vx * nx + Vy * ny + Vz * nz) / nn;

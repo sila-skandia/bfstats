@@ -29,9 +29,27 @@ export const MEDIC_PACK = Object.freeze({ radius: 10.0, allyHeal: 0.25, selfHeal
 /** `BFSoldier::useRepairPack`'s: the reach past a hull's radius
  *  `repairDistance` (+0x2ec) and the HP per invocation `repairFactor` (+0x2e0),
  *  vanilla's 2.0 / 0.15 (Desert Combat's factor is 0.20). `disarmRadius` is
- *  `disarmMinesDistance` (+0x2f0, ctor default 2.0 at `0x0827a39a`), the
- *  crouched branch's reach, which disarms; nothing here disarms yet. */
+ *  `disarmMinesDistance` (+0x2f0, ctor default 2.0, `movl $0x40000000` at
+ *  `0x0827a39a`), the crouched branch's reach past a round's own radius
+ *  (`disarmTarget`). */
 export const REPAIR_PACK = Object.freeze({ radius: 2.0, repairHeal: 0.15, disarmRadius: 2.0 });
+
+/** The rounds a crouched wrench lifts, and the kit item each one's charge goes
+ *  back to. `BFSoldierTemplate::init` resolves the templates NAMED
+ *  `ExpPackProjectile` and `LandmineProjectile` (`0x0827a8c5` / `0x0827aa6e`)
+ *  and keeps them at +0x2a0 / +0x2b4 (`0x0827c0fb` / `0x0827beb2`);
+ *  `useRepairPack` keeps only a candidate of one of the two (`0x0827650b`,
+ *  `0x08276513`) and gives the round back to the holder's item 4 for the pack
+ *  (`getItemFromIndex(4)`, `0x0827657f`) or item 5 for the mine
+ *  (`0x082765a1`). Keys are lower case: the page compares names without case,
+ *  as it does SUP-27's (INFERRED: the template manager's case rule). */
+export const DISARM_ROUNDS = Object.freeze({ exppackprojectile: 4, landmineprojectile: 5 });
+
+/** The kit item index a disarmed round of `template` goes back to (4 or 5),
+ *  or null for a round the wrench does not lift. */
+export function disarmItemOf(template) {
+  return DISARM_ROUNDS[String(template ?? '').toLowerCase()] ?? null;
+}
 
 /**
  * Which of the soldier's two packs a hand weapon is: `'medic'` for the
@@ -117,7 +135,7 @@ export function medPackHeals(holder, soldiers, pack) {
  *   only `ExpPackProjectile` / `LandmineProjectile` rounds (the templates at
  *   +0x2a0 / +0x2b4), and the best-hull local (-0x74) is written only in the
  *   standing branch, so the repair after the loop (`0x082761d6`) has nothing.
- *   (The disarm itself is not built.)
+ *   The disarm is `disarmTarget`.
  * - **A hull held by the other side is skipped.** The candidate's Armor
  *   (interface 0xc4a4) must sit in a PlayerControlObject (the parent walk for
  *   interface 0xc4c5 at `0x082766d0`..`0x0827670f`; none found, skipped), and
@@ -146,6 +164,46 @@ export function repairPackTarget(holder, hulls, pack) {
     if (dist < bestDist) { bestDist = dist; best = h; }
   }
   return best;
+}
+
+/**
+ * One round of the crouched wrench, `useRepairPack` 0x08276100's disarm
+ * branch (SUP-28): the first live mine or explosives pack in reach, as
+ * `{ round, item }`, or null. The caller takes the round out of the world
+ * unexploded (`Projectile::resetProjectile`, `0x082765e4`) and gives one round
+ * back to the holder's `item` (4 the pack, 5 the mine) when that item is a
+ * FireArms whose projectile is this round's template (`FireArms::reloadAmmo(1)`,
+ * `0x082765f6`, the depot's fill, SUP-8); either way it is one disarm a round.
+ *
+ * - **Only crouched** (`getPose() == 1` into the flag at `0x0827612d`..
+ *   `0x08276139`, tested at `0x082764ed`): a standing wrench repairs instead.
+ * - **Only `ExpPackProjectile` and `LandmineProjectile`** (`DISARM_ROUNDS`):
+ *   a mod's mine under another name is not lifted.
+ * - **The reach is the round's own radius plus `disarmMinesDistance`**:
+ *   `distanceSqr(round, holder) <= (getBoundingRadius() + disarmMinesDistance)²`
+ *   (`0x08276546`..`0x08276572`, the add at `0x08276561`). The sweep that
+ *   hands the candidates in is the object manager's query (vt+0x30 at
+ *   `0x082761a1`) over `max(repairDistance, disarmMinesDistance)`; the exact
+ *   gate is this one, as `useMedPack`'s is after its own query.
+ * - **No team test**: a friend's mine is lifted like an enemy's, and so is the
+ *   holder's own.
+ * - **The first that passes**, in the query's order, which is not read; here
+ *   the order `rounds` comes in (the page's: oldest launched first).
+ *
+ * `holder`: `{ x, y, z, crouched }`. `rounds`: an iterable of
+ * `{ x, y, z, radius, template }`. `pack`: `packParams('repair', ...)`.
+ */
+export function disarmTarget(holder, rounds, pack) {
+  if (!holder?.crouched || !pack) return null;
+  const reach = Number.isFinite(pack.disarmRadius) ? pack.disarmRadius : REPAIR_PACK.disarmRadius;
+  for (const round of rounds ?? []) {
+    const item = disarmItemOf(round?.template);
+    if (item == null) continue;
+    const dx = round.x - holder.x, dy = round.y - holder.y, dz = round.z - holder.z;
+    const gate = (round.radius ?? 0) + reach;
+    if (dx * dx + dy * dy + dz * dz <= gate * gate) return { round, item };
+  }
+  return null;
 }
 
 /**

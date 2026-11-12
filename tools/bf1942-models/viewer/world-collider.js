@@ -313,10 +313,11 @@ export class WorldCollider {
    * column-major 4x4 element arrays (a three.js `Matrix4.elements`), copied.
    * `x, y, z, radius` bound the hull where it is now, for the cheap reject.
    */
-  setMovedOwner(owner, fwd, inv, x, y, z, radius) {
+  setMovedOwner(owner, fwd, inv, x, y, z, radius, mass = null) {
     let m = this.moved.get(owner);
     if (!m) {
-      m = { fwd: new Float64Array(16), inv: new Float64Array(16), x: 0, y: 0, z: 0, radius: 0, sub: -1 };
+      m = { fwd: new Float64Array(16), inv: new Float64Array(16), x: 0, y: 0, z: 0, radius: 0, sub: -1,
+            mass: null };
       this.moved.set(owner, m);
       this.statics?.disableOwner?.(owner);
       // The index answers for its own moved owners from here on, so a caller
@@ -331,6 +332,11 @@ export class WorldCollider {
     }
     m.fwd.set(fwd); m.inv.set(inv);
     m.x = x; m.y = y; m.z = z; m.radius = radius;
+    // The root's mass, for a soldier's share of its push (COL-2,
+    // `soldier-resolve.js` `hullShares`); null where the caller has none.
+    m.mass = mass > 0 ? mass : null;
+    // The world tick it was published on (`World.#tick`), or undefined.
+    m.tick = this.publishTick;
     this.#syncSubParts(owner, m);
   }
 
@@ -444,6 +450,32 @@ export class WorldCollider {
       out.kind = 'object';
     }
     return improved;
+  }
+
+  /**
+   * Nearest OBJECT along a segment, or null: the placed statics and every
+   * moved hull but `skipOwner`'s, never the terrain or the sea. This is
+   * `ObjectManager::intersectLine` (lnxded 0x0819e840, objectManager vt+0x48),
+   * which walks the object grid only; the engine's own callers that want the
+   * ground as well ask the terrain separately (HUD-18, SPOT-2). Used by the
+   * restricted-exit test (`restricted-exit.js`). Returns the shared `hit`.
+   */
+  castObjects(ox, oy, oz, dx, dy, dz, maxDist, skipOwner = -1) {
+    if (!this.statics || !(maxDist > 0)) return null;
+    const out = this.hit;
+    out.dx = dx; out.dy = dy; out.dz = dz;
+    let best = maxDist;
+    let found = false;
+    const object = this.statics.cast(ox, oy, oz, dx, dy, dz, best, skipOwner, out,
+                                     -1, false, false, -Infinity, 2, -1, 0, 0);
+    if (object) { best = object.t; found = true; }
+    const movedDone = this.statics.movedPassOf === this;
+    if (!movedDone && this.castMoved(ox, oy, oz, dx, dy, dz, best, skipOwner, out, 0, 0)) {
+      found = true;
+    }
+    if (!found) return null;
+    out.kind = 'object';
+    return out;
   }
 
   /**
@@ -625,26 +657,63 @@ export class WorldCollider {
     // tight.
     const candidates = new Int32Array(capacity);
     let count = 0;
+    // A large root's (COL-22, `coarse-layer.js`): the col0 triangles of the
+    // two-layer statics, from `statics.coarse`, in place of the col1 ones
+    // `statics.fine` marks, which `near` drops from `candidates`.
+    const coarseCandidates = new Int32Array(capacity);
+    let coarseCount = 0;
+    const coarseHit = {
+      t: 0, x: 0, y: 0, z: 0, nx: 0, ny: 1, nz: 0,
+      dx: 0, dy: 0, dz: 0,
+      material: 0, kind: '', owner: -1, triangle: -1, coarse: true,
+    };
     // Per owner: 0 not asked yet, 1 not an Obstacle, 2 an Obstacle.
     const obstacleOf = { statics: null, kind: null };
     return {
-      near(x, y, z, dx, dy, dz, dist, radius, owner, stepTop) {
+      near(x, y, z, dx, dy, dz, dist, radius, owner, stepTop, coarse = false) {
         const s = world.statics;
         count = 0;
+        coarseCount = 0;
         if (!s) return false;
         const ex = x + dx * dist, ey = y + dy * dist, ez = z + dz * dist;
-        count = s.collectInBox(
-          Math.min(x, ex) - radius, Math.min(y, ey) - radius, Math.min(z, ez) - radius,
-          Math.max(x, ex) + radius, Math.max(y, ey) + radius, Math.max(z, ez) + radius,
+        const loX = Math.min(x, ex) - radius, loY = Math.min(y, ey) - radius, loZ = Math.min(z, ez) - radius;
+        const hiX = Math.max(x, ex) + radius, hiY = Math.max(y, ey) + radius, hiZ = Math.max(z, ez) + radius;
+        count = s.collectInBox(loX, loY, loZ, hiX, hiY, hiZ,
           owner, true, stepTop, deckFloorCos, candidates);
-        return count > 0;
+        const c = coarse ? s.coarse : null;
+        if (c && s.fine) {
+          let kept = 0;
+          for (let k = 0; k < count; k++) {
+            const tri = candidates[k];
+            if (!s.fine[tri]) candidates[kept++] = tri;
+          }
+          count = kept;
+          coarseCount = c.collectInBox(loX, loY, loZ, hiX, hiY, hiZ,
+            owner, false, stepTop, deckFloorCos, coarseCandidates);
+          // The coarse index keeps no owner flags of its own: a faded or
+          // simulated owner is the main index's to say.
+          kept = 0;
+          for (let k = 0; k < coarseCount; k++) {
+            const tri = coarseCandidates[k];
+            const o = c.owners[tri];
+            if (o >= 0 && (s._disabled[o] || s._body[o])) continue;
+            coarseCandidates[kept++] = tri;
+          }
+          coarseCount = kept;
+        }
+        return count + coarseCount > 0;
       },
       // `owner` and `stepTop` were applied by `near`; `groups` is the probing
       // part's collision-group mask (`body-statics.js`).
       cast(ox, oy, oz, dx, dy, dz, maxDist, owner, stepTop, groups = 0) {
         const s = world.statics;
-        if (!s || !count) return null;
-        return s.castAmong(candidates, count, ox, oy, oz, dx, dy, dz, maxDist, hit, groups);
+        if (!s || !(count + coarseCount)) return null;
+        const main = count ? s.castAmong(candidates, count, ox, oy, oz, dx, dy, dz, maxDist, hit, groups) : null;
+        if (!coarseCount || !s.coarse) return main;
+        const best = main ? main.t : maxDist;
+        const col0 = s.coarse.castAmong(coarseCandidates, coarseCount, ox, oy, oz, dx, dy, dz, best,
+                                        coarseHit, groups);
+        return col0 && col0.t < best ? col0 : main;
       },
       /** Whether `owner` is an `Obstacle` (`templateKind`, the class
        *  `ObjectTemplate.create Obstacle` makes: barbed wire). */
@@ -665,6 +734,13 @@ export class WorldCollider {
       /** The `Obstacle` the hit's own triangle belongs to, or -1 (per
        *  triangle: XPack2's fences carry the wire as a child of a `Bundle`). */
       obstacleAt(record) {
+        if (record?.coarse) {
+          // A col0 triangle's Obstacle, as the main index numbers it.
+          const c = world.statics?.coarse;
+          const id = c?.obstacleOf ? c.obstacleOf(record.triangle) : -1;
+          const node = id >= 0 ? c.obstacleNodes[id] : null;
+          return node ? world.statics.obstacleNodes.indexOf(node) : -1;
+        }
         return world.obstacleAt(record);
       },
       supportY(x, z, fromY) {
@@ -677,7 +753,7 @@ export class WorldCollider {
        *  wheel's static probe leaves it there (`body-statics.js`
        *  `collideSpringsWithStatics`). */
       drivableAt(record) {
-        const d = world.statics?.drivable;
+        const d = record?.coarse ? world.statics?.coarse?.drivable : world.statics?.drivable;
         return !!d && record.triangle >= 0 && d[record.triangle] !== 0;
       },
     };

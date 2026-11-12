@@ -22,6 +22,8 @@ VIEWER = ROOT / "viewer"
 HARNESS = Path(__file__).resolve().parent / "landing_harness.mjs"
 MODULES = ("strategic.js", "strategic-layer.js", "strategic-ai.js", "doctrine.js", "doctrine-squad.js",
            "doctrine-garrison.js", "doctrine-landing.js", "bot-vehicle.js", "bot-behaviours.js",
+           # `bot-vehicle.js` shares `collisionPredicted` with the pilots.
+           "bot-vehicle-air.js",
            # `strategic-ai.js` reads a flag's capture radius for its orders.
            "control-point-law.js")
 

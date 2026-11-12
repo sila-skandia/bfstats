@@ -897,5 +897,61 @@ function spawnProjectile(guns, muzzle, group, spec, barrel = 0) {
   // `gunfire.js` `releaseRounds`). Stamped now, because a weapon kept across
   // a respawn keeps its group, and the last life's rounds are the last kit's.
   if (group.kitLife) shot.kitLife = group.kitLife;
+  // The weapon's pool (FA-2): a mine or a pack past `2 x magSize + 1` live
+  // re-uses the oldest object, which vanishes unexploded.
+  const poolSize = roundPoolSize(group.weapon, group.magSize ?? group.stats?.magazine?.size ?? group.stats?.magSize);
+  if (poolSize) {
+    const recycled = takePoolSlot(group.kitLife ?? group, group.weapon, poolSize, shot);
+    if (recycled) guns.retireRound?.(recycled);
+  }
   guns.projectiles.push(shot);
+}
+
+/**
+ * How many objects a hand weapon's projectile pool holds, for the two weapons
+ * whose pool is a rule of its own: `FireArms::initProjectilePool` (lnxded
+ * `0x08287a80`, FA-2) compares the weapon template's name with `ExpPack`
+ * (`0x86d224c`, at `0x08287b2e`) and `Landmine` (`0x86d2f8f`, at
+ * `0x08287d2d`) and sizes their pool `2 x magSize + 1` (`+0x228` doubled and
+ * incremented, `0x08287b44`..`0x08287b58`): vanilla's 4 a pouch is 9. Every
+ * other weapon's pool is sized from fields FA-2 does not name and is not
+ * built (a grenade's 3 is spent long before its fuse ends). 0 for a weapon
+ * with no such pool, or no positive `magSize`. The compare is
+ * `std::string::compare` and so has case; the page's names keep the data's
+ * own spelling and are compared without it (INFERRED: the template's stored
+ * name is the spelling the data declares).
+ */
+export function roundPoolSize(weapon, magSize) {
+  const key = String(weapon ?? '').toLowerCase();
+  if (key !== 'exppack' && key !== 'landmine') return 0;
+  const size = Math.trunc(Number(magSize));
+  return size > 0 ? 2 * size + 1 : 0;
+}
+
+/**
+ * The next object of a weapon's pool, for `shot`: `FireArms::createProjectile`
+ * (`0x0828bdb0`) takes `pool[+0x1e8]`, steps the index and wraps it at the
+ * count `+0x1e4` (`0x0828bfbe`..`0x0828bfe8`), whatever that object is doing.
+ * So the round laid `size` launches ago, if it is still in the world, is reset
+ * and thrown again: the oldest mine vanishes, and a slot a disarm or a blast
+ * freed is not looked for. Returns the round the slot held (the caller retires
+ * it; one already gone is harmless), or null. `owner` keeps the pools: the
+ * kit's token (`group.kitLife`), whose weapons they are, so a kit picked up
+ * brings its weapons' places in the wrap; a group with no kit (a bot's) keeps
+ * its own.
+ */
+export function takePoolSlot(owner, weapon, size, shot) {
+  if (!owner || !(size > 0)) return null;
+  const pools = owner.roundPools ??= new Map();
+  const key = String(weapon ?? '').toLowerCase();
+  let pool = pools.get(key);
+  if (!pool || pool.slots.length !== size) {
+    pool = { next: 0, slots: new Array(size).fill(null) };
+    pools.set(key, pool);
+  }
+  const slot = pool.next;
+  pool.next = slot + 1 >= size ? 0 : slot + 1;
+  const held = pool.slots[slot];
+  pool.slots[slot] = shot;
+  return held && held !== shot ? held : null;
 }

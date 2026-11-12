@@ -751,7 +751,7 @@ export function createLevel(page) {
     // level), which the bots' nav maps are taken from (`nav-baked.js`).
     // And the whole heightmap (`terrain/heightmap.png`, tens to hundreds of KB),
     // which the collider stands on where the bake drew no tile.
-    const [terrainMaterials, damageTables, , searchMaps, heightmap] = await Promise.all([
+    const [terrainMaterials, damageTables, collisionMeshes, searchMaps, heightmap] = await Promise.all([
       terrain.loadTerrainMaterials(dir), terrain.loadDamageTables(dir), page.loadCollisionMeshes(dir),
       terrain.loadSearchMaps(dir), terrain.loadHeightmap(dir),
     ]);
@@ -760,7 +760,7 @@ export function createLevel(page) {
         { value: searchMaps, configurable: true, writable: true, enumerable: false });
     }
     terrain.setTables(terrainMaterials, damageTables, heightmap);
-    const collision = terrain.buildCollider(level.currentRoot);
+    const collision = terrain.buildCollider(level.currentRoot, { collisionMeshes });
     // The statics' shade from the ground under them (ledger DL-10): after the
     // collider, whose height it asks, and never in the way of the load.
     shading.bindTerrainShade(level.currentRoot, dir, terrain.groundHeight)

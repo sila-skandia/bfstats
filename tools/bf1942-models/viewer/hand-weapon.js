@@ -135,6 +135,7 @@ export function createHandWeapon(page) {
     get deployTeamId() { return page.deployTeamId; }, get dropClick() { return page.dropClick; },
     get guns() { return page.guns; }, get handWeapon() { return soldierKit.handWeapon; },
     get itemsLocked() { return itemsLocked; }, get kitAmmo() { return kitAmmo; },
+    get kitLife() { return soldierKit.kitLife; },
     get kitLoadout() { return kitLoadout; }, get kitSide() { return loadout.kitSide; },
     get kitWeaponSlots() { return soldierKit.kitWeaponSlots; },
     get loadHandWeapon() { return loadHandWeapon; },
@@ -202,6 +203,9 @@ export function createHandWeapon(page) {
   // Each item's magazine words, by name, as its rig brought them: what a
   // linked weapon counts and whether an item put away empty may come back.
   const raisedMagazines = new Map();
+  // Each raised item's projectile template, by name: which round a disarm
+  // may give back to it (`refundDisarmed`).
+  const raisedProjectiles = new Map();
   // The last kit-item press, for the next input word (local-player.js): the
   // retail control map puts c_PIMenuSelect<n> on the wire, one tick a press.
   let menuPress = 0;
@@ -482,6 +486,8 @@ export function createHandWeapon(page) {
       : armsRig.mountRig(gltf, fp, name, token);
     const magazine = data?.magazine || null;
     if (magazine) raisedMagazines.set(String(name).toLowerCase(), magazine);
+    const roundOf = typeof data?.projectile === 'string' ? data.projectile : data?.projectile?.template;
+    if (roundOf) raisedProjectiles.set(String(name).toLowerCase(), roundOf);
     const hw = {
       name, data, rig,
       soldier: soldierName,  // whose sleeves were asked for
@@ -588,6 +594,9 @@ export function createHandWeapon(page) {
         // The kit this weapon belongs to: its rounds die with that kit.
         hw.group.kitLife = soldierKit.kitLife;
         hw.group.weapon = name;
+        // Its `magSize`, which sizes a pack's or a mine's pool (FA-2,
+        // `round-launch.js` `roundPoolSize`).
+        hw.group.magSize = magazine?.size ?? null;
         // `addRootSpeed 0` (every vanilla rifle, pistol and MG): the round
         // leaves without the soldier's velocity or the root speed's lift
         // (`round-launch.js` `muzzleVelocity`, ledger FA-23). A tree patched
@@ -706,6 +715,29 @@ export function createHandWeapon(page) {
    * kit's worn parts follow `currentKit`. Nothing here heals or refills.
    * False when the level's loadouts do not know the kit.
    */
+  /**
+   * A round the crouched wrench lifted, given back: `useRepairPack` takes the
+   * holder's item at `item` (4 for a pack, 5 for a mine; `getItemFromIndex`
+   * `0x08276582` / `0x082765a4`) and, when it is a FireArms whose projectile
+   * template is the lifted round's, runs `FireArms::reloadAmmo(1)`
+   * (`0x082765f6`): the depot's own fill, one round (`kit-ammo.js`
+   * `AmmoEntry.rearm`, SUP-8), so a pouch already full takes nothing. Which
+   * round an item fires is known once it has been raised; an item of a kit
+   * picked up and never raised is matched by the weapon that laid the round
+   * (`layer`). True when a round went back.
+   */
+  function refundDisarmed(item, template, layer = null) {
+    const entry = soldierKit.kitWeaponSlots?.find(w => w.slot === item);
+    if (!entry?.weapon || !template) return false;
+    const key = String(entry.weapon).toLowerCase();
+    const fires = raisedProjectiles.get(key);
+    const same = fires != null
+      ? String(fires).toLowerCase() === String(template).toLowerCase()
+      : key === String(layer ?? '').toLowerCase();
+    if (!same) return false;
+    return !!kitAmmo.peek(entry.weapon)?.rearm(1);
+  }
+
   function equipKit(kitName, ammo = [], flag = { team: page.deployTeamId }, kitLife = null) {
     if (!kitName || !loadout.loadouts?.kits?.[kitName]) return false;
     // The kit object he takes, with whatever its weapons left in the world
@@ -770,6 +802,7 @@ export function createHandWeapon(page) {
     get world() { return page.world; }, get mouseInput() { return page.mouseInput; },
     get raiseTick() { return soldierKit.raiseTick; },
     get reportPack() { return page.reportPack; }, get vehicles() { return page.vehicles; },
+    get refundDisarmed() { return refundDisarmed; },
   });
   const { footFire, footTrigger, isZoomed, startReload } = fire;
 
@@ -926,6 +959,7 @@ export function createHandWeapon(page) {
     ensureHandFireBus,
     ensureHandWeapon,
     equipKit,
+    refundDisarmed,
     fetchHandFireSound,
     footFire,
     footTrigger,

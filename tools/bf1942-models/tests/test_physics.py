@@ -30,6 +30,7 @@ MODULES = {
     "walking-body.js": ROOT / "viewer" / "walking-body.js",
     "rigid-body.js": ROOT / "viewer" / "rigid-body.js",
     "soldier-resolve.js": ROOT / "viewer" / "soldier-resolve.js",
+    "deck-carry.js": ROOT / "viewer" / "deck-carry.js",
     "soldier-pose.js": ROOT / "viewer" / "soldier-pose.js",
     "soldier-locomotion.js": ROOT / "viewer" / "soldier-locomotion.js",
     "point-body.js": ROOT / "viewer" / "point-body.js",

@@ -1446,7 +1446,11 @@ export function buildCollisionIndex(root, { ownerRoots = null, cellSize = CELL_S
   let anyDrivable = false;
   let minX = Infinity, minZ = Infinity, maxX = -Infinity, maxZ = -Infinity;
   let at = 0;
+  // Each mesh's triangle run, for a pass that marks one mesh's triangles
+  // after the build (`coarse-layer.js`, COL-22).
+  const meshRanges = [];
   for (const mesh of meshes) {
+    meshRanges.push([mesh, at]);
     const geometry = mesh.geometry;
     const position = geometry.attributes.position;
     const array = position.array;
@@ -1499,6 +1503,8 @@ export function buildCollisionIndex(root, { ownerRoots = null, cellSize = CELL_S
   index.setObstacles(obstacleIds.subarray(0, at), obstacleNodes);
   if (groupTable) index.setGroups(anyGroup ? groupIds.subarray(0, at) : null, groupTable);
   index.internalEdges = markInternalEdges(tris, ownerIds, subIds, at);
+  index.meshRanges = meshRanges.map(([mesh, start], i) =>
+    [mesh, start, i + 1 < meshRanges.length ? meshRanges[i + 1][1] : at]);
   return index;
 }
 

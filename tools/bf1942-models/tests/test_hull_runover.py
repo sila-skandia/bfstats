@@ -137,6 +137,74 @@ class HullRunOverTests(unittest.TestCase):
         self.assertTrue(after["dead"])
         self.assertEqual("D", after["runs"][0]["attacker"])
 
+    # --- the hull's turning and mass (COL-2, `getTangentSpeed`) -------------
+
+    def test_a_turning_hull_meets_them_with_its_point_speed(self) -> None:
+        # The root stands still; the stern corner meets them at omega x r
+        # (`PhysicsNode::getTangentSpeed` 0x08254b90 in `vRel`, 0x08259dc4).
+        for run in self.r["spin"]:
+            with self.subTest(omega=run["omega"]):
+                self.assertGreaterEqual(run["contacts"], 1)
+                self.assertAlmostEqual(run["omega"] * run["firstArm"], run["firstHullSpeed"],
+                                       delta=0.05 * run["firstHullSpeed"])
+                self.assertGreater(run["moved"], 0.01)
+
+    def test_the_shares_are_col_2s(self) -> None:
+        # s = mHull / (100 + mHull), stored as a float: over 0.95 (1, 0),
+        # under 0.05 (0, +1, the engine's slip), else (s, -(1 - s)).
+        shares = {m: (a, b) for m, a, b in self.r["shares"]}
+        self.assertEqual((1, 0), shares[2500])
+        self.assertEqual((0.95, -0.05), shares[1900])
+        self.assertAlmostEqual(1000 / 1100, shares[1000][0], places=6)
+        self.assertAlmostEqual(-100 / 1100, shares[1000][1], places=6)
+        self.assertEqual((0.5, -0.5), shares[100])
+        self.assertEqual((0, 1), shares[3])
+        self.assertEqual((1, 0), shares[None])
+
+    def test_a_light_hull_takes_its_share_of_the_push(self) -> None:
+        light, heavy, unknown = self.r["light"]
+        # 1000 kg: the hull's own response pushes it back (-x) and slows it.
+        self.assertGreater(light["reactions"], 0)
+        self.assertLess(light["firstReaction"]["push"][0], 0)
+        self.assertLess(light["firstReaction"]["accel"][0], 0)
+        # The soldier takes 0.909 of a push the heavy hull gives whole.
+        self.assertLess(light["firstPush"], heavy["firstPush"])
+        for whole in (heavy, unknown):
+            self.assertEqual(0, whole["reactions"])
+        self.assertEqual(heavy["firstPush"], unknown["firstPush"])
+
+    def test_a_pose_published_once_a_frame_keeps_its_real_speed(self) -> None:
+        # The page published a hull once a frame; a frame of 2-3 ticks read
+        # as one tick's move, and a Bf109 taxiing at 6.1 m/s ran teammates
+        # over at 12-21 m/s. The speed is taken over the ticks the pose
+        # really took (`trackHulls`, the publish stamps): under retail's
+        # 8.0 m/s floor (`handleCollisionObjectVsObject` 0x08155a10, float
+        # 0x086c08c0) nothing is billed; at 12 m/s the jeep still kills.
+        for r in self.r["cadence"]:
+            with self.subTest(every=r["every"], speed=r["speed"]):
+                if r["speed"] < 8:
+                    self.assertEqual(0, r["lost"])
+                else:
+                    self.assertTrue(r["dead"])
+
+    def test_getting_out_beside_a_hull_that_moved_costs_nothing(self) -> None:
+        # The hull crept 1.1 m while they sat and now does 0.01 m/s: their
+        # first look out measures one tick of it, not the 1.1 m (which read
+        # as 33 m/s and billed 177 HP). Kept up in the seat, and re-seeded
+        # when a tick was missed.
+        seated, unstepped, driven = self.r["staleExit"]
+        for case in (seated, unstepped):
+            with self.subTest(bypass=case["bypass"]):
+                self.assertEqual(0, case["runs"])
+                self.assertEqual(0, case["lost"])
+                # Only the hull's own creep: the centimetre they got out in
+                # and 2 s at 0.01 m/s (unfixed: 2.4 m and 327 HP).
+                self.assertLessEqual(case["pushed"], 0.05)
+        # A hull really driven into them at 9 m/s still runs them over, as
+        # the World's own 9 m/s tank does (24 HP; unfixed: 529).
+        self.assertEqual(1, driven["runs"])
+        self.assertAlmostEqual(24.0, driven["lost"], delta=1.0)
+
 
 if __name__ == "__main__":
     unittest.main()

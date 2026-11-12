@@ -39,7 +39,7 @@ import { createRoomPacks } from './room-packs.mjs';
 export class Room {
   #control;
 
-  constructor({ code, level, mode = null, now = null, random = null }) {
+  constructor({ code, level, mode = null, now = null, random = null, rules = null }) {
     this.code = code;
     /** The auto-team's coin for a tie (`#autoTeam`, `rand() & 1`). */
     this.random = random || Math.random;
@@ -76,6 +76,19 @@ export class Room {
         this.pads.clearWorld();
       },
       onRestart: () => this.pads.restart(),
+      // The server's settings (`authority.mjs` `ROOM_RULES`): the pre-game
+      // and the team-kill law.
+      rules,
+      // `kickPlayer(id, false)` (vt+0x334, 0x08148d40) at the team-kill
+      // limit: the slot leaves and its socket closes.
+      onKick: slot => {
+        const connection = this.players.get(slot);
+        if (!connection) return;
+        this.leave(connection);
+        connection.peer.close(4001, 'kicked: team kills');
+      },
+      // TKT-8: a carried point's carrier, as this room has it.
+      spawnGone: spawn => this.instance.carriedPointGone?.(spawn) ?? false,
     });
     // The control channel's seat, spawn and radio actions (room-control.mjs).
     this.#control = createControlChannel({
@@ -101,7 +114,10 @@ export class Room {
     // The medic bags and wrenches the players' pages fire, run here
     // (room-packs.mjs): the heal is the server's, on the snapshot and the
     // `hull` rows.
-    this.packs = createRoomPacks({ room: this });
+    this.packs = createRoomPacks({
+      room: this,
+      onRow: row => this.broadcast(eventRow(row.type, this.tick, row), null),
+    });
   }
 
   level() { return this.levelData.name; }
@@ -286,6 +302,7 @@ export class Room {
     const slot = connection.slot;
     const name = connection.name;
     if (this.world.player(slot)?.occupancy) this.#unmount(connection);
+    this.authority.forget?.(slot);
     this.world.removePlayer(slot);
     this.players.delete(slot);
     connection.slot = null;
@@ -336,6 +353,9 @@ export class Room {
     this.tick++;
     const world = this.world;
     const step = world.step(WORLD_TICK_DT);
+    // A destroyed Armor's own blast (`Armor::status`, gap audit entry 3),
+    // and any hull it kills in turn, into `step.damage` first.
+    this.hits.deathBlasts(step);
     // A hull that died this step takes its crew with it, before the death
     // pass reads their Armors.
     this.pads.hullDeaths(step);

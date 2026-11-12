@@ -146,6 +146,21 @@ results.bolt = scenario(log => {
   run(a, 3.2, { stance: 'stand', family: 'stand' }, log, t);
 });
 
+// A crouch a third of a second after a No4's shot: the weapon is not ready
+// (its fire timer runs, BODY-2), so the torso keeps `Ub_Fire` and its bolt
+// while the legs crouch; with the gate open (the shot's own tick) the crouch
+// cuts the fire as before.
+for (const [key, ready] of [['boltThroughCrouch', false], ['boltCutByCrouch', true]]) {
+  results[key] = scenario(log => {
+    const a = new SoldierActions(rig(NO4));
+    let t = run(a, 0.1, { stance: 'stand', family: 'stand' }, log);
+    a.fire();
+    t = run(a, 1 / 3, { stance: 'stand', family: 'stand' }, log, t);
+    a.stanceChanged('stand', 'crouch', { ready });
+    run(a, 3.2, { stance: 'crouch', family: 'crouch' }, log, t);
+  });
+}
+
 // FH's bolt rifles: `Ub_Fire<W>` `returnToState Ub_StandBoltOperate<W>`, the
 // reload clip at 0.52 (1.92 s), then the pose. The grip bundle's own `then`.
 const FH_NO4 = {

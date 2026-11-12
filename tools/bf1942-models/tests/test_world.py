@@ -51,7 +51,7 @@ HARNESS = Path(__file__).resolve().parent / "world_harness.mjs"
 # keeps its own name so the unmodified imports resolve.
 _MODULE_NAMES = [
     "physics", "parachute", "rocket-pack", "swim", "soldier", "ladder-climb", "spawn-flags", "spawn-safety", "mouse-input",
-    "point-body", "fixed-step", "input-pace", "soldier-pose", "soldier-locomotion", "walking-body", "soldier-resolve",
+    "point-body", "fixed-step", "input-pace", "soldier-pose", "soldier-locomotion", "walking-body", "soldier-resolve", "deck-carry",
     "fall-damage",
     "body-world", "body-statics", "vehicle-bodies", "geometry-search", "combat-area", "supply", "armor",
     "vehicle-damage", "seats", "seat-dots", "rigid-body", "body-contact",

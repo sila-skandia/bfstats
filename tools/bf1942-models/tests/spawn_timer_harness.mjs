@@ -1,12 +1,29 @@
 // Drives `viewer/spawn-timer.js` outside a browser.
 import { timeToSpawn, spawnWait, deployCountdownLine, respawnPlateLabel, spawnReadyAt, waveSecondsLeft,
-  DEFAULT_SPAWN_TIME, DEFAULT_SPAWN_DELAY, DEFAULT_SPAWN_WINDOW } from './spawn-timer.js';
+  DEFAULT_SPAWN_TIME, DEFAULT_SPAWN_DELAY, DEFAULT_SPAWN_WINDOW, DEFAULT_TK_SPAWN_PENALTY,
+  tkSpawnPenalty, SINGLE_PLAYER_SPAWN_SECONDS, MAX_SINGLE_PLAYER_SPAWN_SECONDS, singlePlayerSpawnSeconds,
+  singlePlayerSpawnParams } from './spawn-timer.js';
 import { teamToAddPlayer } from './team-to-add.js';
 
 // The engine defaults: 20 s between waves, a 5 s window, so windows open at
 // k * 25 on the round clock (resetTimers opens one at 0).
 const P = {};
 const out = {};
+// Single player's flat wait (the owner's choice, 2026-11-12): 3 s by default,
+// 0..30 in whole seconds, the law's waves-off branch whatever the clock says.
+const SPP = singlePlayerSpawnParams();
+out.singlePlayer = {
+  seconds: SINGLE_PLAYER_SPAWN_SECONDS, max: MAX_SINGLE_PLAYER_SPAWN_SECONDS, params: SPP,
+  clamp: [null, '', 'x', 0, '0', 7.4, 99, -2].map(singlePlayerSpawnSeconds),
+  waits: [0, 3, 10, 21, 24.5].map(t => spawnWait(t, SPP)),
+  ready: spawnReadyAt(110, SPP),
+  left: [110, 112, 113, 140].map(now => waveSecondsLeft(now, spawnReadyAt(110, SPP), SPP)),
+  line: deployCountdownLine(111.5, 110, SPP).text,
+  seven: spawnWait(46, singlePlayerSpawnParams(7)),
+  zero: spawnWait(46, singlePlayerSpawnParams(0)),
+  // A team kill adds nothing to a flat wait (the penalty is whole waves).
+  teamKill: spawnWait(46, { ...SPP, teamKills: 2 }),
+};
 out.defaults = { time: DEFAULT_SPAWN_TIME, delay: DEFAULT_SPAWN_DELAY, window: DEFAULT_SPAWN_WINDOW };
 
 // Death as a window opens (phase 0): the window's rest (5) plus 20 -> 125.
@@ -81,6 +98,23 @@ out.gate = {
   hair: waveSecondsLeft(126, 124.9999999, P),  // 0
   noDeath: waveSecondsLeft(40, null, P),       // 0
   noWaves: [waveSecondsLeft(50, 53, { spawnTime: 0 }), waveSecondsLeft(60, 53, { spawnTime: 0 })], // 3, 0
+};
+
+// The team-kill term (`killPlayer` 0x0814df1f..0x0814df85): whole cycles of
+// 25 s, ceil(tks * penalty), added before the 127 clamp; nothing with waves off.
+out.tk = {
+  penalty: DEFAULT_TK_SPAWN_PENALTY,                                  // 1
+  one: tkSpawnPenalty(1), two: tkSpawnPenalty(2),                     // 25, 50
+  half: tkSpawnPenalty(1, { tkPenalty: 0.5 }),                        // 25 (ceil 0.5)
+  third: tkSpawnPenalty(3, { tkPenalty: 0.4 }),                       // 50 (ceil 1.2)
+  zero: tkSpawnPenalty(0), off: tkSpawnPenalty(4, { spawnTime: 0 }),  // 0, 0
+  noPenalty: tkSpawnPenalty(3, { tkPenalty: 0 }),                     // 0
+  // Death at 100 (a window opens): 25 plus one TK's 25 -> 50.
+  wait1: spawnWait(100, { teamKills: 1 }),                            // 50
+  // Five TKs: 25 + 125 = 150, clamped to 127.
+  wait5: spawnWait(100, { teamKills: 5 }),                            // 127
+  // Waves off: the flat delay, no penalty.
+  flat: spawnWait(100, { spawnTime: 0, teamKills: 3 }),               // 3
 };
 
 // `getTeamToAddPlayer` (`team-to-add.js`).

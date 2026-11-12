@@ -141,6 +141,9 @@ const core = new RoomServerCore({
   levels: new Map([['test', levelData]]),
   defaultLevel: 'test',
   now: () => clock.ms,
+  // No pre-game (ROUND-14) for the scenarios below, which spawn from the
+  // first tick; `preGameScenario` plays the shipped 20 / 10.
+  rules: { gameStartDelay: 0, roundStartDelay: 0 },
   // The auto-team's tie (`getTeamToAddPlayer`'s `rand() & 1`) lands on team
   // 1 here, so the scenarios below join on a known side.
   random: () => 0,
@@ -953,9 +956,21 @@ let nextTag = 1;
 /** A room on a descriptor level of `extras`, no vehicles, and its rows. */
 function bleedRoom(code, extras) {
   const name = `bleed-${code.toLowerCase()}`;
+  // A side with no spawn group and nobody alive is stranded and bleeds at
+  // the end-of-round rate (TKT-5, TKT-8); these scenarios test the weight
+  // gate, so a side the extras leave with no group gets one carried group
+  // far off the field (a real level's deck or tower group: Wake's Japanese
+  // carrier, Battle of Britain's Allied towers), which weighs nothing.
+  const grouped = new Set([...(extras.soldierSpawns ?? []), ...(extras.vehicleSoldierSpawns ?? [])]
+    .filter(sp => sp.group != null).map(sp => sp.team));
+  const carried = extras.controlPoints ? [1, 2].filter(team => !grouped.has(team)).map(team => ({
+    vehicle: 'OffField', pad: 900 + team, name: `offfield_${team}`, group: 90 + team, team,
+    position: [-450 + 900 * (team - 1), 0, -450], rotation: [0, 0, 0],
+  })) : [];
   const descriptor = {
     name,
-    extras: { worldSize: 1000, gameplayMode: 'Conquest', ...extras },
+    extras: { worldSize: 1000, gameplayMode: 'Conquest', ...extras,
+              ...(carried.length ? { vehicleSoldierSpawns: [...(extras.vehicleSoldierSpawns ?? []), ...carried] } : {}) },
     collider: { waterLevel: null, heightfield: null, statics: null, surfaceHeight() { return 0; } },
     vehicles: [],
   };
@@ -1029,7 +1044,7 @@ const wakeFlag = (room, name) => room.world.flags.find(f => f.controlPointName =
   const firstTick = roundOf(room);
   runTicks(room, 61 * 30 - room.tick);
   results.n = {
-    flags: room.world.flags.map(f => f.controlPointName),
+    flags: room.world.flags.filter(f => f.controlPointName).map(f => f.controlPointName),
     firstTick,
     clock: room.tick / 30,
     tickets: countsOf(room),
@@ -1627,7 +1642,30 @@ const wakeFlag = (room, name) => room.world.flags.find(f => f.controlPointName =
   const h1 = hull.hitPoints;
   pack(pA, 'RepairPack');
   const crouched = r3(hull.hitPoints - h1);
+  // Crouched, the wrench's lift goes to every page (SUP-28): a mine 1.5 m
+  // off is passed on; one 5 m off, a round the wrench does not lift, and a
+  // standing holder's claim are not.
+  const disarmRows = () => ofType(pB, MSG_EVENT).map(jsonRow).filter(r => r?.type === 'disarm');
+  // The stance is set at each claim: the room's input step stands him up.
+  const lift = (at, template = 'LandmineProjectile', stance = 'crouch') => {
+    sa.stance = stance;
+    sendJson(pA, MSG_ACTION, { type: 'pack', weapon: 'RepairPack', disarm: { at, template } });
+  };
+  step(30);
+  lift([sa.x + 1.5, sa.y, sa.z]);
+  step(1);
+  const liftNear = disarmRows().at(-1) ?? null;
+  step(30);
+  lift([sa.x + 5, sa.y, sa.z]);
+  step(30);
+  lift([sa.x + 1, sa.y, sa.z], 'APLandmineT1');
+  step(1);
+  const liftRefused = disarmRows().length;
   sa.stance = 'stand';
+  step(30);
+  lift([sa.x + 1, sa.y, sa.z], 'LandmineProjectile', 'stand');
+  step(1);
+  const liftStanding = disarmRows().length;
   step(30);
   willy.keptTeam = 2;
   const h2 = hull.hitPoints;
@@ -1642,7 +1680,10 @@ const wakeFlag = (room, name) => room.world.flags.find(f => f.controlPointName =
   const dead0 = hp(2);
   pack(pA, 'MedPack');
   results.z3p = { before, bag, wireHp, wantWireHp: Math.round(before.b + 0.25), wireBefore: Math.round(before.b), far, notPack, burst,
-                  standing, crouched, enemyHull, deadHeal: r3(hp(2) - dead0) };
+                  standing, crouched, enemyHull, deadHeal: r3(hp(2) - dead0),
+                  liftNear: liftNear && { slot: liftNear.slot, template: liftNear.template,
+                                          dx: r3(liftNear.at[0] - sa.x) },
+                  liftRefused, liftStanding };
 }
 
 // --- (z4) a static's hit points go to every client (Battle of Britain's factory) -
@@ -1871,7 +1912,7 @@ const wakeFlag = (room, name) => room.world.flags.find(f => f.controlPointName =
     const rClock = { ms: 0 };
     const rCore = new RoomServerCore({
       levels: new Map([['wake', loadRealLevel({ viewerDir: real, name: 'wake' })]]),
-      defaultLevel: 'wake', now: () => rClock.ms,
+      defaultLevel: 'wake', now: () => rClock.ms, rules: { gameStartDelay: 0, roundStartDelay: 0 },
     });
     const pD = attachPeer(rCore, 'r-driver');
     const pV = attachPeer(rCore, 'r-victim');
@@ -1934,6 +1975,172 @@ const wakeFlag = (room, name) => room.world.flags.find(f => f.controlPointName =
   } else {
     results.runOver = { loaded: false };
   }
+}
+
+// --- (rules) the pre-game and the team-kill law, on the shipped settings -----
+// A room on `ROOM_RULES` (the dedicated serversettings.con): a new map holds
+// every spawn for 20 s and a restart for 10 (ROUND-14); a team kill marks the
+// victim, punish mode counts it only on `punish`, and the fifth punished team
+// kill kicks (FF-9..FF-11).
+{
+  const rClock = { ms: 0 };
+  const rCore = new RoomServerCore({ levels: new Map([['test', levelData]]), defaultLevel: 'test',
+                                     now: () => rClock.ms, random: () => 0 });
+  const lap = (n = 1) => {
+    const room = rCore.room('RUL');
+    for (let i = 0; i < n; i++) {
+      for (const c of room.players.values()) c.lastSeen = room.now();
+      rClock.ms += FRAME_MS; room.frame(FRAME_MS);
+    }
+  };
+  const rows = peer => peer.sent.filter(b => b[0] === MSG_EVENT).map(jsonRow);
+  const pA = attachPeer(rCore, 'rulA');
+  const pB = attachPeer(rCore, 'rulB');
+  const pC = attachPeer(rCore, 'rulC');
+  const hello = joinPeer(rCore, pA, 'RUL', 'Alpha', 1);
+  joinPeer(rCore, pB, 'RUL', 'Bravo', 1);
+  joinPeer(rCore, pC, 'RUL', 'Charlie', 2);
+  const room = rCore.room('RUL');
+  const out = { rules: { ...room.authority.rules }, hello: hello?.round ?? null };
+  // The pre-game: refused with the clock as the wait.
+  sendJson(pA, MSG_ACTION, { type: 'spawn', flag: 0, team: 1 });
+  out.early = rows(pA).find(r => r.type === 'spawnRefused') ?? null;
+  lap(10 * 30);
+  pA.sent.length = 0;
+  sendJson(pA, MSG_ACTION, { type: 'spawn', flag: 0, team: 1 });
+  out.mid = rows(pA).find(r => r.type === 'spawnRefused') ?? null;
+  lap(10 * 30 + 2);
+  out.roundStart = rows(pA).some(r => r.type === 'roundStart');
+  out.status = room.authority.round.status;
+  for (const [peer, flag, team] of [[pA, 0, 1], [pB, 0, 1], [pC, 1, 2]]) {
+    sendJson(peer, MSG_ACTION, { type: 'spawn', flag, team });
+  }
+  out.spawned = [1, 2, 3].map(slot => !room.world.player(slot)?.armor?.destroyed && room.authority.mayInput(slot));
+  // A team kill: Alpha (slot 1) kills Bravo (slot 2).
+  const kill = (victim, killer) => {
+    const armor = room.world.player(victim).armor;
+    armor.applyDamage(armor.hitPoints + armor.maxHitPoints);
+    armor.lastHit = killer;
+    lap(1);
+  };
+  const respawn = (peer, slot, flag, team) => {
+    for (let i = 0; i < 200 * 30 && room.authority.spawnWaitLeft(slot) > 0; i++) lap(1);
+    sendJson(peer, MSG_ACTION, { type: 'spawn', flag, team });
+  };
+  kill(2, 1);
+  out.afterTk = room.authority.teamKillsOf(1);
+  // Punish mode: forgive does nothing, punish counts it.
+  sendJson(pB, MSG_ACTION, { type: 'tk', verb: 'forgive' });
+  out.afterForgive = room.authority.teamKillsOf(1);
+  sendJson(pB, MSG_ACTION, { type: 'tk', verb: 'punish' });
+  out.afterPunish = room.authority.teamKillsOf(1);
+  out.punishedRow = rows(pA).find(r => r.type === 'teamKillPunished') ?? null;
+  sendJson(pB, MSG_ACTION, { type: 'tk', verb: 'punish' });
+  out.twice = room.authority.teamKillsOf(1);
+  // Alpha's next death pays one wave for the team kill.
+  respawn(pB, 2, 0, 1);
+  const before = room.authority.round.clock;
+  kill(1, 3);
+  const killed = rows(pA).filter(r => r.type === 'killed' && r.slot === 1).at(-1) ?? null;
+  out.penaltyWait = killed?.sw ?? null;
+  out.penaltyPhase = Math.round((before % 25) * 1000) / 1000;
+  out.afterDeath = room.authority.teamKillsOf(1);
+  // Four more punished team kills: the fifth reaches nrOfTKToKick and kicks.
+  respawn(pA, 1, 0, 1);
+  for (let n = 0; n < 4; n++) {
+    respawn(pB, 2, 0, 1);
+    kill(2, 1);
+    sendJson(pB, MSG_ACTION, { type: 'tk', verb: 'punish' });
+  }
+  out.kicked = { closed: pA.closed, inRoom: room.players.has(1),
+                 leave: rows(pC).some(r => r.type === 'leave' && r.slot === 1) };
+  results.rules = out;
+
+  // Punish mode off (the engine's own default): the counts rise at once, a
+  // forgive takes one back, the limit kills the killer, and their next spawn
+  // asks kick them.
+  const oClock = { ms: 0 };
+  const oCore = new RoomServerCore({ levels: new Map([['test', levelData]]), defaultLevel: 'test',
+                                     now: () => oClock.ms, random: () => 0,
+                                     rules: { gameStartDelay: 0, tkPunishMode: false, nrOfTKToKick: 2 } });
+  const oA = attachPeer(oCore, 'offA');
+  const oB = attachPeer(oCore, 'offB');
+  joinPeer(oCore, oA, 'OFF', 'Alpha', 1);
+  joinPeer(oCore, oB, 'OFF', 'Bravo', 1);
+  const oRoom = oCore.room('OFF');
+  const oLap = (n = 1) => {
+    for (let i = 0; i < n; i++) {
+      for (const c of oRoom.players.values()) c.lastSeen = oRoom.now();
+      oClock.ms += FRAME_MS; oRoom.frame(FRAME_MS);
+    }
+  };
+  const oKill = (victim, killer) => {
+    const armor = oRoom.world.player(victim).armor;
+    armor.applyDamage(armor.hitPoints + armor.maxHitPoints);
+    armor.lastHit = killer;
+    oLap(1);
+  };
+  const oRespawn = (peer, slot) => {
+    for (let i = 0; i < 200 * 30 && oRoom.authority.spawnWaitLeft(slot) > 0; i++) oLap(1);
+    sendJson(peer, MSG_ACTION, { type: 'spawn', flag: 0, team: 1 });
+  };
+  const off = {};
+  oLap(1);
+  sendJson(oA, MSG_ACTION, { type: 'spawn', flag: 0, team: 1 });
+  sendJson(oB, MSG_ACTION, { type: 'spawn', flag: 0, team: 1 });
+  oKill(2, 1);
+  off.afterTk = oRoom.authority.teamKillsOf(1);
+  sendJson(oB, MSG_ACTION, { type: 'tk', verb: 'punish' });
+  off.afterPunish = oRoom.authority.teamKillsOf(1);
+  sendJson(oB, MSG_ACTION, { type: 'tk', verb: 'forgive' });
+  off.afterForgive = oRoom.authority.teamKillsOf(1);
+  oRespawn(oB, 2); oKill(2, 1);
+  oRespawn(oB, 2); oKill(2, 1);
+  oLap(1);
+  off.killerDead = !oRoom.authority.mayInput(1);
+  off.atLimit = oRoom.authority.teamKillsOf(1);
+  oRespawn(oA, 1);
+  off.kicked = { closed: oA.closed, inRoom: oRoom.players.has(1) };
+  results.rulesOff = off;
+}
+
+// --- (stranded) a side with no spawn group and nobody alive loses (TKT-5) ----
+// Weapon Bunkers in small: Iraq's only group rides a carrier the room holds
+// (a static it can destroy); with it gone and nobody of Iraq alive, Iraq
+// bleeds at the at-end rate, 1000 a minute, its first ticket a whole
+// `60 / rate` after it is stranded.
+{
+  const { room, rows, bleeds } = bleedRoom('STR', {
+    controlPoints: [
+      { name: 'US_base', team: 2, areaValue: 50, spawnGroupId: 1, unableToChangeTeam: true,
+        radius: 50, timeToGetControl: 9999, position: [200, 0, 200] },
+    ],
+    soldierSpawns: [
+      { name: 'US_spawn', group: 1, team: 2, position: [200, 0, 200], rotation: [180, 0, 0], changeTeam: false },
+    ],
+    vehicleSoldierSpawns: [
+      { vehicle: 'Bunker', pad: 7, name: 'Iraq_spawn', group: 99, team: 1, position: [-200, 0, -200],
+        rotation: [0, 0, 0], changeTeam: false },
+    ],
+    tickets: { mode: 'Conquest', team1: 100, team2: 100, lossPerMin: { team1: 5, team2: 5 } },
+  });
+  const out = {};
+  runTicks(room, 30);
+  out.whole = { ...countsOf(room) };
+  // The room's own answer for the carrier (`carriedPointGone`), forced gone.
+  const spawn = room.instance.extras.vehicleSoldierSpawns[0];
+  room.instance.carriedPointGone = s => s === spawn;
+  const strandedAt = room.tick;
+  runTicks(room, 25 * 30);
+  const iraq = bleeds(1);
+  out.first = iraq.length ? Math.round((iraq[0].t - strandedAt) / 30 * 100) / 100 : null;
+  out.last = iraq.length ? iraq.at(-1).count : null;
+  out.bled = iraq.length;
+  const end = rows.find(r => r.type === 'roundEnd') ?? null;
+  out.end = end ? { winner: end.winner, reason: end.reason,
+                    at: Math.round((end.t - strandedAt) / 30 * 100) / 100 } : null;
+  out.us = bleeds(2).length;
+  results.stranded = out;
 }
 
 console.log(JSON.stringify(results));

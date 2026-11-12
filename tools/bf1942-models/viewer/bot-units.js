@@ -16,6 +16,7 @@ import { CHANGE } from './bot-vehicle.js';
 import { mayEnterHull } from './vehicle-instance.js';
 import { findEntryPoint, wantsSeat, SPAWN_SEAT_REACH_AI, SPAWN_STANDS } from './spawn-seat.js';
 import { rowFor, rowFire, setRowsMod } from './bot-rows.js';
+import { objectBlocker, restrictedExit } from './restricted-exit.js';
 
 /** The body radius a land vehicle keeps on its map, and a plane's or ship's
  *  for its arrival circle (INVENTION). */
@@ -656,6 +657,9 @@ export function createBotUnits(env) {
       gunGroups: () => (cand.gunSeat ? inst.groupsOf(cand.gunSeat.seatId) : null),
       // A rider's move term follows whoever drives the hull right now.
       hullMaxSpeed: ai?.maxSpeed ?? 0,
+      // The Mobile plug-in's `avoidCollisionLookAhead` (null: the 5 s of both
+      // ctors; bot-route.js `hullLookAhead`).
+      avoidCollisionLookAhead: ai?.avoidCollisionLookAhead ?? null,
       driverOf: () => env.vehicles.driverOf(node),
     };
   }
@@ -676,6 +680,42 @@ export function createBotUnits(env) {
     return seat ? mountRecord(cand, seat) : null;
   };
 
+  /**
+   * Where a soldier leaving `seat` steps out, `{x, y, z, yaw, allowed}`, or
+   * null when nothing declares an exit: the seat's (or its hull's)
+   * `setSoldierExitLocation`, in that node's frame with Refractor's z negated,
+   * through the restricted-exit test the human's `exitPoseManned` runs
+   * (`restricted-exit.js`, SEAT-42): blocked, the other side; both blocked,
+   * `allowed` false. Read before the seat is given back.
+   */
+  function seatExit(seat) {
+    const exitNode = seat?.exitLocationNode?.() ?? null;
+    const physics = exitNode?.userData?.physics;
+    const declared = physics?.soldierExitLocation;
+    if (!declared?.position) return null;
+    exitNode.getWorldPosition(_exitPos);
+    exitNode.getWorldQuaternion(_exitQuat);
+    const toWorld = (x, y, z) => {
+      const w = _exitLocal.set(x, y, z).applyQuaternion(_exitQuat).add(_exitPos);
+      return { x: w.x, y: w.y, z: w.z };
+    };
+    const collider = env.collider?.() ?? null;
+    const owner = seat.root ? (collider?.statics?.ownerOf?.(seat.root) ?? -1) : -1;
+    const choice = restrictedExit({
+      restricted: physics.hasRestrictedExit === true,
+      local: { x: declared.position[0], y: declared.position[1], z: -declared.position[2] },
+      toWorld, origin: _exitPos, blocked: objectBlocker(collider, owner),
+    });
+    const at = toWorld(choice.local.x, choice.local.y, choice.local.z);
+    const fwd = _exitFwd.set(0, 0, -1).applyQuaternion(_exitQuat);
+    return { ...at, yaw: Math.atan2(fwd.x, fwd.z), allowed: choice.allowed };
+  }
+
+  /** Whether the bot's own Use would let it out now: false only for a
+   *  restricted exit blocked on both sides (`isAllowedToExit` 0x08317490 is
+   *  asked on every press, a bot's through `checkPlayerTriggers`). */
+  units.mayExit = bot => seatExit(env.vehicles.seatOf(bot.playerId))?.allowed !== false;
+
   /** Give the seat back; returns where the body stands up beside: the hull's
    *  own simulated position when it has a drive, else its node's. */
   units.leave = (bot, { exited = false } = {}) => {
@@ -693,15 +733,8 @@ export function createBotUnits(env) {
     // `setSoldierExitLocation`, in that node's frame with Refractor's z
     // negated, as the human's `exitPoseManned` (vehicle-entry.js) places him.
     // Read before the seat is given back. Null when nothing declares one.
-    const exitNode = seat?.exitLocationNode?.() ?? null;
-    const declared = exitNode?.userData?.physics?.soldierExitLocation;
-    if (declared?.position) {
-      exitNode.getWorldPosition(_exitPos);
-      exitNode.getWorldQuaternion(_exitQuat);
-      const local = _exitLocal.set(declared.position[0], declared.position[1], -declared.position[2]).applyQuaternion(_exitQuat);
-      const fwd = _exitFwd.set(0, 0, -1).applyQuaternion(_exitQuat);
-      p.exit = { x: _exitPos.x + local.x, y: _exitPos.y + local.y, z: _exitPos.z + local.z, yaw: Math.atan2(fwd.x, fwd.z) };
-    }
+    const exit = seatExit(seat);
+    if (exit) p.exit = exit;
     // The seat goes back to the hull: its guns released, the world's record
     // cleared, the audio claim dropped; the last one out parks the hull where
     // it stands (`vehicle-instance.js`).

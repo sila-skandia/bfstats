@@ -16,8 +16,12 @@ from extract_collision_meshes import (  # noqa: E402
     _bbox_viewer,
     _to_viewer_vertex,
     _viewer_face_normal,
+    COARSE_LAYER_RADIUS,
+    _sm_header_radius,
     build_collision_meshes,
     collect_collision_groups,
+    collect_root_radii,
+    collect_static_coarse,
     collect_geometry_refs,
     collision_layers_for,
     level_own_vehicle_roots,
@@ -749,3 +753,47 @@ class GeometryAliasTests(unittest.TestCase):
         _meshes, _textures, objects, _game = build_pools(chain, [])
         aliases = collect_geometry_aliases(build_library(objects))
         self.assertEqual("willy_hul_m1", aliases["willy_hull_m1"])
+
+# -- COL-22: the root radius and the statics' col0 ----------------------------- #
+
+class HeaderRadiusTests(unittest.TestCase):
+    def test_the_farthest_corner_of_the_header_box(self) -> None:
+        mesh = standard_mesh((-1.0, 0.0, -3.0), (2.0, 2.0, 1.0), [])
+        self.assertAlmostEqual(_sm_header_radius(mesh), (4 + 4 + 9) ** 0.5)
+
+    def test_the_threshold_is_retails_four_metres(self) -> None:
+        self.assertEqual(COARSE_LAYER_RADIUS, 4.0)
+
+
+@unittest.skipUnless(STANDARD_MESH_RFA.exists() and OBJECTS_RFA.exists(),
+                     "needs the BF1942 install")
+class VanillaCoarseLayerTests(unittest.TestCase):
+    """COL-22's thirteen vanilla radii, by `BCompositeObject::getBoundingRadius`
+    (lnxded 0x08165630) over `.sm` header boxes and `addTemplate` offsets, every
+    LOD alternative counted; and the two-layer statics' col0."""
+
+    @classmethod
+    def setUpClass(cls) -> None:
+        from extract_models import DEFAULT_GAME_DIR, build_library, build_pools, mod_chain
+
+        chain = mod_chain(DEFAULT_GAME_DIR, "bf1942")
+        meshes, _textures, objects, _game = build_pools(chain, [])
+        library = build_library(objects)
+        cls.radii = collect_root_radii(library, meshes)
+        vehicles = set(collect_geometry_refs(library))
+        cls.coarse = collect_static_coarse(library, meshes, vehicles)
+
+    def test_the_ledgers_radii(self) -> None:
+        expected = {"sherman": 5.56, "m10": 5.24, "tiger": 6.12, "t34": 6.17, "priest": 5.20,
+                    "panzeriv": 4.52, "m3a1": 4.90, "hanomag": 4.37, "wespe": 4.06,
+                    "willy": 2.87, "kubelwagen": 3.01, "chi-ha": 3.94, "kettenkrad": 3.65}
+        for name, radius in expected.items():
+            self.assertAlmostEqual(self.radii[name], radius, places=2, msg=name)
+
+    def test_the_tobruk_depot_carries_its_eight_vertex_col0(self) -> None:
+        depot = self.coarse["supplyde_m1"]
+        self.assertEqual(len(depot["v"]) // 3, 8)
+        self.assertEqual(len(depot["f"]) // 3, len(depot["fm"]))
+
+    def test_no_vehicle_mesh_is_a_static_entry(self) -> None:
+        self.assertNotIn("sherman_hull_m1", self.coarse)

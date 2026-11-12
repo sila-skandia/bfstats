@@ -79,7 +79,7 @@ import { bufferInput } from './world-input.js';
 import * as roster from './world-players.js';
 import * as reads from './world-snapshot.js';
 import * as hulls from './world-bodies.js';
-import { noteHullExit, soldierTick } from './world-soldier-tick.js';
+import { noteHullExit, seatedHullWatch, separateSoldiers, soldierTick } from './world-soldier-tick.js';
 import { assignIntegrators, stepFallingWrecks, stepCoastingHulls, vehicleTick } from './world-vehicle-tick.js';
 import { combatTick, supplyFieldTick, supplyTarget } from './world-fields.js';
 import { damageTick } from './world-damage.js';
@@ -502,12 +502,18 @@ export class World {
   #tick() {
     const dt = WORLD_TICK_DT;
     this.ticks++;
+    // The tick a hull's pose is published on (`WorldCollider.setMovedOwner`
+    // stamps it), so a soldier reads a hull's speed over the ticks its pose
+    // really took (`soldier-resolve.js` `trackHulls`).
+    if (this.collider) this.collider.publishTick = this.ticks;
     let combatStepped = false;
     assignIntegrators(this, this.#integrators);
     for (const player of this.players.values()) {
       const before = { ...player.lookApplied };
-      if (player.occupancy) vehicleTick(this, player, dt, this.#integrators);
-      else soldierTick(this, player, dt);
+      if (player.occupancy) {
+        vehicleTick(this, player, dt, this.#integrators);
+        seatedHullWatch(this, player, dt);
+      } else soldierTick(this, player, dt);
       if (combatTick(this, player, dt)) combatStepped = true;
       this.report.players[player.id] = {
         gate: { ...player.gate },
@@ -517,6 +523,10 @@ export class World {
         supply: player.supplyResult,
       };
     }
+    // Soldier against soldier, once every soldier has stepped: pushed apart
+    // to a metre (`checkObjectVsObject` 0x08259690's soldier branch,
+    // `world-soldier-tick.js` `separateSoldiers`).
+    separateSoldiers(this);
     // The depots, once for the whole world: every soldier and hull a due
     // cycle reaches (`world-fields.js`). It fills the `supplyResult` each
     // player's report entry above holds.

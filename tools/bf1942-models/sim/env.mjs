@@ -76,6 +76,10 @@ export async function loadViewerModules(viewer) {
     imp('bot-barrels.js').catch(() => null),
     imp('crash-damage.js').catch(() => null),
   ]);
+  // The end-of-round census (TKT-8); absent from a viewer older than it.
+  const spawnFlags = await imp('spawn-flags.js').catch(() => null);
+  // Single player's flat respawn (the owner's choice); absent from an older viewer.
+  const spawnTimer = await imp('spawn-timer.js').catch(() => null);
   return {
     World: world.World, WORLD_TICK_DT: world.WORLD_TICK_DT,
     BotController: bot.BotController, spawnBots: bot.spawnBots, BEHAVIOUR: bot.BEHAVIOUR,
@@ -108,6 +112,12 @@ export async function loadViewerModules(viewer) {
     createRoundState: roundState.createRoundState,
     scaleTickets: roundState.scaleTickets, roundPlayers: roundState.roundPlayers,
     clampMaxPlayers: roundState.clampMaxPlayers,
+    // What `gameStatusPlaying` counts of each side's spawn groups for the end
+    // of a round (spawn-flags.js, ledger TKT-5, TKT-8).
+    spawnGroupCensus: spawnFlags?.spawnGroupCensus ?? null,
+    // The wave law's parameters in single player (spawn-timer.js): a flat
+    // wait, 3 s by default. Null from a viewer older than it: retail's wave.
+    singlePlayerSpawnParams: spawnTimer?.singlePlayerSpawnParams ?? null,
     // A bot's name as the server picks it, from the tree's
     // `_shared/bot-names.json` (bot-names.js, ledger AI-134, AI-135).
     levelNameLists: botNames?.levelNameLists ?? (() => null), createBotNamer: botNames?.createBotNamer ?? null,

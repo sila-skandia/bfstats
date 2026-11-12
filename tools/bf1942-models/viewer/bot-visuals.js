@@ -41,7 +41,7 @@ import {
 } from './remote-gait.js';
 import { leanOnto } from './soldier-lean.js';
 import { createSeatBodies, seatAnchor, seatStandIn } from './seat-body.js';
-import { BOT_BODY_HEIGHT } from './bot-referee.js';
+import { BOT_BODY_HEIGHT, botWeaponReady } from './bot-referee.js';
 import { PARA_CLIPS, PARA_FALLING } from './parachute.js';
 import { DIE_CLIPS, corpseSeconds, deathFamily, resolveDeathFamily } from './soldier-death.js';
 import { SWIM_CLIPS, switchFamily } from './swim.js';
@@ -1284,6 +1284,7 @@ export function createBotVisuals(page) {
           vis.rig.anim.stanceChanged(e.from, e.to, {
             backward: e.backward,
             family: botClipFamily(0, e.to, family => !!vis.rig.families[family]),
+            ready: e.ready,
           });
         }
         watchReload(vis, bot);
@@ -1443,6 +1444,9 @@ export function createBotVisuals(page) {
         vis.stanceEvents.push({
           from: vis.stanceTick, to: stance,
           backward: vis.stanceTick === 'stand' && stance === 'prone' && !dive,
+          // The torso's gate (BODY-2) on the tick the stance changed: a page
+          // bot's weapon timers; a replayed man's torso is his recording's.
+          ...(lower === undefined ? { ready: botWeaponReady(bot) } : {}),
         });
         if (lower !== undefined) vis.recordedPose = stance;
       }

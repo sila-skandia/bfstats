@@ -337,7 +337,22 @@ export function createNetRoom(page) {
   };
   /** Whether the server is in its pre-game (GameStatus 3, ledger ROUND-1):
    *  the respawn plate then reads TIME_TO_START over the same wait. */
-  room.serverPreGame = () => !!room.roomJoined && room.roomClient?.gameStatus?.() === 3;
+  room.serverPreGame = () => {
+    if (!room.roomJoined) return false;
+    if (typeof room.roomClient?.gameStatus === 'function') return room.roomClient.gameStatus() === 3;
+    // An own room's pre-game (`server/authority.mjs`, ROUND-14): the HELLO's
+    // and the restart row's seconds, until its `roundStart` row.
+    return room.roomPreGameUntil != null && performance.now() < room.roomPreGameUntil;
+  };
+  /** performance.now() when an own room's pre-game ends, or null. */
+  room.roomPreGameUntil = null;
+  /** An own room's pre-game of `seconds`: the plate's label, and the wait
+   *  the page's commit holds for (`spawning.js` `noteServerSpawnWait`). */
+  function notePreGame(seconds) {
+    if (!(Number(seconds) > 0)) { room.roomPreGameUntil = null; return; }
+    room.roomPreGameUntil = performance.now() + Number(seconds) * 1000;
+    page.noteServerSpawnWait?.(Number(seconds));
+  }
   /** The status line over the respawn HUD on a retail server ("ADDITIONAL
    *  PLAYERS NEEDED...", "GAME IS RESTARTING"), stepped on the page's clock
    *  each paint: `{ show, text }` (`status-message.js`, ledger HUD-24), null
@@ -960,10 +975,34 @@ export function createNetRoom(page) {
    * nothing of its own in a room (`hand-fire.js`), so a heal is the server's
    * or nobody's, the way retail's client shows its server's.
    */
-  room.reportPack = weapon => {
+  room.reportPack = (weapon, disarm = null) => {
     if (!room.roomJoined || typeof weapon !== 'string' || !weapon) return;
-    netSendAction({ type: 'pack', weapon });
+    // A crouched wrench's lift (`hand-fire.js` `disarmWithWrench`): the page
+    // took the round out and gave its pouch the charge back; the room tells
+    // every other page, the layer's among them (`takeDisarm`).
+    netSendAction(disarm ? { type: 'pack', weapon, disarm } : { type: 'pack', weapon });
   };
+
+  /** Another soldier's wrench lifted a mine or a pack (`server/room-packs.mjs`,
+   *  SUP-28): this page's copy of it leaves the world unexploded. The copy is
+   *  the round of that template nearest the lifter's report, within
+   *  `DISARM_MATCH_M` (the copies are laid by each page from the same rows,
+   *  so they sit within a frame's drift of each other). */
+  const DISARM_MATCH_M = 1.0;
+  function takeDisarm(row) {
+    const guns = page.guns;
+    if (!guns?.disarmRounds || !Array.isArray(row.at) || typeof row.template !== 'string') return;
+    const want = row.template.toLowerCase();
+    let best = null;
+    let bestD2 = DISARM_MATCH_M * DISARM_MATCH_M;
+    for (const round of guns.disarmRounds()) {
+      if (String(round.template).toLowerCase() !== want) continue;
+      const dx = round.x - row.at[0], dy = round.y - row.at[1], dz = round.z - row.at[2];
+      const d2 = dx * dx + dy * dy + dz * dz;
+      if (d2 <= bestD2) { bestD2 = d2; best = round; }
+    }
+    if (best) guns.retireRound(best.shot);
+  }
 
   /** A blast the room priced pushed this soldier (`room-hits.mjs`): the same
    *  push into the page's own body, its flight run by the page's own
@@ -2352,7 +2391,13 @@ export function createNetRoom(page) {
         // page's round takes the result and its debriefing shows it; the
         // restart row puts the field back the way the server has it.
         if (row.type === 'roundEnd') page.roundEndRow?.(row);
-        if (row.type === 'restart') page.restartRow?.(row);
+        if (row.type === 'restart') {
+          page.restartRow?.(row);
+          notePreGame(row.preGame);
+        }
+        if (row.type === 'roundStart') room.roomPreGameUntil = null;
+        // `teamKillPunished` / `teamKillForgiven` (FF-10) draw nothing: the
+        // retail client prints nothing for either.
         // The server loaded a level (net-relay.js setLevel): another map,
         // or the same one restarted. Another map is a reload of the page on
         // it, the one clean way to switch (onjoined's own law); the same map
@@ -2398,6 +2443,8 @@ export function createNetRoom(page) {
         // A blast the room priced (`server/room-hits.mjs`): this soldier's own
         // push; another's flight is in the snapshot (`netcode.js` `FLIGHT_WIRE`).
         if (row.type === 'blast' && row.slot === room.roomClient.slot) takeBlast(row);
+        // A wrench lifted a round (`room-packs.mjs`): the lifter's page has.
+        if (row.type === 'disarm' && row.slot !== room.roomClient.slot) takeDisarm(row);
         // Another soldier's magazine change, where he stands: his weapon's
         // Reload slot, as a bot's plays (SND-17). Its own `Volume <- Distance`
         // ramps are why almost nobody hears it past a metre.
@@ -2767,6 +2814,8 @@ export function createNetRoom(page) {
         }
         // Joined mid-way through a round's end: its debriefing and countdown.
         if (room.roomClient.hello.round?.status === 'endGame') page.roundEndRow?.(room.roomClient.hello.round);
+        // Joined in the pre-game: its clock is every player's wait (ROUND-14).
+        if (room.roomClient.hello.round?.status === 'preGame') notePreGame(room.roomClient.hello.round.preGameIn);
         page.logToConsole(`room ${room.roomClient.hello.room} · ${room.roomClient.hello.level} · slot ${room.roomClient.slot}`);
         page.logToConsole(`you are on team ${room.roomClient.hello.team === 1 ? 'AXIS' : 'ALLIED'}`);
         // The room names the team; the deploy screen rides it.

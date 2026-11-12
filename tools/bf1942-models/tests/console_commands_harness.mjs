@@ -259,6 +259,18 @@ results.replayPlayersAt20 = replayPlayers(rec, 20, [3]);
   };
 }
 
+// -- a room's team-kill answer (FF-10) ---------------------------------------
+{
+  const sent = [];
+  const room = makeConsole({ teamKillRoom: () => verb => sent.push(verb) });
+  const solo = makeConsole({ teamKillRoom: () => null });
+  results.teamKill = {
+    out: [type(room.con, 'punish'), type(room.con, 'ftk'), type(room.con, 'game.TKPunish')],
+    sent,
+    solo: type(solo.con, 'punish'),
+  };
+}
+
 // -- the helpers alone ------------------------------------------------------
 
 results.helpers = {

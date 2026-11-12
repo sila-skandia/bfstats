@@ -135,6 +135,8 @@ export class GroundVehicle extends Vehicle {
      * — with no hook (or off a deck) the contact normal is the heightfield's own
      * gradient, which is what it has always been. See `surfaceNormalAt`.
      */
+    this._deckV = [0, 0, 0];
+    this._deckVb = new THREE.Vector3();
     this.deckNormal = options.deckNormal || null;
 
     this.wheels = [];
@@ -570,6 +572,14 @@ export class GroundVehicle extends Vehicle {
       // Contact-patch velocity in the body frame. Hoisted above the spring
       // because the damper's first tick needs its vertical component.
       const u = this._u.copy(vBody).add(this._arm.crossVectors(w, wheel.rest));
+      // On a ship's deck the contact speed is the wheel's less the ship's
+      // point speed there (`checkObjectVsObject` 0x08259690, both roots'
+      // `getTangentSpeed`; `hull-bodies.js` `landOnShipDecks`, `deck-carry.js`),
+      // in the body frame as `u` is: a jeep on a carrier under way is held
+      // by the latch and drives at its own speed over her deck.
+      if (!onStatic && this.deckVelocity?.(attach.x, attach.y, attach.z, fromY, this._deckV)) {
+        u.sub(this._deckVb.set(this._deckV[0], this._deckV[1], this._deckV[2]).applyQuaternion(qInv));
+      }
 
       // Suspension, PHY-5: spring on travel at 1.5x the authored strength,
       // damper on the one-tick backward difference of the displacement, bump

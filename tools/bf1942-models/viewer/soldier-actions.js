@@ -436,8 +436,15 @@ export class SoldierActions {
    *  again, which the bots' behaviour loop does when Change wins a single
    *  tick of a fight -- finds the legs still lying in `Lb_LieToStand` and
    *  settles back into the lie loop by the morph, instead of standing up and
-   *  diving again. */
-  stanceChanged(from, to, { backward = false, family = null } = {}) {
+   *  diving again.
+   *
+   *  `ready` is the held weapon's `isReadyToUse` where the caller knows it
+   *  (a page bot's referee: `botWeaponReady`). False keeps the torso as a
+   *  reload does: the engine's gate (BODY-2) also answers false while the
+   *  fire timer runs, so a K98's or No4's `Ub_Fire` is not cut by a crouch
+   *  in the second after the shot and its bolt still plays. Left undefined
+   *  (a replay, a remote player) only the reload and the draw keep it. */
+  stanceChanged(from, to, { backward = false, family = null, ready } = {}) {
     if (this.dead || from === to) return;
     this.stance = to;
     this.family = family ?? STILL_FAMILY[to] ?? 'stand';
@@ -459,6 +466,7 @@ export class SoldierActions {
     // 58.72-59.15: `Ub_CrouchRaiseWeaponMp40` holds the upper machine while
     // the legs go `Lb_CrouchToStand`, `Lb_RunForward`, `Lb_RunBackward`.
     const drawing = this.upper.action === 'recorded' && /RaiseWeapon$/.test(this.upper.name ?? '');
+    if (ready === false) return;
     if (this.upper.action !== 'reload' && !drawing) this.enter(this.upper, entry.upper, 'move');
   }
 

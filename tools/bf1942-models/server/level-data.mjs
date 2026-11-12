@@ -13,6 +13,7 @@ import { collectLadders } from '../viewer/ladder-climb.js';
 import { detachSpawnedCraft } from '../viewer/spawned-craft.js';
 import { bindArm } from '../viewer/held-arm.js';
 import { buildCollisionIndex } from '../viewer/static-index.js';
+import { attachCoarseLayer } from '../viewer/coarse-layer.js';
 import { addLentCollisionCopies } from '../viewer/collision-meshes.js';
 import { bodyPoseOf, bodySpecFor, bodyTerrainOf, settle } from './level-bodies.mjs';
 import { LevelInstance } from './level-instance.mjs';
@@ -136,6 +137,9 @@ export class LevelData {
     const statics = this.sceneRoot
       ? buildCollisionIndex(root, { ownerRoots, collisionGroups: extras?.collisionGroups ?? null })
       : null;
+    // A large root's layer of each two-layer static (COL-22, `coarse-layer.js`).
+    attachCoarseLayer(statics, this.collisionMeshes?.staticCoarse,
+      { collisionGroups: extras?.collisionGroups ?? null });
     // The level's ladders, as the page's `buildCollider` indexes them: the
     // room is the authority for a soldier's movement, and `soldier.js` climbs
     // only what `collider.ladders` holds, so without them a client's climb was

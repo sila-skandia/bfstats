@@ -740,6 +740,11 @@ export function createSpawning(page) {
     page.paintDeployChrome();
   }
 
+  /** The wave law's parameters off a room: the page's (`page.spawnParams()`,
+   *  single player's flat wait, `spawn-timer.js` `singlePlayerSpawnParams`,
+   *  the owner's choice), or retail's defaults where the page names none. */
+  const waveParams = () => page.spawnParams?.() ?? undefined;
+
   /** The local player died off a retail server: their wait runs from now on
    *  the round's clock (`killPlayer` 0x0814d920, SPAWN-35). A room's wait is
    *  its server's and comes with the death row (`noteServerSpawnWait`). */
@@ -747,7 +752,7 @@ export function createSpawning(page) {
     if (page.roomJoined) return;
     const round = page.round;
     if (!round || !Number.isFinite(round.clock)) return;
-    waveReadyAt = spawnReadyAt(round.clock);
+    waveReadyAt = spawnReadyAt(round.clock, waveParams());
     waveRestarts = round.restarts ?? 0;
   };
   /** A room's word on this player's wait, in seconds from now (the `killed`
@@ -768,7 +773,7 @@ export function createSpawning(page) {
     if (waveReadyAt == null || !round || round.status !== 'playing') return 0;
     // A restart starts the round's clock over: the old round's wait is gone.
     if ((round.restarts ?? 0) !== waveRestarts) { waveReadyAt = null; return 0; }
-    return waveSecondsLeft(round.clock, waveReadyAt);
+    return waveSecondsLeft(round.clock, waveReadyAt, waveParams());
   }
   spawning.waveSecondsLeft = waveLeft;
   /** The TIME TO SPAWN plate off a retail relay (`deploy-screen.js`

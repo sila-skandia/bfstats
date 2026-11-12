@@ -135,6 +135,21 @@ class SpawnTimerTests(unittest.TestCase):
         self.assertEqual(0, g["noDeath"])
         self.assertEqual([3, 0], g["noWaves"])
 
+    def test_the_team_kill_penalty_is_whole_waves(self) -> None:
+        """`killPlayer` 0x0814df1f..0x0814df85 (FF-11): `ceil(BFPlayer+0x190 *
+        spawnDelayPenaltyForTK)` (round-up control word 0x800) whole cycles of
+        `+0x214 + +0x210`, before the 0..127 clamp; the ctor's penalty 1.0
+        (0x0812f8b9). Waves off pays the flat `+0x204` only."""
+        t = self.out["tk"]
+        self.assertEqual(1, t["penalty"])
+        self.assertEqual((25, 50), (t["one"], t["two"]))
+        self.assertEqual(25, t["half"])
+        self.assertEqual(50, t["third"])
+        self.assertEqual((0, 0, 0), (t["zero"], t["off"], t["noPenalty"]))
+        self.assertEqual(50, t["wait1"])
+        self.assertEqual(127, t["wait5"])
+        self.assertEqual(3, t["flat"])
+
     def test_get_team_to_add_player(self) -> None:
         """`PlayerManager::getTeamToAddPlayer` 0x08261670: the side over its
         ratio share loses the newcomer; level, the closer split with them

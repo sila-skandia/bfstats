@@ -13,7 +13,7 @@ import { roundHit } from './soldier-death.js';
 import { meetSoldier } from './skeleton-hit.js';
 import { friendlyDamage, roundPasses } from './friendly-fire.js';
 import { calcRecoil } from './recoil.js';
-import { medPackHeals, repairPackTarget } from './healing-packs.js';
+import { disarmTarget, medPackHeals, repairPackTarget } from './healing-packs.js';
 import { CameraShake } from './fire-shake.js';
 import { stepAlt, altBusy } from './hand-alt-fire.js';
 import { wantsSwitch } from './kit-select.js';
@@ -26,7 +26,7 @@ import { delayedFireCycle, delaySpan, fireCycle, hideSpan, timerTicks } from './
  * `clickQueued`, `damageVisuals`, `deployTeamId`, `dropClick`, `fireDetonator`, `fireStates`,
  * `guns`, `handWeapon`, `isDetonator`, `isExplosives`, `itemsLocked`,
  * `lineOfSight`, `LOCAL_PLAYER`, `healingPack`, `mouseInput`, `packThrown`, `params`, `playHandFire`,
- * `reportPack` (in a room: the pack's round goes to the server), `vehicles`,
+ * `refundDisarmed`, `reportPack` (in a room: the pack's round goes to the server), `vehicles`,
  * `playViewmodelClip`, `refetchHandFireSound`, `releaseHandFireLoop`,
  * `selectBestLoadedWeapon`, `soldier`, `thirdPerson`, `triggerHeld`, `updateViewmodelAnimation`, `vehicleAudio`, `vehicleDamage`,
  * `world`.
@@ -366,7 +366,7 @@ export function createHandFire(page) {
    * One round of the wrench: `BFSoldier::useRepairPack()` (`0x08276100`),
    * the law in `healing-packs.js` `repairPackTarget`: nothing while the
    * holder crouches (`getPose() == 1`, `0x0827612d`; the crouched wrench
-   * disarms instead, which is not built), no hull the other side holds (the
+   * disarms instead, `disarmWithWrench`), no hull the other side holds (the
    * PlayerControlObject's team against the soldier's +0x53c, `0x08276731`),
    * no Armor outside a PlayerControlObject, and of the wounded hulls left
    * within `getRadius() + repairDistance` of their origin the closest, healed
@@ -384,6 +384,7 @@ export function createHandFire(page) {
   function useRepairPack(pack) {
     const me = page.soldier;
     if (!me) return;
+    if (me.stance === 'crouch') { disarmWithWrench(pack); return; }
     const hulls = [];
     for (const [owner, visual] of page.damageVisuals ?? []) {
       if (visual?.wrecked || visual?.removed || !visual?.node) continue;
@@ -405,6 +406,28 @@ export function createHandFire(page) {
                      team: page.world?.player(page.LOCAL_PLAYER)?.team ?? page.deployTeamId ?? 0 };
     const best = repairPackTarget(holder, hulls, pack);
     if (best) best.armor.heal(pack.repairHeal);
+  }
+
+  /**
+   * One round of the crouched wrench: `useRepairPack`'s disarm branch
+   * (`0x082764ed`, SUP-28), the law in `healing-packs.js` `disarmTarget`. The
+   * first live `ExpPackProjectile` or `LandmineProjectile` within its own
+   * radius plus `disarmMinesDistance` (2.0) of the holder, whoever laid it,
+   * leaves the world unexploded (`resetProjectile` `0x082765e4`, `gunfire.js`
+   * `retireRound`), and the holder's item 4 (pack) or 5 (mine) takes one round
+   * back when it fires that round (`reloadAmmo(1)` `0x082765f6`,
+   * `hand-weapon.js` `refundDisarmed`). Returns what was lifted, `{ at,
+   * template }` in the page's (and the room's) frame, or null.
+   */
+  function disarmWithWrench(pack) {
+    const me = page.soldier;
+    if (!me || me.stance !== 'crouch' || !page.guns?.disarmRounds) return null;
+    const hit = disarmTarget({ x: me.x, y: me.y, z: me.z, crouched: true }, page.guns.disarmRounds(), pack);
+    if (!hit) return null;
+    const { round } = hit;
+    page.guns.retireRound(round.shot);
+    page.refundDisarmed?.(hit.item, round.template, round.weapon);
+    return { at: [round.x, round.y, round.z], template: round.template };
   }
 
   /** One semi-auto trigger pull, held by `footFire` until its round exists. */
@@ -775,8 +798,12 @@ export function createHandFire(page) {
         // In a room the server runs the pack on its own world and hands the
         // hit points back (`server/room-packs.mjs`): the page's copy heals
         // when the server's does, never ahead of it.
-        if (page.reportPack) page.reportPack(hw.name);
-        else if (pack.kind === 'medic') useMedPack(pack);
+        // The crouched wrench's disarm is the page's to find, the rounds
+        // being the page's (the room flies none, `room-hits.mjs`): it lifts the
+        // round here and names it to the room, which takes it off every page.
+        if (page.reportPack) {
+          page.reportPack(hw.name, pack.kind === 'repair' ? disarmWithWrench(pack) : null);
+        } else if (pack.kind === 'medic') useMedPack(pack);
         else useRepairPack(pack);
       }
       if (!firing) page.releaseHandFireLoop();

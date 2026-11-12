@@ -43,6 +43,9 @@ export function matchUrl({ site = SITE, map, mod = null, mode = 'Conquest', bots
   if (mod && mod !== 'bf1942') q.set('mod', mod);
   q.set('botCount', String(bots));
   q.set('botSkill', String(skill));
+  // Retail's 20 s wave, which page-dice.json was recorded under, not single
+  // player's 3 s flat respawn (the owner's choice, 2026-11-12, `map.html`).
+  q.set('spawnTime', 'wave');
   return `${site}/map.html?${q}&mute&shots`;
 }
 

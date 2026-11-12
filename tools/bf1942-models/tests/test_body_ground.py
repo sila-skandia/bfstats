@@ -444,5 +444,15 @@ class BodyGroundTests(unittest.TestCase):
         self.assertAlmostEqual(0.0, r["staticPlate"], places=2)
         self.assertAlmostEqual(2.0, r["mobilePlate"], places=2)
 
+    def test_a_ship_deck_under_way_carries_a_parked_body(self) -> None:
+        # The deck's speed in the contact (`body-ground.js` `terrainContact`,
+        # `deck-carry.js`): set down at rest on a deck at 6 m/s, the empty
+        # wheels' latch brings it to the deck's speed; on the fixed ground it
+        # stays where it is.
+        deck = self.results["movingDeck"]
+        self.assertAlmostEqual(6.0, deck["carried"]["vx"], delta=0.05)
+        self.assertAlmostEqual(0.0, deck["carried"]["vz"], delta=1e-3)
+        self.assertAlmostEqual(0.0, deck["still"]["vx"], delta=0.05)
+
 if __name__ == "__main__":
     unittest.main()

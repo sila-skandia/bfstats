@@ -45,6 +45,28 @@ export { FLASH_RAMP_MAX, PROJECTILE_SCALE_CUTOFF, RECOIL_KICK_SCALE, sampleCurve
          TRACER_MAX_AGE, TRACER_MAX_RANGE, TRACER_MIN_SCREEN_PX, TRACER_SPEED_SCALE,
          tracerMaterial };
 
+/** A round's projectile template name: its weapon's `projectile` block's
+ *  `template`, or the bare name an older export wrote. */
+export function roundTemplateOf(shot) {
+  const p = shot?.group?.stats?.projectile;
+  return typeof p === 'string' ? p : (p?.template ?? null);
+}
+
+/** A round out of the world with nothing to show for it: its trail, wake,
+ *  sound, depots and spawners stopped and its mesh back in its group's pool.
+ *  `GunFire.releaseRounds` and `retireRound`. */
+function retireShot(guns, shot, i) {
+  shot.run?.stop();
+  shot.wake?.stop();
+  shot.sound?.stop();
+  shot.depots?.end();
+  shot.spawners?.end();
+  guns.scene.remove(shot.mesh);
+  shot.mesh.visible = false;
+  shot.group?.projectilePool?.push(shot.mesh);
+  guns.projectiles.splice(i, 1);
+}
+
 /**
  * Every gun in one scene, and the rounds they have in the air.
  *
@@ -522,16 +544,82 @@ export class GunFire {
     for (let i = this.projectiles.length - 1; i >= 0; i--) {
       const shot = this.projectiles[i];
       if (shot.kitLife !== kitLife) continue;
-      shot.run?.stop();
-      shot.wake?.stop();
-      shot.sound?.stop();
-      shot.depots?.end();
-      shot.spawners?.end();
-      this.scene.remove(shot.mesh);
-      shot.mesh.visible = false;
-      shot.group.projectilePool?.push(shot.mesh);
-      this.projectiles.splice(i, 1);
+      retireShot(this, shot, i);
       count++;
+    }
+    return count;
+  }
+
+  /**
+   * Take one live round out of the world, unexploded, as
+   * `Projectile::resetProjectile` (lnxded `0x0831e720`) parks a pooled one:
+   * no end effect, no blast, no sound. The crouched wrench's disarm
+   * (`useRepairPack` `0x082765e4`, SUP-28) and the pool's wrap, which re-uses
+   * the oldest object of a full pool (`FireArms::createProjectile`
+   * `0x0828bfbe`..`0x0828bfe8`, FA-2), both end a round this way. False when
+   * the round is no longer in the world.
+   */
+  retireRound(shot) {
+    const i = shot ? this.projectiles.indexOf(shot) : -1;
+    if (i < 0) return false;
+    retireShot(this, shot, i);
+    return true;
+  }
+
+  /**
+   * Blow up every live round the weapon `weapon` of kit object `kitLife`
+   * laid: `FireArms::detonateProjectiles` (`0x08287f80`) on the kit's item 4
+   * (`BFSoldier::handleMessage`'s Fire branch, `getItemFromIndex(4)`). The
+   * array it walks is the weapon's pool (FA-2), and the weapon is the kit's,
+   * so whoever holds the kit holds its laid packs: a dead engineer's kit
+   * picked up brings them onto the taker's plunger (KITDROP-7), and the
+   * taker's own go with the kit they dropped. The page's weapon rig is rebuilt
+   * on every raise, so the pool is named by the kit token and the weapon's
+   * template (`round-launch.js` stamps both at launch). Returns how many went
+   * off.
+   */
+  detonatePool(kitLife, weapon) {
+    if (kitLife == null || !weapon) return 0;
+    const want = String(weapon).toLowerCase();
+    let count = 0;
+    for (let i = this.projectiles.length - 1; i >= 0; i--) {
+      const shot = this.projectiles[i];
+      if (shot.kitLife !== kitLife || String(shot.group?.weapon ?? '').toLowerCase() !== want) continue;
+      endRound(this, shot, i, true);
+      count++;
+    }
+    return count;
+  }
+
+  /**
+   * The live rounds a crouched wrench may lift, as `healing-packs.js`
+   * `disarmTarget` takes them, oldest launched first: each round's place,
+   * its radius (`getBoundingRadius`, measured once a group off the drawn body
+   * as the drag term takes it), its projectile template, the weapon that laid
+   * it and the round itself (`shot`, for `retireRound`). Every round with a
+   * template; `disarmTarget` keeps the two it lifts. A remote's drawn copy is
+   * among them, which the room then takes off its owner's page.
+   */
+  disarmRounds() {
+    const out = [];
+    for (const shot of this.projectiles) {
+      const template = roundTemplateOf(shot);
+      if (!template) continue;
+      const p = shot.mesh.position;
+      out.push({ x: p.x, y: p.y, z: p.z, radius: shot.group?.boundingRadius ?? 0,
+                 template, weapon: shot.group?.weapon ?? null, shot });
+    }
+    return out;
+  }
+
+  /** How many rounds of `kitLife`'s `weapon` are still in the world: what
+   *  `detonatePool` would set off. */
+  livePool(kitLife, weapon) {
+    if (kitLife == null || !weapon) return 0;
+    const want = String(weapon).toLowerCase();
+    let count = 0;
+    for (const shot of this.projectiles) {
+      if (shot.kitLife === kitLife && String(shot.group?.weapon ?? '').toLowerCase() === want) count++;
     }
     return count;
   }

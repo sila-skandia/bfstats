@@ -1,8 +1,9 @@
 # Retail inverse gap audit, 2026-11-12
 
-Status: audit done 2026-11-12; the DIFFERENT findings are being fixed by six fixers (section 3,
-which the coordinator updates as they land). Nothing in section 4 is built: each entry waits for the
-owner to pick it.
+Status: audit done 2026-11-12; the DIFFERENT findings were fixed the same day (section 3). Sixteen
+entries of section 4, the mechanics ones, were built later that day, each to retail's rule read on
+the binary: 2, 3, 4, 6, 7, 14, 15, 17, 24, 27, 29, 30, 42, 43, 61 and 68 (marked "Built" in the
+table and under each entry). The rest wait.
 
 ## What this is
 
@@ -146,14 +147,44 @@ never fires.
 
 ## Found by playing, and what the fixes turned up
 
-**Open, live since e5003c584: bot drivers run over their own side.** The run-over (a moving hull kills a
-soldier at 8 m/s or more, as retail does) went live without retail's other half, the bot driver's
-collision prediction (`BBAvoid::calculateUrgency` `0x0855c650`, `collisionPredicted` `0x0855d2f0`,
-about 5 s ahead; entry 7 below). On the live page check that followed, 9 of the first 15 generated
-levels failed the rollout floor's own-hand rule, the worst on driving levels (jeep_bowl 0.35,
-rennpiste_gebirge 0.26, tl_race 0.24 own-side deaths a bot-minute). The check was stopped at 15
-of 64 and its page.json files were put back, so no verdict from it is recorded; no tag was
-withdrawn. Next: port the prediction (entry 7), then play the 64 live levels once on it.
+**Closed 2026-11-12: bot drivers ran over their own side.** The run-over (a moving hull kills a
+soldier at 8 m/s or more, as retail does) went live in e5003c584 without retail's other half, the bot
+driver's collision prediction (`BBAvoid::calculateUrgency` `0x0855c650`, `collisionPredicted`
+`0x0855d2f0`, 5 s ahead). A live page check then failed 9 of the first 15 generated levels on the
+rollout floor's own-hand rule; it was stopped at 15 of 64, its page.json files put back and no tag
+withdrawn. Two causes, both fixed:
+
+- **No prediction** (entry 7, AI-178). Ported: urgency, the 30-degree turn off the other's velocity,
+  the move to the box edge for 1.5 t, and still bodies as pathfinding obstacles. In the runner (8 a
+  side, 300 s, seeds 1..6, four of the failing levels, port on against port off), run-overs of a
+  soldier on foot fell from 4 to 0 and own-side deaths a bot-minute fell on all four levels.
+- **A stale hull track on getting out.** A soldier's per-hull track was refreshed only when their
+  body stepped, so a hull that crept 1.1 m while they sat read as 34 m/s on dismount: a 177 HP
+  "run-over" from a hull doing 0.01 m/s. The tracks now follow through the seat (`seatedHullWatch`)
+  and a track the last tick missed is re-seeded. The same case now bills 0 HP; a hull driven at
+  9 m/s still runs them over (`tests/test_hull_runover.py` `staleExit`).
+
+- **Found by the combined smoke check: landing craft stopped delivering.** With the prediction in,
+  a lone bot in a Daihatsu swapped helm and gun every 0.13 s (about 1,030 mounts in 600 s on Midway,
+  against 11-13 before), and Wake's kills fell from 15 to 4. The viewer scored a landing craft's
+  seats with the general seat-swap factors (`BBChangeTeleport`, another seat at 0.5); retail's
+  `BBChangeLandingCraft` (`0x085602b0`) counts every other seat at 0.25 from the helm, so a lone bot
+  keeps the wheel (AI-179). A craft ringed by its carrier's obstacle circles also never left Wake's
+  start: retail moves the search start out of such a circle (`resolveAvoidStartingPoint`
+  `0x08528ca0`), which our hull search cannot, so a driver no longer plants a circle it already
+  stands in (INVENTION, AI-178). Daihatsu mounts are back to 7 on Midway and Wake has 12 kills and 7
+  captures (seed 3). Midway's kills stay below the pre-port run (3 against 7, seed 3): boats inside
+  a moving carrier's 148 m sphere re-plan their step every tick, retail's rule as read.
+- **A taxiing plane's "team kill" was a real take-off.** The page check showed a Bf109 at 6.1 m/s
+  killing teammates; the 6.1 was the pilot's frozen on-foot speed, and the plane was on its take-off
+  roll at 10.7 to 18.5 m/s, over retail's 8.0 floor (COL-3). The check turned up a real fault: the
+  page published hull poses once a frame, so a frame of several ticks multiplied a hull's measured
+  speed. Hulls now publish every tick from physics, as the room does (COL-29).
+
+The runner never counted a run-over death before this (it now bills them as the page does), which is
+why the bot screens could not show the regression. The 64-level page re-match is not re-run: the
+owner put bot polish behind mechanics on 2026-11-12, and the bars' own floor still guards a new
+level.
 
 The owner's four reports that started the audit, and three more the fixes uncovered:
 
@@ -198,35 +229,35 @@ smallest effort (S, under a day) to M (a few days) and L (more).
 | # | Tier | Title | Impact | Effort |
 |---|---|---|---|---|
 | 1 | 1 | Bots act on only 3 of 22 radio messages | high | S |
-| 2 | 1 | An explosion never pushes a vehicle | high | S |
-| 3 | 1 | A destroyed vehicle's own blast hurts and pushes nothing | medium-high | S |
-| 4 | 1 | A crouched engineer cannot disarm mines and packs | high | S |
+| 2 | 1 | An explosion never pushes a vehicle (**Built 2026-11-12**) | high | S |
+| 3 | 1 | A destroyed vehicle's own blast hurts and pushes nothing (**Built 2026-11-12**) | medium-high | S |
+| 4 | 1 | A crouched engineer cannot disarm mines and packs (**Built 2026-11-12**) | high | S |
 | 5 | 1 | Typed chat never leaves your screen in a room | high | S |
-| 6 | 1 | A moving deck does not carry what stands on it | high | M |
-| 7 | 1 | Bot drivers predict no collisions | high | M |
+| 6 | 1 | A moving deck does not carry what stands on it (**Built 2026-11-12**) | high | M |
+| 7 | 1 | Bot drivers predict no collisions (**Built 2026-11-12**) | high | M |
 | 8 | 1 | Engineer bots never repair vehicles | high | M |
 | 9 | 1 | Live soldiers never jump, backpedal or draw a weapon | high | M |
 | 10 | 1 | Vehicle dust, wakes and placed smoke never play | high | M |
 | 11 | 1 | No dynamic shadows | high | M |
 | 12 | 1 | Soldier movement sounds: only walk and run | medium-high | M |
 | 13 | 1 | Rooms have no bots (no online co-op) | high | L |
-| 14 | 2 | No pre-game countdown | medium | S |
-| 15 | 2 | A stranded side never loses in a room | medium | S |
+| 14 | 2 | No pre-game countdown (**Built 2026-11-12**) | medium | S |
+| 15 | 2 | A stranded side never loses in a room (**Built 2026-11-12**) | medium | S |
 | 16 | 2 | A late joiner's scoreboard starts at their join | medium | S |
-| 17 | 2 | Soldiers walk through each other | medium | S |
+| 17 | 2 | Soldiers walk through each other (**Built 2026-11-12**) | medium | S |
 | 18 | 2 | A bot on foot steps aside only on contact | medium | S |
 | 19 | 2 | No "entered your vehicle" / "left your vehicle" lines | medium | S |
 | 20 | 2 | No "joined the axis team" line | medium | S |
 | 21 | 2 | A radio speaker does not blink on the minimap | medium | S |
 | 22 | 2 | P does not pause single player | medium | S |
 | 23 | 2 | No friendly-mine warning icon | medium | S |
-| 24 | 2 | A stance change cuts the bolt cycle | medium | S |
+| 24 | 2 | A stance change cuts the bolt cycle (**Built 2026-11-12**) | medium | S |
 | 25 | 2 | Trees do not sway | medium | S |
 | 26 | 2 | A room has no host settings and no admin | medium | M |
-| 27 | 2 | No team-kill punish, forgive, penalty or kick | medium | M |
+| 27 | 2 | No team-kill punish, forgive, penalty or kick (**Built 2026-11-12**) | medium | M |
 | 28 | 2 | No votes (map, kick, team kick) | medium | M |
-| 29 | 2 | A blocked exit puts you in the wall | medium | M |
-| 30 | 2 | A blast on a hull never hurts its seated crew | medium | M |
+| 29 | 2 | A blocked exit puts you in the wall (**Built 2026-11-12**) | medium | M |
+| 30 | 2 | A blast on a hull never hurts its seated crew (**Built 2026-11-12**) | medium | M |
 | 31 | 2 | A bot tank takes cover like a soldier | medium | M |
 | 32 | 2 | The commander ignores where its side is losing | medium | M |
 | 33 | 2 | Bots rarely lob grenades | medium | M |
@@ -238,8 +269,8 @@ smallest effort (S, under a day) to M (a few days) and L (more).
 | 39 | 3 | A hull's Scout never turns the hull | low | S |
 | 40 | 3 | Four AI placeholders labelled INVENTION | low | S |
 | 41 | 3 | The bots' radio subscriptions are hard-coded per mod | low | S |
-| 42 | 3 | No cap on live mines and packs per weapon | low | S |
-| 43 | 3 | The hull push ignores rotation and mass | low | S |
+| 42 | 3 | No cap on live mines and packs per weapon (**Built 2026-11-12**) | low | S |
+| 43 | 3 | The hull push ignores rotation and mass (**Built 2026-11-12**) | low | S |
 | 44 | 3 | No depot icons while seated, no repair icon | low | S |
 | 45 | 3 | Typed console words that answer "Unknown object" | low | S |
 | 46 | 3 | No ping column in rooms | low | S |
@@ -257,14 +288,14 @@ smallest effort (S, under a day) to M (a few days) and L (more).
 | 58 | 3 | A remembered enemy weighs as much as a seen one | low-medium | M |
 | 59 | 3 | BF1918 hulls never roam | low | M |
 | 60 | 3 | EoD's SAM sites aim like a ship's gun | low | M |
-| 61 | 3 | Large hulls meet the wrong collision layer | low | M |
+| 61 | 3 | Large hulls meet the wrong collision layer (**Built 2026-11-12**) | low | M |
 | 62 | 3 | Terrain at full detail at every distance | low | M |
 | 63 | 3 | No voice pool or priority stealing | low | M |
 | 64 | 3 | No faces or lip-sync | low | L |
 | 65 | 3 | A ship bot ignores a seat request | low-medium | S |
 | 66 | 3 | Mod weather | medium on mods | M |
 | 67 | 3 | No chat beep | low-medium | S |
-| 68 | 3 | Vehicles on a moving deck | medium | M |
+| 68 | 3 | Vehicles on a moving deck (**Built 2026-11-12**) | medium | M |
 
 Entries 65 to 68 are tails of larger entries, listed on their own so that none is lost: 65 is
 unread and waits on one function, 66 mostly comes with entry 10, 67 comes with entry 5, and 68 is
@@ -288,6 +319,7 @@ the vehicle half of entry 6.
 - Found by: ai-a, ai-b, seams-players, sound-radio.
 
 **2. An explosion never pushes a vehicle** (high, S)
+- **Built 2026-11-12.** explosions builder: every root with a physics node takes KNOCK-5's push at the blast point clamped to its sphere (KNOCK-10, HP-25).
 - Retail: KNOCK-4 and KNOCK-5 (`handleExplosionOnObject` `0x08156500`) push every root with a
   physics node, at the blast point clamped to its bounding sphere, so the hull spins as well as moves.
   Willy `explosionForceMod` 20, ExpPack `ForceOnExplosion` 50.
@@ -299,6 +331,7 @@ the vehicle half of entry 6.
 - Found by: seams-world.
 
 **3. A destroyed vehicle's own blast hurts and pushes nothing** (medium-high, S)
+- **Built 2026-11-12.** explosions builder: a destroyed hull's own blast (`Armor::status` `0x081739e0` calls `handleExplosion` with its `explosionRadius`, `explosionMaterial` and `explosionDamage`) hurts and pushes what is near it, as any blast (HP-25).
 - Retail: `Armor::status` `0x081739e0` calls `handleExplosion` from its destroyed branch
   (`0x08173d60..0x08173df0`) with the hull's `explosionDamage` and `explosionRadius` (5 at 8 m on 52
   vanilla vehicles and planes), its force, and its last hitter as the attacker (HP-2, HP-8).
@@ -310,6 +343,7 @@ the vehicle half of entry 6.
 - Found by: damage, orphan-words, vehicle-physics, seams-world.
 
 **4. A crouched engineer cannot disarm mines and packs** (high, S)
+- **Built 2026-11-12.** engineer builder: a crouched engineer's wrench lifts the nearest live mine or pack, on the page, in the room and for bots (SUP-28).
 - Retail: `BFSoldier::useRepairPack` `0x08276100`: while crouched, the wrench takes the first
   `LandmineProjectile` or `ExpPackProjectile` within its radius plus `disarmMinesDistance` (2.0,
   `0x0827613d`), friend or foe, removes it without a blast and gives the round back
@@ -334,6 +368,7 @@ the vehicle half of entry 6.
 - Found by: console-menus, netcode-server, sound-radio (beep), hud (flood line).
 
 **6. A moving deck does not carry what stands on it** (high, M)
+- **Built 2026-11-12.** moving-decks builder: soldiers, wheels and tracks meet a ship's deck at their speed relative to it, so the deck carries them by friction (COL-30, COL-31, AIRGND-14).
 - Retail: object contacts feed the friction solve with the relative contact speed
   (`ResponsePhysics::addFriction` `0x0825b6e0`, collision-response.md section 8), so a light body on
   a heavy moving one is carried along. There is no parenting: the `+0x558` "standing on" pointer is
@@ -349,6 +384,7 @@ the vehicle half of entry 6.
 - Found by: seams-world (measured), vehicle-physics.
 
 **7. Bot drivers predict no collisions** (high, M)
+- **Built 2026-11-12.** driver-avoid builder: retail's urgency, turn and box-edge move for bot drivers (AI-178); see "Closed 2026-11-12" in section 3.
 - Retail: every driven ground and boat row registers `Avoid BBAvoid BBPAvoidCollision2d`.
   `BBAvoid::calculateUrgency` `0x0855c650` looks 5 s ahead (AI-119) through `collisionPredicted`
   `0x0855d2f0`, and the plan side-steps (`0x08586420`).
@@ -432,6 +468,7 @@ the vehicle half of entry 6.
 ### Tier 2
 
 **14. No pre-game countdown** (medium, S)
+- **Built 2026-11-12.** round-rules builder: a room waits the shipped `serverGameStartDelay` 20 s before a new map and `serverGameRoundStartDelay` 10 s before a restart, with the countdown, and refuses a spawn meanwhile. Single player has no pre-game in retail either (ROUND-14).
 - Retail: status 3 holds every player at `serverGameStartDelay` (20 s) on a new map and 10 s on a
   restart, writing it into every player's spawn wait (`gameStatusPreGame` `0x08150950`, the loop at
   `0x081509e3`). The plate reads TIME UNTIL GAME STARTS (HUD-23).
@@ -441,6 +478,7 @@ the vehicle half of entry 6.
 - Found by: modes, netcode-server.
 
 **15. A stranded side never loses in a room** (medium, S)
+- **Built 2026-11-12.** round-rules builder: the room hands the round its census, spawn groups plus whether each side has a living player, so a stranded side loses (TKT-5, TKT-8); a carrier's points go with the carrier.
 - Retail: TKT-5 and TKT-8. A side with no spawn groups and nobody alive bleeds at 1000 tickets a
   minute. Built on the page.
 - A player notices: on DC Weapon Bunkers, or any carrier side once its ships sink, a room round never
@@ -459,6 +497,7 @@ the vehicle half of entry 6.
 - Found by: netcode-server.
 
 **17. Soldiers walk through each other** (medium, S)
+- **Built 2026-11-12.** soldier-contacts builder: soldiers push each other apart (COL-28).
 - Retail: `ResponsePhysics::checkObjectVsObject` `0x08259690` pushes two overlapping soldiers apart
   to 1.0 m, by position, with no damage. A seated soldier does not move.
 - A player notices: bots and players stand inside each other at spawns, in doorways and on ladders.
@@ -516,6 +555,7 @@ the vehicle half of entry 6.
 - Found by: orphan-words.
 
 **24. A stance change cuts the bolt cycle** (medium, S)
+- **Built 2026-11-12.** soldier-contacts builder: a stance change waits on `HandFireArms::isReadyToUse`, the fire timer included, so it no longer cuts the bolt cycle (BODY-16).
 - Retail: BODY-2. The torso changes stance only while `HandFireArms::isReadyToUse` answers true,
   which it does not while the fire, reload, eject or overheat timer runs. DIE-8 uses the same gate
   for the upper death state.
@@ -545,6 +585,7 @@ the vehicle half of entry 6.
 - Found by: console-menus, netcode-server.
 
 **27. No team-kill punish, forgive, penalty or kick** (medium, M)
+- **Built 2026-11-12.** round-rules builder: `Game.TKPunish` and `Game.TKForgive` in our own rooms, the team-kill penalty added to the wave's wait, and the kick at the limit (FF-9, FF-10, FF-11).
 - Retail: `_giveDamage` `0x0814c1bc` marks the victim's last team killer. With punish mode off the
   counts rise at once and the killer is killed at `nrOfTKToKick` 5 (`0x0814c224`); with it on, they
   rise only through `TKPunish` `0x081593d0` (`TKForgive` `0x081592e0` clears them), which kicks at the
@@ -568,6 +609,7 @@ the vehicle half of entry 6.
 - Found by: console-menus, hud, netcode-server.
 
 **29. A blocked exit puts you in the wall** (medium, M)
+- **Built 2026-11-12.** exit-collision builder: an exit blocked on both sides is refused and the press spent (SEAT-42).
 - Retail: `GameServer::toggleEntryPoint` `0x0814ee70` asks `PlayerControlObject::isAllowedToExit`
   `0x08317490`. With `hasRestrictedExit` set (every vanilla tank and the Willy), it tests a segment
   from the hull to the exit point, tries the mirrored side on a hit, and refuses the exit when both
@@ -580,6 +622,7 @@ the vehicle half of entry 6.
 - Found by: seats-guns.
 
 **30. A blast on a hull never hurts its seated crew** (medium, M)
+- **Built 2026-11-12.** explosions builder: a blast on a hull splashes the crew of every seat with no `SeatObject` (a jeep's crew, an open gunner; not a tank's driver), with no push (HFD-12, confirmed).
 - Retail: HFD-12. After the hull, `handleExplosion` `0x08156ef0` walks the seat map and splashes each
   seated soldier whose flag bit 0 is clear (`0x08157167..0x08157271`).
 - A player notices: a grenade or shell on a jeep or an open gun seat wounds or kills the crew in
@@ -672,10 +715,14 @@ the new holder's detonator. Notices: an engineer who refills at a depot can carp
 a pool per weapon in `round-launch.js`. The kits-healing fixer covers the release on kit death.
 (damage, soldier-weapons)
 
+- **Built 2026-11-12.** engineer builder: each kit's mines and packs come from a pool of 2 x magSize + 1, and a throw past it reuses the oldest (FA-27, KITDROP-11); the detonator sets off the kit's own pool.
+
 **43. The hull push ignores rotation and mass** (low, S). Retail: COL-2's share snaps to 1 only
 above 0.95, and the probe moves in the hull's full frame. Notices: a pivoting tank's stern sweeps a
 soldier the probe misses, and a motorbike shoves like a tank. Approach: carry the probe through
 `fwd_now * inv_prev` and pass the hull's mass. (seams-world)
+
+- **Built 2026-11-12.** soldier-contacts builder: the hull push takes the hull's spin through the hit's tangent speed and the share as retail stores it (COL-29).
 
 **44. No depot icons while seated, no repair icon** (low, S). Retail: SUP-17's `ShowRepairIcon`,
 `ShowHealIcon` and `ShowReloadIcon`. Ours sets only the last two, and only on foot. Approach: set
@@ -766,6 +813,8 @@ two functions read first. (ai-a)
 **61. Large hulls meet the wrong collision layer** (low, M). Retail: COL-22, a root of radius 4 m or
 more meets a static's col0. Ours keeps one layer. No case has been found where it shows. (vehicle-physics)
 
+- **Built 2026-11-12.** exit-collision builder: a large root's two-layer statics meet the coarse layer, exported in `collision-meshes.json` (COL-22, confirmed by a second reader).
+
 **62. Terrain at full detail at every distance** (low, M). Retail: TERR-8's distance law and
 WATER-3's skipped dry tiles. Ours draws full detail everywhere. The gain is performance.
 (render)
@@ -793,6 +842,8 @@ entry 5. (sound-radio)
 carrier under way, EoD's LCT tank, and BF1918's trains. It is the same relative-velocity term in
 `body-friction.js` and the ground laws. (seams-world)
 
+- **Built 2026-11-12.** moving-decks builder, follow-up: jeeps, tanks and planes ride a sailing ship; a parked body wakes once the deck moves past 0.32 m/s under it (COL-31).
+
 ## Kept on purpose, for the owner to confirm
 
 These are departures from retail that our code already labels as our own choice. Each one needs
@@ -801,6 +852,17 @@ only a yes or no.
 - **Bots hold fire when a teammate is in their line. Kept: the owner confirmed it on 2026-11-12.** Retail bots fire through a teammate, and the
   friendly-fire ratio decides the damage (FF-7). `bot-plans.js holdFireFor` is on by default and
   marked INVENTION; `?holdfire=0` and the engine-parity runs turn it off. (seams-players)
+- **Single player respawns in 3 s, not on retail's 20 s wave. Kept: the owner chose it on 2026-11-12.**
+  Retail makes every dead player and bot wait for the reinforcement wave (SPAWN-35, SPAWN-36:
+  5 to 30 s). In Instant Battle, the campaign and the headless runner the player and the bots wait a
+  flat time instead: 3 s by default, 0 to 30 s on the Instant Battle screen's SPAWN TIME trough
+  (`play/bot-settings.js`, remembered in the browser, sent as `?spawnTime=`; `sim/run.mjs
+  --spawn-time N|wave`). It is the law's own waves-off branch (`spawn-timer.js`
+  `singlePlayerSpawnParams`), so the spawn points and the seeded pick are untouched. Rooms and a
+  retail relay keep the wave. No parity pass puts the wave back in single player
+  (`tests/test_sp_spawn_time.py`). The bot judges stay on the wave their bars were recorded under:
+  `sim/botbatch.mjs` runs `--spawn-time wave` and `sim/pagematch.mjs` opens the page with
+  `spawnTime=wave`. (spawn-rules)
 - **A sound loop starts at a random offset** (SND-47). Retail starts at 0. Ours is random so that
   engines do not phase-lock. (sound-radio)
 - **Every bot runs the full mover** (AI-160). Retail's LOD 2 mover drops deck bots into the sea,

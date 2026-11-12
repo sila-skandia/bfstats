@@ -397,10 +397,15 @@ export function roundTimeToLive(timeToLive, damage, hasPointPhysics = null,
  * folded in, so the gap is visible in the one place it is wrong.
  */
 export function splashDamage(material2, splashMaterial, distance, radius,
-                             materials, modifiers, exposure = 1) {
+                             materials, modifiers, exposure = 1, damage = undefined) {
   if (!(radius > 0) || !(distance >= 0) || distance >= radius) return 0;
   if (!(exposure > 0)) return 0;
-  const base = materials?.[material2]?.damage ?? materials?.[String(material2)]?.damage;
+  // `damage` is `handleExplosion`'s own float, when the caller has one: a
+  // destroyed Armor's `explosionDamage` (`Armor::status` pushes `+0x100` at
+  // 0x08173db2), which `handleExplosionOnObject` multiplies in at 0x08156691
+  // in place of a round's material damage.
+  const base = Number.isFinite(damage) ? damage
+    : materials?.[material2]?.damage ?? materials?.[String(material2)]?.damage;
   if (!(base > 0)) return 0;
   const attGroup = materials?.[material2]?.attGroup
     ?? materials?.[String(material2)]?.attGroup

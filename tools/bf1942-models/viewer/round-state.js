@@ -143,6 +143,26 @@ export const MAJOR_VICTORY = 0.80;
  *  `setTimeBeforeRestartMap` (0x0813da60) clamps a server's own to 1..30. */
 export const RESTART_DELAY = 10;
 
+/**
+ * The pre-game (game status 3, ROUND-1; ROUND-14). `gameStatusPreGame`
+ * (0x08150950) counts `GameServer+0x1ac` down by the frame's dt, clamped at
+ * 0 (0x08150977..0x0815099c), writes it into EVERY player's spawn wait
+ * (`BFPlayer+0x8c`, the loop at 0x081509e3..0x08150a08) and, the frame it
+ * reaches 0, sets status 1 (`setGameStatus` vt+0x78, 0x08150ae8). The
+ * delays: `setDelayBeforeStartingGame` (0x0813d9c0) writes the value to both
+ * `+0x1ac` and `+0x1b0`, `setRoundDelayBeforeStartingGame` (0x0813da10)
+ * `+0x1b0` only, and `resetTimers` (0x08157790, the last call of
+ * `restartMap`, OBJ-6) sets status 3 and `+0x1ac = +0x1b0`. So a new map
+ * waits `serverGameStartDelay` and a restart `serverGameRoundStartDelay`;
+ * `Setup::initServerSettings` defaults them 20 and 10 (0x080c09f4,
+ * 0x080c09fb; NET-21), as the shipped dedicated `serversettings.con` does.
+ * `GameServer::init` writes 0 to both (0x08131ce6, 0x08131cf8) and
+ * `Setup::startSinglePlayerGame` sets neither, so single player and Instant
+ * Battle open on a pre-game of one frame: the page's own round has none.
+ */
+export const GAME_START_DELAY = 20;
+export const ROUND_START_DELAY = 10;
+
 export function clampRestartDelay(value, fallback = RESTART_DELAY) {
   const n = Number(value);
   if (!Number.isFinite(n)) return fallback;
@@ -335,6 +355,10 @@ export function holdWeight(points) {
  *                `Setup+0x15c` (the `game.gameMode` word) at 0;
  *  - `atEndRate` tickets a minute a side with no spawn groups bleeds at the
  *                end of a round (`TICKETS_LOST_AT_END_PER_MIN`);
+ *  - `preGameDelay` / `roundStartDelay`  the pre-game's seconds on a new
+ *                map and after a restart (`GAME_START_DELAY`,
+ *                `ROUND_START_DELAY`); 0, the default, plays at once, as
+ *                single player's local server does;
  *  - `playerDeathPenalty` `{ id, tickets }`: that player's deaths cost his
  *                side `tickets` each (the campaign's difficulty), or null;
  *  - `objectives` an ObjectiveMode layer's live objectives
@@ -353,6 +377,7 @@ export function createRoundState({
   minorVictory = MINOR_VICTORY, majorVictory = MAJOR_VICTORY,
   restartDelay = RESTART_DELAY, singlePlayer = false, objectives = null,
   atEndRate = TICKETS_LOST_AT_END_PER_MIN, playerDeathPenalty = null,
+  preGameDelay = 0, roundStartDelay = 0,
 } = {}) {
   const readSettings = typeof settings === 'function' ? settings : () => settings;
   const readMode = typeof mode === 'function' ? mode : () => mode;
@@ -400,8 +425,13 @@ export function createRoundState({
     majorVictory: Number.isFinite(Number(majorVictory)) ? Number(majorVictory) : MAJOR_VICTORY,
     restartDelay: clampRestartDelay(restartDelay),
     singlePlayer: !!singlePlayer,
-    /** 'playing' or 'endGame' (`Game+0x58`: 1 or 2). */
-    status: 'playing',
+    /** 'preGame', 'playing' or 'endGame' (`Game+0x58`: 3, 1 or 2). */
+    status: Math.max(0, Number(preGameDelay) || 0) > 0 ? 'preGame' : 'playing',
+    /** Seconds the pre-game still holds (`GameServer+0x1ac`): every
+     *  player's spawn wait while the status is preGame, 0 once it plays. */
+    preGameIn: Math.max(0, Number(preGameDelay) || 0),
+    /** The restart's pre-game (`+0x1b0`). */
+    roundStartDelay: Math.max(0, Number(roundStartDelay) || 0),
     /** Seconds the round has been playing, for the time limit. */
     clock: 0,
     /** 1, 2, 0 for a draw; null while the round plays. */
@@ -783,6 +813,15 @@ export function createRoundState({
     round.held = held;
     const lost = { 1: 0, 2: 0 };
     if (!(dt > 0)) return lost;
+    // The pre-game (`gameStatusPreGame`, `GAME_START_DELAY`): its own clock
+    // runs down, nothing else does, and the frame it reaches 0 sets the
+    // status to playing; the round's clock (and so the first spawn window,
+    // `resetTimers` +0x208 = 0) starts on the next frame.
+    if (round.status === 'preGame') {
+      round.preGameIn = Math.max(0, round.preGameIn - dt);
+      if (round.preGameIn === 0) round.status = 'playing';
+      return lost;
+    }
     if (!playing()) {
       if (Number.isFinite(round.restartIn)) round.restartIn = Math.max(0, round.restartIn - dt);
       return lost;
@@ -901,7 +940,9 @@ export function createRoundState({
       round.countdowns[team] = intervals[team];
       round.bleeding[team] = false;
     }
-    round.status = 'playing';
+    // `resetTimers` (0x08157790): status 3 on the round delay (`+0x1b0`).
+    round.preGameIn = round.roundStartDelay;
+    round.status = round.preGameIn > 0 ? 'preGame' : 'playing';
     round.over = false;
     round.clock = 0;
     round.winner = null;

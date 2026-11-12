@@ -73,6 +73,7 @@ MODULES = {
     "walking-body.js": VIEWER / "walking-body.js",
     "rigid-body.js": VIEWER / "rigid-body.js",
     "soldier-resolve.js": VIEWER / "soldier-resolve.js",
+    "deck-carry.js": VIEWER / "deck-carry.js",
     "soldier-pose.js": VIEWER / "soldier-pose.js",
     "soldier-locomotion.js": VIEWER / "soldier-locomotion.js",
     "point-body.js": VIEWER / "point-body.js",

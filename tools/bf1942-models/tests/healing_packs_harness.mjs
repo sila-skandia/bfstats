@@ -18,6 +18,7 @@ const { Armor } = await import(url('viewer/armor.js'));
 const { createBotReferee } = await import(url('viewer/bot-referee.js'));
 const { GunFire } = await import(url('viewer/gunfire.js'));
 const { createKitDropsPage } = await import(url('viewer/kit-drops-page.js'));
+const { roundPoolSize, takePoolSlot } = await import(url('viewer/round-launch.js'));
 
 const out = {};
 const r3 = v => Math.round(v * 1000) / 1000;
@@ -69,6 +70,75 @@ const hurt = (max, lost) => { const a = new Armor(max); a.applyDamage(lost); ret
   };
 }
 
+// --- the crouched wrench's disarm ---------------------------------------------
+{
+  const pack = P.packParams('repair');
+  const round = (id, x, template, radius = 0.3) => ({ id, x, y: 0, z: 0, radius, template });
+  const rounds = [
+    round('fhMine', 0.5, 'APLandmineT1'),             // a mod's mine under another name
+    round('grenade', 0.5, 'StickGrenadeProjectile'),
+    round('farPack', 2.31, 'ExpPackProjectile'),       // past 0.3 + 2.0
+    round('mine', 2.3, 'LandmineProjectile'),          // exactly 0.3 + 2.0
+    round('pack', 1.0, 'ExpPackProjectile'),           // nearer, but later in the list
+  ];
+  const lift = holder => {
+    const hit = P.disarmTarget({ x: 0, y: 0, z: 0, ...holder }, rounds, pack);
+    return hit ? { id: hit.round.id, item: hit.item } : null;
+  };
+  out.disarm = {
+    crouched: lift({ crouched: true }),
+    standing: lift({}),
+    packOnly: (() => {
+      const hit = P.disarmTarget({ x: 0, y: 0, z: 0, crouched: true }, rounds.filter(r => r.id !== 'mine'), pack);
+      return hit ? { id: hit.round.id, item: hit.item } : null;
+    })(),
+    items: ['ExpPackProjectile', 'landmineprojectile', 'APLandmineT1', null].map(P.disarmItemOf),
+  };
+}
+
+// --- a weapon's pool of mines and packs (FA-2) -----------------------------------
+{
+  const sizes = {
+    expPack: roundPoolSize('ExpPack', 4), landmine: roundPoolSize('Landmine', 4),
+    lower: roundPoolSize('landmine', 3), grenade: roundPoolSize('StickGrenade', 4),
+    unlimited: roundPoolSize('Landmine', -1), none: roundPoolSize('ExpPack', null),
+  };
+  const kit = { kit: 'US_Engineer' };
+  const laid = [];
+  const recycled = [];
+  for (let i = 0; i < 11; i++) {
+    const shot = { id: i };
+    laid.push(shot);
+    recycled.push(takePoolSlot(kit, 'Landmine', 9, shot)?.id ?? null);
+  }
+  // The pack keeps its own pool on the same kit.
+  const packFirst = takePoolSlot(kit, 'ExpPack', 9, { id: 'p0' });
+  out.pool = { sizes, recycled, packFirst };
+}
+
+// --- the page's rounds: lifted, recycled and set off by kit ----------------------
+{
+  const removed = [];
+  const fake = { scene: { remove: m => removed.push(m) }, projectiles: [] };
+  const life = { kit: 'A' }, other = { kit: 'B' };
+  const mineGroup = { weapon: 'Landmine', boundingRadius: 0.25, projectilePool: [],
+                      stats: { projectile: { template: 'LandmineProjectile' } } };
+  const packGroup = { weapon: 'ExpPack', boundingRadius: 0.2, projectilePool: [],
+                      stats: { projectile: { template: 'ExpPackProjectile' } } };
+  const shot = (group, kitLife, name, x) => ({ group, kitLife, mesh: { name, visible: true, position: { x, y: 0, z: 0 } } });
+  const m1 = shot(mineGroup, life, 'm1', 1), p1 = shot(packGroup, life, 'p1', 2), p2 = shot(packGroup, other, 'p2', 3);
+  fake.projectiles.push(m1, p1, p2);
+  const rounds = GunFire.prototype.disarmRounds.call(fake);
+  const livePacks = GunFire.prototype.livePool.call(fake, life, 'exppack');
+  const retired = GunFire.prototype.retireRound.call(fake, m1);
+  const again = GunFire.prototype.retireRound.call(fake, m1);
+  out.pageRounds = {
+    rounds: rounds.map(r => ({ x: r.x, radius: r.radius, template: r.template, weapon: r.weapon })),
+    livePacks, otherPacks: GunFire.prototype.livePool.call(fake, other, 'ExpPack'),
+    retired, again, left: fake.projectiles.map(s => s.mesh.name), pooled: mineGroup.projectilePool.length,
+  };
+}
+
 // --- the numbers, the names ---------------------------------------------------
 out.params = {
   dc: P.packParams('repair', { templates: { DCSoldier: { repairFactor: 0.2 } } }, 'dcsoldier'),
@@ -112,7 +182,19 @@ out.params = {
   const v1 = vehicle.hitPoints;
   referee.usePack(bot, 'repair');
   const crouchedRepair = r3(vehicle.hitPoints - v1);
-  out.bot = { healed: healed?.map(h => h.id) ?? null, after, repaired, standingRepair, crouchedRepair };
+  // Crouched, with a half-spent mine pouch and a live mine beside it.
+  const mine = { x: 1, y: 0, z: 0, radius: 0.25, template: 'LandmineProjectile', shot: { id: 'm' } };
+  const retired = [];
+  const refBot = { ...bot, weapons: [{ name: 'Landmine' }, { name: 'Colt' }],
+                   weaponData: { Landmine: { projectile: { template: 'LandmineProjectile' },
+                                             magazine: { size: 4, magazines: 1 } },
+                                 Colt: { projectile: { template: 'ColtProjectile' }, magazine: { size: 7, magazines: 5 } } } };
+  const ref2 = createBotReferee({ world: () => world, packRounds: () => [mine], retireRound: s => retired.push(s.id) });
+  ref2.magazineOf(refBot, 'Landmine').rounds = 2;
+  const lifted = ref2.usePack(refBot, 'repair');
+  const pouch = ref2.magazineOf(refBot, 'Landmine').rounds;
+  out.bot = { healed: healed?.map(h => h.id) ?? null, after, repaired, standingRepair, crouchedRepair,
+              lifted, retired, pouch };
 }
 
 // --- a destroyed kit's rounds -------------------------------------------------

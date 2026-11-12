@@ -270,6 +270,91 @@ export function soldierBlastAcceleration({
   return out;
 }
 
+/**
+ * The acceleration a blast puts in a hull's accumulator (or any root that is
+ * no soldier and has a physics node), page frame, m/s^2: KNOCK-4 and KNOCK-5's
+ * non-soldier arm of `handleExplosionOnObject` (`0x08156500`), the same law
+ * as `soldierBlastAcceleration` less what only a soldier gets:
+ *
+ *     F = forceMod * force * (1/radius)               0x081569cb..0x081569e5
+ *     F = min(F, forceMax)                            0x08156a0d..0x08156a23
+ *     d >= 0.001:  axis = the victim's row most along s, signed along it
+ *                  dir = normalize(normalize(s) + axis)   0x08156bcc..0x08156d4a
+ *     d <  0.001:  dir = the terrain's normal under the blast  0x08156a64
+ *
+ * No exposure (it is 1 for a non-soldier, HP-10), no water tenth and no
+ * `calcDamage` ratio (both sit on the soldier class test at `0x08156a01`),
+ * and no rise replaced or radius cut. `axes` are the victim's world rows
+ * (`RigidBody.axes`: right, up, forward), as `vt+0x40`'s `+0x00`, `+0x10`,
+ * `+0x20`; the tie-break is the engine's (up only when strictly above both,
+ * then forward only when strictly above right). `offset` is the victim's
+ * origin less the blast's, Y already times `YModOnExplosion`; `distance` its
+ * length. The caller gates it as the engine does: only a victim the blast's
+ * priced damage is above zero for (`0x081566df`). Returns `out`.
+ */
+export function objectBlastAcceleration({
+  force = FORCE_ON_EXPLOSION_DEFAULT, radius, distance, offset,
+  axes = [[1, 0, 0], [0, 1, 0], [0, 0, 1]],
+  forceMod = EXPLOSION_FORCE_MOD_DEFAULT, forceMax = EXPLOSION_FORCE_MAX_DEFAULT,
+  terrainNormal = null,
+} = {}, out = { x: 0, y: 0, z: 0, force: 0 }) {
+  out.x = out.y = out.z = out.force = 0;
+  if (!(radius > 0) || !(distance >= 0) || !(distance < radius)) return out;
+  let f = forceMod * force * (1 / radius);
+  if (f > forceMax) f = forceMax;
+  if (!(f > 0)) return out;
+  let dx, dy, dz;
+  if (distance >= BLAST_SEPARATION_MIN) {
+    const [sx, sy, sz] = offset;
+    const [right, up, fwd] = axes;
+    const dRight = right[0] * sx + right[1] * sy + right[2] * sz;
+    const dUp = up[0] * sx + up[1] * sy + up[2] * sz;
+    const dFwd = fwd[0] * sx + fwd[1] * sy + fwd[2] * sz;
+    let row, dot;
+    if (Math.abs(dUp) <= Math.abs(dRight) || Math.abs(dUp) <= Math.abs(dFwd)) {
+      if (Math.abs(dFwd) <= Math.abs(dRight)) { row = right; dot = dRight; }
+      else { row = fwd; dot = dFwd; }
+    } else { row = up; dot = dUp; }
+    const sign = dot < 0 ? -1 : 1;
+    const len = Math.hypot(sx, sy, sz);
+    dx = sx / len + sign * row[0];
+    dy = sy / len + sign * row[1];
+    dz = sz / len + sign * row[2];
+  } else {
+    const n = terrainNormal ?? { x: 0, y: 1, z: 0 };
+    dx = n.x; dy = n.y; dz = n.z;
+  }
+  const len = Math.hypot(dx, dy, dz);
+  if (!(len > 0)) return out;
+  out.x = f * dx / len;
+  out.y = f * dy / len;
+  out.z = f * dz / len;
+  out.force = f;
+  return out;
+}
+
+/**
+ * Where the push is put: the blast's point, pulled onto the victim's bounding
+ * sphere when it lies outside it (`getBoundingRadius`, IObject vt `+0x48`,
+ * `0x08156ae6`; `|blast - origin|^2` against `r^2`, kept at the blast when not
+ * greater, `0x08156b0f`/`jne 0x08156bc0`; else `origin + e * r/|e|`,
+ * `0x08156b41`..`0x08156b80`). So a blast beside a hull spins it as well as
+ * moving it (`addAccelerationAtAbsolutePosition`'s torque arm). `blast` and
+ * `origin` are `[x, y, z]`; returns `out`.
+ */
+export function blastPushPoint(blast, origin, boundingRadius, out = [0, 0, 0]) {
+  const ex = blast[0] - origin[0], ey = blast[1] - origin[1], ez = blast[2] - origin[2];
+  const r = boundingRadius > 0 ? boundingRadius : 0;
+  const e2 = ex * ex + ey * ey + ez * ez;
+  if (!(e2 > r * r)) {
+    out[0] = blast[0]; out[1] = blast[1]; out[2] = blast[2];
+    return out;
+  }
+  const k = r / Math.sqrt(e2);
+  out[0] = origin[0] + ex * k; out[1] = origin[1] + ey * k; out[2] = origin[2] + ez * k;
+  return out;
+}
+
 // --- the flight and the landing, run by the page (KNOCK-1, KNOCK-2, KNOCK-8) --
 
 /** `|v|^2` against 64.0: the speed the flight needs (KNOCK-1). */

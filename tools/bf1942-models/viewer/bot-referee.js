@@ -54,10 +54,10 @@ import { roundHit } from './soldier-death.js';
 import { meetSoldier } from './skeleton-hit.js';
 import { barrelRays } from './bot-barrels.js';
 import { botDeviate, botInputIndex, declaredBarrels, deviationIndex, footInputIndex } from './bot-deviation.js';
-import { FireState } from './fire-state.js';
+import { FireState, reloadAmmo } from './fire-state.js';
 import { firePeriod } from './gun-cycle.js';
 import { FRIENDLY_FIRE_SHIPPED, friendlyDamage, roundPasses } from './friendly-fire.js';
-import { healingPackKind, medPackHeals, packParams, repairPackTarget, worldHulls } from './healing-packs.js';
+import { disarmTarget, healingPackKind, medPackHeals, packParams, repairPackTarget, worldHulls } from './healing-packs.js';
 
 // A downed bot waits for the reinforcement wave, as every player does
 // (SPAWN-35: `GameServer::killPlayer` 0x0814d920 sets `BFPlayer+0x8c` with no
@@ -81,6 +81,36 @@ export const BOT_FALLBACK_ROF = 1.0;
 export const BOT_WEAPON_DATA_WAIT = 3;
 /** A soldier body's stand-in radius and origin height (INVENTION). The height
  *  is physics.js `CHARACTER_HEIGHT`. */
+/**
+ * The held weapon's `isReadyToUse` on a page bot, from the referee's own
+ * timers: `FireArms::isReadyToUse` lnxded 0x0828f510 answers false while the
+ * eject-clip (0x0828fc40), reload (0x0828fcb0) or overheat (0x0828fd20) timer
+ * is positive, while the fire timer (`timeToFireFinished`, +0x170 via
+ * 0x0828fd60) is positive and below the round's own period (+0x234,
+ * `1 / roundOfFire`: `fucompp` at 0x0828f629, so the shot's own tick still
+ * answers true), while a `fireDelay` round is owed (+0x294 at 0x0828f5b0),
+ * and with the loaded magazine empty (`mags()[0] <= 0` and not the endless
+ * -1, 0x0828f5ec..0x0828f608). The stance change's torso gate asks it
+ * (BODY-2, `SoldierActions.stanceChanged`). A bot the referee has not armed
+ * yet answers true, as a soldier with no hand weapon passes the gate.
+ */
+export function botWeaponReady(bot) {
+  if (!bot) return true;
+  if (bot._throwRound || bot._altRound) return false;
+  const cool = bot._fireCooldown ?? 0;
+  if (cool > 0 && !(cool >= (bot._firePeriod ?? 0))) return false;
+  const name = bot.weaponAi?.name ?? bot.kitPrimary ?? null;
+  if (!name) return true;
+  const mag = bot._mags?.get?.(name);
+  if (mag) {
+    if (mag.reloadLeft > 0 || mag.ejectLeft > 0) return false;
+    if (!(mag.rounds > 0)) return false;
+  }
+  const heat = bot._heat?.get?.(name);
+  if (heat && heat.overheatRemaining > 0) return false;
+  return true;
+}
+
 export const BOT_BODY_RADIUS = 0.6;
 export const BOT_BODY_HEIGHT = 1.0;
 /** How far from the body centre any capsule of a drawn body can reach, in
@@ -257,10 +287,13 @@ export function lineOfSight(collider, from, to) {
  *    or null where nobody draws him), `onHealed(playerId, armor, before)`, `mountedFire(bot, dt)`,
  *    `soldierBody()` and `soldierTemplateOf(team)` (the packs' numbers, `usePack`),
  *    `packHulls()` (the wrench's hulls, `healing-packs.js` shape; absent, the World's),
+ *    `packRounds()` and `retireRound(shot)` (the live rounds a crouched wrench may
+ *    lift, `gunfire.js` `disarmRounds` / `retireRound`; absent, nothing is lifted),
  *    `captureEnabled()`, `onCapture(bot, flag, prevTeam)`, `onMounted(bot,
  *    cand, mount)`, `onDismounted(bot, mount, opts)`, `onSeatSwitched(bot,
  *    cand)`, `onStrategyChange(side, from, to)`, `onBotCreated(bot)`,
- *    `roundClock()` (the round's clock, which the respawn wave runs on).
+ *    `roundClock()` (the round's clock, which the respawn wave runs on),
+ *    `spawnParams()` (the wave law's parameters, `spawn-timer.js`; absent, retail's).
  */
 export function createBotReferee(env) {
   const referee = {
@@ -289,6 +322,10 @@ export function createBotReferee(env) {
     const c = env.roundClock?.();
     return Number.isFinite(c) ? c : referee.clock;
   };
+  /** The wave law's parameters: the host's (`env.spawnParams()`: single
+   *  player's flat wait, the owner's choice, `spawn-timer.js`
+   *  `singlePlayerSpawnParams`), or retail's defaults where it names none. */
+  const waveParams = () => env.spawnParams?.() ?? undefined;
 
   /**
    * A level change: the bots, their clock, the infantry map, the strategic AI,
@@ -576,8 +613,8 @@ export function createBotReferee(env) {
     // a check's "now" (`map.html` `restartRound`, `__botRespawn`).
     if (!bot._respawnForce) {
       const now = waveClock();
-      if (!Number.isFinite(bot._respawnAt)) bot._respawnAt = spawnReadyAt(now);
-      bot._respawnIn = waveSecondsLeft(now, bot._respawnAt);
+      if (!Number.isFinite(bot._respawnAt)) bot._respawnAt = spawnReadyAt(now, waveParams());
+      bot._respawnIn = waveSecondsLeft(now, bot._respawnAt, waveParams());
       if (bot._respawnIn > 0) return true;
     }
     // A captured capture-only flag is the side's, and still nowhere to spawn;
@@ -921,10 +958,46 @@ export function createBotReferee(env) {
     }
     const holder = { x: at[0], y: at[1], z: at[2], team: me.team ?? 0,
                      crouched: (s?.stance ?? bot.stance) === 'crouch' };
+    if (holder.crouched) {
+      // Crouched, the wrench disarms (SUP-28, `disarmTarget`): the first mine
+      // or pack in reach, anyone's, out of the world unexploded, and one
+      // round back to the bot's item that fires it (`reloadAmmo(1)`).
+      const hit = disarmTarget(holder, env.packRounds?.() ?? [], pack);
+      if (!hit) return null;
+      env.retireRound?.(hit.round.shot ?? hit.round);
+      referee.refundDisarmed(bot, hit.round.template);
+      return { disarmed: hit.round.template, item: hit.item };
+    }
     const hull = repairPackTarget(holder, env.packHulls?.() ?? worldHulls(w), pack);
     if (!hull) return null;
     hull.armor.heal(pack.repairHeal);
     return hull.owner ?? null;
+  };
+
+  /**
+   * A lifted round's charge back to the bot (`useRepairPack` `0x082765f6`,
+   * `FireArms::reloadAmmo(1)`, SUP-8's fill): the weapon it carries whose
+   * projectile is that round's template, the item 4 or 5 retail looks at.
+   * True when a round went back.
+   */
+  referee.refundDisarmed = (bot, template) => {
+    const want = String(template ?? '').toLowerCase();
+    if (!want) return false;
+    for (const w of bot.weapons ?? []) {
+      const data = bot.weaponData?.[w?.name];
+      const p = typeof data?.projectile === 'string' ? data.projectile : data?.projectile?.template;
+      if (String(p ?? '').toLowerCase() !== want) continue;
+      const mag = referee.magazineOf(bot, w.name);
+      if (!mag || !(mag.size > 0)) return false;
+      const counts = { loaded: mag.rounds, spares: mag.spare, pool: mag.pool ?? 0 };
+      const before = mag.rounds + mag.spare * mag.size;
+      reloadAmmo(counts, mag.size, data.magazine?.magazines ?? 1, 1);
+      mag.rounds = counts.loaded;
+      mag.spare = counts.spares;
+      mag.pool = counts.pool;
+      return mag.rounds + mag.spare * mag.size > before;
+    }
+    return false;
   };
 
   referee.applyHeal = (playerId, amount) => {
@@ -1070,6 +1143,9 @@ export function createBotReferee(env) {
   function fireRound(bot, mag, heat, stats, opts = null) {
     const rof = stats?.roundOfFire > 0 ? stats.roundOfFire : BOT_FALLBACK_ROF;
     bot._fireCooldown = firePeriod(rof);
+    // The round's own period (FireArms +0x234), which `botWeaponReady`
+    // compares the timer against.
+    bot._firePeriod = bot._fireCooldown;
     referee.magazineShot(bot, mag);
     heat?.registerShot(1);
     const at = bot.getPosition();
@@ -1146,6 +1222,7 @@ export function createBotReferee(env) {
     if (owed.left > 0) return true;
     bot._altRound = null;
     bot._fireCooldown = firePeriod(alt.roundOfFire > 0 ? alt.roundOfFire : BOT_FALLBACK_ROF);
+    bot._firePeriod = bot._fireCooldown;
     // `handleUpdate` runs the fire timer before the delay (fire-timer.js
     // `delayedFireCycle`): the next tick does not count this one down yet.
     bot._fireCooldownFresh = true;
@@ -1238,8 +1315,8 @@ export function createBotReferee(env) {
     if (bot.vehicle) referee.leaveVehicle(bot, { killed: true });
     bot.isFiring = false;
     bot.firingTarget = null;
-    bot._respawnAt = spawnReadyAt(waveClock());
-    bot._respawnIn = waveSecondsLeft(waveClock(), bot._respawnAt);
+    bot._respawnAt = spawnReadyAt(waveClock(), waveParams());
+    bot._respawnIn = waveSecondsLeft(waveClock(), bot._respawnAt, waveParams());
     referee.strategy?.botDied(playerId);
     env.onDeath?.(bot, attackerId, { ...opts, seated });
   };
@@ -1477,7 +1554,9 @@ export function createBotReferee(env) {
         }
         if (bot.exitRequest) {
           bot.exitRequest = false;
-          referee.leaveVehicle(bot);
+          // Its own Use: a restricted exit blocked on both sides refuses it,
+          // and it stays seated (SEAT-42, `bot-units.js` `mayExit`).
+          if (u.mayExit?.(bot) !== false) referee.leaveVehicle(bot);
         } else if (bot.switchRequest) {
           const req = bot.switchRequest;
           bot.switchRequest = null;

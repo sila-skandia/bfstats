@@ -49,6 +49,7 @@ MODULES = [
     ROOT / "viewer" / "walking-body.js",
     ROOT / "viewer" / "rigid-body.js",
     ROOT / "viewer" / "soldier-resolve.js",
+    ROOT / "viewer" / "deck-carry.js",
     ROOT / "viewer" / "soldier-pose.js",
     ROOT / "viewer" / "soldier-locomotion.js",
     ROOT / "viewer" / "point-body.js",

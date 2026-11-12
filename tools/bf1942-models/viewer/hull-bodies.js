@@ -774,6 +774,8 @@ export function createHullBodies(page) {
   const _holdQuat = new THREE.Quaternion();
   const _holdScale = new THREE.Vector3();
   const _holdVel = [0, 0, 0];
+  // A deck point whose ship speed is asked (`hostPointVelocity`).
+  const _deckAt = [0, 0, 0];
   const _holdAt = [0, 0, 0];
 
   /** The spawner lets `rec`'s craft go, or takes a fresh one up (`released`
@@ -962,7 +964,7 @@ export function createHullBodies(page) {
   const SHIP_DECK_FLOOR_COS = 0.5;
   const _shipRay = { t: 0, x: 0, y: 0, z: 0, nx: 0, ny: 1, nz: 0, dx: 0, dy: -1, dz: 0,
                      material: 0, kind: '', owner: -1, triangle: -1 };
-  const shipDeck = { y: -Infinity, nx: 0, ny: 1, nz: 0, material: 0, owner: -1 };
+  const shipDeck = { y: -Infinity, nx: 0, ny: 1, nz: 0, material: 0, owner: -1, host: null };
 
   /**
    * The top of a ship's own hull under (x, z), at or below `fromY` and at
@@ -1021,6 +1023,7 @@ export function createHullBodies(page) {
       shipDeck.nx = nx; shipDeck.ny = ny; shipDeck.nz = nz;
       shipDeck.material = hit.material;
       shipDeck.owner = owner;
+      shipDeck.host = host;
     }
     return shipDeck.y > -Infinity ? shipDeck : null;
   }
@@ -1376,6 +1379,16 @@ export function createHullBodies(page) {
         return out;
       },
       material: (x, z, y) => deckAt(x, z, y)?.material ?? ground.material(x, z, y),
+      // The deck's point speed under a vertex: a parked body on a ship under
+      // way meets her as an object, at the relative speed (`body-ground.js`
+      // `terrainContact`, `deck-carry.js`). False on the terrain.
+      surfaceVelocity: (x, y, z, vy, out) => {
+        const d = deckAt(x, z, vy);
+        if (!d?.host) return false;
+        _deckAt[0] = x; _deckAt[1] = y; _deckAt[2] = z;
+        hostPointVelocity(d.host.node, _deckAt, out);
+        return true;
+      },
     };
   }
 
@@ -1468,6 +1481,7 @@ export function createHullBodies(page) {
       // reads it: the world's time, the same on a room's server (`held-arm.js`).
       if (heldCraft.length) poseHeldArms(heldCraft, world.tickTime);
       if (heldCraft.length) holdSpawnedCraft();
+      publishTickPoses();
       next?.();
     };
     tick.holdsSpawnedCraft = true;
@@ -1807,6 +1821,16 @@ export function createHullBodies(page) {
     };
     normal.shipDeckBase = baseNormal;
     vehicle.deckNormal = normal;
+    // The deck's own point speed under a wheel, for the contact's relative
+    // speed (`aircraft-ground-law.js` `collideWheels`, `deck-carry.js`): the
+    // ship's `getTangentSpeed` there (`hostPointVelocity`).
+    vehicle.deckVelocity = (x, y, z, fromY, out) => {
+      const deck = col0DeckAt(x, z, Number.isFinite(fromY) ? fromY : vehicle.state.position.y + 0.5);
+      if (!deck || !(deck.y > base(x, z, fromY))) return false;
+      _deckAt[0] = x; _deckAt[1] = y; _deckAt[2] = z;
+      hostPointVelocity(deck.host.node, _deckAt, out);
+      return true;
+    };
     const baseFriction = vehicle.surfaceFriction?.shipDeckBase ?? vehicle.surfaceFriction ?? null;
     if (!baseFriction) return;
     const onDeck = (x, z, fromY) => {
@@ -1844,7 +1868,7 @@ export function createHullBodies(page) {
    * (`hostMatrix`): `{ y, nx, ny, nz, material }` (world), or null. Each
    * host's col0 triangles are cached in its own frame on first use.
    */
-  const _col0Deck = { y: -Infinity, nx: 0, ny: 1, nz: 0, material: 0 };
+  const _col0Deck = { y: -Infinity, nx: 0, ny: 1, nz: 0, material: 0, host: null };
   const _col0Inv = new THREE.Matrix4();
   const _col0P = new THREE.Vector3();
   const _col0D = new THREE.Vector3();
@@ -1912,6 +1936,7 @@ export function createHullBodies(page) {
         if (_col0N.y < SHIP_DECK_FLOOR_COS) continue;
         best = _col0Deck;
         best.y = y; best.nx = _col0N.x; best.ny = _col0N.y; best.nz = _col0N.z; best.material = t.material;
+        best.host = host;
       }
     }
     return best;
@@ -1962,9 +1987,90 @@ export function createHullBodies(page) {
     return Math.max(0, -lowest + HULL_DECK_MARGIN - clearance);
   }
 
+  /**
+   * A land drive (a jeep, a tank, a train's car) on a ship's deck: the deck is
+   * its floor, met as an object (COL-6, COL-22: the face side's col0 when the
+   * vertex side's root radius is 4 m or more, `0x08259690`; col1 under it), and
+   * its wheels' contact speed is theirs less the ship's point speed
+   * (`checkObjectVsObject` 0x08259690 takes `getTangentSpeed` of both roots,
+   * `deck-carry.js`). Before this a land drive's floor was the terrain, the
+   * sea bed and the level's drivable statics only, so one let go on a ship
+   * (EoD's LCT, a car on a carrier) fell through her. Hands the drive
+   * `shipDeckFloor` (the deck under a probe, or null), `deckVelocity`, and
+   * the height, normal and material wrappers its wheels read. Idempotent.
+   */
+  /** How far under the base floor a ship deck is still the same surface. */
+  const SHIP_DECK_SAME = 0.25;
+  function landOnShipDecks(vehicle) {
+    const category = vehicle.node?.userData?.physics?.vehicleCategory;
+    if (category === 'VCAir' || category === 'VCSea') return;
+    if (typeof vehicle.groundHeight !== 'function' || !vehicle.state?.position || !deckHosts.length) return;
+    const base = vehicle.groundHeight.shipDeckBase ?? vehicle.groundHeight;
+    const owner = page.collider?.statics?.ownerOf?.(vehicle.node) ?? -1;
+    const radius = bodyScene.get(owner)?.spec?.boundingRadius ?? vehicle.node?.userData?.cullRadius ?? 3;
+    // COL-22's LOD pick, `rootRadius < 4.0 ? 1 : 0` (0x08259690).
+    const col0 = radius >= 4;
+    const deckUnder = (x, z, fromY) => {
+      const from = Number.isFinite(fromY) ? fromY : vehicle.state.position.y + 0.5;
+      const d = col0 ? col0DeckAt(x, z, from) : shipDeckAt(x, z, from, SHIP_DECK_REACH, owner);
+      // The level's drivable-deck ray finds a moored ship's own col1 too while
+      // she is still over the cells it baked her in (`WorldCollider.deckHeight`
+      // casts the moved owners), so the base can be her deck already: within
+      // `SHIP_DECK_SAME` under it she is the floor, and her speed is in it.
+      if (!d || !(d.y > base(x, z, fromY) - SHIP_DECK_SAME)) return null;
+      return d;
+    };
+    vehicle.shipDeckFloor = deckUnder;
+    const floor = (x, z, fromY) => {
+      const d = deckUnder(x, z, fromY), b = base(x, z, fromY);
+      return d ? Math.max(d.y, b) : b;
+    };
+    floor.shipDeckBase = base;
+    vehicle.groundHeight = floor;
+    const baseNormal = vehicle.deckNormal?.shipDeckBase ?? vehicle.deckNormal ?? null;
+    const normal = (x, z, fromY, out) => {
+      const d = deckUnder(x, z, fromY);
+      if (d) { out[0] = d.nx; out[1] = d.ny; out[2] = d.nz; return true; }
+      return baseNormal ? baseNormal(x, z, fromY, out) : false;
+    };
+    normal.shipDeckBase = baseNormal;
+    vehicle.deckNormal = normal;
+    const baseFriction = vehicle.surfaceFriction?.shipDeckBase ?? vehicle.surfaceFriction ?? null;
+    if (baseFriction) {
+      const friction = (x, z, fromY) => {
+        const d = deckUnder(x, z, fromY);
+        return d ? deckMaterialField(d.material, 'friction', 1.0) : baseFriction(x, z, fromY);
+      };
+      friction.resistance = (x, z, fromY) => {
+        const d = deckUnder(x, z, fromY);
+        if (d) return deckMaterialField(d.material, 'resistance', 0.01);
+        return baseFriction.resistance ? baseFriction.resistance(x, z, fromY) : undefined;
+      };
+      friction.shipDeckBase = baseFriction;
+      vehicle.surfaceFriction = friction;
+      // The drives read the resistance through their own field when they
+      // were handed one (`surfaceResistance`); keep it on the same wrapper.
+      if (typeof vehicle.surfaceResistance === 'function') {
+        const baseRes = vehicle.surfaceResistance.shipDeckBase ?? vehicle.surfaceResistance;
+        const res = (x, z, fromY) => (deckUnder(x, z, fromY)
+          ? deckMaterialField(deckUnder(x, z, fromY).material, 'resistance', 0.01) : baseRes(x, z, fromY));
+        res.shipDeckBase = baseRes;
+        vehicle.surfaceResistance = res;
+      }
+    }
+    vehicle.deckVelocity = (x, y, z, fromY, out) => {
+      const d = deckUnder(x, z, fromY);
+      if (!d?.host) return false;
+      _deckAt[0] = x; _deckAt[1] = y; _deckAt[2] = z;
+      hostPointVelocity(d.host.node, _deckAt, out);
+      return true;
+    };
+  }
+
   /** The player has taken a vehicle: its drive model now stands in for the body. */
   function adoptDrivenBody(vehicle) {
     if (vehicle) aircraftOnShipDecks(vehicle);
+    if (vehicle) landOnShipDecks(vehicle);
     if (!hullBodies.bodyWorld || !vehicle) return;
     const owner = page.collider?.statics?.ownerOf(vehicle.node) ?? -1;
     const scene = bodyScene.get(owner);
@@ -2150,7 +2256,62 @@ export function createHullBodies(page) {
     _bodyFwd.multiplyMatrices(node.matrixWorld, scene.spawnInverse);
     _bodyInv.copy(_bodyFwd).invert();
     page.collider.setMovedOwner(owner, _bodyFwd.elements, _bodyInv.elements,
-      p[0], p[1], p[2], scene.spec.boundingRadius);
+      p[0], p[1], p[2], scene.spec.boundingRadius, scene.spec.mass);
+  }
+
+  /**
+   * Where each moving hull stands at the end of this world tick, told to the
+   * collider from its physics state: the drive's position and orientation, or
+   * the parked body's (the room's `level-instance.mjs` `publishHullPoses` does
+   * the same). A soldier's `pushOutOfHulls` reads a hull's speed as its move
+   * between two looks, one a tick; published once a FRAME (`stepVehicleBodies`)
+   * a frame that ran two or three ticks moved the hull two or three ticks
+   * between one look and the next, and from the render pose, which the
+   * interpolation draws between ticks: a Bf109 taxiing at 6.1 m/s met a
+   * teammate at 12-21 m/s and ran them over (El Alamein, 3 rounds of 3).
+   */
+  function publishTickPoses() {
+    if (!hullBodies.bodyWorld || !page.collider?.setMovedOwner) return;
+    for (const [owner, entry] of hullBodies.bodyWorld.entries) {
+      const scene = bodyScene.get(owner);
+      if (!scene) continue;
+      if (entry.driven) { publishTickPose(owner, scene, entry); continue; }
+      const body = entry.parked?.body;
+      if (!body || body.sleeping || !scene.moved) continue;
+      publishTickPose(owner, scene, entry);
+    }
+  }
+
+  /** One hull's tick pose (`publishTickPoses`) to the collider. */
+  function publishTickPose(owner, scene, entry) {
+    let p;
+    // A craft its spawner still holds stands where the hold put its node.
+    if (heldCraft.length && heldCraft.some(rec => rec.node === scene.node && !rec.released)) {
+      if (!entry.driven) return;
+      const s = entry.driven.vehicle.state.position;
+      publishMovedHull(owner, scene, scene.node, [s.x, s.y, s.z]);
+      return;
+    }
+    if (entry.driven) {
+      const st = entry.driven.vehicle.state;
+      _bodyMatrix.compose(_bodyPos.set(st.position.x, st.position.y, st.position.z),
+                          _bodyQuat.copy(st.orientation), _bodyScale.set(1, 1, 1));
+      // `applyTransform` writes the state as the node's local pose.
+      if (scene.node.parent) _bodyMatrix.premultiply(scene.node.parent.matrixWorld);
+      p = [st.position.x, st.position.y, st.position.z];
+    } else {
+      const a = entry.parked.body.axes;
+      p = entry.parked.body.pos;
+      _bodyMatrix.set(
+        a[0][0], a[1][0], a[2][0], p[0],
+        a[0][1], a[1][1], a[2][1], p[1],
+        a[0][2], a[1][2], a[2][2], p[2],
+        0, 0, 0, 1);
+    }
+    _bodyFwd.multiplyMatrices(_bodyMatrix, scene.spawnInverse);
+    _bodyInv.copy(_bodyFwd).invert();
+    page.collider.setMovedOwner(owner, _bodyFwd.elements, _bodyInv.elements,
+      p[0], p[1], p[2], scene.spec.boundingRadius, scene.spec.mass);
   }
 
   /** One body tick of the world, drawn: the world's step() (frame(), above)
@@ -2171,8 +2332,7 @@ export function createHullBodies(page) {
         if (!page.drawsHull(entry.driven.vehicle)) {
           entry.driven.vehicle.applyTransform();
         }
-        const s = entry.driven.vehicle.state.position;
-        publishMovedHull(owner, scene, scene.node, [s.x, s.y, s.z]);
+        publishTickPose(owner, scene, entry);
         continue;
       }
       const body = entry.parked.body;

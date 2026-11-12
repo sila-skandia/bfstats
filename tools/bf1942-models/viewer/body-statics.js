@@ -26,7 +26,7 @@
 //
 // --- what the static world has to answer -------------------------------------
 //
-//   near(x, y, z, dx, dy, dz, dist, radius, owner, stepTop) -> boolean
+//   near(x, y, z, dx, dy, dz, dist, radius, owner, stepTop, coarse) -> boolean
 //       Optional broadphase, the analogue of §5.1's one grid query per root
 //       per tick: is anything static within `radius` of the segment at all.
 //       Called ONCE per body, before its vertex casts, and a real adapter is
@@ -35,6 +35,8 @@
 //       (`WorldCollider.staticProbe` does exactly that, and it is the
 //       difference between one grid walk per body per tick and one per
 //       vertex). Without it every vertex pays a grid walk on an empty field.
+//       `coarse` (COL-22, `isCoarseRoot`): the body is a large root, which
+//       meets a two-layer static's col0 rather than its col1.
 //   cast(ox, oy, oz, dx, dy, dz, maxDist, owner, stepTop, groups)
 //       The first static face a ray crosses, or null. `dx/dy/dz` unit,
 //       `maxDist` metres. `owner` is the probing body's own owner id, to be
@@ -120,6 +122,20 @@ const HANDLER_SPEED_THRESHOLD_SQ = 0.1;
 export const KERB_STEP = 1.0;
 
 /**
+ * COL-22: a root whose composite bounding radius (`body.rootRadius`, from the
+ * tree's `collision-meshes.json` `rootRadius`, `coarse-layer.js`) is at least
+ * this meets a two-layer static's col0; a smaller one meets its col1
+ * (`checkObjectVsObject` lnxded 0x08259735, `flds 0x086c0304` = 4.0). A body
+ * with no table radius meets col1, as the bake has it.
+ */
+export const COARSE_LAYER_RADIUS = 4.0;
+
+/** Whether `body` meets the statics' coarse layer (COL-22). */
+export function isCoarseRoot(body) {
+  return Number.isFinite(body?.rootRadius) && !(body.rootRadius < COARSE_LAYER_RADIUS);
+}
+
+/**
  * `shareA` for a body of `mass` against a static object, through the same
  * §6.1 rule a vehicle pair takes. 1.0 for every vehicle mass there is — the
  * value is not the point, going through the one rule is.
@@ -182,7 +198,7 @@ export function collideWithStatics(parts, statics, dt, handlers) {
     const dist = Math.hypot(dx, dy, dz);
     const inv = dist > 1e-9 ? 1 / dist : 0;
     if (!statics.near(_S[0], _S[1], _S[2], dx * inv, dy * inv, dz * inv,
-                      dist, body.boundingRadius ?? 0, owner, stepTop)) {
+                      dist, body.boundingRadius ?? 0, owner, stepTop, isCoarseRoot(body))) {
       return 0;
     }
   }

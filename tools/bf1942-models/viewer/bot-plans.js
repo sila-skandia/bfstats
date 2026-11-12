@@ -12,7 +12,7 @@ import { firingPose, firePlanFor, fireApproachStep, choseWeapon, FIRE, FIRE_APPR
 import { SCOUT, TAKE_COVER, MEDIC } from './bot-behaviours.js';
 import { planeFireMode, PLANE_FIRE, boatControl, BOAT } from './bot-vehicle-air.js';
 import { freeLevel } from './nav-grid.js';
-import { hullDecision, VEHICLE_YAW_SIGN } from './bot-route.js';
+import { hullDecision, VEHICLE_YAW_SIGN, drivesHull, planHullAvoid, execHullAvoid } from './bot-route.js';
 import { AIM_COUNTS_MAX, wrapAngle, faceTarget, turretAimAt, turretMiss, precisionFor, precisionHolds, targetShape,
   gunSeatAim, gunSeatIndirectLine, aimerOnlyHolds } from './bot-aim.js';
 import { tankTurnTowards } from './bot-vehicle.js';
@@ -46,6 +46,8 @@ export const PLAN_ACTION = {
   PlaneAttack: 'PlaneAttack',
   /** `BBPAvoidCollision3d`: the aircraft's turn away from a predicted collision. */
   PlaneAvoid: 'PlaneAvoid',
+  /** `BBPAvoidCollision2d`: a driven hull's or boat's side step (`BAPAMoveToDirect`). */
+  HullAvoid: 'HullAvoid',
   MoveToMediumSoldier: 'MoveToMediumSoldier',
   MoveToObjectMediumSoldier: 'MoveToObjectMediumSoldier',
   MouseTurretAimAt: 'MouseTurretAimAt',
@@ -802,6 +804,17 @@ export function planAvoid(bot, now) {
     plan.otherId = r.otherId;
     return plan;
   }
+  if (drivesHull(bot)) {
+    // `BBPAvoidCollision2d::createPlan` 0x08586420 (bot-route.js).
+    const cur = bot.currentPlan;
+    if (bot.planBehaviour === BEHAVIOUR.Avoid && cur.length && cur.otherId === bot._hullAvoidBest?.id
+        && !cur.every(a => a.done)) return cur;
+    const r = planHullAvoid(bot, now);
+    if (!r) return bot._planIdle();
+    const plan = [{ type: PLAN_ACTION.HullAvoid, point: r.point, until: r.until }];
+    plan.otherId = r.otherId;
+    return plan;
+  }
   const t = bot._avoidThreatDir;
   if (!t) return bot._planIdle();
   const cur = bot.currentPlan;
@@ -1008,6 +1021,8 @@ export function executeAction(bot, action, dt, now) {
       return bot._execPlaneAttack(action, now);
     case PLAN_ACTION.PlaneAvoid:
       return execPlaneAvoid(bot, action, now);
+    case PLAN_ACTION.HullAvoid:
+      return execHullAvoid(bot, action, now);
     case PLAN_ACTION.Sense:
       return bot._execSense(action);
     case PLAN_ACTION.SoldierPose:

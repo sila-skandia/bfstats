@@ -95,6 +95,7 @@ const _tPre = new THREE.Vector3();
 const _tPost = new THREE.Vector3();
 const _spin = new THREE.Quaternion();
 const _surface = { y: NaN, nx: 0, ny: 1, nz: 0 };
+const _deckV = [0, 0, 0];
 
 /** Whether a wheel table carries what the law needs (`aircraftSpec`'s
  *  `anchor`, `vertex`, `strength`). */
@@ -351,6 +352,21 @@ export function collideWheels(plane, law, s, occupied, g) {
   law.frictionSamples = 0;
   if (law.sleepiness <= 0) {
     for (const leg of law.legs) { leg.latch = false; leg.contact = false; }
+    // A sleeping body on a ship under way is still in her contacts: the ship
+    // is awake and visits it, and the resolve pass runs `addFriction` on every
+    // part with no sleeping test, which wakes the root once the contact's speed
+    // squared passes 0.1 (collision-response.md 2 and 4.3, 0x0825b6e0). The
+    // contact's speed is the deck's against a root at rest.
+    if (plane.deckVelocity) {
+      for (const leg of law.legs) {
+        legPoint(leg, leg.spec.anchor, _anchor).applyQuaternion(q).add(s.position);
+        if (plane.deckVelocity(_anchor.x, _anchor.y, _anchor.z, _anchor.y + 0.5, _deckV)
+            && _deckV[0] ** 2 + _deckV[1] ** 2 + _deckV[2] ** 2 > CONTACT_WAKE2) {
+          law.sleepiness = SLEEP_TICKS;
+          break;
+        }
+      }
+    }
     law.last.valid = false;
     law.prev.valid = false;
     return 0;
@@ -385,6 +401,16 @@ export function collideWheels(plane, law, s, occupied, g) {
     _C.set(_vert.x, _ground.y, _vert.z);
     _arm.subVectors(_C, s.position);
     const speed = _V.crossVectors(w, _arm).add(s.velocity);
+    // On a ship's deck the contact is object against object, and its speed is
+    // `getTangentSpeed` of both roots (`checkObjectVsObject` 0x08259690,
+    // collision-response.md 6.2), the plane the vertex side at share 1 (the
+    // root radii more than 4x apart, 5.3): the plane's point speed less the
+    // deck's (`hull-bodies.js` `aircraftLawOnShipDecks`, `deck-carry.js`). So
+    // a plane let go on a carrier under way is held on her deck by the same
+    // latch that holds it parked ashore, and rolls at its speed over the deck.
+    if (plane.deckVelocity?.(_C.x, _C.y, _C.z, _anchor.y + 0.5, _deckV)) {
+      speed.x -= _deckV[0]; speed.y -= _deckV[1]; speed.z -= _deckV[2];
+    }
     const speed2 = speed.lengthSq();
     const ground = plane.surfaceFriction ? plane.surfaceFriction(_vert.x, _vert.z, _anchor.y) : 1.0;
     const groundRes = plane.surfaceFriction?.resistance

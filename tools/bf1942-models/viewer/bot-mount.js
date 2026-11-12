@@ -585,7 +585,9 @@ export function urgencyChangeTeleport(bot, { mine, selfU, split, driver, health,
   // (0x0856145b). It scales the stay and every seat alike, so on its own it
   // moves no one to another seat.
   const r = teleportChangeUrgency({ where, rootU, selfU, seats: others, orderFactor, attackSplit: split[0],
-                                    hasPlan: bot._hasPlan(), pending: !!bot.enterRequest, radio });
+                                    hasPlan: bot._hasPlan(), pending: !!bot.enterRequest, radio,
+                                    // `BBChangeLandingCraft` 0x085602b0 for a landing craft's seats.
+                                    landing: LANDING_CRAFT_RE.test(m.template ?? '') });
   if (!r.best) return null;
   const cand = r.best.id === 'root' ? rootCand : others.find(o => o.id === r.best.id)?.cand;
   if (!cand) return null;

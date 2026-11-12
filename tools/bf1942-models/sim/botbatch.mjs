@@ -126,7 +126,11 @@ export async function runMatrix({ maps, models, level, out, seeds = 10, sizes = 
       mkdirSync(t.dir, { recursive: true });
       await runOne([path.join(HERE, 'run.mjs'), '--map', level, '--maps', maps, ...(models ? ['--models', models] : []),
                     '--bots', String(t.size), '--time', String(time), '--seed', String(t.seed), ...(vehicles ? [] : ['--no-vehicles']),
-                    '--trace-every', String(traceEvery), '--doctrine', doctrine, '--quiet', '--out', t.dir], path.join(HERE, '..'));
+                    '--trace-every', String(traceEvery), '--doctrine', doctrine,
+                    // The bars in baselines/ were recorded on retail's 20 s wave; single
+                    // player's 3 s flat respawn (the owner's choice, 2026-11-12) would
+                    // judge a level against a bar it was not recorded under.
+                    '--spawn-time', 'wave', '--quiet', '--out', t.dir], path.join(HERE, '..'));
       const row = { ...await detectRun(t.dir), config: vehicles ? CONFIG.vehicles : CONFIG.foot };
       writeFileSync(rowFile, JSON.stringify(row) + '\n');
       if (!keepTraces) rmSync(path.join(t.dir, 'trace.jsonl'), { force: true });

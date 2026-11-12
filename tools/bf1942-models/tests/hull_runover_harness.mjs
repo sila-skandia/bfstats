@@ -231,7 +231,7 @@ function shoved(kind, speed, seconds) {
 
 /** Through the World's soldier tick (`world-soldier-tick.js`): the run-over
  *  billed to their Armor, 30 HP, against the shipped damage tables. */
-function worldRunOver(kind, speed) {
+function worldRunOver(kind, speed, every = 1) {
   const { spec, world: collider, at } = stage(kind);
   const extras = {
     worldSize: 128,
@@ -248,11 +248,13 @@ function worldRunOver(kind, speed) {
   let ticks = 0;
   while (at.hx < SOLDIER.x + 4 && ticks < 300) {
     at.hx += speed * DT;
-    at.publish();
+    // `every` > 1: the pose published once a frame of that many ticks, as
+    // the page's `stepVehicleBodies` did (El Alamein's taxiing Bf109).
+    if (ticks % every === 0) at.publish();
     w.step(DT);
     ticks++;
   }
-  return { kind, speed, hp0, hp: r3(p.armor.hitPoints), dead: !!p.armor.destroyed,
+  return { kind, speed, every, hp0, hp: r3(p.armor.hitPoints), dead: !!p.armor.destroyed,
            lost: r3(hp0 - p.armor.hitPoints) };
 }
 
@@ -327,4 +329,134 @@ for (const kind of ['tank', 'jeep']) {
   out.shoved.push(shoved(kind, 5, 4));
   for (const speed of [5, 9, 12]) out.world.push(worldRunOver(kind, speed));
 }
+// --- the hull's turning and its mass (COL-2; `pushOutOfHulls`) -------------
+//
+// `relV` and `S` take the roots' linear speeds; a hit's speed is the hull's
+// tangent speed there, spin included (`getTangentSpeed` 0x08254b90). A tank
+// box pivoting on the spot about its middle sweeps a soldier standing off
+// its stern corner: the root does not move, the corner does, at omega x r.
+const { hullShares } = await imp('soldier-resolve.js');
+function rotationAbout(cx, cz, a) {
+  const c = Math.cos(a), s = Math.sin(a);
+  // x' = c (x - cx) + s (z - cz) + cx ; z' = -s (x - cx) + c (z - cz) + cz  (a turn about +y)
+  return [c, 0, -s, 0, 0, 1, 0, 0, s, 0, c, 0,
+          cx - c * cx - s * cz, 0, cz + s * cx - c * cz, 1];
+}
+function spin(omega) {
+  const { spec, world, owner } = stage('tank');
+  const radius = Math.hypot(spec.halfW, spec.halfL, spec.top);
+  let angle = 0;
+  const publish = () => world.setMovedOwner(owner, rotationAbout(SOLDIER.x, SOLDIER.z, angle),
+    rotationAbout(SOLDIER.x, SOLDIER.z, -angle), SOLDIER.x, spec.top / 2, SOLDIER.z, radius);
+  publish();
+  const s = new SoldierBody({ world, yaw: 0 });
+  // Off the stern, beside its corner: the turn brings the side into them.
+  const sx = SOLDIER.x + spec.halfL - 0.3, sz = SOLDIER.z + spec.halfW + 0.45;
+  s.place(sx, 0, sz, 0);
+  for (let i = 0; i < 10; i++) { publish(); s.step(DT, {}); }
+  const contacts = [];
+  for (let i = 0; i < 40 && !contacts.length; i++) {
+    angle += omega * DT;
+    publish();
+    s.step(DT, {});
+    for (const c of s.hullContacts) contacts.push(c);
+  }
+  const first = contacts[0] ?? null;
+  const at = first ? Math.hypot(first.x - SOLDIER.x, first.z - SOLDIER.z) : null;
+  return {
+    omega, contacts: contacts.length,
+    firstHullSpeed: first ? r3(Math.hypot(...first.hullVelocity)) : null,
+    firstArm: at === null ? null : r3(at),
+    moved: r3(Math.hypot(s.position.x - sx, s.position.z - sz)),
+  };
+}
+out.spin = [spin(Math.PI / 2), spin(Math.PI)];
+
+// A light hull, 1000 kg against the soldier's 100: s = 1000 / 1100, so they
+// take 0.909 of the push and the hull -0.091 of it through its own response.
+function light(mass) {
+  const { spec, world, owner, at } = stage('jeep');
+  const radius = Math.hypot(spec.halfW, spec.halfL, spec.top);
+  at.publish = () => {
+    const dx = at.hx - SOLDIER.x;
+    world.setMovedOwner(owner, translation(dx, 0, 0), translation(-dx, 0, 0), at.hx, spec.top / 2,
+                        SOLDIER.z, radius, mass);
+  };
+  at.publish();
+  const s = new SoldierBody({ world, yaw: 0 });
+  s.place(SOLDIER.x, 0, SOLDIER.z, 0);
+  for (let i = 0; i < 30; i++) s.step(DT, {});
+  const reactions = [];
+  let firstPush = null;
+  for (let i = 0; i < 200 && at.hx < SOLDIER.x; i++) {
+    at.hx = Math.min(SOLDIER.x, at.hx + 5 * DT);
+    at.publish();
+    const x0 = s.position.x;
+    s.step(DT, {});
+    for (const r of s.hullReactions ?? []) reactions.push(r);
+    if (firstPush === null && s.hullPushed) firstPush = r3(s.position.x - x0);
+    s.hullPushed = false;
+  }
+  const r0 = reactions[0] ?? null;
+  return { mass, reactions: reactions.length, firstPush,
+           firstReaction: r0 && { push: r0.push.map(v => r3(v)), accel: r0.accel.map(v => r3(v)) } };
+}
+out.light = [light(1000), light(2500), light(null)];
+out.shares = [2500, 1900, 1000, 100, 3, null].map(m => {
+  const { a, b } = hullShares(m);
+  return [m, Math.round(a * 1e6) / 1e6, Math.round(b * 1e6) / 1e6];
+});
+
+// --- a soldier who gets out beside a hull that moved while they sat ---------
+//
+// Their hull tracks (`walker._hullSeen`) were not stepped in a seat. A hull
+// that crept 1.1 m in that time read, on the first look out, as one tick's
+// 33 m/s and billed 177 HP from a hull doing 0.01 m/s (the driver-avoid
+// builder's rennpiste_gebirge seed 6). Seated, the world now keeps the tracks
+// up (`seatedHullWatch`). `bypass` takes the player out of the world for the
+// creep and puts the same record back, so nothing steps or watches their body
+// and only the world-tick re-seed in `trackHulls` stands between them and the
+// bill.
+function staleExit({ driveAfter = 0, bypass = false } = {}) {
+  const { world: collider, at } = stage('tank');
+  const extras = {
+    worldSize: 128,
+    controlPoints: [{ name: 'A', spawnGroupId: 1, team: 1, position: [SOLDIER.x, 0, SOLDIER.z] }],
+    soldierSpawns: [{ name: 'A1', group: 1, team: 1, position: [SOLDIER.x, 0, SOLDIER.z], rotation: [180, 0, 0] }],
+    tickets: { 1: 100, 2: 100 },
+  };
+  const damageTables = JSON.parse(readFileSync(path.join(viewer, 'maps', '_shared', 'damage.json'), 'utf8'));
+  const w = new World({ collider, extras, damageTables, groundHeight: () => 0 });
+  const v = w.addPlayer('V', { team: 1 });
+  w.setPlayerArmor('V', new Armor(1000));
+  // The nose 1.1 m short of their reach, less a centimetre: it creeps the
+  // 1.1 m while they sit, and they get out touching it.
+  at.hx = SOLDIER.x - 2.9 - 0.4 - 1.1 + 0.01;
+  at.publish();
+  for (let i = 0; i < 30; i++) w.step(DT);
+  const other = { name: 'another hull' };
+  const occupancy = { root: other, isActiveRoot: () => true, activeFireArmsNodes: () => [], activeSeatId: 0, rootId: 0 };
+  if (bypass) w.players.delete('V');
+  else w.setPlayerVehicle('V', { occupancy, vehicle: null, kind: 'seat' });
+  for (let i = 0; i < 60; i++) { at.hx += 1.1 / 60; at.publish(); w.step(DT); }
+  if (bypass) w.players.set('V', v);
+  else w.clearPlayerVehicle('V');
+  const x0 = v.soldier.x;
+  const hp0 = v.armor.hitPoints;
+  const runs = [];
+  for (let i = 0; i < 60; i++) {
+    at.hx += (driveAfter || 0.01) * DT;
+    at.publish();
+    const step = w.step(DT);
+    for (const r of step.runOvers ?? []) runs.push(r);
+  }
+  return { driveAfter, bypass, runs: runs.length, lost: r3(hp0 - v.armor.hitPoints),
+           pushed: r3(Math.abs(v.soldier.x - x0)) };
+}
+// A pose published once every two or three ticks: a 6.1 m/s hull is still a
+// 6.1 m/s hull (no run-over, retail's floor is 8.0, 0x086c08c0 at
+// 0x08155a10), a 12 m/s one still kills.
+out.cadence = [2, 3].flatMap(every => [6.1, 12].map(speed => worldRunOver('jeep', speed, every)));
+out.staleExit = [staleExit(), staleExit({ bypass: true }), staleExit({ driveAfter: 9 })];
+
 process.stdout.write(JSON.stringify(out));

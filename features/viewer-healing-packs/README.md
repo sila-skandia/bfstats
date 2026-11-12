@@ -284,3 +284,44 @@ Open:
   block), which means re-extracting every tree's models.
 - The engine sends an empty `autoReload` item the reload message even when it
   is not in hand; here a holstered Bazooka starts its reload when raised.
+
+## 2026-11-12: the crouched wrench disarms; a weapon's pool of mines and packs
+
+Built from the retail inverse audit, entries 4 and 42
+(`features/retail-inverse-gap-audit-2026-11-12`). Engine side: SUP-28 (the
+disarm), FA-2 (the pool), KITDROP-7/10 (the kit carries its weapons' rounds).
+
+- **The crouched wrench lifts a mine or a pack.** `healing-packs.js`
+  `disarmTarget`: crouched, the first live `ExpPackProjectile` or
+  `LandmineProjectile` within its own radius plus `disarmMinesDistance` (2.0),
+  anyone's, leaves the world unexploded (`gunfire.js` `retireRound`), and the
+  holder's item 4 (pack) or 5 (mine) takes one round back through the depot's
+  `reloadAmmo` fill when it fires that round (`hand-weapon.js`
+  `refundDisarmed`). The human (`hand-fire.js` `disarmWithWrench`), the bots
+  (`bot-referee.js` `usePack`, `packRounds` / `retireRound` from `map.html`
+  and `sim/match.mjs`) and the room: the page finds the round and names it
+  (`{type: 'pack', disarm: {at, template}}`), `server/room-packs.mjs` bounds
+  the claim against its own soldier and sends a `disarm` row, and every other
+  page takes its copy out (`net-room.js` `takeDisarm`), the layer's real one
+  among them.
+- **A pack's or a mine's pool is `2 x magSize + 1`.** `round-launch.js`
+  `roundPoolSize` / `takePoolSlot`: the weapons named `ExpPack` and
+  `Landmine` keep a wrapping index on the kit token, so the tenth live mine
+  takes the first one's object and the first vanishes unexploded. The
+  index wraps whatever the slot holds, as retail's does, so a slot a disarm
+  freed is not looked for.
+- **The plunger reaches the kit's packs.** `demolitions.js` `fireDetonator`
+  sets off every live round of the kit's ExpPack (`gunfire.js`
+  `detonatePool`, by the kit token and the weapon's name), so a kit picked up
+  off a dead engineer brings their packs onto the taker's plunger, and the
+  taker's own go with the kit they dropped.
+
+Checked: `tests/test_healing_packs.py` (the reach, the order, the two
+templates, the item indices, the pool sizes and the wrap, the page's rounds by
+kit, a crouched bot's lift and refund), `tests/test_room.py` (z3p: a lift in
+reach goes out as a row; one 5 m off, a mod's mine and a standing claim do
+not).
+
+Open: the object manager's candidate order (`0x082761a1`) is not read; the
+page takes the oldest launched first. The pools of every other networked
+weapon (FA-2's "fields not named") are not built.

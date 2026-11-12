@@ -256,7 +256,7 @@ export function createStage(M, level, { vehicles = true, kinds = STAGE_KINDS, se
   statics.indexScene(root);
   terrain.collectTerrain(root);
   terrain.setTables(data.terrainMaterials, data.damageTables, data.heightmap ?? null);
-  terrain.buildCollider(root);
+  terrain.buildCollider(root, { collisionMeshes: data.collisionMeshes });
   hullBodies.setupVehicleBodies();
   stage.collider = terrain.collider;
 
@@ -350,6 +350,21 @@ export function createStage(M, level, { vehicles = true, kinds = STAGE_KINDS, se
     if (!hull) return false;
     hull.damage(dmg, attackerId, { weapon, splash });
     return true;
+  };
+
+  /** Right after the world step (map.html `simulate`'s `runOverContacts`): a
+   *  hull that ran a bot over this step bills the referee, the driver
+   *  credited (`world-soldier-tick.js` `runOverTick`), else the victim's last
+   *  hitter. Without it the runner never counted a run-over death. */
+  stage.afterWorldStep = step => {
+    const ref = stage.referee;
+    if (!ref) return;
+    for (const ev of step?.runOvers ?? []) {
+      if (!(ev.lost > 0) || ev.playerId == null) continue;
+      if (!ref.bots.some(b => b.playerId === ev.playerId)) continue;
+      ref.damageLanded(ev.playerId, ev.lost, ev.attacker ?? null, null,
+                       { via: 'roadkill', roadkill: true, environment: ev.attacker == null });
+    }
   };
 
   /** Between the referee's tick and the capture pass (map.html frame()). */

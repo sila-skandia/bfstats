@@ -349,7 +349,9 @@ export function createPageInput(page) {
     // of a drivetrain, the seat's for a gunner or a seat of a hull with no
     // drive (`mannedActive()` is the check that is right either way).
     if (page.optPilot.checked && page.occupancy) {
-      page.exitSeat();
+      // A press: a restricted exit blocked on both sides refuses it and the
+      // press is spent (SEAT-42, `toggleEntryPoint` 0x0814eee3).
+      page.exitSeat({ press: true });
       pageInput.noteSeatToggle();
     } else if (page.optOnFoot.checked && page.soldier && pageInput.captured) {
       // The door is looked up on the PRESS, not read off the HUD's offer.

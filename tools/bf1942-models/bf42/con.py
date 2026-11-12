@@ -1312,6 +1312,23 @@ class ObjectTemplate:
     # 0x081ddd09). Vanilla's soldiers 75 / 600, Desert Combat's 150 / 600.
     explosion_force_mod: float | None = None
     explosion_force_max: float | None = None
+    # The object's own blast when its Armor dies (gap audit entry 3):
+    # `Armor::status` (lnxded 0x081739e0) sends the destruction message and,
+    # when `explosionDamage` is above 0.001 (`0x86c0308`, 0x08173d6b), calls
+    # `GameServer::handleExplosion` (game vt+0x38, 0x08173df0) at the object's
+    # `getPos` with these four, the Armor's last hitter as the attacker and
+    # team -1. The template words are ConsoleClass120..123 (lnxded
+    # 0x081b6e63 / 0x081b6d92 / 0x081b6cc1 / 0x081b6bf0 name them):
+    # `explosionRadius` float `+0xdc` (default 15.0, 0x081dbdf4),
+    # `explosionDamage` float `+0xe0` (10.0, 0x081dbdfe), `explosionMaterial`
+    # an `istream >> int` `+0xe4` (204, 0x081dbe08), `explosionForce` float
+    # `+0xe8` (150.0, 0x081dbe12), each handed to the Armor by
+    # `setArmorComponent` (0x081ddcba..0x081ddcf6). Distinct from a
+    # projectile's `radius`, which is `explosion_radius` above.
+    armor_explosion_radius: float | None = None
+    armor_explosion_damage: float | None = None
+    armor_explosion_material: int | None = None
+    armor_explosion_force: float | None = None
     # `forceOnExplosion` is `ProjectileTemplate+0x1b0` (ConsoleClass398,
     # 0x082e1530; default 150). Its console object answers only while the
     # active template is a projectile (`getActiveTemplate(0x9495)`), so the
@@ -3197,6 +3214,22 @@ class ObjectLibrary:
                         "repairdistance": "repair_distance",
                         "repairfactor": "repair_factor",
                     }[cmd], value)
+                # -- The object's own death blast (`armor_explosion_*`).
+                elif cmd in ("explosionradius", "explosiondamage",
+                             "explosionmaterial", "explosionforce"):
+                    try:
+                        value = float(args.split()[0])
+                    except (ValueError, IndexError):
+                        continue
+                    if cmd == "explosionmaterial":
+                        # `istream >> int` (ConsoleClass122): `3.5` is 3.
+                        obj.armor_explosion_material = int(value)
+                    else:
+                        setattr(obj, {
+                            "explosionradius": "armor_explosion_radius",
+                            "explosiondamage": "armor_explosion_damage",
+                            "explosionforce": "armor_explosion_force",
+                        }[cmd], value)
                 # -- The blast's push (ledger KNOCK-4, KNOCK-7).
                 elif cmd in ("explosionforcemod", "explosionforcemax",
                              "forceonexplosion"):
