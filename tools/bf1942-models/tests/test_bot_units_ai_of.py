@@ -43,6 +43,15 @@ class AiOfTests(unittest.TestCase):
         self.assertEqual("H-6", self.results["folderHull"])
         self.assertEqual("A10_B", self.results["variant"])
 
+    def test_a_rounds_template_mesh_is_not_the_hulls_box(self) -> None:
+        # GCMOD's gunships park a laser-sight beam 9.2 km long on a gun; the box is the hull's body.
+        self.assertEqual(self.results["boxBare"], 20)
+        self.assertEqual(self.results["boxWithRoundMesh"], 20)
+        self.assertEqual(self.results["boxWithRoundGroup"], 20)
+
+    def test_a_barrel_is_still_in_the_box(self) -> None:
+        self.assertEqual(self.results["boxWithBarrel"], 40)
+
     def test_no_record_is_null(self) -> None:
         self.assertIsNone(self.results["unknown"])
 

@@ -544,6 +544,10 @@ export function createHullBodies(page) {
       const local = new THREE.Box3();
       node.traverse(o => {
         if (!o.isMesh || !o.geometry) return;
+        // Not a round's template mesh (`userData.projectileMesh`): GCMOD's
+        // gunships carry a laser-sight beam 9.2 km long, which made the hull's
+        // reach the whole level (`bot-units.js localBox` has the same rule).
+        for (let a = o; a && a !== node; a = a.parent) if (a.userData?.projectileMesh) return;
         if (!o.geometry.boundingBox) o.geometry.computeBoundingBox();
         local.copy(o.geometry.boundingBox).applyMatrix4(_tmpReach.multiplyMatrices(_reachInv, o.matrixWorld));
         _reachBox.union(local);

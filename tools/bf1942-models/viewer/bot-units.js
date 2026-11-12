@@ -276,6 +276,14 @@ export function createBotUnits(env) {
     node.traverse(o => {
       const g = o.isMesh ? o.geometry : null;
       if (!g) return;
+      // A round's template mesh (`userData.projectileMesh`: the shell, bomb
+      // or beam the exporter parks on the gun that fires it) is the weapon's
+      // round, not the hull's body. GCMOD's gunships carry a
+      // `LaserSightProjectile` beam 9.2 km long: with it in the box the hull
+      // read 4.6 km in radius, every soldier on the level predicted a
+      // collision with it, and each planted its 587 sub-spheres (GC_BCanyon,
+      // 2026-11-12: a 20 s match did not finish in seven minutes).
+      for (let a = o; a && a !== node; a = a.parent) if (a.userData?.projectileMesh) return;
       if (!g.boundingBox) g.computeBoundingBox();
       if (!g.boundingBox || g.boundingBox.isEmpty()) return;
       _b.copy(g.boundingBox).applyMatrix4(_m.multiplyMatrices(_inv, o.matrixWorld));

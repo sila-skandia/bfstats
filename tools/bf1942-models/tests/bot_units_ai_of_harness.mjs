@@ -30,8 +30,42 @@ const records = {
 };
 units.ai = new Map(Object.entries(records).map(([name, info]) => [name.toLowerCase(), { name, ...info }]));
 
+// `localBox`: a hull's box is its body. A round's template mesh parked on a
+// gun (`userData.projectileMesh`) is left out, whether it is the mesh itself
+// or a group over its primitives: GCMOD's gunships carry a beam 9.2 km long.
+const THREE = await import('three');
+function gunship(beam) {
+  const hull = new THREE.Group();
+  hull.add(new THREE.Mesh(new THREE.BoxGeometry(15, 6, 20)));
+  const gun = new THREE.Group();
+  hull.add(gun);
+  if (beam === 'mesh') {
+    const round = new THREE.Mesh(new THREE.BoxGeometry(0.1, 0.1, 9200));
+    round.position.z = -4600;
+    round.userData.projectileMesh = { template: 'LaserSightProjectile' };
+    gun.add(round);
+  } else if (beam === 'group') {
+    const round = new THREE.Group();
+    round.userData.projectileMesh = { template: 'LaserSightProjectile' };
+    const part = new THREE.Mesh(new THREE.BoxGeometry(0.1, 0.1, 9200));
+    part.position.z = -4600;
+    round.add(part);
+    gun.add(round);
+  } else if (beam === 'unmarked') {
+    const part = new THREE.Mesh(new THREE.BoxGeometry(1, 1, 30));
+    part.position.z = -15;
+    gun.add(part);
+  }
+  return hull;
+}
+const depth = beam => { const b = units.localBox(gunship(beam)); return +(b.max[2] - b.min[2]).toFixed(2); };
+
 const nameOf = node => units.aiOf(node)?.name ?? null;
 console.log(JSON.stringify({
+  boxBare: depth(null),
+  boxWithRoundMesh: depth('mesh'),
+  boxWithRoundGroup: depth('group'),
+  boxWithBarrel: depth('unmarked'),
   howitzer155: nameOf({ name: 'x', userData: { control: 'Howitzer_155' } }),
   shermanCopy: nameOf({ name: 'Sherman_3', userData: {} }),
   shermanSeat: nameOf({ name: 'y', userData: { control: 'shermanBrowning_PCO1' } }),
