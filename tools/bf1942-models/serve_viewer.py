@@ -198,6 +198,17 @@ def remote_enabled(flag: bool) -> bool:
     return not flag and os.environ.get("BF_VIEWER_REMOTE", "").lower() not in ("0", "off", "no", "false")
 
 
+class ViewerServer(ThreadingHTTPServer):
+    """A map page opens with a burst of requests (a level's JSON, its HUD,
+    the modules, a mod's trees through the remote fallback). Python's default
+    queue of 5 waiting connections let the rest be reset, and the page never
+    opened its replay; a session had been starting its own server with 1024 to
+    get by."""
+
+    request_queue_size = 1024
+    daemon_threads = True
+
+
 def main() -> None:
     ap = argparse.ArgumentParser(description=__doc__.split("\n\n")[0])
     ap.add_argument("port", nargs="?", type=int, default=5273)
@@ -223,7 +234,7 @@ def main() -> None:
     else:
         remote = RemoteCache(args.remote, args.cache) if remote_enabled(args.no_remote) else None
     handler = type("ViewerHandler", (Handler,), {"remote": remote})
-    ThreadingHTTPServer(("", args.port), partial(handler, directory=args.directory)).serve_forever()
+    ViewerServer(("", args.port), partial(handler, directory=args.directory)).serve_forever()
 
 
 if __name__ == "__main__":
