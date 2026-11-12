@@ -1591,6 +1591,9 @@ async function testVehicle(s, v, tpl, level, team, rec) {
   // or killer charge (`splashTargets`), so a deploy seat's killer could never
   // take the gun it was thrown from (FHX-30, a static Flak's seat 1).
   if (v.absent) rec.stoodUp = await s.ev(o => window.__standPad?.(o) ?? null, v.owner);
+  // A craft on a hull's hold is in the world only while its host is: a host
+  // its pad has not fielded (the other side's hull) is stood up first.
+  if (v.onHold) rec.hostStood = await s.ev(o => window.__standHost?.(o) ?? null, v.owner);
   // A control object with no EntryPoint in its tree has no door: the E key
   // finds EntryPoints only (`findEntryPoint`, SEAT-3), so nobody sits in it in
   // the game, and `__enterOwner`'s forced entry tests what no player can do.
@@ -1850,7 +1853,10 @@ async function vehiclePhase(s, level, team, summary, scene) {
       const here = await s.ev(([x, z]) => window.__groundAt?.(x, z) ?? null, [v.pos[0], v.pos[2]]);
       // And the floor of a level static under each (a hangar, a bridge deck),
       // which the hull falls onto before the terrain (`__staticTopAt`).
-      const floorAt = ([x, y, z]) => s.ev(([x, y, z]) => window.__staticTopAt?.(x, y, z) ?? null, [x, y + 0.5, z])
+      // Where a hull dropped there lands: past a down-facing face (COL-23), a
+      // ceiling it falls through, where the page has the floor query.
+      const floorAt = ([x, y, z]) => s.ev(([x, y, z]) => (window.__staticFloorAt
+        ? window.__staticFloorAt(x, y, z) : window.__staticTopAt?.(x, y, z)) ?? null, [x, y + 0.5, z])
         .catch(() => null);
       const padFloor = await floorAt(best.pad.position);
       const hullFloor = await floorAt(v.pos);

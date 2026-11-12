@@ -30,6 +30,8 @@ import {
  *
  * - `staticTop(x, y, z)`: the highest static top at or under `y` (an 8 m ray
  *   down), or null.
+ * - `staticFloor(x, y, z)`: the same, skipping a face whose stored normal
+ *   points down (a ceiling a falling body passes, COL-23).
  * - `staticUnder(x, y, z)`: the same as `{ y, node }`, `node` the placement
  *   root it belongs to.
  * - `staticCross(ox, oy, oz, x, y, z)`: the first static face the segment from
@@ -53,8 +55,26 @@ export function staticProbes(root, ownerRoots, buildIndex) {
     const hit = statics()?.cast(x, y, z, 0, -1, 0, 8, -1, probe);
     return hit ? { y: hit.y, node: owners[hit.owner] ?? null } : null;
   };
+  // The highest face under (x, y, z) that a body falling from there would
+  // land on: one whose stored normal points up (COL-23's one-sided test). A
+  // face that points down is a ceiling seen from above, and the body falls
+  // through it: GCMOD Hoth's AT-ST pads stand over the atatbarge's hold, whose
+  // deck in col1 is a down-facing ceiling at 25.42 m over its floor at 21.95.
+  const staticFloor = (x, y, z) => {
+    let from = y;
+    for (let tries = 0; tries < 8; tries++) {
+      const reach = 8 - (y - from);
+      if (!(reach > 0)) return null;
+      const hit = statics()?.cast(x, from, z, 0, -1, 0, reach, -1, probe);
+      if (!hit) return null;
+      if (!(index?.storedNormalY?.(hit.triangle) < 0)) return hit.y;
+      from = hit.y - 1e-3;
+    }
+    return null;
+  };
   return {
     staticUnder,
+    staticFloor,
     staticTop: (x, y, z) => staticUnder(x, y, z)?.y ?? null,
     staticCross: (ox, oy, oz, x, y, z) => {
       const dx = x - ox, dy = y - oy, dz = z - oz;

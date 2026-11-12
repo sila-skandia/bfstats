@@ -473,6 +473,12 @@ export function installVehicleHooks(page) {
   // settle stands a hull on (`hull-bodies.js` `staticTopAt`), which the
   // terrain under it does not know.
   window.__staticTopAt = (x, y, z) => page.staticTopAt?.(x, y, z) ?? null;
+  // The same past a down-facing face: where a hull dropped there lands
+  // (`hull-bodies.js` `staticFloorAt`, COL-23).
+  window.__staticFloorAt = (x, y, z) => page.staticFloorAt?.(x, y, z) ?? null;
+  // Whether a hull node is in the world now (`level-statics.js`
+  // `vehicleSpawnActive`): its pad stood it, its host hull stands it.
+  window.__spawnActive = node => (node ? !!page.vehicleSpawnActive?.(node) : null);
   // The land vehicle the player is currently driving, for a headless drive.
   // Reading its state is not enough to *test* one: the renderer manages a
   // couple of frames a second on a real level under SwiftShader, which pins
@@ -691,6 +697,17 @@ export function installVehicleHooks(page) {
   window.__standPad = owner => {
     const node = page.damageVisuals.get(owner)?.node;
     return !!node && !!page.vehiclePads?.standPadNode?.(node) && !node.userData.padAbsent;
+  };
+  // The hull whose spawner holds this craft (`spawnHoldOf(node).host`), stood
+  // up by its pad when the pad has not fielded it, as `__standPad` stands an
+  // absent pad's own hull; true when the host stands. GCMOD Vanguard's
+  // escape pods ride `runner`, the team-2 side of a pad team 1 holds.
+  window.__standHost = owner => {
+    const node = page.damageVisuals.get(owner)?.node;
+    const host = node ? spawnHoldOf(node)?.host : null;
+    if (!host) return null;
+    if (host.userData?.padAbsent) page.vehiclePads?.standPadNode?.(host);
+    return !host.userData?.padAbsent;
   };
   window.__enterOwner = owner => {
     const node = page.damageVisuals.get(owner)?.node;

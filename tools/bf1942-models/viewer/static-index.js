@@ -1082,6 +1082,19 @@ export class CollisionIndex {
     return (t > 1e-4 && t <= maxDist) ? t : -1;
   }
 
+  /** The y of triangle `tri`'s normal as stored, unit length, not turned to
+   *  face any ray (`#normal` turns it to face the caller's). COL-23: a face
+   *  meets a probe only from the side its stored normal points to. */
+  storedNormalY(tri) {
+    const p = this.tris;
+    const i = tri * 9;
+    const ax = p[i], ay = p[i + 1], az = p[i + 2];
+    const e1x = p[i + 3] - ax, e1y = p[i + 4] - ay, e1z = p[i + 5] - az;
+    const e2x = p[i + 6] - ax, e2y = p[i + 7] - ay, e2z = p[i + 8] - az;
+    const nx = e1y * e2z - e1z * e2y, ny = e1z * e2x - e1x * e2z, nz = e1x * e2y - e1y * e2x;
+    return ny / (Math.hypot(nx, ny, nz) || 1);
+  }
+
   #normal(tri, out) {
     const p = this.tris;
     const i = tri * 9;

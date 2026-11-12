@@ -32,31 +32,39 @@ surface).
 
 ## Open
 
-From the second quick behaviour run (2026-11-12), 10 majors, none
-play-breaking by the gate's own list:
+The second quick behaviour run (2026-11-12) read 10 majors. Since then:
 
-| Item | Evidence | Next step |
-|---|---|---|
-| GC_Hoth `ATST` x3, GC_Ryloth `Firehawke` stand 4 to 6 m under their pads | ATST: pad y 28.0, a static's top at 25.48 under the pad, the hull on the terrain at 21.8 with its feet at 21.6 (`--verbose` `pad-verdict`). It fell past a static floor | Find the static at the pad and whether it collides for vehicles in retail; `surveys/trace_pad_settle.mjs` |
-| GC_Podrace `Gasgano`, `PodRacer1V1`, `PodRacer2V1` roll dead | c_PIRoll binds `GasganoComplex`, a RotationalBundle over the whole racer that carries its engines, so the audit judges it vectored; neither turn nor push | Whether the racer's thrust tilts with it in retail, and which drive the page gives a VCAir hull with no Wing |
-| GC_Dantooine `ATST-V` `veh.steer-reversed` | D turned the nose 1.27 rad at a prior yaw rate of 2.95 rad/s, D's own share -0.21 | A walker spinning before the check; rerun alone |
-| GC_DeathStar `TieAdvanced` `air.no-throttle` | 2.5 m at 0.4 m/s in 6 s | Rerun alone; check its engines against `holdEngine` |
-| GC_Vanguard `escapepod` `air.no-throttle` | 0 m at 0 m/s; the same template releases on GC_Taskforce | Rerun alone on Vanguard |
-| GC_Endor `EwokGlider` silent | its Engine names `Sounds/EwokGliderEngine.ssc`, which the level does not ship; the hull itself loads `Sounds/EwokGlider_Engine.ssc` (a `fondo.wav` loop) | Whether retail plays a PlayerControlObject's own script; no ledger row yet |
+| Item | State |
+|---|---|
+| GC_Hoth `ATST` x3, GC_Ryloth `Firehawke` 4 to 6 m under their pads | **Fixed (audit).** Hoth's pads stand over the `atatbarge`'s hold: its col1 deck at 25.42 m is a down-facing ceiling (normal -y) over the hold floor at 21.95, so a walker dropped from the pad falls through it (COL-23's one-sided test) and stands on the floor, as the page has it. The audit's floor probe took the ceiling for a floor; it now reads `__staticFloorAt` (`static-settle.js` `staticFloor`, which passes a down-facing face). Both read `veh.pad-over-ground` (info). The load settle's own `staticTop` still takes the first face; it ends right only because the body falls on. |
+| GC_Vanguard `escapepod` `air.no-throttle` | **Fixed (audit).** The pods ride `runner`, the team-2 side of `lancerrunnerspawner1`; in a team-1 round the Runner is not in the world, so neither is its hold. The audit now stands an absent host before testing what it holds (`__standHost`); the pod then rolls 72 m and lifts off at 2.4 m/s |
+| GC_DeathStar `TieAdvanced`, GC_Dantooine `ATST-V` | Pass alone: neighbours in the batch run, not the craft |
+| GC_Mos_Eisley `Speederbike` diverges | Accepted: no lifting surface |
+| GC_Podrace `Gasgano`, `PodRacer1V1`, `PodRacer2V1` roll dead | **Open, retail check asked.** c_PIRoll binds only `GasganoComplex`, the invisible RotationalBundle (0/0/-25..25) that carries the whole racer: floaters, engines, rudders. Whether that slides, banks or does nothing in retail decides the fix |
+| GC_Endor `EwokGlider` silent | **Open, retail check asked.** Its Engine names `Sounds/EwokGliderEngine.ssc`, which the level does not ship; the hull itself loads `Sounds/EwokGlider_Engine.ssc` (a looped `fondo.wav`) |
+| The hold engine (`Aircraft.holdEngine`) | **INFERRED, retail check asked**: which of the A-Wing's two engines (main on W, lift on S) releases a hangar hold |
 
-Also open, outside this tree: the `carries_engine` exemption reaches other
-trees' model glbs. On this machine Desert Combat's carrier-deck aircraft
-(Enterprise, Nimitz variants: 11 glbs, ~1300 nodes) would change, and the
-trees not on this machine (fh, fhsweurope, dc_final, xpack1, xpack2,
-interstate, pirates, vanilla) were not measured. `patch_held_axes.py --mod
-<tree> --dry-run` measures it; Desert Combat's local tree also carries 302
-nodes of older pending restores, so patch it from a tree that matches the
-volume.
+### The thrust-rack fix in every tree (2026-11-12)
 
-`v_harness` fails on `test_ground_handling ... test_a_bot_tank_cruises_at_retails_speed`
-(M1A1 13.32 against 13.5) in the main checkout. It passes at HEAD and at HEAD
-with this work applied; the cause is another session's uncommitted edits to
-`viewer/aircraft.js`, `viewer/hull-bodies.js` and `bf42/assemble.py`.
+`patch_held_axes`'s rule, measured against the live volume by reading each
+model glb's JSON chunk (every row and variant of each tree's `models.json`):
+desertcombat 18 of 580 glbs (Enterprise, Nimitz and Shokaku variants, two
+hangars: the deck helicopters' and jets' engine racks), fhsw 3 of 8,134
+(`CounterSpawnKi-201_SP70`, `GrafZeppelin`, `GrafZeppelin+10000`),
+fhsweurope 2 of 9,911, fh 0 of 3,360, gcmod 8 (patched at extraction). The
+install census found no rack in vanilla, XPack1, XPack2, EoD or bf1918;
+dc_final has no tree on the volume, and bg42, finnwars, interstate and
+pirates are poses-only trees there. Only the new axes were added (the older
+pending restores those trees carry were left alone); the store blobs were
+written under their new shas, `desertcombat` and `fhsw` `models.json`
+repointed, and all of it published with `--hash`. Level bakes were not
+affected: Corellia's bake, made before the fix, already carried the racks'
+yaw.
+
+`v_harness` fails in the main checkout on `test_ground_handling ...
+test_a_bot_tank_cruises_at_retails_speed` (M1A1 13.32 against 13.5); it passes
+at HEAD and at HEAD with this work, so it is another session's uncommitted
+edits to `viewer/aircraft.js`, `viewer/hull-bodies.js` and `bf42/assemble.py`.
 
 ## The stats site
 

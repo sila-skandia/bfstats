@@ -1269,9 +1269,16 @@ export function createHullBodies(page) {
   function staticTopAt(x, y, z) {
     return levelStaticTop?.(x, y, z) ?? null;
   }
+  /** `staticTopAt` past any down-facing face (`static-settle.js`
+   *  `staticFloor`): where a hull dropped from (x, y, z) lands. */
+  let levelStaticFloor = null;
+  function staticFloorAt(x, y, z) {
+    return levelStaticFloor?.(x, y, z) ?? null;
+  }
 
   function settlePlacedVehicles(ownerRoots, heightfield, { probes = null } = {}) {
     levelStaticTop = probes?.staticTop ?? null;
+    levelStaticFloor = probes?.staticFloor ?? null;
     loadHeightfield = heightfield ?? null;
     if (!hullBodies.collisionMeshes || !page.damageTables || !heightfield) return;
     // The hulls the round opens with settle together; every other node of a
@@ -2267,6 +2274,7 @@ export function createHullBodies(page) {
     setupVehicleBodies,
     shipDeckAt,
     staticTopAt,
+    staticFloorAt,
     bindCarriers,
     followServerCarriers,
     shipFlagInactive,
