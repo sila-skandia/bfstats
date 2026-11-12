@@ -1,8 +1,7 @@
-// The replay's match-up under node (replay-matchup.js): the fights near the
-// playhead, the rounds between two things, each hit's recorded drop, where
-// one was seen from the other, the soldier's body part a drop names, what a
-// gun does to a hull's armour, and the words. Every case is a small
-// recording written here line by line, so each says exactly what happened.
+// The replay's spotlight under node (replay-spotlight-fights.js): the round's
+// fights, the one a kill ended, which side is whose, the rounds between two
+// things and each hit's recorded drop. Every case is a small recording
+// written here line by line, so each says exactly what happened.
 //
 // Same pattern as `replay_dossier_harness.mjs`: one node run, one JSON
 // report, the modules imported from the viewer tree in place.
@@ -14,8 +13,8 @@ import { installModuleHooks, viewerDir } from '../sim/env.mjs';
 const viewer = viewerDir();
 installModuleHooks(viewer);
 const imp = name => import(pathToFileURL(path.join(viewer, name)).href);
-const [R, A, M, K] = await Promise.all([
-  imp('replay-recording.js'), imp('replay-accuracy.js'), imp('replay-matchup.js'), imp('replay-kinematics.js'),
+const [R, A, M] = await Promise.all([
+  imp('replay-recording.js'), imp('replay-accuracy.js'), imp('replay-spotlight-fights.js'),
 ]);
 
 const results = {};
@@ -80,25 +79,17 @@ const weapons = new Map([['shermangunbarrel', { speed: 300, category: 'land' }],
 const board = A.accuracyBoard(duel, { weapons });
 const shots = board.flatMap(e => e.shots ?? []);
 const kills = duel.kills;
-const fights = M.fightsNear(duel, shots, kills, 13, { follow: 1 });
-const f0 = fights[0];
+const fights = M.fightEpisodes(duel, shots, kills);
+const f0 = M.orient(duel, fights[0], 13, 1);
 const rounds = M.assignDrops(M.roundsBetween(duel, f0.a, f0.b, f0.first - 2, f0.last + 2, {
   shotOf: f => shots.find(s => s.f === f) ?? null, speedOf: () => 300,
 }));
 results.duel = {
   fights: fights.length,
   a: f0.a.tmpl, b: f0.b.tmpl, hits: f0.hits, kill: Boolean(f0.kill), killer: f0.kill?.killer?.tmpl ?? null,
-  moment: r2(f0.moment),
   rounds: rounds.map(r => ({ by: r.by, kind: r.kind, t: r.f.t, miss: r2(r.miss), drop: r.drop ? r2(r.drop.amount) : null })),
-  tallyA: M.tallyOf(rounds.filter(r => r.by === 'a')),
-  tallyB: M.tallyOf(rounds.filter(r => r.by === 'b')),
-  // The Sherman is behind the Tiger; the Tiger is ahead of the Sherman.
-  seenByA: M.seenFrom(f0.a, f0.b, 10, K.poseAt),
-  seenByB: M.seenFrom(f0.b, f0.a, 10, K.poseAt),
   label: M.labelOf(duel, f0.a, 10),
-  // Outside the fight, the moment is just before its kill.
-  momentFromAfar: r2(M.fightsNear(duel, shots, kills, 40, { window: 30 })[0]?.moment ?? null),
-  nothingFar: M.fightsNear(duel, shots, kills, 80, { window: 30 }).length,
+  health: [M.healthOf(f0.b, 10), M.healthOf(f0.b, 11), M.healthOf(f0.a, 15)],
 };
 
 // --- (b) Two rounds on one drop ----------------------------------------------------------
@@ -118,7 +109,7 @@ const twice = recording(L => {
 {
   const b = A.accuracyBoard(twice, { weapons });
   const s = b.flatMap(e => e.shots ?? []);
-  const fs = M.fightsNear(twice, s, twice.kills, 10);
+  const fs = M.fightEpisodes(twice, s, twice.kills).map(raw => M.orient(twice, raw, 10));
   const rs = fs.length ? M.assignDrops(M.roundsBetween(twice, fs[0].a, fs[0].b, 8, 13, {
     shotOf: f => s.find(x => x.f === f) ?? null, speedOf: () => 300,
   })) : [];
@@ -150,36 +141,7 @@ const missed = recording(L => {
   results.inferred = rs.map(r => ({ weapon: r.f.weapon, kind: r.kind, inferred: Boolean(r.inferred), drop: r.drop ? r2(r.drop.amount) : null }));
 }
 
-// --- (c) A soldier's body parts -----------------------------------------------------------
-const thompson = m => ({ 40: 15, 41: 9, 42: 5 })[m] ?? 0;
-results.parts = {
-  chest: M.bodyPartFor(9, thompson)?.part.id ?? null,
-  head: M.bodyPartFor(14.6, thompson)?.part.id ?? null,
-  none: M.bodyPartFor(7, thompson),
-  // A kill of a man on 4 left: head, chest or limbs all cost that.
-  killedAny: M.bodyPartFor(4, thompson, { killed: true }),
-  // A kill of a man on 12 left: only a head shot costs that much.
-  killedHead: M.bodyPartFor(12, thompson, { killed: true })?.part.id ?? null,
-};
-
-// --- (d) What one gun does to a hull's armour --------------------------------------------
-const labels = { 33: '20mm', 39: '40mm', 53: '100mm', 58: '150mm', 37: 'Armor' };
-const hurts = new Set([33, 39]);
-results.armour = M.armourAgainst([33, 39, 53, 58, 37, 53, NaN], m => (hurts.has(m) ? 10 : 0), m => labels[m]);
-results.armourMixed = M.armourAgainst([33, 53, 58], m => (m === 58 ? 5 : m === 33 ? 10 : 0), m => labels[m]);
-results.plateMm = [M.plateMm('7,5mm'), M.plateMm('150mm'), M.plateMm('Armor')];
-
-// --- (e) Aspect words, and the words ----------------------------------------------------
-results.aspects = [0, 40, -40, 90, -100, 130, 180].map(b => M.aspectWords(b));
-results.words = M.sideWords(
-  { who: 'Ann', gun: '75 mm L37,5A gun', tally: { fired: 6, hit: 2, glanced: 3, missed: 1, dealt: 76.2 },
-    armour: { immune: 16, of: 25, from: '100 mm' }, seen: { aspect: 'head on', share: 0.22, hits: 6, range: 312 } },
-  { who: 'Kai', what: 'King Tiger' },
-);
-results.wordsNothing = M.sideWords({ who: 'Kai', gun: null, tally: { fired: 0 } }, { who: 'Ann', what: 'Sherman' });
-results.ending = M.endingWords({ a: 'x', kill: { killer: 'y', weapon: 'Tiger' } }, { who: 'Ann' }, { who: 'Kai' });
-
-// --- (f) A soldier against a tank --------------------------------------------------------
+// --- (c) A soldier against a tank --------------------------------------------------------
 //
 // A soldier 40 m off a Tiger's side fires a bazooka into it (its hit points
 // drop), and the Tiger's gunner kills them: their thing is their soldier, the
@@ -198,12 +160,12 @@ const foot = recording(L => {
 {
   const b = A.accuracyBoard(foot, { weapons: new Map([['bazooka', { speed: 85, category: 'handweapon' }]]) });
   const s = b.flatMap(e => e.shots ?? []);
-  const fs = M.fightsNear(foot, s, foot.kills, 6, { follow: 3 });
+  const fs = M.fightEpisodes(foot, s, foot.kills).map(raw => M.orient(foot, raw, 6, 3));
   results.foot = fs.map(f => ({ a: f.a.soldier ? 'soldier' : f.a.tmpl, b: f.b.soldier ? 'soldier' : f.b.tmpl, hits: f.hits, kill: Boolean(f.kill) }));
 }
 
 
-// --- (h) The round's fights, as the spotlight finds a kill's ----------------------------------
+// --- (d) The round's fights, as the spotlight finds a kill's ----------------------------------
 //
 // The Sherman and the Tiger meet twice: a hit at 10 s, then 50 s later a hit
 // each and the Tiger kills the Sherman. Between those, at 13 s, a Panther 200 m

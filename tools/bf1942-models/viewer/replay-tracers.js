@@ -2,7 +2,7 @@
 // and the faint line it leaves behind from where it left to where it ended,
 // with a flash there. Orange for a round that did damage, pale khaki for one
 // that did not. Shared by the replay's shot lines (replay-shotlines.js) and
-// its spotlight on a kill (replay-matchup-live.js), so a round looks the same
+// its spotlight on a kill (replay-spotlight.js), so a round looks the same
 // in both.
 //
 // One LineSegments and one Points, filled again each frame: `begin()`, then

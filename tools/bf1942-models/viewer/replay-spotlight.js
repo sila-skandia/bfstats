@@ -1,12 +1,10 @@
-// The replay's spotlight on a kill (features/replay-matchup): Spotlight on a
-// kill in the round's timeline jumps to just before it and plays it with the
-// two lit. The rest of the view is dulled and the killer and the one they
+// The replay's spotlight on a kill (features/replay-spotlight): Spotlight on
+// a kill in the round's timeline jumps to just before it and plays it with
+// the two lit. The rest of the view is dulled and the killer and the one they
 // killed (with whoever rides with them) are drawn again over it at full
 // colour, their rounds fly as tracers (replay-tracers.js), every hit's damage
 // rises over whoever took it, and a strip over the view keeps both sides' hit
-// points as they fall. It lets go a few seconds after the kill. Break it down
-// on the strip freezes the round there for the match-up's breakdown
-// (replay-matchup-view.js).
+// points as they fall. It lets go a few seconds after the kill.
 //
 // The dulling is one more pass after the page's render, before the followed
 // player's arms (replay.js `renderViewmodel`): a dark sheet over the frame,
@@ -16,8 +14,10 @@
 // is kept, so a hill in front of one of them still hides it.
 
 import * as THREE from 'three';
-import { HOLD, KILL_FREEZE, LEAD, assignDrops, fightEpisodes, fightOfKill, hasPlayer, healthOf, labelOf, orient, peopleOf, roundsBetween, sideOf } from './replay-matchup.js';
-import { flightOf, gunSpecOf } from './replay-matchup-strike.js';
+import {
+  HOLD, KILL_FREEZE, LEAD, assignDrops, fightEpisodes, fightOfKill, hasPlayer, healthOf, labelOf, orient, peopleOf, roundsBetween, sideOf,
+} from './replay-spotlight-fights.js';
+import { flightOf, roundOf } from './replay-round-flight.js';
 import { motionAt, poseAt } from './replay-kinematics.js';
 import { prettyTank } from './tank-arena.js';
 import { TRACER_HIT, TRACER_LIFE, TRACER_MISS, Tracers } from './replay-tracers.js';
@@ -42,65 +42,65 @@ const MAX_ROUNDS = 240;
 const BOARD_EVERY = 1;
 
 const STYLE = `
-.rm-live { position: absolute; left: 50%; top: 10px; transform: translateX(-50%); display: none; align-items: center; gap: 8px;
+.rs-root { position: absolute; inset: 0; pointer-events: none; z-index: 6; }
+.rs-strip { position: absolute; left: 50%; top: 10px; transform: translateX(-50%); display: none; align-items: center; gap: 8px;
   width: max-content; max-width: calc(100% - 24px); padding: 4px 4px 4px 10px; pointer-events: auto;
   border: 1px solid var(--rp-edge); border-radius: 8px; background: var(--rp-plate-deep);
   box-shadow: 0 8px 26px rgba(0, 0, 0, .45); backdrop-filter: blur(6px); -webkit-backdrop-filter: blur(6px); }
-.rm-root.on:not(.frozen) .rm-live.lit { display: flex; }
-.rm-live-k { flex: none; color: var(--rp-khaki); font: 800 9px/1.2 var(--rp-font); letter-spacing: .22em; }
-.rm-live-fight { display: flex; align-items: center; gap: 10px; min-width: 0; }
-.rm-live-side { min-width: 0; max-width: 190px; padding-left: 7px; border-left: 2px solid var(--rp-edge-strong); }
-.rm-live-side.right { padding: 0 7px 0 0; border-left: 0; border-right: 2px solid var(--rp-edge-strong); text-align: right; }
-.rm-live-side.is-axis { border-color: var(--rp-axis); }
-.rm-live-side.is-allies { border-color: var(--rp-allies); }
-.rm-live-side b { display: block; font: 700 12px/1.25 var(--rp-font); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
-.rm-live-side small { display: block; color: var(--rp-muted); font: 700 9px/1.3 var(--rp-font); letter-spacing: .08em; text-transform: uppercase;
+.rs-strip.lit { display: flex; }
+.rs-strip-k { flex: none; color: var(--rp-khaki); font: 800 9px/1.2 var(--rp-font); letter-spacing: .22em; }
+.rs-strip-fight { display: flex; align-items: center; gap: 10px; min-width: 0; }
+.rs-strip-side { min-width: 0; max-width: 190px; padding-left: 7px; border-left: 2px solid var(--rp-edge-strong); }
+.rs-strip-side.right { padding: 0 7px 0 0; border-left: 0; border-right: 2px solid var(--rp-edge-strong); text-align: right; }
+.rs-strip-side.is-axis { border-color: var(--rp-axis); }
+.rs-strip-side.is-allies { border-color: var(--rp-allies); }
+.rs-strip-side b { display: block; font: 700 12px/1.25 var(--rp-font); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.rs-strip-side small { display: block; color: var(--rp-muted); font: 700 9px/1.3 var(--rp-font); letter-spacing: .08em; text-transform: uppercase;
   white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
-.rm-live-hp { display: block; width: 110px; max-width: 100%; height: 4px; margin-top: 3px; border-radius: 2px; background: rgba(255, 255, 255, .14);
+.rs-strip-hp { display: block; width: 110px; max-width: 100%; height: 4px; margin-top: 3px; border-radius: 2px; background: rgba(255, 255, 255, .14);
   overflow: hidden; }
-.rm-live-side.right .rm-live-hp { margin-left: auto; }
-.rm-live-hp em { display: block; height: 100%; background: var(--rp-life); transition: width .25s ease-out; }
-.rm-live-side.right .rm-live-hp em { margin-left: auto; }
-.rm-live-hp.low em { background: var(--rp-gold); } .rm-live-hp.gone em { width: 0 !important; }
-.rm-live-mid { flex: none; text-align: center; }
-.rm-live-mid b { display: block; font: 700 14px/1.1 var(--rp-mono); color: var(--rp-ink); font-variant-numeric: tabular-nums; }
-.rm-live-mid small { display: block; color: var(--rp-muted); font: 700 9px/1.4 var(--rp-font); letter-spacing: .12em; white-space: nowrap; }
-.rm-live .rp-btn { flex: none; height: 28px; border-color: var(--rp-edge); }
-.rm-live .rp-btn.rm-live-go { background: var(--rp-khaki); color: var(--rp-khaki-ink); border-color: var(--rp-khaki); }
-.rm-live .rp-btn[hidden] { display: none; }
+.rs-strip-side.right .rs-strip-hp { margin-left: auto; }
+.rs-strip-hp em { display: block; height: 100%; background: var(--rp-life); transition: width .25s ease-out; }
+.rs-strip-side.right .rs-strip-hp em { margin-left: auto; }
+.rs-strip-hp.low em { background: var(--rp-gold); } .rs-strip-hp.gone em { width: 0 !important; }
+.rs-strip-mid { flex: none; text-align: center; }
+.rs-strip-mid b { display: block; font: 700 14px/1.1 var(--rp-mono); color: var(--rp-ink); font-variant-numeric: tabular-nums; }
+.rs-strip-mid small { display: block; color: var(--rp-muted); font: 700 9px/1.4 var(--rp-font); letter-spacing: .12em; white-space: nowrap; }
+.rs-strip .rp-btn { flex: none; height: 28px; border-color: var(--rp-edge); }
+.rs-strip .rp-btn[hidden] { display: none; }
 /* The replay's own name tags give way to the two's while a kill is lit, and
    the fronts' tabs (replay-highlights.js), in the same place, to the strip. */
-.rp-root.rm-spot .rp-tags { opacity: 0; pointer-events: none; }
-.rp-root.rm-spot .rp-hl-fronts { display: none; }
+.rp-root.rs-lit .rp-tags { opacity: 0; pointer-events: none; }
+.rp-root.rs-lit .rp-hl-fronts { display: none; }
 /* Where the page's minimap would cover it (a phone, a narrow window), the
    strip keeps to its left (\`layoutStrip\`). */
-.rm-live.is-left { left: 12px; transform: none; }
-.rm-ltags { position: absolute; inset: 0; pointer-events: none; }
-.rm-ltag { position: absolute; left: 0; top: 0; display: none; padding: 2px 7px 3px; border-left: 2px solid var(--rp-edge-strong);
+.rs-strip.is-left { left: 12px; transform: none; }
+.rs-tags { position: absolute; inset: 0; pointer-events: none; }
+.rs-tag { position: absolute; left: 0; top: 0; display: none; padding: 2px 7px 3px; border-left: 2px solid var(--rp-edge-strong);
   background: rgba(14, 14, 12, .82); font: 700 11px/1.25 var(--rp-font); white-space: nowrap; will-change: transform; }
-.rm-ltag.is-axis { border-color: var(--rp-axis); } .rm-ltag.is-allies { border-color: var(--rp-allies); }
-.rm-ltag small { display: block; color: var(--rp-muted); font: 10px/1.3 var(--rp-mono); }
-.rm-ltag .rm-live-hp { width: 64px; height: 3px; }
-.rm-ltag i { display: none; position: absolute; left: 50%; top: 50%; width: 0; height: 0; margin: -5px 0 0 -4px;
+.rs-tag.is-axis { border-color: var(--rp-axis); } .rs-tag.is-allies { border-color: var(--rp-allies); }
+.rs-tag small { display: block; color: var(--rp-muted); font: 10px/1.3 var(--rp-mono); }
+.rs-tag .rs-strip-hp { width: 64px; height: 3px; }
+.rs-tag i { display: none; position: absolute; left: 50%; top: 50%; width: 0; height: 0; margin: -5px 0 0 -4px;
   border-left: 9px solid currentColor; border-top: 5px solid transparent; border-bottom: 5px solid transparent; }
-.rm-ltag.is-off { padding: 2px 6px; opacity: .92; }
-.rm-ltag.is-off small, .rm-ltag.is-off .rm-live-hp { display: none; }
-.rm-ltag.is-off i { display: block; }
-.rm-ltag.is-axis i { color: var(--rp-axis); } .rm-ltag.is-allies i { color: var(--rp-allies); }
-.rm-pop { position: absolute; left: 0; top: 0; display: none; color: var(--rp-fire); font: 800 13px/1 var(--rp-mono);
+.rs-tag.is-off { padding: 2px 6px; opacity: .92; }
+.rs-tag.is-off small, .rs-tag.is-off .rs-strip-hp { display: none; }
+.rs-tag.is-off i { display: block; }
+.rs-tag.is-axis i { color: var(--rp-axis); } .rs-tag.is-allies i { color: var(--rp-allies); }
+.rs-pop { position: absolute; left: 0; top: 0; display: none; color: var(--rp-fire); font: 800 13px/1 var(--rp-mono);
   text-shadow: 0 1px 2px rgba(0, 0, 0, .9), 0 0 8px rgba(240, 145, 60, .45); white-space: nowrap; will-change: transform, opacity; }
-.rm-pop.is-end { color: var(--rp-gold); font: 800 11px/1 var(--rp-font); letter-spacing: .16em; }
+.rs-pop.is-end { color: var(--rp-gold); font: 800 11px/1 var(--rp-font); letter-spacing: .16em; }
 @media (max-width: 720px) {
-  .rm-live { top: 8px; left: 8px; right: 8px; transform: none; width: auto; max-width: none; flex-wrap: wrap; gap: 4px 8px; }
-  .rm-live-k { display: none; }
-  .rm-live-fight { flex: 1 1 100%; justify-content: space-between; }
-  .rm-live-side { max-width: 38vw; }
-  .rm-live-hp { width: 72px; }
-  .rm-live .rp-btn { flex: 1 1 0; }
-  .rm-live .rp-btn.rm-live-off { flex: none; }
-  .rm-live.is-left { left: 8px; right: auto; }
+  .rs-strip { top: 8px; left: 8px; right: 8px; transform: none; width: auto; max-width: none; flex-wrap: wrap; gap: 4px 8px; }
+  .rs-strip-k { display: none; }
+  .rs-strip-fight { flex: 1 1 100%; justify-content: space-between; }
+  .rs-strip-side { max-width: 38vw; }
+  .rs-strip-hp { width: 72px; }
+  .rs-strip .rp-btn { flex: 1 1 0; }
+  .rs-strip .rp-btn.rs-strip-off { flex: none; }
+  .rs-strip.is-left { left: 8px; right: auto; }
 }
-@media (prefers-reduced-motion: reduce) { .rm-live-hp em { transition: none; } }
+@media (prefers-reduced-motion: reduce) { .rs-strip-hp em { transition: none; } }
 `;
 
 const el = (tag, className, text) => {
@@ -116,10 +116,9 @@ const _v = new THREE.Vector3();
 const _a = new THREE.Vector3();
 const _b = new THREE.Vector3();
 
-export class MatchupSpotlight {
-  constructor(matchup) {
-    this.matchup = matchup;
-    this.player = matchup.player;
+export class ReplaySpotlight {
+  constructor(player) {
+    this.player = player;
     this.episodes = null;
     this.board = null;
     this.boardAt = -Infinity;
@@ -134,43 +133,44 @@ export class MatchupSpotlight {
     this.litAt = -Infinity;
     this.edge = null;
     this.gl = null;
-    if (!document.getElementById('rm-live-style')) {
+    if (!document.getElementById('rs-style')) {
       const style = el('style');
-      style.id = 'rm-live-style';
+      style.id = 'rs-style';
       style.textContent = STYLE;
       document.head.appendChild(style);
     }
     this.buildStrip();
-    this.tagsEl = el('div', 'rm-ltags');
+    this.tagsEl = el('div', 'rs-tags');
     this.tagNodes = null;
     this.pops = [];
+    this.root = el('div', 'rs-root');
+    this.root.append(this.tagsEl, this.strip);
+    player.ui.root.append(this.root);
   }
 
   buildStrip() {
     const ui = this.player.ui;
-    this.strip = el('div', 'rm-live');
+    this.strip = el('div', 'rs-strip');
     this.strip.setAttribute('role', 'status');
     this.sides = ['a', 'b'].map((key, i) => {
-      const node = el('div', `rm-live-side${i ? ' right' : ''}`);
+      const node = el('div', `rs-strip-side${i ? ' right' : ''}`);
       const name = el('b');
       const what = el('small');
-      const hp = el('span', 'rm-live-hp');
+      const hp = el('span', 'rs-strip-hp');
       const bar = el('em');
       hp.append(bar);
       node.append(name, what, hp);
       return { node, name, what, hp, bar };
     });
-    const mid = el('div', 'rm-live-mid');
+    const mid = el('div', 'rs-strip-mid');
     this.score = el('b', '', '0 : 0');
     this.midLine = el('small', '', 'HITS');
     mid.append(this.score, this.midLine);
-    const fight = el('div', 'rm-live-fight');
+    const fight = el('div', 'rs-strip-fight');
     fight.append(this.sides[0].node, mid, this.sides[1].node);
-    this.againBtn = ui.button('rm-live-again', null, 'Watch it again from just before the kill', () => this.again(), 'Again');
-    this.goBtn = ui.button('rm-live-go', null, 'Freeze here and break the fight down: every round, every plate, the two taken apart',
-      () => this.matchup.breakdownLive(), 'Break it down');
-    const off = ui.button('rm-live-off', 'close', 'Let go of this kill', () => this.release());
-    this.strip.append(el('span', 'rm-live-k', 'SPOTLIGHT'), fight, this.againBtn, this.goBtn, off);
+    this.againBtn = ui.button('rs-strip-again', null, 'Watch it again from just before the kill', () => this.again(), 'Again');
+    const off = ui.button('rs-strip-off', 'close', 'Let go of this kill', () => this.release());
+    this.strip.append(el('span', 'rs-strip-k', 'SPOTLIGHT'), fight, this.againBtn, off);
     for (const type of ['pointerdown', 'wheel', 'click', 'dblclick']) this.strip.addEventListener(type, e => e.stopPropagation());
   }
 
@@ -199,15 +199,19 @@ export class MatchupSpotlight {
   }
 
   /**
-   * Light the kill of `victimPid` at `t`: to just before it, the camera on
-   * one of the two (the one followed, else the killer), playing. False when
-   * the recording places nobody who could have made it.
+   * Spotlight on a kill in the timeline: the kill of `victimPid` at `t` from
+   * just before it, the camera on one of the two (the one followed, else the
+   * killer), playing. False, and said, when the recording places nobody who
+   * could have made it.
    */
-  spotlight(t, victimPid) {
+  light(t, victimPid) {
     const p = this.player;
     this.ensureEpisodes(true);
     const raw = fightOfKill(this.episodes, t, victimPid);
-    if (!raw) return false;
+    if (!raw) {
+      p.ui.flash('Nothing to light for that kill: the recording places no one who made it', 2800);
+      return false;
+    }
     const kill = raw.kill;
     if (!hasPlayer(raw, p.followPid) && Number.isInteger(kill.killerPid)) p.ui.follow(kill.killerPid);
     if (p.highlights?.auto || p.camera?.mode === 'free') p.ui.setMode('orbit');
@@ -235,7 +239,7 @@ export class MatchupSpotlight {
     this.pin = null;
   }
 
-  /** The breakdown is open: nothing drawn, the kill kept. */
+  /** Nothing drawn. */
   suspend() {
     this.raw = null;
     this.fight = null;
@@ -246,11 +250,11 @@ export class MatchupSpotlight {
     this.tagNodes = null;
     this.pops = [];
     this.strip.classList.remove('lit');
-    this.player.ui.root.classList.remove('rm-spot');
+    this.player.ui.root.classList.remove('rs-lit');
     if (this.gl) this.gl.tracers.group.visible = false;
   }
 
-  /** The switch off: the kill let go, nothing drawn. */
+  /** The kill let go, nothing drawn. */
   end() {
     this.pin = null;
     this.suspend();
@@ -258,7 +262,7 @@ export class MatchupSpotlight {
     this.litAt = -Infinity;
   }
 
-  /** Each frame while the switch is on and nothing is frozen. */
+  /** Each frame, last in the replay's: the kill lit, while there is one. */
   update(t, dt) {
     const pin = this.pin;
     // A play or a seek past the kill's last seconds lets it go; a seek back
@@ -275,7 +279,7 @@ export class MatchupSpotlight {
     if (raw) this.shownFight = this.fight;
     else if (this.dim === 0) this.shownFight = null;
     const p = this.player;
-    p.ui.root.classList.toggle('rm-spot', Boolean(raw));
+    p.ui.root.classList.toggle('rs-lit', Boolean(raw));
     this.strip.classList.toggle('lit', Boolean(raw));
     // The orbit turns to the other once it has settled on the one it follows.
     if (this.pin && !this.pin.faced && this.fight && --this.pin.faceIn <= 0) {
@@ -342,15 +346,15 @@ export class MatchupSpotlight {
   /** Every round between the two over the fight, with its flight. */
   roundsOf(fight, raw) {
     const p = this.player;
-    const speedOf = (f, shooter) => gunSpecOf(p, shooter, f.weapon)?.speed ?? null;
+    const speedOf = (f, shooter) => roundOf(p, shooter, f.weapon)?.speed ?? null;
     const rounds = assignDrops(roundsBetween(p.rec, fight.a, fight.b, raw.first - LEAD - 2, raw.last + HOLD,
       { shotOf: f => this.shotOf?.get(f), speedOf }));
     for (const r of rounds) {
-      r.spec = gunSpecOf(p, r.shooter, r.f.weapon);
+      const round = roundOf(p, r.shooter, r.f.weapon);
       const platform = r.shooter && !r.shooter.soldier ? motionAt(r.shooter, r.f.t)?.velocity ?? null : null;
-      r.flight = flightOf(r.f, r.spec, platform);
+      r.flight = flightOf(r.f, round, platform);
       r.span = Math.max(0.02, r.arrival - r.f.t) + (r.kind === 'hit' ? 0 : MISS_ON);
-      r.steps = r.spec?.gravity > 0 && r.span > 0.3 ? 8 : 1;
+      r.steps = round?.gravity > 0 && r.span > 0.3 ? 8 : 1;
     }
     return rounds;
   }
@@ -371,7 +375,7 @@ export class MatchupSpotlight {
     const now = performance.now();
     if (now - (this.laidAt ?? -Infinity) < 500) return;
     this.laidAt = now;
-    const root = this.matchup.root.getBoundingClientRect();
+    const root = this.root.getBoundingClientRect();
     const map = document.getElementById('minimap');
     const r = map?.getBoundingClientRect();
     const shown = r && r.width > 0 && r.height > 0 && getComputedStyle(map).visibility !== 'hidden' && getComputedStyle(map).display !== 'none';
@@ -399,7 +403,7 @@ export class MatchupSpotlight {
         const life = fight[key];
         const label = labelOf(p.rec, life, fight.first, prettyTank);
         const side = this.sides[i];
-        side.node.className = `rm-live-side${i ? ' right' : ''} ${teamClass(sideOf(p.rec, life, fight.first))}`;
+        side.node.className = `rs-strip-side${i ? ' right' : ''} ${teamClass(sideOf(p.rec, life, fight.first))}`;
         side.name.textContent = shown(label.who);
         side.what.textContent = label.what;
       }
@@ -432,9 +436,9 @@ export class MatchupSpotlight {
     const make = key => {
       const life = fight[key];
       const label = labelOf(p.rec, life, fight.first, prettyTank);
-      const node = el('div', `rm-ltag ${teamClass(sideOf(p.rec, life, fight.first))}`);
+      const node = el('div', `rs-tag ${teamClass(sideOf(p.rec, life, fight.first))}`);
       node.append(el('i'), document.createTextNode(shown(label.who)), el('small', '', label.what));
-      const hp = el('span', 'rm-live-hp');
+      const hp = el('span', 'rs-strip-hp');
       const bar = el('em');
       hp.append(bar);
       node.append(hp);
@@ -475,7 +479,7 @@ export class MatchupSpotlight {
   bottomEdge(h) {
     const now = performance.now();
     if (this.edge && this.edge.h === h && now - this.edge.at < 500) return this.edge.bottom;
-    const root = this.matchup.root.getBoundingClientRect();
+    const root = this.root.getBoundingClientRect();
     let top = h;
     for (const selector of ['.rp-bar', '.rp-card']) {
       const r = this.player.ui.root.querySelector(selector)?.getBoundingClientRect();
@@ -489,8 +493,8 @@ export class MatchupSpotlight {
   placeTags(t) {
     const nodes = this.tagNodes;
     if (!nodes || nodes.fight !== this.fight || !this.fight) return;
-    const w = this.matchup.root.clientWidth;
-    const h = this.matchup.root.clientHeight;
+    const w = this.root.clientWidth;
+    const h = this.root.clientHeight;
     const places = {};
     for (const key of ['a', 'b']) {
       const tag = nodes[key];
@@ -541,7 +545,7 @@ export class MatchupSpotlight {
       }
       if (!pop) {
         const end = drop.after <= 0;
-        pop = el('div', `rm-pop${end ? ' is-end' : ''}`, end ? (r.at.soldier ? 'KILLED' : 'DESTROYED') : `−${Math.round(drop.amount)}`);
+        pop = el('div', `rs-pop${end ? ' is-end' : ''}`, end ? (r.at.soldier ? 'KILLED' : 'DESTROYED') : `−${Math.round(drop.amount)}`);
         this.tagsEl.append(pop);
         this.pops[i] = pop;
       }
@@ -684,7 +688,6 @@ export class MatchupSpotlight {
       this.gl.tracers.dispose();
       this.gl = null;
     }
-    this.strip.remove();
-    this.tagsEl.remove();
+    this.root.remove();
   }
 }

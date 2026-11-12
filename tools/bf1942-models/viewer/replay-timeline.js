@@ -373,8 +373,7 @@ export class ReplayTimeline {
     const frame = cluster ? this.frameOfChapter(cluster) : this.frameAt(at);
     // The content is rebuilt only when it changes: the tooltip is refreshed
     // every frame while the pointer rests on a playing timeline.
-    const matchup = this.player.matchup?.on ? 'm' : '';
-    const key = `${cluster ? cluster.lead.i : ''}|${fights.map(f => f.id).join(',')}|${fmtClock(at)}|${frame?.id ?? ''}|${this.player.followPid}|${matchup}`;
+    const key = `${cluster ? cluster.lead.i : ''}|${fights.map(f => f.id).join(',')}|${fmtClock(at)}|${frame?.id ?? ''}|${this.player.followPid}`;
     if (key !== this.tipKey) {
       this.tipKey = key;
       // The time, and the round's own clock beside it.
@@ -406,16 +405,17 @@ export class ReplayTimeline {
             });
             li.append(go);
           }
-          // With the spotlight on, a kill played from just before it with the
-          // two lit and the rest dulled (features/replay-matchup).
-          if ((ch.kind === 'kill' || ch.kind === 'teamkill') && matchup) {
-            const go = el('button', 'rp-tip-shot rp-tip-matchup', 'Spotlight');
+          // A kill played from just before it with the two lit and the rest
+          // dulled (features/replay-spotlight).
+          const spotlight = this.player.spotlight;
+          if ((ch.kind === 'kill' || ch.kind === 'teamkill') && spotlight) {
+            const go = el('button', 'rp-tip-shot rp-tip-spotlight', 'Spotlight');
             go.type = 'button';
             go.title = 'Play this kill from just before it, the two lit and everything else dimmed';
             go.addEventListener('click', e => {
               e.stopPropagation();
               this.hideTip();
-              try { this.player.matchup.spotlightKill(ch.t, ch.victim); } catch (error) { console.warn('replay: a spotlight from the timeline', error); }
+              try { spotlight.light(ch.t, ch.victim); } catch (error) { console.warn('replay: a spotlight from the timeline', error); }
             });
             li.append(go);
           }

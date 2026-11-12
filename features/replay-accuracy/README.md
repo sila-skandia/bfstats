@@ -225,7 +225,7 @@ the traces from the muzzle of the weapon". It is the engine's `game.drawDebug`
 lines**, off by default, remembered in the browser (`localStorage`
 `bf42-replay-shot-lines`). `viewer/replay-shotlines.js`.
 
-Then, 2026-11-12, having seen the spotlight's tracers (features/replay-matchup):
+Then, 2026-11-12, having seen the spotlight's tracers (features/replay-spotlight):
 "I like the tracers, I feel like we could use that style to replace the shot
 lines we already have." So each line is now drawn as a tracer
 (`viewer/replay-tracers.js`, shared with the spotlight): the round flies from

@@ -57,7 +57,7 @@ import { ReplayFeed } from './replay-feed.js';
 import { dynamicCast } from './replay-gunfire.js';
 import { ReplayHull, modelKind } from './replay-hulls.js';
 import { ReplaySoldiers } from './replay-bodies.js';
-import { ReplayMatchup } from './replay-matchup-view.js';
+import { ReplaySpotlight } from './replay-spotlight.js';
 import { addStandIns } from './replay-standins.js';
 import { ReplayProps, networkedRounds, weaponOfProjectile } from './replay-props.js';
 import { ReplayFlights } from './replay-flights.js';
@@ -248,22 +248,22 @@ class ReplayPlayer {
     // The creator view: picking, the round cam, a player's highlights, clips
     // and camera keys, for a signed-in player (features/replay-creator-view).
     this.creator = extra('the creator view', () => new ReplayCreator(this)) ?? null;
-    // The match-up: the round frozen on two that fought, taken apart side by
-    // side (features/replay-matchup). Opened from the bar's menu only.
-    this.matchup = extra('the match-up', () => new ReplayMatchup(this)) ?? null;
+    // The spotlight: a kill from the timeline played from just before it,
+    // the two lit and the rest dulled (features/replay-spotlight).
+    this.spotlight = extra('the spotlight', () => new ReplaySpotlight(this)) ?? null;
   }
 
-  /** The match-up's turn in a frame, switched off the way the highlights'
+  /** The spotlight's turn in a frame, switched off the way the highlights'
    *  is if it throws. */
-  withMatchup(fn) {
-    if (!this.matchup) return;
+  withSpotlight(fn) {
+    if (!this.spotlight) return;
     try {
-      fn(this.matchup);
+      fn(this.spotlight);
     } catch (error) {
-      console.warn('replay: the match-up threw and is switched off', error);
-      const matchup = this.matchup;
-      this.matchup = null;
-      extra('taking the match-up down', () => matchup.dispose());
+      console.warn('replay: the spotlight threw and is switched off', error);
+      const spotlight = this.spotlight;
+      this.spotlight = null;
+      extra('taking the spotlight down', () => spotlight.dispose());
     }
   }
 
@@ -402,8 +402,8 @@ class ReplayPlayer {
   /** After the frame is rendered: the timeline keeps a frame of it when it
    *  asked for one (replay-timeline.js). */
   afterRender(canvas) {
-    // A frame the match-up dulled is no frame of the round to keep.
-    if (!this.matchup?.dimmed) this.ui.timeline.capture(canvas);
+    // A frame the spotlight dulled is no frame of the round to keep.
+    if (!this.spotlight?.dimmed) this.ui.timeline.capture(canvas);
     // A creator's clip cropped to its frame is drawn from the same canvas.
     this.withCreator(c => c.afterRender(canvas));
   }
@@ -1166,7 +1166,7 @@ class ReplayPlayer {
     guard.run('the bar', () => this.ui.update(t, dt));
     this.withHighlights(h => h.update(t, dt));
     this.withCreator(c => c.update(t, dt));
-    this.withMatchup(m => m.update(t, dt));
+    this.withSpotlight(s => s.update(t, dt));
   }
 
   /**
@@ -1284,7 +1284,7 @@ class ReplayPlayer {
     extra('taking the message log back', () => this.feed.dispose());
     extra('taking the highlights down', () => this.highlights?.dispose());
     extra('taking the creator view down', () => this.creator?.dispose());
-    extra('taking the match-up down', () => this.matchup?.dispose());
+    extra('taking the spotlight down', () => this.spotlight?.dispose());
     extra('taking the bar down', () => this.ui.dispose());
     extra('taking the debriefing down', () => this.debrief?.dispose());
     extra('taking the scout view down', () => this.spotting?.dispose());
@@ -1441,12 +1441,12 @@ export function createReplayController(ctx) {
       guarded("the timeline's frame", () => player.afterRender(canvas));
     },
     /** The followed player's weapon over the frame just drawn, in his first
-     *  person (replay-viewmodel.js), and the match-up's spotlight under it:
+     *  person (replay-viewmodel.js), and the spotlight's pass under it:
      *  after the render, before `afterRender`. */
     renderViewmodel() {
-      // The match-up's pass first: the rest dulled and the fight's two drawn
-      // over it (replay-matchup-live.js), then his arms over both.
-      guarded('the match-up', () => player.matchup?.renderSpot());
+      // The spotlight's pass first: the rest dulled and the kill's two drawn
+      // over it (replay-spotlight.js), then his arms over both.
+      guarded('the spotlight', () => player.spotlight?.render());
       guarded('the first-person weapon', () => player.viewmodel?.render());
     },
     /** The followed man's own camera shake (his hit shake) on the camera,

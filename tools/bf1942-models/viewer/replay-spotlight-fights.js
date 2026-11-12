@@ -1,27 +1,20 @@
-// The replay's match-up (features/replay-matchup): two things that fought in a
-// recorded round -- two tanks, a plane and the gun that brought it down, a
-// soldier and the tank they went for -- and every round that passed between
-// them. Pure functions of the parsed recording (replay-recording.js) and the
+// The round's fights, for the replay's spotlight on a kill (features/
+// replay-spotlight): two things that fought in a recorded round -- two tanks,
+// a plane and the gun that brought it down, a soldier and the tank they went
+// for -- the fight a kill ended, and every round that passed between the two.
+// Pure functions of the parsed recording (replay-recording.js) and the
 // Accuracy rebuild's shots (replay-accuracy.js `accuracyBoard`), so
-// `tests/replay_matchup_harness.mjs` runs them under node. The page side,
-// which freezes the round, rebuilds where each round struck and takes the two
-// apart, is replay-matchup-view.js.
+// `tests/replay_spotlight_harness.mjs` runs them under node. The page side is
+// replay-spotlight.js.
 //
 // A "thing" is a life: a hull (whoever is in it) or a soldier on foot. What a
 // round was fired from is the hull its FireArms hangs under, else the man
 // (`shooterOf`); what it hit is the life whose hit points dropped as it got
 // there (the Accuracy rebuild's `victim`). A kill is the killer's thing
 // against the thing the victim was in a moment before they died.
-//
-// What the recording cannot say is left unsaid: it holds only what the
-// recording player's client was sent (nothing past the level's view
-// distance), and it never says where on a hull a round struck. The page
-// rebuilds that and checks it against the recorded drop of hit points.
 
 import { controlledAt, crewOf, hpAt, nameAt, positionAt, rootOf, teamAt } from './replay-recording.js';
 
-/** Seconds either side of the playhead a fight is looked for in. */
-export const WINDOW = 30;
 /** A round that missed counts as one fired at the other when it passed
  *  within this many metres of the target: a tank's shell 11 m wide is a
  *  miss at it, its machine gun 16 m off was at the men beside it. */
@@ -31,8 +24,6 @@ export const NEAR = 12;
  *  Accuracy rebuild can miss the kill shot when the victim's crew dies on
  *  the same tick. */
 const THROUGH = { hull: 4, soldier: 1.2 };
-/** Seconds kept before a fight's first round and after its last. */
-export const PAD = 2;
 /** Metres a second for a round whose speed nothing names. */
 export const DEFAULT_SPEED = 400;
 /** Seconds a round can take to arrive: past this it is no round at the target. */
@@ -159,11 +150,9 @@ export function hasPlayer(raw, follow) {
 }
 
 /**
- * `raw` (a `fightFrom`) seen from `t`: `{ a, b, hits: { a, b }, kill,
- * first, last, moment, score, events, raw }`. `a` is the followed player's
- * thing where they are in the fight, else the killer's, else whoever landed
- * more. `moment` is where the match-up freezes: the playhead when it is
- * inside the fight, else just before its kill, else its last hit.
+ * `raw` (a `fightFrom`) seen from `t`: `{ a, b, hits: { a, b }, kill, first,
+ * last, raw }`. `a` is the followed player's thing where they are in the
+ * fight, else the killer's, else whoever landed more.
  */
 export function orient(rec, raw, t, follow = null) {
   const { x, y } = raw;
@@ -177,36 +166,10 @@ export function orient(rec, raw, t, follow = null) {
   else if (raw.kill) a = raw.kill.killer;
   else if (hy > hx) a = y;
   const b = a === x ? y : x;
-  const inside = t >= raw.first - PAD && t <= raw.last + PAD;
-  const lastHit = raw.events.filter(e => e.kind === 'hit').reduce((m, e) => Math.max(m, e.t), -Infinity);
-  const moment = inside ? t : raw.kill ? raw.kill.t - BEFORE_KILL : Number.isFinite(lastHit) ? lastHit : raw.last;
-  const both = hx > 0 && hy > 0;
-  const mine = theirs(a) || theirs(b);
-  const near = Math.min(Math.abs(t - raw.first), Math.abs(t - raw.last), inside ? 0 : Infinity);
-  // Hits count by their logarithm: a machine gun's 36 small hits on an
-  // open-topped hull are not twelve times the fight two shells make.
-  const score = Math.log2(1 + hx) + Math.log2(1 + hy) + (raw.kill ? 3 : 0) + (both ? 2 : 0) + (mine ? 4 : 0)
-    + (inside ? 4 : 0) - near / 10;
   return {
     a, b, hits: { a: raw.hitsBy.get(a) ?? 0, b: raw.hitsBy.get(b) ?? 0 }, kill: raw.kill,
-    first: raw.first, last: raw.last, moment, score: Math.round(score * 100) / 100,
-    events: raw.events, raw,
+    first: raw.first, last: raw.last, raw,
   };
-}
-
-/**
- * The fights near `t`: two things that hit each other, or one of which killed
- * the other, within `window` seconds of it. `shots` are the Accuracy board's
- * (each `{ f, t, hit, victim, dist }`), `kills` the replay's kill lines.
- * Returns `orient`'s fights, best first.
- */
-export function fightsNear(rec, shots, kills, t, { window = WINDOW, follow = null } = {}) {
-  const out = [];
-  for (const { x, y, events } of pairEvents(rec, shots, kills, at => Math.abs(at - t) <= window).values()) {
-    out.push(orient(rec, fightFrom(x, y, events.sort((p, q) => p.t - q.t)), t, follow));
-  }
-  out.sort((p, q) => q.score - p.score || Math.abs(p.moment - t) - Math.abs(q.moment - t));
-  return out;
 }
 
 /**
@@ -242,8 +205,8 @@ export function fightOfKill(episodes, t, victimPid) {
   return best;
 }
 
-/** Seconds before a kill the match-up freezes on it: the round still in the
- *  air, the victim still in their seat. */
+/** Seconds before a kill the victim's thing is read, and the spotlight
+ *  turns to the killer: they were still in their tank. */
 export const KILL_FREEZE = BEFORE_KILL;
 
 /** The index of the first of `fires` (time order) at or after `t`. */
@@ -370,195 +333,9 @@ export function assignDrops(rounds) {
   return rounds;
 }
 
-/** Where `b` was seen from `a` at `t`, in `b`'s own frame (view axes, the
- *  hull's nose along -z): `{ bearing, elevation, range, local }`, `bearing`
- *  in degrees from dead ahead (positive to its right), `elevation` how far
- *  above its horizon `a` was. `poseOf(life, t)` is replay-kinematics.js
- *  `poseAt` (view frame `{ p, q }`). */
-export function seenFrom(a, b, t, poseOf) {
-  const pa = poseOf(a, t);
-  const pb = poseOf(b, t);
-  if (!pa || !pb) return null;
-  const d = [pa.p[0] - pb.p[0], pa.p[1] - pb.p[1], pa.p[2] - pb.p[2]];
-  const range = Math.hypot(...d);
-  // Into b's frame: the conjugate of its rotation.
-  const [qx, qy, qz, qw] = pb.q;
-  const ix = -qx, iy = -qy, iz = -qz;
-  const tx = 2 * (iy * d[2] - iz * d[1]);
-  const ty = 2 * (iz * d[0] - ix * d[2]);
-  const tz = 2 * (ix * d[1] - iy * d[0]);
-  _q[0] = d[0] + qw * tx + (iy * tz - iz * ty);
-  _q[1] = d[1] + qw * ty + (iz * tx - ix * tz);
-  _q[2] = d[2] + qw * tz + (ix * ty - iy * tx);
-  const local = [_q[0], _q[1], _q[2]];
-  const flat = Math.hypot(local[0], local[2]);
-  return {
-    bearing: Math.round((Math.atan2(local[0], -local[2]) * 180) / Math.PI * 10) / 10,
-    elevation: Math.round((Math.atan2(local[1], flat) * 180) / Math.PI * 10) / 10,
-    range: Math.round(range * 10) / 10,
-    local,
-  };
-}
-
-/** Words for where one was seen from, by its bearing from dead ahead:
- *  "they saw Kai head on", "... from the left side". */
-export function aspectWords(bearing) {
-  const b = Math.abs(bearing);
-  const side = bearing >= 0 ? 'right' : 'left';
-  if (b < 25) return 'head on';
-  if (b < 65) return `from the front ${side} quarter`;
-  if (b < 115) return `from the ${side} side`;
-  if (b < 155) return `from the rear ${side} quarter`;
-  return 'from behind';
-}
-
-/** A soldier's three hit capsules (DIE-10, DMG-3): head 40, chest 41, limbs 42. */
-export const BODY_PARTS = Object.freeze([
-  { id: 'head', material: 40, label: 'head' },
-  { id: 'chest', material: 41, label: 'chest' },
-  { id: 'limbs', material: 42, label: 'arms or legs' },
-]);
-
-/** Which of a soldier's capsules best explains a recorded drop of `amount`,
- *  from `price(material)` (a square hit's damage, falloff applied): the part
- *  and how close, `{ part, expected, off }`, or null when none is within a
- *  fifth of the drop (a blast, two rounds in one sample). A drop that kills
- *  them is only what they had left, so it names a part only when one part alone
- *  costs at least that. */
-export function bodyPartFor(amount, price, { killed = false } = {}) {
-  const priced = BODY_PARTS.map(part => ({ part, expected: price(part.material) }))
-    .filter(p => p.expected > 0)
-    .map(p => ({ ...p, expected: Math.round(p.expected * 10) / 10 }));
-  if (killed) {
-    const enough = priced.filter(p => p.expected >= amount - 0.05);
-    return enough.length === 1 ? { ...enough[0], off: 0 } : null;
-  }
-  let best = null;
-  for (const p of priced) {
-    const off = Math.abs(p.expected - amount);
-    if (!best || off < best.off) best = { ...p, off };
-  }
-  if (!best || best.off > Math.max(1, amount * 0.2)) return null;
-  return best;
-}
-
-/** `n` thing`s`. */
-const count = (n, one, many = `${one}s`) => `${n} ${n === 1 ? one : many}`;
-
-/** A list in words: a, b and c. */
-const listed = items => (items.length <= 1 ? items.join('') : `${items.slice(0, -1).join(', ')} and ${items[items.length - 1]}`);
-
-/**
- * One side's tally against the other, `rounds` that side's from
- * `roundsBetween` (with `struck` set by the page on a near round that met the
- * other's hull: `{ damage }`, 0 for a plate it cannot hurt). Returns `{ fired,
- * hit, glanced, missed, dealt }`: rounds that did damage, rounds that met
- * the hull and did none, the rest.
- */
-export function tallyOf(rounds) {
-  let hit = 0, glanced = 0, missed = 0, dealt = 0;
-  for (const r of rounds) {
-    if (r.kind === 'hit') {
-      hit++;
-      dealt += r.drop?.amount ?? 0;
-    } else if (r.struck) glanced++;
-    else missed++;
-  }
-  return { fired: rounds.length, hit, glanced, missed, dealt: Math.round(dealt * 10) / 10 };
-}
-
-/**
- * The plain words for one side of the match-up: what its rounds did, what
- * its gun can and cannot get through on the other, and how the other was
- * turned to it. Never a verdict on who should have won: what happened, and
- * what the numbers allowed (features/battle-schools, "Lesson from the model
- * browser: no verdict").
- *
- * `side`: `{ who, gun, tally, armour, seen, kill }`, where `armour` is
- * `{ immune, of, from }` (the other's armour materials this gun does nothing
- * to, of how many, and the thinnest of them where they are plates in mm) and
- * `seen` `{ aspect, share, perHit, hits, range }` (what the other showed
- * this side, the share of it this gun gets through, a hit there, the hits
- * that kill).
- */
-export function sideWords(side, other) {
-  const lines = [];
-  const t = side.tally;
-  if (t?.fired) {
-    const parts = [`${t.hit} did damage`];
-    if (t.glanced) parts.push(`${t.glanced} struck and did none`);
-    if (t.missed) parts.push(`${t.missed} missed`);
-    lines.push(`${side.who} fired ${count(t.fired, 'round')} at ${other.who}: ${listed(parts)}.`);
-    if (t.dealt > 0) lines.push(`Their hits took ${fmt(t.dealt)} of ${other.who}'s hit points.`);
-  } else {
-    lines.push(`${side.who} fired nothing at ${other.who} that the recording saw.`);
-  }
-  if (side.armour && side.gun) {
-    const { immune, of, from } = side.armour;
-    if (immune > 0 && immune === of) {
-      lines.push(`Their ${side.gun} does nothing to any armour on the ${other.what}.`);
-    } else if (immune > 0) {
-      lines.push(`Their ${side.gun} does nothing to ${immune} of the ${of} armour materials on the ${other.what}${from ? `: every plate from ${from} up` : ''}.`);
-    } else if (of > 0) {
-      lines.push(`Their ${side.gun} can hurt every armour material on the ${other.what}.`);
-    }
-  }
-  if (side.seen) {
-    const { aspect, share, perHit, hits, range } = side.seen;
-    let line = `${Number.isFinite(range) ? `From ${Math.round(range)} m they` : 'They'} saw ${other.who} ${aspect}`;
-    if (Number.isFinite(share)) {
-      line += share > 0 ? `, and ${Math.round(share * 100)}% of what they could see was armour their gun gets through` : ', and none of what they could see was armour their gun gets through';
-    }
-    if (share > 0 && hits) line += `; ${count(hits, 'hit')} there destroy it from full health`;
-    else if (perHit > 0 && hits) line += `; ${fmt(perHit)} a hit there, ${count(hits, 'hit')} to destroy it`;
-    lines.push(`${line}.`);
-  }
-  return lines;
-}
-
-const fmt = v => (Number.isInteger(v) ? String(v) : (Math.round(v * 10) / 10).toFixed(1));
-
-/** The fight's ending in words. */
-export function endingWords(fight, a, b, pretty = w => w) {
-  const k = fight.kill;
-  if (!k) return 'Neither was killed in this fight.';
-  const killer = k.killer === fight.a ? a : b;
-  const victim = k.killer === fight.a ? b : a;
-  return `${killer.who} killed ${victim.who}${k.weapon ? ` (${pretty(k.weapon)})` : ''}.`;
-}
-
-/** The hit points `life` had at `t`, and its most. */
+/** `life`'s hit points at `t`, and the most it has. */
 export function healthOf(life, t) {
   const hp = hpAt(life, t);
   const max = Number(life?.maxhp) || (life?.soldier ? 30 : null);
   return { hp: Number.isFinite(hp) ? hp : null, max };
-}
-
-/** A plate's thickness in mm where its material is named for it (FHSW's
- *  "150mm"), else null. */
-export function plateMm(label) {
-  const m = /^(\d+(?:[.,]\d+)?)\s*mm$/i.exec(String(label ?? '').trim());
-  return m ? Number(m[1].replace(',', '.')) : null;
-}
-
-/**
- * What one gun does to a hull's armour: `materials` the hull's collision
- * faces' defence materials, `price(material)` a square hit's damage there.
- * `{ immune, of, from, immuneList, hurtList }`: how many of its materials the
- * gun does nothing to, of how many, and -- where the mod names its plates by
- * thickness -- the thickness from which every plate is proof against it
- * (null when a thicker plate than the thinnest proof one still gives).
- */
-export function armourAgainst(materials, price, labelOf = () => '') {
-  const unique = [...new Set(materials.filter(m => Number.isFinite(m)))].sort((x, y) => x - y);
-  const immuneList = unique.filter(m => !(price(m) > 0));
-  const hurtList = unique.filter(m => price(m) > 0);
-  const proof = immuneList.map(m => plateMm(labelOf(m))).filter(v => v !== null);
-  const given = hurtList.map(m => plateMm(labelOf(m))).filter(v => v !== null);
-  let from = null;
-  if (proof.length) {
-    const thinnest = Math.min(...proof);
-    if (!given.length || thinnest > Math.max(...given)) from = `${thinnest} mm`;
-  }
-  return { immune: immuneList.length, of: unique.length, from, immuneList, hurtList };
 }
