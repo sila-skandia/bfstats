@@ -1,0 +1,88 @@
+rem *** Strategic areas: one per control point (botgen) ***
+
+aiStrategicArea.create axisbase 830.8/1631.4 835.8/1636.4 50
+aiStrategicArea.addNeighbour nakahonoki
+aiStrategicArea.addNeighbour kushira
+aiStrategicArea.addNeighbour sitasosu
+aiStrategicArea.addNeighbour trench
+aiStrategicArea.addObjectTypeFlag Base
+aiStrategicArea.setOrderPosition Infantry 836.5/1635.5
+aiStrategicArea.setSide 1
+aiStrategicArea.setTakeable 2 0
+
+aiStrategicArea.create alliedbase 981.1/81.1 986.1/86.1 50
+aiStrategicArea.addNeighbour nakahonoki
+aiStrategicArea.addNeighbour kushira
+aiStrategicArea.addNeighbour okazaki
+aiStrategicArea.addNeighbour trench
+aiStrategicArea.addObjectTypeFlag Base
+aiStrategicArea.setOrderPosition Infantry 987.5/87.5
+aiStrategicArea.setSide 2
+aiStrategicArea.setTakeable 1 0
+
+aiStrategicArea.create nakahonoki 1505.9/1178.5 1510.9/1183.5 150
+aiStrategicArea.addNeighbour axisbase
+aiStrategicArea.addNeighbour alliedbase
+aiStrategicArea.addNeighbour sitasosu
+aiStrategicArea.addNeighbour trench
+aiStrategicArea.addObjectTypeFlag Flank
+aiStrategicArea.addObjectTypeFlag ControlPoint
+aiStrategicArea.setOrderPosition Infantry 1512.5/1181.5
+aiStrategicArea.setSide 1
+
+aiStrategicArea.create shimoobaru 106/1034.4 111/1039.4 150
+aiStrategicArea.addNeighbour kushira
+aiStrategicArea.addNeighbour okazaki
+aiStrategicArea.addNeighbour sitasosu
+aiStrategicArea.addObjectTypeFlag Flank
+aiStrategicArea.addObjectTypeFlag ControlPoint
+aiStrategicArea.setOrderPosition Infantry 112.5/1037.5
+aiStrategicArea.setSide 1
+
+aiStrategicArea.create kushira 755.7/516.5 760.7/521.5 200
+aiStrategicArea.addNeighbour axisbase
+aiStrategicArea.addNeighbour alliedbase
+aiStrategicArea.addNeighbour shimoobaru
+aiStrategicArea.addNeighbour okazaki
+aiStrategicArea.addNeighbour sitasosu
+aiStrategicArea.addNeighbour trench
+aiStrategicArea.addObjectTypeFlag Centre
+aiStrategicArea.addObjectTypeFlag Close
+aiStrategicArea.addObjectTypeFlag ControlPoint
+aiStrategicArea.setOrderPosition Infantry 761.5/520.5
+aiStrategicArea.setSide 1
+
+aiStrategicArea.create okazaki 327.4/422.8 332.4/427.8 150
+aiStrategicArea.addNeighbour alliedbase
+aiStrategicArea.addNeighbour shimoobaru
+aiStrategicArea.addNeighbour kushira
+aiStrategicArea.addNeighbour sitasosu
+aiStrategicArea.addObjectTypeFlag Flank
+aiStrategicArea.addObjectTypeFlag ControlPoint
+aiStrategicArea.setOrderPosition Infantry 331.5/426.5
+aiStrategicArea.setSide 1
+
+aiStrategicArea.create sitasosu 556/1117.8 561/1122.8 150
+aiStrategicArea.addNeighbour axisbase
+aiStrategicArea.addNeighbour nakahonoki
+aiStrategicArea.addNeighbour shimoobaru
+aiStrategicArea.addNeighbour kushira
+aiStrategicArea.addNeighbour okazaki
+aiStrategicArea.addNeighbour trench
+aiStrategicArea.addObjectTypeFlag Flank
+aiStrategicArea.addObjectTypeFlag Close
+aiStrategicArea.addObjectTypeFlag ControlPoint
+aiStrategicArea.setOrderPosition Infantry 559.5/1121.5
+aiStrategicArea.setSide 1
+
+aiStrategicArea.create trench 933.1/820.9 938.1/825.9 300
+aiStrategicArea.addNeighbour axisbase
+aiStrategicArea.addNeighbour alliedbase
+aiStrategicArea.addNeighbour nakahonoki
+aiStrategicArea.addNeighbour kushira
+aiStrategicArea.addNeighbour sitasosu
+aiStrategicArea.addObjectTypeFlag Centre
+aiStrategicArea.addObjectTypeFlag StrongPoint
+aiStrategicArea.addObjectTypeFlag ControlPoint
+aiStrategicArea.setOrderPosition Infantry 941.5/823.5
+aiStrategicArea.setSide 1

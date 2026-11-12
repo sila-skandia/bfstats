@@ -1,0 +1,35 @@
+rem *** Strategic areas: one per control point (botgen) ***
+
+aiStrategicArea.create izumisano 1025.7/85 1030.7/90 200
+aiStrategicArea.addNeighbour izumisano2
+aiStrategicArea.addNeighbour suehirokouen
+aiStrategicArea.addObjectTypeFlag Centre
+aiStrategicArea.addObjectTypeFlag ControlPoint
+aiStrategicArea.setOrderPosition Infantry 1031.5/91.5
+aiStrategicArea.setSide 1
+
+aiStrategicArea.create kankuu 654/1526.2 659/1531.2 50
+aiStrategicArea.addObjectTypeFlag Base
+aiStrategicArea.setSide 2
+aiStrategicArea.setTakeable 1 0
+
+aiStrategicArea.create Rinku_town 1072.8/513.5 1077.8/518.5 10
+aiStrategicArea.setSide 1
+aiStrategicArea.setTakeable 1 0
+aiStrategicArea.setTakeable 2 0
+
+aiStrategicArea.create izumisano2 1245.5/252 1250.5/257 200
+aiStrategicArea.addNeighbour izumisano
+aiStrategicArea.addObjectTypeFlag Centre
+aiStrategicArea.addObjectTypeFlag ControlPoint
+aiStrategicArea.setOrderPosition Infantry 1251.5/255.5
+aiStrategicArea.setSide 1
+
+aiStrategicArea.create suehirokouen 980.3/169.8 985.3/174.8 300
+aiStrategicArea.addNeighbour izumisano
+aiStrategicArea.addObjectTypeFlag Centre
+aiStrategicArea.addObjectTypeFlag StrongPoint
+aiStrategicArea.addObjectTypeFlag Close
+aiStrategicArea.addObjectTypeFlag ControlPoint
+aiStrategicArea.setOrderPosition Infantry 984.5/173.5
+aiStrategicArea.setSide 1

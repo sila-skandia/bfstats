@@ -1,0 +1,32 @@
+rem *** Strategic areas: one per control point (botgen) ***
+
+aiStrategicArea.create Imperial_Forward_Command 354.6/1687.1 374.6/1707.1 10
+aiStrategicArea.setSide 1
+aiStrategicArea.setTakeable 1 0
+aiStrategicArea.setTakeable 2 0
+
+aiStrategicArea.create City_Dock 1443.8/1411.3 1453.8/1421.3 150
+aiStrategicArea.addNeighbour City_Pump_Station
+aiStrategicArea.addObjectTypeFlag Flank
+aiStrategicArea.addObjectTypeFlag ControlPoint
+aiStrategicArea.setOrderPosition Tank 1453.8/1421.3
+aiStrategicArea.setOrderPosition Infantry 1453.8/1421.3
+aiStrategicArea.setSide 2
+
+aiStrategicArea.create City_Pump_Station 1320.3/1279.3 1330.3/1289.3 150
+aiStrategicArea.addNeighbour City_Dock
+aiStrategicArea.addObjectTypeFlag Flank
+aiStrategicArea.addObjectTypeFlag ControlPoint
+aiStrategicArea.setOrderPosition Tank 1328.5/1285.5
+aiStrategicArea.setOrderPosition Infantry 1330.3/1289.3
+aiStrategicArea.setSide 2
+
+aiStrategicArea.create Southern_Pump_Station 1514.8/450.6 1539.8/475.6 10
+aiStrategicArea.setSide 2
+aiStrategicArea.setTakeable 1 0
+aiStrategicArea.setTakeable 2 0
+
+aiStrategicArea.create Southern_Habitat 449/488 474/513 10
+aiStrategicArea.setSide 2
+aiStrategicArea.setTakeable 1 0
+aiStrategicArea.setTakeable 2 0

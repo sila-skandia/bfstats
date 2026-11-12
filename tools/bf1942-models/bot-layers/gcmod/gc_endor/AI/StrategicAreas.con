@@ -1,0 +1,32 @@
+rem *** Strategic areas: one per control point (botgen) ***
+
+aiStrategicArea.create Bunker 630.9/844 635.9/849 10
+aiStrategicArea.setSide 1
+aiStrategicArea.setTakeable 1 0
+aiStrategicArea.setTakeable 2 0
+
+aiStrategicArea.create Rebel_Landing 434.1/198.7 439.1/203.7 200
+aiStrategicArea.addNeighbour Imperial_Outpost
+aiStrategicArea.addObjectTypeFlag Centre
+aiStrategicArea.addObjectTypeFlag ControlPoint
+aiStrategicArea.setOrderPosition Tank 441.5/205.5
+aiStrategicArea.setOrderPosition Infantry 439.1/203.7
+aiStrategicArea.setSide 2
+
+aiStrategicArea.create Imperial_Outpost 477.9/503.6 489.9/515.6 300
+aiStrategicArea.addNeighbour Rebel_Landing
+aiStrategicArea.addObjectTypeFlag Centre
+aiStrategicArea.addObjectTypeFlag StrongPoint
+aiStrategicArea.addObjectTypeFlag ControlPoint
+aiStrategicArea.setOrderPosition Tank 503.5/527.5
+aiStrategicArea.setOrderPosition Infantry 489.9/515.6
+aiStrategicArea.setSide 1
+
+aiStrategicArea.create Ewok_Village 255/337.8 275/357.8 10
+aiStrategicArea.setTakeable 1 0
+aiStrategicArea.setTakeable 2 0
+
+aiStrategicArea.create Landing_Platform 404.8/742.6 422.8/760.6 10
+aiStrategicArea.setSide 1
+aiStrategicArea.setTakeable 1 0
+aiStrategicArea.setTakeable 2 0

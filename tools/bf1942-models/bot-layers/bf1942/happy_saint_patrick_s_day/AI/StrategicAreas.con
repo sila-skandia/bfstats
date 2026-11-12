@@ -1,0 +1,17 @@
+rem *** Strategic areas: one per control point (botgen) ***
+
+aiStrategicArea.create England 176/581 181/586 50
+aiStrategicArea.addNeighbour Ireland
+aiStrategicArea.addObjectTypeFlag Base
+aiStrategicArea.setOrderPosition Tank 177.5/587.5
+aiStrategicArea.setOrderPosition Infantry 179.5/586.5
+aiStrategicArea.setSide 1
+aiStrategicArea.setTakeable 2 0
+
+aiStrategicArea.create Ireland 183.3/450.5 188.3/455.5 50
+aiStrategicArea.addNeighbour England
+aiStrategicArea.addObjectTypeFlag Base
+aiStrategicArea.setOrderPosition Tank 187.5/458.5
+aiStrategicArea.setOrderPosition Infantry 187.5/455.5
+aiStrategicArea.setSide 2
+aiStrategicArea.setTakeable 1 0

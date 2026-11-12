@@ -1,0 +1,52 @@
+rem *** Strategic areas: one per control point (botgen) ***
+
+aiStrategicArea.create charan_kanoa 2195.1/1333.8 2225.1/1363.8 150
+aiStrategicArea.addNeighbour aslito_airfield
+aiStrategicArea.addNeighbour death_valley_strongpoint
+aiStrategicArea.addNeighbour radarhill
+aiStrategicArea.addObjectTypeFlag Flank
+aiStrategicArea.addObjectTypeFlag ControlPoint
+aiStrategicArea.setOrderPosition Infantry 2226.5/1362.5
+aiStrategicArea.setSide 1
+
+aiStrategicArea.create aslito_airfield 2629.7/1401.8 2634.7/1406.8 200
+aiStrategicArea.addNeighbour charan_kanoa
+aiStrategicArea.addNeighbour death_valley_strongpoint
+aiStrategicArea.addObjectTypeFlag Centre
+aiStrategicArea.addObjectTypeFlag ControlPoint
+aiStrategicArea.setOrderPosition Infantry 2635.5/1405.5
+aiStrategicArea.setSide 1
+
+aiStrategicArea.create death_valley_strongpoint 2111.9/1762.7 2116.9/1767.7 300
+aiStrategicArea.addNeighbour charan_kanoa
+aiStrategicArea.addNeighbour aslito_airfield
+aiStrategicArea.addNeighbour radarhill
+aiStrategicArea.addObjectTypeFlag Centre
+aiStrategicArea.addObjectTypeFlag StrongPoint
+aiStrategicArea.addObjectTypeFlag ControlPoint
+aiStrategicArea.setOrderPosition Infantry 2115.5/1768.5
+aiStrategicArea.setSide 1
+
+aiStrategicArea.create radarhill 1839.1/2043.5 1844.1/2048.5 150
+aiStrategicArea.addNeighbour charan_kanoa
+aiStrategicArea.addNeighbour death_valley_strongpoint
+aiStrategicArea.addNeighbour northern_japanese_base
+aiStrategicArea.addObjectTypeFlag Flank
+aiStrategicArea.addObjectTypeFlag ControlPoint
+aiStrategicArea.setOrderPosition Infantry 1845.5/2049.5
+aiStrategicArea.setSide 1
+
+aiStrategicArea.create northern_japanese_base 1578.7/2629.1 1583.7/2634.1 200
+aiStrategicArea.addNeighbour radarhill
+aiStrategicArea.addNeighbour northern_airfield
+aiStrategicArea.addObjectTypeFlag Centre
+aiStrategicArea.addObjectTypeFlag ControlPoint
+aiStrategicArea.setOrderPosition Infantry 1584.5/2635.5
+aiStrategicArea.setSide 1
+
+aiStrategicArea.create northern_airfield 1555.2/2813.6 1560.2/2818.6 200
+aiStrategicArea.addNeighbour northern_japanese_base
+aiStrategicArea.addObjectTypeFlag Centre
+aiStrategicArea.addObjectTypeFlag ControlPoint
+aiStrategicArea.setOrderPosition Infantry 1559.5/2819.5
+aiStrategicArea.setSide 1

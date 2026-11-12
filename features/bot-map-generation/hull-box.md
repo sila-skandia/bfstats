@@ -64,8 +64,10 @@ Eight live generated levels place a hull whose box shrinks (Desert Combat's
 `Minigun` 0.55 m, `BM21`, `SCUD-B`, `SA-3`; BF1918's `PomPom_Static`,
 `LePrieurRaketenBase`; FHSWEurope Aberdeen's tanks): DC_Battle_of_73_Easting,
 DC_LostVillage, DC_Oil_Fields, DC_Urban_Siege, Inshallah_Valley,
-hindenburg_line, roye and FHSWEurope's aberdeen. Each gets one page match
-on the fix (`page-matches.md` section 6).
+hindenburg_line, roye and FHSWEurope's aberdeen. Each got a page match
+on the fix (`page-matches.md` section 6): five passed it, DC_LostVillage
+and DC_Oil_Fields failed it and passed the next, and roye failed for the
+second time that day and lost its tag (it was failing before the fix).
 
 ## Left open
 

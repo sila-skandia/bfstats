@@ -1,0 +1,92 @@
+rem *** Strategic areas: one per control point (botgen) ***
+
+aiStrategicArea.create AlliedBase 819.2/45.8 824.2/50.8 50
+aiStrategicArea.addObjectTypeFlag Base
+aiStrategicArea.setOrderPosition Infantry 823.5/49.5
+aiStrategicArea.setSide 2
+aiStrategicArea.setTakeable 1 0
+
+aiStrategicArea.create Gela_Beach 950.6/1040.8 965.6/1055.8 300
+aiStrategicArea.addNeighbour Gela_Church
+aiStrategicArea.addNeighbour Gela_West
+aiStrategicArea.addNeighbour mortar_base
+aiStrategicArea.addObjectTypeFlag Centre
+aiStrategicArea.addObjectTypeFlag StrongPoint
+aiStrategicArea.addObjectTypeFlag Close
+aiStrategicArea.addObjectTypeFlag ControlPoint
+aiStrategicArea.setOrderPosition Infantry 966.5/1054.5
+aiStrategicArea.setSide 1
+
+aiStrategicArea.create Gela_North 937.3/1371.8 942.3/1376.8 200
+aiStrategicArea.addNeighbour Gela_Church
+aiStrategicArea.addNeighbour Gela_West
+aiStrategicArea.addNeighbour Gela_East
+aiStrategicArea.addNeighbour mortar_base
+aiStrategicArea.addNeighbour AxisBase2
+aiStrategicArea.addObjectTypeFlag Centre
+aiStrategicArea.addObjectTypeFlag ControlPoint
+aiStrategicArea.setOrderPosition Infantry 941.5/1377.5
+aiStrategicArea.setSide 1
+
+aiStrategicArea.create Gela_Church 1087.6/1390.2 1092.6/1395.2 200
+aiStrategicArea.addNeighbour Gela_Beach
+aiStrategicArea.addNeighbour Gela_North
+aiStrategicArea.addNeighbour AxisBase
+aiStrategicArea.addNeighbour Gela_East
+aiStrategicArea.addNeighbour mortar_base
+aiStrategicArea.addObjectTypeFlag Centre
+aiStrategicArea.addObjectTypeFlag ControlPoint
+aiStrategicArea.setOrderPosition Infantry 1093.5/1394.5
+aiStrategicArea.setSide 1
+
+aiStrategicArea.create Gela_West 895.9/1189.2 900.9/1194.2 200
+aiStrategicArea.addNeighbour Gela_Beach
+aiStrategicArea.addNeighbour Gela_North
+aiStrategicArea.addNeighbour Gela_East
+aiStrategicArea.addNeighbour mortar_base
+aiStrategicArea.addNeighbour AxisBase2
+aiStrategicArea.addObjectTypeFlag Centre
+aiStrategicArea.addObjectTypeFlag ControlPoint
+aiStrategicArea.setOrderPosition Infantry 899.5/1193.5
+aiStrategicArea.setSide 1
+
+aiStrategicArea.create AxisBase 1292.4/1826.9 1297.4/1831.9 50
+aiStrategicArea.addNeighbour Gela_Church
+aiStrategicArea.addNeighbour mortar_base
+aiStrategicArea.addNeighbour AxisBase2
+aiStrategicArea.addObjectTypeFlag Base
+aiStrategicArea.setOrderPosition Infantry 1296.5/1830.5
+aiStrategicArea.setSide 1
+aiStrategicArea.setTakeable 2 0
+
+aiStrategicArea.create Gela_East 1060.3/1217.3 1065.3/1222.3 200
+aiStrategicArea.addNeighbour Gela_North
+aiStrategicArea.addNeighbour Gela_Church
+aiStrategicArea.addNeighbour Gela_West
+aiStrategicArea.addObjectTypeFlag Centre
+aiStrategicArea.addObjectTypeFlag ControlPoint
+aiStrategicArea.setOrderPosition Infantry 1064.5/1221.5
+aiStrategicArea.setSide 1
+
+aiStrategicArea.create mortar_base 958.8/1549.3 973.8/1564.3 200
+aiStrategicArea.addNeighbour Gela_Beach
+aiStrategicArea.addNeighbour Gela_North
+aiStrategicArea.addNeighbour Gela_Church
+aiStrategicArea.addNeighbour Gela_West
+aiStrategicArea.addNeighbour AxisBase
+aiStrategicArea.addNeighbour AxisBase2
+aiStrategicArea.addObjectTypeFlag Centre
+aiStrategicArea.addObjectTypeFlag Close
+aiStrategicArea.addObjectTypeFlag ControlPoint
+aiStrategicArea.setOrderPosition Infantry 972.5/1563.5
+aiStrategicArea.setSide 1
+
+aiStrategicArea.create AxisBase2 506.8/1742 511.8/1747 50
+aiStrategicArea.addNeighbour Gela_North
+aiStrategicArea.addNeighbour Gela_West
+aiStrategicArea.addNeighbour AxisBase
+aiStrategicArea.addNeighbour mortar_base
+aiStrategicArea.addObjectTypeFlag Base
+aiStrategicArea.setOrderPosition Infantry 512.5/1748.5
+aiStrategicArea.setSide 1
+aiStrategicArea.setTakeable 2 0

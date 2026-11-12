@@ -1,0 +1,49 @@
+rem *** Strategic areas: one per control point (botgen) ***
+
+aiStrategicArea.create Peleliu_Flag1 918.5/2184 923.5/2189 10
+aiStrategicArea.setSide 1
+aiStrategicArea.setTakeable 1 0
+aiStrategicArea.setTakeable 2 0
+
+aiStrategicArea.create Peleliu_Flag2 1062.2/2158.7 1067.2/2163.7 200
+aiStrategicArea.addNeighbour beach
+aiStrategicArea.addNeighbour white_beachtemplate
+aiStrategicArea.addObjectTypeFlag Centre
+aiStrategicArea.addObjectTypeFlag ControlPoint
+aiStrategicArea.setOrderPosition Infantry 1066.5/2164.5
+aiStrategicArea.setSide 1
+
+aiStrategicArea.create Peleliu_Flag4 1623.4/2484.9 1628.4/2489.9 10
+aiStrategicArea.setSide 1
+aiStrategicArea.setTakeable 1 0
+aiStrategicArea.setTakeable 2 0
+
+aiStrategicArea.create Peleliu_Flag3 1238.5/2276.7 1243.5/2281.7 10
+aiStrategicArea.setSide 1
+aiStrategicArea.setTakeable 1 0
+aiStrategicArea.setTakeable 2 0
+
+aiStrategicArea.create beach 753.4/2201.1 763.4/2211.1 300
+aiStrategicArea.addNeighbour Peleliu_Flag2
+aiStrategicArea.addNeighbour white_beachtemplate
+aiStrategicArea.addObjectTypeFlag Centre
+aiStrategicArea.addObjectTypeFlag StrongPoint
+aiStrategicArea.addObjectTypeFlag ControlPoint
+aiStrategicArea.setOrderPosition Infantry 762.5/2212.5
+
+aiStrategicArea.create usa 59.7/2138.4 64.7/2143.4 50
+aiStrategicArea.addObjectTypeFlag Base
+aiStrategicArea.setSide 2
+aiStrategicArea.setTakeable 1 0
+
+aiStrategicArea.create white_beachtemplate 731.9/2081.2 741.9/2091.2 200
+aiStrategicArea.addNeighbour Peleliu_Flag2
+aiStrategicArea.addNeighbour beach
+aiStrategicArea.addObjectTypeFlag Centre
+aiStrategicArea.addObjectTypeFlag Close
+aiStrategicArea.addObjectTypeFlag ControlPoint
+aiStrategicArea.setOrderPosition Infantry 740.5/2090.5
+
+aiStrategicArea.create landing 110/2110 150/2150 10
+aiStrategicArea.setTakeable 1 0
+aiStrategicArea.setTakeable 2 0

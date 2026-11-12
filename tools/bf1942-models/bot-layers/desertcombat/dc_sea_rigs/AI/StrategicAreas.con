@@ -1,0 +1,23 @@
+rem *** Strategic areas: one per control point (botgen) ***
+
+aiStrategicArea.create OilRig1_Topside 972/1046 984/1058 10
+aiStrategicArea.setSide 1
+aiStrategicArea.setTakeable 1 0
+aiStrategicArea.setTakeable 2 0
+
+aiStrategicArea.create OilRig2_Topside 1030.2/1295.5 1042.2/1307.5 10
+aiStrategicArea.setSide 1
+aiStrategicArea.setTakeable 1 0
+aiStrategicArea.setTakeable 2 0
+
+aiStrategicArea.create Oil_Spill 860/1142 900/1182 10
+aiStrategicArea.setTakeable 1 0
+aiStrategicArea.setTakeable 2 0
+
+aiStrategicArea.create OilRig1_Control_Room 976/1031 984/1039 10
+aiStrategicArea.setTakeable 1 0
+aiStrategicArea.setTakeable 2 0
+
+aiStrategicArea.create OilRig2_Control_Room 1034/1317 1042/1325 10
+aiStrategicArea.setTakeable 1 0
+aiStrategicArea.setTakeable 2 0

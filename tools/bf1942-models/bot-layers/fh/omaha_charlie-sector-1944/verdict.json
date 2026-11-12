@@ -1,0 +1,25 @@
+{
+ "level": "omaha_charlie-sector-1944",
+ "verdict": "fail",
+ "outcome": "unsuitable",
+ "config": "with vehicles",
+ "doctrine": "garrison",
+ "generatorVersion": 5,
+ "inputs": {
+  "controlPoints": "c18f6fb5e637b62f417f2e42905eb0f1f9250afb129271613c41d6ffe6bf79f6",
+  "infantryMap": "f00f4b019038f6a2ed08e824ee86f2add93d6de1cf6d1dfaa329c6a9eb3a565a",
+  "template": "bdc0e455f47f91b7e7724e71d7c0c196e839b36946ac3abb7663d725944081e5"
+ },
+ "baseline": "DICE layers with vehicles, garrison doctrine: berlin, stalingrad, kharkov, bocage; seeds 1..10, 600 s",
+ "bar": null,
+ "seeds": 1,
+ "sizes": {},
+ "oneSided": null,
+ "unreachable": [
+  "west_bunker",
+  "east_bunker"
+ ],
+ "lintErrors": [
+  "side 2 holds no spawn point at the start of the round"
+ ]
+}

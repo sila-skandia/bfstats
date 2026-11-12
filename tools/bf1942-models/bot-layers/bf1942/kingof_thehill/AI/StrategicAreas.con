@@ -1,0 +1,23 @@
+rem *** Strategic areas: one per control point (botgen) ***
+
+aiStrategicArea.create AxisBase 46.8/47.6 53.8/54.6 10
+aiStrategicArea.setSide 1
+aiStrategicArea.setTakeable 1 0
+aiStrategicArea.setTakeable 2 0
+
+aiStrategicArea.create AlliedBase 1986/1978.3 1993/1985.3 10
+aiStrategicArea.setSide 2
+aiStrategicArea.setTakeable 1 0
+aiStrategicArea.setTakeable 2 0
+
+aiStrategicArea.create Axis_beachhead 337.4/257.3 377.4/297.3 10
+aiStrategicArea.setTakeable 1 0
+aiStrategicArea.setTakeable 2 0
+
+aiStrategicArea.create TheBeachhead_Allies 1496/1499.6 1536/1539.6 10
+aiStrategicArea.setTakeable 1 0
+aiStrategicArea.setTakeable 2 0
+
+aiStrategicArea.create CenterFlag 988.4/1028.2 1008.4/1048.2 10
+aiStrategicArea.setTakeable 1 0
+aiStrategicArea.setTakeable 2 0

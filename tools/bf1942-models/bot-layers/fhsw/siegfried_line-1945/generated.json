@@ -1,0 +1,135 @@
+{
+ "generator": "botgen",
+ "version": 5,
+ "mod": "FHSW",
+ "level": "siegfried_line-1945",
+ "objectSpawners": 163,
+ "template": "few",
+ "templateSource": "DICE, bf1942 Kursk (1.6 patch archives, Kursk_003.rfa): AI/Strategies.con, AI/conditions.con, AI/prerequisites.con, unchanged",
+ "templateChoice": {
+  "name": "few",
+  "inPlay": 3,
+  "rule": "3 capturable flags in play, at most 3"
+ },
+ "scope": "on foot: infantry order positions only, no search maps, no co-op layer",
+ "unreachable": [
+  "chateau_de_la_ligne_de_maginot",
+  "belgisches_landhaus",
+  "flakturm_ground"
+ ],
+ "unreachableReasons": {
+  "chateau_de_la_ligne_de_maginot": "route probe",
+  "belgisches_landhaus": "walk test",
+  "flakturm_ground": "walk test"
+ },
+ "botSpawnsExcluded": [
+  "axisbase_spawn1",
+  "maginot_chateau_spawn1",
+  "french_base_spawn3",
+  "belgian_villa_spawn1",
+  "belgian_villa_spawn2",
+  "belgian_villa_spawn3",
+  "belgian_villa_spawn4",
+  "belgian_villa_spawn5",
+  "belgian_villa_spawn6",
+  "belgian_villa_spawn7",
+  "commande_de_fronti_re_de_franc_belge_spawn1",
+  "luxemburg_gr_nden_spawn2",
+  "commande_de_fronti_re_de_franc_belge_spawn1",
+  "commande_de_fronti_re_de_franc_belge_spawn2",
+  "longwy_base_spawn1",
+  "belgisches_landhaus_spawn1",
+  "belgisches_landhaus_spawn2",
+  "belgisches_landhaus_spawn3",
+  "belgisches_landhaus_spawn4",
+  "wohnwagen_des_waldes_ardennes_spawn1",
+  "wohnwagen_des_waldes_ardennes_spawn2",
+  "wohnwagen_des_waldes_ardennes_spawn3",
+  "commande_de_fronti_re_franc_belge_spawn1",
+  "commande_de_fronti_re_franc_belge_spawn2",
+  "longwy_base_spawn2",
+  "longwy_base_spawn3",
+  "longwy_base_spawn4",
+  "flakturm_ground_spawn1",
+  "flakturm_ground_spawn3",
+  "flakturm_ground_spawn4",
+  "flakturm_ground_spawn5"
+ ],
+ "walkMap": {
+  "source": "page painter",
+  "engine": "none",
+  "opened": [],
+  "ways": [],
+  "cover": 0.909,
+  "floors": {
+   "stacked": true,
+   "twoFloorShare": 0.003,
+   "raised": [
+    "belgisches_landhaus",
+    "forteresse_de_ligne_de_maginot",
+    "wohnwagen_des_waldes_ardennes",
+    "flakturm_ground"
+   ],
+   "reason": "4 of 6 capturable flags stand a storey over or under another walked floor"
+  },
+  "capped": true,
+  "joined": 1
+ },
+ "routeProbe": {
+  "chokeMax": 4,
+  "unreachable": [
+   "chateau_de_la_ligne_de_maginot"
+  ],
+  "stops": {
+   "chateau_de_la_ligne_de_maginot": {
+    "1": {
+     "stage": "strategic"
+    },
+    "2": {
+     "stage": "strategic"
+    }
+   }
+  },
+  "oneSided": {},
+  "sides": {
+   "1": {
+    "spawns": 12,
+    "flags": [
+     "commande_de_frontiere_franc_belge",
+     "forteresse_de_ligne_de_maginot",
+     "wohnwagen_des_waldes_ardennes"
+    ]
+   },
+   "2": {
+    "spawns": 7,
+    "flags": [
+     "commande_de_frontiere_franc_belge",
+     "forteresse_de_ligne_de_maginot",
+     "wohnwagen_des_waldes_ardennes"
+    ]
+   }
+  },
+  "chokes": {
+   "forteresse_de_ligne_de_maginot:1": 0,
+   "forteresse_de_ligne_de_maginot:2": 0,
+   "wohnwagen_des_waldes_ardennes:1": 0,
+   "wohnwagen_des_waldes_ardennes:2": 0,
+   "commande_de_frontiere_franc_belge:1": 4,
+   "commande_de_frontiere_franc_belge:2": 0
+  },
+  "late": {},
+  "shutLinks": []
+ },
+ "inputs": {
+  "controlPoints": "7a71c77d562b844b29dc6ccb9be82f3d1e50e0119e131c1dbbed2b7c5eb198f4",
+  "infantryMap": "be9225039264e685c0670a37308e3fa8c59eba1e48bf11286a70ed7af57e02c0",
+  "template": "bdc0e455f47f91b7e7724e71d7c0c196e839b36946ac3abb7663d725944081e5"
+ },
+ "files": {
+  "AI.con": "4273795de48751f9dd85de84bda769f3ab21d91be76a3c84a194297ecc4d2347",
+  "AI/StrategicAreas.con": "c9d49ea5b4efbd60dced3f9c55d6d60bde9a3f7a4876294e1cd70f40d4254237",
+  "AI/Strategies.con": "13da4dc35872dd4b5798a066f4425bdc824cfd61f31093d1808e1202644de52e",
+  "AI/conditions.con": "248a04b727c08d696bf0fa9c162bc22c43cde3c75f695892fe1e0f5141519c49",
+  "AI/prerequisites.con": "c96168b5f69860e578f5d26728fd2a2092c4c436e1da49b7d6f4009b65735398"
+ }
+}

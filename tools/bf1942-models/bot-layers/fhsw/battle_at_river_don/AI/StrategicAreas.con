@@ -1,0 +1,56 @@
+rem *** Strategic areas: one per control point (botgen) ***
+
+aiStrategicArea.create alliedbase 1410.5/1184.7 1415.5/1189.7 50
+aiStrategicArea.addObjectTypeFlag Base
+aiStrategicArea.setOrderPosition Tank 1415.5/1191.5
+aiStrategicArea.setOrderPosition Infantry 1414.5/1190.5
+aiStrategicArea.setSide 2
+aiStrategicArea.setTakeable 1 0
+
+aiStrategicArea.create 1st_defence_position 1095.1/1491.8 1100.1/1496.8 10
+aiStrategicArea.setSide 1
+aiStrategicArea.setTakeable 1 0
+aiStrategicArea.setTakeable 2 0
+
+aiStrategicArea.create 2nd_defence_position 735.9/1425.3 740.9/1430.3 10
+aiStrategicArea.setSide 1
+aiStrategicArea.setTakeable 1 0
+aiStrategicArea.setTakeable 2 0
+
+aiStrategicArea.create hungary_arty_position 430.2/1343 435.2/1348 150
+aiStrategicArea.addNeighbour Bridge_Defense
+aiStrategicArea.addObjectTypeFlag Flank
+aiStrategicArea.addObjectTypeFlag Close
+aiStrategicArea.addObjectTypeFlag ControlPoint
+aiStrategicArea.setOrderPosition Tank 433.5/1348.5
+aiStrategicArea.setOrderPosition Infantry 437.5/1351.5
+aiStrategicArea.setSide 1
+
+aiStrategicArea.create allied_base_ 979/1876.1 984/1881.1 50
+aiStrategicArea.addObjectTypeFlag Base
+aiStrategicArea.setOrderPosition Tank 984.5/1883.5
+aiStrategicArea.setOrderPosition Infantry 985.5/1882.5
+aiStrategicArea.setSide 2
+aiStrategicArea.setTakeable 1 0
+
+aiStrategicArea.create 3rd_defence_position 297.6/902.9 302.6/907.9 150
+aiStrategicArea.addNeighbour Bridge_Defense
+aiStrategicArea.addObjectTypeFlag Flank
+aiStrategicArea.addObjectTypeFlag ControlPoint
+aiStrategicArea.setOrderPosition Tank 304.5/907.5
+aiStrategicArea.setOrderPosition Infantry 302.5/908.5
+aiStrategicArea.setSide 1
+
+aiStrategicArea.create russian_flag 1206.1/1155.2 1211.1/1160.2 10
+aiStrategicArea.setTakeable 1 0
+aiStrategicArea.setTakeable 2 0
+
+aiStrategicArea.create Bridge_Defense 451.3/999.3 456.3/1004.3 150
+aiStrategicArea.addNeighbour hungary_arty_position
+aiStrategicArea.addNeighbour 3rd_defence_position
+aiStrategicArea.addObjectTypeFlag Flank
+aiStrategicArea.addObjectTypeFlag Close
+aiStrategicArea.addObjectTypeFlag ControlPoint
+aiStrategicArea.setOrderPosition Tank 451.5/1009.5
+aiStrategicArea.setOrderPosition Infantry 456.3/1004.3
+aiStrategicArea.setSide 1

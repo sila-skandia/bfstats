@@ -1,0 +1,78 @@
+{
+ "level": "rennpiste_gebirge",
+ "verdict": "fail",
+ "outcome": "no-fight",
+ "config": "with vehicles",
+ "doctrine": "garrison",
+ "generatorVersion": 5,
+ "inputs": {
+  "controlPoints": "af5ca770c96382865d9063f974d7c487250bb6a1dc294f69d4e902bab652df79",
+  "infantryMap": "75c6d046102945cc93475a8c91c863ef6bd088a96dda7cca35bf1749f3459141",
+  "template": "43f8a790471528016570235f76e97dbb2045732458781a5139f37fed68bf98c0"
+ },
+ "baseline": "DICE layers with vehicles, garrison doctrine: berlin, stalingrad, kharkov, bocage; seeds 1..10, 600 s",
+ "bar": {
+  "against": "dice",
+  "why": "a vanilla or community level: DICE's bar"
+ },
+ "seeds": 1,
+ "sizes": {
+  "8": {
+   "verdict": "fail",
+   "failed": [
+    "enemyKillsPerBotMinute",
+    "bothSidesCapture",
+    "bothSidesKill",
+    "nonEnemyDeathShareWorseSide",
+    "hullStuckSecondsPerDrivingMinute",
+    "hullStuckSecondsPerDrivingMinuteWorseSide",
+    "unitsNeverUsedShare"
+   ],
+   "winners": [
+    0,
+    1,
+    0
+   ]
+  },
+  "16": {
+   "verdict": "fail",
+   "failed": [
+    "enemyKillsPerBotMinute",
+    "bothSidesCapture",
+    "nonEnemyDeathShareWorseSide",
+    "hullStuckSecondsPerDrivingMinute",
+    "hullStuckSecondsPerDrivingMinuteWorseSide",
+    "unitsNeverUsedShare"
+   ],
+   "winners": [
+    0,
+    1,
+    0
+   ]
+  }
+ },
+ "oneSided": null,
+ "unreachable": [],
+ "lintErrors": [],
+ "accepted": {
+  "reason": "Owner's rollout, 2026-11-12: the owner asked for everything with a fight to go live (\"everything can go up if it's ready\"). Screened in the runner at 8 and 16 a side under the garrison; the checks it fails are listed with this verdict, and a match on the page decides whether it keeps its menu flag.",
+  "date": "2026-11-12",
+  "outcome": "no-fight",
+  "failed": [
+   "8:enemyKillsPerBotMinute",
+   "8:bothSidesCapture",
+   "8:bothSidesKill",
+   "8:nonEnemyDeathShareWorseSide",
+   "8:hullStuckSecondsPerDrivingMinute",
+   "8:hullStuckSecondsPerDrivingMinuteWorseSide",
+   "8:unitsNeverUsedShare",
+   "16:enemyKillsPerBotMinute",
+   "16:bothSidesCapture",
+   "16:nonEnemyDeathShareWorseSide",
+   "16:hullStuckSecondsPerDrivingMinute",
+   "16:hullStuckSecondsPerDrivingMinuteWorseSide",
+   "16:unitsNeverUsedShare"
+  ],
+  "by": "owner"
+ }
+}

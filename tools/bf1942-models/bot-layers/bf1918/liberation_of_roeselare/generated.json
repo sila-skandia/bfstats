@@ -1,0 +1,695 @@
+{
+ "generator": "botgen",
+ "version": 6,
+ "mod": "bf1918",
+ "level": "liberation_of_roeselare",
+ "objectSpawners": 67,
+ "template": "symmetric",
+ "templateSource": "DICE, bf1942 Kharkov (1.6 patch archives): AI/Strategies.con, AI/conditions.con, AI/prerequisites.con, unchanged",
+ "templateChoice": {
+  "name": "symmetric",
+  "inPlay": 5,
+  "rule": "5 capturable flags in play, more than 3"
+ },
+ "scope": "an infantry map painted from the walk test, a Tank0 map from the page painter, infantry order positions, no strategic maps, no co-op layer",
+ "unreachable": [
+  "Harbour",
+  "Sint_Michielskerk"
+ ],
+ "unreachableReasons": {
+  "Harbour": "route probe",
+  "Sint_Michielskerk": "route probe"
+ },
+ "botSpawnsExcluded": [
+  "Belgian_Line_Spawn1",
+  "Grote_Markt_Spawn1",
+  "Botermarkt_Spawn1",
+  "Botermarkt_Spawn2",
+  "Botermarkt_Spawn3",
+  "Botermarkt_Spawn6",
+  "Botermarkt_Spawn7",
+  "Station_Spawn5",
+  "Station_Spawn7",
+  "Station_Spawn8",
+  "Station_Spawn9",
+  "Station_Spawn11",
+  "Outskirts_Spawn4",
+  "Sint_Michielskerk_Spawn2",
+  "Sint_Michielskerk_Spawn3",
+  "Sint_Michielskerk_Spawn4",
+  "Sint_Michielskerk_Spawn5",
+  "Harbour_Spawn7",
+  "Harbour_Spawn8",
+  "Grote_Markt_Spawn2",
+  "Botermarkt_Spawn11",
+  "Botermarkt_Spawn12",
+  "Botermarkt_Spawn13",
+  "German_2nd_Defense_line_Spawn6",
+  "Belgian_Line_Spawn2",
+  "Belgian_Line_Spawn3",
+  "Belgian_Line_Spawn8"
+ ],
+ "walkMap": {
+  "source": "walk test",
+  "engine": "none",
+  "vehicleMap": "page painter",
+  "vehicleBrush": 3,
+  "vehicleBrushes": [
+   {
+    "brush": 3,
+    "flagsOn": 1,
+    "spawnersOn": 1,
+    "pieces": 38,
+    "main": 135
+   },
+   {
+    "brush": 2.5,
+    "flagsOn": 1,
+    "spawnersOn": 1,
+    "pieces": 47,
+    "main": 190
+   },
+   {
+    "brush": 2,
+    "flagsOn": 1,
+    "spawnersOn": 1,
+    "pieces": 53,
+    "main": 198
+   },
+   {
+    "brush": 1.5,
+    "flagsOn": 1,
+    "spawnersOn": 1,
+    "pieces": 60,
+    "main": 631
+   }
+  ],
+  "opened": [
+   [
+    340,
+    88
+   ],
+   [
+    341,
+    88
+   ],
+   [
+    342,
+    88
+   ],
+   [
+    343,
+    88
+   ],
+   [
+    344,
+    88
+   ],
+   [
+    345,
+    88
+   ],
+   [
+    345,
+    89
+   ],
+   [
+    346,
+    89
+   ],
+   [
+    347,
+    89
+   ],
+   [
+    348,
+    89
+   ],
+   [
+    349,
+    89
+   ],
+   [
+    349,
+    90
+   ],
+   [
+    349,
+    91
+   ],
+   [
+    349,
+    92
+   ],
+   [
+    355,
+    92
+   ],
+   [
+    356,
+    92
+   ],
+   [
+    349,
+    93
+   ],
+   [
+    355,
+    93
+   ],
+   [
+    349,
+    94
+   ],
+   [
+    355,
+    94
+   ],
+   [
+    349,
+    95
+   ],
+   [
+    355,
+    95
+   ],
+   [
+    347,
+    96
+   ],
+   [
+    348,
+    96
+   ],
+   [
+    349,
+    96
+   ],
+   [
+    353,
+    96
+   ],
+   [
+    354,
+    96
+   ],
+   [
+    355,
+    96
+   ],
+   [
+    347,
+    97
+   ],
+   [
+    348,
+    97
+   ],
+   [
+    349,
+    97
+   ],
+   [
+    350,
+    97
+   ],
+   [
+    351,
+    97
+   ],
+   [
+    352,
+    97
+   ],
+   [
+    353,
+    97
+   ],
+   [
+    347,
+    98
+   ],
+   [
+    342,
+    99
+   ],
+   [
+    343,
+    99
+   ],
+   [
+    344,
+    99
+   ],
+   [
+    345,
+    99
+   ],
+   [
+    346,
+    99
+   ],
+   [
+    347,
+    99
+   ],
+   [
+    342,
+    100
+   ],
+   [
+    347,
+    100
+   ],
+   [
+    348,
+    100
+   ],
+   [
+    349,
+    100
+   ],
+   [
+    350,
+    100
+   ],
+   [
+    342,
+    101
+   ],
+   [
+    342,
+    102
+   ],
+   [
+    342,
+    103
+   ],
+   [
+    342,
+    104
+   ],
+   [
+    337,
+    105
+   ],
+   [
+    338,
+    105
+   ],
+   [
+    339,
+    105
+   ],
+   [
+    340,
+    105
+   ],
+   [
+    341,
+    105
+   ],
+   [
+    342,
+    105
+   ],
+   [
+    337,
+    106
+   ],
+   [
+    337,
+    107
+   ],
+   [
+    337,
+    108
+   ],
+   [
+    337,
+    109
+   ],
+   [
+    337,
+    110
+   ],
+   [
+    337,
+    111
+   ],
+   [
+    338,
+    111
+   ],
+   [
+    339,
+    111
+   ],
+   [
+    340,
+    111
+   ],
+   [
+    581,
+    239
+   ],
+   [
+    581,
+    240
+   ],
+   [
+    581,
+    241
+   ],
+   [
+    581,
+    242
+   ],
+   [
+    585,
+    243
+   ],
+   [
+    586,
+    243
+   ],
+   [
+    594,
+    251
+   ],
+   [
+    575,
+    258
+   ],
+   [
+    596,
+    258
+   ],
+   [
+    683,
+    277
+   ],
+   [
+    683,
+    278
+   ],
+   [
+    683,
+    279
+   ],
+   [
+    683,
+    280
+   ],
+   [
+    683,
+    281
+   ],
+   [
+    702,
+    299
+   ],
+   [
+    703,
+    299
+   ],
+   [
+    707,
+    299
+   ],
+   [
+    462,
+    307
+   ],
+   [
+    701,
+    309
+   ],
+   [
+    667,
+    336
+   ],
+   [
+    667,
+    337
+   ],
+   [
+    667,
+    338
+   ],
+   [
+    667,
+    339
+   ],
+   [
+    667,
+    340
+   ],
+   [
+    667,
+    341
+   ],
+   [
+    667,
+    342
+   ],
+   [
+    667,
+    343
+   ],
+   [
+    667,
+    344
+   ],
+   [
+    455,
+    434
+   ],
+   [
+    455,
+    435
+   ],
+   [
+    455,
+    436
+   ],
+   [
+    455,
+    437
+   ]
+  ],
+  "ways": [
+   {
+    "who": "Belgian_Line_Spawn1",
+    "kind": "spawn",
+    "way": "none",
+    "opened": 0
+   },
+   {
+    "who": "Botermarkt_Spawn4",
+    "kind": "spawn",
+    "way": "walk",
+    "opened": 1
+   },
+   {
+    "who": "Botermarkt_Spawn5",
+    "kind": "spawn",
+    "way": "walk",
+    "opened": 0
+   },
+   {
+    "who": "Factory_Spawn1",
+    "kind": "spawn",
+    "way": "walk",
+    "opened": 8
+   },
+   {
+    "who": "Factory_Spawn2",
+    "kind": "spawn",
+    "way": "walk",
+    "opened": 1
+   },
+   {
+    "who": "Harbour_Spawn2",
+    "kind": "spawn",
+    "way": "walk",
+    "opened": 5
+   },
+   {
+    "who": "Harbour_Spawn6",
+    "kind": "spawn",
+    "way": "walk",
+    "opened": 9
+   },
+   {
+    "who": "Grote_Markt_Spawn3",
+    "kind": "spawn",
+    "way": "walk",
+    "opened": 4
+   },
+   {
+    "who": "German_2nd_Defense_line_Spawn6",
+    "kind": "spawn",
+    "way": "none",
+    "opened": 0
+   },
+   {
+    "who": "Belgian_Line_Spawn4",
+    "kind": "spawn",
+    "way": "drop",
+    "opened": 30
+   },
+   {
+    "who": "Belgian_Line_Spawn5",
+    "kind": "spawn",
+    "way": "drop",
+    "opened": 16
+   },
+   {
+    "who": "Belgian_Line_Spawn6",
+    "kind": "spawn",
+    "way": "drop",
+    "opened": 8
+   },
+   {
+    "who": "Belgian_Line_Spawn7",
+    "kind": "spawn",
+    "way": "drop",
+    "opened": 12
+   },
+   {
+    "who": "Harbour",
+    "kind": "flag",
+    "way": "walk",
+    "opened": 4
+   }
+  ],
+  "cover": 0.964,
+  "floors": {
+   "stacked": false,
+   "twoFloorShare": 0.011,
+   "raised": [],
+   "reason": null
+  }
+ },
+ "routeProbe": {
+  "chokeMax": 4,
+  "unreachable": [
+   "Harbour",
+   "Sint_Michielskerk"
+  ],
+  "stops": {
+   "Harbour": {
+    "1": {
+     "stage": "choke",
+     "points": 8,
+     "metres": 24,
+     "first": [
+      [
+       696.2,
+       -297
+      ],
+      [
+       698.4,
+       -298.2
+      ],
+      [
+       701.1,
+       -299.4
+      ]
+     ]
+    },
+    "2": {
+     "stage": "choke",
+     "points": 33,
+     "metres": 99,
+     "first": [
+      [
+       344.3,
+       -99.6
+      ],
+      [
+       342.5,
+       -100.5
+      ],
+      [
+       342.5,
+       -103.5
+      ]
+     ]
+    }
+   },
+   "Sint_Michielskerk": {
+    "1": {
+     "stage": "strategic"
+    },
+    "2": {
+     "stage": "strategic"
+    }
+   }
+  },
+  "oneSided": {
+   "Grote_Markt": 1,
+   "Outskirts": 1,
+   "Station": 1,
+   "Factory": 1,
+   "Botermarkt": 1
+  },
+  "sides": {
+   "1": {
+    "spawns": 27,
+    "flags": [
+     "Botermarkt",
+     "Factory",
+     "Grote_Markt",
+     "Outskirts",
+     "Station"
+    ]
+   },
+   "2": {
+    "spawns": 4,
+    "flags": []
+   }
+  },
+  "chokes": {
+   "Grote_Markt:1": 1,
+   "Grote_Markt:2": 9,
+   "Outskirts:1": 2,
+   "Outskirts:2": 9,
+   "Station:1": 3,
+   "Station:2": 14,
+   "Factory:1": 4,
+   "Factory:2": 22,
+   "Botermarkt:1": 2,
+   "Botermarkt:2": 9
+  },
+  "late": {},
+  "shutLinks": [
+   "Grote_Markt>Factory",
+   "Station>Factory",
+   "Factory>Grote_Markt",
+   "Factory>Station",
+   "Factory>Botermarkt",
+   "Botermarkt>Factory"
+  ]
+ },
+ "inputs": {
+  "controlPoints": "338bc0cf5626dc3446b7a4b75e2281a27fe9ad69735b94a82e71710db175dbda",
+  "infantryMap": "cbcc040f81465068959ae985a8a96a299b76e9bbdb95a9c06b1cfeaf774d9f90",
+  "template": "43f8a790471528016570235f76e97dbb2045732458781a5139f37fed68bf98c0"
+ },
+ "files": {
+  "AI.con": "26a4968a932cb02f5560de800c61804de753d63024b7306accd1c363ba784669",
+  "AIpathFinding.con": "8014dbf6ef50a7e5ba3bd3af85ed910350bb0936cd33c5a2e1c5138053711957",
+  "AI/StrategicAreas.con": "fe283c7108950cd4db93c61df503c314040e0a0296f4ba73e48b44315d668bcd",
+  "AI/Strategies.con": "4ce0be59a0d6c5cd530db002fb062c4be8d936bc6ae59bd188803ccaf7869a8d",
+  "AI/conditions.con": "68a0c7a8aec69954063147b60fae560b2874884285737aa085efa76597d395aa",
+  "AI/prerequisites.con": "4c1f313bc285b228fd6ad03bfd1f44c5b15c8703c31f802eb605bc5f00f88bb5",
+  "Pathfinding/Infantry1Level0Map.raw": "fb9706c4c4dcc69c95653f7f9f1a336634d3f4fe0054e3798a7a98fc85ae6093",
+  "Pathfinding/Infantry1Level1Map.raw": "cd3c7be325f4a26906c5276e12e0a446bb57d49833048ea1454125f5313b5b74",
+  "Pathfinding/Infantry1Level2Map.raw": "8b2e2a73256bf6c36f191fc7c3cc982d9f157f298c1a6f683207337e98f4cd7b",
+  "Pathfinding/Tank0Level0Map.raw": "527d9243cdeebaa045440eb52caf22eca0b177e621e4716de28db2098b99365b",
+  "Pathfinding/Tank0Level1Map.raw": "7231fd5031540ddb0afafb7c28f349fecbc886bdb5b8b73db321baadbf3d01d0",
+  "Pathfinding/Tank0Level2Map.raw": "6a6def098ad738bf172dd70684927dcb54657526cc2c1bc836eb31d3c16e5dd9"
+ }
+}

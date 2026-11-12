@@ -1,0 +1,203 @@
+{
+ "generator": "botgen",
+ "version": 5,
+ "mod": "bf1942",
+ "level": "waterworld",
+ "objectSpawners": 51,
+ "template": "few",
+ "templateSource": "DICE, bf1942 Kursk (1.6 patch archives, Kursk_003.rfa): AI/Strategies.con, AI/conditions.con, AI/prerequisites.con, unchanged",
+ "templateChoice": {
+  "name": "few",
+  "inPlay": 0,
+  "rule": "0 capturable flags in play, at most 3"
+ },
+ "scope": "an infantry map painted from the walk test, a Tank0 map from the page painter, infantry order positions, no strategic maps, no co-op layer",
+ "unreachable": [
+  "German",
+  "American",
+  "Maincontryl",
+  "Planepoint"
+ ],
+ "unreachableReasons": {
+  "German": "walk test",
+  "American": "walk test",
+  "Maincontryl": "route probe",
+  "Planepoint": "walk test"
+ },
+ "botSpawnsExcluded": [
+  "AxisBase_Spawn1",
+  "AlliedBase_Spawn1",
+  "American_Spawn1",
+  "Maincontryl_Spawn3",
+  "German_Spawn1",
+  "Maincontryl_Spawn4",
+  "Planepoint_Spawn1",
+  "Planepoint_Spawn2",
+  "Planepoint_Spawn3",
+  "Planepoint_Spawn4",
+  "Maincontryl_Spawn5",
+  "American_Spawn2",
+  "Maincontryl_Spawn6"
+ ],
+ "walkMap": {
+  "source": "walk test",
+  "engine": "none",
+  "vehicleMap": "page painter",
+  "vehicleBrush": 2.5,
+  "vehicleBrushes": [
+   {
+    "brush": 3,
+    "flagsOn": 2,
+    "spawnersOn": 3,
+    "pieces": 5,
+    "main": 25322
+   },
+   {
+    "brush": 2.5,
+    "flagsOn": 2,
+    "spawnersOn": 4,
+    "pieces": 7,
+    "main": 26149
+   },
+   {
+    "brush": 2,
+    "flagsOn": 2,
+    "spawnersOn": 4,
+    "pieces": 7,
+    "main": 26179
+   },
+   {
+    "brush": 1.5,
+    "flagsOn": 2,
+    "spawnersOn": 4,
+    "pieces": 7,
+    "main": 27066
+   }
+  ],
+  "opened": [],
+  "ways": [
+   {
+    "who": "AlliedBase_Spawn1",
+    "kind": "spawn",
+    "way": "none",
+    "opened": 0
+   },
+   {
+    "who": "American_Spawn1",
+    "kind": "spawn",
+    "way": "none",
+    "opened": 0
+   },
+   {
+    "who": "Maincontryl_Spawn3",
+    "kind": "spawn",
+    "way": "none",
+    "opened": 0
+   },
+   {
+    "who": "German_Spawn1",
+    "kind": "spawn",
+    "way": "none",
+    "opened": 0
+   },
+   {
+    "who": "Planepoint_Spawn1",
+    "kind": "spawn",
+    "way": "none",
+    "opened": 0
+   },
+   {
+    "who": "Planepoint_Spawn2",
+    "kind": "spawn",
+    "way": "none",
+    "opened": 0
+   },
+   {
+    "who": "Planepoint_Spawn3",
+    "kind": "spawn",
+    "way": "none",
+    "opened": 0
+   },
+   {
+    "who": "Planepoint_Spawn4",
+    "kind": "spawn",
+    "way": "none",
+    "opened": 0
+   },
+   {
+    "who": "Maincontryl_Spawn5",
+    "kind": "spawn",
+    "way": "none",
+    "opened": 0
+   },
+   {
+    "who": "American_Spawn2",
+    "kind": "spawn",
+    "way": "none",
+    "opened": 0
+   },
+   {
+    "who": "Maincontryl_Spawn6",
+    "kind": "spawn",
+    "way": "none",
+    "opened": 0
+   }
+  ],
+  "cover": 0.508,
+  "floors": {
+   "stacked": false,
+   "twoFloorShare": 0,
+   "raised": [],
+   "reason": null
+  }
+ },
+ "routeProbe": {
+  "chokeMax": 4,
+  "unreachable": [
+   "Maincontryl"
+  ],
+  "stops": {
+   "Maincontryl": {
+    "1": {
+     "stage": "no usable spawn"
+    },
+    "2": {
+     "stage": "no usable spawn"
+    }
+   }
+  },
+  "oneSided": {},
+  "sides": {
+   "1": {
+    "spawns": 0,
+    "flags": []
+   },
+   "2": {
+    "spawns": 0,
+    "flags": []
+   }
+  },
+  "chokes": {},
+  "late": {},
+  "shutLinks": []
+ },
+ "inputs": {
+  "controlPoints": "6071448f60a85332eb211268803eb22ae17c463b930f8ec2f84759f12459f7e8",
+  "infantryMap": "ca408d532b188a4900a37909e556a746c0db568c601ecc97cff1e8484aa999d3",
+  "template": "bdc0e455f47f91b7e7724e71d7c0c196e839b36946ac3abb7663d725944081e5"
+ },
+ "files": {
+  "AI.con": "39c086362b6dcfd68c98d0a970906aadd87bd9696ae330b3fadd5b90b8bfb447",
+  "AIpathFinding.con": "549030ff1cdb81bd819fcdc28c999857f4784e20ee4850753a8c1213f80184fe",
+  "AI/StrategicAreas.con": "f69b114c8d00d4ff79fdbb51ba27d90d9d54715a1946bbc9e296a1710f93882d",
+  "AI/Strategies.con": "13da4dc35872dd4b5798a066f4425bdc824cfd61f31093d1808e1202644de52e",
+  "AI/conditions.con": "248a04b727c08d696bf0fa9c162bc22c43cde3c75f695892fe1e0f5141519c49",
+  "AI/prerequisites.con": "c96168b5f69860e578f5d26728fd2a2092c4c436e1da49b7d6f4009b65735398",
+  "Pathfinding/Infantry1Level0Map.raw": "b680149415ded00bfeefa1fd8eb46f20993919ba0a1a1975d5b0380398ffcaf1",
+  "Pathfinding/Infantry1Level1Map.raw": "e396aaae062656e18bed7e01047787d1cce61b0bc1d7f71d91bdea8d6d36342f",
+  "Pathfinding/Infantry1Level2Map.raw": "9aa5cfca695fd64e95cc78542eaf7ccfc943210721315115bbff4b94e3feda15",
+  "Pathfinding/Tank0Level0Map.raw": "598013db5f787b50342fa250e26bff6e1b9fb7e44cdaffe72187b53f37defafb",
+  "Pathfinding/Tank0Level1Map.raw": "c8da56cbb5eee92d364ef5dc1d6a67401e5dd1a2b5959e673b60506144704370",
+  "Pathfinding/Tank0Level2Map.raw": "a9381bb4e5301b00b9256ddf2fa463d5525d625ff32687110aa880eebe24c943"
+ }
+}

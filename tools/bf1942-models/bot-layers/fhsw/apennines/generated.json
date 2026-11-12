@@ -1,0 +1,115 @@
+{
+ "generator": "botgen",
+ "version": 5,
+ "mod": "FHSW",
+ "level": "apennines",
+ "objectSpawners": 195,
+ "template": "few",
+ "templateSource": "DICE, bf1942 Kursk (1.6 patch archives, Kursk_003.rfa): AI/Strategies.con, AI/conditions.con, AI/prerequisites.con, unchanged",
+ "templateChoice": {
+  "name": "few",
+  "inPlay": 3,
+  "rule": "3 capturable flags in play, at most 3"
+ },
+ "scope": "on foot: infantry order positions only, no search maps, no co-op layer",
+ "unreachable": [
+  "defenceline4template"
+ ],
+ "unreachableReasons": {
+  "defenceline4template": "walk test"
+ },
+ "botSpawnsExcluded": [
+  "axisbase_spawn1",
+  "axisbase_spawn2",
+  "axisbase_spawn3",
+  "axisbase_spawn4",
+  "axisbase_spawn5",
+  "axisbase_spawn6",
+  "axisbase_spawn7",
+  "axisbase_spawn8",
+  "axisbase_spawn9",
+  "axisbase_spawn10",
+  "axisbase_spawn11",
+  "axisbase_spawn12",
+  "line1_spawn1",
+  "line2_spawn1",
+  "line3_spawn1",
+  "alliedbase_spawn3",
+  "line1_spawn2",
+  "line1_spawn4",
+  "line1_spawn5",
+  "line1_spawn8",
+  "line2_spawn2",
+  "line2_spawn3",
+  "line2_spawn4",
+  "line2_spawn5",
+  "line3_spawn3",
+  "line3_spawn2",
+  "line3_spawn4",
+  "line3_spawn5",
+  "line3_spawn6",
+  "line3_spawn7",
+  "line3_spawn8"
+ ],
+ "walkMap": {
+  "source": "page painter",
+  "engine": "none",
+  "opened": [],
+  "ways": [],
+  "cover": 0.508,
+  "floors": {
+   "stacked": false,
+   "twoFloorShare": 0.001,
+   "raised": [],
+   "reason": null
+  },
+  "capped": true,
+  "joined": 4
+ },
+ "routeProbe": {
+  "chokeMax": 4,
+  "unreachable": [],
+  "stops": {},
+  "oneSided": {},
+  "sides": {
+   "1": {
+    "spawns": 18,
+    "flags": [
+     "defenceline1template",
+     "defenceline2template",
+     "defenceline3template"
+    ]
+   },
+   "2": {
+    "spawns": 15,
+    "flags": [
+     "defenceline1template",
+     "defenceline2template",
+     "defenceline3template"
+    ]
+   }
+  },
+  "chokes": {
+   "defenceline1template:1": 0,
+   "defenceline1template:2": 0,
+   "defenceline2template:1": 0,
+   "defenceline2template:2": 0,
+   "defenceline3template:1": 1,
+   "defenceline3template:2": 0
+  },
+  "late": {},
+  "shutLinks": []
+ },
+ "inputs": {
+  "controlPoints": "f9b246f90bce1b7d090a6f5b756eafbddefc273f15cd67d0bbd9c757bfc319eb",
+  "infantryMap": "15e6cd432dd94bf64d54d7f55fa8b565e30d93475b57afa8caff9edd21a423ba",
+  "template": "bdc0e455f47f91b7e7724e71d7c0c196e839b36946ac3abb7663d725944081e5"
+ },
+ "files": {
+  "AI.con": "ff65da5cf781f265a28875b6cbca3063a01ed39073ce89fcfbb96af7a80600f7",
+  "AI/StrategicAreas.con": "4a71fc6292cfa5638e2e5fcd54f9d4f000b487a3ad095ba7f7b36246047a7c3f",
+  "AI/Strategies.con": "13da4dc35872dd4b5798a066f4425bdc824cfd61f31093d1808e1202644de52e",
+  "AI/conditions.con": "248a04b727c08d696bf0fa9c162bc22c43cde3c75f695892fe1e0f5141519c49",
+  "AI/prerequisites.con": "c96168b5f69860e578f5d26728fd2a2092c4c436e1da49b7d6f4009b65735398"
+ }
+}

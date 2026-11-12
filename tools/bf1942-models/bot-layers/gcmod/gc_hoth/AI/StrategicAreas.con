@@ -1,0 +1,62 @@
+rem *** Strategic areas: one per control point (botgen) ***
+
+aiStrategicArea.create echobasecp 327.3/317.7 335.3/325.7 150
+aiStrategicArea.addNeighbour secondlinetrench
+aiStrategicArea.addNeighbour thirdlinetrench
+aiStrategicArea.addObjectTypeFlag Flank
+aiStrategicArea.addObjectTypeFlag ControlPoint
+aiStrategicArea.setOrderPosition Tank 336.5/330.5
+aiStrategicArea.setOrderPosition Infantry 335.3/325.7
+aiStrategicArea.setSide 2
+
+aiStrategicArea.create shieldgeneratorcp 1119.5/473.9 1124.5/478.9 150
+aiStrategicArea.addNeighbour secondlinetrench
+aiStrategicArea.addNeighbour firstlinetrench
+aiStrategicArea.addNeighbour thirdlinetrench
+aiStrategicArea.addObjectTypeFlag Flank
+aiStrategicArea.addObjectTypeFlag ControlPoint
+aiStrategicArea.setOrderPosition Tank 1125.5/477.5
+aiStrategicArea.setOrderPosition Infantry 1124.5/478.9
+aiStrategicArea.setSide 2
+
+aiStrategicArea.create secondlinetrench 503.7/635.1 520.7/652.1 150
+aiStrategicArea.addNeighbour echobasecp
+aiStrategicArea.addNeighbour shieldgeneratorcp
+aiStrategicArea.addNeighbour firstlinetrench
+aiStrategicArea.addNeighbour thirdlinetrench
+aiStrategicArea.addObjectTypeFlag Flank
+aiStrategicArea.addObjectTypeFlag ControlPoint
+aiStrategicArea.setOrderPosition Tank 520.5/658.5
+aiStrategicArea.setOrderPosition Infantry 519.5/654.5
+aiStrategicArea.setSide 2
+
+aiStrategicArea.create firstlinetrench 967.3/821.6 987.3/841.6 300
+aiStrategicArea.addNeighbour shieldgeneratorcp
+aiStrategicArea.addNeighbour secondlinetrench
+aiStrategicArea.addNeighbour imperialspawn
+aiStrategicArea.addNeighbour thirdlinetrench
+aiStrategicArea.addObjectTypeFlag Centre
+aiStrategicArea.addObjectTypeFlag StrongPoint
+aiStrategicArea.addObjectTypeFlag Close
+aiStrategicArea.addObjectTypeFlag ControlPoint
+aiStrategicArea.setOrderPosition Tank 987.3/841.6
+aiStrategicArea.setOrderPosition Infantry 987.3/841.6
+
+aiStrategicArea.create imperialspawn 1364.7/1700.6 1404.7/1740.6 50
+aiStrategicArea.addNeighbour firstlinetrench
+aiStrategicArea.addObjectTypeFlag Base
+aiStrategicArea.setOrderPosition Tank 1404.5/1739.5
+aiStrategicArea.setOrderPosition Infantry 1404.7/1740.6
+aiStrategicArea.setSide 1
+aiStrategicArea.setTakeable 2 0
+
+aiStrategicArea.create thirdlinetrench 619.1/406.7 636.1/423.7 200
+aiStrategicArea.addNeighbour echobasecp
+aiStrategicArea.addNeighbour shieldgeneratorcp
+aiStrategicArea.addNeighbour secondlinetrench
+aiStrategicArea.addNeighbour firstlinetrench
+aiStrategicArea.addObjectTypeFlag Centre
+aiStrategicArea.addObjectTypeFlag ControlPoint
+aiStrategicArea.setOrderPosition Tank 640.5/423.5
+aiStrategicArea.setOrderPosition Infantry 640.5/423.5
+aiStrategicArea.setSide 2

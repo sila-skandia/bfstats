@@ -1,0 +1,109 @@
+{
+ "generator": "botgen",
+ "version": 5,
+ "mod": "FHSW",
+ "level": "kushira",
+ "objectSpawners": 403,
+ "template": "symmetric",
+ "templateSource": "DICE, bf1942 Kharkov (1.6 patch archives): AI/Strategies.con, AI/conditions.con, AI/prerequisites.con, unchanged",
+ "templateChoice": {
+  "name": "symmetric",
+  "inPlay": 6,
+  "rule": "6 capturable flags in play, more than 3"
+ },
+ "scope": "on foot: infantry order positions only, no search maps, no co-op layer",
+ "unreachable": [],
+ "unreachableReasons": {},
+ "botSpawnsExcluded": [
+  "axisbase_spawn2",
+  "axisbase_spawn3",
+  "axisbase_spawn4",
+  "kushira_spawn1",
+  "okazaki_spawn2",
+  "okazaki_spawn3",
+  "shimoobaru_spawn1",
+  "shimoobaru_spawn3",
+  "shimoobaru_spawn4",
+  "nakahonoki_spawn1",
+  "nakahonoki_spawn3",
+  "alliedbase_spawn6",
+  "sitasosu_spawn1",
+  "sitasosu_spawn3",
+  "trench_spawn2",
+  "trench_spawn3",
+  "kushira_spawn2"
+ ],
+ "walkMap": {
+  "source": "page painter",
+  "engine": "none",
+  "opened": [],
+  "ways": [],
+  "cover": 0.844,
+  "floors": {
+   "stacked": false,
+   "twoFloorShare": 0.002,
+   "raised": [],
+   "reason": null
+  },
+  "capped": true,
+  "joined": 9
+ },
+ "routeProbe": {
+  "chokeMax": 4,
+  "unreachable": [],
+  "stops": {},
+  "oneSided": {},
+  "sides": {
+   "1": {
+    "spawns": 13,
+    "flags": [
+     "kushira",
+     "nakahonoki",
+     "okazaki",
+     "shimoobaru",
+     "sitasosu",
+     "trench"
+    ]
+   },
+   "2": {
+    "spawns": 6,
+    "flags": [
+     "kushira",
+     "nakahonoki",
+     "okazaki",
+     "shimoobaru",
+     "sitasosu",
+     "trench"
+    ]
+   }
+  },
+  "chokes": {
+   "nakahonoki:1": 0,
+   "nakahonoki:2": 1,
+   "shimoobaru:1": 2,
+   "shimoobaru:2": 0,
+   "kushira:1": 0,
+   "kushira:2": 0,
+   "okazaki:1": 0,
+   "okazaki:2": 0,
+   "sitasosu:1": 0,
+   "sitasosu:2": 0,
+   "trench:1": 0,
+   "trench:2": 0
+  },
+  "late": {},
+  "shutLinks": []
+ },
+ "inputs": {
+  "controlPoints": "12ea2c44408148b9a0c0bffebda30c88b732442178b9ffa56f2d108469bc5d48",
+  "infantryMap": "d6983572cf5ecd0ae474e3e60f205a748f3eb5054ef69c7346eb2bd32bc10d7e",
+  "template": "43f8a790471528016570235f76e97dbb2045732458781a5139f37fed68bf98c0"
+ },
+ "files": {
+  "AI.con": "6add06fce9aa94cfe94d211bd067d741e04433e1f1c464973e40b7b389dd13d7",
+  "AI/StrategicAreas.con": "9db65706cbfc05bcb335c95714f21542ac7f155de49ed6e38d2808d1177b5664",
+  "AI/Strategies.con": "4ce0be59a0d6c5cd530db002fb062c4be8d936bc6ae59bd188803ccaf7869a8d",
+  "AI/conditions.con": "68a0c7a8aec69954063147b60fae560b2874884285737aa085efa76597d395aa",
+  "AI/prerequisites.con": "4c1f313bc285b228fd6ad03bfd1f44c5b15c8703c31f802eb605bc5f00f88bb5"
+ }
+}

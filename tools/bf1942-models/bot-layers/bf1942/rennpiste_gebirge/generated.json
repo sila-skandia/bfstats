@@ -1,0 +1,120 @@
+{
+ "generator": "botgen",
+ "version": 5,
+ "mod": "bf1942",
+ "level": "rennpiste_gebirge",
+ "objectSpawners": 22,
+ "template": "symmetric",
+ "templateSource": "DICE, bf1942 Kharkov (1.6 patch archives): AI/Strategies.con, AI/conditions.con, AI/prerequisites.con, unchanged",
+ "templateChoice": {
+  "name": "symmetric",
+  "inPlay": 4,
+  "rule": "4 capturable flags in play, more than 3"
+ },
+ "scope": "an infantry map painted from the walk test, a Tank0 map from the page painter, infantry order positions, no strategic maps, no co-op layer",
+ "unreachable": [],
+ "unreachableReasons": {},
+ "botSpawnsExcluded": [],
+ "walkMap": {
+  "source": "walk test",
+  "engine": "none",
+  "vehicleMap": "page painter",
+  "vehicleBrush": 1.5,
+  "vehicleBrushes": [
+   {
+    "brush": 3,
+    "flagsOn": 5,
+    "spawnersOn": 14,
+    "pieces": 4,
+    "main": 24897
+   },
+   {
+    "brush": 2.5,
+    "flagsOn": 5,
+    "spawnersOn": 20,
+    "pieces": 2,
+    "main": 29271
+   },
+   {
+    "brush": 2,
+    "flagsOn": 5,
+    "spawnersOn": 20,
+    "pieces": 2,
+    "main": 30949
+   },
+   {
+    "brush": 1.5,
+    "flagsOn": 6,
+    "spawnersOn": 22,
+    "pieces": 1,
+    "main": 340060
+   }
+  ],
+  "opened": [],
+  "ways": [],
+  "cover": 0.991,
+  "floors": {
+   "stacked": false,
+   "twoFloorShare": 0.003,
+   "raised": [],
+   "reason": null
+  }
+ },
+ "routeProbe": {
+  "chokeMax": 4,
+  "unreachable": [],
+  "stops": {},
+  "oneSided": {},
+  "sides": {
+   "1": {
+    "spawns": 2,
+    "flags": [
+     "Nordkurve",
+     "Serpentinen",
+     "Sprungschanze",
+     "Suedkurve"
+    ]
+   },
+   "2": {
+    "spawns": 1,
+    "flags": [
+     "Nordkurve",
+     "Serpentinen",
+     "Sprungschanze",
+     "Suedkurve"
+    ]
+   }
+  },
+  "chokes": {
+   "Serpentinen:1": 0,
+   "Serpentinen:2": 0,
+   "Sprungschanze:1": 0,
+   "Sprungschanze:2": 0,
+   "Nordkurve:1": 0,
+   "Nordkurve:2": 0,
+   "Suedkurve:1": 0,
+   "Suedkurve:2": 0
+  },
+  "late": {},
+  "shutLinks": []
+ },
+ "inputs": {
+  "controlPoints": "af5ca770c96382865d9063f974d7c487250bb6a1dc294f69d4e902bab652df79",
+  "infantryMap": "75c6d046102945cc93475a8c91c863ef6bd088a96dda7cca35bf1749f3459141",
+  "template": "43f8a790471528016570235f76e97dbb2045732458781a5139f37fed68bf98c0"
+ },
+ "files": {
+  "AI.con": "3dc94f663ac7545695a38d3670752432e4a5e64efe048dc4b26d578aece3748c",
+  "AIpathFinding.con": "9d8080cdfa7605961969aa126519b03be9691bd604ac76aef50166d81215edd2",
+  "AI/StrategicAreas.con": "03a0445dfa9c75a0519da66cdb7dcbfa1fa9188233d8b361ca7cf2eebf90ce26",
+  "AI/Strategies.con": "4ce0be59a0d6c5cd530db002fb062c4be8d936bc6ae59bd188803ccaf7869a8d",
+  "AI/conditions.con": "68a0c7a8aec69954063147b60fae560b2874884285737aa085efa76597d395aa",
+  "AI/prerequisites.con": "4c1f313bc285b228fd6ad03bfd1f44c5b15c8703c31f802eb605bc5f00f88bb5",
+  "Pathfinding/Infantry1Level0Map.raw": "44e9d08b709d657f6347287367356f3cca7f3f7c3e537c95d6ab8418045b4c04",
+  "Pathfinding/Infantry1Level1Map.raw": "3bf304160323a5fe2e562fca7fdaab7ddc9eb80a7a1c75ebf37cac72bd6b70f7",
+  "Pathfinding/Infantry1Level2Map.raw": "f518fdd26594f608d62b58216cdfa28dbf5022ef1d39d8a3c7ab118fbd4a198f",
+  "Pathfinding/Tank0Level0Map.raw": "56bccad9092bc8d7ab65ffde5f035eacda4aa07aca27410c6aa3424e651be90c",
+  "Pathfinding/Tank0Level1Map.raw": "e87bcdffef52b09c0e7b79eb74e068ae745e06c5871680e7a6cadecd0243e608",
+  "Pathfinding/Tank0Level2Map.raw": "d7f32d9c48ef1c76328779e0a194e95dcf396a0e7098825c440379d884c6d59a"
+ }
+}

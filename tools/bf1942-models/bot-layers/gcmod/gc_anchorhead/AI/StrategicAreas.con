@@ -1,0 +1,57 @@
+rem *** Strategic areas: one per control point (botgen) ***
+
+aiStrategicArea.create AxisBase 429/694 434/699 50
+aiStrategicArea.addObjectTypeFlag Base
+aiStrategicArea.setOrderPosition Tank 428.5/696.5
+aiStrategicArea.setOrderPosition Infantry 434.5/703.5
+aiStrategicArea.setSide 1
+aiStrategicArea.setTakeable 2 0
+
+aiStrategicArea.create AlliedBase 727/401.7 732/406.7 50
+aiStrategicArea.addNeighbour Rebel_Starport
+aiStrategicArea.addNeighbour Cantina
+aiStrategicArea.addNeighbour Abandoned_Outpost
+aiStrategicArea.addObjectTypeFlag Base
+aiStrategicArea.setOrderPosition Tank 734.5/401.5
+aiStrategicArea.setOrderPosition Infantry 733.5/402.5
+aiStrategicArea.setSide 2
+aiStrategicArea.setTakeable 1 0
+
+aiStrategicArea.create Rebel_Starport 574.2/314.4 592.2/332.4 150
+aiStrategicArea.addNeighbour AlliedBase
+aiStrategicArea.addNeighbour Cantina
+aiStrategicArea.addNeighbour Abandoned_Outpost
+aiStrategicArea.addObjectTypeFlag Flank
+aiStrategicArea.addObjectTypeFlag Close
+aiStrategicArea.addObjectTypeFlag ControlPoint
+aiStrategicArea.setOrderPosition Tank 593.5/334.5
+aiStrategicArea.setOrderPosition Infantry 592.2/332.4
+
+aiStrategicArea.create Imperial_Starport 349.8/534.1 367.8/552.1 150
+aiStrategicArea.addNeighbour Cantina
+aiStrategicArea.addNeighbour Abandoned_Outpost
+aiStrategicArea.addObjectTypeFlag Flank
+aiStrategicArea.addObjectTypeFlag Close
+aiStrategicArea.addObjectTypeFlag ControlPoint
+aiStrategicArea.setOrderPosition Tank 374.5/557.5
+aiStrategicArea.setOrderPosition Infantry 367.8/552.1
+
+aiStrategicArea.create Cantina 535.9/505.9 544.9/514.9 150
+aiStrategicArea.addNeighbour AlliedBase
+aiStrategicArea.addNeighbour Rebel_Starport
+aiStrategicArea.addNeighbour Imperial_Starport
+aiStrategicArea.addNeighbour Abandoned_Outpost
+aiStrategicArea.addObjectTypeFlag Flank
+aiStrategicArea.addObjectTypeFlag ControlPoint
+aiStrategicArea.setOrderPosition Tank 544.5/519.5
+aiStrategicArea.setOrderPosition Infantry 544.5/517.5
+
+aiStrategicArea.create Abandoned_Outpost 356.9/320.9 367.9/331.9 150
+aiStrategicArea.addNeighbour AlliedBase
+aiStrategicArea.addNeighbour Rebel_Starport
+aiStrategicArea.addNeighbour Imperial_Starport
+aiStrategicArea.addNeighbour Cantina
+aiStrategicArea.addObjectTypeFlag Flank
+aiStrategicArea.addObjectTypeFlag ControlPoint
+aiStrategicArea.setOrderPosition Tank 367.5/329.5
+aiStrategicArea.setOrderPosition Infantry 367.9/331.9

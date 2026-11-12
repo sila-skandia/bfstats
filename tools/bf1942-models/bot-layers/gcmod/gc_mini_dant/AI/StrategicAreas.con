@@ -1,0 +1,42 @@
+rem *** Strategic areas: one per control point (botgen) ***
+
+aiStrategicArea.create impmaintemplate 1209.3/992.5 1229.3/1012.5 50
+aiStrategicArea.addNeighbour imperial_sidetemplate
+aiStrategicArea.addNeighbour the_bridgetemplate
+aiStrategicArea.addObjectTypeFlag Base
+aiStrategicArea.setOrderPosition Tank 1229.3/1012.5
+aiStrategicArea.setOrderPosition Infantry 1229.3/1012.5
+
+aiStrategicArea.create imperial_sidetemplate 1096.8/1038.8 1103.8/1045.8 150
+aiStrategicArea.addNeighbour impmaintemplate
+aiStrategicArea.addNeighbour the_bridgetemplate
+aiStrategicArea.addObjectTypeFlag Flank
+aiStrategicArea.addObjectTypeFlag Close
+aiStrategicArea.addObjectTypeFlag ControlPoint
+aiStrategicArea.setOrderPosition Tank 1106.5/1043.5
+aiStrategicArea.setOrderPosition Infantry 1102.5/1045.5
+
+aiStrategicArea.create the_bridgetemplate 1037.9/903.3 1054.9/920.3 300
+aiStrategicArea.addNeighbour impmaintemplate
+aiStrategicArea.addNeighbour imperial_sidetemplate
+aiStrategicArea.addNeighbour rebel_sidetemplate
+aiStrategicArea.addObjectTypeFlag Centre
+aiStrategicArea.addObjectTypeFlag StrongPoint
+aiStrategicArea.addObjectTypeFlag ControlPoint
+aiStrategicArea.setOrderPosition Tank 1054.9/920.3
+aiStrategicArea.setOrderPosition Infantry 1054.9/920.3
+
+aiStrategicArea.create rebel_sidetemplate 945/834.9 959/848.9 200
+aiStrategicArea.addNeighbour the_bridgetemplate
+aiStrategicArea.addNeighbour rebelmaintemplate
+aiStrategicArea.addObjectTypeFlag Centre
+aiStrategicArea.addObjectTypeFlag Close
+aiStrategicArea.addObjectTypeFlag ControlPoint
+aiStrategicArea.setOrderPosition Tank 959.5/845.5
+aiStrategicArea.setOrderPosition Infantry 959.5/847.5
+
+aiStrategicArea.create rebelmaintemplate 844.2/763.2 864.2/783.2 50
+aiStrategicArea.addNeighbour rebel_sidetemplate
+aiStrategicArea.addObjectTypeFlag Base
+aiStrategicArea.setOrderPosition Tank 864.2/783.2
+aiStrategicArea.setOrderPosition Infantry 864.2/783.2

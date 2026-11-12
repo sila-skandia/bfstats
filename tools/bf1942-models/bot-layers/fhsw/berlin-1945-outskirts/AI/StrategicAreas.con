@@ -1,0 +1,71 @@
+rem *** Strategic areas: one per control point (botgen) ***
+
+aiStrategicArea.create allied_garisson 406/761.2 411/766.2 10
+aiStrategicArea.setSide 2
+aiStrategicArea.setTakeable 1 0
+aiStrategicArea.setTakeable 2 0
+
+aiStrategicArea.create wooden_bunker 307.9/398.9 317.9/408.9 150
+aiStrategicArea.addNeighbour flak88_west
+aiStrategicArea.addNeighbour artillery_positions
+aiStrategicArea.addObjectTypeFlag Flank
+aiStrategicArea.addObjectTypeFlag ControlPoint
+aiStrategicArea.setOrderPosition Tank 320.5/408.5
+aiStrategicArea.setOrderPosition Infantry 316.5/408.5
+aiStrategicArea.setSide 1
+
+aiStrategicArea.create flak88_west 352.9/353 367.9/368 300
+aiStrategicArea.addNeighbour wooden_bunker
+aiStrategicArea.addNeighbour artillery_positions
+aiStrategicArea.addNeighbour field_headquarters
+aiStrategicArea.addNeighbour flak88_east
+aiStrategicArea.addNeighbour forest_village
+aiStrategicArea.addObjectTypeFlag Centre
+aiStrategicArea.addObjectTypeFlag StrongPoint
+aiStrategicArea.addObjectTypeFlag ControlPoint
+aiStrategicArea.setOrderPosition Tank 368.5/370.5
+aiStrategicArea.setOrderPosition Infantry 367.5/367.5
+aiStrategicArea.setSide 1
+
+aiStrategicArea.create artillery_positions 333.9/302.1 343.9/312.1 200
+aiStrategicArea.addNeighbour wooden_bunker
+aiStrategicArea.addNeighbour flak88_west
+aiStrategicArea.addNeighbour field_headquarters
+aiStrategicArea.addNeighbour forest_village
+aiStrategicArea.addObjectTypeFlag Centre
+aiStrategicArea.addObjectTypeFlag ControlPoint
+aiStrategicArea.setOrderPosition Tank 343.5/310.5
+aiStrategicArea.setOrderPosition Infantry 344.5/312.5
+aiStrategicArea.setSide 1
+
+aiStrategicArea.create field_headquarters 401.3/297.1 411.3/307.1 200
+aiStrategicArea.addNeighbour flak88_west
+aiStrategicArea.addNeighbour artillery_positions
+aiStrategicArea.addNeighbour flak88_east
+aiStrategicArea.addNeighbour forest_village
+aiStrategicArea.addObjectTypeFlag Centre
+aiStrategicArea.addObjectTypeFlag ControlPoint
+aiStrategicArea.setOrderPosition Tank 413.5/306.5
+aiStrategicArea.setOrderPosition Infantry 410.5/307.5
+aiStrategicArea.setSide 1
+
+aiStrategicArea.create flak88_east 433.6/352 448.6/367 150
+aiStrategicArea.addNeighbour flak88_west
+aiStrategicArea.addNeighbour field_headquarters
+aiStrategicArea.addNeighbour forest_village
+aiStrategicArea.addObjectTypeFlag Flank
+aiStrategicArea.addObjectTypeFlag ControlPoint
+aiStrategicArea.setOrderPosition Tank 447.5/370.5
+aiStrategicArea.setOrderPosition Infantry 447.5/367.5
+aiStrategicArea.setSide 1
+
+aiStrategicArea.create forest_village 434.6/236.1 439.6/241.1 150
+aiStrategicArea.addNeighbour flak88_west
+aiStrategicArea.addNeighbour artillery_positions
+aiStrategicArea.addNeighbour field_headquarters
+aiStrategicArea.addNeighbour flak88_east
+aiStrategicArea.addObjectTypeFlag Flank
+aiStrategicArea.addObjectTypeFlag ControlPoint
+aiStrategicArea.setOrderPosition Tank 441.5/241.5
+aiStrategicArea.setOrderPosition Infantry 440.5/241.5
+aiStrategicArea.setSide 1

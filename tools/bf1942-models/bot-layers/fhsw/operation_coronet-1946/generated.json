@@ -1,0 +1,191 @@
+{
+ "generator": "botgen",
+ "version": 5,
+ "mod": "FHSW",
+ "level": "operation_coronet-1946",
+ "objectSpawners": 362,
+ "template": "few",
+ "templateSource": "DICE, bf1942 Kursk (1.6 patch archives, Kursk_003.rfa): AI/Strategies.con, AI/conditions.con, AI/prerequisites.con, unchanged",
+ "templateChoice": {
+  "name": "few",
+  "inPlay": 0,
+  "rule": "0 capturable flags in play, at most 3"
+ },
+ "scope": "on foot: infantry order positions only, no search maps, no co-op layer",
+ "unreachable": [
+  "village",
+  "coastalgunbattery",
+  "coastalhq",
+  "crossroad",
+  "howitzerbattery"
+ ],
+ "unreachableReasons": {
+  "village": "walk test",
+  "coastalgunbattery": "route probe",
+  "coastalhq": "route probe",
+  "crossroad": "walk test",
+  "howitzerbattery": "route probe"
+ },
+ "botSpawnsExcluded": [
+  "enganhouzinti_spawn1",
+  "enganhouzinti_spawn3",
+  "enganhouzinti_spawn4",
+  "enganhouzinti_spawn5",
+  "zensensireibu_spawn1",
+  "zensensireibu_spawn2",
+  "zensensireibu_spawn3",
+  "zensensireibu_spawn4",
+  "zensensireibu_spawn5",
+  "crossroad_spawn1",
+  "crossroad_spawn2",
+  "crossroad_spawn4",
+  "crossroad_spawn5",
+  "new_control_point6_spawn1",
+  "new_control_point6_spawn4",
+  "new_control_point7_spawn1",
+  "new_control_point7_spawn3",
+  "new_control_point7_spawn4",
+  "new_control_point7_spawn5"
+ ],
+ "walkMap": {
+  "source": "page painter",
+  "engine": "none",
+  "opened": [],
+  "ways": [],
+  "cover": 0.609,
+  "floors": {
+   "stacked": false,
+   "twoFloorShare": 0.004,
+   "raised": [
+    "coastalhq"
+   ],
+   "reason": null
+  },
+  "capped": true,
+  "joined": 5
+ },
+ "routeProbe": {
+  "chokeMax": 4,
+  "unreachable": [
+   "coastalgunbattery",
+   "coastalhq",
+   "howitzerbattery"
+  ],
+  "stops": {
+   "coastalgunbattery": {
+    "1": {
+     "stage": "choke",
+     "points": 8,
+     "metres": 24,
+     "first": [
+      [
+       959.6,
+       -1773.5
+      ],
+      [
+       882.4,
+       -725.1
+      ],
+      [
+       879.7,
+       -723.7
+      ]
+     ]
+    },
+    "2": {
+     "stage": "choke",
+     "points": 7,
+     "metres": 21,
+     "first": [
+      [
+       882.4,
+       -725.1
+      ],
+      [
+       879.7,
+       -723.7
+      ],
+      [
+       877.5,
+       -722.5
+      ]
+     ]
+    }
+   },
+   "coastalhq": {
+    "1": {
+     "stage": "strategic"
+    },
+    "2": {
+     "stage": "strategic"
+    }
+   },
+   "howitzerbattery": {
+    "1": {
+     "stage": "choke",
+     "points": 5,
+     "metres": 15,
+     "first": [
+      [
+       1613.9,
+       -1515.3
+      ],
+      [
+       1613.5,
+       -1518.3
+      ],
+      [
+       1613.2,
+       -1521.3
+      ]
+     ]
+    },
+    "2": {
+     "stage": "choke",
+     "points": 14,
+     "metres": 42,
+     "first": [
+      [
+       1495.5,
+       -1343.5
+      ],
+      [
+       1494.8,
+       -1346.2
+      ],
+      [
+       1490.8,
+       -1352
+      ]
+     ]
+    }
+   }
+  },
+  "oneSided": {},
+  "sides": {
+   "1": {
+    "spawns": 6,
+    "flags": []
+   },
+   "2": {
+    "spawns": 5,
+    "flags": []
+   }
+  },
+  "chokes": {},
+  "late": {},
+  "shutLinks": []
+ },
+ "inputs": {
+  "controlPoints": "9c50f65cc4b403defeff70407c085e1a15ed88d0d6bab24ad7a3dd2ddcddef3e",
+  "infantryMap": "3ce5a9a5b2949fd8819172f3f9e3893b9099466b042d67408e912223f65f7b3d",
+  "template": "bdc0e455f47f91b7e7724e71d7c0c196e839b36946ac3abb7663d725944081e5"
+ },
+ "files": {
+  "AI.con": "ff65da5cf781f265a28875b6cbca3063a01ed39073ce89fcfbb96af7a80600f7",
+  "AI/StrategicAreas.con": "bd151e57bf70ec862d378310fa48dae2c802d2cee09c4e1af934ac696661d2df",
+  "AI/Strategies.con": "13da4dc35872dd4b5798a066f4425bdc824cfd61f31093d1808e1202644de52e",
+  "AI/conditions.con": "248a04b727c08d696bf0fa9c162bc22c43cde3c75f695892fe1e0f5141519c49",
+  "AI/prerequisites.con": "c96168b5f69860e578f5d26728fd2a2092c4c436e1da49b7d6f4009b65735398"
+ }
+}

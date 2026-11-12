@@ -2,7 +2,7 @@
  "level": "Aberdeen",
  "mod": "xpack1",
  "url": "https://play.bfstats.io/map.html?map=Aberdeen&team=2&mode=Conquest&mod=xpack1&botCount=16&botSkill=0.75&mute&shots",
- "date": "2026-11-11",
+ "date": "2026-11-12",
  "bar": "DICE levels on the page, 3 matches each of 600 s, 16 bots: Berlin, Stalingrad, Kharkov, Bocage; 2026-11-11",
  "verdict": "pass",
  "failed": [],
@@ -15,19 +15,19 @@
   },
   {
    "metric": "suicidesPerBotMinute",
-   "median": 0.0312,
+   "median": 0.0125,
    "bar": "<= 0.0562",
    "pass": true
   },
   {
    "metric": "nonEnemyDeathShareWorseSide",
-   "median": 0.174,
+   "median": 0.077,
    "bar": "<= 0.308",
    "pass": true
   },
   {
    "metric": "enemyKillsPerBotMinute",
-   "median": 0.275,
+   "median": 0.2812,
    "bar": ">= 0.175",
    "pass": true
   }
@@ -45,26 +45,23 @@
  },
  "runs": [
   {
-   "generated": {
-    "version": 5,
-    "template": "symmetric"
-   },
+   "generated": null,
    "minutes": 10,
    "tickets": {
-    "1": 80,
-    "2": 83
+    "1": 72,
+    "2": 93
    },
-   "capturesTotal": 2,
+   "capturesTotal": 8,
    "teamKillsPerBotMinute": 0,
-   "suicidesPerBotMinute": 0.0312,
-   "nonEnemyDeathShareWorseSide": 0.174,
-   "enemyKillsPerBotMinute": 0.275,
+   "suicidesPerBotMinute": 0.0125,
+   "nonEnemyDeathShareWorseSide": 0.077,
+   "enemyKillsPerBotMinute": 0.2812,
    "rollout": {
     "pass": true,
     "why": [],
-    "enemyKills": 0.275,
-    "captures": 2,
-    "ownHand": 0.0312
+    "enemyKills": 0.2812,
+    "captures": 8,
+    "ownHand": 0.0125
    },
    "teamKillsBySide": {
     "1": 0,

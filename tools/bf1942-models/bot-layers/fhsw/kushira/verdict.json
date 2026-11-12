@@ -1,0 +1,102 @@
+{
+ "level": "kushira",
+ "verdict": "fail",
+ "outcome": "no-fight",
+ "config": "with vehicles",
+ "doctrine": "garrison",
+ "generatorVersion": 5,
+ "inputs": {
+  "controlPoints": "12ea2c44408148b9a0c0bffebda30c88b732442178b9ffa56f2d108469bc5d48",
+  "infantryMap": "d6983572cf5ecd0ae474e3e60f205a748f3eb5054ef69c7346eb2bd32bc10d7e",
+  "template": "43f8a790471528016570235f76e97dbb2045732458781a5139f37fed68bf98c0"
+ },
+ "baseline": "DICE layers with vehicles, garrison doctrine: berlin, stalingrad, kharkov, bocage; seeds 1..10, 600 s",
+ "bar": {
+  "against": "dice",
+  "why": "no bar of fhsw's own: DICE's"
+ },
+ "seeds": 1,
+ "sizes": {
+  "8": {
+   "verdict": "fail",
+   "failed": [
+    "stuckSecondsPerBotMinute",
+    "idleShare",
+    "routeFailuresPerBotMinute",
+    "redeploysPerBotMinute",
+    "capturesTotal",
+    "enemyKillsPerBotMinute",
+    "flagCoverage",
+    "bothSidesCapture",
+    "bothSidesKill",
+    "ticketsBleed",
+    "stuckSecondsPerBotMinuteWorseSide",
+    "routeFailuresPerBotMinuteWorseSide",
+    "redeploysPerBotMinuteWorseSide",
+    "nonEnemyDeathShareWorseSide",
+    "unitsNeverUsedShare"
+   ],
+   "winners": [
+    0,
+    1,
+    0
+   ]
+  },
+  "16": {
+   "verdict": "fail",
+   "failed": [
+    "idleShare",
+    "redeploysPerBotMinute",
+    "enemyKillsPerBotMinute",
+    "flagCoverage",
+    "bothSidesCapture",
+    "redeploysPerBotMinuteWorseSide",
+    "nonEnemyDeathShareWorseSide",
+    "hullStuckSecondsPerDrivingMinute",
+    "hullStuckSecondsPerDrivingMinuteWorseSide",
+    "unitsNeverUsedShare"
+   ],
+   "winners": [
+    0,
+    1,
+    0
+   ]
+  }
+ },
+ "oneSided": null,
+ "unreachable": [],
+ "lintErrors": [],
+ "accepted": {
+  "reason": "Owner's rollout, 2026-11-12: the owner asked for everything with a fight to go live (\"everything can go up if it's ready\"). Screened in the runner at 8 and 16 a side under the garrison; the checks it fails are listed with this verdict, and a match on the page decides whether it keeps its menu flag.",
+  "date": "2026-11-12",
+  "outcome": "no-fight",
+  "failed": [
+   "8:stuckSecondsPerBotMinute",
+   "8:idleShare",
+   "8:routeFailuresPerBotMinute",
+   "8:redeploysPerBotMinute",
+   "8:capturesTotal",
+   "8:enemyKillsPerBotMinute",
+   "8:flagCoverage",
+   "8:bothSidesCapture",
+   "8:bothSidesKill",
+   "8:ticketsBleed",
+   "8:stuckSecondsPerBotMinuteWorseSide",
+   "8:routeFailuresPerBotMinuteWorseSide",
+   "8:redeploysPerBotMinuteWorseSide",
+   "8:nonEnemyDeathShareWorseSide",
+   "8:unitsNeverUsedShare",
+   "16:idleShare",
+   "16:redeploysPerBotMinute",
+   "16:enemyKillsPerBotMinute",
+   "16:flagCoverage",
+   "16:bothSidesCapture",
+   "16:redeploysPerBotMinuteWorseSide",
+   "16:nonEnemyDeathShareWorseSide",
+   "16:hullStuckSecondsPerDrivingMinute",
+   "16:hullStuckSecondsPerDrivingMinuteWorseSide",
+   "16:unitsNeverUsedShare"
+  ],
+  "by": "owner"
+ }
+}

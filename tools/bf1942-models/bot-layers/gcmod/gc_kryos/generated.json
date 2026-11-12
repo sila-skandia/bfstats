@@ -1,0 +1,955 @@
+{
+ "generator": "botgen",
+ "version": 6,
+ "mod": "GCMOD",
+ "level": "gc_kryos",
+ "objectSpawners": 42,
+ "template": "few",
+ "templateSource": "DICE, bf1942 Kursk (1.6 patch archives, Kursk_003.rfa): AI/Strategies.con, AI/conditions.con, AI/prerequisites.con, unchanged",
+ "templateChoice": {
+  "name": "few",
+  "inPlay": 3,
+  "rule": "3 capturable flags in play, at most 3"
+ },
+ "scope": "an infantry map from the page painter with the walk test's ways out opened, a Tank0 map from the page painter, infantry order positions, no strategic maps, no co-op layer",
+ "unreachable": [],
+ "unreachableReasons": {},
+ "botSpawnsExcluded": [
+  "Rebel_Base_Spawn1",
+  "Rebel_Base_Spawn2",
+  "Rebel_Base_Spawn3",
+  "Rebel_Base_Spawn4"
+ ],
+ "walkMap": {
+  "source": "page painter",
+  "engine": "none",
+  "vehicleMap": "page painter",
+  "vehicleBrush": 3,
+  "vehicleBrushes": [
+   {
+    "brush": 3,
+    "flagsOn": 3,
+    "spawnersOn": 11,
+    "pieces": 6,
+    "main": 686106
+   },
+   {
+    "brush": 2.5,
+    "flagsOn": 3,
+    "spawnersOn": 11,
+    "pieces": 6,
+    "main": 709992
+   },
+   {
+    "brush": 2,
+    "flagsOn": 3,
+    "spawnersOn": 11,
+    "pieces": 13,
+    "main": 720939
+   },
+   {
+    "brush": 1.5,
+    "flagsOn": 3,
+    "spawnersOn": 11,
+    "pieces": 15,
+    "main": 742068
+   }
+  ],
+  "opened": [
+   [
+    614,
+    384
+   ],
+   [
+    615,
+    384
+   ],
+   [
+    616,
+    384
+   ],
+   [
+    617,
+    384
+   ],
+   [
+    618,
+    384
+   ],
+   [
+    619,
+    384
+   ],
+   [
+    620,
+    384
+   ],
+   [
+    609,
+    394
+   ],
+   [
+    609,
+    395
+   ],
+   [
+    609,
+    396
+   ],
+   [
+    606,
+    397
+   ],
+   [
+    607,
+    397
+   ],
+   [
+    608,
+    397
+   ],
+   [
+    609,
+    397
+   ],
+   [
+    605,
+    402
+   ],
+   [
+    605,
+    403
+   ],
+   [
+    605,
+    404
+   ],
+   [
+    605,
+    405
+   ],
+   [
+    605,
+    406
+   ],
+   [
+    605,
+    407
+   ],
+   [
+    605,
+    408
+   ],
+   [
+    604,
+    409
+   ],
+   [
+    605,
+    409
+   ],
+   [
+    603,
+    410
+   ],
+   [
+    604,
+    410
+   ],
+   [
+    602,
+    411
+   ],
+   [
+    603,
+    411
+   ],
+   [
+    571,
+    412
+   ],
+   [
+    572,
+    412
+   ],
+   [
+    573,
+    412
+   ],
+   [
+    598,
+    412
+   ],
+   [
+    599,
+    412
+   ],
+   [
+    600,
+    412
+   ],
+   [
+    601,
+    412
+   ],
+   [
+    602,
+    412
+   ],
+   [
+    571,
+    413
+   ],
+   [
+    571,
+    414
+   ],
+   [
+    563,
+    418
+   ],
+   [
+    563,
+    419
+   ],
+   [
+    564,
+    419
+   ],
+   [
+    564,
+    420
+   ],
+   [
+    564,
+    421
+   ],
+   [
+    568,
+    421
+   ],
+   [
+    569,
+    421
+   ],
+   [
+    570,
+    421
+   ],
+   [
+    571,
+    421
+   ],
+   [
+    571,
+    422
+   ],
+   [
+    572,
+    422
+   ],
+   [
+    569,
+    423
+   ],
+   [
+    570,
+    423
+   ],
+   [
+    571,
+    423
+   ],
+   [
+    572,
+    423
+   ],
+   [
+    572,
+    424
+   ],
+   [
+    572,
+    425
+   ],
+   [
+    590,
+    446
+   ],
+   [
+    591,
+    446
+   ],
+   [
+    592,
+    446
+   ],
+   [
+    590,
+    447
+   ],
+   [
+    590,
+    448
+   ],
+   [
+    591,
+    448
+   ],
+   [
+    591,
+    449
+   ],
+   [
+    592,
+    449
+   ],
+   [
+    593,
+    449
+   ],
+   [
+    594,
+    449
+   ],
+   [
+    597,
+    450
+   ],
+   [
+    597,
+    451
+   ],
+   [
+    598,
+    451
+   ],
+   [
+    598,
+    452
+   ],
+   [
+    1372,
+    614
+   ],
+   [
+    1372,
+    615
+   ],
+   [
+    1372,
+    616
+   ],
+   [
+    1372,
+    617
+   ],
+   [
+    1368,
+    618
+   ],
+   [
+    1369,
+    618
+   ],
+   [
+    1370,
+    618
+   ],
+   [
+    1371,
+    618
+   ],
+   [
+    1372,
+    618
+   ],
+   [
+    1365,
+    635
+   ],
+   [
+    1366,
+    635
+   ],
+   [
+    1367,
+    635
+   ],
+   [
+    1368,
+    635
+   ],
+   [
+    1369,
+    635
+   ],
+   [
+    1370,
+    635
+   ],
+   [
+    1371,
+    635
+   ],
+   [
+    1372,
+    635
+   ],
+   [
+    1373,
+    635
+   ],
+   [
+    1373,
+    636
+   ],
+   [
+    1373,
+    637
+   ],
+   [
+    1373,
+    638
+   ],
+   [
+    1373,
+    639
+   ],
+   [
+    1373,
+    640
+   ],
+   [
+    1373,
+    641
+   ],
+   [
+    1373,
+    642
+   ],
+   [
+    1373,
+    643
+   ],
+   [
+    1373,
+    644
+   ],
+   [
+    1373,
+    645
+   ],
+   [
+    1373,
+    646
+   ],
+   [
+    1373,
+    647
+   ],
+   [
+    1373,
+    648
+   ],
+   [
+    1373,
+    649
+   ],
+   [
+    1373,
+    650
+   ],
+   [
+    1373,
+    651
+   ],
+   [
+    1373,
+    652
+   ],
+   [
+    1373,
+    653
+   ],
+   [
+    1373,
+    654
+   ],
+   [
+    1373,
+    655
+   ],
+   [
+    1373,
+    656
+   ],
+   [
+    1373,
+    657
+   ],
+   [
+    1373,
+    658
+   ],
+   [
+    1373,
+    659
+   ],
+   [
+    1373,
+    660
+   ],
+   [
+    1373,
+    661
+   ],
+   [
+    1417,
+    688
+   ],
+   [
+    1417,
+    689
+   ],
+   [
+    1417,
+    690
+   ],
+   [
+    1417,
+    691
+   ],
+   [
+    1417,
+    692
+   ],
+   [
+    1417,
+    693
+   ],
+   [
+    1417,
+    694
+   ],
+   [
+    1403,
+    695
+   ],
+   [
+    1404,
+    695
+   ],
+   [
+    1405,
+    695
+   ],
+   [
+    1406,
+    695
+   ],
+   [
+    1407,
+    695
+   ],
+   [
+    1408,
+    695
+   ],
+   [
+    1409,
+    695
+   ],
+   [
+    1417,
+    695
+   ],
+   [
+    1418,
+    695
+   ],
+   [
+    1419,
+    695
+   ],
+   [
+    1420,
+    695
+   ],
+   [
+    1421,
+    695
+   ],
+   [
+    1422,
+    695
+   ],
+   [
+    1423,
+    695
+   ],
+   [
+    1424,
+    695
+   ],
+   [
+    1425,
+    695
+   ],
+   [
+    1426,
+    695
+   ],
+   [
+    1427,
+    695
+   ],
+   [
+    898,
+    977
+   ],
+   [
+    898,
+    978
+   ],
+   [
+    898,
+    979
+   ],
+   [
+    898,
+    980
+   ],
+   [
+    898,
+    981
+   ],
+   [
+    883,
+    988
+   ],
+   [
+    883,
+    989
+   ],
+   [
+    884,
+    989
+   ],
+   [
+    885,
+    989
+   ],
+   [
+    885,
+    990
+   ],
+   [
+    1518,
+    1050
+   ],
+   [
+    1518,
+    1051
+   ],
+   [
+    1518,
+    1052
+   ],
+   [
+    1518,
+    1053
+   ],
+   [
+    1518,
+    1054
+   ],
+   [
+    1518,
+    1055
+   ],
+   [
+    1518,
+    1056
+   ],
+   [
+    1518,
+    1057
+   ],
+   [
+    1518,
+    1058
+   ],
+   [
+    1518,
+    1059
+   ],
+   [
+    1501,
+    1113
+   ],
+   [
+    1502,
+    1113
+   ],
+   [
+    1503,
+    1113
+   ],
+   [
+    1504,
+    1113
+   ],
+   [
+    1499,
+    1114
+   ],
+   [
+    1500,
+    1114
+   ],
+   [
+    1501,
+    1114
+   ],
+   [
+    1498,
+    1115
+   ],
+   [
+    1499,
+    1115
+   ],
+   [
+    1496,
+    1116
+   ],
+   [
+    1497,
+    1116
+   ],
+   [
+    1498,
+    1116
+   ],
+   [
+    1553,
+    1130
+   ],
+   [
+    1554,
+    1130
+   ],
+   [
+    1554,
+    1131
+   ],
+   [
+    1555,
+    1131
+   ],
+   [
+    1556,
+    1131
+   ],
+   [
+    1557,
+    1131
+   ],
+   [
+    1558,
+    1131
+   ],
+   [
+    1559,
+    1131
+   ],
+   [
+    1560,
+    1131
+   ],
+   [
+    1561,
+    1131
+   ],
+   [
+    1562,
+    1131
+   ]
+  ],
+  "ways": [
+   {
+    "who": "Imperial_Base_Spawn1",
+    "kind": "spawn",
+    "way": "walk",
+    "opened": 14
+   },
+   {
+    "who": "Rebel_Base_Spawn1",
+    "kind": "spawn",
+    "way": "none",
+    "opened": 0
+   },
+   {
+    "who": "Rebel_Base_Spawn2",
+    "kind": "spawn",
+    "way": "none",
+    "opened": 0
+   },
+   {
+    "who": "Rebel_Base_Spawn3",
+    "kind": "spawn",
+    "way": "none",
+    "opened": 0
+   },
+   {
+    "who": "Rebel_Base_Spawn4",
+    "kind": "spawn",
+    "way": "none",
+    "opened": 0
+   },
+   {
+    "who": "Imperial_Base_Spawn2",
+    "kind": "spawn",
+    "way": "walk",
+    "opened": 15
+   },
+   {
+    "who": "Imperial_Base_Spawn3",
+    "kind": "spawn",
+    "way": "walk",
+    "opened": 27
+   },
+   {
+    "who": "Imperial_Base_Spawn4",
+    "kind": "spawn",
+    "way": "walk",
+    "opened": 10
+   },
+   {
+    "who": "Ion_Cannon_Spawn1",
+    "kind": "spawn",
+    "way": "walk",
+    "opened": 5
+   },
+   {
+    "who": "Power_Generator_Spawn1",
+    "kind": "spawn",
+    "way": "walk",
+    "opened": 5
+   },
+   {
+    "who": "Water_Cooling_Station_Spawn3",
+    "kind": "spawn",
+    "way": "walk",
+    "opened": 11
+   },
+   {
+    "who": "Ion_Cannon_Spawn2",
+    "kind": "spawn",
+    "way": "walk",
+    "opened": 9
+   },
+   {
+    "who": "Ion_Cannon_Spawn3",
+    "kind": "spawn",
+    "way": "walk",
+    "opened": 18
+   },
+   {
+    "who": "Ion_Cannon_Spawn4",
+    "kind": "spawn",
+    "way": "walk",
+    "opened": 7
+   },
+   {
+    "who": "Ion_Cannon_Spawn5",
+    "kind": "spawn",
+    "way": "walk",
+    "opened": 30
+   },
+   {
+    "who": "Power_Generator_Spawn3",
+    "kind": "spawn",
+    "way": "walk",
+    "opened": 5
+   },
+   {
+    "who": "Water_Cooling_Station_Spawn4",
+    "kind": "spawn",
+    "way": "walk",
+    "opened": 10
+   },
+   {
+    "who": "Water_Cooling_Station_Spawn5",
+    "kind": "spawn",
+    "way": "walk",
+    "opened": 12
+   },
+   {
+    "who": "Imperial_Base",
+    "kind": "flag",
+    "way": "walk",
+    "opened": 2
+   }
+  ],
+  "cover": 0.812,
+  "floors": {
+   "stacked": false,
+   "twoFloorShare": 0.012,
+   "raised": [],
+   "reason": null
+  },
+  "capped": true
+ },
+ "routeProbe": {
+  "chokeMax": 4,
+  "unreachable": [],
+  "stops": {},
+  "oneSided": {
+   "Ion_Cannon": 1,
+   "Water_Cooling_Station": 1,
+   "Power_Generator": 1
+  },
+  "sides": {
+   "1": {
+    "spawns": 4,
+    "flags": [
+     "Ion_Cannon",
+     "Power_Generator",
+     "Water_Cooling_Station"
+    ]
+   },
+   "2": {
+    "spawns": 0,
+    "flags": []
+   }
+  },
+  "chokes": {
+   "Ion_Cannon:1": 2,
+   "Water_Cooling_Station:1": 2,
+   "Power_Generator:1": 2
+  },
+  "late": {},
+  "shutLinks": []
+ },
+ "inputs": {
+  "controlPoints": "0de0e990f16286e8dd44cc35b062b73c4b9cfa36f04ce0adf68ff83a5c4e158c",
+  "infantryMap": "2a9291ff6fdb47bb2e9d8d027b72116b000d72b621abf5f6e783fed2b1c1e4c2",
+  "template": "bdc0e455f47f91b7e7724e71d7c0c196e839b36946ac3abb7663d725944081e5"
+ },
+ "files": {
+  "AI.con": "9c2af3380f8a98fc9447bba0dd137edd65a0a9b694fc58d303e2006c8923332b",
+  "AIpathFinding.con": "8014dbf6ef50a7e5ba3bd3af85ed910350bb0936cd33c5a2e1c5138053711957",
+  "AI/StrategicAreas.con": "17f1f983924d5aa0d945bfede6fa16e874a2dc1132bba05bb767ffb15fc90f5e",
+  "AI/Strategies.con": "13da4dc35872dd4b5798a066f4425bdc824cfd61f31093d1808e1202644de52e",
+  "AI/conditions.con": "248a04b727c08d696bf0fa9c162bc22c43cde3c75f695892fe1e0f5141519c49",
+  "AI/prerequisites.con": "c96168b5f69860e578f5d26728fd2a2092c4c436e1da49b7d6f4009b65735398",
+  "Pathfinding/Infantry1Level0Map.raw": "9cbbb642dd8dac2e035f55c4887273d23edd4f5f56c2cee8659c4a3f59e8cfe8",
+  "Pathfinding/Infantry1Level1Map.raw": "2f015505360cd82ae3e017764af1dcd093563585bd57e7273c96ed01dc9f277e",
+  "Pathfinding/Infantry1Level2Map.raw": "b93018272f6e29bb9db6a095ad4590536e18ee7767ba9a1723dff7d12c056365",
+  "Pathfinding/Tank0Level0Map.raw": "414faee88516e4347192cbdc54432d6381d15d17f2bb746d17a485bb288244c5",
+  "Pathfinding/Tank0Level1Map.raw": "1b830a9161fbaccf8893db618eac434a04e62505d9ac0c1f3eed5034b537b003",
+  "Pathfinding/Tank0Level2Map.raw": "8d4c50f156f52b1622e00793ea2e66da61731b37a11a7d39c28e3b21f134b7a1"
+ }
+}

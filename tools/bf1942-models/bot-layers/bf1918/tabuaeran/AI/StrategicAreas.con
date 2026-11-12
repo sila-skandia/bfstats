@@ -1,0 +1,34 @@
+rem *** Strategic areas: one per control point (botgen) ***
+
+aiStrategicArea.create West_Tower 1966.5/1906.9 1971.5/1911.9 50
+aiStrategicArea.addNeighbour East_Tower
+aiStrategicArea.addNeighbour Outpost
+aiStrategicArea.addObjectTypeFlag Base
+aiStrategicArea.setOrderPosition Tank 1969.5/1911.5
+aiStrategicArea.setOrderPosition Infantry 1970.5/1911.5
+aiStrategicArea.setSide 2
+aiStrategicArea.setTakeable 1 0
+
+aiStrategicArea.create East_Tower 2160.1/1867.8 2165.1/1872.8 50
+aiStrategicArea.addNeighbour West_Tower
+aiStrategicArea.addObjectTypeFlag Base
+aiStrategicArea.setOrderPosition Tank 2165.5/1874.5
+aiStrategicArea.setOrderPosition Infantry 2165.5/1873.5
+aiStrategicArea.setSide 2
+aiStrategicArea.setTakeable 1 0
+
+aiStrategicArea.create Outpost 1940.9/2105.3 1955.9/2120.3 300
+aiStrategicArea.addNeighbour West_Tower
+aiStrategicArea.addObjectTypeFlag Centre
+aiStrategicArea.addObjectTypeFlag StrongPoint
+aiStrategicArea.addObjectTypeFlag Close
+aiStrategicArea.addObjectTypeFlag ControlPoint
+aiStrategicArea.setOrderPosition Tank 1955.5/2118.5
+aiStrategicArea.setOrderPosition Infantry 1955.5/2119.5
+aiStrategicArea.setSide 2
+
+aiStrategicArea.create germany 2914.9/1158.2 2919.9/1163.2 50
+aiStrategicArea.addObjectTypeFlag Base
+aiStrategicArea.setOrderPosition Tank 2919.5/1161.5
+aiStrategicArea.setSide 1
+aiStrategicArea.setTakeable 2 0

@@ -1,0 +1,106 @@
+{
+ "generator": "botgen",
+ "version": 5,
+ "mod": "FHSW",
+ "level": "seelow-heights-1945",
+ "objectSpawners": 215,
+ "template": "symmetric",
+ "templateSource": "DICE, bf1942 Kharkov (1.6 patch archives): AI/Strategies.con, AI/conditions.con, AI/prerequisites.con, unchanged",
+ "templateChoice": {
+  "name": "symmetric",
+  "inPlay": 4,
+  "rule": "4 capturable flags in play, more than 3"
+ },
+ "scope": "on foot: infantry order positions only, no search maps, no co-op layer",
+ "unreachable": [
+  "stationtemplate"
+ ],
+ "unreachableReasons": {
+  "stationtemplate": "walk test"
+ },
+ "botSpawnsExcluded": [
+  "seelow_town_center6",
+  "allied_bso2",
+  "seelow_mil_hq3",
+  "seelow_outskirts1",
+  "hill-foot4",
+  "seelow_mil_hq1",
+  "seelow_town_center4",
+  "seelow_town_center2",
+  "seelow_outskirts3",
+  "seelow_outskirts2",
+  "seelow_station2",
+  "seelow_station3",
+  "hill-foot1",
+  "hill-foot2"
+ ],
+ "walkMap": {
+  "source": "page painter",
+  "engine": "none",
+  "opened": [],
+  "ways": [],
+  "cover": 0.864,
+  "floors": {
+   "stacked": false,
+   "twoFloorShare": 0.006,
+   "raised": [],
+   "reason": null
+  },
+  "capped": true,
+  "joined": 1
+ },
+ "routeProbe": {
+  "chokeMax": 4,
+  "unreachable": [],
+  "stops": {},
+  "oneSided": {
+   "hill_foottemplate": 1
+  },
+  "sides": {
+   "1": {
+    "spawns": 6,
+    "flags": [
+     "axisbase",
+     "hill_foottemplate",
+     "seelow_mil_hqtemplate",
+     "seelow_outskirtstemplate"
+    ]
+   },
+   "2": {
+    "spawns": 2,
+    "flags": [
+     "axisbase",
+     "seelow_mil_hqtemplate",
+     "seelow_outskirtstemplate"
+    ]
+   }
+  },
+  "chokes": {
+   "seelow_mil_hqtemplate:1": 1,
+   "seelow_mil_hqtemplate:2": 1,
+   "axisbase:1": 0,
+   "axisbase:2": 0,
+   "seelow_outskirtstemplate:1": 0,
+   "seelow_outskirtstemplate:2": 0,
+   "hill_foottemplate:1": 4,
+   "hill_foottemplate:2": 5
+  },
+  "late": {},
+  "shutLinks": [
+   "seelow_outskirtstemplate>hill_foottemplate",
+   "hill_foottemplate>seelow_outskirtstemplate"
+  ]
+ },
+ "inputs": {
+  "controlPoints": "3a3e5ec68c3b43516c0535341d6bf73992c1e142b9cff4b94f6b090822e8cf32",
+  "infantryMap": "f9b851edc4c9aa922a7c47a5dafb8601e0ef8ae89bb42764704083b902d20ef4",
+  "template": "43f8a790471528016570235f76e97dbb2045732458781a5139f37fed68bf98c0"
+ },
+ "files": {
+  "AI.con": "6add06fce9aa94cfe94d211bd067d741e04433e1f1c464973e40b7b389dd13d7",
+  "AI/StrategicAreas.con": "b85ff6b5dc0a367476d735316c8412f975657ae82b93771291227b73a537953d",
+  "AI/Strategies.con": "4ce0be59a0d6c5cd530db002fb062c4be8d936bc6ae59bd188803ccaf7869a8d",
+  "AI/conditions.con": "68a0c7a8aec69954063147b60fae560b2874884285737aa085efa76597d395aa",
+  "AI/prerequisites.con": "4c1f313bc285b228fd6ad03bfd1f44c5b15c8703c31f802eb605bc5f00f88bb5"
+ }
+}

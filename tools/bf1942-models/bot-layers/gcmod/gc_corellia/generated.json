@@ -1,0 +1,464 @@
+{
+ "generator": "botgen",
+ "version": 6,
+ "mod": "GCMOD",
+ "level": "gc_corellia",
+ "objectSpawners": 51,
+ "template": "few",
+ "templateSource": "DICE, bf1942 Kursk (1.6 patch archives, Kursk_003.rfa): AI/Strategies.con, AI/conditions.con, AI/prerequisites.con, unchanged",
+ "templateChoice": {
+  "name": "few",
+  "inPlay": 3,
+  "rule": "3 capturable flags in play, at most 3"
+ },
+ "scope": "an infantry map from the page painter with the walk test's ways out opened, a Tank0 map from the page painter, infantry order positions, no strategic maps, no co-op layer",
+ "unreachable": [
+  "Vreni_Island"
+ ],
+ "unreachableReasons": {
+  "Vreni_Island": "walk test"
+ },
+ "botSpawnsExcluded": [
+  "Vreni_Island_Spawn1",
+  "Vreni_Island_Spawn2",
+  "Vreni_Island_Spawn3",
+  "Daoba_Guerfel_Spawn1",
+  "Vreni_Island_Spawn4"
+ ],
+ "walkMap": {
+  "source": "page painter",
+  "engine": "none",
+  "vehicleMap": "page painter",
+  "vehicleBrush": 1.5,
+  "vehicleBrushes": [
+   {
+    "brush": 3,
+    "flagsOn": 5,
+    "spawnersOn": 27,
+    "pieces": 7,
+    "main": 2512724
+   },
+   {
+    "brush": 2.5,
+    "flagsOn": 5,
+    "spawnersOn": 27,
+    "pieces": 6,
+    "main": 2546725
+   },
+   {
+    "brush": 2,
+    "flagsOn": 5,
+    "spawnersOn": 27,
+    "pieces": 9,
+    "main": 2569075
+   },
+   {
+    "brush": 1.5,
+    "flagsOn": 5,
+    "spawnersOn": 30,
+    "pieces": 5,
+    "main": 2600397
+   }
+  ],
+  "opened": [
+   [
+    1094,
+    708
+   ],
+   [
+    1094,
+    709
+   ],
+   [
+    1094,
+    710
+   ],
+   [
+    1094,
+    711
+   ],
+   [
+    1094,
+    712
+   ],
+   [
+    1094,
+    713
+   ],
+   [
+    1094,
+    714
+   ],
+   [
+    1094,
+    715
+   ],
+   [
+    1094,
+    716
+   ],
+   [
+    1094,
+    717
+   ],
+   [
+    1094,
+    718
+   ],
+   [
+    1095,
+    718
+   ],
+   [
+    1095,
+    719
+   ],
+   [
+    1096,
+    719
+   ],
+   [
+    1096,
+    720
+   ],
+   [
+    1096,
+    721
+   ],
+   [
+    1097,
+    721
+   ],
+   [
+    1097,
+    722
+   ],
+   [
+    1097,
+    723
+   ],
+   [
+    1097,
+    724
+   ],
+   [
+    1098,
+    724
+   ],
+   [
+    1091,
+    1323
+   ],
+   [
+    1092,
+    1323
+   ],
+   [
+    1093,
+    1323
+   ],
+   [
+    1094,
+    1323
+   ],
+   [
+    1095,
+    1323
+   ],
+   [
+    1096,
+    1323
+   ],
+   [
+    1097,
+    1323
+   ],
+   [
+    1098,
+    1323
+   ],
+   [
+    1058,
+    1345
+   ],
+   [
+    1058,
+    1346
+   ],
+   [
+    1058,
+    1347
+   ],
+   [
+    1058,
+    1348
+   ],
+   [
+    1058,
+    1349
+   ],
+   [
+    1058,
+    1350
+   ],
+   [
+    1058,
+    1351
+   ],
+   [
+    1058,
+    1352
+   ],
+   [
+    1058,
+    1353
+   ],
+   [
+    1058,
+    1354
+   ],
+   [
+    1058,
+    1355
+   ],
+   [
+    1058,
+    1356
+   ],
+   [
+    1397,
+    1668
+   ],
+   [
+    1398,
+    1668
+   ],
+   [
+    1399,
+    1668
+   ],
+   [
+    1397,
+    1669
+   ],
+   [
+    1397,
+    1670
+   ],
+   [
+    1392,
+    1671
+   ],
+   [
+    1393,
+    1671
+   ],
+   [
+    1394,
+    1671
+   ],
+   [
+    1395,
+    1671
+   ],
+   [
+    1396,
+    1671
+   ],
+   [
+    1397,
+    1671
+   ],
+   [
+    1391,
+    1672
+   ],
+   [
+    1392,
+    1672
+   ],
+   [
+    1391,
+    1673
+   ],
+   [
+    1383,
+    1674
+   ],
+   [
+    1384,
+    1674
+   ],
+   [
+    1385,
+    1674
+   ],
+   [
+    1386,
+    1674
+   ],
+   [
+    1387,
+    1674
+   ],
+   [
+    1388,
+    1674
+   ],
+   [
+    1389,
+    1674
+   ],
+   [
+    1390,
+    1674
+   ],
+   [
+    1391,
+    1674
+   ],
+   [
+    1390,
+    1769
+   ],
+   [
+    1390,
+    1770
+   ],
+   [
+    1390,
+    1771
+   ],
+   [
+    1390,
+    1772
+   ]
+  ],
+  "ways": [
+   {
+    "who": "Bela_Vistal_Spawn1",
+    "kind": "spawn",
+    "way": "drop",
+    "opened": 4
+   },
+   {
+    "who": "Vreni_Island_Spawn1",
+    "kind": "spawn",
+    "way": "none",
+    "opened": 0
+   },
+   {
+    "who": "Vreni_Island_Spawn2",
+    "kind": "spawn",
+    "way": "none",
+    "opened": 0
+   },
+   {
+    "who": "Vreni_Island_Spawn3",
+    "kind": "spawn",
+    "way": "none",
+    "opened": 0
+   },
+   {
+    "who": "Rebel_Hideout_Spawn2",
+    "kind": "spawn",
+    "way": "walk",
+    "opened": 21
+   },
+   {
+    "who": "Imperial_Outpost_Spawn2",
+    "kind": "spawn",
+    "way": "walk",
+    "opened": 8
+   },
+   {
+    "who": "Imperial_Outpost_Spawn3",
+    "kind": "spawn",
+    "way": "walk",
+    "opened": 12
+   },
+   {
+    "who": "Daoba_Guerfel_Spawn1",
+    "kind": "spawn",
+    "way": "jump",
+    "opened": 0
+   },
+   {
+    "who": "Vreni_Island_Spawn4",
+    "kind": "spawn",
+    "way": "none",
+    "opened": 0
+   },
+   {
+    "who": "Bela_Vistal_Spawn2",
+    "kind": "spawn",
+    "way": "walk",
+    "opened": 23
+   }
+  ],
+  "cover": 0.945,
+  "floors": {
+   "stacked": true,
+   "twoFloorShare": 0.007,
+   "raised": [
+    "Vreni_Island",
+    "Imperial_Outpost"
+   ],
+   "reason": "2 of 4 capturable flags stand a storey over or under another walked floor"
+  },
+  "capped": true
+ },
+ "routeProbe": {
+  "chokeMax": 4,
+  "unreachable": [],
+  "stops": {},
+  "oneSided": {},
+  "sides": {
+   "1": {
+    "spawns": 8,
+    "flags": [
+     "Daoba_Guerfel",
+     "Imperial_Outpost",
+     "Rebel_Hideout"
+    ]
+   },
+   "2": {
+    "spawns": 8,
+    "flags": [
+     "Daoba_Guerfel",
+     "Imperial_Outpost",
+     "Rebel_Hideout"
+    ]
+   }
+  },
+  "chokes": {
+   "Daoba_Guerfel:1": 2,
+   "Daoba_Guerfel:2": 0,
+   "Rebel_Hideout:1": 0,
+   "Rebel_Hideout:2": 0,
+   "Imperial_Outpost:1": 0,
+   "Imperial_Outpost:2": 0
+  },
+  "late": {},
+  "shutLinks": []
+ },
+ "inputs": {
+  "controlPoints": "32325d5b81d831883d57a82b5ec2d172f91e7ec350c04b0117ec7c31eaa1e10d",
+  "infantryMap": "15233ae9953fadca36312f544e40dab6d95586db6a29e23af761e5e567a80a05",
+  "template": "bdc0e455f47f91b7e7724e71d7c0c196e839b36946ac3abb7663d725944081e5"
+ },
+ "files": {
+  "AI.con": "9c2af3380f8a98fc9447bba0dd137edd65a0a9b694fc58d303e2006c8923332b",
+  "AIpathFinding.con": "9d8080cdfa7605961969aa126519b03be9691bd604ac76aef50166d81215edd2",
+  "AI/StrategicAreas.con": "d9786fab8922f4d50eb07bd5fe4633e68708c3b08f76437d3e4c491744b7712c",
+  "AI/Strategies.con": "13da4dc35872dd4b5798a066f4425bdc824cfd61f31093d1808e1202644de52e",
+  "AI/conditions.con": "248a04b727c08d696bf0fa9c162bc22c43cde3c75f695892fe1e0f5141519c49",
+  "AI/prerequisites.con": "c96168b5f69860e578f5d26728fd2a2092c4c436e1da49b7d6f4009b65735398",
+  "Pathfinding/Infantry1Level0Map.raw": "c726eed40b0f3f0cba5464ce4e9f9a8aa43c32a666bd8087d93f815c86f56c04",
+  "Pathfinding/Infantry1Level1Map.raw": "c798b9ae04849aa6f99bcac221514c90aee9f8c42ae01923a0d8773b19ce6215",
+  "Pathfinding/Infantry1Level2Map.raw": "7853d4b3e8a46f024bae86fd0aed888f5274570145b0118bf09b47c5b586c50e",
+  "Pathfinding/Tank0Level0Map.raw": "affa70c76315fd6ccc4bccb8f0cdad70843b6be92235572123f6ce4ad0d6de7a",
+  "Pathfinding/Tank0Level1Map.raw": "765ae05e8e6464da47b01e1d4ce929a69cd93c66e11d4e0a6eacb90fb6d2b3d2",
+  "Pathfinding/Tank0Level2Map.raw": "04938abe26fee60df4aeb167f84a149b994e1d0648b344c12239e2561482caf7"
+ }
+}

@@ -240,19 +240,25 @@ export function judgePage(matches, pageBar) {
  *    of both (0.05 and 1 capture). Flags alone are not a fight: FHSW's Fall
  *    of Berlin took 7 with no enemy kill;
  *  - at most 0.10 deaths a bot-minute by a bot's own or its side's hand
- *    (suicides and team kills; DICE's worst match shows 0.056 and 0.025).
- *    Not the worse side's SHARE of such deaths: with few deaths that is
- *    noise (Red Square read 1.00 on one death);
+ *    (suicides and team kills; DICE's worst match shows 0.056 and 0.025),
+ *    or, on a level with more killing than that allows for, no more than a
+ *    third of its enemy kills (2026-11-12: DICE's own levels on the page
+ *    run to 0.31, Berlin 0.080 of 0.268 and Kharkov 0.080 of 0.259; the
+ *    flat cap alone turned down Happy Saint Patrick's Day at 0.58 enemy
+ *    kills for 0.119 by its own hand, a better ratio than Berlin's). The
+ *    second clause only ever applies above 0.30 enemy kills a bot-minute,
+ *    so it is never a share of a handful of deaths: with few deaths a share
+ *    is noise (Red Square read 1.00 on one death);
  *  - no page error.
  * `{ pass, why }`, `why` the clauses it fails.
  */
-export const ROLLOUT_FLOOR = Object.freeze({ kills: 0.15, killsWithFlags: 0.03, flags: 3, killsWithAFlag: 0.05, ownHand: 0.10 });
+export const ROLLOUT_FLOOR = Object.freeze({ kills: 0.15, killsWithFlags: 0.03, flags: 3, killsWithAFlag: 0.05, ownHand: 0.10, ownHandOfKills: 1 / 3 });
 export function rolloutFloor(m, floor = ROLLOUT_FLOOR) {
   const k = m.enemyKillsPerBotMinute ?? 0, c = m.capturesTotal ?? 0;
   const own = (m.suicidesPerBotMinute ?? 0) + (m.teamKillsPerBotMinute ?? 0);
   const why = [];
   if (!(k >= floor.kills || (k >= floor.killsWithFlags && c >= floor.flags) || (k >= floor.killsWithAFlag && c >= 1))) why.push('activity');
-  if (own > floor.ownHand) why.push('ownHand');
+  if (own > floor.ownHand && !(own <= k * (floor.ownHandOfKills ?? 0))) why.push('ownHand');
   if ((m.pageErrors ?? []).length) why.push('pageErrors');
   return { pass: !why.length, why, enemyKills: k, captures: c, ownHand: +own.toFixed(4) };
 }
@@ -273,9 +279,24 @@ function parseArgs(argv) {
 }
 
 if (process.argv[1] && path.resolve(process.argv[1]) === fileURLToPath(import.meta.url)) {
-  const cmd = ['bar', 'check'].includes(process.argv[2]) ? process.argv[2] : null;
+  const cmd = ['bar', 'check', 'rescore'].includes(process.argv[2]) ? process.argv[2] : null;
   const a = parseArgs(process.argv.slice(cmd ? 3 : 2));
   const { readFileSync, writeFileSync } = await import('node:fs');
+  if (cmd === 'rescore') {
+    // Ask today's floor of a page.json's matches again, in place. `--earlier <page.json>` puts that file's
+    // matches in front (an earlier match of the same level the last `check` wrote over); with `--old-code
+    // "<what changed>"` they are kept for the record and not counted, having been played on other bot code.
+    if (!a.file) { console.error('rescore: --file <page.json> [--earlier <page.json> [--old-code "<what changed since>"]]'); process.exit(2); }
+    const file = path.resolve(a.file), page = JSON.parse(readFileSync(file, 'utf8'));
+    const earlier = a.earlier ? JSON.parse(readFileSync(path.resolve(a.earlier), 'utf8')).runs.map(r => ({ ...r, ...(a['old-code'] ? { oldCode: String(a['old-code']) } : {}) })) : [];
+    const same = (x, y) => JSON.stringify({ ...x, rollout: 0, oldCode: 0 }) === JSON.stringify({ ...y, rollout: 0, oldCode: 0 });
+    page.runs = [...earlier.filter(e => !page.runs.some(r => same(e, r))), ...page.runs].map(r => ({ ...r, rollout: rolloutFloor(r) }));
+    page.matches = page.runs.length;
+    page.rollout = { pass: page.runs.some(r => !r.oldCode && r.rollout.pass), floor: ROLLOUT_FLOOR };
+    writeFileSync(file, JSON.stringify(page, null, 1) + '\n');
+    console.log(`${page.level}: ${page.rollout.pass ? 'PASS' : 'FAIL'} | ${page.runs.map(r => `${r.oldCode ? '(old code) ' : ''}kills ${r.enemyKillsPerBotMinute} captures ${r.capturesTotal} own-hand ${r.rollout.ownHand}${r.rollout.pass ? '' : ' ' + JSON.stringify(r.rollout.why)}`).join('; ')}`);
+    process.exit(0);
+  }
   const BAR_FILE = path.join(HERE, 'baselines', 'page-dice.json');
   const slim = m => { const { teamKills, ticketsOverTime, generated, ...rest } = m; return { ...rest, generated: generated ? { version: generated.version, template: generated.template ?? null } : null }; };
   if (cmd === 'bar') {

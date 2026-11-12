@@ -1,0 +1,22 @@
+{
+ "level": "battle_of_gela-1943",
+ "verdict": "fail",
+ "outcome": "unsuitable",
+ "config": "with vehicles",
+ "doctrine": "garrison",
+ "generatorVersion": 5,
+ "inputs": {
+  "controlPoints": "15529646f583e05c44dc1f280720f342086a9d4cb95e036e165ab037d0e71c9f",
+  "infantryMap": "a471c35babf37d07d13d35ab9eef1ff0684536e686944fbecd2daf5bf0b78c7e",
+  "template": "43f8a790471528016570235f76e97dbb2045732458781a5139f37fed68bf98c0"
+ },
+ "baseline": "DICE layers with vehicles, garrison doctrine: berlin, stalingrad, kharkov, bocage; seeds 1..10, 600 s",
+ "bar": null,
+ "seeds": 1,
+ "sizes": {},
+ "oneSided": null,
+ "unreachable": [],
+ "lintErrors": [
+  "side 2 has no spawn with a route to any flag it must take: of its 4 spawns 4 have no way on foot to the main ground; the level places 7 ladders, which neither the walk test nor a bot climbs"
+ ]
+}

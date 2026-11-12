@@ -1,0 +1,1033 @@
+{
+ "generator": "botgen",
+ "version": 6,
+ "mod": "FHSW",
+ "level": "battle_at_river_don",
+ "objectSpawners": 99,
+ "template": "few",
+ "templateSource": "DICE, bf1942 Kursk (1.6 patch archives, Kursk_003.rfa): AI/Strategies.con, AI/conditions.con, AI/prerequisites.con, unchanged",
+ "templateChoice": {
+  "name": "few",
+  "inPlay": 3,
+  "rule": "3 capturable flags in play, at most 3"
+ },
+ "scope": "an infantry map from the page painter with the walk test's ways out opened, a Tank0 map from the page painter, infantry order positions, no strategic maps, no co-op layer",
+ "unreachable": [
+  "1st_defence_position",
+  "2nd_defence_position",
+  "russian_flag"
+ ],
+ "unreachableReasons": {
+  "1st_defence_position": "walk test",
+  "2nd_defence_position": "walk test",
+  "russian_flag": "walk test"
+ },
+ "botSpawnsExcluded": [
+  "alliedbase_spawn1",
+  "alliedbase_spawn2",
+  "alliedbase_spawn3",
+  "alliedbase_spawn4",
+  "1st_defence_position_spawn1",
+  "1st_defence_position_spawn2",
+  "1st_defence_position_spawn3",
+  "1st_defence_position_spawn4",
+  "1st_defence_position_spawn5",
+  "2nd_defence_position_spawn1",
+  "2nd_defence_position_spawn2",
+  "2nd_defence_position_spawn3",
+  "2nd_defence_position_spawn4",
+  "2nd_defence_position_spawn5",
+  "hungary_arty_position_spawn4",
+  "russian_flag_spawn1",
+  "russian_flag_spawn2",
+  "russian_flag_spawn3",
+  "russian_flag_spawn4"
+ ],
+ "walkMap": {
+  "source": "page painter",
+  "engine": "none",
+  "vehicleMap": "page painter",
+  "vehicleBrush": 1.5,
+  "vehicleBrushes": [
+   {
+    "brush": 3,
+    "flagsOn": 2,
+    "spawnersOn": 13,
+    "pieces": 29,
+    "main": 665589
+   },
+   {
+    "brush": 2.5,
+    "flagsOn": 2,
+    "spawnersOn": 15,
+    "pieces": 21,
+    "main": 680758
+   },
+   {
+    "brush": 2,
+    "flagsOn": 3,
+    "spawnersOn": 18,
+    "pieces": 20,
+    "main": 1264835
+   },
+   {
+    "brush": 1.5,
+    "flagsOn": 5,
+    "spawnersOn": 35,
+    "pieces": 20,
+    "main": 1977968
+   }
+  ],
+  "opened": [
+   [
+    287,
+    845
+   ],
+   [
+    287,
+    846
+   ],
+   [
+    287,
+    847
+   ],
+   [
+    287,
+    848
+   ],
+   [
+    267,
+    849
+   ],
+   [
+    283,
+    849
+   ],
+   [
+    284,
+    849
+   ],
+   [
+    285,
+    849
+   ],
+   [
+    286,
+    849
+   ],
+   [
+    287,
+    849
+   ],
+   [
+    267,
+    850
+   ],
+   [
+    267,
+    851
+   ],
+   [
+    267,
+    852
+   ],
+   [
+    267,
+    853
+   ],
+   [
+    267,
+    854
+   ],
+   [
+    267,
+    855
+   ],
+   [
+    267,
+    856
+   ],
+   [
+    267,
+    857
+   ],
+   [
+    267,
+    858
+   ],
+   [
+    267,
+    859
+   ],
+   [
+    267,
+    860
+   ],
+   [
+    267,
+    861
+   ],
+   [
+    267,
+    862
+   ],
+   [
+    267,
+    863
+   ],
+   [
+    267,
+    864
+   ],
+   [
+    267,
+    865
+   ],
+   [
+    267,
+    866
+   ],
+   [
+    267,
+    867
+   ],
+   [
+    267,
+    868
+   ],
+   [
+    267,
+    869
+   ],
+   [
+    267,
+    870
+   ],
+   [
+    267,
+    871
+   ],
+   [
+    267,
+    872
+   ],
+   [
+    260,
+    873
+   ],
+   [
+    267,
+    873
+   ],
+   [
+    260,
+    874
+   ],
+   [
+    267,
+    874
+   ],
+   [
+    260,
+    875
+   ],
+   [
+    267,
+    875
+   ],
+   [
+    260,
+    876
+   ],
+   [
+    267,
+    876
+   ],
+   [
+    365,
+    876
+   ],
+   [
+    366,
+    876
+   ],
+   [
+    260,
+    877
+   ],
+   [
+    261,
+    877
+   ],
+   [
+    262,
+    877
+   ],
+   [
+    263,
+    877
+   ],
+   [
+    264,
+    877
+   ],
+   [
+    265,
+    877
+   ],
+   [
+    266,
+    877
+   ],
+   [
+    267,
+    877
+   ],
+   [
+    358,
+    877
+   ],
+   [
+    359,
+    877
+   ],
+   [
+    364,
+    877
+   ],
+   [
+    365,
+    877
+   ],
+   [
+    281,
+    882
+   ],
+   [
+    282,
+    882
+   ],
+   [
+    282,
+    883
+   ],
+   [
+    283,
+    883
+   ],
+   [
+    283,
+    884
+   ],
+   [
+    283,
+    885
+   ],
+   [
+    283,
+    886
+   ],
+   [
+    283,
+    887
+   ],
+   [
+    271,
+    906
+   ],
+   [
+    271,
+    907
+   ],
+   [
+    381,
+    907
+   ],
+   [
+    271,
+    908
+   ],
+   [
+    272,
+    908
+   ],
+   [
+    273,
+    908
+   ],
+   [
+    274,
+    908
+   ],
+   [
+    275,
+    908
+   ],
+   [
+    276,
+    908
+   ],
+   [
+    277,
+    908
+   ],
+   [
+    278,
+    908
+   ],
+   [
+    279,
+    908
+   ],
+   [
+    280,
+    908
+   ],
+   [
+    281,
+    908
+   ],
+   [
+    282,
+    908
+   ],
+   [
+    283,
+    908
+   ],
+   [
+    284,
+    908
+   ],
+   [
+    285,
+    908
+   ],
+   [
+    286,
+    908
+   ],
+   [
+    287,
+    908
+   ],
+   [
+    288,
+    908
+   ],
+   [
+    289,
+    908
+   ],
+   [
+    290,
+    908
+   ],
+   [
+    291,
+    908
+   ],
+   [
+    292,
+    908
+   ],
+   [
+    293,
+    908
+   ],
+   [
+    294,
+    908
+   ],
+   [
+    295,
+    908
+   ],
+   [
+    296,
+    908
+   ],
+   [
+    297,
+    908
+   ],
+   [
+    298,
+    908
+   ],
+   [
+    299,
+    908
+   ],
+   [
+    300,
+    908
+   ],
+   [
+    301,
+    908
+   ],
+   [
+    302,
+    908
+   ],
+   [
+    303,
+    908
+   ],
+   [
+    381,
+    908
+   ],
+   [
+    381,
+    909
+   ],
+   [
+    381,
+    910
+   ],
+   [
+    381,
+    912
+   ],
+   [
+    381,
+    913
+   ],
+   [
+    381,
+    914
+   ],
+   [
+    381,
+    931
+   ],
+   [
+    381,
+    932
+   ],
+   [
+    381,
+    933
+   ],
+   [
+    381,
+    934
+   ],
+   [
+    382,
+    934
+   ],
+   [
+    383,
+    934
+   ],
+   [
+    383,
+    935
+   ],
+   [
+    383,
+    936
+   ],
+   [
+    383,
+    937
+   ],
+   [
+    383,
+    938
+   ],
+   [
+    383,
+    939
+   ],
+   [
+    383,
+    940
+   ],
+   [
+    384,
+    940
+   ],
+   [
+    384,
+    941
+   ],
+   [
+    384,
+    942
+   ],
+   [
+    385,
+    942
+   ],
+   [
+    385,
+    943
+   ],
+   [
+    385,
+    944
+   ],
+   [
+    385,
+    945
+   ],
+   [
+    386,
+    945
+   ],
+   [
+    386,
+    946
+   ],
+   [
+    386,
+    947
+   ],
+   [
+    387,
+    947
+   ],
+   [
+    387,
+    948
+   ],
+   [
+    387,
+    949
+   ],
+   [
+    388,
+    949
+   ],
+   [
+    388,
+    950
+   ],
+   [
+    388,
+    951
+   ],
+   [
+    388,
+    952
+   ],
+   [
+    388,
+    953
+   ],
+   [
+    389,
+    953
+   ],
+   [
+    389,
+    954
+   ],
+   [
+    389,
+    955
+   ],
+   [
+    390,
+    955
+   ],
+   [
+    390,
+    956
+   ],
+   [
+    390,
+    957
+   ],
+   [
+    391,
+    957
+   ],
+   [
+    391,
+    958
+   ],
+   [
+    391,
+    959
+   ],
+   [
+    392,
+    959
+   ],
+   [
+    392,
+    960
+   ],
+   [
+    392,
+    961
+   ],
+   [
+    392,
+    962
+   ],
+   [
+    393,
+    962
+   ],
+   [
+    393,
+    963
+   ],
+   [
+    393,
+    964
+   ],
+   [
+    394,
+    964
+   ],
+   [
+    394,
+    965
+   ],
+   [
+    395,
+    965
+   ],
+   [
+    395,
+    966
+   ],
+   [
+    395,
+    967
+   ],
+   [
+    396,
+    967
+   ],
+   [
+    396,
+    968
+   ],
+   [
+    396,
+    969
+   ],
+   [
+    397,
+    969
+   ],
+   [
+    397,
+    970
+   ],
+   [
+    397,
+    971
+   ],
+   [
+    397,
+    972
+   ],
+   [
+    397,
+    973
+   ],
+   [
+    397,
+    974
+   ],
+   [
+    397,
+    975
+   ],
+   [
+    397,
+    976
+   ],
+   [
+    397,
+    977
+   ],
+   [
+    452,
+    1004
+   ],
+   [
+    453,
+    1004
+   ],
+   [
+    454,
+    1004
+   ],
+   [
+    455,
+    1004
+   ],
+   [
+    456,
+    1004
+   ],
+   [
+    452,
+    1005
+   ],
+   [
+    452,
+    1006
+   ],
+   [
+    452,
+    1007
+   ],
+   [
+    452,
+    1008
+   ],
+   [
+    342,
+    1242
+   ],
+   [
+    342,
+    1243
+   ],
+   [
+    342,
+    1244
+   ],
+   [
+    342,
+    1245
+   ],
+   [
+    342,
+    1246
+   ],
+   [
+    399,
+    1351
+   ],
+   [
+    399,
+    1352
+   ]
+  ],
+  "ways": [
+   {
+    "who": "alliedbase_spawn1",
+    "kind": "spawn",
+    "way": "none",
+    "opened": 0
+   },
+   {
+    "who": "alliedbase_spawn2",
+    "kind": "spawn",
+    "way": "none",
+    "opened": 0
+   },
+   {
+    "who": "alliedbase_spawn3",
+    "kind": "spawn",
+    "way": "none",
+    "opened": 0
+   },
+   {
+    "who": "alliedbase_spawn4",
+    "kind": "spawn",
+    "way": "none",
+    "opened": 0
+   },
+   {
+    "who": "1st_defence_position_spawn1",
+    "kind": "spawn",
+    "way": "none",
+    "opened": 0
+   },
+   {
+    "who": "1st_defence_position_spawn2",
+    "kind": "spawn",
+    "way": "none",
+    "opened": 0
+   },
+   {
+    "who": "1st_defence_position_spawn3",
+    "kind": "spawn",
+    "way": "none",
+    "opened": 0
+   },
+   {
+    "who": "1st_defence_position_spawn4",
+    "kind": "spawn",
+    "way": "none",
+    "opened": 0
+   },
+   {
+    "who": "1st_defence_position_spawn5",
+    "kind": "spawn",
+    "way": "none",
+    "opened": 0
+   },
+   {
+    "who": "2nd_defence_position_spawn3",
+    "kind": "spawn",
+    "way": "none",
+    "opened": 0
+   },
+   {
+    "who": "2nd_defence_position_spawn4",
+    "kind": "spawn",
+    "way": "none",
+    "opened": 0
+   },
+   {
+    "who": "2nd_defence_position_spawn5",
+    "kind": "spawn",
+    "way": "none",
+    "opened": 0
+   },
+   {
+    "who": "hungary_arty_position_spawn1",
+    "kind": "spawn",
+    "way": "walk",
+    "opened": 5
+   },
+   {
+    "who": "hungary_arty_position_spawn2",
+    "kind": "spawn",
+    "way": "walk",
+    "opened": 2
+   },
+   {
+    "who": "3rd_defence_position_spawn1",
+    "kind": "spawn",
+    "way": "none",
+    "opened": 0
+   },
+   {
+    "who": "3rd_defence_position_spawn2",
+    "kind": "spawn",
+    "way": "walk",
+    "opened": 116
+   },
+   {
+    "who": "3rd_defence_position_spawn3",
+    "kind": "spawn",
+    "way": "walk",
+    "opened": 37
+   },
+   {
+    "who": "3rd_defence_position_spawn4",
+    "kind": "spawn",
+    "way": "walk",
+    "opened": 7
+   },
+   {
+    "who": "3rd_defence_position_spawn5",
+    "kind": "spawn",
+    "way": "walk",
+    "opened": 8
+   },
+   {
+    "who": "russian_flag_spawn1",
+    "kind": "spawn",
+    "way": "none",
+    "opened": 0
+   },
+   {
+    "who": "russian_flag_spawn2",
+    "kind": "spawn",
+    "way": "none",
+    "opened": 0
+   },
+   {
+    "who": "russian_flag_spawn3",
+    "kind": "spawn",
+    "way": "none",
+    "opened": 0
+   },
+   {
+    "who": "russian_flag_spawn4",
+    "kind": "spawn",
+    "way": "none",
+    "opened": 0
+   },
+   {
+    "who": "3rd_defence_position",
+    "kind": "flag",
+    "way": "walk",
+    "opened": 0
+   },
+   {
+    "who": "Bridge_Defense",
+    "kind": "flag",
+    "way": "walk",
+    "opened": 9
+   }
+  ],
+  "cover": 0.908,
+  "floors": {
+   "stacked": false,
+   "twoFloorShare": 0.001,
+   "raised": [],
+   "reason": null
+  },
+  "capped": true
+ },
+ "routeProbe": {
+  "chokeMax": 4,
+  "unreachable": [],
+  "stops": {},
+  "oneSided": {
+   "hungary_arty_position": 1,
+   "3rd_defence_position": 1,
+   "Bridge_Defense": 1
+  },
+  "sides": {
+   "1": {
+    "spawns": 9,
+    "flags": [
+     "3rd_defence_position",
+     "Bridge_Defense",
+     "hungary_arty_position"
+    ]
+   },
+   "2": {
+    "spawns": 0,
+    "flags": []
+   }
+  },
+  "chokes": {
+   "hungary_arty_position:1": 1,
+   "3rd_defence_position:1": 2,
+   "Bridge_Defense:1": 20
+  },
+  "late": {},
+  "shutLinks": [
+   "3rd_defence_position>Bridge_Defense",
+   "Bridge_Defense>3rd_defence_position"
+  ]
+ },
+ "inputs": {
+  "controlPoints": "32ba28a05f133a42d3084e7694e943425a4be6838a26a09b5533a804e3b57a69",
+  "infantryMap": "a6c1bfb375061354497f5a85cc6f41432ce413f5ce565dfa0ea7c8ab79d5e03c",
+  "template": "bdc0e455f47f91b7e7724e71d7c0c196e839b36946ac3abb7663d725944081e5"
+ },
+ "files": {
+  "AI.con": "76fd41037823b89cacb449efe2a0e1e1f7a2d976dce74a987a8f603ca1cc2b4e",
+  "AIpathFinding.con": "9d8080cdfa7605961969aa126519b03be9691bd604ac76aef50166d81215edd2",
+  "AI/StrategicAreas.con": "f955389087810cbb56affc7b703a72818a27933d12e182dd3089e71487ef4263",
+  "AI/Strategies.con": "13da4dc35872dd4b5798a066f4425bdc824cfd61f31093d1808e1202644de52e",
+  "AI/conditions.con": "248a04b727c08d696bf0fa9c162bc22c43cde3c75f695892fe1e0f5141519c49",
+  "AI/prerequisites.con": "c96168b5f69860e578f5d26728fd2a2092c4c436e1da49b7d6f4009b65735398",
+  "Pathfinding/Infantry1Level0Map.raw": "60f9a4c508f9e5562408f1042a988f94ccc5f7b301cc6a173c7ccc435756b4da",
+  "Pathfinding/Infantry1Level1Map.raw": "baf53ff4e014ce3b26987a02476e1b9fc0f8f7e9cc095d2582c20a867e9a8ebc",
+  "Pathfinding/Infantry1Level2Map.raw": "a61161ca8c4277e451349b11bed859895513324d5fc1dd0798a47dc5797335b4",
+  "Pathfinding/Tank0Level0Map.raw": "9c86dc326b6984b7412698575726cc37314d0da89321b299f1e05adf16a16d66",
+  "Pathfinding/Tank0Level1Map.raw": "14c8b725e27d31d89177ca6bee0cd606fd05dc3841075e632eaf6fa7c2ea90aa",
+  "Pathfinding/Tank0Level2Map.raw": "9d85b56d266a222e11b95abc4a6b5e01fbc5829c52c38aaa56c889bfd7ce2ef7"
+ }
+}

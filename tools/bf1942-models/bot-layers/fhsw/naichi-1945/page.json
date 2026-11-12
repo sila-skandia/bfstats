@@ -1,0 +1,111 @@
+{
+ "level": "Naichi-1945",
+ "mod": "fhsw",
+ "url": "https://play.bfstats.io/map.html?map=Naichi-1945&team=2&mode=Conquest&mod=fhsw&botCount=16&botSkill=0.75&mute&shots",
+ "date": "2026-11-12",
+ "bar": "DICE levels on the page, 3 matches each of 600 s, 16 bots: Berlin, Stalingrad, Kharkov, Bocage; 2026-11-11",
+ "verdict": "fail",
+ "failed": [
+  "nonEnemyDeathShareWorseSide",
+  "enemyKillsPerBotMinute"
+ ],
+ "checks": [
+  {
+   "metric": "teamKillsPerBotMinute",
+   "median": 0,
+   "bar": "<= 0.025",
+   "pass": true
+  },
+  {
+   "metric": "suicidesPerBotMinute",
+   "median": 0.0062,
+   "bar": "<= 0.0562",
+   "pass": true
+  },
+  {
+   "metric": "nonEnemyDeathShareWorseSide",
+   "median": 0.5,
+   "bar": "<= 0.308",
+   "pass": false
+  },
+  {
+   "metric": "enemyKillsPerBotMinute",
+   "median": 0.0062,
+   "bar": ">= 0.175",
+   "pass": false
+  }
+ ],
+ "matches": 2,
+ "rollout": {
+  "pass": false,
+  "floor": {
+   "kills": 0.15,
+   "killsWithFlags": 0.03,
+   "flags": 3,
+   "killsWithAFlag": 0.05,
+   "ownHand": 0.1,
+   "ownHandOfKills": 0.3333333333333333
+  }
+ },
+ "runs": [
+  {
+   "generated": {
+    "version": 5,
+    "template": "symmetric"
+   },
+   "minutes": 10,
+   "tickets": {
+    "1": 166,
+    "2": 137
+   },
+   "capturesTotal": 0,
+   "teamKillsPerBotMinute": 0,
+   "suicidesPerBotMinute": 0.0125,
+   "nonEnemyDeathShareWorseSide": 1,
+   "enemyKillsPerBotMinute": 0.0187,
+   "rollout": {
+    "pass": false,
+    "why": [
+     "activity"
+    ],
+    "enemyKills": 0.0187,
+    "captures": 0,
+    "ownHand": 0.0125
+   },
+   "teamKillsBySide": {
+    "1": 0,
+    "2": 0
+   },
+   "oldCode": "played before the bot code of 401826c1d went live (2026-11-12, about 12:10)"
+  },
+  {
+   "generated": {
+    "version": 5,
+    "template": "symmetric"
+   },
+   "minutes": 10,
+   "tickets": {
+    "1": 168,
+    "2": 138
+   },
+   "capturesTotal": 0,
+   "teamKillsPerBotMinute": 0,
+   "suicidesPerBotMinute": 0.0062,
+   "nonEnemyDeathShareWorseSide": 0.5,
+   "enemyKillsPerBotMinute": 0.0062,
+   "rollout": {
+    "pass": false,
+    "why": [
+     "activity"
+    ],
+    "enemyKills": 0.0062,
+    "captures": 0,
+    "ownHand": 0.0062
+   },
+   "teamKillsBySide": {
+    "1": 0,
+    "2": 0
+   }
+  }
+ ]
+}

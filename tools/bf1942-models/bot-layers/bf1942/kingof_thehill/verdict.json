@@ -1,0 +1,26 @@
+{
+ "level": "kingof_thehill",
+ "verdict": "fail",
+ "outcome": "unsuitable",
+ "config": "with vehicles",
+ "doctrine": "garrison",
+ "generatorVersion": 5,
+ "inputs": {
+  "controlPoints": "50f6695aaebc3f8a407b0513bc71b762854e183a5f9c5b7d91db3c65fd49bade",
+  "infantryMap": "b5008d5fed0ed9addf160f90ed24b82ca4e1b1a3f11635f327910c8bf068a23c",
+  "template": "bdc0e455f47f91b7e7724e71d7c0c196e839b36946ac3abb7663d725944081e5"
+ },
+ "baseline": "DICE layers with vehicles, garrison doctrine: berlin, stalingrad, kharkov, bocage; seeds 1..10, 600 s",
+ "bar": null,
+ "seeds": 1,
+ "sizes": {},
+ "oneSided": null,
+ "unreachable": [
+  "AxisBase",
+  "AlliedBase"
+ ],
+ "lintErrors": [
+  "side 1 has no spawn with a route to any flag it must take: of its 32 spawns 32 have no way on foot to the main ground; the level places 6 ladders, which neither the walk test nor a bot climbs",
+  "side 2 has no spawn with a route to any flag it must take: of its 32 spawns 32 have no way on foot to the main ground; the level places 6 ladders, which neither the walk test nor a bot climbs"
+ ]
+}

@@ -1,0 +1,22 @@
+{
+ "level": "juno_beach",
+ "verdict": "fail",
+ "outcome": "unsuitable",
+ "config": "with vehicles",
+ "doctrine": "garrison",
+ "generatorVersion": 5,
+ "inputs": {
+  "controlPoints": "7f4656ec8a22d473a5664c065b75d20214c673d1ad40a5784994b639464ce5b6",
+  "infantryMap": "dd8cefb3d5014ffb4f22a979a6a588785003d04bf578122036662f577a8dc44a",
+  "template": "43f8a790471528016570235f76e97dbb2045732458781a5139f37fed68bf98c0"
+ },
+ "baseline": "DICE layers with vehicles, garrison doctrine: berlin, stalingrad, kharkov, bocage; seeds 1..10, 600 s",
+ "bar": null,
+ "seeds": 1,
+ "sizes": {},
+ "oneSided": null,
+ "unreachable": [],
+ "lintErrors": [
+  "side 2 holds no spawn point at the start of the round"
+ ]
+}

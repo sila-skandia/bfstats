@@ -60,5 +60,10 @@
  },
  "oneSided": null,
  "unreachable": [],
- "lintErrors": []
+ "lintErrors": [],
+ "acceptanceWithdrawn": {
+  "because": "page matches 2026-11-12: no kill, no death and no capture in two matches (the second played by the page check after the first never got going); under the rollout floor",
+  "date": "2026-11-12",
+  "was": "Owner's rollout, 2026-11-12: the owner asked for everything with a fight to go l"
+ }
 }

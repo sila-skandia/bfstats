@@ -1,0 +1,71 @@
+rem *** Strategic areas: one per control point (botgen) ***
+
+aiStrategicArea.create black_force_hq 668/1166.8 693/1191.8 50
+aiStrategicArea.addNeighbour tunnel
+aiStrategicArea.addNeighbour casualty_clearing_station
+aiStrategicArea.addNeighbour lagoon
+aiStrategicArea.addObjectTypeFlag Base
+aiStrategicArea.setOrderPosition Tank 692.5/1185.5
+aiStrategicArea.setOrderPosition Infantry 692.5/1192.5
+aiStrategicArea.setSide 2
+aiStrategicArea.setTakeable 1 0
+
+aiStrategicArea.create east_java 1534/1125.3 1554/1145.3 150
+aiStrategicArea.addNeighbour tunnel
+aiStrategicArea.addNeighbour village
+aiStrategicArea.addObjectTypeFlag Flank
+aiStrategicArea.addObjectTypeFlag Close
+aiStrategicArea.addObjectTypeFlag ControlPoint
+aiStrategicArea.setOrderPosition Tank 1558.5/1145.5
+aiStrategicArea.setOrderPosition Infantry 1554.5/1144.5
+aiStrategicArea.setSide 2
+
+aiStrategicArea.create tunnel 1077.7/1125 1093.7/1141 150
+aiStrategicArea.addNeighbour black_force_hq
+aiStrategicArea.addNeighbour east_java
+aiStrategicArea.addNeighbour casualty_clearing_station
+aiStrategicArea.addNeighbour village
+aiStrategicArea.addNeighbour lagoon
+aiStrategicArea.addObjectTypeFlag Flank
+aiStrategicArea.addObjectTypeFlag ControlPoint
+aiStrategicArea.setOrderPosition Tank 1095.5/1142.5
+aiStrategicArea.setOrderPosition Infantry 1093.7/1141
+aiStrategicArea.setSide 2
+
+aiStrategicArea.create casualty_clearing_station 861.7/1080.5 886.7/1105.5 200
+aiStrategicArea.addNeighbour black_force_hq
+aiStrategicArea.addNeighbour tunnel
+aiStrategicArea.addNeighbour lagoon
+aiStrategicArea.addObjectTypeFlag Centre
+aiStrategicArea.addObjectTypeFlag Close
+aiStrategicArea.addObjectTypeFlag ControlPoint
+aiStrategicArea.setOrderPosition Tank 889.5/1105.5
+aiStrategicArea.setOrderPosition Infantry 885.5/1104.5
+aiStrategicArea.setSide 2
+
+aiStrategicArea.create village 1283/1230 1303/1250 150
+aiStrategicArea.addNeighbour east_java
+aiStrategicArea.addNeighbour tunnel
+aiStrategicArea.addNeighbour lagoon
+aiStrategicArea.addObjectTypeFlag Flank
+aiStrategicArea.addObjectTypeFlag ControlPoint
+aiStrategicArea.setOrderPosition Tank 1296.5/1249.5
+aiStrategicArea.setOrderPosition Infantry 1297.5/1249.5
+aiStrategicArea.setSide 2
+
+aiStrategicArea.create lagoon 919.7/1263.2 939.7/1283.2 300
+aiStrategicArea.addNeighbour black_force_hq
+aiStrategicArea.addNeighbour tunnel
+aiStrategicArea.addNeighbour casualty_clearing_station
+aiStrategicArea.addNeighbour village
+aiStrategicArea.addObjectTypeFlag Centre
+aiStrategicArea.addObjectTypeFlag StrongPoint
+aiStrategicArea.addObjectTypeFlag ControlPoint
+aiStrategicArea.setOrderPosition Tank 939.5/1286.5
+aiStrategicArea.setOrderPosition Infantry 939.5/1282.5
+aiStrategicArea.setSide 2
+
+aiStrategicArea.create controlpoint_axis_base 1955/1927.4 1960/1932.4 50
+aiStrategicArea.addObjectTypeFlag Base
+aiStrategicArea.setSide 1
+aiStrategicArea.setTakeable 2 0

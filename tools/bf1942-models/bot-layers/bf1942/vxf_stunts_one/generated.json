@@ -1,0 +1,76 @@
+{
+ "generator": "botgen",
+ "version": 5,
+ "mod": "bf1942",
+ "level": "vxf_stunts_one",
+ "objectSpawners": 50,
+ "template": "few",
+ "templateSource": "DICE, bf1942 Kursk (1.6 patch archives, Kursk_003.rfa): AI/Strategies.con, AI/conditions.con, AI/prerequisites.con, unchanged",
+ "templateChoice": {
+  "name": "few",
+  "inPlay": 0,
+  "rule": "0 capturable flags in play, at most 3"
+ },
+ "scope": "on foot: infantry order positions only, no search maps, no co-op layer",
+ "unreachable": [
+  "high"
+ ],
+ "unreachableReasons": {
+  "high": "walk test"
+ },
+ "botSpawnsExcluded": [
+  "AXIS_AIRDROP",
+  "deep_base_Spawn1",
+  "high_Spawn1",
+  "church_Spawn1",
+  "hangar_Spawn1",
+  "hangar_Spawn2",
+  "AlliedBase_Spawn3",
+  "german_us_Spawn1"
+ ],
+ "walkMap": {
+  "source": "page painter",
+  "engine": "none",
+  "opened": [],
+  "ways": [],
+  "cover": 0.549,
+  "floors": {
+   "stacked": false,
+   "twoFloorShare": 0.004,
+   "raised": [],
+   "reason": null
+  },
+  "capped": true
+ },
+ "routeProbe": {
+  "chokeMax": 4,
+  "unreachable": [],
+  "stops": {},
+  "oneSided": {},
+  "sides": {
+   "1": {
+    "spawns": 0,
+    "flags": []
+   },
+   "2": {
+    "spawns": 2,
+    "flags": []
+   }
+  },
+  "chokes": {},
+  "late": {},
+  "shutLinks": []
+ },
+ "inputs": {
+  "controlPoints": "da27f931182051d047a9f24e164a31b7826fc909a8b6e9be93e2419dcb2ef0cf",
+  "infantryMap": "50a788cb5861f369863df0745eb1bbd0270b848f548bfb09ad7d5caefb68b0a3",
+  "template": "bdc0e455f47f91b7e7724e71d7c0c196e839b36946ac3abb7663d725944081e5"
+ },
+ "files": {
+  "AI.con": "ff65da5cf781f265a28875b6cbca3063a01ed39073ce89fcfbb96af7a80600f7",
+  "AI/StrategicAreas.con": "e5af693ceb1229096e218bfb9b2a88b377faec3556b0ae8dfd665c83959e7cea",
+  "AI/Strategies.con": "13da4dc35872dd4b5798a066f4425bdc824cfd61f31093d1808e1202644de52e",
+  "AI/conditions.con": "248a04b727c08d696bf0fa9c162bc22c43cde3c75f695892fe1e0f5141519c49",
+  "AI/prerequisites.con": "c96168b5f69860e578f5d26728fd2a2092c4c436e1da49b7d6f4009b65735398"
+ }
+}

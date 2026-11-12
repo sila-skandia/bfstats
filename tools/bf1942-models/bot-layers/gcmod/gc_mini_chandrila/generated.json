@@ -1,0 +1,359 @@
+{
+ "generator": "botgen",
+ "version": 6,
+ "mod": "GCMOD",
+ "level": "gc_mini_chandrila",
+ "objectSpawners": 0,
+ "template": "few",
+ "templateSource": "DICE, bf1942 Kursk (1.6 patch archives, Kursk_003.rfa): AI/Strategies.con, AI/conditions.con, AI/prerequisites.con, unchanged",
+ "templateChoice": {
+  "name": "few",
+  "inPlay": 3,
+  "rule": "3 capturable flags in play, at most 3"
+ },
+ "scope": "an infantry map painted from the walk test, a Tank0 map from the page painter, infantry order positions, no strategic maps, no co-op layer",
+ "unreachable": [
+  "Western_Peak"
+ ],
+ "unreachableReasons": {
+  "Western_Peak": "route probe"
+ },
+ "botSpawnsExcluded": [],
+ "walkMap": {
+  "source": "walk test",
+  "engine": "none",
+  "vehicleMap": "page painter",
+  "vehicleBrush": 1.5,
+  "vehicleBrushes": [
+   {
+    "brush": 3,
+    "flagsOn": 1,
+    "spawnersOn": 0,
+    "pieces": 6,
+    "main": 5339
+   },
+   {
+    "brush": 2.5,
+    "flagsOn": 1,
+    "spawnersOn": 0,
+    "pieces": 4,
+    "main": 6399
+   },
+   {
+    "brush": 2,
+    "flagsOn": 1,
+    "spawnersOn": 0,
+    "pieces": 4,
+    "main": 6846
+   },
+   {
+    "brush": 1.5,
+    "flagsOn": 2,
+    "spawnersOn": 0,
+    "pieces": 3,
+    "main": 8768
+   }
+  ],
+  "opened": [
+   [
+    468,
+    472
+   ],
+   [
+    468,
+    473
+   ],
+   [
+    468,
+    477
+   ],
+   [
+    467,
+    478
+   ],
+   [
+    466,
+    479
+   ],
+   [
+    465,
+    480
+   ],
+   [
+    462,
+    481
+   ],
+   [
+    462,
+    483
+   ],
+   [
+    461,
+    484
+   ],
+   [
+    427,
+    503
+   ],
+   [
+    423,
+    507
+   ],
+   [
+    423,
+    508
+   ],
+   [
+    423,
+    509
+   ],
+   [
+    423,
+    510
+   ],
+   [
+    440,
+    524
+   ],
+   [
+    588,
+    577
+   ],
+   [
+    588,
+    587
+   ],
+   [
+    535,
+    607
+   ],
+   [
+    536,
+    607
+   ],
+   [
+    539,
+    609
+   ],
+   [
+    540,
+    613
+   ],
+   [
+    541,
+    614
+   ],
+   [
+    543,
+    615
+   ],
+   [
+    585,
+    617
+   ],
+   [
+    586,
+    617
+   ],
+   [
+    587,
+    617
+   ],
+   [
+    585,
+    618
+   ],
+   [
+    585,
+    619
+   ],
+   [
+    570,
+    637
+   ],
+   [
+    571,
+    638
+   ],
+   [
+    580,
+    638
+   ],
+   [
+    580,
+    639
+   ],
+   [
+    571,
+    645
+   ],
+   [
+    515,
+    663
+   ],
+   [
+    515,
+    664
+   ]
+  ],
+  "ways": [
+   {
+    "who": "AxisBase_Spawn1",
+    "kind": "spawn",
+    "way": "walk",
+    "opened": 11
+   },
+   {
+    "who": "Northern_Peak_Spawn1",
+    "kind": "spawn",
+    "way": "walk",
+    "opened": 0
+   },
+   {
+    "who": "Western_Peak_Spawn1",
+    "kind": "spawn",
+    "way": "walk",
+    "opened": 14
+   },
+   {
+    "who": "Western_Peak_Spawn2",
+    "kind": "spawn",
+    "way": "walk",
+    "opened": 0
+   },
+   {
+    "who": "Northern_Peak_Spawn2",
+    "kind": "spawn",
+    "way": "walk",
+    "opened": 3
+   },
+   {
+    "who": "Western_Peak_Spawn3",
+    "kind": "spawn",
+    "way": "walk",
+    "opened": 0
+   },
+   {
+    "who": "Northern_Peak",
+    "kind": "flag",
+    "way": "walk",
+    "opened": 6
+   },
+   {
+    "who": "Western_Peak",
+    "kind": "flag",
+    "way": "walk",
+    "opened": 1
+   }
+  ],
+  "cover": 0.975,
+  "floors": {
+   "stacked": false,
+   "twoFloorShare": 0,
+   "raised": [],
+   "reason": null
+  }
+ },
+ "routeProbe": {
+  "chokeMax": 4,
+  "unreachable": [
+   "Western_Peak"
+  ],
+  "stops": {
+   "Western_Peak": {
+    "1": {
+     "stage": "choke",
+     "points": 21,
+     "metres": 63,
+     "first": [
+      [
+       586.6,
+       -603.5
+      ],
+      [
+       586.9,
+       -600.5
+      ],
+      [
+       587.1,
+       -597.5
+      ]
+     ]
+    },
+    "2": {
+     "stage": "choke",
+     "points": 9,
+     "metres": 27,
+     "first": [
+      [
+       482.8,
+       -462.2
+      ],
+      [
+       480.7,
+       -464.3
+      ],
+      [
+       479,
+       -465.8
+      ]
+     ]
+    }
+   }
+  },
+  "oneSided": {
+   "Northern_Peak": 1,
+   "Southern_Peak": 2,
+   "Eastern_Peak": 2
+  },
+  "sides": {
+   "1": {
+    "spawns": 3,
+    "flags": [
+     "Northern_Peak"
+    ]
+   },
+   "2": {
+    "spawns": 3,
+    "flags": [
+     "Eastern_Peak",
+     "Southern_Peak"
+    ]
+   }
+  },
+  "chokes": {
+   "Northern_Peak:1": 0,
+   "Northern_Peak:2": 11,
+   "Southern_Peak:1": 11,
+   "Southern_Peak:2": 0,
+   "Eastern_Peak:1": 11,
+   "Eastern_Peak:2": 0
+  },
+  "late": {},
+  "shutLinks": [
+   "Northern_Peak>Southern_Peak",
+   "Northern_Peak>Eastern_Peak",
+   "Southern_Peak>Northern_Peak",
+   "Eastern_Peak>Northern_Peak"
+  ]
+ },
+ "inputs": {
+  "controlPoints": "24087e2c8df51edfb5cce6f63bc913b175c8543c153c7a3e560c2cc8b3acc54b",
+  "infantryMap": "5319742bd3dcec77eec37f5f510948ef92bd0f8f831c2a5f1008dde8ff52b800",
+  "template": "bdc0e455f47f91b7e7724e71d7c0c196e839b36946ac3abb7663d725944081e5"
+ },
+ "files": {
+  "AI.con": "46e7c502345ba29970a209b1047d43db8d2f48a1719cf640182c187368d6b046",
+  "AIpathFinding.con": "9d8080cdfa7605961969aa126519b03be9691bd604ac76aef50166d81215edd2",
+  "AI/StrategicAreas.con": "18ef03afbd87fd330a35723fa89e18703dd14e3a48b57939eb53f0af2c1c40cb",
+  "AI/Strategies.con": "13da4dc35872dd4b5798a066f4425bdc824cfd61f31093d1808e1202644de52e",
+  "AI/conditions.con": "248a04b727c08d696bf0fa9c162bc22c43cde3c75f695892fe1e0f5141519c49",
+  "AI/prerequisites.con": "c96168b5f69860e578f5d26728fd2a2092c4c436e1da49b7d6f4009b65735398",
+  "Pathfinding/Infantry1Level0Map.raw": "7775902fcdba703d905481c9f4cbe10bb987e378994557d348799de0d5b55c6a",
+  "Pathfinding/Infantry1Level1Map.raw": "b5ebe74b52e053487af901a7997c74a4c3d1d889d40e04833a5cbb797318003e",
+  "Pathfinding/Infantry1Level2Map.raw": "b2f2c7bdad5e9b22127969e3380ca724dfb6ee4d8569abd56dd30be3d33362e2",
+  "Pathfinding/Tank0Level0Map.raw": "459c6847dbed687efc5133448eabf8b5d901f77db863d468c494e3e98d8677e0",
+  "Pathfinding/Tank0Level1Map.raw": "e0904cc128174d0e8f9d693a0e6bf3b9a0aa88bc22fb6bb4f45161a960594acc",
+  "Pathfinding/Tank0Level2Map.raw": "15a15b9d105b8e74eac0ebdc823d784da98818a62cd14bfccffa1b2af301f749"
+ }
+}

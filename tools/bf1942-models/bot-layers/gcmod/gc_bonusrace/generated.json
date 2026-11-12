@@ -1,0 +1,195 @@
+{
+ "generator": "botgen",
+ "version": 6,
+ "mod": "GCMOD",
+ "level": "gc_bonusrace",
+ "objectSpawners": 41,
+ "template": "few",
+ "templateSource": "DICE, bf1942 Kursk (1.6 patch archives, Kursk_003.rfa): AI/Strategies.con, AI/conditions.con, AI/prerequisites.con, unchanged",
+ "templateChoice": {
+  "name": "few",
+  "inPlay": 0,
+  "rule": "0 capturable flags in play, at most 3"
+ },
+ "scope": "an infantry map from the page painter with the walk test's ways out opened, a Tank0 map from the page painter, infantry order positions, no strategic maps, no co-op layer",
+ "unreachable": [
+  "SpeederbikeI",
+  "SpeedbikeR",
+  "Imperial_Ships",
+  "Rebel_Ships"
+ ],
+ "unreachableReasons": {
+  "SpeederbikeI": "walk test",
+  "SpeedbikeR": "walk test",
+  "Imperial_Ships": "walk test",
+  "Rebel_Ships": "walk test"
+ },
+ "botSpawnsExcluded": [
+  "AxisBase_Spawn1",
+  "AlliedBase_Spawn1",
+  "SpeederbikeI_Spawn1",
+  "SpeedbikeR_Spawn1",
+  "Rebel_Ships_Spawn1",
+  "SkyhopperI_Spawn1",
+  "SkyhopperR_Spawn1",
+  "SpeedbikeR_Spawn2",
+  "SpeederbikeI_Spawn2"
+ ],
+ "walkMap": {
+  "source": "page painter",
+  "engine": "none",
+  "vehicleMap": "page painter",
+  "vehicleBrush": 3,
+  "vehicleBrushes": [
+   {
+    "brush": 3,
+    "flagsOn": 2,
+    "spawnersOn": 14,
+    "pieces": 5,
+    "main": 150143
+   },
+   {
+    "brush": 2.5,
+    "flagsOn": 2,
+    "spawnersOn": 14,
+    "pieces": 5,
+    "main": 153970
+   },
+   {
+    "brush": 2,
+    "flagsOn": 2,
+    "spawnersOn": 14,
+    "pieces": 5,
+    "main": 155619
+   },
+   {
+    "brush": 1.5,
+    "flagsOn": 2,
+    "spawnersOn": 14,
+    "pieces": 5,
+    "main": 163855
+   }
+  ],
+  "opened": [],
+  "ways": [
+   {
+    "who": "AxisBase_Spawn1",
+    "kind": "spawn",
+    "way": "none",
+    "opened": 0
+   },
+   {
+    "who": "AlliedBase_Spawn1",
+    "kind": "spawn",
+    "way": "none",
+    "opened": 0
+   },
+   {
+    "who": "SpeederbikeI_Spawn1",
+    "kind": "spawn",
+    "way": "none",
+    "opened": 0
+   },
+   {
+    "who": "SpeedbikeR_Spawn1",
+    "kind": "spawn",
+    "way": "none",
+    "opened": 0
+   },
+   {
+    "who": "Rebel_Ships_Spawn1",
+    "kind": "spawn",
+    "way": "none",
+    "opened": 0
+   },
+   {
+    "who": "SkyhopperI_Spawn1",
+    "kind": "spawn",
+    "way": "none",
+    "opened": 0
+   },
+   {
+    "who": "SkyhopperR_Spawn1",
+    "kind": "spawn",
+    "way": "none",
+    "opened": 0
+   },
+   {
+    "who": "SpeedbikeR_Spawn2",
+    "kind": "spawn",
+    "way": "none",
+    "opened": 0
+   },
+   {
+    "who": "SpeederbikeI_Spawn2",
+    "kind": "spawn",
+    "way": "none",
+    "opened": 0
+   },
+   {
+    "who": "SpeedbikeR",
+    "kind": "flag",
+    "way": "none",
+    "opened": 0
+   },
+   {
+    "who": "Imperial_Ships",
+    "kind": "flag",
+    "way": "none",
+    "opened": 0
+   },
+   {
+    "who": "Rebel_Ships",
+    "kind": "flag",
+    "way": "none",
+    "opened": 0
+   }
+  ],
+  "cover": 0.189,
+  "floors": {
+   "stacked": false,
+   "twoFloorShare": 0,
+   "raised": [],
+   "reason": null
+  },
+  "capped": true
+ },
+ "routeProbe": {
+  "chokeMax": 4,
+  "unreachable": [],
+  "stops": {},
+  "oneSided": {},
+  "sides": {
+   "1": {
+    "spawns": 1,
+    "flags": []
+   },
+   "2": {
+    "spawns": 0,
+    "flags": []
+   }
+  },
+  "chokes": {},
+  "late": {},
+  "shutLinks": []
+ },
+ "inputs": {
+  "controlPoints": "48b5483e514743ef7a500a743681a45fcb3e0e3b4ace78777ea8b697533e9912",
+  "infantryMap": "90860042fddec5a072cde73aca34d9dc10b805df422807c81fb6c8a47370ad23",
+  "template": "bdc0e455f47f91b7e7724e71d7c0c196e839b36946ac3abb7663d725944081e5"
+ },
+ "files": {
+  "AI.con": "9c2af3380f8a98fc9447bba0dd137edd65a0a9b694fc58d303e2006c8923332b",
+  "AIpathFinding.con": "8014dbf6ef50a7e5ba3bd3af85ed910350bb0936cd33c5a2e1c5138053711957",
+  "AI/StrategicAreas.con": "7bb32661a2fecfd0a2c493aed798c9fdcfbbec67bbcf2ad2abfb9f006e8f8785",
+  "AI/Strategies.con": "13da4dc35872dd4b5798a066f4425bdc824cfd61f31093d1808e1202644de52e",
+  "AI/conditions.con": "248a04b727c08d696bf0fa9c162bc22c43cde3c75f695892fe1e0f5141519c49",
+  "AI/prerequisites.con": "c96168b5f69860e578f5d26728fd2a2092c4c436e1da49b7d6f4009b65735398",
+  "Pathfinding/Infantry1Level0Map.raw": "67140a026a951685e0b0a227bbf4644551d32499207cb06f413374348fd8c583",
+  "Pathfinding/Infantry1Level1Map.raw": "e81abeefd7f360e737ca5b2b248d1322df3a9bd4490d5071049c55cc617f84ed",
+  "Pathfinding/Infantry1Level2Map.raw": "696fa52b0dfc041fd2c75b5e1c91d70d79b2fffeb3fe0aeb01209d42f25ee8c7",
+  "Pathfinding/Tank0Level0Map.raw": "7b5c3a442deb04863c4aeb9fbf7ba5a4ebeef8dcba31cdf70f57239bedb05c3f",
+  "Pathfinding/Tank0Level1Map.raw": "633002904ccd43762af0d9c8ccefc425da521a26d4f19572a4eef9bc26a4d067",
+  "Pathfinding/Tank0Level2Map.raw": "52594bc900c21ac997365a3cd861b3f7e867547cb669663e78e2a9974e85af99"
+ }
+}

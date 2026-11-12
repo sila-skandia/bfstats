@@ -1,0 +1,53 @@
+rem *** Strategic areas: one per control point (botgen) ***
+
+aiStrategicArea.create melamu_temple 219.7/506.3 234.7/521.3 10
+aiStrategicArea.setSide 1
+aiStrategicArea.setTakeable 1 0
+aiStrategicArea.setTakeable 2 0
+
+aiStrategicArea.create jujiro 1272.4/1272.6 1282.4/1282.6 50
+aiStrategicArea.addNeighbour surtee_mosque
+aiStrategicArea.addObjectTypeFlag Base
+aiStrategicArea.setOrderPosition Infantry 1280.5/1282.5
+aiStrategicArea.setSide 2
+aiStrategicArea.setTakeable 1 0
+
+aiStrategicArea.create alliedmain 886.7/62.6 891.7/67.6 50
+aiStrategicArea.addObjectTypeFlag Base
+aiStrategicArea.setSide 2
+aiStrategicArea.setTakeable 1 0
+
+aiStrategicArea.create surtee_mosque 1347.6/742.8 1367.6/762.8 50
+aiStrategicArea.addNeighbour jujiro
+aiStrategicArea.addObjectTypeFlag Base
+aiStrategicArea.setOrderPosition Infantry 1368.5/764.5
+aiStrategicArea.setSide 2
+aiStrategicArea.setTakeable 1 0
+
+aiStrategicArea.create old_school 904.6/1333.2 924.6/1353.2 150
+aiStrategicArea.addNeighbour rangoon_docks
+aiStrategicArea.addNeighbour infantry_camp
+aiStrategicArea.addObjectTypeFlag Flank
+aiStrategicArea.addObjectTypeFlag Close
+aiStrategicArea.addObjectTypeFlag ControlPoint
+aiStrategicArea.setOrderPosition Infantry 925.5/1351.5
+aiStrategicArea.setSide 1
+
+aiStrategicArea.create rangoon_docks 591.3/639.8 611.3/659.8 150
+aiStrategicArea.addNeighbour old_school
+aiStrategicArea.addNeighbour infantry_camp
+aiStrategicArea.addObjectTypeFlag Flank
+aiStrategicArea.addObjectTypeFlag Close
+aiStrategicArea.addObjectTypeFlag ControlPoint
+aiStrategicArea.setOrderPosition Infantry 610.5/658.5
+aiStrategicArea.setSide 1
+
+aiStrategicArea.create infantry_camp 814.3/784.9 834.3/804.9 300
+aiStrategicArea.addNeighbour old_school
+aiStrategicArea.addNeighbour rangoon_docks
+aiStrategicArea.addObjectTypeFlag Centre
+aiStrategicArea.addObjectTypeFlag StrongPoint
+aiStrategicArea.addObjectTypeFlag Close
+aiStrategicArea.addObjectTypeFlag ControlPoint
+aiStrategicArea.setOrderPosition Infantry 831.5/804.5
+aiStrategicArea.setSide 1

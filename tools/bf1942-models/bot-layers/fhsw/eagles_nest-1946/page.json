@@ -2,7 +2,7 @@
  "level": "Eagles_Nest-1946",
  "mod": "fhsw",
  "url": "https://play.bfstats.io/map.html?map=Eagles_Nest-1946&team=2&mode=Conquest&mod=fhsw&botCount=16&botSkill=0.75&mute&shots",
- "date": "2026-11-11",
+ "date": "2026-11-12",
  "bar": "DICE levels on the page, 3 matches each of 600 s, 16 bots: Berlin, Stalingrad, Kharkov, Bocage; 2026-11-11",
  "verdict": "fail",
  "failed": [
@@ -29,7 +29,7 @@
   },
   {
    "metric": "enemyKillsPerBotMinute",
-   "median": 0.0687,
+   "median": 0.1062,
    "bar": ">= 0.175",
    "pass": false
   }
@@ -53,19 +53,19 @@
    },
    "minutes": 10,
    "tickets": {
-    "1": 101,
-    "2": 126
+    "1": 97,
+    "2": 124
    },
-   "capturesTotal": 2,
+   "capturesTotal": 1,
    "teamKillsPerBotMinute": 0,
    "suicidesPerBotMinute": 0,
    "nonEnemyDeathShareWorseSide": 0,
-   "enemyKillsPerBotMinute": 0.0687,
+   "enemyKillsPerBotMinute": 0.1062,
    "rollout": {
     "pass": true,
     "why": [],
-    "enemyKills": 0.0687,
-    "captures": 2,
+    "enemyKills": 0.1062,
+    "captures": 1,
     "ownHand": 0
    },
    "teamKillsBySide": {

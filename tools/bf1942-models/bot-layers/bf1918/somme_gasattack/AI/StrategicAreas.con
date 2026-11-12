@@ -1,0 +1,27 @@
+rem *** Strategic areas: one per control point (botgen) ***
+
+aiStrategicArea.create northern_village 849.8/828.8 869.8/848.8 200
+aiStrategicArea.addNeighbour inner_trench
+aiStrategicArea.addObjectTypeFlag Centre
+aiStrategicArea.addObjectTypeFlag ControlPoint
+aiStrategicArea.setOrderPosition Tank 869.5/850.5
+aiStrategicArea.setOrderPosition Infantry 870.5/848.5
+aiStrategicArea.setSide 1
+
+aiStrategicArea.create inner_trench 897.8/654.2 902.8/659.2 300
+aiStrategicArea.addNeighbour northern_village
+aiStrategicArea.addNeighbour frontline
+aiStrategicArea.addObjectTypeFlag Centre
+aiStrategicArea.addObjectTypeFlag StrongPoint
+aiStrategicArea.addObjectTypeFlag ControlPoint
+aiStrategicArea.setOrderPosition Tank 906.5/668.5
+aiStrategicArea.setOrderPosition Infantry 902.5/658.5
+aiStrategicArea.setSide 1
+
+aiStrategicArea.create frontline 869.1/538.7 874.1/543.7 200
+aiStrategicArea.addNeighbour inner_trench
+aiStrategicArea.addObjectTypeFlag Centre
+aiStrategicArea.addObjectTypeFlag ControlPoint
+aiStrategicArea.setOrderPosition Tank 876.5/543.5
+aiStrategicArea.setOrderPosition Infantry 874.5/544.5
+aiStrategicArea.setSide 1

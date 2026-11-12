@@ -1,0 +1,380 @@
+{
+ "generator": "botgen",
+ "version": 6,
+ "mod": "GCMOD",
+ "level": "gc_lok",
+ "objectSpawners": 41,
+ "template": "symmetric",
+ "templateSource": "DICE, bf1942 Kharkov (1.6 patch archives): AI/Strategies.con, AI/conditions.con, AI/prerequisites.con, unchanged",
+ "templateChoice": {
+  "name": "symmetric",
+  "inPlay": 4,
+  "rule": "4 capturable flags in play, more than 3"
+ },
+ "scope": "an infantry map from the page painter with the walk test's ways out opened, a Tank0 map from the page painter, infantry order positions, no strategic maps, no co-op layer",
+ "unreachable": [
+  "Supply_Depot"
+ ],
+ "unreachableReasons": {
+  "Supply_Depot": "route probe"
+ },
+ "botSpawnsExcluded": [],
+ "walkMap": {
+  "source": "page painter",
+  "engine": "none",
+  "vehicleMap": "page painter",
+  "vehicleBrush": 1.5,
+  "vehicleBrushes": [
+   {
+    "brush": 3,
+    "flagsOn": 5,
+    "spawnersOn": 17,
+    "pieces": 17,
+    "main": 1677388
+   },
+   {
+    "brush": 2.5,
+    "flagsOn": 6,
+    "spawnersOn": 18,
+    "pieces": 14,
+    "main": 1872748
+   },
+   {
+    "brush": 2,
+    "flagsOn": 6,
+    "spawnersOn": 18,
+    "pieces": 13,
+    "main": 1899030
+   },
+   {
+    "brush": 1.5,
+    "flagsOn": 6,
+    "spawnersOn": 20,
+    "pieces": 11,
+    "main": 1947671
+   }
+  ],
+  "opened": [
+   [
+    986,
+    1432
+   ],
+   [
+    987,
+    1432
+   ],
+   [
+    988,
+    1432
+   ],
+   [
+    986,
+    1433
+   ],
+   [
+    971,
+    1434
+   ],
+   [
+    972,
+    1434
+   ],
+   [
+    973,
+    1434
+   ],
+   [
+    974,
+    1434
+   ],
+   [
+    975,
+    1434
+   ],
+   [
+    976,
+    1434
+   ],
+   [
+    977,
+    1434
+   ],
+   [
+    978,
+    1434
+   ],
+   [
+    979,
+    1434
+   ],
+   [
+    980,
+    1434
+   ],
+   [
+    981,
+    1434
+   ],
+   [
+    982,
+    1434
+   ],
+   [
+    983,
+    1434
+   ],
+   [
+    984,
+    1434
+   ],
+   [
+    985,
+    1434
+   ],
+   [
+    986,
+    1434
+   ],
+   [
+    1365,
+    1562
+   ],
+   [
+    1360,
+    1565
+   ],
+   [
+    1360,
+    1566
+   ],
+   [
+    1360,
+    1567
+   ],
+   [
+    1338,
+    1603
+   ],
+   [
+    1339,
+    1603
+   ],
+   [
+    1340,
+    1603
+   ],
+   [
+    1341,
+    1603
+   ],
+   [
+    1341,
+    1604
+   ],
+   [
+    1342,
+    1604
+   ],
+   [
+    1342,
+    1605
+   ],
+   [
+    1343,
+    1605
+   ],
+   [
+    1344,
+    1605
+   ],
+   [
+    1345,
+    1605
+   ],
+   [
+    1356,
+    1605
+   ],
+   [
+    1345,
+    1606
+   ],
+   [
+    1346,
+    1606
+   ],
+   [
+    1347,
+    1606
+   ],
+   [
+    1348,
+    1606
+   ],
+   [
+    1349,
+    1606
+   ],
+   [
+    1350,
+    1606
+   ],
+   [
+    1351,
+    1606
+   ],
+   [
+    1352,
+    1606
+   ],
+   [
+    1353,
+    1606
+   ],
+   [
+    1354,
+    1606
+   ],
+   [
+    1355,
+    1606
+   ],
+   [
+    1356,
+    1606
+   ]
+  ],
+  "ways": [
+   {
+    "who": "Imperial_Headquarters_Spawn1",
+    "kind": "spawn",
+    "way": "walk",
+    "opened": 23
+   },
+   {
+    "who": "Imperial_Headquarters_Spawn2",
+    "kind": "spawn",
+    "way": "walk",
+    "opened": 4
+   },
+   {
+    "who": "Supply_Depot",
+    "kind": "flag",
+    "way": "walk",
+    "opened": 20
+   }
+  ],
+  "cover": 0.693,
+  "floors": {
+   "stacked": true,
+   "twoFloorShare": 0.007,
+   "raised": [
+    "Imperial_Headquarters",
+    "Research_Center",
+    "Supply_Depot"
+   ],
+   "reason": "3 of 5 capturable flags stand a storey over or under another walked floor"
+  },
+  "capped": true
+ },
+ "routeProbe": {
+  "chokeMax": 4,
+  "unreachable": [
+   "Supply_Depot"
+  ],
+  "stops": {
+   "Supply_Depot": {
+    "1": {
+     "stage": "choke",
+     "points": 6,
+     "metres": 18,
+     "first": [
+      [
+       989.5,
+       -1432.5
+      ],
+      [
+       986.5,
+       -1432.5
+      ],
+      [
+       985.5,
+       -1434.5
+      ]
+     ]
+    },
+    "2": {
+     "stage": "choke",
+     "points": 6,
+     "metres": 18,
+     "first": [
+      [
+       990.3,
+       -1434
+      ],
+      [
+       988.5,
+       -1432.5
+      ],
+      [
+       986.1,
+       -1433.4
+      ]
+     ]
+    }
+   }
+  },
+  "oneSided": {},
+  "sides": {
+   "1": {
+    "spawns": 16,
+    "flags": [
+     "Communications_Center",
+     "Imperial_Headquarters",
+     "Junkyard",
+     "Research_Center"
+    ]
+   },
+   "2": {
+    "spawns": 3,
+    "flags": [
+     "Communications_Center",
+     "Imperial_Headquarters",
+     "Junkyard",
+     "Research_Center"
+    ]
+   }
+  },
+  "chokes": {
+   "Imperial_Headquarters:1": 0,
+   "Imperial_Headquarters:2": 0,
+   "Research_Center:1": 0,
+   "Research_Center:2": 0,
+   "Junkyard:1": 0,
+   "Junkyard:2": 0,
+   "Communications_Center:1": 0,
+   "Communications_Center:2": 0
+  },
+  "late": {},
+  "shutLinks": []
+ },
+ "inputs": {
+  "controlPoints": "7eeddadb80548bb53f153cfbd21f858a36d7d03ce194358edc8d30824830340b",
+  "infantryMap": "67201acf6c29e149dd4f5d890b112765d6d98e4b4eb0f3b21aefe24f9ad140b4",
+  "template": "43f8a790471528016570235f76e97dbb2045732458781a5139f37fed68bf98c0"
+ },
+ "files": {
+  "AI.con": "26f62f783813f16aedaa4cd94d6da44996c4e824dcf37c7206fe33779fba7eda",
+  "AIpathFinding.con": "9d8080cdfa7605961969aa126519b03be9691bd604ac76aef50166d81215edd2",
+  "AI/StrategicAreas.con": "ffd2eb3c27e0e700544fe087f4678da35e7b26793e5217b6be213cbb70063821",
+  "AI/Strategies.con": "4ce0be59a0d6c5cd530db002fb062c4be8d936bc6ae59bd188803ccaf7869a8d",
+  "AI/conditions.con": "68a0c7a8aec69954063147b60fae560b2874884285737aa085efa76597d395aa",
+  "AI/prerequisites.con": "4c1f313bc285b228fd6ad03bfd1f44c5b15c8703c31f802eb605bc5f00f88bb5",
+  "Pathfinding/Infantry1Level0Map.raw": "9e4c1f90380ca7c84960f7319515cab85685dc61b8bb9ba08d05f53968347011",
+  "Pathfinding/Infantry1Level1Map.raw": "245b706f42d5ce3361a258d40b7735de7bc70a3220dd66d536f66a5b26373793",
+  "Pathfinding/Infantry1Level2Map.raw": "7bf36fda367d7fc267fb0fe2bf4eff99a783256a01690829fac34b64f09defa4",
+  "Pathfinding/Tank0Level0Map.raw": "ad4950d84eb21707fb00160bb2eef7404247fede8298803d10d09a83f7de5675",
+  "Pathfinding/Tank0Level1Map.raw": "b68404da4be327a8c46ac4c4132b6fc5c4e1b400754b3d3468ff5f556feb2355",
+  "Pathfinding/Tank0Level2Map.raw": "af85a96f2927d62a2bb8a67c73e952e7ac80deaed0825a170c47028415df8ea4"
+ }
+}

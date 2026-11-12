@@ -1,0 +1,25 @@
+{
+ "level": "kakazu_ridge-1945",
+ "verdict": "fail",
+ "outcome": "unsuitable",
+ "config": "with vehicles",
+ "doctrine": "garrison",
+ "generatorVersion": 5,
+ "inputs": {
+  "controlPoints": "b940e54605d2a231113f9a9a53b34839750c6af2615ed90b5cfb6d3e11c06267",
+  "infantryMap": "9f8bc846f77036c0058e10b33e7b513914b80a71f9637a1cb167e3ba85938b0e",
+  "template": "bdc0e455f47f91b7e7724e71d7c0c196e839b36946ac3abb7663d725944081e5"
+ },
+ "baseline": "DICE layers with vehicles, garrison doctrine: berlin, stalingrad, kharkov, bocage; seeds 1..10, 600 s",
+ "bar": null,
+ "seeds": 1,
+ "sizes": {},
+ "oneSided": null,
+ "unreachable": [
+  "kakazu_ridge",
+  "kakazu_west"
+ ],
+ "lintErrors": [
+  "the play surface is stacked floors (2 of 3 capturable flags stand a storey over or under another walked floor): a one-floor walk map cannot hold it"
+ ]
+}

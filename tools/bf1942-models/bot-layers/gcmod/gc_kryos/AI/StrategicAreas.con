@@ -1,0 +1,44 @@
+rem *** Strategic areas: one per control point (botgen) ***
+
+aiStrategicArea.create Imperial_Base 574.2/429.4 579.2/434.4 50
+aiStrategicArea.addNeighbour Ion_Cannon
+aiStrategicArea.addNeighbour Power_Generator
+aiStrategicArea.addObjectTypeFlag Base
+aiStrategicArea.setOrderPosition Tank 580.5/430.5
+aiStrategicArea.setOrderPosition Infantry 579.2/434.4
+aiStrategicArea.setSide 1
+aiStrategicArea.setTakeable 2 0
+
+aiStrategicArea.create Rebel_Base 1508.4/1751.7 1513.4/1756.7 50
+aiStrategicArea.addObjectTypeFlag Base
+aiStrategicArea.setSide 2
+aiStrategicArea.setTakeable 1 0
+
+aiStrategicArea.create Ion_Cannon 1359.6/603.7 1399.6/643.7 150
+aiStrategicArea.addNeighbour Imperial_Base
+aiStrategicArea.addNeighbour Water_Cooling_Station
+aiStrategicArea.addNeighbour Power_Generator
+aiStrategicArea.addObjectTypeFlag Flank
+aiStrategicArea.addObjectTypeFlag ControlPoint
+aiStrategicArea.setOrderPosition Tank 1394.5/638.5
+aiStrategicArea.setOrderPosition Infantry 1395.5/640.5
+
+aiStrategicArea.create Water_Cooling_Station 1492.5/1056.8 1532.5/1096.8 150
+aiStrategicArea.addNeighbour Ion_Cannon
+aiStrategicArea.addNeighbour Power_Generator
+aiStrategicArea.addObjectTypeFlag Flank
+aiStrategicArea.addObjectTypeFlag Close
+aiStrategicArea.addObjectTypeFlag ControlPoint
+aiStrategicArea.setOrderPosition Tank 1506.5/1090.5
+aiStrategicArea.setOrderPosition Infantry 1508.5/1091.5
+
+aiStrategicArea.create Power_Generator 820.9/952 860.9/992 300
+aiStrategicArea.addNeighbour Imperial_Base
+aiStrategicArea.addNeighbour Ion_Cannon
+aiStrategicArea.addNeighbour Water_Cooling_Station
+aiStrategicArea.addObjectTypeFlag Centre
+aiStrategicArea.addObjectTypeFlag StrongPoint
+aiStrategicArea.addObjectTypeFlag Close
+aiStrategicArea.addObjectTypeFlag ControlPoint
+aiStrategicArea.setOrderPosition Tank 860.9/992
+aiStrategicArea.setOrderPosition Infantry 860.9/992

@@ -1,0 +1,115 @@
+{
+ "generator": "botgen",
+ "version": 5,
+ "mod": "FHSW",
+ "level": "ilomantsi-1944",
+ "objectSpawners": 212,
+ "template": "symmetric",
+ "templateSource": "DICE, bf1942 Kharkov (1.6 patch archives): AI/Strategies.con, AI/conditions.con, AI/prerequisites.con, unchanged",
+ "templateChoice": {
+  "name": "symmetric",
+  "inPlay": 5,
+  "rule": "5 capturable flags in play, more than 3"
+ },
+ "scope": "on foot: infantry order positions only, no search maps, no co-op layer",
+ "unreachable": [],
+ "unreachableReasons": {},
+ "botSpawnsExcluded": [
+  "hattuvaara_spawn1",
+  "alliedbase_spawn2",
+  "alliedbase_spawn6",
+  "ilajanjarvi_spawn2",
+  "alliedbase_spawn3",
+  "alliedbase_spawn4",
+  "alliedbase_spawn7",
+  "utriovaara_spawn2",
+  "utriovaara_spawn3",
+  "utriovaara_spawn4",
+  "utriovaara_spawn5",
+  "utriovaara_spawn6",
+  "utriovaara_spawn7",
+  "hattuvaara_spawn2",
+  "hattuvaara_spawn3",
+  "hattuvaara_spawn5",
+  "ruukinpohja_spawn2",
+  "ruukinpohja_spawn5",
+  "ruukinpohja_spawn3",
+  "ruukinpohja_spawn6",
+  "ruukinpohja_spawn7",
+  "Kuuksenvaara_spawn1",
+  "Kuuksenvaara_spawn2",
+  "Kuuksenvaara_spawn3",
+  "Kuuksenvaara_spawn4",
+  "church_spawn1",
+  "church_spawn2"
+ ],
+ "walkMap": {
+  "source": "page painter",
+  "engine": "none",
+  "opened": [],
+  "ways": [],
+  "cover": 0.863,
+  "floors": {
+   "stacked": false,
+   "twoFloorShare": 0.003,
+   "raised": [],
+   "reason": null
+  },
+  "capped": true,
+  "joined": 7
+ },
+ "routeProbe": {
+  "chokeMax": 4,
+  "unreachable": [],
+  "stops": {},
+  "oneSided": {},
+  "sides": {
+   "1": {
+    "spawns": 17,
+    "flags": [
+     "churchtemplate",
+     "firebasetemplate",
+     "first_linetemplate",
+     "second_linetemplate",
+     "village_1template"
+    ]
+   },
+   "2": {
+    "spawns": 12,
+    "flags": [
+     "churchtemplate",
+     "firebasetemplate",
+     "first_linetemplate",
+     "second_linetemplate",
+     "village_1template"
+    ]
+   }
+  },
+  "chokes": {
+   "first_linetemplate:1": 0,
+   "first_linetemplate:2": 0,
+   "second_linetemplate:1": 0,
+   "second_linetemplate:2": 0,
+   "village_1template:1": 1,
+   "village_1template:2": 0,
+   "firebasetemplate:1": 0,
+   "firebasetemplate:2": 0,
+   "churchtemplate:1": 0,
+   "churchtemplate:2": 0
+  },
+  "late": {},
+  "shutLinks": []
+ },
+ "inputs": {
+  "controlPoints": "39d78ac1f7c6b2f8ffb7ce932cc8fccf6bb2e31b58c465a4dd069cdef01a5067",
+  "infantryMap": "2ed3508710b5c593f31356ec0c1aed9fb05c56613a903aa4fc767841b207c982",
+  "template": "43f8a790471528016570235f76e97dbb2045732458781a5139f37fed68bf98c0"
+ },
+ "files": {
+  "AI.con": "049a71a35ef5e3a8942aa0c99552a3559feb3d9517b3a83170aa5b6f9827300d",
+  "AI/StrategicAreas.con": "1a9d63eb552b1c39012716b42fed73827d06438d5efc2ee114b2b8b88dd0cdf7",
+  "AI/Strategies.con": "4ce0be59a0d6c5cd530db002fb062c4be8d936bc6ae59bd188803ccaf7869a8d",
+  "AI/conditions.con": "68a0c7a8aec69954063147b60fae560b2874884285737aa085efa76597d395aa",
+  "AI/prerequisites.con": "4c1f313bc285b228fd6ad03bfd1f44c5b15c8703c31f802eb605bc5f00f88bb5"
+ }
+}

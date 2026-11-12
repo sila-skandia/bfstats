@@ -1,0 +1,27 @@
+{
+ "level": "battle_of_peleliu",
+ "verdict": "fail",
+ "outcome": "unsuitable",
+ "config": "with vehicles",
+ "doctrine": "garrison",
+ "generatorVersion": 5,
+ "inputs": {
+  "controlPoints": "b225aa5a7c4a11e02424d51b26b9c081e0b1a176d6893e2881d0613b55c0e6ea",
+  "infantryMap": "de7739b84e37ad7f667e658919fd45098d891b08e4e63b355b75d1c33e6e5d09",
+  "template": "bdc0e455f47f91b7e7724e71d7c0c196e839b36946ac3abb7663d725944081e5"
+ },
+ "baseline": "DICE layers with vehicles, garrison doctrine: berlin, stalingrad, kharkov, bocage; seeds 1..10, 600 s",
+ "bar": null,
+ "seeds": 1,
+ "sizes": {},
+ "oneSided": null,
+ "unreachable": [
+  "Peleliu_Flag1",
+  "Peleliu_Flag4",
+  "Peleliu_Flag3",
+  "landing"
+ ],
+ "lintErrors": [
+  "side 2 holds no spawn point at the start of the round"
+ ]
+}

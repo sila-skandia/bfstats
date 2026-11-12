@@ -1,0 +1,27 @@
+{
+ "level": "gc_moncal",
+ "verdict": "fail",
+ "outcome": "unsuitable",
+ "config": "with vehicles",
+ "doctrine": "garrison",
+ "generatorVersion": 6,
+ "inputs": {
+  "controlPoints": "5a718888990107db62b5ad527449d348afe348b92d8eb36b8a1b8d94d1d78d13",
+  "infantryMap": "b8dd554ec0fc854e4906877fee7693c30c2d328c2fd665ba7f82d1140b153510",
+  "template": "bdc0e455f47f91b7e7724e71d7c0c196e839b36946ac3abb7663d725944081e5"
+ },
+ "baseline": "DICE layers with vehicles, garrison doctrine: berlin, stalingrad, kharkov, bocage; seeds 1..10, 600 s",
+ "bar": null,
+ "seeds": 1,
+ "sizes": {},
+ "oneSided": null,
+ "unreachable": [
+  "Imperial_Forward_Command",
+  "Southern_Pump_Station",
+  "Southern_Habitat"
+ ],
+ "lintErrors": [
+  "side 1 has no spawn with a route to any flag it must take: of its 5 spawns 4 have no way on foot to the main ground, 1 seat their soldier in a vehicle (a half-track, a plane, a landing craft on the beach) and are no spawn on foot; the level places 6 ladders, which neither the walk test nor a bot climbs",
+  "side 2 has no spawn with a route to any flag it must take: none of the 1 flags it does not hold can be reached"
+ ]
+}

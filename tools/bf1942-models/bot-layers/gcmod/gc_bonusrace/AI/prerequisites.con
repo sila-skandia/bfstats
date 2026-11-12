@@ -1,0 +1,28 @@
+if v_arg1 == host
+rem ----- Host 
+rem ---------------------------------------------------------------------------- 
+
+rem *** Create Prerequisites ***
+
+
+rem *** Kursk ***
+
+aiStrategy.createPrerequisite breakOutPrereq
+aiStrategy.addCondition noFriendlyCPCond  10.0
+aiStrategy.addCondition twoEnemyCPCond    10.0
+
+aiStrategy.createPrerequisite holdAndCampPrereq
+aiStrategy.addCondition twoFriendlyCPCond         3.0
+aiStrategy.addCondition minFiveFriendlyAreasCond  2.0
+
+aiStrategy.createPrerequisite singlePrereq
+aiStrategy.addCondition maxOneEnemyCP 10.0
+rem aiStrategy.addCondition timeCond       0.1
+
+aiStrategy.createPrerequisite doublePrereq
+aiStrategy.addCondition maxOneEnemyCP 10.0
+rem aiStrategy.addCondition timeCond       0.1
+
+
+rem ----------------------------------------------------------------------------
+endIf

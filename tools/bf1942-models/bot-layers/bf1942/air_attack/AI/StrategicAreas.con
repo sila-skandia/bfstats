@@ -1,0 +1,13 @@
+rem *** Strategic areas: one per control point (botgen) ***
+
+aiStrategicArea.create AxisBase 136.1/65.3 176.1/105.3 50
+aiStrategicArea.addObjectTypeFlag Base
+aiStrategicArea.setOrderPosition Infantry 186.5/105.5
+aiStrategicArea.setSide 1
+aiStrategicArea.setTakeable 2 0
+
+aiStrategicArea.create AlliedBase 1494.3/80.4 1534.3/120.4 50
+aiStrategicArea.addObjectTypeFlag Base
+aiStrategicArea.setOrderPosition Infantry 1533.5/119.5
+aiStrategicArea.setSide 2
+aiStrategicArea.setTakeable 1 0

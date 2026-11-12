@@ -1,0 +1,22 @@
+{
+ "level": "liberation_of_roeselare",
+ "verdict": "fail",
+ "outcome": "unsuitable",
+ "config": "with vehicles",
+ "doctrine": "garrison",
+ "generatorVersion": 6,
+ "inputs": {
+  "controlPoints": "338bc0cf5626dc3446b7a4b75e2281a27fe9ad69735b94a82e71710db175dbda",
+  "infantryMap": "cbcc040f81465068959ae985a8a96a299b76e9bbdb95a9c06b1cfeaf774d9f90",
+  "template": "43f8a790471528016570235f76e97dbb2045732458781a5139f37fed68bf98c0"
+ },
+ "baseline": "DICE layers with vehicles, garrison doctrine: berlin, stalingrad, kharkov, bocage; seeds 1..10, 600 s",
+ "bar": null,
+ "seeds": 1,
+ "sizes": {},
+ "oneSided": null,
+ "unreachable": [],
+ "lintErrors": [
+  "side 2's bots have an open route to none of the 5 flags in play"
+ ]
+}

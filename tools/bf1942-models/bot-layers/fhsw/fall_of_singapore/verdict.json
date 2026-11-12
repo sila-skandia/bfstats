@@ -1,0 +1,24 @@
+{
+ "level": "fall_of_singapore",
+ "verdict": "fail",
+ "outcome": "unsuitable",
+ "config": "with vehicles",
+ "doctrine": "garrison",
+ "generatorVersion": 5,
+ "inputs": {
+  "controlPoints": "9bb343a5ba55e6b0fb31c74c2aa31ea68f478499a7f9db4882788735378699d3",
+  "infantryMap": "6661037402589a7e0d7139ef893e44d4733d3a2d767b9b3da85a7570802ccb9f",
+  "template": "43f8a790471528016570235f76e97dbb2045732458781a5139f37fed68bf98c0"
+ },
+ "baseline": "DICE layers with vehicles, garrison doctrine: berlin, stalingrad, kharkov, bocage; seeds 1..10, 600 s",
+ "bar": null,
+ "seeds": 1,
+ "sizes": {},
+ "oneSided": null,
+ "unreachable": [
+  "frontline_allies"
+ ],
+ "lintErrors": [
+  "side 1 has no spawn with a route to any flag it must take: of its 3 spawns 3 have no way on foot to the main ground; the level places 36 ladders, which neither the walk test nor a bot climbs"
+ ]
+}

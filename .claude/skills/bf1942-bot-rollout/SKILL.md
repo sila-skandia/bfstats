@@ -136,8 +136,15 @@ publishes. `pagebatch.sh` plays one unseeded ten-minute match of each with
 
 - some killing always, and either 0.15 enemy kills a bot-minute, or 3
   captures with 0.03, or 1 capture with 0.05;
-- at most 0.10 deaths a bot-minute by a bot's own or its side's hand;
+- at most 0.10 deaths a bot-minute by a bot's own or its side's hand, or
+  no more than a third of the match's enemy kills;
 - no page error.
+
+`pagebatch.sh` writes over a level's `page.json`. Before replaying a
+level, copy its `page.json` aside, and afterwards put the earlier match
+back in front: `node sim/pagematch.mjs rescore --file <page.json>
+--earlier <the copy>` (`--old-code "<why>"` when it was played on other
+bot code and must not count).
 
 At most five page matches at once, and run them in the background (ten
 minutes each, real time). A level that fails is played **once more**
@@ -262,33 +269,67 @@ Every generated level live runs the page's bot code, and so do DICE's.
 - **Scratch is not durable.** Anything a later session needs goes in the
   repo: layers, verdicts, page.json, scripts, notes.
 
-## Where it stood on 2026-11-12
+## Where it stood at the end of 2026-11-12
 
-40 levels live (`python3 $S/live.py`): FHSW 17, the vanilla tree 8 (6
-community, Aberdeen), Desert Combat 6, BF1918 6, FH 2, FHSWEurope 1. Every
-level that has a layer folder has been played on the page; nothing is
-waiting.
+64 levels live (`python3 $S/live.py`): the vanilla tree 19 (18 community,
+Aberdeen), FHSW 19, Galactic Conquest 9, Desert Combat 6, BF1918 4, Secret
+Weapons 3, Road to Rome 2, FH 1, FHSWEurope 1. Of the 248 published levels
+with no AI of their own, 59 more were played on the page and turned down
+and 125 are out with a reason. None is waiting:
+`features/bot-map-generation/status-2026-11-12.md` lists every one, and
+`python3 $S/status.py` gives today's state.
 
-Turned down on the page, with the figures in each `verdict.json`
-(`acceptanceWithdrawn`) and `page.json`. Each is worth another match only
-after a fix that could help it (they are quiet: bots that barely meet):
-bf1942 the_bridge; fhsw pegasus, bizerte-1943, gazaps-1945, westwall-1945,
-ramelle_neuville-1944, berlin-1945-streets, fht_battle_of_kohima-1944,
-in_the_hell_of_bocage-1944, ural_mountains-1947, warsaw_uprising,
-fht_dinant-1940, fht_operation_longcloth-1943, fht_pasir_panjang-1942,
-way_to_paris-1946; desertcombat dc_medina_ridge, dc_operation_bragg;
-bf1918 mauerfall, battle_of_cambrai, saint_quentin_canal,
-fht_meuse_argonne_offensive, sanaga_river, operation_gericht. To retry
-one: `pagebatch.sh` (its layer is still on the volume), and if it passes
-`rollout.sh` to accept it again, then `menus.sh`.
+The day's record is `page-matches.md` section 6 ("The rest of
+2026-11-12"). The floor's own-hand clause changed that day: at most 0.10
+deaths a bot-minute by a bot's own or its side's hand, or no more than a
+third of the match's enemy kills (DICE's Berlin and Kharkov run to 0.31).
+
+**What to do next, best lead first.**
+
+1. **Regenerate the turned-down levels on generator 6 and replay them.**
+   Generator 6 (README 22) changes the layers of wide levels a great deal:
+   BF1918's roye goes from 1 flag in play to 3 and from 18 excluded spawns
+   to 2. A run over 14 turned-down levels was stopped at the end of the
+   day and put back, so nothing of it is in the repo. Of those 14 the
+   layer's AI files changed for roye, saint_quentin_canal,
+   fht_meuse_argonne_offensive, dc_medina_ridge, dc_operation_bragg,
+   way_to_paris-1946, gazaps-1945 and pegasus (FHSW); in the runner
+   mauerfall, fht_meuse_argonne_offensive, the_bridge and FHSW's pegasus
+   read better than nothing. `screen.sh` regenerates and re-judges (a
+   level's `acceptanceWithdrawn` goes with the old verdict), then
+   `rollout.sh`, `pagebatch.sh`, `menus.sh` as for a new level. Do the
+   same for the four that lost their tags that day: chemin_des_dames, roye,
+   FHSW's monte_cassino-1944, FH's seelow-heights-1945.
+2. **Second matches never played.** Withdrawn after one failed match
+   because the day ended: FHSW's desert_hill, fht_siege_of_zeeland-1940,
+   forgotten_hometown; BF1918's battle_of_the_vosges (10 captures and 0.019
+   enemy kills: the near miss); community tanquilizer; Desert Combat's
+   dc_weapon_bunkers and dc_no_fly_zone_day2. FHSW's
+   battle_over_hokkaido-1945 is published and was never played.
+3. **Galactic Conquest's own-hand deaths.** Endor (0.14 to 0.17 enemy
+   kills, 6 to 12 captures), BCanyon, Lok and Alaris Prime fail only or
+   mainly because the bots die by their own hand at 0.16 to 0.34 a
+   bot-minute. How was not looked at (falls, craft, their own blasts).
+   Endor passes everything else. Still refused by the lint: Bespin and
+   Bespin Night (no side holds a spawn at the start), Judicator, Judicator
+   Push, Kryos, MonCal, Mini Cove, Mos Eisley (a side sealed), Dantooine
+   (no strategic areas), and the space and race levels.
+4. **Generator faults left open** (README 22.4): an order position on a
+   blocked cell (Breaking Point, Invasion of the Philippines); ways opened
+   one cell wide, which the choke rule then refuses (Deulemont,
+   Roeselare); River Don's 150 m way search; `extract_map.py` taking a
+   placement's `Object.setTeam` over the template's.
+5. **A match at a third of real time** on a level with a hundred vehicles
+   (forgotten_hometown): the bots re-test a line of sight to every hull
+   they remember on every sense pass (README 22.4, item 5). It is page bot
+   code and costs a player frames too.
+6. **Strasbourg** (community) is held: its archive is not on the machine
+   (`bot-layers/bf1942/strasbourg/held.json`).
 
 The marginal ones live, to look at first if the owner finds a level not
-worth having: fhsw stalingrad_redsquare, manchuria-1945,
-monte_cassino-1944; bf1918 lutte_de_honneur, chemin_des_dames,
-hindenburg_line (a walkover); community liberation_of_caen.
-
-Not started: Road to Rome, Secret Weapons and EoD. FHSWEurope ships AI
-for 260 of its 274 levels; of its 13 botless ones eleven are 8 km naval
-levels or have no capturable flag, which leaves adak_race and
-escape_from_leyte to look at. Open faults are listed at the end of each
-note and in the README's section 20.
+worth having: community rennpiste_gebirge (passes one match of two by a
+hair), tl_race, liberation_of_caen; FHSW stalingrad_redsquare,
+manchuria-1945, kushira, westminster-1942; BF1918 lutte_de_honneur,
+hindenburg_line (a walkover); Desert Combat dc_lostvillage and
+dc_oil_fields (one fail in three that day); GC's Ryloth, Tatooine,
+Anchorhead and Mini Dant (flags change hands, little killing).

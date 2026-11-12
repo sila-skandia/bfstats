@@ -1,0 +1,159 @@
+{
+ "generator": "botgen",
+ "version": 5,
+ "mod": "bf1942",
+ "level": "downhill_to_the_beach_two",
+ "objectSpawners": 49,
+ "template": "symmetric",
+ "templateSource": "DICE, bf1942 Kharkov (1.6 patch archives): AI/Strategies.con, AI/conditions.con, AI/prerequisites.con, unchanged",
+ "templateChoice": {
+  "name": "symmetric",
+  "inPlay": 4,
+  "rule": "4 capturable flags in play, more than 3"
+ },
+ "scope": "an infantry map painted from the walk test, a Tank0 map from the page painter, infantry order positions, no strategic maps, no co-op layer",
+ "unreachable": [
+  "Trial_zone",
+  "Beach"
+ ],
+ "unreachableReasons": {
+  "Trial_zone": "walk test",
+  "Beach": "walk test"
+ },
+ "botSpawnsExcluded": [
+  "Trial_zone_Spawn1",
+  "Trial_zone_Spawn2",
+  "Beach_Spawn1",
+  "Beach_Spawn2"
+ ],
+ "walkMap": {
+  "source": "walk test",
+  "engine": "none",
+  "vehicleMap": "page painter",
+  "vehicleBrush": 2.5,
+  "vehicleBrushes": [
+   {
+    "brush": 3,
+    "flagsOn": 2,
+    "spawnersOn": 18,
+    "pieces": 8,
+    "main": 10293
+   },
+   {
+    "brush": 2.5,
+    "flagsOn": 2,
+    "spawnersOn": 20,
+    "pieces": 9,
+    "main": 10822
+   },
+   {
+    "brush": 2,
+    "flagsOn": 2,
+    "spawnersOn": 20,
+    "pieces": 9,
+    "main": 10955
+   },
+   {
+    "brush": 1.5,
+    "flagsOn": 2,
+    "spawnersOn": 20,
+    "pieces": 10,
+    "main": 11499
+   }
+  ],
+  "opened": [],
+  "ways": [
+   {
+    "who": "Trial_zone_Spawn1",
+    "kind": "spawn",
+    "way": "none",
+    "opened": 0
+   },
+   {
+    "who": "Trial_zone_Spawn2",
+    "kind": "spawn",
+    "way": "none",
+    "opened": 0
+   },
+   {
+    "who": "Beach_Spawn1",
+    "kind": "spawn",
+    "way": "none",
+    "opened": 0
+   },
+   {
+    "who": "Beach_Spawn2",
+    "kind": "spawn",
+    "way": "none",
+    "opened": 0
+   }
+  ],
+  "cover": 0.985,
+  "floors": {
+   "stacked": false,
+   "twoFloorShare": 0.005,
+   "raised": [],
+   "reason": null
+  }
+ },
+ "routeProbe": {
+  "chokeMax": 4,
+  "unreachable": [],
+  "stops": {},
+  "oneSided": {},
+  "sides": {
+   "1": {
+    "spawns": 8,
+    "flags": [
+     "Bumps",
+     "GoGoGo_OrCrash",
+     "Jump",
+     "What_a_jump"
+    ]
+   },
+   "2": {
+    "spawns": 10,
+    "flags": [
+     "Bumps",
+     "GoGoGo_OrCrash",
+     "Jump",
+     "What_a_jump"
+    ]
+   }
+  },
+  "chokes": {
+   "Bumps:1": 0,
+   "Bumps:2": 0,
+   "Jump:1": 4,
+   "Jump:2": 4,
+   "What_a_jump:1": 4,
+   "What_a_jump:2": 4,
+   "GoGoGo_OrCrash:1": 4,
+   "GoGoGo_OrCrash:2": 4
+  },
+  "late": {},
+  "shutLinks": [
+   "Bumps>Jump",
+   "Jump>Bumps"
+  ]
+ },
+ "inputs": {
+  "controlPoints": "9b46a7b8ea5b9bc760b76f0497a9acd18a621b7defe1688d27f8ac395f6fd57c",
+  "infantryMap": "3f1acfb09135242edc1424261361ca7df43cc668f8acb58bf558530d762d7576",
+  "template": "43f8a790471528016570235f76e97dbb2045732458781a5139f37fed68bf98c0"
+ },
+ "files": {
+  "AI.con": "26f62f783813f16aedaa4cd94d6da44996c4e824dcf37c7206fe33779fba7eda",
+  "AIpathFinding.con": "549030ff1cdb81bd819fcdc28c999857f4784e20ee4850753a8c1213f80184fe",
+  "AI/StrategicAreas.con": "b0a8dafc28901b79c7e654eefc593b8a204f60ddc11806e1e0ed792751231e47",
+  "AI/Strategies.con": "4ce0be59a0d6c5cd530db002fb062c4be8d936bc6ae59bd188803ccaf7869a8d",
+  "AI/conditions.con": "68a0c7a8aec69954063147b60fae560b2874884285737aa085efa76597d395aa",
+  "AI/prerequisites.con": "4c1f313bc285b228fd6ad03bfd1f44c5b15c8703c31f802eb605bc5f00f88bb5",
+  "Pathfinding/Infantry1Level0Map.raw": "ef27f9bfe3cfa32d370a329adc1847a73183c4bcc0646f3460bce99c2df863fb",
+  "Pathfinding/Infantry1Level1Map.raw": "3d9c500158b901f4293450fac49a7e8603b7f2c7c1a37e7cf7505f26bd401031",
+  "Pathfinding/Infantry1Level2Map.raw": "f3462ecfe4cfa5d415708829e4f6d1a6f7dbda85451528f559658435ca8b39d1",
+  "Pathfinding/Tank0Level0Map.raw": "fe49c518d62ef5378a20641c8e91173707b7d2089d09b33a2aa2a48e37976539",
+  "Pathfinding/Tank0Level1Map.raw": "0feb2a9121921fa00915503fcff95e8ef46e1d9747c994098a273f0a02ad7a8e",
+  "Pathfinding/Tank0Level2Map.raw": "c7c0347c4ee74421e82f751ce5c9cb85a82aa0fbff6ea9b49a6226bb4af3ec2d"
+ }
+}

@@ -1,0 +1,24 @@
+{
+ "level": "jeep_racing",
+ "verdict": "fail",
+ "outcome": "unsuitable",
+ "config": "with vehicles",
+ "doctrine": "garrison",
+ "generatorVersion": 5,
+ "inputs": {
+  "controlPoints": "e66634a3ddf5786cd786f030b070fe0477d9a4f7ffc6f5497c40e3c1c40e301b",
+  "infantryMap": "87ecf98e10300dd92749323726b7ed7e9f45113ee3da061fc8727d877233d08f",
+  "template": "bdc0e455f47f91b7e7724e71d7c0c196e839b36946ac3abb7663d725944081e5"
+ },
+ "baseline": "DICE layers with vehicles, garrison doctrine: berlin, stalingrad, kharkov, bocage; seeds 1..10, 600 s",
+ "bar": null,
+ "seeds": 1,
+ "sizes": {},
+ "oneSided": null,
+ "unreachable": [
+  "jump"
+ ],
+ "lintErrors": [
+  "side 2 has no spawn with a route to any flag it must take: of its 6 spawns 6 have no way on foot to the main ground; the level places 1 ladders, which neither the walk test nor a bot climbs"
+ ]
+}

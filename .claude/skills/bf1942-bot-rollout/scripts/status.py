@@ -59,13 +59,14 @@ def state(tree, folder, scene, live):
             return "out", "one control point: nothing to order bots to (" + hint + ")"
         return "not screened", hint
     v = json.loads((d / "verdict.json").read_text())
+    # Played on the page and withdrawn comes first: a level run despite a stacked-floors lint error still carries it.
+    if v.get("acceptanceWithdrawn"):
+        return "turned down", str(v["acceptanceWithdrawn"].get("because", ""))[:150]
     if v.get("lintErrors"):
         why = "; ".join(sorted({re.sub(r":.*", "", e)[:70] for e in v["lintErrors"]}))
         return "out", "lint: " + why
     if v.get("outcome") == "unsuitable":
         return "out", "unsuitable"
-    if v.get("acceptanceWithdrawn"):
-        return "turned down", str(v["acceptanceWithdrawn"].get("because", ""))[:150]
     if (d / "page.json").is_file():
         # Played on the page and never tagged: nothing was accepted, so there was nothing to withdraw.
         p = json.loads((d / "page.json").read_text())

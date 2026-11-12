@@ -1,0 +1,63 @@
+{
+ "level": "gc_endor",
+ "verdict": "fail",
+ "outcome": "better-than-nothing",
+ "config": "with vehicles",
+ "doctrine": "garrison",
+ "generatorVersion": 6,
+ "inputs": {
+  "controlPoints": "f631c62679ab9f4a42ada7446f9117c53ff730b17f8fb82810f2c31841e1a698",
+  "infantryMap": "b7cda327ddf70e744347859fda39a2232b09dc3a95568434b379724c3b4e1764",
+  "template": "bdc0e455f47f91b7e7724e71d7c0c196e839b36946ac3abb7663d725944081e5"
+ },
+ "baseline": "DICE layers with vehicles, garrison doctrine: berlin, stalingrad, kharkov, bocage; seeds 1..10, 600 s",
+ "bar": {
+  "against": "dice",
+  "why": "no bar of gcmod's own: DICE's"
+ },
+ "seeds": 1,
+ "sizes": {
+  "8": {
+   "verdict": "fail",
+   "failed": [
+    "oscillationsPerBotMinute",
+    "selfDeathsPerBotMinute",
+    "nonEnemyDeathShareWorseSide",
+    "unitsNeverUsedShare"
+   ],
+   "winners": [
+    1,
+    0,
+    0
+   ]
+  },
+  "16": {
+   "verdict": "fail",
+   "failed": [
+    "selfDeathsPerBotMinute",
+    "spawnTrapsPerBotMinute",
+    "hullStuckSecondsPerDrivingMinute",
+    "hullStuckSecondsPerDrivingMinuteWorseSide",
+    "unitsNeverUsedShare"
+   ],
+   "winners": [
+    1,
+    0,
+    0
+   ]
+  }
+ },
+ "oneSided": null,
+ "unreachable": [
+  "Ewok_Village",
+  "Landing_Platform"
+ ],
+ "lintErrors": [
+  "the play surface is stacked floors (3 of 5 capturable flags stand a storey over or under another walked floor): a one-floor walk map cannot hold it"
+ ],
+ "acceptanceWithdrawn": {
+  "because": "page matches 2026-11-12: 0.14 then 0.17 enemy kills a bot-minute with 12 and 6 captures, and as many deaths by the bots' own hand (0.16, 0.17); under the rollout floor on own-hand deaths. The nearest miss of the GC levels: worth another look once it is known how the bots die",
+  "date": "2026-11-12",
+  "was": "Owner's rollout, 2026-11-12: the owner imported Galactic Conquest and asked for "
+ }
+}

@@ -1,0 +1,57 @@
+{
+ "level": "desert_hill",
+ "verdict": "fail",
+ "outcome": "better-than-nothing",
+ "config": "with vehicles",
+ "doctrine": "garrison",
+ "generatorVersion": 6,
+ "inputs": {
+  "controlPoints": "b2b924d9b6e41816a7d4acdbe09cd9f65f1c4dd2b0a6d1b007aeff5fb0de1ef3",
+  "infantryMap": "687ff54efcaba3e37e1f76ae3fa2387ce9538f1934c7c954432aaf44ec147d18",
+  "template": "43f8a790471528016570235f76e97dbb2045732458781a5139f37fed68bf98c0"
+ },
+ "baseline": "DICE layers with vehicles, garrison doctrine: berlin, stalingrad, kharkov, bocage; seeds 1..10, 600 s",
+ "bar": {
+  "against": "dice",
+  "why": "no bar of fhsw's own: DICE's"
+ },
+ "seeds": 1,
+ "sizes": {
+  "8": {
+   "verdict": "fail",
+   "failed": [
+    "oscillationsPerBotMinute",
+    "enemyKillsPerBotMinute",
+    "bothSidesCapture",
+    "unitsNeverUsedShare"
+   ],
+   "winners": [
+    0,
+    1,
+    0
+   ]
+  },
+  "16": {
+   "verdict": "fail",
+   "failed": [
+    "idleShare",
+    "enemyKillsPerBotMinute",
+    "bothSidesCapture",
+    "unitsNeverUsedShare"
+   ],
+   "winners": [
+    0,
+    1,
+    0
+   ]
+  }
+ },
+ "oneSided": null,
+ "unreachable": [],
+ "lintErrors": [],
+ "acceptanceWithdrawn": {
+  "because": "page match 2026-11-12: 0.019 enemy kills a bot-minute, no capture; under the rollout floor. One match only: the day ended before its second.",
+  "date": "2026-11-12",
+  "was": "Owner's rollout, 2026-11-12: the owner asked for everything with a fight to go l"
+ }
+}

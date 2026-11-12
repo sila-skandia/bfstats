@@ -86,41 +86,9 @@
   "axisbase"
  ],
  "lintErrors": [],
- "accepted": {
-  "reason": "Owner's rollout, 2026-11-11: after playing Tunis-1943 against its generated bots the owner asked for every level with a fight to go live. Two or more seeds at 8 and 16 a side, the garrison; the checks it fails are listed with this verdict, and a match on the page decides whether it keeps its menu flag.",
-  "date": "2026-11-11",
-  "outcome": "no-fight",
-  "failed": [
-   "8:stuckSecondsPerBotMinute",
-   "8:idleShare",
-   "8:routeFailuresPerBotMinute",
-   "8:redeploysPerBotMinute",
-   "8:enemyKillsPerBotMinute",
-   "8:flagCoverage",
-   "8:bothSidesCapture",
-   "8:bothSidesKill",
-   "8:stuckSecondsPerBotMinuteWorseSide",
-   "8:routeFailuresPerBotMinuteWorseSide",
-   "8:redeploysPerBotMinuteWorseSide",
-   "8:nonEnemyDeathShareWorseSide",
-   "8:unitsNeverUsedShare",
-   "8:tankSilentShare",
-   "16:stuckSecondsPerBotMinute",
-   "16:idleShare",
-   "16:oscillationsPerBotMinute",
-   "16:routeFailuresPerBotMinute",
-   "16:redeploysPerBotMinute",
-   "16:enemyKillsPerBotMinute",
-   "16:flagCoverage",
-   "16:bothSidesCapture",
-   "16:bothSidesKill",
-   "16:stuckSecondsPerBotMinuteWorseSide",
-   "16:routeFailuresPerBotMinuteWorseSide",
-   "16:redeploysPerBotMinuteWorseSide",
-   "16:nonEnemyDeathShareWorseSide",
-   "16:unitsNeverUsedShare",
-   "16:tankSilentShare"
-  ],
-  "by": "owner"
+ "acceptanceWithdrawn": {
+  "because": "page matches 2026-11-12, on the bot code of 401826c1d: 0.025 enemy kills a bot-minute in both, with 1 capture then 6; under the rollout floor by a hair (it was live on 0.062 with 2 captures)",
+  "date": "2026-11-12",
+  "was": "Owner's rollout, 2026-11-11: after playing Tunis-1943 against its generated bots"
  }
 }

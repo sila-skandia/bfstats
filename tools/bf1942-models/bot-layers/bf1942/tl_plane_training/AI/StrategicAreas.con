@@ -1,0 +1,40 @@
+rem *** Strategic areas: one per control point (botgen) ***
+
+aiStrategicArea.create BERKLE_AIRFIELD 1856/215.2 1861/220.2 50
+aiStrategicArea.addNeighbour CENTER
+aiStrategicArea.addNeighbour NORTE
+aiStrategicArea.addObjectTypeFlag Base
+aiStrategicArea.setOrderPosition Tank 1859.5/217.5
+aiStrategicArea.setOrderPosition Infantry 1859.5/219.5
+aiStrategicArea.setSide 1
+aiStrategicArea.setTakeable 2 0
+
+aiStrategicArea.create OILIVA_AIRFIELD 63.2/1802.9 68.2/1807.9 50
+aiStrategicArea.addNeighbour CENTER
+aiStrategicArea.addNeighbour NORTE
+aiStrategicArea.addObjectTypeFlag Base
+aiStrategicArea.setOrderPosition Tank 65.5/1806.5
+aiStrategicArea.setOrderPosition Infantry 67.5/1806.5
+aiStrategicArea.setSide 2
+aiStrategicArea.setTakeable 1 0
+
+aiStrategicArea.create CENTER 1066.7/1191 1106.7/1231 300
+aiStrategicArea.addNeighbour BERKLE_AIRFIELD
+aiStrategicArea.addNeighbour OILIVA_AIRFIELD
+aiStrategicArea.addNeighbour NORTE
+aiStrategicArea.addObjectTypeFlag Centre
+aiStrategicArea.addObjectTypeFlag StrongPoint
+aiStrategicArea.addObjectTypeFlag Close
+aiStrategicArea.addObjectTypeFlag ControlPoint
+aiStrategicArea.setOrderPosition Tank 1109.5/1229.5
+aiStrategicArea.setOrderPosition Infantry 1107.5/1229.5
+
+aiStrategicArea.create NORTE 1721.5/1463 1726.5/1468 150
+aiStrategicArea.addNeighbour BERKLE_AIRFIELD
+aiStrategicArea.addNeighbour OILIVA_AIRFIELD
+aiStrategicArea.addNeighbour CENTER
+aiStrategicArea.addObjectTypeFlag Flank
+aiStrategicArea.addObjectTypeFlag Close
+aiStrategicArea.addObjectTypeFlag ControlPoint
+aiStrategicArea.setOrderPosition Tank 1723.5/1466.5
+aiStrategicArea.setOrderPosition Infantry 1725.5/1466.5

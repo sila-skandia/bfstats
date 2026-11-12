@@ -1,0 +1,24 @@
+{
+ "level": "battle_of_iwo_jima",
+ "verdict": "fail",
+ "outcome": "unsuitable",
+ "config": "with vehicles",
+ "doctrine": "garrison",
+ "generatorVersion": 5,
+ "inputs": {
+  "controlPoints": "27245bde226ddf504613bcfd766701587b06b64bd5c8f95d08f81a2cf00df266",
+  "infantryMap": "d2c6fab3d1ee96e41a9f2f438919dbb21ded145f3539dd3a30735ec69a48672d",
+  "template": "43f8a790471528016570235f76e97dbb2045732458781a5139f37fed68bf98c0"
+ },
+ "baseline": "DICE layers with vehicles, garrison doctrine: berlin, stalingrad, kharkov, bocage; seeds 1..10, 600 s",
+ "bar": null,
+ "seeds": 1,
+ "sizes": {},
+ "oneSided": null,
+ "unreachable": [
+  "axis_point6"
+ ],
+ "lintErrors": [
+  "side 2 holds no spawn point at the start of the round"
+ ]
+}

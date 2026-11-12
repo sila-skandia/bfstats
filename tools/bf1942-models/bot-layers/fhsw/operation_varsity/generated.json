@@ -1,0 +1,179 @@
+{
+ "generator": "botgen",
+ "version": 5,
+ "mod": "FHSW",
+ "level": "operation_varsity",
+ "objectSpawners": 116,
+ "template": "few",
+ "templateSource": "DICE, bf1942 Kursk (1.6 patch archives, Kursk_003.rfa): AI/Strategies.con, AI/conditions.con, AI/prerequisites.con, unchanged",
+ "templateChoice": {
+  "name": "few",
+  "inPlay": 3,
+  "rule": "3 capturable flags in play, at most 3"
+ },
+ "scope": "on foot: infantry order positions only, no search maps, no co-op layer",
+ "unreachable": [
+  "stationtemplate",
+  "feldmarktemplate"
+ ],
+ "unreachableReasons": {
+  "stationtemplate": "walk test",
+  "feldmarktemplate": "route probe"
+ },
+ "botSpawnsExcluded": [
+  "unnamedspawn3",
+  "unnamedspawn4",
+  "unnamedspawn26",
+  "unnamedspawn27",
+  "unnamedspawn28",
+  "unnamedspawn29",
+  "unnamedspawn30",
+  "unnamedspawn31",
+  "unnamedspawn32",
+  "unnamedspawn33",
+  "unnamedspawn34",
+  "unnamedspawn35",
+  "unnamedspawn36",
+  "unnamedspawn37",
+  "unnamedspawn39",
+  "unnamedspawn40",
+  "unnamedspawn41",
+  "unnamedspawn42",
+  "unnamedspawn43",
+  "unnamedspawn44",
+  "unnamedspawn45",
+  "unnamedspawn46",
+  "unnamedspawn47",
+  "unnamedspawn48",
+  "unnamedspawn49",
+  "unnamedspawn50",
+  "unnamedspawn51",
+  "unnamedspawn52",
+  "unnamedspawn53",
+  "unnamedspawn54",
+  "unnamedspawn55",
+  "unnamedspawn56",
+  "unnamedspawn57",
+  "unnamedspawn58",
+  "unnamedspawn59",
+  "unnamedspawn60",
+  "unnamedspawn61",
+  "unnamedspawn76",
+  "unnamedspawn92",
+  "unnamedspawn113",
+  "unnamedspawn114",
+  "unnamedspawn115",
+  "unnamedspawn116",
+  "unnamedspawn117",
+  "unnamedspawn118",
+  "unnamedspawn119",
+  "unnamedspawn120",
+  "unnamedspawn121"
+ ],
+ "walkMap": {
+  "source": "page painter",
+  "engine": "none",
+  "opened": [],
+  "ways": [],
+  "cover": 0.776,
+  "floors": {
+   "stacked": false,
+   "twoFloorShare": 0.006,
+   "raised": [
+    "stationtemplate"
+   ],
+   "reason": null
+  },
+  "capped": true,
+  "joined": 3
+ },
+ "routeProbe": {
+  "chokeMax": 4,
+  "unreachable": [
+   "feldmarktemplate"
+  ],
+  "stops": {
+   "feldmarktemplate": {
+    "1": {
+     "stage": "choke",
+     "points": 22,
+     "metres": 66,
+     "first": [
+      [
+       1383.8,
+       -1326.9
+      ],
+      [
+       1382,
+       -1329.4
+      ],
+      [
+       1380.5,
+       -1331.5
+      ]
+     ]
+    },
+    "2": {
+     "stage": "choke",
+     "points": 9,
+     "metres": 27,
+     "first": [
+      [
+       1356.3,
+       -1364.2
+      ],
+      [
+       1358.6,
+       -1362.3
+      ],
+      [
+       1360.4,
+       -1361.9
+      ]
+     ]
+    }
+   }
+  },
+  "oneSided": {},
+  "sides": {
+   "1": {
+    "spawns": 35,
+    "flags": [
+     "blumenkamptemplate",
+     "churchtemplate",
+     "hoteltemplate"
+    ]
+   },
+   "2": {
+    "spawns": 27,
+    "flags": [
+     "blumenkamptemplate",
+     "churchtemplate",
+     "hoteltemplate"
+    ]
+   }
+  },
+  "chokes": {
+   "churchtemplate:1": 19,
+   "churchtemplate:2": 0,
+   "blumenkamptemplate:1": 0,
+   "blumenkamptemplate:2": 4,
+   "hoteltemplate:1": 0,
+   "hoteltemplate:2": 0
+  },
+  "late": {},
+  "shutLinks": []
+ },
+ "inputs": {
+  "controlPoints": "c79cc28fc548a127d2fe1ba03ee921be35af6ee2f9e5751a960c949ec5902ebd",
+  "infantryMap": "3c8c10116498678c1c3424d5d018588e96700acd14967d0659e26ecb43782f67",
+  "template": "bdc0e455f47f91b7e7724e71d7c0c196e839b36946ac3abb7663d725944081e5"
+ },
+ "files": {
+  "AI.con": "95fb71df10e2a9c3c7c3c09898b1b967e335429c11d96fbaef382b91484632ce",
+  "AI/StrategicAreas.con": "bcb6b3c02e5fc1e502a3077b345a6ab9ffd9f2b2682328d91f670ae9c88b0a45",
+  "AI/Strategies.con": "13da4dc35872dd4b5798a066f4425bdc824cfd61f31093d1808e1202644de52e",
+  "AI/conditions.con": "248a04b727c08d696bf0fa9c162bc22c43cde3c75f695892fe1e0f5141519c49",
+  "AI/prerequisites.con": "c96168b5f69860e578f5d26728fd2a2092c4c436e1da49b7d6f4009b65735398"
+ }
+}

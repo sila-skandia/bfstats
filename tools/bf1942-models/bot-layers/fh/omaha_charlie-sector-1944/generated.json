@@ -1,0 +1,153 @@
+{
+ "generator": "botgen",
+ "version": 5,
+ "mod": "FH",
+ "level": "omaha_charlie-sector-1944",
+ "objectSpawners": 67,
+ "template": "few",
+ "templateSource": "DICE, bf1942 Kursk (1.6 patch archives, Kursk_003.rfa): AI/Strategies.con, AI/conditions.con, AI/prerequisites.con, unchanged",
+ "templateChoice": {
+  "name": "few",
+  "inPlay": 3,
+  "rule": "3 capturable flags in play, at most 3"
+ },
+ "scope": "an infantry map painted from the walk test, a Tank0 map from the page painter, infantry order positions, no strategic maps, no co-op layer",
+ "unreachable": [
+  "west_bunker",
+  "east_bunker"
+ ],
+ "unreachableReasons": {
+  "west_bunker": "walk test",
+  "east_bunker": "walk test"
+ },
+ "botSpawnsExcluded": [
+  "beach05",
+  "beach10"
+ ],
+ "walkMap": {
+  "source": "walk test",
+  "engine": "none",
+  "vehicleMap": "page painter",
+  "vehicleBrush": 1.5,
+  "vehicleBrushes": [
+   {
+    "brush": 3,
+    "flagsOn": 3,
+    "spawnersOn": 5,
+    "pieces": 15,
+    "main": 2020923
+   },
+   {
+    "brush": 2.5,
+    "flagsOn": 3,
+    "spawnersOn": 10,
+    "pieces": 17,
+    "main": 2053179
+   },
+   {
+    "brush": 2,
+    "flagsOn": 3,
+    "spawnersOn": 11,
+    "pieces": 17,
+    "main": 2067011
+   },
+   {
+    "brush": 1.5,
+    "flagsOn": 3,
+    "spawnersOn": 14,
+    "pieces": 17,
+    "main": 2096415
+   }
+  ],
+  "opened": [
+   [
+    879,
+    1280
+   ],
+   [
+    879,
+    1281
+   ],
+   [
+    877,
+    1284
+   ],
+   [
+    878,
+    1284
+   ],
+   [
+    872,
+    1291
+   ]
+  ],
+  "ways": [
+   {
+    "who": "commandpost06",
+    "kind": "spawn",
+    "way": "walk",
+    "opened": 5
+   }
+  ],
+  "cover": 0.99,
+  "floors": {
+   "stacked": false,
+   "twoFloorShare": 0.001,
+   "raised": [
+    "west_bunker",
+    "east_bunker"
+   ],
+   "reason": null
+  }
+ },
+ "routeProbe": {
+  "chokeMax": 4,
+  "unreachable": [],
+  "stops": {},
+  "oneSided": {
+   "beach": 1,
+   "commandpost": 1,
+   "german_base": 1
+  },
+  "sides": {
+   "1": {
+    "spawns": 16,
+    "flags": [
+     "beach",
+     "commandpost",
+     "german_base"
+    ]
+   },
+   "2": {
+    "spawns": 0,
+    "flags": []
+   }
+  },
+  "chokes": {
+   "beach:1": 4,
+   "commandpost:1": 0,
+   "german_base:1": 0
+  },
+  "late": {},
+  "shutLinks": []
+ },
+ "inputs": {
+  "controlPoints": "c18f6fb5e637b62f417f2e42905eb0f1f9250afb129271613c41d6ffe6bf79f6",
+  "infantryMap": "f00f4b019038f6a2ed08e824ee86f2add93d6de1cf6d1dfaa329c6a9eb3a565a",
+  "template": "bdc0e455f47f91b7e7724e71d7c0c196e839b36946ac3abb7663d725944081e5"
+ },
+ "files": {
+  "AI.con": "b8328a3b90f532baaa4198c52cb628f2ef1ee11390dbca3b8fbb4033e569ed2c",
+  "AIpathFinding.con": "9d8080cdfa7605961969aa126519b03be9691bd604ac76aef50166d81215edd2",
+  "AI/StrategicAreas.con": "e62ca763299bdb80371a262d3e562df261964722354bed61a1351df82adc952d",
+  "AI/Strategies.con": "13da4dc35872dd4b5798a066f4425bdc824cfd61f31093d1808e1202644de52e",
+  "AI/conditions.con": "248a04b727c08d696bf0fa9c162bc22c43cde3c75f695892fe1e0f5141519c49",
+  "AI/prerequisites.con": "c96168b5f69860e578f5d26728fd2a2092c4c436e1da49b7d6f4009b65735398",
+  "Pathfinding/Infantry1Level0Map.raw": "62d9c93c6666f2ea099a6de01f177fdcd50167df7510076e8f39e1db2c7a0828",
+  "Pathfinding/Infantry1Level1Map.raw": "0af273c89241b9f1516f5cecf828a21078575fe6477c217827895b4aedaf95f4",
+  "Pathfinding/Infantry1Level2Map.raw": "1888809be872dacd80f033ee9afbda72bf1cde57156c9181b4cb190d8fd3a8d7",
+  "Pathfinding/Tank0Level0Map.raw": "7bfa254bccb89cfd2b63c8f718d7a7a28ae8dd968faab43b732703ad6ea99e1d",
+  "Pathfinding/Tank0Level1Map.raw": "da0cc728c369f86b24579dbfdaaf08009efe18a7cd86d05030a623e65c4795eb",
+  "Pathfinding/Tank0Level2Map.raw": "aae5dc73706a49ea72d5c02ac1f9fc318b08edad7a18910a401e04b180ba01d6"
+ }
+}

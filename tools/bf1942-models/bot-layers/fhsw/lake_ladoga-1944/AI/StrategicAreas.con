@@ -1,0 +1,45 @@
+rem *** Strategic areas: one per control point (botgen) ***
+
+aiStrategicArea.create alliedbase 1979.7/1179.3 1984.7/1184.3 50
+aiStrategicArea.addNeighbour alliedbase2
+aiStrategicArea.addObjectTypeFlag Base
+aiStrategicArea.setOrderPosition Infantry 1985.5/1183.5
+aiStrategicArea.setSide 2
+aiStrategicArea.setTakeable 1 0
+
+aiStrategicArea.create axisbase 28.8/1042 33.8/1047 50
+aiStrategicArea.addNeighbour axisbase2
+aiStrategicArea.addObjectTypeFlag Base
+aiStrategicArea.setOrderPosition Infantry 34.5/1045.5
+aiStrategicArea.setSide 1
+aiStrategicArea.setTakeable 2 0
+
+aiStrategicArea.create central_barge 982/983.3 1022/1023.3 10
+aiStrategicArea.setTakeable 1 0
+aiStrategicArea.setTakeable 2 0
+
+aiStrategicArea.create lake_south 984/340 1024/380 10
+aiStrategicArea.setTakeable 1 0
+aiStrategicArea.setTakeable 2 0
+
+aiStrategicArea.create lake_north 989.6/1614.8 1029.6/1654.8 10
+aiStrategicArea.setTakeable 1 0
+aiStrategicArea.setTakeable 2 0
+
+aiStrategicArea.create air_supremacy 984/1008.6 1024/1048.6 10
+aiStrategicArea.setTakeable 1 0
+aiStrategicArea.setTakeable 2 0
+
+aiStrategicArea.create alliedbase2 1837/1247.8 1842/1252.8 50
+aiStrategicArea.addNeighbour alliedbase
+aiStrategicArea.addObjectTypeFlag Base
+aiStrategicArea.setOrderPosition Infantry 1843.5/1251.5
+aiStrategicArea.setSide 2
+aiStrategicArea.setTakeable 1 0
+
+aiStrategicArea.create axisbase2 184.6/941.5 189.6/946.5 50
+aiStrategicArea.addNeighbour axisbase
+aiStrategicArea.addObjectTypeFlag Base
+aiStrategicArea.setOrderPosition Infantry 188.5/945.5
+aiStrategicArea.setSide 1
+aiStrategicArea.setTakeable 2 0

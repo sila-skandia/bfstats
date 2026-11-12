@@ -1,0 +1,75 @@
+{
+ "generator": "botgen",
+ "version": 5,
+ "mod": "FHSW",
+ "level": "air_raid_alert_-kure-1945",
+ "objectSpawners": 106,
+ "template": "few",
+ "templateSource": "DICE, bf1942 Kursk (1.6 patch archives, Kursk_003.rfa): AI/Strategies.con, AI/conditions.con, AI/prerequisites.con, unchanged",
+ "templateChoice": {
+  "name": "few",
+  "inPlay": 0,
+  "rule": "0 capturable flags in play, at most 3"
+ },
+ "scope": "on foot: infantry order positions only, no search maps, no co-op layer",
+ "unreachable": [],
+ "unreachableReasons": {},
+ "botSpawnsExcluded": [
+  "axisbase1_spawn1",
+  "axisbase3_spawn1",
+  "axisbase4_spawn2",
+  "axisbase4_spawn3",
+  "axisbase1_spawn2",
+  "axisbase1_spawn3",
+  "axisbase2_spawn3",
+  "axisbase2_spawn4",
+  "axisbase3_spawn2",
+  "axisbase3_spawn3"
+ ],
+ "walkMap": {
+  "source": "page painter",
+  "engine": "none",
+  "opened": [],
+  "ways": [],
+  "cover": 0.643,
+  "floors": {
+   "stacked": false,
+   "twoFloorShare": 0.004,
+   "raised": [],
+   "reason": null
+  },
+  "capped": true,
+  "joined": 3
+ },
+ "routeProbe": {
+  "chokeMax": 4,
+  "unreachable": [],
+  "stops": {},
+  "oneSided": {},
+  "sides": {
+   "1": {
+    "spawns": 3,
+    "flags": []
+   },
+   "2": {
+    "spawns": 0,
+    "flags": []
+   }
+  },
+  "chokes": {},
+  "late": {},
+  "shutLinks": []
+ },
+ "inputs": {
+  "controlPoints": "00cfa96d73c75a4c2fef4f84ad935410f878772a56256aa12cae6fb67ebcdd95",
+  "infantryMap": "7aa2b19e7e67af754617b41cc5bf6146a5c289339bf1775a22ef71b65aeb602f",
+  "template": "bdc0e455f47f91b7e7724e71d7c0c196e839b36946ac3abb7663d725944081e5"
+ },
+ "files": {
+  "AI.con": "88dfd1983fbd9704dcfa9c80558e5e3cef3dabe0c2b9c2bb9fd9d773dea4651d",
+  "AI/StrategicAreas.con": "02256dd69b56763365757fb93d45988af5ac23aa5710f573c270b04b24de704e",
+  "AI/Strategies.con": "13da4dc35872dd4b5798a066f4425bdc824cfd61f31093d1808e1202644de52e",
+  "AI/conditions.con": "248a04b727c08d696bf0fa9c162bc22c43cde3c75f695892fe1e0f5141519c49",
+  "AI/prerequisites.con": "c96168b5f69860e578f5d26728fd2a2092c4c436e1da49b7d6f4009b65735398"
+ }
+}

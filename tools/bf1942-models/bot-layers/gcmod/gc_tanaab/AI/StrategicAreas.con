@@ -1,0 +1,16 @@
+rem *** Strategic areas: one per control point (botgen) ***
+
+aiStrategicArea.create mc_libertytemplate 553/690.2 573/710.2 50
+aiStrategicArea.addObjectTypeFlag Base
+aiStrategicArea.setOrderPosition Tank 569.5/708.5
+aiStrategicArea.setSide 2
+aiStrategicArea.setTakeable 1 0
+
+aiStrategicArea.create imp_shipyardtemplate 2173.7/2113.3 2193.7/2133.3 50
+aiStrategicArea.addObjectTypeFlag Base
+aiStrategicArea.setOrderPosition Tank 2193.7/2133.3
+aiStrategicArea.setOrderPosition Infantry 2193.7/2133.3
+
+aiStrategicArea.create impmainspawntemplate 3380.8/3370.2 3400.8/3390.2 50
+aiStrategicArea.addObjectTypeFlag Base
+aiStrategicArea.setOrderPosition Tank 3400.8/3390.2

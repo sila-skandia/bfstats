@@ -1,0 +1,50 @@
+rem *** Strategic areas: one per control point (botgen) ***
+
+aiStrategicArea.create Imperial_Base 582.1/866 587.1/871 50
+aiStrategicArea.addNeighbour Rebel_Lowland
+aiStrategicArea.addNeighbour Volcano
+aiStrategicArea.addNeighbour Imperial_Lowland
+aiStrategicArea.addObjectTypeFlag Base
+aiStrategicArea.setOrderPosition Tank 587.5/879.5
+aiStrategicArea.setOrderPosition Infantry 587.1/871
+aiStrategicArea.setSide 1
+aiStrategicArea.setTakeable 2 0
+
+aiStrategicArea.create Rebel_Base 525/205.1 530/210.1 50
+aiStrategicArea.addNeighbour Rebel_Lowland
+aiStrategicArea.addNeighbour Volcano
+aiStrategicArea.addObjectTypeFlag Base
+aiStrategicArea.setOrderPosition Tank 528.5/213.5
+aiStrategicArea.setOrderPosition Infantry 530.5/211.5
+aiStrategicArea.setSide 2
+aiStrategicArea.setTakeable 1 0
+
+aiStrategicArea.create Rebel_Lowland 697.7/354.6 717.7/374.6 150
+aiStrategicArea.addNeighbour Imperial_Base
+aiStrategicArea.addNeighbour Rebel_Base
+aiStrategicArea.addNeighbour Volcano
+aiStrategicArea.addObjectTypeFlag Flank
+aiStrategicArea.addObjectTypeFlag Close
+aiStrategicArea.addObjectTypeFlag ControlPoint
+aiStrategicArea.setOrderPosition Tank 719.5/371.5
+aiStrategicArea.setOrderPosition Infantry 717.7/374.6
+
+aiStrategicArea.create Volcano 510.5/536.1 525.5/551.1 300
+aiStrategicArea.addNeighbour Imperial_Base
+aiStrategicArea.addNeighbour Rebel_Base
+aiStrategicArea.addNeighbour Rebel_Lowland
+aiStrategicArea.addNeighbour Imperial_Lowland
+aiStrategicArea.addObjectTypeFlag Centre
+aiStrategicArea.addObjectTypeFlag StrongPoint
+aiStrategicArea.addObjectTypeFlag ControlPoint
+aiStrategicArea.setOrderPosition Tank 527.5/554.5
+aiStrategicArea.setOrderPosition Infantry 525.5/551.1
+
+aiStrategicArea.create Imperial_Lowland 335.8/712.6 355.8/732.6 150
+aiStrategicArea.addNeighbour Imperial_Base
+aiStrategicArea.addNeighbour Volcano
+aiStrategicArea.addObjectTypeFlag Flank
+aiStrategicArea.addObjectTypeFlag Close
+aiStrategicArea.addObjectTypeFlag ControlPoint
+aiStrategicArea.setOrderPosition Tank 357.5/729.5
+aiStrategicArea.setOrderPosition Infantry 355.8/732.6

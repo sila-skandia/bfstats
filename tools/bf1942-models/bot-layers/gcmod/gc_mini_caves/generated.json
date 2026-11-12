@@ -1,0 +1,124 @@
+{
+ "generator": "botgen",
+ "version": 6,
+ "mod": "GCMOD",
+ "level": "gc_mini_caves",
+ "objectSpawners": 2,
+ "template": "symmetric",
+ "templateSource": "DICE, bf1942 Kharkov (1.6 patch archives): AI/Strategies.con, AI/conditions.con, AI/prerequisites.con, unchanged",
+ "templateChoice": {
+  "name": "symmetric",
+  "inPlay": 4,
+  "rule": "4 capturable flags in play, more than 3"
+ },
+ "scope": "an infantry map painted from the walk test, a Tank0 map from the page painter, infantry order positions, no strategic maps, no co-op layer",
+ "unreachable": [],
+ "unreachableReasons": {},
+ "botSpawnsExcluded": [],
+ "walkMap": {
+  "source": "walk test",
+  "engine": "none",
+  "vehicleMap": "page painter",
+  "vehicleBrush": 3,
+  "vehicleBrushes": [
+   {
+    "brush": 3,
+    "flagsOn": 2,
+    "spawnersOn": 0,
+    "pieces": 7,
+    "main": 1488
+   },
+   {
+    "brush": 2.5,
+    "flagsOn": 2,
+    "spawnersOn": 0,
+    "pieces": 8,
+    "main": 1909
+   },
+   {
+    "brush": 2,
+    "flagsOn": 2,
+    "spawnersOn": 0,
+    "pieces": 5,
+    "main": 2303
+   },
+   {
+    "brush": 1.5,
+    "flagsOn": 2,
+    "spawnersOn": 0,
+    "pieces": 6,
+    "main": 2719
+   }
+  ],
+  "opened": [],
+  "ways": [],
+  "cover": 0.971,
+  "floors": {
+   "stacked": false,
+   "twoFloorShare": 0.005,
+   "raised": [],
+   "reason": null
+  }
+ },
+ "routeProbe": {
+  "chokeMax": 4,
+  "unreachable": [],
+  "stops": {},
+  "oneSided": {
+   "Upper_Bridge_Rebel_Side": 2,
+   "Lower_Bridge_Rebel_Side": 2,
+   "Lower_Bridge_Imperial_Side": 1,
+   "Upper_Bridge_Imperial_Side": 1
+  },
+  "sides": {
+   "1": {
+    "spawns": 4,
+    "flags": [
+     "Lower_Bridge_Imperial_Side",
+     "Upper_Bridge_Imperial_Side"
+    ]
+   },
+   "2": {
+    "spawns": 4,
+    "flags": [
+     "Lower_Bridge_Rebel_Side",
+     "Upper_Bridge_Rebel_Side"
+    ]
+   }
+  },
+  "chokes": {
+   "Upper_Bridge_Rebel_Side:1": 17,
+   "Upper_Bridge_Rebel_Side:2": 0,
+   "Lower_Bridge_Rebel_Side:1": 17,
+   "Lower_Bridge_Rebel_Side:2": 0,
+   "Lower_Bridge_Imperial_Side:1": 0,
+   "Lower_Bridge_Imperial_Side:2": 17,
+   "Upper_Bridge_Imperial_Side:1": 0,
+   "Upper_Bridge_Imperial_Side:2": 17
+  },
+  "late": {},
+  "shutLinks": [
+   "Lower_Bridge_Rebel_Side>Lower_Bridge_Imperial_Side",
+   "Lower_Bridge_Imperial_Side>Lower_Bridge_Rebel_Side"
+  ]
+ },
+ "inputs": {
+  "controlPoints": "2b271906967134ef3c00c6a80f926f00924d962653398ed13e14368d61850b1a",
+  "infantryMap": "310fceb91207c2bd24662bc22f5e6719d08817e813f3129a52e94984d46ec0ee",
+  "template": "43f8a790471528016570235f76e97dbb2045732458781a5139f37fed68bf98c0"
+ },
+ "files": {
+  "AI.con": "3dc94f663ac7545695a38d3670752432e4a5e64efe048dc4b26d578aece3748c",
+  "AIpathFinding.con": "8014dbf6ef50a7e5ba3bd3af85ed910350bb0936cd33c5a2e1c5138053711957",
+  "AI/StrategicAreas.con": "127c1199d4c71da974d5c2567b56fc421754630d99793a927f68be6f7db0ebf1",
+  "AI/Strategies.con": "4ce0be59a0d6c5cd530db002fb062c4be8d936bc6ae59bd188803ccaf7869a8d",
+  "AI/conditions.con": "68a0c7a8aec69954063147b60fae560b2874884285737aa085efa76597d395aa",
+  "AI/prerequisites.con": "4c1f313bc285b228fd6ad03bfd1f44c5b15c8703c31f802eb605bc5f00f88bb5",
+  "Pathfinding/Infantry1Level0Map.raw": "e5ed88e6b87f59b3dc9ba387b848e0b624a366d66ccbc9b005b778af6d9ac52e",
+  "Pathfinding/Infantry1Level1Map.raw": "1ffd0e830bf0299a913cff4d9cf070d29c917a6a6f87b65abbbd11ecba13dcdb",
+  "Pathfinding/Infantry1Level2Map.raw": "bad9ea85c026deb62eba3f8f1fb0f2a551550883451b8cb23510a414322ed0d0",
+  "Pathfinding/Tank0Level0Map.raw": "5245b7b5f5d1970091f4507b25be59258e715cea156f030ab2142e4499c00a41",
+  "Pathfinding/Tank0Level1Map.raw": "a3db2d1bb024956ba10b8872c3515363f55c679f3143f997cba546f1fc521cff",
+  "Pathfinding/Tank0Level2Map.raw": "fbdeec76481c64ad6851519ac23c8306665c3980d3791ef80c37ac042074a414"
+ }
+}

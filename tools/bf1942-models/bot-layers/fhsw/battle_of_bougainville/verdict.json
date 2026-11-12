@@ -1,0 +1,23 @@
+{
+ "level": "battle_of_bougainville",
+ "verdict": "fail",
+ "outcome": "unsuitable",
+ "config": "with vehicles",
+ "doctrine": "garrison",
+ "generatorVersion": 5,
+ "inputs": {
+  "controlPoints": "7a5df6c11bf7a18842a3c9d5e9ecbaa9ff8279a7a26b586b2a161c4271ba302b",
+  "infantryMap": "67cda96d6630743bf761c7cb0064eee33fe86e9c8cdb0ee116b1fa5b4e03d550",
+  "template": "bdc0e455f47f91b7e7724e71d7c0c196e839b36946ac3abb7663d725944081e5"
+ },
+ "baseline": "DICE layers with vehicles, garrison doctrine: berlin, stalingrad, kharkov, bocage; seeds 1..10, 600 s",
+ "bar": null,
+ "seeds": 1,
+ "sizes": {},
+ "oneSided": null,
+ "unreachable": [],
+ "lintErrors": [
+  "side 1 holds no spawn point at the start of the round",
+  "side 2 holds no spawn point at the start of the round"
+ ]
+}

@@ -1,0 +1,175 @@
+{
+ "generator": "botgen",
+ "version": 5,
+ "mod": "bf1918",
+ "level": "tabuaeran",
+ "objectSpawners": 39,
+ "template": "few",
+ "templateSource": "DICE, bf1942 Kursk (1.6 patch archives, Kursk_003.rfa): AI/Strategies.con, AI/conditions.con, AI/prerequisites.con, unchanged",
+ "templateChoice": {
+  "name": "few",
+  "inPlay": 1,
+  "rule": "1 capturable flag in play, at most 3"
+ },
+ "scope": "an infantry map painted from the walk test, a Tank0 map from the page painter, infantry order positions, no strategic maps, no co-op layer",
+ "unreachable": [],
+ "unreachableReasons": {},
+ "botSpawnsExcluded": [
+  "West_Tower_Spawn4",
+  "West_Tower_Spawn5",
+  "West_Tower_Spawn6",
+  "West_Tower_Spawn8",
+  "East_Tower_Spawn7",
+  "germany_Spawn1",
+  "germany_Spawn2"
+ ],
+ "walkMap": {
+  "source": "walk test",
+  "engine": "none",
+  "vehicleMap": "page painter",
+  "vehicleBrush": 1.5,
+  "vehicleBrushes": [
+   {
+    "brush": 3,
+    "flagsOn": 1,
+    "spawnersOn": 1,
+    "pieces": 18,
+    "main": 10724
+   },
+   {
+    "brush": 2.5,
+    "flagsOn": 1,
+    "spawnersOn": 1,
+    "pieces": 15,
+    "main": 11413
+   },
+   {
+    "brush": 2,
+    "flagsOn": 1,
+    "spawnersOn": 1,
+    "pieces": 16,
+    "main": 11839
+   },
+   {
+    "brush": 1.5,
+    "flagsOn": 2,
+    "spawnersOn": 2,
+    "pieces": 15,
+    "main": 13238
+   }
+  ],
+  "opened": [
+   [
+    2184,
+    1901
+   ],
+   [
+    2189,
+    1904
+   ],
+   [
+    2229,
+    1953
+   ],
+   [
+    2227,
+    1957
+   ],
+   [
+    1956,
+    2145
+   ],
+   [
+    1957,
+    2146
+   ],
+   [
+    1958,
+    2147
+   ]
+  ],
+  "ways": [
+   {
+    "who": "East_Tower_Spawn6",
+    "kind": "spawn",
+    "way": "walk",
+    "opened": 2
+   },
+   {
+    "who": "East_Tower_Spawn12",
+    "kind": "spawn",
+    "way": "walk",
+    "opened": 2
+   },
+   {
+    "who": "Outpost_Spawn1",
+    "kind": "spawn",
+    "way": "walk",
+    "opened": 3
+   },
+   {
+    "who": "germany_Spawn1",
+    "kind": "spawn",
+    "way": "none",
+    "opened": 0
+   },
+   {
+    "who": "germany_Spawn2",
+    "kind": "spawn",
+    "way": "none",
+    "opened": 0
+   }
+  ],
+  "cover": 0.972,
+  "floors": {
+   "stacked": false,
+   "twoFloorShare": 0.016,
+   "raised": [],
+   "reason": null
+  }
+ },
+ "routeProbe": {
+  "chokeMax": 4,
+  "unreachable": [],
+  "stops": {},
+  "oneSided": {
+   "Outpost": 2
+  },
+  "sides": {
+   "1": {
+    "spawns": 0,
+    "flags": []
+   },
+   "2": {
+    "spawns": 28,
+    "flags": [
+     "Outpost"
+    ]
+   }
+  },
+  "chokes": {
+   "Outpost:2": 1
+  },
+  "late": {},
+  "shutLinks": []
+ },
+ "inputs": {
+  "controlPoints": "166892f3f41e7733f865fedd9ac0498143e16b5620690058a4c7e2baf825002e",
+  "infantryMap": "483d8604ee8061fb45622da0bbf19ae0de4ba26b06bb55bf4d8dc08ae85467e4",
+  "template": "bdc0e455f47f91b7e7724e71d7c0c196e839b36946ac3abb7663d725944081e5"
+ },
+ "files": {
+  "AI.con": "8ed8e89c10559484f101f97a526aca507e2b480bac3ba562c02ffb53dcc5d6d2",
+  "AIpathFinding.con": "9d8080cdfa7605961969aa126519b03be9691bd604ac76aef50166d81215edd2",
+  "AI/StrategicAreas.con": "bc69ca4c1bc7458a2aa2e408fe891fc4cc33a45dc5564113311047d291550a16",
+  "AI/Strategies.con": "13da4dc35872dd4b5798a066f4425bdc824cfd61f31093d1808e1202644de52e",
+  "AI/conditions.con": "248a04b727c08d696bf0fa9c162bc22c43cde3c75f695892fe1e0f5141519c49",
+  "AI/prerequisites.con": "c96168b5f69860e578f5d26728fd2a2092c4c436e1da49b7d6f4009b65735398",
+  "Pathfinding/Infantry1Level0Map.raw": "321321f9bbdaddd1f9666bb36bcbff23b5138e04b1ea5c5cea1c22b2611d5aaf",
+  "Pathfinding/Infantry1Level1Map.raw": "5d15cb49557fdcb3234fbcf259413f51c755566766600e5da7a7c11d4ba71364",
+  "Pathfinding/Infantry1Level2Map.raw": "5572e49eba6ff0d99837c711da8747525ecbcf18e9aab7210005d9646fecc187",
+  "Pathfinding/Tank0Level0Map.raw": "20d92e00924e08be278a03507e25559ada7026b89a3eea3a8858bd125dbd0e22",
+  "Pathfinding/Tank0Level1Map.raw": "94455773403a9fe4202dc7c24d483c4c04e4309193dfa65587321e73e99bba34",
+  "Pathfinding/Tank0Level2Map.raw": "0b013aae20dfb4d28d1914addbc97c4a98de36a49ed97ce19afd3b5696903f17"
+ }
+}

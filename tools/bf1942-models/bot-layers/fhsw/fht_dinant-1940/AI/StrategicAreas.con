@@ -1,24 +1,28 @@
 rem *** Strategic areas: one per control point (botgen) ***
 
 aiStrategicArea.create kge_hq 2004.8/458 2009.8/463 50
+aiStrategicArea.addNeighbour dinant_city_hall
 aiStrategicArea.addObjectTypeFlag Base
+aiStrategicArea.setOrderPosition Tank 2016.5/461.5
 aiStrategicArea.setOrderPosition Infantry 2010.5/461.5
 aiStrategicArea.setSide 1
 aiStrategicArea.setTakeable 2 0
 
-aiStrategicArea.create dinant_bridge_head 1466.5/399.6 1491.5/424.6 300
+aiStrategicArea.create dinant_bridge_head 1466.5/399.6 1491.5/424.6 10
+aiStrategicArea.setSide 2
+aiStrategicArea.setTakeable 1 0
+aiStrategicArea.setTakeable 2 0
+
+aiStrategicArea.create dinant_city_hall 1239.8/356.1 1249.8/366.1 300
+aiStrategicArea.addNeighbour kge_hq
 aiStrategicArea.addNeighbour the_factory
 aiStrategicArea.addObjectTypeFlag Centre
 aiStrategicArea.addObjectTypeFlag StrongPoint
 aiStrategicArea.addObjectTypeFlag Close
 aiStrategicArea.addObjectTypeFlag ControlPoint
-aiStrategicArea.setOrderPosition Infantry 1491.5/426.5
+aiStrategicArea.setOrderPosition Tank 1249.5/368.5
+aiStrategicArea.setOrderPosition Infantry 1250.5/367.5
 aiStrategicArea.setSide 2
-
-aiStrategicArea.create dinant_city_hall 1239.8/356.1 1249.8/366.1 10
-aiStrategicArea.setSide 2
-aiStrategicArea.setTakeable 1 0
-aiStrategicArea.setTakeable 2 0
 
 aiStrategicArea.create storage 1122.6/513.6 1132.6/523.6 10
 aiStrategicArea.setSide 2
@@ -26,8 +30,9 @@ aiStrategicArea.setTakeable 1 0
 aiStrategicArea.setTakeable 2 0
 
 aiStrategicArea.create the_factory 776.9/402.6 801.9/427.6 50
-aiStrategicArea.addNeighbour dinant_bridge_head
+aiStrategicArea.addNeighbour dinant_city_hall
 aiStrategicArea.addObjectTypeFlag Base
+aiStrategicArea.setOrderPosition Tank 803.5/427.5
 aiStrategicArea.setOrderPosition Infantry 802.5/428.5
 aiStrategicArea.setSide 2
 aiStrategicArea.setTakeable 1 0

@@ -1,0 +1,279 @@
+{
+ "generator": "botgen",
+ "version": 5,
+ "mod": "DesertCombat",
+ "level": "dc_sea_rigs",
+ "objectSpawners": 19,
+ "template": "few",
+ "templateSource": "DICE, bf1942 Kursk (1.6 patch archives, Kursk_003.rfa): AI/Strategies.con, AI/conditions.con, AI/prerequisites.con, unchanged",
+ "templateChoice": {
+  "name": "few",
+  "inPlay": 0,
+  "rule": "0 capturable flags in play, at most 3"
+ },
+ "scope": "an infantry map painted from the walk test, a Tank0 map from the page painter, infantry order positions, no strategic maps, no co-op layer",
+ "unreachable": [
+  "OilRig1_Topside",
+  "OilRig2_Topside",
+  "Oil_Spill",
+  "OilRig1_Control_Room",
+  "OilRig2_Control_Room"
+ ],
+ "unreachableReasons": {
+  "OilRig1_Topside": "walk test",
+  "OilRig2_Topside": "walk test",
+  "Oil_Spill": "walk test",
+  "OilRig1_Control_Room": "walk test",
+  "OilRig2_Control_Room": "walk test"
+ },
+ "botSpawnsExcluded": [
+  "Oilrig1topside_spawn4",
+  "Oilrig2topside_spawn1",
+  "Oilrig2topside_spawn2",
+  "Oilrig2topside_spawn3",
+  "Oilrig2topside_spawn4",
+  "OilSpill_spawn1",
+  "OilSpill_spawn2",
+  "OilSpill_spawn3"
+ ],
+ "walkMap": {
+  "source": "walk test",
+  "engine": "none",
+  "vehicleMap": "page painter",
+  "vehicleBrush": 1.5,
+  "vehicleBrushes": [
+   {
+    "brush": 3,
+    "flagsOn": 1,
+    "spawnersOn": 0,
+    "pieces": 5,
+    "main": 6
+   },
+   {
+    "brush": 2.5,
+    "flagsOn": 1,
+    "spawnersOn": 0,
+    "pieces": 9,
+    "main": 97
+   },
+   {
+    "brush": 2,
+    "flagsOn": 1,
+    "spawnersOn": 0,
+    "pieces": 10,
+    "main": 104
+   },
+   {
+    "brush": 1.5,
+    "flagsOn": 2,
+    "spawnersOn": 0,
+    "pieces": 17,
+    "main": 4
+   }
+  ],
+  "opened": [
+   [
+    970,
+    1010
+   ],
+   [
+    972,
+    1010
+   ],
+   [
+    970,
+    1011
+   ],
+   [
+    970,
+    1012
+   ],
+   [
+    970,
+    1013
+   ],
+   [
+    970,
+    1014
+   ],
+   [
+    970,
+    1015
+   ],
+   [
+    970,
+    1016
+   ],
+   [
+    970,
+    1017
+   ],
+   [
+    970,
+    1018
+   ],
+   [
+    968,
+    1019
+   ],
+   [
+    969,
+    1019
+   ],
+   [
+    964,
+    1021
+   ],
+   [
+    965,
+    1021
+   ],
+   [
+    966,
+    1021
+   ],
+   [
+    967,
+    1021
+   ],
+   [
+    1058,
+    1342
+   ],
+   [
+    1059,
+    1342
+   ],
+   [
+    1060,
+    1342
+   ],
+   [
+    1061,
+    1342
+   ],
+   [
+    1056,
+    1344
+   ],
+   [
+    1057,
+    1344
+   ],
+   [
+    1055,
+    1345
+   ],
+   [
+    1055,
+    1346
+   ],
+   [
+    1055,
+    1347
+   ],
+   [
+    1055,
+    1348
+   ],
+   [
+    1055,
+    1349
+   ],
+   [
+    1055,
+    1350
+   ],
+   [
+    1055,
+    1351
+   ],
+   [
+    1055,
+    1352
+   ]
+  ],
+  "ways": [
+   {
+    "who": "Oilrig1controlroom_spawn1",
+    "kind": "spawn",
+    "way": "walk",
+    "opened": 16
+   },
+   {
+    "who": "Oilrig2controlroom_spawn1",
+    "kind": "spawn",
+    "way": "walk",
+    "opened": 14
+   },
+   {
+    "who": "OilSpill_spawn1",
+    "kind": "spawn",
+    "way": "none",
+    "opened": 0
+   },
+   {
+    "who": "OilSpill_spawn2",
+    "kind": "spawn",
+    "way": "none",
+    "opened": 0
+   },
+   {
+    "who": "OilSpill_spawn3",
+    "kind": "spawn",
+    "way": "none",
+    "opened": 0
+   }
+  ],
+  "cover": 0.917,
+  "floors": {
+   "stacked": true,
+   "twoFloorShare": 0.339,
+   "raised": [
+    "OilRig1_Topside",
+    "OilRig2_Topside",
+    "OilRig1_Control_Room",
+    "OilRig2_Control_Room"
+   ],
+   "reason": "34 % of the main floor has another walked floor over or under it"
+  }
+ },
+ "routeProbe": {
+  "chokeMax": 4,
+  "unreachable": [],
+  "stops": {},
+  "oneSided": {},
+  "sides": {
+   "1": {
+    "spawns": 3,
+    "flags": []
+   },
+   "2": {
+    "spawns": 0,
+    "flags": []
+   }
+  },
+  "chokes": {},
+  "late": {},
+  "shutLinks": []
+ },
+ "inputs": {
+  "controlPoints": "7344430e76b84b74074ea94ab330614a17dad8e3e2543ee15b79b3179d4268dc",
+  "infantryMap": "3e3af06ff787a6b9d23f8708d2b89401db5f6581cd03dd16422c699a14b44d92",
+  "template": "bdc0e455f47f91b7e7724e71d7c0c196e839b36946ac3abb7663d725944081e5"
+ },
+ "files": {
+  "AI.con": "549321036283997124af6ed3e489266748a310e970019fbfd847b623329c3db2",
+  "AIpathFinding.con": "9d8080cdfa7605961969aa126519b03be9691bd604ac76aef50166d81215edd2",
+  "AI/StrategicAreas.con": "f8adfc1829a107f6e38d3badc4ef11d9b78b659680bc81af5ec42c9245f70a47",
+  "AI/Strategies.con": "13da4dc35872dd4b5798a066f4425bdc824cfd61f31093d1808e1202644de52e",
+  "AI/conditions.con": "248a04b727c08d696bf0fa9c162bc22c43cde3c75f695892fe1e0f5141519c49",
+  "AI/prerequisites.con": "c96168b5f69860e578f5d26728fd2a2092c4c436e1da49b7d6f4009b65735398",
+  "Pathfinding/Infantry1Level0Map.raw": "71a5761e15287d71d770be5b49fcfe24e6d3e2617388fa3627fb38b16c593ada",
+  "Pathfinding/Infantry1Level1Map.raw": "c604a23226ee2548623604d861838c4067a8de651fd67a4708404394035fa458",
+  "Pathfinding/Infantry1Level2Map.raw": "68c4bba473257b36faa200fcc00eba491d51bed7bbf5e5b8b8bb3b30b27b2799",
+  "Pathfinding/Tank0Level0Map.raw": "b2b62569318cfad0c85d7c63e4462517702db151f352ea93bc23955f59897769",
+  "Pathfinding/Tank0Level1Map.raw": "7a88f13ef952afc79ae9c2597d1888f1f82cc9d0b9af7d98cf67e26838a338f2",
+  "Pathfinding/Tank0Level2Map.raw": "840c38694c82dea91374976b824c1b76725c84aa569105f0cba7d2a48b140f31"
+ }
+}

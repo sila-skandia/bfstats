@@ -1,0 +1,24 @@
+{
+ "level": "deulemont",
+ "verdict": "fail",
+ "outcome": "unsuitable",
+ "config": "with vehicles",
+ "doctrine": "garrison",
+ "generatorVersion": 6,
+ "inputs": {
+  "controlPoints": "14c5fbb609a928ba784b48b08653a123afe8047877fc83a98180533e0208434d",
+  "infantryMap": "22e2b5efe2b4475bddb9bf200097ba747df6e8a029dde457e07f10b270db025b",
+  "template": "43f8a790471528016570235f76e97dbb2045732458781a5139f37fed68bf98c0"
+ },
+ "baseline": "DICE layers with vehicles, garrison doctrine: berlin, stalingrad, kharkov, bocage; seeds 1..10, 600 s",
+ "bar": null,
+ "seeds": 1,
+ "sizes": {},
+ "oneSided": null,
+ "unreachable": [
+  "deutscher_nachschub_grabentemplate"
+ ],
+ "lintErrors": [
+  "side 1's bots have an open route to none of the 5 flags in play"
+ ]
+}

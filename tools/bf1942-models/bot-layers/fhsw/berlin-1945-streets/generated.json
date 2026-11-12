@@ -1,6 +1,6 @@
 {
  "generator": "botgen",
- "version": 5,
+ "version": 6,
  "mod": "FHSW",
  "level": "berlin-1945-streets",
  "objectSpawners": 86,
@@ -23,7 +23,6 @@
   "bauman_strasse": "walk test"
  },
  "botSpawnsExcluded": [
-  "alliedbase_spawn3",
   "hotel_alsterhof_spawn1",
   "hotel_alsterhof_spawn2",
   "wolf_platz_spawn1",
@@ -245,7 +244,7 @@
     ]
    },
    "2": {
-    "spawns": 11,
+    "spawns": 12,
     "flags": [
      "hotel_alsterhof"
     ]

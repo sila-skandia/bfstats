@@ -1,0 +1,64 @@
+rem *** Strategic areas: one per control point (botgen) ***
+
+aiStrategicArea.create Main_Entrance 787.6/1493.5 827.6/1533.5 150
+aiStrategicArea.addNeighbour Forward_Trenches
+aiStrategicArea.addNeighbour Second_trench_line
+aiStrategicArea.addObjectTypeFlag Flank
+aiStrategicArea.addObjectTypeFlag ControlPoint
+aiStrategicArea.setOrderPosition Tank 829.5/1533.5
+aiStrategicArea.setOrderPosition Infantry 828.5/1533.5
+aiStrategicArea.setSide 1
+
+aiStrategicArea.create Rebel_LZ 1353.8/290.6 1358.8/295.6 200
+aiStrategicArea.addNeighbour Forward_Fire_Base
+aiStrategicArea.addObjectTypeFlag Centre
+aiStrategicArea.addObjectTypeFlag ControlPoint
+aiStrategicArea.setOrderPosition Tank 1358.8/295.6
+aiStrategicArea.setOrderPosition Infantry 1358.8/295.6
+aiStrategicArea.setSide 2
+
+aiStrategicArea.create Mountain_Outpost 647.4/1223.4 657.4/1233.4 200
+aiStrategicArea.addNeighbour Forward_Fire_Base
+aiStrategicArea.addNeighbour Forward_Trenches
+aiStrategicArea.addNeighbour Second_trench_line
+aiStrategicArea.addObjectTypeFlag Centre
+aiStrategicArea.addObjectTypeFlag ControlPoint
+aiStrategicArea.setOrderPosition Tank 657.5/1229.5
+aiStrategicArea.setOrderPosition Infantry 657.4/1233.4
+aiStrategicArea.setSide 1
+
+aiStrategicArea.create Forward_Fire_Base 757.1/550.7 772.1/565.7 150
+aiStrategicArea.addNeighbour Rebel_LZ
+aiStrategicArea.addNeighbour Mountain_Outpost
+aiStrategicArea.addNeighbour Forward_Trenches
+aiStrategicArea.addObjectTypeFlag Flank
+aiStrategicArea.addObjectTypeFlag ControlPoint
+aiStrategicArea.setOrderPosition Tank 775.5/565.5
+aiStrategicArea.setOrderPosition Infantry 773.5/567.5
+aiStrategicArea.setSide 1
+
+aiStrategicArea.create Forward_Trenches 833.3/975.2 873.3/1015.2 300
+aiStrategicArea.addNeighbour Main_Entrance
+aiStrategicArea.addNeighbour Mountain_Outpost
+aiStrategicArea.addNeighbour Forward_Fire_Base
+aiStrategicArea.addNeighbour Second_trench_line
+aiStrategicArea.addObjectTypeFlag Centre
+aiStrategicArea.addObjectTypeFlag StrongPoint
+aiStrategicArea.addObjectTypeFlag ControlPoint
+aiStrategicArea.setOrderPosition Tank 870.5/1017.5
+aiStrategicArea.setOrderPosition Infantry 872.5/1015.5
+
+aiStrategicArea.create Main_Base 772.4/1420.5 780.4/1428.5 10
+aiStrategicArea.setSide 1
+aiStrategicArea.setTakeable 1 0
+aiStrategicArea.setTakeable 2 0
+
+aiStrategicArea.create Second_trench_line 745.9/1217.8 775.9/1247.8 200
+aiStrategicArea.addNeighbour Main_Entrance
+aiStrategicArea.addNeighbour Mountain_Outpost
+aiStrategicArea.addNeighbour Forward_Trenches
+aiStrategicArea.addObjectTypeFlag Centre
+aiStrategicArea.addObjectTypeFlag ControlPoint
+aiStrategicArea.setOrderPosition Tank 775.9/1247.8
+aiStrategicArea.setOrderPosition Infantry 775.9/1247.8
+aiStrategicArea.setSide 1

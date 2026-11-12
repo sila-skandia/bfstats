@@ -1,0 +1,16 @@
+rem *** Strategic areas: one per control point (botgen) ***
+
+aiStrategicArea.create eastern_island 3829.1/483.5 3834.1/488.5 50
+aiStrategicArea.addObjectTypeFlag Base
+aiStrategicArea.setSide 2
+aiStrategicArea.setTakeable 1 0
+
+aiStrategicArea.create axisbase 2832.3/435.2 2837.3/440.2 50
+aiStrategicArea.addObjectTypeFlag Base
+aiStrategicArea.setOrderPosition Infantry 2838.5/439.5
+aiStrategicArea.setSide 2
+aiStrategicArea.setTakeable 1 0
+
+aiStrategicArea.create SeaPointTemplate 2029.6/2092.1 2069.6/2132.1 10
+aiStrategicArea.setTakeable 1 0
+aiStrategicArea.setTakeable 2 0

@@ -1,0 +1,30 @@
+{
+ "level": "quest_for_adventure",
+ "verdict": "fail",
+ "outcome": "unsuitable",
+ "config": "with vehicles",
+ "doctrine": "garrison",
+ "generatorVersion": 5,
+ "inputs": {
+  "controlPoints": "333b4e4c8085fcf8dfb5f0fe635bc4d15aa77fae7075dab22656005e2d112a8f",
+  "infantryMap": "0f95de415f165097cbf93b459763522ae27093c491644e80fa6c3a5d7ee8637f",
+  "template": "bdc0e455f47f91b7e7724e71d7c0c196e839b36946ac3abb7663d725944081e5"
+ },
+ "baseline": "DICE layers with vehicles, garrison doctrine: berlin, stalingrad, kharkov, bocage; seeds 1..10, 600 s",
+ "bar": null,
+ "seeds": 1,
+ "sizes": {},
+ "oneSided": null,
+ "unreachable": [
+  "Helena_Hangars_nazi",
+  "Helena_Hangars_US",
+  "Teddy_Bear_VS_Garden_Gnome_allied",
+  "Teddy_Bear_VS_Garden_Gnome_nazi",
+  "Tiki_Tiki_Bar"
+ ],
+ "lintErrors": [
+  "no capturable flag is reachable in 3D: none of the 5 has a place inside its radius that a soldier on the one-floor walk map's main ground can stand in",
+  "side 1 has no spawn with a route to any flag it must take: of its 1 spawns 1 have no way on foot to the main ground; the level places 113 ladders, which neither the walk test nor a bot climbs",
+  "side 2 has no spawn with a route to any flag it must take: of its 1 spawns 1 have no way on foot to the main ground; the level places 113 ladders, which neither the walk test nor a bot climbs"
+ ]
+}

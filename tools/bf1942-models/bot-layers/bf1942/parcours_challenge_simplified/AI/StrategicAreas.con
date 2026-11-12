@@ -1,0 +1,41 @@
+rem *** Strategic areas: one per control point (botgen) ***
+
+aiStrategicArea.create Stage_8_Allies 132.6/1029 137.6/1034 10
+aiStrategicArea.setTakeable 1 0
+aiStrategicArea.setTakeable 2 0
+
+aiStrategicArea.create Stage_8_Axis 132.4/1000.9 137.4/1005.9 10
+aiStrategicArea.setTakeable 1 0
+aiStrategicArea.setTakeable 2 0
+
+aiStrategicArea.create Stage_17_Allies 1455/875 1460/880 10
+aiStrategicArea.setTakeable 1 0
+aiStrategicArea.setTakeable 2 0
+
+aiStrategicArea.create Stage_17_Axis 1423/875 1428/880 10
+aiStrategicArea.setTakeable 1 0
+aiStrategicArea.setTakeable 2 0
+
+aiStrategicArea.create Finish_Axis 1442.7/354.7 1447.7/359.7 10
+aiStrategicArea.setTakeable 1 0
+aiStrategicArea.setTakeable 2 0
+
+aiStrategicArea.create Finish_Allies 1435.7/363.3 1440.7/368.3 10
+aiStrategicArea.setTakeable 1 0
+aiStrategicArea.setTakeable 2 0
+
+aiStrategicArea.create AlliedBaseCQ 39/183.5 44/188.5 50
+aiStrategicArea.addNeighbour AxisBaseCQ
+aiStrategicArea.addObjectTypeFlag Base
+aiStrategicArea.setOrderPosition Tank 44.5/190.5
+aiStrategicArea.setOrderPosition Infantry 44.5/187.5
+aiStrategicArea.setSide 2
+aiStrategicArea.setTakeable 1 0
+
+aiStrategicArea.create AxisBaseCQ 59.1/183.5 64.1/188.5 50
+aiStrategicArea.addNeighbour AlliedBaseCQ
+aiStrategicArea.addObjectTypeFlag Base
+aiStrategicArea.setOrderPosition Tank 64.5/190.5
+aiStrategicArea.setOrderPosition Infantry 64.5/187.5
+aiStrategicArea.setSide 1
+aiStrategicArea.setTakeable 2 0

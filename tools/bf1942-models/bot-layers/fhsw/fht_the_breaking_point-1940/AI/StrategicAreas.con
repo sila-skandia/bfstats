@@ -1,0 +1,79 @@
+rem *** Strategic areas: one per control point (botgen) ***
+
+aiStrategicArea.create checkpoint_west 901.2/634.7 931.2/664.7 150
+aiStrategicArea.addNeighbour checkpoint_east
+aiStrategicArea.addNeighbour castle_ruins
+aiStrategicArea.addNeighbour steene
+aiStrategicArea.addNeighbour church
+aiStrategicArea.addNeighbour outskirts
+aiStrategicArea.addObjectTypeFlag Flank
+aiStrategicArea.addObjectTypeFlag ControlPoint
+aiStrategicArea.setOrderPosition Tank 931.5/654.5
+aiStrategicArea.setOrderPosition Infantry 940.5/664.5
+aiStrategicArea.setSide 2
+
+aiStrategicArea.create checkpoint_east 1402.1/1044.3 1432.1/1074.3 150
+aiStrategicArea.addNeighbour checkpoint_west
+aiStrategicArea.addNeighbour castle_ruins
+aiStrategicArea.addNeighbour steene
+aiStrategicArea.addNeighbour church
+aiStrategicArea.addNeighbour outskirts
+aiStrategicArea.addObjectTypeFlag Flank
+aiStrategicArea.addObjectTypeFlag ControlPoint
+aiStrategicArea.setOrderPosition Tank 1431.5/1084.5
+aiStrategicArea.setOrderPosition Infantry 1431.5/1083.5
+aiStrategicArea.setSide 2
+
+aiStrategicArea.create castle_ruins 923.4/960.7 943.4/980.7 300
+aiStrategicArea.addNeighbour checkpoint_west
+aiStrategicArea.addNeighbour checkpoint_east
+aiStrategicArea.addNeighbour church
+aiStrategicArea.addNeighbour outskirts
+aiStrategicArea.addObjectTypeFlag Centre
+aiStrategicArea.addObjectTypeFlag StrongPoint
+aiStrategicArea.addObjectTypeFlag ControlPoint
+aiStrategicArea.setOrderPosition Tank 940.5/977.5
+aiStrategicArea.setOrderPosition Infantry 943.5/981.5
+aiStrategicArea.setSide 2
+
+aiStrategicArea.create spycker 401.1/1585 426.1/1610 200
+aiStrategicArea.addNeighbour church
+aiStrategicArea.addNeighbour outskirts
+aiStrategicArea.addObjectTypeFlag Centre
+aiStrategicArea.addObjectTypeFlag ControlPoint
+aiStrategicArea.setOrderPosition Tank 433.5/1609.5
+aiStrategicArea.setOrderPosition Infantry 426.1/1610
+aiStrategicArea.setSide 2
+
+aiStrategicArea.create steene 1523.7/431.3 1541.7/449.3 200
+aiStrategicArea.addNeighbour checkpoint_west
+aiStrategicArea.addNeighbour checkpoint_east
+aiStrategicArea.addObjectTypeFlag Centre
+aiStrategicArea.addObjectTypeFlag ControlPoint
+aiStrategicArea.setOrderPosition Tank 1543.5/447.5
+aiStrategicArea.setOrderPosition Infantry 1542.5/447.5
+aiStrategicArea.setSide 2
+
+aiStrategicArea.create church 419.8/1020.3 429.8/1030.3 150
+aiStrategicArea.addNeighbour checkpoint_west
+aiStrategicArea.addNeighbour checkpoint_east
+aiStrategicArea.addNeighbour castle_ruins
+aiStrategicArea.addNeighbour spycker
+aiStrategicArea.addNeighbour outskirts
+aiStrategicArea.addObjectTypeFlag Flank
+aiStrategicArea.addObjectTypeFlag ControlPoint
+aiStrategicArea.setOrderPosition Tank 431.5/1030.5
+aiStrategicArea.setOrderPosition Infantry 430.5/1029.5
+aiStrategicArea.setSide 2
+
+aiStrategicArea.create outskirts 775.7/1287.8 800.7/1312.8 200
+aiStrategicArea.addNeighbour checkpoint_west
+aiStrategicArea.addNeighbour checkpoint_east
+aiStrategicArea.addNeighbour castle_ruins
+aiStrategicArea.addNeighbour spycker
+aiStrategicArea.addNeighbour church
+aiStrategicArea.addObjectTypeFlag Centre
+aiStrategicArea.addObjectTypeFlag ControlPoint
+aiStrategicArea.setOrderPosition Tank 801.5/1315.5
+aiStrategicArea.setOrderPosition Infantry 799.5/1311.5
+aiStrategicArea.setSide 2

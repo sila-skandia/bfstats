@@ -1,0 +1,115 @@
+{
+ "generator": "botgen",
+ "version": 5,
+ "mod": "FHSW",
+ "level": "korsun_pocket",
+ "objectSpawners": 200,
+ "template": "few",
+ "templateSource": "DICE, bf1942 Kursk (1.6 patch archives, Kursk_003.rfa): AI/Strategies.con, AI/conditions.con, AI/prerequisites.con, unchanged",
+ "templateChoice": {
+  "name": "few",
+  "inPlay": 2,
+  "rule": "2 capturable flags in play, at most 3"
+ },
+ "scope": "on foot: infantry order positions only, no search maps, no co-op layer",
+ "unreachable": [
+  "new_control_point1"
+ ],
+ "unreachableReasons": {
+  "new_control_point1": "walk test"
+ },
+ "botSpawnsExcluded": [
+  "axisbase2_spawn1",
+  "alliedbase2_spawn1",
+  "new_control_point1_spawn1",
+  "new_control_point2_spawn1",
+  "axisbase1_spawn1",
+  "new_control_point3_spawn1",
+  "axisbase2_spawn2",
+  "axisbase2_spawn3",
+  "new_control_point1_spawn3",
+  "new_control_point1_spawn4",
+  "new_control_point1_spawn5",
+  "new_control_point1_spawn6",
+  "new_control_point1_spawn7",
+  "alliedbase1_spawn4",
+  "alliedbase1_spawn5",
+  "alliedbase1_spawn7",
+  "axisbase1_spawn2",
+  "axisbase1_spawn6",
+  "axisbase1_spawn7",
+  "new_control_point2_spawn2",
+  "new_control_point2_spawn3",
+  "new_control_point2_spawn5",
+  "new_control_point2_spawn6",
+  "new_control_point2_spawn7",
+  "alliedbase2_spawn2",
+  "alliedbase2_spawn4",
+  "new_control_point3_spawn2",
+  "new_control_point3_spawn3",
+  "new_control_point3_spawn4",
+  "new_control_point3_spawn5",
+  "new_control_point3_spawn6",
+  "new_control_point3_spawn7"
+ ],
+ "walkMap": {
+  "source": "page painter",
+  "engine": "none",
+  "opened": [],
+  "ways": [],
+  "cover": 0.897,
+  "floors": {
+   "stacked": true,
+   "twoFloorShare": 0.003,
+   "raised": [
+    "new_control_point1",
+    "new_control_point2"
+   ],
+   "reason": "2 of 3 capturable flags stand a storey over or under another walked floor"
+  },
+  "capped": true,
+  "joined": 6
+ },
+ "routeProbe": {
+  "chokeMax": 4,
+  "unreachable": [],
+  "stops": {},
+  "oneSided": {},
+  "sides": {
+   "1": {
+    "spawns": 6,
+    "flags": [
+     "new_control_point2",
+     "new_control_point3"
+    ]
+   },
+   "2": {
+    "spawns": 9,
+    "flags": [
+     "new_control_point2",
+     "new_control_point3"
+    ]
+   }
+  },
+  "chokes": {
+   "new_control_point2:1": 0,
+   "new_control_point2:2": 0,
+   "new_control_point3:1": 0,
+   "new_control_point3:2": 0
+  },
+  "late": {},
+  "shutLinks": []
+ },
+ "inputs": {
+  "controlPoints": "a5bee4cf208e1bf734945855c3e4dd43b1f9d75d540958084a1351f92cc20293",
+  "infantryMap": "76c3b2fa83de527a655e8a9b53ef693994e6ac1edf50aadaf266a99ae7c95d22",
+  "template": "bdc0e455f47f91b7e7724e71d7c0c196e839b36946ac3abb7663d725944081e5"
+ },
+ "files": {
+  "AI.con": "ff65da5cf781f265a28875b6cbca3063a01ed39073ce89fcfbb96af7a80600f7",
+  "AI/StrategicAreas.con": "fe6585ea9685766c74e4bcbdd61b397c7fca8336334ecc4510320ba37fccab07",
+  "AI/Strategies.con": "13da4dc35872dd4b5798a066f4425bdc824cfd61f31093d1808e1202644de52e",
+  "AI/conditions.con": "248a04b727c08d696bf0fa9c162bc22c43cde3c75f695892fe1e0f5141519c49",
+  "AI/prerequisites.con": "c96168b5f69860e578f5d26728fd2a2092c4c436e1da49b7d6f4009b65735398"
+ }
+}

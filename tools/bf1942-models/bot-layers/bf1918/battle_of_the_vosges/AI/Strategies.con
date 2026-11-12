@@ -1,0 +1,43 @@
+if v_arg1 == host
+rem ----- Host 
+rem ---------------------------------------------------------------------------- 
+
+rem *** Create Strategies ***
+
+
+rem *** Kursk ***
+
+aiStrategy.createStrategy breakOut
+aiStrategy.Aggression 1.0
+aiStrategy.NumberOfAttacks 1
+aiStrategy.NumberOfDefences 0
+aiStrategy.setPrerequisite breakOutPrereq
+aiStrategy.setStrategicObjectsModifier ControlPoint 4.0 
+
+aiStrategy.createStrategy holdAndCamp
+aiStrategy.Aggression 0.65
+aiStrategy.NumberOfAttacks 1
+aiStrategy.NumberOfDefences 2
+aiStrategy.setPrerequisite holdAndCampPrereq
+aiStrategy.setStrategicObjectsModifier Safe          0.2 Owned
+aiStrategy.setStrategicObjectsModifier ControlPoint  2.0 Owned
+
+aiStrategy.createStrategy single
+aiStrategy.Aggression 1.0
+aiStrategy.NumberOfAttacks 1
+aiStrategy.NumberOfDefences 0
+aiStrategy.TimeLimit 200
+aiStrategy.setPrerequisite singlePrereq
+aiStrategy.setStrategicObjectsModifier Safe          0.2 Owned
+
+aiStrategy.createStrategy double
+aiStrategy.Aggression 1.0
+aiStrategy.NumberOfAttacks 2
+aiStrategy.NumberOfDefences 0
+aiStrategy.TimeLimit 200
+aiStrategy.setPrerequisite doublePrereq
+aiStrategy.setStrategicObjectsModifier Safe          0.2 Owned
+
+
+rem ----------------------------------------------------------------------------
+endIf

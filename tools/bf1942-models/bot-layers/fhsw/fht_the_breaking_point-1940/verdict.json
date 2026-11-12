@@ -1,0 +1,22 @@
+{
+ "level": "fht_the_breaking_point-1940",
+ "verdict": "fail",
+ "outcome": "unsuitable",
+ "config": "with vehicles",
+ "doctrine": "garrison",
+ "generatorVersion": 6,
+ "inputs": {
+  "controlPoints": "f6b420a8769ea6be6a0cbe2a32ab6be1a29c2140a47cfa3a34bb2c80345dc6c3",
+  "infantryMap": "96b069fa1bb7b5f9b7190843702042a6ccf5891712d7c9c8da90a77819a9979c",
+  "template": "43f8a790471528016570235f76e97dbb2045732458781a5139f37fed68bf98c0"
+ },
+ "baseline": "DICE layers with vehicles, garrison doctrine: berlin, stalingrad, kharkov, bocage; seeds 1..10, 600 s",
+ "bar": null,
+ "seeds": 1,
+ "sizes": {},
+ "oneSided": null,
+ "unreachable": [],
+ "lintErrors": [
+  "spycker: the Infantry order position is not a free cell"
+ ]
+}

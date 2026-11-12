@@ -1,0 +1,56 @@
+rem *** Strategic areas: one per control point (botgen) ***
+
+aiStrategicArea.create Bela_Vistal 1383.6/1753 1388.6/1758 50
+aiStrategicArea.addNeighbour Daoba_Guerfel
+aiStrategicArea.addNeighbour Imperial_Outpost
+aiStrategicArea.addObjectTypeFlag Base
+aiStrategicArea.setOrderPosition Tank 1376.5/1749.5
+aiStrategicArea.setOrderPosition Infantry 1390.5/1769.5
+aiStrategicArea.setSide 1
+aiStrategicArea.setTakeable 2 0
+
+aiStrategicArea.create Nerf_City 869.3/248.7 874.3/253.7 50
+aiStrategicArea.addNeighbour Rebel_Hideout
+aiStrategicArea.addNeighbour Imperial_Outpost
+aiStrategicArea.addObjectTypeFlag Base
+aiStrategicArea.setOrderPosition Tank 874.5/256.5
+aiStrategicArea.setOrderPosition Infantry 876.5/252.5
+aiStrategicArea.setSide 2
+aiStrategicArea.setTakeable 1 0
+
+aiStrategicArea.create Vreni_Island 544.4/970.9 569.4/995.9 10
+aiStrategicArea.setTakeable 1 0
+aiStrategicArea.setTakeable 2 0
+
+aiStrategicArea.create Daoba_Guerfel 1491/963.8 1516/988.8 150
+aiStrategicArea.addNeighbour Bela_Vistal
+aiStrategicArea.addNeighbour Rebel_Hideout
+aiStrategicArea.addNeighbour Imperial_Outpost
+aiStrategicArea.addObjectTypeFlag Flank
+aiStrategicArea.addObjectTypeFlag ControlPoint
+aiStrategicArea.setOrderPosition Tank 1513.5/988.5
+aiStrategicArea.setOrderPosition Infantry 1516/988.8
+
+aiStrategicArea.create Rebel_Hideout 1108.8/696.5 1133.8/721.5 300
+aiStrategicArea.addNeighbour Nerf_City
+aiStrategicArea.addNeighbour Daoba_Guerfel
+aiStrategicArea.addNeighbour Imperial_Outpost
+aiStrategicArea.addObjectTypeFlag Centre
+aiStrategicArea.addObjectTypeFlag StrongPoint
+aiStrategicArea.addObjectTypeFlag Close
+aiStrategicArea.addObjectTypeFlag ControlPoint
+aiStrategicArea.setOrderPosition Tank 1131.5/721.5
+aiStrategicArea.setOrderPosition Infantry 1131.5/721.5
+aiStrategicArea.setSide 2
+
+aiStrategicArea.create Imperial_Outpost 1052.8/1317.1 1074.8/1339.1 200
+aiStrategicArea.addNeighbour Bela_Vistal
+aiStrategicArea.addNeighbour Nerf_City
+aiStrategicArea.addNeighbour Daoba_Guerfel
+aiStrategicArea.addNeighbour Rebel_Hideout
+aiStrategicArea.addObjectTypeFlag Centre
+aiStrategicArea.addObjectTypeFlag Close
+aiStrategicArea.addObjectTypeFlag ControlPoint
+aiStrategicArea.setOrderPosition Tank 1074.5/1336.5
+aiStrategicArea.setOrderPosition Infantry 1074.5/1336.5
+aiStrategicArea.setSide 1

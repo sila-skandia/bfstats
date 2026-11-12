@@ -1,0 +1,24 @@
+{
+ "level": "gc_judicator_push",
+ "verdict": "fail",
+ "outcome": "unsuitable",
+ "config": "with vehicles",
+ "doctrine": "garrison",
+ "generatorVersion": 6,
+ "inputs": {
+  "controlPoints": "9498f4cd6d89a2ba004250d442dc236c4833ac1d33a5236bffced21b16d60b3d",
+  "infantryMap": "15e0bba520fd6a25c98438e38971c37aacc6aca55e8093df3c81a62a47ce97d7",
+  "template": "43f8a790471528016570235f76e97dbb2045732458781a5139f37fed68bf98c0"
+ },
+ "baseline": "DICE layers with vehicles, garrison doctrine: berlin, stalingrad, kharkov, bocage; seeds 1..10, 600 s",
+ "bar": null,
+ "seeds": 1,
+ "sizes": {},
+ "oneSided": null,
+ "unreachable": [
+  "imperial_bridgetemplate"
+ ],
+ "lintErrors": [
+  "side 2 has no spawn with a route to any flag it must take: of its 5 spawns 5 have no way on foot to the main ground; the level places 1 ladders, which neither the walk test nor a bot climbs"
+ ]
+}

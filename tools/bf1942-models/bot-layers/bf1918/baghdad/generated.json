@@ -1,0 +1,170 @@
+{
+ "generator": "botgen",
+ "version": 5,
+ "mod": "bf1918",
+ "level": "baghdad",
+ "objectSpawners": 64,
+ "template": "symmetric",
+ "templateSource": "DICE, bf1942 Kharkov (1.6 patch archives): AI/Strategies.con, AI/conditions.con, AI/prerequisites.con, unchanged",
+ "templateChoice": {
+  "name": "symmetric",
+  "inPlay": 5,
+  "rule": "5 capturable flags in play, more than 3"
+ },
+ "scope": "an infantry map painted from the walk test, a Tank0 map from the page painter, infantry order positions, no strategic maps, no co-op layer",
+ "unreachable": [
+  "Baghdad_Outskirts_South"
+ ],
+ "unreachableReasons": {
+  "Baghdad_Outskirts_South": "route probe"
+ },
+ "botSpawnsExcluded": [
+  "Baghdad_mosque_Spawn2"
+ ],
+ "walkMap": {
+  "source": "walk test",
+  "engine": "none",
+  "vehicleMap": "page painter",
+  "vehicleBrush": 1.5,
+  "vehicleBrushes": [
+   {
+    "brush": 3,
+    "flagsOn": 1,
+    "spawnersOn": 0,
+    "pieces": 31,
+    "main": 490906
+   },
+   {
+    "brush": 2.5,
+    "flagsOn": 1,
+    "spawnersOn": 3,
+    "pieces": 36,
+    "main": 98211
+   },
+   {
+    "brush": 2,
+    "flagsOn": 1,
+    "spawnersOn": 5,
+    "pieces": 38,
+    "main": 99138
+   },
+   {
+    "brush": 1.5,
+    "flagsOn": 1,
+    "spawnersOn": 6,
+    "pieces": 38,
+    "main": 100929
+   }
+  ],
+  "opened": [
+   [
+    564,
+    354
+   ],
+   [
+    564,
+    355
+   ],
+   [
+    564,
+    356
+   ]
+  ],
+  "ways": [
+   {
+    "who": "Ottoman_Defend_Lines_West_Spawn3",
+    "kind": "spawn",
+    "way": "walk",
+    "opened": 3
+   }
+  ],
+  "cover": 0.975,
+  "floors": {
+   "stacked": false,
+   "twoFloorShare": 0.006,
+   "raised": [],
+   "reason": null
+  }
+ },
+ "routeProbe": {
+  "chokeMax": 4,
+  "unreachable": [
+   "Baghdad_Outskirts_South"
+  ],
+  "stops": {
+   "Baghdad_Outskirts_South": {
+    "1": {
+     "stage": "leg",
+     "leg": 0,
+     "from": [
+      652.7,
+      -249.7
+     ],
+     "to": [
+      646.5,
+      -254.5
+     ]
+    },
+    "2": {
+     "stage": "strategic"
+    }
+   }
+  },
+  "oneSided": {
+   "Baghdad_Palace": 1,
+   "Ottoman_Defend_Lines_West": 1,
+   "Baghdad_East": 1,
+   "Baghdad_mosque": 1,
+   "Ottoman_Defend_Lines_East": 1
+  },
+  "sides": {
+   "1": {
+    "spawns": 33,
+    "flags": [
+     "Baghdad_East",
+     "Baghdad_Palace",
+     "Baghdad_mosque",
+     "Ottoman_Defend_Lines_East",
+     "Ottoman_Defend_Lines_West"
+    ]
+   },
+   "2": {
+    "spawns": 5,
+    "flags": []
+   }
+  },
+  "chokes": {
+   "Baghdad_Palace:1": 0,
+   "Baghdad_Palace:2": 9,
+   "Ottoman_Defend_Lines_West:1": 0,
+   "Ottoman_Defend_Lines_West:2": 7,
+   "Baghdad_East:1": 0,
+   "Baghdad_East:2": 9,
+   "Baghdad_mosque:1": 0,
+   "Baghdad_mosque:2": 9,
+   "Ottoman_Defend_Lines_East:1": 0,
+   "Ottoman_Defend_Lines_East:2": 9
+  },
+  "late": {},
+  "shutLinks": []
+ },
+ "inputs": {
+  "controlPoints": "e9659f1b0eb86d5fabb24938bf3bca207c2d2fcaa5406b5937179aa1022cd627",
+  "infantryMap": "02f7ff3ce7deecaa47cc318cc3f0304fde4664c0613ca2edf09848ef78d21801",
+  "template": "43f8a790471528016570235f76e97dbb2045732458781a5139f37fed68bf98c0"
+ },
+ "files": {
+  "AI.con": "22a3e370127833163855d36adda4a7391c034ecb2ac38f0c631787813d15b49b",
+  "AIpathFinding.con": "9d8080cdfa7605961969aa126519b03be9691bd604ac76aef50166d81215edd2",
+  "AI/StrategicAreas.con": "84ca37085a8b50546212fbbb3a05cff2c48e30a2a0210547dc9478f0ab3acc6c",
+  "AI/Strategies.con": "4ce0be59a0d6c5cd530db002fb062c4be8d936bc6ae59bd188803ccaf7869a8d",
+  "AI/conditions.con": "68a0c7a8aec69954063147b60fae560b2874884285737aa085efa76597d395aa",
+  "AI/prerequisites.con": "4c1f313bc285b228fd6ad03bfd1f44c5b15c8703c31f802eb605bc5f00f88bb5",
+  "Pathfinding/Infantry1Level0Map.raw": "1087227da0fbc7cd7a72a45e64abe8fda1232dd387e0c5f0916cf0a2d4dcd5e9",
+  "Pathfinding/Infantry1Level1Map.raw": "6e82c50bd1c3256590c684fd8bf24b656d807c79dbeb1150752b6f4e2a17b27b",
+  "Pathfinding/Infantry1Level2Map.raw": "59132ab3e1a43c26b455159b0b3659d061baadd3d63da3978c7c45084110fdbf",
+  "Pathfinding/Tank0Level0Map.raw": "ffccd3788b736147387e849dd3adc0e5ed727ec5bea28f114bee3b4222261e54",
+  "Pathfinding/Tank0Level1Map.raw": "3184ba3100748d3bbc67509fed379fa640129478ff445eed204e439519c1b9f6",
+  "Pathfinding/Tank0Level2Map.raw": "af5dc62ad352a15f76a19f8600f755e8acbc95c10ddbb3f03ae139d80c6abb63"
+ }
+}

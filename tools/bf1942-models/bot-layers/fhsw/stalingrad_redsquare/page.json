@@ -2,7 +2,7 @@
  "level": "Stalingrad_RedSquare",
  "mod": "fhsw",
  "url": "https://play.bfstats.io/map.html?map=Stalingrad_RedSquare&team=2&mode=Conquest&mod=fhsw&botCount=16&botSkill=0.75&mute&shots",
- "date": "2026-11-11",
+ "date": "2026-11-12",
  "bar": "DICE levels on the page, 3 matches each of 600 s, 16 bots: Berlin, Stalingrad, Kharkov, Bocage; 2026-11-11",
  "verdict": "fail",
  "failed": [
@@ -12,13 +12,13 @@
  "checks": [
   {
    "metric": "teamKillsPerBotMinute",
-   "median": 0.0062,
+   "median": 0,
    "bar": "<= 0.025",
    "pass": true
   },
   {
    "metric": "suicidesPerBotMinute",
-   "median": 0.0062,
+   "median": 0.0187,
    "bar": "<= 0.0562",
    "pass": true
   },
@@ -36,6 +36,16 @@
   }
  ],
  "matches": 1,
+ "rollout": {
+  "pass": true,
+  "floor": {
+   "kills": 0.15,
+   "killsWithFlags": 0.03,
+   "flags": 3,
+   "killsWithAFlag": 0.05,
+   "ownHand": 0.1
+  }
+ },
  "runs": [
   {
    "generated": {
@@ -44,16 +54,23 @@
    },
    "minutes": 10,
    "tickets": {
-    "1": 88,
-    "2": 102
+    "1": 87,
+    "2": 103
    },
    "capturesTotal": 3,
-   "teamKillsPerBotMinute": 0.0062,
-   "suicidesPerBotMinute": 0.0062,
+   "teamKillsPerBotMinute": 0,
+   "suicidesPerBotMinute": 0.0187,
    "nonEnemyDeathShareWorseSide": 1,
    "enemyKillsPerBotMinute": 0.05,
+   "rollout": {
+    "pass": true,
+    "why": [],
+    "enemyKills": 0.05,
+    "captures": 3,
+    "ownHand": 0.0187
+   },
    "teamKillsBySide": {
-    "1": 1,
+    "1": 0,
     "2": 0
    }
   }

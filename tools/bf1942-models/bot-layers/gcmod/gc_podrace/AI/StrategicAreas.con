@@ -1,0 +1,25 @@
+rem *** Strategic areas: one per control point (botgen) ***
+
+aiStrategicArea.create Imperial_Start 845.5/260.1 850.5/265.1 50
+aiStrategicArea.addNeighbour Rebel_Start
+aiStrategicArea.addObjectTypeFlag Base
+aiStrategicArea.setOrderPosition Tank 850.5/258.5
+aiStrategicArea.setOrderPosition Infantry 850.5/265.1
+aiStrategicArea.setSide 1
+aiStrategicArea.setTakeable 2 0
+
+aiStrategicArea.create Rebel_Start 840.9/153.6 845.9/158.6 50
+aiStrategicArea.addNeighbour Imperial_Start
+aiStrategicArea.addObjectTypeFlag Base
+aiStrategicArea.setOrderPosition Tank 845.5/165.5
+aiStrategicArea.setOrderPosition Infantry 845.5/163.5
+aiStrategicArea.setSide 2
+aiStrategicArea.setTakeable 1 0
+
+aiStrategicArea.create Checkpoint 1252/1649.3 1262/1659.3 10
+aiStrategicArea.setTakeable 1 0
+aiStrategicArea.setTakeable 2 0
+
+aiStrategicArea.create Finish_Line 701.9/201.9 711.9/211.9 10
+aiStrategicArea.setTakeable 1 0
+aiStrategicArea.setTakeable 2 0

@@ -1,0 +1,26 @@
+{
+ "level": "pakfront",
+ "verdict": "fail",
+ "outcome": "unsuitable",
+ "config": "with vehicles",
+ "doctrine": "garrison",
+ "generatorVersion": 5,
+ "inputs": {
+  "controlPoints": "585bbb39130c7270b7bd3b5fa378bda48f9d7ae099d833eadb05d793be454c4a",
+  "infantryMap": "93d2863af4ee7662dfbdb1b6ed0d1171aeefd809ba1b4033ddc26621c27a497b",
+  "template": "43f8a790471528016570235f76e97dbb2045732458781a5139f37fed68bf98c0"
+ },
+ "baseline": "DICE layers with vehicles, garrison doctrine: berlin, stalingrad, kharkov, bocage; seeds 1..10, 600 s",
+ "bar": null,
+ "seeds": 1,
+ "sizes": {},
+ "oneSided": null,
+ "unreachable": [
+  "ussrbase1st_south",
+  "ussrbase_2nd_south"
+ ],
+ "lintErrors": [
+  "the play surface is stacked floors (3 of 6 capturable flags stand a storey over or under another walked floor): a one-floor walk map cannot hold it",
+  "side 1 has no spawn with a route to any flag it must take: of its 5 spawns 5 have no way on foot to the main ground; the level places 4 ladders, which neither the walk test nor a bot climbs"
+ ]
+}

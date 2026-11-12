@@ -1,0 +1,154 @@
+{
+ "generator": "botgen",
+ "version": 5,
+ "mod": "FHSW",
+ "level": "fht_conquest_of_java-1942",
+ "objectSpawners": 160,
+ "template": "symmetric",
+ "templateSource": "DICE, bf1942 Kharkov (1.6 patch archives): AI/Strategies.con, AI/conditions.con, AI/prerequisites.con, unchanged",
+ "templateChoice": {
+  "name": "symmetric",
+  "inPlay": 5,
+  "rule": "5 capturable flags in play, more than 3"
+ },
+ "scope": "an infantry map painted from the walk test, a Tank0 map from the page painter, infantry order positions, no strategic maps, no co-op layer",
+ "unreachable": [],
+ "unreachableReasons": {},
+ "botSpawnsExcluded": [
+  "axis_base_spawn2",
+  "lagoon_spawn2",
+  "lagoon_spawn3",
+  "lagoon_spawn5"
+ ],
+ "walkMap": {
+  "source": "walk test",
+  "engine": "none",
+  "vehicleMap": "page painter",
+  "vehicleBrush": 1.5,
+  "vehicleBrushes": [
+   {
+    "brush": 3,
+    "flagsOn": 3,
+    "spawnersOn": 33,
+    "pieces": 45,
+    "main": 83537
+   },
+   {
+    "brush": 2.5,
+    "flagsOn": 3,
+    "spawnersOn": 41,
+    "pieces": 45,
+    "main": 109168
+   },
+   {
+    "brush": 2,
+    "flagsOn": 5,
+    "spawnersOn": 43,
+    "pieces": 44,
+    "main": 122111
+   },
+   {
+    "brush": 1.5,
+    "flagsOn": 5,
+    "spawnersOn": 47,
+    "pieces": 43,
+    "main": 145967
+   }
+  ],
+  "opened": [
+   [
+    895,
+    1092
+   ],
+   [
+    893,
+    1096
+   ]
+  ],
+  "ways": [
+   {
+    "who": "axis_base_spawn2",
+    "kind": "spawn",
+    "way": "jump",
+    "opened": 0
+   },
+   {
+    "who": "us_village_spawn2",
+    "kind": "spawn",
+    "way": "walk",
+    "opened": 2
+   },
+   {
+    "who": "lagoon_spawn2",
+    "kind": "spawn",
+    "way": "none",
+    "opened": 0
+   }
+  ],
+  "cover": 0.982,
+  "floors": {
+   "stacked": false,
+   "twoFloorShare": 0.003,
+   "raised": [
+    "tunnel"
+   ],
+   "reason": null
+  }
+ },
+ "routeProbe": {
+  "chokeMax": 4,
+  "unreachable": [],
+  "stops": {},
+  "oneSided": {
+   "east_java": 2,
+   "tunnel": 2,
+   "casualty_clearing_station": 2,
+   "village": 2,
+   "lagoon": 2
+  },
+  "sides": {
+   "1": {
+    "spawns": 0,
+    "flags": []
+   },
+   "2": {
+    "spawns": 53,
+    "flags": [
+     "casualty_clearing_station",
+     "east_java",
+     "lagoon",
+     "tunnel",
+     "village"
+    ]
+   }
+  },
+  "chokes": {
+   "east_java:2": 0,
+   "tunnel:2": 0,
+   "casualty_clearing_station:2": 0,
+   "village:2": 0,
+   "lagoon:2": 1
+  },
+  "late": {},
+  "shutLinks": []
+ },
+ "inputs": {
+  "controlPoints": "eaffb2ce92e5eed6b9fd8812d75964b748a5cc6039fde57280939a4bdd2d4082",
+  "infantryMap": "f29f6bd3d22acc40d1fac45654cc381bc1c492dc109fbf3d3bbb1bac34b56cc0",
+  "template": "43f8a790471528016570235f76e97dbb2045732458781a5139f37fed68bf98c0"
+ },
+ "files": {
+  "AI.con": "26f62f783813f16aedaa4cd94d6da44996c4e824dcf37c7206fe33779fba7eda",
+  "AIpathFinding.con": "9d8080cdfa7605961969aa126519b03be9691bd604ac76aef50166d81215edd2",
+  "AI/StrategicAreas.con": "e3fb66abf722fadd6f1eaed0b6cc7f41631fec8b38d74d062da3251750d509da",
+  "AI/Strategies.con": "4ce0be59a0d6c5cd530db002fb062c4be8d936bc6ae59bd188803ccaf7869a8d",
+  "AI/conditions.con": "68a0c7a8aec69954063147b60fae560b2874884285737aa085efa76597d395aa",
+  "AI/prerequisites.con": "4c1f313bc285b228fd6ad03bfd1f44c5b15c8703c31f802eb605bc5f00f88bb5",
+  "Pathfinding/Infantry1Level0Map.raw": "993992fed6549575e8b9bbb38a64e216396b941da94686e7389c5a396bca5f85",
+  "Pathfinding/Infantry1Level1Map.raw": "6a30d5015b5578e0866dc739eb2b14933ad7809823745133c776ee14e06eedc3",
+  "Pathfinding/Infantry1Level2Map.raw": "7ee3902226e1508ff26db10b6b0c06d2e86be82a036c411e26cccf8574cf2589",
+  "Pathfinding/Tank0Level0Map.raw": "322db5650b857729d3b13732dc113abb61436718dcfbb6d787ae2afaf672b50e",
+  "Pathfinding/Tank0Level1Map.raw": "b80d23b1e8b6b721d67b87ca945b25db0296c3d2624605fa5132d84bb5ea7b79",
+  "Pathfinding/Tank0Level2Map.raw": "e5c0811db2b0695dc11ea428ed5e4bff5700080854d79e06bb8e48da1f34affc"
+ }
+}

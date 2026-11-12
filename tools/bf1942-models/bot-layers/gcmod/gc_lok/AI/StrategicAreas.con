@@ -1,0 +1,51 @@
+rem *** Strategic areas: one per control point (botgen) ***
+
+aiStrategicArea.create Imperial_Headquarters 1379.1/1572.5 1393.1/1586.5 150
+aiStrategicArea.addNeighbour Communications_Center
+aiStrategicArea.addObjectTypeFlag Flank
+aiStrategicArea.addObjectTypeFlag ControlPoint
+aiStrategicArea.setOrderPosition Tank 1393.5/1577.5
+aiStrategicArea.setOrderPosition Infantry 1393.5/1577.5
+aiStrategicArea.setSide 1
+
+aiStrategicArea.create Captured_Imp_Starport 1007.9/295.6 1012.9/300.6 50
+aiStrategicArea.addNeighbour Junkyard
+aiStrategicArea.addObjectTypeFlag Base
+aiStrategicArea.setOrderPosition Tank 1016.5/299.5
+aiStrategicArea.setOrderPosition Infantry 1016.5/299.5
+aiStrategicArea.setSide 2
+aiStrategicArea.setTakeable 1 0
+
+aiStrategicArea.create Research_Center 789.3/1207.8 814.3/1232.8 150
+aiStrategicArea.addNeighbour Junkyard
+aiStrategicArea.addNeighbour Communications_Center
+aiStrategicArea.addObjectTypeFlag Flank
+aiStrategicArea.addObjectTypeFlag ControlPoint
+aiStrategicArea.setOrderPosition Tank 805.5/1232.5
+aiStrategicArea.setOrderPosition Infantry 806.5/1236.5
+aiStrategicArea.setSide 1
+
+aiStrategicArea.create Junkyard 1203/1158.4 1223/1178.4 150
+aiStrategicArea.addNeighbour Captured_Imp_Starport
+aiStrategicArea.addNeighbour Research_Center
+aiStrategicArea.addObjectTypeFlag Flank
+aiStrategicArea.addObjectTypeFlag Close
+aiStrategicArea.addObjectTypeFlag ControlPoint
+aiStrategicArea.setOrderPosition Tank 1220.5/1178.5
+aiStrategicArea.setOrderPosition Infantry 1221.5/1176.5
+aiStrategicArea.setSide 1
+
+aiStrategicArea.create Supply_Depot 956.5/1419.6 971.5/1434.6 10
+aiStrategicArea.setSide 1
+aiStrategicArea.setTakeable 1 0
+aiStrategicArea.setTakeable 2 0
+
+aiStrategicArea.create Communications_Center 964.5/1626.4 989.5/1651.4 300
+aiStrategicArea.addNeighbour Imperial_Headquarters
+aiStrategicArea.addNeighbour Research_Center
+aiStrategicArea.addObjectTypeFlag Centre
+aiStrategicArea.addObjectTypeFlag StrongPoint
+aiStrategicArea.addObjectTypeFlag ControlPoint
+aiStrategicArea.setOrderPosition Tank 989.5/1648.5
+aiStrategicArea.setOrderPosition Infantry 991.5/1649.5
+aiStrategicArea.setSide 1

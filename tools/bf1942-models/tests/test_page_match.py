@@ -123,6 +123,13 @@ class RolloutFloor(unittest.TestCase):
         f = run_harness()["floor"]
         self.assertEqual(f["ownHand"]["why"], ["ownHand"])
         self.assertEqual(f["ownHand"]["ownHand"], 0.119)
+
+    def test_a_lively_level_may_lose_a_third_as_many_by_its_own_hand(self) -> None:
+        # DICE's own levels on the page run to 0.31 (Berlin, Kharkov); the flat cap is for quiet levels.
+        f = run_harness()["floor"]
+        self.assertTrue(f["ownHandLively"]["pass"])
+        self.assertEqual(f["ownHandRace"]["why"], ["ownHand"])
+        self.assertEqual(f["ownHandQuiet"]["why"], ["ownHand"])
         self.assertEqual(f["error"]["why"], ["pageErrors"])
 
 if __name__ == "__main__":

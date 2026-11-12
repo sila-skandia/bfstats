@@ -1,0 +1,85 @@
+{
+ "generator": "botgen",
+ "version": 5,
+ "mod": "DesertCombat",
+ "level": "dc_no_fly_zone",
+ "objectSpawners": 55,
+ "template": "few",
+ "templateSource": "DICE, bf1942 Kursk (1.6 patch archives, Kursk_003.rfa): AI/Strategies.con, AI/conditions.con, AI/prerequisites.con, unchanged",
+ "templateChoice": {
+  "name": "few",
+  "inPlay": 0,
+  "rule": "0 capturable flags in play, at most 3"
+ },
+ "scope": "on foot: infantry order positions only, no search maps, no co-op layer",
+ "unreachable": [
+  "West_No_Fly_Zone",
+  "Middle_No_Fly_Zone",
+  "East_No_Fly_Zone"
+ ],
+ "unreachableReasons": {
+  "West_No_Fly_Zone": "walk test",
+  "Middle_No_Fly_Zone": "walk test",
+  "East_No_Fly_Zone": "walk test"
+ },
+ "botSpawnsExcluded": [
+  "Coalition_Airbase_Spawn1",
+  "Coalition_Airbase_Spawn2",
+  "Coalition_Airbase_Spawn3",
+  "Coalition_Airbase_Spawn4",
+  "Coalition_Airbase_Spawn9",
+  "Coalition_Airbase_Spawn10",
+  "Coalition_Airbase_Spawn11",
+  "Coalition_Airbase_Spawn12",
+  "Coalition_Airbase_Spawn13",
+  "Coalition_Airbase_Spawn14",
+  "Coalition_Airbase_Spawn16",
+  "Opposition_Airbase_Spawn1"
+ ],
+ "walkMap": {
+  "source": "page painter",
+  "engine": "none",
+  "opened": [],
+  "ways": [],
+  "cover": 0.795,
+  "floors": {
+   "stacked": false,
+   "twoFloorShare": 0.019,
+   "raised": [],
+   "reason": null
+  },
+  "capped": true,
+  "joined": 1
+ },
+ "routeProbe": {
+  "chokeMax": 4,
+  "unreachable": [],
+  "stops": {},
+  "oneSided": {},
+  "sides": {
+   "1": {
+    "spawns": 10,
+    "flags": []
+   },
+   "2": {
+    "spawns": 5,
+    "flags": []
+   }
+  },
+  "chokes": {},
+  "late": {},
+  "shutLinks": []
+ },
+ "inputs": {
+  "controlPoints": "94b660b4ced5d9ca09337bc17452f552d75370f3270fa059c2af47aad5fa12c6",
+  "infantryMap": "c08cd9d158b960f00d0575836b36a10db853c02024f5e3b8784ca6844579ea9a",
+  "template": "bdc0e455f47f91b7e7724e71d7c0c196e839b36946ac3abb7663d725944081e5"
+ },
+ "files": {
+  "AI.con": "73237dc6aaa6a0635578470b4f825888d4281599954787dc66743faf72cd6a7d",
+  "AI/StrategicAreas.con": "419a3d1c3429659090a6b19953951171b56852f258059e1c542f3439b300e5bf",
+  "AI/Strategies.con": "13da4dc35872dd4b5798a066f4425bdc824cfd61f31093d1808e1202644de52e",
+  "AI/conditions.con": "248a04b727c08d696bf0fa9c162bc22c43cde3c75f695892fe1e0f5141519c49",
+  "AI/prerequisites.con": "c96168b5f69860e578f5d26728fd2a2092c4c436e1da49b7d6f4009b65735398"
+ }
+}

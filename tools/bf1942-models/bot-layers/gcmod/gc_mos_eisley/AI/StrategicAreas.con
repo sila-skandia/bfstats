@@ -1,0 +1,37 @@
+rem *** Strategic areas: one per control point (botgen) ***
+
+aiStrategicArea.create northwest 369/625 384/640 10
+aiStrategicArea.setSide 1
+aiStrategicArea.setTakeable 1 0
+aiStrategicArea.setTakeable 2 0
+
+aiStrategicArea.create southwest 354/354 384/384 150
+aiStrategicArea.addNeighbour southeast
+aiStrategicArea.addObjectTypeFlag Flank
+aiStrategicArea.addObjectTypeFlag ControlPoint
+aiStrategicArea.setOrderPosition Tank 387.5/391.5
+aiStrategicArea.setOrderPosition Infantry 382.5/386.5
+aiStrategicArea.setSide 1
+
+aiStrategicArea.create centralcp 494.9/492.2 512.9/510.2 10
+aiStrategicArea.setSide 2
+aiStrategicArea.setTakeable 1 0
+aiStrategicArea.setTakeable 2 0
+
+aiStrategicArea.create southeast 610/354 640/384 150
+aiStrategicArea.addNeighbour southwest
+aiStrategicArea.addObjectTypeFlag Flank
+aiStrategicArea.addObjectTypeFlag ControlPoint
+aiStrategicArea.setOrderPosition Tank 641.5/384.5
+aiStrategicArea.setOrderPosition Infantry 640/384
+aiStrategicArea.setSide 1
+
+aiStrategicArea.create northeast 623.5/644.5 641.5/662.5 10
+aiStrategicArea.setSide 1
+aiStrategicArea.setTakeable 1 0
+aiStrategicArea.setTakeable 2 0
+
+aiStrategicArea.create centralcp2 492/415.8 512/435.8 10
+aiStrategicArea.setSide 2
+aiStrategicArea.setTakeable 1 0
+aiStrategicArea.setTakeable 2 0

@@ -1,0 +1,103 @@
+{
+ "generator": "botgen",
+ "version": 5,
+ "mod": "FHSW",
+ "level": "operation_springawakening",
+ "objectSpawners": 234,
+ "template": "symmetric",
+ "templateSource": "DICE, bf1942 Kharkov (1.6 patch archives): AI/Strategies.con, AI/conditions.con, AI/prerequisites.con, unchanged",
+ "templateChoice": {
+  "name": "symmetric",
+  "inPlay": 4,
+  "rule": "4 capturable flags in play, more than 3"
+ },
+ "scope": "on foot: infantry order positions only, no search maps, no co-op layer",
+ "unreachable": [],
+ "unreachableReasons": {},
+ "botSpawnsExcluded": [
+  "axis_base1_spawn1",
+  "axis_base1_spawn2",
+  "axis_base1_spawn3",
+  "allies_base1_spawn1",
+  "allies_base1_spawn3",
+  "allies_base1_spawn4",
+  "allies_base1_spawn5",
+  "allies_base1_spawn6",
+  "new_control_point1_spawn1",
+  "new_control_point3_spawn1",
+  "new_control_point4_spawn1",
+  "new_control_point2_spawn2",
+  "new_control_point5_spawn2",
+  "new_control_point1_spawn3",
+  "new_control_point3_spawn3",
+  "new_control_point1_spawn4",
+  "new_control_point2_spawn4",
+  "new_control_point3_spawn4",
+  "new_control_point5_spawn4"
+ ],
+ "walkMap": {
+  "source": "page painter",
+  "engine": "none",
+  "opened": [],
+  "ways": [],
+  "cover": 0.93,
+  "floors": {
+   "stacked": false,
+   "twoFloorShare": 0.006,
+   "raised": [],
+   "reason": null
+  },
+  "capped": true,
+  "joined": 6
+ },
+ "routeProbe": {
+  "chokeMax": 4,
+  "unreachable": [],
+  "stops": {},
+  "oneSided": {},
+  "sides": {
+   "1": {
+    "spawns": 3,
+    "flags": [
+     "new_control_point1",
+     "new_control_point2",
+     "new_control_point3",
+     "new_control_point4"
+    ]
+   },
+   "2": {
+    "spawns": 10,
+    "flags": [
+     "new_control_point1",
+     "new_control_point2",
+     "new_control_point3",
+     "new_control_point4"
+    ]
+   }
+  },
+  "chokes": {
+   "new_control_point1:1": 1,
+   "new_control_point1:2": 0,
+   "new_control_point2:1": 0,
+   "new_control_point2:2": 0,
+   "new_control_point3:1": 0,
+   "new_control_point3:2": 0,
+   "new_control_point4:1": 0,
+   "new_control_point4:2": 0
+  },
+  "late": {},
+  "shutLinks": []
+ },
+ "inputs": {
+  "controlPoints": "91c944c188430bf85ee604b3df287258b7ef6869f62788c68636aca68d9a68e9",
+  "infantryMap": "ecf54cf4ff886614ff1750cdd35d14a78f5b2cb0abb7bc11dceeb89cd0c8e767",
+  "template": "43f8a790471528016570235f76e97dbb2045732458781a5139f37fed68bf98c0"
+ },
+ "files": {
+  "AI.con": "6add06fce9aa94cfe94d211bd067d741e04433e1f1c464973e40b7b389dd13d7",
+  "AI/StrategicAreas.con": "5255e2341777ed584ee2080da54f9e06f4f7040c7ab3b43637d2dcff915e3677",
+  "AI/Strategies.con": "4ce0be59a0d6c5cd530db002fb062c4be8d936bc6ae59bd188803ccaf7869a8d",
+  "AI/conditions.con": "68a0c7a8aec69954063147b60fae560b2874884285737aa085efa76597d395aa",
+  "AI/prerequisites.con": "4c1f313bc285b228fd6ad03bfd1f44c5b15c8703c31f802eb605bc5f00f88bb5"
+ }
+}

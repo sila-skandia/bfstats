@@ -405,11 +405,12 @@ export async function lintLevel({ maps, models = null, map, source = null }) {
       ? liveStrategiesAtStart({ StrategicLayer: M.StrategicLayer, StrategicAI: M.StrategicAI, ai: extras.ai, flags: world.flags, candidateMin: M.SAI?.candidateMin ?? 0.1 })
       : null,
   });
-  // The kits: a level whose bots would hold the stand-in weapon is not judged.
+  // The kits: a level whose bots would hold the stand-in weapon is not judged. The message names the file
+  // within the tree, never its absolute path: the text is kept in verdict.json, and a path names a machine.
   const loadoutsFile = path.join(maps, '_shared', 'loadouts.json');
   const kits = kitsDealt(existsSync(loadoutsFile) ? JSON.parse(readFileSync(loadoutsFile, 'utf8')) : null, map);
   if (kits.missing.length) {
-    res.errors.push({ check: 'kits', text: `no kit for ${kits.missing.map(s => (s === 1 ? 'Axis' : 'Allies')).join(' or ')} in ${loadoutsFile}: `
+    res.errors.push({ check: 'kits', text: `no kit for ${kits.missing.map(s => (s === 1 ? 'Axis' : 'Allies')).join(' or ')} in the tree's _shared/loadouts.json: `
       + 'the bots would fire the stand-in weapon; refresh the tree\'s loadouts.json from the published one' });
   }
   res.facts = { ...(res.facts ?? {}), kits: kits.sides };

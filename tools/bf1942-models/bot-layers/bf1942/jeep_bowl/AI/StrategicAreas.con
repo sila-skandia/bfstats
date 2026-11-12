@@ -1,0 +1,27 @@
+rem *** Strategic areas: one per control point (botgen) ***
+
+aiStrategicArea.create AxisBase 505.4/352.4 510.4/357.4 50
+aiStrategicArea.addNeighbour Bowl
+aiStrategicArea.addObjectTypeFlag Base
+aiStrategicArea.setOrderPosition Tank 510.5/367.5
+aiStrategicArea.setOrderPosition Infantry 510.5/365.5
+aiStrategicArea.setSide 1
+aiStrategicArea.setTakeable 2 0
+
+aiStrategicArea.create AlliedBase 495.5/620 500.5/625 50
+aiStrategicArea.addNeighbour Bowl
+aiStrategicArea.addObjectTypeFlag Base
+aiStrategicArea.setOrderPosition Tank 490.5/609.5
+aiStrategicArea.setOrderPosition Infantry 500.5/613.5
+aiStrategicArea.setSide 2
+aiStrategicArea.setTakeable 1 0
+
+aiStrategicArea.create Bowl 493/469.2 503/479.2 300
+aiStrategicArea.addNeighbour AxisBase
+aiStrategicArea.addNeighbour AlliedBase
+aiStrategicArea.addObjectTypeFlag Centre
+aiStrategicArea.addObjectTypeFlag StrongPoint
+aiStrategicArea.addObjectTypeFlag Close
+aiStrategicArea.addObjectTypeFlag ControlPoint
+aiStrategicArea.setOrderPosition Tank 500.5/477.5
+aiStrategicArea.setOrderPosition Infantry 502.5/478.5

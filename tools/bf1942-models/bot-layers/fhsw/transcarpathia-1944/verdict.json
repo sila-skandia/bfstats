@@ -1,0 +1,24 @@
+{
+ "level": "transcarpathia-1944",
+ "verdict": "fail",
+ "outcome": "unsuitable",
+ "config": "with vehicles",
+ "doctrine": "garrison",
+ "generatorVersion": 5,
+ "inputs": {
+  "controlPoints": "ea74ef979942b33918a24b572c6812d9b36181dffbc58e09dc3f3965873bee01",
+  "infantryMap": "bbd3cb84a950e76e378bbe0eda5975aa67634387ba8bcc5e91abdb62eadeabf8",
+  "template": "43f8a790471528016570235f76e97dbb2045732458781a5139f37fed68bf98c0"
+ },
+ "baseline": "DICE layers with vehicles, garrison doctrine: berlin, stalingrad, kharkov, bocage; seeds 1..10, 600 s",
+ "bar": null,
+ "seeds": 1,
+ "sizes": {},
+ "oneSided": null,
+ "unreachable": [
+  "hungarian_3template"
+ ],
+ "lintErrors": [
+  "side 2's bots have an open route to none of the 4 flags in play"
+ ]
+}

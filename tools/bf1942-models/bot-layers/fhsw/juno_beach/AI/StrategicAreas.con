@@ -1,0 +1,50 @@
+rem *** Strategic areas: one per control point (botgen) ***
+
+aiStrategicArea.create beach_village 734.3/1084.2 749.3/1099.2 200
+aiStrategicArea.addNeighbour beach_north_village
+aiStrategicArea.addObjectTypeFlag Centre
+aiStrategicArea.addObjectTypeFlag ControlPoint
+aiStrategicArea.setOrderPosition Infantry 748.5/1098.5
+aiStrategicArea.setSide 1
+
+aiStrategicArea.create hill_radar 827.6/1307.3 842.6/1322.3 300
+aiStrategicArea.addNeighbour german_northbase
+aiStrategicArea.addNeighbour river_crossing
+aiStrategicArea.addNeighbour beach_north_village
+aiStrategicArea.addObjectTypeFlag Centre
+aiStrategicArea.addObjectTypeFlag StrongPoint
+aiStrategicArea.addObjectTypeFlag ControlPoint
+aiStrategicArea.setOrderPosition Infantry 845.5/1323.5
+aiStrategicArea.setSide 1
+
+aiStrategicArea.create german_northbase 1332.4/1656.8 1337.4/1661.8 200
+aiStrategicArea.addNeighbour hill_radar
+aiStrategicArea.addNeighbour river_crossing
+aiStrategicArea.addNeighbour beach_north_village
+aiStrategicArea.addObjectTypeFlag Centre
+aiStrategicArea.addObjectTypeFlag ControlPoint
+aiStrategicArea.setOrderPosition Infantry 1336.5/1660.5
+aiStrategicArea.setSide 1
+
+aiStrategicArea.create river_crossing 1287.1/1159.2 1307.1/1179.2 150
+aiStrategicArea.addNeighbour hill_radar
+aiStrategicArea.addNeighbour german_northbase
+aiStrategicArea.addNeighbour beach_north_village
+aiStrategicArea.addObjectTypeFlag Flank
+aiStrategicArea.addObjectTypeFlag ControlPoint
+aiStrategicArea.setOrderPosition Infantry 1313.5/1179.5
+aiStrategicArea.setSide 1
+
+aiStrategicArea.create beach_north_village 819.8/1202.1 824.8/1207.1 200
+aiStrategicArea.addNeighbour beach_village
+aiStrategicArea.addNeighbour hill_radar
+aiStrategicArea.addNeighbour german_northbase
+aiStrategicArea.addNeighbour river_crossing
+aiStrategicArea.addObjectTypeFlag Centre
+aiStrategicArea.addObjectTypeFlag ControlPoint
+aiStrategicArea.setOrderPosition Infantry 825.5/1208.5
+
+aiStrategicArea.create checkpoint 1052.6/1349 1067.6/1364 10
+aiStrategicArea.setSide 1
+aiStrategicArea.setTakeable 1 0
+aiStrategicArea.setTakeable 2 0

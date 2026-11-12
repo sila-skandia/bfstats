@@ -1,0 +1,56 @@
+rem *** Strategic areas: one per control point (botgen) ***
+
+aiStrategicArea.create Start_Achse 760/458.3 800/498.3 50
+aiStrategicArea.addNeighbour Start_Alliierte
+aiStrategicArea.addNeighbour Sprungschanze
+aiStrategicArea.addNeighbour Nordkurve
+aiStrategicArea.addObjectTypeFlag Base
+aiStrategicArea.setOrderPosition Tank 800.5/496.5
+aiStrategicArea.setOrderPosition Infantry 800.5/497.5
+aiStrategicArea.setSide 1
+aiStrategicArea.setTakeable 2 0
+
+aiStrategicArea.create Start_Alliierte 760.3/419.4 800.3/459.4 50
+aiStrategicArea.addNeighbour Start_Achse
+aiStrategicArea.addNeighbour Serpentinen
+aiStrategicArea.addNeighbour Suedkurve
+aiStrategicArea.addObjectTypeFlag Base
+aiStrategicArea.setOrderPosition Tank 798.5/459.5
+aiStrategicArea.setOrderPosition Infantry 799.5/459.5
+aiStrategicArea.setSide 2
+aiStrategicArea.setTakeable 1 0
+
+aiStrategicArea.create Serpentinen 437.2/441.9 467.2/471.9 150
+aiStrategicArea.addNeighbour Start_Alliierte
+aiStrategicArea.addNeighbour Sprungschanze
+aiStrategicArea.addNeighbour Suedkurve
+aiStrategicArea.addObjectTypeFlag Flank
+aiStrategicArea.addObjectTypeFlag ControlPoint
+aiStrategicArea.setOrderPosition Tank 451.5/471.5
+aiStrategicArea.setOrderPosition Infantry 466.5/472.5
+
+aiStrategicArea.create Sprungschanze 513.5/576.3 543.5/606.3 150
+aiStrategicArea.addNeighbour Start_Achse
+aiStrategicArea.addNeighbour Serpentinen
+aiStrategicArea.addNeighbour Nordkurve
+aiStrategicArea.addObjectTypeFlag Flank
+aiStrategicArea.addObjectTypeFlag ControlPoint
+aiStrategicArea.setOrderPosition Tank 543.5/604.5
+aiStrategicArea.setOrderPosition Infantry 543.5/605.5
+
+aiStrategicArea.create Nordkurve 595.7/646.3 635.7/686.3 150
+aiStrategicArea.addNeighbour Start_Achse
+aiStrategicArea.addNeighbour Sprungschanze
+aiStrategicArea.addObjectTypeFlag Flank
+aiStrategicArea.addObjectTypeFlag Close
+aiStrategicArea.addObjectTypeFlag ControlPoint
+aiStrategicArea.setOrderPosition Tank 633.5/686.5
+aiStrategicArea.setOrderPosition Infantry 635.5/685.5
+
+aiStrategicArea.create Suedkurve 426.1/301.2 461.1/336.2 150
+aiStrategicArea.addNeighbour Start_Alliierte
+aiStrategicArea.addNeighbour Serpentinen
+aiStrategicArea.addObjectTypeFlag Flank
+aiStrategicArea.addObjectTypeFlag ControlPoint
+aiStrategicArea.setOrderPosition Tank 460.5/339.5
+aiStrategicArea.setOrderPosition Infantry 460.5/337.5

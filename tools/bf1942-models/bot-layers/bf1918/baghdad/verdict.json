@@ -1,0 +1,22 @@
+{
+ "level": "baghdad",
+ "verdict": "fail",
+ "outcome": "unsuitable",
+ "config": "with vehicles",
+ "doctrine": "garrison",
+ "generatorVersion": 5,
+ "inputs": {
+  "controlPoints": "e9659f1b0eb86d5fabb24938bf3bca207c2d2fcaa5406b5937179aa1022cd627",
+  "infantryMap": "02f7ff3ce7deecaa47cc318cc3f0304fde4664c0613ca2edf09848ef78d21801",
+  "template": "43f8a790471528016570235f76e97dbb2045732458781a5139f37fed68bf98c0"
+ },
+ "baseline": "DICE layers with vehicles, garrison doctrine: berlin, stalingrad, kharkov, bocage; seeds 1..10, 600 s",
+ "bar": null,
+ "seeds": 1,
+ "sizes": {},
+ "oneSided": null,
+ "unreachable": [],
+ "lintErrors": [
+  "side 2's bots have an open route to none of the 5 flags in play"
+ ]
+}

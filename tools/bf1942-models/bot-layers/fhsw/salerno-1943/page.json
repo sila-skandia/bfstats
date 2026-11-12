@@ -2,7 +2,7 @@
  "level": "Salerno-1943",
  "mod": "fhsw",
  "url": "https://play.bfstats.io/map.html?map=Salerno-1943&team=2&mode=Conquest&mod=fhsw&botCount=16&botSkill=0.75&mute&shots",
- "date": "2026-11-11",
+ "date": "2026-11-12",
  "bar": "DICE levels on the page, 3 matches each of 600 s, 16 bots: Berlin, Stalingrad, Kharkov, Bocage; 2026-11-11",
  "verdict": "fail",
  "failed": [
@@ -13,7 +13,7 @@
  "checks": [
   {
    "metric": "teamKillsPerBotMinute",
-   "median": 0.0062,
+   "median": 0,
    "bar": "<= 0.025",
    "pass": true
   },
@@ -25,18 +25,28 @@
   },
   {
    "metric": "nonEnemyDeathShareWorseSide",
-   "median": 0.6,
+   "median": 0.769,
    "bar": "<= 0.308",
    "pass": false
   },
   {
    "metric": "enemyKillsPerBotMinute",
-   "median": 0.075,
+   "median": 0.0437,
    "bar": ">= 0.175",
    "pass": false
   }
  ],
  "matches": 1,
+ "rollout": {
+  "pass": true,
+  "floor": {
+   "kills": 0.15,
+   "killsWithFlags": 0.03,
+   "flags": 3,
+   "killsWithAFlag": 0.05,
+   "ownHand": 0.1
+  }
+ },
  "runs": [
   {
    "generated": {
@@ -45,17 +55,24 @@
    },
    "minutes": 10,
    "tickets": {
-    "1": 108,
-    "2": 72
+    "1": 112,
+    "2": 74
    },
-   "capturesTotal": 4,
-   "teamKillsPerBotMinute": 0.0062,
+   "capturesTotal": 12,
+   "teamKillsPerBotMinute": 0,
    "suicidesPerBotMinute": 0.0625,
-   "nonEnemyDeathShareWorseSide": 0.6,
-   "enemyKillsPerBotMinute": 0.075,
+   "nonEnemyDeathShareWorseSide": 0.769,
+   "enemyKillsPerBotMinute": 0.0437,
+   "rollout": {
+    "pass": true,
+    "why": [],
+    "enemyKills": 0.0437,
+    "captures": 12,
+    "ownHand": 0.0625
+   },
    "teamKillsBySide": {
     "1": 0,
-    "2": 1
+    "2": 0
    }
   }
  ]

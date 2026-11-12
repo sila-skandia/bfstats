@@ -2,12 +2,10 @@
  "level": "Moscow_Outskirts-1941",
  "mod": "fhsw",
  "url": "https://play.bfstats.io/map.html?map=Moscow_Outskirts-1941&team=2&mode=Conquest&mod=fhsw&botCount=16&botSkill=0.75&mute&shots",
- "date": "2026-11-11",
+ "date": "2026-11-12",
  "bar": "DICE levels on the page, 3 matches each of 600 s, 16 bots: Berlin, Stalingrad, Kharkov, Bocage; 2026-11-11",
- "verdict": "fail",
- "failed": [
-  "enemyKillsPerBotMinute"
- ],
+ "verdict": "pass",
+ "failed": [],
  "checks": [
   {
    "metric": "teamKillsPerBotMinute",
@@ -17,21 +15,21 @@
   },
   {
    "metric": "suicidesPerBotMinute",
-   "median": 0.0125,
+   "median": 0.0437,
    "bar": "<= 0.0562",
    "pass": true
   },
   {
    "metric": "nonEnemyDeathShareWorseSide",
-   "median": 0.077,
+   "median": 0.231,
    "bar": "<= 0.308",
    "pass": true
   },
   {
    "metric": "enemyKillsPerBotMinute",
-   "median": 0.15,
+   "median": 0.2187,
    "bar": ">= 0.175",
-   "pass": false
+   "pass": true
   }
  ],
  "matches": 1,
@@ -53,20 +51,20 @@
    },
    "minutes": 10,
    "tickets": {
-    "1": 135,
-    "2": 135
+    "1": 122,
+    "2": 132
    },
-   "capturesTotal": 4,
+   "capturesTotal": 6,
    "teamKillsPerBotMinute": 0,
-   "suicidesPerBotMinute": 0.0125,
-   "nonEnemyDeathShareWorseSide": 0.077,
-   "enemyKillsPerBotMinute": 0.15,
+   "suicidesPerBotMinute": 0.0437,
+   "nonEnemyDeathShareWorseSide": 0.231,
+   "enemyKillsPerBotMinute": 0.2187,
    "rollout": {
     "pass": true,
     "why": [],
-    "enemyKills": 0.15,
-    "captures": 4,
-    "ownHand": 0.0125
+    "enemyKills": 0.2187,
+    "captures": 6,
+    "ownHand": 0.0437
    },
    "teamKillsBySide": {
     "1": 0,

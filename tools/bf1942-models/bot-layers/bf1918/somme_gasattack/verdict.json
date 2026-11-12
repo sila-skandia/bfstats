@@ -1,0 +1,22 @@
+{
+ "level": "somme_gasattack",
+ "verdict": "fail",
+ "outcome": "unsuitable",
+ "config": "with vehicles",
+ "doctrine": "garrison",
+ "generatorVersion": 6,
+ "inputs": {
+  "controlPoints": "e5696fd673dabd3a00d8161f7bd994f162103e43d86b24276a87ba9f1fcff559",
+  "infantryMap": "b2e96368349b0357c4ba23b410b08402c1038f7374dc31c12f26882b4831e068",
+  "template": "bdc0e455f47f91b7e7724e71d7c0c196e839b36946ac3abb7663d725944081e5"
+ },
+ "baseline": "DICE layers with vehicles, garrison doctrine: berlin, stalingrad, kharkov, bocage; seeds 1..10, 600 s",
+ "bar": null,
+ "seeds": 1,
+ "sizes": {},
+ "oneSided": null,
+ "unreachable": [],
+ "lintErrors": [
+  "side 2's bots have an open route to none of the 3 flags in play"
+ ]
+}

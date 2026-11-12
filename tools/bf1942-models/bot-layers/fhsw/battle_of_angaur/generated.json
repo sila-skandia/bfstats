@@ -1,0 +1,247 @@
+{
+ "generator": "botgen",
+ "version": 5,
+ "mod": "FHSW",
+ "level": "battle_of_angaur",
+ "objectSpawners": 152,
+ "template": "symmetric",
+ "templateSource": "DICE, bf1942 Kharkov (1.6 patch archives): AI/Strategies.con, AI/conditions.con, AI/prerequisites.con, unchanged",
+ "templateChoice": {
+  "name": "symmetric",
+  "inPlay": 7,
+  "rule": "7 capturable flags in play, more than 3"
+ },
+ "scope": "an infantry map painted from the walk test, a Tank0 map from the page painter, infantry order positions, no strategic maps, no co-op layer",
+ "unreachable": [],
+ "unreachableReasons": {},
+ "botSpawnsExcluded": [
+  "fishing_village_spawn1",
+  "fishing_village_spawn3",
+  "fishing_village_spawn4",
+  "axisbase_spawn2",
+  "first_defence_spawn3"
+ ],
+ "walkMap": {
+  "source": "walk test",
+  "engine": "none",
+  "vehicleMap": "page painter",
+  "vehicleBrush": 1.5,
+  "vehicleBrushes": [
+   {
+    "brush": 3,
+    "flagsOn": 4,
+    "spawnersOn": 38,
+    "pieces": 14,
+    "main": 454902
+   },
+   {
+    "brush": 2.5,
+    "flagsOn": 6,
+    "spawnersOn": 43,
+    "pieces": 10,
+    "main": 467316
+   },
+   {
+    "brush": 2,
+    "flagsOn": 6,
+    "spawnersOn": 45,
+    "pieces": 11,
+    "main": 474064
+   },
+   {
+    "brush": 1.5,
+    "flagsOn": 7,
+    "spawnersOn": 51,
+    "pieces": 18,
+    "main": 482469
+   }
+  ],
+  "opened": [
+   [
+    1182,
+    775
+   ],
+   [
+    1183,
+    777
+   ],
+   [
+    1163,
+    789
+   ],
+   [
+    1164,
+    789
+   ],
+   [
+    1165,
+    789
+   ],
+   [
+    1165,
+    790
+   ],
+   [
+    1178,
+    813
+   ],
+   [
+    1177,
+    815
+   ],
+   [
+    1022,
+    983
+   ],
+   [
+    1022,
+    985
+   ],
+   [
+    1022,
+    988
+   ],
+   [
+    882,
+    1226
+   ],
+   [
+    877,
+    1231
+   ],
+   [
+    878,
+    1231
+   ],
+   [
+    879,
+    1231
+   ]
+  ],
+  "ways": [
+   {
+    "who": "fishing_village_spawn1",
+    "kind": "spawn",
+    "way": "none",
+    "opened": 0
+   },
+   {
+    "who": "fishing_village_spawn2",
+    "kind": "spawn",
+    "way": "walk",
+    "opened": 3
+   },
+   {
+    "who": "fishing_village_spawn3",
+    "kind": "spawn",
+    "way": "none",
+    "opened": 0
+   },
+   {
+    "who": "fishing_village_spawn4",
+    "kind": "spawn",
+    "way": "none",
+    "opened": 0
+   },
+   {
+    "who": "village_spawn1",
+    "kind": "spawn",
+    "way": "walk",
+    "opened": 4
+   },
+   {
+    "who": "village_spawn4",
+    "kind": "spawn",
+    "way": "walk",
+    "opened": 2
+   },
+   {
+    "who": "village_spawn5",
+    "kind": "spawn",
+    "way": "walk",
+    "opened": 2
+   },
+   {
+    "who": "first_defence_spawn3",
+    "kind": "spawn",
+    "way": "none",
+    "opened": 0
+   },
+   {
+    "who": "axisbase_spawn5",
+    "kind": "spawn",
+    "way": "walk",
+    "opened": 4
+   }
+  ],
+  "cover": 0.993,
+  "floors": {
+   "stacked": false,
+   "twoFloorShare": 0.001,
+   "raised": [],
+   "reason": null
+  }
+ },
+ "routeProbe": {
+  "chokeMax": 4,
+  "unreachable": [],
+  "stops": {},
+  "oneSided": {
+   "axisbase": 1,
+   "defence_point": 1,
+   "fishing_village": 1,
+   "village": 1,
+   "red_beach_": 1,
+   "first_defence": 1,
+   "road_defence": 1
+  },
+  "sides": {
+   "1": {
+    "spawns": 22,
+    "flags": [
+     "axisbase",
+     "defence_point",
+     "first_defence",
+     "fishing_village",
+     "red_beach_",
+     "road_defence",
+     "village"
+    ]
+   },
+   "2": {
+    "spawns": 0,
+    "flags": []
+   }
+  },
+  "chokes": {
+   "axisbase:1": 0,
+   "defence_point:1": 0,
+   "fishing_village:1": 1,
+   "village:1": 1,
+   "red_beach_:1": 0,
+   "first_defence:1": 0,
+   "road_defence:1": 0
+  },
+  "late": {},
+  "shutLinks": []
+ },
+ "inputs": {
+  "controlPoints": "b02e9d11cb9691cd42abd35048f8d0e85496893c971777ae9fd357508d17b1be",
+  "infantryMap": "6fe67f88c606ad645677b3cc81ab547277d5adecd51b82119ca106cf8cd2ba89",
+  "template": "43f8a790471528016570235f76e97dbb2045732458781a5139f37fed68bf98c0"
+ },
+ "files": {
+  "AI.con": "26f62f783813f16aedaa4cd94d6da44996c4e824dcf37c7206fe33779fba7eda",
+  "AIpathFinding.con": "9d8080cdfa7605961969aa126519b03be9691bd604ac76aef50166d81215edd2",
+  "AI/StrategicAreas.con": "8b131376838277037dd4a0bfb0a538c23c61c7afe0ebf65027277c09e292108d",
+  "AI/Strategies.con": "4ce0be59a0d6c5cd530db002fb062c4be8d936bc6ae59bd188803ccaf7869a8d",
+  "AI/conditions.con": "68a0c7a8aec69954063147b60fae560b2874884285737aa085efa76597d395aa",
+  "AI/prerequisites.con": "4c1f313bc285b228fd6ad03bfd1f44c5b15c8703c31f802eb605bc5f00f88bb5",
+  "Pathfinding/Infantry1Level0Map.raw": "530b068f6dcd34ace4038f6fe5309c220dcef28a103f583ca612b1930b5fcdf3",
+  "Pathfinding/Infantry1Level1Map.raw": "72f722d1ea86aaec56b02e2213e060cf85d41933535585f3b5799a41125b75f0",
+  "Pathfinding/Infantry1Level2Map.raw": "0b820b1919f1299ab111522200fa5157d3fed4c6078f8396a087c53a4f4cedb9",
+  "Pathfinding/Tank0Level0Map.raw": "1548e44badcb21693ff14cc5fbb6179d5a30d5a13cf0469a41b64ccc79b17fb6",
+  "Pathfinding/Tank0Level1Map.raw": "243d5efa756c0d2293cd2071075aa156ae54c264cae8ab3a657d364e8faba744",
+  "Pathfinding/Tank0Level2Map.raw": "53aac0aa81d409b9428464d21909fccd5df875d3cc838c56870b55ad8bc28c64"
+ }
+}

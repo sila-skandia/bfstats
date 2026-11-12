@@ -1,0 +1,28 @@
+rem *** Strategic areas: one per control point (botgen) ***
+
+aiStrategicArea.create Opposition_Airbase 2701.7/1154.2 2706.7/1159.2 50
+aiStrategicArea.addNeighbour Coalition_Airbase
+aiStrategicArea.addObjectTypeFlag Base
+aiStrategicArea.setOrderPosition Infantry 2707.5/1158.5
+aiStrategicArea.setSide 1
+aiStrategicArea.setTakeable 2 0
+
+aiStrategicArea.create Coalition_Airbase 859.1/3456.9 864.1/3461.9 50
+aiStrategicArea.addNeighbour Opposition_Airbase
+aiStrategicArea.addObjectTypeFlag Base
+aiStrategicArea.setOrderPosition Infantry 865.5/3460.5
+aiStrategicArea.setSide 2
+aiStrategicArea.setTakeable 1 0
+
+aiStrategicArea.create West_No_Fly_Zone 1019.3/1163.5 1059.3/1203.5 10
+aiStrategicArea.setTakeable 1 0
+aiStrategicArea.setTakeable 2 0
+
+aiStrategicArea.create Middle_No_Fly_Zone 1622.3/1945.2 1662.3/1985.2 10
+aiStrategicArea.setSide 1
+aiStrategicArea.setTakeable 1 0
+aiStrategicArea.setTakeable 2 0
+
+aiStrategicArea.create East_No_Fly_Zone 2766.8/2396.5 2806.8/2436.5 10
+aiStrategicArea.setTakeable 1 0
+aiStrategicArea.setTakeable 2 0

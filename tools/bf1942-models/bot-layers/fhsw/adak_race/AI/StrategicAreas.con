@@ -1,0 +1,15 @@
+rem *** Strategic areas: one per control point (botgen) ***
+
+aiStrategicArea.create USbase 911.7/240.7 916.7/245.7 50
+aiStrategicArea.addObjectTypeFlag Base
+aiStrategicArea.setSide 2
+aiStrategicArea.setTakeable 1 0
+
+aiStrategicArea.create AXISbase 996.7/257.4 1001.7/262.4 50
+aiStrategicArea.addObjectTypeFlag Base
+aiStrategicArea.setSide 1
+aiStrategicArea.setTakeable 2 0
+
+aiStrategicArea.create GOAL 1282.2/1761.5 1287.2/1766.5 10
+aiStrategicArea.setTakeable 1 0
+aiStrategicArea.setTakeable 2 0

@@ -1,0 +1,51 @@
+rem *** Strategic areas: one per control point (botgen) ***
+
+aiStrategicArea.create russian_headquartertemplate 996.4/557.1 1016.4/577.1 50
+aiStrategicArea.addNeighbour rivertemplate
+aiStrategicArea.addNeighbour hungarian_2template
+aiStrategicArea.addObjectTypeFlag Base
+aiStrategicArea.setOrderPosition Infantry 1014.5/579.5
+aiStrategicArea.setSide 2
+aiStrategicArea.setTakeable 1 0
+
+aiStrategicArea.create rivertemplate 901.6/954 916.6/969 150
+aiStrategicArea.addNeighbour russian_headquartertemplate
+aiStrategicArea.addNeighbour hungarian_1template
+aiStrategicArea.addNeighbour hungarian_2template
+aiStrategicArea.addObjectTypeFlag Flank
+aiStrategicArea.addObjectTypeFlag Close
+aiStrategicArea.addObjectTypeFlag ControlPoint
+aiStrategicArea.setOrderPosition Infantry 917.5/970.5
+aiStrategicArea.setSide 1
+
+aiStrategicArea.create hungarian_1template 1005/1138.9 1025/1158.9 150
+aiStrategicArea.addNeighbour rivertemplate
+aiStrategicArea.addNeighbour hungarian_2template
+aiStrategicArea.addNeighbour hungarian_4template
+aiStrategicArea.addObjectTypeFlag Flank
+aiStrategicArea.addObjectTypeFlag ControlPoint
+aiStrategicArea.setOrderPosition Infantry 1023.5/1157.5
+aiStrategicArea.setSide 1
+
+aiStrategicArea.create hungarian_2template 1481.8/1162 1486.8/1167 150
+aiStrategicArea.addNeighbour russian_headquartertemplate
+aiStrategicArea.addNeighbour rivertemplate
+aiStrategicArea.addNeighbour hungarian_1template
+aiStrategicArea.addNeighbour hungarian_4template
+aiStrategicArea.addObjectTypeFlag Flank
+aiStrategicArea.addObjectTypeFlag ControlPoint
+aiStrategicArea.setOrderPosition Infantry 1487.5/1165.5
+aiStrategicArea.setSide 1
+
+aiStrategicArea.create hungarian_3template 1214.7/1356.5 1219.7/1361.5 10
+aiStrategicArea.setSide 1
+aiStrategicArea.setTakeable 1 0
+aiStrategicArea.setTakeable 2 0
+
+aiStrategicArea.create hungarian_4template 1464.9/1619.1 1469.9/1624.1 150
+aiStrategicArea.addNeighbour hungarian_1template
+aiStrategicArea.addNeighbour hungarian_2template
+aiStrategicArea.addObjectTypeFlag Flank
+aiStrategicArea.addObjectTypeFlag ControlPoint
+aiStrategicArea.setOrderPosition Infantry 1468.5/1625.5
+aiStrategicArea.setSide 1

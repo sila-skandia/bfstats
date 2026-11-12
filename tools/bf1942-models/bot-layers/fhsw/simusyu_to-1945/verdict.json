@@ -1,0 +1,24 @@
+{
+ "level": "simusyu_to-1945",
+ "verdict": "fail",
+ "outcome": "unsuitable",
+ "config": "with vehicles",
+ "doctrine": "garrison",
+ "generatorVersion": 5,
+ "inputs": {
+  "controlPoints": "66866c83ba86093316119d106b36e3a8e4dacd4bd3e7ee75be5ca8c102f13fc8",
+  "infantryMap": "b6806130ff9566ac7eef08fd270b3a071d65781fea98afe0e254ff9322a0eb3f",
+  "template": "43f8a790471528016570235f76e97dbb2045732458781a5139f37fed68bf98c0"
+ },
+ "baseline": "DICE layers with vehicles, garrison doctrine: berlin, stalingrad, kharkov, bocage; seeds 1..10, 600 s",
+ "bar": null,
+ "seeds": 1,
+ "sizes": {},
+ "oneSided": null,
+ "unreachable": [
+  "kataokatemplate"
+ ],
+ "lintErrors": [
+  "side 2 has no spawn with a route to any flag it must take: of its 6 spawns 6 have no way on foot to the main ground; the level places 16 ladders, which neither the walk test nor a bot climbs"
+ ]
+}

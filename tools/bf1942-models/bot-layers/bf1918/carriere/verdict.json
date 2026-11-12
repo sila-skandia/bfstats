@@ -1,0 +1,22 @@
+{
+ "level": "carriere",
+ "verdict": "fail",
+ "outcome": "unsuitable",
+ "config": "with vehicles",
+ "doctrine": "garrison",
+ "generatorVersion": 5,
+ "inputs": {
+  "controlPoints": "fe2bc3caece806e346d7a2b6df964b8988cba274cec51a8c60085f2c456cdedf",
+  "infantryMap": "362d90bea7aa77bf380eeb95094a677d3de90fd07c65ba673b41c68663d8bfff",
+  "template": "43f8a790471528016570235f76e97dbb2045732458781a5139f37fed68bf98c0"
+ },
+ "baseline": "DICE layers with vehicles, garrison doctrine: berlin, stalingrad, kharkov, bocage; seeds 1..10, 600 s",
+ "bar": null,
+ "seeds": 1,
+ "sizes": {},
+ "oneSided": null,
+ "unreachable": [],
+ "lintErrors": [
+  "the play surface is stacked floors (4 of 5 capturable flags stand a storey over or under another walked floor): a one-floor walk map cannot hold it"
+ ]
+}

@@ -1,0 +1,88 @@
+{
+ "level": "gc_mini_wayfar",
+ "verdict": "fail",
+ "outcome": "no-better-than-nothing",
+ "config": "with vehicles",
+ "doctrine": "garrison",
+ "generatorVersion": 6,
+ "inputs": {
+  "controlPoints": "8d7ece81f59f05657b38465aec0a088ce8ddb597b77b8d606e7efefcc05618b5",
+  "infantryMap": "424e9b5c20597a2e52a60551d97eb61ff5a24f012c82f60a6851233c037fb2ea",
+  "template": "43f8a790471528016570235f76e97dbb2045732458781a5139f37fed68bf98c0"
+ },
+ "baseline": "DICE layers with vehicles, garrison doctrine: berlin, stalingrad, kharkov, bocage; seeds 1..10, 600 s",
+ "bar": {
+  "against": "dice",
+  "why": "no bar of gcmod's own: DICE's"
+ },
+ "seeds": 1,
+ "sizes": {
+  "8": {
+   "verdict": "fail",
+   "failed": [
+    "stuckSecondsPerBotMinute",
+    "spawnTrapsPerBotMinute",
+    "routeFailuresPerBotMinute",
+    "redeploysPerBotMinute",
+    "flagCoverage",
+    "bothSidesCapture",
+    "stuckSecondsPerBotMinuteWorseSide",
+    "spawnTrapsPerBotMinuteWorseSide",
+    "routeFailuresPerBotMinuteWorseSide",
+    "redeploysPerBotMinuteWorseSide"
+   ],
+   "winners": [
+    0,
+    1,
+    0
+   ]
+  },
+  "16": {
+   "verdict": "fail",
+   "failed": [
+    "stuckSecondsPerBotMinute",
+    "spawnTrapsPerBotMinute",
+    "routeFailuresPerBotMinute",
+    "redeploysPerBotMinute",
+    "stuckSecondsPerBotMinuteWorseSide",
+    "spawnTrapsPerBotMinuteWorseSide",
+    "routeFailuresPerBotMinuteWorseSide",
+    "redeploysPerBotMinuteWorseSide"
+   ],
+   "winners": [
+    0,
+    1,
+    0
+   ]
+  }
+ },
+ "oneSided": null,
+ "unreachable": [],
+ "lintErrors": [],
+ "accepted": {
+  "reason": "Owner's rollout, 2026-11-12: the owner imported Galactic Conquest and asked for bots on it (\"I'm sure we can add something to it\"). Screened in the runner at 8 and 16 a side under the garrison; the checks it fails are listed with this verdict, and a match on the page decides whether it keeps its menu flag.",
+  "date": "2026-11-12",
+  "outcome": "no-better-than-nothing",
+  "failed": [
+   "8:stuckSecondsPerBotMinute",
+   "8:spawnTrapsPerBotMinute",
+   "8:routeFailuresPerBotMinute",
+   "8:redeploysPerBotMinute",
+   "8:flagCoverage",
+   "8:bothSidesCapture",
+   "8:stuckSecondsPerBotMinuteWorseSide",
+   "8:spawnTrapsPerBotMinuteWorseSide",
+   "8:routeFailuresPerBotMinuteWorseSide",
+   "8:redeploysPerBotMinuteWorseSide",
+   "16:stuckSecondsPerBotMinute",
+   "16:spawnTrapsPerBotMinute",
+   "16:routeFailuresPerBotMinute",
+   "16:redeploysPerBotMinute",
+   "16:stuckSecondsPerBotMinuteWorseSide",
+   "16:spawnTrapsPerBotMinuteWorseSide",
+   "16:routeFailuresPerBotMinuteWorseSide",
+   "16:redeploysPerBotMinuteWorseSide"
+  ],
+  "by": "owner"
+ }
+}

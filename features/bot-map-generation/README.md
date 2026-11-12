@@ -51,11 +51,20 @@ section 6).
 (`.claude/skills/bf1942-bot-rollout/`) is the procedure as scripts: list a
 mod's botless levels, mirror and screen them in the runner, publish
 without the menu flag, play them on the live page against the rollout
-floor (`sim/pagematch.mjs rolloutFloor`), tag what passes. 40 levels are
-live as of 2026-11-12 (`scripts/live.py` in the skill lists them): FHSW 17,
-the vanilla tree 8, Desert Combat 6, BF1918 6, FH 2, FHSWEurope 1. Every
-level judged has been played on the page; the skill's last section lists
-the ones turned down.
+floor (`sim/pagematch.mjs rolloutFloor`), tag what passes. 64 levels are
+live at the end of 2026-11-12 (`scripts/live.py` in the skill lists them):
+the vanilla tree 19, FHSW 19, Galactic Conquest 9, Desert Combat 6, BF1918
+4, Secret Weapons 3, Road to Rome 2, FH 1, FHSWEurope 1.
+
+**Every botless level has been looked at, 2026-11-12.** Of the 248
+published levels with no AI of their own, 64 are live, 59 were played on
+the page and turned down, and 125 are out with a reason
+([status-2026-11-12.md](status-2026-11-12.md), written by the skill's
+`status.py`). The day also brought Galactic Conquest in (9 of its 30
+levels live), a re-match of every live level on new bot code, four lint
+faults that had refused walkable levels (section 22), and a hull box that
+hung a match ([hull-box.md](hull-box.md));
+[page-matches.md](page-matches.md) section 6 has every match.
 
 **The owner's rollout, 2026-11-11.** After playing Tunis-1943 against its
 generated bots the owner asked for every level with a fight to go live. A

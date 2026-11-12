@@ -1,0 +1,107 @@
+{
+ "level": "team_liberation_air_race",
+ "mod": "community",
+ "url": "https://play.bfstats.io/map.html?map=team_liberation_air_race&team=2&mode=Conquest&mod=community&botCount=16&botSkill=0.75&mute&shots",
+ "date": "2026-11-12",
+ "bar": "DICE levels on the page, 3 matches each of 600 s, 16 bots: Berlin, Stalingrad, Kharkov, Bocage; 2026-11-11",
+ "verdict": "fail",
+ "failed": [
+  "suicidesPerBotMinute",
+  "nonEnemyDeathShareWorseSide",
+  "enemyKillsPerBotMinute"
+ ],
+ "checks": [
+  {
+   "metric": "teamKillsPerBotMinute",
+   "median": 0,
+   "bar": "<= 0.025",
+   "pass": true
+  },
+  {
+   "metric": "suicidesPerBotMinute",
+   "median": 0.6125,
+   "bar": "<= 0.0562",
+   "pass": false
+  },
+  {
+   "metric": "nonEnemyDeathShareWorseSide",
+   "median": 0.846,
+   "bar": "<= 0.308",
+   "pass": false
+  },
+  {
+   "metric": "enemyKillsPerBotMinute",
+   "median": 0.1437,
+   "bar": ">= 0.175",
+   "pass": false
+  }
+ ],
+ "matches": 2,
+ "rollout": {
+  "pass": false,
+  "floor": {
+   "kills": 0.15,
+   "killsWithFlags": 0.03,
+   "flags": 3,
+   "killsWithAFlag": 0.05,
+   "ownHand": 0.1,
+   "ownHandOfKills": 0.3333333333333333
+  }
+ },
+ "runs": [
+  {
+   "generated": null,
+   "minutes": 10,
+   "tickets": {
+    "1": 44,
+    "2": 42
+   },
+   "capturesTotal": 0,
+   "teamKillsPerBotMinute": 0,
+   "suicidesPerBotMinute": 0.7562,
+   "nonEnemyDeathShareWorseSide": 0.968,
+   "enemyKillsPerBotMinute": 0.0312,
+   "rollout": {
+    "pass": false,
+    "why": [
+     "activity",
+     "ownHand"
+    ],
+    "enemyKills": 0.0312,
+    "captures": 0,
+    "ownHand": 0.7562
+   },
+   "teamKillsBySide": {
+    "1": 0,
+    "2": 0
+   }
+  },
+  {
+   "generated": null,
+   "minutes": 10,
+   "tickets": {
+    "1": 50,
+    "2": 41
+   },
+   "capturesTotal": 0,
+   "teamKillsPerBotMinute": 0,
+   "suicidesPerBotMinute": 0.6125,
+   "nonEnemyDeathShareWorseSide": 0.846,
+   "enemyKillsPerBotMinute": 0.1437,
+   "rollout": {
+    "pass": false,
+    "why": [
+     "activity",
+     "ownHand"
+    ],
+    "enemyKills": 0.1437,
+    "captures": 0,
+    "ownHand": 0.6125
+   },
+   "teamKillsBySide": {
+    "1": 0,
+    "2": 0
+   }
+  }
+ ]
+}

@@ -1,0 +1,26 @@
+{
+ "level": "battle_of_off_malay",
+ "verdict": "fail",
+ "outcome": "unsuitable",
+ "config": "with vehicles",
+ "doctrine": "garrison",
+ "generatorVersion": 5,
+ "inputs": {
+  "controlPoints": "905118bf2691554660e4a81ed59db7c45f564bbe56d7b7ac5eddfbdd796e0343",
+  "infantryMap": "de9b0b518147f940469a6a06b63158c8a14640f9ae388589154b330b5381101c",
+  "template": "bdc0e455f47f91b7e7724e71d7c0c196e839b36946ac3abb7663d725944081e5"
+ },
+ "baseline": "DICE layers with vehicles, garrison doctrine: berlin, stalingrad, kharkov, bocage; seeds 1..10, 600 s",
+ "bar": null,
+ "seeds": 1,
+ "sizes": {},
+ "oneSided": null,
+ "unreachable": [
+  "point2"
+ ],
+ "lintErrors": [
+  "no capturable flag is reachable in 3D: none of the 1 has a place inside its radius that a soldier on the one-floor walk map's main ground can stand in",
+  "side 1 holds no spawn point at the start of the round",
+  "side 2 holds no spawn point at the start of the round"
+ ]
+}

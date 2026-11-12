@@ -1,0 +1,28 @@
+{
+ "level": "dc_no_fly_zone",
+ "verdict": "fail",
+ "outcome": "unsuitable",
+ "config": "with vehicles",
+ "doctrine": "garrison",
+ "generatorVersion": 5,
+ "inputs": {
+  "controlPoints": "94b660b4ced5d9ca09337bc17452f552d75370f3270fa059c2af47aad5fa12c6",
+  "infantryMap": "c08cd9d158b960f00d0575836b36a10db853c02024f5e3b8784ca6844579ea9a",
+  "template": "bdc0e455f47f91b7e7724e71d7c0c196e839b36946ac3abb7663d725944081e5"
+ },
+ "baseline": "DICE layers with vehicles, garrison doctrine: berlin, stalingrad, kharkov, bocage; seeds 1..10, 600 s",
+ "bar": null,
+ "seeds": 1,
+ "sizes": {},
+ "oneSided": null,
+ "unreachable": [
+  "West_No_Fly_Zone",
+  "Middle_No_Fly_Zone",
+  "East_No_Fly_Zone"
+ ],
+ "lintErrors": [
+  "no capturable flag is reachable in 3D: none of the 3 has a place inside its radius that a soldier on the one-floor walk map's main ground can stand in",
+  "side 1 has no spawn with a route to any flag it must take: none of the 2 flags it does not hold can be reached",
+  "side 2 has no spawn with a route to any flag it must take: none of the 3 flags it does not hold can be reached"
+ ]
+}

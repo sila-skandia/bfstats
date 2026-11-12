@@ -1,0 +1,117 @@
+{
+ "generator": "botgen",
+ "version": 5,
+ "mod": "FHSW",
+ "level": "naichi-1945",
+ "objectSpawners": 341,
+ "template": "symmetric",
+ "templateSource": "DICE, bf1942 Kharkov (1.6 patch archives): AI/Strategies.con, AI/conditions.con, AI/prerequisites.con, unchanged",
+ "templateChoice": {
+  "name": "symmetric",
+  "inPlay": 5,
+  "rule": "5 capturable flags in play, more than 3"
+ },
+ "scope": "on foot: infantry order positions only, no search maps, no co-op layer",
+ "unreachable": [
+  "banzai_hill"
+ ],
+ "unreachableReasons": {
+  "banzai_hill": "walk test"
+ },
+ "botSpawnsExcluded": [
+  "axisbase_spawn1",
+  "jpdf_bridge1_spawn1",
+  "jpdf_bridge2_spawn2",
+  "jpn_spawn2",
+  "jpdf_bridge2_spawn3",
+  "jpdf_bridge2_spawn4",
+  "jpdf_bridge2_spawn5",
+  "jpn_spawn3",
+  "jpn_spawn4",
+  "jpn_spawn5",
+  "jpn_spawn6",
+  "jpn_spawn7",
+  "jpdf_hill_spawn1",
+  "banzai_hill_spawn1",
+  "banzai_hill_spawn4",
+  "yagitei_spawn1",
+  "banzai_hill_spawn2",
+  "banzai_hill_spawn3",
+  "alliedbase_spawn5",
+  "jpdf_ie2_Spawn2",
+  "jpdf_ie2_Spawn3",
+  "jpdf_ie2_Spawn5"
+ ],
+ "walkMap": {
+  "source": "page painter",
+  "engine": "none",
+  "opened": [],
+  "ways": [],
+  "cover": 0.887,
+  "floors": {
+   "stacked": false,
+   "twoFloorShare": 0.004,
+   "raised": [],
+   "reason": null
+  },
+  "capped": true,
+  "joined": 6
+ },
+ "routeProbe": {
+  "chokeMax": 4,
+  "unreachable": [],
+  "stops": {},
+  "oneSided": {},
+  "sides": {
+   "1": {
+    "spawns": 14,
+    "flags": [
+     "jpdf_bridge1",
+     "jpdf_bridge2",
+     "jpdf_hill",
+     "jpdf_ie1",
+     "jpdf_ie2"
+    ]
+   },
+   "2": {
+    "spawns": 5,
+    "flags": [
+     "jpdf_bridge1",
+     "jpdf_bridge2",
+     "jpdf_hill",
+     "jpdf_ie1",
+     "jpdf_ie2"
+    ]
+   }
+  },
+  "chokes": {
+   "jpdf_bridge1:1": 0,
+   "jpdf_bridge1:2": 9,
+   "jpdf_bridge2:1": 0,
+   "jpdf_bridge2:2": 0,
+   "jpdf_ie1:1": 0,
+   "jpdf_ie1:2": 2,
+   "jpdf_hill:1": 0,
+   "jpdf_hill:2": 9,
+   "jpdf_ie2:1": 0,
+   "jpdf_ie2:2": 0
+  },
+  "late": {},
+  "shutLinks": [
+   "jpdf_bridge1>jpdf_ie2",
+   "jpdf_ie2>jpdf_bridge1"
+  ]
+ },
+ "inputs": {
+  "controlPoints": "7196a0b360601ffdb96946cdc4ab09e380adf183bb0a696db5d23c82d05c3d87",
+  "infantryMap": "dbfa13be1c26a6d5537177bf009d80156d028ed4996d626f304d15f19cea8bf8",
+  "template": "43f8a790471528016570235f76e97dbb2045732458781a5139f37fed68bf98c0"
+ },
+ "files": {
+  "AI.con": "6add06fce9aa94cfe94d211bd067d741e04433e1f1c464973e40b7b389dd13d7",
+  "AI/StrategicAreas.con": "32ca46a941064866b4c315fdefb5385316ad151d260efa7551e5d387ead878f3",
+  "AI/Strategies.con": "4ce0be59a0d6c5cd530db002fb062c4be8d936bc6ae59bd188803ccaf7869a8d",
+  "AI/conditions.con": "68a0c7a8aec69954063147b60fae560b2874884285737aa085efa76597d395aa",
+  "AI/prerequisites.con": "4c1f313bc285b228fd6ad03bfd1f44c5b15c8703c31f802eb605bc5f00f88bb5"
+ }
+}

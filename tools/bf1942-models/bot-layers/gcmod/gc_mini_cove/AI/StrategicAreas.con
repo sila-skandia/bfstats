@@ -1,0 +1,25 @@
+rem *** Strategic areas: one per control point (botgen) ***
+
+aiStrategicArea.create imperial_base 184.4/171.4 189.4/176.4 50
+aiStrategicArea.addObjectTypeFlag Base
+aiStrategicArea.setOrderPosition Tank 193.5/177.5
+aiStrategicArea.setSide 1
+aiStrategicArea.setTakeable 2 0
+
+aiStrategicArea.create rebel_base 793/889.4 798/894.4 50
+aiStrategicArea.addObjectTypeFlag Base
+aiStrategicArea.setOrderPosition Tank 794.5/892.5
+aiStrategicArea.setSide 2
+aiStrategicArea.setTakeable 1 0
+
+aiStrategicArea.create imperial_dome 415.3/373.4 435.3/393.4 10
+aiStrategicArea.setTakeable 1 0
+aiStrategicArea.setTakeable 2 0
+
+aiStrategicArea.create rebel_dome 664.6/406.9 684.6/426.9 10
+aiStrategicArea.setTakeable 1 0
+aiStrategicArea.setTakeable 2 0
+
+aiStrategicArea.create Supply_Platform 477.1/572.2 497.1/592.2 10
+aiStrategicArea.setTakeable 1 0
+aiStrategicArea.setTakeable 2 0

@@ -1,0 +1,146 @@
+{
+ "generator": "botgen",
+ "version": 5,
+ "mod": "FHSW",
+ "level": "alaska-1948",
+ "objectSpawners": 130,
+ "template": "few",
+ "templateSource": "DICE, bf1942 Kursk (1.6 patch archives, Kursk_003.rfa): AI/Strategies.con, AI/conditions.con, AI/prerequisites.con, unchanged",
+ "templateChoice": {
+  "name": "few",
+  "inPlay": 3,
+  "rule": "3 capturable flags in play, at most 3"
+ },
+ "scope": "on foot: infantry order positions only, no search maps, no co-op layer",
+ "unreachable": [
+  "allied_airporttemplate",
+  "factorytemplate",
+  "foresttemplate"
+ ],
+ "unreachableReasons": {
+  "allied_airporttemplate": "route probe",
+  "factorytemplate": "route probe",
+  "foresttemplate": "walk test"
+ },
+ "botSpawnsExcluded": [
+  "alliedbase_spawn1",
+  "airport_spawn",
+  "unnamedspawn",
+  "unnamedspawn1",
+  "unnamedspawn2",
+  "unnamedspawn3",
+  "unnamedspawn4",
+  "unnamedspawn5",
+  "unnamedspawn6",
+  "unnamedspawn7",
+  "unnamedspawn8",
+  "unnamedspawn9",
+  "unnamedspawn10",
+  "unnamedspawn11",
+  "unnamedspawn12",
+  "unnamedspawn13",
+  "unnamedspawn14",
+  "unnamedspawn15",
+  "unnamedspawn16",
+  "unnamedspawn18",
+  "unnamedspawn19",
+  "unnamedspawn20",
+  "unnamedspawn21",
+  "unnamedspawn24",
+  "unnamedspawn25",
+  "unnamedspawn26",
+  "unnamedspawn28",
+  "unnamedspawn29",
+  "unnamedspawn30",
+  "mountain_command1",
+  "mountain_command2",
+  "axisbase1",
+  "axisbase2",
+  "tunnelspawn1",
+  "tunnelspawn2",
+  "AlliedAirfieldSpawn_1",
+  "AlliedAirfieldSpawn_2"
+ ],
+ "walkMap": {
+  "source": "page painter",
+  "engine": "none",
+  "opened": [],
+  "ways": [],
+  "cover": 0.746,
+  "floors": {
+   "stacked": true,
+   "twoFloorShare": 0.007,
+   "raised": [
+    "allied_airporttemplate",
+    "towntemplate",
+    "foresttemplate"
+   ],
+   "reason": "3 of 6 capturable flags stand a storey over or under another walked floor"
+  },
+  "capped": true,
+  "joined": 8
+ },
+ "routeProbe": {
+  "chokeMax": 4,
+  "unreachable": [
+   "allied_airporttemplate",
+   "factorytemplate"
+  ],
+  "stops": {
+   "allied_airporttemplate": {
+    "1": {
+     "stage": "no usable spawn"
+    },
+    "2": {
+     "stage": "strategic"
+    }
+   },
+   "factorytemplate": {
+    "1": {
+     "stage": "no usable spawn"
+    },
+    "2": {
+     "stage": "strategic"
+    }
+   }
+  },
+  "oneSided": {
+   "towntemplate": 2,
+   "crashpointtemplate": 2,
+   "beach_flagtemplate": 2
+  },
+  "sides": {
+   "1": {
+    "spawns": 0,
+    "flags": []
+   },
+   "2": {
+    "spawns": 5,
+    "flags": [
+     "beach_flagtemplate",
+     "crashpointtemplate",
+     "towntemplate"
+    ]
+   }
+  },
+  "chokes": {
+   "towntemplate:2": 0,
+   "crashpointtemplate:2": 0,
+   "beach_flagtemplate:2": 2
+  },
+  "late": {},
+  "shutLinks": []
+ },
+ "inputs": {
+  "controlPoints": "7054ef872d03ced99d8c734f3b120cf1e4611401ebdd217f12cb6e3c0402b17c",
+  "infantryMap": "5bbd289cd8860776a52bbde61bcbc3c58059aa832b23fe64df00494940470440",
+  "template": "bdc0e455f47f91b7e7724e71d7c0c196e839b36946ac3abb7663d725944081e5"
+ },
+ "files": {
+  "AI.con": "7c2d8d42d7a52f8cec28af35b4f789b7cf309be16070eb09664e86990aa772d9",
+  "AI/StrategicAreas.con": "09e0b6b9ae1ab5198cc0a0f84d1aa4e53c20d2939e92f09c7ea0bfe8e08304d2",
+  "AI/Strategies.con": "13da4dc35872dd4b5798a066f4425bdc824cfd61f31093d1808e1202644de52e",
+  "AI/conditions.con": "248a04b727c08d696bf0fa9c162bc22c43cde3c75f695892fe1e0f5141519c49",
+  "AI/prerequisites.con": "c96168b5f69860e578f5d26728fd2a2092c4c436e1da49b7d6f4009b65735398"
+ }
+}

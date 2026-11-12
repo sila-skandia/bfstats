@@ -1,0 +1,170 @@
+{
+ "generator": "botgen",
+ "version": 6,
+ "mod": "GCMOD",
+ "level": "gc_anchorhead",
+ "objectSpawners": 17,
+ "template": "symmetric",
+ "templateSource": "DICE, bf1942 Kharkov (1.6 patch archives): AI/Strategies.con, AI/conditions.con, AI/prerequisites.con, unchanged",
+ "templateChoice": {
+  "name": "symmetric",
+  "inPlay": 4,
+  "rule": "4 capturable flags in play, more than 3"
+ },
+ "scope": "an infantry map painted from the walk test, a Tank0 map from the page painter, infantry order positions, no strategic maps, no co-op layer",
+ "unreachable": [],
+ "unreachableReasons": {},
+ "botSpawnsExcluded": [],
+ "walkMap": {
+  "source": "walk test",
+  "engine": "none",
+  "vehicleMap": "page painter",
+  "vehicleBrush": 1.5,
+  "vehicleBrushes": [
+   {
+    "brush": 3,
+    "flagsOn": 1,
+    "spawnersOn": 6,
+    "pieces": 17,
+    "main": 800773
+   },
+   {
+    "brush": 2.5,
+    "flagsOn": 1,
+    "spawnersOn": 6,
+    "pieces": 10,
+    "main": 819205
+   },
+   {
+    "brush": 2,
+    "flagsOn": 1,
+    "spawnersOn": 6,
+    "pieces": 11,
+    "main": 827039
+   },
+   {
+    "brush": 1.5,
+    "flagsOn": 5,
+    "spawnersOn": 7,
+    "pieces": 6,
+    "main": 847739
+   }
+  ],
+  "opened": [
+   [
+    544,
+    517
+   ],
+   [
+    547,
+    518
+   ],
+   [
+    552,
+    519
+   ],
+   [
+    553,
+    519
+   ],
+   [
+    554,
+    520
+   ],
+   [
+    555,
+    521
+   ],
+   [
+    555,
+    522
+   ],
+   [
+    556,
+    523
+   ]
+  ],
+  "ways": [
+   {
+    "who": "Cantina_Spawn1",
+    "kind": "spawn",
+    "way": "walk",
+    "opened": 6
+   },
+   {
+    "who": "Cantina",
+    "kind": "flag",
+    "way": "walk",
+    "opened": 2
+   }
+  ],
+  "cover": 0.987,
+  "floors": {
+   "stacked": false,
+   "twoFloorShare": 0.001,
+   "raised": [
+    "Imperial_Starport"
+   ],
+   "reason": null
+  }
+ },
+ "routeProbe": {
+  "chokeMax": 4,
+  "unreachable": [],
+  "stops": {},
+  "oneSided": {},
+  "sides": {
+   "1": {
+    "spawns": 4,
+    "flags": [
+     "Abandoned_Outpost",
+     "Cantina",
+     "Imperial_Starport",
+     "Rebel_Starport"
+    ]
+   },
+   "2": {
+    "spawns": 4,
+    "flags": [
+     "Abandoned_Outpost",
+     "Cantina",
+     "Imperial_Starport",
+     "Rebel_Starport"
+    ]
+   }
+  },
+  "chokes": {
+   "Rebel_Starport:1": 0,
+   "Rebel_Starport:2": 0,
+   "Imperial_Starport:1": 1,
+   "Imperial_Starport:2": 2,
+   "Cantina:1": 3,
+   "Cantina:2": 4,
+   "Abandoned_Outpost:1": 0,
+   "Abandoned_Outpost:2": 0
+  },
+  "late": {},
+  "shutLinks": [
+   "Imperial_Starport>Cantina"
+  ]
+ },
+ "inputs": {
+  "controlPoints": "9c9d9230fb206fd1597a6c1c2ad6bc8abdb84d9f5cc32d466b1a4ccafb6662ec",
+  "infantryMap": "ff306dcf81a0adb266a999ba23f4f0b33029436e30de4b583b64f14a748a4125",
+  "template": "43f8a790471528016570235f76e97dbb2045732458781a5139f37fed68bf98c0"
+ },
+ "files": {
+  "AI.con": "3dc94f663ac7545695a38d3670752432e4a5e64efe048dc4b26d578aece3748c",
+  "AIpathFinding.con": "9d8080cdfa7605961969aa126519b03be9691bd604ac76aef50166d81215edd2",
+  "AI/StrategicAreas.con": "6adcaa0240e2e764c5a0e69f3d91e5f33535b2948b3d3b141d3920474cb5c9f5",
+  "AI/Strategies.con": "4ce0be59a0d6c5cd530db002fb062c4be8d936bc6ae59bd188803ccaf7869a8d",
+  "AI/conditions.con": "68a0c7a8aec69954063147b60fae560b2874884285737aa085efa76597d395aa",
+  "AI/prerequisites.con": "4c1f313bc285b228fd6ad03bfd1f44c5b15c8703c31f802eb605bc5f00f88bb5",
+  "Pathfinding/Infantry1Level0Map.raw": "74a6dde986b7068de18ec8529d8eeb67467f2663a8f2265a759b23eb457a7e61",
+  "Pathfinding/Infantry1Level1Map.raw": "fda5552ae1abc99abc5a2cdd0f6904cdd88a3f522d511d313c69edc0f5856f4d",
+  "Pathfinding/Infantry1Level2Map.raw": "e048c79a5c1423b45616c7eb9d1d47ec6cb00cade5e4abe432334102e07dbc58",
+  "Pathfinding/Tank0Level0Map.raw": "60a2014b8e5ef747b73de566e1d119418b2e62a7ce2d55e2ad0a6dbd33554892",
+  "Pathfinding/Tank0Level1Map.raw": "2c6c052c04278e08a72a929c5f5adf519e7fe4911fa7ccbaa9e0faab332f76ad",
+  "Pathfinding/Tank0Level2Map.raw": "fdee86c04520257c367bb566d0d6616ad5bec697b6ff461c250e80fa33d6904f"
+ }
+}

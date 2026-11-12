@@ -1,0 +1,61 @@
+rem *** Strategic areas: one per control point (botgen) ***
+
+aiStrategicArea.create luxemburg_grunden 469.4/857.1 474.4/862.1 50
+aiStrategicArea.addNeighbour wohnwagen_des_waldes_ardennes
+aiStrategicArea.addNeighbour commande_de_frontiere_franc_belge
+aiStrategicArea.addObjectTypeFlag Base
+aiStrategicArea.setOrderPosition Infantry 476.5/862.5
+aiStrategicArea.setSide 1
+aiStrategicArea.setTakeable 2 0
+
+aiStrategicArea.create longwy_base 792.9/143.9 812.9/163.9 50
+aiStrategicArea.addNeighbour forteresse_de_ligne_de_maginot
+aiStrategicArea.addNeighbour wohnwagen_des_waldes_ardennes
+aiStrategicArea.addObjectTypeFlag Base
+aiStrategicArea.setOrderPosition Infantry 811.5/162.5
+aiStrategicArea.setSide 2
+aiStrategicArea.setTakeable 1 0
+
+aiStrategicArea.create chateau_de_la_ligne_de_maginot 560.1/664.8 568.1/672.8 10
+aiStrategicArea.setSide 1
+aiStrategicArea.setTakeable 1 0
+aiStrategicArea.setTakeable 2 0
+
+aiStrategicArea.create belgisches_landhaus 198/847.7 206/855.7 10
+aiStrategicArea.setSide 1
+aiStrategicArea.setTakeable 1 0
+aiStrategicArea.setTakeable 2 0
+
+aiStrategicArea.create forteresse_de_ligne_de_maginot 723.8/432.5 731.8/440.5 300
+aiStrategicArea.addNeighbour longwy_base
+aiStrategicArea.addNeighbour wohnwagen_des_waldes_ardennes
+aiStrategicArea.addObjectTypeFlag Centre
+aiStrategicArea.addObjectTypeFlag StrongPoint
+aiStrategicArea.addObjectTypeFlag Close
+aiStrategicArea.addObjectTypeFlag ControlPoint
+aiStrategicArea.setOrderPosition Infantry 734.5/440.5
+aiStrategicArea.setSide 1
+
+aiStrategicArea.create wohnwagen_des_waldes_ardennes 351.8/349.7 366.8/364.7 150
+aiStrategicArea.addNeighbour luxemburg_grunden
+aiStrategicArea.addNeighbour longwy_base
+aiStrategicArea.addNeighbour forteresse_de_ligne_de_maginot
+aiStrategicArea.addNeighbour commande_de_frontiere_franc_belge
+aiStrategicArea.addObjectTypeFlag Flank
+aiStrategicArea.addObjectTypeFlag ControlPoint
+aiStrategicArea.setOrderPosition Infantry 368.5/361.5
+aiStrategicArea.setSide 1
+
+aiStrategicArea.create commande_de_frontiere_franc_belge 278.3/623.2 293.3/638.2 150
+aiStrategicArea.addNeighbour luxemburg_grunden
+aiStrategicArea.addNeighbour wohnwagen_des_waldes_ardennes
+aiStrategicArea.addObjectTypeFlag Flank
+aiStrategicArea.addObjectTypeFlag Close
+aiStrategicArea.addObjectTypeFlag ControlPoint
+aiStrategicArea.setOrderPosition Infantry 291.5/639.5
+aiStrategicArea.setSide 1
+
+aiStrategicArea.create flakturm_ground 147.6/894.3 157.6/904.3 10
+aiStrategicArea.setSide 1
+aiStrategicArea.setTakeable 1 0
+aiStrategicArea.setTakeable 2 0

@@ -2,10 +2,11 @@
  "level": "Fall_of_Berlin-1945",
  "mod": "fhsw",
  "url": "https://play.bfstats.io/map.html?map=Fall_of_Berlin-1945&team=2&mode=Conquest&mod=fhsw&botCount=16&botSkill=0.75&mute&shots",
- "date": "2026-11-11",
+ "date": "2026-11-12",
  "bar": "DICE levels on the page, 3 matches each of 600 s, 16 bots: Berlin, Stalingrad, Kharkov, Bocage; 2026-11-11",
  "verdict": "fail",
  "failed": [
+  "nonEnemyDeathShareWorseSide",
   "enemyKillsPerBotMinute"
  ],
  "checks": [
@@ -17,19 +18,19 @@
   },
   {
    "metric": "suicidesPerBotMinute",
-   "median": 0,
+   "median": 0.0062,
    "bar": "<= 0.0562",
    "pass": true
   },
   {
    "metric": "nonEnemyDeathShareWorseSide",
-   "median": 0,
+   "median": 0.5,
    "bar": "<= 0.308",
-   "pass": true
+   "pass": false
   },
   {
    "metric": "enemyKillsPerBotMinute",
-   "median": 0.0625,
+   "median": 0.0437,
    "bar": ">= 0.175",
    "pass": false
   }
@@ -53,22 +54,21 @@
    },
    "minutes": 10,
    "tickets": {
-    "1": 223,
-    "2": 160
+    "1": 221,
+    "2": 164
    },
    "capturesTotal": 6,
    "teamKillsPerBotMinute": 0,
-   "suicidesPerBotMinute": 0,
-   "nonEnemyDeathShareWorseSide": 0,
-   "enemyKillsPerBotMinute": 0.0625,
+   "suicidesPerBotMinute": 0.0062,
+   "nonEnemyDeathShareWorseSide": 0.5,
+   "enemyKillsPerBotMinute": 0.0437,
    "rollout": {
     "pass": true,
     "why": [],
-    "enemyKills": 0.0625,
+    "enemyKills": 0.0437,
     "captures": 6,
-    "ownHand": 0
+    "ownHand": 0.0062
    },
-   "replayed": true,
    "teamKillsBySide": {
     "1": 0,
     "2": 0

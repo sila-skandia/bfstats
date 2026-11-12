@@ -1,0 +1,69 @@
+rem *** Strategic areas: one per control point (botgen) ***
+
+aiStrategicArea.create bridge_passtemplate 1405.7/989.5 1425.7/1009.5 200
+aiStrategicArea.addNeighbour sand_swept_basetemplate
+aiStrategicArea.addNeighbour toshe_station
+aiStrategicArea.addObjectTypeFlag Centre
+aiStrategicArea.addObjectTypeFlag ControlPoint
+aiStrategicArea.setOrderPosition Tank 1428.5/1009.5
+aiStrategicArea.setOrderPosition Infantry 1425.7/1009.5
+aiStrategicArea.setSide 1
+
+aiStrategicArea.create sand_swept_basetemplate 1171.8/1018.8 1191.8/1038.8 300
+aiStrategicArea.addNeighbour bridge_passtemplate
+aiStrategicArea.addNeighbour tusken_forttemplate
+aiStrategicArea.addNeighbour toshe_station
+aiStrategicArea.addNeighbour the_citideltemplate
+aiStrategicArea.addNeighbour lost_citytemplate
+aiStrategicArea.addObjectTypeFlag Centre
+aiStrategicArea.addObjectTypeFlag StrongPoint
+aiStrategicArea.addObjectTypeFlag ControlPoint
+aiStrategicArea.setOrderPosition Tank 1191.8/1038.8
+aiStrategicArea.setOrderPosition Infantry 1191.8/1038.8
+
+aiStrategicArea.create tusken_forttemplate 1521.1/1576.4 1536.1/1591.4 150
+aiStrategicArea.addNeighbour sand_swept_basetemplate
+aiStrategicArea.addNeighbour rebel_crash_sitetemplate
+aiStrategicArea.addNeighbour lost_citytemplate
+aiStrategicArea.addObjectTypeFlag Flank
+aiStrategicArea.addObjectTypeFlag ControlPoint
+aiStrategicArea.setOrderPosition Tank 1536.1/1591.4
+aiStrategicArea.setOrderPosition Infantry 1536.1/1591.4
+
+aiStrategicArea.create toshe_station 1563.9/667.1 1588.9/692.1 200
+aiStrategicArea.addNeighbour bridge_passtemplate
+aiStrategicArea.addNeighbour sand_swept_basetemplate
+aiStrategicArea.addNeighbour rebel_crash_sitetemplate
+aiStrategicArea.addObjectTypeFlag Centre
+aiStrategicArea.addObjectTypeFlag Close
+aiStrategicArea.addObjectTypeFlag ControlPoint
+aiStrategicArea.setOrderPosition Tank 1588.5/687.5
+aiStrategicArea.setOrderPosition Infantry 1588.5/687.5
+
+aiStrategicArea.create the_citideltemplate 618.1/1546.7 638.1/1566.7 50
+aiStrategicArea.addNeighbour sand_swept_basetemplate
+aiStrategicArea.addNeighbour lost_citytemplate
+aiStrategicArea.addObjectTypeFlag Base
+aiStrategicArea.setOrderPosition Tank 640.5/1566.5
+aiStrategicArea.setOrderPosition Infantry 639.5/1568.5
+aiStrategicArea.setSide 1
+aiStrategicArea.setTakeable 2 0
+
+aiStrategicArea.create rebel_crash_sitetemplate 1902.7/129.4 1922.7/149.4 50
+aiStrategicArea.addNeighbour tusken_forttemplate
+aiStrategicArea.addNeighbour toshe_station
+aiStrategicArea.addObjectTypeFlag Base
+aiStrategicArea.setOrderPosition Tank 1922.7/149.4
+aiStrategicArea.setOrderPosition Infantry 1922.7/149.4
+aiStrategicArea.setSide 2
+aiStrategicArea.setTakeable 1 0
+
+aiStrategicArea.create lost_citytemplate 1280.4/1604.6 1286.4/1610.6 150
+aiStrategicArea.addNeighbour sand_swept_basetemplate
+aiStrategicArea.addNeighbour tusken_forttemplate
+aiStrategicArea.addNeighbour the_citideltemplate
+aiStrategicArea.addObjectTypeFlag Flank
+aiStrategicArea.addObjectTypeFlag Close
+aiStrategicArea.addObjectTypeFlag ControlPoint
+aiStrategicArea.setOrderPosition Tank 1284.5/1612.5
+aiStrategicArea.setOrderPosition Infantry 1285.5/1611.5

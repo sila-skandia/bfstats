@@ -1,0 +1,22 @@
+rem *** Strategic areas: one per control point (botgen) ***
+
+aiStrategicArea.create german_hq 1806.1/1739.9 1814.1/1747.9 50
+aiStrategicArea.addNeighbour penzeskaia
+aiStrategicArea.addObjectTypeFlag Base
+aiStrategicArea.setOrderPosition Tank 1814.5/1745.5
+aiStrategicArea.setOrderPosition Infantry 1814.5/1746.5
+aiStrategicArea.setSide 1
+aiStrategicArea.setTakeable 2 0
+
+aiStrategicArea.create penzeskaia 1942.9/1828.9 1949.9/1835.9 50
+aiStrategicArea.addNeighbour german_hq
+aiStrategicArea.addObjectTypeFlag Base
+aiStrategicArea.setOrderPosition Tank 1952.5/1835.5
+aiStrategicArea.setOrderPosition Infantry 1950.5/1836.5
+aiStrategicArea.setSide 2
+aiStrategicArea.setTakeable 1 0
+
+aiStrategicArea.create pavlov_house 1843.6/1819.4 1848.6/1824.4 10
+aiStrategicArea.setSide 2
+aiStrategicArea.setTakeable 1 0
+aiStrategicArea.setTakeable 2 0
