@@ -5,19 +5,16 @@ aiStrategicArea.addNeighbour garrison_hill
 aiStrategicArea.addNeighbour tennis_court
 aiStrategicArea.addNeighbour factory
 aiStrategicArea.addObjectTypeFlag Base
-aiStrategicArea.setOrderPosition Tank 686.5/170.5
-aiStrategicArea.setOrderPosition Infantry 686.5/158.5
+aiStrategicArea.setOrderPosition Infantry 686.5/170.5
 aiStrategicArea.setSide 1
 aiStrategicArea.setTakeable 2 0
 
 aiStrategicArea.create garrison_hill 116.7/418.7 121.7/423.7 50
 aiStrategicArea.addNeighbour naga_village
 aiStrategicArea.addNeighbour tennis_court
-aiStrategicArea.addNeighbour field_supply_depot
 aiStrategicArea.addNeighbour monastery
 aiStrategicArea.addNeighbour factory
 aiStrategicArea.addObjectTypeFlag Base
-aiStrategicArea.setOrderPosition Tank 123.5/423.5
 aiStrategicArea.setOrderPosition Infantry 122.5/424.5
 aiStrategicArea.setSide 2
 aiStrategicArea.setTakeable 1 0
@@ -25,48 +22,36 @@ aiStrategicArea.setTakeable 1 0
 aiStrategicArea.create tennis_court 377/306.8 406/335.8 150
 aiStrategicArea.addNeighbour naga_village
 aiStrategicArea.addNeighbour garrison_hill
-aiStrategicArea.addNeighbour field_supply_depot
 aiStrategicArea.addNeighbour monastery
 aiStrategicArea.addNeighbour south_city
 aiStrategicArea.addNeighbour factory
 aiStrategicArea.addObjectTypeFlag Flank
 aiStrategicArea.addObjectTypeFlag Close
 aiStrategicArea.addObjectTypeFlag ControlPoint
-aiStrategicArea.setOrderPosition Tank 401.5/335.5
 aiStrategicArea.setOrderPosition Infantry 407.5/334.5
 aiStrategicArea.setSide 1
 
 aiStrategicArea.create field_supply_depot 730.5/698.9 755.5/723.9 50
-aiStrategicArea.addNeighbour garrison_hill
-aiStrategicArea.addNeighbour tennis_court
-aiStrategicArea.addNeighbour monastery
-aiStrategicArea.addNeighbour south_city
-aiStrategicArea.addNeighbour factory
 aiStrategicArea.addObjectTypeFlag Base
-aiStrategicArea.setOrderPosition Tank 755.5/722.5
-aiStrategicArea.setOrderPosition Infantry 755.5/723.9
+aiStrategicArea.setOrderPosition Infantry 756.5/726.5
 aiStrategicArea.setSide 2
 aiStrategicArea.setTakeable 1 0
 
 aiStrategicArea.create monastery 323.3/853.6 343.3/873.6 50
 aiStrategicArea.addNeighbour garrison_hill
 aiStrategicArea.addNeighbour tennis_court
-aiStrategicArea.addNeighbour field_supply_depot
 aiStrategicArea.addNeighbour factory
 aiStrategicArea.addObjectTypeFlag Base
-aiStrategicArea.setOrderPosition Tank 347.5/871.5
-aiStrategicArea.setOrderPosition Infantry 343.5/871.5
+aiStrategicArea.setOrderPosition Infantry 347.5/873.5
 aiStrategicArea.setSide 1
 aiStrategicArea.setTakeable 2 0
 
 aiStrategicArea.create south_city 758.4/376.8 778.4/396.8 150
 aiStrategicArea.addNeighbour tennis_court
-aiStrategicArea.addNeighbour field_supply_depot
 aiStrategicArea.addNeighbour factory
 aiStrategicArea.addObjectTypeFlag Flank
 aiStrategicArea.addObjectTypeFlag Close
 aiStrategicArea.addObjectTypeFlag ControlPoint
-aiStrategicArea.setOrderPosition Tank 776.5/396.5
 aiStrategicArea.setOrderPosition Infantry 777.5/398.5
 aiStrategicArea.setSide 1
 
@@ -79,12 +64,10 @@ aiStrategicArea.create factory 628.5/460.1 648.5/480.1 150
 aiStrategicArea.addNeighbour naga_village
 aiStrategicArea.addNeighbour garrison_hill
 aiStrategicArea.addNeighbour tennis_court
-aiStrategicArea.addNeighbour field_supply_depot
 aiStrategicArea.addNeighbour monastery
 aiStrategicArea.addNeighbour south_city
 aiStrategicArea.addObjectTypeFlag Flank
 aiStrategicArea.addObjectTypeFlag Close
 aiStrategicArea.addObjectTypeFlag ControlPoint
-aiStrategicArea.setOrderPosition Tank 646.5/480.5
 aiStrategicArea.setOrderPosition Infantry 647.5/481.5
 aiStrategicArea.setSide 1

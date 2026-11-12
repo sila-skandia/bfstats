@@ -1,13 +1,13 @@
 {
  "level": "in_the_hell_of_bocage-1944",
  "verdict": "fail",
- "outcome": "better-than-nothing",
+ "outcome": "no-fight",
  "config": "with vehicles",
  "doctrine": "garrison",
- "generatorVersion": 6,
+ "generatorVersion": 5,
  "inputs": {
   "controlPoints": "f9657a837b7dd1374aaf2172126fb9a1d80e1be770cb3b5bf9382e39875178cc",
-  "infantryMap": "984256dc0a222e1e0a8abbb26cc91a29408379c5d53918f1b4fac556bbaa616c",
+  "infantryMap": "0d56b1da57ef45e9d57b9b4125d98310002e76bd59de044a8c7a344e228a440c",
   "template": "43f8a790471528016570235f76e97dbb2045732458781a5139f37fed68bf98c0"
  },
  "baseline": "DICE layers with vehicles, garrison doctrine: berlin, stalingrad, kharkov, bocage; seeds 1..10, 600 s",
@@ -15,15 +15,22 @@
   "against": "dice",
   "why": "no bar of fhsw's own: DICE's"
  },
- "seeds": 1,
+ "seeds": 2,
  "sizes": {
   "8": {
    "verdict": "fail",
    "failed": [
+    "stuckSecondsPerBotMinute",
     "idleShare",
+    "routeFailuresPerBotMinute",
     "redeploysPerBotMinute",
+    "capturesTotal",
     "enemyKillsPerBotMinute",
+    "flagCoverage",
     "bothSidesCapture",
+    "bothSidesKill",
+    "stuckSecondsPerBotMinuteWorseSide",
+    "routeFailuresPerBotMinuteWorseSide",
     "redeploysPerBotMinuteWorseSide",
     "nonEnemyDeathShareWorseSide",
     "hullStuckSecondsPerDrivingMinute",
@@ -32,18 +39,21 @@
    ],
    "winners": [
     0,
-    1,
-    0
+    0,
+    2
    ]
   },
   "16": {
    "verdict": "fail",
    "failed": [
     "stuckSecondsPerBotMinute",
-    "oscillationsPerBotMinute",
+    "idleShare",
+    "routeFailuresPerBotMinute",
     "redeploysPerBotMinute",
+    "enemyKillsPerBotMinute",
     "bothSidesCapture",
     "stuckSecondsPerBotMinuteWorseSide",
+    "routeFailuresPerBotMinuteWorseSide",
     "redeploysPerBotMinuteWorseSide",
     "nonEnemyDeathShareWorseSide",
     "hullStuckSecondsPerDrivingMinute",
@@ -51,13 +61,18 @@
     "unitsNeverUsedShare"
    ],
    "winners": [
-    1,
     0,
+    2,
     0
    ]
   }
  },
  "oneSided": null,
  "unreachable": [],
- "lintErrors": []
+ "lintErrors": [],
+ "acceptanceWithdrawn": {
+  "because": "page match 2026-11-12, after the flag binding: under the rollout floor (0.006 enemy kills, no capture)",
+  "date": "2026-11-12",
+  "was": "Owner's rollout, 2026-11-11: after playing Tunis-1943 against its generated bots"
+ }
 }

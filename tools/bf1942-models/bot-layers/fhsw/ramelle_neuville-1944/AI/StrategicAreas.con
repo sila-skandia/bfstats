@@ -1,39 +1,24 @@
 rem *** Strategic areas: one per control point (botgen) ***
 
 aiStrategicArea.create german_farm 119.4/812.4 159.4/852.4 50
-aiStrategicArea.addNeighbour ammunition_dump
 aiStrategicArea.addNeighbour the_school
-aiStrategicArea.addNeighbour courtyard
-aiStrategicArea.addNeighbour the_orchard
 aiStrategicArea.addNeighbour ramelle_fields
 aiStrategicArea.addObjectTypeFlag Base
-aiStrategicArea.setOrderPosition Tank 162.5/850.5
 aiStrategicArea.setOrderPosition Infantry 161.5/852.5
 aiStrategicArea.setSide 1
 aiStrategicArea.setTakeable 2 0
 
-aiStrategicArea.create ammunition_dump 450/537.1 463/550.1 150
+aiStrategicArea.create ammunition_dump 450/537.1 463/550.1 10
+aiStrategicArea.setSide 2
+aiStrategicArea.setTakeable 1 0
+aiStrategicArea.setTakeable 2 0
+
+aiStrategicArea.create the_school 552.1/562 569.1/579 150
 aiStrategicArea.addNeighbour german_farm
-aiStrategicArea.addNeighbour the_school
-aiStrategicArea.addNeighbour courtyard
-aiStrategicArea.addNeighbour the_orchard
 aiStrategicArea.addNeighbour ramelle_fields
 aiStrategicArea.addObjectTypeFlag Flank
 aiStrategicArea.addObjectTypeFlag Close
 aiStrategicArea.addObjectTypeFlag ControlPoint
-aiStrategicArea.setOrderPosition Tank 466.5/551.5
-aiStrategicArea.setOrderPosition Infantry 463.5/550.5
-aiStrategicArea.setSide 2
-
-aiStrategicArea.create the_school 552.1/562 569.1/579 150
-aiStrategicArea.addNeighbour german_farm
-aiStrategicArea.addNeighbour ammunition_dump
-aiStrategicArea.addNeighbour courtyard
-aiStrategicArea.addNeighbour the_orchard
-aiStrategicArea.addNeighbour ramelle_fields
-aiStrategicArea.addObjectTypeFlag Flank
-aiStrategicArea.addObjectTypeFlag ControlPoint
-aiStrategicArea.setOrderPosition Tank 572.5/580.5
 aiStrategicArea.setOrderPosition Infantry 570.5/580.5
 aiStrategicArea.setSide 2
 
@@ -47,40 +32,20 @@ aiStrategicArea.setSide 2
 aiStrategicArea.setTakeable 1 0
 aiStrategicArea.setTakeable 2 0
 
-aiStrategicArea.create courtyard 493.8/359.6 505.8/371.6 150
-aiStrategicArea.addNeighbour german_farm
-aiStrategicArea.addNeighbour ammunition_dump
-aiStrategicArea.addNeighbour the_school
-aiStrategicArea.addNeighbour the_orchard
-aiStrategicArea.addNeighbour ramelle_fields
-aiStrategicArea.addObjectTypeFlag Flank
-aiStrategicArea.addObjectTypeFlag ControlPoint
-aiStrategicArea.setOrderPosition Tank 502.5/370.5
-aiStrategicArea.setOrderPosition Infantry 505.5/370.5
+aiStrategicArea.create courtyard 493.8/359.6 505.8/371.6 10
 aiStrategicArea.setSide 2
+aiStrategicArea.setTakeable 1 0
+aiStrategicArea.setTakeable 2 0
 
-aiStrategicArea.create the_orchard 398.9/322.8 414.9/338.8 300
-aiStrategicArea.addNeighbour german_farm
-aiStrategicArea.addNeighbour ammunition_dump
-aiStrategicArea.addNeighbour the_school
-aiStrategicArea.addNeighbour courtyard
-aiStrategicArea.addNeighbour ramelle_fields
-aiStrategicArea.addObjectTypeFlag Centre
-aiStrategicArea.addObjectTypeFlag StrongPoint
-aiStrategicArea.addObjectTypeFlag Close
-aiStrategicArea.addObjectTypeFlag ControlPoint
-aiStrategicArea.setOrderPosition Tank 413.5/341.5
-aiStrategicArea.setOrderPosition Infantry 414.5/339.5
+aiStrategicArea.create the_orchard 398.9/322.8 414.9/338.8 10
 aiStrategicArea.setSide 2
+aiStrategicArea.setTakeable 1 0
+aiStrategicArea.setTakeable 2 0
 
 aiStrategicArea.create ramelle_fields 438.5/63.3 478.5/103.3 50
 aiStrategicArea.addNeighbour german_farm
-aiStrategicArea.addNeighbour ammunition_dump
 aiStrategicArea.addNeighbour the_school
-aiStrategicArea.addNeighbour courtyard
-aiStrategicArea.addNeighbour the_orchard
 aiStrategicArea.addObjectTypeFlag Base
-aiStrategicArea.setOrderPosition Tank 478.5/103.3
 aiStrategicArea.setOrderPosition Infantry 478.5/103.3
 aiStrategicArea.setSide 2
 aiStrategicArea.setTakeable 1 0

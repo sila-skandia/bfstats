@@ -5,69 +5,39 @@ rem ----------------------------------------------------------------------------
 rem *** Create Strategies ***
 
 
-rem *** Kharkov ***
-
-aiStrategy.createStrategy normal
-aiStrategy.Aggression 1.0
-aiStrategy.NumberOfAttacks 1
-aiStrategy.NumberOfDefences 0
-aiStrategy.TimeLimit 300
-aiStrategy.setPrerequisite normalPrereq
-aiStrategy.setStrategicObjectsModifier Centre        2.0  
-aiStrategy.setStrategicObjectsModifier Close         0.75 Hostile
-aiStrategy.setStrategicObjectsModifier Close         0.75 Neutral
-aiStrategy.setStrategicObjectsModifier StrongPoint   5.0  
-aiStrategy.setStrategicObjectsModifier StrongPoint   0.2  Owned
-aiStrategy.setStrategicObjectsModifier Base          0.3  Hostile
-aiStrategy.setStrategicObjectsModifier Base          0.3  Neutral
-aiStrategy.setStrategicObjectsModifier ControlPoint  2.0 
-aiStrategy.setStrategicObjectsModifier Centre        2.0  Owned
-aiStrategy.setStrategicObjectsModifier Safe          0.2  Owned
-
-aiStrategy.createStrategy bridge
-aiStrategy.Aggression 0.5
-aiStrategy.NumberOfAttacks 1
-aiStrategy.NumberOfDefences 1
-aiStrategy.TimeLimit 200
-aiStrategy.setPrerequisite bridgePrereq
-aiStrategy.setStrategicObjectsModifier Centre        0.5  Hostile
-aiStrategy.setStrategicObjectsModifier Close         2.0  Hostile
-aiStrategy.setStrategicObjectsModifier StrongPoint   0.5  Hostile
-aiStrategy.setStrategicObjectsModifier Base          0.3  Hostile
-aiStrategy.setStrategicObjectsModifier Centre        0.5  Neutral
-aiStrategy.setStrategicObjectsModifier Close         2.0  Neutral
-aiStrategy.setStrategicObjectsModifier StrongPoint   0.5  Neutral
-aiStrategy.setStrategicObjectsModifier Base          0.3  Neutral
-aiStrategy.setStrategicObjectsModifier ControlPoint  2.0 
-aiStrategy.setStrategicObjectsModifier Centre        4.0  Owned
-aiStrategy.setStrategicObjectsModifier Close         4.0  Owned
-aiStrategy.setStrategicObjectsModifier Safe          0.2  Owned
-aiStrategy.setStrategicObjectsModifier Bridge        4.0  
-aiStrategy.setStrategicObjectsModifier Bridge        0.25 Owned
-
-aiStrategy.createStrategy finalPush
-aiStrategy.Aggression 1.0
-aiStrategy.NumberOfAttacks 1
-aiStrategy.NumberOfDefences 0
-aiStrategy.setPrerequisite finalPushPrereq
-aiStrategy.setStrategicObjectsModifier Base        10.0 Hostile
-aiStrategy.setStrategicObjectsModifier Close        2.0 Hostile
-aiStrategy.setStrategicObjectsModifier Base        10.0 Neutral
-aiStrategy.setStrategicObjectsModifier Close        2.0 Neutral
+rem *** Kursk ***
 
 aiStrategy.createStrategy breakOut
 aiStrategy.Aggression 1.0
 aiStrategy.NumberOfAttacks 1
 aiStrategy.NumberOfDefences 0
 aiStrategy.setPrerequisite breakOutPrereq
-aiStrategy.setStrategicObjectsModifier Close        3.0  Hostile
-aiStrategy.setStrategicObjectsModifier Close        3.0  Neutral
-aiStrategy.setStrategicObjectsModifier Safe         0.05 Owned
-aiStrategy.setStrategicObjectsModifier Front        2.0 
-aiStrategy.setStrategicObjectsModifier ControlPoint 4.0  Hostile
-aiStrategy.setStrategicObjectsModifier ControlPoint 4.0  Neutral
+aiStrategy.setStrategicObjectsModifier ControlPoint 4.0 
+
+aiStrategy.createStrategy holdAndCamp
+aiStrategy.Aggression 0.65
+aiStrategy.NumberOfAttacks 1
+aiStrategy.NumberOfDefences 2
+aiStrategy.setPrerequisite holdAndCampPrereq
+aiStrategy.setStrategicObjectsModifier Safe          0.2 Owned
+aiStrategy.setStrategicObjectsModifier ControlPoint  2.0 Owned
+
+aiStrategy.createStrategy single
+aiStrategy.Aggression 1.0
+aiStrategy.NumberOfAttacks 1
+aiStrategy.NumberOfDefences 0
+aiStrategy.TimeLimit 200
+aiStrategy.setPrerequisite singlePrereq
+aiStrategy.setStrategicObjectsModifier Safe          0.2 Owned
+
+aiStrategy.createStrategy double
+aiStrategy.Aggression 1.0
+aiStrategy.NumberOfAttacks 2
+aiStrategy.NumberOfDefences 0
+aiStrategy.TimeLimit 200
+aiStrategy.setPrerequisite doublePrereq
+aiStrategy.setStrategicObjectsModifier Safe          0.2 Owned
 
 
 rem ----------------------------------------------------------------------------
 endIf
-

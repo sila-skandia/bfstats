@@ -4,7 +4,7 @@
  "outcome": "no-fight",
  "config": "with vehicles",
  "doctrine": "garrison",
- "generatorVersion": 6,
+ "generatorVersion": 5,
  "inputs": {
   "controlPoints": "0923c9f78bca10c94039883af70f21fe4fe829cf75e41446d2efbc993c71f099",
   "infantryMap": "b5e861b3f9eddcd6307946712805cfb3b26174fba58ac0a9465129fd1ec29d08",
@@ -15,14 +15,16 @@
   "against": "dice",
   "why": "no bar of fhsw's own: DICE's"
  },
- "seeds": 1,
+ "seeds": 2,
  "sizes": {
   "8": {
    "verdict": "fail",
    "failed": [
     "stuckSecondsPerBotMinute",
+    "idleShare",
     "routeFailuresPerBotMinute",
     "redeploysPerBotMinute",
+    "capturesTotal",
     "enemyKillsPerBotMinute",
     "bothSidesCapture",
     "bothSidesKill",
@@ -35,40 +37,40 @@
    ],
    "winners": [
     0,
-    1,
+    2,
     0
    ]
   },
   "16": {
    "verdict": "fail",
    "failed": [
-    "stuckSecondsPerBotMinute",
+    "idleShare",
     "routeFailuresPerBotMinute",
-    "redeploysPerBotMinute",
     "enemyKillsPerBotMinute",
     "bothSidesCapture",
     "bothSidesKill",
     "ticketsBleed",
-    "stuckSecondsPerBotMinuteWorseSide",
     "routeFailuresPerBotMinuteWorseSide",
-    "redeploysPerBotMinuteWorseSide",
     "nonEnemyDeathShareWorseSide",
-    "hullStuckSecondsPerDrivingMinute",
-    "hullStuckSecondsPerDrivingMinuteWorseSide",
     "unitsNeverUsedShare"
    ],
    "winners": [
     0,
-    1,
+    2,
     0
    ]
   }
  },
- "oneSided": null,
+ "oneSided": 2,
  "unreachable": [
   "bergmann_strasse",
   "wolf_platz",
   "bauman_strasse"
  ],
- "lintErrors": []
+ "lintErrors": [],
+ "acceptanceWithdrawn": {
+  "because": "page match 2026-11-12, after the flag binding: under the rollout floor (0.006 enemy kills, no capture)",
+  "date": "2026-11-12",
+  "was": "Owner's rollout, 2026-11-11: after playing Tunis-1943 against its generated bots"
+ }
 }

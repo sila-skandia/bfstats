@@ -1,13 +1,13 @@
 {
  "level": "fht_battle_of_kohima-1944",
  "verdict": "fail",
- "outcome": "better-than-nothing",
+ "outcome": "no-fight",
  "config": "with vehicles",
  "doctrine": "garrison",
- "generatorVersion": 6,
+ "generatorVersion": 5,
  "inputs": {
   "controlPoints": "28f95f454516fb23b018ceaf5103d853c80aa80420c398dc56b96496d945b58f",
-  "infantryMap": "33402de051624fcb4771737935eaa53d2a66b320b34d762e5acc5aa4795957f9",
+  "infantryMap": "0b394ca1e7c431bb62fe74def8a44ca88a4f0d12e776edfeca265dcdf4f559f1",
   "template": "bdc0e455f47f91b7e7724e71d7c0c196e839b36946ac3abb7663d725944081e5"
  },
  "baseline": "DICE layers with vehicles, garrison doctrine: berlin, stalingrad, kharkov, bocage; seeds 1..10, 600 s",
@@ -15,31 +15,19 @@
   "against": "dice",
   "why": "no bar of fhsw's own: DICE's"
  },
- "seeds": 1,
+ "seeds": 2,
  "sizes": {
   "8": {
    "verdict": "fail",
    "failed": [
+    "idleShare",
     "routeFailuresPerBotMinute",
+    "capturesTotal",
     "enemyKillsPerBotMinute",
     "flagCoverage",
-    "routeFailuresPerBotMinuteWorseSide",
-    "hullStuckSecondsPerDrivingMinute",
-    "hullStuckSecondsPerDrivingMinuteWorseSide",
-    "unitsNeverUsedShare"
-   ],
-   "winners": [
-    1,
-    0,
-    0
-   ]
-  },
-  "16": {
-   "verdict": "fail",
-   "failed": [
-    "oscillationsPerBotMinute",
-    "routeFailuresPerBotMinute",
-    "enemyKillsPerBotMinute",
+    "bothSidesCapture",
+    "bothSidesKill",
+    "ticketsBleed",
     "routeFailuresPerBotMinuteWorseSide",
     "nonEnemyDeathShareWorseSide",
     "hullStuckSecondsPerDrivingMinute",
@@ -47,13 +35,40 @@
     "unitsNeverUsedShare"
    ],
    "winners": [
-    1,
+    2,
+    0,
+    0
+   ]
+  },
+  "16": {
+   "verdict": "fail",
+   "failed": [
+    "idleShare",
+    "routeFailuresPerBotMinute",
+    "enemyKillsPerBotMinute",
+    "flagCoverage",
+    "bothSidesCapture",
+    "bothSidesKill",
+    "ticketsBleed",
+    "routeFailuresPerBotMinuteWorseSide",
+    "nonEnemyDeathShareWorseSide",
+    "hullStuckSecondsPerDrivingMinute",
+    "hullStuckSecondsPerDrivingMinuteWorseSide",
+    "unitsNeverUsedShare"
+   ],
+   "winners": [
+    2,
     0,
     0
    ]
   }
  },
- "oneSided": null,
+ "oneSided": 1,
  "unreachable": [],
- "lintErrors": []
+ "lintErrors": [],
+ "acceptanceWithdrawn": {
+  "because": "page match 2026-11-12, after the flag binding: under the rollout floor (no kill and no capture in two matches)",
+  "date": "2026-11-12",
+  "was": "Owner's rollout, 2026-11-11: after playing Tunis-1943 against its generated bots"
+ }
 }

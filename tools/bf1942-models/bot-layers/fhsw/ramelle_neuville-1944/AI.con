@@ -23,18 +23,16 @@ run AI/conditions.con v_arg1
 run AI/prerequisites.con v_arg1
 run AI/Strategies.con v_arg1
 
-ai.addSAIStrategy 1 normal
-ai.addSAIStrategy 1 bridge
-ai.addSAIStrategy 1 finalPush
 ai.addSAIStrategy 1 breakOut
+ai.addSAIStrategy 1 holdAndCamp
+ai.addSAIStrategy 1 single
+ai.addSAIStrategy 1 double
 
-ai.addSAIStrategy 2 normal
-ai.addSAIStrategy 2 bridge
-ai.addSAIStrategy 2 finalPush
 ai.addSAIStrategy 2 breakOut
+ai.addSAIStrategy 2 holdAndCamp
+ai.addSAIStrategy 2 single
+ai.addSAIStrategy 2 double
 
 ai.saiEnable 1
-
-run AIpathFinding.con v_arg1
 
 run AI/StrategicAreas.con v_arg1
