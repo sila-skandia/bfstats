@@ -527,7 +527,8 @@ export function actionStatusDecision({ state = 0, dir, pos, forward, velSign = 0
  */
 export function unitUrgency({ health = 1, fire = null, strengths = {}, presence = { Infantry: 1 }, maxSpeed = 0,
                               engineHeat = 1, occupiedByBot = false, value = 0,
-                              orderSplit = [0.5, 0.5], spawnAge = Infinity, leftAge = Infinity }) {
+                              orderSplit = [0.5, 0.5], spawnAge = Infinity, leftAge = Infinity,
+                              requestAge = Infinity }) {
   let fireTerm = fire;
   if (fireTerm === null || fireTerm === undefined) {
     fireTerm = 0;
@@ -538,14 +539,36 @@ export function unitUrgency({ health = 1, fire = null, strengths = {}, presence 
   let u = sCurve(clamp(health, 0, 1)) * (fire_ * (orderSplit[0] + CHANGE.fireBias) + move * orderSplit[1]) + value;
   if (leftAge < CHANGE.unitRampSeconds) u *= leftAge / CHANGE.unitRampSeconds;
   if (spawnAge < CHANGE.unitRampSeconds) u *= spawnAge / CHANGE.unitRampSeconds;
+  // A same-side human asked for this unit, the seat the bot holds, with Use
+  // or a seat key (`BotMain::playerRequestPlayerControlObject` 0x0852ed40):
+  // for 15 s after the press it is worth `age x 0.06667` of itself to this
+  // bot (`calculateVehicleUrgency` 0x08583c50..0x08583d1f: `15.0 >
+  // now - BotMain+0x1e8`, the requested id `+0x1e4` against the unit; then
+  // the bot's vt+0x184 drops the request).
+  if (requestAge < CHANGE.unitRampSeconds) u *= Math.max(0, requestAge) / CHANGE.unitRampSeconds;
   return u;
 }
 
-/** The bot's order strengths into the fire / move split (`Bot` +0x168 / +0x16c). */
-export function orderSplit(attack = 0, defence = 0) {
-  if (attack <= 0) return defence <= 0 ? [0.5, 0.5] : [1.0, 0.0];
-  if (defence > 0) return [defence / (attack + defence), attack / (attack + defence)];
+/**
+ * The fire / move split `BBChange::calculateUrgency` 0x0855e0c0 hands
+ * `calculateVehicleUrgency` as `w1` / `w2` (its +0x20 / +0x24): from the
+ * bot's move and fire inclinations, `BotMain` vtable +0x168
+ * `getMoveInclination` 0x0852e280 and +0x16c `getFireInclination` 0x0852e310
+ * (0x0855e108, 0x0855e128; ledger AI-43 corrected, which had them as order
+ * fields). Move > 0 and fire > 0: `[fire, move] / (fire + move)`
+ * (0x0855f720..0x0855f774); move > 0 alone: `[0, 1]` (0x0855e142); fire > 0
+ * alone: `[1, 0]`; neither: `[0.5, 0.5]` (0x0855f780..0x0855f7c0).
+ */
+export function inclinationSplit(fire = 0, move = 0) {
+  if (!(move > 0)) return fire > 0 ? [1.0, 0.0] : [0.5, 0.5];
+  if (fire > 0) return [fire / (fire + move), move / (fire + move)];
   return [0.0, 1.0];
+}
+
+/** The earlier split by the order's strengths, kept under its old name for
+ *  callers outside the bot (`attack` stood for move, `defence` for fire). */
+export function orderSplit(attack = 0, defence = 0) {
+  return inclinationSplit(defence, attack);
 }
 
 /**

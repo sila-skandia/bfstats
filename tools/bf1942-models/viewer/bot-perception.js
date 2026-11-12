@@ -5,7 +5,7 @@
 // which delegates its methods here.
 
 import { lineClear, playerPosition, sensedPoint, sCurveExact } from './bot-sense.js';
-import { scoreTargets, scoreVehicleTargets, weaponAiOf, SOLDIER_BATTLE_STRENGTH, VEHICLE_FIRE } from './bot-fire.js';
+import { scoreTargets, scoreVehicleTargets, weaponAiOf, SOLDIER_BATTLE_STRENGTH, VEHICLE_FIRE, unarmedThreat, decliningSlope } from './bot-fire.js';
 import { QUADRANTS, quadrantOf } from './bot-behaviours.js';
 import { TANK } from './bot-vehicle.js';
 import { unitTable } from './bot-strength.js';
@@ -298,11 +298,24 @@ export function chooseVehicleTarget(bot, now) {
   // seat's offset). Empty, it returns
   // `BBFireUnarmed::calculateUrgency` 0x0856eb90, whose only `ret`
   // (0x0856ec35) follows `fldz`: its threat score goes to
-  // `addToFireInclination` (BotMain vt+0x164, read by `BBChange`; not
-  // modelled) and the Fire urgency is 0 (ledger SPOT-16).
+  // `addToFireInclination` (BotMain vt+0x164, read by `BBChange`;
+  // bot-fire.js `unarmedThreat`) and the Fire urgency is 0 (ledger SPOT-16).
   const gun = isArtilleryDriver(m) ? m.gunSeat : null;
-  if (isArtilleryDriver(m) && !(gun && m.gunSeatHeld?.())) {
-    return { targetId: null, targetPos: null, score: 0, weaponIndex: -1, urgency: 0 };
+  if ((isArtilleryDriver(m) && !(gun && m.gunSeatHeld?.())) || rowFire(m?.row) === 'FireUnarmed') {
+    // `BBFireUnarmed` (bot-fire.js `unarmedThreat`): no target and urgency
+    // 0; the threat's `Declein(2 best)` goes to the fire inclination
+    // (`inclination`, which `urgencyFire` scales by the modifier).
+    const r = unarmedThreat({
+      spotted: bot.senses.spottedEnemies(), position: bot.position, now,
+      infoOf: id => bot._unitInfo(id), myType: bot._myType(),
+      attackedBy: id => bot.senses.attackedBy(id),
+      insideOrderedArea: bot._insideOrderedArea(),
+      insideArea: bot.waypoints?.inside ? (pos) => bot.waypoints.inside(pos[0], pos[2]) : null,
+      currentTarget: bot._unarmedTarget ?? null,
+    });
+    bot._unarmedTarget = r.targetId;
+    return { targetId: null, targetPos: null, score: 0, weaponIndex: -1, urgency: 0,
+             inclination: r.best > 0 ? decliningSlope(2 * r.best) : 0 };
   }
   const weapons = gun ? gunWeapons(m) : bot.weapons;
   const spotted = bot.senses.spottedEnemies();

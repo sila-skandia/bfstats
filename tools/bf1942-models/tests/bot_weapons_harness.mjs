@@ -361,7 +361,8 @@ function lawReaches(words, level = Math.fround(0.8)) {
   const dry = { rounds: bot._mags.get('Bazooka').rounds, spare: bot._mags.get('Bazooka').spare };
   const index = [bot.lives, bot.inputIndex];
   world.armorOf('bot_0').damage(1e6);
-  bot._respawnIn = 0.01;
+  // Past the wave (SPAWN-35), which this check of the kit does not wait for.
+  bot._respawnForce = true;
   referee.respawnTick(bot, 0.02);
   index.push(bot.lives, bot.inputIndex);
   bot.isFiring = false;

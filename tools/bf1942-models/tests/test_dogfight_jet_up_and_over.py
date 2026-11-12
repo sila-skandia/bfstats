@@ -266,10 +266,10 @@ class FollowingThemUpOnAJetTests(unittest.TestCase):
         self.assertTrue(18 <= lo and hi <= 27, (lo, hi))
 
     def test_they_come_round_and_hit_you_but_nobody_is_shot_down(self) -> None:
-        # "in four of the nine they came round and hit you, 4 or 5 times about
-        # 31 s in from three of them"
+        # "in four of the nine they came round and hit you, 2 to 5 times,
+        # about 31 s in"
         hit = [r["aceHits"] for r in self.runs if r["aceHits"]]
-        self.assertEqual([1, 4, 5, 5], sorted(len(h) for h in hit))
+        self.assertEqual([2, 3, 5, 5], sorted(len(h) for h in hit))  # re-pinned 2026-11-12 on retail g and box area (features/retail-parity-cross-check-2026-11-12)
         self.assertTrue(all(30.5 <= t <= 31.5 for h in hit for t in h), hit)
         # "the only round you landed, in two of the nine, was fired before
         # they pulled up"
@@ -280,7 +280,7 @@ class FollowingThemUpOnAJetTests(unittest.TestCase):
             self.assertIsNone(r["winner"])
         runs = jet_lesson(LESSON, demo="move")["demos"]["move"]
         self.assertEqual(0, shot_down(runs, 0) + shot_down(runs, 1))
-        self.assertEqual([0, 0, 1, 0, 0, 0, 4, 5, 5], [r["hits"][0] for r in runs])
+        self.assertEqual([0, 0, 2, 0, 0, 0, 3, 5, 5], [r["hits"][0] for r in runs])  # re-pinned 2026-11-12 on retail g and box area (features/retail-parity-cross-check-2026-11-12)
 
 
 class FollowingShallowOnAJetTests(unittest.TestCase):
@@ -383,9 +383,9 @@ class TheMovesOnAJetTests(unittest.TestCase):
     def test_the_ninja_climbs_on_alone(self) -> None:
         runs = self.m["moves"]["ninja"]
         self.assertTrue(all("ninja-shoot" not in [ph for _, ph in r["you"]] for r in runs))
-        # "You never land a round; in two of the nine they hit you, 2 and 3 times"
+        # "You never land a round; in two of the nine they hit you, once and twice"
         self.assertTrue(all(r["hitsOnHim"] == 0 for r in runs))
-        self.assertEqual([2, 3], sorted(r["hitsOnMe"] for r in runs if r["hitsOnMe"]))
+        self.assertEqual([1, 2], sorted(r["hitsOnMe"] for r in runs if r["hitsOnMe"]))  # re-pinned 2026-11-12 on retail g and box area (features/retail-parity-cross-check-2026-11-12)
         # "level off at 755 to 775 m, under the top of the sky, never slower than 55 m/s"
         lo, hi = span(r["yourTop"] for r in runs)
         self.assertTrue(753 <= lo and hi <= 775, (lo, hi))
@@ -448,7 +448,7 @@ class OnTheMig29Tests(unittest.TestCase):
         self.assertEqual(7, len(hung))
         self.assertTrue(all(r["yourSlowestClimb"] < 27 for r in hung))
         runs = jet_lesson(LESSON, plane="Mig29", demo="move")["demos"]["move"]
-        self.assertEqual(4, shot_down(runs, 1))
+        self.assertEqual(5, shot_down(runs, 1))  # re-pinned 2026-11-12 on retail g and box area (features/retail-parity-cross-check-2026-11-12)
         self.assertEqual(0, shot_down(runs, 0))
 
     def test_following_shallow(self) -> None:

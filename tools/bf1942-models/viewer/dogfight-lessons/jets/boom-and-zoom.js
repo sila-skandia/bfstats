@@ -25,7 +25,7 @@ export default {
   note: 'The pass is the same and faster: one burst lands 15 to 23 rounds, so the pilot who never looks up goes down in one pass or two. Flown nine times on the F-16 they were shot down every time, 13 to 52 s in; the one who met the dive was never hit, and once it was met the ace never got above them again.',
   story: [
     'The pilot above you holds the cards. Height is speed waiting to be spent: they come down on you fast, hold their fire until you fill their sight, fire one burst, and before you can turn they use that speed to zoom back up, out of reach. Then they turn over the top and do it again.',
-    'On a jet the sky has a roof. A wing makes no lift at 1,000 m, so a jet\'s pilot levels off under 800 m, and the height they have on you is what lies under that: perched at 730 m, 372 m over you. They dive from 338 to 356 m above you, 587 to 621 m out, and one burst lands 15 to 23 rounds.',
+    'On a jet the sky has a roof. A wing makes no lift at 1,000 m, so a jet\'s pilot levels off under 800 m, and the height they have on you is what lies under that: perched at 730 m, 372 m over you. They dive from 338 to 356 m above you, 589 to 621 m out, and one burst lands 15 to 23 rounds.',
     'Erich Hartmann, the highest-scoring ace in history, fought almost only like this: see, decide, attack, reverse.',
   ],
   counterStory: [
@@ -53,7 +53,7 @@ export default {
         { phase: 'dip-run', say: 'They zoom away: do not follow. Straight on, full throttle, nose 3° up, to the top of the sky' },
       ] },
       note: 'Meet their first dive head on, then straight on out of the pass the way it left you while their zoom takes them the other way: full throttle, the nose 3 degrees up. Not down low, as a Spitfire runs: a jet is fastest at the top of the sky, and there they have no height over you to dive with.',
-      verdict: { works: 9, of: 9, line: 'Out in all nine and never hit: their guns never bore on you. They dive after you once more, 16 s in, from 1.7 to 1.8 km back and only 146 to 189 m above you, never get within 798 m, and give up the chase 19.5 to 20.4 s in. At 90 s you are 16.8 to 17.3 km apart, you at 770 m and 128 m/s.' },
+      verdict: { works: 9, of: 9, line: 'Out in all nine and never hit: their guns never bore on you. They dive after you once more, 16 s in, from 1.7 to 1.8 km back and only 153 to 189 m above you, never get within 798 m, and give up the chase 19.6 to 20.4 s in. At 90 s you are 16.8 to 17.3 km apart, you at 770 m and 128 m/s.' },
     },
     flip: {
       note: 'This opens where their height is spent: both of you climbing at about 600 m. When they turn their nose away, in behind them with the lead, and if the guns do not bear in 3 to 5 s, up and away, never round after them. On a jet they turn to face you, and the climb takes you both to the top of the sky.',

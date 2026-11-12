@@ -3,10 +3,14 @@
 // A plain function of the `World` (world.js), called from its tick.
 
 import { fallDamageFor } from './fall-damage.js';
-import { obstacleDamage, obstacleOrigin, OBSTACLE_DAMAGE } from './obstacle.js';
+import { ColObjectList, obstacleDamage, obstacleOrigin, OBSTACLE_DAMAGE } from './obstacle.js';
 import { SOLDIER_PITCH_GAIN, soldierYawStep } from './mouse-input.js';
 import { recoilStep } from './recoil.js';
 import { consume } from './world-input.js';
+import { soldierCollisionDamage } from './crash-damage.js';
+import { SOLDIER_SPEED_MOD } from './fall-damage.js';
+import { runOverInputs } from './soldier-resolve.js';
+import { KILL_MATERIAL_DAMAGE } from './soldier-locomotion.js';
 
 const DEG_TO_RAD = Math.PI / 180;
 // The tick's recoil share, reused (nothing allocates per tick).
@@ -92,7 +96,142 @@ export function soldierTick(world, player, dt) {
     const drowned = soldier.drainDrowning?.() ?? 0;
     if (drowned > 0) player.armor.applyDamage(drowned);
   }
+  // The kill material: `BFSoldier::handleCollision` bills a soldier touching
+  // a material-99 face 1e10 (lnxded 0x0827d3c8 -> 0x0827dda9). A soldier who
+  // ends up inside a closed building dies on its floor.
+  if (soldier.drainKillFace?.() && player.armor && !player.armor.destroyed) {
+    player.armor.applyDamage(KILL_MATERIAL_DAMAGE);
+  }
   obstacleTick(world, player, dt);
+  runOverTick(world, player, dt);
+}
+
+/**
+ * SEAT-33: for 2 s after they leave a hull, a soldier's contacts with it
+ * cost them nothing (`BFSoldier::setExitedFromVehicle` 0x08277220 stores the
+ * root at `+0x580` and posts message 0x16 at 2.0 s, which clears it;
+ * `handleCollision` 0x0827d3b0 returns 1 for that object at 0x0827d421,
+ * before every damage branch and the collision list). It still pushes.
+ */
+export const EXIT_GRACE = 2.0;
+
+/**
+ * V0's attribution: a hull nobody sits in credits its last occupant while
+ * `2.0 > worldTime - lastOccupiedTime` (`getLastOccupidePlayer` /
+ * `getLastOccupideTime`, 0x08155f91-0x08155fd3, the double 2.0 at 0x086c0330).
+ */
+export const LAST_OCCUPANT_WINDOW = 2.0;
+
+/** A hull's collision owner, by its seat root (a walk of the index's owner
+ *  list, so cached per root and index). */
+const _ownerOfRoot = new WeakMap();
+function ownerOfRoot(world, root) {
+  const statics = world.collider?.statics;
+  if (!root || !statics?.ownerOf) return -1;
+  let cached = _ownerOfRoot.get(root);
+  if (!cached || cached.statics !== statics) {
+    cached = { statics, owner: statics.ownerOf(root) };
+    _ownerOfRoot.set(root, cached);
+  }
+  return cached.owner;
+}
+
+/**
+ * `player` is leaving the hull they sit in, at world time `now`
+ * (`PlayerControlObject::exit` 0x08317d00): the soldier's SEAT-33 record,
+ * and for the root seat the hull's last occupant (V0's 2 s credit).
+ */
+export function noteHullExit(world, player, now) {
+  const occ = player?.occupancy;
+  if (!occ?.root) return;
+  const owner = ownerOfRoot(world, occ.root);
+  if (owner < 0) return;
+  if (player.soldier) {
+    player.soldier.exitedFrom = owner;
+    player.soldier.exitedUntil = now + EXIT_GRACE;
+  }
+  if (occ.isActiveRoot?.() ?? true) {
+    (world.lastOccupants ??= new Map()).set(owner, { playerId: player.id, at: now });
+  }
+}
+
+/**
+ * Who a hull's collision is credited to, `{ id, team }` or null:
+ * `handleCollisionObjectVsObject` 0x081551c0 walks up from the attacking
+ * object to its first IPlayerControlObject (0x08155546-0x0815559d) and takes
+ * its occupant (vt+0xc), else its last within 2 s; the id is the player's
+ * (vt+0x48) and the team the player's own (`BFPlayer+0x7c`, 0x08155537). A
+ * hull's col1 is its root's, whose PCO is the driver's seat, so here it is
+ * the driver (a turret's own PCO would be its gunner's: not told apart).
+ */
+function hullCredit(world, owner, now) {
+  for (const [id, p] of world.players) {
+    const occ = p.occupancy;
+    if (!occ?.root || !(occ.isActiveRoot?.() ?? true)) continue;
+    if (ownerOfRoot(world, occ.root) === owner) return { id, team: p.team ?? null };
+  }
+  const last = world.lastOccupants?.get(owner);
+  if (last && now - last.at < LAST_OCCUPANT_WINDOW) {
+    return { id: last.playerId, team: world.players.get(last.playerId)?.team ?? null };
+  }
+  return null;
+}
+
+/**
+ * A hull that pushed them this tick (`soldier-resolve.js` `pushOutOfHulls`):
+ * their `handleCollision` (`BFSoldier::handleCollision` 0x0827d3b0 over
+ * `SimpleObject::handleCollision` 0x081dab40) hands the contact to
+ * `handleCollisionObjectVsObject` 0x081551c0 with the hull as the attacker,
+ * once a second per hull (the Armor's collision list, `Armor::isInColList`
+ * 0x081744d0 / `addColObject` 0x08173740, COL-5, the same list the wire
+ * uses), and the soldier-victim branch prices it (COL-3; nothing under 8
+ * m/s of contact speed, 0x08155a10). Their Armor is the vanilla soldier's:
+ * `speedMod 0.5` and `angleMod 1` (HP-14, DMG-3).
+ *
+ * The damage is `giveDamage(soldier, damage, id, team, -1, ...)` with the
+ * hull's driver (`hullCredit`), so the kill is theirs, an enemy's kill or a
+ * team kill by the sides as any other (`round-state.js` `kill`); the -1 is
+ * the weapon, so the kill line reads `[killed]` (`chat-log.js` `killStamp`'s
+ * `roadkill`). V0's same-team clause: when the soldier is on the driver's
+ * side and was the faster of the two along the contact's speed, nobody is
+ * credited (0x081555ad-0x08155ed1), and `giveDamage` names the soldier's
+ * last hitter instead, which the page's `lastAttack` stands for.
+ */
+function runOverTick(world, player, dt) {
+  const soldier = player.soldier;
+  const armor = player.armor;
+  const touches = soldier?.drainHullTouches?.();
+  if (!touches?.length || !armor || armor.destroyed) return;
+  // In a room the server's world bills it and sends the hit points
+  // (`server/authority.mjs`); the page's copy only pushes.
+  if (world.remoteDamage) return;
+  if (!armor.colList) armor.colList = new ColObjectList();
+  const now = world.ticks * dt;
+  for (const t of touches) {
+    // SEAT-33: the hull they just left, before anything else.
+    if (soldier.exitedFrom === t.owner && now < (soldier.exitedUntil ?? -Infinity)) continue;
+    const key = `hull:${t.owner}`;
+    if (armor.colList.has(key)) continue;
+    armor.colList.add(key);
+    const body = soldier.body;
+    const fallHeight = body ? body.lastCollisionHeight - body.position.y : 0;
+    const inputs = runOverInputs(t, { fallHeight, kitDamping: soldier.kitDamping ?? 1 });
+    const damage = soldierCollisionDamage({
+      ...inputs, victimSpeedMod: SOLDIER_SPEED_MOD, victimAngleMod: 1,
+    }, world.damageTables);
+    if (!(damage > 0)) continue;
+    let credit = hullCredit(world, t.owner, now);
+    if (credit && credit.team != null && credit.team === player.team
+        && Math.abs(inputs.victimSpeedAlong) > Math.abs(inputs.attackerSpeedAlong)) credit = null;
+    const lost = armor.damage(damage);
+    const list = world.report?.runOvers;
+    if (list && list.length < 256) {
+      list.push({ playerId: player.id, owner: t.owner, attacker: credit?.id ?? null,
+                  attackerTeam: credit?.team ?? null, lost, killed: !!armor.destroyed,
+                  at: [t.x, t.y, t.z] });
+    }
+    if (armor.destroyed) break;
+  }
 }
 
 /**

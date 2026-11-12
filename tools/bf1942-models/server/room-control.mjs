@@ -7,6 +7,7 @@
 import { RADIO_LOCAL_RANGE, RELOAD_GAP_MS, SPAWN_INDEX_MAX, WEAPON_NAME_OK } from './room-rules.mjs';
 import { encodeJsonMsg, eventRow } from './room-wire.mjs';
 import { mayEnterHull } from '../viewer/vehicle-instance.js';
+import { flagSide } from '../viewer/spawn-flags.js';
 
 /**
  * @param {object} options
@@ -19,12 +20,15 @@ export function createControlChannel({ room, event }) {
   function onAction(connection, row) {
     if (!row || typeof row !== 'object') return;
     if (row.type === 'spawn') onSpawn(connection, row);
+    else if (row.type === 'suicide') onSuicide(connection);
     else if (row.type === 'seat') onSeat(connection, row);
     else if (row.type === 'radio') onRadio(connection, row);
     else if (row.type === 'reload') onReload(connection, row);
     else if (row.type === 'stab') onStab(connection, row);
     // A landing of the page's own round, priced by the room (room-hits.mjs).
     else if (row.type === 'impact') room.hits?.onImpact(connection, row);
+    // A round of the medic bag or the wrench, run by the room (room-packs.mjs).
+    else if (row.type === 'pack') room.packs?.onPack(connection, row);
   }
 
   /**
@@ -106,12 +110,40 @@ export function createControlChannel({ room, event }) {
     const world = room.world;
     const player = world.player(slot);
     if (!player) return;
+    const refuse = (extra = {}) => {
+      connection.spawnRefused = true;
+      connection.peer.send(encodeJsonMsg(eventRow('spawnRefused', room.tick, { slot, ...extra })));
+    };
+    // The side the deploy screen's tab asks for: the row's `team`, sent
+    // with every spawn as retail's SetTeam goes before its SpawnRequest.
+    // `GameServer::setTeam(BFPlayer*, int)` 0x08131800 honours it (neither
+    // `forcePlayerToTeam` +0x2b8 nor `autoBalanceTeam` +0x1d0, both off by
+    // default, NET-21, is a room setting), sets it (`BFPlayer::setTeam`,
+    // 0x0813186b) and kills a live player whose side changed
+    // (`killPlayer(p, false)`, 0x08131950): that death waits for the wave
+    // like any other, so this spawn is refused with the wait.
+    if ((row?.team === 1 || row?.team === 2) && row.team !== connection.team) {
+      changeSide(connection, row.team);
+      // The death's own `killed` row, on the next step, carries the wait.
+      if (connection.lived && room.authority.suicide(slot)) {
+        refuse();
+        return;
+      }
+    }
     // `GameServer::spawnPlayer` 0x0814c990 (ROUND-11): a human spawns only
     // while the round plays, and not on a side out of tickets. The page
     // keeps its spawn screen up and asks again.
     if (!room.authority.maySpawn(connection.team)) {
-      connection.spawnRefused = true;
-      connection.peer.send(encodeJsonMsg(eventRow('spawnRefused', room.tick, { slot })));
+      refuse();
+      return;
+    }
+    // The reinforcement wave (SPAWN-35): a dead player's wait to the next
+    // spawn window (`killPlayer` 0x0814d920) must be spent before
+    // `gameStatusPlaying` stands them (0x08152917..0x08152987). The row
+    // says how long is left, and the page's own commit waits it out.
+    const wait = room.authority.spawnWaitLeft(slot);
+    if (wait > 0) {
+      refuse({ sw: Math.round(wait * 100) / 100 });
       return;
     }
     if (player.occupancy) unmount(connection);   // defensive
@@ -120,6 +152,14 @@ export function createControlChannel({ room, event }) {
     const index = row?.flag;
     if (Number.isInteger(index) && index >= 0 && index < flags.length) {
       flag = flags[index];
+    }
+    // A flag of the other side spawns nobody: `spawnPlayer` drops a group
+    // that is not active or not the player's side (`cmp [edi+0x7c],[ebx]`
+    // at 0x0814cb3e, then `+0x90 = 0`), and the page dies back to its
+    // spawn screen.
+    if (flag && flagSide(flag) !== connection.team) {
+      refuse();
+      return;
     }
     // A seat point (`setEnterOnSpawn 1`: FH's circling Hellcat, an LVT;
     // FHR-10): the row names the very point (`point`, its place in the
@@ -133,11 +173,11 @@ export function createControlChannel({ room, event }) {
     const named = Number.isInteger(row?.point) ? flag?.spawns?.[row.point] : null;
     const seatPoint = named?.enterOnSpawn ? named : null;
     if (seatPoint && !room.instance.seatPointOpen(seatPoint, slot)) {
-      connection.spawnRefused = true;
-      connection.peer.send(encodeJsonMsg(eventRow('spawnRefused', room.tick, { slot })));
+      refuse();
       return;
     }
     connection.spawnRefused = false;
+    connection.lived = true;
     room.authority.revive(slot, connection.team, row?.kit ?? null);
     if (seatPoint) {
       if (!world.spawnPlayer(slot, { flag, point: seatPoint })) return;
@@ -164,6 +204,26 @@ export function createControlChannel({ room, event }) {
     if (pinned) player.spawnIndex = wanted;
     if (!world.spawnPlayer(slot, { flag, advance: !pinned })) return;
     event('spawn', connection, {});
+  }
+
+  /** A change of side (`GameServer::setTeam` 0x08131800 -> `BFPlayer::
+   *  setTeam`): the connection, the world's player and every client's roster
+   *  take the new side. A seated player leaves the seat first. */
+  function changeSide(connection, team) {
+    const player = room.world.player(connection.slot);
+    if (player?.occupancy) unmount(connection);
+    connection.team = team;
+    if (player) player.team = team;
+    room.broadcast(eventRow('team', room.tick, { slot: connection.slot, team }), null);
+  }
+
+  /** The player's Suicide (retail's is `killPlayer`): the authority's
+   *  death decree takes it on the next step, with its wave (`killed`'s
+   *  `sw`). Retail's SUICIDE button on the spawn screen. */
+  function onSuicide(connection) {
+    const player = room.world.player(connection.slot);
+    if (player?.occupancy) unmount(connection);
+    room.authority.suicide(connection.slot);
   }
 
   /** The team of the room's players seated in `vehicle`, `slot` left out: the

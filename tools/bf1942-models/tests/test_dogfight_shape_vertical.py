@@ -166,8 +166,10 @@ class UpAndOverShape(unittest.TestCase):
     def test_the_words_numbers_hold(self) -> None:
         # The lesson's words: "you hung 45 to 115 m below him every time",
         # "at 13 m/s", "under one hit a fight"; "15 to 18 m/s faster than him
-        # and 180 to 275 m away", "first hits in all nine", "12 a fight to
-        # his 0.6" (his 0.2 before every pilot had human eyes, 2026-11-07).
+        # and 180 to 275 m away", "first hits in all nine", "10 a fight to
+        # his 0.6" (his 0.2 before every pilot had human eyes, 2026-11-07; 12
+        # until it was re-pinned 2026-11-12 on retail g and box area,
+        # features/retail-parity-cross-check-2026-11-12).
         move, counter = self.runs("move"), self.runs("counter")
         for r in move:
             self.assertGreaterEqual(r["topGap"], 45, r)
@@ -180,7 +182,7 @@ class UpAndOverShape(unittest.TestCase):
             self.assertGreaterEqual(r["atTop"]["range"], 175, r)
         you = sum(r["hits"][1] for r in counter) / 9
         him = sum(r["hits"][0] for r in counter) / 9
-        self.assertGreater(you, 11, you)
+        self.assertGreater(you, 9.5, you)
         self.assertLess(him, 0.7, him)
 
 

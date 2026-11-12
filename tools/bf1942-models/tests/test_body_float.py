@@ -47,9 +47,11 @@ MODULES = {
 }
 
 WATER = 20.0
-GRAVITY = -14.73
-#: What `sum (-f) * lift` has to reach: `|g| / (g / -9.82)` = 9.82.
-EQUILIBRIUM_SUM = 9.82
+#: 0xC16BAE14, the float32 of -14.73 (lnxded `0x08251e3b`).
+GRAVITY = -14.729999542236328
+#: What `sum (-f) * lift` has to reach: `|g| / (g / -9.82)`, the float32
+#: divisor's 9.8199997 (`0x086d0d6c`).
+EQUILIBRIUM_SUM = 9.819999694824219
 
 #: N, relY, hullHeight, floatMinLift, floatMaxLift -- each hull's `Physics.con`
 #: and `Objects.con`, per the research's §1.5 table.
@@ -106,7 +108,7 @@ class BodyFloatTests(unittest.TestCase):
         """`g / -9.82` is 1.5 on the nose, not 1.49995 -- VERDICT §2.7."""
         self.assertEqual(self.out["constants"]["LIFT_NORMALISER"], 1.5)
         self.assertAlmostEqual(9.82 * 1.5, 14.73, places=10)
-        self.assertEqual(self.out["constants"]["EQUILIBRIUM_SUM"], 9.82)
+        self.assertEqual(self.out["constants"]["EQUILIBRIUM_SUM"], EQUILIBRIUM_SUM)
 
     def test_the_submarine_lift_pair_is_centred_on_gravity(self):
         """`8 * 1.5 * (0.8275 + 1.6275)/2 = 14.73` exactly: the midpoint of the
@@ -152,7 +154,7 @@ class BodyFloatTests(unittest.TestCase):
     def test_one_fletcher_node_at_its_draft_carries_an_eighth_of_gravity(self):
         """`(g * 0.61375 * 2) / -9.82`, and eight of them make 14.73."""
         one = self.out["acceleration"]["fletcherAtDraft"]
-        self.assertAlmostEqual(one, (GRAVITY * 0.61375 * 2) / -9.82, places=9)
+        self.assertAlmostEqual(one, (GRAVITY * 0.61375 * 2) / -EQUILIBRIUM_SUM, places=9)
         self.assertAlmostEqual(8 * one, 14.73, places=6)
 
     def test_a_node_above_its_reference_plane_makes_no_force_and_no_damping(self):

@@ -1433,6 +1433,12 @@ class ObjectTemplate:
     # the pack, the landmine and the flak shells; Desert Combat writes 0 on
     # the Shilka's shell after taking its proximity fuse out.
     has_on_time_effect: bool | None = None
+    # `noFFSound` is `ProjectileTemplate+0x14f` (ConsoleClass409, the write
+    # at lnxded 0x082e39fe). `Projectile::handleCollision` calls
+    # `BFSoldier::projectileHit(team)`, the struck soldier's friendly-fire
+    # call-out, only while it is clear (0x0831efe6, FF-6). Vanilla sets it on
+    # the grenades, the explosives pack, the landmine and the rifle grenade.
+    no_ff_sound: bool | None = None
     # `setHasPointPhysics 0` puts a round on the `ResponsePhysics` path rather
     # than the point-mass one, i.e. a full rigid body with its `Wing` fins and
     # `FloatingBundle` floaters acting on it. Both grenades, the explosives
@@ -1693,6 +1699,15 @@ class ObjectTemplate:
     # and the reload, fire and eject timers with them (FA-8): FHSW's bayonet
     # rifle in slot 1 and the plain rifle in slot 3 are one rifle's rounds.
     weapon_link: int | None = None
+    # `ammoType`: the tag a supply depot's `addAmmoType` row id is matched
+    # against, `FireArmsTemplate+0x238` (`ObjectTemplate.ammoType`,
+    # ConsoleClass290 `executeObjectMethod` lnxded 0x082c98be; `makeScript`
+    # writes it back at 0x0828f234). 0 from the constructor (0x0828d614).
+    # `SupplyDepot::reloadAmmo` gives a gun only the row whose id equals
+    # `FireArms::getAmmoType` (0x0828d4c0, compare at 0x08323995; SUP-2):
+    # vanilla's guns write 1, grenades and explosives 2, launchers 3, an
+    # aircraft's guns 10 or 8 and its bombs 9 or 7.
+    ammo_type: int | None = None
     # `timeToNotAllowChange`: seconds after a round before another item may
     # be selected. Unwritten (-1 in the engine) the whole fire cycle holds
     # the weapon (`BFSoldier::isNotFireingOrHaveRecoil`, FA-9).
@@ -2311,6 +2326,8 @@ class ObjectTemplate:
             "timeToNotAllowChange": self.time_to_not_allow_change,
             "changeWeaponWhenNoAmmo": self.change_weapon_when_no_ammo,
             "cantSelectWhenNoAmmo": self.cant_select_when_no_ammo,
+            # The depot row this item is rearmed from (SUP-2).
+            "ammoType": self.ammo_type,
         })
         zoom = prune({
             "fov": self.zoom_fov,
@@ -2658,6 +2675,13 @@ class ObjectLibrary:
                         obj.item_index = int(args.split()[0])
                     except (ValueError, IndexError):
                         pass
+                elif cmd == "ammotype":
+                    # An int read (`istream >> int`): its leading digits.
+                    if match := re.match(r"\s*([+-]?\d+)", args):
+                        obj.ammo_type = int(match.group(1))
+                elif cmd in ("noffsound", "setnoffsound"):
+                    if (value := engine_bool(args)) is not None:
+                        obj.no_ff_sound = value
                 elif cmd == "setbonename":
                     # Always the template's own attachment, never a child's, and
                     # written before any `addTemplate` in every kit file in the

@@ -218,8 +218,19 @@ const HULL_WALL_NORMAL_Y = 0.6;
  */
 export const SOLDIER_AVOID = {
   lookAhead: 5.0,
-  /** `getPotentialObstacleMaxSpeed`, 0 (`AIPathfinding` ctor 0x0847a780). */
-  potentialObstacleMaxSpeed: 0,
+  /** `getPotentialObstacleMaxSpeed` (`AIPathfinding+0x2c`, read through
+   *  IAIPathfinding vt+0x8c by `BBAvoid::calculateUrgency` 0x0855cecf and
+   *  `updatePotentialObstacles` 0x0852dac0): 1.0, written by the
+   *  `AIPathfinding` ctor at 0x0847a7f0 and by `reset` 0x0847e5a2. No
+   *  console word sets it. Read as 0 until 2026-11-12. */
+  potentialObstacleMaxSpeed: 1.0,
+  /** `getPotentialObstacleMaxAge` (`+0x30`, vt+0x94, 0x0852daaa): 10 s, the
+   *  same two writes (0x0847a7f7, 0x0847e5a9). */
+  potentialObstacleMaxAge: 10.0,
+  /** `updatePotentialObstacles` drops a planted body moving faster than
+   *  `maxSpeed x 1.2` (the float at 0x086c4f64, 0x0852dac6; the compare at
+   *  0x0852dbd9). */
+  dropSpeedScale: 1.2,
   /** A body slower than this reads as still: the viewer's bodies drift a
    *  few mm/s at rest (INVENTION: the engine compares the exact speed). */
   stillSpeed: 0.05,
@@ -324,16 +335,16 @@ export function predictObstacles(bot, bodies = null) {
   const R = bot._radius?.() ?? BOT_RADIUS;
   const reach = SOLDIER_AVOID.lookAhead * speed + R;
   const list = bodies ?? avoidBodies(bot);
-  const still = o => Math.hypot(o.vx, o.vz) <= SOLDIER_AVOID.potentialObstacleMaxSpeed + SOLDIER_AVOID.stillSpeed;
+  const still = o => Math.hypot(o.vx, o.vz) <= SOLDIER_AVOID.potentialObstacleMaxSpeed;
   let planted = 0;
   // One circle a sub-sphere (`addPotentialObstacle` 0x0852ceb0); a soldier
   // is one sphere at his feet.
   const plant = o => {
     if (bot.obstacles.some(ob => ob.id === o.id || ob.id?.startsWith(`${o.id}#`))) return;
     if (o.spheres?.length) {
-      o.spheres.forEach(([x, z], k) => bot.obstacles.push({ x, z, r: R + o.sphereR, age: 0, id: `${o.id}#${k}`, unit: null }));
+      o.spheres.forEach(([x, z], k) => bot.obstacles.push({ x, z, r: R + o.sphereR, age: 0, id: `${o.id}#${k}`, body: o.id, unit: null }));
     } else {
-      bot.obstacles.push({ x: o.x, z: o.z, r: R + o.r, age: 0, id: o.id, unit: null });
+      bot.obstacles.push({ x: o.x, z: o.z, r: R + o.r, age: 0, id: o.id, body: o.id, unit: null });
     }
     planted++;
   };
@@ -355,11 +366,47 @@ export function predictObstacles(bot, bodies = null) {
   return planted;
 }
 
-/** `updatePotentialObstacles`: an obstacle is dropped once the bot is
- *  well away from it (max age 0 in every shipped level). */
-export function ageObstacles(bot, dt) {
+/** The speed of each body a soldier's prediction planted, by its id
+ *  (`avoidBodies`' `p:` / `h:` ids), now; a body no longer there is absent. */
+function plantedSpeeds(bodies) {
+  const out = new Map();
+  for (const o of bodies) out.set(o.id, Math.hypot(o.vx, o.vz));
+  return out;
+}
+
+/**
+ * `updatePotentialObstacles` 0x0852d880 rebuilds the bot's circles from its
+ * planted bodies every update (the map at `BotMain+0x188`): a body that is
+ * gone (0x0852e0f9) or moving faster than `maxSpeed x 1.2` (0x0852dbd9 ->
+ * 0x0852e0e9) is dropped; one older than `maxAge` (10 s, 0x0852dbf0) is
+ * dropped once the bot is farther from it than `5 x size + R` (25.5 m,
+ * 0x0852df17..0x0852dfbf); a younger one stays wherever the bot is. A
+ * friend planted while touching (`collisionPredicted`'s t = 0) who walks on
+ * is therefore no obstacle a tick later. The page kept every circle until
+ * the bot was 25.5 m off, so a friend who had stood in a doorway closed it
+ * for the bots behind him long after he left: after the reinforcement wave
+ * (SPAWN-35) a side walks out of its base together and the circles from
+ * that crowd failed the routes of whoever followed (2026-11-12, the DICE
+ * runner: on-foot route failures per bot-minute about 1.5x). Contact
+ * circles and a hull's own circles (no planted body) keep the distance rule.
+ * `bodies` defaults to the world's (`avoidBodies`); with no world to ask,
+ * only the distance rule runs.
+ */
+export function ageObstacles(bot, dt, bodies = null) {
   if (!bot.obstacles.length) return;
   for (const ob of bot.obstacles) ob.age += dt;
+  if (bot.obstacles.some(ob => ob.body) && (bodies || bot.world)) {
+    const speeds = plantedSpeeds(bodies ?? avoidBodies(bot));
+    const fast = SOLDIER_AVOID.potentialObstacleMaxSpeed * SOLDIER_AVOID.dropSpeedScale;
+    bot.obstacles = bot.obstacles.filter(ob => {
+      if (!ob.body) return true;
+      const v = speeds.get(ob.body);
+      if (v === undefined || v > fast) return false;
+      if (ob.age <= SOLDIER_AVOID.potentialObstacleMaxAge) { ob.young = true; return true; }
+      ob.young = false;
+      return true;
+    });
+  }
   // A predicted obstacle is sized for the body that predicted it (`R_bot +
   // R_object`): one a soldier planted goes when he takes a hull, and one a
   // hull's crewman planted when he leaves it (INVENTION: what the engine's
@@ -371,7 +418,7 @@ export function ageObstacles(bot, dt) {
   const target = bot.currentPlan?.vehicleId != null ? `h:${String(bot.currentPlan.vehicleId).split(':')[0]}` : null;
   bot.obstacles = bot.obstacles.filter(ob => (ob.unit === undefined || ob.unit === unit)
     && !(target && (ob.id === target || ob.id?.startsWith(`${target}#`)))
-    && Math.hypot(ob.x - bot.position[0], ob.z - bot.position[2]) <= OBSTACLE_DROP_DISTANCE);
+    && (ob.young || Math.hypot(ob.x - bot.position[0], ob.z - bot.position[2]) <= OBSTACLE_DROP_DISTANCE));
 }
 
 /**

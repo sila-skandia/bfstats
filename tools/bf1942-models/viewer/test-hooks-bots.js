@@ -41,7 +41,8 @@ export function installBotHooks(page) {
     const before = armor.hitPoints;
     armor.damage(1e6);
     page.referee.damageLanded(id, before, null);
-    bot._respawnIn = 0;
+    // Past the wave (SPAWN-35), which a staged respawn does not wait for.
+    bot._respawnForce = true;
     return true;
   };
   window.__botDismount = id => { const bot = page.referee.bots.find(b => b.playerId === id); if (bot?.vehicle) page.referee.leaveVehicle(bot); return !bot?.vehicle; };

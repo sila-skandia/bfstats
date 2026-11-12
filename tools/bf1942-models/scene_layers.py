@@ -640,7 +640,8 @@ def layer_damage(ctx: LevelContext):
     # shared sounds and referenced relatively from each level.
     return {"damage": em.write_damage_tables(
         ctx.damage_tables, ctx.shared_sounds.parent, ctx.final_level_dir(),
-        em.projectile_materials(ctx.library))}, {}
+        em.projectile_materials(ctx.library),
+        (em.weapon_ammo_types(ctx.library) if ctx.library is not None else None))}, {}
 
 
 def layer_sounds(ctx: LevelContext):

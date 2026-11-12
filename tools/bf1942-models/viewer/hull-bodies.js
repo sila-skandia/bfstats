@@ -2021,7 +2021,27 @@ export function createHullBodies(page) {
     page.world.releaseDriven(owner, vehicle, scene.spec, bodyPoseOf(vehicle.node), wheelState);
   }
 
-  /** A wreck is scenery and a respawn is a fresh vehicle on its pad. */
+  /**
+   * A hull has died: its body stays in the world, parked, until the wreck is
+   * cleared (`retireVehicleBody` from `vehicle-wrecks.js` `clearWreck`).
+   * `ResponsePhysicsManager::update` 0x0825d0b0..0x0825d5c0 walks every hull's
+   * collidable chain with no test of the destroyed flag `SimpleObject+0xed`
+   * (HP-15 makes that flag stop input only), so a wreck keeps rolling,
+   * settling and being rammed until HP-19's `timeToLiveAfterDeath` removes it.
+   * A hull still adopted by a drive nobody integrates (a coasting hull killed
+   * on the ground, a falling wreck that has landed) is parked here with the
+   * drive's velocity, as the last man out parks one; a parked one is left be.
+   */
+  function parkWreckBody(owner, drive = null) {
+    if (!bodyScene.has(owner) || !hullBodies.bodyWorld) return;
+    if (!hullBodies.bodyWorld.get(owner)?.driven || drive?.fallingWreck) return;
+    if (drive) releaseDrivenBody(drive);
+    // No drive to park it from: the old retirement, so nothing stays driven
+    // by a model nobody steps.
+    if (hullBodies.bodyWorld.get(owner)?.driven) page.world.retireBody(owner);
+  }
+
+  /** A cleared wreck leaves the world, and a respawn is a fresh vehicle on its pad. */
   function retireVehicleBody(owner) {
     if (!bodyScene.has(owner)) return;
     page.world.retireBody(owner);
@@ -2275,6 +2295,7 @@ export function createHullBodies(page) {
     loadCollisionMeshes,
     recoilOnHull,
     onCrashDamage,
+    parkWreckBody,
     rebaseDeckSpawns,
     releaseDrivenBody,
     respawnVehicleBody,

@@ -8,7 +8,7 @@ import { atRestPose, restQuaternion } from './rest-pose.js';
 import {
   hullGeometry, inertiaGeometryBox, DEFAULT_DIFFERENTIAL, DEFAULT_TORQUE, DEFAULT_NO_PROPELLER_EFFECT_AT_SPEED,
 } from './ship-spec.js';
-import { floatNodesOf, floatAcceleration } from './body-float.js';
+import { floatNodesOf, floatAcceleration, GRAVITY as SIGNED_GRAVITY } from './body-float.js';
 
 import { LIFT_ENGINE_ANGLE, VectoredEngine, clipAngleStep, engineGeometry } from './vectored-engines.js';
 import {
@@ -97,23 +97,13 @@ const clamp = (value, low, high) => Math.max(low, Math.min(high, value));
  *
  * The server seeds the same literal (lnxded `0x08251e3b`).
  *
- * HELD, with `BOX_AREA` below: the flight law alone does NOT run the retail
- * values. Retail is 0xC16BAE14 = -14.73f (lnxded `0x08251e3b` / client
- * `0x00578f11`; -14.7295379 was a mis-decode of that word, commit
- * `7daf0ae33`) and the box drag's `3.14 * 0.25` (`0x082545b8`). These two are
- * held at the old -14.7295379 and pi/4 because the dogfight school's lessons
- * and pinned flown outcomes were tuned on them: at the retail pair 76 tests
- * fail and about 30 lessons break their own claims (planes fly into the
- * ground, Kursk's drag-and-bag gets no shot on the hunter, the counters let
- * his shots land), and `test_air_law`'s Bf109 lift-off goes 1.19 mm against
- * its 1.0 mm bound. Switching is pending a retune: see
- * `features/retail-parity-cross-check-2026-11-12`, "Still open". Everything
- * else (`aircraft-ground-law.js`, the bodies, the floats, the ships) runs the
- * shared -14.73 of `rigid-body.js`.
+ * That is 0xC16BAE14 = -14.73f (client `0x00578f11`); -14.7295379, which
+ * this file carried until 2026-11-12, was a mis-decode of the word (commit
+ * `7daf0ae33`). The signed value is `rigid-body.js`'s, by way of
+ * `body-float.js`, so the flight law, its ground law, the bodies, the floats
+ * and the ships run on one g. This is its magnitude.
  */
-const FLIGHT_GRAVITY = -14.7295379;
-/** The flight law's g, a magnitude: `FLIGHT_GRAVITY`'s (HELD, above). */
-export const GRAVITY = -FLIGHT_GRAVITY;
+export const GRAVITY = -SIGNED_GRAVITY;
 
 /**
  * Where the air runs out. `airDensityZeroAtHeight`, +0x30 of the same
@@ -147,8 +137,7 @@ const FLAP_LIFT_DEFAULT = 0.1;
  * 1/9.82, the constant `PhysicsWing` and `PhysicsSpring` both normalise by.
  *
  * The engine multiplies authored coefficients by `getGravity() * -0.101833`,
- * which at the shipped g is a flat x1.5 (14.73 x 0.101833 = 1.5000001; the held
- * `FLIGHT_GRAVITY` makes it x1.49995). Whoever wrote it was expressing
+ * which at the shipped g is a flat x1.5 (14.73 x 0.101833 = 1.5000001). Whoever wrote it was expressing
  * "in units of gravity" against a g of 9.82 that the engine no longer runs at.
  */
 const GRAVITY_NORMALISER = 0.101833;
@@ -159,12 +148,10 @@ const SURFACE_LIFT_CLAMP = 200;
 /** A submerged surface makes ten times the lift. Same function. */
 const SUBMERGED_MEDIUM = 10;
 
-/** `(pi/4)`: the box drag law's faces are ellipses inscribed in them. HELD:
- *  retail is `3.14 * 0.25` (lnxded `PhysicsNode::updatePhysics`
- *  `0x082545b8`; the client's 0.785f at `0x8f733c`; SHIPLAW-3), which
- *  `ship.js` and `amphibious.js` run; see `FLIGHT_GRAVITY` for why the flight
- *  law keeps pi/4 until the dogfight school is retuned. */
-const BOX_AREA = Math.PI / 4;
+/** `3.14 * 0.25`: the box drag law's faces are ellipses inscribed in them,
+ *  with the engine's own 3.14, not pi (lnxded `PhysicsNode::updatePhysics`
+ *  `0x082545b8`/`0x082545c8`; the client's 0.785f at `0x8f733c`; SHIPLAW-3). */
+const BOX_AREA = 3.14 * 0.25;
 
 /** `0.1 * |throttle|`: the part of thrust that does not fade with speed. */
 const ENGINE_IDLE = 0.1;
@@ -1685,6 +1672,8 @@ export class Aircraft extends Vehicle {
       if (body.racc) law.racc.fromArray(body.racc);
       if (body.fr) law.fr.fromArray(body.fr);
       if (body.rfr) law.rfr.fromArray(body.rfr);
+      // `rebase` keeps these over its own pass on the next tick.
+      law.adopted = !!(body.acc && body.fr);
       if (body.sleep === true) law.sleepiness = 0;
       else if (body.sleep === false && law.sleepiness <= 0) law.sleepiness = AIR_SLEEP_TICKS;
     }

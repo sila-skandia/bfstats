@@ -51,7 +51,7 @@ export default {
     },
     dip: {
       ace: 'jetTaAce',
-      verdict: { works: 9, of: 9, line: 'In all nine they never fired: they rolled out over the top 277 to 342 m from you, chased from about 260 m, were 634 to 704 m behind and not closing at 17.5 to 17.9 s, turned away, and you were 2937 to 3081 m apart at 32 s.' },
+      verdict: { works: 9, of: 9, line: 'In all nine they never fired: they rolled out over the top 277 to 342 m from you, chased from about 260 m, were 634 to 704 m behind and not closing at 17.5 to 17.9 s, turned away, and you were 2933 to 3081 m apart at 32 s.' },
     },
     flip: {
       ace: 'jetTaAce',

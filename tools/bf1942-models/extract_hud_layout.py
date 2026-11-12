@@ -883,7 +883,10 @@ RESPAWN_GROUPS = ("spawnTimer", "spawnText", "statusMessage")
 CLIENT_STRINGS = ("TIME_TO_SPAWN", "TIME_TO_START",
                   "RESPAWN_SPAWN_POINT_SELECTED", "RESPAWN_SPAWN_POINT_NOT_SELECTED",
                   # The status line's two (`viewer/status-message.js`, HUD-24).
-                  "INFO_MESSAGE_GAME_NOT_STARTED", "INFO_MESSAGE_GAME_IS_RESTARTING")
+                  "INFO_MESSAGE_GAME_NOT_STARTED", "INFO_MESSAGE_GAME_IS_RESTARTING",
+                  # The death camera's ride (`viewer/death-camera.js`,
+                  # `BfMenu::updateHud`): "CHASE CAMERA", "TO TOGGLE BETWEEN PLAYERS".
+                  "DEATH_CAMERA_RIDING_WITH", "DEATH_CAMERA_TOGGLE")
 
 SUPPLY_KEYS = ("supplyCtf", "supplyParachute", "supplyRepair", "supplyHeal",
                "supplyMine", "supplyReload", "supplyFlag", "supplyNonTakeable")

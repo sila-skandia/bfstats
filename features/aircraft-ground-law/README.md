@@ -45,8 +45,8 @@ One server tick, in the server's order (TANK-18 for the shape, AIRGND-1..5):
    `c` 12 on every vanilla plane, `D` the push the last collision pass left,
    the wheel snapped back to rest (TANK-19; `PhysicsSpring::updatePhysics`
    0x0824ddd0, the 1.5 being `getGravity() * -0.101833` with g = 0xC16BAE14 = -14.73f; an
-   earlier 1.49995 mis-decoded the seed, corrected 2026-11-12; the code still
-   holds the old -14.7295379 with `aircraft.js`, see
+   earlier 1.49995 mis-decoded the seed; the code runs `Math.fround(-14.73)`
+   from `rigid-body.js` since 2026-11-12, see
    `features/retail-parity-cross-check-2026-11-12`). A steered tail
    wheel's anchor and vertex are turned with its bundle.
 3. The wings, the engine and the box drag as the page already ran them, into

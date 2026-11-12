@@ -153,11 +153,13 @@ class DoctrineTests(unittest.TestCase):
         for run in fooled + follow:
             self.assertIsNotNone(run["fall"])
             self.assertTrue(run["recovered"])
-        # Taken for a kill: out of sight and gone, every start.
+        # Taken for a kill: out of sight and gone, every start; 0 to 5 rounds
+        # after the fall (0 to 4 until it was re-pinned 2026-11-12 on retail g
+        # and box area, features/retail-parity-cross-check-2026-11-12).
         for run in fooled:
             self.assertGreater(run["endRange"], 1100, run)
             self.assertLess(run["sight"], 0.3, run)
-            self.assertLessEqual(run["hitsAfter"], 4, run)
+            self.assertLessEqual(run["hitsAfter"], 5, run)
         # Followed down: in sight, close, and hit, every start.
         for run in follow:
             self.assertLess(run["endRange"], 400, run)
@@ -176,7 +178,12 @@ class DoctrineTests(unittest.TestCase):
         # Drag and bag: you drag, your wingman cuts in on the hunter and
         # shoots, you reverse onto it. Never hit, and the hunter is hit from
         # most starts, mostly by your wingman, and none of your own rounds
-        # strike your wingman (`friendInLine`).
+        # strike your wingman (`friendInLine`). Retuned 2026-11-12 on retail g
+        # and box area (features/retail-parity-cross-check-2026-11-12): the
+        # bait was hit in two starts; now its drag tightens to a hard turn
+        # toward the wingman once the hunter is about to fire
+        # (`BAG.breakRange`, `BAG.breakCone`): the hunter hit in 8 of 9, 65
+        # rounds, 39 the wingman's, the bait never.
         bag = pair["counter"]
         self.assertTrue(all(r["onYou"] == 0 and r["youDown"] is None for r in bag), bag)
         self.assertGreaterEqual(sum(r["onAce"] > 0 for r in bag), 7, bag)
@@ -188,8 +195,13 @@ class DoctrineTests(unittest.TestCase):
         # Far more than the turn alone, or the weave, put on it.
         self.assertGreater(sum(r["onAce"] for r in bag), 3 * sum(r["onAce"] for r in pair["flat"]))
         self.assertGreater(sum(r["onAce"] for r in bag), sum(r["onAce"] for r in pair["weave"]))
-        # The weave, from these starts: the pair never hit, the hunter hit.
-        self.assertTrue(all(r["onYou"] == 0 and r["onWing"] == 0 for r in pair["weave"]), pair["weave"])
+        # The weave, from these starts: the pair hit once (one round in nine
+        # fights), the hunter hit more. Rewritten 2026-11-12 on retail g and
+        # box area (features/retail-parity-cross-check-2026-11-12): "the pair
+        # never hit"; the weave trades shots between equals, which the lesson
+        # says, and on retail's law it trades one back.
+        self.assertLessEqual(sum(r["onYou"] for r in pair["weave"]), 1, pair["weave"])
+        self.assertEqual(0, sum(r["onWing"] for r in pair["weave"]), pair["weave"])
         self.assertGreater(sum(r["onAce"] for r in pair["weave"]), sum(r["onAce"] for r in pair["flat"]))
         self.assertIn("shoot", pair["weave"][0]["phases"])
 

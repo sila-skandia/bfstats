@@ -52,7 +52,8 @@ import math
 from pathlib import Path
 
 TICK = 1 / 30
-GRAVITY = -14.73
+# 0xC16BAE14 = -14.73f, the float32 itself (lnxded `0x08251e3b`).
+GRAVITY = -14.729999542236328
 FRAMES_BEFORE_SLEEP = 100
 ACCEL_CLAMP_LIMIT_SQ = 1e6
 ACCEL_CLAMP_SPEED = 1000

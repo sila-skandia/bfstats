@@ -24,7 +24,7 @@ import { createOperaHint } from './opera-gestures.js';
  * `fullmapBox`, `gameConsole`, `handWeapon`, `isSlow`, `minimapBox`,
  * `overlay` (the load overlay's `briefingCaptures`/`acceptBriefing` handshake),
  * `isTouchDevice`, `itemsLocked`, `LOCAL_PLAYER`, `lookDelta`,
- * `nearEntry`, `occupancy`, `openDeploy`, `optOnFoot`, `optPilot`, `requestSeatToggle`,
+ * `nearEntry`, `occupancy`, `openDeploy`, `optOnFoot`, `optPilot`, `requestHeldSeat`, `requestSeatToggle`,
  * `panCamera`, `params`, `pickupKit`, `radioKeydown`, `renderer`, `resetCamera`,
  * `scoreboardOpen`, `scoutStep`,
  * `scoreFromSpawn`, `selectDeployFlag`, `selectKitWeapon`, `setConsoleOpen`,
@@ -238,8 +238,13 @@ export function createPageInput(page) {
     // gunner, bare gun). On foot `soldier-camera.js` owns it: C walks the
     // canopy's three views, and on the ground toggles first person and the
     // chase view (`FOOT_VIEW_CYCLE`), as retail's C does on foot.
+    // Dead, the same key walks the death camera to the next living human
+    // teammate (`FreeCamera::handlePlayerInput`, `death-camera.js`).
     if (triggers.includes('c_PIToggleCameraMode') && !e.repeat
-        && !e.ctrlKey && !e.metaKey) page.cycleView();
+        && !e.ctrlKey && !e.metaKey) {
+      if (page.soldierDead) page.toggleDeathCamera?.();
+      else page.cycleView();
+    }
     // `c_PILie`, a non-repetitive trigger, so it toggles rather than holds.
     if (triggers.includes('c_PILie') && !e.repeat
         && page.optOnFoot.checked && page.soldier) page.toggleProne();
@@ -361,6 +366,10 @@ export function createPageInput(page) {
       if (entry) {
         page.enterVehicle(entry);
         pageInput.noteSeatToggle();
+      } else {
+        // No free door: `toggleEntryPoint` asks the bot holding the nearest
+        // one for it (0x0814f1b6..0x0814f21a; bot-referee.js `requestSeat`).
+        page.requestHeldSeat?.();
       }
     }
   }

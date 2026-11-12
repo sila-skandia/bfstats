@@ -199,7 +199,7 @@ const results = {};
   for (const bot of bots.filter(b => b.team === 2)) {
     for (let i = 0; i < 20; i++) {
       world.setPlayerArmor(bot.playerId, new Armor(30, 0));
-      bot._respawnIn = 0;
+      bot._respawnForce = true;   // past the wave (SPAWN-35): this checks where
       referee.respawnTick(bot, DT);
       const record = world.player(bot.playerId);
       respawns.push({ flag: flagName(record.flag), atSpawn: !!record.flag?.spawns.some(s =>

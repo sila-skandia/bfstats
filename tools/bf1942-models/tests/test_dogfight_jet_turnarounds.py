@@ -319,7 +319,7 @@ class TurnaroundsOnAJetTests(unittest.TestCase):
         between(self, (first(m, 0, "chase")["range"] for m in moves), 257, 263, "they chase from")
         between(self, (first(m, 0, "let-go")["range"] for m in moves), 634, 704, "they let go at")
         between(self, (first(m, 0, "let-go")["t"] for m in moves), 17.5, 17.9, "they let go")
-        between(self, (m["endRange"] for m in moves), 2937, 3081, "apart at 32 s")
+        between(self, (m["endRange"] for m in moves), 2933, 3081, "apart at 32 s")  # re-pinned 2026-11-12 on retail g and box area (features/retail-parity-cross-check-2026-11-12)
 
     def test_the_flip_meets_them_coming_back_over_you(self) -> None:
         moves = self.f["moves"]["flip"]
@@ -372,7 +372,7 @@ class TurnaroundsOnAJetTests(unittest.TestCase):
             self.assertEqual([0, 0], x["past"], demo)
         # The Flip's turning fight is the highest; the lesson's Immelmanns
         # top out at 479 to 535 m.
-        self.assertEqual(780, max(max(x["top"]) for x in tops.values()))
+        self.assertEqual(765, max(max(x["top"]) for x in tops.values()))  # re-pinned 2026-11-12 on retail g and box area (features/retail-parity-cross-check-2026-11-12)
         self.assertEqual([479, 535], tops["immelmann"]["top"])
 
     def test_the_jet_file_is_laid_over_the_lesson(self) -> None:
@@ -405,7 +405,7 @@ class TurnaroundsOnTheMig29Tests(unittest.TestCase):
         def first(m, phase):
             return next(e for e in m["events"] if e["side"] == 0 and e["phase"] == phase)
         between(self, (first(m, "rollout")["range"] for m in dip), 388, 510, "they roll out from you")
-        between(self, (first(m, "let-go")["range"] for m in dip), 755, 801, "they let go at")
+        between(self, (first(m, "let-go")["range"] for m in dip), 755, 806, "they let go at")  # re-pinned 2026-11-12 on retail g and box area (features/retail-parity-cross-check-2026-11-12)
         between(self, (first(m, "let-go")["t"] for m in dip), 17.3, 18.1, "they let go")
         between(self, (m["endRange"] for m in dip), 3502, 3719, "apart at 32 s")
 

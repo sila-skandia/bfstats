@@ -754,5 +754,16 @@ class PhysicsModuleTests(unittest.TestCase):
         self.assertAlmostEqual(eye["crouched"], eye["worldY"], places=6)
 
 
+    def test_a_kill_face_met_from_its_front_is_flagged(self) -> None:
+        """`BFSoldier::handleCollision` (lnxded 0x0827d3c8) bills a soldier on
+        material 99 1e10; the engine's one-sided test (COL-23) finds the face
+        only from in front of its stored normal."""
+        k = self.results["killFloor"]
+        self.assertTrue(k["front"]["met"])
+        self.assertAlmostEqual(0.3, k["front"]["y"], places=1)
+        self.assertFalse(k["back"]["met"])
+        self.assertFalse(k["plain"]["met"])
+
+
 if __name__ == "__main__":
     unittest.main()

@@ -603,7 +603,8 @@ export function createDeployScreen(page) {
     const hud = page.respawnHud;
     const cv = hud?.canvas;
     if (!cv) return;
-    const cd = page.spawnCountdown?.();
+    // A retail relay's own wait, else the page's wave (`spawning.js`).
+    const cd = page.spawnCountdown?.() ?? page.waveCountdown?.() ?? null;
     const strings = hud.layout?.strings || {};
     // The status line under them is fed every frame, body or not
     // (`status-message.js`, HUD-24), so it also stands over the world.

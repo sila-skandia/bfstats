@@ -208,15 +208,18 @@ export function createLevelSky(page) {
     const env = page.extras.envmapTexture === 'texture/defaultTexture'
       ? null : sky.levelEnvCube;
     const ld = w.lightDirection || [-0.3, 0.5, 0.65];
-    // `water.envmapColor` and `GeometryTemplate.waveHeight` (level-content.md
-    // Gap 17): both are registered client properties. The tint multiplies the
-    // reflected-cube term before the fresnel mix — Raid_on_Agheila's warm
-    // 0.5/0.4/0.3 versus the shared green 0.7/0.8/0.7 is the visible case —
-    // and the height drives a vertical swell, nonzero only on Santo_Croce and
-    // Eagles_Nest (0.1). A level that declares neither keys neither, so
-    // scenes extracted before this change read exactly as they did.
+    // `water.envmapColor` (level-content.md Gap 17), a registered client
+    // property: the tint multiplies the reflected-cube term before the
+    // fresnel mix — Raid_on_Agheila's warm 0.5/0.4/0.3 versus the shared green
+    // 0.7/0.8/0.7 is the visible case. A level that declares none keys none.
+    //
+    // `GeometryTemplate.waveHeight` (Santo_Croce and Eagles_Nest, 0.1) moves
+    // nothing (WATER-4): the client fills each tile's 17 x 17 dynamic grid
+    // once, flat, y = 0 and normal (0, 1, 0) (0x00653eb0, behind the
+    // once-only flag 0x00959c5c, cleared at 0x0065443c), and reads the word
+    // only to widen the tile's cull sphere to 2 * sqrt(waveHeight^2 + 32768)
+    // (0x00655906..0x00655917). So the sea here is flat too.
     const envColor = w.envmapColor || null;
-    const waveHeight = w.waveHeight || 0;
     sky.waterUniforms = {
       tLayer1: { value: layer1 },
       tLayer2: { value: layer2 },
@@ -244,7 +247,6 @@ export function createLevelSky(page) {
       uAlphaDepth: { value: w.alphaDepth || 1.5 },
       uColorDepth: { value: w.colorDepth || 10 },
       uEnvColor: { value: envColor ? srgb(envColor, [1, 1, 1]) : null },
-      uWaveHeight: { value: waveHeight },
       fogColor: { value: new THREE.Color(0x808080) },
       fogNear: { value: 400 },
       fogFar: { value: 900 },
@@ -255,18 +257,11 @@ export function createLevelSky(page) {
       depthWrite: false,
       side: THREE.DoubleSide,
       vertexShader: `
-      uniform float uTime, uWaveHeight, uWorldSize;
       varying vec3 vWorld;
       void main() {
+        // A flat sea: the engine's water grid has y = 0 at every vertex
+        // (0x00653eb0, WATER-4), whatever the level's waveHeight.
         vec4 world = modelMatrix * vec4(position, 1.0);
-        // GeometryTemplate.waveHeight: a vertical swell across the plane,
-        // nonzero only where a level ships it (Santo_Croce, Eagles_Nest).
-        // One travelling sine in world space; 0.1 m is a swell, not surf.
-        if (uWaveHeight > 0.0) {
-          float k = 6.2831853 / 256.0;
-          world.y += uWaveHeight * sin(world.x * k + uTime * 1.1)
-                                  * cos(world.z * k * 0.63 - uTime * 0.7);
-        }
         vWorld = world.xyz;
         gl_Position = projectionMatrix * viewMatrix * world;
       }`,
@@ -278,7 +273,6 @@ export function createLevelSky(page) {
       uniform float uScroll1, uScroll2, uScrollN, uTile1, uTile2, uTileN;
       uniform vec3 uShallow, uDeep, uSpec, uLightDir, uEnvColor;
       uniform float uShininess, uShallowAlpha, uAlphaDepth, uColorDepth;
-      uniform float uWaveHeight;
       uniform vec3 fogColor;
       uniform float fogNear, fogFar;
       varying vec3 vWorld;

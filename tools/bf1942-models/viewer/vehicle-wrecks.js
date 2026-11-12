@@ -30,7 +30,7 @@ import { afterDeath, afterDeathOpacity } from './after-death.js';
  * `cutVehicleAudio`, `detachSeatCorpse`, `dieInSeat`, `dieInWreck`, `effects`, `exitPoseManned`, `extras`,
  * `fireStates`, `freezeVehicle`, `groundHeight`, `isCollision`, `leaveSeat`, `loader`, `markPilot`,
  * `maxPlayers`, `MODELS_BASE`, `noteHullKiller`, `occupancy`, `optOnFoot`, `optPilot`, `placeCamera`,
- * `resetMobileControls`, `respawnVehicleBody`, `retireVehicleBody`,
+ * `parkWreckBody`, `resetMobileControls`, `respawnVehicleBody`, `retireVehicleBody`,
  * `soldier`, `soldierArmor`, `soldierDead`, `standUp`, `useLens`,
  * `vehicleDamage`, `vehiclePads`, `vehicles`, `world`.
  */
@@ -431,7 +431,10 @@ export function createVehicleWrecks(page) {
       page.world.falling.add(drive);
       return;
     }
-    page.retireVehicleBody(vehicle.owner);
+    // The wreck stays a body (no destroyed test in `ResponsePhysicsManager::
+    // update` 0x0825d0b0, HP-21): parked, it rolls off a slope, settles in
+    // the water and is shoved by a rammer until `clearWreck` takes it out.
+    parkWreck(vehicle.owner, page.vehicles?.lastFlightOf?.(visual.node)?.drive ?? null);
     await placeWreck(visual, vehicle);
   }
 
@@ -549,12 +552,19 @@ export function createVehicleWrecks(page) {
     // The wreck has stopped moving: its drive is not a wreck's any more, and a
     // hull the spawner puts back on the pad has to be able to fly.
     restoreLift(drive);
-    page.retireVehicleBody(owner);
-    // Back with the level's frozen scenery: the hull is where it came down, and
-    // nothing is going to move it again until its spawner puts a fresh one on
-    // the pad.
+    // Parked where it came down, and still a body (0x0825d0b0 has no
+    // destroyed test, HP-21): the node leaves the per-frame matrix walk, and
+    // the body world draws it whenever something moves it.
+    parkWreck(owner, drive);
     page.freezeVehicle(visual.node);
     placeWreck(visual, vehicle);
+  }
+
+  /** The page's `parkWreckBody` where it has one; the old retirement where
+   *  a host wires only that. */
+  function parkWreck(owner, drive) {
+    if (page.parkWreckBody) page.parkWreckBody(owner, drive);
+    else page.retireVehicleBody(owner);
   }
 
   /**
@@ -808,6 +818,9 @@ export function createVehicleWrecks(page) {
    *  collision. The node stays, hidden, for its pad to stand up again. */
   function clearWreck(owner, visual) {
     visual.removed = true;
+    // The time to live is up (HP-19): only now does the wreck's body leave the
+    // world, before its collision goes, or the next body tick republishes it.
+    page.retireVehicleBody?.(owner);
     if (visual.wreck) { visual.node.remove(visual.wreck); visual.wreck = null; }
     for (const child of visual.hidden) child.visible = false;
     // Whatever of it still draws goes with it: a time to live of 0 removes

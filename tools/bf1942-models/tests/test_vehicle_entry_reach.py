@@ -84,6 +84,16 @@ class VehicleEntryReachTests(unittest.TestCase):
         self.assertEqual({"root": 1.83, "door": 2.65, "offered": None}, self.r["horseRump"])
         self.assertEqual({"root": 1.35, "door": 2.42, "offered": None}, self.r["horseBehind"])
 
+    def test_a_tanks_gunner_door_gives_the_free_drivers_seat(self) -> None:
+        """SEAT-30: the human's Use asks the finder's seat for
+        `getPreferredPco()` (lnxded 0x083193c0, called at 0x0814f293). A seat
+        whose own template is VTHeavyTank/VTLightTank/VTArmoredCar/
+        VTTankHunter gives the hull's root seat while it is free; a template
+        with no `setVehicleType` keeps its own."""
+        self.assertEqual("Sherman", self.r["shermanGunnerDoor"])
+        self.assertEqual("shermanBrowning_PCO1", self.r["shermanGunnerDoorDriverIn"])
+        self.assertEqual("shermanBrowning_PCO1", self.r["untypedGunnerDoor"])
+
 
 if __name__ == "__main__":
     unittest.main()

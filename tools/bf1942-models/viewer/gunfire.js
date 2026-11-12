@@ -500,6 +500,42 @@ export class GunFire {
     return count;
   }
 
+  /**
+   * Take every round fired by a weapon of kit `kitLife` out of the world,
+   * unexploded: the kit object has been destroyed, and its weapons with it.
+   *
+   * `FireArms::releaseProjectilePool` (lnxded `0x08287ee0`), run from every
+   * `~FireArms` (`0x08287715`, `0x082877d5`, `0x08287897`), hands each round
+   * of the weapon's pool (`+0x1d8`, count `+0x1e4`, FA-2) to the game's
+   * `destroyObject` (vt+0x54 at `0x08287f65`) and never to
+   * `Projectile::detonate`, which only `detonateProjectiles` (`0x0828800c`)
+   * calls. A kit dies 30 s after a death on foot (KITDROP-5) and at once with
+   * a death in a seat (KITDROP-1), so a dead engineer's mines and packs vanish
+   * then rather than running out their 360 s / 240 s fuse. `kitLife` is the
+   * token `hand-weapon.js` puts on every group a kit's weapon makes
+   * (`group.kitLife`), which each round takes at launch (`round-launch.js`).
+   * No end effect, no blast, no sound. Returns how many went.
+   */
+  releaseRounds(kitLife) {
+    if (kitLife == null) return 0;
+    let count = 0;
+    for (let i = this.projectiles.length - 1; i >= 0; i--) {
+      const shot = this.projectiles[i];
+      if (shot.kitLife !== kitLife) continue;
+      shot.run?.stop();
+      shot.wake?.stop();
+      shot.sound?.stop();
+      shot.depots?.end();
+      shot.spawners?.end();
+      this.scene.remove(shot.mesh);
+      shot.mesh.visible = false;
+      shot.group.projectilePool?.push(shot.mesh);
+      this.projectiles.splice(i, 1);
+      count++;
+    }
+    return count;
+  }
+
   /** Advance flashes, recoil, firing cadence and rounds. True while active. */
   advance(dt) {
     dt *= this.timeScale ?? 1;

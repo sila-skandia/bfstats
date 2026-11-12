@@ -59,6 +59,7 @@ import { Armor } from '../viewer/armor.js';
 import { createCtf } from '../viewer/ctf.js';
 import { createRoundState, GAME_PLAY_MODE, gamePlayModeOf, TICKET_BASE_PLAYERS }
   from '../viewer/round-state.js';
+import { spawnReadyAt, waveSecondsLeft } from '../viewer/spawn-timer.js';
 
 /** The game play modes in which `spawnPlayer` asks the side's tickets
  *  (`[+0x10]` 2, 4 and 5 at 0x0814ca0a..0x0814ca22, ROUND-11). */
@@ -101,6 +102,13 @@ export function createAuthority(ctx) {
    *  them. The room stops forwarding their input while they are in the set
    *  (the world idles the body). */
   const dead = new Set();
+
+  /** slot -> the round clock when the slot's respawn wait is spent: the
+   *  reinforcement wave, `killPlayer` 0x0814d920 (SPAWN-35), which a retail
+   *  server runs for every player. Set at the death decree, gone at the
+   *  revive and at a restart. A slot with none (a fresh join) waits for
+   *  nothing, as a BFPlayer's `+0x8c` starts at 0. */
+  const spawnReady = new Map();
 
   /** flag index -> {team, ticks} — an enemy inside the ring, accumulating.
    *  Contested (both teams present) freezes; an empty|defended ring resets. */
@@ -194,6 +202,18 @@ export function createAuthority(ctx) {
     return new Armor(max);
   }
 
+  /** slot -> the kit template he spawned with, when the companion file
+   *  names it: the deploy row's template, or its class (`KITS`) on the
+   *  level's side. What `room-packs.mjs` asks a pack's round against. */
+  const kits = new Map();
+  function kitTemplateFor(team, kitName) {
+    if (!loadouts?.kits || !kitName) return null;
+    if (loadouts.kits[kitName]) return kitName;
+    const slot = KITS.indexOf(String(kitName).toLowerCase());
+    const kit = slot >= 0 ? loadouts?.levels?.[levelDir]?.[team]?.slots?.[String(slot)] : null;
+    return kit && loadouts.kits[kit] ? kit : null;
+  }
+
   return {
     KITS,
     dead,
@@ -205,9 +225,17 @@ export function createAuthority(ctx) {
      *  fresh Armor on the kit's max, and the death decree lifted. */
     revive(slot, team, kitName) {
       dead.delete(slot);
+      kits.set(slot, kitTemplateFor(team, kitName));
+      spawnReady.delete(slot);
       const armor = armorFor(team, kitName);
       world.setPlayerArmor(slot, armor);
       return armor;
+    },
+
+    /** The kit template `slot` spawned with, or null when the room cannot
+     *  name it. */
+    kitOf(slot) {
+      return kits.get(slot) ?? null;
     },
 
     /** Whether a slot may send input: the dead do not. The room checks this
@@ -222,6 +250,24 @@ export function createAuthority(ctx) {
      *  bot alone is spared that test), and in Conquest, Co-op and
      *  ObjectiveMode only while his side has a ticket left (`TeamScore+0x48`
      *  above 0). */
+    /** Seconds before `slot` may spawn: its wave (SPAWN-35, `spawn-timer.js`
+     *  `waveSecondsLeft` on the round's clock); 0 when it may now. */
+    spawnWaitLeft(slot) {
+      return spawnReady.has(slot) ? waveSecondsLeft(round.clock, spawnReady.get(slot)) : 0;
+    },
+
+    /** The player's Suicide (retail's is `killPlayer`): the body's Armor
+     *  goes, and the next step's decree books it as a death of their own
+     *  doing, with its wave. False for a slot already dead or absent. */
+    suicide(slot) {
+      const armor = world.players.get(slot)?.armor;
+      if (!armor || armor.destroyed || dead.has(slot)) return false;
+      armor.lastHit = null;
+      armor.applyDamage(armor.hitPoints + armor.maxHitPoints);
+      armor.lastHit = null;
+      return true;
+    },
+
     maySpawn(team) {
       if (round.status !== 'playing') return false;
       const mode = gamePlayModeOf(world.extras?.gameplayMode);
@@ -291,6 +337,16 @@ export function createAuthority(ctx) {
         const killer = ownerToPlayer(crash.other);
         if (victim != null) killers.set(victim, killer);
       }
+      // A soldier a hull ran over: the hull's driver, or null when the
+      // same-side clause dropped the credit (`world-soldier-tick.js`
+      // `runOverTick`, V0's attribution), then the Armor's last hitter names
+      // the killer as `giveDamage` does.
+      const roadkills = new Set();
+      for (const run of step?.runOvers ?? []) {
+        if (!run.killed) continue;
+        roadkills.add(run.playerId);
+        if (run.attacker != null) killers.set(run.playerId, run.attacker);
+      }
       for (const change of step?.damage ?? []) {
         if (!change.died) continue;
         // The damage pass reports the DamageableVehicle, which knows its owner.
@@ -306,8 +362,15 @@ export function createAuthority(ctx) {
           onRow({ type: 'ticket', team: player.team,
                   count: ticketsOf(player.team), reason: 'death' });
         }
-        const row = { type: 'killed', slot };
+        // The wave (SPAWN-35): the wait to the next spawn window, from the
+        // round's clock at the death; the page waits it out before it asks.
+        spawnReady.set(slot, spawnReadyAt(round.clock));
+        const row = { type: 'killed', slot,
+                      sw: Math.round(waveSecondsLeft(round.clock, spawnReady.get(slot)) * 100) / 100 };
         if (other != null) row.other = other;
+        // Run over: the kill line's `[killed]`, the weapon -1 `giveDamage`
+        // was handed (`chat-log.js` `killStamp`).
+        if (roadkills.has(slot)) row.roadkill = true;
         onRow(row);
       }
   }
@@ -387,6 +450,7 @@ export function createAuthority(ctx) {
     }
     capture.clear();
     ctf?.reset();
+    spawnReady.clear();
     round.restart();
     ended = false;
     for (const team of [1, 2]) if (world.tickets) writeTickets(team);

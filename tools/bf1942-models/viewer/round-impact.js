@@ -99,6 +99,11 @@ export function impact(guns, group, spec, hit, velocity = null, travelled = 0, o
     defGroup,
     damageMod: mod,
     incidence,
+    // `noFFSound` (`ProjectileTemplate+0x14f`): set, the round's touch never
+    // draws a teammate's "Watch your aim!" (`Projectile::handleCollision`
+    // lnxded 0x0831efe6 skips `BFSoldier::projectileHit`, FF-6). The
+    // projectile table's row (`damage.json`), else the baked block's.
+    noFFSound: !!(guns.projectileEntry?.(spec)?.noFFSound ?? spec?.damage?.noFFSound),
     // The engine's whole direct-hit formula. `damageMod` genuinely absent
     // (no table loaded) leaves the base damage alone rather than zeroing it;
     // a table that *does* load and says 0.0 for this pairing means exactly

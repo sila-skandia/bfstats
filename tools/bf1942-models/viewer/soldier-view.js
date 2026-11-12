@@ -11,6 +11,7 @@ import { soldierLookDegrees, soldierYawStep } from './mouse-input.js';
 const _lead = { twist: 0, view: 0 };
 import { CHASE_BEHIND, CHASE_AHEAD, CHASE_RADIUS_SCALE, chaseTarget, chaseStep, chaseEye } from './chase-camera.js';
 import { FOV_DEG as FOOT_FOV } from './soldier.js';
+import { deathShot, stepDeathCamera, toggleDeathCamera } from './death-camera.js';
 import {
   SoldierView, PARACHUTE_VIEW_CYCLE, PARACHUTE_VIEW_RADIUS, VIEW_INSIDE, VIEW_FRONT,
   FOOT_VIEW_CYCLE, FOOT_CHASE_RADIUS, FOOT_CHASE_SHOULDER, FOOT_WALL_MARGIN, FOOT_WALL_MIN,
@@ -210,7 +211,10 @@ export function createSoldierView(page) {
       undefined, undefined, _lead);
     page.soldier.lookPreview(-lead.view * page.DEG_TO_RAD, -per.pitch * page.DEG_TO_RAD, page.footView);
     if (!page.soldierDead) corpseShot.yaw = null;
-    if (page.soldierDead && !page.deathCamTarget) {
+    if (!page.soldierDead) soldierView.deathRide = null;
+    if (page.soldierDead && page.deathCam) {
+      deathCamView(dt);
+    } else if (page.soldierDead && !page.deathCamTarget) {
       corpseCam(footEye);
     } else if (page.soldierDead) {
       // Behind the subject along its own facing and above it, by `deathCamShot`:
@@ -294,6 +298,63 @@ export function createSoldierView(page) {
 
   const EMPTY_KEYS = new Set();
   const footEye = { x: 0, y: 0, z: 0 };
+
+  // --- retail's death camera (`death-camera.js`) --------------------------------
+  //
+  // The shot rises straight over the dead player's controlled object, 1 m to
+  // 30 m in 3 s, looking straight down while its up axis turns, and holds;
+  // past 10 s it rides with the next living human teammate
+  // (`FreeCamera::updateDeathCamera` lnxded 0x081b0350). The ride is a chase
+  // of their body by `chase-camera.js`'s law, which is the engine's; the
+  // engine scales it by the followed root's own `getRidingWithOffset` and
+  // `getRidingWithDistMod` (vt+0x98, vt+0x9c), which are not read for a
+  // soldier, so the radius is the foot chase's (`FOOT_CHASE_RADIUS`).
+  // `deathFollowCandidates()` is the player list `followNextPlayer` walks: a
+  // room's players; single player's are all bots, AI players it skips.
+  const _shot = { eye: [0, 0, 0], up: [0, 0, 0] };
+  // `setLook` is a yaw and a pitch; exactly -pi/2 is degenerate, so the look
+  // stops this far short of straight down and the yaw carries the up axis.
+  const DEATH_LOOK_EPS = 1e-3;
+  const rideRel = [0, 0, 0];
+  const rideTarget = [0, 0, 0];
+  const rideForward = [0, 0, 0];
+  const rideAnchor = [0, 0, 0];
+  const rideEye = [0, 0, 0];
+  let rideId = -1;
+  /** Whom the death camera rides with this frame, or null (the HUD's lines). */
+  soldierView.deathRide = null;
+  /** C while dead (`FreeCamera::handlePlayerInput`): the next teammate. */
+  soldierView.toggleDeathCam = () => (page.deathCam
+    ? toggleDeathCamera(page.deathCam, page.deathFollowCandidates?.() ?? [], page.deathSelfId ?? null, page.deployTeamId)
+    : false);
+
+  function deathCamView(dt) {
+    const cam = page.deathCam;
+    const row = stepDeathCamera(cam, dt, page.deathFollowCandidates?.() ?? [],
+                                page.deathSelfId ?? null, page.deployTeamId);
+    soldierView.deathRide = row;
+    if (row) {
+      const yaw = Number.isFinite(row.yaw) ? row.yaw : 0;
+      rideForward[0] = Math.sin(yaw); rideForward[1] = 0; rideForward[2] = Math.cos(yaw);
+      rideAnchor[0] = row.x; rideAnchor[1] = row.y + 1; rideAnchor[2] = row.z;
+      chaseTarget(rideForward, FOOT_3P_UP, FOOT_CHASE_RADIUS, CHASE_BEHIND, rideTarget);
+      // A new rider: the camera starts where the ease would settle.
+      if (rideId !== row.id) { rideRel[0] = rideTarget[0]; rideRel[1] = rideTarget[1]; rideRel[2] = rideTarget[2]; rideId = row.id; }
+      chaseStep(rideRel, rideTarget, null, CHASE_BEHIND, dt);
+      const floorY = groundAt(rideAnchor[0] + rideRel[0], rideAnchor[2] + rideRel[2]);
+      chaseEye(rideAnchor, rideRel, Number.isFinite(floorY) ? floorY : -Infinity, rideEye);
+      page.camera.position.set(rideEye[0], rideEye[1], rideEye[2]);
+      const dx = rideAnchor[0] - rideEye[0], dy = rideAnchor[1] - rideEye[1], dz = rideAnchor[2] - rideEye[2];
+      page.setLook(Math.atan2(dx, dz), Math.atan2(dy, Math.hypot(dx, dz)));
+      return;
+    }
+    rideId = -1;
+    const floor = groundAt(cam.at.x, cam.at.z);
+    deathShot(cam.t, cam.at, Number.isFinite(floor) ? floor : -Infinity, _shot);
+    page.camera.position.set(_shot.eye[0], _shot.eye[1], _shot.eye[2]);
+    // Looking straight down, the screen's up is the look's own heading.
+    page.setLook(Math.atan2(_shot.up[0], _shot.up[2]), -Math.PI / 2 + DEATH_LOOK_EPS);
+  }
 
   // The soldier's view mode and the state the external ones carry between
   // frames. `SoldierView` starts on the engine's own set -- `CVMInside` alone,

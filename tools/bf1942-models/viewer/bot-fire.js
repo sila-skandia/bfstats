@@ -34,8 +34,8 @@
 //    view within `5` deg, the aim condition's tolerance is `0.25 * the
 //    target's extents` (at least `0.4` m); a single-shot weapon
 //    (`burst 0`) fires one one-tick pulse per `BAPATrigger` and the plan
-//    loops a shot counter (2 to 5 pulses, 1 to 10 rounds for a burst weapon:
-//    ledger AI-131; the viewer keeps 1 to 10 and no limit, below); a burst
+//    loops a shot counter (2 to 4 pulses, 1 to 9 rounds for a burst weapon:
+//    ledger AI-131, `fireRoundBudget`); a burst
 //    weapon holds the trigger (`BAPATriggerContinously`) while the aim
 //    condition holds. The plan ends
 //    on the target's death, an empty magazine, an overheated barrel, or a
@@ -52,12 +52,14 @@
 //    `roundOfFire` while the aim holds: a burst. The empty-magazine break of
 //    the loop is only added for a weapon without `autoReload` carrying more
 //    than one magazine (bot-referee.js `magazineTick`).
-//  * The round budget is not ported: the viewer rebuilds a finished plan in
-//    the same frame (the engine's waits on `actionDecisionMaking`'s
-//    budgeted queue, AI-129), so a 1..10 budget cannot show as a pause
-//    between bursts, and every rebuild drops the bot's route. On the
-//    runner's seed-1 Bocage match it took the route failures from 13 to 123
-//    (features/bot-weapons).
+//  * The bursts (2026-11-12, features/bot-weapons "Bursts"): a soldier's
+//    trigger runs on his decision clock, down from the 6th tick of every
+//    12 to its end, for at most the budget drawn for that period
+//    (`triggerWindow`), the lab's measured cadence of retail bots: an
+//    automatic fires 1 or 2 rounds at its own rate every 0.4 s. The plan is
+//    kept across periods (a rebuild drops the bot's route: the runner's
+//    seed-1 Bocage match went from 13 route failures to 123 when a spent
+//    budget ended the plan), so only the trigger starts over.
 //  * `EntryTrigger::execute` 0x086257d0 hands the weapon `setBotSkill(botSkill,
 //    firingTargetTime, C)` on every pull, `C` an anti-aircraft penalty on the
 //    shooter (ledger AI-18, AI-68; AI-36's "0 / 30 / 10" is corrected there):
@@ -139,7 +141,6 @@ export const FIRE = {
   aimToleranceFraction: 0.25,
   aimToleranceMin: 0.4,
   planTimeout: 3.0,
-  shotsMax: 10,
   /** `EntryTrigger` / `EntryTriggerContinously`'s anti-aircraft `C`
    *  (ledger AI-18): `[pull, held]` for a ground and a naval shooter. */
   aaPenaltyGround: [30.0, 3.0],
@@ -148,7 +149,69 @@ export const FIRE = {
    *  `push 0x3f000000; push 0x3f4ccccd`), a float 0.8 and 0.5. */
   heatStop: Math.fround(0.8),
   heatResume: 0.5,
+  /** A soldier bot's decision period in world ticks, and the ticks of it its
+   *  fire plan's trigger waits before it goes down (`triggerWindow`). */
+  decisionTicks: 12,
+  triggerDelayTicks: 6,
 };
+
+/**
+ * A fire plan's round budget (ledger AI-131): `BBPFireInfantery::createPlan`
+ * 0x085a3870 writes the firing state's +8 at 0x085a51c1 from one `Rand` draw,
+ * u = `((r >> 7 | 1) + 1) x 2^-24` (0x085a5100..0x085a5112, the constant at
+ * 0x086c4c10), through `fistp` under a control word with RC = 11
+ * (`movb $0xc, %ah` at 0x085a512f): a truncation, not a round. A burst
+ * weapon (template byte 0 set) gets `trunc(1 + u (n - 1))`, n the template's
+ * +0x10 (the rounds `WeaponFireArm::init` 0x085ee220 read from `getAmmo`),
+ * 10 below 1 or above 10 (0x085a501e..0x085a5030, 0x085a5240; 10.0 at
+ * 0x086b9314), so 1 to 9 for every vanilla automatic; any other weapon
+ * `trunc(2 + 3u)` (0x085a534e..0x085a5360; 3.0 at 0x086c08c8, 2.0 at
+ * 0x086c08c4), 2 to 4. A budget of 10 or 5 needs u = 1 exactly.
+ * `rand` is a draw in [0, 1); `ammo` the weapon's rounds, -1 unlimited.
+ */
+export function fireRoundBudget(burst, ammo, rand) {
+  const u = Math.min(1, Math.max(0, rand)) * (1 - 2 ** -24) + 2 ** -24;
+  if (!burst) return Math.trunc(2 + 3 * u);
+  const n = !(ammo >= 1) || ammo > 10 ? 10 : Math.trunc(ammo);
+  return Math.trunc(1 + u * (n - 1));
+}
+
+/**
+ * A soldier bot's trigger runs on its decision clock (retail lab, 2026-11-12,
+ * features/bot-weapons, "Bursts"): every `decisionTicks` world ticks the bot decides
+ * again, its fire plan starts over, and the trigger goes down only
+ * `triggerDelayTicks` into the period and stays down to its end, for at most
+ * the plan's round budget (`fireRoundBudget`, drawn once a period). The
+ * weapon's own fire timer paces the rounds inside that window, so a Thompson
+ * (3 ticks a round) fires 2 rounds 3 ticks apart and then waits 9, a Type99,
+ * BAR or Mp18 (4 ticks) 2 rounds 4 apart then 8, and a rifle slower than the
+ * window one round a window: the lab's server recordings of retail bots
+ * (`f` records, Wake co-op, five rounds) show exactly that cadence, bursts
+ * starting 12 ticks apart (+-1) with 1 or 2 rounds each.
+ *
+ * `state` is the trigger action's own record (one per plan), `ticks` the
+ * bot's tick count, `phase` its fixed offset on the clock, `shots` its rounds
+ * this plan. Returns true while the trigger may be down this tick.
+ */
+export function triggerWindow(state, { ticks, phase = 0, shots = 0, burst = false, ammo = -1, rand = Math.random } = {}) {
+  const t = ticks + phase;
+  const period = Math.floor(t / FIRE.decisionTicks);
+  if (state.period !== period) {
+    state.period = period;
+    state.budget = fireRoundBudget(burst, ammo, rand());
+    state.shotsAtStart = shots;
+  }
+  if (t - period * FIRE.decisionTicks < FIRE.triggerDelayTicks) return false;
+  return shots - state.shotsAtStart < state.budget;
+}
+
+/** A bot's fixed offset on its decision clock, from its id (no draw). */
+export function decisionPhase(id) {
+  const s = String(id ?? '');
+  let h = 0;
+  for (let i = 0; i < s.length; i++) h = (h * 31 + s.charCodeAt(i)) >>> 0;
+  return h % FIRE.decisionTicks;
+}
 
 /**
  * The anti-aircraft term `C` a trigger statement hands `setBotSkill`
@@ -161,6 +224,77 @@ export function aaPenalty({ shooterKind = null, targetAir = false, continuous = 
   if (shooterKind === 'air' || !targetAir) return 0;
   const pair = shooterKind === 'ship' ? FIRE.aaPenaltyNaval : FIRE.aaPenaltyGround;
   return pair[continuous ? 1 : 0];
+}
+
+/** `BBFireUnarmed::calculateUrgency` 0x0856eb90's numbers (lnxded.static;
+ *  the 1.61 dump's 0x08575c00 reads the same): the 250 m reach
+ *  (`[0x086b6920]`), the 0.5 m distance floor (`[0x086648e8]`), the
+ *  `max(0.1, d x 1.5 x 0.2)` distance divisor (`[0x086727d0]`,
+ *  `[0x08679274]`, `[0x08665fa0]`), the 0.05 sighting-age decay, the 0.33
+ *  harmless cut and the 1.2 switch margin. */
+export const UNARMED_FIRE = { reach: 250.0, minDistance: 0.5, distanceScale: 1.5 * 0.2, distanceFloor: 0.1 };
+
+/**
+ * The threat an unarmed seat weighs (`BBFireUnarmed::calculateUrgency`
+ * 0x0856eb90), the Car / UnarmedTank / LandingCraft / Passenger /
+ * UnarmedBoat / UnarmedPlane / AmphibiousCar rows' Fire, and an artillery
+ * driver's with its gun seat empty (`BBFireArtilleryDriver` 0x0856a650).
+ * Over the bot's memory list, every enemy object within 250 m (`d` floored
+ * at 0.5) that is a unit (+0x10 bit 3) with someone aboard
+ * (`vehicleOccupied` 0x08658ef0) scores, over its seat chain, the sum of
+ * `(seat.table[myType] + seat.basicTemp) x armourClassValue[targetType] x
+ * attacked x area`, times `sight / max(0.1, 0.3 d)`; `sight` 1 when seen,
+ * else `1 / ((now - lostAt) x 0.05 + 1)`; `area` 0.75 when the bot has an
+ * ordered area and stands outside it, x0.75 again for a target outside it;
+ * `attacked` the attacker bonus (`bot vt+0xe4 +8`, `FIRE.attacked`) for a
+ * target in the bot's attacker list. A hull whose seats' `table[myType]`
+ * sum is at or under the harmless threshold scores x0.33. The best is kept
+ * (the current target unless beaten 1.2x). Its stored value is
+ * `Declein(2 best) x radio x mod` in the generator's +0x28, which goes to
+ * `addToFireInclination` (vt+0x164 at 0x0856fa74); the urgency it returns
+ * is 0 (`fldz`, 0x0856ec31). Objects typed `ITTargetTemperature` (enum 29,
+ * the `+7 & 0x20` branch: `armourClassValue[type] x basicTemp x ...`) are
+ * scored too in retail, but no vanilla AI template adds that type, so it is
+ * left out. The radio terms (messages 37 Fire, 43 CoverMe, 38 HoldFire) are
+ * 1 here, as on every Fire generator of the viewer's.
+ */
+export function unarmedThreat({ spotted, position, now, infoOf, myType = 'LightArmour', attackedBy = null,
+                                insideOrderedArea = true, insideArea = null, currentTarget = null,
+                                armourClassValues = ARMOUR_CLASS_VALUES, harmlessThreshold = 0 }) {
+  if (!spotted?.length) return { best: 0, targetId: null };
+  const areaBase = insideOrderedArea ? 1.0 : FIRE.outsideAreaFactor;
+  let best = 0, bestId = null, current = 0;
+  for (const m of spotted) {
+    const info = infoOf?.(m.id);
+    if (!info?.seats?.length || !info.enemyManned) continue;
+    const pos = m.pos;
+    const d = Math.max(UNARMED_FIRE.minDistance, Math.hypot(pos[0] - position[0], pos[1] - position[1], pos[2] - position[2]));
+    if (!(d <= UNARMED_FIRE.reach)) continue;
+    const sight = m.lost ? 1 / ((now - (m.lostAt ?? now)) * FIRE.sightAgeDecay + 1) : 1;
+    let area = areaBase;
+    if (!insideOrderedArea && insideArea && !insideArea(pos)) area *= FIRE.outsideAreaFactor;
+    // The attacker bonus, as the other Fire generators' (INFERRED: the
+    // engine's `bot vt+0xe4 +8` term for a target in the attacker list).
+    const attackedAt = attackedBy?.(m.id) ?? -1000;
+    const attacked = attackedAt > -1000
+      ? 1.5 - 0.5 * Math.min(1, Math.max(0, (now - attackedAt) / FIRE.attackedWindow))
+      : 1.0;
+    const targetType = info.type ?? 'LightArmour';
+    let sum = 0, threat = 0;
+    for (const seat of info.seats) {
+      const t = seat.table?.[myType] ?? 0;
+      threat += t;
+      sum += (t + (seat.value ?? 0)) * (armourClassValues[targetType] ?? 1) * attacked * area;
+    }
+    let score = sum * (sight / Math.max(UNARMED_FIRE.distanceFloor, d * UNARMED_FIRE.distanceScale));
+    if (threat <= harmlessThreshold) score *= FIRE.harmlessFactor;
+    if (m.id === currentTarget) current = score;
+    if (score > best) { best = score; bestId = m.id; }
+  }
+  if (currentTarget != null && current > 0 && best < current * FIRE.switchHysteresis) {
+    return { best: current, targetId: currentTarget };
+  }
+  return { best, targetId: bestId };
 }
 
 /**
@@ -495,7 +629,8 @@ export function firePlanFor({ position, targetPos, targetId, weapon, pose, now }
     tolerance: aimToleranceRad(dist),
     startedAt: now,
     timeout: FIRE.planTimeout,
-    shots: weapon.burst ? 0 : Math.min(FIRE.shotsMax, 1 + Math.floor(Math.random() * FIRE.shotsMax)),
+    // The round budget is the trigger's, a period at a time (`triggerWindow`).
+    shots: 0,
   });
   return plan;
 }

@@ -45,7 +45,9 @@ import {
   JUMP_IMPULSE, JUMP_COMMAND_KICK, JUMP_CONTACT_NORMAL_Y, MATERIAL_WATER,
   LOCOMOTION_GAIN, SLOW_DOWN_MOD, ENGINE_TICK_RATE, SoldierJumpState,
 } from './soldier-locomotion.js';
-import { HULL_REACH, resolveMove, refuseSteepGround, settleFeet } from './soldier-resolve.js';
+import {
+  HULL_REACH, pushOutOfHulls, resolveMove, refuseSteepGround, settleFeet,
+} from './soldier-resolve.js';
 
 /** `addFriction`'s floor on a delta-v worth scaling, `|dV|^2 > 1e-6`
  *  (`0x086d139c`, PHY-2). */
@@ -202,8 +204,17 @@ export class SoldierBody {
     // `slowDownMod`.
     this.obstacleContacts = [];
     this.obstacleSlow = false;
+    // Whether this tick's resolve met a kill face (material 99) from its
+    // front (`soldier-resolve.js` `metFromFront`, `MATERIAL_KILL`).
+    this.killFace = false;
     this.slowDownMod = SLOW_DOWN_MOD;
     this._obstaclePass = false;
+    // A moving hull's contacts this tick, one per hull, for the world's
+    // soldier tick to bill as a run-over (`soldier-resolve.js`
+    // `pushOutOfHulls`), and where each moved hull stood when this soldier
+    // last looked (its `vHull dt`).
+    this.hullContacts = [];
+    this._hullSeen = new Map();
     /**
      * A blast's flight and landing (`knockback.js` `Knockback`, KNOCK-1/2/8),
      * or `null` for a body no blast has reached. Injected like `swim`, by
@@ -253,6 +264,7 @@ export class SoldierBody {
     this.contacted = false;
     this.obstacleSlow = false;
     this.obstacleContacts.length = 0;
+    this.killFace = false;
     this.knockback?.reset();
     this._blastDv.x = this._blastDv.y = this._blastDv.z = 0;
     // A placed body has not fallen: the drop it would be judged on starts here,
@@ -688,6 +700,10 @@ export class SoldierBody {
     // ground under the feet: the terrain by the engine's law, a hull floor by
     // ours. Then the friction solve over whatever was touched.
     this.#resolve();
+    // A hull that drove into them pushes them out (`pushOutOfHulls`):
+    // the engine's narrow phase for the pair, which the sweep above cannot
+    // see because it moves only the soldier.
+    pushOutOfHulls(this, dt);
     this.#refuseSteepGround();
     this.#settle();
     this.#contactLaw(dt, cmdX, cmdY, cmdZ);

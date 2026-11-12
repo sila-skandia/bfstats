@@ -387,3 +387,16 @@ ace's scissors captions play only while he is still scissoring: he is in
   above him.
 - The Dip's three fails are the 15 m rule on a pass the scissors force on
   you. They are not the Dip.
+
+
+## On retail g and box area (2026-11-12)
+
+Re-flown on the final law (gravity `Math.fround(-14.73)`, box-drag area
+`3.14 * 0.25`; `features/retail-parity-cross-check-2026-11-12`). Verdicts unchanged
+(Dip 6, Flip 0, Ninja 0). The Flip's snaps land 2 and 3 hits in 2 of 9 (2
+and 2 before), passing as close as 6 m; the Ninja's one 0.2 s snap now
+misses (one hit before). The *Scissoring* shape: in one start (30 m left,
+3 m/s faster) the ace, chasing his shot in the last 9 s, slows to 25.4 m/s
+and ends 135 m under the start; the other eight stay within 66-108 m and
+above 32.9 m/s. `PLANS.scissors` is shared with the jets, so the shape
+test's "nobody below 30 m/s, within 130 m" is held in eight of nine.

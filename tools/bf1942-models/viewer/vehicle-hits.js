@@ -711,6 +711,10 @@ export function createVehicleHits(page) {
     const id = record.target;
     const firer = recordFirer(record);
     const firerTeam = teamOf(firer);
+    // A teammate it touched says "Watch your aim!" whatever it costs him
+    // (`BFSoldier::projectileHit` lnxded 0x0827ea20, before any pricing).
+    // Not for a round that sets `noFFSound` (0x0831efe6: the rifle grenade).
+    page.roundTouchedSoldier?.(id, firerTeam, !!record.noFFSound);
     // A man seated in a hull has the hull for his root, and the engine prices
     // him as one: the vehicle ratio.
     const damage = priceFriendly(record.damage, {

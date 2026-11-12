@@ -51,7 +51,7 @@ be in, the foot included:
 ```
 move     = heat x maxSpeed x 4        (x 2.5 instead of 4 for a seat another bot drives)
 u        = SCurve(health) x (fire x (w1 + 0.15) + move x w2) + value
-[w1, w2] = orderSplit(attack, defence): 0.5 / 0.5 with no order strengths (the viewer never sets them)
+[w1, w2] = inclinationSplit(fire, move): the bot's smoothed fire / move inclinations (BotMain vt+0x16c / +0x168, v = 0.8 v + 0.2 x this pass's Fire / MoveTo urgency); fire / move shares, [0, 1] move only, [1, 0] fire only, 0.5 / 0.5 neither (AI-43, corrected 2026-11-12)
 u       x= age / 15 within 15 s of leaving that unit, and within 15 s of its spawn
 ```
 

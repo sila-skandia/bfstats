@@ -56,92 +56,86 @@ section 4 merges them, and the merged list has 68 entries.
 Three of the 28 DIFFERENT findings are departures we keep on purpose (section 5). Two more turned
 out to be wrong on a second reading (section 6).
 
-## Bugs being fixed now
+## Bugs fixed the same day
 
 These are the DIFFERENT findings, plus the MISSING ones that undo a rule we already claim to follow.
-Six fixers are working on them, in the groups below. Every line is **fix in progress** until the
-coordinator marks it landed here. Each fixer confirms retail's rule on our binary before changing
+Six fixers took them on the same afternoon, in the groups below; each line says how it landed. Each fixer confirms retail's rule on our binary before changing
 anything, and leaves the code alone where the binary does not support the auditor.
 
 **spawn-rules**
 
-- Fix in progress. Reinforcement waves everywhere. Retail makes every player, bots included, wait
+- Fixed. Reinforcement waves everywhere. Retail makes every player, bots included, wait
   for the next `serverSpawnTime` 20 + 5 s window (SPAWN-35, `killPlayer` `0x0814d920`). Ours does
   this only on a retail relay: the solo player respawns on the click, bots after a flat 8 s, and room
   players at once. (modes, netcode-server)
-- Fix in progress. The room ignores a side change made on the deploy screen. `onSpawn` uses the
+- Fixed. The room ignores a side change made on the deploy screen. `onSpawn` uses the
   joined side, so the server's friendly fire, tickets, capture and radio disagree with the player's
   screen. (netcode-server)
-- Fix in progress. The room's auto-team breaks a tie onto team 1. Retail's `getTeamToAddPlayer`
+- Fixed. The room's auto-team breaks a tie onto team 1. Retail's `getTeamToAddPlayer`
   `0x08261670` weighs the sides by the team ratios and breaks a tie at random. (modes)
-- Fix in progress. Instant Battle's defaults. Retail's NORMAL charges 5 tickets per player death and
+- Fixed. Instant Battle's defaults. Retail's NORMAL charges 5 tickets per player death and
   splits the bots 3:4 friendly:enemy. Ours charges the level's per-death loss and splits 1:1 (or 9
   against 7 with the human for 15 bots). (console-menus, seams-players)
 
 **kits-healing**
 
-- Fix in progress. The bot medic's heal law. Retail's `useMedPack` `0x082768d0` heals everyone
+- Fixed. The bot medic's heal law. Retail's `useMedPack` `0x082768d0` heals everyone
   within 10 m at 0.25 a round and the medic at 0.15. Ours heals one friend in a 20 degree cone at
   the wrench's 0.3. (seams-players, soldier-weapons)
-- Fix in progress. The wrench's team and stance gates. Retail skips a hull held by the other side
+- Fixed. The wrench's team and stance gates. Retail skips a hull held by the other side
   (`0x08276731`) and repairs nothing while crouched (`0x0827612d`). Ours repairs any hull in any
   stance. (soldier-weapons)
-- Fix in progress. A dead engineer's mines and packs vanish with their kit (`releaseProjectilePool`
+- Fixed. A dead engineer's mines and packs vanish with their kit (`releaseProjectilePool`
   `0x08287ee0`; 30 s after a death on foot, at once after a death in a seat). Ours leave them to
   run out their 240 or 360 s fuse and then explode. (soldier-weapons, damage)
-- Fix in progress. The room heal path. Online, medic packs, wrenches and depots heal only the
+- Fixed. The room heal path. Online, medic packs, wrenches and depots heal only the
   healer's page copy, and the server puts the old value back. (seams-players)
 
 **camera-seat-hud-sound**
 
-- Fix in progress. The death camera. Retail runs `FreeCamera::updateDeathCamera`: the corpse, a
-  rise from 3 to 5 s, then following teammates with "CHASE CAMERA" and a toggle key. Ours holds a
-  1.2 s house shot. (hud)
-- Fix in progress. E at a tank's gunner door seats you as gunner. Retail gives the driver's seat
+- The death camera. Fixed, with the auditor's reading corrected on the binary: the shot rises over the body from 1 m to 30 m in the first 3 s while it turns, then holds; past 10 s it rides with the next living human teammate (bots never count), C walks to the next, and the CHASE CAMERA lines show. Ours held a 1.2 s house shot. (hud)
+- Fixed. E at a tank's gunner door seats you as gunner. Retail gives the driver's seat
   while it is free (SEAT-30, `getPreferredPco` `0x083193c0`). (seats-guns)
-- Fix in progress. Name tags show to 75 m off a retail server. Retail's listen server caps them at
+- Fixed. Name tags show to 75 m off a retail server. Retail's listen server caps them at
   50 m (`serverNameTagDistance`, NET-21, HUD-16). (netcode-server)
-- Fix in progress. "Watch your aim!" plays from any soldier a teammate's round touches, damage or
+- Fixed. "Watch your aim!" plays from any soldier a teammate's round touches, damage or
   not, once every 3 s per soldier (`BFSoldier::projectileHit` `0x0827ea20`). Ours plays it only for
   the local player, and only when hurt. Hurt grunts share one 0.9 s cooldown across every bot, where
   retail keeps one per soldier at 1.0 +/- 0.2 s. (sound-radio)
-- Fix in progress. Collision material 99, the 275 kill faces inside vanilla's closed buildings,
+- Fixed. Collision material 99, the 275 kill faces inside vanilla's closed buildings,
   kills a soldier who touches it (`0x0827d3c8` to `0x0827dd60`, 1e10 damage). Ours pushes them out.
   (soldier-body)
 
 **world-physics**
 
-- Fix in progress. A wreck stays a physical body until it is removed: it rolls, gets rammed and
+- Fixed. A wreck stays a physical body until it is removed: it rolls, gets rammed and
   sinks. The physics manager `0x0825d0b0` never tests the destroyed flag. Ours freezes the wreck as
   scenery. (seams-world)
-- Fix in progress. Ladders follow a moving ship. Retail measures the ladder in its object's live
+- Fixed. Ladders follow a moving ship. Retail measures the ladder in its object's live
   transform (`getLadderClosestPosition` `0x08280b40`). Ours indexes ladders once, at the moored pose.
   (seams-world)
-- Fix in progress. The room server has no ladders, so a joined player's climb is corrected back
+- Fixed. The room server has no ladders, so a joined player's climb is corrected back
   down by the server. (seams-world)
-- Fix in progress. AI LOD 2 deck bots (AI-160). Retail's cheap LOD 2 mover drops a deck bot through
-  the ship. Ours runs every bot on the full mover. The auditor read ours as a deliberate choice; the
-  fixer decides whether anything changes. (ai-b)
-- Fix in progress. The sea's swell. Retail moves the water's vertex grid by `waveHeight`
-  (`WaterPatch::fillDynamicVertexBlock`). Ours is an uncited two-sine wave. (render)
+- AI LOD 2 deck bots (AI-160). Confirmed, not changed: we have no AI level-of-detail system, and copying the defect would mean building one to reproduce it. (ai-b)
+- The sea's swell. Fixed: retail fills the water grid flat once (`waveHeight` only widens each tile's culling radius), so the invented swell is gone. WATER-2's per-vertex depth colour stays per pixel. (render)
 
 **bot-weights**
 
-- Fix in progress. AI-43's vehicle weighting. `calculateVehicleUrgency`'s two weights are the bot's
+- Fixed. AI-43's vehicle weighting. `calculateVehicleUrgency`'s two weights are the bot's
   smoothed fire and move inclinations (`BotMain` vtable +0x16c and +0x168, `0x0852e280` and
   `0x0852e310`), not its order's attack and defence split. (ai-a)
-- Fix in progress. `ChangeInhibit`. The file's values are Avoid 0.8, MoveTo 0, Idle 0.01, Fire 0.75,
+- Fixed. `ChangeInhibit`. The file's values are Avoid 0.8, MoveTo 0, Idle 0.01, Fire 0.75,
   Special 0, Scout 0.5, and the column applies per row (infantry use `UnitWeights`). Ours zeroes
   MoveTo for every bot and leaves the rest at 1. (ai-a)
 
 **ammo-and-words**
 
-- Fix in progress. `ammoType` rearm rates. Depots pick the row that matches the gun's `ammoType`
+- Fixed. `ammoType` rearm rates. Depots pick the row that matches the gun's `ammoType`
   (SUP-2). Ours never exports the word, so grenades and rockets come back at the bullet row's 15/s
   instead of 1.2/s, and bombs at 100/s instead of 4/s. (orphan-words)
-- Fix in progress. `noFFSound`. The five explosive rounds that set it never trigger the
+- Fixed. `noFFSound`. The five explosive rounds that set it never trigger the
   friendly-fire line (FF-6). (orphan-words)
-- Fix in progress. The weapon-word table. The 14 bazooka deviation words, `projectileVisible` and
+- Fixed. The weapon-word table. The 14 bazooka deviation words, `projectileVisible` and
   the bare `startOnEffects` are dead in retail too (neither binary registers them); the table moves
   them from OPEN to PLUMBING. (orphan-words)
 
@@ -149,6 +143,40 @@ Four DIFFERENT findings have no fixer. They are low impact and appear in section
 run the large-bore fire rule, HUD text metrics do not follow the display width (FONT-3), the sea's
 depth colour is per pixel where retail is per vertex (WATER-2), and SPAWN-14's Wasserfall exemption
 never fires.
+
+## Found by playing, and what the fixes turned up
+
+The owner's four reports that started the audit, and three more the fixes uncovered:
+
+- **A soldier stuck under a moving vehicle.** Retail resolves a hull meeting a soldier on the
+  soldier's side even when the hull moved (lnxded `0x08259690`): pushed clear sideways, run over at
+  8 m/s or more, billed once a second per hull and credited to the driver (`0x081551c0`), with a 2 s
+  grace on a hull just left (SEAT-33). Ours only resolved the soldier's own moves, and the room
+  never told its collider where a hull had moved. Fixed on the page and in the room.
+- **Bots "single-firing".** Our bots fired whole magazines in one stream; retail's bots fire 1 or 2
+  rounds at the weapon's cycle every 12 ticks (AI-174, from the lab's recordings of real bots) on
+  a round budget truncated, not rounded (AI-131). Fixed.
+- **Replay weapon sound.** The half-second rhythm did not reproduce; the first rounds of a burst
+  were silent because weapon sounds were never pre-loaded. Fixed (`primeReports`).
+- **Bots giving up a seat.** Confirmed: the radio's Bail out / Get in / Abandon ship reach
+  same-side bots within 70 m, and E or a seat key at a seat a bot holds asks for it; the bot
+  becomes likelier to climb out (AI-169..AI-173, SEAT-40, SEAT-41). No swap, as in retail. Built.
+- **On-foot route failures rose four-fold with the reinforcement waves.** Not spawn stacking: bots
+  kept a teammate's avoidance circle until 25.5 m away, so a wave leaving base blocked its own
+  paths. Retail drops it once the body moves faster than 1.2 m/s, the distance only after 10 s
+  (AI-176). Fixed; failures fell below their level before the waves.
+- **Bots mounted vehicles less** after AI-43's weighting. The unarmed seats' threat score was the
+  missing half (AI-177); with it, Wake's mounted share is 0.64 against the lab's 0.61 over seven
+  retail recordings (the old code read 0.75).
+- **DICE's bot bars, rebuilt on the final tree** (8 a side, p50, before -> after): on-foot route
+  failures 0.021 -> 0.015 and team kills 0.014 -> 0.008 a bot-minute; vehicle-bar enemy kills 0.28 ->
+  0.37, team kills 0.0065 -> 0 and hull stuck time 0.94 -> 0.54 s a driving minute; mounted share
+  0.68 -> 0.58. Open: at 16 a side the on-foot route failures' p90 rose from 0.37 to 1.07 on one or
+  two matches, most likely Berlin's single-door Soviet base, where the remaining failures follow
+  retail's rule as read.
+- **Bot sight lines were slow on vehicle-heavy levels** (a third of real time on a 103-vehicle FHSW
+  level): the collider tested every moving hull twice per line. Fixed with identical trace hashes,
+  2.2x faster.
 
 ## What we have not built
 
@@ -761,7 +789,7 @@ carrier under way, EoD's LCT tank, and BF1918's trains. It is the same relative-
 These are departures from retail that our code already labels as our own choice. Each one needs
 only a yes or no.
 
-- **Bots hold fire when a teammate is in their line.** Retail bots fire through a teammate, and the
+- **Bots hold fire when a teammate is in their line. Kept: the owner confirmed it on 2026-11-12.** Retail bots fire through a teammate, and the
   friendly-fire ratio decides the damage (FF-7). `bot-plans.js holdFireFor` is on by default and
   marked INVENTION; `?holdfire=0` and the engine-parity runs turn it off. (seams-players)
 - **A sound loop starts at a random offset** (SND-47). Retail starts at 0. Ours is random so that
@@ -875,7 +903,7 @@ marked client or Mac.
 - The AI's radio reads, one row per behaviour: Fire `0x085652b5..0x08565329` (37, 43, 38), MoveTo
   `0x08575035..0x08575096` (49, 44, 36), Scout `0x0857a81a..0x0857a98a` (52, 15..21), TakeCover
   `0x0857d05f` / `0x08581039` (41) and TakeCover3d `0x0857e651` (52), MedicAssist `0x08573d55` /
-  `0x08574320` (40, 54), ChangeLandingCraft `0x085604c1` (53). ai-b proposes AI-174 and AI-175.
+  `0x08574320` (40, 54), ChangeLandingCraft `0x085604c1` (53). ai-b proposed AI-174 and AI-175; those ids went to the burst clock and a bot-weights row the same day, so these take the next free AI ids.
 - MedicAssist takes friendly hulls as RepairPack targets: `0x08573840`, `0x08574320`.
 - The bot's fire and move inclinations: `BotMain` `0x0852e280..0x0852e395`, smoothed `0.8 v + 0.2 acc`.
   This is a correction to AI-43.

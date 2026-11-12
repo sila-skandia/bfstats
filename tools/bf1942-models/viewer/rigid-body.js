@@ -42,9 +42,15 @@ export const TICK = 1 / 30;
  * 0xC16BAE14 = -14.73f (client `0x00578f11`, lnxded `0x08251e3b`), restated
  * here because this module re-seeds it every tick — F8: `acc.y +=
  * basicPhysicsSystem.getGravity() * gravityModifier`. `body-float.js` (and so
- * `aircraft.js` and the ship law) take theirs from here.
+ * `aircraft.js`, its ground law and the ship law) take theirs from here.
+ *
+ * The float32 itself, -14.7299995, not the double -14.73: the field is a
+ * float and the server's accumulator reads -14.7299 on the wire (the lab
+ * Bf109, `tests/fixtures/air_law_bf109_alamein.json.gz`, 557 of its awake
+ * acks). The half-micron matters to nothing but a replay a round trip late
+ * through a lift-off (AIRGND-9), which it puts back inside its millimetre.
  */
-export const GRAVITY = -14.73;
+export const GRAVITY = Math.fround(-14.73);
 
 /**
  * `PhysicsNode::mFramesBeforeSafeToSleep` (F10): what `setIsAwake()` resets

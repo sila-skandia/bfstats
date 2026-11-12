@@ -113,8 +113,9 @@ THREE_PACKAGE = json.dumps({
     "main": "three.module.js", "exports": "./three.module.js",
 })
 
-# Gravity: `BasicPhysicsSystem::BasicPhysicsSystem`, client 0x00578f00.
-G = 14.7295379
+# Gravity: `BasicPhysicsSystem::BasicPhysicsSystem`, client 0x00578f00:
+# 0xC16BAE14 = -14.73f.
+G = 14.73
 # `airDensityZeroAtHeight`, same constructor, +0x30.
 CEILING = 1000.0
 

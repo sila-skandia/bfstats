@@ -48,10 +48,11 @@ Over the measure's nine starts on the F-16:
 - **The Ninja: 0 of 9.** You are 50 to 55 m above them over the top, but
   their nose stays on you and the dive never comes; you leave, and the run
   is `btDip`'s (above). It never fires.
-- **The Flip: 0 of 9.** From 12 to 42 s they are 26 to 744 m away and from
+- **The Flip: 0 of 9.** From 12 to 42 s they are 25 to 744 m away and from
   41 m below you to 69 m above, never dead astern inside 155 m in time: the
   zoom comes in two starts, 40.7 and 40.9 s in. Their rounds never land;
-  yours land once, 1 round 39.3 s in.
+  yours land in three of the nine, 1 round each, 38.4 to 39.3 s in
+  (re-flown 2026-11-12 on retail g and box area; it was once, 39.3 s in).
 
 What was tried for the jet Dip on this roof, each over the nine on the
 F-16 (the run's nose angle after the same break, zoom and 8 s over):
@@ -166,8 +167,9 @@ rounds each landed.
    about 17 m/s; its throttle chop is gated at 15 m/s of closure in the
    Spitfire's units (19 real), so it never brakes, comes within 1 to 5 m of
    the target's tail about 20 s in, goes past and loses sight. Single
-   cannon, small tail-on target: 5 to 20 rounds land on the closing run
-   against the 22 that bring it down. Shot down in 1 of 9.
+   cannon, small tail-on target: 6 to 17 rounds land on the closing run
+   against the 22 that bring it down. Shot down in 2 of 9 (re-flown
+   2026-11-12 on retail g and box area; it was 1 of 9, 5 to 20 rounds).
 3. **The break and the counter hold** as they do on the Spitfire, with the
    jet's own sizes: a circle about 135 m across at 70 to 80 m/s, the
    attacker swinging back in 110 m behind, the yo-yo 40 to 70 m above. (The
@@ -203,9 +205,9 @@ without`, `--base` for before). Hits ACE/YOU.
 
 | Demo | As written | Re-tuned (2026-11-10) | Under the roof (2026-11-11) |
 |---|---|---|---|
-| without (cruiser vs chaser) | shot down 1 of 9 (33 s); the rest 5 to 20 hits, attacker through their tail 20 s in | shot down 9 of 9, 29.5 to 40.2 s in, from 25 to 30 m behind; the target lands nothing | unchanged (starts at 384 and 410 m) |
+| without (cruiser vs chaser) | shot down 2 of 9 (36 and 38 s; 1 of 9 before retail g); the rest 6 to 17 hits, attacker through their tail 20 s in | shot down 9 of 9, 29.5 to 40.2 s in, from 25 to 30 m behind; the target lands nothing | unchanged (starts at 384 and 410 m) |
 | move (they break) | never down; 1 to 6 hits on the breaker, all by 4.2 s; attacker past 13 to 43 m off, 4.5 s in | never down; 0 to 4 hits on the breaker, all 1.1 to 3.5 s in; attacker past 42 to 71 m off, 4.3 to 7.0 s in; reverse 4.1 s; then 107 to 129 m behind, nose 45 to 60 degrees off, no landing shot after 8 s | unchanged; tops 472 and 486 m |
-| counter (you stay patient) | never down; 0 to 1 hits; yo-yo 41 to 85 m above | never down; 0 to 1 hits, both at 1.2 s; yo-yo from 0.5 s, more than 30 m above from 3 s in every start, 40 to 73 m (median), never within 59 m | unchanged; tops 520 and 587 m |
+| counter (you stay patient) | never down; 0 to 1 hits; yo-yo 41 to 85 m above | never down; 0 to 1 hits, both at 1.2 s; yo-yo from 0.5 s, more than 30 m above from 3 s in every start, 40 to 73 m (median), never within 59 m | unchanged (never within 56 m since the 2026-11-12 retail-g retune of `breakTurn`); tops 520 and 587 m |
 | dip | 0/0 in all nine | 0/0 in all nine. With the guard fixed: 0/0, over the top at 1,590 to 1,600 m, 1.2 to 1.5 km apart and closing at 50 s | the jet Dip (`jetBtDip`): 0/0 in all nine, the hunter lets go, 3.4 to 4.4 km apart at 50 s; tops 762 (the hunter) and 770 m |
 | flip | 0/0 | 0/0. With the guard fixed: the Flip lands 1 and 2 rounds in two starts, in the head-on pass 43.4 to 43.8 s in; the zoom in five of nine, 45.1 to 46.4 s in; closest 27 to 107 m | 1 round each way in two starts, nobody down; tops 767 and 768 m |
 | ninja | 0/0 | 0/0. With the guard fixed: 0/0, the Dip's flight, with a dive 30 to 32 s in and no shot | 0/0, no dive in any start; tops 752 and 759 m |

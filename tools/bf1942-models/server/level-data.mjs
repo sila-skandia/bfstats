@@ -9,12 +9,14 @@ import { pruneToMode, resolveMode, selectGameMode } from '../viewer/game-modes.j
 import { scaleTickets } from '../viewer/round-state.js';
 import { World } from '../viewer/world.js';
 import { WorldCollider } from '../viewer/world-collider.js';
+import { collectLadders } from '../viewer/ladder-climb.js';
 import { detachSpawnedCraft } from '../viewer/spawned-craft.js';
 import { bindArm } from '../viewer/held-arm.js';
 import { buildCollisionIndex } from '../viewer/static-index.js';
 import { addLentCollisionCopies } from '../viewer/collision-meshes.js';
 import { bodyPoseOf, bodySpecFor, bodyTerrainOf, settle } from './level-bodies.mjs';
 import { LevelInstance } from './level-instance.mjs';
+import { collectSupplyDepots } from '../viewer/supply-collect.js';
 
 /**
  * One level, loaded once and shared by every room that plays it; every
@@ -134,9 +136,18 @@ export class LevelData {
     const statics = this.sceneRoot
       ? buildCollisionIndex(root, { ownerRoots, collisionGroups: extras?.collisionGroups ?? null })
       : null;
+    // The level's ladders, as the page's `buildCollider` indexes them: the
+    // room is the authority for a soldier's movement, and `soldier.js` climbs
+    // only what `collider.ladders` holds, so without them a client's climb was
+    // corrected back to the foot. Each keeps the owner it hangs in, and follows
+    // that hull's moves (`followLadder`; LADDER-1, 0x0827d3b0).
+    const ladders = this.sceneRoot
+      ? collectLadders(root, { ownerOf: node => statics?.ownerOf?.(node) ?? -1 })
+      : null;
     const collider = (this.sceneRoot && (heightfield || statics
       || Number.isFinite(waterLevel)))
-      ? new WorldCollider({ heightfield, statics, waterLevel })
+      ? new WorldCollider({ heightfield, statics, waterLevel,
+                            ladders: ladders?.length ? ladders : null })
       : this.colliderMock;
 
     const groundHeightAt = collider
@@ -175,6 +186,12 @@ export class LevelData {
         })() : null,
       });
     });
+
+    // The level's supply depots, found by the page's own walk
+    // (`supply-collect.js`): the room's world heals, rearms and repairs at
+    // them (`world-fields.js` `supplyFieldTick`), and the page takes the
+    // server's hit points (`net-room.js`).
+    world.setSupplyDepots(collectSupplyDepots(root, { spawnersRoot }));
 
     // Parked hulls on their own springs (map.html setupVehicleBodies).
     if (haveGround) {

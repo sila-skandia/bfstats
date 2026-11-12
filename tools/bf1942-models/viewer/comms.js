@@ -14,7 +14,7 @@
  * `audioBufferCache`, `audioListener`, `audioLoader`, `bust`,
  * `ensureAudioContext`, `extras`, `flags`, `gridRef`, `hudPaths`,
  * `localAlive`, `localName`, `localPosition`, `localTeam`, `MAPS_BASE`,
- * `masterVolume`, `radioIconType`, `roomJoined`, `roomSendChat`, `roomSendRadio`, `sprite`,
+ * `masterVolume`, `radioIconType`, `botsHearRadio`, `roomJoined`, `roomSendChat`, `roomSendRadio`, `sprite`,
  * `teamNation`.
  */
 
@@ -213,6 +213,10 @@ export function createComms(page) {
     };
     receive(message, speaker);
     page.roomSendRadio?.(message, isTeamMessage(message));
+    // The server also hands it to its AI (`GameServer::radioMessage`
+    // 0x0813a120 -> `AIRadio::sendMessage`, bot-radio.js): the page's own
+    // bots when it is the server (single player, Instant Battle).
+    page.botsHearRadio?.(message, speaker.team, at, isTeamMessage(message));
   }
   comms.send = send;
 
@@ -826,7 +830,12 @@ export function createComms(page) {
     // puts the chat and the kill lines after it); the F-key strip is
     // menu/RadioMenu's, whose order against the spawn screen is not read, so
     // it stays off there, as it was when the whole canvas sat underneath.
-    const radioUp = radioShown && !page.deployActive?.();
+    // Nor is it up while the player is not alive: `BfMenu::updateHud` (Mac
+    // client) hides the HudManager's Radio (`+0x2c`, vt+0x18 `Radio::hide`
+    // 0x0043b0dc) with the Soldier, Vehicle and Weapon groups whenever
+    // `BFPlayer+0x89` is clear, and shows it (vt+0x14 `show` 0x0043b0d0) only
+    // in the living branch. Dead, the top centre is the TIME TO SPAWN plate's.
+    const radioUp = radioShown && !page.deployActive?.() && (page.localAlive?.() ?? true);
     const sig = `${chat.version}|${radio.category}|${stageW}x${stageH}@${dpr}|${centre?.text ?? ''}|${icons.size}|${!!font}`
       + `|${page.radioIconType?.() ?? 0}|${radioPoints().map(f => f.team).join('')}|${radioUp}`
       + `|${say.version}|${say.caretShown()}`;

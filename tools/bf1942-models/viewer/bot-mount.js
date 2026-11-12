@@ -8,7 +8,7 @@
 import { isWalkable, traceValidPoint } from './nav-grid.js';
 import { playerPosition } from './bot-sense.js';
 import { weaponAiOf, SOLDIER_BATTLE_STRENGTH } from './bot-fire.js';
-import { unitUrgency, orderSplit, changeUrgency, teleportChangeUrgency, mannedByEnemy, TANK, CHANGE } from './bot-vehicle.js';
+import { unitUrgency, inclinationSplit, changeUrgency, teleportChangeUrgency, mannedByEnemy, TANK, CHANGE } from './bot-vehicle.js';
 import { decleiningSlope } from './bot-behaviours.js';
 import { fireStrength, unitTable } from './bot-strength.js';
 import { wrapAngle } from './bot-aim.js';
@@ -17,6 +17,39 @@ import { PLAN_ACTION, approachGoal } from './bot-plans.js';
 import { candidateRunwayClear } from './bot-pilot.js';
 import { craftBailReason, levelZones, LANDING_CRAFT_RE } from './doctrine-landing.js';
 import { CHARACTER_HEIGHT } from './soldier-pose.js';
+import { changeRadioStrength, teleportRadioStrength } from './bot-radio.js';
+
+/** How long a human's request for a bot's seat lasts: `calculateVehicleUrgency`
+ *  0x08583c61 (`15.0`, 0x86b01b0), past which the bot drops it (vt+0x184). */
+export const SEAT_REQUEST_SECONDS = 15.0;
+
+/**
+ * The bot's radio strengths (`AIRadio::getMessageStrength`) as a function of
+ * the message id, from the referee's AIRadio (bot-radio.js); 0 without one.
+ */
+function radioOf(bot) {
+  const r = bot.radio;
+  return id => (r ? r.strength(bot.playerId, id) : 0);
+}
+
+/**
+ * The age of a human's standing request for unit `id`, or Infinity
+ * (`BotMain+0x1e4` / `+0x1e8`, set by `playerRequestPlayerControlObject`
+ * 0x0852ed40). A request 15 s old is dropped, as the bot's vt+0x184 does
+ * from `calculateVehicleUrgency` 0x08583d4f.
+ */
+export function seatRequestAge(bot, id, now) {
+  const q = bot.seatRequest;
+  if (!q) return Infinity;
+  const age = now - q.at;
+  if (!(age < SEAT_REQUEST_SECONDS)) { bot.seatRequest = null; return Infinity; }
+  return q.id === id ? age : Infinity;
+}
+
+/** `getRadioStrength`'s unit class: the soldier, a naval unit, any other. */
+function radioKind(kind) {
+  return kind === 'ship' ? 'ship' : 'vehicle';
+}
 
 /** The Change walk's arrival: `getMaxPathPosRemovalDistance` 0x0852b780,
  *  `0.99 x max(0.5, radius - |sphere offset|)`, a soldier's 1.0 radius. */
@@ -163,7 +196,9 @@ export function urgencyChange(bot, mod, now) {
   }
   const cands = bot.vehicleCandidates;
   const world = bot.world;
-  const split = orderSplit(bot.waypoints?.attack ?? 0, bot.waypoints?.defence ?? 0);
+  // The fire / move split from the bot's inclinations (bot-decision.js
+  // `stepInclinations`; ledger AI-43 corrected).
+  const split = inclinationSplit(bot.inclination?.fire ?? 0, bot.inclination?.move ?? 0);
   const me = world?.armorOf?.(bot.playerId);
   const myHealth = me?.maxHitPoints > 0 ? me.hitPoints / me.maxHitPoints : 1;
   // The soldier's own table is `setBattleStrength` (the kit's weapons do
@@ -197,9 +232,23 @@ export function urgencyChange(bot, mod, now) {
     });
     const selfU = unitUrgency({ health, fire: seatFire,
                                 maxSpeed: seatSpeed, occupiedByBot: !m.drives && !!driver,
-                                value: mine?.value ?? 0, orderSplit: split });
+                                value: mine?.value ?? 0, orderSplit: split,
+                                requestAge: seatRequestAge(bot, m.id, now) });
     let staying = selfU * CHANGE.stayFactor;
     if (mine && mine.upright === false) staying = 0;
+    // The radio term of the hull (`getRadioStrength` 0x0855fc10, called on
+    // the root at 0x0855e7c9): `(1 + GetIn) x (1 - BailOut)`, AbandonShip
+    // on a naval hull. The stay option enters the comparison scaled by it
+    // (0x0855e7d9: own urgency x 1.25 x radio is the best to beat), and so
+    // does each of the hull's other seats (0x0855f4db). What `x` divides by
+    // is the driver's own x 1.25 (0x0855f682 -> -0x20c) but, for a seat
+    // under a driver, its own x 1.25 x radio (0x0855f5d5): so a gunner a
+    // teammate shouted "Bail out!" at from under 56 m (radio < 0) has a
+    // negative `x` and no Change at all (DecleiningSlopeCurve 0x08655560
+    // gives 0 at or under 0), while a driver bails. Upside down there is no
+    // radio (0x0855f635: 1, the stay 0).
+    const s = radioOf(bot);
+    const radio = mine && mine.upright === false ? 1 : changeRadioStrength(radioKind(m.kind), s);
     const nav = bot.navGrid;
     // Not from a cell the soldier's map blocks, unless the unit is a fixed
     // gun: a bot in Bocage's base AA guns, which stand on blocked cells,
@@ -254,7 +303,12 @@ export function urgencyChange(bot, mod, now) {
       const gy = world?.collider?.surfaceHeight?.(bot.position[0], bot.position[2]);
       bailAllowed = bailAllowed && Number.isFinite(gy) && bot.position[1] - gy < 6;
     }
-    let best = null, bestU = 0, bail = false;
+    // The bar the alternatives must beat is the stay option itself (`best`
+    // starts as the bot's own unit, 0x0855e752 / 0x0855e7e3); it stays the
+    // best -> no Change (0x0855ea34).
+    const stayBar = staying * radio;
+    const stayDiv = m.drives ? staying : stayBar;
+    let best = null, bestU = stayBar, bail = false;
     if (bailAllowed && foot > bestU) { best = { id: 'foot', u: foot, dist: 0, cand: null }; bestU = foot; bail = true; }
     // The whole seated evaluation, the other units included, sits under
     // `isBailAllowed` (0x0855e0c0: `if (unit+6 & 0x40 || isBailAllowed)`):
@@ -284,19 +338,23 @@ export function urgencyChange(bot, mod, now) {
       const u = unitUrgency({ health: c.health ?? 1, fire: bot._candidateFire(c),
                               maxSpeed: c.maxSpeed ?? 0, value: c.value ?? 0, orderSplit: split,
                               occupiedByBot: !!c.movedByBot,
-                              spawnAge: c.spawnAge ?? Infinity, leftAge }) * (c.seatFactor ?? 1);
+                              spawnAge: c.spawnAge ?? Infinity, leftAge,
+                              requestAge: seatRequestAge(bot, c.id, now) }) * (c.seatFactor ?? 1);
       const f = Math.min(0.5, (CHANGE.searchRadius ** 2 - d * d) / CHANGE.searchRadius ** 2);
-      const v = u * (f + 0.5);
+      // The candidate's own radio term (0x0855ee58 -> x -0x218 at 0x0855eeab).
+      const v = u * (f + 0.5) * changeRadioStrength(radioKind(c.kind), s);
       if (v > bestU) { best = { id: c.id, u: v, dist: d, cand: c }; bestU = v; bail = false; }
     }
     let r = null;
-    if (best && bestU > staying) {
-      const x = staying > 0 ? 0.5 * bestU / staying : 0.5 * bestU;
+    if (best) {
+      // 0x0855eb22: `x = 0.5 best / stay`, or `0.5 best` when the stay is 0.
+      const x = stayDiv !== 0 ? 0.5 * bestU / stayDiv : 0.5 * bestU;
       const urgency = decleiningSlope(x) * mod * CHANGE.urgencyScale * ramp * areaFactor * (bail ? 2 : 1);
       r = { urgency, best, bail, teleport: false };
     }
     // `BBChangeTeleport`: the other seats of this hull.
-    const t = bot._urgencyChangeTeleport({ mine, selfU, split, driver, health });
+    const t = bot._urgencyChangeTeleport({ mine, selfU, split, driver, health,
+                                           radio: teleportRadioStrength(radioKind(m.kind), s) });
     if (t && (!r || t.urgency > r.urgency)) r = t;
     if (!r) { bot._changeResult = null; bot.changedTarget.Change = false; return 0; }
     bot.changedTarget.Change = (r.best?.id ?? null) !== (bot._changeResult?.best?.id ?? null);
@@ -306,6 +364,7 @@ export function urgencyChange(bot, mod, now) {
   if (!cands?.length) { bot._changeResult = null; return 0; }
   const nav = bot.navGrid;
   const origin = aiOrigin(bot);
+  const footRadio = radioOf(bot);
   const list = [];
   // The seats a press of Use can reach: each has a door of its own. The
   // engine also weighs a door-less seat here (AI-139), one its Use never
@@ -338,10 +397,15 @@ export function urgencyChange(bot, mod, now) {
     // `modifyForDriver` 0x0855f7d0 scales a secondary seat's whole urgency
     // (0x0855e0c0: `calculateVehicleUrgency(seat) x radio x (f + 0.5) x
     // modifyForDriver(root)`).
+    // The radio term (`getRadioStrength` of the unit, 0x0855ee58): a "Get in!"
+    // a teammate shouted from his hull raises every unit, a "Bail out!"
+    // lowers them all for as long as it lasts in this bot.
     const u = unitUrgency({ health: c.health ?? 1, fire: bot._candidateFire(c),
                             maxSpeed: c.maxSpeed ?? 0, value: c.value ?? 0, orderSplit: split,
                             occupiedByBot: !!c.movedByBot,
-                            spawnAge: c.spawnAge ?? Infinity, leftAge }) * (c.seatFactor ?? 1);
+                            spawnAge: c.spawnAge ?? Infinity, leftAge,
+                            requestAge: seatRequestAge(bot, c.id, now) })
+      * (c.seatFactor ?? 1) * changeRadioStrength(radioKind(c.kind), footRadio);
     list.push({ id: c.id, u, dist: d3, cand: c });
   }
   const r = changeUrgency({ staying: foot, candidates: list, mod, ramp, areaFactor });
@@ -486,7 +550,7 @@ export function fixedAimable(bot, c = null) {
  * `BBChangeTeleport::calculateUrgency`: the root's and the other seats'
  * urgencies by where the bot sits, the winner other than its own seat.
  */
-export function urgencyChangeTeleport(bot, { mine, selfU, split, driver, health }) {
+export function urgencyChangeTeleport(bot, { mine, selfU, split, driver, health, radio = 0 }) {
   const m = bot.vehicle;
   const seats = mine?.seats ?? m.seats ?? [];
   if (!seats.length) return null;
@@ -517,8 +581,11 @@ export function urgencyChangeTeleport(bot, { mine, selfU, split, driver, health 
     others.push({ id: c.id, u: uOf(c), cand: c });
   }
   const orderFactor = bot.waypoints ? 1 : bot.botSkill;
+  // `radio`: the BailOut (AbandonShip on a ship) strength in its `1 - s`
+  // (0x0856145b). It scales the stay and every seat alike, so on its own it
+  // moves no one to another seat.
   const r = teleportChangeUrgency({ where, rootU, selfU, seats: others, orderFactor, attackSplit: split[0],
-                                    hasPlan: bot._hasPlan(), pending: !!bot.enterRequest });
+                                    hasPlan: bot._hasPlan(), pending: !!bot.enterRequest, radio });
   if (!r.best) return null;
   const cand = r.best.id === 'root' ? rootCand : others.find(o => o.id === r.best.id)?.cand;
   if (!cand) return null;

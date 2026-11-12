@@ -29,7 +29,7 @@
 //
 // The fallback's clock is the relay's `clock` (`net-relay.js`); that it starts
 // at the round's `resetTimers` is this file's assumption, so a fallback number
-// can be out of phase with a server whose clock does not. It only paints the
+// can be out of phase with a server whose clock does not. On a relay it only paints the
 // wait, never gates the spawn (`spawning.js` `askServerSpawn`).
 
 /** `game.serverSpawnTime` / `game.serverSpawnDelay` defaults (0x080c09e6,
@@ -57,6 +57,47 @@ export function spawnWait(diedAt, { spawnTime = DEFAULT_SPAWN_TIME, spawnDelay =
   if (phase < window) return clamp(cycle - phase);
   const toWindow = cycle - phase;               // `+0x208`
   return clamp(toWindow > window ? toWindow : toWindow + cycle);
+}
+
+/**
+ * The wave law as a gate, for every path that stands a body up off a retail
+ * server: the page's own player in solo play and Instant Battle
+ * (`spawning.js`), the bots on the page and in the headless runner
+ * (`bot-referee.js` `respawnTick`), and a room's players
+ * (`server/authority.mjs`). Retail runs it for every BFPlayer, bots included
+ * (SPAWN-35): `killPlayer` 0x0814d920 sets the wait with no AI test, and
+ * `gameStatusPlaying` spawns any dead player who has a group once the wait
+ * (`BFPlayer+0x8c`) is spent (0x08152917..0x08152987). When a window
+ * closes, a dead player whose wait is spent but who has not spawned (no
+ * group, nowhere to stand) is re-armed to the next window (`+0x8c = +0x214`,
+ * 0x0815288c..0x081528ab).
+ *
+ *   readyAt  the round clock when this player's wait is spent:
+ *            `spawnReadyAt(diedAt)` after a death
+ *   now      the round clock (`round-state.js` `clock`, which starts at the
+ *            round's `resetTimers` and goes back to 0 on a restart)
+ *
+ * Returns the seconds still to wait, 0 when the player may spawn now.
+ */
+export function spawnReadyAt(diedAt, params = {}) {
+  return diedAt + spawnWait(diedAt, params);
+}
+
+export function waveSecondsLeft(now, readyAt, { spawnTime = DEFAULT_SPAWN_TIME, spawnDelay = DEFAULT_SPAWN_DELAY,
+  spawnWindow = DEFAULT_SPAWN_WINDOW } = {}) {
+  if (!Number.isFinite(now) || !Number.isFinite(readyAt)) return 0;
+  if (now < readyAt) return readyAt - now;
+  if (!(spawnTime > 0)) return 0;        // waves off: the flat wait, then any time
+  const window = Math.max(0, spawnWindow);
+  const cycle = spawnTime + window;
+  // The window the wait ended in (or the next one, for a wait that ended
+  // between windows) closes at `close`; until then a spent wait spawns.
+  const close = Math.floor(readyAt / cycle) * cycle + window;
+  const firstClose = close > readyAt ? close : close + cycle;
+  if (now < firstClose) return 0;
+  // Re-armed at that close: only an open window spawns from here on.
+  const phase = ((now % cycle) + cycle) % cycle;
+  return phase < window ? 0 : cycle - phase;
 }
 
 /**

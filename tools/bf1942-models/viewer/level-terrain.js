@@ -359,8 +359,10 @@ export function createLevelTerrain(page) {
     // Gap 16: the climbable ladders. `indexScene` has already composed every
     // matrix where the extract put it, so the `extras.isLadder` nodes read out
     // in world space; ship ladders ride the parked-vehicle subtrees and are
-    // covered by the same walk.
-    const ladders = collectLadders(root);
+    // covered by the same walk. Each keeps the owner it hangs in, so it is
+    // asked where that hull stands now (`followLadder`, LADDER-1's contact
+    // with the object's live collision, 0x0827d3b0).
+    const ladders = collectLadders(root, { ownerOf: node => statics?.ownerOf?.(node) ?? -1 });
     // Every damageable thing in the level, keyed by the same owner id the
     // collision index just handed out — which is what a hit record names, so a
     // round that lands resolves to the vehicle it landed on with one lookup and

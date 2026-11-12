@@ -161,3 +161,240 @@ export function rowFor({ mod = null, equipment = null, equipmentType = null } = 
 
 /** A row's Fire generator, or null with no row. */
 export const rowFire = row => row?.behaviours?.Fire ?? null;
+
+/**
+ * The modifier sets a row's Avoid and Change columns name, per mod (the
+ * tenth word of `aiSettings.setVehicleBehaviour <row> <behaviour> ...`, the
+ * set made by `aiSettings.createBehaviourModifiers <set>` and filled by
+ * `setBehaviourModifier`). `BotMain::calculateMods` 0x08525b80 multiplies the
+ * ACTIVE behaviour's column (`+0x44[i]`) into every behaviour's mod while its
+ * plan runs (ledger AI-35). Each set is a list in the order Avoid, MoveTo,
+ * Idle, Fire, Special, Scout, TakeCover, Change. Transcribed from the shipped
+ * files (`rem` lines skipped) on 2026-11-12. Vanilla names only `AvoidInhibit`
+ * (Avoid column) and `ChangeInhibit` / `UnitWeights` (Change column); every
+ * other column of every vanilla row is `UnitWeights`, all ones. The mods name
+ * more sets in their other columns (FH's `TankWeights`, BF1918's per-class
+ * weights, EoD's `InfantryWeights`, ...): NOT BUILT, those columns stay 1, as
+ * do a mod's own `UnitWeights` (BF1918's and EoD's are not all ones) where it
+ * is the basic weight rather than a column.
+ */
+/* eslint-disable max-len */
+export const INHIBITOR_SETS = {
+  bf1942: {
+    sets: {
+      AvoidInhibit: [1.0, 0.3, 1.0, 1.0, 0.5, 1.0, 1.0, 1.0],
+      ChangeInhibit: [0.8, 0.0, 0.01, 0.75, 0.0, 0.5, 1.0, 1.0],
+      UnitWeights: [1.0, 1.0, 1.0, 1.0, 1.0, 1.0, 1.0, 1.0],
+    },
+    rows: {
+      Tank: {Avoid: "AvoidInhibit", Change: "ChangeInhibit"},
+      Plane: {Change: "ChangeInhibit"},
+      Boat: {Avoid: "AvoidInhibit", Change: "ChangeInhibit"},
+      Infantery: {Avoid: "AvoidInhibit", Change: "UnitWeights"},
+      Fixed: {Change: "UnitWeights"},
+      BoatFixed: {Change: "ChangeInhibit"},
+      Car: {Avoid: "AvoidInhibit", Change: "UnitWeights"},
+      UnarmedTank: {Avoid: "AvoidInhibit", Change: "ChangeInhibit"},
+      LandingCraft: {Avoid: "AvoidInhibit", Change: "ChangeInhibit"},
+      Passenger: {Change: "ChangeInhibit"},
+      LandingCraftPassenger: {Change: "ChangeInhibit"},
+      LandingCraftFixed: {Change: "UnitWeights"},
+      UnarmedBoat: {Change: "ChangeInhibit"},
+      FixedLargeBore: {Change: "UnitWeights"},
+      ArtilleryDriver: {Avoid: "AvoidInhibit", Change: "ChangeInhibit"},
+      UnarmedPlane: {Change: "ChangeInhibit"},
+      AmphibiousCar: {Avoid: "AvoidInhibit", Change: "UnitWeights"},
+      FixedGuidedMissileLauncher: {Change: "UnitWeights"},
+    },
+  },
+  fh: {
+    sets: {
+      AvoidInhibit: [1.0, 0.3, 1.0, 1.0, 0.5, 1.0, 1.0, 1.0],
+      ChangeInhibit: [0.8, 0.0, 0.01, 0.75, 0.0, 0.5, 1.0, 1.0],
+      FixedNoChangeWeights: [0.0, 0.0, 0.01, 1.0, 0.0, 1.0, 0.0, 0.0],
+      PlaneWeights: [0.0, 1.0, 0.1, 1.0, 0.0, 0.0, 0.0, 0.0],
+      UnitWeights: [1.0, 1.0, 1.0, 1.0, 1.0, 1.0, 1.0, 1.0],
+    },
+    rows: {
+      Tank: {Avoid: "AvoidInhibit", Change: "ChangeInhibit"},
+      Plane: {Change: "PlaneWeights"},
+      Boat: {Avoid: "AvoidInhibit", Change: "ChangeInhibit"},
+      Infantery: {Avoid: "AvoidInhibit", Change: "UnitWeights"},
+      Fixed: {Change: "UnitWeights"},
+      BoatFixed: {Change: "ChangeInhibit"},
+      Car: {Avoid: "AvoidInhibit", Change: "UnitWeights"},
+      UnarmedTank: {Avoid: "AvoidInhibit", Change: "ChangeInhibit"},
+      LandingCraft: {Avoid: "AvoidInhibit", Change: "ChangeInhibit"},
+      Passenger: {Change: "ChangeInhibit"},
+      LandingCraftPassenger: {Change: "ChangeInhibit"},
+      LandingCraftFixed: {Change: "UnitWeights"},
+      UnarmedBoat: {Change: "ChangeInhibit"},
+      FixedLargeBore: {Change: "UnitWeights"},
+      ArtilleryDriver: {Avoid: "AvoidInhibit", Change: "ChangeInhibit"},
+      UnarmedPlane: {Change: "PlaneWeights"},
+      AmphibiousCar: {Avoid: "AvoidInhibit", Change: "UnitWeights"},
+      FixedGuidedMissileLauncher: {Change: "UnitWeights"},
+      ArmedBoat: {Avoid: "AvoidInhibit", Change: "ChangeInhibit"},
+      MobileArtillery: {Avoid: "AvoidInhibit", Change: "ChangeInhibit"},
+      BoatFixedNonArty: {Change: "ChangeInhibit"},
+      FixedNoChange: {Change: "FixedNoChangeWeights"},
+    },
+  },
+  fhsw: {
+    sets: {
+      AvoidInhibit: [1.0, 0.3, 1.0, 1.0, 0.5, 1.0, 1.0, 1.0],
+      ChangeInhibit: [0.8, 0.0, 0.01, 0.75, 0.0, 0.5, 1.0, 1.0],
+      FixedNoChangeWeights: [0.0, 0.0, 0.01, 1.0, 0.0, 1.0, 0.0, 0.0],
+      PlaneWeights: [0.0, 1.0, 0.1, 1.0, 0.0, 0.0, 0.0, 0.0],
+      UnitWeights: [1.0, 1.0, 1.0, 1.0, 1.0, 1.0, 1.0, 1.0],
+    },
+    rows: {
+      Tank: {Avoid: "AvoidInhibit", Change: "ChangeInhibit"},
+      Plane: {Change: "PlaneWeights"},
+      Boat: {Avoid: "AvoidInhibit", Change: "ChangeInhibit"},
+      Infantery: {Avoid: "AvoidInhibit", Change: "UnitWeights"},
+      Fixed: {Change: "UnitWeights"},
+      BoatFixed: {Change: "ChangeInhibit"},
+      Car: {Avoid: "AvoidInhibit", Change: "UnitWeights"},
+      UnarmedTank: {Avoid: "AvoidInhibit", Change: "ChangeInhibit"},
+      LandingCraft: {Avoid: "AvoidInhibit", Change: "ChangeInhibit"},
+      Passenger: {Change: "ChangeInhibit"},
+      LandingCraftPassenger: {Change: "ChangeInhibit"},
+      LandingCraftFixed: {Change: "UnitWeights"},
+      UnarmedBoat: {Change: "ChangeInhibit"},
+      FixedLargeBore: {Change: "UnitWeights"},
+      ArtilleryDriver: {Avoid: "AvoidInhibit", Change: "ChangeInhibit"},
+      UnarmedPlane: {Change: "PlaneWeights"},
+      AmphibiousCar: {Avoid: "AvoidInhibit", Change: "UnitWeights"},
+      FixedGuidedMissileLauncher: {Change: "UnitWeights"},
+      ArmedBoat: {Avoid: "AvoidInhibit", Change: "ChangeInhibit"},
+      MobileArtillery: {Avoid: "AvoidInhibit", Change: "ChangeInhibit"},
+      BoatFixedNonArty: {Change: "ChangeInhibit"},
+      FixedNoChange: {Change: "FixedNoChangeWeights"},
+    },
+  },
+  bf1918: {
+    sets: {
+      AvoidInhibit: [1.2, 1.2, 0.1, 3.0, 0.5, 0.5, 0.5, 1.0],
+      ChangeInhibit: [0.1, 0.1, 0.01, 3.0, 0.1, 0.1, 0.1, 1.0],
+      FixedWeights: [0.0, 0.0, 0.1, 9.5, 0.0, 1.5, 0.0, 0.0],
+      LCChangeInhibit: [0.8, 3.0, 0.001, 1.0, 0.1, 1.0, 2.0, 5.0],
+      PlaneAvoidInhibit: [7.5, 3.0, 0.01, 3.0, 1.0, 0.0, 0.0, 0.1],
+      PlaneChangeInhibit: [1.0, 5.0, 0.1, 0.75, 0.1, 0.5, 3.0, 0.01],
+    },
+    rows: {
+      HeavyTank: {Avoid: "AvoidInhibit", Change: "ChangeInhibit"},
+      LightTank: {Avoid: "AvoidInhibit", Change: "ChangeInhibit"},
+      UnarmedTank: {Avoid: "AvoidInhibit", Change: "ChangeInhibit"},
+      Truck: {Avoid: "AvoidInhibit", Change: "ChangeInhibit"},
+      ArmedCar: {Avoid: "AvoidInhibit", Change: "ChangeInhibit"},
+      Car: {Avoid: "AvoidInhibit", Change: "ChangeInhibit"},
+      Infantry: {Avoid: "AvoidInhibit", Change: "ChangeInhibit"},
+      Artillery: {Avoid: "AvoidInhibit", Change: "ChangeInhibit"},
+      ArtilleryGunner: {Change: "ChangeInhibit"},
+      Gunner: {Change: "FixedWeights"},
+      Passenger: {Change: "ChangeInhibit"},
+      Boat: {Avoid: "AvoidInhibit", Change: "ChangeInhibit"},
+      UnarmedBoat: {Avoid: "AvoidInhibit", Change: "ChangeInhibit"},
+      BoatGunner: {Change: "ChangeInhibit"},
+      LandingCraft: {Avoid: "AvoidInhibit", Change: "LCChangeInhibit"},
+      LandingCraftGunner: {Change: "LCChangeInhibit"},
+      LandingCraftPassenger: {Change: "LCChangeInhibit"},
+      Submarine: {Avoid: "AvoidInhibit", Change: "ChangeInhibit"},
+      FighterPlane: {Avoid: "PlaneAvoidInhibit", Change: "PlaneChangeInhibit"},
+      BomberPlane: {Avoid: "PlaneAvoidInhibit", Change: "PlaneChangeInhibit"},
+      UnarmedPlane: {Avoid: "PlaneAvoidInhibit", Change: "PlaneChangeInhibit"},
+      PlaneGunner: {Change: "PlaneChangeInhibit"},
+      Zeppelin: {Avoid: "AvoidInhibit", Change: "ChangeInhibit"},
+      Train: {Avoid: "AvoidInhibit", Change: "ChangeInhibit"},
+    },
+  },
+  eod: {
+    sets: {
+      AvoidInhibit: [1.0, 0.3, 0.01, 0.75, 1.0, 1.0, 1.0, 1.0],
+      ChangeInhibit: [0.8, 0.0, 0.01, 0.75, 0.0, 0.5, 1.0, 1.0],
+      InfantryWeights: [1.0, 3.0, 0.0001, 7.5, 2.0, 1.0, 1.0, 2.0],
+      PlaneChangeInhibit: [0.8, 0.0, 0.01, 0.75, 0.0, 0.5, 1.0, 0.1],
+      UnarmedWeights: [1.0, 1.0, 0.01, 0.0, 1.0, 1.0, 1.0, 1.0],
+      UnitWeights: [1.0, 1.0, 0.01, 7.5, 1.0, 1.0, 1.0, 1.0],
+    },
+    rows: {
+      Tank: {Avoid: "AvoidInhibit", Change: "ChangeInhibit"},
+      Plane: {Change: "PlaneChangeInhibit"},
+      Boat: {Avoid: "AvoidInhibit", Change: "ChangeInhibit"},
+      Infantery: {Avoid: "AvoidInhibit", Change: "InfantryWeights"},
+      Fixed: {Change: "UnitWeights"},
+      BoatFixed: {Change: "ChangeInhibit"},
+      Car: {Avoid: "AvoidInhibit", Change: "UnarmedWeights"},
+      UnarmedTank: {Avoid: "AvoidInhibit", Change: "ChangeInhibit"},
+      LandingCraft: {Avoid: "AvoidInhibit", Change: "ChangeInhibit"},
+      Passenger: {Change: "ChangeInhibit"},
+      LandingCraftPassenger: {Change: "ChangeInhibit"},
+      LandingCraftFixed: {Change: "UnitWeights"},
+      UnarmedBoat: {Change: "ChangeInhibit"},
+      FixedLargeBore: {Change: "UnitWeights"},
+      ArtilleryDriver: {Avoid: "AvoidInhibit", Change: "ChangeInhibit"},
+      UnarmedPlane: {Change: "ChangeInhibit"},
+      AmphibiousCar: {Avoid: "AvoidInhibit", Change: "UnitWeights"},
+      FixedGuidedMissileLauncher: {Change: "UnitWeights"},
+      AmphibiousTank: {Avoid: "AvoidInhibit", Change: "ChangeInhibit"},
+      AmphibiousAPC: {Avoid: "AvoidInhibit", Change: "ChangeInhibit"},
+      AmphibiousArty: {Avoid: "AvoidInhibit", Change: "ChangeInhibit"},
+    },
+  },
+  gcmod: {
+    sets: {
+      AvoidInhibit: [1.0, 0.3, 1.0, 1.0, 0.5, 1.0, 1.0, 1.0],
+      ChangeInhibit: [0.8, 0.0, 0.01, 0.75, 0.0, 0.5, 1.0, 1.0],
+      UnitWeights: [1.0, 1.0, 1.0, 1.0, 1.0, 1.0, 1.0, 1.0],
+    },
+    rows: {
+      Tank: {Avoid: "AvoidInhibit", Change: "ChangeInhibit"},
+      Plane: {Change: "ChangeInhibit"},
+      Boat: {Avoid: "AvoidInhibit", Change: "ChangeInhibit"},
+      Infantery: {Avoid: "AvoidInhibit", Change: "UnitWeights"},
+      Fixed: {Change: "UnitWeights"},
+      BoatFixed: {Change: "ChangeInhibit"},
+      Car: {Avoid: "AvoidInhibit", Change: "UnitWeights"},
+      UnarmedTank: {Avoid: "AvoidInhibit", Change: "ChangeInhibit"},
+      LandingCraft: {Avoid: "AvoidInhibit", Change: "ChangeInhibit"},
+      Passenger: {Change: "ChangeInhibit"},
+      LandingCraftPassenger: {Change: "ChangeInhibit"},
+      LandingCraftFixed: {Change: "UnitWeights"},
+      UnarmedBoat: {Change: "ChangeInhibit"},
+      FixedLargeBore: {Change: "UnitWeights"},
+      ArtilleryDriver: {Avoid: "AvoidInhibit", Change: "ChangeInhibit"},
+    },
+  },
+};
+/* eslint-enable max-len */
+INHIBITOR_SETS.dc_final = INHIBITOR_SETS.bf1942;
+
+const BEHAVIOUR_ORDER = ['Avoid', 'MoveTo', 'Idle', 'Fire', 'Special', 'Scout', 'TakeCover', 'Change'];
+let rowsMod = null;
+
+/** The mod whose rows a bot on foot runs (bot-units.js sets it from
+ *  `vehicle-ai.json`'s `mod`). */
+export function setRowsMod(mod) { rowsMod = mod ?? null; }
+
+/** The infantry row of a mod: `Infantery` in vanilla's spelling, `Infantry`
+ *  in BF1918's. */
+export function infantryRow(mod = rowsMod) {
+  const hit = rowsOf(mod).find(r => /^Infant/i.test(r[0]));
+  return hit ? { name: hit[0], behaviours: hit[1] } : null;
+}
+
+/**
+ * The modifier column a row registers for `behaviour` (Avoid or Change), as
+ * `{ Avoid: w, MoveTo: w, ... }`, or null where the row registers no such
+ * column (or for a behaviour whose column is not transcribed). `row` is a
+ * row name.
+ */
+export function inhibitorColumn(rowName, behaviour, mod = rowsMod) {
+  const key = String(mod ?? 'bf1942').toLowerCase();
+  const table = INHIBITOR_SETS[VANILLA_ROWS.has(key) ? 'bf1942' : key] ?? INHIBITOR_SETS.bf1942;
+  const set = table.rows[rowName]?.[behaviour];
+  const values = set ? table.sets[set] : null;
+  if (!values) return null;
+  return Object.fromEntries(BEHAVIOUR_ORDER.map((b, i) => [b, values[i]]));
+}

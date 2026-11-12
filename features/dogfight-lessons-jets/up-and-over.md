@@ -73,7 +73,7 @@ Against the jet ace, nine starts each, under the roof as it is now:
 
 | follower | what happens |
 |---|---|
-| follow them up (`followStraightUp`, the lesson's `move`) | you are 55 to 62 m under them as they go over, then climb on into the thin air at 773 to 786 m while they come back down, and slow there to 18 to 27 m/s; in four of the nine they come round and hit you about 31 s in (1, 4, 5 and 5 times); you land a round in two, before they pull; nobody shot down. On the MiG-29 you hang in seven and are shot down in four |
+| follow them up (`followStraightUp`, the lesson's `move`) | you are 55 to 62 m under them as they go over, then climb on into the thin air at 773 to 786 m while they come back down, and slow there to 18 to 27 m/s; in four of the nine they come round and hit you about 31 s in (2, 3, 5 and 5 times; 1, 4, 5 and 5 before the retail g of 2026-11-12); you land a round in two, before they pull; nobody shot down. On the MiG-29 you hang in seven and are shot down in five |
 | follow shallow at 25 degrees (`shallowFollow`, `counter`) | the shot as their nose comes up through 62 to 65 degrees, 388 to 426 m out, 4.8 to 5.7 s in: 6 to 12 hits in seven, none in two (30 m right, as fast or 3 m/s faster); climbing on you go up to 714 to 804 m; they never hit you |
 | the shot at 25, then past them as they come down, then away | 9 of 9, never hit: `jetUoDip` |
 
@@ -103,7 +103,7 @@ roof of `868247883` with this plan.
 | counter | 0/12, 0/8, 0/8, 0/7, 0/7, 0/7, 1/6, 3/1, 0/1; you on up to 1,151 to 1,316 m | 0/13, 0/8, 0/8, 0/7, 0/7, 0/7, 1/8, 0/1, 3/1; you level off at 827 to 833 m | 0/12, 0/8, 0/8, 0/7, 0/7, 0/7, 0/6, 0/1, 0/1: the shot as they pull, and their guns never touch you; you go up to 714 to 804 m |
 | dip | 9 of 9; they let go at 24 to 27 s; 2.3 to 2.9 km apart | 9 of 9; you held nose up at about 780 m, slowed to 24 to 34 m/s; they let go at 17 to 18 s; 1.85 to 1.96 km | **9 of 9**, never hit; the shot lands 0 to 10; you go no higher than 755 m, never under 55 m/s; they chase you 7 to 12 s and let go at 24.5 to 29.4 s (one breaks round at you and lets go at 18.2 s); 1.3 to 3.8 km apart at 35 s, opening |
 | flip | 0 of 9, never started | 0 of 9; started at 690 to 700 m; behind them in two, 23 and 26 s later | **0 of 9**: started at 667 to 707 m, 8.6 to 9.7 s in; the nose comes down so slowly in the thin air that you fall to 10 to 19 m/s; behind them in two, 8.5 and 17.4 s later, never firing |
-| ninja | 0 of 9; you on up to 1,289 to 1,584 m; hit in four | 0 of 9; you level off at 827 to 829 m, 25 to 60 m/s | **0 of 9**: no `ninja-shoot`; you level off at 754 to 772 m, never under 55 m/s; you land nothing; hit in two, 2 and 3 times |
+| ninja | 0 of 9; you on up to 1,289 to 1,584 m; hit in four | 0 of 9; you level off at 827 to 829 m, 25 to 60 m/s | **0 of 9**: no `ninja-shoot`; you level off at 754 to 772 m, never under 55 m/s; you land nothing; hit in two, once and twice (2 and 3 before the retail g of 2026-11-12) |
 
 Claims, one by one:
 
@@ -111,7 +111,7 @@ Claims, one by one:
   Spitfire's lesson come back by another road: the follower, not the leader,
   ends up slow at the top (the thin air, and the roof taking the throttle off
   a nose that is too high), and the ace comes round onto them. On the F-16
-  they hit you in four of nine; on the MiG-29 they shoot you down in four.
+  they hit you in four of nine; on the MiG-29 they shoot you down in five.
 - "Following shallow gets the hits": **holds, about half**: the shot is the
   pull, not the top; one burst, no kill, no second; never hit back.
 - "They hang slow at the top inside your guns": **false** on a jet.
@@ -123,8 +123,8 @@ The same lesson. The ace climbs at 91 to 103 m/s, its nose to 53 degrees,
 goes over at 551 m 3 s after the pull and tops its loop at 773 to 775 m 7.7 s
 in, from every start of every demo and move; the highest it goes is 809 m,
 never slower than 63 m/s. Following them up you hang (the follower's own
-`hang`) in seven of the nine at 20 to 27 m/s, and they shoot you down in four
-(harness starts). Following shallow lands 8, 8, 11, 3, 3, 1, 1, 0, 1, and they
+`hang`) in seven of the nine at 20 to 27 m/s, and they shoot you down in five
+(harness starts; four before the retail g of 2026-11-12). Following shallow lands 8, 8, 11, 3, 3, 1, 1, 0, 1, and they
 shoot you down in one, 36 s in. Dip 9 of 9, never hit, 3.3 to 6.1 km apart at
 the end, never under 90 m/s. Flip 0, Ninja 0. Nobody, in any demo or move,
 goes over 830 m. The words' numbers are the F-16's.

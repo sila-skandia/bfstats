@@ -773,6 +773,16 @@ class TerrainDirectiveTests(unittest.TestCase):
         info = parse_terrain_con("GeometryTemplate.worldSize 2048\n")
         self.assertIsNone(info.wave_height)
 
+    def test_the_water_draws_no_swell(self) -> None:
+        # WATER-4: the client fills each water tile's 17 x 17 grid once and
+        # flat, y = 0 (BF1942.exe 0x00653eb0, once-only flag 0x00959c5c), and
+        # reads waveHeight only into the tile's cull radius,
+        # 2 * sqrt(waveHeight^2 + 32768) (0x00655906..0x00655917). The
+        # extractor still records the word; the page must not move the sea.
+        sky = (Path(__file__).resolve().parents[1] / "viewer" / "level-sky.js").read_text()
+        self.assertNotIn("uWaveHeight", sky)
+        self.assertNotIn("world.y +=", sky)
+
     def test_wave_scale_is_dead_and_not_read(self) -> None:
         # El Alamein is the only level that ships it, and its paired
         # waveHeight is 0 anyway; the string is absent from both binaries.

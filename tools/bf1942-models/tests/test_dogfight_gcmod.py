@@ -74,7 +74,8 @@ class NeverRaceATie(unittest.TestCase):
         self.assertGreaterEqual(lo, 8.5)
         self.assertLessEqual(hi, 19.5)
         self.assertEqual(9, sum(1 for r in d if r["passed"] is not None))
-        self.assertEqual((53, 224), span(d, "apart"))
+        # re-pinned 2026-11-12 on retail g and box area (features/retail-parity-cross-check-2026-11-12)
+        self.assertEqual((52, 224), span(d, "apart"))
         self.assertEqual(1, sum(1 for r in d if r["hits"][1] == 2))
         self.assertEqual(8, sum(1 for r in d if r["hits"][1] == 0))
 
@@ -119,7 +120,7 @@ class TheWordsQuoteTheRuns(unittest.TestCase):
 
     def test_the_words(self):
         src = (VIEWER / "dogfight-lessons" / "gcmod" / "index.js").read_text()
-        for phrase in ("shot you down in all nine, 16 s in", "15 to 17 s in", "53 to 224 m apart",
+        for phrase in ("shot you down in all nine, 16 s in", "15 to 17 s in", "52 to 224 m apart",
                        "6.1 to 7.1 s in", "five of nine, 10.3 to 10.9 s in", "1,124 m", "2.2 km apart",
                        "108 m/s to the X-Wing's 79", "21 bolts a second", "4.8"):
             self.assertIn(phrase.replace("'", "\\'"), src, phrase)

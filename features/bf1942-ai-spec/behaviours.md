@@ -22,14 +22,22 @@ basic `UnitWeights` (all 1):
 |---|---|---|---|---|---|---|---|---|
 | StandardWeights | 1.0 | 1.5 | 0.1 | 7.5 | 1.0 | 1.0 | 2.0 | 1.9 |
 | AvoidInhibit | 1 | 0.3 | 1 | 1 | 0.5 | 1 | 1 | 1 |
-| ChangeInhibit | 1 | 0 | 1 | 1 | 1 | 1 | 1 | 1 |
+| ChangeInhibit | 0.8 | 0 | 0.01 | 0.75 | 0 | 0.5 | 1 | 1 |
 
 With no plan, `mod(i) = base(i)`. With a plan (a winner and a non-empty
 plan), `mod(i) = base(i) x curve_active(t) [i = active only] x
 inhibitor_active(i)`, `t` the seconds the active behaviour has held, the
-inhibitor column `AvoidInhibit` while Avoid is active, `ChangeInhibit` while
-Change is, `UnitWeights` otherwise. **A behaviour whose `mod <= 0` is not
-evaluated and keeps its old urgency** (MoveTo while Change is active).
+inhibitor column the one the bot's unit row registers for the active
+behaviour (bot-rows.js `inhibitorColumn`, per mod): in vanilla `AvoidInhibit`
+while Avoid is active, `ChangeInhibit` while Change is on the Tank, Plane,
+Boat, BoatFixed, UnarmedTank, LandingCraft, Passenger, LandingCraftPassenger,
+UnarmedBoat, ArtilleryDriver and UnarmedPlane rows, `UnitWeights` while Change
+is on the Infantery row (a bot on foot inhibits nothing while it walks to a
+unit) and on Fixed, Car, LandingCraftFixed, FixedLargeBore, AmphibiousCar and
+FixedGuidedMissileLauncher, and `UnitWeights` otherwise (corrected
+2026-11-12; the values were MoveTo 0, else 1, on every row). **A behaviour
+whose `mod <= 0` is not evaluated and keeps its old urgency** (MoveTo while a
+seated bot's Change is active).
 
 **Curves** (`URGENCY_CURVE`), over the active behaviour's seconds:
 

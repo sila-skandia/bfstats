@@ -356,6 +356,9 @@
        hud.js, fed by deploy-screen.js paintSpawnTimer): over the spawn screen
        AND the in-game HUD while a server wave is awaited (authority mode). -->
   <canvas id="spawn-timer" aria-hidden="true" hidden></canvas>
+  <!-- The death camera's ride (death-camera.js `deathCameraLines`): who it
+       follows and the key that walks to the next, BfMenu::updateHud's two. -->
+  <div id="death-cam-lines" hidden><div class="dc-riding"></div><div class="dc-toggle"></div></div>
   <canvas id="console-canvas" aria-hidden="true" hidden></canvas>
   <div id="crosshair" hidden><span class="ch-pic"></span><span class="ch-dot"></span><span class="ch-n"></span><span class="ch-s"></span><span class="ch-w"></span><span class="ch-e"></span></div>
   <div id="gl-lost" hidden>
@@ -507,6 +510,7 @@ import { createRoundSpawners } from './round-spawners.js';
 import { createSeatPose } from './seat-pose.js';
 import { createFootBody } from './foot-body.js';
 import { createSoldierView } from './soldier-view.js';
+import { deathCameraLines } from './death-camera.js';
 import { createPageAudio } from './page-audio.js';
 import { createFlagCapture } from './capture.js';
 import { createCaptureRings } from './capture-rings.js';
@@ -937,6 +941,10 @@ const pageInput = createPageInput(bag(
   from(() => touchControls, `updateMobileControls`),
   from(() => room, `requestSeatToggle`),
   from(() => vehicleEntry, `enterVehicle exitSeat nearEntry nearestEntry`),
+  // E with no free door in reach: ask the bot holding the nearest door.
+  { requestHeldSeat: () => { const h = vehicleEntry.heldEntry(); if (h) requestBotSeat(h.holder); } },
+  // C while dead: the death camera's next teammate (`death-camera.js`).
+  { toggleDeathCamera: () => soldierView.toggleDeathCam() },
   {
     get camera() { return camera; }, get FLY_KEYS() { return FLY_KEYS; },
     get FLY_SLOW() { return FLY_SLOW; },
@@ -1236,6 +1244,7 @@ function destroyOnExit(node, root) {
 const seatWorldPos = new THREE.Vector3();
 const audioSeatKey = playerId => (playerId === LOCAL_PLAYER ? 'local' : `bot:${playerId}`);
 const localPlayer = createLocalPlayer(bag(
+  { requestBotSeat: holder => requestBotSeat(holder) },
   from(() => controls, `axis held`),
   from(() => deployScreen, `deployActive`),
   from(() => footBodies, `syncFootBody`),
@@ -1255,7 +1264,7 @@ const localPlayer = createLocalPlayer(bag(
   from(() => soldierHud, `triggerHitIndicator`),
   from(() => soldierKit, `disposeHandWeapon releaseFireTrigger takeMenuPress`),
   from(() => soldierView, `EMPTY_KEYS onFootCamera`),
-  from(() => spawning, `buildSpawnFlags deployTeamId showFlagPicker spawnAtFlag`),
+  from(() => spawning, `buildSpawnFlags deployTeamId noteDeath showFlagPicker spawnAtFlag`),
   from(() => touchControls, `clampMobileInput feedMobileLook feedMobileTurretAim mobileJumpHeld
     mobilePadAxis mobilePadHeld mobilePadVector mobileRightPadAxis mobileRightPadHeld
     mobileRightPadVector mobileRudderAxis updateMobileControls`),
@@ -1316,6 +1325,7 @@ const vehicleEntry = createVehicleEntry(bag(
   from(() => touchControls, `resetMobileControls updateMobileControls`),
   {
     get isTouchDevice() { return isTouchDevice; },
+    get LOCAL_PLAYER() { return LOCAL_PLAYER; },
     get optOnFoot() { return optOnFoot; },
   },
 ));
@@ -1415,7 +1425,7 @@ function buildHullDrive(instance) {
 
 const wrecks = createVehicleWrecks(bag(
   from(() => freeCamera, `placeCamera`),
-  from(() => hullBodies, `respawnVehicleBody retireVehicleBody`),
+  from(() => hullBodies, `parkWreckBody respawnVehicleBody retireVehicleBody`),
   from(() => level, `bindDynamicShading collider extras freezeVehicle groundHeight isCollision
     vehicleDamage vehiclePads world`),
   from(() => localPlayer, `dieInSeat dieInWreck leaveSeat markPilot occupancy soldier soldierArmor
@@ -1469,6 +1479,7 @@ const vehicleHits = createVehicleHits(bag(
     get optPilot() { return optPilot; }, get vehicles() { return vehicles; },
     // Who last hit the human and with what, so his death names them.
     noteLocalAttack: (id, how) => comms.noteAttack(LOCAL_PLAYER, speakerOf(id), how, id),
+    roundTouchedSoldier: (id, team, noFFSound) => roundTouchedSoldier(id, team, noFFSound),
     // In a room the server prices the landing (`server/room-hits.mjs`).
     get reportImpact() { return room.roomJoined ? room.reportImpact : null; },
     // On a real server the marks are the server's word alone (net-room.js).
@@ -1992,6 +2003,11 @@ let botPlayerPos = null;
 let botPlayerTeam = null;
 const referee = createBotReferee({
   world: () => level.world,
+  // The respawn wave runs on the round's clock (SPAWN-35, `spawn-timer.js`).
+  // `round` is declared further down: a read in its TDZ is no clock yet.
+  roundClock: () => { try { return round?.clock; } catch { return null; } },
+  // The mod's `Game/AI/radio.con` subscriptions (bot-radio.js).
+  mod: () => activeMod.id ?? 'bf1942',
   get units() { return botUnits; },
   groundAt: (x, z, fromY) => level.groundHeight(x, z, fromY),
   armorFor: (bot, flag) => new Armor(soldierKit.soldierMaxHp(flag)),
@@ -1999,6 +2015,10 @@ const referee = createBotReferee({
   // A rocket launcher's round flies (`bot-rounds.js`); the rest are resolved
   // as rays in the referee.
   launchRound: (bot, stats) => botRounds.launch(bot, stats),
+  // A bot's MedPack and RepairPack run on its soldier template's numbers
+  // (`healing-packs.js`, the human's own `kit-loadout.js` `healingPack`).
+  soldierBody: () => footBodies.soldierBody,
+  soldierTemplateOf: team => soldierKit.soldierTemplateFor({ team }),
   debug: BOT_DEBUG,
   doctrine: BOT_DOCTRINE,
   // `?holdfire=0`: the bots fire through a teammate in their line, as the
@@ -2094,8 +2114,10 @@ const referee = createBotReferee({
   onHurt: bot => {
     const at = bot.getPosition();
     pageAudio.playSoldierHurtSound(false, { x: at[0], y: at[1] + 1.2, z: at[2] },
-      soldierKit.teamVoice(bot.team));
+      soldierKit.teamVoice(bot.team), true, bot.playerId);
   },
+  // A bot's round that met a body: "Watch your aim!" from a teammate it touched.
+  onHit: (bot, hit) => roundTouchedSoldier(hit.targetId, bot.team),
   onDeath: (bot, attackerId, opts) => {
     // The corpse: the engine's death for how he was standing, sitting or
     // swimming and where the round came from (`soldier-death.js`).
@@ -2399,7 +2421,8 @@ function restartRound(fromRoom = null) {
       if (bot.vehicle) referee.leaveVehicle(bot, { silent: true });
       const armor = w?.armorOf(bot.playerId);
       if (armor && !armor.destroyed) armor.applyDamage(armor.hitPoints + 1);
-      bot._respawnIn = 0;
+      // The restart stands everyone up at once, wave or not.
+      bot._respawnForce = true;
       referee.respawnTick(bot, 1);
     } catch (err) {
       console.warn('[round] restart could not respawn', bot.playerId, err);
@@ -2611,6 +2634,10 @@ const soldierKit = createHandWeapon(bag(
   from(() => wrecks, `damageVisuals`),
   {
     get AUDIO_OFF() { return AUDIO_OFF; }, get bust() { return bust; },
+    // A pack's round in a room: the server runs it (`server/room-packs.mjs`).
+    get reportPack() { return room.roomJoined ? room.reportPack : null; },
+    get vehicles() { return vehicles; },
+    get roundTouchedSoldier() { return roundTouchedSoldier; },
     get camera() { return camera; }, get fireStates() { return fireStates; },
     get guns() { return guns; }, get hemi() { return hemi; }, get loader() { return loader; },
     get LOCAL_PLAYER() { return LOCAL_PLAYER; }, get MAPS_BASE() { return MAPS_BASE; },
@@ -2625,9 +2652,11 @@ const kitDrops = createKitDropsPage(bag(
   from(() => level, `bindDynamicShading collider groundHeight`),
   from(() => localPlayer, `occupancy soldier soldierDead`),
   from(() => room, `roomJoined`),
-  from(() => soldierKit, `carriedAmmo currentKit equipKit handWeapon`),
+  from(() => soldierKit, `carriedAmmo currentKit equipKit handWeapon kitLife`),
   from(() => spawning, `deployTeamId`),
   {
+    // A destroyed kit's rounds leave the world unexploded (`gunfire.js`).
+    releaseKitRounds: life => guns.releaseRounds(life),
     get bust() { return bust; }, get loader() { return loader; },
     get LOCAL_PLAYER() { return LOCAL_PLAYER; }, get optOnFoot() { return optOnFoot; },
     get optPilot() { return optPilot; }, get params() { return params; },
@@ -2808,7 +2837,7 @@ const soldierView = createSoldierView(bag(
   from(() => freeCamera, `applyLook setLook`),
   from(() => level, `collectSupplyDepots collider currentRoot world`),
   from(() => localLook, `footEyeCur footEyePrev footLookPending footOffset footPending footView presentAlpha`),
-  from(() => localPlayer, `deathCamPos deathCamShot deathCamTarget deathCamTimer deathYaw
+  from(() => localPlayer, `deathCam deathCamPos deathCamShot deathCamTarget deathCamTimer deathYaw
     frameInputLast runDeathCam soldier soldierArmor soldierDead supplyTarget`),
   from(() => soldierKit, `DEG_TO_RAD footFire`),
   from(() => spawning, `deployTeamId openDeploy`),
@@ -2827,6 +2856,25 @@ const soldierView = createSoldierView(bag(
     // Where the last man to hit the human stood (the message log's record of
     // the attack): the side the corpse cam looks from.
     lastAttackerAt: () => comms.lastAttack(LOCAL_PLAYER)?.killer?.position ?? null,
+    // The player list `followNextPlayer` walks (`death-camera.js`): a room's
+    // players, slot order. Off a room every teammate is a bot, an AI player
+    // the engine never follows, so the list is empty.
+    deathFollowCandidates: () => {
+      const rc = room.roomJoined ? room.roomClient : null;
+      if (!rc?.remoteSlots) return [];
+      const maxHp = localPlayer.soldierArmor?.maxHitPoints ?? null;
+      const out = [];
+      for (const slot of rc.remoteSlots()) {
+        const p = rc.remotePlayer(slot);
+        if (!p) continue;
+        out.push({ id: slot, name: rc.nameOf(slot), team: p.team ?? rc.teamOf?.(slot) ?? 0,
+                   alive: !!p.alive, ai: false, x: p.x, y: p.y, z: p.z,
+                   // Degrees on the wire; the page's yaw, forward (sin, 0, cos).
+                   yaw: (p.yaw ?? 0) * Math.PI / 180, hp: p.hp, maxHp });
+      }
+      return out;
+    },
+    get deathSelfId() { return room.roomJoined ? room.roomClient?.slot ?? null : LOCAL_PLAYER; },
   },
 ));
 const footBodies = createFootBody(bag(
@@ -2971,7 +3019,7 @@ const deployScreen = createDeployScreen(bag(
   from(() => scoreboard, `scoreFromSpawn setScoreboard`),
   from(() => soldierKit, `KIT_ROW_KEYS KIT_ACTIVE_ROW_KEYS kitLoadout kitRowLabelFor kitActiveLabelFor loadouts loadoutsLoad`),
   from(() => spawning, `deployCommitted deployHoverBtn deployHoverVar deployKit deployRejoin deployTeamId
-    deployUnchosen updateKitAriaLabels watchCommitted`),
+    deployUnchosen updateKitAriaLabels waveCountdown watchCommitted`),
   from(() => ticketFeed, `feedTicketVars`),
   {
     get bust() { return bust; }, get hudPaths() { return hudPaths; },
@@ -3082,7 +3130,7 @@ const room = createNetRoom(bag(
   from(() => pageInput, `captured lockHeld`),
   from(() => soldierKit, `handWeapon loadouts soldierTemplateFor`),
   from(() => footBodies, `soldierDress`),
-  from(() => spawning, `deployJoined deployWaiting openDeploy reaskServerSpawn resumeServerLife setDeployTeam
+  from(() => spawning, `deployJoined deployWaiting noteServerSpawnWait openDeploy reaskServerSpawn resumeServerLife setDeployTeam
     standServerSpawn`),
   from(() => vehicleEntry, `dropEntryPoints enterVehicle exitSeat nearEntry`),
   from(() => wrecks, `damageVisuals modelUrls padWorld registerDamageable remoteGone remoteStand templateNameOf
@@ -3125,6 +3173,16 @@ function localSpeaker() {
     weapon: soldierKit.handWeapon?.name ?? null,
     position: pos ? { x: pos.x, y: pos.y, z: pos.z } : null,
   };
+}
+/**
+ * The human's Use or seat key met a seat a bot holds (bot-referee.js
+ * `requestSeat`: `IBotManager::playerRequestPlayerControlObject`, called from
+ * `toggleEntryPoint` and the seat switch). Offline only: in a room the press
+ * went to the server, whose own AI answers it.
+ */
+function requestBotSeat(holderId) {
+  if (room.roomJoined || holderId == null || holderId === LOCAL_PLAYER) return false;
+  return referee.requestSeat(localSpeaker().team, holderId);
 }
 /** The message log's speaker for a player id: the human, a bot, or null. */
 function speakerOf(id) {
@@ -3178,6 +3236,13 @@ const comms = createComms(bag(
       return kind === 'air' ? 2 : kind === 'ship' ? 3 : 1;
     },
     roomSendRadio: (id, team) => room.sendRadio?.(id, team),
+    // Offline the page is the server: its bots hear the message (bot-radio.js).
+    // In a room the server's own AI does (the relay's lnxded; the node room
+    // has no bots).
+    botsHearRadio: (id, team, at, broadcast) => {
+      if (room.roomJoined) return;
+      referee.radioMessage(id, { team, speakerId: LOCAL_PLAYER, at: at ? [at.x, at.y, at.z] : null, broadcast });
+    },
   },
 ));
 
@@ -3818,7 +3883,12 @@ replayController = createReplayController({
   bindDynamicShading: root => level.bindDynamicShading(root),
   isCollision: obj => level.isCollision(obj),
   lights: () => ({ hemi, sun }),
-  playWorldShot: (weapon, x, y, z, owner) => pageAudio.playWorldShot(weapon, x, y, z, owner),
+  // With its `prime` (page-audio.js): the replay decodes every weapon its
+  // recording fires as it opens, or a weapon's first burst is silent while
+  // its first slot is built (replay-bodies.js `primeReports`).
+  playWorldShot: Object.assign((weapon, x, y, z, owner) => pageAudio.playWorldShot(weapon, x, y, z, owner), {
+    prime: (weapon, opts) => pageAudio.playWorldShot.prime?.(weapon, opts) ?? Promise.resolve(null),
+  }),
   footstepTick: (actor, dt) => pageAudio.botFootstepTick(actor, dt),
   playSoldierDeathSound: (at, team) => pageAudio.playSoldierDeathSound(at, soldierKit.teamVoice(team)),
   // A replayed soldier's hurt grunt (`c_SstHitDamage`, replay-bodies.js
@@ -4045,6 +4115,9 @@ function frame(dt) {
   // The "TIME TO SPAWN" bar over everything: it rides both the deploy chrome
   // and the in-game HUD while a server wave is awaited (authority mode).
   phase(() => deployScreen.paintSpawnTimer());
+  // A commit held for the reinforcement wave stands the body when it comes
+  // (`spawning.js` `waveTick`, SPAWN-35).
+  phase(() => spawning.waveTick());
   const tEnd = performance.now();
   frameCost.sim = tSim - tStart;
   frameCost.present = tPresent - tSim;
@@ -4061,6 +4134,54 @@ function frame(dt) {
  *  (`GameServer::giveDamage` 0x0814b2e0); the message log's last attack on
  *  him is this page's record of that. The human's own HP drop is the HUD's
  *  (`soldier-hud.js`), and his death the on-foot camera's, as a fall's is. */
+/** A hull that ran a soldier over this step (`world-soldier-tick.js`
+ *  `runOverTick`): the kill and the damage are the driver's, the kill line
+ *  `[killed]` (`how.roadkill`). A bot's goes through the referee as a round's
+ *  does (the corpse, the kill line, the round's tally); the human's names the
+ *  driver as their last attacker, which their death's line and tally read
+ *  (`commsWatchLocalDeath`). A run-over nobody is credited with keeps the
+ *  victim's last hitter, as `giveDamage` does with an attacker of -1. In a
+ *  room the server's own rows say all of it. */
+function runOverContacts(step) {
+  const list = step.runOvers;
+  if (!list?.length || room.roomJoined) return;
+  const how = { roadkill: true };
+  for (const ev of list) {
+    if (!(ev.lost > 0) || ev.playerId == null) continue;
+    if (ev.playerId === LOCAL_PLAYER) {
+      if (ev.attacker != null) comms.noteAttack(LOCAL_PLAYER, speakerOf(ev.attacker), how, ev.attacker);
+      continue;
+    }
+    if (!referee.bots.some(b => b.playerId === ev.playerId)) continue;
+    const attacker = ev.attacker ?? comms.lastAttack(ev.playerId)?.killerId ?? null;
+    if (ev.attacker != null) comms.noteAttack(ev.playerId, speakerOf(ev.attacker), how, ev.attacker);
+    referee.damageLanded(ev.playerId, ev.lost, attacker, null,
+                         { via: 'roadkill', roadkill: true, environment: attacker == null });
+  }
+}
+/**
+ * A round of `roundTeam` touched soldier `playerId`, damaged or not:
+ * "Watch your aim!" from them when it is their own side's, at most once in
+ * 3 s each (`BFSoldier::projectileHit` lnxded 0x0827ea20, from
+ * `Projectile::handleCollision` 0x0831effc; `soldier-voice-gates.js`). The
+ * three direct-round paths call it: the human's hand rounds (`hand-fire.js`),
+ * a bot's (the referee's `onHit`) and a seat gun's (`vehicle-hits.js`). A
+ * blast is no round's touch and never plays it.
+ */
+function roundTouchedSoldier(playerId, roundTeam, noFFSound = false) {
+  // A round whose template sets `noFFSound` never calls `projectileHit`
+  // (`Projectile::handleCollision` 0x0831efe6, `ProjectileTemplate+0x14f`).
+  if (playerId == null || roundTeam == null || noFFSound) return;
+  const local = playerId === LOCAL_PLAYER;
+  const team = level.world?.player(playerId)?.team ?? (local ? spawning.deployTeamId : null);
+  let at = null;
+  if (!local) {
+    const p = referee.bots.find(b => b.playerId === playerId)?.getPosition();
+    if (!p) return;
+    at = { x: p[0], y: p[1] + 1.2, z: p[2] };
+  }
+  pageAudio.playFriendlyHitSound(playerId, roundTeam, team, at, soldierKit.teamVoice(team));
+}
 const obstacleLog = [];
 function obstacleContacts(step) {
   const list = step.obstacles;
@@ -4104,6 +4225,7 @@ function simulate(dt, input, look, wire) {
   room.notePageInput?.(input);
   const step = level.world?.step(dt) ?? { ticks: 0, bodyTicks: 0, alpha: 0, players: {}, damage: [] };
   obstacleContacts(step);
+  runOverContacts(step);
   // The human's fire edge is noted every frame, whether or not the bots hear
   // it this frame (`beforeBots` drains it on the referee's next pass).
   noteLocalFireEdge();
@@ -4331,6 +4453,23 @@ const replayHudArt = {
 };
 
 /** The HUD feed and paint, last, over everything. */
+/** The death camera's two lines while it rides with someone (`death-camera.js`). */
+const deathCamLines = { el: null, text: '' };
+function paintDeathCamLines() {
+  deathCamLines.el ??= document.getElementById('death-cam-lines');
+  const el = deathCamLines.el;
+  if (!el) return;
+  const ride = localPlayer.soldierDead ? soldierView.deathRide : null;
+  const lines = deathCameraLines(ride, hudFeed.gameHud?.layout?.strings ?? {}, 'C');
+  const text = lines ? `${lines.riding}\n${lines.toggle}` : '';
+  if (text === deathCamLines.text) return;
+  deathCamLines.text = text;
+  el.hidden = !lines;
+  if (lines) {
+    el.firstElementChild.textContent = lines.riding;
+    el.lastElementChild.textContent = lines.toggle;
+  }
+}
 function paintHud(dt) {
   // The briefing screen owns the stage while it is parked on it: the game
   // shows only the dialog over the live scene, so the HUD — the F1..F8 radio
@@ -4352,6 +4491,7 @@ function paintHud(dt) {
     hudCanvas.hidden = false;
     hudFeed.gameHud.requestRepaint();
   }
+  paintDeathCamLines();
   if (commsCanvas?.hidden) commsCanvas.hidden = false;
   // Last, over everything: feed this frame's soldier-side variables, then
   // repaint only if paint() finds one of them (or the stage size) actually

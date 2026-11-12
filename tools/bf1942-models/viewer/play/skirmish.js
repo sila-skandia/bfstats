@@ -36,6 +36,7 @@ import { menuMovie } from './menu-movie.js';
 import { loadMods, menuLevels, remember, servable, stored, treeOf, VANILLA, withMod } from '../mods.js';
 import { createLoadingAudioController } from '../audio.js';
 import { previewMuted } from '../preview-mute.js';
+import { instantBattleOdds } from './campaign.js';
 import { loadHudPaths, hudPaths as plainHudPaths } from '../hud-pack.js';
 
 export { AXIS, ALLIED };
@@ -324,6 +325,11 @@ export function createSkirmishScreen({
     const botless = state.level.singlePlayer === false && !state.level.generatedBots;
     url.searchParams.set('botCount', String(botless ? 0 : state.botCount));
     url.searchParams.set('botSkill', String(state.botSkill));
+    // Retail's NORMAL split and death penalty (`campaign.js`
+    // `instantBattleOdds`, AI-20): the screen draws no sliders for them.
+    const odds = instantBattleOdds(botless ? 0 : state.botCount);
+    url.searchParams.set('enemyBots', String(odds.enemyBots));
+    url.searchParams.set('deathPenalty', String(odds.deathPenalty));
     return url.toString();
   }
 

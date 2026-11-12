@@ -147,9 +147,10 @@ class FlyingStraightTests(unittest.TestCase):
     def test_as_written_the_attacker_flies_through_a_slow_target(self) -> None:
         # The Spitfire's 52 m/s cruise, 67 on the F-16: the attacker comes
         # within a few metres of its tail and on past it, and it survives
-        # eight starts of nine with 5 to 20 rounds in it.
+        # seven starts of nine with 6 to 17 rounds in it.
         runs = demo("without", base=True)
-        self.assertEqual(1, shot_down(runs, 0))
+        # re-pinned 2026-11-12 on retail g and box area (features/retail-parity-cross-check-2026-11-12)
+        self.assertEqual(2, shot_down(runs, 0))
         self.assertTrue(all(r["closest"] <= 10 for r in runs), [r["closest"] for r in runs])
         alive = [r for r in runs if r["winner"] is None]
         self.assertTrue(all(5 <= r["hits"][1] <= 21 for r in alive), [r["hits"] for r in alive])
@@ -177,11 +178,13 @@ class TheBreakTests(unittest.TestCase):
         self.assertTrue(all(65 <= v <= 85 for r in runs for v in r["speed"]), [r["speed"] for r in runs])
 
     def test_the_patient_attacker_stays_above_and_nobody_is_shot_down(self) -> None:
-        # "never came within 59 m of the breaker"; "they never land a round on you".
+        # "never came within 56 m of the breaker"; "they never land a round on you".
         runs = demo("counter")
         self.assertTrue(all(r["winner"] is None for r in runs))
         self.assertTrue(all(r["hits"][0] == 0 and r["hits"][1] <= 1 for r in runs), [r["hits"] for r in runs])
-        self.assertEqual(59, min(r["closest"] for r in runs))
+        # re-pinned 2026-11-12 on retail g and box area (features/retail-parity-cross-check-2026-11-12);
+        # moved by the Spitfire retune of the shared `breakTurn` (reverses at 6 m across, was 8)
+        self.assertEqual(56, min(r["closest"] for r in runs))
         self.assertTrue(all("yoyo" in r["phases"][1] for r in runs))
         # 40 to 70 m above their circle (the median); at the bell, above them.
         self.assertTrue(all(r["height"][1] > r["height"][0] + 30 for r in runs), [r["height"] for r in runs])
@@ -233,22 +236,26 @@ class TheMovesTests(unittest.TestCase):
         self.assertTrue(all(t is not None for t in times) and times == sorted(times), times)
 
     def test_the_flip_barely_gets_to_zoom(self) -> None:
-        # "In the circle, 12 to 42 s in, they hang 26 to 744 m away, from 41 m
+        # "In the circle, 12 to 42 s in, they hang 25 to 744 m away, from 41 m
         # below you to 69 m above, never dead astern inside 155 m in time:
         # the zoom comes in two of the nine, 41 s in, with no time left to
-        # come back down. Their rounds never land; yours land once, 1 round
-        # 39 s in."
+        # come back down. Their rounds never land; yours land in three of the
+        # nine, 1 round each, 38 to 39 s in."
         flip = self.l9["flip"]
         self.assertEqual(0, flip["works"])
         self.assertEqual(flip["declared"], flip["works"])
         rows = flip["scores"]
-        self.assertEqual((26, 744), (min(r["rLo"] for r in rows), max(r["rHi"] for r in rows)))
+        # re-pinned 2026-11-12 on retail g and box area (features/retail-parity-cross-check-2026-11-12)
+        self.assertEqual((25, 744), (min(r["rLo"] for r in rows), max(r["rHi"] for r in rows)))
         self.assertEqual((-41, 69), (min(r["uLo"] for r in rows), max(r["uHi"] for r in rows)))
         zooms = [r["zoom"] for r in rows if r["zoom"] is not None]
         self.assertEqual(2, len(zooms))
         self.assertTrue(all(40.5 <= z <= 41.5 for z in zooms), zooms)
         self.assertTrue(all(r["hitsA"] == [] for r in rows))
-        self.assertEqual([[39.3]], [r["hitsB"] for r in rows if r["hitsB"]])
+        # Words rewritten 2026-11-12 on retail g and box area
+        # (features/retail-parity-cross-check-2026-11-12): one start with a
+        # round landed became three.
+        self.assertEqual([[38.9], [39.3], [38.4]], [r["hitsB"] for r in rows if r["hitsB"]])
         runs = demo("flip")
         self.assertTrue(all(r["winner"] is None for r in runs))
 

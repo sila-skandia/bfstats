@@ -34,7 +34,7 @@ export const GC_LESSONS = [
       'Nor do the brakes save you. Pull the throttle right back and the X-Wing\'s lift engines spin up and stand it on the air: from 86 m/s to 7.7 in 9.8 s, climbing 51 m as it slows. But the TIE carries the same lift engines, and its pilot eases off as hard as you do. In all nine it stayed behind you and shot you down 15 to 17 s in; it got past you in three, after you were already done.',
     ],
     counterStory: [
-      'Turn. As they come inside 300 m, hard over at full throttle. A TIE is fast in a straight line; it does not follow a hard turn round. From the same nine starts its bolts never touched you, it ended up in front of you 9 to 19 s in, in all nine, and at 40 s the two of you were 53 to 224 m apart and nobody was down.',
+      'Turn. As they come inside 300 m, hard over at full throttle. A TIE is fast in a straight line; it does not follow a hard turn round. From the same nine starts its bolts never touched you, it ended up in front of you 9 to 19 s in, in all nine, and at 40 s the two of you were 52 to 224 m apart and nobody was down.',
       'Once it is in front, your four cannon are on it: four bolts bring a TIE down (55 hit points). In one fight of the nine you landed two before it got away.',
     ],
     ace: { plan: 'hunter', craft: 'tiefighter', name: 'TIE fighter', fight: TIE, start: { at: [0, 300, 450], headingDeg: 0, speed: 100 } },
@@ -48,7 +48,7 @@ export const GC_LESSONS = [
         verdict: { works: 0, of: 9, line: 'In all nine the TIE brakes with you (down to 39 to 41 m/s; you to 25) and shoots you down 14.7 to 16.8 s in; in three it slides past you at 19 s, too late.' } },
       { id: 'counter', label: 'Turn hard', seat: 'swBreak', skill: 0.9, aceSkill: 1,
         note: 'Hard over at full throttle as they close: they cannot follow it round.',
-        verdict: { works: 9, of: 9, line: 'In all nine no bolt of theirs lands; the TIE is in front of you 9 to 19 s in, and at 40 s you are 53 to 224 m apart, both still flying. In one you land two bolts on it.' } },
+        verdict: { works: 9, of: 9, line: 'In all nine no bolt of theirs lands; the TIE is in front of you 9 to 19 s in, and at 40 s you are 52 to 224 m apart, both still flying. In one you land two bolts on it.' } },
     ],
     seconds: 40,
     coach: {

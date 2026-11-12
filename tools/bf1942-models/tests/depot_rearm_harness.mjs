@@ -11,6 +11,7 @@
 import { SupplyDepot, SupplyField } from './supply.js';
 import { FireState } from './fire-state.js';
 import { supplyFieldTick, rearmTypeFor } from './world-fields.js';
+import { ammoTypeOf } from './fire-state.js';
 
 const RACK = { magSize: 8, numOfMag: 10, reloadTime: 15.0, autoReload: true, roundOfFire: 4 };
 const MG = { magSize: 900, numOfMag: 1, roundOfFire: 10 };
@@ -22,7 +23,8 @@ const TICK = 1 / 30;
 /** One crewed B17 at `at`, its pilot holding both guns, and the depot at the
  *  origin. `tags` false leaves the guns without `ammoType`, as the exporter
  *  ships them today. */
-function makeWorld({ at = [0, 0, 0], tags = true } = {}) {
+function makeWorld({ at = [0, 0, 0], tags = true, table = null, depot = AIRPLANE_DEPOT,
+  depotName = 'AlliedAirplaneSupplyDepot' } = {}) {
   const rackNode = { name: 'B17BombRack' }, mgNode = { name: 'B17_MG1_FB' };
   const states = new Map([
     [rackNode, new FireState(tags ? { ...RACK, ammoType: 9 } : RACK)],
@@ -44,7 +46,8 @@ function makeWorld({ at = [0, 0, 0], tags = true } = {}) {
     bodyWorld: null,
     positions: new Map([[owner, at]]),
     fireStateFor: node => states.get(node),
-    supplyField: new SupplyField([new SupplyDepot({ x: 0, y: 0, z: 0 }, AIRPLANE_DEPOT, 'AlliedAirplaneSupplyDepot')]),
+    damageTables: table ? { ammoTypes: table } : null,
+    supplyField: new SupplyField([new SupplyDepot({ x: 0, y: 0, z: 0 }, depot, depotName)]),
   };
   return { world, rack: states.get(rackNode), mg: states.get(mgNode), player };
 }
@@ -130,6 +133,49 @@ const out = {};
     pick: rearmTypeFor({}, [{ id: 10, units: 0 }, { id: 9, units: 2 }])?.id,
     tagged: rearmTypeFor({ ammoType: 9 }, [{ id: 10, units: 50 }, { id: 9, units: 2 }])?.id,
     none: rearmTypeFor({ ammoType: 3 }, [{ id: 10, units: 50 }]) };
+}
+
+// The tags from the tree's `damage.json` `ammoTypes` table (2026-11-12), the
+// way a level baked before the glb carried the word reaches them: the rack
+// (9) is served by the bomb row's 4 a second, never the guns' 100. A GLTF
+// suffix on the node name (`B17_MG1_FB_1`) finds the template's row.
+{
+  // Every rack spent away from the field, then a landing, as emptyLanding;
+  // the same with no table at all serves the rack from the guns' 100/s row.
+  const landing = table => {
+    const w = makeWorld({ at: [0, 0, 500], tags: false, table });
+    for (let rack = 0; rack < 10; rack++) {
+      for (let i = 0; i < 8; i++) w.rack.registerShot(1);
+      run(w, 15.1);
+    }
+    w.world.positions.set(7, [0, 0, 0]);
+    w.player.position = [0, 0, 0];
+    run(w, 2.05);
+    return snap(w.rack);
+  };
+  const landed2s = landing({ b17bombrack: 9, b17_mg1_fb: 10 });
+  const legacy2s = landing(null);
+  out.tableTagged = { landed2s, legacy2s,
+    suffixed: ammoTypeOf({}, 'B17_MG1_FB_1', { b17_mg1_fb: 10 }),
+    unlisted: ammoTypeOf({}, 'ShermanCannon', { b17_mg1_fb: 10 }),
+    ownWins: ammoTypeOf({ ammoType: 8 }, 'B17_MG1_FB', { b17_mg1_fb: 10 }),
+    noTable: ammoTypeOf({}, 'B17_MG1_FB', null) };
+}
+
+// A gun the table does not list is the constructor's 0
+// (`FireArmsTemplate+0x238`, 0x0828d614): a tank's cannon at the vehicle
+// ammo box (`AmmoboxVehicleSupplyDepot`, one row of id 0 at 20 a second) is
+// served, and at the airfield (no row 0) it gets nothing.
+{
+  const VEHICLE_BOX = { radius: 10, team: 0, health: [0, 0, 0], ammoTypes: [[0, -1, 20, 0]],
+    workOnSoldiers: false, workOnVehicles: true };
+  const box = makeWorld({ tags: false, table: {}, depot: VEHICLE_BOX, depotName: 'AmmoboxVehicleSupplyDepot' });
+  box.mg.registerShot(600);
+  run(box, 0.6);
+  const field = makeWorld({ tags: false, table: {} });
+  field.mg.registerShot(600);
+  run(field, 3);
+  out.untaggedIsZero = { vehicleBox: box.mg.ammo, airfield: field.mg.ammo };
 }
 
 // `FireState.rearm` on its own: what comes back.

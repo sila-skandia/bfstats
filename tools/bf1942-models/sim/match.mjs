@@ -258,6 +258,8 @@ export class Match {
     const stage = this.stage;
     return {
       world: () => this.world,
+      // The respawn wave's clock (SPAWN-35): the round's, as on the page.
+      roundClock: () => this.round?.clock,
       doctrine: this.doctrine,
       holdFire: this.holdFire,
       // Read live: the stand-in vehicles are built after the referee.

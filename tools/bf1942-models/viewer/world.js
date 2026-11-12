@@ -79,7 +79,7 @@ import { bufferInput } from './world-input.js';
 import * as roster from './world-players.js';
 import * as reads from './world-snapshot.js';
 import * as hulls from './world-bodies.js';
-import { soldierTick } from './world-soldier-tick.js';
+import { noteHullExit, soldierTick } from './world-soldier-tick.js';
 import { assignIntegrators, stepFallingWrecks, stepCoastingHulls, vehicleTick } from './world-vehicle-tick.js';
 import { combatTick, supplyFieldTick, supplyTarget } from './world-fields.js';
 import { damageTick } from './world-damage.js';
@@ -249,8 +249,10 @@ export class World {
     this.bodyWorld?.remove(owner);
   }
 
-  /** A wreck is scenery and a respawn is a fresh vehicle on its pad: either
-   *  way the wrecked hull stops simulating. */
+  /** A wreck cleared at its time to live (HP-19), or a hull replaced by a
+   *  fresh one on its pad: either way it stops simulating. A hull that has
+   *  just died keeps its body until then (0x0825d0b0 asks no destroyed
+   *  flag, HP-21). */
   retireBody(owner) {
     this.bodyWorld?.remove(owner);
   }
@@ -320,6 +322,9 @@ export class World {
   clearPlayerVehicle(playerId) {
     const player = this.players.get(playerId);
     if (!player) return;
+    // Who left which hull and when: SEAT-33's grace and the run-over's
+    // last-driver credit (`world-soldier-tick.js` `noteHullExit`).
+    noteHullExit(this, player, this.ticks * WORLD_TICK_DT);
     player.occupancy = null;
     player.vehicle = null;
     player.kind = null;
@@ -486,8 +491,12 @@ export class World {
     // id, x, y, z, playerId | owner, lost, killed }`: the message each one
     // sends the wire, which the page plays as its scrape, and for a soldier
     // the hit points it billed.
+    // `runOvers`: every hull that ran a soldier over this step
+    // (`world-soldier-tick.js` `runOverTick`), `{ playerId, owner, attacker,
+    // attackerTeam, lost, killed, at }`: the HP it cost and the driver it is
+    // credited to (null when nobody is, then the victim's last hitter is).
     return { ticks: 0, bodyTicks: 0, alpha: 0, players: {}, damage: [], crashes: [], timedDamage: [],
-             obstacles: [] };
+             obstacles: [], runOvers: [] };
   }
 
   #tick() {

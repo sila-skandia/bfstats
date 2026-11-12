@@ -21,10 +21,12 @@ import { Room } from './room.mjs';
  * MSG_CLOSED for anything but MSG_JOIN pre-join.
  */
 export class RoomServerCore {
-  constructor({ levels = new Map(), defaultLevel = null, now = null } = {}) {
+  constructor({ levels = new Map(), defaultLevel = null, now = null, random = null } = {}) {
     this.levels = levels;
     this.defaultLevel = defaultLevel;
     this.now = now || (() => performance.now());
+    /** The auto-team's coin for a tie (`rand()`, `team-to-add.js`). */
+    this.random = random || Math.random;
     this.rooms = new Map();        // code -> Room
     this.connections = new Map();  // peer -> connection record
     this.nextId = 1;
@@ -45,7 +47,7 @@ export class RoomServerCore {
     const levelName = level || this.defaultLevel;
     const levelData = this.levels.get(levelName);
     if (!levelData) return null;
-    const room = new Room({ code, level: levelData, mode, now: this.now });
+    const room = new Room({ code, level: levelData, mode, now: this.now, random: this.random });
     this.rooms.set(code, room);
     return room;
   }

@@ -892,5 +892,10 @@ function spawnProjectile(guns, muzzle, group, spec, barrel = 0) {
     shot.wings = roundWingsOf(spec, Math.abs(GRAVITY));
     mesh.quaternion.copy(_aim);
   }
+  // The kit object whose weapon made it (`hand-weapon.js` `kitLife`): the
+  // round is that weapon's pool's and goes when the kit does (FA-2,
+  // `gunfire.js` `releaseRounds`). Stamped now, because a weapon kept across
+  // a respawn keeps its group, and the last life's rounds are the last kit's.
+  if (group.kitLife) shot.kitLife = group.kitLife;
   guns.projectiles.push(shot);
 }

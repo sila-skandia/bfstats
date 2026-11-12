@@ -58,7 +58,9 @@ class SoldierLookAheadTests(unittest.TestCase):
 
     def test_the_look_ahead_is_five_seconds_and_only_still_objects_count(self) -> None:
         self.assertEqual(self.results["lookAhead"], 5.0)
-        self.assertEqual(self.results["maxSpeed"], 0)
+        # `getPotentialObstacleMaxSpeed`: 1.0 from the `AIPathfinding` ctor
+        # (0x0847a7f0), not 0.
+        self.assertEqual(self.results["maxSpeed"], 1.0)
 
     def test_a_still_friend_ahead_is_planted_before_contact(self) -> None:
         s = self.results["stillAhead"]
@@ -79,6 +81,21 @@ class SoldierLookAheadTests(unittest.TestCase):
         self.assertEqual(self.results["crossing"], 0)
         # Touching now plants it whatever its speed.
         self.assertEqual(self.results["touching"], 1)
+
+    def test_a_walker_under_the_potential_obstacle_speed_is_planted(self) -> None:
+        self.assertEqual(self.results["slowWalker"], 1)
+
+    def test_a_planted_body_that_moves_on_or_goes_is_dropped(self) -> None:
+        # `updatePotentialObstacles` 0x0852d880: faster than maxSpeed x 1.2
+        # (0x086c4f64) drops it, so does the body being gone; under maxAge
+        # (10 s) distance does not; past it the 25.5 m rule does.
+        d = self.results["dropRules"]
+        self.assertEqual(d["walkedOn"], 0)
+        self.assertEqual(d["ambling"], 1)
+        self.assertEqual(d["gone"], 0)
+        self.assertEqual(d["youngFar"], 1)
+        self.assertEqual(d["oldFar"], 0)
+        self.assertEqual(d["contactFar"], 0)
 
     def test_the_still_objects_around_the_hit_come_with_it(self) -> None:
         c = self.results["cluster"]

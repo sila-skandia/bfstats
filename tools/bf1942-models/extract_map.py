@@ -1948,13 +1948,42 @@ def projectile_materials(library) -> dict[str, dict]:
         # what the viewer assumes when this is absent.
         if template.force_on_explosion is not None:
             entry["forceOnExplosion"] = template.force_on_explosion
+        # `noFFSound 1` (`ProjectileTemplate+0x14f`, the gate at lnxded
+        # 0x0831efe6, FF-6): a teammate's round that meets a soldier never
+        # draws the friendly-fire call-out. Grenades, the pack, the landmine
+        # and the rifle grenade. Written only when set; the constructor's 0
+        # is what the viewer assumes when it is absent.
+        if template.no_ff_sound:
+            entry["noFFSound"] = True
         if entry:
             out[name] = entry
     return out
 
 
+def weapon_ammo_types(library) -> dict[str, int]:
+    """`weapon template -> ammoType`, the tag a depot row's id must equal.
+
+    `SupplyDepot::reloadAmmo` (lnxded 0x08323770) gives a gun only the units
+    of the row whose id equals `FireArms::getAmmoType` (0x0828d4c0, the
+    compare at 0x08323995): `FireArmsTemplate+0x238`, written by
+    `ObjectTemplate.ammoType` (0x082c98be) and 0 from the constructor
+    (0x0828d614). Every FireArms and HandFireArms that writes the word, lower
+    case; one that does not is 0, which `viewer/fire-state.js` `ammoTypeOf`
+    assumes for a weapon missing from a table that exists. Written into
+    `damage.json` beside the projectile table, so both a kit item and a seat
+    gun reach it by template name without a re-bake (SUP-2).
+    """
+    if library is None:
+        return {}
+    return {name: template.ammo_type
+            for name, template in sorted(library.objects.items())
+            if template.kind.lower() in ("firearms", "handfirearms")
+            and template.ammo_type is not None}
+
+
 def write_damage_tables(tables, shared_dir: Path, rel_base: Path,
-                        projectiles: dict | None = None) -> dict | None:
+                        projectiles: dict | None = None,
+                        ammo_types: dict | None = None) -> dict | None:
     """`damage.json` in the shared directory, plus the path to reach it.
 
     The MaterialManager tables are mod-wide, so they are written once beside
@@ -1976,13 +2005,23 @@ def write_damage_tables(tables, shared_dir: Path, rel_base: Path,
     # `round-not-in-damage-table`, 2026-10-21). So the rows already there
     # stay, and this level's own win where both have one.
     merged: dict = {}
+    merged_ammo: dict = {}
     if target.is_file():
         try:
-            merged = dict(json.loads(target.read_text()).get("projectiles") or {})
+            previous = json.loads(target.read_text())
+            merged = dict(previous.get("projectiles") or {})
+            merged_ammo = dict(previous.get("ammoTypes") or {})
         except (OSError, ValueError, AttributeError):
-            merged = {}
+            merged, merged_ammo = {}, {}
     merged.update(projectiles or {})
     payload["projectiles"] = merged
+    # The weapons' depot tags (`weapon_ammo_types`), merged the same way: a
+    # weapon only one level declares keeps its row. Always written, an empty
+    # table included, so the page can tell "no weapon of this mod writes the
+    # word" (every weapon 0) from a file written before the word was read.
+    if ammo_types is not None:
+        merged_ammo.update(ammo_types)
+        payload["ammoTypes"] = merged_ammo
     text = json.dumps(payload, separators=(",", ":"))
     # Rewritten only when it differs, so a layer patch that changes nothing
     # leaves the file (and its mtime) alone.

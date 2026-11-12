@@ -972,4 +972,24 @@ results.accelClamp = {
   vy: thrown.body.velocity.y,
 };
 
+// The kill material (MATERIAL_KILL, lnxded 0x0827d3c8): a soldier dropped onto
+// a material-99 floor quad meets it from its front, the side its stored normal
+// `(v2 - v0) x (v1 - v0)` faces (COL-23), and the resolve flags the tick. The
+// same quad wound the other way is one the engine never finds from above, and
+// an ordinary floor flags nothing.
+function killFloor(index, material) {
+  const quad = fakeMesh([0, 0.3, -40, 20, 0.3, -40, 20, 0.3, -24, 0, 0.3, -24], { index, material });
+  const world = new WorldCollider({ heightfield: field, statics: buildCollisionIndex(group([quad])) });
+  const body = new SoldierBody({ world, yaw: 0 });
+  body.place(10, 1.2, -32);
+  let met = false;
+  for (let i = 0; i < 60; i++) { body.step(TICK_DT, {}); if (body.killFace) met = true; }
+  return { met, y: +body.position.y.toFixed(3) };
+}
+results.killFloor = {
+  front: killFloor([0, 1, 2, 0, 2, 3], 99),
+  back: killFloor([0, 2, 1, 0, 3, 2], 99),
+  plain: killFloor([0, 1, 2, 0, 2, 3], 0),
+};
+
 process.stdout.write(JSON.stringify(results));

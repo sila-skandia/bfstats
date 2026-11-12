@@ -850,8 +850,12 @@ PLANS.breakTurn = {
     }
     if (inFront) { go(c, 'chase'); return { ...leadPursuit(c), throttle: 1 }; }
     // He came past my tail to my other side, close: the turn reverses, into
-    // him again.
-    if (g.range < 150 && g.ata > 90 && Math.sign(across) === -mem.side && Math.abs(across) > 8) {
+    // him again, once he is 6 m across (a wobble does not flip the turn).
+    // Re-tuned 2026-11-12 on retail g and box area
+    // (features/retail-parity-cross-check-2026-11-12): at 8 m one rusher sat
+    // near the tail line 1.5 s past the crossing, the reversal took 2.8 s
+    // and he landed a round in it; at 6 m every reversal is done in 2 s.
+    if (g.range < 150 && g.ata > 90 && Math.sign(across) === -mem.side && Math.abs(across) > 6) {
       mem.side = -mem.side;
       mem.reversals = (mem.reversals ?? 0) + 1;
       go(c, 'reverse');
@@ -921,7 +925,13 @@ PLANS.btFlip = {
     // The zoom ends at 52 m/s (it tops out near 40, not hanging); a high
     // yo-yo when he breaks with me inside 120 m; "over the top" only while
     // the nose is above 20 degrees down and I am over him.
-    const K = { zoomEnd: 52, yoyo: 120, minUp: 0, overDown: -20 };
+    // `minUp`: off him, the nose comes up for at least that long, even slow.
+    // At 0 a slow pilot "off him" fell through flip-up and flip-top back
+    // into the dive in the same tick and flew on into the hunter's nose
+    // (re-tuned 2026-11-12 on retail g and box area,
+    // features/retail-parity-cross-check-2026-11-12: his gun had a 0.1 s
+    // shot while he ran, `extend`, at 32 m).
+    const K = { zoomEnd: 52, yoyo: 120, minUp: 0.05, overDown: -20 };
     if (mem.phase === 'flip-zoom') {
       if (!(g.mySpeed < K.zoomEnd || (g.ata < 100 && g.above < -15))) {
         return { ...pointNose(me, climbing(heading(me.velocity), 70), { fine: 6 }), throttle: 1 };
@@ -2578,7 +2588,14 @@ PLANS.wingman = {
     const gap = dot(sub(spot, me.position), lf);
     // Far off it (back from a fight) he says so: he is coming back.
     go(c, len(sub(spot, me.position)) > PAIR.rejoin ? 'rejoin' : 'station');
-    return { ...pointNose(me, toSpot, { fine: 8 }), throttle: clamp(0.6 + gap * 0.02, -1, 1), aimed: false };
+    // Careful, he never closes the throttle to drop back onto the spot while
+    // slow or under the floor: on retail's gravity (re-tuned 2026-11-12,
+    // features/retail-parity-cross-check-2026-11-12) a Bf 109 throttled back
+    // beside Kursk's hard-turning leader bled from 39 to 8 m/s at 117 m and
+    // fell in. He lets the spot go by instead, and comes back to it.
+    const throttle = careful && (c.g.mySpeed < PAIR.slow * 1.25 || (c.agl ?? Infinity) < PAIR.floor)
+      ? 1 : clamp(0.6 + gap * 0.02, -1, 1);
+    return { ...pointNose(me, toSpot, { fine: 8 }), throttle, aimed: false };
   },
 };
 
@@ -2640,8 +2657,18 @@ PLANS.weaver = {
  * bag"): turning away from the wingman instead left the wingman chasing
  * from outside the turn, and a hunter fixed on the bait alone (no target
  * switch) was never caught at all, everyone at full throttle.
+ * Retuned 2026-11-12 on retail g and box area
+ * (features/retail-parity-cross-check-2026-11-12): with the drag alone the
+ * hunter shot the bait in two of the nine starts, and in all twelve sets of
+ * the nine nudged by up to 3 m and 0.5 m/s. Now, once the hunter is inside
+ * `BAG.breakRange` with the bait within `BAG.breakCone` degrees of its nose,
+ * about to fire, the drag tightens to a hard turn, still toward the wingman:
+ * unhit in the nine and in 11 of the 12 sets, and the arenas as before. A
+ * gentler drag (0.15) did as well on the Spitfire but cost vanilla's Battle
+ * of Britain and Coral Sea pairs their rounds in the hunter.
  */
-const BAG = { tail: 900, tailCone: 50, dragRate: 0.18, reverseAfter: 1.5, behind: 170, bagRange: 650, bagCone: 40, floor: 150, swingRate: 0.8, swingDown: 5, friendCone: 10, friendNear: 80, leadCone: 100 };
+const BAG = { tail: 900, tailCone: 50, dragRate: 0.18, reverseAfter: 1.5, behind: 170, bagRange: 650, bagCone: 40, floor: 150, swingRate: 0.8, swingDown: 5, friendCone: 10, friendNear: 80, leadCone: 100,
+              breakRange: 250, breakCone: 20 };
 const onTailOf = (st, enemies) => (enemies ?? []).some(e => {
   const rel = sub(st.position, e.state.position), d = len(rel);
   const nose = Math.acos(clamp(dot(basis(e.state.orientation).F, scale(rel, 1 / Math.max(d, 1e-6))))) / DEG;
@@ -2678,6 +2705,8 @@ PLANS.dragger = {
       // A gentle turn still sinks; under `BAG.floor` metres it climbs a
       // little, as the weave does, so the bait is never dragged into the ground.
       const low = BAG.floor + 100 - c.agl;
+      // About to be fired on: the drag tightens to a hard turn, the same way.
+      if (g.range < BAG.breakRange && g.hisAta < BAG.breakCone) return { ...hardTurn(me, mem.dragSide), throttle: 1, aimed: false };
       return { ...climbingTurn(c, mem.dragSide, low > 0 ? clamp(low * 0.05, 0, 6) : 0, BAG.dragRate), throttle: 1, aimed: false };
     }
     go(c, 'cruise');

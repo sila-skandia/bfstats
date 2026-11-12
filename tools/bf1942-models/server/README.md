@@ -34,6 +34,8 @@ room-pads.mjs  the vehicle pads, the wrecks and the hulls' and statics' hit
                points to every client
 room-hits.mjs  a landing a page reports, priced: the direct hit, the blast,
                the push
+room-packs.mjs a round of a medic bag or a wrench a page names, run on the
+               room's world by the page's law (`healing-packs.js`)
 server.mjs     the network half: GET /netcode/rooms + the WS upgrade on
                /netcode, on node:http — no npm, no deps
   websocket.mjs        the RFC 6455 codec and the SocketPeer adapter
@@ -177,8 +179,11 @@ landings and the reloads") has the whole of it; in short:
 - `_shared/loadouts.json` is read but only its kit `maxHitpoints` is used
   (spawn armor); the deploy-screen kit pick and the `primary` weapon are the
   client's choice — the room's `#soldierMaxHp` is the seam.
-- Supply: `World#supplyTick` runs with an empty depot field; `setSupplyDepots`
-  wants the page's `collectSupplyDepots` equivalent over the scene tree.
+- Supply: the room's world takes the level's depots by the page's own walk
+  (`viewer/supply-collect.js`, in `level-data.mjs`), and the medic bag and the
+  wrench each round a page names (`room-packs.mjs`, `viewer/healing-packs.js`);
+  the soldiers' rises reach the pages on the snapshot, the hulls' as `hull`
+  rows.
 - Spawner respawn windows: run by `room-pads.mjs` since 2026-10-07, off the
   pad's own `objectSpawns` row (`deployables.js` `padFromSpawn`).
 - The `test` descriptor level is registered by server.mjs unconditionally —

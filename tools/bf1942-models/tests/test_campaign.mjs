@@ -203,6 +203,16 @@ test('the enemy\'s share of the bots follows the ratio, ties to the player', () 
   assert.deepEqual(law.botTeams(3, 0, 2, 1), [2, 2, 2]);
 });
 
+test('Instant Battle takes retail\'s NORMAL split and death penalty', () => {
+  // `continueStartSkirmish` (Mac 0x004ca5dc) hands the BotRatio and
+  // NrOfLives sliders over with the skill; both ship on NORMAL (AI-20):
+  // 3:4 friendly:enemy, 5 tickets a player death.
+  assert.equal(law.SKIRMISH_NORMAL, 2);
+  assert.deepEqual(law.instantBattleOdds(16), { enemyBots: 10, deathPenalty: 5 });
+  assert.deepEqual(law.instantBattleOdds(15), { enemyBots: 9, deathPenalty: 5 });
+  assert.deepEqual(law.instantBattleOdds(0), { enemyBots: 0, deathPenalty: 5 });
+});
+
 test('a mission launches on its level, side, layer, tickets and difficulty', () => {
   const state = law.newCampaign({ team: law.AXIS, difficulty: { level: 4 }, botCount: 6 });
   const levels = { battleaxe: { axis: { tickets: { team1: 100, team2: 120, lossPerMin: { team1: 15, team2: 30 } } } } };

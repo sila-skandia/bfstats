@@ -44,27 +44,31 @@ class Row(NamedTuple):
 # landing shot (s); in how many of the nine I came up with a landing shot,
 # shot him down, and sat more than 20 s inside 600 m of him without a shot
 # (the measure's stalemate, IDLE).
+# Re-pinned 2026-11-12 on retail g and box area
+# (features/retail-parity-cross-check-2026-11-12), with `breakTurn` reversing
+# at 6 m across: 16 of the 20 rows moved; abeam/taAce now works 3 of 9
+# (partly, was 2), astern/uhAce 0 (was 1), abeam/bzAce 5 (was 4).
 EXPECTED = {
-    ('astern', 'otBreaker'): Row(0, (1, 1), (0.53, 1.33), (6, 12), 0.13, 0.31, 0.07, 9, 0, 9),
-    ('astern', 'btHunter'): Row(3, (1, 2), (0.67, 1.23), (9, 27), 0, 1, 0, 9, 3, 6),
-    ('astern', 'scAce'): Row(2, (1, 1), (0.3, 1.53), (5, 23), 2.8, 0.39, 0, 9, 2, 7),
-    ('astern', 'taAce'): Row(3, (0, 1), (0, 1.77), (0, 29), 1, 0, 0, 6, 3, 5),
-    ('astern', 'uoAce'): Row(0, (0, 1), (0, 0.53), (0, 9), 1.43, 0, 0.27, 3, 0, 9),
-    ('astern', 'bzAce'): Row(0, (1, 2), (0.93, 1.83), (13, 17), 0, 0.84, 0, 9, 0, 9),
-    ('astern', 'uhAce'): Row(1, (1, 2), (0.93, 2.4), (13, 27), 3, 0.87, 0, 9, 1, 8),
-    ('astern', 'olHunter'): Row(2, (1, 1), (0.67, 1), (9, 22), 0, 0.96, 0, 9, 2, 7),
-    ('astern', 'breakTurn'): Row(1, (1, 4), (0.3, 2), (0, 25), 0, 1, 0, 9, 2, 7),
-    ('astern', 'breaker'): Row(0, (1, 1), (0.53, 1.33), (6, 12), 3.73, 0.3, 0.07, 9, 0, 9),
+    ('astern', 'otBreaker'): Row(0, (1, 1), (0.53, 1.33), (6, 11), 0, 0.31, 0.07, 9, 0, 9),
+    ('astern', 'btHunter'): Row(3, (1, 2), (0.67, 1.17), (10, 27), 0, 1, 0, 9, 3, 6),
+    ('astern', 'scAce'): Row(2, (1, 1), (0.3, 1.53), (5, 23), 2.77, 0.38, 0, 9, 2, 7),
+    ('astern', 'taAce'): Row(3, (0, 2), (0, 1.8), (0, 28), 1.43, 0, 0, 7, 3, 6),
+    ('astern', 'uoAce'): Row(0, (0, 1), (0, 0.53), (0, 9), 1.43, 0, 0.17, 4, 0, 9),
+    ('astern', 'bzAce'): Row(0, (1, 2), (0.97, 1.8), (13, 18), 0, 0.81, 0, 9, 0, 9),
+    ('astern', 'uhAce'): Row(0, (1, 2), (0.97, 1.87), (12, 20), 0.67, 0.92, 0, 9, 0, 9),
+    ('astern', 'olHunter'): Row(2, (1, 1), (0.67, 1), (10, 22), 0, 1, 0, 9, 2, 7),
+    ('astern', 'breakTurn'): Row(1, (1, 3), (0.3, 1.3), (0, 22), 0, 1, 0, 9, 1, 8),
+    ('astern', 'breaker'): Row(0, (1, 1), (0.53, 1.33), (6, 11), 0, 0.31, 0.07, 9, 0, 9),
     ('abeam', 'otBreaker'): Row(5, (1, 1), (1.57, 1.83), (10, 28), 0, 0.39, 0, 9, 5, 4),
     ('abeam', 'btHunter'): Row(0, (0, 1), (0, 0.47), (0, 4), 0, 0, 0.37, 2, 0, 9),
-    ('abeam', 'scAce'): Row(0, (1, 2), (0.53, 1.4), (2, 18), 2.87, 0.8, 0.27, 9, 0, 8),
-    ('abeam', 'taAce'): Row(2, (1, 3), (0.7, 2.6), (7, 45), 3.6, 0.94, 0, 9, 1, 6),
-    ('abeam', 'uoAce'): Row(3, (0, 1), (0.17, 2.13), (2, 36), 10.57, 0, 0.4, 9, 3, 6),
-    ('abeam', 'bzAce'): Row(4, (1, 1), (0.5, 2.27), (2, 35), 0, 0.76, 0, 9, 4, 5),
+    ('abeam', 'scAce'): Row(0, (1, 3), (0.53, 1.4), (2, 19), 11.4, 0.75, 0, 9, 0, 7),
+    ('abeam', 'taAce'): Row(3, (1, 3), (0.7, 2.6), (7, 45), 3.6, 0.6, 0, 9, 2, 5),
+    ('abeam', 'uoAce'): Row(3, (0, 1), (0.17, 2.13), (2, 36), 8.17, 0, 0.4, 9, 3, 6),
+    ('abeam', 'bzAce'): Row(5, (1, 2), (0.5, 2.27), (2, 35), 0, 0.77, 0, 9, 5, 4),
     ('abeam', 'uhAce'): Row(9, (1, 1), (1.1, 1.93), (32, 44), 0, 1, 0, 9, 9, 0),
     ('abeam', 'olHunter'): Row(0, (0, 1), (0, 0.47), (0, 4), 0, 0, 0.37, 2, 0, 9),
     ('abeam', 'breakTurn'): Row(3, (0, 1), (0, 1.6), (1, 42), 0, 0, 0, 6, 3, 6),
-    ('abeam', 'breaker'): Row(1, (1, 1), (1.63, 1.83), (10, 22), 0, 0.31, 0, 9, 1, 8),
+    ('abeam', 'breaker'): Row(1, (1, 1), (1.6, 1.83), (10, 22), 0, 0.31, 0.03, 9, 1, 8),
 }
 
 
@@ -124,9 +128,13 @@ class AscendBenchTests(unittest.TestCase):
         # comes up in 154, it is never shot down itself, and 137 end in the
         # stalemate the measure fails. What holds is the first pass; staying
         # on top of an ace who sees it come back does not.
+        # Re-pinned 2026-11-12 on retail g and box area
+        # (features/retail-parity-cross-check-2026-11-12): 40 of 180 work and
+        # 39 are kills (one of abeam/taAce's three works without one), a
+        # landing shot in 156, 137 stalemates.
         rows = self.rows.values()
-        self.assertEqual(39, sum(r["works"] for r in rows))
-        self.assertEqual(154, sum(r["landed"] for r in rows))
+        self.assertEqual(40, sum(r["works"] for r in rows))
+        self.assertEqual(156, sum(r["landed"] for r in rows))
         self.assertEqual(39, sum(r["killed"] for r in rows))
         self.assertEqual(0, sum(r["shotDown"] for r in rows))
         self.assertEqual(137, sum(r["stalemate"] for r in rows))
@@ -136,14 +144,16 @@ class AscendBenchTests(unittest.TestCase):
         # (11.9 once, the scissors ace off his beam), against every ace but
         # the hunters off the beam, who turn on me at once (a shot in 2 of 9,
         # 10.3 to 19.2 s in), and the Immelmann and up-and-over aces from
-        # astern, who pull away first (a shot in 6 and 3 of the nine).
+        # astern, who pull away first (a shot in 7 and 4 of the nine; 6 and 3
+        # before the 2026-11-12 retail-g re-pin).
         for key, row in self.rows.items():
             if key in {("abeam", "btHunter"), ("abeam", "olHunter")}:
                 self.assertEqual(2, row["landed"], key)
                 self.assertEqual([10.3, 19.17], row["firstShot"], key)
                 continue
             if key in {("astern", "taAce"), ("astern", "uoAce")}:
-                self.assertEqual(6 if key[1] == "taAce" else 3, row["landed"], key)
+                # 6 and 3 before the 2026-11-12 retail-g re-pin.
+                self.assertEqual(7 if key[1] == "taAce" else 4, row["landed"], key)
                 continue
             lo, hi = row["firstShot"]
             self.assertGreaterEqual(lo, 3.3, key)

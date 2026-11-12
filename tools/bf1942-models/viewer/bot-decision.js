@@ -35,6 +35,7 @@ import { airAvoid } from './bot-pilot.js';
 import { isArtilleryDriver } from './bot-perception.js';
 import { captureReach, captureStandRadius } from './control-point-law.js';
 import { footingAt } from './bot-pose.js';
+import { inhibitorColumn, infantryRow } from './bot-rows.js';
 
 /**
  * Behaviour names matching AIbehaviours.con §4.1, in registration order.
@@ -47,8 +48,11 @@ export const BEHAVIOUR = {
 export const REGISTERED = ['Avoid', 'MoveTo', 'Idle', 'Fire', 'Special', 'Scout', 'TakeCover', 'Change'];
 /** The Tank rows: no Special. */
 const REGISTERED_VEHICLE = ['Avoid', 'MoveTo', 'Idle', 'Fire', 'Scout', 'TakeCover', 'Change'];
-/** `ChangeInhibit`: the column applied while Change is the active behaviour. */
-const CHANGE_INHIBIT = { Avoid: 1.0, MoveTo: 0.0, Idle: 1.0, Fire: 1.0, Special: 1.0, Scout: 1.0, TakeCover: 1.0, Change: 1.0 };
+/** `ChangeInhibit` as vanilla's `AIbehaviours.con` writes it (Avoid 0.8,
+ *  MoveTo 0, Idle 0.01, Fire 0.75, Special 0, Scout 0.5), the Change column
+ *  of a vehicle row with no row of its own to read (bot-rows.js
+ *  `inhibitorColumn` holds every mod's, per row). */
+const CHANGE_INHIBIT = { Avoid: 0.8, MoveTo: 0.0, Idle: 0.01, Fire: 0.75, Special: 0.0, Scout: 0.5, TakeCover: 1.0, Change: 1.0 };
 
 /** `StandardWeights`, the standard personality of both sides. */
 export const STANDARD_WEIGHTS = {
@@ -58,8 +62,33 @@ export const STANDARD_WEIGHTS = {
 const UNIT_WEIGHTS = { Avoid: 1, MoveTo: 1, Idle: 1, Fire: 1, Special: 1, Scout: 1, TakeCover: 1, Change: 1 };
 /** `AvoidInhibit`: the column applied while Avoid is the active behaviour. */
 const AVOID_INHIBIT = { Avoid: 1.0, MoveTo: 0.3, Idle: 1.0, Fire: 1.0, Special: 0.5, Scout: 1.0, TakeCover: 1.0, Change: 1.0 };
-/** Each infantry row's modifier set (`setVehicleBehaviour Infantery ...`). */
-const INHIBITOR = { Avoid: AVOID_INHIBIT, MoveTo: UNIT_WEIGHTS, Idle: UNIT_WEIGHTS, Fire: UNIT_WEIGHTS, Special: UNIT_WEIGHTS, Scout: UNIT_WEIGHTS, TakeCover: UNIT_WEIGHTS, Change: CHANGE_INHIBIT };
+/** The columns a unit with no row of its own falls back to: vanilla's
+ *  Infantery row on foot (Avoid `AvoidInhibit`, every other column
+ *  `UnitWeights`, Change included), vanilla's Tank row in a seat (Change
+ *  `ChangeInhibit`). */
+const INHIBITOR_FOOT = { Avoid: AVOID_INHIBIT };
+const INHIBITOR_SEAT = { Avoid: AVOID_INHIBIT, Change: CHANGE_INHIBIT };
+
+/**
+ * The modifier column of the active behaviour, for the bot's unit row
+ * (`setVehicleBehaviour <row> <behaviour> ... <set>`, bot-rows.js
+ * `inhibitorColumn`; ledger AI-35): the row's own set for Avoid and Change,
+ * `UnitWeights` for the rest (every vanilla column but those two). So a bot
+ * changing vehicle on foot inhibits nothing (`Infantery ... Change ...
+ * UnitWeights`), and a bot changing out of or between seats of a Tank,
+ * Plane, Boat, BoatFixed, UnarmedTank, LandingCraft, Passenger, UnarmedBoat,
+ * ArtilleryDriver or UnarmedPlane row runs `ChangeInhibit`; Fixed, Car,
+ * LandingCraftFixed, FixedLargeBore, AmphibiousCar and
+ * FixedGuidedMissileLauncher keep `UnitWeights`.
+ */
+export function activeColumn(bot, active) {
+  if (active !== 'Avoid' && active !== 'Change') return UNIT_WEIGHTS;
+  const m = bot.vehicle;
+  const rowName = m ? m.row?.name ?? null : infantryRow()?.name ?? null;
+  const col = rowName ? inhibitorColumn(rowName, active) : null;
+  if (col) return col;
+  return (m ? INHIBITOR_SEAT : INHIBITOR_FOOT)[active] ?? UNIT_WEIGHTS;
+}
 
 /**
  * The engine's urge curves (assembly, `UCLinear::calculate` 0x085838f0 and
@@ -216,7 +245,32 @@ export function hasPlan(bot) {
   return bot.currentBehaviour !== null && bot.currentPlan.length > 0;
 }
 
+/** `stepMoveInclination` / `stepFireInclination` 0x0852e2d0 / 0x0852e360:
+ *  `v = 0.8 v + 0.2 acc` (`[0x086d2954]`, `[0x086c4f74]`), then `acc = 0`. */
+const INCLINATION_KEEP = Math.fround(0.8);
+const INCLINATION_TAKE = Math.fround(0.2);
+
+/**
+ * The bot's fire and move inclinations (`BotMain` +0x1a4 / +0x1a0, their
+ * accumulators +0x1ac / +0x1a8; ledger AI-43 corrected): `decisionMaking`
+ * 0x08520620 steps both first thing each pass (0x08520660, 0x0852066a), and
+ * each Fire generator (`BBFire`, `BBFire3d`, `BBFireLargeBore`,
+ * `BBFireGuided`, `BBFireUnarmed`: vt+0x164 `addToFireInclination`) and each
+ * MoveTo one (`BBMoveTo`, `BBMoveToFixed`: vt+0x160 `addToMoveInclination`)
+ * adds the urgency it stored this pass. `BBChange` reads the smoothed values
+ * (vt+0x16c / +0x168) for its fire / move split (bot-mount.js).
+ */
+export function stepInclinations(bot) {
+  const inc = bot.inclination ??= { fire: 0, move: 0, fireAcc: 0, moveAcc: 0 };
+  inc.move = Math.fround(INCLINATION_KEEP * inc.move + INCLINATION_TAKE * inc.moveAcc);
+  inc.fire = Math.fround(INCLINATION_KEEP * inc.fire + INCLINATION_TAKE * inc.fireAcc);
+  inc.moveAcc = 0;
+  inc.fireAcc = 0;
+  return inc;
+}
+
 export function decisionMaking(bot, now, dt) {
+  const inc = stepInclinations(bot);
   const hasPlan = bot._hasPlan();
   const active = hasPlan ? bot.currentBehaviour : null;
   const activeFor = active ? now - bot.behaviourChosenAt : 0;
@@ -225,9 +279,24 @@ export function decisionMaking(bot, now, dt) {
     let mod = bot._currentMod(name);
     if (active) {
       const curve = name === active ? curveOf(bot, active)(activeFor) : 1.0;
-      mod *= curve * ((INHIBITOR[active] ?? UNIT_WEIGHTS)[name] ?? 1.0);
+      mod *= curve * (activeColumn(bot, active)[name] ?? 1.0);
     }
-    if (mod > 0) bot.urgency[name] = bot._generate(name, mod, now, dt, true);
+    if (mod > 0) {
+      bot.urgency[name] = bot._generate(name, mod, now, dt, true);
+      // `addToFireInclination` / `addToMoveInclination` with the urgency the
+      // generator stored. `BBMoveToFixed` (a seat that does not drive)
+      // returns 0 and adds the order urgency it publishes (its +0x28,
+      // 0x085756bb..0x085756c6), here `bot._orderUrgency`. INFERRED: the
+      // engine's cheap and full evaluations (decisionMaking's bool, 0 at
+      // 0x08520a10, 1 at 0x08520bd7) both add for every generator but
+      // MoveToFixed's full one; the viewer runs every generator in full each
+      // pass and adds each time.
+      if (name === BEHAVIOUR.Fire) inc.fireAcc = Math.fround(inc.fireAcc + ((bot._fireInclinationAdd ?? bot.urgency[name]) || 0));
+      else if (name === BEHAVIOUR.MoveTo) {
+        const fixed = bot.vehicle && !bot.vehicle.drives;
+        inc.moveAcc = Math.fround(inc.moveAcc + ((fixed ? bot._orderUrgency : bot.urgency[name]) || 0));
+      }
+    }
     // else: not evaluated, the old urgency stands.
   }
   // The winner.
@@ -398,6 +467,9 @@ export function urgencyFire(bot, mod, now) {
     bot.targetScore = 0;
   }
   bot.changedTarget.Fire = changed && !!t.targetId;
+  // What this generator adds to the fire inclination: its urgency, or an
+  // unarmed seat's threat (`BBFireUnarmed`'s +0x28, urgency 0).
+  bot._fireInclinationAdd = (Number.isFinite(t.inclination) ? t.inclination : t.urgency) * mod;
   return t.urgency * mod;
 }
 

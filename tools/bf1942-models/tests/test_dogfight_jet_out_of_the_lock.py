@@ -142,7 +142,7 @@ class TheLockOnAJetTests(unittest.TestCase):
         # on their nose cannot come onto you: nobody is hit. ... the circle
         # climbs: both of you go up about 310 m in 45 s, until the roof levels
         # the turn off at about 760 m. Up there the air is thin and the turn
-        # slows; you end at 120 m/s, 665 to 672 m from them, and they are
+        # slows; you end at 120 m/s, 667 to 673 m from them, and they are
         # hunting you again." Before the roof (`underRoof`, every jet pilot)
         # the circle went on climbing to 802-812 m and ended at 97 to 98 m/s,
         # them still in `lag`.
@@ -156,7 +156,8 @@ class TheLockOnAJetTests(unittest.TestCase):
             self.assertTrue(305 <= r["climbed"] <= 315, r)
             self.assertTrue(all(745 <= h <= 760 for h in r["height"]), r)
             self.assertTrue(120 <= r["speed"][1] <= 121, r)
-            self.assertTrue(665 <= r["apart"] <= 672, r)
+            # 665-672 before; re-pinned 2026-11-12 on retail g and box area (features/retail-parity-cross-check-2026-11-12).
+            self.assertTrue(667 <= r["apart"] <= 673, r)
             self.assertEqual(["track", "lag", "hunt"], r["phases"][0], r)
 
     def test_nobody_goes_over_the_roof(self) -> None:
@@ -225,7 +226,8 @@ class TheMovesOnAJetTests(unittest.TestCase):
             self.assertEqual([0, 0], s["hits"], s)
             self.assertFalse(s["hisFired"], s)
             self.assertNotIn("let-go", s["acePhases"], s)
-            self.assertTrue(43 <= s["minRange"] <= 45, s)
+            # 43-45 before; re-pinned 2026-11-12 on retail g and box area (features/retail-parity-cross-check-2026-11-12).
+            self.assertTrue(42 <= s["minRange"] <= 44, s)
             self.assertTrue(23 <= s["hisShot"] <= 24, s)
             self.assertTrue(300 <= s["hisShotRange"][0] and s["hisShotRange"][1] <= 480, s)
             self.assertTrue(306 <= s["endRange"] <= 323, s)
@@ -234,8 +236,9 @@ class TheMovesOnAJetTests(unittest.TestCase):
         self.assertGreaterEqual(sum(1 for s in self.m["dip"]["scores"] if s["hisShotRange"][1] <= 340), 5)
 
     def test_the_flip_and_the_ninja_never_get_on_top(self) -> None:
-        # "they follow you up at 60 to 67 m/s ... The Flip and the Ninja landed
-        # 5 hits in one fight of nine and none in the rest", "They never hit you".
+        # "they follow you up at 60 to 68 m/s ... The Flip and the Ninja landed
+        # a single hit in one fight of nine and none in the rest", "They never hit you".
+        # 60-67 m/s and 5 hits before; re-pinned 2026-11-12 on retail g and box area (features/retail-parity-cross-check-2026-11-12).
         for kind in ("flip", "ninja"):
             scores = self.m[kind]["scores"]
             for s in scores:
@@ -244,8 +247,8 @@ class TheMovesOnAJetTests(unittest.TestCase):
                 self.assertFalse(s["killed"], (kind, s))
                 self.assertEqual(0, s["attacks"], (kind, s))
                 self.assertLess(s["bestQuarter"], 2, (kind, s))
-                self.assertTrue(60 <= s["aceMinSpeed"] <= 67, (kind, s))
-            self.assertEqual([0] * 8 + [5], sorted(s["hits"][1] for s in scores), kind)
+                self.assertTrue(60 <= s["aceMinSpeed"] <= 68, (kind, s))
+            self.assertEqual([0] * 8 + [1], sorted(s["hits"][1] for s in scores), kind)
 
     def test_the_survival_verdict_follows_from_the_three(self) -> None:
         verdicts = ["works" if self.m[k]["works"] >= 7 else "partly" if self.m[k]["works"] >= 3 else "no"

@@ -9,7 +9,7 @@
 import { packSpec } from './rocket-pack.js';
 import { kitActiveLabel, kitRowLabel } from './kit-icon.js';
 import { heldItem, peekKit, resolveKitRow, rollKit } from './random-items.js';
-import { soldierTemplateValue } from './soldier-death.js';
+import { healingPackKind, packParams } from './healing-packs.js';
 import { flagSide } from './spawn-flags.js';
 import { heldKitSlots } from './kit-select.js';
 
@@ -65,20 +65,10 @@ export function kitPackSpec(loadouts, kit) {
   return spec;
 }
 
-/**
- * Which of the soldier's two packs a hand weapon is: `'medic'` for the
- * template named `MedPack`, `'repair'` for `RepairPack`, null for anything
- * else (ledger SUP-27: `BFSoldierTemplate::init` keeps the ids of the
- * templates of those names and `BFSoldier::handleMessage` dispatches on
- * them). Compared without case, as the template manager resolves names
- * (INFERRED: the lookup's case rule was not read).
- */
-export function healingPackKind(name) {
-  const key = String(name ?? '').toLowerCase();
-  if (key === 'medpack') return 'medic';
-  if (key === 'repairpack') return 'repair';
-  return null;
-}
+// Which of the soldier's two packs a hand weapon is (ledger SUP-27), and the
+// pack's numbers: one copy with the bots' and the room server's
+// (`healing-packs.js`).
+export { healingPackKind } from './healing-packs.js';
 
 /**
  * Built once by `createHandWeapon`. `page` is the narrow bag of getters it
@@ -425,37 +415,6 @@ export function createKitLoadout(page) {
     return (template && loadout.loadouts?.aiWeapons?.[template]) || null;
   }
 
-  /** `BFSoldier::useMedPack`'s parameters, from the soldier template's own
-   *  registered properties (supply-depots.md §6): the heal sweep's reach
-   *  (`healDistance`, +0x2f4) and the HP per invocation (each round of the
-   *  held trigger is one invocation, at the pack's `roundOfFire` 10/s):
-   *  allies take `healFactor` (+0x2d8), the holder himself takes
-   *  `selfHealFactor` (+0x2dc). Read off the holder's template
-   *  (`gaits.json` `soldierBody`, `soldierTemplateValue`); these are vanilla
-   *  `CommonSoldierData.inc`'s 10.0 / 0.25 / 0.15, the stand-in for a tree
-   *  published before the manifest carried them, as `FALLBACK_PRIMARIES` is. */
-  const MEDIC_PACK = { radius: 10.0, allyHeal: 0.25, selfHeal: 0.15 };
-
-  /** `BFSoldier::useRepairPack`'s parameters (supply-depots.md §6, the
-   *  function at `0x08276100`): the reach past a target's hull
-   *  (`repairDistance`, +0x2ec), and the HP per invocation (`repairFactor`,
-   *  +0x2e0). The function itself gates each candidate on `distanceSqr <=
-   *  (target.getRadius() + repairDistance)²` (`0x08276762`, the `+0x2ec` add;
-   *  the pose branch adds `+0x2f0`, which vanilla registers at the same 2.0),
-   *  keeps only wounded, undestroyed armour, and heals the closest one it
-   *  kept — so a wounded vehicle at vanilla's 0.15 HP/round, 10 rounds/s:
-   *  1.5 HP/s, and Desert Combat's 0.20: 2.0 HP/s. Read off the holder's
-   *  template like the medic bag's; vanilla's 2.0 / 0.15 stand in. */
-  const REPAIR_PACK = { radius: 2.0, repairHeal: 0.15 };
-
-  /** The local holder's soldier template's `key` (`soldierTemplateValue`), or
-   *  `fallback` where the tree's manifest predates it. */
-  function holderValue(key, fallback) {
-    const template = soldierTemplateFor({ team: page.deployTeamId });
-    const v = soldierTemplateValue(page.soldierBody, template, key);
-    return Number.isFinite(v) ? v : fallback;
-  }
-
   /** The healing pack in hand, with its use parameters — or null.
    *
    *  The engine picks the pack by its template's NAME (ledger SUP-27).
@@ -472,21 +431,14 @@ export function createKitLoadout(page) {
    *  round. */
   function healingPack() {
     const kind = healingPackKind(page.handWeapon?.name);
-    if (!kind) return null;
-    if (kind === 'medic') {
-      return {
-        radius: holderValue('healDistance', MEDIC_PACK.radius),
-        allyHeal: holderValue('healFactor', MEDIC_PACK.allyHeal),
-        selfHeal: holderValue('selfHealFactor', MEDIC_PACK.selfHeal),
-        kind: 'medic',
-      };
-    }
-    return {
-      radius: holderValue('repairDistance', REPAIR_PACK.radius),
-      repairHeal: holderValue('repairFactor', REPAIR_PACK.repairHeal),
-      kind: 'repair',
-    };
+    // `BFSoldier::useMedPack` / `useRepairPack`'s numbers off the holder's own
+    // soldier template (`gaits.json` `soldierBody`), vanilla's where the tree
+    // predates them (`healing-packs.js` `packParams`, SUP-15).
+    return kind
+      ? packParams(kind, page.soldierBody, soldierTemplateFor({ team: page.deployTeamId }))
+      : null;
   }
+
 
   Object.assign(loadout, {
     KIT_ROW_KEYS,

@@ -30,6 +30,11 @@ import { createHeldCraft } from './held-craft.mjs';
  *  pick: `TrackedVehicle` straight out of tracked-vehicle.js). */
 const DRIVE_CLASSES = { Aircraft, GroundVehicle, TrackedVehicle };
 
+// `publishHullPoses`' scratch.
+const _hullPose = new THREE.Matrix4();
+const _hullFwd = new THREE.Matrix4();
+const _hullInv = new THREE.Matrix4();
+
 // --- one room's mutable half -------------------------------------------------
 
 /**
@@ -63,6 +68,73 @@ export class LevelInstance {
     for (const entry of this.table) this.ownerToEntry.set(entry.owner, entry);
     // The craft a static's spawner holds, kept on it (`held-craft.mjs`).
     this.held = createHeldCraft(this, heldCraft);
+    // Every hull the body world moves, told to the collider at the end of
+    // each tick (`publishHullPoses`).
+    this.#bakedInverse = ownerRoots.map(node => {
+      if (!node?.matrixWorld) return null;
+      node.updateWorldMatrix(true, false);
+      return node.matrixWorld.clone().invert();
+    });
+    if (typeof collider?.setMovedOwner === 'function' && world?.bodyWorld) {
+      const next = world.onTick;
+      world.onTick = () => { this.publishHullPoses(); next?.(); };
+    }
+  }
+
+  // --- the hulls' poses, for everything that sweeps the collider ---------------
+
+  /** owner -> the inverse of its root's world matrix when the index baked it. */
+  #bakedInverse = [];
+  /** Owners already handed to `setMovedOwner` (they are re-sent every tick). */
+  #moved = new Set();
+
+  /**
+   * The page's `hull-bodies.js` `stepVehicleBodies` / `publishMovedHull`, for
+   * the room: every hull the body world holds, driven or parked, told to the
+   * collider where it stands now (`WorldCollider.setMovedOwner`, the baked
+   * frame to world and back). Until 2026-11-12 the room never did this, so
+   * its collider answered every hull at its baked pose: a soldier in a room
+   * walked through a driven tank and into the ghost of where it had been
+   * parked, and nothing a moving hull did could push or run them over
+   * (`soldier-resolve.js` `pushOutOfHulls`). Run at the end of each world
+   * tick, after the body world has pushed the hulls.
+   */
+  publishHullPoses() {
+    const bodyWorld = this.world?.bodyWorld;
+    const collider = this.collider;
+    if (!bodyWorld || typeof collider?.setMovedOwner !== 'function') return;
+    for (const [owner, entry] of bodyWorld.entries) {
+      const inverse = this.#bakedInverse[owner];
+      if (!inverse) continue;
+      if (entry.driven) {
+        // The drive wrote the node in its `integrate` (`applyTransform`).
+        const node = this.ownerRoots[owner];
+        if (!node) continue;
+        node.updateWorldMatrix(true, false);
+        _hullPose.copy(node.matrixWorld);
+      } else if (entry.parked?.body) {
+        const body = entry.parked.body;
+        if (!this.#moved.has(owner) && body.sleeping) continue;
+        const a = body.axes, p = body.pos;
+        _hullPose.set(
+          a[0][0], a[1][0], a[2][0], p[0],
+          a[0][1], a[1][1], a[2][1], p[1],
+          a[0][2], a[1][2], a[2][2], p[2],
+          0, 0, 0, 1);
+      } else continue;
+      _hullFwd.multiplyMatrices(_hullPose, inverse);
+      // A hull still where the index baked it is answered by the index.
+      if (!this.#moved.has(owner)) {
+        const e = _hullFwd.elements;
+        if (Math.abs(e[12]) + Math.abs(e[13]) + Math.abs(e[14]) < 1e-4
+            && Math.abs(e[0] - 1) + Math.abs(e[5] - 1) + Math.abs(e[10] - 1) < 1e-6) continue;
+        this.#moved.add(owner);
+      }
+      _hullInv.copy(_hullFwd).invert();
+      const e = _hullPose.elements;
+      collider.setMovedOwner(owner, _hullFwd.elements, _hullInv.elements, e[12], e[13], e[14],
+        entry.spec?.boundingRadius ?? this.ownerRoots[owner]?.userData?.cullRadius ?? 8);
+    }
   }
 
   // --- the seat points (`setEnterOnSpawn 1`, FHR-10) --------------------------

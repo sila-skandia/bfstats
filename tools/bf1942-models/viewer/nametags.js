@@ -18,6 +18,15 @@
 export const NAMETAG_NEAR = 75;
 export const NAMETAG_SCOPE = 300;
 
+/** NET-21: a server's caps where its serversettings.con says nothing
+ *  (`Setup::initServerSettings` lnxded 0x080c0a55 `movl $0x32,0x5c` and
+ *  0x080c0a5c `movl $0x12c,0x60`); both shipped files write the same. A
+ *  retail single-player game is a listen server with these settings, so a
+ *  page no server has spoken to (single player, Instant Battle, a room)
+ *  caps its tags at 50 and 300, not the client's own 75. */
+export const SERVER_NAMETAG_NEAR = 50;
+export const SERVER_NAMETAG_SCOPE = 300;
+
 /** HUD-22: the anchor sits this far up the object's own up axis from its
  *  origin, past the template's `nameTagOffset`. A soldier's origin is a
  *  metre over his feet (PHY-10), so his tag is 2.5 m over them. */

@@ -105,9 +105,12 @@ class UnderTheHeightSurvivalTests(unittest.TestCase):
         # shot: mostly the turn back slows you to 27 to 33 m/s and leaves you
         # 300 to 330 m behind him, out of gun range, and the shot comes 8 to
         # 14 s later from a dive from above. That dive lands enough in five
-        # (and shoots him down in two, the fight shown among them) and too
-        # little in two (0.2 and 0.47 s); in the ninth he never comes after
-        # you again after his first dive."
+        # (and shoots him down in four, the fight shown among them), too
+        # little in one (0.4 s), and in one never comes within reach of him;
+        # in the ninth he never comes after you again after his first dive."
+        # (Down in two, too little in two, 0.2 and 0.47 s, until it was
+        # re-pinned 2026-11-12 on retail g and box area,
+        # features/retail-parity-cross-check-2026-11-12.)
         scores = self.demo("flip")["scores"]
         reversed_ = [s for s in scores if s["t0"] is not None]
         self.assertEqual(8, len(reversed_))
@@ -122,23 +125,29 @@ class UnderTheHeightSurvivalTests(unittest.TestCase):
         self.assertEqual(1, len(in_turn), [s["firstShotPhase"] for s in reversed_])
         later = [s for s in reversed_ if s["firstShotPhase"] != "flip-reverse"]
         for s in later:
-            self.assertEqual("dive", s["firstShotPhase"], s)
+            self.assertIn(s["firstShotPhase"], ("dive", None), s)
             self.assertTrue(27 <= s["reverseMinV"] <= 33, s)
             self.assertTrue(295 <= s["reverseEndRange"] <= 330, s)
-            self.assertTrue(8 <= s["firstShotT"] - s["reverseEnd"] <= 14, s)
+            if s["firstShotPhase"] is not None:
+                self.assertTrue(8 <= s["firstShotT"] - s["reverseEnd"] <= 14, s)
+        self.assertEqual(1, sum(1 for s in later if s["firstShotPhase"] is None))
         self.assertEqual(5, sum(1 for s in later if s["ok"]))
-        self.assertEqual([0.2, 0.47], sorted(s["myShot"] for s in later if not s["ok"]))
+        self.assertEqual([0, 0.4], sorted(s["myShot"] for s in later if not s["ok"]))
         self.assertTrue(scores[0]["ok"] and scores[0]["killedAt"] is not None, scores[0])
-        self.assertEqual(2, sum(1 for s in scores if s["killedAt"] is not None))
+        self.assertEqual(4, sum(1 for s in scores if s["killedAt"] is not None))
 
     def test_the_ninja_wins_the_height_but_holds_it_only_in_the_fight_shown(self) -> None:
         # "In all nine his guns never fire and he is never on your tail, and
-        # you win the height back ... Only in the fight shown does the dive
-        # finish him (down at 62.6 s). In four a dive lands a burst, but he
-        # is not shot down and the bursts do not keep coming (a second in
-        # only one of the four, 20 s or more near him without one in three);
-        # in four no dive lands at all. Level with him then, you leave rather
-        # than circle with him".
+        # you win the height back ... Only in two does the dive finish him:
+        # the fight shown (down at 62.7 s) and one more (at 56.1 s). In three
+        # a dive lands a burst, but he is not shot down and the bursts do not
+        # keep coming (a second in two of the three, and 20 s or more near
+        # him without one in all three); in four no dive lands at all. Level
+        # with him then, you leave rather than circle with him". Rewritten
+        # 2026-11-12 on retail g and box area
+        # (features/retail-parity-cross-check-2026-11-12): it was "only in the
+        # fight shown" (1 of 9), four bursts and one second; the longest
+        # circling went from 10.5 to 10.7 s.
         # The energy is yours "35 to 53 s in".
         d = self.demo("ninja")
         # Long enough that holding it is seen, not assumed.
@@ -150,16 +159,21 @@ class UnderTheHeightSurvivalTests(unittest.TestCase):
             self.assertEqual(0, s["sixLost"], s)
             self.assertTrue(34.5 <= s["hand"] <= 53, s)
             # Never long circling after him at his height.
-            self.assertLessEqual(s["circling"], 10.5, s)
+            self.assertLessEqual(s["circling"], 11.5, s)
         shown = scores[0]
         self.assertTrue(shown["ok"], shown)
         self.assertTrue(62 <= shown["killedAt"] <= 63, shown)
         rest = scores[1:]
-        self.assertTrue(all(not s["ok"] and s["killedAt"] is None for s in rest), rest)
-        landed = [s for s in rest if s["attacks"] >= 1]
-        self.assertEqual(4, len(landed))
-        self.assertEqual(1, sum(1 for s in landed if s["attacks"] >= 2))
+        down = [s for s in rest if s["killedAt"] is not None]
+        self.assertEqual(1, len(down), rest)
+        self.assertTrue(down[0]["ok"] and 55.5 <= down[0]["killedAt"] <= 57, down)
+        alive = [s for s in rest if s["killedAt"] is None]
+        self.assertTrue(all(not s["ok"] for s in alive), alive)
+        landed = [s for s in alive if s["attacks"] >= 1]
+        self.assertEqual(3, len(landed))
+        self.assertEqual(2, sum(1 for s in landed if s["attacks"] >= 2))
         self.assertEqual(3, sum(1 for s in landed if s["idle"] > 20))
+        self.assertEqual(4, sum(1 for s in alive if s["attacks"] == 0))
 
 if __name__ == "__main__":
     unittest.main()

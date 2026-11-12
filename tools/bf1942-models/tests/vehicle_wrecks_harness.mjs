@@ -193,6 +193,31 @@ async function lateWreck() {
 }
 
 /**
+ * A ground hull's death and its wreck's time to live: the body stays in the
+ * world from the death (parked, `parkWreckBody`) and leaves it only when the
+ * wreck clears (`retireVehicleBody`). `ResponsePhysicsManager::update`
+ * 0x0825d0b0 asks no destroyed flag (HP-21), so retail's wreck rolls, settles
+ * and is rammed until `timeToLiveAfterDeath` removes it (HP-19).
+ */
+async function wreckKeepsBody() {
+  const calls = [];
+  const h = hull();
+  h.node.userData = { armor: { timeToLiveAfterDeath: 3, fadeAtTimeToLiveAfterDeath: false } };
+  const wrecks = createVehicleWrecks({
+    ...page(), effects: { play: () => null }, isCollision: () => false, bindDynamicShading() {},
+    parkWreckBody: (owner, drive) => calls.push(['park', owner, drive]),
+    retireVehicleBody: owner => calls.push(['retire', owner, round(visual.wreckAge)]),
+    loader: { loadAsync: async () => { throw new Error('no wreck glb'); } },
+  });
+  const visual = { node: h.node, anchors: new Map(), handles: [], spawnDelay: null };
+  wrecks.damageVisuals.set(5, visual);
+  await wrecks.wreckVehicle({ owner: 5, effects: [], killedBy: null, armorKnown: true });
+  const atDeath = calls.slice();
+  for (let t = 0; t < 30 * 4 && !visual.removed; t++) wrecks.stepWrecks(1 / 30);
+  return { atDeath, after: calls.slice(atDeath.length), removed: !!visual.removed };
+}
+
+/**
  * A pad's abandoned hull (`stepAbandoned`, ledger SPAWN-13): an M1A1 with
  * Desert Combat's words (`TimeToLive 45`, `Distance 40`, `damageWhenLost
  * 10`) left `at` metres from its pad. Returns its hit points each whole
@@ -507,6 +532,7 @@ process.stdout.write(JSON.stringify({
     stay: afterDeathRun({ stayAsDestroyed: true }),
   },
   lateWreck: await lateWreck(),
+  wreckBody: await wreckKeepsBody(),
   crashRespawn: await crashRespawn(),
   deck: {
     parked: await deckWreck({ y: 18.8 + 1.2 }),

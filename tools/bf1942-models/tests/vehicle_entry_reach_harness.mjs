@@ -148,4 +148,29 @@ const horseAt = ([x, y, z]) => ({
 out.horseSaddle = horseAt([1107.55, 78.90, 1640.31]);
 out.horseRump = horseAt([1107.29, 78.90, 1642.44]);
 out.horseBehind = horseAt([1105.88, 78.90, 1642.58]);
+// SEAT-30: E at a Sherman's hull-gunner door. Both of its PCOs say
+// `setVehicleType VTLightTank` (vanilla `Objects/Vehicles/Land/Sherman/
+// Objects.con`), so `getPreferredPco` (lnxded 0x083193c0) hands the driver's
+// seat over while nobody holds it, and the gunner's once somebody does.
+const sherman = new THREE.Group();
+sherman.name = 'Sherman';
+sherman.userData = { templateKind: 'PlayerControlObject', control: 'Sherman', physics: { vehicleType: 'VTLightTank' } };
+sherman.position.set(200, 0, 0);
+const shermanGun = node(sherman, 'shermanBrowning_PCO1', [0.5, 1, 1]);
+shermanGun.userData = { templateKind: 'PlayerControlObject', control: 'shermanBrowning_PCO1', physics: { vehicleType: 'VTLightTank' } };
+const driverDoor = node(sherman, 'ShermanEntry', [-1.5, 0, -1.5]);
+const gunnerDoor = node(sherman, 'ShermanGunnerEntry', [1.5, 0, 1.5]);
+sherman.updateMatrixWorld(true);
+entry.entryPoints = [
+  { node: driverDoor, vehicle: sherman, control: 'Sherman', seatId: 'Sherman', radius: 2 },
+  { node: gunnerDoor, vehicle: sherman, control: 'Sherman', seatId: 'shermanBrowning_PCO1', radius: 2 },
+];
+out.shermanGunnerDoor = offered(201.5, -1, 1.5);
+held.add('Sherman');
+out.shermanGunnerDoorDriverIn = offered(201.5, -1, 1.5);
+held.clear();
+// The same hull with no `setVehicleType` (the template's 20): its seat stays.
+delete sherman.userData.physics;
+delete shermanGun.userData.physics;
+out.untypedGunnerDoor = offered(201.5, -1, 1.5);
 process.stdout.write(JSON.stringify(out));

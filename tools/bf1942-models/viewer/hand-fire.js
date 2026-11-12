@@ -13,6 +13,7 @@ import { roundHit } from './soldier-death.js';
 import { meetSoldier } from './skeleton-hit.js';
 import { friendlyDamage, roundPasses } from './friendly-fire.js';
 import { calcRecoil } from './recoil.js';
+import { medPackHeals, repairPackTarget } from './healing-packs.js';
 import { CameraShake } from './fire-shake.js';
 import { stepAlt, altBusy } from './hand-alt-fire.js';
 import { wantsSwitch } from './kit-select.js';
@@ -25,6 +26,7 @@ import { delayedFireCycle, delaySpan, fireCycle, hideSpan, timerTicks } from './
  * `clickQueued`, `damageVisuals`, `deployTeamId`, `dropClick`, `fireDetonator`, `fireStates`,
  * `guns`, `handWeapon`, `isDetonator`, `isExplosives`, `itemsLocked`,
  * `lineOfSight`, `LOCAL_PLAYER`, `healingPack`, `mouseInput`, `packThrown`, `params`, `playHandFire`,
+ * `reportPack` (in a room: the pack's round goes to the server), `vehicles`,
  * `playViewmodelClip`, `refetchHandFireSound`, `releaseHandFireLoop`,
  * `selectBestLoadedWeapon`, `soldier`, `thirdPerson`, `triggerHeld`, `updateViewmodelAnimation`, `vehicleAudio`, `vehicleDamage`,
  * `world`.
@@ -106,6 +108,9 @@ export function createHandFire(page) {
       bestMaterial = met.material;
     }
     if (best) {
+      // A teammate it touched says "Watch your aim!", damage or none
+      // (`BFSoldier::projectileHit` lnxded 0x0827ea20).
+      page.roundTouchedSoldier?.(best, myTeam);
       // The held weapon's own round (`fireArms.projectile`), priced against the
       // capsule's material (head, chest and limbs are each their own defence
       // group) at the distance it flew, and by `calcDamage` on a friend.
@@ -332,90 +337,74 @@ export function createHandFire(page) {
   const PULSE_CEILING = 0.25;
 
   /**
-   * One round of the medic bag: `BFSoldier::useMedPack()` (`0x082768d0`).
-   * The sweep takes every soldier object in `healDistance` of the holder —
-   * the `objectManager` vt+0x30 query at `0x08276949`, each candidate gated
-   * on the soldier template class (`0x0827697b`), the squared distance
-   * against `healDistance²` (`0x08276bd0`), an `isDestroyed` test and a
-   * full-health one (`0x08276c1a`/`0x08276c45`) — and heals each by
-   * `healFactor` through the negative-argument route into `Armor::heal`
-   * (`0x08276c6f`). No team gate exists in the function: the class test is
-   * the soldier template's, and a wounded enemy soldier in reach is healed
-   * exactly like a friend. The holder's own branch runs unconditionally
-   * after the loop (`0x0827698f`, the loop-exit falls into it): self is
-   * skipped in the sweep (`0x08276962`) and healed separately by
-   * `selfHealFactor`. `pack` carries the three numbers (`kit-loadout.js`
-   * `MEDIC_PACK`); the amount is per invocation and the pack fires at its
-   * `roundOfFire` (vanilla 10/s), so holding the trigger pays 2.5 HP/s to
-   * every wounded soldier in reach and 1.5 HP/s to the holder.
+   * One round of the medic bag: `BFSoldier::useMedPack()` (`0x082768d0`),
+   * the law in `healing-packs.js` `medPackHeals` that the bots and the room
+   * server run too: every wounded soldier within `healDistance` of the
+   * holder, friend or enemy (the function has no team test), takes
+   * `healFactor`, and the holder `selfHealFactor`. `pack` carries the three
+   * numbers (`kit-loadout.js` `healingPack`); the amount is per invocation
+   * and the pack fires at its `roundOfFire` (vanilla 10/s), so holding the
+   * trigger pays 2.5 HP/s to every wounded soldier in reach and 1.5 HP/s to
+   * the holder.
    */
   function useMedPack(pack) {
     const world = page.world;
     const me = page.soldier;
     if (!world || !me) return;
+    const soldiers = [];
     for (const [id, player] of world.players) {
-      if (id === page.LOCAL_PLAYER) continue;
-      const armor = world.armorOf(id);
-      if (!armor || armor.destroyed || armor.hitPoints >= armor.maxHitPoints) continue;
       const s = player.soldier;
-      if (!s) continue;
-      const dx = s.x - me.x, dy = s.y - me.y, dz = s.z - me.z;
-      if (dx * dx + dy * dy + dz * dz <= pack.radius * pack.radius) {
-        page.applyHeal?.(id, pack.allyHeal);
-      }
+      if (id === page.LOCAL_PLAYER || !s) continue;
+      soldiers.push({ id, x: s.x, y: s.y, z: s.z, armor: world.armorOf(id) });
     }
-    // The self branch: hp against max (a wounded man only), at the lower rate.
-    const armor = world.armorOf(page.LOCAL_PLAYER);
-    if (armor && !armor.destroyed && armor.hitPoints < armor.maxHitPoints) {
-      page.applyHeal?.(page.LOCAL_PLAYER, pack.selfHeal);
-    }
+    const holder = { id: page.LOCAL_PLAYER, x: me.x, y: me.y, z: me.z,
+                     armor: world.armorOf(page.LOCAL_PLAYER) };
+    for (const heal of medPackHeals(holder, soldiers, pack)) page.applyHeal?.(heal.id, heal.amount);
   }
 
   /**
-   * One round of the wrench: `BFSoldier::useRepairPack()` (`0x08276100`).
-   * The same `objectManager` sweep, but the candidate gates differ (`0x082764d0`):
-   * the template class test skips `BFSoldier` (`cmp 0x86c2b88`, so a man — and
-   * the holder himself — is never a target), keeps placed armour whose
-   * template is one the AI weapon's `strength` table rates (the vehicle class
-   * tables at `+0x2a0`/`+0x2b4`), and measures
-   * `distanceSqr <= (target.getRadius() + repairDistance)²` to the object's
-   * origin (`0x08276743`, `+0x2ec`). Wounded, undestroyed candidates compete
-   * on distance and the closest is healed after the loop ends
-   * (`0x082767e6`–`0x08276841`): not every vehicle in reach, the nearest one,
-   * by `repairFactor` (`0x08276210`, also through `Armor::heal`).
+   * One round of the wrench: `BFSoldier::useRepairPack()` (`0x08276100`),
+   * the law in `healing-packs.js` `repairPackTarget`: nothing while the
+   * holder crouches (`getPose() == 1`, `0x0827612d`; the crouched wrench
+   * disarms instead, which is not built), no hull the other side holds (the
+   * PlayerControlObject's team against the soldier's +0x53c, `0x08276731`),
+   * no Armor outside a PlayerControlObject, and of the wounded hulls left
+   * within `getRadius() + repairDistance` of their origin the closest, healed
+   * by `repairFactor`. (The crouched branch keeps the two projectile templates
+   * at `BFSoldierTemplate+0x2a0` / `+0x2b4`, `ExpPackProjectile` and
+   * `LandmineProjectile`, which it disarms.)
    *
    * The viewer has no per-object radius to stand in for `getRadius`, so the
    * gate measures to the placed node's bounding-sphere radius, computed once
    * and memoised on the damage-visual entry. Placed armour is
-   * `page.damageVisuals` joined to `page.vehicleDamage` — the same pair the
-   * splash pass walks.
+   * `page.damageVisuals` joined to `page.vehicleDamage`, the same pair the
+   * splash pass walks; a hull's side is its crew's, or the spawner's stamp
+   * (`vehicles.teamOf`, SEAT-27).
    */
   function useRepairPack(pack) {
     const me = page.soldier;
     if (!me) return;
-    let best = null;
-    let bestDist = Infinity;
+    const hulls = [];
     for (const [owner, visual] of page.damageVisuals ?? []) {
       if (visual?.wrecked || visual?.removed || !visual?.node) continue;
       const veh = page.vehicleDamage?.get?.(owner);
       if (!veh || veh.destroyed || veh.hitPoints >= veh.maxHitPoints) continue;
       const node = visual.node;
       // The engine measures to the object's origin, as the splash pass does
-      // (vehicle-hits.js' `splashTargets` — "a tank is not hurt less for
-      // being hit on the far corner of its hull"), and the gate widens by
-      // the hull radius: `getRadius() + repairDistance`. The bounding
-      // sphere stands in for `getRadius`.
+      // (vehicle-hits.js' `splashTargets`), and the gate widens by the hull
+      // radius: `getRadius() + repairDistance`.
       if (visual.boundRadius == null) {
         const box = new THREE.Box3().setFromObject(node);
         visual.boundRadius = box.isEmpty() ? 0 : box.getSize(_repairBox).length() / 2;
       }
       const p = node.getWorldPosition(_repairPos);
-      const dx = p.x - me.x, dy = p.y - me.y, dz = p.z - me.z;
-      const dist = Math.sqrt(dx * dx + dy * dy + dz * dz);
-      if (dist > visual.boundRadius + pack.radius) continue;
-      if (dist < bestDist) { bestDist = dist; best = veh; }
+      hulls.push({ x: p.x, y: p.y, z: p.z, radius: visual.boundRadius, armor: veh,
+                   pco: veh.isPco !== false, team: page.vehicles?.teamOf?.(node) ?? 0 });
     }
-    if (best) best.heal(pack.repairHeal);
+    const holder = { x: me.x, y: me.y, z: me.z, crouched: me.stance === 'crouch',
+                     team: page.world?.player(page.LOCAL_PLAYER)?.team ?? page.deployTeamId ?? 0 };
+    const best = repairPackTarget(holder, hulls, pack);
+    if (best) best.armor.heal(pack.repairHeal);
   }
 
   /** One semi-auto trigger pull, held by `footFire` until its round exists. */
@@ -783,7 +772,12 @@ export function createHandFire(page) {
         hw.cool = Math.max(0, hw.cool + fireCycle(hw.data?.roundOfFire));
         if (Number.isFinite(hw.rounds)) hw.rounds -= 1;
         beginHandFire(hw);
-        if (pack.kind === 'medic') useMedPack(pack); else useRepairPack(pack);
+        // In a room the server runs the pack on its own world and hands the
+        // hit points back (`server/room-packs.mjs`): the page's copy heals
+        // when the server's does, never ahead of it.
+        if (page.reportPack) page.reportPack(hw.name);
+        else if (pack.kind === 'medic') useMedPack(pack);
+        else useRepairPack(pack);
       }
       if (!firing) page.releaseHandFireLoop();
     }

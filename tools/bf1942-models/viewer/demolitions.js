@@ -64,9 +64,12 @@ export function createDemolitions(page) {
   // it leaves the hand, so the group is remembered here instead — the rounds
   // already in the air keep their own reference to it, which is what makes
   // that survivable (`disposeHandWeapon`'s surgical splice). Cleared on every
-  // spawn, because a new life is a new kit and an empty array; packs left over
-  // from the last one run their 240 s fuse out on their own, exactly as they
-  // do in the game.
+  // spawn, because a new life is a new kit and an empty array. Packs left over
+  // from the last one do not run their 240 s fuse out: they belong to the last
+  // kit's weapon, and go unexploded when that kit is destroyed, 30 s after a
+  // death on foot and at once after one in a seat
+  // (`FireArms::releaseProjectilePool` 0x08287ee0, FA-2, KITDROP-1/5;
+  // `kit-drops-page.js` `destroyKit`).
   demolitions.thrownPackGroup = null;
 
   /** The pouch's own counts (`kitAmmo`), which outlive the pack's rig the way

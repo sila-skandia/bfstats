@@ -48,7 +48,8 @@ import { copyViewOffset } from './video-settings.js';
  * `MAPS_BASE`, `masterVolume`, `MODELS_BASE`, `modelSoundBuffer`,
  * `optOnFoot`, `optPilot`, `params`, `playSupplyGive`, `renderer`, `scene`,
  * `soldier`, `SOLDIER_MAX_HP_FALLBACK`, `soldierBody`, `soldierDead`, `spawnLayout`, `sun`,
- * `supplyTarget`, `teamNation`, `triggerHeld`, `vehicleAudio`, `vehicleDamage`,
+ * `supplyTarget`, `teamNation`, `triggerHeld`, `vehicleAudio`, `vehicleDamage`, `vehicles`,
+ * `reportPack`,
  * `warmSubtree`, `warmups`, `world`.
  */
 export function createHandWeapon(page) {
@@ -176,7 +177,7 @@ export function createHandWeapon(page) {
     // cancelled the reload, rounds a relay's server never gave.
     // A soldier who is owed nothing gets nothing, and hears nothing: the depot
     // ticks every half second for as long as he stands on it.
-    if (!kitAmmo.rearm(types)) return;
+    if (!kitAmmo.rearm(types, page.world?.damageTables?.ammoTypes ?? null)) return;
     page.playSupplyGive();
   };
   soldierKit.weaponToken = 0;      // guards a slow load landing after a mode/map switch
@@ -206,6 +207,12 @@ export function createHandWeapon(page) {
   let menuPress = 0;
   soldierKit.takeMenuPress = () => { const n = menuPress; menuPress = 0; return n; };
   soldierKit.handSlot = null;        // the slot number currently in hand, or null
+  /** The kit object the soldier carries, as a token every group its weapons
+   *  make carries too (`group.kitLife`): a fresh one each life
+   *  (`ensureHandWeapon`), the picked-up kit's on a pickup (`equipKit`). When
+   *  that kit object is destroyed its weapons' rounds go with it, unexploded
+   *  (`gunfire.js` `releaseRounds`, `kit-drops-page.js`). */
+  soldierKit.kitLife = { kit: null };
   // The weapon-select bar: the client HUD's `Weapon` group, whose every field
   // the layout reads (`weapon-bar.js`, ledger HUD-14..HUD-17). The wheel only
   // moves its highlight; Fire commits it; an item change raises it for 1.5
@@ -578,6 +585,8 @@ export function createHandWeapon(page) {
       // (`chat-log.js` `killStamp`).
       if (hw.group) {
         hw.group.firer = page.LOCAL_PLAYER;
+        // The kit this weapon belongs to: its rounds die with that kit.
+        hw.group.kitLife = soldierKit.kitLife;
         hw.group.weapon = name;
         // `addRootSpeed 0` (every vanilla rifle, pistol and MG): the round
         // leaves without the soldier's velocity or the root speed's lift
@@ -594,6 +603,7 @@ export function createHandWeapon(page) {
         && g.node?.userData?.fireArms?.input === 'c_PIAltFire') ?? null;
       if (altGroup) {
         altGroup.firer = page.LOCAL_PLAYER;
+        altGroup.kitLife = soldierKit.kitLife;
         // The kill line names the weapon in hand, as the engine's names the
         // object a round belongs to: the knife, not its stab.
         altGroup.weapon = name;
@@ -642,10 +652,11 @@ export function createHandWeapon(page) {
     loadout.rollSpawnKit(flag);
     soldierKit.kitWeaponSlots = kitSlotsFor(flag);
     soldierKit.kitItemOrder = kitItemOrder(loadout.kitRowFor(kitLoadout(loadout.kitSide(flag), page.deployKit).kit));
-    // A fresh kit: a fresh pouch, and a plunger wired to nothing. Charges left
-    // over from the last life keep running their own 240 s fuse in the world,
-    // which is what the game does — the array the plunger walks belongs to the
-    // weapon, and the weapon died with the soldier.
+    // A fresh kit: a fresh pouch, and a plunger wired to nothing. The charges
+    // and mines the last life laid belong to the last kit's weapons, which the
+    // kit takes with it when it is destroyed (`kit-drops-page.js`,
+    // `gunfire.js` `releaseRounds`); a fresh kit object is a fresh token.
+    soldierKit.kitLife = { kit: null };
     demolitions.armDemolitions(flag);
     demolitions.forgetThrownPacks();
     // A new life is a new kit: every item full again. This is the one place
@@ -669,6 +680,11 @@ export function createHandWeapon(page) {
       // The rig survived the last life; its counts did not — it is re-pointed at
       // the new kit's full entry, and a magazine change in progress is dropped.
       soldierKit.handWeapon.ammo = ammoFor(name, soldierKit.handWeapon.data?.magazine || null);
+      // The new kit's: its rounds from now on are this life's
+      // (`round-launch.js` stamps each round at launch, so the last life's
+      // keep the last kit's token).
+      if (soldierKit.handWeapon.group) soldierKit.handWeapon.group.kitLife = soldierKit.kitLife;
+      if (soldierKit.handWeapon.alt?.group) soldierKit.handWeapon.alt.group.kitLife = soldierKit.kitLife;
       soldierKit.handWeapon.reload = 0;
       // The heat is the entry's too (`itemHeat`): the new life's barrel is
       // cold, not the last one's carried over through the kept rig.
@@ -690,8 +706,12 @@ export function createHandWeapon(page) {
    * kit's worn parts follow `currentKit`. Nothing here heals or refills.
    * False when the level's loadouts do not know the kit.
    */
-  function equipKit(kitName, ammo = [], flag = { team: page.deployTeamId }) {
+  function equipKit(kitName, ammo = [], flag = { team: page.deployTeamId }, kitLife = null) {
     if (!kitName || !loadout.loadouts?.kits?.[kitName]) return false;
+    // The kit object he takes, with whatever its weapons left in the world
+    // (FA-2: the pool is the weapon's, so its last owner's laid packs answer
+    // his plunger now, and go when this kit goes).
+    soldierKit.kitLife = kitLife ?? { kit: kitName };
     // The kit's rolled items are the ones its last owner was handed.
     loadout.adoptKitRolls(kitName, ammo);
     const row = loadout.kitRowFor(kitName);
@@ -728,6 +748,7 @@ export function createHandWeapon(page) {
     // (a stab); `playWorldShot` is that stab's report, at the soldier.
     get altQueued() { return page.altQueued; }, get dropAlt() { return page.dropAlt; },
     get playWorldShot() { return page.playWorldShot; },
+    get roundTouchedSoldier() { return page.roundTouchedSoldier; },
     get stabFootBody() { return page.stabFootBody; },
     get damageVisuals() { return page.damageVisuals; },
     get deployTeamId() { return page.deployTeamId; }, get dropClick() { return page.dropClick; },
@@ -748,6 +769,7 @@ export function createHandWeapon(page) {
     get vehicleAudio() { return page.vehicleAudio; }, get vehicleDamage() { return page.vehicleDamage; },
     get world() { return page.world; }, get mouseInput() { return page.mouseInput; },
     get raiseTick() { return soldierKit.raiseTick; },
+    get reportPack() { return page.reportPack; }, get vehicles() { return page.vehicles; },
   });
   const { footFire, footTrigger, isZoomed, startReload } = fire;
 

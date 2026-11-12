@@ -19,8 +19,10 @@ import {
 import { encodeJsonMsg, eventRow, frame, parseJson, serverTimeBytes } from './room-wire.mjs';
 import { chokeRates, sendSnapshots, snapshotRecord } from './room-stream.mjs';
 import { createControlChannel } from './room-control.mjs';
+import { teamToAddPlayer } from '../viewer/team-to-add.js';
 import { createRoomPads } from './room-pads.mjs';
 import { createRoomHits } from './room-hits.mjs';
+import { createRoomPacks } from './room-packs.mjs';
 
 // --- the room ----------------------------------------------------------------
 
@@ -37,8 +39,10 @@ import { createRoomHits } from './room-hits.mjs';
 export class Room {
   #control;
 
-  constructor({ code, level, mode = null, now = null }) {
+  constructor({ code, level, mode = null, now = null, random = null }) {
     this.code = code;
+    /** The auto-team's coin for a tie (`#autoTeam`, `rand() & 1`). */
+    this.random = random || Math.random;
     this.levelData = level;           // the shared LevelData
     // The layer the room plays: the one the creating join asked for
     // (`?mode=`, resolved the page's way), else the level's default.
@@ -94,6 +98,10 @@ export class Room {
       room: this,
       onRow: row => this.broadcast(eventRow(row.type, this.tick, row), null),
     });
+    // The medic bags and wrenches the players' pages fire, run here
+    // (room-packs.mjs): the heal is the server's, on the snapshot and the
+    // `hull` rows.
+    this.packs = createRoomPacks({ room: this });
   }
 
   level() { return this.levelData.name; }
@@ -152,13 +160,16 @@ export class Room {
     return { ok: true, slot, team };
   }
 
-  /** The engine's join half: fewer first, tie lands on team 1. */
+  /** The engine's join half for team 0: `PlayerManager::getTeamToAddPlayer`
+   *  (0x08261670, `viewer/team-to-add.js`) over every player on each side,
+   *  weighed by the team ratios, a tie at random (`rand() & 1`, 0x0826179e).
+   *  A room has no ratio settings, so both are the default's equal pair. */
   #autoTeam() {
     let one = 0, two = 0;
     for (const p of this.players.values()) {
       if (p.team === 1) one++; else if (p.team === 2) two++;
     }
-    return one <= two ? 1 : 2;
+    return teamToAddPlayer(one, two, 1, 1, this.random);
   }
 
   /** The HELLO row (netcode.js: slot, room, level, mode, team, name, slots,

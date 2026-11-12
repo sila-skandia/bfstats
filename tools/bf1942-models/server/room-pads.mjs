@@ -18,9 +18,9 @@
 //     per side (`padSides`), stood where the baked one stands, as the page's
 //     `loadPadVariants` stands it;
 //   * a hull's death: everyone in it dies with it (the page's
-//     `killOccupantInWreck`), its body stops simulating (`retireBody`), and its
-//     wreck goes after its Armor's time to live (`afterDeath`), whatever pad
-//     it came from;
+//     `killOccupantInWreck`), its body stays in the world as a parked one
+//     (0x0825d0b0 has no destroyed test, HP-21), and its wreck and its body go
+//     after its Armor's time to live (`afterDeath`), whatever pad it came from;
 //   * the abandoned hull's clock (SPAWN-13, `AbandonClock`): a pad's hull far
 //     from its pad, empty and with no soldier near, counts down `timeToLive`
 //     and then loses `damageWhenLost` a second (SPAWN-20's out-of-area bill is
@@ -187,6 +187,8 @@ export function createRoomPads({ room, onRow, unmount }) {
     vehicle?.reset();
     entry.live = true;
     entry.wreckAge = null;
+    // A depot the hull carries works again (`world-fields.js` `depotSuspended`).
+    if (entry.root?.userData) entry.root.userData.padAbsent = false;
     // The home pose is world space; a scene node's is written through its
     // parent (the spawners group), a placeholder's stands bare.
     _home.compose(entry.home.position, entry.home.quaternion, _unit);
@@ -217,6 +219,8 @@ export function createRoomPads({ room, onRow, unmount }) {
     const was = entry.live;
     entry.live = false;
     entry.wreckAge = null;
+    // ...and its depot with it, as the page's `markAbsent` stands one down.
+    if (entry.root?.userData) entry.root.userData.padAbsent = true;
     world.removeBody(entry.owner);
     instance.collider?.clearMovedOwner?.(entry.owner, { enable: false });
     instance.statics?.disableOwner?.(entry.owner);
@@ -225,7 +229,7 @@ export function createRoomPads({ room, onRow, unmount }) {
 
   /** A hull died this tick (the world's damage pass reports it): its crew
    *  die with it, before the authority's death pass reads their Armors, and
-   *  it becomes a wreck that stops simulating. */
+   *  it becomes a wreck that is still a body until its time to live. */
   function hullDeaths(step) {
     for (const change of step?.damage ?? []) {
       if (!change.died) continue;
@@ -237,7 +241,9 @@ export function createRoomPads({ room, onRow, unmount }) {
         if (player.armor && !player.armor.destroyed) player.armor.applyDamage(player.armor.hitPoints + 1);
         unmount(slot);
       }
-      world.retireBody(entry.owner);
+      // The wreck keeps its body, parked by the unmount, until `retire` at its
+      // time to live: `ResponsePhysicsManager::update` 0x0825d0b0 asks no
+      // destroyed flag (HP-21), so it still rolls, settles and is rammed.
       entry.wreckAge = 0;
     }
   }

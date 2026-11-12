@@ -42,7 +42,7 @@ export default {
     },
     back: {
       note: 'Leave as the Dip does, run 22 s, then turn back and come in under their tail for a burst. What you see is it failing: they never let you go, so turning back is a head-on pass, and then they are behind you again.',
-      verdict: { works: 0, of: 9, line: 'Never a shot that lands. They never let you go: turning back you pass 30 to 40 m apart and they are behind you again, their guns bearing for 13 to 35 s. In five of nine they land 5 to 26 rounds, and in two they shoot you down.' },
+      verdict: { works: 0, of: 9, line: 'Never a shot that lands. They never let you go: turning back you pass 30 to 40 m apart and they are behind you again, their guns bearing for 13 to 35 s. In five of nine they land 3 to 28 rounds, and in two they shoot you down.' },
     },
     chop: {
       note: 'The throttle back (S) in the circle, to turn inside them. What you see is it failing: a slower jet turns no tighter here, only slower, and sinks.',
@@ -50,7 +50,7 @@ export default {
     },
     reverse: {
       note: 'Roll out of the circle into the opposite turn, so that you meet them. What you see is it failing: the circle simply turns the other way, with no pass and no shot.',
-      verdict: { works: 0, of: 9, line: 'You never have a shot. In none of the nine is there a head-on pass: the circle turns the other way, 92 to 146 m apart at the closest, and nobody fires.' },
+      verdict: { works: 0, of: 9, line: 'You never have a shot. In none of the nine is there a head-on pass: the circle turns the other way, 87 to 147 m apart at the closest, and nobody fires.' },
     },
     low: {
       note: 'The circle flown nose low, to gain on them round the circle, then up into them from below. What you see is it nearly working: you get round behind them and the jet climbs back up to them at speed, but the nose never comes onto them.',

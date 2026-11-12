@@ -26,7 +26,8 @@ const materials = {
   42: { attGroup: 42, defGroup: 42, damage: 10 },
 };
 const modifiers = { 0: { 40: 0.001, 41: 0.001, 42: 0.001 }, 219: { 40: 10, 41: 4, 42: 2 } };
-const projectiles = { k98projectile: { material: 219 }, nomaterialprojectile: {} };
+const projectiles = { k98projectile: { material: 219 }, nomaterialprojectile: {},
+  k98riflegrenadeprojectile: { material: 219, noFFSound: true } };
 const guns = {
   materials, modifiers, projectileMaterials: projectiles, damageEffects: null,
   hits: [], effects: null,
@@ -67,4 +68,13 @@ const out = {
     unauthored: botRound({ round: { template: 'NoMaterialProjectile' } }, 41),
   },
 };
+// `noFFSound` (`ProjectileTemplate+0x14f`, FF-6): the table's row rides on
+// the impact record, which `vehicle-hits.js` hands `roundTouchedSoldier`.
+const ffRecord = template => {
+  guns.hits.length = 0;
+  impact(guns, { node: { name: 'K98' } }, { template, material: 219 },
+    { kind: 'soldier', material: 41, owner: -1, x: 0, y: 1, z: 0, nx: 0, ny: 0, nz: -1 }, null, 10);
+  return guns.hits[0].noFFSound;
+};
+out.noFFSound = { riflegrenade: ffRecord('K98RifleGrenadeProjectile'), rifle: ffRecord('K98Projectile') };
 process.stdout.write(JSON.stringify(out) + '\n');

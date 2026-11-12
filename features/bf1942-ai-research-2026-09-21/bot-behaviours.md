@@ -430,8 +430,11 @@ modifyForDriver` **0x0855f7d0**, `getRadioStrength` **0x0855fc10**,
   occupied and team-locked to another side, or an aircraft's engine heat is
   at 1 (`airOverheatBail`); else `SCurve(health) × (fireStrength × (w1 +
   0.15) + moveUrgency × w2) + Information+0x14`, with `w1 / w2` from the
-  bot's order strengths (`Bot` +0x168 / +0x16c: both 0 → 0.5 / 0.5, only the
-  first > 0 → 0 / 1, only the second → 1 / 0, else the normalised split),
+  bot's move and fire inclinations (`BotMain` vtable +0x168
+  `getMoveInclination` 0x0852e280 / +0x16c `getFireInclination` 0x0852e310,
+  not fields; corrected 2026-11-12: both 0 → 0.5 / 0.5, move only → 0 / 1,
+  fire only → 1 / 0, else the normalised split; each a `0.8 v + 0.2 acc`
+  smoothing of the Fire / MoveTo urgencies, stepped each decision pass),
   `moveUrgency = engineHeatInfluence × maxSpeed × 4` (× 2.5 instead when
   another bot already sits in it), and `fireStrength` the unit's weapon
   strengths with its manned seats' at 0.4 (0.9 for a plane's) folded against
@@ -459,7 +462,9 @@ modifyForDriver` **0x0855f7d0**, `getRadioStrength` **0x0855fc10**,
   within 12.375 m and with the unit "behind" the bot (`ObjectBehind` −0.8)
   the Use input (channel 10) is held until `ObjectOccupied`, `UpdateVehicle`
   swaps the bot's unit and `ChangeVehicle` re-registers its behaviours
-  (`ChangeInhibit` zeroes MoveTo while Change is active). The viewer walks to
+  (`ChangeInhibit`, Avoid 0.8 MoveTo 0 Idle 0.01 Fire 0.75 Special 0 Scout 0.5,
+  while a seated bot's Change is active on the rows that name it; on foot the
+  Infantery row's Change column is `UnitWeights`, nothing inhibited). The viewer walks to
   the door's own radius and asks the page for the seat (`EnterVehicle`).
 - **Driving** (`EntryTankMoveTo::execute`, `TankControl::
   controlTowardsDirection`): arrival inside the move's radius resets the

@@ -283,6 +283,31 @@ export function enemyBots(count, ratio = 1) {
   return Math.min(n, Math.max(0, Math.round((n + 1) * share - 1e-9)));
 }
 
+/** The BotRatio and NrOfLives step Instant Battle ships on: 2, NORMAL
+ *  (`menu/SkirmishMenu`'s slider defaults; bf1942-ai-research-2026-09-21
+ *  section 5.1). */
+export const SKIRMISH_NORMAL = 2;
+
+/**
+ * What Instant Battle hands the game beside the bot count and skill. Retail's
+ * `SkirmishMenu::continueStartSkirmish` (Mac 0x004ca5dc) converts the
+ * BotRatio and NrOfLives sliders with the skill (BF1942.exe
+ * `FUN_006dd910`'s skirmish arm reads `SkirmishSettings+0x68` and `+0x70`,
+ * 0x006dd926..0x006dd933, into AI-20's tables), and both ship on NORMAL: a
+ * 3:4 friendly:enemy split and 5 tickets for the player's own death. The
+ * page's Instant Battle draws no sliders for them (`bot-settings.js`), so
+ * every battle takes NORMAL's pair. `enemyBots` agrees with
+ * `getTeamToAddPlayer` topping the bots up one by one with the player
+ * counted (`team-to-add.js`) for every count up to `MAX_BOTS`, up to the
+ * coin of a tie.
+ */
+export function instantBattleOdds(count) {
+  return {
+    enemyBots: enemyBots(count, SKIRMISH_NORMAL),
+    deathPenalty: DEATH_PENALTY[SKIRMISH_NORMAL - 1],
+  };
+}
+
 /** The `teams` list `bot.js` `spawnBots` deals bots from (one entry a bot,
  *  `teams[i % length]`): `enemy` of them on `enemyTeam`, the rest on
  *  `friendlyTeam`, interleaved so both sides fill their spawn points. */

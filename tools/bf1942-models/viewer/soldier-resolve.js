@@ -6,9 +6,9 @@
 
 import { GRAVITY } from './point-body.js';
 import { ENGINE_TICK_RATE } from './soldier-locomotion.js';
-import { BODY_RADIUS } from './soldier-pose.js';
+import { BODY_RADIUS, CHARACTER_HEIGHT } from './soldier-pose.js';
 import {
-  JUMP_CONTACT_NORMAL_Y, MATERIAL_WATER, STEP_HEIGHT, SNAP_DOWN, MAX_GROUND_SLOPE,
+  JUMP_CONTACT_NORMAL_Y, MATERIAL_WATER, MATERIAL_KILL, STEP_HEIGHT, SNAP_DOWN, MAX_GROUND_SLOPE,
   OBSTACLE_HANDLER_SPEED_SQ,
 } from './soldier-locomotion.js';
 
@@ -39,7 +39,7 @@ const SLIDE_PASSES = 4;
 // owns and reuses, so the nearest of several sphere sweeps has to be copied out
 // before the next call overwrites it.
 const _contact = {
-  t: 0, nx: 0, ny: 1, nz: 0, px: 0, py: 0, pz: 0, material: 0, owner: -1, depth: 0,
+  t: 0, nx: 0, ny: 1, nz: 0, px: 0, py: 0, pz: 0, material: 0, triangle: -1, owner: -1, depth: 0,
 };
 
 /** Scratch for `sweepCapsule`'s walk direction. */
@@ -127,6 +127,7 @@ function sweepCapsule(world, x, y, z, dx, dy, dz, dist, radius, offsets,
     _contact.nx = hit.nx; _contact.ny = hit.ny; _contact.nz = hit.nz;
     _contact.px = hit.px; _contact.py = hit.py; _contact.pz = hit.pz;
     _contact.material = hit.material;
+    _contact.triangle = hit.triangle ?? -1;
     _contact.owner = hit.owner;
     _contact.depth = hit.depth ?? 0;
   }
@@ -173,6 +174,25 @@ function recordContact(walker, nx, ny, nz, material, terrain = false) {
   }
 }
 
+/**
+ * Whether the engine would have found `hit`'s face at all: its one-sided test
+ * (ledger COL-23) counts a face only from in front of its stored normal,
+ * `(v2 - v0) x (v1 - v0)` in glTF space, and this resolve is two-sided with
+ * the normal turned toward the probe (`body-statics.js` divergence 1). A kill
+ * face is billed only from its front (`MATERIAL_KILL`). A hit with no static
+ * triangle behind it is judged by its normal: vanilla's kill faces are floors.
+ */
+function metFromFront(world, hit) {
+  const tris = world?.statics?.tris;
+  const t = hit.triangle;
+  if (!tris || !(t >= 0)) return hit.ny > 0;
+  const j = t * 9;
+  const ax = tris[j + 6] - tris[j], ay = tris[j + 7] - tris[j + 1], az = tris[j + 8] - tris[j + 2];
+  const bx = tris[j + 3] - tris[j], by = tris[j + 4] - tris[j + 1], bz = tris[j + 5] - tris[j + 2];
+  const nx = ay * bz - az * by, ny = az * bx - ax * bz, nz = ax * by - ay * bx;
+  return nx * hit.nx + ny * hit.ny + nz * hit.nz > 0;
+}
+
 /** The spheres making up the capsule, lowest lifted by a step when grounded. */
 function capsule(walker) {
   const height = walker.height;
@@ -202,6 +222,7 @@ export function resolveMove(walker) {
   const body = walker.body;
   walker.contacts = 0;
   walker.obstacleContacts.length = 0;
+  walker.killFace = false;
   // Every handler, the wire's veto included, runs only above this contact
   // speed (collision-response.md §6.2); a body slower than it meets the wire
   // as any static. A static's contact speed is the body's own velocity.
@@ -226,6 +247,7 @@ export function resolveMove(walker) {
     }
     walker.contacts++;
     recordContact(walker, hit.nx, hit.ny, hit.nz, hit.material);
+    if (hit.material === MATERIAL_KILL && metFromFront(world, hit)) walker.killFace = true;
     const advance = Math.max(0, hit.t - SKIN);
     px += dx * advance; py += dy * advance; pz += dz * advance;
     // A floor-ish contact is ground, which is how you stand on a bunker roof
@@ -651,4 +673,322 @@ export function settleFeet(walker) {
   if (world && world.heightfield && walker.grounded) {
     walker.material = world.heightfield.material(p.x, p.z);
   }
+}
+
+// --- a moving hull against them ------------------------------------------
+//
+// The engine's narrow phase for a soldier on foot and a moving hull, which
+// pushes the soldier out of the hull (and so along in front of
+// it) and hands the contact to the run-over damage.
+//
+// What retail does (lnxded; features/bf1942-engine-reference, COL-2, COL-3,
+// COL-6, COL-9, and the soldier rows below):
+//
+//   * The soldier is always the VERTEX side of a soldier-hull pair, weight 1.0
+//     (collision-response.md 5.3, `ResponsePhysicsManager::checkObjectVsObjects`
+//     0x0825d820), whichever of the two the manager was visiting, and the
+//     hull's faces are col1 (`checkObjectVsObject` 0x08259690 asks LOD 1 for a
+//     `CID_BFSoldierTemplate` vertex side).
+//   * Their vertices are the 17 `SkeletonCollisionMeshTemplate`'s constructor
+//     hard-codes (0x083af375-0x083af62a; -0.2, -0.4 and 0.4 are the floats at
+//     0x086e972c, 0x086e9730 and 0x086c4f70), in their origin's frame, the
+//     origin a metre over their feet in every pose (PHY-10, PHY-38):
+//     the foot (0, -1, 0), a ring of four at -0.6, a ring of eight at 0 and
+//     four at 0.8.
+//   * Each is a ray from their origin as it stood one tick ago in the hull's
+//     moving frame, `S = origin - (vSoldier - vHull) dt`, to the vertex where
+//     it is now, against the hull's faces one-sided (a face counts only when
+//     S is in front of it and the vertex on or behind it, COL-23). From
+//     inside a hull every face is a back face, so a soldier already in one is
+//     never held there.
+//   * The share is by the roots' masses, `s = mHull / (mSoldier + mHull)`,
+//     snapped to 1 over 0.95 (COL-2, `0x0825a3be`): every vanilla hull
+//     outweighs a soldier twenty times over, so they take the whole push and
+//     the hull feels nothing.
+//   * For any vertex but the foot (vertex 0), the push is NOT the face normal:
+//     `0x0825a0eb`-`0x0825a1e5` replaces it with the direction from the hit
+//     back to S, flattened to the horizontal when the hit is within 0.65 m
+//     (0x086cfc28) of their origin's height, the depth staying the end point's
+//     plane distance; past 0.65 m the direction keeps its height and the depth
+//     is the distance from the hit to the vertex along the ray. So a hull's
+//     side or nose shoves them sideways along the ground, never down into it or
+//     up its armour; the foot alone keeps the face's own normal, which is how
+//     they stand on a deck.
+//   * `impulseOn` 0x08258900 merges the pushes per axis (`setAdjust`), cancels
+//     the relative speed along each, and `solveImpulse` 0x08258d30 moves them
+//     out at once and posts `speedAdjust x 30 x (1 + e)/2` (e = 0) for the
+//     next tick (COL-9): they are pushed clear and given half the hull's closing
+//     speed, tick after tick, and carried in front of it.
+//   * Before the response, a contact whose relative speed squared exceeds 0.1
+//     calls both `handleCollision`s (collision-response.md 6.2); the soldier's
+//     (`BFSoldier::handleCollision` 0x0827d3b0 over `SimpleObject::
+//     handleCollision` 0x081dab40) bills the soldier-victim branch of
+//     `handleCollisionObjectVsObject` 0x081551c0 once a second per hull
+//     (COL-3, COL-5): nothing under 8 m/s (0x08155a10), and `crash-damage.js`
+//     `soldierCollisionDamage` above it. The face normal, not the replaced
+//     one, is what the handler is handed.
+//
+// So in retail a hull never ends up over a soldier: under 8 m/s it pushes them
+// ahead and aside, and above it the same push comes with the run-over damage.
+//
+// What the page did instead: the soldier swept only their own motion against
+// each hull's standing pose (`soldier-resolve.js` `resolveMove`), and the
+// sweep lets go of a face a sphere already overlaps. A hull driven into them
+// came on through, and once its faces were round them the two-sided sweep held
+// them inside (the owner's report, 2026-11-12; tests/test_hull_runover.py).
+//
+// Ours, and said so: the hull's velocity is its published pose's move since
+// this soldier last looked (`WorldCollider.setMovedOwner`), linear only like
+// `relV` (the hull's spin is not in `S`, as it is not in the engine's); the
+// mass share is taken as the snap (no hull's mass reaches the collider); and
+// the speed adjust lands on this tick's velocity instead of next tick's
+// accumulator.
+
+/** `SkeletonCollisionMeshTemplate`'s 17 vertices, origin frame (see header). */
+export const SOLDIER_HULL_VERTICES = Object.freeze([
+  [0, -1, 0],
+  [-0.2, -0.6, -0.2], [-0.2, -0.6, 0.2], [0.2, -0.6, 0.2], [0.2, -0.6, -0.2],
+  [-0.2, 0, -0.4], [-0.4, 0, -0.2], [-0.4, 0, 0.2], [-0.2, 0, 0.4],
+  [0.2, 0, 0.4], [0.4, 0, 0.2], [0.4, 0, -0.2], [0.2, 0, -0.4],
+  [0, 0.8, -0.4], [0, 0.8, 0.4], [0.4, 0.8, 0], [-0.4, 0.8, 0],
+].map(v => Object.freeze(v)));
+
+/**
+ * `ResponsePhysics::setAdjust` 0x0825cec0, one axis (`body-contact.js`
+ * `setAdjust`, repeated here so this module keeps the imports the tests that
+ * copy it already list): empty takes the candidate, opposite signs add, the
+ * same sign keeps the larger.
+ */
+function setAdjust(current, candidate) {
+  if (current === 0) return candidate;
+  if (current > 0) return candidate > 0 ? Math.max(current, candidate) : current + candidate;
+  return candidate < 0 ? Math.min(current, candidate) : current + candidate;
+}
+
+/** Every vertex's material, `0x29` (the constructor's loop after the table). */
+export const SOLDIER_VERTEX_MATERIAL = 41;
+
+/** Within this height of their origin a hit's push is flattened (0x086cfc28). */
+export const FLAT_PUSH_BAND = 0.65;
+
+/** `|relV|^2` over which the handlers run (collision-response.md 6.2). */
+const HANDLER_SPEED_SQ = 0.1;
+
+/** `solveImpulse`'s `(1 + e) / 2` with every hull and soldier material's e = 0
+ *  (COL-9): the share of the speed adjust one tick of the posted
+ *  acceleration (`x 30`, one 1/30 s tick) puts on them. */
+const SPEED_ADJUST_SHARE = 0.5;
+
+/** A published move longer than this between two looks is a teleport (a
+ *  respawned or replaced hull), not motion. */
+const TELEPORT = 8;
+
+/** How far over their origin `pushOutOfHulls` looks for a hull's roof seen
+ *  from inside, in metres. */
+const ROOF_PROBE = 4;
+
+/** Back faces skipped along one probe before it gives up. */
+const MAX_BACK_FACES = 4;
+
+const _probe = { t: 0, x: 0, y: 0, z: 0, nx: 0, ny: 1, nz: 0, dx: 0, dy: 0, dz: 0,
+                 material: 0, kind: '', owner: -1, triangle: -1 };
+const _hit = { x: 0, y: 0, z: 0, nx: 0, ny: 0, nz: 0, material: 0, triangle: -1 };
+
+/**
+ * The first face along `S -> E` that the probe meets from its front, in world
+ * space, into `_hit`: 1. -1 when the first face it met was a back face and no
+ * front face followed (S is inside the hull), 0 for nothing. `m` is a `WorldCollider.moved` record.
+ * The index's triangles store `(v1 - v0) x (v2 - v0)` pointing into a closed
+ * hull (every closed collision mesh on Wake measures a negative signed volume
+ * that way), so the engine's face normal is its opposite (COL-23).
+ */
+function frontFace(statics, m, owner, sx, sy, sz, ex, ey, ez) {
+  const e = m.inv, f = m.fwd;
+  let lx = e[0] * sx + e[4] * sy + e[8] * sz + e[12];
+  let ly = e[1] * sx + e[5] * sy + e[9] * sz + e[13];
+  let lz = e[2] * sx + e[6] * sy + e[10] * sz + e[14];
+  const qx = e[0] * ex + e[4] * ey + e[8] * ez + e[12];
+  const qy = e[1] * ex + e[5] * ey + e[9] * ez + e[13];
+  const qz = e[2] * ex + e[6] * ey + e[10] * ez + e[14];
+  let dx = qx - lx, dy = qy - ly, dz = qz - lz;
+  let len = Math.hypot(dx, dy, dz);
+  if (len < 1e-6) return 0;
+  let result = 0;
+  dx /= len; dy /= len; dz /= len;
+  const p = statics.tris;
+  for (let k = 0; k < MAX_BACK_FACES && len > 1e-6; k++) {
+    _probe.dx = dx; _probe.dy = dy; _probe.dz = dz;
+    const hit = statics.cast(lx, ly, lz, dx, dy, dz, len, -1, _probe, owner,
+                             false, false, -Infinity, 2, m.sub ?? -1);
+    if (!hit) return result;
+    const i = hit.triangle * 9;
+    const e1x = p[i + 3] - p[i], e1y = p[i + 4] - p[i + 1], e1z = p[i + 5] - p[i + 2];
+    const e2x = p[i + 6] - p[i], e2y = p[i + 7] - p[i + 1], e2z = p[i + 8] - p[i + 2];
+    // The engine's normal, out of the hull.
+    let nx = -(e1y * e2z - e1z * e2y), ny = -(e1z * e2x - e1x * e2z), nz = -(e1x * e2y - e1y * e2x);
+    const nl = Math.hypot(nx, ny, nz);
+    if (nl > 1e-12 && nx * dx + ny * dy + nz * dz < 0) {
+      nx /= nl; ny /= nl; nz /= nl;
+      _hit.x = f[0] * hit.x + f[4] * hit.y + f[8] * hit.z + f[12];
+      _hit.y = f[1] * hit.x + f[5] * hit.y + f[9] * hit.z + f[13];
+      _hit.z = f[2] * hit.x + f[6] * hit.y + f[10] * hit.z + f[14];
+      _hit.nx = f[0] * nx + f[4] * ny + f[8] * nz;
+      _hit.ny = f[1] * nx + f[5] * ny + f[9] * nz;
+      _hit.nz = f[2] * nx + f[6] * ny + f[10] * nz;
+      _hit.material = hit.material;
+      _hit.triangle = hit.triangle;
+      return 1;
+    }
+    // A back face: the probe is leaving the hull here. Go on past it.
+    if (k === 0) { result = -1; _hit.triangle = hit.triangle; }
+    const step = hit.t + 1e-4;
+    lx += dx * step; ly += dy * step; lz += dz * step;
+    len -= step;
+  }
+  return result;
+}
+
+/**
+ * Push `walker` (a `SoldierBody`) out of every moved hull that has come into
+ * them this tick, the engine's way (above). Run after the capsule
+ * sweep has moved them, before their feet are put on the ground. Fills
+ * `walker.hullContacts` with this tick's run-over contacts, one per hull:
+ * `{ owner, speed, rel: [x,y,z], normal: [x,y,z], hullVelocity: [x,y,z],
+ *    soldierVelocity: [x,y,z], material, x, y, z }`.
+ */
+export function pushOutOfHulls(walker, dt) {
+  const contacts = walker.hullContacts;
+  contacts.length = 0;
+  const world = walker.world;
+  const moved = world?.moved;
+  const seen = walker._hullSeen;
+  if (!moved?.size || !world.statics?.cast) { seen?.clear(); return; }
+  const statics = world.statics;
+  const body = walker.body;
+  const p = body.position, prev = body.previous, v = body.velocity;
+  const ox = p.x, oy = p.y + CHARACTER_HEIGHT, oz = p.z;
+  const px = prev.x, py = prev.y + CHARACTER_HEIGHT, pz = prev.z;
+  const c = Math.cos(walker.yaw ?? 0), s = Math.sin(walker.yaw ?? 0);
+  let pushX = 0, pushY = 0, pushZ = 0, speedX = 0, speedY = 0, speedZ = 0;
+  for (const [key, m] of moved) {
+    const owner = m.sub >= 0 ? m.owner : key;
+    const f = m.fwd;
+    // The hull's move since this soldier last looked, its linear `vHull dt`.
+    let last = seen.get(key);
+    let hx = 0, hy = 0, hz = 0;
+    if (last) {
+      hx = f[12] - last.x; hy = f[13] - last.y; hz = f[14] - last.z;
+      if (hx * hx + hy * hy + hz * hz > TELEPORT * TELEPORT) hx = hy = hz = 0;
+    } else {
+      last = { x: 0, y: 0, z: 0 };
+      seen.set(key, last);
+    }
+    last.x = f[12]; last.y = f[13]; last.z = f[14];
+    if (owner === walker.ignoreOwner) continue;
+    // Their 17 vertices reach 1.8 m from their origin at most; the probes start
+    // at most the tick's two moves further off.
+    const reach = m.radius + 1.0 + Math.hypot(hx, hy, hz) + Math.hypot(ox - px, oy - py, oz - pz);
+    const cx = m.x - ox, cy = m.y - oy, cz = m.z - oz;
+    if (cx * cx + cy * cy + cz * cz > reach * reach) continue;
+    // `S`: their origin one tick ago, carried by the hull's move.
+    const sx = px + hx, sy = py + hy, sz = pz + hz;
+    const vhx = dt > 0 ? hx / dt : 0, vhy = dt > 0 ? hy / dt : 0, vhz = dt > 0 ? hz / dt : 0;
+    const rx = v.x - vhx, ry = v.y - vhy, rz = v.z - vhz;
+    let contact = null, fronts = 0, backs = 0;
+    for (let i = 0; i < SOLDIER_HULL_VERTICES.length; i++) {
+      const [vx, vy, vz] = SOLDIER_HULL_VERTICES[i];
+      const ex = ox + vx * c + vz * s, ey = oy + vy, ez = oz - vx * s + vz * c;
+      const met = frontFace(statics, m, owner, sx, sy, sz, ex, ey, ez);
+      // Barbed wire a round's spawner stood (a moved `Obstacle` owner, bf1918's
+      // `BarbWire5`): `Obstacle::handleCollision` 0x08315e10 answers 0 above
+      // the handlers' gate, so there is no push at all, only the touch the
+      // capsule sweep already records and bills (`resolveMove`, the slow and
+      // the 5 HP); under the gate it is as solid as any static. Never a
+      // reason to look through it either: a man in a coil is in the wire.
+      const wire = met !== 0 && statics.obstacleOf?.(_hit.triangle) >= 0;
+      if (wire && (met < 0 || rx * rx + ry * ry + rz * rz > OBSTACLE_HANDLER_SPEED_SQ)) continue;
+      if (met < 0) backs++;
+      if (met <= 0) continue;
+      fronts++;
+      const H = _hit;
+      // The end point's plane distance, <= 0 (`f2`).
+      let depth = (ex - H.x) * H.nx + (ey - H.y) * H.ny + (ez - H.z) * H.nz;
+      let nx = H.nx, ny = H.ny, nz = H.nz;
+      if (i !== 0) {
+        // 0x0825a0eb: back toward `S`, flat inside the band.
+        nx = sx - H.x; ny = sy - H.y; nz = sz - H.z;
+        if (Math.abs(oy - H.y) < FLAT_PUSH_BAND) {
+          ny = 0;
+        } else {
+          // `f3`: minus the hit's distance to the vertex along the ray.
+          depth = -Math.hypot(ex - H.x, ey - H.y, ez - H.z);
+        }
+        const l = Math.hypot(nx, ny, nz);
+        if (l < 1e-6) continue;
+        nx /= l; ny /= l; nz /= l;
+      }
+      if (depth > 0) depth = 0;
+      // `impulseOn`: push out by the depth, cancel the speed along it.
+      pushX = setAdjust(pushX, -depth * nx);
+      pushY = setAdjust(pushY, -depth * ny);
+      pushZ = setAdjust(pushZ, -depth * nz);
+      const k = -(rx * nx + ry * ny + rz * nz);
+      speedX = setAdjust(speedX, k * nx);
+      speedY = setAdjust(speedY, k * ny);
+      speedZ = setAdjust(speedZ, k * nz);
+      // The handlers: the first vertex past 0.1 m^2/s^2 of relative speed.
+      if (!contact && rx * rx + ry * ry + rz * rz > HANDLER_SPEED_SQ) {
+        contact = {
+          owner, speed: Math.hypot(rx, ry, rz), rel: [rx, ry, rz],
+          normal: [H.nx, H.ny, H.nz], hullVelocity: [vhx, vhy, vhz],
+          soldierVelocity: [v.x, v.y, v.z], material: H.material,
+          x: H.x, y: H.y, z: H.z,
+        };
+      }
+    }
+    if (contact) contacts.push(contact);
+    // Already inside it: the engine finds no face from in there and they walk
+    // out, where the page's two-sided sweep would hold them (`resolveMove`).
+    // So the sweep looks through this hull until they are clear of it, as it
+    // does for a man spawned inside one (`SoldierBody.ignoreHullWithin`).
+    // Inside means enclosed: the hull's roof over their origin is a back face
+    // too. A probe that met only the back of an open plate (a fence, a wall
+    // whose faces look the other way) is no reason to let the page's
+    // two-sided sweep through it.
+    if (!fronts && backs && walker.ignoreOwner < 0
+        && frontFace(statics, m, owner, sx, sy, sz, sx, sy + ROOF_PROBE, sz) < 0) {
+      walker.ignoreHullWithin?.({ owner, x: m.x, z: m.z, r: m.radius }, 30);
+    }
+  }
+  // Forget hulls that are no longer published.
+  if (seen.size > moved.size) for (const key of seen.keys()) if (!moved.has(key)) seen.delete(key);
+  // `solveImpulse`, gated on a non-zero positional adjust (COL-9).
+  if (pushX === 0 && pushY === 0 && pushZ === 0) return;
+  p.x += pushX; p.y += pushY; p.z += pushZ;
+  v.x += speedX * SPEED_ADJUST_SHARE;
+  v.y += speedY * SPEED_ADJUST_SHARE;
+  v.z += speedZ * SPEED_ADJUST_SHARE;
+  walker.hullPushed = true;
+}
+
+/**
+ * The run-over damage for one contact `pushOutOfHulls` recorded: the
+ * soldier-victim branch of COL-3 (`crash-damage.js` `soldierCollisionDamage`,
+ * V0's exact form), the face's material the attacker's, their vertex's 41 the
+ * victim's, both bodies' speeds projected on the contact speed's direction.
+ * `fallHeight` is `lastCollisionHeight - y` (HP-14's `F`).
+ */
+export function runOverInputs(contact, { fallHeight = 0, kitDamping = 1 } = {}) {
+  const [rx, ry, rz] = contact.rel;
+  const l = Math.hypot(rx, ry, rz) || 1;
+  const ux = rx / l, uy = ry / l, uz = rz / l;
+  const [hx, hy, hz] = contact.hullVelocity;
+  const [vx, vy, vz] = contact.soldierVelocity;
+  return {
+    speed: contact.rel, normal: contact.normal,
+    matAttacker: contact.material, matVictim: SOLDIER_VERTEX_MATERIAL,
+    attackerSpeedAlong: hx * ux + hy * uy + hz * uz,
+    victimSpeedAlong: vx * ux + vy * uy + vz * uz,
+    fallHeight, kitDamping,
+  };
 }

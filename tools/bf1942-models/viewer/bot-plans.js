@@ -7,7 +7,8 @@
 import { isWalkable, traceClear } from './nav-grid.js';
 import { playerPosition, sensedPoint } from './bot-sense.js';
 import { scoutPose, takeCoverPose, fixedPose, directionPose, POSE_EYE } from './bot-pose.js';
-import { firingPose, firePlanFor, fireApproachStep, choseWeapon, FIRE, FIRE_APPROACH, weaponHeatHolds } from './bot-fire.js';
+import { firingPose, firePlanFor, fireApproachStep, choseWeapon, FIRE, FIRE_APPROACH, weaponHeatHolds,
+         triggerWindow, decisionPhase } from './bot-fire.js';
 import { SCOUT, TAKE_COVER, MEDIC } from './bot-behaviours.js';
 import { planeFireMode, PLANE_FIRE, boatControl, BOAT } from './bot-vehicle-air.js';
 import { freeLevel } from './nav-grid.js';
@@ -189,7 +190,7 @@ export function planFire(bot, now) {
       { type: PLAN_ACTION.MouseTurretAimAt, targetId: bot.firingTarget, targetPos: [...bot.targetPosition] },
       { type: weapon?.burst ? PLAN_ACTION.TriggerContinously : PLAN_ACTION.Trigger,
         targetId: bot.firingTarget, targetPos: [...bot.targetPosition], startedAt: now, timeout: FIRE.planTimeout,
-        shots: weapon?.burst ? 0 : Math.min(FIRE.shotsMax, 1 + Math.floor(Math.random() * FIRE.shotsMax)) },
+        shots: 0 },
     ];
     plan.targetId = bot.firingTarget;
     plan.startedAt = now;
@@ -1132,6 +1133,9 @@ export function execTrigger(bot, action, now) {
         && !holdFireFor(bot, action, pos)) bot.isFiring = true;
     return false;
   }
+  // On foot the trigger runs on the bot's decision clock: a period's window,
+  // its round budget (bot-fire.js `triggerWindow`). Not the medic's heal.
+  if (!bot.vehicle && !action.heal && !soldierTriggerOpen(bot, action)) return false;
   const s = bot.vehicle?.kind === 'air' ? bot._noseReference() : bot._aimReference();
   const want = faceTarget(bot._aimOrigin(), [pos[0], pos[1] + 1.0, pos[2]]);
   const dy = wrapAngle(want.yaw - (s?.yaw ?? bot.yaw));
@@ -1146,8 +1150,26 @@ export function execTrigger(bot, action, now) {
 }
 
 /**
- * The hold-fire (INVENTION, 2026-11-11; `friendly-fire.js` `HOLD_FIRE`,
- * features/bot-friendly-fire "Decisions"): true while a living teammate's
+ * Whether a soldier's trigger may go down this tick: the period's window and
+ * budget (`triggerWindow`) over the bot's tick count (`bot._aiTicks`, bot.js
+ * `tick`), its fixed phase, its rounds this plan and the held weapon's rounds.
+ */
+export function soldierTriggerOpen(bot, action) {
+  const weapon = bot.weapons?.[bot.weaponIndex] ?? bot.weaponAi ?? null;
+  const data = weapon?.name ? bot.weaponData?.[weapon.name] : null;
+  const mag = data?.magazine;
+  const ammo = mag?.size > 0 ? mag.size * Math.max(1, mag.magazines ?? 1) : -1;
+  action.window ??= {};
+  return triggerWindow(action.window, {
+    ticks: bot._aiTicks ?? 0, phase: bot._decisionPhase ??= decisionPhase(bot.playerId),
+    shots: bot._shotsThisPlan ?? 0, burst: !!weapon?.burst, ammo,
+  });
+}
+
+/**
+ * The hold-fire (INVENTION, 2026-11-11, kept on purpose: the owner confirmed
+ * it on 2026-11-12 after the retail inverse audit; `friendly-fire.js`
+ * `HOLD_FIRE`, features/bot-friendly-fire "Decisions"): true while a living teammate's
  * body lies in the line from the bot's muzzle to `targetPos`'s aim point,
  * nearer than the target, so the trigger stays up and the aim goes on. The
  * engine has no such test (FF-7). On foot, a bot that has held for

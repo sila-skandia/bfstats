@@ -101,12 +101,12 @@ here, F-16:
   still 0 of 9, and diving sooner (wings past 30 to 150 deg rolled) is
   still shot down in nine of nine.
 - **The Flip** no longer goes to 1,848 m: its turning fight tops out at
-  780 m (838 under the first roof) and ends 124 to 357 m apart (was 1,013
+  765 m (780 before the retail g of 2026-11-12, 838 under the first roof) and ends 124 to 357 m apart (was 1,013
   to 1,494 in three before any roof). Its quoted numbers and its 0 of 9 are
   unchanged.
 
 No F-16 verdict flipped (Dip 9, Flip 0, Ninja 0) and `survival` stays
-"yes". The highest anyone goes in any demo or move is 780 m.
+"yes". The highest anyone goes in any demo or move is 765 m (780 before the 2026-11-12 retail g).
 
 The rest of this section is the lesson's plans as the shared roof flies
 them; the next section is what the jet aces do instead.
@@ -171,12 +171,12 @@ with every loop from 525 m under 800 m on both. The test holds the 525 and
 - **MiG-29:** the Dip's and the Flip's ace, from 455 to 456 m at 119 m/s,
   now loops: +195 m in 5.1 s, slowest 90 m/s, 170 deg round. The Dip is a
   real 9 of 9: they roll out 388 to 510 m from you at 8.7 to 9.2 s, chase,
-  let you go at 755 to 801 m at 17.3 to 18.1 s, and you are 3,502 to
+  let you go at 755 to 806 m at 17.3 to 18.1 s, and you are 3,502 to
   3,719 m apart at 32 s, never fired at. Flip 0, Ninja 0.
 - **No ace ends a fight in a loop.** In every start of every demo and move
   on both jets the ace's last phase is none of `immelmann`, `rollout`,
   `turn`, `split` or `pullthrough`, and every Immelmann begun reaches `top`.
-- **Tops:** 780 m on the F-16 (the Flip's turning fight), 782 m on the
+- **Tops:** 765 m on the F-16 (the Flip's turning fight), 782 m on the
   MiG-29 (the same).
 
 ## What the nine F-16 flights showed, before and after
@@ -191,7 +191,7 @@ Hits are "ace/you", rounds each side landed.
 | `immelmann` follow them up | nobody down, 0/0 to 0/3; your slowest 66-68, landing fire 0-0.1 s, closest 50-54 m | same fight | Spitfire's "you hang under their top" is false: **rewritten** (you keep your speed, still no shot) |
 | `immelmann-counter` meet the top | nobody down, 0/0 to 0/5; landing fire 0.2-0.7 s, closest 23-43 m, they fire nothing | same fight; tab "You meet them coming back" | "shoot as they hang there" is false (slowest 69 m/s; `turnaroundsMeetTop`'s `shoot` needs them under 45 Spitfire units and never opens): **rewritten** as a head-on snap |
 | `split` let them go | **no split-S at all**: the ace is at 105 m/s by 650 m and Immelmanns at 5.2-5.3 s; 0/0 | ace staged 120 m closer (`[40, 460, -640]`): split-S in all nine at 0.0-0.4 s, -163 m, 58 -> 96 m/s, 5.3 s; 0/0, nobody fires | **tuned** to hold (a): the split-S is real for a slow jet, the stage just has to catch it slow |
-| `dip` | 9 of 9 | 9 of 9 (same fight): roll out 277-342 m from you, chase from 257-263, let go at 634-704 m at 17.5-17.9 s, 2937-3081 m apart at 32 s, never fired | holds; verdict line in jet numbers |
+| `dip` | 9 of 9 | 9 of 9 (same fight): roll out 277-342 m from you, chase from 257-263, let go at 634-704 m at 17.5-17.9 s, 2933-3081 m apart at 32 s, never fired | holds; verdict line in jet numbers |
 | `flip` | 0 of 9 | 0 of 9 (same fight): round at 9.7-10.2 s, 114-193 m from them, under their roll-out not their tail; they break or turn on you within 3.5 s; landing fire 0-0.1 s; 0-2 hits either way to 45 s | **rewritten** note and verdict |
 | `ninja` | 0 of 9, and no split-S (the Dip every time) | 0 of 9 at the split stage: dive at 3.5-3.7 s from 237-298 m (267-309 before the roof), off them 1.5 s later, closest 145-227 m (215-272), nobody fires | **rewritten**: the one-dive ambush does not work on a jet |
 

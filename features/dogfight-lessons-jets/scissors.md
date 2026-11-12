@@ -39,11 +39,11 @@ Not on screen: the coach line no longer says it takes seconds.
 
 **Who wins it.** Nobody, while it lasts. The slower pilot gets the only
 shots in the classic demo (the ace, in 5 of 9, 0.03 to 0.13 s, one hit in
-3 of 9) and in the Flip (you, slower, 0.2 to 0.27 s in 2 of 9). Nobody ever
+4 of 9) and in the Flip (you, slower, 0.2 to 0.3 s in 2 of 9). Nobody ever
 sits in the other's rear quarter. What decides it on a jet is leaving: an
-equal jet with a 1,000 m/s cannon turns after you and holds 250 to 440 m
+equal jet with a 1,000 m/s cannon turns after you and holds 240 to 440 m
 behind you, which is inside its reach (the Spitfire's guns stop at 298 m),
-and shoots you down 15 to 17 s after you leave, from all nine starts.
+and shoots you down 14 to 17 s after you leave, from all nine starts.
 
 ## What was changed
 
@@ -109,8 +109,8 @@ F-16 (the test's `_measure`, not the jet harness):
 
 | Move | Before | After | Line |
 |---|---|---|---|
-| Dip | 2/9 (shot down in 7) | 0/9 | out 8-9 s in, shot down 15-17 s later in 9 of 9, 250-440 m behind; leaving at crossing 1, 3 or 4, or diving 15 degrees: 0/9 each |
-| Flip | 0/9 | 0/9 | 39-42 m/s to their 48-49, three crossings, never in their rear quarter; your snaps 0.2-0.27 s in 2 of 9 (1 and 5 hits); you sink 60-71 m to end 30-53 m under them; theirs 0.07-0.27 s in 2, no hits; 9 m closest |
+| Dip | 2/9 (shot down in 7) | 0/9 | out 8-9 s in, shot down 14-17 s later in 9 of 9, 240-440 m behind; leaving at crossing 1, 3 or 4, or diving 15 degrees: 0/9 each |
+| Flip | 0/9 | 0/9 | 39-42 m/s to their 48-49, three crossings, never in their rear quarter; your snaps 0.2-0.3 s in 2 of 9; you sink 60-70 m to end 32-56 m under them; theirs 0.07-0.27 s in 2, no hits; 10 m closest |
 | Ninja | 0/9 | 0/9 | on the reworked roof (2026-11-11): climb 357-395 m in 20 s, levelled off at about 765 m, and they climb after you: 20-40 m over them at 20 s, level (within 10 m) at 40 and 60 s; no attack, and flown on they come in behind you: rounds on you in 5 of 9 by 40 s, 8 of 9 by 60 s, nobody shot down. Before the roof: climb 460-810 m, 250-410 m over them in 7 of 9 |
 
 Small changes tried on the moves: the Ninja flown 40 and 60 s (0/9, no
@@ -200,3 +200,23 @@ both jets).
   early, which is a new move, not a re-tune.
 - The ace's slowest is 34 m/s: the shot's brake (`throttle -0.4` when
   closing) bites at once on a jet. The F-16 still turns and climbs from 30.
+
+## On retail g and box area (2026-11-12)
+
+The flight law now runs retail's gravity (`Math.fround(-14.73)`) and box-drag
+area (`3.14 * 0.25`) where the school was tuned on -14.7295 and pi/4
+(`features/retail-parity-cross-check-2026-11-12`). Every claim still holds:
+the braid, nobody's kill, the slower one's snaps only, and the Dip, Flip and
+Ninja at 0 of 9. Nothing was tuned; the numbers the words quote were
+re-pinned to what is flown now (F-16):
+
+| Measure | Before | Now |
+|---|---|---|
+| Scissoring, ace's hits per start (harness) | 0 0 0 0 0 0 1 1 1 | 0 0 1 0 0 0 1 1 1 |
+| One hit in 45 s | 3 of 9 | 4 of 9 |
+| Braid, most apart | 238-264 m | 234-272 m |
+| Braid, slowest | 34.4 m/s | 33.5 m/s |
+| You ahead at 45 s | 139-154 m | 135-163 m |
+| As written: the ace's mean speed; you out in front | 46-48 m/s; 261-503 m | 43-48 m/s; 236-529 m |
+| Dip: shot down after leaving; behind you | 15-17 s; 250-440 m | 13.9-16.9 s; 244-439 m |
+| Flip: your snaps; under them at the end; closest | 0.2-0.27 s; 30-53 m; 9 m | 0.2-0.3 s; 32-56 m; 10 m |

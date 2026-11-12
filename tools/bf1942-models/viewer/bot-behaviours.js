@@ -301,13 +301,9 @@ export const MEDIC = {
   searchRadius: 60.0,
   /** A unit's `Information+0x14` value term (INVENTION: 1 per soldier). */
   unitValue: 1.0,
-  /** The healing round at the MedPack's 10 / s: `BFSoldier::useRepairPack`
-   *  0x08276100 heals the closest damaged armour in reach by the soldier
-   *  template's +0x2e0, whose constructor default (0x0827a210) is 0.1, and
-   *  runs per 30 Hz tick while the pack fires (INFERRED: the caller was not
-   *  read) — 0.3 a round here, 3 hp/s, a 30 hp soldier in 10 s. The reach
-   *  radii at +0x2ec / +0x2f0 default to 3.0 and 2.0 m. */
-  healPerRound: 0.3,
+  // What a round of the bag heals is not this state's: the bot fires its
+  // MedPack through the human's `useMedPack` law (`bot-referee.js` `usePack`,
+  // `healing-packs.js`; SUP-27), every wounded soldier within `healDistance`.
 };
 
 export class MedicState {

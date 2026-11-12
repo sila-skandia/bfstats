@@ -15,7 +15,7 @@ import { craftTipped } from './doctrine-landing.js';
 import { CHANGE } from './bot-vehicle.js';
 import { mayEnterHull } from './vehicle-instance.js';
 import { findEntryPoint, wantsSeat, SPAWN_SEAT_REACH_AI, SPAWN_STANDS } from './spawn-seat.js';
-import { rowFor, rowFire } from './bot-rows.js';
+import { rowFor, rowFire, setRowsMod } from './bot-rows.js';
 
 /** The body radius a land vehicle keeps on its map, and a plane's or ship's
  *  for its arrival circle (INVENTION). */
@@ -64,6 +64,8 @@ export function createBotUnits(env) {
         // The mod whose `AIbehaviours.con` rows the records' `equipmentType`
         // numbers index (bot-rows.js).
         units.aiMod = json?.mod ?? null;
+        // ...and the row a bot on foot runs, for its modifier columns.
+        setRowsMod(units.aiMod);
         for (const [name, info] of Object.entries(json?.vehicles ?? {})) units.ai.set(name.toLowerCase(), { name, ...info });
         return units.ai;
       })
@@ -481,7 +483,9 @@ export function createBotUnits(env) {
             door.node.getWorldPosition(_entryWorld);
             entry = [_entryWorld.x, _entryWorld.z];
           }
-          seats.push({ seatId, table: strengths, occupied: !!holder, strType: ai.strType ?? 'LightArmour', isRoot, door: !!door });
+          seats.push({ seatId, table: strengths, occupied: !!holder, strType: ai.strType ?? 'LightArmour', isRoot, door: !!door,
+                       // `Information+0x14`, the seat's `basicTemp` (BBFireUnarmed sums it).
+                       value: seatAi?.basicTemp ?? (isRoot ? ai.basicTemp : null) ?? 0 });
           (door ? entries : doorless).push({
             id: `${node.uuid}:${seatId}`, vehicleId: node.uuid, node, template: ai.name, kind,
             seatId, isRoot, drives, seats, turnRadius: ai.turnRadius ?? null,

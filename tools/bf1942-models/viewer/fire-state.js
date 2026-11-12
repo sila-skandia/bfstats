@@ -378,15 +378,35 @@ export function reloadAmmo(mag, magSize, numOfMag, units) {
   return left;
 }
 
+/** A weapon's depot tag, its `ObjectTemplate.ammoType` (SUP-2):
+ *  `FireArmsTemplate+0x238`, written by the word (ConsoleClass290 lnxded
+ *  0x082c98be) and 0 from the constructor (0x0828d614). The weapon's own
+ *  words win when they carry it (`stats.ammoType`, a bake since 2026-11-12);
+ *  else the tree's `damage.json` `ammoTypes` table, `table`, by template
+ *  `name`, where a weapon that is not listed writes no `ammoType` and is the
+ *  engine's 0: the tag every tank and boat gun has, and the id of the
+ *  vehicle depots' one row (`AmmoboxVehicleSupplyDepot`, `RepairPoint`).
+ *  null when neither knows, a tree exported before the word was read. */
+export function ammoTypeOf(stats, name, table) {
+  if (Number.isFinite(stats?.ammoType)) return stats.ammoType;
+  if (!table || typeof table !== 'object') return null;
+  if (!name) return 0;
+  // GLTFLoader suffixes a repeated node name (`B17_MG1_FB_1`).
+  const key = String(name).toLowerCase();
+  return table[key] ?? table[key.replace(/_\d+$/, '')] ?? 0;
+}
+
 /** The depot ammo row that rearms a gun this cycle (SUP-2,
- *  `SupplyDepot::reloadAmmo` 0x08323770): the row whose id is the gun's own
- *  `AmmoType` word, among the rows whose bucket gave units. The exporter does
- *  not carry that word yet, so a gun without it takes the first row that
- *  gave units: an approximation of which row, not of how much it gives.
- *  `stats.ammoType` is the gun's `AmmoType`, absent when it is not known. */
-export function rearmTypeFor(stats, types) {
+ *  `SupplyDepot::reloadAmmo` 0x08323770): the row whose id equals the gun's
+ *  tag (`ammoTypeOf`; the compare is an exact int one, 0x08323995), among the
+ *  rows whose bucket gave units. An Ammobox's grenades and rockets (tags 2
+ *  and 3) take its 1.2/s rows, not the guns' 15/s; a B17's rack (9) the
+ *  airfield's 4/s. A gun whose tag no row carries gets nothing. A tag of
+ *  null (a tree exported before `ammoType` was read) takes the first row
+ *  that gave units, the approximation until 2026-11-12. `tag` defaults to
+ *  `stats.ammoType`. */
+export function rearmTypeFor(stats, types, tag = stats?.ammoType) {
   if (!types) return null;
-  const tag = stats?.ammoType;
   for (const type of types) {
     if (!(type.units > 0)) continue;
     if (tag == null || type.id === tag) return type;

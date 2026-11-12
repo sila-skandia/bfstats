@@ -85,8 +85,9 @@ class OnHisTailDfnTests(unittest.TestCase):
         # "In six of the nine he got in behind you 252 to 319 m back, at the
         # edge of his reach but never with a shot, gave up 19 to 25 s in, and
         # at 40 s you were 1942 to 2530 m apart, never hit. From 30 m further
-        # back he caught you at 110 to 117 m and shot you down twice; from 30 m
-        # nearer you passed him at 14 m and were only 1034 m clear at 40 s."
+        # back he caught you at 99 to 110 m and shot you down twice; from 30 m
+        # nearer you passed him at 14 m and were only 1030 m clear at 40 s."
+        # (1034 m before the 2026-11-12 retail-g re-pin.)
         rows = self.scores("dip")
         for s in rows:
             # A turn and more in his circle first (he breaks about 3 s in),
@@ -103,23 +104,29 @@ class OnHisTailDfnTests(unittest.TestCase):
             self.assertTrue(1942 <= s["endRange"] <= 2530, s)
         down = [s for s in rows if s["end"] == "shot down"]
         self.assertEqual(2, len(down))
-        self.assertTrue(all(s["dz"] == 30 and 110 <= s["chaseMin"] <= 117 for s in down), down)
+        # re-pinned 2026-11-12 on retail g and box area
+        # (features/retail-parity-cross-check-2026-11-12): 110 to 117 m before.
+        self.assertTrue(all(s["dz"] == 30 and 99 <= s["chaseMin"] <= 110 for s in down), down)
         near = [s for s in rows if not s["ok"] and s["end"] is None]
         self.assertEqual(1, len(near))
         self.assertEqual(-30, near[0]["dz"])
-        self.assertEqual(1034, near[0]["endRange"])
+        self.assertEqual(1030, near[0]["endRange"])
 
     def test_the_yo_yo_never_gets_the_shot_and_is_shown_from_the_pull_up(self) -> None:
-        # "your guns had him for 0.27 s at most (3 rounds, in two of the
-        # nine)"; never hit, never on your six for a second.
+        # "your guns had him for 0.27 s at most (4 rounds, in two of the
+        # nine)"; never hit, and on your six for 1.2 s at most.
+        # re-pinned 2026-11-12 on retail g and box area
+        # (features/retail-parity-cross-check-2026-11-12): one start (dx -30, dz 30, dv -3) now
+        # has him on your six for 1.17 s, where every start was under 1 s;
+        # the bound is 1.5 s.
         self.assertEqual(7, self.shape["demos"]["flip"]["startAt"])
         rows = self.scores("flip")
         for s in rows:
             self.assertGreaterEqual(s["dives"], 1, s)
             self.assertLessEqual(s["myShot"], 0.27, s)
-            self.assertLessEqual(s["hitsOnHim"], 3, s)
+            self.assertLessEqual(s["hitsOnHim"], 4, s)  # 3 before the 2026-11-12 re-pin
             self.assertEqual(0, s["hitsOnMe"], s)
-            self.assertLess(s["sixLost"], 1, s)
+            self.assertLess(s["sixLost"], 1.5, s)
         self.assertEqual(2, sum(1 for s in rows if s["hitsOnHim"] > 0))
 
     def test_the_ninja_gets_one_pass_and_then_he_is_on_your_tail(self) -> None:
@@ -142,10 +149,11 @@ class OnHisTailDfnTests(unittest.TestCase):
                 self.assertTrue(2 <= s["hitsOnHim"] <= 21, s)
                 self.assertTrue(4.5 <= s["sixLost"] <= 24, s)
                 self.assertEqual(50, s["flown"], s)
-        # The theatre's run: nine rounds, then he on your tail for 16 s.
+        # The theatre's run: ten rounds (nine before the 2026-11-12 retail-g
+        # re-pin), then he on your tail for 16 s.
         first = rows[0]
         self.assertEqual((0, 0, 0, 0), (first["dx"], first["dz"], first["dy"], first["dv"]))
-        self.assertEqual(9, first["hitsOnHim"])
+        self.assertEqual(10, first["hitsOnHim"])
         self.assertTrue(15 <= first["sixLost"] <= 17, first)
 
 

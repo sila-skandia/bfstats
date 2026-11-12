@@ -62,12 +62,14 @@ ORPHAN_WORDS: dict[str, str] = {
     "setspawnpreventiondelay": "27x spawnpoint | doc | how long a used spawn is held shut",
     "setspawnrotation": "27x spawnpoint | doc | which way a spawned soldier faces",
     "hasstarteffect": "20x projectile | doc | the round plays an effect as it leaves",
-    "disarmminesdistance": "10x bfsoldier | doc | the engineer's reach for disarming a mine",
+    # `disarmMinesDistance` left this table on 2026-11-12 (SUP-28):
+    # `healing-packs.js` `packParams` reads it, the crouched wrench's reach.
     "isportalpassing": "10x bfsoldier | new | nothing in the repo has ever looked at this",
     "portalpassingposition": "10x bfsoldier | new | its companion, equally unknown",
     "addpcoposid": "9x playercontrolobject | doc | another seat-id word",
     # -- the long tail -------------------------------------------------- #
-    "noffsound": "5x projectile | doc | a round's off sound",
+    # `noFFSound` left this table on 2026-11-12 (FF-6): `extract_map.py`
+    # `projectile_materials` carries it and `local-player.js` honours it.
     "alphatestrefovertime": "4x spriteparticle | doc | the alpha test reference as a ramp",
     "canberepaiedasdestroyed": "4x playercontrolobject | new | (sic) a wreck a depot can bring back",
     "dragoffset": "4x playercontrolobject, 1x simpleobject | doc | where the drag term is taken",

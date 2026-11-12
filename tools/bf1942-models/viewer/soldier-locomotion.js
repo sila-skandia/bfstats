@@ -438,6 +438,18 @@ export const JUMP_CONTACT_NORMAL_Y = 0.1;
 export const MATERIAL_WATER = 1;
 
 /**
+ * The kill material (collision-response.md §9.1): `BFSoldier::handleCollision`
+ * (lnxded 0x0827d3b0) tests the other side's material `cmpl $0x63,0x20(%ebp)`
+ * at 0x0827d3c8 and, on 99, bills the soldier `0x501502f9` = 1e10 through the
+ * damage interface's vt+0xf4 (0x0827dda9..0x0827ddb0) and returns. Vanilla
+ * lays it on upward floor quads 0.2-0.8 m up inside its closed buildings
+ * (Berlin's `citymesh*_closed`, `SightScene*`, `repport_box1`): only a soldier
+ * inside the shell meets one.
+ */
+export const MATERIAL_KILL = 99;
+export const KILL_MATERIAL_DAMAGE = 1e10;
+
+/**
  * `accel = 0.75 * vCmd`, `0x08274a09` against `0x086ba8cc`. **PHY-6.**
  *
  * The locomotion force. It is **not** multiplied by `g_simulationFps` -- unlike

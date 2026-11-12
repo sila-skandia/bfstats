@@ -133,6 +133,7 @@ export function createStage(M, level, { vehicles = true, kinds = STAGE_KINDS, se
     MODELS_BASE: '', occupancy: null, optOnFoot: unchecked, placeCamera: noop, resetMobileControls: noop,
     respawnVehicleBody: owner => { hullBodies.respawnVehicleBody(owner); stage.hooks.onRespawn?.(owner); },
     retireVehicleBody: owner => hullBodies.retireVehicleBody(owner),
+    parkWreckBody: (owner, drive) => hullBodies.parkWreckBody(owner, drive),
     soldier: null, soldierDead: true, standUp: noop, updateHud: noop, useLens: noop,
     get vehicleDamage() { return world?.vehicleDamage; }, get vehicles() { return registry; },
     get world() { return world; },

@@ -43,6 +43,15 @@ class NametagTests(unittest.TestCase):
         self.assertEqual({"near": 50, "scope": 300}, d["capped"])
         self.assertEqual({"near": 75, "scope": 300}, d["above"])
 
+    def test_a_page_no_server_spoke_to_caps_at_the_listen_servers_50(self) -> None:
+        # NET-21: `Setup::initServerSettings` writes serverNameTagDistance 50
+        # and its scope 300 (lnxded 0x080c0a55 / 0x080c0a5c); single player
+        # is a listen server with them, so the tags stop at 50 m, not 75.
+        self.assertEqual({"near": 50, "scope": 300}, self.r["distances"]["listen"])
+        layer = (ROOT / "viewer" / "nametag-layer.js").read_text()
+        self.assertIn("let serverNear = SERVER_NAMETAG_NEAR;", layer)
+        self.assertIn("let serverScope = SERVER_NAMETAG_SCOPE;", layer)
+
     def test_a_teammate_near_fades_by_cosine_and_stops_at_the_near_range(self) -> None:
         a = self.r["alpha"]
         self.assertEqual(int(255 * 0.8090169943749475), a["friendNear"])  # cos(0.4 * pi/2)

@@ -158,7 +158,7 @@ Verdict: fixed
   `0x008f733c` = 0.7850000262 (`fmuls` at `0x00540be7`).
 - **What changed:** `BOX_AREA = Math.fround(Math.fround(3.14) * 0.25)`, bit-equal to the client;
   `tests/test_ground.py` `test_a_hull_drags_by_the_box_law` now expects 0.785f. The same constant
-  runs in the ship and amphibious laws (aircraft and ships below). It also
+  runs in the ship, amphibious and flight laws (aircraft and ships below). It also
   moved the bot M1A1's cruise into another steering basin (ground vehicles, below).
 - **Ledger:** PHY-22.
 
@@ -694,8 +694,9 @@ Verdict: fixed
 Verdict: fixed
 - **What we had:** `aircraft.js`, `ship.js`, `amphibious.js` and `world-vehicle-tick.js` used pi/4.
 - **What retail does:** 3.14 x 0.25, as in soldier physics (`0x082545b8`, client 0.785).
-- **What changed:** `ship.js`, `amphibious.js` and `ship-law.js` run 0.785. The flight law was held
-  at pi/4 because the dogfight school's lessons are tuned on it (Gravity, below).
+- **What changed:** `ship.js`, `amphibious.js`, `ship-law.js`, `aircraft.js` and the
+  `world-vehicle-tick.js` fall floor run 0.785. The flight law moved last, with the dogfight
+  school retuned on it (Gravity, below).
 - **Ledger:** SHIPLAW-3.
 
 ### Gravity: the first finding was backwards
@@ -1363,13 +1364,39 @@ physics.md, AIRGND-1 and several "x 1.49995" factors. This cross-check first spr
 further, then caught it reading the constant back with `readmem.py - 0xc16bae14 hexf`. `g / -9.82`
 is 1.5 to float precision (the ships VERDICT had it right), and the docs and rows were corrected.
 
-The viewer's shared value is `rigid-body.js` `GRAVITY = -14.73`, which ships, floats, ground hulls,
-soldiers and rounds use, and the box area 0.785 runs in the ground, ship and amphibious laws. The
-flight law (`aircraft.js`, and `aircraft-ground-law.js`, which steps the same body in the air) was
-held on the old pair, -14.7295379 and pi/4, because at the retail values 76 dogfight-school tests
-failed, about 30 lessons broke their own claims, and `test_air_law`'s Bf109 lift-off read 1.19 mm
-against its 1.0 mm lab bound (`buckets/air-sea.md`, "Held", lists every lesson that breaks and how).
-Being retuned now; this section is updated when it lands.
+The viewer's shared value is `rigid-body.js` `GRAVITY = Math.fround(-14.73)`, the float32 itself
+(-14.7299995), which ships, floats, ground hulls, soldiers, rounds and now the aircraft use; the
+buoyancy divisor is `Math.fround(-9.82)` (`0x086d0d6c`), so the lift normaliser stays 1.5. The lab
+recording agrees: the lab server's own gravity accumulator reads -14.7299 on 557 of the Bf109
+run's awake acks (the old value would read -14.7295).
+
+The flight law (`aircraft.js`, and `aircraft-ground-law.js`, which steps the same body in the air)
+moved last. At first it was held on the old pair, -14.7295379 and pi/4: at the retail values 76
+dogfight-school tests failed, about 30 lessons broke their own claims, and `test_air_law`'s Bf109
+lift-off read 1.19 mm against its 1.0 mm lab bound. Then, on the owner's word, it moved:
+
+- **The lab air law.** On the float32 g the Bf109 lift-off passes at 0.68 mm. A round-trip-late
+  correction test then failed by 0.17 mm, and chasing it found a real bug in the page's
+  correction: on the first replayed tick `rebase` re-ran the collision pass and overwrote the four
+  accumulators the server had just sent with the page's own. `Aircraft.adopt` now marks them and
+  `rebase` puts the server's values back. All of `test_air_law` passes. The tests stay sensitive in
+  the ninth digit of g at the moments a wheel latches or leaves the sand (each skip is a
+  discontinuity of the contact law, retail's own); see Still open.
+- **The dogfight school, retuned** (the school's `RETUNING.md`, one group of lessons each, five
+  at once). Most failures were our own law's pinned numbers moving by a few metres, seconds or
+  rounds while the lesson's claim held; those were re-pinned with a dated comment, and the
+  lesson words and docs that quote them updated. Where a claim broke, the pilot was fixed, not
+  the claim: a careful live wingman kept full throttle when slow and low instead of stalling into
+  the ground at Kursk; `breakTurn` reverses at 6 m across instead of 8 (1.6..2.0 s against the
+  2.5 s limit); the break-turn Flip's slow pilot no longer dives into the hunter's nose; the
+  drag-and-bag pair turns hard toward the wingman when the hunter is inside 250 m and about to
+  fire, which holds on twelve nudged copies of the nine starts (the bait unhit in 11 of 12,
+  against 0 of 12 before). Where a claim was only ever luck, its words now say what is flown: the
+  jet under-the-height Ninja's "never" (still 0 of 9), the out-of-the-lock Flip's verdict (1 of 9
+  is 0 of 9), the under-the-height Ninja's declared count (1 is 2), the flat scissors' shape (8
+  of 9), the Thach weave (one round in nine fights), the on-his-tail Flip's "never on your six
+  for a second" (under 1.5 s), and the ascend table's "every work is a kill" (40 works, 39
+  kills).
 
 ## Caught on the way
 
@@ -1423,10 +1450,8 @@ heat feeder, AI-44's 0.6914 (0.7071, against the ground normal), AI-33's roundin
 differential reason, PARA-5/6's `<=`, DL-12's "squared distance", ARM-1's threshold rule and
 HUD-20's "buddy list". `ledger-index.json` and `ledger-gaps.md` were regenerated.
 
-One row is still behind: IMP-7 says `gravityModifier` "scales -14.7295379 m/s^2 ... written -14.73
-until 2026-11-12". That was an optional tidy applied before the mis-decode was caught; FA-23,
-AIRGND-1 and SHIP-1 already carry the withdrawal, and IMP-7 should read -14.73 (0xC16BAE14 =
--14.73f). SHIP-7's "`8 x 1.5 x 1.2275 = 14.73 = |g|` exactly" was left for a reader.
+IMP-7, FA-23, AIRGND-1, SHIP-1 and SHIP-7 carry the gravity withdrawal: -14.73 (0xC16BAE14 =
+-14.73f), and SHIP-7's equilibrium holds for any g because `8 x 1.2275 = 9.82`.
 
 ## Data that still has to catch up
 
@@ -1453,8 +1478,12 @@ The exporter now carries what retail reads, but some trees can only be rebuilt e
 
 ## Still open
 
-- **The aircraft laws on retail's g and box area** (Gravity): held until the dogfight school is
-  retuned on -14.73 and 0.785. Being retuned now; this section is updated when it lands.
+- **The lab air-law tests' sensitivity** (Gravity): at g nudged by 1e-8 one lift-off window of
+  the Bf109's skipping run (seven touches of the sand) reads 1.65 mm against 1.5. Each wheel
+  latch and contact change is a discontinuity, so a ninth-digit change decides which tick a wheel
+  sticks. The tests would be robust scored over several seeds or round-trip lags, or with the
+  contact flags compared tick by tick (the wire carries them) and the position bounded only
+  between transitions. They pass at the true value.
 - **The T-72's top speed**: the bot cruise test now compares the run's p95 with the lab's p95 hull
   by hull (`test_ground_handling`). The M1A1, BMP-2 and M2A3 match; the T-72 has the M1A1's
   drivetrain ceiling where retail tops out at 11.3 m/s (`lab-ground-truth.md`), so its test is an

@@ -75,7 +75,7 @@ function killLift(vehicle) {
  * threw it upward every tick faster than the floor pulled it down: a
  * destroyed airship (and the observation balloon) climbed at 7..13 m/s to
  * 400 m (t2 F4). The terminal speed is `sqrt(g m / (drag A_y))` under the
- * box law (`Aircraft.applyBoxDrag`, the flat face `pi/4 DX DZ`), `g / drag`
+ * box law (`Aircraft.applyBoxDrag`, the flat face `0.785 DX DZ`), `g / drag`
  * under the linear one.   [HOUSE RULE, the floor's own bound]
  */
 export function fallSinkFloor(vehicle) {
@@ -84,9 +84,9 @@ export function fallSinkFloor(vehicle) {
   if (!(k?.drag > 0) || !(g > 0)) return FALL_MIN_SINK;
   let terminal = Infinity;
   if (k.dragLaw === 'box' && Array.isArray(k.size) && k.mass > 0) {
-    // The box law's face area as `aircraft.js` reads it: pi/4, HELD there with
-    // the flight law (retail is 3.14 * 0.25, lnxded `0x082545b8`, SHIPLAW-3).
-    const area = (Math.PI / 4) * k.size[0] * k.size[2];
+    // `3.14 * 0.25`, the box law's face area as `aircraft.js` reads it (lnxded
+    // `0x082545b8`; SHIPLAW-3).
+    const area = (3.14 * 0.25) * k.size[0] * k.size[2];
     if (area > 0) terminal = Math.sqrt(g * k.mass / (k.drag * area));
   } else if (k.dragLaw !== 'box') {
     terminal = g / k.drag;

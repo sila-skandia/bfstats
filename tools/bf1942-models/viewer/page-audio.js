@@ -19,6 +19,7 @@ import { entryInMode } from './game-modes.js';
 import { ScrapeVoices } from './obstacle.js';
 import { nationStems } from './radio.js';
 import { decodeGapless, gaplessAudioLoader } from './gapless-decode.js';
+import { createVoiceGates } from './soldier-voice-gates.js';
 
 /** `SoldierRefillAmmo.ssc`'s HIGH patch, as read from vanilla's Objects.rfa:
  *  `minDistance 5` and the `Volume <- Distance` ramp `10 15 1 -1`. */
@@ -695,10 +696,14 @@ export function createPageAudio(page) {
    * is one of many); the player's own stab is one press, so `hand-weapon.js`
    * primes its report as the weapon is raised. A property of `playWorldShot`
    * so every surface that already carries the one carries the other.
+   * `{ edges: false }` primes the report alone, not its Reload and eject
+   * slots: the replay primes every weapon a recording fires as it opens, and
+   * plays no magazine change.
    */
-  playWorldShot.prime = weaponName => {
+  playWorldShot.prime = (weaponName, { edges = true } = {}) => {
     if (!weaponName || page.AUDIO_OFF) return Promise.resolve(null);
-    return ensureWorldFire().then(fire => fire?.primeWeapon(weaponName) ?? null, () => null);
+    return ensureWorldFire().then(fire => (edges ? fire?.primeWeapon(weaponName) : fire?.prime(weaponName)) ?? null,
+      () => null);
   };
 
   /** A bot's magazine change, at the bot: the weapon's Reload slot (SND-17). */
@@ -834,8 +839,8 @@ export function createPageAudio(page) {
   // --- soldier footsteps, damage direction & hurt audio ------------------------
 
   pageAudio.soldierSoundsIndex = null;
-  pageAudio.lastHurtSoundTime = 0;
-  pageAudio.lastWorldHurtSoundTime = 0;
+  // Each soldier's own grunt and "Watch your aim!" clocks (`soldier-voice-gates.js`).
+  pageAudio.voiceGates = createVoiceGates();
 
   // A tree that has no `soldier.json` answers 404 for good: remembered per
   // models base, so every footstep of a round does not ask again. Anything
@@ -1061,25 +1066,41 @@ export function createPageAudio(page) {
     return (page.teamVoice ?? page.teamNation)?.(page.deployTeamId) ?? null;
   }
 
+  /**
+   * The hurt grunt (`c_SstHitDamage`), of soldier `key`: their own
+   * `SoldierSound` clock, 1.0 to 1.2 s between two (`soldier-voice-gates.js`).
+   * Until 2026-11-12 every world soldier shared one 0.9 s clock, so two bots
+   * hit within it gave one grunt. `cooled` false skips it: a replay's grunts
+   * come one per recorded blow (replay-bodies.js `hurt`), and one grenade that
+   * hurts three men is three grunts (8t224pppqe at 154.93 s). `isFriendlyFire`
+   * is the old caller's word and plays the grunt alone: "Watch your aim!" is a
+   * round's touch, not damage (`playFriendlyHitSound`).
+   */
   async function playSoldierHurtSound(isFriendlyFire = false, position = null, nation = undefined,
-                                      cooled = true) {
+                                      cooled = true, key = null) {
     if (page.AUDIO_OFF || masterVolume() <= 0) return;
     const now = performance.now() * 0.001;
-    // Two cooldowns: the listener's own grunt and the world's. A shared one
-    // meant a bot hit a second after the player took a round played nothing.
-    // `cooled` false skips them: a replay's grunts come one per recorded blow
-    // (replay-bodies.js `hurt`), and one grenade that hurts three men is three
-    // grunts (8t224pppqe at 154.93 s), which a world cooldown cut to one.
-    if (cooled) {
-      const last = position ? pageAudio.lastWorldHurtSoundTime : pageAudio.lastHurtSoundTime;
-      if (now - last < 0.9) return;
-      if (position) pageAudio.lastWorldHurtSoundTime = now;
-      else pageAudio.lastHurtSoundTime = now;
-    }
+    if (cooled && !pageAudio.voiceGates.hurt(key ?? (position ? 'world' : 'local'), now)) return;
+    await playSoldierTrigger('c_SstHitDamage', position, nation);
+  }
 
+  /**
+   * "Watch your aim!" (`c_SstFFHitDamage`): a round of `roundTeam` touched
+   * soldier `key` of `soldierTeam`, damaged or not (`BFSoldier::projectileHit`
+   * lnxded 0x0827ea20; `soldier-voice-gates.js`). Played at the soldier, in
+   * their own side's tongue; the human's own (`position` null) at the ear.
+   */
+  function playFriendlyHitSound(key, roundTeam, soldierTeam, position = null, nation = undefined) {
+    const now = performance.now() * 0.001;
+    if (!pageAudio.voiceGates.friendlyHit(key, now, roundTeam, soldierTeam)) return false;
+    if (page.AUDIO_OFF || masterVolume() <= 0) return true;
+    playSoldierTrigger('c_SstFFHitDamage', position, nation);
+    return true;
+  }
+
+  async function playSoldierTrigger(triggerName, position, nation) {
     const manifest = await soldierSoundsManifest();
     if (!manifest) return;
-    const triggerName = isFriendlyFire ? 'c_SstFFHitDamage' : 'c_SstHitDamage';
     const trigger = manifest.triggers?.[triggerName];
     const patch = trigger?.patches?.[0];
     if (!patch?.layers?.length) return;
@@ -1219,6 +1240,7 @@ export function createPageAudio(page) {
     modelSoundBuffer,
     playSoldierDeathSound,
     playSoldierHurtSound,
+    playFriendlyHitSound,
     playObstacleScrape,
     playRefillSound,
     playRoundMusic,

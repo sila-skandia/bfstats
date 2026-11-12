@@ -17,6 +17,7 @@ import { deathFamily } from './soldier-death.js';
 import { PARA_FALLING } from './parachute.js';
 import { routeFlightInput, routeLookPair } from './mouse-look-key.js';
 import { mayEnterHull } from './vehicle-instance.js';
+import { createDeathCamera } from './death-camera.js';
 
 /**
  * Built once by the page, where this code used to sit. `page` hands in
@@ -33,9 +34,9 @@ import { mayEnterHull } from './vehicle-instance.js';
  * `lookKeyHeld`, `lookNeedsKey`,
  * `mobileJumpHeld`, `mobilePadAxis`, `mobilePadHeld`,
  * `mobilePadVector`, `mouseInput`, `netSeatRow`, `netSendAction`,
- * `netVehicleIdFor`, `noteOccupiedVehicle`, `onFootCamera`, `optOnFoot`,
+ * `netVehicleIdFor`, `noteDeath`, `noteOccupiedVehicle`, `onFootCamera`, `optOnFoot`,
  * `optPilot`, `pickVehicle`, `playSoldierDeathSound`, `playSoldierHurtSound`, `pumpLook`,
- * `rebuildVehicleInterp`, `remoteCrewTeam`, `replayCamera`, `requestSeatSwitch`, `roomJoined`, `seatAltFire`,
+ * `rebuildVehicleInterp`, `remoteCrewTeam`, `replayCamera`, `requestBotSeat`, `requestSeatSwitch`, `roomJoined`, `seatAltFire`,
  * `seatedCamera`, `seatFire`, `showFlagPicker`, `spawnAtFlag`,
  * `stepSeatIk`, `stopFallSound`, `syncFootBody`, `toggleFullMap`, `touchFlying`,
  * `triggerHitIndicator`, `updateMobileControls`, `vehiclePlayersKey` (optional), `vehicles`, `view`,
@@ -106,9 +107,10 @@ export function createLocalPlayer(page) {
         // A different vehicle than the one already held. Every exit path has
         // already given the old seat back; this is the defensive case.
         if (current) leaveSeat();
-        // Root seat unless a specific `EntryPoint` said otherwise — walking
-        // straight up to a Sherman's hull-gunner door seats you there directly,
-        // never through the driver's seat first. The hull's instance builds the
+        // Root seat unless a specific `EntryPoint` said otherwise. Which seat
+        // a door gives is the finder's call: a tank's hull-gunner door gives
+        // the driver's seat while it is free (SEAT-30, `vehicle-entry.js`
+        // `preferredDoor`), an APC's gunner door its gun. The hull's instance builds the
         // drivetrain when its root seat is taken, adopts it into the body world,
         // thaws the node, collects this seat's guns, mounts the world's record
         // and claims the audio (`vehicle-instance.js`).
@@ -238,8 +240,15 @@ export function createLocalPlayer(page) {
     if (page.requestSeatSwitch?.(position)) return;
     const seatId = seat.seatIdAt(position);
     if (seatId === undefined || seatId === seat.activeSeatId) return;
-    // Somebody sits there: the engine's own miss, nothing happens.
-    if (seat.instance.holder(seatId) != null) return;
+    // Somebody sits there: the switch is refused (`enterVehicle(..., false,
+    // false)`, SEAT-11), and when that somebody is a bot of his side the
+    // server asks it for the seat (`checkPlayerTriggers` 0x0814fb07..
+    // 0x0814fb63 -> `IBotManager::playerRequestPlayerControlObject`;
+    // bot-referee.js `requestSeat`). The bot is not moved and the two do
+    // not swap: it may climb out on its own next Change, and a second
+    // press then takes the seat.
+    const holder = seat.instance.holder(seatId);
+    if (holder != null) { page.requestBotSeat?.(holder); return; }
     // Discard the previous seat's soldier pose (if any) before loading the new
     // one — a driver→passenger switch on a Willy, or vice-versa.
     page.disposeSeatPose();
@@ -434,6 +443,10 @@ export function createLocalPlayer(page) {
   // up vector, degenerate at exactly -pi/2). The beats are not engine numbers
   // (the client's own death cam was never decoded past `FUN_004933d0` opening
   // the spawn screen); they are framing.   [HOUSE RULES]
+  // Since 2026-11-12 the shot itself is retail's (`death-camera.js`, drawn by
+  // `soldier-view.js` `deathCamView`); these framings stand only where no
+  // `deathCam` was made. `beat` is still when the spawn screen opens, which
+  // retail does at once (`FUN_004933d0`) and the page holds for the rise.
   const DEATH_CAM = {
     // 4.6 m off the pelvis, 23 deg down: at the soldier's 57.3 deg the frame's
     // top edge sits 5.6 deg above the horizon, so the ground out to the man
@@ -449,6 +462,11 @@ export function createLocalPlayer(page) {
   /** What the death cam is framed on: `null` for the corpse itself — the
    *  on-foot death — or `{ x, y, z, yaw }`, the burning hull the player was in. */
   localPlayer.deathCamTarget = null;
+  /** Retail's death camera over the death (`death-camera.js`, type 1): the
+   *  shot that rises 1 to 30 m over the dead player's controlled object in
+   *  3 s and holds, and past 10 s a ride with a living human teammate.
+   *  `soldier-view.js` draws it; null while alive. */
+  localPlayer.deathCam = null;
 
   // The body's life and the death cam are written here and nowhere else;
   // the modules that see a death or a spawn say which one happened.
@@ -486,6 +504,11 @@ export function createLocalPlayer(page) {
     localPlayer.deathCamShot = DEATH_CAM.foot;
     localPlayer.deathCamTarget = null;
     localPlayer.deathCamTimer = localPlayer.deathCamShot.beat;
+    // `setDeathCamera(true, soldier)` (`GameServer::killPlayer`): over his
+    // origin, a metre above his feet (PHY-10).
+    localPlayer.deathCam = s ? createDeathCamera({ x: s.x, y: s.y + 1, z: s.z }) : null;
+    // The respawn wave's wait runs from the death (`spawning.js`, SPAWN-35).
+    page.noteDeath?.();
     // `c_SstKilled`, his last word -- which is all a free fall into the
     // ground without the cord pulled sounds like.
     page.playSoldierDeathSound();
@@ -501,6 +524,9 @@ export function createLocalPlayer(page) {
     localPlayer.deathCamShot = DEATH_CAM.vehicle;
     localPlayer.deathCamTimer = localPlayer.deathCamShot.beat;
     localPlayer.deathCamTarget = target;
+    // Over the seat he died in, the controlled object `killPlayer` names.
+    localPlayer.deathCam = target ? createDeathCamera(target) : null;
+    page.noteDeath?.();
   };
   /** Killed in the seat by a round (the hull is fine): the corpse is the seat's
    *  own body, slumped over the gun (`seat-pose.js` `detachSeatCorpse`), and
@@ -514,6 +540,8 @@ export function createLocalPlayer(page) {
     localPlayer.deathCamShot = DEATH_CAM.seat;
     localPlayer.deathCamTimer = localPlayer.deathCamShot.beat;
     localPlayer.deathCamTarget = target;
+    localPlayer.deathCam = target ? createDeathCamera(target) : null;
+    page.noteDeath?.();
   };
   /** A fresh body on its feet with `armor`; the death cam lets go of it. */
   localPlayer.revive = armor => {
@@ -524,6 +552,7 @@ export function createLocalPlayer(page) {
     localPlayer.deathCamTimer = 0;
     localPlayer.deathCamShot = DEATH_CAM.foot;
     localPlayer.deathCamTarget = null;
+    localPlayer.deathCam = null;
   };
   /** The soldier is gone without a death (a team switch on the deploy screen). */
   localPlayer.discardSoldier = () => {
@@ -531,6 +560,7 @@ export function createLocalPlayer(page) {
     localPlayer.soldierArmor = null;
     localPlayer.soldierDead = false;
     localPlayer.deathCamTimer = 0;
+    localPlayer.deathCam = null;
   };
   /** The level went, and the scene graph the soldier stood in with it. */
   localPlayer.forgetSoldier = () => { localPlayer.soldier = null; };
@@ -613,9 +643,11 @@ export function createLocalPlayer(page) {
     // through `Armor::heal`, never `_giveDamage`.
     if (!(damage >= 0)) return;
 
-    const isFriendlyFire = attackerTeam != null && attackerTeam === page.deployTeamId;
-    // The killing blow is `dieOnFoot`'s last word, not a grunt as well.
-    if (localPlayer.soldierArmor.hitPoints > 0) page.playSoldierHurtSound(isFriendlyFire);
+    // The killing blow is `dieOnFoot`'s last word, not a grunt as well. A
+    // teammate's round adds "Watch your aim!" where it touched him, damage or
+    // none (`roundTouchedSoldier`, `BFSoldier::projectileHit` lnxded
+    // 0x0827ea20); a teammate's blast does not, so the grunt is all this plays.
+    if (localPlayer.soldierArmor.hitPoints > 0) page.playSoldierHurtSound(false);
 
     // `_giveDamage`'s wash and arc (HFD-2, HFD-3): the octant from the
     // soldier toward that point, in 3-D, the alpha this damage's share of

@@ -207,6 +207,12 @@ export function createRoomClient({ ws, now = null }) {
       roster.set(row.slot, { slot: row.slot, name: row.text ?? '', team: 0 });
     } else if (row.type === 'leave' && Number.isInteger(row.slot)) {
       roster.delete(row.slot);
+    } else if (row.type === 'team' && Number.isInteger(row.slot) && (row.team === 1 || row.team === 2)) {
+      // A change of side on the deploy screen (`server/room-control.mjs`
+      // `changeSide`, `GameServer::setTeam` 0x08131800).
+      const entry = roster.get(row.slot);
+      if (entry) entry.team = row.team;
+      if (row.slot === out.slot && out.hello) out.hello.team = row.team;
     }
     if (out.onevent) out.onevent(feedRow);
   }
@@ -246,6 +252,7 @@ export function createRoomClient({ ws, now = null }) {
       case 'roundEnd': return '';
       case 'restart': return '';
       case 'spawnRefused': return '';
+      case 'team': return '';
       case 'seatRefused': return '';
       // A remote's magazine change and stab are heard (`net-room.js`), not printed; nor
       // are the pads' and the hulls' rows, which the field itself shows.

@@ -147,22 +147,26 @@ class TheBraidOnAJetTests(unittest.TestCase):
         # The school's shape test, on the jet: crossings at a steady beat,
         # the headings swinging either side of the line and back, close and
         # flat. Its 250 m and 130 m are the Spitfire's size; on the F-16 the
-        # braid stays inside 264 m and 62 m, its swing inside 74 degrees.
+        # braid stays inside 272 m and 61 m, its swing inside 74 degrees.
+        # (264 m before; re-pinned 2026-11-12 on retail g and box area (features/retail-parity-cross-check-2026-11-12).)
         for row in self.rows:
             self.assertGreaterEqual(row["crossings"], 8, row)
             self.assertTrue(all(4.4 <= g <= 6.2 for g in row["gaps"]), row)
             self.assertLessEqual(max(row["off"]), 75, row)
-            self.assertLessEqual(row["maxRange"], 265, row)
+            self.assertLessEqual(row["maxRange"], 275, row)
             self.assertGreaterEqual(row["closest"], 20, row)
             self.assertLessEqual(max(row["dy"]), 65, row)
-            self.assertGreaterEqual(min(row["minV"]), 34, row)
+            # 34 before; re-pinned 2026-11-12 on retail g and box area
+            # (features/retail-parity-cross-check-2026-11-12): 33.5 at the slowest.
+            self.assertGreaterEqual(min(row["minV"]), 33, row)
 
     def test_both_are_on_the_brakes_and_the_faster_drifts_ahead(self) -> None:
         # "they sit at about 47 m/s, you at 53"
         ace, you = span(r["meanV"][0] for r in self.rows), span(r["meanV"][1] for r in self.rows)
         self.assertTrue(46.5 <= ace[0] and ace[1] < 48.5, ace)
         self.assertTrue(52.5 <= you[0] and you[1] < 53.5, you)
-        self.assertTrue(all(130 <= r["youAhead"] <= 160 for r in self.rows), [r["youAhead"] for r in self.rows])
+        # 130-160 before; re-pinned 2026-11-12 on retail g and box area (features/retail-parity-cross-check-2026-11-12): 135 to 163.
+        self.assertTrue(all(130 <= r["youAhead"] <= 165 for r in self.rows), [r["youAhead"] for r in self.rows])
 
     def test_the_slower_one_gets_the_only_shots(self) -> None:
         # "the slower pilot got the only shots, never more than 0.13 s"
@@ -170,14 +174,15 @@ class TheBraidOnAJetTests(unittest.TestCase):
         fired = [r["shots"][0] for r in self.rows if r["shots"][0] > 0]
         self.assertEqual(5, len(fired))
         self.assertLessEqual(max(fired), 0.14)
-        # "one hit in 45 s, in 3 of 9"
-        self.assertEqual(3, sum(1 for r in self.rows if r["hits"] == [1, 0]))
+        # "one hit in 45 s, in 4 of 9" (3 of 9 before; re-pinned 2026-11-12 on retail g and box area (features/retail-parity-cross-check-2026-11-12))
+        self.assertEqual(4, sum(1 for r in self.rows if r["hits"] == [1, 0]))
         self.assertTrue(all(r["hits"] in ([0, 0], [1, 0]) for r in self.rows))
 
     def test_it_is_nobodys_kill(self) -> None:
         runs = jet_lesson("scissors", demo="move")["demos"]["move"]
         self.assertTrue(all(r["winner"] is None for r in runs))
-        self.assertEqual([0, 0, 0, 0, 0, 0, 1, 1, 1], [r["hits"][0] for r in runs])
+        # re-pinned 2026-11-12 on retail g and box area (features/retail-parity-cross-check-2026-11-12): the third start now takes one hit too.
+        self.assertEqual([0, 0, 1, 0, 0, 0, 1, 1, 1], [r["hits"][0] for r in runs])
 
     def test_the_jet_file_is_laid_over_the_lesson(self) -> None:
         self.assertEqual("jet", jet_lesson("scissors", demo="move")["era"])
@@ -187,14 +192,15 @@ class WhyTheBraidNeedsBothTests(unittest.TestCase):
     """What the jet does to the Spitfire's scissors, in the story's words."""
 
     def test_as_written_full_throttle_throws_you_out_in_front(self) -> None:
-        # "you weave at 73 to 78 m/s to their 46 to 48 and are 260 to 500 m
-        # out in front at 45 s"; and the swing past 100 degrees.
+        # "you weave at 73 to 78 m/s to their 43 to 48 and are 240 to 530 m
+        # out in front at 45 s"; and the swing past 100 degrees. (46 to 48 and
+        # 260 to 500 before; re-pinned 2026-11-12 on retail g and box area (features/retail-parity-cross-check-2026-11-12).)
         rows = measure(kind="shape", demo="move", base=True)["rows"]
         ace, you = span(r["meanV"][0] for r in rows), span(r["meanV"][1] for r in rows)
-        self.assertTrue(45.5 <= ace[0] and ace[1] < 48.5, ace)
+        self.assertTrue(42.5 <= ace[0] and ace[1] < 48.5, ace)
         self.assertTrue(72.5 <= you[0] and you[1] < 78.5, you)
         ahead = span(r["youAhead"] for r in rows)
-        self.assertTrue(255 <= ahead[0] and ahead[1] <= 505, ahead)
+        self.assertTrue(235 <= ahead[0] and ahead[1] <= 530, ahead)
         self.assertTrue(all(104 <= max(r["off"]) <= 107 for r in rows))
         # Nobody's kill either way.
         base = jet_lesson("scissors", demo="move", base=True)["demos"]["move"]
@@ -216,11 +222,12 @@ class TheMovesOnAJetTests(unittest.TestCase):
         rows = m["rows"]
         self.assertEqual(0, m["verdict"]["works"])
         self.assertTrue(all(r["end"] == "shot down" and r["winner"] == 0 for r in rows))
-        # "Out 8 to 9 s in ... shoot you down 15 to 17 s after you left"
+        # "Out 8 to 9 s in ... shoot you down 14 to 17 s after you left"
+        # (15 to 17 and 250 to 440 m before; re-pinned 2026-11-12 on retail g and box area (features/retail-parity-cross-check-2026-11-12))
         self.assertTrue(all(7.9 <= r["t0"] <= 9.1 for r in rows), [r["t0"] for r in rows])
-        self.assertTrue(all(15 <= r["endT"] - r["t0"] <= 17 for r in rows), [r["endT"] - r["t0"] for r in rows])
-        # "they sit 250 to 440 m behind you"
-        self.assertGreaterEqual(min(r["sepFrom12"] for r in rows), 245)
+        self.assertTrue(all(13.5 <= r["endT"] - r["t0"] <= 17 for r in rows), [r["endT"] - r["t0"] for r in rows])
+        # "they sit 240 to 440 m behind you"
+        self.assertGreaterEqual(min(r["sepFrom12"] for r in rows), 240)
         self.assertLessEqual(max(r["sepTo12"] for r in rows), 440)
         # And on the jet harness's nine starts too ("in all nine").
         runs = jet_lesson("scissors", demo="dip")["demos"]["dip"]
@@ -244,22 +251,23 @@ class TheMovesOnAJetTests(unittest.TestCase):
         self.assertLess(max(r["myMean"] for r in rows), 42.5)
         his = span(r["hisMean"] for r in rows)
         self.assertTrue(47.5 <= his[0] and his[1] < 49.5, his)
-        # "a snap of 0.2 to 0.27 s in 2 of 9"
+        # "a snap of 0.2 to 0.3 s in 2 of 9" (0.2 to 0.27 s, 30 to 53 m under
+        # and 9 m before; re-pinned 2026-11-12 on retail g and box area (features/retail-parity-cross-check-2026-11-12))
         mine = [r["myShot"] for r in rows if r["myShot"] > 0]
         self.assertEqual(2, len(mine))
-        self.assertTrue(all(0.19 <= s <= 0.28 for s in mine), mine)
-        # "you sink 60 to 71 m, ending 30 to 53 m under them"
+        self.assertTrue(all(0.19 <= s <= 0.31 for s in mine), mine)
+        # "you sink 60 to 71 m, ending 32 to 56 m under them"
         sank = span(-r["climbed"] for r in rows)
         self.assertTrue(59.5 <= sank[0] and sank[1] < 71.5, sank)
         under = span(-r["over"] for r in rows)
-        self.assertTrue(29.5 <= under[0] and under[1] < 53.5, under)
+        self.assertTrue(31.5 <= under[0] and under[1] < 56.5, under)
         # "They snap you as you cross (0.07 to 0.27 s, in 2 of 9) without a
-        # hit, passing as close as 9 m."
+        # hit, passing as close as 10 m."
         his_shots = [r["hisShot"] for r in rows if r["hisShot"] > 0]
         self.assertEqual(2, len(his_shots))
         self.assertTrue(all(0.06 <= s <= 0.28 for s in his_shots), his_shots)
         self.assertTrue(all(r["hitsOnMe"] == 0 for r in rows))
-        self.assertEqual(9, min(r["minRange"] for r in rows))
+        self.assertEqual(10, min(r["minRange"] for r in rows))
 
     def test_the_ninja_wins_the_height_and_no_shot(self) -> None:
         m = measure(kind="move", demo="ninja")

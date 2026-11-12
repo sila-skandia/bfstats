@@ -603,9 +603,9 @@ astern, exactly where you cannot see him.
 | Lesson | Survive? | Dip | Flip | Ninja |
 |---|---|---|---|---|
 | Boom and zoom | yes | 9: meet his first dive, then run level | 0 | 0: one pass from above once his height is spent; he meets it |
-| When they have the height | yes | 9: break his dive and his chase, run once his nose is off you | 6: break his chase, reverse onto him | 1: the height comes back in all nine, the kill in one |
+| When they have the height | yes | 9: break his dive and his chase, run once his nose is off you | 6: break his chase, reverse onto him | 2: the height comes back in all nine, the kill in two |
 | Up and over | yes | 7: climb past him over the top, run | 0: once you followed him up | 6: shoot at his top, under his tail unseen, leave when he turns in |
-| Out of their lock | yes | 9: turn in, under him, run | 1 | 0: one pass across his beam, then his nose follows you |
+| Out of their lock | yes | 9: turn in, under him, run | 0 | 0: one pass across his beam, then his nose follows you |
 | On their tail | partly | 6: leave his circle when he is across it going away | 0 | 3: climb beside his break, one pass from above |
 | The break turn | yes | 9: turn in at once, zoom once he is past, leave from the top | 0 | 0: over the top his nose never leaves you |
 | The flat scissors | partly | 6: out at the second crossing | 0 | 0: against a man who climbs with you |
@@ -851,8 +851,8 @@ deadlock is on screen before the move.
 |---|---|---|---|---|
 | You turn with them | `ciCircle` | | | the deadlock: 52 to 218 m apart for 30 s, no shot, nobody gains |
 | leave | `ciDip` | Extension | **7** | roll out on the tangent while they are across the circle: they chase 160 to 235 m back, out of their reach, and give up 16 to 24 s later; 1.1 to 2 km clear at 40 s. From 30 m to your right they never give up (274 to 291 m behind, holding their fire) |
-| go vertical | `ciZoom` | Bounce | 0 | you top out 38 to 48 m over them at 30 m/s; they follow shallow at 41 to 43 m/s onto your tail, so there is no dive, and from 16.5 s it is the circle again; hit in two (6, 8 rounds) |
-| out and back | `ciBack` | Bounce | 0 | out as the extension, back after 22 s to come under their tail: in five they had let you go and turn to meet you (38 to 52 s), in three they never stopped chasing; six passes inside 2 to 24 m, one round lands on a head-on snap |
+| go vertical | `ciZoom` | Bounce | 0 | you top out 38 to 48 m over them at 30 m/s; they follow shallow at 41 to 43 m/s onto your tail, so there is no dive, and from 16.5 s it is the circle again; hit in three (8 rounds as you come out of the hang, 2 and 1 back in the circle) |
+| out and back | `ciBack` | Bounce | 0 | out as the extension, back after 22 s to come under their tail: in four they had let you go and turn to meet you (39 to 53 s), in three they never stopped chasing; six passes inside 2 to 25 m, one round lands on a head-on snap |
 | throttle chop | `ciChop` | Reversal | 0 | down to 27-28 m/s, 50 to 70 m under them and 42 to 94 m of energy behind; nobody to fly past you, nobody shoots |
 | reverse | `ciReverse` | Reversal | 0 | five head-on passes 15 to 21 m apart at about 22 s, never your shot; in the other four the circle turns the other way |
 | nose low | `ciLow` | Reversal | 0 | the closest to working: gravity's speed turns you faster and you come round 95 to 135 degrees behind their heading 17 to 24 s in, but 70 to 131 m under them; the climb back costs the speed (down to 28-38 m/s) before the nose gets there. One burst in nine lands, 7 rounds; in five they see you coming up and break |
@@ -1262,7 +1262,12 @@ your own type and the hunter coming in behind, as in the demos.
   stalled into it, so the live wingman flies careful (`mem.careful`): their
   station stays 150 m up with a 10-degree climb back at most, and their
   pull-out (`guard`) climbs less when slow and starts higher when rolled
-  past the vertical. The demos' pilots fly as before (tried on all of them,
+  past the vertical. Since the retail-g retune (2026-11-12,
+  features/retail-parity-cross-check-2026-11-12) they also never close the
+  throttle to drop back onto the station while slower than 47.5 m/s or
+  under the 150 m floor: on Kursk a Bf 109 throttled back beside a leader
+  turning hard bled from 39 to 8 m/s at 117 m and fell in. Now the lowest a
+  wingman goes in any of the nine turning starts is 76 m. The demos' pilots fly as before (tried on all of them,
   it moved twenty lesson counts).
 - **Checked in the page**, headless on this checkout's code over the live
   assets (vanilla Kursk with the Bf 109 and with the Stuka, FHSW El
@@ -1363,7 +1368,9 @@ From all nine starts (`test_the_flat_scissors_braids_along_one_line`,
 `test_in_the_scissors_the_slower_pilot_gets_the_shot`): 7-8 crossings at a
 steady 4.5-6 s, headings within 80 degrees of the axis, never more than
 200 m apart, height held within 70-110 m over 45 s, nobody below 32 m/s, the
-full-throttle pilot ahead at the end, and the ace with snap shots in every
+full-throttle pilot ahead at the end (on retail g and box area, 2026-11-12:
+in eight of nine; from the ninth start the ace, chasing his shot in the last
+9 s, slows to 25 m/s and ends 135 m under the start: `reviews/dfn-sc.md`), and the ace with snap shots in every
 start but one while the other never has one.
 
 ## The ace

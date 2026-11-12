@@ -43,8 +43,10 @@
 // (`tests/test_ladder.py` drives `tests/ladder_harness.mjs`).
 //
 // The ladder index (`collectLadders`) is built once per level by
-// `level-terrain.js`'s `buildCollider` from the scene nodes the exporter
-// stamped `extras.isLadder` on (Gap 16). It reads three.js objects through the
+// `level-terrain.js`'s `buildCollider` (and the room's `server/level-data.mjs`)
+// from the scene nodes the exporter stamped `extras.isLadder` on (Gap 16),
+// each record keeping the owner it hangs in, and `followLadder` puts it where
+// that owner stands now, out of the collider's moved frames. It reads three.js objects through the
 // two fields it needs (`traverse`, `matrixWorld.elements`) and hands back plain
 // numbers, so the climb law never touches a scene graph.
 
@@ -232,14 +234,82 @@ export function ladderRecord(spec, e, name = null) {
  * honest, and `__ladderInject` exists for a headless check that must stand a
  * ladder in by hand.
  */
-export function collectLadders(root) {
+export function collectLadders(root, { ownerOf = null } = {}) {
   const ladders = [];
   root.traverse(obj => {
     const spec = obj.userData?.isLadder;
     if (!spec || typeof spec !== 'object') return;
     obj.updateWorldMatrix(true, false);
-    ladders.push(ladderRecord(spec, obj.matrixWorld.elements, obj.name));
+    const record = ladderRecord(spec, obj.matrixWorld.elements, obj.name);
+    // The placed object the ladder hangs in (a ship, a tower), for
+    // `followLadder`: the collision index's owner id, the key its
+    // `WorldCollider.moved` frame is filed under once that object moves.
+    const owner = typeof ownerOf === 'function' ? ownerOf(obj) : -1;
+    if (owner >= 0) bakeLadder(record, owner);
+    ladders.push(record);
   });
+  return ladders;
+}
+
+/** The world fields `followLadder` rewrites: points, then directions. */
+const LADDER_POINTS = [['ox', 'oy', 'oz'], ['x', 'y', 'z'], ['tx', 'ty', 'tz']];
+const LADDER_AXES = [['rx', 'ry', 'rz'], ['ux', 'uy', 'uz'], ['zx', 'zy', 'zz'], ['fx', 'fy', 'fz']];
+
+/** Keep a ladder's frame as the level baked it, against its owner's moves. */
+export function bakeLadder(record, owner) {
+  record.owner = owner;
+  record.baked = {};
+  for (const keys of [...LADDER_POINTS, ...LADDER_AXES]) {
+    for (const k of keys) record.baked[k] = record[k];
+  }
+  record.posedBy = null;
+  return record;
+}
+
+/**
+ * Put a ladder where its object stands now. The engine finds the ladder by
+ * contact with the object's own collision (`BFSoldier::handleCollision`
+ * 0x0827d3b0, material 192..195 in `c_CGLadders`, 0x0827d437-0x0827d46a,
+ * LADDER-1) and measures the climber in that object's LIVE transform
+ * (`getLadderClosestPosition` 0x08280b40), so a ship's `ClimbingNet` is
+ * wherever the ship is, and a man on it is carried with her. Here the frame
+ * the level baked is mapped through the owner's `WorldCollider.moved` entry
+ * (`fwd`, baked world to world now, column-major), the same frame the
+ * collider asks the owner's triangles in; an owner that has not moved (or is
+ * back on its pad) has the baked frame. The box (`yMin`..`xMax`) is in the
+ * ladder's own frame and does not change. `moved` is the collider's map.
+ */
+export function followLadder(record, moved) {
+  const baked = record?.baked;
+  if (!baked) return record;
+  const m = moved?.get?.(record.owner) ?? null;
+  const fwd = m?.fwd ?? null;
+  if (!fwd) {
+    if (record.posedBy) {
+      for (const k in baked) record[k] = baked[k];
+      record.posedBy = null;
+    }
+    return record;
+  }
+  for (const [kx, ky, kz] of LADDER_POINTS) {
+    const x = baked[kx], y = baked[ky], z = baked[kz];
+    record[kx] = fwd[0] * x + fwd[4] * y + fwd[8] * z + fwd[12];
+    record[ky] = fwd[1] * x + fwd[5] * y + fwd[9] * z + fwd[13];
+    record[kz] = fwd[2] * x + fwd[6] * y + fwd[10] * z + fwd[14];
+  }
+  for (const [kx, ky, kz] of LADDER_AXES) {
+    const x = baked[kx], y = baked[ky], z = baked[kz];
+    record[kx] = fwd[0] * x + fwd[4] * y + fwd[8] * z;
+    record[ky] = fwd[1] * x + fwd[5] * y + fwd[9] * z;
+    record[kz] = fwd[2] * x + fwd[6] * y + fwd[10] * z;
+  }
+  record.posedBy = m;
+  return record;
+}
+
+/** Every ladder of the index where its object stands now (`followLadder`). */
+export function followLadders(ladders, moved) {
+  for (const ladder of ladders) if (ladder.baked) followLadder(ladder, moved);
   return ladders;
 }
 
@@ -366,6 +436,7 @@ function touch(ladder, body) {
  * with his back to it and puts him through it.
  */
 export function climbStart(climb, body, ladders) {
+  followLadders(ladders, body.world?.moved);
   const p = body.position;
   const originY = p.y + CHARACTER_HEIGHT;
   const water = body.world?.waterLevel;
@@ -409,7 +480,7 @@ export function climbStart(climb, body, ladders) {
  * (0x08281ecc), and his velocity is left as the climb set it.
  */
 export function climbStop(climb, body, kind) {
-  const ladder = climb.ladder;
+  const ladder = followLadder(climb.ladder, body.world?.moved);
   let lifted = false;
   if (ladder && climb.ly > ladder.yMax - LADDER_TOP_ZONE) {
     const origin = fromLocal(ladder, clampAcross(ladder, climb.lx),
@@ -468,7 +539,10 @@ export function climbSpeed(body, direction, dt, walk) {
  */
 export function climbTick(climb, body, dt, input = {}) {
   if (!climb.active) return null;
-  const ladder = climb.ladder;
+  // The ladder's object may have moved since the last tick: he hangs at his
+  // own place on it (`lx`, `ly`, in its frame), so the snap below carries him
+  // with it (`getLadderClosestPosition` 0x08280b40 every climbing tick).
+  const ladder = followLadder(climb.ladder, body.world?.moved);
   const raw = input.forward || 0;
   const pitch = input.pitch || 0;
   const direction = raw === 0 ? 0 : (pitch > 0 ? 1 : pitch < 0 ? -1 : Math.sign(raw));

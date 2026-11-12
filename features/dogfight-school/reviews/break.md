@@ -86,7 +86,7 @@ heading -25, 72 m/s; it was dead astern 30 m to one side).
 - `breakTurn`: breaks on range (gun reach + 30 m) and the rear cone (attacker
   more than 130 deg off his nose, nose within 45 deg of him), no closure gate.
   `break` -> `reverse` only when the attacker crosses to his other side inside
-  150 m, behind his wingline, 8 m across; `reverse` -> `turn` when the attacker
+  150 m, behind his wingline, 6 m across (8 m until the 2026-11-12 retail-g retune); `reverse` -> `turn` when the attacker
   is back behind him nose-on; `chase` (attack) only when the attacker is out
   in front of his nose, inside 400 m and less than 40 m above. No timers.
   INTENTS: reverse and turn are `defend`.
@@ -110,7 +110,7 @@ heading -25, 72 m/s; it was dead astern 30 m to one side).
 ## Thresholds relaxed, and why
 
 - Reversal within 2.5 s of the overshoot, not 2: the plan waits until the
-  attacker is 8 m across (a wobble must not flip the turn) and rolling from a
+  attacker is 6 m across (a wobble must not flip the turn; 8 m until 2026-11-12, when on retail g one reversal took 2.8 s) and rolling from a
   full turn one way to 45 deg the other takes the Spitfire about 1.8 s.
 - "Payoff: you offensive >= 2 s or a landing shot" dropped: no corner speed
   (table above). Replaced by: after the overshoot he is back behind you
@@ -136,3 +136,14 @@ heading -25, 72 m/s; it was dead astern 30 m to one side).
   (69 hits by the ace, test wants > 80); not chased.
 - The top camera frames the whole fight, so the overshoot (a 35 m crossing
   inside a 1.5 km picture) is small from above; the wide camera shows it.
+
+## Retail g and box area (2026-11-12)
+
+On the law's retail gravity and box-drag area
+(features/retail-parity-cross-check-2026-11-12) one rusher (dx -30, dv +3)
+sat near the defender's tail line for 1.5 s past the crossing before he was
+8 m across: the reversal took 2.8 s and he landed a round 3.2 s after the
+overshoot. `breakTurn` now reverses at 6 m across: every reversal is 1.6 to
+2.0 s after the overshoot (bound 2.5), no hit lands after the break's first
+two seconds, and On his tail's rush-in is unchanged (about 5 hits a fight,
+all inside the first 3 s of the break).

@@ -13,7 +13,7 @@ import { findEntryPoint, preferredSeat, SPAWN_ENTER_REACH, SPAWN_SEAT_REACH, SPA
  * `holster`, `hullOpenTo`, `leaveSeat`,
  * `mannedActive`, `markPilot`, `mayEnterHull`, `netSeatRow`, `netSendAction`, `occupancy`,
  * `optOnFoot`, `placeCamera`, `releaseButtons`, `resetMobileControls`,
- * `seatHolder`, `setPilot`, `soldier`,
+ * `LOCAL_PLAYER`, `seatHolder`, `setPilot`, `soldier`,
  * `updateMobileControls`, `useLens`, `vehicleSpawnActive`, `world`.
  */
 export function createVehicleEntry(page) {
@@ -153,7 +153,7 @@ export function createVehicleEntry(page) {
     // The soldier's origin, a metre over his feet (PHY-10): what the server
     // measures from.
     const origin = [page.soldier.x, page.soldier.y + 1, page.soldier.z];
-    return findEntryPoint(vehicleEntry.entryPoints, SPAWN_ENTER_REACH, {
+    const door = findEntryPoint(vehicleEntry.entryPoints, SPAWN_ENTER_REACH, {
       useEntryRadius: true,
       hullOf: hullFrom(origin),
       open: entry => {
@@ -169,6 +169,57 @@ export function createVehicleEntry(page) {
         return Math.hypot(entryWorld.x - origin[0], entryWorld.y - origin[1], entryWorld.z - origin[2]);
       },
     });
+    return door ? preferredDoor(door) : null;
+  }
+
+  /**
+   * The seat a human's Use takes at `door`: `toggleEntryPoint`'s human branch
+   * asks the finder's seat for `getPreferredPco()` (IPCO vt+0x48, call at lnxded
+   * 0x0814f293; 0x083193c0 tests the seat's own `+0x1e0` at 0x083193de..
+   * 0x083193eb and the root's `isOccupied` at 0x0831946d). A tank's, armoured
+   * car's or tank hunter's gunner door gives the driver's seat while it is
+   * free (SEAT-30), as the spawn's press already did (`spawnSeat`). The door
+   * keeps its own node, so the HUD's offer and the climb in stand where it is.
+   */
+  function preferredDoor(door) {
+    const survey = surveyVehicle(door.vehicle);
+    const rootId = survey?.rootId;
+    if (rootId == null) return door;
+    const seatId = preferredSeat(door.seatId, {
+      vehicleType: survey.seats?.get(door.seatId)?.vehicleType,
+      rootId, rootFree: !page.seatHolder(door.vehicle, rootId),
+    });
+    return seatId === door.seatId ? door : { ...door, seatId };
+  }
+
+  /**
+   * When E finds no free door: the nearest HELD door in the same reach, as
+   * `{ entry, holder }`, or null. `BFfindEntryPoint` 0x0831d770 fills its
+   * out pointer (the fifth argument, `toggleEntryPoint`'s `-0x4c`) with the
+   * nearest occupied seat that passes the same door radius test
+   * (0x0831dba3..0x0831dbe4), and `toggleEntryPoint` hands that seat's
+   * player to the bot manager when he is a bot (0x0814f1b6..0x0814f21a;
+   * bot-referee.js `requestSeat`). The page's own player is never his own
+   * holder here.
+   */
+  function heldEntry() {
+    if (!vehicleEntry.entryPoints) collectEntryPoints();
+    const origin = [page.soldier.x, page.soldier.y + 1, page.soldier.z];
+    const entry = findEntryPoint(vehicleEntry.entryPoints, SPAWN_ENTER_REACH, {
+      useEntryRadius: true,
+      hullOf: hullFrom(origin),
+      open: e => {
+        const holder = page.seatHolder(e.vehicle, e.seatId);
+        if (holder == null || holder === page.LOCAL_PLAYER) return false;
+        if (!page.mayEnterHull(e.vehicle)) return false;
+        return !isWreck(e.vehicle);
+      },
+      distanceOf: e => {
+        e.node.getWorldPosition(entryWorld);
+        return Math.hypot(entryWorld.x - origin[0], entryWorld.y - origin[1], entryWorld.z - origin[2]);
+      },
+    });
+    return entry ? { entry, holder: page.seatHolder(entry.vehicle, entry.seatId) } : null;
   }
 
   /**
@@ -479,6 +530,7 @@ export function createVehicleEntry(page) {
     exitPoseManned,
     exitSeat,
     exitVehicle,
+    heldEntry,
     isWreck,
     nearestEntry,
     scanForEntry,

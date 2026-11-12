@@ -152,9 +152,9 @@ export class SupplyDepot {
     // addAmmoType rows verbatim, (id, amount, rate, extra). `id` is an opaque
     // `FireArmsTemplate+0x238` tag, not the client's HUD ammo style (SUP-2):
     // a gun's own `ObjectTemplate.AmmoType` word (the B17's bomb rack 9, its
-    // guns 10), which the exporter does not carry yet, so the viewer cannot
-    // match it to a gun exactly (`world-fields.js` `rearmTypeFor`) and `amount` (every
-    // shipped row is -1, unlimited) is not tracked either. Only `rate` --
+    // guns 10, a tank's cannon the constructor's 0), matched exactly by
+    // `fire-state.js` `rearmTypeFor`. `amount` (every
+    // shipped row is -1, unlimited) is not tracked. Only `rate` --
     // how often this type has a whole unit ready to give -- governs the
     // leaky bucket `step()` reproduces exactly (SUP-7).
     // `units` is what the type's bucket gave in the last cycle, which a

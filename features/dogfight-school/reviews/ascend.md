@@ -367,3 +367,15 @@ for it" in every lesson that hands over to it). On the same bench: **39 of
 holds is the first pass. A banked turn onto the leave heading in place of
 the pull-up was tried and dropped: Up and over's Ninja, which leaves through
 `ascend`, fell from 6 to 1 of the nine.
+
+## Retail g and box area (2026-11-12)
+
+Re-pinned on the law's retail gravity and box-drag area
+(features/retail-parity-cross-check-2026-11-12), with `breakTurn` now
+reversing at 6 m across (reviews/break.md): 16 of the 20 rows moved. The
+bench: **40 of 180 work and 39 of them are kills** (one of abeam/taAce's
+three, now partly, works without a kill); a landing shot in 156, never shot
+down, 137 stalemates. abeam/taAce 3 of 9 (was 2), abeam/bzAce 5 (was 4),
+astern/uhAce 0 (was 1); from astern the Immelmann and up-and-over aces give
+a first shot in 7 and 4 of nine (were 6 and 3). The conclusion stands: what
+`ascend` holds is the first pass.

@@ -367,6 +367,9 @@ export function createNetRoom(page) {
   // smaller than this is the prediction's own business, so the prediction stays
   // the predictor (netcode.md §4).
   const NET_HP_GRACE = 1.5;
+  /** A room's rise past the page's count, more than the wire's whole-point
+   *  rounding, that the page takes as a heal (`onsnapshot`). */
+  const NET_HP_RISE = 0.5;
   // P4: the correction law lives in netcode-reconcile.js — the hard-set limit,
   // the smoothing share and the replay of the client's unacknowledged ticks are
   // all its numbers, each justified from the sim in its own header. The page
@@ -949,6 +952,19 @@ export function createNetRoom(page) {
     });
   };
 
+  /**
+   * One round of the medic bag or the wrench in hand, to the room
+   * (`server/room-packs.mjs`), which runs `useMedPack` / `useRepairPack` on
+   * its own world (`healing-packs.js`) and hands the hit points back: the
+   * soldiers' on the snapshot, the hulls' as `hull` rows. The page heals
+   * nothing of its own in a room (`hand-fire.js`), so a heal is the server's
+   * or nobody's, the way retail's client shows its server's.
+   */
+  room.reportPack = weapon => {
+    if (!room.roomJoined || typeof weapon !== 'string' || !weapon) return;
+    netSendAction({ type: 'pack', weapon });
+  };
+
   /** A blast the room priced pushed this soldier (`room-hits.mjs`): the same
    *  push into the page's own body, its flight run by the page's own
    *  `Knockback` (the human's landing, KNOCK-8). The ledger's poses describe
@@ -1352,10 +1368,13 @@ export function createNetRoom(page) {
       // 5 the page saw no kill for is silent, and a 3 or 6 settles the team
       // kill instead of the sides as the page has them.
       if (row.kind === 5 && row.other == null) return;
-      const how = row.weaponName != null || row.weapon != null || typeof row.teamKill === 'boolean'
-        ? { weapon: row.weaponName ?? null, stamped: row.weaponName != null || row.weapon != null,
-            ...(typeof row.teamKill === 'boolean' ? { teamKill: row.teamKill } : {}) }
-        : null;
+      // A man the room's hull ran over (`server/authority.mjs`, `roadkill`)
+      // is `[killed]`, never the driver's hull.
+      const how = row.roadkill ? { roadkill: true }
+        : row.weaponName != null || row.weapon != null || typeof row.teamKill === 'boolean'
+          ? { weapon: row.weaponName ?? null, stamped: row.weaponName != null || row.weapon != null,
+              ...(typeof row.teamKill === 'boolean' ? { teamKill: row.teamKill } : {}) }
+          : null;
       comms.onKill(who(row.slot), row.other != null ? who(row.other) : null, how);
     } else if (row.type === 'captured' && !row.quiet && Number.isInteger(row.flag) && page.flags[row.flag]) {
       // The first report of a point is how the round stood at the join: no line.
@@ -2314,6 +2333,13 @@ export function createNetRoom(page) {
         if (row.type === 'spawnRefused' && page.soldierArmor && !page.soldierDead) {
           page.soldierArmor.applyDamage(page.soldierArmor.maxHitPoints);
         }
+        // A room's wave (SPAWN-35, `server/authority.mjs`): the death and a
+        // spawn asked too early carry this player's wait, which the page's
+        // own commit then waits out (`spawning.js` `noteServerSpawnWait`).
+        if ((row.type === 'killed' || row.type === 'spawnRefused')
+            && row.slot === room.roomClient.slot && Number.isFinite(row.sw)) {
+          page.noteServerSpawnWait?.(row.sw);
+        }
         // The server would not seat him (the hull is the other side's, the
         // seat would not take him): the page's own seat was a prediction, so
         // he is put out of it, and the snapshots put him where the server
@@ -2453,9 +2479,8 @@ export function createNetRoom(page) {
           }
         }
       };
-      // P3/P4: the snapshot is the server's word. HP drops apply (never heals —
-      // the supply depots heal both sides, and the server's own count absorbs
-      // the rest), and the position goes through the correction law: the error
+      // P3/P4: the snapshot is the server's word. HP drops apply, and so do
+      // rises (the server runs the packs and the depots), and the position goes through the correction law: the error
       // is measured at the tick the authority acknowledges, the client's own
       // unacknowledged ticks are replayed on top, and what is left is closed a
       // fraction at a time unless it is large enough to be a different event
@@ -2545,6 +2570,12 @@ export function createNetRoom(page) {
         }
         if (self.hp != null && self.hp < page.soldierArmor.hitPoints - NET_HP_GRACE) {
           page.soldierArmor.applyDamage(page.soldierArmor.hitPoints - self.hp);
+        } else if (self.hp != null && self.hp > page.soldierArmor.hitPoints + NET_HP_RISE) {
+          // The server heals (a medic's bag, a depot: `server/room-packs.mjs`,
+          // `world-fields.js` in a room, the game's own on a real server), so
+          // the rise is its word too. The wire's hit points are whole (netcode.js), so a rise is
+          // taken once it is more than the rounding.
+          page.soldierArmor.heal(self.hp - page.soldierArmor.hitPoints);
         }
         if (self.seated || self.inVehicle) {
           if (relayUrl && !page.occupancy) adoptServerSeat(self);

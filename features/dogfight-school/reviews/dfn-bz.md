@@ -237,9 +237,16 @@ rested on exactly the kill threshold (22 hits; the theatre on El Alamein lands
 **On the L9 starts** (the measure's `STARTS`: sideways, along, height and speed;
 `test_dogfight_dfn_bz.py` flies them, and the counts and words above the round
 two numbers follow them; STARTS[0] is the theatre's start). Dip 9/9: from 15 s
-never within 732 m, he gives up at about 80 s in four (STARTS[0] among them),
+never within 700 m (731 m the closest on retail g, 2026-11-12; 732 m before), he gives up at about 80 s in four (STARTS[0] among them),
 1.1-1.9 km apart at 90 s. Flip 0/9: you turn in after him at 9-10 s, never a
 tick in his rear quarter, 0.8-1 km apart at 22 s. Ninja 0/9: the pass at 7-9 s,
 he still turning into it as it ends in six, no shot, 0.9-1.2 km apart at 25 s.
 The old x-by-speed grid gave the same verdicts (where the round-two bullets
 above differ, e.g. 749 m, six let-goes, five met dives, they are that grid's).
+
+## Retail g and box area (2026-11-12)
+
+On the law's retail gravity and box-drag area
+(features/retail-parity-cross-check-2026-11-12) the Dip's closest from 15 s
+on is 731 m (was 732). The words now say "never within 700 m", which holds
+with 31 m to spare instead of being pinned to the metre.

@@ -316,5 +316,32 @@ class LadderExitTests(unittest.TestCase):
         self.assertLess(out["y"], out["yAt"])
 
 
+
+class LadderOnAMovingHullTests(unittest.TestCase):
+    """LADDER-1: the ladder is found by contact with its object's live
+    collision (`BFSoldier::handleCollision` 0x0827d3b0) and the snap is in the
+    object's live transform (`getLadderClosestPosition` 0x08280b40), so a
+    ship's climbing net goes where the ship goes, and carries the climber."""
+
+    @classmethod
+    def setUpClass(cls) -> None:
+        cls.r = run_harness()["movingHull"]
+
+    def test_the_baked_place_holds_no_ladder_once_the_hull_has_moved(self) -> None:
+        self.assertFalse(self.r["staleTook"])
+
+    def test_the_ladder_is_taken_where_the_hull_now_stands(self) -> None:
+        self.assertTrue(self.r["took"])
+
+    def test_a_climber_is_carried_by_the_hulls_move(self) -> None:
+        carried = self.r["carried"]
+        self.assertTrue(carried["active"])
+        self.assertAlmostEqual(5.0, carried["dx"], places=6)
+        self.assertAlmostEqual(0.0, carried["dz"], places=6)
+
+    def test_back_where_it_was_baked_it_is_the_baked_ladder(self) -> None:
+        self.assertEqual({"ox": 2, "oz": 0}, self.r["home"])
+
+
 if __name__ == "__main__":
     unittest.main()

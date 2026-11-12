@@ -23,7 +23,7 @@ const TICK = 1 / 30;
 
 /** One soldier on foot at `at`, his kit's refill wired as the page wires it,
  *  and the box at the origin. `tags` gives the items their `AmmoType`. */
-function makeWorld({ at = [0, 0, 0], tags = true, seatedOn = null } = {}) {
+function makeWorld({ at = [0, 0, 0], tags = true, seatedOn = null, table = null } = {}) {
   const kit = new KitAmmo();
   const tag = (words, t) => (tags ? { ...words, ammoType: t } : words);
   const items = {
@@ -34,7 +34,7 @@ function makeWorld({ at = [0, 0, 0], tags = true, seatedOn = null } = {}) {
   };
   const gives = [];
   let t = 0;
-  const refillAmmo = types => { if (kit.rearm(types)) gives.push(Math.round(t * 100) / 100); };
+  const refillAmmo = types => { if (kit.rearm(types, table)) gives.push(Math.round(t * 100) / 100); };
   const player = {
     soldier: { x: at[0], y: at[1], z: at[2] }, armor: { destroyed: false, applyDamage() {} },
     occupancy: seatedOn ? { root: seatedOn } : null, position: at,
@@ -109,6 +109,22 @@ const out = {};
   w.items.smg.rounds = 0; w.items.smg.mags = 0;
   w.run(0.6);
   out.untagged = { pouch: snap(w.items.pouch), smg: snap(w.items.smg) };
+}
+
+// The tags from the tree's `damage.json` `ammoTypes` table (vanilla's own
+// words: the Thompson 1, the Bazooka 3, the grenades 2), for items whose
+// magazine words do not carry them: the pouch and the tube take their 1.2 a
+// second rows, the gun its 15. The knife, listed nowhere, is the
+// constructor's 0, which no row of the box carries.
+{
+  const w = makeWorld({ tags: false, table: { thompson: 1, bazooka: 3, grenadeallies: 2 } });
+  w.items.pouch.rounds = 0;
+  w.items.tube.rounds = 0; w.items.tube.mags = 0;
+  w.items.smg.rounds = 0; w.items.smg.mags = 0;
+  w.run(0.6);
+  const oneCycle = { pouch: snap(w.items.pouch), tube: snap(w.items.tube), smg: snap(w.items.smg) };
+  w.run(0.6);
+  out.tableTagged = { oneCycle, after1s: { pouch: snap(w.items.pouch), tube: snap(w.items.tube) } };
 }
 
 // Out of the box's reach nothing comes back.

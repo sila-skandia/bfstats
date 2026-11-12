@@ -326,6 +326,7 @@ export class WorldCollider {
       if (this.statics && !this.statics.movedPass) {
         this.statics.movedPass = (ox, oy, oz, dx, dy, dz, best, skipOwner, out, groups = 0, ownHits = 0) =>
           this.castMoved(ox, oy, oz, dx, dy, dz, best, skipOwner, out, groups, ownHits);
+        this.statics.movedPassOf = this;
       }
     }
     m.fwd.set(fwd); m.inv.set(inv);
@@ -500,6 +501,7 @@ export class WorldCollider {
     if (this.statics && !this.statics.movedPass) {
       this.statics.movedPass = (ox, oy, oz, dx, dy, dz, best, skipOwner, out, groups = 0, ownHits = 0) =>
         this.castMoved(ox, oy, oz, dx, dy, dz, best, skipOwner, out, groups, ownHits);
+      this.statics.movedPassOf = this;
     }
     this.#syncSubParts(owner, still);
   }
@@ -745,11 +747,17 @@ export class WorldCollider {
       const t = this.#terrain(ox, oy, oz, dx, dy, dz, best);
       if (t >= 0 && t < best) { best = t; kind = 'terrain'; }
     }
-    // Hulls: whatever is left of the segment.
+    // Hulls: whatever is left of the segment. The index runs this collider's
+    // moved pass itself (`movedPass`), so the one below is not run again. It
+    // asked every moved hull a second time, against a segment no longer than
+    // the first's, so it could never find a nearer hit than the first had;
+    // it doubled the cost of every line of sight on a level full of vehicles.
+    let movedDone = false;
     if (this.statics && best > 0) {
       const object = this.statics.cast(ox, oy, oz, dx, dy, dz, best, skipOwner, out,
                                        -1, false, false, -Infinity, 2, -1, groups, ownHits);
       if (object) { best = object.t; kind = 'object'; }
+      movedDone = this.statics.movedPassOf === this;
     }
     if (this.dynamicCast && best > 0) {
       const dyn = this.dynamicCast(ox, oy, oz, dx, dy, dz, best, skipOwner);
@@ -765,7 +773,7 @@ export class WorldCollider {
         out.kind = 'object';
       }
     }
-    if (this.castMoved(ox, oy, oz, dx, dy, dz, best, skipOwner, out, groups, ownHits)) {
+    if (!movedDone && this.castMoved(ox, oy, oz, dx, dy, dz, best, skipOwner, out, groups, ownHits)) {
       best = out.t;
       kind = 'object';
     }

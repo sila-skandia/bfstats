@@ -178,6 +178,20 @@ label.opt {
   pointer-events: none;
 }
 #spawn-timer[hidden] { display: none !important; }
+/* The death camera's ride: who it follows and the toggle key, over the world
+   (the spawn screen, when open, covers it as retail's does). */
+#death-cam-lines {
+  position: absolute;
+  left: 0; right: 0; bottom: 18%;
+  z-index: 3;
+  pointer-events: none;
+  text-align: center;
+  font: 600 14px/1.5 var(--hud-font, monospace);
+  letter-spacing: 0.04em;
+  color: #e8e4d8;
+  text-shadow: 0 1px 2px rgba(0, 0, 0, 0.85);
+}
+#death-cam-lines[hidden] { display: none !important; }
 /* The radio strip and the message log (comms.js): the engine draws both in
    the same overlay pass as the HUD, after it, and after the spawn screen and
    the map (menu/InGame's root chain: ShowMap 14, Kit/ShowKit 17, the chat,

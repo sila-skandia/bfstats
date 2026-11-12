@@ -19,7 +19,7 @@ export default {
   story: [
     'You are chasing them, but they came in faster than you. They pull nearly straight up, and the instinct is to follow them, nose on them.',
     'Straight up, a jet does not run out of speed: with its nose over 60 degrees the F-16 never drops below 71 m/s. What runs out is the air: in BF1942 a wing makes half its lift at 500 m and none at all at 1,000 m, and a jet pilot does not climb into that. They pull up 1.5 s in and go over the top at 550 m, 4 s later, while the air still holds them: a loop that tops out at 725 m at 76 m/s, 9 s in, and brings them straight back down at you.',
-    'Follow them up and you are 55 to 62 m under them as they go over. Then they are coming back down past you while you are still going up, into the thin air at 770 to 790 m, where your nose is slow to come down and your speed runs out: 18 to 27 m/s. Flown nine times from slightly different starts, nobody was shot down, but in four of the nine they came round and hit you, 4 or 5 times about 31 s in from three of them, and the only round you landed, in two of the nine, was fired before they pulled up. On a jet it is the follower who ends up slow at the top, not the leader.',
+    'Follow them up and you are 55 to 62 m under them as they go over. Then they are coming back down past you while you are still going up, into the thin air at 770 to 790 m, where your nose is slow to come down and your speed runs out: 18 to 27 m/s. Flown nine times from slightly different starts, nobody was shot down, but in four of the nine they came round and hit you, 2 to 5 times, about 31 s in, and the only round you landed, in two of the nine, was fired before they pulled up. On a jet it is the follower who ends up slow at the top, not the leader.',
   ],
   counterStory: [
     'Follow them, but shallow: 25 degrees on their bearing, nose under them, full throttle. Do not point your nose at them: a jet\'s nose answers slowly, and chasing their climb with it lands nothing.',
@@ -52,7 +52,7 @@ export default {
     ninja: {
       ace: 'jetUoAceSharp',
       note: 'Never follow them up and never circle with them. Climb after them at 24 degrees and wait to shoot as they slow over the top. On a jet they do not slow: they loop and come back down, and you climb on alone.',
-      verdict: { works: 0, of: 9, line: 'No. The shot as they slow over the top never comes, because they never slow there. You climb on alone at 24 degrees and level off at 755 to 775 m, under the top of the sky, never slower than 55 m/s. You never land a round; in two of the nine they hit you, 2 and 3 times.' },
+      verdict: { works: 0, of: 9, line: 'No. The shot as they slow over the top never comes, because they never slow there. You climb on alone at 24 degrees and level off at 755 to 775 m, under the top of the sky, never slower than 55 m/s. You never land a round; in two of the nine they hit you, once and twice.' },
     },
   },
   survival: { verdict: 'yes', line: 'Yes, and more easily than on a Spitfire: going up buys them nothing. Following shallow, the shot as they pull lands 6 to 12 hits in seven of nine. Then go past them as they come back down, and away: clear in 9 of 9, never hit. Following them up is the mistake: you run out of air and speed at the top, and they hit you in four of nine. Getting on top of them does not follow (0 of 9).' },

@@ -2857,6 +2857,8 @@ class Assembler:
                 # The fourth: a round that sticks to the object it strikes
                 # (`ProjectileTemplate+0x1ab`, tested at 0x0831ef16).
                 "isSticky": projectile.is_sticky,
+                # No friendly-fire call-out on contact (FF-6, `+0x14f`).
+                "noFFSound": projectile.no_ff_sound,
             }.items() if value is not None
         }
         if damage:
@@ -3033,6 +3035,9 @@ class Assembler:
             # vehicle FireArms exactly like a HandFireArms (Defgun's cannon:
             # 499/999/5s; a coax Browning: 400/1/0.1s, autoReload 1).
             "numOfMag": template.num_of_mag,
+            # The depot row that rearms the gun (`ammoType`, SUP-2): a B17's
+            # guns 10 and its rack 9 against the airfield's 100/s and 4/s rows.
+            "ammoType": template.ammo_type,
             "magType": template.mag_type,
             "reloadTime": template.reload_time,
             "autoReload": template.auto_reload,

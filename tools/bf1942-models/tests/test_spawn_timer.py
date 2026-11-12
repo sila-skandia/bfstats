@@ -47,7 +47,7 @@ def run_harness() -> dict:
         raise unittest.SkipTest("node is not installed")
     with tempfile.TemporaryDirectory() as tmp:
         work = Path(tmp)
-        for name in _closure("spawn-timer.js"):
+        for name in _closure("spawn-timer.js") | _closure("team-to-add.js"):
             (work / name).parent.mkdir(parents=True, exist_ok=True)
             shutil.copyfile(VIEWER / name, work / name)
         (work / "package.json").write_text('{"type":"module"}\n')
@@ -117,6 +117,35 @@ class SpawnTimerTests(unittest.TestCase):
         r = self.out["clockReset"]
         self.assertGreater(r["staleFuture"], 2000)
         self.assertTrue(r["reseeded"])
+
+
+    def test_the_gate_holds_until_the_window_then_rearms_at_its_close(self) -> None:
+        """The wave as a gate (SPAWN-35): `gameStatusPlaying` stands a dead
+        player once their wait is spent (0x08152917..0x08152987); a spent wait
+        not taken by the window's close is re-armed to the next window
+        (0x0815288c..0x081528ab)."""
+        g = self.out["gate"]
+        self.assertEqual(125, g["readyAt"])
+        self.assertEqual(15, g["atDeath"])
+        self.assertEqual(0, g["atOpen"])
+        self.assertEqual(0, g["inWindow"])
+        self.assertEqual(19, g["afterClose"])
+        self.assertEqual(0, g["nextWindow"])
+        self.assertEqual(0, g["hair"])
+        self.assertEqual(0, g["noDeath"])
+        self.assertEqual([3, 0], g["noWaves"])
+
+    def test_get_team_to_add_player(self) -> None:
+        """`PlayerManager::getTeamToAddPlayer` 0x08261670: the side over its
+        ratio share loses the newcomer; level, the closer split with them
+        counted; a tie to `rand() & 1` + 1 (0x0826179e)."""
+        t = self.out["teamToAdd"]
+        self.assertEqual([1, 2], t["empty"])
+        self.assertEqual([2, 1], t["fewer"])
+        self.assertEqual([1, 2], t["tie"])
+        self.assertEqual(2, t["ratioFirst"])
+        self.assertEqual([8, 8], t["topUp"])
+        self.assertEqual([7, 9], t["topUp34"])
 
 
 if __name__ == "__main__":
