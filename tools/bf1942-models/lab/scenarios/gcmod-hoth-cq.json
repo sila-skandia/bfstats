@@ -1,0 +1,20 @@
+{
+  "name": "gcmod-hoth-cq",
+  "description": "GCMOD GC_Hoth (GPM_CQ) for a manual retail check (features/gcmod-extraction, Open). The level ships no SinglePlayer layer, so no bots.",
+  "levels": [
+    {
+      "map": "GC_Hoth",
+      "mode": "GPM_CQ",
+      "mod": "GCMOD"
+    }
+  ],
+  "serverSettings": {
+    "serverMaxPlayers": 16,
+    "serverNumberOfRounds": 1,
+    "serverGameTime": 0,
+    "serverGameStartDelay": 30,
+    "serverGameRoundStartDelay": 10
+  },
+  "autoexec": [],
+  "human": "At round start, the three AT-STs at the Imperial AT-AT barge: on the deck, or inside at ground level?"
+}

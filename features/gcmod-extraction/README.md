@@ -66,6 +66,30 @@ test_a_bot_tank_cruises_at_retails_speed` (M1A1 13.32 against 13.5); it passes
 at HEAD and at HEAD with this work, so it is another session's uncommitted
 edits to `viewer/aircraft.js`, `viewer/hull-bodies.js` and `bf42/assemble.py`.
 
+## Found in play (2026-11-12)
+
+- **Team radio silent (F1 to F4), shouts fine.** GCMOD writes its own
+  patches into `menu/MenuRadioSound.ssc`, the script the engine loads
+  (RADIO-2); vanilla's only includes `MenuRadioSoundHigh.ssc`, and
+  `extract_radio.py` read that High file directly. So GC's three languages
+  (`hothrebel`, `hothsnowtrooper`, `montrooper`) were asked for vanilla's
+  `RogerThat`, `Negative`, ... and had 0 of 26; GC ships `RogerThat01..06`,
+  `Negative1..4`, `RequestingReinforcements1..2` and the rest. The extractor
+  now reads `menu/MenuRadioSound.ssc` and `SoldierVoice.ssc` at the HIGH tier,
+  following their includes: GC's languages have all 38 team lines. Every other
+  installed mod's two scripts are dispatchers to the same High files, so no
+  other tree's output moves. Published; `tests/test_extract_radio.py`
+  `GalacticConquestRadioTests`.
+- **A grenade on a sleeve**, seen once and gone on a reload: a stale cached
+  file, not a defect.
+- **The lab server and GC.** "Data differs from server": the lab wrote the map
+  list lower-cased (`gc_taskforce ... gcmod`), and GC's `contentCrc32.con`
+  keys its checksums `GCMOD GC_Taskforce`. The Windows lab server
+  (`--server windows`, 1.61 in the client's own bottle) now keeps the
+  scenario's spelling and passes the check; scenarios
+  `lab/scenarios/gcmod-*.json`. The retail client then crashed loading
+  GC_Taskforce (log stops mid-load, no crash report); GC_Hoth is the next try.
+
 ## The stats site
 
 Map pictures (60) and the kit icons were already live. 29 dossiers were live;

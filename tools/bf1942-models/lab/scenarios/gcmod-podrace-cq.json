@@ -1,0 +1,20 @@
+{
+  "name": "gcmod-podrace-cq",
+  "description": "GCMOD GC_Podrace (GPM_CQ) for a manual retail check (features/gcmod-extraction, Open). The level ships no SinglePlayer layer, so no bots.",
+  "levels": [
+    {
+      "map": "GC_Podrace",
+      "mode": "GPM_CQ",
+      "mod": "GCMOD"
+    }
+  ],
+  "serverSettings": {
+    "serverMaxPlayers": 16,
+    "serverNumberOfRounds": 1,
+    "serverGameTime": 0,
+    "serverGameStartDelay": 30,
+    "serverGameRoundStartDelay": 10
+  },
+  "autoexec": [],
+  "human": "Gasgano or any podracer: hold roll right (right arrow) hovering and racing. Slide, bank and turn, or nothing?"
+}

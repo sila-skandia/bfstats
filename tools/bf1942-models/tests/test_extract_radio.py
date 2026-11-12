@@ -167,6 +167,33 @@ class DesertCombatRadioTests(unittest.TestCase):
 
 
 
+@unittest.skipUnless((DEFAULT_GAME_DIR / "Mods" / "GCMOD").is_dir(), "GCMOD not installed")
+class GalacticConquestRadioTests(unittest.TestCase):
+    """GCMOD writes its own patches into `menu/MenuRadioSound.ssc`, the script
+    the engine loads (RADIO-2), where vanilla's only includes the High file.
+    Read in its place, vanilla's `MenuRadioSoundHigh.ssc` asked GC's languages
+    for `RogerThat` and `Negative`, which they do not ship, and F1 to F4 were
+    silent on every GC level (2026-11-12)."""
+
+    @classmethod
+    def setUpClass(cls) -> None:
+        import extract_radio as er
+        cls.voices = er.extract_voices(DEFAULT_GAME_DIR, "GCMOD", Path("/nonexistent"), transcode=False)
+
+    def test_the_team_radio_is_the_mods_own_script(self) -> None:
+        radio = self.voices["radio"]
+        self.assertEqual([f"RogerThat0{i}" for i in range(1, 7)], radio[0]["stems"])
+        self.assertTrue(radio[0]["random"])
+        self.assertEqual(["Negative1", "Negative2", "Negative3", "Negative4"], radio[1]["stems"])
+        self.assertEqual(["RequestingReinforcements1", "RequestingReinforcements2"], radio[7]["stems"])
+
+    def test_gcs_own_languages_speak_every_team_line(self) -> None:
+        stems = {s for p in self.voices["radio"] for s in p["stems"] if s != "radiomess"}
+        for lang in ("hothrebel", "hothsnowtrooper", "montrooper"):
+            missing = next((m for m in self.voices["missing"] if m["nation"] == lang), {"stems": []})
+            self.assertFalse(stems & set(missing["stems"]), lang)
+
+
 class SoldierLanguageTests(unittest.TestCase):
     """A side's voice folder is its soldier's `setRadioLanguage`."""
 
