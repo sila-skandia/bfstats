@@ -8,6 +8,15 @@ the same level from the same camera.
 
 Audio has its own notes: [AUDIO.md](AUDIO.md).
 
+**What `?remaster` is now (2026-11-12).** The owner played it and kept the
+sun and the water: "I'd keep the sun and the water, but I'm not sold on
+anything else." The Sherman's generated relief read as hail damage, and the
+audio was "too muffled... like having headphones on", inside a tank most of
+all. So `?remaster` is the lighting (sun, sky, shadows, haze, AO, bloom) and
+the water. The relief maps are `?remaster=maps`, and the spatial audio is
+`&remasterAudio=1`. Both were fixed after the verdict (below), but they stay
+off unless asked for.
+
 ## Plan and progress
 
 | Step | State |
@@ -23,8 +32,9 @@ Audio has its own notes: [AUDIO.md](AUDIO.md).
 | Water from the level's own water words and depth bake | done |
 | Foliage: leaf sprites, billboards and wind as node graphs | done |
 | Bloom on muzzle flashes, explosions and tracers; flashes and blasts light their surroundings; sun shafts | done |
-| Audio: HRTF, reverb by surroundings, occlusion, air absorption, the crack before the report | done ([AUDIO.md](AUDIO.md)) |
-| Generated normal and roughness maps from the texture store | done (`remaster_texture_maps.py`, 3,367 maps) |
+| Audio: reverb by surroundings, occlusion, air absorption, the crack before the report | done, behind `remasterAudio=1` ([AUDIO.md](AUDIO.md)); no longer forces Chromium's HRTF |
+| Generated normal and roughness maps from the texture store | done, behind `?remaster=maps` (`remaster_texture_maps.py`, 3,367 maps); edges only, no paint mottle |
+| Pipelines and textures warmed before play, not on first sight | done (worst frame while turning: 141-501 ms down to 26-83 ms) |
 | Two levels with before/after captures and frame times | done: Wake, Battle of Britain |
 
 ## How to look at it
@@ -34,6 +44,8 @@ map.html?map=wake&remaster
 play/index.html?remaster                     # the menu: every game it starts is remastered, in this tab
 map.html?map=wake&remaster=0                 # off again for the tab
 map.html?map=wake&remaster=noao,nobloom      # parts off, comma-separated
+map.html?map=wake&remaster=maps              # with the generated relief maps
+map.html?map=wake&remaster&remasterAudio=1   # with the spatial audio chain
 ```
 
 The setting lives in the tab's `sessionStorage` (`bfRemaster`): the menu and
@@ -44,11 +56,12 @@ start the game their own way; this covers all of them.
 The parts that can be turned off: `noshadow`, `noproxies` (statics cast for
 themselves), `noao`, `nobloom`, `nosmaa`, `nopost` (no post chain at all),
 `nofog`, `nowater`, `noglow` (effects at their texture brightness),
-`noflash` (no flash lights), `noshafts`, `nomaps` (no generated normal and
-roughness maps), `nostagger` (every cascade every frame), `notonemap`. Tuning
+`noflash` (no flash lights), `noshafts`, `nostagger` (every cascade every
+frame), `notonemap`. Parts that are off unless named: `maps` (the generated
+normal and roughness maps). Tuning
 knobs: `&exposure=`, `&cascades=`, `&shadowFar=`, `&shadowSize=`,
-`&leafReach=`, `&solidReach=`, `&glow=`, `&gpuTiming`. `remasterAudio=0`
-keeps the retail sound.
+`&leafReach=`, `&solidReach=`, `&glow=`, `&gpuTiming`. `remasterAudio=1`
+adds the spatial audio chain; without it the sound is retail's.
 
 The before/after harness, one headless Google Chrome with WebGPU on the Mac's
 GPU (`apple metal-3`), both modes, named views per level, frame times and
@@ -65,8 +78,8 @@ It stops the page's own animation loop and steps frames with `__renderOnce`,
 waiting for the GPU queue after each one, so a frame time is CPU and GPU
 together.
 
-The normal and roughness maps are generated, not committed (352 MB for the
-two local levels and the whole models tree):
+The normal and roughness maps are generated, not committed (150 MB for the
+two local levels and the whole models tree; 3.5 minutes):
 
 ```
 python3 -m venv tools/bf1942-models/.venv-remaster
@@ -210,7 +223,7 @@ The retail modules call in where they build their own look:
 `level-load.js` (the level's atmosphere once it is up), `proving-ground.js`,
 `glb-loader.js` (each texture's store hash), the seven side views that build
 their own renderer, and `level-warmup.js` and `texture-quality.js` (skipped
-under WebGPU).
+under WebGPU; the remaster warms its own pipelines, below).
 
 ### What each level word drives
 
@@ -261,10 +274,11 @@ lightmap becomes occlusion on the sky's light. Each texture's generated map
 
 **Generated maps.** `remaster_texture_maps.py` reads every store texture the
 given glbs name and writes one WebP per texture: the normal (RG) of a height
-taken from the texture's luminance with its broad painted shading high-passed
-away (grain, mortar, rivets, planks and bark stay), and roughness (B) from
-brightness and local detail (broad bright paint smoother, busy or dark
-rougher). The page tags each texture with its store hash as the glb loads
+taken from the texture's luminance, high-passed at a sixty-fourth of the
+texture, with only its steepest slopes kept (panel lines, hatch rims, rivets,
+plank edges, mortar; not paint mottle or weathering), and roughness (B) from
+brightness and that kept detail (broad bright paint smoother, edges and dark
+paint rougher). Drawn at strength 1. The page tags each texture with its store hash as the glb loads
 (`glb-loader.js`) and finds its map through the generator's index.
 
 **Haze.** Distance and exponential height fog in one: clear to 60 % of
@@ -328,8 +342,34 @@ surroundings through a pool of four point lights.
   frame's passes and shadow maps. `remaster.render()` advances it when the
   loop has not.
 - **`compileAsync` with cascaded shadows** sizes their uniform buffers before
-  the cascades exist and fails every pipeline it builds, so the warm-up is
-  skipped under WebGPU (pipelines build on first draw instead).
+  the cascades exist and fails every pipeline it builds. So retail's warm-up
+  is skipped under WebGPU, and for a while nothing took its place: every
+  building's pipeline was built, and every texture uploaded, by the first
+  frame to see it. The owner felt it ("a little stuttery at the start"); a
+  camera turning on Wake took 141 to 501 ms frames. The remaster now warms
+  its own (`warmPipelines` in `remaster-renderer.js`): five frames after the
+  level is up (the cascades exist by then), the whole scene is compiled off
+  the main thread against the scene pass's own target, with frustum culling
+  lifted for the one synchronous walk. Every texture a material binds is
+  then uploaded, 4 ms of it a frame. It runs again three seconds later for
+  what the level spawns, and on the first-person overlay when it is built.
+  The same turn now peaks at 26 to 83 ms; the build takes about 2.6 s in the
+  background on Wake.
+- **The generated relief read as hail damage** on the Sherman. The first
+  generator took everything finer than an eighth of the texture as height,
+  so painted mottle, weathering and camo blotches became dents, and the page
+  drew them at 1.8 times. It now high-passes at a sixty-fourth and keeps a
+  slope only where it is among the texture's steepest (a soft knee between
+  its 70th and 97th percentiles): panel lines, hatch rims, rivets, plank
+  edges and mortar keep a bevel, paint stays flat. Drawn at 1.
+- **The spatial audio forced Chromium's HRTF on every voice.** Against equal
+  power on white noise it lifts the bottom 3 dB and takes 2.5 to 3.5 dB off
+  the top ahead and 7.5 to 10 dB behind: the owner's "like having headphones
+  on". The chain now pans with the player's own model (equal power, or HRTF
+  with HARDWARE ACCELERATION ticked). Its air absorption was a Q 0.5 corner,
+  -6 dB at the cutoff, moving from 15 m. It is now a Butterworth from 25 m,
+  13 kHz at 50 m and 8.7 kHz at 100 m. Full occlusion is 1.5 kHz and -5 dB,
+  where it was 700 Hz and -7 dB.
 - **Seven side views build a `WebGLRenderer`**, which the WebGPU build does not
   have (the tank sight, the controls preview, the proving ground's card, the
   dogfight and tank schools, tank snapshots); under the remaster they get a
@@ -359,7 +399,7 @@ surroundings through a pool of four point lights.
   deepens to the level's deep colour, and foams at the shore.
 - Explosions and muzzle flashes are light: HDR cores, bloom, a flash of light
   on the ground and walls around them.
-- Walls, planks, rock and paint have relief and roughness of their own.
+- With `maps`: panel lines, rivets, planks and mortar have relief, and surfaces roughness of their own.
 - Trees sway, leaves flutter, and leaves cast leaf-shaped shadows.
 - Contact shadows under eaves, in doorways and where objects meet the ground.
 

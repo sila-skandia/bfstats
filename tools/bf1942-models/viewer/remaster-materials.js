@@ -89,7 +89,7 @@ function packedMapFor(map) {
  * tangent frame from the UVs), the roughness read per texel and scaled by
  * the material's own (`roughness`: shinier materials stay shinier).
  */
-function applyPackedMap(mat, map, strength = 1.8) {
+function applyPackedMap(mat, map, strength = 1) {
   const packed = packedMapFor(map);
   if (!packed) return;
   mat.bfPacked = packed;
@@ -258,7 +258,7 @@ export function dynamicMaterial(source, { materialDiffuse = null, env = false } 
   byKey.set(key, mat);
   // Relief and roughness from the generated map; a leaf card takes none
   // (its normal is the canopy's, remaster-foliage.js).
-  if (!/^sprite_\d+$/.test(source.name || '')) applyPackedMap(mat, source.map, env ? 1 : 1.8);
+  if (!/^sprite_\d+$/.test(source.name || '')) applyPackedMap(mat, source.map);
   // A cut-out (wire, foliage, nets): its shadow cut by the same alpha, not
   // the whole card (barbed wire cast a solid rectangle across Wake).
   if ((mat.alphaTest > 0 || mat.transparent) && mat.map) {

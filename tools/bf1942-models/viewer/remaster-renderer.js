@@ -339,6 +339,83 @@ export async function createRemasterScene({ renderer, scene, camera, sun, hemi }
     shaftStrength.value = facing <= 0 ? 0 : 0.35 * Math.min(1, facing * 3) * Math.max(0, Math.min(1, (1.8 - edge) / 0.8));
   }
 
+  // The warm-up (retail's is level-warmup.js, rule 6 of
+  // features/mesh-viewer-performance, which the WebGL build runs and this
+  // one skips). Without it the first frame to see a building builds its
+  // pipeline on the main thread, and the first to bind a texture uploads it
+  // and makes its mips: the owner's "a little stuttery at the start"
+  // (2026-11-12), 140 to 500 ms frames while the camera first turns. So once
+  // a level is drawing, every pipeline the scene pass can need is built off
+  // the thread (`compileAsync`, frustum culling lifted for its one
+  // synchronous walk), and every texture a material binds is uploaded, a few
+  // a frame. Twice: a few frames after the level is up, and again when the
+  // vehicles and soldiers it spawns have arrived.
+  let scenePassRef = null;
+  const warmAt = [];
+  const textureQueue = [];
+  const queuedTextures = new WeakSet();
+  let lastWarm = null;
+  function queueTextures(root) {
+    root.traverse(o => {
+      for (const m of [o.material].flat()) {
+        if (!m) continue;
+        for (const v of Object.values(m)) {
+          if (v?.isTexture && !v.isRenderTargetTexture && !queuedTextures.has(v)) {
+            queuedTextures.add(v);
+            textureQueue.push(v);
+          }
+        }
+      }
+    });
+  }
+  function uploadSome(budgetMs = 4) {
+    const t0 = performance.now();
+    while (textureQueue.length && performance.now() - t0 < budgetMs) {
+      const t = textureQueue.shift();
+      const img = t.image;
+      // Pixels not arrived yet: dropped for now (the next warm-up queues it
+      // again, or its first draw uploads it, as before).
+      if (!img || (img.width === 0 && !img.data) || t.version === 0) {
+        queuedTextures.delete(t);
+        continue;
+      }
+      try { renderer.initTexture(t); } catch { /* drawn as before */ }
+    }
+  }
+  function warmPipelines(target, cam, why) {
+    const flipped = [];
+    target.traverse(o => {
+      if ((o.isMesh || o.isPoints || o.isLine || o.isSprite) && o.frustumCulled) { o.frustumCulled = false; flipped.push(o); }
+    });
+    const t0 = performance.now();
+    let job;
+    const rt = renderer.getRenderTarget();
+    const mrt = renderer.getMRT();
+    try {
+      // The scene pass's own target and MRT: a pipeline is keyed by them.
+      if (target === scene && scenePassRef) {
+        renderer.setRenderTarget(scenePassRef.renderTarget);
+        renderer.setMRT(scenePassRef._mrt ?? null);
+      }
+      // Synchronous up to its first wait: the walk, and every pipeline
+      // asked for. The target and culling are put back before any frame.
+      job = renderer.compileAsync(target, cam);
+    } catch (err) {
+      console.warn('[remaster] warm-up', why, err);
+    } finally {
+      renderer.setRenderTarget(rt);
+      renderer.setMRT(mrt);
+      for (const o of flipped) o.frustumCulled = true;
+    }
+    queueTextures(target);
+    const walk = performance.now() - t0;
+    lastWarm = Promise.resolve(job).then(() => {
+      const ms = performance.now() - t0;
+      console.info(`[remaster] warm-up (${why}): ${flipped.length} objects, walk ${walk.toFixed(0)} ms, pipelines ready in ${ms.toFixed(0)} ms, ${textureQueue.length} textures to upload`);
+    }, err => console.warn('[remaster] warm-up', why, err));
+    return lastWarm;
+  }
+
   // The post chain, built once the camera is final.
   let pipeline = null;
   function buildPipeline() {
@@ -346,6 +423,7 @@ export async function createRemasterScene({ renderer, scene, camera, sun, hemi }
     // One sample: the ambient occlusion reads the depth, which a multisampled
     // pass cannot hand it; the edges are smoothed by SMAA instead.
     const scenePass = pass(scene, camera, { samples: 0 });
+    scenePassRef = scenePass;
     const color = scenePass.getTextureNode('output');
     const depth = scenePass.getTextureNode('depth');
     let out = color;
@@ -409,6 +487,10 @@ export async function createRemasterScene({ renderer, scene, camera, sun, hemi }
       }
       judgeCasters();
       lastFlag = performance.now();
+      // Five frames in (the scene pass is set up, the cascades fitted), and
+      // again three seconds on.
+      warmAt.length = 0;
+      warmAt.push({ frame: earlyFrames + 5, why: 'level' }, { at: performance.now() + 3000, why: 'spawned' });
     },
     /** An overlay pass's scene (the first-person arms) lit like the world:
      *  the sky's image-based light, at the world's strength. */
@@ -416,7 +498,11 @@ export async function createRemasterScene({ renderer, scene, camera, sun, hemi }
       if (!overlay) return;
       overlay.environment = scene.environment;
       overlay.environmentIntensity = scene.environmentIntensity;
+      // The arms and the gun, built before their first frame.
+      warmAt.push({ frame: earlyFrames + 1, why: 'overlay', target: overlay });
     },
+    /** The last warm-up's promise (a harness waits on it). */
+    warmed: () => lastWarm,
     /** How many meshes cast now, of how many could. */
     casters: () => ({ casting: judgeCasters(), of: casters.length }),
     render() {
@@ -449,6 +535,14 @@ export async function createRemasterScene({ renderer, scene, camera, sun, hemi }
       renderer.autoClear = true;
       (pipeline ?? buildPipeline()).render(renderer);
       renderer.autoClear = autoClear;
+      for (let i = warmAt.length - 1; i >= 0; i--) {
+        const w = warmAt[i];
+        if ((w.frame != null && earlyFrames >= w.frame) || (w.at != null && now >= w.at)) {
+          warmAt.splice(i, 1);
+          warmPipelines(w.target ?? scene, camera, w.why);
+        }
+      }
+      if (textureQueue.length) uploadSome();
     },
   };
   remasterHooks.scene = api;

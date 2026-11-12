@@ -43,7 +43,7 @@
 
 import { clamp01, modulate, modulatorValue } from './ssc-curves.js';
 import { coherentSets, resolveCoherent } from './ssc-coherent.js';
-import { configureDs3dPanner, ds3dDopplerApplied, ds3dRenderPoint } from './ds3d-pan.js';
+import { configureDs3dPanner, ds3dDopplerApplied, ds3dRenderPoint, ds3dTruePoint } from './ds3d-pan.js';
 import { INSTANCES_PER_SAMPLE, claimOneShot, releaseOneShot } from './sample-instances.js';
 
 export {
@@ -885,6 +885,7 @@ export class EngineAudio {
                                    wx, wy, wz, this.#renderPoint);
         if (at) this.#placePanner(group.panner, at.x, at.y, at.z, now, snap);
         else this.#placePanner(group.panner, wx, wy, wz, now, snap);
+        ds3dTruePoint(group.panner, wx, wy, wz, snap);
       }
     }
 

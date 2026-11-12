@@ -19,7 +19,7 @@ import { RemasterAudio, installRemasterAudio, terrainBlocks, uninstallRemasterAu
   from '../viewer/remaster-audio.js';
 import { addTree, treesNear } from '../viewer/remaster-audio-world.js';
 import {
-  DS3D_HARDWARE_PANNING_MODEL, DS3D_PANNING_MODEL, configureDs3dPanner, ds3dPanningModel,
+  DS3D_PANNING_MODEL, configureDs3dPanner, ds3dTruePoint, ds3dPanningModel,
   ds3dRenderPoint, ds3dSpatialHook,
 } from '../viewer/ds3d-pan.js';
 
@@ -64,9 +64,9 @@ function stubContext() {
 
 test('air absorption: untouched near, falling with distance, floored', () => {
   assert.equal(airAbsorptionCutoff(0), AIR_TOP);
-  assert.equal(airAbsorptionCutoff(15), AIR_TOP);
-  near(airAbsorptionCutoff(100), 4823, 5);
-  near(airAbsorptionCutoff(400), 1705, 5);
+  assert.equal(airAbsorptionCutoff(25), AIR_TOP);
+  near(airAbsorptionCutoff(100), 8706, 5);
+  near(airAbsorptionCutoff(400), 3789, 5);
   assert.equal(airAbsorptionCutoff(5000), AIR_FLOOR);
   let last = Infinity;
   for (let d = 0; d <= 3000; d += 25) {
@@ -251,11 +251,13 @@ test('a panner is adopted: chain between it and its node, taps refcounted, relea
   const remaster = installRemasterAudio({ context: ctx, input });
   try {
     assert.equal(ds3dSpatialHook(), remaster);
-    assert.equal(ds3dPanningModel(), DS3D_HARDWARE_PANNING_MODEL);
+    // The chain keeps the player's panning model: equal power unless
+    // HARDWARE ACCELERATION is ticked (Chromium's HRTF dulls every voice).
+    assert.equal(ds3dPanningModel(), DS3D_PANNING_MODEL);
     const bus = Object.assign(new Node(ctx), { gain: new Param(1) });
     const p1 = configureDs3dPanner(ctx.createPanner());
     const p2 = configureDs3dPanner(ctx.createPanner());
-    assert.equal(p1.panningModel, DS3D_HARDWARE_PANNING_MODEL);
+    assert.equal(p1.panningModel, DS3D_PANNING_MODEL);
     p1.positionX.value = 100;
     p1.connect(bus);
     p2.connect(bus);
@@ -276,9 +278,17 @@ test('a panner is adopted: chain between it and its node, taps refcounted, relea
     const p3 = configureDs3dPanner(ctx.createPanner());
     p3.connect(input);
     assert.ok(p3.__remaster.wet && p3.__remaster.wet.outs.has(remaster.reverbIn));
-    // A render point is the real point while the hook is in.
+    // The pan stays retail's render point while the hook is in (equal power
+    // at the real point was a hard pan); the chain is handed the real point
+    // apart, and measures from it.
     const m = [1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1];
-    assert.deepEqual(ds3dRenderPoint(m, 5, 2, -7, {}), { x: 5, y: 2, z: -7 });
+    const at = ds3dRenderPoint(m, 5, 2, -7, {});
+    assert.notDeepEqual(at, { x: 5, y: 2, z: -7 });
+    const p4 = configureDs3dPanner(ctx.createPanner());
+    p4.connect(input);
+    p4.positionX.value = at.x; p4.positionY.value = at.y; p4.positionZ.value = at.z;
+    ds3dTruePoint(p4, 5, 2, -7, true);
+    assert.deepEqual({ ...p4.__remaster.pos }, { x: 5, y: 2, z: -7 });
   } finally {
     uninstallRemasterAudio();
   }

@@ -19,7 +19,7 @@
      "to": 1,
      "peakL": -9.9,
      "peakR": -34.8,
-     "rmsL": -18.7,
+     "rmsL": -18.6,
      "rmsR": -43.6
     },
     {
@@ -28,15 +28,15 @@
      "peakL": -16.8,
      "peakR": -41.8,
      "rmsL": -36.8,
-     "rmsR": -61.8
+     "rmsR": -61.7
     }
    ],
    "onsets": [
     0.5101
    ],
    "centroids": [
-    4098,
-    1747
+    4065,
+    1770
    ]
   }
  },
@@ -90,7 +90,7 @@
    "surveys": 23,
    "occlusionPasses": 54,
    "cracks": 0,
-   "msPerFrame": 0.017391304606976715,
+   "msPerFrame": 0.0071428571393863756,
    "occluded": 0
   },
   "stats": {
@@ -98,26 +98,26 @@
     {
      "from": 0.5,
      "to": 1,
-     "peakL": -4.1,
-     "peakR": -9,
-     "rmsL": -16.4,
-     "rmsR": -21
+     "peakL": -8.8,
+     "peakR": -33.6,
+     "rmsL": -18.6,
+     "rmsR": -43.6
     },
     {
      "from": 1,
      "to": 3,
-     "peakL": -11.4,
-     "peakR": -18.5,
-     "rmsL": -32.6,
-     "rmsR": -38.2
+     "peakL": -14.2,
+     "peakR": -38.4,
+     "rmsL": -35,
+     "rmsR": -59.8
     }
    ],
    "onsets": [
-    0.5747
+    0.5684
    ],
    "centroids": [
-    3063,
-    1637
+    4212,
+    1989
    ]
   }
  },
@@ -216,7 +216,7 @@
    "surveys": 27,
    "occlusionPasses": 63,
    "cracks": 2,
-   "msPerFrame": 0.012234043250692652,
+   "msPerFrame": 0.006117021274861899,
    "occluded": 0
   },
   "stats": {
@@ -224,28 +224,28 @@
     {
      "from": 0.5,
      "to": 1.4,
-     "peakL": -20.4,
-     "peakR": -6.5,
-     "rmsL": -55,
-     "rmsR": -43.7
+     "peakL": -19,
+     "peakR": -6.2,
+     "rmsL": -56.6,
+     "rmsR": -43.8
     },
     {
      "from": 1.4,
      "to": 3.4,
-     "peakL": -43.3,
-     "peakR": -44.4,
-     "rmsL": -61.5,
-     "rmsR": -61.4
+     "peakL": -46.6,
+     "peakR": -47.1,
+     "rmsL": -64.5,
+     "rmsR": -64.4
     }
    ],
    "onsets": [
-    0.9621,
-    1.591,
-    3.9674,
-    4.2778
+    0.9564,
+    1.6366,
+    3.9617,
+    4.2717
    ],
    "centroids": [
-    5709,
+    6944,
     0
    ]
   }
@@ -261,33 +261,33 @@
     {
      "from": 1.5,
      "to": 2.5,
-     "peakL": -20.3,
-     "peakR": -23.8,
-     "rmsL": -31.1,
-     "rmsR": -35.3
+     "peakL": -20.6,
+     "peakR": -24.1,
+     "rmsL": -31.2,
+     "rmsR": -35.5
     },
     {
      "from": 3.5,
      "to": 4.5,
-     "peakL": -19.6,
-     "peakR": -18.5,
-     "rmsL": -29,
-     "rmsR": -29
+     "peakL": -18.9,
+     "peakR": -18.2,
+     "rmsL": -28.8,
+     "rmsR": -28.9
     },
     {
      "from": 5.5,
      "to": 6.5,
-     "peakL": -23.9,
-     "peakR": -20.5,
-     "rmsL": -34.9,
-     "rmsR": -30.7
+     "peakL": -23.6,
+     "peakR": -19.9,
+     "rmsL": -35,
+     "rmsR": -30.9
     }
    ],
    "onsets": [],
    "centroids": [
-    1395,
-    1433,
-    1356
+    1507,
+    1252,
+    1328
    ]
   }
  },
@@ -500,7 +500,7 @@
    "surveys": 31,
    "occlusionPasses": 72,
    "cracks": 0,
-   "msPerFrame": 0.016317015761262054,
+   "msPerFrame": 0.007925407920849004,
    "occluded": 0
   },
   "stats": {
@@ -508,33 +508,33 @@
     {
      "from": 1.5,
      "to": 2.5,
-     "peakL": -18.2,
-     "peakR": -19.8,
-     "rmsL": -28.6,
-     "rmsR": -31.2
+     "peakL": -20.7,
+     "peakR": -24,
+     "rmsL": -31,
+     "rmsR": -35.6
     },
     {
      "from": 3.5,
      "to": 4.5,
-     "peakL": -15.6,
-     "peakR": -15.8,
-     "rmsL": -25.3,
-     "rmsR": -25.9
+     "peakL": -18.1,
+     "peakR": -18.7,
+     "rmsL": -28.8,
+     "rmsR": -29.4
     },
     {
      "from": 5.5,
      "to": 6.5,
-     "peakL": -19.3,
-     "peakR": -16.7,
-     "rmsL": -31.1,
-     "rmsR": -28.3
+     "peakL": -24.1,
+     "peakR": -20.2,
+     "rmsL": -35.3,
+     "rmsR": -30.7
     }
    ],
    "onsets": [],
    "centroids": [
-    959,
-    617,
-    1089
+    1652,
+    1493,
+    1491
    ]
   }
  },
@@ -747,7 +747,7 @@
    "surveys": 31,
    "occlusionPasses": 72,
    "cracks": 0,
-   "msPerFrame": 0.021445221278495165,
+   "msPerFrame": 0.012121212120560847,
    "occluded": 0
   },
   "stats": {
@@ -755,33 +755,33 @@
     {
      "from": 1.5,
      "to": 2.5,
-     "peakL": -18.1,
-     "peakR": -20.8,
-     "rmsL": -29.2,
-     "rmsR": -31.9
+     "peakL": -20.8,
+     "peakR": -24.6,
+     "rmsL": -31.5,
+     "rmsR": -36.3
     },
     {
      "from": 3.5,
      "to": 4.5,
-     "peakL": -22.5,
-     "peakR": -22.9,
-     "rmsL": -32.3,
-     "rmsR": -32.9
+     "peakL": -23.9,
+     "peakR": -24,
+     "rmsL": -34.1,
+     "rmsR": -34.8
     },
     {
      "from": 5.5,
      "to": 6.5,
-     "peakL": -23,
-     "peakR": -19.9,
-     "rmsL": -34.4,
-     "rmsR": -31.5
+     "peakL": -27.3,
+     "peakR": -22.3,
+     "rmsL": -37.7,
+     "rmsR": -32.9
     }
    ],
    "onsets": [],
    "centroids": [
-    957,
-    308,
-    282
+    1561,
+    622,
+    676
    ]
   }
  },
@@ -832,7 +832,7 @@
    "surveys": 12,
    "occlusionPasses": 27,
    "cracks": 0,
-   "msPerFrame": 0.010559006137137087,
+   "msPerFrame": 0.0043478260881134444,
    "occluded": 0
   },
   "stats": {
@@ -840,32 +840,32 @@
     {
      "from": 0.3,
      "to": 0.5,
-     "peakL": -2.5,
-     "peakR": 0.9,
-     "rmsL": -11.6,
-     "rmsR": -8.1
+     "peakL": -4.9,
+     "peakR": -0.4,
+     "rmsL": -13.1,
+     "rmsR": -8.4
     },
     {
      "from": 0.5,
      "to": 1.5,
-     "peakL": -4,
-     "peakR": 0.6,
-     "rmsL": -18.6,
-     "rmsR": -13.6
+     "peakL": -5,
+     "peakR": -0.3,
+     "rmsL": -19.8,
+     "rmsR": -15
     },
     {
      "from": 1.5,
      "to": 2.9,
-     "peakL": -61.1,
-     "peakR": -51.6,
-     "rmsL": -83.8,
-     "rmsR": -74.2
+     "peakL": -63.8,
+     "peakR": -55,
+     "rmsL": -87.4,
+     "rmsR": -77.7
     }
    ],
    "onsets": [],
    "centroids": [
-    3327,
-    2179,
+    4232,
+    2599,
     0
    ]
   }
@@ -917,7 +917,7 @@
    "surveys": 12,
    "occlusionPasses": 27,
    "cracks": 0,
-   "msPerFrame": 0.017391304792084308,
+   "msPerFrame": 0.006832298137224424,
    "occluded": 0
   },
   "stats": {
@@ -925,33 +925,33 @@
     {
      "from": 0.3,
      "to": 0.5,
-     "peakL": -2.3,
-     "peakR": 0.8,
-     "rmsL": -11.5,
-     "rmsR": -8
+     "peakL": -4.7,
+     "peakR": -0.1,
+     "rmsL": -13.2,
+     "rmsR": -8.5
     },
     {
      "from": 0.5,
      "to": 1.5,
-     "peakL": -3.5,
-     "peakR": 0.9,
-     "rmsL": -18.3,
-     "rmsR": -13.4
+     "peakL": -4.3,
+     "peakR": 0.1,
+     "rmsL": -19.7,
+     "rmsR": -14.9
     },
     {
      "from": 1.5,
      "to": 2.9,
-     "peakL": -35.2,
-     "peakR": -30.3,
-     "rmsL": -54.5,
-     "rmsR": -49.6
+     "peakL": -38.4,
+     "peakR": -32.4,
+     "rmsL": -56.9,
+     "rmsR": -52.6
     }
    ],
    "onsets": [],
    "centroids": [
-    3313,
-    2069,
-    1268
+    4234,
+    2595,
+    1354
    ]
   }
  },
@@ -1002,7 +1002,7 @@
    "surveys": 12,
    "occlusionPasses": 27,
    "cracks": 0,
-   "msPerFrame": 0.014906832520265758,
+   "msPerFrame": 0.009316770183443098,
    "occluded": 0
   },
   "stats": {
@@ -1010,33 +1010,33 @@
     {
      "from": 0.3,
      "to": 0.5,
-     "peakL": -2.6,
-     "peakR": 1,
-     "rmsL": -11.7,
-     "rmsR": -8.3
+     "peakL": -4.2,
+     "peakR": 0,
+     "rmsL": -13.3,
+     "rmsR": -8.6
     },
     {
      "from": 0.5,
      "to": 1.5,
      "peakL": -3.4,
-     "peakR": 0.9,
-     "rmsL": -18.4,
-     "rmsR": -13.4
+     "peakR": -0.1,
+     "rmsL": -19.4,
+     "rmsR": -14.6
     },
     {
      "from": 1.5,
      "to": 2.9,
-     "peakL": -37,
-     "peakR": -34.7,
-     "rmsL": -59.4,
-     "rmsR": -54.1
+     "peakL": -41.6,
+     "peakR": -36.1,
+     "rmsL": -62.6,
+     "rmsR": -56.7
     }
    ],
    "onsets": [],
    "centroids": [
-    3345,
-    2069,
-    1356
+    4229,
+    2597,
+    1414
    ]
   }
  },
@@ -1087,7 +1087,7 @@
    "surveys": 12,
    "occlusionPasses": 27,
    "cracks": 0,
-   "msPerFrame": 0.01552795142120456,
+   "msPerFrame": 0.007453416147332939,
    "occluded": 0
   },
   "stats": {
@@ -1095,32 +1095,32 @@
     {
      "from": 0.3,
      "to": 0.5,
-     "peakL": -0.6,
-     "peakR": 1,
-     "rmsL": -11.8,
-     "rmsR": -8.5
+     "peakL": -3.5,
+     "peakR": 0.5,
+     "rmsL": -13.7,
+     "rmsR": -9.1
     },
     {
      "from": 0.5,
      "to": 1.5,
      "peakL": -4.5,
-     "peakR": 1.5,
-     "rmsL": -18.7,
-     "rmsR": -13.6
+     "peakR": 0.4,
+     "rmsL": -19.7,
+     "rmsR": -14.9
     },
     {
      "from": 1.5,
      "to": 2.9,
-     "peakL": -55.3,
-     "peakR": -51.5,
-     "rmsL": -78.8,
-     "rmsR": -74.1
+     "peakL": -57.5,
+     "peakR": -54.4,
+     "rmsL": -81.9,
+     "rmsR": -77.3
     }
    ],
    "onsets": [],
    "centroids": [
-    3354,
-    2169,
+    4392,
+    2602,
     0
    ]
   }
@@ -1660,7 +1660,7 @@
    "surveys": 31,
    "occlusionPasses": 72,
    "cracks": 0,
-   "msPerFrame": 0.0072261081153140476,
+   "msPerFrame": 0.006526806532885089,
    "occluded": 1
   },
   "surfAt": {
@@ -2129,24 +2129,24 @@
     {
      "from": 1,
      "to": 3.5,
-     "peakL": -21.1,
-     "peakR": -22.7,
-     "rmsL": -32.8,
-     "rmsR": -33.5
+     "peakL": -21.9,
+     "peakR": -22.8,
+     "rmsL": -33.2,
+     "rmsR": -33.6
     },
     {
      "from": 5,
      "to": 7.5,
-     "peakL": -26.7,
-     "peakR": -27.6,
-     "rmsL": -38,
-     "rmsR": -38.6
+     "peakL": -26.8,
+     "peakR": -27.4,
+     "rmsL": -38.2,
+     "rmsR": -38.7
     }
    ],
    "onsets": [],
    "centroids": [
-    1522,
-    708
+    1894,
+    815
    ]
   }
  },
@@ -2197,7 +2197,7 @@
    "surveys": 12,
    "occlusionPasses": 27,
    "cracks": 0,
-   "msPerFrame": 0.017391305162299493,
+   "msPerFrame": 0.004347826091005751,
    "occluded": 0
   },
   "stats": {
@@ -2205,18 +2205,18 @@
     {
      "from": 0.3,
      "to": 0.5,
-     "peakL": -2.9,
-     "peakR": 0.9,
-     "rmsL": -11.6,
-     "rmsR": -8.1
+     "peakL": -5.3,
+     "peakR": -0.5,
+     "rmsL": -13.1,
+     "rmsR": -8.4
     },
     {
      "from": 0.5,
      "to": 1.5,
-     "peakL": -4,
-     "peakR": 0.6,
-     "rmsL": -18.6,
-     "rmsR": -13.6
+     "peakL": -5.4,
+     "peakR": -0.6,
+     "rmsL": -19.8,
+     "rmsR": -15
     },
     {
      "from": 1.5,
@@ -2229,8 +2229,8 @@
    ],
    "onsets": [],
    "centroids": [
-    3325,
-    2172,
+    4152,
+    2620,
     0
    ]
   }
@@ -2572,7 +2572,7 @@
   }
  },
  "page": {
-  "url": "map.html?map=wake&remaster&shots=1&mute",
+  "url": "map.html?map=wake&remaster&remasterAudio=1&shots=1&mute",
   "errors": [
    {
     "count": 2,
@@ -2581,10 +2581,6 @@
    {
     "count": 1,
     "text": "console: Failed to load resource: the server responded with a status of 404 (File not found)"
-   },
-   {
-    "count": 1142,
-    "text": "console: THREE.WebGPURenderer: Uncaptured WebGPU GPUValidationError: Write range (bufferOffset: 0, size: 2304) does not fit in [Buffer \"bindingBufferundefined_UniformBuffer_0_(vertex)\"] size (1280).\n "
    }
   ],
   "installed": true,
@@ -2593,8 +2589,8 @@
    "voices": 14,
    "taps": 14,
    "weights": {
-    "open": 0.8333333333333334,
-    "woods": 0.16666666666666666,
+    "open": 0.8333333333333353,
+    "woods": 0.16666666666666619,
     "builtup": 0,
     "inside": 0
    },
@@ -2623,12 +2619,12 @@
     "open",
     "woods"
    ],
-   "rays": 342,
-   "surveys": 38,
-   "occlusionPasses": 89,
+   "rays": 351,
+   "surveys": 39,
+   "occlusionPasses": 91,
    "cracks": 0,
-   "msPerFrame": 0.046741154495786245,
-   "occluded": 8
+   "msPerFrame": 0.029166666665890566,
+   "occluded": 5
   }
  }
 }

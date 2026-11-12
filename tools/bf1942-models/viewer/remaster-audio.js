@@ -8,9 +8,10 @@
 // (`remaster-mode.js`). Installed, it registers itself as `ds3d-pan.js`'s
 // spatial hook, and from then on:
 //
-//   1. every panner `configureDs3dPanner` sets up is an HRTF head
-//      (`DS3D_HARDWARE_PANNING_MODEL`) stood at the voice's real point,
-//      height and all, never at a render point;
+//   1. every panner `configureDs3dPanner` sets up stands at the voice's real
+//      point, height and all, never at a render point, and pans with the
+//      model the player's sound options choose (equal power, or the HRTF
+//      head with HARDWARE ACCELERATION ticked);
 //   2. whatever the panner is connected to, this module puts a voice chain
 //      in between: air absorption (a low-pass whose cutoff falls with
 //      distance), occlusion (a low-pass and a gain drop, smoothed, from
@@ -23,7 +24,7 @@
 //   4. a soldier's report reaches the listener distance / 343 m/s after the
 //      shot (`arrivalDelay`, which `world-fire.js` asks), and a supersonic
 //      round that passes near the ear cracks where and when its shock cone
-//      touches him (`roundFlown`, which `passing-rounds.js` calls).
+//      touches the ear (`roundFlown`, which `passing-rounds.js` calls).
 //
 // The chain is inserted by wrapping the panner's own `connect` and
 // `disconnect`, so no caller changes how it builds or tears down its graph:
@@ -190,6 +191,16 @@ export class RemasterAudio {
     return panner;
   }
 
+  /** `ds3d-pan.js` hands the real point of a voice whose panner stands at
+   *  its render point (`ds3dTruePoint`), after the panner was put there: the
+   *  chain's distance and rays are the real point's. */
+  place(panner, x, y, z, snap = false) {
+    const voice = panner?.__remaster;
+    if (!voice || this.disposed) return;
+    voice.pos.x = x; voice.pos.y = y; voice.pos.z = z;
+    if (voice.air) this.#place(voice, snap);
+  }
+
   /**
    * Hear where the caller puts the panner, as it puts it. A position param's
    * `.value` reads back the last rendered quantum's, so a pooled slot moved
@@ -247,7 +258,10 @@ export class RemasterAudio {
     const ctx = this.ctx;
     voice.air = ctx.createBiquadFilter();
     voice.air.type = 'lowpass';
-    voice.air.Q.value = 0.5;
+    // Butterworth: -3 dB at the cutoff, flat below it. At Q 0.5 the corner
+    // is -6 dB and the slope starts an octave early, which dulled every
+    // voice past 15 m twice what the law asks.
+    voice.air.Q.value = Math.SQRT1_2;
     voice.air.frequency.value = 20000;
     voice.occ = ctx.createBiquadFilter();
     voice.occ.type = 'lowpass';

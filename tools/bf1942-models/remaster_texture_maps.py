@@ -21,11 +21,13 @@ never written.
 
 BF1942's textures are painted with their light in them, so a height taken
 straight from brightness would turn every painted shadow into a slope. The
-height is the texture's luminance with its broad shading taken out (a high
-pass at an eighth of the texture's size): what is left is grain, mortar,
-rivets, planks, bark, the relief that the paint drew. Roughness follows the
-same reading: broad bright surfaces (paint, concrete, metal) a little
-smoother, fine busy detail and dark crevices rougher.
+height is the texture's luminance with its shading and its paint taken out
+(a high pass at a sixty-fourth of the texture, then only the steepest slopes
+kept, `maps_for`): what is left is mortar, rivets, panel lines, plank
+edges, the relief that the paint drew, and not the mottle and weathering
+around them. Roughness follows the same reading: broad bright surfaces
+(paint, concrete, metal) a little smoother, sharp detail and dark crevices
+rougher.
 """
 
 from __future__ import annotations
@@ -80,29 +82,42 @@ def box_blur(a: np.ndarray, r: int) -> np.ndarray:
 
 
 def maps_for(rgb: np.ndarray) -> np.ndarray:
-    """The packed normal (RG) and roughness (B) for one texture, 0..255."""
+    """The packed normal (RG) and roughness (B), keeping only drawn relief.
+
+    The first reading took everything under an eighth of the
+    texture as relief, so a vehicle's painted mottle, weathering and camo
+    blotches became dents: the Sherman read as hail-battered (the owner,
+    2026-11-12). Painted relief is small and sharp (a panel line, a rivet,
+    a plank's edge, mortar); paint is soft. So the high pass is at a
+    sixty-fourth of the texture, and a slope survives only where it is
+    steep against the texture's own run of slopes (a soft knee between its
+    70th and 97th percentiles): a blotch's gentle rise is flat, an edge
+    keeps its bevel.
+    """
     h, w = rgb.shape[:2]
     lum = (0.2126 * rgb[..., 0] + 0.7152 * rgb[..., 1] + 0.0722 * rgb[..., 2]).astype(np.float32)
-    # The broad shading out: a gaussian-ish low pass (three box passes) at
-    # an eighth of the texture.
-    r = max(1, min(h, w) // 16)
-    low = box_blur(box_blur(box_blur(lum, r), r), r)
+    r = max(1, min(h, w) // 64)
+    low = box_blur(box_blur(lum, r), r)
     detail = lum - low
-    # A touch of smoothing so single-texel noise is not a bump.
     height = box_blur(detail, 1)
-    # Slope in texels, scaled so a 512 texture and a 128 one read alike.
-    k = 3.2 * (min(h, w) / 512.0) ** 0.5
     dx = (np.roll(height, -1, axis=1) - np.roll(height, 1, axis=1)) * 0.5
     dy = (np.roll(height, -1, axis=0) - np.roll(height, 1, axis=0)) * 0.5
-    nx, ny = -dx * k * 8.0, -dy * k * 8.0
+    g = np.sqrt(dx * dx + dy * dy)
+    lo, hi = np.percentile(g, 70), np.percentile(g, 97)
+    t = np.clip((g - lo) / max(hi - lo, 1e-6), 0, 1)
+    keep = t * t * (3 - 2 * t)
+    k = 4.0 * (min(h, w) / 512.0) ** 0.5
+    nx, ny = -dx * keep * k * 8.0, -dy * keep * k * 8.0
     nz = np.ones_like(nx)
     inv = 1.0 / np.sqrt(nx * nx + ny * ny + nz * nz)
     nx, ny = nx * inv, ny * inv
-    # Roughness: 0.92 at mid-grey, down toward 0.55 on broad bright
-    # surfaces, up toward 1 where the detail is busy or the paint is dark.
-    busy = box_blur(np.abs(detail), max(1, r // 2))
-    rough = 0.92 - 0.38 * np.clip(low - 0.45, 0, 1) / 0.55 + 2.5 * busy + 0.12 * np.clip(0.25 - low, 0, 1) / 0.25
-    rough = np.clip(rough, 0.5, 1.0)
+    # Roughness from the broad paint, as before, with the busy term on the
+    # kept relief only, so mottle does not read as rough patches either.
+    rb = max(1, min(h, w) // 16)
+    broad = box_blur(box_blur(lum, rb), rb)
+    busy = box_blur(np.abs(detail) * keep, r)
+    rough = 0.9 - 0.3 * np.clip(broad - 0.45, 0, 1) / 0.55 + 2.0 * busy + 0.1 * np.clip(0.25 - broad, 0, 1) / 0.25
+    rough = np.clip(rough, 0.55, 1.0)
     out = np.stack([nx * 0.5 + 0.5, ny * 0.5 + 0.5, rough], axis=-1)
     return np.clip(out * 255.0 + 0.5, 0, 255).astype(np.uint8)
 

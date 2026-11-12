@@ -1,7 +1,10 @@
 # Remaster mode: the audio half
 
-`map.html?remaster` (or `?remaster&remasterAudio=0` to keep the retail sound
-under the new renderer, `remaster-mode.js`). Our own BF1942 implementation
+`map.html?remaster&remasterAudio=1` (`remaster-mode.js`). Off by default
+since 2026-11-12: the owner played it and heard it as "too muffled... like
+having headphones on", inside a tank most of all, so `?remaster` alone keeps
+the retail sound. What was muffling it was fixed the same day (below, "The
+owner's verdict"). Our own BF1942 implementation
 presented the way a game made today would sound. Without `?remaster`, nothing
 in this note runs: the chain is built only when `REMASTER_AUDIO` is set, and
 every hook it uses is null in the retail build (checked headless:
@@ -19,10 +22,12 @@ now carries a spatial hook (`setDs3dSpatialHook`); `page-audio.js` installs
 `remaster-audio.js` as that hook in `ensureListener`, under `REMASTER_AUDIO`
 only. With the hook in:
 
-1. **HRTF at the real point.** `ds3dPanningModel()` answers
-   `DS3D_HARDWARE_PANNING_MODEL` (HRTF) and `ds3dRenderPoint` returns the
-   voice's own position, height included (the hardware path the page already
-   had for OPTIONS > SOUND > HARDWARE ACCELERATION). The distance law stays
+1. **The real point.** `ds3dRenderPoint` returns the voice's own position,
+   height included (the hardware path the page already had for OPTIONS >
+   SOUND > HARDWARE ACCELERATION), so the occlusion rays leave from where the
+   sound is. The panning model stays the player's: equal power, or HRTF
+   with HARDWARE ACCELERATION ticked. The chain forced HRTF at first; see
+   "The owner's verdict". The distance law stays
    the script's: each layer's `Volume <- Distance` ramps times DirectSound's
    `min(1, minDistance / d)`, which is an inverse law with
    `refDistance = minDistance`. The panners keep `rolloffFactor 0` so the two
@@ -31,7 +36,7 @@ only. With the hook in:
    `connect`/`disconnect`, so no caller changed how it builds its graph:
 
    ```
-   source -> gain -> panner(HRTF) -> air LP -> occlusion LP -> occlusion gain -> caller's node
+   source -> gain -> panner -> air LP -> occlusion LP -> occlusion gain -> caller's node
                                        \-> per-voice wet  (caller's node is the listener input)
    caller's node (a patch bus, a PositionalAudio gain) -> tap -> reverb in
    reverb in -> send[space] -> convolver[space] -> return (0.8) -> listener input -> limiter
@@ -69,9 +74,9 @@ only. With the hook in:
 
 | Law | Value |
 | --- | --- |
-| Air absorption | low-pass, `fc = 20 kHz` to 15 m, then `20 kHz x (15 / d)^0.75`, floor 1 kHz: 8.1 kHz at 50 m, 4.8 kHz at 100 m, 1.7 kHz at 400 m. Puts the 12 dB/oct corner where ISO 9613-1 (20 C, 50 % RH) passes about 3 dB. |
+| Air absorption | Butterworth low-pass (Q 0.707, -3 dB at the corner), `fc = 20 kHz` to 25 m, then `20 kHz x (25 / d)^0.6`, floor 2 kHz: 13 kHz at 50 m, 8.7 kHz at 100 m, 3.8 kHz at 400 m. Gentler than ISO 9613-1 on purpose: the game's sounds were mixed for a chain with no air at all. (First cut: Q 0.5 from 15 m, `^0.75`, floor 1 kHz, 4.8 kHz at 100 m.) |
 | Reverb send | `0.3 x clamp(sqrt(d / 10), 0.5, 3.5)`: 0.15 at 1 m, 0.3 at 10 m, 0.95 at 100 m. Gives back about half of the direct sound's 6 dB per doubling, since a reverberant field barely falls with distance. |
-| Occlusion | 0 / 0.5 / 1 from two rays: the line ear to source, and ear to 3 m over the source (a wall the sound can come over is half). Full: low-pass 700 Hz and gain 0.45 (-7 dB); between, log-frequency interpolation. Smoothed with a 0.15 s time constant. Terrain alone is 1 (a hill). The wet send drops by half what the dry drops (sound comes round). |
+| Occlusion | 0 / 0.5 / 1 from two rays: the line ear to source, and ear to 3 m over the source (a wall the sound can come over is half). Full: low-pass 1.5 kHz and gain 0.55 (-5 dB; first cut 700 Hz and -7 dB); between, log-frequency interpolation. Smoothed with a 0.15 s time constant. Terrain alone is 1 (a hill). The wet send drops by half what the dry drops (sound comes round). |
 | Surroundings | survey 4 Hz, reverb crossfade time constant 0.6 s. |
 
 ### Impulse responses (generated at install, nothing downloaded)
@@ -147,32 +152,51 @@ by the page check above.
 | File | What it shows |
 | --- | --- |
 | `a_rifle_20m_left_retail.wav` | K98 fired twice 20 m to the left, retail: DirectSound's pan, hard left (right ear -25 dB), no room, no delay. |
-| `a_rifle_20m_left_remaster.wav` | The same: HRTF (far ear 5 dB down and darker, not gone), the open-field return, the report 58 ms after the shot (onset 0.575 s against 0.510). |
+| `a_rifle_20m_left_remaster.wav` | The same: retail's pan (far ear -33.6 dB peak against retail's -34.8), as bright as retail (centroid 4212 Hz against 4065), the open-field return, the report 58 ms after the shot (onset 0.568 s against 0.510). The first cut, through HRTF, was 3063 Hz. |
 | `b_rifle_350m_retail.wav` | K98 at 350 m firing past the listener, retail: silence, then the script's 0.99 s band delay, a thin report. No crack in this render (the game's own `bulletair` crack is an `EffectAudio` script the rig does not load). |
 | `b_rifle_350m_crack_then_report_remaster.wav` | The same: the N-wave crack from up-range on the right at 0.96 s (0.5 + 0.445), the report at 1.59 s, d / 343 exact, low-passed by 350 m of air, with its echo. |
 | `c_tank_passby_retail.wav` | Sherman engine (its own `.ssc`) driving past at 45 m, 20 m/s, retail. |
-| `c_tank_passby_remaster_occlusion_off.wav` | The remaster chain with no house: HRTF and air absorption only. |
-| `c_tank_passby_remaster_behind_house.wav` | A 28 x 14 x 9 m house between the road and the listener: occlusion ramps in at x = -30 and out at x = +40; behind it the note is 7 dB down and its centroid 308 Hz against 617 in the clear. |
+| `c_tank_passby_remaster_occlusion_off.wav` | The remaster chain with no house: air absorption only. Centroid 1493 Hz at the pass, as retail's (1252-1507); the first cut was 617. |
+| `c_tank_passby_remaster_behind_house.wav` | A 28 x 14 x 9 m house between the road and the listener: occlusion ramps in at x = -30 and out at x = +40; behind it the note is 5 dB down and its centroid 622 Hz against 1493 in the clear (first cut: 7 dB, 308 against 617). |
 | `d_gunshot_dry_remaster_reference.wav` | K98 4.2 m away, remaster chain with the reverb muted: the reference for the four below. |
 | `d_gunshot_open_remaster.wav` | The same shot in open ground. |
 | `d_gunshot_woods_remaster.wav` | ...in woods: long dark diffuse tail. |
 | `d_gunshot_builtup_remaster.wav` | ...in a street: slaps off the house fronts, bright tail. |
 | `d_gunshot_inside_remaster.wav` | ...in a 10 x 8 x 3.5 m room: dense early reflections, short loud tail. |
 | `e_ambient_wake_beach_retail.wav` | Wake: the level's wind bed and island1's surf (its own `scene.json` areas, placed by `area-sound.js`), 8 s, retail. |
-| `e_ambient_wake_beach_then_bunker_remaster.wav` | The same, remaster; at 4 s the listener steps into a bunker: the wind muffled, the surf occluded and the room's return on it (-5 dB, centroid 1522 to 708 Hz). |
+| `e_ambient_wake_beach_then_bunker_remaster.wav` | The same, remaster; at 4 s the listener steps into a bunker: the wind muffled, the surf occluded and the room's return on it (-5 dB, centroid 1894 to 815 Hz). |
 
-## What sounds better, what worse (from the numbers, nobody has listened)
+## The owner's verdict, and what it fixed (2026-11-12)
 
-Better, by measurement: direction (the far ear keeps a darker 5 dB-down copy
-instead of DirectSound's near-silence at 90 degrees, and front and back now
-differ by 4 dB); distance reads as distance (air absorption, the reverb ratio
-rising, the exact delay); a wall between you and a tank takes 7 dB and the top
-off it; a rifle in a room rings.
+The owner played Wake with the chain on: "The sound is too muffed. Inside a
+tank it takes away from the atmosphere too much... It's like having
+headphones on." Measured afterwards:
+
+- **HRTF everywhere.** The chain had switched every panner to Chromium's
+  HRTF. Against equal power, on white noise at 5 m, it lifts 50-500 Hz by
+  3-4 dB and takes 2.5 dB off 3-12 kHz and 3.4 dB off 8-20 kHz ahead, 1.3
+  and 2.2 dB to the side, and 7.5 and 9.7 dB behind. That tilt is a closed
+  pair of headphones, and in a tank, where the fight is all round, half of
+  it is behind. The chain now leaves the model to the player's sound option.
+- **The air filter's corner.** At Q 0.5 a biquad is 6 dB down at its cutoff
+  and already falling an octave below it, so everything past 15 m lost
+  about twice the top the law meant. It is now a Butterworth and moves from
+  25 m, more slowly.
+- **Occlusion.** A hull between the ear and the source took everything down
+  to 700 Hz. The hulls are outlines (no windows or doors), so in a village
+  most of the fight went under a blanket. Full occlusion is now 1.5 kHz and
+  -5 dB.
+
+The renders below are from after the fix.
+
+## What sounds better, what worse (from the numbers)
+
+Better, by measurement: distance reads as distance (a little air at range,
+the reverb ratio rising, the exact delay); a wall between you and a tank
+takes 5 dB and the top off it; a rifle in a room rings. Direction is
+retail's pan again, and near sounds are as bright as retail's.
 
 Worse or open:
-- HRTF is Chromium's IRCAM set; it lifts the bottom 2-3 dB and some listeners
-  hear it as in-head on speakers. Nothing in the chain switches to a speaker
-  pan on speakers.
 - The reverb is a send per space, not per source position: a gun fired in the
   street while you stand inside rings with the room's IR.
 - The near shots peak just over 0 dBFS (+1.5) before the limiter catches them;
@@ -182,17 +206,18 @@ Worse or open:
   tail is still sounding moves that tail to the new place (the slot's hold
   covers it in practice).
 - Air absorption also lands on the game's far layers, which were already
-  recorded dull; at 300+ m the report is very dark.
+  recorded dull. Since the gentler law, a report at 350 m loses the top
+  above about 4 kHz, where it lost everything above 1.7.
 
-## Not done / next
+## Left as it is (the owner set the audio aside, 2026-11-12)
 
 - Vehicle guns (`vehicle-audio.js`) are not delayed by distance: their fire
   loops are gated by a held trigger, not one trigger a round, so the delay
-  needs its own design. They do get HRTF, air, occlusion and reverb.
+  needs its own design. They do get air, occlusion and reverb.
 - Explosions keep the scripts' own `trigger Volume` + `Time` band delays (they
   already model the speed of sound in steps); not made exact.
 - The player's own hand-weapon report is 2D at the shoulder (retail rule); it
-  gets the reverb but no HRTF.
+  gets the reverb but no pan.
 - Occlusion ignores vehicles and soldiers as blockers, and material (a wooden
   hut stops as much as a bunker).
 - No early-reflection direction from the real walls the survey found; a next
@@ -210,4 +235,5 @@ Worse or open:
   decay, decorrelation, repeatable), and the chain's insertion, tap refcount
   and release, and that removing the hook gives the retail pan back.
 - `test_ds3d_pan.mjs` still passes unchanged: no module writes an HRTF
-  panning model literally, and the retail pan is untouched.
+  panning model literally, and the retail pan is untouched. The chain test
+  checks that installing it keeps the player's panning model.

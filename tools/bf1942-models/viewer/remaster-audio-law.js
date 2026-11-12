@@ -21,19 +21,23 @@ export const SPEED_OF_SOUND = 343;
  * Real air takes the top off a sound at a rate that grows with frequency
  * (ISO 9613-1, 20 C, 50 % RH: about 0.025 dB/m at 4 kHz and 0.08 dB/m at
  * 8 kHz), so a shot 400 m away has lost 10 dB at 4 kHz and 30 at 8. One
- * 12 dB/octave low-pass cannot follow that curve exactly; the cutoff law
- * below puts its corner where the real loss passes about 3 dB:
+ * 12 dB/octave low-pass cannot follow that curve exactly. The law below is
+ * gentler than real air, on purpose: the game's sounds were mixed for a
+ * chain with no air at all, and a full ISO filter on them dulled every
+ * fight past 50 m (the owner, 2026-11-12: "too muffled... like having
+ * headphones on"). So the corner is a Butterworth's -3 dB and it moves
+ * late and slowly:
  *
  *   fc(d) = AIR_TOP                                 d <= AIR_NEAR
  *   fc(d) = AIR_TOP * (AIR_NEAR / d) ^ AIR_EXPONENT  beyond, floored at AIR_FLOOR
  *
- * 15 m: 20 kHz (untouched), 50 m: 8.1 kHz, 100 m: 4.8 kHz, 400 m: 1.7 kHz,
- * 1 km and beyond: 1 kHz.
+ * 25 m: 20 kHz (untouched), 50 m: 13 kHz, 100 m: 8.7 kHz, 400 m: 3.8 kHz,
+ * 1.2 km and beyond: 2 kHz.
  */
 export const AIR_TOP = 20000;
-export const AIR_NEAR = 15;
-export const AIR_EXPONENT = 0.75;
-export const AIR_FLOOR = 1000;
+export const AIR_NEAR = 25;
+export const AIR_EXPONENT = 0.6;
+export const AIR_FLOOR = 2000;
 
 export function airAbsorptionCutoff(distance) {
   const d = Number.isFinite(distance) ? Math.max(0, distance) : 0;
@@ -64,9 +68,12 @@ export function wetSendFor(distance) {
 
 /** An occluded voice's low-pass at full occlusion, Hz, and its gain. A wall
  *  or a hill between the ear and the source takes the top off and about
- *  7 dB with it; diffraction round the edge keeps the bottom. */
-export const OCCLUDED_CUTOFF = 700;
-export const OCCLUDED_GAIN = 0.45;
+ *  5 dB with it; diffraction round the edge keeps the bottom. Gentler than
+ *  a solid wall measures (700 Hz, 7 dB at first): the hulls are a building's
+ *  outline, not its windows and doors, and at 700 Hz every fight behind a
+ *  hut sounded like it was under a blanket. */
+export const OCCLUDED_CUTOFF = 1500;
+export const OCCLUDED_GAIN = 0.55;
 
 /** How quickly a voice's occlusion follows its rays, seconds (time constant). */
 export const OCCLUSION_TAU = 0.15;
