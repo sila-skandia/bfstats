@@ -146,6 +146,15 @@ never fires.
 
 ## Found by playing, and what the fixes turned up
 
+**Open, live since e5003c584: bot drivers run over their own side.** The run-over (a moving hull kills a
+soldier at 8 m/s or more, as retail does) went live without retail's other half, the bot driver's
+collision prediction (`BBAvoid::calculateUrgency` `0x0855c650`, `collisionPredicted` `0x0855d2f0`,
+about 5 s ahead; entry 7 below). On the live page check that followed, 9 of the first 15 generated
+levels failed the rollout floor's own-hand rule, the worst on driving levels (jeep_bowl 0.35,
+rennpiste_gebirge 0.26, tl_race 0.24 own-side deaths a bot-minute). The check was stopped at 15
+of 64 and its page.json files were put back, so no verdict from it is recorded; no tag was
+withdrawn. Next: port the prediction (entry 7), then play the 64 live levels once on it.
+
 The owner's four reports that started the audit, and three more the fixes uncovered:
 
 - **A soldier stuck under a moving vehicle.** Retail resolves a hull meeting a soldier on the
