@@ -23,8 +23,9 @@
 //     wait: the time to the next window when that is MORE than the window's
 //     length (0x0814dee8..0x0814defb), else that plus the rest of the open
 //     window plus the time between waves (0x0814df01..0x0814df13), i.e. the
-//     window after next; clamped 0..127 (127.0 at 0x086c0300). A team-kill
-//     penalty adds whole cycles (not modelled). `serverSpawnDelay`
+//     window after next; plus the team-kill penalty, whole cycles
+//     (`tkSpawnPenalty`, 0x0814df1f..0x0814df85); clamped 0..127 (127.0 at
+//     0x086c0300). `serverSpawnDelay`
 //     (`+0x204`) is read only with waves off (0x0814db90): the flat wait.
 //
 // The fallback's clock is the relay's `clock` (`net-relay.js`); that it starts
@@ -40,23 +41,81 @@ export const DEFAULT_SPAWN_DELAY = 3;
 export const DEFAULT_SPAWN_WINDOW = 5;
 /** The wait's clamp in `killPlayer` (0x086c0300). */
 export const MAX_SPAWN_WAIT = 127;
+/** `admin.spawnDelayPenaltyForTK`, `GameServer+0x4d4`: 1.0 in the ctor
+ *  (`movl $0x3f800000` at 0x0812f8b9); the shipped serversettings.con does
+ *  not set it. */
+export const DEFAULT_TK_SPAWN_PENALTY = 1;
+
+// --- single player: a departure from retail, on purpose -------------------
+//
+// THE OWNER'S CHOICE, 2026-11-12: single player respawns in 3 s by default,
+// adjustable; retail waits for the 20 s wave. Instant Battle, the campaign
+// and any other level played off a room (the page's own player in
+// `spawning.js`, the bots in `bot-referee.js`, the headless runner in
+// `sim/match.mjs`) use a flat wait of `SINGLE_PLAYER_SPAWN_SECONDS`, set on
+// the Instant Battle screen beside the bot settings (`play/bot-settings.js`
+// SPAWN TIME, `map.html` `?spawnTime=`). It is the law's own waves-off
+// branch (`serverSpawnTime` 0, the flat `serverSpawnDelay`), so nothing else
+// of the spawn law moves: the spawn points and the seeded pick are as they
+// were. A room (`server/authority.mjs`) and a retail relay keep retail's
+// 20 s wave. Not a parity bug: do not put the wave back in single player
+// (features/retail-inverse-gap-audit-2026-11-12, "Kept on purpose").
+export const SINGLE_PLAYER_SPAWN_SECONDS = 3;
+/** The setting's ceiling, whole seconds (the screen's slider runs 0..30). */
+export const MAX_SINGLE_PLAYER_SPAWN_SECONDS = 30;
+
+/** A stored or typed spawn time as the whole seconds single player uses:
+ *  0..30, the 3 s default for anything that is not a number (0 is a choice:
+ *  no wait at all). */
+export function singlePlayerSpawnSeconds(value) {
+  if (value == null || value === '') return SINGLE_PLAYER_SPAWN_SECONDS;
+  const n = Number(value);
+  if (!Number.isFinite(n)) return SINGLE_PLAYER_SPAWN_SECONDS;
+  return Math.min(MAX_SINGLE_PLAYER_SPAWN_SECONDS, Math.max(0, Math.round(n)));
+}
+
+/** The wave law's parameters in single player: waves off, the flat wait. */
+export function singlePlayerSpawnParams(seconds = SINGLE_PLAYER_SPAWN_SECONDS) {
+  return { spawnTime: 0, spawnDelay: singlePlayerSpawnSeconds(seconds) };
+}
+
+/** Where the Instant Battle screen remembers the setting (`localStorage`);
+ *  `map.html` reads it for a level opened without `?spawnTime=` (a campaign
+ *  mission, a hand-typed URL). */
+export const SINGLE_PLAYER_SPAWN_KEY = 'bf42-mesh-sp-spawn-seconds';
+
+/**
+ * The team-kill term `killPlayer` (0x0814d920) adds to the wave's wait, with
+ * waves on only: `ceil(tks * spawnDelayPenaltyForTK) * (time between waves +
+ * window)` (`fild BFPlayer+0x190; fmuls +0x4d4`, `frndint` under the
+ * round-up control word `0x800`, times `+0x214 + +0x210`, added before the
+ * clamp, 0x0814df1f..0x0814df85), then `+0x190 = 0` (0x0814df8b). `tks` is
+ * the player's team kills since their last death (`BFPlayer+0x190`).
+ */
+export function tkSpawnPenalty(tks, { spawnTime = DEFAULT_SPAWN_TIME, spawnWindow = DEFAULT_SPAWN_WINDOW,
+  tkPenalty = DEFAULT_TK_SPAWN_PENALTY } = {}) {
+  if (!(spawnTime > 0) || !(tks > 0)) return 0;
+  const cycles = Math.ceil(Math.fround(tks * Math.fround(tkPenalty)));
+  return cycles > 0 ? cycles * (spawnTime + Math.max(0, spawnWindow)) : 0;
+}
 
 /**
  * The wait `killPlayer` gives a player who dies at `diedAt` on the server's
  * round clock: seconds from death until a spawn window has them.
  */
 export function spawnWait(diedAt, { spawnTime = DEFAULT_SPAWN_TIME, spawnDelay = DEFAULT_SPAWN_DELAY,
-  spawnWindow = DEFAULT_SPAWN_WINDOW } = {}) {
+  spawnWindow = DEFAULT_SPAWN_WINDOW, teamKills = 0, tkPenalty = DEFAULT_TK_SPAWN_PENALTY } = {}) {
   const clamp = v => Math.min(MAX_SPAWN_WAIT, Math.max(0, v));
   if (!(spawnTime > 0)) return clamp(spawnDelay);
   const window = Math.max(0, spawnWindow);
   const cycle = spawnTime + window;
   const phase = ((diedAt % cycle) + cycle) % cycle;
+  const tk = tkSpawnPenalty(teamKills, { spawnTime, spawnWindow, tkPenalty });
   // Inside an open window: `+0x208` is 0, so the wait is the window's rest
   // plus the time between waves, the next window's start.
-  if (phase < window) return clamp(cycle - phase);
+  if (phase < window) return clamp(cycle - phase + tk);
   const toWindow = cycle - phase;               // `+0x208`
-  return clamp(toWindow > window ? toWindow : toWindow + cycle);
+  return clamp((toWindow > window ? toWindow : toWindow + cycle) + tk);
 }
 
 /**
