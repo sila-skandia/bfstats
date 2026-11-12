@@ -17,6 +17,12 @@
 //                       the URL today; until it gets a control of its own the
 //                       slider carries the caption BF1942 EQUIVALENT.
 //
+// DELIBERATE: a working skill slider is an improvement on the game. Retail
+// 1.61's Instant Battle AI SKILL slider is inert (ledger AI-21: the skirmish
+// arm of `FUN_006dd910` reads a byte at `SkirmishSettings+0x88` that nothing
+// writes, so it always yields 0.5); this one reaches the bots on purpose, as
+// features/instant-battle-bot-settings records. Do not wire it back to 0.5.
+//
 // Drawn with the menu pack's own face and fills so it sits on the screen the
 // way the retail sliders did; hit-tested before the layout walk in
 // `skirmish.js` (what this module draws is not in `menu-layout.json`, so the

@@ -4,14 +4,16 @@ The engine side is settled in `features/bf1942-engine-reference/` — ledger row
 HP-1/HP-2/HP-5 for the Armor and the burn cadence, ARM-1/ARM-2 for the
 `addArmorEffect` tiers — and nothing asserted here is invented. Assertions:
 
-  - the burn is a flat `hpLostWhileCriticalDamage` once per whole second, **not**
-    scaled by `dt` (HP-5), so a Sherman critical at 12 HP takes exactly 8 ticks;
+  - the burn bills `Armor::update`'s one-second bank times
+    `hpLostWhileCriticalDamage` each time the bank fills (HP-17), so a Sherman
+    critical at 12 HP takes exactly 8 ticks at 30 Hz;
   - a living vehicle's tier is re-evaluated continuously (ARM-1) and clears
     again when it is repaired, because the engine's `Armor+0x128` byte is a
     death latch rather than a first-run latch;
-  - water damage is a flat `hpLostWhileDamageFromWater` once per second while
-    `inWater` (HP-5), and only for vehicles with `damageFromWater` set — boats
-    do not drown (HP-12, parity-audit GAP D-2).
+  - water damage is a flat `hpLostWhileDamageFromWater` on the first wet frame
+    after `WaterDamageDelay` (0 unless authored) and then each time the
+    reloaded 1.0 s countdown runs out (HP-5), and only for vehicles with
+    `damageFromWater` set — boats do not drown (HP-12, parity-audit GAP D-2).
 
 Like `test_armor.py`, this copies the module plus the two it imports
 (`armor.js`, and `effects-core.js` for the splash formula) into a temp dir and
@@ -153,9 +155,8 @@ class BurnAndDeathTests(unittest.TestCase):
             self.assertAlmostEqual(index + 1, tick["at"], delta=0.05)
         self.assertEqual(0, burn["finalTier"]["threshold"])
 
-    def test_a_long_frame_checks_in_less_often_not_harder(self) -> None:
-        # HP-5: the loss is a flat amount per firing, not scaled by dt. A single
-        # 2 s step costs two ticks (3 HP), never 2 s worth of scaled loss.
+    def test_a_long_frame_bills_the_whole_bank(self) -> None:
+        # HP-17: a 2 s step leaves 2 s in the bank, billed at once, 2 x 1.5.
         self.assertEqual(9, self.results["longFrame"]["hp"])
 
     def test_repair_clears_the_tier_and_resets_the_burn(self) -> None:
@@ -167,7 +168,9 @@ class BurnAndDeathTests(unittest.TestCase):
         self.assertIsNone(repair["afterHeal"])
         self.assertTrue(repair["changed"])
         self.assertFalse(repair["critical"])
-        self.assertEqual(0, repair["accumulator"])
+        # The bank is not the burn's: it runs from spawn and a repair does
+        # not empty it (HP-17, `+0xe8`). Two 1/30 s steps are in it.
+        self.assertAlmostEqual(2 / 30, repair["bank"], places=5)
 
     def test_death_is_announced_exactly_once(self) -> None:
         # A round kills through damage(), outside any update() — so "died" has
@@ -263,24 +266,45 @@ class WaterDamageTests(unittest.TestCase):
     def setUpClass(cls) -> None:
         cls.results = run_harness()
 
-    def test_flat_tick_per_second(self) -> None:
-        # Sherman: 100 HP, hpLostWhileDamageFromWater 10. One second per tick.
-        self.assertEqual(90, self.results["waterTick1"]["hp"])
-        self.assertEqual(80, self.results["waterTick2"]["hp"])
-        self.assertEqual(70, self.results["waterTick3"]["hp"])
-        # The accumulator drains whole seconds and never carries a fraction.
-        self.assertEqual(0, self.results["waterTick3"]["acc"])
+    def test_first_wet_frame_then_every_second(self) -> None:
+        # Sherman: 100 HP, hpLostWhileDamageFromWater 10, no WaterDamageDelay:
+        # the template's 0, so the first wet frame bills (HP-5, lnxded
+        # 0x081dbdc0), then each 1.0 s reload, 30 frames at 30 Hz.
+        water = self.results["waterTicks"]
+        self.assertEqual([{"frame": 1, "hp": 90}, {"frame": 31, "hp": 80},
+                          {"frame": 61, "hp": 70}], water["bills"])
 
-    def test_long_frame_checks_in_less_often(self) -> None:
-        # HP-5: a 2 s step costs two ticks (20 HP), never 2 s worth of scaled loss.
-        self.assertEqual(80, self.results["waterLongFrame"]["hp"])
-        self.assertEqual(0, self.results["waterLongFrame"]["acc"])
+    def test_long_frame_bills_once(self) -> None:
+        # One countdown per frame: a 2 s step crosses 0 once and reloads 1.0.
+        self.assertEqual(90, self.results["waterLongFrame"]["hp"])
+        self.assertEqual(1, self.results["waterLongFrame"]["timer"])
 
-    def test_leaving_water_resets_the_countdown(self) -> None:
-        # Half a second accumulates but does not tick; going dry resets.
+    def test_leaving_water_gives_the_delay_back(self) -> None:
+        # An authored 2 s delay: half a second spent, then dry restores all of
+        # it (`+0xe4 = +0xec`), and the first bill waits the whole delay again.
         self.assertEqual(100, self.results["waterExitMid"]["hp"])
-        self.assertAlmostEqual(0.5, self.results["waterExitMid"]["acc"])
-        self.assertEqual(0, self.results["waterExitDry"]["acc"])
+        self.assertAlmostEqual(1.5, self.results["waterExitMid"]["timer"])
+        self.assertEqual(2, self.results["waterExitDry"]["timer"])
+        self.assertEqual({"before": 100, "after": 90}, self.results["waterDelayed"])
+
+    def test_unwritten_rates_are_the_constructors_one(self) -> None:
+        # HP-22's constructor 1.0 at template +0xfc/+0x100 (lnxded 0x081dbe3b,
+        # 0x081dbe41) reaches the Armor's upside-down and water rates.
+        d = self.results["defaults"]
+        self.assertEqual(1, d["upsideDown"])
+        self.assertEqual(1, d["water"])
+        self.assertEqual(0, d["waterDelay"])
+        self.assertFalse(d["deep"])
+        self.assertEqual([1, 1, 0], [d["deepRate"], d["deepDelay"], d["deepLevel"]])
+        self.assertEqual(49, d["afterWetFrame"])
+        self.assertEqual(49, d["afterFlippedSecond"])
+
+    def test_deep_water_is_its_own_countdown(self) -> None:
+        # BF1918's words, the delay the template's 1.0 s: billed at 1 s and
+        # 2 s; a hull that does not author `damageFromDeepWater` is not.
+        deep = self.results["deepWater"]
+        self.assertEqual([{"frame": 30, "hp": 95}, {"frame": 60, "hp": 90}], deep["bills"])
+        self.assertEqual(100, deep["offHp"])
 
     def test_boats_do_not_drown(self) -> None:
         # damageFromWater is false on the boat template. Its authored 500
@@ -288,11 +312,10 @@ class WaterDamageTests(unittest.TestCase):
         self.assertEqual(500, self.results["boatNoWaterDamage"]["hp"])
 
     def test_set_routes_in_water_per_owner(self) -> None:
-        # Both owner 3 (Sherman) and 4 (boat) marked in-water; only the Sherman
-        # loses HP. The boat keeps its authored 500 (HP-17).
+        # Both owner 3 (Sherman) and 4 (boat) marked in-water for 3 s at 30 Hz;
+        # only the Sherman loses HP. The boat keeps its authored 500 (HP-17).
         self.assertEqual(70, self.results["setWater"]["shermanHp"])
         self.assertEqual(500, self.results["setWater"]["boatHp"])
-        self.assertEqual(0, self.results["setWater"]["shermanAcc"])
 
     def test_set_without_in_water_flag_loses_nothing(self) -> None:
         self.assertEqual(100, self.results["setNoWater"]["shermanHp"])
@@ -326,9 +349,13 @@ class AboveCeilingTests(unittest.TestCase):
 
     def test_a_shot_down_ac130_burns_at_its_own_rate(self) -> None:
         # 400 left after 1600 damage, under the 500 critical threshold, then
-        # ten whole seconds at 4 HP/s.
-        self.assertEqual({"hp": 360, "critical": True, "destroyed": False},
-                         self.results["burn"])
+        # ten whole seconds at 4 HP/s. Each bill is the float bank (a hair
+        # over or under 1.0 s at 30 Hz) times the rate (HP-17), so the total
+        # lands within a few thousandths of 40.
+        burn = self.results["burn"]
+        self.assertAlmostEqual(360, burn["hp"], places=3)
+        self.assertTrue(burn["critical"])
+        self.assertFalse(burn["destroyed"])
 
 
 class BlastGeometryTests(unittest.TestCase):
@@ -702,3 +729,48 @@ class SubmarineDataTests(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+class CriticalByteAndDeathKeyTests(unittest.TestCase):
+    """HP-13/HP-17: the byte `Armor::status` moves by message, which the input
+    scale (HP-15) and a ship's sink rate read; ARM-11: the death key."""
+
+    results: dict
+
+    @classmethod
+    def setUpClass(cls) -> None:
+        cls.results = run_harness()
+
+    def test_death_sends_no_0x14(self) -> None:
+        # `status()` takes the death branch at 0x08173a06 for any value at or
+        # under 0.001: 0x15 alone. A one-blow kill is never flagged critical.
+        b = self.results["criticalByte"]
+        self.assertTrue(b["afterCross"])
+        self.assertTrue(b["deadAfterCross"])
+        self.assertFalse(b["oneBlow"])
+        self.assertTrue(b["oneBlowDestroyed"])
+        self.assertFalse(b["healed"])
+
+    def test_authored_under_its_threshold_bleeds_at_full_input(self) -> None:
+        f = self.results["criticalByte"]["flagkill"]
+        self.assertTrue(f["critical"])
+        self.assertFalse(f["flagged"])
+        self.assertEqual(1, f["scale"])
+
+    def test_death_key_follows_the_last_hit_material(self) -> None:
+        k = self.results["deathKeys"]
+        self.assertEqual(0, k["legacyDry"])
+        self.assertEqual(-1, k["legacyWet"])
+        self.assertEqual(0, k["neverHitWet"])
+        self.assertEqual(-1, k["seaContactDry"])
+        self.assertEqual(0, k["grassDry"])
+        self.assertEqual(-1, k["grassWet"])
+
+    def test_the_death_tier_reads_the_hulls_own_last_material(self) -> None:
+        d = self.results["deathByMaterial"]
+        self.assertEqual(-1, d["seaThenBeached"])
+        self.assertEqual(0, d["grass"])
+        self.assertEqual(0, d["never"])
+        self.assertEqual(-1, d["inTheWater"])
+        self.assertEqual(3, d["keptAfterDeath"])
+

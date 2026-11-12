@@ -148,7 +148,7 @@ class MaterialsLayerTests(unittest.TestCase):
         top, modes = scene_layers.layer_materials(self._ctx(meshes))
         self.assertEqual(top, {"depthWriteOff": ["1p_katyusha_m1_material1"],
                                "materialDiffuse": {}, "alphaBlend": [],
-                               "alphaLodDistance": {}})
+                               "alphaLodDistance": {}, "textureFadeMaxDist": {}})
         self.assertEqual(modes, {})
 
     def test_lists_the_transparent_materials_that_also_test_alpha(self) -> None:
@@ -183,6 +183,20 @@ class MaterialsLayerTests(unittest.TestCase):
         top, _ = scene_layers.layer_materials(self._ctx(meshes, objects))
         self.assertEqual(top["alphaBlend"], ["pega_grassfield02_material0"])
         self.assertEqual(top["alphaLodDistance"], {"b17_prp1": 750.0, "stebarbwire_m1": 0.0})
+
+    def test_lists_each_geometrys_texture_fade_distance(self) -> None:
+        # GeometryTemplate.textureFadeMaxDist, template +0xa0 (ledger DL-13):
+        # only where a script sets it; the viewer takes 200 otherwise.
+        objects = {
+            "Objects/Houses/Geometries.con":
+                "GeometryTemplate.create StandardMesh afr_house1_ste_M1\n"
+                "GeometryTemplate.textureFadeMaxDist 70\n"
+                "GeometryTemplate.create StandardMesh Plain_m1\n"
+                "GeometryTemplate.create StandardMesh Big_m1\n"
+                "geometryTemplate.textureFadeMaxDist 100\n",
+        }
+        top, _ = scene_layers.layer_materials(self._ctx({}, objects))
+        self.assertEqual(top["textureFadeMaxDist"], {"afr_house1_ste_m1": 70.0, "big_m1": 100.0})
 
 
     def test_groups_the_lit_materials_whose_diffuse_is_not_white(self) -> None:
@@ -279,8 +293,9 @@ GeometryTemplate.create TreeMesh Bush_m1
         self.assertEqual(scene_layers.LAYERS["meshCull"], (("meshCull",), ()))
         # After terrainDetail, ahead of envmapTexture (both added 2026-10-17),
         # collisionGroups (2026-10-20) and fireOnce (2026-11-10).
-        self.assertEqual(scene_layers.REPORT_ORDER[-4:],
-                         ("meshCull", "envmapTexture", "collisionGroups", "fireOnce"))
+        self.assertEqual(scene_layers.REPORT_ORDER[-5:],
+                         ("meshCull", "envmapTexture", "collisionGroups", "fireOnce",
+                          "textureFadeMaxDist"))
 
 
 class CollisionGroupTests(unittest.TestCase):

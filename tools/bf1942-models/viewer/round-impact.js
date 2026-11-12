@@ -6,24 +6,36 @@
 
 import { impactEffect, materialFamily } from './collision-materials.js';
 import { damageFactor, IMPACT_BLAST_OFFSET, splashSpec } from './effects-core.js';
-import { angleFactor } from './crash-damage.js';
+import { angleFactor, materialOf, roundAttackerMaterial } from './crash-damage.js';
 import { spawnImpact } from './round-visuals.js';
 
 /** Record a hit, name the effect the game would play, and play or mark it.
  *  `origin` is where the round left the barrel, when the caller kept it. */
 export function impact(guns, group, spec, hit, velocity = null, travelled = 0, origin = null, stamp = null) {
-  const attacker = guns.attackerMaterial(spec);
+  // The round's own collision material (`crash-damage.js`
+  // `roundAttackerMaterial`, IMP-2): its spec's or its table row's, 0 for a
+  // template the table lists without one (the engine's -1 template default
+  // leaves the round's contact material, 0), and null when our own data does
+  // not name the round at all. A null is our plumbing, not the engine's
+  // material 0: the record then carries no direct damage, as before.
+  const attacker = roundAttackerMaterial(guns, spec);
   const family = materialFamily(hit.material);
   // `Projectile::getDamage`: the attacker material's `materialDamage`, then
   // the falloff over the distance the round has flown since it left.
-  const base = guns.materials?.[attacker]?.damage ?? null;
+  // A material id the table does not define is read as material 0, the
+  // MaterialManager's retry on id 0 (ledger DMG-1), through the same lookup
+  // `crash-damage.js` and `vehicle-hits.js` use.
+  const tables = guns.materials ? { materials: guns.materials } : null;
+  const attMat = attacker === null ? null : materialOf(tables, attacker);
+  const defMat = materialOf(tables, hit.material);
+  const base = attMat?.damage ?? null;
   const factor = damageFactor(spec?.damage, travelled);
   // The two terms that were missing. `damageMod` is keyed by the attacker's
   // and defender's *groups*, not their material ids — most materials use
   // their own id for both, which is why a keyed-by-id lookup mostly works and
   // then silently doesn't on the ones that differ.
-  const attGroup = guns.materials?.[attacker]?.attGroup ?? attacker;
-  const defGroup = guns.materials?.[hit.material]?.defGroup ?? hit.material;
+  const attGroup = attMat?.attGroup ?? attacker;
+  const defGroup = defMat?.defGroup ?? hit.material;
   const mod = guns.modifiers?.[attGroup]?.[defGroup] ?? null;
   // The angle term, `angleMod + (1 - angleMod) sin(abs(cos) pi/2)` with the
   // struck object's own `angleMod` (`handleCollisionForProjectile`, ledger
@@ -92,7 +104,7 @@ export function impact(guns, group, spec, hit, velocity = null, travelled = 0, o
     // a table that *does* load and says 0.0 for this pairing means exactly
     // that, and the round bounces.
     damage: base === null ? null
-      : base * (mod === null ? 1 : mod) * incidence * factor,
+      : base * (mod ?? (guns.modifiers ? 0 : 1)) * incidence * factor,  // DMG-1: no cell is 0.0
     played: false,
   };
   // Splash / HE area pass. Direct HP is already in `damage`; these fields
@@ -163,10 +175,11 @@ export function impact(guns, group, spec, hit, velocity = null, travelled = 0, o
  *     whole of why, and why handing this path a fractional radius would be
  *     wrong rather than faithful.
  *   - `sourceArmor` is pushed as **NULL** (0x0831f727), where the impact
- *     path passes the firer's. So this does not exclude the thrower, which
- *     is why your own grenade hurts you. UNVERIFIED, and named as such:
- *     what that argument actually gates downstream was not re-derived this
- *     round, only the fact that it is null here.
+ *     path passes the firer's. That argument does one thing downstream:
+ *     `handleExplosionOnObject` finds the victim's first Armor up its
+ *     parent chain and skips the victim when it is the source's
+ *     (`cmpl %ebx,0x30(%ebp)` / `je` at lnxded 0x08156597; ledger HP-9g).
+ *     With NULL nothing is skipped, which is why your own grenade hurts you.
  *   - there is no surface: the engine stands the effect on world up,
  *     `startEndEffect` passing (0, 1, 0), so there is no material pair, no
  *     incidence cosine and no direct-hit HP — an end-of-life blast is

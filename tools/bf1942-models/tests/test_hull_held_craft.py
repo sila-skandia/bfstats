@@ -1,5 +1,5 @@
 """What a land or air hull's own spawner holds is an object of its own, held
-on the hull (ledger AI-121, SPAWN-30, SPAWN-35), with seats of its own
+on the hull (ledger AI-121, SPAWN-30, SPAWN-33), with seats of its own
 (`viewer/spawned-craft.js` `hullHeldCraftUnder`,
 `tests/hull_held_craft_harness.mjs`). BF1918's Kolossal carries its MG
 platform and commander that way (five of its twelve crew positions), the

@@ -5,7 +5,7 @@
 
 import * as THREE from 'three';
 import { selectGait } from './gait-select.js';
-import { replayGait } from './remote-gait.js';
+import { drawnAimPitch, replayGait } from './remote-gait.js';
 import { FAMILY_HALVES, MORPH_CUT, MorphBlend, stateInfo, stateMorph } from './soldier-actions.js';
 import { trackNodes } from './clip-nodes.js';
 import { findBone } from './pose-compose.js';
@@ -26,10 +26,11 @@ export const TORSO_ROOT_BONE = 'Spine Root';
 const TWIST = AIM_TWIST_SCALE * Math.PI / 180;
 const PITCH = AIM_PITCH_SCALE * Math.PI / 180;
 
-/** The most the torso is bent or turned off the hips, drawn degrees: the live
- *  page's clamp for a remote soldier (`netcode-render.js` `twistTorso`), where a
- *  rig stops reading as a man. The twist register pins at 20 recorded degrees
- *  (60 drawn), so it only ever bites the pitch. */
+/** The most the torso is turned off the hips, drawn degrees. The twist
+ *  register pins at 20 recorded degrees (60 drawn), so this never bites. The
+ *  pitch has the engine's own clamp instead (`remote-gait.js`
+ *  `drawnAimPitch`, ledger ANIM-23): +-20 register degrees standing and
+ *  crouched (50 drawn), the template's `setLiePointUpDownAngle` lying. */
 export const AIM_BEND_MAX_DEG = 60;
 
 /** How fast the bend comes on and goes off when he takes or leaves a stance
@@ -105,10 +106,11 @@ export function unbendTorso(bone, bend) {
  *
  * `group` is the soldier's drawn group (his body times the pose glb's half
  * turn), `aim` his recorded `{ pitch, twist }` (`aimAt`), `on` whether his
- * stance carries a bend, `dt` the replay clock's advance (null on a cut).
+ * stance carries a bend, `dt` the replay clock's advance (null on a cut),
+ * `stance` his stance ('prone' takes the lying pitch limits, ANIM-23).
  * Call `unbendTorso` before the mixer runs.
  */
-export function bendTorso(bone, bend, group, aim, on, dt) {
+export function bendTorso(bone, bend, group, aim, on, dt, stance = 'stand') {
   if (!bone || !bend) return;
   const target = on ? 1 : 0;
   // A cut (a seek, a body just built, a clock gone back) goes straight to the
@@ -121,7 +123,10 @@ export function bendTorso(bone, bend, group, aim, on, dt) {
   const w = bend.weight;
   const clamp = v => Math.max(-MAX_BEND, Math.min(MAX_BEND, v));
   const twist = clamp((Number.isFinite(aim?.twist) ? aim.twist : 0) * TWIST) * w;
-  const pitch = clamp((Number.isFinite(aim?.pitch) ? aim.pitch : 0) * PITCH) * w;
+  // `BFSoldier::updateAnimations`' own clamp on the drawn pitch
+  // (`0x0826f109` / `0x0826f122`, ANIM-23), in register degrees, then the
+  // 2.5 its three spine bones spread it over.
+  const pitch = drawnAimPitch(aim?.pitch, stance === 'prone') * PITCH * w;
   if (!twist && !pitch) return;
   bend.base.copy(bone.quaternion);
   // D = B E B^-1 in the world, B his body; on the bone, P^-1 D P before the
@@ -141,12 +146,15 @@ export function bendTorso(bone, bend, group, aim, on, dt) {
   bend.worn = true;
 }
 
-/** Whether a replayed body's stance carries the bend: a man lying down is
- *  bent to the ground and his aim is in his arms and the slope (ledger
- *  ANIM-5's third-person block runs for the standing poses), and a seated or
- *  swimming one is posed by his seat or the water. */
+/** Whether a replayed body's stance carries the bend. Every stance on foot
+ *  does: `BFSoldier::updateAnimations` runs the third-person aim block lying
+ *  too, with its own pitch limits (`0x0826f0ed`: `c_AsmIsLying` takes the
+ *  template's `setLiePointUpDownAngle`, vanilla up 0 / down -6, so a lying
+ *  man raises his chest at most 15 drawn degrees and never bows; ANIM-23).
+ *  A seated or swimming one is posed by his seat or the water, which the
+ *  callers decide. */
 export function stanceBends(stance) {
-  return stance !== 'prone';
+  return true;
 }
 
 // Gait selection (idle/walk/run) is `gait-select.js`'s job: ground speed and
@@ -358,7 +366,7 @@ export function setGaitPose(entity, t, body = null, aim = null, lean = 0) {
   let bendAim = aim ?? (body ? { pitch: body.pitch, twist: body.twist } : null);
   if (anim.lean?.value && bendAim) bendAim = { ...bendAim, twist: 0 };
   bendTorso(anim.torso, anim.twist, entity.group, bendAim,
-    Boolean(bendAim) && stanceBends(body?.stance), cut ? null : dt);
+    Boolean(bendAim) && stanceBends(body?.stance), cut ? null : dt, body?.stance);
 }
 
 // The soldier's next pose cuts to his gait at its instant instead of morphing:

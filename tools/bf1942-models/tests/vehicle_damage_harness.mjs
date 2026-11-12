@@ -147,7 +147,7 @@ out.waterDeathFallback = deathTier(
   const healed = v.update(1 / 30);
   out.repair = {
     burning, afterHeal: healed.tier, changed: healed.changed,
-    critical: v.critical, accumulator: v.criticalAccumulator,
+    critical: v.critical, bank: v.bank,
   };
 }
 
@@ -164,40 +164,82 @@ out.waterDeathFallback = deathTier(
   };
 }
 
-// Water damage: a Sherman in water loses hpLostWhileDamageFromWater (10)
-// per second, starting immediately, flat (not scaled by dt).
+// Water damage (HP-5): `Armor::update`'s `+0xe4` countdown. The Sherman
+// authors no `WaterDamageDelay`, the template's 0, so it is billed a flat
+// `hpLostWhileDamageFromWater` (10) on its first wet frame, and then each
+// time the countdown, reloaded to 1.0 s, falls below 0. Stepped at 30 Hz.
 {
   const v = new DamageableVehicle(SHERMAN);
-  v.update(1.0, { inWater: true });          // first tick: 10 HP gone
-  out.waterTick1 = { hp: v.hitPoints, acc: v.waterAccumulator };
-  v.update(1.0, { inWater: true });          // second tick: another 10
-  out.waterTick2 = { hp: v.hitPoints, acc: v.waterAccumulator };
-  v.update(1.0, { inWater: true });          // third tick
-  out.waterTick3 = { hp: v.hitPoints, acc: v.waterAccumulator };
+  const bills = [];
+  for (let i = 1; i <= 90; i++) {
+    const r = v.update(1 / 30, { inWater: true });
+    if (r.tick > 0) bills.push({ frame: i, hp: v.hitPoints });
+  }
+  out.waterTicks = { bills, hp: v.hitPoints, timer: v.waterTimer };
 }
 
-// A long water frame does not over-damage: two whole seconds cost two ticks,
-// not one.
+// A long water frame bills once: the countdown is not drained in a loop.
 {
   const v = new DamageableVehicle(SHERMAN);
   v.update(2.0, { inWater: true });          // 2s in one call
-  out.waterLongFrame = { hp: v.hitPoints, acc: v.waterAccumulator };
+  out.waterLongFrame = { hp: v.hitPoints, timer: v.waterTimer };
 }
 
-// Leaving water resets the accumulator: re-entering starts a fresh second.
+// An authored delay is the grace before the first bill, and going dry gives
+// all of it back (`+0xe4 = +0xec`).
 {
-  const v = new DamageableVehicle(SHERMAN);
-  v.update(0.5, { inWater: true });          // half-accumulated, no tick yet
-  out.waterExitMid = { hp: v.hitPoints, acc: v.waterAccumulator };
-  v.update(1 / 30, { inWater: false });       // dry: accumulator cleared
-  out.waterExitDry = { acc: v.waterAccumulator };
+  const v = new DamageableVehicle({ ...SHERMAN, waterDamageDelay: 2 });
+  v.update(0.5, { inWater: true });          // 1.5 s of grace left
+  out.waterExitMid = { hp: v.hitPoints, timer: v.waterTimer };
+  v.update(1 / 30, { inWater: false });       // dry: the whole delay back
+  out.waterExitDry = { timer: v.waterTimer };
+  v.update(1.9, { inWater: true });          // under the delay: nothing
+  const before = v.hitPoints;
+  v.update(0.2, { inWater: true });          // past it: the first bill
+  out.waterDelayed = { before, after: v.hitPoints };
 }
 
 // A boat (damageFromWater false) never drowns, even in water.
 {
   const v = new DamageableVehicle(BOAT);
   v.update(3.0, { inWater: true });
-  out.boatNoWaterDamage = { hp: v.hitPoints, acc: v.waterAccumulator };
+  out.boatNoWaterDamage = { hp: v.hitPoints };
+}
+
+// The template defaults (HP-22, `armor.js`): a hull that never writes
+// `hpLostWhileUpSideDown` or `hpLostWhileDamageFromWater` takes the
+// constructor's 1.0 for each, and `WaterDamageDelay` is 0.
+{
+  const bare = new DamageableVehicle({ hitpoints: 50, maxHitpoints: 50, damageFromWater: true });
+  out.defaults = {
+    upsideDown: bare.hpLostWhileUpSideDown,
+    water: bare.hpLostWhileDamageFromWater,
+    waterDelay: bare.waterDamageDelay,
+    deep: bare.damageFromDeepWater,
+    deepRate: bare.hpLostWhileDamageFromDeepWater,
+    deepDelay: bare.deepWaterDamageDelay,
+    deepLevel: bare.deepWaterLevel,
+  };
+  bare.update(1 / 30, { inWater: true });
+  out.defaults.afterWetFrame = bare.hitPoints;
+  const flipped = new DamageableVehicle({ hitpoints: 50, maxHitpoints: 50 });
+  for (let i = 0; i < 30; i++) flipped.update(1 / 30, { upsideDown: true });
+  out.defaults.afterFlippedSecond = +flipped.hitPoints.toFixed(4);
+}
+
+// Deep water (HP-5): BF1918's `damageFromDeepWater 1`, `hpLostWhile...
+// FromDeepWater 5`, the delay the template's 1.0 s. Deep is also wet.
+{
+  const v = new DamageableVehicle({ hitpoints: 100, maxHitpoints: 100,
+    damageFromDeepWater: true, hpLostWhileDamageFromDeepWater: 5 });
+  const bills = [];
+  for (let i = 1; i <= 75; i++) {
+    const r = v.update(1 / 30, { deepWater: true });
+    if (r.tick > 0) bills.push({ frame: i, hp: v.hitPoints });
+  }
+  const off = new DamageableVehicle({ hitpoints: 100, maxHitpoints: 100 });
+  for (let i = 0; i < 75; i++) off.update(1 / 30, { deepWater: true });
+  out.deepWater = { bills, hp: v.hitPoints, offHp: off.hitPoints };
 }
 
 // The set: inWaterOwners routes the flag per vehicle, tank sinks, boat floats.
@@ -205,11 +247,10 @@ out.waterDeathFallback = deathTier(
   const set = new VehicleDamageSet();
   set.add(3, SHERMAN, { name: 'Sherman' });
   set.add(4, BOAT, { name: 'LCVP' });
-  set.update(3.0, { inWaterOwners: new Set([3, 4]) });
+  for (let i = 0; i < 90; i++) set.update(1 / 30, { inWaterOwners: new Set([3, 4]) });
   out.setWater = {
     shermanHp: set.get(3).hitPoints,
     boatHp: set.get(4).hitPoints,
-    shermanAcc: set.get(3).waterAccumulator,
   };
 }
 
@@ -528,6 +569,70 @@ const AC130 = {
   };
 }
 
+// The critical byte (HP-13, HP-17): `0x14` only on a living crossing to at or
+// under the threshold, `0x13` back above it, nothing on death. A hull killed
+// outright from above its threshold is never flagged, which is what leaves a
+// ship destroyed in one blow with its floats unarmed (FloatingBundle `0x14`).
+{
+  const crossed = new DamageableVehicle(SHERMAN);
+  crossed.damage(90);                        // 10 HP: 0x14
+  const afterCross = crossed.criticalFlagged;
+  crossed.damage(50);                        // dead: 0x15 alone, byte kept
+  const oneBlow = new DamageableVehicle(SHERMAN);
+  oneBlow.damage(150);                       // safe straight to dead
+  const healed = new DamageableVehicle(SHERMAN);
+  healed.damage(90);
+  healed.heal(50);                           // 60 HP: 0x13
+  // DC's `flagkill`: authored at or under its own threshold, so it bleeds
+  // but is never sent 0x14 and turns at full rate (HP-15, HP-17).
+  const flagkill = new DamageableVehicle({ hitpoints: 20, maxHitpoints: 20, criticalDamage: 21 });
+  out.criticalByte = {
+    afterCross, deadAfterCross: crossed.criticalFlagged,
+    oneBlow: oneBlow.criticalFlagged, oneBlowDestroyed: oneBlow.destroyed,
+    healed: healed.criticalFlagged,
+    flagkill: { critical: flagkill.critical, flagged: flagkill.criticalFlagged,
+                scale: inputGate(flagkill).rotationalScale },
+  };
+}
+
+// The death key (ARM-11): 0 with no hit material, -material out of the water,
+// -1 in it; each falls back to 0. The Sherman authors 0 and -1.
+{
+  const fx = SHERMAN.effects;
+  out.deathKeys = {
+    legacyDry: deathTier(fx, {})?.threshold,
+    legacyWet: deathTier(fx, { inWater: true })?.threshold,
+    neverHitWet: deathTier(fx, { inWater: true, lastHitMaterial: -1 })?.threshold,
+    seaContactDry: deathTier(fx, { inWater: false, lastHitMaterial: 1 })?.threshold,
+    grassDry: deathTier(fx, { inWater: false, lastHitMaterial: 3 })?.threshold,
+    grassWet: deathTier(fx, { inWater: true, lastHitMaterial: 3 })?.threshold,
+  };
+}
+
+// The death key wired (ARM-11): the hull's own last hit material. A Sherman
+// that last touched the sea and dies beached plays -1; one that last touched
+// grass (3), or nothing, plays 0; one dying in the water plays -1.
+{
+  const die = (setup, inWater = false) => {
+    const v = new DamageableVehicle(SHERMAN);
+    setup(v);
+    v.damage(500);
+    return v.update(0, { inWater }).tier?.threshold;
+  };
+  out.deathByMaterial = {
+    seaThenBeached: die(v => v.update(1 / 30, { inWater: true })),
+    grass: die(v => v.noteHitMaterial(3)),
+    never: die(() => {}),
+    inTheWater: die(v => v.noteHitMaterial(3), true),
+    // A dead hull keeps the material it died with.
+    keptAfterDeath: (() => {
+      const v = new DamageableVehicle(SHERMAN);
+      v.noteHitMaterial(3); v.damage(500); v.noteHitMaterial(1);
+      return v.lastHitMaterial;
+    })(),
+  };
+}
+
 // Each timed tick is its own `giveDamage` in the engine, and so its own wash
 // for whoever sits in the hull (ledger HFD-11, HFD-13): `update` says what the
 // last tick of the step took, and the set lists every vehicle that ticked.
@@ -592,7 +697,7 @@ const AC130 = {
       const r = v.update(dt, { upsideDown });
       if (r.tick > 0) bills.push({ at: +t.toFixed(3), amount: +r.tick.toFixed(3) });
     }
-    return { hp: +v.hitPoints.toFixed(3), bills, bank: +v.upsideDownAccumulator.toFixed(3) };
+    return { hp: +v.hitPoints.toFixed(3), bills, bank: +v.bank.toFixed(3) };
   };
   const at30 = (seconds, flipAt = 0) => Array.from({ length: Math.round(seconds * 30) },
     (_, i) => [1 / 30, (i + 1) / 30 > flipAt]);

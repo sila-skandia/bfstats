@@ -151,7 +151,9 @@ class ControlPointTemplate:
     name: str
     display_name: str = ""              # setControlPointName
     team: int = 0                       # starting owner, 0 = neutral
-    radius: float = 0.0
+    # `ControlPointTemplate` ctor 0x082846d0 writes 10.0 to +0x1dc
+    # (0x08284702, AI-115): a template that never says `radius` plays 10 m.
+    radius: float = 10.0
     area_value: float = 0.0
     spawn_group_id: int | None = None   # joins a SpawnPoint template's setGroup
     second_spawn_group_id: int | None = None
@@ -411,11 +413,12 @@ class SoundEffect:
     trapezoid (a rise ramp times a fall ramp) and how the distance fade stacks
     on top of the RPM crossfade.
 
-    `Ramp p1 p2 p3 p4` is piecewise linear in the control value `x`: `p3` below
-    `p1`, `p3 + p4` above `p2`, linear between, and `p4` is signed so a fade-out
-    is just a negative delta. Six-param ramps occur (573 in vanilla) and the
-    extra pair's meaning is unresolved; treating them as four-param reproduces
-    the audible design, so the surplus is carried but not interpreted.
+    `Ramp p1 p2 p3 p4 [p5 p6]` is `p3` at or below `p1` and `p3 + p4` at or
+    above `p2`, and `p4` is signed so a fade-out is just a negative delta.
+    Between them p5 picks the curve and p6 its exponent: 0 linear, 1 quick,
+    2 slow (BF1942.exe 0x00803aa0, ledger SSC-7; 573 six-param ramps in
+    vanilla, mostly engine pitch curves). The params are carried whole and
+    the viewer evaluates them (`viewer/ssc-curves.js` `rampAt`).
     `Linear p1 p2` is `p1 + p2 * x`, which with `controlSource Default` and
     `p2 = 0` is the "constant pitch offset" idiom.
     """
@@ -1067,7 +1070,9 @@ def parse_control_point_templates(text: str) -> dict[str, ControlPointTemplate]:
         elif cmd == "team":
             current.team = _opt_int(tokens) or 0
         elif cmd == "radius":
-            current.radius = _opt_float(tokens) or 0.0
+            value = _opt_float(tokens)
+            if value is not None:
+                current.radius = value
         elif cmd == "areavalue":
             current.area_value = _opt_float(tokens) or 0.0
         elif cmd == "spawngroupid":
@@ -3699,15 +3704,17 @@ def parse_sound_scripts(text: str) -> dict[str, tuple[str, str]]:
 
 
 def _distance_volume(patch: SoundPatch) -> list[float] | None:
-    """The first layer's `Volume <- Distance` ramp, as the four params the
-    viewer evaluates (a six-param ramp's surplus pair is not interpreted
-    anywhere, `SoundEffect`)."""
+    """The first layer's `Volume <- Distance` ramp, every param it was given.
+
+    A six-param ramp's p5 and p6 are its curve and exponent (ledger SSC-7,
+    BF1942.exe 0x00803aa0), which `area-sound.js` evaluates through
+    `ssc-curves.js`, so they are kept: four params are a linear ramp."""
     if not patch.samples:
         return None
     for eff in patch.samples[0].effects:
         if eff.destination == "volume" and eff.source == "distance" \
                 and eff.envelope == "ramp" and len(eff.params) >= 4:
-            return [float(v) for v in eff.params[:4]]
+            return [float(v) for v in eff.params[:6]]
     return None
 
 

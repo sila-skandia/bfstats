@@ -66,6 +66,16 @@ class SkeletonHitTests(unittest.TestCase):
         self.assertIsNone(r["overHead"])      # 0.2 m above the capsule top
         self.assertIsNone(r["tooShort"])      # the round stops short of him
 
+    def test_the_contact_is_the_bone_and_minus_a_tenth(self) -> None:
+        # DIE-10's output half (lnxded getDistanceToGeometry 0x083aeb10): the
+        # struck bone's own world position (0x083af00b) and a literal -0.1
+        # distance (0x083af0d4), not a point on the round.
+        self.assertEqual([0, 1.6, 0], self.results["headShot"]["at"])
+        self.assertEqual([0, 1.3, 0], self.results["chestShot"]["at"])
+        self.assertAlmostEqual(-0.1, self.results["headShot"]["distance"])
+        # A capsule built by hand, with no bone position, keeps the round's.
+        self.assertEqual(2, len(self.results["declarationOrder"]))
+
     def test_the_first_declared_capsule_wins(self) -> None:
         self.assertEqual(["Far", "Near"], self.results["declarationOrder"])
 

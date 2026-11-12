@@ -48,6 +48,8 @@ MODULES = {
                  # local-look.js draws the hulls' belts (`track-scroll.js`,
                  # which reads the engine law out of ground-engine.js).
                  "track-scroll.js", "ground-engine.js", "ground-contact.js",
+                 # ground-engine.js takes the bundle defaults from engine-spin.js.
+                 "engine-spin.js",
                  # and eases a server correction into the drawn pose.
                  "correction-blend.js")
 }

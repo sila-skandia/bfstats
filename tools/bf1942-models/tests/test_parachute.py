@@ -29,6 +29,7 @@ MODULES = [
     ROOT / "viewer" / "spawn-flags.js",
     ROOT / "viewer" / "physics.js",
     ROOT / "viewer" / "walking-body.js",
+    ROOT / "viewer" / "rigid-body.js",
     ROOT / "viewer" / "soldier-resolve.js",
     ROOT / "viewer" / "soldier-pose.js",
     ROOT / "viewer" / "soldier-locomotion.js",
@@ -83,9 +84,17 @@ class ParachuteTests(unittest.TestCase):
         self.assertEqual(10.0, c["fallStateHeight"])
 
     def test_the_chute_closes_at_two_metres_a_second(self) -> None:
-        # |getPositionalSpeed().y| <= 2.0 -> setIsParachuting(false), in both
-        # arms of BFSoldier::handleUpdate (0x08272f3b, 0x08273129).
+        # |getPositionalSpeed().y| < 2.0 (strict, the jne at 0x08272f30) ->
+        # setIsParachuting(false), in both arms of BFSoldier::handleUpdate
+        # (0x08272f3b, 0x08273129).
         self.assertEqual(2.0, self.results["constants"]["chuteCloseSpeed"])
+
+    def test_the_one_shot_clips_last_one_over_their_speed(self) -> None:
+        # ANIM-2: a pass is 1/|speed| s whatever the frame count.
+        # `Lb_ParachuteOpen` plays at 0.5 (2.0 s), `Lb_ParachuteHitGround` at
+        # 1.0 (1.0 s); no 3pAnimationsTweaking line re-declares either.
+        self.assertAlmostEqual(2.0, self.results["constants"]["openClipSeconds"], places=9)
+        self.assertAlmostEqual(1.0, self.results["constants"]["landedClipSeconds"], places=9)
 
     def test_the_shipped_pair_is_drag_24_and_speed_30(self) -> None:
         # CommonSoldierData.inc; BFSoldierTemplate +0x2e4 and +0x2e8, written

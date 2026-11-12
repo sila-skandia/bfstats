@@ -28,10 +28,17 @@
 // is aboard, and `setHealth` never reaches a hull. `SupplyField.update` is
 // that pass, made once per world tick (`world-fields.js`).
 
-// SUP-4: the engine only re-evaluates a depot every 0.5s of world time — the
-// elapsed seconds since its own last evaluation, not the 1/30s sim tick — and
-// no shipped template overrides the default.
+// SUP-4: the engine only re-evaluates a depot once MORE than 0.5 s of world
+// time has passed since its own last evaluation (not the 1/30 s sim tick), from
+// a random start phase, and no shipped template overrides the 0.5.
 export const UPDATE_INTERVAL = 0.5;
+
+/** SUP-4's phase: the ctor (and `reset`) stamp the depot's last cycle at
+ *  `(rand() % 30) / 30.0` seconds of world time, so depots placed together
+ *  do not all fire on the same frame. `rand` is any integer source. */
+export function depotPhase(rand = () => Math.floor(Math.random() * 0x7fff)) {
+  return (Math.abs(Math.trunc(rand())) % 30) / 30;
+}
 
 // SUP-16: 0 = both teams / neutral (always eligible), 1 = Axis, 2 = Allied.
 const DEFAULT_TEAM = 0;
@@ -109,11 +116,14 @@ export class SupplyDepot {
    *   and `heldGap` the spawner's delay before it makes the next;
    *   `gone`: says the object carrying the depot no longer exists, for a
    *   depot a round carries (`SupplyField.add`), which leaves the field
-   *   with its round.
+   *   with its round;
+   *   `phase`: SUP-4's start stamp in seconds (`depotPhase()`, 0..29/30),
+   *   which delays the first cycle by that much. Default 0 (deterministic);
+   *   a caller that wants the engine's spread passes `depotPhase()`.
    */
   constructor(position, data = {}, name = null,
     { root = null, locate = null, heldDelay = 0, heldLife = Infinity, heldGap = 0,
-      gone = null } = {}) {
+      gone = null, phase = 0 } = {}) {
     this.name = name;
     this.x = position.x; this.y = position.y; this.z = position.z;
     this.root = root;
@@ -168,7 +178,10 @@ export class SupplyDepot {
       regen: row[3] ?? 0,
     }));
 
-    this._elapsed = 0;  // world seconds accumulated since the last cycle (SUP-4)
+    // World seconds since the last cycle (SUP-4). The ctor stamps the last
+    // cycle at `phase` seconds of world time, so the first comes that much
+    // later than 0.5 s.
+    this._elapsed = -(Number.isFinite(phase) && phase > 0 ? phase : 0);
     this._cycle = { elapsed: 0, ammoFired: false };
   }
 
@@ -238,7 +251,10 @@ export class SupplyDepot {
    */
   step(dt) {
     this._elapsed += dt;
-    if (this._elapsed < UPDATE_INTERVAL) return null;
+    // `handleUpdate` 0x083240f0: `fucom` of (world time - stamp) against the
+    // template's 0.5 (+0x1e8), `testb $0x45; je` -> `update` only when the
+    // elapsed time is strictly more (0x08324114..0x0832411d).
+    if (this._elapsed <= UPDATE_INTERVAL) return null;
     const elapsed = this._elapsed;
     this._elapsed = 0;
 

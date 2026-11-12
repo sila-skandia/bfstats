@@ -5,7 +5,9 @@
 // `snapshotPayload` call these.
 
 import { MSG_SNAPSHOT, encodeSnapshot } from '../viewer/netcode.js';
-import { CHOKE_CAP, RATE_BYTES, SNAPSHOT_RATE_MIN } from './room-rules.mjs';
+import {
+  CHOKE_BUDGET_MIN, CHOKE_CAP, CHOKE_RATE_STEP, RATE_BYTES, SNAPSHOT_RATE_MIN,
+} from './room-rules.mjs';
 import { frame } from './room-wire.mjs';
 
 /** The flight a knockback family is in, for the wire (`FLIGHT_WIRE`). */
@@ -21,24 +23,42 @@ function degreesOf(radians) {
   return Number.isFinite(radians) ? radians * 180 / Math.PI : NaN;
 }
 
-/** R-1: while Σ(rate × 1044) > cap, the highest-rate connections above the
- *  floor lose 5 — the engine's "lower the offending rates" (netcode.md §5).
- *  The snapshot is ~52 B/player-equivalent at 20 Hz, so this is a capacity
- *  law, not a bandwidth panic. */
-export function chokeRates(players) {
+/**
+ * R-1, `GameServer::chokeBandwidth` (lnxded 0x08132cc0), one pass:
+ *
+ *   * a cap of 0 is no choke at all (0x08132cd7), and that is the engine's
+ *     and the shipped default (`CHOKE_CAP`);
+ *   * nothing happens while Σ(rate × budget) is at or under the cap
+ *     (0x08132d09);
+ *   * otherwise every connection gets an equal share, cap / connections
+ *     (`divl 0x104(%edi)` at 0x08132d15, integer). One whose rate × budget is
+ *     over its share has its budget cut to share / rate (truncated) while that
+ *     stays above 260 bytes (0x08132da5); when it would fall to 260 or under,
+ *     its rate drops by 5 instead, never under 10 (0x08132db0..0x08132dc9),
+ *     and its budget is left as it was. A connection already at 10 is left.
+ *
+ * Mutates each connection's `rate` and `budget` (bytes per update, defaulting
+ * to RATE_BYTES). Returns the connections whose rate changed, the ones retail
+ * tells with an event (0x08132df2). `cap` defaults to the room's CHOKE_CAP.
+ */
+export function chokeRates(players, cap = CHOKE_CAP) {
+  if (!(cap > 0)) return [];
+  const connections = [...players.values()];
+  for (const c of connections) if (!Number.isFinite(c.budget)) c.budget = RATE_BYTES;
   let total = 0;
-  for (const connection of players.values()) total += connection.rate * RATE_BYTES;
-  if (total <= CHOKE_CAP) return;
-  const sorted = [...players.values()].sort((a, b) => b.rate - a.rate);
-  let at = 0;
-  while (total > CHOKE_CAP && at < sorted.length) {
-    const c = sorted[at];
-    if (c.rate <= SNAPSHOT_RATE_MIN) { at++; continue; }
-    c.rate = Math.max(SNAPSHOT_RATE_MIN, c.rate - 5);
-    total -= 5 * RATE_BYTES;
-    if (at === sorted.length - 1) at = 0;    // another pass round the list
-    else at++;
+  for (const c of connections) total += Math.trunc(c.rate * c.budget);
+  if (total <= cap || !connections.length) return [];
+  const share = Math.floor(cap / connections.length);
+  const changed = [];
+  for (const c of connections) {
+    if (!(share < c.budget * c.rate)) continue;
+    const budget = Math.trunc(share / c.rate);
+    if (budget > CHOKE_BUDGET_MIN) { c.budget = budget; continue; }
+    if (c.rate <= SNAPSHOT_RATE_MIN) continue;
+    c.rate = Math.max(SNAPSHOT_RATE_MIN, c.rate - CHOKE_RATE_STEP);
+    changed.push(c);
   }
+  return changed;
 }
 
 export function sendSnapshots(players, nowMs, payload) {

@@ -86,13 +86,11 @@ export const BODY_HEIGHT = Object.freeze([1.80, 1.30, 0.60]);
 export const BODY_RADIUS = 0.3;
 
 /**
- * Seconds the eye takes to travel between two poses, when nobody says otherwise.
- *
- * A pose change that teleported the camera half a metre reads as a glitch
- * rather than as ducking, so the eye is animated. 0.09 s is a placeholder for a
- * caller that does not care; `soldier.js` passes the real per-transition
- * durations, which come off the animation clips
- * (`animations/AnimationStatesCrouching.con` and `...Lie.con`) and differ by a
- * factor of four between dropping prone and standing back up.
+ * The default `duration` argument `SoldierBody.setPoseFlags` / `setCrouch` /
+ * `setProne` still accept. **Not read for the eye any more**: the eye halves
+ * its remaining distance to `setPoseCameraPos[pose]` every 1/30 s tick
+ * (VIEW-15, client `0x004fd42c` / `0x004fd441`; `walking-body.js`), and no
+ * transition clip length enters it. Kept so the callers that pass it need not
+ * change.
  */
 export const POSE_TRANSITION = 0.09;

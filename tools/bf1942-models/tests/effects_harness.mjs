@@ -351,6 +351,11 @@ out.impactBlastOffset = IMPACT_BLAST_OFFSET;
   out.lifetime.longFuse = roundTimeToLive(600, VANILLA.landmine.damage);
   // No `timeToLive` at all on the spec.
   out.lifetime.unspecified = roundTimeToLive(undefined, VANILLA.sherman.damage);
+  // The engine's constructor draw, CRD_UNIFORM/3/0/0 (PROX-10): r = 1 - rand.
+  out.lifetime.unspecifiedLow = roundTimeToLive(undefined, VANILLA.sherman.damage, false, () => 0.999999);
+  out.lifetime.unspecifiedHigh = roundTimeToLive(undefined, VANILLA.sherman.damage, false, () => 0);
+  out.lifetime.unspecifiedMid = roundTimeToLive(undefined, VANILLA.sherman.damage, false, () => 0.5);
+  out.lifetime.unspecifiedRest = roundTimeToLive(undefined, VANILLA.landmine.damage, false, () => 0.5);
   out.flightCeiling = FLIGHT_TTL_CEILING;
 }
 out.truncate = {

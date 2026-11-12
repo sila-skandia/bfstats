@@ -1095,7 +1095,13 @@ export function createHullBodies(page) {
         if (page.vehicles.instanceOf(host.node)?.drive) { stirred = true; continue; }
         const owner = page.collider?.statics?.ownerOf?.(host.node) ?? -1;
         const record = owner >= 0 ? page.vehicleDamage?.get(owner) : null;
-        if (!record?.critical) continue;
+        // `FloatingBundle::handleMessage` arms the sink rate on `0x14` only
+        // (lnxded `0x08240557`), the message `Armor::status` sends on a
+        // living crossing to critical; death sends `0x15` alone (`0x08173a06`
+        // jumps past the `push $0x14`), so a ship destroyed in one blow from
+        // above its threshold never arms and stays afloat (ledger HP-13).
+        // `criticalFlagged` is that byte; `critical` is the bleed's float test.
+        if (!record?.criticalFlagged) continue;
         if (!ticks || !armSinkingHull(host)) continue;
       }
       for (let tick = 0; tick < ticks; tick++) host.sinking.step();

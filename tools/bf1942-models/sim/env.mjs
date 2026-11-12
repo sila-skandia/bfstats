@@ -66,7 +66,7 @@ export async function loadViewerModules(viewer) {
   installModuleHooks(viewer);
   const imp = (name) => import(pathToFileURL(path.join(viewer, name)).href);
   const [world, bot, nav, strategic, strength, armor, heightfield, staticIndex, drivable, collider,
-    behaviours, vehicle, three, referee, projectileDamage, roundState, botNames, barrels] = await Promise.all([
+    behaviours, vehicle, three, referee, projectileDamage, roundState, botNames, barrels, crashDamage] = await Promise.all([
     imp('world.js'), imp('bot.js'), imp('nav-grid.js'), imp('strategic.js'), imp('bot-strength.js'),
     imp('armor.js'), imp('heightfield.js'), imp('static-index.js'), imp('drivable-mask.js'),
     imp('world-collider.js'), imp('bot-behaviours.js'), imp('bot-vehicle.js'),
@@ -74,6 +74,7 @@ export async function loadViewerModules(viewer) {
     // Absent from a viewer older than the file (a `--viewer` before/after run).
     imp('bot-names.js').catch(() => null),
     imp('bot-barrels.js').catch(() => null),
+    imp('crash-damage.js').catch(() => null),
   ]);
   return {
     World: world.World, WORLD_TICK_DT: world.WORLD_TICK_DT,
@@ -95,6 +96,13 @@ export async function loadViewerModules(viewer) {
     BOT_BODY_MATERIAL: referee.BOT_BODY_MATERIAL,
     // A round's falloff over the distance it flew (`Projectile::getDamage`).
     damageFactor: projectileDamage.damageFactor,
+    // The MaterialManager's lookups the page's `botRoundDamage` prices a round
+    // with (crash-damage.js, ledger DMG-1): the round's attacker material,
+    // material damage, and the attacker/defender cell (0 when unauthored).
+    // Null from a viewer older than them (a `--viewer` before/after run).
+    roundAttackerMaterial: crashDamage?.roundAttackerMaterial ?? null,
+    materialDamage: crashDamage?.materialDamage ?? null,
+    damageModifier: crashDamage?.damageModifier ?? null,
     // The page's round: a level's tickets as a server of max players starts
     // and bleeds them, a death's cost, the bleed (ledger TKT-1..TKT-4).
     createRoundState: roundState.createRoundState,

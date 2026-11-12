@@ -88,19 +88,26 @@ client.handleMessage(frame(MSG_JOIN_SNAPSHOT, live));
 out.remoteSlots = client.remoteSlots();
 out.selfNotRemote = !client.remoteSlots().includes(2);
 
-// A second snapshot, A moved 100 ms later: with the 50 ms render lookback,
-// a read at the instant B lands samples mid-window — halfway between.
+// A second snapshot three ticks (100 ms) on, A moved 10 m and gone prone.
+// Retail's draw law (ledger P-2, P-6, P-7): the remote is drawn at the client's
+// tick clock less 100 ms, stamped by the snapshots' own ticks, so 50 ms after
+// it lands he is halfway; past the newest he runs on along the last pair's
+// velocity (facing held) for at most 1.2 s, then stands at the newest.
 clock = 100;
-const moved = snap(110, [
+const moved = snap(103, [
   { slot: 1, alive: true, seated: false, crouch: false, prone: true,
     inVehicle: false, team: 1, x: 10, y: 0, z: 0, yaw: 90, pitch: 0,
     hp: 30, vehicleId: 0, seatIndex: null },
 ]);
 client.handleMessage(frame(MSG_SNAPSHOT, moved));
-const lerpedA = client.remotePlayer(1);
+const lerpedA = client.remotePlayer(1, 150);
 out.lerpX = lerpedA.x;
 out.lerpProne = lerpedA.prone;
 out.lerpYaw = lerpedA.yaw;
+out.atLanding = client.remotePlayer(1, 100).x;
+out.extrapX = client.remotePlayer(1, 250).x;
+out.extrapYaw = client.remotePlayer(1, 250).yaw;
+out.heldX = client.remotePlayer(1, 100 + 100 + 1300).x;
 
 // A blast's flight in the swim bits' spare codes (`netcode.js` `FLIGHT_WIRE`):
 // A thrown backwards, which a reader sees as a flight and not as a swim.

@@ -68,7 +68,7 @@ from it in that tab silent, for previews and checks.
 
 | # | Status | What changed | Tests | Left open |
 |---|---|---|---|---|
-| 1 | fixed | DEFINE KEY on OPTIONS > CONTROLS to retail parity: click a box, press a key / button / wheel / axis; Escape unbinds; Grave refused; per-map conflict scan; SAVE refuses on conflict, writes the four `.con` files byte-identical to a retail save; DEFAULT confirms. `controls-edit.js` (new), `controls.js` (engine key table, slot flag, mixed axis verbs), `play/controls-screen.js`, `page-input.js` (screen gets Escape first). Ledger CTL-1..CTL-8; viewer-profile-controls section 8 | `test_controls_rebind` (45) | FIRE / ALT FIRE swapped between mouse buttons has no effect in game yet (the page's mouse path predates the control map); Grave in game still opens the console; browser-reserved keys can't be bound |
+| 1 | fixed | DEFINE KEY on OPTIONS > CONTROLS to retail parity: click a box, press a key / button / wheel / axis; Escape unbinds; Grave unbinds and is refused (corrected 2026-11-12); per-map conflict scan; SAVE refuses on conflict, writes the four `.con` files byte-identical to a retail save; DEFAULT confirms. `controls-edit.js` (new), `controls.js` (engine key table, slot flag, mixed axis verbs), `play/controls-screen.js`, `page-input.js` (screen gets Escape first). Ledger CTL-1..CTL-8; viewer-profile-controls section 8 | `test_controls_rebind` (45) | FIRE / ALT FIRE swapped between mouse buttons has no effect in game yet (the page's mouse path predates the control map); Grave in game still opens the console; browser-reserved keys can't be bound |
 | 2 | fixed | Retail's DISPLAY MODE plate and list (`WxHx32`, heights that fit the screen) replaces RENDER SCALE; the chosen height sets the pixel ratio in `resize()`; a stored percentage migrates. Ledger VID-11; video-options README | `test_display_mode`, `test_video_settings` (now runs on macOS), `test_controls_menu` | No entries above native (no supersampling); `screen.*` under Windows zoom unchecked |
 | 3 | built | SINGLEPLAY > CAMPAIGN | INSTANT BATTLE; the campaign screen; 16 missions in retail's order with per-side tickets; retail's score rule, floors/caps, final grade; single-player results screen with DONE / REPLAY / CONTINUE; saved per side in localStorage. Long LEVELS titles cut before NO BOTS. Ledger CAMP-1..CAMP-6; [single-player-campaign](../single-player-campaign/README.md) | `test_campaign` (.py 14, .mjs 28) | **Needs its data published** (`menu/campaign.json`, the three menu pages, debriefing layout and 14 textures under `maps/_shared/hud/`) before the CAMPAIGN button appears live; until then the menu shows Instant Battle alone. Campaign briefing plate not drawn |
 | 4 | not done | Online play from the browser is a known roadmap item | | |
@@ -327,8 +327,9 @@ the Windows addresses):
   extractor drops these plates as off-screen
   (`extract_controls_menu_layout.py:168-172`). A tab click clears the wait.
 - **Capture** (`handleControlsInput` 0x006c67d0, polled while `Controls+0x18`;
-  gate 0x00446de3): any scancode; Grave (0x29) refused with "THIS KEY IS NOT
-  MAPPABLE!" (0x006c7678); **Escape unbinds the box** (`setKey("")`,
+  gate 0x00446de3): any scancode; Grave (0x29) jumps to 0x006c7678, which makes
+  Escape's own `setKey("")` (0x006c769c, so the box is unbound) and then
+  shows "THIS KEY IS NOT MAPPABLE!" (corrected 2026-11-12, ledger CTL-3); **Escape unbinds the box** (`setKey("")`,
   0x006c6816-0x006c683f), it does not cancel; mouse buttons 1-5 (left via
   `PrimaryMouseButton` 0x006c63c0), wheel -> `MWheelUp/Down`, mouse moved past
   +/-0.2 -> `Mouse_IDAxis_0/1` (0x008eaf50, 0x009226c0); joystick buttons 0-31

@@ -11,8 +11,9 @@ import { combatMaterial } from './world-fields.js';
  * Is a ground position one the combat area would damage — outside the level's
  * rectangle (the declared one, else the terrain), or on the out-of-bounds
  * terrain material (CA-5)? Null when the level bounds nothing, and then
- * `pickSpawn` filters nothing, as before. Handed to `pickSpawn` so a spawn
- * point the area would kill is kept for last (FHSWEurope stashuv_area's
+ * `pickSpawn` filters nothing, as before. Handed to `pickSpawn`, which never
+ * offers a spawn point the area would damage, as `BFSpawnPoint::getActive`
+ * 0x08163dd0 refuses one (SPAWN-5; FHSWEurope stashuv_area's
  * `russianhq1`, 1240 m outside the material pocket in the mod's own con —
  * every team-2 CoOp life began there and ended at ~16 s).
  */

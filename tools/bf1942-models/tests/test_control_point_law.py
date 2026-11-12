@@ -66,6 +66,20 @@ class ControlPointLawTests(unittest.TestCase):
         self.assertEqual(len(i["events"]), 1)
         self.assertAlmostEqual(i["events"][0]["t"], 1 / 30, places=3)
 
+    def test_a_spent_lose_timer_falls_to_a_lone_attacker_at_once(self) -> None:
+        # One side alone on an owned point: `lostControl` straight away when
+        # the lose timer is spent (0x08283c29, no `cmpl $0x2,0x17c`), so
+        # `timeToLoseControl 0` falls on frame 1 and `timeToGetControl 0`
+        # takes it on frame 2 (bf1918 fao_landing `Fao_Beach`).
+        z = self.r["zeroLose"]
+        self.assertEqual(z["team"], 1)
+        self.assertEqual([("lost" in e, "got" in e) for e in z["events"]], [(True, False), (False, True)])
+        self.assertAlmostEqual(z["events"][0]["t"], 1 / 30, places=3)
+        self.assertAlmostEqual(z["events"][1]["t"], 2 / 30, places=3)
+        # With the owner's player there too, the state-2 test applies
+        # (0x08283ddb) and a timer that never ran never lets it go.
+        self.assertEqual(self.r["zeroLoseDefended"], {"team": 2, "events": []})
+
     def test_the_other_settings(self) -> None:
         self.assertEqual(self.r["empty"], {"team": 1, "events": []})
         self.assertEqual(self.r["emptyLoses"]["team"], 0)

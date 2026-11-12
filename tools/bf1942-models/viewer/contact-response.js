@@ -103,12 +103,15 @@ export const SIM_HZ = 30;
 export const SIM_DT = 1 / SIM_HZ;
 
 /**
- * The gravity `addFriction` hard-codes: `1.5 * 9.82`, not `getGravity()`.
+ * The gravity in `addFriction`'s two terms (collision-response.md section 8;
+ * the same 14.73 `physics.js` already uses for the soldier).
  *
- * It appears twice in one solver — once as the tick of gravity added to the
- * contact velocity before the tangent is taken, and once as the magnitude the
- * Coulomb budget is built from. collision-response.md section 8; the same 14.73
- * `physics.js` already uses for the soldier.
+ * Only the Coulomb budget hard-codes it: `9.82` (`0x86d16e4`) times `1.5`
+ * (`0x86be4d0`) or `2.25` (`0x86d16e0`) over `g_simulationFps`
+ * (`0x0825b7c9`-`0x0825b804`; TANK-23, PHY-2). The tick of gravity added to
+ * the contact velocity before the tangent is taken is
+ * `basicPhysicsSystem->getGravity() / 30` (`0x0825b8b3`-`0x0825b8e7`), which
+ * is this same 14.73 only while the level keeps the default gravity.
  */
 export const CONTACT_GRAVITY = 14.73;
 

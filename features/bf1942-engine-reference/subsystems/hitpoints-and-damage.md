@@ -629,8 +629,13 @@ effect name, `+0xa4` `vector<Vec3>` for the attach offset, `+0xb0`
 `vector<int>` for the threshold — confirmed by the mangled `_M_insert_aux`
 callees. It is not one of §1's 23 copied setters, which is why HP-3 never saw
 it. At construction the three fold into an `std::map<int,DamageEffects*>` at
-`Armor+0x148`, and `Armor::getEffect(int)` (`0x08172820`) reads it as a
-nearest-threshold-below lookup (`_Rb_tree::find` plus `_M_decrement`).
+`Armor+0x148`, and `Armor::getEffect(int)` (`0x08172820`) answers, for a key
+above 0, the **smallest authored threshold at or above the key**, and nothing
+when the key is above every threshold: it returns null when the rightmost key is
+below the key (`0x08172853`..`0x08172864`), else walks back from `end` while the
+previous key is still `>=` the key (`0x08172890`..`0x081728da`). For a key at or
+below 0 it is `find(key)`, falling back to `find(0)` (`0x081728fc`..`0x0817295c`).
+(Corrected 2026-11-12; this read "nearest-threshold-below" before.)
 
 **The `+0x128` byte is a death latch, not a first-run latch.** This was read
 backwards once (the first pass called it "set on the first non-dead run", which
@@ -653,8 +658,11 @@ jump is taken exactly when `hp > 0.001`. That target, `0x8172e6d`–`0x8172ec7`,
 is the **alive** path: `fnstcw`, `or $0x800` to force round-up, `frndint`,
 `fistpl`, then a jump into the same single `getEffect` call. **It never writes
 `+0x128`.** The `movb $0x1,0x128(%edx)` at `0x81729a2` sits on the fallthrough
-— the death path — next to the `push $0xffffffff` that makes the call
-`getEffect(-1)`.
+— the death path — which picks its key from the Armor's last hit: `getEffect(0)`
+when no hit material was ever recorded (`+0x8 == -1`), `getEffect(-material)`
+when `+0x10` (in water) is clear, and the `push $0xffffffff` of `getEffect(-1)`
+when it is set (`0x817299f`..`0x81729c4`, `0x8172e55`..`0x8172e68`); each falls
+back to key 0 (ARM-11).
 
 Every literal write to `+0x128` inside Armor's range (`0x08172000`–`0x08178000`)
 is accounted for: `0x8172231` and `0x8172381`, the two constructors, writing 0;
@@ -664,7 +672,7 @@ message. So `status()` clears the latch on a critical-state transition, and a
 repaired vehicle resumes evaluating its tier.
 
 **Which means the cadence is simply the tick.** A living vehicle re-checks its
-smoke/fire tier at 30 Hz, takes the nearest authored threshold at or below
+smoke/fire tier at 30 Hz, takes the smallest authored threshold at or above
 `ceil(hitPoints)`, and swaps the visible effect only when that tier changes.
 The latch's one externally visible effect is freezing whatever was showing when
 the object died. A viewer gets that for free by stopping the check at

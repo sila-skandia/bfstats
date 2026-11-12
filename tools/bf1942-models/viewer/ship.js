@@ -139,7 +139,9 @@ const WATER_THROTTLE_BAND = 0.02;
 const SUBMERGED_DRAG_TOP = 25;
 
 /** `(pi/4)` — the box law's faces are ellipses inscribed in them. */
-const BOX_AREA = Math.PI / 4;
+/** `3.14 * 0.25`, the engine's 3.14 and not pi (lnxded `0x082545b8`,
+ *  client 0.785 at `0x8f733c`; SHIPLAW-3). */
+const BOX_AREA = 3.14 * 0.25;
 
 /**
  * The friction scalar `A` for a hull resting on a sea bed, when the page has

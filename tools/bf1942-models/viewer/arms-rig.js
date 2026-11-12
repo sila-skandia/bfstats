@@ -250,8 +250,9 @@ export function createArmsRig(page) {
   // (`AnimationStateMachineInstance::updateState`, lnxded 0x0832b50f, client
   // 0x00613c60), against whatever pose the skeleton currently holds
   // (`Skeleton::setRelativeBoneTransform`, lnxded 0x0832f6e0, client
-  // 0x0066b5c0) — so a fade lasts 1/factor and a factor of 1000 or more is a
-  // cut (lnxded 0x0832b481). The exporter carries each family's factor in
+  // 0x0066b5c0) — so a fade lasts 1/factor and a factor above 1000 is a cut
+  // (lnxded 0x0832b481 compares against 1000.0 at 0x086b1ca8; exactly 1000
+  // still blends, fully in one tick). The exporter carries each family's factor in
   // the glb extras (`clips.<family>.morphFactor`); vanilla's Thompson aim is
   // 0.7 (a 1.4 s settle back onto the sights), fire 4.0, deploy 10000. The
   // constant below is only the engine's own constructor default (lnxded
@@ -297,7 +298,7 @@ export function createArmsRig(page) {
 
   function viewmodelFade(hw, name) {
     const factor = hw?.clips?.[name]?.morphFactor ?? VIEWMODEL_MORPH_DEFAULT;
-    return factor >= VIEWMODEL_MORPH_SNAP || factor <= 0 ? 0 : 1 / factor;
+    return factor > VIEWMODEL_MORPH_SNAP || factor <= 0 ? 0 : 1 / factor;
   }
 
   function playViewmodelClip(hw, name, { restart = false, timeScale = 1,

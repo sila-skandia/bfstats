@@ -12,8 +12,9 @@ import {
   INPUT_BYTES_MIN, decodeInputFrame,
 } from '../viewer/netcode.js';
 import {
-  DROP_SWEEP_MS, FIRE_EVENT_COOLDOWN_S, FRAME_MS, HEARTBEAT_TIMEOUT_MS, NAME_OK,
-  SNAPSHOT_RATE_DEFAULT, error, isPeer, nextFreeSlot,
+  CHOKE_CAP, CHOKE_PERIOD_MS, DROP_SWEEP_MS, FIRE_EVENT_COOLDOWN_S, FRAME_MS,
+  HEARTBEAT_TIMEOUT_MS, NAME_OK, RATE_BYTES, SNAPSHOT_RATE_DEFAULT,
+  STALL_COLLAPSE_TICKS, error, isPeer, nextFreeSlot,
 } from './room-rules.mjs';
 import { encodeJsonMsg, eventRow, frame, parseJson, serverTimeBytes } from './room-wire.mjs';
 import { chokeRates, sendSnapshots, snapshotRecord } from './room-stream.mjs';
@@ -46,6 +47,11 @@ export class Room {
     this.now = now || (() => performance.now());
     this.tick = 0;                    // engine ticks run (MSG_EVENT's `t`)
     this.clock = new FixedStep({ rate: WORLD_TICK_RATE, maxTicks: MAX_CATCH_UP_TICKS });
+    /** Ticks a stall cost the room's tick clock for good (`frame`, D-4). */
+    this.ticksLost = 0;
+    /** `game.serverBandwidthChokeLimit`: 0, the engine's default, is off (R-1). */
+    this.chokeCap = CHOKE_CAP;
+    this.lastChoke = null;
     /** slot (1..16) -> connection record. Slot order is join order. */
     this.players = new Map();
     this.lastAt = null;
@@ -133,6 +139,7 @@ export class Room {
     connection.name = String(name).trim();
     connection.team = team;
     connection.rate = SNAPSHOT_RATE_DEFAULT;
+    connection.budget = RATE_BYTES;
     connection.nextSendAt = 0;
     connection.fireAt = 0;
     connection.lastSeen = this.now();
@@ -140,6 +147,8 @@ export class Room {
     // addPlayer places the soldier on the team's flag (world.js's own join
     // law) and the client's spawn row re-places it on its chosen flag.
     this.world.addPlayer(slot, { team });
+    // The engine chokes at every join (`processReceivedPackets` 0x08138560).
+    this.#choke();
     return { ok: true, slot, team };
   }
 
@@ -297,9 +306,14 @@ export class Room {
     if (elapsedMs == null) elapsedMs = Math.max(0, nowMs - this.lastAt);
     this.lastAt = nowMs;
 
-    const n = this.clock.advance(elapsedMs / 1000);
+    let n = this.clock.advance(elapsedMs / 1000);
+    // Retail's server stall law (D-4, P-10): more than nine owed runs one, and
+    // the rest are gone from the tick clock (`GameServer::update` 0x08132955).
+    // The FixedStep's own cap of 12 still bounds what `advance` hands back.
+    if (n > STALL_COLLAPSE_TICKS) { this.ticksLost += n - 1; n = 1; }
     for (let i = 0; i < n; i++) this.#tick();
-    this.#choke();
+    // And every 10 s, with the timer sync (`updateConnections` 0x0813940c).
+    if (this.lastChoke === null || nowMs - this.lastChoke >= CHOKE_PERIOD_MS) this.#choke(nowMs);
     this.#broadcastSnapshots(nowMs);
     if (nowMs - this.lastSweep >= DROP_SWEEP_MS) {
       this.lastSweep = nowMs;
@@ -351,9 +365,10 @@ export class Room {
     }
   }
 
-  /** R-1 (room-stream.mjs `chokeRates`). */
-  #choke() {
-    chokeRates(this.players);
+  /** R-1 (room-stream.mjs `chokeRates`), at a join and every 10 s. */
+  #choke(nowMs = this.now()) {
+    this.lastChoke = nowMs;
+    chokeRates(this.players, this.chokeCap);
   }
 
   #broadcastSnapshots(nowMs) {

@@ -6,6 +6,11 @@
 
 // --- coherent duplicates: the car-horn fingerprint --------------------------
 //
+// DELIBERATE, not retail: the client plays both halves of such a pair, each on
+// its own DirectSound voice, and they sum (features/bf1942-3d-models/
+// map-sounds.md, "both halves ran at full gain"; vehicle-sound-coverage). The
+// page keeps one, for the reason below.
+//
 // **Two voices playing the same decoded buffer, at the same point in space, at
 // the same playback rate, are not twice as loud. They are a comb filter.**
 // Their phase relationship is fixed for as long as both run, so a looped

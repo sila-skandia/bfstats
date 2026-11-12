@@ -288,6 +288,13 @@ class SwimFeetConventionTests(unittest.TestCase):
         # test (0.35) fires on the very next tick.
         self.assertEqual(["swimStart", "swimEnd"], self.results["eye"]["crouchedNextTick"])
 
+    def test_the_exit_is_strict(self) -> None:
+        # `updateSwimming` 0x082822a8..0x082822ba: `Lb_EndSwim` only when
+        # 0.35 > depth; at exactly 0.35 he stays in and is pinned.
+        edge = self.results["exitEdge"]
+        self.assertNotEqual("swimEnd", edge["at035"]["family"])
+        self.assertEqual("swimEnd", edge["at034"]["family"])
+
 
 class DrowningTests(unittest.TestCase):
     results: dict

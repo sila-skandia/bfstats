@@ -272,9 +272,10 @@ class StrategicFixtureTests(unittest.TestCase):
 
     def test_the_reach_and_the_stand_radius_follow_the_3d_radius(self) -> None:
         # control-point-law.js `captureReach`: sqrt(r^2 - dy^2), 0 where the
-        # radius does not reach; the template's 8 m with no radius set.
+        # radius does not reach; the `ControlPointTemplate` ctor's 10 m with no
+        # radius set (0x08284702, AI-115).
         law = self.results["pins"]["captureRing"]["ground3d"]["law"]
-        self.assertEqual(law["reach"], [5, 4, 2.862, 0, 0, 8])
+        self.assertEqual(law["reach"], [5, 4, 2.862, 0, 0, 10])
         # `captureStandRadius`: the flat figure (r - 1, at least r / 2) while
         # a body there is inside the 3D radius (to 3 m up or down at 5 m);
         # past that the reach less the metre; 0 under a body's width.

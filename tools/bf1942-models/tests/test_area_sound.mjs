@@ -91,6 +91,16 @@ close(emitterAt({ ...square, volume: 10, minDistance: 8 }, { x: 50, y: 95, z: -2
   close(emitterAt(radar, { x: 0, y: 10, z: 100 }).gain, 0);
 }
 
+// 8b. A curved distance ramp (shape 2, exponent 2; ledger SSC-7) is evaluated
+// through ssc-curves.js: halfway through 10..30 m it is 1 - 0.5^2, not 0.5.
+{
+  const curved = { kind: 'point', loop: true, volume: 1, minDistance: 1,
+    distanceVolume: [10, 30, 1, -1, 2, 2], points: [[0, 0, 0]] };
+  close(distanceVolume(curved, 20), 0.75, 1e-12);
+  close(distanceVolume(curved, 5), 1, 1e-12);
+  close(distanceVolume(curved, 30), 0, 1e-12);
+}
+
 // 9. One-shots are events, not beds (e_Barbwire's scrape).
 assert.equal(isBed({ loop: false }), false);
 assert.equal(isBed({}), true, 'older data has no loop flag; keep it');

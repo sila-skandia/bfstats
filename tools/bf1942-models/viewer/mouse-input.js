@@ -215,7 +215,15 @@ export function axisScale(sensitivity) {
  */
 export function floatToFixed(value, bits = AXIS_BITS, range = AXIS_RANGE) {
   let x = value / range;
-  if (!(x === x)) x = 0;                 // the engine's fucom treats NaN as "<"
+  // Retail KEEPS a NaN: both clamp compares take their keep branch on
+  // unordered (0x08113498, 0x081134ab), and `fistpll` stores the integer
+  // indefinite, whose low dword is 0, so a NaN packs to code 0 = -16. The
+  // page centres it instead, on purpose: a mouse never sends one, and a
+  // stray NaN from the page's own maths must not read as a full deflection.
+  // (Retail also rounds `(x + 1) / 2` to float32 at 0x081134c3; the page
+  // stays in doubles, which moves a value by one code only at a boundary the
+  // decode's 0.01 snap absorbs.) Ledger GUN-2b.
+  if (!(x === x)) x = 0;
   if (x > 1) x = 1;
   else if (x < -1) x = -1;
   const steps = bits === 32 ? 0xffffffff : (1 << bits) - 1;
@@ -670,7 +678,8 @@ export class MouseInput {
 //     same path as the hand, through the same x3 yaw gain and the same +-38
 //     pitch clamp. This viewer writes recoil straight into `soldier.look`
 //     instead, which is a different shape with the same visible effect but
-//     does not inherit the 3:1 asymmetry. UNMODELLED, deliberately.
+//     does not inherit the 3 : 2.5 asymmetry (yaw x3, view pitch 2.5 per
+//     register degree, VIEW-14). UNMODELLED, deliberately.
 //
 // STILL OPEN, and the viewer deliberately implements only the tick's own
 // rotation: `BFSoldier+0x288` is a second register the tick decrements

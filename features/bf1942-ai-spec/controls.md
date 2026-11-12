@@ -68,17 +68,21 @@ a weapon change) plus the AI term (AI-16, AI-17):
 AI = (1 - 0.75 A) C + dev x ( max(0, T (1 - A) - (now - B)) / T + 0.25 (1 - A) )
 A  = botSkill (0.75 default)          dev = weaponTemplate.deviation (5.0 default)
 T  = deviationCorrectionTime (10.0)   B = firingTargetTime (set when the target changes)
-C  = 0 (never passed)
+C  = the anti-aircraft penalty (below; bot-fire.js aaPenalty)
 ```
 
-Research disagreement on `C`: AI-18 (2026-09-21, two readers) reads an
-anti-aircraft penalty keyed on the shooter's equipment and an `ITAir` target
-(0 / 10 / 30); AI-36 and bot-behaviours §3 (2026-09-23, later) read 0 against
-infantry, 30 against a vehicle, 10 for a primary or occupied one (3 / 1 for
-the continuous entry). Both give 0 for infantry against infantry, which is
-all the code does. The engine adds the term once per trigger pull (it is
-consumed by the next deviation update, AI-19); the viewer recomputes it every
-tick and holds it.
+`C` (settled 2026-11-12 on the binary, ledger AI-18; AI-36's "0 / 30 / 10"
+read was the same branches without their key): an anti-aircraft penalty on
+the shooter. `EntryTrigger::execute` 0x086257d0 passes 0 when the bot's own
+equipment is ITAir (`testb $0x10,0x4` at 0x08625d87) or its firing target is
+not ITAir (0x08625e18); at an air target 10 from naval equipment (`testb
+$0x40` at 0x08625e64, or the equipment's vt+0x6c predicate, unnamed and not
+modelled) and 30 otherwise (0x08625eb8). `EntryTriggerContinously` 0x08625ff0
+passes 1 / 3 in the same places (0x0862656a, 0x08626593). A soldier or a
+ground gunner shooting at an aircraft at skill 0.75 adds `30 x 0.4375 = 13.125`.
+The viewer passes it from the plan's trigger statement (`bot.js` tick). The
+engine adds the term once per trigger pull (it is consumed by the next
+deviation update, AI-19); the viewer recomputes it every tick and holds it.
 
 *Example.* A K98 (min 0.25 deg) at skill 0.75: the AI term is `5 x (2.5 / 10 +
 0.0625) = 1.5625` deg at acquisition, `1.0625` a second later, `0.3125` from

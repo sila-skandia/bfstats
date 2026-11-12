@@ -960,4 +960,16 @@ results.eye = {
   stepHeight: STEP_HEIGHT,
 };
 
+// `updatePositionalPhysics` `0x08253570` holds the summed accumulator to
+// 1000 m/s^2 (PHY-34): a 2000 m/s^2 blast on a man in the air moves him
+// 33.3 m/s in its tick, not 66.7.
+const thrown = new SoldierBody({ world: ground, yaw: 0 });
+thrown.place(4, 100, -32);
+thrown.blast(2000, 0, 0);
+thrown.step(1 / ENGINE_TICK_RATE, {});
+results.accelClamp = {
+  vx: thrown.body.velocity.x,
+  vy: thrown.body.velocity.y,
+};
+
 process.stdout.write(JSON.stringify(results));

@@ -116,11 +116,13 @@ tick (the `get` twin `0x004913a0`), erases it, and reaches `handleInput`
 send **ServerInfoEvent** and **ServerInfoEvent2**, then `initChallengeString`
 + **ChallengeEvent**, `setConnectionType(0)`, and finish with
 `chokeBandwidth()` (J-1). The ctor fixes the per-connection numbers: `+0xc` =
-raw bits `0x14` = **20 (the send rate)**, `+0x10` = raw bits `0x414` =
-**1044 (the byte budget)**, send stream `BitStream(0x400)` = 1024 bytes. The
-second BitStream ctor is invoked with no explicit argument — its default limit
-was not verified. A second ClientConnection ctor (`0x08113530`, decompiled at
-research time) was not re-derived by the verifier and stays open.
+raw bits `0x14` = **20 (the send rate)**, `+0x10` = `0x578` = **1400 (the
+byte budget per update)** (`0x081142c7` / `0x081142ce`; the 1.61 dynamic build
+the same at `0x0811b33e`), and both send streams are `BitStream(0x400)` = 1024
+bytes (`pushl $0x400` at `0x0811464e` and `0x0811467b`). The second
+ClientConnection ctor (`0x08113530`) sets the same rate and budget
+(`0x08113555` / `0x0811355c`). *Corrected 2026-11-12: this paragraph said
+`0x414` = 1044; no store of `0x414` exists in the binary.*
 
 **The "services" are stubs.** IService / IJoinService / IHostService (client
 PE vtables `0x8c37d8` / `0x8c37e0` / `0x8c3810`, loaded by the three- and
@@ -183,16 +185,21 @@ the client twin `0x0048a130` (read live this round; gated on
 state-applier `0x00489ed0` and a per-entity factor `0x00489cb0`
 (distance/velocity factor, flying) into `0x00498ce0` (P-2).
 
-**There is no interpolation buffer.** The client's ghost-apply path contains
-no snapshot-history or sample repository — remote state is applied as a
-single current state with a computed factor, at a **0.1 s cadence** on both
-binaries (`conn+0x18 = 0x3dcccccd`: server `0x08139420`, client `0x0048c520`;
-0.1f confirmed at client `0x8c53cc`, twin two-timer structure with the rate
-at `[esi+0xc]` and the period at `[esi+0x14]` vs 0.0 at `0x8c41ac`). The one
-caveat: `0x00498ce0`, the actual transform application step, was not read, so
-"how the factor maps to movement" stays unread — but the negative claim, "no
-interpolation buffer like replay.js's SAMPLE_PERIOD", is confirmed as far as
-read (P-2).
+**Ghost records ride every packet; the 0.1 s timer is the scope refresh
+(corrected 2026-11-12).** `processGameStateAndSendPackets` (server
+`0x08139420`) sends to a connection when its `+0x14` timer runs out, re-arming
+it to `1 / rate` (`fildl 0xc(%esi); fdivrs 1.0` at `0x08139477`..`0x08139480`),
+and on every such packet calls `GhostManager::update` (`0x0813973c`). The
+second timer, `conn+0x18`, re-armed to `0x3dcccccd` = 0.1 s (`0x08139752`),
+only gates `updateGhostManager` (`0x08137710`: `resetGhostStates`,
+`Setup::getViewDistance`, `getRelevantObjects`), which re-picks the objects the
+connection is sent. Both timers count down by the frame's dt in
+`updateConnections` (`0x08139269`, `0x08139272`). So a client receives ghost
+records at its connection rate, 20 Hz by default, and the 0.1 s is how often
+the server re-scopes it. The client twin at `0x0048c520` carries the same two
+timers. This section used to read the 0.1 s as the ghost cadence and to say
+there is no interpolation buffer; both were wrong: see the next note, P-2 as
+corrected 2026-10-16, and P-6..P-9.
 *Noted 2026-09-29: [round-replay-capture §15](../../round-replay-capture/README.md#15-format-v4-turrets-engines-and-soldiers-bodies-2026-09-27)
 reads this differently. It finds a 16-entry history on each networkable and a
 RotationalBundle `predict` that interpolates between the two records around
@@ -240,12 +247,22 @@ in P-10).
 - Default per-connection send rate **20 Hz** (`conn+0xc`), minimum **10**,
   applied as the period `1/rate` in `processGameStateAndSendPackets`
   (`0x08139420`; identically on the client at `0x0048c520`).
-- `chokeBandwidth` (`0x08132cc0`) / `setBandwidthChokeLimit`
-  (`0x08132c90`): with the cap at `GameServer+0x46c`, sum `rate · (conn+0x10
-  = 1044)` over the connections; while `cap < Σ`, each offending connection's
-  rate is lowered by **5**, floored at 10, written through
-  `changeUpdateFrequency` (`0x08132ff0`) to `conn+0xc`. `getBandwidthChokeLimit`
-  (`0x08132cb0`) reads the same cap (R-1).
+- `chokeBandwidth` (`0x08132cc0`; re-read 2026-11-12) is **one pass**, run at
+  each join (`processReceivedPackets` `0x08138560`), every 10 s with the timer
+  sync (`updateConnections` `0x0813940c`), on `setConnectionType`
+  (`0x08132fe1`), from `handleGameEventManagerEvent` (`0x081366d7`) and by
+  `setBandwidthChokeLimit` (`0x08132c90`). With the cap `GameServer+0x46c`
+  at 0 it does nothing (`0x08132cd7`). Otherwise, when `Σ rate · budget`
+  (`conn+0xc · conn+0x10`, budget 1400 at join) is over the cap, each
+  connection gets the share `cap / connections` (`divl 0x104(%edi)`,
+  `0x08132d15`); one whose `budget · rate` is over its share has its budget cut
+  to `share / rate` (truncated) when that is above 260 bytes (`cmpl $0x104` at
+  `0x08132da5`), else its rate lowered by **5**, floored at 10, through
+  `changeUpdateFrequency` (`0x08132ff0`), with an event to that client. The
+  cap is `game.serverBandwidthChokeLimit`: 0 in the GameServer ctor
+  (`0x0812f261`), in `Setup::initServerSettings` (`0x080c0a37`, settings
+  `+0x64`) and in the shipped serversettings.con, so by default there is no
+  choke. `getBandwidthChokeLimit` (`0x08132cb0`) reads the same cap (R-1).
 - The receive side reads a **4-bit count field (≤ 15)** in
   `processReceivedPacket` (`0x081484e0`); each counted entry is a full
   `readFromStream` (R-2).
@@ -272,13 +289,12 @@ which is now read rather than guessed:
   rounded to 0.01; buttons are level-triggered at `> 0.5`; the button map is
   W-1's (Fire bit 0 … ch33 bit 25). ch48 stays server-local and off the wire.
   Do **not** derive the format from `operator<<`/`>>` (W-5).
-- **Snapshot cadence ≤ 20 Hz with no interpolation** is engine-consistent:
-  the engine sends ghost state at 0.1 s and applies it as single current
-  state — replay.js-style interpolation is a rendering choice the engine
-  never made (P-2). The 20 Hz default and the `Σ(rate × 1044)` choke
-  arithmetic are the capacity law (R-1).
-  *Noted 2026-09-29: the no-interpolation half is disputed, see the note at
-  the end of §4.*
+- **Snapshot cadence 20 Hz, drawn by retail's ghost law.** The engine sends
+  ghost records with every packet at the connection rate (20 Hz default) and
+  the client draws them 100 ms behind its tick clock from a 16-record ring,
+  extrapolating up to 1.2 s (P-2 as corrected, P-6..P-9); the room client
+  (`netcode-client.js`) and the relay seam share that law (`ghost-draw.js`).
+  The choke is R-1's one pass, off at the default cap of 0.
 - **Joining and leaving are explicit packets.** The server announces itself
   (ServerInfoEvent/ServerInfoEvent2), challenges, then choke-bandwidths; the
   client leaves with an explicit disconnect packet (type 0xd) before
@@ -296,8 +312,4 @@ which is now read rather than guessed:
   the distance/velocity factor maps to movement stays unread.
 - **`registerPlayerAction` → wire send path** (`0x004904f0` → connection):
   not re-derived (NEEDS-MORE, cosmetic — the loop-level claim P-1 holds).
-- **`0x08113530`** — the second ClientConnection ctor, decompiled at research
-  time, not re-derived by the verifier.
-- **J-1's second BitStream ctor** — invoked with no explicit arg; its default
-  limit is unverified.
 - The client's challenge-answer path (join validation) was not located.

@@ -61,6 +61,17 @@ export const AIR_DENSITY_ZERO_AT_HEIGHT = 1000;
 /** `0.1*|throttle|`, the half of `K` that does not fade with speed. */
 const ENGINE_IDLE = 0.1;
 
+/** `EngineTemplate`'s constructor defaults for an Engine that omits the
+ *  word: differential 10.0 (`+0x364`, lnxded 0x0823f022), torque 60.0
+ *  (`+0x368`, 0x0823f02c), noPropellerEffectAtSpeed 100.0 (`+0x520`,
+ *  0x0823f06e). The same numbers as `ship-spec.js`'s `DEFAULT_*`, restated
+ *  because that module imports `three` and this one runs under node. Every
+ *  rocket baked so far declares all three; a mod's that omits one gets these
+ *  rather than the 1 and 0 that stood here until 2026-11-12. */
+export const ROCKET_ENGINE_DEFAULTS = Object.freeze({
+  differential: 10, torque: 60, noPropellerEffectAtSpeed: 100,
+});
+
 /** `operator<<(ostream&, EngineType)`'s table (ledger TANK-1). */
 const ENGINE_TYPE_BITS = {
   c_etplane: 0x1, c_etcar: 0x2, c_ettank: 0x6, c_etship: 0x9,
@@ -100,9 +111,9 @@ export class RocketMotor {
     this.template = part.template ?? null;
     // `getCurrentRatio` (`0x0824ca70`): 3.5 * setDifferential / ratioCurve[100]
     // with the one gear every projectile engine has.
-    this.ratio = currentRatio(part.differential ?? 1);
-    this.torque = part.torque ?? 0;
-    this.fadeSpeed = part.noPropellerEffectAtSpeed || 100;
+    this.ratio = currentRatio(part.differential ?? ROCKET_ENGINE_DEFAULTS.differential);
+    this.torque = part.torque ?? ROCKET_ENGINE_DEFAULTS.torque;
+    this.fadeSpeed = part.noPropellerEffectAtSpeed || ROCKET_ENGINE_DEFAULTS.noPropellerEffectAtSpeed;
     // The roll axis `T1` reads. `con.py` omits a zero, so absent is 0.
     this.max = part.maxRotation?.[2] ?? 0;
     this.min = part.minRotation?.[2] ?? 0;

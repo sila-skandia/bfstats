@@ -69,13 +69,22 @@ is 0.96 (birch) and centroids align to within a few pixels.
 
 ## Transition
 
-The engine cuts at `billboardDistance`; drawn here that popped, because the
-card is denser than the sprite canopy. The viewer fades instead: over
-`FADE_SPAN` (40% of the distance, 40..60 m for a 50 m tree) the geometry
-stays opaque while the card blends in over it, from clear to solid, and the
-geometry is dropped underneath the solid card at the far edge. Each placed
-tree has its own card material for the opacity; the card's alpha test scales
-with opacity so its outline holds while it fades. An ordered-dither
+The engine cross-fades (it does not cut): `TreeRenderer`'s draw (client
+`0x0064dd10`, Mac `TreeRenderer::drawTree`) takes the swap distance
+`D = billboardDistance x instance +0x94 x billboardDistanceScale` and a band
+`F = D x billboardFadeScale` (0.5 from the constructor, so `[D/2, D)`), and
+with `useNewBillboardFadeFunc` on (the constructor's default) draws the
+geometry at alpha `cos(pi/2 t)` and the card at `sin(pi/2 t)` across it,
+`t = (d - (D - F)) / F`; past `D` the geometry is off. (With the switch off it
+would be card `t`, geometry `1 - t^3`.) The distance `d` is the camera's
+**horizontal** distance from the tree, `sqrt(dx^2 + dz^2)` with no height term,
+times the render view's field of view in radians (`getFieldOfView`, vt
+`+0x18`, `0x005b7cb0`), read at `0x0064ddbd`..`0x0064ddfe`: a camera high over
+a forest keeps the trees under it whole, and a zoomed lens keeps them whole
+further out. The viewer (`tree-foliage.js` `billboardJudgedDistance`) does the
+same since 2026-11-12; before, it used the 3D distance and no FOV term. Each
+tree in the band has its own card material for the opacity, and the band's
+geometry swaps to cloned materials carrying its own. An ordered-dither
 cross-fade was tried first and rejected: the 4x4 stipple reads as a screen
 door at mid-band without temporal AA.
 

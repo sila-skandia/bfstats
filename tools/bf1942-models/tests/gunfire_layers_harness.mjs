@@ -18,7 +18,7 @@ import { GunFire } from './gunfire.js';
 
 const VIEWMODEL_LAYER = 1;
 
-function grenadeRig() {
+function grenadeRig({ pointBody = false } = {}) {
   const arms = new THREE.Group();
   arms.name = 'USSoldier GrenadeAllies viewmodel';
   const weapon = new THREE.Group();
@@ -29,6 +29,9 @@ function grenadeRig() {
     projectile: {
       kind: 'shell', template: 'GrenadeAlliesProjectile', timeToLive: 3.0,
       gravity: 1, material: 70,
+      // Both grenades declare `setHasPointPhysics 0`: a full body, which is
+      // the only kind that keeps a `rotationalSpeed` (COL-8).
+      hasPointPhysics: pointBody ? undefined : false,
       // `isFuseRound`: an end-of-life blast, no collision effect, survives
       // contact — the three conditions both grenades meet.
       damage: { hasCollisionEffect: false, dieAfterColl: false,
@@ -99,6 +102,20 @@ out.roundParentIsScene = round?.mesh?.parent === scene;
 out.worldCameraSees = round ? drawable(round.mesh, 0) : [];
 out.nearCameraSees = round ? drawable(round.mesh, VIEWMODEL_LAYER) : [];
 out.spin = round?.spin ?? null;
+// The same throw on a point body: `PointPhysicsNode::setRotationalSpeed`
+// (lnxded 0x082568b0) is empty, so it never turns.
+{
+  const pointGuns = new GunFire({ scene: new THREE.Scene(), camera, viewportHeight: () => 900 });
+  pointGuns.rand = () => 0.5;
+  const rig = grenadeRig({ pointBody: true });
+  const pointFound = pointGuns.collect(rig.arms, {
+    replace: true, speedScale: 1, roundLifetime: 'data',
+    aimRay: () => ({ origin: { x: 0, y: 2, z: 0 }, dir: { x: 0, y: 0.2, z: -1 } }),
+  });
+  pointGuns.setFiring(pointFound[0], true);
+  pointGuns.advance(1 / 30);
+  out.pointBodySpin = pointGuns.projectiles[0]?.spin ?? null;
+}
 
 // And the arms rig is untouched: a shot must not drag the viewmodel onto the
 // world layer along with the round it fired.

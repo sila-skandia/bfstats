@@ -38,7 +38,12 @@
 // under plain node. The caller owns every scene concern: where an effect is
 // drawn, what a wreck looks like, who is allowed to climb in.
 
-import { Armor, DEATH_EPSILON, HP_LOST_WHILE_CRITICAL_DEFAULT, templateHitPoints } from './armor.js';
+import {
+  Armor, DEATH_EPSILON, HP_LOST_WHILE_CRITICAL_DEFAULT, HP_LOST_WHILE_UPSIDE_DOWN_DEFAULT,
+  HP_LOST_WHILE_DAMAGE_FROM_WATER_DEFAULT, WATER_DAMAGE_DELAY_DEFAULT,
+  HP_LOST_WHILE_DAMAGE_FROM_DEEP_WATER_DEFAULT, DEEP_WATER_DAMAGE_DELAY_DEFAULT,
+  DEEP_WATER_LEVEL_DEFAULT, templateHitPoints,
+} from './armor.js';
 import { blastDistance, splashDamage as splashHp } from './effects-core.js';
 
 /** `addArmorEffect`'s death tier: the explosion and the scrap. */
@@ -59,15 +64,13 @@ export const TIER_WATER_DEATH = -1;
  * `0` and `-1` are the death tiers and never match a living vehicle; ask for
  * them explicitly with `deathTier`.
  *
- * OPEN, and worth knowing before trusting this on a mod: the engine reaches the
- * same answer through an `std::map<int,DamageEffects*>` keyed by threshold
- * (ARM-1), and the two agents who read `Armor::getEffect` both described the
- * lookup as "nearest threshold below" — which, taken literally, would make a
- * full-health Sherman smoke, because 50 is the nearest key below 100. That
- * cannot be what the game does, so this implements the rule that matches
- * observed play and the authored data. Whether the engine gets there by
- * `lower_bound` on the live HP or by some other arrangement was never pinned
- * down; if a mod's tiers ever look inverted, this is the assumption to re-read.
+ * This is exactly the engine's (ARM-1, settled 2026-11-12 on lnxded):
+ * `Armor::playEffect` (`0x08172960`) keys a living object on `ceil(hitPoints)`
+ * (`or $0x800; frndint; fistpl`, `0x08172e6d`), and `Armor::getEffect`
+ * (`0x08172820`) answers the SMALLEST authored threshold at or above that key,
+ * nothing when the key is above every threshold (it walks back from the map's
+ * end while the previous key is still `>=` the key). For an integer threshold
+ * `ceil(hp) <= k` is `hp <= k`, so comparing the float here is the same rule.
  */
 export function activeTier(effects, hitPoints) {
   if (!effects || !effects.length) return null;
@@ -83,17 +86,63 @@ export function activeTier(effects, hitPoints) {
 }
 
 /**
- * The death tier's effects: `0` normally, `-1` when the vehicle died in water
- * and authored a water tier. Returns null when neither is declared.
+ * `Armor::playEffect`'s key for a dead object (ARM-11; lnxded `0x0817299f`..
+ * `0x081729c4` and `0x08172e55`..`0x08172e68`, client `0x004bc413`): 0 when no
+ * hit material was ever recorded (`Armor+0x8 == -1`), -1 when the object is in
+ * water (`+0x10`), otherwise minus the last hit material. The material is the
+ * other side's of the latest `SimpleObject::handleCollision` (`0x081dae4d`,
+ * vtable +0x60 `setLastHitMaterialIndex`), so a hull that last touched the sea
+ * (material 1) keys -1 even out of the water.
  */
-export function deathTier(effects, { inWater = false } = {}) {
-  if (!effects || !effects.length) return null;
-  if (inWater) {
-    const names = namesAt(effects, TIER_WATER_DEATH);
-    if (names.length) return { threshold: TIER_WATER_DEATH, names };
+export function deathKey({ lastHitMaterial = -1, inWater = false } = {}) {
+  if (lastHitMaterial == null || lastHitMaterial === -1) return 0;
+  return inWater ? TIER_WATER_DEATH : -lastHitMaterial;
+}
+
+/**
+ * `Armor::getEffect(key)` (lnxded `0x08172820`, client `0x004bc2f0`) over an
+ * `armor.effects` list: `{ threshold, effects }` with every entry authored at
+ * the answered threshold, in authored order, or null.
+ *
+ * Below 1 it is the exact key, else key 0 (`find(key)`, then `find(0)`,
+ * `0x081728fc`..`0x0817295c`). From 1 up it is the smallest threshold at or
+ * above the key, and nothing when the key is above every threshold.
+ */
+export function tierAt(effects, key) {
+  if (!Array.isArray(effects) || !effects.length) return null;
+  const at = threshold => effects.filter(entry => entry.hp === threshold);
+  if (key < 1) {
+    for (const threshold of [key, 0]) {
+      const found = at(threshold);
+      if (found.length) return { threshold, effects: found };
+    }
+    return null;
   }
-  const names = namesAt(effects, TIER_DEATH);
-  return names.length ? { threshold: TIER_DEATH, names } : null;
+  let best = null;
+  for (const entry of effects) {
+    if (entry.hp >= key && (best === null || entry.hp < best)) best = entry.hp;
+  }
+  return best === null ? null : { threshold: best, effects: at(best) };
+}
+
+/**
+ * The death tier's effects, `{ threshold, names }`, or null when the key and
+ * the 0 fallback are both undeclared: `getEffect(deathKey(...))` (ARM-11).
+ *
+ * `lastHitMaterial` is the Armor's `+0x8`. A caller that does not track it
+ * (no caller does yet: the body world does not hand the contact's material to
+ * the hull's damage record) leaves it undefined and gets the water rule alone,
+ * -1 in the water and 0 out of it, which is the engine's answer for every
+ * death but two: a hull in the water that never touched anything (0), and one
+ * whose last contact was the sea while it is out of it (-1).
+ */
+export function deathTier(effects, { inWater = false, lastHitMaterial = undefined } = {}) {
+  if (!effects || !effects.length) return null;
+  const key = lastHitMaterial === undefined
+    ? (inWater ? TIER_WATER_DEATH : TIER_DEATH)
+    : deathKey({ lastHitMaterial, inWater });
+  const tier = tierAt(effects, key);
+  return tier ? { threshold: tier.threshold, names: tier.effects.map(e => e.effect) } : null;
 }
 
 /** Every effect name declared at exactly this threshold, in authored order. */
@@ -134,26 +183,67 @@ export class DamageableVehicle {
     this.hpLostWhileCriticalDamage =
       Number.isFinite(extras?.hpLostWhileCriticalDamage)
         ? extras.hpLostWhileCriticalDamage : HP_LOST_WHILE_CRITICAL_DEFAULT;
+    // The other two rates default to the same constructor 1.0 (HP-22,
+    // `armor.js`): an unwritten word is 1 HP a second, not none.
     this.hpLostWhileDamageFromWater =
       Number.isFinite(extras?.hpLostWhileDamageFromWater)
-        ? extras.hpLostWhileDamageFromWater : null;
+        ? extras.hpLostWhileDamageFromWater : HP_LOST_WHILE_DAMAGE_FROM_WATER_DEFAULT;
     this.hpLostWhileUpSideDown =
       Number.isFinite(extras?.hpLostWhileUpSideDown)
-        ? extras.hpLostWhileUpSideDown : null;
+        ? extras.hpLostWhileUpSideDown : HP_LOST_WHILE_UPSIDE_DOWN_DEFAULT;
     this.damageFromWater = Boolean(extras?.damageFromWater);
+    /** `WaterDamageDelay`, the grace before the first water bill (HP-5);
+     *  0 where never written. */
+    this.waterDamageDelay = Number.isFinite(extras?.waterDamageDelay)
+      ? extras.waterDamageDelay : WATER_DAMAGE_DELAY_DEFAULT;
+    // The deep-water clock (HP-5's second countdown): off unless authored.
+    this.damageFromDeepWater = Boolean(extras?.damageFromDeepWater);
+    this.hpLostWhileDamageFromDeepWater =
+      Number.isFinite(extras?.hpLostWhileDamageFromDeepWater)
+        ? extras.hpLostWhileDamageFromDeepWater : HP_LOST_WHILE_DAMAGE_FROM_DEEP_WATER_DEFAULT;
+    this.deepWaterDamageDelay = Number.isFinite(extras?.deepWaterDamageDelay)
+      ? extras.deepWaterDamageDelay : DEEP_WATER_DAMAGE_DELAY_DEFAULT;
+    /** `deepWaterLevel` (Armor `+0x144`): the origin is deep, and wet, when
+     *  the sea at it stands above `y - deepWaterLevel` (`Armor::update`
+     *  `0x08172f9d`..`0x08172fcc`). */
+    this.deepWaterLevel = Number.isFinite(extras?.deepWaterLevel)
+      ? extras.deepWaterLevel : DEEP_WATER_LEVEL_DEFAULT;
     this.splashMaterial = Number.isFinite(extras?.splashMaterial)
       ? extras.splashMaterial : null;
     this.name = name;
     this.owner = owner;
     /** The tier the caller has been told to draw, or null. */
     this.shown = null;
-    /** Seconds accumulated toward the next critical tick (HP-5's `+0xe8`). */
-    this.criticalAccumulator = 0;
-    /** Seconds accumulated toward the next water-damage tick. */
-    this.waterAccumulator = 0;
-    /** `Armor+0xe8`, the one-second bank the upside-down test is billed
-     *  from (HP-17). */
-    this.upsideDownAccumulator = 0;
+    /** `Armor+0xe8`, the one-second bank the critical bleed and the
+     *  upside-down test are both billed from (HP-17, HP-18). It runs from
+     *  spawn whatever the hull's state, as a float. */
+    this.bank = 0;
+    /** `Armor+0xe4`, the water countdown: the delay while dry, then 1.0 s
+     *  after each bill (HP-5). */
+    this.waterTimer = this.waterDamageDelay;
+    /** `Armor+0x13c`, the deep-water countdown, the same law (HP-5). */
+    this.deepWaterTimer = this.deepWaterDamageDelay;
+    /**
+     * The critical byte `Armor::status` moves by message (HP-13, HP-17):
+     * set on `0x14` when a safe Armor's new value is at or under
+     * `criticalDamage` (alive), cleared on `0x13` when a critical one's rises
+     * above it. **Death sends `0x15` alone**: `status()` (`0x081739e0`) takes
+     * the death branch at `0x08173a06` straight to `0x08173c70` for any value
+     * at or under 0.001, so a hull killed outright from above its threshold
+     * never gets `0x14`. What reads it: `RotationalBundle`'s 0.2 input scale
+     * (HP-15, `SimpleObject+0xee`) and `FloatingBundle`'s sink rate (only its
+     * `0x14` branch arms `+0xb0`, `0x08240557`; `0x15` sets the wreck byte
+     * alone, `0x082403fa`). So a ship destroyed in one blow from above its
+     * threshold never arms its floats' sink rate.
+     */
+    this.criticalFlagged = false;
+    /**
+     * `Armor+0x8`, the last hit material: -1 until a contact records one
+     * (Armor ctor `0x081722be`), then the other side's material of each
+     * `handleCollision`, which stops recording once the object is destroyed
+     * (`0x081dae32` skips past it). The death tier keys on it (ARM-11).
+     */
+    this.lastHitMaterial = -1;
     /**
      * `PlayerControlObjectTemplate::submarineData`'s seven floats (PHY-3,
      * template `+0x218..+0x230`), or null when the hull authors none or a
@@ -217,12 +307,31 @@ export class DamageableVehicle {
       && this.armor.hitPoints <= this.criticalDamage;
   }
 
+  /** The critical byte's move for one change of hit points (`status()`'s
+   *  alive branches, HP-13/HP-17). Death moves nothing. Death is final here
+   *  (no `canBeRepairedAndDestroyed`), so only a living Armor reaches this. */
+  _status(before) {
+    const after = this.armor.hitPoints;
+    if (this.armor.destroyed || this.criticalDamage === null) return;
+    if (before > this.criticalDamage && after <= this.criticalDamage) this.criticalFlagged = true;
+    else if (before <= this.criticalDamage && after > this.criticalDamage) this.criticalFlagged = false;
+  }
+
+  /** Any damage the hull's own Armor takes: the move of the critical byte
+   *  with it. Returns the HP lost. */
+  _hurt(amount) {
+    const before = this.armor.hitPoints;
+    const lost = this.armor.damage(amount);
+    this._status(before);
+    return lost;
+  }
+
   /** A round landed. `attacker` is the player behind it (an id), if any.
    *  Returns the HP actually lost. */
   damage(amount, attacker = null, how = null) {
     if (this.armor.destroyed) return this.armor.damage(amount);
     if (attacker != null) this.lastHitPlayer = attacker;
-    const lost = this.armor.damage(amount);
+    const lost = this._hurt(amount);
     if (this.armor.destroyed) {
       this.killedBy = attacker ?? null;
       this.killedWith = attacker != null && how ? { weapon: how.weapon ?? null, splash: !!how.splash } : null;
@@ -230,18 +339,33 @@ export class DamageableVehicle {
     return lost;
   }
 
+  /** A contact's other-side material (`setLastHitMaterialIndex`); a dead
+   *  object keeps the one it died with. */
+  noteHitMaterial(material) {
+    if (!this.armor.destroyed && Number.isFinite(material)) this.lastHitMaterial = material;
+  }
+
   /** A depot or a repair tool. Returns the HP actually restored. */
   heal(amount) {
-    return this.armor.heal(amount);
+    const before = this.armor.hitPoints;
+    const healed = this.armor.heal(amount);
+    this._status(before);
+    return healed;
   }
 
   /** Pad respawn: full HP, clear death latch, no burn smoke until damaged again. */
   reset() {
     this.armor.reset();
     this.shown = null;
-    this.criticalAccumulator = 0;
-    this.waterAccumulator = 0;
-    this.upsideDownAccumulator = 0;
+    this.bank = 0;
+    this.waterTimer = this.waterDamageDelay;
+    this.deepWaterTimer = this.deepWaterDamageDelay;
+    // `setHitPoints(getMaxHitPoints())` from destroyed: `status()` sends
+    // `0x13` when the new value is above the threshold and `0x14` when it is
+    // at or under it (HP-17), so the byte is the full hull's own answer.
+    this.criticalFlagged = this.criticalDamage !== null
+      && this.armor.hitPoints <= this.criticalDamage;
+    this.lastHitMaterial = -1;
     this.oxygen = 1;
     this.submarineAccumulator = 0;
     this.deathAnnounced = false;
@@ -278,7 +402,7 @@ export class DamageableVehicle {
     const elapsed = this.submarineAccumulator;
     this.submarineAccumulator = 0;
     const [drain, refill, suffocation, , breathDepth, crushDepth, crushRate] = sub;
-    if (depth > crushDepth) out.hull = this.armor.damage(elapsed * crushRate);
+    if (depth > crushDepth) out.hull = this._hurt(elapsed * crushRate);
     if (depth <= breathDepth) {
       this.oxygen = Math.min(1, this.oxygen + refill * elapsed);
     } else {
@@ -292,78 +416,93 @@ export class DamageableVehicle {
   }
 
   /**
-   * One simulation step. Runs the critical-damage burn — `Armor::update`'s
-   * accumulator, which fires a flat `hpLostWhileCriticalDamage` once per whole
-   * second and is **not** scaled by `dt` (HP-5) — and reports what the caller
+   * One simulation step: `Armor::update`'s server clocks (lnxded
+   * `0x08172f40`), in its order, then `submarineData`'s, and what the caller
    * should now be drawing.
+   *
+   *   bank      `+0xe8 += dt` from spawn, a float. Once it holds a second:
+   *             the critical bleed, `bank x hpLostWhileCriticalDamage` when
+   *             `hitPoints <= criticalDamage` and the rate is not 0
+   *             (`0x081732f2`..`0x08173657`, HP-17); then the upside-down
+   *             test, `bank x hpLostWhileUpSideDown` (HP-18, `0x081734a6`);
+   *             then the bank is zeroed, no carry (`0x0817336d`).
+   *   water     every step: wet and `damageFromWater`, `+0xe4 -= dt`, and
+   *             below 0 a flat `hpLostWhileDamageFromWater` and `+0xe4 = 1`
+   *             (`0x08173167`..`0x081732b8`); otherwise `+0xe4 =
+   *             WaterDamageDelay` (`0x081732c7`). HP-5.
+   *   deep      the same law on `+0x13c` with the deep-water words
+   *             (`0x0817318d`..`0x08173248`). HP-5.
    *
    * Returns `{ tier, changed, died, tick, crew }`: `tier` is what to draw (the
    * death tier once it is dead), `changed` is true only on the step the answer
    * moved, `died` is true on the one step the caller is first told about
    * death, `tick` the HP the hull's own clocks took and `crew` the HP each of
    * its crew is owed for want of air (`stepSubmarine`). `depth` is the hull's
-   * `underWater`, metres.
+   * `underWater`, metres; `deepWater` is the origin under the sea plus
+   * `deepWaterLevel` (`world-damage.js` `deepWaterOwners`), which is wet too
+   * (`0x08172fc8` sets `+0x10` with `+0x130`).
    *
    * `died` deliberately means "newly dead *as far as the caller knows*", not
    * "died inside this call" — a round that kills the vehicle does so through
    * `damage()`, outside any `update`, so a flag scoped to this call would never
    * fire for the one case that matters and the explosion would never play.
    */
-  update(dt, { inWater = false, upsideDown = false, depth = 0 } = {}) {
+  update(dt, { inWater = false, upsideDown = false, depth = 0, deepWater = false } = {}) {
     // Each tick below is its own `giveDamage` in the engine (`Armor::update`
     // hands it the Armor's own object and the world origin for `Pos3`), so
     // each washes the screen of whoever sits in this hull (ledger HFD-11,
     // HFD-13). `tick` is the HP the last of this step's ticks took, 0 when
     // none fired: a second tick in the same step replaces the first's flash.
     let tick = 0;
-    if (!this.armor.destroyed && this.critical
-        && this.hpLostWhileCriticalDamage !== null) {
-      this.criticalAccumulator += dt;
-      // A long frame does not burn more; it checks in less often. Drain whole
-      // seconds so a 2 s hitch costs two ticks rather than one.
-      while (this.criticalAccumulator >= 1 && !this.armor.destroyed) {
-        this.criticalAccumulator -= 1;
-        this.armor.damage(this.hpLostWhileCriticalDamage);
-        tick = this.hpLostWhileCriticalDamage;
-      }
-    } else if (!this.critical) {
-      // Recovered above the threshold: the next burn starts its second over.
-      this.criticalAccumulator = 0;
-    }
+    const wet = inWater || deepWater;
+    if (inWater) this.noteHitMaterial(1);
 
-    // Water damage: a flat hpLostWhileDamageFromWater once per whole second,
-    // not scaled by dt (HP-5). Only vehicles with `damageFromWater` set take
-    // it — boats are excluded (they have a water death tier, not drowning).
-    if (!this.armor.destroyed && inWater && this.damageFromWater
-        && this.hpLostWhileDamageFromWater !== null) {
-      this.waterAccumulator += dt;
-      while (this.waterAccumulator >= 1 && !this.armor.destroyed) {
-        this.waterAccumulator -= 1;
-        this.armor.damage(this.hpLostWhileDamageFromWater);
-        tick = this.hpLostWhileDamageFromWater;
-      }
-    } else if (!inWater) {
-      this.waterAccumulator = 0;
-    }
-
-    // Upside-down damage (HP-17, HP-18): `Armor::update`'s one-second bank
-    // `+0xe8` runs from spawn whether the hull is upside down or not; once it
-    // holds a second the hull is tested THEN (`upsideDown`, which the caller
-    // answers by `world-damage.js` `upsideDownOwners`), billed the whole bank
-    // times `hpLostWhileUpSideDown` (`0x081734a6`), and the bank emptied either
-    // way. A hull rolled over is billed 0 to 1 s later, never before. The bank
-    // is a float (`fstp` to `+0xe8`): 30 ticks of 1/30 s fill it, where a
-    // double needs 31 and bills 5.17 HP every 1.03 s. Retail bills 5.0 at
-    // each whole second (DC lab, an unmanned Humvee_TOW on its roof).
+    // The one-second bank (HP-17, HP-18). The float matters: 30 ticks of
+    // 1/30 s fill it, where a double needs 31 and bills 5.17 HP every 1.03 s.
+    // Retail bills 5.0 at each whole second (DC lab, an unmanned Humvee_TOW on
+    // its roof). A hull that goes critical is billed 0 to 1 s later, on the
+    // bank's own phase, never sooner.
     if (!this.armor.destroyed) {
-      this.upsideDownAccumulator = Math.fround(this.upsideDownAccumulator + Math.fround(dt));
-      if (this.upsideDownAccumulator >= 1) {
-        if (upsideDown && this.hpLostWhileUpSideDown > 0.01) {
-          const amount = this.upsideDownAccumulator * this.hpLostWhileUpSideDown;
-          this.armor.damage(amount);
+      this.bank = Math.fround(this.bank + Math.fround(dt));
+      if (this.bank >= 1) {
+        if (this.critical && this.hpLostWhileCriticalDamage !== 0) {
+          const amount = this.bank * this.hpLostWhileCriticalDamage;
+          this._hurt(amount);
           tick = amount;
         }
-        this.upsideDownAccumulator = 0;
+        if (!this.armor.destroyed && upsideDown && this.hpLostWhileUpSideDown > 0.01) {
+          const amount = this.bank * this.hpLostWhileUpSideDown;
+          this._hurt(amount);
+          tick = amount;
+        }
+        this.bank = 0;
+      }
+    }
+
+    // Water, then deep water: each its own countdown, its first bill after
+    // its delay (0 s and 1 s where never written), every one after it 1.0 s
+    // on, and the delay given back the moment the hull is dry (HP-5).
+    if (!this.armor.destroyed) {
+      if (wet && this.damageFromWater) {
+        // A float, as `+0xe4` is (`fstps`).
+        this.waterTimer = Math.fround(this.waterTimer - Math.fround(dt));
+        if (this.waterTimer < 0) {
+          this._hurt(this.hpLostWhileDamageFromWater);
+          tick = this.hpLostWhileDamageFromWater;
+          this.waterTimer = 1;
+        }
+      } else {
+        this.waterTimer = this.waterDamageDelay;
+      }
+      if (deepWater && this.damageFromDeepWater) {
+        this.deepWaterTimer = Math.fround(this.deepWaterTimer - Math.fround(dt));
+        if (this.deepWaterTimer < 0) {
+          this._hurt(this.hpLostWhileDamageFromDeepWater);
+          tick = this.hpLostWhileDamageFromDeepWater;
+          this.deepWaterTimer = 1;
+        }
+      } else {
+        this.deepWaterTimer = this.deepWaterDamageDelay;
       }
     }
 
@@ -374,7 +513,12 @@ export class DamageableVehicle {
 
     const died = this.armor.destroyed && !this.deathAnnounced;
     const tier = this.armor.destroyed
-      ? deathTier(this.effects, { inWater })
+      // A hull in the water is touching it: its wet parts send
+      // `handleCollision` with material 1 every tick (HP-21), and the wet
+      // byte `+0x10` is itself that contact's (`setLastHitMaterialIndex`,
+      // `0x081736c7`..`0x0817370a`), so on the frame it dies in the sea its
+      // last material is 1 whatever killed it.
+      ? deathTier(this.effects, { inWater, lastHitMaterial: inWater ? 1 : this.lastHitMaterial })
       : activeTier(this.effects, this.armor.hitPoints);
 
     // A destroyed vehicle's tier is announced once and then frozen — which is
@@ -418,7 +562,10 @@ function tierKey(tier) {
  *     input axes by the double at `ds:0x86c8678` = **0.2** (0x081d83af /
  *     0x081d83b7). So a burning tank still traverses — at one fifth the rate.
  *     (An earlier pass read that block as running *only* when the byte is set,
- *     i.e. as an all-or-nothing gate; it is a scale.)
+ *     i.e. as an all-or-nothing gate; it is a scale.) The byte is the
+ *     message's, `criticalFlagged`, not the float test the bleed uses: a hull
+ *     authored at or under its own threshold (DC's `flagkill`) is never sent
+ *     `0x14` and so turns at full rate while it burns down (HP-17).
  *
  * Both are **persistent state for the whole wrecked lifetime**, not per-frame
  * edge flags. They are set by the Armor's own status messages and cleared only
@@ -441,7 +588,7 @@ export function inputGate(vehicle, out = { blocked: false, rotationalScale: 1 })
   out.blocked = !!vehicle?.destroyed;
   out.rotationalScale = !vehicle ? 1
     : vehicle.destroyed ? 0
-      : vehicle.critical ? CRITICAL_INPUT_SCALE
+      : (vehicle.criticalFlagged ?? vehicle.critical) ? CRITICAL_INPUT_SCALE
         : 1;
   return out;
 }
@@ -621,6 +768,7 @@ export class VehicleDamageSet {
    *  `upsideDownOwners` the hulls `Armor::update`'s tilt test passes for. */
   update(dt, {
     inWaterOwners = null, upsideDownOwners = null, ticks = null, depthOf = null, crews = null,
+    deepWaterOwners = null,
   } = {}) {
     const changes = [];
     for (const [owner, vehicle] of this.byOwner) {
@@ -629,7 +777,8 @@ export class VehicleDamageSet {
       const inWater = inWaterOwners?.has(owner) ?? false;
       const upsideDown = upsideDownOwners?.has(owner) ?? false;
       const depth = vehicle.submarine && depthOf ? depthOf(owner) : 0;
-      const result = vehicle.update(dt, { inWater, upsideDown, depth });
+      const deepWater = deepWaterOwners?.has(owner) ?? false;
+      const result = vehicle.update(dt, { inWater, upsideDown, depth, deepWater });
       if (result.changed || result.died) changes.push({ vehicle, ...result });
       if (result.tick > 0) ticks?.push({ vehicle, owner, amount: result.tick });
       if (result.crew > 0) crews?.push({ vehicle, owner, amount: result.crew });

@@ -717,7 +717,8 @@ export class StrategicAI {
        *  `WPMoveTo::getUrgency` make. */
       inside: (x, z) => layer.isInside(area, x, z),
       /**
-       * `WPMoveTo::getUrgency` 0x085374a0 on the last point. R' = round(R)
+       * `WPMoveTo::getUrgency` 0x085374a0 on the last point. R' = ceil(R) (`frndint` under
+       * a round-up control word, 0x085374ce..0x085374df)
        * + the unit's `getMaxPathPosRemovalDistance` (Bot vt+0xf8,
        * `BotMain` 0x0852b780). Inside R' the order has arrived and asks for
        * nothing. Otherwise: x2 in an area the side does not hold (area
@@ -727,7 +728,7 @@ export class StrategicAI {
        * urgency is clamp(d^2 / 4R'^2, 0.1, 1) x the factor.
        */
       urgency(x, z, pathRadius = SAI.unitRadius) {
-        const Rr = Math.round(R) + pathRadius;
+        const Rr = Math.ceil(R) + pathRadius;
         const R2 = Rr * Rr;
         let d2 = (x - point[0]) ** 2 + (z - point[1]) ** 2;
         // INVENTION (`_captureRing`): while the flag is still to take, the
@@ -771,7 +772,7 @@ export class StrategicAI {
    * `WPMoveTo::getUrgency` never read a control point's radius): a bot on
    * foot ordered to a flag ends inside its capture ring.
    *
-   * The engine's order has arrived inside R' = round(R) + the path radius of
+   * The engine's order has arrived inside R' = ceil(R) + the path radius of
    * a random point of the area's box, R at least 5, so 6 m on foot at the
    * least. A capture counts a body inside the flag's own radius
    * (control-point-law.js). Where that radius is under R', even a point
@@ -818,7 +819,7 @@ export class StrategicAI {
    */
   _captureRing(bot, area, side, unit, R, valid) {
     if (unit?.mounted) return null;
-    const arrive = Math.round(R) + SAI.unitRadius;
+    const arrive = Math.ceil(R) + SAI.unitRadius;
     const wanted = flag => flag.team !== side || flag._cp?.state === 2;
     for (const flag of area.controlPoints) {
       if (!flag.position || flag.uncapturable || bot.ringless?.has(flag)) continue;

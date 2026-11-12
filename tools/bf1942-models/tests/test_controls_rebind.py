@@ -294,8 +294,10 @@ class ScreenTests(unittest.TestCase):
         self.assertFalse(r["escapeWhenIdle"])
         self.assertEqual(["MOUSE 1", ""], r["wheel"]["unbound"])
 
-    def test_grave_is_not_mappable(self) -> None:
-        self.assertEqual({"message": "THIS KEY IS NOT MAPPABLE!", "defining": None, "reload": ["R", ""]},
+    def test_grave_unbinds_the_box_and_is_not_mappable(self) -> None:
+        # Retail's Grave arm (0x006c7678) makes Escape's own setKey("", "")
+        # before the popup, so RELOAD's R is gone (ledger CTL-3).
+        self.assertEqual({"message": "THIS KEY IS NOT MAPPABLE!", "defining": None, "reload": ["", ""]},
                          self.results["grave"])
 
     def test_mouse_buttons_and_the_browsers_own_uses_of_them(self) -> None:

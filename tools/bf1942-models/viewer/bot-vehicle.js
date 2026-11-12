@@ -38,7 +38,8 @@
 //    apply after the bot left that unit and after the unit spawned. On foot
 //    the bot's own urgency x1.25 (x `modifyForDriver`) is "staying"; every
 //    enterable unit in the environment's radius that is not manned by the
-//    enemy (`mannedByEnemy`), not upside down (up . normal < 0.6914), and
+//    enemy (`mannedByEnemy`), not upside down (up . ground normal < 0.7071,
+//    `isUpsideDown` 0x0855fcf0 with the 0.7071 pushed at 0x0855f2ad), and
 //    standing on a valid cell of the bot's map scores `u * (f + 0.5)` with
 //    `f = min(0.5, (R^2 - d^2) / R^2)`; the winner gives
 //    `Declein(0.5 * best / staying) * k * 4`, times a 10 s ramp after the
@@ -110,7 +111,9 @@ export const CHANGE = {
   fireBias: 0.15,
   moveFactor: 4.0,
   moveFactorOccupied: 2.5,
-  upsideDownCos: 0.6914,
+  /** `BBChange::isUpsideDown` 0x0855fcf0's threshold, pushed by its caller
+   *  (0x0855f2ad: 0x3f350481, cos 45 deg; ledger AI-44). */
+  upsideDownCos: 0.7071,
   /** `BFEnvironment::getHardware` 0x085e2fa0: the 50 m candidate radius. */
   searchRadius: 50.0,
   /** `BBPChange::createPlan` 0x0858b5c0 on foot (AI-44, AI-138): beyond

@@ -147,7 +147,7 @@ export function heartbeatUrls(shared, sounds, stem = 'heartbeatloop') {
  * them (the map's draw, then the HUD update):
  *
  *   mode         `GamePlayMode` (1..5)
- *   team         the local player's side, 1 or 2; 0 while he has none
+ *   team         the local player's side, 1 or 2; 0 while they have none
  *   playing      the round is running (`Game::getGameStatus() == 1`)
  *   held         `{ 1, 2 }` summed area values held (`round-state.js`
  *                `holdWeight`)
@@ -212,9 +212,14 @@ export class GameplayAnnouncer {
       const share = Math.max(0, Number(state.tickets?.[team]) || 0) / start;
       // The two compares at 0x006E38AB / 0x006E38BC: above 0.2 re-arms, at
       // or under it and above 0.05 plays; at or under 0.05 is the heartbeat's.
+      // The 0.05 compare reloads the float the client stored (`fst DWORD`
+      // 0x006E38A7, `fld DWORD` 0x006E38B8), so it is made on float32: 1/20
+      // is 0.0500000007, above the double 0.05, and is in the band. The 0.2
+      // compare is made on the quotient still on the FPU stack, whose
+      // precision is the FPU mode's; it is left in double here (unsettled).
       if (share > TICKET_LOW_HIGH) {
         this.lowLatch = false;
-      } else if (share > TICKET_LOW_FLOOR && !this.lowLatch) {
+      } else if (Math.fround(share) > TICKET_LOW_FLOOR && !this.lowLatch) {
         out.push(TICKET_LOW);
         this.lowLatch = true;
       }

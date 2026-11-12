@@ -43,11 +43,13 @@ export const FALL_STATE_SPEED = -8.0;
 export const FALL_STATE_HEIGHT = 10.0;
 
 /**
- * The chute closes at this vertical speed. **Verified, and it is `abs`.**
+ * The chute closes under this vertical speed. **Verified, and it is `abs`,
+ * and strict.**
  *
- * `BFSoldier::handleUpdate` tests `|getPositionalSpeed().y| <= 2.0` in both of
- * its parachuting arms (`0x08272f3b` and `0x08273129`) and calls
- * `setIsParachuting(false)`. Under the chute the descent never falls to 2 m/s
+ * `BFSoldier::handleUpdate` tests `|getPositionalSpeed().y| < 2.0` in both of
+ * its parachuting arms and calls `setIsParachuting(false)` (`0x08272f3b` and
+ * `0x08273129`): `fldl 0x86c0330` (the double 2.0), `fabs`, `fucompp`, and the
+ * `jne` at `0x08272f30` skips the close when |vy| >= 2.0. Under the chute the descent never falls to 2 m/s
  * in the air, so in practice this fires on the tick the ground stops you.
  */
 export const CHUTE_CLOSE_SPEED = 2.0;
@@ -130,7 +132,7 @@ export const PARACHUTE_SPEED = 30;
  * where. **One** shipped behaviour bounds it, from above:
  *
  *   - the canopy must not close in mid-air — `setIsParachuting(false)` fires
- *     at `|vy| <= 2.0` (`0x08272f3b`, `0x08273129`) — so **`r < 3.126`**.
+ *     at `|vy| < 2.0` (`0x08272f3b`, `0x08273129`) — so **`r < 3.126`**.
  *
  * There used to be a lower bound of `r >= 2.354` here, and **it is refuted**.
  * It said a chute landing has to arrive under HP-14's 8.0 m/s floor to be
@@ -255,20 +257,22 @@ export function effectiveParachuteDrag(bodyRadius) {
 }
 
 /**
- * `3PParachuteOpenLower.baf` is **41 frames** and `Lb_ParachuteOpen` plays it
- * at the `addAnimation` rate **0.5**, over the same nominal 26 fps
- * `physics.js`'s `DIVE_DURATION` is derived against — 3.154 s of opening clip
- * before `addTransitionWhenDone` hands the lower body to `Lb_ParachuteIdle`.
- * The frame count is read (`bf42.baf.parse`); the 26 fps is the same soft term
- * `DIVE_DURATION` carries, because no `.baf` header states a rate.
+ * `Lb_ParachuteOpen` plays `3PParachuteOpenLower.baf` once at the
+ * `addAnimation` rate **0.5** (`AnimationStatesParachute.con`; no
+ * `3pAnimationsTweaking.con` line re-declares it), and a one-shot's pass is
+ * `1 / |speed|` seconds whatever its frame count (ANIM-2: `updateState`
+ * lnxded `0x0832b4fa`..`0x0832b509` advances the phase by `dt * speed`, and
+ * ANIM-6 ends a one-shot at phase 1): **2.0 s** before `addTransitionWhenDone`
+ * hands the lower body to `Lb_ParachuteIdle` and the upper to `Ub_StandAim`.
+ * (Was `41 / (26 * 0.5)` = 3.154 s, the refuted 26 fps frame law.)
  */
-export const OPEN_CLIP_SECONDS = 41 / (26 * 0.5);
-
+export const OPEN_CLIP_SECONDS = 1 / 0.5;
 /**
- * `3PParachuteGroundLower.baf` is **6 frames** at rate 1.0 — 0.231 s — before
- * `Lb_ParachuteHitGround`'s `addTransitionWhenDone Lb_Stand`. Same soft term.
+ * `Lb_ParachuteHitGround`'s `3PParachuteGroundLower.baf` at rate 1.0, once:
+ * **1.0 s** (ANIM-2) before its `addTransitionWhenDone Lb_Stand`. (Was
+ * `6 / 26` = 0.231 s.)
  */
-export const LANDED_CLIP_SECONDS = 6 / 26;
+export const LANDED_CLIP_SECONDS = 1 / 1.0;
 
 /** Not falling, or on the ground. */
 export const PARA_NONE = 'none';
@@ -502,8 +506,8 @@ export class Parachute {
     if (this.state === PARA_OPEN) {
       this.openTime += dt;
       this.drag = PARACHUTE_DRAG;
-      // |vy| <= 2.0 closes it: 0x08272f3b and 0x08273129 in handleUpdate.
-      if (grounded || Math.abs(velocityY) <= CHUTE_CLOSE_SPEED) {
+      // |vy| < 2.0 closes it: 0x08272f3b and 0x08273129 in handleUpdate.
+      if (grounded || Math.abs(velocityY) < CHUTE_CLOSE_SPEED) {
         this.state = PARA_LANDED;
         this._landedFor = 0;
         this.drag = null;

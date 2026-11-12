@@ -143,6 +143,8 @@ results.args = {
     onlyReadable: probe('game.readonly 1'),
     onlySetable: probe('game.writeonly'),
     oneArg: probe('game.usehud 1 2'),
+    // CON-21: a write-only property refuses a second argument too (0x083e455c).
+    oneArgWriteOnly: probe('game.writeonly 1 2'),
     accessTwoUnheld: probe('admin.two'),
     ok: probe('show.dev 1'),
     okEquals: probe('show.dev = 1'),

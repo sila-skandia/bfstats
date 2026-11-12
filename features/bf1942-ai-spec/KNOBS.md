@@ -35,7 +35,7 @@ Code paths are under `tools/bf1942-models/viewer/`; `bot-referee.js` and
 | sensing | sub-state restart on turning | 25 / 15 / 7.5 deg (18.75 / 11.25 / 3.75 mounted): the camera turned past the NEW band's angle since the last band's frustum sends the sweep back to band 0 | `BotMain::sense` 0x08521cf0 (0x08521dee), cos of the doubles the static init at 0x0852f36b stores into `tweak_frustumUpdateAngle` (AI-107) | `bot-sense.js FRUSTUM_RESET`, `BotSenses.sense` | ENGINE; one band a tick INVENTION |
 | sensing | line re-casts past skipped owners | 32 | the engine's `collideLineWithWorld` skips the units outright | `bot-sense.js LINE_RECASTS` | INVENTION |
 | sensing | near plane | 0.01 m | `Frustum::setupFrustum` 0x08440c70 | `bot-sense.js FRUSTUM_NEAR` | ENGINE |
-| sensing | rays | `clamp(round(30 radius / d), 1, 10)` | `BotMain::sense` 0x08521cf0 | `bot-sense.js RAYS_PER_METRE_RADIUS`, `RAYS_MAX` | ENGINE |
+| sensing | rays | `clamp(trunc(30 radius / d), 1, 10)` (truncating control word at 0x08522272) | `BotMain::sense` 0x08521cf0 | `bot-sense.js RAYS_PER_METRE_RADIUS`, `RAYS_MAX` | ENGINE |
 | sensing | soldier radius | 1.0 m | not read | `bot-sense.js SOLDIER_RADIUS` | INVENTION |
 | sensing | sense points (a soldier) | heights 0.3, 0.8, 1.2, 1.55 m, +-0.25 m jitter; the offset that saw him kept on the record | the engine picks a random skeleton bone (`pickSoldierRandomSensePosition` 0x085e3d20, stride 0xe8 at +0x78) and keeps its index (+0x10) (AI-123) | `bot-sense.js SENSE_HEIGHTS`, `SENSE_JITTER`, the record's `offset` | INVENTION (the bone pick read, not ported) |
 | sensing | sense points (a hull) | the first of several rays at the hull's position, every other at a uniform point on a random collision triangle of the hull; the point that saw it kept in the hull's frame | `BotMain::sense` 0x08521cf0 (0x08522306, vt+0x5c), `pickRandomSensePosition` 0x085e4080 (AI-123) | `bot-sense.js hullSensePoint`, `bakedToWorld`, `_rays`, the record's `local` | ENGINE; one triangle pool per hull (the engine picks a child, then a face): INVENTION of weighting |
@@ -84,7 +84,7 @@ Code paths are under `tools/bf1942-models/viewer/`; `bot-referee.js` and
 | fire | plan timeout | 3 s | `createFirePlan` | `FIRE.planTimeout` | ENGINE |
 | fire | shots | up to 10; the uniform draw `1 + floor(rand x 10)` | `createFirePlan` | `FIRE.shotsMax`, `firePlanFor` | ENGINE; the draw UNSOURCED |
 | fire | pose order | prone, crouch, stand | `getFiringPose` 0x085a26f0 | `FIRING_POSES` | ENGINE |
-| fire | trigger extra `C` | 0 infantry, 30 vehicle, 10 primary/occupied (AI-36); AI-18 reads an AA penalty | `EntryTrigger::execute` 0x086257d0 | `FIRE.vehicleExtra`, `vehicleOccupiedExtra` (unused) | ENGINE |
+| fire | trigger extra `C` | anti-aircraft penalty: 0 from an air unit or at a non-air target; at an air target 10 from naval equipment, else 30; 1 / 3 under `EntryTriggerContinously` (AI-18; AI-36's "0 / 30 / 10" corrected 2026-11-12) | `EntryTrigger::execute` 0x086257d0 (0x08625d87, 0x08625e18, 0x08625e64, 0x08625eb8), `EntryTriggerContinously` 0x08625ff0 | `FIRE.aaPenaltyGround`, `aaPenaltyNaval`, `bot-fire.js aaPenalty`, `bot.js` tick | ENGINE; the equipment's vt+0x6c predicate (10) not modelled |
 | fire | soldier battle strength | Infantry 4, LightArmour 2, HeavyArmour 1, Air 1 | `Objects/Soldiers/Common/AI/Objects.con setBattleStrength` | `SOLDIER_BATTLE_STRENGTH` | CON |
 | fire | weapon template defaults | deviation 5.0, correction time 10.0 | `WeaponTemplate` ctor 0x085ef740 | `weaponAiOf` | ENGINE |
 | fire | weapon template fallbacks | maxRange 60, strength Infantry 1 | | `weaponAiOf` | UNSOURCED |
@@ -210,7 +210,7 @@ Code paths are under `tools/bf1942-models/viewer/`; `bot-referee.js` and
 | change | staying | x1.25 | `BBChange::calculateUrgency` 0x0855e0c0 | `CHANGE.stayFactor` | ENGINE |
 | change | fire bias, move factors | 0.15; x4, x2.5 with a bot driver | `calculateVehicleUrgency` 0x08583b10, `calculateVehicleMoveUrgency` 0x08584310 | `CHANGE.fireBias`, `moveFactor`, `moveFactorOccupied` | ENGINE |
 | change | order split | both 0: 0.5 / 0.5; attack only 0 / 1; defence only 1 / 0 | `Bot` +0x168 / +0x16c | `orderSplit` | ENGINE |
-| change | upside down | up . normal < 0.6914 | `isUpsideDown` 0x0855fcf0 | `CHANGE.upsideDownCos` | ENGINE |
+| change | upside down | hull up . ground normal < 0.7071 (cos 45 deg, pushed at 0x0855f2ad / 0x0855f606; AI-44's 0.6914 corrected 2026-11-12) | `isUpsideDown` 0x0855fcf0 | `CHANGE.upsideDownCos` | ENGINE |
 | change | search radius | 50 m | `getHardware` 0x085e2fa0 | `CHANGE.searchRadius` | ENGINE |
 | change | distance factor | `min(0.5, (R² - d²) / R²) + 0.5` | `BBChange` | `changeUrgency` | ENGINE |
 | change | urgency | `Declein(0.5 best / staying) x 4`, x2 bailing | `BBChange` | `CHANGE.urgencyScale` | ENGINE |

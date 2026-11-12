@@ -58,10 +58,16 @@
 //    between bursts, and every rebuild drops the bot's route. On the
 //    runner's seed-1 Bocage match it took the route failures from 13 to 123
 //    (features/bot-weapons).
-//  * `EntryTrigger` hands the weapon `setBotSkill(botSkill, firingTargetTime,
-//    extra)` on every pull: `extra` is 0 against infantry, 30 (or 10 for a
-//    primary/occupied vehicle) against a vehicle — the deviation model
-//    `deviation.js` implements.
+//  * `EntryTrigger::execute` 0x086257d0 hands the weapon `setBotSkill(botSkill,
+//    firingTargetTime, C)` on every pull, `C` an anti-aircraft penalty on the
+//    shooter (ledger AI-18, AI-68; AI-36's "0 / 30 / 10" is corrected there):
+//    0 when the bot's own equipment is ITAir (`testb $0x10,0x4` at
+//    0x08625d87) or its target is not (0x08625e18); else 10 from naval
+//    equipment (`testb $0x40` at 0x08625e64, or the equipment's unnamed
+//    vt+0x6c predicate, not modelled), else 30 (`push 0x41f00000` at
+//    0x08625eb8). `EntryTriggerContinously` 0x08625ff0 runs the same tests
+//    with 1 and 3 (0x0862656a, 0x08626593). `aaPenalty` below; `deviation.js
+//    setAIDeviation` weighs it by `1 - 0.75 skill`.
 //
 // The vehicle and aircraft targeting (`scoreVehicleTargets`, read
 // 2026-09-23; bot-behaviours.md §12, ledger AI-52..AI-53):
@@ -134,13 +140,28 @@ export const FIRE = {
   aimToleranceMin: 0.4,
   planTimeout: 3.0,
   shotsMax: 10,
-  vehicleExtra: 30.0,
-  vehicleOccupiedExtra: 10.0,
+  /** `EntryTrigger` / `EntryTriggerContinously`'s anti-aircraft `C`
+   *  (ledger AI-18): `[pull, held]` for a ground and a naval shooter. */
+  aaPenaltyGround: [30.0, 3.0],
+  aaPenaltyNaval: [10.0, 1.0],
   /** `createFirePlan` 0x085ac240's `BAPConWeaponHeat(0.8, 0.5)` (0x085aedb8:
    *  `push 0x3f000000; push 0x3f4ccccd`), a float 0.8 and 0.5. */
   heatStop: Math.fround(0.8),
   heatResume: 0.5,
 };
+
+/**
+ * The anti-aircraft term `C` a trigger statement hands `setBotSkill`
+ * (`EntryTrigger::execute` 0x086257d0, `EntryTriggerContinously` 0x08625ff0;
+ * ledger AI-18): 0 from an aircraft or at a target that is not one; at an
+ * aircraft 10 from a naval unit and 30 from anything else (soldier, tank,
+ * fixed gun), 1 / 3 under a held (continuous) trigger.
+ */
+export function aaPenalty({ shooterKind = null, targetAir = false, continuous = false } = {}) {
+  if (shooterKind === 'air' || !targetAir) return 0;
+  const pair = shooterKind === 'ship' ? FIRE.aaPenaltyNaval : FIRE.aaPenaltyGround;
+  return pair[continuous ? 1 : 0];
+}
 
 /**
  * `BAPConWeaponHeat::evaluate` 0x08555510 over the weapon's heat (`Weapon`
@@ -326,7 +347,7 @@ export function scoreTargets({
     }
     const range = Math.max(0, 1 - dist / (FIRE.rangeSlack * maxRange));
     const rangeFactor = (minRange + FIRE.rangeFactorMin * (maxRange - minRange)) / dist;
-    const strengthSum = Math.round(SOLDIER_BATTLE_STRENGTH[targetType] ?? 1) * F;
+    const strengthSum = Math.trunc(SOLDIER_BATTLE_STRENGTH[targetType] ?? 1) * F;
     const curve = Math.max(0, -0.22 * seededUnit(hashId(id)) + 1.3);   // UCFire jitter
     let score = curve * range * wVal * sightFactor * speedFactor * attackedBonus
       * F * strengthSum * rangeFactor;
@@ -774,7 +795,7 @@ export function scoreVehicleTargets({
  *    `getCameraTransformation`, 0x0856511f..); out of range, a fixed gun
  *    skips it and a mobile unit keeps it while the overshoot is under
  *    5 x its own top speed (the Mobile template's +8);
- *  * the base: over a manned vehicle's seats `(round(seat[myType]) +
+ *  * the base: over a manned vehicle's seats `(trunc(seat[myType]) +
  *    security + own[seatType]) x classValue[seatType] x order x F`, the
  *    seats' `[myType]` sum under the harmless threshold x 0.33; anything
  *    else `own[type] x security x classValue[type] x order x F`;
@@ -852,7 +873,7 @@ export function scoreMountedInfantry({
         const st = seat.type ?? targetType;
         const t = seat.table?.[myType] ?? 0;
         threat += t;
-        base += (Math.round(t) + 1 + (myTable[st] ?? 0)) * (armourClassValues[st] ?? 1) * orderFactor * F;
+        base += (Math.trunc(t) + 1 + (myTable[st] ?? 0)) * (armourClassValues[st] ?? 1) * orderFactor * F;
       }
       harmless = threat <= harmlessThreshold;
     } else {

@@ -25,9 +25,11 @@ export function createVehicleEntry(page) {
   // where a soldier walks in from, with `setEntryRadius` as their reach
   // (`extras.seat.entryRadius`, 2.3 m on a Willys) — and the PCO root carries
   // `setSoldierExitLocation` for the walk back out. Both are the game's own
-  // data; the only invention here is the 4 m fallback radius for a mod entry
-  // point that declares none.
-  const ENTRY_RADIUS_FALLBACK = 4;
+  // data. An entry point that declares no `setEntryRadius` keeps the
+  // template's own 3.0 m (`EntryPointTemplate` ctor, lnxded 0x081ae0e0:
+  // `movl $0x40400000, 0x138(%ebx)`, the field `BFfindEntryPoint` reads,
+  // SEAT-32); a declared 0 stays 0 and is never reached.
+  const ENTRY_RADIUS_FALLBACK = 3.0;
   const ENTRY_SCAN_PERIOD = 0.25;   // seconds between proximity sweeps on foot
   vehicleEntry.entryPoints = null;           // [{node, vehicle, control, radius, hullRadius}]
   vehicleEntry.nearEntry = null;             // the seat the HUD is currently offering
@@ -282,8 +284,12 @@ export function createVehicleEntry(page) {
   /**
    * Where the occupant steps out, in world space: the vehicle's own
    * `setSoldierExitLocation` when it declares one (the Willys puts its driver
-   * 1.5 m off the left running board), else two metres to the vehicle's left.
-   * The declared vector is in Refractor's frame — z forward — so its Z is
+   * 1.5 m off the left running board), else the seat PCO's own origin: the
+   * template's default exit position and rotation are 0/0/0
+   * (`PlayerControlObjectTemplate` ctor, lnxded 0x0831973a..0x08319789,
+   * `+0x158` and `+0x164`; SEAT-35). It was (-2, 0.5, 0) until 2026-11-12,
+   * a placeholder from the first E press (ef53c2252), not a fix for any
+   * defect. Every vanilla PCO declares the word. The declared vector is in Refractor's frame — z forward — so its Z is
    * negated at this boundary, the same fix `rig` angles get.
    */
   function exitPose(vehicle) {
@@ -291,7 +297,7 @@ export function createVehicleEntry(page) {
     const local = declared
       ? new THREE.Vector3(declared.position[0], declared.position[1],
         -declared.position[2])
-      : new THREE.Vector3(-2, 0.5, 0);
+      : new THREE.Vector3(0, 0, 0);   // the template default (SEAT-35, see exitPose)
     const position = local.applyQuaternion(vehicle.state.orientation)
       .add(vehicle.state.position);
     const fwd = page.driveFwd.set(0, 0, -1).applyQuaternion(vehicle.state.orientation);
@@ -423,7 +429,7 @@ export function createVehicleEntry(page) {
     const local = declared
       ? new THREE.Vector3(declared.position[0], declared.position[1],
         -declared.position[2])
-      : new THREE.Vector3(-2, 0.5, 0);
+      : new THREE.Vector3(0, 0, 0);   // the template default (SEAT-35, see exitPose)
     // Use the exit node's own pose when it is a nested seat (e.g. a carrier
     // AA gun m metres above the hull), not the hull root's pose at the
     // waterline.  The root case stays as-is — a hull door offset is in the

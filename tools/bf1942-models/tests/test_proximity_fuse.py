@@ -39,7 +39,7 @@ MODULES = {name: VIEWER / name for name in (
     "world-collider.js", "static-index.js", "collision-meshes.js",
     "drivable-mask.js", "collision-materials.js", "heightfield.js",
     "effects-core.js", "projectile-damage.js", "crash-damage.js", "physics.js",
-    "walking-body.js",
+    "walking-body.js", "rigid-body.js",
     "soldier-resolve.js", "soldier-pose.js", "soldier-locomotion.js",
     "point-body.js", "fixed-step.js", "parachute.js", "contact-response.js",
 )}
@@ -157,6 +157,21 @@ class MovingHullTests(unittest.TestCase):
     def test_a_parked_hull_in_the_path_does_not_set_it_off(self):
         hit = self.out["parkedNear"]["hit"]
         self.assertIsNone(hit["fusedOn"])
+
+    def test_the_fuse_runs_before_the_ticks_move_and_contact(self):
+        # `GameServer::simulateFrame` updates the objects (the fuse, in
+        # `Projectile::handleUpdate`) before the physics nodes move the round
+        # and before `Game::updateWorldCollision` (lnxded 0x0815c2e6..
+        # 0x0815c342). A round 9.5 m from a hull at the top of a tick whose
+        # 10 m step would meet the hull's floor is fused on the hull there;
+        # the same pass without the fuse meets the floor.
+        fused = self.out["directPass"]["hit"]
+        self.assertEqual("endOfLife", fused["kind"])
+        self.assertEqual(self.out["directPass"]["owner"], fused["fusedOn"])
+        self.assertEqual([0, 90, 0], fused["point"])
+        struck = self.out["directPassNoFuse"]["hit"]
+        self.assertEqual("object", struck["kind"])
+        self.assertEqual([0, 98.5, 0], struck["point"])
 
     def test_the_lifetime_is_drawn_from_the_crd(self):
         # `sampleCrd` UNIFORM is a + (1 - rand)(b - a).

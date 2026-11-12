@@ -284,9 +284,9 @@ into the physics node's `+0xa4`/`+0xa8` by
 `PhysicsSpring::updatePhysics` applies to `setStrength` and that `flight.js`
 already carries as `GRAVITY_NORMALISER`.
 
-So an authored lift is worth `x 14.73/9.82 = 1.49995`. **Implementing the spec
+So an authored lift is worth `x 14.73/9.82 = 1.5`. **Implementing the spec
 literally sinks the torpedo**: two floaters at the authored 5.9 give 11.8
-against a g of 14.73 and it goes to the bottom; 2 x 5.9 x 1.49995 = 17.70 holds
+against a g of 14.73 and it goes to the bottom; 2 x 5.9 x 1.5 = 17.70 holds
 it up at 6.58 m. This is the one place where following §2.5(c) as written would
 have produced a wrong feature.
 

@@ -60,6 +60,12 @@ export const WAKE_MAX_DEPTH = 50;
  *  gear-ratio curve is always sampled at 100). */
 const ENGINE_RATIO_SCALE = 3.5;
 const GEAR_RATIO = 0.94;
+/** `EngineTemplate`'s constructor defaults for an omitted word (lnxded
+ *  0x0823f022 differential 10.0, 0x0823f06e noPropellerEffectAtSpeed 100.0;
+ *  `rocket-motor.js` `ROCKET_ENGINE_DEFAULTS`). Restated so this module keeps
+ *  its import list for the harnesses that copy it. */
+const ENGINE_DEFAULT_DIFFERENTIAL = 10;
+const ENGINE_DEFAULT_FADE_SPEED = 100;
 
 /** `0.1 * |throttle|`: the part of propeller thrust that does not fade. */
 const ENGINE_IDLE = 0.1;
@@ -267,8 +273,10 @@ export class TorpedoRun {
     let accel = 0;
     const along = velocity.x * fx + velocity.y * fy + velocity.z * fz;
     for (const engine of this.engines) {
-      const fade = engine.noPropellerEffectAtSpeed;
-      const differential = engine.differential;
+      // An omitted word is `EngineTemplate`'s constructor default, not "no
+      // thrust" (lnxded 0x0823f022 / 0x0823f06e).
+      const fade = engine.noPropellerEffectAtSpeed ?? ENGINE_DEFAULT_FADE_SPEED;
+      const differential = engine.differential ?? ENGINE_DEFAULT_DIFFERENTIAL;
       if (!(fade > 0) || !(differential > 0)) continue;
       const e = 1 - along / fade;
       accel += (ENGINE_IDLE + e * Math.abs(e))

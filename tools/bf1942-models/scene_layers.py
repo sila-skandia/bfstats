@@ -65,7 +65,7 @@ LAYERS: dict[str, tuple[tuple[str, ...], tuple[str, ...]]] = {
                      "targetTriCount"), ()),
     "damage": (("damage",), ()),
     "materials": (("depthWriteOff", "materialDiffuse", "alphaBlend",
-                   "alphaLodDistance"), ()),
+                   "alphaLodDistance", "textureFadeMaxDist"), ()),
     "sounds": (("sounds",), ()),
     "ai": (("ai",), ()),
     "heightmap": (("heightmap",), ()),
@@ -115,6 +115,8 @@ REPORT_ORDER = (
     "collisionGroups",
     # Added 2026-11-10, the same way.
     "fireOnce",
+    # Added 2026-11-12, the same way (the `materials` layer).
+    "textureFadeMaxDist",
 )
 MODE_KEY_ORDER = ("gameTypes", "controlPoints", "soldierSpawns",
                   "objectSpawns", "vehicleSoldierSpawns", "tickets",
@@ -831,6 +833,7 @@ def layer_materials(ctx: LevelContext):
         "materialDiffuse": {c: sorted(names) for c, names in sorted(diffuse.items())},
         "alphaBlend": sorted(k for k, v in seen.items() if blends_near(v)),
         "alphaLodDistance": alpha_lod_distances(objects),
+        "textureFadeMaxDist": texture_fade_max_distances(objects),
     }, {}
 
 
@@ -861,6 +864,37 @@ def alpha_lod_distances(objects) -> dict[str, float]:
             continue
         current = None
         for match in _ALPHA_LOD.finditer(blob.decode("latin-1", "replace")):
+            if match.group(2):
+                current = match.group(2).lower()
+            elif current is not None and current not in out:
+                try:
+                    out[current] = float(match.group(3))
+                except ValueError:
+                    pass
+    return dict(sorted(out.items()))
+
+
+_TEXTURE_FADE = re.compile(
+    r"(?im)^\s*GeometryTemplate\.(create\s+\S+\s+(\S+)|textureFadeMaxDist\s+(-?[0-9.]+))")
+
+
+def texture_fade_max_distances(objects) -> dict[str, float]:
+    """`GeometryTemplate.textureFadeMaxDist` by lower-case geometry name, where
+    a script sets one (ledger DL-13). The word is the mesh template's `+0xa0`
+    (setter `0x005cd100`, which also keeps `1 / D^2` at `+0xa4`), 200 m until
+    set (constructor `0x005b5bd9`); a `textureFade true` material is clear at
+    the mesh and solid from that distance out (`StandardMesh_drawLod`
+    `0x005af140`..`0x005af194`). Vanilla's houses set 70, 80 or 100. The
+    viewer takes 200 for a geometry this does not list."""
+    out: dict[str, float] = {}
+    for name in sorted(objects.names(), key=str.lower):
+        if not name.lower().endswith(".con"):
+            continue
+        blob = objects.try_read(name)
+        if blob is None or b"texturefademaxdist" not in blob.lower():
+            continue
+        current = None
+        for match in _TEXTURE_FADE.finditer(blob.decode("latin-1", "replace")):
             if match.group(2):
                 current = match.group(2).lower()
             elif current is not None and current not in out:

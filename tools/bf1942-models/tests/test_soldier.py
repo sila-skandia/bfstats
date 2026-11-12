@@ -46,6 +46,7 @@ MODULES = [
     ROOT / "viewer" / "spawn-flags.js",
     ROOT / "viewer" / "physics.js",
     ROOT / "viewer" / "walking-body.js",
+    ROOT / "viewer" / "rigid-body.js",
     ROOT / "viewer" / "soldier-resolve.js",
     ROOT / "viewer" / "soldier-pose.js",
     ROOT / "viewer" / "soldier-locomotion.js",
@@ -159,26 +160,30 @@ class SoldierModuleTests(unittest.TestCase):
         self.assertAlmostEqual(0.30, self.results["proneEye"], places=3)
         self.assertAlmostEqual(1.65, self.results["standEye"], places=3)
 
-    def test_stance_transitions_take_the_time_the_clips_declare(self) -> None:
-        # `Lb_CrouchToLie` is 9 frames at 1.6x = 216 ms; `Lb_LieToStand` is 9
-        # frames at -3.0x = 115 ms (the eye's table; the clip itself plays a
-        # third of a second, below). The easing itself lives in `SoldierBody`
-        # and is spent by the engine's 30 Hz ticks, so the eye arrives on the
-        # tick that spends the last of it: ceil(6.48) = 7 ticks and
-        # ceil(3.45) = 4 ticks, which the harness's 60 fps frames see as 14
-        # and 8 (a tick every second frame). These durations are what
-        # `soldier.js` hands it, which is the whole of the arrangement being
-        # checked here.
-        self.assertEqual(2 * math.ceil(0.216 * 30), self.results["crouchToProneFrames"])
+    def test_the_eye_halves_its_distance_every_engine_tick(self) -> None:
+        # VIEW-15 (client `0x004fd42c` / `0x004fd441`): `handleUpdate` moves the
+        # camera half the remaining way to `setPoseCameraPos[getPose()]` every
+        # 1/30 s tick, whatever the transition clip. The harness's 60 fps
+        # frames see a tick every second frame. This replaced a linear ease
+        # over clip lengths taken at an assumed 26 fps (216 ms crouch -> prone,
+        # 115 ms prone -> stand), refuted by ANIM-2 and VIEW-15.
+        crouch, prone, stand = 1.12, 0.30, 1.65
+        down = self.results["crouchToProne"]
+        for tick in range(1, 6):
+            want = prone + (crouch - prone) * 0.5 ** tick
+            self.assertAlmostEqual(want, down[2 * tick - 1], places=6)
+            self.assertAlmostEqual(want, down[2 * tick], places=6)
+        self.assertTrue(self.results["proneEaseMonotonic"])
         # Getting up is `Lb_LieToStand`, one pass at 3.0 (ANIM-2): the pose
         # stays lying eleven ticks counting the press's (PHY-38), and the eye
-        # with it, since the camera eases toward `setPoseCameraPos[getPose()]`
-        # (VIEW-14); then the 115 ms ease, 4 ticks: 15 ticks, 30 frames.
-        self.assertEqual(2 * (11 + math.ceil(0.115 * 30)), self.results["proneToStandFrames"])
-        self.assertTrue(self.results["proneEaseMonotonic"])
-        transition = self.results["constants"]["stanceTransition"]
-        self.assertAlmostEqual(0.216, transition["crouch>prone"], places=6)
-        self.assertAlmostEqual(0.115, transition["prone>stand"], places=6)
+        # with it, since the camera eases toward `setPoseCameraPos[getPose()]`;
+        # the halving starts on tick twelve (frame 24).
+        up = self.results["proneToStand"]
+        for frame in range(23):
+            self.assertAlmostEqual(prone, up[frame], places=6)
+        for k in range(1, 5):
+            self.assertAlmostEqual(stand - (stand - prone) * 0.5 ** k,
+                                   up[23 + 2 * (k - 1)], places=6)
 
     # -- movement ----------------------------------------------------------- #
 

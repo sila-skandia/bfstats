@@ -79,6 +79,7 @@ MODULES = {
     "heightfield.js": VIEWER / "heightfield.js",
     "physics.js": VIEWER / "physics.js",
     "walking-body.js": VIEWER / "walking-body.js",
+    "rigid-body.js": VIEWER / "rigid-body.js",
     "soldier-resolve.js": VIEWER / "soldier-resolve.js",
     "soldier-pose.js": VIEWER / "soldier-pose.js",
     "soldier-locomotion.js": VIEWER / "soldier-locomotion.js",
@@ -662,15 +663,24 @@ class SeatsModuleTests(unittest.TestCase):
         servo = self.results["turretServo"]
         self.assertAlmostEqual(35.0, servo["ownAccelAtTenth"], delta=0.5)
 
-    def test_an_axis_without_one_falls_back_and_is_slower(self) -> None:
-        # Every glb baked before `con.py` started emitting the magnitude. The
-        # fallback is the middle of the confirmed 30–150 band, 90 deg/s^2 —
-        # 9 deg/s after a tenth of a second, and it does not reach the 35 deg/s
-        # that input 1 asks for until ~0.39 s.
+    def test_an_axis_without_one_takes_the_engine_default(self) -> None:
+        # An axis with no `acceleration` gets the template's own 0.1 deg/s^2
+        # (`RotationalBundleTemplate` ctor, lnxded 0x081d923c, GUN-2), not
+        # the 90 mid-band guess this used to assert: 0.01 deg/s after a
+        # tenth of a second, 0.05 after half of one -- all but still, as an
+        # axis that never says `setAcceleration` is in the game.
         servo = self.results["turretServo"]
-        self.assertEqual(90, servo["fallbackAcceleration"])
-        self.assertAlmostEqual(9.0, servo["fallbackAccelAtTenth"], delta=0.5)
-        self.assertAlmostEqual(35.0, servo["fallbackAccelAtHalf"], delta=0.5)
+        self.assertAlmostEqual(0.1, servo["fallbackAcceleration"], places=6)
+        self.assertAlmostEqual(0.01, servo["fallbackAccelAtTenth"], delta=0.005)
+        self.assertAlmostEqual(0.05, servo["fallbackAccelAtHalf"], delta=0.005)
+
+    def test_a_zero_max_speed_axis_is_not_stepped(self) -> None:
+        # GUN-20: `RotationalBundle::handleUpdate` skips `calculateAndClipAngle`
+        # for a slot whose `maxSpeed` is exactly 0 (lnxded 0x081d79b0..ec), so
+        # neither the continuous term nor the clip moves it.
+        servo = self.results["turretServo"]
+        self.assertEqual(0, servo["zeroSpeedContinuousAngle"])
+        self.assertEqual(0, servo["zeroSpeedClipAngle"])
 
     def test_there_is_no_input_bank_so_a_flick_does_not_coast(self) -> None:
         # The `+0x128` register a previous reading of this file modelled as a

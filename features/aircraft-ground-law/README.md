@@ -41,10 +41,13 @@ One server tick, in the server's order (TANK-18 for the shape, AIRGND-1..5):
    servo, the tail wheel's steering bundle (`calculateAndClipAngle` under
    `setAutomaticReset 1`: +-25 degrees at 150 deg/s on the SBD, +-20 at 110 on
    the Zero, the Val and the Corsair).
-2. The springs: `-(1.49995 k D + c (D - Dprev) 30)` at each anchor, `k` 24,
+2. The springs: `-(1.5 k D + c (D - Dprev) 30)` at each anchor, `k` 24,
    `c` 12 on every vanilla plane, `D` the push the last collision pass left,
    the wheel snapped back to rest (TANK-19; `PhysicsSpring::updatePhysics`
-   0x0824ddd0, the 1.49995 being `getGravity() * -0.101833`). A steered tail
+   0x0824ddd0, the 1.5 being `getGravity() * -0.101833` with g = 0xC16BAE14 = -14.73f; an
+   earlier 1.49995 mis-decoded the seed, corrected 2026-11-12; the code still
+   holds the old -14.7295379 with `aircraft.js`, see
+   `features/retail-parity-cross-check-2026-11-12`). A steered tail
    wheel's anchor and vertex are turned with its bundle.
 3. The wings, the engine and the box drag as the page already ran them, into
    the same accumulators; the root's sleep and one Euler step (TANK-21,

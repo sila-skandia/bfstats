@@ -227,9 +227,18 @@ export function partNodeOf(root, name) {
   return found;
 }
 
-/** How fast `node` turned since `part.prev`, deg/s: the angle between its
- *  local rotations, which is the bundle's own (GUN-2's angle registers). */
-function turnRate(part, dt) {
+/** How fast `node` turned since `part.prev`, deg/s, as `RotationalBundle::
+ *  updateSound` measures it (lnxded 0x081d8630, ledger SND-20): the LARGEST
+ *  of its per-axis rates (`|speed register| + |continousRotationSpeed|` for
+ *  each of its three axes, kept by `fucom` at 0x081d86a4 / 0x081d86df), not
+ *  the total angle. The page reads the axes off the node's own motion: the
+ *  frame's rotation in the bundle's local frame, `conj(prev) * now`, as a
+ *  rotation vector whose components are the per-axis angles. A turret slewing
+ *  30 deg/s in yaw and 30 in pitch at once reads 30, not 42. DELIBERATE, not
+ *  retail: the motion, not the speed register, so a hand pushing a turret
+ *  against its stop is silent here where the client's servo keeps running
+ *  (features/vehicle-sound-coverage, "Not done here"). */
+export function turnRate(part, dt) {
   const q = part.node?.quaternion;
   if (!q) return 0;
   const p = part.prev;
@@ -240,8 +249,16 @@ function turnRate(part, dt) {
     return 0;
   }
   if (dt > 0) {
-    const dot = Math.min(1, Math.abs(q.x * p.x + q.y * p.y + q.z * p.z + q.w * p.w));
-    rate = (2 * Math.acos(dot) * 180 / Math.PI) / dt;
+    // d = conj(p) * q
+    let dw = p.w * q.w + p.x * q.x + p.y * q.y + p.z * q.z;
+    let dx = p.w * q.x - p.x * q.w - p.y * q.z + p.z * q.y;
+    let dy = p.w * q.y + p.x * q.z - p.y * q.w - p.z * q.x;
+    let dz = p.w * q.z - p.x * q.y + p.y * q.x - p.z * q.w;
+    if (dw < 0) { dw = -dw; dx = -dx; dy = -dy; dz = -dz; }
+    const s = Math.hypot(dx, dy, dz);
+    const angle = 2 * Math.atan2(s, dw);
+    const axis = s > 0 ? Math.max(Math.abs(dx), Math.abs(dy), Math.abs(dz)) / s : 0;
+    rate = (angle * axis * 180 / Math.PI) / dt;
   }
   p.x = q.x; p.y = q.y; p.z = q.z; p.w = q.w;
   part.rate = rate;
@@ -1037,11 +1054,12 @@ export class VehicleAudioRack {
       entry.worldPos = { x: 0, y: 0, z: 0 };
       entry.worldQuat = { x: 0, y: 0, z: 0, w: 1 };
     }
+    let e = null;
     if (entry.engineNode) {
       if (entry.engineNode.updateWorldMatrix) {
         entry.engineNode.updateWorldMatrix(true, false);
       }
-      const e = entry.engineNode.matrixWorld?.elements;
+      e = entry.engineNode.matrixWorld?.elements ?? null;
       if (e) {
         entry.worldPos.x = e[12]; entry.worldPos.y = e[13]; entry.worldPos.z = e[14];
         quatFromElements(e, entry.worldQuat);
@@ -1061,11 +1079,17 @@ export class VehicleAudioRack {
         entry.prevVelocity.y = v.y;
         entry.prevVelocity.z = v.z;
       }
-      // `Engine::DiveAngle` is read as the sine of the flight path's descent
-      // angle — 1 straight down, 0.2 about 12 degrees nose-down. Inferred,
-      // not read out of the data (same as the single-seat path).
-      if (speed > 1 && v) diveAngle = Math.max(0, -v.y / speed);
     }
+    // `Engine::DiveAngle` is the Engine's control slot 1, which
+    // `Engine::updateSound` (lnxded 0x0823e930, ledger SND-24) writes as
+    // `(pi/2 - acos(clamp(d, 0, 1))) * 2/pi` = `(2/pi) asin(d)`, `d` the
+    // descent of the Engine's own nose (its row 2 dotted with (0, -1, 0)):
+    // the dive in degrees over 90, 0 level or nose-up, 1 straight down, and
+    // no speed in it. The page's frame has the nose on local -Z (aircraft.js
+    // FORWARD), so the descent is the world matrix's column 2 y over its
+    // length; a hull without an engine node reads its drive's orientation.
+    const descent = noseDescent(e, state?.orientation);
+    if (descent > 0) diveAngle = (2 / Math.PI) * Math.asin(Math.min(1, descent));
     return {
       dt,
       // The already-spooled engine value, NOT the stick. Cars write gearbox
@@ -1171,6 +1195,23 @@ export class VehicleAudioRack {
 }
 
 /** A column-major THREE matrix's upper 3x3, as a quaternion. */
+/**
+ * How far an Engine's nose points down: the world y of its local -Z axis,
+ * negated, for a column-major world matrix `m`, else for a unit quaternion
+ * `q`. 0 level, 1 straight down, negative nose-up.
+ */
+export function noseDescent(m, q) {
+  if (m) {
+    const len = Math.hypot(m[8], m[9], m[10]);
+    return len > 0 ? m[9] / len : 0;
+  }
+  if (q) {
+    // -Z rotated by q: its y is -2 (y z - w x); the descent is minus that.
+    return 2 * (q.y * q.z - q.w * q.x);
+  }
+  return 0;
+}
+
 function quatFromElements(m, out) {
   const t = m[0] + m[5] + m[10];
   let x, y, z, w;

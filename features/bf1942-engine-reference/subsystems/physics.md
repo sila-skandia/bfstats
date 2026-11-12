@@ -51,8 +51,8 @@ note EARTH does *not* restore the default) and the console property setter
 vanilla file.
 
 Corroboration from the other direction: the SBD's three `setRegulateToLift 4.91`
-surfaces sum to 14.73 exactly. **`4.91` is g/3, not g/2** — 14.7295/3 = 4.9098
-rounds to 4.91 with room to spare, where 9.81/2 = 4.905 does not.
+surfaces sum to 14.73 exactly. **`4.91` is g/3, not g/2** — 14.73/3 = 4.91
+exactly, where 9.81/2 = 4.905 does not.
 
 ---
 
@@ -253,7 +253,8 @@ The `0.0025` scale constant is at `0x008feb30`.
 
 - `coeff = (setWingLift + setFlapLift) * getGravity() * -0.101833`. That constant
   is **−1/9.82** — the same earth-gravity normalisation `PhysicsSpring` uses. At
-  the shipped g this is a flat ×1.49995.
+  the shipped g (0xC16BAE14 = -14.73f) this is a flat ×1.5 (1.49999995; an
+  earlier ×1.49995 decoded the seed as -14.7295379, corrected 2026-11-12).
 - `setWingLift` and `setFlapLift` are **summed into one coefficient**. There is
   no `flapLift × deflection` term; a hinge reaches the arithmetic only by
   rotating the surface's world matrix.

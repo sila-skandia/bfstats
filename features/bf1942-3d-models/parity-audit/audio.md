@@ -1021,9 +1021,10 @@ preference.
    no cloth geometry (the midway/truk/kasserine case, G11b).
 2. Whether `upload-mesh-maps-resumable.sh` has ever been pointed at a directory
    containing `mods/`, and what it does when it is.
-3. The exact semantics of the 6-parameter `Ramp` surplus pair (573 uses) —
-   inherited as unresolved from `engine-sound.md` §1.4 and untouched here;
-   treating them as 4-param reproduces the audible design.
+3. ~~The exact semantics of the 6-parameter `Ramp` surplus pair (573 uses)~~ —
+   settled 2026-11-12 (ledger SSC-7, BF1942.exe 0x00803aa0): p5 is the curve
+   (0 linear, 1 quick, 2 slow, any other p3 + p3) and p6 its exponent;
+   `viewer/ssc-curves.js` `rampAt` plays them.
 4. `Bf1942/Game/Heartbeats.ssc`'s `HeartBeat::Pitch` / `HeartBeat::Volume`
    channels — read out of the data, but what feeds them (low health? sprint?) is
    inferred, not confirmed.

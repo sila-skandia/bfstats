@@ -436,4 +436,21 @@ out.classify = {
   out.crashDamageSoldierRunOver = result;
 }
 
+// ARM-11's death key: every contact past the 99/37 tests records the other
+// side's material for its victim, the rate-limited repeat included
+// (`setLastHitMaterialIndex` at 0x081dae4d runs before `isInColList`).
+{
+  const crash = new CrashDamage(tables);
+  crash.register(1);
+  const v = [5, 0, 0], n = [-1, 0, 0];
+  const first = crash.onTerrainContact(1, v, n, 50, 3);
+  const repeat = crash.onTerrainContact(1, v, n, 50, 1);   // inside the second
+  const none = crash.onTerrainContact(1, v, n, 50, NO_DAMAGE_MATERIAL);
+  const seen = [];
+  crash.drainHitMaterials((owner, material) => seen.push([owner, material]));
+  const after = [];
+  crash.drainHitMaterials((owner, material) => after.push([owner, material]));
+  out.hitMaterials = { firstMaterial: first?.material ?? null, repeat, none, seen, after };
+}
+
 console.log(JSON.stringify(out, null, 2));

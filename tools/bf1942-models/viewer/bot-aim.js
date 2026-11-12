@@ -549,7 +549,8 @@ export function aimAlong(bot, dir, frame = barrelFrame(bot)) {
  * each step's flight time `(1 - drag) h / (v cos a)` to the predicted
  * target's horizontal distance `h`, its height against the round's
  * `v sin a t + g t^2 / 2`; reverse and halve once it has crossed, and stop
- * after `round(8 precision + 2)` halvings (1024 steps at most). The elevation
+ * after `trunc(8 precision + 2)` halvings (the `fistpll` at 0x08538be3
+ * under a truncating control word) (1024 steps at most). The elevation
  * is held inside +-1.5393804 (88.2 deg); leaving it, or never crossing, is
  * no solution. The direction is the last predicted position's bearing at the
  * found elevation. Returns `{ dir, time }` or null.
@@ -564,7 +565,7 @@ export function firingDirection({ rel, relVel = [0, 0, 0], speed, gravity = 0, d
   let angle = Math.atan2(p[1], horiz);
   if (indirect) angle = (angle + 1.5079645) * 0.5;
   let stepSize = Math.PI / (precision * 60 + 5);
-  const halvings = Math.round(precision * 8 + 2);
+  const halvings = Math.trunc(precision * 8 + 2);
   let side = 0, crossed = false, counted = 0, time = 0;
   for (let i = 0; counted < halvings; ) {
     const c = Math.cos(clamp(angle, -1000, 1000)), sn = Math.sin(clamp(angle, -1000, 1000));

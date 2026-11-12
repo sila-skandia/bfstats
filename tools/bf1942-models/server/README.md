@@ -136,14 +136,15 @@ collision meshes, each wheel's radius off a now-decoded Spring mesh): see
 `features/viewer-ground-hull-collision/README.md`, "Terrain contact,
 2026-10-07".
 
-**Choke cap: 1044 × 16 × 20.** R-1 is the engine's capacity law —
-`Σ(rate × 1044) ≤ cap`, offenders lose 5, never below 10 — but P0 never
-recovered the engine's own cap value (netcode.md §5). This server documents
-its choice: `RATE_BYTES × MAX_PLAYERS × SNAPSHOT_RATE_DEFAULT` = 334,080,
-i.e. every player at the default rate. It is a number a Kubernetes QoS
-engineer can reason about and a client can observe (rates arrive in the
-constituent snapshot cadence); the law's shape is the engine's, the scale
-is this project's.
+**Choke: retail's law, retail's default (off).** R-1 (`chokeBandwidth`
+lnxded 0x08132cc0) is one pass: with a cap set and Σ(rate × budget) over it,
+each connection gets cap / connections; one over its share has its budget
+(bytes per update, 1400 at join, `conn+0x10` = 0x578) cut to share / rate
+while that stays above 260 bytes, else its rate drops by 5, never under 10.
+It runs at each join and every 10 s. The cap is `game.serverBandwidthChokeLimit`,
+0 in the engine and in the shipped serversettings.con, and 0 is no choke; the
+room runs that default (`Room.chokeCap`). An earlier version carried a cap of
+1044 × 16 × 20 on the belief that the engine's value was not recovered.
 
 ## What the room runs that retail's server does (2026-10-07)
 

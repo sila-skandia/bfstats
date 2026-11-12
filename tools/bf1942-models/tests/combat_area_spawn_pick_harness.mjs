@@ -1,13 +1,13 @@
 // `pickSpawn` against the combat area: a spawn point standing where the area
 // deals damage (outside the rectangle, or on the out-of-bounds material,
-// CA-5) is picked only when the flag offers nothing else.
+// CA-5) is never offered: `BFSpawnPoint::getActive` 0x08163dd0 refuses it
+// (SPAWN-5), and `getSpawnPoint` draws only among the points it passes.
 //
 // The shape that went wrong: FHSWEurope stashuv_area's singleplayer layer
 // places `russianhq1` at 144.53/347.85 — 1240 m west of its flag, on
-// material 7 — beside five siblings at x 1344..1467. The engine draws
-// `rand() %` over the whole pool (SPAWNGRP-10) and so lands there one life
-// in six; this page's deterministic walk landed there EVERY life, and the
-// out-of-area damage killed each team-2 soldier ~16 s in.
+// material 7 — beside five siblings at x 1344..1467. The page's walk landed
+// there every life and the out-of-area damage killed each team-2 soldier
+// ~16 s in; retail never offers that point at all.
 //
 // `outsideArea` here is a plain predicate, as `world-players.js`
 // `outsideAreaOf` builds it; the fixtures mark the trap by coordinate.
@@ -46,9 +46,8 @@ const results = {};
   };
 }
 
-// 2. Every point of the flag stands in the damage field: the filter must not
-//    empty the flag — the asked-for point comes back, as the engine would
-//    offer it.
+// 2. Every point of the flag stands in the damage field: nothing is offered
+//    and the spawn is refused (`spawnPlayer` returns 0 with no active point).
 {
   const flag = flagOf([TRAP, point(100, -100), point(200, -200)]);
   const pick = pickSpawn(flag, 0, { outsideArea });
@@ -63,12 +62,12 @@ const results = {};
   results.no_area_unchanged = { picked_x: pick?.position?.[0] ?? null };
 }
 
-// 4. A vehicle-borne flag's authored positions are not where the carrier now
-//    stands: the filter does not run on them.
+// 4. A vehicle-borne flag's points are tested too, at the positions they
+//    carry (`rebaseDeckSpawns` writes the live deck position in place).
 {
   const flag = { ...flagOf([TRAP, ...GOOD]), vehicle: 'Carrier' };
   const pick = pickSpawn(flag, 0, { outsideArea, group: 2 });
-  results.vehicle_flag_unfiltered = { picked_x: pick?.position?.[0] ?? null };
+  results.vehicle_flag_filtered = { picked_x: pick?.position?.[0] ?? null };
 }
 
 console.log(JSON.stringify(results));

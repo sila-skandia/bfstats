@@ -12,6 +12,7 @@
 
 import * as THREE from 'three';
 import { createHullBodies } from './hull-bodies.js';
+import { DamageableVehicle } from './vehicle-damage.js';
 
 const WATER = 20;
 const PAD = [3173.63, 20.437, -2259.6];
@@ -197,4 +198,37 @@ const out = {
   };
 }
 
+// A ship sinks by her floats only once `FloatingBundle` has had `0x14`
+// (lnxded 0x08240557), which `Armor::status` sends on a living crossing to
+// critical and never on death (0x08173a06; ledger HP-13). A Fletcher shot to
+// critical goes down; one destroyed in one blow from full stays afloat.
+{
+  const sink = (hurt) => {
+    const ship = hull('Fletcher', {}, PAD, { count: 8, hullHeight: 20, lift: 2, relY: 7.5, scale: 1 });
+    for (const f of ship.children) f.userData.physics.sinkingSpeedMod = 1;
+    const holder = new THREE.Group();
+    holder.add(ship);
+    holder.updateMatrixWorld(true);
+    const record = new DamageableVehicle({ hitpoints: 500, maxHitpoints: 500, criticalDamage: 350 });
+    hurt(record);
+    const shipPage = {
+      extras: { vehicleSoldierSpawns: [], waterLevel: WATER },
+      collider: { waterLevel: WATER, statics: { ownerOf: node => (node === ship ? 7 : -1) } },
+      vehicleDamage: new Map([[7, record]]),
+      vehicles: { instanceOf: () => null },
+      damageVisuals: new Map(), vehicleSpawnActive: () => true,
+    };
+    const bodies = createHullBodies(shipPage);
+    bodies.floatPlacedVehicles([ship], WATER);
+    const afloat = ship.position.y;
+    for (let i = 0; i < 600; i++) bodies.stepSinkingHulls({ bodyTicks: 1 });
+    return { flagged: record.criticalFlagged, destroyed: record.destroyed,
+             drop: +(ship.position.y - afloat).toFixed(3) };
+  };
+  out.sinkArming = {
+    critical: sink(r => r.damage(200)),
+    oneBlow: sink(r => r.damage(1000)),
+    shotToCriticalThenKilled: sink(r => { r.damage(200); r.damage(1000); }),
+  };
+}
 console.log(JSON.stringify(out));

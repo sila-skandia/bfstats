@@ -10,7 +10,7 @@
 // morphFactor is ~0.7 (~1.4 s settle). crossFadeFrom keeps LoopRepeat fire
 // evaluating at declining weight for that whole settle, so stationary release
 // still shakes. Walk/reload look fine because walk replaces the motion and
-// reload snaps (morphFactor >= 1000 → from.stop()). map.html must freeze or
+// reload snaps (morphFactor > 1000 → from.stop(); lnxded 0x0832b481). map.html must freeze or
 // stop the fire action when `stopLoopFire` is set (timeScale 0, then fade).
 
 import { locoClip, stanceClip, stanceFor } from './stance-clips.js';

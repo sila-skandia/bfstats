@@ -124,6 +124,31 @@ export function damageModifier(tables, matAttacker, matVictim) {
 }
 
 /**
+ * The attacker material a round's own collision carries, or null when our data
+ * does not yet name the round. `guns` is anything with `GunFire`'s
+ * `attackerMaterial(spec)` (the spec's `material`, else its template's row in
+ * `damage.json`'s projectile table) and `projectileEntry(spec)`.
+ *
+ * `Projectile::handleCollision` (lnxded `0x0831eeda`..`0x0831eee5`) takes the
+ * template's material (`+0x88`) over the contact's unless it is -1, the
+ * template default (`SimpleObjectTemplate` ctor `movl $0xffffffff,0x88(%ebx)`
+ * at `0x081dbd4c`), and a round's own contact material is 0
+ * (`PointResponsePhysics::checkObjectVsObject` writes `+0x68 = 0`,
+ * `0x08257540` / `0x082579e5`). So a round whose template the table lists
+ * without a `material` hits as material 0 (IMP-2, DMG-3). No spec at all, or
+ * a template the table does not list, is our plumbing (a weapon glb not
+ * loaded, a tree without it), not the engine's 0: null, for the caller's
+ * stand-in.
+ */
+export function roundAttackerMaterial(guns, spec) {
+  if (!spec) return null;
+  const known = guns?.attackerMaterial?.(spec);
+  if (Number.isFinite(known)) return known;
+  if (Number.isFinite(spec.material)) return spec.material;
+  return guns?.projectileEntry?.(spec) ? 0 : null;
+}
+
+/**
  * `getDamageForMaterial(id)` — `materialDamage`, 1.0 for every armour
  * material and 30.0 for every terrain material in vanilla (§9.4). Falls back
  * through `materialOf`'s id -> material-0 chain.
@@ -493,6 +518,20 @@ export class CrashDamage {
   constructor(tables) {
     this.tables = tables;
     this.owners = new Map();
+    /** Owner -> the other side's material of its latest contact, since the
+     *  last `drainHitMaterials`. `SimpleObject::handleCollision` gives the
+     *  Armor that material (`setLastHitMaterialIndex`, vtable +0x60, lnxded
+     *  `0x081dae4d`) after the 99/37 tests and BEFORE the one-second
+     *  collision list (`isInColList`, +0x12c, `0x081dae59`), so a contact
+     *  the rate limiter swallows still records it. ARM-11's death key. */
+    this.hitMaterials = new Map();
+  }
+
+  /** Hand every recorded contact material to `apply(owner, material)` and
+   *  forget them (`world-damage.js` `damageTick`). */
+  drainHitMaterials(apply) {
+    for (const [owner, material] of this.hitMaterials) apply(owner, material);
+    this.hitMaterials.clear();
   }
 
   /**
@@ -537,6 +576,7 @@ export class CrashDamage {
     if (matVictim === NO_DAMAGE_MATERIAL || matAttacker === NO_DAMAGE_MATERIAL) {
       return null;
     }
+    if (Number.isFinite(matAttacker)) this.hitMaterials.set(victimOwner, matAttacker);
     if (victim.list.has(attackerOwner)) return null;
     victim.list.add(attackerOwner);
 
@@ -561,7 +601,8 @@ export class CrashDamage {
         matAttacker, matVictim,
       }, this.tables);
 
-    return { damage, kill: false, effectCell: this._effectCell(matAttacker, matVictim) };
+    return { damage, kill: false, material: matAttacker,
+             effectCell: this._effectCell(matAttacker, matVictim) };
   }
 
   /**
@@ -581,6 +622,7 @@ export class CrashDamage {
     if (matSelf === NO_DAMAGE_MATERIAL || matTerrain === NO_DAMAGE_MATERIAL) {
       return null;
     }
+    if (Number.isFinite(matTerrain)) this.hitMaterials.set(victimOwner, matTerrain);
     if (victim.list.has(null)) return null;
     victim.list.add(null);
 
@@ -594,7 +636,7 @@ export class CrashDamage {
         : null,
     }, this.tables);
 
-    return { damage, kill: false, water: matTerrain === WATER_MATERIAL,
+    return { damage, kill: false, water: matTerrain === WATER_MATERIAL, material: matTerrain,
              effectCell: this._effectCell(matTerrain, matSelf) };
   }
 

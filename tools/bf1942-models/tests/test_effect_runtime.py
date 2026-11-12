@@ -11,7 +11,7 @@ Two defects in Desert Combat, one file each side of them:
   to drop a particle that throws rather than the frame.
 - DC's soldiers author `addArmorEffect 0 e_soldierdeath_{us,iraq}` and no death
   ever played it. `viewer/soldier-armor-effects.js` is the engine's rule
-  (ledger ARM-8..ARM-10): `Armor::getEffect`'s lookup, the death key, and the
+  (ledger ARM-1, ARM-11): `Armor::getEffect`'s lookup, the death key, and the
   offset placed in the soldier's own frame at his feet.
 
 `tests/effect_runtime_harness.mjs` loads the page's own modules through

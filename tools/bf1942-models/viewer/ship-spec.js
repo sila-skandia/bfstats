@@ -9,11 +9,20 @@
 import * as THREE from 'three';
 import { ownGeometryMeshes, ownCollisionMeshes, inertiaGeometryNode } from './geometry-search.js';
 
-/** `EngineTemplate`'s ctor default for `setTorque` (`0x0823f082`'s neighbour,
- *  tank-driving.md §3: "Constructor defaults are `numberOfGears = 1`,
- *  `differential = 10.0`, `torque = 60.0`"). Only reached by a hull that
- *  authors no `setTorque`; every vanilla ship authors one. */
+/**
+ * `EngineTemplate`'s constructor defaults, the values an `Engine` keeps when
+ * its `.con` omits the word (lnxded `EngineTemplate::EngineTemplate`
+ * `0x0823f230`: `+0x364` differential 10.0, `+0x368` torque 60.0, `+0x520`
+ * noPropellerEffectAtSpeed 100.0, the field names from `makeScript`
+ * `0x0823f580`; the client's twin `0x005715d0` writes the same three at
+ * `+0x414` / `+0x418` / `+0x5d0`; tank-driving.md §3). Shared by every engine
+ * table: `shipSpec` here, `aircraftSpec` and `VectoredEngine`. Every vanilla,
+ * XPack1 and XPack2 plane and ship engine authors all three; BF1918's
+ * zeppelins and Lebaudy omit `setNoPropellerEffectAtSpeed`.
+ */
+export const DEFAULT_DIFFERENTIAL = 10;
 export const DEFAULT_TORQUE = 60;
+export const DEFAULT_NO_PROPELLER_EFFECT_AT_SPEED = 100;
 
 /** The node kinds a root's own geometry may be reached THROUGH. Anything else
  *  under the root is a separate object with its own geometry, and the engine's
@@ -193,14 +202,14 @@ export function shipSpec(root) {
         position: conPosition(node),
         // `getCurrentRatio` = 3.5*setDifferential / ratioCurve[100*gear/gears],
         // constant for a ship (one gear); `engine-revs.js` has the derivation.
-        differential: part.differential ?? 1,
+        differential: part.differential ?? DEFAULT_DIFFERENTIAL,
         // `setTorque` is NOT thrust — but it is not only the engine sound
         // either. `getCurrentTorque()` (`0x0824cb10`) is the **divisor of the
         // gearbox's load** (TANK-13), so it sets how hard the rev governor
         // pulls the throttle down, and therefore the top speed.
         torque: part.torque ?? DEFAULT_TORQUE,
         numberOfGears: part.numberOfGears ?? undefined,
-        noPropellerEffectAtSpeed: part.noPropellerEffectAtSpeed ?? 120,
+        noPropellerEffectAtSpeed: part.noPropellerEffectAtSpeed ?? DEFAULT_NO_PROPELLER_EFFECT_AT_SPEED,
       });
       // `setMaxSpeed` over the rev accumulator's own span, the same reading
       // `CORSAIR.throttleRate` is: `Fletcher_Engine` is 5000 over 5000, so a

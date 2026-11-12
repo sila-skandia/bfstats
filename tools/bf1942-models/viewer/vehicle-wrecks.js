@@ -543,7 +543,7 @@ export function createVehicleWrecks(page) {
     // are the wreck's with the rest: the pad stands its next hull up on this
     // node, often the moment a long fall ends, and a run nothing stops burns
     // on over the fresh one.
-    const death = deathTier(vehicle?.effects, { inWater });
+    const death = deathTier(vehicle?.effects, { inWater, lastHitMaterial: vehicle?.lastHitMaterial });
     if (death) visual.handles.push(...playTier(visual, vehicle, death, 'crash'));
     else if (!vehicle?.armorKnown) page.effects.play('e_ExplGas', { position: [wreckDeathPos.x, wreckDeathPos.y, wreckDeathPos.z], normal: [0, 1, 0] });
     // The wreck has stopped moving: its drive is not a wreck's any more, and a

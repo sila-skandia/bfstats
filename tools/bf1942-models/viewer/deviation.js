@@ -62,10 +62,12 @@
 // turns `3 x` it in degrees a tick). Every vanilla weapon ships
 // `setTurnDev 0 0 0 0`; Desert Combat's rifles and machine guns do not.
 //
-// What remains OPEN, each marked at its declaration:
-//   - The AT/thrown family (`minDeviation` / `maxDeviation`) speaks a
-//     different .con vocabulary registered in a different console block
-//     (corpus doc §7); the floor-and-lid reading here is the stand-in.
+// The AT/thrown words (`minDeviation`, `maxDeviation`, `minDevStanding`...,
+// `subDev...`, `addDev...`) are not the engine's (ledger DEV-8): neither
+// binary carries the strings, so a template that uses only them keeps the
+// FireArmsTemplate ctor's zero deviation (lnxded 0x0828d7de..0x0828d7f6), and
+// `updateDeviation` stores the plain sum with no lid (0x08294139..0x0829415d).
+// This module reads neither word, though the exporter still writes them.
 //
 // Like `physics.js` and `collision.js` this imports nothing and touches no
 // renderer and no DOM, so `tests/test_deviation.py` drives the real module
@@ -103,8 +105,8 @@ const clamp = (v, lo, hi) => (v < lo ? lo : v > hi ? hi : v);
  * One weapon's cone, fed by the soldier's inputs and the trigger.
  *
  * `deviation` is the weapon's own block out of the glb's document extras and
- * may be either family's shape (or absent entirely, in which case the cone is
- * a point and stays one). The per-frame inputs arrive through `update()`
+ * may be absent entirely, in which case the cone is a point and stays one (so
+ * is a block carrying only the AT words, DEV-8). The per-frame inputs arrive through `update()`
  * rather than being pulled, the same seam `soldier.js` keeps: a replay that
  * writes the inputs drives the cone identically.
  */
@@ -153,12 +155,13 @@ export class DeviationModel {
   }
 
   /**
-   * The constant floor: `setMinDev`, or the AT family's `minDeviation`. NOT
+   * The constant floor: `setMinDev` (template +0x2fc), 0 without it. NOT
    * scaled by the stance multiplier — `updateDeviation` adds the stored
-   * float as-is; devMod touches only the dynamic channels.
+   * float as-is; devMod touches only the dynamic channels. `minDeviation`
+   * is not an engine word (DEV-8) and floors nothing.
    */
   floor() {
-    return this.data.min ?? this.data.minDeviation ?? 0;
+    return this.data.min ?? 0;
   }
 
   /**
@@ -252,17 +255,13 @@ export class DeviationModel {
    * The cone's half-angle right now, degrees:
    * `total = minDev + fire + speed + turn + misc`. Plain addition — the
    * engine's, not a reading of the data. `aiPending` (the sixth term) is bot
-   * aim error and stays 0 for a player.
-   *
-   * The AT family's `maxDeviation` lid is the OPEN stand-in from the header:
-   * that family's combine rule lives in a console block the corpus has not
-   * read yet, and floor-and-lid is what its two extracted numbers can say.
+   * aim error and stays 0 for a player. No lid: `updateDeviation` stores the
+   * sum unclamped (lnxded 0x0829415d), and `maxDeviation` is not an engine
+   * word (DEV-8).
    */
   current() {
-    let total = this.floor() + this.fire + this.speed + this.turn + this.misc
+    const total = this.floor() + this.fire + this.speed + this.turn + this.misc
       + (this.aiPending ?? 0);
-    const lid = this.data.maxDeviation;
-    if (lid !== undefined && total > lid) total = lid;
     return total > 0 ? total : 0;
   }
 

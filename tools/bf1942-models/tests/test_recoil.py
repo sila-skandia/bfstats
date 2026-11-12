@@ -1,7 +1,7 @@
 """The hand weapon's recoil and its return (`viewer/recoil.js`), driven through the
 world's own soldier tick by `recoil_harness.mjs`.
 
-Ledger FA-2..FA-5. `setGoBackOnRecoil 1` was extracted and never read, so DC's
+Ledger FA-22 (the draw) and FA-26 (the ride). `setGoBackOnRecoil 1` was extracted and never read, so DC's
 pistols, the Tabuk and the Remington, and vanilla's Colt, K98, Garand, MP40 and
 Thompson climbed a full kick a shot for good. The engine arms a 20-tick ride
 per shot (8 without goBack) that `handlePlayerInput` spends on the mouse-look

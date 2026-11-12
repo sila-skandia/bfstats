@@ -2908,7 +2908,7 @@ const mapSurfaces = createMapSurfaces(bag(
     easeOpen:easeDeployOpen finishDeployClose fullmapFrame`),
   from(() => flagCapture, `flags`),
   from(() => hudFeed, `hudPack sprite`),
-  from(() => level, `currentDir extras mapVehicles spawnersRoot vehicleSpawnActive world`),
+  from(() => level, `currentDir extras mapVehicles spawnersRoot vehicleSpawnActive viewDistance world`),
   from(() => localPlayer, `aircraft car occupancy`),
   from(() => room, `roomClient roomJoined serverEntities`),
   from(() => pageInput, `capture captured release`),
@@ -3157,7 +3157,7 @@ const comms = createComms(bag(
   from(() => pageAudio, `audioBufferCache audioListener audioLoader ensureAudioContext
     masterVolume`),
   from(() => soldierKit, `teamVoice`),
-  from(() => room, `sendChat:roomSendChat`),
+  from(() => room, `sendChat:roomSendChat roomJoined`),
   from(() => deployScreen, `deployActive`),
   {
     get AUDIO_OFF() { return AUDIO_OFF; }, get bust() { return bust; },

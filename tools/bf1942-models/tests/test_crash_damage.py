@@ -318,3 +318,22 @@ class CrashDamageTests(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+class HitMaterialTests(unittest.TestCase):
+    """ARM-11: the last hit material `CrashDamage` records for the death key."""
+
+    @classmethod
+    def setUpClass(cls) -> None:
+        cls.results = run_harness()["hitMaterials"]
+
+    def test_every_contact_records_the_other_sides_material(self) -> None:
+        r = self.results
+        self.assertEqual(3, r["firstMaterial"])
+        # The repeat is rate-limited (no result) but still recorded; a 37
+        # contact records nothing; the drain empties the record.
+        self.assertIsNone(r["repeat"])
+        self.assertIsNone(r["none"])
+        self.assertEqual([[1, 1]], r["seen"])
+        self.assertEqual([], r["after"])
+

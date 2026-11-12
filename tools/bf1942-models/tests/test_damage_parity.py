@@ -45,6 +45,11 @@ class DamageParityTests(unittest.TestCase):
 
     # --- a bot's hand-weapon round ------------------------------------------------
 
+    def test_an_undefined_material_reads_as_material_0(self):
+        # DMG-1: the MaterialManager retries an id it does not define as 0, so
+        # the round is priced against material 0's defGroup (7 here), x0.5.
+        self.assertEqual({"defGroup": 7, "damage": 50}, self.results["unknownMaterial"])
+
     def test_a_round_is_priced_by_the_material_it_meets(self) -> None:
         colt = self.results["price"]["colt"]
         self.assertEqual(17.5, colt["head10"])

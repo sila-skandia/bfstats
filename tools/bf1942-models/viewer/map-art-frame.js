@@ -12,7 +12,7 @@
  * bottom edge; `features/authentic-spawn-map` section 19 has the census of
  * every exported level that carries such a margin.
  *
- * INVENTION: the open map is framed on the art's content instead. The black
+ * INVENTION (DELIBERATE, keep): the open map is framed on the art's content instead. The black
  * margin is trimmed, and the window is the content's longer side, square,
  * centred on the content, so a band-shaped map sits in the middle of the pane
  * with the dim backdrop above and below it, and a map drawn small in a corner

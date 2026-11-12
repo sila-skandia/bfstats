@@ -99,10 +99,12 @@ export const WEAPON_HEADROOM = 1;
 // used to play every spatialised layer at its ramp's gain whatever the
 // distance (panner rolloff 0), so a rifle 99 m away was as loud as one at 2 m.
 //
-// Which layer field the client hands `SetMinDistance` is inferred: `minDistance`
-// is the only distance-valued `.ssc` word, but the offsets from the parser's
-// store (descriptor +0x2c, 0x007ffcb0) to the update's read (+0x24, 0x0080243c)
-// were not joined up.
+// The layer field the client hands `SetMinDistance` is `minDistance` (read,
+// ledger SND-6 / SND-27): command 6 stores it at the description's +0x2c
+// (0x007ffcb0), `SoundPatch__configureSample` copies that to the sample's
+// +0x24 (0x00802175 -> 0x00803650), and the per-frame update hands +0x24 to
+// the voice's min-distance slot (0x0080243c..0x00802444), the slot voice init
+// gives 1.0 (0x007fefee).
 export const ROLLOFF_FACTOR = 1;
 
 /**
@@ -126,10 +128,19 @@ export function distanceRolloff(distance, minDistance, factor = ROLLOFF_FACTOR) 
 // axis; the distance itself is inert, because the panner's own rolloff is 0.
 const ATTACHED_AHEAD = 10;
 
-// Speed of sound, m/s, for the doppler shift the engine loops keep (they are
-// the samples that pointedly do *not* set `dopplerOff`; gunfire and the
-// start/stop one-shots do). Clamped hard: a hard manoeuvre past the listener
-// otherwise chipmunks the whole mix for a frame.
+// Speed of sound, m/s, for the doppler shift. Only a LOOPING sample that does
+// not say `dopplerOff` is shifted: the client copies the description's doppler
+// byte (+0x48, cleared by `dopplerOff` 0x007ffd30) to the sample's +0x38 only
+// when its `loop` byte (+0x1e) is set, and pushes 0 otherwise
+// (`SoundPatch__configureSample` 0x0080218b..0x0080219e), and a sample whose
+// +0x38 is clear is given the listener's own velocity (0x008023dd, ledger
+// SND-45). So a one-shot never shifts, whatever its script says.
+//
+// DELIBERATE, not retail: the shift is clamped to DOPPLER_MIN..DOPPLER_MAX.
+// DirectSound applies none (only the factor's 0..10 range, SND-45); the page
+// keeps the clamp because a hard manoeuvre past the listener otherwise
+// chipmunks the whole mix for a frame (its velocities are differenced from
+// rendered frames, not the engine's smooth physics velocity).
 const SPEED_OF_SOUND = 340;
 const DOPPLER_MIN = 0.85;
 const DOPPLER_MAX = 1.2;
@@ -910,7 +921,7 @@ export class EngineAudio {
       // its velocity as usual (0x008023dd) and leaves the rest to DirectSound.
       // `Sound.dopplerFactor` scales the speed the shift is made from, as
       // DirectSound's listener factor does (ds3d-pan.js, SND-45): 0 none.
-      if (voice.layer.doppler && !this.attached) {
+      if (voice.layer.loop && voice.layer.doppler && !this.attached) {
         const shift = SPEED_OF_SOUND / (SPEED_OF_SOUND + voice.group.radial * ds3dDopplerApplied());
         rate *= Math.min(DOPPLER_MAX, Math.max(DOPPLER_MIN, shift));
       }

@@ -19,6 +19,7 @@ import { installModuleHooks, viewerDir } from '../sim/env.mjs';
 installModuleHooks(viewerDir());
 const { textureState } = await import('../viewer/texture-quality.js');
 const { pixelRatioFor } = await import('../viewer/video-apply.js');
+const { billboardJudgedDistance, viewFieldOfView } = await import('../viewer/tree-foliage.js');
 
 const memory = () => ({
   data: {},
@@ -194,4 +195,13 @@ out.textureState = [1, 2, 3, 4, 5].map(q => textureState(q, 16));
 
 out.envmap = { switch: ENVMAP_SWITCH.value, gated: envmapFragmentPatch().includes('if ( bfEnvOn < 0.5 ) return base;') };
 
+// The tree swap's distance (0x0064ddbd..0x0064ddfe): horizontal, times the
+// view's FOV in radians, over the page's billboard scale.
+out.treeDistance = {
+  level: billboardJudgedDistance(30, 40, 1, 1),
+  zoomed: billboardJudgedDistance(30, 40, 0.5, 1),
+  medium: billboardJudgedDistance(30, 40, 1, 0.75),
+  fovOneRad: viewFieldOfView(180 / Math.PI, 1),
+  fovZoom2: viewFieldOfView(180 / Math.PI, 2),
+};
 process.stdout.write(JSON.stringify(out));

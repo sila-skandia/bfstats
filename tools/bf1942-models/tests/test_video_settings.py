@@ -97,6 +97,17 @@ class VideoSettingsTests(unittest.TestCase):
         self.assertIsNone(d["displayHeight"])
         self.assertTrue(d["environmentMapping"] and d["lightmaps"])
 
+    def test_the_tree_swap_distance(self) -> None:
+        # TreeRenderer's draw 0x0064ddbd..0x0064ddfe: sqrt(dx^2 + dz^2), no
+        # height term, times the render view's getFieldOfView (vt +0x18,
+        # 0x005b7cb0, the raw FOV in radians), against D x the scale.
+        t = self.results["treeDistance"]
+        self.assertAlmostEqual(50.0, t["level"])
+        self.assertAlmostEqual(25.0, t["zoomed"])
+        self.assertAlmostEqual(50.0 / 0.75, t["medium"])
+        self.assertAlmostEqual(1.0, t["fovOneRad"])
+        self.assertAlmostEqual(2 * math.atan(math.tan(0.5) / 2), t["fovZoom2"])
+
     def test_the_engine_numbers(self) -> None:
         r = self.results
         # 0x006b0e0d..0x006b0e82: renderer vt+0x188, TreeRenderer vt+0x68,

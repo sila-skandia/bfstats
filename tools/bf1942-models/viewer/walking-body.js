@@ -30,6 +30,9 @@ import { PARACHUTE_DRAG } from './parachute.js';
 import { PointBody, GRAVITY } from './point-body.js';
 import { lerp } from './fixed-step.js';
 import {
+  ACCEL_CLAMP_LIMIT_SQ, ACCEL_CLAMP_SPEED, POSITIONAL_FRICTION_ZERO_SQ,
+} from './rigid-body.js';
+import {
   POSE_STAND, POSE_FLAG_CROUCH, POSE_FLAG_PRONE, POSE_FLAG_JUMP, poseFromFlags,
   EYE_HEIGHT, BODY_HEIGHT, POSE_TRANSITION,
 } from './soldier-pose.js';
@@ -103,15 +106,13 @@ export class SoldierBody {
      *  what `checkVsTerrain` hands `setUnderWater` (`swim.js`,
      *  `SWIM_SPEED_CEILING_FACTOR`). PHY-7's drag reads this one. */
     this.underWater = 0;
-    // Eye height is animated rather than snapped: a pose change that teleported
-    // the camera 50 cm reads as a glitch, not as ducking. The travel is linear
-    // over a duration the caller may set per transition, because it stands in
-    // for an animation clip playing at a declared rate rather than for a spring.
+    // Eye height eases rather than snaps, by the engine's own law (VIEW-15):
+    // `BFSoldier::handleUpdate` moves the camera half the remaining way to
+    // `setPoseCameraPos[getPose()]` every simulation tick (client
+    // `0x004fd42c` pushes the 0.5, `0x004fd441` is the lerp; lnxded twin
+    // `0x082721dd`..`0x08272269`). No clip length enters it.
     this.eyeHeight = EYE_HEIGHT[POSE_STAND];
     this.previousEyeHeight = this.eyeHeight;
-    this.eyeFrom = this.eyeHeight;
-    this.eyeProgress = 1;
-    this.eyeDuration = POSE_TRANSITION;
     this.material = -1;      // what the feet are on, for footsteps later
     this.contacts = 0;       // hull contacts resolved in the last tick
     // The soldier's two `applyMovementFactors` registers (PHY-6), carried as
@@ -265,8 +266,6 @@ export class SoldierBody {
     this._pendingFlags = -1;
     this.eyeHeight = EYE_HEIGHT[this.pose];
     this.previousEyeHeight = this.eyeHeight;
-    this.eyeFrom = this.eyeHeight;
-    this.eyeProgress = 1;
   }
 
   /**
@@ -275,20 +274,15 @@ export class SoldierBody {
    * Crouch and prone are the two bits at 0x20 and 0x40 and the pose falls out
    * of `poseFromFlags`; nothing here decides a priority of its own.
    *
-   * `duration` is how long the eye takes to arrive, and it only restarts the
-   * travel when the pose actually changed — so holding crouch does not pin the
-   * eye at the start of the transition forever. Travel begins from where the
-   * eye *is*, not from the old pose's nominal height, so reversing a transition
-   * halfway does not jump.
+   * The eye follows the pose by itself, half the remaining way each tick
+   * (VIEW-15, see the constructor), from wherever it is, so reversing a
+   * transition halfway does not jump. `duration` is accepted for the callers
+   * that still pass a clip length and no longer read: retail's camera ease
+   * does not know the transition clip.
    */
   setPoseFlags(flags, duration = POSE_TRANSITION) {
     this._pendingFlags = -1;
     const pose = poseFromFlags(flags);
-    if (pose !== this.pose) {
-      this.eyeFrom = this.eyeHeight;
-      this.eyeProgress = 0;
-      this.eyeDuration = duration > 0 ? duration : 1e-6;
-    }
     this.poseFlags = flags;
     this.pose = pose;
   }
@@ -626,8 +620,15 @@ export class SoldierBody {
       // There is no swim entry in `directionalSpeed` (`0x0872edec`) and
       // `getPose()` (`0x0827ddc0`) can only answer 0, 1 or 2: a swimming
       // soldier is posed standing and reads the standing row.
+      //
+      // The ordinary `0.75 * vCmd` (`0x08274a09`) lands too: nothing between
+      // the jump branch (`0x082749e3`) and the swim test (`0x08274b5f`) asks
+      // whether he swims, and its `+0xa4` gate is open every tick (PHY-34), so
+      // a swimmer is pushed by 5.75 * vCmd, all three components of it
+      // (`0x08274b75`..`0x08274b98` multiply x, y and z).
       const gain = Number.isFinite(this.swim?.gain) ? this.swim.gain : 5.0;
-      body.addAcceleration(gain * cmdX, 0, gain * cmdZ);
+      const k = gain + LOCOMOTION_GAIN;
+      body.addAcceleration(k * cmdX, k * cmdY, k * cmdZ);
       // A queued jump is spent rather than banked: coming out of the water
       // holding Space must not fire a jump that was pressed mid-stroke.
       this._jumpQueued = false;
@@ -733,13 +734,15 @@ export class SoldierBody {
     if (this.grounded) this.poseFlags &= ~POSE_FLAG_JUMP;
     this.gatePose = this.pose;
     this.previousEyeHeight = this.eyeHeight;
+    // VIEW-15: half the remaining way per 1/30 s engine tick (client
+    // `0x004fd441`, t = 0.5). The page's soldier steps at exactly that tick
+    // (`soldier.js`), where the factor is exactly 0.5; a harness stepping a
+    // finer dt gets the same curve, `1 - 0.5^(dt * 30)` per step. The last
+    // micrometre is snapped so the double does not dither a bit off target.
     const target = EYE_HEIGHT[this.pose];
-    if (this.eyeProgress >= 1) {
-      this.eyeHeight = target;
-    } else {
-      this.eyeProgress = Math.min(1, this.eyeProgress + dt / this.eyeDuration);
-      this.eyeHeight = this.eyeFrom + (target - this.eyeFrom) * this.eyeProgress;
-    }
+    const k = 1 - Math.pow(0.5, dt * ENGINE_TICK_RATE);
+    this.eyeHeight += (target - this.eyeHeight) * k;
+    if (Math.abs(target - this.eyeHeight) < 1e-6) this.eyeHeight = target;
   }
 
   // The collision resolve (`soldier-resolve.js`): move along the integrator's
@@ -750,7 +753,8 @@ export class SoldierBody {
 
   /**
    * `PhysicsNode::updatePhysics` (`0x082543d0`) for the soldier's node: the
-   * box drag, then ONE Euler step (`0x08253570`) -- `v += acc * dt`, then the
+   * box drag, the accumulator held to 1000 m/s^2 and an oversized friction
+   * adder dropped, then ONE Euler step (`0x08253570`) -- `v += acc * dt`, then the
    * friction solve's `v += fr * dt`, then `x += v * dt` -- and the
    * accumulator re-seeded with gravity (PHY-34).
    *
@@ -782,6 +786,20 @@ export class SoldierBody {
       a.z += R.fz * ff + R.rz * fr + u.z * fu;
     }
     const f = this.friction;
+    // `updatePositionalPhysics` (`0x08253570`) holds the summed accumulator
+    // to 1000 m/s^2 (`|acc|^2 > 1e6`, `0x082536a1`..`0x082536c8`: scaled, not
+    // dropped, so one tick moves him at most 33.3 m/s -- a close satchel or
+    // bomb throws him no harder than that) and drops the friction adder whole
+    // past `|fr|^2 > 62500` (`0x082536f5`), as it does a vehicle's
+    // (`rigid-body.js`, collision-response.md section 4.2; PHY-34).
+    const aSq = a.x * a.x + a.y * a.y + a.z * a.z;
+    if (aSq > ACCEL_CLAMP_LIMIT_SQ) {
+      const s = ACCEL_CLAMP_SPEED / Math.sqrt(aSq);
+      a.x *= s; a.y *= s; a.z *= s;
+    }
+    if (f.x * f.x + f.y * f.y + f.z * f.z > POSITIONAL_FRICTION_ZERO_SQ) {
+      f.x = f.y = f.z = 0;
+    }
     body.previous.x = p.x; body.previous.y = p.y; body.previous.z = p.z;
     v.x += a.x * dt + f.x * dt;
     v.y += a.y * dt + f.y * dt;
@@ -802,7 +820,8 @@ export class SoldierBody {
    *   N   the most upward contact normal of the tick, which
    *       `BFSoldier::handleCollision` (`0x0827d3b0`) writes to `resp+0x98`
    *       (`0x0827d52f`..`0x0827d541`) -- only when the handler runs at all,
-   *       `|v|^2 >= 0.1`; below it N is zero and so is the budget
+   *       `|v|^2 > 0.1` (strict: `checkVsTerrain` `0x0825afac` skips it at
+   *       `<= 0.1`); below it N is zero and so is the budget
    *   A   the mean `materialFriction` of his material and the ground's
    *       (`impulseOn` `0x08258900`); the resistance is the same mean
    *   V   v - vCmd (`setSurfacePositionalSpeed`, `0x08274e2f`), with one
@@ -834,7 +853,7 @@ export class SoldierBody {
       + materialValue(world?.materialFrictionById, this.contactMaterial, DEFAULT_MATERIAL_FRICTION));
     const res = 0.5 * (materialValue(world?.materialResistanceById, SOLDIER_MATERIAL, DEFAULT_MATERIAL_RESISTANCE)
       + materialValue(world?.materialResistanceById, this.contactMaterial, DEFAULT_MATERIAL_RESISTANCE));
-    const handled = v.x * v.x + v.y * v.y + v.z * v.z >= SOLDIER_HANDLER_SPEED_SQ;
+    const handled = v.x * v.x + v.y * v.y + v.z * v.z > SOLDIER_HANDLER_SPEED_SQ;
     const c = this.contactNormal;
     const nx = handled ? c.x : 0, ny = handled ? c.y : 0, nz = handled ? c.z : 0;
     const ny5 = ny * ny * ny * ny * ny;

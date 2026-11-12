@@ -70,6 +70,33 @@ class LodShadingTests(unittest.TestCase):
             self.assertFalse(s["lightMap"], s)
             self.assertEqual(s["shade"], [1, 1, 1, 0], "lit, and in the open")
 
+    def test_the_alpha_lod_reach_is_on_selectlods_e(self) -> None:
+        # Ledger DL-12: drawLod compares selectLod's out-parameter
+        # e = d^2 / m - r^2 (0x005ae056) with alphaLodDistance^2 (0x005af11b).
+        a = self.results["alphaLod"]
+        self.assertFalse(a["edgePlain"])
+        self.assertTrue(a["edgeWithRadius"])
+        self.assertFalse(a["pastRadius"])
+        self.assertTrue(a["scaled"])
+
+    def test_a_texture_fade_plane_is_linear_in_selectlods_e(self) -> None:
+        # drawLod 0x005af140..0x005af194: TFACTOR alpha = 255 x e / D^2,
+        # clamped, truncated; D = textureFadeMaxDist (template +0xa0).
+        t = self.results["textureFade"]
+        self.assertEqual(0, t["atZero"])
+        self.assertAlmostEqual(127 / 255, t["half"])
+        self.assertAlmostEqual(63 / 255, t["quarterDistance"])
+        self.assertEqual(1, t["atD"])
+        self.assertEqual(1, t["past"])
+        self.assertEqual(0, t["insideRadius"])
+        # A patched scene's table: its value, else the engine's 200
+        # (0x005b5bd9); a scene with no table (an unpatched tree): the 70 m
+        # interim.
+        self.assertEqual(80, t["listed"])
+        self.assertEqual(200, t["unlisted"])
+        self.assertEqual(200, t["emptyTable"])
+        self.assertEqual(70, t["noTable"])
+
     def test_the_grounds_shade_reaches_every_lod(self) -> None:
         # Ground luminance 40 under Terrain.shadowAmbient 80/90/100.
         want = [round(v / 255, 4) for v in (120, 130, 140)] + [1.0]

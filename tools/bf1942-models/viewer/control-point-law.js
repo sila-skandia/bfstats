@@ -9,9 +9,15 @@
  *  ctor's 5.0 (+0x1f4, 0x08284774). */
 export const CAPTURE_FALLBACK_SECONDS = 5;
 
-/** A flag's capture radius: its template's, else 8 m. */
+/** A flag with no `radius` of its own: the `ControlPointTemplate` ctor's
+ *  10.0 (+0x1dc, `movl $0x41200000,0x1dc(%ebx)` at 0x08284702; AI-115). */
+export const CAPTURE_FALLBACK_RADIUS = 10;
+
+/** A flag's capture radius: its template's, else the ctor's 10 m. An explicit
+ *  0 stays 0 (`handleFrameUpdate`'s test is `distance <= +0x1dc`, so only a
+ *  body exactly on the point is inside it). */
 export function captureRadius(flag) {
-  return Number.isFinite(flag?.radius) && flag.radius > 0 ? flag.radius : 8;
+  return Number.isFinite(flag?.radius) && flag.radius >= 0 ? flag.radius : CAPTURE_FALLBACK_RADIUS;
 }
 
 /**
@@ -121,7 +127,7 @@ export function controlPointSettings(flag) {
  *    (`control` 0x08283fe0 resets both timers).
  *  - Attackers of two teams and no owner's player: nothing changes.
  *  - Attackers of one team alone: an owned point runs its lose timer and is
- *    lost at 0; a neutral one, when no other team is getting it and at
+ *    lost once it is spent, whatever the state (no state-2 test there); a neutral one, when no other team is getting it and at
  *    least `minNrToTakeControl` attackers are in, runs the get timer
  *    (`gettingControl` 0x08283f20) and is taken at 0; otherwise the timers
  *    reset (`faildGettingControl` 0x08283ef0).
@@ -165,14 +171,20 @@ export function controlPointStep(flag, teams, dt) {
     cp.state = 4; cp.get = cfg.timeToGet; cp.lose = cfg.timeToLose;
     enable(!by);
   };
-  const losing = team => {
+  // `gated`: whether the spent timer needs state 2 before `lostControl`. The
+  // defended-and-contested branch tests it (`cmpl $0x2,0x17c` at 0x08283ddb)
+  // and so does the nobody branch (0x08283bd2); one side alone on an owned
+  // point does not (0x08283c29 calls `lostControl` straight), so a point whose
+  // lose timer is already spent (`timeToLoseControl 0`, bf1918 fao_landing's
+  // `Fao_Beach`) falls on the first frame (AI-100).
+  const losing = (team, gated = true) => {
     if (!allowed(team)) return null;
     if (cp.lose > 0) {
       cp.state = 2; cp.lose -= dt;
       enable(!cfg.disableWhenLosing);
       return null;
     }
-    if (cp.state !== 2) return null;
+    if (gated && cp.state !== 2) return null;
     cp.state = 1;
     enable(false);
     if (fixed) return null;
@@ -185,7 +197,7 @@ export function controlPointStep(flag, teams, dt) {
     return null;
   }
   if (attacker) {
-    if (owner) return losing(attacker);
+    if (owner) return losing(attacker, false);
     if ((cp.getting === 0 || cp.getting === attacker) && count >= cfg.minNr) {
       if (!allowed(attacker)) return null;
       if (cp.get > 0) { cp.state = 3; cp.getting = attacker; cp.get -= dt; return null; }

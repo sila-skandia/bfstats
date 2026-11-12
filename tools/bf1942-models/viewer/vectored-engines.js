@@ -45,6 +45,7 @@ import * as THREE from 'three';
 import { currentRatio, currentTorque, loadSample, revAdvance } from './engine-revs.js';
 import { SIMULATION_FPS } from './body-friction.js';
 import { unboundRollAxis } from './engine-spin.js';
+import { DEFAULT_DIFFERENTIAL, DEFAULT_TORQUE, DEFAULT_NO_PROPELLER_EFFECT_AT_SPEED } from './ship-spec.js';
 
 const FORWARD = new THREE.Vector3(0, 0, -1);
 const RAD = Math.PI / 180;
@@ -278,10 +279,12 @@ export class VectoredEngine {
     this.id = spec.id;
     this.engineType = spec.engineType ?? null;
     // `getCurrentRatio` (`0x0824ca70`): 3.5 * setDifferential / ratioCurve[100].
-    this.ratio = currentRatio(spec.differential ?? 1);
+    // An omitted word keeps `EngineTemplate`'s ctor default (`0x0823f230`,
+    // ship-spec.js `DEFAULT_*`): differential 10, torque 60, fade 100.
+    this.ratio = currentRatio(spec.differential ?? DEFAULT_DIFFERENTIAL);
     // `setTorque`, the divisor of the load `feedbackLoop` feeds the gearbox.
-    this.torque = spec.torque ?? 0;
-    this.fadeSpeed = spec.noPropellerEffectAtSpeed || 100;
+    this.torque = spec.torque ?? DEFAULT_TORQUE;
+    this.fadeSpeed = spec.noPropellerEffectAtSpeed || DEFAULT_NO_PROPELLER_EFFECT_AT_SPEED;
     this.throttle = spec.throttle || null;
     this.maxRotationZ = spec.maxRotationZ ?? 0;
     this.chain = (spec.chain || []).map(segment => ({

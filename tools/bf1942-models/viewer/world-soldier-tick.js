@@ -30,7 +30,7 @@ export function soldierTick(world, player, dt) {
   // engine applies it per PlayerInput. An idle tick carries a zeroed axis, so
   // a missed packet turns nobody.
   const entry = consume(player);
-  // The recoil ride rides the same two axes (`recoil.js`, ledger FA-2..FA-5):
+  // The recoil ride rides the same two axes (`recoil.js`, ledger FA-26):
   // `handlePlayerInput` adds this tick's share of the last shot's kick and
   // return to c_PIMouseLookX/Y after the zoom factor and before the law, so
   // it takes the x3 yaw gain and the pitch clamp as the hand does, and a

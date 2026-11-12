@@ -280,6 +280,22 @@ every other weapon falls back down its chain, as above.
 > growth is per rig and almost all of it is the prone reload, which every
 > weapon has.
 
+### Deliberate departures in the stance code
+
+- **No standing up under a ceiling.** `soldier.js` `#applyStance` keeps a
+  crouched or prone soldier down when a ray up from their feet meets geometry
+  inside the taller pose (`headroom`). Retail does not: `handlePlayerInput`'s
+  stance branch (lnxded `0x08275540`..`0x08275600`) tests only the lower
+  state's flags, and getting up is a `.con` transition with no world query, so
+  the engine stands a soldier into the ceiling (they have no movement capsule,
+  PHY-1). The page keeps the refusal because its capsule would otherwise be
+  driven into the geometry above. Found by the 2026-11 retail-parity
+  cross-check (soldier-states F6).
+- **The eye is not a clip.** Since the same cross-check, the first-person eye
+  moves half the remaining way to `setPoseCameraPos[pose]` every 1/30 s tick
+  (VIEW-15), not on a per-transition clip length; that is the engine's law,
+  not a departure.
+
 ---
 
 ## 3. Spawn-pad soldiers — the brief had moved, and what replaced it was broken

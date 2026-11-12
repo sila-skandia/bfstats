@@ -541,10 +541,12 @@ export function createLevelSky(page) {
     // the world ends in a completed haze wall that meets the sky painting.
     // Drawing past it (the old draw*1.6 with a 900 m floor) rasterised
     // fog-saturated terrain as crisp silhouettes against the paler sky band —
-    // the "distant mountain ridge" the game never shows. Extend only to a
-    // declared fogEnd beyond the view distance (Gazala: fog 500-850 vs VD 500)
-    // so the wall always completes before the clip; 1.05 keeps the last
-    // fog-saturated metres from z-fighting the plane.
+    // the "distant mountain ridge" the game never shows. The baked fogEnd is
+    // the client's resolved word (ledger FOG-4: `renderer.fogEnd` is kept only
+    // under the view distance, `scene_layers.py`), so it never passes `draw`
+    // on a current bake; the max only matters for a scene.json baked before
+    // 2026-10-12. 1.05 keeps the last fog-saturated metres from z-fighting
+    // the plane.
     page.camera.far = page.optEntire.checked
       ? Math.max(4000, world * 1.5)
       : Math.max(draw, fogByLaw() ? 0 : page.extras.fogEnd || 0) * 1.05;

@@ -274,19 +274,27 @@ export class LevelInstance {
     return exit;
   }
 
-  /** The seat's exit point in world space (map.html exitPoseManned — the
-   *  ROOT's transform, not the seat's: a hull door is a hull door, and the
-   *  root is the one the drive keeps fresh). */
+  /** The seat's exit point in world space, the page's own law
+   *  (`vehicle-entry.js` `exitPoseManned`): the declared
+   *  `soldierExitLocation` in the exit node's frame — the root's for a hull
+   *  door, a nested seat's own for a seat whose exit is declared on it (a
+   *  carrier AA gun's is in the gun's frame, and the hull origin sits at the
+   *  waterline) — and the template default, the seat's own origin, when the
+   *  `.con` declares none (SEAT-35). Until 2026-11-12 this returned the root's
+   *  position and dropped the offset it had just computed, and its fallback
+   *  was an invented (-2, 0.5, 0). */
   exitPoseOf(occ) {
-    const declared = occ.exitLocationNode()?.userData?.physics?.soldierExitLocation;
+    const exitNode = occ.exitLocationNode();
+    const declared = exitNode?.userData?.physics?.soldierExitLocation;
     const local = (declared && Array.isArray(declared.position))
       ? new THREE.Vector3(declared.position[0], declared.position[1],
         -declared.position[2])
-      : new THREE.Vector3(-2, 0.5, 0);
-    const position = new THREE.Vector3();
+      : new THREE.Vector3(0, 0, 0);
+    const refNode = exitNode && exitNode !== occ.root ? exitNode : occ.root;
+    const origin = new THREE.Vector3();
     const quat = new THREE.Quaternion();
-    readWorldPose(occ.root, position, quat);
-    local.applyQuaternion(quat).add(position);
+    readWorldPose(refNode, origin, quat);
+    const position = local.applyQuaternion(quat).add(origin);
     const fwd = new THREE.Vector3(0, 0, -1).applyQuaternion(quat);
     return { x: position.x, y: position.y, z: position.z,
              yaw: Math.atan2(fwd.x, fwd.z) };

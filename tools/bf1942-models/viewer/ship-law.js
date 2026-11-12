@@ -54,7 +54,8 @@ import { currentRatio, currentTorque, loadSample, revStep } from './engine-revs.
 export const SHIP_TICK_HZ = 30;
 export const SHIP_TICK = 1 / SHIP_TICK_HZ;
 
-/** `getGravity()`, -14.73, and the wing's `g / -9.82` = 1.5 exactly. */
+/** `getGravity()`, -14.73 (0xC16BAE14 = -14.73f, `body-float.js`), and the
+ *  wing's `g / -9.82` = 1.5. */
 const G = SERVER_GRAVITY;
 const WING_SCALE = G / -9.82;
 

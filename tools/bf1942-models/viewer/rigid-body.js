@@ -38,9 +38,11 @@
 export const TICK = 1 / 30;
 
 /**
- * `BasicPhysicsSystem`'s gravity, m/s^2 downward (`physics.js`'s own citation
- * of `0x00578f00`; restated here because this module re-seeds it every tick —
- * F8: `acc.y += basicPhysicsSystem.getGravity() * gravityModifier`).
+ * `BasicPhysicsSystem`'s gravity, m/s^2 downward: the constructor's seed
+ * 0xC16BAE14 = -14.73f (client `0x00578f11`, lnxded `0x08251e3b`), restated
+ * here because this module re-seeds it every tick — F8: `acc.y +=
+ * basicPhysicsSystem.getGravity() * gravityModifier`. `body-float.js` (and so
+ * `aircraft.js` and the ship law) take theirs from here.
  */
 export const GRAVITY = -14.73;
 

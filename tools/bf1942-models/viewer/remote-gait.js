@@ -442,3 +442,44 @@ const RECORDED_ACTIONS = new Map(
 // Longest first: `Ub_FireEndMp40` is the fire's end, not `Ub_Fire` of `EndMp40`.
 const RECORDED_ACTION =
   /^(Ub_(?:LieFireEnd|FireEnd|LieAltFire|AltFire|LieFire|Fire|StandReload|LieReload|StandBoltOperate|LieBoltOperate))\S+$/i;
+
+// --- the drawn torso's pitch limits (ANIM-23) -------------------------------
+
+/**
+ * `ObjectTemplate.setLiePointUpDownAngle 0.0 -6.0` (`CommonSoldierData.inc`),
+ * the `{ up, down }` pair `BFSoldier::updateAnimations` holds a LYING
+ * soldier's drawn upper-body pitch between. Its console method
+ * (`ConsoleClass172::executeObjectMethod`, lnxded `0x082bb420`) stores them at
+ * `BFSoldierTemplate+0x194` / `+0x198`; the only `BFSoldier` reader is the
+ * clamp at `0x0826f109` / `0x0826f122`. Vanilla's value: no extractor carries
+ * the word yet (`extract_pose.py` `SOLDIER_TEMPLATE_VALUES` would, through a
+ * `bf42/con.py` field), so a mod that writes its own pair draws vanilla's.
+ */
+export const LIE_POINT_UP_DOWN = Object.freeze({ up: 0.0, down: -6.0 });
+
+/** Standing and crouched, the same clamp is hard-coded: [-20, 20]
+ *  (`0x086c0314` = 20.0 and `0x086d26f0` = -20.0, at `0x082705e6`). */
+export const POINT_BEND_LIMIT = Object.freeze({ up: 20.0, down: -20.0 });
+
+/**
+ * The aim pitch a third-person body is DRAWN bent by, in the register's own
+ * units (positive up), before the 2.5 the three spine bones spread it over
+ * (`Bip01 Spine`, `Spine1` whole, `Spine2` half: ANIM-21, so 2.5 in all).
+ *
+ * `updateAnimations` takes `-aim` (`+0x284` negated at `0x0826e677`), clamps
+ * it into `[down, up]` -- the template's lie pair while the lower state has
+ * `c_AsmIsLying` (`0x0826f0ed`), the hard-coded +-20 otherwise -- and hands
+ * it to `setRotateXDeg` (`0x0826f174`). So standing a man bends with his aim
+ * to +-20 register degrees (50 drawn) and no further; lying he bends only up,
+ * by at most 6 (15 drawn), and never down into the ground. The aim register
+ * itself, and the view and the rounds with it, keep `setPointUpDownAngle`'s
+ * +-38 in every pose (`handlePlayerInput` `0x082744ff`).
+ */
+export function drawnAimPitch(aim, prone = false, lie = LIE_POINT_UP_DOWN) {
+  if (!Number.isFinite(aim)) return 0;
+  const { up, down } = prone ? lie : POINT_BEND_LIMIT;
+  let a = -aim;
+  if (a > up) a = up;
+  else if (down > a) a = down;
+  return a === 0 ? 0 : -a;
+}

@@ -100,7 +100,7 @@ const TABLE = {
  * The plane is placed so its origin crosses x = 0 when the round reaches
  * y = 100 (1/3 s after the shot).
  */
-function engagement({ miss = 0, speed = 60, fuse = true, rand = 0.5 } = {}) {
+function engagement({ miss = 0, speed = 60, fuse = true, rand = 0.5, height = 100 } = {}) {
   const scene = new THREE.Scene();
   const hull = planeHull();
   scene.add(hull);
@@ -116,7 +116,7 @@ function engagement({ miss = 0, speed = 60, fuse = true, rand = 0.5 } = {}) {
   const bakedInv = baked.clone().invert();
   const body = { owner, pos: [0, 0, 0], v: [speed, 0, 0], mass: 3000 };
   const place = (t) => {
-    body.pos = [-speed * (1 / 3) + speed * t, 100, miss];
+    body.pos = [-speed * (1 / 3) + speed * t, height, miss];
     // `publishMovedHull`: baked frame -> the body's pose.
     const now = new THREE.Matrix4().makeTranslation(...body.pos);
     const fwd = now.multiply(bakedInv);
@@ -166,6 +166,13 @@ out.passNear = engagement({ miss: 6 });
 out.passFar = engagement({ miss: 14 });
 out.parkedNear = engagement({ miss: 6, speed: 0 });
 out.noFuseNear = engagement({ miss: 6, fuse: false });
+// Straight through the hull with the fuse on: the fuse runs before the
+// tick's move and contact (lnxded 0x0815c2e6..0x0815c342), so the round
+// that the hull would meet on this tick's step is fused on it first. The
+// hull flies at 99.5 m, so the round starts the tick at 90 m, 9.5 m from its
+// origin, and its 10 m step would meet the box's floor at 98.5 m.
+out.directPass = engagement({ miss: 0, speed: 3, height: 99.5 });
+out.directPassNoFuse = engagement({ miss: 0, speed: 3, height: 99.5, fuse: false });
 out.ttlLow = engagement({ miss: 30, rand: 0.999999 }).ttl;
 out.ttlHigh = engagement({ miss: 30, rand: 0 }).ttl;
 

@@ -18,7 +18,7 @@ const HERE = path.dirname(fileURLToPath(import.meta.url));
 const viewer = viewerDir(path.join(HERE, '..', 'viewer'));
 installModuleHooks(viewer);
 const imp = name => import(pathToFileURL(path.join(viewer, name)).href);
-const [THREE, { createLevelShading }] = await Promise.all([
+const [THREE, { createLevelShading, alphaLodNear, textureFadeAlpha, textureFadeMaxDistFor }] = await Promise.all([
   imp('vendor/three.module.js'), imp('level-shading.js'),
 ]);
 
@@ -102,4 +102,24 @@ const report = p => ({
   lod0: state(p.lod0), rung1: state(p.rung1),
   rung2: p.rung2.children.flatMap(state),
 });
-console.log(JSON.stringify({ shaded, barn: report(barn), rubble: report(rubble), well: report(well), block: report(block) }));
+// DL-12's near test on selectLod's e = d^2 / m - r^2 (0x005ae056, 0x005af11b).
+const alphaLod = {
+  edgePlain: alphaLodNear(100.4 ** 2, 1, 0, 100 ** 2),
+  edgeWithRadius: alphaLodNear(100.4 ** 2, 1, 10 ** 2, 100 ** 2),
+  pastRadius: alphaLodNear(100.6 ** 2, 1, 10 ** 2, 100 ** 2),
+  scaled: alphaLodNear(140 ** 2, 2, 0, 100 ** 2),
+};
+// textureFade: TFACTOR alpha 255 x clamp(e / D^2, 0, 1), truncated (0x005af140..0x005af194).
+const textureFade = {
+  atZero: textureFadeAlpha(0, 1, 0, 70),
+  half: textureFadeAlpha(70 ** 2 / 2, 1, 0, 70),
+  quarterDistance: textureFadeAlpha(35 ** 2, 1, 0, 70),
+  atD: textureFadeAlpha(70 ** 2, 1, 0, 70),
+  past: textureFadeAlpha(80 ** 2, 1, 0, 70),
+  insideRadius: textureFadeAlpha(3 ** 2, 1, 4 ** 2, 70),
+  listed: textureFadeMaxDistFor({ afr_house1_ste_m1: 80 }, 'Afr_House1_Ste_M1'),
+  unlisted: textureFadeMaxDistFor({ afr_house1_ste_m1: 80 }, 'plain_m1'),
+  emptyTable: textureFadeMaxDistFor({}, 'plain_m1'),
+  noTable: textureFadeMaxDistFor(undefined, 'afr_house1_ste_m1'),
+};
+console.log(JSON.stringify({ shaded, alphaLod, textureFade, barn: report(barn), rubble: report(rubble), well: report(well), block: report(block) }));

@@ -19,7 +19,7 @@
 import { DeviationModel } from './deviation.js';
 import { flagSide } from './spawn-flags.js';
 import { BotSenses } from './bot-sense.js';
-import { weaponAiOf, FIRE } from './bot-fire.js';
+import { weaponAiOf, FIRE, aaPenalty } from './bot-fire.js';
 import { ScoutState, TakeCoverState, QUADRANTS, MedicState } from './bot-behaviours.js';
 import { REGISTERED, ACTIVE_URGENCY_INIT } from './bot-decision.js';
 import { BOT_RADIUS, VEHICLE_RADIUS } from './bot-route.js';
@@ -343,8 +343,21 @@ export class BotController {
       this._deviationWeapon = w.name;
       this.deviation = new DeviationModel({ deviation: this._buildDeviationData(w.name) });
     }
+    // The anti-aircraft `C` (ledger AI-18): the trigger statement in the
+    // plan hands it, keyed on this bot's own unit and an air target
+    // (bot-fire.js `aaPenalty`); with no trigger statement, none.
+    const trigger = this.firingTarget != null
+      ? this.currentPlan?.find?.(a => a.type === planning.PLAN_ACTION.Trigger
+                                   || a.type === planning.PLAN_ACTION.TriggerContinously)
+      : null;
+    const aa = trigger ? aaPenalty({
+      shooterKind: this.vehicle?.kind ?? null,
+      targetAir: !!this._unitInfo(this.firingTarget)?.air,
+      continuous: trigger.type === planning.PLAN_ACTION.TriggerContinously,
+    }) : 0;
     this.deviation.setAIDeviation({
       botSkill: this.botSkill,
+      aaPenalty: aa,
       timeSinceTarget: this.firingTarget ? Math.max(0, now - this.firingTargetTime) : 0,
       deviation: w?.deviation ?? 5.0,
       correctionTime: w?.deviationCorrectionTime ?? 10.0,

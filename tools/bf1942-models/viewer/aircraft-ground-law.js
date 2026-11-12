@@ -35,6 +35,20 @@
 import * as THREE from 'three';
 import { clipAngleStep } from './vectored-engines.js';
 
+/**
+ * The g this law steps the root under, HELD with `aircraft.js`'s
+ * `FLIGHT_GRAVITY` at -14.7295379 (retail is 0xC16BAE14 = -14.73f, lnxded
+ * `0x08251e3b`). This law IS the fixed-wing root's one Euler step in the air
+ * as well as on its wheels (AIRGND-1), so it cannot run a different g from
+ * the flight law: on -14.73 alone `test_air_law`'s Bf109 lift-off goes past
+ * its 1.0 mm bound, a Stuka of `test_dogfight_live_wing` (kursk, turn) flies
+ * into the ground and `test_dogfight_jet_turnarounds`' dip stops working in
+ * one of nine. A literal, not an import: `aircraft.js` imports this module.
+ * Pending the same retune (`features/retail-parity-cross-check-2026-11-12`,
+ * "Still open").
+ */
+const GRAVITY = -14.7295379;
+
 /** The wheel's own side of the material pair. Every vanilla plane's wheels
  *  are material 37, which `materialManagerDefine.con` never defines, so it
  *  is material 0's: friction 1.0, resistance **0.02** (AIRGND-4; the lab SBD's
@@ -50,9 +64,10 @@ const DEFAULT_MATERIAL_RESISTANCE = 0.02;
 export const TICK_HZ = 30;
 export const TICK = 1 / TICK_HZ;
 
-/** `getGravity() * -0.101833`: the spring's and the wing's normaliser, 1.49995
- *  at the shipped g (`PhysicsSpring::updatePhysics`). */
-const SPRING_SCALE = 14.7295379 * 0.101833;
+/** `getGravity() * -0.101833`: the spring's and the wing's normaliser, 1.5
+ *  at retail's 0xC16BAE14 = -14.73f, 1.49995 at the held `GRAVITY`
+ *  (`PhysicsSpring::updatePhysics`). */
+const SPRING_SCALE = -GRAVITY * 0.101833;
 
 /** The root's sleep (TANK-21): the countdown, and what keeps it at 100. */
 const SLEEP_TICKS = 100;
@@ -108,7 +123,7 @@ export function createGroundLaw(wheels) {
     clock: 0,
     fresh: true,
     sleepiness: SLEEP_TICKS,
-    acc: new THREE.Vector3(0, -14.7295379, 0),
+    acc: new THREE.Vector3(0, GRAVITY, 0),
     racc: new THREE.Vector3(),
     fr: new THREE.Vector3(),
     rfr: new THREE.Vector3(),

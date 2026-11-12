@@ -8,6 +8,36 @@ import * as THREE from 'three';
 import { uvExtent, repeatsTexture, planTileWrap } from './terrain-tile-wrap.js';
 import { ENVMAP_SWITCH, wantsEnvmap, envmapVertexPatch, envmapVertexBody, envmapFragmentPatch, envmapFragmentApply } from './envmap.js';
 import { LIT, objectIntensity, samplesTerrain, shadeFactor, shadeField, shadowBits } from './terrain-shade.js';
+import { originRadius } from './mesh-cull.js';
+import { meshCullSpec } from './level-statics.js';
+
+/** Whether a `transparent true` mesh is in its alpha-LOD reach (ledger
+ *  DL-12): `StandardMesh_drawLod` compares the `e = d^2 / m - r^2` that
+ *  `StandardMesh_selectLod` hands back (0x005ae056) with
+ *  `alphaLodDistance^2` and blends when it is not more (0x005af11b..0x005af137). */
+export function alphaLodNear(d2, m, r2, reach2) {
+  return d2 / (m > 0 ? m : 1) - r2 <= reach2;
+}
+
+/** A geometry's `textureFadeMaxDist` from the scene's table: its own value
+ *  where listed; `fallback` (the engine's 200) where the table exists and
+ *  does not list it; `unpatched` (an interim) where the scene has no table. */
+export function textureFadeMaxDistFor(table, geometry, fallback = 200, unpatched = 70) {
+  if (!table || typeof table !== 'object') return unpatched;
+  const set = table[String(geometry || '').toLowerCase()];
+  return Number.isFinite(set) ? set : fallback;
+}
+
+/** A `textureFade true` material's alpha (0..1): `StandardMesh_drawLod`
+ *  0x005af140..0x005af194, `clamp(e / D^2, 0, 1)` quantised to a byte as the
+ *  TFACTOR alpha is, with `e = d^2 / m - r^2` and `D` the geometry's
+ *  `textureFadeMaxDist`. */
+export function textureFadeAlpha(d2, m, r2, maxDist) {
+  const e = d2 / (m > 0 ? m : 1) - r2;
+  const D2 = maxDist * maxDist;
+  if (!(D2 > 0) || e > D2) return 1;
+  return Math.trunc(Math.max(0, e) / D2 * 255) / 255;
+}
 
 /**
  * Built once by `createLevel` (level-load.js). `page` hands in what it reads,
@@ -753,19 +783,35 @@ export function createLevelShading(page) {
       for (let n = obj; n && n !== root; n = n.parent) {
         if (n.userData?.kind === 'spawners') return;
       }
-      let geometry = null;
-      for (let n = obj; n && !geometry; n = n.parent) geometry = n.userData?.geometry || null;
+      let geometry = null, part = null;
+      for (let n = obj; n && !geometry; n = n.parent) {
+        geometry = n.userData?.geometry || null;
+        if (geometry) part = n;
+      }
       const set = distances[String(geometry || '').toLowerCase()];
       const reach = Number.isFinite(set) ? set : ALPHA_LOD_DEFAULT;
+      // The near test is on `StandardMesh_selectLod`'s out-parameter, not the
+      // plain squared distance: `e = d^2 / m - r^2` (0x005ae042..0x005ae056),
+      // `r` the mesh's origin radius and `m` the largest component of its
+      // template scale, the same terms `mesh-cull.js` uses (ledger LOD-7).
+      // `meshCullSpec` reads them as the LOD pass does; a level baked before
+      // the `meshCull` key measures `r` off this mesh and takes `m` as 1.
+      const spec = part ? meshCullSpec(part, page.extras?.meshCull ?? null) : null;
+      let r = spec?.r;
+      if (!(r >= 0)) {
+        if (!obj.geometry.boundingBox) obj.geometry.computeBoundingBox();
+        r = obj.geometry.boundingBox ? originRadius(obj.geometry.boundingBox) * obj.matrixWorld.getMaxScaleOnAxis() : 0;
+      }
+      const m = spec?.m > 0 ? spec.m : 1;
       const at = new THREE.Vector3();
-      obj.getWorldPosition(at);
+      (part || obj).getWorldPosition(at);
       for (const m of mats) {
         m.userData = { ...m.userData, alphaTestRef: m.alphaTest };
         m.transparent = true;
         m.blending = THREE.NoBlending;
         m.depthWrite = !off.has(String(m.name || '').toLowerCase());
       }
-      shading.alphaLodMeshes.push({ at, mats, reach2: reach * reach, near: false });
+      shading.alphaLodMeshes.push({ at, mats, reach2: reach * reach, m, r2: r * r, near: false });
     });
   }
 
@@ -779,7 +825,9 @@ export function createLevelShading(page) {
     shading.alphaLodCamX = cam.x; shading.alphaLodCamY = cam.y; shading.alphaLodCamZ = cam.z;
     for (const entry of shading.alphaLodMeshes) {
       const dx = entry.at.x - cam.x, dy = entry.at.y - cam.y, dz = entry.at.z - cam.z;
-      const near = dx * dx + dy * dy + dz * dz <= entry.reach2;
+      // drawLod 0x005af10b..0x005af137: blended while e <= alphaLodDistance^2
+      // (ledger DL-12).
+      const near = alphaLodNear(dx * dx + dy * dy + dz * dz, entry.m, entry.r2, entry.reach2);
       if (near === entry.near) continue;
       entry.near = near;
       for (const m of entry.mats) {
@@ -790,16 +838,26 @@ export function createLevelShading(page) {
   }
 
   // `textureFade true` — the black_o darkness plane sealing every building
-  // doorway and window. The engine fades it with camera distance: up close it
-  // is gone and the room shows through the opening; at range it is solid and
-  // the opening reads as dark. The exporter marks the material in extras and
-  // this pass gives each flagged mesh its own clone so one building's doorway
-  // can be open while a distant one's is sealed. The band is PROVISIONAL
-  // [free]: fully open inside 20 m, fully sealed past 55 m, chosen to sit
-  // inside the 70 m interior-LOD switch the engine used — measure against a
-  // recording to pin it.
-  const FADE_NEAR = 20;   // [free] m, alpha 0 at or below
-  const FADE_FAR = 55;    // [free] m, alpha 1 at or beyond
+  // doorway and window. The client fades it with the camera's distance:
+  // `StandardMesh_drawLod` (0x005af13a, the material's flag bit 4) sets the
+  // stage's TFACTOR alpha to `255 x clamp(e / D^2, 0, 1)` (0x005af140..
+  // 0x005af194), `e = d^2 / m - r^2` the term `StandardMesh_selectLod` hands
+  // back (0x005ae056, ledger DL-12) and `D` the geometry's
+  // `GeometryTemplate.textureFadeMaxDist` (template +0xa0, setter 0x005cd100,
+  // which also keeps 1 / D^2 at +0xa4; 200 from the constructor, 0x005b5bd9).
+  // So up close the plane is clear and the room shows through, and it is
+  // solid from D out, the alpha linear in the SQUARED distance between.
+  // Vanilla's buildings set D themselves (57 of the 65 geometries that name
+  // it in Objects.rfa set 70, four 80, four 100); the level's scene.json
+  // carries every set value as `textureFadeMaxDist` (lower-cased geometry ->
+  // metres, the `materials` layer, `scene_layers.py`). In a scene that carries
+  // the table, a geometry it does not list takes the engine's 200.
+  const FADE_MAX_DIST_DEFAULT = 200;   // 0x005b5bd9
+  // INTERIM, not an engine number: a scene with no table at all is a tree not
+  // yet patched (FHSW and FHSWEurope, whose installs are not on the Mac the
+  // patch ran on). There every plane takes 70, the value nearly all of the
+  // houses that set one use, until that tree's `materials` layer is patched.
+  const FADE_MAX_DIST_UNPATCHED = 70;
   shading.fadeMeshes = [];
   // Every input to the ramp below is the camera's position against fixed points,
   // so a frame that did not move the camera cannot change a single opacity. The
@@ -836,14 +894,29 @@ export function createLevelShading(page) {
         return mat;
       });
       obj.material = Array.isArray(obj.material) ? bound : bound[0];
-      // Statics never move; cache the world position once.
+      // Statics never move; cache the world position, and the terms of
+      // selectLod's `e` (`r`, `m`) and the geometry's `D`, once.
+      let geometry = null, part = null;
+      for (let n = obj; n && !geometry; n = n.parent) {
+        geometry = n.userData?.geometry || null;
+        if (geometry) part = n;
+      }
+      const spec = part ? meshCullSpec(part, page.extras?.meshCull ?? null) : null;
+      let r = spec?.r;
+      if (!(r >= 0)) {
+        if (!obj.geometry.boundingBox) obj.geometry.computeBoundingBox();
+        r = obj.geometry.boundingBox ? originRadius(obj.geometry.boundingBox) * obj.matrixWorld.getMaxScaleOnAxis() : 0;
+      }
+      const m = spec?.m > 0 ? spec.m : 1;
+      const maxDist = textureFadeMaxDistFor(page.extras?.textureFadeMaxDist, geometry,
+        FADE_MAX_DIST_DEFAULT, FADE_MAX_DIST_UNPATCHED);
       const at = new THREE.Vector3();
-      obj.getWorldPosition(at);
+      (part || obj).getWorldPosition(at);
       // And which of this mesh's materials the ramp drives. A mesh can carry a
       // material ARRAY where only some entries are the darkness plane's, so the
       // fading ones are kept rather than the first (rule 5: `[obj.material].flat()`
       // per mesh per frame was two fresh arrays per mesh, 33 of them on Wake).
-      shading.fadeMeshes.push({ obj, at, mats: bound.filter(m => m?.userData?.textureFade) });
+      shading.fadeMeshes.push({ obj, at, m, r2: r * r, maxDist, mats: bound.filter(x => x?.userData?.textureFade) });
     });
   }
 
@@ -853,17 +926,10 @@ export function createLevelShading(page) {
         && cam.x === shading.fadeCamX && cam.y === shading.fadeCamY && cam.z === shading.fadeCamZ) return;
     shading.fadeCamGeneration = shading.fadeGeneration;
     shading.fadeCamX = cam.x; shading.fadeCamY = cam.y; shading.fadeCamZ = cam.z;
-    for (const { obj, at, mats } of shading.fadeMeshes) {
+    for (const { obj, at, m, r2, maxDist, mats } of shading.fadeMeshes) {
       const dx = at.x - cam.x, dy = at.y - cam.y, dz = at.z - cam.z;
-      // Kept as a real square root rather than compared against squared band
-      // edges: `sqrt` is correctly rounded, so `sqrt(d2) <= 20` and `d2 <= 400`
-      // disagree by one ULP just past the near edge (`sqrt(400 + 2^-44)` rounds
-      // back to exactly 20), and this has to be a behavioural no-op. One sqrt
-      // across 33 meshes is not what the profile was reading anyway — the
-      // allocations and the unconditional writes below were.
-      const d = Math.sqrt(dx * dx + dy * dy + dz * dz);
-      const a = Math.min(1, Math.max(0, (d - FADE_NEAR) / (FADE_FAR - FADE_NEAR)));
-      for (const m of mats) if (m.opacity !== a) m.opacity = a;
+      const a = textureFadeAlpha(dx * dx + dy * dy + dz * dz, m, r2, maxDist);
+      for (const mat of mats) if (mat.opacity !== a) mat.opacity = a;
       // A fully-faded plane still costs a draw call; drop it. Compared against
       // the material's and the object's OWN current value rather than a
       // remembered one, so anything else that writes either is picked up on the

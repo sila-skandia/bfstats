@@ -66,6 +66,12 @@ class MapVehicleMarkTests(unittest.TestCase):
         # 0.574219 (0x3f130004) of 255.
         self.assertEqual([146, 146, 146], self.r["emptyTint"])
 
+    def test_a_hull_past_the_view_distance_is_hidden_outside_a_joined_game(self) -> None:
+        # MMAP-3: client 0x0046b476..0x0046b5c6, single player or host only.
+        self.assertEqual("empty", self.r["marks"]["inRange"])
+        self.assertIsNone(self.r["marks"]["pastRange"])
+        self.assertEqual("empty", self.r["marks"]["pastRangeJoined"])
+
     def test_a_wreck_has_no_icon(self) -> None:
         self.assertIsNone(self.r["marks"]["wreck"])
         self.assertIsNone(self.r["marks"]["wreckFriendlyCrew"])

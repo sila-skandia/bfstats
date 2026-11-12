@@ -138,7 +138,7 @@ else exists in shipped data.
 | `setFlapLift` | dimensionless coefficient | **Control lift ∝ hinge deflection**. Ship rudders have `wingLift 0, flapLift 2`: force from deflection only | 0 (fins) – 4 (regulators) | confirmed role, see §4 |
 | `setPositionOffset` | metres, **parent-body frame**, added to the part's attach position | Moves the force application point: `apply = attachPos + positionOffset` | regulators: exact negation of attach (→ CoM); ailerons/elevators: ±0.5 pulled inboard; rudders: 0/−0.5/0 pulled down the fin | confirmed (see §4b) |
 | `setPitchOffset` | degrees | Static incidence added to the surface's aero angle — a built-in +0.5° AoA so lifting surfaces lift at zero body AoA. Value is 0.5 in 53 of 54 vanilla uses; the single 0 is the Katyusha rocket's fin, which must not veer | 0.5 | strong inference |
-| `setRegulateToLift` | m/s² | Target for the closed-loop lift regulator; **4.91 = g/3 in every one of the 27 vanilla uses** (g = 14.7295, §2c; 14.7295/3 = 4.9098). A fighter's two surfaces therefore budget two thirds of gravity, the SBD's three exactly all of it | 4.91 only | confirmed value, strong inference units |
+| `setRegulateToLift` | m/s² | Target for the closed-loop lift regulator; **4.91 = g/3 in every one of the 27 vanilla uses** (g = 14.73, §2c; 14.73/3 = 4.91). A fighter's two surfaces therefore budget two thirds of gravity, the SBD's three exactly all of it | 4.91 only | confirmed value, strong inference units |
 | `setWingToRegulatorRatio` | dimensionless | Regulator scaling; 1 everywhere except the B17's two ±30° brakes (3.0). Exact semantics not recoverable from data (loop gain vs target multiplier) | 1, 3.0 | speculative |
 | `setPivotPosition` | metres | Hinge pivot relocation; only 2 vanilla uses, both `0/0/0` (SBD flaps) — a no-op. Ignore | 0/0/0 | confirmed inert in vanilla |
 | `geometry` | — | Optional. A Wing without geometry is an invisible force generator (Ilyushin) | — | confirmed |
@@ -193,7 +193,9 @@ body-lean documented in `bf42/con.py`); `Fletcher_Engine` `c_ETShip` torque
 
 ### Gravity — CORRECTED
 
-**This section used to say the engine default was −9.81. It is −14.7295.**
+**This section used to say the engine default was −9.81. It is −14.73.**
+**Corrected again, 2026-11-12.** `0xC16BAE14` is the IEEE-754 single **-14.73** (-14.7299995 exactly), not -14.73: `features/bf1942-engine-reference/readmem.py - 0xc16bae14 hexf`. So `g / -9.82` is 1.5 to float precision (1.49999995), the springs' and wings' `x getGravity() x -0.101833` is x1.5, and `4.91` is g/3 = 4.91. The figures below are rewritten to -14.73 / 1.5; the law and every address stand (ledger FA-23, SHIP-1, AIRGND-1; `features/retail-parity-cross-check-2026-11-12`).
+
 `confirmed`, by decompilation. Recording the correction in full, because the
 wrong number was load-bearing for everything in §8 and §9.
 
@@ -205,7 +207,7 @@ default is −9.81, `strong inference`, corroborated *from inside the data* by
 **What the client says**: `BasicPhysicsSystem::BasicPhysicsSystem` at
 **`0x00578f00`** in the retail client writes the literal `0xC16BAE14` into the
 field at +0x8 — the one the get/set vtable slots touch — which is the IEEE-754
-single **−14.7295379**. The same constructor writes `0x447A0000` = 1000.0 to
+single **−14.73** (−14.7299995). The same constructor writes `0x447A0000` = 1000.0 to
 `airDensityZeroAtHeight` at +0x30, and zeroes the wind vector at +0xc..+0x14.
 
 **Why no override can be hiding**: the question is closed by exhaustion, not by
@@ -222,7 +224,7 @@ subsystem `physics`; browse with `./xref.py list physics` and
 `./xref.py sym 0x00578f00` from that directory.
 
 **How the "corroboration" misled**: `setRegulateToLift 4.91` really is a
-gravity fraction — it is g/**3**, not g/2. 14.7295/3 = 4.9098, which rounds to
+gravity fraction — it is g/**3**, not g/2. 14.73/3 = 4.91, which rounds to
 4.91 with 0.0002 to spare; 9.81/2 = 4.905 needs 0.005. The tighter fit is the
 true one, and the fleet confirms it by distribution rather than by arithmetic:
 
@@ -234,7 +236,7 @@ true one, and the fleet confirms it by distribution rather than by arithmetic:
 
 §5 already recorded the three-and-one counts as an unresolved bookkeeping
 oddity ("the target is per surface with saturation doing the balancing, not an
-exact global budget"). With g = 14.7295 they stop being odd: the regulator
+exact global budget"). With g = 14.73 they stop being odd: the regulator
 budget is a per-surface third of gravity, and an aircraft carries as many
 thirds as its passive wing area does not already provide. That is a stronger
 reading of the data than the one it replaces, and it was reachable from the
@@ -309,7 +311,7 @@ medium = 10.0 submerged, else 1 - clamp(y / airDensityZeroAtHeight, 0, 1)
   say `setWingLift × AoA` and `setFlapLift × deflection` were independent
   terms. They are not; there is no deflection term in this function at all.
   The `-0.101833` is `-1/9.82`, the same gravity normalisation `PhysicsSpring`
-  uses, so at the shipped g the coefficient is a flat **×1.49995**.
+  uses, so at the shipped g the coefficient is a flat **×1.5**.
 - **The force is applied off-centre**, at the surface's own world position, so
   the pitch, roll and yaw moments are `r × F` over the surface list and nothing
   has to declare them. §4b's table is the rigid-body layout, as it always said.
@@ -443,7 +445,7 @@ retail client, only a debug readout — and no aircraft authors
 divisor is **0.94**.
 
 For the Corsair that is `3.5 × 5 / 0.94` = **18.617 m/s² per unit of K**, and a
-thrust-to-weight at rest of `18.617 × 1.1 / 14.7295` = **1.39**. §9c item 3 is
+thrust-to-weight at rest of `18.617 × 1.1 / 14.73` = **1.39**. §9c item 3 is
 closed on both halves.
 
 ### The B17 tension, checked and left standing
@@ -631,7 +633,7 @@ in the data (`confirmed` absence — the full Wing command inventory is in
   Note what the correction changed here. Under g = 9.81 the two regulators
   were exactly 1 g on their own, so the aircraft was on rails at *every*
   speed above saturation and stall was a single cliff at that speed. Under
-  g = 14.7295 it is on rails at one speed — cruise — and trades altitude for
+  g = 14.73 it is on rails at one speed — cruise — and trades altitude for
   airspeed either side of it, which is both closer to an aeroplane and closer
   to how BF1942 planes are remembered flying.
 
@@ -802,7 +804,7 @@ inputs   {pitch, roll, yaw, throttle} each -1..1
 ```
 MASS   = 2500        kg                                          [data]
 DRAG   = 0.0652      s^-1 linear                                 [data]
-G      = 14.7295379                        [code: client 0x00578f00, §2c]
+G      = 14.73                             [code: client 0x00578f00, §2c]
 INERTIA_MOD = (1.05, 0.850, 0.94)      y/p/r                     [data]
 // base inertia: solid-box estimate from the mesh bbox (span 12.5 m,
 // length 10.2 m, height 3.1 m) times INERTIA_MOD                [free]
@@ -1153,7 +1155,7 @@ seconds comfortable rather than marginal. The trim angle of attack did *not*:
   paired with cosmetic RotationalBundles).
 - `setPositionOffset` = force application point delta in parent frame;
   regulator offsets exactly negate attach positions.
-- Engine gravity is **−14.7295**, not −9.81: `BasicPhysicsSystem`'s ctor at
+- Engine gravity is **−14.73**, not −9.81: `BasicPhysicsSystem`'s ctor at
   `0x00578f00` seeds it with `0xC16BAE14`, and no map-load path overrides it
   (31 singleton xrefs audited; only the chat cheats and the console property
   write it). Already in `symbols.json` under subsystem `physics`; the point

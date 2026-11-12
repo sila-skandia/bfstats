@@ -22,6 +22,7 @@ import {
   setDs3dHardware, standDs3dPanner,
 } from '../viewer/ds3d-pan.js';
 import { EngineAudio } from '../viewer/engine-audio.js';
+import { refillVolumeAt } from '../viewer/page-audio.js';
 
 const VIEWER = path.join(path.dirname(fileURLToPath(import.meta.url)), '..', 'viewer');
 const near = (a, b, eps = 1e-6) => Math.abs(a - b) <= eps;
@@ -321,6 +322,18 @@ test('no module of the viewer asks for a head', () => {
   const positional = (page.match(/new THREE\.PositionalAudio\(/g) || []).length;
   assert.ok(positional >= 1);
   assert.ok((page.match(/configureDs3dPanner\(sound\.panner\)/g) || []).length >= positional);
+});
+
+test('the refill one-shot falls off as SoldierRefillAmmo.ssc and DirectSound say', () => {
+  // HIGH patch: minDistance 5, Volume <- Distance Ramp 10 15 1 -1 (SND-6).
+  const near = (got, want) => assert.ok(Math.abs(got - want) < 1e-9, `${got} vs ${want}`);
+  near(refillVolumeAt(0), 1);
+  near(refillVolumeAt(5), 1);
+  near(refillVolumeAt(8), 5 / 8);
+  near(refillVolumeAt(10), 0.5);
+  near(refillVolumeAt(12.5), 0.5 * 0.4);
+  near(refillVolumeAt(15), 0);
+  near(refillVolumeAt(40), 0);
 });
 
 let failed = 0;

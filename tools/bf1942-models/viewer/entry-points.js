@@ -62,7 +62,7 @@ export function listEntryPoints(root, fallbackRadius) {
     for (const entry of seat.entryPoints) {
       list.push({
         node: entry, seatId: seat.id,
-        radius: entry.userData?.seat?.entryRadius || fallbackRadius,
+        radius: entry.userData?.seat?.entryRadius ?? fallbackRadius,
       });
     }
   }

@@ -14,7 +14,7 @@
  * `audioBufferCache`, `audioListener`, `audioLoader`, `bust`,
  * `ensureAudioContext`, `extras`, `flags`, `gridRef`, `hudPaths`,
  * `localAlive`, `localName`, `localPosition`, `localTeam`, `MAPS_BASE`,
- * `masterVolume`, `radioIconType`, `roomSendChat`, `roomSendRadio`, `sprite`,
+ * `masterVolume`, `radioIconType`, `roomJoined`, `roomSendChat`, `roomSendRadio`, `sprite`,
  * `teamNation`.
  */
 
@@ -31,6 +31,7 @@ import {
 import { ChatInput, CHAT_BOX, promptText } from './chat-input.js';
 import { GameplayAnnouncer, gamePlayMode, heartbeatUrls } from './announcer.js';
 import { standDs3dPanner } from './ds3d-pan.js';
+import { SOLDIER_ORIGIN_UP } from './nametags.js';
 import { callOf, callSprite, createSupportCalls, expireCalls, hearCall } from './support-calls.js';
 
 const VIRTUAL_W = 800;
@@ -141,7 +142,8 @@ export function createComms(page) {
   }
 
   function gameMode() {
-    return radioGameMode(page.extras?.gameplayMode);
+    // A room is a joined game (RADIO-13's switch, radio.js).
+    return radioGameMode(page.extras?.gameplayMode, { multiplayer: !!page.roomJoined });
   }
 
   function vars() {
@@ -502,9 +504,14 @@ export function createComms(page) {
       panner.refDistance = patch.ramp[0];
       panner.maxDistance = patch.ramp[1];
       panner.rolloffFactor = 1;
-      // DirectSound's pan, not a head (`ds3d-pan.js`).
+      // DirectSound's pan, not a head (`ds3d-pan.js`). A 3D voice stands at
+      // its owner's origin (SND-30); the shout's owner is the speaker's
+      // soldier (RADIO-3, `BFSoldier::playVoice` 0x004f5c20), whose origin is
+      // a metre over the feet `position` carries (PHY-10). The 1.6 m this
+      // used was no engine number. A seated speaker's `position` is the
+      // hull's origin, not his seat's: that stays an approximation.
       standDs3dPanner(panner, listener.matrixWorld?.elements,
-                      position.x, position.y + 1.6, position.z);
+                      position.x, position.y + SOLDIER_ORIGIN_UP, position.z);
       gain.connect(panner);
     }
     (panner ?? gain).connect(listener.getInput());

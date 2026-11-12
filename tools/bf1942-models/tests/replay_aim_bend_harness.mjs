@@ -158,7 +158,26 @@ for (const [pitch, twist] of [[6, 0], [-5, 0], [0, 7.7], [10, -12], [-14, 15], [
   const rest = restForward(s);
   const bend = makeAimBend();
   bendTorso(s.torso, bend, s.group, { pitch: 40, twist: 0 }, true, null);
-  results.clamp = { max: gait.AIM_BEND_MAX_DEG, drawn: angleDeg(rest.fwd, torsoDir(s.torso, rest.local)) };
+  const drawn = angleDeg(rest.fwd, torsoDir(s.torso, rest.local));
+  // Lying: the template's lie pair, up 0 / down -6 of the negated aim
+  // (ANIM-23): an aim up of 3 draws 7.5, of 10 is held at 6 (15 drawn), and
+  // an aim down draws nothing.
+  const lying = pitch => {
+    const p = soldier();
+    const pr = restForward(p);
+    bendTorso(p.torso, makeAimBend(), p.group, { pitch, twist: 0 }, true, null, 'prone');
+    return angleDeg(pr.fwd, torsoDir(p.torso, pr.local));
+  };
+  results.clamp = {
+    max: gait.AIM_BEND_MAX_DEG, drawn,
+    proneUp3: lying(3), proneUp10: lying(10), proneDown10: lying(-10),
+    standDown40: (() => {
+      const p = soldier();
+      const pr = restForward(p);
+      bendTorso(p.torso, makeAimBend(), p.group, { pitch: -40, twist: 0 }, true, null, 'crouch');
+      return angleDeg(pr.fwd, torsoDir(p.torso, pr.local));
+    })(),
+  };
 }
 
 // --- the fallback rig through setGaitPose ----------------------------------

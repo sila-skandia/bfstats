@@ -176,6 +176,20 @@ function landed({ deg, kind = 'object', owner = 2, hook = true, angleMod = undef
   const record = guns.hits[0];
   return { incidence: round4(record.incidence), damage: round4(record.damage) };
 }
+// A struck face whose material id the table does not define reads as
+// material 0 (DMG-1's retry on id 0), the same lookup crash-damage.js uses.
+{
+  const guns = {
+    attackerMaterial: () => 200,
+    materials: { 0: { attGroup: 0, defGroup: 7, damage: 1 },
+                 200: { attGroup: 200, defGroup: 200, damage: 100 } },
+    modifiers: { 200: { 7: 0.5 } },
+    damageEffects: null, effects: null, impactMarkers: false, hits: [],
+  };
+  impact(guns, { node: { name: 'gun' }, owner: 9 }, { template: 'x' },
+         { kind: 'object', owner: 2, material: 999, x: 0, y: 0, z: 0, nx: 0, ny: 0, nz: 1, t: 10 }, null, 10);
+  out.unknownMaterial = { defGroup: guns.hits[0].defGroup, damage: round4(guns.hits[0].damage) };
+}
 out.angle = {
   tankSquare: landed({ deg: 0 }),
   tank60: landed({ deg: 60 }),

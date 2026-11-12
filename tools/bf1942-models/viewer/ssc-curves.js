@@ -6,18 +6,34 @@
 export const clamp01 = (v) => (v < 0 ? 0 : v > 1 ? 1 : v);
 
 /**
- * `Ramp p1 p2 p3 p4`: `p3` at or below p1, `p3 + p4` at or above p2, linear
- * between. `p4` is signed, so a fade-out is a negative delta rather than a
- * reversed pair, and `p1 == p2` is a step. Six-param ramps occur (573 in
- * vanilla); the surplus pair's meaning is unresolved and treating them as
- * four-param reproduces the audible design, so it is ignored here too.
+ * `Ramp p1 p2 p3 p4 [p5 p6]`, as the client evaluates it (BF1942.exe Ramp
+ * ctor 0x00803a10, `getModulation` 0x00803aa0; ledger SSC-7). `p3` at or
+ * below p1, `p3 + p4` at or above p2, and between them a curve that p5 picks
+ * and p6 shapes (the ctor's defaults: p5 0, p6 1.0):
+ *
+ *   p5 0  linear  p3 + p4 * (x - p1) / (p2 - p1)
+ *   p5 1  quick   p3 + p4 * (1 - ((x - p2) / (p1 - p2)) ^ p6)   (0x00803a70)
+ *   p5 2  slow    p3 + p4 * ((x - p1) / (p2 - p1)) ^ p6         (0x00803b33)
+ *   other         p3 + p3: the branch adds the local holding p3 to itself
+ *                 (0x00803b85), not to a shape value
+ *
+ * p5 is truncated (ftol 0x00804af0). A p2 under p1 is raised to p1 first
+ * (0x00803aaf), and `p1 == p2` is a step that is already up AT p1
+ * (0x00803ae2..0x00803af9). `p4` is signed, so a fade-out is a negative
+ * delta. Most six-param ramps are engine `Pitch` curves (shape 2).
  */
 function rampAt(params, x) {
-  const [a = 0, b = 0, base = 0, delta = 0] = params;
-  if (x <= a) return base;
-  if (x >= b) return base + delta;
-  const span = b - a;
-  return span <= 0 ? base + delta : base + delta * ((x - a) / span);
+  const [a = 0, b0 = 0, base = 0, delta = 0, shape = 0, exp = 1] = params;
+  const b = b0 < a ? a : b0;
+  if (x > a) {
+    if (!(x < b)) return base + delta;
+    const s = Math.trunc(shape);
+    if (s === 0) return base + delta * ((x - a) / (b - a));
+    if (s === 1) return base + delta * (1 - ((x - b) / (a - b)) ** exp);
+    if (s === 2) return base + delta * ((x - a) / (b - a)) ** exp;
+    return base + base;
+  }
+  return a === b && x >= a ? base + delta : base;
 }
 
 /** `Linear p1 p2`: `p1 + p2 * x`. With source Default and p2 = 0, a constant. */

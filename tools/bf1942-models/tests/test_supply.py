@@ -291,11 +291,25 @@ class SupplyDepotTests(unittest.TestCase):
         lies there, then leaves the field with it."""
         r = self.results["roundDepot"]
         self.assertEqual(50, r["before"])
-        self.assertEqual(60, r["during"])          # 10 cycles of 1 HP in 5 s
+        # 0.25 s steps: a cycle needs MORE than 0.5 s (`handleUpdate`
+        # 0x083240f0), so every third step, 6 cycles of 1 HP in 5 s (it read
+        # 10 while the gate was `>=`).
+        self.assertEqual(56, r["during"])
         self.assertEqual(r["during"], r["after"])
         self.assertEqual(0, r["depotsAfter"])
         self.assertFalse(r["transientLeft"])
 
+
+    def test_a_cycle_needs_more_than_half_a_second_from_its_phase(self) -> None:
+        # `handleUpdate` 0x083240f0: `testb $0x45; je` runs `update` only when
+        # the elapsed time is strictly over 0.5 (+0x1e8); the ctor stamps the
+        # last cycle at (rand()%30)/30 (SUP-4).
+        g = self.results["gate"]
+        self.assertTrue(g["atHalf"])
+        self.assertTrue(g["past"])
+        self.assertAlmostEqual(g["phase47"], 17 / 30)
+        # 17/30 + 0.5 = 32/30: the 33rd 1/30 s step is the first past it.
+        self.assertEqual(33, g["lateFirstStep"])
 
 if __name__ == "__main__":
     unittest.main()

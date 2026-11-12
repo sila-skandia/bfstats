@@ -832,4 +832,33 @@ const COAX_FAR = twin('brownmlp.mp3', { priority: 8, band: [1, 1, 0, 1] });
     + (levels.length ? '' : ' (none extracted — viewer/maps is not in the tree)'));
 }
 
+// Doppler shifts a LOOPING sample that does not say `dopplerOff`, and nothing
+// else: the client gives a sample its object's velocity only when its `loop`
+// byte is set (0x0080218b..0x0080219e, ledger SND-45).
+{
+  const mk = (file, loop, doppler) => ({
+    file, loop, volume: 1, modulators: [],
+    randomStartPitch: [0, 0], relativePosition: [0, 0, 0], doppler,
+  });
+  const layers = [mk('loopd.wav', true, true), mk('loopoff.wav', true, false), mk('shot.wav', false, true)];
+  const ctx = stubCtx();
+  const buffers = new Map(layers.map(l => [l.file, fakeBuffer()]));
+  const audio = new EngineAudio({ template: 'T', engine: 'E', layers }, layers, buffers, fakeListener(ctx));
+  audio.start();
+  audio.setMaster(1);
+  // Approach the listener at 30 m/s.
+  for (const z of [100, 99, 98]) {
+    audio.update({
+      dt: 1 / 30, rpm: 0, speed: 30, acceleration: 0, diveAngle: 0,
+      position: { x: 0, y: 0, z },
+      quaternion: { x: 0, y: 0, z: 0, w: 1 },
+      listenerPosition: { x: 0, y: 0, z: -100 },
+    });
+  }
+  const rate = file => audio.snapshot().layers.find(l => l.file === file).playbackRate;
+  assert.ok(rate('loopd.wav') > 1.001, `an approaching loop is shifted up (${rate('loopd.wav')})`);
+  assert.ok(Math.abs(rate('loopoff.wav') - 1) < 1e-9, `dopplerOff loop is not shifted (${rate('loopoff.wav')})`);
+  assert.ok(Math.abs(rate('shot.wav') - 1) < 1e-9, `a one-shot is never shifted (${rate('shot.wav')})`);
+}
+
 console.log('test_engine_audio_default.mjs: ok');

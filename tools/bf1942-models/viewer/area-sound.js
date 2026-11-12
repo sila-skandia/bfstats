@@ -121,7 +121,8 @@ export function emitterAt(area, ear) {
 }
 
 /**
- * One voice per sample: of every emitter in a same-file group, the one the
+ * DELIBERATE, not retail (every AreaObject runs its own sound in the client):
+ * one voice per sample: of every emitter in a same-file group, the one the
  * listener hears loudest. Several copies of one loop audible at once through
  * separate panners read as a hall echo, not louder surf (the one-voice-per-
  * sample rule, features/bf1942-3d-models/map-sounds.md), so the group plays

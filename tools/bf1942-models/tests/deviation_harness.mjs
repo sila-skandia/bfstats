@@ -5,7 +5,7 @@
 // **the shipped data**, read back out of the glbs' document extras rather than
 // invented for the test: the Thompson's is the block every assertion leans on,
 // the K98Sniper's is the degenerate shape (no floor, no fire, no mod), the AT
-// family's is the other vocabulary entirely. If one of them stops matching
+// family's is the other vocabulary entirely, which the engine ignores (DEV-8). If one of them stops matching
 // `models/<Name>.glb`, the extractor changed and this file is lying about
 // what it tests.
 //
@@ -17,8 +17,8 @@
 // the turn terms are analog in the look input; miscDev is the jump channel;
 // firing blooms +b per shot to cap a and decays c/M per tick; and aiming
 // changes NOTHING. The clock (TICK_HZ) is the engine's fixed 30 Hz simulation
-// tick; what stays approximate is only the AT family's floor-and-lid, marked
-// OPEN in the module.
+// tick; the AT family's `minDeviation` / `maxDeviation` are not engine words
+// (ledger DEV-8): they floor and lid nothing.
 
 import {
   DeviationModel, STANCE_INDEX, TICK_HZ, INPUT_DEADZONE,
@@ -41,9 +41,10 @@ const SNIPER = {
   misc: [2.5, 2.5, 0.1],
 };
 
-// The AT/thrown vocabulary (`models/Bazooka.glb`): a floor and a lid,
-// combine rule OPEN. The speed block is synthetic, here only to prove the
-// lid clamps what the additive terms would exceed.
+// The AT/thrown vocabulary (`models/Bazooka.glb`): `minDeviation` and
+// `maxDeviation`, neither in either binary's strings (DEV-8). The speed block
+// is synthetic, here only to prove the would-be lid clamps nothing: the cone
+// reaches the channel's own cap, as `updateDeviation`'s unclamped sum does.
 const CAPPED = {
   minDeviation: 0.0,
   maxDeviation: 0.5,
@@ -271,8 +272,9 @@ results.sniper = {
 };
 results.capped = {
   still: settle(CAPPED, {}),
-  moving: settle(CAPPED, { throttle: 1 }),   // channel cap 2.0, lid 0.5
+  moving: settle(CAPPED, { throttle: 1 }),   // channel cap 2.0; maxDeviation 0.5 ignored
   lid: CAPPED.maxDeviation,
+  channelCap: CAPPED.speed[0],
 };
 results.none = {
   still: settle(null, {}),

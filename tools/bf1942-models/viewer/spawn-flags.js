@@ -539,6 +539,22 @@ export function pickSpawn(flag, index = 0, {
   ai = false, seatFor = null, outsideArea = null, avoid = null,
 } = {}) {
   let pool = spawnPool(flag, { enter, ai, seatFor });
+  // `BFSpawnPoint::getActive` (0x08163dd0, SPAWN-5) refuses a point outside
+  // the active combat area in x/z (the four `fucompp` at 0x08163efe..
+  // 0x08163f42, the terrain's extent when no area is declared) or, inside
+  // it, on `materialToGiveDamage` (the terrain material against
+  // `IGameServer vt+0x2c0`, 0x0816406c..0x08164086), and `getSpawnPoint`
+  // (0x08166f60) draws only among the points it passes. So such a point is
+  // never a candidate, a carrier's included at its live position
+  // (`hull-bodies.js` `rebaseDeckSpawns` writes it in place), and a flag
+  // whose every point is out spawns nobody: `spawnPlayer` refuses. FHSWEurope
+  // stashuv_area's `russianhq1` (1240 m west of its flag on material 7, a
+  // dropped digit in the mod's own singleplayer/SoldierSpawns.con) is the
+  // case that found it.
+  if (outsideArea) {
+    pool = pool.filter(spawn => !spawn.position
+      || !outsideArea(spawn.position[0], spawn.position[2]));
+  }
   if (!pool.length) return null;
   // Points a generated bot layer found no walking route from (a windmill's
   // top, features/bot-map-generation): a bot is not stood on one while the
@@ -573,21 +589,6 @@ export function pickSpawn(flag, index = 0, {
     // building's own origin `OnlyForAI`. The AI point is indoors under a
     // 2.25 m ceiling. A human is never offered it; a bot is.
     if (spawn.onlyForAI && !ai) return false;
-    // A point standing where the combat area deals damage — outside the
-    // declared rectangle, or on the out-of-bounds terrain material (CA-5) —
-    // is picked only when the flag offers nothing else. The engine offers it
-    // and draws `rand() %` over the whole pool (SPAWNGRP-10), so retail lands
-    // on such a point one life in N; this page's walk is deterministic, and
-    // on FHSWEurope's stashuv_area it started EVERY team-2 CoOp life on
-    // `russianhq1` — the mod's own singleplayer/SoldierSpawns.con puts that
-    // one point at 144.53/347.85, 1240 m west of its flag on material 7, a
-    // dropped digit beside its five siblings at x 1344..1467 — so every
-    // Soviet died of out-of-area damage ~16 s in (the audit read it as five
-    // `kit.reload-never-completes`: death stops `footFire`, and with it the
-    // reload clock). Not applied to a vehicle-borne flag, whose authored
-    // point positions are not where the carrier now stands.
-    if (!flag?.vehicle && outsideArea && spawn.position
-        && outsideArea(spawn.position[0], spawn.position[2])) return false;
     if (flag?.vehicle || !groundAt || !spawn.position) return true;
     const ground = groundAt(spawn.position[0], spawn.position[2]);
     return !Number.isFinite(ground) || spawn.position[1] - ground < airborne;

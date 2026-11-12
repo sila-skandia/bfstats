@@ -36,8 +36,8 @@
 //      `setAnimationState` calls, `Lb_StartSwim` (`0x086d299e`, `0x082823f7`)
 //      and `Ub_StartSwim` (`0x086d29ab`, `0x08282426`), and nothing else: the
 //      entering tick writes no position.
-//   5. already swimming: leave if `depth <= 0.35` (`0x086d29b8`, tested at
-//      `0x082822a8`) — `Lb_EndSwim` (`0x086d2988`) and `Ub_EndSwim`
+//   5. already swimming: leave if `depth < 0.35`, strictly (`0x086d29b8`,
+//      tested at `0x082822a8`: the `je` at `0x082822ba` takes only 0.35 > depth) — `Lb_EndSwim` (`0x086d2988`) and `Ub_EndSwim`
 //      (`0x086d2993`) — else, while `surfaceY > pos.y` (`0x082822bc`), TELEPORT
 //      the origin to `surfaceY - 0.4` (`0x086c4f70`, `0x082822d4`, written
 //      through `vtbl+0x3c`, `setAbsolutePosition`).
@@ -113,7 +113,7 @@ export const ASM_IS_CLIMBING = 0x10;
 
 /** Enter the swim state above this much water over the ORIGIN (`0x086d29bc`). */
 export const SWIM_ENTER_DEPTH = 0.43;
-/** And leave it at or below this much (`0x086d29b8`). The hysteresis is the
+/** And leave it below this much, strictly (`0x086d29b8`). The hysteresis is the
  *  engine's: 8 cm of it, which is what stops a man in the surf flickering. */
 export const SWIM_LEAVE_DEPTH = 0.35;
 /** How far below the surface a swimmer's ORIGIN is pinned (`0x086c4f70`). */
@@ -137,6 +137,13 @@ export const SWIM_FEET_DRAFT = SWIM_FLOAT_DRAFT + CHARACTER_HEIGHT;
  * gate that the ordinary `0.75 * vCmd` locomotion force is under —
  * `0x08274a03`'s `jne` lands past the 0.75 block and before the swim test at
  * `0x08274b5f`. A swimmer is accelerated every tick, in contact or not.
+ *
+ * And it is **in addition to** the 0.75 block, not instead of it: nothing
+ * between the two skips the 0.75 arm (`0x08274a09`, `0x086ba8cc`) for a
+ * swimmer, and that arm's gate is always open (PHY-34), so a swimmer is pushed
+ * at `0.75 * vCmd + 5.0 * vCmd` = 5.75 * vCmd every tick (`0x08274a09` then
+ * `0x08274b6f`, each handed to `addAccelerationAtRelativePosition`). `gain`
+ * below is the swim arm's 5.0 alone; the body adds the 0.75 itself.
  */
 export const SWIM_ACCEL_GAIN = 5.0;
 
@@ -233,10 +240,18 @@ export const MATERIAL_WATER = 1;
  * else armor[0x11] = 1;                                   // 0x081736f3
  * ```
  *
- * A vehicle that touches water is wet. A **soldier** is wet only while the
- * `c_AsmIsSwimming` flag is up — so wading never starts the clock, and leaving
- * the water resets it, because `Armor::update`'s own `!inWater` arm puts the
- * timer back to the full delay every tick he is dry.
+ * A vehicle that touches water is wet. For a **soldier** that latch is the
+ * `c_AsmIsSwimming` flag, but it is not the only writer of the wet byte the
+ * timer reads (`+0x10`, tested at `0x08173150`). `Armor::update` itself sets
+ * it whenever the object's ORIGIN is under the water surface at its (x, z):
+ * `water > pos.y - deepWaterLevel` (`0x08172faa`..`0x08172fc8`), with
+ * `deepWaterLevel` (`+0x144`) 0 unless a `.con` sets it (the constructor's
+ * zero at `0x08172354`; HP-21 reads the same test for hulls). So a soldier is
+ * wet while swimming OR while water stands over his origin, a metre over his
+ * feet: deep wading before the swim state takes him, and the 0..0.35 m band
+ * he walks out through, both run the clock. Only a tick with neither resets
+ * it to the full delay (`Armor::update`'s `!inWater` arm). `soldier.js` feeds
+ * `swimming || depth > 0`, `depth` being `swimDepth` over the origin.
  *
  * The numbers are `Objects/Soldiers/Common/CommonSoldierData.inc`, which every
  * vanilla soldier includes:
@@ -642,13 +657,13 @@ export class SwimState {
       return null;
     }
     this.swimTime += dt;
-    if (depth <= SWIM_LEAVE_DEPTH) {
+    if (depth < SWIM_LEAVE_DEPTH) {
       if (this.family !== 'swimEnd') {
         this.family = 'swimEnd';
         this.oneShotLeft = SWIM_END_SECONDS;
       }
       // Still `c_AsmIsSwimming` — `Lb_EndSwim` declares it — but out of the
-      // water, so no pin: the engine's pin is inside the `depth > 0.35` arm.
+      // water, so no pin: the engine's pin is inside the `depth >= 0.35` arm.
       return null;
     }
     if (!this.oneShot) this.family = swimStroke(dead ? 0 : throttle);

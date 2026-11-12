@@ -8,16 +8,23 @@
 // The laws it pins are `netcode.js`'s (the engine's 104-bit record, the
 // 20 Hz cadence, the sequence discipline) and the prediction law of
 // `subsystems/netcode.md` §4: the client predicts its own soldier from the
-// same action bytes it sends, and remote players are ghost state applied as
-// the engine applied it — a single current state at ~0.1 s. The lerp between
-// the last two snapshots is a RENDERING choice (netcode.md §6 makes that
-// explicit), kept here so the page's renderer stays dumb.
+// same action bytes it sends, and remote players are drawn the way the
+// retail client draws every object it does not control (ledger P-2, P-6..P-9):
+// from a 16-snapshot history stamped with the snapshot's own server tick, at
+// the client's tick clock less `interpolationTime` (100 ms), the embracing
+// pair interpolated, run on past the newest for up to `extrapolationTime`
+// (1.2 s). The law's constants and clock are `ghost-draw.js`'s, shared with the
+// relay seam (`net-relay.js`), and kept here so the page's renderer stays dumb.
 
 import {
   MSG_JOIN, MSG_INPUT, MSG_PING, MSG_LEAVE, MSG_ACTION,
   MSG_HELLO, MSG_JOIN_SNAPSHOT, MSG_SNAPSHOT, MSG_EVENT, MSG_CLOSED, MSG_PONG,
   encodeInputFrame, decodeSnapshot, MAX_PLAYERS,
 } from './netcode.js';
+import {
+  TRACK_SAMPLES, SERVER_TICK_HZ, RENDER_LOOKBACK_S, TRACK_MAX_GAP, EXTRAPOLATION_S,
+  clientClockShift, followShift, extrapolateQ,
+} from './ghost-draw.js';
 
 /**
  * The transport the page hands in: anything that looks like the browser's
@@ -31,8 +38,14 @@ export function createRoomClient({ ws, now = null }) {
   /** The wire's per-tick seq: strictly increasing, starts at 1 (the World's
    *  `setInput(..., seq)` dedupes on `seq > lastSeen`). */
   let seq = 0;
-  /** Snapshot history for render-space lerp: {at, snap} pairs, newest last. */
+  /** Snapshot history: {at, snap}, newest last, at most TRACK_SAMPLES (the
+   *  engine's 16-record ring, P-3). `at` is the snapshot's server tick in
+   *  seconds (`tick / 30`), never its arrival time (P-6). */
   let history = [];
+  /** Page seconds to add to reach the client's tick clock (P-6: the newest
+   *  snapshot's tick plus this page's words still in flight), filtered as the
+   *  relay filters it (`followShift`). Null before the first snapshot. */
+  let clockShift = null;
   /** slot -> {name, team} — the roster from HELLO plus join/leave rows. */
   const roster = new Map();
   /** The last decoded MSG_EVENT row seen; kept for the page's feed. */
@@ -142,14 +155,21 @@ export function createRoomClient({ ws, now = null }) {
   function applySnapshot(body) {
     if (out.state !== 'joined') return;
     const decoded = decodeSnapshot(fullView(body));
-    const at = now?.() ?? 0;
+    const arrived = now?.() ?? 0;
+    const at = Number.isFinite(decoded.tick) ? decoded.tick / SERVER_TICK_HZ : arrived / 1000;
+    // A round restart or a new room resets the tick: start the ring again.
+    if (history.length && at < history[history.length - 1].at) history = [];
     history.push({ at, snap: decoded });
-    // The engine's ghost cadence: one current state per ~0.1 s. History rows
-    // older than half a second are dead weight for a 20 Hz lerp window.
-    while (history.length > 2 && history[history.length - 3].at < at - 500) {
-      history.shift();
-    }
-    if (out.onsnapshot) out.onsnapshot(decoded, at);
+    if (history.length > TRACK_SAMPLES) history.splice(0, history.length - TRACK_SAMPLES);
+    // The clock retail draws remotes by (P-6): the block's tick plus the words
+    // this page has made that the authority has not yet run.
+    const own = playerIn(decoded, out.slot);
+    const acked = Number.isInteger(own?.ack) && own.ack > 0 ? own.ack : seq;
+    const sample = clientClockShift({
+      tick: decoded.tick, acked, sent: seq, pageNow: arrived / 1000,
+    });
+    clockShift = followShift(clockShift, sample ?? (at - arrived / 1000));
+    if (out.onsnapshot) out.onsnapshot(decoded, arrived);
   }
 
   function onEvent(row) {
@@ -292,81 +312,112 @@ export function createRoomClient({ ws, now = null }) {
   out.nameOf = slot => roster.get(slot)?.name ?? `Player ${slot}`;
   out.teamOf = slot => roster.get(slot)?.team ?? 0;
 
-  /**
- * Render-side lookback: the lerp window is `[t-100ms, t]` sampled at
- * `t-50ms` — one ghost interval behind, half the engine's 0.1 s cadence —
- * so a 60 fps page reads mid-window between two arrivals instead of
- * snapping to the newest the moment it lands. All a rendering choice
- * (netcode.md §6); the wire and the sim never see it.
- */
-const RENDER_LOOKBACK_MS = 50;
+  /** The render time for page time `atMs` (default now): the client's tick
+   *  clock less interpolationTime, in the snapshots' own seconds. */
+  function drawTime(atMs) {
+    const pageS = (atMs ?? now?.() ?? 0) / 1000;
+    return pageS + (clockShift ?? 0) - RENDER_LOOKBACK_S;
+  }
 
-function lerped(slot, at) {
+  /**
+   * One object's drawn state at render time `t` from the history, retail's
+   * `predict` (SimpleObjectNetworkable 0x08237a90, BFSoldierNetworkable
+   * 0x08222e50, prediction mode 1): `get(snap)` picks the object's row out of
+   * a snapshot, `mix(a, b, k, extrapolating)` blends two rows. Before the
+   * oldest, the oldest; between two, the embracing pair when 0 < gap < 0.5 s
+   * (a wider gap is a different appearance: the newer whole); past the
+   * newest, the last pair carried on by `(t - newest) / gap` for at most 1.2 s
+   * (`extrapolationTime`), then the newest held.
+   */
+  function sampleAt(get, mix, t) {
+    const h = [];
+    for (const e of history) {
+      const row = get(e.snap);
+      if (row) h.push({ at: e.at, row });
+    }
+    if (!h.length) return null;
+    const newest = h[h.length - 1];
+    if (h.length === 1) return newest.row;
+    if (t >= newest.at) {
+      const a = h[h.length - 2];
+      const gap = newest.at - a.at, past = t - newest.at;
+      if (!(gap > 0) || past > EXTRAPOLATION_S) return newest.row;
+      return mix(a.row, newest.row, 1 + past / gap, true);
+    }
+    if (t <= h[0].at) return h[0].row;
+    let i = h.length - 1;
+    while (i > 0 && h[i - 1].at > t) i--;
+    const a = h[i - 1], b = h[i];
+    const gap = b.at - a.at;
+    if (!(gap > 0 && gap < TRACK_MAX_GAP)) return b.row;
+    return mix(a.row, b.row, (t - a.at) / gap, false);
+  }
+
+  function lerped(slot, at) {
     if (history.length === 0) return null;
-    const [a, b] = sliceWindow(history);
-    const t = (at ?? now?.() ?? 0) - RENDER_LOOKBACK_MS;
-    const k = blend(a, b, t);
-    const pa = playerIn(a.snap, slot);
-    const pb = playerIn(b.snap, slot);
-    if (pa && pb) return blendPlayer(pa, pb, k);
-    return pa ?? pb ?? null;
+    const newest = playerIn(history[history.length - 1].snap, slot);
+    const drawn = sampleAt(snap => playerIn(snap, slot), blendPlayer, drawTime(at));
+    if (!drawn) return null;
+    // P-7: a soldier's states, state bits and held item are the NEWEST
+    // record's whatever the render time; only his transform and aim ride the
+    // clock.
+    return newest ? { ...drawn, ...discreteOf(newest) } : drawn;
   }
 
   function lerpedVehicle(id, at) {
     if (history.length === 0) return null;
-    const [a, b] = sliceWindow(history);
-    const t = (at ?? now?.() ?? 0) - RENDER_LOOKBACK_MS;
-    const k = blend(a, b, t);
-    const va = a.snap.vehicles.find(v => v.id === id);
-    const vb = b.snap.vehicles.find(v => v.id === id);
-    if (va && vb) {
-      return {
-        id,
-        x: va.x + (vb.x - va.x) * k,
-        y: va.y + (vb.y - va.y) * k,
-        z: va.z + (vb.z - va.z) * k,
-        q: slerpQ(va.q, vb.q, k),
-        occupied: vb.occupied,
-      };
-    }
-    return va ?? vb ?? null;
-  }
-
-  /** The lerp window: the newest snapshot and its immediate predecessor,
-   *  both within the lookback (else the newest alone, at full weight). */
-  function sliceWindow(hist) {
-    if (hist.length === 1) return [hist[0], hist[0]];
-    const back = hist[hist.length - 1];
-    return [hist[hist.length - 2], back];
-  }
-
-  function blend(a, b, t) {
-    const span = b.at - a.at;
-    if (!(span > 0)) return 1;
-    return Math.max(0, Math.min(1, (t - a.at) / span));
+    const get = snap => snap?.vehicles?.find(v => v.id === id) ?? null;
+    const newest = get(history[history.length - 1].snap);
+    const v = sampleAt(get, (va, vb, k, past) => ({
+      id,
+      x: va.x + (vb.x - va.x) * k,
+      y: va.y + (vb.y - va.y) * k,
+      z: va.z + (vb.z - va.z) * k,
+      q: past ? extrapolateQ(va.q, vb.q, k - 1) : slerpQ(va.q, vb.q, k),
+      occupied: vb.occupied,
+    }), drawTime(at));
+    if (!v) return null;
+    return {
+      id, x: v.x, y: v.y, z: v.z, q: v.q,
+      occupied: (newest ?? v).occupied,
+    };
   }
 
   function playerIn(snap, slot) {
     return snap?.players?.find(p => p.slot === slot) ?? null;
   }
 
-  function blendPlayer(pa, pb, k) {
-    const lerp = (x, y) => (Number.isFinite(x) && Number.isFinite(y) ? x + (y - x) * k : Number.isFinite(x) ? x : Number.isFinite(y) ? y : NaN);
+  /** The fields P-7 takes from the newest record, not the clock. */
+  function discreteOf(p) {
     return {
-      team: pb.team ?? pa.team ?? 0,
-      alive: pb.alive,
-      seated: pb.seated,
-      crouch: pb.crouch,
-      prone: pb.prone,
-      swim: pb.swim ?? null,
+      team: p.team ?? 0,
+      alive: p.alive,
+      seated: p.seated,
+      crouch: p.crouch,
+      prone: p.prone,
+      swim: p.swim ?? null,
       // A blast's flight (`netcode.js` `FLIGHT_WIRE`), the newest word.
-      flight: pb.flight ?? null,
-      inVehicle: pb.inVehicle,
-      x: lerp(pa.x, pb.x), y: lerp(pa.y, pb.y), z: lerp(pa.z, pb.z),
-      yaw: lerp(pa.yaw, pb.yaw), pitch: lerp(pa.pitch, pb.pitch),
+      flight: p.flight ?? null,
+      inVehicle: p.inVehicle,
+      hp: p.hp ?? null,
+      vehicleId: p.vehicleId ?? 0,
+      seatIndex: p.seatIndex ?? null,
+    };
+  }
+
+  /** Two rows of one player blended at `k`. Past the newest (`past`) the
+   *  position runs on and the facing and aim are held at the newest, as
+   *  `BFSoldierNetworkable::predict` holds a soldier's rotation (P-7). */
+  function blendPlayer(pa, pb, k, past = false) {
+    const lerp = (x, y) => (Number.isFinite(x) && Number.isFinite(y) ? x + (y - x) * k : Number.isFinite(x) ? x : Number.isFinite(y) ? y : NaN);
+    const hold = (x, y) => (Number.isFinite(y) ? y : x);
+    return {
+      ...discreteOf(pb),
+      team: pb.team ?? pa.team ?? 0,
       hp: pb.hp ?? pa.hp ?? null,
-      vehicleId: pb.vehicleId ?? 0,
-      seatIndex: pb.seatIndex ?? null,
+      x: lerp(pa.x, pb.x), y: lerp(pa.y, pb.y), z: lerp(pa.z, pb.z),
+      yaw: past ? hold(pa.yaw, pb.yaw) : lerp(pa.yaw, pb.yaw),
+      pitch: past ? hold(pa.pitch, pb.pitch) : lerp(pa.pitch, pb.pitch),
     };
   }
 
@@ -391,9 +442,10 @@ function rowFrom(body) {
   }
 }
 
-/** Spherical lerp over a unit quaternion, shortest path — the render-side
- *  smoothing the engine never shipped (netcode.md §6). Fallbacks: identity
- *  when either side is degenerate. */
+/** Spherical lerp over a unit quaternion, shortest path: the embracing pair's
+ *  rotation as `SimpleObjectNetworkable::predict` (0x08237a90) draws it with
+ *  `BaseQuaternion::slerp` (P-2). Fallbacks: identity when either side is
+ *  degenerate. */
 export function slerpQ(a, b, k) {
   if (!a || !b || a.length !== 4 || b.length !== 4) return a ? [...a] : b ? [...b] : [0, 0, 0, 1];
   let [ax, ay, az, aw] = a;

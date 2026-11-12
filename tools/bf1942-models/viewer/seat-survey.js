@@ -125,16 +125,17 @@ export function turretPeerNodes(seat, axisName) {
  * used to.
  *
  * `order` lists seat ids in the order their PlayerControlObject node is first
- * seen (root always first). SEAT-22/23 (verify-r5.md) confirm the real engine
- * builds a `position id -> seat` map once per vehicle and switches seats with
- * `c_PIMenuSelect1..9` -> position 0..8, but the *position* integer itself is
- * assigned by client-side helpers this data does not expose. Declaration
- * order is the approximation: it reproduces the one pair the report checked
- * against real data exactly (Sherman: root/driver = position 0 = key 1,
- * `shermanBrowning_PCO1` = position 1 = key 2, SEAT-24), and generalises the
- * same way to M3A1 and the ship gun mounts. OPEN (SEAT-22): whether a vehicle
- * whose `.con` declares seats in a different order than the node tree walks
- * them would disagree with the real position map.
+ * seen (root always first). The engine builds a `position id -> seat` map
+ * once per vehicle and switches seats with `c_PIMenuSelect1..9` -> position
+ * 0..8 (SEAT-7). The positions themselves are SEAT-34's: `postInitPcoId`
+ * (lnxded 0x0831c7c0) files each PCO under its template's `setPcoId`, and
+ * gives the rest the lowest free numbers in a breadth-first walk from the
+ * root. This depth-first first sighting gives the same numbers on all 126
+ * multi-seat roots of vanilla, XPack1 and XPack2 (SEAT-34's census; the lab's
+ * M3A1 keys 1..6 agree). It is not that rule: the extractor does not carry
+ * `setPcoId` (`con.py` has no reader for the word), so a mod vehicle that
+ * writes one, or whose depth-first and breadth-first orders differ, can
+ * number its keys differently from retail until it does.
  */
 export function surveyVehicle(root) {
   const rootId = root.userData?.control || root.name || 'vehicle';

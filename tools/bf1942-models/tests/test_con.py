@@ -270,6 +270,56 @@ ObjectTemplate.setInputToPitch c_PIMouseLookY
         self.assertEqual(15.0, axes["yaw"]["continuousRotation"])
         self.assertNotIn("continuousRotation", axes["pitch"])
 
+    def test_a_short_rotation_vector_reads_as_the_console_reads_it(self) -> None:
+        # CON-16: `setMaxSpeed 40/0` is 40/0/0 (the last component read
+        # repeats), not a parse error that dropped the word: bf1918's
+        # `autocarmg_TopMGYawer` lost its traverse to that until 2026-11-12.
+        library = ObjectLibrary()
+        library.add_con(
+            "Objects/Vehicles/Test/Objects.con",
+            """
+ObjectTemplate.create RotationalBundle TestTopMG
+ObjectTemplate.setMaxSpeed 40/0
+ObjectTemplate.setAcceleration 1000/0/0
+ObjectTemplate.setInputToYaw c_PIMouseLookX
+""",
+        )
+        yaw = library.object("TestTopMG").rig()["axes"]["yaw"]
+        self.assertEqual(40.0, yaw["maxSpeed"])
+        self.assertEqual(1000.0, yaw["acceleration"])
+
+    def test_an_omitted_servo_word_is_the_template_default(self) -> None:
+        # GUN-2 / GUN-20: `RotationalBundleTemplate`'s ctor (lnxded
+        # 0x081d922b / 0x081d923c) gives every component maxSpeed 1.0 and
+        # acceleration 0.1, for each kind built on it, Engine included; an
+        # authored 0 stays 0 and its acceleration is still emitted.
+        library = ObjectLibrary()
+        library.add_con(
+            "Objects/Vehicles/Test/Objects.con",
+            """
+ObjectTemplate.create RotationalBundle TestBare
+ObjectTemplate.setInputToYaw c_PIMouseLookX
+
+ObjectTemplate.create Engine TestEngine
+ObjectTemplate.setInputToYaw c_PIYaw
+ObjectTemplate.setAutomaticReset 1
+
+ObjectTemplate.create RotationalBundle TestZero
+ObjectTemplate.setMaxSpeed 0/100/0
+ObjectTemplate.setAcceleration 0/100/0
+ObjectTemplate.setInputToYaw c_PIYaw
+""",
+        )
+        bare = library.object("TestBare").rig()["axes"]["yaw"]
+        engine = library.object("TestEngine").rig()["axes"]["yaw"]
+        zero = library.object("TestZero").rig()["axes"]["yaw"]
+        self.assertEqual(1.0, bare["maxSpeed"])
+        self.assertAlmostEqual(0.1, bare["acceleration"])
+        self.assertEqual(1.0, engine["maxSpeed"])
+        self.assertAlmostEqual(0.1, engine["acceleration"])
+        self.assertEqual(0.0, zero["maxSpeed"])
+        self.assertEqual(0.0, zero["acceleration"])
+
     def test_the_two_player_control_object_hud_words_are_read(self) -> None:
         # VHUD-9 / VHUD-11, neither of which `con.py` had a hit for. The icon
         # position is ONE `x/y` token in 18,349 of 18,352 declarations across
@@ -1432,6 +1482,42 @@ ObjectTemplate.hasRestrictedExit 1
              "hpLostWhileUpSideDown": 5.0},
             library.object("Willy").physics(),
         )
+
+    def test_the_water_delay_and_deep_water_words_reach_the_armor_block(self) -> None:
+        """HP-5: `WaterDamageDelay` (template +0xc0) and the deep-water clock
+        (`damageFromDeepWater` +0x11c, `hpLostWhileDamageFromDeepWater` +0x118,
+        `deepWaterDamageDelay` +0x124, `deepWaterLevel` +0x120) ride the
+        `armor` extras `viewer/vehicle-damage.js` reads. BF1918 authors the
+        deep-water pair on 137 templates. An unwritten word stays absent, the
+        viewer's cue for the engine default."""
+        from bf42.assemble import armor_extras
+        library = self.library("""
+ObjectTemplate.create PlayerControlObject FT17
+ObjectTemplate.hasArmor 1
+ObjectTemplate.hitPoints 100
+ObjectTemplate.maxHitPoints 100
+ObjectTemplate.damageFromWater 1
+ObjectTemplate.WaterDamageDelay 20
+ObjectTemplate.damageFromDeepWater 1
+ObjectTemplate.hpLostWhileDamageFromDeepWater 7.5
+ObjectTemplate.deepWaterDamageDelay 2
+ObjectTemplate.deepWaterLevel 1.5
+
+ObjectTemplate.create PlayerControlObject Willy
+ObjectTemplate.hasArmor 1
+ObjectTemplate.hitPoints 50
+""", "Objects/Vehicles/Land/FT17/Objects.con")
+        armor = armor_extras(library.object("FT17"))
+        self.assertEqual(20.0, armor["waterDamageDelay"])
+        self.assertIs(True, armor["damageFromDeepWater"])
+        self.assertEqual(7.5, armor["hpLostWhileDamageFromDeepWater"])
+        self.assertEqual(2.0, armor["deepWaterDamageDelay"])
+        self.assertEqual(1.5, armor["deepWaterLevel"])
+        bare = armor_extras(library.object("Willy"))
+        for key in ("waterDamageDelay", "damageFromDeepWater",
+                    "hpLostWhileDamageFromDeepWater", "deepWaterDamageDelay",
+                    "deepWaterLevel"):
+            self.assertNotIn(key, bare)
 
     def test_aircraft_body_keeps_per_axis_inertia_ratios(self) -> None:
         # Corsair/Objects.con:12 against B17/Objects.con:13 — the ratios are

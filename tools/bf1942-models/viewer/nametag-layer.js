@@ -137,7 +137,12 @@ export function createNametagLayer(page) {
   /** HUD-18's aim pass: the keys of the players under the crosshair. A ray
    *  from a metre in front of the camera down its forward axis, the scope
    *  range long; the world (terrain, statics, hulls) stops it, a soldier's
-   *  body or an occupied hull before that names who is aimed at. */
+   *  body or an occupied hull before that names who is aimed at. That a
+   *  static stops it is retail's: the cast's `ObjectFlagPredicator(0x200)`
+   *  (client 0x0044186b) keeps objects carrying flag 0x200, which is
+   *  `hasCollisionPhysics` (COL-16), so the nearest colliding object wins and
+   *  a building's root names no player; terrain cancels a farther hit
+   *  (0x004419d7). */
   function aimed(list, scope) {
     const hit = new Set();
     page.camera.getWorldPosition(_eye);

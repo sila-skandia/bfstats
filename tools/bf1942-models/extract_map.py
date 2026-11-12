@@ -1317,7 +1317,8 @@ def extract_flag_sound(info: LevelInfo, objects: ArchivePool,
     if ramp:
         entry["nearDistance"], entry["farDistance"] = ramp[0], ramp[1]
         if len(ramp) >= 4:
-            entry["distanceVolume"] = [float(v) for v in ramp[:4]]
+            # Every param: p5/p6 are the curve and its exponent (SSC-7).
+            entry["distanceVolume"] = [float(v) for v in ramp[:6]]
     return entry
 
 

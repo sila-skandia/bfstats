@@ -14,8 +14,9 @@
 //    band's objects come from the environment grid through `SideFilter::
 //    predicate` 0x08533120: not the bot's side; a neutral only when it is a
 //    unit; inside the view distance.
-//  * Each candidate not yet in memory gets `n = clamp(round(30 * radius /
-//    distance), 1, 10)` rays from the eye to random sense points on its body
+//  * Each candidate not yet in memory gets `n = clamp(trunc(30 * radius /
+//    distance), 1, 10)` rays (truncated: the `fistpl` at 0x08522281 runs
+//    under a truncating control word, 0x08522272; Ghidra shows ROUND) from the eye to random sense points on its body
 //    (`pickSoldierRandomSensePosition`, env vtable +0x60), tested with
 //    `collideLineWithWorld` (+0x54); one clear ray spots it
 //    (`event_SpottedEnemyObject` 0x08523ae0, which also tells every bot in
@@ -132,7 +133,7 @@ export const DEAF_AFTER_FIRE = 3.0;
 export const SHOT_SOUND_WINDOW = 3.0;
 /** `aiTemplatePlugIn.setSoundSphereRadius 0.0 15.0` on the soldier. */
 export const SOLDIER_SOUND_RADIUS = 15.0;
-/** Rays per candidate: `clamp(round(30 * radius / distance), 1, 10)`. */
+/** Rays per candidate: `clamp(trunc(30 * radius / distance), 1, 10)` (ledger AI-33). */
 export const RAYS_PER_METRE_RADIUS = 30;
 export const RAYS_MAX = 10;
 /** A soldier's bounding radius as the AI object reports it (INVENTION: the
@@ -164,33 +165,11 @@ export function fromBodyFrame(yaw, r, f) {
   return [r * c + f * s, f * c - r * s];
 }
 
-/** `SCurve::init` 0x08658030: `SCurve::curveValues`, 101 floats. */
-export const SCURVE_TABLE = [
-  0.0, 0.00224938989, 0.00338781998, 0.00463052979, 0.00598675013, 0.00746650994, 0.00908064004,
-  0.0108407997, 0.0127597004, 0.0148508996, 0.0171288997, 0.0196096003, 0.0223098006, 0.0252474006,
-  0.0284416005, 0.0319131017, 0.0356835015, 0.0397756994, 0.0442142002, 0.0490242988, 0.0542327985,
-  0.0598676018, 0.0659573004, 0.0725317001, 0.0796212032, 0.0872564986, 0.0954684988, 0.104287997,
-  0.113744996, 0.123869002, 0.134688005, 0.146227002, 0.158509001, 0.171553999, 0.185376003,
-  0.199987993, 0.215393007, 0.231592, 0.248576, 0.266330004, 0.284830987, 0.304048002, 0.323940992,
-  0.344460994, 0.365550995, 0.387147993, 0.409179002, 0.431564987, 0.45422399, 0.477064997, 0.5,
-  0.52293402, 0.54577601, 0.568435013, 0.590821028, 0.612851977, 0.634449005, 0.655538976,
-  0.676059008, 0.695951998, 0.715167999, 0.733669996, 0.751424015, 0.768408, 0.784606993,
-  0.800011992, 0.814624012, 0.828445971, 0.841490984, 0.853772998, 0.86531198, 0.876130998,
-  0.886255026, 0.895712018, 0.904532015, 0.912743986, 0.920378983, 0.927468002, 0.93404299,
-  0.940132022, 0.945766985, 0.950976014, 0.95578599, 0.960223973, 0.964317024, 0.968087018,
-  0.971557975, 0.974753022, 0.977689981, 0.980390012, 0.982870996, 0.985149026, 0.987240016,
-  0.989158988, 0.990918994, 0.992533982, 0.994013011, 0.995369017, 0.996612012, 0.997750998, 1.0,
-];
-
-/** `SCurve::calculate` 0x08658420: the table at `trunc(100 x)`, blended. */
-export function sCurveExact(x) {
-  if (!(x < 1)) return 1;
-  if (!(x >= 0)) return 0;
-  const s = x * 100;
-  const i = Math.trunc(s);
-  const f = s - i;
-  return (1 - f) * SCURVE_TABLE[i] + f * SCURVE_TABLE[i + 1];
-}
+// `SCurve::init` 0x08658030's table and `SCurve::calculate` 0x08658420 live in
+// bot-behaviours.js with the Declein table (it imports nothing, so every
+// module can take both); re-exported here under the names they had.
+export { SCURVE_TABLE, sCurveExact } from './bot-behaviours.js';
+import { sCurveExact } from './bot-behaviours.js';
 
 /** A side's knowledge of an enemy object (`InformationKnown`). */
 export const INFORMATION = {
@@ -618,7 +597,7 @@ export class BotSenses {
     const skip = [this.selfOwner, this.unitOwnerOf?.(player) ?? -1];
     const hull = this._hullOwner(collider, player);
     if (hull >= 0) {
-      const n = Math.max(1, Math.min(RAYS_MAX, Math.round(RAYS_PER_METRE_RADIUS * hullRadius(collider, hull) / Math.max(dist, 0.1))));
+      const n = Math.max(1, Math.min(RAYS_MAX, Math.trunc(RAYS_PER_METRE_RADIUS * hullRadius(collider, hull) / Math.max(dist, 0.1))));
       for (let i = 0; i < n; i++) {
         if (i === 0 && n > 1) {
           if (lineClear(collider, eye, pos, skip)) return { local: null };
@@ -630,7 +609,7 @@ export class BotSenses {
       return null;
     }
     const radius = SOLDIER_RADIUS;
-    const n = Math.max(1, Math.min(RAYS_MAX, Math.round(RAYS_PER_METRE_RADIUS * radius / Math.max(dist, 0.1))));
+    const n = Math.max(1, Math.min(RAYS_MAX, Math.trunc(RAYS_PER_METRE_RADIUS * radius / Math.max(dist, 0.1))));
     const stance = player.soldier?.stance ?? 'stand';
     const top = stance === 'prone' ? 0.5 : stance === 'crouch' ? 1.1 : 1.7;
     const yaw = player.soldier?.yaw ?? 0;

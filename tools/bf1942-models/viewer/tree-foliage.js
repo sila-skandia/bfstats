@@ -56,9 +56,12 @@ const TRUNK_MATERIAL = /^trunk_\d+$/;
  *  `level-batching.js` leaves a `Mesh`. */
 export const TREE_PART = /^(sprite|trunk|branch)_\d+$/;
 const EIGHTH_TURN = Math.PI / 4;
-/** Width of the dissolve band as a fraction of `billboardDistance`, centred on
- *  it. Not an engine number: the engine cuts. 0.4 is the narrowest band that
- *  still reads as a fade at walking pace. */
+/** Width of the cross-fade band as a fraction of the swap distance D: the
+ *  band is [D - F, D) with F = D x TreeRenderer's `billboardFadeScale`
+ *  (+0x84, 0.5 from the constructor 0x0064ca30; ledger VID-1), read at
+ *  0x0064dd88 (`fmul [edi+0x84]`). Geometry alpha cos(pi/2 t), card alpha
+ *  sin(pi/2 t), the path `useNewBillboardFadeFunc` (+0x98, set to 1 by the
+ *  constructor at 0x0064cace) selects at 0x0064de67. */
 export const FADE_SPAN = 0.5;
 /** Where a tree turns into its card, as a fraction of the viewer's own
  *  swap (`billboardDistance`, unscaled). OPTIONS > VIDEO's GRAPHICS QUALITY
@@ -352,6 +355,27 @@ function setGeometryOpacity(tree, opacity) {
 
 const camPos = new THREE.Vector3();
 
+/** The render view's `getFieldOfView` for a three camera, in radians: the
+ *  vertical `fov` narrowed by `zoom` the way three's projection narrows it
+ *  (the same reading of the engine's lens `mesh-cull.js` `fovModifier` takes,
+ *  where `renderer.fieldOfView 1` is the 1 rad start). */
+export function viewFieldOfView(fovDeg, zoom = 1) {
+  const halfTan = Math.tan((fovDeg * Math.PI) / 360) / (zoom || 1);
+  return halfTan > 0 ? 2 * Math.atan(halfTan) : 1;
+}
+
+/** The distance a tree's swap is judged at (`TreeRenderer` draw,
+ *  0x0064ddbd..0x0064ddfe; Mac `TreeRenderer::drawTree`): the camera's
+ *  HORIZONTAL distance from the tree's origin, `sqrt(dx^2 + dz^2)` with no
+ *  height term, times the render view's field of view in radians (vt +0x18,
+ *  0x005b7cb0, `flds [+0x24]`: the raw FOV that `setFieldOfView` 0x005b7b40
+ *  stores, not the +0x1c modifier the mesh cull takes). A camera above a
+ *  forest keeps its trees whole; a zoomed lens keeps them whole further out.
+ *  `scale` is the page's `billboardDistanceScale` over HIGH's (ledger VID-1). */
+export function billboardJudgedDistance(dx, dz, fovRad = 1, scale = 1) {
+  return Math.hypot(dx, dz) * fovRad / (scale > 0 ? scale : 1);
+}
+
 function installHook(scene, state) {
   if (scene.userData.treeFoliage) {
     scene.userData.treeFoliage.state = state;
@@ -365,12 +389,12 @@ function installHook(scene, state) {
     const trees = hook.state?.trees;
     if (!trees?.length) return;
     camPos.setFromMatrixPosition(camera.matrixWorld);
-    const inv = 1 / distanceScale;
+    const fov = camera.isPerspectiveCamera ? viewFieldOfView(camera.fov, camera.zoom) : 1;
     for (const tree of trees) {
       const e = tree.group.matrixWorld.elements;
-      const dx = e[12] - camPos.x, dy = e[13] - camPos.y, dz = e[14] - camPos.z;
-      // The distance against the band at the page's scale, as the band over it.
-      const d = Math.sqrt(dx * dx + dy * dy + dz * dz) * inv;
+      // Horizontal distance times the view's FOV, against the band at the
+      // page's scale (`billboardJudgedDistance`).
+      const d = billboardJudgedDistance(e[12] - camPos.x, e[14] - camPos.z, fov, distanceScale);
       // 1 this side of the band, 0 past it, the fade between.
       const fade = d <= tree.fadeStart ? 1
         : d >= tree.fadeEnd ? 0

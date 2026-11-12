@@ -26,7 +26,7 @@
 // Rebinding is retail's (features/viewer-profile-controls, "DEFINE KEY"):
 // clicking a box puts up the DEFINE KEY plate at the pointer and the next
 // key, mouse button, wheel step, joystick button or (on a movement row) axis
-// fills it; Escape unbinds it, Grave is refused as not mappable. Boxes that
+// fills it; Escape unbinds it, Grave unbinds it too and says it is not mappable (CTL-3). Boxes that
 // share an input inside one control map are marked and say so in red under
 // the pointer; SAVE refuses while any is, and otherwise writes the four
 // files (`../controls-edit.js`) and the account copy. Edits wait for SAVE,
@@ -128,7 +128,13 @@ export const CONFIRM_OK_RECT = [270, 285, 109, 25];
 export const CONFIRM_CANCEL_RECT = [421, 285, 109, 25];
 
 /** How far the mouse must travel while a movement row waits for it to be
- *  taken as that axis (retail: past 0.2 of its range in one read). */
+ *  taken as that axis. Retail's test is a RATE, not a distance: it reads
+ *  `getAxisValue(axis, relative = 1)` (0x006c76dd), the device register
+ *  `0.001 x counts x scale / dt`, and takes the axis when one read is past
+ *  +0.2 or -0.2 (0x006c780f against 0x008eaf50, 0x006c7820 against
+ *  0x009226c0; ledger CTL-3, GUN-2b) -- a few counts in one 1/30 s pump. The
+ *  page differs on purpose: a travelled distance after a 150 ms guard, so the
+ *  jitter of the click that opened the box is not taken as the axis. */
 const MOUSE_AXIS_PX = 40;
 /** A joystick axis taken past this from where it rested when the box was
  *  clicked (retail's 0.2). */
@@ -1172,9 +1178,19 @@ export function createControlsScreen({
 
   function takeKey(event) {
     if (!capture) return;
+    if (event.code === 'Backquote') {
+      // Grave is the console's. Retail does not just refuse it: scancode 0x29
+      // jumps to 0x006c7678, which makes the very `setKey("", "")` Escape
+      // makes (0x006c769c, against 0x006c6816..0x006c683f), so the waiting
+      // box is UNBOUND, and only then puts up CONFIRMATION_ILLEGAL_BUTTON_ERROR
+      // (0x006c76a6). Ledger CTL-3.
+      unbind();
+      say('unmappable');
+      return;
+    }
     if (!CAPTURE_CODES.has(event.code)) {
-      // Grave is the console's (retail refuses scancode 0x29, 0x006c7678),
-      // and a key the engine has no name for cannot be written.
+      // A key the engine has no name for cannot be written. What retail does
+      // with one is not read; the box keeps its binding.
       cancelCapture(false);
       say('unmappable');
       return;

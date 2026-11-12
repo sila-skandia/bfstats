@@ -6,6 +6,7 @@
 
 import * as THREE from 'three';
 import { isFuseRound, restsOnContact, roundTimeToLive, sampleCrd } from './effects-core.js';
+import { defaultTimeToLive } from './projectile-damage.js';
 import { proximityFuseOf } from './proximity-fuse.js';
 import { GRAVITY } from './physics.js';
 // The contact a fuse round gets when it lands — elasticity, friction and
@@ -24,7 +25,7 @@ import { recoilSpan } from './gun-cycle.js';
 // already watchable and fly at their real speed.
 export const TRACER_SPEED_SCALE = 0.15;
 export const PROJECTILE_SCALE_CUTOFF = 150;  // m/s; below this, no scaling
-export const TRACER_MAX_AGE = 1.5;      // seconds, when the data declares none
+export const TRACER_MAX_AGE = 1.5;      // seconds, the turntable's fixed streak life
 export const TRACER_MAX_RANGE = 250;    // metres of travel before recycling
 
 const _origin = new THREE.Vector3();
@@ -526,10 +527,13 @@ function spawnTracer(guns, muzzle, group, bright, barrel = 0) {
     // round's own declared `timeToLive`: a `CorsairProjectile` lives 1.5 s
     // and the `Tracer_Projectile` that replaces every third round lives 3,
     // and the tracer is the object actually in flight, so it is the one
-    // whose clock runs.
+    // whose clock runs. A round that declares none lives the engine's
+    // constructor draw, 0 to 3 s per round (`defaultTimeToLive`, PROX-10),
+    // from the page's own dice.
     ttl: group.roundLifetime === 'data'
       ? ((bright ? group.stats.tracer?.timeToLive : null)
-         ?? group.stats.projectile?.timeToLive ?? TRACER_MAX_AGE)
+         ?? group.stats.projectile?.timeToLive
+         ?? defaultTimeToLive(guns.rand ?? Math.random))
       : TRACER_MAX_AGE,
     maxRange: group.maxRange,
     age: 0,
@@ -794,7 +798,7 @@ function spawnProjectile(guns, muzzle, group, spec, barrel = 0) {
     // clamping an explosives pack's 240 s to 20 s now drops 12 m of real
     // splash on the player twenty seconds after he puts the charge down.
     ttl: roundTimeToLive(launchTimeToLive(guns, spec, entry), spec?.damage,
-                         spec?.hasPointPhysics),
+                         spec?.hasPointPhysics, guns.rand ?? Math.random),
     // Burst or vanish when that runs out (`onTimeEffectOf`, PROX-7).
     onTimeEffect: onTimeEffectOf(spec, entry),
     trail: group.trailQuad ? spec.trail : null,
@@ -817,13 +821,18 @@ function spawnProjectile(guns, muzzle, group, spec, barrel = 0) {
     // The round's authored spin, radians per second about its own X, from the
     // throwing weapon's `rotationalSpeed` — `8/0/0` on both grenades and on
     // nothing else in vanilla, which is why a thrown grenade tumbles and a
-    // landmine does not. `PointPhysicsNode::updatePhysics` (lnxded
-    // 0x082562c0) integrates one scalar rate into one accumulated angle, so
-    // only the first component is the engine's; the UNIT is unverified (see
-    // features/grenade-viewmodel-and-throw). Read as radians it is 1.3
-    // turns a second, which is what a thrown grenade does; read as degrees
-    // it would be 2.2 degrees a second, which is nothing.
-    spin: group.stats.throw?.rotationalSpeed?.[0] || 0,
+    // landmine does not. `fireBarrel` turns the template's vector into the
+    // launch frame (lnxded 0x0828aff3..0x0828b05c) and hands it to the
+    // round's physics node. Only a full `PhysicsNode` keeps it: its
+    // `updateRotationalPhysics` turns the body by `dt * |w| * 57.2958`
+    // degrees (0x08253e42..0x08253e63), so the unit is radians per second,
+    // 1.3 turns a second on a grenade. `PointPhysicsNode::setRotationalSpeed`
+    // (0x082568b0) is an empty function, so a point-body round never spins
+    // (ledger COL-8). Both grenades declare `setHasPointPhysics 0`. The
+    // vanilla vector is `8/0/0`, about the round's own X, which is all this
+    // keeps.
+    spin: spec?.hasPointPhysics === false
+      ? (group.stats.throw?.rotationalSpeed?.[0] || 0) : 0,
     spun: 0,
     // The flattened direction of travel, kept for `layOnSurface`: a round
     // that has stopped has no velocity left to face along, and the last

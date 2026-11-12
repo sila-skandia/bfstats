@@ -11,7 +11,7 @@
 // ran armor tiers for vehicles and statics only (`vehicle-wrecks.js`), so no
 // death ever played one.
 //
-// What the engine does with a tier (ledger ARM-8..ARM-10,
+// What the engine does with a tier (ledger ARM-1, ARM-11,
 // `features/bf1942-engine-reference/subsystems/hitpoints-and-damage.md` §8):
 //
 //   - Every Armor runs `Armor::playEffect` from its 30 Hz update until its
@@ -40,38 +40,11 @@
 
 import * as THREE from 'three';
 import { modelFileStem } from './model-file.js';
+import { deathKey, tierAt } from './vehicle-damage.js';
 
-/** `Armor::playEffect`'s key for a dead object (client 0x004bc413): 0 with no
- *  hit material on record, -1 in water, otherwise minus the material. */
-export function deathKey({ lastHitMaterial = -1, inWater = false } = {}) {
-  if (lastHitMaterial == null || lastHitMaterial === -1) return 0;
-  return inWater ? -1 : -lastHitMaterial;
-}
-
-/**
- * `Armor::getEffect(key)` (lnxded 0x08172820, client 0x004bc2f0) over an
- * `armor.effects` list: `{ threshold, effects }` with every entry authored at
- * the answered threshold, in authored order, or null.
- *
- * Below 1 it is the exact key, else 0. From 1 up it is the smallest threshold
- * at or above the key, and nothing when the key is above every threshold.
- */
-export function tierAt(effects, key) {
-  if (!Array.isArray(effects) || !effects.length) return null;
-  const at = threshold => effects.filter(entry => entry.hp === threshold);
-  if (key < 1) {
-    for (const threshold of [key, 0]) {
-      const found = at(threshold);
-      if (found.length) return { threshold, effects: found };
-    }
-    return null;
-  }
-  let best = null;
-  for (const entry of effects) {
-    if (entry.hp >= key && (best === null || entry.hp < best)) best = entry.hp;
-  }
-  return best === null ? null : { threshold: best, effects: at(best) };
-}
+// `deathKey` and `getEffect`'s lookup (`tierAt`) are the vehicle tiers' own,
+// one copy for every Armor (ARM-1, ARM-11): `vehicle-damage.js`.
+export { deathKey, tierAt };
 
 /**
  * Where an `addArmorEffect` offset lands for a man standing at `feet`

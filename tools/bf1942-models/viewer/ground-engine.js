@@ -6,6 +6,7 @@
 // header in `tracked-vehicle.js` carries the TANK-3 reading this rests on.
 
 import { ENGINE_TICK_HZ } from './ground-contact.js';
+import { UNDECLARED_ACCELERATION, UNDECLARED_MAX_SPEED } from './engine-spin.js';
 
 /** `PhysicsEngine::getCurrentRatio`, `0x0057bd90`: `ratio = 3.5 *
  * setDifferential / curve[idx]`. Declared again here (rather than imported)
@@ -431,8 +432,10 @@ export class EngineState {
   /**
    * @param {object} [physics] the Engine node's `extras.physics`
    * @param {boolean} [automaticReset] the Engine's `rig.automaticReset`
+   * @param {object} [axes] the Engine's `rig.axes`, whose `roll`/`yaw`
+   *   `min`/`max` are the template's `setMinRotation`/`setMaxRotation`
    */
-  constructor(physics = {}, automaticReset = true) {
+  constructor(physics = {}, automaticReset = true, axes = null) {
     const pick = (value, fallback) =>
       (typeof value === 'number' && Number.isFinite(value) ? value : fallback);
     this.torque = pick(physics.torque, ENGINE_DEFAULTS.torque);
@@ -446,22 +449,59 @@ export class EngineState {
     this.bits = engineTypeBits(this.engineType);
     // The Engine's own RotationalBundle, which is what the throttle and the
     // steer are read through. `maxRotation` is the divisor; the rate is
-    // `setAcceleration` under the `automaticReset` law (GUN-2) and falls back
-    // to `setMaxSpeed`, which every vanilla ground drivetrain authors equal
-    // to it. Yaw/Pitch/Roll order, straight off the `.con`.
+    // `|setAcceleration|` under the `automaticReset` law (GUN-2). Yaw/Pitch/
+    // Roll order, straight off the `.con`.
+    //
+    // Two engine defaults stand behind an omitted word (ledger GUN-2, TANK-12):
+    //   - `setAcceleration` omitted -> the `RotationalBundleTemplate` default
+    //     0.1 (`0x081d913c`, stored to `+0x180..+0x188`), NOT `setMaxSpeed`.
+    //     This file used to fall back to maxSpeed, which only the three vanilla
+    //     drivetrains (which author both equal) could not tell apart.
+    //   - `Engine::handleUpdate` runs `calculateAndClipAngle` for an axis only
+    //     when that axis's maxSpeed is non-zero (`0x0823e18e`-`0x0823e1ce`);
+    //     otherwise the angle holds. maxSpeed itself defaults to 1.0
+    //     (`0x081d912b`), so an omitted `setMaxSpeed` still runs the servo.
     const maxRotation = physics.maxRotation || [0, 0, 0];
-    const rate = physics.acceleration || physics.maxSpeed || [0, 0, 0];
+    const maxSpeed = Array.isArray(physics.maxSpeed)
+      ? physics.maxSpeed : [UNDECLARED_MAX_SPEED, UNDECLARED_MAX_SPEED, UNDECLARED_MAX_SPEED];
+    const acceleration = Array.isArray(physics.acceleration) ? physics.acceleration : null;
+    const axisRate = i => ((maxSpeed[i] ?? UNDECLARED_MAX_SPEED) === 0 ? 0
+      : Math.abs(acceleration?.[i] ?? UNDECLARED_ACCELERATION));
     this.maxRollAngle = Math.abs(maxRotation[2] || 0);
     this.maxYawAngle = Math.abs(maxRotation[0] || 0);
-    this.rollRate = Math.abs(rate[2] || 0);
-    this.yawRate = Math.abs(rate[0] || 0);
+    this.rollRate = axisRate(2);
+    this.yawRate = axisRate(0);
+    // `calculateAndClipAngle`'s clip is to the template's own span,
+    // `> max -> max, < min -> min` (GUN-2), and the span need not be
+    // symmetric: 347 of the 1,428 car and tank Engines in the extracted
+    // models author a `minRotation.z` whose size is not their
+    // `maxRotation.z` (EoD's trucks -6..10, so full reverse is T1 = -0.6).
+    // The target is `input * maxRotation` (GUN-2), so a short reverse span
+    // is reached and held at its floor. Without a rig span (an Engine that
+    // binds no input) the symmetric limit stands.
+    const span = (axis, limit) => {
+      const lo = Number.isFinite(axis?.min) ? axis.min : -limit;
+      const hi = Number.isFinite(axis?.max) ? axis.max : limit;
+      return lo <= hi ? [lo, hi] : [hi, lo];
+    };
+    [this.rollMin, this.rollMax] = span(axes?.roll, this.maxRollAngle);
+    [this.yawMin, this.yawMax] = span(axes?.yaw, this.maxYawAngle);
+    // What `EngineNetworkable::getNetUpdate` scales each angle by before
+    // `writeSignedFloat(angle, 16, 1.25 L)`: `L` the larger magnitude of the
+    // axis's `maxRotation` and `minRotation` (`0x08227a4e`-`0x08227a71`,
+    // `fabs` both, `fucom`, keep the larger; ledger TANK-28). Not
+    // `maxRotation` alone: the Elco 80's land engine spans -4000..2500.
+    this.rollWireLimit = Math.max(this.maxRollAngle, Math.abs(this.rollMin), Math.abs(this.rollMax));
+    this.yawWireLimit = Math.max(this.maxYawAngle, Math.abs(this.yawMin), Math.abs(this.yawMax));
     this.automaticReset = automaticReset !== false;
     /** True when the Engine node carried no `maxRotation`, i.e. it came out
      * of a tree extracted before `con.py` emitted it. Both angle terms then
      * fall back to the raw input — see `tick`. Not a tuning knob: it is a
      * report on the asset tree, and it goes away when the lead re-extracts
-     * every level's `scene.glb` and the `viewer/models` glbs. */
-    this.stale = !(this.maxRollAngle > 0) || !(this.maxYawAngle > 0);
+     * every level's `scene.glb` and the `viewer/models` glbs. An AUTHORED
+     * zero (a car's unbound yaw) is not stale: retail reads it, and gives a
+     * steer of 0 (`0x0823e154`, `0x0823e1fd`). */
+    this.stale = !Array.isArray(physics.maxRotation);
     /** `Engine+0x142`, the engine-on flag: `handleUpdate` forces the revs to
      * **0** when it is clear (`0x0823e2d3 cmp BYTE PTR [edi+0x142],0x0` and
      * the `0x0823e2e6`/`0x0823e2ec` arm that stores 0.0 to `+0xa0`), and
@@ -629,9 +669,9 @@ export class EngineState {
     // reaches full roll in 5000/55000 = 0.091 s, a Sherman in 1/10 = 0.1 s,
     // and a Sherman's steer reaches full lock in 1/4 = 0.25 s.
     this.rollAngle = this.#ramp(this.rollAngle, pedal * this.maxRollAngle,
-      this.rollRate * dt, this.maxRollAngle);
+      this.rollRate * dt, this.maxRollAngle, this.rollMin, this.rollMax);
     this.yawAngle = this.#ramp(this.yawAngle, steerInput * this.maxYawAngle,
-      this.yawRate * dt, this.maxYawAngle);
+      this.yawRate * dt, this.maxYawAngle, this.yawMin, this.yawMax);
     // `T1 = Engine+0x10c / getMaxRotation().z` (`0x0823e1e0`-`0x0823e1f4`)
     // and the steering term is its sibling, `Engine+0x104 / maxRotation.x`.
     //
@@ -655,10 +695,21 @@ export class EngineState {
     // vanilla response until its tree is re-extracted. `stale` says which
     // path a vehicle is on so a harness — and `window.__drive()` — can tell
     // a fallback from a reading.
-    this.throttleTerm = this.maxRollAngle > 0
-      ? this.rollAngle / this.maxRollAngle : pedal;
-    this.steer = this.maxYawAngle > 0
-      ? this.yawAngle / this.maxYawAngle : steerInput;
+    //
+    // Only a tree with NO `maxRotation` takes the fallback (`stale`). One that
+    // authors a zero axis reads it as retail does: `handleUpdate` seeds the
+    // steer to 0.0 (`0x0823e154`) and divides by `maxRotation.x` only when it
+    // is positive (`0x0823e1fd`-`0x0823e214`, `0x0823e569`), so a zero yaw
+    // limit steers 0 — a tank with one drives straight. The throttle's
+    // divide is unguarded in retail (0/0 when `maxRotation.z` is 0); 0, no
+    // drive, is the finite reading of it.
+    if (this.stale) {
+      this.throttleTerm = pedal;
+      this.steer = steerInput;
+    } else {
+      this.throttleTerm = this.maxRollAngle > 0 ? this.rollAngle / this.maxRollAngle : 0;
+      this.steer = this.maxYawAngle > 0 ? this.yawAngle / this.maxYawAngle : 0;
+    }
 
     // The gear-change lockout counts down and is never re-armed (0x0823e24f,
     // 0x0823e25a).
@@ -714,11 +765,11 @@ export class EngineState {
     this._clock = 0;
   }
 
-  #ramp(angle, wanted, step, limit) {
+  #ramp(angle, wanted, step, limit, lo = -limit, hi = limit) {
     let next = angle;
     if (wanted > angle) next = Math.min(wanted, angle + step);
     else if (wanted < angle) next = Math.max(wanted, angle - step);
-    // `calculateAndClipAngle`'s clip, with the template's symmetric limits.
-    return limit > 0 ? clamp(next, -limit, limit) : next;
+    // `calculateAndClipAngle`'s clip, to the template's own span (GUN-2).
+    return limit > 0 ? clamp(next, lo, hi) : next;
   }
 }

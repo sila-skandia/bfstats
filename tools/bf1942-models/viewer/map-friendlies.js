@@ -173,6 +173,17 @@ export function createMapFriendlies(page) {
    * list. The local player's own hull is left out too: the ring is his mark,
    * in a vehicle as on foot. A spawner whose flag is neutral has no hull.
    */
+  /** The reader's control object's position (MMAP-3's range is measured from
+   *  it): his hull's root when seated, else his soldier; null when neither is
+   *  known, and then no range is applied. */
+  const controlPos = new THREE.Vector3();
+  function localControlPosition() {
+    const root = page.occupancy?.root;
+    if (root) return root.getWorldPosition(controlPos);
+    const s = page.world?.players?.get(page.LOCAL_PLAYER)?.soldier;
+    return s ? controlPos.set(s.x, s.y, s.z) : null;
+  }
+
   function mapVehicleMarks() {
     // On a server in authority mode the field is the server's own entities
     // (`server-entities.js`), not the level's parked copies -- those were
@@ -185,6 +196,12 @@ export function createMapFriendlies(page) {
     const localTeam = localMapTeam();
     const crews = vehicleOccupantTeams();
     const own = page.occupancy?.root ? hullOf(page.occupancy.root) : null;
+    // MMAP-3's range gate: this page simulating the round itself is retail's
+    // single player or host, where a hull past the reader's view distance is
+    // not drawn; a joined page (`roomJoined`) draws them at any range.
+    const from = page.roomJoined ? null : localControlPosition();
+    const viewDistance = from ? page.viewDistance?.() : null;
+    const applyRange = !!from && Number.isFinite(viewDistance);
     for (const node of page.mapVehicles) {
       if (!page.vehicleSpawnActive(node)) continue;
       const armor = page.world?.damageableOf?.(node) ?? null;
@@ -192,6 +209,8 @@ export function createMapFriendlies(page) {
         hitPoints: armor?.hitPoints ?? 0,
         occupantTeams: crews.get(node) ?? [],
         localTeam,
+        applyRange, viewDistance,
+        distance: applyRange ? node.getWorldPosition(vehiclePos).distanceTo(from) : 0,
       });
       if (kind) out.push({ node, kind });
       // The objects the hull's own spawners hold (AI-121: each is an object
@@ -203,7 +222,8 @@ export function createMapFriendlies(page) {
       const hostHp = armor?.hitPoints ?? 0;
       for (const held of heldMapObjects(node)) {
         const heldKind = mapVehicleMark({ hitPoints: hostHp, heldTeam: held.userData.heldSpawner.team ?? 0,
-          localTeam });
+          localTeam, applyRange, viewDistance,
+          distance: applyRange ? held.getWorldPosition(vehiclePos).distanceTo(from) : 0 });
         if (heldKind) out.push({ node: held, kind: heldKind, held: true });
       }
     }

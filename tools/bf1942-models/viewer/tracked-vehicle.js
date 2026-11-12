@@ -65,6 +65,7 @@ import {
 import { Wheel, gripOf, mergeWheelPush, meetsTerrain } from './suspension.js';
 import { clamp, EngineState, ENGINE_BIT_THRUST, engineTypeBits } from './ground-engine.js';
 import { traverseOwn } from './spawned-craft.js';
+import { UNDECLARED_ACCELERATION } from './engine-spin.js';
 import { bodyMotion, scrollBeltsByEngine, scrollBeltsByMotion } from './track-scroll.js';
 import {
   AmphibiousKit, HullWater, bedGroundHeight, inertiaGeometryBox, geometryInertia,
@@ -519,7 +520,7 @@ export class TrackedVehicle extends Vehicle {
           differential: this.spec.differential,
           numberOfGears: this.spec.numberOfGears,
           ...data.physics,
-        }, data.rig?.automaticReset);
+        }, data.rig?.automaticReset, data.rig?.axes);
         return;
       }
       if (data.templateKind !== 'Spring' || !data.physics) return;
@@ -535,6 +536,7 @@ export class TrackedVehicle extends Vehicle {
       let steered = false;
       let steerMax = this.spec.maxSteer;
       let steerRate = 0;
+      let steerHeld = false;
       let steerSign = 1;
       let bundleX = 0;
       for (let p = obj.parent; p && p !== this.node; p = p.parent) {
@@ -551,9 +553,18 @@ export class TrackedVehicle extends Vehicle {
           const span = Math.max(Math.abs(yaw.min ?? 0), Math.abs(yaw.max ?? 0));
           if (span > 0) steerMax = span;
           // The bundle's servo under `automaticReset` (GUN-2): degrees a
-          // second, its `setAcceleration` (TANK-12's reading of the Engine's
-          // own bundle), else `setMaxSpeed`.
-          steerRate = Math.abs(yaw.acceleration || yaw.maxSpeed || 0);
+          // second, its `setAcceleration`, and when the `.con` omits the word
+          // the `RotationalBundleTemplate` default 0.1 (`0x081d913c`), not
+          // `setMaxSpeed`. Retail also skips the servo on an axis whose
+          // maxSpeed is 0 (`RotationalBundle::handleUpdate` `0x081d79b0`-
+          // `0x081d79dc`, GUN-20), so such a bundle holds its rest angle:
+          // bf1918's `bicycle_albelt_Complex` binds `c_PIYaw` to a yaw slot
+          // of `setMaxSpeed 0/100/0`. On today's trees a 0 here is authored:
+          // no input-bound RotationalBundle in the 12 installed mods omits
+          // `setMaxSpeed` (bar FH's SBD pilot hatch, bound to a menu key),
+          // and `con.py` now writes the template's 1.0 for one that does.
+          steerHeld = yaw.maxSpeed === 0;
+          steerRate = Math.abs(yaw.acceleration ?? UNDECLARED_ACCELERATION);
           // The bundle's own sense, as `applyRig` poses it (`axisDirection`):
           // the Puma's rear axles declare `direction -1` and turn against
           // the front. Taking the stick's sense laid its four driven wheels
@@ -591,6 +602,7 @@ export class TrackedVehicle extends Vehicle {
        * axle RollGrip asks along is the wheel's posed row 0, which follows the
        * bundle at its rate, not the stick. */
       wheel.steerRate = steerRate;
+      wheel.steerHeld = steerHeld;
       wheel.steerSign = steerSign;
       wheel.bundleX = Math.abs(bundleX) < CENTRELINE ? 0 : bundleX;
       wheel.steerAngle = 0;
@@ -784,11 +796,13 @@ export class TrackedVehicle extends Vehicle {
       // 0x08227cb0), not over 1.25: a Willy's throttle angle runs to 5000,
       // a Sherman's to 1. An axis with no limit (a car's yaw) writes nothing
       // a client can read back, and keeps the page's own.
-      if (Number.isFinite(e.roll) && engine.maxRollAngle > 0) {
-        engine.rollAngle = e.roll * ENGINE_WIRE * engine.maxRollAngle;
+      // `L` is the larger of the two bounds' sizes (TANK-28), which
+      // `EngineState` keeps as `rollWireLimit` / `yawWireLimit`.
+      if (Number.isFinite(e.roll) && engine.rollWireLimit > 0) {
+        engine.rollAngle = e.roll * ENGINE_WIRE * engine.rollWireLimit;
       }
-      if (Number.isFinite(e.yaw) && engine.maxYawAngle > 0) {
-        engine.yawAngle = e.yaw * ENGINE_WIRE * engine.maxYawAngle;
+      if (Number.isFinite(e.yaw) && engine.yawWireLimit > 0) {
+        engine.yawAngle = e.yaw * ENGINE_WIRE * engine.yawWireLimit;
       }
       if (Number.isInteger(e.gear)) engine.gear = e.gear;
     }
@@ -873,7 +887,7 @@ export class TrackedVehicle extends Vehicle {
     // Each steering bundle's servo, the same tick (`calculateAndClipAngle`
     // 0x081d7490 under automaticReset): straight toward input x lock.
     for (const wheel of this.wheels) {
-      if (!wheel.steered) continue;
+      if (!wheel.steered || wheel.steerHeld) continue;
       const want = yaw * wheel.steerSign * wheel.steerMax;
       const step = wheel.steerRate > 0 ? wheel.steerRate * h : Infinity;
       const a = wheel.steerAngle;

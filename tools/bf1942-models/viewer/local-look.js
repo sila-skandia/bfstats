@@ -45,9 +45,14 @@ export function createLocalLook(page) {
   // player; this page reads its frame's tick count back from `world.lookTicks
   // (dt)` instead of running a second accumulator that could drift out of
   // phase with the world's (a profile switch used to reset this page's simAccum
-  // and never the world's). The engine's backlog collapse was that page clock's
-  // rule too (`GameClient::update` 0x0048fca8 `cmp ebx,0x9; jle; mov ebx,1`);
-  // the world owns the same law as its FixedStep's MAX_CATCH_UP_TICKS cap.
+  // and never the world's). The backlog rule is NOT retail's: retail
+  // collapses a backlog of more than nine ticks to ONE (`GameClient::update`
+  // 0x0048fca8 `cmp ebx,0x9; jle; mov ebx,1`; its `InputManager::update`
+  // collapses more than ten, 0x0049cfb3, and then pumps the mouse with one
+  // tick's dt; ledger LOOP-1), where the world's FixedStep clamps to
+  // MAX_CATCH_UP_TICKS = 12 and drops the rest, a documented choice
+  // (fixed-step.js). Total mouse rotation is the same either way; only the
+  // +-16 axis ceiling bites sooner after a retail hitch.
 
   /** Which sensitivity profile the player is on right now.
    *
@@ -101,8 +106,10 @@ export function createLocalLook(page) {
    *
    *  `BFSoldier::handlePlayerInput` (lnxded 0x08273c70) turns the view by
    *  `input * dt * g_simulationFps` degrees a tick -- so, at the fixed tick,
-   *  `input` degrees -- with a x3.0 on the yaw axis alone (`ds:0x86c08c8`, read
-   *  at 0x0827457d) and none on the pitch (0x08274537). `mouse-input.js` carries
+   *  `input` degrees -- with a x3.0 on the yaw (`ds:0x86c08c8`, read at
+   *  0x0827457d) and none on the pitch REGISTER (0x08274537), which the view
+   *  then pitches 2.5 degrees per degree (`handleUpdate` setRotateXDeg(-2.5 x
+   *  +0x284), ledger VIEW-14; `SOLDIER_PITCH_GAIN`). `mouse-input.js` carries
    *  the addresses. Signs match this page's own convention, which counts yaw the
    *  other way from the engine. */
   function footLookPair() {

@@ -36,6 +36,7 @@ folder answers.
 | [desert-combat-parity](desert-combat-parity/README.md) | tracker | How much of Desert Combat works, what each fix package changed, what the real game confirmed, and what is open? |
 | [browser-play-feedback-2026-11-06](browser-play-feedback-2026-11-06/README.md) | tracker | What did a first-time player's walkthrough video of play.bfstats.io report as broken, and what did each investigation find? |
 | [bf1942-corpus-sweep-2026-09-18](bf1942-corpus-sweep-2026-09-18/README.md) | tracker | Which gaps found by the 09-18 corpus audit are still open, and why? |
+| [retail-parity-cross-check-2026-11-12](retail-parity-cross-check-2026-11-12/README.md) | tracker | Does every retail value the browser game cites survive a second decompile and our own binaries, and what did the cross-check change? |
 | [parity-lab](parity-lab/README.md) | build | How do I record a real bot round and compare it with the viewer? |
 | [server-replay-recorder](server-replay-recorder/README.md) | build | How does the lab server record the whole round itself, and what layout does it read? |
 | [vehicle-instance-refactor](vehicle-instance-refactor/README.md) | build | Who owns vehicle, seat and page state now, and where did map.html code move? |

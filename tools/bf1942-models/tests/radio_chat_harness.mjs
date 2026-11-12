@@ -68,7 +68,8 @@ out.patch = {
   attack: radioPatch(23, false), defend: radioPatch(23, true),
   medic: radioPatch(40), apc: radioPatch(14), protectFlag: radioPatch(56),
 };
-out.mode = ['Conquest', 'CTF', 'TDM', 'Coop', ''].map(radioGameMode);
+out.mode = ['Conquest', 'CTF', 'TDM', 'Coop', ''].map(m => radioGameMode(m));
+out.modeJoined = ['Conquest', 'CTF', 'TDM', 'Coop', 'Objective'].map(m => radioGameMode(m, { multiplayer: true }));
 
 // The spam limit: seven sends go, the eighth inside four seconds does not,
 // and holding the key keeps it refused.
@@ -152,7 +153,10 @@ out.announcer = {
     { ...cq, held: {}, tickets: { 1: 30, 2: 100 } },
     { ...cq, held: {}, tickets: { 1: 15, 2: 100 } },
   ]),
-  lowAlreadyUnderFloor: run([{ ...cq, held: {}, tickets: { 1: 5, 2: 100 } }]),
+  lowAlreadyUnderFloor: run([{ ...cq, held: {}, tickets: { 1: 4, 2: 100 } }]),
+  // Exactly 1/20: the 0.05 compare is on the stored float (0x006E38B8),
+  // 0.0500000007 > 0.05, so it is still in the band.
+  lowAtTheFloor: run([{ ...cq, held: {}, tickets: { 1: 5, 2: 100 } }]),
   lowRoundOver: run([{ ...cq, playing: false, held: { 1: 0, 2: 150 }, tickets: { 1: 10, 2: 0 } }]),
   lowNoSide: run([{ ...cq, team: 0, held: { 1: 0, 2: 150 }, tickets: { 1: 10, 2: 100 } }]),
   // Leaving the area: once the WHOLE seconds outside pass zero, once per

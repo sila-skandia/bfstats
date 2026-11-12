@@ -18,8 +18,9 @@ binary on the 0.01 deadzone; the turn terms are analog; miscDev is the jump
 channel; firing adds fireDev.b per shot clamped to fireDev.a and decays
 fireDev.c/M per tick; and aiming changes nothing at all. The tick is the
 engine's fixed 1/30 s simulation step (`g_simulationFps` = 30 in both
-binaries, one `handlePlayerInput` per tick — corpus doc §2, "Clock"); only
-the AT family's floor-and-lid remains OPEN. No assertion below depends on
+binaries, one `handlePlayerInput` per tick — corpus doc §2, "Clock"). The
+AT family's `minDeviation` / `maxDeviation` are not engine words (ledger
+DEV-8) and floor and lid nothing. No assertion below depends on
 the rate beyond the per-tick amounts being applied at the declared 30 Hz.
 """
 
@@ -268,12 +269,15 @@ class DeviationModelTests(unittest.TestCase):
         self.assertEqual(0.0, sniper["still"])
         self.assertAlmostEqual(SPEED[0], sniper["moving"], places=9)
 
-    def test_the_at_familys_lid_clamps(self) -> None:
-        # `maxDeviation 0.5` (combine rule OPEN): whatever the additive terms
-        # reach, the cone stops at the declared lid.
+    def test_the_at_words_floor_and_lid_nothing(self) -> None:
+        # DEV-8: `minDeviation` / `maxDeviation` are in neither binary's
+        # strings, and `updateDeviation` stores the sum unclamped (lnxded
+        # 0x0829415d). So `maxDeviation 0.5` does not stop the speed channel
+        # short of its own cap of 2.0.
         capped = self.results["capped"]
         self.assertEqual(0.0, capped["still"])
-        self.assertAlmostEqual(capped["lid"], capped["moving"], places=9)
+        self.assertAlmostEqual(capped["channelCap"], capped["moving"], places=9)
+        self.assertGreater(capped["moving"], capped["lid"])
 
     def test_no_deviation_block_is_a_point(self) -> None:
         none = self.results["none"]

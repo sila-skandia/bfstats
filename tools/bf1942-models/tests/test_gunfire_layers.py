@@ -61,6 +61,7 @@ MODULES = {
     "crash-damage.js": VIEWER / "crash-damage.js",
     "physics.js": VIEWER / "physics.js",
     "walking-body.js": VIEWER / "walking-body.js",
+    "rigid-body.js": VIEWER / "rigid-body.js",
     "soldier-resolve.js": VIEWER / "soldier-resolve.js",
     "soldier-pose.js": VIEWER / "soldier-pose.js",
     "soldier-locomotion.js": VIEWER / "soldier-locomotion.js",
@@ -142,6 +143,9 @@ class ProjectileLayerTests(unittest.TestCase):
         # throw block. A round with none spins at 0 and keeps the nose-along-
         # flight orientation alone.
         self.assertEqual(8, self.results["spin"])
+        # Only a full physics body keeps it: a point body's
+        # `setRotationalSpeed` is empty (lnxded 0x082568b0, ledger COL-8).
+        self.assertEqual(0, self.results["pointBodySpin"])
 
     def test_someone_elses_gun_flashes_the_outside_mesh(self) -> None:
         # The observer on foot: his own gun gets the first-person sprite...

@@ -12,14 +12,32 @@ export { ROOM_CODE_RE };
 export const NAME_MAX = 24;
 export const NAME_OK = /^[^\x00-\x1f\x7f]{1,24}$/;
 
-/** The R-1 choke's shape: conn+0x10 = 1044 byte-budget per rate unit... */
-export const RATE_BYTES = 1044;
+/** The R-1 choke's shape. A connection starts at rate 20 (`conn+0xc`) with a
+ *  byte budget of 1400 per update (`conn+0x10` = 0x578, ClientConnection ctor
+ *  lnxded 0x081142ce; J-1, R-1). */
+export const RATE_BYTES = 1400;
 export const SNAPSHOT_RATE_DEFAULT = 20;
 export const SNAPSHOT_RATE_MIN = 10;
-/** ... and the capacity law the room server honors. 1044 x 16 x 20 — every
- *  player at the default rate — is the P2 choice for the engine's own value
- *  (not recovered in P0; see server/README.md §decisions). */
-export const CHOKE_CAP = RATE_BYTES * MAX_PLAYERS * SNAPSHOT_RATE_DEFAULT;
+/** The cap `game.serverBandwidthChokeLimit` sets (`GameServer+0x46c`): 0 in
+ *  the GameServer ctor (lnxded 0x0812f261), in `Setup::initServerSettings`
+ *  (0x080c0a37) and in the shipped serversettings.con, and 0 turns the choke
+ *  off (`chokeBandwidth` 0x08132cd7). The room runs the engine's default. */
+export const CHOKE_CAP = 0;
+/** A connection whose fair share would leave it this many bytes per update
+ *  or fewer loses rate instead of budget (`cmpl $0x104` at 0x08132da5). */
+export const CHOKE_BUDGET_MIN = 260;
+/** The rate step and the period the server re-runs the choke at: every
+ *  connection's timer sync, 10 s (`updateConnections` 0x08139402 re-arms
+ *  `nextTimerSync` to 10.0 and calls `chokeBandwidth` at 0x0813940c), and at
+ *  each join (`processReceivedPackets` 0x08138560). */
+export const CHOKE_RATE_STEP = 5;
+export const CHOKE_PERIOD_MS = 10_000;
+
+/** A server frame owing more than this many ticks runs ONE, and the rest are
+ *  lost to its tick clock for good (`GameServer::update` lnxded 0x08132955:
+ *  `cmp $0x9,%ebx; jle`, else n - 1 added to +0x4f8 and n = 1; D-4, P-10).
+ *  The room server's loop only: the page's FixedStep keeps its own 12. */
+export const STALL_COLLAPSE_TICKS = 9;
 
 /** Silent connections are dropped — the peer's 0xd-equivalent (J-3). */
 /** A connection the server heard nothing from for this long is gone. The

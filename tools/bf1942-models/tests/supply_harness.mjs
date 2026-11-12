@@ -7,7 +7,13 @@
 // `viewer/maps/wake/scene.glb` on 2026-09-16): the exact `radius`/`team`/
 // `health`/`ammoTypes` rows each archetype ships, not invented numbers.
 
-import { SupplyDepot, SupplyField, UPDATE_INTERVAL, heldObjectLife } from './supply.mjs';
+import { SupplyDepot, SupplyField, UPDATE_INTERVAL, heldObjectLife, depotPhase } from './supply.mjs';
+// One depot cycle: `handleUpdate` (0x083240f0) runs `update` only once the
+// elapsed time is strictly MORE than 0.5 s, so a step of exactly 0.5 is not
+// one; a hair over it is, and leaves every per-cycle amount as it was.
+const CYCLE = UPDATE_INTERVAL + 1e-9;
+/** Drop the 1e-9 s of `CYCLE` from an amount billed by the second. */
+const r6 = v => Math.round(v * 1e6) / 1e6;
 import { Armor } from './armor.mjs';
 
 const out = {};
@@ -23,12 +29,12 @@ const withCounter = t => {
   return t;
 };
 
-/** Run `n` update cycles of exactly `UPDATE_INTERVAL` seconds each — the
+/** Run `n` update cycles of `CYCLE` seconds each (a hair over `UPDATE_INTERVAL`) — the
  *  depot's own self-throttle interval, so every call is guaranteed to fire
  *  the leaky bucket exactly once (SUP-11). */
 function runCycles(depot, t, n) {
   const results = [];
-  for (let i = 0; i < n; i++) results.push(depot.tick(UPDATE_INTERVAL, t));
+  for (let i = 0; i < n; i++) results.push(depot.tick(CYCLE, t));
   return results;
 }
 
@@ -335,7 +341,7 @@ const hullAt = (template, overrides = {}) => withCounter(target({
   const field = new SupplyField([fk]);
   const hulls = [tank, bmp, far].map(h => ({ ...h, results: [{ gaveAmmo: false, healed: false }] }));
   // `results` is folded into; the hull objects carry the same armor.
-  field.update(UPDATE_INTERVAL, {
+  field.update(CYCLE, {
     soldiers: () => [{ ...soldier, results: [{ gaveAmmo: false, healed: false }] }],
     hulls: () => hulls,
   });
@@ -356,15 +362,15 @@ const hullAt = (template, overrides = {}) => withCounter(target({
     { radius: 10, team: 0, vehicleTypes: [['Tank', 10, 4, 2]], workOnVehicles: true });
   const hull = hullAt('tank', { armor: new Armor(100, 99) });
   const row = depot.vehicleTypes[0];
-  depot.tick(UPDATE_INTERVAL, hull);          // heal 4, pays 1 (only 1 missing)
+  depot.tick(CYCLE, hull);          // heal 4, pays 1 (only 1 missing)
   const afterFirst = { hp: hull.armor.hitPoints, reserve: row.reserve };
   const hurt = hullAt('tank', { armor: new Armor(100, 50) });
-  depot.tick(UPDATE_INTERVAL, hurt);          // regen +1 (to 10, capped), heal 4, pays 4
+  depot.tick(CYCLE, hurt);          // regen +1 (to 10, capped), heal 4, pays 4
   const afterSecond = { hp: hurt.armor.hitPoints, reserve: row.reserve };
   row.reserve = 2;
   const dry = hullAt('tank', { armor: new Armor(100, 50) });
-  depot.tick(UPDATE_INTERVAL, dry);           // regen to 3, heal 3, pays 3
-  out.finiteReserve = { afterFirst, afterSecond, dry: { hp: dry.armor.hitPoints, reserve: row.reserve } };
+  depot.tick(CYCLE, dry);           // regen to 3, heal 3, pays 3
+  out.finiteReserve = { afterFirst, afterSecond, dry: { hp: r6(dry.armor.hitPoints), reserve: r6(row.reserve) } };
 }
 
 {
@@ -383,10 +389,10 @@ const hullAt = (template, overrides = {}) => withCounter(target({
   const stranger = target({ armor: new Armor(30, 10), root: hullB });
   const soldiers = [a, b, rider, stranger].map(s => ({ ...s, results: [{ gaveAmmo: false, healed: false }] }));
   let asked = 0;
-  field.update(UPDATE_INTERVAL, { soldiers: () => { asked++; return soldiers; }, hulls: () => [] });
+  field.update(CYCLE, { soldiers: () => { asked++; return soldiers; }, hulls: () => [] });
   const suspendedField = new SupplyField([new SupplyDepot({ x: 0, y: 0, z: 0 }, M3A1_HYBRID, 'onWreck', { root: hullA })]);
   const onWreck = target({ armor: new Armor(30, 10) });
-  suspendedField.update(UPDATE_INTERVAL, {
+  suspendedField.update(CYCLE, {
     soldiers: () => [{ ...onWreck, results: [{ gaveAmmo: false, healed: false }] }], hulls: () => [],
   }, depot => depot.root === hullA);
   // Nothing due, nothing built.
@@ -394,12 +400,12 @@ const hullAt = (template, overrides = {}) => withCounter(target({
   let built = 0;
   idle.update(0.1, { soldiers: () => { built++; return []; }, hulls: () => { built++; return []; } });
   out.fieldPass = {
-    footHp: [a.armor.hitPoints, b.armor.hitPoints],
-    riderHp: rider.armor.hitPoints,
-    strangerHp: stranger.armor.hitPoints,
+    footHp: [r6(a.armor.hitPoints), r6(b.armor.hitPoints)],
+    riderHp: r6(rider.armor.hitPoints),
+    strangerHp: r6(stranger.armor.hitPoints),
     results: soldiers.map(s => s.results[0]),
     soldiersAskedOnce: asked === 1,
-    onWreckHp: onWreck.armor.hitPoints,
+    onWreckHp: r6(onWreck.armor.hitPoints),
     idleBuilt: built,
   };
 }
@@ -523,6 +529,19 @@ const hullAt = (template, overrides = {}) => withCounter(target({
   for (let t = 0; t < 30 * 5; t++) field.update(1 / 30, targets);
   out.roundDepot = { before, during, after: tank.armor.hitPoints, depotsAfter,
                      added: depot.name, transientLeft: field._transient };
+}
+
+// SUP-4's gate and phase: `handleUpdate` 0x083240f0 runs `update` only when
+// (world time - stamp) is MORE than 0.5, and the ctor stamps (rand()%30)/30.
+{
+  const d = new SupplyDepot({ x: 0, y: 0, z: 0 }, MEDICLOCKER);
+  const atHalf = d.step(UPDATE_INTERVAL);
+  const past = d.step(1 / 30);
+  const late = new SupplyDepot({ x: 0, y: 0, z: 0 }, MEDICLOCKER, null, { phase: depotPhase(() => 47) });
+  let steps = 0;
+  while (!late.step(1 / 30) && steps < 100) steps++;
+  out.gate = { atHalf: atHalf === null, past: !!past, phase47: depotPhase(() => 47),
+               lateFirstStep: steps + 1 };
 }
 
 process.stdout.write(JSON.stringify(out, null, 2));

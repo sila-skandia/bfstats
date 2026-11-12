@@ -49,7 +49,9 @@
  */
 export const HAND = Object.freeze({ speed: 100, seconds: 1.5, share: 0.63, ref: 1 / 3, rollRef: 0.53, slack: 1.25 });
 
-/** The engine's gravity (`BasicPhysicsSystem`, flight-model.md 2c). */
+/** The gravity `aircraft.js`'s flight law flies on (`FLIGHT_GRAVITY`, HELD at
+ *  -14.7295379; retail is 0xC16BAE14 = -14.73f). The school's pilots plan on
+ *  the same number the airframe falls by. */
 export const G = 14.7295379;
 /** Where every wing stops lifting (`airDensityZeroAtHeight`). */
 export const LIFT_CEILING = 1000;

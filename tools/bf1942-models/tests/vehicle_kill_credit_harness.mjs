@@ -28,6 +28,11 @@ out.marks = {
   mixedLastFriendly: mark({ hitPoints: 100, occupantTeams: [1, 2] }),
   mixedLastEnemy: mark({ hitPoints: 100, occupantTeams: [2, 1] }),
   axisReaderSeesAxisCrew: mapVehicleMark({ hitPoints: 50, occupantTeams: [1], localTeam: 1 }),
+  // MMAP-3's range gate (0x0046b5bd: drawn while dist <= view distance),
+  // applied outside a joined game only.
+  inRange: mark({ hitPoints: 100, applyRange: true, distance: 500, viewDistance: 500 }),
+  pastRange: mark({ hitPoints: 100, applyRange: true, distance: 500.5, viewDistance: 500 }),
+  pastRangeJoined: mark({ hitPoints: 100, applyRange: false, distance: 5000, viewDistance: 500 }),
 };
 out.emptyTint = EMPTY_VEHICLE_TINT;
 

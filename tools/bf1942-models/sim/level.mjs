@@ -465,25 +465,53 @@ export async function realLevel(M, { maps, models, map }) {
     return fire;
   };
 
-  // `botRoundDamage`, the same law over the same tables (ledger DMG-3): the
-  // round's material damage, x the modifier of its attacker group against
-  // the struck material's defence group (the stand-in body's torso unless a
-  // capsule says otherwise), x its falloff over `distance`. 30 until a
-  // projectile resolves. A match with a stage bills the stage's copy
-  // (`vehicle-hits.js botRoundDamage`, the page's).
+  // `botRoundDamage` for a match with no stage (the synthetic level, and a
+  // real level whose stage did not load): the page's law (`vehicle-hits.js
+  // botRoundDamage`, ledger DMG-3) over the same tables, through the same
+  // `crash-damage.js` lookups (DMG-1). The round's attacker material is
+  // `roundAttackerMaterial` over a GunFire-shaped view of the tables (the
+  // spec's `material`, else its template's row, else material 0 for a listed
+  // template with none, lnxded 0x0831eeda / 0x081dbd4c); null (no weapon
+  // data, an unlisted round: our own plumbing gap, not an engine material)
+  // prices at the 30 HP stand-in with the full modifier, as the page does.
+  // Otherwise the material's damage x its attacker group's cell against the
+  // struck material's defence group, 0 for a cell the table does not author,
+  // x the falloff over `distance`. A match with a stage bills the stage's
+  // copy itself.
   const damage = damageTables;
+  const STAND_IN_DAMAGE = 30;
+  const tableGuns = damage ? {
+    materials: damage.materials ?? null,
+    modifiers: damage.modifiers ?? null,
+    projectileEntry(spec) {
+      const table = damage.projectiles;
+      return table && spec?.template ? table[String(spec.template).toLowerCase()] ?? null : null;
+    },
+    attackerMaterial(spec) {
+      if (!spec) return null;
+      if (Number.isFinite(spec.material)) return spec.material;
+      const entry = this.projectileEntry(spec);
+      return Number.isFinite(entry?.material) ? entry.material : null;
+    },
+  } : null;
   const roundDamage = (fire, material = M.BOT_BODY_MATERIAL, distance = 0) => {
-    const spec = fire?.round && typeof fire.round === 'object' ? fire.round : null;
-    const template = spec?.template ?? fire?.projectile;
-    const proj = template ? damage?.projectiles?.[String(template).toLowerCase()] : null;
-    const attacker = Number.isFinite(spec?.material) ? spec.material
-      : Number.isFinite(proj?.material) ? proj.material : null;
-    const mat = attacker !== null ? damage?.materials?.[attacker] : null;
-    const base = mat?.damage ?? 30;
-    const attGroup = mat?.attGroup ?? attacker;
-    const defGroup = damage?.materials?.[material]?.defGroup ?? material;
-    const mod = damage?.modifiers?.[attGroup]?.[defGroup] ?? null;
-    return base * (mod === null ? 1 : mod) * M.damageFactor(spec?.damage, distance);
+    const projectile = fire?.round ?? fire?.projectile;
+    const spec = typeof projectile === 'string' ? { template: projectile } : projectile ?? null;
+    const falloff = M.damageFactor(spec?.damage, distance);
+    if (!M.roundAttackerMaterial || !tableGuns?.materials) {
+      // A viewer older than the shared lookups: the law as it stood then.
+      const proj = spec?.template ? damage?.projectiles?.[String(spec.template).toLowerCase()] : null;
+      const attacker = Number.isFinite(spec?.material) ? spec.material
+        : Number.isFinite(proj?.material) ? proj.material : null;
+      const mat = attacker !== null ? damage?.materials?.[attacker] : null;
+      const mod = damage?.modifiers?.[mat?.attGroup ?? attacker]?.[damage?.materials?.[material]?.defGroup ?? material] ?? null;
+      return (mat?.damage ?? STAND_IN_DAMAGE) * (mod === null ? 1 : mod) * falloff;
+    }
+    const attacker = M.roundAttackerMaterial(tableGuns, spec);
+    if (attacker === null) return STAND_IN_DAMAGE * falloff;
+    const base = M.materialDamage(tableGuns, attacker);
+    const mod = tableGuns.modifiers ? M.damageModifier(tableGuns, attacker, material) : 1;
+    return base * mod * falloff;
   };
 
   // The level's baked search maps (`pathfinding/`), which `level-terrain.js

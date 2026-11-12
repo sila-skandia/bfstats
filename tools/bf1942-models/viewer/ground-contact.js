@@ -526,8 +526,11 @@ export function intoContactPlane(axis, normal) {
 
 // --- the hull's own drag ------------------------------------------------------
 
-/** `pi / 4`: each face of the drag box is the ellipse inscribed in it. */
-const BOX_AREA = Math.PI / 4;
+/** Each face of the drag box is the ellipse inscribed in it, with the
+ *  engine's own pi: `3.14f * 0.25` (lnxded `0x086d1384` x `0x086c08ac` at
+ *  `0x082545b8`; the client folds it to `0.785f`, `0x008f733c`; PHY-22),
+ *  not `Math.PI / 4`. */
+const BOX_AREA = Math.fround(Math.fround(3.14) * 0.25);
 const _boxV = new THREE.Vector3();
 
 /**
@@ -536,7 +539,7 @@ const _boxV = new THREE.Vector3();
  *
  *   accel  += -drag |v| / mass * (Ax proj0(v) + Ay proj1(v) + Az proj2(v))
  *   torque += -drag |w| / mass * ((Ay+Az) proj0(w) + (Ax+Az) proj1(w) + (Ax+Ay) proj2(w))
- *   Ax = (pi/4) DY DZ,  Ay = (pi/4) DX DZ,  Az = (pi/4) DX DY
+ *   Ax = (3.14/4) DY DZ,  Ay = (3.14/4) DX DZ,  Az = (3.14/4) DX DY
  *
  * with `[DX, DY, DZ]` the box the engine's inertia is read off too
  * (`inertiaGeometryBox`, COL-14/COL-15) and each `projN` the projection on

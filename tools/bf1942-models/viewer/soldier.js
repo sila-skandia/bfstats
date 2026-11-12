@@ -144,18 +144,22 @@ export const AIM_PITCH_LIMIT_DEG = 38;
  */
 export const PITCH_LIMIT_DEG = AIM_PITCH_LIMIT_DEG * SOLDIER_VIEW_PITCH_PER_AIM;
 
-/**
- * `ObjectTemplate.setLiePointUpDownAngle 0.0 -6.0` — declared, and deliberately
- * NOT applied.
- *
- * Read literally against its standing twin it means "prone, you may look 0
- * degrees up and 6 degrees down", which is a view so narrow it is almost
- * certainly a modifier on the standing pair rather than a replacement for it.
- * Guessing which would be inventing a rule and calling it data, so prone uses
- * the same +-38 (+-95 of view) as standing and this constant sits here unread until somebody
- * settles it.
+/*
+ * `ObjectTemplate.setLiePointUpDownAngle 0.0 -6.0` (`CommonSoldierData.inc`)
+ * does NOT limit a prone soldier's view, so prone keeps the clamp above.
+ * Settled on lnxded 2026-11-12: its console method (`ConsoleClass172::
+ * executeObjectMethod` `0x082bb420`) stores the two floats at
+ * `BFSoldierTemplate+0x194` / `+0x198`, and the only `BFSoldier` reader is
+ * `updateAnimations` (`0x0826f109`, `0x0826f122`), which clamps the DRAWN
+ * upper-body pitch, `-aim` (`+0x284` negated at `0x0826e677`), into
+ * [-6, 0] degrees while the lower state has `c_AsmIsLying` (`0x0826f0ed`)
+ * before `setRotateXDeg` (`0x0826f174`); standing and crouched it is a
+ * hard-coded [-20, 20] (`0x086d26f0`, `0x086c0314`, `0x082705e6`). The aim
+ * register itself is clamped in `handlePlayerInput` by `setPointUpDownAngle`'s
+ * `+0x18c` / `+0x190` alone (`0x082744ff`..`0x0827455b`), in every pose.
+ * The drawn third-person clamp is `remote-gait.js` `drawnAimPitch` (ANIM-23),
+ * which the replay, the bots and remote players bend their torsos through.
  */
-export const LIE_POINT_UP_DOWN_DEG = [0.0, -6.0];
 
 /**
  * Vertical FOV, degrees: `renderer.fieldOfView 1` (Settings/VideoDefault.con),
@@ -285,32 +289,17 @@ export function setCameraShakeFactorGlobal(v) {
   return cameraShakeGlobal;
 }
 
-/**
- * How long the eye takes to travel between stances, seconds. Not invented —
- * the animation state machine declares a clip and a rate for every one of these
- * transitions, and `frames / (fps x speed)` is how long it plays:
- *
- *     Lb_StandToCrouch  3PStand2CrouchLower.baf  5 frames  4.0x   48 ms
- *     Lb_CrouchToStand  3PStand2CrouchLower.baf  5 frames -4.0x   48 ms
- *     Lb_StandToLie     3PStand2CrouchLower.baf  5 frames  4.0x   48 ms
- *     Lb_CrouchToLie    3PCrouch2LieLower.baf    9 frames  1.6x  216 ms
- *     Lb_LieToCrouch    3PCrouch2LieLower.baf    9 frames -2.0x  173 ms
- *     Lb_LieToStand     3PCrouch2LieLower.baf    9 frames -3.0x  115 ms
- *
- * (`animations/AnimationStatesCrouching.con` and `...Lie.con`.) The one soft
- * term is the nominal clip rate, which no header states, and 26 fps is what the
- * walk cycle implies against its own declared step period. Getting
- * dropping-prone right at 48 ms and standing-up-from-prone right at 115 ms is
- * most of why BF1942 feels the way it does going down and coming up.
- *
- * These are handed to `SoldierBody.setPoseFlags` as the transition duration, so
- * the easing itself has one implementation and it is the body's.
+/*
+ * The eye's travel between stances is not a clip length (VIEW-15): the
+ * engine's `handleUpdate` moves the camera half the remaining way to
+ * `setPoseCameraPos[getPose()]` every 1/30 s tick (client `0x004fd42c` /
+ * `0x004fd441`), whatever transition clip the lower body plays.
+ * `walking-body.js` carries that law; the stance code below only sets the
+ * pose flags (and defers them while `Lb_LieToStand` still lies, PHY-38).
+ * The per-transition table that stood here (48..216 ms, off the
+ * `addAnimation` rates at an assumed 26 fps) is gone: ANIM-2 refuted the
+ * frame law and ANIM-3 the rates.
  */
-export const STANCE_TRANSITION = {
-  'stand>crouch': 0.048, 'crouch>stand': 0.048,
-  'stand>prone': 0.048, 'prone>stand': 0.115,
-  'crouch>prone': 0.216, 'prone>crouch': 0.173,
-};
 
 // -- tuning that is purely runtime ------------------------------------------
 
@@ -912,7 +901,14 @@ export class Soldier {
       // `Armor::update`'s water-damage timer, on the same tick the body just
       // spent. Accumulated rather than applied: the `Armor` a soldier's HP lives
       // in belongs to the page, which is where `Armor::update` would apply it.
-      this.drownDamage += this.drown.update(this.clock.dt, this.swim.swimming);
+      // Wet is either of `Armor::update`'s two writers of `+0x10`: the swim
+      // state (`setLastHitMaterialIndex`, `isSwimming` at `0x08173700`) or
+      // his ORIGIN under the water surface (`0x08172fad`..`0x08172fc8`,
+      // `water > pos.y - deepWaterLevel`, which defaults to 0 at
+      // `0x08172354`). `swim.depth` is that water over the origin, so deep
+      // wading and the walk out of the sea run the clock too (HP-21).
+      const wet = this.swim.swimming || this.swim.depth > 0;
+      this.drownDamage += this.drown.update(this.clock.dt, wet);
       contacts += this.body.contacts;
       if (this.body.landed) {
         this.landing = {
@@ -1182,15 +1178,17 @@ export class Soldier {
   }
 
   /**
-   * Crouch is held, prone is a toggle, and the eye eases between them over the
-   * duration the animation clip declares.
+   * Crouch is held, prone is a toggle, and the eye eases between them by the
+   * engine's per-tick halving (VIEW-15, `walking-body.js`).
    *
    * One of those transitions is not just a clip. Dropping prone from a stand
    * while not moving backward enters `Lb_RunStandToLie`, which declares
    * `setSpeed 6.0 1.0 1.0` — six times the prone table, i.e. a full run — for
    * the length of its own dive clip. That is BF1942's prone slide, and
-   * `physics.js`'s `DIVE_SPEED_FACTOR` carries the engine reading (PHY-7). The
-   * eye takes the same 0.282 s down, because it is one state, not two.
+   * `physics.js`'s `DIVE_SPEED_FACTOR` carries the engine reading (PHY-8) for
+   * the clip's one pass, `DIVE_DURATION` (1/1.4 s, ANIM-2). The eye does not
+   * wait for it: the dive state sets `c_AsmIsLying` on its first tick, so the
+   * camera is most of the way down in three ticks (VIEW-15).
    *
    * The other two routes to the floor are ordinary: `Lb_StandToLie` (moving
    * backward when you press it) and `Lb_CrouchToLie` (from a crouch) both
@@ -1210,7 +1208,14 @@ export class Soldier {
     const prone = input.prone && !this.proneSpent;
     const wanted = prone ? 'prone' : (input.crouch ? 'crouch' : 'stand');
     let want = wanted;
-    // Standing up into a ceiling is not allowed; stay down instead.
+    // Standing up into a ceiling is not allowed; stay down instead. **A
+    // deliberate departure from retail**: the engine's stance branch
+    // (`handlePlayerInput` `0x08275540`..`0x08275600`) tests only the lower
+    // state's flags, and crouch -> stand / lie -> stand are `.con`
+    // transitions, so retail makes no world query and stands a man into the
+    // ceiling (he has no movement capsule, PHY-1). The page refuses because
+    // its capsule would otherwise be pushed into the geometry above
+    // (`features/viewer-soldier-stance-and-blast/README.md`).
     if (want !== this.stance && HEIGHT[want] > HEIGHT[this.stance]
         && !this.headroom(HEIGHT[want])) {
       want = this.stance;
@@ -1231,9 +1236,6 @@ export class Soldier {
     // and every stand/walk/run state declares 1.0, so it is the input's sign.
     const dive = want === 'prone' && this.stance === 'stand'
       && !((input.forward || 0) < 0);
-    const duration = dive
-      ? DIVE_DURATION
-      : (STANCE_TRANSITION[`${this.stance}>${want}`] || 0.05);
     const from = this.stance;
     this.stance = want;
     // The jump bit is the body's to set and clear, so it is carried across
@@ -1246,10 +1248,10 @@ export class Soldier {
     // soldier held `Lb_LieToStand` ten ticks from the press, prone speeds and
     // his lean onto the ground with it (PHY-38).
     if (from === 'prone' && want === 'stand') {
-      this.body.deferPoseFlags(STANCE_FLAGS.stand, LIE_TO_STAND_DURATION, STANCE_TRANSITION['prone>stand']);
+      this.body.deferPoseFlags(STANCE_FLAGS.stand, LIE_TO_STAND_DURATION);
     } else {
       this.body.setPoseFlags(
-        (this.body.poseFlags & POSE_FLAG_JUMP) | STANCE_FLAGS[want], duration);
+        (this.body.poseFlags & POSE_FLAG_JUMP) | STANCE_FLAGS[want]);
     }
     // Leaving the dive — standing up, or crouching out of it — is a state with
     // a plain 1.0, so any slide still running is cancelled by the same call.

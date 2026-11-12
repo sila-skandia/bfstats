@@ -912,6 +912,28 @@ ObjectTemplate.addLinePoint -10.0/0.0
         self.assertEqual(5.0, area.min_distance)
         self.assertIsNone(area.distance_volume)
 
+    def test_a_curved_distance_ramp_keeps_its_shape_pair(self) -> None:
+        # p5/p6 are the curve and its exponent (ledger SSC-7, BF1942.exe
+        # 0x00803aa0); `area-sound.js` evaluates them, so all six ride along.
+        files = MockLevelFiles({
+            "Sounds/a.con": """
+ObjectTemplate.create AreaObject a
+ObjectTemplate.loadSoundScript A.ssc
+ObjectTemplate.triggerRadius 20
+ObjectTemplate.addLinePoint 10.0/0.0
+ObjectTemplate.addLinePoint 0.0/10.0
+ObjectTemplate.addLinePoint -10.0/0.0
+""",
+            "Sounds/A.ssc": ("newPatch\nload a.wav\nloop\nbeginEffect\n"
+                             "controlDestination Volume\ncontrolSource Distance\n"
+                             "envelope Ramp\nparam 10\nparam 30\nparam 1\nparam -1\n"
+                             "param 2\nparam 2\nendEffect\n"),
+        })
+        statics = [StaticInstance(template="a", position=(0.0, 0.0, 0.0),
+                                  rotation=(0.0, 0.0, 0.0))]
+        area = discover_level_sounds(files, statics).areas[0]
+        self.assertEqual([10.0, 30.0, 1.0, -1.0, 2.0, 2.0], area.distance_volume)
+
     def test_an_area_object_with_two_points_is_silent(self) -> None:
         # The engine's loop needs three or more points (`2 < n`).
         files = MockLevelFiles({

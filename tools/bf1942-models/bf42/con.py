@@ -77,7 +77,8 @@ _OBJECT_TEMPLATE_PROPERTIES = frozenset({
     "autoreload", "center1phands",
     "colorrgbaovertime", "cooldownpersec", "createinvisible", "criticaldamage",
     "cvmchase", "cvmexterntrace", "cvmflyby", "cvmfrontchase", "cvminside",
-    "cvmtrace", "damagefromwater", "damagetype", "damagewhenlost",
+    "cvmtrace", "damagefromdeepwater", "damagefromwater", "damagetype", "damagewhenlost",
+    "deepwaterdamagedelay", "deepwaterlevel",
     "destblendmode", "destroyonexit", "detonateonwatercollision",
     "dieaftercoll", "distance",
     "disttomindamage", "disttostartlosedamage", "drag", "endeffecttemplate",
@@ -86,8 +87,9 @@ _OBJECT_TEMPLATE_PROPERTIES = frozenset({
     "hascollisioneffect", "hasmobilephysics", "hasrestrictedexit",
     "healdistance", "healfactor", "heataddwhenfire", "hideduringfiretime",
     "hitpoints", "holdobject", "hplostwhilecriticaldamage",
-    "hplostwhiledamagefromwater", "hplostwhileupsidedown", "inertiamodifier",
-    "invisible", "itemindex", "magsize", "magtype", "mass", "material",
+    "hplostwhiledamagefromdeepwater", "hplostwhiledamagefromwater",
+    "hplostwhileupsidedown", "inertiamodifier",
+    "invisible", "itemindex", "waterdamagedelay", "magsize", "magtype", "mass", "material",
     "material2", "maxdistanceunderwatersurface", "maxhitpoints",
     "maxnrofobjectspawned", "mindamage", "mindistanceunderwatersurface",
     "numofmag", "outsidehudoffset", "positionalspeedindof",
@@ -296,6 +298,12 @@ PHYSICS_GRIP_FLAGS = {
     "c_pgfenginedummygrip": 0x24,
     "c_pgfstaticfriction": 0x80,
 }
+
+
+# Template kinds built on `RotationalBundleTemplate`'s ctor, and so carrying
+# its `setMaxSpeed 1/1/1` and `setAcceleration 0.1/0.1/0.1` defaults (`rig`).
+SERVO_TEMPLATE_KINDS = frozenset(
+    ("rotationalbundle", "camera", "engine", "wing", "landinggear", "floatingbundle"))
 
 
 def vec3(token: str) -> tuple[float, float, float]:
@@ -1624,6 +1632,19 @@ class ObjectTemplate:
     damage_from_water: bool | None = None
     hp_lost_while_damage_from_water: float | None = None
     hp_lost_while_upside_down: float | None = None
+    # The water countdown's delay and the deep-water clock (ledger HP-5;
+    # `Armor::update` lnxded 0x08172f40). None where the `.con` never writes
+    # the word, which the viewer reads as the engine default: WaterDamageDelay
+    # 0.0 (template +0xc0), damageFromDeepWater off (+0x11c),
+    # hpLostWhileDamageFromDeepWater 1.0 (+0x118), deepWaterDamageDelay 1.0
+    # (+0x124), deepWaterLevel 0.0 (+0x120) (`viewer/armor.js`). Vanilla and
+    # both packs author none of them but the soldier's WaterDamageDelay;
+    # BF1918 authors deep-water damage on 137 templates.
+    water_damage_delay: float | None = None
+    damage_from_deep_water: bool | None = None
+    hp_lost_while_damage_from_deep_water: float | None = None
+    deep_water_damage_delay: float | None = None
+    deep_water_level: float | None = None
     # `submarineData <7 floats>`. The seven parameters are undocumented and
     # nothing in the shipped data or the survey fixes what any one of them
     # means, so they are passed through in order and unnamed. Only two
@@ -1955,6 +1976,20 @@ class ObjectTemplate:
         gear = self._landing_gear_axes() if self.kind.lower() == "landinggear" else {}
         if not self.inputs and not gear:
             return None
+        # An omitted `setMaxSpeed` / `setAcceleration` is the template's own
+        # 1.0 / 0.1 per component (`RotationalBundleTemplate` ctor, lnxded
+        # 0x081d922b / 0x081d923c, GUN-2) for every kind built on that ctor:
+        # `RotationalBundle` itself and the five whose ctors call it first and
+        # store nothing over `+0x174..+0x188` -- `Camera` (0x081accc0),
+        # `Engine`, `Wing`, `LandingGear` and `FloatingBundle` (the only
+        # callers of `RotationalBundleTemplate::RotationalBundleTemplate()` in
+        # lnxded). Until 2026-11-12 an omitted `setMaxSpeed` came out as 0,
+        # which the viewer cannot tell from an authored 0, the one value
+        # `handleUpdate` refuses to step (GUN-20). For these kinds the
+        # acceleration is always emitted, a declared 0 included.
+        servo_default = self.kind.lower() in SERVO_TEMPLATE_KINDS
+        omitted_speed = (1.0, 1.0, 1.0) if servo_default else (0.0, 0.0, 0.0)
+        omitted_accel = (0.1, 0.1, 0.1) if servo_default else (0.0, 0.0, 0.0)
         axes = {}
         for index, axis in enumerate(("yaw", "pitch", "roll")):
             raw = self.inputs.get(axis)
@@ -1973,7 +2008,7 @@ class ObjectTemplate:
             # a mirrored pair declares one identical range and two opposite
             # accelerations, so without this both halves of an aileron pair
             # deflect the same way and the aircraft visibly cannot roll.
-            accel = (self.acceleration or (0.0, 0.0, 0.0))[index]
+            accel = (self.acceleration or omitted_accel)[index]
             # `setContinousRotationSpeed <axis>`, deg/s, signed. GUN-2: the
             # servo adds this term UNCONDITIONALLY every tick in the
             # non-`automaticReset` path, alongside whatever the input asked
@@ -1998,7 +2033,7 @@ class ObjectTemplate:
                 "max": None if free else (hi if hi is not None else 0.0),
                 "free": free,
                 "driver": "rate" if span is not None and span > ACCUMULATOR_SPAN else "position",
-                "maxSpeed": (self.max_speed or (0.0, 0.0, 0.0))[index],
+                "maxSpeed": (self.max_speed or omitted_speed)[index],
                 "direction": -1.0 if accel < 0 else 1.0,
                 # The MAGNITUDE as well as the sign, which this emitted alone
                 # until now. deg/s^2, the servo's acceleration toward its
@@ -2010,7 +2045,7 @@ class ObjectTemplate:
                 # second for every gun in the game. Zero (or an absent
                 # `setAcceleration`) stays absent rather than being emitted as
                 # a 0 that reads as "never gets moving".
-                **({"acceleration": abs(accel)} if accel else {}),
+                **({"acceleration": abs(accel)} if accel or servo_default else {}),
                 **({"continuousRotation": cont} if cont else {}),
             }
         for axis, spec in gear.items():
@@ -2069,7 +2104,7 @@ class ObjectTemplate:
                 "max": retracted,
                 "free": False,
                 "driver": "position",
-                "maxSpeed": (self.max_speed or (0.0, 0.0, 0.0))[index],
+                "maxSpeed": speed,
             }
         return axes
 
@@ -2669,9 +2704,13 @@ class ObjectLibrary:
                 # child instance — it is behaviour, not placement.
                 elif cmd in ("setminrotation", "setmaxrotation", "setmaxspeed",
                              "setacceleration"):
-                    try:
-                        value = vec3(args.split()[0]) if args else (0.0, 0.0, 0.0)
-                    except (ValueError, IndexError):
+                    # Read as the console reads a Vec3 (CON-16): a component
+                    # the text leaves out repeats the last one read, so
+                    # bf1918's `autocarmg_TopMGYawer` `setMaxSpeed 40/0` is
+                    # 40/0/0, not a parse error that dropped the word (and
+                    # with it the gun's traverse) until 2026-11-12.
+                    value = stream_vec3(args.split()[0]) if args else (0.0, 0.0, 0.0)
+                    if value is None:
                         continue
                     setattr(obj, {"setminrotation": "min_rotation",
                                   "setmaxrotation": "max_rotation",
@@ -3167,6 +3206,8 @@ class ObjectLibrary:
                     "exittimer", "exitspeedmod",
                     "cameradelaytime", "cameradelaydistance", "vehiclefov",
                     "hplostwhiledamagefromwater", "hplostwhileupsidedown",
+                    "waterdamagedelay", "hplostwhiledamagefromdeepwater",
+                    "deepwaterdamagedelay", "deepwaterlevel",
                     "setsubmarinehuddepthmodifier", "setsubmarinehuddirmodifier",
                 ):
                     try:
@@ -3207,6 +3248,10 @@ class ObjectLibrary:
                         "vehiclefov": "vehicle_fov",
                         "hplostwhiledamagefromwater": "hp_lost_while_damage_from_water",
                         "hplostwhileupsidedown": "hp_lost_while_upside_down",
+                        "waterdamagedelay": "water_damage_delay",
+                        "hplostwhiledamagefromdeepwater": "hp_lost_while_damage_from_deep_water",
+                        "deepwaterdamagedelay": "deep_water_damage_delay",
+                        "deepwaterlevel": "deep_water_level",
                         "setsubmarinehuddepthmodifier": "submarine_hud_depth_modifier",
                         "setsubmarinehuddirmodifier": "submarine_hud_dir_modifier",
                     }[cmd], value)
@@ -3247,7 +3292,7 @@ class ObjectLibrary:
                     }[cmd], value)
                 elif cmd in ("rememberexcessinput", "hasrestrictedexit",
                              "damagefromwater", "destroyonexit",
-                             "dontclearteamonexit"):
+                             "dontclearteamonexit", "damagefromdeepwater"):
                     if (value := truthy(args)) is not None:
                         setattr(obj, {
                             "rememberexcessinput": "remember_excess_input",
@@ -3255,6 +3300,7 @@ class ObjectLibrary:
                             "destroyonexit": "destroy_on_exit",
                             "dontclearteamonexit": "dont_clear_team_on_exit",
                             "damagefromwater": "damage_from_water",
+                            "damagefromdeepwater": "damage_from_deep_water",
                         }[cmd], value)
                 elif cmd in ("grip", "setvehiclecategory", "setvehicletype"):
                     # `Grip` is the one physics directive with no `set` prefix,

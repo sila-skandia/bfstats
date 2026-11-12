@@ -1772,7 +1772,7 @@ export function createProvingGroundPage(page) {
     if (!group || !root) return {};
     const st = group.stats ?? {};
     const out = { speed: st.velocity, reach: st.velocity * (st.projectile?.timeToLive ?? 1.5),
-                  gravity: (st.projectile?.gravity ?? 0) * 14.7295379 };
+                  gravity: (st.projectile?.gravity ?? 0) * 14.73 };
     root.updateMatrixWorld(true);
     root.getWorldPosition(_go);
     root.getWorldQuaternion(_gq);

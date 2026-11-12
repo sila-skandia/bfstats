@@ -83,6 +83,40 @@ export const TEMPLATE_HITPOINTS_DEFAULT = 10;
  */
 export const HP_LOST_WHILE_CRITICAL_DEFAULT = 1;
 
+/**
+ * The two rates beside it, before any `.con` sets them: 1.0 as well. The same
+ * constructor stores the same 1.0 (`esi`) to template `+0xfc` and `+0x100`
+ * (lnxded `0x081dbe3b`, `0x081dbe41`), and `setArmorComponent` hands `+0xfc`
+ * to the Armor's vt+0xd8 `setHpLostWhileUpSideDown` (`0x081ddd38`, Armor
+ * `+0x120`, the rate HP-18 bills) and `+0x100` to vt+0xe0
+ * `setHpLostWhileDamageFromWater` (`0x081ddd4a`, Armor `+0x124`, HP-5's flat
+ * amount). So a hull that never writes either still loses 1 HP a second on its
+ * roof, and 1 a second in the water when it has `damageFromWater` (HP-22).
+ */
+export const HP_LOST_WHILE_UPSIDE_DOWN_DEFAULT = 1;
+export const HP_LOST_WHILE_DAMAGE_FROM_WATER_DEFAULT = 1;
+
+/**
+ * `WaterDamageDelay` before any `.con` sets it: 0 s, so a `damageFromWater`
+ * hull is billed on its first wet frame (template `+0xc0` takes `ecx` = 0 at
+ * lnxded `0x081dbdc0`; `setArmorComponent` vt+0x58 `setWaterDamageDelay`
+ * `0x08174050` writes it to both the live countdown `+0xe4` and the reload
+ * `+0xec`). HP-5.
+ */
+export const WATER_DAMAGE_DELAY_DEFAULT = 0;
+
+/**
+ * The deep-water words before any `.con` sets them (HP-5, ledger edit
+ * 2026-11-12): `damageFromDeepWater` off (template `+0x11c` = 0, vt+0x110,
+ * Armor `+0x138`), `hpLostWhileDamageFromDeepWater` 1.0 (`+0x118`, vt+0x108,
+ * Armor `+0x134`), `deepWaterLevel` 0 (`+0x120`, vt+0x100, Armor `+0x144`) and
+ * `deepWaterDamageDelay` 1.0 (`+0x124`, vt+0x118, Armor `+0x13c`/`+0x140`).
+ * BF1918 authors `damageFromDeepWater 1` on 137 templates.
+ */
+export const HP_LOST_WHILE_DAMAGE_FROM_DEEP_WATER_DEFAULT = 1;
+export const DEEP_WATER_DAMAGE_DELAY_DEFAULT = 1;
+export const DEEP_WATER_LEVEL_DEFAULT = 0;
+
 /** One of a template's two hit-point words as the Armor receives it: the
  *  authored value rounded up, or the template default when it was never
  *  authored. */

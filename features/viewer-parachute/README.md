@@ -478,7 +478,7 @@ Two shipped behaviours bound it.
   at the shipped `r = 1.8` the canopy arrives at `|v| = 13.681 m/s`, and
   `fall-damage.js` returns a severity of **6855** against 30 HP.
 - **The canopy never closes in mid-air.** `BFSoldier::handleUpdate` calls
-  `setIsParachuting(false)` as soon as `|getPositionalSpeed().y| <= 2.0` (§5).
+  `setIsParachuting(false)` as soon as `|getPositionalSpeed().y| < 2.0` (§5).
   A descent that settles at or below 2 m/s would therefore drop the canopy
   while still in the sky, which is not a thing that happens, so
   `v_y = 1473 / (pi · r² · 24) > 2.0` gives **r < 3.126**. This replaces the
@@ -506,7 +506,7 @@ stream owns.
 
 ## 5. Landing, and dying under the canopy
 
-`BFSoldier::handleUpdate` closes the chute on `|getPositionalSpeed().y| <= 2.0`,
+`BFSoldier::handleUpdate` closes the chute on `|getPositionalSpeed().y| < 2.0`,
 in both of its parachuting arms (`0x08272f3b`, `0x08273129`). Under a canopy the
 descent never falls to 2 m/s in the air, so in practice this fires on the tick
 the ground stops you, and `setIsParachuting(false)` then plays
@@ -692,7 +692,7 @@ beside this file; serve the viewer on your own port first). Out of a plane
 - **The drag radius** (§4). The honest lever if the descent ever needs
   re-tuning; nothing else in the law is free.
 - **`c_AsmLockFreeLook` on `Lb_ParachuteOpen` is not modelled.** The engine
-  locks the view for the 3.15 s the opening clip plays and releases it for
+  locks the view for the 2.0 s the opening clip plays (one pass at 0.5, ANIM-2; this read 3.15 s off the refuted 26 fps law until the 2026-11 parity cross-check) and releases it for
   `Lb_ParachuteIdle`, which declares no such flag; the viewer leaves the view
   free throughout. Firing under the canopy is already right without any work
   — `Ub_ParachuteOpen`'s `addTransitionWhenDone Ub_StandAim` puts the upper

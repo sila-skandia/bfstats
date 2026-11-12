@@ -492,10 +492,11 @@ class GroundModelTests(unittest.TestCase):
             self.assertAlmostEqual(abs(fresh["yawDeg"]), abs(stale["yawDeg"]),
                                    delta=max(3.0, abs(fresh["yawDeg"]) * 0.08),
                                    msg=name)
-        # A Willys Engine authors no yaw axis at all, so it is on the
-        # fallback path either way — and correctly so: a `c_ETCar` never
-        # reads the steering term.
-        self.assertTrue(pre["willy"]["stale"])
+        # A Willys Engine authors `maxRotation` with a zero yaw axis. That is
+        # data, not a stale tree: retail reads it and steers 0 (`0x0823e154`,
+        # `0x0823e1fd`), and a `c_ETCar` never reads the steering term anyway.
+        # Only a tree with no `maxRotation` at all is stale.
+        self.assertFalse(pre["willy"]["stale"])
         self.assertFalse(pre["sherman"]["stale"])
 
     def test_a_long_frame_settles_where_a_short_one_does(self) -> None:
@@ -1689,12 +1690,15 @@ class TrackedVehicleTests(unittest.TestCase):
     def test_a_hull_drags_by_the_box_law(self) -> None:
         # PHY-4: every live PhysicsNode takes the box law,
         # -drag |v| / mass * A_face * v along each of its own axes, with the
-        # faces' ellipses (pi/4) DY DZ, (pi/4) DX DZ, (pi/4) DX DY. The rotation
-        # takes -drag |w| / mass * (A_other + A_other) * w. On the Krupp's box:
-        # straight ahead Az = 3.227, sideways Ax = 7.705.
+        # faces' ellipses (3.14/4) DY DZ, (3.14/4) DX DZ, (3.14/4) DX DY: the
+        # engine's pi is 3.14f (PHY-22, lnxded 0x086d1384; client folds it to
+        # 0.785f at 0x008f733c). The rotation takes
+        # -drag |w| / mass * (A_other + A_other) * w. On the Krupp's box:
+        # straight ahead Az = 3.225, sideways Ax = 7.701.
         d = self.results["boxDrag"]
-        az = math.pi / 4 * 2.27 * 1.81
-        ax = math.pi / 4 * 1.81 * 5.42
+        area = 0.7850000262260437
+        az = area * 2.27 * 1.81
+        ax = area * 1.81 * 5.42
         self.assertTrue(d["ahead10"]["took"])
         self.assertAlmostEqual(15 * 10 / 2500 * az * 10, d["ahead10"]["accel"][2], places=3)
         # Quadratic, not the sphere law's linear: twice the speed, four times
@@ -1889,10 +1893,14 @@ class DrivetrainConstantTests(unittest.TestCase):
         self.assertAlmostEqual(0.1, term["sherman"]["seconds"], places=2)
         # Twice the limit at the same rate: half as far along after one tick.
         self.assertAlmostEqual(1 / 6, term["doubledMaxRotation"], places=4)
-        # An Engine with no roll limit has nothing to divide by and falls
-        # back to the pedal. No ground vehicle in 18 installs is in that
-        # position; all 1,421 author a non-zero `maxRotation.z`.
-        self.assertAlmostEqual(0.5, term["noLimit"], places=4)
+        # An Engine that AUTHORS a zero roll limit is read as data: retail
+        # divides by it unguarded (0/0), and the page takes that as no drive.
+        # No ground vehicle in 18 installs is in that position; all 1,421
+        # author a non-zero `maxRotation.z`. Only a tree with no
+        # `maxRotation` at all falls back to the pedal (F2 of the 2026-11
+        # parity check: the fallback used to fire on an authored zero too).
+        self.assertAlmostEqual(0.0, term["noLimit"], places=4)
+        self.assertAlmostEqual(0.5, term["staleNoLimit"], places=4)
 
     def test_the_steering_term_is_the_yaw_angles_sibling(self) -> None:
         # `PhysicsEngine+0xb0` = `Engine+0x104 / maxRotation.x`. A Sherman
@@ -1902,15 +1910,29 @@ class DrivetrainConstantTests(unittest.TestCase):
         # even before the type gate.
         term = self.results["steerTerm"]
         self.assertAlmostEqual(0.25, term["shermanSeconds"], delta=0.02)
-        # A Willys Engine declares no yaw input or limit at all, so it takes
-        # the pre-extract fallback and its steering term reads the raw input
-        # rather than 0. **Harmless, and deliberately so**: a `c_ETCar` is
-        # `(type & 4) == 0`, so `getCurrentDifferentialRPM` returns the rev
-        # state raw and never looks at the steering term. The fallback exists
-        # for the tracked hulls, whose whole steering IS the differential and
-        # which degraded to a dead stick without it — see
-        # `test_a_tree_extracted_before_this_branch_still_steers`.
-        self.assertEqual(1, term["carSteer"])
+        # A Willys Engine authors `maxRotation` with a zero yaw limit, and
+        # retail reads that: `handleUpdate` seeds the steer to 0.0
+        # (`0x0823e154`) and divides only by a positive `maxRotation.x`
+        # (`0x0823e1fd`-`0x0823e214`). So its steering term is 0. (It used to
+        # take the pre-extract fallback and read the raw input; the fallback
+        # now fires only on a tree with no `maxRotation` at all.) A
+        # `c_ETCar` never reads the term anyway: `(type & 4) == 0`.
+        self.assertEqual(0, term["carSteer"])
+
+    def test_the_servo_takes_the_bundle_defaults_and_the_templates_span(self) -> None:
+        # `setAcceleration` omitted: `RotationalBundleTemplate`'s 0.1
+        # (`0x081d913c`), so one second of full throttle is 0.1 of the roll,
+        # not the maxSpeed's 10. An axis whose maxSpeed is 0 runs no servo
+        # (`Engine::handleUpdate` `0x0823e18e`-`0x0823e1ce`).
+        servo = self.results["engineServo"]
+        self.assertAlmostEqual(0.1, servo["noAccelRoll"], places=4)
+        self.assertAlmostEqual(0.1, servo["noAccelYawRate"], places=6)
+        self.assertEqual(0, servo["zeroSpeedRoll"])
+        # The clip is to the template's own span (GUN-2): -6..10 reverses
+        # at 0.6 of the forward throttle term.
+        self.assertAlmostEqual(-0.6, servo["asymReverseT1"], places=4)
+        # The wire limit is the larger bound's size (TANK-28).
+        self.assertEqual(4000, servo["elcoWireLimit"])
 
     def test_the_gearbox_rules_are_the_engines(self) -> None:
         # Up: `revs > gearUp` AND `blend == 0` AND `gear < numberOfGears`

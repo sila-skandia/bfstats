@@ -58,11 +58,13 @@ class CtfTests(unittest.TestCase):
 
     def test_the_shipped_flag_numbers(self) -> None:
         d = self.results["defaults"]
-        self.assertEqual((5, 30, [0, 7.6, 0], 1.5),
+        # `TimeToReSpawn` with no word is the `FlagTemplate` ctor's -1.0
+        # (0x08291fd4): home on the next frame. Every shipped flag says 30.
+        self.assertEqual((5, -1, [0, 7.6, 0], 1.5),
                          (d["radius"], d["timeToRespawn"], d["location"], d["drop"]))
         # A bare base keeps them.
         base = self.results["normalised"]
-        self.assertEqual((5, 30, 1), (base["radius"], base["flag"]["timeToRespawn"],
+        self.assertEqual((5, -1, 1), (base["radius"], base["flag"]["timeToRespawn"],
                                       base["flag"]["team"]))
 
     def test_ctf_ssc_patches_by_the_actors_team(self) -> None:

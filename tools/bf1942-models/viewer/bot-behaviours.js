@@ -3,8 +3,9 @@
 // 2026-09-23 (features/bf1942-ai-research-2026-09-21/bot-behaviours.md §4-6):
 //
 //  * `DecleiningSlopeCurve::calculate` 0x08655560 and `SCurve::calculate`
-//    0x08658420 are 101-entry tables interpolated at `x * 100` and clamped to
-//    `[0, 1]`; the sampled points below are the read ones, the rest linear.
+//    0x08658420 are 101-entry tables read at `x * 100` and clamped to
+//    `[0, 1]`: SCurve blends its two neighbours, Declein takes the lower
+//    entry (both tables as the binary writes them, 2026-11-12).
 //  * `BBScout::calculateUrgency` 0x08579a50 bins every threat around the bot
 //    into eight quadrants (`computeQuadrants` 0x08579150, 25 / 45 deg cones)
 //    weighted by each quadrant's inertia (`BotMain+0x1f0`: seconds since
@@ -40,24 +41,69 @@
 // `coverSearchRadius 20`; a cover object's extents are its collider box; the
 // per-strength threat a soldier poses is its `setBattleStrength`.
 
-/** `DecleiningSlopeCurve`: sampled points of the 101-entry table. */
-const DECLEIN_POINTS = [[0, 0], [0.05, 0.146], [0.10, 0.292], [0.20, 0.579],
-  [0.30, 0.754], [0.50, 0.895], [0.70, 0.955], [1.0, 1.0]];
-/** `SCurve`: logistic, sampled. */
-const SCURVE_POINTS = [[0, 0], [0.25, 0.087], [0.5, 0.5], [0.75, 0.913], [1.0, 1.0]];
+/** `SCurve::init` 0x08658030: `SCurve::curveValues`, 101 floats. */
+export const SCURVE_TABLE = [
+  0.0, 0.00224938989, 0.00338781998, 0.00463052979, 0.00598675013, 0.00746650994, 0.00908064004,
+  0.0108407997, 0.0127597004, 0.0148508996, 0.0171288997, 0.0196096003, 0.0223098006, 0.0252474006,
+  0.0284416005, 0.0319131017, 0.0356835015, 0.0397756994, 0.0442142002, 0.0490242988, 0.0542327985,
+  0.0598676018, 0.0659573004, 0.0725317001, 0.0796212032, 0.0872564986, 0.0954684988, 0.104287997,
+  0.113744996, 0.123869002, 0.134688005, 0.146227002, 0.158509001, 0.171553999, 0.185376003,
+  0.199987993, 0.215393007, 0.231592, 0.248576, 0.266330004, 0.284830987, 0.304048002, 0.323940992,
+  0.344460994, 0.365550995, 0.387147993, 0.409179002, 0.431564987, 0.45422399, 0.477064997, 0.5,
+  0.52293402, 0.54577601, 0.568435013, 0.590821028, 0.612851977, 0.634449005, 0.655538976,
+  0.676059008, 0.695951998, 0.715167999, 0.733669996, 0.751424015, 0.768408, 0.784606993,
+  0.800011992, 0.814624012, 0.828445971, 0.841490984, 0.853772998, 0.86531198, 0.876130998,
+  0.886255026, 0.895712018, 0.904532015, 0.912743986, 0.920378983, 0.927468002, 0.93404299,
+  0.940132022, 0.945766985, 0.950976014, 0.95578599, 0.960223973, 0.964317024, 0.968087018,
+  0.971557975, 0.974753022, 0.977689981, 0.980390012, 0.982870996, 0.985149026, 0.987240016,
+  0.989158988, 0.990918994, 0.992533982, 0.994013011, 0.995369017, 0.996612012, 0.997750998, 1.0,
+];
 
-function table(points, x) {
-  if (!(x > 0)) return 0;
-  if (x >= 1) return 1;
-  for (let i = 1; i < points.length; i++) {
-    const [x0, y0] = points[i - 1], [x1, y1] = points[i];
-    if (x <= x1) return y0 + (y1 - y0) * (x - x0) / (x1 - x0);
-  }
-  return 1;
+/** `SCurve::calculate` 0x08658420: the table at `trunc(100 x)`, blended. */
+export function sCurveExact(x) {
+  if (!(x < 1)) return 1;
+  if (!(x >= 0)) return 0;
+  const s = x * 100;
+  const i = Math.trunc(s);
+  const f = s - i;
+  return (1 - f) * SCURVE_TABLE[i] + f * SCURVE_TABLE[i + 1];
 }
 
-export function decleiningSlope(x) { return table(DECLEIN_POINTS, x); }
-export function sCurve(x) { return table(SCURVE_POINTS, x); }
+/** `DecleiningSlopeCurve::init` 0x08655170: `DecleiningSlopeCurve::
+ *  curveValues`, the 101 floats it writes (`movl $0x3cef8d24,0x4(%eax)` ..
+ *  `movl $0x3f800000,0x190(%eax)`). */
+export const DECLEIN_TABLE = [
+  0, 0.0292421058, 0.0584842116, 0.0877263099, 0.116968423, 0.146210521, 0.17545262, 0.204694748,
+  0.233936846, 0.263178945, 0.292421043, 0.321663141, 0.35090524, 0.380147398, 0.409389496,
+  0.438631594, 0.467873693, 0.497115791, 0.526357889, 0.551246345, 0.578947365, 0.604010522,
+  0.626794755, 0.647596836, 0.666666329, 0.684210539, 0.7004053, 0.715399981, 0.729323208,
+  0.742286325, 0.754386306, 0.765704215, 0.776315808, 0.786284208, 0.795665324, 0.804511547,
+  0.812865257, 0.820768476, 0.828254759, 0.835357904, 0.842105269, 0.848524213, 0.854636908,
+  0.860465288, 0.866028428, 0.871345282, 0.876430511, 0.881298959, 0.885965288, 0.890439987,
+  0.894736886, 0.898865283, 0.9028337, 0.906653643, 0.910331607, 0.913875818, 0.917293727,
+  0.92059058, 0.923774779, 0.926850557, 0.929824233, 0.932701111, 0.935484231, 0.938178957,
+  0.940789521, 0.943319976, 0.945773721, 0.948153675, 0.950464189, 0.95270735, 0.95488739,
+  0.957005262, 0.959064245, 0.961067379, 0.963015795, 0.964912653, 0.966758907, 0.968557894,
+  0.970310569, 0.972018957, 0.973684251, 0.975308418, 0.976893723, 0.978439987, 0.979949474,
+  0.981424272, 0.982864201, 0.984270513, 0.985646307, 0.986989498, 0.988304257, 0.989589512,
+  0.990846336, 0.992076874, 0.993281066, 0.994460046, 0.995613754, 0.996744215, 0.99785161,
+  0.998936832, 1,
+];
+
+/** `DecleiningSlopeCurve::calculate` 0x08655560: 0 at or below 0, 1 from 1,
+ *  else the table at `i = clamp(trunc(100 x), 0, 99)` with NO blend: its
+ *  fraction is `fld %st(0); fsubp` (0x086555a6..0x086555ab), x100 less
+ *  itself, so 0, and the result is `table[i]` (`SCurve::calculate` reloads
+ *  the integer with `fildl` and blends; this one does not). A step curve, the
+ *  engine's arithmetic kept as it is. */
+export function decleiningSlope(x) {
+  if (!(x > 0)) return 0;
+  if (x >= 1) return 1;
+  const i = Math.min(99, Math.max(0, Math.trunc(x * 100)));
+  return DECLEIN_TABLE[i];
+}
+/** `SCurve::calculate` 0x08658420, the exact 101-entry table (bot-sense.js). */
+export function sCurve(x) { return sCurveExact(x); }
 
 /** The eight sensing quadrants: four azimuths x {level, up}. `computeQuadrants`
  *  splits a direction into azimuth bins with 45 deg cones and an elevation

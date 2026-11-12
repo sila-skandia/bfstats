@@ -309,6 +309,19 @@ Ghidra or with `lnxded/`). Where it helped, say so in the row's evidence
 ("named by the Mac build, recorpus") so the next reader knows where the lead
 came from. If their claim and our binary disagree, the binary wins.
 
+Without Ghidra (this Mac has none), our binary is read with LLVM `objdump` and
+`./readmem.py`. `objdump -d --no-show-raw-insn --start-address=A
+--stop-address=B <file>` disassembles either file, and `objdump -t
+<lnxded.static> | grep <address>` names a server address. `objdump -s`
+misreads data addresses in both files, so read the constant an instruction
+loads with `./readmem.py server 0x086d1388 f` (or `client`, or `dyn` for the
+1.61 `.dynamic` the third-party Linux dump was made from), and decode an
+immediate with `./readmem.py - 0xc16bae14 hexf`. Decode an immediate before
+quoting it: `0xC16BAE14` is -14.73f, and a mis-decode of it as -14.7295379
+stood in the docs from 2026-09-15 to 2026-11-12. The 2026-11-12 pass over
+every retail citation in the browser game used this method, bucket by bucket
+([`retail-parity-cross-check-2026-11-12`](../retail-parity-cross-check-2026-11-12/README.md)).
+
 ## Layout
 
 ```

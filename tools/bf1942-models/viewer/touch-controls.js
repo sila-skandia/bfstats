@@ -1445,8 +1445,11 @@ export function createTouchControls(page) {
   // lets a hold and a toggle share one target (the ninth pass's objection
   // was a crouch that engaged on the press with a prone then put on top of
   // it). Jump is deliberately not the road up from prone: the engine sets
-  // the jump bit only when neither the crouch nor the prone flag is set
-  // (client `0x00500628`-`0x0050067a`, `BFSoldier_jumpFlagSet`). The
+  // the jump bit (0x80) only when the current lower-body state carries
+  // neither `c_AsmIsCrouching` nor `c_AsmIsLying` (`test 0x60` on
+  // `getCurrentStateFlags` at client 0x00500628; ledger ANIM-18, PHY-1), and
+  // never from a jump state (`getSoundTrigger` 0x004f5c60 != 4), setting it
+  // at 0x0050067a (`BFSoldier_jumpFlagSet`). The
   // visibility pass runs straight after either action, so the lit word
   // never lags a frame behind the stance.
   const STANCE_HOLD_MS = 350;

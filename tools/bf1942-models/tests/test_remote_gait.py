@@ -446,5 +446,29 @@ class RecordedActionTests(unittest.TestCase):
             self.assertIsNone(self.out[key], key)
 
 
+
+class DrawnAimPitchTests(unittest.TestCase):
+    results: dict
+
+    @classmethod
+    def setUpClass(cls) -> None:
+        cls.results = run_harness()
+
+    def test_the_drawn_pitch_takes_the_engines_clamp(self) -> None:
+        # `BFSoldier::updateAnimations` clamps `-aim` (`+0x284` negated at
+        # 0x0826e677) into [-20, 20] standing and crouched (0x086d26f0,
+        # 0x086c0314), and into the template's `setLiePointUpDownAngle` pair
+        # [down, up] = [-6, 0] lying (0x0826f109 / 0x0826f122). ANIM-23.
+        d = self.results["drawnAimPitch"]
+        self.assertEqual({"up": 0.0, "down": -6.0}, d["lie"])
+        self.assertEqual({"up": 20.0, "down": -20.0}, d["limit"])
+        self.assertEqual([-20, -20, -5, 0, 5, 20, 20], d["stand"])
+        # Lying: aim up (positive) bends up to 6, aim down not at all.
+        self.assertEqual([0, 0, 0, 3, 6, 6, 6], d["prone"])
+        # A mod's own pair: up 2 / down -12 holds an aim up of 10 at 10 (the
+        # negated aim -10 is inside [-12, 2]).
+        self.assertEqual(10, d["modLie"])
+        self.assertEqual(0, d["notANumber"])
+
 if __name__ == "__main__":
     unittest.main()

@@ -12,9 +12,9 @@ What this file pins is the P2 contract of
   hello's slots, own slot excluded from the remote iteration;
 * the input seq — one increasing seq per send, exactly one frame per tick
   the page consumed, no sends before join;
-* the snapshot lerp — the last two snapshots blend in render space (the
-  engine's single-current-state ghost law, netcode.md §4), NaN-safe before
-  any snapshot, stance flags ride the sample;
+* the snapshot draw law — retail's (ledger P-2, P-6, P-7): 100 ms behind the
+  tick clock from a 16-snapshot history stamped by tick, extrapolated up to
+  1.2 s, NaN-safe before any snapshot, stance flags ride the newest record;
 * the feed and the roster — join/fire/seatEnter/leave rows resolve to text,
   the roster drops a left player;
 * the exits — the explicit MSG_LEAVE on close (J-3's 0xd), MSG_CLOSED
@@ -40,6 +40,7 @@ HARNESS = Path(__file__).resolve().parent / "netcode_client_harness.mjs"
 
 MODULES = {
     "netcode-client.mjs": VIEWER / "netcode-client.js",
+    "ghost-draw.js": VIEWER / "ghost-draw.js",
     "netcode.js": VIEWER / "netcode.js",
     "mouse-input.js": VIEWER / "mouse-input.js",
 }
@@ -90,12 +91,21 @@ class NetcodeClientTests(unittest.TestCase):
         self.assertTrue(self.results["selfNotRemote"])
 
     def test_snapshot_lerp_window(self):
-        # Two snapshots: A at (0,0,0) then (10,0,0); at +50 ms of a 100 ms
-        # frame the lerped sample sits halfway, stance rides the newest.
+        # Retail's draw law (P-2, P-6, P-7): 100 ms behind the tick clock, the
+        # snapshots stamped by their own ticks. At the instant the second
+        # lands the remote is drawn at the first; 50 ms on, halfway; stance
+        # rides the newest record.
+        self.assertAlmostEqual(self.results["atLanding"], 0.0, places=3)
         self.assertAlmostEqual(self.results["lerpX"], 5.0, places=3)
         self.assertTrue(self.results["lerpProne"])
         self.assertEqual(self.results["lerpYaw"], 90)
-        self.assertTrue(self.results["noSnapshot"])
+
+    def test_snapshot_extrapolates_past_the_newest(self):
+        # 50 ms past the newest at 100 m/s: 5 m on, the facing held (P-7);
+        # beyond extrapolationTime (1.2 s) the newest is held.
+        self.assertAlmostEqual(self.results["extrapX"], 15.0, places=3)
+        self.assertEqual(self.results["extrapYaw"], 90)
+        self.assertAlmostEqual(self.results["heldX"], 10.0, places=3)
 
     def test_input_seq(self):
         self.assertTrue(self.results["inputSeq1"])

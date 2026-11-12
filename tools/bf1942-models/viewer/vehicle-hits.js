@@ -21,6 +21,7 @@ import { FRIENDLY_FIRE_SHIPPED, friendlyDamage, roundPasses } from './friendly-f
 import { hitFromDirAlpha, hitFromDirOctantAxes } from './hud.js';
 import { inWaterOwners } from './world-damage.js';
 import { roundWeapon } from './vehicle-damage.js';
+import { damageModifier, materialDamage, roundAttackerMaterial } from './crash-damage.js';
 
 /**
  * Built once by the page, where this code used to sit. `page` hands in
@@ -542,12 +543,22 @@ export function createVehicleHits(page) {
     // carries the spec itself (`{ template, material, damage, ... }`).
     const projectile = stats?.round ?? stats?.projectile;
     const spec = typeof projectile === 'string' ? { template: projectile } : projectile ?? null;
-    const attacker = page.guns.attackerMaterial(spec);
-    const base = page.guns.materials?.[attacker]?.damage ?? BOT_FALLBACK_DAMAGE;
-    const attGroup = page.guns.materials?.[attacker]?.attGroup ?? attacker;
-    const defGroup = page.guns.materials?.[defender]?.defGroup ?? defender;
-    const mod = page.guns.modifiers?.[attGroup]?.[defGroup] ?? null;
-    return base * (mod === null ? 1 : mod) * damageFactor(spec?.damage, distance);
+    const tables = page.guns.materials ? page.guns : null;
+    // No weapon data, or a round the projectile table does not know: our own
+    // plumbing has not resolved the round yet (a bot whose weapon glb has not
+    // loaded, or a tree without it, as the headless runner's model cache is).
+    // That is not an engine material, so the stand-in prices it, full modifier.
+    const attacker = roundAttackerMaterial(page.guns, spec);
+    if (!tables || attacker === null) {
+      return BOT_FALLBACK_DAMAGE * damageFactor(spec?.damage, distance);
+    }
+    // The MaterialManager's own lookups (`crash-damage.js`, ledger DMG-1): an
+    // id the table does not define is material 0's, and a pair with no cell
+    // is 0.0, so the round does nothing (vanilla's Bayonet, 257, has cells
+    // against def group 73 alone).
+    const base = materialDamage(tables, attacker);
+    const mod = tables.modifiers ? damageModifier(tables, attacker, defender) : 1;
+    return base * mod * damageFactor(spec?.damage, distance);
   }
 
   /** Whose round it is: the player in the seat that fired `group`, else the

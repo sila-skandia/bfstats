@@ -7,7 +7,8 @@
 // `effect-audio.js` stay the voices.
 
 import * as THREE from 'three';
-import { WEAPON_HEADROOM } from './engine-audio.js';
+import { WEAPON_HEADROOM, distanceRolloff } from './engine-audio.js';
+import { modulate } from './ssc-curves.js';
 import { configureDs3dPanner, standDs3dPanner } from './ds3d-pan.js';
 import { VehicleAudioRack } from './vehicle-audio.js';
 import { WorldFire } from './world-fire.js';
@@ -18,6 +19,19 @@ import { entryInMode } from './game-modes.js';
 import { ScrapeVoices } from './obstacle.js';
 import { nationStems } from './radio.js';
 import { decodeGapless, gaplessAudioLoader } from './gapless-decode.js';
+
+/** `SoldierRefillAmmo.ssc`'s HIGH patch, as read from vanilla's Objects.rfa:
+ *  `minDistance 5` and the `Volume <- Distance` ramp `10 15 1 -1`. */
+export const REFILL_MIN_DISTANCE = 5;
+export const REFILL_DISTANCE_RAMP = [10, 15, 1, -1];
+
+/** The refill one-shot's level at `distance` metres: the script's distance
+ *  ramp times DirectSound's `min(1, minDistance / d)` (ledger SND-6). */
+export function refillVolumeAt(distance) {
+  const ramp = modulate([{ source: 'distance', envelope: 'ramp', params: REFILL_DISTANCE_RAMP }],
+    { distance }, 1);
+  return ramp * distanceRolloff(distance, REFILL_MIN_DISTANCE);
+}
 
 /** A place a panner can take: Web Audio throws on a position that is not all
  *  numbers, and a one-shot at no position is better not played than a frame
@@ -365,9 +379,13 @@ export function createPageAudio(page) {
    * `SoldierRefillAmmo.ssc`: a soldier's own refill, which his client plays
    * when a depot resupplies him (`BFSoldier::triggerRefillAmmoSound`, lnxded
    * 0x0827ebc0, told by SpecialGameEvent 0), played for a replayed player at
-   * `position` (replay.js). The script's HIGH patch: `Ammorefill.wav` with a
-   * 5 % pitch jitter, full to 10 m and gone at 15 m (`Volume <- Distance`
-   * ramp 10..15). The wave is the one the levels' depots ship, so a level
+   * `position` (replay.js). The script's HIGH patch (vanilla
+   * `Objects/Soldiers/Common/Sounds/SoldierRefillAmmo.ssc`, read 2026-11-12):
+   * `Ammorefill.wav`, `minDistance 5`, a 5 % pitch jitter, and a `Volume <-
+   * Distance` ramp `10 15 1 -1` (full to 10 m, gone at 15 m). On top of the
+   * ramp the voice falls off as DirectSound's `min(1, 5 / d)` like every 3D
+   * voice (ledger SND-6, `distanceRolloff`): 0.5 at 10 m, 0.2 at 12.5 m. The
+   * wave is the one the levels' depots ship, so a level
    * whose own depot gave it this page already holds it (`supplyGive`), and
    * any other finds it in its tree's shared sounds.
    */
@@ -381,15 +399,20 @@ export function createPageAudio(page) {
     const source = ctx.createBufferSource();
     source.buffer = buffer;
     source.playbackRate.value = 1 + (Math.random() * 2 - 1) * 0.05;
+    const e = pageAudio.audioListener.matrixWorld?.elements;
+    const d = e ? Math.hypot(e[12] - position.x, e[13] - position.y, e[14] - position.z) : 0;
+    const level = refillVolumeAt(d);
+    if (!(level > 0)) return;
     const gain = ctx.createGain();
-    gain.gain.value = masterVolume() * WEAPON_HEADROOM;
+    gain.gain.value = level * masterVolume() * WEAPON_HEADROOM;
+    // The level is the script's and DirectSound's, worked out above at the
+    // voice's true distance; the panner only places it (it stands at the
+    // render point, not the real one), so it attenuates nothing itself.
     const panner = ctx.createPanner();
-    panner.distanceModel = 'linear';
-    panner.refDistance = 10;
-    panner.maxDistance = 15;
-    panner.rolloffFactor = 1;
-    standDs3dPanner(panner, pageAudio.audioListener.matrixWorld?.elements,
-                    position.x, position.y, position.z);
+    panner.distanceModel = 'inverse';
+    panner.refDistance = 1;
+    panner.rolloffFactor = 0;
+    standDs3dPanner(panner, e, position.x, position.y, position.z);
     source.connect(gain);
     gain.connect(panner);
     panner.connect(pageAudio.audioListener.getInput());
@@ -855,8 +878,8 @@ export function createPageAudio(page) {
     if (ctx.state === 'suspended') return null;
     if (position && !placeable(position)) return null;
     if (position) {
-      // Beyond the panner's own 40 m cut a bot's foley is ~-32 dB; skip the
-      // voice entirely. Twelve bots walking was a hundred one-shot panners a
+      // DELIBERATE, not retail (a voice has no maximum distance, SND-6): past
+      // 40 m a bot's foley is ~-32 dB and the page skips the voice entirely. Twelve bots walking was a hundred one-shot panners a
       // second, most of them built for nobody.
       const e = pageAudio.audioListener.matrixWorld?.elements;
       if (e) {

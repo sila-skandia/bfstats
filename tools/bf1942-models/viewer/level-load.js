@@ -28,7 +28,7 @@ import { createLevelWarmup } from './level-warmup.js';
 import { bareFireArmsName } from './vehicle-audio.js';
 import { idleFirePose } from './idle-vehicle.js';
 import { restoreLoadedRounds } from './loaded-rounds.js';
-import { SupplyDepot, heldObjectLife } from './supply.js';
+import { SupplyDepot, depotPhase, heldObjectLife } from './supply.js';
 import { World } from './world.js';
 import { artCandidates } from './level-art.js';
 import { commentsWithBotCredit } from './briefing-screen.js';
@@ -66,6 +66,16 @@ import { createLevelSkin, repaintPage } from './level-skin.js';
  * `syncDeployReady`, `templateNameOf`, `texLoader`, `texManager`,
  * `toggleFullMap`, `unitRectOf`, `vehicles`, `vmScene`.
  */
+/** A depot's start phase (ledger SUP-4): the `SupplyDepot` ctor stamps its
+ *  last cycle at `(rand() % 30) / 30.0` s of world time, so depots placed
+ *  together do not fire on one frame (`supply.js` `depotPhase`). `random` is
+ *  a [0, 1) source: the page's `random` when it has one, else `Math.random`,
+ *  which the headless runner seeds (`sim/env.mjs` `seedMathRandom`), so a
+ *  run with a seed is reproducible. Drawn once per depot per level load. */
+export function depotStartPhase(random = Math.random) {
+  return depotPhase(() => Math.floor(random() * 0x8000));
+}
+
 export function createLevel(page) {
   const level = {};
   // The level's own paint for the pad vehicles loaded from the models tree
@@ -304,7 +314,8 @@ export function createLevel(page) {
         return obj.getWorldPosition(at);
       } : null;
       depots.push(new SupplyDepot({ x: pos.x, y: pos.y, z: pos.z }, data, obj.name,
-        { root: owner, locate, heldDelay, heldLife, heldGap }));
+        { root: owner, locate, heldDelay, heldLife, heldGap,
+          phase: depotStartPhase(typeof page.random === 'function' ? page.random : Math.random) }));
     });
     return depots;
   }

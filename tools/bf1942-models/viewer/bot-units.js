@@ -12,6 +12,7 @@ import * as THREE from 'three';
 import { classifyRoot, surveyVehicle, seatYawLimits } from './seats.js';
 import { buildNavMap, isWalkable, searchTypeMaps, OUTSIDE_MAP_MATERIAL } from './nav-grid.js';
 import { craftTipped } from './doctrine-landing.js';
+import { CHANGE } from './bot-vehicle.js';
 import { mayEnterHull } from './vehicle-instance.js';
 import { findEntryPoint, wantsSeat, SPAWN_SEAT_REACH_AI, SPAWN_STANDS } from './spawn-seat.js';
 import { rowFor, rowFire } from './bot-rows.js';
@@ -369,7 +370,27 @@ export function createBotUnits(env) {
         node.getWorldPosition(_entryWorld);
         const pos = [_entryWorld.x, _entryWorld.y, _entryWorld.z];
         _up.set(0, 1, 0).applyQuaternion(node.getWorldQuaternion(_quat));
-        const upright = _up.y >= 0.6914;
+        // `BBChange::isUpsideDown` 0x0855fcf0: the hull's up (its matrix row
+        // +0x10) against the ground normal under it (environment vt+0xa8 at
+        // its x, z), refused below cos 45 deg, the 0.7071 the caller pushes
+        // (0x0855f2ad, 0x0855f606; ledger AI-44, whose 0.6914 is corrected).
+        // The normal is `BFEnvironment::getNormal` 0x085e50e0, which is
+        // `terrainBase` (0x087435f0) vt+0x50, `PatchTerrain::getNormal`
+        // 0x083d6b30: the heightmap's, statics ignored, so a level hull on a
+        // stone bridge over a steep bank reads as upside down (as in retail).
+        // Both callers skip an aircraft: the candidate test runs only on a
+        // unit with a Mobile plug-in (+0x2c, 0x0855ed0c) that is neither
+        // ITAir (0x10) nor ITSoldier (0x400000, 0x0855ed16..0x0855ed25), and
+        // the own-unit test is skipped for ITAir equipment (0x0855e7a6). A
+        // fixed gun (no Mobile plug-in, `mobile: kind !== 'gun'` below) is
+        // never tested. Both frames agree: `heightfield.height` takes the
+        // page's (x, z) and negates z itself, so its normal and the hull's
+        // up are in the page's frame. World up where the page has no
+        // heightfield.
+        const hfUp = collider?.heightfield ?? null;
+        const gn = hfUp ? hfUp.normal(pos[0], pos[2], [0, 0, 0]) : null;
+        const upright = kind === 'air' || kind === 'gun'
+          || (gn ? _up.x * gn[0] + _up.y * gn[1] + _up.z * gn[2] : _up.y) >= CHANGE.upsideDownCos;
         // The hull's heading, for a seat's traverse limits (its -z column).
         const hullYaw = Math.atan2(-node.matrixWorld.elements[8], -node.matrixWorld.elements[10]);
         const rootId = node.userData?.control || node.name || 'vehicle';

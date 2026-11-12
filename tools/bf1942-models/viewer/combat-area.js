@@ -236,8 +236,10 @@ export function combatAreaRect(extras) {
     minX: Math.min(ax, bx), maxX: Math.max(ax, bx),
     minZ: Math.min(az, bz), maxZ: Math.max(az, bz),
   };
-  // A zero-area declaration is a level saying nothing, not a level where
-  // every position is outside.
+  // DELIBERATE departure (subsystems/combat-area.md section 1): the engine
+  // uses a declared rectangle whatever its size (`+0x6d`, 0x08061846), so a
+  // zero-area one would put every position outside. Here it is a level saying
+  // nothing, and the terrain's extent bounds it instead.
   if (rect.maxX <= rect.minX || rect.maxZ <= rect.minZ) return null;
   return rect;
 }

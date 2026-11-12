@@ -210,8 +210,14 @@ export function createEffectObjects(page) {
   /** One world tick of a float body: the law, then the sea bed under it. */
   function tickFloat(record) {
     // `FloatingBundle::handleMessage(0x14)`: critical damage arms each
-    // float's sink rate (0 on both rafts, whose `sinkingSpeedMod` is 0).
-    if (!record.hull.armed && record.damageable?.critical) record.hull.arm();
+    // float's sink rate (0 on both rafts, whose `sinkingSpeedMod` is 0). The
+    // message is the Armor's critical crossing, `criticalFlagged`; death sends
+    // 0x15 without 0x14, so a hull killed in one blow never arms it. The bare
+    // `critical` is read only from a damageable that predates the flag.
+    const damageable = record.damageable;
+    const flagged = damageable && ('criticalFlagged' in damageable
+      ? damageable.criticalFlagged : damageable.critical);
+    if (!record.hull.armed && flagged) record.hull.arm();
     const body = record.hull.step(TICK);
     const drop = lowestDrop(record.object, record.box);
     const bed = terrainAt(body.pos[0], body.pos[2]);

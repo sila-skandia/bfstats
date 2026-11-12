@@ -91,7 +91,7 @@ function willyNode() {
     axes: {
       yaw: {
         input: 'c_PIYaw', min: -30, max: 30, free: false,
-        driver: 'position', maxSpeed: 200, direction: 1,
+        driver: 'position', maxSpeed: 200, direction: 1, acceleration: 200,
       },
     },
   };
@@ -203,7 +203,7 @@ function kubelNode() {
     axes: {
       yaw: {
         input: 'c_PIYaw', min: -30, max: 30, free: false,
-        driver: 'position', maxSpeed: 200, direction: 1,
+        driver: 'position', maxSpeed: 200, direction: 1, acceleration: 200,
       },
     },
   };
@@ -482,7 +482,7 @@ function m3a1Node() {
 
   const steerRig = {
     control: 'M3A1', automaticReset: true,
-    axes: { yaw: { input: 'c_PIYaw', min: -40, max: 40, free: false, driver: 'position', maxSpeed: 80, direction: 1 } },
+    axes: { yaw: { input: 'c_PIYaw', min: -40, max: 40, free: false, driver: 'position', maxSpeed: 80, direction: 1, acceleration: 80 } },
   };
   for (const side of [1, -1]) {
     const bundle = new THREE.Object3D();
@@ -1637,9 +1637,11 @@ results.diffRPMByType = {
   results.revFilter = {
     trace,
     ceiling: round(e.revs, 5),
-    // One tick from rest with T1 already at 1: exactly the gain.
+    // One tick from rest with T1 already at 1: exactly the gain. A tree with
+    // no `maxRotation` (the pre-extract path) takes the pedal as T1 at once.
     firstStepFromT1: (() => {
-      const probe = new EngineState({ ...ENGINE_SPECS.sherman, maxRotation: [1, 0, 0] });
+      const { maxRotation, ...noRotation } = ENGINE_SPECS.sherman;
+      const probe = new EngineState(noRotation);
       probe.tick(TICK, 1, 0);
       return round(probe.revs, 6);
     })(),
@@ -1670,9 +1672,18 @@ results.diffRPMByType = {
     // Double maxRotation.z with the same rate and the term is half as far
     // along after one tick: the divisor is real.
     doubledMaxRotation: round(slow.throttleTerm, 5),
-    // No roll limit at all falls back to the pedal.
+    // An AUTHORED zero roll limit is data, not a stale tree: retail divides
+    // by it unguarded, and the page reads that as no drive (0).
     noLimit: (() => {
       const e = new EngineState({ ...ENGINE_SPECS.sherman, maxRotation: [1, 0, 0] });
+      e.tick(TICK, 0.5, 0);
+      return round(e.throttleTerm, 4);
+    })(),
+    // No `maxRotation` at all (a tree older than `con.py`'s export) falls
+    // back to the pedal.
+    staleNoLimit: (() => {
+      const { maxRotation, ...noRotation } = ENGINE_SPECS.sherman;
+      const e = new EngineState(noRotation);
       e.tick(TICK, 0.5, 0);
       return round(e.throttleTerm, 4);
     })(),
@@ -2899,6 +2910,32 @@ function kettenKradNode({ rearWheels = true } = {}) {
   };
 }
 
+{
+  // The servo's engine defaults and the template's own span (GUN-2,
+  // TANK-12, TANK-28; 2026-11 parity check F1/F2).
+  const base = { engineType: 'c_ETTank', torque: 4, differential: 4, numberOfGears: 5,
+    maxRotation: [1, 0, 1] };
+  // `setAcceleration` omitted: the RotationalBundleTemplate default 0.1/s,
+  // not setMaxSpeed.
+  const noAccel = new EngineState({ ...base, maxSpeed: [4, 0, 10] });
+  // A zero maxSpeed axis runs no servo at all.
+  const zeroSpeed = new EngineState({ ...base, maxSpeed: [4, 0, 0], acceleration: [4, 0, 10] });
+  for (let i = 0; i < 30; i++) { noAccel.tick(TICK, 1, 0); zeroSpeed.tick(TICK, 1, 0); }
+  // EoD's trucks: roll -6..10, so full reverse is T1 = -0.6.
+  const asym = new EngineState({ ...base, maxRotation: [0, 0, 10], maxSpeed: [0, 0, 100],
+    acceleration: [0, 0, 100] }, true, { roll: { min: -6, max: 10 } });
+  for (let i = 0; i < 30; i++) asym.tick(TICK, -1, 0);
+  const elco = new EngineState({ ...base, maxRotation: [0, 0, 2500] }, true,
+    { roll: { min: -4000, max: 2500 } });
+  results.engineServo = {
+    noAccelRoll: round(noAccel.rollAngle, 5),
+    noAccelYawRate: noAccel.yawRate,
+    zeroSpeedRoll: round(zeroSpeed.rollAngle, 5),
+    asymReverseT1: round(asym.throttleTerm, 4),
+    elcoWireLimit: elco.rollWireLimit,
+  };
+}
+
 results.contactSide = {
   restNoise: restSide(1.2e-7), restRight: restSide(1.0), restLeft: restSide(-1.0),
   centreLeanRight: contactSide(0, 0.05, 0.1), centreLeanLeft: contactSide(0, -0.05, 0.1),
@@ -3141,7 +3178,7 @@ function pumaNode() {
     hook.name = 'Sherman-Pak40_Hook';
     hook.position.set(0, -0.05, 2.3);
     hook.userData = { templateKind: 'RotationalBundle', rig: { control: 'Sherman', automaticReset: true, axes: {
-      yaw: { input: 'c_PIYaw', min: -55, max: 55, free: false, driver: 'position', maxSpeed: 30, direction: -1 } } } };
+      yaw: { input: 'c_PIYaw', min: -55, max: 55, free: false, driver: 'position', maxSpeed: 30, direction: -1, acceleration: 30 } } } };
     hookSpring.add(hook);
     const hitch = new THREE.Object3D();
     hitch.name = 'Sherman-Pak40_Spring';

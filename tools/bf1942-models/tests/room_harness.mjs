@@ -58,6 +58,7 @@ import {
 import { VehicleOccupancy, classifyRoot, listEntryPoints } from './viewer/seats.js';
 import { MAX_CATCH_UP_TICKS } from './viewer/physics.js';
 import { HEARTBEAT_TIMEOUT_MS, SPAWN_INDEX_MAX } from './server/rooms.mjs';
+import { chokeRates } from './server/room-stream.mjs';
 import { fileURLToPath } from 'node:url';
 import { join } from 'node:path';
 
@@ -234,11 +235,20 @@ let nextTag = 1;
   clock.ms += FRAME_MS;
   room3.frame(FRAME_MS);                        // empty -> the zeroed idle word
   const idleForward = player.last?.input?.forward;
-  // Backlog collapse: one giant lap runs at most MAX_CATCH_UP_TICKS ticks
-  // and drops the rest (the D-4 >9 collapse, in the room's own accumulator).
-  const before = room3.clock.ticks;
+  // Backlog collapse, retail's server law (D-4, `GameServer::update`
+  // 0x08132955): a lap owing more than nine ticks runs ONE; nine run whole.
+  const before = room3.tick;
   clock.ms += 5000;
   room3.frame(5000);
+  const ranGiant = room3.tick - before;
+  const beforeTen = room3.tick;
+  clock.ms += 10 * 1000 / 30 + 1;
+  room3.frame(10 * 1000 / 30 + 1);
+  const ranTen = room3.tick - beforeTen;
+  const beforeNine = room3.tick;
+  clock.ms += 9 * 1000 / 30 + 1;
+  room3.frame(9 * 1000 / 30 + 1);
+  const ranNine = room3.tick - beforeNine;
   results.c = {
     afterOne,
     // The wire law is trim-to-4 THEN consume-one: the burst of six lands
@@ -248,11 +258,7 @@ let nextTag = 1;
     dedupeOk: player.lastSeen === 9,
     consumedAfterDedupe: afterDedupe,
     idleOk: idleForward === 0,
-    collapse: {
-      ran: room3.clock.ticks - before,
-      max: MAX_CATCH_UP_TICKS,
-      bounded: room3.clock.ticks - before <= MAX_CATCH_UP_TICKS,
-    },
+    collapse: { ranGiant, ranTen, ranNine, lost: room3.ticksLost },
   };
 }
 
@@ -1561,6 +1567,21 @@ const wakeFlag = (room, name) => room.world.flags.find(f => f.controlPointName =
   sendJson(pQ, MSG_JOIN, { room: 'PREGAME', name: 'Early', team: 1, level: 'pregame' });
   const room = core.room('PREGAME');
   results.preGame = room.pads.records.map(r => ({ template: r.spawn.vehicle, live: r.live.size }));
+}
+
+// --- R-1: retail's one-pass choke (`chokeBandwidth` 0x08132cc0) ------------------
+{
+  const conns = n => new Map(Array.from({ length: n }, (_, i) => [i + 1, { rate: 20, budget: 1400 }]));
+  const view = m => [...m.values()].map(c => [c.rate, c.budget]);
+  const off = conns(16); chokeRates(off, 0);
+  const under = conns(2); chokeRates(under, 2 * 20 * 1400);
+  // cap 100000 over 4: share 25000, 25000 / 20 = 1250 > 260 -> budget cut.
+  const budget = conns(4); chokeRates(budget, 100_000);
+  // cap 16000 over 4: share 4000, 4000 / 20 = 200 <= 260 -> rate 15, budget kept.
+  const rate = conns(4); chokeRates(rate, 16_000);
+  // rates already at the floor are left alone.
+  const floor = new Map([[1, { rate: 10, budget: 1400 }]]); chokeRates(floor, 1000);
+  results.choke = { off: view(off), under: view(under), budget: view(budget), rate: view(rate), floor: view(floor) };
 }
 
 console.log(JSON.stringify(results));

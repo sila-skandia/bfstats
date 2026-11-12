@@ -107,6 +107,8 @@ class RadioTests(unittest.TestCase):
 
     def test_game_modes(self) -> None:
         self.assertEqual([3, 2, 1, 3, 3], self.r["mode"])
+        # A joined or hosted game: Conquest and Objective undimmed (0x006e3c48).
+        self.assertEqual([1, 2, 1, 3, 1], self.r["modeJoined"])
 
     def test_the_spam_limit(self) -> None:
         self.assertEqual([True] * 7 + [False, False, True], self.r["spam"])
@@ -174,6 +176,8 @@ class AnnouncerTests(unittest.TestCase):
         a = self.r["announcer"]
         self.assertEqual([[], [3], [], [], [], [3]], a["low"])
         self.assertEqual([[]], a["lowAlreadyUnderFloor"])
+        # 5/100 as float32 is above the double 0.05 (0x006E38B8): it plays.
+        self.assertEqual([[3]], a["lowAtTheFloor"])
         self.assertEqual([[]], a["lowRoundOver"])
         self.assertEqual([[]], a["lowNoSide"])
 

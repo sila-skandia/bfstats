@@ -696,9 +696,12 @@ read, plus the `worldTime` the server keeps syncing in `GameRules`: the next wav
 boundary is `spawnWaveTime - (worldTime mod spawnWaveTime)` when `spawnWaves` is
 set, else the flat `spawnDelay` from death.
 
-The real values are on the lab server (`bf1942-lab/server`'s
-`serversettings.con`): `game.serverSpawnTime 15`, `game.serverSpawnDelay 5` --
-the vanilla defaults, and the client exe carries the same setting names
+The real values (corrected 2026-11-12, findings modes-spawns-supply F3 /
+netcode-replay F7): `Setup::initServerSettings` defaults
+`game.serverSpawnTime 20` and `game.serverSpawnDelay 3` (lnxded 0x080c09e6 /
+0x080c09ed), and the shipped and lab `serversettings.con` say the same; only
+the admin tool's `servermanager.con` carries 15. With waves on the delay is
+never read: the law is the wave clocks below. The client exe carries the same setting names
 (`serverSpawnTime`, `spawnWaveTime`, `spawnDelay`) and the `TIME_TO_SPAWN`
 lexicon key (VA `0x91df20`), so it computes its own number from them + the
 server clock.
@@ -709,8 +712,10 @@ returns whole seconds to the next GLOBAL wave boundary at or after `diedAt +
 spawnDelay` (the flat delay when `spawnTime <= 0`), null before a death; waves are
 a grid on the server clock, so a death mid-wave waits for the next boundary, never
 a fraction early. `deployCountdownLine` gives the "TIME TO SPAWN: N" /
-"SELECT A SPAWN POINT" text. Defaults `DEFAULT_SPAWN_TIME = 15`,
-`DEFAULT_SPAWN_DELAY = 5`.
+"SELECT A SPAWN POINT" text. (Superseded 2026-11-12: the fallback now follows
+the server's own wave law read below -- 5 s windows every 20 + 5 s from the
+round's `resetTimers` 0x08157790, and `killPlayer`'s wait -- with defaults
+20 / 3 / 5.)
 
 **How the retail CLIENT paints N (RE, BF1942.exe `FUN_006ad0a0`, the HUD/spawn
 draw).** At `0x6adc1e` it pushes the `TIME_TO_SPAWN` lexicon key (VA `0x91df20`),

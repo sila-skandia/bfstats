@@ -310,8 +310,28 @@ export function restsOnContact(damage, hasPointPhysics = null) {
  */
 export const FLIGHT_TTL_CEILING = 20;
 
-/** Fallback when a projectile spec carries no `timeToLive` at all. */
-export const DEFAULT_TIME_TO_LIVE = 10;
+/**
+ * The engine's `timeToLive` for a projectile whose `.con` never says one:
+ * `CRD_UNIFORM/3/0/0`. `ProjectileTemplate`'s constructor writes `+0x17c` = 1
+ * (uniform), `+0x180` = 3.0, `+0x184` = 0 after its `updateFlags` call (lnxded
+ * 0x0831fa8c..0x0831fab0), and `Projectile::activate` (0x0831e120) draws it
+ * per round through `Random::getContinuousRandom` (0x081e28b0, CRD-1:
+ * `a + r(b - a)`, r in (0, 1]). So such a round lives anywhere from 0 to 3 s,
+ * 1.5 s on average, drawn afresh for each round (ledger PROX-10). In the
+ * `sampleCrd` form (`effects-core.js`).
+ */
+export const DEFAULT_TIME_TO_LIVE_CRD = Object.freeze(['u', 3, 0, 0]);
+
+/** The draw `DEFAULT_TIME_TO_LIVE_CRD` makes, with the caller's `rand` (the
+ *  page's seeded one where it has one): `3 + r(0 - 3)`, `r = 1 - rand()`. */
+export function defaultTimeToLive(rand = Math.random) {
+  const [, a, b] = DEFAULT_TIME_TO_LIVE_CRD;
+  return a + (1 - rand()) * (b - a);
+}
+
+/** @deprecated The mean of the engine's draw, for callers that want one
+ *  number (it was a flat 10 s, which no round ever got; PROX-10). */
+export const DEFAULT_TIME_TO_LIVE = 1.5;
 
 /**
  * How long the viewer lets a round live: its authored fuse for a round that
@@ -336,8 +356,13 @@ export const DEFAULT_TIME_TO_LIVE = 10;
  * Same principle as the range cap in `advance`: a guard the viewer invented
  * must not invent a blast with it.
  */
-export function roundTimeToLive(timeToLive, damage, hasPointPhysics = null) {
-  const authored = timeToLive || DEFAULT_TIME_TO_LIVE;
+export function roundTimeToLive(timeToLive, damage, hasPointPhysics = null,
+                                rand = Math.random) {
+  // An absent word takes the constructor's draw (PROX-10). A baked 0 is
+  // treated the same way: the glb carries only a CRD's first number, so a 0
+  // there may be the low end of an undrawn range rather than the engine's
+  // "expire on the next tick".
+  const authored = timeToLive > 0 ? timeToLive : defaultTimeToLive(rand);
   return restsOnContact(damage, hasPointPhysics)
     ? authored : Math.min(authored, FLIGHT_TTL_CEILING);
 }

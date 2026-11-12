@@ -752,6 +752,18 @@ export function advanceProjectiles(guns, dt) {
   for (let i = guns.projectiles.length - 1; i >= 0; i--) {
     const shot = guns.projectiles[i];
     shot.age += dt;
+    // The proximity fuse first, where the round stands before this frame's
+    // move: `GameServer::simulateFrame` runs the objects' updates
+    // (`objectManager`, lnxded 0x0815c2e6..0x0815c304, where
+    // `Projectile::handleUpdate` 0x0831e940 runs the fuse) before the physics
+    // nodes move the round (`physicsNodeManager`, 0x0815c31a..0x0815c327)
+    // and before the world's contacts (`Game::updateWorldCollision`,
+    // 0x0815c342). A round the fuse takes this tick never moves or touches
+    // anything on it (ledger IMP-8, PROX-1).
+    if (shot.proximity && proximityDetonates(guns, shot)) {
+      endRound(guns, shot, i, true);
+      continue;
+    }
     let step = 0;
     // A fuse round runs the rigid-body contact solver instead of this
     // loop's ballistic step: it has to keep moving after it touches
@@ -860,15 +872,6 @@ export function advanceProjectiles(guns, dt) {
         recycle(guns, shot, i);
         continue;
       }
-    }
-    // The proximity fuse, after the contact test: a round that met a hull
-    // this frame has already gone through `impact`. Which of the two the
-    // engine runs first within a tick (the physics contact or
-    // `handleUpdate`) was not read; at a 10 m fuse the fuse nearly always
-    // wins by frames, not by order.
-    if (shot.proximity && proximityDetonates(guns, shot)) {
-      endRound(guns, shot, i, true);
-      continue;
     }
     const expired = shot.age > shot.ttl;
     if (expired && shot.onTimeEffect === false) {

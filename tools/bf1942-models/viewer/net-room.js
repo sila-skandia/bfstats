@@ -308,7 +308,7 @@ export function createNetRoom(page) {
    * reinforcement wave; the client reads a float it decrements
    * (`spawnScreenObj+0xC0`, BF1942.exe `FUN_006ad0a0`). Here the wait is measured
    * off the server's own clock (`roomClient.clock`) from when the page first
-   * noticed it had no body, against the wave period (vanilla + the lab's 15/5).
+   * noticed it had no body, against the wave period (`spawn-timer.js`'s fallback defaults).
    * The spawn itself stays server-gated (`spawning.js`), so the number is the
    * client's own estimate of the wait, never a gate on the real spawn.
    */

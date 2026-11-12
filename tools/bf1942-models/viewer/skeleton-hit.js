@@ -82,11 +82,24 @@ export function capsuleSegment(bone, parent, stretch) {
           [bone[0] + d[0], bone[1] + d[1], bone[2] + d[2]]];
 }
 
+/** The distance `getDistanceToGeometry` reports for every skeleton hit:
+ *  a literal -0.1 (lnxded `0x083af0d4`, `movl $0xbdcccccd`), whatever the
+ *  round's path, written to both of its distance outputs. */
+export const SKELETON_HIT_DISTANCE = -0.1;
+
 /**
  * The round `origin + dir * t`, `0 <= t <= maxT`, against `capsules` (each
- * `{ bone, a, b, distSq, material }`, in declaration order). Returns the first
- * capsule it meets, as the engine does -- not the nearest -- with the point on
- * the round closest to it: `{ bone, material, t, at }`, or null.
+ * `{ bone, a, b, distSq, material, origin }`, in declaration order). Returns
+ * the first capsule it meets, as the engine does -- not the nearest:
+ * `{ bone, material, t, at, distance }`, or null.
+ *
+ * `at` is what the engine reports as the contact: the struck BONE's own world
+ * position (`flds 0x78(%ecx)` at lnxded `0x083af00b`, through the mesh's
+ * matrix and its translation, `0x083af069`), not a point on the round, and
+ * `distance` its literal -0.1 (DIE-10). `t` is where along the round the
+ * capsule came nearest; the engine reports no such thing, and it is kept
+ * only for a caller that must choose between two bodies on one path (how the
+ * engine orders a skeleton contact against others was not read).
  */
 export function skeletonHit(origin, dir, maxT, capsules) {
   if (!capsules?.length || !(maxT > 0)) return null;
@@ -96,9 +109,14 @@ export function skeletonHit(origin, dir, maxT, capsules) {
     const near = closestOnSegments(origin, end, cap.a, cap.b);
     if (near.distSq >= cap.distSq) continue;
     const t = near.s * maxT;
+    // A capsule built without its bone's position (a hand-made one) falls
+    // back to the round's own nearest point.
+    const bone = cap.origin
+      ?? [origin[0] + dir[0] * t, origin[1] + dir[1] * t, origin[2] + dir[2] * t];
     return {
       bone: cap.bone, material: cap.material, t,
-      at: [origin[0] + dir[0] * t, origin[1] + dir[1] * t, origin[2] + dir[2] * t],
+      at: [bone[0], bone[1], bone[2]],
+      distance: SKELETON_HIT_DISTANCE,
     };
   }
   return null;
@@ -139,7 +157,8 @@ export function buildCapsules(table, positionOf) {
     const pos = positionOf(entry.bone);
     if (!pos) continue;
     const [a, b] = capsuleSegment(pos.bone, pos.parent, entry.stretch);
-    out.push({ bone: entry.bone, a, b, distSq: entry.distSq, material: entry.material });
+    out.push({ bone: entry.bone, a, b, distSq: entry.distSq, material: entry.material,
+               origin: [pos.bone[0], pos.bone[1], pos.bone[2]] });
   }
   return out;
 }

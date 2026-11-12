@@ -24,12 +24,13 @@
 // module reads all of that off the node tree at construction; the `WILLYS`
 // table (`ground-specs.js`) only fills in what the data genuinely does not say.
 //
-// PROVISIONAL, in the same sense `Aircraft`'s roll model is: the retail
-// engine's car integrator has not been read out of the executable the way the
-// point-body one has (`physics.js`), so the *shape* of this model — vertical
-// spring rays, a linear tyre inside a friction circle, torque as mass-free
-// acceleration — is our reconstruction, contained in `integrate` and
-// replaceable without anything outside noticing.
+// A FALLBACK, not the car law. The retail car integrator has since been read
+// and replayed against the lab (ledger TANK-29): a `c_ETCar` moves by the same
+// per-tick law as a tank (TANK-18..TANK-27), and `vehicle-occupancy.js` builds
+// every ground hull on `TrackedVehicle`, reaching this class only when that one
+// is not supplied. The *shape* of this model — vertical spring rays, a linear
+// tyre inside a friction circle, torque as mass-free acceleration — is our own
+// reconstruction, which TANK-29 measured 5-37 mm an ack off the server.
 
 import * as THREE from 'three';
 import { Vehicle, axisAngle } from './vehicle-base.js';
@@ -284,7 +285,7 @@ export class GroundVehicle extends Vehicle {
           gearUp: this.spec.gearUp,
           gearDown: this.spec.gearDown,
           ...data.physics,
-        }, data.rig?.automaticReset);
+        }, data.rig?.automaticReset, data.rig?.axes);
         return;
       }
       if (data.templateKind !== 'Spring' || !data.physics) return;

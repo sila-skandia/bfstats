@@ -58,7 +58,7 @@ within `V` and inside the sub-state's band and field. A candidate already in
 memory is left to the memory update. Otherwise it gets
 
 ```
-n = clamp(round(30 * radius / distance), 1, 10)      radius 1.0 (INVENTION)
+n = clamp(trunc(30 * radius / distance), 1, 10)      radius 1.0 (INVENTION)
 ```
 
 rays from the eye to points on its body. On a soldier: heights 0.3, 0.8, 1.2,

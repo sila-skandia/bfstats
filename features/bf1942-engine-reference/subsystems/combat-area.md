@@ -39,6 +39,19 @@ When no area is declared the same block falls through at `0x08152575` and uses
 the terrain's own `getSizeX`/`getSizeZ` (`PatchTerrain` vtable `+0x0c`/`+0x10`)
 — so a level with no combat area still has one: the heightfield.
 
+**A deliberate departure: a zero-area declaration is no declaration.** The
+engine has no such rule: `setActiveCombatArea` sets `+0x6d` whatever the size
+(`0x08061846 movb $0x1,0x6d(%edx)`), and `gameStatusPlaying` uses the stored
+rectangle whenever that byte is set (`0x08152344 testb %al,%al; je
+0x08152575`), so a level declaring a size of 0 (or a negative one that the
+origin-plus-size sum leaves empty) would put every position but the line
+outside and bleed everyone after ten seconds. The viewer's `combatAreaRect`
+(`viewer/combat-area.js`) returns null for a rectangle with no area, which
+falls back to the terrain's extent like an undeclared one. Kept on purpose: such
+a declaration is an authoring slip, not a design, and following it would make
+the level unplayable in the viewer for no gain. Do not "fix" it back without a
+level that needs it (findings modes-spawns-supply F7, 2026-11-12).
+
 ## 2. Inclusive on all four edges, and altitude is never bounded
 
 Four `fucomp`/`fucom` + `test ah,0x45` pairs, each decoded from the flag

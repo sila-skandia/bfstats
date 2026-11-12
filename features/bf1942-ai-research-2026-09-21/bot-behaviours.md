@@ -33,7 +33,7 @@ The movement half is `bot-movement-and-pathfinding.md`.
 - **The side filter** is `SideFilter::predicate` 0x08533120: own side out;
   side 0 only if the object is a unit; inside `viewDist²`. `updateMemory`
   also purges any remembered object that is now on the bot's side.
-- **The rays**: `n = clamp(round(30 * boundingRadius / distance), 1, 10)`
+- **The rays**: `n = clamp(trunc(30 * boundingRadius / distance), 1, 10)` (truncated, 0x08522272; corrected 2026-11-12)
   rays from the eye to random sense points on the target (`pickSoldierRandom
   SensePosition`, env vtable +0x60, for a soldier; `pickRandomSensePosition`
   +0x5c otherwise), tested with `collideLineWithWorld` (+0x54, ignoring self,
@@ -442,7 +442,7 @@ modifyForDriver` **0x0855f7d0**, `getRadioStrength` **0x0855fc10**,
   bot's own unit urgency × 1.25 (× `modifyForDriver`: 0.77 / 0.5 for a
   manned unit's secondary seats by class). The environment lists the units
   around (radius R); each not manned by the enemy, not upside down
-  (`up · ground normal < 0.6914`), and — beyond 12 m — standing on a valid
+  (`up · ground normal < 0.7071`, the cos 45 deg its caller pushes at 0x0855f2ad; 0.6914 corrected 2026-11-12), and — beyond 12 m — standing on a valid
   cell of the bot's map (a vehicle-type unit: a valid point 12 m behind it)
   scores `u × (f + 0.5) × (1 + radio)` with `f = min(0.5, (R² − d²) / R²)`;
   a plane also needs `runwayClear`; its secondary seats are scored through

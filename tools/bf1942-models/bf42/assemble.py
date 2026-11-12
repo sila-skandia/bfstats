@@ -85,6 +85,13 @@ def armor_extras(template) -> dict:
         "hpLostWhileDamageFromWater": template.hp_lost_while_damage_from_water,
         "hpLostWhileUpSideDown": template.hp_lost_while_upside_down,
         "damageFromWater": template.damage_from_water,
+        # HP-5's water delay and deep-water clock; absent is the engine
+        # default (`viewer/armor.js`).
+        "waterDamageDelay": template.water_damage_delay,
+        "damageFromDeepWater": template.damage_from_deep_water,
+        "hpLostWhileDamageFromDeepWater": template.hp_lost_while_damage_from_deep_water,
+        "deepWaterDamageDelay": template.deep_water_damage_delay,
+        "deepWaterLevel": template.deep_water_level,
         "splashMaterial": template.material,
     }.items() if value is not None}
     if armor or template.has_armor:
@@ -4551,6 +4558,12 @@ class Assembler:
                 "hpLostWhileUpSideDown": (
                     template.hp_lost_while_upside_down),
                 "damageFromWater": template.damage_from_water,
+                "waterDamageDelay": template.water_damage_delay,
+                "damageFromDeepWater": template.damage_from_deep_water,
+                "hpLostWhileDamageFromDeepWater": (
+                    template.hp_lost_while_damage_from_deep_water),
+                "deepWaterDamageDelay": template.deep_water_damage_delay,
+                "deepWaterLevel": template.deep_water_level,
             }.items()
                 if value is not None
             }

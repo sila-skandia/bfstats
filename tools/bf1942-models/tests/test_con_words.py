@@ -58,7 +58,6 @@ ORPHAN_WORDS: dict[str, str] = {
     "setboneoriginoffset": "37x animatedbundle | doc | the tank tracks' bone origin",
     "useasbone": "37x animatedbundle | doc | the tracks again: the part drives a skeleton bone",
     "hasstaticcolor": "36x spriteparticle | doc | a particle that ignores its colour ramp",
-    "setpcoid": "27x playercontrolobject | doc | the seat id a PCO answers to",
     "setspawnpositionoffset": "27x spawnpoint | doc | the spawn's own offset from its node",
     "setspawnpreventiondelay": "27x spawnpoint | doc | how long a used spawn is held shut",
     "setspawnrotation": "27x spawnpoint | doc | which way a spawned soldier faces",

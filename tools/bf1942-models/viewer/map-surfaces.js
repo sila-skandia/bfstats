@@ -465,6 +465,8 @@ export function createMapSurfaces(page) {
     get serverEntities() { return page.serverEntities; },
     vehicleSpawnActive: node => page.vehicleSpawnActive(node),
     callSpriteFor: key => page.callSpriteFor?.(key) ?? null,
+    // The reader's view distance, MMAP-3's range for the hull marks.
+    viewDistance: () => page.viewDistance?.() ?? null,
   });
 
   // The sonar and radar scope of a `sonarPos` seat (`map-sonar.js`).

@@ -249,7 +249,13 @@ for (const [name, maxSpeed] of Object.entries(MAX_SPEED)) {
     drive.integrate(DT);
     if (i >= 30 * 20) { speeds.push(f.dot(v)); steer += Math.abs(c.steer); }
   }
-  cruise[name] = { maxSpeed, speed: round(median(speeds), 2), gear: drive.gear, revs: round(drive.revs, 3),
+  // The lab's table is percentiles of level, full-throttle samples
+  // (`features/desert-combat-parity/lab-ground-truth.md`), so the run reports
+  // the same statistics over its own last ten seconds.
+  const sorted = [...speeds].sort((a, b) => a - b);
+  const pct = p => sorted[Math.floor(p * (sorted.length - 1))];
+  cruise[name] = { maxSpeed, speed: round(median(speeds), 2), p95: round(pct(0.95), 2),
+    max: round(sorted[sorted.length - 1], 2), gear: drive.gear, revs: round(drive.revs, 3),
     meanSteer: round(steer / speeds.length, 4) };
   // The drive's own ceiling, the same hull held at full throttle.
   const flat = await build(name);

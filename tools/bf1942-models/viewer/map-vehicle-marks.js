@@ -41,14 +41,21 @@ export const EMPTY_VEHICLE_TINT = [146, 146, 146];
  * its own path (0x0046b77a sets the icon kind 0xb) and the viewer marks him
  * with the player ring.
  *
- * Not built: in game modes `BfMenu+0x6DC` 0, 1, 3 and 4 the pass also drops
- * any hull farther from the reader's control object than a float the client
- * reads off the object his player holds at +0x94 (vtable +0x34, 0x0046b476..
- * 0x0046b5cc). What that object is was not identified, so no range is applied.
+ * - `distance` / `viewDistance` / `applyRange`: outside a joined game the pass
+ *   also drops a hull farther from the reader's control object than the view
+ *   distance of the reader's camera (ledger MMAP-3). BF1942.exe reads the
+ *   float off `player+0x94` (the camera HUD-18 casts from), vtable +0x34
+ *   (0x0046b476..0x0046b499; the Mac client's `AIPlayer::getViewDistance`
+ *   makes the same call), and applies the test only when `BfMenu+0x6dc` is 3
+ *   (host, 0x0045cff0) or 0, 1, 4 (single player, 0x0045d050): `dist <=
+ *   viewDistance` (0x0046b5bd..0x0046b5c6). A joined client (2) draws every
+ *   hull at any range. A missing camera leaves the range at 0.
  */
-export function mapVehicleMark({ hitPoints, occupantTeams = [], heldTeam = 0, localTeam }) {
+export function mapVehicleMark({ hitPoints, occupantTeams = [], heldTeam = 0, localTeam,
+                                 distance = 0, viewDistance = 0, applyRange = false }) {
   if (!(hitPoints > 0)) return null;
   if (heldTeam && heldTeam !== localTeam) return null;
+  if (applyRange && !(distance <= viewDistance)) return null;
   let shown = true;
   let crewed = false;
   for (const team of occupantTeams) {

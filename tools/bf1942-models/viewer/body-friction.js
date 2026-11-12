@@ -164,7 +164,11 @@ const _axleTangent = [0, 0, 0];
  *   (authored byte), `liveGrip` (mutated in place — the cross-tick 0x80
  *   latch), `avgNormal`/`avgSpeed`/`avgRelPos` (3-vectors), `friction`,
  *   `resistance`, `surfaceSpeed` (3-vector), `kind`
- *   (`'body'|'spring'|'soldier'|'projectile'`), and `clearContacts()`.
+ *   (`'body'|'spring'|'projectile'`), and `clearContacts()`. Not a
+ *   soldier: his arm of `addFriction` (normal from `resp+0x98`, written by
+ *   `BFSoldier::handleCollision` `0x0827d52f`; budgets `A*4.8*9.82/30*Ny^5`
+ *   and `A*7.2*9.82/30*Ny^5`, `0x0825c5e0`/`0x0825c5ee`; PHY-2, PHY-34) is
+ *   `walking-body.js` `#contactLaw`, and a `'soldier'` response throws here.
  * @param {object} body a duck-typed body: `addAcceleration(a)`,
  *   `addFrictionAt(p,f)`, `wake()`, and `sleepiness` (a number; a body that
  *   omits it — outside the documented shared interface, see this file's
@@ -202,10 +206,10 @@ export function addFriction(response, body, partPos, opts = {}) {
     return { applied: false, spin: false, F: null, latched: false, woke: false };
   }
 
-  const isSoldier = response.kind === 'soldier';
-  // F8: a soldier's normal (+0x98) is written by nothing, so N is always
-  // zero — read-only here, never mutated.
-  const N = isSoldier ? ZERO3 : response.avgNormal;
+  if (response.kind === 'soldier') {
+    throw new Error("addFriction: a soldier's friction is walking-body.js #contactLaw (PHY-34)");
+  }
+  const N = response.avgNormal;
   const mu = response.friction;
 
   const limKinetic = mu * N[1] * (COULOMB_KINETIC_COEFFICIENT * COULOMB_GRAVITY) / SIMULATION_FPS;
@@ -218,8 +222,7 @@ export function addFriction(response, body, partPos, opts = {}) {
   _V[1] = avgSpeed[1] - surfaceSpeed[1] + GRAVITY / SIMULATION_FPS;
   _V[2] = avgSpeed[2] - surfaceSpeed[2];
 
-  // Vt = V - N*(V.N)/(N.N), or V itself when N.N == 0 (F8's soldier case
-  // falls out of this same line, no special branch needed).
+  // Vt = V - N*(V.N)/(N.N), or V itself when N.N == 0.
   const nn = dot3(N[0], N[1], N[2], N[0], N[1], N[2]);
   if (nn === 0) {
     _Vt[0] = _V[0]; _Vt[1] = _V[1]; _Vt[2] = _V[2];
@@ -290,16 +293,12 @@ export function addFriction(response, body, partPos, opts = {}) {
   }
   response.liveGrip = latched ? (L | GRIP_STATIC_FRICTION) : (L & ~GRIP_STATIC_FRICTION);
 
-  // (d) apply. Soldier: no avgRelPos offset (R1 F5 "(d) apply", V1 confirms
-  // "+ +0x8c unless soldier").
+  // (d) apply, at the part plus its averaged contact offset (R1 F5 "(d)
+  // apply"; the engine's soldier arm skips the offset, `walking-body.js`).
   const avgRelPos = response.avgRelPos;
-  if (isSoldier) {
-    _armPos[0] = partPos[0]; _armPos[1] = partPos[1]; _armPos[2] = partPos[2];
-  } else {
-    _armPos[0] = partPos[0] + avgRelPos[0];
-    _armPos[1] = partPos[1] + avgRelPos[1];
-    _armPos[2] = partPos[2] + avgRelPos[2];
-  }
+  _armPos[0] = partPos[0] + avgRelPos[0];
+  _armPos[1] = partPos[1] + avgRelPos[1];
+  _armPos[2] = partPos[2] + avgRelPos[2];
   _F30[0] = _F[0] * SIMULATION_FPS; _F30[1] = _F[1] * SIMULATION_FPS; _F30[2] = _F[2] * SIMULATION_FPS;
   body.addFrictionAt(_armPos, _F30);
 

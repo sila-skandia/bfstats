@@ -217,6 +217,7 @@ class ConsoleHarnessTests(unittest.TestCase):
         self.assertEqual("Property is only readable!", d["onlyReadable"]["message"])
         self.assertEqual("Property is only setable!", d["onlySetable"]["message"])
         self.assertEqual("Properties only takes one argument!", d["oneArg"]["message"])
+        self.assertEqual("Properties only takes one argument!", d["oneArgWriteOnly"]["message"])
 
     def test_access_is_a_mask_and_four_wants_an_archive_script(self) -> None:
         """CON-22: access 4 is refused to a typed line (`OldConsole+0x484`

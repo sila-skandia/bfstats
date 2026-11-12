@@ -4,9 +4,9 @@
 // fixed-step accumulator driven from the monotonic wall clock, input fed
 // through `World.setInput(id, input, look, seq)` so the World's own receive
 // law does the enforcing (trim <= 4 drop-oldest, exactly one consume per
-// tick, zeroed idle word on an empty buffer, seq dedupe on `seq > lastSeen`,
-// backlog > 9 collapses), one 20 Hz snapshot stream per connection under the
-// R-1 choke, and the control channel's seat/spawn actions mirrored on the
+// tick, zeroed idle word on an empty buffer, seq dedupe on `seq > lastSeen`),
+// a backlog > 9 ticks collapsed to one by the room's own loop (Room.frame,
+// D-4), one 20 Hz snapshot stream per connection under the R-1 choke, and the control channel's seat/spawn actions mirrored on the
 // world. Everything here talks to abstract `{send(bytes), close()}` peers —
 // `server.mjs` adapts the WebSocket, the harnesses drive the same core with
 // in-memory peers, which is what keeps the protocol law in one place and the
@@ -17,11 +17,11 @@
 //   LOOP/D-*  the receive law — enforced by World.setInput, fed verbatim
 //   J-1/J-3   the control channel: seat enter/exit/switch and spawn arrive
 //             as action rows, not as PlayerActions; 0xd is the explicit
-//             MSG_LEAVE and its drop twin is the silent-10 s sweep
-//   P-2       snapshots at 20 Hz (default), each connection its own rate
-//   R-1       Σ(rate × 1044) ≤ cap; offenders lose 5, never below 10 —
-//             the engine's own cap value was not recovered in P0, so the
-//             cap is a documented P2 choice (see server/README.md)
+//             MSG_LEAVE and its drop twin is the silent sweep (25 s,
+//             room-rules.mjs HEARTBEAT_TIMEOUT_MS, checked every 1 s)
+//   R-1       snapshots at 20 Hz (default), each connection its own rate;
+//             the choke is retail's one pass (room-stream.mjs `chokeRates`),
+//             with the engine's default cap of 0, which is off
 //
 // Divergences, all documented: one drive model per hull at a time (the
 // World's #vehicleTick integrates player.vehicle once per seated player), a
@@ -42,6 +42,7 @@
 export {
   ROOM_CODE_RE, NAME_MAX,
   RATE_BYTES, SNAPSHOT_RATE_DEFAULT, SNAPSHOT_RATE_MIN, CHOKE_CAP,
+  CHOKE_BUDGET_MIN, CHOKE_RATE_STEP, CHOKE_PERIOD_MS, STALL_COLLAPSE_TICKS,
   HEARTBEAT_TIMEOUT_MS, DROP_SWEEP_MS, FIRE_EVENT_COOLDOWN_S, SPAWN_INDEX_MAX,
   RADIO_LOCAL_RANGE,
   isPeer,

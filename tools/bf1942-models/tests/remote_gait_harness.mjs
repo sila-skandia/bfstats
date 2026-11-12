@@ -8,7 +8,7 @@
 // nowhere.
 
 import {
-  BANDS, FALLBACKS, FAMILY_CLIPS, TOP_SPEED, WALK_FACTOR,
+  BANDS, FALLBACKS, FAMILY_CLIPS, TOP_SPEED, WALK_FACTOR, LIE_POINT_UP_DOWN, POINT_BEND_LIMIT, drawnAimPitch,
   lowerBase, recordedAction, recordedClip, recordedGait, recordedStanceEntry, remoteClipFamily, remoteGait, replayGait, resolveRemoteGait,
 } from './remote-gait.js';
 
@@ -222,6 +222,14 @@ out.recordedAction = {
   draw: recordedAction('Ub_StandRaiseWeaponKnifeAxis'),
   bare: recordedAction('Ub_Fire'),
   nothing: recordedAction(null),
+};
+
+out.drawnAimPitch = {
+  lie: LIE_POINT_UP_DOWN, limit: POINT_BEND_LIMIT,
+  stand: [-40, -20, -5, 0, 5, 20, 40].map(a => drawnAimPitch(a, false)),
+  prone: [-40, -5, 0, 3, 6, 10, 40].map(a => drawnAimPitch(a, true)),
+  modLie: drawnAimPitch(10, true, { up: 2, down: -12 }),
+  notANumber: drawnAimPitch(NaN, false),
 };
 
 console.log(JSON.stringify(out));

@@ -14,7 +14,7 @@
  * Stub Web Audio, no browser. Run by `tests/test_vehicle_parts.py`.
  */
 import assert from 'node:assert/strict';
-import { VehicleAudioRack, PART_RULES } from '../viewer/vehicle-audio.js';
+import { VehicleAudioRack, PART_RULES, turnRate, noseDescent } from '../viewer/vehicle-audio.js';
 
 function stubCtx() {
   const param = (initial = 0) => ({
@@ -331,6 +331,43 @@ assert.deepEqual(Object.keys(PART_RULES).sort(),
   tick();
   const [creak] = heard('A10FlapLeftOuter');
   assert.ok(creak && Math.abs(creak.gain - 1) < 1e-6, 'pulling hard at speed: the full creak');
+}
+
+// A part's `Default` is its largest single-axis rate (lnxded 0x081d8630,
+// SND-20): a turret slewing 30 deg/s in yaw and in pitch together reads 30.
+{
+  const deg = Math.PI / 180;
+  const qFromYawPitch = (yaw, pitch) => {
+    // yaw about Y, then pitch about the yawed X: q = qy * qx
+    const cy = Math.cos(yaw / 2), sy = Math.sin(yaw / 2);
+    const cx = Math.cos(pitch / 2), sx = Math.sin(pitch / 2);
+    return { w: cy * cx, x: cy * sx, y: sy * cx, z: -sy * sx };
+  };
+  const part = { node: { quaternion: qFromYawPitch(0, 0) } };
+  turnRate(part, 1 / 30);
+  part.node.quaternion = qFromYawPitch(1 * deg, 1 * deg);
+  const both = turnRate(part, 1 / 30);
+  assert.ok(Math.abs(both - 30) < 0.05, `yaw+pitch 30 deg/s each reads 30 (${both})`);
+  const solo = { node: { quaternion: qFromYawPitch(0, 0) } };
+  turnRate(solo, 1 / 30);
+  solo.node.quaternion = qFromYawPitch(0.5 * deg, 0);
+  const yawOnly = turnRate(solo, 1 / 30);
+  assert.ok(Math.abs(yawOnly - 15) < 1e-6, `yaw alone 15 deg/s (${yawOnly})`);
+}
+
+// `Engine::DiveAngle` (lnxded 0x0823e930, SND-24) reads the nose's descent:
+// the world y of local -Z, negated. Pitched 30 degrees down about X:
+{
+  const a = -30 * Math.PI / 180;   // nose (-Z) down is a negative rotation about +X
+  const q = { w: Math.cos(a / 2), x: Math.sin(a / 2), y: 0, z: 0 };
+  // column-major matrix of that rotation: column 2 = local +Z in world
+  const m = new Array(16).fill(0);
+  m[0] = 1; m[5] = Math.cos(a); m[6] = Math.sin(a); m[9] = -Math.sin(a); m[10] = Math.cos(a); m[15] = 1;
+  const fromM = noseDescent(m, null), fromQ = noseDescent(null, q);
+  assert.ok(Math.abs(fromM - 0.5) < 1e-9, `matrix: 30 deg nose-down descends 0.5 (${fromM})`);
+  assert.ok(Math.abs(fromQ - 0.5) < 1e-9, `quaternion: 30 deg nose-down descends 0.5 (${fromQ})`);
+  const dive = (2 / Math.PI) * Math.asin(fromM);
+  assert.ok(Math.abs(dive - 1 / 3) < 1e-9, `dive angle is 30/90 (${dive})`);
 }
 
 console.log('vehicle-parts: all assertions passed');

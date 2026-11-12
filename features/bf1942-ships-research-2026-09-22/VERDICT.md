@@ -274,10 +274,15 @@ than a `c_PI*` name.
 ### 2.7 Smaller factual fixes
 
 - `g / −9.82` is **exactly 1.5**, not 1.49995. `getGravity` is
-  `BasicPhysicsSystem::getGravity` `0x08251ec0` = `fld [eax+0x8]` — a field read,
-  so −14.73 comes from configuration, not a literal in that function. Every
-  1.49995 in §1.5, §6 and the SHIP-7 row should read 1.5; `8 × 0.8275 × 1.5 =
-  9.93` and `8 × 1.2275 × 1.5 = 14.73` both stay true.
+  `BasicPhysicsSystem::getGravity` `0x08251ec0` = `fld [eax+0x8]`, a field
+  read, and the constructor seeds that field with the literal 0xC16BAE14
+  (lnxded `0x08251e3b`, `movl $0xc16bae14, 0x8(%edx)`; client `0x00578f11`),
+  which is the float32 of −14.73: −14.7299995422. Divided by the float32
+  −9.82 (−9.8199997) it is 1.5000000 to float precision. (The −14.7295379
+  that some notes and `aircraft.js` carried was a mis-decode of the same word,
+  re-checked 2026-11-12.) Every 1.49995 in §1.5, §6 and the SHIP-7 row should
+  read 1.5; `8 × 0.8275 × 1.5 = 9.93` and `8 × 1.2275 × 1.5 = 14.73` both stay
+  true.
 - The client ctor's `ret 8` is at **`0x0057e979`**, not `0x0057e97c`;
   `0x0057e97c`–`0x0057e97f` are the four `nop`s. Bytes at `0x0057e980`:
   `81 ec 40 01 00 00 / 56 / 8b f1 / d9 86 a0 00 00 00` =

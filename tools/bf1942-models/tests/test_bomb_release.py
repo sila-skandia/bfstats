@@ -85,6 +85,7 @@ MODULES = {
     "crash-damage.js": VIEWER / "crash-damage.js",
     "physics.js": VIEWER / "physics.js",
     "walking-body.js": VIEWER / "walking-body.js",
+    "rigid-body.js": VIEWER / "rigid-body.js",
     "soldier-resolve.js": VIEWER / "soldier-resolve.js",
     "soldier-pose.js": VIEWER / "soldier-pose.js",
     "soldier-locomotion.js": VIEWER / "soldier-locomotion.js",

@@ -159,7 +159,10 @@ class ReplayFirstPersonTests(unittest.TestCase):
         self.assertEqual(seat["dots"], [1, 2])
         self.assertEqual(seat["turret"], 0.5, "IconLookRotation: the view half a radian right of the hull")
         self.assertEqual(seat["ammo"], [1, 28, 1])
-        self.assertEqual(seat["ready"], 0.174, "half a second into the cannon's 86-tick (2.87 s) cycle")
+        # VHUD-10: 1 - fireLeft / (1 / roundOfFire); half a second into the
+        # cannon's 86-tick (2.867 s) cycle, over the 1/0.35 = 2.857 s interval
+        # retail divides by (was 0.174, the cycle over itself).
+        self.assertEqual(seat["ready"], 0.172, "half a second into the cannon's 86-tick (2.87 s) cycle")
         self.assertEqual(seat["soldierHp"], 30)
         self.assertEqual(seat["aim"], {"style": "CHTCrossHair", "deviation": 0, "scoped": False, "centre": False})
         self.assertFalse(seat["weapon"])

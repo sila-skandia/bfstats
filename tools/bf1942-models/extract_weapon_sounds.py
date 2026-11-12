@@ -76,14 +76,25 @@ EJECT_SLOT = 6
 
 
 def _ramp_at(params: list[float], x: float) -> float:
-    """`Ramp p1 p2 p3 p4` evaluated at `x`, the same shape the viewer uses."""
-    a, b, base, delta = (list(params) + [0.0, 0.0, 0.0, 0.0])[:4]
-    if x <= a:
-        return base
-    if x >= b:
-        return base + delta
-    span = b - a
-    return base + delta if span <= 0 else base + delta * ((x - a) / span)
+    """`Ramp p1 p2 p3 p4 [p5 p6]` evaluated at `x`, as BF1942.exe does it
+    (`getModulation` 0x00803aa0, ledger SSC-7) and `viewer/ssc-curves.js`
+    `rampAt` does: p2 raised to p1, p5 the curve (0 linear, 1 quick, 2 slow,
+    any other p3 + p3), p6 its exponent, and a step already up at p1."""
+    a, b, base, delta, shape, exp = (
+        list(params) + [0.0, 0.0, 0.0, 0.0, 0.0, 1.0][len(params):])[:6]
+    b = max(a, b)
+    if x > a:
+        if not x < b:
+            return base + delta
+        s = int(shape)
+        if s == 0:
+            return base + delta * ((x - a) / (b - a))
+        if s == 1:
+            return base + delta * (1 - ((x - b) / (a - b)) ** exp)
+        if s == 2:
+            return base + delta * ((x - a) / (b - a)) ** exp
+        return base + base
+    return base + delta if a == b and x >= a else base
 
 
 def muzzle_gain(sample: SoundSample, at_time: float | None = 0.0) -> float:

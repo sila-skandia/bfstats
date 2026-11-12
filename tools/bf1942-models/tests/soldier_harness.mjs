@@ -50,7 +50,7 @@ import {
   EYE, HEIGHT, GAIT_SPEED, BODY_RADIUS, STEP_HEIGHT, MAX_GROUND_SLOPE,
   JUMP_IMPULSE, GRAVITY, DIRECTIONAL_SPEED, STRAFE_SPEED, WALK_SPEED_FACTOR,
   PITCH_LIMIT_DEG, FOV_DEG, BOB, CAMERA_SHAKE_FACTOR, STEP_PERIOD,
-  STANCE_TRANSITION, RAMP_ACCEL, RAMP_LIMIT, ENGINE_TICK_RATE,
+  RAMP_ACCEL, RAMP_LIMIT, ENGINE_TICK_RATE,
   DIVE_SPEED_FACTOR, DIVE_DURATION,
 } from './soldier.js';
 
@@ -169,7 +169,7 @@ const results = { constants: {
   pitchLimitDeg: PITCH_LIMIT_DEG, fovDeg: FOV_DEG,
   bobRunUp: BOB.run.up, bobWalkUp: BOB.walk.up,
   cameraShakeFactor: CAMERA_SHAKE_FACTOR,
-  stepPeriod: STEP_PERIOD, stanceTransition: STANCE_TRANSITION,
+  stepPeriod: STEP_PERIOD,
 } };
 
 // A 60 fps display frame. `Soldier.step` takes a frame dt and runs whole ticks
@@ -229,20 +229,21 @@ const runway = () => fresh(4, 0.5, RUNWAY_Z, NORTH);
   walk(s, { crouch: true }, 60);
   results.crouchEye = s.eyeY;
 
-  // crouch -> prone is the slowest declared transition (216 ms, 7 engine
-  // ticks, 14 frames here), so it is the one where the ease is observable.
+  // crouch -> prone: the eye halves its remaining distance every engine
+  // tick (VIEW-15), so the frames here (60 fps, a tick every second frame)
+  // record the whole curve.
   const down = [];
-  for (let i = 0; i < 20; i++) { s.step(DT, { prone: true }); down.push(s.eyeY); }
+  for (let i = 0; i < 60; i++) { s.step(DT, { prone: true }); down.push(s.eyeY); }
   results.proneEye = s.eyeY;
-  results.crouchToProneFrames = down.findIndex(y => Math.abs(y - EYE.prone) < 1e-6) + 1;
-  results.proneEaseMonotonic = down.slice(0, 12).every((y, i) => i === 0 || y <= down[i - 1] + 1e-9);
+  results.crouchToProne = down;
+  results.proneEaseMonotonic = down.every((y, i) => i === 0 || y <= down[i - 1] + 1e-9);
 
   // prone -> stand is `Lb_LieToStand`, one pass at speed 3.0, lying eleven
-  // ticks (PHY-38), then the eye's 115 ms ease: 15 ticks, 30 frames.
+  // ticks (PHY-38), then the same halving toward the standing eye.
   const up = [];
-  for (let i = 0; i < 40; i++) { s.step(DT, {}); up.push(s.eyeY); }
+  for (let i = 0; i < 80; i++) { s.step(DT, {}); up.push(s.eyeY); }
   results.standEye = s.eyeY;
-  results.proneToStandFrames = up.findIndex(y => Math.abs(y - EYE.stand) < 1e-6) + 1;
+  results.proneToStand = up;
 }
 
 // --- the speeds, and Shift being the slow one ------------------------------

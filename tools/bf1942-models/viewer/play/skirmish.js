@@ -176,8 +176,8 @@ export function createSkirmishScreen({
       if (!entry) continue;
       // The game's own rule (`menu-levels.json` `inGameList`) lists a level
       // in Instant Battle only when its root ships `SinglePlayerAllied.con` or
-      // `SinglePlayerAxis.con` (BF1942.exe 0x006dca77..0x006dca83). The page
-      // departs from it (owner, 2026-10-16): a level without them is listed
+      // `SinglePlayerAxis.con` (BF1942.exe 0x006dca77..0x006dca83). DELIBERATE:
+      // the page departs from it (owner, 2026-10-16): a level without them is listed
       // too and starts in Conquest with no bots, since the viewer has no
       // multiplayer screen to reach it from and bots need the single-player
       // scripts. `launchUrl` sends `mode=Conquest` and `botCount=0` for it,

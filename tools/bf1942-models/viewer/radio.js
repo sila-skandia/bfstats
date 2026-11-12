@@ -107,17 +107,23 @@ export const ICON_LAND = 1;
 export const ICON_AIR = 2;
 export const ICON_SEA = 3;
 
-/** `Radio/RadioGameMode` from the level's mode (switch at 0x006e3c31):
- *  CTF 2, everything else 1 or 3. 1 and 3 both show the control points; 3
- *  also dims the menu's items to half alpha (`Radio/RadioAlpha`, the file's
- *  own CullVariableActionNodes). Conquest is 3 when `BfMenu+0x6dc` is 0, 1 or
- *  4 -- a field nobody has named yet -- and the retail capture on a conquest
- *  server shows the dimmed items, so conquest takes 3 here. */
-export function radioGameMode(mode) {
+/** `Radio/RadioGameMode` from the level's mode (switch at 0x006e3c31 on
+ *  `Game::getGamePlayMode`, RADIO-13: CTF 1, Conquest 2, TDM 3, Co-op 4,
+ *  Objective 5): CTF 2, TDM 1 (`ebx`, 0x006e3c0b), and Conquest, Co-op and
+ *  Objective by the case at 0x006e3c48: 3 for Co-op, and 3 for the other two
+ *  only when `BfMenu+0x6dc` is a single-player game (0, 1 or 4,
+ *  `isSingleplayerGame` 0x0045d050), else 1. 1 and 3 both show the control
+ *  points; 3 also dims the menu's items to half alpha (`Radio/RadioAlpha`, the
+ *  file's own CullVariableActionNodes). `multiplayer` is a joined or hosted
+ *  game (`BfMenu+0x6dc` 2 or 3); this page's own skirmish or campaign is
+ *  single player. The retail capture with dimmed items was the lab's co-op
+ *  server, 3 either way. */
+export function radioGameMode(mode, { multiplayer = false } = {}) {
   const m = String(mode || '').toLowerCase();
   if (m.includes('ctf') || m.includes('capturetheflag')) return 2;
   if (m.includes('tdm') || m.includes('teamdeathmatch')) return 1;
-  return 3;
+  if (m.includes('coop') || m.includes('co-op')) return 3;
+  return multiplayer ? 1 : 3;
 }
 
 /**

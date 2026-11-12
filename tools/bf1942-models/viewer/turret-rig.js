@@ -68,22 +68,23 @@ const RIG_SIGN = { yaw: -1, pitch: -1, roll: 1 };       // (unexported there; ke
 // The order one node's angles compose in: the engine's `setRotation` (MLK-17).
 const POSE_ORDER = ['yaw', 'pitch', 'roll'];
 
-// The ramp rate for an axis whose extract does not carry its own
-// `setAcceleration`, deg/s^2. An axis that does carry it uses that number
-// (`spec.acceleration`, emitted by `con.py` since 2026-09-17); this is the
-// fallback for every glb baked before then.
-//
-// 90 deg/s^2 is the middle of the 30-150 band `setAcceleration` occupies
-// across vanilla (flight-model.md §2a, confirmed). Still a fallback, not a
-// measurement -- the fix is to re-extract, after which the gun's own number
-// wins. A Sherman tower's real number is 1000, an MG42's 5000; at those
-// rates the ramp is essentially instant and the cap is what the hand feels.
-//
-// It used to be scaled alongside the cap, to hold the wind-up TIME at the
-// game's `maxSpeed/acceleration` ratio while `TURRET_SPEED_SCALE` moved the
-// cap. Both are gone: the ratio is now simply the game's, because neither
-// number is scaled by anything.
-export const TURRET_ACCELERATION = 90;
+// The ramp rate for an axis whose extract carries no `acceleration`,
+// deg/s^2: the engine's own default for a template that never says
+// `setAcceleration`, 0.1 on each component (`RotationalBundleTemplate` ctor,
+// lnxded 0x081d923c, `movl $0x3dcccccd` into `+0x180..+0x188`; GUN-2). It
+// was 90 until 2026-11-12, a mid-band guess for glbs baked before `con.py`
+// emitted the field. None of the current trees has a moving aim or key axis
+// without one (a census of `viewer/models` and the local level bakes), and in
+// the old emission an absent field meant "declared 0 or omitted", both of
+// which the engine leaves (all but) still, so the engine's number is right
+// for every glb either way. A declared 0 now arrives as 0 and stays 0
+// (`??`, not `||`).
+export const TURRET_ACCELERATION = 0.1;
+
+// `setMaxSpeed`'s engine default, 1.0 deg/s per input unit on each component
+// (`RotationalBundleTemplate` ctor, lnxded 0x081d922b). `con.py` emits it for
+// an omitted word; this covers a spec built without the field.
+export const TURRET_MAX_SPEED = 1.0;
 
 /** A surveyed seat's mouse traverse limits `[min, max]` in radians from the
  *  rest pose, or null for a traverse that wraps (`minRotation == 0 &&
@@ -218,6 +219,11 @@ export class TurretAxis {
    */
   step(dt, inputScale = 1) {
     if (!(dt > 0)) return;
+    // GUN-20: `RotationalBundle::handleUpdate` calls `calculateAndClipAngle`
+    // only for a slot whose `maxSpeed` component is not exactly 0 (lnxded
+    // 0x081d79b0..0x081d79ec): such an axis is not stepped at all -- no
+    // servo, no continuous term, no automaticReset ramp and no clip.
+    if (this._still()) return;
 
     // GUN-2b, transcribed rather than invented now: the engine's `input` is
     // `PlayerInput[c_PIMouseLookX/Y]` exactly as `mouse-input.js` produces it
@@ -228,22 +234,25 @@ export class TurretAxis {
     // Signed: `calculateAndClipAngle` multiplies by the template's
     // `maxSpeed` with no `fabs` (lnxded `0x081d7866`), so a negative one
     // turns the servo the other way. No look-bound turret declares one.
-    const cap = this.spec.maxSpeed || 0;
+    const cap = this.spec.maxSpeed ?? TURRET_MAX_SPEED;
     // `direction` is `sign(acceleration)`, the engine's own
     // `fchs`-on-negative-acceleration; `inputScale` is HP-15's 0.2.
     const input = this._input * (this.spec.direction || 1) * inputScale;
 
-    // `|acceleration|`, the axis's own `setAcceleration`, unscaled.
-    // NOTE: `con.py` omits a zero `setAcceleration` rather than emitting 0, so
-    // the engine's own early-out (`acceleration == 0 && continousRotationSpeed
-    // == 0` returns without touching either register) cannot be told apart
-    // from "this glb predates the field". The fallback is applied in both
-    // cases, which is the pre-existing behaviour and the safe one.
-    const accel = Math.abs(this.spec.acceleration || TURRET_ACCELERATION);
+    // `|acceleration|`, the axis's own `setAcceleration`, unscaled. A
+    // declared 0 stays 0: the engine's early-out (`acceleration == 0 &&
+    // continousRotationSpeed == 0` returns without touching either register,
+    // 0x081d74b1..0x081d74d6) and a zero ramp leave the same angle.
+    const accel = Math.abs(this.spec.acceleration ?? TURRET_ACCELERATION);
 
     this._advance(dt, input, cap, accel);
     this._clip();
     this._apply();
+  }
+
+  /** GUN-20's skip: an axis whose `maxSpeed` is exactly 0 is never stepped. */
+  _still() {
+    return (this.spec.maxSpeed ?? TURRET_MAX_SPEED) === 0;
   }
 
   /** The registers' one-tick law, shared by `step` and `preview`. */
@@ -270,10 +279,10 @@ export class TurretAxis {
    * servo's own law rather than a copy of it.
    */
   preview(dt, input, inputScale = 1) {
-    if (!(dt > 0)) return this.angle;
+    if (!(dt > 0) || this._still()) return this.angle;
     const angle = this.angle, speed = this.speed;
     const value = (Number.isFinite(input) ? input : 0) * (this.spec.direction || 1) * inputScale;
-    this._advance(dt, value, this.spec.maxSpeed || 0, Math.abs(this.spec.acceleration || TURRET_ACCELERATION));
+    this._advance(dt, value, this.spec.maxSpeed ?? TURRET_MAX_SPEED, Math.abs(this.spec.acceleration ?? TURRET_ACCELERATION));
     this._clip();
     const out = this.angle;
     this.angle = angle;
@@ -294,9 +303,9 @@ export class TurretAxis {
     const a0 = this.angle, v0 = this.speed;
     this.angle = angle;
     this.speed = speed;
-    if (dt > 0) {
+    if (dt > 0 && !this._still()) {
       const value = (Number.isFinite(input) ? input : 0) * (this.spec.direction || 1) * inputScale;
-      this._advance(dt, value, this.spec.maxSpeed || 0, Math.abs(this.spec.acceleration || TURRET_ACCELERATION));
+      this._advance(dt, value, this.spec.maxSpeed ?? TURRET_MAX_SPEED, Math.abs(this.spec.acceleration ?? TURRET_ACCELERATION));
       this._clip();
     }
     const out = [this.angle, this.speed];

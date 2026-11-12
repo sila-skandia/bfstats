@@ -181,6 +181,15 @@ results.draftPin = {
     // engine's crouched man in chest-deep water.
     crouchedNextTick: walkDepths([at(1.15, 1), at(1.15, 1)]).trace.map(s => s.family),
   };
+  // The exit is strict (`0x082822ba` takes only 0.35 > depth): a swimmer
+  // whose origin is exactly 0.35 under stays in. Origin at y = 0 so the
+  // depth is the surface, exactly 0.35.
+  results.exitEdge = {
+    at035: walkDepths([{ surfaceY: 3, feetY: -20, ticks: 120 },
+                       { surfaceY: 0.35, feetY: -1 }]).last,
+    at034: walkDepths([{ surfaceY: 3, feetY: -20, ticks: 120 },
+                       { surfaceY: 0.34, feetY: -1 }]).last,
+  };
 }
 
 // --- the ladder ----------------------------------------------------------

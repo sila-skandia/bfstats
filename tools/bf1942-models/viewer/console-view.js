@@ -19,10 +19,13 @@
  *  the quad: a flat white wash at 0.8. */
 export const WASH = 'rgba(255, 255, 255, 0.8)';
 
-/** Text colour. Not read out of the binary — the text object at
- *  `Setup+0x2d8 + 0x08` is drawn through its own vtable slot `+0x10` and its
- *  colour is set somewhere this pass did not reach. Black is what the user's
- *  reference capture shows. */
+/** Text colour: opaque black, the font's own default. The drawer
+ *  (0x00464ee0) sets no colour; it draws through the renderer's shared
+ *  `font/BF1942.font` object (Mac `RenderSetup::loadFonts`, `RenderSetup+8`),
+ *  whose constructor (client 0x0065d594, Mac `NewRendFont::NewRendFont`)
+ *  stores colour `0xff000000` (ARGB) at `+0x14`. The other user of that font,
+ *  the name tags, puts the old colour back after each tag (HUD-22). The
+ *  user's reference capture shows black too. */
 export const TEXT_COLOR = '#000000';
 
 /** Left inset and first-line offset, straight out of the drawer:

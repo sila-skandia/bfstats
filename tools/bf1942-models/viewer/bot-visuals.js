@@ -1312,8 +1312,8 @@ export function createBotVisuals(page) {
       // A replayed man's recorded aim (`replay-bodies.js` sets `bot.aim`,
       // `aimAt`): his torso turned and bent to it over the pose just drawn, as
       // his rounds and his camera are (`replay-gait.js` `bendTorso`). Play's
-      // own bots carry none. Off lying down, swimming and in a blast's or the
-      // chute's held pose.
+      // own bots carry none. Off swimming and in a blast's or the chute's held
+      // pose; lying it bends by the lie limits (`drawnAimPitch`, ANIM-23).
       // His legs turned toward a strafe and his spine back to his aim
       // (`strafe-lean.js`, ledger ANIM-21), before the aim bend, which then
       // carries the pitch alone: the engine's lean takes the twist's place.
@@ -1328,8 +1328,9 @@ export function createBotVisuals(page) {
           const bone = findBone(vis.rig.scene, TORSO_ROOT_BONE);
           vis.aimBend = Object.assign(makeAimBend(), { rig: vis.rig, bone });
         }
+        // Lying takes the template's lie pitch limits (ANIM-23).
         bendTorso(vis.aimBend.bone, vis.aimBend, vis.group, aim,
-          Boolean(aim) && stanceBends(stance) && !swimWant && !heldWant, dt);
+          Boolean(aim) && stanceBends(stance) && !swimWant && !heldWant, dt, stance);
       }
       syncCanopy(vis, bot, heldPair, dt);
     }

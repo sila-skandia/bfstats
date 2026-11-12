@@ -66,6 +66,22 @@ export function weaponIconCount(hud) {
 /** A seat with no guns: one shared empty list, not one a frame. */
 const NO_GUNS = Object.freeze([]);
 
+/**
+ * The vehicle reload bars' value, retail's feeder (ledger VHUD-10, client
+ * `Vehicle::updateAmmoBar` 0x006d6af0): `f = reloadLeft / reloadTime` while
+ * more than 0.1 s of reload is left (0.1f at 0x008c53cc), else
+ * `f = fireLeft / interval` while more than 0.1 s of the shot interval is
+ * left, else 0; the bar is `1 - f`. `interval` is the weapon's `1 /
+ * roundOfFire` (`FireArms+0x264`, 0x0053cc1a). No overheat term. Shared by
+ * the live seat (`readyFraction` below) and the replay (`replay-hud.js`).
+ */
+export function reloadBarValue(reloadLeft, reloadTime, fireLeft, interval) {
+  let f = 0;
+  if (reloadLeft > 0.1) f = reloadTime > 0 ? reloadLeft / reloadTime : 0;
+  else if (fireLeft > 0.1 && interval > 0) f = fireLeft / interval;
+  return 1 - f;
+}
+
 export function createVehicleHud(page) {
   const vehicleHud = {};
 
@@ -390,12 +406,10 @@ export function createVehicleHud(page) {
     // tick `manned()` steps (rule 5, features/mesh-viewer-performance/README.md).
     const heated = primary?.hasHeat ? primary : secondary?.hasHeat ? secondary : null;
     setHudVar('Overheat/OverHeat', heated ? heated.heat : null);
-    // Both reload-bar copies are a fraction of `reloadTime` remaining, scaled to
-    // the `max: 1.0` the layout declares — direction (counts down to empty vs.
-    // fills up as reload completes) is not settled by anything in
-    // verify-r2.md/verify-r6.md or `hud-layout.json`'s own metadata, so this is
-    // an approximation: counts down from full (just started) to empty (ready).
-    // `reloadFraction` is a module-level function, not a closure allocated here,
+    // Both reload-bar copies are the client's own feeder (ledger VHUD-10,
+    // `Vehicle::updateAmmoBar` 0x006d6af0): first weapon to `ReloadTime`,
+    // second to `ReloadTimeSecondary`, each `1 - f` (full when ready).
+    // `readyFraction` is a module-level function, not a closure allocated here,
     // for the same per-tick reason as `heated` above.
     setHudVar('Ammo/ReloadTime', readyFraction(primary, nodes[0]));
     setHudVar('Ammo/ReloadTimeSecondary', readyFraction(secondary, nodes[1]));
@@ -440,38 +454,24 @@ export function createVehicleHud(page) {
   /** How ready this weapon is to fire again, `0` (just fired) to `1` (ready),
    *  or `null` when there is no weapon in that slot at all.
    *
-   *  This used to read `state.reloadRemaining / reloadTime` alone, and on a
-   *  tank cannon that is a bar which never moves: a Sherman's `reloadTime` is
-   *  0.35 s and only runs once its whole 30-round magazine is out. What the
-   *  player actually waits through between shells is the `roundOfFire`
-   *  cooldown — 1/0.35 s = 2.86 s — which lives on the `GunFire` group, not on
-   *  `FireState`. GUN-5 has the engine's own `isReadyToUseFire` gating on the
-   *  eject-clip timer, the reload timer, the overheat timer AND the fire-rate
-   *  timer together, so the bar takes whichever of them is still running: it
-   *  is a readiness bar, and readiness is the last gate to clear.
-   *
-   *  Direction: fills as the weapon becomes ready, empty right after the shot.
-   *  Neither verify-r2.md nor `hud-layout.json` settles which way this bar
-   *  runs (VHUD-10 is still open on the whole live-value question for a
-   *  driver's own weapons), so this is a choice, not a reproduction — made
-   *  this way round because the alternative draws a FULL bar at the exact
-   *  moment the gun cannot fire, which reads as "loaded" to anyone glancing at
-   *  it, and because every other gauge in this layout is full when the thing
-   *  it measures is in good shape. Module scope, not a closure inside
-   *  `feedVehicleHud`, for that function's own stated per-tick reason. */
+   *  Retail's feeder, read on BF1942.exe (ledger VHUD-10): `Vehicle::update`
+   *  (0x006d7179..0x006d71ad) hands `updateAmmoBar` (0x006d6af0) the weapon's
+   *  `timeToReloadFinished` (`FireArms+0x184`, 0x00539980), its
+   *  `timeToFireFinished` (`+0x18c`, 0x00539a10), the template's `reloadTime`
+   *  (`+0x3a8`) and the weapon's shot interval (`+0x264 = 1 / roundOfFire`,
+   *  0x0053cc1a). It takes `f = reloadLeft / reloadTime` while more than 0.1 s
+   *  of reload is left (0.1f at 0x008c53cc), else `f = fireLeft / interval`
+   *  while more than 0.1 s of the shot interval is left, else 0, and stores
+   *  `1 - f`. No max of the two, no overheat term (the heat has its own
+   *  `Overheat/OverHeat` bar), and the bar snaps full in the last 0.1 s.
+   *  The `roundOfFire` cooldown lives on the `GunFire` group (`cooldown` is
+   *  `timeToFireFinished`, gun-cycle.js), not on `FireState`. */
   function readyFraction(state, node) {
     if (!state) return null;
-    const reloadWindow = state.stats.reloadTime > 0 ? state.stats.reloadTime : 0;
-    let remaining = reloadWindow > 0 ? state.reloadRemaining / reloadWindow : 0;
     const group = fireGroupFor(node);
     const rate = group?.stats.roundOfFire;
-    if (group && rate > 0) {
-      remaining = Math.max(remaining, group.cooldown * rate);
-    }
-    if (state.hasHeat && state.overheatRemaining > 0 && state.stats.timeDelayOnOverheat > 0) {
-      remaining = Math.max(remaining, state.overheatRemaining / state.stats.timeDelayOnOverheat);
-    }
-    return 1 - Math.max(0, Math.min(1, remaining));
+    return reloadBarValue(state.reloadRemaining, state.stats.reloadTime,
+                          group ? group.cooldown : 0, rate > 0 ? 1 / rate : 0);
   }
 
   /**

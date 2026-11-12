@@ -112,6 +112,21 @@ class DeckSpawnHostTests(unittest.TestCase):
         self.assertEqual(boat["land"], 0)
         self.assertEqual(boat["wheeled"], 0)
 
+    def test_a_ship_killed_in_one_blow_never_arms_her_sink_rate(self):
+        # HP-13 / air-sea F7: `FloatingBundle` arms its floats on `0x14` alone
+        # (lnxded 0x08240557), and `Armor::status` sends `0x14` only on a
+        # living crossing to critical; death is `0x15` alone (0x08173a06). The
+        # page used to arm on `hitPoints <= criticalDamage`, which a dead hull
+        # at 0 HP passes, so a one-blow kill sank.
+        arm = self.out["sinkArming"]
+        self.assertTrue(arm["critical"]["flagged"])
+        self.assertLess(arm["critical"]["drop"], -1)
+        self.assertFalse(arm["oneBlow"]["flagged"])
+        self.assertTrue(arm["oneBlow"]["destroyed"])
+        self.assertEqual(0, arm["oneBlow"]["drop"])
+        # Shot to critical first, then killed: already armed, she goes down.
+        self.assertLess(arm["shotToCriticalThenKilled"]["drop"], -1)
+
 
 if __name__ == "__main__":
     unittest.main()

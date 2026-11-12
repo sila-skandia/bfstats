@@ -569,7 +569,7 @@ export function createHandFire(page) {
     // runs out — the bolt-cycle un-zoom. The toggle latch itself holds.
     const unzoom = hw.data?.zoom?.unZoomBetweenFire;
     if (unzoom > 0 && hw.zoomed) hw.rezoom = unzoom;
-    // `BFSoldier::calcRecoil` (`recoil.js`, ledger FA-2..FA-5): the shot only
+    // `BFSoldier::calcRecoil` (`recoil.js`, ledger FA-22): the shot only
     // arms the soldier's recoil ride -- the two amounts drawn from
     // `setRecoilForceUp` / `LeftRight` (Thompson up 0.21..0.25, leftRight
     // -0.1..0.1) and a 20-tick counter for a `setGoBackOnRecoil` weapon, 8

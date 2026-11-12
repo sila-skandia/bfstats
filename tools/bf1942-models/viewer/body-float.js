@@ -30,8 +30,10 @@
 //    sink: the boat settles at `depth = angle_Y + 0.5`, where `t = 0.5`,
 //    `lift = (min+max)/2 = 1.2275` and `8 * 1.5 * 1.2275 = 14.73 = |g|`
 //    exactly. DICE centred the pair on `|g| / (N * 1.5)`.
-//  - **`g / -9.82` is exactly 1.5**, not 1.49995. An authored lift is quoted
-//    against a 9.82 m/s^2 gravity and the engine runs at -14.73.
+//  - **`g / -9.82` is 1.5** (1.5000000 to float precision), not 1.49995. An
+//    authored lift is quoted against a 9.82 m/s^2 gravity, and the engine runs
+//    at 0xC16BAE14 = -14.73f (-14.7299995, seeded by `BasicPhysicsSystem`'s
+//    constructor, lnxded `0x08251e3b`, client `0x00578f11`).
 //  - **`1 + 24f` really does reverse sign.** The bytes are `(1 - f) + f*25`
 //    (`0x0824d890`-`0x0824d8b3`, the 25.0 at `0x086ccce0`), so over
 //    `f in [-1, 0)` the coefficient runs `+1 -> -23` and the sliver
@@ -53,22 +55,25 @@
 // duck-typed node access `collision.js` and `vehicle-bodies.js` use
 // (`userData`, `children`, `matrixWorld.elements`), so it runs under node.
 
-import { RigidBody, TICK } from './rigid-body.js';
+import { RigidBody, TICK, GRAVITY as RIGID_GRAVITY } from './rigid-body.js';
 import { inertiaGeometryNode, ownGeometryMeshes } from './geometry-search.js';
 
-/** `BasicPhysicsSystem::getGravity` (vtable `+0x14`, `0x08251ec0`) — a field
- *  read, so -14.73 is configured rather than literal in that function. */
-export const GRAVITY = -14.73;
+/** `BasicPhysicsSystem::getGravity` (vtable `+0x14`, `0x08251ec0`) reads the
+ *  field the constructor seeds with 0xC16BAE14 = -14.73f (lnxded
+ *  `0x08251e3b`, client `0x00578f11`); nothing in a level load writes it
+ *  again. `rigid-body.js`'s, re-exported: the floats, the integrator under
+ *  them, the ship law and `aircraft.js` run on one g. */
+export const GRAVITY = RIGID_GRAVITY;
 
 /** The divisor at `0x086d0d6c`: -9.819999694824219. */
 export const BUOYANCY_DIVISOR = -9.82;
 
-/** `g / -9.82`. Exactly 1.5 — `9.82 * 1.5 = 14.73`. */
-export const LIFT_NORMALISER = 1.5;
+/** `g / -9.82`: 1.5, since `9.82 * 1.5 = 14.73`. */
+export const LIFT_NORMALISER = GRAVITY / BUOYANCY_DIVISOR;
 
 /** What `sum (-f_i) * lift_i` has to reach for buoyancy to cancel gravity:
- *  `|g| / LIFT_NORMALISER` = 9.82. */
-export const EQUILIBRIUM_SUM = 9.82;
+ *  `|g| / LIFT_NORMALISER`, which is the divisor's 9.82 whatever g is. */
+export const EQUILIBRIUM_SUM = -BUOYANCY_DIVISOR;
 
 /** The 100.0 at `0x086b01ac`, multiplying the bounding-box footprint. */
 export const DAMPING_AREA_SCALE = 100;

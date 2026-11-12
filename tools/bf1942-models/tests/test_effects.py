@@ -1361,7 +1361,15 @@ class BlastGeometryTests(unittest.TestCase):
         self.assertEqual(20, life["longFlier"])
         self.assertEqual(3, life["sherman"])
         self.assertAlmostEqual(0.8, life["flakAllies"])
-        self.assertEqual(10, life["unspecified"])   # the no-timeToLive default
+        # No `timeToLive` at all: the engine's constructor draw,
+        # CRD_UNIFORM/3/0/0 (lnxded 0x0831fa8c..0x0831fab0, ledger PROX-10),
+        # 0 to 3 s per round. It was a flat 10 s, which no round ever got.
+        self.assertTrue(0 <= life["unspecified"] <= 3)
+        # r = 1 - rand: rand 0 draws b (0 s), rand near 1 draws a (3 s).
+        self.assertAlmostEqual(3, life["unspecifiedLow"], places=4)
+        self.assertAlmostEqual(0, life["unspecifiedHigh"])
+        self.assertAlmostEqual(1.5, life["unspecifiedMid"])
+        self.assertAlmostEqual(1.5, life["unspecifiedRest"])
 
     def test_the_impact_blast_is_centred_off_the_surface(self) -> None:
         # `hitPos + 0.1 * normal`, lnxded 0x08153f5e (`ds:0x086b1ca0` =

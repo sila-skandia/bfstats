@@ -35,11 +35,11 @@ function node(name, userData, ...children) {
 function defgun() {
   const yawAxis = node('DefgunTurret', {
     templateKind: 'RotationalBundle',
-    rig: { axes: { yaw: { input: 'c_PIMouseLookX', min: -90, max: 90, free: false, maxSpeed: 90, direction: 1 } } },
+    rig: { axes: { yaw: { input: 'c_PIMouseLookX', min: -90, max: 90, free: false, maxSpeed: 90, direction: 1, acceleration: 90 } } },
   });
   const pitchAxis = node('DefgunGunBase', {
     templateKind: 'RotationalBundle',
-    rig: { axes: { pitch: { input: 'c_PIMouseLookY', min: -30, max: 10, free: false, maxSpeed: 50, direction: 1 } } },
+    rig: { axes: { pitch: { input: 'c_PIMouseLookY', min: -30, max: 10, free: false, maxSpeed: 50, direction: 1, acceleration: 90 } } },
   });
   const camera = node('DefgunCamera', { templateKind: 'Camera' });
   const barrel = node('DefgunGunBarrel', {
@@ -78,11 +78,11 @@ function sherman() {
   const driverCamera = node('ShermanCamera', { templateKind: 'Camera', control: 'Sherman' });
   const gunBase = node('ShermanGunBase', {
     control: 'Sherman', templateKind: 'RotationalBundle',
-    rig: { axes: { pitch: { input: 'c_PIMouseLookY', min: -20, max: 5, free: false, maxSpeed: 20, direction: 1 } } },
+    rig: { axes: { pitch: { input: 'c_PIMouseLookY', min: -20, max: 5, free: false, maxSpeed: 20, direction: 1, acceleration: 90 } } },
   }, cannon, driverCamera);
   const tower = node('ShermanTower', {
     control: 'Sherman', templateKind: 'RotationalBundle',
-    rig: { axes: { yaw: { input: 'c_PIMouseLookX', min: null, max: null, free: true, maxSpeed: 35, direction: 1 } } },
+    rig: { axes: { yaw: { input: 'c_PIMouseLookX', min: null, max: null, free: true, maxSpeed: 35, direction: 1, acceleration: 90 } } },
   }, gunBase);
   const rootEntryA = node('ShermanEntry', {
     control: 'Sherman', templateKind: 'EntryPoint',
@@ -90,7 +90,7 @@ function sherman() {
   });
   const gunYaw = node('ShermanBrowningRot', {
     templateKind: 'RotationalBundle',
-    rig: { axes: { yaw: { input: 'c_PIMouseLookX', min: 0, max: 0, free: true, maxSpeed: 60, direction: 1 } } },
+    rig: { axes: { yaw: { input: 'c_PIMouseLookX', min: 0, max: 0, free: true, maxSpeed: 60, direction: 1, acceleration: 90 } } },
     control: 'shermanBrowning_PCO1',
   });
   const gunCamera = node('ShermanBrowningCamera', { templateKind: 'Camera', control: 'shermanBrowning_PCO1' });
@@ -147,8 +147,8 @@ function wespe() {
   const gunBase = node('WespeGunBase', {
     control: 'Wespe', templateKind: 'RotationalBundle',
     rig: { axes: {
-      yaw: { input: 'c_PIMouseLookX', min: -15, max: 15, free: false, maxSpeed: 20, direction: 1 },
-      pitch: { input: 'c_PIMouseLookY', min: -5, max: 40, free: false, maxSpeed: 15, direction: 1 },
+      yaw: { input: 'c_PIMouseLookX', min: -15, max: 15, free: false, maxSpeed: 20, direction: 1, acceleration: 90 },
+      pitch: { input: 'c_PIMouseLookY', min: -5, max: 40, free: false, maxSpeed: 15, direction: 1, acceleration: 90 },
     } },
   }, node('WespeGunBarrel', {
     templateKind: 'FireArms', fireArms: { magSize: 20, numOfMag: 1, roundOfFire: 0.2 },
@@ -210,20 +210,20 @@ function mixedAxisCar() {
   });
   const wheelR = node('V-100FrontWheelR', {
     control: 'V-100', templateKind: 'RotationalBundle',
-    rig: { axes: { yaw: { input: 'c_PIYaw', min: -40, max: 40, free: false, maxSpeed: 2, direction: 1 } } },
+    rig: { axes: { yaw: { input: 'c_PIYaw', min: -40, max: 40, free: false, maxSpeed: 2, direction: 1, acceleration: 90 } } },
   });
   const wheelL = node('V-100FrontWheelL', {
     control: 'V-100', templateKind: 'RotationalBundle',
-    rig: { axes: { yaw: { input: 'c_PIYaw', min: -40, max: 40, free: false, maxSpeed: 2, direction: 1 } } },
+    rig: { axes: { yaw: { input: 'c_PIYaw', min: -40, max: 40, free: false, maxSpeed: 2, direction: 1, acceleration: 90 } } },
   });
   // Declared LAST, exactly as the glb traverses it.
   const turret = node('V-100Turret', {
     control: 'V-100', templateKind: 'RotationalBundle',
-    rig: { axes: { yaw: { input: 'c_PIMouseLookX', min: null, max: null, free: true, maxSpeed: 50, direction: 1 } } },
+    rig: { axes: { yaw: { input: 'c_PIMouseLookX', min: null, max: null, free: true, maxSpeed: 50, direction: 1, acceleration: 90 } } },
   });
   const gunBase = node('V-100GunBase', {
     control: 'V-100', templateKind: 'RotationalBundle',
-    rig: { axes: { pitch: { input: 'c_PIMouseLookY', min: -15, max: 40, free: false, maxSpeed: 40, direction: 1 } } },
+    rig: { axes: { pitch: { input: 'c_PIMouseLookY', min: -15, max: 40, free: false, maxSpeed: 40, direction: 1, acceleration: 90 } } },
   });
   const entry = node('V-100Entry', {
     control: 'V-100', templateKind: 'EntryPoint',
@@ -243,7 +243,7 @@ function jeep() {
   });
   const steer = node('WillyWheel1', {
     control: 'Willy', templateKind: 'RotationalBundle',
-    rig: { axes: { yaw: { input: 'c_PIYaw', min: -35, max: 35, free: false, maxSpeed: 2, direction: 1 } } },
+    rig: { axes: { yaw: { input: 'c_PIYaw', min: -35, max: 35, free: false, maxSpeed: 2, direction: 1, acceleration: 90 } } },
   });
   const entry = node('WillyEntry', {
     control: 'Willy', templateKind: 'EntryPoint',
@@ -262,7 +262,7 @@ function stationaryBrowning() {
     control: 'Stationary_Browning', templateKind: 'RotationalBundle',
     rig: {
       axes: {
-        yaw: { input: 'c_PIMouseLookX', min: -70, max: 70, free: false, maxSpeed: 90, direction: 1 },
+        yaw: { input: 'c_PIMouseLookX', min: -70, max: 70, free: false, maxSpeed: 90, direction: 1, acceleration: 90 },
         pitch: { input: 'c_PIMouseLookY', min: null, max: null, free: true, maxSpeed: 0, direction: 1 },
       },
     },
@@ -272,7 +272,7 @@ function stationaryBrowning() {
     rig: {
       axes: {
         yaw: { input: 'c_PIMouseLookX', min: null, max: null, free: true, maxSpeed: 0, direction: 1 },
-        pitch: { input: 'c_PIMouseLookY', min: -70, max: 30, free: false, maxSpeed: 90, direction: 1 },
+        pitch: { input: 'c_PIMouseLookY', min: -70, max: 30, free: false, maxSpeed: 90, direction: 1, acceleration: 90 },
       },
     },
   });
@@ -723,11 +723,11 @@ function shermanWithRenamedGunnerNode() {
   {
     const fwd = node('Fletcher_cannon', {
       control: 'Fletcher', templateKind: 'RotationalBundle',
-      rig: { axes: { yaw: { input: 'c_PIMouseLookX', min: null, max: null, free: true, maxSpeed: 30, direction: 1 } } },
+      rig: { axes: { yaw: { input: 'c_PIMouseLookX', min: null, max: null, free: true, maxSpeed: 30, direction: 1, acceleration: 90 } } },
     });
     const fwdFront = node('Fletcher_cannon_Front', {
       control: 'Fletcher', templateKind: 'RotationalBundle',
-      rig: { axes: { yaw: { input: 'c_PIMouseLookX', min: null, max: null, free: true, maxSpeed: 30, direction: 1 } } },
+      rig: { axes: { yaw: { input: 'c_PIMouseLookX', min: null, max: null, free: true, maxSpeed: 30, direction: 1, acceleration: 90 } } },
     });
     const engine = node('Fletcher_Engine', {
       control: 'Fletcher', templateKind: 'Engine', physics: { engineType: 'c_ETShip' },
@@ -899,8 +899,8 @@ function shermanWithRenamedGunnerNode() {
 
   // The ramp: `speed` winds up at |acceleration| deg/s^2 -- the axis's own
   // `setAcceleration`, unscaled by anything now -- until it reaches the
-  // commanded rate. An axis with no `setAcceleration` in its extract falls
-  // back to `TURRET_ACCELERATION`.
+  // commanded rate. An axis with no `acceleration` in its extract takes the
+  // engine's own default, `TURRET_ACCELERATION` (0.1, GUN-2).
   function speedAfter(spec, seconds, input = 1) {
     const a = new TurretAxis('yaw', node('WindUp', {}), spec);
     a.setInput(input);
@@ -938,11 +938,11 @@ function shermanWithRenamedGunnerNode() {
   // `min == max == 45` axis pins at 45; `con.py` now marks only the first
   // free, and `_clip` is what acts on it.
   const freeAxis = new TurretAxis('yaw', node('FreeAxis', {}),
-    { free: true, min: null, max: null, maxSpeed: 90, direction: 1 });
+    { free: true, min: null, max: null, maxSpeed: 90, direction: 1, acceleration: 90 });
   freeAxis.setInput(1);
   for (let i = 0; i < 400; i++) freeAxis.step(DT);
   const pinned = new TurretAxis('yaw', node('Pinned', {}),
-    { free: false, min: 45, max: 45, maxSpeed: 90, direction: 1 });
+    { free: false, min: 45, max: 45, maxSpeed: 90, direction: 1, acceleration: 90 });
   pinned.setInput(1);
   for (let i = 0; i < 400; i++) pinned.step(DT);
 
@@ -1067,9 +1067,24 @@ function shermanWithRenamedGunnerNode() {
     // finished, rather than off the travel, which still carries it.
     shermanFastSteadySpeed: round(shermanFast.axis.speed, 4),
     ownAccelAtTenth: round(speedAfter(ownAccel, 0.1), 1),
-    fallbackAccelAtTenth: round(speedAfter(fallbackAccel, 0.1), 1),
-    fallbackAccelAtHalf: round(speedAfter(fallbackAccel, 0.5), 1),
+    fallbackAccelAtTenth: round(speedAfter(fallbackAccel, 0.1), 4),
+    fallbackAccelAtHalf: round(speedAfter(fallbackAccel, 0.5), 4),
     fallbackAcceleration: TURRET_ACCELERATION,
+    // GUN-20's skip: a zero-speed axis with a continuous term, and one whose
+    // range excludes its rest angle, both stay at 0.
+    zeroSpeedContinuousAngle: (() => {
+      const a = new TurretAxis('yaw', node('ZeroCont', {}),
+        { free: true, maxSpeed: 0, direction: 1, acceleration: 90, continuousRotation: 30 });
+      for (let i = 0; i < 30; i++) a.step(DT);
+      return a.angle;
+    })(),
+    zeroSpeedClipAngle: (() => {
+      const a = new TurretAxis('yaw', node('ZeroClip', {}),
+        { free: false, min: 10, max: 20, maxSpeed: 0, direction: 1, acceleration: 90 });
+      a.setInput(1);
+      for (let i = 0; i < 30; i++) a.step(DT);
+      return a.angle;
+    })(),
     // No bank: a one-frame flick turns the axis by one tick of servo, and
     // what follows is only the register ramping down.
     flickOneTickDegrees: round(flickTick, 3),

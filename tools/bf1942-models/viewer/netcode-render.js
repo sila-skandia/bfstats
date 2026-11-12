@@ -2,9 +2,11 @@
 // replay.js draws a recording, this module draws from the room's snapshots —
 // remote soldiers as pose-pair rigs, remote-driven vehicles as template
 // replicas, seated soldiers parented into their vehicle's seat node — with
-// the engine's ghost-state law (netcode.md §4, P-2): remotes are a single
-// current state at ~0.1 s; the lerp between the last two snapshots is the
-// page's rendering choice (netcode.md §6), not the engine's.
+// the engine's ghost law (netcode.md §4, P-2, P-6..P-9): records at the
+// connection's 20 Hz, drawn 100 ms behind the client's tick clock from a
+// 16-record history and run on past the newest for up to 1.2 s, which
+// `netcode-client.js` and `net-relay.js` (ghost-draw.js) work out and this
+// module draws.
 //
 // The layout mirrors replay.js's own pieces on purpose: the model URL law,
 // the pose-pair URL law, the gaits manifest, the baked 180-degree soldier
@@ -23,7 +25,7 @@ import * as THREE from 'three';
 import { clone as skeletonClone } from './vendor/utils/SkeletonUtils.js';
 import { setReplayPropellerIdle } from './replay.js';
 import { surveyVehicle } from './seats.js';
-import { BANDS as FAMILY_BANDS, FAMILY_CLIPS, remoteClipFamily } from './remote-gait.js';
+import { BANDS as FAMILY_BANDS, FAMILY_CLIPS, drawnAimPitch, remoteClipFamily } from './remote-gait.js';
 import { findBone } from './pose-compose.js';
 import { noteRest } from './rest-pose.js';
 import { loadFirst } from './pose-bases.js';
@@ -1067,11 +1069,14 @@ export function createRemoteRenderer(ctx) {
     // same number the remote's rounds leave down (`net-remote-rounds.js`
     // takes `aim x 2.5` too), so a man shooting at the sky raises his chest
     // and his gun instead of standing level with the flash above him. The
-    // engine blends an aim pose from the register; rotating the spine is this
-    // page's approximation of that blend, clamped where a rig stops reading
-    // as a man.
+    // engine bends the three spine bones by the register (2.5 in all,
+    // ANIM-21); rotating the spine root is this page's approximation of that,
+    // under the engine's own clamp on the drawn pitch (`updateAnimations`
+    // `0x0826f109` / `0x0826f122`, ANIM-23: +-20 register degrees standing
+    // and crouched, the lie pair 0 / -6 lying, so a prone man only raises
+    // his chest, at most 15 degrees).
     const wantAim = Number.isFinite(state.aim)
-      ? Math.max(-60, Math.min(60, state.aim * AIM_VIEW_PITCH)) : 0;
+      ? drawnAimPitch(state.aim, !!state.prone) * AIM_VIEW_PITCH : 0;
     const ease = Math.min(1, Math.max(0, dt) * TWIST_EASE_HZ);
     const held = s.twistDeg ?? 0;
     const heldAim = s.aimDeg ?? 0;

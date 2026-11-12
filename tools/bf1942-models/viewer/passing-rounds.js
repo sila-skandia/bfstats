@@ -24,7 +24,11 @@
 // Not modelled: a bot's ray does not meet the world, so a round into a hill
 // flies on through it to its time to live or the body it met.
 
-const GRAVITY = 9.81;
+// The world's gravity, the engine's own -14.73 (`BasicPhysicsSystem`'s
+// constructor, client 0x00578f00, writes 0xC16BAE14; ledger IMP-7). This file
+// carried Earth's 9.81 until 2026-11-12. Signed downward in `point-body.js` (re-exported by `physics.js`).
+import { GRAVITY as WORLD_GRAVITY } from './point-body.js';
+const GRAVITY = -WORLD_GRAVITY;
 
 /**
  * Closest approach of the segment `origin + dir * s`, `s` in `[0, length]`,

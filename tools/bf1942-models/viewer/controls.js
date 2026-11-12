@@ -98,8 +98,9 @@ for (const [id, code] of KEY_TABLE) if (!CODE_KEY_IDS.has(code)) CODE_KEY_IDS.se
 export const UNBOUND_KEY_ID = 'IDKey_Unknown';
 
 /** The keys retail's CONTROLS screen takes while it waits for one
- *  (`handleControlsInput` 0x006c67d0 polls exactly these). Grave is refused
- *  with "THIS KEY IS NOT MAPPABLE!" and Escape unbinds the box; a key the
+ *  (`handleControlsInput` 0x006c67d0 polls exactly these). Escape unbinds the
+ *  box; Grave unbinds it the same way and then says "THIS KEY IS NOT
+ *  MAPPABLE!" (0x006c7678, ledger CTL-3); a key the
  *  engine has no name for (the Windows keys, F13 and up, the media keys) is
  *  not mappable either. */
 export const CAPTURE_CODES = new Set([

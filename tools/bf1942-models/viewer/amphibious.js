@@ -117,8 +117,9 @@ const SURFACE_LIFT_CLAMP = 200;
 /** `1 + 24 min(depth/DY, 1)`: the 25.0 at `0x086ccce0`. */
 const SUBMERGED_DRAG_TOP = 25;
 
-/** The box law's faces are ellipses inscribed in them. */
-const BOX_AREA = Math.PI / 4;
+/** The box law's faces are ellipses inscribed in them: `3.14 * 0.25`, the
+ *  engine's 3.14 and not pi (lnxded `0x082545b8`; client 0.785; SHIPLAW-3). */
+const BOX_AREA = 3.14 * 0.25;
 
 const UP = new THREE.Vector3(0, 1, 0);
 const IDENTITY = new THREE.Quaternion();

@@ -17,8 +17,9 @@
 //
 //   Encode and decode are the engine's own, imported from the module that
 //   owns them (world.js's composition rule): `mouse-input.js`'s
-//   `floatToFixed`/`fixedToFloat` implement `PlayerAction::set` 0x08113480
-//   and `PlayerAction::get` 0x0815c5a0 -- `round`/`trunc` over 12 bits in a
+//   `floatToFixed`/`fixedToFloat` implement `floatToFixed` 0x08113480 (which
+//   `PlayerAction::set` 0x081128a0 calls per channel, W-2) and
+//   `PlayerAction::get` 0x0815c5a0 -- `round`/`trunc` over 12 bits in a
 //   +-16 range, decode snapped to 0.01 -- and the SAME quantization applies
 //   to the page's own local player (GameClient::processLocalPlayersInputs
 //   0x00488840 packs before it simulates), so the wire adds no quantization
@@ -243,11 +244,13 @@ export function decodeInputFrame(payload) {
 
 // --- the snapshot record ----------------------------------------------------
 
-// Snapshot cadence is the engine's: the ghost state went out at 0.1 s as a
-// single current state with no interpolation buffer (P-2), and the server's
-// `Σ(rate x 1044) < cap` choke (R-1) is the capacity law the room server
-// honors (20 Hz default, lower on cumulative load). Rendering-side
-// smoothness is the client's choice; the record is the law.
+// Snapshot cadence is the engine's: ghost records ride every packet at the
+// connection's rate, 20 Hz by default (`processGameStateAndSendPackets`
+// lnxded 0x08139420, period 1 / conn+0xc; the 0.1 s timer there is only the
+// ghost-scope refresh, P-2, R-1), and the room server's choke is retail's
+// (room-stream.mjs `chokeRates`, off at the engine's default cap of 0). The
+// client draws the records by retail's law (netcode-client.js, ghost-draw.js:
+// P-2, P-6..P-9); the record is the law.
 
 // Per-player record, 31 bytes:
 //   u8  slot           1..16

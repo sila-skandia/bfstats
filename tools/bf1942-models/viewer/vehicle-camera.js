@@ -20,15 +20,18 @@ import { cameraPivotOffset } from './camera-pivot.js';
 // limits are that template's `setMinRotation -70/-40/0` / `setMaxRotation 70/5/0`,
 // and the interior mesh swap is its LodObject's `DistCompareSelector`.
 //
-// `chase`, `front` and `flyby` are OURS. A survey of every `Camera` template in
-// vanilla `Objects.rfa` plus thirteen installed mods — ~37,000 `.con` files —
-// finds a 13-command vocabulary on that template (setMinRotation, setMaxRotation,
-// setMaxSpeed, setAcceleration, setInputToYaw/Pitch/Roll, setPivotPosition,
-// toggleMouseLook, OutsideHudOffset, setHasTarget, setContinousRotationSpeed,
-// CVM*) and not one distance, offset, lag, spring or damping term among them. The
-// `CVM*` flags are booleans: they say a mode exists, never where it sits. So the
-// engine's chase framing is a hardcoded constant we cannot read, and every number
-// in this section is a viewer choice tuned by eye.
+// The `chase`, `front` and `flyby` framing in THIS file is ours. A survey of every
+// `Camera` template in vanilla `Objects.rfa` plus thirteen installed mods —
+// ~37,000 `.con` files — finds a 13-command vocabulary on that template
+// (setMinRotation, setMaxRotation, setMaxSpeed, setAcceleration,
+// setInputToYaw/Pitch/Roll, setPivotPosition, toggleMouseLook, OutsideHudOffset,
+// setHasTarget, setContinousRotationSpeed, CVM*) and not one distance, offset,
+// lag, spring or damping term among them: the `CVM*` flags are booleans that say
+// a mode exists, never where it sits. The engine's framing is hard-coded in
+// `Camera::getTransformation` and HAS been read (ledger CVM-2, CVM-5, CVM-6;
+// `chase-camera.js`, see "SINCE READ" below). The numbers in this section are
+// the `legacy` framing a seat without that law still gets, a viewer choice
+// tuned by eye, not a stand-in for an unread constant.
 //
 // `OutsideHudOffset` is the one per-vehicle datum that mentions the outside view
 // at all, and it is not a camera. Vanilla declares it 13 times, aircraft only,

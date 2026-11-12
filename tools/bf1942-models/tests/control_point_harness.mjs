@@ -44,6 +44,13 @@ const results = {
   // Nobody there: an owned flag is held; with `loseControlWhenNotClose` it runs down.
   empty: run(flag(1), [], 30),
   emptyLoses: run(flag(1, { loseControlWhenNotClose: true, timeToLoseControl: 3 }), [], 5),
+  // bf1918 fao_landing's `Fao_Beach` in the mode that gives it to team 2:
+  // `timeToLoseControl 0`, `timeToGetControl 0`. One attacker alone on it:
+  // lost on the first frame (0x08283c29 calls `lostControl` with no state-2
+  // test), taken on the second. Defended and contested, the state-2 test
+  // stands (0x08283ddb): never lost.
+  zeroLose: run(flag(2, { timeToLoseControl: 0, timeToGetControl: 0 }), [1], 1),
+  zeroLoseDefended: run(flag(2, { timeToLoseControl: 0, timeToGetControl: 0 }), [1, 2], 1),
   // Two Allied attackers against `minNrToTakeControl 3`: never taken.
   tooFew: run(flag(0, { minNrToTakeControl: 3 }), [2, 2], 30),
   // FHSWEurope soletschnogorsk-1941's `Ausrustung_und_Munition` in

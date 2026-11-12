@@ -28,6 +28,7 @@ ROOT = Path(__file__).resolve().parents[1]
 MODULES = {
     "physics.mjs": ROOT / "viewer" / "physics.js",
     "walking-body.js": ROOT / "viewer" / "walking-body.js",
+    "rigid-body.js": ROOT / "viewer" / "rigid-body.js",
     "soldier-resolve.js": ROOT / "viewer" / "soldier-resolve.js",
     "soldier-pose.js": ROOT / "viewer" / "soldier-pose.js",
     "soldier-locomotion.js": ROOT / "viewer" / "soldier-locomotion.js",
@@ -554,6 +555,15 @@ class PhysicsModuleTests(unittest.TestCase):
         self.assertAlmostEqual(0.3, high["y"], places=3)
 
     # --- the jump (PHY-1) --------------------------------------------------
+
+    def test_one_tick_of_a_huge_push_is_held_to_1000_m_s2(self) -> None:
+        """PHY-34 / collision-response.md 4.2: `|acc|^2 > 1e6` is scaled to
+        1000 m/s^2 (`0x082536a1`..`0x082536c8`), so a 2000 m/s^2 push plus
+        gravity leaves one 1/30 s tick at 33.3 m/s, not 66.7."""
+        c = self.results["accelClamp"]
+        a = math.hypot(2000.0, -14.73)
+        self.assertAlmostEqual(c["vx"], 1000.0 * 2000.0 / a / 30.0, places=3)
+        self.assertAlmostEqual(math.hypot(c["vx"], c["vy"]), 1000.0 / 30.0, places=3)
 
     def test_the_jump_constants_are_read_not_fitted(self) -> None:
         c = self.results["constants"]

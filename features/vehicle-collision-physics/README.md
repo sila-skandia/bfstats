@@ -338,7 +338,7 @@ below).
   their zones. This branch beaches 10 of 12, and 8
   of those 10 sooner (Midway's median bail 115 s against 178 s). The other
   two (Iwo pick 0 at 13 s, Midway pick 5 at 36 s) hit the `Enterprise`'s
-  side, roll past the 46 degrees at which bots bail (`upsideDownCos` 0.6914)
+  side, roll past the 46 degrees at which bots bail (`upsideDownCos` 0.6914 then; the binary's 0.7071 against the ground normal since 2026-11-12, AI-44)
   and leave the craft at sea. The engine walk's own box (3.4 x 3.0 x 11.06,
   keel 0.39) does the same on Iwo pick 0, so the cause is the hull-vs-hull
   contact, not this box. Retail LCVPs are tipped by contacts too: on the

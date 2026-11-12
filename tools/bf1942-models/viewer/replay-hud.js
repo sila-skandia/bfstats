@@ -37,7 +37,7 @@ import { AmmoEntry } from './kit-ammo.js';
 import { FireState, crossGunOf } from './fire-state.js';
 import { fireCycle } from './fire-timer.js';
 import { SOLDIER_AMMO_VARS, STANCE_TEXTURE, writeSoldierAmmo } from './soldier-hud.js';
-import { weaponIconCount } from './vehicle-hud.js';
+import { reloadBarValue, weaponIconCount } from './vehicle-hud.js';
 import { ANIM_FLAGS, bodyAt, crewOf, hpAt, kitAt, latestAt, nameAt, primaryWeaponFor, teamAt } from './replay-recording.js';
 import { VehiclePlayersList, VEHICLE_PLAYERS_VARS, hudPlayerName } from './vehicle-players.js';
 import { motionAt } from './replay-kinematics.js';
@@ -283,23 +283,21 @@ export function gunStateAt(stats, rounds, t, perPull = 1) {
   return { state, last };
 }
 
-/** How ready a seat gun is to fire again, 0 just fired to 1 ready: the last
- *  of its gates to clear (vehicle-hud.js `readyFraction`), its fire rate's
- *  cooldown from the recorded round included. */
+/** A seat gun's `Ammo/ReloadTime` at `t`, 0 just fired to 1 ready: retail's
+ *  feeder (ledger VHUD-10, `vehicle-hud.js` `reloadBarValue`, the same
+ *  function the live seat uses). The recording carries no weapon timer: it
+ *  carries the rounds' times, and the template's `reloadTime` and
+ *  `roundOfFire` come from the weapon's stats. So the reload left is
+ *  `gunStateAt`'s FireState run over the recorded rounds, and the shot timer
+ *  left is rebuilt from the last recorded round: retail's
+ *  `timeToFireFinished` (`FireArms+0x18c`) is the whole-tick cycle
+ *  (`fire-timer.js`, GUN-13) less the time since that round, divided, as
+ *  retail does, by `1 / roundOfFire` (`FireArms+0x264`). */
 function readiness({ state, last }, t) {
   const stats = state.stats;
-  let remaining = stats.reloadTime > 0 ? state.reloadRemaining / stats.reloadTime : 0;
   const rate = stats.roundOfFire;
-  // The round's timer runs whole ticks (`fire-timer.js`, GUN-13): the bar
-  // fills on the tick the gun could fire again, not `1 / rate` after.
-  if (rate > 0 && last !== null) {
-    const cycle = fireCycle(rate);
-    remaining = Math.max(remaining, Math.max(0, cycle - (t - last)) / cycle);
-  }
-  if (state.hasHeat && state.overheatRemaining > 0 && stats.timeDelayOnOverheat > 0) {
-    remaining = Math.max(remaining, state.overheatRemaining / stats.timeDelayOnOverheat);
-  }
-  return 1 - Math.max(0, Math.min(1, remaining));
+  const fireLeft = rate > 0 && last !== null ? Math.max(0, fireCycle(rate) - (t - last)) : 0;
+  return reloadBarValue(state.reloadRemaining, stats.reloadTime, fireLeft, rate > 0 ? 1 / rate : 0);
 }
 
 export class ReplayHud {

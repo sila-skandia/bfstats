@@ -85,7 +85,11 @@ export function chooseHardware3d({ hw3d = null, stored = null } = {}) {
 //
 //   MASTER VOLUME  0..100   the `Default` volume group, which every voice of
 //                           the game sits in: the percentage times 0.01
-//                           (SND-28). The page's one master gain.
+//                           (SND-28). The page's one master gain. While a
+//                           round is paused (game status 4) the HUD writes
+//                           `Default` = 0 instead (0x006ad3a7, ebx zeroed at
+//                           0x006ad0b1), so a paused game is silent; the page
+//                           has no paused round to apply it to.
 //   DISABLE ALL SOUNDS      that gain at 0.
 //   CHANNELS                the voice pool, 6 of them the 2D reserves
 //                           (SND-44): the effect sounds' budget is the rest.
@@ -100,7 +104,8 @@ export function chooseHardware3d({ hw3d = null, stored = null } = {}) {
 export const SOUND_KEY = 'bf42-sound';
 
 /** With nothing stored: the page's own level since before these rows
- *  (SoundHigh.con writes 75, the shipped Default profile 100), sound on, and
+ *  (SoundHigh.con writes 75, the shipped Default profile 100; 70 is
+ *  DELIBERATE, the level the page has always shipped at), sound on, and
  *  the shipped HIGH's detail and quality. `channels` null leaves the effect
  *  sounds' budget to the level manifest. */
 export const DEFAULT_SOUND = Object.freeze({

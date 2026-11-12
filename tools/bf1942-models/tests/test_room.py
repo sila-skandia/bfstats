@@ -13,10 +13,10 @@ What this file pins is the P2 contract of
 * the 30 Hz engine loop — two players on one clock, input isolation, the
   walk law on the wire;
 * the receive law THROUGH the room's feed — trim <= 4 drop-oldest, exactly
-  one consume per tick, seq dedupe, idle zero, backlog collapse, all of it
+  one consume per tick, seq dedupe, idle zero, all of it
   the World's own logic fed verbatim;
 * late join's MSG_JOIN_SNAPSHOT — live players, live poses;
-* explicit MSG_LEAVE + the silent-10 s drop sweep (J-3);
+* explicit MSG_LEAVE + the silent drop sweep (25 s, J-3);
 * MSG_ACTION seat enter/exit — the hull pose on the wire, seatEnter/seatExit
   rows, the exit-point placement;
 * fire throttling at ~0.35 s per player;
@@ -106,6 +106,8 @@ _VIEWER_MODULES = [
     "after-death",
     # room-hits.mjs prices a reported landing by the page's own law.
     "friendly-fire", "knockback", "soldier-exposure", "soldier-death", "skeleton-hit",
+    "tree-foliage",
+    "level-batching",
 ]
 MODULES = {f"viewer/{name}.js": VIEWER / f"{name}.js" for name in _VIEWER_MODULES}
 MODULES.update({
@@ -226,9 +228,23 @@ class RoomTests(unittest.TestCase):
         self.assertTrue(self.results["c"]["idleOk"])
 
     def test_backlog_collapse_bounds_the_room_accumulator(self) -> None:
+        # D-4 on the room server: more than nine owed runs one (0x08132955).
         c = self.results["c"]["collapse"]
-        self.assertTrue(c["bounded"], c)
-        self.assertGreaterEqual(c["ran"], 1)
+        self.assertEqual(c["ranGiant"], 1, c)
+        self.assertEqual(c["ranTen"], 1, c)
+        self.assertEqual(c["ranNine"], 9, c)
+        self.assertGreater(c["lost"], 0, c)
+
+    def test_choke_is_retails_one_pass(self) -> None:
+        # R-1 / `chokeBandwidth` 0x08132cc0: cap 0 is off; at or under the cap
+        # nothing moves; over it each connection's share is cap / n, its budget
+        # cut to share / rate while above 260 bytes, else its rate down 5.
+        ch = self.results["choke"]
+        self.assertEqual(ch["off"], [[20, 1400]] * 16)
+        self.assertEqual(ch["under"], [[20, 1400]] * 2)
+        self.assertEqual(ch["budget"], [[20, 1250]] * 4)
+        self.assertEqual(ch["rate"], [[15, 1400]] * 4)
+        self.assertEqual(ch["floor"], [[10, 1400]])
 
     # --- (d) late join ----------------------------------------------------------
 
@@ -268,7 +284,8 @@ class RoomTests(unittest.TestCase):
         f = self.results["f"]
         self.assertTrue(f["exitRow"]["type"] == "seatExit", f["exitRow"])
         self.assertTrue(f["unmounted"])
-        # The default exit point is 2 m to the vehicle's left.
+        # The declared `soldierExitLocation`, else the seat's own origin
+        # (SEAT-35; `exitPoseOf` follows the page's `exitPoseManned`).
         self.assertLess(f["exitDist"], 5.0)
 
     def test_a_wreck_has_no_door(self) -> None:

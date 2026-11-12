@@ -8,7 +8,8 @@
  * (`Objects/Items/Flag/Objects.con`, or the level's own) names its team, the
  * `Flag` it raises (`flagTemplate`), a radius and where the flag hangs
  * (`setFlagLocation 0/7.6/0`); the flag's names its team, its own radius and
- * `TimeToReSpawn` (30 on every shipped flag). `scene.json.modes.Ctf.flagBases`
+ * `TimeToReSpawn` (30 on every shipped flag; the engine's own -1 when a
+ * template omits it). `scene.json.modes.Ctf.flagBases`
  * carries both, resolved by `bf42/ctf.py` `flag_bases`.
  *
  * What the server does with them, per frame:
@@ -54,9 +55,15 @@
 
 import { SCORE_MSG } from './round-state.js';
 
-/** What every shipped `Flag` template sets, for a base the data leaves bare. */
+/** For a base the data leaves bare: the radius and flag location every
+ *  shipped `Flag` template sets, and `TimeToReSpawn` as the engine leaves it
+ *  when a template omits it. Every shipped flag says 30; the `FlagTemplate`
+ *  ctor's own is -1.0 (`movl $0xbf800000,0x170(%ebx)` at 0x08291fd4), so a
+ *  dropped flag of a template that never sets it goes home on the next frame
+ *  (`Flag::handleUpdate` 0x08291a90 returns it once the countdown is under 0,
+ *  0x08291af6..0x08291b12). */
 export const FLAG_DEFAULTS = Object.freeze({
-  radius: 5, timeToRespawn: 30, location: [0, 7.6, 0],
+  radius: 5, timeToRespawn: -1, location: [0, 7.6, 0],
 });
 
 /** A dropped flag rests this far above the terrain (`fadd 1.5`, 0x08291e97). */

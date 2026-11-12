@@ -1,5 +1,6 @@
 // The hand weapon's recoil: the kick a shot puts into the soldier's aim, and
-// the way it springs back (lnxded; ledger FA-2..FA-5).
+// the way it springs back (lnxded; ledger FA-22 for the draw; the ride below
+// is FA-26).
 //
 // A shot does not move the view. `BFSoldier::calcRecoil` (0x0827e2f0, from
 // `FireArms::Fire` 0x0828a3d9 and `FireArms::handleUpdate` 0x08289532 for a

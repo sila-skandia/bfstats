@@ -5,7 +5,9 @@
 import * as THREE from 'three';
 import { Vehicle, keyOf, axisAngle, isGearInput, multiplyAxisRotation } from './vehicle-base.js';
 import { atRestPose, restQuaternion } from './rest-pose.js';
-import { hullGeometry, inertiaGeometryBox } from './ship-spec.js';
+import {
+  hullGeometry, inertiaGeometryBox, DEFAULT_DIFFERENTIAL, DEFAULT_TORQUE, DEFAULT_NO_PROPELLER_EFFECT_AT_SPEED,
+} from './ship-spec.js';
 import { floatNodesOf, floatAcceleration } from './body-float.js';
 
 import { LIFT_ENGINE_ANGLE, VectoredEngine, clipAngleStep, engineGeometry } from './vectored-engines.js';
@@ -87,17 +89,31 @@ const clamp = (value, low, high) => Math.max(low, Math.min(high, value));
  * Gravity. NOT 9.81.
  *
  * `BasicPhysicsSystem::BasicPhysicsSystem` (client `0x00578f00`) seeds its
- * gravity field with the literal 0xC16BAE14 = -14.7295379, and nothing in a map
+ * gravity field with the literal 0xC16BAE14 = -14.73f, and nothing in a map
  * load path ever writes it again: all 31 xrefs to the singleton are accounted
  * for and the only `setGravity` callers are the chat cheats (EarthWalk -10,
  * MoonWalk -1.67, SpaceWalk -0.1) and the console property. `physics.gravity`
  * appears in no vanilla file, so the default is the value.
  *
- * Kept local on purpose. `viewer/physics.js` is growing a shared constants
- * module; when it lands this should read from it rather than declaring its own
- * g, and `gunfire.js`'s own GRAVITY with it.
+ * The server seeds the same literal (lnxded `0x08251e3b`).
+ *
+ * HELD, with `BOX_AREA` below: the flight law alone does NOT run the retail
+ * values. Retail is 0xC16BAE14 = -14.73f (lnxded `0x08251e3b` / client
+ * `0x00578f11`; -14.7295379 was a mis-decode of that word, commit
+ * `7daf0ae33`) and the box drag's `3.14 * 0.25` (`0x082545b8`). These two are
+ * held at the old -14.7295379 and pi/4 because the dogfight school's lessons
+ * and pinned flown outcomes were tuned on them: at the retail pair 76 tests
+ * fail and about 30 lessons break their own claims (planes fly into the
+ * ground, Kursk's drag-and-bag gets no shot on the hunter, the counters let
+ * his shots land), and `test_air_law`'s Bf109 lift-off goes 1.19 mm against
+ * its 1.0 mm bound. Switching is pending a retune: see
+ * `features/retail-parity-cross-check-2026-11-12`, "Still open". Everything
+ * else (`aircraft-ground-law.js`, the bodies, the floats, the ships) runs the
+ * shared -14.73 of `rigid-body.js`.
  */
-export const GRAVITY = 14.7295379;
+const FLIGHT_GRAVITY = -14.7295379;
+/** The flight law's g, a magnitude: `FLIGHT_GRAVITY`'s (HELD, above). */
+export const GRAVITY = -FLIGHT_GRAVITY;
 
 /**
  * Where the air runs out. `airDensityZeroAtHeight`, +0x30 of the same
@@ -131,7 +147,8 @@ const FLAP_LIFT_DEFAULT = 0.1;
  * 1/9.82, the constant `PhysicsWing` and `PhysicsSpring` both normalise by.
  *
  * The engine multiplies authored coefficients by `getGravity() * -0.101833`,
- * which at the shipped g is a flat x1.49995. Whoever wrote it was expressing
+ * which at the shipped g is a flat x1.5 (14.73 x 0.101833 = 1.5000001; the held
+ * `FLIGHT_GRAVITY` makes it x1.49995). Whoever wrote it was expressing
  * "in units of gravity" against a g of 9.82 that the engine no longer runs at.
  */
 const GRAVITY_NORMALISER = 0.101833;
@@ -142,7 +159,11 @@ const SURFACE_LIFT_CLAMP = 200;
 /** A submerged surface makes ten times the lift. Same function. */
 const SUBMERGED_MEDIUM = 10;
 
-/** `(pi/4)`: the box drag law's faces are ellipses inscribed in them. */
+/** `(pi/4)`: the box drag law's faces are ellipses inscribed in them. HELD:
+ *  retail is `3.14 * 0.25` (lnxded `PhysicsNode::updatePhysics`
+ *  `0x082545b8`; the client's 0.785f at `0x8f733c`; SHIPLAW-3), which
+ *  `ship.js` and `amphibious.js` run; see `FLIGHT_GRAVITY` for why the flight
+ *  law keeps pi/4 until the dogfight school is retuned. */
 const BOX_AREA = Math.PI / 4;
 
 /** `0.1 * |throttle|`: the part of thrust that does not fade with speed. */
@@ -820,9 +841,10 @@ function surveyAircraft(root, physics, options) {
         // `RiggedPart`): a vectored airframe's rotor visual follows its revs.
         spins: Array.isArray(data.spinsChildren) && data.spinsChildren.length > 0,
         position: frame(node).position,
-        differential: part.differential ?? 1,
-        torque: part.torque,
-        noPropellerEffectAtSpeed: part.noPropellerEffectAtSpeed ?? 70,
+        // `EngineTemplate`'s ctor defaults for an omitted word (ship-spec.js).
+        differential: part.differential ?? DEFAULT_DIFFERENTIAL,
+        torque: part.torque ?? DEFAULT_TORQUE,
+        noPropellerEffectAtSpeed: part.noPropellerEffectAtSpeed ?? DEFAULT_NO_PROPELLER_EFFECT_AT_SPEED,
         ...engineGeometry(root, node),
       });
       // `setMaxSpeed` over the rev span, as `CORSAIR.throttleRate` reads it.

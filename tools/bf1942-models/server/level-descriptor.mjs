@@ -21,6 +21,13 @@ export function fakeLevelDescriptor({ viewerDir }) {
     name: 'test',
     extras: {
       worldSize: 600,
+      // The level's play space. Without one the area is the terrain's own
+      // extent (x 0..600, z -600..0 in the viewer's frame, `terrainRect`),
+      // which every point below lies outside of, and `BFSpawnPoint::getActive`
+      // (0x08163dd0, SPAWN-5) offers no point outside the area: the flags
+      // would spawn nobody. A declared rectangle round the origin keeps the
+      // harness's coordinates (combat-area.js `combatAreaRect`).
+      combatArea: { min: [-300, 0, -300], max: [300, 0, 300] },
       gameplayMode: 'Conquest',
       // 50 each: a side holding both flags holds 100, over the engine's 99,
       // and the other side bleeds (ledger TKT-4). One each bleeds nobody.

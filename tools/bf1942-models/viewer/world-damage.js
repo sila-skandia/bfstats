@@ -16,6 +16,10 @@ export function onBodyDamage(world, owner, result, at, other) {
   // In a room the server's world bills its own crashes and sends the hit
   // points (`server/room-pads.mjs`); the page's copy only draws them.
   if (vehicle && !vehicle.destroyed && !world.remoteDamage) {
+    // `handleCollision` records the contact's material before it deals the
+    // damage (`0x081dae4d`, ahead of the dispatch), so the contact that
+    // kills names the death key's material (ARM-11).
+    vehicle.noteHitMaterial(result.material);
     lost = vehicle.damage(result.kill ? vehicle.hitPoints : result.damage);
   }
   // `lost` and `water` are for the crew's wash (`vehicle-hits.js`): a hull
@@ -38,11 +42,21 @@ export function onBodyDamage(world, owner, result, at, other) {
 export function damageTick(world, dt) {
   const waterLevel = world.collider?.waterLevel;
   const crews = [];
+  // The death key's last hit material (ARM-11): every contact the body world
+  // handed `CrashDamage` this tick, then the sea for every hull touching it,
+  // whose wet parts each send `handleCollision` with material 1 (HP-21). A
+  // ship is not in the body world, so this is the only contact it records.
+  const wetOwners = inWaterOwners(world);
+  world.bodyWorld?.crash?.drainHitMaterials?.((owner, material) =>
+    world.vehicleDamage.get(owner)?.noteHitMaterial(material));
+  if (wetOwners) for (const owner of wetOwners) world.vehicleDamage.get(owner)?.noteHitMaterial(1);
   // In a room (`remoteDamage`) the server runs every damage clock (the burn,
   // the water, the tilt, the air) and sends the hit points; here the pass
   // only re-picks the tier and notices a death the rows brought, at no time.
   const changes = world.vehicleDamage.update(world.remoteDamage ? 0 : dt, {
-    inWaterOwners: inWaterOwners(world),
+    inWaterOwners: wetOwners,
+    // After `inWaterOwners`, which refreshes `world.positions`.
+    deepWaterOwners: deepWaterOwners(world),
     upsideDownOwners: upsideDownOwners(world),
     ticks: world.report.timedDamage,
     // `submarineData` reads the hull's `underWater` (PHY-3): the body
@@ -206,6 +220,26 @@ function suffocateCrew(world, { vehicle, owner, amount }) {
     const lost = player.armor.damage(amount);
     world.report.suffocation?.push({ playerId, owner, lost, killed: !!player.armor.destroyed });
   }
+}
+
+/**
+ * The hulls `Armor::update` finds in deep water this tick (HP-5): those that
+ * author `damageFromDeepWater` and whose origin is under the sea plus their
+ * `deepWaterLevel` (`water > y - deepWaterLevel`, lnxded `0x08172f9d`..
+ * `0x08172fc8`, the water manager asked at the origin's x and z). Off for
+ * every vanilla, Road to Rome and Secret Weapons template; BF1918 authors it.
+ * Reads `world.positions` as `inWaterOwners` just left them.
+ */
+export function deepWaterOwners(world) {
+  const waterLevel = world.collider?.waterLevel;
+  if (!Number.isFinite(waterLevel)) return null;
+  let owners = null;
+  for (const [owner, pos] of world.positions) {
+    const vehicle = world.vehicleDamage.get(owner);
+    if (!vehicle?.damageFromDeepWater || vehicle.destroyed || world.isWrecked(owner)) continue;
+    if (waterLevel > pos[1] - vehicle.deepWaterLevel) (owners ??= new Set()).add(owner);
+  }
+  return owners;
 }
 
 export function inWaterOwners(world) {

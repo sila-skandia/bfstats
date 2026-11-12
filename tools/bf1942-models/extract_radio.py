@@ -368,7 +368,8 @@ def heartbeat_script(pool) -> dict | None:
                          "loop": bool(sample.loop)}
             for effect in sample.effects:
                 if effect.destination in ("pitch", "volume") and effect.envelope == "ramp":
-                    row[effect.destination] = list(effect.params[:4])
+                    # Every param: p5/p6 are the curve and its exponent (SSC-7).
+                    row[effect.destination] = list(effect.params[:6])
             return row
     return None
 

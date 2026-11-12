@@ -417,7 +417,8 @@ ALTERNATE KEY) plate at the pointer, in the plate's olive (0.508, 0.523,
 |---|---|---|
 | a key (the capture set retail's `handleControlsInput` polls) | the key | `addKeyToTriggerMapping`, or one half of `addKeysToAxisMapping` |
 | Escape | unbinds the box (retail's `setKey("")`, not a cancel) | the line goes; half of a key pair becomes `IDKey_Unknown` |
-| Grave, or a key the engine has no name for (Windows keys, F13+) | refused: `THIS KEY IS NOT MAPPABLE!` | |
+| Grave | unbinds the box (the same `setKey("")` Escape makes, 0x006c7678 -> 0x006c769c), then `THIS KEY IS NOT MAPPABLE!` | the line goes, as for Escape |
+| a key the engine has no name for (Windows keys, F13+) | refused: `THIS KEY IS NOT MAPPABLE!`, the box keeps its binding (retail's handling not read) | |
 | mouse buttons 1-5 (left included, as retail's `PrimaryMouseButton`) | MOUSE n | `addButtonToTriggerMapping ... IDFMouse` |
 | the wheel | MOUSE WHEEL UP / DOWN | the pair `addAxisToTriggerMapping <up> <down> IDFMouse IDAxis_2`; on a movement row the wheel axis |
 | the mouse moved 40 px one way, movement rows only | MOUSE LEFT / RIGHT / UP / DOWN | `addAxisToAxisMapping <ch> IDFMouse IDAxis_0/1` |

@@ -72,12 +72,24 @@ class ReplayAimBendTests(unittest.TestCase):
         self.assertTrue(all(a > b for a, b in zip(easing, easing[1:])))
         self.assertLess(easing[-1], 0.1)
         self.assertLess(s["afterCut"], 1e-3)
-        self.assertEqual({"stand": True, "crouch": True, "prone": False, "none": True}, s["bends"])
+        # Lying bends too, under its own limits (ANIM-23, `updateAnimations`
+        # 0x0826f0ed); it used to be off.
+        self.assertEqual({"stand": True, "crouch": True, "prone": True, "none": True}, s["bends"])
 
-    def test_the_bend_is_clamped_where_a_rig_stops_reading_as_a_man(self) -> None:
+    def test_the_bend_is_clamped_where_the_engine_clamps_it(self) -> None:
+        # `BFSoldier::updateAnimations` holds the drawn pitch at +-20 register
+        # degrees standing and crouched (0x086c0314 / 0x086d26f0), 2.5 drawn
+        # each over the spine: 40 up or down draws 50. Lying it is the
+        # template's `setLiePointUpDownAngle 0.0 -6.0` (0x0826f109 /
+        # 0x0826f122): up only, at most 6 (15 drawn). ANIM-23. The old clamp
+        # was the page's 60 drawn degrees.
         c = self.r["clamp"]
         self.assertEqual(60, c["max"])
-        self.assertAlmostEqual(60.0, c["drawn"], places=6)
+        self.assertAlmostEqual(50.0, c["drawn"], places=4)
+        self.assertAlmostEqual(50.0, c["standDown40"], places=4)
+        self.assertAlmostEqual(7.5, c["proneUp3"], places=4)
+        self.assertAlmostEqual(15.0, c["proneUp10"], places=4)
+        self.assertAlmostEqual(0.0, c["proneDown10"], places=4)
 
     def test_the_fallback_rig_bends_through_set_gait_pose(self) -> None:
         f = self.r["fallback"]

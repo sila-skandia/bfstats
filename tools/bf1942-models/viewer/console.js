@@ -96,7 +96,7 @@ export const ERROR = 2;
 
 /**
  * The dispatcher's own messages, verbatim. Client block
- * `0x00902cb8`-`0x00902d3c`, lnxded block `0x086eb01d`-`0x086eb07d`; both
+ * `0x00902cbc`-`0x00902d24` (setable first, Unknown last), lnxded block `0x086eb01d`-`0x086eb07d`; both
  * binaries ship the same five strings in the same wording, including
  * "setable" with one t.
  */
@@ -106,7 +106,7 @@ export const MESSAGES = {
   onlyReadable: 'Property is only readable!',       // 0x086eb04d
   unauthorised: 'Unauthorised method!',             // 0x086eb068
   unknown: 'Unknown object or method!',             // 0x086eb07d
-  tooFew: 'Too few arguments, the min no of arguments is ',   // 0x086eb5ee-ish, pushed at 0x083e45ee
+  tooFew: 'Too few arguments, the min no of arguments is ',   // 0x086eb240, pushed at 0x083e45ee
   tooMany: 'Too many arguments, the max no of arguments is ', // pushed at 0x083e65b3
   oneArg: 'Properties only takes one argument!',    // pushed at 0x083e67e5
   wrongSyntax: 'Wrong syntax!',                     // pushed at 0x083e34ad
@@ -127,7 +127,7 @@ export const KEYWORDS = [
   'var', 'const',                                   // 0x086e3b05 / b09
   'echo',                                           // 0x086bdabc
   'run', 'include',                                 // 0x086eb011 / 015
-  'alias', 'listalias', 'unalias',                  // 0x086a2ff2-ish block
+  'alias', 'listalias', 'unalias',                  // listalias 0x086eafff, unalias 0x086eb009
   'beginNoExecution', 'endNoExecution',             // 0x086eafd2 / fe3
 ];
 
@@ -504,7 +504,10 @@ export class GameConsole {
     if (args.length === 0 && cmd.type === 3) {
       return { code: ERROR, message: MESSAGES.onlySetable };
     }
-    if (args.length > 1 && cmd.type === 1) {
+    // Both value-taking property kinds refuse a second argument (CON-21:
+    // lnxded 0x083e4547 for type 1 and 0x083e455c for type 3, both to
+    // 0x083e67cf), before the min/max counts.
+    if (args.length > 1 && (cmd.type === 1 || cmd.type === 3)) {
       return { code: ERROR, message: MESSAGES.oneArg };
     }
     if (args.length < cmd.minArgs) {

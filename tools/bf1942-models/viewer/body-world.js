@@ -26,7 +26,13 @@ import { collideWithStatics, collideSpringsWithStatics } from './body-statics.js
 import { CrashDamage, WATER_MATERIAL, contactMaterialValues } from './crash-damage.js';
 import { wheelFrictionOpts } from './vehicle-bodies.js';
 
-/** Ticks a stalled tab may owe before the backlog is dropped (the engine's own rule is 10). */
+/**
+ * Ticks a stalled tab may owe before the backlog is dropped to one. Retail's
+ * client drops more than 9 to 1 (`GameClient::update` `0x0048fca8`
+ * `cmp ebx, 9`; the server's `GameServer::update` `0x08132955` the same,
+ * LOOP-1), after `InputManager`'s own >10 test; 10 here is a deliberate
+ * browser allowance, one tick more than retail runs.
+ */
 const MAX_BACKLOG_TICKS = 10;
 
 export class BodyWorld {

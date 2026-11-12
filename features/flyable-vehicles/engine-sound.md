@@ -137,10 +137,13 @@ Survey totals: destination `Volume` 8562 / `Pitch` 1326; envelope `Ramp`
 - `Ramp p1 p2 p3 p4 p5 p6` (6-param, 573 uses): first four as above. The
   extra pair is dominated by `(2, 2)` on Effect::Speed volume ramps and
   `(1, 2)` on Engine::Rpm pitch ramps, with scattered `(2, 0.16..6)` on
-  `Default` pitch ramps. Meaning unresolved — plausibly curve shaping or
-  slew limiting (`speculative`; the engine also has a global
-  `Sound.setPitchChangeRate 15`, so pitch is slewed regardless). Safe to
-  ignore: treating all ramps as linear reproduces the audible design.
+  `Default` pitch ramps. **Settled 2026-11-12 (ledger SSC-7, BF1942.exe
+  `0x00803aa0`): curve shaping.** p5 picks the curve between p1 and p2 (0
+  linear, 1 quick `p3 + p4 (1 - ((x - p2) / (p1 - p2))^p6)`, 2 slow
+  `p3 + p4 ((x - p1) / (p2 - p1))^p6`, any other `p3 + p3`), p6 is the
+  exponent. Treating them as linear did NOT reproduce the design: a `2 5`
+  pitch curve sits at 0.467 where the line gave 0.725. `viewer/ssc-curves.js`
+  `rampAt` plays them.
 - `Linear p1 p2`: `out = p1 + p2 * x`. With `controlSource Default` and
   `p2 = 0` this is the "Offset Pitch" idiom — a constant pitch multiplier
   (e.g. every distant MG layer runs at 0.9).

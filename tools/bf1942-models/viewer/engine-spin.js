@@ -106,8 +106,15 @@ export function unboundRollAxis(physics) {
   };
 }
 
-/** `RotationalBundleTemplate`'s `setAcceleration` default (`0x081d90c0`). */
+/** `RotationalBundleTemplate`'s `setAcceleration` default (`0x081d90c0`:
+ *  0.1f to `+0x180..+0x188` at `0x081d913c`). Shared with `ground-engine.js`
+ *  and `tracked-vehicle.js`, whose servos take it when a `.con` omits the word. */
 export const UNDECLARED_ACCELERATION = 0.1;
+
+/** `RotationalBundleTemplate`'s `setMaxSpeed` default: 1.0f to `+0x174..+0x17c`
+ *  (`0x081d912b`). Non-zero, so an omitted `setMaxSpeed` still runs the servo
+ *  (`Engine::handleUpdate` skips an axis only on a zero maxSpeed). */
+export const UNDECLARED_MAX_SPEED = 1;
 
 // --- a propeller / rotor pair, as the page holds it -------------------------
 

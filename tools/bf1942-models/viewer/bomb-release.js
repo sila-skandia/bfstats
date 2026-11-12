@@ -89,7 +89,12 @@ export const FIREARMS_DEFAULT_VELOCITY = 200;
  *
  * `roundsLeft < barrelCount` is BOMB-5, the partial salvo: `Fire` has a rule
  * above the loop that fires only `roundsLeft` barrels, so a dive bomber down
- * to its last round drops ONE bomb and never goes into ammunition debt.
+ * to its last round drops ONE bomb. The engine's charge does not follow it:
+ * `fireFinished` takes the full `barrelCount` off the magazine whenever it
+ * holds a round (`subl %eax,%edx` at lnxded 0x0828878d, unclamped), so the
+ * engine's magazine goes negative there. This returns the barrels fired as
+ * the cost instead and never goes below 0. Shipped data reaches the case
+ * only in `WasserFallGuns` below (the engine leaves its magazine at -24).
  *
  * It never fires on a bomb rack, though, and the "free bomb at the bottom of
  * every magazine" this comment used to claim does not occur in shipped data:

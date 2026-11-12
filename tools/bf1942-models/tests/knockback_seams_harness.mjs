@@ -66,31 +66,48 @@ const out = {};
 }
 
 // 2. Two blasts priced in one tick: the engine adds both to the one
-//    accumulator (`addAccelerationAtAbsolutePosition` `0x08256620` is a plain
-//    add), each held under the ceiling on its own (KNOCK-4), so he leaves at
-//    the sum.
-{
+//    accumulator (KNOCK-6: `PhysicsNode::addAccelerationAtAbsolutePosition`
+//    `0x08255110` is a plain add), each held under the soldier's
+//    `explosionForceMax` on its own (KNOCK-4, KNOCK-7: 600 m/s^2, 20 m/s),
+//    and the tick's step then holds the WHOLE accumulator -- gravity and last
+//    tick's contact push included -- to 1000 m/s^2 (PHY-34,
+//    `updatePositionalPhysics` `0x082536a1`..`0x082536c8`). Two capped
+//    blasts are 1200 m/s^2, so the pair is cut back; two small ones add
+//    exactly.
+const ACCEL_LIMIT = 1000;
+function blastPair({ exposure }) {
   const s = new Soldier({ collider: flatWorld() });
   s.spawn(0, 0, 0, 0);
   for (let i = 0; i < 30; i++) s.step(TICK, {});
   s.body.knockback = new Knockback();
   const a = soldierBlastAcceleration({
-    force: 150, radius: 15, distance: 5, offset: [0, 0, 5], exposure: 1,
+    force: 150, radius: 15, distance: 5, offset: [0, 0, 5], exposure,
     forceMod: 150, forceMax: 600,
   });
   const one = { x: a.x, y: a.y, z: a.z };
   s.body.blast(one.x, one.y, one.z);
   s.body.blast(one.x, one.y, one.z);
+  // What the accumulator holds going into the step: gravity and the contact
+  // push the last tick seeded, plus the banked pair (`blast` hands it back as
+  // dv / dt, the same 2a at the engine's tick).
+  const acc = s.body.body.accel;
+  const A = { x: acc.x + 2 * one.x, y: acc.y + 2 * one.y, z: acc.z + 2 * one.z };
+  const k = Math.min(1, ACCEL_LIMIT / Math.hypot(A.x, A.y, A.z));
   const v0 = { ...s.body.velocity };
   s.step(TICK, {});
   const v = s.body.velocity;
-  out.twoBlasts = {
+  return {
     each: round(Math.hypot(one.x, one.y, one.z) / 30),
-    // One body tick of gravity rides in with it; the horizontal part is clean.
+    accel: round(Math.hypot(A.x, A.y, A.z)),
     horizontal: round(Math.hypot(v.x - v0.x, v.z - v0.z)),
-    expectedHorizontal: round(2 * Math.hypot(one.x, one.z) / 30),
+    unclamped: round(2 * Math.hypot(one.x, one.z) / 30),
+    expectedHorizontal: round(k * 2 * Math.hypot(one.x, one.z) * TICK),
   };
 }
+// 150 x 150 / 15 = 1500 m/s^2 before the cap: exposure 1 is capped to 600
+// each; exposure 0.2 is 300 each, a 600 m/s^2 pair under the step's 1000.
+out.twoBlasts = blastPair({ exposure: 1 });
+out.twoSmallBlasts = blastPair({ exposure: 0.2 });
 
 // 3. The item gate. Every explosion state's lower half declares
 //    `c_AsmHideWeapon` (`AnimationStatesExplosionFly.con`), the same flag the

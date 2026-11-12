@@ -606,12 +606,13 @@ export function landingTick(order, { id, position, command, candidates, actuator
   if (order.route?.length) {
     // `WPMoveToBeachLanding::getUrgency` 0x08537e50 on the route: the first
     // point is popped (the changed flag +4 set, so the plan is rebuilt) once
-    // the bot is within `round(R) + getMaxPathPosRemovalDistance` of it or
+    // the bot is within `ceil(R) + getMaxPathPosRemovalDistance` of it (`frndint`
+    // under a round-up control word, 0x08537ed0..0x08537ee1) or
     // inside its area (`AIStrategicArea::isInside`); until the list is empty
     // the zone law does not run. (Its re-randomising of a point under the
     // waypoint's error flag, +6, has no viewer counterpart: no error flag.)
     const first = order.route[0];
-    const rr = Math.round(order.radius) + (order._pathRadius ?? 0);
+    const rr = Math.ceil(order.radius) + (order._pathRadius ?? 0);
     const d2p = (x - first.point[0]) ** 2 + (z - first.point[1]) ** 2;
     if (d2p < rr * rr || (first.area && order.layer?.isInside(first.area, x, z))) {
       const rest = order.route.slice(1);
