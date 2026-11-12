@@ -15,7 +15,7 @@ import { craftTipped } from './doctrine-landing.js';
 import { CHANGE } from './bot-vehicle.js';
 import { mayEnterHull } from './vehicle-instance.js';
 import { findEntryPoint, wantsSeat, SPAWN_SEAT_REACH_AI, SPAWN_STANDS } from './spawn-seat.js';
-import { rowFor, rowFire, setRowsMod } from './bot-rows.js';
+import { rowFor, rowFire, setRowsMod, botKind } from './bot-rows.js';
 import { objectBlocker, restrictedExit } from './restricted-exit.js';
 
 /** The body radius a land vehicle keeps on its map, and a plane's or ship's
@@ -371,10 +371,11 @@ export function createBotUnits(env) {
       }
       for (const [node, doors] of byNode) {
         if (!env.vehicleSpawnActive(node)) continue;
-        const kind = units.kindOf(node);
-        if (!['ground', 'tank', 'gun', 'air', 'ship'].includes(kind)) continue;
         const ai = units.aiOf(node);
         if (!ai) continue;
+        // An aircraft by its AI template, not its engines (bot-rows.js `botKind`).
+        const kind = botKind(units.kindOf(node), ai);
+        if (!['ground', 'tank', 'gun', 'air', 'ship'].includes(kind)) continue;
         const owner = collider?.statics?.ownerOf(node) ?? -1;
         const damage = world?.vehicleDamage?.get(owner) ?? null;
         if (damage?.destroyed) continue;
@@ -618,13 +619,16 @@ export function createBotUnits(env) {
     // The hull's own search type (`typeNav`, AI-118); a level that lists
     // none keeps the choice by drive kind (the Tank line for land, the
     // water maps by name).
-    const typed = drive && inst.rootKind !== 'air' && Number.isInteger(ai?.vehicleNumber)
+    // The bot's kind of the hull (bot-rows.js `botKind`); `airframe` is the
+    // drive's, whose input channels the world reads (bot-aim.js `writeInput`).
+    const kind = botKind(inst.rootKind, ai);
+    const typed = drive && kind !== 'air' && Number.isInteger(ai?.vehicleNumber)
       ? units.typeNav(ai.vehicleNumber) : undefined;
     const nav = typed !== undefined ? typed.nav
-      : drive && ['ground', 'tank'].includes(inst.rootKind) ? units.vehicleNav()
-      : drive && inst.rootKind === 'ship' ? units.waterNav(landingCraft ? 'LandingCraft' : 'Boat') : null;
+      : drive && ['ground', 'tank'].includes(kind) ? units.vehicleNav()
+      : drive && kind === 'ship' ? units.waterNav(landingCraft ? 'LandingCraft' : 'Boat') : null;
     return {
-      id: cand.id, vehicleId: cand.vehicleId, node, drive, occupancy: seat, kind: inst.rootKind,
+      id: cand.id, vehicleId: cand.vehicleId, node, drive, occupancy: seat, kind, airframe: inst.rootKind === 'air',
       seatId: seat.seatId, drives: !!drive,
       // The seat's groups, live: the instance re-collects them on a seat swap.
       get groups() { return seat.groups.driven; },
@@ -642,7 +646,7 @@ export function createBotUnits(env) {
       turnRadius: ai?.turnRadius ?? null, strType: cand.strType, seats: cand.seats, isRoot: cand.isRoot,
       // The hull's own velocity: its one drive, whoever holds the wheel.
       hullVelocity: () => inst.drive?.state?.velocity ?? null,
-      radius: inst.rootKind === 'air' || inst.rootKind === 'ship' ? BOT_VEHICLE_RADIUS_LARGE : BOT_VEHICLE_RADIUS,
+      radius: kind === 'air' || kind === 'ship' ? BOT_VEHICLE_RADIUS_LARGE : BOT_VEHICLE_RADIUS,
       maxSpeed: cand.maxSpeed,
       weapons: cand.weapons, template: cand.template, antiAircraft: !!cand.antiAircraft,
       controlInfo: cand.controlInfo ?? null, equipmentType: cand.equipmentType ?? null,
@@ -800,7 +804,7 @@ export function createBotUnits(env) {
     const node = seat.root;
     const cands = units.candidates().filter(c => c.vehicleId === node.uuid);
     const ai = units.aiOf(node);
-    const kind = units.kindOf(node);
+    const kind = botKind(units.kindOf(node), ai);
     const c = cands.find(x => x.seatId === seat.seatId) ?? cands[0] ?? null;
     const box = new THREE.Box3().setFromObject(node);
     const ext = box.isEmpty() ? [4, 2, 6] : [box.max.x - box.min.x, box.max.y - box.min.y, box.max.z - box.min.z];

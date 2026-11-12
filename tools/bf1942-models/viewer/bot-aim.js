@@ -227,6 +227,17 @@ export function writeInput(bot) {
     input.pad = true;
     input.forward = 0;
     input.strafe = 0;
+  } else if (bot.vehicle?.airframe) {
+    // A land unit on an aircraft's drive (bot-rows.js `botKind`: Galactic
+    // Conquest's Speederbike): the car law's throttle and steer are the
+    // same two channels, `PIThrottle` and `PIYaw` (`CarControl` writes the
+    // ControlInfo's drive pair), which the world's air branch reads from
+    // `forwardKeys` and `rudder`. The stick stays centred.
+    input.forwardKeys = input.forward;
+    input.rudder = input.strafe;
+    input.roll = 0;
+    input.pitch = 0;
+    input.pad = true;
   }
   bot.input[PI.Throttle] = input.forward;
   bot.input[PI.Yaw] = input.strafe;

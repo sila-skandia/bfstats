@@ -141,6 +141,27 @@ export function rowsOf(mod) {
 }
 
 /**
+ * The kind a bot handles a hull as: its drive kind, but an aircraft only
+ * when its AI template says so (`aiTemplate.addType ITAir`). The engine never
+ * reads a hull's physics to pick a bot's control: the strategic order goes to
+ * `orderAirBot` on the information's air flag (`AIStrategicArea::orderBot`
+ * 0x08640760, `+4 & 0x10`, AI-71), and the move is run by the plan
+ * interpreter of the seat's equipment type (`AISettings::getPlanInterpreter`
+ * 0x08483db0, the table `aiSettings.addInterpreterEntry <vehicle> <entry>`
+ * fills: `CarMoveTo` for a Car, `PlaneMoveTo` for a plane, AI-180). Galactic
+ * Conquest's Speederbike is a hover bike on five `c_ETPlane` engines whose
+ * template is vanilla's `Willy` (a Car: ITGround, no ITAir). Handled by its
+ * drive kind it was flown with the plane law, which holds a takeoff run
+ * until the hull is airborne: the bike never is, so its driver held the
+ * throttle open in a straight line, out of the level at 107 m/s and into the
+ * ground. A table without types (an older tree) keeps the drive kind.
+ */
+export function botKind(kind, ai) {
+  const types = ai?.types;
+  return kind === 'air' && types?.length && !types.includes('ITAir') ? 'ground' : kind;
+}
+
+/**
  * A seat's row: `{ name, behaviours }`, from its row name (`equipment`, which
  * `extract_vehicle_ai.py` stamps from the mod's own list) where the table
  * carries one, else from its number through the mod's list; null with
