@@ -193,6 +193,27 @@ database.
 
 ---
 
+## Finish the job
+
+Work the owner asked for is done when it is done, not when a first pass
+exists. Fix every bug and every shortcoming you find, in the session, without
+asking.
+
+- **Never ask whether to fix something.** Not as a question at the end of a
+  turn, not as a yes/no button, not as a "new task" card, not as "want me
+  to...?". A bug, a defect in your own output (a frame in the ground, a dark
+  hill, a missing sky) or a limit of what you built is fixed, verified and
+  committed, then reported as done.
+- **No "known, not fixed" and no "what's next" hand-backs** for anything
+  inside the task. A README's "what looks worse" or "next" list is a work
+  queue for this session, not a summary for the owner: work through it.
+- **Keep going until the queue is empty.** Do not stop after a milestone to
+  report and wait. Report once, at the end, with what was fixed.
+- The only things that still wait for the owner: destructive or
+  outward-facing actions (kubectl, applying manifests, deleting volume
+  content, see "Conventions"), and a brand-new feature nobody asked for. A
+  shortcoming of a feature the owner did ask for is not a new feature.
+
 ## Conventions
 
 - When we document our decisions or iterate on a design, we store the outcomes / tasklist / progress in a markdown file in `features/<feature-name>` where feature name is a brief descriptive name of the feature separated by hyphens. A new folder also gets its line in `features/README.md`, and a unit test fails until it has one.
