@@ -5,7 +5,7 @@ Status: **re-worded, no fight changed; re-measured under the roof**
 six ways out breaks the circle, the Spitfire's one answer (leaving)
 included, and with every jet pilot under the roof none does still (0 of 9
 each); the zoom now ends level with them under the top of the sky.
-The jet file (`tools/bf1942-models/viewer/dogfight-jet-the-circle.js`) says
+The jet file (`tools/bf1942-models/viewer/dogfight-lessons/jets/the-circle.js`) says
 so with the nine flights' numbers; every try flies the plan it flies on the
 Spitfire. The plan file holds no plan. Tests:
 `tools/bf1942-models/tests/test_dogfight_jet_the_circle.py`.

@@ -20,7 +20,7 @@
 
 import { Aircraft } from './aircraft.js';
 import { createDogfightTheatre } from './dogfight-theatre.js';
-import { fighterRank, jetName, lessonById } from './dogfight-lessons.js';
+import { fighterRank, jetName, lessonById, lessonsFor, setLessonMod } from './dogfight-lessons.js';
 import { arenasFrom, arenasFromTeams, planeIn, aceAgainst, arenaUrl } from './dogfight-arena.js';
 import { loadPlaneModel, airframeRoot, planeVisual } from './plane-models.js';
 import { VIEWER_ROOT } from './viewer-root.js';
@@ -97,6 +97,19 @@ if (!arenas.length) {
 const modId = m => (m.id === VANILLA.id ? null : m.id);
 /** The arena tree's collision meshes, in hand before a plane is built. */
 const collisionMeshes = await collisionOf(arenaMod);
+// The tree's own lessons (`dogfight-lessons.js` `MOD_LESSONS`: GCMOD's), and
+// the craft each names for its sides, loaded once: a lesson flies and is
+// drawn on its own X-Wing and TIE, whatever plane is picked.
+setLessonMod(arenaMod.id);
+const crafts = new Map();
+await Promise.all([...new Set(lessonsFor(arenaMod.id).flatMap(l => [l.ace?.craft, l.you?.craft]).filter(Boolean))]
+  .map(async name => {
+    try {
+      const root = airframeRoot(await loadPlaneModel(name, modId(arenaMod)));
+      if (root) crafts.set(name.toLowerCase(), root);
+    } catch (error) { console.warn(`dogfight school: craft ${name}`, error); }
+  }));
+const craftOf = name => (name ? crafts.get(String(name).toLowerCase()) ?? null : null);
 const frame = { cockpit: false, collisionMeshes };
 /** The arena is remembered per mod; vanilla keeps the key it always had. */
 const ARENA_KEY = arenaMod.id === VANILLA.id ? ARENA_KEY_VANILLA : `${ARENA_KEY_VANILLA}:${arenaMod.id}`;
@@ -252,10 +265,10 @@ const theatre = createDogfightTheatre({
   // Flown over a floor at 0, as the Range and the school's tests fly them.
   groundY: 0,
   // Side 0 is the ace, the rest yours (you, a wingman): each its own type.
-  makePlane: (side, i) => new Aircraft((i === 0 ? models.ace : models.mine).clone(true), null, frame),
+  makePlane: (side, i) => new Aircraft((craftOf(side?.craft) ?? (i === 0 ? models.ace : models.mine)).clone(true), null, frame),
   // Each side's gunners: a two-seater's rear gun fires in every lesson.
   gunners: i => (i === 0 ? models.aceGunners : models.mineGunners),
-  planeVisual: i => planeVisual(i === 0 ? models.ace : models.mine),
+  planeVisual: (i, craft = null) => planeVisual(craftOf(craft) ?? (i === 0 ? models.ace : models.mine)),
   // A recorded fight's own types, from their trees.
   planeVisualFor: (template, mod) => loadPlaneModel(template, mod).then(scene => (scene ? planeVisual(scene) : null)),
   makePlaneFor: async (template, mod) => {

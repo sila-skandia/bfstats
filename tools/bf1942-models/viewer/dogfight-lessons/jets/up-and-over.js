@@ -4,7 +4,7 @@
 // A jet does not: nose 72 degrees up the F-16 never drops below 71 m/s. What
 // runs out is the air (lift falls as 1 - height / 1000, `aircraft.js`
 // `medium`), so the jet's ace (`jetUpAndOver`, `jetUoAce`, `jetUoAceSharp`,
-// `dogfight-jet-plan-up-and-over.js`) goes over the top at 550 m while the
+// `plan-up-and-over.js`) goes over the top at 550 m while the
 // air still holds it, tops out at 725 m and comes straight back down. Every
 // jet pilot flies under the roof (`stepPilot`), which caps a pull toward the
 // sky near the top of it and takes the throttle off a nose well over the

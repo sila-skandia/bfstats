@@ -1,5 +1,5 @@
-"""The flat scissors on a jet (`viewer/dogfight-jet-scissors.js`,
-`viewer/dogfight-jet-plan-scissors.js`; features/dogfight-lessons-jets/scissors.md).
+"""The flat scissors on a jet (`viewer/dogfight-lessons/jets/scissors.js`,
+`viewer/dogfight-lessons/jets/plan-scissors.js`; features/dogfight-lessons-jets/scissors.md).
 
 Every number the jet lesson's words make, on the published F-16. The
 outcomes come from `jet_school` (the jet harness's nine starts, sideways by
@@ -43,7 +43,7 @@ const THREE = await load('vendor/three.module.js');
 const { Aircraft } = await load('aircraft.js');
 const { runDuel } = await load('dogfight-duel.js');
 const { LESSONS, lessonFor, demoSides } = await load('dogfight-lessons.js');
-const { JET_LESSONS } = await load('dogfight-jets.js');
+const { JET_LESSONS } = await load('dogfight-lessons/jets/index.js');
 const { STARTS, nudge, scoreMove, verdictOf } = await load('dogfight-measure.js');
 const { jetMaker } = await import(pathToFileURL(path.join(HERE, 'jet_airframes.mjs')).href);
 const fixture = JSON.parse(readFileSync(path.join(HERE, 'fixtures', 'dc-jets.json'), 'utf8'));

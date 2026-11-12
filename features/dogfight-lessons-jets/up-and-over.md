@@ -7,8 +7,8 @@ top of the sky, the ace keeps its pull, its loop and its recovery out of that
 roof, its loop tops out under 800 m on both jets, and the words say what the
 nine starts fly now. Following them up, it is you who ends up slow at the
 top. Dip 9 of 9 on both jets, Flip 0, Ninja 0. Files:
-`tools/bf1942-models/viewer/dogfight-jet-up-and-over.js`,
-`viewer/dogfight-jet-plan-up-and-over.js` (`jetUoDip`, `jetUpAndOver`,
+`tools/bf1942-models/viewer/dogfight-lessons/jets/up-and-over.js`,
+`viewer/dogfight-lessons/jets/plan-up-and-over.js` (`jetUoDip`, `jetUpAndOver`,
 `jetUoAce`, `jetUoAceSharp`), `viewer/dogfight-jet-ceiling.js` (the roof,
 every jet pilot's since 2026-11-11), `tests/test_dogfight_jet_up_and_over.py`.
 The Spitfire's version: [vertical.md](../dogfight-school/reviews/vertical.md),
@@ -38,7 +38,7 @@ wallowed at 15 to 60 m/s for 20 s or more (full aft stick at low speed, `over`
 and `zoom` cycling under `OVER_SPEED`), even down at 300 m. An ace that falls
 out of the sky is not an ace.
 
-The jet's ace (`jetUp` in `dogfight-jet-plan-up-and-over.js`, wrapping
+The jet's ace (`jetUp` in `dogfight-lessons/jets/plan-up-and-over.js`, wrapping
 `upAndOver`, `uoAce` and `uoAceSharp` as `jetUpAndOver`, `jetUoAce`,
 `jetUoAceSharp`):
 

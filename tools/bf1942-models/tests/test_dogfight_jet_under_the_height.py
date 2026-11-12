@@ -1,9 +1,9 @@
-"""When they have the height, on a jet (`viewer/dogfight-jet-under-the-height.js`,
+"""When they have the height, on a jet (`viewer/dogfight-lessons/jets/under-the-height.js`,
 features/dogfight-lessons-jets/under-the-height.md).
 
 The fights are the lesson's starts and seats against the jet's ace, the same
 boom-and-zoomer turning over the top under the roof every jet pilot flies
-under (`jetBoomAndZoom`, `jetUhAce`, `viewer/dogfight-jet-plan-under-the-height.js`,
+under (`jetBoomAndZoom`, `jetUhAce`, `viewer/dogfight-lessons/jets/plan-under-the-height.js`,
 `underRoof` in `stepPilot`); the jet file rewrites the words, because on the
 F-16 a straight climb under a diver is not the trap it is on a Spitfire, and
 neither plane can get above the other under the roof.
@@ -26,7 +26,7 @@ from pathlib import Path
 from jet_school import jet_lesson, jet_steps, jet_tops, shot_down
 
 TOOLS = Path(__file__).resolve().parent.parent
-JET_FILE = TOOLS / "viewer" / "dogfight-jet-under-the-height.js"
+JET_FILE = TOOLS / "viewer" / "dogfight-lessons/jets/under-the-height.js"
 
 # What the harness's summaries do not carry: each fight's timeline read for
 # the words' numbers (when you reach their height and their energy, the top

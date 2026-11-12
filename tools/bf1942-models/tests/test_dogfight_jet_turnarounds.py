@@ -1,6 +1,6 @@
 """The Immelmann and the split-S on a jet (features/dogfight-lessons-jets/turnarounds.md).
 
-Every number the jet lesson's words make (`viewer/dogfight-jet-turnarounds.js`),
+Every number the jet lesson's words make (`viewer/dogfight-lessons/jets/turnarounds.js`),
 held on the F-16 from the nine starts. The demos' plain results come from
 `jet_lesson`; what each turnaround costs (the ace's height and speed through
 it), the Dip, Flip and Ninja as the school scores them over its `STARTS`,
@@ -67,7 +67,7 @@ function turn(T, dt, kinds = ['immelmann', 'split', 'turn'], ends = ['top', 'run
     phases: [...new Set(T.map(k => k.ph))], last: T.at(-1).ph };
 }
 const { seenHeight } = await load('dogfight-jet-ceiling.js');
-const { LOOP_UNDER } = await load('dogfight-jet-plan-turnarounds.js');
+const { LOOP_UNDER } = await load('dogfight-lessons/jets/plan-turnarounds.js');
 
 const out = { demos: {}, moves: {}, solo: [], verdicts: Object.fromEntries(L.demos.filter(d => d.kind).map(d => [d.id, d.verdict])) };
 for (const demo of L.demos) {
@@ -186,7 +186,7 @@ def solo(kind: str, y: int, speed: int | None = None) -> list[dict]:
 
 
 class TurnaroundsOnAJetTests(unittest.TestCase):
-    """The F-16, nine starts each (`viewer/dogfight-jet-turnarounds.js`)."""
+    """The F-16, nine starts each (`viewer/dogfight-lessons/jets/turnarounds.js`)."""
 
     @classmethod
     def setUpClass(cls) -> None:

@@ -5,8 +5,8 @@ for the F-16 (2026-11-10), re-measured under the reworked roof (2026-11-11,
 commit `868247883`): the hard turn levels off at about 760 m and slows in the
 thin air there, ending 665 to 672 m from them; every count holds (Dip, Flip
 and Ninja 0 of 9, survival "no"), and nobody in any demo or move goes over
-759 m on the F-16 (799 m on the MiG-29). Files: `viewer/dogfight-jet-out-of-the-lock.js`
-(the jet block), `viewer/dogfight-jet-plan-out-of-the-lock.js` (two jet
+759 m on the F-16 (799 m on the MiG-29). Files: `viewer/dogfight-lessons/jets/out-of-the-lock.js`
+(the jet block), `viewer/dogfight-lessons/jets/plan-out-of-the-lock.js` (two jet
 watchers), `tests/test_dogfight_jet_out_of_the_lock.py`.
 
 ## What broke a jet's lock

@@ -1,5 +1,5 @@
 // The dogfight school's lessons as a jet flies them
-// (features/dogfight-lessons-jets): one file a lesson, `dogfight-jet-<id>.js`,
+// (features/dogfight-lessons-jets): one file a lesson, `<id>.js`,
 // each the changes that lesson needs on an airframe paced as a jet
 // (`dogfight-duel.js` `fitAirframe`), or null where it is flown as written.
 //
@@ -12,22 +12,22 @@
 //
 // These files are data and import nothing: the Range loads the lesson book
 // before the rest of the school. A plan a jet lesson needs of its own goes
-// in `dogfight-jet-plan-<id>.js` (`dogfight-jet-plans.js`), which is loaded
+// in `plan-<id>.js` (`plans.js`), which is loaded
 // with the pilots.
 //
 // Starts and every number a plan reads stay in the Spitfire's units: the
 // duel makes a jet's fight larger by its pace and shows its pilot the fight
 // at the Spitfire's size (`pilotView`).
 
-import boomAndZoom from './dogfight-jet-boom-and-zoom.js';
-import underTheHeight from './dogfight-jet-under-the-height.js';
-import upAndOver from './dogfight-jet-up-and-over.js';
-import outOfTheLock from './dogfight-jet-out-of-the-lock.js';
-import onHisTail from './dogfight-jet-on-his-tail.js';
-import breakTurn from './dogfight-jet-break-turn.js';
-import scissors from './dogfight-jet-scissors.js';
-import turnarounds from './dogfight-jet-turnarounds.js';
-import theCircle from './dogfight-jet-the-circle.js';
+import boomAndZoom from './boom-and-zoom.js';
+import underTheHeight from './under-the-height.js';
+import upAndOver from './up-and-over.js';
+import outOfTheLock from './out-of-the-lock.js';
+import onHisTail from './on-his-tail.js';
+import breakTurn from './break-turn.js';
+import scissors from './scissors.js';
+import turnarounds from './turnarounds.js';
+import theCircle from './the-circle.js';
 
 /** Each lesson's jet changes, by lesson id; null or absent: as written. */
 export const JET_LESSONS = {

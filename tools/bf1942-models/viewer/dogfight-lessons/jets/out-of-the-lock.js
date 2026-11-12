@@ -5,7 +5,7 @@
 // degrees of bank, turns a jet at three quarters of the Spitfire's rate, the
 // hunter slides into the cone behind the headrest, is lost, and comes in
 // unseen to a pilot flying straight. The jet's watchers (`jetOlHardTurn`,
-// `jetOlChop`, dogfight-jet-plan-out-of-the-lock.js) hold the Spitfire's
+// `jetOlChop`, plan-out-of-the-lock.js) hold the Spitfire's
 // rate of turn instead, 26 to 39 degrees of bank, and from then on fly the
 // Spitfire's plans: no hit either way in nine. The rest is rewritten for
 // what a jet does: the chop's moment never comes, and an equal jet can be

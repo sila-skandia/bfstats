@@ -16,8 +16,8 @@ jet that guard waited for 1,126 m real until commit `726b12eb6` read the
 (below): the rush, the Dip, the old exit and the Flip are the same fights to
 the metre, and every verdict holds (the Dip 9 of 9, Flip and Ninja 0 of 9).
 
-Files: `viewer/dogfight-jet-on-his-tail.js` (the words, the Dip's seat, the
-verdicts, survival, coach), `viewer/dogfight-jet-plan-on-his-tail.js`
+Files: `viewer/dogfight-lessons/jets/on-his-tail.js` (the words, the Dip's seat, the
+verdicts, survival, coach), `viewer/dogfight-lessons/jets/plan-on-his-tail.js`
 (`jetOtLeave`), `tests/test_dogfight_jet_on_his_tail.py` (every number the
 words give).
 

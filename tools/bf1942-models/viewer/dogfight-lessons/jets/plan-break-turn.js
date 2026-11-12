@@ -1,8 +1,8 @@
 // The plans break-turn needs on a jet (features/dogfight-lessons-jets,
 // break-turn.md). In the Spitfire's units, like every plan: the duel shows a
 // jet's pilot the fight at the Spitfire's size (`pilotView`).
-import { PLANS, INTENTS, go, heading, climbing, turnToward } from './dogfight-pilot.js';
-import { hardTurn, pointNose, pullLift, sub } from './dogfight-flight.js';
+import { PLANS, INTENTS, go, heading, climbing, turnToward } from '../../dogfight-pilot.js';
+import { hardTurn, pointNose, pullLift, sub } from '../../dogfight-flight.js';
 
 /** The zoom once they are past: degrees, and how long at most (s). */
 const ZOOM_DEG = 70;

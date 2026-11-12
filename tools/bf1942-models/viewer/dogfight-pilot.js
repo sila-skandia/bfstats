@@ -206,7 +206,10 @@ export function gunOf(gun = {}) {
   const crossing = converge > 0.05 ? (span + 5) / Math.tan(converge * DEG) : Infinity;
   const range = ok(gun.range, 50) ? gun.range : Math.min(reach, crossing, 400);
   return { speed, reach, span, converge, range,
-           gravity: Number.isFinite(gun.gravity) && gun.gravity >= 0 ? gun.gravity : 0 };
+           gravity: Number.isFinite(gun.gravity) && gun.gravity >= 0 ? gun.gravity : 0,
+           // Rounds a second, for a gun that brings its own (`runDuel`); none
+           // fires a round a tick.
+           ...(ok(gun.rate, 0) ? { rate: gun.rate } : {}) };
 }
 
 /**

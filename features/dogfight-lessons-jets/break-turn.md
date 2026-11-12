@@ -6,8 +6,8 @@ guard fixed (2026-11-11); **re-measured under the roof as reworked**
 and away with the nose on the horizon) gets away in 9 of 9 on both jets
 against a hunter free to chase; the Flip and the Ninja are 0 of 9;
 survival is "yes". Files:
-`tools/bf1942-models/viewer/dogfight-jet-break-turn.js` (the jet block),
-`tools/bf1942-models/viewer/dogfight-jet-plan-break-turn.js` (`jetBtDip`),
+`tools/bf1942-models/viewer/dogfight-lessons/jets/break-turn.js` (the jet block),
+`tools/bf1942-models/viewer/dogfight-lessons/jets/plan-break-turn.js` (`jetBtDip`),
 `tools/bf1942-models/tests/test_dogfight_jet_break_turn.py`.
 
 ## Under the roof (2026-11-11)
@@ -113,7 +113,7 @@ zoom was given up.
   they come back to meet you and land 2 rounds at 47 s, 60 m off).
 
 **What was tried for a jet Dip before the roof** (a `jetBtDip` plan in
-`dogfight-jet-plan-break-turn.js`, flown from the measure's nine, not kept
+`dogfight-lessons/jets/plan-break-turn.js`, flown from the measure's nine, not kept
 then; the name now holds the up-and-away-level run, above):
 
 - Break, then straight away at full throttle on the heading flown as they

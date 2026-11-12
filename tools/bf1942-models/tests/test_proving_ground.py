@@ -38,9 +38,11 @@ MODULES = {
     # The dogfight school's lesson book (the page loads the rest of the
     # school on first use, features/dogfight-school).
     "dogfight-lessons.js": VIEWER / "dogfight-lessons.js",
-    # Its jet files, which are data (`viewer/dogfight-jets.js`).
-    "dogfight-jets.js": VIEWER / "dogfight-jets.js",
-    **{f"dogfight-jet-{i}.js": VIEWER / f"dogfight-jet-{i}.js" for i in (
+    # Its jet files, which are data (`viewer/dogfight-lessons/jets/index.js`).
+    "dogfight-lessons/jets/index.js": VIEWER / "dogfight-lessons/jets/index.js",
+    # Galactic Conquest's lessons, data too (`viewer/dogfight-lessons/gcmod/index.js`).
+    "dogfight-lessons/gcmod/index.js": VIEWER / "dogfight-lessons/gcmod/index.js",
+    **{f"dogfight-lessons/jets/{i}.js": VIEWER / f"dogfight-lessons/jets/{i}.js" for i in (
         "boom-and-zoom", "under-the-height", "up-and-over", "out-of-the-lock", "on-his-tail",
         "break-turn", "scissors", "turnarounds", "the-circle")},
     "vendor/utils/SkeletonUtils.js": VIEWER / "vendor" / "utils" / "SkeletonUtils.js",

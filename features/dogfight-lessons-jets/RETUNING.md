@@ -19,8 +19,8 @@ What a jet is to the school, and where each lesson stands, is in
    `features/dogfight-school/reviews/`, and its `tests/test_dogfight_dfn_*.py`
    and `test_dogfight_shape_*.py`.
 5. A lesson already done, as the pattern:
-   `viewer/dogfight-jet-boom-and-zoom.js`, its plans in
-   `viewer/dogfight-jet-plan-boom-and-zoom.js`,
+   `viewer/dogfight-lessons/jets/boom-and-zoom.js`, its plans in
+   `viewer/dogfight-lessons/jets/plan-boom-and-zoom.js`,
    `tests/test_dogfight_jet_boom_and_zoom.py` and
    [boom-and-zoom.md](boom-and-zoom.md).
 
@@ -70,7 +70,7 @@ Create or edit only these four.
 
 | File | What it is |
 |---|---|
-| `tools/bf1942-models/viewer/dogfight-jet-<id>.js` | Data only, no imports; `export default` the jet block. How it is merged: the header of `viewer/dogfight-jets.js`, and `lessonFor` in `dogfight-lessons.js` |
+| `tools/bf1942-models/viewer/dogfight-jet-<id>.js` | Data only, no imports; `export default` the jet block. How it is merged: the header of `viewer/dogfight-lessons/jets/index.js`, and `lessonFor` in `dogfight-lessons.js` |
 | `tools/bf1942-models/viewer/dogfight-jet-plan-<id>.js` | Only if the lesson needs a plan of its own. It may import from `./dogfight-pilot.js` and `./dogfight-flight.js`, registers its plans on `PLANS` and their phases on `INTENTS`, and names every plan with a `jet` prefix. With none, it keeps `export {};` |
 | `tools/bf1942-models/tests/test_dogfight_jet_<id_with_underscores>.py` | New. Holds every number and claim the words make, with `from jet_school import jet_lesson, shot_down`. A range where a count differs between starts; never something not seen |
 | `features/dogfight-lessons-jets/<id>.md` | New. What was found, what was changed and why, the nine-start results of every demo before and after on the F-16, what the MiG-29 does with it, what is open |

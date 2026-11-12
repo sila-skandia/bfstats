@@ -9,8 +9,8 @@
 // its zoom is over once the roof holds it level: it turns over the top
 // there, still fast, instead of waiting to be slow.
 
-import { PLANS, INTENTS, go } from './dogfight-pilot.js';
-import { atRoof } from './dogfight-jet-ceiling.js';
+import { PLANS, INTENTS, go } from '../../dogfight-pilot.js';
+import { atRoof } from '../../dogfight-jet-ceiling.js';
 
 function roofed(name) {
   const base = PLANS[name];

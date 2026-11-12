@@ -7,8 +7,8 @@ at and ends level with them, a kilometre apart; climbing straight is never
 fired at but ends with them sitting behind you and you 12 to 86 m of energy
 behind; turning flat is the one demo they fire in. Dip 9 of 9 (the lesson's
 own `uhDip`), Flip 0, Ninja 0. Files:
-`tools/bf1942-models/viewer/dogfight-jet-under-the-height.js` (the jet block),
-`viewer/dogfight-jet-plan-under-the-height.js` (`jetBoomAndZoom`, `jetUhAce`),
+`tools/bf1942-models/viewer/dogfight-lessons/jets/under-the-height.js` (the jet block),
+`viewer/dogfight-lessons/jets/plan-under-the-height.js` (`jetBoomAndZoom`, `jetUhAce`),
 `viewer/dogfight-jet-ceiling.js` (the roof, shared),
 `tools/bf1942-models/tests/test_dogfight_jet_under_the_height.py` (every number the
 words make, the ace's roof and slowest speed, and the tops of both planes).

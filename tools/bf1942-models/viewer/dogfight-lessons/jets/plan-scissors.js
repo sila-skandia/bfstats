@@ -1,6 +1,6 @@
 // The plans scissors needs on a jet (features/dogfight-lessons-jets/scissors.md).
-import { PLANS, INTENTS, heading, climbing, go, leadPursuit, turnToward } from './dogfight-pilot.js';
-import { clamp, dot, add, scale, sub, unit, hardTurn, pointNose, leadPoint, angleBetween } from './dogfight-flight.js';
+import { PLANS, INTENTS, heading, climbing, go, leadPursuit, turnToward } from '../../dogfight-pilot.js';
+import { clamp, dot, add, scale, sub, unit, hardTurn, pointNose, leadPoint, angleBetween } from '../../dogfight-flight.js';
 
 const DEG = Math.PI / 180;
 

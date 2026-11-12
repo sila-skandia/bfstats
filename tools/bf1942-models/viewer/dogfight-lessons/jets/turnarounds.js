@@ -11,7 +11,7 @@
 // slow); from the lesson's own stage the ace is past 75 m/s by then and goes
 // up instead. Every jet's pilot flies under a roof (`dogfight-jet-ceiling.js`,
 // 800 m), so the lesson's aces here are jet copies
-// (`dogfight-jet-plan-turnarounds.js`) that loop only from under 530 m, where
+// (`plan-turnarounds.js`) that loop only from under 530 m, where
 // the loop tops out under the roof, and turn round flat from higher; the
 // lesson's own Immelmanns start at 350 to 380 m on the F-16. Every number below is the F-16 from the nine starts (the
 // harness's for the demos, the school's `STARTS` for the Dip, Flip and
@@ -31,7 +31,7 @@ export default {
     'A split-S ends low and fast: they have given you 163 m of height for 38 m/s of speed. Let them go and they run off at 96 m/s and nobody fires. The one-dive ambush that works on a Spitfire does not work here: once their nose is 25 degrees down their split-S is over in about 2 seconds, and your dive arrives after they are out. Dive as they roll over instead and you arrive in front of them as they come out, and they shoot you down.',
     'And if you want out: when they Immelmann back at you after a head-on pass, turn back under their loop the moment they are past and going up, and run the way they came. They roll out 280 to 340 m from you, chase from 260 m, never close, and let you go at 630 to 700 m, about 18 seconds in.',
   ],
-  // The lesson's aces with a jet's Immelmann (`dogfight-jet-plan-turnarounds.js`):
+  // The lesson's aces with a jet's Immelmann (`plan-turnarounds.js`):
   // a loop pulled up under 530 m is flown over the top, a higher one is not
   // started and they turn round flat instead.
   ace: { plan: 'jetTurnarounds' },

@@ -2,8 +2,8 @@
 // boom-and-zoom.md). In the Spitfire's units, like every plan: the duel shows
 // a jet's pilot the fight at the Spitfire's size (`pilotView`).
 
-import { PLANS, INTENTS, go, heading, climbing, turnToward } from './dogfight-pilot.js';
-import { clamp } from './dogfight-flight.js';
+import { PLANS, INTENTS, go, heading, climbing, turnToward } from '../../dogfight-pilot.js';
+import { clamp } from '../../dogfight-flight.js';
 
 const DEG = Math.PI / 180;
 

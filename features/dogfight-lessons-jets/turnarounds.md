@@ -2,9 +2,9 @@
 
 Status: **re-tuned, re-measured under the roof, and the aces' Immelmann
 fitted to it** (2026-11-11, the roof as reworked in `868247883`).
-`viewer/dogfight-jet-turnarounds.js` rewrites the words for the jet, moves
+`viewer/dogfight-lessons/jets/turnarounds.js` rewrites the words for the jet, moves
 the split-S stage, and flies the lesson's two aces as jet copies
-(`viewer/dogfight-jet-plan-turnarounds.js`, `jetTurnarounds` and
+(`viewer/dogfight-lessons/jets/plan-turnarounds.js`, `jetTurnarounds` and
 `jetTaAce`) that loop only from under 530 m real, where the loop tops out
 under the roof on both jets, and turn round flat from higher. On the F-16
 every demo and move is the same fight to the decimal as without them; on the

@@ -15,9 +15,9 @@ Every number here was measured on the roof as reworked in `868247883`
 with `4a526cfea`. A first pass was made on the first roof (`8d616bcc2`) and
 is not quoted; what it changed is in "On the first roof" below.
 
-Files: `viewer/dogfight-jet-boom-and-zoom.js` (the words, the burst and the
+Files: `viewer/dogfight-lessons/jets/boom-and-zoom.js` (the words, the burst and the
 fight's length, the moves' seats and ace, verdicts, survival),
-`viewer/dogfight-jet-plan-boom-and-zoom.js` (`jetBzDip`, `jetBzAceMeet`),
+`viewer/dogfight-lessons/jets/plan-boom-and-zoom.js` (`jetBzDip`, `jetBzAceMeet`),
 `tests/test_dogfight_jet_boom_and_zoom.py` (every number the words give; 16
 tests, about 70 s). `tests/test_dogfight_jets.py` keeps only the check that a
 jet file is laid over its lesson (`JetFileTests`).

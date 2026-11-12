@@ -3,7 +3,7 @@
 //
 // The fights are the lesson's own starts, seats and 55 s, against the jet's
 // ace: the same boom-and-zoomer, who turns over the top under the roof
-// (`jetBoomAndZoom`, `jetUhAce`, `dogfight-jet-plan-under-the-height.js`).
+// (`jetBoomAndZoom`, `jetUhAce`, `plan-under-the-height.js`).
 // Every jet pilot's pull toward the sky is capped by 800 m (`stepPilot`,
 // `underRoof` in `dogfight-jet-ceiling.js`), and the ace starts under it,
 // at 735 m on the F-16 (`pacedHeight`). On the F-16 the climb that is fatal

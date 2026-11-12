@@ -41,9 +41,10 @@ const { runFight } = await load('dogfight-fight.js');
 const { LESSONS, lessonFor, demoSides, fightSides, demoById } = await load('dogfight-lessons.js');
 const { HAND } = await load('dogfight-flight.js');
 const { jetMaker } = await import(pathToFileURL(path.join(HERE, 'jet_airframes.mjs')).href);
-const fixture = JSON.parse(readFileSync(path.join(HERE, 'fixtures', 'dc-jets.json'), 'utf8'));
-
 const args = process.argv.slice(2);
+// `--fixture gc-starfighters.json`: another tree's airframes (default the DC jets).
+const fixtureName = (() => { const i = args.indexOf('--fixture'); return i >= 0 ? args[i + 1] : 'dc-jets.json'; })();
+const fixture = JSON.parse(readFileSync(path.join(HERE, 'fixtures', fixtureName), 'utf8'));
 const flag = name => args.includes(name);
 const opt = (name, fallback = null) => { const i = args.indexOf(name); return i >= 0 ? args[i + 1] : fallback; };
 const r1 = v => Math.round(v * 10) / 10;

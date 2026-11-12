@@ -6,7 +6,8 @@
 
 import { createPilot, gunOf } from './dogfight-pilot.js';
 // The jet lessons' own plans, registered on the pilots' as they load.
-import './dogfight-jet-plans.js';
+import './dogfight-lessons/jets/plans.js';
+import './dogfight-lessons/gcmod/plans.js';
 import { stateOf, gunSolution, pointNose, energyHeight, len, rotate, basis, bodyRates, add, sub, scale, unit, dot, HAND } from './dogfight-flight.js';
 
 /** The world's tick (`WORLD_TICK_DT`, LOOP-1). */
@@ -417,6 +418,13 @@ export function setPlaneState(plane, state, throttle = 1) {
  * solution while its trigger was down ("hits": rounds that would land).
  * The fight ends at `seconds`, or a moment after one side has been on target
  * for `killAfter` seconds in all, or one hits the ground.
+ *
+ * A side may also bring its own fight (a mod's lessons, features/
+ * dogfight-lessons-gcmod): `pace` (staged and seen at that pace, not its
+ * airframe's: GCMOD's are flown at their own size, 1), `gun` (its own guns
+ * in the school's form, with `rate`, rounds a second, where the default is
+ * one a tick) and `killHits` (the hits that bring it down, for a hull the
+ * other side's rounds take apart faster or slower). Absent, nothing moves.
  */
 export function runDuel({ makePlane, sides, seconds = 60, origin = [0, 0, 0], groundAt = () => origin[1],
                           gun = {}, killHits = KILL_HITS, dt = DUEL_DT, arena = null }) {
@@ -424,6 +432,9 @@ export function runDuel({ makePlane, sides, seconds = 60, origin = [0, 0, 0], gr
   const planes = sides.map((side, i) => {
     const plane = makePlane(side, i);
     fitted[i] = fitAirframe(plane, makePlane, i);
+    if (side.pace !== undefined || side.gun) {
+      fitted[i] = Object.freeze({ ...fitted[i], ...(side.pace !== undefined ? { pace: side.pace } : {}), ...(side.gun ? { gun: side.gun } : {}) });
+    }
     plane.groundHeight = (x, z) => groundAt(x, z);
     return plane;
   });
@@ -451,6 +462,9 @@ export function runDuel({ makePlane, sides, seconds = 60, origin = [0, 0, 0], gr
   let rng = 0x2545f491;
   const rand = () => ((rng = (rng * 1103515245 + 12345) >>> 0) / 4294967296);
   const lastPhase = ['', ''];
+  const fireClock = [0, 0];
+  const barrels = [0, 0];
+  const killsAt = sides.map(side => side.killHits ?? killHits);
   let end = null;
   const ticks = Math.round(seconds / dt);
   for (let n = 0; n <= ticks; n++) {
@@ -467,7 +481,12 @@ export function runDuel({ makePlane, sides, seconds = 60, origin = [0, 0, 0], gr
       const sol = gunSolution(me, him, { ...guns[i], width: 5 });
       const hit = out.fire && sol.fire;
       if (hit) onTarget[i] += dt * hitShare(sol.dist);
-      if (out.fire) rounds.push(fireRound(me, guns[i], rand, i, t, n));
+      // A gun with its own rate fires when its next round is due; the
+      // school's own fires a round a tick.
+      if (out.fire && guns[i].rate) {
+        fireClock[i] += dt;
+        while (fireClock[i] >= 1 / guns[i].rate) { fireClock[i] -= 1 / guns[i].rate; rounds.push(fireRound(me, guns[i], rand, i, t, barrels[i]++)); }
+      } else if (out.fire) rounds.push(fireRound(me, guns[i], rand, i, t, n));
       tracks[i].push({
         t, p: me.position, q: [me.orientation.x, me.orientation.y, me.orientation.z, me.orientation.w],
         v: len(me.velocity), ph: out.phase, f: out.fire, h: hit,
@@ -490,7 +509,7 @@ export function runDuel({ makePlane, sides, seconds = 60, origin = [0, 0, 0], gr
         events.push({ t, side: i, phase: out.phase, say: out.say, move: out.move, intent: out.intent });
         lastPhase[i] = out.phase;
       }
-      if (end === null && hits[i] >= killHits) {
+      if (end === null && hits[i] >= killsAt[1 - i]) {
         end = { t, winner: i, why: 'shot down' };
         events.push({ t, side: i, phase: 'kill', say: 'Enough rounds on him to bring him down', move: out.move });
       }

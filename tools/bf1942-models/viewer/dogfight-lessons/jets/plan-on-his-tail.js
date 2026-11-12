@@ -1,7 +1,7 @@
 // The plans on-his-tail needs on a jet (features/dogfight-lessons-jets,
 // on-his-tail.md). In the Spitfire's units, like every plan: the duel shows a
 // jet's pilot the fight at the Spitfire's size (`pilotView`).
-import { PLANS, INTENTS, go, heading, climbing, turnToward } from './dogfight-pilot.js';
+import { PLANS, INTENTS, go, heading, climbing, turnToward } from '../../dogfight-pilot.js';
 
 /**
  * THE DIP ON A JET: never into their circle. In behind them at their speed

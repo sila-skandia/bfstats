@@ -23,9 +23,9 @@
 //
 // The lesson's other plans (the seats) do not loop and are flown as written.
 
-import { PLANS, INTENTS, go, heading } from './dogfight-pilot.js';
-import { hardTurn, dot } from './dogfight-flight.js';
-import { seenHeight } from './dogfight-jet-ceiling.js';
+import { PLANS, INTENTS, go, heading } from '../../dogfight-pilot.js';
+import { hardTurn, dot } from '../../dogfight-flight.js';
+import { seenHeight } from '../../dogfight-jet-ceiling.js';
 
 const DEG = Math.PI / 180;
 

@@ -63,7 +63,7 @@ now build with the tree's `_shared/collision-meshes.json`
   story: what the nine flights on the F-16 showed.
 - `viewer/dogfight-jet-plan-<lesson>.js` holds any plan the jet lesson needs
   of its own, registered on `PLANS` and `INTENTS` as it loads
-  (`dogfight-jet-plans.js`, imported by the duel). The lesson files import
+  (`dogfight-lessons/jets/plans.js`, imported by the duel). The lesson files import
   nothing, because the Range loads the lesson book before the school.
 - Starts, and every number a plan reads, stay in the Spitfire's units.
 - `tests/dogfight_jet_harness.mjs` flies a lesson's jet version from the

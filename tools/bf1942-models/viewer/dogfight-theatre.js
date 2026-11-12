@@ -16,7 +16,7 @@ import { runDuel, fitAirframe } from './dogfight-duel.js';
 import { gunOf } from './dogfight-pilot.js';
 import { leadPoint } from './dogfight-flight.js';
 import { COURSES } from './dogfight-rings.js';
-import { LESSONS, demoSides, fightSides, withGunners, hasGunners, lessonById, setEra, eraNow, RULES, jetName } from './dogfight-lessons.js';
+import { lessonsNow, demoSides, fightSides, withGunners, hasGunners, lessonById, setEra, eraNow, RULES, jetName } from './dogfight-lessons.js';
 import { runFight } from './dogfight-fight.js';
 import { recordedFight, fightLine, pilotTable, inThirdPerson } from './dogfight-recorded.js';
 import { VIEWER_ROOT } from './viewer-root.js';
@@ -674,7 +674,7 @@ export function createDogfightTheatre({ host, makePlane, planeVisual = () => nul
         try { plane = fight.twoSeater.visual(); } catch { plane = null; }
       }
       if (!plane && !world) {
-        try { plane = planeVisual(i); } catch { plane = null; }
+        try { plane = planeVisual(i, fight.crafts?.[i] ?? null); } catch { plane = null; }
       }
       if (!plane) plane = plainFighter(color);
       // A ring of the side's colour round the drawn fighter, so it reads at
@@ -864,7 +864,10 @@ export function createDogfightTheatre({ host, makePlane, planeVisual = () => nul
     const last = r.tracks[0].at(-1).t;
     const duration = Math.min(last, demo.endAt ?? last);
     const end = r.end && r.end.t <= duration ? r.end : null;
-    const fight = { ...r, end, fullEnd: r.end, origin, lesson, demo, duration, twoSeater: seater };
+    // A lesson that names each side's craft (a mod's own: GCMOD's X-Wing and
+    // TIE fighter) is drawn on them, whatever plane the page has picked.
+    const crafts = demoSides(lesson, demo).map(x => x.craft ?? null);
+    const fight = { ...r, end, fullEnd: r.end, origin, lesson, demo, duration, twoSeater: seater, crafts };
     // Each side's bursts, and its shot windows (a solution that lands,
     // whether or not he fired), as spans of time.
     const spansOf = (track, key, gap = 0.25) => {
@@ -1052,11 +1055,12 @@ export function createDogfightTheatre({ host, makePlane, planeVisual = () => nul
     if (demo.startRange) { try { pace = Math.max(...[0, 1].map(i => fitAirframe(makePlane(null, i), makePlane, i).pace)); } catch { pace = 1; } }
     state.startAt = Math.max(0, Math.min(fight.duration - 1, demo.startRange ? closedTo(fight, demo.startRange * pace) : demo.startAt ?? 0));
     stageLesson(fight, { at: state.startAt });
-    const plane = String(typeof planeName === 'function' ? planeName() : planeName).toUpperCase();
+    // A lesson that flies craft of its own names them (`ace.name`, `you.name`).
+    const plane = String(lesson.you?.name ?? (typeof planeName === 'function' ? planeName() : planeName)).toUpperCase();
     // A two-seater lesson's ace flies the two-seater it found.
     // Otherwise the plane drawn as the ace (`aceName`), when the page knows it.
     const aceNow = typeof aceName === 'function' ? aceName() : aceName;
-    const theirs = String(fight.twoSeater?.name || aceNow || plane).toUpperCase();
+    const theirs = String(fight.twoSeater?.name || lesson.ace?.name || aceNow || plane).toUpperCase();
     ui.tcKicker.textContent = `${lesson.title.toUpperCase()} · ${plane} AGAINST ${theirs}`;
     // A move's title is its pilot's name for it; what it does is on its
     // card, and the measured detail is in the notes.
@@ -1160,7 +1164,7 @@ export function createDogfightTheatre({ host, makePlane, planeVisual = () => nul
 
   /** The era of the airframe on stage (`dogfight-duel.js` `fitAirframe`): a
    *  plane paced as a jet is taught the lessons' jet files
-   *  (`dogfight-jets.js`). On a fight's map there is no lesson to tell. */
+   *  (`dogfight-lessons/jets/index.js`). On a fight's map there is no lesson to tell. */
   function syncEra() {
     if (world) return;
     let jet = false;
@@ -1202,7 +1206,7 @@ export function createDogfightTheatre({ host, makePlane, planeVisual = () => nul
     helper.seen.clear();
     helperHide();
     syncEra();
-    const lesson = lessonById(id) ?? lessonById(LESSONS[0].id);
+    const lesson = lessonById(id) ?? lessonById(lessonsNow()[0].id);
     state.lesson = lesson;
     ui.lessons.querySelectorAll('.dfs-row').forEach(b => b.setAttribute('aria-current', String(b.dataset.lesson === lesson.id)));
     ui.storyHeads[0].textContent = 'THE MOVE';
@@ -2752,7 +2756,7 @@ export function createDogfightTheatre({ host, makePlane, planeVisual = () => nul
       ground = () => groundY;
       moment = momentOf(sides, i0 * fight.dt, { makePlane, origin, groundAt: ground, dt: fight.dt });
       opponent = { plan: sides[1 - side].plan, memory: moment.mems[1 - side], skill: sides[1 - side].skill };
-      makers = [() => makePlane(null, 0), () => makePlane(null, 1)];
+      makers = [() => makePlane(sides[0], 0), () => makePlane(sides[1], 1)];
     }
     let w;
     try {
@@ -3017,7 +3021,7 @@ export function createDogfightTheatre({ host, makePlane, planeVisual = () => nul
         const fight = q.get('fight');
         if (fight) await pickRecorded(fight);
         else {
-          pickLesson(q.get('lesson') || LESSONS[0].id);
+          pickLesson(q.get('lesson') || lessonsNow()[0].id);
           const demo = q.get('demo');
           if (demo && state.lesson?.demos.some(d => d.id === demo)) pickDemo(state.lesson, demo);
         }
@@ -3137,7 +3141,7 @@ export function createDogfightTheatre({ host, makePlane, planeVisual = () => nul
   }
 
   // --- input ------------------------------------------------------------------------
-  ui.lessons.innerHTML = LESSONS.map((l, i) => `
+  ui.lessons.innerHTML = lessonsNow().map((l, i) => `
     <li data-section="lessons">${ROW} data-lesson="${l.id}"><span class="dfs-n">${String(i + 1).padStart(2, '0')}</span>
       <b>${esc(l.title)}</b><small>${esc(l.tagline)}</small>${l.survival ? survivalBadge(l.survival) : ''}</div></li>`).join('')
     // The ring courses: stick and rudder, nobody shooting. Each flies
@@ -3471,7 +3475,7 @@ export function createDogfightTheatre({ host, makePlane, planeVisual = () => nul
     state.rule = (state.rule + 1) % RULES.length;
     ui.rule.textContent = RULES[state.rule];
     if (!world && !fight && (lessonId || !state.fight?.recorded)) {
-      pickLesson(lessonId ?? state.lesson?.id ?? LESSONS[0].id);
+      pickLesson(lessonId ?? state.lesson?.id ?? lessonsNow()[0].id);
       if (demo && state.lesson?.demos.some(d => d.id === demo)) pickDemo(state.lesson, demo);
     }
     loadRecorded().then(() => { if (fight) return pickRecorded(fight); });

@@ -15,7 +15,8 @@
 // Spitfire's, measured on the same law (features/dogfight-school/README.md,
 // "What the airframe does").
 
-import { JET_LESSONS } from './dogfight-jets.js';
+import { JET_LESSONS } from './dogfight-lessons/jets/index.js';
+import { GC_LESSONS } from './dogfight-lessons/gcmod/index.js';
 
 export const LESSONS = [
   {
@@ -624,6 +625,25 @@ export const LESSONS = [
   },
 ];
 
+/**
+ * A mod's own lessons, by tree id (`viewer/dogfight-lessons/<mod>/`): shown
+ * first in the school on that mod (`lessonsFor`) and on no other. Each
+ * carries `mods`, the trees it belongs to.
+ */
+export const MOD_LESSONS = { gcmod: GC_LESSONS };
+const ALL_LESSONS = [...Object.values(MOD_LESSONS).flat(), ...LESSONS];
+
+/** The lessons the school lists on tree `mod`: its own first, then the
+ *  book's (`LESSONS`). */
+export function lessonsFor(mod) {
+  const own = (MOD_LESSONS[String(mod ?? '').toLowerCase()] ?? []);
+  return [...own, ...LESSONS];
+}
+let pageMod = null;
+/** The tree the page's school is on (`lessonsNow`). */
+export function setLessonMod(mod) { pageMod = mod ? String(mod).toLowerCase() : null; }
+export const lessonsNow = () => lessonsFor(pageMod);
+
 let pageEra = null;
 /** The era the page's airframe flies in (`'jet'` or null), which
  *  `lessonById` then answers for. Set by whoever knows the airframe. */
@@ -632,7 +652,7 @@ export const eraNow = () => pageEra;
 
 /**
  * A lesson as an airframe of `era` flies it: the lesson itself, or for
- * `'jet'` its jet file's changes laid over it (`dogfight-jets.js`): `ace`
+ * `'jet'` its jet file's changes laid over it (`dogfight-lessons/jets/index.js`): `ace`
  * and `you` merged (their `start` and `memory` too), each demo by its id,
  * everything else replaced. A lesson with no jet file is flown as written.
  */
@@ -652,7 +672,7 @@ export function lessonFor(lesson, era = null) {
 }
 
 /** A lesson by its id, as the page's era flies it (`setEra`). */
-export const lessonById = (id, era = pageEra) => lessonFor(LESSONS.find(l => l.id === id) ?? null, era);
+export const lessonById = (id, era = pageEra) => lessonFor(ALL_LESSONS.find(l => l.id === id) ?? null, era);
 
 /**
  * The fights in which a pilot does nothing: flies straight and never looks
@@ -774,9 +794,14 @@ export function withGunners(sides, gunnersFor) {
 export const hasGunners = sides => sides.some(s => s.gunners?.length);
 
 export function demoSides(lesson, demo) {
+  // A lesson that brings its own fight (`ace.fight`, `you.fight`: a pace, a
+  // gun with its rate, the hits that bring the side down; `runDuel`) hands it
+  // on with the side.
   return [
-    { plan: demo.ace ?? lesson.ace.plan, start: demo.aceStart ?? lesson.ace.start, memory: demo.aceMemory ?? lesson.ace.memory, skill: demo.aceSkill ?? 1 },
-    { plan: demo.seat, start: demo.youStart ?? lesson.you.start, memory: demo.youMemory ?? lesson.you.memory, skill: demo.skill ?? 0.7 },
+    { plan: demo.ace ?? lesson.ace.plan, start: demo.aceStart ?? lesson.ace.start, memory: demo.aceMemory ?? lesson.ace.memory, skill: demo.aceSkill ?? 1, ...lesson.ace.fight,
+      ...(lesson.ace.craft ? { craft: lesson.ace.craft } : {}) },
+    { plan: demo.seat, start: demo.youStart ?? lesson.you.start, memory: demo.youMemory ?? lesson.you.memory, skill: demo.skill ?? 0.7, ...lesson.you.fight,
+      ...(lesson.you.craft ? { craft: lesson.you.craft } : {}) },
   ];
 }
 
@@ -792,10 +817,15 @@ export const FIGHTERS = ['spitfire', 'bf109', 'mustang', 'yak9', 'zero', 'corsai
   // harder turners first. They come after every propeller name, so a WWII
   // template that happens to hold one of these (a Bf 109 F-14) is still
   // found as what it is.
-  'f16', 'mig29', 'f15', 'mirage', 'f14', 'av8'];
+  'f16', 'mig29', 'f15', 'mirage', 'f14', 'av8',
+  // Galactic Conquest's starfighters (features/dogfight-lessons-gcmod), the
+  // faster first, as `fitAirframe` measures them level: the A-Wing 124 m/s,
+  // the TIE Advanced 122, the Interceptor 112, the TIE 108, the Y-Wing 104,
+  // the X-Wing 79.
+  'awing', 'tieadvanced', 'tieinterceptor', 'tiefighter', 'xwing', 'ewing', 'ywing', 'rogue'];
 /** Two-seaters, bombers and airships, checked before the fighters: the
  *  Albatros C.III is not the Albatros scout. */
-const NOT_FIGHTERS = /b17|ju88|c47|lancaster|heinkel|he111|betty|ac130|transport|albatrossc|aircodh4|breguet|caudron|gotha|handleypage|felixstowe|hansaw|taube|bleriot|zeppelin|lebaudy|balloon/;
+const NOT_FIGHTERS = /b17|ju88|c47|lancaster|heinkel|he111|betty|ac130|transport|albatrossc|aircodh4|breguet|caudron|gotha|handleypage|felixstowe|hansaw|taube|bleriot|zeppelin|lebaudy|balloon|tiebomber|lambda|landingcraft|cloudbus|satellite/;
 /** Helicopters, by the designations the mods use (AH-64, MH-6, UH-60, OH-6,
  *  CH-47, Mi-8, Mi-24, SA-342). */
 const ROTARY = /^(ah|mh|oh|uh|ch)\d|^mi(8|17|24)|^sa3[14]\d/;

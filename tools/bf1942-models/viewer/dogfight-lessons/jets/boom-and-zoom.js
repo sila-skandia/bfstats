@@ -11,7 +11,7 @@
 // height and the drag with it, so a jet is fastest at the top of the sky
 // (128 m/s level at 770 m on the F-16, 93 at 215 m). The Spitfire's Dip runs
 // low, and the ace dives after it from its height and closes; the jet's Dip
-// (`jetBzDip`, dogfight-jet-plan-boom-and-zoom.js) runs straight on climbing
+// (`jetBzDip`, plan-boom-and-zoom.js) runs straight on climbing
 // 3 degrees, and the ace, with no height over you left to dive with, gives
 // the chase up. Its ace (`jetBzAceMeet`) dives as soon as you are 30 degrees
 // under them: from the lesson's perch your climb took you up to them in three

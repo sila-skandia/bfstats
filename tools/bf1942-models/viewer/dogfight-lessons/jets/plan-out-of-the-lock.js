@@ -13,8 +13,8 @@
 // (26 to 39 degrees on the F-16, 28 to 44 on the MiG-29: a rate, not a bank,
 // so it fits any pace). Everything after the watch is the Spitfire's plan as
 // it is.
-import { PLANS, INTENTS, holdSpeed, heading } from './dogfight-pilot.js';
-import { bankAndPull, clamp, angleBetween, G } from './dogfight-flight.js';
+import { PLANS, INTENTS, holdSpeed, heading } from '../../dogfight-pilot.js';
+import { bankAndPull, clamp, angleBetween, G } from '../../dogfight-flight.js';
 
 const DEG = Math.PI / 180;
 /** The Spitfire's look turn: its bank, degrees. */

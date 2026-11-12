@@ -1,6 +1,6 @@
 """On their tail on Desert Combat's jets (features/dogfight-lessons-jets,
-on-his-tail.md): `viewer/dogfight-jet-on-his-tail.js` and its plan
-`jetOtLeave` (`viewer/dogfight-jet-plan-on-his-tail.js`), flown on the
+on-his-tail.md): `viewer/dogfight-lessons/jets/on-his-tail.js` and its plan
+`jetOtLeave` (`viewer/dogfight-lessons/jets/plan-on-his-tail.js`), flown on the
 published F-16 and MiG-29 (`fixtures/dc-jets.json`).
 
 What the jet file's words say, held here number by number:
@@ -155,7 +155,7 @@ def spread(rows: list[dict], key: str) -> tuple:
 
 
 class OnTheirTailOnAJetTests(unittest.TestCase):
-    """`viewer/dogfight-jet-on-his-tail.js` on the F-16, every number its words give."""
+    """`viewer/dogfight-lessons/jets/on-his-tail.js` on the F-16, every number its words give."""
 
     @classmethod
     def setUpClass(cls) -> None:
@@ -306,9 +306,9 @@ class OnTheirTailOnAJetTests(unittest.TestCase):
         self.assertEqual("yes", want)
 
     def test_the_words_call_pilots_they(self) -> None:
-        words = (VIEWER / "dogfight-jet-on-his-tail.js").read_text()
+        words = (VIEWER / "dogfight-lessons/jets/on-his-tail.js").read_text()
         body = words[words.index("export default"):]
-        plan = (VIEWER / "dogfight-jet-plan-on-his-tail.js").read_text()
+        plan = (VIEWER / "dogfight-lessons/jets/plan-on-his-tail.js").read_text()
         says = plan[plan.index("says:"):plan.index("step(c)")]
         for text in (body, says):
             self.assertIsNone(re.search(r"\b(he|him|his|himself)\b", text, re.I), re.search(r"\b(he|him|his|himself)\b", text, re.I))

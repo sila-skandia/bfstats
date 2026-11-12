@@ -3,8 +3,8 @@
 Status: **re-tuned** (2026-11-11), **re-measured under the reworked roof**
 (2026-11-11, commit `868247883`): only the Ninja moved, and it is still 0 of
 9; no way out works, survival stays "no". Nobody in any demo or move goes
-over 765 m on the F-16 (770 m on the MiG-29). Files: `viewer/dogfight-jet-scissors.js`,
-`viewer/dogfight-jet-plan-scissors.js`, `tests/test_dogfight_jet_scissors.py`.
+over 765 m on the F-16 (770 m on the MiG-29). Files: `viewer/dogfight-lessons/jets/scissors.js`,
+`viewer/dogfight-lessons/jets/plan-scissors.js`, `tests/test_dogfight_jet_scissors.py`.
 
 What a scissors is on a jet, in one line: the same braid, flown on the
 brakes with every reversal started early, nobody's kill, and no way out of
@@ -59,7 +59,7 @@ Claim by claim:
 | Leave at the second crossing (the Dip) | (b) rewritten | 0 of 9: the cannon reaches |
 | Survival | (b) | "No way out" (`verdict: 'no'`) |
 
-The plans (`dogfight-jet-plan-scissors.js`), each the school's own with its
+The plans (`dogfight-lessons/jets/plan-scissors.js`), each the school's own with its
 scissors swapped for `jetScissors`:
 
 - `jetScissors`: `PLANS.scissors` with memory `lead` (seconds the heading is

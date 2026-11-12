@@ -1,6 +1,6 @@
 """Boom and zoom on Desert Combat's jets (features/dogfight-lessons-jets,
-boom-and-zoom.md): `viewer/dogfight-jet-boom-and-zoom.js` and its plans
-`jetBzDip` and `jetBzAceMeet` (`viewer/dogfight-jet-plan-boom-and-zoom.js`),
+boom-and-zoom.md): `viewer/dogfight-lessons/jets/boom-and-zoom.js` and its plans
+`jetBzDip` and `jetBzAceMeet` (`viewer/dogfight-lessons/jets/plan-boom-and-zoom.js`),
 flown on the published F-16 and MiG-29 (`fixtures/dc-jets.json`) under the
 roof every jet pilot flies (`viewer/dogfight-jet-ceiling.js` `underRoof`, as
 reworked in `868247883`).
@@ -154,7 +154,7 @@ def entered(phases: list, phase: str) -> list:
 
 
 class BoomAndZoomOnAJetTests(unittest.TestCase):
-    """`viewer/dogfight-jet-boom-and-zoom.js` on the F-16, every number its words give."""
+    """`viewer/dogfight-lessons/jets/boom-and-zoom.js` on the F-16, every number its words give."""
 
     @classmethod
     def setUpClass(cls) -> None:
@@ -309,9 +309,9 @@ class BoomAndZoomOnAJetTests(unittest.TestCase):
         self.assertLess(max(r["top"][0] for r in self.nine("move")), 860)
 
     def test_the_words_call_pilots_they(self) -> None:
-        words = (VIEWER / "dogfight-jet-boom-and-zoom.js").read_text()
+        words = (VIEWER / "dogfight-lessons/jets/boom-and-zoom.js").read_text()
         body = words[words.index("export default"):]
-        plan = (VIEWER / "dogfight-jet-plan-boom-and-zoom.js").read_text()
+        plan = (VIEWER / "dogfight-lessons/jets/plan-boom-and-zoom.js").read_text()
         says = "".join(plan[m.end():plan.index("},", m.end())] for m in re.finditer(r"says: \{", plan))
         for text in (body, says):
             found = re.search(r"\b(he|him|his|himself)\b", text, re.I)

@@ -33,7 +33,7 @@ sys.path.insert(0, str(Path(__file__).resolve().parent))
 
 from test_flight import MODULES as FLIGHT_MODULES, THREE_PACKAGE, VIEWER  # noqa: E402
 
-# The lessons with a jet file of their own (`viewer/dogfight-jets.js`).
+# The lessons with a jet file of their own (`viewer/dogfight-lessons/jets/index.js`).
 JET_LESSON_IDS = ("boom-and-zoom", "under-the-height", "up-and-over", "out-of-the-lock", "on-his-tail",
                   "break-turn", "scissors", "turnarounds", "the-circle")
 HARNESS = Path(__file__).resolve().parent / "dogfight_school_harness.mjs"
@@ -43,10 +43,13 @@ MODULES = {
     "dogfight-pilot.js": VIEWER / "dogfight-pilot.js",
     "dogfight-duel.js": VIEWER / "dogfight-duel.js",
     "dogfight-lessons.js": VIEWER / "dogfight-lessons.js",
-    "dogfight-jets.js": VIEWER / "dogfight-jets.js",
-    **{f"dogfight-jet-{i}.js": VIEWER / f"dogfight-jet-{i}.js" for i in JET_LESSON_IDS},
-    "dogfight-jet-plans.js": VIEWER / "dogfight-jet-plans.js",
-    **{f"dogfight-jet-plan-{i}.js": VIEWER / f"dogfight-jet-plan-{i}.js" for i in JET_LESSON_IDS},
+    "dogfight-lessons/jets/index.js": VIEWER / "dogfight-lessons/jets/index.js",
+    **{f"dogfight-lessons/jets/{i}.js": VIEWER / f"dogfight-lessons/jets/{i}.js" for i in JET_LESSON_IDS},
+    "dogfight-lessons/jets/plans.js": VIEWER / "dogfight-lessons/jets/plans.js",
+    **{f"dogfight-lessons/jets/plan-{i}.js": VIEWER / f"dogfight-lessons/jets/plan-{i}.js" for i in JET_LESSON_IDS},
+    # Galactic Conquest's own lessons and their plans (features/dogfight-lessons-gcmod).
+    "dogfight-lessons/gcmod/index.js": VIEWER / "dogfight-lessons/gcmod/index.js",
+    "dogfight-lessons/gcmod/plans.js": VIEWER / "dogfight-lessons/gcmod/plans.js",
     # The top of the sky, shared by the under-the-height and up-and-over jet aces.
     "dogfight-jet-ceiling.js": VIEWER / "dogfight-jet-ceiling.js",
     "dogfight-coach.js": VIEWER / "dogfight-coach.js",

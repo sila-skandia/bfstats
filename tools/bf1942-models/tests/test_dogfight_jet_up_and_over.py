@@ -3,8 +3,8 @@
 The Spitfire's lesson rests on the follower running out of speed going up. A
 jet does not, and neither does the jet's ace: they go over the top while the
 air still holds them (`jetUpAndOver`, `jetUoAce`, `jetUoAceSharp` in
-`viewer/dogfight-jet-plan-up-and-over.js`, over `dogfight-jet-ceiling.js`) and
-come straight back down. The lesson's words (`viewer/dogfight-jet-up-and-over.js`)
+`viewer/dogfight-lessons/jets/plan-up-and-over.js`, over `dogfight-jet-ceiling.js`) and
+come straight back down. The lesson's words (`viewer/dogfight-lessons/jets/up-and-over.js`)
 say what that fight does, every number in them held here. The Dip is the shot
 as they pull, then past them as they come back down and away (`jetUoDip`).
 Every jet pilot flies under the roof (`stepPilot`, `underRoof`), which caps
@@ -135,7 +135,7 @@ def words() -> dict:
               "const m = await import(pathToFileURL(process.argv[1]).href);"
               "console.log(JSON.stringify(m.default));")
     proc = subprocess.run(["node", "--input-type=module", "-e", script,
-                           str(TOOLS / "viewer" / "dogfight-jet-up-and-over.js")],
+                           str(TOOLS / "viewer" / "dogfight-lessons/jets/up-and-over.js")],
                           capture_output=True, text=True, timeout=60)
     if proc.returncode != 0:
         raise AssertionError(proc.stderr)
@@ -196,7 +196,7 @@ class TheJetAceTests(unittest.TestCase):
 
     def test_the_ace_opts_out_of_the_roof_only_where_it_means_to(self) -> None:
         # The pull, the loop and the recovery; the zoom back up is capped.
-        src = (TOOLS / "viewer" / "dogfight-jet-plan-up-and-over.js").read_text()
+        src = (TOOLS / "viewer" / "dogfight-lessons/jets/plan-up-and-over.js").read_text()
         self.assertNotIn("underRoof(", src)
         self.assertEqual(3, src.count("roof: false }"))
         self.assertIn("const OVER_AT = 550;", src)

@@ -16,7 +16,7 @@
 // Spitfire's Dip runs from the top 8 degrees nose down, into thicker air
 // where a jet is slower, and the hunter sits 500 m behind it, just inside
 // the reach it gives up outside: 5 of 9. The jet Dip (`jetBtDip`,
-// dogfight-jet-plan-break-turn.js) runs with the nose on the horizon, draws
+// plan-break-turn.js) runs with the nose on the horizon, draws
 // out past 550 m, and they let you go 31 to 35 s in: 9 of 9.
 //
 // Starts are in the Spitfire's units (68 m/s is 87 on the F-16); the words

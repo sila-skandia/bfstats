@@ -6,9 +6,9 @@
 // 1,000 m, where a wing makes nothing. The jet's ace (below) goes over the
 // top while the air still holds it, and comes straight back down at you.
 
-import { PLANS, INTENTS, go, heading, climbing, leadPursuit, easedClimb, turnToward } from './dogfight-pilot.js';
-import { pointNose, sub, add, unit, pitchOf } from './dogfight-flight.js';
-import { seenHeight, atRoof } from './dogfight-jet-ceiling.js';
+import { PLANS, INTENTS, go, heading, climbing, leadPursuit, easedClimb, turnToward } from '../../dogfight-pilot.js';
+import { pointNose, sub, add, unit, pitchOf } from '../../dogfight-flight.js';
+import { seenHeight, atRoof } from '../../dogfight-jet-ceiling.js';
 
 /**
  * THE DIP, for a jet: the shot as they pull, past them as they come down,

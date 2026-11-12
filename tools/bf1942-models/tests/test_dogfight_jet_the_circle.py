@@ -1,5 +1,5 @@
 """Breaking the circle on a jet (features/dogfight-lessons-jets/the-circle.md,
-`viewer/dogfight-jet-the-circle.js`).
+`viewer/dogfight-lessons/jets/the-circle.js`).
 
 Every try is flown on the F-16 with the plan it flies on the Spitfire. The
 tries are scored as the school scores them: from the nine starts of

@@ -1,5 +1,5 @@
 """The break turn on a jet (features/dogfight-lessons-jets/break-turn.md,
-`viewer/dogfight-jet-break-turn.js`): what its words claim, flown from the
+`viewer/dogfight-lessons/jets/break-turn.js`): what its words claim, flown from the
 harness's nine starts on the published F-16.
 
 In this lesson side 0 (the harness's ACE) is the pilot under attack, who
@@ -10,7 +10,7 @@ quote, are from the measure's own nine starts (`dogfight-measure.js`
 STARTS, scored with `scoreMove`, as `movesOn` scores them), flown by
 `MEASURE` below; the harness's nine are held beside them. Every jet pilot
 flies under the roof (`dogfight-jet-ceiling.js`); the Dip is the jet's own
-(`jetBtDip`, `viewer/dogfight-jet-plan-break-turn.js`).
+(`jetBtDip`, `viewer/dogfight-lessons/jets/plan-break-turn.js`).
 """
 
 from __future__ import annotations
