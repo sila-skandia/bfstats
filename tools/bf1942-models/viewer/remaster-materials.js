@@ -12,10 +12,11 @@
 
 import * as THREE from 'three/webgpu';
 import {
-  abs, clamp, dot, float, fract, fwidth, materialReference, max, min, mix, positionWorld, step, normalView, normalWorldGeometry, reference, uniform, normalize, sRGBTransferEOTF, sRGBTransferOETF, smoothstep,
+  abs, clamp, cubeTexture, dot, float, fract, fwidth, materialColor, materialReference, max, min, mix, positionWorld, step, normalView, normalWorld, normalWorldGeometry, reference, reflectView, uniform, normalize, sRGBTransferEOTF, sRGBTransferOETF, smoothstep,
   transformNormalToView, uv, vec2, vec3, vec4, normalMap,
 } from 'three/tsl';
 import { REMASTER_OFF } from './remaster-mode.js';
+import { ENVMAP_SWITCH } from './envmap.js';
 
 // Every texture in these graphs is read through the material being drawn
 // (`materialReference`), never baked into the graph with `texture(t)`: three
@@ -315,7 +316,95 @@ export function dynamicMaterial(source, { materialDiffuse = null, env = false } 
   return mat;
 }
 
-export const remasterMaterials = { terrainMaterial, lightmapMaterial, dynamicMaterial, vec3 };
+/**
+ * The first-person rig: the arms and the weapon in hand.
+ *
+ * These are NOT lit by the remaster's sun and sky. They draw with the
+ * engine's own combine for a lit mesh, the one the retail page draws them
+ * with (level-shading.js `bindDynamicShading`, ledger DL-5):
+ *
+ *     2 * tex * clamp(ambient + globalAmbient + diffuse * materialDiffuse * N.L)
+ *
+ * in display space, then `envmap true`'s stage over it where the level has a
+ * cube (envmap.js: `lit * A + cube * (1 - A)`, the cube indexed by the
+ * view-space reflection vector), with the level's light direction as the
+ * retail page aims it.
+ *
+ * The first cut lit the rig as a physically based surface under the world's
+ * sun and sky, like a vehicle. Facing the sun, every face the player looks
+ * at was in shade and drew by the sky's blue light alone: the hands grey,
+ * the steel flat and dark. With the sun behind, the same faces took the
+ * whole sun and washed out. The owner (2026-11-13): "it makes everything
+ * look rubbery and low detail. In the retail the gun still renders
+ * beautifully even when in our sun... technically cool but provides
+ * nothing." The weapon's art is painted to be seen under the engine's
+ * combine, so it gets that combine. Nothing in the world reads the rig's
+ * light: it is an overlay pass, with no shadow to cast or take.
+ *
+ * `viewGain` undoes the renderer's exposure, as the painted sky's does
+ * (`skyGain`), so the rig's colours reach the screen as the combine left
+ * them; remaster-renderer.js sets it.
+ */
+export const viewGain = uniform(1);
+const viewFloor = uniform(new THREE.Vector3(0.4, 0.4, 0.4));
+const viewSun = uniform(new THREE.Vector3(0.5, 0.5, 0.5));
+const viewDir = uniform(new THREE.Vector3(0, 1, 0));
+// OPTIONS > VIDEO's ENVIRONMENT MAPPING (ledger VID-3), read each frame.
+const viewEnvOn = uniform(1).onRenderUpdate(() => (ENVMAP_SWITCH.value ? 1 : 0));
+// One node for the level's cube, re-pointed at each level's own.
+let viewCube = null;
+
+/**
+ * `light` is the level's: `{ floor, sun, toward }`, the clamp's constant
+ * part, the sun's diffuse and the direction to the light, each `[x, y, z]`.
+ * `cube` is the level's reflection cube, or null when it shipped none (the
+ * engine's own gate, 0x005bfa8b).
+ */
+const viewCache = new WeakMap();
+export function viewMaterial(source, { light, materialDiffuse = null, cube = null } = {}) {
+  viewFloor.value.fromArray(light.floor);
+  viewSun.value.fromArray(light.sun);
+  viewDir.value.fromArray(light.toward).normalize();
+  if (cube) {
+    // three's cube lookup mirrors x for a loaded cube; the engine's stage,
+    // as the retail page's shader samples it, does not.
+    if (!viewCube) viewCube = cubeTexture(cube, vec3(reflectView.x.negate(), reflectView.y, reflectView.z));
+    viewCube.value = cube;
+  }
+  const key = `${materialDiffuse ? materialDiffuse.join(',') : ''}|${!!cube}`;
+  let byKey = viewCache.get(source);
+  if (!byKey) viewCache.set(source, byKey = new Map());
+  if (byKey.has(key)) return byKey.get(key);
+  const mat = new THREE.MeshBasicNodeMaterial({
+    map: source.map || null,
+    color: source.color ? source.color.clone() : 0xffffff,
+    side: source.side,
+    alphaTest: source.alphaTest || 0,
+    transparent: source.transparent,
+    opacity: source.opacity ?? 1,
+    depthWrite: source.depthWrite ?? true,
+  });
+  mat.name = source.name;
+  mat.userData = source.userData;
+  mat.remaster = true;
+  mat.remasterView = true;
+  byKey.set(key, mat);
+  mat.bfViewDiffuse = new THREE.Vector3(...(materialDiffuse ?? [1, 1, 1]));
+  const ndl = max(dot(normalWorld, viewDir), 0);
+  // D3D clamps the vertex diffuse to [0, 1] before the stage's modulate-2x,
+  // and saturates again after the multiply.
+  const lit = min(vec3(1), viewFloor.add(viewSun.mul(materialReference('bfViewDiffuse', 'vec3')).mul(ndl))).mul(2);
+  let display = min(vec3(1), sRGBTransferOETF(materialColor.rgb).mul(lit));
+  if (cube) {
+    const staged = mix(sRGBTransferOETF(viewCube.rgb), display, materialColor.a.clamp(0, 1));
+    display = mix(display, min(vec3(1), staged), viewEnvOn);
+  }
+  mat.colorNode = vec4(sRGBTransferEOTF(display).mul(viewGain), materialColor.a);
+  mat.bfEnv = !!cube;
+  return cloneWithNodes(mat);
+}
+
+export const remasterMaterials = { terrainMaterial, lightmapMaterial, dynamicMaterial, viewMaterial, vec3 };
 
 /**
  * The proving ground's floor (proving-ground.js `floorMaterial`) as a node

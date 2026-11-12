@@ -66,6 +66,59 @@ export async function createRemasterRenderer({ antialias = true } = {}) {
 }
 
 /**
+ * Pipelines built during play are built off the main thread, and what needs
+ * one is drawn from the frame it is ready.
+ *
+ * three builds a pipeline it meets in a frame with `createRenderPipeline`,
+ * and the GPU process compiles its shaders before that frame can be shown.
+ * The warm-up (`warmPipelines`) covers what the scene holds when a level
+ * comes up. It cannot cover what does not exist yet: an effect's debris and
+ * sprites are made when the effect plays, a wreck is loaded when its vehicle
+ * dies, a tree's blend band is cloned as it crosses a range, and no warm-up
+ * reaches the shadow passes. Each of those froze the frame that first drew
+ * it: "very laggy at key moments, when I shoot something that explodes" (the
+ * owner, 2026-11-13; 440 to 630 ms on Wake for the first gun emplacement
+ * destroyed). So once a level is up, a pipeline asked for inside a frame is
+ * asked for with `createRenderPipelineAsync` (three's own path for
+ * `compileAsync`), and `draw` skips an object whose pipeline is still being
+ * built: it appears a few frames late, once, and nothing stops.
+ *
+ * Full-screen quads (the post chain's passes) stay synchronous: a frame
+ * without its output quad is a black frame. `?remaster=syncpipes` turns
+ * this off. These are three's internals (r186): if either is not where it
+ * was, nothing is installed and pipelines are built as before.
+ */
+function installAsyncPipelines(renderer) {
+  const state = { on: false, pending: 0, built: 0, installed: false };
+  const pipelines = renderer._pipelines;
+  const backend = renderer.backend;
+  if (typeof pipelines?._getRenderPipeline !== 'function' || typeof backend?.draw !== 'function'
+      || typeof backend.get !== 'function') return state;
+  const build = pipelines._getRenderPipeline.bind(pipelines);
+  pipelines._getRenderPipeline = (renderObject, vertex, fragment, cacheKey, promises) => {
+    if (promises !== null || !state.on || renderObject.object?.isQuadMesh) {
+      return build(renderObject, vertex, fragment, cacheKey, promises);
+    }
+    const waiting = [];
+    const pipeline = build(renderObject, vertex, fragment, cacheKey, waiting);
+    if (waiting.length) {
+      state.pending += waiting.length;
+      state.built += waiting.length;
+      Promise.all(waiting).then(() => { state.pending -= waiting.length; });
+    }
+    return pipeline;
+  };
+  const draw = backend.draw.bind(backend);
+  backend.draw = (renderObject, info) => {
+    // Still being built: drawn from the frame it is ready.
+    if (backend.get(renderObject.pipeline).pipeline === undefined) return undefined;
+    return draw(renderObject, info);
+  };
+  state.installed = true;
+  return state;
+}
+
+/**
  * The few WebGLRenderer members the game's modules reach for that the
  * WebGPU renderer does not have, as harmless stand-ins: the warm-up asks
  * `properties.get(material)` for linked programs (none: WebGPU builds its
@@ -112,6 +165,9 @@ export async function createRemasterScene({ renderer, scene, camera, sun, hemi }
   const shaftMod = await import('three/addons/tsl/display/radialBlur.js');
   const { REMASTER_OFF: off } = await import('./remaster-mode.js');
   const atmosphere = createRemasterSky({ renderer, scene, camera, sun, hemi });
+  const { viewGain } = await import('./remaster-materials.js');
+  const overlays = new WeakMap();
+  const asyncPipelines = off.has('syncpipes') ? { on: false, pending: 0, built: 0, installed: false } : installAsyncPipelines(renderer);
   remasterHooks.materials = remasterMaterials;
   // The generated normal and roughness maps' index (remaster_texture_maps.py);
   // none generated is no relief, not an error. Asked for with `maps`.
@@ -128,11 +184,40 @@ export async function createRemasterScene({ renderer, scene, camera, sun, hemi }
   // brighter than its texture, so its core passes the bloom's threshold and
   // spills over what is around it. The tone mapping brings it back under
   // white; the texture's own falloff gives the halo its shape.
+  //
+  // Only what the data blends additively (`blendDest one`, the page's
+  // AdditiveBlending or a D3D pair whose destination is One). The hook is
+  // called for every material an effect makes, and until 2026-11-13 it
+  // tripled all of them: a destroyed gun's flying parts and an explosion's
+  // smoke drew three times as bright as their textures.
+  //
+  // The amount of light is shaped as the engine's blend shaped it. The
+  // client added `texel * alpha` to the frame in display space, where a
+  // faint texel adds next to nothing; this frame is linear, where the same
+  // texel is a visible veil. An explosion's fireball (`e_fire4`, a 16 x 16
+  // texture on a 21 m quad, its border texels at a tenth alpha) drew as a
+  // hard-edged yellow rectangle over the scene behind it. So the product is
+  // taken in display space and brought to linear, `EOTF(OETF(rgb) * alpha *
+  // opacity)`, which is the engine's own result over black, and that is
+  // what is multiplied by GLOW. That is for a particle's quad (`sprite`,
+  // effects.js), where the whole quad is on screen. A flash that is a mesh
+  // (a muzzle's, a tracer) keeps the plain multiple: its shape is its
+  // geometry, and the owner called the AA gun's "beautiful" as it is.
   const GLOW = Number(new URLSearchParams(location.search).get('glow')) || 3;
-  remasterHooks.glow = m => {
-    if (!m || m.remasterGlow || off.has('noglow')) return;
+  const addsLight = m => m.blending === THREE.AdditiveBlending
+    || (m.blending === THREE.CustomBlending && m.blendDst === THREE.OneFactor);
+  remasterHooks.glow = (m, { sprite = false } = {}) => {
+    if (!m || m.remasterGlow || off.has('noglow') || !addsLight(m)) return;
     m.remasterGlow = true;
-    m.colorNode = tsl.vec4(tsl.materialColor.rgb.mul(GLOW), tsl.materialColor.a);
+    const c = tsl.materialColor;
+    const byAlpha = m.blending === THREE.AdditiveBlending || m.blendSrc === THREE.SrcAlphaFactor;
+    if (sprite && byAlpha && !(m.alphaTest > 0)) {
+      const display = tsl.sRGBTransferOETF(c.rgb).mul(c.a).mul(tsl.materialOpacity).clamp(0, 1);
+      m.colorNode = tsl.vec4(tsl.sRGBTransferEOTF(display).mul(GLOW), 1);
+      m.opacityNode = tsl.float(1);
+    } else {
+      m.colorNode = tsl.vec4(c.rgb.mul(GLOW), c.a);
+    }
     m.needsUpdate = true;
   };
   // Light from a flash or a blast (effects.js `play`): a pool of point lights
@@ -382,37 +467,61 @@ export async function createRemasterScene({ renderer, scene, camera, sun, hemi }
       try { renderer.initTexture(t); } catch { /* drawn as before */ }
     }
   }
-  function warmPipelines(target, cam, why) {
+  /** Hidden things play can show are built too, as the WebGL warm-up's
+   *  `compile` builds them (level-warmup.js): the effect pool's parked
+   *  sprites, a vehicle not spawned yet, a wreck, a gun's flash. three's
+   *  WebGPU walk skips a hidden node and everything under it, so the first
+   *  explosion of a session built its sprites' pipelines on the main thread
+   *  in the frame that drew them: "very laggy at key moments, when I shoot
+   *  something that explodes" (the owner, 2026-11-13; 444 ms on Wake for the
+   *  first `BombBig_Expl`, nothing for any after it). A collision hull is
+   *  never drawn and stays hidden. `within` is the scene whose lights, fog
+   *  and sky `target` draws under, when `target` is a part of one. */
+  const NEVER_DRAWN = /collision/i;
+  function warmPipelines(target, cam, why, within = null) {
     const flipped = [];
-    target.traverse(o => {
+    const shown = [];
+    const lift = o => {
+      if (o.visible === false) {
+        if (NEVER_DRAWN.test(o.name) || o.userData?.remasterNoWarm) return;
+        o.visible = true;
+        shown.push(o);
+      }
       if ((o.isMesh || o.isPoints || o.isLine || o.isSprite) && o.frustumCulled) { o.frustumCulled = false; flipped.push(o); }
-    });
+      for (const c of o.children) lift(c);
+    };
+    lift(target);
     const t0 = performance.now();
     let job;
     const rt = renderer.getRenderTarget();
     const mrt = renderer.getMRT();
     try {
       // The scene pass's own target and MRT: a pipeline is keyed by them.
-      if (target === scene && scenePassRef) {
+      if ((within ?? target) === scene && scenePassRef) {
         renderer.setRenderTarget(scenePassRef.renderTarget);
         renderer.setMRT(scenePassRef._mrt ?? null);
       }
       // Synchronous up to its first wait: the walk, and every pipeline
-      // asked for. The target and culling are put back before any frame.
-      job = renderer.compileAsync(target, cam);
+      // asked for. The target, culling and hidden nodes are put back before
+      // any frame.
+      job = renderer.compileAsync(target, cam, within && within !== target ? within : null);
     } catch (err) {
       console.warn('[remaster] warm-up', why, err);
     } finally {
       renderer.setRenderTarget(rt);
       renderer.setMRT(mrt);
       for (const o of flipped) o.frustumCulled = true;
+      for (const o of shown) o.visible = false;
     }
     queueTextures(target);
     const walk = performance.now() - t0;
     lastWarm = Promise.resolve(job).then(() => {
       const ms = performance.now() - t0;
-      console.info(`[remaster] warm-up (${why}): ${flipped.length} objects, walk ${walk.toFixed(0)} ms, pipelines ready in ${ms.toFixed(0)} ms, ${textureQueue.length} textures to upload`);
+      // The level is built: from here a new pipeline never holds a frame.
+      if (target === scene) asyncPipelines.on = asyncPipelines.installed;
+      console.info(`[remaster] warm-up (${why}): ${flipped.length} objects (${shown.length} hidden roots shown), walk ${walk.toFixed(0)} ms, pipelines ready in ${ms.toFixed(0)} ms, ${textureQueue.length} textures to upload`);
     }, err => console.warn('[remaster] warm-up', why, err));
+    return lastWarm;
     return lastWarm;
   }
 
@@ -489,18 +598,51 @@ export async function createRemasterScene({ renderer, scene, camera, sun, hemi }
       lastFlag = performance.now();
       // Five frames in (the scene pass is set up, the cascades fitted), and
       // again three seconds on.
-      warmAt.length = 0;
+      // A request the old level left is answered, not left waiting.
+      for (const w of warmAt.splice(0)) w.resolve?.();
       warmAt.push({ frame: earlyFrames + 5, why: 'level' }, { at: performance.now() + 3000, why: 'spawned' });
     },
-    /** An overlay pass's scene (the first-person arms) lit like the world:
-     *  the sky's image-based light, at the world's strength. */
+    /** An overlay pass's scene (the first-person arms and weapon). Its
+     *  materials are the engine's own combine (remaster-materials.js
+     *  `viewMaterial`) and read no light; they are handed the exposure to
+     *  undo. Anything else in the scene still lit (an ejected case, a
+     *  muzzle's smoke) takes the sky's light at the world's strength. */
     lightOverlay(overlay) {
       if (!overlay) return;
       overlay.environment = scene.environment;
       overlay.environmentIntensity = scene.environmentIntensity;
-      // The arms and the gun, built before their first frame.
-      warmAt.push({ frame: earlyFrames + 1, why: 'overlay', target: overlay });
+      viewGain.value = 1 / Math.max(0.1, renderer.toneMappingExposure);
+      // The arms and the gun, built before their first frame: once for each
+      // rig the scene holds (a weapon change swaps it), not once a frame.
+      // Until 2026-11-13 this asked for a warm-up on every frame the rig
+      // drew, a `compileAsync` walk of the overlay sixty times a second.
+      let rig = '';
+      for (const a of overlay.children) for (const b of a.children) rig += `${b.id}:${b.children.length},`;
+      if (rig !== overlays.get(overlay)) {
+        overlays.set(overlay, rig);
+        warmAt.push({ frame: earlyFrames + 1, why: 'overlay', target: overlay });
+      }
     },
+    /** The page's own warm points (level-warmup.js `warmSubtree`: a rig, a
+     *  seat's cockpit, a replay's models, the level and its effect pool):
+     *  `root` built for the pass that draws it, a few frames on (the scene
+     *  pass and the cascades must exist first). Resolves when its pipelines
+     *  are ready. One request a root: a second before the first has run
+     *  rides on it. */
+    warm(root, cam = camera, within = scene) {
+      if (!root) return Promise.resolve();
+      const queued = warmAt.find(w => (w.target ?? scene) === root);
+      if (queued) {
+        queued.promise ??= new Promise(resolve => { queued.resolve = resolve; });
+        return queued.promise;
+      }
+      const entry = { frame: earlyFrames + 5, why: root === scene ? 'page: scene' : `page: ${root.name || root.type}`, target: root, cam, within };
+      entry.promise = new Promise(resolve => { entry.resolve = resolve; });
+      warmAt.push(entry);
+      return entry.promise;
+    },
+    /** Pipelines built off the thread during play: `{ on, pending, built }`. */
+    asyncPipelines: () => ({ ...asyncPipelines }),
     /** The last warm-up's promise (a harness waits on it). */
     warmed: () => lastWarm,
     /** How many meshes cast now, of how many could. */
@@ -539,7 +681,8 @@ export async function createRemasterScene({ renderer, scene, camera, sun, hemi }
         const w = warmAt[i];
         if ((w.frame != null && earlyFrames >= w.frame) || (w.at != null && now >= w.at)) {
           warmAt.splice(i, 1);
-          warmPipelines(w.target ?? scene, camera, w.why);
+          const done = warmPipelines(w.target ?? scene, w.cam ?? camera, w.why, w.within ?? null);
+          w.resolve?.(done);
         }
       }
       if (textureQueue.length) uploadSome();

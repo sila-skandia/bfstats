@@ -970,7 +970,7 @@ export class EffectPlayer {
         }
         this.onMaterial?.(material);
         // Remaster mode: additive flame and flash brighter than white, for the bloom.
-        remasterHooks.glow?.(material);
+        remasterHooks.glow?.(material, { sprite: true });
         const geometry = animated ? source.geometry.clone() : source.geometry;
         mesh = new THREE.Mesh(geometry, material);
         mesh.userData.poolKey = key;

@@ -66,10 +66,14 @@ export function createLevelWarmup(page) {
    *  them: `GunFire.collect` clones a rig's flash materials right after the
    *  rig's compile starts, and the clones reuse these programs by key. */
   function warmSubtree(root, cam = page.camera, target = page.scene) {
-    // Remaster mode's WebGPU renderer builds its pipelines on first draw;
-    // its `compileAsync` sizes the cascaded shadows' uniforms before the
-    // cascades exist and fails every pipeline (features/remaster-browser).
-    if (page.renderer.isRemaster) return Promise.resolve();
+    // Remaster mode's WebGPU renderer has its own warm-up, which waits for
+    // the scene pass and the cascaded shadows to exist (a `compileAsync`
+    // before them sizes the cascades' uniforms wrong and fails every
+    // pipeline) and walks hidden nodes as this one does
+    // (remaster-renderer.js `warm`, features/remaster-browser).
+    if (page.renderer.isRemaster) {
+      return globalThis.bfRemasterHooks?.scene?.warm?.(root, cam, target) ?? Promise.resolve();
+    }
     const compiled = page.renderer.compileAsync(root, cam, target);
     const programs = new Set();
     root.traverse(obj => {

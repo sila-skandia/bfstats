@@ -864,8 +864,9 @@ export function createHandWeapon(page) {
     soldierKit.vmSun.color.copy(page.sun.color);
     soldierKit.vmSun.intensity = page.sun.intensity;
     soldierKit.vmSun.position.copy(page.sun.position);
-    // Remaster mode lights the world from the sky (the hemisphere is off):
-    // the arms take the same sky light (features/remaster-browser).
+    // Remaster mode: the rig's own materials are the engine's combine and
+    // read no light; this hands them the exposure, and the sky's light to
+    // what else the pass draws (features/remaster-browser).
     globalThis.bfRemasterHooks?.scene?.lightOverlay?.(soldierKit.vmScene);
     soldierKit.vmCamera.matrixWorld.copy(page.camera.matrixWorld);
     soldierKit.vmCamera.matrixWorldInverse.copy(page.camera.matrixWorld).invert();

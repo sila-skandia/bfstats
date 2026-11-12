@@ -246,7 +246,12 @@ export function createRemasterSky({ renderer, scene, camera, sun, hemi }) {
     // from altitude the height haze is thin, and without the floor the
     // world met the wall at 80 % of fogEnd as one hard band.
     const ramp = clamp(toFrag.length().sub(u.start).div(max(u.end.sub(u.start), 1)), 0, 1).mul(0.7);
-    const factor = clamp(max(max(haze, ramp), wall), 0, 1);
+    // `?pipelineSalt=<n>` (a measurement's, tests/perf): a number folded
+    // into every fogged shader, so the OS's shader cache has seen none of
+    // them and a run pays for its pipelines as a first visit does.
+    const salt = Number(qp.get('pipelineSalt')) || 0;
+    const mixed = max(max(haze, ramp), wall);
+    const factor = clamp(salt ? mixed.add(float(salt * 1e-9)) : mixed, 0, 1);
     // The haze's colour: the sky's own horizon (computed on the CPU from
     // the same model, `apply`), tinted by the level's fog colour, with the
     // sun's forward glow. A per-pixel lookup of the sky's image-based light

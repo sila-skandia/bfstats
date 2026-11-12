@@ -35,6 +35,8 @@ off unless asked for.
 | Audio: reverb by surroundings, occlusion, air absorption, the crack before the report | done, behind `remasterAudio=1` ([AUDIO.md](AUDIO.md)); no longer forces Chromium's HRTF |
 | Generated normal and roughness maps from the texture store | done, behind `?remaster=maps` (`remaster_texture_maps.py`, 3,367 maps); edges only, no paint mottle |
 | Pipelines and textures warmed before play, not on first sight | done (worst frame while turning: 141-501 ms down to 26-83 ms) |
+| The first-person arms and weapon drawn by the engine's own combine, not the remaster's sun | done (the owner's call, 2026-11-13) |
+| Nothing built during play holds a frame: hidden effects and vehicles warmed, later pipelines built off the thread | done (first kill of a kind: 283-486 ms down to 36-52 ms) |
 | Two levels with before/after captures and frame times | done: Wake, Battle of Britain |
 
 ## How to look at it
@@ -57,10 +59,13 @@ The parts that can be turned off: `noshadow`, `noproxies` (statics cast for
 themselves), `noao`, `nobloom`, `nosmaa`, `nopost` (no post chain at all),
 `nofog`, `nowater`, `noglow` (effects at their texture brightness),
 `noflash` (no flash lights), `noshafts`, `nostagger` (every cascade every
-frame), `notonemap`. Parts that are off unless named: `maps` (the generated
-normal and roughness maps). Tuning
+frame), `notonemap`, `syncpipes` (a pipeline met during play is built in
+the frame that meets it, as before 2026-11-13). Parts that are off unless
+named: `maps` (the generated normal and roughness maps). Tuning
 knobs: `&exposure=`, `&cascades=`, `&shadowFar=`, `&shadowSize=`,
-`&leafReach=`, `&solidReach=`, `&glow=`, `&gpuTiming`. `remasterAudio=1`
+`&leafReach=`, `&solidReach=`, `&glow=`, `&gpuTiming`, `&pipelineSalt=`
+(a measurement's: a number folded into every fogged shader so the OS's
+shader cache has seen none of them). `remasterAudio=1`
 adds the spatial audio chain; without it the sound is retail's.
 
 The before/after harness, one headless Google Chrome with WebGPU on the Mac's
@@ -124,6 +129,15 @@ Battle of Britain, the airfield and the overview:
 An explosion (`BombBig_Expl`, 4/30 s in) and a muzzle flash (`e_MuzzHeavy`):
 ![Explosion](shots/wake_explosion.jpg)
 ![Muzzle flash](shots/wake_muzzle_flash.jpg)
+
+The first-person weapon at three headings on Wake (toward the sun, across
+it, away from it): the original game, the remaster lighting it with its own
+sun, and the remaster now, drawing it with the engine's combine:
+![The first-person weapon](shots/wake_first_person_weapon.jpg)
+
+An explosion's fireball, a frame after a gun emplacement dies off the left
+edge: the original game, the remaster's hard-edged rectangle, and now:
+![Explosion glow](shots/wake_explosion_glow.jpg)
 
 On foot, remaster only: [Wake](shots/wake_on_foot_remaster.jpg),
 [Battle of Britain](shots/bob_on_foot_remaster.jpg). Full-size frames:
@@ -219,11 +233,13 @@ The retail modules call in where they build their own look:
 `level-shading.js` (terrain detail, lightmaps, dynamic shading),
 `level-sky.js` (the painted sky, the cloud layer, the water), `tree-foliage.js`,
 `effects.js` (glow, flash lights), `gun-groups.js`, `arms-rig.js`,
-`hand-weapon.js` and `replay-viewmodel.js` (the arms lit by the sky),
+`hand-weapon.js` and `replay-viewmodel.js` (the first-person rig, drawn
+by the engine's combine: `viewMaterial`),
 `level-load.js` (the level's atmosphere once it is up), `proving-ground.js`,
 `glb-loader.js` (each texture's store hash), the seven side views that build
-their own renderer, and `level-warmup.js` and `texture-quality.js` (skipped
-under WebGPU; the remaster warms its own pipelines, below).
+their own renderer, `level-warmup.js` (its warm points hand their roots to
+the remaster's warm-up, below) and `texture-quality.js` (skipped under
+WebGPU).
 
 ### What each level word drives
 
@@ -355,6 +371,72 @@ surroundings through a pool of four point lights.
   what the level spawns, and on the first-person overlay when it is built.
   The same turn now peaks at 26 to 83 ms; the build takes about 2.6 s in the
   background on Wake.
+- **The first-person weapon was lit by the remaster's sun, and should not
+  have been.** The arms and the gun were physically based surfaces under the
+  world's sun and sky, like a vehicle. Facing the sun, every face the player
+  looks at is in shade and drew by the sky's blue light alone: grey hands,
+  flat dark steel. With the sun behind, the same faces took the whole sun
+  and washed out (the BAR's receiver on Wake at two to three times the
+  retail page's brightness). The owner, twice: "the weapons can look very
+  washed out at the peak of the sun", then of the shaded case, "it makes
+  everything look rubbery and low detail. In the retail the gun still
+  renders beautifully even when in our sun... technically cool but provides
+  nothing" (2026-11-13). The rig now draws with the engine's own combine,
+  the one the retail page uses, as a node material
+  (`remaster-materials.js` `viewMaterial`): `2 * tex * clamp(ambient +
+  globalAmbient + diffuse * materialDiffuse * N.L)` in display space, then
+  `envmap true`'s stage where the level has a cube, with the light aimed as
+  the retail page aims it. `arms-rig.js` marks the rig (`firstPerson`) when
+  it asks for its shading. Nothing in the world reads the rig's light: it is
+  an overlay pass with no shadow to cast or take. Over eight headings on
+  Wake the weapon's mean brightness is retail's (60 against 60 of 255).
+  A first attempt kept the real sun at a smaller share and cast a ray from
+  the eye to shade the weapon indoors; it was dropped, since the complaint
+  was the real sun on the weapon at all.
+- **The first-person overlay asked for a warm-up on every frame it drew.**
+  `lightOverlay` queued one each call, so a `compileAsync` walk of the rig
+  ran sixty times a second for as long as the player was on foot. It is
+  asked for once per rig now (a weapon change swaps the rig).
+- **The first explosion of a session froze the game** ("very laggy at key
+  moments, when I shoot something that explodes", the owner, 2026-11-13).
+  Three causes, all the same kind: a pipeline built in the frame that first
+  needs it, which waits for the GPU process to compile its shaders.
+  1. three's WebGPU `compileAsync` skips a hidden node and everything under
+     it, where the WebGL `compile` the retail warm-up relies on walks them.
+     The effect pool's parked sprites, vehicles not spawned yet and guns'
+     flashes were never built. `warmPipelines` now shows hidden nodes for
+     its one synchronous walk (collision hulls excepted) and puts them back.
+     The first `BombBig_Expl` on Wake: 444 ms down to 43.
+  2. `level-warmup.js` returned early under WebGPU, so the page's own warm
+     points (the level once its effect pool is built, a rig, a seat's
+     cockpit, a replay's models) reached nothing. `warmSubtree` now hands
+     its root to the remaster (`remaster.warm`), which builds it for the
+     pass that draws it a few frames on.
+  3. Some things do not exist until they are needed: an effect's debris and
+     its sprite materials are made when it plays, a wreck is loaded when its
+     vehicle dies, a tree's blend band is cloned as it crosses a range, and
+     no warm-up reaches the shadow passes. No warm-up can build those. So
+     once a level is up, a pipeline met inside a frame is built with
+     `createRenderPipelineAsync` (three's own path for `compileAsync`) and
+     `draw` skips an object whose pipeline is not ready
+     (`installAsyncPipelines`): it appears a few frames late, once, and no
+     frame waits. Full-screen quads stay synchronous.
+  Measured with `tests/perf/remaster_explosions.mjs`, a cold shader cache
+  each run (`pipelineSalt`: macOS keeps compiled shaders between runs, which
+  made every run after the first read as already fixed): destroying one
+  vehicle of each of eight kinds, four more, and fourteen explosion effects,
+  the worst frame was 283 to 486 ms before and 36 to 52 ms now.
+- **An explosion's glow drew as a hard-edged rectangle**, and debris and
+  smoke glowed with it. The glow hook tripled every material an effect
+  made, not only the additive ones, so a destroyed gun's flying parts and an
+  explosion's smoke were three times their textures. And the engine added
+  `texel * alpha` to the frame in display space, where a faint texel adds
+  next to nothing, while this frame is linear, where it is a veil: the
+  fireball (`e_fire4`, 16 x 16 on a 21 m quad, a tenth alpha at its border)
+  showed its whole quad. The hook now takes only what the data blends
+  additively, and a particle's quad adds `EOTF(OETF(rgb) * alpha * opacity)`
+  times the glow: the engine's own result over black. A flash that is a
+  mesh (a muzzle's, a tracer) is as it was.
 - **The generated relief read as hail damage** on the Sherman. The first
   generator took everything finer than an eighth of the texture as height,
   so painted mottle, weathering and camo blotches became dents, and the page
@@ -442,6 +524,9 @@ These are choices, not open faults.
 - **The far haze is lighter from the air** than retail's: the remaster's haze
   thins with height, retail's fog does not (retail's wall at `fogEnd` is
   kept).
+- **The first-person arms and weapon are not lit by the remaster's sun.**
+  They draw as retail draws them (the owner's call; see the bugs above).
+  The weapon in the hand takes no shadow in either.
 - **A frame costs about twice retail's** (9.6 to 18.7 ms against 3.8 to 6.9
   on this machine).
 
@@ -450,6 +535,7 @@ These are choices, not open faults.
 - `tools/bf1942-models/viewer/remaster-*.js`, `vendor/three-webgpu/`
 - `tools/bf1942-models/remaster_texture_maps.py` (its venv and output are
   gitignored)
-- `tools/bf1942-models/tests/perf/remastershot.mjs`
+- `tools/bf1942-models/tests/perf/remastershot.mjs`,
+  `tools/bf1942-models/tests/perf/remaster_explosions.mjs`
 - `features/remaster-browser/shots/` (the composites above),
   `features/remaster-browser/AUDIO.md`

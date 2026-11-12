@@ -504,8 +504,13 @@ export function createLevelShading(page) {
    * constant part and the sun's diffuse. Without it the engine's fixed-function
    * terms are used, `ambientColor + globalAmbientColor` and `diffuseColor`.
    * `shadeCockpit` is the one caller that passes one.
+   *
+   * `firstPerson` marks the arms rig and the weapon in hand (arms-rig.js).
+   * The retail page draws them as it draws everything else here; remaster
+   * mode draws them with this same combine instead of its own sun
+   * (remaster-materials.js `viewMaterial`).
    */
-  function bindDynamicShading(root, rule = null) {
+  function bindDynamicShading(root, rule = null, { firstPerson = false } = {}) {
     applyInstanceColors(root);
     const lit = page.extras.lighting || {};
     const amb = rule ? rule.floor : lit.ambient || [0.2, 0.2, 0.2];
@@ -581,6 +586,19 @@ export function createLevelShading(page) {
         // (ctx+0x18 != NULL, 0x005bfa8b) fails too and the material draws plain.
         const env = wantsEnvmap(m) && page.levelEnvCube ? page.levelEnvCube : null;
         const md = diffuseFor(m);
+        if (remasterHooks.materials && firstPerson) {
+          // Remaster mode's first-person rig: the engine's combine, below,
+          // as a node material.
+          const view = remasterHooks.materials.viewMaterial(m, {
+            light: {
+              floor: [0, 1, 2].map(i => Math.min(1, (amb[i] || 0) + (glob[i] || 0))),
+              sun: diff, toward: L,
+            },
+            materialDiffuse: md === WHITE ? null : md, cube: env,
+          });
+          view.bfShade = { value: new THREE.Vector4(1, 1, 1, 0) };
+          return view;
+        }
         if (remasterHooks.materials) {
           // Remaster mode: lit by the real sun and sky (remaster-materials.js).
           const lit = remasterHooks.materials.dynamicMaterial(m, {

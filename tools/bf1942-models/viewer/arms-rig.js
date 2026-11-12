@@ -716,7 +716,7 @@ export function createArmsRig(page) {
     // Before the additive marks below — the pass rebuilds the materials and
     // keeps their extras, not their blending.
     // Optional-chained for the harnesses that mount a rig with no level behind it.
-    page.bindDynamicShading?.(gltf.scene);
+    page.bindDynamicShading?.(gltf.scene, null, { firstPerson: true });
     applyAdditiveMarks(gltf.scene);
     vmRoot.add(rig);
     // The load can resolve after its owner has already climbed into a seat —
@@ -856,7 +856,7 @@ export function createArmsRig(page) {
       hand.add(grip);
       // The engine combine on the grafted weapon too (`mountRig` says why),
       // ahead of the additive marks for the same reason.
-      page.bindDynamicShading?.(grip);
+      page.bindDynamicShading?.(grip, null, { firstPerson: true });
       grip.traverse(obj => {
         obj.layers.set(VIEWMODEL_LAYER);
         if (!obj.isMesh) return;

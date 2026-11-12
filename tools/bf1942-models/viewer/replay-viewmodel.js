@@ -447,7 +447,7 @@ export class ReplayViewmodel {
       isCollision: obj => (ctx.isCollision ? ctx.isCollision(obj)
         : Boolean(obj.userData?.collision || /collision/i.test(obj.name || ''))),
       warmSubtree: (root, cam, target) => ctx.warmSubtree?.(root, cam, target) ?? Promise.resolve(),
-      bindDynamicShading: root => ctx.bindDynamicShading?.(root),
+      bindDynamicShading: (...args) => ctx.bindDynamicShading?.(...args),
       warmups,
       optPilot: { checked: false },
       aircraft: null,
@@ -728,7 +728,8 @@ export class ReplayViewmodel {
       vmSun.intensity = lights.sun.intensity;
       vmSun.position.copy(lights.sun.position);
     }
-    // Remaster mode: the sky's light on the arms too (features/remaster-browser).
+    // Remaster mode: the exposure for the rig's own materials, and the sky's
+    // light for what else the pass draws (features/remaster-browser).
     globalThis.bfRemasterHooks?.scene?.lightOverlay?.(vmScene);
     vmCamera.matrixWorld.copy(cam.matrixWorld);
     vmCamera.matrixWorldInverse.copy(cam.matrixWorld).invert();
