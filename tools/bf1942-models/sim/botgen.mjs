@@ -108,11 +108,16 @@ export function flagsOf(extras) {
   }));
 }
 
-/** The nearest free cell's centre to `(x, z)` within `reach` metres, or null. */
+/**
+ * The nearest free place to `(x, z)` within `reach` metres, or null: the point itself when its cell is free,
+ * else the nearest free cell's centre. The con keeps one decimal, and a point within 0.05 m of a cell's edge
+ * rounds into the next cell: when that one is blocked the answer is the centre of the point's own cell
+ * (Westwall-1945's north mountain flag stands at z -1691.99, was written 1692, and the lint refused the layer).
+ */
 export function nearestFree(nav, isWalkable, x, z, reach = ORDER_SEARCH) {
-  if (isWalkable(nav, x, z)) return [x, z];
   const cs = nav.cellSize;
   const cx = Math.floor(x / cs) * cs + cs / 2, cz = -(Math.floor(-z / cs) * cs + cs / 2);
+  if (isWalkable(nav, x, z)) return isWalkable(nav, Number(r1(x)), Number(r1(z))) ? [x, z] : [cx, cz];
   let best = null, bestD = Infinity;
   const n = Math.ceil(reach / cs);
   for (let dz = -n; dz <= n; dz++) {

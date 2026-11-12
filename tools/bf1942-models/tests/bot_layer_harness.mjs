@@ -376,6 +376,12 @@ out.walkMap = {
 // of the place that is (a pole 4.2 m up with a 5 m radius is a 2.7 m ring on the ground), else none.
 const pole = prep.facts.flags.find(f => f.name === 'Pole');
 out.order = [gen.flagReach(pole, [30.5, -20.5]).order, gen.flagReach(pole, [34.5, -20.5]).order, gen.flagReach(prep.facts.flags.find(f => f.name === 'Tower'), null).order];
+// A flag a hair inside its cell: one decimal would write it into the next cell, so when that one is blocked the
+// answer is its own cell's centre. The same hair beside a free cell keeps the point.
+{
+  const one = { cellSize: 1 }, free = (_, x, z) => !(Math.floor(-z) === 20);
+  out.orderOnAnEdge = [gen.nearestFree(one, free, 12.07, -19.99), gen.nearestFree(one, free, 12.07, -18.99), gen.nearestFree(one, free, 12.4, -19.5)];
+}
 const ladderLint = lint.lintLayer({ ai: good, flags: lf, grid, isWalkable: walk, defined: ['homogenous'],
   walk: { cover: 1, capped: false, ladders: 3, floors: { stacked: false }, spawns: [{ name: 'a', side: 1, landed: true, usable: false, over: 0 }, { name: 'b', side: 2, landed: true, usable: true, over: 0 }],
           flags: [{ name: 'A', team: 1, fixed: false, reachable: true, over: 0 }, { name: 'B', team: 2, fixed: false, reachable: true, over: 0 }] } });

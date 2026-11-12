@@ -218,6 +218,12 @@ class WalkMapTests(unittest.TestCase):
         self.assertLessEqual(((far[0] - 30) ** 2 + (far[1] + 20) ** 2) ** 0.5, 2.8)
         self.assertIsNone(none)
 
+    def test_an_order_position_a_hair_from_a_blocked_cell_is_its_own_cells_centre(self) -> None:
+        edge, free_side, inside = self.out["orderOnAnEdge"]
+        self.assertEqual(edge, [12.5, -19.5])
+        self.assertEqual(free_side, [12.07, -18.99])
+        self.assertEqual(inside, [12.4, -19.5])
+
     def test_a_second_run_puts_the_engines_map_back_first_and_opens_the_same_cells(self) -> None:
         self.assertTrue(self.walk["sameAgain"])
 
