@@ -47,6 +47,12 @@ export function textureState(q, maxAnisotropy = 1) {
  * `roots()` lists the scenes whose materials' maps it walks.
  */
 export function createTextureQuality({ renderer, roots }) {
+  // Remaster mode's WebGPU renderer (features/remaster-browser) has no GL
+  // sampler state to poke: its textures keep full mips and the anisotropy
+  // the level gave them, and TEXTURE QUALITY is a no-op there.
+  if (renderer.isRemaster) {
+    return { get quality() { return 4; }, get state() { return { minLod: 0, anisotropy: null, touched: 0, webgl2: false, maxAnisotropy: 16 }; }, set: () => 0, tick() {}, walk: () => 0 };
+  }
   const gl = renderer.getContext();
   const webgl2 = typeof WebGL2RenderingContext !== 'undefined' && gl instanceof WebGL2RenderingContext;
   const aniso = renderer.extensions.get('EXT_texture_filter_anisotropic');

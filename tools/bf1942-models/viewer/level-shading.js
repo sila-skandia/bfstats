@@ -10,6 +10,11 @@ import { ENVMAP_SWITCH, wantsEnvmap, envmapVertexPatch, envmapVertexBody, envmap
 import { LIT, objectIntensity, samplesTerrain, shadeFactor, shadeField, shadowBits } from './terrain-shade.js';
 import { originRadius } from './mesh-cull.js';
 import { meshCullSpec } from './level-statics.js';
+// Remaster mode's hooks (features/remaster-browser, remaster-mode.js):
+// one registry on the global, so this module needs no import for it and
+// stays loadable by the harnesses that copy it alone. Empty without
+// `?remaster`.
+const remasterHooks = globalThis.bfRemasterHooks ?? (globalThis.bfRemasterHooks = {});
 
 /** Whether a `transparent true` mesh is in its alpha-LOD reach (ledger
  *  DL-12): `StandardMesh_drawLod` compares the `e = d^2 / m - r^2` that
@@ -144,7 +149,13 @@ export function createLevelShading(page) {
     // The `terrainDetail` layer's key; a tree baked before 2026-10-12 carries
     // the image under `terrain.detailTexture`.
     const image = page.extras.terrainDetail?.image || page.extras.terrain?.detailTexture;
-    if (!image) return;
+    // Remaster mode (features/remaster-browser) lights the ground: every
+    // patch takes a lit material, with the detail grain when there is one.
+    const R = remasterHooks.materials;
+    if (!image) {
+      if (R) remasterTerrain(root, null, () => 1);
+      return;
+    }
     const tex = page.texLoader.load(`${page.MAPS_BASE}/${dir}/${image}${page.bust()}`);
     tex.wrapS = tex.wrapT = THREE.RepeatWrapping;
     // Same grazing-angle story as the tile art: without anisotropy the detail
@@ -156,13 +167,20 @@ export function createLevelShading(page) {
     // base tile through sRGB so the sum happens in the space the engine did it
     // in.
     tex.colorSpace = THREE.NoColorSpace;
+    const repeatsOf = obj => {
+      const extent = uvExtent(obj.geometry);
+      return DETAIL_REPEATS_PER_PATCH
+        / (repeatsTexture(extent) ? Math.max(1, Math.round(extent)) : 1);
+    };
+    if (R) {
+      remasterTerrain(root, tex, repeatsOf);
+      return;
+    }
     root.traverse(node => {
       if (node.userData?.kind !== 'terrain') return;
       node.traverse(obj => {
         if (!obj.isMesh || !obj.material) return;
-        const extent = uvExtent(obj.geometry);
-        const repeats = DETAIL_REPEATS_PER_PATCH
-          / (repeatsTexture(extent) ? Math.max(1, Math.round(extent)) : 1);
+        const repeats = repeatsOf(obj);
         const source = Array.isArray(obj.material) ? obj.material : [obj.material];
         const bound = source.map(m => {
           // A patch baked with no tile art (vxf_stunts_one names an empty
@@ -201,6 +219,20 @@ export function createLevelShading(page) {
           mat.needsUpdate = true;
           return mat;
         });
+        obj.material = Array.isArray(obj.material) ? bound : bound[0];
+      });
+    });
+  }
+
+  /** Remaster mode's terrain: a lit material on every patch (remaster-materials.js). */
+  function remasterTerrain(root, detail, repeatsOf) {
+    const R = remasterHooks.materials;
+    root.traverse(node => {
+      if (node.userData?.kind !== 'terrain') return;
+      node.traverse(obj => {
+        if (!obj.isMesh || !obj.material) return;
+        const source = Array.isArray(obj.material) ? obj.material : [obj.material];
+        const bound = source.map(m => (m.remaster ? m : R.terrainMaterial(m, detail, repeatsOf(obj))));
         obj.material = Array.isArray(obj.material) ? bound : bound[0];
       });
     });
@@ -330,6 +362,8 @@ export function createLevelShading(page) {
       for (const obj of [...lightmapTargets(node), ...lodRungMeshes(node).filter(hasLightmapUvs)]) {
         const source = Array.isArray(obj.material) ? obj.material : [obj.material];
         const bound = source.map(m => {
+          // Remaster mode: a lit surface keeping the bake as occlusion.
+          if (remasterHooks.materials) return remasterHooks.materials.lightmapMaterial(m, tex);
           const mat = new THREE.MeshBasicMaterial({
             map: m.map || null,
             side: m.side,
@@ -517,9 +551,10 @@ export function createLevelShading(page) {
       // showing anyway.
       if (obj.userData?.effect) return;
       const source = Array.isArray(obj.material) ? obj.material : [obj.material];
-      if (!source.some(m => m.isMeshStandardMaterial)) return;
+      if (!source.some(m => m.isMeshStandardMaterial && !m.remaster)) return;
       const bound = source.map(m => {
-        if (!m.isMeshStandardMaterial) return m;
+        // A remaster material (the water's, a lit one already bound) is final.
+        if (!m.isMeshStandardMaterial || m.remaster) return m;
         const mat = new THREE.MeshBasicMaterial({
           map: m.map || null,
           color: m.color ? m.color.clone() : 0xffffff,
@@ -546,6 +581,15 @@ export function createLevelShading(page) {
         // (ctx+0x18 != NULL, 0x005bfa8b) fails too and the material draws plain.
         const env = wantsEnvmap(m) && page.levelEnvCube ? page.levelEnvCube : null;
         const md = diffuseFor(m);
+        if (remasterHooks.materials) {
+          // Remaster mode: lit by the real sun and sky (remaster-materials.js).
+          const lit = remasterHooks.materials.dynamicMaterial(m, {
+            materialDiffuse: md === WHITE ? null : md, env: wantsEnvmap(m),
+          });
+          lit.bfShade = { value: new THREE.Vector4(1, 1, 1, 0) };
+          lit.bfEnv = !!env;
+          return lit;
+        }
         // The mesh's own shade (ledger DL-10): white in the open, darker
         // where `bindTerrainShade` finds the ground under it in shadow. `w`
         // is 1 while it is shaded at all, which is also when the client

@@ -15,6 +15,11 @@ import {
   basisFromNormal, EmitterClock, spawnParticleInto, newParticleRecord, integrateParticle,
   evalParticleInto, atlasGrid, frameIndex, GRAVITY, sampleCrd,
 } from './effects-core.js';
+// Remaster mode's hooks (features/remaster-browser, remaster-mode.js):
+// one registry on the global, so this module needs no import for it and
+// stays loadable by the harnesses that copy it alone. Empty without
+// `?remaster`.
+const remasterHooks = globalThis.bfRemasterHooks ?? (globalThis.bfRemasterHooks = {});
 
 // Lids. The engine keeps 127 decals per emitter ring (`DecalEmitter::addDecal`,
 // lnxded 0x081e02f0); the particle cap is ours.
@@ -962,6 +967,8 @@ export class EffectPlayer {
           material.blending = THREE.AdditiveBlending;
         }
         this.onMaterial?.(material);
+        // Remaster mode: additive flame and flash brighter than white, for the bloom.
+        remasterHooks.glow?.(material);
         const geometry = animated ? source.geometry.clone() : source.geometry;
         mesh = new THREE.Mesh(geometry, material);
         mesh.userData.poolKey = key;
@@ -1021,6 +1028,7 @@ export class EffectPlayer {
             if (c.userData.alphaTest > 0) c.alphaTest = c.userData.alphaTest;
           }
           this.onMaterial?.(c);
+          remasterHooks.glow?.(c);
           mesh.userData.materials.push(c);
         }
       });

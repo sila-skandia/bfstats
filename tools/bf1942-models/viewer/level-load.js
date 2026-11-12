@@ -47,6 +47,11 @@ import { bindTreeFoliage } from './tree-foliage.js';
 import { stampLevelNodes } from './level-nodes.js';
 import { armTeamCloths, restoreFlagNodeNames } from './flag-cloth-teams.js';
 import { createLevelSkin, repaintPage } from './level-skin.js';
+// Remaster mode's hooks (features/remaster-browser, remaster-mode.js):
+// one registry on the global, so this module needs no import for it and
+// stays loadable by the harnesses that copy it alone. Empty without
+// `?remaster`.
+const remasterHooks = globalThis.bfRemasterHooks ?? (globalThis.bfRemasterHooks = {});
 
 /**
  * Built once by the page, where this code used to sit. `page` hands in
@@ -843,6 +848,10 @@ export function createLevel(page) {
     sky.applyFar();
     if (!sky.skyRoot) await sky.loadSky(entry);
     sky.applyFog();
+    // Remaster mode (features/remaster-browser): its own sky, sun, fog and
+    // shadows over the level just built.
+    remasterHooks.scene?.levelLoaded(level.extras, level.currentRoot,
+      level.collider?.waterLevel ?? level.extras?.waterLevel);
     page.placeCamera();
     wireframe(page.optWire.checked);
     statics.applyVisibility();

@@ -10,6 +10,11 @@ import { burstsAtEndOfLife } from './projectile-damage.js';
 import { firesFromCamera, seatCameraOf } from './camera-dof.js';
 import { TRACER_MAX_RANGE, TRACER_SPEED_SCALE } from './round-launch.js';
 import { mountLoadedRounds } from './loaded-rounds.js';
+// Remaster mode's hooks (features/remaster-browser, remaster-mode.js):
+// one registry on the global, so this module needs no import for it and
+// stays loadable by the harnesses that copy it alone. Empty without
+// `?remaster`.
+const remasterHooks = globalThis.bfRemasterHooks ?? (globalThis.bfRemasterHooks = {});
 
 const _extent = new THREE.Vector3();
 const _relative = new THREE.Matrix4();
@@ -179,6 +184,7 @@ export function collectGroups(guns, root, options = {}) {
             clone.transparent = true;
             clone.depthWrite = false;
             clone.needsUpdate = true;
+            remasterHooks.glow?.(clone);
           }
           guns.onMaterial?.(clone);
           materials.push(clone);
@@ -275,6 +281,7 @@ export function collectGroups(guns, root, options = {}) {
           material.transparent = true;
           material.depthWrite = false;
           material.needsUpdate = true;
+          remasterHooks.glow?.(material);
         }
       });
     }

@@ -13,6 +13,11 @@ import { loadFirst, modelUrls, poseBases, rigEntryIn, rigIndexOf } from './pose-
 import { createLevelSkin, sharePagePaint } from './level-skin.js';
 import { paintSoldierRig } from './soldier-skin.js';
 import { collectWeaponParts, poseWeaponParts } from './weapon-part-pose.js';
+// Remaster mode's hooks (features/remaster-browser, remaster-mode.js):
+// one registry on the global, so this module needs no import for it and
+// stays loadable by the harnesses that copy it alone. Empty without
+// `?remaster`.
+const remasterHooks = globalThis.bfRemasterHooks ?? (globalThis.bfRemasterHooks = {});
 
 /**
  * Built once by `createHandWeapon`. `page` is the narrow bag of getters it
@@ -559,6 +564,7 @@ export function createArmsRig(page) {
         m.transparent = true;
         m.depthWrite = false;
         m.needsUpdate = true;
+        remasterHooks.glow?.(m);
       }
     });
   }

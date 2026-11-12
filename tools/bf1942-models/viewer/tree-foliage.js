@@ -48,6 +48,11 @@
  * (`applyVisibility`) keeps the final say on the node.
  */
 import * as THREE from 'three';
+// Remaster mode's hooks (features/remaster-browser, remaster-mode.js):
+// one registry on the global, so this module needs no import for it and
+// stays loadable by the harnesses that copy it alone. Empty without
+// `?remaster`.
+const remasterHooks = globalThis.bfRemasterHooks ?? (globalThis.bfRemasterHooks = {});
 
 const SPRITE_MATERIAL = /^sprite_\d+$/;
 const BRANCH_MATERIAL = /^branch_\d+$/;
@@ -151,6 +156,13 @@ function attachSpriteAttributes(geometry) {
  *  it faces the camera whatever the tree's yaw or the viewer's bearing. The
  *  placed node's scale (Bocage scales each tree a little) still applies. */
 function patchSpriteMaterial(material) {
+  // Remaster mode (features/remaster-browser): the same expansion as a node
+  // graph, lit, with wind (remaster-foliage.js). Ahead of the userData guard,
+  // which materials made from one source share.
+  if (remasterHooks.foliage) {
+    remasterHooks.foliage.spriteNodes(material);
+    return;
+  }
   if (material.userData?.treeSprite) return;
   material.userData = material.userData || {};
   material.userData.treeSprite = true;
@@ -194,6 +206,10 @@ function patchSpriteMaterial(material) {
  *  alpha-tested at ref 0 and blended with Z write off; a trunk is opaque with
  *  the alpha test off. The glb carries both as MASK 0.4. */
 function softenCard(material) {
+  if (remasterHooks.foliage) {
+    remasterHooks.foliage.windNodes(material);
+    return;
+  }
   if (material.userData?.treeCardSoft) return;
   material.userData = material.userData || {};
   material.userData.treeCardSoft = true;
@@ -204,6 +220,12 @@ function softenCard(material) {
 }
 
 function opaqueTrunk(material) {
+  if (remasterHooks.foliage) {
+    material.transparent = false;
+    material.alphaTest = 0;
+    remasterHooks.foliage.windNodes(material);
+    return;
+  }
   if (material.userData?.treeTrunkOpaque) return;
   material.userData = material.userData || {};
   material.userData.treeTrunkOpaque = true;
@@ -253,6 +275,16 @@ function impostorMaterial(texture, frames) {
   });
   material.name = 'tree impostor';
   material.customProgramCacheKey = () => `bf-tree-impostor2:${frames}`;
+  if (remasterHooks.foliage) {
+    // Remaster mode: lit, as a node graph (remaster-foliage.js).
+    const lit = new THREE.MeshStandardMaterial({
+      map: texture, alphaTest: CARD_ALPHA_TEST, transparent: true, depthWrite: false,
+      side: THREE.DoubleSide, roughness: 0.9, metalness: 0,
+    });
+    lit.name = material.name;
+    remasterHooks.foliage.impostorNodes(lit, frames, EIGHTH_TURN);
+    return lit;
+  }
   material.onBeforeCompile = (shader) => {
     shader.vertexShader = shader.vertexShader
       .replace('void main() {', 'varying float vBfFrameW;\nvarying float vBfU1;\nvoid main() {')
@@ -323,6 +355,7 @@ function bandClone(material) {
   clone.onBeforeCompile = material.onBeforeCompile;
   clone.customProgramCacheKey = material.customProgramCacheKey;
   clone.userData = material.userData;
+  remasterHooks.foliage?.carryNodes(material, clone);
   return clone;
 }
 
@@ -518,6 +551,7 @@ export function bindTreeFoliage(root, { scene, mapsBase, bust = () => '', texLoa
       const cardMaterial = material.clone();
       cardMaterial.onBeforeCompile = material.onBeforeCompile;
       cardMaterial.customProgramCacheKey = material.customProgramCacheKey;
+      remasterHooks.foliage?.carryNodes(material, cardMaterial);
       const impostor = new THREE.Mesh(geometry, cardMaterial);
       impostor.name = `${rec.group.name} billboard`;
       impostor.userData.treeImpostor = true;

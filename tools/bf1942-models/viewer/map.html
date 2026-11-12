@@ -422,6 +422,29 @@
   <canvas id="menu-canvas-opt" tabindex="-1" aria-label="Controls" hidden></canvas>
 </div>
 
+<script>
+// The three build is picked here, before any module resolves 'three'
+// (features/remaster-browser). The retail-parity page runs on the vendored
+// r169 WebGL build through the import map below, as it always has (and as
+// mesh/stamp-viewer.mjs rewrites it). `?remaster` puts a map of its own
+// ahead of that one: three r186's WebGPU build (three.webgpu.js re-exports
+// the whole core, so every `import * as THREE from 'three'` keeps working),
+// three/tsl and the addons. Where import maps merge, the first definition
+// of a specifier wins, so the retail map's 'three' is then ignored.
+(() => {
+  const p = new URLSearchParams(location.search);
+  if (!p.has('remaster') || p.get('remaster') === '0') return;
+  const map = document.createElement('script');
+  map.type = 'importmap';
+  map.textContent = JSON.stringify({ imports: {
+    three: './vendor/three-webgpu/three.webgpu.js',
+    'three/webgpu': './vendor/three-webgpu/three.webgpu.js',
+    'three/tsl': './vendor/three-webgpu/three.tsl.js',
+    'three/addons/': './vendor/three-webgpu/addons/',
+  } });
+  document.currentScript.after(map);
+})();
+</script>
 <script type="importmap">
 { "imports": { "three": "./vendor/three.module.js" } }
 </script>
@@ -455,6 +478,7 @@ import { EffectLibrary, EffectPlayer } from './effects.js';
 import { DEFAULT_VOICE_BUDGET, EffectAudio } from './effect-audio.js';
 import { PassingRounds } from './passing-rounds.js';
 import { chooseAntialias, storedAntialias } from './render-antialias.js';
+import { REMASTER } from './remaster-mode.js';
 import {
   changeSound, chooseHardware3d, currentSound, effectVoiceBudget, onSoundChange,
   storeHardware3d, storedHardware3d,
@@ -592,10 +616,17 @@ const msaa = chooseAntialias({
 if (msaa.reason === 'intel-mesa') {
   console.info(`map: MSAA off on ${msaa.gpu}: Intel under Mesa hangs drawing effects with it (OPTIONS > VIDEO turns it on)`);
 }
-const renderer = new THREE.WebGLRenderer({
-  antialias: msaa.antialias,
-  preserveDrawingBuffer: renderQuery.has('shots') && !renderQuery.has('nopreserve'),
-});
+// `?remaster` (features/remaster-browser): three's WebGPU renderer, real-time
+// shadows, ambient occlusion, HDR and the rest, built by remaster-renderer.js
+// and imported only then, since its modules resolve three/webgpu and
+// three/tsl, which only the remaster import map names.
+const remasterGfx = REMASTER ? await import('./remaster-renderer.js') : null;
+const renderer = remasterGfx
+  ? await remasterGfx.createRemasterRenderer({ antialias: msaa.antialias })
+  : new THREE.WebGLRenderer({
+    antialias: msaa.antialias,
+    preserveDrawingBuffer: renderQuery.has('shots') && !renderQuery.has('nopreserve'),
+  });
 const dprParam = Number(renderQuery.get('dpr'));
 const dprOverride = dprParam > 0 && dprParam <= 4 ? dprParam : null;
 // What the page draws at until OPTIONS > VIDEO's DISPLAY MODE is read
@@ -672,6 +703,12 @@ const hemi = new THREE.HemisphereLight(0xe8dcc0, 0x5a4a32, 1.35);
 scene.add(hemi);
 const sun = new THREE.DirectionalLight(0xfff1d0, 2.4);
 scene.add(sun);
+// `?remaster`: the sky, the sun's shadows, the lit surfaces and the post
+// chain (remaster-renderer.js), set up before the first level so its
+// materials are built lit.
+const remaster = remasterGfx
+  ? await remasterGfx.createRemasterScene({ renderer, scene, camera, sun, hemi })
+  : null;
 
 const loader = new GLTFLoader();
 // A level's whole asset set, asked for in one burst as it opens
@@ -1124,7 +1161,7 @@ canvasPixelRatio = videoApply.pixelRatio;
 resize();
 if (renderQuery.has('shots')) window.__videoApply = videoApply;
 const pageAudio = createPageAudio(bag(
-  from(() => level, `currentDir currentRoot extras`),
+  from(() => level, `collider currentDir currentRoot extras`),
   from(() => localPlayer, `aircraft car mannedGuns occupancy soldier vehicleGuns`),
   from(() => mapSurfaces, `teamNation`),
   from(() => seatCamera, `view`),
@@ -4286,7 +4323,8 @@ function draw3d() {
   // TEXTURE QUALITY reaches textures uploaded since its last walk (none at
   // the default, where it touches nothing).
   videoApply.tick();
-  renderer.render(scene, camera);
+  if (remaster) remaster.render();
+  else renderer.render(scene, camera);
   unkick?.();
   soldierKit.renderViewmodel();
   unshake?.();

@@ -7,6 +7,11 @@ import * as THREE from 'three';
 import { cubeFaceUrls } from './envmap.js';
 import { scaledViewDistance, viewDistanceFog } from './video-settings.js';
 import { RING } from './level-edge.js';
+// Remaster mode's hooks (features/remaster-browser, remaster-mode.js):
+// one registry on the global, so this module needs no import for it and
+// stays loadable by the harnesses that copy it alone. Empty without
+// `?remaster`.
+const remasterHooks = globalThis.bfRemasterHooks ?? (globalThis.bfRemasterHooks = {});
 
 /**
  * Built once by `createLevel` (level-load.js). `page` hands in what it reads,
@@ -99,6 +104,12 @@ export function createLevelSky(page) {
       }));
       obj.material = Array.isArray(obj.material) ? mats : mats[0];
     });
+    // Remaster mode draws a physical sky with its own clouds
+    // (remaster-sky.js); the painted one stays loaded for the retail toggle.
+    if (remasterHooks.scene) {
+      sky.skyRoot.visible = false;
+      return;
+    }
     setupClouds(dir);
   }
 
@@ -205,6 +216,16 @@ export function createLevelSky(page) {
     // (`scene.json` `envmapTexture`), the six faces are that one grey: the
     // water's look does not change with the cube in retail, so it takes no
     // reflection term rather than a grey one.
+    // Remaster mode: the node-material water (remaster-water.js) from the
+    // same textures and words.
+    if (remasterHooks.water) {
+      if (remasterHooks.off?.has('nowater')) { waterObj.visible = false; return; }
+      waterObj.material = remasterHooks.water({
+        w, layer1, layer2, normal, depthTex: depth,
+        worldSize: w.worldSize || page.extras.worldSize || 2048, maxDepth: w.maxDepth || 0,
+      });
+      return;
+    }
     const env = page.extras.envmapTexture === 'texture/defaultTexture'
       ? null : sky.levelEnvCube;
     const ld = w.lightDirection || [-0.3, 0.5, 0.65];
