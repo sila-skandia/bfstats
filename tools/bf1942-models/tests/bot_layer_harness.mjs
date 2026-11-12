@@ -154,6 +154,24 @@ out.mill = tall.find(a => a.name === 'Mill');
 out.millCon = gen.areasCon(tall);
 out.pathCon = gen.pathFindingCon();
 out.tags = [menu.levelTag({ singlePlayer: false }), menu.levelTag({ singlePlayer: false, generatedBots: true }), menu.levelTag({ singlePlayer: true }), menu.levelTag({})];
+// The mark a generated level's row carries in place of a tag, and what it says when pointed at.
+{
+  const briefing = await imp('viewer/briefing-screen.js');
+  const box = { kind: 'listbox', rect: [100, 50, 200, 120], rowHeight: 12 };
+  const layout = { pages: { skirmish: { elements: [box] } } };
+  const levels = [{ singlePlayer: false, generatedBots: true }, { singlePlayer: false }, { singlePlayer: true }];
+  const rect = menu.botCreditRect(box, 100, 50, 200);
+  out.botCredit = {
+    marked: levels.map(menu.hasBotCredit),
+    sameLine: menu.BOT_CREDIT === briefing.GENERATED_BOTS_CREDIT,
+    rect,
+    // The pointer on the first row's mark, on the same row's title, and on the mark's place in a row with none.
+    onMark: menu.botCreditAt(layout, { scroll: 0 }, levels, rect[0] + 2, rect[1] + 2),
+    onTitle: menu.botCreditAt(layout, { scroll: 0 }, levels, 110, rect[1] + 2),
+    onBotless: menu.botCreditAt(layout, { scroll: 0 }, levels, rect[0] + 2, rect[1] + 2 + 12),
+    scrolled: menu.botCreditAt(layout, { scroll: 1 }, [{}, ...levels], rect[0] + 2, rect[1] + 2),
+  };
+}
 // --- acceptance (sim/botbatch.mjs) ---------------------------------------------
 const short = (o = {}) => ({ level: 'x', verdict: 'fail', outcome: 'better-than-nothing', lintErrors: [],
   sizes: { 8: { verdict: 'pass', failed: [] }, 16: { verdict: 'fail', failed: ['redeploysPerBotMinute'] } }, ...o });

@@ -2,7 +2,7 @@
 name: bf1942-bot-rollout
 description: >
   Give bots to Battlefield 1942 levels that ship without them, and get those
-  levels live on play.bfstats.io with the EXPERIMENTAL BOTS tag: list a mod's
+  levels live on play.bfstats.io, offered with bots in the level list: list a mod's
   botless levels, generate a bot layer for each, judge it in the headless
   runner, publish it, play it on the live page, and tag only what has a
   fight. Use it whenever the owner asks for bots on a mod's or pack's maps in
@@ -26,6 +26,15 @@ the live page (`page.json`). The bake's `ai` layer reads one into a level's
 `scene.json` only when the level ships no AI of its own and the gate is
 open (a verdict of `pass`, or an `accepted` block). The level then needs
 its menu flag to be offered to players.
+
+**What a player sees.** A flagged level is listed like any level with
+bots. Until 2026-11-12 its row read EXPERIMENTAL BOTS; the owner played
+Galactic Conquest's and said to drop that and "just show bots". The row
+now carries a small bfstats.io mark at its right edge, and pointing at it
+shows "Bot support added by skandia | bfstats.io"
+(`viewer/play/menu-screen.js hasBotCredit`, `BOT_CREDIT`); the briefing
+screen carries the same line. In these notes "tag" and "flag" mean the
+menu's `generatedBots` flag.
 
 Everything here was learnt on 2026-11-10 to 12 taking 5 live levels to 29.
 The full record is `features/bot-map-generation/`: `README.md` (status at

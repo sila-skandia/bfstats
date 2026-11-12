@@ -198,13 +198,37 @@ export function thumbSpan(layout, box, scroll, count) {
 
 /** The row tag for a level with no single-player scripts: no bots on it. */
 export const NO_SP_TAG = 'NO BOTS';
-/** The tag of a level whose bot layer was generated, not shipped
- *  (features/bot-map-generation): it plays with bots, as an experiment. */
-export const GENERATED_BOTS_TAG = 'EXPERIMENTAL BOTS';
-/** The tag a level's row wears, or null. */
+/** The tag a level's row wears, or null. A level whose bot layer was
+ *  generated, not shipped (features/bot-map-generation), plays with bots
+ *  like any other and wears none: it was tagged EXPERIMENTAL BOTS until the
+ *  owner played them ("drop the 'Experimental bots' thing, just show bots",
+ *  2026-11-12). Its row carries the site's mark instead (`hasBotCredit`). */
 export function levelTag(level) {
-  if (level?.singlePlayer !== false) return null;
-  return level.generatedBots ? GENERATED_BOTS_TAG : NO_SP_TAG;
+  if (level?.singlePlayer !== false || level.generatedBots) return null;
+  return NO_SP_TAG;
+}
+
+/** Whether a level's bots are a generated layer: its row carries the site's
+ *  mark at its right edge, and the mark says who made them when pointed at. */
+export const hasBotCredit = level => level?.singlePlayer === false && level.generatedBots === true;
+/** What the mark says. The briefing screen's own line
+ *  (`briefing-screen.js GENERATED_BOTS_CREDIT`), word for word; not imported,
+ *  because this module is loaded on its own. `tests/test_bot_layer.py` holds
+ *  the two together. */
+export const BOT_CREDIT = 'Bot support added by skandia | bfstats.io';
+/** The mark's square in the row whose top is `y`: `[x, y, w, h]`. */
+export function botCreditRect(box, bx, y, width) {
+  const size = box.rowHeight - 2;
+  return [Math.round(bx + width - size - 3), y + 1, size, size];
+}
+/** The index of the row whose mark is under `(x, y)`, or -1. */
+export function botCreditAt(layout, state, levels, x, y) {
+  const box = listBox(layout);
+  if (!box) return -1;
+  const index = rowAt(layout, box, state.scroll, x, y);
+  if (index < 0 || !hasBotCredit(levels?.[index])) return -1;
+  const [bx, by, width] = rowArea(layout, box);
+  return inRect(botCreditRect(box, bx, by + (index - state.scroll) * box.rowHeight, width), x, y) ? index : -1;
 }
 
 export const rgb = c => `rgb(${c.slice(0, 3).map(v => Math.round(v * 255)).join(',')})`;
@@ -398,8 +422,12 @@ function paintRows(ctx, layout, state, env) {
     const left = Math.round(bx + box.scrollbarOffset);
     const tag = levelTag(level);
     const tagWidth = tag ? measureText(font, tag) : 0;
+    // A level with generated bots carries the site's mark where a tag would
+    // be; the title stops short of that too.
+    const mark = hasBotCredit(level) ? botCreditRect(box, bx, y, width) : null;
     const titleRoom = tagWidth
       ? (bx + width - tagWidth - 4) - left - measureText(font, ' ')
+      : mark ? mark[0] - left - measureText(font, ' ')
       : (bx + width) - left;
     // The rows are indented off the box's left edge by the inset the box
     // carries for its scrollbar.
@@ -409,8 +437,44 @@ function paintRows(ctx, layout, state, env) {
       drawBitmapText(ctx, font, env.tint, tag,
                      Math.round(bx + width - tagWidth - 4), y + 1, [0.5, 0.5, 0.5]);
     }
+    const sigil = mark && env.creditMark?.();
+    if (sigil) {
+      const pointed = env.hover?.kind === 'row' && env.hover.index === index && env.hover.credit;
+      ctx.imageSmoothingEnabled = true;
+      ctx.globalAlpha = pointed ? 1 : 0.7;
+      ctx.drawImage(sigil, mark[0], mark[1], mark[2], mark[3]);
+      ctx.globalAlpha = 1;
+      ctx.imageSmoothingEnabled = false;
+    }
   }
   paintThumb(ctx, layout, box, state, levels.length);
+  paintBotCredit(ctx, layout, box, state, env, font);
+}
+
+/** The line a pointed-at mark shows: `BOT_CREDIT` in the list's own face on
+ *  a dark plate, on the row above the mark (below it on the list's first
+ *  row), its right edge on the mark's. */
+function paintBotCredit(ctx, layout, box, state, env, font) {
+  const hover = env.hover;
+  if (!font || hover?.kind !== 'row' || !hover.credit) return;
+  const row = hover.index - state.scroll;
+  if (row < 0 || row >= visibleRows(layout, box)) return;
+  const [bx, by, width] = rowArea(layout, box);
+  const mark = botCreditRect(box, bx, by + row * box.rowHeight, width);
+  const pad = 4;
+  const w = measureText(font, BOT_CREDIT) + pad * 2;
+  const h = box.rowHeight + 2;
+  const x = Math.max(2, Math.round(mark[0] + mark[2] - w));
+  const y = row === 0 ? mark[1] + mark[3] + 2 : mark[1] - h - 2;
+  ctx.globalAlpha = 0.92;
+  ctx.fillStyle = '#0b0d0c';
+  ctx.fillRect(x, y, w, h);
+  ctx.globalAlpha = 1;
+  ctx.strokeStyle = rgb(box.select);
+  ctx.lineWidth = 1;
+  ctx.strokeRect(x + 0.5, y + 0.5, w - 1, h - 1);
+  ctx.imageSmoothingEnabled = false;
+  drawBitmapText(ctx, font, env.tint, BOT_CREDIT, x + pad, y + 2, [0.86, 0.86, 0.86]);
 }
 
 /** The scroll track: the black 0.8-alpha quad beside the list box. */

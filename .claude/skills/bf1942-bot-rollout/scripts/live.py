@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""List the levels that carry the EXPERIMENTAL BOTS tag on the live site, by tree."""
+"""List the levels offered with generated bots on the live site (the menu's `generatedBots` flag), by tree."""
 import gzip, json, time, urllib.request
 
 SITE = "https://mesh.bfstats.io"

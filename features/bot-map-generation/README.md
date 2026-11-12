@@ -56,6 +56,14 @@ live at the end of 2026-11-12 (`scripts/live.py` in the skill lists them):
 the vanilla tree 19, FHSW 19, Galactic Conquest 9, Desert Combat 6, BF1918
 4, Secret Weapons 3, Road to Rome 2, FH 1, FHSWEurope 1.
 
+**No more EXPERIMENTAL BOTS, 2026-11-12.** After playing Galactic
+Conquest's the owner asked for the tag to go ("just show bots"): a level
+with a generated layer is listed like any other with bots, and its row
+carries a small bfstats.io mark that shows "Bot support added by skandia |
+bfstats.io" when pointed at (`viewer/play/menu-screen.js hasBotCredit`).
+Where older sections say a level is "tagged", read: it carries the menu's
+`generatedBots` flag.
+
 **Every botless level has been looked at, 2026-11-12.** Of the 248
 published levels with no AI of their own, 64 are live, 59 were played on
 the page and turned down, and 125 are out with a reason

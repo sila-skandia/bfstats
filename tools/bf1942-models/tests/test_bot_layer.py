@@ -557,8 +557,19 @@ class DoorwayTests(unittest.TestCase):
 
 
 class MenuTagTests(unittest.TestCase):
-    def test_a_generated_level_wears_the_experimental_tag(self) -> None:
-        self.assertEqual(run_harness()["tags"], ["NO BOTS", "EXPERIMENTAL BOTS", None, None])
+    def test_a_generated_level_wears_no_tag(self) -> None:
+        # The owner, 2026-11-12: "drop the 'Experimental bots' thing, just show bots".
+        self.assertEqual(run_harness()["tags"], ["NO BOTS", None, None, None])
+
+    def test_a_generated_levels_row_carries_the_sites_mark(self) -> None:
+        c = run_harness()["botCredit"]
+        self.assertEqual(c["marked"], [True, False, False])
+        self.assertTrue(c["sameLine"], "the mark says what the briefing screen says")
+        self.assertEqual(c["rect"], [287, 51, 10, 10])
+        self.assertEqual(c["onMark"], 0)
+        self.assertEqual(c["onTitle"], -1)
+        self.assertEqual(c["onBotless"], -1)
+        self.assertEqual(c["scrolled"], 1)
 
 
 class BakeHookTests(unittest.TestCase):
