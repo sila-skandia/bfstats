@@ -277,9 +277,12 @@ function impostorMaterial(texture, frames) {
   material.customProgramCacheKey = () => `bf-tree-impostor2:${frames}`;
   if (remasterHooks.foliage) {
     // Remaster mode: lit, as a node graph (remaster-foliage.js).
-    const lit = new THREE.MeshStandardMaterial({
+    // Lambert: the card's normal is straight up and it is always seen from
+    // the side, the angle at which any specular surface mirrors the horizon.
+    // As a standard material every far palm wore a pale veil of sky.
+    const lit = new THREE.MeshLambertMaterial({
       map: texture, alphaTest: CARD_ALPHA_TEST, transparent: true, depthWrite: false,
-      side: THREE.DoubleSide, roughness: 0.9, metalness: 0,
+      side: THREE.DoubleSide,
     });
     lit.name = material.name;
     remasterHooks.foliage.impostorNodes(lit, frames, EIGHTH_TURN);

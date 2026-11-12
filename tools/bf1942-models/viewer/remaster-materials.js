@@ -243,10 +243,50 @@ export function lightmapMaterial(source, lightmap) {
 }
 
 /**
+ * How much of the sky's image-based light a vehicle or a soldier takes.
+ *
+ * The sky that lights the buildings and the ground at the right level lit a
+ * vehicle's faces as brightly as the sun did (measured in the Sherman's
+ * gunner seat on Wake: 0.068 linear from the sky alone on the gun, 0.05 from
+ * the sun alone on the box beside it), so nothing on a hull had a lit side
+ * and a shaded side: "washed out and too white" (the owner, 2026-11-12).
+ * The engine's own combine for these meshes is `2 * tex * clamp(ambient +
+ * diffuse * N.L)` (ledger DL-5); with Wake's 0.24 and 0.40 a sunlit face
+ * draws at 1.28 times its texture and a shaded one at 0.48. A quarter of the
+ * sky puts the remaster's sunlit face at 1.29 times its texture, and its
+ * shaded one at 0.62: lit by the sky, and still the shaded side.
+ */
+export const DYNAMIC_SKY_FILL = 0.25;
+/** A tree's share: leaves pass and scatter light, so a crown's shaded side
+ *  is nowhere near as dark as a hull's (at a quarter, a backlit palm was a
+ *  black cut-out against the sky). */
+export const FOLIAGE_SKY_FILL = 0.6;
+
+/**
+ * `envmap true`, the engine's way (envmap.js): `lit * A + cube * (1 - A)`,
+ * A the texture's own alpha. An opaque texel is plain paint and a clear one
+ * is all reflection, so the art says where a surface shines: a canopy, a
+ * polished cowl, and nowhere on a machine gun whose texture is opaque. As
+ * PBR that is metalness (which takes the diffuse out by the same share) and
+ * a smoother surface, both by `1 - A`.
+ *
+ * The first cut made every `envmap true` material shiny all over (roughness
+ * 0.5, metalness 0.15, full specular) whatever its alpha. The Sherman's
+ * Browning and its ammunition box (alpha 0.94) mirrored the sky from the
+ * gunner's seat: "washed out and too white" (the owner, 2026-11-12).
+ */
+function envByAlpha(mat) {
+  const shine = float(1).sub(matTexture('map').ref.a).clamp(0, 1);
+  mat.metalnessNode = shine.mul(0.85);
+  const smooth = mix(float(1), float(0.3), shine);
+  mat.roughnessNode = (mat.roughnessNode ?? materialReference('roughness', 'float')).mul(smooth);
+}
+
+/**
  * A vehicle, a soldier or a bare static. `materialDiffuse` (ledger DL-9)
  * scales the sun's term in the engine; a lit PBR surface folds it into the
- * albedo. `envmap true` materials (the shiny ones: vehicles' paint and
- * glass) get a smoother surface that reflects the sky.
+ * albedo. `envmap true` materials reflect the sky where their texture's
+ * alpha says they do (`envByAlpha`).
  */
 const dynamicCache = new WeakMap();
 export function dynamicMaterial(source, { materialDiffuse = null, env = false } = {}) {
@@ -254,11 +294,15 @@ export function dynamicMaterial(source, { materialDiffuse = null, env = false } 
   let byKey = dynamicCache.get(source);
   if (!byKey) dynamicCache.set(source, byKey = new Map());
   if (byKey.has(key)) return byKey.get(key);
-  const mat = litFrom(source, env ? { roughness: 0.5, metalness: 0.15, specularIntensity: 1 } : {});
+  const mat = litFrom(source);
   byKey.set(key, mat);
   // Relief and roughness from the generated map; a leaf card takes none
   // (its normal is the canopy's, remaster-foliage.js).
   if (!/^sprite_\d+$/.test(source.name || '')) applyPackedMap(mat, source.map);
+  if (env && mat.map) envByAlpha(mat);
+  // The sky's share of the light on a vehicle or a soldier (three scales
+  // the image-based light, diffuse and reflected, by `aoNode`).
+  mat.aoNode = float(DYNAMIC_SKY_FILL);
   // A cut-out (wire, foliage, nets): its shadow cut by the same alpha, not
   // the whole card (barbed wire cast a solid rectangle across Wake).
   if ((mat.alphaTest > 0 || mat.transparent) && mat.map) {

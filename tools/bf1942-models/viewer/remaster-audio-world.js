@@ -7,9 +7,15 @@
 //              (`_shared/collision-meshes.json` and the level's own), placed
 //              per level by `level-terrain.js`. The ray asks with
 //              `CG_PROJECTILES`, so it passes what a round passes: barbed
-//              wire, fences, nets (FF-2), which stop no sound either. It does
-//              not see vehicles or soldiers (`castMoved`, `dynamicCast`): a
-//              listener in a tank would otherwise be occluded by his own hull.
+//              wire, fences, nets (FF-2), which stop no sound either. It
+//              passes through every vehicle: a hull is in the index while it
+//              stands where the level parked it, and a moved one is the
+//              index's `movedPass`. Seen, the listener's own tank walled
+//              them in: every voice fully occluded, the survey's roof 2 cm
+//              overhead and "inside" at 1.0, which is what the owner heard
+//              as "inside a tank it takes away from the atmosphere"
+//              (2026-11-12). So the moved pass is skipped (`skipBodies`), and
+//              a hit on a parked hull's owner is stepped through.
 //   groundAt   the terrain heightfield, metres, NaN off the lattice.
 //   trees      the placed trees and bushes within a radius, from the level
 //              scene's SimpleObjects whose geometry reads as one
@@ -71,6 +77,26 @@ export function treesNear(index, x, z, r) {
   return n;
 }
 
+/** How many hulls one ray steps through, and how far past each hit, m. */
+const VEHICLE_PASSES = 6;
+const VEHICLE_STEP = 0.05;
+
+/**
+ * Whether owner `id` of the static index is a vehicle: its node sits under
+ * the level's spawners, or is a hull the page drives (`userData.control`).
+ * Cached per owner in `cache`; an owner the index cannot name is not one.
+ */
+export function isVehicleOwner(statics, cache, id) {
+  if (!(id >= 0)) return false;
+  if (cache.has(id)) return cache.get(id);
+  let vehicle = false;
+  for (let n = statics?.ownerNodes?.[id] ?? null; n; n = n.parent) {
+    if (n.userData?.control != null || n.userData?.kind === 'spawners') { vehicle = true; break; }
+  }
+  cache.set(id, vehicle);
+  return vehicle;
+}
+
 /**
  * The queries for one level: `collider` the page's `WorldCollider` (or
  * null), `root` the level scene (or null). Kept per pair, so a frame
@@ -89,16 +115,25 @@ export function remasterWorld(collider, root) {
   const statics = collider?.statics ?? null;
   const field = collider?.heightfield ?? null;
   const scratch = {};
+  const vehicleOwners = new Map();
   const trees = settled ? treeIndex(root) : null;
   const env = {
     rays: 0,
     treeCount: trees?.count ?? 0,
     castHull: statics?.cast ? (ox, oy, oz, dx, dy, dz, max) => {
       env.rays += 1;
-      scratch.dx = dx; scratch.dy = dy; scratch.dz = dz;
-      const hit = statics.cast(ox, oy, oz, dx, dy, dz, max, -1, scratch, -1, false, false,
-                               -Infinity, 2, -1, CG_PROJECTILES, 0);
-      return hit ? hit.t : null;
+      let from = 0;
+      for (let pass = 0; pass < VEHICLE_PASSES; pass++) {
+        scratch.dx = dx; scratch.dy = dy; scratch.dz = dz;
+        const hit = statics.cast(ox + dx * from, oy + dy * from, oz + dz * from, dx, dy, dz,
+                                 max - from, -1, scratch, -1, false, true,
+                                 -Infinity, 2, -1, CG_PROJECTILES, 0);
+        if (!hit) return null;
+        if (!isVehicleOwner(statics, vehicleOwners, hit.owner)) return from + hit.t;
+        from += hit.t + VEHICLE_STEP;
+        if (from >= max) return null;
+      }
+      return null;
     } : null,
     groundAt: field?.height ? (x, z) => field.height(x, z) : null,
     trees: trees ? (x, z, r) => treesNear(trees, x, z, r) : null,

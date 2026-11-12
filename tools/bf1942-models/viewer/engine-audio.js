@@ -877,6 +877,10 @@ export class EngineAudio {
           listenerPosition.x + (facing?.x ?? 0) * ahead,
           listenerPosition.y + (facing?.y ?? 0) * ahead,
           listenerPosition.z + (facing?.z ?? 0) * ahead, now, snap);
+        // The remaster chain: this voice is the listener's own hull, at the
+        // ear. Measured from where the panner stands (10 m ahead) it was
+        // occluded by whatever wall the listener faced.
+        ds3dTruePoint(group.panner, listenerPosition.x, listenerPosition.y, listenerPosition.z, snap);
       } else {
         // Not at the voice's own point: at the point whose equal-power pan is
         // DirectSound's for it. Without a listener pose to read (a harness's

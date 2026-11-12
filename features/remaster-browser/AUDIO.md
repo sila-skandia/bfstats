@@ -189,6 +189,31 @@ headphones on." Measured afterwards:
 
 The renders below are from after the fix.
 
+**Second pass, the same day.** The owner tried `&remasterAudio=1` again: "it's
+the same, it's super muffled". The three fixes above were real but none was
+what they heard in a tank. Measured in the page itself this time (an analyser
+on the destination, in the Sherman on Wake, against the retail chain in the
+same seat): 22.5 dB down from 4 to 10 kHz and 5.5 dB down from 60 to 250 Hz,
+which is full occlusion's filter and gain on every voice.
+
+- **The rays hit the listener's own tank.** `castHull`'s note said the rays
+  do not see vehicles. They did: a hull is in the static index while it
+  stands where the level parked it, and a moved one is the index's
+  `movedPass`. From the commander's seat the survey found a roof 2 cm
+  overhead and walls 0.1 to 2 m away on every side ("inside" 0.9997: the
+  room reverb, the wind bed at 1.4 kHz and half level), and every voice's
+  line was blocked 0.13 to 0.39 m from the ear. The rays now skip the moved
+  pass and step through any hit whose owner is a vehicle
+  (`remaster-audio-world.js` `isVehicleOwner`).
+- **The listener's own hull was 10 m away.** An attached voice (the engine
+  of the vehicle you sit in) is panned from 10 m dead ahead
+  (`ATTACHED_AHEAD`), and the chain measured from there: your own engine was
+  occluded by whatever wall you faced. It is now handed the ear's own point.
+
+After both, the same seat measures within 0.2 dB of retail in every band.
+What the unit rig could not show, the page did: the rig's listener never sat
+in a vehicle.
+
 ## What sounds better, what worse (from the numbers)
 
 Better, by measurement: distance reads as distance (a little air at range,
@@ -218,8 +243,8 @@ Worse or open:
   already model the speed of sound in steps); not made exact.
 - The player's own hand-weapon report is 2D at the shoulder (retail rule); it
   gets the reverb but no pan.
-- Occlusion ignores vehicles and soldiers as blockers, and material (a wooden
-  hut stops as much as a bunker).
+- Occlusion ignores vehicles and soldiers as blockers (on purpose: see the
+  second pass above), and material (a wooden hut stops as much as a bunker).
 - No early-reflection direction from the real walls the survey found; a next
   step is to steer the built-up and inside taps' pan from the survey's hits.
 - Doppler is still `engine-audio.js`'s playback-rate shift, not a delay line.

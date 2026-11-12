@@ -223,7 +223,12 @@ def main() -> None:
     else:
         remote = RemoteCache(args.remote, args.cache) if remote_enabled(args.no_remote) else None
     handler = type("ViewerHandler", (Handler,), {"remote": remote})
-    ThreadingHTTPServer(("", args.port), partial(handler, directory=args.directory)).serve_forever()
+    # The page asks for about 600 modules at once, each on its own connection
+    # (HTTP/1.0, no keep-alive). socketserver's backlog of 5 dropped some of
+    # that burst on macOS 27 (ERR_CONNECTION_RESET on a module, and the page
+    # never booted), so the queue is the burst's size.
+    server = type("ViewerServer", (ThreadingHTTPServer,), {"request_queue_size": 1024})
+    server(("", args.port), partial(handler, directory=args.directory)).serve_forever()
 
 
 if __name__ == "__main__":

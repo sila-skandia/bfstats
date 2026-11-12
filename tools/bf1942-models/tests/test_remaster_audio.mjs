@@ -17,7 +17,7 @@ import {
 } from '../viewer/remaster-audio-law.js';
 import { RemasterAudio, installRemasterAudio, terrainBlocks, uninstallRemasterAudio }
   from '../viewer/remaster-audio.js';
-import { addTree, treesNear } from '../viewer/remaster-audio-world.js';
+import { addTree, isVehicleOwner, remasterWorld, treesNear } from '../viewer/remaster-audio-world.js';
 import {
   DS3D_PANNING_MODEL, configureDs3dPanner, ds3dTruePoint, ds3dPanningModel,
   ds3dRenderPoint, ds3dSpatialHook,
@@ -296,6 +296,43 @@ test('a panner is adopted: chain between it and its node, taps refcounted, relea
   assert.equal(ds3dPanningModel(), DS3D_PANNING_MODEL, 'the retail pan, back');
   const retail = configureDs3dPanner(ctx.createPanner());
   assert.equal(retail.__remaster, undefined, 'never adopted without the hook');
+});
+
+test('the level rays pass through vehicles: a listener in a tank is not walled in', () => {
+  // Owner 0 a house, owner 1 a parked tank (under the level's spawners),
+  // owner 2 a hull the page drives (`userData.control`).
+  const spawners = { userData: { kind: 'spawners' }, parent: null };
+  const ownerNodes = [
+    { userData: {}, parent: { userData: { kind: 'statics' }, parent: null } },
+    { userData: {}, parent: spawners },
+    { userData: { control: 'Sherman' }, parent: null },
+  ];
+  // Along +x from the ear: the listener's own hull 0.2 m out, a second hull
+  // at 3 m, the house at 12 m.
+  const hits = [[0.2, 1], [3, 2], [12, 0]];
+  const calls = [];
+  const statics = {
+    ownerNodes,
+    cast(ox, oy, oz, dx, dy, dz, max, skipOwner, out, onlyOwner, onlyDrivable, skipBodies) {
+      calls.push({ ox, max, skipBodies });
+      const next = hits.find(([t]) => t > ox + 1e-9 && t - ox <= max);
+      if (!next) return null;
+      out.t = next[0] - ox; out.owner = next[1];
+      return out;
+    },
+  };
+  const cache = new Map();
+  assert.equal(isVehicleOwner(statics, cache, 0), false);
+  assert.equal(isVehicleOwner(statics, cache, 1), true);
+  assert.equal(isVehicleOwner(statics, cache, 2), true);
+  assert.equal(isVehicleOwner(statics, cache, -1), false);
+  assert.equal(isVehicleOwner(statics, cache, 99), false);
+  const env = remasterWorld({ statics, heightfield: null }, null);
+  near(env.castHull(0, 0, 0, 1, 0, 0, 40), 12, 1e-9);
+  assert.ok(calls.every(c => c.skipBodies === true), 'the moved hulls are skipped by the index');
+  // Nothing but hulls within reach: the line is clear.
+  assert.equal(env.castHull(0, 0, 0, 1, 0, 0, 8), null);
+  assert.equal(env.rays, 2, 'one ray each, however many hulls it stepped through');
 });
 
 test('occlusion: a wall between ear and source, and over it', () => {

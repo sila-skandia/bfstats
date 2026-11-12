@@ -370,6 +370,35 @@ surroundings through a pool of four point lights.
   -6 dB at the cutoff, moving from 15 m. It is now a Butterworth from 25 m,
   13 kHz at 50 m and 8.7 kHz at 100 m. Full occlusion is 1.5 kHz and -5 dB,
   where it was 700 Hz and -7 dB.
+- **In a tank the spatial audio was still fully muffled**, which is what the
+  owner heard on the second try. Its occlusion rays hit the listener's own
+  hull: every voice blocked, the reverb's survey reading "inside a room".
+  Measured in the page, in the Sherman: 22.5 dB down from 4 to 10 kHz against
+  retail in the same seat. The rays now pass through vehicles and the
+  listener's own engine is measured from the ear; the seat is within 0.2 dB
+  of retail in every band ([AUDIO.md](AUDIO.md), "Second pass").
+- **`envmap true` made a whole material shiny.** The engine reflects the
+  level's cube by the texture's alpha, `lit * A + cube * (1 - A)`
+  (`envmap.js`); the remaster gave every such material roughness 0.5,
+  metalness 0.15 and full specular whatever its alpha. The Sherman's
+  Browning and its ammunition box (alpha 0.94: paint) mirrored the sky from
+  the gunner's seat, "washed out and too white". Reflection is now by
+  `1 - A` (`envByAlpha`).
+- **The sky lit a vehicle as brightly as the sun did.** Measured on that
+  gun: 0.068 linear from the sky alone, 0.05 from the sun alone, so no hull
+  had a lit side and a shaded side. The engine's own numbers for these
+  meshes on Wake are 0.24 ambient to 0.40 sun. Vehicles and soldiers now
+  take a quarter of the sky's image-based light (`DYNAMIC_SKY_FILL`, through
+  `aoNode`), which puts a sunlit face at 1.29 times its texture against
+  retail's 1.28. Trees take 0.6 (`FOLIAGE_SKY_FILL`): at a quarter a backlit
+  palm was a black cut-out.
+- **Far palms were pale ghosts.** The far tree card is lit with a
+  straight-up normal and always seen from the side, the angle at which a
+  specular surface mirrors the horizon. It is a Lambert material now.
+- **The dev server dropped modules.** `serve_viewer.py` listened with
+  socketserver's backlog of 5; the page asks for about 600 modules at once,
+  and on macOS 27 some of that burst was reset, so the page never booted.
+  The backlog is 1024.
 - **Seven side views build a `WebGLRenderer`**, which the WebGPU build does not
   have (the tank sight, the controls preview, the proving ground's card, the
   dogfight and tank schools, tank snapshots); under the remaster they get a

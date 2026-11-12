@@ -22,7 +22,7 @@ import {
   modelWorldMatrix, modelWorldMatrixInverse, normalize, positionLocal, sin, time,
   transformNormalToView, uv, vec2, vec3, vec4,
 } from 'three/tsl';
-import { copyRemasterProps, matTexture, shadowCut } from './remaster-materials.js';
+import { copyRemasterProps, FOLIAGE_SKY_FILL, matTexture, shadowCut } from './remaster-materials.js';
 
 // One wind for the level: a direction and a gust, slowly varying.
 const WIND = vec3(0.86, 0, 0.5);
@@ -55,6 +55,7 @@ export function windNodes(material) {
   const worldSway = sway(treeRoot(), h);
   const localSway = modelWorldMatrixInverse.mul(vec4(worldSway, 0)).xyz;
   material.positionNode = positionLocal.add(localSway);
+  material.aoNode = float(FOLIAGE_SKY_FILL);
   material.needsUpdate = true;
 }
 
@@ -88,8 +89,11 @@ export function spriteNodes(material) {
   // Through the material being drawn, not baked into the shared graph
   // (remaster-materials.js has the story).
   if (material.map) material.maskShadowNode = shadowCut(material, 0.42);
+  material.aoNode = float(FOLIAGE_SKY_FILL);
   material.needsUpdate = true;
 }
+
+const IMPOSTOR_ALBEDO = 1;
 
 /**
  * The far card: about Y toward the camera, two frames of the strip blended
@@ -112,7 +116,13 @@ export function impostorNodes(material, frames, eighth) {
   // `keep` first keeps the reference, and its per-material update, in the
   // graph ahead of the samples (remaster-materials.js `matTexture`).
   const col = vec4(strip.keep).add(mix(a, b, w));
-  material.colorNode = col;
+  // The strip is the tree as the art drew it, light and all, and retail
+  // draws it unlit. Here it is lit matte from straight up (tree-foliage.js
+  // makes it a Lambert material: seen from the side, a specular one wore a
+  // pale veil of the horizon, a ghost of a palm beside the near trees), and
+  // takes a tree's share of the sky.
+  material.colorNode = vec4(col.rgb.mul(IMPOSTOR_ALBEDO), col.a);
+  material.aoNode = float(FOLIAGE_SKY_FILL);
   material.normalNode = transformNormalToView(vec3(0, 1, 0));
   material.needsUpdate = true;
 }
