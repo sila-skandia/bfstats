@@ -2144,6 +2144,9 @@ export class ReplayUi {
   updateTags(t) {
     const seen = new Set();
     const player = this.player;
+    // The lit kill's players who carry a tag this frame: the spotlight draws
+    // its own only for one who does not.
+    this.litTagged = null;
     if (this.showTags && !this.root.classList.contains('rp-bare')) {
       const camera = this.ctx.camera;
       // The stage's size as `measure` keeps it: read here, after the frame's
@@ -2155,29 +2158,49 @@ export class ReplayUi {
       // Through his eyes, only his side's names, as the game tags friends.
       const ownTeam = hideOwn !== null ? teamAt(player.rec, hideOwn, t) || null : null;
       const orbit = player.camera.mode === 'orbit';
+      // A kill the spotlight has lit (replay-spotlight.js): its two carry
+      // their names however far off, the other side's too, and everyone
+      // else's give way.
+      const lit = player.spotlight?.litPids?.(t) ?? null;
       const candidates = [];
       for (const target of player.tagTargets(t)) {
+        const spot = lit !== null && Boolean(target.pids?.some(pid => lit.has(pid)));
+        if (lit !== null && !spot) continue;
         // Not over the head the first-person camera is inside.
         if (hideOwn !== null && target.pids?.includes(hideOwn)) continue;
-        if (ownTeam !== null && target.team !== ownTeam) continue;
+        if (ownTeam !== null && target.team !== ownTeam && !spot) continue;
         const me = Boolean(target.pids?.includes(player.followPid));
         v.copy(target.at);
         const distance = v.distanceTo(camera.position);
         // Only the players round the camera carry a name: whole close to it,
         // fading out further off.
         const reach = target.vehicle ? TAG_VEHICLE : 1;
-        const fade = me && orbit ? 1
+        const fade = spot || (me && orbit) ? 1
           : 1 - Math.min(1, Math.max(0, (distance - TAG_NEAR * reach) / ((TAG_FAR - TAG_NEAR) * reach)));
         if (fade < 0.05) continue;
         v.project(camera);
         if (!(v.z < 1 && Math.abs(v.x) < 1.05 && Math.abs(v.y) < 1.05)) continue;
-        candidates.push({ target, distance, fade, x: ((v.x + 1) / 2) * width, y: ((1 - v.y) / 2) * height });
+        const x = ((v.x + 1) / 2) * width;
+        let y = ((1 - v.y) / 2) * height;
+        // Close to the camera, a point over a hull projects towards the
+        // horizon, over whatever is beyond (a followed M6's tag sat on its
+        // victim's 250 m off): a hull's tag stays a short way above it.
+        if (target.base) {
+          v.copy(target.base).project(camera);
+          if (v.z < 1) {
+            const below = ((1 - v.y) / 2) * height;
+            y = Math.min(below - 24, Math.max(y, below - Math.min(150, 0.2 * height)));
+          }
+        }
+        candidates.push({ target, distance, fade, x, y });
       }
       candidates.sort((a, b) => a.distance - b.distance);
       const highlights = player.highlights;
       const leader = highlights?.leaderAt(t)?.pid ?? null;
+      if (lit !== null) this.litTagged = new Set();
       for (const { target, fade, x, y } of candidates.slice(0, TAG_MAX)) {
         seen.add(target.key);
+        if (this.litTagged) for (const pid of target.pids ?? []) this.litTagged.add(pid);
         let tag = this.tagNodes.get(target.key);
         if (!tag) {
           tag = el('button', 'rp-tag');

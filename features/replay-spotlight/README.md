@@ -39,19 +39,32 @@ published: no asset is involved.
 - **It jumps in** 5 s before the kill, or 2 s before the killing round left if
   that is earlier (a shell long in the air), and plays.
 - **The camera** stays on whoever it follows when they are one of the two, else
-  goes over to the killer, in the orbit (out of Auto and the free camera). Once
-  it has settled it swings round behind them to look at the other, when the
-  other is off the screen.
+  goes over to the killer, in the orbit (out of Auto and the free camera), and
+  swings round behind them to look at the other, so both are in the view, and
+  again whenever the other's direction drifts more than 23 degrees, until you
+  turn the camera yourself (or the death cam takes it). A recording holds a far
+  player's last place until they come back into its range: an M6's victim
+  stood 400 m from where they were, then jumped behind the camera once the
+  recording caught up. (It first swung only when the other looked off the
+  screen, judged from a camera still gliding over from the last player, and
+  only the followed tank was ever seen lit.)
 - **The two lit**: the rest of the view is dulled and the killer and the one
   they killed, with whoever rides with them, stay at full colour over it.
   Their rounds fly as tracers, the shot lines' (below), orange for one that
   did damage and pale khaki for one that did not. Each hit's damage rises over
   whoever took it ("-88"), and DESTROYED or KILLED on the round that ends it.
-  Each of the two has a tag with their name, what they are in and their hit
-  points, kept a short way above them on the screen (close to the camera, a
-  point over a hull projects towards the horizon, over whatever is beyond); one
-  off the screen is held at its edge, above the bar and the player card, with
-  an arrow towards them. The replay's own name tags give way.
+- **Their name tags**: the replay's own (name, vehicle, hit points, streak; a
+  click follows them) stay on both of the two however far off, the other
+  side's too in first person, and everyone else's give way. A first cut hid
+  them all for a tag of its own: "you removed the opponents name tag, add it
+  back". The spotlight still draws a tag where the replay draws none (a man
+  just killed, a hull nobody is left in, one past the view distance, where the
+  page draws nothing of them: an M6's victims on Meuse River Line were 300 to
+  400 m off), kept a short way above them on the screen, and one off the
+  screen is held at its edge, above the bar and the player card, with an arrow
+  towards them. Whether they are behind the camera is read from the camera's
+  own frame: a point past the far plane projects past 1 in depth too, and the
+  M6's victims, dead ahead, were first sent to the bottom edge.
 - **The strip** at the top while a kill is lit: both sides, their hit points as
   they fall, the hits each has landed and the range between them. *Again* plays
   it once more from the start; the cross lets go. The fronts' tabs, which sit

@@ -146,6 +146,42 @@ class WiringTests(unittest.TestCase):
         self.assertNotIn("matchup", replay.lower())
         self.assertNotIn("matchup", ui.lower())
 
+    def test_the_two_keep_their_name_tags(self) -> None:
+        # 2026-11-12, the owner: "you removed the opponents name tag, add it
+        # back". The replay's own tags stay on the two however far off (the
+        # other side's too, through first person's own-side rule), the rest
+        # give way; the spotlight's own tag is for the edge and for whoever
+        # the replay does not tag.
+        ui = (VIEWER / "replay-ui.js").read_text()
+        live = (VIEWER / "replay-spotlight.js").read_text()
+        self.assertIn("const lit = player.spotlight?.litPids?.(t) ?? null;", ui)
+        self.assertIn("if (lit !== null && !spot) continue;", ui)
+        self.assertIn("if (ownTeam !== null && target.team !== ownTeam && !spot) continue;", ui)
+        self.assertIn("const fade = spot || (me && orbit) ? 1", ui)
+        self.assertNotIn(".rp-tags {", live)
+        self.assertIn("this.player.ui.litTagged?.has(pid)", live)
+        # The orbit always turns to face the other, not only when they look
+        # off the screen from a camera still gliding in.
+        face = live[live.index("  faceOther(fight, t, drift = 0) {"):live.index("  /** Every round between the two")]
+        self.assertNotIn("project(", face)
+        # And again as the other's direction drifts (a far player's place
+        # catches up), until the viewer turns the camera themselves.
+        self.assertIn("this.faceOther(this.fight, t, FACE_DRIFT);", live)
+        self.assertIn("pin.steered = true;", face)
+        # A far opponent beyond the far plane is in front, not behind: their
+        # tag goes where they are.
+        self.assertIn("const behind = _w.copy(v).applyMatrix4(camera.matrixWorldInverse).z > 0;", live)
+
+    def test_a_hulls_tag_stays_near_the_hull(self) -> None:
+        # A followed M6's own tag floated to the horizon, onto its victim's
+        # 250 m off: the replay's hull tags are kept a short way above the
+        # hull on the screen, as the spotlight's own are.
+        ui = (VIEWER / "replay-ui.js").read_text()
+        replay = (VIEWER / "replay.js").read_text()
+        self.assertIn("        base,\n", replay)
+        self.assertIn("y = Math.min(below - 24, Math.max(y, below - Math.min(150, 0.2 * height)));", ui)
+        self.assertIn("const x = ((v.x + 1) / 2) * width;", ui)
+
     def test_the_spotlight_lets_go_after_the_kill(self) -> None:
         live = (VIEWER / "replay-spotlight.js").read_text()
         # From before the kill and its round; let go a few seconds after it.

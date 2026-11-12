@@ -570,6 +570,10 @@ class ReplayPlayer {
       if (!crew.length && !damaged) continue;
       const lead = crew.find(c => c.seat === 0) ?? crew[0] ?? null;
       const at = hull.root.getWorldPosition(point(hull));
+      // Where the hull itself is, for the tag to stay near it on the screen
+      // (replay-ui.js `updateTags`).
+      const base = (this.tagBases ??= new Map()).get(hull) ?? new THREE.Vector3();
+      this.tagBases.set(hull, base.copy(at));
       at.y += Math.min(hullRadius(hull), 12) * 0.9 + 1;
       const vehicle = names?.[life.tmpl] ?? life.tmpl;
       out.push({
@@ -581,6 +585,7 @@ class ReplayPlayer {
         extra: lead ? `${vehicle}${crew.length > 1 ? ` +${crew.length - 1}` : ''}` : '',
         team: lead ? team(lead.pid) || life.team : life.team,
         at,
+        base,
         hp: life.maxhp > 0 && hull.hp !== null ? { hp: hull.hp, max: life.maxhp, crit: life.crit } : null,
       });
     }
