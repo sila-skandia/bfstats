@@ -1,41 +1,42 @@
 {
  "level": "happy_saint_patrick_s_day",
  "mod": "community",
- "url": "https://play.bfstats.io/map.html?map=happy_saint_patrick_s_day&team=2&mode=Conquest&mod=community&botCount=16&botSkill=0.75&mute&shots",
+ "url": "https://play.bfstats.io/map.html?map=happy_saint_patrick_s_day&team=2&mode=Conquest&mod=community&botCount=16&botSkill=0.75&spawnTime=wave&mute&shots",
  "date": "2026-11-12",
  "bar": "DICE levels on the page, 3 matches each of 600 s, 16 bots: Berlin, Stalingrad, Kharkov, Bocage; 2026-11-11",
  "verdict": "fail",
  "failed": [
   "teamKillsPerBotMinute",
+  "suicidesPerBotMinute",
   "nonEnemyDeathShareWorseSide"
  ],
  "checks": [
   {
    "metric": "teamKillsPerBotMinute",
-   "median": 0.1,
+   "median": 0.1375,
    "bar": "<= 0.025",
    "pass": false
   },
   {
    "metric": "suicidesPerBotMinute",
-   "median": 0.0187,
+   "median": 0.0625,
    "bar": "<= 0.0562",
-   "pass": true
+   "pass": false
   },
   {
    "metric": "nonEnemyDeathShareWorseSide",
-   "median": 0.425,
+   "median": 0.369,
    "bar": "<= 0.308",
    "pass": false
   },
   {
    "metric": "enemyKillsPerBotMinute",
-   "median": 0.575,
+   "median": 0.7375,
    "bar": ">= 0.175",
    "pass": true
   }
  ],
- "matches": 2,
+ "matches": 3,
  "rollout": {
   "pass": true,
   "floor": {
@@ -98,6 +99,31 @@
    "teamKillsBySide": {
     "1": 0,
     "2": 16
+   },
+   "oldCode": "played on the bot code of e5003c584 or earlier, before drivers predicted collisions with their own side (3b1ebe45c, live 2026-11-13)"
+  },
+  {
+   "generated": null,
+   "minutes": 10,
+   "tickets": {
+    "1": 40,
+    "2": 22
+   },
+   "capturesTotal": 0,
+   "teamKillsPerBotMinute": 0.1375,
+   "suicidesPerBotMinute": 0.0625,
+   "nonEnemyDeathShareWorseSide": 0.369,
+   "enemyKillsPerBotMinute": 0.7375,
+   "rollout": {
+    "pass": true,
+    "why": [],
+    "enemyKills": 0.7375,
+    "captures": 0,
+    "ownHand": 0.2
+   },
+   "teamKillsBySide": {
+    "1": 1,
+    "2": 21
    }
   }
  ]

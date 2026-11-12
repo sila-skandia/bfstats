@@ -45,7 +45,7 @@ import { flagSide, spawnFlags } from '../viewer/spawn-flags.js';
 
 const HERE = path.dirname(fileURLToPath(import.meta.url));
 export const GENERATOR = 'botgen';
-export const GENERATOR_VERSION = 6;
+export const GENERATOR_VERSION = 7;
 export const LAYERS_ROOT = path.resolve(HERE, '..', 'bot-layers');
 export const TEMPLATE_FILES = ['Strategies.con', 'conditions.con', 'prerequisites.con'];
 
@@ -93,6 +93,13 @@ export const VEHICLE_BRUSHES = [3.0, 2.5, 2.0, 1.5];
 export const ENGINE_COPY = `Pathfinding/engine/${WALK_MAP}Level0Map.raw`;
 /** How far a way out of a pocket is looked for, metres, and the most standing places one search may hold. */
 export const WAY_REACH = 150, WAY_CELLS = 2000000;
+/**
+ * How many cells of walked ground either side of an opened way are opened with it. INVENTION: generator 6
+ * opened the walked path's own cells only, and the choke rule then refused the level for the ways the
+ * generator itself had made (Deulemont: 70 choke points on every German route). Two either side is a way
+ * five cells wide where the ground is that wide; a doorway stays a doorway.
+ */
+export const WAY_WIDEN = 2;
 
 const sha = data => createHash('sha256').update(data).digest('hex');
 const r1 = v => (Math.round(v * 10) / 10).toFixed(1).replace(/\.0$/, '');
@@ -549,11 +556,24 @@ export function prepareWalkMap({ collider, size, flags, spawns, body, engine, pr
     return c >= 0 && c < id.length && ((facts.mainComponent && id[c] === facts.mainComponent) || opened.has(c))
       && ground.regionOf(x, z, y) === facts.mainRegion;
   };
+  // Every cell whose centre is a standing place, whatever its region: what a way may be widened over.
+  let standing = null;
   const open = (who, kind, start, twoWay) => {
     const res = wayOut(collider, [start], body, onMain, { twoWay, reach: WAY_REACH, maxCells: WAY_CELLS });
     let n = 0;
     if (res.way === 'walk') {
-      for (const [x, z] of res.path) { const c = cellOf(x, z); if (pixels[c]) { pixels[c] = 0; opened.add(c); n++; } }
+      const free = c => { if (pixels[c]) { pixels[c] = 0; opened.add(c); n++; } };
+      for (const [x, z] of res.path) free(cellOf(x, z));
+      // The way's own cells are single file, and one teammate standing on it shuts it for those behind
+      // (`routeprobe.mjs chokePoints`): the walked ground `WAY_WIDEN` cells either side is opened with it.
+      standing ??= paintGround(ground, size);
+      for (const [x, z] of res.path) {
+        const gx = Math.floor(x), gz = Math.floor(-z);
+        for (let dz = -WAY_WIDEN; dz <= WAY_WIDEN; dz++) for (let dx = -WAY_WIDEN; dx <= WAY_WIDEN; dx++) {
+          const nx = gx + dx, nz = gz + dz;
+          if (nx >= 0 && nz >= 0 && nx < size && nz < size && !standing[nz * size + nx]) free(nz * size + nx);
+        }
+      }
     }
     const fell = res.path ? res.path.some((p, i) => i && res.path[i - 1][2] - p[2] > body.step) : false;
     ways.push({ who, kind, way: res.way === 'walk' && fell ? 'drop' : res.way, opened: n });

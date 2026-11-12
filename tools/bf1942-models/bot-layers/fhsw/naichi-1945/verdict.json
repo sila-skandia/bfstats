@@ -4,10 +4,10 @@
  "outcome": "no-fight",
  "config": "with vehicles",
  "doctrine": "garrison",
- "generatorVersion": 5,
+ "generatorVersion": 6,
  "inputs": {
   "controlPoints": "7196a0b360601ffdb96946cdc4ab09e380adf183bb0a696db5d23c82d05c3d87",
-  "infantryMap": "dbfa13be1c26a6d5537177bf009d80156d028ed4996d626f304d15f19cea8bf8",
+  "infantryMap": "91593fdf046a06ae8b771993859aad6df60618d4757561fe463da53bf6d428ec",
   "template": "43f8a790471528016570235f76e97dbb2045732458781a5139f37fed68bf98c0"
  },
  "baseline": "DICE layers with vehicles, garrison doctrine: berlin, stalingrad, kharkov, bocage; seeds 1..10, 600 s",
@@ -21,6 +21,7 @@
    "verdict": "fail",
    "failed": [
     "stuckSecondsPerBotMinute",
+    "idleShare",
     "routeFailuresPerBotMinute",
     "redeploysPerBotMinute",
     "capturesTotal",
@@ -51,10 +52,11 @@
     "enemyKillsPerBotMinute",
     "flagCoverage",
     "bothSidesCapture",
-    "stuckSecondsPerBotMinuteWorseSide",
     "routeFailuresPerBotMinuteWorseSide",
     "redeploysPerBotMinuteWorseSide",
     "nonEnemyDeathShareWorseSide",
+    "hullStuckSecondsPerDrivingMinute",
+    "hullStuckSecondsPerDrivingMinuteWorseSide",
     "unitsNeverUsedShare"
    ],
    "winners": [
@@ -70,8 +72,8 @@
  ],
  "lintErrors": [],
  "acceptanceWithdrawn": {
-  "because": "page matches 2026-11-12: 0.019 then 0.006 enemy kills a bot-minute, no capture in either; under the rollout floor",
-  "date": "2026-11-12",
-  "was": "Owner's rollout, 2026-11-12: the owner asked for everything with a fight to go l"
+  "because": "generator 6 layer on the bot code of 3b1ebe45c, two page matches of 600 s with 16 bots, both under the rollout floor: 0.006 and 0.044 enemy kills a bot-minute, no capture",
+  "date": "2026-11-13",
+  "was": "Regenerated on generator 6 (2026-11-13) after being turned down on generator 5: "
  }
 }

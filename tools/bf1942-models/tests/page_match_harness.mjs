@@ -1,5 +1,5 @@
 // tests/test_page_match.py: the pure parts of sim/pagematch.mjs (no browser).
-import { buildPageBar, isVoid, judgePage, matchUrl, onTheLine, rolloutFloor, summarise } from '../sim/pagematch.mjs';
+import { buildPageBar, isVoid, judgePage, matchUrl, onTheLine, ownHandIn, rolloutFloor, summarise } from '../sim/pagematch.mjs';
 
 const counts = [
   { id: 'bot_0', team: 1, kills: 3, deaths: 2, teamKills: 0, suicides: 0, captures: 1, score: 5 },
@@ -33,6 +33,8 @@ console.log(JSON.stringify({
   },
   voids: [isVoid(summarise([], 16, 10)), isVoid(summarise(counts, 16, 10)), isVoid(summarise([{ id: 'bot_9', team: 0, captures: 2, score: 4 }], 16, 10))],
   unsided: summarise([counts[0], { id: 'bot_9', team: 0, captures: 2, score: 4 }], 16, 10),
+  ownHandIn: ownHandIn([{ vehicle: 'Willy', drives: true }, { vehicle: null }, { vehicle: 'Willy', drives: true, kills: 2 }, { vehicle: 'Willy', drives: false }, { vehicle: 'Lcvp', drives: true }]),
+  ownHandInNone: ownHandIn(undefined),
   ahead: onTheLine([0, 0, 0], [0, 0, 100], [0.3, 0, 12]),
   behind: onTheLine([0, 0, 0], [0, 0, 100], [0, 0, -4]),
   beside: onTheLine([0, 0, 0], [0, 0, 100], [6, 0, 12]),

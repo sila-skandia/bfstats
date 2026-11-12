@@ -53,24 +53,9 @@
  "oneSided": null,
  "unreachable": [],
  "lintErrors": [],
- "accepted": {
-  "reason": "Owner's rollout, 2026-11-12: the owner imported Galactic Conquest and asked for bots on it (\"I'm sure we can add something to it\"). Screened in the runner at 8 and 16 a side under the garrison; the checks it fails are listed with this verdict, and a match on the page decides whether it keeps its menu flag.",
-  "date": "2026-11-12",
-  "outcome": "no-fight",
-  "failed": [
-   "8:routeFailuresPerBotMinute",
-   "8:bothSidesKill",
-   "8:routeFailuresPerBotMinuteWorseSide",
-   "8:nonEnemyDeathShareWorseSide",
-   "8:hullStuckSecondsPerDrivingMinute",
-   "8:hullStuckSecondsPerDrivingMinuteWorseSide",
-   "16:selfDeathsPerBotMinute",
-   "16:enemyKillsPerBotMinute",
-   "16:bothSidesCapture",
-   "16:bothSidesKill",
-   "16:nonEnemyDeathShareWorseSide",
-   "16:tankSilentShare"
-  ],
-  "by": "owner"
+ "acceptanceWithdrawn": {
+  "because": "on the bot code of 3b1ebe45c, two page matches of 600 s with 16 bots, both under the rollout floor on deaths by their own hand: 0.14 and 0.16 enemy kills a bot-minute, 12 and 7 captures, own-hand deaths 0.11 a bot-minute in the second (floor 0.10, or a third of the kills)",
+  "date": "2026-11-13",
+  "was": "Owner's rollout, 2026-11-12: the owner imported Galactic Conquest and asked for "
  }
 }

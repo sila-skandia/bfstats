@@ -1,19 +1,102 @@
 {
  "level": "liberation_of_roeselare",
  "verdict": "fail",
- "outcome": "unsuitable",
+ "outcome": "better-than-nothing",
  "config": "with vehicles",
  "doctrine": "garrison",
- "generatorVersion": 6,
+ "generatorVersion": 7,
  "inputs": {
   "controlPoints": "338bc0cf5626dc3446b7a4b75e2281a27fe9ad69735b94a82e71710db175dbda",
-  "infantryMap": "cbcc040f81465068959ae985a8a96a299b76e9bbdb95a9c06b1cfeaf774d9f90",
+  "infantryMap": "be3055496c17964da84a3228984d54f1633afe7c25522900218b1278f3b7ce70",
   "template": "43f8a790471528016570235f76e97dbb2045732458781a5139f37fed68bf98c0"
  },
- "baseline": "DICE layers with vehicles, garrison doctrine: berlin, stalingrad, kharkov, bocage; seeds 1..10, 600 s",
- "bar": null,
+ "baseline": "bf1918's own layers with vehicles, garrison doctrine: argonnerwald, battle_of_cer, battle_of_mons, belleau_wood; seeds 1..10, 600 s; dropped, no fight: krakau",
+ "bar": {
+  "against": "bf1918",
+  "why": "bf1918's own bar, built from 4 of its levels that are alive (argonnerwald, battle_of_cer, battle_of_mons, belleau_wood)"
+ },
+ "againstDice": {
+  "verdict": "fail",
+  "outcome": "better-than-nothing",
+  "baseline": "DICE layers with vehicles, garrison doctrine: berlin, stalingrad, kharkov, bocage; seeds 1..10, 600 s",
+  "sizes": {
+   "8": {
+    "verdict": "fail",
+    "failed": [
+     "stuckSecondsPerBotMinute",
+     "routeFailuresPerBotMinute",
+     "redeploysPerBotMinute",
+     "enemyKillsPerBotMinute",
+     "flagCoverage",
+     "stuckSecondsPerBotMinuteWorseSide",
+     "routeFailuresPerBotMinuteWorseSide",
+     "redeploysPerBotMinuteWorseSide",
+     "nonEnemyDeathShareWorseSide",
+     "unitsNeverUsedShare"
+    ]
+   },
+   "16": {
+    "verdict": "fail",
+    "failed": [
+     "stuckSecondsPerBotMinute",
+     "routeFailuresPerBotMinute",
+     "redeploysPerBotMinute",
+     "enemyKillsPerBotMinute",
+     "flagCoverage",
+     "bothSidesCapture",
+     "stuckSecondsPerBotMinuteWorseSide",
+     "routeFailuresPerBotMinuteWorseSide",
+     "redeploysPerBotMinuteWorseSide",
+     "nonEnemyDeathShareWorseSide",
+     "unitsNeverUsedShare"
+    ]
+   }
+  }
+ },
  "seeds": 1,
- "sizes": {},
+ "sizes": {
+  "8": {
+   "verdict": "fail",
+   "failed": [
+    "stuckSecondsPerBotMinute",
+    "spawnTrapsPerBotMinute",
+    "routeFailuresPerBotMinute",
+    "redeploysPerBotMinute",
+    "enemyKillsPerBotMinute",
+    "flagCoverage",
+    "stuckSecondsPerBotMinuteWorseSide",
+    "routeFailuresPerBotMinuteWorseSide",
+    "redeploysPerBotMinuteWorseSide",
+    "nonEnemyDeathShareWorseSide",
+    "unitsNeverUsedShare"
+   ],
+   "winners": [
+    1,
+    0,
+    0
+   ]
+  },
+  "16": {
+   "verdict": "fail",
+   "failed": [
+    "stuckSecondsPerBotMinute",
+    "routeFailuresPerBotMinute",
+    "redeploysPerBotMinute",
+    "enemyKillsPerBotMinute",
+    "bothSidesCapture",
+    "stuckSecondsPerBotMinuteWorseSide",
+    "routeFailuresPerBotMinuteWorseSide",
+    "redeploysPerBotMinuteWorseSide",
+    "nonEnemyDeathShareWorseSide",
+    "unitsNeverUsedShare"
+   ],
+   "winners": [
+    1,
+    0,
+    0
+   ]
+  }
+ },
  "oneSided": null,
  "unreachable": [],
  "lintErrors": [

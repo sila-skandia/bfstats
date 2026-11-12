@@ -2,8 +2,10 @@ rem *** Strategic areas: one per control point (botgen) ***
 
 aiStrategicArea.create alliedbase 613.4/210.3 618.4/215.3 50
 aiStrategicArea.addNeighbour bahnhof
+aiStrategicArea.addNeighbour Kriemhilde_Stellung
 aiStrategicArea.addNeighbour Brunhilde_Stellung
 aiStrategicArea.addObjectTypeFlag Base
+aiStrategicArea.setOrderPosition Tank 621.5/216.5
 aiStrategicArea.setOrderPosition Infantry 620.5/216.5
 aiStrategicArea.setSide 2
 aiStrategicArea.setTakeable 1 0
@@ -11,33 +13,48 @@ aiStrategicArea.setTakeable 1 0
 aiStrategicArea.create bahnhof 556.7/541.3 561.7/546.3 150
 aiStrategicArea.addNeighbour alliedbase
 aiStrategicArea.addNeighbour manchester_hill
+aiStrategicArea.addNeighbour Kriemhilde_Stellung
 aiStrategicArea.addNeighbour Brunhilde_Stellung
 aiStrategicArea.addObjectTypeFlag Flank
 aiStrategicArea.addObjectTypeFlag Close
 aiStrategicArea.addObjectTypeFlag ControlPoint
+aiStrategicArea.setOrderPosition Tank 561.5/549.5
 aiStrategicArea.setOrderPosition Infantry 559.5/544.5
 aiStrategicArea.setSide 1
 
 aiStrategicArea.create manchester_hill 659/655.3 664/660.3 300
 aiStrategicArea.addNeighbour bahnhof
+aiStrategicArea.addNeighbour Kriemhilde_Stellung
 aiStrategicArea.addNeighbour Brunhilde_Stellung
+aiStrategicArea.addNeighbour vorposten
 aiStrategicArea.addObjectTypeFlag Centre
 aiStrategicArea.addObjectTypeFlag StrongPoint
 aiStrategicArea.addObjectTypeFlag ControlPoint
-aiStrategicArea.setOrderPosition Infantry 665.5/659.5
+aiStrategicArea.setOrderPosition Tank 664.5/658.5
+aiStrategicArea.setOrderPosition Infantry 665.5/660.5
 aiStrategicArea.setSide 1
 
-aiStrategicArea.create Kriemhilde_Stellung 755.1/790.3 760.1/795.3 10
+aiStrategicArea.create Kriemhilde_Stellung 755.1/790.3 760.1/795.3 200
+aiStrategicArea.addNeighbour alliedbase
+aiStrategicArea.addNeighbour bahnhof
+aiStrategicArea.addNeighbour manchester_hill
+aiStrategicArea.addNeighbour Brunhilde_Stellung
+aiStrategicArea.addNeighbour vorposten
+aiStrategicArea.addObjectTypeFlag Centre
+aiStrategicArea.addObjectTypeFlag ControlPoint
+aiStrategicArea.setOrderPosition Tank 757.5/785.5
+aiStrategicArea.setOrderPosition Infantry 760.1/795.3
 aiStrategicArea.setSide 1
-aiStrategicArea.setTakeable 1 0
-aiStrategicArea.setTakeable 2 0
 
 aiStrategicArea.create Brunhilde_Stellung 825.2/940.9 830.2/945.9 200
 aiStrategicArea.addNeighbour alliedbase
 aiStrategicArea.addNeighbour bahnhof
 aiStrategicArea.addNeighbour manchester_hill
+aiStrategicArea.addNeighbour Kriemhilde_Stellung
+aiStrategicArea.addNeighbour vorposten
 aiStrategicArea.addObjectTypeFlag Centre
 aiStrategicArea.addObjectTypeFlag ControlPoint
+aiStrategicArea.setOrderPosition Tank 830.5/949.5
 aiStrategicArea.setOrderPosition Infantry 829.5/947.5
 aiStrategicArea.setSide 1
 
@@ -51,7 +68,12 @@ aiStrategicArea.setSide 1
 aiStrategicArea.setTakeable 1 0
 aiStrategicArea.setTakeable 2 0
 
-aiStrategicArea.create vorposten 591.9/821.5 596.9/826.5 10
+aiStrategicArea.create vorposten 591.9/821.5 596.9/826.5 150
+aiStrategicArea.addNeighbour manchester_hill
+aiStrategicArea.addNeighbour Kriemhilde_Stellung
+aiStrategicArea.addNeighbour Brunhilde_Stellung
+aiStrategicArea.addObjectTypeFlag Flank
+aiStrategicArea.addObjectTypeFlag ControlPoint
+aiStrategicArea.setOrderPosition Tank 586.5/821.5
+aiStrategicArea.setOrderPosition Infantry 596.9/826.5
 aiStrategicArea.setSide 1
-aiStrategicArea.setTakeable 1 0
-aiStrategicArea.setTakeable 2 0

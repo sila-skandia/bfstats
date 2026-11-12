@@ -1,65 +1,31 @@
 {
  "generator": "botgen",
- "version": 5,
+ "version": 6,
  "mod": "bf1918",
  "level": "saint_quentin_canal",
  "objectSpawners": 117,
- "template": "few",
- "templateSource": "DICE, bf1942 Kursk (1.6 patch archives, Kursk_003.rfa): AI/Strategies.con, AI/conditions.con, AI/prerequisites.con, unchanged",
+ "template": "symmetric",
+ "templateSource": "DICE, bf1942 Kharkov (1.6 patch archives): AI/Strategies.con, AI/conditions.con, AI/prerequisites.con, unchanged",
  "templateChoice": {
-  "name": "few",
-  "inPlay": 3,
-  "rule": "3 capturable flags in play, at most 3"
+  "name": "symmetric",
+  "inPlay": 5,
+  "rule": "5 capturable flags in play, more than 3"
  },
- "scope": "on foot: infantry order positions only, no search maps, no co-op layer",
+ "scope": "an infantry map from the page painter with the walk test's ways out opened, a Tank0 map from the page painter, infantry order positions, no strategic maps, no co-op layer",
  "unreachable": [
-  "Kriemhilde_Stellung",
   "wotan_stellung",
-  "Siegfried_Stellung",
-  "vorposten"
+  "Siegfried_Stellung"
  ],
  "unreachableReasons": {
-  "Kriemhilde_Stellung": "walk test",
   "wotan_stellung": "walk test",
-  "Siegfried_Stellung": "walk test",
-  "vorposten": "walk test"
+  "Siegfried_Stellung": "walk test"
  },
  "botSpawnsExcluded": [
-  "Manchester_Hill_Spawn1",
-  "AlliedBase_Spawn4",
-  "Bahnhof_Spawn2",
-  "Bahnhof_Spawn3",
   "Bahnhof_Spawn4",
-  "Bahnhof_Spawn5",
-  "Bahnhof_Spawn6",
-  "Bahnhof_Spawn7",
   "Bahnhof_Spawn8",
-  "Bahnhof_Spawn9",
   "Manchester_Hill_Spawn2",
-  "Manchester_Hill_Spawn3",
-  "Manchester_Hill_Spawn4",
-  "Manchester_Hill_Spawn5",
-  "Manchester_Hill_Spawn7",
-  "Kriemhilde_Stellung_Spawn1",
-  "Kriemhilde_Stellung_Spawn2",
-  "Kriemhilde_Stellung_Spawn3",
-  "Kriemhilde_Stellung_Spawn4",
   "Kriemhilde_Stellung_Spawn5",
-  "Kriemhilde_Stellung_Spawn6",
-  "Kriemhilde_Stellung_Spawn7",
-  "Kriemhilde_Stellung_Spawn8",
-  "Kriemhilde_Stellung_Spawn9",
-  "Wotan_Stellung_Spawn1",
-  "Wotan_Stellung_Spawn2",
-  "Wotan_Stellung_Spawn3",
-  "Wotan_Stellung_Spawn4",
   "Wotan_Stellung_Spawn5",
-  "Wotan_Stellung_Spawn6",
-  "Wotan_Stellung_Spawn7",
-  "Wotan_Stellung_Spawn8",
-  "Wotan_Stellung_Spawn9",
-  "Wotan_Stellung_Spawn10",
-  "Wotan_Stellung_Spawn11",
   "Wotan_Stellung_Spawn12",
   "Wotan_Stellung_Spawn13",
   "Siegfried_Stellung_Spawn1",
@@ -67,30 +33,2832 @@
   "Siegfried_Stellung_Spawn5",
   "Siegfried_Stellung_Spawn6",
   "Siegfried_Stellung_Spawn7",
-  "Siegfried_Stellung_Spawn8",
   "Siegfried_Stellung_Spawn9",
   "Siegfried_Stellung_Spawn10",
-  "Vorposten_Spawn1",
-  "Vorposten_Spawn2",
   "Vorposten_Spawn3",
-  "Vorposten_Spawn4",
-  "Vorposten_Spawn5",
-  "Vorposten_Spawn6",
   "Brunhilde_Stellung_Spawn1",
-  "Brunhilde_Stellung_Spawn2",
-  "Brunhilde_Stellung_Spawn5"
+  "Brunhilde_Stellung_Spawn2"
  ],
  "walkMap": {
   "source": "page painter",
   "engine": "none",
-  "opened": [],
-  "ways": [],
-  "cover": 0.847,
+  "vehicleMap": "page painter",
+  "vehicleBrush": 1.5,
+  "vehicleBrushes": [
+   {
+    "brush": 3,
+    "flagsOn": 6,
+    "spawnersOn": 15,
+    "pieces": 24,
+    "main": 2991653
+   },
+   {
+    "brush": 2.5,
+    "flagsOn": 6,
+    "spawnersOn": 17,
+    "pieces": 23,
+    "main": 3025275
+   },
+   {
+    "brush": 2,
+    "flagsOn": 6,
+    "spawnersOn": 24,
+    "pieces": 21,
+    "main": 3043183
+   },
+   {
+    "brush": 1.5,
+    "flagsOn": 6,
+    "spawnersOn": 28,
+    "pieces": 17,
+    "main": 3071475
+   }
+  ],
+  "opened": [
+   [
+    588,
+    224
+   ],
+   [
+    589,
+    224
+   ],
+   [
+    590,
+    224
+   ],
+   [
+    591,
+    224
+   ],
+   [
+    592,
+    224
+   ],
+   [
+    593,
+    224
+   ],
+   [
+    594,
+    224
+   ],
+   [
+    595,
+    224
+   ],
+   [
+    596,
+    224
+   ],
+   [
+    510,
+    503
+   ],
+   [
+    510,
+    504
+   ],
+   [
+    510,
+    505
+   ],
+   [
+    511,
+    505
+   ],
+   [
+    508,
+    506
+   ],
+   [
+    509,
+    506
+   ],
+   [
+    510,
+    506
+   ],
+   [
+    511,
+    506
+   ],
+   [
+    511,
+    507
+   ],
+   [
+    511,
+    508
+   ],
+   [
+    511,
+    509
+   ],
+   [
+    512,
+    509
+   ],
+   [
+    513,
+    509
+   ],
+   [
+    514,
+    509
+   ],
+   [
+    515,
+    509
+   ],
+   [
+    544,
+    509
+   ],
+   [
+    545,
+    509
+   ],
+   [
+    546,
+    509
+   ],
+   [
+    547,
+    509
+   ],
+   [
+    548,
+    509
+   ],
+   [
+    544,
+    510
+   ],
+   [
+    544,
+    511
+   ],
+   [
+    544,
+    512
+   ],
+   [
+    544,
+    513
+   ],
+   [
+    544,
+    514
+   ],
+   [
+    545,
+    514
+   ],
+   [
+    545,
+    515
+   ],
+   [
+    546,
+    515
+   ],
+   [
+    547,
+    515
+   ],
+   [
+    548,
+    515
+   ],
+   [
+    549,
+    515
+   ],
+   [
+    550,
+    515
+   ],
+   [
+    619,
+    538
+   ],
+   [
+    619,
+    539
+   ],
+   [
+    620,
+    539
+   ],
+   [
+    620,
+    540
+   ],
+   [
+    621,
+    540
+   ],
+   [
+    621,
+    541
+   ],
+   [
+    622,
+    541
+   ],
+   [
+    622,
+    542
+   ],
+   [
+    623,
+    542
+   ],
+   [
+    569,
+    543
+   ],
+   [
+    570,
+    543
+   ],
+   [
+    571,
+    543
+   ],
+   [
+    623,
+    543
+   ],
+   [
+    624,
+    543
+   ],
+   [
+    571,
+    544
+   ],
+   [
+    624,
+    544
+   ],
+   [
+    625,
+    544
+   ],
+   [
+    571,
+    545
+   ],
+   [
+    625,
+    545
+   ],
+   [
+    626,
+    545
+   ],
+   [
+    627,
+    545
+   ],
+   [
+    628,
+    545
+   ],
+   [
+    571,
+    546
+   ],
+   [
+    571,
+    547
+   ],
+   [
+    572,
+    547
+   ],
+   [
+    572,
+    548
+   ],
+   [
+    573,
+    548
+   ],
+   [
+    573,
+    549
+   ],
+   [
+    573,
+    550
+   ],
+   [
+    574,
+    550
+   ],
+   [
+    595,
+    554
+   ],
+   [
+    596,
+    554
+   ],
+   [
+    597,
+    554
+   ],
+   [
+    595,
+    555
+   ],
+   [
+    590,
+    556
+   ],
+   [
+    591,
+    556
+   ],
+   [
+    592,
+    556
+   ],
+   [
+    593,
+    556
+   ],
+   [
+    594,
+    556
+   ],
+   [
+    595,
+    556
+   ],
+   [
+    674,
+    650
+   ],
+   [
+    674,
+    657
+   ],
+   [
+    674,
+    658
+   ],
+   [
+    673,
+    659
+   ],
+   [
+    674,
+    659
+   ],
+   [
+    665,
+    660
+   ],
+   [
+    666,
+    660
+   ],
+   [
+    667,
+    660
+   ],
+   [
+    668,
+    660
+   ],
+   [
+    669,
+    660
+   ],
+   [
+    670,
+    660
+   ],
+   [
+    671,
+    660
+   ],
+   [
+    672,
+    660
+   ],
+   [
+    673,
+    660
+   ],
+   [
+    674,
+    660
+   ],
+   [
+    675,
+    660
+   ],
+   [
+    676,
+    660
+   ],
+   [
+    677,
+    660
+   ],
+   [
+    677,
+    661
+   ],
+   [
+    677,
+    662
+   ],
+   [
+    678,
+    662
+   ],
+   [
+    679,
+    662
+   ],
+   [
+    697,
+    663
+   ],
+   [
+    698,
+    663
+   ],
+   [
+    699,
+    663
+   ],
+   [
+    697,
+    664
+   ],
+   [
+    697,
+    665
+   ],
+   [
+    697,
+    666
+   ],
+   [
+    697,
+    667
+   ],
+   [
+    697,
+    668
+   ],
+   [
+    694,
+    669
+   ],
+   [
+    695,
+    669
+   ],
+   [
+    696,
+    669
+   ],
+   [
+    697,
+    669
+   ],
+   [
+    698,
+    669
+   ],
+   [
+    699,
+    669
+   ],
+   [
+    699,
+    670
+   ],
+   [
+    699,
+    671
+   ],
+   [
+    699,
+    672
+   ],
+   [
+    699,
+    673
+   ],
+   [
+    699,
+    674
+   ],
+   [
+    699,
+    675
+   ],
+   [
+    700,
+    675
+   ],
+   [
+    701,
+    675
+   ],
+   [
+    719,
+    677
+   ],
+   [
+    719,
+    678
+   ],
+   [
+    719,
+    679
+   ],
+   [
+    717,
+    680
+   ],
+   [
+    718,
+    680
+   ],
+   [
+    719,
+    680
+   ],
+   [
+    733,
+    781
+   ],
+   [
+    733,
+    782
+   ],
+   [
+    733,
+    783
+   ],
+   [
+    733,
+    784
+   ],
+   [
+    733,
+    785
+   ],
+   [
+    733,
+    786
+   ],
+   [
+    733,
+    787
+   ],
+   [
+    733,
+    788
+   ],
+   [
+    733,
+    789
+   ],
+   [
+    733,
+    790
+   ],
+   [
+    733,
+    791
+   ],
+   [
+    733,
+    792
+   ],
+   [
+    733,
+    793
+   ],
+   [
+    710,
+    794
+   ],
+   [
+    711,
+    794
+   ],
+   [
+    712,
+    794
+   ],
+   [
+    733,
+    794
+   ],
+   [
+    784,
+    794
+   ],
+   [
+    785,
+    794
+   ],
+   [
+    786,
+    794
+   ],
+   [
+    787,
+    794
+   ],
+   [
+    788,
+    794
+   ],
+   [
+    789,
+    794
+   ],
+   [
+    694,
+    795
+   ],
+   [
+    695,
+    795
+   ],
+   [
+    696,
+    795
+   ],
+   [
+    697,
+    795
+   ],
+   [
+    698,
+    795
+   ],
+   [
+    699,
+    795
+   ],
+   [
+    700,
+    795
+   ],
+   [
+    701,
+    795
+   ],
+   [
+    702,
+    795
+   ],
+   [
+    703,
+    795
+   ],
+   [
+    704,
+    795
+   ],
+   [
+    705,
+    795
+   ],
+   [
+    706,
+    795
+   ],
+   [
+    707,
+    795
+   ],
+   [
+    708,
+    795
+   ],
+   [
+    709,
+    795
+   ],
+   [
+    710,
+    795
+   ],
+   [
+    712,
+    795
+   ],
+   [
+    713,
+    795
+   ],
+   [
+    714,
+    795
+   ],
+   [
+    715,
+    795
+   ],
+   [
+    719,
+    795
+   ],
+   [
+    720,
+    795
+   ],
+   [
+    721,
+    795
+   ],
+   [
+    722,
+    795
+   ],
+   [
+    723,
+    795
+   ],
+   [
+    724,
+    795
+   ],
+   [
+    725,
+    795
+   ],
+   [
+    726,
+    795
+   ],
+   [
+    727,
+    795
+   ],
+   [
+    728,
+    795
+   ],
+   [
+    729,
+    795
+   ],
+   [
+    730,
+    795
+   ],
+   [
+    731,
+    795
+   ],
+   [
+    732,
+    795
+   ],
+   [
+    733,
+    795
+   ],
+   [
+    759,
+    795
+   ],
+   [
+    760,
+    795
+   ],
+   [
+    761,
+    795
+   ],
+   [
+    762,
+    795
+   ],
+   [
+    763,
+    795
+   ],
+   [
+    764,
+    795
+   ],
+   [
+    765,
+    795
+   ],
+   [
+    766,
+    795
+   ],
+   [
+    767,
+    795
+   ],
+   [
+    768,
+    795
+   ],
+   [
+    769,
+    795
+   ],
+   [
+    770,
+    795
+   ],
+   [
+    771,
+    795
+   ],
+   [
+    772,
+    795
+   ],
+   [
+    773,
+    795
+   ],
+   [
+    780,
+    795
+   ],
+   [
+    781,
+    795
+   ],
+   [
+    782,
+    795
+   ],
+   [
+    783,
+    795
+   ],
+   [
+    784,
+    795
+   ],
+   [
+    789,
+    795
+   ],
+   [
+    790,
+    795
+   ],
+   [
+    715,
+    796
+   ],
+   [
+    716,
+    796
+   ],
+   [
+    717,
+    796
+   ],
+   [
+    718,
+    796
+   ],
+   [
+    719,
+    796
+   ],
+   [
+    759,
+    796
+   ],
+   [
+    773,
+    796
+   ],
+   [
+    774,
+    796
+   ],
+   [
+    775,
+    796
+   ],
+   [
+    776,
+    796
+   ],
+   [
+    777,
+    796
+   ],
+   [
+    778,
+    796
+   ],
+   [
+    779,
+    796
+   ],
+   [
+    780,
+    796
+   ],
+   [
+    759,
+    797
+   ],
+   [
+    759,
+    798
+   ],
+   [
+    759,
+    799
+   ],
+   [
+    759,
+    800
+   ],
+   [
+    759,
+    801
+   ],
+   [
+    759,
+    802
+   ],
+   [
+    759,
+    803
+   ],
+   [
+    759,
+    804
+   ],
+   [
+    759,
+    805
+   ],
+   [
+    759,
+    806
+   ],
+   [
+    759,
+    807
+   ],
+   [
+    759,
+    808
+   ],
+   [
+    654,
+    814
+   ],
+   [
+    655,
+    814
+   ],
+   [
+    656,
+    814
+   ],
+   [
+    657,
+    814
+   ],
+   [
+    658,
+    814
+   ],
+   [
+    659,
+    814
+   ],
+   [
+    660,
+    814
+   ],
+   [
+    661,
+    814
+   ],
+   [
+    662,
+    814
+   ],
+   [
+    663,
+    814
+   ],
+   [
+    666,
+    814
+   ],
+   [
+    667,
+    814
+   ],
+   [
+    668,
+    814
+   ],
+   [
+    669,
+    814
+   ],
+   [
+    670,
+    814
+   ],
+   [
+    671,
+    814
+   ],
+   [
+    672,
+    814
+   ],
+   [
+    673,
+    814
+   ],
+   [
+    674,
+    814
+   ],
+   [
+    675,
+    814
+   ],
+   [
+    676,
+    814
+   ],
+   [
+    677,
+    814
+   ],
+   [
+    678,
+    814
+   ],
+   [
+    679,
+    814
+   ],
+   [
+    680,
+    814
+   ],
+   [
+    681,
+    814
+   ],
+   [
+    682,
+    814
+   ],
+   [
+    683,
+    814
+   ],
+   [
+    687,
+    814
+   ],
+   [
+    688,
+    814
+   ],
+   [
+    689,
+    814
+   ],
+   [
+    699,
+    814
+   ],
+   [
+    700,
+    814
+   ],
+   [
+    701,
+    814
+   ],
+   [
+    702,
+    814
+   ],
+   [
+    703,
+    814
+   ],
+   [
+    704,
+    814
+   ],
+   [
+    705,
+    814
+   ],
+   [
+    706,
+    814
+   ],
+   [
+    707,
+    814
+   ],
+   [
+    708,
+    814
+   ],
+   [
+    709,
+    814
+   ],
+   [
+    710,
+    814
+   ],
+   [
+    711,
+    814
+   ],
+   [
+    712,
+    814
+   ],
+   [
+    604,
+    815
+   ],
+   [
+    605,
+    815
+   ],
+   [
+    653,
+    815
+   ],
+   [
+    654,
+    815
+   ],
+   [
+    663,
+    815
+   ],
+   [
+    664,
+    815
+   ],
+   [
+    665,
+    815
+   ],
+   [
+    666,
+    815
+   ],
+   [
+    683,
+    815
+   ],
+   [
+    684,
+    815
+   ],
+   [
+    685,
+    815
+   ],
+   [
+    686,
+    815
+   ],
+   [
+    687,
+    815
+   ],
+   [
+    689,
+    815
+   ],
+   [
+    690,
+    815
+   ],
+   [
+    691,
+    815
+   ],
+   [
+    692,
+    815
+   ],
+   [
+    693,
+    815
+   ],
+   [
+    694,
+    815
+   ],
+   [
+    695,
+    815
+   ],
+   [
+    696,
+    815
+   ],
+   [
+    697,
+    815
+   ],
+   [
+    698,
+    815
+   ],
+   [
+    699,
+    815
+   ],
+   [
+    603,
+    816
+   ],
+   [
+    604,
+    816
+   ],
+   [
+    651,
+    816
+   ],
+   [
+    652,
+    816
+   ],
+   [
+    653,
+    816
+   ],
+   [
+    601,
+    817
+   ],
+   [
+    602,
+    817
+   ],
+   [
+    603,
+    817
+   ],
+   [
+    646,
+    817
+   ],
+   [
+    647,
+    817
+   ],
+   [
+    648,
+    817
+   ],
+   [
+    649,
+    817
+   ],
+   [
+    650,
+    817
+   ],
+   [
+    651,
+    817
+   ],
+   [
+    600,
+    818
+   ],
+   [
+    601,
+    818
+   ],
+   [
+    644,
+    818
+   ],
+   [
+    645,
+    818
+   ],
+   [
+    646,
+    818
+   ],
+   [
+    600,
+    819
+   ],
+   [
+    643,
+    819
+   ],
+   [
+    644,
+    819
+   ],
+   [
+    599,
+    820
+   ],
+   [
+    600,
+    820
+   ],
+   [
+    642,
+    820
+   ],
+   [
+    643,
+    820
+   ],
+   [
+    599,
+    821
+   ],
+   [
+    639,
+    821
+   ],
+   [
+    640,
+    821
+   ],
+   [
+    641,
+    821
+   ],
+   [
+    642,
+    821
+   ],
+   [
+    598,
+    822
+   ],
+   [
+    599,
+    822
+   ],
+   [
+    637,
+    822
+   ],
+   [
+    638,
+    822
+   ],
+   [
+    639,
+    822
+   ],
+   [
+    598,
+    823
+   ],
+   [
+    636,
+    823
+   ],
+   [
+    637,
+    823
+   ],
+   [
+    598,
+    824
+   ],
+   [
+    635,
+    824
+   ],
+   [
+    636,
+    824
+   ],
+   [
+    596,
+    825
+   ],
+   [
+    597,
+    825
+   ],
+   [
+    598,
+    825
+   ],
+   [
+    634,
+    825
+   ],
+   [
+    635,
+    825
+   ],
+   [
+    596,
+    826
+   ],
+   [
+    598,
+    826
+   ],
+   [
+    599,
+    826
+   ],
+   [
+    634,
+    826
+   ],
+   [
+    599,
+    827
+   ],
+   [
+    633,
+    827
+   ],
+   [
+    634,
+    827
+   ],
+   [
+    599,
+    828
+   ],
+   [
+    632,
+    828
+   ],
+   [
+    633,
+    828
+   ],
+   [
+    599,
+    829
+   ],
+   [
+    600,
+    829
+   ],
+   [
+    632,
+    829
+   ],
+   [
+    600,
+    830
+   ],
+   [
+    601,
+    830
+   ],
+   [
+    631,
+    830
+   ],
+   [
+    632,
+    830
+   ],
+   [
+    601,
+    831
+   ],
+   [
+    602,
+    831
+   ],
+   [
+    603,
+    831
+   ],
+   [
+    631,
+    831
+   ],
+   [
+    603,
+    832
+   ],
+   [
+    604,
+    832
+   ],
+   [
+    630,
+    832
+   ],
+   [
+    631,
+    832
+   ],
+   [
+    604,
+    833
+   ],
+   [
+    605,
+    833
+   ],
+   [
+    628,
+    833
+   ],
+   [
+    629,
+    833
+   ],
+   [
+    630,
+    833
+   ],
+   [
+    605,
+    834
+   ],
+   [
+    626,
+    834
+   ],
+   [
+    627,
+    834
+   ],
+   [
+    628,
+    834
+   ],
+   [
+    605,
+    835
+   ],
+   [
+    606,
+    835
+   ],
+   [
+    625,
+    835
+   ],
+   [
+    626,
+    835
+   ],
+   [
+    606,
+    836
+   ],
+   [
+    607,
+    836
+   ],
+   [
+    624,
+    836
+   ],
+   [
+    625,
+    836
+   ],
+   [
+    607,
+    837
+   ],
+   [
+    608,
+    837
+   ],
+   [
+    623,
+    837
+   ],
+   [
+    624,
+    837
+   ],
+   [
+    608,
+    838
+   ],
+   [
+    622,
+    838
+   ],
+   [
+    623,
+    838
+   ],
+   [
+    608,
+    839
+   ],
+   [
+    609,
+    839
+   ],
+   [
+    610,
+    839
+   ],
+   [
+    621,
+    839
+   ],
+   [
+    622,
+    839
+   ],
+   [
+    610,
+    840
+   ],
+   [
+    611,
+    840
+   ],
+   [
+    612,
+    840
+   ],
+   [
+    620,
+    840
+   ],
+   [
+    621,
+    840
+   ],
+   [
+    612,
+    841
+   ],
+   [
+    613,
+    841
+   ],
+   [
+    614,
+    841
+   ],
+   [
+    619,
+    841
+   ],
+   [
+    620,
+    841
+   ],
+   [
+    614,
+    842
+   ],
+   [
+    615,
+    842
+   ],
+   [
+    618,
+    842
+   ],
+   [
+    619,
+    842
+   ],
+   [
+    615,
+    843
+   ],
+   [
+    616,
+    843
+   ],
+   [
+    617,
+    843
+   ],
+   [
+    618,
+    843
+   ],
+   [
+    616,
+    844
+   ],
+   [
+    616,
+    845
+   ],
+   [
+    616,
+    846
+   ],
+   [
+    617,
+    846
+   ],
+   [
+    617,
+    847
+   ],
+   [
+    618,
+    847
+   ],
+   [
+    618,
+    848
+   ],
+   [
+    619,
+    848
+   ],
+   [
+    619,
+    849
+   ],
+   [
+    620,
+    849
+   ],
+   [
+    591,
+    852
+   ],
+   [
+    591,
+    853
+   ],
+   [
+    591,
+    854
+   ],
+   [
+    591,
+    855
+   ],
+   [
+    591,
+    856
+   ],
+   [
+    592,
+    856
+   ],
+   [
+    592,
+    857
+   ],
+   [
+    593,
+    857
+   ],
+   [
+    800,
+    960
+   ],
+   [
+    800,
+    961
+   ],
+   [
+    800,
+    962
+   ],
+   [
+    800,
+    963
+   ],
+   [
+    800,
+    964
+   ],
+   [
+    800,
+    965
+   ],
+   [
+    801,
+    965
+   ],
+   [
+    802,
+    965
+   ],
+   [
+    803,
+    965
+   ],
+   [
+    804,
+    965
+   ],
+   [
+    805,
+    965
+   ],
+   [
+    806,
+    965
+   ],
+   [
+    807,
+    965
+   ],
+   [
+    808,
+    965
+   ],
+   [
+    809,
+    965
+   ],
+   [
+    810,
+    965
+   ],
+   [
+    831,
+    1039
+   ],
+   [
+    832,
+    1039
+   ],
+   [
+    832,
+    1040
+   ],
+   [
+    832,
+    1041
+   ],
+   [
+    832,
+    1042
+   ],
+   [
+    832,
+    1043
+   ],
+   [
+    832,
+    1044
+   ],
+   [
+    832,
+    1045
+   ],
+   [
+    832,
+    1046
+   ],
+   [
+    832,
+    1047
+   ],
+   [
+    832,
+    1048
+   ],
+   [
+    832,
+    1049
+   ],
+   [
+    832,
+    1050
+   ],
+   [
+    833,
+    1050
+   ],
+   [
+    833,
+    1051
+   ],
+   [
+    833,
+    1052
+   ],
+   [
+    833,
+    1053
+   ],
+   [
+    833,
+    1054
+   ],
+   [
+    833,
+    1055
+   ],
+   [
+    833,
+    1056
+   ],
+   [
+    833,
+    1057
+   ],
+   [
+    833,
+    1058
+   ],
+   [
+    861,
+    1058
+   ],
+   [
+    862,
+    1058
+   ],
+   [
+    833,
+    1059
+   ],
+   [
+    859,
+    1059
+   ],
+   [
+    860,
+    1059
+   ],
+   [
+    861,
+    1059
+   ],
+   [
+    833,
+    1060
+   ],
+   [
+    849,
+    1060
+   ],
+   [
+    850,
+    1060
+   ],
+   [
+    851,
+    1060
+   ],
+   [
+    852,
+    1060
+   ],
+   [
+    853,
+    1060
+   ],
+   [
+    854,
+    1060
+   ],
+   [
+    855,
+    1060
+   ],
+   [
+    856,
+    1060
+   ],
+   [
+    857,
+    1060
+   ],
+   [
+    858,
+    1060
+   ],
+   [
+    859,
+    1060
+   ],
+   [
+    820,
+    1061
+   ],
+   [
+    833,
+    1061
+   ],
+   [
+    837,
+    1061
+   ],
+   [
+    838,
+    1061
+   ],
+   [
+    839,
+    1061
+   ],
+   [
+    840,
+    1061
+   ],
+   [
+    841,
+    1061
+   ],
+   [
+    842,
+    1061
+   ],
+   [
+    843,
+    1061
+   ],
+   [
+    844,
+    1061
+   ],
+   [
+    845,
+    1061
+   ],
+   [
+    846,
+    1061
+   ],
+   [
+    847,
+    1061
+   ],
+   [
+    848,
+    1061
+   ],
+   [
+    849,
+    1061
+   ],
+   [
+    820,
+    1062
+   ],
+   [
+    828,
+    1062
+   ],
+   [
+    829,
+    1062
+   ],
+   [
+    830,
+    1062
+   ],
+   [
+    831,
+    1062
+   ],
+   [
+    832,
+    1062
+   ],
+   [
+    833,
+    1062
+   ],
+   [
+    834,
+    1062
+   ],
+   [
+    835,
+    1062
+   ],
+   [
+    837,
+    1062
+   ],
+   [
+    848,
+    1062
+   ],
+   [
+    820,
+    1063
+   ],
+   [
+    824,
+    1063
+   ],
+   [
+    825,
+    1063
+   ],
+   [
+    826,
+    1063
+   ],
+   [
+    827,
+    1063
+   ],
+   [
+    828,
+    1063
+   ],
+   [
+    837,
+    1063
+   ],
+   [
+    848,
+    1063
+   ],
+   [
+    990,
+    1063
+   ],
+   [
+    991,
+    1063
+   ],
+   [
+    992,
+    1063
+   ],
+   [
+    993,
+    1063
+   ],
+   [
+    812,
+    1064
+   ],
+   [
+    813,
+    1064
+   ],
+   [
+    814,
+    1064
+   ],
+   [
+    815,
+    1064
+   ],
+   [
+    816,
+    1064
+   ],
+   [
+    817,
+    1064
+   ],
+   [
+    818,
+    1064
+   ],
+   [
+    819,
+    1064
+   ],
+   [
+    820,
+    1064
+   ],
+   [
+    821,
+    1064
+   ],
+   [
+    822,
+    1064
+   ],
+   [
+    823,
+    1064
+   ],
+   [
+    824,
+    1064
+   ],
+   [
+    826,
+    1064
+   ],
+   [
+    837,
+    1064
+   ],
+   [
+    848,
+    1064
+   ],
+   [
+    993,
+    1064
+   ],
+   [
+    826,
+    1065
+   ],
+   [
+    832,
+    1065
+   ],
+   [
+    833,
+    1065
+   ],
+   [
+    834,
+    1065
+   ],
+   [
+    835,
+    1065
+   ],
+   [
+    836,
+    1065
+   ],
+   [
+    837,
+    1065
+   ],
+   [
+    848,
+    1065
+   ],
+   [
+    993,
+    1065
+   ],
+   [
+    994,
+    1065
+   ],
+   [
+    995,
+    1065
+   ],
+   [
+    996,
+    1065
+   ],
+   [
+    826,
+    1066
+   ],
+   [
+    827,
+    1066
+   ],
+   [
+    828,
+    1066
+   ],
+   [
+    829,
+    1066
+   ],
+   [
+    830,
+    1066
+   ],
+   [
+    831,
+    1066
+   ],
+   [
+    832,
+    1066
+   ],
+   [
+    848,
+    1066
+   ],
+   [
+    848,
+    1067
+   ],
+   [
+    848,
+    1068
+   ],
+   [
+    848,
+    1069
+   ],
+   [
+    848,
+    1070
+   ],
+   [
+    848,
+    1071
+   ],
+   [
+    848,
+    1072
+   ],
+   [
+    849,
+    1072
+   ],
+   [
+    849,
+    1073
+   ],
+   [
+    849,
+    1074
+   ],
+   [
+    849,
+    1075
+   ],
+   [
+    849,
+    1076
+   ],
+   [
+    849,
+    1077
+   ],
+   [
+    849,
+    1078
+   ],
+   [
+    849,
+    1079
+   ],
+   [
+    849,
+    1080
+   ],
+   [
+    850,
+    1080
+   ],
+   [
+    850,
+    1081
+   ],
+   [
+    850,
+    1082
+   ],
+   [
+    850,
+    1083
+   ],
+   [
+    850,
+    1084
+   ],
+   [
+    850,
+    1085
+   ],
+   [
+    851,
+    1085
+   ],
+   [
+    851,
+    1086
+   ],
+   [
+    851,
+    1087
+   ],
+   [
+    851,
+    1088
+   ],
+   [
+    851,
+    1089
+   ],
+   [
+    851,
+    1090
+   ],
+   [
+    829,
+    1099
+   ],
+   [
+    829,
+    1100
+   ],
+   [
+    870,
+    1100
+   ],
+   [
+    871,
+    1100
+   ],
+   [
+    829,
+    1101
+   ],
+   [
+    830,
+    1101
+   ],
+   [
+    831,
+    1101
+   ],
+   [
+    832,
+    1101
+   ],
+   [
+    833,
+    1101
+   ],
+   [
+    867,
+    1101
+   ],
+   [
+    868,
+    1101
+   ],
+   [
+    869,
+    1101
+   ],
+   [
+    870,
+    1101
+   ],
+   [
+    867,
+    1102
+   ],
+   [
+    867,
+    1103
+   ],
+   [
+    867,
+    1104
+   ],
+   [
+    867,
+    1105
+   ],
+   [
+    867,
+    1106
+   ]
+  ],
+  "ways": [
+   {
+    "who": "Manchester_Hill_Spawn1",
+    "kind": "spawn",
+    "way": "walk",
+    "opened": 14
+   },
+   {
+    "who": "AlliedBase_Spawn4",
+    "kind": "spawn",
+    "way": "walk",
+    "opened": 9
+   },
+   {
+    "who": "Bahnhof_Spawn2",
+    "kind": "spawn",
+    "way": "drop",
+    "opened": 12
+   },
+   {
+    "who": "Bahnhof_Spawn3",
+    "kind": "spawn",
+    "way": "drop",
+    "opened": 3
+   },
+   {
+    "who": "Bahnhof_Spawn4",
+    "kind": "spawn",
+    "way": "none",
+    "opened": 0
+   },
+   {
+    "who": "Bahnhof_Spawn5",
+    "kind": "spawn",
+    "way": "walk",
+    "opened": 17
+   },
+   {
+    "who": "Bahnhof_Spawn6",
+    "kind": "spawn",
+    "way": "walk",
+    "opened": 13
+   },
+   {
+    "who": "Bahnhof_Spawn7",
+    "kind": "spawn",
+    "way": "walk",
+    "opened": 10
+   },
+   {
+    "who": "Bahnhof_Spawn8",
+    "kind": "spawn",
+    "way": "jump",
+    "opened": 0
+   },
+   {
+    "who": "Bahnhof_Spawn9",
+    "kind": "spawn",
+    "way": "walk",
+    "opened": 17
+   },
+   {
+    "who": "Manchester_Hill_Spawn3",
+    "kind": "spawn",
+    "way": "walk",
+    "opened": 14
+   },
+   {
+    "who": "Manchester_Hill_Spawn4",
+    "kind": "spawn",
+    "way": "walk",
+    "opened": 8
+   },
+   {
+    "who": "Manchester_Hill_Spawn5",
+    "kind": "spawn",
+    "way": "walk",
+    "opened": 8
+   },
+   {
+    "who": "Manchester_Hill_Spawn7",
+    "kind": "spawn",
+    "way": "walk",
+    "opened": 6
+   },
+   {
+    "who": "Kriemhilde_Stellung_Spawn1",
+    "kind": "spawn",
+    "way": "walk",
+    "opened": 41
+   },
+   {
+    "who": "Kriemhilde_Stellung_Spawn2",
+    "kind": "spawn",
+    "way": "walk",
+    "opened": 17
+   },
+   {
+    "who": "Kriemhilde_Stellung_Spawn3",
+    "kind": "spawn",
+    "way": "walk",
+    "opened": 0
+   },
+   {
+    "who": "Kriemhilde_Stellung_Spawn4",
+    "kind": "spawn",
+    "way": "walk",
+    "opened": 6
+   },
+   {
+    "who": "Kriemhilde_Stellung_Spawn5",
+    "kind": "spawn",
+    "way": "none",
+    "opened": 0
+   },
+   {
+    "who": "Kriemhilde_Stellung_Spawn6",
+    "kind": "spawn",
+    "way": "walk",
+    "opened": 34
+   },
+   {
+    "who": "Kriemhilde_Stellung_Spawn7",
+    "kind": "spawn",
+    "way": "walk",
+    "opened": 0
+   },
+   {
+    "who": "Kriemhilde_Stellung_Spawn8",
+    "kind": "spawn",
+    "way": "walk",
+    "opened": 0
+   },
+   {
+    "who": "Kriemhilde_Stellung_Spawn9",
+    "kind": "spawn",
+    "way": "walk",
+    "opened": 9
+   },
+   {
+    "who": "Wotan_Stellung_Spawn1",
+    "kind": "spawn",
+    "way": "walk",
+    "opened": 26
+   },
+   {
+    "who": "Wotan_Stellung_Spawn2",
+    "kind": "spawn",
+    "way": "walk",
+    "opened": 16
+   },
+   {
+    "who": "Wotan_Stellung_Spawn3",
+    "kind": "spawn",
+    "way": "walk",
+    "opened": 22
+   },
+   {
+    "who": "Wotan_Stellung_Spawn4",
+    "kind": "spawn",
+    "way": "walk",
+    "opened": 3
+   },
+   {
+    "who": "Wotan_Stellung_Spawn6",
+    "kind": "spawn",
+    "way": "walk",
+    "opened": 3
+   },
+   {
+    "who": "Wotan_Stellung_Spawn7",
+    "kind": "spawn",
+    "way": "walk",
+    "opened": 31
+   },
+   {
+    "who": "Wotan_Stellung_Spawn8",
+    "kind": "spawn",
+    "way": "walk",
+    "opened": 5
+   },
+   {
+    "who": "Wotan_Stellung_Spawn9",
+    "kind": "spawn",
+    "way": "walk",
+    "opened": 27
+   },
+   {
+    "who": "Wotan_Stellung_Spawn10",
+    "kind": "spawn",
+    "way": "walk",
+    "opened": 7
+   },
+   {
+    "who": "Wotan_Stellung_Spawn11",
+    "kind": "spawn",
+    "way": "drop",
+    "opened": 11
+   },
+   {
+    "who": "Wotan_Stellung_Spawn13",
+    "kind": "spawn",
+    "way": "none",
+    "opened": 0
+   },
+   {
+    "who": "Siegfried_Stellung_Spawn1",
+    "kind": "spawn",
+    "way": "none",
+    "opened": 0
+   },
+   {
+    "who": "Siegfried_Stellung_Spawn2",
+    "kind": "spawn",
+    "way": "none",
+    "opened": 0
+   },
+   {
+    "who": "Siegfried_Stellung_Spawn8",
+    "kind": "spawn",
+    "way": "walk",
+    "opened": 9
+   },
+   {
+    "who": "Siegfried_Stellung_Spawn10",
+    "kind": "spawn",
+    "way": "none",
+    "opened": 0
+   },
+   {
+    "who": "Vorposten_Spawn1",
+    "kind": "spawn",
+    "way": "walk",
+    "opened": 134
+   },
+   {
+    "who": "Vorposten_Spawn2",
+    "kind": "spawn",
+    "way": "walk",
+    "opened": 22
+   },
+   {
+    "who": "Vorposten_Spawn3",
+    "kind": "spawn",
+    "way": "none",
+    "opened": 0
+   },
+   {
+    "who": "Vorposten_Spawn4",
+    "kind": "spawn",
+    "way": "walk",
+    "opened": 31
+   },
+   {
+    "who": "Vorposten_Spawn5",
+    "kind": "spawn",
+    "way": "walk",
+    "opened": 8
+   },
+   {
+    "who": "Vorposten_Spawn6",
+    "kind": "spawn",
+    "way": "walk",
+    "opened": 8
+   },
+   {
+    "who": "Brunhilde_Stellung_Spawn1",
+    "kind": "spawn",
+    "way": "none",
+    "opened": 0
+   },
+   {
+    "who": "Brunhilde_Stellung_Spawn2",
+    "kind": "spawn",
+    "way": "none",
+    "opened": 0
+   },
+   {
+    "who": "Brunhilde_Stellung_Spawn5",
+    "kind": "spawn",
+    "way": "walk",
+    "opened": 16
+   },
+   {
+    "who": "Kriemhilde_Stellung",
+    "kind": "flag",
+    "way": "walk",
+    "opened": 0
+   },
+   {
+    "who": "vorposten",
+    "kind": "flag",
+    "way": "walk",
+    "opened": 3
+   }
+  ],
+  "cover": 0.848,
   "floors": {
    "stacked": false,
-   "twoFloorShare": 0.002,
+   "twoFloorShare": 0.005,
    "raised": [
-    "wotan_stellung"
+    "wotan_stellung",
+    "Siegfried_Stellung"
    ],
    "reason": null
   },
@@ -100,20 +2868,25 @@
   "chokeMax": 4,
   "unreachable": [],
   "stops": {},
-  "oneSided": {},
+  "oneSided": {
+   "vorposten": 1
+  },
   "sides": {
    "1": {
-    "spawns": 12,
+    "spawns": 48,
     "flags": [
      "Brunhilde_Stellung",
+     "Kriemhilde_Stellung",
      "bahnhof",
-     "manchester_hill"
+     "manchester_hill",
+     "vorposten"
     ]
    },
    "2": {
-    "spawns": 3,
+    "spawns": 4,
     "flags": [
      "Brunhilde_Stellung",
+     "Kriemhilde_Stellung",
      "bahnhof",
      "manchester_hill"
     ]
@@ -121,25 +2894,43 @@
   },
   "chokes": {
    "bahnhof:1": 0,
-   "bahnhof:2": 0,
-   "manchester_hill:1": 1,
-   "manchester_hill:2": 0,
+   "bahnhof:2": 2,
+   "manchester_hill:1": 2,
+   "manchester_hill:2": 3,
+   "Kriemhilde_Stellung:1": 0,
+   "Kriemhilde_Stellung:2": 4,
    "Brunhilde_Stellung:1": 1,
-   "Brunhilde_Stellung:2": 0
+   "Brunhilde_Stellung:2": 2,
+   "vorposten:1": 1,
+   "vorposten:2": 50
   },
   "late": {},
-  "shutLinks": []
+  "shutLinks": [
+   "manchester_hill>vorposten",
+   "Kriemhilde_Stellung>vorposten",
+   "Brunhilde_Stellung>vorposten",
+   "vorposten>manchester_hill",
+   "vorposten>Kriemhilde_Stellung",
+   "vorposten>Brunhilde_Stellung"
+  ]
  },
  "inputs": {
   "controlPoints": "64ebb40b7e82590b070da46e5f15770a12ff91363f50267342ed9251cd422d99",
-  "infantryMap": "e83cdeaa55f11f5a08d9fdf8b2bfc55aaf59a5ba0bc360e69970c4de889a963f",
-  "template": "bdc0e455f47f91b7e7724e71d7c0c196e839b36946ac3abb7663d725944081e5"
+  "infantryMap": "471b2395cd8ad869168452726d69d2a25b7372be8302acd70634365dd665ffb3",
+  "template": "43f8a790471528016570235f76e97dbb2045732458781a5139f37fed68bf98c0"
  },
  "files": {
-  "AI.con": "9b22e83889ee475b19b5aaa9a293f648818d67ae43b4074c9288d11e89f0be83",
-  "AI/StrategicAreas.con": "ea6885e410ebb659fd0d27d0d85494d3472b1cd7dd7c212d29228d8c0f06f8d5",
-  "AI/Strategies.con": "13da4dc35872dd4b5798a066f4425bdc824cfd61f31093d1808e1202644de52e",
-  "AI/conditions.con": "248a04b727c08d696bf0fa9c162bc22c43cde3c75f695892fe1e0f5141519c49",
-  "AI/prerequisites.con": "c96168b5f69860e578f5d26728fd2a2092c4c436e1da49b7d6f4009b65735398"
+  "AI.con": "7c41d1617d05784e85a22777540c99fe9122d0f09d58c906961892e6c1391b5a",
+  "AIpathFinding.con": "9d8080cdfa7605961969aa126519b03be9691bd604ac76aef50166d81215edd2",
+  "AI/StrategicAreas.con": "7853831dc33e89dca9960b0c8d5e5c21340362579e437ab4991186e640981658",
+  "AI/Strategies.con": "4ce0be59a0d6c5cd530db002fb062c4be8d936bc6ae59bd188803ccaf7869a8d",
+  "AI/conditions.con": "68a0c7a8aec69954063147b60fae560b2874884285737aa085efa76597d395aa",
+  "AI/prerequisites.con": "4c1f313bc285b228fd6ad03bfd1f44c5b15c8703c31f802eb605bc5f00f88bb5",
+  "Pathfinding/Infantry1Level0Map.raw": "42a5b96337c4aa7ef26e8f872bf511b60f495854c5f76a1a939bb3925601ecee",
+  "Pathfinding/Infantry1Level1Map.raw": "5e66075ef1213349bc3f34b649c5632f3de094bdcccb8668dccf85533c7c3bcf",
+  "Pathfinding/Infantry1Level2Map.raw": "1b8e47a1d867bf815365a68a28bc3c07763c67bc1240900f13610b62014fce4c",
+  "Pathfinding/Tank0Level0Map.raw": "c0e5c8083af94f08f580049b8256a4952787c3017d1655d020ea1be6ec5c8e4f",
+  "Pathfinding/Tank0Level1Map.raw": "1b8de8f7ef7d8766c0d466352d54d33c65a78ae4969351440e15bae70123d131",
+  "Pathfinding/Tank0Level2Map.raw": "79f644297de098fe04a5897f11d75e98a8456ecf9e2e32c38b060691ae4781c8"
  }
 }

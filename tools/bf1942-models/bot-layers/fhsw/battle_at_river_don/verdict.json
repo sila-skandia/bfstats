@@ -4,10 +4,10 @@
  "outcome": "unsuitable",
  "config": "with vehicles",
  "doctrine": "garrison",
- "generatorVersion": 6,
+ "generatorVersion": 7,
  "inputs": {
   "controlPoints": "32ba28a05f133a42d3084e7694e943425a4be6838a26a09b5533a804e3b57a69",
-  "infantryMap": "a6c1bfb375061354497f5a85cc6f41432ce413f5ce565dfa0ea7c8ab79d5e03c",
+  "infantryMap": "7cad25c33943a30552af51c99cd87e002c3e0194e8fab8ec72b960bf84259076",
   "template": "bdc0e455f47f91b7e7724e71d7c0c196e839b36946ac3abb7663d725944081e5"
  },
  "baseline": "DICE layers with vehicles, garrison doctrine: berlin, stalingrad, kharkov, bocage; seeds 1..10, 600 s",

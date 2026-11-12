@@ -1,8 +1,8 @@
 {
  "level": "DC_Operation_Bragg",
  "mod": "desertcombat",
- "url": "https://play.bfstats.io/map.html?map=DC_Operation_Bragg&team=2&mode=Conquest&mod=desertcombat&botCount=16&botSkill=0.75&mute&shots",
- "date": "2026-11-11",
+ "url": "https://play.bfstats.io/map.html?map=DC_Operation_Bragg&team=2&mode=Conquest&mod=desertcombat&botCount=16&botSkill=0.75&spawnTime=wave&mute&shots",
+ "date": "2026-11-12",
  "bar": "DICE levels on the page, 3 matches each of 600 s, 16 bots: Berlin, Stalingrad, Kharkov, Bocage; 2026-11-11",
  "verdict": "fail",
  "failed": [
@@ -18,32 +18,33 @@
   },
   {
    "metric": "suicidesPerBotMinute",
-   "median": 0.0437,
+   "median": 0.0312,
    "bar": "<= 0.0562",
    "pass": true
   },
   {
    "metric": "nonEnemyDeathShareWorseSide",
-   "median": 0.8,
+   "median": 0.5,
    "bar": "<= 0.308",
    "pass": false
   },
   {
    "metric": "enemyKillsPerBotMinute",
-   "median": 0.0187,
+   "median": 0.05,
    "bar": ">= 0.175",
    "pass": false
   }
  ],
- "matches": 1,
+ "matches": 2,
  "rollout": {
-  "pass": false,
+  "pass": true,
   "floor": {
    "kills": 0.15,
    "killsWithFlags": 0.03,
    "flags": 3,
    "killsWithAFlag": 0.05,
-   "ownHand": 0.1
+   "ownHand": 0.1,
+   "ownHandOfKills": 0.3333333333333333
   }
  },
  "runs": [
@@ -70,6 +71,34 @@
     "enemyKills": 0.0187,
     "captures": 2,
     "ownHand": 0.0437
+   },
+   "teamKillsBySide": {
+    "1": 0,
+    "2": 0
+   },
+   "oldCode": "played on the generator 5 layer, on the bot code of e5003c584 or earlier"
+  },
+  {
+   "generated": {
+    "version": 6,
+    "template": "few"
+   },
+   "minutes": 10,
+   "tickets": {
+    "1": 127,
+    "2": 46
+   },
+   "capturesTotal": 4,
+   "teamKillsPerBotMinute": 0,
+   "suicidesPerBotMinute": 0.0312,
+   "nonEnemyDeathShareWorseSide": 0.5,
+   "enemyKillsPerBotMinute": 0.05,
+   "rollout": {
+    "pass": true,
+    "why": [],
+    "enemyKills": 0.05,
+    "captures": 4,
+    "ownHand": 0.0312
    },
    "teamKillsBySide": {
     "1": 0,

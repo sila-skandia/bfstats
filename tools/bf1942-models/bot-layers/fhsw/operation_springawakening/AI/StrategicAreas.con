@@ -4,6 +4,7 @@ aiStrategicArea.create axis_base1 321.7/1709.9 331.7/1719.9 50
 aiStrategicArea.addNeighbour new_control_point1
 aiStrategicArea.addNeighbour new_control_point3
 aiStrategicArea.addObjectTypeFlag Base
+aiStrategicArea.setOrderPosition Tank 326.5/1722.5
 aiStrategicArea.setOrderPosition Infantry 335.5/1716.5
 aiStrategicArea.setSide 1
 aiStrategicArea.setTakeable 2 0
@@ -13,6 +14,7 @@ aiStrategicArea.addNeighbour new_control_point2
 aiStrategicArea.addNeighbour new_control_point4
 aiStrategicArea.addNeighbour new_control_point5
 aiStrategicArea.addObjectTypeFlag Base
+aiStrategicArea.setOrderPosition Tank 1337.5/491.5
 aiStrategicArea.setOrderPosition Infantry 1337.5/491.5
 aiStrategicArea.setSide 2
 aiStrategicArea.setTakeable 1 0
@@ -25,6 +27,7 @@ aiStrategicArea.addNeighbour new_control_point5
 aiStrategicArea.addObjectTypeFlag Flank
 aiStrategicArea.addObjectTypeFlag Close
 aiStrategicArea.addObjectTypeFlag ControlPoint
+aiStrategicArea.setOrderPosition Tank 1087.5/1651.5
 aiStrategicArea.setOrderPosition Infantry 1072.5/1644.5
 aiStrategicArea.setSide 2
 
@@ -34,6 +37,7 @@ aiStrategicArea.addNeighbour new_control_point3
 aiStrategicArea.addNeighbour new_control_point4
 aiStrategicArea.addObjectTypeFlag Flank
 aiStrategicArea.addObjectTypeFlag ControlPoint
+aiStrategicArea.setOrderPosition Tank 793.5/843.5
 aiStrategicArea.setOrderPosition Infantry 790.5/845.5
 aiStrategicArea.setSide 2
 
@@ -47,6 +51,7 @@ aiStrategicArea.addObjectTypeFlag Centre
 aiStrategicArea.addObjectTypeFlag StrongPoint
 aiStrategicArea.addObjectTypeFlag Close
 aiStrategicArea.addObjectTypeFlag ControlPoint
+aiStrategicArea.setOrderPosition Tank 759.5/1334.5
 aiStrategicArea.setOrderPosition Infantry 758.5/1335.5
 aiStrategicArea.setSide 2
 
@@ -59,6 +64,7 @@ aiStrategicArea.addNeighbour new_control_point5
 aiStrategicArea.addObjectTypeFlag Flank
 aiStrategicArea.addObjectTypeFlag Close
 aiStrategicArea.addObjectTypeFlag ControlPoint
+aiStrategicArea.setOrderPosition Tank 1091.5/967.5
 aiStrategicArea.setOrderPosition Infantry 1092.5/964.5
 aiStrategicArea.setSide 2
 
@@ -68,6 +74,7 @@ aiStrategicArea.addNeighbour new_control_point1
 aiStrategicArea.addNeighbour new_control_point3
 aiStrategicArea.addNeighbour new_control_point4
 aiStrategicArea.addObjectTypeFlag Base
+aiStrategicArea.setOrderPosition Tank 1697.5/1565.5
 aiStrategicArea.setOrderPosition Infantry 1700.5/1563.5
 aiStrategicArea.setSide 2
 aiStrategicArea.setTakeable 1 0

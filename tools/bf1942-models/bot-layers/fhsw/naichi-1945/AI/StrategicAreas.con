@@ -4,6 +4,7 @@ aiStrategicArea.create axisbase 1453.2/1721.9 1458.2/1726.9 50
 aiStrategicArea.addNeighbour jpdf_bridge2
 aiStrategicArea.addNeighbour jpdf_hill
 aiStrategicArea.addObjectTypeFlag Base
+aiStrategicArea.setOrderPosition Tank 1460.5/1731.5
 aiStrategicArea.setOrderPosition Infantry 1461.5/1723.5
 aiStrategicArea.setSide 1
 aiStrategicArea.setTakeable 2 0
@@ -12,6 +13,7 @@ aiStrategicArea.create alliedbase 186.3/148.1 191.3/153.1 50
 aiStrategicArea.addNeighbour jpdf_ie1
 aiStrategicArea.addNeighbour jpdf_ie2
 aiStrategicArea.addObjectTypeFlag Base
+aiStrategicArea.setOrderPosition Tank 189.5/153.5
 aiStrategicArea.setOrderPosition Infantry 190.5/154.5
 aiStrategicArea.setSide 2
 aiStrategicArea.setTakeable 1 0
@@ -23,6 +25,7 @@ aiStrategicArea.addNeighbour jpdf_ie2
 aiStrategicArea.addObjectTypeFlag Centre
 aiStrategicArea.addObjectTypeFlag StrongPoint
 aiStrategicArea.addObjectTypeFlag ControlPoint
+aiStrategicArea.setOrderPosition Tank 970.5/977.5
 aiStrategicArea.setOrderPosition Infantry 969.5/978.5
 aiStrategicArea.setSide 1
 
@@ -33,6 +36,7 @@ aiStrategicArea.addNeighbour jpdf_ie1
 aiStrategicArea.addNeighbour jpdf_hill
 aiStrategicArea.addObjectTypeFlag Flank
 aiStrategicArea.addObjectTypeFlag ControlPoint
+aiStrategicArea.setOrderPosition Tank 629.5/1296.5
 aiStrategicArea.setOrderPosition Infantry 630.5/1295.5
 aiStrategicArea.setSide 1
 
@@ -42,6 +46,7 @@ aiStrategicArea.addNeighbour jpdf_bridge2
 aiStrategicArea.addNeighbour jpdf_ie2
 aiStrategicArea.addObjectTypeFlag Flank
 aiStrategicArea.addObjectTypeFlag ControlPoint
+aiStrategicArea.setOrderPosition Tank 181.5/885.5
 aiStrategicArea.setOrderPosition Infantry 182.5/884.5
 aiStrategicArea.setSide 1
 
@@ -52,6 +57,7 @@ aiStrategicArea.addNeighbour jpdf_bridge2
 aiStrategicArea.addObjectTypeFlag Centre
 aiStrategicArea.addObjectTypeFlag Close
 aiStrategicArea.addObjectTypeFlag ControlPoint
+aiStrategicArea.setOrderPosition Tank 1130.5/1426.5
 aiStrategicArea.setOrderPosition Infantry 1131.5/1425.5
 aiStrategicArea.setSide 1
 
@@ -67,5 +73,6 @@ aiStrategicArea.addNeighbour jpdf_ie1
 aiStrategicArea.addObjectTypeFlag Centre
 aiStrategicArea.addObjectTypeFlag Close
 aiStrategicArea.addObjectTypeFlag ControlPoint
+aiStrategicArea.setOrderPosition Tank 676.5/639.5
 aiStrategicArea.setOrderPosition Infantry 675.5/640.5
 aiStrategicArea.setSide 1

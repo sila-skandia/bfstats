@@ -1,13 +1,13 @@
 {
  "level": "seelow-heights-1945",
  "verdict": "fail",
- "outcome": "better-than-nothing",
+ "outcome": "no-fight",
  "config": "with vehicles",
  "doctrine": "garrison",
- "generatorVersion": 5,
+ "generatorVersion": 6,
  "inputs": {
   "controlPoints": "3a3e5ec68c3b43516c0535341d6bf73992c1e142b9cff4b94f6b090822e8cf32",
-  "infantryMap": "f9b851edc4c9aa922a7c47a5dafb8601e0ef8ae89bb42764704083b902d20ef4",
+  "infantryMap": "9468467367715b69ca1831c457fa18737c2235690a48630a63bb0f66af9bb6d8",
   "template": "43f8a790471528016570235f76e97dbb2045732458781a5139f37fed68bf98c0"
  },
  "baseline": "DICE layers with vehicles, garrison doctrine: berlin, stalingrad, kharkov, bocage; seeds 1..10, 600 s",
@@ -20,12 +20,12 @@
   "8": {
    "verdict": "fail",
    "failed": [
-    "selfDeathsPerBotMinute",
-    "routeFailuresPerBotMinute",
+    "idleShare",
+    "capturesTotal",
     "enemyKillsPerBotMinute",
     "flagCoverage",
     "bothSidesCapture",
-    "routeFailuresPerBotMinuteWorseSide",
+    "bothSidesKill",
     "nonEnemyDeathShareWorseSide",
     "unitsNeverUsedShare"
    ],
@@ -38,16 +38,14 @@
   "16": {
    "verdict": "fail",
    "failed": [
-    "stuckSecondsPerBotMinute",
     "idleShare",
     "routeFailuresPerBotMinute",
-    "redeploysPerBotMinute",
+    "capturesTotal",
     "enemyKillsPerBotMinute",
     "flagCoverage",
     "bothSidesCapture",
-    "stuckSecondsPerBotMinuteWorseSide",
+    "bothSidesKill",
     "routeFailuresPerBotMinuteWorseSide",
-    "redeploysPerBotMinuteWorseSide",
     "nonEnemyDeathShareWorseSide",
     "hullStuckSecondsPerDrivingMinute",
     "hullStuckSecondsPerDrivingMinuteWorseSide",
@@ -62,13 +60,11 @@
   }
  },
  "oneSided": null,
- "unreachable": [
-  "stationtemplate"
- ],
+ "unreachable": [],
  "lintErrors": [],
  "acceptanceWithdrawn": {
-  "because": "page matches 2026-11-12: 0.025 enemy kills a bot-minute with 2 captures, then no kill and no capture; under the rollout floor",
-  "date": "2026-11-12",
-  "was": "Owner's rollout, 2026-11-12: the owner asked for everything with a fight to go l"
+  "because": "generator 6 layer on the bot code of 3b1ebe45c, two page matches of 600 s with 16 bots, both under the rollout floor: 0.019 and 0 enemy kills a bot-minute, no capture",
+  "date": "2026-11-13",
+  "was": "Regenerated on generator 6 (2026-11-13) after being turned down on generator 5: "
  }
 }

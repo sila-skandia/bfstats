@@ -1,22 +1,112 @@
 {
  "level": "somme_gasattack",
  "verdict": "fail",
- "outcome": "unsuitable",
+ "outcome": "no-better-than-nothing",
  "config": "with vehicles",
  "doctrine": "garrison",
- "generatorVersion": 6,
+ "generatorVersion": 7,
  "inputs": {
   "controlPoints": "e5696fd673dabd3a00d8161f7bd994f162103e43d86b24276a87ba9f1fcff559",
   "infantryMap": "b2e96368349b0357c4ba23b410b08402c1038f7374dc31c12f26882b4831e068",
   "template": "bdc0e455f47f91b7e7724e71d7c0c196e839b36946ac3abb7663d725944081e5"
  },
- "baseline": "DICE layers with vehicles, garrison doctrine: berlin, stalingrad, kharkov, bocage; seeds 1..10, 600 s",
- "bar": null,
+ "baseline": "bf1918's own layers with vehicles, garrison doctrine: argonnerwald, battle_of_cer, battle_of_mons, belleau_wood; seeds 1..10, 600 s; dropped, no fight: krakau",
+ "bar": {
+  "against": "bf1918",
+  "why": "bf1918's own bar, built from 4 of its levels that are alive (argonnerwald, battle_of_cer, battle_of_mons, belleau_wood)"
+ },
+ "againstDice": {
+  "verdict": "fail",
+  "outcome": "no-better-than-nothing",
+  "baseline": "DICE layers with vehicles, garrison doctrine: berlin, stalingrad, kharkov, bocage; seeds 1..10, 600 s",
+  "sizes": {
+   "8": {
+    "verdict": "fail",
+    "failed": [
+     "stuckSecondsPerBotMinute",
+     "idleShare",
+     "routeFailuresPerBotMinute",
+     "redeploysPerBotMinute",
+     "capturesTotal",
+     "enemyKillsPerBotMinute",
+     "flagCoverage",
+     "bothSidesCapture",
+     "stuckSecondsPerBotMinuteWorseSide",
+     "routeFailuresPerBotMinuteWorseSide",
+     "redeploysPerBotMinuteWorseSide",
+     "nonEnemyDeathShareWorseSide",
+     "hullStuckSecondsPerDrivingMinute",
+     "hullStuckSecondsPerDrivingMinuteWorseSide",
+     "unitsNeverUsedShare"
+    ]
+   },
+   "16": {
+    "verdict": "fail",
+    "failed": [
+     "idleShare",
+     "routeFailuresPerBotMinute",
+     "capturesTotal",
+     "enemyKillsPerBotMinute",
+     "flagCoverage",
+     "bothSidesCapture",
+     "routeFailuresPerBotMinuteWorseSide",
+     "redeploysPerBotMinuteWorseSide",
+     "nonEnemyDeathShareWorseSide",
+     "hullStuckSecondsPerDrivingMinute",
+     "hullStuckSecondsPerDrivingMinuteWorseSide",
+     "unitsNeverUsedShare",
+     "tankSilentShare"
+    ]
+   }
+  }
+ },
  "seeds": 1,
- "sizes": {},
+ "sizes": {
+  "8": {
+   "verdict": "fail",
+   "failed": [
+    "idleShare",
+    "selfDeathsPerBotMinute",
+    "enemyKillsPerBotMinute",
+    "flagCoverage",
+    "bothSidesCapture",
+    "stuckSecondsPerBotMinuteWorseSide",
+    "hullStuckSecondsPerDrivingMinute",
+    "unitsNeverUsedShare"
+   ],
+   "winners": [
+    1,
+    0,
+    0
+   ]
+  },
+  "16": {
+   "verdict": "fail",
+   "failed": [
+    "idleShare",
+    "enemyKillsPerBotMinute",
+    "bothSidesCapture",
+    "stuckSecondsPerBotMinuteWorseSide",
+    "nonEnemyDeathShareWorseSide",
+    "hullStuckSecondsPerDrivingMinute",
+    "hullStuckSecondsPerDrivingMinuteWorseSide",
+    "tankSilentShare"
+   ],
+   "winners": [
+    1,
+    0,
+    0
+   ]
+  }
+ },
  "oneSided": null,
  "unreachable": [],
  "lintErrors": [
   "side 2's bots have an open route to none of the 3 flags in play"
- ]
+ ],
+ "acceptanceWithdrawn": {
+  "because": "run despite the lint's choke rule; on the bot code of 3b1ebe45c, two page matches of 600 s with 16 bots, both under the rollout floor: 0.069 and 0.088 enemy kills a bot-minute, no capture; side 2 down to 11 and 8 tickets, a walkover",
+  "date": "2026-11-13",
+  "was": "Owner's rollout, played despite the lint's choke rule, 2026-11-13: every route o"
+ }
 }

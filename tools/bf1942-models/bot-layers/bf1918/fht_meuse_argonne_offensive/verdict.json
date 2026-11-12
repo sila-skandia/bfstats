@@ -4,10 +4,10 @@
  "outcome": "better-than-nothing",
  "config": "with vehicles",
  "doctrine": "garrison",
- "generatorVersion": 5,
+ "generatorVersion": 6,
  "inputs": {
   "controlPoints": "d01bec0e63d447bbb03901788518738cd96e498c97b5d9f7750ae0edd2730349",
-  "infantryMap": "c21cab80e6fa0649f8f293ebca10d3c424b939d4bab479554fc830130398a9b5",
+  "infantryMap": "783ccf2c783cefc6aaaab5ea0ab6c36bfc466f8d591761042436d709ca3d4ee5",
   "template": "43f8a790471528016570235f76e97dbb2045732458781a5139f37fed68bf98c0"
  },
  "baseline": "bf1918's own layers with vehicles, garrison doctrine: argonnerwald, battle_of_cer, battle_of_mons, belleau_wood; seeds 1..10, 600 s; dropped, no fight: krakau",
@@ -24,62 +24,45 @@
     "verdict": "fail",
     "failed": [
      "stuckSecondsPerBotMinute",
-     "routeFailuresPerBotMinute",
-     "capturesTotal",
      "enemyKillsPerBotMinute",
-     "flagCoverage",
-     "bothSidesCapture",
      "stuckSecondsPerBotMinuteWorseSide",
-     "routeFailuresPerBotMinuteWorseSide",
      "nonEnemyDeathShareWorseSide",
-     "hullStuckSecondsPerDrivingMinute",
-     "hullStuckSecondsPerDrivingMinuteWorseSide",
      "unitsNeverUsedShare"
     ]
    },
    "16": {
     "verdict": "fail",
     "failed": [
-     "routeFailuresPerBotMinute",
      "enemyKillsPerBotMinute",
-     "flagCoverage",
-     "bothSidesCapture",
-     "routeFailuresPerBotMinuteWorseSide",
      "nonEnemyDeathShareWorseSide",
      "hullStuckSecondsPerDrivingMinute",
      "hullStuckSecondsPerDrivingMinuteWorseSide",
-     "unitsNeverUsedShare",
-     "tankSilentShare"
+     "unitsNeverUsedShare"
     ]
    }
   }
  },
- "seeds": 2,
+ "seeds": 1,
  "sizes": {
   "8": {
    "verdict": "fail",
    "failed": [
-    "selfDeathsPerBotMinute",
-    "enemyKillsPerBotMinute",
-    "flagCoverage",
-    "bothSidesCapture",
     "unitsNeverUsedShare"
    ],
    "winners": [
     0,
     1,
-    1
+    0
    ]
   },
   "16": {
    "verdict": "fail",
    "failed": [
     "enemyKillsPerBotMinute",
-    "bothSidesCapture",
     "unitsNeverUsedShare"
    ],
    "winners": [
-    1,
+    0,
     1,
     0
    ]
@@ -87,5 +70,16 @@
  },
  "oneSided": null,
  "unreachable": [],
- "lintErrors": []
+ "lintErrors": [],
+ "accepted": {
+  "reason": "Regenerated on generator 6 (2026-11-13) after being turned down on generator 5: the screen shows kills or captures, so the page decides again.",
+  "date": "2026-11-12",
+  "outcome": "better-than-nothing",
+  "failed": [
+   "8:unitsNeverUsedShare",
+   "16:enemyKillsPerBotMinute",
+   "16:unitsNeverUsedShare"
+  ],
+  "by": "owner"
+ }
 }

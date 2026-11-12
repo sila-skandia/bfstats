@@ -1,6 +1,6 @@
 {
  "generator": "botgen",
- "version": 5,
+ "version": 6,
  "mod": "bf1918",
  "level": "fht_meuse_argonne_offensive",
  "objectSpawners": 108,
@@ -11,35 +11,483 @@
   "inPlay": 5,
   "rule": "5 capturable flags in play, more than 3"
  },
- "scope": "on foot: infantry order positions only, no search maps, no co-op layer",
+ "scope": "an infantry map from the page painter with the walk test's ways out opened, a Tank0 map from the page painter, infantry order positions, no strategic maps, no co-op layer",
  "unreachable": [],
  "unreachableReasons": {},
  "botSpawnsExcluded": [
-  "axisbase_spawn1",
-  "brabant_spawn1",
   "artillery_hill_spawn1",
-  "axisbase_spawn2",
-  "alliedbase_spawn2",
-  "brabant_spawn2",
-  "brabant_spawn3",
-  "brabant_spawn4",
-  "brabant_spawn5",
-  "brabant_spawn6",
-  "brabant_spawn7",
-  "consenvoye_spawn4",
-  "consenvoye_spawn6",
-  "artillery_hill_spawn2"
+  "brabant_spawn7"
  ],
  "walkMap": {
   "source": "page painter",
   "engine": "none",
-  "opened": [],
-  "ways": [],
-  "cover": 0.943,
+  "vehicleMap": "page painter",
+  "vehicleBrush": 1.5,
+  "vehicleBrushes": [
+   {
+    "brush": 3,
+    "flagsOn": 7,
+    "spawnersOn": 32,
+    "pieces": 20,
+    "main": 899576
+   },
+   {
+    "brush": 2.5,
+    "flagsOn": 7,
+    "spawnersOn": 42,
+    "pieces": 15,
+    "main": 924113
+   },
+   {
+    "brush": 2,
+    "flagsOn": 6,
+    "spawnersOn": 46,
+    "pieces": 18,
+    "main": 939347
+   },
+   {
+    "brush": 1.5,
+    "flagsOn": 6,
+    "spawnersOn": 50,
+    "pieces": 16,
+    "main": 958766
+   }
+  ],
+  "opened": [
+   [
+    489,
+    101
+   ],
+   [
+    489,
+    102
+   ],
+   [
+    489,
+    103
+   ],
+   [
+    489,
+    104
+   ],
+   [
+    489,
+    105
+   ],
+   [
+    489,
+    106
+   ],
+   [
+    489,
+    107
+   ],
+   [
+    489,
+    108
+   ],
+   [
+    561,
+    309
+   ],
+   [
+    562,
+    309
+   ],
+   [
+    562,
+    310
+   ],
+   [
+    563,
+    310
+   ],
+   [
+    562,
+    311
+   ],
+   [
+    561,
+    312
+   ],
+   [
+    562,
+    312
+   ],
+   [
+    582,
+    312
+   ],
+   [
+    583,
+    312
+   ],
+   [
+    584,
+    312
+   ],
+   [
+    585,
+    312
+   ],
+   [
+    561,
+    313
+   ],
+   [
+    585,
+    313
+   ],
+   [
+    585,
+    314
+   ],
+   [
+    586,
+    314
+   ],
+   [
+    587,
+    314
+   ],
+   [
+    460,
+    331
+   ],
+   [
+    459,
+    332
+   ],
+   [
+    459,
+    333
+   ],
+   [
+    582,
+    333
+   ],
+   [
+    459,
+    334
+   ],
+   [
+    582,
+    334
+   ],
+   [
+    459,
+    335
+   ],
+   [
+    582,
+    335
+   ],
+   [
+    459,
+    336
+   ],
+   [
+    581,
+    336
+   ],
+   [
+    582,
+    336
+   ],
+   [
+    459,
+    337
+   ],
+   [
+    459,
+    338
+   ],
+   [
+    459,
+    339
+   ],
+   [
+    460,
+    339
+   ],
+   [
+    461,
+    339
+   ],
+   [
+    462,
+    339
+   ],
+   [
+    463,
+    339
+   ],
+   [
+    463,
+    340
+   ],
+   [
+    463,
+    341
+   ],
+   [
+    459,
+    342
+   ],
+   [
+    460,
+    342
+   ],
+   [
+    461,
+    342
+   ],
+   [
+    462,
+    342
+   ],
+   [
+    463,
+    342
+   ],
+   [
+    459,
+    343
+   ],
+   [
+    459,
+    344
+   ],
+   [
+    459,
+    345
+   ],
+   [
+    459,
+    346
+   ],
+   [
+    457,
+    347
+   ],
+   [
+    458,
+    347
+   ],
+   [
+    459,
+    347
+   ],
+   [
+    492,
+    360
+   ],
+   [
+    492,
+    361
+   ],
+   [
+    493,
+    361
+   ],
+   [
+    494,
+    361
+   ],
+   [
+    494,
+    362
+   ],
+   [
+    494,
+    363
+   ],
+   [
+    834,
+    544
+   ],
+   [
+    835,
+    544
+   ],
+   [
+    836,
+    544
+   ],
+   [
+    837,
+    544
+   ],
+   [
+    837,
+    545
+   ],
+   [
+    837,
+    546
+   ],
+   [
+    837,
+    547
+   ],
+   [
+    529,
+    729
+   ],
+   [
+    529,
+    730
+   ],
+   [
+    593,
+    736
+   ],
+   [
+    591,
+    737
+   ],
+   [
+    592,
+    737
+   ],
+   [
+    593,
+    737
+   ],
+   [
+    515,
+    932
+   ],
+   [
+    493,
+    933
+   ],
+   [
+    494,
+    933
+   ],
+   [
+    515,
+    933
+   ],
+   [
+    493,
+    934
+   ],
+   [
+    515,
+    934
+   ],
+   [
+    493,
+    935
+   ],
+   [
+    515,
+    935
+   ],
+   [
+    493,
+    936
+   ],
+   [
+    493,
+    937
+   ],
+   [
+    492,
+    938
+   ],
+   [
+    493,
+    938
+   ],
+   [
+    492,
+    939
+   ]
+  ],
+  "ways": [
+   {
+    "who": "axisbase_spawn1",
+    "kind": "spawn",
+    "way": "drop",
+    "opened": 9
+   },
+   {
+    "who": "brabant_spawn1",
+    "kind": "spawn",
+    "way": "walk",
+    "opened": 27
+   },
+   {
+    "who": "axisbase_spawn2",
+    "kind": "spawn",
+    "way": "walk",
+    "opened": 4
+   },
+   {
+    "who": "alliedbase_spawn2",
+    "kind": "spawn",
+    "way": "drop",
+    "opened": 8
+   },
+   {
+    "who": "brabant_spawn2",
+    "kind": "spawn",
+    "way": "walk",
+    "opened": 6
+   },
+   {
+    "who": "brabant_spawn3",
+    "kind": "spawn",
+    "way": "walk",
+    "opened": 8
+   },
+   {
+    "who": "brabant_spawn4",
+    "kind": "spawn",
+    "way": "walk",
+    "opened": 5
+   },
+   {
+    "who": "brabant_spawn5",
+    "kind": "spawn",
+    "way": "walk",
+    "opened": 2
+   },
+   {
+    "who": "brabant_spawn6",
+    "kind": "spawn",
+    "way": "walk",
+    "opened": 6
+   },
+   {
+    "who": "consenvoye_spawn4",
+    "kind": "spawn",
+    "way": "walk",
+    "opened": 4
+   },
+   {
+    "who": "consenvoye_spawn6",
+    "kind": "spawn",
+    "way": "walk",
+    "opened": 2
+   },
+   {
+    "who": "artillery_hill_spawn2",
+    "kind": "spawn",
+    "way": "walk",
+    "opened": 7
+   }
+  ],
+  "cover": 0.944,
   "floors": {
    "stacked": false,
    "twoFloorShare": 0.003,
-   "raised": [],
+   "raised": [
+    "artillery_hill"
+   ],
    "reason": null
   },
   "capped": true
@@ -51,7 +499,7 @@
   "oneSided": {},
   "sides": {
    "1": {
-    "spawns": 13,
+    "spawns": 17,
     "flags": [
      "artillery_hill",
      "bois_de_forge",
@@ -61,7 +509,7 @@
     ]
    },
    "2": {
-    "spawns": 9,
+    "spawns": 16,
     "flags": [
      "artillery_hill",
      "bois_de_forge",
@@ -73,29 +521,36 @@
   },
   "chokes": {
    "brabant:1": 0,
-   "brabant:2": 0,
+   "brabant:2": 4,
    "consenvoye:1": 0,
-   "consenvoye:2": 0,
+   "consenvoye:2": 2,
    "bois_de_forge:1": 0,
    "bois_de_forge:2": 0,
    "cote_288:1": 0,
    "cote_288:2": 0,
    "artillery_hill:1": 0,
-   "artillery_hill:2": 0
+   "artillery_hill:2": 2
   },
   "late": {},
   "shutLinks": []
  },
  "inputs": {
   "controlPoints": "d01bec0e63d447bbb03901788518738cd96e498c97b5d9f7750ae0edd2730349",
-  "infantryMap": "c21cab80e6fa0649f8f293ebca10d3c424b939d4bab479554fc830130398a9b5",
+  "infantryMap": "783ccf2c783cefc6aaaab5ea0ab6c36bfc466f8d591761042436d709ca3d4ee5",
   "template": "43f8a790471528016570235f76e97dbb2045732458781a5139f37fed68bf98c0"
  },
  "files": {
-  "AI.con": "84b54fdbafe161fd3682345ddef4b1a2f08529643491b9fc45c06500a5cc4522",
-  "AI/StrategicAreas.con": "ea85a782a5264185a4bca9292a09ef6fa2afa414028363b8382ebbe63fa759db",
+  "AI.con": "3dc94f663ac7545695a38d3670752432e4a5e64efe048dc4b26d578aece3748c",
+  "AIpathFinding.con": "9d8080cdfa7605961969aa126519b03be9691bd604ac76aef50166d81215edd2",
+  "AI/StrategicAreas.con": "70e33b6a2437bcb5f82cd4bf9eeaee6f76b349f4daece31e94521e2e4fc6ced7",
   "AI/Strategies.con": "4ce0be59a0d6c5cd530db002fb062c4be8d936bc6ae59bd188803ccaf7869a8d",
   "AI/conditions.con": "68a0c7a8aec69954063147b60fae560b2874884285737aa085efa76597d395aa",
-  "AI/prerequisites.con": "4c1f313bc285b228fd6ad03bfd1f44c5b15c8703c31f802eb605bc5f00f88bb5"
+  "AI/prerequisites.con": "4c1f313bc285b228fd6ad03bfd1f44c5b15c8703c31f802eb605bc5f00f88bb5",
+  "Pathfinding/Infantry1Level0Map.raw": "74b03c5c6ef02fe58c0fbfe10ad723796746b255d196229d41461406d620376e",
+  "Pathfinding/Infantry1Level1Map.raw": "e20ca233830bcdeb517bffd1b71ad00e442bee02ba0bf6c641453dba088b9851",
+  "Pathfinding/Infantry1Level2Map.raw": "72316500328a26cce8718b21cfd162112b38786ffcda35585d6f5a2f458078fe",
+  "Pathfinding/Tank0Level0Map.raw": "4ca24cbd0b81e894d76e7545725da98716de49f7f24d69bef3a437baaf6a2766",
+  "Pathfinding/Tank0Level1Map.raw": "a11f03c57c7e041e0f85405acc8a091716d1cfcf480d9ae33479a8cf2a76e1a8",
+  "Pathfinding/Tank0Level2Map.raw": "f925998e417c22989d8e490c3433d503304457b19b94ac6bb62dd0fffb881518"
  }
 }

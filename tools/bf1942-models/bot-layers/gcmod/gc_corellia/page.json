@@ -1,42 +1,41 @@
 {
  "level": "GC_Corellia",
  "mod": "gcmod",
- "url": "https://play.bfstats.io/map.html?map=GC_Corellia&team=2&mode=Conquest&mod=gcmod&botCount=16&botSkill=0.75&mute&shots",
+ "url": "https://play.bfstats.io/map.html?map=GC_Corellia&team=2&mode=Conquest&mod=gcmod&botCount=16&botSkill=0.75&spawnTime=wave&mute&shots",
  "date": "2026-11-12",
  "bar": "DICE levels on the page, 3 matches each of 600 s, 16 bots: Berlin, Stalingrad, Kharkov, Bocage; 2026-11-11",
  "verdict": "fail",
  "failed": [
-  "suicidesPerBotMinute",
   "nonEnemyDeathShareWorseSide",
   "enemyKillsPerBotMinute"
  ],
  "checks": [
   {
    "metric": "teamKillsPerBotMinute",
-   "median": 0,
+   "median": 0.0062,
    "bar": "<= 0.025",
    "pass": true
   },
   {
    "metric": "suicidesPerBotMinute",
-   "median": 0.0687,
+   "median": 0.0562,
    "bar": "<= 0.0562",
-   "pass": false
+   "pass": true
   },
   {
    "metric": "nonEnemyDeathShareWorseSide",
-   "median": 0.438,
+   "median": 0.353,
    "bar": "<= 0.308",
    "pass": false
   },
   {
    "metric": "enemyKillsPerBotMinute",
-   "median": 0.0937,
+   "median": 0.125,
    "bar": ">= 0.175",
    "pass": false
   }
  ],
- "matches": 2,
+ "matches": 3,
  "rollout": {
   "pass": true,
   "floor": {
@@ -102,6 +101,34 @@
    "teamKillsBySide": {
     "1": 0,
     "2": 0
+   },
+   "oldCode": "played on the bot code of e5003c584 or earlier, before drivers predicted collisions with their own side (3b1ebe45c, live 2026-11-13)"
+  },
+  {
+   "generated": {
+    "version": 6,
+    "template": "few"
+   },
+   "minutes": 10,
+   "tickets": {
+    "1": 87,
+    "2": 80
+   },
+   "capturesTotal": 5,
+   "teamKillsPerBotMinute": 0.0062,
+   "suicidesPerBotMinute": 0.0562,
+   "nonEnemyDeathShareWorseSide": 0.353,
+   "enemyKillsPerBotMinute": 0.125,
+   "rollout": {
+    "pass": true,
+    "why": [],
+    "enemyKills": 0.125,
+    "captures": 5,
+    "ownHand": 0.0624
+   },
+   "teamKillsBySide": {
+    "1": 0,
+    "2": 1
    }
   }
  ]

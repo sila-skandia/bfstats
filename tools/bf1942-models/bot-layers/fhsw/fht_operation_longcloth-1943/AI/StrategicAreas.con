@@ -5,7 +5,8 @@ aiStrategicArea.addNeighbour bongyaun
 aiStrategicArea.addNeighbour hinthaw_airfield
 aiStrategicArea.addNeighbour rubber_plantation
 aiStrategicArea.addObjectTypeFlag Base
-aiStrategicArea.setOrderPosition Infantry 1002.5/173.5
+aiStrategicArea.setOrderPosition Tank 1001.5/172.5
+aiStrategicArea.setOrderPosition Infantry 1004.5/173.5
 aiStrategicArea.setSide 2
 aiStrategicArea.setTakeable 1 0
 
@@ -20,6 +21,7 @@ aiStrategicArea.addNeighbour rubber_plantation
 aiStrategicArea.addNeighbour yindaik
 aiStrategicArea.addObjectTypeFlag Flank
 aiStrategicArea.addObjectTypeFlag ControlPoint
+aiStrategicArea.setOrderPosition Tank 791.5/772.5
 aiStrategicArea.setOrderPosition Infantry 791.5/772.5
 aiStrategicArea.setSide 1
 
@@ -28,6 +30,7 @@ aiStrategicArea.addNeighbour allied_main
 aiStrategicArea.addNeighbour rubber_plantation
 aiStrategicArea.addNeighbour yindaik
 aiStrategicArea.addObjectTypeFlag Base
+aiStrategicArea.setOrderPosition Tank 1402.5/1077.5
 aiStrategicArea.setOrderPosition Infantry 1402.5/1079.5
 aiStrategicArea.setSide 1
 aiStrategicArea.setTakeable 2 0
@@ -41,6 +44,7 @@ aiStrategicArea.addObjectTypeFlag Centre
 aiStrategicArea.addObjectTypeFlag StrongPoint
 aiStrategicArea.addObjectTypeFlag Close
 aiStrategicArea.addObjectTypeFlag ControlPoint
+aiStrategicArea.setOrderPosition Tank 1112.5/479.5
 aiStrategicArea.setOrderPosition Infantry 1111.5/478.5
 aiStrategicArea.setSide 1
 
@@ -51,5 +55,6 @@ aiStrategicArea.addNeighbour rubber_plantation
 aiStrategicArea.addObjectTypeFlag Flank
 aiStrategicArea.addObjectTypeFlag Close
 aiStrategicArea.addObjectTypeFlag ControlPoint
+aiStrategicArea.setOrderPosition Tank 925.5/1014.5
 aiStrategicArea.setOrderPosition Infantry 923.5/1015.5
 aiStrategicArea.setSide 1

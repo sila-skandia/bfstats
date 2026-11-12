@@ -4,29 +4,31 @@ rem ----------------------------------------------------------------------------
 
 rem *** Create Conditions ***
 
-rem *** Kharkov ***
+rem *** Kursk ***
 
 rem ** common **
-aiStrategy.createConstantCondition timeCond Fuzzy EqualSmaller Friendly StartTime 180
+aiStrategy.createConstantCondition timeCond Fuzzy EqualSmaller Friendly StartTime 120
 aiStrategy.setConditionStrength AdvisoryNegative
 aiStrategy.setIsAbortCondition 1
 
-rem ** normal **
-aiStrategy.createConstantCondition constantCond Crisp Equal Enemy UnitConstant 1
+rem ** single & double **
+aiStrategy.createConstantCondition maxOneEnemyCP Crisp EqualSmaller Enemy ControlPoint 1
 aiStrategy.setConditionStrength Required
 
-rem ** bridge **
-aiStrategy.createConstantCondition max2CPCond Crisp Equal Friendly ControlPoint 1
+rem ** holdAndCamp **
+aiStrategy.createConstantCondition twoFriendlyCPCond Crisp Equal Friendly ControlPoint 2
 aiStrategy.setConditionStrength Required
 
-rem ** finalPush **
-aiStrategy.createConstantCondition min4CpCond Crisp EqualGreater Friendly ControlPoint 3
+aiStrategy.createConstantCondition minFiveFriendlyAreasCond Crisp EqualGreater Friendly NumberOfHostileAreas 5
 aiStrategy.setConditionStrength Required
 
 rem ** breakOut **
-aiStrategy.createConstantCondition oneCPOrLessCond Crisp Equal Friendly ControlPoint 0
+aiStrategy.createConstantCondition noFriendlyCPCond Crisp Equal Friendly ControlPoint 0
 aiStrategy.setConditionStrength Required
+
+aiStrategy.createConstantCondition twoEnemyCPCond Crisp Equal Enemy ControlPoint 2
+aiStrategy.setConditionStrength Required
+
 
 rem ----------------------------------------------------------------------------
 endIf
-

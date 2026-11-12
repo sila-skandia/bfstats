@@ -5,33 +5,57 @@ aiStrategicArea.addObjectTypeFlag Base
 aiStrategicArea.setSide 2
 aiStrategicArea.setTakeable 1 0
 
-aiStrategicArea.create village 608.4/986.6 613.4/991.6 10
+aiStrategicArea.create village 608.4/986.6 613.4/991.6 300
+aiStrategicArea.addNeighbour coastalhq
+aiStrategicArea.addNeighbour crossroad
+aiStrategicArea.addNeighbour aabattery
+aiStrategicArea.addObjectTypeFlag Centre
+aiStrategicArea.addObjectTypeFlag StrongPoint
+aiStrategicArea.addObjectTypeFlag Close
+aiStrategicArea.addObjectTypeFlag ControlPoint
+aiStrategicArea.setOrderPosition Tank 613.5/993.5
+aiStrategicArea.setOrderPosition Infantry 612.5/992.5
 aiStrategicArea.setSide 1
-aiStrategicArea.setTakeable 1 0
-aiStrategicArea.setTakeable 2 0
 
 aiStrategicArea.create coastalgunbattery 851.8/698 856.8/703 10
 aiStrategicArea.setSide 1
 aiStrategicArea.setTakeable 1 0
 aiStrategicArea.setTakeable 2 0
 
-aiStrategicArea.create coastalhq 1110.7/817.9 1130.7/837.9 10
+aiStrategicArea.create coastalhq 1110.7/817.9 1130.7/837.9 150
+aiStrategicArea.addNeighbour village
+aiStrategicArea.addNeighbour crossroad
+aiStrategicArea.addObjectTypeFlag Flank
+aiStrategicArea.addObjectTypeFlag ControlPoint
+aiStrategicArea.setOrderPosition Tank 1136.5/832.5
+aiStrategicArea.setOrderPosition Infantry 1131.5/832.5
 aiStrategicArea.setSide 1
-aiStrategicArea.setTakeable 1 0
-aiStrategicArea.setTakeable 2 0
 
-aiStrategicArea.create crossroad 1060/1270.2 1065/1275.2 10
+aiStrategicArea.create crossroad 1060/1270.2 1065/1275.2 150
+aiStrategicArea.addNeighbour village
+aiStrategicArea.addNeighbour coastalhq
+aiStrategicArea.addNeighbour aabattery
+aiStrategicArea.addNeighbour howitzerbattery
+aiStrategicArea.addObjectTypeFlag Flank
+aiStrategicArea.addObjectTypeFlag Close
+aiStrategicArea.addObjectTypeFlag ControlPoint
+aiStrategicArea.setOrderPosition Tank 1072.5/1270.5
+aiStrategicArea.setOrderPosition Infantry 1062.5/1278.5
 aiStrategicArea.setSide 1
-aiStrategicArea.setTakeable 1 0
-aiStrategicArea.setTakeable 2 0
 
 aiStrategicArea.create aabattery 961.9/1730.8 966.9/1735.8 50
+aiStrategicArea.addNeighbour village
+aiStrategicArea.addNeighbour crossroad
 aiStrategicArea.addObjectTypeFlag Base
+aiStrategicArea.setOrderPosition Tank 966.5/1733.5
 aiStrategicArea.setOrderPosition Infantry 965.5/1734.5
 aiStrategicArea.setSide 1
 aiStrategicArea.setTakeable 2 0
 
-aiStrategicArea.create howitzerbattery 1460.1/1457.3 1470.1/1467.3 10
+aiStrategicArea.create howitzerbattery 1460.1/1457.3 1470.1/1467.3 150
+aiStrategicArea.addNeighbour crossroad
+aiStrategicArea.addObjectTypeFlag Flank
+aiStrategicArea.addObjectTypeFlag ControlPoint
+aiStrategicArea.setOrderPosition Tank 1470.5/1465.5
+aiStrategicArea.setOrderPosition Infantry 1471.5/1466.5
 aiStrategicArea.setSide 1
-aiStrategicArea.setTakeable 1 0
-aiStrategicArea.setTakeable 2 0

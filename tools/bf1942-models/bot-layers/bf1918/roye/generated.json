@@ -1,6 +1,6 @@
 {
  "generator": "botgen",
- "version": 5,
+ "version": 6,
  "mod": "bf1918",
  "level": "roye",
  "objectSpawners": 72,
@@ -8,113 +8,937 @@
  "templateSource": "DICE, bf1942 Kursk (1.6 patch archives, Kursk_003.rfa): AI/Strategies.con, AI/conditions.con, AI/prerequisites.con, unchanged",
  "templateChoice": {
   "name": "few",
-  "inPlay": 1,
-  "rule": "1 capturable flag in play, at most 3"
+  "inPlay": 3,
+  "rule": "3 capturable flags in play, at most 3"
  },
- "scope": "on foot: infantry order positions only, no search maps, no co-op layer",
+ "scope": "an infantry map from the page painter with the walk test's ways out opened, a Tank0 map from the page painter, infantry order positions, no strategic maps, no co-op layer",
  "unreachable": [
-  "Bahnhof",
-  "Bauernhof",
   "Ballonflagge"
  ],
  "unreachableReasons": {
-  "Bahnhof": "route probe",
-  "Bauernhof": "route probe",
   "Ballonflagge": "walk test"
  },
  "botSpawnsExcluded": [
-  "Bahnhof_Spawn1",
   "Flugfeld_Spawn1",
-  "Flugfeld_Spawn5",
-  "Flugfeld_Spawn6",
-  "Flugfeld_Spawn7",
-  "Bahnhof_Spawn2",
-  "Bahnhof_Spawn3",
-  "Bahnhof_Spawn4",
-  "Bahnhof_Spawn6",
-  "Bahnhof_Spawn9",
-  "AlliedBase_Spawn3",
-  "AlliedBase_Spawn4",
-  "AxisBase_Spawn10",
-  "AxisBase_Spawn11",
-  "Bauernhof_Spawn2",
-  "Bauernhof_Spawn3",
-  "Bauernhof_Spawn4",
-  "Bahnhof_Spawn7"
+  "Bahnhof_Spawn4"
  ],
  "walkMap": {
   "source": "page painter",
   "engine": "none",
-  "opened": [],
-  "ways": [],
-  "cover": 0.947,
+  "vehicleMap": "page painter",
+  "vehicleBrush": 1.5,
+  "vehicleBrushes": [
+   {
+    "brush": 3,
+    "flagsOn": 3,
+    "spawnersOn": 18,
+    "pieces": 23,
+    "main": 2329411
+   },
+   {
+    "brush": 2.5,
+    "flagsOn": 5,
+    "spawnersOn": 41,
+    "pieces": 17,
+    "main": 3920543
+   },
+   {
+    "brush": 2,
+    "flagsOn": 4,
+    "spawnersOn": 46,
+    "pieces": 12,
+    "main": 3929205
+   },
+   {
+    "brush": 1.5,
+    "flagsOn": 4,
+    "spawnersOn": 56,
+    "pieces": 8,
+    "main": 3948413
+   }
+  ],
+  "opened": [
+   [
+    937,
+    402
+   ],
+   [
+    938,
+    402
+   ],
+   [
+    938,
+    403
+   ],
+   [
+    939,
+    403
+   ],
+   [
+    940,
+    403
+   ],
+   [
+    940,
+    404
+   ],
+   [
+    944,
+    404
+   ],
+   [
+    945,
+    404
+   ],
+   [
+    946,
+    404
+   ],
+   [
+    940,
+    405
+   ],
+   [
+    944,
+    405
+   ],
+   [
+    941,
+    406
+   ],
+   [
+    942,
+    406
+   ],
+   [
+    943,
+    406
+   ],
+   [
+    944,
+    406
+   ],
+   [
+    930,
+    415
+   ],
+   [
+    930,
+    421
+   ],
+   [
+    930,
+    422
+   ],
+   [
+    930,
+    423
+   ],
+   [
+    931,
+    423
+   ],
+   [
+    932,
+    423
+   ],
+   [
+    932,
+    424
+   ],
+   [
+    933,
+    424
+   ],
+   [
+    933,
+    425
+   ],
+   [
+    522,
+    450
+   ],
+   [
+    523,
+    450
+   ],
+   [
+    524,
+    450
+   ],
+   [
+    522,
+    451
+   ],
+   [
+    522,
+    452
+   ],
+   [
+    526,
+    466
+   ],
+   [
+    737,
+    466
+   ],
+   [
+    738,
+    466
+   ],
+   [
+    739,
+    466
+   ],
+   [
+    526,
+    467
+   ],
+   [
+    527,
+    467
+   ],
+   [
+    736,
+    467
+   ],
+   [
+    737,
+    467
+   ],
+   [
+    527,
+    468
+   ],
+   [
+    736,
+    468
+   ],
+   [
+    527,
+    469
+   ],
+   [
+    748,
+    476
+   ],
+   [
+    749,
+    476
+   ],
+   [
+    750,
+    476
+   ],
+   [
+    751,
+    476
+   ],
+   [
+    752,
+    476
+   ],
+   [
+    753,
+    476
+   ],
+   [
+    754,
+    476
+   ],
+   [
+    755,
+    476
+   ],
+   [
+    756,
+    476
+   ],
+   [
+    757,
+    476
+   ],
+   [
+    758,
+    476
+   ],
+   [
+    759,
+    476
+   ],
+   [
+    781,
+    505
+   ],
+   [
+    782,
+    505
+   ],
+   [
+    783,
+    505
+   ],
+   [
+    781,
+    506
+   ],
+   [
+    783,
+    506
+   ],
+   [
+    783,
+    507
+   ],
+   [
+    1222,
+    507
+   ],
+   [
+    1223,
+    507
+   ],
+   [
+    1224,
+    507
+   ],
+   [
+    1225,
+    507
+   ],
+   [
+    1226,
+    507
+   ],
+   [
+    1227,
+    507
+   ],
+   [
+    1228,
+    507
+   ],
+   [
+    1229,
+    507
+   ],
+   [
+    1230,
+    507
+   ],
+   [
+    783,
+    508
+   ],
+   [
+    1221,
+    508
+   ],
+   [
+    1222,
+    508
+   ],
+   [
+    734,
+    509
+   ],
+   [
+    783,
+    509
+   ],
+   [
+    1219,
+    509
+   ],
+   [
+    1220,
+    509
+   ],
+   [
+    1221,
+    509
+   ],
+   [
+    734,
+    510
+   ],
+   [
+    783,
+    510
+   ],
+   [
+    1218,
+    510
+   ],
+   [
+    1219,
+    510
+   ],
+   [
+    734,
+    511
+   ],
+   [
+    783,
+    511
+   ],
+   [
+    1213,
+    511
+   ],
+   [
+    1214,
+    511
+   ],
+   [
+    1215,
+    511
+   ],
+   [
+    1216,
+    511
+   ],
+   [
+    1217,
+    511
+   ],
+   [
+    1218,
+    511
+   ],
+   [
+    734,
+    512
+   ],
+   [
+    783,
+    512
+   ],
+   [
+    784,
+    512
+   ],
+   [
+    734,
+    513
+   ],
+   [
+    784,
+    513
+   ],
+   [
+    785,
+    513
+   ],
+   [
+    734,
+    514
+   ],
+   [
+    785,
+    514
+   ],
+   [
+    786,
+    514
+   ],
+   [
+    734,
+    515
+   ],
+   [
+    734,
+    516
+   ],
+   [
+    734,
+    517
+   ],
+   [
+    734,
+    518
+   ],
+   [
+    734,
+    519
+   ],
+   [
+    733,
+    520
+   ],
+   [
+    734,
+    520
+   ],
+   [
+    731,
+    521
+   ],
+   [
+    732,
+    521
+   ],
+   [
+    733,
+    521
+   ],
+   [
+    1207,
+    524
+   ],
+   [
+    1208,
+    524
+   ],
+   [
+    1208,
+    525
+   ],
+   [
+    1208,
+    526
+   ],
+   [
+    1208,
+    527
+   ],
+   [
+    1208,
+    528
+   ],
+   [
+    1208,
+    529
+   ],
+   [
+    1209,
+    529
+   ],
+   [
+    1209,
+    530
+   ],
+   [
+    1209,
+    531
+   ],
+   [
+    1209,
+    532
+   ],
+   [
+    1210,
+    532
+   ],
+   [
+    1210,
+    533
+   ],
+   [
+    1210,
+    534
+   ],
+   [
+    1210,
+    535
+   ],
+   [
+    744,
+    543
+   ],
+   [
+    745,
+    543
+   ],
+   [
+    746,
+    543
+   ],
+   [
+    747,
+    543
+   ],
+   [
+    735,
+    544
+   ],
+   [
+    736,
+    544
+   ],
+   [
+    744,
+    544
+   ],
+   [
+    736,
+    545
+   ],
+   [
+    743,
+    545
+   ],
+   [
+    744,
+    545
+   ],
+   [
+    736,
+    546
+   ],
+   [
+    737,
+    546
+   ],
+   [
+    738,
+    546
+   ],
+   [
+    739,
+    546
+   ],
+   [
+    740,
+    546
+   ],
+   [
+    741,
+    546
+   ],
+   [
+    742,
+    546
+   ],
+   [
+    743,
+    546
+   ],
+   [
+    743,
+    547
+   ],
+   [
+    743,
+    548
+   ],
+   [
+    743,
+    549
+   ],
+   [
+    743,
+    550
+   ],
+   [
+    743,
+    551
+   ],
+   [
+    743,
+    552
+   ],
+   [
+    743,
+    553
+   ],
+   [
+    743,
+    554
+   ],
+   [
+    743,
+    555
+   ],
+   [
+    743,
+    556
+   ],
+   [
+    743,
+    557
+   ],
+   [
+    743,
+    558
+   ],
+   [
+    743,
+    559
+   ],
+   [
+    743,
+    560
+   ],
+   [
+    952,
+    577
+   ],
+   [
+    953,
+    577
+   ],
+   [
+    954,
+    577
+   ],
+   [
+    955,
+    577
+   ],
+   [
+    956,
+    577
+   ],
+   [
+    951,
+    578
+   ],
+   [
+    952,
+    578
+   ],
+   [
+    956,
+    578
+   ],
+   [
+    957,
+    578
+   ],
+   [
+    951,
+    579
+   ],
+   [
+    949,
+    580
+   ],
+   [
+    950,
+    580
+   ],
+   [
+    951,
+    580
+   ],
+   [
+    949,
+    581
+   ],
+   [
+    951,
+    581
+   ],
+   [
+    949,
+    582
+   ],
+   [
+    951,
+    582
+   ],
+   [
+    952,
+    582
+   ],
+   [
+    949,
+    583
+   ],
+   [
+    1393,
+    1086
+   ],
+   [
+    1395,
+    1086
+   ],
+   [
+    1396,
+    1086
+   ],
+   [
+    1396,
+    1087
+   ]
+  ],
+  "ways": [
+   {
+    "who": "Bahnhof_Spawn1",
+    "kind": "spawn",
+    "way": "walk",
+    "opened": 16
+   },
+   {
+    "who": "Flugfeld_Spawn5",
+    "kind": "spawn",
+    "way": "walk",
+    "opened": 15
+   },
+   {
+    "who": "Flugfeld_Spawn6",
+    "kind": "spawn",
+    "way": "walk",
+    "opened": 9
+   },
+   {
+    "who": "Flugfeld_Spawn7",
+    "kind": "spawn",
+    "way": "walk",
+    "opened": 0
+   },
+   {
+    "who": "Bahnhof_Spawn2",
+    "kind": "spawn",
+    "way": "none",
+    "opened": 0
+   },
+   {
+    "who": "Bahnhof_Spawn3",
+    "kind": "spawn",
+    "way": "walk",
+    "opened": 22
+   },
+   {
+    "who": "Bahnhof_Spawn4",
+    "kind": "spawn",
+    "way": "drop",
+    "opened": 10
+   },
+   {
+    "who": "Bahnhof_Spawn6",
+    "kind": "spawn",
+    "way": "walk",
+    "opened": 16
+   },
+   {
+    "who": "Bahnhof_Spawn9",
+    "kind": "spawn",
+    "way": "walk",
+    "opened": 6
+   },
+   {
+    "who": "AlliedBase_Spawn3",
+    "kind": "spawn",
+    "way": "walk",
+    "opened": 5
+   },
+   {
+    "who": "AlliedBase_Spawn4",
+    "kind": "spawn",
+    "way": "walk",
+    "opened": 5
+   },
+   {
+    "who": "AxisBase_Spawn10",
+    "kind": "spawn",
+    "way": "walk",
+    "opened": 22
+   },
+   {
+    "who": "AxisBase_Spawn11",
+    "kind": "spawn",
+    "way": "walk",
+    "opened": 15
+   },
+   {
+    "who": "Bauernhof_Spawn2",
+    "kind": "spawn",
+    "way": "walk",
+    "opened": 7
+   },
+   {
+    "who": "Bauernhof_Spawn3",
+    "kind": "spawn",
+    "way": "walk",
+    "opened": 7
+   },
+   {
+    "who": "Bauernhof_Spawn4",
+    "kind": "spawn",
+    "way": "walk",
+    "opened": 5
+   },
+   {
+    "who": "Bahnhof_Spawn7",
+    "kind": "spawn",
+    "way": "walk",
+    "opened": 12
+   },
+   {
+    "who": "ArmouredTrain_GunCarF:armouredtrain_soldierspawn",
+    "kind": "spawn",
+    "way": "walk",
+    "opened": 4
+   }
+  ],
+  "cover": 0.946,
   "floors": {
    "stacked": false,
-   "twoFloorShare": 0.003,
+   "twoFloorShare": 0.006,
    "raised": [
     "Bahnhof"
    ],
    "reason": null
   },
-  "capped": true,
-  "joined": 2
+  "capped": true
  },
  "routeProbe": {
   "chokeMax": 4,
-  "unreachable": [
-   "Bahnhof",
-   "Bauernhof"
-  ],
-  "stops": {
-   "Bahnhof": {
-    "1": {
-     "stage": "strategic"
-    },
-    "2": {
-     "stage": "strategic"
-    }
-   },
-   "Bauernhof": {
-    "1": {
-     "stage": "strategic"
-    },
-    "2": {
-     "stage": "strategic"
-    }
-   }
-  },
+  "unreachable": [],
+  "stops": {},
   "oneSided": {},
   "sides": {
    "1": {
-    "spawns": 9,
+    "spawns": 14,
     "flags": [
+     "Bahnhof",
+     "Bauernhof",
      "Flugfeld"
     ]
    },
    "2": {
-    "spawns": 4,
+    "spawns": 7,
     "flags": [
+     "Bahnhof",
+     "Bauernhof",
      "Flugfeld"
     ]
    }
   },
   "chokes": {
-   "Flugfeld:1": 0,
-   "Flugfeld:2": 0
+   "Bahnhof:1": 4,
+   "Bahnhof:2": 4,
+   "Flugfeld:1": 4,
+   "Flugfeld:2": 0,
+   "Bauernhof:1": 4,
+   "Bauernhof:2": 4
   },
   "late": {},
-  "shutLinks": []
+  "shutLinks": [
+   "Bahnhof>Flugfeld",
+   "Bahnhof>Bauernhof",
+   "Bauernhof>Bahnhof"
+  ]
  },
  "inputs": {
   "controlPoints": "5c0672fc5d823e9c872993c666f67c307c8d023f90d50b5cc3362c0cc0008ff8",
-  "infantryMap": "d1dc20842a30dcca23b1ace5142314374a2ddf424b1eabf054012f6386f04063",
+  "infantryMap": "6587b9024d2efa9cc48f561f8334affbf62dc8bd2ba5b3d5b0b7f14f4b177f75",
   "template": "bdc0e455f47f91b7e7724e71d7c0c196e839b36946ac3abb7663d725944081e5"
  },
  "files": {
-  "AI.con": "0f5d86745f412c4b55c9c49ba16ac50147328dfca5e164e9048f49356c8ad4f7",
-  "AI/StrategicAreas.con": "bea751223e9587e6d019db55f24fbb1045c9d772062299faec3cc093f8eb6f35",
+  "AI.con": "581a9486bb76bdf43c7d33aa9aa9bdf2f39ab7a0cb68ad0ee31188a260d8d5e0",
+  "AIpathFinding.con": "9d8080cdfa7605961969aa126519b03be9691bd604ac76aef50166d81215edd2",
+  "AI/StrategicAreas.con": "0aa6be60c9cf032705e57be9b779a20037e130137dcae3c64181f29231eb27f8",
   "AI/Strategies.con": "13da4dc35872dd4b5798a066f4425bdc824cfd61f31093d1808e1202644de52e",
   "AI/conditions.con": "248a04b727c08d696bf0fa9c162bc22c43cde3c75f695892fe1e0f5141519c49",
-  "AI/prerequisites.con": "c96168b5f69860e578f5d26728fd2a2092c4c436e1da49b7d6f4009b65735398"
+  "AI/prerequisites.con": "c96168b5f69860e578f5d26728fd2a2092c4c436e1da49b7d6f4009b65735398",
+  "Pathfinding/Infantry1Level0Map.raw": "f15a7de20dc495cb2d2e8e5bd123bd0ed53b749811e91eb4ea8e75a9cf5e09df",
+  "Pathfinding/Infantry1Level1Map.raw": "3893c032bcf93fc2781ac4da8816d8b0f0c3d91960947e827c07dfab163ecef2",
+  "Pathfinding/Infantry1Level2Map.raw": "3a444a76e3a8f8cd592416ba4efc5612bcfc4601342ba5611288147579c541e1",
+  "Pathfinding/Tank0Level0Map.raw": "363ce54a75e247b0f439bf8865687d19473b3e39df363f17d8cdaa6cb5d7802f",
+  "Pathfinding/Tank0Level1Map.raw": "dbd2e1b59eb730a31526209d51a16c8a86dc03bd7c1e42bbdddd6371958008f9",
+  "Pathfinding/Tank0Level2Map.raw": "97ad6ed0f408b3831b2c5787c09e5f7ab6406034c0f240bd7746476e99b91a72"
  }
 }

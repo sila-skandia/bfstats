@@ -35,4 +35,6 @@ ai.addSAIStrategy 2 double
 
 ai.saiEnable 1
 
+run AIpathFinding.con v_arg1
+
 run AI/StrategicAreas.con v_arg1

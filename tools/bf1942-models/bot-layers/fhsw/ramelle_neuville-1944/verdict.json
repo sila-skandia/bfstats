@@ -4,42 +4,38 @@
  "outcome": "no-fight",
  "config": "with vehicles",
  "doctrine": "garrison",
- "generatorVersion": 5,
+ "generatorVersion": 6,
  "inputs": {
   "controlPoints": "6a0d93f1c8b78657b755d773ad563ffb42232c1d053860270eca3b37cb278e61",
-  "infantryMap": "3a8ba5e4df98be2c4b4b5acf8eca1b9d653b232ccd14061a9f4552c07d73f468",
-  "template": "bdc0e455f47f91b7e7724e71d7c0c196e839b36946ac3abb7663d725944081e5"
+  "infantryMap": "016fac73175d2f71f4ebb2ff85c0b5c9b204e20219b4bbdd5400f5520a30df9e",
+  "template": "43f8a790471528016570235f76e97dbb2045732458781a5139f37fed68bf98c0"
  },
  "baseline": "DICE layers with vehicles, garrison doctrine: berlin, stalingrad, kharkov, bocage; seeds 1..10, 600 s",
  "bar": {
   "against": "dice",
   "why": "no bar of fhsw's own: DICE's"
  },
- "seeds": 2,
+ "seeds": 1,
  "sizes": {
   "8": {
    "verdict": "fail",
    "failed": [
-    "stuckSecondsPerBotMinute",
     "idleShare",
+    "selfDeathsPerBotMinute",
     "routeFailuresPerBotMinute",
-    "redeploysPerBotMinute",
     "capturesTotal",
     "enemyKillsPerBotMinute",
     "flagCoverage",
     "bothSidesCapture",
     "bothSidesKill",
     "ticketsBleed",
-    "stuckSecondsPerBotMinuteWorseSide",
     "routeFailuresPerBotMinuteWorseSide",
-    "redeploysPerBotMinuteWorseSide",
     "nonEnemyDeathShareWorseSide",
-    "unitsNeverUsedShare",
-    "tankSilentShare"
+    "unitsNeverUsedShare"
    ],
    "winners": [
     0,
-    2,
+    1,
     0
    ]
   },
@@ -48,38 +44,31 @@
    "failed": [
     "stuckSecondsPerBotMinute",
     "idleShare",
+    "selfDeathsPerBotMinute",
     "routeFailuresPerBotMinute",
     "redeploysPerBotMinute",
+    "capturesTotal",
     "enemyKillsPerBotMinute",
     "flagCoverage",
     "bothSidesCapture",
     "bothSidesKill",
-    "stuckSecondsPerBotMinuteWorseSide",
+    "ticketsBleed",
     "routeFailuresPerBotMinuteWorseSide",
-    "redeploysPerBotMinuteWorseSide",
     "nonEnemyDeathShareWorseSide",
-    "unitsNeverUsedShare",
-    "tankSilentShare"
+    "unitsNeverUsedShare"
    ],
    "winners": [
     0,
-    2,
+    1,
     0
    ]
   }
  },
- "oneSided": 2,
- "unreachable": [
-  "ammunition_dump",
-  "bridge",
-  "church",
-  "courtyard",
-  "the_orchard"
- ],
+ "oneSided": null,
+ "unreachable": [],
  "lintErrors": [],
  "acceptanceWithdrawn": {
-  "because": "page match 2026-11-12, after the flag binding: under the rollout floor (0.025 enemy kills, no capture)",
-  "date": "2026-11-12",
-  "was": "Owner's rollout, 2026-11-11: after playing Tunis-1943 against its generated bots"
+  "because": "regenerated on generator 6 and screened in the runner on 2026-11-13, one seed at 8 and 16 a side: no kill and no capture at either size; not played on the page",
+  "date": "2026-11-13"
  }
 }

@@ -1,13 +1,13 @@
 {
  "level": "ilomantsi-1944",
  "verdict": "fail",
- "outcome": "no-fight",
+ "outcome": "no-better-than-nothing",
  "config": "with vehicles",
  "doctrine": "garrison",
- "generatorVersion": 5,
+ "generatorVersion": 6,
  "inputs": {
   "controlPoints": "39d78ac1f7c6b2f8ffb7ce932cc8fccf6bb2e31b58c465a4dd069cdef01a5067",
-  "infantryMap": "2ed3508710b5c593f31356ec0c1aed9fb05c56613a903aa4fc767841b207c982",
+  "infantryMap": "f9d14da3d8602fd000f8326e4eb0125cc75f015c9e5664949036e7cca0091350",
   "template": "43f8a790471528016570235f76e97dbb2045732458781a5139f37fed68bf98c0"
  },
  "baseline": "DICE layers with vehicles, garrison doctrine: berlin, stalingrad, kharkov, bocage; seeds 1..10, 600 s",
@@ -21,11 +21,12 @@
    "verdict": "fail",
    "failed": [
     "stuckSecondsPerBotMinute",
+    "routeFailuresPerBotMinute",
     "redeploysPerBotMinute",
     "enemyKillsPerBotMinute",
     "bothSidesCapture",
-    "bothSidesKill",
     "stuckSecondsPerBotMinuteWorseSide",
+    "routeFailuresPerBotMinuteWorseSide",
     "redeploysPerBotMinuteWorseSide",
     "nonEnemyDeathShareWorseSide",
     "hullStuckSecondsPerDrivingMinute",
@@ -41,16 +42,14 @@
   "16": {
    "verdict": "fail",
    "failed": [
-    "stuckSecondsPerBotMinute",
-    "idleShare",
-    "oscillationsPerBotMinute",
+    "routeFailuresPerBotMinute",
     "redeploysPerBotMinute",
     "enemyKillsPerBotMinute",
     "bothSidesCapture",
-    "stuckSecondsPerBotMinuteWorseSide",
     "redeploysPerBotMinuteWorseSide",
     "nonEnemyDeathShareWorseSide",
     "hullStuckSecondsPerDrivingMinute",
+    "hullStuckSecondsPerDrivingMinuteWorseSide",
     "unitsNeverUsedShare"
    ],
    "winners": [
@@ -64,8 +63,8 @@
  "unreachable": [],
  "lintErrors": [],
  "acceptanceWithdrawn": {
-  "because": "page matches 2026-11-12: 0.025 then 0.019 enemy kills a bot-minute, no capture in either; under the rollout floor",
-  "date": "2026-11-12",
-  "was": "Owner's rollout, 2026-11-12: the owner asked for everything with a fight to go l"
+  "because": "generator 6 layer on the bot code of 3b1ebe45c, two page matches of 600 s with 16 bots, both under the rollout floor: 0.025 and 0.019 enemy kills a bot-minute, no capture",
+  "date": "2026-11-13",
+  "was": "Regenerated on generator 6 (2026-11-13) after being turned down on generator 5: "
  }
 }
