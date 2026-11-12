@@ -4,7 +4,7 @@ import gzip, json, time, urllib.request
 
 SITE = "https://mesh.bfstats.io"
 TREES = ["maps", "maps/mods/xpack1", "maps/mods/xpack2", "maps/mods/fhsw", "maps/mods/fhsweurope", "maps/mods/fh",
-         "maps/mods/desertcombat", "maps/mods/bf1918", "maps/mods/eod"]
+         "maps/mods/desertcombat", "maps/mods/bf1918", "maps/mods/eod", "maps/mods/gcmod"]
 
 
 def walk(o):

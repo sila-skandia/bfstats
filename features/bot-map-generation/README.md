@@ -3976,3 +3976,128 @@ a 600 s match for those that move and take flags (section 20).
    route crosses it.
 3. Generating a capped level now takes about two minutes (two floods and
    a route probe that has routes to plan), against twenty seconds.
+
+## 22. 2026-11-12: four ways the lint refused a walkable level
+
+A re-check of 21 land levels the lint had refused (14 for "no spawn with a
+route", 7 for "holds no spawn point at the start") found 10 refused on a
+wrong reading: the levels are plainly walkable. The faults are of four
+kinds. Each change is labelled INVENTION in the code, as the walk test is,
+and generator 6 carries all four (`botgen.mjs GENERATOR_VERSION`). Nothing
+in `viewer/` changed for them.
+
+### 22.1 The four faults
+
+**The spawns' sides.** `botgen.mjs spawnsOf` took a spawn's side only from
+a control point that claimed its group. The page asks more than that
+(`spawn-flags.js spawnFlags`, `flagSide`). A neutral point offers its
+groups to the side the spawn manager gave them, as on BF1918's Vosges,
+which writes `Object.setTeam 0` on both bases. A group that no point claims
+is a base of its own: Somme's French line, Breaking Point's German base.
+And a spawn point an object carries counts once that object stands, like
+Desert Combat's weapon bunkers. Those sides read as holding no spawn at
+all. The generator now takes the page's answer. A carried point counts
+when its spawner spawns that carrier for the side holding its point at the
+start (`carrierStandsAtStart`): Juno's Allied town house belongs to a point
+the Germans hold, so it does not. A point that seats its soldier in a
+vehicle is never a spawn on foot. A side that starts only on ships and
+landing craft is still refused, and the lint now says so: "the side starts
+at sea or in its vehicles" (Java, Juno, Omaha and 23 others).
+
+**One-way exits.** The walk test's regions are ground a soldier can walk
+both ways. A base on a shelf that a soldier drops 1 to 2 m off was its own
+region, and its spawns read as sealed, though the generator had already
+opened the drop in the layer's map (Deulemont: 296 to 333 cells for four
+of the seven German spawns). A landed spawn off the main ground now serves
+when a one-way walk reaches the main ground with no jump and no fall that
+costs health (`walkflood.mjs walkFacts`, `exit`; `serves`).
+
+**Flag seeds on wide levels.** On a level wider than the flood's cap the
+flood is run a second time, seeded at each flag (section 21). The seed sat
+on the pole, and Forgotten Hope's 8.5 m flagpoles have a collision of their
+own. A start inside one never grows, so the flag read as standing on no
+walked ground: Desert Hill's East Picket and Attack Point, though a
+soldier 3 m off the pole walks 50 m. Each flag is now also seeded at four
+points 2.5 m from its pole (`flagSeeds`).
+
+**The painter's map on wide levels.** A capped level wrote no map of its
+own, and the page painted one with no way opened in it. The painter's 30
+degree slope test, its outline of rubble and props, and the bridges it
+stamps shut sealed spawns the walk test walks out of: Forgotten Hometown's
+hill base, Raseiniai's barnyard. Such a level now ships the painter's map
+with the walked way out of every pocket opened, as an engine map gets
+(`prepareWalkMap`, `ground` and `paint`). A spawn also serves when the
+map's main component is within the 20 m the page moves a buried start
+(`nav-search.js START_RESOLVE_CELLS`).
+
+### 22.2 Guards
+
+- 131 layer folders linted with a frozen copy of the tools before any
+  edit: 35 clean before, 44 after, and no level that was clean has an error
+  now.
+- Three live levels regenerated into scratch. the_maze and tunis-1943
+  differ only in `"version": 5` to `6`. roye is capped, so the painter's
+  map applies: regenerated, it would ship an Infantry1 map with 128 opened
+  cells and a Tank0 map, bring Bahnhof and Bauernhof back into play (3
+  flags for 1), and drop its excluded spawns from 18 to 2. **Live layers
+  were not regenerated.** Regenerating roye is a change to a live level,
+  to be judged on the page like any other.
+- `tests/test_bot_layer.py WalkableRefusalTests`, six tests, one or two a
+  fault.
+
+### 22.3 What it opened
+
+Re-screened on generator 6, one seed at 8 and 16 a side:
+
+| Level | Lint before | Now | Runner |
+|---|---|---|---|
+| fhsw desert_hill | no route | clean | better than nothing |
+| bf1918 battle_of_the_vosges | no spawn | clean | better than nothing |
+| community tl_plane_training | no flag, no route | clean | better than nothing |
+| fhsw raseiniai | sealed | clean | no better than nothing |
+| community tanquilizer | no flag, no route | clean | no better than nothing |
+| desertcombat dc_weapon_bunkers | no spawn | clean | no fight (no capturable flag) |
+| desertcombat dc_no_fly_zone_day2 | no spawn | clean | no fight (no capturable flag) |
+| fhsw fht_hong_kong-1941 | sealed | clean | no fight |
+| fhsw fht_siege_of_zeeland-1940 | sealed | clean | no fight |
+| fhsw forgotten_hometown | sealed | clean | slow: see 22.4 |
+| fhsw battle_over_hokkaido-1945 | no flag, no route | clean | slow: see 22.4 |
+| bf1918 somme_gasattack | no spawn | route | refused: every route of the French line has 29 choke points |
+| bf1918 deulemont | sealed | route | refused: 70 choke points on the opened ways |
+| bf1918 liberation_of_roeselare | sealed | route | refused: 9 to 22 choke points |
+| fhsw fht_the_breaking_point-1940 | no spawn | new error | "spycker: the Infantry order position is not a free cell" |
+| fhsw battle_at_river_don | no route, sealed | still refused | the allied base's way out is longer than the 150 m search |
+
+The page figures for the nine that play are in `page-matches.md`
+section 6.
+
+### 22.4 Open
+
+1. **An order position on a blocked cell.** On regenerated capped levels an
+   area's order position can sit on the flag itself, on a cell the layer's
+   map blocks: Breaking Point's Spycker, and East Harbor on Invasion of the
+   Philippines in all three packs. The generator's nearest-free-cell search
+   found the cell free when it ran, and the map it wrote blocks it. Cause
+   not found. It is the one new lint error the fixes caused.
+2. **One-cell ways.** The way-opening frees only the walked path's own
+   cells, so every way it opens is single file, and the choke rule then
+   refuses the level (Deulemont, Roeselare). Widening each opened way by a
+   cell or two of walked ground is the next step.
+3. **River Don.** The way search reaches 150 m (`WAY_REACH`); the allied
+   base needs a longer one.
+4. **`Object.setTeam` on a placement.** `extract_map.py
+   _control_point_report` takes the placement's `Object.setTeam` over the
+   template's team. Vosges writes `setTeam 0` on every point and `38585940`
+   on one, so its `scene.json` reads both bases as neutral while its spawn
+   rows carry teams 2 and 1. A value that is not 0, 1 or 2 should fall back
+   to the template's team. Not changed: it is an exporter fix with a
+   re-patch of every tree behind it.
+5. **A match at a third of real time.** forgotten_hometown places 103
+   vehicles. Its no-layer match at 16 a side had reached 348 s of game time
+   after 18 minutes. A profile 143 s into the match: 59 % of the time in
+   `static-index.js cast`, nearly all under `bot-sense.js lineClear` from
+   `world-collider.js castMoved`, about half through `_retestHull` in
+   `updateMemory`. Each bot re-tests a line of sight to every hull it
+   remembers on every sense pass, and each test is a full cast through the
+   moved statics. A cap or a stagger on the re-tests a pass is the likely
+   fix; it is page bot code and was not touched.

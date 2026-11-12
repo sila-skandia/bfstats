@@ -5,8 +5,8 @@
 
 One line a level: live (it carries the menu tag), turned down (its layer was
 played on the page and withdrawn, with the reason), out (the lint or the
-judge refuses it, with the reason), judged (a verdict, not yet on the page),
-or not screened. Reads the live menus and maps trees, and the layer folders
+judge refuses it, or a held.json in its layer folder says why it waits, with
+the reason), judged (a verdict, not yet on the page), or not screened. Reads the live menus and maps trees, and the layer folders
 in this checkout.
 """
 import json, re, subprocess, sys
@@ -19,7 +19,7 @@ import fetch_tree as ft  # noqa: E402
 ROOT = Path(subprocess.check_output(["git", "rev-parse", "--show-toplevel"], text=True).strip())
 LAYERS = ROOT / "tools/bf1942-models/bot-layers"
 TREES = ["maps", "maps/mods/xpack1", "maps/mods/xpack2", "maps/mods/fhsw", "maps/mods/fhsweurope", "maps/mods/fh",
-         "maps/mods/desertcombat", "maps/mods/bf1918", "maps/mods/eod"]
+         "maps/mods/desertcombat", "maps/mods/bf1918", "maps/mods/eod", "maps/mods/gcmod"]
 
 
 def tagged(tree):
@@ -50,9 +50,13 @@ def state(tree, folder, scene, live):
         return "live", ""
     flags = scene.get("controlPoints") or []
     hint = f"world {int(scene.get('worldSize') or 0)}, {len(flags)} flags, {len(scene.get('soldierSpawns') or [])} soldier spawns"
+    if (d / "held.json").is_file():
+        return "out", "held: " + str(json.loads((d / "held.json").read_text()).get("because", ""))[:150]
     if not (d / "verdict.json").is_file():
         if not flags:
             return "out", "no control point: not a Conquest level on foot (" + hint + ")"
+        if len(flags) < 2:
+            return "out", "one control point: nothing to order bots to (" + hint + ")"
         return "not screened", hint
     v = json.loads((d / "verdict.json").read_text())
     if v.get("lintErrors"):
@@ -62,6 +66,14 @@ def state(tree, folder, scene, live):
         return "out", "unsuitable"
     if v.get("acceptanceWithdrawn"):
         return "turned down", str(v["acceptanceWithdrawn"].get("because", ""))[:150]
+    if (d / "page.json").is_file():
+        # Played on the page and never tagged: nothing was accepted, so there was nothing to withdraw.
+        p = json.loads((d / "page.json").read_text())
+        runs = "; ".join(f"{r.get('enemyKillsPerBotMinute')} enemy kills a bot-minute, {r.get('capturesTotal')} captures"
+                         for r in p.get("runs") or [])
+        if not (p.get("rollout") or {}).get("pass"):
+            return "turned down", f"page match {p.get('date')}: {runs}; under the rollout floor"[:150]
+        return "judged", f"passed the page {p.get('date')} ({runs}), not tagged: run menus.sh"[:150]
     return "judged", f"{v.get('outcome')}, not on the page" + (" (accepted)" if v.get("accepted") else "")
 
 

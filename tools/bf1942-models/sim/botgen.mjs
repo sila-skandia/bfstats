@@ -39,12 +39,13 @@ import { fileURLToPath, pathToFileURL } from 'node:url';
 import { viewerDir, loadViewerModules, seedMathRandom } from './env.mjs';
 import { realLevel } from './level.mjs';
 import { createStage } from './stage.mjs';
-import { STOREY, MAP_COVER, components, paintGround, soldierBody, walkFacts, walkedGround, wayOut } from './walkflood.mjs';
+import { STOREY, MAP_COVER, components, paintGround, serves, soldierBody, walkFacts, walkedGround, wayOut } from './walkflood.mjs';
 import { CHOKE_MAX, probeLevel, probeTools, wayStop } from './routeprobe.mjs';
+import { flagSide, spawnFlags } from '../viewer/spawn-flags.js';
 
 const HERE = path.dirname(fileURLToPath(import.meta.url));
 export const GENERATOR = 'botgen';
-export const GENERATOR_VERSION = 5;
+export const GENERATOR_VERSION = 6;
 export const LAYERS_ROOT = path.resolve(HERE, '..', 'bot-layers');
 export const TEMPLATE_FILES = ['Strategies.con', 'conditions.con', 'prerequisites.con'];
 
@@ -315,11 +316,65 @@ export function readTemplate(name, root = LAYERS_ROOT) {
 }
 
 /** Everything a layer's folder holds, as `{ relative path: text }`, and its marker: `buildLayer`, below the walk test's rules. */
-/** The soldier spawns of a level as the walk test takes them: `[{ name, x, y, z, side }]`, the side its flag starts with. */
+/**
+ * The spawns of a level as the walk test takes them, `[{ name, x, y, z, side, carried?, seats? }]`: every
+ * soldier spawn, with the side the page offers it to when the round starts, then the spawn points an object
+ * carries (a ship's deck, a landing craft, Desert Combat's weapon bunkers) whose object stands at the start.
+ *
+ * The side is the page's own answer (`viewer/spawn-flags.js spawnFlags`, `flagSide`): a flag's owner, or for
+ * a neutral point the one side its groups are on (BF1918's Vosges writes `Object.setTeam 0` on both bases),
+ * and a group no control point claims spawns for the side the spawn manager gives it (Somme's French line,
+ * Breaking Point's German base). Before generator 6 only a control point's own team counted, so those sides
+ * read as holding no spawn at all. A soldier spawn the page offers nobody keeps side 0 and stays a start of
+ * the flood, so the flood's starts are what they were.
+ *
+ * A carried point stands at the start when its spawner pad spawns that carrier for the side its point
+ * serves (`carrierStandsAtStart`). `seats` marks a point that puts whoever spawns on it into the carrier
+ * (`aiEnterOnSpawn`, else `enterOnSpawn`): a landing craft, a half-track, a plane. Such a point is no
+ * spawn on foot.
+ */
 export function spawnsOf(extras) {
-  const side = new Map((extras.controlPoints ?? []).map(c => [c.spawnGroupId, c.team === 1 || c.team === 2 ? c.team : 0]));
-  return (extras.soldierSpawns ?? []).filter(s => s.position && s.name)
-    .map(s => ({ name: s.name, x: s.position[0], y: s.position[1], z: s.position[2], side: side.get(s.group) ?? 0 }));
+  const offered = new Map();
+  const flags = spawnFlags(extras);
+  for (const flag of flags) {
+    if (flag.vehicle) continue;
+    const side = flagSide(flag);
+    for (const s of flag.spawns ?? []) if (!offered.has(s)) offered.set(s, side);
+  }
+  const out = (extras.soldierSpawns ?? []).filter(s => s.position && s.name)
+    .map(s => ({ name: s.name, x: s.position[0], y: s.position[1], z: s.position[2], side: offered.get(s) ?? 0 }));
+  const names = new Map();
+  for (const s of extras.vehicleSoldierSpawns ?? []) {
+    if (!s?.position || !(s.team === 1 || s.team === 2) || !carrierStandsAtStart(extras, s)) continue;
+    const base = `${s.vehicle}:${s.name}`;
+    const n = (names.get(base) ?? 0) + 1;
+    names.set(base, n);
+    out.push({ name: n > 1 ? `${base}#${n}` : base, x: s.position[0], y: s.position[1], z: s.position[2], side: s.team,
+               carried: s.vehicle, seats: !!(s.aiEnterOnSpawn ?? s.enterOnSpawn) });
+  }
+  return out;
+}
+
+/**
+ * Whether the object carrying spawn point `point` (a `vehicleSoldierSpawns` row) stands when the round
+ * starts. Its spawner (`objectSpawns`, by name) follows the control point it is filed under (`osId`
+ * against `objectSpawnerId`) and spawns the template of the side holding that point; a spawner filed under
+ * no point, or under one that starts neutral, spawns its own `Object.setTeam` side's (ledger SPAWN-2,
+ * SPAWN-12, SPAWN-19; `viewer/deployables.js padSides`, `followPadPoint`). Juno's `beachtownallied` and
+ * Omaha's `Alliedbeachspawn` are filed under a point the Germans hold, so they stand only once the Allies
+ * take it. A point whose spawner the scene does not list (a ship's own) is taken to stand.
+ */
+export function carrierStandsAtStart(extras, point) {
+  const key = String(point.spawner ?? '').toLowerCase();
+  const row = (extras.objectSpawns ?? []).find(r => String(r?.spawner ?? '').toLowerCase() === key && key);
+  if (!row) return true;
+  const own = row.team === 1 || row.team === 2 ? row.team : 0;
+  const cp = Number.isFinite(row.osId) ? (extras.controlPoints ?? []).find(c => c?.objectSpawnerId === row.osId) : null;
+  const held = cp && (cp.team === 1 || cp.team === 2) ? cp.team : 0;
+  const side = held || own;
+  if (!side) return false;
+  const template = row.templates ? row.templates[String(side)] : (own === side ? row.vehicle : null);
+  return !!template && String(template).toLowerCase() === String(point.vehicle ?? '').toLowerCase();
 }
 
 /**
@@ -375,7 +430,7 @@ export function probeAreas(tools, nav, areas, starts) {
 /** The spawns bots are kept off, from the walk test: no way to the main ground, or a storey over another floor.
  *  INVENTION: the engine spawns a bot on any point of its side's group (`viewer/spawn-flags.js pickSpawn` honours the list). */
 export function excludedByWalk(facts) {
-  return facts.spawns.filter(s => !s.usable || s.over >= STOREY).map(s => s.name);
+  return facts.spawns.filter(s => !s.carried && !serves(s)).map(s => s.name);
 }
 
 /** A decoded search-map level (`nav-baked.js BakedSearchMap`) as one byte a pixel, 1 blocked. */
@@ -456,22 +511,26 @@ export function encodePyramid(pixels, size) {
  *    ground with no fall that costs health. A way that needs a jump is not
  *    opened: the page's bots never jump.
  *
- * Returns `{ pixels, source, engineCover, opened, ways, facts }`;
+ * `ground` is the walk test's flood when the caller has it (`walkedGround`'s), and `paint: false` keeps
+ * `engine` as the map however little of the main ground it holds: a capped flood has walked only part of
+ * the level, so a map painted from it would hold only that part (`generate`, the page painter's map).
+ *
+ * Returns `{ pixels, source, engineCover, opened, ways, facts, ground }`;
  * `engineCover` is the share of the main ground the engine's map held free
  * (the marker keeps it for a painted map), `opened` is every cell
  * `[x, z]` (engine z) this run freed, so a later run can put the engine's
  * map back before it decides again.
  */
-export function prepareWalkMap({ collider, size, flags, spawns, body, engine, previous = null }) {
+export function prepareWalkMap({ collider, size, flags, spawns, body, engine, previous = null, ground = null, paint = true }) {
   const gridOf = pixels => ({ width: size, height: size, cellSize: 1, blocked: pixels });
-  const ground = walkedGround(collider, spawns, flags, body, size);
+  ground ??= walkedGround(collider, spawns, flags, body, size);
   let pixels = Uint8Array.from(engine);
   if (previous?.source === 'engine') for (const [x, z] of previous.opened ?? []) pixels[z * size + x] = 1;
   const original = Uint8Array.from(pixels);
   let facts = walkFacts({ collider, grid: gridOf(pixels), flags, spawns, body, ground });
   // What the engine's own map held of the main ground, kept for the record when the map is painted.
   const engineCover = facts.cover;
-  const painted = facts.mainRegion >= 0 && facts.cover < MAP_COVER;
+  const painted = paint && facts.mainRegion >= 0 && facts.cover < MAP_COVER;
   if (painted) {
     pixels = paintGround(ground, size, facts.mainRegion);
     facts = walkFacts({ collider, grid: gridOf(pixels), flags, spawns, body, ground });
@@ -506,7 +565,7 @@ export function prepareWalkMap({ collider, size, flags, spawns, body, engine, pr
   }
   if (opened.size) facts = walkFacts({ collider, grid: gridOf(pixels), flags, spawns, body, ground });
   const cells = [...opened].sort((p, q) => p - q).map(c => [c % size, Math.floor(c / size)]);
-  return { pixels, engine: original, source: painted ? 'walk test' : 'engine', engineCover, opened: cells, ways, facts };
+  return { pixels, engine: original, source: painted ? 'walk test' : 'engine', engineCover, opened: cells, ways, facts, ground };
 }
 
 /**
@@ -584,6 +643,8 @@ export function buildLayer({ mod, level, extras, areas, navSha, template, templa
     objectSpawners: (extras.objectSpawns ?? []).length,
     template: template.name, templateSource: template.source, ...(templateChoice ? { templateChoice } : {}),
     scope: !engineMaps ? 'on foot: infantry order positions only, no search maps, no co-op layer'
+      : walkMap?.engine === 'none' && walkMap?.source === 'page painter'
+        ? 'an infantry map from the page painter with the walk test\'s ways out opened, a Tank0 map from the page painter, infantry order positions, no strategic maps, no co-op layer'
       : walkMap?.engine === 'none'
         ? 'an infantry map painted from the walk test, a Tank0 map from the page painter, infantry order positions, no strategic maps, no co-op layer'
       : walkMap?.source === 'walk test'
@@ -649,7 +710,9 @@ export async function loadForBots({ maps, models, map, viewer = null, layerDir =
     const grid = build(searchMap);
     // `regrid(bytes)`: the same map the page would build from another level-0 file of the layer.
     const regrid = async bytes => build(await layerInfantryMap(null, viewer, bytes));
-    return { M, level, world, nav, grid, extras: level.extras, worldSize, searchMap, shipped, regrid };
+    // The map the page paints for a level with no map of its own, whatever map the layer folder holds.
+    const painter = () => nav.buildNavMap(world.collider, worldSize, { waterLevel: world.collider?.waterLevel, seeds, baked: false });
+    return { M, level, world, nav, grid, extras: level.extras, worldSize, searchMap, shipped, regrid, painter };
   } finally {
     console.log = log;
   }
@@ -692,10 +755,20 @@ export async function generate({ maps, models, map, mod, out = LAYERS_ROOT, temp
   const kept = existsSync(keptFile) ? (await layerInfantryMap(null, null, readFileSync(keptFile))) : null;
   const noEngine = !kept && (!loaded.searchMap || previous?.engine === 'none');
   if (noEngine || loaded.searchMap.width === size) {
+    const ground = walkedGround(world.collider, spawns, flags, body, size);
+    // A level the engine wrote no map for, wider than the walk test's cap (README 22): the flood walked only
+    // part of it, so no map is painted from it. The page painter's own map is the layer's, with the walked
+    // way out of every pocket the painter makes opened in it, as an engine map's are. Before generator 6 no
+    // map was written and the page painted its own with no way opened: its 30 degree slope test, its outline
+    // of rubble and props and the bridges it stamps shut sealed spawns the walk test walks out of.
+    const painter = noEngine && ground.capped ? loaded.painter() : null;
+    const onPainter = !!painter && painter.width === size && painter.height === size;
     const walk = prepareWalkMap({ collider: world.collider, size, flags, spawns, body,
-                                  engine: noEngine ? new Uint8Array(size * size).fill(1) : searchMapPixels(kept ?? loaded.searchMap),
-                                  previous: kept || noEngine ? null : previous });
-    if (noEngine && (walk.source !== 'walk test' || walk.facts.capped)) {
+                                  engine: onPainter ? Uint8Array.from(painter.blocked, b => (b ? 1 : 0))
+                                    : noEngine ? new Uint8Array(size * size).fill(1) : searchMapPixels(kept ?? loaded.searchMap),
+                                  previous: kept || noEngine ? null : previous, ground, paint: !onPainter });
+    if (onPainter) walk.source = 'page painter';
+    if (noEngine && !onPainter && (walk.source !== 'walk test' || walk.facts.capped)) {
       // The walk test found no main ground to paint (no spawn lands, or the flood ran out of room): no map is
       // written and the page paints its own, as it does for a level with no layer.
       for (const f of Object.keys(rawFiles)) delete rawFiles[f];
@@ -718,7 +791,8 @@ export async function generate({ maps, models, map, mod, out = LAYERS_ROOT, temp
       facts = walk.facts;
       walkMap = { source: walk.source, ...(noEngine ? { engine: 'none', vehicleMap: 'page painter', vehicleBrush: painted.brush, vehicleBrushes: painted.tried } : {}),
                   ...(walk.source === 'walk test' && !noEngine ? { engineCover: walk.engineCover } : {}),
-                  opened: walk.opened, ways: walk.ways, cover: facts.cover, floors: facts.floors, ...(walk.facts.capped ? { capped: true } : {}) };
+                  opened: walk.opened, ways: walk.ways, cover: facts.cover, floors: facts.floors, ...(walk.facts.capped ? { capped: true } : {}),
+                  ...(walk.facts.capped && walk.facts.joined ? { joined: walk.facts.joined } : {}) };
     }
   } else {
     facts = walkFacts({ collider: world.collider, grid, flags, spawns, body });
@@ -748,7 +822,7 @@ export async function generate({ maps, models, map, mod, out = LAYERS_ROOT, temp
   let areas = build();
   // The route probe: the page's own planner on this map, from each side's usable spawns to every flag still in play.
   const tools = await probeTools();
-  const usable = new Set(facts.spawns.filter(sp => sp.usable && sp.over < STOREY).map(sp => sp.name));
+  const usable = new Set(facts.spawns.filter(serves).map(sp => sp.name));
   const starts = spawns.filter(sp => (sp.side === 1 || sp.side === 2) && usable.has(sp.name));
   let probe = probeAreas(tools, grid, areas, starts);
   if (probe.unreachable.length) {

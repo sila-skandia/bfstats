@@ -33,7 +33,8 @@ the top; section 20 has every level's runner figures, section 21 the walk
 test), `page-matches.md` (section 6: the page check, the rollout floor,
 every level's page figures), and one note a fault: `hold-fire.md`,
 `hull-steering.md`, `wide-levels.md`, `no-live-strategy.md`,
-`flag-binding.md`, `seat-behaviour.md`. Read the README's status
+`flag-binding.md`, `seat-behaviour.md`, `hull-box.md`. README section 22
+has the four ways the lint refused walkable levels until generator 6. Read the README's status
 paragraphs and `page-matches.md` section 6 before starting.
 
 ## The owner's rules
@@ -62,7 +63,10 @@ paragraphs and `page-matches.md` section 6 before starting.
 Scripts are in `.claude/skills/bf1942-bot-rollout/scripts/`; below, `S` is
 that folder. The mod folder names are `bf1942` (retail levels in the
 vanilla tree), `community` (the community map pack, same tree), `xpack1`,
-`xpack2`, `fhsw`, `fhsweurope`, `fh`, `desertcombat`, `bf1918`, `eod`.
+`xpack2`, `fhsw`, `fhsweurope`, `fh`, `desertcombat`, `bf1918`, `eod`,
+`gcmod`. A mod imported later needs one line in `scripts/env.sh` (`mod_of`)
+and its tree in the `TREES` lists of `status.py` and `live.py`; nothing
+else is per mod.
 Set `BOT_WORK` to a scratch folder you keep for the whole job (level
 trees are tens of MB each); `BF1942_GAME` and `BF_MODELS` default to the
 owner's machine.
@@ -84,7 +88,10 @@ python3 $S/live.py                          # what carries the tag on the live s
 `status.py` is the work list: `not screened` rows have no verdict in the
 repo yet, `judged` rows have one and have not been on the page. A level the
 lint refuses still gets its layer folder and verdict from `screen.sh`, so
-it shows as `out` with the reason and is never looked at twice.
+it shows as `out` with the reason and is never looked at twice. A level
+that cannot be worked on for a reason outside the tools (Strasbourg: its
+archive is not on the machine) gets a `held.json` with a `because` in its
+layer folder and shows as `out` too.
 
 Pick the `botless` rows. Drop the ones out of scope by inspection: world
 8192 with few soldier spawns is a naval level; 0 capturable flags is not
@@ -110,6 +117,8 @@ What to do with the outcome:
 |---|---|
 | lint errors | stop: read the errors (below). The level is out unless the error is a tool fault |
 | `unsuitable` | out |
+| lint error is stacked floors and nothing else | run it anyway with `DESPITE_LINT=1 bash $S/screen.sh ...`; `rollout.sh` accepts it as the owner (Raid on Agheila, and GC's Endor, Corellia, Lok, Alaris Prime, Mini Hoth went this way) |
+| no verdict, and a `run.mjs` still at work after 15 minutes | a match is hung or crawling: see "Traps" |
 | `pass`, `better-than-nothing`, `no-better-than-nothing`, `no-fight` | send it to the page (step 3), unless both side sizes show no kill at all AND no capture: that level is dead, diagnose or drop |
 
 **3. Publish without the menu flag, and play it on the page.**
@@ -159,7 +168,9 @@ passes were marginal.
 | It says | It means |
 |---|---|
 | a side sealed in / no spawn with a route | no spawn of that side reaches the main ground on foot. Real on island and ship levels. Before 2026-11-11 it was also a tool fault on every level wider than about 700 m (README 21); that is fixed (`joinThroughMap`). If a plainly open level still reads sealed, suspect the tool first |
-| a side with no spawn at the start | the side holds no spawn group when the round begins (often a ship or a parachute start): out |
+| a side with no spawn at the start, or "the side starts at sea or in its vehicles" | the side's every spawn is on a ship, a landing craft or a vehicle seat when the round begins: out. Since generator 6 the lint counts what the page offers (a spawn's own team, groups no flag claims, carried spawns whose carrier stands at the start), so this is no longer said of a land base |
+| route: N choke points | every route of a side squeezes through single-file cells more often than the choke rule allows. Real on a causeway or a trench; also what a one-cell way the generator opened reads as (Deulemont, Roeselare: README 22.4) |
+| "the Infantry order position is not a free cell" | a generator fault on some capped levels, open (README 22.4): out for now |
 | no flag a soldier can stand in | every capturable flag is on a roof, a deck or in the air: out |
 | stacked floors (classed out) | a tenth of the play surface has a second walked floor over it: out, by the owner's decision |
 | warning: the walk test ran out of room | a wide level; its grounds were joined through the walk map. Expected, not a fault |
@@ -225,6 +236,28 @@ Every generated level live runs the page's bot code, and so do DICE's.
   `scene.json`, so the layer is published again.
 - **Never edit a script while it runs**, and never `pkill -f "botbatch"`:
   it matches every agent's runs on the machine.
+- **A runner match is a few minutes.** One still running after 15 is hung
+  or crawling, and the screen will wait on it for ever: find its PID
+  (`ps -o pid,etime,command -ax | grep "run.mjs --map"`), kill that PID,
+  and profile a short run (`node --prof sim/run.mjs ... --time 20` for a
+  minute, then `node --prof-process isolate-*.log`). GC_BCanyon hung on a
+  gunship whose box was 9 km long (`hull-box.md`); a level with a hundred
+  vehicles crawls at a third of real time in the bots' line-of-sight
+  re-tests (README 22.4). A run started before a fix has the old code
+  loaded.
+- **Queue page matches in one script** that calls `pagebatch.sh` group
+  after group (`( pagebatch.sh a ... & pagebatch.sh b ... & wait )` fills a
+  group of five from several mods). Several scripts each waiting on
+  another with `pgrep` is how an order gets lost.
+- **Somebody else can change the bot code mid-rollout.** A page result is
+  of the code live when its match started. When a bot-code commit lands
+  (ask in `git log -- tools/bf1942-models/viewer/bot-*.js`), matches from
+  before it are the old code: replay them before tagging, and re-match the
+  live levels ("When bot code changes", step 5).
+- **A re-match of every live level fails some on noise.** On 2026-11-12,
+  10 of 45 failed one match though the 45 together had not moved (median
+  0.106 enemy kills a bot-minute before, 0.100 after). Play the fails
+  again before reading anything into them.
 - **mesh.bfstats.io answers 403 to a request with no User-Agent.**
 - **Scratch is not durable.** Anything a later session needs goes in the
   repo: layers, verdicts, page.json, scripts, notes.

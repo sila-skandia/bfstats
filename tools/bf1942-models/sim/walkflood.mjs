@@ -294,6 +294,24 @@ export function components(grid) {
 
 /** A soldier spawn's own free cell is looked for this far from it, metres. */
 export const SPAWN_CELL_REACH = 3;
+/** How far the page moves a start buried in the paint to the nearest free metre (`viewer/nav-search.js
+ *  START_RESOLVE_CELLS`, 20 one-metre cells), metres. */
+export const START_RESOLVE = 20;
+/** How far, and over how many places, a spawn off the main ground looks for a one-way walk onto it
+ *  (`botgen.mjs` `WAY_REACH`, `WAY_CELLS`, the generator's own search for the way it opens). */
+export const EXIT_REACH = 150, EXIT_CELLS = 2000000;
+
+/**
+ * Whether a spawn serves a side's bots on foot (`walkFacts`'s row): it stands on the main ground with the
+ * walk map's main component within the page's start resolve (`usable`, or `resolved` within
+ * `START_RESOLVE`), or walks onto the main ground one way (`exit`, a walk or a fall that costs no health);
+ * never a storey over another floor, and never a point that seats its soldier in a vehicle.
+ *
+ * INVENTION, as the walk test is.
+ */
+export function serves(s) {
+  return !s.seats && (s.usable || s.resolved != null || !!s.exit) && s.over < STOREY;
+}
 /** Two walked floors this far apart over the same spot are two storeys, metres. */
 export const STOREY = 2.5;
 /** "The same spot": how far from a point another floor is looked for under or over it, metres. */
@@ -324,17 +342,41 @@ export function floodBounds(points, worldSize = Infinity) {
 /**
  * The ground every soldier spawn of a level can walk, as a flood whose
  * every move can be walked back (`drop` is the step): its regions are
- * ground whose places all reach each other. `spawns` `[{ x, y, z }]`.
+ * ground whose places all reach each other. `spawns` `[{ x, y, z }]`;
+ * `maxCells` is the flood's cap, for a test (the walk test's own otherwise).
  */
-export function walkedGround(collider, spawns, flags, body, worldSize = Infinity) {
+export function walkedGround(collider, spawns, flags, body, worldSize = Infinity, { maxCells = undefined } = {}) {
   const starts = spawns.map(s => [s.x, s.y, s.z]);
-  const options = { twoWay: true, bounds: floodBounds([...spawns, ...flags], worldSize) };
+  const options = { twoWay: true, bounds: floodBounds([...spawns, ...flags], worldSize), ...(maxCells ? { maxCells } : {}) };
   const flood = walkFlood(collider, starts, body, options);
   if (!flood.capped || !flags.length) return flood;
   // The cap ended it with ground left (a level wider than `maxCells` fine cells): each start has walked a
   // disc of its own, and a flag far from every spawn stands in none. Flood again with the flags as starts
   // after the spawns, so every flag's ground is looked at; `walkFacts` joins the discs through the walk map.
-  return walkFlood(collider, [...starts, ...flags.map(f => [f.x, f.y, f.z])], body, options);
+  return walkFlood(collider, [...starts, ...flags.flatMap(f => flagSeeds(collider, f, body))], body, options);
+}
+
+/** How far from a flag's pole a capped flood seeds the flag's ground, metres. */
+export const FLAG_SEED_OFFSET = 2.5;
+
+/**
+ * Where a capped flood starts a flag's ground: the pole, and the surface
+ * `FLAG_SEED_OFFSET` from it in each of the four directions. The pole alone
+ * is not enough: on Forgotten Hope's levels the flag's 8.5 m pole has a
+ * collision of its own, a start inside it never grows (one place, both ways),
+ * and the flag reads as standing on no walked ground at all (Desert Hill's
+ * East Picket and Attack Point; a soldier 3 m off the pole walks 50 m).
+ *
+ * INVENTION, as the walk test is.
+ */
+export function flagSeeds(collider, f, body) {
+  const out = [[f.x, f.y, f.z]];
+  for (const [dx, dz] of [[1, 0], [-1, 0], [0, 1], [0, -1]]) {
+    const x = f.x + dx * FLAG_SEED_OFFSET, z = f.z + dz * FLAG_SEED_OFFSET;
+    const floor = floorBelow(collider, x, z, f.y + FLAG_SEED_OFFSET + body.step, 2 * FLAG_SEED_OFFSET + body.step, body.wade);
+    if (floor) out.push([x, floor.y, z]);
+  }
+  return out;
 }
 
 /** An unfinished region is on a walk map's component when this share of its places, and this many, stand on
@@ -391,6 +433,12 @@ export function joinThroughMap(flood, grid, id) {
  *   component the one most of it stands on;
  * - a spawn is `usable` when it lands on the main ground and that ground
  *   holds a free cell of the main component within `SPAWN_CELL_REACH`;
+ *   `resolved` is how far the nearest such cell is when it is further but
+ *   within the page's start resolve (`START_RESOLVE`), `exit` whether a
+ *   landed spawn off the main ground walks onto it one way ('walk', or
+ *   'drop' with a fall that costs no health), `sea` whether a spawn that
+ *   lands nowhere is over water deeper than a soldier wades; `serves` reads
+ *   them;
  * - a flag is `reachable` (in 3D) when a place of the main ground inside
  *   its 3D radius stands on a free cell of the main component: a soldier
  *   on walkable ground is inside the ring. `inRing` is the nearest place of
@@ -454,10 +502,32 @@ export function walkFacts({ collider, grid, flags, spawns, body, ground = null }
     if (onMainGround && mainComponent) {
       for (const p of near(s.x, s.z, SPAWN_CELL_REACH)) if (p.region === r && p.component === mainComponent && (!stand || p.d < stand.d)) stand = p;
     }
+    // The page moves a buried start to the nearest free metre within `START_RESOLVE` (`nav-search.js
+    // START_RESOLVE_CELLS`): a spawn on the main ground with the main component that close serves.
+    let resolved = null;
+    if (onMainGround && mainComponent && !stand) {
+      for (const p of near(s.x, s.z, START_RESOLVE)) if (p.region === r && p.component === mainComponent && (!resolved || p.d < resolved.d)) resolved = p;
+    }
     const floor = floorBelow(collider, s.x, s.z, s.y + body.step, 1e4, body.wade);
     const terrain = terrainAt(s.x, s.z);
+    const water = collider?.waterLevel;
+    // A point the walk test finds no floor under, over water a soldier would swim in: a deck or a hull at sea.
+    const sea = r < 0 && Number.isFinite(water) && Number.isFinite(terrain) && water - terrain > body.wade;
+    // A landed spawn off the main ground that walks onto it one way, falling no further than costs no health
+    // (and never jumping): the generator opens that way in the layer's map (`botgen.mjs prepareWalkMap`).
+    let exit = null;
+    if (r >= 0 && main && mainComponent && !onMainGround && (s.side === 1 || s.side === 2) && !s.seats) {
+      const goal = (x, z, y) => {
+        const c = cellIndex(grid, x, z);
+        return c >= 0 && id[c] === mainComponent && flood.regionOf(x, z, y) === main.id;
+      };
+      const way = walkFlood(collider, [[s.x, s.y, s.z]], body, { goal, reach: EXIT_REACH, maxCells: EXIT_CELLS });
+      if (way.reached) exit = way.path.some((p, i) => i && way.path[i - 1][2] - p[2] > body.step) ? 'drop' : 'walk';
+    }
     return { name: s.name, side: s.side ?? 0, x: s.x, y: s.y, z: s.z, region: r, landed: r >= 0, onMainGround,
              usable: !!stand, cell: stand ? [stand.x, stand.z] : null,
+             resolved: resolved ? +resolved.d.toFixed(1) : null, exit, sea,
+             ...(s.carried ? { carried: s.carried, seats: !!s.seats } : {}),
              floorY: floor ? +floor.y.toFixed(2) : null, fall: floor ? +(s.y - floor.y).toFixed(1) : null,
              objectFloor: !!floor && floor.kind === 'object' && !(floor.y - terrain < STOREY),
              refused: !!floor && floor.kind === 'terrain' && floor.ny < body.slopeCos,

@@ -1,0 +1,38 @@
+rem *** Strategic areas: one per control point (botgen) ***
+
+aiStrategicArea.create German_Barracks 1021/1776.8 1036/1791.8 50
+aiStrategicArea.addNeighbour West_Bridge
+aiStrategicArea.addObjectTypeFlag Base
+aiStrategicArea.setOrderPosition Infantry 1027.5/1791.5
+aiStrategicArea.setSide 1
+aiStrategicArea.setTakeable 2 0
+
+aiStrategicArea.create Allied_Main_Base 1041.2/323.5 1056.2/338.5 50
+aiStrategicArea.addNeighbour West_Bridge
+aiStrategicArea.addObjectTypeFlag Base
+aiStrategicArea.setOrderPosition Infantry 1057.5/337.5
+aiStrategicArea.setSide 2
+aiStrategicArea.setTakeable 1 0
+
+aiStrategicArea.create Hotel 1024.5/881 1034.5/891 10
+aiStrategicArea.setSide 2
+aiStrategicArea.setTakeable 1 0
+aiStrategicArea.setTakeable 2 0
+
+aiStrategicArea.create Strasbourg_Cathedral 1042.7/1112.9 1052.7/1122.9 10
+aiStrategicArea.setSide 1
+aiStrategicArea.setTakeable 1 0
+aiStrategicArea.setTakeable 2 0
+
+aiStrategicArea.create East_Bridge 1115/1019 1125/1029 10
+aiStrategicArea.setTakeable 1 0
+aiStrategicArea.setTakeable 2 0
+
+aiStrategicArea.create West_Bridge 963/1018 973/1028 300
+aiStrategicArea.addNeighbour German_Barracks
+aiStrategicArea.addNeighbour Allied_Main_Base
+aiStrategicArea.addObjectTypeFlag Centre
+aiStrategicArea.addObjectTypeFlag StrongPoint
+aiStrategicArea.addObjectTypeFlag Close
+aiStrategicArea.addObjectTypeFlag ControlPoint
+aiStrategicArea.setOrderPosition Infantry 972.5/1022.5

@@ -1,0 +1,5 @@
+{
+  "level": "strasbourg",
+  "date": "2026-11-12",
+  "because": "its level archive (Strasbourg Fix 28-12-2021.zip plus strasbourg_003.rfa) is not on this machine, so the bake cannot write a layer into its scene. The generated layer is in this folder; with the archive in the install's levels folder, run screen.sh community strasbourg and carry on from step 3."
+}

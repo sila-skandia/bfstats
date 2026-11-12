@@ -27,6 +27,7 @@ mod_of() {
     desertcombat) MOD=DesertCombat; LAYERS=desertcombat; TREE=maps/mods/desertcombat; MAPS=$BOT_WORK/trees/desertcombat; MODELS=$BF_MODELS/mods/desertcombat; GAME=$BF1942_GAME; PAGEMOD=desertcombat ;;
     bf1918)       MOD=bf1918; LAYERS=bf1918; TREE=maps/mods/bf1918; MAPS=$BOT_WORK/trees/bf1918; MODELS=$BF_MODELS/mods/bf1918; GAME=$BF1942_GAME; PAGEMOD=bf1918 ;;
     eod)          MOD=EoD; LAYERS=eod; TREE=maps/mods/eod; MAPS=$BOT_WORK/trees/eod; MODELS=$BF_MODELS/mods/eod; GAME=$BF1942_GAME; PAGEMOD=eod ;;
-    *) echo "unknown mod folder: $1 (bf1942 community xpack1 xpack2 fhsw fhsweurope fh desertcombat bf1918 eod)" >&2; return 1 ;;
+    gcmod)        MOD=GCMOD; LAYERS=gcmod; TREE=maps/mods/gcmod; MAPS=$BOT_WORK/trees/gcmod; MODELS=$BF_MODELS/mods/gcmod; GAME=$BF1942_GAME; PAGEMOD=gcmod ;;
+    *) echo "unknown mod folder: $1 (bf1942 community xpack1 xpack2 fhsw fhsweurope fh desertcombat bf1918 eod gcmod)" >&2; return 1 ;;
   esac
 }
