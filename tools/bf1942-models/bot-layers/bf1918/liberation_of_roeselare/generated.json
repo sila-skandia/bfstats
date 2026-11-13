@@ -1,0 +1,1423 @@
+{
+ "generator": "botgen",
+ "version": 7,
+ "mod": "bf1918",
+ "level": "liberation_of_roeselare",
+ "objectSpawners": 67,
+ "template": "symmetric",
+ "templateSource": "DICE, bf1942 Kharkov (1.6 patch archives): AI/Strategies.con, AI/conditions.con, AI/prerequisites.con, unchanged",
+ "templateChoice": {
+  "name": "symmetric",
+  "inPlay": 5,
+  "rule": "5 capturable flags in play, more than 3"
+ },
+ "scope": "an infantry map painted from the walk test, a Tank0 map from the page painter, infantry order positions, no strategic maps, no co-op layer",
+ "unreachable": [
+  "Harbour",
+  "Sint_Michielskerk"
+ ],
+ "unreachableReasons": {
+  "Harbour": "route probe",
+  "Sint_Michielskerk": "route probe"
+ },
+ "botSpawnsExcluded": [
+  "Belgian_Line_Spawn1",
+  "Grote_Markt_Spawn1",
+  "Botermarkt_Spawn1",
+  "Botermarkt_Spawn2",
+  "Botermarkt_Spawn3",
+  "Botermarkt_Spawn6",
+  "Botermarkt_Spawn7",
+  "Station_Spawn5",
+  "Station_Spawn7",
+  "Station_Spawn8",
+  "Station_Spawn9",
+  "Station_Spawn11",
+  "Outskirts_Spawn4",
+  "Sint_Michielskerk_Spawn2",
+  "Sint_Michielskerk_Spawn3",
+  "Sint_Michielskerk_Spawn4",
+  "Sint_Michielskerk_Spawn5",
+  "Harbour_Spawn7",
+  "Harbour_Spawn8",
+  "Grote_Markt_Spawn2",
+  "Botermarkt_Spawn11",
+  "Botermarkt_Spawn12",
+  "Botermarkt_Spawn13",
+  "German_2nd_Defense_line_Spawn6",
+  "Belgian_Line_Spawn2",
+  "Belgian_Line_Spawn3",
+  "Belgian_Line_Spawn8"
+ ],
+ "walkMap": {
+  "source": "walk test",
+  "engine": "none",
+  "vehicleMap": "page painter",
+  "vehicleBrush": 3,
+  "vehicleBrushes": [
+   {
+    "brush": 3,
+    "flagsOn": 1,
+    "spawnersOn": 1,
+    "pieces": 38,
+    "main": 135
+   },
+   {
+    "brush": 2.5,
+    "flagsOn": 1,
+    "spawnersOn": 1,
+    "pieces": 47,
+    "main": 190
+   },
+   {
+    "brush": 2,
+    "flagsOn": 1,
+    "spawnersOn": 1,
+    "pieces": 53,
+    "main": 198
+   },
+   {
+    "brush": 1.5,
+    "flagsOn": 1,
+    "spawnersOn": 1,
+    "pieces": 60,
+    "main": 631
+   }
+  ],
+  "opened": [
+   [
+    340,
+    86
+   ],
+   [
+    342,
+    86
+   ],
+   [
+    343,
+    86
+   ],
+   [
+    346,
+    86
+   ],
+   [
+    338,
+    88
+   ],
+   [
+    339,
+    88
+   ],
+   [
+    340,
+    88
+   ],
+   [
+    341,
+    88
+   ],
+   [
+    342,
+    88
+   ],
+   [
+    343,
+    88
+   ],
+   [
+    344,
+    88
+   ],
+   [
+    345,
+    88
+   ],
+   [
+    346,
+    88
+   ],
+   [
+    347,
+    88
+   ],
+   [
+    348,
+    88
+   ],
+   [
+    349,
+    88
+   ],
+   [
+    350,
+    88
+   ],
+   [
+    351,
+    88
+   ],
+   [
+    338,
+    89
+   ],
+   [
+    339,
+    89
+   ],
+   [
+    340,
+    89
+   ],
+   [
+    341,
+    89
+   ],
+   [
+    342,
+    89
+   ],
+   [
+    343,
+    89
+   ],
+   [
+    344,
+    89
+   ],
+   [
+    345,
+    89
+   ],
+   [
+    346,
+    89
+   ],
+   [
+    347,
+    89
+   ],
+   [
+    348,
+    89
+   ],
+   [
+    349,
+    89
+   ],
+   [
+    350,
+    89
+   ],
+   [
+    351,
+    89
+   ],
+   [
+    338,
+    90
+   ],
+   [
+    339,
+    90
+   ],
+   [
+    340,
+    90
+   ],
+   [
+    341,
+    90
+   ],
+   [
+    342,
+    90
+   ],
+   [
+    343,
+    90
+   ],
+   [
+    344,
+    90
+   ],
+   [
+    345,
+    90
+   ],
+   [
+    346,
+    90
+   ],
+   [
+    347,
+    90
+   ],
+   [
+    348,
+    90
+   ],
+   [
+    349,
+    90
+   ],
+   [
+    350,
+    90
+   ],
+   [
+    351,
+    90
+   ],
+   [
+    354,
+    90
+   ],
+   [
+    355,
+    90
+   ],
+   [
+    356,
+    90
+   ],
+   [
+    357,
+    90
+   ],
+   [
+    347,
+    91
+   ],
+   [
+    348,
+    91
+   ],
+   [
+    349,
+    91
+   ],
+   [
+    350,
+    91
+   ],
+   [
+    351,
+    91
+   ],
+   [
+    354,
+    91
+   ],
+   [
+    355,
+    91
+   ],
+   [
+    356,
+    91
+   ],
+   [
+    357,
+    91
+   ],
+   [
+    347,
+    92
+   ],
+   [
+    348,
+    92
+   ],
+   [
+    349,
+    92
+   ],
+   [
+    350,
+    92
+   ],
+   [
+    351,
+    92
+   ],
+   [
+    354,
+    92
+   ],
+   [
+    355,
+    92
+   ],
+   [
+    356,
+    92
+   ],
+   [
+    357,
+    92
+   ],
+   [
+    347,
+    93
+   ],
+   [
+    348,
+    93
+   ],
+   [
+    349,
+    93
+   ],
+   [
+    350,
+    93
+   ],
+   [
+    351,
+    93
+   ],
+   [
+    354,
+    93
+   ],
+   [
+    355,
+    93
+   ],
+   [
+    356,
+    93
+   ],
+   [
+    357,
+    93
+   ],
+   [
+    347,
+    94
+   ],
+   [
+    348,
+    94
+   ],
+   [
+    349,
+    94
+   ],
+   [
+    350,
+    94
+   ],
+   [
+    351,
+    94
+   ],
+   [
+    354,
+    94
+   ],
+   [
+    355,
+    94
+   ],
+   [
+    356,
+    94
+   ],
+   [
+    357,
+    94
+   ],
+   [
+    345,
+    95
+   ],
+   [
+    347,
+    95
+   ],
+   [
+    348,
+    95
+   ],
+   [
+    349,
+    95
+   ],
+   [
+    355,
+    95
+   ],
+   [
+    345,
+    96
+   ],
+   [
+    347,
+    96
+   ],
+   [
+    348,
+    96
+   ],
+   [
+    349,
+    96
+   ],
+   [
+    350,
+    96
+   ],
+   [
+    351,
+    96
+   ],
+   [
+    353,
+    96
+   ],
+   [
+    354,
+    96
+   ],
+   [
+    355,
+    96
+   ],
+   [
+    356,
+    96
+   ],
+   [
+    357,
+    96
+   ],
+   [
+    340,
+    97
+   ],
+   [
+    341,
+    97
+   ],
+   [
+    342,
+    97
+   ],
+   [
+    343,
+    97
+   ],
+   [
+    344,
+    97
+   ],
+   [
+    345,
+    97
+   ],
+   [
+    347,
+    97
+   ],
+   [
+    348,
+    97
+   ],
+   [
+    349,
+    97
+   ],
+   [
+    350,
+    97
+   ],
+   [
+    351,
+    97
+   ],
+   [
+    352,
+    97
+   ],
+   [
+    353,
+    97
+   ],
+   [
+    354,
+    97
+   ],
+   [
+    355,
+    97
+   ],
+   [
+    356,
+    97
+   ],
+   [
+    357,
+    97
+   ],
+   [
+    340,
+    98
+   ],
+   [
+    341,
+    98
+   ],
+   [
+    342,
+    98
+   ],
+   [
+    343,
+    98
+   ],
+   [
+    344,
+    98
+   ],
+   [
+    345,
+    98
+   ],
+   [
+    347,
+    98
+   ],
+   [
+    348,
+    98
+   ],
+   [
+    349,
+    98
+   ],
+   [
+    350,
+    98
+   ],
+   [
+    351,
+    98
+   ],
+   [
+    353,
+    98
+   ],
+   [
+    354,
+    98
+   ],
+   [
+    355,
+    98
+   ],
+   [
+    356,
+    98
+   ],
+   [
+    357,
+    98
+   ],
+   [
+    340,
+    99
+   ],
+   [
+    341,
+    99
+   ],
+   [
+    342,
+    99
+   ],
+   [
+    343,
+    99
+   ],
+   [
+    344,
+    99
+   ],
+   [
+    345,
+    99
+   ],
+   [
+    346,
+    99
+   ],
+   [
+    347,
+    99
+   ],
+   [
+    348,
+    99
+   ],
+   [
+    349,
+    99
+   ],
+   [
+    350,
+    99
+   ],
+   [
+    351,
+    99
+   ],
+   [
+    354,
+    99
+   ],
+   [
+    355,
+    99
+   ],
+   [
+    340,
+    100
+   ],
+   [
+    341,
+    100
+   ],
+   [
+    342,
+    100
+   ],
+   [
+    343,
+    100
+   ],
+   [
+    344,
+    100
+   ],
+   [
+    345,
+    100
+   ],
+   [
+    347,
+    100
+   ],
+   [
+    348,
+    100
+   ],
+   [
+    349,
+    100
+   ],
+   [
+    350,
+    100
+   ],
+   [
+    351,
+    100
+   ],
+   [
+    340,
+    101
+   ],
+   [
+    341,
+    101
+   ],
+   [
+    342,
+    101
+   ],
+   [
+    343,
+    101
+   ],
+   [
+    344,
+    101
+   ],
+   [
+    345,
+    101
+   ],
+   [
+    347,
+    101
+   ],
+   [
+    348,
+    101
+   ],
+   [
+    349,
+    101
+   ],
+   [
+    350,
+    101
+   ],
+   [
+    351,
+    101
+   ],
+   [
+    340,
+    102
+   ],
+   [
+    341,
+    102
+   ],
+   [
+    342,
+    102
+   ],
+   [
+    343,
+    102
+   ],
+   [
+    344,
+    102
+   ],
+   [
+    345,
+    102
+   ],
+   [
+    347,
+    102
+   ],
+   [
+    348,
+    102
+   ],
+   [
+    349,
+    102
+   ],
+   [
+    350,
+    102
+   ],
+   [
+    351,
+    102
+   ],
+   [
+    335,
+    103
+   ],
+   [
+    336,
+    103
+   ],
+   [
+    339,
+    103
+   ],
+   [
+    340,
+    103
+   ],
+   [
+    341,
+    103
+   ],
+   [
+    342,
+    103
+   ],
+   [
+    343,
+    103
+   ],
+   [
+    344,
+    103
+   ],
+   [
+    342,
+    104
+   ],
+   [
+    335,
+    105
+   ],
+   [
+    336,
+    105
+   ],
+   [
+    337,
+    105
+   ],
+   [
+    338,
+    105
+   ],
+   [
+    339,
+    105
+   ],
+   [
+    340,
+    105
+   ],
+   [
+    341,
+    105
+   ],
+   [
+    342,
+    105
+   ],
+   [
+    343,
+    105
+   ],
+   [
+    344,
+    105
+   ],
+   [
+    335,
+    106
+   ],
+   [
+    336,
+    106
+   ],
+   [
+    337,
+    106
+   ],
+   [
+    338,
+    106
+   ],
+   [
+    339,
+    106
+   ],
+   [
+    340,
+    106
+   ],
+   [
+    341,
+    106
+   ],
+   [
+    342,
+    106
+   ],
+   [
+    343,
+    106
+   ],
+   [
+    344,
+    106
+   ],
+   [
+    335,
+    107
+   ],
+   [
+    336,
+    107
+   ],
+   [
+    337,
+    107
+   ],
+   [
+    338,
+    107
+   ],
+   [
+    339,
+    107
+   ],
+   [
+    340,
+    107
+   ],
+   [
+    341,
+    107
+   ],
+   [
+    342,
+    107
+   ],
+   [
+    343,
+    107
+   ],
+   [
+    344,
+    107
+   ],
+   [
+    335,
+    108
+   ],
+   [
+    336,
+    108
+   ],
+   [
+    337,
+    108
+   ],
+   [
+    338,
+    108
+   ],
+   [
+    339,
+    108
+   ],
+   [
+    335,
+    109
+   ],
+   [
+    336,
+    109
+   ],
+   [
+    337,
+    109
+   ],
+   [
+    338,
+    109
+   ],
+   [
+    339,
+    109
+   ],
+   [
+    340,
+    109
+   ],
+   [
+    341,
+    109
+   ],
+   [
+    342,
+    109
+   ],
+   [
+    335,
+    110
+   ],
+   [
+    336,
+    110
+   ],
+   [
+    337,
+    110
+   ],
+   [
+    338,
+    110
+   ],
+   [
+    339,
+    110
+   ],
+   [
+    340,
+    110
+   ],
+   [
+    341,
+    110
+   ],
+   [
+    342,
+    110
+   ],
+   [
+    335,
+    111
+   ],
+   [
+    336,
+    111
+   ],
+   [
+    337,
+    111
+   ],
+   [
+    338,
+    111
+   ],
+   [
+    339,
+    111
+   ],
+   [
+    340,
+    111
+   ],
+   [
+    581,
+    239
+   ],
+   [
+    581,
+    240
+   ],
+   [
+    581,
+    241
+   ],
+   [
+    581,
+    242
+   ],
+   [
+    585,
+    243
+   ],
+   [
+    586,
+    243
+   ],
+   [
+    594,
+    251
+   ],
+   [
+    575,
+    258
+   ],
+   [
+    596,
+    258
+   ],
+   [
+    683,
+    277
+   ],
+   [
+    683,
+    278
+   ],
+   [
+    683,
+    279
+   ],
+   [
+    683,
+    280
+   ],
+   [
+    683,
+    281
+   ],
+   [
+    702,
+    299
+   ],
+   [
+    703,
+    299
+   ],
+   [
+    707,
+    299
+   ],
+   [
+    462,
+    307
+   ],
+   [
+    701,
+    309
+   ],
+   [
+    667,
+    336
+   ],
+   [
+    667,
+    337
+   ],
+   [
+    667,
+    338
+   ],
+   [
+    667,
+    339
+   ],
+   [
+    667,
+    340
+   ],
+   [
+    667,
+    341
+   ],
+   [
+    667,
+    342
+   ],
+   [
+    667,
+    343
+   ],
+   [
+    667,
+    344
+   ],
+   [
+    455,
+    434
+   ],
+   [
+    455,
+    435
+   ],
+   [
+    455,
+    436
+   ],
+   [
+    455,
+    437
+   ]
+  ],
+  "ways": [
+   {
+    "who": "Belgian_Line_Spawn1",
+    "kind": "spawn",
+    "way": "none",
+    "opened": 0
+   },
+   {
+    "who": "Botermarkt_Spawn4",
+    "kind": "spawn",
+    "way": "walk",
+    "opened": 1
+   },
+   {
+    "who": "Botermarkt_Spawn5",
+    "kind": "spawn",
+    "way": "walk",
+    "opened": 0
+   },
+   {
+    "who": "Factory_Spawn1",
+    "kind": "spawn",
+    "way": "walk",
+    "opened": 8
+   },
+   {
+    "who": "Factory_Spawn2",
+    "kind": "spawn",
+    "way": "walk",
+    "opened": 1
+   },
+   {
+    "who": "Harbour_Spawn2",
+    "kind": "spawn",
+    "way": "walk",
+    "opened": 5
+   },
+   {
+    "who": "Harbour_Spawn6",
+    "kind": "spawn",
+    "way": "walk",
+    "opened": 9
+   },
+   {
+    "who": "Grote_Markt_Spawn3",
+    "kind": "spawn",
+    "way": "walk",
+    "opened": 4
+   },
+   {
+    "who": "German_2nd_Defense_line_Spawn6",
+    "kind": "spawn",
+    "way": "none",
+    "opened": 0
+   },
+   {
+    "who": "Belgian_Line_Spawn4",
+    "kind": "spawn",
+    "way": "drop",
+    "opened": 131
+   },
+   {
+    "who": "Belgian_Line_Spawn5",
+    "kind": "spawn",
+    "way": "drop",
+    "opened": 52
+   },
+   {
+    "who": "Belgian_Line_Spawn6",
+    "kind": "spawn",
+    "way": "drop",
+    "opened": 29
+   },
+   {
+    "who": "Belgian_Line_Spawn7",
+    "kind": "spawn",
+    "way": "drop",
+    "opened": 36
+   },
+   {
+    "who": "Harbour",
+    "kind": "flag",
+    "way": "walk",
+    "opened": 4
+   }
+  ],
+  "cover": 0.964,
+  "floors": {
+   "stacked": false,
+   "twoFloorShare": 0.011,
+   "raised": [],
+   "reason": null
+  }
+ },
+ "routeProbe": {
+  "chokeMax": 4,
+  "unreachable": [
+   "Harbour",
+   "Sint_Michielskerk"
+  ],
+  "stops": {
+   "Harbour": {
+    "1": {
+     "stage": "choke",
+     "points": 8,
+     "metres": 24,
+     "first": [
+      [
+       696.2,
+       -297
+      ],
+      [
+       698.4,
+       -298.2
+      ],
+      [
+       701.1,
+       -299.4
+      ]
+     ]
+    },
+    "2": {
+     "stage": "choke",
+     "points": 30,
+     "metres": 90,
+     "first": [
+      [
+       347.9,
+       -97.7
+      ],
+      [
+       346.6,
+       -99.9
+      ],
+      [
+       345.2,
+       -101.4
+      ]
+     ]
+    }
+   },
+   "Sint_Michielskerk": {
+    "1": {
+     "stage": "strategic"
+    },
+    "2": {
+     "stage": "strategic"
+    }
+   }
+  },
+  "oneSided": {
+   "Grote_Markt": 1,
+   "Outskirts": 1,
+   "Station": 1,
+   "Factory": 1,
+   "Botermarkt": 1
+  },
+  "sides": {
+   "1": {
+    "spawns": 27,
+    "flags": [
+     "Botermarkt",
+     "Factory",
+     "Grote_Markt",
+     "Outskirts",
+     "Station"
+    ]
+   },
+   "2": {
+    "spawns": 4,
+    "flags": []
+   }
+  },
+  "chokes": {
+   "Grote_Markt:1": 1,
+   "Grote_Markt:2": 5,
+   "Outskirts:1": 2,
+   "Outskirts:2": 5,
+   "Station:1": 3,
+   "Station:2": 11,
+   "Factory:1": 4,
+   "Factory:2": 17,
+   "Botermarkt:1": 2,
+   "Botermarkt:2": 5
+  },
+  "late": {},
+  "shutLinks": [
+   "Grote_Markt>Factory",
+   "Station>Factory",
+   "Factory>Grote_Markt",
+   "Factory>Station",
+   "Factory>Botermarkt",
+   "Botermarkt>Factory"
+  ]
+ },
+ "inputs": {
+  "controlPoints": "338bc0cf5626dc3446b7a4b75e2281a27fe9ad69735b94a82e71710db175dbda",
+  "infantryMap": "be3055496c17964da84a3228984d54f1633afe7c25522900218b1278f3b7ce70",
+  "template": "43f8a790471528016570235f76e97dbb2045732458781a5139f37fed68bf98c0"
+ },
+ "files": {
+  "AI.con": "26a4968a932cb02f5560de800c61804de753d63024b7306accd1c363ba784669",
+  "AIpathFinding.con": "8014dbf6ef50a7e5ba3bd3af85ed910350bb0936cd33c5a2e1c5138053711957",
+  "AI/StrategicAreas.con": "fe283c7108950cd4db93c61df503c314040e0a0296f4ba73e48b44315d668bcd",
+  "AI/Strategies.con": "4ce0be59a0d6c5cd530db002fb062c4be8d936bc6ae59bd188803ccaf7869a8d",
+  "AI/conditions.con": "68a0c7a8aec69954063147b60fae560b2874884285737aa085efa76597d395aa",
+  "AI/prerequisites.con": "4c1f313bc285b228fd6ad03bfd1f44c5b15c8703c31f802eb605bc5f00f88bb5",
+  "Pathfinding/Infantry1Level0Map.raw": "70f0da9fc223af1c05bc3a085654234e6dd7f282be4572c7d69a3f353898acef",
+  "Pathfinding/Infantry1Level1Map.raw": "1a4777f001f6cb75d058909356b5441e9292cd826426d782f5db0aff739f8c0c",
+  "Pathfinding/Infantry1Level2Map.raw": "5f0dc076da37f89abf5a67b447bf5dc8e8c3034880a5b90e4c902e262f6b0a95",
+  "Pathfinding/Tank0Level0Map.raw": "527d9243cdeebaa045440eb52caf22eca0b177e621e4716de28db2098b99365b",
+  "Pathfinding/Tank0Level1Map.raw": "7231fd5031540ddb0afafb7c28f349fecbc886bdb5b8b73db321baadbf3d01d0",
+  "Pathfinding/Tank0Level2Map.raw": "6a6def098ad738bf172dd70684927dcb54657526cc2c1bc836eb31d3c16e5dd9"
+ }
+}

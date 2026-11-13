@@ -1,0 +1,113 @@
+{
+ "generator": "botgen",
+ "version": 5,
+ "mod": "FHSW",
+ "level": "battle_of_gela-1943",
+ "objectSpawners": 132,
+ "template": "symmetric",
+ "templateSource": "DICE, bf1942 Kharkov (1.6 patch archives): AI/Strategies.con, AI/conditions.con, AI/prerequisites.con, unchanged",
+ "templateChoice": {
+  "name": "symmetric",
+  "inPlay": 6,
+  "rule": "6 capturable flags in play, more than 3"
+ },
+ "scope": "on foot: infantry order positions only, no search maps, no co-op layer",
+ "unreachable": [],
+ "unreachableReasons": {},
+ "botSpawnsExcluded": [
+  "AxisBase_Spawn2",
+  "AxisBase_Spawn4",
+  "Gela_North_Spawn3",
+  "Gela_West_Spawn1",
+  "Gela_West_Spawn3",
+  "Gela_West_Spawn4",
+  "Gela_East_Spawn2",
+  "Gela_East_Spawn3",
+  "Gela_East_Spawn5",
+  "AlliedBase_spawn1",
+  "AlliedBase_spawn2",
+  "AlliedBase_spawn3",
+  "AlliedBase_spawn4",
+  "mortar_base_Spawn1",
+  "mortar_base_Spawn3",
+  "Gela_West_Spawn5",
+  "Gela_East_Spwan6",
+  "Gela_Beach2_Spawn3",
+  "Gela_Beach2_Spawn5",
+  "Gela_Beach2_Spawn6",
+  "Gela_North_Spawn8",
+  "Gela_Church_Spawn1",
+  "Gela_Church_Spawn5",
+  "AxisBase2_Spawn1",
+  "AxisBase2_Spawn2",
+  "AxisBase2_Spawn3",
+  "AxisBase2_Spawn4"
+ ],
+ "walkMap": {
+  "source": "page painter",
+  "engine": "none",
+  "opened": [],
+  "ways": [],
+  "cover": 0.881,
+  "floors": {
+   "stacked": false,
+   "twoFloorShare": 0.002,
+   "raised": [],
+   "reason": null
+  },
+  "capped": true,
+  "joined": 2
+ },
+ "routeProbe": {
+  "chokeMax": 4,
+  "unreachable": [],
+  "stops": {},
+  "oneSided": {
+   "Gela_Beach": 1,
+   "Gela_North": 1,
+   "Gela_Church": 1,
+   "Gela_West": 1,
+   "Gela_East": 1,
+   "mortar_base": 1
+  },
+  "sides": {
+   "1": {
+    "spawns": 28,
+    "flags": [
+     "Gela_Beach",
+     "Gela_Church",
+     "Gela_East",
+     "Gela_North",
+     "Gela_West",
+     "mortar_base"
+    ]
+   },
+   "2": {
+    "spawns": 0,
+    "flags": []
+   }
+  },
+  "chokes": {
+   "Gela_Beach:1": 0,
+   "Gela_North:1": 0,
+   "Gela_Church:1": 0,
+   "Gela_West:1": 0,
+   "Gela_East:1": 2,
+   "mortar_base:1": 0
+  },
+  "late": {},
+  "shutLinks": []
+ },
+ "inputs": {
+  "controlPoints": "15529646f583e05c44dc1f280720f342086a9d4cb95e036e165ab037d0e71c9f",
+  "infantryMap": "a471c35babf37d07d13d35ab9eef1ff0684536e686944fbecd2daf5bf0b78c7e",
+  "template": "43f8a790471528016570235f76e97dbb2045732458781a5139f37fed68bf98c0"
+ },
+ "files": {
+  "AI.con": "6add06fce9aa94cfe94d211bd067d741e04433e1f1c464973e40b7b389dd13d7",
+  "AI/StrategicAreas.con": "d19c5a7c2d56fabf6624a77910b17a937fdf8e7ea617bdc28ab75341d4de0fdc",
+  "AI/Strategies.con": "4ce0be59a0d6c5cd530db002fb062c4be8d936bc6ae59bd188803ccaf7869a8d",
+  "AI/conditions.con": "68a0c7a8aec69954063147b60fae560b2874884285737aa085efa76597d395aa",
+  "AI/prerequisites.con": "4c1f313bc285b228fd6ad03bfd1f44c5b15c8703c31f802eb605bc5f00f88bb5"
+ }
+}

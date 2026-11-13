@@ -1,0 +1,63 @@
+{
+ "generator": "botgen",
+ "version": 5,
+ "mod": "FHSW",
+ "level": "battle_of_bougainville",
+ "objectSpawners": 128,
+ "template": "few",
+ "templateSource": "DICE, bf1942 Kursk (1.6 patch archives, Kursk_003.rfa): AI/Strategies.con, AI/conditions.con, AI/prerequisites.con, unchanged",
+ "templateChoice": {
+  "name": "few",
+  "inPlay": 0,
+  "rule": "0 capturable flags in play, at most 3"
+ },
+ "scope": "on foot: infantry order positions only, no search maps, no co-op layer",
+ "unreachable": [],
+ "unreachableReasons": {},
+ "botSpawnsExcluded": [],
+ "walkMap": {
+  "source": "page painter",
+  "engine": "none",
+  "opened": [],
+  "ways": [],
+  "cover": 0,
+  "floors": {
+   "stacked": false,
+   "twoFloorShare": 0,
+   "raised": [],
+   "reason": null
+  },
+  "capped": false
+ },
+ "routeProbe": {
+  "chokeMax": 4,
+  "unreachable": [],
+  "stops": {},
+  "oneSided": {},
+  "sides": {
+   "1": {
+    "spawns": 0,
+    "flags": []
+   },
+   "2": {
+    "spawns": 0,
+    "flags": []
+   }
+  },
+  "chokes": {},
+  "late": {},
+  "shutLinks": []
+ },
+ "inputs": {
+  "controlPoints": "7a5df6c11bf7a18842a3c9d5e9ecbaa9ff8279a7a26b586b2a161c4271ba302b",
+  "infantryMap": "67cda96d6630743bf761c7cb0064eee33fe86e9c8cdb0ee116b1fa5b4e03d550",
+  "template": "bdc0e455f47f91b7e7724e71d7c0c196e839b36946ac3abb7663d725944081e5"
+ },
+ "files": {
+  "AI.con": "73237dc6aaa6a0635578470b4f825888d4281599954787dc66743faf72cd6a7d",
+  "AI/StrategicAreas.con": "2f748fda9baa6fcb6f48fb62ad41abf7361f4aaffdd889661eae8aaebdc5410c",
+  "AI/Strategies.con": "13da4dc35872dd4b5798a066f4425bdc824cfd61f31093d1808e1202644de52e",
+  "AI/conditions.con": "248a04b727c08d696bf0fa9c162bc22c43cde3c75f695892fe1e0f5141519c49",
+  "AI/prerequisites.con": "c96168b5f69860e578f5d26728fd2a2092c4c436e1da49b7d6f4009b65735398"
+ }
+}

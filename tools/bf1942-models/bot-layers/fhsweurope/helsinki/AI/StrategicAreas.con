@@ -1,0 +1,37 @@
+rem *** Strategic areas: one per control point (botgen) ***
+
+aiStrategicArea.create fornebu 1442.7/1474.3 1450.7/1482.3 50
+aiStrategicArea.addObjectTypeFlag Base
+aiStrategicArea.setOrderPosition Infantry 1451.5/1481.5
+aiStrategicArea.setSide 1
+aiStrategicArea.setTakeable 2 0
+
+aiStrategicArea.create fornebufjellet 1380.4/1371 1388.4/1379 50
+aiStrategicArea.addNeighbour snaroya
+aiStrategicArea.addNeighbour roadblocktemplate
+aiStrategicArea.addObjectTypeFlag Base
+aiStrategicArea.setOrderPosition Infantry 1388.5/1373.5
+aiStrategicArea.setSide 1
+aiStrategicArea.setTakeable 2 0
+
+aiStrategicArea.create snaroya 106.3/1912.1 114.3/1920.1 50
+aiStrategicArea.addNeighbour fornebufjellet
+aiStrategicArea.addNeighbour roadblocktemplate
+aiStrategicArea.addObjectTypeFlag Base
+aiStrategicArea.setOrderPosition Infantry 120.5/1920.5
+aiStrategicArea.setSide 1
+aiStrategicArea.setTakeable 2 0
+
+aiStrategicArea.create roadblocktemplate 1190.2/1002.6 1198.2/1010.6 50
+aiStrategicArea.addNeighbour fornebufjellet
+aiStrategicArea.addNeighbour snaroya
+aiStrategicArea.addObjectTypeFlag Base
+aiStrategicArea.setOrderPosition Infantry 1199.5/1011.5
+aiStrategicArea.setSide 1
+aiStrategicArea.setTakeable 2 0
+
+aiStrategicArea.create fornebuairfieldtemplate 1932/82 1940/90 50
+aiStrategicArea.addObjectTypeFlag Base
+aiStrategicArea.setOrderPosition Infantry 1938.5/91.5
+aiStrategicArea.setSide 2
+aiStrategicArea.setTakeable 1 0

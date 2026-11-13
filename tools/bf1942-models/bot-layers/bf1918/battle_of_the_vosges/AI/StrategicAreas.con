@@ -1,0 +1,45 @@
+rem *** Strategic areas: one per control point (botgen) ***
+
+aiStrategicArea.create frenchmountaintemplate 699.9/835.2 723.9/859.2 50
+aiStrategicArea.addNeighbour unnamedcontrol3template
+aiStrategicArea.addObjectTypeFlag Base
+aiStrategicArea.setOrderPosition Tank 723.5/861.5
+aiStrategicArea.setOrderPosition Infantry 722.5/858.5
+
+aiStrategicArea.create unnamedcontroltemplate 625.7/745.6 639.7/759.6 10
+aiStrategicArea.setTakeable 1 0
+aiStrategicArea.setTakeable 2 0
+
+aiStrategicArea.create unnamedcontrol1template 565.9/647.5 579.9/661.5 10
+aiStrategicArea.setTakeable 1 0
+aiStrategicArea.setTakeable 2 0
+
+aiStrategicArea.create unnamedcontrol2template 432.2/733.8 446.2/747.8 10
+aiStrategicArea.setTakeable 1 0
+aiStrategicArea.setTakeable 2 0
+
+aiStrategicArea.create unnamedcontrol3template 510.7/701.6 524.7/715.6 150
+aiStrategicArea.addNeighbour frenchmountaintemplate
+aiStrategicArea.addNeighbour unnamedcontrol4template
+aiStrategicArea.addNeighbour unnamedcontrol5template
+aiStrategicArea.addObjectTypeFlag Flank
+aiStrategicArea.addObjectTypeFlag Close
+aiStrategicArea.addObjectTypeFlag ControlPoint
+aiStrategicArea.setOrderPosition Tank 522.5/715.5
+aiStrategicArea.setOrderPosition Infantry 523.5/716.5
+
+aiStrategicArea.create unnamedcontrol4template 339.7/660.2 353.7/674.2 150
+aiStrategicArea.addNeighbour unnamedcontrol3template
+aiStrategicArea.addNeighbour unnamedcontrol5template
+aiStrategicArea.addObjectTypeFlag Flank
+aiStrategicArea.addObjectTypeFlag Close
+aiStrategicArea.addObjectTypeFlag ControlPoint
+aiStrategicArea.setOrderPosition Tank 340.5/676.5
+aiStrategicArea.setOrderPosition Infantry 340.5/676.5
+
+aiStrategicArea.create unnamedcontrol5template 261.3/811.2 281.3/831.2 50
+aiStrategicArea.addNeighbour unnamedcontrol3template
+aiStrategicArea.addNeighbour unnamedcontrol4template
+aiStrategicArea.addObjectTypeFlag Base
+aiStrategicArea.setOrderPosition Tank 281.5/829.5
+aiStrategicArea.setOrderPosition Infantry 280.5/830.5

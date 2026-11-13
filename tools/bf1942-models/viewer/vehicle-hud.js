@@ -10,10 +10,12 @@
  * `handWeapon`, `hudPaths`, `isZoomed`, `itemsLocked`, `LOCAL_PLAYER`,
  * `localName`, `mannedActive`, `mannedGuns`, `netOccupiedVehicleId`, `occupancy`,
  * `occupiedVehicleDamage`, `occupiedVehicleIdFor`, `optOnFoot`, `renderer`,
- * `replayAim`, `roomClient`, `roomJoined`, `soldier`, `vehicleGuns`, `view`, `world`.
+ * `replayAim`, `roomClient`, `roomJoined`, `soldier`, `vehicleGuns`, `view`, `world`;
+ * and `guns` (the live rounds, for the friendly-mine icon).
  */
 
-import { crossGunOf } from './fire-state.js';
+import { ammoTypeOf, crossGunOf } from './fire-state.js';
+import { friendlyMineNear } from './mine-icon.js';
 import { VehiclePlayersList, VEHICLE_PLAYERS_VARS, hudPlayerName } from './vehicle-players.js';
 
 /** The HUD's virtual screen, the frame the cross is measured in. */
@@ -105,6 +107,9 @@ export function createVehicleHud(page) {
     'Ammo/SecondaryAmmoIcon', 'Ammo/SecondaryAmmoBar',
     'Ammo/SecondaryAmmo', 'Ammo/SecondaryAmmoText', 'Ammo/MaxSecondaryAmmo',
     'Ammo/ReloadTime', 'Ammo/ReloadTimeSecondary', 'Overheat/OverHeat',
+    // The depot icons and the mine warning as the seat wrote them
+    // (`feedSeatedIcons`); on foot `soldier-view.js` writes them again.
+    'ShowRepairIcon', 'ShowHealIcon', 'ShowReloadIcon', 'ShowMineIcon',
     // VHUD-11/VHUD-2: the seat-occupancy dots. One shared `Occupied/OccupiedData`
     // backs all six leaves (an array here, indexed by the leaf's own
     // `position`), and each dot's place inside the 128x128 vehicle icon is a
@@ -270,8 +275,12 @@ export function createVehicleHud(page) {
    *  rebuilds it (the engine's enter and exit handlers), then the frame. */
   function feedVehiclePlayers() {
     if (!page.occupancy) return;
-    vehicleHud.players.observe(page.occupancy.root, crewBySeat());
+    const crew = crewBySeat();
+    vehicleHud.players.observe(page.occupancy.root, crew);
     vehicleHud.players.frame(page.gameHud?.vars);
+    // The same crew, for `entered your vehicle` / `left your vehicle`
+    // (comms.js `observeCrew`).
+    page.observeCrew?.(page.occupancy.root, crew);
   }
 
   /** A number key in a seat, 0-based (`c_PIMenuSelect1..6`, `0x006d7a00`):
@@ -413,6 +422,76 @@ export function createVehicleHud(page) {
     // for the same per-tick reason as `heated` above.
     setHudVar('Ammo/ReloadTime', readyFraction(primary, nodes[0]));
     setHudVar('Ammo/ReloadTimeSecondary', readyFraction(secondary, nodes[1]));
+    feedSeatedIcons(nodes);
+  }
+
+  // --- the depot icons and the mine warning, seated ---------------------------
+  //
+  // `MenuMapNode::onPaint` writes `ShowRepairIcon`, `ShowHealIcon`,
+  // `ShowReloadIcon` and `ShowMineIcon` every paint for the local player,
+  // seated or not (gap audit 2026-11-12, entries 44 and 23). On foot the
+  // writer is `soldier-view.js`; in a seat it is here, by the seated halves of
+  // the three `show*IconInMenu` predicates (`supply.js` `seatedIcons`, SUP-5,
+  // SUP-17) and the 30 m mine radius (`mine-icon.js`). Scratch objects: this
+  // runs every frame in a seat. Cost: one pass over the level's depots (52 on
+  // Wake) and, for the mine, one over the live rounds.
+  // World places read off `matrixWorld` (the last render's, a frame old at
+  // most): no vector class is imported here.
+  const seatAt = { x: 0, y: 0, z: 0 };
+  const rootAt = { x: 0, y: 0, z: 0 };
+  const worldPlace = (node, into) => {
+    const e = node.matrixWorld.elements;
+    into.x = e[12]; into.y = e[13]; into.z = e[14];
+  };
+  const seatProbe = { team: 0, root: null, x: 0, y: 0, z: 0, rootX: 0, rootY: 0, rootZ: 0,
+                      template: null, ammoTags: [] };
+  const seatIcons = { repair: false, heal: false, reload: false };
+  const mineViewer = { alive: true, seated: true, kit: null, team: 0, x: 0, y: 0, z: 0 };
+  // A round's side: its firer's in the world, else (a room's remote player,
+  // whose rounds are drawn here under their slot) the roster's.
+  const mineTeamOf = firer => (firer == null ? null
+    : page.world?.player(firer)?.team
+      ?? (page.roomJoined && Number.isInteger(firer) ? page.roomClient?.teamOf?.(firer) || null : null));
+
+  function feedSeatedIcons(nodes) {
+    const occ = page.occupancy;
+    const root = occ?.root;
+    if (!root?.matrixWorld) return;
+    const me = page.world?.player?.(page.LOCAL_PLAYER) ?? null;
+    const alive = me ? !me.armor?.destroyed : true;
+    const team = me?.supply?.team ?? me?.team ?? 0;
+    const seat = occ.seatInfo(occ.activeSeatId);
+    const seatNode = seat?.node?.matrixWorld ? seat.node : root;
+    worldPlace(seatNode, seatAt);
+    worldPlace(root, rootAt);
+    const field = page.world?.supplyField;
+    if (field?.depots.length && alive) {
+      seatProbe.team = team;
+      seatProbe.root = root;
+      seatProbe.x = seatAt.x; seatProbe.y = seatAt.y; seatProbe.z = seatAt.z;
+      seatProbe.rootX = rootAt.x; seatProbe.rootY = rootAt.y; seatProbe.rootZ = rootAt.z;
+      // The player's vehicle is the seat's own PlayerControlObject: the hull
+      // for its driver, the seat object for anyone else, and it is that
+      // template a depot's `addVehicleType` rows are matched against.
+      seatProbe.template = seatNode.userData?.control ?? seatNode.name ?? null;
+      const tags = seatProbe.ammoTags;
+      tags.length = 0;
+      const table = page.world?.damageTables?.ammoTypes ?? null;
+      for (const node of nodes) {
+        tags.push(ammoTypeOf(page.fireStateFor(node)?.stats, node?.name, table));
+      }
+      field.seatedIcons(seatProbe, seatIcons);
+    } else {
+      seatIcons.repair = false; seatIcons.heal = false; seatIcons.reload = false;
+    }
+    setHudVar('ShowRepairIcon', seatIcons.repair);
+    setHudVar('ShowHealIcon', seatIcons.heal);
+    setHudVar('ShowReloadIcon', seatIcons.reload);
+    mineViewer.alive = alive;
+    mineViewer.team = team;
+    mineViewer.x = seatAt.x; mineViewer.y = seatAt.y; mineViewer.z = seatAt.z;
+    setHudVar('ShowMineIcon', friendlyMineNear(mineViewer, page.guns?.projectiles,
+      page.world?.damageTables?.projectiles, mineTeamOf));
   }
 
   /** The active seat's FireArms nodes, primary first: the ammo panel's

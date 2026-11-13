@@ -71,6 +71,16 @@ export function sendSnapshots(players, nowMs, payload) {
   }
 }
 
+/** A player row's lower state for the wire: standing, the walking body's
+ *  own machine (`SoldierJumpState`); crouched or lying, only whether it
+ *  moves backward (the forward ramp's sign). Null seated, swimming or dead. */
+function lowerOf(row, body, soldier = null) {
+  if (!body || !row.alive || row.seated || row.inVehicle || row.swim) return null;
+  if (soldier?.climb?.active) return 'climb';
+  if (!row.crouch && !row.prone) return body.lowerBody?.state ?? null;
+  return body.forwardRamp < 0 ? 'backward' : null;
+}
+
 /** The 20 Hz record (netcode.js's encodeSnapshot), built once per send —
  *  every connection at whatever rate ships the same bytes. `Room.
  *  snapshotPayload` is this, public because the core's join handshake sends
@@ -79,7 +89,11 @@ export function snapshotRecord(room) {
   const world = room.world;
   const rows = new Map(world.playersSnapshot().map(r => [r.id, r]));
   const players = [];
-  for (const [slot, connection] of room.players) {
+  // Every player of the room: the humans' connections, then the bots, which
+  // have a slot and no connection (`room-bots.mjs`).
+  const roster = room.bots?.count
+    ? [...room.players, ...[...room.bots.slots.keys()].map(slot => [slot, null])] : room.players;
+  for (const [slot, connection] of roster) {
     const row = rows.get(slot);
     if (!row) continue;
     let { x, y, z } = row;
@@ -111,10 +125,13 @@ export function snapshotRecord(room) {
       hp: row.hp,
       vehicleId: entry ? entry.id : 0,
       seatIndex: row.seatIndex >= 0 ? Math.min(row.seatIndex, 15) : null,
+      // The lower machine's state his walking body ran this tick
+      // (`netcode.js` `LOWER_WIRE`): the jumps, the backward run, the turns.
+      lower: lowerOf(row, wp?.soldier?.body, wp?.soldier),
       // The input acknowledgement: the highest seq this world has consumed
       // for the player (raised in `#tick`). The client reconciles against
       // the tick it names, so the input latency is not read as error.
-      ack: connection.ack,
+      ack: connection?.ack ?? 0,
     });
   }
   const vehicles = [];
@@ -122,7 +139,9 @@ export function snapshotRecord(room) {
     // A hull out of the world (a pad's other side, a cleared wreck) has no
     // pose to send (`room-pads.mjs`).
     if (entry.live === false) continue;
-    const pose = world.vehiclePose(entry.owner);
+    // A ship at rest is scenery the body world does not hold: her node's own
+    // pose (`room-ships.mjs`), where the world would answer her pad's.
+    const pose = room.instance.ships?.poseOf(entry) ?? world.vehiclePose(entry.owner);
     if (!pose) continue;
     vehicles.push({
       id: entry.id,

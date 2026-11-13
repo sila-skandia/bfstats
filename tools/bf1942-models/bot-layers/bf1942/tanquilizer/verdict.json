@@ -1,0 +1,62 @@
+{
+ "level": "tanquilizer",
+ "verdict": "fail",
+ "outcome": "no-better-than-nothing",
+ "config": "with vehicles",
+ "doctrine": "garrison",
+ "generatorVersion": 6,
+ "inputs": {
+  "controlPoints": "07edd074ab2b2e8f93e54a082f57a1977268823882358194f7effd7779c3cd06",
+  "infantryMap": "e02cd877a5f5df6f9a440543a8fe9094af64050d5f310719d55672f627e2a489",
+  "template": "bdc0e455f47f91b7e7724e71d7c0c196e839b36946ac3abb7663d725944081e5"
+ },
+ "baseline": "DICE layers with vehicles, garrison doctrine: berlin, stalingrad, kharkov, bocage; seeds 1..10, 600 s",
+ "bar": {
+  "against": "dice",
+  "why": "a vanilla or community level: DICE's bar"
+ },
+ "seeds": 1,
+ "sizes": {
+  "8": {
+   "verdict": "fail",
+   "failed": [
+    "selfDeathsPerBotMinute",
+    "capturesTotal",
+    "enemyKillsPerBotMinute",
+    "flagCoverage",
+    "bothSidesCapture",
+    "nonEnemyDeathShareWorseSide",
+    "tankSilentShare"
+   ],
+   "winners": [
+    1,
+    0,
+    0
+   ]
+  },
+  "16": {
+   "verdict": "fail",
+   "failed": [
+    "selfDeathsPerBotMinute",
+    "enemyKillsPerBotMinute",
+    "flagCoverage",
+    "bothSidesCapture",
+    "nonEnemyDeathShareWorseSide",
+    "tankSilentShare"
+   ],
+   "winners": [
+    0,
+    1,
+    0
+   ]
+  }
+ },
+ "oneSided": null,
+ "unreachable": [],
+ "lintErrors": [],
+ "acceptanceWithdrawn": {
+  "because": "page match 2026-11-12: 0.075 enemy kills a bot-minute, no capture, 0.275 deaths by the bots' own hand; under the rollout floor. One match only: the day ended before its second.",
+  "date": "2026-11-12",
+  "was": "Owner's rollout, 2026-11-12: the owner asked for everything with a fight to go l"
+ }
+}

@@ -238,6 +238,18 @@ export class DamageableVehicle {
      */
     this.criticalFlagged = false;
     /**
+     * `Armor+0x1c`, the last hit place (`setLastHitPlace` `0x08174120`): the
+     * hit point less the root's position, world axes, written by every
+     * `GameServer::_giveDamage` before the damage lands (`0x0814b996`..
+     * `0x0814b9dd`). Only its x is read anywhere this page models: a Wing
+     * going critical mirrors its lift scale on `x < 0` (`Wing::handleMessage`
+     * `0x08250e92`, `aircraft.js` `criticalLift`). 0 until a hit names one.
+     */
+    this.lastHitPlaceX = 0;
+    /** `lastHitPlaceX` as the crossing into critical found it, which is when
+     *  the Wings read it (message 0x14). */
+    this.criticalHitX = 0;
+    /**
      * `Armor+0x8`, the last hit material: -1 until a contact records one
      * (Armor ctor `0x081722be`), then the other side's material of each
      * `handleCollision`, which stops recording once the object is destroyed
@@ -313,7 +325,10 @@ export class DamageableVehicle {
   _status(before) {
     const after = this.armor.hitPoints;
     if (this.armor.destroyed || this.criticalDamage === null) return;
-    if (before > this.criticalDamage && after <= this.criticalDamage) this.criticalFlagged = true;
+    if (before > this.criticalDamage && after <= this.criticalDamage) {
+      this.criticalFlagged = true;
+      this.criticalHitX = this.lastHitPlaceX;
+    }
     else if (before <= this.criticalDamage && after > this.criticalDamage) this.criticalFlagged = false;
   }
 
@@ -337,6 +352,12 @@ export class DamageableVehicle {
       this.killedWith = attacker != null && how ? { weapon: how.weapon ?? null, splash: !!how.splash } : null;
     }
     return lost;
+  }
+
+  /** Where a hit landed, as its world x less the root's (`lastHitPlaceX`).
+   *  Called before the damage it belongs to, as `_giveDamage` orders it. */
+  noteHitPlace(dx) {
+    if (!this.armor.destroyed && Number.isFinite(dx)) this.lastHitPlaceX = dx;
   }
 
   /** A contact's other-side material (`setLastHitMaterialIndex`); a dead
@@ -366,6 +387,8 @@ export class DamageableVehicle {
     this.criticalFlagged = this.criticalDamage !== null
       && this.armor.hitPoints <= this.criticalDamage;
     this.lastHitMaterial = -1;
+    this.lastHitPlaceX = 0;
+    this.criticalHitX = 0;
     this.oxygen = 1;
     this.submarineAccumulator = 0;
     this.deathAnnounced = false;
@@ -611,6 +634,66 @@ export function roundWeapon(record) {
   return record?.stamp?.weapon ?? record?.firerGroup?.weapon ?? null;
 }
 
+/**
+ * An Armor's own blast and push words as `SimpleObjectTemplate`'s
+ * constructor leaves them (lnxded 0x081dbc70): `explosionRadius` 15.0
+ * (0x081dbdf4), `explosionDamage` 10.0 (0x081dbdfe), `explosionMaterial` 204
+ * (0x081dbe08), `explosionForce` 150.0 (0x081dbe12), `explosionForceMod` 1.0
+ * (0x081dc0ac), `explosionForceMax` 300.0 (0x081dc0b2). `setArmorComponent`
+ * hands all six to the Armor (0x081ddcba..0x081ddd14). `extract_map.py`
+ * `ARMOR_EXPLOSION_DEFAULTS` holds the same six.
+ */
+export const ARMOR_EXPLOSION_DEFAULTS = Object.freeze({
+  explosionRadius: 15, explosionDamage: 10, explosionMaterial: 204,
+  explosionForce: 150, explosionForceMod: 1, explosionForceMax: 300,
+});
+
+/** `Armor::status` fires the death blast only above this (`ds:0x86c0308`,
+ *  0.001f, the compare at 0x08173d6b..0x08173d83). */
+export const DEATH_BLAST_DAMAGE_MIN = 0.001;
+
+/**
+ * A template's Armor words out of `damage.json`'s `armors` table
+ * (`extract_map.py` `armor_explosions`), the constructor's for every word it
+ * does not write. Null when the table is absent (a tree published before it,
+ * which leaves the death blast and the hull push off rather than guessing) or
+ * the template is not in it (it has no Armor).
+ */
+export function armorExplosion(tables, template) {
+  const table = tables?.armors;
+  if (!table || typeof template !== 'string') return null;
+  const row = table[template.toLowerCase()];
+  if (!row) return null;
+  const out = { ...ARMOR_EXPLOSION_DEFAULTS };
+  for (const key of Object.keys(out)) if (Number.isFinite(row[key])) out[key] = row[key];
+  return out;
+}
+
+/**
+ * The blast record a destroyed Armor's own explosion is, for `applySplash`:
+ * `Armor::status`'s destroyed branch (0x08173d89..0x08173df0) calls
+ * `GameServer::handleExplosion` with the owner's `getPos` (vt+0x38), the
+ * Armor's `explosionRadius` (+0xf8), `explosionMaterial` (+0xfc),
+ * `explosionDamage` (+0x100), its last hitter (+0x14) as the attacker, a null
+ * source Armor (so nothing is excluded by it), stat id and team -1 (so
+ * `calcDamage` never scales it, HP-9c) and `explosionForce` (+0x104). Null
+ * when the damage is not above 0.001 or the spec is missing. `at` is the
+ * object's origin `[x, y, z]`.
+ */
+export function deathBlastRecord(spec, at) {
+  if (!spec || !(spec.explosionDamage > DEATH_BLAST_DAMAGE_MIN)) return null;
+  if (!Array.isArray(at) || !at.every(Number.isFinite)) return null;
+  return {
+    deathBlast: true,
+    point: at.slice(), splashPoint: at.slice(),
+    splashRadius: spec.explosionRadius,
+    splashMaterial2: Math.trunc(spec.explosionMaterial),
+    splashDamage: spec.explosionDamage,
+    splashForce: spec.explosionForce,
+    firer: null,
+  };
+}
+
 export class VehicleDamageSet {
   constructor() {
     this.byOwner = new Map();
@@ -653,6 +736,10 @@ export class VehicleDamageSet {
     if (!vehicle || vehicle.destroyed) return null;
     const amount = scale ? scale(record.damage, record.owner) : record.damage;
     if (!(amount > 0)) return null;
+    // `originX` is the world's answer for a hull's present x where a world
+    // owns this set (`world.js`); without one the place stays what it was.
+    const originX = this.originX?.(record.owner);
+    if (Number.isFinite(originX) && Number.isFinite(record.point?.[0])) vehicle.noteHitPlace(record.point[0] - originX);
     const lost = vehicle.damage(amount, attacker, { weapon: roundWeapon(record), splash: false });
     return lost > 0 ? { vehicle, lost, amount } : null;
   }
@@ -696,7 +783,7 @@ export class VehicleDamageSet {
    */
   applySplash(record, targets,
               { materials = null, modifiers = null, exposure = null, attacker = null,
-                scale = null } = {}) {
+                scale = null, wrecks = false } = {}) {
     const material2 = record?.splashMaterial2;
     const radius = record?.splashRadius;
     if (!(Number.isFinite(material2) && material2 >= 0) || !(radius > 0)) {
@@ -714,17 +801,37 @@ export class VehicleDamageSet {
     if (![bx, by, bz].every(Number.isFinite)) return [];
     const yMod = record.splashYMod;
     const out = [];
+    // What the round struck, whose Armor is the blast's source (below): a
+    // soldier (`target`, a player id) or a placed object (`owner`).
+    const struckSoldier = record.target ?? null;
+    const struckOwner = Number.isFinite(record.owner) ? record.owner : -1;
     for (const target of targets) {
       // A soldier carries his own Armor; a placed object is looked up by the
       // collision index's owner id. `target.armor` wins, so a caller can
       // splash anything with hit points without registering it.
       const victim = target.armor ?? this.get(target.owner);
-      if (!victim || victim.destroyed) continue;
-      // The firer is excluded by owner id — but a soldier target has no owner
-      // id worth excluding, and the end-of-life blast passes `firer -1`
-      // anyway, which is how your own grenade hurts you (`sourceArmor = NULL`
-      // at 0x0831f727).
-      if (!target.armor && target.owner === record.firer) continue;
+      if (!victim) continue;
+      // A wreck is priced and pushed like anything else
+      // (`handleExplosionOnObject` 0x08156500 asks no destroyed flag before
+      // the push at 0x08156b92), so a caller that pushes hulls (`wrecks`)
+      // hears of it, with nothing lost: its Armor has no hit points left.
+      const wreck = victim.destroyed && !target.armor;
+      if (victim.destroyed && !(wrecks && wreck)) continue;
+      // The source Armor (HP-9g): `handleExplosionOnObject` skips the one
+      // victim whose own Armor is the explosion's source (0x08156597), and
+      // the impact path's source is the Armor of the object the round
+      // STRUCK, not the firer's: `handleCollisionForProjectile` walks up
+      // from its second object argument (0x08153d3d..0x08153d71, stored at
+      // 0x08154552, pushed at 0x08154009), which `SimpleObject::
+      // handleCollision` hands it as the other object (0x081daf23). So the
+      // hull or the man a round met takes its direct hit and not its blast
+      // as well, and the hull that fired it is hurt by its own shell like
+      // anything else in reach (a tank firing into a wall at its tracks).
+      // The end-of-life blast and a wreck's own pass no source
+      // (0x0831f727), which is how your own grenade hurts you.
+      if (struckSoldier != null) {
+        if (target.soldier && target.playerId === struckSoldier) continue;
+      } else if (struckOwner >= 0 && !target.armor && target.owner === struckOwner) continue;
       // Distance to the victim's transform ORIGIN — not a bounding box, not
       // the nearest surface (HP-9) — with only Y scaled.
       const distance = blastDistance(target.x - bx, target.y - by,
@@ -745,10 +852,15 @@ export class VehicleDamageSet {
         if (!(seen > 0)) continue;
       }
       const raw = splashHp(material2, splashMaterial, distance, radius,
-                           materials, modifiers, seen);
+                           materials, modifiers, seen, record.splashDamage);
       const amount = scale ? scale(raw, target) : raw;
       if (!(amount > 0)) continue;
+      if (wreck) {
+        out.push({ vehicle: victim, target, lost: 0, amount, raw, distance, exposure: seen, wreck: true });
+        continue;
+      }
       // A soldier's own Armor takes no attacker; a hull records who hit it.
+      if (!target.armor) victim.noteHitPlace?.(bx - target.x);
       const lost = target.armor ? victim.damage(amount)
         : victim.damage(amount, attacker, { weapon: roundWeapon(record), splash: true });
       if (lost > 0) {

@@ -19,7 +19,8 @@ const HERE = path.dirname(fileURLToPath(import.meta.url));
 function parseArgs(argv) {
   const a = { level: null, bots: 4, maxPlayers: null, time: 120, seed: 1, skill: 0.75, traceEvery: 1, sampleEvery: 1,
               vehicles: true, out: null, maps: null, models: null, viewer: null, quiet: false,
-              replay: null, why: null, trace: null, step: 30, noTrace: false, doctrine: null, seats: [], holdFire: null };
+              replay: null, why: null, trace: null, step: 30, noTrace: false, doctrine: null, seats: [], holdFire: null,
+              spawnSeconds: null };
   for (let i = 0; i < argv.length; i++) {
     const k = argv[i];
     const next = () => { if (i + 1 >= argv.length) throw new Error(`${k} needs a value`); return argv[++i]; };
@@ -28,6 +29,7 @@ function parseArgs(argv) {
       case '--map': a.level = next(); break;
       case '--maps': a.maps = next(); break;
       case '--models': a.models = next(); break;
+      case '--glbs': a.glbs = next(); break;
       case '--viewer': a.viewer = next(); break;
       case '--bots': a.bots = Number(next()); break;
       case '--max-players': a.maxPlayers = parseMaxPlayers(next()); break;
@@ -39,6 +41,12 @@ function parseArgs(argv) {
       case '--no-vehicles': a.vehicles = false; break;
       case '--no-trace': a.noTrace = true; break;
       case '--doctrine': a.doctrine = next(); break;
+      case '--spawn-time': {
+        const v = next();
+        if (v !== 'wave' && !(Number(v) >= 0 && Number(v) <= 30)) throw new Error('--spawn-time is 0..30 seconds, or wave');
+        a.spawnSeconds = v === 'wave' ? 'wave' : Number(v);
+        break;
+      }
       case '--hold-fire': {
         const v = next();
         if (v !== 'on' && v !== 'off') throw new Error('--hold-fire is on or off');
@@ -98,9 +106,19 @@ match options:
   --hold-fire on|off  the bots hold fire for a teammate in their line
                     (INVENTION, viewer bot-plans.js holdFireFor); default on,
                     off under the SAI on both sides (the engine-parity traces)
+  --spawn-time N|wave  the bots' respawn: a flat N seconds, 0..30 (default 3,
+                    single player's, the owner's choice), or 'wave', retail's
+                    20 s reinforcement wave (a room's law)
   --out DIR         output directory (default sim/out/<level>-s<seed>)
   --maps DIR        the extracted maps tree (default <viewer>/maps)
   --models DIR      the extracted models tree (default <viewer>/models)
+  --glbs DIR        the content store, for a tree extracted before
+                    poses/stances.json (extract_stances.py): the soldiers' rig
+                    blobs are then read from it (default <models>/../glbs).
+                    With either, the bots' rounds meet the skeleton's capsules
+                    and they aim at its bones, as on the page and in a room;
+                    with neither, the stand-in sphere (the summary's level
+                    line says which)
   --viewer DIR      the viewer to load the AI from (default ../viewer)
   --quiet           no progress on stderr`;
 
@@ -114,7 +132,8 @@ async function runMatch(a) {
   const levelName = a.level ?? 'synthetic';
   const level = levelName === 'synthetic'
     ? syntheticLevel(M, { vehicles: a.vehicles })
-    : await realLevel(M, { maps: a.maps ?? path.join(viewer, 'maps'), models: a.models ?? path.join(viewer, 'models'), map: levelName });
+    : await realLevel(M, { maps: a.maps ?? path.join(viewer, 'maps'), models: a.models ?? path.join(viewer, 'models'), map: levelName,
+                        glbs: a.glbs ?? null });
   // Re-seed after the level load so a real level's load order cannot move
   // the match's first draw.
   seedMathRandom(a.seed);
@@ -130,7 +149,8 @@ async function runMatch(a) {
   const sink = (line) => { if (fd === null) return; buffer.push(line); if (buffer.length >= 2000) flush(); };
   const match = new Match({ M, level, botsPerSide: a.bots, botSkill: a.skill, duration: a.time, seed: a.seed,
                             traceEvery: a.traceEvery, sampleEvery: a.sampleEvery, vehicles: a.vehicles, sink,
-                            doctrine: a.doctrine, seats: a.seats, maxPlayers: a.maxPlayers, holdFire: a.holdFire });
+                            doctrine: a.doctrine, seats: a.seats, maxPlayers: a.maxPlayers, holdFire: a.holdFire,
+                            spawnSeconds: a.spawnSeconds });
   const started = performance.now();
   match.setup();
   let lastReport = 0;
@@ -162,7 +182,8 @@ async function runMatch(a) {
   const m = summary.metrics;
   const lines = [
     `level ${summary.level}  seed ${summary.seed}  ${summary.botsPerSide} a side  ${summary.maxPlayers} max players  `
-      + `${summary.duration} s  (${summary.runtime.wallMs} ms)`,
+      + `${summary.duration} s  (${summary.runtime.wallMs} ms)`
+      + `${summary.level_info?.bodies ? `  bodies ${summary.level_info.bodies}` : ''}`,
     `result: ${summary.result.reason}, tickets Axis ${summary.result.tickets[1]} / Allies ${summary.result.tickets[2]}`
       + `${summary.result.winner ? `, ${summary.result.winner === 1 ? 'Axis' : 'Allies'} ahead` : ', level'}`,
     `captures ${m.captures.total} (Axis ${m.captures[1]}, Allies ${m.captures[2]}), first ${m.timeToFirstCapture ? `${m.timeToFirstCapture.flag} at ${m.timeToFirstCapture.t} s` : 'none'}`,

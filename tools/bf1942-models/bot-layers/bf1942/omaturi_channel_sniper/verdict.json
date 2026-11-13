@@ -50,5 +50,10 @@
  },
  "oneSided": 2,
  "unreachable": [],
- "lintErrors": []
+ "lintErrors": [],
+ "acceptanceWithdrawn": {
+  "because": "page matches 2026-11-12: 0.031 enemy kills a bot-minute with 1 capture, then 0.006 with none; under the rollout floor",
+  "date": "2026-11-12",
+  "was": "Owner's rollout, 2026-11-12: the owner asked for everything with a fight to go l"
+ }
 }

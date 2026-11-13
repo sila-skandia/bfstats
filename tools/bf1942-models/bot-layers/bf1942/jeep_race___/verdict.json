@@ -1,0 +1,67 @@
+{
+ "level": "jeep_race___",
+ "verdict": "fail",
+ "outcome": "no-fight",
+ "config": "with vehicles",
+ "doctrine": "garrison",
+ "generatorVersion": 5,
+ "inputs": {
+  "controlPoints": "75dc1864414e560b94c967100c36e9a85d066fd38a0cdd59c530992061c59d54",
+  "infantryMap": "13bba4d4160251044b8b101bd29c8b6ae131a351dcf50b2b59c7773ca703cb3c",
+  "template": "bdc0e455f47f91b7e7724e71d7c0c196e839b36946ac3abb7663d725944081e5"
+ },
+ "baseline": "DICE layers with vehicles, garrison doctrine: berlin, stalingrad, kharkov, bocage; seeds 1..10, 600 s",
+ "bar": {
+  "against": "dice",
+  "why": "a vanilla or community level: DICE's bar"
+ },
+ "seeds": 1,
+ "sizes": {
+  "8": {
+   "verdict": "fail",
+   "failed": [
+    "idleShare",
+    "capturesTotal",
+    "enemyKillsPerBotMinute",
+    "flagCoverage",
+    "bothSidesCapture",
+    "bothSidesKill",
+    "ticketsBleed",
+    "nonEnemyDeathShareWorseSide",
+    "unitsNeverUsedShare"
+   ],
+   "winners": [
+    0,
+    0,
+    1
+   ]
+  },
+  "16": {
+   "verdict": "fail",
+   "failed": [
+    "idleShare",
+    "capturesTotal",
+    "enemyKillsPerBotMinute",
+    "flagCoverage",
+    "bothSidesCapture",
+    "bothSidesKill",
+    "ticketsBleed",
+    "nonEnemyDeathShareWorseSide",
+    "unitsNeverUsedShare"
+   ],
+   "winners": [
+    0,
+    0,
+    1
+   ]
+  }
+ },
+ "oneSided": null,
+ "unreachable": [],
+ "lintErrors": [],
+ "acceptanceWithdrawn": {
+  "because": "on the bot code of 3b1ebe45c, two page matches of 600 s with 16 bots, both under the rollout floor: 0.32 kills with own-hand deaths over the floor, then 0.013 kills; no flag changed hands in any of five matches",
+  "date": "2026-11-13",
+  "was": "Owner's rollout, 2026-11-12: the owner asked for everything with a fight to go l"
+ }
+}

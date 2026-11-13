@@ -2,6 +2,7 @@ import * as THREE from 'three';
 import { findAllVehicleRoots, listEntryPoints, readWorldPose, surveyVehicle } from './seats.js';
 import { boundingRadius } from './entry-points.js';
 import { findEntryPoint, preferredSeat, SPAWN_ENTER_REACH, SPAWN_SEAT_REACH, SPAWN_SEAT_REACH_AI } from './spawn-seat.js';
+import { objectBlocker, restrictedExit } from './restricted-exit.js';
 
 /**
  * Walking up to a seat, getting in and getting out: the door list and the
@@ -13,7 +14,7 @@ import { findEntryPoint, preferredSeat, SPAWN_ENTER_REACH, SPAWN_SEAT_REACH, SPA
  * `holster`, `hullOpenTo`, `leaveSeat`,
  * `mannedActive`, `markPilot`, `mayEnterHull`, `netSeatRow`, `netSendAction`, `occupancy`,
  * `optOnFoot`, `placeCamera`, `releaseButtons`, `resetMobileControls`,
- * `seatHolder`, `setPilot`, `soldier`,
+ * `LOCAL_PLAYER`, `seatHolder`, `setPilot`, `soldier`,
  * `updateMobileControls`, `useLens`, `vehicleSpawnActive`, `world`.
  */
 export function createVehicleEntry(page) {
@@ -64,6 +65,20 @@ export function createVehicleEntry(page) {
         vehicleEntry.entryPoints.push({
           node: entry.node, vehicle, control,
           seatId: entry.seatId, radius: entry.radius, hullRadius,
+        });
+      }
+    }
+    // A hull another player of the room sits in stands on this page as its
+    // replica, the page's own copy off the field (`net-room.js`
+    // `heldHullRoots`): its doors are the replica's, and taking one stands
+    // the copy there first (`claimHeldHull`, `enterVehicle`).
+    for (const { id, root } of page.heldHullRoots?.() ?? []) {
+      const control = root.userData?.control || root.name || 'vehicle';
+      const hullRadius = hullRadiusOf(root);
+      for (const entry of listEntryPoints(root, ENTRY_RADIUS_FALLBACK)) {
+        vehicleEntry.entryPoints.push({
+          node: entry.node, vehicle: root, control,
+          seatId: entry.seatId, radius: entry.radius, hullRadius, heldHull: id,
         });
       }
     }
@@ -153,11 +168,13 @@ export function createVehicleEntry(page) {
     // The soldier's origin, a metre over his feet (PHY-10): what the server
     // measures from.
     const origin = [page.soldier.x, page.soldier.y + 1, page.soldier.z];
-    return findEntryPoint(vehicleEntry.entryPoints, SPAWN_ENTER_REACH, {
+    const door = findEntryPoint(vehicleEntry.entryPoints, SPAWN_ENTER_REACH, {
       useEntryRadius: true,
       hullOf: hullFrom(origin),
       open: entry => {
         if (page.seatHolder(entry.vehicle, entry.seatId)) return false;
+        // A seat one of the room's other players sits in (SEAT-11).
+        if (page.roomSeatHeld?.(entry.vehicle, entry.seatId)) return false;
         if (!page.mayEnterHull(entry.vehicle)) return false;
         // A wreck has no doors. The bots' candidate list skips a destroyed
         // hull (bot-units.js); the human's did not, and E seated him in a
@@ -169,6 +186,57 @@ export function createVehicleEntry(page) {
         return Math.hypot(entryWorld.x - origin[0], entryWorld.y - origin[1], entryWorld.z - origin[2]);
       },
     });
+    return door ? preferredDoor(door) : null;
+  }
+
+  /**
+   * The seat a human's Use takes at `door`: `toggleEntryPoint`'s human branch
+   * asks the finder's seat for `getPreferredPco()` (IPCO vt+0x48, call at lnxded
+   * 0x0814f293; 0x083193c0 tests the seat's own `+0x1e0` at 0x083193de..
+   * 0x083193eb and the root's `isOccupied` at 0x0831946d). A tank's, armoured
+   * car's or tank hunter's gunner door gives the driver's seat while it is
+   * free (SEAT-30), as the spawn's press already did (`spawnSeat`). The door
+   * keeps its own node, so the HUD's offer and the climb in stand where it is.
+   */
+  function preferredDoor(door) {
+    const survey = surveyVehicle(door.vehicle);
+    const rootId = survey?.rootId;
+    if (rootId == null) return door;
+    const seatId = preferredSeat(door.seatId, {
+      vehicleType: survey.seats?.get(door.seatId)?.vehicleType,
+      rootId, rootFree: !page.seatHolder(door.vehicle, rootId) && !page.roomSeatHeld?.(door.vehicle, rootId),
+    });
+    return seatId === door.seatId ? door : { ...door, seatId };
+  }
+
+  /**
+   * When E finds no free door: the nearest HELD door in the same reach, as
+   * `{ entry, holder }`, or null. `BFfindEntryPoint` 0x0831d770 fills its
+   * out pointer (the fifth argument, `toggleEntryPoint`'s `-0x4c`) with the
+   * nearest occupied seat that passes the same door radius test
+   * (0x0831dba3..0x0831dbe4), and `toggleEntryPoint` hands that seat's
+   * player to the bot manager when he is a bot (0x0814f1b6..0x0814f21a;
+   * bot-referee.js `requestSeat`). The page's own player is never his own
+   * holder here.
+   */
+  function heldEntry() {
+    if (!vehicleEntry.entryPoints) collectEntryPoints();
+    const origin = [page.soldier.x, page.soldier.y + 1, page.soldier.z];
+    const entry = findEntryPoint(vehicleEntry.entryPoints, SPAWN_ENTER_REACH, {
+      useEntryRadius: true,
+      hullOf: hullFrom(origin),
+      open: e => {
+        const holder = page.seatHolder(e.vehicle, e.seatId);
+        if (holder == null || holder === page.LOCAL_PLAYER) return false;
+        if (!page.mayEnterHull(e.vehicle)) return false;
+        return !isWreck(e.vehicle);
+      },
+      distanceOf: e => {
+        e.node.getWorldPosition(entryWorld);
+        return Math.hypot(entryWorld.x - origin[0], entryWorld.y - origin[1], entryWorld.z - origin[2]);
+      },
+    });
+    return entry ? { entry, holder: page.seatHolder(entry.vehicle, entry.seatId) } : null;
   }
 
   /**
@@ -254,6 +322,12 @@ export function createVehicleEntry(page) {
     // adoptServerSeat) is taken whatever this page thinks of the hull: the
     // server seats a man in a hull that is burning down, and refusing it
     // left the page on foot beside the hull the server had him driving.
+    // A door of a replica: the page's own copy of that hull is stood where
+    // the server has it and is what he gets into (`net-room.js`).
+    if (entry?.heldHull != null) {
+      entry = page.claimHeldHull?.(entry) ?? null;
+      if (!entry) return;
+    }
     if (entry?.vehicle && !entry.granted && page.occupancy?.root !== entry.vehicle && isWreck(entry.vehicle)) return;
     page.holster();
     // A button held through the climb in must not arrive already pulling the
@@ -293,20 +367,47 @@ export function createVehicleEntry(page) {
    * negated at this boundary, the same fix `rig` angles get.
    */
   function exitPose(vehicle) {
-    const declared = vehicle.node.userData?.physics?.soldierExitLocation;
-    const local = declared
-      ? new THREE.Vector3(declared.position[0], declared.position[1],
-        -declared.position[2])
-      : new THREE.Vector3(0, 0, 0);   // the template default (SEAT-35, see exitPose)
-    const position = local.applyQuaternion(vehicle.state.orientation)
-      .add(vehicle.state.position);
+    const physics = vehicle.node.userData?.physics;
+    const at = seatExitAt(physics, vehicle.state.position, vehicle.state.orientation,
+      page.collider?.statics?.ownerOf?.(vehicle.node) ?? -1);
     const fwd = page.driveFwd.set(0, 0, -1).applyQuaternion(vehicle.state.orientation);
     return {
-      x: position.x, y: position.y, z: position.z,
+      ...at,
       // The soldier's convention: forward is (sin yaw, 0, cos yaw). Stepping
       // out facing the way the vehicle faces reads right for both doors.
       yaw: Math.atan2(fwd.x, fwd.z),
     };
+  }
+
+  const exitLocalPoint = new THREE.Vector3();
+
+  /**
+   * The world point a soldier leaving the seat PCO at `origin`/`quat` steps
+   * out at, and whether he may leave at all: the declared
+   * `soldierExitLocation` (Refractor's Z negated at this boundary; the
+   * template default, the PCO's own origin, when none is declared, SEAT-35),
+   * through the restricted-exit test when the PCO's template says
+   * `hasRestrictedExit` (`restricted-exit.js`, `isAllowedToExit` 0x08317490):
+   * the line from the PCO to the door is cast against every object but the
+   * hull's own (`owner`), never the ground; blocked, the other side; both
+   * blocked, `allowed` false.
+   */
+  function seatExitAt(physics, origin, quat, owner) {
+    const declared = physics?.soldierExitLocation;
+    const local = declared && Array.isArray(declared.position)
+      ? { x: declared.position[0], y: declared.position[1], z: -declared.position[2] }
+      : { x: 0, y: 0, z: 0 };   // the template default (SEAT-35, see exitPose)
+    const toWorld = (x, y, z) => {
+      const p = exitLocalPoint.set(x, y, z).applyQuaternion(quat).add(origin);
+      return { x: p.x, y: p.y, z: p.z };
+    };
+    const choice = restrictedExit({
+      restricted: physics?.hasRestrictedExit === true,
+      local, toWorld, origin,
+      blocked: objectBlocker(page.collider, owner),
+    });
+    const p = toWorld(choice.local.x, choice.local.y, choice.local.z);
+    return { x: p.x, y: p.y, z: p.z, allowed: choice.allowed, mirrored: choice.mirrored };
   }
 
   /** Metres above the ground past which stepping out is a bail-out, not a
@@ -373,17 +474,21 @@ export function createVehicleEntry(page) {
    * or altitude-related — bailing out of a moving plane is genuine vanilla
    * behaviour, not a bug to guard against. A prior pass here gated on
    * `grounded || airspeed<3`, which the report contradicts directly; removed.
-   * The real gate (SEAT-6/SEAT-9: a room check at `soldierExitLocation`, run
-   * only when the template's `hasRestrictedExit` is set) is not implemented —
-   * `exitPose`'s placement is trusted as-is, same as it already was on the
-   * ground.
+   * The real gate is the restricted exit (`seatExitAt`, SEAT-42): on a
+   * `press` (E, the touch button) a hull whose template says
+   * `hasRestrictedExit` refuses the exit when both sides are blocked, and the
+   * press does nothing (`toggleEntryPoint` 0x0814eee3). A forced exit (the
+   * round's end, the server moving him) is not a press and is never refused,
+   * as retail's `exitPlayer` never asks `isAllowedToExit`.
    *
-   * Where he lands and how fast he is going is `stepOut`'s.
+   * Where he lands and how fast he is going is `stepOut`'s. Returns whether
+   * he left.
    */
-  function exitVehicle() {
+  function exitVehicle({ press = false } = {}) {
     const vehicle = page.aircraft || page.car;
-    if (!vehicle) return;
+    if (!vehicle) return false;
     const exit = exitPose(vehicle);
+    if (press && !exit.allowed) return false;
     const hull = hullMotion(vehicle, vehicle.node, vehicle === page.aircraft);
     // The room's control channel: capture the seat row before the seat is
     // given back.
@@ -401,6 +506,7 @@ export function createVehicleEntry(page) {
       page.placeCamera();
     }
     page.resetMobileControls();
+    return true;
   }
 
   const exitWorldPos = new THREE.Vector3();
@@ -425,30 +531,24 @@ export function createVehicleEntry(page) {
    */
   function exitPoseManned(occ) {
     const exitNode = occ.exitLocationNode();
-    const declared = exitNode?.userData?.physics?.soldierExitLocation;
-    const local = declared
-      ? new THREE.Vector3(declared.position[0], declared.position[1],
-        -declared.position[2])
-      : new THREE.Vector3(0, 0, 0);   // the template default (SEAT-35, see exitPose)
     // Use the exit node's own pose when it is a nested seat (e.g. a carrier
     // AA gun m metres above the hull), not the hull root's pose at the
     // waterline.  The root case stays as-is — a hull door offset is in the
     // root's frame by definition.
     const refNode = exitNode !== occ.root ? exitNode : occ.root;
     readWorldPose(refNode, exitWorldPos, exitWorldQuat);
-    const position = local.applyQuaternion(exitWorldQuat).add(exitWorldPos);
+    const at = seatExitAt(exitNode?.userData?.physics, exitWorldPos, exitWorldQuat,
+      occ.root ? (page.collider?.statics?.ownerOf?.(occ.root) ?? -1) : -1);
     const fwd = exitFwd.set(0, 0, -1).applyQuaternion(exitWorldQuat);
-    return {
-      x: position.x, y: position.y, z: position.z,
-      yaw: Math.atan2(fwd.x, fwd.z),
-    };
+    return { ...at, yaw: Math.atan2(fwd.x, fwd.z) };
   }
 
   /** E from a manned-only seat: a bare furniture gun, or a nested seat of a
    *  vehicle whose root seat you never drove this time. */
-  function exitManned() {
-    if (!page.occupancy) return;
+  function exitManned({ press = false } = {}) {
+    if (!page.occupancy) return false;
     const exit = exitPoseManned(page.occupancy);
+    if (press && !exit.allowed) return false;
     const hull = hullMotion(page.occupancy.drive, page.occupancy.root,
       page.occupancy.rootKind === 'air');
     const netSeat = page.netSeatRow('exit');
@@ -463,12 +563,16 @@ export function createVehicleEntry(page) {
       page.placeCamera();
     }
     page.resetMobileControls();
+    return true;
   }
 
-  function exitSeat() {
-    if (!page.occupancy) return;
-    if (!page.mannedActive() && (page.aircraft || page.car)) exitVehicle();
-    else exitManned();
+  /** Out of the seat held. `press`: the player's own Use, which a restricted
+   *  exit with both sides blocked refuses (SEAT-42); anything else is forced.
+   *  Returns whether he left. */
+  function exitSeat({ press = false } = {}) {
+    if (!page.occupancy) return false;
+    if (!page.mannedActive() && (page.aircraft || page.car)) return exitVehicle({ press });
+    return exitManned({ press });
   }
 
   Object.assign(vehicleEntry, {
@@ -479,6 +583,7 @@ export function createVehicleEntry(page) {
     exitPoseManned,
     exitSeat,
     exitVehicle,
+    heldEntry,
     isWreck,
     nearestEntry,
     scanForEntry,

@@ -7,7 +7,7 @@
 
 import * as THREE from 'three';
 import { wantViewmodelClip } from './viewmodel-anim.js';
-import { fireVariantsFor, isAltFireClip, stanceClip, stanceFor } from './stance-clips.js';
+import { fireVariantsFor, isAltFireClip, isEjectClip, stanceClip, stanceFor } from './stance-clips.js';
 import { modelFileStem } from './model-file.js';
 import { loadFirst, modelUrls, poseBases, rigEntryIn, rigIndexOf } from './pose-bases.js';
 import { createLevelSkin, sharePagePaint } from './level-skin.js';
@@ -447,6 +447,8 @@ export function createArmsRig(page) {
       // only keeps it. Unkept, the frame that started it asked for idle and
       // faded it out, and no thrust was ever seen.
       altRunning: isAltFireClip(hw.active) && !!hw.actions[hw.active]?.isRunning(),
+      // The clip leaving the gun (`stepDryMagazine` starts it), kept the same way.
+      ejectRunning: isEjectClip(hw.active) && !!hw.actions[hw.active]?.isRunning(),
       hasReload: !!reloadAction,
       hasDeploy: !!hw.actions[stanceClip('deploy', stance, has)],
       gait: page.soldier?.gait,

@@ -4,10 +4,10 @@
  "outcome": "no-fight",
  "config": "with vehicles",
  "doctrine": "garrison",
- "generatorVersion": 5,
+ "generatorVersion": 6,
  "inputs": {
   "controlPoints": "c48e8bf91cdb898427b59daa7598b0b0ce6a79002246e6c6f220fbb964b14f22",
-  "infantryMap": "b2891e59d4e9b9aa33bea4f1122a3df901343946d5ebc49807af53ffa42f1d93",
+  "infantryMap": "b245fd5105f24ab992a3ea6ec87dbb4fe877a9bfef5b464124bfdd807aa12e2f",
   "template": "bdc0e455f47f91b7e7724e71d7c0c196e839b36946ac3abb7663d725944081e5"
  },
  "baseline": "desertcombat's own layers with vehicles, garrison doctrine: berlin, dc_desertshield, kharkov, kursk, stalingrad; seeds 1..10, 600 s; dropped, no fight: dc_basrahs_edge",
@@ -23,18 +23,14 @@
    "8": {
     "verdict": "fail",
     "failed": [
-     "stuckSecondsPerBotMinute",
      "idleShare",
      "routeFailuresPerBotMinute",
-     "redeploysPerBotMinute",
      "capturesTotal",
      "enemyKillsPerBotMinute",
      "flagCoverage",
      "bothSidesCapture",
      "bothSidesKill",
-     "stuckSecondsPerBotMinuteWorseSide",
      "routeFailuresPerBotMinuteWorseSide",
-     "redeploysPerBotMinuteWorseSide",
      "nonEnemyDeathShareWorseSide",
      "unitsNeverUsedShare"
     ]
@@ -43,17 +39,19 @@
     "verdict": "fail",
     "failed": [
      "idleShare",
+     "routeFailuresPerBotMinute",
+     "capturesTotal",
      "enemyKillsPerBotMinute",
      "flagCoverage",
      "bothSidesCapture",
-     "nonEnemyDeathShareWorseSide",
+     "routeFailuresPerBotMinuteWorseSide",
      "unitsNeverUsedShare",
      "tankSilentShare"
     ]
    }
   }
  },
- "seeds": 2,
+ "seeds": 1,
  "sizes": {
   "8": {
    "verdict": "fail",
@@ -64,13 +62,12 @@
     "flagCoverage",
     "bothSidesCapture",
     "bothSidesKill",
-    "stuckSecondsPerBotMinuteWorseSide",
-    "redeploysPerBotMinuteWorseSide",
     "nonEnemyDeathShareWorseSide",
-    "unitsNeverUsedShare"
+    "unitsNeverUsedShare",
+    "tankSilentShare"
    ],
    "winners": [
-    2,
+    1,
     0,
     0
    ]
@@ -83,26 +80,22 @@
     "enemyKillsPerBotMinute",
     "flagCoverage",
     "bothSidesCapture",
-    "nonEnemyDeathShareWorseSide",
     "unitsNeverUsedShare",
     "tankSilentShare"
    ],
    "winners": [
-    2,
+    1,
     0,
     0
    ]
   }
  },
- "oneSided": 1,
- "unreachable": [
-  "oasis_town",
-  "outpost_pass"
- ],
+ "oneSided": null,
+ "unreachable": [],
  "lintErrors": [],
  "acceptanceWithdrawn": {
-  "because": "page match 2026-11-12, after the flag binding: under the rollout floor (0.013 enemy kills, no capture, in two matches)",
-  "date": "2026-11-12",
-  "was": "Owner's rollout, 2026-11-11: after playing Tunis-1943 against its generated bots"
+  "because": "generator 6 layer on the bot code of 3b1ebe45c, two page matches of 600 s with 16 bots, both under the rollout floor: 0.006 and 0.013 enemy kills a bot-minute, no capture",
+  "date": "2026-11-13",
+  "was": "Regenerated on generator 6 (2026-11-13) after being turned down on generator 5: "
  }
 }

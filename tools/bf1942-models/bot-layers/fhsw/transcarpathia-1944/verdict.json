@@ -1,0 +1,71 @@
+{
+ "level": "transcarpathia-1944",
+ "verdict": "fail",
+ "outcome": "no-fight",
+ "config": "with vehicles",
+ "doctrine": "garrison",
+ "generatorVersion": 7,
+ "inputs": {
+  "controlPoints": "ea74ef979942b33918a24b572c6812d9b36181dffbc58e09dc3f3965873bee01",
+  "infantryMap": "d3a050d88f04b5b74079447e4cc3293001fc7863e9d86e2d1e0af9919ff9efdc",
+  "template": "43f8a790471528016570235f76e97dbb2045732458781a5139f37fed68bf98c0"
+ },
+ "baseline": "DICE layers with vehicles, garrison doctrine: berlin, stalingrad, kharkov, bocage; seeds 1..10, 600 s",
+ "bar": {
+  "against": "dice",
+  "why": "no bar of fhsw's own: DICE's"
+ },
+ "seeds": 1,
+ "sizes": {
+  "8": {
+   "verdict": "fail",
+   "failed": [
+    "idleShare",
+    "routeFailuresPerBotMinute",
+    "capturesTotal",
+    "enemyKillsPerBotMinute",
+    "flagCoverage",
+    "bothSidesCapture",
+    "bothSidesKill",
+    "ticketsBleed",
+    "routeFailuresPerBotMinuteWorseSide",
+    "nonEnemyDeathShareWorseSide",
+    "unitsNeverUsedShare"
+   ],
+   "winners": [
+    1,
+    0,
+    0
+   ]
+  },
+  "16": {
+   "verdict": "fail",
+   "failed": [
+    "idleShare",
+    "enemyKillsPerBotMinute",
+    "flagCoverage",
+    "bothSidesCapture",
+    "nonEnemyDeathShareWorseSide",
+    "hullStuckSecondsPerDrivingMinute",
+    "hullStuckSecondsPerDrivingMinuteWorseSide",
+    "unitsNeverUsedShare",
+    "tankSilentShare"
+   ],
+   "winners": [
+    1,
+    0,
+    0
+   ]
+  }
+ },
+ "oneSided": null,
+ "unreachable": [],
+ "lintErrors": [
+  "side 2's bots have an open route to none of the 5 flags in play"
+ ],
+ "acceptanceWithdrawn": {
+  "because": "run despite the lint's choke rule; on the bot code of 3b1ebe45c, two page matches of 600 s with 16 bots, both under the rollout floor: 0.056 and 0.044 enemy kills a bot-minute, 0 and 2 captures",
+  "date": "2026-11-13",
+  "was": "Owner's rollout, played despite the lint's choke rule, 2026-11-13: every route o"
+ }
+}

@@ -3,7 +3,8 @@ rem *** Strategic areas: one per control point (botgen) ***
 aiStrategicArea.create alliedbase 1186.5/437.4 1191.5/442.4 50
 aiStrategicArea.addNeighbour pasir_panjang
 aiStrategicArea.addObjectTypeFlag Base
-aiStrategicArea.setOrderPosition Infantry 1191.5/448.5
+aiStrategicArea.setOrderPosition Tank 1191.5/448.5
+aiStrategicArea.setOrderPosition Infantry 1191.5/441.5
 aiStrategicArea.setSide 2
 aiStrategicArea.setTakeable 1 0
 
@@ -12,7 +13,8 @@ aiStrategicArea.addNeighbour opium_hill
 aiStrategicArea.addNeighbour point_226_firebase
 aiStrategicArea.addNeighbour rice_fields
 aiStrategicArea.addObjectTypeFlag Base
-aiStrategicArea.setOrderPosition Infantry 818.5/1581.5
+aiStrategicArea.setOrderPosition Tank 819.5/1569.5
+aiStrategicArea.setOrderPosition Infantry 818.5/1575.5
 aiStrategicArea.setSide 1
 aiStrategicArea.setTakeable 2 0
 
@@ -23,6 +25,7 @@ aiStrategicArea.addNeighbour rice_fields
 aiStrategicArea.addObjectTypeFlag Flank
 aiStrategicArea.addObjectTypeFlag Close
 aiStrategicArea.addObjectTypeFlag ControlPoint
+aiStrategicArea.setOrderPosition Tank 1104.5/1326.5
 aiStrategicArea.setOrderPosition Infantry 1104.5/1326.5
 aiStrategicArea.setSide 2
 
@@ -31,6 +34,7 @@ aiStrategicArea.addNeighbour axisbase
 aiStrategicArea.addNeighbour rice_fields
 aiStrategicArea.addObjectTypeFlag Flank
 aiStrategicArea.addObjectTypeFlag ControlPoint
+aiStrategicArea.setOrderPosition Tank 631.5/1216.5
 aiStrategicArea.setOrderPosition Infantry 632.5/1215.5
 aiStrategicArea.setSide 2
 
@@ -41,6 +45,7 @@ aiStrategicArea.addNeighbour rice_fields
 aiStrategicArea.addObjectTypeFlag Flank
 aiStrategicArea.addObjectTypeFlag Close
 aiStrategicArea.addObjectTypeFlag ControlPoint
+aiStrategicArea.setOrderPosition Tank 901.5/796.5
 aiStrategicArea.setOrderPosition Infantry 900.5/794.5
 aiStrategicArea.setSide 2
 
@@ -56,5 +61,6 @@ aiStrategicArea.addNeighbour point_226_firebase
 aiStrategicArea.addNeighbour pasir_panjang
 aiStrategicArea.addObjectTypeFlag Flank
 aiStrategicArea.addObjectTypeFlag ControlPoint
+aiStrategicArea.setOrderPosition Tank 853.5/1013.5
 aiStrategicArea.setOrderPosition Infantry 854.5/1010.5
 aiStrategicArea.setSide 2

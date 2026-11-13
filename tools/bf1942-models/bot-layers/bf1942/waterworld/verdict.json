@@ -1,0 +1,27 @@
+{
+ "level": "waterworld",
+ "verdict": "fail",
+ "outcome": "unsuitable",
+ "config": "with vehicles",
+ "doctrine": "garrison",
+ "generatorVersion": 5,
+ "inputs": {
+  "controlPoints": "6071448f60a85332eb211268803eb22ae17c463b930f8ec2f84759f12459f7e8",
+  "infantryMap": "ca408d532b188a4900a37909e556a746c0db568c601ecc97cff1e8484aa999d3",
+  "template": "bdc0e455f47f91b7e7724e71d7c0c196e839b36946ac3abb7663d725944081e5"
+ },
+ "baseline": "DICE layers with vehicles, garrison doctrine: berlin, stalingrad, kharkov, bocage; seeds 1..10, 600 s",
+ "bar": null,
+ "seeds": 1,
+ "sizes": {},
+ "oneSided": null,
+ "unreachable": [
+  "German",
+  "American",
+  "Planepoint"
+ ],
+ "lintErrors": [
+  "side 1 has no spawn with a route to any flag it must take: of its 2 spawns 1 have no way on foot to the main ground, 1 are in the air; the level places 21 ladders, which neither the walk test nor a bot climbs",
+  "side 2 has no spawn with a route to any flag it must take: of its 2 spawns 2 have no way on foot to the main ground; the level places 21 ladders, which neither the walk test nor a bot climbs"
+ ]
+}

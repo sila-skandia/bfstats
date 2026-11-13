@@ -86,5 +86,53 @@ class BotRetailParityTests(unittest.TestCase):
         self.assertAlmostEqual(self.results["scurve37"], 0.231592, places=5)
 
 
+    def test_the_vehicle_split_is_the_bots_inclinations(self) -> None:
+        # BBChange 0x0855e0c0: [fire, move] / (fire + move); move only [0, 1];
+        # fire only [1, 0]; neither [0.5, 0.5] (AI-43 corrected).
+        sp = self.results["split"]
+        self.assertEqual(sp["both"], [0.75, 0.25])
+        self.assertEqual(sp["moveOnly"], [0.0, 1.0])
+        self.assertEqual(sp["fireOnly"], [1.0, 0.0])
+        self.assertEqual(sp["neither"], [0.5, 0.5])
+        self.assertEqual(sp["legacy"], [0.5, 0.5])
+
+    def test_inclinations_smooth_by_point_eight(self) -> None:
+        # step*Inclination 0x0852e2d0 / 0x0852e360: v = 0.8 v + 0.2 acc, acc = 0.
+        st = self.results["step"]
+        self.assertAlmostEqual(st["first"]["fire"], 2.0, places=5)
+        self.assertAlmostEqual(st["first"]["move"], 1.0, places=5)
+        self.assertEqual(st["first"]["fireAcc"], 0)
+        self.assertAlmostEqual(st["second"]["fire"], 3.6, places=5)
+        self.assertAlmostEqual(st["second"]["move"], 0.8, places=5)
+
+    def test_change_inhibit_is_the_files_and_per_row(self) -> None:
+        c = self.results["columns"]
+        want = {"Avoid": 0.8, "MoveTo": 0.0, "Idle": 0.01, "Fire": 0.75, "Special": 0.0, "Scout": 0.5, "TakeCover": 1.0, "Change": 1.0}
+        self.assertEqual(c["tankChange"], want)
+        self.assertEqual(c["seatActive"], want)
+        self.assertEqual(c["rowlessSeat"], want)
+        ones = {k: 1.0 for k in want}
+        self.assertEqual(c["footChange"], ones)
+        self.assertEqual(c["footActive"], ones)
+        self.assertEqual(c["carChange"], ones)
+        self.assertIsNone(c["fixedAvoid"])
+        self.assertEqual(c["fireActive"], ones)
+        self.assertEqual(c["bf1918Foot"]["Fire"], 3.0)
+
+
+    def test_an_unarmed_seat_weighs_manned_hulls_as_bbfireunarmed(self) -> None:
+        # BBFireUnarmed 0x0856eb90: sum over seats (table[my] + basicTemp) x
+        # classValue[target] (HeavyArmour 8), / max(0.1, 0.3 d), d >= 0.5, 250 m reach.
+        u = self.results["unarmed"]
+        self.assertAlmostEqual(u["tank100"]["best"], (2 + 3 + 1 + 0) * 8 / 30.0, places=5)
+        self.assertEqual(u["tank100"]["targetId"], "t")
+        self.assertAlmostEqual(u["tank1"]["best"], 6 * 8 / 0.15, places=4)
+        self.assertEqual(u["far"]["best"], 0)
+        self.assertEqual(u["emptyAndSoldier"]["best"], 0)
+        self.assertAlmostEqual(u["lost"]["best"], (6 * 8 / 30.0) / 1.5, places=5)
+        self.assertAlmostEqual(u["harmless"]["best"], 6 * 3 / 3.0 * 0.33, places=5)
+        self.assertAlmostEqual(u["outside"]["best"], (6 * 8 / 30.0) * 0.75, places=5)
+
+
 if __name__ == "__main__":
     unittest.main()

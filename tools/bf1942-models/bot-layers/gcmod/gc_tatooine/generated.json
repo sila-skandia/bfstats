@@ -1,0 +1,571 @@
+{
+ "generator": "botgen",
+ "version": 6,
+ "mod": "GCMOD",
+ "level": "gc_tatooine",
+ "objectSpawners": 38,
+ "template": "few",
+ "templateSource": "DICE, bf1942 Kursk (1.6 patch archives, Kursk_003.rfa): AI/Strategies.con, AI/conditions.con, AI/prerequisites.con, unchanged",
+ "templateChoice": {
+  "name": "few",
+  "inPlay": 2,
+  "rule": "2 capturable flags in play, at most 3"
+ },
+ "scope": "an infantry map from the page painter with the walk test's ways out opened, a Tank0 map from the page painter, infantry order positions, no strategic maps, no co-op layer",
+ "unreachable": [
+  "jabbas_palacetemplate",
+  "the_sarlacctemplate"
+ ],
+ "unreachableReasons": {
+  "jabbas_palacetemplate": "route probe",
+  "the_sarlacctemplate": "walk test"
+ },
+ "botSpawnsExcluded": [
+  "sarlac_spawn",
+  "cant_3"
+ ],
+ "walkMap": {
+  "source": "page painter",
+  "engine": "none",
+  "vehicleMap": "page painter",
+  "vehicleBrush": 1.5,
+  "vehicleBrushes": [
+   {
+    "brush": 3,
+    "flagsOn": 5,
+    "spawnersOn": 22,
+    "pieces": 8,
+    "main": 13674857
+   },
+   {
+    "brush": 2.5,
+    "flagsOn": 4,
+    "spawnersOn": 25,
+    "pieces": 8,
+    "main": 13753847
+   },
+   {
+    "brush": 2,
+    "flagsOn": 4,
+    "spawnersOn": 25,
+    "pieces": 8,
+    "main": 13783747
+   },
+   {
+    "brush": 1.5,
+    "flagsOn": 5,
+    "spawnersOn": 29,
+    "pieces": 6,
+    "main": 13907871
+   }
+  ],
+  "opened": [
+   [
+    1995,
+    143
+   ],
+   [
+    1996,
+    143
+   ],
+   [
+    1997,
+    143
+   ],
+   [
+    1995,
+    144
+   ],
+   [
+    1995,
+    145
+   ],
+   [
+    1994,
+    146
+   ],
+   [
+    1995,
+    146
+   ],
+   [
+    1994,
+    147
+   ],
+   [
+    1994,
+    148
+   ],
+   [
+    1992,
+    149
+   ],
+   [
+    1993,
+    149
+   ],
+   [
+    1994,
+    149
+   ],
+   [
+    1992,
+    150
+   ],
+   [
+    1992,
+    151
+   ],
+   [
+    1992,
+    152
+   ],
+   [
+    1992,
+    153
+   ],
+   [
+    1992,
+    154
+   ],
+   [
+    1992,
+    155
+   ],
+   [
+    1992,
+    156
+   ],
+   [
+    1992,
+    157
+   ],
+   [
+    1992,
+    158
+   ],
+   [
+    1992,
+    159
+   ],
+   [
+    1992,
+    160
+   ],
+   [
+    1931,
+    166
+   ],
+   [
+    1932,
+    166
+   ],
+   [
+    2160,
+    2308
+   ],
+   [
+    2160,
+    2309
+   ],
+   [
+    2160,
+    2310
+   ],
+   [
+    2160,
+    2311
+   ],
+   [
+    2160,
+    2312
+   ],
+   [
+    2160,
+    2313
+   ],
+   [
+    2160,
+    2314
+   ],
+   [
+    2160,
+    2315
+   ],
+   [
+    2160,
+    2316
+   ],
+   [
+    2160,
+    2317
+   ],
+   [
+    2160,
+    2318
+   ],
+   [
+    2161,
+    2318
+   ],
+   [
+    2162,
+    2318
+   ],
+   [
+    2163,
+    2318
+   ],
+   [
+    2164,
+    2318
+   ],
+   [
+    2165,
+    2318
+   ],
+   [
+    2165,
+    2319
+   ],
+   [
+    2165,
+    2320
+   ],
+   [
+    2165,
+    2321
+   ],
+   [
+    2165,
+    2322
+   ],
+   [
+    2148,
+    2323
+   ],
+   [
+    2149,
+    2323
+   ],
+   [
+    2150,
+    2323
+   ],
+   [
+    2151,
+    2323
+   ],
+   [
+    2152,
+    2323
+   ],
+   [
+    2153,
+    2323
+   ],
+   [
+    2154,
+    2323
+   ],
+   [
+    2155,
+    2323
+   ],
+   [
+    2156,
+    2323
+   ],
+   [
+    2157,
+    2323
+   ],
+   [
+    2158,
+    2323
+   ],
+   [
+    2159,
+    2323
+   ],
+   [
+    2160,
+    2323
+   ],
+   [
+    2161,
+    2323
+   ],
+   [
+    2162,
+    2323
+   ],
+   [
+    2163,
+    2323
+   ],
+   [
+    2164,
+    2323
+   ],
+   [
+    2165,
+    2323
+   ],
+   [
+    2198,
+    2328
+   ],
+   [
+    2199,
+    2328
+   ],
+   [
+    2200,
+    2328
+   ],
+   [
+    2201,
+    2328
+   ],
+   [
+    2198,
+    2329
+   ],
+   [
+    2196,
+    2332
+   ],
+   [
+    2197,
+    2332
+   ],
+   [
+    2198,
+    2332
+   ],
+   [
+    2194,
+    2333
+   ],
+   [
+    2195,
+    2333
+   ],
+   [
+    2196,
+    2333
+   ],
+   [
+    2193,
+    2334
+   ],
+   [
+    2194,
+    2334
+   ],
+   [
+    2193,
+    2335
+   ],
+   [
+    2192,
+    2336
+   ],
+   [
+    2193,
+    2336
+   ],
+   [
+    2191,
+    2337
+   ],
+   [
+    2192,
+    2337
+   ],
+   [
+    2187,
+    2338
+   ],
+   [
+    2188,
+    2338
+   ],
+   [
+    2189,
+    2338
+   ],
+   [
+    2190,
+    2338
+   ],
+   [
+    2191,
+    2338
+   ],
+   [
+    2185,
+    2339
+   ],
+   [
+    2186,
+    2339
+   ],
+   [
+    2187,
+    2339
+   ],
+   [
+    2180,
+    2340
+   ],
+   [
+    2181,
+    2340
+   ],
+   [
+    2184,
+    2340
+   ],
+   [
+    2185,
+    2340
+   ]
+  ],
+  "ways": [
+   {
+    "who": "sarlac_spawn",
+    "kind": "spawn",
+    "way": "none",
+    "opened": 0
+   },
+   {
+    "who": "jaba_spawn1",
+    "kind": "spawn",
+    "way": "walk",
+    "opened": 30
+   },
+   {
+    "who": "cant_2",
+    "kind": "spawn",
+    "way": "walk",
+    "opened": 2
+   },
+   {
+    "who": "cant_3",
+    "kind": "spawn",
+    "way": "drop",
+    "opened": 23
+   },
+   {
+    "who": "jabbas_palacetemplate",
+    "kind": "flag",
+    "way": "walk",
+    "opened": 38
+   }
+  ],
+  "cover": 0.823,
+  "floors": {
+   "stacked": false,
+   "twoFloorShare": 0.004,
+   "raised": [
+    "jawa_camp"
+   ],
+   "reason": null
+  },
+  "capped": true
+ },
+ "routeProbe": {
+  "chokeMax": 4,
+  "unreachable": [
+   "jabbas_palacetemplate"
+  ],
+  "stops": {
+   "jabbas_palacetemplate": {
+    "1": {
+     "stage": "choke",
+     "points": 12,
+     "metres": 36,
+     "first": [
+      [
+       2160.5,
+       -2307.5
+      ],
+      [
+       2160.5,
+       -2310.5
+      ],
+      [
+       2160.5,
+       -2313.5
+      ]
+     ]
+    },
+    "2": {
+     "stage": "choke",
+     "points": 12,
+     "metres": 36,
+     "first": [
+      [
+       2160.5,
+       -2307.5
+      ],
+      [
+       2160.5,
+       -2310.5
+      ],
+      [
+       2160.5,
+       -2313.5
+      ]
+     ]
+    }
+   }
+  },
+  "oneSided": {},
+  "sides": {
+   "1": {
+    "spawns": 4,
+    "flags": [
+     "cantina",
+     "jawa_camp"
+    ]
+   },
+   "2": {
+    "spawns": 3,
+    "flags": [
+     "cantina",
+     "jawa_camp"
+    ]
+   }
+  },
+  "chokes": {
+   "cantina:1": 0,
+   "cantina:2": 0,
+   "jawa_camp:1": 0,
+   "jawa_camp:2": 0
+  },
+  "late": {},
+  "shutLinks": []
+ },
+ "inputs": {
+  "controlPoints": "d3b8941e301caa643cb9d46364e65586584b990a5d76d460894741ce06cce84b",
+  "infantryMap": "276eac40616e9fd70488c116f75689a0200f37df35b28b85aad6ab8ecc82bb12",
+  "template": "bdc0e455f47f91b7e7724e71d7c0c196e839b36946ac3abb7663d725944081e5"
+ },
+ "files": {
+  "AI.con": "8ed8e89c10559484f101f97a526aca507e2b480bac3ba562c02ffb53dcc5d6d2",
+  "AIpathFinding.con": "9d8080cdfa7605961969aa126519b03be9691bd604ac76aef50166d81215edd2",
+  "AI/StrategicAreas.con": "9b8e84c840065d8a943122e07eac3e41f99e84baf451a11248d38545d3153c9c",
+  "AI/Strategies.con": "13da4dc35872dd4b5798a066f4425bdc824cfd61f31093d1808e1202644de52e",
+  "AI/conditions.con": "248a04b727c08d696bf0fa9c162bc22c43cde3c75f695892fe1e0f5141519c49",
+  "AI/prerequisites.con": "c96168b5f69860e578f5d26728fd2a2092c4c436e1da49b7d6f4009b65735398",
+  "Pathfinding/Infantry1Level0Map.raw": "5d17d0d88e6bc522a12d3c3a3d82e4414bc746f4f0ebfc781f2dde216239ae26",
+  "Pathfinding/Infantry1Level1Map.raw": "dda76cdf845c1c8855ba4cc885b60065123e6e3489f7d6da7e741e1f237d3f5d",
+  "Pathfinding/Infantry1Level2Map.raw": "bc6c46128e3a7efe0ce6014cd89bfaaea4390793d93fb900066931eac1a13a70",
+  "Pathfinding/Tank0Level0Map.raw": "bf3d5a382ac4a665eb45308f91a857a82345331ac2a5d463e5b3b975ea3a7e28",
+  "Pathfinding/Tank0Level1Map.raw": "4790066e5cfb4fb053263ca500a9e4dff4f43065c78b61ead471206cdce98e00",
+  "Pathfinding/Tank0Level2Map.raw": "cfef5a9aaeb703333f46504342245fdb92adfe4d695210cc4f0c0550febb0cd5"
+ }
+}

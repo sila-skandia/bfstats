@@ -43,7 +43,7 @@ const NORDEN = { parts: [
 const FINNED = { parts: [{ template: 'Bomb_wing', kind: 'Wing', position: [0, 0, 1.2], wingLift: 0.2 }] };
 out.onCentre = { norden: motor.partsOnCentre(NORDEN), finned: motor.partsOnCentre(FINNED),
   bare: motor.partsOnCentre({ parts: [] }) };
-out.wings = motor.roundWingsOf(NORDEN, 14.7295379).map(w => ({ ...w, coeff: round(w.coeff) }));
+out.wings = motor.roundWingsOf(NORDEN, 14.73).map(w => ({ ...w, coeff: round(w.coeff) }));
 
 // The motor's own row: 30 degrees under a level nose, in the round's held
 // attitude or under its flight path.

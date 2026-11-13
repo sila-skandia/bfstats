@@ -1,0 +1,24 @@
+{
+ "level": "berlin-1945-outskirts",
+ "verdict": "fail",
+ "outcome": "unsuitable",
+ "config": "with vehicles",
+ "doctrine": "garrison",
+ "generatorVersion": 5,
+ "inputs": {
+  "controlPoints": "7176b3980f0902d836894a867050e73357705c670671fbd1a9ba570cc019047c",
+  "infantryMap": "49daf5900db8da4628790761e7f34b7dc2361f8a7fd2fda753d85ae2349f3714",
+  "template": "43f8a790471528016570235f76e97dbb2045732458781a5139f37fed68bf98c0"
+ },
+ "baseline": "DICE layers with vehicles, garrison doctrine: berlin, stalingrad, kharkov, bocage; seeds 1..10, 600 s",
+ "bar": null,
+ "seeds": 1,
+ "sizes": {},
+ "oneSided": null,
+ "unreachable": [
+  "allied_garisson"
+ ],
+ "lintErrors": [
+  "side 1 has no spawn with a route to any flag it must take: none of the 1 flags it does not hold can be reached"
+ ]
+}

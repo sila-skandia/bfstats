@@ -1,0 +1,82 @@
+{
+ "level": "gc_mini_hoth",
+ "verdict": "fail",
+ "outcome": "no-fight",
+ "config": "with vehicles",
+ "doctrine": "garrison",
+ "generatorVersion": 6,
+ "inputs": {
+  "controlPoints": "773dd1903be6a0df77010c51b1d2f427e3cd4500df5ac9740e015f01a67b3221",
+  "infantryMap": "5db9b0ec3f474ce8f46c97df4f417d7458613a4caabca893b2218cd618d65805",
+  "template": "43f8a790471528016570235f76e97dbb2045732458781a5139f37fed68bf98c0"
+ },
+ "baseline": "DICE layers with vehicles, garrison doctrine: berlin, stalingrad, kharkov, bocage; seeds 1..10, 600 s",
+ "bar": {
+  "against": "dice",
+  "why": "no bar of gcmod's own: DICE's"
+ },
+ "seeds": 1,
+ "sizes": {
+  "8": {
+   "verdict": "fail",
+   "failed": [
+    "stuckSecondsPerBotMinute",
+    "selfDeathsPerBotMinute",
+    "routeFailuresPerBotMinute",
+    "redeploysPerBotMinute",
+    "capturesTotal",
+    "enemyKillsPerBotMinute",
+    "flagCoverage",
+    "bothSidesCapture",
+    "bothSidesKill",
+    "stuckSecondsPerBotMinuteWorseSide",
+    "routeFailuresPerBotMinuteWorseSide",
+    "redeploysPerBotMinuteWorseSide",
+    "nonEnemyDeathShareWorseSide",
+    "hullStuckSecondsPerDrivingMinute",
+    "hullStuckSecondsPerDrivingMinuteWorseSide"
+   ],
+   "winners": [
+    1,
+    0,
+    0
+   ]
+  },
+  "16": {
+   "verdict": "fail",
+   "failed": [
+    "stuckSecondsPerBotMinute",
+    "routeFailuresPerBotMinute",
+    "redeploysPerBotMinute",
+    "enemyKillsPerBotMinute",
+    "flagCoverage",
+    "bothSidesCapture",
+    "bothSidesKill",
+    "ticketsBleed",
+    "stuckSecondsPerBotMinuteWorseSide",
+    "routeFailuresPerBotMinuteWorseSide",
+    "redeploysPerBotMinuteWorseSide",
+    "nonEnemyDeathShareWorseSide",
+    "hullStuckSecondsPerDrivingMinute",
+    "hullStuckSecondsPerDrivingMinuteWorseSide"
+   ],
+   "winners": [
+    1,
+    0,
+    0
+   ]
+  }
+ },
+ "oneSided": null,
+ "unreachable": [
+  "fallen_walkertemplate"
+ ],
+ "lintErrors": [
+  "the play surface is stacked floors (10 % of the main floor has another walked floor over or under it): a one-floor walk map cannot hold it"
+ ],
+ "acceptanceWithdrawn": {
+  "because": "page matches 2026-11-12: 0.013 then 0.006 enemy kills a bot-minute, no capture in either; under the rollout floor",
+  "date": "2026-11-12",
+  "was": "Owner's rollout, 2026-11-12: the owner imported Galactic Conquest and asked for "
+ }
+}

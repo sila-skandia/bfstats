@@ -96,12 +96,22 @@ export const MSG_PONG = 0x86;           // binary: u32le server time
 // MSG_ACTION payloads (client -> server), JSON:
 //   {type: 'seat', vehicle: <table id>, seat: <index>, action: 'enter'|'exit'|'switch'}
 //   {type: 'spawn', flag: <flag index>}     -- the player is re-deploying
+//   {type: 'chat', text: <string>, team: <bool>}  -- a typed line, all or team (CHAT-4)
+//   {type: 'name', name: <string>}          -- game.changePlayerName
 // The server mounts/unmounts the player in its own world from these rows,
 // exactly as the engine's control channel carried seat changes (J-1).
 
+// MSG_PING carries four more bytes when it answers a MSG_PONG: the pong's own
+// server time, which the server times the round trip by (the board's ping).
+//
 // MSG_EVENT types (server -> client), JSON rows:
 //   {t: <world tick>, type: 'join'|'leave'|'spawn'|'seatEnter'|'seatExit'|'fire'|'closed',
 //    slot?: <player slot>, other?: <slot>, text?: <string>}
+//   {type: 'chat', slot, text, team: <bool>}   another player's typed line
+//   {type: 'stats', rows: [[slot, score, kills, deaths, ping], ...]}  the board's
+//       numbers that changed; HELLO's `slots` rows and `stats` carry them at a join
+//   {type: 'name', slot, text}                 a player's new name
+//   a 'join' row also carries `team`, the side the room gave the newcomer
 // P3 adds the kill feed's rows ('killed', 'captured', 'ticket') on the same
 // seam; replay.js's SCORE_TEXT already names them.
 
@@ -263,7 +273,8 @@ export function decodeInputFrame(payload) {
 //   f32 yaw, pitch     degrees; NaN when seated (the hull owns the facing)
 //   u16 hp             armor hitPoints, 0xffff when the player carries none
 //   u8  vehicleId      0 = on foot, else the room's vehicle table id
-//   u8  seatIndex      0..15, 0xff when not seated
+//   u8  seatIndex      0..15; not seated, 0xe0 | the lower state's code
+//                      (`LOWER_WIRE`), 0xff for none
 //   u32 ack            the input seq the authority's last tick CONSUMED for
 //                      this player (0 before it has consumed any)
 //
@@ -321,6 +332,38 @@ export function lowerWireCode(p) {
   if (p?.flight === 'flyBackward') return 7;
   return swimWireCode(p?.swim);
 }
+
+/**
+ * The lower-body state on the wire, in the `seatIndex` byte of a player who
+ * is NOT seated (2026-11-13): `0xe0 | code`, the code an index into this
+ * list. The engine's own ghost carries the lower machine's state; this
+ * record had no room for it, and the seat byte is unused on foot, where an
+ * older server writes 0xff (code 0x1f, `LOWER_WIRE_NONE`: no state, and the
+ * renderer falls back to the speed bands) and an older page reads any of
+ * these as a seat index it never looks at while `seated` is clear.
+ *
+ * The states are `soldier-locomotion.js` `SoldierJumpState`'s, which the
+ * authority's walking body runs a tick at a time (`AnimationStatesLower.con`'s
+ * clauses, PHY-35): the jumps, the backward run and walk and the turns are
+ * what a remote soldier's legs could not otherwise be told. `backward` is a
+ * crouched or lying body moving backward. Append only.
+ */
+export const LOWER_WIRE = Object.freeze([
+  'stand', 'walkForward', 'walkBackward', 'runForward', 'runBackward',
+  'turnLeft', 'turnRight', 'strafeLeft', 'strafeRight',
+  'standJump', 'runJump', 'runJumpBackward', 'backward',
+  // On a ladder (`soldier.climb.active`, `ladder-climb.js`): the body is
+  // hung at the stand and its machine says nothing, so the wire says it.
+  'climb',
+]);
+export const LOWER_WIRE_NONE = 0x1f;
+const LOWER_WIRE_BASE = 0xe0;
+
+/** A lower state to its code, `LOWER_WIRE_NONE` for none or unknown. */
+export function lowerStateCode(state) {
+  const i = state ? LOWER_WIRE.indexOf(state) : -1;
+  return i >= 0 ? i : LOWER_WIRE_NONE;
+}
 export const SNAPSHOT_VEHICLE_BYTES = 30;
 
 export function encodeSnapshot(tick, players, vehicles) {
@@ -343,7 +386,8 @@ export function encodeSnapshot(tick, players, vehicles) {
     buf.setFloat32(o, p.pitch ?? NaN, true); o += 4;
     buf.setUint16(o, p.hp === null ? 0xffff : Math.max(0, Math.min(0x7fff, Math.round(p.hp))), true); o += 2;
     buf.setUint8(o, p.vehicleId ?? 0); o += 1;
-    buf.setUint8(o, p.seatIndex ?? 0xff); o += 1;
+    buf.setUint8(o, p.seatIndex ?? (p.seated ? 0xff
+      : LOWER_WIRE_BASE | lowerStateCode(p.lower))); o += 1;
     buf.setUint32(o, Math.max(0, Math.min(0xffffffff, p.ack ?? 0)), true); o += 4;
   }
   buf.setUint8(o, vehicles.length); o += 1;
@@ -390,7 +434,10 @@ export function decodeSnapshot(payload) {
       team, x, y, z, yaw, pitch,
       hp: hp === 0xffff ? null : hp,
       vehicleId,
-      seatIndex: seatIndex === 0xff ? null : seatIndex,
+      seatIndex: seatIndex >= LOWER_WIRE_BASE ? null : seatIndex,
+      // On foot the seat byte is the lower state (`LOWER_WIRE`), or null.
+      lower: seatIndex >= LOWER_WIRE_BASE && (flags & 2) === 0
+        ? LOWER_WIRE[seatIndex & LOWER_WIRE_NONE] ?? null : null,
       ack,
     });
   }

@@ -1,0 +1,148 @@
+{
+ "generator": "botgen",
+ "version": 5,
+ "mod": "bf1918",
+ "level": "raid_on_fort_pontisse",
+ "objectSpawners": 74,
+ "template": "few",
+ "templateSource": "DICE, bf1942 Kursk (1.6 patch archives, Kursk_003.rfa): AI/Strategies.con, AI/conditions.con, AI/prerequisites.con, unchanged",
+ "templateChoice": {
+  "name": "few",
+  "inPlay": 2,
+  "rule": "2 capturable flags in play, at most 3"
+ },
+ "scope": "on foot: infantry order positions only, no search maps, no co-op layer",
+ "unreachable": [
+  "Fort_Pontisse_Main_Entrance",
+  "Luik_square",
+  "Observation_Post",
+  "Fort_Pontisse"
+ ],
+ "unreachableReasons": {
+  "Fort_Pontisse_Main_Entrance": "walk test",
+  "Luik_square": "walk test",
+  "Observation_Post": "walk test",
+  "Fort_Pontisse": "walk test"
+ },
+ "botSpawnsExcluded": [
+  "German_Base_Spawn1",
+  "German_Base_Spawn2",
+  "German_Base_Spawn3",
+  "German_Base_Spawn4",
+  "German_Base_Spawn5",
+  "Old_Oak_Spawn1",
+  "Old_Oak_Spawn2",
+  "Fort_Pontisse_Spawn1",
+  "Fort_Pontisse_Spawn2",
+  "German_Base_Spawn6",
+  "German_Base_Spawn7",
+  "German_Base_Spawn8",
+  "German_Base_Spawn9",
+  "German_Base_Spawn10",
+  "German_Base_Spawn11",
+  "German_Base_Spawn12",
+  "German_Base_Spawn13",
+  "German_Base_Spawn14",
+  "Old_Oak_Spawn3",
+  "Old_Oak_Spawn4",
+  "Old_Oak_Spawn5",
+  "Old_Oak_Spawn6",
+  "Old_Oak_Spawn7",
+  "Fort_Pontisse_Spawn3",
+  "Luik_square_Spawn1",
+  "Luik_square_Spawn2",
+  "Luik_square_Spawn3",
+  "Luik_square_Spawn4",
+  "Luik_square_Spawn5",
+  "Luik_square_Spawn6",
+  "Luik_square_Spawn7",
+  "Luik_square_Spawn8",
+  "Belgian_HQ_Underground_Spawn1",
+  "Belgian_HQ_Underground_Spawn2",
+  "Belgian_HQ_Underground_Spawn3",
+  "Belgian_HQ_Underground_Spawn4",
+  "Observation_Post_Spawn1",
+  "Observation_Post_Spawn2",
+  "Observation_Post_Spawn3",
+  "Fort_Pontisse_Spawn5",
+  "Fort_Pontisse_Spawn6",
+  "Fort_Pontisse_Spawn7",
+  "Observation_Post_Spawn4",
+  "Observation_Post_Spawn5",
+  "Observation_Post_Spawn6",
+  "Observation_Post_Spawn7",
+  "Observation_Post_Spawn8",
+  "Observation_Post_Spawn9",
+  "Observation_Post_Spawn10",
+  "Observation_Post_Spawn11",
+  "Fort_Pontisse_Main_Entrance_Spawn1",
+  "Fort_Pontisse_Main_Entrance_Spawn2",
+  "Fort_Pontisse_Spawn8",
+  "Fort_Pontisse_Main_Entrance_Spawn3",
+  "Fort_Pontisse_Main_Entrance_Spawn4",
+  "Fort_Pontisse_Main_Entrance_Spawn5",
+  "Fort_Pontisse_Spawn9",
+  "Fort_Pontisse_Main_Entrance_Spawn6",
+  "Fort_Pontisse_Main_Entrance_Spawn7",
+  "Fort_Pontisse_Spawn10",
+  "Fort_Pontisse_Spawn11"
+ ],
+ "walkMap": {
+  "source": "page painter",
+  "engine": "none",
+  "opened": [],
+  "ways": [],
+  "cover": 0.821,
+  "floors": {
+   "stacked": true,
+   "twoFloorShare": 0.03,
+   "raised": [
+    "Old_Oak",
+    "Observation_Post",
+    "Fort_Pontisse"
+   ],
+   "reason": "3 of 6 capturable flags stand a storey over or under another walked floor"
+  },
+  "capped": true
+ },
+ "routeProbe": {
+  "chokeMax": 4,
+  "unreachable": [],
+  "stops": {},
+  "oneSided": {
+   "Old_Oak": 1,
+   "Chapel": 1
+  },
+  "sides": {
+   "1": {
+    "spawns": 3,
+    "flags": [
+     "Chapel",
+     "Old_Oak"
+    ]
+   },
+   "2": {
+    "spawns": 0,
+    "flags": []
+   }
+  },
+  "chokes": {
+   "Old_Oak:1": 0,
+   "Chapel:1": 0
+  },
+  "late": {},
+  "shutLinks": []
+ },
+ "inputs": {
+  "controlPoints": "be9a235d0fe86b5364241cb9d646e90be5a5c8e0288b1cf87b1a5da24c5f0187",
+  "infantryMap": "8214f893536710696effffc979c28b1f13799915f1a61d9a249e269a00b60c17",
+  "template": "bdc0e455f47f91b7e7724e71d7c0c196e839b36946ac3abb7663d725944081e5"
+ },
+ "files": {
+  "AI.con": "ff65da5cf781f265a28875b6cbca3063a01ed39073ce89fcfbb96af7a80600f7",
+  "AI/StrategicAreas.con": "c17df7105f33d50c54edf4e9d15482e9488d3e66f936c12e6e450d99087506a7",
+  "AI/Strategies.con": "13da4dc35872dd4b5798a066f4425bdc824cfd61f31093d1808e1202644de52e",
+  "AI/conditions.con": "248a04b727c08d696bf0fa9c162bc22c43cde3c75f695892fe1e0f5141519c49",
+  "AI/prerequisites.con": "c96168b5f69860e578f5d26728fd2a2092c4c436e1da49b7d6f4009b65735398"
+ }
+}

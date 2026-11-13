@@ -34,6 +34,9 @@ each kind of change to one):
                     in c_CGProjectiles: barbed wire, fences, palms)
     fireOnce        the `fireOnce` key: the FireArms that take one round a
                     press (GUN-22: horns, torpedoes, artillery calls)
+    templateWords   the `templateWords` key: the rocket and submarine words
+                    of the templates that write one (an Engine's heat, a
+                    round that is a vehicle, `disableSpawnPointsOnEnter`)
     all             every one of them
 
 Each level's layers are re-parsed from the game install and swapped into its

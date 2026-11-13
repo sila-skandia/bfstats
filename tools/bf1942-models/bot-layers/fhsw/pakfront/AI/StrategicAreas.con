@@ -1,0 +1,62 @@
+rem *** Strategic areas: one per control point (botgen) ***
+
+aiStrategicArea.create gerbase1 99.3/881.1 104.3/886.1 50
+aiStrategicArea.addObjectTypeFlag Base
+aiStrategicArea.setOrderPosition Infantry 103.5/887.5
+aiStrategicArea.setSide 1
+aiStrategicArea.setTakeable 2 0
+
+aiStrategicArea.create gerbase2 96.6/180.3 101.6/185.3 50
+aiStrategicArea.addObjectTypeFlag Base
+aiStrategicArea.setOrderPosition Infantry 102.5/184.5
+aiStrategicArea.setSide 1
+aiStrategicArea.setTakeable 2 0
+
+aiStrategicArea.create ussrbase1st_south 665.6/318.5 674.6/327.5 10
+aiStrategicArea.setSide 2
+aiStrategicArea.setTakeable 1 0
+aiStrategicArea.setTakeable 2 0
+
+aiStrategicArea.create ussrbase_1st_central 670.1/708 679.1/717 300
+aiStrategicArea.addNeighbour ussrbase_1st_north
+aiStrategicArea.addNeighbour ussrbase_2nd_north
+aiStrategicArea.addNeighbour ussrbase3rd
+aiStrategicArea.addObjectTypeFlag Centre
+aiStrategicArea.addObjectTypeFlag StrongPoint
+aiStrategicArea.addObjectTypeFlag Close
+aiStrategicArea.addObjectTypeFlag ControlPoint
+aiStrategicArea.setOrderPosition Infantry 682.5/716.5
+aiStrategicArea.setSide 2
+
+aiStrategicArea.create ussrbase_1st_north 627.4/917.4 636.4/926.4 150
+aiStrategicArea.addNeighbour ussrbase_1st_central
+aiStrategicArea.addNeighbour ussrbase_2nd_north
+aiStrategicArea.addNeighbour ussrbase3rd
+aiStrategicArea.addObjectTypeFlag Flank
+aiStrategicArea.addObjectTypeFlag Close
+aiStrategicArea.addObjectTypeFlag ControlPoint
+aiStrategicArea.setOrderPosition Infantry 635.5/927.5
+aiStrategicArea.setSide 2
+
+aiStrategicArea.create ussrbase_2nd_north 763.7/876.4 770.7/883.4 150
+aiStrategicArea.addNeighbour ussrbase_1st_central
+aiStrategicArea.addNeighbour ussrbase_1st_north
+aiStrategicArea.addNeighbour ussrbase3rd
+aiStrategicArea.addObjectTypeFlag Flank
+aiStrategicArea.addObjectTypeFlag ControlPoint
+aiStrategicArea.setOrderPosition Infantry 772.5/882.5
+aiStrategicArea.setSide 2
+
+aiStrategicArea.create ussrbase_2nd_south 865.8/533.5 872.8/540.5 10
+aiStrategicArea.setSide 2
+aiStrategicArea.setTakeable 1 0
+aiStrategicArea.setTakeable 2 0
+
+aiStrategicArea.create ussrbase3rd 864.6/716.9 869.6/721.9 200
+aiStrategicArea.addNeighbour ussrbase_1st_central
+aiStrategicArea.addNeighbour ussrbase_1st_north
+aiStrategicArea.addNeighbour ussrbase_2nd_north
+aiStrategicArea.addObjectTypeFlag Centre
+aiStrategicArea.addObjectTypeFlag ControlPoint
+aiStrategicArea.setOrderPosition Infantry 868.5/720.5
+aiStrategicArea.setSide 2

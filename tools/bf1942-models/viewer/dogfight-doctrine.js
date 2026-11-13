@@ -78,7 +78,7 @@ export const RULES = [
     here: 'Your airfield repairs and rearms, your AA covers it, and the combat area burns a plane that strays out of it. Not in the school yet: its arena has no airfields.' },
   { n: 8, id: 'team', name: 'Fight as a team', rule: 'Attack on principle in groups of four or six. Avoid two aircraft attacking the same opponent.',
     plain: 'Fight as a group, and never two of you on one of them.', lesson: ['the-pair', 'counter'],
-    here: 'Outnumbered, a recorded pilot won 7% and lost 26%; shot at by a third plane, 42% went down. Drag and bag: the hunted one drags the hunter across the wingman\'s nose, and the pair put rounds in it from seven of nine starts without either being hit.' },
+    here: 'Outnumbered, a recorded pilot won 7% and lost 26%; shot at by a third plane, 42% went down. Drag and bag: the hunted one drags the hunter across the wingman\'s nose, and the pair put rounds in it from eight of nine starts without either being hit.' },
 ];
 
 /**

@@ -63,10 +63,17 @@ class TerrainInfo:
     # budget, read at PatchTerrain init next to the create string (4000 on the
     # 1024 m levels, 5000 elsewhere). Recorded as metadata; the viewer keeps
     # its own full-resolution grid, which is more detailed than the budget in
-    # the right direction. `lodDistance` ships alongside but no such string
-    # exists in BF1942.exe — dead in retail, not parsed (level-content.md
-    # Gap 10).
+    # the right direction.
     target_tri_count: int | None = None
+    # `GeometryTemplate.lodDistance`: the range of the terrain's detail law
+    # (ledger TERR-8). The client registers the word on the PatchTerrain
+    # template (0x005d2d05, string 0x008f01e4) and its handler 0x005d2e40
+    # writes template +0xf4, which the visible-cell walk squares at
+    # 0x00683085. None where the level omits it: the constructor's 1050
+    # (0x005b5d22) then stands. (Until 2026-11-13 this was held to be dead
+    # in retail, level-content.md Gap 10: the string search had looked for
+    # the wrong spelling.)
+    lod_distance: float | None = None
 
 
 @dataclass
@@ -295,9 +302,13 @@ class WaterInfo:
     color: tuple[float, float, float] | None = None
     deep_color: tuple[float, float, float] | None = None
     shallow_color: tuple[float, float, float] | None = None
-    shallow_alpha: float = 1.0        # water.waterShallowAlpha
-    alpha_depth: float = 0.0          # water.waterAlphaDepth, metres to full alpha
-    color_depth: float = 10.0         # water.waterColordepth, metres to deep colour
+    # The three depth words, at the water object's constructor values for a
+    # level that omits one (client `0x00654ffe` +0x70 = 1.7, `0x00655005`
+    # +0x74 = 0 from the `ebx` zeroed at `0x00654fa7`, `0x00655008` +0x78 =
+    # 5.0; ledger WATER-5). Until 2026-11-13 these read 1.0, 0.0 and 10.0.
+    shallow_alpha: float = 0.0        # water.waterShallowAlpha
+    alpha_depth: float = 1.7          # water.waterAlphaDepth, metres to full alpha
+    color_depth: float = 5.0          # water.waterColordepth, metres to deep colour
     # `water.envmapColor` — the tint of the reflected environment cube (a
     # registered property in the retail binaries, read from Init.con; eight
     # levels across the three packs set it, most visibly Raid_on_Agheila's
@@ -320,7 +331,9 @@ class LightingInfo:
     diffuse_color: tuple[float, float, float] | None = None
     global_ambient: tuple[float, float, float] | None = None
     specular_color: tuple[float, float, float] | None = None
-    shadow_color: float | None = None
+    # `shadow.shadowColor`: a float for a line of one number, the four the
+    # client reads for `r/g/b` (`con.shadow_color`).
+    shadow_color: float | list[float] | None = None
     # `renderer.animatedMeshAmbientColor` / `renderer.animatedMeshDiffuseFactor`.
     # The client keeps them in two plain globals (a Vec3 at 0x009595ac, a float
     # at 0x009595a8) whose file-initial values are 0.3 / 0.3 / 0.3 and 1.0
@@ -953,9 +966,11 @@ def parse_terrain_con(text: str) -> TerrainInfo:
                 info.target_tri_count = int(float(token))
             except ValueError:
                 pass
-        # `lodDistance` is deliberately not read: the string is absent from
-        # BF1942.exe, so the retail client never applied it (level-content.md
-        # Gap 10's investigation).
+        elif cmd == "loddistance":
+            try:
+                info.lod_distance = float(token)
+            except ValueError:
+                pass
     return info
 
 
@@ -3012,10 +3027,11 @@ def parse_init_con(text: str, info: LevelInfo) -> None:
                 except ValueError:
                     pass
         elif ns == "shadow" and cmd == "shadowcolor" and tokens:
-            try:
-                info.lighting.shadow_color = float(tokens[0])
-            except ValueError:
-                pass
+            # One number, or `r/g/b` as Battle of Britain writes it: the
+            # client's own stream read (`con.shadow_color`).
+            color = con_mod.shadow_color(tokens[0])
+            if color is not None:
+                info.lighting.shadow_color = color
         elif ns == "shadermanager" and cmd == "settextureparam" and len(tokens) >= 2:
             if tokens[0].lower() == "envmap":
                 info.envmap_rcm = tokens[1].replace("\\", "/").strip("/")

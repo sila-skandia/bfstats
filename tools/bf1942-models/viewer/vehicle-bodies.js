@@ -236,6 +236,24 @@ function relativeTransform(rootWorld, partWorld) {
  * Returns null when the vehicle has no mass (a stationary gun, a spawner for
  * something static) or none of its parts resolve: such a thing stays scenery.
  */
+/**
+ * A root's composite bounding radius from the tree's `collision-meshes.json`
+ * `rootRadius` (COL-22, `extract_collision_meshes.py` `collect_root_radii`:
+ * `BCompositeObject::getBoundingRadius` lnxded 0x08165630), by its template
+ * (`userData.control`, else its name); null when the table has none (a
+ * level's own vehicle, an older tree), and the body meets col1 as it did.
+ */
+export function rootRadiusOf(collisionMeshes, root) {
+  const table = collisionMeshes?.rootRadius;
+  if (!table || !root) return null;
+  for (const name of [root.userData?.control, root.userData?.sourceTemplate, root.name]) {
+    if (!name) continue;
+    const r = table[String(name).toLowerCase()];
+    if (Number.isFinite(r)) return r;
+  }
+  return null;
+}
+
 export function describeVehicleParts(root, collisionMeshes) {
   const physics = root?.userData?.physics;
   if (!physics || !(physics.mass > 0)) return null;
@@ -340,6 +358,10 @@ export function describeVehicleParts(root, collisionMeshes) {
   const armor = root.userData.armor || {};
   return {
     parts, box: hullBox, boundingRadius,
+    // The root's composite radius by the engine's law (COL-22), which picks
+    // the static layer it meets (`body-statics.js` `isCoarseRoot`); null when
+    // the tree's table has none.
+    rootRadius: rootRadiusOf(collisionMeshes, root),
     mass: physics.mass,
     inertiaModifier: physics.inertiaModifier || [1, 1, 1],
     // Engine defaults where the template authors nothing (spec section 3).
@@ -376,11 +398,12 @@ export function describeVehicleParts(root, collisionMeshes) {
  * an acceleration and is kept.
  */
 export class DrivenBody {
-  constructor(vehicle, { mass, inertiaModifier = [1, 1, 1], box, boundingRadius }) {
+  constructor(vehicle, { mass, inertiaModifier = [1, 1, 1], box, boundingRadius, rootRadius = null }) {
     this.vehicle = vehicle;
     this.mass = mass;
     this.isStatic = false;
     this.boundingRadius = boundingRadius;
+    this.rootRadius = rootRadius;   // COL-22 (`body-statics.js` `isCoarseRoot`)
     this.inertiaModifier = inertiaModifier;
     this.inertia = boxInertia(box[0], box[1], box[2]);
     this.pos = [0, 0, 0];
@@ -581,6 +604,7 @@ export function buildParkedVehicle(spec, {
     position, axes,
   });
   body.boundingRadius = spec.boundingRadius;
+  body.rootRadius = spec.rootRadius ?? null;
   if (asleep) body.setSleepiness(0);
   const parts = collisionPartsFor(spec, body);
   const wheels = parts.filter(p => p.kind === 'spring').map(part => ({

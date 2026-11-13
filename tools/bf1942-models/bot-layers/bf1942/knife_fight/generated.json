@@ -1,0 +1,101 @@
+{
+ "generator": "botgen",
+ "version": 5,
+ "mod": "bf1942",
+ "level": "knife_fight",
+ "objectSpawners": 12,
+ "template": "few",
+ "templateSource": "DICE, bf1942 Kursk (1.6 patch archives, Kursk_003.rfa): AI/Strategies.con, AI/conditions.con, AI/prerequisites.con, unchanged",
+ "templateChoice": {
+  "name": "few",
+  "inPlay": 0,
+  "rule": "0 capturable flags in play, at most 3"
+ },
+ "scope": "an infantry map painted from the walk test, a Tank0 map from the page painter, infantry order positions, no strategic maps, no co-op layer",
+ "unreachable": [],
+ "unreachableReasons": {},
+ "botSpawnsExcluded": [],
+ "walkMap": {
+  "source": "walk test",
+  "engine": "none",
+  "vehicleMap": "page painter",
+  "vehicleBrush": 3,
+  "vehicleBrushes": [
+   {
+    "brush": 3,
+    "flagsOn": 2,
+    "spawnersOn": 12,
+    "pieces": 3,
+    "main": 643
+   },
+   {
+    "brush": 2.5,
+    "flagsOn": 2,
+    "spawnersOn": 12,
+    "pieces": 3,
+    "main": 746
+   },
+   {
+    "brush": 2,
+    "flagsOn": 2,
+    "spawnersOn": 12,
+    "pieces": 3,
+    "main": 802
+   },
+   {
+    "brush": 1.5,
+    "flagsOn": 2,
+    "spawnersOn": 12,
+    "pieces": 3,
+    "main": 897
+   }
+  ],
+  "opened": [],
+  "ways": [],
+  "cover": 0.984,
+  "floors": {
+   "stacked": false,
+   "twoFloorShare": 0.005,
+   "raised": [],
+   "reason": null
+  }
+ },
+ "routeProbe": {
+  "chokeMax": 4,
+  "unreachable": [],
+  "stops": {},
+  "oneSided": {},
+  "sides": {
+   "1": {
+    "spawns": 4,
+    "flags": []
+   },
+   "2": {
+    "spawns": 4,
+    "flags": []
+   }
+  },
+  "chokes": {},
+  "late": {},
+  "shutLinks": []
+ },
+ "inputs": {
+  "controlPoints": "449f1b61d3c5a4cdee6070f70cffa129d6335e18299c6bb23c3b715a344af298",
+  "infantryMap": "60128a770281d8d2d1cf518b1524dadc66b66507580b40e60709bd787cf87dca",
+  "template": "bdc0e455f47f91b7e7724e71d7c0c196e839b36946ac3abb7663d725944081e5"
+ },
+ "files": {
+  "AI.con": "39c086362b6dcfd68c98d0a970906aadd87bd9696ae330b3fadd5b90b8bfb447",
+  "AIpathFinding.con": "8014dbf6ef50a7e5ba3bd3af85ed910350bb0936cd33c5a2e1c5138053711957",
+  "AI/StrategicAreas.con": "baa92d6188e60e5315ec4dfab9dd5b5fe81bb6595a4ae55ae87b78e82387ac54",
+  "AI/Strategies.con": "13da4dc35872dd4b5798a066f4425bdc824cfd61f31093d1808e1202644de52e",
+  "AI/conditions.con": "248a04b727c08d696bf0fa9c162bc22c43cde3c75f695892fe1e0f5141519c49",
+  "AI/prerequisites.con": "c96168b5f69860e578f5d26728fd2a2092c4c436e1da49b7d6f4009b65735398",
+  "Pathfinding/Infantry1Level0Map.raw": "f6e917b996b444cd3d32bbdb447c1b255640e066a11d258087feee02d874044c",
+  "Pathfinding/Infantry1Level1Map.raw": "dd554311f82c48cd10a344f3ae7abf16d9b0702e55c1c4833dd69cb56814250c",
+  "Pathfinding/Infantry1Level2Map.raw": "ba5bfd03a086fb7089dadf0594145acc0621b309e50c8975dd74291d989cd925",
+  "Pathfinding/Tank0Level0Map.raw": "a3842b48a0e86775d197c219cd39a9ec353961fbc29400b784d3318544b73186",
+  "Pathfinding/Tank0Level1Map.raw": "10f078098d92aa83e1be4e67297cc383e3639b59861edc1ba0d7f164019b90b1",
+  "Pathfinding/Tank0Level2Map.raw": "8b712faf6af8559c728318669e5f64940e4353b65d9bd7d500a449d75c91b460"
+ }
+}

@@ -72,15 +72,23 @@ export function submarineSpec(physics) {
 }
 
 /**
- * Whether the page feeds the submarine HUD for a hull. Retail asks the
- * player's control object (`IPlayerControlObject` vtable `+0x60`, read as
- * `getSubPos`, which the exporter does not carry); the page takes a
- * `VTSubmarine` with a submarine block, which is the two vanilla boats and
- * none of the Desert Combat land vehicles that author `submarineData` for
- * its crush.
+ * Whether the page feeds the submarine HUD for a seat (ledger SUB-6). Retail
+ * asks the player's control object for `getSubPos` (`IPlayerControlObject`
+ * vtable `+0x60`; `PlayerControlObject::getSubPos` lnxded 0x08318bd0 reads
+ * the template byte `+0x1f1`, which `ObjectTemplate.subPos` writes,
+ * `setSubPos` 0x0831bbb0): the Gato's and the Sub7C's own seat, and in the
+ * mods the boat's helm but not a deck gun that is a `VTSubmarine` too (FH's
+ * Sub7C: 27 `VTSubmarine` seats, 15 with the word). `physics.subPos` is that
+ * byte in a tree baked since 2026-11-13, written false as well as true on a
+ * seat with a submarine block. A tree baked before carries no key, and the
+ * page takes a `VTSubmarine` with a submarine block as it did: the vanilla
+ * boats, and none of the Desert Combat land vehicles that author
+ * `submarineData` for its crush.
  */
 export function isSubmarine(physics) {
-  return physics?.vehicleType === 'VTSubmarine' && !!submarineSpec(physics);
+  if (!submarineSpec(physics)) return false;
+  if (typeof physics.subPos === 'boolean') return physics.subPos;
+  return physics.vehicleType === 'VTSubmarine';
 }
 
 /**

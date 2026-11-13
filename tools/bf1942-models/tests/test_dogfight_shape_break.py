@@ -113,7 +113,7 @@ class BreakTurnShape(unittest.TestCase):
                 self.assertIsNotNone(run.get("overT"), run)
                 self.assertLessEqual(run["overT"] - run["breakT"], 10, run)
                 self.assertGreaterEqual(run["minRange"], 25, run)
-                # Within 2.5 s: the plan waits until he is 8 m across (so a
+                # Within 2.5 s: the plan waits until he is 6 m across (so a
                 # wobble does not flip the turn), and rolling from a full
                 # turn one way to 45 degrees the other takes a Spitfire
                 # about 1.8 s.

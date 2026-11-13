@@ -133,6 +133,7 @@ export function createStage(M, level, { vehicles = true, kinds = STAGE_KINDS, se
     MODELS_BASE: '', occupancy: null, optOnFoot: unchecked, placeCamera: noop, resetMobileControls: noop,
     respawnVehicleBody: owner => { hullBodies.respawnVehicleBody(owner); stage.hooks.onRespawn?.(owner); },
     retireVehicleBody: owner => hullBodies.retireVehicleBody(owner),
+    parkWreckBody: (owner, drive) => hullBodies.parkWreckBody(owner, drive),
     soldier: null, soldierDead: true, standUp: noop, updateHud: noop, useLens: noop,
     get vehicleDamage() { return world?.vehicleDamage; }, get vehicles() { return registry; },
     get world() { return world; },
@@ -167,9 +168,11 @@ export function createStage(M, level, { vehicles = true, kinds = STAGE_KINDS, se
   stage.hullBodies = hullBodies;
   const vehicleHits = S.createVehicleHits({
     applyDamage: (...a) => stage.referee.applyDamage(...a), applyDamageToPlayer: noop,
-    // Where a round can meet a man: the referee's stand-in body, and no drawn
-    // skeleton to test (nothing draws here), so every round meets the sphere.
-    bodyAt: id => stage.referee.bodyAt(id), capsulesOf: () => null,
+    // Where a round can meet a man: the capsules of his skeleton in his
+    // stance (`level.bodies`, the room server's own module), and the
+    // referee's stand-in sphere for a seated man or a tree without poses.
+    bodyAt: id => stage.referee.bodyAt(id),
+    capsulesOf: id => level.bodies?.capsulesAt(world?.player(id)) ?? null,
     get bots() { return stage.referee?.bots ?? []; }, get camera() { return camera; },
     get collider() { return terrain.collider; }, get currentRoot() { return root; },
     damageLanded: (...a) => stage.referee.damageLanded(...a), get damageVisuals() { return wrecks.damageVisuals; },
@@ -255,7 +258,7 @@ export function createStage(M, level, { vehicles = true, kinds = STAGE_KINDS, se
   statics.indexScene(root);
   terrain.collectTerrain(root);
   terrain.setTables(data.terrainMaterials, data.damageTables, data.heightmap ?? null);
-  terrain.buildCollider(root);
+  terrain.buildCollider(root, { collisionMeshes: data.collisionMeshes });
   hullBodies.setupVehicleBodies();
   stage.collider = terrain.collider;
 
@@ -313,6 +316,12 @@ export function createStage(M, level, { vehicles = true, kinds = STAGE_KINDS, se
     botUnits.ai = new Map(Object.entries(data.vehicleAi ?? {}).map(([k, v]) => [k.toLowerCase(), { name: k, ...v }]));
     // ...and the file's `mod`, as `loadAi` keeps it (bot-rows.js).
     botUnits.aiMod = data.vehicleAiMod ?? null;
+    // ...and its `radio` rows (the mod's `radio.con`, bot-radio.js).
+    botUnits.aiRadio = data.vehicleAiRadio ?? null;
+    // ...and its `coverPortals` (a cover mesh's doors and windows, bot-decision.js).
+    botUnits.aiCoverPortals = data.vehicleAiCoverPortals ?? null;
+    // ...and the portals' planes (`coverPortalPlanes`, bot-portal.js).
+    botUnits.aiCoverPortalPlanes = data.vehicleAiCoverPortalPlanes ?? null;
     const allowed = new Set(kinds);
     units = Object.create(botUnits);
     units.candidates = () => botUnits.candidates().filter(c => allowed.has(c.kind));
@@ -335,6 +344,42 @@ export function createStage(M, level, { vehicles = true, kinds = STAGE_KINDS, se
   }
   stage.units = units;
 
+  // --- the round that is a vehicle (map.html roundSpawners, rocketRide) -------
+  //
+  // Secret Weapons' Wasserfall and the mods' guided missiles (FA-29): a bot in
+  // the launcher fires, and `FireArms::fireBarrel` puts it in the missile its
+  // gun throws, where its pilot AI flies it at a target and sets the warhead
+  // off (`WasserFallAttack`, 30 m), then `exitVehicle` gives it back to the
+  // launcher. The page's own modules do all of it (`rocket-ride.js` `botLaunch`,
+  // `botRideOut`; `round-spawners.js` `standVehicle` over the pool
+  // `sim/level.mjs` parked), handed the runner's pieces in the page's shape.
+  // Without them a bot's launcher threw the missile as a plain shell.
+  stage.roundSpawners = null;
+  stage.rocketRide = null;
+  stage.rideOut = () => false;
+  if (units && S.createRoundSpawners && S.createRocketRide) {
+    const roundPage = {
+      get collider() { return terrain.collider; }, get vehicleDamage() { return world?.vehicleDamage; },
+      get vehiclePads() { return statics; }, get world() { return world; },
+      soldier: null, soldierDead: true, roomJoined: false, loadouts: null, kitDrops: null,
+      get hullBodies() { return hullBodies; }, get wrecks() { return wrecks; },
+      LOCAL_PLAYER: 'local', maxPlayers, optOnFoot: unchecked, optPilot: unchecked,
+      get vehicles() { return registry; },
+    };
+    stage.roundSpawners = S.createRoundSpawners(roundPage);
+    guns.onRoundSpawners = stage.roundSpawners.onRound;
+    const ridePage = Object.create(roundPage, Object.getOwnPropertyDescriptors({
+      referee: () => stage.referee, botUnits: () => units,
+      get camera() { return camera; }, get fireStates() { return world?.fireStates; },
+      get guns() { return guns; }, get roundSpawners() { return stage.roundSpawners; },
+      occupancy: null, seatAltFire: false, seatFire: false, enterVehicle: noop,
+      wrecked: node => entry.isWreck(node),
+    }));
+    stage.rocketRide = S.createRocketRide(ridePage);
+    guns.onVehicleRound = stage.rocketRide.onVehicleRound;
+    stage.rideOut = bot => stage.rocketRide.botRideOut(bot);
+  }
+
   /** The units the bots can take on this level: every vehicle root of an
    *  allowed kind with AI data, live or waiting on a neutral flag. */
   const unitTotal = units
@@ -351,9 +396,33 @@ export function createStage(M, level, { vehicles = true, kinds = STAGE_KINDS, se
     return true;
   };
 
+  /** Right after the world step (map.html `simulate`'s `runOverContacts`): a
+   *  hull that ran a bot over this step bills the referee, the driver
+   *  credited (`world-soldier-tick.js` `runOverTick`), else the victim's last
+   *  hitter. Without it the runner never counted a run-over death. */
+  stage.afterWorldStep = step => {
+    const ref = stage.referee;
+    if (!ref) return;
+    for (const ev of step?.runOvers ?? []) {
+      if (!(ev.lost > 0) || ev.playerId == null) continue;
+      if (!ref.bots.some(b => b.playerId === ev.playerId)) continue;
+      ref.damageLanded(ev.playerId, ev.lost, ev.attacker ?? null, null,
+                       { via: 'roadkill', roadkill: true, environment: ev.attacker == null });
+    }
+  };
+
   /** Between the referee's tick and the capture pass (map.html frame()). */
   stage.afterBots = () => {
     hullBodies.syncVehicleSpawnOwnership();
+  };
+
+  /** Once a tick, after the world step (map.html: `rocketRide.frame` and
+   *  `roundSpawners.tick`): a fired missile's bot boards it, and a spent one
+   *  goes back to its pool. */
+  stage.rounds = dt => {
+    if (!stage.rocketRide) return;
+    stage.rocketRide.frame(dt);
+    stage.roundSpawners.tick(dt);
   };
 
   /** After the capture pass: the bodies drawn back onto their nodes, the

@@ -19,6 +19,12 @@ import { createProvingGroundScreen } from './proving-ground-screen.js';
 import { SHORT_PLAYER_EVENT } from './replay-shorts.js';
 import { bootShortLoader, endBootShortLoader } from './short-loader.js';
 import { VANILLA } from '../mods.js';
+import { glyphTable, snapToPixel } from '../bitmap-text.js';
+import { setTextMetrics } from './menu-screen.js';
+
+// The menu's faces at the display width's metrics, its lists and text fields
+// snapped to device pixels (ledger FONT-3, FONT-5).
+setTextMetrics({ glyphTable, snapToPixel });
 
 const canvas = document.getElementById('screen');
 const canvasCamp = document.getElementById('screen-camp');
@@ -42,13 +48,13 @@ const TABS = [
             { key: 'MENU_INTRO', id: 'replay', label: 'REPLAY' },
             { key: 'CREDITS', id: 'proving', label: 'THE RANGE' }] },
 ];
-// OPTIONS' own row: CONTROLS, VIDEO and SOUND are the three of its four this
-// site has, the controls screen's three sections.
+// OPTIONS' own row: CONTROLS, CUSTOMIZE, VIDEO and SOUND, the controls
+// screen's four sections.
 const OPTIONS_TABS = [
   ...TABS,
   { page: 'optionsNav',
-    items: [{ key: 'MENU_CONTROLS', id: 'controls' }, { key: 'MENU_VIDEO', id: 'video' },
-            { key: 'MENU_SOUND', id: 'sound' }] },
+    items: [{ key: 'MENU_CONTROLS', id: 'controls' }, { key: 'MENU_GENERAL_OPTIONS', id: 'general' },
+            { key: 'MENU_VIDEO', id: 'video' }, { key: 'MENU_SOUND', id: 'sound' }] },
 ];
 // SINGLEPLAY's own row, `menu/SingleplayerNavigation`: CAMPAIGN and INSTANT
 // BATTLE, retail's two (the file's other slots are a demo build's). CAMPAIGN

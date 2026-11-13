@@ -1,0 +1,29 @@
+rem *** Strategic areas: one per control point (botgen) ***
+
+aiStrategicArea.create Northern_Peak 517.1/589.9 532.1/604.9 300
+aiStrategicArea.addNeighbour Southern_Peak
+aiStrategicArea.addNeighbour Eastern_Peak
+aiStrategicArea.addObjectTypeFlag Centre
+aiStrategicArea.addObjectTypeFlag StrongPoint
+aiStrategicArea.addObjectTypeFlag ControlPoint
+aiStrategicArea.setOrderPosition Infantry 532.1/604.9
+aiStrategicArea.setSide 1
+
+aiStrategicArea.create Southern_Peak 508.8/429.1 523.8/444.1 200
+aiStrategicArea.addNeighbour Northern_Peak
+aiStrategicArea.addNeighbour Eastern_Peak
+aiStrategicArea.addObjectTypeFlag Centre
+aiStrategicArea.addObjectTypeFlag ControlPoint
+aiStrategicArea.setOrderPosition Infantry 523.8/444.1
+aiStrategicArea.setSide 2
+
+aiStrategicArea.create Eastern_Peak 601.1/513.3 616.1/528.3 150
+aiStrategicArea.addNeighbour Northern_Peak
+aiStrategicArea.addNeighbour Southern_Peak
+aiStrategicArea.addObjectTypeFlag Flank
+aiStrategicArea.addObjectTypeFlag ControlPoint
+aiStrategicArea.setOrderPosition Infantry 616.1/528.3
+
+aiStrategicArea.create Western_Peak 435.2/510.8 450.2/525.8 10
+aiStrategicArea.setTakeable 1 0
+aiStrategicArea.setTakeable 2 0

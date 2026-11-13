@@ -35,7 +35,7 @@ function watch(seconds, where, { mem = { t: 0, rng: 1 }, load = 1 } = {}) {
     flown += 60 * EDT;
     me.position = [0, 500, -flown];
     // A sideways push of `load` g on me: what the eyes read the load from.
-    const side = load > 1 ? Math.sqrt(Math.max(0, (load * 9.80665) ** 2 - 14.7295379 ** 2)) : 0;
+    const side = load > 1 ? Math.sqrt(Math.max(0, (load * 9.80665) ** 2 - 14.73 ** 2)) : 0;
     mem.myV = [me.velocity[0] - side * EDT, me.velocity[1], me.velocity[2]];
     const e = perceive(mem, me, him(where(mem.t)), EDT);
     log.push({ t: +mem.t.toFixed(3), truth: where(mem.t), sees: e.sees, lost: e.lost, p: e.him.position.map(v => +v.toFixed(1)), glance: mem.eye.glancing });

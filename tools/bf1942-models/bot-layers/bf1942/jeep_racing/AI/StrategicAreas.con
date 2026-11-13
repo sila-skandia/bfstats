@@ -1,0 +1,63 @@
+rem *** Strategic areas: one per control point (botgen) ***
+
+aiStrategicArea.create controlpoint_allies_base 662.2/1613.7 682.2/1633.7 50
+aiStrategicArea.addNeighbour center
+aiStrategicArea.addObjectTypeFlag Base
+aiStrategicArea.setOrderPosition Infantry 681.5/1634.5
+aiStrategicArea.setSide 2
+aiStrategicArea.setTakeable 1 0
+
+aiStrategicArea.create stangs 1338.4/628.1 1358.4/648.1 50
+aiStrategicArea.addNeighbour airfield
+aiStrategicArea.addNeighbour bridgepoint
+aiStrategicArea.addNeighbour corner
+aiStrategicArea.addNeighbour controlpoint
+aiStrategicArea.addObjectTypeFlag Base
+aiStrategicArea.setOrderPosition Infantry 1357.5/649.5
+aiStrategicArea.setSide 1
+aiStrategicArea.setTakeable 2 0
+
+aiStrategicArea.create airfield 1105.1/1457.2 1125.1/1477.2 50
+aiStrategicArea.addNeighbour stangs
+aiStrategicArea.addNeighbour corner
+aiStrategicArea.addNeighbour controlpoint
+aiStrategicArea.addObjectTypeFlag Base
+aiStrategicArea.setOrderPosition Infantry 1126.5/1476.5
+aiStrategicArea.setSide 1
+aiStrategicArea.setTakeable 2 0
+
+aiStrategicArea.create bridgepoint 1856.6/847.1 1876.6/867.1 150
+aiStrategicArea.addNeighbour stangs
+aiStrategicArea.addObjectTypeFlag Flank
+aiStrategicArea.addObjectTypeFlag Close
+aiStrategicArea.addObjectTypeFlag ControlPoint
+aiStrategicArea.setOrderPosition Infantry 1877.5/868.5
+aiStrategicArea.setSide 1
+
+aiStrategicArea.create jump 906.4/108.1 946.4/148.1 10
+aiStrategicArea.setTakeable 1 0
+aiStrategicArea.setTakeable 2 0
+
+aiStrategicArea.create corner 943.4/1205.5 973.4/1235.5 150
+aiStrategicArea.addNeighbour stangs
+aiStrategicArea.addNeighbour airfield
+aiStrategicArea.addNeighbour controlpoint
+aiStrategicArea.addObjectTypeFlag Flank
+aiStrategicArea.addObjectTypeFlag Close
+aiStrategicArea.addObjectTypeFlag ControlPoint
+aiStrategicArea.setOrderPosition Infantry 972.5/1236.5
+
+aiStrategicArea.create controlpoint 1427/1725.3 1447/1745.3 150
+aiStrategicArea.addNeighbour stangs
+aiStrategicArea.addNeighbour airfield
+aiStrategicArea.addNeighbour corner
+aiStrategicArea.addObjectTypeFlag Flank
+aiStrategicArea.addObjectTypeFlag ControlPoint
+aiStrategicArea.setOrderPosition Infantry 1445.5/1744.5
+
+aiStrategicArea.create center 406.1/1048.8 426.1/1068.8 50
+aiStrategicArea.addNeighbour controlpoint_allies_base
+aiStrategicArea.addObjectTypeFlag Base
+aiStrategicArea.setOrderPosition Infantry 427.5/1069.5
+aiStrategicArea.setSide 1
+aiStrategicArea.setTakeable 2 0

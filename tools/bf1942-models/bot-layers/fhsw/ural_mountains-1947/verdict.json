@@ -4,10 +4,10 @@
  "outcome": "no-fight",
  "config": "with vehicles",
  "doctrine": "garrison",
- "generatorVersion": 5,
+ "generatorVersion": 6,
  "inputs": {
   "controlPoints": "11f2e7849025577eccbc941b7f222de1f7172e8de152f081844f2929813def8a",
-  "infantryMap": "07edf25dae7a8e3b71837ab39c22d40550eeb247331865867eb2e7087de2c5ee",
+  "infantryMap": "8bde30221b52a46d7f6529cfb595da7e9266caf448d0618e11cf4c3c367ace83",
   "template": "bdc0e455f47f91b7e7724e71d7c0c196e839b36946ac3abb7663d725944081e5"
  },
  "baseline": "DICE layers with vehicles, garrison doctrine: berlin, stalingrad, kharkov, bocage; seeds 1..10, 600 s",
@@ -15,11 +15,12 @@
   "against": "dice",
   "why": "no bar of fhsw's own: DICE's"
  },
- "seeds": 2,
+ "seeds": 1,
  "sizes": {
   "8": {
    "verdict": "fail",
    "failed": [
+    "idleShare",
     "routeFailuresPerBotMinute",
     "capturesTotal",
     "enemyKillsPerBotMinute",
@@ -29,12 +30,10 @@
     "ticketsBleed",
     "routeFailuresPerBotMinuteWorseSide",
     "nonEnemyDeathShareWorseSide",
-    "hullStuckSecondsPerDrivingMinute",
-    "hullStuckSecondsPerDrivingMinuteWorseSide",
     "unitsNeverUsedShare"
    ],
    "winners": [
-    2,
+    1,
     0,
     0
    ]
@@ -42,33 +41,29 @@
   "16": {
    "verdict": "fail",
    "failed": [
-    "idleShare",
     "routeFailuresPerBotMinute",
+    "capturesTotal",
     "enemyKillsPerBotMinute",
     "flagCoverage",
     "bothSidesCapture",
     "routeFailuresPerBotMinuteWorseSide",
     "nonEnemyDeathShareWorseSide",
-    "hullStuckSecondsPerDrivingMinute",
-    "hullStuckSecondsPerDrivingMinuteWorseSide",
-    "unitsNeverUsedShare"
+    "unitsNeverUsedShare",
+    "tankSilentShare"
    ],
    "winners": [
-    2,
+    1,
     0,
     0
    ]
   }
  },
- "oneSided": 1,
- "unreachable": [
-  "controlpoint_allies_middle_vallery",
-  "controlpoint_axis_middle_industrial"
- ],
+ "oneSided": null,
+ "unreachable": [],
  "lintErrors": [],
  "acceptanceWithdrawn": {
-  "because": "page match 2026-11-12, after the flag binding: under the rollout floor (0.006 enemy kills, no capture)",
-  "date": "2026-11-12",
-  "was": "Owner's rollout, 2026-11-11: after playing Tunis-1943 against its generated bots"
+  "because": "generator 6 layer on the bot code of 3b1ebe45c, two page matches of 600 s with 16 bots, both under the rollout floor: 0.025 enemy kills a bot-minute in each, 0 and 3 captures",
+  "date": "2026-11-13",
+  "was": "Regenerated on generator 6 (2026-11-13) after being turned down on generator 5: "
  }
 }

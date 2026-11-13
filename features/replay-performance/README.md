@@ -7,7 +7,8 @@ the replay's own overheads cut?
 
 ## Status
 
-Done (2026-09-29), in two passes: the overheads first, then what the first
+Done (2026-09-29), in two passes; phones on 2026-11-13 ("Phones" below).
+The 2026-09-29 passes: the overheads first, then what the first
 pass left open (the samples' memory, the hulls built before the round shows,
 the drag). The overheads were the replay's own. Nothing server-side.
 
@@ -92,6 +93,129 @@ The second pass:
 | `replay.js` | A hull is built when the round first has it (`buildHulls`), within 4 ms of a frame while the timeline is dragged; the rest are built ahead, 1.5 ms a frame, until every one is. What a hull is (air, sea, tank) is its template's, surveyed once (`hullKind`, replay-hulls.js `modelKind`), so the standouts know who flies before his plane is built. A seek while dragging fires no rounds again. |
 | `replay-bodies.js` | While the timeline is dragged, a man keeps the body he has whatever his life or item at the step, and nobody dies on the way; the seek the drag ends on builds each as he is. |
 
+## Phones
+
+The 2026-11-13 report: on a phone the live replay had become unwatchable,
+"the lowest of low FPS", where it used to be watchable. On a phone a replay
+has to do one thing, scrub and play the round, and the page drew it as a
+desktop draws it.
+
+### Measured
+
+The 30-minute Liberation of Caen round `c8z2nt8m7u` (23 MB), at 900 s,
+headless Chromium on the owner's M5 Max with a 390x844 phone's screen (3x,
+touch), `scratchpad` probes beside `tests/perf/replayperf.cjs`. CPU throttled
+4x stands in for a phone's CPU; a phone's GPU cannot be measured here, so its
+share is the canvas and the draw calls.
+
+| | Before (prod) | Phone profile |
+|---|---|---|
+| Canvas | 780x1688, 4x MSAA (5.3 M samples) | 585x1266, no MSAA (0.74 M) |
+| Draw calls a frame | 430-460 | 250 |
+| Frames a second asked of the GPU | 60 | 30 |
+| Frame at 4x CPU throttle | 44 ms | 35 ms |
+| Script a drawn frame at 4x | 34.5 ms | 29 ms |
+| DOM elements | 21,060 (19,469 of them the hidden replay log) | 1,326 |
+| Level nodes the matrix walk visits a frame | 10,437 | ~760 (the shown ones) |
+| A forced layout a frame | yes (the minimap read `clientWidth`) | no |
+
+The October 20 build (`067338626`) on the same round, same probe: 38 ms at 4x,
+so the CPU side grew some 15 % since; the page was already drawing a phone
+the desktop's canvas then. Nothing composited over the canvas (no
+full-screen `backdrop-filter`) costs a frame.
+
+### What changed
+
+| File | Change |
+|---|---|
+| `replay-phone.js` (new) | Who is on the profile (a coarse pointer on a screen whose short side is under 600 px, in a replay; `?phone=0/1`), the profile's numbers, and the frame gate. |
+| `map.html` | On the profile, no MSAA unless chosen (`?aa`, OPTIONS > VIDEO), a pixel ratio of at most 1.5, the profile's video settings when none are stored, and the animation loop drawing 30 frames a second (`?fps=` lifts it). |
+| `video-apply.js` | `ratioCap` (held only while no DISPLAY MODE is chosen) and `initial` settings. |
+| `shown-walk.js` (new), `replay.js` | The level's root walks only shown nodes at every depth while nothing above has moved: the placed vehicles' `spawners` group, the collision meshes and the LOD rungs not chosen are skipped. Every replay, not only a phone's. Checked in the page against three's own forced walk at three instants and camera modes: every shown matrix bit-identical. |
+| `map-surfaces.js` | The minimap's stage size from a ResizeObserver, not `clientWidth` read after the frame's DOM writes (a forced layout every frame, every page). |
+| `replay-ui.js` | The replay log's rows are built when the log is first opened. |
+
+The profile: VideoLow.con's LOD (0.6) and effects (0.3), no reflections,
+75 % view distance; lightmaps stay (a level lit flat reads badly) and
+textures drop one mip, not three. A stored OPTIONS > VIDEO wins over all of
+it, DISPLAY MODE over the ratio cap.
+
+### Open
+
+- The replay's own frame (`the soldiers`, the hulls) and three's render of
+  what is shown are the CPU that is left, about 10 and 11 ms of the 35 at 4x.
+  The visible soldiers' bones are most of the scene walk that remains.
+- The minimap is still painted every drawn frame (about 6 % of the script).
+
+## Quality on the fly
+
+The owner's follow-up the same day: on every device, when a replay cannot
+hold its frame rate, lower the quality on its own, with the level shown under
+the bar's "..." menu where the viewer can change it.
+
+`replay-quality.js` keeps a ladder below the viewer's own settings, each rung
+a cap over OPTIONS > VIDEO and a share of the canvas's pixel ratio, all live
+through `video-apply.js` `setRuntime` (nothing stored; the options screen
+shows `videoApply.chosen`, the frame draws `videoApply.settings`):
+
+| Rung | Pixel ratio | Caps |
+|---|---|---|
+| Full | the page's | none |
+| Reduced | x0.85 | graphics 2, effects 2, no shadows, view 90 % |
+| Low | x0.7 | graphics 1, effects 1, no reflections or shadows, view 75 % |
+| Lowest | x0.5 (never under 0.5) | Low's, view 50 %, textures 40 % |
+
+Anti-aliasing (the WebGL context's) and lightmaps (the level's build) are not
+on it. A cap only lowers: a setting chosen below it stays.
+
+Auto reads the median interval of the drawn frames over 4 s (at least five
+frames, so a page at 1 fps is judged over five seconds; a gap over 3 s is not a
+frame) while the replay
+plays undisturbed: not loading, paused, dragged, hidden, or within 2 s of a
+seek (`replay.seek` holds it). Under 75 % of the target (60, or a phone's 30)
+it steps down one rung and waits 2 s for the page to settle. The rung is then
+judged over twice the window (8 s, ten frames at least), so one stall at a few
+frames a second does not read as the rung making it worse. A rung that buys
+under 8 % more frames is undone and Auto stops there: the frame rate is held
+down by something the ladder does not lower (a CPU busy with the round, a
+display or browser capped at 30). It never steps back up on its own.
+
+The menu's Quality row reads `AUTO · LOW` while Auto picks and the rung alone
+when pinned, with the last measured rate in its title; a click steps Auto,
+Full, Reduced, Low, Lowest and round, kept in this browser
+(`bf42-replay-quality`). `?quality=auto|full|reduced|low|lowest` picks for
+the page; `?shots` and `?dpr` (screenshots, the Shorts runner, benches) draw
+at Full unless they ask, and `replayperf.cjs` asks for Full.
+
+Checked headless on the Caen round: software GL at 1280x720 x2, Auto stepped
+to Lowest as the rate rose 5, 6, 8, 10 fps; Metal at 6x CPU throttle, Reduced
+bought nothing (15 fps either side), so Auto put Full back and stopped. On a
+phone's screen the row cycles every rung, the canvas following (1.5, 1.275,
+1.05, 0.75), and a pinned rung survives a reload. `test_replay_phone.py` runs
+the governor on synthetic pages (GPU-bound, crawling at 1-3 fps, enough at
+Low, CPU-bound, fast,
+a phone at 26 of 30, busy only, pinned) and the cap.
+
+### Recording draws at Full
+
+The studio records the canvas itself (replay-clip.js `captureStream`, the
+9:16 crop measured from the canvas when the take starts), so a lowered
+drawing is a lowered Short. The owner, 2026-11-13: exporting and recording
+a Short must be at full quality by default. So a take (replay-creator.js
+`record`, Post as a Short included) calls `ctx.filming(true)` before its crop
+is measured, and `stopRecording` calls it off; map.html `setFilming` then
+pauses Auto, lifts its cap, and lifts a phone's lean profile (the desktop's
+pixel ratio, the stored OPTIONS > VIDEO or HIGH, no 30 fps gate: the
+recorder takes 60), synchronously, so the crop is the full canvas's. The
+frame loop ends it if no take is running. After the take the page goes back
+to the rung and profile it had, and Auto lets it settle before reading.
+Anti-aliasing stays as the page was opened (a phone's off): it is the WebGL
+context's.
+
+Checked on a phone's screen pinned at Lowest (ratio 0.75, canvas 292x633): a
+9:16 take drew at ratio 2, 780x1688, its source 780x1386, Auto paused, 60
+frames a second; after it, Lowest again.
+
 ## A highlights file on the server
 
 Not done. Playback needs the whole recording anyway, and what the marks and
@@ -121,6 +245,9 @@ mean downloading every recording.
   cache.
 - A change meant only to be faster must leave `tests/perf/replaydump.mjs`'s
   output byte-identical.
+- A phone is a viewer, not a creator: whatever a replay adds per frame is
+  measured on the phone profile too (`?phone=1` on a desktop), and what a
+  phone does not need to scrub and watch stays off it.
 
 ## Open
 

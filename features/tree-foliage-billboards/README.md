@@ -136,3 +136,59 @@ Open: the engine draws **one** angle set of cards and sprites per view
 the union of the card sets. The per-tree tint (terrain colour word at
 HeightMap+0x2c, +/-1.5% jitter) is taken as 1.0; retail far trees measured
 ~25% brighter than ours at 75 m, which may be that tint or fog.
+
+## Sway (2026-11-13)
+
+Gap 25 of `features/retail-inverse-gap-audit-2026-11-12`. A tree whose
+`Geometries.con` says `GeometryTemplate.swayEnable 1` rocks in the wind while
+the camera is near it. In vanilla that is 22 templates (the spruces, pines,
+birches and their kin under `Objects/Vegetation/Common`), 33 with Secret
+Weapons' winter trees; 21 and 32 of them also say `swayRangeDegrees 1.1`, and
+none sets any other sway word.
+
+What retail does, read off both binaries (addresses in `tree-foliage.js`):
+
+- `TreeRenderer.swayEnable` is off in the constructor and the level start turns
+  it on (client `0x0044ca0f`), so in a level trees sway. There is no VIDEO
+  OPTIONS row for it.
+- `TreeMesh::realDraw` (client `0x0067daa0`) rebuilds the tree's world matrix
+  each frame and, inside the range, multiplies the sway matrix into it in the
+  tree's own frame: the whole tree turns about its origin, the trunk base.
+- The range is `swayLodDistance` 40 m times the view's FOV modifier, on the 3D
+  distance. The amplitude inside it is `clamp((R^2 - d^2) / (0.7 R)^2, 0, 1)`:
+  full to 28.6 m, nothing at 40 m. So sway is a near-field effect; a tree is
+  long still before it becomes its card.
+- `Swayer::update` (server symbols `0x083b91d0`): one sine,
+  `sin(2 pi f t + phase f) * swayRangeDegrees`, split between a rotation about
+  X and one about Z by the template's direction. `f` is the `swayPeriodSeconds`
+  word (0.2 from the constructor; it is used as a frequency, not a period)
+  times the tree's own speed, rolled in (1, 1.4]: a swing every 3.6 to 5 s.
+  The phase is rolled per tree, the direction per template per load. A second
+  sine exists, scaled by `swayWindFactor`, which is 0 unless a script sets it.
+- `CollisionSwayer` (a tree shoved by something hitting it) is a second class
+  on the same template. No installed template sets `collisionSwayEnable` or
+  `bushSwayEnable`; it is not built.
+
+What the viewer does:
+
+- `extract_tree_billboards.py` writes a `sway` block into `_shared/trees.json`:
+  one entry per swaying template with the words its block sets. A tree with no
+  entry does not sway, the engine's own default.
+- `tree-foliage.js` rocks each swaying tree's parts the way the client does, by
+  the matrix: `tree world * sway * part`. The statics are frozen, so nothing
+  else writes those matrices, and a tree that leaves the range gets its own
+  back. The gap report suggested a vertex shader; the matrix is what retail
+  does, costs no shader variant, and carries the leaf sprites' centres with it.
+  Per frame: a distance test per swaying tree (Kursk has 1330) and, for the 30
+  or so inside 40 m, a sine and a matrix product per part.
+- The rolls are hashes (the template's name, the tree's place), so a level
+  looks the same on every load.
+
+Checked: `tests/test_tree_sway.py` (the constants, the fade, the law, the
+rolls, a bound scene), and Kursk in the page (29 trees rocking at a pine stand,
+1.0 degree at the reading).
+
+Open: the client's own copy of `Swayer::update` was not disassembled (the
+server's, with symbols, and the Mac dump agree); which way round the X and Z
+turns map through the exporter's z flip is not settled, and with a random
+direction it cannot show.

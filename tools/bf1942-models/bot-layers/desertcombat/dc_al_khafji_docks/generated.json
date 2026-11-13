@@ -1,0 +1,191 @@
+{
+ "generator": "botgen",
+ "version": 5,
+ "mod": "DesertCombat",
+ "level": "dc_al_khafji_docks",
+ "objectSpawners": 21,
+ "template": "few",
+ "templateSource": "DICE, bf1942 Kursk (1.6 patch archives, Kursk_003.rfa): AI/Strategies.con, AI/conditions.con, AI/prerequisites.con, unchanged",
+ "templateChoice": {
+  "name": "few",
+  "inPlay": 3,
+  "rule": "3 capturable flags in play, at most 3"
+ },
+ "scope": "an infantry map painted from the walk test, a Tank0 map from the page painter, infantry order positions, no strategic maps, no co-op layer",
+ "unreachable": [
+  "cargoship"
+ ],
+ "unreachableReasons": {
+  "cargoship": "walk test"
+ },
+ "botSpawnsExcluded": [
+  "cargoship_spawn1",
+  "cargoship_spawn2",
+  "cargoship_spawn3",
+  "cargoship_spawn4",
+  "cargoship_spawn5",
+  "coallitionislandbase_spawn1",
+  "coallitionislandbase_spawn2",
+  "coallitionislandbase_spawn3",
+  "coallitionislandbase_spawn4",
+  "coallitionislandbase_spawn5"
+ ],
+ "walkMap": {
+  "source": "walk test",
+  "engine": "none",
+  "vehicleMap": "page painter",
+  "vehicleBrush": 2.5,
+  "vehicleBrushes": [
+   {
+    "brush": 3,
+    "flagsOn": 4,
+    "spawnersOn": 10,
+    "pieces": 8,
+    "main": 503532
+   },
+   {
+    "brush": 2.5,
+    "flagsOn": 4,
+    "spawnersOn": 11,
+    "pieces": 6,
+    "main": 518097
+   },
+   {
+    "brush": 2,
+    "flagsOn": 4,
+    "spawnersOn": 11,
+    "pieces": 7,
+    "main": 524618
+   },
+   {
+    "brush": 1.5,
+    "flagsOn": 4,
+    "spawnersOn": 11,
+    "pieces": 7,
+    "main": 537101
+   }
+  ],
+  "opened": [],
+  "ways": [
+   {
+    "who": "cargoship_spawn1",
+    "kind": "spawn",
+    "way": "jump",
+    "opened": 0
+   },
+   {
+    "who": "cargoship_spawn2",
+    "kind": "spawn",
+    "way": "jump",
+    "opened": 0
+   },
+   {
+    "who": "cargoship_spawn3",
+    "kind": "spawn",
+    "way": "jump",
+    "opened": 0
+   },
+   {
+    "who": "cargoship_spawn4",
+    "kind": "spawn",
+    "way": "jump",
+    "opened": 0
+   },
+   {
+    "who": "cargoship_spawn5",
+    "kind": "spawn",
+    "way": "jump",
+    "opened": 0
+   },
+   {
+    "who": "coallitionislandbase_spawn1",
+    "kind": "spawn",
+    "way": "none",
+    "opened": 0
+   },
+   {
+    "who": "coallitionislandbase_spawn2",
+    "kind": "spawn",
+    "way": "none",
+    "opened": 0
+   },
+   {
+    "who": "coallitionislandbase_spawn3",
+    "kind": "spawn",
+    "way": "none",
+    "opened": 0
+   },
+   {
+    "who": "coallitionislandbase_spawn4",
+    "kind": "spawn",
+    "way": "none",
+    "opened": 0
+   },
+   {
+    "who": "coallitionislandbase_spawn5",
+    "kind": "spawn",
+    "way": "none",
+    "opened": 0
+   }
+  ],
+  "cover": 0.993,
+  "floors": {
+   "stacked": false,
+   "twoFloorShare": 0,
+   "raised": [],
+   "reason": null
+  }
+ },
+ "routeProbe": {
+  "chokeMax": 4,
+  "unreachable": [],
+  "stops": {},
+  "oneSided": {
+   "warehouse1": 1,
+   "warehouse2": 1,
+   "coalitiondroppoint": 1
+  },
+  "sides": {
+   "1": {
+    "spawns": 17,
+    "flags": [
+     "coalitiondroppoint",
+     "warehouse1",
+     "warehouse2"
+    ]
+   },
+   "2": {
+    "spawns": 0,
+    "flags": []
+   }
+  },
+  "chokes": {
+   "warehouse1:1": 2,
+   "warehouse2:1": 2,
+   "coalitiondroppoint:1": 0
+  },
+  "late": {},
+  "shutLinks": [
+   "warehouse1>warehouse2"
+  ]
+ },
+ "inputs": {
+  "controlPoints": "de75f7290c2594e4d175ead55fa397c9e2dd5889685893410abb8c528cab4582",
+  "infantryMap": "ff028576c978d6f566946c08eb69da0aff4a371c080d8679f6142cb59c161c16",
+  "template": "bdc0e455f47f91b7e7724e71d7c0c196e839b36946ac3abb7663d725944081e5"
+ },
+ "files": {
+  "AI.con": "c5fba9381c4239226c873a0edcb8f631309006e9bf72eb8c04a55cd115d48ac8",
+  "AIpathFinding.con": "549030ff1cdb81bd819fcdc28c999857f4784e20ee4850753a8c1213f80184fe",
+  "AI/StrategicAreas.con": "e0f2141680299f38702b5f9e62c899cc8572752cf8dbaada6d9b558e9b11efd2",
+  "AI/Strategies.con": "13da4dc35872dd4b5798a066f4425bdc824cfd61f31093d1808e1202644de52e",
+  "AI/conditions.con": "248a04b727c08d696bf0fa9c162bc22c43cde3c75f695892fe1e0f5141519c49",
+  "AI/prerequisites.con": "c96168b5f69860e578f5d26728fd2a2092c4c436e1da49b7d6f4009b65735398",
+  "Pathfinding/Infantry1Level0Map.raw": "b2da6010d032263e24325b2d71cc3e2e7842338136b2b61c0df5b7f748a19fb5",
+  "Pathfinding/Infantry1Level1Map.raw": "a08ca04f710a5c2ccc73843588025123555e91765664c22e789e3b711482841e",
+  "Pathfinding/Infantry1Level2Map.raw": "7d2049cfc324600cde2d81c51e208b3f0877efb1f6d173765868a20d81122b92",
+  "Pathfinding/Tank0Level0Map.raw": "53e12809e7ca004c740a87147ccf26c9ddffe85f5e8311d90fdd9e83c42ec647",
+  "Pathfinding/Tank0Level1Map.raw": "f5d2a969425b242ff9ae7203bb34bd4689d89285d4bd2382969d05ace24add4e",
+  "Pathfinding/Tank0Level2Map.raw": "126d683dc00e6931fd46dd5d077ed1f20c204ee32bb635ef25a71a0554481429"
+ }
+}

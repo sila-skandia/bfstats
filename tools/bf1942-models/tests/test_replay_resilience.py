@@ -154,6 +154,8 @@ const draw = part('draw');
 const paintHud = part('hud');
 const paintPlayingShell = part('shell');
 const deployScreen = {{ paintSpawnTimer: part('spawnTimer') }};
+// The reinforcement wave's held commit (`spawning.js` `waveTick`).
+const spawning = {{ waveTick: part('waveTick') }};
 // Not the proving ground (`?proving=1`): its instruments are not built.
 const provingPage = null;
 // No dogfight school over the replay (`?school`): the page's camera is its own.
@@ -182,17 +184,17 @@ process.stdout.write(JSON.stringify({{ calls, thrown }}));
         out = self.run_frame("world")
         # The replay, the render, the HUD (and its Escape menu) and the shell
         # still run; the throw is still the loop's to report.
-        self.assertEqual(out["calls"], ["world", "replay", "draw", "hud", "shell", "spawnTimer"])
+        self.assertEqual(out["calls"], ["world", "replay", "draw", "hud", "shell", "spawnTimer", "waveTick"])
         self.assertEqual(out["thrown"], "world threw")
 
     def test_the_hud_is_painted_whatever_the_render_threw(self) -> None:
         out = self.run_frame("draw")
-        self.assertEqual(out["calls"], ["world", "replay", "draw", "hud", "shell", "spawnTimer"])
+        self.assertEqual(out["calls"], ["world", "replay", "draw", "hud", "shell", "spawnTimer", "waveTick"])
         self.assertEqual(out["thrown"], "draw threw")
 
     def test_a_quiet_frame_throws_nothing(self) -> None:
         out = self.run_frame("")
-        self.assertEqual(out["calls"], ["world", "replay", "draw", "hud", "shell", "spawnTimer"])
+        self.assertEqual(out["calls"], ["world", "replay", "draw", "hud", "shell", "spawnTimer", "waveTick"])
         self.assertIsNone(out["thrown"])
 
 

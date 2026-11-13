@@ -289,3 +289,21 @@ theatre `top-break-turn-dip.png`.
 
 Open: the Ninja and the Dip fly the same opening, so the Ninja tab is the Dip
 with a wait; the Flip at the theatre's start fails (the note says so).
+
+## Retail g and box area (2026-11-12)
+
+On the law's retail gravity (`Math.fround(-14.73)`) and box-drag area
+(`3.14 * 0.25`), features/retail-parity-cross-check-2026-11-12. Verdicts
+unchanged: Dip 9/9, Flip 0/9, Ninja 0/9, survival yes.
+
+- Dip and Ninja (re-pinned): the late let-go is 40.4 s (was 41), and that
+  start is 1,354 m away at 50 s, so the words read 1.3 to 2.9 km (was 1.4).
+- Flip (re-tuned): `btFlip` `minUp` 0 -> 0.05 s. At 0, "off him" while slow
+  fell through `flip-up` and `flip-top` back into `flip-dive` in the same
+  tick, and the dive flew on into the hunter's nose: in the school's start
+  (dx -30, dv -3) his gun had a 0.1 s shot while he ran (`extend`, a defend
+  intent), at 32 m. Now the nose comes up for two ticks. L9: rounds on him in
+  6 of 8 flown (up to 20), in his rear quarter three times (20, 27, 31 s
+  after the zoom; was twice, 20 and 27), five passes inside 15 m, he hits you
+  in one (5 rounds; was three, 1-3). Larger `minUp` (0.2-2 s) let him onto
+  your six for up to 12 s and took your rounds away: rejected.

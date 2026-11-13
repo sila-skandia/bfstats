@@ -13,6 +13,17 @@ import { RING } from './level-edge.js';
 // the remaster.
 const remasterHooks = globalThis.bfRemasterHooks ?? (globalThis.bfRemasterHooks = {});
 
+/** The spacing of the water grid's vertices, metres: `WaterGeometry1` is 17 x
+ *  17 vertices over a 256 m tile (0x00653eb0 and 0x006546e0 step by the float
+ *  at 0x008eb640, 16.0). The far tiles' 9 x 9 `LodWaterGeom` (32 m, tile
+ *  `+0x50` = 1) is not drawn apart: at that range the fog has the shoreline. */
+export const WATER_GRID_M = 16;
+/** `water.waterAlphaDepth` and `waterColorDepth` where a level sets neither:
+ *  the water object's constructor, 0x00654ffe (0x3fd9999a) and 0x00655008
+ *  (0x40a00000). */
+export const WATER_ALPHA_DEPTH = 1.7;
+export const WATER_COLOR_DEPTH = 5;
+
 /**
  * Built once by `createLevel` (level-load.js). `page` hands in what it reads,
  * as getters (a value the level reassigns is read live):
@@ -234,15 +245,18 @@ export function createLevelSky(page) {
     const env = page.extras.envmapTexture === 'texture/defaultTexture'
       ? null : sky.levelEnvCube;
     const ld = w.lightDirection || [-0.3, 0.5, 0.65];
-    // `water.envmapColor` and `GeometryTemplate.waveHeight` (level-content.md
-    // Gap 17): both are registered client properties. The tint multiplies the
-    // reflected-cube term before the fresnel mix — Raid_on_Agheila's warm
-    // 0.5/0.4/0.3 versus the shared green 0.7/0.8/0.7 is the visible case —
-    // and the height drives a vertical swell, nonzero only on Santo_Croce and
-    // Eagles_Nest (0.1). A level that declares neither keys neither, so
-    // scenes extracted before this change read exactly as they did.
+    // `water.envmapColor` (level-content.md Gap 17), a registered client
+    // property: the tint multiplies the reflected-cube term before the
+    // fresnel mix — Raid_on_Agheila's warm 0.5/0.4/0.3 versus the shared green
+    // 0.7/0.8/0.7 is the visible case. A level that declares none keys none.
+    //
+    // `GeometryTemplate.waveHeight` (Santo_Croce and Eagles_Nest, 0.1) moves
+    // nothing (WATER-4): the client fills each tile's 17 x 17 dynamic grid
+    // once, flat, y = 0 and normal (0, 1, 0) (0x00653eb0, behind the
+    // once-only flag 0x00959c5c, cleared at 0x0065443c), and reads the word
+    // only to widen the tile's cull sphere to 2 * sqrt(waveHeight^2 + 32768)
+    // (0x00655906..0x00655917). So the sea here is flat too.
     const envColor = w.envmapColor || null;
-    const waveHeight = w.waveHeight || 0;
     sky.waterUniforms = {
       tLayer1: { value: layer1 },
       tLayer2: { value: layer2 },
@@ -267,10 +281,9 @@ export function createLevelSky(page) {
       uLightDir: { value: new THREE.Vector3(ld[0], ld[1], ld[2]).normalize() },
       uShininess: { value: Math.min(120, Math.max(20, 0.06 / Math.max(w.streakFactor || 0.001, 1e-4))) },
       uShallowAlpha: { value: w.shallowAlpha ?? 0.5 },
-      uAlphaDepth: { value: w.alphaDepth || 1.5 },
-      uColorDepth: { value: w.colorDepth || 10 },
+      uAlphaDepth: { value: w.alphaDepth || WATER_ALPHA_DEPTH },
+      uColorDepth: { value: w.colorDepth || WATER_COLOR_DEPTH },
       uEnvColor: { value: envColor ? srgb(envColor, [1, 1, 1]) : null },
-      uWaveHeight: { value: waveHeight },
       fogColor: { value: new THREE.Color(0x808080) },
       fogNear: { value: 400 },
       fogFar: { value: 900 },
@@ -281,18 +294,11 @@ export function createLevelSky(page) {
       depthWrite: false,
       side: THREE.DoubleSide,
       vertexShader: `
-      uniform float uTime, uWaveHeight, uWorldSize;
       varying vec3 vWorld;
       void main() {
+        // A flat sea: the engine's water grid has y = 0 at every vertex
+        // (0x00653eb0, WATER-4), whatever the level's waveHeight.
         vec4 world = modelMatrix * vec4(position, 1.0);
-        // GeometryTemplate.waveHeight: a vertical swell across the plane,
-        // nonzero only where a level ships it (Santo_Croce, Eagles_Nest).
-        // One travelling sine in world space; 0.1 m is a swell, not surf.
-        if (uWaveHeight > 0.0) {
-          float k = 6.2831853 / 256.0;
-          world.y += uWaveHeight * sin(world.x * k + uTime * 1.1)
-                                  * cos(world.z * k * 0.63 - uTime * 0.7);
-        }
         vWorld = world.xyz;
         gl_Position = projectionMatrix * viewMatrix * world;
       }`,
@@ -304,7 +310,6 @@ export function createLevelSky(page) {
       uniform float uScroll1, uScroll2, uScrollN, uTile1, uTile2, uTileN;
       uniform vec3 uShallow, uDeep, uSpec, uLightDir, uEnvColor;
       uniform float uShininess, uShallowAlpha, uAlphaDepth, uColorDepth;
-      uniform float uWaveHeight;
       uniform vec3 fogColor;
       uniform float fogNear, fogFar;
       varying vec3 vWorld;
@@ -318,6 +323,24 @@ export function createLevelSky(page) {
             c * ( 1.0 / 12.92 ),
             vec3( lessThanEqual( c, vec3( 0.04045 ) ) ) );
       }
+      #ifdef HAS_DEPTH
+      // One vertex of the engine's water grid (0x006546e0, ledger WATER-2):
+      // the tile's colour block is a 17 x 17 lattice every 16 m (0x008eb640),
+      // filled once from the terrain height under each vertex. A vertex over
+      // ground above the water level takes the shallow colour at
+      // waterShallowAlpha (+0x74); one under it takes
+      // shallow + (deep - shallow) * min(depth / waterColorDepth, 1) (+0x78)
+      // at alpha min(depth / waterAlphaDepth, 1) (+0x70). Bytes, so display
+      // space. cell is the lattice index; the lookup lands on the height
+      // sample's own texel (LOD 0: the stepped coordinate has no derivative).
+      vec4 bfWaterVertex( vec2 cell, vec3 shallow, vec3 deep ) {
+        vec2 uv = cell * ( WATER_GRID_M / uWorldSize ) + 0.5 / vec2( textureSize( tDepth, 0 ) );
+        float d = textureLod( tDepth, uv, 0.0 ).r * uMaxDepth;
+        if ( d <= 0.0 ) return vec4( shallow, uShallowAlpha );
+        return vec4( mix( shallow, deep, min( d / max( uColorDepth, 0.001 ), 1.0 ) ),
+            min( d / max( uAlphaDepth, 0.001 ), 1.0 ) );
+      }
+      #endif
       void main() {
         vec2 wuv = vec2(vWorld.x, -vWorld.z);
         vec3 tex = vec3(1.0);
@@ -332,12 +355,23 @@ export function createLevelSky(page) {
         vec3 l2 = bfToSrgb(texture2D(tLayer2, wuv * uTile2 + uDir2 * uScroll2 * uTime).rgb);
         tex = min(vec3(1.0), l1 * l2 * 2.0);
         #endif
-        float depth = uMaxDepth;
         #ifdef HAS_DEPTH
-        depth = texture2D(tDepth, wuv / uWorldSize).r * uMaxDepth;
+        // The four lattice vertices round this pixel, blended as the
+        // rasteriser blends a quad's vertex colours: the shore's gradient
+        // runs over the 16 m cell it falls in, not over the bed's own slope.
+        vec3 sShallow = bfToSrgb(uShallow), sDeep = bfToSrgb(uDeep);
+        vec2 grid = wuv / WATER_GRID_M;
+        vec2 cell = floor(grid);
+        vec2 gf = grid - cell;
+        vec4 lit = mix(
+            mix(bfWaterVertex(cell, sShallow, sDeep), bfWaterVertex(cell + vec2(1.0, 0.0), sShallow, sDeep), gf.x),
+            mix(bfWaterVertex(cell + vec2(0.0, 1.0), sShallow, sDeep), bfWaterVertex(cell + vec2(1.0, 1.0), sShallow, sDeep), gf.x),
+            gf.y);
+        vec3 col = bfFromSrgb(min(vec3(1.0), lit.rgb * tex));
+        #else
+        // A level with no depth map is all deep water.
+        vec3 col = bfFromSrgb(min(vec3(1.0), bfToSrgb(uDeep) * tex));
         #endif
-        vec3 base = mix(uShallow, uDeep, clamp(depth / max(uColorDepth, 0.001), 0.0, 1.0));
-        vec3 col = bfFromSrgb(min(vec3(1.0), bfToSrgb(base) * tex));
         vec3 N = vec3(0.0, 1.0, 0.0);
         #ifdef HAS_NORMAL
         // The DX8-era normal map is not 0.5-centred; two offset samples
@@ -388,7 +422,11 @@ export function createLevelSky(page) {
         #endif
         vec3 H = normalize(normalize(uLightDir) + V);
         col += uSpec * pow(max(dot(N, H), 0.0), uShininess);
-        float alpha = mix(uShallowAlpha, 0.96, clamp(depth / max(uAlphaDepth, 0.001), 0.0, 1.0));
+        #ifdef HAS_DEPTH
+        float alpha = lit.a;
+        #else
+        float alpha = 1.0;
+        #endif
         #ifdef HAS_ENV
         alpha = max(alpha, clamp(fresnel, 0.0, 1.0));
         #endif
@@ -406,7 +444,7 @@ export function createLevelSky(page) {
       defines: {
         ...(layer1 && layer2 ? { HAS_LAYERS: '' } : {}),
         ...(normal ? { HAS_NORMAL: '' } : {}),
-        ...(depth ? { HAS_DEPTH: '' } : {}),
+        ...(depth ? { HAS_DEPTH: '', WATER_GRID_M: WATER_GRID_M.toFixed(1) } : {}),
         ...(env ? { HAS_ENV: '' } : {}),
         ...(envColor ? { HAS_ENVCOLOR: '' } : {}),
       },

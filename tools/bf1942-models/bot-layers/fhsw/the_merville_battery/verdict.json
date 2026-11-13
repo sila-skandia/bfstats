@@ -1,0 +1,24 @@
+{
+ "level": "the_merville_battery",
+ "verdict": "fail",
+ "outcome": "unsuitable",
+ "config": "with vehicles",
+ "doctrine": "garrison",
+ "generatorVersion": 5,
+ "inputs": {
+  "controlPoints": "0a694be54c7d5d9e4922b5e4c1a9fedbb37981466d3df566a3a86dc68dc9abcf",
+  "infantryMap": "8bb40741b797913509feeb735e038bcc1aa66ddf9a204bba3170bfbf41b7ca44",
+  "template": "43f8a790471528016570235f76e97dbb2045732458781a5139f37fed68bf98c0"
+ },
+ "baseline": "DICE layers with vehicles, garrison doctrine: berlin, stalingrad, kharkov, bocage; seeds 1..10, 600 s",
+ "bar": null,
+ "seeds": 1,
+ "sizes": {},
+ "oneSided": null,
+ "unreachable": [
+  "battery1"
+ ],
+ "lintErrors": [
+  "side 2 has no spawn with a route to any flag it must take: of its 4 spawns 4 have no way on foot to the main ground; the level places 22 ladders, which neither the walk test nor a bot climbs"
+ ]
+}

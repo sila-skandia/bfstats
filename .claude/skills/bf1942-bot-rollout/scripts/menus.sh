@@ -1,6 +1,6 @@
 #!/bin/bash
 # Publish the menu flags as the gate now has them: every accepted layer of each mod gets its
-# EXPERIMENTAL BOTS tag, every withdrawn one loses it.   menus.sh <batch name> <mod folder> [<mod folder> ...]
+# `generatedBots` flag (bots in the level list, with the site's mark), every withdrawn one loses it.   menus.sh <batch name> <mod folder> [<mod folder> ...]
 # Run it after pagebatch.sh and withdraw.py, so only levels that passed are still accepted.
 . "$(dirname "$0")/env.sh"
 batch=$1; shift; [ -n "$batch" ] && [ $# -gt 0 ] || { echo "menus.sh <batch> <mod folder> ..."; exit 2; }

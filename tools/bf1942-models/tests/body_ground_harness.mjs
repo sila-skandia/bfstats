@@ -590,4 +590,19 @@ function buriedLift(secondMobile) {
 }
 out.staticPart = { staticPlate: buriedLift(false), mobilePlate: buriedLift(true) };
 
+// --- a ship's deck under way (`deck-carry.js`) -------------------------------
+// The terrain a parked body meets on a ship's deck (`hull-bodies.js`
+// `withShipDecks`) hands its contacts the deck's point speed: the contact's
+// speed is the body's `getTangentSpeed` less the deck's (`checkObjectVsObject`
+// 0x08259690), so the empty wheels' ContactGrip latch holds it to the deck.
+// A flat deck at a steady 6 m/s along +x, the body set down at rest on it.
+function onMovingDeck(deckSpeed, withSpeed) {
+  const terrain = { ...makeFlatTerrain() };
+  if (withSpeed) terrain.surfaceVelocity = (x, y, z, vy, o) => { o[0] = deckSpeed; o[1] = 0; o[2] = 0; return true; };
+  const v = buildVehicle({ position: [0, 0.05 - REST_Y, 0] });
+  for (let t = 0; t < 120; t++) tickOnce(v.vehicle, v.body, terrain, handlers);
+  return { vx: +v.body.v[0].toFixed(3), vz: +v.body.v[2].toFixed(3), sleeping: v.body.sleeping };
+}
+out.movingDeck = { carried: onMovingDeck(6, true), still: onMovingDeck(6, false) };
+
 process.stdout.write(JSON.stringify(out));

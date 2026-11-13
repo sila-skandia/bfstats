@@ -115,6 +115,25 @@ class StanceTransitionTests(unittest.TestCase):
         self.assertAlmostEqual(1 / 0.47, at(log, "upper", "lie.upper")
                                - at(log, "upper", "Ub_StandReload"), delta=2 / 60)
 
+    def test_a_crouch_after_a_bolt_rifles_shot_keeps_the_bolt(self) -> None:
+        # BODY-2: `handlePlayerInput` sets the torso's transition only while
+        # the weapon's vt+0x120 (`HandFireArms::isReadyToUse` 0x08293e40,
+        # vtable 0x087318c8 + 0x120) answers true, and `FireArms::isReadyToUse`
+        # 0x0828f510 answers false while the fire timer runs.
+        log = self.results["boltThroughCrouch"]
+        self.assertEqual(["stand.lower", "Lb_StandToCrouch", "crouch.lower"],
+                         entered(log, "lower"))
+        self.assertEqual(["stand.upper", "Ub_Fire", "Ub_StandReload", "crouch.upper"],
+                         entered(log, "upper"))
+        # The fire runs its whole second and the bolt its 1/0.52 s.
+        self.assertAlmostEqual(1.0, at(log, "upper", "Ub_StandReload")
+                               - at(log, "upper", "Ub_Fire"), delta=2 / 60)
+
+    def test_a_crouch_the_gate_lets_through_cuts_the_fire(self) -> None:
+        upper = entered(self.results["boltCutByCrouch"], "upper")
+        self.assertEqual(["stand.upper", "Ub_Fire"], upper[:2])
+        self.assertNotIn("Ub_StandReload", upper)
+
     def test_a_prone_reload_is_the_prone_clip(self) -> None:
         self.assertEqual(["lie.upper", "Ub_LieReload", "lie.upper"],
                          entered(self.results["proneReload"], "upper"))

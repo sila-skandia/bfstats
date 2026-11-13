@@ -14,7 +14,7 @@
  * `audioBufferCache`, `audioListener`, `audioLoader`, `bust`,
  * `ensureAudioContext`, `extras`, `flags`, `gridRef`, `hudPaths`,
  * `localAlive`, `localName`, `localPosition`, `localTeam`, `MAPS_BASE`,
- * `masterVolume`, `radioIconType`, `roomJoined`, `roomSendChat`, `roomSendRadio`, `sprite`,
+ * `masterVolume`, `radioIconType`, `botsHearRadio`, `roomJoined`, `roomSendChat`, `roomSendRadio`, `sprite`,
  * `teamNation`.
  */
 
@@ -27,12 +27,15 @@ import {
 import {
   ChatLog, SECTION_CHAT, SECTION_INFO, SECTION_KILL, deathLines, captureLine,
   allPointsLine, rowGeometry, dividerGeometry, lineColor, playerChatLine,
+  vehicleLine, joinLine, botTierLine, CrewWatch, IgnoreList, cutSayText,
 } from './chat-log.js';
+import { decodePlayerName } from './vehicle-players.js';
 import { ChatInput, CHAT_BOX, promptText } from './chat-input.js';
 import { GameplayAnnouncer, gamePlayMode, heartbeatUrls } from './announcer.js';
 import { standDs3dPanner } from './ds3d-pan.js';
 import { SOLDIER_ORIGIN_UP } from './nametags.js';
 import { callOf, callSprite, createSupportCalls, expireCalls, hearCall } from './support-calls.js';
+import { mapFlash } from './map-flash.js';
 
 const VIRTUAL_W = 800;
 const VIRTUAL_H = 600;
@@ -213,6 +216,10 @@ export function createComms(page) {
     };
     receive(message, speaker);
     page.roomSendRadio?.(message, isTeamMessage(message));
+    // The server also hands it to its AI (`GameServer::radioMessage`
+    // 0x0813a120 -> `AIRadio::sendMessage`, bot-radio.js): the page's own
+    // bots when it is the server (single player, Instant Battle).
+    page.botsHearRadio?.(message, speaker.team, at, isTeamMessage(message));
   }
   comms.send = send;
 
@@ -263,6 +270,9 @@ export function createComms(page) {
     // shout). So the spawn screen hears no radio. A replay's listener is the
     // recording's player, whose feed carries only what he got.
     if (!listener && page.localAlive && !page.localAlive()) return;
+    // Then the ignore list (`isInIgnoreList` 0x006a8db0, RADIO-7): a muted
+    // speaker's message writes no line and plays no voice.
+    if (!listener && !speaker.local && ignored.has(speaker.id)) return;
     const listenerTeam = listener ? listener.team ?? 0 : page.localTeam?.() ?? 0;
     // A teammate's "Medic!" or "Need repairs!" marks him for the local medic
     // or engineer (`support-calls.js`, HUD-25). A replay's listener is not
@@ -272,6 +282,11 @@ export function createComms(page) {
                                localOnFoot: !!page.localOnFoot?.(), localKit: page.localKit?.() ?? null,
                                now: performance.now() / 1000 });
     }
+    // Any speaker but the local player goes on the minimap's flash list for
+    // `Game.setRadioFlashTime` blinks (`Radio::outputRadioMessage` ->
+    // `MenuMapNode::addPlayerToFlashList`, `map-flash.js`). A replay's
+    // listener is not this page's player, and a rebuilt log blinks nobody.
+    if (!listener && !speaker.local && speaker.key != null) mapFlash.add(speaker.key);
     const team = msg.kind === 'team';
     let defend = false;
     let pointName = null;
@@ -291,11 +306,16 @@ export function createComms(page) {
         pointName,
         defend,
       });
-      if (text) chat.add(SECTION_CHAT, { text, team: speaker.team, buddy: isBuddy(speaker) });
+      // `chat.ignoreRadioText` hides the line (0x006a7c20, RADIO-7).
+      if (text && !(radioMute.text && !listener)) {
+        chat.add(SECTION_CHAT, { text, team: speaker.team, buddy: isBuddy(speaker) });
+      }
     }
     dirty = true;
     const patch = radioPatch(id, defend);
     if (!patch || listener?.silent) return;
+    // `chat.ignoreRadioAudio` mutes the voice (0x006a7c30).
+    if (radioMute.audio && !listener) return;
     if (patch.script === 'radio') {
       playVoice('radio', patch.patch, voiceOf(listenerTeam), null);
     } else {
@@ -307,6 +327,13 @@ export function createComms(page) {
       }
       playVoice('local', patch.patch, voiceOf(speaker.team),
         speaker.local ? null : speaker.position);
+      // The voice, then the hand sign on the speaker's soldier (RADIO-3,
+      // client `0x004feb20`; `hand-sign.js`). The page finds their body, and
+      // plays nothing for one in a seat.
+      if (msg.sign) page.handSign?.(speaker, msg.sign, !!listener);
+      // And their mouth: `speakLine` is handed the line's lip-sync symbols
+      // with the sign, sign or no sign (`soldier-face.js`).
+      page.lipSync?.(speaker, id, !!listener);
     }
   }
   comms.receive = receive;
@@ -529,7 +556,19 @@ export function createComms(page) {
    *  (`BfMap+0x13C`, 0x00468680); the engine has no special case for the
    *  reader himself, so his own lines take his team's colour. The viewer has
    *  no buddy list yet, so this is the hook one would answer through. */
-  const isBuddy = player => !!(player && page.isBuddy?.(player));
+  const isBuddy = player => !!(player && (page.isBuddy?.(player)
+    || (player.id != null && !player.local && buddies.has(player.id))));
+
+  /** The local player's ignore list (`chat.addToIgnoreList`, the alias
+   *  `ignore`) and buddy list (`game.addPlayerToBuddyList`, `buddy`), each by
+   *  the id the server knows a player by, and the two radio switches
+   *  (`chat.ignoreRadioText` / `ignoreRadioAudio`, `BfMenu+0x5cc` / `+0x5cd`
+   *  on the Mac build). All four last as long as the page. */
+  const ignored = new IgnoreList();
+  const buddies = new Set();
+  const radioMute = { text: false, audio: false };
+  /** For the console words (console-commands.js `social`). */
+  comms.social = { ignored, buddies, radioMute };
 
   /**
    * A soldier died. `victim` and `killer` are `{ id, name, team, local,
@@ -618,6 +657,111 @@ export function createComms(page) {
     dirty = true;
   };
 
+  /** The chat beep: `GamePlay.ssc` patch 5 (`radiomess`, the manifest's
+   *  `crackle`), flat 2D, once for every player chat line and never for a
+   *  radio line (RADIO-12: 0x006a5550 from `addPlayerChatMessage`). The file
+   *  is language-free, `voices/radiomess.mp3` beside the nations' folders. */
+  async function playCrackle() {
+    const stem = sounds?.crackle;
+    if (!stem || page.AUDIO_OFF || page.masterVolume() <= 0) return false;
+    page.ensureAudioContext();
+    const listener = page.audioListener;
+    if (!listener || listener.context.state === 'suspended') return false;
+    const shared = sharedDir();
+    let buffer = await voiceBuffer(`${shared}/voices/${stem}.mp3`);
+    if (!buffer && shared !== 'maps/_shared') buffer = await voiceBuffer(`maps/_shared/voices/${stem}.mp3`);
+    if (!buffer) return false;
+    playBuffer(listener, buffer, sounds.gameplay?.[5] ?? {}, null);
+    return true;
+  }
+  comms.playCrackle = playCrackle;
+  /** How many chat beeps have been asked for (a headless check's read). */
+  comms.crackles = 0;
+
+  /**
+   * A player's typed line arriving, the local player's own included
+   * (`BfMenu::outputChatMessage`): nothing for a sender on the ignore list
+   * (`isInIgnoreList` 0x006a8db0), else the beep and the line, `name: text`
+   * or `name [axis]: text` for team chat, in the sender's side's colour and
+   * green for a buddy. `sender` is `{ id, name, team, local }`.
+   */
+  comms.playerChat = (sender, text, { teamOnly = false } = {}) => {
+    if (!sender.local && ignored.has(sender.id)) return false;
+    comms.crackles += 1;
+    playCrackle();
+    chat.add(SECTION_CHAT, {
+      text: playerChatLine(decodePlayerName(sender.name ?? ''), text,
+        { teamOnly, team: sender.team, strings: chatLayout?.strings }),
+      team: sender.team ?? 0, buddy: isBuddy(sender),
+    });
+    dirty = true;
+    return true;
+  };
+
+  /** A player took a side (`chat-log.js` `joinLine`, client event 0x36):
+   *  game information, in that side's colour under its flag. */
+  comms.onTeam = (player, team) => {
+    const text = joinLine(decodePlayerName(player?.name ?? ''), team, strings());
+    if (!text) return;
+    chat.add(SECTION_INFO, { text, team });
+    dirty = true;
+  };
+
+  /** The host is told when the room runs fewer bots than their settings allow
+   *  (`chat-log.js` `botTierLine`): game information, no side. */
+  comms.onBotTier = (tier, top) => {
+    const text = botTierLine(tier, top);
+    if (!text) return;
+    chat.add(SECTION_INFO, { text, team: 0 });
+    dirty = true;
+  };
+
+  /** Single player's own side, as the page's server sets it
+   *  (`GameServer::setTeam` on a listen server prints the same line,
+   *  0x00487ec8): `page.joinedSide()` is the local player's side once they
+   *  have one, 0 before and wherever a server or a recording owns the line.
+   *  The bots take theirs through `BFPlayer::setTeam` alone
+   *  (`AIPlayer::setSide`, `createPlayer` 0x08131201), which prints nothing. */
+  let ownSide = 0;
+  function watchOwnSide() {
+    const side = page.joinedSide?.() ?? 0;
+    if (side === ownSide) return;
+    ownSide = side;
+    if (side === 1 || side === 2) comms.onTeam({ name: page.localName?.() ?? 'Player' }, side);
+  }
+
+  /** Who else sits in the local player's hull, once a frame while seated
+   *  (`vehicle-hud.js` `crewBySeat`: `[{ id, name } | null]` by seat, the
+   *  local player's own entry `id: 'local'`): anyone new prints `entered
+   *  your vehicle`, anyone gone `left your vehicle` (`chat-log.js`
+   *  `vehicleLine`). A frame with no call is the local player out of every
+   *  hull, and the next hull starts clean. */
+  const crewWatch = new CrewWatch();
+  const crewNames = new Map();
+  let crewSeen = false;
+  let crewHull = null;
+  let crewIds = [];
+  comms.observeCrew = (hull, crew = []) => {
+    crewSeen = true;
+    // The same hull and the same seats as the frame before, which is nearly
+    // every frame: one pass of compares, nothing allocated.
+    if (hull === crewHull && crew.length === crewIds.length
+        && crew.every((c, i) => (c?.id ?? null) === crewIds[i])) return;
+    crewHull = hull;
+    crewIds = crew.map(c => c?.id ?? null);
+    const others = crew.filter(c => c && c.id !== 'local');
+    const { entered, left } = crewWatch.observe(hull, others.map(c => c.id));
+    for (const id of left) {
+      chat.add(SECTION_INFO, { text: vehicleLine(decodePlayerName(crewNames.get(id) ?? ''), false, strings()), team: 0 });
+    }
+    crewNames.clear();
+    for (const c of others) crewNames.set(c.id, c.name ?? '');
+    for (const id of entered) {
+      chat.add(SECTION_INFO, { text: vehicleLine(decodePlayerName(crewNames.get(id) ?? ''), true, strings()), team: 0 });
+    }
+    if (entered.length || left.length) dirty = true;
+  };
+
   // --- the typed line (K / L) -------------------------------------------------
 
   /** Enter on a non-empty line. In a room the room sends it (the UDP
@@ -628,10 +772,12 @@ export function createComms(page) {
   function sayLine(line, team) {
     if (page.roomSendChat?.(line, team)) return;
     if (!line.trim()) return;
-    const side = page.localTeam?.() ?? 0;
-    comms.chatLine(playerChatLine(page.localName?.() ?? 'Player', line,
-      { teamOnly: !!team, team: side, strings: chatLayout?.strings }), side);
+    comms.playerChat({ name: page.localName?.() ?? 'Player', team: page.localTeam?.() ?? 0, local: true },
+      cutSayText(line), { teamOnly: !!team });
   }
+  /** `game.sayAll <text>` (the aliases `say` and `speak`): the typed line's
+   *  own path, to everyone. */
+  comms.sayAll = text => sayLine(String(text ?? ''), false);
 
   /** K (`c_PISayAll`, false) or L (`c_PISayTeam`, true). */
   comms.sayOpen = (team = false) => {
@@ -675,6 +821,15 @@ export function createComms(page) {
 
   comms.tick = dt => {
     chat.tick(dt);
+    // Single player's own side, and the crew watch's reset on a frame
+    // nobody fed it.
+    watchOwnSide();
+    if (!crewSeen && crewHull !== null) {
+      crewWatch.observe(null);
+      crewHull = null;
+      crewIds = [];
+    }
+    crewSeen = false;
     if (say.tick(dt)) dirty = true;
     spam.tick(dt);
     // The open page's own timeout node: it runs while a page is open and
@@ -713,33 +868,46 @@ export function createComms(page) {
     return c;
   }
 
+  /** The face's glyph rows at the display width's metrics (`bitmap-text.js`
+   *  `glyphTable`, ledger FONT-3), handed in by the page; the file's own in
+   *  a harness. */
+  const glyphRows = () => page.glyphTable?.(font) ?? font.meta.glyphs;
+  /** FONT-5's device-pixel snap, for the list and the text field. */
+  const snapPx = v => page.snapToPixel?.(v) ?? v;
+
   function measure(text) {
     let w = 0;
+    const table = glyphRows();
     for (const ch of text) {
-      const g = font.meta.glyphs[ch.charCodeAt(0)];
+      const g = table[ch.charCodeAt(0)];
       if (g) w += g[0] + g[1] + g[2];
     }
     return w;
   }
 
-  /** Glyphs on a baseline, in one colour. */
-  function glyphs(ctx, text, x, baseline, rgb) {
+  /** Glyphs on a baseline, in one colour. `snap` puts each on a device
+   *  pixel, as the client's list (the message log) and its text field (the
+   *  open chat line) do; its other text draws do not. */
+  function glyphs(ctx, text, x, baseline, rgb, snap = false) {
     const sheet = atlas(rgb);
+    const table = glyphRows();
     let pen = x;
     for (const ch of text) {
-      const g = font.meta.glyphs[ch.charCodeAt(0)];
+      const g = table[ch.charCodeAt(0)];
       if (!g) continue;
-      const [left, width, right, ascent, x0, y0, x1, y1] = g;
+      const [left, width, right, ascent, x0, y0, x1, y1, drawW = x1 - x0, drawH = y1 - y0] = g;
       if (ch !== ' ' && width > 0 && y1 > y0) {
-        ctx.drawImage(sheet, x0, y0, x1 - x0, y1 - y0, pen + left, baseline - ascent, x1 - x0, y1 - y0);
+        const gx = pen + left, gy = baseline - ascent;
+        ctx.drawImage(sheet, x0, y0, x1 - x0, y1 - y0,
+                      snap ? snapPx(gx) : gx, snap ? snapPx(gy) : gy, drawW, drawH);
       }
       pen += left + width + right;
     }
   }
 
-  function text(ctx, str, x, baseline, rgb, outline) {
-    if (outline) for (const [dx, dy] of OUTLINE) glyphs(ctx, str, x + dx, baseline + dy, [0, 0, 0]);
-    glyphs(ctx, str, x, baseline, rgb);
+  function text(ctx, str, x, baseline, rgb, outline, snap = false) {
+    if (outline) for (const [dx, dy] of OUTLINE) glyphs(ctx, str, x + dx, baseline + dy, [0, 0, 0], snap);
+    glyphs(ctx, str, x, baseline, rgb, snap);
   }
 
   /** A line in the log's face for another painter of the same 800 x 600
@@ -793,7 +961,7 @@ export function createComms(page) {
         const flag = key ? page.sprite?.(key) : null;
         if (flag) ctx.drawImage(flag, ...g.flag);
       }
-      if (font) text(ctx, row.text, g.textX, g.baseline, lineColor(chatLayout, row), true);
+      if (font) text(ctx, row.text, g.textX, g.baseline, lineColor(chatLayout, row), true, true);
     }
     if (centre && font) {
       const [x, y, w] = chatLayout.killMessage.rect;
@@ -808,10 +976,10 @@ export function createComms(page) {
     if (!say.isOpen || !font) return;
     const rgb = CHAT_BOX.color;
     const [px, py] = CHAT_BOX.prompt;
-    text(ctx, promptText(say.team, chatLayout?.names), px, py + font.meta.baseline, rgb, true);
+    text(ctx, promptText(say.team, chatLayout?.names), px, py + font.meta.baseline, rgb, true, true);
     const [ex, ey] = CHAT_BOX.edit;
     const baseline = ey + font.meta.baseline;
-    text(ctx, say.text, ex, baseline, rgb, true);
+    text(ctx, say.text, ex, baseline, rgb, true, true);
     if (say.caretShown()) {
       const cx = ex + measure(say.text.slice(0, say.cursor));
       ctx.fillStyle = `rgb(${rgb.map(v => Math.round(v * 255)).join(',')})`;
@@ -826,7 +994,12 @@ export function createComms(page) {
     // puts the chat and the kill lines after it); the F-key strip is
     // menu/RadioMenu's, whose order against the spawn screen is not read, so
     // it stays off there, as it was when the whole canvas sat underneath.
-    const radioUp = radioShown && !page.deployActive?.();
+    // Nor is it up while the player is not alive: `BfMenu::updateHud` (Mac
+    // client) hides the HudManager's Radio (`+0x2c`, vt+0x18 `Radio::hide`
+    // 0x0043b0dc) with the Soldier, Vehicle and Weapon groups whenever
+    // `BFPlayer+0x89` is clear, and shows it (vt+0x14 `show` 0x0043b0d0) only
+    // in the living branch. Dead, the top centre is the TIME TO SPAWN plate's.
+    const radioUp = radioShown && !page.deployActive?.() && (page.localAlive?.() ?? true);
     const sig = `${chat.version}|${radio.category}|${stageW}x${stageH}@${dpr}|${centre?.text ?? ''}|${icons.size}|${!!font}`
       + `|${page.radioIconType?.() ?? 0}|${radioPoints().map(f => f.team).join('')}|${radioUp}`
       + `|${say.version}|${say.caretShown()}`;
@@ -857,6 +1030,8 @@ export function createComms(page) {
     centre: centre?.text ?? null,
     say: say.state(),
     ready: !!(radioLayout && chatLayout && font),
+    // How many chat beeps have been asked for (RADIO-12's patch 5).
+    crackles: comms.crackles,
   });
 
   return comms;

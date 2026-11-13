@@ -1,0 +1,82 @@
+{
+ "level": "gc_anchorhead",
+ "verdict": "fail",
+ "outcome": "no-better-than-nothing",
+ "config": "with vehicles",
+ "doctrine": "garrison",
+ "generatorVersion": 6,
+ "inputs": {
+  "controlPoints": "9c9d9230fb206fd1597a6c1c2ad6bc8abdb84d9f5cc32d466b1a4ccafb6662ec",
+  "infantryMap": "ff306dcf81a0adb266a999ba23f4f0b33029436e30de4b583b64f14a748a4125",
+  "template": "43f8a790471528016570235f76e97dbb2045732458781a5139f37fed68bf98c0"
+ },
+ "baseline": "DICE layers with vehicles, garrison doctrine: berlin, stalingrad, kharkov, bocage; seeds 1..10, 600 s",
+ "bar": {
+  "against": "dice",
+  "why": "no bar of gcmod's own: DICE's"
+ },
+ "seeds": 1,
+ "sizes": {
+  "8": {
+   "verdict": "fail",
+   "failed": [
+    "stuckSecondsPerBotMinute",
+    "selfDeathsPerBotMinute",
+    "routeFailuresPerBotMinute",
+    "redeploysPerBotMinute",
+    "enemyKillsPerBotMinute",
+    "stuckSecondsPerBotMinuteWorseSide",
+    "routeFailuresPerBotMinuteWorseSide",
+    "redeploysPerBotMinuteWorseSide",
+    "nonEnemyDeathShareWorseSide",
+    "unitsNeverUsedShare"
+   ],
+   "winners": [
+    0,
+    1,
+    0
+   ]
+  },
+  "16": {
+   "verdict": "fail",
+   "failed": [
+    "selfDeathsPerBotMinute",
+    "routeFailuresPerBotMinute",
+    "enemyKillsPerBotMinute",
+    "routeFailuresPerBotMinuteWorseSide",
+    "nonEnemyDeathShareWorseSide"
+   ],
+   "winners": [
+    0,
+    1,
+    0
+   ]
+  }
+ },
+ "oneSided": null,
+ "unreachable": [],
+ "lintErrors": [],
+ "accepted": {
+  "reason": "Owner's rollout, 2026-11-12: the owner imported Galactic Conquest and asked for bots on it (\"I'm sure we can add something to it\"). Screened in the runner at 8 and 16 a side under the garrison; the checks it fails are listed with this verdict, and a match on the page decides whether it keeps its menu flag.",
+  "date": "2026-11-12",
+  "outcome": "no-better-than-nothing",
+  "failed": [
+   "8:stuckSecondsPerBotMinute",
+   "8:selfDeathsPerBotMinute",
+   "8:routeFailuresPerBotMinute",
+   "8:redeploysPerBotMinute",
+   "8:enemyKillsPerBotMinute",
+   "8:stuckSecondsPerBotMinuteWorseSide",
+   "8:routeFailuresPerBotMinuteWorseSide",
+   "8:redeploysPerBotMinuteWorseSide",
+   "8:nonEnemyDeathShareWorseSide",
+   "8:unitsNeverUsedShare",
+   "16:selfDeathsPerBotMinute",
+   "16:routeFailuresPerBotMinute",
+   "16:enemyKillsPerBotMinute",
+   "16:routeFailuresPerBotMinuteWorseSide",
+   "16:nonEnemyDeathShareWorseSide"
+  ],
+  "by": "owner"
+ }
+}

@@ -1,0 +1,66 @@
+{
+ "level": "gc_mini_dant",
+ "verdict": "fail",
+ "outcome": "no-fight",
+ "config": "with vehicles",
+ "doctrine": "garrison",
+ "generatorVersion": 6,
+ "inputs": {
+  "controlPoints": "d257c439ff0c876f44dbd56d9e9fd601122947061c21590f87bca4bec9aed4b7",
+  "infantryMap": "efd30994245e9a4eb94889cd5f265df114359f8c0ef1f4f220a2a3e39a27ad22",
+  "template": "bdc0e455f47f91b7e7724e71d7c0c196e839b36946ac3abb7663d725944081e5"
+ },
+ "baseline": "DICE layers with vehicles, garrison doctrine: berlin, stalingrad, kharkov, bocage; seeds 1..10, 600 s",
+ "bar": {
+  "against": "dice",
+  "why": "no bar of gcmod's own: DICE's"
+ },
+ "seeds": 1,
+ "sizes": {
+  "8": {
+   "verdict": "fail",
+   "failed": [
+    "stuckSecondsPerBotMinute",
+    "redeploysPerBotMinute",
+    "enemyKillsPerBotMinute",
+    "bothSidesKill",
+    "ticketsBleed",
+    "stuckSecondsPerBotMinuteWorseSide",
+    "routeFailuresPerBotMinuteWorseSide",
+    "redeploysPerBotMinuteWorseSide",
+    "nonEnemyDeathShareWorseSide"
+   ],
+   "winners": [
+    0,
+    0,
+    1
+   ]
+  },
+  "16": {
+   "verdict": "fail",
+   "failed": [
+    "stuckSecondsPerBotMinute",
+    "redeploysPerBotMinute",
+    "enemyKillsPerBotMinute",
+    "bothSidesKill",
+    "ticketsBleed",
+    "stuckSecondsPerBotMinuteWorseSide",
+    "redeploysPerBotMinuteWorseSide",
+    "nonEnemyDeathShareWorseSide"
+   ],
+   "winners": [
+    0,
+    1,
+    0
+   ]
+  }
+ },
+ "oneSided": null,
+ "unreachable": [],
+ "lintErrors": [],
+ "acceptanceWithdrawn": {
+  "because": "on the bot code of 3b1ebe45c, two page matches of 600 s with 16 bots, both under the rollout floor: 0.019 and 0.006 enemy kills a bot-minute with 16 and 15 captures; the bots trade flags and hardly fight",
+  "date": "2026-11-13",
+  "was": "Owner's rollout, 2026-11-12: the owner imported Galactic Conquest and asked for "
+ }
+}

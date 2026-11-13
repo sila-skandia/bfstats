@@ -367,6 +367,15 @@ export function roundTimeToLive(timeToLive, damage, hasPointPhysics = null,
     ? authored : Math.min(authored, FLIGHT_TTL_CEILING);
 }
 
+/** A material's record, or material 0's for an id the table does not define
+ *  (`MaterialManager::getDamageMod`'s retry, ledger DMG-1; `crash-damage.js`
+ *  `lookupMaterial` is the same rule for a direct hit). Undefined for no id
+ *  or no table. */
+function materialRow(materials, id) {
+  if (!materials || !Number.isFinite(id)) return undefined;
+  return materials[id] ?? materials[String(id)] ?? materials[0] ?? materials['0'];
+}
+
 /**
  * Splash HP: `materialDamage(att2) * damageMod(att2, splashMaterial) * (1 - d/radius)`.
  * Same formula as `bf42/damage.py` `splash_damage`. Returns 0 when the tables
@@ -397,17 +406,26 @@ export function roundTimeToLive(timeToLive, damage, hasPointPhysics = null,
  * folded in, so the gap is visible in the one place it is wrong.
  */
 export function splashDamage(material2, splashMaterial, distance, radius,
-                             materials, modifiers, exposure = 1) {
+                             materials, modifiers, exposure = 1, damage = undefined) {
   if (!(radius > 0) || !(distance >= 0) || distance >= radius) return 0;
   if (!(exposure > 0)) return 0;
-  const base = materials?.[material2]?.damage ?? materials?.[String(material2)]?.damage;
+  // `damage` is `handleExplosion`'s own float, when the caller has one: a
+  // destroyed Armor's `explosionDamage` (`Armor::status` pushes `+0x100` at
+  // 0x08173db2), which `handleExplosionOnObject` multiplies in at 0x08156691
+  // in place of a round's material damage.
+  // The MaterialManager's lookups, as a direct hit takes them
+  // (`crash-damage.js` `lookupMaterial`; ledger DMG-1): a material id the
+  // table does not define is read as material 0, for the explosion's
+  // material and the victim's alike (`getDamageMod` 0x08175040 retries
+  // `getMaterialPtr` with id 0 for either side, 0x081750b0 and 0x08175095;
+  // `getDamageForMaterial` 0x08175170 the same). A blast with no material at
+  // all (null: our data names none) stays nothing; that is not material 0.
+  const att = materialRow(materials, material2);
+  const def = materialRow(materials, splashMaterial);
+  const base = Number.isFinite(damage) ? damage : att?.damage;
   if (!(base > 0)) return 0;
-  const attGroup = materials?.[material2]?.attGroup
-    ?? materials?.[String(material2)]?.attGroup
-    ?? material2;
-  const defGroup = materials?.[splashMaterial]?.defGroup
-    ?? materials?.[String(splashMaterial)]?.defGroup
-    ?? splashMaterial;
+  const attGroup = att?.attGroup ?? material2;
+  const defGroup = def?.defGroup ?? splashMaterial;
   const mod = modifiers?.[attGroup]?.[defGroup]
     ?? modifiers?.[String(attGroup)]?.[String(defGroup)]
     ?? modifiers?.[attGroup]?.[String(defGroup)]

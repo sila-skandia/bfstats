@@ -1,0 +1,70 @@
+{
+ "level": "seelow-heights-1945",
+ "verdict": "fail",
+ "outcome": "no-fight",
+ "config": "with vehicles",
+ "doctrine": "garrison",
+ "generatorVersion": 6,
+ "inputs": {
+  "controlPoints": "3a3e5ec68c3b43516c0535341d6bf73992c1e142b9cff4b94f6b090822e8cf32",
+  "infantryMap": "9468467367715b69ca1831c457fa18737c2235690a48630a63bb0f66af9bb6d8",
+  "template": "43f8a790471528016570235f76e97dbb2045732458781a5139f37fed68bf98c0"
+ },
+ "baseline": "DICE layers with vehicles, garrison doctrine: berlin, stalingrad, kharkov, bocage; seeds 1..10, 600 s",
+ "bar": {
+  "against": "dice",
+  "why": "no bar of fhsw's own: DICE's"
+ },
+ "seeds": 1,
+ "sizes": {
+  "8": {
+   "verdict": "fail",
+   "failed": [
+    "idleShare",
+    "capturesTotal",
+    "enemyKillsPerBotMinute",
+    "flagCoverage",
+    "bothSidesCapture",
+    "bothSidesKill",
+    "nonEnemyDeathShareWorseSide",
+    "unitsNeverUsedShare"
+   ],
+   "winners": [
+    1,
+    0,
+    0
+   ]
+  },
+  "16": {
+   "verdict": "fail",
+   "failed": [
+    "idleShare",
+    "routeFailuresPerBotMinute",
+    "capturesTotal",
+    "enemyKillsPerBotMinute",
+    "flagCoverage",
+    "bothSidesCapture",
+    "bothSidesKill",
+    "routeFailuresPerBotMinuteWorseSide",
+    "nonEnemyDeathShareWorseSide",
+    "hullStuckSecondsPerDrivingMinute",
+    "hullStuckSecondsPerDrivingMinuteWorseSide",
+    "unitsNeverUsedShare",
+    "tankSilentShare"
+   ],
+   "winners": [
+    1,
+    0,
+    0
+   ]
+  }
+ },
+ "oneSided": null,
+ "unreachable": [],
+ "lintErrors": [],
+ "acceptanceWithdrawn": {
+  "because": "generator 6 layer on the bot code of 3b1ebe45c, two page matches of 600 s with 16 bots, both under the rollout floor: 0.019 and 0 enemy kills a bot-minute, no capture",
+  "date": "2026-11-13",
+  "was": "Regenerated on generator 6 (2026-11-13) after being turned down on generator 5: "
+ }
+}

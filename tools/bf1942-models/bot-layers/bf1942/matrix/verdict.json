@@ -1,0 +1,57 @@
+{
+ "level": "matrix",
+ "verdict": "fail",
+ "outcome": "no-fight",
+ "config": "with vehicles",
+ "doctrine": "garrison",
+ "generatorVersion": 5,
+ "inputs": {
+  "controlPoints": "d24c3d92c513216f3563a8405fcc8efec34bc25491b93b7a0c453082f498991f",
+  "infantryMap": "2f49c519d38a9a138e92d70f77e94e29dd2b8661623e9f65b430bafc5e849530",
+  "template": "bdc0e455f47f91b7e7724e71d7c0c196e839b36946ac3abb7663d725944081e5"
+ },
+ "baseline": "DICE layers with vehicles, garrison doctrine: berlin, stalingrad, kharkov, bocage; seeds 1..10, 600 s",
+ "bar": {
+  "against": "dice",
+  "why": "a vanilla or community level: DICE's bar"
+ },
+ "seeds": 1,
+ "sizes": {
+  "8": {
+   "verdict": "fail",
+   "failed": [
+    "capturesTotal",
+    "enemyKillsPerBotMinute",
+    "flagCoverage",
+    "bothSidesCapture",
+    "bothSidesKill",
+    "ticketsBleed"
+   ],
+   "winners": [
+    0,
+    0,
+    1
+   ]
+  },
+  "16": {
+   "verdict": "fail",
+   "failed": [
+    "enemyKillsPerBotMinute",
+    "bothSidesCapture"
+   ],
+   "winners": [
+    1,
+    0,
+    0
+   ]
+  }
+ },
+ "oneSided": null,
+ "unreachable": [],
+ "lintErrors": [],
+ "acceptanceWithdrawn": {
+  "because": "on the bot code of 3b1ebe45c, two page matches of 600 s with 16 bots, both under the rollout floor: 0.11 and 0.05 enemy kills a bot-minute, no capture in either",
+  "date": "2026-11-13",
+  "was": "Owner's rollout, 2026-11-12: the owner asked for everything with a fight to go l"
+ }
+}

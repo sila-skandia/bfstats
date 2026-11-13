@@ -1,0 +1,24 @@
+{
+ "level": "the_airport",
+ "verdict": "fail",
+ "outcome": "unsuitable",
+ "config": "with vehicles",
+ "doctrine": "garrison",
+ "generatorVersion": 5,
+ "inputs": {
+  "controlPoints": "3143ed35bac2aa9da4d6d5ad484ee1f38a99bc67669ec96fbe916ee1c08bff2c",
+  "infantryMap": "2f74a7914b64c21cfb6ddc338c5b7c440228342d9b7e1dc6283b64bb86cae222",
+  "template": "bdc0e455f47f91b7e7724e71d7c0c196e839b36946ac3abb7663d725944081e5"
+ },
+ "baseline": "DICE layers with vehicles, garrison doctrine: berlin, stalingrad, kharkov, bocage; seeds 1..10, 600 s",
+ "bar": null,
+ "seeds": 1,
+ "sizes": {},
+ "oneSided": null,
+ "unreachable": [
+  "Rinku_town"
+ ],
+ "lintErrors": [
+  "side 2 has no spawn with a route to any flag it must take: of its 22 spawns 22 have no way on foot to the main ground; the level places 23 ladders, which neither the walk test nor a bot climbs"
+ ]
+}

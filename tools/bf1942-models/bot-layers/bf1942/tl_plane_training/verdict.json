@@ -1,0 +1,66 @@
+{
+ "level": "tl_plane_training",
+ "verdict": "fail",
+ "outcome": "better-than-nothing",
+ "config": "with vehicles",
+ "doctrine": "garrison",
+ "generatorVersion": 6,
+ "inputs": {
+  "controlPoints": "e280eba195002e382cf81252a4a0f728ab6e7eda567a37814670fd5f297e7904",
+  "infantryMap": "5f8e67e27098e4118c3c12e4ae5613e6c729d06f480bb4f75fbf34907c21683a",
+  "template": "bdc0e455f47f91b7e7724e71d7c0c196e839b36946ac3abb7663d725944081e5"
+ },
+ "baseline": "DICE layers with vehicles, garrison doctrine: berlin, stalingrad, kharkov, bocage; seeds 1..10, 600 s",
+ "bar": {
+  "against": "dice",
+  "why": "a vanilla or community level: DICE's bar"
+ },
+ "seeds": 1,
+ "sizes": {
+  "8": {
+   "verdict": "fail",
+   "failed": [
+    "selfDeathsPerBotMinute",
+    "enemyKillsPerBotMinute",
+    "nonEnemyDeathShareWorseSide",
+    "unitsNeverUsedShare"
+   ],
+   "winners": [
+    1,
+    0,
+    0
+   ]
+  },
+  "16": {
+   "verdict": "fail",
+   "failed": [
+    "enemyKillsPerBotMinute",
+    "nonEnemyDeathShareWorseSide",
+    "unitsNeverUsedShare"
+   ],
+   "winners": [
+    0,
+    1,
+    0
+   ]
+  }
+ },
+ "oneSided": null,
+ "unreachable": [],
+ "lintErrors": [],
+ "accepted": {
+  "reason": "Owner's rollout, 2026-11-12: the owner asked for everything with a fight to go live (\"everything can go up if it's ready\"). The lint had refused this level on a wrong reading (features/bot-map-generation/README.md section 22); on generator 6 it lints clean. Screened in the runner at 8 and 16 a side under the garrison; the checks it fails are listed with this verdict, and a match on the page decides whether it keeps its menu flag.",
+  "date": "2026-11-12",
+  "outcome": "better-than-nothing",
+  "failed": [
+   "8:selfDeathsPerBotMinute",
+   "8:enemyKillsPerBotMinute",
+   "8:nonEnemyDeathShareWorseSide",
+   "8:unitsNeverUsedShare",
+   "16:enemyKillsPerBotMinute",
+   "16:nonEnemyDeathShareWorseSide",
+   "16:unitsNeverUsedShare"
+  ],
+  "by": "owner"
+ }
+}

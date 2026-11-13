@@ -30,7 +30,7 @@ VIEWER = ROOT / "viewer"
 FIXTURES = Path(__file__).resolve().parent / "fixtures"
 HARNESS = Path(__file__).resolve().parent / "move_law_harness.mjs"
 MODULES = [
-    "walking-body.js", "rigid-body.js", "soldier-resolve.js", "soldier-pose.js",
+    "walking-body.js", "rigid-body.js", "soldier-resolve.js", "deck-carry.js", "soldier-pose.js",
     "soldier-locomotion.js", "point-body.js", "fixed-step.js", "parachute.js",
     "heightfield.js", "world-collider.js", "collision-materials.js",
     # `Soldier`, for the page-entry case.

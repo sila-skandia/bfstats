@@ -1,0 +1,54 @@
+rem *** Strategic areas: one per control point (botgen) ***
+
+aiStrategicArea.create warehouse1 664.3/561.6 674.3/571.6 300
+aiStrategicArea.addNeighbour warehouse2
+aiStrategicArea.addNeighbour coalitiondroppoint
+aiStrategicArea.addNeighbour oppositionbase
+aiStrategicArea.addObjectTypeFlag Centre
+aiStrategicArea.addObjectTypeFlag StrongPoint
+aiStrategicArea.addObjectTypeFlag Close
+aiStrategicArea.addObjectTypeFlag ControlPoint
+aiStrategicArea.setOrderPosition Tank 674.5/552.5
+aiStrategicArea.setOrderPosition Infantry 673.5/571.5
+aiStrategicArea.setSide 1
+
+aiStrategicArea.create warehouse2 443.4/562.3 453.4/572.3 150
+aiStrategicArea.addNeighbour warehouse1
+aiStrategicArea.addNeighbour coalitiondroppoint
+aiStrategicArea.addNeighbour oppositionbase
+aiStrategicArea.addObjectTypeFlag Flank
+aiStrategicArea.addObjectTypeFlag Close
+aiStrategicArea.addObjectTypeFlag ControlPoint
+aiStrategicArea.setOrderPosition Tank 453.5/592.5
+aiStrategicArea.setOrderPosition Infantry 452.5/572.5
+aiStrategicArea.setSide 1
+
+aiStrategicArea.create cargoship 609.5/629 619.5/639 10
+aiStrategicArea.setSide 1
+aiStrategicArea.setTakeable 1 0
+aiStrategicArea.setTakeable 2 0
+
+aiStrategicArea.create coalitiondroppoint 146.7/539.1 156.7/549.1 150
+aiStrategicArea.addNeighbour warehouse1
+aiStrategicArea.addNeighbour warehouse2
+aiStrategicArea.addNeighbour oppositionbase
+aiStrategicArea.addObjectTypeFlag Flank
+aiStrategicArea.addObjectTypeFlag ControlPoint
+aiStrategicArea.setOrderPosition Tank 156.5/552.5
+aiStrategicArea.setOrderPosition Infantry 157.5/549.5
+
+aiStrategicArea.create coallitionislandbase 376.5/892.1 381.5/897.1 50
+aiStrategicArea.addObjectTypeFlag Base
+aiStrategicArea.setOrderPosition Tank 384.5/897.5
+aiStrategicArea.setSide 2
+aiStrategicArea.setTakeable 1 0
+
+aiStrategicArea.create oppositionbase 819.8/463.4 824.8/468.4 50
+aiStrategicArea.addNeighbour warehouse1
+aiStrategicArea.addNeighbour warehouse2
+aiStrategicArea.addNeighbour coalitiondroppoint
+aiStrategicArea.addObjectTypeFlag Base
+aiStrategicArea.setOrderPosition Tank 826.5/466.5
+aiStrategicArea.setOrderPosition Infantry 825.5/468.5
+aiStrategicArea.setSide 1
+aiStrategicArea.setTakeable 2 0

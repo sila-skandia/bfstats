@@ -1,0 +1,132 @@
+{
+ "generator": "botgen",
+ "version": 6,
+ "mod": "GCMOD",
+ "level": "gc_mini_wayfar",
+ "objectSpawners": 2,
+ "template": "symmetric",
+ "templateSource": "DICE, bf1942 Kharkov (1.6 patch archives): AI/Strategies.con, AI/conditions.con, AI/prerequisites.con, unchanged",
+ "templateChoice": {
+  "name": "symmetric",
+  "inPlay": 4,
+  "rule": "4 capturable flags in play, more than 3"
+ },
+ "scope": "an infantry map painted from the walk test, a Tank0 map from the page painter, infantry order positions, no strategic maps, no co-op layer",
+ "unreachable": [],
+ "unreachableReasons": {},
+ "botSpawnsExcluded": [],
+ "walkMap": {
+  "source": "walk test",
+  "engine": "none",
+  "vehicleMap": "page painter",
+  "vehicleBrush": 1.5,
+  "vehicleBrushes": [
+   {
+    "brush": 3,
+    "flagsOn": 1,
+    "spawnersOn": 0,
+    "pieces": 12,
+    "main": 946801
+   },
+   {
+    "brush": 2.5,
+    "flagsOn": 1,
+    "spawnersOn": 0,
+    "pieces": 11,
+    "main": 952578
+   },
+   {
+    "brush": 2,
+    "flagsOn": 1,
+    "spawnersOn": 0,
+    "pieces": 12,
+    "main": 955642
+   },
+   {
+    "brush": 1.5,
+    "flagsOn": 4,
+    "spawnersOn": 0,
+    "pieces": 7,
+    "main": 962606
+   }
+  ],
+  "opened": [
+   [
+    537,
+    479
+   ]
+  ],
+  "ways": [
+   {
+    "who": "Imperial_Base_Spawn4",
+    "kind": "spawn",
+    "way": "walk",
+    "opened": 1
+   }
+  ],
+  "cover": 0.988,
+  "floors": {
+   "stacked": false,
+   "twoFloorShare": 0,
+   "raised": [],
+   "reason": null
+  }
+ },
+ "routeProbe": {
+  "chokeMax": 4,
+  "unreachable": [],
+  "stops": {},
+  "oneSided": {},
+  "sides": {
+   "1": {
+    "spawns": 4,
+    "flags": [
+     "Bazaar",
+     "Cargo_Hold",
+     "Imperial_Base",
+     "Rebel_Base"
+    ]
+   },
+   "2": {
+    "spawns": 4,
+    "flags": [
+     "Bazaar",
+     "Cargo_Hold",
+     "Imperial_Base",
+     "Rebel_Base"
+    ]
+   }
+  },
+  "chokes": {
+   "Imperial_Base:1": 0,
+   "Imperial_Base:2": 3,
+   "Rebel_Base:1": 1,
+   "Rebel_Base:2": 0,
+   "Bazaar:1": 2,
+   "Bazaar:2": 2,
+   "Cargo_Hold:1": 0,
+   "Cargo_Hold:2": 2
+  },
+  "late": {},
+  "shutLinks": []
+ },
+ "inputs": {
+  "controlPoints": "8d7ece81f59f05657b38465aec0a088ce8ddb597b77b8d606e7efefcc05618b5",
+  "infantryMap": "424e9b5c20597a2e52a60551d97eb61ff5a24f012c82f60a6851233c037fb2ea",
+  "template": "43f8a790471528016570235f76e97dbb2045732458781a5139f37fed68bf98c0"
+ },
+ "files": {
+  "AI.con": "3dc94f663ac7545695a38d3670752432e4a5e64efe048dc4b26d578aece3748c",
+  "AIpathFinding.con": "9d8080cdfa7605961969aa126519b03be9691bd604ac76aef50166d81215edd2",
+  "AI/StrategicAreas.con": "07703fb1acfaecddb885e13310184ef253292e06ca06542a4c71885e25c6dd95",
+  "AI/Strategies.con": "4ce0be59a0d6c5cd530db002fb062c4be8d936bc6ae59bd188803ccaf7869a8d",
+  "AI/conditions.con": "68a0c7a8aec69954063147b60fae560b2874884285737aa085efa76597d395aa",
+  "AI/prerequisites.con": "4c1f313bc285b228fd6ad03bfd1f44c5b15c8703c31f802eb605bc5f00f88bb5",
+  "Pathfinding/Infantry1Level0Map.raw": "314578130fe970bb344363191c6d44057dc9e38a8dc62214cd6032ddfa2940bf",
+  "Pathfinding/Infantry1Level1Map.raw": "cbbf8df83c1353540db80a59c56f68e21bb18bfb920805e7039bf83df77c6354",
+  "Pathfinding/Infantry1Level2Map.raw": "f0f093f309531904bd68c09b06bf845af60ebd8b6be1641aedc2dbd2038624ef",
+  "Pathfinding/Tank0Level0Map.raw": "50c93c24703c2b89de2971b0ab6a6884b20ac4c8fece6f72a0187a6b5de81942",
+  "Pathfinding/Tank0Level1Map.raw": "32ff198857414c8ce407ddbe985b8858135bdf0a8406b1a2b564111c12dd042f",
+  "Pathfinding/Tank0Level2Map.raw": "fc9a9b9d559260884f128bd9773b456a13610946c7092488b2574bfd26e58a2f"
+ }
+}

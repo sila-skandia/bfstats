@@ -70,7 +70,15 @@ export function ownCollisionMeshes(node) {
  */
 export function inertiaGeometryNode(root) {
   const parts = node => node.children.filter(child => child.userData?.templateKind);
-  const hasGeometry = node => Boolean(node?.userData?.geometry) && ownGeometryMeshes(node).length > 0;
+  // A tree with no mesh in it at all is a template's JSON alone (the room
+  // server's `glb-tree.mjs` `loadVehicleTree`: a pad's other-side hull, a
+  // fired missile). There the geometry word is all there is to ask, and the
+  // box is the `.sm` header's (`headerGeometryBox`); requiring a drawn mesh
+  // left such an airframe a 0 x 0 x 0 box and its first tick's turn NaN.
+  let meshless = true;
+  root.traverse?.(node => { if (node.isMesh) meshless = false; });
+  const hasGeometry = node => Boolean(node?.userData?.geometry)
+    && (meshless || ownGeometryMeshes(node).length > 0);
   if (hasGeometry(root)) return root;
   const first = parts(root)[0];
   if (first?.userData?.templateKind === 'LodObject') {

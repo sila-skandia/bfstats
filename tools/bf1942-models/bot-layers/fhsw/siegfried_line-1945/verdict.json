@@ -1,0 +1,25 @@
+{
+ "level": "siegfried_line-1945",
+ "verdict": "fail",
+ "outcome": "unsuitable",
+ "config": "with vehicles",
+ "doctrine": "garrison",
+ "generatorVersion": 5,
+ "inputs": {
+  "controlPoints": "7a71c77d562b844b29dc6ccb9be82f3d1e50e0119e131c1dbbed2b7c5eb198f4",
+  "infantryMap": "be9225039264e685c0670a37308e3fa8c59eba1e48bf11286a70ed7af57e02c0",
+  "template": "bdc0e455f47f91b7e7724e71d7c0c196e839b36946ac3abb7663d725944081e5"
+ },
+ "baseline": "DICE layers with vehicles, garrison doctrine: berlin, stalingrad, kharkov, bocage; seeds 1..10, 600 s",
+ "bar": null,
+ "seeds": 1,
+ "sizes": {},
+ "oneSided": null,
+ "unreachable": [
+  "belgisches_landhaus",
+  "flakturm_ground"
+ ],
+ "lintErrors": [
+  "the play surface is stacked floors (4 of 6 capturable flags stand a storey over or under another walked floor): a one-floor walk map cannot hold it"
+ ]
+}

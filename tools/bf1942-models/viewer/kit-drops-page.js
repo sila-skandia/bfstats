@@ -33,7 +33,7 @@
 // on the pad, in the human's hands (`carried`), and in the drop it ends in.
 
 import * as THREE from 'three';
-import { KitDrops, ammoRowsFromBotMags, pickupAllowed, restingPlace } from './kit-drops.js';
+import { KIT_TIME_TO_LIVE, KitDrops, ammoRowsFromBotMags, pickupAllowed, restingPlace } from './kit-drops.js';
 import { CHARACTER_HEIGHT } from './soldier-pose.js';
 import { wearPagePaint } from './level-skin.js';
 
@@ -43,9 +43,10 @@ const DEG = Math.PI / 180;
  * Built once by the page. `page` hands in what it reads of the rest of the
  * page, as getters (a binding the page reassigns is read live):
  * `bindDynamicShading`, `bust`, `carriedAmmo`, `collider`, `currentKit`,
- * `deployTeamId`, `equipKit`, `groundHeight`, `handWeapon`, `loader`,
+ * `deployTeamId`, `equipKit`, `groundHeight`, `handWeapon`, `kitLife`, `loader`,
  * `LOCAL_PLAYER`, `occupancy`, `optOnFoot`, `optPilot`, `params`,
- * `roomJoined`, `scene`, `soldier`, `soldierDead`, `soldierDress`.
+ * `releaseKitRounds`, `roomJoined`, `scene`, `soldier`, `soldierDead`,
+ * `soldierDress`.
  */
 export function createKitDropsPage(page) {
   const kitDrops = {};
@@ -58,6 +59,29 @@ export function createKitDropsPage(page) {
    *  death on foot, and then the drop's own 30 s) or it is destroyed with him
    *  (a death in a seat, `killPlayer`'s `destroyObject`, KITDROP-1). */
   kitDrops.carried = null;
+  /** The human's kit object while he lives (`page.kitLife`, the token his
+   *  rounds carry), let go of when it lands on the ground (`localDied`). A
+   *  kit still held by a dead man died with him in a seat. */
+  let lifeHeld = null;
+  /** Kit objects with nothing drawn that still own rounds: a room's death on
+   *  foot, where no kit is laid (nothing here is replicated), whose kit is
+   *  destroyed on the same 30 s (`{ life, at }` on `drops.clock`). */
+  const lifeClocks = [];
+
+  /**
+   * A destroyed kit takes its weapons, and with them every round they laid
+   * (mines, explosives packs), out of the world unexploded:
+   * `FireArms::releaseProjectilePool` (lnxded 0x08287ee0) from `~FireArms`
+   * hands its pool to `destroyObject` and never to `detonate` (FA-2). The kit
+   * is destroyed 30 s after a death on foot (`Kit::handleMessage` 0x08296790,
+   * KITDROP-5) and at once after one in a seat (`GameServer::killPlayer`'s
+   * `destroyObject` 0x0814e11e, KITDROP-1). A server recording shows it:
+   * `replay_20260928-133433`'s kit 14434 at 187.46 s, four mines gone
+   * unexploded with it (`replay-props.js`).
+   */
+  function destroyKit(life) {
+    if (life) page.releaseKitRounds?.(life);
+  }
 
   const root = new THREE.Group();
   root.name = 'kit drops';
@@ -221,11 +245,15 @@ export function createKitDropsPage(page) {
 
   /** Lay `kit` down where a soldier at `at` (`{ x, y, z, yaw }`, his feet)
    *  fell or stood, with the rows of ammunition its weapons carry. */
-  function layDown(kit, at, { ammo = [], by = null, team = null, objectId = null } = {}) {
+  function layDown(kit, at, { ammo = [], by = null, team = null, objectId = null, kitLife = null } = {}) {
     if (!kit || !at || !Number.isFinite(at.x) || !Number.isFinite(at.z)) return null;
     const place = restingPlace(at, ground, CHARACTER_HEIGHT);
     const record = drops.drop(place, { kit, ammo, by, team, objectId });
-    if (record) showMesh(record);
+    if (record) {
+      // The kit object, whose weapons own what they laid (`destroyKit`).
+      record.kitLife = kitLife;
+      showMesh(record);
+    }
     return record;
   }
   kitDrops.layDown = layDown;
@@ -273,13 +301,21 @@ export function createKitDropsPage(page) {
    *  stays, with what he left in it. */
   kitDrops.localDied = () => {
     const s = page.soldier;
+    const life = page.kitLife ?? null;
+    lifeHeld = null;
+    // In a room no kit is laid, but it is still destroyed 30 s on.
+    if (page.roomJoined && life) lifeClocks.push({ life, at: drops.clock + KIT_TIME_TO_LIVE });
     if (page.roomJoined || !s) return null;
     const objectId = kitDrops.carried?.objectId ?? null;
     kitDrops.carried = null;
-    return layDown(page.currentKit?.(page.deployTeamId) ?? null,
+    const record = layDown(page.currentKit?.(page.deployTeamId) ?? null,
       { x: s.x, y: s.y, z: s.z, yaw: s.yaw ?? 0 },
       { ammo: page.carriedAmmo?.() ?? [], by: page.LOCAL_PLAYER, team: page.deployTeamId,
-        objectId });
+        objectId, kitLife: life });
+    // No kit to lie there (a level without its loadouts): the kit object
+    // still goes on the same clock.
+    if (!record && life) lifeClocks.push({ life, at: drops.clock + KIT_TIME_TO_LIVE });
+    return record;
   };
 
   // --- the human's key ---------------------------------------------------------
@@ -346,9 +382,11 @@ export function createKitDropsPage(page) {
     if (mine) {
       layDown(mine, { x: s.x, y: s.y, z: s.z, yaw: s.yaw ?? 0 },
         { ammo: page.carriedAmmo?.() ?? [], by: page.LOCAL_PLAYER, team: page.deployTeamId,
-          objectId: kitDrops.carried?.objectId ?? null });
+          objectId: kitDrops.carried?.objectId ?? null, kitLife: page.kitLife ?? null });
     }
-    page.equipKit?.(record.kit, record.ammo, { team: page.deployTeamId });
+    // The kit object itself changes hands, with what its weapons laid.
+    page.equipKit?.(record.kit, record.ammo, { team: page.deployTeamId }, record.kitLife ?? null);
+    lifeHeld = page.kitLife ?? null;
     // The object he now carries is the one he took: a pad's kit keeps its id.
     kitDrops.carried = record.objectId != null ? { objectId: record.objectId, kit: record.kit } : null;
     kitDrops.lastPickupAt = drops.clock;
@@ -360,7 +398,23 @@ export function createKitDropsPage(page) {
   /** `dt` seconds of world time (the page hands in `ticks / 30`): every kit
    *  turns, and those whose 30 s are up go. */
   kitDrops.tick = dt => {
-    for (const gone of drops.tick(dt)) hideMesh(gone);
+    for (const gone of drops.tick(dt)) {
+      hideMesh(gone);
+      destroyKit(gone.kitLife);
+    }
+    for (let i = lifeClocks.length - 1; i >= 0; i--) {
+      if (drops.clock < lifeClocks[i].at) continue;
+      destroyKit(lifeClocks[i].life);
+      lifeClocks.splice(i, 1);
+    }
+    // The kit the human carries: a living soldier holds `page.kitLife`; one
+    // that is dead and never laid it down died in a seat, and the kit went
+    // with him (KITDROP-1).
+    if (page.soldier && !page.soldierDead) lifeHeld = page.kitLife ?? null;
+    else if (page.soldierDead && lifeHeld) {
+      destroyKit(lifeHeld);
+      lifeHeld = null;
+    }
     // The carried kit object is destroyed with a man who died anywhere but on
     // foot (on foot `localDied` has already laid it down and let go of it),
     // and a fresh soldier carries a fresh kit.
@@ -381,6 +435,8 @@ export function createKitDropsPage(page) {
     for (const record of [...drops.drops]) hideMesh(record);
     drops.clear();
     drops.clock = 0;
+    lifeClocks.length = 0;
+    lifeHeld = null;
     kitDrops.lastPickupAt = -Infinity;
     kitDrops.carried = null;
     for (const pending of sources.values()) {

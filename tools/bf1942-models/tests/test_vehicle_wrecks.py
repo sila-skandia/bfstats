@@ -236,7 +236,9 @@ class EndOfRoundTests(unittest.TestCase):
         # The intact and the burning hull are cleared (no wreck); the wreck
         # just goes as a cleared wreck does.
         self.assertEqual([True, True, False], [h["cleared"] for h in self.r["after"]])
-        self.assertEqual([0, 1], self.r["retired"])
+        # Every one's body leaves the world, the wreck's too: a wreck is still a
+        # body until it is cleared (0x0825d0b0, HP-21).
+        self.assertEqual([0, 1, 2], self.r["retired"])
 
     def test_only_a_player_control_object_of_the_level_goes(self) -> None:
         # An armoured SimpleObject stays; so does what a spawn effect stood
@@ -273,6 +275,29 @@ class SeatDeathTests(unittest.TestCase):
     def test_a_living_man_keeps_his_seat(self) -> None:
         self.assertFalse(self.r["alive"]["released"])
         self.assertEqual([], self.r["alive"]["calls"])
+
+
+
+class WreckBodyTests(unittest.TestCase):
+    """A wreck stays a body until it is removed. `ResponsePhysicsManager::update`
+    (lnxded 0x0825d0b0..0x0825d5c0) walks every hull's collidable chain with no
+    test of the destroyed flag `SimpleObject+0xed`, which HP-15 shows stops only
+    player input; HP-19's `timeToLiveAfterDeath` is what takes it out."""
+
+    @classmethod
+    def setUpClass(cls) -> None:
+        cls.r = run_harness()["wreckBody"]
+
+    def test_the_death_parks_the_body_rather_than_retiring_it(self) -> None:
+        self.assertEqual([["park", 5, None]], self.r["atDeath"])
+
+    def test_the_body_leaves_when_the_time_to_live_is_up(self) -> None:
+        self.assertTrue(self.r["removed"])
+        self.assertEqual(1, len(self.r["after"]))
+        kind, owner, age = self.r["after"][0]
+        self.assertEqual(("retire", 5), (kind, owner))
+        # 3 s after the one-tick latch (HP-19).
+        self.assertAlmostEqual(3.0, age, delta=0.1)
 
 
 if __name__ == "__main__":

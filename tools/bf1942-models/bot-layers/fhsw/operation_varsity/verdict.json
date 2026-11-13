@@ -1,0 +1,79 @@
+{
+ "level": "operation_varsity",
+ "verdict": "fail",
+ "outcome": "better-than-nothing",
+ "config": "with vehicles",
+ "doctrine": "garrison",
+ "generatorVersion": 6,
+ "inputs": {
+  "controlPoints": "c79cc28fc548a127d2fe1ba03ee921be35af6ee2f9e5751a960c949ec5902ebd",
+  "infantryMap": "e24bd6a7e1450331dfe14e7832554f41f67f8a9bfa98ef8ea8ada7c33ba22389",
+  "template": "bdc0e455f47f91b7e7724e71d7c0c196e839b36946ac3abb7663d725944081e5"
+ },
+ "baseline": "DICE layers with vehicles, garrison doctrine: berlin, stalingrad, kharkov, bocage; seeds 1..10, 600 s",
+ "bar": {
+  "against": "dice",
+  "why": "no bar of fhsw's own: DICE's"
+ },
+ "seeds": 1,
+ "sizes": {
+  "8": {
+   "verdict": "fail",
+   "failed": [
+    "stuckSecondsPerBotMinute",
+    "idleShare",
+    "routeFailuresPerBotMinute",
+    "redeploysPerBotMinute",
+    "enemyKillsPerBotMinute",
+    "flagCoverage",
+    "bothSidesCapture",
+    "stuckSecondsPerBotMinuteWorseSide",
+    "routeFailuresPerBotMinuteWorseSide",
+    "redeploysPerBotMinuteWorseSide",
+    "nonEnemyDeathShareWorseSide",
+    "hullStuckSecondsPerDrivingMinute",
+    "hullStuckSecondsPerDrivingMinuteWorseSide",
+    "unitsNeverUsedShare"
+   ],
+   "winners": [
+    0,
+    1,
+    0
+   ]
+  },
+  "16": {
+   "verdict": "fail",
+   "failed": [
+    "stuckSecondsPerBotMinute",
+    "idleShare",
+    "routeFailuresPerBotMinute",
+    "redeploysPerBotMinute",
+    "enemyKillsPerBotMinute",
+    "flagCoverage",
+    "bothSidesCapture",
+    "stuckSecondsPerBotMinuteWorseSide",
+    "routeFailuresPerBotMinuteWorseSide",
+    "redeploysPerBotMinuteWorseSide",
+    "nonEnemyDeathShareWorseSide",
+    "hullStuckSecondsPerDrivingMinute",
+    "hullStuckSecondsPerDrivingMinuteWorseSide",
+    "unitsNeverUsedShare"
+   ],
+   "winners": [
+    0,
+    1,
+    0
+   ]
+  }
+ },
+ "oneSided": null,
+ "unreachable": [
+  "stationtemplate"
+ ],
+ "lintErrors": [],
+ "acceptanceWithdrawn": {
+  "because": "generator 6 layer on the bot code of 3b1ebe45c, two page matches of 600 s with 16 bots, both under the rollout floor: 0.006 enemy kills a bot-minute in each, 2 captures each",
+  "date": "2026-11-13",
+  "was": "Regenerated on generator 6 (2026-11-13) after being turned down on generator 5: "
+ }
+}

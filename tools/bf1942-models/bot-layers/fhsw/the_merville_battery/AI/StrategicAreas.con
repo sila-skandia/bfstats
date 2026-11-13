@@ -1,0 +1,57 @@
+rem *** Strategic areas: one per control point (botgen) ***
+
+aiStrategicArea.create allied_home_base 665.5/1930.3 670.5/1935.3 50
+aiStrategicArea.addObjectTypeFlag Base
+aiStrategicArea.setOrderPosition Infantry 669.5/1934.5
+aiStrategicArea.setSide 2
+aiStrategicArea.setTakeable 1 0
+
+aiStrategicArea.create town 1181.9/648.3 1202.9/669.3 200
+aiStrategicArea.addNeighbour battery2
+aiStrategicArea.addNeighbour axis_home_base
+aiStrategicArea.addNeighbour west_village
+aiStrategicArea.addObjectTypeFlag Centre
+aiStrategicArea.addObjectTypeFlag Close
+aiStrategicArea.addObjectTypeFlag ControlPoint
+aiStrategicArea.setOrderPosition Infantry 1201.5/668.5
+aiStrategicArea.setSide 1
+
+aiStrategicArea.create battery2 1161.2/874 1179.2/892 200
+aiStrategicArea.addNeighbour town
+aiStrategicArea.addNeighbour west_village
+aiStrategicArea.addNeighbour east_village
+aiStrategicArea.addObjectTypeFlag Centre
+aiStrategicArea.addObjectTypeFlag ControlPoint
+aiStrategicArea.setOrderPosition Infantry 1178.5/890.5
+aiStrategicArea.setSide 1
+
+aiStrategicArea.create axis_home_base 1138.1/436.3 1151.1/449.3 50
+aiStrategicArea.addNeighbour town
+aiStrategicArea.addNeighbour west_village
+aiStrategicArea.addObjectTypeFlag Base
+aiStrategicArea.setOrderPosition Infantry 1152.5/450.5
+aiStrategicArea.setSide 1
+aiStrategicArea.setTakeable 2 0
+
+aiStrategicArea.create battery1 1215.6/1017.4 1222.6/1024.4 10
+aiStrategicArea.setSide 1
+aiStrategicArea.setTakeable 1 0
+aiStrategicArea.setTakeable 2 0
+
+aiStrategicArea.create west_village 970.6/889.4 988.6/907.4 300
+aiStrategicArea.addNeighbour town
+aiStrategicArea.addNeighbour battery2
+aiStrategicArea.addNeighbour axis_home_base
+aiStrategicArea.addObjectTypeFlag Centre
+aiStrategicArea.addObjectTypeFlag StrongPoint
+aiStrategicArea.addObjectTypeFlag Close
+aiStrategicArea.addObjectTypeFlag ControlPoint
+aiStrategicArea.setOrderPosition Infantry 989.5/906.5
+aiStrategicArea.setSide 1
+
+aiStrategicArea.create east_village 1399.8/1049.4 1419.8/1069.4 150
+aiStrategicArea.addNeighbour battery2
+aiStrategicArea.addObjectTypeFlag Flank
+aiStrategicArea.addObjectTypeFlag ControlPoint
+aiStrategicArea.setOrderPosition Infantry 1420.5/1068.5
+aiStrategicArea.setSide 1

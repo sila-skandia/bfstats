@@ -23,9 +23,12 @@
 
 import * as THREE from 'three';
 import { clone as skeletonClone } from './vendor/utils/SkeletonUtils.js';
+import { rigCapsules } from './rig-capsules.js';
 import { setReplayPropellerIdle } from './replay.js';
 import { surveyVehicle } from './seats.js';
-import { BANDS as FAMILY_BANDS, FAMILY_CLIPS, drawnAimPitch, remoteClipFamily } from './remote-gait.js';
+import { BANDS as FAMILY_BANDS, FAMILY_CLIPS, LIVE_CLIPS, drawnAimPitch, liveFamily, remoteClipFamily } from './remote-gait.js';
+import { HandSignOverlay } from './hand-sign.js';
+import { attachSoldierFace, familyFaceStates } from './soldier-face.js';
 import { findBone } from './pose-compose.js';
 import { noteRest } from './rest-pose.js';
 import { loadFirst } from './pose-bases.js';
@@ -33,7 +36,7 @@ import { DIE_CLIPS, corpseSeconds, deathFamily, resolveDeathFamily } from './sol
 import { createSeatBodies } from './seat-body.js';
 import { createPoseComposer } from './pose-compose.js';
 import { SWIM_CLIPS, switchFamily } from './swim.js';
-import { bundleClips } from './soldier-actions.js';
+import { IdleClock, bundleClips } from './soldier-actions.js';
 import { EXPLOSION_CLIPS } from './knockback.js';
 import { weaponNodeOf } from './soldier-dress.js';
 import { outfitCandidates } from './kit-graft.js';
@@ -86,6 +89,35 @@ export function applyJoints(v, joints) {
     node.quaternion.copy(_jointParent.invert().multiply(_jointWorld));
     node.updateMatrixWorld(true);
   }
+}
+
+/**
+ * The template's own root under a replica's wrapper group: the first node the
+ * exporter stamped a template kind on (the vehicle's root
+ * PlayerControlObject). The seat survey starts here, as the server's does
+ * (`server/glb-tree.mjs` hands back the glb's one scene node), so that seat 0
+ * is the hull's own seat on both sides. The wrapper itself when the glb
+ * carries no stamped node.
+ */
+export function replicaHullRoot(group) {
+  let found = null;
+  group.traverse(obj => { if (!found && obj !== group && obj.userData?.templateKind) found = obj; });
+  return found ?? group;
+}
+
+/**
+ * The hulls the room's other players are seated in, by the rows of their
+ * snapshot: the ones drawn as replicas, and so the ones whose level copy the
+ * page stands down (`net-room.js` `remoteCrewedHulls`). One law for both, so
+ * a hull is never drawn twice or not at all. `own` is the hull the page's own
+ * player sits in, which is never a replica.
+ */
+export function heldHullIds(rows, own = null) {
+  const ids = new Set();
+  for (const p of rows) {
+    if (p?.inVehicle && p.vehicleId && p.vehicleId !== own) ids.add(p.vehicleId);
+  }
+  return ids;
 }
 
 const rad = d => (d * Math.PI) / 180;
@@ -204,7 +236,9 @@ export function createRemoteRenderer(ctx) {
     const swim = manifest.swim ? await gaitBundle(manifest.swim) : [];
     // A blast's flights (`gaits/explosion.gait.glb`, `knockback.js`).
     const explosion = manifest.explosion ? await gaitBundle(manifest.explosion) : [];
-    return [...lower, ...upper, ...die, ...swim, ...explosion];
+    // The hand signs a shout plays (`gaits/handsign.gait.glb`, `hand-sign.js`).
+    const signs = manifest.handsign ? await gaitBundle(manifest.handsign) : [];
+    return [...lower, ...upper, ...die, ...swim, ...explosion, ...signs];
   }
 
   function posePair(soldier, weapon) {
@@ -259,6 +293,8 @@ export function createRemoteRenderer(ctx) {
   function soldierFor(slot, team, kit = null, held = null) {
     let s = soldiers.get(slot);
     if (s && s.team === team && s.kit === kit && s.held === held) return s;
+    // The same man with another item in his hands: the new body draws it.
+    const drew = !!s && s.team === team && s.kit === kit && s.held !== held && !!s.rig;
     if (s) {
       root.remove(s.group);
       dropSeatBody(s);
@@ -266,6 +302,7 @@ export function createRemoteRenderer(ctx) {
       s.dropped = true;
     }
     s = newSoldier(slot, team, kit, held);
+    s.pendingDraw = drew;
     soldiers.set(slot, s);
     return s;
   }
@@ -391,6 +428,34 @@ export function createRemoteRenderer(ctx) {
         if (a) guns[kind][stance] = { action: a, seconds: clip.duration };
       }
     }
+    // A remote's lower state, which the snapshot names (`netcode.js`
+    // `LOWER_WIRE`): the jumps, the backward run, the turn on the spot and
+    // the relaxed stand as families of their own (`remote-gait.js`
+    // `LIVE_CLIPS`).
+    for (const [family, spec] of Object.entries(LIVE_CLIPS)) {
+      const lower = action(spec.lower, gaitClips, !!spec.lowerOnce);
+      const upper = action(spec.upper, gaitClips, !!spec.upperOnce);
+      if (lower && upper) families[family] = [lower, upper];
+    }
+    // The draw of a new item (`Ub_<Pose>RaiseWeapon<W>`) and the torso's
+    // idle fidgets (`Ub_Idle<W>1..3`, `Ub_CrouchIdle<W>1..3`, for the weapons
+    // of the grip the clip lists), one-shots over the torso like a reload.
+    const heldName = String(s.assets?.weapon ?? '').toLowerCase();
+    const oneShot = (name, listed = false) => {
+      const clip = THREE.AnimationClip.findByName(gaitClips, name);
+      if (!clip) return null;
+      const only = clip.userData?.weapons;
+      if (listed && Array.isArray(only) && !only.some(w => String(w).toLowerCase() === heldName)) return null;
+      const a = action(name, gaitClips, true);
+      return a ? { action: a, seconds: clip.duration } : null;
+    };
+    s.rig.draws = { stand: oneShot('Ub_StandRaiseWeapon'), crouch: oneShot('Ub_CrouchRaiseWeapon'),
+                    prone: oneShot('Ub_LieRaiseWeapon') };
+    s.rig.idles = { stand: [1, 2, 3].map(n => oneShot(`Ub_Idle${n}`, true)),
+                    crouch: [1, 2, 3].map(n => oneShot(`Ub_CrouchIdle${n}`, true)) };
+    s.rig.sign = new HandSignOverlay(gaitClips, name => THREE.PropertyBinding.findNode(scene, name));
+    s.relax = new IdleClock();
+    s.fidget = new IdleClock();
     const stillLower = {};
     for (const [family, name] of Object.entries(STILL_LOWER)) {
       const a = action(name, gaitClips);
@@ -470,6 +535,40 @@ export function createRemoteRenderer(ctx) {
     return true;
   }
 
+  /** A torso one-shot that is neither a stab nor the gun's: the draw of a
+   *  new item, an idle fidget. `clip` is `{ action, seconds }`. */
+  function torsoAction(s, clip, kind) {
+    if (!clip || !s.rig || s.seat || !s.want) return false;
+    if (SWIM_CLIPS[s.want] || FLIGHT_FAMILIES.includes(s.want)) return false;
+    if (s.stab) endStab(s);
+    const a = clip.action;
+    a.stopFading();
+    a.paused = false;
+    a.reset();
+    a.setEffectiveWeight(1);
+    a.play();
+    s.stab = { action: a, left: clip.seconds, family: null, kind };
+    holdStab(s);
+    return true;
+  }
+
+  /** `slot` shouted on foot: the hand sign over their left arm
+   *  (`hand-sign.js`, RADIO-3). Nothing in a seat or in the water. */
+  function handSign(slot, sign) {
+    const s = soldiers.get(slot);
+    if (!s?.rig?.sign || s.seat || !s.want || !s.group.visible) return false;
+    if (SWIM_CLIPS[s.want] || FLIGHT_FAMILIES.includes(s.want)) return false;
+    return s.rig.sign.play(sign);
+  }
+
+  /** `slot` shouted on foot: the line's lip-sync symbols on their face
+   *  (`soldier-face.js`), where the animated head is the one drawn. */
+  function lipSync(slot, symbols) {
+    const s = soldiers.get(slot);
+    if (!s?.rig?.face || s.seat || !s.want || !s.group.visible) return false;
+    return s.rig.face.speak(symbols);
+  }
+
   /** His torso under the thrust: the family's upper half out, or a still
    *  stance's whole-body pose swapped for its lower half. */
   function holdStab(s) {
@@ -533,8 +632,13 @@ export function createRemoteRenderer(ctx) {
       // The replica's own seat table, on the replica's fresh nodes: the
       // survey order is the SAME law the server's seatIndex names (root
       // first — seats.js §surveyVehicle), so the snapshot's seatIndex
-      // addresses the replica's seats directly.
-      v.survey = surveyVehicle(group);
+      // addresses the replica's seats directly. Taken from the template's
+      // own root, as the server takes it (`server/glb-tree.mjs`): from the
+      // wrapper it counted the wrapper as seat 0, so a remote driver had no
+      // seat to be drawn in and every other index named the seat before it.
+      v.survey = surveyVehicle(replicaHullRoot(group));
+      // Its doors are there to be found now (`vehicle-entry.js`).
+      ctx.onReplicaReady?.(id);
     });
     return v;
   }
@@ -710,6 +814,8 @@ export function createRemoteRenderer(ctx) {
         s.lastPos[0] = state.x; s.lastPos[1] = state.y; s.lastPos[2] = state.z;
       }
       poseSoldier(s, state, dt);
+      // Their movement sounds, off the family just chosen (`soldier-sound.js`).
+      ctx.soldierSound?.(s, state, dt);
     }
 
     // The bodies of men who have left the game lie on to their own
@@ -769,9 +875,11 @@ export function createRemoteRenderer(ctx) {
     // the server names, driven or parked, and these would be a second copy
     // of each driven one.
     const replicate = ctx.replicateVehicles?.() !== false;
-    if (replicate) for (const slot of client.remoteSlots(nowMs)) {
-      const state = client.remotePlayer(slot, nowMs);
-      if (state?.inVehicle && state.vehicleId && state.vehicleId !== own) driven.add(state.vehicleId);
+    if (replicate) {
+      const rows = client.remoteSlots(nowMs).map(slot => client.remotePlayer(slot, nowMs));
+      // Not a hull the page keeps drawing as its own copy (a ship:
+      // `net-room.js` `shipsHeld`).
+      for (const id of heldHullIds(rows, own)) if (!ctx.pageDrawsHull?.(id)) driven.add(id);
     }
     for (const [id, v] of [...vehicles]) {
       if (!driven.has(id)) {
@@ -1008,10 +1116,22 @@ export function createRemoteRenderer(ctx) {
     // In the water the snapshot's swim state wins (`netcode.js` `SWIM_WIRE`):
     // the authority's `SwimState` already chose the stroke off his throttle.
     // A blast's flight (`netcode.js` `FLIGHT_WIRE`) holds his legs over both.
-    const want = state.flight && rig.families[state.flight] ? state.flight
+    const gait = state.flight && rig.families[state.flight] ? state.flight
       : remoteClipFamily(s.lastSpeed, state,
                          family => !!rig.families[family],
                          state.swim ?? null);
+    // Over the gait, the lower state the authority's own machine was in
+    // (`netcode.js` `LOWER_WIRE`, `remote-gait.js` `liveFamily`): a jump, the
+    // backward run, a turn on the spot, a gait played backwards; and the
+    // relaxed stand once the idle timer has run out (ANIM-6). A record
+    // without one (an older server, a relay) keeps the gait.
+    const wet = !!SWIM_CLIPS[gait] || FLIGHT_FAMILIES.includes(gait);
+    const still = gait === 'stand' && (state.lower == null || state.lower === 'stand');
+    if (!still) { s.relaxed = false; s.relax.step(null, dt); }
+    else if (s.relax.step('stand', dt, 1) >= 0) s.relaxed = true;
+    const live = wet ? { family: gait, reverse: false }
+      : liveFamily(state.lower ?? null, gait, family => !!rig.families[family], !!s.relaxed);
+    const want = live.family;
     if (want !== s.want) {
       const was = s.want;
       s.want = want;
@@ -1024,9 +1144,35 @@ export function createRemoteRenderer(ctx) {
       if (s.stab.left <= 0 || SWIM_CLIPS[want] || FLIGHT_FAMILIES.includes(want)) endStab(s);
       else holdStab(s);
     }
+    // A gait played backwards (`Lb_WalkBackward`: the walk's clip at -0.7).
+    for (const a of rig.families[want] ?? []) {
+      const scale = live.reverse ? -1 : 1;
+      if (a.timeScale !== scale) a.timeScale = scale;
+    }
+    // A body built for a new item draws it, once it has a family to draw over.
+    if (s.pendingDraw) {
+      s.pendingDraw = false;
+      const pose = state.prone ? 'prone' : state.crouch ? 'crouch' : 'stand';
+      torsoAction(s, rig.draws?.[pose], 'draw');
+    }
+    // The torso's idle fidget: the aim's timer, standing or crouched and
+    // still, draws one of three; this grip has a clip for some or none.
+    const fidgetKey = wet || s.stab ? null : gait === 'stand' ? 'stand' : gait === 'crouch' ? 'crouch' : null;
+    const drawn = s.fidget.step(fidgetKey, dt, 3);
+    if (drawn >= 0 && !torsoAction(s, rig.idles?.[fidgetKey]?.[drawn], 'idle')) s.fidget.rearm();
     // `c_AsmHideWeapon`, which every lower swim and explosion state declares.
     if (rig.weaponNode) rig.weaponNode.visible = !SWIM_CLIPS[want] && !FLIGHT_FAMILIES.includes(want);
+    rig.sign?.restore();
     rig.mixer.update(dt);
+    if (wet) rig.sign?.stop();
+    rig.sign?.update(dt);
+    // Their face inside retail's 5 m (`soldier-face.js`), attached on the
+    // body's first frame; null on a page that shares no faces.
+    if (rig.face === undefined) rig.face = attachSoldierFace(rig.scene, s.assets?.soldier, `slot:${s.slot}`);
+    if (rig.face) {
+      const [lower, upper] = familyFaceStates(s.want, s.stab, LIVE_CLIPS[s.want] ?? DIE_CLIPS[s.want]);
+      rig.face.update(dt, lower, upper, s.assets?.weapon);
+    }
     twistTorso(s, state, dt);
   }
 
@@ -1171,11 +1317,30 @@ export function createRemoteRenderer(ctx) {
     return out;
   }
 
+  /** The replicas on the field, for a headless check: each one's seats in the
+   *  order a snapshot's `seatIndex` addresses them, and how many SeatObjects
+   *  each carries (none: a seat that draws nobody, a tank driver's). */
+  function debugVehicles() {
+    return [...vehicles.values()].map(v => ({
+      id: v.id, template: v.template, loaded: v.loaded,
+      seats: v.survey ? [...v.survey.order] : null,
+      seatObjects: v.survey ? v.survey.order.map(id => v.survey.seats.get(id)?.seatObjects.length ?? 0) : null,
+    }));
+  }
+
+  /** The seat a seated remote's last row names on the hull it names, or null. */
+  function seatIdOf(s) {
+    const row = s.lastAlive;
+    if (!row?.seated || row.vehicleId == null) return null;
+    return seatFor(vehicles.get(row.vehicleId) ?? ctx.serverEntity?.(row.vehicleId) ?? null, row.seatIndex)?.id ?? null;
+  }
+
   function debugSoldiers() {
     return [...soldiers.values()].map(s => ({
       slot: s.slot, team: s.team, visible: s.group.visible,
-      // His seat's own body, drawn (`syncSeatBody`).
+      // His seat's own body, drawn (`syncSeatBody`), and the seat he is in.
       seatBody: !!s.seat?.scene?.visible,
+      seatId: seatIdOf(s),
       want: s.want, speed: +(s.lastSpeed ?? 0).toFixed(3),
       bound: s.rig?.families ? Object.keys(s.rig.families) : null,
       // The thrusts his grip has, and the seconds left of one under way.
@@ -1205,10 +1370,39 @@ export function createRemoteRenderer(ctx) {
     return _muzzleV.setFromMatrixPosition((tip ?? node).matrixWorld).clone();
   }
 
+  /**
+   * A remote soldier's hit capsules this frame (`rig-capsules.js`, the
+   * engine's `setSkeletonCollisionBone` table out of `gaits.json`): the body
+   * this page draws for him on foot, or null for one it does not draw (in a
+   * seat, out of scope, his pose pair not loaded yet). What the page's own
+   * hand-weapon round is tested against in a room (`hand-fire.js`), so a
+   * round on his head is priced as the head.
+   */
+  function capsulesOf(slot) {
+    const s = soldiers.get(slot);
+    if (!s?.rig?.scene || !s.group.visible) return null;
+    return rigCapsules(s.rig.scene, s.assets?.soldierBody?.collisionBones ?? null);
+  }
+
   // The template loader, for the server-authority entity seam
   // (`server-entities.js`): one cache, one paint, one shading pass for
   // every copy of a template the page stands, whoever stands it.
-  return { update, reset, root, debugSoldiers, debugBodies, stab, weaponAt, model,
+  /** The replica of room hull `id` once its glb is in, `{ id, root, survey }`
+   *  (`root` the template's own root, whose doors a second player takes), and
+   *  the id of the replica a node is the root of. */
+  function replica(id) {
+    const v = vehicles.get(id);
+    const root = v?.survey?.seats.get(v.survey.order[0])?.node;
+    return root ? { id, root, survey: v.survey } : null;
+  }
+  function replicaIdOf(node) {
+    for (const v of vehicles.values()) {
+      if (v.survey?.seats.get(v.survey.order[0])?.node === node) return v.id;
+    }
+    return null;
+  }
+
+  return { update, reset, root, debugSoldiers, debugVehicles, debugBodies, stab, replica, replicaIdOf, weaponAt, capsulesOf, model, handSign, lipSync,
            fire: slot => gunAction(slot, 'fire'),
            reload: slot => gunAction(slot, 'reload') };
 }

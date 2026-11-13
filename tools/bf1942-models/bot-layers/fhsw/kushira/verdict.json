@@ -1,0 +1,74 @@
+{
+ "level": "kushira",
+ "verdict": "fail",
+ "outcome": "no-fight",
+ "config": "with vehicles",
+ "doctrine": "garrison",
+ "generatorVersion": 5,
+ "inputs": {
+  "controlPoints": "12ea2c44408148b9a0c0bffebda30c88b732442178b9ffa56f2d108469bc5d48",
+  "infantryMap": "d6983572cf5ecd0ae474e3e60f205a748f3eb5054ef69c7346eb2bd32bc10d7e",
+  "template": "43f8a790471528016570235f76e97dbb2045732458781a5139f37fed68bf98c0"
+ },
+ "baseline": "DICE layers with vehicles, garrison doctrine: berlin, stalingrad, kharkov, bocage; seeds 1..10, 600 s",
+ "bar": {
+  "against": "dice",
+  "why": "no bar of fhsw's own: DICE's"
+ },
+ "seeds": 1,
+ "sizes": {
+  "8": {
+   "verdict": "fail",
+   "failed": [
+    "stuckSecondsPerBotMinute",
+    "idleShare",
+    "routeFailuresPerBotMinute",
+    "redeploysPerBotMinute",
+    "capturesTotal",
+    "enemyKillsPerBotMinute",
+    "flagCoverage",
+    "bothSidesCapture",
+    "bothSidesKill",
+    "ticketsBleed",
+    "stuckSecondsPerBotMinuteWorseSide",
+    "routeFailuresPerBotMinuteWorseSide",
+    "redeploysPerBotMinuteWorseSide",
+    "nonEnemyDeathShareWorseSide",
+    "unitsNeverUsedShare"
+   ],
+   "winners": [
+    0,
+    1,
+    0
+   ]
+  },
+  "16": {
+   "verdict": "fail",
+   "failed": [
+    "idleShare",
+    "redeploysPerBotMinute",
+    "enemyKillsPerBotMinute",
+    "flagCoverage",
+    "bothSidesCapture",
+    "redeploysPerBotMinuteWorseSide",
+    "nonEnemyDeathShareWorseSide",
+    "hullStuckSecondsPerDrivingMinute",
+    "hullStuckSecondsPerDrivingMinuteWorseSide",
+    "unitsNeverUsedShare"
+   ],
+   "winners": [
+    0,
+    1,
+    0
+   ]
+  }
+ },
+ "oneSided": null,
+ "unreachable": [],
+ "lintErrors": [],
+ "acceptanceWithdrawn": {
+  "because": "on the bot code of 3b1ebe45c, two page matches of 600 s with 16 bots, both under the rollout floor: 0.044 and 0.006 enemy kills a bot-minute, no capture in either",
+  "date": "2026-11-13",
+  "was": "Owner's rollout, 2026-11-12: the owner asked for everything with a fight to go l"
+ }
+}

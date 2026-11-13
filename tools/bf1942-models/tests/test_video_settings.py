@@ -35,6 +35,7 @@ HARNESS = Path(__file__).resolve().parent / "video_settings_harness.mjs"
 _INSTALLS = [
     Path.home() / ".wine/drive_c/EA Games/Battlefield 1942",
     Path.home() / "Library/Application Support/CrossOver/Bottles/BF1942/drive_c/EA Games/Battlefield 1942",
+    Path.home() / ".cache/vimpact-game",
 ]
 SETTINGS = next((p / "Mods/bf1942/Settings/Default" for p in _INSTALLS
                  if (p / "Mods/bf1942/Settings/Default").is_dir()),
@@ -46,10 +47,11 @@ WORDS = {
     "seteffectsquality": "effectsQuality",
     "setenvironmentmapping": "environmentMapping",
     "setlightmaps": "lightmaps",
+    "setshadows": "shadows",
     "setdetailtexture": "textureQuality",
     "setmenuviewdistance": "viewDistance",
 }
-BOOLS = {"environmentMapping", "lightmaps"}
+BOOLS = {"environmentMapping", "lightmaps", "shadows"}
 
 
 def run_harness() -> dict:
@@ -86,16 +88,35 @@ class VideoSettingsTests(unittest.TestCase):
             with self.subTest(name):
                 self.assertEqual(read_preset(SETTINGS / name), self.results["presets"][level])
 
-    def test_nothing_chosen_is_high_and_the_old_look(self) -> None:
+    def test_nothing_chosen_is_high_with_retails_top_texture_row(self) -> None:
+        # Retail at its highest setting: HIGH's rows, but TEXTURE QUALITY at
+        # 100 % (every mip, LOD bias -1.5, VID-5), not the 80 % HIGH's file
+        # writes. That is not a preset, so VIDEO PERFORMANCE reads CUSTOM.
         r = self.results
-        self.assertEqual(3, r["defaultPerformance"])
+        self.assertEqual(0, r["defaultPerformance"])
         d = r["defaults"]
         self.assertEqual(1, r["graphics"][str(d["graphicsQuality"])]["lodPercent"])
         self.assertEqual(1, r["effects"][str(d["effectsQuality"])])
-        self.assertEqual({"mipSkip": 0, "lodBias": 0}, r["texture"][str(d["textureQuality"])])
+        self.assertEqual(5, d["textureQuality"])
+        self.assertEqual({"mipSkip": 0, "lodBias": -1.5}, r["texture"][str(d["textureQuality"])])
+        high = {k: v for k, v in r["presets"]["3"].items() if k != "textureQuality"}
+        self.assertEqual(high, {k: d[k] for k in high})
         self.assertEqual(100, d["viewDistance"])
         self.assertIsNone(d["displayHeight"])
         self.assertTrue(d["environmentMapping"] and d["lightmaps"])
+        # HIGH's `game.setShadows 1` (VID-7).
+        self.assertTrue(d["shadows"])
+
+    def test_a_choice_kept_before_shadows_was_a_row_keeps_its_preset(self) -> None:
+        # A stored LOW or MEDIUM has no `shadows` field: it reads as the
+        # preset's own line (off), not as CUSTOM; a stored HIGH and any other
+        # mix read the default.
+        k = self.results["shadowsKept"]
+        self.assertEqual({"performance": 1, "shadows": False}, k["low"])
+        self.assertEqual({"performance": 2, "shadows": False}, k["medium"])
+        self.assertEqual({"performance": 3, "shadows": True}, k["high"])
+        self.assertEqual({"performance": 0, "shadows": True}, k["mix"])
+        self.assertEqual({"performance": 0, "shadows": False}, k["off"])
 
     def test_the_tree_swap_distance(self) -> None:
         # TreeRenderer's draw 0x0064ddbd..0x0064ddfe: sqrt(dx^2 + dz^2), no

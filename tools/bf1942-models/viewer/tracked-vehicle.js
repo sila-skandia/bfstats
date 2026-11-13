@@ -66,7 +66,9 @@ import { Wheel, gripOf, mergeWheelPush, meetsTerrain } from './suspension.js';
 import { clamp, EngineState, ENGINE_BIT_THRUST, engineTypeBits } from './ground-engine.js';
 import { traverseOwn } from './spawned-craft.js';
 import { UNDECLARED_ACCELERATION } from './engine-spin.js';
-import { bodyMotion, scrollBeltsByEngine, scrollBeltsByMotion } from './track-scroll.js';
+import {
+  bodyMotion, followBogies, restBelts, scrollBeltsByEngine, scrollBeltsByMotion,
+} from './track-scroll.js';
 import {
   AmphibiousKit, HullWater, bedGroundHeight, inertiaGeometryBox, geometryInertia,
 } from './amphibious.js';
@@ -429,6 +431,7 @@ export class TrackedVehicle extends Vehicle {
     this._dir = new THREE.Vector3();
     this._lat = new THREE.Vector3();
     this._u = new THREE.Vector3();
+    this._deckV = [0, 0, 0];
     this._force = new THREE.Vector3();
     this._torque = new THREE.Vector3();
     this._accel = new THREE.Vector3();
@@ -1184,6 +1187,13 @@ export class TrackedVehicle extends Vehicle {
       y = this.groundHeight(x, z, fromY);
       if (Number.isFinite(y)) surfaceNormalAt(this, x, z, fromY, out.n);
     }
+    // A ship's deck over both (`hull-bodies.js` `landOnShipDecks`): her
+    // faces are a floor to the wheel's vertex like any object's (COL-6).
+    const ship = this.shipDeckFloor?.(x, z, fromY);
+    if (ship && ship.y > y) {
+      y = ship.y;
+      out.n.set(ship.nx, ship.ny, ship.nz);
+    }
     out.y = y;
     return Number.isFinite(y);
   }
@@ -1221,6 +1231,21 @@ export class TrackedVehicle extends Vehicle {
       // A sleeping root's parts are not tested: no contact, no friction, and
       // the latch is off; the hull still stands where it went to sleep.
       for (const wheel of this.wheels) wheel.staticGrip = false;
+      // A sleeping body on a ship under way is still in her contacts: the ship
+    // is awake and visits it, and the resolve pass runs `addFriction` on every
+    // part with no sleeping test, which wakes the root once the contact's speed
+    // squared passes 0.1 (collision-response.md 2 and 4.3, 0x0825b6e0). The
+    // contact's speed is the deck's against a root at rest.
+      if (this.deckVelocity) {
+        for (const wheel of this.wheels) {
+          const attach = this._attach.copy(wheel.rest).applyQuaternion(q).add(s.position);
+          if (this.deckVelocity(attach.x, attach.y, attach.z, attach.y + DECK_STEP_UP, this._deckV)
+              && this._deckV[0] ** 2 + this._deckV[1] ** 2 + this._deckV[2] ** 2 > CONTACT_WAKE2) {
+            law.sleepiness = SLEEP_TICKS;
+            break;
+          }
+        }
+      }
       s.airspeed = s.velocity.length();
       return;
     }
@@ -1274,6 +1299,14 @@ export class TrackedVehicle extends Vehicle {
       const C = this._contact.set(vert.x, vert.y + pen, vert.z);
       const rel = this._rel.subVectors(C, s.position);
       const speed = this._u.crossVectors(wWorld, rel).add(s.velocity);
+      // On a ship's deck the contact is object against object: its speed is
+      // both roots' `getTangentSpeed`, the hull's less the ship's
+      // (`checkObjectVsObject` 0x08259690, `deck-carry.js`), so a tank on an
+      // LCT under way is held to her by the latch and drives at its own
+      // speed over her deck.
+      if (this.deckVelocity?.(C.x, C.y, C.z, fromY, this._deckV)) {
+        speed.x -= this._deckV[0]; speed.y -= this._deckV[1]; speed.z -= this._deckV[2];
+      }
       const speed2 = speed.lengthSq();
       if (wheel.dummy) {
         wheel.angle += (speed.dot(fwd) / wheel.radius) * TICK;
@@ -1434,7 +1467,7 @@ export class TrackedVehicle extends Vehicle {
       wheel.angle += (along / radius) * dt;
     }
     super.presentKinematic(dt, throttle, running);
-    this.#applyWheels();
+    this.#applyWheels(false);
     // No engine is recorded to scroll the belts from: each runs at its side's
     // contact speed off the recorded motion (`track-scroll.js`).
     scrollBeltsByMotion(this.node, bodyMotion(s.orientation, s.velocity, s.angularVelocity), dt);
@@ -1445,13 +1478,18 @@ export class TrackedVehicle extends Vehicle {
    * either, for the same reason: a half-track's front-axle yaw is the
    * declared rig, and `applyRig` already poses it (subject to the shared-key
    * caveat noted in `#step`). */
-  #applyWheels() {
+  #applyWheels(sprung = true) {
     for (const wheel of this.wheels) {
       const lift = Math.min(wheel.compression, this.spec.suspensionTravel);
       wheel.node.position.y = wheel.basePosition.y + lift;
       this._wheelSpin.setFromEuler(this._wheelEuler.set(-wheel.angle, 0, 0));
       wheel.node.quaternion.copy(wheel.baseQuaternion).multiply(this._wheelSpin);
     }
+    // The belts ride their bogies (`AnimatedBundle::updateAnimations`
+    // `0x08266080`, `track-scroll.js`). A presented hull's springs are not
+    // known, so its belts stay as the mesh has them.
+    if (sprung) followBogies(this.node);
+    else restBelts(this.node);
   }
 
   /** Park it back on its spawn, engine off, wheels straight — same contract
@@ -1475,6 +1513,7 @@ export class TrackedVehicle extends Vehicle {
       wheel.node.position.copy(wheel.basePosition);
       wheel.node.quaternion.copy(wheel.baseQuaternion);
     }
+    restBelts(this.node);
     // Back to the engine's own construction state: gear 1, no revs, and the
     // gear-change lockout re-seeded at 1.0 the way a fresh `PhysicsEngine` is.
     this.engine.reset();

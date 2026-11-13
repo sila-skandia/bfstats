@@ -23,7 +23,7 @@ ROOT = Path(__file__).resolve().parents[1]
 VIEWER = ROOT / "viewer"
 HARNESS = Path(__file__).with_name("kit_level_harness.mjs")
 MODULES = ("kit-loadout.js", "rocket-pack.js", "kit-icon.js", "kit-panels.js", "random-items.js",
-           "model-file.js", "soldier-death.js", "skeleton-hit.js", "spawn-flags.js", "spawn-safety.js", "kit-select.js")
+           "model-file.js", "soldier-death.js", "healing-packs.js", "skeleton-hit.js", "spawn-flags.js", "spawn-safety.js", "kit-select.js")
 
 
 def run_harness() -> dict:
@@ -93,7 +93,9 @@ class KitLevelTests(unittest.TestCase):
         # Desert Combat's `CommonSoldierData.inc` registers 0.20.
         packs = self.results["packs"]
         vanilla_medic = {"radius": 10, "allyHeal": 0.25, "selfHeal": 0.15, "kind": "medic"}
-        vanilla_repair = {"radius": 2, "repairHeal": 0.15, "kind": "repair"}
+        vanilla_repair = {"radius": 2, "repairHeal": 0.15, "kind": "repair",
+                          # `disarmMinesDistance` +0x2f0, the crouched branch's reach.
+                          "disarmRadius": 2}
         for case in ("oldTree", "vanilla"):
             self.assertEqual(vanilla_medic, packs[case]["medic"], case)
             self.assertEqual(vanilla_repair, packs[case]["repair"], case)

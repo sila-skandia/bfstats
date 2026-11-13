@@ -126,7 +126,11 @@ export async function runMatrix({ maps, models, level, out, seeds = 10, sizes = 
       mkdirSync(t.dir, { recursive: true });
       await runOne([path.join(HERE, 'run.mjs'), '--map', level, '--maps', maps, ...(models ? ['--models', models] : []),
                     '--bots', String(t.size), '--time', String(time), '--seed', String(t.seed), ...(vehicles ? [] : ['--no-vehicles']),
-                    '--trace-every', String(traceEvery), '--doctrine', doctrine, '--quiet', '--out', t.dir], path.join(HERE, '..'));
+                    '--trace-every', String(traceEvery), '--doctrine', doctrine,
+                    // The bars in baselines/ were recorded on retail's 20 s wave; single
+                    // player's 3 s flat respawn (the owner's choice, 2026-11-12) would
+                    // judge a level against a bar it was not recorded under.
+                    '--spawn-time', 'wave', '--quiet', '--out', t.dir], path.join(HERE, '..'));
       const row = { ...await detectRun(t.dir), config: vehicles ? CONFIG.vehicles : CONFIG.foot };
       writeFileSync(rowFile, JSON.stringify(row) + '\n');
       if (!keepTraces) rmSync(path.join(t.dir, 'trace.jsonl'), { force: true });
@@ -295,12 +299,17 @@ export function acceptVerdict(short, reason, date, { owner = false } = {}) {
     throw new Error(`${short.level} is ${short.outcome}: only ${allowed.join(', ')} can be accepted`
       + (!owner && OWNER_ACCEPTABLE.includes(short.outcome) ? ' (the owner may: --owner)' : ''));
   }
-  // A lint error closes a layer to acceptance, with one exception for the owner's rollout: a level whose only
-  // error is "stacked floors" and that was run despite it (`level --despite-lint`) and came out with a fight.
-  // Secret Weapons' Raid on Agheila is the case: three of its five flags stand over bunkers, and the rest of it
-  // is open desert the bots fight over. The page match still decides whether it keeps its menu flag.
-  const onlyStacked = owner && (short.lintErrors ?? []).every(e => /stacked floors/.test(e));
-  if (short.lintErrors?.length && !onlyStacked) throw new Error(`${short.level} has lint errors`);
+  // A lint error closes a layer to acceptance, with two exceptions for the owner's rollout, both for a level
+  // run despite the error (`level --despite-lint`) that came out with a fight:
+  //  - "stacked floors" and nothing else. Secret Weapons' Raid on Agheila is the case: three of its five flags
+  //    stand over bunkers, and the rest of it is open desert the bots fight over.
+  //  - the choke rule and nothing else ("an open route to none of the flags in play"). It predicts a jam in
+  //    single file, and the runner measures one: FHSW's Transcarpathia-1944 has 13 choke points on every route
+  //    of one side and its bots stand stuck under a second a bot-minute, where BF1918's Deulemont (30) and
+  //    Roeselare lose a quarter of their time (README 22.4). Whoever accepts one has read the stuck figure.
+  // The page match still decides whether the level keeps its menu flag.
+  const despite = owner && (short.lintErrors ?? []).every(e => /stacked floors/.test(e) || /an open route to none of the/.test(e));
+  if (short.lintErrors?.length && !despite) throw new Error(`${short.level} has lint errors`);
   const { acceptanceWithdrawn, ...rest } = short;
   return { ...rest, accepted: { reason: String(reason).trim(), date, outcome: short.outcome, failed: failedChecks(short), ...(owner ? { by: 'owner' } : {}) } };
 }

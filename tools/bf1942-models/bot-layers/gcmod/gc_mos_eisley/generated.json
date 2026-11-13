@@ -1,0 +1,165 @@
+{
+ "generator": "botgen",
+ "version": 6,
+ "mod": "GCMOD",
+ "level": "gc_mos_eisley",
+ "objectSpawners": 35,
+ "template": "few",
+ "templateSource": "DICE, bf1942 Kursk (1.6 patch archives, Kursk_003.rfa): AI/Strategies.con, AI/conditions.con, AI/prerequisites.con, unchanged",
+ "templateChoice": {
+  "name": "few",
+  "inPlay": 2,
+  "rule": "2 capturable flags in play, at most 3"
+ },
+ "scope": "an infantry map painted from the walk test, a Tank0 map from the page painter, infantry order positions, no strategic maps, no co-op layer",
+ "unreachable": [
+  "northwest",
+  "centralcp",
+  "northeast",
+  "centralcp2"
+ ],
+ "unreachableReasons": {
+  "northwest": "walk test",
+  "centralcp": "walk test",
+  "northeast": "walk test",
+  "centralcp2": "walk test"
+ },
+ "botSpawnsExcluded": [
+  "northwestspawn",
+  "southwestspawn",
+  "centralspawn",
+  "centralspawn2",
+  "centralspawn3",
+  "centralspawn4",
+  "centralspawn5",
+  "centralspawn6",
+  "northeastspawn",
+  "southcbdspawn",
+  "northwestspawn",
+  "northwestspawn",
+  "southeastspawn",
+  "southeastspawn",
+  "northeastspawn",
+  "northeastspawn",
+  "southcbdspawn",
+  "southcbdspawn",
+  "southcbdspawn",
+  "northwestspawn"
+ ],
+ "walkMap": {
+  "source": "walk test",
+  "engine": "none",
+  "vehicleMap": "page painter",
+  "vehicleBrush": 1.5,
+  "vehicleBrushes": [
+   {
+    "brush": 3,
+    "flagsOn": 4,
+    "spawnersOn": 0,
+    "pieces": 25,
+    "main": 551175
+   },
+   {
+    "brush": 2.5,
+    "flagsOn": 4,
+    "spawnersOn": 1,
+    "pieces": 32,
+    "main": 585120
+   },
+   {
+    "brush": 2,
+    "flagsOn": 4,
+    "spawnersOn": 1,
+    "pieces": 35,
+    "main": 598254
+   },
+   {
+    "brush": 1.5,
+    "flagsOn": 4,
+    "spawnersOn": 3,
+    "pieces": 35,
+    "main": 625729
+   }
+  ],
+  "opened": [],
+  "ways": [
+   {
+    "who": "centralspawn",
+    "kind": "spawn",
+    "way": "none",
+    "opened": 0
+   },
+   {
+    "who": "northwestspawn",
+    "kind": "spawn",
+    "way": "none",
+    "opened": 0
+   },
+   {
+    "who": "northwestspawn",
+    "kind": "spawn",
+    "way": "none",
+    "opened": 0
+   }
+  ],
+  "cover": 0.968,
+  "floors": {
+   "stacked": true,
+   "twoFloorShare": 0.051,
+   "raised": [
+    "northwest",
+    "centralcp",
+    "northeast",
+    "centralcp2"
+   ],
+   "reason": "4 of 6 capturable flags stand a storey over or under another walked floor"
+  }
+ },
+ "routeProbe": {
+  "chokeMax": 4,
+  "unreachable": [],
+  "stops": {},
+  "oneSided": {
+   "southwest": 1,
+   "southeast": 1
+  },
+  "sides": {
+   "1": {
+    "spawns": 7,
+    "flags": [
+     "southeast",
+     "southwest"
+    ]
+   },
+   "2": {
+    "spawns": 0,
+    "flags": []
+   }
+  },
+  "chokes": {
+   "southwest:1": 0,
+   "southeast:1": 1
+  },
+  "late": {},
+  "shutLinks": []
+ },
+ "inputs": {
+  "controlPoints": "c1ddba89643ab4a1a4d9640dc34bd21d3faaaeea11121c438f33b2204a1fa550",
+  "infantryMap": "abee3486ae4917e0433e918bc85c671d4d2f4e43935bab6a5c58f6e971e9a0f5",
+  "template": "bdc0e455f47f91b7e7724e71d7c0c196e839b36946ac3abb7663d725944081e5"
+ },
+ "files": {
+  "AI.con": "913bc4e41a0e1cb48fd8a01a4179903ff525e3fd0ad8cbb37870490d2fb34747",
+  "AIpathFinding.con": "9d8080cdfa7605961969aa126519b03be9691bd604ac76aef50166d81215edd2",
+  "AI/StrategicAreas.con": "d68bf8dd739c8b8ee97ab8e5ff970f1717f1dbd2be1ca727d367201b91635669",
+  "AI/Strategies.con": "13da4dc35872dd4b5798a066f4425bdc824cfd61f31093d1808e1202644de52e",
+  "AI/conditions.con": "248a04b727c08d696bf0fa9c162bc22c43cde3c75f695892fe1e0f5141519c49",
+  "AI/prerequisites.con": "c96168b5f69860e578f5d26728fd2a2092c4c436e1da49b7d6f4009b65735398",
+  "Pathfinding/Infantry1Level0Map.raw": "c855281fd4f8a1fa821151ca66cf56f2e3d71a8dab3cefd1bc995edbfe292db9",
+  "Pathfinding/Infantry1Level1Map.raw": "56fdc91dec0f5560dcae99a2a8984b0ec8c17a81c0c289a3a15fa4a41212798d",
+  "Pathfinding/Infantry1Level2Map.raw": "c22042deb40381d95115c26a375cf0ca6d4597ad624014174355f591714470bc",
+  "Pathfinding/Tank0Level0Map.raw": "b884f4b1f313d5e05863c3ea86777a03a574076deccffaae31b8deb3c83d7570",
+  "Pathfinding/Tank0Level1Map.raw": "aa103b4d3174bcb888fc5ec5d0c4c5d6ca6a96371850e10449fd1f313f3af2c5",
+  "Pathfinding/Tank0Level2Map.raw": "2d93d436aa5c17dd5798cd29b4fd68e008368044596c76744d538b3b1e95f1fd"
+ }
+}

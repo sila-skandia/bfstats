@@ -1,0 +1,42 @@
+rem *** Strategic areas: one per control point (botgen) ***
+
+aiStrategicArea.create mos_eisly_starporttemplate 2881/1501 2901/1521 50
+aiStrategicArea.addNeighbour cantina
+aiStrategicArea.addNeighbour jawa_camp
+aiStrategicArea.addObjectTypeFlag Base
+aiStrategicArea.setOrderPosition Tank 2901/1521
+aiStrategicArea.setOrderPosition Infantry 2901/1521
+
+aiStrategicArea.create cantina 1967.2/122.1 1984.2/139.1 150
+aiStrategicArea.addNeighbour mos_eisly_starporttemplate
+aiStrategicArea.addNeighbour the_dune_seatemplate
+aiStrategicArea.addNeighbour jawa_camp
+aiStrategicArea.addObjectTypeFlag Flank
+aiStrategicArea.addObjectTypeFlag ControlPoint
+aiStrategicArea.setOrderPosition Tank 1979.5/139.5
+aiStrategicArea.setOrderPosition Infantry 1979.5/139.5
+
+aiStrategicArea.create the_dune_seatemplate 600.9/367.7 620.9/387.7 50
+aiStrategicArea.addNeighbour cantina
+aiStrategicArea.addNeighbour jawa_camp
+aiStrategicArea.addObjectTypeFlag Base
+aiStrategicArea.setOrderPosition Tank 620.9/387.7
+aiStrategicArea.setOrderPosition Infantry 620.9/387.7
+
+aiStrategicArea.create jabbas_palacetemplate 2142/2317.9 2148/2323.9 10
+aiStrategicArea.setTakeable 1 0
+aiStrategicArea.setTakeable 2 0
+
+aiStrategicArea.create the_sarlacctemplate 3362.2/626.7 3379.2/643.7 10
+aiStrategicArea.setTakeable 1 0
+aiStrategicArea.setTakeable 2 0
+
+aiStrategicArea.create jawa_camp 1589.7/1198.5 1602.7/1211.5 150
+aiStrategicArea.addNeighbour mos_eisly_starporttemplate
+aiStrategicArea.addNeighbour cantina
+aiStrategicArea.addNeighbour the_dune_seatemplate
+aiStrategicArea.addObjectTypeFlag Flank
+aiStrategicArea.addObjectTypeFlag Close
+aiStrategicArea.addObjectTypeFlag ControlPoint
+aiStrategicArea.setOrderPosition Tank 1602.7/1211.5
+aiStrategicArea.setOrderPosition Infantry 1602.7/1211.5

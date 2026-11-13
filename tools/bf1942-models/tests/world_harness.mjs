@@ -278,8 +278,8 @@ const water = {
 // `world.falling` is what a hull destroyed in the air joins when its crew dies
 // (`vehicle-wrecks.js`), and `stepFallingWrecks` (`world-vehicle-tick.js`) is
 // what flies it: one `integrate` per world tick, the same cadence an occupant's
-// hull gets, with every control word forced to the engine's zero and the
-// throttle spool pinned. A stub drive is enough — the rule under test is who
+// hull gets, with the triggers let go, the throttle spool pinned and the
+// stick left where the kill found it. A stub drive is enough — the rule under test is who
 // integrates it and with what, not the aerodynamics.
 const worldG = makeWorld();
 const driveCalls = [];
@@ -309,29 +309,24 @@ worldG.falling.clear();
 driveCalls.length = 0;
 worldG.step(1 / 30);
 const afterClear = driveCalls.length;
-// A dead hull's engines stop (PHY-14), and the sink it is held to is no
-// faster than its own drag lets it fall flat: BF1918's Zeppelin L30 (drag 5,
-// mass 16000, 26.9 x 208.2 m) and a fighter (BF109's numbers).
-const { fallSinkFloor } = await import('./world-vehicle-tick.js');
-const zeppelinSpec = { dragLaw: 'box', drag: 5, mass: 16000, gravity: 14.73, size: [26.9, 20, 208.2] };
-const fighterSpec = { dragLaw: 'box', drag: 0.105, mass: 2500, gravity: 14.73, size: [10.6, 3, 9.5] };
+// A dead hull's engines stop (PHY-14) and nothing else is done to it: no sink
+// is forced on it and its speed is its own (retail asks no destroyed flag in
+// the physics, HP-24). BF1918's Zeppelin L30 is the hull a forced sink threw
+// upward (t2 F4); the stub's `integrate` is the only thing that moves it.
 const deadAirship = {
-  spec: zeppelinSpec, engineRunning: true,
-  state: { throttle: 0, velocity: { x: 0, y: 0, z: 0 } },
+  engineRunning: true,
+  state: { throttle: 0, velocity: { x: 12, y: 0, z: -3 } },
   setInput() {},
-  integrate() { this.state.velocity.y += 2; },   // its floats and drag push it up
+  integrate() { this.state.velocity.y += 2; },
 };
 worldG.falling.add(deadAirship);
 worldG.step(1 / 30);
 worldG.falling.clear();
-const sinkFloors = {
-  zeppelin: fallSinkFloor({ spec: zeppelinSpec }),
-  fighter: fallSinkFloor({ spec: fighterSpec }),
-  noSpec: fallSinkFloor({}),
-  deadEngineRunning: deadAirship.engineRunning,
-  deadVy: deadAirship.state.velocity.y,
+const deadHull = {
+  engineRunning: deadAirship.engineRunning,
+  velocity: [deadAirship.state.velocity.x, deadAirship.state.velocity.y, deadAirship.state.velocity.z],
 };
-const falling = { oneTick, noTick, fourTicks, afterClear, sinkFloors };
+const falling = { oneTick, noTick, fourTicks, afterClear, deadHull };
 
 // --- scenario 10: the depots' one pass a tick -------------------------------
 // Two soldiers of one side at a neutral medical locker, and an empty F-14

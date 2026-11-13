@@ -1,0 +1,29 @@
+{
+ "level": "lake_ladoga-1944",
+ "verdict": "fail",
+ "outcome": "unsuitable",
+ "config": "with vehicles",
+ "doctrine": "garrison",
+ "generatorVersion": 5,
+ "inputs": {
+  "controlPoints": "7e22998e98c84ff552787b44d111debf3fd2511afc3057632380895446f3af91",
+  "infantryMap": "0d35b485357bdc73c26dc2284453c1eb89c08c192647d6b0685c01c60a89d7ec",
+  "template": "bdc0e455f47f91b7e7724e71d7c0c196e839b36946ac3abb7663d725944081e5"
+ },
+ "baseline": "DICE layers with vehicles, garrison doctrine: berlin, stalingrad, kharkov, bocage; seeds 1..10, 600 s",
+ "bar": null,
+ "seeds": 1,
+ "sizes": {},
+ "oneSided": null,
+ "unreachable": [
+  "central_barge",
+  "lake_south",
+  "lake_north",
+  "air_supremacy"
+ ],
+ "lintErrors": [
+  "no capturable flag is reachable in 3D: none of the 4 has a place inside its radius that a soldier on the one-floor walk map's main ground can stand in",
+  "side 1 has no spawn with a route to any flag it must take: none of the 4 flags it does not hold can be reached",
+  "side 2 has no spawn with a route to any flag it must take: of its 19 spawns 19 have no way on foot to the main ground; the level places 125 ladders, which neither the walk test nor a bot climbs"
+ ]
+}

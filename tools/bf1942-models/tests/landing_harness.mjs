@@ -157,6 +157,11 @@ const south = zones.get('southlanding');
       far: far === null,
       entered: entered ? { left: entered.route.length, radius: entered.radius, direct: entered.direct,
                            approachZ: r3(entered.point[1]), insideZone: entered.insideZone } : null,
+      // The approach move ends inside the craft's path-point removal
+      // distance, not the order's radius (AI-113).
+      arrive: entered ? { route: order.arriveRadius ?? null, before: entered.arriveRadius,
+                          after: (entered.urgency(0, 0, 9.9), entered.arriveRadius),
+                          beach: entered.regoal(true).arriveRadius ?? null } : null,
     };
   }
 }

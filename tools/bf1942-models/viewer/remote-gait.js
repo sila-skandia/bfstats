@@ -397,7 +397,9 @@ export function recordedClip(state, half, weapon = null) {
 }
 
 const RECORDED_LOWER_CLIPS = new Map(
-  ['Lb_RunJump', 'Lb_StandJump', 'Lb_RunJumpBackward', 'Lb_RunBackward']
+  ['Lb_RunJump', 'Lb_StandJump', 'Lb_RunJumpBackward', 'Lb_RunBackward',
+   // The turn on the spot and the relaxed stand, baked since 2026-11-13.
+   'Lb_TurnLeft', 'Lb_TurnRight', 'Lb_StandRelax']
     .map(name => [name.toLowerCase(), name]));
 const RECORDED_UPPER_CLIPS = new Map(
   ['Ub_RunJump', 'Ub_StandJump', 'Ub_RunBackward',
@@ -482,4 +484,122 @@ export function drawnAimPitch(aim, prone = false, lie = LIE_POINT_UP_DOWN) {
   if (a > up) a = up;
   else if (down > a) a = down;
   return a === 0 ? 0 : -a;
+}
+
+// --- a live body's lower state (2026-11-13) ----------------------------------
+//
+// Outside a replay nothing names a soldier's lower state, so a live body's
+// jumps, backward run and turns were never drawn. Every walking body on the
+// page and in the room already runs the engine's lower machine a tick at a
+// time, for the jump gate (`soldier-locomotion.js` `SoldierJumpState`:
+// `AnimationStatesLower.con`'s clauses in their own order, PHY-35), and its
+// `state` is the engine's own word: `Lb_Stand` and the walks enter
+// `Lb_StandJump` on `c_PIAction 0.5 1`, the run and the strafes `Lb_RunJump`,
+// `Lb_RunBackward` its own `Lb_RunJumpBackward`; `c_PIThrottle -1 -0.5` is
+// `Lb_RunBackward` (its own clip, `3PRunBackLower.baf` -1.6) or, with
+// `c_PIWalk`, `Lb_WalkBackward` (the walk's clip at -0.7); and `c_PIMouseLookX`
+// past 0.01 either way, standing, is `Lb_TurnLeft` / `Lb_TurnRight`
+// (`3PTurnLower.baf` at 2.0 / -2.0). What follows turns that word into what a
+// renderer plays; a room's snapshot carries it as `netcode.js` `LOWER_WIRE`.
+
+/**
+ * The lower state a walking body (`walking-body.js`) is in, or null where
+ * its machine does not say: in the water, thrown by a blast, dead. Standing
+ * it is `body.lowerBody.state`; crouched or lying only the backward sign is
+ * known, the sign of the forward ramp (`applyMovementFactors`).
+ */
+export function bodyLowerState(body, stance = 'stand') {
+  if (!body || body.swimming) return null;
+  if (stance === 'stand') return body.lowerBody?.state ?? null;
+  return body.forwardRamp < 0 ? 'backward' : null;
+}
+
+/**
+ * What a lower state plays beside the gait: `lower` and `upper` are the
+ * clips the half enters by name where the body carries them (the bundles'
+ * `LOWER_ACTIONS` / `UPPER_ACTIONS`), `reverse` the gait played backwards
+ * where there is no clip of its own, and `key` the family a whole-family rig
+ * files the pair under (`LIVE_CLIPS`).
+ */
+const LIVE_STATES = Object.freeze({
+  standJump: Object.freeze({ key: 'live.standJump', lower: 'Lb_StandJump', upper: 'Ub_StandJump' }),
+  runJump: Object.freeze({ key: 'live.runJump', lower: 'Lb_RunJump', upper: 'Ub_RunJump' }),
+  // `Lb_RunJumpBackward` plays the run jump's clip at -1.2 and hands to
+  // `Lb_RunBackward`; no torso state of that name exists, and the torso
+  // stays in the backward run's.
+  runJumpBackward: Object.freeze({ key: 'live.runJumpBackward', lower: 'Lb_RunJumpBackward', upper: 'Ub_RunBackward' }),
+  runBackward: Object.freeze({ key: 'live.runBackward', lower: 'Lb_RunBackward', upper: 'Ub_RunBackward', reverse: true }),
+  walkBackward: Object.freeze({ reverse: true }),
+  backward: Object.freeze({ reverse: true }),
+  turnLeft: Object.freeze({ key: 'live.turnLeft', lower: 'Lb_TurnLeft' }),
+  turnRight: Object.freeze({ key: 'live.turnRight', lower: 'Lb_TurnRight' }),
+});
+
+export function liveLower(state) {
+  return (state && LIVE_STATES[state]) || null;
+}
+
+/**
+ * What each half of a half-body rig (`SoldierActions`) enters by name for a
+ * live lower state over the gait `family`, and whether the gait plays
+ * backwards: `{ lower, upper, reverse }`. `has(name)` says what the body
+ * carries. A jump is taken from any standing gait, the backward run's own
+ * clip only at a run and a turn only standing still, whatever the speed
+ * bands have settled on; a body without the backward run's clip (a tree
+ * baked before 2026-10-29) plays the forward run reversed, as it always did
+ * for a replay.
+ */
+export function liveHalves(state, family, has = () => true) {
+  const live = liveLower(state);
+  if (!live) return { lower: null, upper: null, reverse: false };
+  const moving = family === 'walk' || family === 'run' || family === 'crouchwalk' || family === 'crawl';
+  if (live.lower) {
+    const jump = /Jump/.test(live.lower);
+    const fits = jump ? (family === 'stand' || family === 'walk' || family === 'run')
+      : live.reverse ? family === 'run' : family === 'stand';
+    if (fits && has(live.lower)) {
+      return { lower: live.lower, upper: live.upper && has(live.upper) ? live.upper : null, reverse: false };
+    }
+  }
+  return { lower: null, upper: null, reverse: Boolean(live.reverse) && moving };
+}
+
+/**
+ * The same pairs for a rig that switches whole families
+ * (`foot-body.js`, `netcode-render.js`): family key -> the two clips and
+ * which of them play once. A turn's torso and the relaxed stand's are the
+ * standing aim, as the engine's are (no torso state is entered).
+ */
+export const LIVE_CLIPS = Object.freeze({
+  'live.standJump': Object.freeze({ lower: 'Lb_StandJump', upper: 'Ub_StandJump', lowerOnce: true, upperOnce: true }),
+  'live.runJump': Object.freeze({ lower: 'Lb_RunJump', upper: 'Ub_RunJump', lowerOnce: true, upperOnce: true }),
+  'live.runJumpBackward': Object.freeze({ lower: 'Lb_RunJumpBackward', upper: 'Ub_RunBackward', lowerOnce: true }),
+  'live.runBackward': Object.freeze({ lower: 'Lb_RunBackward', upper: 'Ub_RunBackward' }),
+  'live.turnLeft': Object.freeze({ lower: 'Lb_TurnLeft', upper: 'stand.upper' }),
+  'live.turnRight': Object.freeze({ lower: 'Lb_TurnRight', upper: 'stand.upper' }),
+  'live.relax': Object.freeze({ lower: 'Lb_StandRelax', upper: 'stand.upper' }),
+});
+
+/**
+ * The family a whole-family rig plays for a live lower state over the gait
+ * `family` it would otherwise play: `{ family, reverse }`. A jump is taken
+ * whatever the speed says; the backward run only at a run, a turn only
+ * standing still, and `relaxed` (the idle timer ran out, `soldier-actions.js`
+ * `IdleClock`) only
+ * there too. A rig that bound none of them keeps the gait, reversed where
+ * the state moves backward.
+ */
+export function liveFamily(state, family, bound, relaxed = false) {
+  const live = liveLower(state);
+  const has = key => !!key && (typeof bound !== 'function' || bound(key));
+  const moving = family === 'walk' || family === 'run' || family === 'crouchwalk' || family === 'crawl';
+  if (live?.key) {
+    const jump = /Jump/.test(live.key);
+    const fits = jump ? (family === 'stand' || family === 'walk' || family === 'run')
+      : live.reverse ? family === 'run' : family === 'stand';
+    if (fits && has(live.key)) return { family: live.key, reverse: false };
+  }
+  if (live?.reverse && moving) return { family, reverse: true };
+  if (relaxed && family === 'stand' && !live && has('live.relax')) return { family: 'live.relax', reverse: false };
+  return { family, reverse: false };
 }

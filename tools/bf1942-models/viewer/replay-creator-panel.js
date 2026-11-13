@@ -237,7 +237,7 @@ export class CreatorPanel {
       if (num !== null) tail.append(el('em', '', num));
       if (kill?.round?.f) {
         tail.append(this.button('', 'bullet', 'Bullet cam: ride the fatal round', () => creator.bulletCam(kill), 'rc-ico'));
-        tail.append(this.button('', 'rec', 'Record a short: the bullet cam on this kill, written to a video file in one click', () => creator.recordShort(kill), 'rc-ico rc-rec'));
+        tail.append(this.button('', 'rec', 'Post as a Short: the bullet cam on this kill, recorded vertical in one click, then you name it (a video file where the round is not shared)', () => creator.recordShort(kill), 'rc-ico rc-rec'));
       }
       tail.append(this.button('', 'clip', 'Mark a clip round it', () => creator.clipAround(t, t1, pid), 'rc-ico'));
       r.append(time, main, tail);
@@ -667,6 +667,8 @@ const STYLE = `
 .rc-plate .rp-btn { height: 22px; }
 .rc-plate .rc-plate-rec { color: #ffb3ab; border-color: rgba(255, 122, 110, .55); }
 .rc-plate .rc-plate-rec[hidden] { display: none; }
+.rc-plate .rc-plate-short { color: #191a12; background: #e8c35a; border-color: #e8c35a; font-weight: 800; }
+.rc-plate .rc-plate-short[hidden] { display: none; }
 @keyframes rc-pulse { from { opacity: .35; transform: scale(.75); } to { opacity: 1; transform: scale(1.15); } }
 
 /* The ring and name over what the pointer can pick. */

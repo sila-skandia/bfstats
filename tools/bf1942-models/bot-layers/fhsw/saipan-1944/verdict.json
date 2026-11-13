@@ -1,0 +1,22 @@
+{
+ "level": "saipan-1944",
+ "verdict": "fail",
+ "outcome": "unsuitable",
+ "config": "with vehicles",
+ "doctrine": "garrison",
+ "generatorVersion": 5,
+ "inputs": {
+  "controlPoints": "05cf0a4232bd99a8126d7ddf602559705c92305b5391f9635d6d9a84b96e070f",
+  "infantryMap": "f00cffe823474de99bfbc7d6cb751c272fdf8027da2c4a797d01f52c99fea24f",
+  "template": "43f8a790471528016570235f76e97dbb2045732458781a5139f37fed68bf98c0"
+ },
+ "baseline": "DICE layers with vehicles, garrison doctrine: berlin, stalingrad, kharkov, bocage; seeds 1..10, 600 s",
+ "bar": null,
+ "seeds": 1,
+ "sizes": {},
+ "oneSided": null,
+ "unreachable": [],
+ "lintErrors": [
+  "side 2 holds no spawn point at the start of the round"
+ ]
+}

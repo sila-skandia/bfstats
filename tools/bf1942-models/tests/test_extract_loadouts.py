@@ -710,7 +710,7 @@ class RetailAiWeaponTests(unittest.TestCase):
     def test_desert_combat_keeps_every_firearms_ai(self) -> None:
         self.assertGreaterEqual(len(self.dc), 44)
         self.assertEqual({"aiTemplate": "AK47AI", "burst": 1, "deviation": 5.0,
-                          "deviationCorrectionTime": 10.0, "indirect": 0,
+                          "deviationCorrectionTime": 10.0, "indirect": 0, "isThrown": False,
                           "minRange": 0.0, "maxRange": 175.0,
                           "weaponActivate": "PIMenuSelect3", "weaponFire": "PIFire",
                           "strength": {"Infantry": 5.0, "LightArmour": 1.0,
@@ -719,14 +719,27 @@ class RetailAiWeaponTests(unittest.TestCase):
                           "soundSphereRadius": 120.0, "healing": False},
                          self.dc["AK47"])
         self.assertEqual("StingerRPG", self.dc["Stinger"]["aiTemplate"])
+        # DC's own words: both hand grenades and the smoke grenade are thrown.
+        self.assertEqual({"GrenadeAllies", "GrenadeAxis", "SmokeGrenade"},
+                         {n for n, w in self.dc.items() if w["isThrown"]})
         # The tree's file, when present: every entry it has comes back the
-        # same (the pad kits' M82Sniper and SA-7 included).
+        # same (the pad kits' M82Sniper and SA-7 included). A file extracted
+        # before the exporter carried `isThrown` (2026-11-13) has no such key
+        # on any entry and is the same without it: the viewer then tells a
+        # thrown weapon by its FireArms wind-up (bot-plans.js
+        # `soldierChoseThrownWeapon`), so no bot loses its grenades to an old
+        # file. A file that has the word has it on every entry, and right.
         tree = (Path(__file__).resolve().parents[1] / "viewer" / "maps" / "mods"
                 / "desertcombat" / "_shared" / "loadouts.json")
         if tree.is_file():
             import json
-            for name, entry in json.loads(tree.read_text())["aiWeapons"].items():
-                self.assertEqual(entry, self.dc.get(name), name)
+            stored = json.loads(tree.read_text())["aiWeapons"]
+            carries = any("isThrown" in entry for entry in stored.values())
+            for name, entry in stored.items():
+                fresh = dict(self.dc.get(name) or {})
+                if not carries:
+                    fresh.pop("isThrown", None)
+                self.assertEqual(entry, fresh, name)
 
     def test_vanilla_gives_every_carried_item_that_names_an_ai_template(self) -> None:
         ai = self.vanilla["aiWeapons"]
@@ -738,6 +751,10 @@ class RetailAiWeaponTests(unittest.TestCase):
         # which was the only one left with `/ai/` dropped.
         self.assertEqual(2.0, ai["Bazooka"]["strength"]["Infantry"])
         self.assertEqual("K98AI", ai["K98"]["aiTemplate"])
+        # `weaponTemplate.isThrown 1`: vanilla's two hand grenades and nothing
+        # else (`soldier_choseThrownWeapon` 0x085cf300 picks by it, AI-158).
+        self.assertEqual({"GrenadeAllies", "GrenadeAxis"}, {n for n, w in ai.items() if w["isThrown"]})
+        self.assertEqual(5.0, ai["GrenadeAllies"]["minRange"])
 
 
 class PadKitLevelLoadTests(unittest.TestCase):

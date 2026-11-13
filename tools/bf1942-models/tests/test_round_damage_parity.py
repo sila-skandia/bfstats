@@ -31,6 +31,12 @@ class RoundDamageParityTests(unittest.TestCase):
     def setUpClass(cls) -> None:
         cls.out = run_harness()
 
+    def test_a_no_ff_sound_round_carries_the_flag_to_its_touch(self) -> None:
+        # `Projectile::handleCollision` lnxded 0x0831efe6 calls
+        # `BFSoldier::projectileHit` (the teammate's "Watch your aim!") only
+        # while the template's `noFFSound` byte (+0x14f) is clear (FF-6).
+        self.assertEqual({"riflegrenade": True, "rifle": False}, self.out["noFFSound"])
+
     def test_the_pages_k98_round_is_the_templates_damage(self) -> None:
         # 5 (material 219) x 10 / 4 / 2 against head 40, chest 41, limbs 42.
         self.assertEqual({"head": 50, "chest": 20, "limbs": 10}, self.out["page"])

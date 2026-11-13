@@ -31,6 +31,8 @@ def run_harness() -> dict:
     # `mannedByEnemy`, the bots' side of the entry rule, and its one import.
     test_world.MODULES["bot-vehicle.js"] = test_world.VIEWER / "bot-vehicle.js"
     test_world.MODULES["bot-behaviours.js"] = test_world.VIEWER / "bot-behaviours.js"
+    # `collisionPredicted`, which the driver's avoid (`hullAvoidUrgency`) shares.
+    test_world.MODULES["bot-vehicle-air.js"] = test_world.VIEWER / "bot-vehicle-air.js"
     try:
         return test_world.run_harness()
     finally:

@@ -51,7 +51,9 @@ UNREAD_WEAPON_WORDS: dict[str, str] = {
     # and `makeScript` are its only readers in either binary: no game code
     # looks at it, so there is nothing to build.
     "delaytouse": PLUMBING,
-    "ammotype": OPEN,                       # 3808: what a supply depot's `addAmmoType` matches
+    # `ammoType` left this table on 2026-11-12 (SUP-2): `con.py` reads it into
+    # the magazine block and `damage.json` `ammoTypes`, and a depot rearms
+    # each item from the row its tag names (`viewer/fire-state.js`).
     "destroyvehiclewhennoammo": OPEN,       # 3
     "disablewhenfired": OPEN,               # 55
     # -- the round as it leaves ------------------------------------------- #
@@ -59,18 +61,31 @@ UNREAD_WEAPON_WORDS: dict[str, str] = {
     # stats block carries it and `round-launch.js` honours a 0.
     # `fireingForce` left this table on 2026-10-18 (ledger FA-1,
     # `features/gun-hull-recoil`): the gun's push on its vehicle is built.
-    "projectilevisible": OPEN,              # 101
-    "setprojectilevisible": OPEN,           # 4
+    # Dead in retail (2026-11-12, `features/retail-inverse-gap-audit-2026-11-12`
+    # orphan-words): no string `projectileVisible` in lnxded or BF1942.exe, so
+    # no console object answers either spelling and the engine prints
+    # *Unknown object or method!* (CON-15). Nothing to build.
+    "projectilevisible": PLUMBING,          # 101
+    "setprojectilevisible": PLUMBING,       # 4
     "projectile2template": OPEN,            # 1: the binoculars
-    "startoneffects": OPEN,                 # 1272
+    # Dead in retail: `setStartOnEffects` is the registered word (strings
+    # `ObjectTemplate.setStartOnEffects`, lnxded and BF1942.exe; the method
+    # `EffectBundleTemplate::setStartOnEffects`), a method (type 0), and the
+    # console adds no `set` to a bare word (CON-15), so the data's bare
+    # `startOnEffects` is *Unknown object or method!*.
+    "startoneffects": PLUMBING,             # 1272
     "setfirecamerashakeanimationstate": OPEN,   # 1460
     "hasresponsephysics": OPEN,             # 8
     # -- the launcher's second deviation family (Bazooka, Panzerschreck) --- #
-    "adddevfire": OPEN, "adddevjump": OPEN, "adddevpitch": OPEN,
-    "adddevrun": OPEN, "adddevstrafe": OPEN, "adddevwalk": OPEN,
-    "adddevyaw": OPEN, "mindevcrouching": OPEN, "mindevlying": OPEN,
-    "mindevstanding": OPEN, "subdev": OPEN, "subdevcrouching": OPEN,
-    "subdevlying": OPEN, "subdevstanding": OPEN,
+    # Dead in retail (2026-11-12): neither binary has a string containing
+    # `addDev`, `subDev` or `minDevStanding`/`Crouching`/`Lying` (the only
+    # `minDev` word is `ObjectTemplate.setMinDev`, `FireArmsTemplate::setMinDev`),
+    # so the console rejects all fourteen (CON-15). Nothing to build.
+    "adddevfire": PLUMBING, "adddevjump": PLUMBING, "adddevpitch": PLUMBING,
+    "adddevrun": PLUMBING, "adddevstrafe": PLUMBING, "adddevwalk": PLUMBING,
+    "adddevyaw": PLUMBING, "mindevcrouching": PLUMBING, "mindevlying": PLUMBING,
+    "mindevstanding": PLUMBING, "subdev": PLUMBING, "subdevcrouching": PLUMBING,
+    "subdevlying": PLUMBING, "subdevstanding": PLUMBING,
 }
 
 
@@ -109,6 +124,37 @@ ObjectTemplate.brandNewWord 3
             {"size": 8, "reloadOnEmptyOnly": True, "ejectClipTime": 0.6, "link": 3,
              "timeToNotAllowChange": 0.25},
             garand.weapon_stats()["magazine"])
+
+    def test_the_words_neither_binary_registers_are_plumbing(self) -> None:
+        # No console object answers them in lnxded or BF1942.exe (CON-15), so
+        # the queue of open words does not list them.
+        dead = {"projectilevisible", "setprojectilevisible", "startoneffects",
+                "adddevfire", "adddevjump", "adddevpitch", "adddevrun",
+                "adddevstrafe", "adddevwalk", "adddevyaw", "mindevcrouching",
+                "mindevlying", "mindevstanding", "subdev", "subdevcrouching",
+                "subdevlying", "subdevstanding"}
+        self.assertEqual({PLUMBING}, {UNREAD_WEAPON_WORDS[w] for w in dead})
+
+    def test_ammo_type_reaches_the_magazine_block_and_its_round_the_ff_flag(self) -> None:
+        # `ObjectTemplate.ammoType` writes `FireArmsTemplate+0x238` (lnxded
+        # 0x082c98be), the tag `SupplyDepot::reloadAmmo` matches (SUP-2);
+        # `noFFSound` writes `ProjectileTemplate+0x14f` (0x082e39fe, FF-6).
+        from bf42.con import ObjectLibrary
+        library = ObjectLibrary()
+        library.add_con("Objects/HandWeapons/GrenadeAllies/Objects.con", """
+ObjectTemplate.create HandFireArms GrenadeAllies
+ObjectTemplate.magSize 3
+ObjectTemplate.ammoType 2
+
+ObjectTemplate.create HandFireArms KnifeAllies
+
+ObjectTemplate.create Projectile GrenadeAlliesProjectile
+ObjectTemplate.noFFSound 1
+""")
+        self.assertEqual({"size": 3, "ammoType": 2},
+                         library.object("GrenadeAllies").weapon_stats()["magazine"])
+        self.assertIsNone(library.object("KnifeAllies").ammo_type)
+        self.assertTrue(library.object("GrenadeAlliesProjectile").no_ff_sound)
 
     def test_the_select_words_reach_the_magazine_block(self) -> None:
         from bf42.con import ObjectLibrary

@@ -3,7 +3,7 @@
 Lesson `out-of-the-lock` ("Out of their lock: breaking the tail"), re-tuned
 for the F-16 (2026-11-10), re-measured under the reworked roof (2026-11-11,
 commit `868247883`): the hard turn levels off at about 760 m and slows in the
-thin air there, ending 665 to 672 m from them; every count holds (Dip, Flip
+thin air there, ending 667 to 673 m from them; every count holds (Dip, Flip
 and Ninja 0 of 9, survival "no"), and nobody in any demo or move goes over
 759 m on the F-16 (799 m on the MiG-29). Files: `viewer/dogfight-lessons/jets/out-of-the-lock.js`
 (the jet block), `viewer/dogfight-lessons/jets/plan-out-of-the-lock.js` (two jet
@@ -69,7 +69,7 @@ little easier than on the Spitfire, and still nothing passes.
   caps the bank at 65 degrees plus its sink term, and at full throttle the
   F-16 has the lift and thrust to climb in it: both go up 310 to 311 m in 45
   s, until the roof levels the turn off at 747 to 759 m; there the air is
-  thin and the turn slows, you end at 120 to 121 m/s and 665 to 672 m from
+  thin and the turn slows, you end at 120 to 121 m/s and 667 to 673 m from
   them, and they are hunting you again (before any roof: 356 to 364 m up,
   97 to 98 m/s, still climbing, still in `lag`). The words say so instead of
   "holding your height".
@@ -87,9 +87,9 @@ little easier than on the Spitfire, and still nothing passes.
   s", and a jet cannon's range is `gunOf`'s 400 (Spitfire units, 512 real;
   the Spitfire's is its 268 m crossing), so 300 m behind is inside it.
 - **The Flip and the Ninja** (rewritten, 0 of 9 each): the jet ace never slows
-  over the top. After the move they stay at 60 to 67 m/s (35 to 44 on the
+  over the top. After the move they stay at 60 to 68 m/s (35 to 44 on the
   Spitfire when the burst landed), follow you up, and no dive comes from
-  behind: no attack counted, best time in their quarter under 2 s, 5 hits in
+  behind: no attack counted, best time in their quarter under 2 s, a single hit in
   one fight of nine and none in the rest, never hit yourself. Several
   head-on passes come within 2 to 6 m.
 - **Survival**: `no` (all three moves `no`), with a line that says turning
@@ -139,7 +139,7 @@ F-16, nine starts (`--tops`, ace / you):
 
 | Demo | Before any roof | First roof | Reworked roof |
 |---|---|---|---|
-| flat | 810 / 812 m; end 97-98 m/s, climbing, 275 m apart | 811 / 812 m; end 105-111 m/s | 757 / 759 m; end ace 109-111, you 120-121 m/s, 665-672 m apart, the hunter back in `hunt` |
+| flat | 810 / 812 m; end 97-98 m/s, climbing, 275 m apart | 811 / 812 m; end 105-111 m/s | 757 / 759 m; end ace 109-111, you 120-121 m/s, 667-673 m apart, the hunter back in `hunt` |
 | counter | the same as flat (the chop never flown) | the same | the same |
 | dip | 487 / 465 m | unchanged | unchanged |
 | flip | 626 / 753 m | 626 / 708 m | 626 / 689 m |
@@ -155,7 +155,7 @@ and the hunter's landing shot before the turn (1.7 s at most) are unchanged,
 and the chop is still never flown on the F-16. The Flip and the Ninja are
 the same fights from the nine starts (`- 3/4` and `- 1/2` in the same two);
 on the L9 their end ranges move but every number the words quote holds (the
-ace at 60 to 67 m/s, 5 hits in one fight, never hit yourself). The Dip did
+ace at 60 to 68 m/s, a single hit in one fight, never hit yourself). The Dip did
 not move. Nothing was tuned; the story sentence and the flat demo's note
 now say the circle climbs to the roof and slows there.
 
@@ -183,3 +183,18 @@ The lesson ends at 45 s and quotes none of it.
   the jet file re-flew carries its own `steps`, and these three have none.
 - No jet version of the Dip, Flip or Ninja was attempted: against an equal
   jet that holds its speed, a small change does not make any of them work.
+
+## On retail g and box area (2026-11-12)
+
+The flight law now runs retail's gravity (`Math.fround(-14.73)`) and box-drag
+area (`3.14 * 0.25`) (`features/retail-parity-cross-check-2026-11-12`). Every
+claim holds: flying straight is shot down 9 of 9, turning hard is never hit,
+the chop is never flown, and the Dip, Flip and Ninja are 0 of 9 each. Nothing
+was tuned; the quoted numbers were re-pinned (F-16):
+
+| Measure | Before | Now |
+|---|---|---|
+| flat: apart at 45 s | 665-672 m | 667-673 m |
+| Dip: closest pass | 43-45 m | 42-44 m |
+| Flip and Ninja: the ace's slowest after the move | 60-67 m/s | 60-68 m/s |
+| Flip and Ninja: your hits | 5 in one fight of nine | 1 in one fight of nine |

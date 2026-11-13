@@ -1,0 +1,73 @@
+{
+ "level": "xhaos_lake",
+ "verdict": "fail",
+ "outcome": "no-fight",
+ "config": "with vehicles",
+ "doctrine": "garrison",
+ "generatorVersion": 5,
+ "inputs": {
+  "controlPoints": "c2172b6f23a9bace4b0c4ae5c64cd17dadbc41978da0c518e4f84613ef915b01",
+  "infantryMap": "484e6b19352db838b301fb582e32510fc972a606947e0d2fa11db5475471b8a8",
+  "template": "bdc0e455f47f91b7e7724e71d7c0c196e839b36946ac3abb7663d725944081e5"
+ },
+ "baseline": "DICE layers with vehicles, garrison doctrine: berlin, stalingrad, kharkov, bocage; seeds 1..10, 600 s",
+ "bar": {
+  "against": "dice",
+  "why": "a vanilla or community level: DICE's bar"
+ },
+ "seeds": 1,
+ "sizes": {
+  "8": {
+   "verdict": "fail",
+   "failed": [
+    "idleShare",
+    "routeFailuresPerBotMinute",
+    "enemyKillsPerBotMinute",
+    "bothSidesCapture",
+    "bothSidesKill",
+    "ticketsBleed",
+    "routeFailuresPerBotMinuteWorseSide",
+    "nonEnemyDeathShareWorseSide",
+    "hullStuckSecondsPerDrivingMinute",
+    "hullStuckSecondsPerDrivingMinuteWorseSide",
+    "unitsNeverUsedShare"
+   ],
+   "winners": [
+    1,
+    0,
+    0
+   ]
+  },
+  "16": {
+   "verdict": "fail",
+   "failed": [
+    "idleShare",
+    "routeFailuresPerBotMinute",
+    "enemyKillsPerBotMinute",
+    "bothSidesCapture",
+    "bothSidesKill",
+    "ticketsBleed",
+    "routeFailuresPerBotMinuteWorseSide",
+    "nonEnemyDeathShareWorseSide",
+    "hullStuckSecondsPerDrivingMinute",
+    "hullStuckSecondsPerDrivingMinuteWorseSide",
+    "unitsNeverUsedShare"
+   ],
+   "winners": [
+    1,
+    0,
+    0
+   ]
+  }
+ },
+ "oneSided": null,
+ "unreachable": [
+  "v1_airbase"
+ ],
+ "lintErrors": [],
+ "acceptanceWithdrawn": {
+  "because": "page matches 2026-11-12: no kill in two matches, one capture; under the rollout floor",
+  "date": "2026-11-12",
+  "was": "Owner's rollout, 2026-11-12: the owner asked for everything with a fight to go l"
+ }
+}

@@ -745,16 +745,21 @@ class TerrainDirectiveTests(unittest.TestCase):
         info = parse_terrain_con("GeometryTemplate.worldSize 2048\n")
         self.assertIsNone(info.target_tri_count)
 
-    def test_lod_distance_is_dead_and_not_read(self) -> None:
-        # 22 levels author it; the retail client never reads it. Recording it
-        # would imply a viewer behaviour the engine never had.
+    def test_lod_distance_is_read(self) -> None:
+        # The client registers the word on the PatchTerrain template
+        # (0x005d2d05) and its handler 0x005d2e40 writes template +0xf4, the
+        # range of the terrain's detail law (ledger TERR-8). Until 2026-11-13
+        # this test held it dead: the string search had missed it.
         info = parse_terrain_con(
             "GeometryTemplate.worldSize 2048\n"
             "GeometryTemplate.lodDistance 350\n"
             "GeometryTemplate.targetTriCount 5000\n"
         )
         self.assertEqual(5000, info.target_tri_count)
-        self.assertFalse(any("lod" in field for field in vars(info)))
+        self.assertEqual(350.0, info.lod_distance)
+
+    def test_undeclared_lod_distance_stays_none(self) -> None:
+        self.assertIsNone(parse_terrain_con("GeometryTemplate.worldSize 2048\n").lod_distance)
 
     def test_wave_height_is_read(self) -> None:
         info = parse_terrain_con(
@@ -772,6 +777,16 @@ class TerrainDirectiveTests(unittest.TestCase):
     def test_undeclared_wave_height_stays_none(self) -> None:
         info = parse_terrain_con("GeometryTemplate.worldSize 2048\n")
         self.assertIsNone(info.wave_height)
+
+    def test_the_water_draws_no_swell(self) -> None:
+        # WATER-4: the client fills each water tile's 17 x 17 grid once and
+        # flat, y = 0 (BF1942.exe 0x00653eb0, once-only flag 0x00959c5c), and
+        # reads waveHeight only into the tile's cull radius,
+        # 2 * sqrt(waveHeight^2 + 32768) (0x00655906..0x00655917). The
+        # extractor still records the word; the page must not move the sea.
+        sky = (Path(__file__).resolve().parents[1] / "viewer" / "level-sky.js").read_text()
+        self.assertNotIn("uWaveHeight", sky)
+        self.assertNotIn("world.y +=", sky)
 
     def test_wave_scale_is_dead_and_not_read(self) -> None:
         # El Alamein is the only level that ships it, and its paired
@@ -853,7 +868,10 @@ class WaterEnvmapColorTests(unittest.TestCase):
         info = LevelInfo(name="El_Alamein", terrain=parse_terrain_con(""))
         parse_init_con("water.wateShallowAlpha 0.5\n", info)
         self.assertIsNone(info.water.envmap_color)
-        self.assertEqual(1.0, info.water.shallow_alpha)   # the ctor default
+        # The water constructor's own (client `0x00655005`, ledger WATER-5).
+        self.assertEqual(0.0, info.water.shallow_alpha)
+        self.assertEqual(1.7, info.water.alpha_depth)     # `0x00654ffe`
+        self.assertEqual(5.0, info.water.color_depth)     # `0x00655008`
 
 
 class RenderSettingsTests(unittest.TestCase):

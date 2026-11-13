@@ -138,6 +138,8 @@ if (existsSync(path.join(viewer, 'models', 'Willy.glb'))) {
   const core = new RoomServerCore({
     levels: new Map([['seats', buildLevelFromDescriptor({ viewerDir: viewer, descriptor })]]),
     defaultLevel: 'seats', now: () => clock.ms,
+    // No pre-game (ROUND-14): the scenarios spawn from the first tick.
+    rules: { gameStartDelay: 0, roundStartDelay: 0 },
   });
   const pA = makePeer(core);
   const pB = makePeer(core);
@@ -205,7 +207,7 @@ if (existsSync(path.join(viewer, 'maps', 'mods', 'fh', 'tarawa-1943', 'scene.glb
   const data = loadRealLevel({ viewerDir: viewer, name: 'tarawa-1943', mod: 'fh' });
   const clock = { ms: 0 };
   const core = new RoomServerCore({ levels: new Map([['tarawa-1943', data]]), defaultLevel: 'tarawa-1943',
-                                    now: () => clock.ms });
+                                    now: () => clock.ms, rules: { gameStartDelay: 0, roundStartDelay: 0 } });
   const pA = makePeer(core);
   const pB = makePeer(core);
   const pC = makePeer(core);

@@ -7,16 +7,20 @@
 
 /** The table lookups, bound to one `damage.json`. */
 export function damageMath(tables) {
+  // An id the table does not define is material 0's, as the engine reads it
+  // (`MaterialManager::getDamageMod` 0x08175040, ledger DMG-1).
+  const row = material => tables?.materials?.[material] ?? tables?.materials?.[0];
+
   function attGroup(material) {
-    return tables?.materials?.[material]?.attGroup ?? material;
+    return row(material)?.attGroup ?? material;
   }
 
   function defGroup(material) {
-    return tables?.materials?.[material]?.defGroup ?? material;
+    return row(material)?.defGroup ?? material;
   }
 
   function baseDamage(material) {
-    const defined = tables?.materials?.[material];
+    const defined = row(material);
     return defined ? defined.damage : null;
   }
 

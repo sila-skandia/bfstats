@@ -1,0 +1,95 @@
+{
+ "generator": "botgen",
+ "version": 5,
+ "mod": "bf1942",
+ "level": "densloe_practice",
+ "objectSpawners": 66,
+ "template": "symmetric",
+ "templateSource": "DICE, bf1942 Kharkov (1.6 patch archives): AI/Strategies.con, AI/conditions.con, AI/prerequisites.con, unchanged",
+ "templateChoice": {
+  "name": "symmetric",
+  "inPlay": 6,
+  "rule": "6 capturable flags in play, more than 3"
+ },
+ "scope": "on foot: infantry order positions only, no search maps, no co-op layer",
+ "unreachable": [],
+ "unreachableReasons": {},
+ "botSpawnsExcluded": [
+  "openSpawnPoint_Bridge1",
+  "OpenSpawnPoint_BridgeSecond1",
+  "OpenSpawnPoint_BridgeSecond6"
+ ],
+ "walkMap": {
+  "source": "page painter",
+  "engine": "none",
+  "opened": [],
+  "ways": [],
+  "cover": 0.919,
+  "floors": {
+   "stacked": false,
+   "twoFloorShare": 0.001,
+   "raised": [],
+   "reason": null
+  },
+  "capped": true,
+  "joined": 4
+ },
+ "routeProbe": {
+  "chokeMax": 4,
+  "unreachable": [],
+  "stops": {},
+  "oneSided": {},
+  "sides": {
+   "1": {
+    "spawns": 24,
+    "flags": [
+     "East_Cpoint",
+     "Lumbermill_Cpoint",
+     "North_Cpoint",
+     "West_Cpoint",
+     "broAlleis_Cpoint",
+     "broaxis_Cpoint"
+    ]
+   },
+   "2": {
+    "spawns": 27,
+    "flags": [
+     "East_Cpoint",
+     "Lumbermill_Cpoint",
+     "North_Cpoint",
+     "West_Cpoint",
+     "broAlleis_Cpoint",
+     "broaxis_Cpoint"
+    ]
+   }
+  },
+  "chokes": {
+   "broaxis_Cpoint:1": 0,
+   "broaxis_Cpoint:2": 0,
+   "broAlleis_Cpoint:1": 0,
+   "broAlleis_Cpoint:2": 0,
+   "Lumbermill_Cpoint:1": 0,
+   "Lumbermill_Cpoint:2": 0,
+   "West_Cpoint:1": 0,
+   "West_Cpoint:2": 0,
+   "East_Cpoint:1": 0,
+   "East_Cpoint:2": 0,
+   "North_Cpoint:1": 0,
+   "North_Cpoint:2": 0
+  },
+  "late": {},
+  "shutLinks": []
+ },
+ "inputs": {
+  "controlPoints": "a5d3c518c99391c759448eca6fcaecb88c935bd779d49a204843e099aa58a3e2",
+  "infantryMap": "58aab9c91bbedb66c9e6a5b1d9f7aef9d2eacd8a5fad91526abfdf1680e7842a",
+  "template": "43f8a790471528016570235f76e97dbb2045732458781a5139f37fed68bf98c0"
+ },
+ "files": {
+  "AI.con": "6add06fce9aa94cfe94d211bd067d741e04433e1f1c464973e40b7b389dd13d7",
+  "AI/StrategicAreas.con": "f1f90246015290e47145596cea4b7cc8c67deb85cfede2eb33225bf62f3cd741",
+  "AI/Strategies.con": "4ce0be59a0d6c5cd530db002fb062c4be8d936bc6ae59bd188803ccaf7869a8d",
+  "AI/conditions.con": "68a0c7a8aec69954063147b60fae560b2874884285737aa085efa76597d395aa",
+  "AI/prerequisites.con": "4c1f313bc285b228fd6ad03bfd1f44c5b15c8703c31f802eb605bc5f00f88bb5"
+ }
+}

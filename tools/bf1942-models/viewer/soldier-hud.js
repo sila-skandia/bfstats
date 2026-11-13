@@ -1,5 +1,6 @@
 import { AMMO_TYPE_CODES, AMMO_TYPES_WITH_ROUNDS, hitFromDirAlpha } from './hud.js';
 import { soldierArt } from './nation.js';
+import { recoverBar } from './rocket-burn.js';
 
 // c_BfSoldierStanding/Crouching/Lying, the engine's own pose vocabulary
 // (CommonSoldierData.inc), against the sprite pack's own suffix — a direct
@@ -414,6 +415,13 @@ export function createSoldierHud(page) {
     // T4a / V-R4: retail keeps the soldier stance icon inside vehicles.
     vars['Soldier/ShowSoldierIcon'] = !!page.soldier && (onFootActive || inVehicle);
     vars['Vehicle/ShowVehicleIcon'] = inVehicle;
+    // The hull's engine heat (VHUD-20, `rocket-burn.js`): the Natter's and
+    // the Wasserfall rocket's burn left, on the `vehicleHealth` group's bar
+    // of the engine's `heatBarType`, through the node the rocket pack's fuel
+    // uses on foot (below). A vehicle's own, so ahead of the soldier's gate.
+    const burn = inVehicle ? recoverBar(page.occupancy?.drive?.lawEngines) : null;
+    vars['Recover/ShowRecover'] = burn?.show ?? 0;
+    if (burn?.show) vars['Recover/Recover'] = burn.value;
     // The weapon bar: the client HUD's `Weapon` group (`weapon-bar.js`, ledger
     // HUD-14..HUD-17), fed whole every painted frame, before every early
     // return below. `ShowWeaponIcon` gates the wheel (0x006d4a72); the icons
@@ -467,7 +475,8 @@ export function createSoldierHud(page) {
     // `rocketpackbar_full_32x64`). Full is cool: the inverted feed the
     // shared overheat feeder writes (`1 - heat`, VHUD-10).
     const pack = onFootActive ? page.soldier.pack : null;
-    vars['Recover/ShowRecover'] = pack ? 3 : 0;
+    // Seated, the node is the hull's engine heat, fed above (VHUD-20).
+    if (!burn?.show) vars['Recover/ShowRecover'] = pack ? 3 : 0;
     if (pack) vars['Recover/Recover'] = pack.fuel;
 
     // SCOPE-1 / V-R5: CrossHair/* is owned here (T5). Off-foot, `ScopeIndex`

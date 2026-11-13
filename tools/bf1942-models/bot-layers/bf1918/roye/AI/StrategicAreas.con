@@ -1,36 +1,51 @@
 rem *** Strategic areas: one per control point (botgen) ***
 
 aiStrategicArea.create AxisBase 1231.9/541.9 1236.9/546.9 50
-aiStrategicArea.addNeighbour AlliedBase
 aiStrategicArea.addNeighbour Flugfeld
+aiStrategicArea.addNeighbour Bauernhof
 aiStrategicArea.addObjectTypeFlag Base
+aiStrategicArea.setOrderPosition Tank 1236.5/549.5
 aiStrategicArea.setOrderPosition Infantry 1235.5/548.5
 aiStrategicArea.setSide 1
 aiStrategicArea.setTakeable 2 0
 
 aiStrategicArea.create AlliedBase 514.5/462.3 519.5/467.3 50
-aiStrategicArea.addNeighbour AxisBase
-aiStrategicArea.addNeighbour Flugfeld
+aiStrategicArea.addNeighbour Bahnhof
 aiStrategicArea.addObjectTypeFlag Base
+aiStrategicArea.setOrderPosition Tank 519.5/465.5
 aiStrategicArea.setOrderPosition Infantry 518.5/466.5
 aiStrategicArea.setSide 2
 aiStrategicArea.setTakeable 1 0
 
-aiStrategicArea.create Bahnhof 725.6/504.8 740.6/519.8 10
-aiStrategicArea.setTakeable 1 0
-aiStrategicArea.setTakeable 2 0
+aiStrategicArea.create Bahnhof 725.6/504.8 740.6/519.8 200
+aiStrategicArea.addNeighbour AlliedBase
+aiStrategicArea.addNeighbour Flugfeld
+aiStrategicArea.addNeighbour Bauernhof
+aiStrategicArea.addObjectTypeFlag Centre
+aiStrategicArea.addObjectTypeFlag Close
+aiStrategicArea.addObjectTypeFlag ControlPoint
+aiStrategicArea.setOrderPosition Tank 747.5/519.5
+aiStrategicArea.setOrderPosition Infantry 734.5/519.5
 
 aiStrategicArea.create Flugfeld 912.9/384.5 952.9/424.5 150
 aiStrategicArea.addNeighbour AxisBase
-aiStrategicArea.addNeighbour AlliedBase
+aiStrategicArea.addNeighbour Bahnhof
+aiStrategicArea.addNeighbour Bauernhof
 aiStrategicArea.addObjectTypeFlag Flank
-aiStrategicArea.addObjectTypeFlag Close
 aiStrategicArea.addObjectTypeFlag ControlPoint
+aiStrategicArea.setOrderPosition Tank 952.5/426.5
 aiStrategicArea.setOrderPosition Infantry 951.5/425.5
 
-aiStrategicArea.create Bauernhof 943/571.4 953/581.4 10
-aiStrategicArea.setTakeable 1 0
-aiStrategicArea.setTakeable 2 0
+aiStrategicArea.create Bauernhof 943/571.4 953/581.4 300
+aiStrategicArea.addNeighbour AxisBase
+aiStrategicArea.addNeighbour Bahnhof
+aiStrategicArea.addNeighbour Flugfeld
+aiStrategicArea.addObjectTypeFlag Centre
+aiStrategicArea.addObjectTypeFlag StrongPoint
+aiStrategicArea.addObjectTypeFlag Close
+aiStrategicArea.addObjectTypeFlag ControlPoint
+aiStrategicArea.setOrderPosition Tank 948.5/584.5
+aiStrategicArea.setOrderPosition Infantry 952.5/582.5
 
 aiStrategicArea.create Ballonflagge 709.9/916.3 749.9/956.3 10
 aiStrategicArea.setTakeable 1 0

@@ -290,8 +290,9 @@ def main() -> int:
                     help="level names to leave out")
     ap.add_argument("--skip-existing", action="store_true",
                     help="leave levels that already have a scene.glb alone")
-    ap.add_argument("--max-texture", type=int, default=512,
-                    help="pass through to extract_map.py (default: 512)")
+    ap.add_argument("--max-texture", type=int, default=1024,
+                    help="pass through to extract_map.py (default: 1024, the "
+                         "largest texture the retail packs ship)")
     ap.add_argument("--terrain-only", action="store_true",
                     help="pass through: heightmap and tiles, no objects")
     ap.add_argument("--texture-fallback", action="append", default=[],

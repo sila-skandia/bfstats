@@ -1,13 +1,13 @@
 {
  "level": "roye",
  "verdict": "fail",
- "outcome": "better-than-nothing",
+ "outcome": "no-fight",
  "config": "with vehicles",
  "doctrine": "garrison",
- "generatorVersion": 5,
+ "generatorVersion": 6,
  "inputs": {
   "controlPoints": "5c0672fc5d823e9c872993c666f67c307c8d023f90d50b5cc3362c0cc0008ff8",
-  "infantryMap": "d1dc20842a30dcca23b1ace5142314374a2ddf424b1eabf054012f6386f04063",
+  "infantryMap": "6587b9024d2efa9cc48f561f8334affbf62dc8bd2ba5b3d5b0b7f14f4b177f75",
   "template": "bdc0e455f47f91b7e7724e71d7c0c196e839b36946ac3abb7663d725944081e5"
  },
  "baseline": "bf1918's own layers with vehicles, garrison doctrine: argonnerwald, battle_of_cer, battle_of_mons, belleau_wood; seeds 1..10, 600 s; dropped, no fight: krakau",
@@ -17,33 +17,40 @@
  },
  "againstDice": {
   "verdict": "fail",
-  "outcome": "better-than-nothing",
+  "outcome": "no-fight",
   "baseline": "DICE layers with vehicles, garrison doctrine: berlin, stalingrad, kharkov, bocage; seeds 1..10, 600 s",
   "sizes": {
    "8": {
     "verdict": "fail",
     "failed": [
+     "routeFailuresPerBotMinute",
      "enemyKillsPerBotMinute",
      "bothSidesCapture",
+     "bothSidesKill",
+     "routeFailuresPerBotMinuteWorseSide",
+     "nonEnemyDeathShareWorseSide",
+     "hullStuckSecondsPerDrivingMinute",
+     "hullStuckSecondsPerDrivingMinuteWorseSide",
+     "unitsNeverUsedShare"
+    ]
+   },
+   "16": {
+    "verdict": "fail",
+    "failed": [
+     "selfDeathsPerBotMinute",
+     "routeFailuresPerBotMinute",
+     "enemyKillsPerBotMinute",
+     "routeFailuresPerBotMinuteWorseSide",
      "nonEnemyDeathShareWorseSide",
      "hullStuckSecondsPerDrivingMinute",
      "hullStuckSecondsPerDrivingMinuteWorseSide",
      "unitsNeverUsedShare",
      "tankSilentShare"
     ]
-   },
-   "16": {
-    "verdict": "fail",
-    "failed": [
-     "enemyKillsPerBotMinute",
-     "nonEnemyDeathShareWorseSide",
-     "unitsNeverUsedShare",
-     "tankSilentShare"
-    ]
    }
   }
  },
- "seeds": 2,
+ "seeds": 1,
  "sizes": {
   "8": {
    "verdict": "fail",
@@ -51,11 +58,14 @@
     "selfDeathsPerBotMinute",
     "enemyKillsPerBotMinute",
     "bothSidesCapture",
-    "unitsNeverUsedShare"
+    "bothSidesKill",
+    "nonEnemyDeathShareWorseSide",
+    "unitsNeverUsedShare",
+    "tankSilentShare"
    ],
    "winners": [
+    1,
     0,
-    2,
     0
    ]
   },
@@ -63,12 +73,15 @@
    "verdict": "fail",
    "failed": [
     "selfDeathsPerBotMinute",
+    "routeFailuresPerBotMinute",
     "enemyKillsPerBotMinute",
+    "routeFailuresPerBotMinuteWorseSide",
+    "unitsNeverUsedShare",
     "tankSilentShare"
    ],
    "winners": [
     1,
-    1,
+    0,
     0
    ]
   }
@@ -78,19 +91,9 @@
   "Ballonflagge"
  ],
  "lintErrors": [],
- "accepted": {
-  "reason": "Owner's rollout, 2026-11-11: after playing Tunis-1943 against its generated bots the owner asked for every level with a fight to go live. Two or more seeds at 8 and 16 a side, the garrison; the checks it fails are listed with this verdict, and a match on the page decides whether it keeps its menu flag.",
-  "date": "2026-11-11",
-  "outcome": "better-than-nothing",
-  "failed": [
-   "8:selfDeathsPerBotMinute",
-   "8:enemyKillsPerBotMinute",
-   "8:bothSidesCapture",
-   "8:unitsNeverUsedShare",
-   "16:selfDeathsPerBotMinute",
-   "16:enemyKillsPerBotMinute",
-   "16:tankSilentShare"
-  ],
-  "by": "owner"
+ "acceptanceWithdrawn": {
+  "because": "generator 6 layer on the bot code of 3b1ebe45c, two page matches of 600 s with 16 bots, both under the rollout floor: 0.013 enemy kills a bot-minute in each, with 2 and 3 captures",
+  "date": "2026-11-13",
+  "was": "Regenerated on generator 6 (2026-11-13) after being turned down on generator 5: "
  }
 }

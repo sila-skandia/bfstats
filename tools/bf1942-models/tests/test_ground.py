@@ -81,6 +81,8 @@ MODULES = {
     "geometry-search.js": VIEWER / "geometry-search.js",
     # `aircraft.js`'s engine law for an airframe with engines off its nose.
     "vectored-engines.js": VIEWER / "vectored-engines.js",
+    # `vectored-engines.js` steps an Engine's heat (PHY-45).
+    "rocket-burn.js": VIEWER / "rocket-burn.js",
     "engine-revs.js": VIEWER / "engine-revs.js",
     # `vehicle-base.js` and `vectored-engines.js` import the rotor spin law.
     "engine-spin.js": VIEWER / "engine-spin.js",
@@ -89,6 +91,7 @@ MODULES = {
     "physics.js": VIEWER / "physics.js",
     "walking-body.js": VIEWER / "walking-body.js",
     "soldier-resolve.js": VIEWER / "soldier-resolve.js",
+    "deck-carry.js": VIEWER / "deck-carry.js",
     "soldier-pose.js": VIEWER / "soldier-pose.js",
     "soldier-locomotion.js": VIEWER / "soldier-locomotion.js",
     "point-body.js": VIEWER / "point-body.js",
@@ -877,6 +880,18 @@ class GroundModelTests(unittest.TestCase):
         # third of a metre up: an eye a little over a metre off the road.
         self.assertGreater(camera["y"], 1.0)
         self.assertLess(camera["y"], 1.7)
+
+    def test_a_ship_deck_under_way_carries_a_jeep_and_a_tank(self) -> None:
+        # Nobody at the controls on a deck gathering way to 6 m/s
+        # (`deckVelocity`, `hull-bodies.js` `landOnShipDecks`): the latch
+        # holds each to the deck's speed; on the fixed ground they stay put.
+        for name in ("jeep", "tank"):
+            with self.subTest(name=name):
+                deck = self.results[f"{name}OnMovingDeck"]
+                self.assertLess(abs(deck["carried"]["relAtSpeed"]), 0.05)
+                self.assertLess(abs(deck["carried"]["relEnd"]), 0.05)
+                self.assertAlmostEqual(6.0, deck["carried"]["vx"], delta=0.05)
+                self.assertAlmostEqual(0.0, deck["still"]["vx"], delta=0.05)
 
 
 class TrackedVehicleTests(unittest.TestCase):

@@ -8,7 +8,8 @@ import { SCORE_DEFAULTS, BLEED_WEIGHT, scoreTable, scoreSettingsFile, holdWeight
           createRoundState, TICKET_BASE_PLAYERS, MAX_PLAYERS_LIMIT, clampMaxPlayers,
           roundPlayers, startingTickets, bleedInterval, scaleTickets,
           GAME_PLAY_MODE, gamePlayModeOf, ticketsDecide, VICTORY, victoryTypeOf,
-          ticketShare, RESTART_DELAY, clampRestartDelay, SCORE_MSG, ticketsEnd, MEDALS }
+          ticketShare, RESTART_DELAY, clampRestartDelay, SCORE_MSG, ticketsEnd, MEDALS,
+          GAME_START_DELAY, ROUND_START_DELAY }
   from './round-state.js';
 
 const results = {};
@@ -453,6 +454,32 @@ const run = (round, seconds, points) => {
     out.noCensus = { tickets: { ...round.tickets } };
   }
   results.endOfRound = out;
+}
+
+// The pre-game (`gameStatusPreGame` 0x08150950, ROUND-14): a new map's 20,
+// a restart's 10, nothing else running; the page's own round has none.
+{
+  const tickets = { team1: 100, team2: 100 };
+  const rates = { team1: 60, team2: 0 };
+  const points = [{ team: 2, areaValue: 100 }];
+  const round = createRoundState({ tickets, rates, mode: 'conquest',
+                                   preGameDelay: GAME_START_DELAY, roundStartDelay: ROUND_START_DELAY });
+  const out = { delays: [GAME_START_DELAY, ROUND_START_DELAY], start: [round.status, round.preGameIn] };
+  for (let i = 0; i < 19 * 30; i++) round.tick(1 / 30, points);
+  out.at19 = { status: round.status, left: Math.round(round.preGameIn * 1000) / 1000, clock: round.clock,
+               tickets: { ...round.tickets }, pay: (round.kill({ killer: 1, killerTeam: 1, victim: 2, victimTeam: 2 }), round.tally(1).score) };
+  for (let i = 0; i < 31; i++) round.tick(1 / 30, points);
+  out.at20 = { status: round.status, left: round.preGameIn, clock: Math.round(round.clock * 1000) / 1000 };
+  round.endRound(1, null, 'tickets');
+  for (let i = 0; i < 400; i++) round.tick(1 / 30, points);
+  round.restart();
+  out.restart = { status: round.status, left: round.preGameIn, clock: round.clock };
+  for (let i = 0; i < 301; i++) round.tick(1 / 30, points);
+  out.afterRestart = { status: round.status };
+  const solo = createRoundState({ tickets, rates, mode: 'conquest' });
+  solo.restart();
+  out.solo = { start: createRoundState({ tickets }).status, restart: solo.status };
+  results.preGame = out;
 }
 
 console.log(JSON.stringify(results));

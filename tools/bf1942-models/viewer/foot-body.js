@@ -8,10 +8,13 @@ import { RocketFlames, packNodeOf } from './rocket-flame.js';
 import * as THREE from 'three';
 import { GLTFLoader } from './glb-loader.js';
 import { clone as skeletonClone } from './vendor/utils/SkeletonUtils.js';
-import { rigCapsules } from './rig-capsules.js';
+import { rigBones, rigCapsules } from './rig-capsules.js';
 import { BODY_CLIPS, BODY_DEATHS, BODY_ONCE, BODY_HIDES_WEAPON, bodyClipFamily, canopyClip, canopyPosition } from './soldier-body.js';
 import { EXPLOSION_CLIPS } from './knockback.js';
-import { bundleClips } from './soldier-actions.js';
+import { IdleClock, bundleClips } from './soldier-actions.js';
+import { LIVE_CLIPS, bodyLowerState, liveFamily } from './remote-gait.js';
+import { HandSignOverlay } from './hand-sign.js';
+import { attachSoldierFace, familyFaceStates } from './soldier-face.js';
 import { createSoldierDress, undress, weaponNodeOf } from './soldier-dress.js';
 import { switchFamily } from './swim.js';
 import { leanOnto } from './soldier-lean.js';
@@ -202,8 +205,12 @@ export function createFootBody(page) {
     // tree baked before `gaits/hit.gait.glb` has no key, and the torso then
     // keeps its aim through a hit.
     const hit = await footBundle(manifest.hit);
+    // The hand signs a shout plays (`hand-sign.js`, RADIO-3), from
+    // `gaits/handsign.gait.glb`; a tree baked before it has no key and its
+    // soldiers shout with their arms still.
+    const signs = await footBundle(manifest.handsign);
     const blast = await blastLoad;
-    return [...lower, ...upper, ...chute, ...swim, ...die, ...hit, ...blast];
+    return [...lower, ...upper, ...chute, ...swim, ...die, ...hit, ...signs, ...blast];
   }
 
   /** The death bundle's clips (`gaits/die.gait.glb`), for a body that is not
@@ -288,6 +295,15 @@ export function createFootBody(page) {
       const upper = action(spec.upper, once);
       if (lower && upper) families[blastFamily(family)] = [lower, upper];
     }
+    // A live body's own lower states (`remote-gait.js` `LIVE_CLIPS`): the
+    // jumps, the backward run, the turn on the spot and the relaxed stand,
+    // each a pair like any family. A turn's torso is the standing aim's own
+    // action, shared with `stand` (`switchFamily` knows a shared half).
+    for (const [family, spec] of Object.entries(LIVE_CLIPS)) {
+      const lower = action(spec.lower, !!spec.lowerOnce);
+      const upper = action(spec.upper, !!spec.upperOnce);
+      if (lower && upper) families[family] = [lower, upper];
+    }
     // The alternate fire's thrust (`Ub_AltFire`, `Ub_LieAltFire`: the grip
     // bundle's, `extract_pose.py` `ALT_ACTIONS`), a one-shot over the torso
     // only. Null for a grip with none.
@@ -315,7 +331,21 @@ export function createFootBody(page) {
     };
     const fires = { stand: gun('Ub_Fire'), prone: gun('Ub_LieFire') };
     const reloads = { stand: action('Ub_StandReload', true), prone: action('Ub_LieReload', true) };
-    return { mixer, families, stabs, swings, fires, reloads };
+    // The draw (`Ub_<Pose>RaiseWeapon<W>`, set by name on an item change)
+    // and the torso's idle fidgets (`Ub_Idle<W>1..3`, `Ub_CrouchIdle<W>1..3`;
+    // a clip lists the weapons of the grip that have one, `IDLE_ACTIONS`).
+    const listed = name => {
+      const only = THREE.AnimationClip.findByName(clips, name)?.userData?.weapons;
+      return !Array.isArray(only) || only.some(w => String(w).toLowerCase() === held)
+        ? action(name, true) : null;
+    };
+    const draws = { stand: action('Ub_StandRaiseWeapon', true),
+                    crouch: action('Ub_CrouchRaiseWeapon', true),
+                    prone: action('Ub_LieRaiseWeapon', true) };
+    const idles = { stand: [1, 2, 3].map(n => listed(`Ub_Idle${n}`)),
+                    crouch: [1, 2, 3].map(n => listed(`Ub_CrouchIdle${n}`)) };
+    const sign = new HandSignOverlay(clips, name => THREE.PropertyBinding.findNode(scene, name));
+    return { mixer, families, stabs, swings, fires, reloads, draws, idles, sign };
   }
 
   /**
@@ -326,7 +356,7 @@ export function createFootBody(page) {
    * holding a weapon. `kind` 'swing' is a knife's primary fire instead
    * (`beginHandFire`), from `swings`.
    */
-  function stabFootBody(kind = 'alt') {
+  function stabFootBody(kind = 'alt', idle = null) {
     const body = footBodies.footBody;
     if (!body || page.soldierDead || BODY_HIDES_WEAPON.has(body.want)) return false;
     // 'fire' is a gun's round, 'reload' its magazine change (`fires`,
@@ -336,7 +366,11 @@ export function createFootBody(page) {
     const set = kind === 'swing' ? body.swings
       : kind === 'fire' ? body.fires
         : kind === 'reload' ? body.reloads : body.stabs;
-    const action = set?.[page.soldier?.stance === 'prone' ? 'prone' : 'stand'];
+    const stance = page.soldier?.stance;
+    // The draw has a state per pose; an idle fidget is handed in whole.
+    const action = kind === 'draw' ? body.draws?.[stance === 'prone' ? 'prone' : stance === 'crouch' ? 'crouch' : 'stand']
+      : kind === 'idle' ? idle
+        : set?.[stance === 'prone' ? 'prone' : 'stand'];
     if (!action) return false;
     if (kind === 'fire' && body.stab?.action === action && body.stab.left > 0) return true;
     // A reload is not cut short by the round that emptied the magazine.
@@ -483,8 +517,13 @@ export function createFootBody(page) {
     const weaponNode = weaponNodeOf(body, pair.weaponName ?? weapon);
     footBodies.footBody = { scene: body, mixer: rig.mixer, families: rig.families,
                  stabs: rig.stabs, swings: rig.swings, fires: rig.fires, reloads: rig.reloads, stab: null, want: null, soldier: soldierName, weapon, weaponNode, kit: null,
+                 draws: rig.draws, idles: rig.idles, sign: rig.sign,
+                 relax: new IdleClock(), fidget: new IdleClock(), relaxed: false,
                  graftOf: pair.graftOf ?? null };
     dressFootBody();
+    // The item in the hands changed: the new body draws it (`Ub_<Pose>
+    // RaiseWeapon<W>`, a cut, then the pose).
+    if (held && held.soldier === soldierName && held.weapon !== weapon) stabFootBody('draw');
     if (canopy) {
       const chute = skeletonClone(canopy.scene);
       page.bindDynamicShading(chute);
@@ -533,7 +572,7 @@ export function createFootBody(page) {
     const thrown = page.soldier.body?.knockback?.family ?? null;
     const blastWant = thrown && footBodies.footBody.families[blastFamily(thrown)]
       ? blastFamily(thrown) : null;
-    const want = blastWant ?? bodyClipFamily({
+    let want = blastWant ?? bodyClipFamily({
       gait: page.soldier.gait,
       stance: page.soldier.stance,
       // The pack's flight is the glide's clip under the pack's own name
@@ -542,6 +581,24 @@ export function createFootBody(page) {
       swim: page.soldier.swimClips?.(dead) ?? null,
       death: dead ? page.deathFamily : null,
     }, family => !!footBodies.footBody.families[family]);
+    const gaitWant = want;
+    let reverse = false;
+    if (!dead && !blastWant) {
+      // The body's own lower machine over the gait (`remote-gait.js`
+      // `liveFamily`): the jump, the backward run and the turn on the spot
+      // as families of their own, a backward walk or crawl as its gait
+      // reversed, and the relaxed stand once the idle timer has run out
+      // (ANIM-6), until anything else takes the legs.
+      const body = footBodies.footBody;
+      const state = bodyLowerState(page.soldier.body, page.soldier.stance);
+      const still = want === 'stand' && (state === 'stand' || state == null);
+      if (!still) body.relaxed = false;
+      else if (body.relax.step('stand', dt, 1) >= 0) body.relaxed = true;
+      if (!still) body.relax.step(null, dt);
+      const live = liveFamily(state, want, family => !!body.families[family], body.relaxed);
+      want = live.family;
+      reverse = live.reverse;
+    }
     const visible = page.optOnFoot.checked && !page.optPilot.checked
       && (dead ? (BODY_DEATHS.has(want) || !!blastWant) : !page.footView3p.firstPerson)
       && !footBodies.footBodyForceHidden;
@@ -588,9 +645,38 @@ export function createFootBody(page) {
       footBodies.footBody.want = want;
       switchFamily(footBodies.footBody.families, was, want);
     }
-    stepFootStab(footBodies.footBody, dt, want,
-      dead || !!blastWant || BODY_HIDES_WEAPON.has(want));
+    // A gait played backwards (`Lb_WalkBackward`: the walk's clip at -0.7).
+    for (const a of footBodies.footBody.families[want] ?? []) {
+      const scale = reverse ? -1 : 1;
+      if (a.timeScale !== scale) a.timeScale = scale;
+    }
+    const stowed = dead || !!blastWant || BODY_HIDES_WEAPON.has(want);
+    // The torso's idle fidget: the aim's timer, standing or crouched and
+    // still, draws one of three, and this grip has a clip for some or none.
+    {
+      const body = footBodies.footBody;
+      const key = stowed || body.stab ? null
+        : gaitWant === 'stand' ? 'stand' : gaitWant === 'crouch' ? 'crouch' : null;
+      const drawn = body.fidget.step(key, dt, 3);
+      if (drawn >= 0) {
+        if (!stabFootBody('idle', body.idles?.[key]?.[drawn] ?? null)) body.fidget.rearm();
+      }
+    }
+    stepFootStab(footBodies.footBody, dt, want, stowed);
+    footBodies.footBody.sign?.restore();
     footBodies.footBody.mixer.update(dt);
+    if (stowed) footBodies.footBody.sign?.stop();
+    footBodies.footBody.sign?.update(dt);
+    // The player's own face, seen from a chase or death camera inside
+    // retail's 5 m (`soldier-face.js`); attached on the body's first frame.
+    {
+      const body = footBodies.footBody;
+      if (body.face === undefined) body.face = attachSoldierFace(body.scene, body.soldier, page.faceId?.() ?? 'player');
+      if (body.face) {
+        const [lower, upper] = familyFaceStates(want, body.stab, LIVE_CLIPS[want]);
+        body.face.update(dt, lower, upper, body.weapon);
+      }
+    }
 
     // A worn rocket pack burns while the part says so (`rocket-pack.js`), on
     // the part's own node of this figure.
@@ -619,12 +705,36 @@ export function createFootBody(page) {
     }
   }
 
+  /** The local player shouted on foot: the hand sign on their own body, seen
+   *  in the chase view (`hand-sign.js`, RADIO-3). */
+  function footHandSign(sign) {
+    const body = footBodies.footBody;
+    if (!body?.sign || page.soldierDead) return false;
+    return body.sign.play(sign);
+  }
+
+  /** The local player shouted on foot: the line's lip-sync symbols on their
+   *  own face (`soldier-face.js`), where the animated head is the one drawn. */
+  function footLipSync(symbols) {
+    const body = footBodies.footBody;
+    if (!body?.face || page.soldierDead) return false;
+    return body.face.speak(symbols);
+  }
+
   /** The human's own body's hit capsules on foot (`rig-capsules.js`), or null
    *  while it has none to offer. */
   function footCapsules() {
     const body = footBodies.footBody;
     if (!body || page.soldierDead) return null;
     return rigCapsules(body.scene, footBodies.soldierBody?.collisionBones);
+  }
+
+  /** The human's own skeleton bones on foot, for the bots' sense rays and
+   *  aim (`rig-capsules.js` `rigBones`); null while no body is posed. */
+  function footBones(soldier) {
+    const body = footBodies.footBody;
+    if (!body || page.soldierDead) return null;
+    return rigBones(body.scene, soldier);
   }
 
   Object.assign(footBodies, {
@@ -634,11 +744,14 @@ export function createFootBody(page) {
     dieClips,
     disposeFootBodyScene,
     footCapsules,
+    footBones,
     ensureFootBody,
     footBodyClips,
     footBodyLoader,
     footStateMachine,
     footTriggerShakes,
+    footHandSign,
+    footLipSync,
     stabFootBody,
     syncFootBody,
   });

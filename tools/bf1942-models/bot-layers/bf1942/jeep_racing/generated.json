@@ -1,0 +1,94 @@
+{
+ "generator": "botgen",
+ "version": 5,
+ "mod": "bf1942",
+ "level": "jeep_racing",
+ "objectSpawners": 61,
+ "template": "few",
+ "templateSource": "DICE, bf1942 Kursk (1.6 patch archives, Kursk_003.rfa): AI/Strategies.con, AI/conditions.con, AI/prerequisites.con, unchanged",
+ "templateChoice": {
+  "name": "few",
+  "inPlay": 3,
+  "rule": "3 capturable flags in play, at most 3"
+ },
+ "scope": "on foot: infantry order positions only, no search maps, no co-op layer",
+ "unreachable": [
+  "jump"
+ ],
+ "unreachableReasons": {
+  "jump": "walk test"
+ },
+ "botSpawnsExcluded": [
+  "start1",
+  "start2",
+  "start3",
+  "start4",
+  "start5",
+  "start6",
+  "bridge4",
+  "newspawnpoint35",
+  "newspawnpoint36",
+  "newspawnpoint37",
+  "newspawnpoint38"
+ ],
+ "walkMap": {
+  "source": "page painter",
+  "engine": "none",
+  "opened": [],
+  "ways": [],
+  "cover": 0.969,
+  "floors": {
+   "stacked": false,
+   "twoFloorShare": 0,
+   "raised": [
+    "jump"
+   ],
+   "reason": null
+  },
+  "capped": true,
+  "joined": 7
+ },
+ "routeProbe": {
+  "chokeMax": 4,
+  "unreachable": [],
+  "stops": {},
+  "oneSided": {
+   "bridgepoint": 1,
+   "corner": 1,
+   "controlpoint": 1
+  },
+  "sides": {
+   "1": {
+    "spawns": 13,
+    "flags": [
+     "bridgepoint",
+     "controlpoint",
+     "corner"
+    ]
+   },
+   "2": {
+    "spawns": 0,
+    "flags": []
+   }
+  },
+  "chokes": {
+   "bridgepoint:1": 0,
+   "corner:1": 0,
+   "controlpoint:1": 0
+  },
+  "late": {},
+  "shutLinks": []
+ },
+ "inputs": {
+  "controlPoints": "e66634a3ddf5786cd786f030b070fe0477d9a4f7ffc6f5497c40e3c1c40e301b",
+  "infantryMap": "87ecf98e10300dd92749323726b7ed7e9f45113ee3da061fc8727d877233d08f",
+  "template": "bdc0e455f47f91b7e7724e71d7c0c196e839b36946ac3abb7663d725944081e5"
+ },
+ "files": {
+  "AI.con": "ff65da5cf781f265a28875b6cbca3063a01ed39073ce89fcfbb96af7a80600f7",
+  "AI/StrategicAreas.con": "c1acd381b840fa3fb416b432fa3b52cd7a8ea0d2d764fe6116c904b338283be7",
+  "AI/Strategies.con": "13da4dc35872dd4b5798a066f4425bdc824cfd61f31093d1808e1202644de52e",
+  "AI/conditions.con": "248a04b727c08d696bf0fa9c162bc22c43cde3c75f695892fe1e0f5141519c49",
+  "AI/prerequisites.con": "c96168b5f69860e578f5d26728fd2a2092c4c436e1da49b7d6f4009b65735398"
+ }
+}

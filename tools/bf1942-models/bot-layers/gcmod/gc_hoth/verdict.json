@@ -1,0 +1,68 @@
+{
+ "level": "gc_hoth",
+ "verdict": "fail",
+ "outcome": "no-better-than-nothing",
+ "config": "with vehicles",
+ "doctrine": "garrison",
+ "generatorVersion": 6,
+ "inputs": {
+  "controlPoints": "b3f01751d5148b6e3f65f13f838bde5198ae5f73c16c300889148c644f237824",
+  "infantryMap": "9b522e375fc2bff0de2a7ae294e5478a444dd0c77887bb119cf7c1d2ed3585c9",
+  "template": "43f8a790471528016570235f76e97dbb2045732458781a5139f37fed68bf98c0"
+ },
+ "baseline": "DICE layers with vehicles, garrison doctrine: berlin, stalingrad, kharkov, bocage; seeds 1..10, 600 s",
+ "bar": {
+  "against": "dice",
+  "why": "no bar of gcmod's own: DICE's"
+ },
+ "seeds": 1,
+ "sizes": {
+  "8": {
+   "verdict": "fail",
+   "failed": [
+    "stuckSecondsPerBotMinute",
+    "redeploysPerBotMinute",
+    "enemyKillsPerBotMinute",
+    "flagCoverage",
+    "stuckSecondsPerBotMinuteWorseSide",
+    "redeploysPerBotMinuteWorseSide",
+    "nonEnemyDeathShareWorseSide",
+    "unitsNeverUsedShare"
+   ],
+   "winners": [
+    0,
+    1,
+    0
+   ]
+  },
+  "16": {
+   "verdict": "fail",
+   "failed": [
+    "stuckSecondsPerBotMinute",
+    "selfDeathsPerBotMinute",
+    "redeploysPerBotMinute",
+    "enemyKillsPerBotMinute",
+    "flagCoverage",
+    "stuckSecondsPerBotMinuteWorseSide",
+    "redeploysPerBotMinuteWorseSide",
+    "nonEnemyDeathShareWorseSide",
+    "hullStuckSecondsPerDrivingMinute",
+    "hullStuckSecondsPerDrivingMinuteWorseSide",
+    "unitsNeverUsedShare"
+   ],
+   "winners": [
+    0,
+    1,
+    0
+   ]
+  }
+ },
+ "oneSided": null,
+ "unreachable": [],
+ "lintErrors": [],
+ "acceptanceWithdrawn": {
+  "because": "page matches 2026-11-12: 0.019 enemy kills a bot-minute with 4 captures, then 0.025 with 4; under the rollout floor in both (flags change hands, the sides barely meet)",
+  "date": "2026-11-12",
+  "was": "Owner's rollout, 2026-11-12: the owner imported Galactic Conquest and asked for "
+ }
+}

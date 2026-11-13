@@ -5,6 +5,7 @@
 import { INFANTRY_TYPE } from './strategic-layer.js';
 import { captureReach, captureStandRadius } from './control-point-law.js';
 import { LANDING, landingZonesOf, beachTarget, beachLandingOrder } from './doctrine-landing.js';
+import { sCurveExact } from './bot-behaviours.js';
 
 // ---------------------------------------------------------------------------
 // The strategic AI itself: `dice::bf::ai::SAI`, read 2026-09-23
@@ -29,8 +30,8 @@ import { LANDING, landingZonesOf, beachTarget, beachLandingOrder } from './doctr
 //  * `AIStrategicArea::update` 0x0863d6d0: attack temperature = unit
 //    strength in the area + the area's base (the `create` radius), defence
 //    temperature = base + static strength; status from the control point's
-//    owner; wanted strength `round(2 * max(1, sum of present values))`
-//    (x1.25 when not owned). `updateTemperature` 0x0863e8b0 multiplies both
+//    owner; the wanted strength is the enemy's (`wantedStrength` below,
+//    ledger AI-168). `updateTemperature` 0x0863e8b0 multiplies both
 //    by the strategy's modifier for each flag under the area's status, then
 //    Enemy / Front / Safe / Neutral. `calculateAttackValue` 0x0863e3f0: not
 //    owned with an owned neighbour -> `attackTemp * (1.5 hostile neighbour |
@@ -52,10 +53,36 @@ import { LANDING, landingZonesOf, beachTarget, beachLandingOrder } from './doctr
 //    arrived when `d^2 < 2 R^2`. `SAI::updateBotPositions` 0x08635bc0
 //    re-orders an idle present bot every 20 s.
 //
-// INVENTION, labelled: the enemy-cost term (`EnemyStatistics`, filled from
-// battle statistics) is 0; the area factor `X` is 0 as in the binary; unit
-// strength is one per soldier; strategic areas with no control point take
-// their authored side.
+//  * The wanted strength, `AIStrategicArea::update` 0x0863d6d0 (+0xd4[side],
+//    an integer; read 2026-11-13, ledger AI-168). Zeroed each pass
+//    (0x0863d936). Every occupied unit the side's and the neutral grids
+//    return in the area that the SAI calls an enemy (`ISAI` vt+0x2c; the
+//    branches at 0x0863e035 and 0x0863e1b6) adds its unit plug-in's
+//    strategic strength (`IPIUnit+0xc`, two floats: the template's
+//    `setStrategicStrength 0|1` x the unit's health, `calculateStrengths`
+//    0x085ec3c0), index 1 where the side owns the area and index 0 where it
+//    does not (`sete` on the status at 0x0863e0fa / 0x0863e294), truncated
+//    after every add (`fistpl` under a chop control word, 0x0863e124 /
+//    0x0863e2be). Then, owned: `trunc((2 - SCurve(+0xac[side])) x max(1,
+//    w))` (0x0863de2b..0x0863de89; 2.0 at 0x86c08c4), where +0xac[side]
+//    (+0xb0 / +0xb4) is zeroed by the ctor 0x08643441 and written by nothing,
+//    so the factor is 2. Not owned: `trunc((2 - SCurve(f)) x 1.25 x max(1,
+//    w))` (0x0863dec3..0x0863df0b; 1.25 at 0x87023d0) with `f` = +0xb4[side],
+//    the side's share of the battle strength in the area this pass:
+//    `friendly / (friendly + enemy)`, 0 when both are 0 (0x0863dce2..
+//    0x0863dd5c), each side's sum `security x (the six battle strengths
+//    summed)` over its occupied units there. The same loop hands
+//    `SampleHelper::addSample` 0x0862e0a0 each enemy's two vectors and
+//    `EnemyStatistics::sample` 0x0862dfa0 stores the pass's sums (its blend
+//    weight `n / (n + 1)` has n = +0x34, which nothing raises, so it keeps
+//    only the latest pass); `SAI::updateStrategicObjects` 0x08631ae0 adds
+//    them into SAI +0x104 / +0x13c, which nothing reads, and
+//    `AreaAssignment` has no caller. So no kill or loss history enters: the
+//    commander wants more where it KNOWS more enemy, and that is all.
+//
+// INVENTION, labelled: the area factor `X` is 0 as in the binary; the
+// temperatures count one per soldier; strategic areas with no control point
+// take their authored side.
 
 /** `SCConstant::compare`: Crisp gives +-1, Fuzzy the signed distance. */
 export function compareCondition(cond, a, b = null) {
@@ -113,7 +140,36 @@ export const SAI = {
   waypointRadiusMin: 5.0,
   unitRadius: 1.0,
   unitValue: 1.0,
+  /** The soldier's `aiTemplatePlugIn.setStrategicStrength 0 1` / `1 1`
+   *  (`Objects/Soldiers/Common/AI/Objects.con`): index 0 counts where the
+   *  watching side does not own the area, index 1 where it does. */
+  soldierStrategic: [1, 1],
+  /** The soldier's six `setBattleStrength` values summed (4 + 2 + 1 + 0 + 0
+   *  + 1), the weight of one soldier in an area's battle-strength share. */
+  soldierStrength: 8.0,
+  /** `AIStrategicArea::update`: 2.0 at 0x86c08c4, the `2 - SCurve(..)`. */
+  wantedBase: 2.0,
 };
+
+/**
+ * `AIStrategicArea::update` 0x0863d6d0, the wanted strength of one area for
+ * one side (ledger AI-168). `enemies` are the occupied enemy units the side
+ * knows in the area, each `{ strategic: [notOwned, owned], health }`;
+ * `friendly` and `enemy` the two sides' battle strength there (security x
+ * the unit's six strengths summed).
+ */
+export function wantedStrength(owned, enemies, friendly = 0, enemy = 0) {
+  let w = 0;
+  for (const u of enemies) {
+    const s = (u.strategic ?? SAI.soldierStrategic)[owned ? 1 : 0] ?? 0;
+    w = Math.trunc(w + s * (u.health ?? 1));
+  }
+  w = Math.max(1, w);
+  if (owned) return Math.trunc((SAI.wantedBase - sCurveExact(0)) * w);
+  const total = friendly + enemy;
+  const share = total !== 0 ? friendly / total : 0;
+  return Math.trunc((SAI.wantedBase - sCurveExact(share)) * SAI.wantedNotOwned * w);
+}
 
 export class StrategicAI {
   /**
@@ -122,14 +178,20 @@ export class StrategicAI {
    *   `unitOf(id)` -> `{ type, isWalkable, radius, pathRadius, mounted }`: the
    *   bot's unit, its search type (`Infantery`/`Tank`/`Car`), the test of its
    *   own search map, its bounding radius and its `getMaxPathPosRemovalDistance`;
-   *   `spottedOf(id)` -> how many objects the bot sees.
+   *   `spottedOf(id)` -> how many objects the bot sees;
+   *   `sampleOf(id, toSide)` -> what side `toSide` holds of the unit bot `id`
+   *   occupies, `{ strategic: [notOwned, owned], health, strength, security }`,
+   *   or null when that side has no information of it (never in a frustum
+   *   band of its bots, never heard). Without it every bot is a soldier
+   *   known to everyone.
    */
-  constructor(layer, { random = Math.random, isWalkable = null, unitOf = null, spottedOf = null } = {}) {
+  constructor(layer, { random = Math.random, isWalkable = null, unitOf = null, spottedOf = null, sampleOf = null } = {}) {
     this.layer = layer;
     this.random = random;
     this.isWalkable = isWalkable;
     this.unitOf = unitOf;
     this.spottedOf = spottedOf;
+    this.sampleOf = sampleOf;
     /** The level's landing zones by name (`extras.ai.landingZones`), for the
      *  beach orders `_order` gives a landing craft. */
     this.zones = landingZonesOf(layer.ai);
@@ -161,7 +223,8 @@ export class StrategicAI {
   }
 
   _blankArea(a) {
-    return { attackTemp: a.radius, defenceTemp: a.radius, friendly: 0, enemy: 0, present: [], wanted: 1, isAttack: false, assigned: new Set() };
+    return { attackTemp: a.radius, defenceTemp: a.radius, friendly: 0, enemy: 0, present: [], wanted: 1, isAttack: false, assigned: new Set(),
+             known: [], friendlyStrength: 0, enemyStrength: 0 };
   }
 
   /** Register a bot (`{ id, side, position() }`) with the strategic layer. */
@@ -321,7 +384,15 @@ export class StrategicAI {
   // --- the area pass --------------------------------------------------------
 
   _updateAreas(alive) {
-    for (const [, st] of this.areaState) { st[1].present = []; st[2].present = []; st[1].friendly = 0; st[2].friendly = 0; st[1].enemy = 0; st[2].enemy = 0; }
+    for (const [, st] of this.areaState) {
+      for (const side of [1, 2]) {
+        const s = st[side];
+        s.present = []; s.friendly = 0; s.enemy = 0;
+        // The wanted strength's inputs (`wantedStrength`): the enemy units
+        // the side knows here, and the two battle-strength sums.
+        s.known = []; s.friendlyStrength = 0; s.enemyStrength = 0;
+      }
+    }
     for (const b of this.bots.values()) {
       if (!alive.has(b.id)) { b.area = null; continue; }
       const p = alive.get(b.id);
@@ -345,6 +416,18 @@ export class StrategicAI {
       if (!(unit?.air && unit?.root)) st[b.side].present.push(b.id);
       st[b.side].friendly += SAI.unitValue;
       st[b.side === 1 ? 2 : 1].enemy += SAI.unitValue;
+      // The unit as each side holds it. Its own side's information is real
+      // (security 1); the other side's exists only once the unit has been in
+      // a frustum band of one of its bots or heard (bot-sense.js
+      // `SideKnowledge`, AI-75), and a side with none does not count it.
+      const other = b.side === 1 ? 2 : 1;
+      const own = this.sampleOf ? this.sampleOf(b.id, b.side) : null;
+      st[b.side].friendlyStrength += own?.strength ?? SAI.soldierStrength;
+      const seen = this.sampleOf ? this.sampleOf(b.id, other) : { security: 1 };
+      if (seen) {
+        st[other].known.push(seen);
+        st[other].enemyStrength += (seen.security ?? 1) * (seen.strength ?? SAI.soldierStrength);
+      }
     }
     for (const [area, st] of this.areaState) {
       this.layer.updatePresenceOwner(area, st[1].present.length, st[2].present.length);
@@ -357,8 +440,7 @@ export class StrategicAI {
         s.status = owned ? 'Owned' : owner === 0 ? 'Neutral' : 'Hostile';
         s.attackTemp = s.friendly + s.enemy + area.radius;
         s.defenceTemp = area.radius;
-        const presentValue = Math.max(1, s.present.length * SAI.unitValue);
-        s.wanted = owned ? Math.round(2 * presentValue) : Math.round(2 * presentValue * SAI.wantedNotOwned);
+        s.wanted = wantedStrength(owned, s.known, s.friendlyStrength, s.enemyStrength);
       }
     }
   }

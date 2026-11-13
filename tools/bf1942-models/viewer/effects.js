@@ -13,7 +13,7 @@
 import * as THREE from 'three';
 import {
   basisFromNormal, EmitterClock, spawnParticleInto, newParticleRecord, integrateParticle,
-  evalParticleInto, atlasGrid, frameIndex, GRAVITY, sampleCrd,
+  evalParticleInto, atlasGrid, frameIndex, GRAVITY, sampleCrd, levelBasis,
 } from './effects-core.js';
 // Remaster mode's hooks (features/remaster-browser, remaster-mode.js):
 // one registry on the global, so this module needs no import for it and
@@ -25,6 +25,16 @@ const remasterHooks = globalThis.bfRemasterHooks ?? (globalThis.bfRemasterHooks 
 // lnxded 0x081e02f0); the particle cap is ours.
 export const MAX_PARTICLES = 1200;
 export const MAX_DECALS = 128;
+// Where a bundle that runs by itself (`play`'s `ambient`: a track's dust, a
+// chimney's smoke) stops spawning, so the fight's own bursts always find
+// room under `MAX_PARTICLES`. Ours.
+export const MAX_AMBIENT_PARTICLES = 800;
+// An emitter's `lodDistance` when its template names none: the
+// `EmitterTemplate` constructor's 300.0 (lnxded 0x081e5c5e).
+const DEFAULT_EMITTER_LOD = 300;
+// `moveToWaterSurface` puts a spawn this far over the water level (the Mac
+// client's `Emitter::handleUpdate`, 0.2 added to `terrainBase` vt+0x5c).
+const WATER_SURFACE_LIFT = 0.2;
 // m/s. An attached run's derived velocity above this is a jump, not motion.
 const ATTACH_MAX_DERIVED_SPEED = 400;
 // The baked sprite quad's width over the engine's `size` (see `#draw`).
@@ -329,6 +339,9 @@ export class EffectPlayer {
     // this way.
     this.onObject = onObject;
     this.firstPerson = firstPerson;
+    // The level's water level, for an emitter that sets `moveToWaterSurface`
+    // (a boat's wake rings lie on the sea, not at the keel). Null: no sea.
+    this.waterLevel = null;
     this.runs = [];
     this.particles = [];
     this.decals = [];
@@ -434,9 +447,14 @@ export class EffectPlayer {
    * frame, its emitters inheriting `velocity()` when they `addEmitterSpeed`.
    * Returns a handle with `stop()`; a stopped run spawns nothing more and
    * ends when its particles have.
+   *
+   * `ambient` marks a bundle the engine runs by itself for as long as its
+   * host stands (`ambient-effects.js`): each emitter's `lodDistance` is then
+   * asked every frame against where the run is now, instead of once here,
+   * and its spawns stop at `MAX_AMBIENT_PARTICLES`.
    */
   play(name, { position = null, normal = null, attach = null, speed = 0,
-                view = null, silent = false, pooled = false } = {}) {
+                view = null, silent = false, pooled = false, ambient = false } = {}) {
     // Sound first, and independent of the geometry library: see `onSound`.
     // An `attach`ed bundle (a wreck's fire, in practice — vanilla's trail
     // bundles carry no script of their own) has no `position`, so it is given
@@ -497,6 +515,8 @@ export class EffectPlayer {
     run.stopped = false;
     run.age = 0;
     run.pooled = pooled;
+    run.ambient = !!ambient;
+    run.sampled = false;
     run.world = this.#worldOf(attach?.object);
     if (attach?.object) {
       attach.object.getWorldPosition(run.origin);
@@ -520,7 +540,7 @@ export class EffectPlayer {
       // the view nor `lodDistance` (375 m on Desert Combat's ruins) does.
       const spawns = spec.particle?.kind === 'object';
       if (!spawns && spec.view && spec.view !== seen) continue;
-      if (!spawns && spec.lodDistance && distance > spec.lodDistance) continue;
+      if (!spawns && !ambient && spec.lodDistance && distance > spec.lodDistance) continue;
       if (spec.startProbability != null && this.rand() > spec.startProbability) continue;
       if (pooled) {
         let slot = run.slots[run.emitters.length];
@@ -630,7 +650,10 @@ export class EffectPlayer {
     for (const p of this.particles) this.#recycle(p);
     this.particles.length = 0;
     this.decals.length = 0;
-    for (const run of this.runs) if (run.pooled) this.#retire(run);
+    for (const run of this.runs) {
+      run.alive = false;
+      if (run.pooled) this.#retire(run);
+    }
     this.runs.length = 0;
     for (const object of this.objects) object.removeFromParent();
     this.objects.length = 0;
@@ -774,9 +797,27 @@ export class EffectPlayer {
         }
         run.speed = velocity ? Math.hypot(velocity[0], velocity[1], velocity[2]) : 0;
       }
+      // An ambient run's first frame only takes the host's position: its
+      // emitters read their rate off the host's speed (`intensityAtSpeed`),
+      // and a run played and advanced in one frame has not moved yet, which
+      // would put a moving track's second puff 100 s away.
+      if (run.ambient && !run.sampled) {
+        run.sampled = true;
+        active = true;
+        continue;
+      }
       let running = false;
+      // An ambient run's emitters each keep their own `lodDistance` against
+      // where the run stands now: past it the clock waits, unstepped.
+      const far = run.ambient && this.camera
+        ? this.camera.getWorldPosition(_camPos).distanceTo(run.origin) : 0;
       try {
         for (const emitter of run.emitters) {
+          if (far > 0 && far > (emitter.spec.lodDistance > 0 ? emitter.spec.lodDistance : DEFAULT_EMITTER_LOD)
+              && emitter.spec.particle?.kind !== 'object') {
+            if (!emitter.clock.done && !emitter.clock.stopped) running = true;
+            continue;
+          }
           const count = emitter.clock.step(dt, run.speed);
           if (!emitter.clock.done && !emitter.clock.stopped) running = true;
           for (let n = 0; n < count; n++) this.#spawn(run, emitter, velocity);
@@ -787,6 +828,7 @@ export class EffectPlayer {
       }
       if (!running) {
         this.runs.splice(i, 1);
+        run.alive = false;
         if (run.pooled) this.#retire(run);
       } else {
         active = true;
@@ -819,14 +861,25 @@ export class EffectPlayer {
       this.#spawnObject(run, emitter, emitterVelocity);
       return;
     }
-    if (this.particles.length >= MAX_PARTICLES) { this.dropped++; return; }
+    if (this.particles.length >= (run.ambient ? MAX_AMBIENT_PARTICLES : MAX_PARTICLES)) {
+      this.dropped++;
+      return;
+    }
     // The emitter's own frame: the bundle's, then its authored placement.
     _q.copy(run.quaternion).multiply(emitter.template.quaternion);
     _pos.copy(emitter.template.position).applyQuaternion(run.quaternion).add(run.origin);
     const basis = quaternionFrame(_q, _frame);
     _origin[0] = _pos.x; _origin[1] = _pos.y; _origin[2] = _pos.z;
+    // `moveToWaterSurface` (the Mac client's `Emitter::handleUpdate`,
+    // `EmitterTemplate+0x461`): a mesh particle's frame is stood on world up,
+    // keeping its heading, and the spawn point is put 0.2 m over the water
+    // level. A ship's wake rings lie on the sea, 1 to 4 m over the node that
+    // emits them.
+    const onWater = emitter.spec.moveToWaterSurface && Number.isFinite(this.waterLevel);
+    if (onWater && emitter.spec.particle?.kind === 'mesh') levelBasis(basis);
     const p = spawnParticleInto(this.recordPool.pop() ?? newParticleRecord(),
                                 emitter.spec, basis, _origin, emitterVelocity, this.rand);
+    if (onWater) p.position[1] = this.waterLevel + WATER_SURFACE_LIFT;
     p.tumbleRates = null;
     p.mesh = this.#acquire(emitter, p, run.world);
     if (!p.mesh) { this.dropped++; this.recordPool.push(p); return; }

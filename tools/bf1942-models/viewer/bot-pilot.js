@@ -6,7 +6,7 @@
 
 import { playerPosition } from './bot-sense.js';
 import { GRAVITY } from './point-body.js';
-import { aimAtDirection, towardsPoint, attackRunStep, planeAimFor, insideBattleZone, PLANE, PLANE_FIRE,
+import { aimAtDirection, towardsPoint, attackRunStep, breakPoint, planeAimFor, insideBattleZone, PLANE, PLANE_FIRE,
          runwayClear, airAvoidUrgency, airAvoidPoint, AIR_AVOID, helicopterControl } from './bot-vehicle-air.js';
 
 /** The world's tick, which is the bot's (`world.js` `WORLD_TICK_DT`, LOOP-1). */
@@ -170,15 +170,17 @@ export function execPlaneAttack(bot, action, now) {
   }
   bot.isFiring = false;
   if (step.phase === 'break') {
-    // `MoveTo3dDirection`: 200 m along the heading, level.
-    const f = bot._unitForward3();
-    // The point's height is the literal 100.0 written into its y
-    // (0x0859bda5) and the move's clearance the 100.0 pushed at 0x0859beab;
-    // how its x / z are solved (a line-circle construction around
-    // 0x0859bc90) is not ported: 200 m along the heading (INVENTION).
-    const ahead = [position[0] + f[0] * PLANE_FIRE.breakDistance, PLANE_FIRE.breakHeight,
-                   position[2] + f[2] * PLANE_FIRE.breakDistance];
-    bot._execPlaneMoveTo(ahead, null, PLANE_FIRE.breakClearance);
+    // `MoveTo3dDirection` (ledger AI-83): the point is fixed when the break
+    // begins (the action's first `execute` 0x08541400 clears its +0x84 flag),
+    // `1.5 x` the weapon's maxRange along the heading at the 100.0 the move's
+    // clearance is (pushed at 0x0859beab), or a point on the world's edge
+    // when the heading leaves the map (`breakPoint`).
+    if (!state.breakTo || state.breakTo.from !== state.breakFrom) {
+      const b = breakPoint({ position, forward: bot._unitForward3(), maxRange: action.maxRange,
+                             turnRadius: m.turnRadius ?? 25, worldSize: worldMapSize(bot)[0] });
+      state.breakTo = { from: state.breakFrom, point: b.point };
+    }
+    bot._execPlaneMoveTo(state.breakTo.point, null, PLANE_FIRE.breakClearance);
     return false;
   }
   // `MoveTo3dObject(target, radius, maxSpeed, maxSpeed, 100 m)`: the
@@ -451,6 +453,10 @@ export function planAirAvoid(bot, now) {
  * Enterprise into the sea.
  */
 export function execPlaneAvoid(bot, action, now) {
-  const arrived = execPlaneMoveTo(bot, action.point, null, AIR_AVOID_CLEARANCE);
+  execPlaneMoveTo(bot, action.point, null, AIR_AVOID_CLEARANCE);
+  // `BAPConPosition(point, 5.0)`: 3D, against the point as the plan wrote it.
+  const st = bot.vehicle?.drive?.state?.position;
+  const arrived = !!st && Math.hypot(action.point[0] - st.x, action.point[1] - st.y, action.point[2] - st.z)
+    < AIR_AVOID.arriveRadius;
   return arrived || now >= action.until;
 }

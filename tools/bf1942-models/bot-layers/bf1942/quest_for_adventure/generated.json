@@ -1,0 +1,143 @@
+{
+ "generator": "botgen",
+ "version": 5,
+ "mod": "bf1942",
+ "level": "quest_for_adventure",
+ "objectSpawners": 62,
+ "template": "few",
+ "templateSource": "DICE, bf1942 Kursk (1.6 patch archives, Kursk_003.rfa): AI/Strategies.con, AI/conditions.con, AI/prerequisites.con, unchanged",
+ "templateChoice": {
+  "name": "few",
+  "inPlay": 0,
+  "rule": "0 capturable flags in play, at most 3"
+ },
+ "scope": "an infantry map painted from the walk test, a Tank0 map from the page painter, infantry order positions, no strategic maps, no co-op layer",
+ "unreachable": [
+  "Helena_Hangars_nazi",
+  "Helena_Hangars_US",
+  "Teddy_Bear_VS_Garden_Gnome_allied",
+  "Teddy_Bear_VS_Garden_Gnome_nazi",
+  "Tiki_Tiki_Bar"
+ ],
+ "unreachableReasons": {
+  "Helena_Hangars_nazi": "walk test",
+  "Helena_Hangars_US": "walk test",
+  "Teddy_Bear_VS_Garden_Gnome_allied": "walk test",
+  "Teddy_Bear_VS_Garden_Gnome_nazi": "walk test",
+  "Tiki_Tiki_Bar": "walk test"
+ },
+ "botSpawnsExcluded": [
+  "AxisBase_Spawn2",
+  "AlliedBase_Spawn2",
+  "Helena_Hangars_nazi_Spawn1",
+  "Helena_Hangars_US_Spawn1"
+ ],
+ "walkMap": {
+  "source": "walk test",
+  "engine": "none",
+  "vehicleMap": "page painter",
+  "vehicleBrush": 3,
+  "vehicleBrushes": [
+   {
+    "brush": 3,
+    "flagsOn": 2,
+    "spawnersOn": 2,
+    "pieces": 10,
+    "main": 2844539
+   },
+   {
+    "brush": 2.5,
+    "flagsOn": 2,
+    "spawnersOn": 2,
+    "pieces": 14,
+    "main": 2854022
+   },
+   {
+    "brush": 2,
+    "flagsOn": 2,
+    "spawnersOn": 2,
+    "pieces": 13,
+    "main": 2855277
+   },
+   {
+    "brush": 1.5,
+    "flagsOn": 2,
+    "spawnersOn": 2,
+    "pieces": 12,
+    "main": 2864294
+   }
+  ],
+  "opened": [],
+  "ways": [
+   {
+    "who": "AxisBase_Spawn2",
+    "kind": "spawn",
+    "way": "none",
+    "opened": 0
+   },
+   {
+    "who": "AlliedBase_Spawn2",
+    "kind": "spawn",
+    "way": "none",
+    "opened": 0
+   },
+   {
+    "who": "Helena_Hangars_nazi_Spawn1",
+    "kind": "spawn",
+    "way": "none",
+    "opened": 0
+   },
+   {
+    "who": "Helena_Hangars_US_Spawn1",
+    "kind": "spawn",
+    "way": "none",
+    "opened": 0
+   }
+  ],
+  "cover": 0.993,
+  "floors": {
+   "stacked": false,
+   "twoFloorShare": 0.034,
+   "raised": [],
+   "reason": null
+  }
+ },
+ "routeProbe": {
+  "chokeMax": 4,
+  "unreachable": [],
+  "stops": {},
+  "oneSided": {},
+  "sides": {
+   "1": {
+    "spawns": 0,
+    "flags": []
+   },
+   "2": {
+    "spawns": 0,
+    "flags": []
+   }
+  },
+  "chokes": {},
+  "late": {},
+  "shutLinks": []
+ },
+ "inputs": {
+  "controlPoints": "333b4e4c8085fcf8dfb5f0fe635bc4d15aa77fae7075dab22656005e2d112a8f",
+  "infantryMap": "0f95de415f165097cbf93b459763522ae27093c491644e80fa6c3a5d7ee8637f",
+  "template": "bdc0e455f47f91b7e7724e71d7c0c196e839b36946ac3abb7663d725944081e5"
+ },
+ "files": {
+  "AI.con": "9c2af3380f8a98fc9447bba0dd137edd65a0a9b694fc58d303e2006c8923332b",
+  "AIpathFinding.con": "8014dbf6ef50a7e5ba3bd3af85ed910350bb0936cd33c5a2e1c5138053711957",
+  "AI/StrategicAreas.con": "c344debdc705fcb72971f1f885a09df601298a4f97dc17d8e2a6aa4fe4794186",
+  "AI/Strategies.con": "13da4dc35872dd4b5798a066f4425bdc824cfd61f31093d1808e1202644de52e",
+  "AI/conditions.con": "248a04b727c08d696bf0fa9c162bc22c43cde3c75f695892fe1e0f5141519c49",
+  "AI/prerequisites.con": "c96168b5f69860e578f5d26728fd2a2092c4c436e1da49b7d6f4009b65735398",
+  "Pathfinding/Infantry1Level0Map.raw": "81e739393fa45bf4e6c1b678c883e934c4fe9c0b164c3050cc241bfbcf7e7182",
+  "Pathfinding/Infantry1Level1Map.raw": "b79f7fba8907b956cd10142b2c1699657426e6b364000de781f8d093f40ab255",
+  "Pathfinding/Infantry1Level2Map.raw": "535d1fc9cfa7da29e62467a9d28c28374d1eaa2d1c1b351d293d9889c7498423",
+  "Pathfinding/Tank0Level0Map.raw": "0eed7a3b8357a65c84c1f10a899405fc96b02f81d3d685a0ba8e59a7c3e9078f",
+  "Pathfinding/Tank0Level1Map.raw": "fd6e7b9af157c1dc46d7ac8d2c61eebf620c097b1618588102adee51b068e296",
+  "Pathfinding/Tank0Level2Map.raw": "e5f64808c30d73fa3255a8519cf22cfbcab4784476c46c0f8c800b3f291a1ad7"
+ }
+}

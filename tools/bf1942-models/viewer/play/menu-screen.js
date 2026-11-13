@@ -198,23 +198,61 @@ export function thumbSpan(layout, box, scroll, count) {
 
 /** The row tag for a level with no single-player scripts: no bots on it. */
 export const NO_SP_TAG = 'NO BOTS';
-/** The tag of a level whose bot layer was generated, not shipped
- *  (features/bot-map-generation): it plays with bots, as an experiment. */
-export const GENERATED_BOTS_TAG = 'EXPERIMENTAL BOTS';
-/** The tag a level's row wears, or null. */
+/** The tag a level's row wears, or null. A level whose bot layer was
+ *  generated, not shipped (features/bot-map-generation), plays with bots
+ *  like any other and wears none: it was tagged EXPERIMENTAL BOTS until the
+ *  owner played them ("drop the 'Experimental bots' thing, just show bots",
+ *  2026-11-12). Its row carries the site's mark instead (`hasBotCredit`). */
 export function levelTag(level) {
-  if (level?.singlePlayer !== false) return null;
-  return level.generatedBots ? GENERATED_BOTS_TAG : NO_SP_TAG;
+  if (level?.singlePlayer !== false || level.generatedBots) return null;
+  return NO_SP_TAG;
+}
+
+/** Whether a level's bots are a generated layer: its row carries the site's
+ *  mark at its right edge, and the mark says who made them when pointed at. */
+export const hasBotCredit = level => level?.singlePlayer === false && level.generatedBots === true;
+/** What the mark says. The briefing screen's own line
+ *  (`briefing-screen.js GENERATED_BOTS_CREDIT`), word for word; not imported,
+ *  because this module is loaded on its own. `tests/test_bot_layer.py` holds
+ *  the two together. */
+export const BOT_CREDIT = 'Bot support added by skandia | bfstats.io';
+/** The mark's square in the row whose top is `y`: `[x, y, w, h]`. */
+export function botCreditRect(box, bx, y, width) {
+  const size = box.rowHeight - 2;
+  return [Math.round(bx + width - size - 3), y + 1, size, size];
+}
+/** The index of the row whose mark is under `(x, y)`, or -1. */
+export function botCreditAt(layout, state, levels, x, y) {
+  const box = listBox(layout);
+  if (!box) return -1;
+  const index = rowAt(layout, box, state.scroll, x, y);
+  if (index < 0 || !hasBotCredit(levels?.[index])) return -1;
+  const [bx, by, width] = rowArea(layout, box);
+  return inRect(botCreditRect(box, bx, by + (index - state.scroll) * box.rowHeight, width), x, y) ? index : -1;
 }
 
 export const rgb = c => `rgb(${c.slice(0, 3).map(v => Math.round(v * 255)).join(',')})`;
+
+/** A face's glyph rows and the device-pixel snap, handed in by the page
+ *  (`setTextMetrics`): `../bitmap-text.js` `glyphTable` rescales the metrics
+ *  for the display width (ledger FONT-3) and `snapToPixel` is the list's and
+ *  the text field's snap (FONT-5). This file is copied alone into harnesses,
+ *  so it imports neither; until a page sets them the rows are the file's own
+ *  and the snap does nothing. */
+let glyphRows = font => font.meta.glyphs;
+let snapPx = v => v;
+export function setTextMetrics({ glyphTable = null, snapToPixel = null } = {}) {
+  glyphRows = typeof glyphTable === 'function' ? glyphTable : (font => font.meta.glyphs);
+  snapPx = typeof snapToPixel === 'function' ? snapToPixel : (v => v);
+}
 
 /** Width of a string in a bitmap face, by the `.dif` metrics: each glyph
  *  advances the pen by left + width + right. */
 export function measureText(font, text) {
   let w = 0;
+  const table = glyphRows(font);
   for (const ch of text) {
-    const g = font.meta.glyphs[ch.charCodeAt(0)];
+    const g = table[ch.charCodeAt(0)];
     if (g) w += g[0] + g[1] + g[2];
   }
   return w;
@@ -231,8 +269,9 @@ export function fitText(font, text, width) {
   const room = width - measureText(font, dots);
   let out = '';
   let w = 0;
+  const table = glyphRows(font);
   for (const ch of s) {
-    const g = font.meta.glyphs[ch.charCodeAt(0)];
+    const g = table[ch.charCodeAt(0)];
     const step = g ? g[0] + g[1] + g[2] : 0;
     if (w + step > room) break;
     out += ch;
@@ -244,20 +283,22 @@ export function fitText(font, text, width) {
 /** One line of bitmap text, its top at `y`. The atlas is white with the
  *  coverage as alpha, so a tinted copy is made per colour — `tint(font,
  *  rgbTriple)` returns it. */
-export function drawBitmapText(ctx, font, tint, text, x, y, color) {
+export function drawBitmapText(ctx, font, tint, text, x, y, color, snap = false) {
   const atlas = tint(font, color.slice(0, 3));
   if (!atlas) return;
   const base = font.meta.baseline;
+  const table = glyphRows(font);
   let pen = x;
   for (const ch of text) {
-    const g = font.meta.glyphs[ch.charCodeAt(0)];
+    const g = table[ch.charCodeAt(0)];
     if (!g) continue;
-    const [left, width, right, ascent, x0, y0, x1, y1] = g;
+    const [left, width, right, ascent, x0, y0, x1, y1, drawW = x1 - x0, drawH = y1 - y0] = g;
     // The space glyph's rectangle is an opaque corner texel; it only
-    // advances the pen.
+    // advances the pen. `snap` is a list row or a text field (FONT-5).
     if (ch !== ' ' && width > 0 && y1 > y0) {
+      const gx = pen + left, gy = y + base - ascent;
       ctx.drawImage(atlas, x0, y0, x1 - x0, y1 - y0,
-                    pen + left, y + base - ascent, x1 - x0, y1 - y0);
+                    snap ? snapPx(gx) : gx, snap ? snapPx(gy) : gy, drawW, drawH);
     }
     pen += left + width + right;
   }
@@ -398,19 +439,59 @@ function paintRows(ctx, layout, state, env) {
     const left = Math.round(bx + box.scrollbarOffset);
     const tag = levelTag(level);
     const tagWidth = tag ? measureText(font, tag) : 0;
+    // A level with generated bots carries the site's mark where a tag would
+    // be; the title stops short of that too.
+    const mark = hasBotCredit(level) ? botCreditRect(box, bx, y, width) : null;
     const titleRoom = tagWidth
       ? (bx + width - tagWidth - 4) - left - measureText(font, ' ')
+      : mark ? mark[0] - left - measureText(font, ' ')
       : (bx + width) - left;
     // The rows are indented off the box's left edge by the inset the box
     // carries for its scrollbar.
     drawBitmapText(ctx, font, env.tint, fitText(font, level.title, titleRoom),
-                   left, y + 1, [0.78, 0.78, 0.78]);
+                   left, y + 1, [0.78, 0.78, 0.78], true);
     if (tagWidth) {
       drawBitmapText(ctx, font, env.tint, tag,
-                     Math.round(bx + width - tagWidth - 4), y + 1, [0.5, 0.5, 0.5]);
+                     Math.round(bx + width - tagWidth - 4), y + 1, [0.5, 0.5, 0.5], true);
+    }
+    const sigil = mark && env.creditMark?.();
+    if (sigil) {
+      const pointed = env.hover?.kind === 'row' && env.hover.index === index && env.hover.credit;
+      ctx.imageSmoothingEnabled = true;
+      ctx.globalAlpha = pointed ? 1 : 0.7;
+      ctx.drawImage(sigil, mark[0], mark[1], mark[2], mark[3]);
+      ctx.globalAlpha = 1;
+      ctx.imageSmoothingEnabled = false;
     }
   }
   paintThumb(ctx, layout, box, state, levels.length);
+  paintBotCredit(ctx, layout, box, state, env, font);
+}
+
+/** The line a pointed-at mark shows: `BOT_CREDIT` in the list's own face on
+ *  a dark plate, on the row above the mark (below it on the list's first
+ *  row), its right edge on the mark's. */
+function paintBotCredit(ctx, layout, box, state, env, font) {
+  const hover = env.hover;
+  if (!font || hover?.kind !== 'row' || !hover.credit) return;
+  const row = hover.index - state.scroll;
+  if (row < 0 || row >= visibleRows(layout, box)) return;
+  const [bx, by, width] = rowArea(layout, box);
+  const mark = botCreditRect(box, bx, by + row * box.rowHeight, width);
+  const pad = 4;
+  const w = measureText(font, BOT_CREDIT) + pad * 2;
+  const h = box.rowHeight + 2;
+  const x = Math.max(2, Math.round(mark[0] + mark[2] - w));
+  const y = row === 0 ? mark[1] + mark[3] + 2 : mark[1] - h - 2;
+  ctx.globalAlpha = 0.92;
+  ctx.fillStyle = '#0b0d0c';
+  ctx.fillRect(x, y, w, h);
+  ctx.globalAlpha = 1;
+  ctx.strokeStyle = rgb(box.select);
+  ctx.lineWidth = 1;
+  ctx.strokeRect(x + 0.5, y + 0.5, w - 1, h - 1);
+  ctx.imageSmoothingEnabled = false;
+  drawBitmapText(ctx, font, env.tint, BOT_CREDIT, x + pad, y + 2, [0.86, 0.86, 0.86]);
 }
 
 /** The scroll track: the black 0.8-alpha quad beside the list box. */

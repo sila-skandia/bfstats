@@ -1,0 +1,31 @@
+{
+ "level": "parcours_challenge",
+ "verdict": "fail",
+ "outcome": "unsuitable",
+ "config": "with vehicles",
+ "doctrine": "garrison",
+ "generatorVersion": 5,
+ "inputs": {
+  "controlPoints": "2f1b81e51cea691d8fa21488ade249fabf3d90be2e57d70a50913c8780d907ce",
+  "infantryMap": "867a7efb56e43850ef0775f63ce709a3c9ee5e035e5c3530efba63c8864b5970",
+  "template": "bdc0e455f47f91b7e7724e71d7c0c196e839b36946ac3abb7663d725944081e5"
+ },
+ "baseline": "DICE layers with vehicles, garrison doctrine: berlin, stalingrad, kharkov, bocage; seeds 1..10, 600 s",
+ "bar": null,
+ "seeds": 1,
+ "sizes": {},
+ "oneSided": null,
+ "unreachable": [
+  "Stage_8_Allies",
+  "Stage_8_Axis",
+  "Stage_17_Allies",
+  "Stage_17_Axis",
+  "Finish_Axis",
+  "Finish_Allies"
+ ],
+ "lintErrors": [
+  "no capturable flag is reachable in 3D: none of the 6 has a place inside its radius that a soldier on the one-floor walk map's main ground can stand in",
+  "side 1 has no spawn with a route to any flag it must take: none of the 6 flags it does not hold can be reached",
+  "side 2 has no spawn with a route to any flag it must take: none of the 6 flags it does not hold can be reached"
+ ]
+}

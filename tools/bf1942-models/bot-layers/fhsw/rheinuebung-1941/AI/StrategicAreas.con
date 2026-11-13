@@ -1,0 +1,17 @@
+rem *** Strategic areas: one per control point (botgen) ***
+
+aiStrategicArea.create East_Atlantic 5214/4056 5254/4096 10
+aiStrategicArea.setTakeable 1 0
+aiStrategicArea.setTakeable 2 0
+
+aiStrategicArea.create North_Atlantic 4056/5214 4096/5254 10
+aiStrategicArea.setTakeable 1 0
+aiStrategicArea.setTakeable 2 0
+
+aiStrategicArea.create West_Atlantic 2897/4056 2937/4096 10
+aiStrategicArea.setTakeable 1 0
+aiStrategicArea.setTakeable 2 0
+
+aiStrategicArea.create South_Atlantic 4056/2897 4096/2937 10
+aiStrategicArea.setTakeable 1 0
+aiStrategicArea.setTakeable 2 0

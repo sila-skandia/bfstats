@@ -1,6 +1,6 @@
 {
  "generator": "botgen",
- "version": 5,
+ "version": 6,
  "mod": "FHSW",
  "level": "pegasus",
  "objectSpawners": 70,
@@ -55,13 +55,80 @@
     "main": 926964
    }
   ],
-  "opened": [],
+  "opened": [
+   [
+    327,
+    560
+   ],
+   [
+    327,
+    561
+   ],
+   [
+    327,
+    562
+   ],
+   [
+    327,
+    563
+   ],
+   [
+    327,
+    564
+   ],
+   [
+    328,
+    564
+   ],
+   [
+    329,
+    564
+   ],
+   [
+    330,
+    564
+   ],
+   [
+    330,
+    565
+   ],
+   [
+    330,
+    566
+   ],
+   [
+    331,
+    566
+   ],
+   [
+    331,
+    567
+   ],
+   [
+    331,
+    568
+   ],
+   [
+    331,
+    569
+   ],
+   [
+    332,
+    569
+   ]
+  ],
   "ways": [
    {
     "who": "leport2spawn",
     "kind": "spawn",
     "way": "none",
     "opened": 0
+   },
+   {
+    "who": "bridgewest_sp:bridgewest_sp_1",
+    "kind": "spawn",
+    "way": "drop",
+    "opened": 15
    }
   ],
   "cover": 0.988,
@@ -79,7 +146,7 @@
   "oneSided": {},
   "sides": {
    "1": {
-    "spawns": 11,
+    "spawns": 12,
     "flags": [
      "gondree",
      "pegasus"
@@ -104,7 +171,7 @@
  },
  "inputs": {
   "controlPoints": "42cee693392cf5f00dc2d935292cd801fabab0bd8bcd693ae3f17dca40a7f26f",
-  "infantryMap": "355e36802f8f484dcd6b28ca359630a10cbdce51ebdae11284f43647e3b8ee18",
+  "infantryMap": "0254dbd17a09ee888149c04dac2d1aecebbf07f132035aa3ca399ea8d49d0565",
   "template": "bdc0e455f47f91b7e7724e71d7c0c196e839b36946ac3abb7663d725944081e5"
  },
  "files": {
@@ -114,7 +181,7 @@
   "AI/Strategies.con": "13da4dc35872dd4b5798a066f4425bdc824cfd61f31093d1808e1202644de52e",
   "AI/conditions.con": "248a04b727c08d696bf0fa9c162bc22c43cde3c75f695892fe1e0f5141519c49",
   "AI/prerequisites.con": "c96168b5f69860e578f5d26728fd2a2092c4c436e1da49b7d6f4009b65735398",
-  "Pathfinding/Infantry1Level0Map.raw": "e538f3270f0f45c85181a37144e57b723c06c7cee87e224476a0c06d2215bf67",
+  "Pathfinding/Infantry1Level0Map.raw": "f911529c2abdfc3e507777f5a9fd3649784518325e8a202e02ab148065c8245f",
   "Pathfinding/Infantry1Level1Map.raw": "36afdf464eafbe7f45d9e5ceec6be1d0fa93cd3db892216d61736f289de9bdd8",
   "Pathfinding/Infantry1Level2Map.raw": "98f548932ed332aad70dde499d8656ba2a0770dee3c9556ca407f8459316648c",
   "Pathfinding/Tank0Level0Map.raw": "f35c1bac79b8b9055decb11e8f499f8c3a26dc946f84fee072d691ad51444fed",

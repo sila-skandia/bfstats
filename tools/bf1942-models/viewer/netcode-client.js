@@ -92,6 +92,20 @@ export function createRoomClient({ ws, now = null }) {
    *  relays it to whoever should hear it. */
   out.radio = (msg, team) => out.action({ type: 'radio', msg, team: !!team });
 
+  /** A vote laid or issued (MSG_ACTION `{type: 'vote', kind, target,
+   *  option}`; `server/room-votes.mjs` `cast`): kind 0 map, 1 kick, 2 team
+   *  kick; option 0 yes, 1 no. */
+  out.vote = (kind, target, option = 0) => out.action({ type: 'vote', kind, target, option });
+
+  /** An admin's word (MSG_ACTION `{type: 'admin', cmd, args}`;
+   *  `server/room-host.mjs` `onAdmin`). */
+  out.admin = (cmd, args = []) => out.action({ type: 'admin', cmd, args });
+
+  /** A typed chat line, all or team (MSG_ACTION `{type: 'chat', text,
+   *  team}`): the server relays it to everyone else, or to the sender's side
+   *  (`server/room-control.mjs` `onChat`, CHAT-4). */
+  out.chat = (text, team) => out.action({ type: 'chat', text: String(text ?? ''), team: !!team });
+
   out.ping = () => {
     if (out.state !== 'joined') return;
     const at = Math.max(0, (now?.() ?? 0)) & 0xffffffff;
@@ -99,9 +113,41 @@ export function createRoomClient({ ws, now = null }) {
                             (at >> 16) & 0xff, (at >> 24) & 0xff]));
   };
 
-  out.join = ({ room, name, team = 0, level = null }) => {
+  /** The server's pong, sent straight back with its own time in bytes 4..7:
+   *  the round trip the server times for the board's ping column
+   *  (`server/room-stats.mjs` `onPingEcho`, MEME-27). */
+  function echoPong(body) {
+    if (out.state !== 'joined' || body.length < 4) return;
+    const at = Math.max(0, (now?.() ?? 0)) & 0xffffffff;
+    ws.send(new Uint8Array([MSG_PING, at & 0xff, (at >> 8) & 0xff,
+                            (at >> 16) & 0xff, (at >> 24) & 0xff,
+                            body[0], body[1], body[2], body[3]]));
+  }
+
+  /** slot -> `{ score, kills, deaths, ping }`, the server's own numbers for
+   *  the score board (`server/room-stats.mjs`): HELLO's roster and the
+   *  `stats` rows since. */
+  const stats = new Map();
+  const statsRow = r => ({
+    score: Number(r?.score) || 0, kills: Number(r?.kills) || 0,
+    deaths: Number(r?.deaths) || 0, ping: Number(r?.ping) || 0,
+  });
+  /** What the score board shows for `slot`, null when the server sent none
+   *  (a room server before the `stats` rows). */
+  out.statsOf = slot => stats.get(slot) ?? null;
+
+  out.join = ({ room, name, team = 0, level = null, mode = null, settings = null,
+                password = null, admin = null, id = null }) => {
     const row = { room, name, team };
     if (level) row.level = level;   // create-on-join names the level
+    if (mode) row.mode = mode;      // and the layer (GAME TYPE's pick)
+    // The host half (`server/room-host.mjs`): CREATE GAME's settings for a
+    // room this join makes, the room's password, the admin's key after a
+    // level change, and the browser's own id (what a ban is kept by).
+    if (settings) row.settings = settings;
+    if (password) row.password = password;
+    if (admin) row.admin = admin;
+    if (id) row.id = id;
     ws.send(new Uint8Array([MSG_JOIN, ...textBytes(JSON.stringify(row))]));
     out.state = 'waiting';
   };
@@ -132,7 +178,7 @@ export function createRoomClient({ ws, now = null }) {
         if (out.onclosed) out.onclosed(row?.code ?? 'closed', row);
         return;
       }
-      case MSG_PONG: return;   // liveness only; the server's law is the timeout
+      case MSG_PONG: return echoPong(body);   // liveness, and the ping's round trip
       default: return;         // future messages ride past, as the server's do
     }
   };
@@ -147,7 +193,13 @@ export function createRoomClient({ ws, now = null }) {
     roster.set(row.slot, { slot: row.slot, name: row.name ?? '', team: row.team ?? 0 });
     // The roster at join: HELLO's slots array lists the players already in
     // the room (the server builds it for this connection).
-    for (const s of Array.isArray(row.slots) ? row.slots : []) roster.set(s.slot, s);
+    for (const s of Array.isArray(row.slots) ? row.slots : []) {
+      roster.set(s.slot, s);
+      // A server that sends the board's numbers sends them with each player
+      // (J-1: a joining client's database carries every player's).
+      if ('score' in s) stats.set(s.slot, statsRow(s));
+    }
+    if (row.stats) stats.set(row.slot, statsRow(row.stats));
     (row.vehicles ?? []).forEach(v => out.vehicles.set(v.id, { ...v }));
     if (out.onjoined) out.onjoined();
   }
@@ -204,9 +256,30 @@ export function createRoomClient({ ws, now = null }) {
     // Roster maintenance: join/leave rows carry names (the page labels
     // remotes with these).
     if (row.type === 'join' && Number.isInteger(row.slot)) {
-      roster.set(row.slot, { slot: row.slot, name: row.text ?? '', team: 0 });
+      roster.set(row.slot, { slot: row.slot, name: row.text ?? '',
+                             team: row.team === 1 || row.team === 2 ? row.team : 0,
+                             // A room's bot (`server/room-bots.mjs`), as HELLO's rows mark it.
+                             ...(row.bot === true ? { bot: true } : {}) });
+      if (stats.size) stats.set(row.slot, statsRow(null));
     } else if (row.type === 'leave' && Number.isInteger(row.slot)) {
       roster.delete(row.slot);
+      stats.delete(row.slot);
+    } else if (row.type === 'name' && Number.isInteger(row.slot) && typeof row.text === 'string') {
+      // `game.changePlayerName` (`server/room-control.mjs` `onName`).
+      const entry = roster.get(row.slot);
+      if (entry) entry.name = row.text;
+      if (row.slot === out.slot && out.hello) out.hello.name = row.text;
+    } else if (row.type === 'stats' && Array.isArray(row.rows)) {
+      for (const r of row.rows) {
+        if (!Array.isArray(r) || !Number.isInteger(r[0])) continue;
+        stats.set(r[0], statsRow({ score: r[1], kills: r[2], deaths: r[3], ping: r[4] }));
+      }
+    } else if (row.type === 'team' && Number.isInteger(row.slot) && (row.team === 1 || row.team === 2)) {
+      // A change of side on the deploy screen (`server/room-control.mjs`
+      // `changeSide`, `GameServer::setTeam` 0x08131800).
+      const entry = roster.get(row.slot);
+      if (entry) entry.team = row.team;
+      if (row.slot === out.slot && out.hello) out.hello.team = row.team;
     }
     if (out.onevent) out.onevent(feedRow);
   }
@@ -241,11 +314,17 @@ export function createRoomClient({ ws, now = null }) {
       // lines (`ctf-page.js`, in the mod's words).
       case 'radio': return '';
       case 'ctf': return '';
+      // A chat line's text is the line itself (the message log reads it,
+      // `net-room.js`); the board's numbers are the board's.
+      case 'chat': return row.text ?? '';
+      case 'stats': return '';
+      case 'name': return '';
       // The debriefing shows a round's end and the restart writes its own
       // line; a refused spawn is the spawn screen's business.
       case 'roundEnd': return '';
       case 'restart': return '';
       case 'spawnRefused': return '';
+      case 'team': return '';
       case 'seatRefused': return '';
       // A remote's magazine change and stab are heard (`net-room.js`), not printed; nor
       // are the pads' and the hulls' rows, which the field itself shows.
@@ -256,6 +335,13 @@ export function createRoomClient({ ws, now = null }) {
       case 'hull': return '';
       case 'object': return '';
       case 'blast': return '';
+      case 'disarm': return '';
+      // The host's rows (`server/room-host.mjs`): the message log prints a
+      // vote's and a welcome's own lines (`room-host-client.js`).
+      case 'vote': return '';
+      case 'welcome': return '';
+      case 'settings': return '';
+      case 'levelChange': return '';
       default: return row.text ?? row.type;
     }
   }
@@ -303,6 +389,21 @@ export function createRoomClient({ ws, now = null }) {
     return playerIn(snap, out.slot);
   };
 
+  /** The hull the local player is seated in, un-lerped, as the newest
+   *  snapshot has it: `{id, ack, x, y, z, q}` or null. The snapshot's pose is
+   *  the world's after the tick that ran the word `ack` (`server/room-stream.
+   *  mjs` builds both from one tick), so it is the hull's state AT the acked
+   *  word, which is what the driver's correction measures against
+   *  (`net-room.js` `correctDrivenHull`, `netcode-reconcile.js`
+   *  `createHullReconciler`). No velocity: the record does not carry one. */
+  out.selfHull = () => {
+    const snap = history.length ? history[history.length - 1].snap : null;
+    const self = playerIn(snap, out.slot);
+    if (!self?.inVehicle || !self.vehicleId) return null;
+    const v = snap.vehicles?.find(row => row.id === self.vehicleId);
+    return v ? { id: v.id, ack: self.ack, x: v.x, y: v.y, z: v.z, q: v.q } : null;
+  };
+
   /** The vehicle `id`'s lerped pose between the last two snapshots:
    *  {id, x, y, z, q, occupied} or null. */
   out.remoteVehicle = (id, at = null) => {
@@ -311,6 +412,9 @@ export function createRoomClient({ ws, now = null }) {
 
   out.nameOf = slot => roster.get(slot)?.name ?? `Player ${slot}`;
   out.teamOf = slot => roster.get(slot)?.team ?? 0;
+  /** Whether `slot` is one of the room's bots (BFPlayer vt+0x58: the board's
+   *  bot row, `listPlayers`' " is an AI bot.", CON-24). */
+  out.isAi = slot => roster.get(slot)?.bot === true;
 
   /** The render time for page time `atMs` (default now): the client's tick
    *  clock less interpolationTime, in the snapshots' own seconds. */
@@ -398,6 +502,8 @@ export function createRoomClient({ ws, now = null }) {
       swim: p.swim ?? null,
       // A blast's flight (`netcode.js` `FLIGHT_WIRE`), the newest word.
       flight: p.flight ?? null,
+      // The lower machine's state (`netcode.js` `LOWER_WIRE`), the newest word.
+      lower: p.lower ?? null,
       inVehicle: p.inVehicle,
       hp: p.hp ?? null,
       vehicleId: p.vehicleId ?? 0,

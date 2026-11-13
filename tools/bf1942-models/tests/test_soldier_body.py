@@ -1,303 +1,49 @@
-"""`viewer/soldier-body.js` under node: which clips the local body plays.
-
-The selection rules are the engine's and the clip names are the published
-files'. Two of them are the kind of thing that is invisible until someone
-renders it:
-
-* A stationary crouched soldier reads `soldier.gait === 'stand'` -- the gait
-  exists to pick a row of the view-bob table, which is only read while moving --
-  so the stance has to be consulted or a crouching man stands up. This is the
-  same trap `stance-clips.js` documents for the arms rig, and the same one that
-  made a prone remote stand up before W5-A.
-
-* The parachute's whole-body states replace the locomotion pair rather than
-  layering over it (`setIsParachuting` sets both halves, PARA-5), so the chute
-  outranks the gait.
-
-The parachute half is asserted against `parachute.js`'s own `PARA_CLIPS`, which
-is read out of `animations/AnimationStatesParachute.con`, so there is one table
-and not two.
-"""
-
+"""The soldier's AI body, read on lnxded (ledger AI-197): the first geometry's
+`BodyCollision` hull, radius 1.0, smallest radius sqrt(0.4^2 + 0.9^2 + 0.4^2),
+sphere offset 0.1, and the path removal distance made from them."""
 from __future__ import annotations
 
 import json
-import shutil
+import math
 import subprocess
-import tempfile
 import unittest
 from pathlib import Path
 
-ROOT = Path(__file__).resolve().parents[1]
-VIEWER = ROOT / "viewer"
-HARNESS = Path(__file__).with_name("soldier_body_harness.mjs")
-MODULES = {"soldier-body.js": VIEWER / "soldier-body.js",
-           "parachute.js": VIEWER / "parachute.js",
-           "swim.js": VIEWER / "swim.js",
-           "soldier-pose.js": VIEWER / "soldier-pose.js",
-           "soldier-death.js": VIEWER / "soldier-death.js",
-           "skeleton-hit.js": VIEWER / "skeleton-hit.js"}
-
-
-def run_harness() -> dict:
-    if shutil.which("node") is None:
-        raise unittest.SkipTest("node is not installed")
-    for source in MODULES.values():
-        if not source.exists():
-            raise unittest.SkipTest(f"{source.name} is not in the tree")
-    with tempfile.TemporaryDirectory() as tmp:
-        work = Path(tmp)
-        for name, source in MODULES.items():
-            shutil.copyfile(source, work / name)
-        (work / "package.json").write_text('{"type":"module"}\n')
-        shutil.copyfile(HARNESS, work / "harness.mjs")
-        proc = subprocess.run(
-            ["node", str(work / "harness.mjs")],
-            capture_output=True, text=True, timeout=120)
-    if proc.returncode != 0:
-        raise AssertionError(f"harness failed:\n{proc.stderr}")
-    return json.loads(proc.stdout)
-
-
-# `soldier-death.js` `DIE_CLIPS`, in its order.
-DEATHS = ["dieChestStand", "dieBackStand", "dieChestCrouch", "dieBackCrouch",
-          "dieLie", "dieHead", "dieSlow", "dieHitGround", "dieByVehicle"]
+VIEWER = Path(__file__).resolve().parent.parent / "viewer"
 
 
 class SoldierBodyTests(unittest.TestCase):
-    results: dict
+    def test_the_body_constants_are_the_hull_boxs(self) -> None:
+        code = ("import * as s from './bot-sense.js'; import {pathRadius} from './bot-decision.js';"
+                "console.log(JSON.stringify([s.SOLDIER_RADIUS, s.SOLDIER_SMALLEST_RADIUS,"
+                "s.SOLDIER_SPHERE_OFFSET, s.SOLDIER_PATH_REMOVAL, pathRadius({vehicle:null})]))")
+        out = subprocess.run(["node", "--input-type=module", "-e", code], cwd=VIEWER,
+                             capture_output=True, text=True, check=True).stdout
+        radius, smallest, offset, removal, bot = json.loads(out.strip().splitlines()[-1])
+        self.assertEqual(1.0, radius)                         # 0x083af2fb
+        self.assertAlmostEqual(math.sqrt(0.16 + 0.81 + 0.16), smallest, places=6)   # 0x083809f0 +0x1c
+        self.assertEqual(0.1, offset)                         # the box centre (0, -0.1, 0)
+        self.assertAlmostEqual(0.99 * (smallest - 0.1), removal, places=6)          # 0x0852b780
+        self.assertEqual(removal, bot)
 
-    @classmethod
-    def setUpClass(cls) -> None:
-        cls.results = run_harness()
 
-    def test_the_seven_gaits_the_six_parachutes_the_six_swims_and_the_deaths(self) -> None:
-        self.assertEqual(
-            ["stand", "walk", "run", "crouch", "crouchwalk", "prone", "crawl",
-             "parachuteFall", "parachuteOpen", "parachuteGlide",
-             "parachuteLanded", "parachuteDie", "parachuteDeadLanded",
-             "swimStart", "swimFloat", "swimForward", "swimBackward",
-             "swimEnd", "swimDie"] + DEATHS,
-            self.results["families"])
-
-    def test_every_family_names_both_halves_of_the_body(self) -> None:
-        # The engine runs two state machines over disjoint bone sets, so a
-        # family that named only one half would leave the other holding the
-        # static pose -- which is a bug, not a fallback.
-        self.assertTrue(self.results["everyFamilyHasBothHalves"])
-        self.assertTrue(self.results["everyFamilyHasAChain"])
-
-    def test_the_clip_names_are_the_published_files_own(self) -> None:
-        clips = self.results["clips"]
-        self.assertEqual({"lower": "stand.lower", "upper": "stand.upper"},
-                         clips["stand"])
-        self.assertEqual({"lower": "run.lower", "upper": "run.upper"},
-                         clips["run"])
-        # The prone pose is baked as the engine's own word, `lie`.
-        self.assertEqual({"lower": "lie.lower", "upper": "lie.upper"},
-                         clips["prone"])
-        self.assertEqual({"lower": "crawl.lower", "upper": "crawl.upper"},
-                         clips["crawl"])
-        # The parachute clips keep the engine's state names verbatim.
-        self.assertEqual({"lower": "Lb_ParachuteOpen",
-                          "upper": "Ub_ParachuteOpen"},
-                         clips["parachuteOpen"])
-        self.assertEqual({"lower": "Lb_ParachuteDeadHitGround",
-                          "upper": "Ub_ParachuteDeadHitGround"},
-                         clips["parachuteDeadLanded"])
-
-    def test_the_glide_torso_is_the_weapon_aim_the_engine_returns_to(self) -> None:
-        # Not a viewer choice: `Ub_ParachuteOpen`'s own
-        # `addTransitionWhenDone Ub_StandAim`, which is also why there is no
-        # `Ub_ParachuteIdle` state to bake.
-        self.assertEqual("Ub_StandAim", self.results["glideUpperState"])
-        self.assertEqual("stand.upper", self.results["standAim"])
-        self.assertEqual("stand.upper", self.results["glideBakedUpper"])
-        self.assertEqual("Lb_ParachuteIdle",
-                         self.results["clips"]["parachuteGlide"]["lower"])
-
-    def test_the_playonce_states_are_the_one_shots(self) -> None:
-        # The four parachute `c_AsmPlayOnce` states, and the swim entry, exit and
-        # death -- `Lb_StartSwim`, `Lb_EndSwim` and `Lb_DieSwim` are all
-        # `c_AsmPlayOnce` with an `addTransitionWhenDone` (or, for the death,
-        # nothing) after them.
-        # Every `AnimationStatesDie.con` state is a one-shot too: `0` or
-        # `c_AsmPlayOnce`, and nothing to go on to.
-        self.assertEqual(
-            ["parachuteOpen", "parachuteLanded", "parachuteDie",
-             "parachuteDeadLanded", "swimStart", "swimEnd", "swimDie"] + DEATHS,
-            self.results["once"])
-
-    def test_every_pair_parachute_js_can_answer_resolves_to_a_family(self) -> None:
-        pairs = self.results["paraPairs"]
-        self.assertEqual(
-            {"falling": "parachuteFall", "open": "parachuteOpen",
-             "glide": "parachuteGlide", "landed": "parachuteLanded",
-             "dead": "parachuteDie", "deadLanded": "parachuteDeadLanded"},
-            pairs)
-        self.assertIsNone(self.results["paraUnknown"])
-        self.assertIsNone(self.results["paraNull"])
-        self.assertEqual("parachuteGlide", self.results["paraCaseInsensitive"])
-
-    def test_a_stationary_crouched_soldier_does_not_stand_up(self) -> None:
-        loco = self.results["loco"]
-        self.assertEqual("crouch", loco["crouchedStill"])
-        self.assertEqual("prone", loco["proneStill"])
-        self.assertEqual("stand", loco["standing"])
-
-    def test_the_moving_gaits_of_a_stance_are_its_movement_families(self) -> None:
-        loco = self.results["loco"]
-        self.assertEqual("crouchwalk", loco["crouchedMoving"])
-        self.assertEqual("crawl", loco["proneMoving"])
-        self.assertEqual("walk", loco["walking"])
-        self.assertEqual("run", loco["running"])
-
-    def test_a_gait_that_proves_a_posture_outranks_a_stale_stance(self) -> None:
-        loco = self.results["loco"]
-        self.assertEqual("crouchwalk", loco["crouchGaitStandStance"])
-        self.assertEqual("crawl", loco["proneGaitStandStance"])
-
-    def test_nonsense_lands_on_standing_rather_than_nothing(self) -> None:
-        self.assertEqual("stand", self.results["loco"]["garbage"])
-        self.assertEqual("stand", self.results["emptyState"])
-
-    def test_the_parachute_outranks_the_gait(self) -> None:
-        self.assertEqual("parachuteGlide", self.results["parachuteWinsOverGait"])
-        self.assertEqual("run", self.results["noParachuteFallsThrough"])
-
-    def test_a_chain_falls_back_toward_the_posture_before_standing(self) -> None:
-        fall = self.results["fallback"]
-        self.assertEqual("prone", fall["crawlToProne"])
-        self.assertEqual("walk", fall["crawlToWalk"])
-        self.assertEqual("crouch", fall["crouchwalkToCrouch"])
-        self.assertEqual("walk", fall["runToWalk"])
-        self.assertTrue(self.results["everyChainEndsAtStand"])
-        self.assertTrue(self.results["everyChainStartsWithItself"])
-        self.assertTrue(self.results["noDeathChainReachesLocomotion"])
-
-    def test_a_tree_without_the_parachute_bundle_still_draws_a_body(self) -> None:
-        fall = self.results["fallback"]
-        self.assertEqual("stand", fall["glideWithoutBundle"])
-        self.assertEqual("stand", fall["openWithoutBundle"])
-        self.assertEqual("parachuteGlide", fall["openWithGlideOnly"])
-        self.assertEqual("parachuteLanded", fall["deadLandedToLanded"])
-
-    def test_no_predicate_means_what_the_engine_owes(self) -> None:
-        self.assertEqual("crawl", self.results["fallback"]["noPredicate"])
-        self.assertEqual("stand", self.results["fallback"]["nothingBound"])
-        self.assertEqual("stand", self.results["fallback"]["unknownFamily"])
-
-    def test_end_to_end_selection(self) -> None:
-        end = self.results["endToEnd"]
-        self.assertEqual("parachuteGlide", end["glideOnAFullRig"])
-        self.assertEqual("stand", end["glideOnAnOldRig"])
-        self.assertEqual("crouch", end["crouchedStillOnAFullRig"])
-
-    def test_the_canopy_is_drawn_only_while_the_chute_carries_him(self) -> None:
-        canopy = self.results["canopy"]
-        # Free fall: the pack is still on his back.
-        self.assertIsNone(canopy["fall"])
-        self.assertIsNone(canopy["run"])
-        self.assertIsNone(canopy["stand"])
-        # `setIsParachuting` drives the child to "OpenParachute", which
-        # transitions to "IdleParachute" when done (PARA-5).
-        self.assertEqual("open", canopy["open"])
-        self.assertEqual("idle", canopy["glide"])
-        self.assertEqual("idle", canopy["landed"])
-        self.assertEqual("idle", canopy["die"])
-        self.assertEqual("idle", canopy["deadLanded"])
-
-    def test_every_pair_swim_js_can_answer_resolves_to_a_family(self) -> None:
-        self.assertEqual(
-            {"swimStart": "swimStart", "swimFloat": "swimFloat",
-             "swimForward": "swimForward", "swimBackward": "swimBackward",
-             "swimEnd": "swimEnd", "swimDie": "swimDie"},
-            self.results["swimPairs"])
-        # One table, not two: the clip names here are `swim.js`'s own.
-        self.assertTrue(self.results["swimTableAgrees"])
-        self.assertIsNone(self.results["swimUnknown"])
-        self.assertIsNone(self.results["swimNull"])
-        self.assertEqual("swimForward", self.results["swimCaseInsensitive"])
-
-    def test_swimming_replaces_the_gait_and_the_stance(self) -> None:
-        # `updateSwimming` enters the swim states by name on BOTH machines
-        # (`0x082823f7` / `0x08282426`), so they are whole-body states like the
-        # parachute's -- a swimming man is not also running, and not also
-        # crouching (the swim states declare no `c_AsmIsCrouching`).
-        sel = self.results["swimSelection"]
-        self.assertEqual("run", sel["running"])
-        self.assertEqual("swimForward", sel["swimmingWhileRunning"])
-        self.assertEqual("swimFloat", sel["swimmingWhileCrouched"])
-        self.assertEqual("swimDie", sel["deadInTheWater"])
-        # A canopy over water is the parachute's landing, not a swim.
-        self.assertEqual("parachuteGlide", sel["underACanopyOverWater"])
-
-    def test_a_tree_without_the_swim_bundle_falls_back_to_treading(self) -> None:
-        old = self.results["swimOnAnOldRig"]
-        # Never `run`: the chain goes swim -> swimFloat -> stand.
-        self.assertEqual("stand", old["noSwimBundle"])
-        self.assertEqual("swimFloat", old["onlyFloat"])
-        self.assertEqual("swimBackward", old["fullRig"])
-
-    def test_a_swimmer_and_a_corpse_stow_the_weapon(self) -> None:
-        # `setFlag c_AsmHideWeapon` on all five lower swim states and on every
-        # lower state in `AnimationStatesDie.con`, `Lb_DieSwim` included, and
-        # `BFSoldier::enableItem` obeys it (`0x082784af and eax,0x2`).
-        self.assertEqual(
-            ["swimStart", "swimFloat", "swimForward", "swimBackward", "swimEnd",
-             "swimDie"] + DEATHS,
-            self.results["hidesWeapon"])
-        self.assertTrue(self.results["hidesWeaponIsSwimOrDeath"])
-        # The renderer's set and the item gate's set are the same `setFlag`, so
-        # they must agree family by family or one of them is wrong.
-        self.assertTrue(self.results["hidesWeaponAgreesWithSwimJs"])
-
-    def test_the_canopy_hangs_from_his_origin(self) -> None:
-        # `addTemplate Parachute` at 0/0.3/0 in the soldier's own frame, his
-        # origin a metre over his feet: 1.3 m over the feet at (2, 10, -3).
-        # Hung from the feet, the human's canopy had its risers at his knees.
-        self.assertEqual(self.results["canopyAt"], [2, 11.3, -3])
-        for page_module in ("foot-body.js", "bot-visuals.js"):
-            self.assertIn("canopyPosition(", (VIEWER / page_module).read_text(), page_module)
-
-    def test_a_swimmer_has_no_canopy(self) -> None:
-        canopy = self.results["swimCanopy"]
-        self.assertIsNone(canopy["float"])
-        self.assertIsNone(canopy["die"])
+class LastLegTests(unittest.TestCase):
+    def test_the_last_leg_takes_the_moves_radius_and_the_rest_the_draw(self) -> None:
+        # `updateLocalPath` 0x08527120 (AI-191): the last leg's box is BotMain+0x5c, the
+        # waypoint walk's radius, 0.0 for every other foot move; other legs 10 + rand 14,
+        # the largest obstacle, plus 1; a hull keeps the draw.
+        code = ("import {legSearchRadius} from './bot-route.js';"
+                "const foot = (wp, ob = []) => ({vehicle: null, obstacles: ob, _pathFailures: 0,"
+                " _routeOwner: wp === null ? {} : {waypointObject: {radius: wp}}});"
+                "const r0 = () => 0, r1 = () => 1;"
+                "console.log(JSON.stringify([legSearchRadius(foot(37), true), legSearchRadius(foot(null), true),"
+                "legSearchRadius(foot(37), false, r0), legSearchRadius(foot(37), false, r1),"
+                "legSearchRadius(foot(37, [{r: 30}]), false, r0),"
+                "legSearchRadius({...foot(37), vehicle: {}}, true, r0)]))")
+        out = subprocess.run(["node", "--input-type=module", "-e", code], cwd=VIEWER,
+                             capture_output=True, text=True, check=True).stdout
+        self.assertEqual([37, 0, 11, 25, 31, 11], json.loads(out.strip().splitlines()[-1]))
 
 
 if __name__ == "__main__":
     unittest.main()
-
-
-class DeathBodyTests(unittest.TestCase):
-    results: dict
-
-    @classmethod
-    def setUpClass(cls) -> None:
-        cls.results = run_harness()
-
-    def test_a_death_outranks_the_gait_and_the_chute(self) -> None:
-        sel = self.results["deathSelection"]
-        self.assertEqual("dieBackCrouch", sel["crouchedDeath"])
-        # Killed in free fall: `handleDamage` plays `DieHitGround` while the
-        # chute still reads `Lb_ParachuteFall` (lnxded `0x08270bdc`).
-        self.assertEqual("dieHitGround", sel["freeFallDeath"])
-
-    def test_the_canopy_and_swim_deaths_are_their_own_modules_pairs(self) -> None:
-        sel = self.results["deathSelection"]
-        self.assertEqual("parachuteDie", sel["canopyDeath"])
-        self.assertEqual("swimDie", sel["swimDeath"])
-
-    def test_an_unbound_death_never_stands_the_corpse_up_as_a_gait(self) -> None:
-        sel = self.results["deathSelection"]
-        # Past the end of a death chain `resolveBodyFamily` answers `stand`, and
-        # the renderer hides a dead body whose family is not in `BODY_DEATHS`.
-        self.assertEqual("stand", sel["noDeathBundle"])
-        self.assertNotIn("stand", self.results["deaths"])
-        self.assertEqual("dieChestStand", sel["onlyChest"])
-
-    def test_every_death_is_a_corpse(self) -> None:
-        self.assertEqual(
-            set(DEATHS) | {"parachuteDie", "parachuteDeadLanded", "swimDie"},
-            set(self.results["deaths"]))

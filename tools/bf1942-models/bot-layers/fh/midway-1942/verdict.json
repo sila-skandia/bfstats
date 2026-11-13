@@ -1,0 +1,26 @@
+{
+ "level": "midway-1942",
+ "verdict": "fail",
+ "outcome": "unsuitable",
+ "config": "with vehicles",
+ "doctrine": "garrison",
+ "generatorVersion": 5,
+ "inputs": {
+  "controlPoints": "5f3dfa321cf0ab50cb1b8e220c9affd514214ebccb16eca2c63ce12c21bb3e5e",
+  "infantryMap": "244ad22d9e910e938ca5311e5a75e1ed8f3bf0d81fd30054010c55afbf987484",
+  "template": "bdc0e455f47f91b7e7724e71d7c0c196e839b36946ac3abb7663d725944081e5"
+ },
+ "baseline": "DICE layers with vehicles, garrison doctrine: berlin, stalingrad, kharkov, bocage; seeds 1..10, 600 s",
+ "bar": null,
+ "seeds": 1,
+ "sizes": {},
+ "oneSided": null,
+ "unreachable": [
+  "SeaPointTemplate"
+ ],
+ "lintErrors": [
+  "no capturable flag is reachable in 3D: none of the 1 has a place inside its radius that a soldier on the one-floor walk map's main ground can stand in",
+  "side 1 holds no spawn point at the start of the round",
+  "side 2 holds no spawn point at the start of the round"
+ ]
+}

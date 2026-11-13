@@ -40,7 +40,7 @@ MODULES = {name: VIEWER / name for name in (
     "drivable-mask.js", "collision-materials.js", "heightfield.js",
     "effects-core.js", "projectile-damage.js", "crash-damage.js", "physics.js",
     "walking-body.js", "rigid-body.js",
-    "soldier-resolve.js", "soldier-pose.js", "soldier-locomotion.js",
+    "soldier-resolve.js", "deck-carry.js", "soldier-pose.js", "soldier-locomotion.js",
     "point-body.js", "fixed-step.js", "parachute.js", "contact-response.js",
 )}
 MODULES["node_modules/three/three.module.js"] = VIEWER / "vendor" / "three.module.js"

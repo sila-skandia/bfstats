@@ -1,0 +1,28 @@
+{
+ "level": "escape_from_leyte",
+ "verdict": "fail",
+ "outcome": "unsuitable",
+ "config": "with vehicles",
+ "doctrine": "garrison",
+ "generatorVersion": 5,
+ "inputs": {
+  "controlPoints": "5e92e660d5a738926a4150b8c5b40149b00c81842b81d04f9245398b93f6becf",
+  "infantryMap": "be4cbe36f83e56b6d7fada57e1b0b9b3ea36f89282587c969091195cd638cfc1",
+  "template": "bdc0e455f47f91b7e7724e71d7c0c196e839b36946ac3abb7663d725944081e5"
+ },
+ "baseline": "DICE layers with vehicles, garrison doctrine: berlin, stalingrad, kharkov, bocage; seeds 1..10, 600 s",
+ "bar": null,
+ "seeds": 1,
+ "sizes": {},
+ "oneSided": null,
+ "unreachable": [
+  "West_Atlantic",
+  "AREA2",
+  "AREA3",
+  "East_ATLANTIC"
+ ],
+ "lintErrors": [
+  "side 1 holds no spawn point at the start of the round",
+  "side 2 holds no spawn point at the start of the round"
+ ]
+}

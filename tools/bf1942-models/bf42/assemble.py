@@ -731,6 +731,41 @@ def retail_lod_chain(lods, lightmapped: bool = False) -> int:
     return len(lods)
 
 
+def belt_influences(positions, skn: skin.Skin, numbers: list[int],
+                    binds: dict[int, list[tuple[float, float, float]]]):
+    """`(joints, weights)` for a track belt primitive's vertices.
+
+    A `.skn` vertex carries its rest position and, per influence, the bone's
+    index into the skin's own name list and the vertex's offset in that bone's
+    frame. The belt's bones never rotate (`_bind_belt`), so `rest - offset` is
+    the bone's bind translation; every such reading is gathered into `binds`
+    by bone NUMBER (`numbers[skin bone index]`, the N of `bone<N>`), which is
+    also what lands in JOINTS_0. Every vanilla belt vertex has one influence;
+    more than four are cut to the four heaviest and renormalised.
+    """
+    joints: list[tuple[int, int, int, int]] = []
+    weights: list[tuple[float, float, float, float]] = []
+    for match in flagcloth._match(positions, skn):
+        vertex = skn.vertices[match]
+        slots: dict[int, float] = {}
+        for inf in vertex.influences:
+            if inf.bone >= len(numbers) or inf.weight <= 0.0:
+                continue
+            number = numbers[inf.bone]
+            slots[number] = slots.get(number, 0.0) + inf.weight
+            binds.setdefault(number, []).append(tuple(
+                vertex.rest[axis] - inf.offset[axis] for axis in range(3)))
+        kept = sorted(slots.items(), key=lambda item: (-item[1], item[0]))[:4]
+        if not kept:
+            kept = [(0, 1.0)]
+        total = sum(weight for _number, weight in kept) or 1.0
+        js = [number for number, _weight in kept] + [0, 0, 0, 0]
+        ws = [weight / total for _number, weight in kept] + [0.0, 0.0, 0.0, 0.0]
+        joints.append(tuple(js[:4]))
+        weights.append(tuple(ws[:4]))
+    return joints, weights
+
+
 def geometry_scale(template: con_mod.GeometryTemplate | None
                    ) -> tuple[float, float, float] | None:
     """A geometry's `GeometryTemplate.scale`, or None when it draws at 1/1/1.
@@ -1335,6 +1370,9 @@ class Assembler:
         # from the mesh bounds — axis, length, bottom/top, face. Shared by
         # every placement of the geometry; `None` caches a non-ladder reading.
         self._geom_ladder: dict[str, dict | None] = {}
+        # A track belt's geometry -> {bone number: bind translation}, for the
+        # meshes `_mesh_index` emitted with JOINTS_0 (`_belt_skin`).
+        self._geom_belt: dict[str, dict[int, tuple[float, float, float]]] = {}
         # Gap 11: per geometry, the LOD rungs emitted below LOD 0 as
         # `[(level, mesh index), ...]` plus the distance table used. Shared by
         # every placement of the geometry; read by `_lod_children_for`.
@@ -2168,6 +2206,8 @@ class Assembler:
             report.mesh_lods[mesh_file]["lodTriangles"] = emitted_tris
             self._geom_lod_chain[cache_key] = (emitted, distances)
 
+        belt = self._belt_skin(template)
+        belt_binds: dict[int, list[tuple[float, float, float]]] = {}
         primitives: list[gltf.Primitive] = []
         triangles = 0
         for material in lod.materials:
@@ -2176,18 +2216,29 @@ class Assembler:
                 continue
             triangles += len(tris)
             shader = rs.lookup(shaders, material.name)
+            positions = material.positions()
+            joints = weights = None
+            if belt is not None:
+                joints, weights = belt_influences(positions, *belt, belt_binds)
             primitives.append(gltf.Primitive(
-                positions=material.positions(),
+                positions=positions,
                 normals=material.normals(),
                 uvs=material.uvs(),
                 uvs2=material.uvs2(),
                 indices=[i for tri in tris for i in tri],
                 material=self._material_index(builder, shader, material.name, report),
+                joints=joints,
+                weights=weights,
             ))
 
         if not primitives:
             self._geom_mesh[cache_key] = (None, 0)
             return None, 0
+        if belt is not None:
+            self._geom_belt[cache_key] = {
+                bone: tuple(sum(b[axis] for b in found) / len(found)
+                            for axis in range(3))
+                for bone, found in belt_binds.items()}
         result = builder.add_mesh(mesh_file, primitives), triangles
         self._geom_mesh[cache_key] = result
         return result
@@ -2753,6 +2804,12 @@ class Assembler:
         # precisely to be shown in flight.
         body = (drawn if drawn is not None and drawn.geometry
                 else projectile if not projectile.invisible else None)
+        # A round that is a vehicle: `FireArms::fireBarrel` 0x0828aba0 spawns
+        # a PlayerControlObject template through the game instead of throwing
+        # a pooled projectile, and moves the firer into it (FA-29). XPack2's
+        # Wasserfall launcher throws `WasserfallRocket`; `viewer/rocket-ride.js`.
+        if projectile.kind.lower() == "playercontrolobject":
+            spec["vehicle"] = True
         if projectile.time_to_live is not None:
             spec["timeToLive"] = projectile.time_to_live
         if projectile.gravity_modifier is not None:
@@ -2857,6 +2914,8 @@ class Assembler:
                 # The fourth: a round that sticks to the object it strikes
                 # (`ProjectileTemplate+0x1ab`, tested at 0x0831ef16).
                 "isSticky": projectile.is_sticky,
+                # No friendly-fire call-out on contact (FF-6, `+0x14f`).
+                "noFFSound": projectile.no_ff_sound,
             }.items() if value is not None
         }
         if damage:
@@ -3033,6 +3092,9 @@ class Assembler:
             # vehicle FireArms exactly like a HandFireArms (Defgun's cannon:
             # 499/999/5s; a coax Browning: 400/1/0.1s, autoReload 1).
             "numOfMag": template.num_of_mag,
+            # The depot row that rearms the gun (`ammoType`, SUP-2): a B17's
+            # guns 10 and its rack 9 against the airfield's 100/s and 4/s rows.
+            "ammoType": template.ammo_type,
             "magType": template.mag_type,
             "reloadTime": template.reload_time,
             "autoReload": template.auto_reload,
@@ -3058,6 +3120,11 @@ class Assembler:
             # launcher. Absent when the template does not say it, so a held
             # trigger keeps firing at `roundOfFire` as before.
             "fireOnce": True if template.fire_once else None,
+            # FA-28, FA-30: the dummy round kept off the rail until the
+            # reload, and the root PCO destroyed with the last round.
+            "disableWhenFired": True if template.disable_when_fired else None,
+            "destroyVehicleWhenNoAmmo": (True if template.destroy_vehicle_when_no_ammo
+                                         else None),
             # `projectilePosition` is where the round leaves when a template
             # declares no `addFireArmsPosition`, and the muzzle list below
             # already falls back to it. When BOTH are declared the barrels win
@@ -3123,6 +3190,104 @@ class Assembler:
             + (f", heat +{template.heat_add_when_fire:g}/shot"
                if template.heat_add_when_fire else ""))
         return nodes, extras
+
+    def _belt_skin(self, template: con_mod.GeometryTemplate
+                   ) -> tuple[skin.Skin, list[int]] | None:
+        """A track belt's `.skn` and each of its bones' numbers, or None.
+
+        The editor's `AnimatedBundleTemplate::buildSkeleton` (lnxded
+        `0x08268360`) names the bones it writes `bone%d` (the format string at
+        `0x086d1b58`), one per `useAsBone` child in order, and `buildSkin`
+        (`0x082678f0`) writes the `.skn` against them. So a skin whose every
+        bone is `bone<N>` is one a bundle's bogies pose, and N is the BoneInfo
+        it follows. A soldier's or a flag's skin names Max bones and is left
+        to its own path.
+        """
+        if template.kind.lower() == "treemesh" or not template.skin:
+            return None
+        if flagcloth.is_flag_skin(template.skin):
+            return None
+        skn = self._read_skin(template.skin)
+        if skn is None or not skn.bones:
+            return None
+        numbers: list[int] = []
+        for name in skn.bones:
+            if not name.lower().startswith("bone") or not name[4:].isdigit():
+                return None
+            numbers.append(int(name[4:]))
+        return skn, numbers
+
+    def _bind_belt(self, builder: gltf.GlbBuilder,
+                   template: con_mod.ObjectTemplate, node_index: int,
+                   built_children: list[tuple[con_mod.ChildRef, str, int]],
+                   report: Report) -> None:
+        """Skin a track belt to its bogies, the way the engine poses it.
+
+        `AnimatedBundle::updateAnimations` (lnxded `0x08266080`; the Mac
+        client's twin reads the same): when the skeleton's bone count equals
+        the template's BoneInfo count (`0x082661d5`-`0x082661e5`), it walks
+        the bundle's children and, for BoneInfo k's child (`0x0826639d`),
+        writes bone k's relative matrix as the identity rotation
+        (`0x0826651f`-`0x08266557`) with the child's own relative position
+        (vtable `+0x74`, `0x08266509`), then `Skeleton::transform`
+        (`0x08266321`). So a belt vertex rides its bogie's translation and
+        never its spin, and a count that differs leaves the belt unposed.
+
+        Here: one joint node per BoneInfo under the belt, `extras.trackBone`
+        k, and `extras.trackBogie` k on the child it follows; the viewer copies
+        the child's position onto the joint (`viewer/track-scroll.js`
+        `followBogies`). A joint RESTS at the bind the `.skn` records (its
+        vertices' `rest - offset`), so a hull nothing drives draws the belt
+        as the `.sm` has it. That bind is the child's position less the
+        `useAsBone` vector of the day the skin was built: the Sherman's sits
+        0.15 m above its springs, which is the height the springs settle to
+        under the hull's weight.
+        """
+        geometry = (template.geometry or "").lower()
+        binds = self._geom_belt.get(geometry)
+        if binds is None or template.kind.lower() != "animatedbundle":
+            return
+        bones = [ref for ref in template.children if ref.use_as_bone is not None]
+        if not bones:
+            return
+        skeleton = (self._read_skeleton(template.skeleton, report)
+                    if template.skeleton else None)
+        if skeleton is None or len(skeleton.bones) != len(bones):
+            report.skinned_parts.append(
+                f"{template.name} belt left rigid: {len(bones)} useAsBone "
+                f"children, skeleton "
+                + ("unread" if skeleton is None else f"{len(skeleton.bones)} bones"))
+            return
+        if binds and max(binds) >= len(bones):
+            report.skinned_parts.append(
+                f"{template.name} belt left rigid: skin names bone{max(binds)}, "
+                f"{len(bones)} useAsBone children")
+            return
+        node = builder.node(node_index)
+        identity = ((1.0, 0.0, 0.0), (0.0, 1.0, 0.0), (0.0, 0.0, 1.0))
+        joints: list[int] = []
+        rests: list[tuple[float, float, float]] = []
+        followed = 0
+        for k, ref in enumerate(bones):
+            rest = binds.get(k, tuple(ref.position))
+            rests.append(rest)
+            joints.append(builder.add_node(gltf.Node(
+                name=f"{template.name}_bone{k}",
+                translation=rest,
+                extras={"trackBone": k},
+            )))
+            child = next((index for child_ref, _name, index in built_children
+                          if child_ref is ref), None)
+            if child is not None:
+                bogie = builder.node(child)
+                bogie.extras = {**(bogie.extras or {}), "trackBogie": k}
+                followed += 1
+        node.children = list(node.children) + joints
+        node.skin = builder.add_skin(
+            joints, [(identity, rest) for rest in rests], name=template.name)
+        node.extras = {**(node.extras or {}), "trackBones": len(bones)}
+        report.skinned_parts.append(
+            f"{template.name} belt skinned to {followed} of {len(bones)} bogies")
 
     def _read_skin(self, path: str) -> skin.Skin | None:
         key = path.lower()
@@ -4208,6 +4373,10 @@ class Assembler:
                 seat["entryRadius"] = template.entry_radius
             if template.seat_flags:
                 seat["flags"] = list(template.seat_flags)
+            if template.seat_angle_multipliers:
+                # SEAT-43: only the words the script wrote; the ctor's are
+                # left / right / headMax 0.6, up / down 0.4.
+                seat["angleMultipliers"] = dict(template.seat_angle_multipliers)
             if template.seat_animation_upper_body or template.seat_animation_lower_body:
                 seat["poseAnimation"] = {k: v for k, v in {
                     "upperBody": template.seat_animation_upper_body,
@@ -4257,6 +4426,11 @@ class Assembler:
                 # tanks declare it, so a casemate hull -- Wespe, StuG -- now
                 # correctly shows no dial where it used to get one.
                 "hasTurretIcon": template.has_turret_icon,
+                # `setToolTipType` as its number (`con.TOOL_TIP_TYPES`): the
+                # class whose help the client shows on entry, and 0x24 the
+                # Wasserfall SPAWN-14 exempts. A tree baked before this reads
+                # it from the pack's `tooltip-layout.json` `vehicles` table.
+                "toolTipType": con_mod.tool_tip_type_id(template.tool_tip_type),
                 # VHUD-11: this PCO's own seat-occupancy dot, in the 128x128
                 # vehicle-icon texture's space. Carried for the root AND every
                 # seat, because each declares its own.
@@ -4424,6 +4598,8 @@ class Assembler:
             children=child_indices,
             extras=extras,
         ))
+        if mesh_index is not None:
+            self._bind_belt(builder, template, node_index, built_children, report)
 
         # Spin specs need the node's *authored* placement (the keyframes
         # restate it), so they only apply where nothing else has rewritten it:

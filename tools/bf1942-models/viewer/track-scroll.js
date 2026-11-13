@@ -57,9 +57,28 @@
 // the bottom run's pattern toward the back of the hull when the hull drives
 // forward, as a track on the ground does.
 //
-// The belt geometry itself stays rigid: the engine skins it to its road
-// wheels (`features/vehicle-chase-and-tracks`, "Belt articulation"), and the
-// exporter does not yet ship that skin.
+// THE BELT'S SHAPE (2026-11-13). The same function poses the belt's skin
+// after the scroll. Where the skeleton has as many bones as the template has
+// `useAsBone` children (lnxded `0x082661d5`-`0x082661e5`), it walks the
+// bundle's children and gives bone k the identity rotation
+// (`0x0826651f`-`0x08266557`) and the relative position of the k-th such
+// child (`0x08266509`, vtable `+0x74`), then `Skeleton::transform`
+// (`0x08266321`). The Mac client's twin reads the same. So each stretch of
+// tread rides the bogie it is skinned to, up and down with the spring, and
+// never turns with the wheel. `useAsBone`'s and `setBoneOriginOffset`'s own
+// vectors (`0x082685a0`, `0x08268680`) are read only by the editor that
+// wrote the `.skn` (`buildSkin` `0x082678f0`).
+//
+// `followBogies` is that loop: a glb baked since this date carries one joint
+// per bone under the belt (`extras.trackBone` k) and marks the child each
+// follows (`extras.trackBogie` k; `bf42/assemble.py` `_bind_belt`). It runs
+// wherever a drive integrates its springs (`TrackedVehicle` and
+// `WheeledVehicle` `#applyWheels`), a handful of vector copies a hull a tick.
+// A hull presented from a recording or a room has no spring travel to follow
+// (`presentKinematic` draws its wheels at their authored height), so its
+// belt is put back as the mesh has it (`restBelts`); a parked hull nothing
+// drives is the same. A glb baked before has no joints and its belt stays
+// rigid, as it was.
 
 import { currentDifferentialRPM } from './ground-engine.js';
 
@@ -299,4 +318,89 @@ export function scrollBeltsByMotion(root, motion, dt) {
   const belts = beltsOf(root);
   if (!belts.length || !motion) return;
   advanceBelts(belts, dt, belt => motionBeltRate(motion.forward, motion.yawRate, belt.lateral));
+}
+
+const bogieRigs = new WeakMap();
+
+/** The (joint, bogie) pairs of every skinned belt under `root`. */
+function bogieRig(root) {
+  const pairs = [];
+  const skinned = [];
+  root.traverse(belt => {
+    if (!(belt.userData?.trackBones > 0)) return;
+    const joints = new Map();
+    const bogies = new Map();
+    for (const child of belt.children) {
+      const data = child.userData;
+      if (Number.isInteger(data?.trackBone)) joints.set(data.trackBone, child);
+      else if (Number.isInteger(data?.trackBogie)) bogies.set(data.trackBogie, child);
+      else if (child.isSkinnedMesh) skinned.push(child);
+    }
+    if (belt.isSkinnedMesh) skinned.push(belt);
+    for (const [k, joint] of joints) {
+      const bogie = bogies.get(k);
+      // The rig is built before anything poses the belt, so where the joint
+      // stands now is its rest: the skin's own bind.
+      if (bogie) pairs.push({ joint, bogie, rest: joint.position.clone() });
+    }
+  });
+  return { pairs, skinned, measured: false, posed: false };
+}
+
+function rigOf(root) {
+  let rig = bogieRigs.get(root);
+  if (!rig) {
+    rig = bogieRig(root);
+    bogieRigs.set(root, rig);
+  }
+  return rig;
+}
+
+/**
+ * Pose every skinned belt under `root` on its bogies: joint k takes its
+ * bogie's own position and keeps no rotation (`updateAnimations`, above).
+ * Call it after the wheels' lift is written. A hull whose glb carries no belt
+ * joints costs one WeakMap read.
+ *
+ * @returns {number} how many joints it posed
+ */
+export function followBogies(root) {
+  if (!root?.traverse) return 0;
+  const rig = rigOf(root);
+  const { pairs } = rig;
+  for (let i = 0; i < pairs.length; i++) pairs[i].joint.position.copy(pairs[i].bogie.position);
+  rig.posed = pairs.length > 0;
+  if (!rig.measured && pairs.length) {
+    // A skinned mesh measured before its skeleton first updated (the level's
+    // cull tagging boxes every hull at load) keeps a box of one point, and
+    // `SkinnedMesh.raycast` trusts it. Measure again from the posed bones.
+    rig.measured = true;
+    root.updateWorldMatrix?.(true, true);
+    for (const mesh of rig.skinned) {
+      mesh.skeleton?.update?.();
+      mesh.boundingBox = null;
+      mesh.boundingSphere = null;
+    }
+  }
+  return pairs.length;
+}
+
+/**
+ * Every skinned belt under `root` back as its mesh has it: the joints at
+ * their bind. For a hull whose springs nothing knows the travel of: a replay's
+ * or a room's presented hull is drawn with its wheels at their authored
+ * height, and a belt following them there would hang the `useAsBone` drop
+ * (0.15 m on a Sherman) below the tread the recording drove on. Retail has no
+ * such case: its own client runs every hull's springs.
+ *
+ * @returns {number} how many joints it put back
+ */
+export function restBelts(root) {
+  if (!root?.traverse) return 0;
+  const rig = rigOf(root);
+  if (!rig.posed) return 0;
+  const { pairs } = rig;
+  for (let i = 0; i < pairs.length; i++) pairs[i].joint.position.copy(pairs[i].rest);
+  rig.posed = false;
+  return pairs.length;
 }

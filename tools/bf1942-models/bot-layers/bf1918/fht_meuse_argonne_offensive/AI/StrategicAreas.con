@@ -5,6 +5,7 @@ aiStrategicArea.addNeighbour consenvoye
 aiStrategicArea.addNeighbour cote_288
 aiStrategicArea.addNeighbour artillery_hill
 aiStrategicArea.addObjectTypeFlag Base
+aiStrategicArea.setOrderPosition Tank 492.5/941.5
 aiStrategicArea.setOrderPosition Infantry 491.5/941.5
 aiStrategicArea.setSide 1
 aiStrategicArea.setTakeable 2 0
@@ -13,6 +14,7 @@ aiStrategicArea.create alliedbase 507.3/96.7 512.3/101.7 50
 aiStrategicArea.addNeighbour brabant
 aiStrategicArea.addNeighbour bois_de_forge
 aiStrategicArea.addObjectTypeFlag Base
+aiStrategicArea.setOrderPosition Tank 514.5/101.5
 aiStrategicArea.setOrderPosition Infantry 511.5/100.5
 aiStrategicArea.setSide 2
 aiStrategicArea.setTakeable 1 0
@@ -27,6 +29,7 @@ aiStrategicArea.addObjectTypeFlag Centre
 aiStrategicArea.addObjectTypeFlag StrongPoint
 aiStrategicArea.addObjectTypeFlag Close
 aiStrategicArea.addObjectTypeFlag ControlPoint
+aiStrategicArea.setOrderPosition Tank 568.5/361.5
 aiStrategicArea.setOrderPosition Infantry 567.5/362.5
 aiStrategicArea.setSide 2
 
@@ -39,6 +42,7 @@ aiStrategicArea.addNeighbour artillery_hill
 aiStrategicArea.addObjectTypeFlag Centre
 aiStrategicArea.addObjectTypeFlag Close
 aiStrategicArea.addObjectTypeFlag ControlPoint
+aiStrategicArea.setOrderPosition Tank 576.5/682.5
 aiStrategicArea.setOrderPosition Infantry 577.5/681.5
 aiStrategicArea.setSide 1
 
@@ -49,6 +53,7 @@ aiStrategicArea.addNeighbour consenvoye
 aiStrategicArea.addNeighbour cote_288
 aiStrategicArea.addObjectTypeFlag Flank
 aiStrategicArea.addObjectTypeFlag ControlPoint
+aiStrategicArea.setOrderPosition Tank 293.5/410.5
 aiStrategicArea.setOrderPosition Infantry 294.5/411.5
 aiStrategicArea.setSide 2
 
@@ -59,6 +64,7 @@ aiStrategicArea.addNeighbour consenvoye
 aiStrategicArea.addNeighbour bois_de_forge
 aiStrategicArea.addObjectTypeFlag Flank
 aiStrategicArea.addObjectTypeFlag ControlPoint
+aiStrategicArea.setOrderPosition Tank 303.5/662.5
 aiStrategicArea.setOrderPosition Infantry 302.5/663.5
 aiStrategicArea.setSide 1
 
@@ -68,4 +74,5 @@ aiStrategicArea.addNeighbour brabant
 aiStrategicArea.addNeighbour consenvoye
 aiStrategicArea.addObjectTypeFlag Flank
 aiStrategicArea.addObjectTypeFlag ControlPoint
+aiStrategicArea.setOrderPosition Tank 805.5/518.5
 aiStrategicArea.setOrderPosition Infantry 802.5/513.5

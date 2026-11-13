@@ -1,0 +1,166 @@
+{
+ "generator": "botgen",
+ "version": 5,
+ "mod": "FHSW",
+ "level": "westminster-1942",
+ "objectSpawners": 141,
+ "template": "symmetric",
+ "templateSource": "DICE, bf1942 Kharkov (1.6 patch archives): AI/Strategies.con, AI/conditions.con, AI/prerequisites.con, unchanged",
+ "templateChoice": {
+  "name": "symmetric",
+  "inPlay": 6,
+  "rule": "6 capturable flags in play, more than 3"
+ },
+ "scope": "an infantry map painted from the walk test, a Tank0 map from the page painter, infantry order positions, no strategic maps, no co-op layer",
+ "unreachable": [],
+ "unreachableReasons": {},
+ "botSpawnsExcluded": [
+  "station_spawn2",
+  "citysouth_spawn3",
+  "citysouth_spawn4",
+  "roadcenter_spawn3",
+  "roadcenter_spawn4"
+ ],
+ "walkMap": {
+  "source": "walk test",
+  "engine": "none",
+  "vehicleMap": "page painter",
+  "vehicleBrush": 1.5,
+  "vehicleBrushes": [
+   {
+    "brush": 3,
+    "flagsOn": 2,
+    "spawnersOn": 20,
+    "pieces": 47,
+    "main": 2076658
+   },
+   {
+    "brush": 2.5,
+    "flagsOn": 2,
+    "spawnersOn": 27,
+    "pieces": 33,
+    "main": 2100083
+   },
+   {
+    "brush": 2,
+    "flagsOn": 2,
+    "spawnersOn": 27,
+    "pieces": 27,
+    "main": 2106896
+   },
+   {
+    "brush": 1.5,
+    "flagsOn": 3,
+    "spawnersOn": 32,
+    "pieces": 26,
+    "main": 63468
+   }
+  ],
+  "opened": [
+   [
+    822,
+    959
+   ],
+   [
+    1107,
+    1037
+   ],
+   [
+    1107,
+    1038
+   ]
+  ],
+  "ways": [
+   {
+    "who": "alliesbase_spawn1",
+    "kind": "spawn",
+    "way": "walk",
+    "opened": 1
+   },
+   {
+    "who": "citysouth_spawn3",
+    "kind": "spawn",
+    "way": "jump",
+    "opened": 0
+   },
+   {
+    "who": "roadcenter_spawn5",
+    "kind": "spawn",
+    "way": "walk",
+    "opened": 2
+   }
+  ],
+  "cover": 0.952,
+  "floors": {
+   "stacked": false,
+   "twoFloorShare": 0.01,
+   "raised": [],
+   "reason": null
+  }
+ },
+ "routeProbe": {
+  "chokeMax": 4,
+  "unreachable": [],
+  "stops": {},
+  "oneSided": {},
+  "sides": {
+   "1": {
+    "spawns": 10,
+    "flags": [
+     "controlpoint_big_ben",
+     "controlpoint_northpark",
+     "controlpoint_roadcenter",
+     "controlpoint_southcity",
+     "westminster_bridge",
+     "westminster_station"
+    ]
+   },
+   "2": {
+    "spawns": 23,
+    "flags": [
+     "controlpoint_big_ben",
+     "controlpoint_northpark",
+     "controlpoint_roadcenter",
+     "controlpoint_southcity",
+     "westminster_bridge",
+     "westminster_station"
+    ]
+   }
+  },
+  "chokes": {
+   "westminster_station:1": 0,
+   "westminster_station:2": 0,
+   "controlpoint_northpark:1": 0,
+   "controlpoint_northpark:2": 0,
+   "controlpoint_southcity:1": 0,
+   "controlpoint_southcity:2": 0,
+   "controlpoint_roadcenter:1": 0,
+   "controlpoint_roadcenter:2": 0,
+   "westminster_bridge:1": 0,
+   "westminster_bridge:2": 0,
+   "controlpoint_big_ben:1": 0,
+   "controlpoint_big_ben:2": 2
+  },
+  "late": {},
+  "shutLinks": []
+ },
+ "inputs": {
+  "controlPoints": "277c1f6da6fa77574473e2e5ff314e4ac6092873b7119ab079818f03f9aadb37",
+  "infantryMap": "0a296bc75d8e963edcc4e446ed3fe82b719cd1a10e792e450c6d79a2097b806a",
+  "template": "43f8a790471528016570235f76e97dbb2045732458781a5139f37fed68bf98c0"
+ },
+ "files": {
+  "AI.con": "5999c3e75c7eb1ee24c971a5488c3eac0dd891e0655bf057c72c69fc1ac71a63",
+  "AIpathFinding.con": "9d8080cdfa7605961969aa126519b03be9691bd604ac76aef50166d81215edd2",
+  "AI/StrategicAreas.con": "ab0102bc5cf180aeac134bf3667f994981b902dc2f4fd5689e70c10e1d26f012",
+  "AI/Strategies.con": "4ce0be59a0d6c5cd530db002fb062c4be8d936bc6ae59bd188803ccaf7869a8d",
+  "AI/conditions.con": "68a0c7a8aec69954063147b60fae560b2874884285737aa085efa76597d395aa",
+  "AI/prerequisites.con": "4c1f313bc285b228fd6ad03bfd1f44c5b15c8703c31f802eb605bc5f00f88bb5",
+  "Pathfinding/Infantry1Level0Map.raw": "d8c63915079e4d177c2d255cab61d109501222552da064d9b93cc8f8de0ff08a",
+  "Pathfinding/Infantry1Level1Map.raw": "bdc5e101336fd04e9092f6311a3be988894a042f16faa8ee0f87209a2d5264bb",
+  "Pathfinding/Infantry1Level2Map.raw": "1cb0e9c7025b2fe1b55aa918c4ad9cd3be9d745a736a2fd40918656ca0f931a1",
+  "Pathfinding/Tank0Level0Map.raw": "6d666746033c781e82c4d4b5ab8e243ec1a2e23d14d6451c4c5b01ddfc9d8379",
+  "Pathfinding/Tank0Level1Map.raw": "7e0186cf7e0e42af30c98cc7951a0862e93c566b5edb02bfa1289b221b6b9ab7",
+  "Pathfinding/Tank0Level2Map.raw": "15b2c8dd4a92296f9ece5b4fdaca704df6ea337ad95a23f89c08436dbffd6c90"
+ }
+}

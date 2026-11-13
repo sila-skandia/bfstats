@@ -42,7 +42,7 @@ MODULE_NAMES = [
     "seat-dots.js", "idle-vehicle.js", "world-collider.js", "static-index.js",
     "collision-meshes.js", "drivable-mask.js", "collision-materials.js",
     "heightfield.js", "effects-core.js", "projectile-damage.js",
-    "crash-damage.js", "physics.js", "walking-body.js", "rigid-body.js", "soldier-resolve.js",
+    "crash-damage.js", "physics.js", "walking-body.js", "rigid-body.js", "soldier-resolve.js", "deck-carry.js",
     "soldier-pose.js", "soldier-locomotion.js", "point-body.js", "fixed-step.js",
     "parachute.js", "contact-response.js",
 ]

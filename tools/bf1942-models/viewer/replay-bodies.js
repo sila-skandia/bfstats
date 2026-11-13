@@ -204,6 +204,30 @@ export class ReplaySoldiers {
     this.snap = true;
     // From a `jump` to the next `reset`: the timeline is being dragged.
     this.dragging = false;
+    this.primeReports();
+  }
+
+  /**
+   * Decode the report of every weapon the recording fires, as the replay
+   * opens. `WorldFire.play` drops a round whose weapon has no pooled slot
+   * yet and only then starts building one, so a weapon's first burst was
+   * silent while its samples were fetched and decoded: on 3cqup373fj
+   * (manchuria-1945, pid 16) the first 9 of an Mp18's 41 rounds, 0.8 s,
+   * went unheard. Report only (`edges: false`): the replay plays no magazine
+   * change. A hull gun's name is not in `weapons.json` and primes nothing.
+   */
+  primeReports() {
+    const prime = this.player.ctx?.playWorldShot?.prime;
+    if (typeof prime !== 'function') return [];
+    const names = new Map();
+    for (const f of this.player.rec?.fires ?? []) {
+      if (f.press || !f.weapon || /soldier/i.test(f.weapon)) continue;
+      const key = f.weapon.toLowerCase();
+      if (!names.has(key)) names.set(key, f.weapon);
+    }
+    const primed = [...names.values()];
+    for (const name of primed) prime(name, { edges: false });
+    return primed;
   }
 
   get available() { return Boolean(this.bodies); }

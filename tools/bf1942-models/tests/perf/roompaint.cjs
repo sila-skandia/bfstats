@@ -66,7 +66,8 @@ function bootStatic(port, netPort) {
 
 async function main() {
   const [netPort, webPort] = [await freePort(), await freePort()];
-  const args = ['server.mjs', '--port', String(netPort), '--viewer', VIEWER, '--default-level', opts.map];
+  const args = ['server.mjs', '--port', String(netPort), '--viewer', VIEWER, '--default-level', opts.map,
+    '--game-start-delay', '0'];
   if (opts.mod !== 'bf1942') args.push('--mod', opts.mod);
   const room = spawn('node', args, { cwd: path.join(ROOT, 'server'), stdio: ['ignore', 'pipe', 'pipe'] });
   let roomLog = '';

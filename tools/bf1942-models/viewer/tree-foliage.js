@@ -48,6 +48,7 @@
  * (`applyVisibility`) keeps the final say on the node.
  */
 import * as THREE from 'three';
+import { fovModifier } from './mesh-cull.js';
 // Remaster mode's hooks (features/remaster-browser, remaster-mode.js):
 // one registry on the global, so this module needs no import for it and
 // stays loadable by the harnesses that copy it alone. Empty without
@@ -90,6 +91,174 @@ const CARD_ALPHA_TEST = 0.004;
  *  sorted with the scenery); a fading one blends over the geometry beneath. */
 function setCardOpacity(material, opacity) {
   material.opacity = opacity;
+}
+
+/**
+ * Wind sway, `geom::Swayer` (features/tree-foliage-billboards, "Sway").
+ *
+ * `TreeMesh::realDraw` (client 0x0067daa0) rebuilds a tree's world matrix
+ * each frame and, when the camera is inside the sway range, multiplies the
+ * sway matrix into it in the tree's own frame, so the whole tree (trunk,
+ * branch cards, sprite centres) rocks about its origin, the trunk base.
+ *
+ * The range is `swayLodDistance` (TreeRenderer +0x78, 40 m from the
+ * constructor 0x0064ca98) times the render view's FOV modifier (vt +0x20,
+ * `flds [+0x1c]`, the one `mesh-cull.js` `fovModifier` returns), judged on
+ * the 3D distance squared (0x0067dace..0x0067db38). Inside it the amplitude
+ * is `clamp((R^2 - d^2) / (R * swayFadeFactor)^2, 0, 1)` with
+ * `swayFadeFactor` 0.7 (+0x7c, 0x0064ca9f): full out to 0.714 R, nothing at R.
+ *
+ * `Swayer::update` (server symbols 0x083b91d0; the client's is the same
+ * source): with `f = swayPeriodSeconds * speed` (the word is used as a
+ * frequency in Hz, not a period),
+ *   a = sin(2 pi f t + phase f)
+ *   angleX = a * direction.x * swayRangeDegrees
+ *   angleZ = a * direction.y * swayRangeDegrees
+ * plus a second sine at `forceFrequency * speed` times `swayWindFactor`
+ * along the direction's perpendicular, and the pair times the fade.
+ * `getSwayMatrix` (0x0067ce30) is rotate-X by angleX then rotate-Z by angleZ.
+ *
+ * Template values, `TreeMeshTemplate`'s constructor (0x083bc3e2..0x083bc40c):
+ * range 1.0 degree, period word 0.2, wind factor 0 (so the second sine is
+ * nothing unless a script sets `swayWindFactor`; no installed one does), and
+ * a direction that is a random unit vector per template per load. Each tree
+ * (`Swayer::Swayer` 0x083b8a50) rolls a phase in (0, 2 pi] and a speed in
+ * (1, 1.4]. The rolls here are hashes of the template's name and the tree's
+ * place, so a level looks the same on every load and for every player.
+ */
+export const SWAY = Object.freeze({
+  lodDistance: 40,        // TreeRenderer +0x78, 0x42200000 at 0x0064ca98
+  fadeFactor: 0.7,        // TreeRenderer +0x7c, 0x3f333333 at 0x0064ca9f
+  rangeDegrees: 1,        // SwayerTemplate +0x0c, 0x3f800000 at 0x083bc3ed
+  periodSeconds: 0.2,     // SwayerTemplate +0x10, 0x3e4ccccd at 0x083bc3e2
+  windFactor: 0,          // SwayerTemplate +0x14, 0 at 0x083bc3f8
+  forceFrequencyScale: 0.5, // setSwayPeriodSeconds: +0x08 = rand * period * 0.5 (0x086b05e8)
+  speedBase: 1,           // Swayer +0x0c = 1 + rand * 0.4 (0x083b8d4d, 0x086c4f70)
+  speedSpread: 0.4,
+});
+
+let swayOn = true;
+/** `TreeRenderer.swayEnable` (+0x73). The constructor leaves it off and the
+ *  level start turns it on (`push 1; call [vt+0x38]` at 0x0044ca0f), so in a
+ *  level it is on unless the console says otherwise. */
+export function setTreeSway(on) {
+  swayOn = !!on;
+}
+export function treeSway() {
+  return swayOn;
+}
+
+/** A unit-interval hash of a string, in (0, 1] like the engine's roll. */
+function roll(text) {
+  let h = 2166136261;
+  for (let i = 0; i < text.length; i++) {
+    h ^= text.charCodeAt(i);
+    h = Math.imul(h, 16777619);
+  }
+  h ^= h >>> 15; h = Math.imul(h, 2246822519); h ^= h >>> 13;
+  return ((h >>> 8) + 1) / 16777216;
+}
+
+/** A template's sway terms from its `trees.json` words (`extract_tree_billboards.py`
+ *  `sway_settings`), the constructor's value for each word the block omits. */
+export function swayTemplate(name, words = {}) {
+  const key = String(name).toLowerCase();
+  let dx, dz;
+  const d = words.direction;
+  if (Array.isArray(d) && d.length >= 2 && Math.hypot(d[0], d[1]) > 1e-7) {
+    const len = Math.hypot(d[0], d[1]);
+    dx = d[0] / len; dz = d[1] / len;
+  } else {
+    const theta = roll(`${key}|direction`) * 2 * Math.PI;
+    dx = Math.cos(theta); dz = Math.sin(theta);
+  }
+  const period = words.periodSeconds ?? SWAY.periodSeconds;
+  return {
+    rangeDegrees: words.rangeDegrees ?? SWAY.rangeDegrees,
+    frequency: period,
+    windFactor: words.windFactor ?? SWAY.windFactor,
+    forceFrequency: roll(`${key}|force`) * period * SWAY.forceFrequencyScale,
+    dirX: dx, dirZ: dz,
+    // setSwayDirection 0x083b8780: the perpendicular, (-y, x).
+    perpX: -dz, perpZ: dx,
+  };
+}
+
+/** A placed tree's own rolls, from where it stands. */
+export function swayInstance(x, y, z) {
+  const key = `${Math.round(x * 100)}|${Math.round(y * 100)}|${Math.round(z * 100)}`;
+  return {
+    phase: roll(`${key}|p1`) * 2 * Math.PI,
+    forcePhase: roll(`${key}|p2`) * 2 * Math.PI,
+    speed: SWAY.speedBase + roll(`${key}|s`) * SWAY.speedSpread,
+  };
+}
+
+/** The sway amplitude at squared distance `d2`, 0 outside the range. */
+export function swayFade(d2, fovMod = 1) {
+  const r = SWAY.lodDistance * fovMod;
+  const r2 = r * r;
+  if (!(d2 <= r2)) return 0;
+  const band = r * SWAY.fadeFactor;
+  return Math.min(1, Math.max(0, (r2 - d2) / (band * band)));
+}
+
+/** `Swayer::update`: the two angles, in degrees, at time `t` seconds. */
+export function swayAngles(t, tpl, inst, fade, out = { x: 0, z: 0 }) {
+  const f1 = tpl.frequency * inst.speed;
+  const a1 = Math.sin(f1 * 2 * Math.PI * t + inst.phase * f1);
+  let x = a1 * tpl.dirX * tpl.rangeDegrees;
+  let z = a1 * tpl.dirZ * tpl.rangeDegrees;
+  if (tpl.windFactor) {
+    const f2 = tpl.forceFrequency * inst.speed;
+    const a2 = Math.sin(f2 * 2 * Math.PI * t + inst.forcePhase * f2) * tpl.windFactor;
+    x += a2 * tpl.perpX * tpl.rangeDegrees;
+    z += a2 * tpl.perpZ * tpl.rangeDegrees;
+  }
+  out.x = x * fade;
+  out.z = z * fade;
+  return out;
+}
+
+const DEG = Math.PI / 180;
+const swayMat = new THREE.Matrix4();
+const swayRotZ = new THREE.Matrix4();
+const swayOut = { x: 0, z: 0 };
+
+/** Rock one tree: every part's world matrix becomes
+ *  `tree world * sway * (tree world^-1 * part world)`. The statics are
+ *  frozen, so nothing else writes these matrices; `rest` puts them back. */
+function applySway(tree, t, fade) {
+  swayAngles(t, tree.tpl, tree.inst, fade, swayOut);
+  swayMat.makeRotationX(swayOut.x * DEG).multiply(swayRotZ.makeRotationZ(swayOut.z * DEG));
+  swayMat.premultiply(tree.world);
+  for (const part of tree.parts) {
+    part.mesh.matrixWorld.multiplyMatrices(swayMat, part.local);
+  }
+  tree.swaying = true;
+}
+
+function restSway(tree) {
+  if (!tree.swaying) return;
+  for (const part of tree.parts) part.mesh.matrixWorld.copy(part.rest);
+  tree.swaying = false;
+}
+
+/** The per-frame sway pass: a distance test per swaying tree, and for the
+ *  few inside 40 m one sine and a matrix product per part. */
+function updateSway(list, camera, t) {
+  if (!swayOn) {
+    for (const tree of list) restSway(tree);
+    return;
+  }
+  const mod = camera.isPerspectiveCamera ? fovModifier(camera.fov, camera.zoom) : 1;
+  for (const tree of list) {
+    const e = tree.world.elements;
+    const dx = e[12] - camPos.x, dy = e[13] - camPos.y, dz = e[14] - camPos.z;
+    const fade = swayFade(dx * dx + dy * dy + dz * dz, mod);
+    if (fade > 0) applySway(tree, t, fade);
+    else restSway(tree);
+  }
 }
 
 const manifestByBase = new Map();
@@ -323,6 +492,11 @@ function loadManifest(mapsBase, bust) {
             byName.set(name.toLowerCase(), entry);
           }
         }
+        // `sway`: the templates that say `swayEnable 1`, with their words.
+        byName.sway = new Map();
+        for (const [name, words] of Object.entries(doc?.sway || {})) {
+          byName.sway.set(name.toLowerCase(), words || {});
+        }
         return byName;
       });
     manifestByBase.set(mapsBase, pending);
@@ -415,13 +589,20 @@ function installHook(scene, state) {
   scene.onBeforeRender = function (renderer, sceneArg, camera, target) {
     if (typeof previous === 'function') previous.call(this, renderer, sceneArg, camera, target);
     const trees = hook.state?.trees;
-    if (!trees?.length) return;
+    const sway = hook.state?.sway;
+    if (!trees?.length && !sway?.length) return;
     // The WebGPU renderer (remaster mode) calls this for the sun's shadow
     // cascades too, each with its own orthographic camera, and it draws them
     // in the middle of the main pass: judged from there, every tree's swap
     // was rewritten after the frame had picked what to draw.
     if (renderer?.isRemaster && camera.isOrthographicCamera) return;
     camPos.setFromMatrixPosition(camera.matrixWorld);
+    // TreeRenderer::update (vt +0x20, 0x0064bbb0) adds each frame's time to
+    // +0x88; a wall clock from the bind is the same number.
+    // Remaster mode sways its trees in the vertex stage (remaster-foliage.js);
+    // the engine's sway, which rewrites a tree's matrices each frame, would
+    // add to it and take the tree out of its merged shadow proxy.
+    if (sway?.length && !renderer?.isRemaster) updateSway(sway, camera, (performance.now() - hook.state.swayEpoch) / 1000);
     const fov = camera.isPerspectiveCamera ? viewFieldOfView(camera.fov, camera.zoom) : 1;
     for (const tree of trees) {
       const e = tree.group.matrixWorld.elements;
@@ -498,7 +679,7 @@ function treeOf(mesh) {
  * world matrix once, as a frozen child would never get one.
  */
 export function bindTreeFoliage(root, { scene, mapsBase, bust = () => '', texLoader, maxAnisotropy = 1 }) {
-  const state = { trees: [], generation: (scene.userData.treeFoliage?.state?.generation || 0) + 1 };
+  const state = { trees: [], sway: [], swayEpoch: performance.now(), generation: (scene.userData.treeFoliage?.state?.generation || 0) + 1 };
   installHook(scene, state);
   const groups = new Map();
   let sprites = 0;
@@ -533,8 +714,29 @@ export function bindTreeFoliage(root, { scene, mapsBase, bust = () => '', texLoa
     if (scene.userData.treeFoliage?.state !== state) return { trees: groups.size, sprites, impostors: 0 };
     const geometries = new Map();
     const materials = new Map();
+    const templates = new Map();
     let impostors = 0;
     for (const rec of groups.values()) {
+      // Sway first: it reads the parts' rest matrices, and a tree with no
+      // far card (billboard off, strip missing) still sways.
+      const words = manifest.sway?.get(rec.name);
+      if (words) {
+        let tpl = templates.get(rec.name);
+        if (!tpl) { tpl = swayTemplate(rec.name, words); templates.set(rec.name, tpl); }
+        const world = rec.group.matrixWorld.clone();
+        const inverse = world.clone().invert();
+        const e = world.elements;
+        state.sway.push({
+          world, tpl, inst: swayInstance(e[12], e[13], e[14]), swaying: false,
+          parts: rec.near.map(mesh => {
+            return {
+              mesh,
+              rest: mesh.matrixWorld.clone(),
+              local: new THREE.Matrix4().multiplyMatrices(inverse, mesh.matrixWorld),
+            };
+          }),
+        });
+      }
       const entry = manifest.get(rec.name);
       if (!entry) continue;
       let geometry = geometries.get(entry);
@@ -569,6 +771,6 @@ export function bindTreeFoliage(root, { scene, mapsBase, bust = () => '', texLoa
       });
       impostors++;
     }
-    return { trees: groups.size, sprites, impostors };
+    return { trees: groups.size, sprites, impostors, swaying: state.sway.length };
   });
 }

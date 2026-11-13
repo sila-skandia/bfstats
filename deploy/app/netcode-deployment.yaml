@@ -8,7 +8,8 @@
 # feature README says this pod is NOT gated on the node budget (7296/7741 Mi
 # today) — it is kept lean by construction, one Node process, no framework,
 # level data without glb scenes, and profiled on the real node once it runs.
-# It adds a hard ceiling of 192Mi to the budget sweep either way.
+# It adds a hard ceiling of 832Mi to the budget sweep either way (sized
+# below, 2026-11-13).
 #
 # Namespace bf42-stats and the overall shape mirror mesh-deployment.yaml:
 # same PVC and the same two assets subPaths, read-only; the room server is
@@ -58,16 +59,78 @@ spec:
               mountPath: /app/viewer/models
               subPath: assets/mesh/models
               readOnly: true
-          # Requests 96Mi / 50m CPU, limits 192Mi / 400m CPU — the feature
-          # README's own estimate (Node RSS ~120-200Mi with level data and
-          # rooms; ~16 soldiers + ~60 vehicles at 30 Hz is a fraction of one
-          # core). This is Node, so the SQLite per-connection multiplier
-          # warnings do not apply, but the cgroup relationship is the same
-          # one the repo documents for .NET: the container's memory limit is
-          # also Node's heap back-pressure (one process, one cgroup), so the
-          # limit is the correct ceiling, not a constraint bolted on top of
-          # an unbounded heap. requests/limits both present, as CLAUDE.md
-          # requires for every container.
+            # The published tree keeps each glb once, by content, under
+            # glbs/<sha>.glb and names it in models/models.json (mesh-asset-size
+            # phase 5): there is no models/<Name>.glb on the volume. The room's
+            # vehicle templates (level-load.mjs storedTemplatePath) and the
+            # bots' weapon data (room-bots.mjs botDataFor) read through that
+            # table, so the blobs are mounted too. Without this mount a room has
+            # no vehicle template and its bots fire a stand-in weapon.
+            - name: assets-data
+              mountPath: /app/viewer/glbs
+              subPath: assets/mesh/glbs
+              readOnly: true
+          # Requests 96Mi / 50m CPU, limits 832Mi / 1000m CPU. A small request and
+          # a real limit, the owner's practice; limits may add up to more than
+          # the node, and CPU is compressible (CLAUDE.md).
+          #
+          # MEMORY, measured 2026-11-13 on the server's own entry point (node
+          # server/server.mjs, rooms joined over the socket, RSS from ps; M5
+          # Max, node 22). The level table loads a level when a room first
+          # plays it (level-table.mjs): the live vanilla tree holds 100 level
+          # directories at about 28 MB each, which the old load-everything-at-
+          # start could not have fitted in any limit.
+          #
+          #   boot, no room                               82 MB
+          #   one room, no bots (Wake)                   237 MB
+          #   two rooms on one level, no bots            264 MB
+          #   one room, 15 bots on foot             234..270 MB
+          #   two rooms, 30 bots on foot                 317 MB
+          #   one room, 15 bots with hulls: Berlin 279, Wake 351
+          #   two rooms, 30 bots with hulls (Berlin)     398 MB
+          #
+          # Bots take hulls by default since 2026-11-13 (room-guns), and a hull
+          # room is the large one: the hulls' own navigation maps and drives.
+          # The server's cap on live rooms (room-registry.mjs ROOM_MEMORY) adds
+          # these up as RSS: 82 the process, 40 a room, 10 a room's bots, and
+          # for each level some room plays, the level's own navigation maps at
+          # 9 bytes a square-metre cell (shared by its rooms, at the richest bot
+          # tier any of them runs) plus the build scratch of the largest. That
+          # answers Stalingrad, Berlin and Wake from above and Midway to within
+          # 5 MB. A CREATE that would take the sum past 748 MB is refused
+          # (`server_full`; the lobby's CREATE GAME says SERVER FULL; joining a
+          # room that exists is never refused), a room gets the richest bot
+          # tier that fits (every hull, ships only, on foot, none), and a room
+          # empty for a minute is dropped. 748 is 10 % under this limit of
+          # 832Mi.
+          #
+          #   Midway, one room, bots in ships only   738 MB measured-model
+          #   Wake, one room, bots in every hull     386 MB
+          #   Berlin, one room, bots in every hull   314 MB (271 measured)
+          #
+          # 832Mi is the smallest limit at which Midway's bots crew their ships
+          # (at 768Mi they were held on foot, and on Midway they swim). While
+          # that room runs it fills the budget and the server takes no other
+          # CREATE; rooms are few, and the alternative is swimming bots. Limits
+          # in deploy/app/ then sum past the node's 7741Mi; that is the owner's
+          # practice (small requests, real limits, limits may oversubscribe),
+          # and this pod's request stays 96Mi.
+          # `--room-memory-mb N` moves the cap with the limit; 0 is none. The
+          # limit is also Node's heap back-pressure (one process, one cgroup):
+          # with the heap held to 200 MB a no-bot room fell from 237 to 149 MB,
+          # a hull room did not move (280), its weight being typed arrays.
+          # requests/limits both present, as CLAUDE.md requires.
+          #
+          # CPU. A hull room of 15 bots costs 2.71 ms of CPU a 33.3 ms tick on
+          # the M5 Max (p95 7.9, p99 13.3; on foot 0.80: wave2 room-guns). The
+          # node-wide bot cap is two such rooms: 5.4 ms a tick, 16 % of an M5
+          # core, an estimated 50..65 % of one of this node's cores at three to
+          # four times slower. Under the old 400m that is throttled every
+          # period (CFS gives 40 ms in each 100 ms), which a 30 Hz room shows
+          # as lost ticks. The server is one JavaScript thread, so one core is
+          # all it can use bar the collector's helpers: 1000m covers the mean
+          # with a third to spare and lets a p99 tick (2 x 13.3 x 4 = 106 ms
+          # worst case) run without a throttle on top. The request stays 50m.
           #
           # Intentionally NO priorityClassName: 1942-services is for the
           # always-on core services. A room server runs a 30 Hz tick where a
@@ -79,8 +142,8 @@ spec:
               memory: "96Mi"
               cpu: "50m"
             limits:
-              memory: "192Mi"
-              cpu: "400m"
+              memory: "832Mi"
+              cpu: "1000m"
       volumes:
         - name: assets-data
           persistentVolumeClaim:

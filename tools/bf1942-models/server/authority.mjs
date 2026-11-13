@@ -32,7 +32,12 @@
 //   whole interval on every frame the gate is shut (team 1 0x08152100,
 //   team 2 0x0815218c), so each bleed's first ticket comes a whole interval
 //   after it starts. TKT-5's two end-of-round rules, for a side left with no
-//   spawn groups, are not built here or on the page;
+//   spawn groups (TKT-8), are the round's own: `bleed` hands it each side's
+//   census (`roundSides`), as the page does;
+// * the pre-game (ROUND-14): a new map holds every spawn for
+//   `gameStartDelay`, a restart for `roundStartDelay` (`round-state.js`);
+// * the team kills (FF-9..FF-11): each human's counts, the victim's mark,
+//   `punish` and `forgive`, the spawn penalty and the kick (`teamKill`);
 // * flag capture: a live player of the opposing team inside the flag's ring
 //   for `FLAG_CAPTURE_SECONDS` un-contested flips the owner. The capture law
 //   itself was never read (the parity round left it open), so
@@ -57,8 +62,35 @@
 
 import { Armor } from '../viewer/armor.js';
 import { createCtf } from '../viewer/ctf.js';
-import { createRoundState, GAME_PLAY_MODE, gamePlayModeOf, TICKET_BASE_PLAYERS }
-  from '../viewer/round-state.js';
+import { createRoundState, GAME_PLAY_MODE, gamePlayModeOf, TICKET_BASE_PLAYERS,
+  GAME_START_DELAY, ROUND_START_DELAY } from '../viewer/round-state.js';
+import { DEFAULT_SPAWN_DELAY, DEFAULT_SPAWN_TIME, DEFAULT_TK_SPAWN_PENALTY, MAX_SPAWN_WAIT,
+  spawnWait, waveSecondsLeft }
+  from '../viewer/spawn-timer.js';
+import { spawnGroupCensus } from '../viewer/spawn-flags.js';
+
+/**
+ * The room's server settings, a dedicated server's on the shipped
+ * `mods/bf1942/settings/serversettings.con`:
+ *   gameStartDelay   `game.serverGameStartDelay 20` (NET-21)
+ *   roundStartDelay  `game.serverGameRoundStartDelay 10` (NET-21)
+ *   tkPunishMode     `game.serverTKPunishMode 1` (the engine's own default
+ *                    is 0, `GameServer` ctor 0x0812f8f6; FF-10)
+ *   nrOfTKToKick     5.0, the ctor's (0x0812f8c3; the file does not set it)
+ *   tkSpawnPenalty   1.0, the ctor's `spawnDelayPenaltyForTK` (0x0812f8b9)
+ * and the host's (`room-settings.mjs`, CREATE GAME's rows; NET-21's defaults):
+ *   spawnTime / spawnDelay  `game.serverSpawnTime 20`, `serverSpawnDelay 3`
+ *   gameTime         `game.serverGameTime` in seconds, 0 no limit
+ *   scoreLimit       `game.serverScoreLimit`, 0 none
+ *   ticketRatio      `game.serverTicketRatio`, a percentage (TKT-1)
+ *   autoBalance      `game.serverAutoBalanceTeams`, off
+ */
+export const ROOM_RULES = Object.freeze({
+  gameStartDelay: GAME_START_DELAY, roundStartDelay: ROUND_START_DELAY,
+  tkPunishMode: true, nrOfTKToKick: 5, tkSpawnPenalty: DEFAULT_TK_SPAWN_PENALTY,
+  spawnTime: DEFAULT_SPAWN_TIME, spawnDelay: DEFAULT_SPAWN_DELAY,
+  gameTime: 0, scoreLimit: 0, ticketRatio: 100, autoBalance: false,
+});
 
 /** The game play modes in which `spawnPlayer` asks the side's tickets
  *  (`[+0x10]` 2, 4 and 5 at 0x0814ca0a..0x0814ca22, ROUND-11). */
@@ -93,14 +125,46 @@ const KITS = ['scout', 'assault', 'antitank', 'medic', 'engineer'];
  *                 has ended: everyone out of the seats, every hull destroyed
  *   onRestart     () => {}  the room's half of `restartMap`: the hulls back
  *                 on their pads (the round, flags and CTF are this file's)
+ *   onKick        (slot) => {}  `kickPlayer(id, false)` (vt+0x334): the
+ *                 room drops the slot (its team kills reached the limit)
+ *   spawnGone     (spawn) => bool  whether a carried spawn point's carrier is
+ *                 gone (TKT-8's `immediateDestroy`), for the census
+ *   rules         `ROOM_RULES`' keys, any of them
  */
 export function createAuthority(ctx) {
   const { world, loadouts, levelDir, onRow } = ctx;
+  const rules = { ...ROOM_RULES, ...(ctx.rules ?? {}) };
+  /** The wave law's pair as the host set it, read live (an admin may change
+   *  `spawnTime` mid-round). */
+  const wave = () => ({ spawnTime: rules.spawnTime, spawnDelay: rules.spawnDelay });
 
   /** Slots under the death decree: dead until their spawn action revives
    *  them. The room stops forwarding their input while they are in the set
    *  (the world idles the body). */
   const dead = new Set();
+
+  /** slot -> the round clock when the slot's respawn wait is spent: the
+   *  reinforcement wave, `killPlayer` 0x0814d920 (SPAWN-35), which a retail
+   *  server runs for every player. Set at the death decree, gone at the
+   *  revive and at a restart. A slot with none (a fresh join) waits for
+   *  nothing, as a BFPlayer's `+0x8c` starts at 0. */
+  const spawnReady = new Map();
+
+  /** slot -> its team-kill counts (FF-9): `total` (`BFPlayer+0x18c`, what
+   *  the kick reads; a restart keeps it, `resetStats` 0x080556e0 does not
+   *  touch it) and `sinceDeath` (`+0x190`, what the next death's wait pays
+   *  for). A new player starts both at 0 (`BFPlayer` ctor 0x08050f0d). */
+  const teamKills = new Map();
+  /** victim slot -> the slot that last team-killed them (`BFPlayer+0x188`,
+   *  `id + 0x100`; -1 for none), until they punish or forgive. */
+  const lastTeamKiller = new Map();
+  const tkOf = slot => {
+    let row = teamKills.get(slot);
+    if (!row) { row = { total: 0, sinceDeath: 0 }; teamKills.set(slot, row); }
+    return row;
+  };
+  const tkLimitReached = slot => rules.nrOfTKToKick > 0
+    && (teamKills.get(slot)?.total ?? 0) >= rules.nrOfTKToKick;
 
   /** flag index -> {team, ticks} — an enemy inside the ring, accumulating.
    *  Contested (both teams present) freezes; an empty|defended ring resets. */
@@ -137,10 +201,29 @@ export function createAuthority(ctx) {
    *  maxPlayers / 16)`. The counts are handed over bare, because the object's
    *  own `maxPlayers` (a mode script's `game.maxNrOfPlayers`, Kasserine Pass
    *  co-op's 18) has already scaled the start once. */
+  // `game.serverTicketRatio` (TKT-1): `gamaStatusFirstPreGame` 0x08150710
+  // multiplies each side's count by the ratio (`+0x1f4`, the percentage over
+  // 100) before it truncates. The room's counts are already scaled for its
+  // slots, so the ratio is applied to them here, truncated the same way.
+  // ObjectiveMode's attacker modifier (`+0x1f8`) is not a room setting.
+  if (world.tickets && Number.isFinite(rules.ticketRatio) && rules.ticketRatio !== 100) {
+    for (const team of [1, 2]) {
+      const scaled = Math.trunc(Math.fround(ticketsOf(team) * Math.fround(rules.ticketRatio / 100)));
+      world.tickets[`team${team}`] = scaled;
+      if (`${team}` in world.tickets) world.tickets[`${team}`] = scaled;
+    }
+  }
   const round = createRoundState({
+    // The host's time limit (seconds) and score limit; 0 is none.
+    gameTime: rules.gameTime,
+    scoreLimit: rules.scoreLimit,
     tickets: { team1: ticketsOf(1), team2: ticketsOf(2) },
     rates: world.tickets?.lossPerMin ?? null,
     maxPlayers: TICKET_BASE_PLAYERS,
+    // The pre-game (`gameStatusPreGame`, ROUND-14): the map's first, then
+    // each restart's.
+    preGameDelay: rules.gameStartDelay,
+    roundStartDelay: rules.roundStartDelay,
     // The layer's mode decides which rules end the round and whether the
     // bleed runs at all (CTF has none, `round-state.js` `ticketsDecide`).
     mode: world.extras?.gameplayMode ?? '',
@@ -194,6 +277,18 @@ export function createAuthority(ctx) {
     return new Armor(max);
   }
 
+  /** slot -> the kit template he spawned with, when the companion file
+   *  names it: the deploy row's template, or its class (`KITS`) on the
+   *  level's side. What `room-packs.mjs` asks a pack's round against. */
+  const kits = new Map();
+  function kitTemplateFor(team, kitName) {
+    if (!loadouts?.kits || !kitName) return null;
+    if (loadouts.kits[kitName]) return kitName;
+    const slot = KITS.indexOf(String(kitName).toLowerCase());
+    const kit = slot >= 0 ? loadouts?.levels?.[levelDir]?.[team]?.slots?.[String(slot)] : null;
+    return kit && loadouts.kits[kit] ? kit : null;
+  }
+
   return {
     KITS,
     dead,
@@ -205,9 +300,17 @@ export function createAuthority(ctx) {
      *  fresh Armor on the kit's max, and the death decree lifted. */
     revive(slot, team, kitName) {
       dead.delete(slot);
+      kits.set(slot, kitTemplateFor(team, kitName));
+      spawnReady.delete(slot);
       const armor = armorFor(team, kitName);
       world.setPlayerArmor(slot, armor);
       return armor;
+    },
+
+    /** The kit template `slot` spawned with, or null when the room cannot
+     *  name it. */
+    kitOf(slot) {
+      return kits.get(slot) ?? null;
     },
 
     /** Whether a slot may send input: the dead do not. The room checks this
@@ -222,6 +325,98 @@ export function createAuthority(ctx) {
      *  bot alone is spared that test), and in Conquest, Co-op and
      *  ObjectiveMode only while his side has a ticket left (`TeamScore+0x48`
      *  above 0). */
+    /** Seconds before `slot` may spawn: its wave (SPAWN-35, `spawn-timer.js`
+     *  `waveSecondsLeft` on the round's clock); 0 when it may now. */
+    spawnWaitLeft(slot) {
+      // The pre-game writes its own clock into every player's wait
+      // (0x081509e3..0x08150a08, ROUND-14).
+      if (round.status === 'preGame') return round.preGameIn;
+      return spawnReady.has(slot) ? waveSecondsLeft(round.clock, spawnReady.get(slot), wave()) : 0;
+    },
+
+    /** The room's settings as this authority plays them (`ROOM_RULES`). */
+    rules,
+
+    /** Whether `slot`'s team kills have reached `nrOfTKToKick`:
+     *  `spawnPlayer` kicks such a player when they ask to spawn (0x0814c9c8..
+     *  0x0814c9f1, then `kickPlayer` vt+0x334 at 0x0814d841), past the status
+     *  test and before the tickets'. */
+    tkKickDue(slot) {
+      return tkLimitReached(slot);
+    },
+
+    /** `kickPlayer(slot, false)` (vt+0x334): the room drops the slot. */
+    kick(slot) {
+      ctx.onKick?.(slot);
+    },
+
+    /** `GameServer::TKPunish(victim)` (0x081593d0): only in punish mode. The
+     *  victim's last team killer gets one more on both counts and is kicked
+     *  once the total reaches `nrOfTKToKick`; the mark is cleared either way.
+     *  Returns the killer's slot when there was one to punish. */
+    tkPunish(victim) {
+      if (!rules.tkPunishMode) return null;
+      const killer = lastTeamKiller.get(victim);
+      if (killer == null) return null;
+      lastTeamKiller.delete(victim);
+      if (!world.players.has(killer)) return null;
+      const row = tkOf(killer);
+      row.total += 1;
+      row.sinceDeath += 1;
+      onRow({ type: 'teamKillPunished', slot: killer, victim, teamKills: row.total });
+      if (tkLimitReached(killer)) ctx.onKick?.(killer);
+      return killer;
+    },
+
+    /** `GameServer::TKForgive(victim)` (0x081592e0): only with punish mode
+     *  OFF (`cmpb $0,+0x4e1; je` at 0x081592e8; in punish mode the word does
+     *  nothing at all). The killer's total and since-death counts lose the
+     *  one the team kill gave them (each floored at 0; the since-death one
+     *  only while the mark's `+0x100` is on, which it always is), and the
+     *  mark is cleared. */
+    tkForgive(victim) {
+      if (rules.tkPunishMode) return null;
+      const killer = lastTeamKiller.get(victim);
+      if (killer == null) return null;
+      lastTeamKiller.delete(victim);
+      const row = teamKills.get(killer);
+      if (!row || !world.players.has(killer)) return null;
+      row.total = Math.max(0, row.total - 1);
+      row.sinceDeath = Math.max(0, row.sinceDeath - 1);
+      onRow({ type: 'teamKillForgiven', slot: killer, victim, teamKills: row.total });
+      return killer;
+    },
+
+    /** A slot's team-kill counts, `{ total, sinceDeath }` (zeros for none). */
+    teamKillsOf(slot) {
+      const row = teamKills.get(slot);
+      return { total: row?.total ?? 0, sinceDeath: row?.sinceDeath ?? 0 };
+    },
+
+    /** The slot has left: its BFPlayer goes, and with it the counts and the
+     *  mark (a rejoin is a new player, ctor 0x08050f03..0x08050f17). */
+    forget(slot) {
+      teamKills.delete(slot);
+      lastTeamKiller.delete(slot);
+      for (const [victim, killer] of lastTeamKiller) if (killer === slot) lastTeamKiller.delete(victim);
+      spawnReady.delete(slot);
+      // The slot's tally goes with its player (a BFPlayer's counters are its
+      // own), so whoever takes the slot next starts at 0 on every board.
+      round.counts.delete(slot);
+    },
+
+    /** The player's Suicide (retail's is `killPlayer`): the body's Armor
+     *  goes, and the next step's decree books it as a death of their own
+     *  doing, with its wave. False for a slot already dead or absent. */
+    suicide(slot) {
+      const armor = world.players.get(slot)?.armor;
+      if (!armor || armor.destroyed || dead.has(slot)) return false;
+      armor.lastHit = null;
+      armor.applyDamage(armor.hitPoints + armor.maxHitPoints);
+      armor.lastHit = null;
+      return true;
+    },
+
     maySpawn(team) {
       if (round.status !== 'playing') return false;
       const mode = gamePlayModeOf(world.extras?.gameplayMode);
@@ -232,6 +427,9 @@ export function createAuthority(ctx) {
     /** The round as a client joining now must draw it (the HELLO): playing,
      *  or ended with its result and the restart's countdown. */
     roundState() {
+      if (round.status === 'preGame') {
+        return { status: 'preGame', preGameIn: round.preGameIn, roundsWon: { ...round.roundsWon } };
+      }
       return round.status === 'playing'
         ? { status: 'playing', roundsWon: { ...round.roundsWon } }
         : { status: 'endGame', ...resultRow() };
@@ -252,6 +450,13 @@ export function createAuthority(ctx) {
 
     /** The CTF law's state (null off a CTF layer), for a check. */
     ctf,
+
+    /** `admin.restartMap` (`GameServer::restartMap` 0x08157cb0): the world
+     *  cleared and the round made again, now. */
+    restart() {
+      clearWorld();
+      restartRound();
+    },
   };
 
   /** One tick of the CTF law over the room's players: a slot under the
@@ -291,6 +496,16 @@ export function createAuthority(ctx) {
         const killer = ownerToPlayer(crash.other);
         if (victim != null) killers.set(victim, killer);
       }
+      // A soldier a hull ran over: the hull's driver, or null when the
+      // same-side clause dropped the credit (`world-soldier-tick.js`
+      // `runOverTick`, V0's attribution), then the Armor's last hitter names
+      // the killer as `giveDamage` does.
+      const roadkills = new Set();
+      for (const run of step?.runOvers ?? []) {
+        if (!run.killed) continue;
+        roadkills.add(run.playerId);
+        if (run.attacker != null) killers.set(run.playerId, run.attacker);
+      }
       for (const change of step?.damage ?? []) {
         if (!change.died) continue;
         // The damage pass reports the DamageableVehicle, which knows its owner.
@@ -302,14 +517,88 @@ export function createAuthority(ctx) {
         if (!player?.armor?.destroyed || dead.has(slot)) continue;
         dead.add(slot);
         const other = killers.get(slot) ?? player.armor.lastHit ?? null;
+        // A team kill is booked before the victim's own death, as
+        // `_giveDamage` does it before `killPlayer` (0x0814c1bc..0x0814c224).
+        if (round.status === 'playing') teamKill(slot, player.team, other);
         if (bookDeath(slot, player.team, other)) {
           onRow({ type: 'ticket', team: player.team,
                   count: ticketsOf(player.team), reason: 'death' });
         }
-        const row = { type: 'killed', slot };
+        // The wave (SPAWN-35): the wait to the next spawn window, from the
+        // round's clock at the death, plus the team kills since the last
+        // death (`killPlayer` 0x0814df1f..0x0814df8b), which it then clears;
+        // the page waits it out before it asks.
+        const tk = teamKills.get(slot);
+        const wait = spawnWait(round.clock, { teamKills: tk?.sinceDeath ?? 0,
+                                              tkPenalty: rules.tkSpawnPenalty, ...wave() });
+        if (tk) tk.sinceDeath = 0;
+        spawnReady.set(slot, round.clock + Math.min(MAX_SPAWN_WAIT, wait));
+        const row = { type: 'killed', slot,
+                      sw: Math.round(waveSecondsLeft(round.clock, spawnReady.get(slot), wave()) * 100) / 100 };
         if (other != null) row.other = other;
+        // Run over: the kill line's `[killed]`, the weapon -1 `giveDamage`
+        // was handed (`chat-log.js` `killStamp`).
+        if (roadkills.has(slot)) row.roadkill = true;
         onRow(row);
+        // Auto-balance, the tail of `killPlayer` (0x0814dc02..0x0814dc90):
+        // while the round is not over, a death with the sides more than one
+        // apart moves the dead player (the room's `autoBalance`, gap entry 47).
+        if (rules.autoBalance && round.status !== 'endGame') ctx.onAutoBalance?.(slot);
       }
+  }
+
+  /**
+   * The team-kill law of `GameServer::_giveDamage` (FF-9): a kill of a
+   * player by another of the same side (`[+0x7c]` equal, 0x0814c0fa), both
+   * human (BFPlayer vt+0x5c false for both, 0x0814c167..0x0814c182), not the
+   * same player and the killer not the server's local human (0x0814c18c..
+   * 0x0814c1a3: a listen server's own player never counts, so single
+   * player and Instant Battle, one local human among bots, count none; a
+   * room has no local human). The victim is marked with the killer
+   * (`+0x188 = id + 0x100`, 0x0814c1bc). With punish mode off the killer's
+   * two counts rise now and, at `nrOfTKToKick` (not 0), the killer is
+   * killed (`killPlayer(killer, false)`, 0x0814c224); with it on they rise
+   * only when the victim punishes (`tkPunish`). Every player of a room is
+   * human. `_giveDamage`'s last bool (`[ebp+0x38]`, tested at 0x0814c139)
+   * must also be set; what clears it is unread.
+   */
+  function teamKill(slot, team, other) {
+    if (other == null || other === slot || !(team === 1 || team === 2)) return;
+    const killer = world.players.get(other);
+    if (!killer || killer.team !== team) return;
+    // Both human (BFPlayer vt+0x5c false for both, 0x0814c167..0x0814c182):
+    // a room's bot (`room-bots.mjs`) neither commits a team kill nor is one.
+    if (killer.bot || world.players.get(slot)?.bot) return;
+    lastTeamKiller.set(slot, other);
+    if (rules.tkPunishMode) return;
+    const row = tkOf(other);
+    row.total += 1;
+    row.sinceDeath += 1;
+    if (tkLimitReached(other)) {
+      const armor = killer.armor;
+      if (armor && !armor.destroyed && !dead.has(other)) {
+        armor.lastHit = null;
+        armor.applyDamage(armor.hitPoints + armor.maxHitPoints);
+        armor.lastHit = null;
+      }
+    }
+  }
+
+  /** What `gameStatusPlaying` counts for the end of a round (TKT-5, TKT-8),
+   *  the page's `roundSides`: each side's spawn groups with a point left
+   *  (`spawnGroupCensus`, a carried point out once its carrier is gone,
+   *  `ctx.spawnGone`), whether it could take another side's, and whether it
+   *  has a living player (`+0x79`: not under the death decree). */
+  function roundSides() {
+    if (!world.flags) return null;
+    const sides = spawnGroupCensus(world.flags, { absent: ctx.spawnGone });
+    sides[1].alive = false;
+    sides[2].alive = false;
+    for (const [slot, player] of world.players) {
+      if (dead.has(slot) || player?.armor?.destroyed) continue;
+      if (player?.team === 1 || player?.team === 2) sides[player.team].alive = true;
+    }
+    return sides;
   }
 
   /** A death on the round's own books (`round-state.js` `kill`/`suicide`):
@@ -343,7 +632,9 @@ export function createAuthority(ctx) {
       onRow({ type: 'roundEnd', ...resultRow() });
       clearWorld();
     }
-    if (round.restartDue()) restartRound();
+    // `gameStatusEndGame` (0x08152d09..0x08153369): another round of this
+    // map, or the room's host loads the next level (`onRoundsOver` true).
+    if (round.restartDue() && !ctx.onRoundsOver?.()) restartRound();
   }
 
   /** The round's result as the rows carry it: the winner (0 a draw), the
@@ -387,6 +678,7 @@ export function createAuthority(ctx) {
     }
     capture.clear();
     ctf?.reset();
+    spawnReady.clear();
     round.restart();
     ended = false;
     for (const team of [1, 2]) if (world.tickets) writeTickets(team);
@@ -397,6 +689,8 @@ export function createAuthority(ctx) {
       flags: (world.flags ?? []).map(flag => ({ team: flag.team })),
       roundsWon: { ...round.roundsWon },
       ctf: ctf?.snapshot() ?? null,
+      // `resetTimers`' pre-game (ROUND-14): seconds before anyone spawns.
+      preGame: round.status === 'preGame' ? round.preGameIn : 0,
     });
   }
 
@@ -451,7 +745,11 @@ export function createAuthority(ctx) {
     // A layer with no tickets has nothing to bleed or decide while it plays;
     // once the round has ended the tick is also the restart's countdown.
     if (!world.tickets && round.status === 'playing') return;
-    const lost = round.tick(dt, points);
+    const roundWas = round.status;
+    const lost = round.tick(dt, points, round.status === 'playing' ? roundSides() : null);
+    // The pre-game's end (`setGameStatus(1)`, 0x08150ae8): the page's TIME
+    // UNTIL GAME STARTS plate gives way to TIME TO SPAWN.
+    if (roundWas === 'preGame' && round.status === 'playing') onRow({ type: 'roundStart' });
     if (!world.tickets) return;
     for (const team of [1, 2]) {
       if (!lost[team]) continue;

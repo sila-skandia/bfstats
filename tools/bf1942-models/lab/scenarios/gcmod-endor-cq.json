@@ -1,0 +1,20 @@
+{
+  "name": "gcmod-endor-cq",
+  "description": "GCMOD GC_Endor (GPM_CQ) for a manual retail check (features/gcmod-extraction, Open). The level ships no SinglePlayer layer, so no bots.",
+  "levels": [
+    {
+      "map": "GC_Endor",
+      "mode": "GPM_CQ",
+      "mod": "GCMOD"
+    }
+  ],
+  "serverSettings": {
+    "serverMaxPlayers": 16,
+    "serverNumberOfRounds": 1,
+    "serverGameTime": 0,
+    "serverGameStartDelay": 30,
+    "serverGameRoundStartDelay": 10
+  },
+  "autoexec": [],
+  "human": "Fly an Ewok glider: any engine, wind or background loop sound?"
+}

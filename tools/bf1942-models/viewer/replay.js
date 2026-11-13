@@ -75,6 +75,7 @@ import { whereIs } from './replay-battles.js';
 import { isLocalReplay, readLocalRecording, recordingSummary } from './replay-open.js';
 import { FAULT_STREAK, ReplayGuard, finiteVector } from './replay-guard.js';
 import { CHARACTER_HEIGHT } from './soldier-pose.js';
+import { walkShownOnly } from './shown-walk.js';
 
 export { parseRecording, parseServerLog, alignServerLog };
 /** The player itself, for the node harness (it needs a DOM to construct). */
@@ -570,6 +571,10 @@ class ReplayPlayer {
       if (!crew.length && !damaged) continue;
       const lead = crew.find(c => c.seat === 0) ?? crew[0] ?? null;
       const at = hull.root.getWorldPosition(point(hull));
+      // Where the hull itself is, for the tag to stay near it on the screen
+      // (replay-ui.js `updateTags`).
+      const base = (this.tagBases ??= new Map()).get(hull) ?? new THREE.Vector3();
+      this.tagBases.set(hull, base.copy(at));
       at.y += Math.min(hullRadius(hull), 12) * 0.9 + 1;
       const vehicle = names?.[life.tmpl] ?? life.tmpl;
       out.push({
@@ -581,6 +586,7 @@ class ReplayPlayer {
         extra: lead ? `${vehicle}${crew.length > 1 ? ` +${crew.length - 1}` : ''}` : '',
         team: lead ? team(lead.pid) || life.team : life.team,
         at,
+        base,
         hp: life.maxhp > 0 && hull.hp !== null ? { hp: hull.hp, max: life.maxhp, crit: life.crit } : null,
       });
     }
@@ -589,6 +595,10 @@ class ReplayPlayer {
 
   async load() {
     this.ctx.hideBakedVehicles();
+    // The level's own nodes, nine in ten hidden in a replay (its placed
+    // vehicles, collision meshes, LOD rungs), walked only where shown
+    // (shown-walk.js).
+    walkShownOnly(this.ctx.levelRoot?.() ?? null);
     // What a soldier carries is not a hull: every kit and every item a kit
     // hands out, by the level's own loadouts, lies on the ground as a plain
     // model when it lies there at all (a dropped kit, a thrown pistol).
@@ -910,6 +920,9 @@ class ReplayPlayer {
     // every life at no time, frame after frame.
     if (!Number.isFinite(t)) return;
     this.time = Math.min(Math.max(0, t), this.rec.duration);
+    // The frames after a seek rebuild the men and say nothing of the
+    // quality (replay-quality.js).
+    this.ctx.quality?.hold?.();
     const guard = this.guard ??= new ReplayGuard();
     guard.run('the seek', () => {
       this.ctx.guns?.clear();

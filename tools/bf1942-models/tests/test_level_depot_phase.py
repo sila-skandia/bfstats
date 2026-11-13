@@ -59,10 +59,15 @@ class DepotStartPhaseTests(unittest.TestCase):
         self.assertGreater(len(set(self.r["a"])), 10)
 
     def test_every_level_depot_takes_one(self) -> None:
-        source = (VIEWER / "level-load.js").read_text()
+        # The walk is shared with the room server (`supply-collect.js`); the
+        # page hands it its own `random`.
+        source = (VIEWER / "supply-collect.js").read_text()
         start = source.index("function collectSupplyDepots")
         body = source[start:source.index("depots.push(", start) + 400]
         self.assertIn("phase: depotStartPhase(", body)
+        page = (VIEWER / "level-load.js").read_text()
+        start = page.index("function collectSupplyDepots")
+        self.assertIn("page.random", page[start:start + 400])
 
 
 if __name__ == "__main__":

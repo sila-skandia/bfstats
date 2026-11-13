@@ -1,11 +1,12 @@
 {
  "level": "DC_Medina_Ridge",
  "mod": "desertcombat",
- "url": "https://play.bfstats.io/map.html?map=DC_Medina_Ridge&team=2&mode=Conquest&mod=desertcombat&botCount=16&botSkill=0.75&mute&shots",
- "date": "2026-11-11",
+ "url": "https://play.bfstats.io/map.html?map=DC_Medina_Ridge&team=2&mode=Conquest&mod=desertcombat&botCount=16&botSkill=0.75&spawnTime=wave&mute&shots",
+ "date": "2026-11-12",
  "bar": "DICE levels on the page, 3 matches each of 600 s, 16 bots: Berlin, Stalingrad, Kharkov, Bocage; 2026-11-11",
  "verdict": "fail",
  "failed": [
+  "nonEnemyDeathShareWorseSide",
   "enemyKillsPerBotMinute"
  ],
  "checks": [
@@ -17,15 +18,15 @@
   },
   {
    "metric": "suicidesPerBotMinute",
-   "median": 0,
+   "median": 0.0062,
    "bar": "<= 0.0562",
    "pass": true
   },
   {
    "metric": "nonEnemyDeathShareWorseSide",
-   "median": 0,
+   "median": 0.333,
    "bar": "<= 0.308",
-   "pass": true
+   "pass": false
   },
   {
    "metric": "enemyKillsPerBotMinute",
@@ -34,7 +35,7 @@
    "pass": false
   }
  ],
- "matches": 1,
+ "matches": 3,
  "rollout": {
   "pass": false,
   "floor": {
@@ -42,7 +43,8 @@
    "killsWithFlags": 0.03,
    "flags": 3,
    "killsWithAFlag": 0.05,
-   "ownHand": 0.1
+   "ownHand": 0.1,
+   "ownHandOfKills": 0.3333333333333333
   }
  },
  "runs": [
@@ -71,6 +73,66 @@
     "ownHand": 0
    },
    "replayed": true,
+   "teamKillsBySide": {
+    "1": 0,
+    "2": 0
+   },
+   "oldCode": "played on the generator 5 layer, on the bot code of e5003c584 or earlier"
+  },
+  {
+   "generated": {
+    "version": 6,
+    "template": "few"
+   },
+   "minutes": 10,
+   "tickets": {
+    "1": 121,
+    "2": 142
+   },
+   "capturesTotal": 0,
+   "teamKillsPerBotMinute": 0,
+   "suicidesPerBotMinute": 0,
+   "nonEnemyDeathShareWorseSide": 0,
+   "enemyKillsPerBotMinute": 0.0062,
+   "rollout": {
+    "pass": false,
+    "why": [
+     "activity"
+    ],
+    "enemyKills": 0.0062,
+    "captures": 0,
+    "ownHand": 0
+   },
+   "replayed": true,
+   "teamKillsBySide": {
+    "1": 0,
+    "2": 0
+   }
+  },
+  {
+   "generated": {
+    "version": 6,
+    "template": "few"
+   },
+   "minutes": 10,
+   "tickets": {
+    "1": 119,
+    "2": 149
+   },
+   "capturesTotal": 0,
+   "teamKillsPerBotMinute": 0,
+   "suicidesPerBotMinute": 0.0062,
+   "nonEnemyDeathShareWorseSide": 0.333,
+   "enemyKillsPerBotMinute": 0.0125,
+   "rollout": {
+    "pass": false,
+    "why": [
+     "activity"
+    ],
+    "enemyKills": 0.0125,
+    "captures": 0,
+    "ownHand": 0.0062
+   },
    "teamKillsBySide": {
     "1": 0,
     "2": 0

@@ -96,9 +96,11 @@ class ScissorsDfnTests(unittest.TestCase):
             self.assertEqual(0, s["bestQuarter"], s)
             self.assertLessEqual(s["myShot"], 0.37, s)
             self.assertIsNone(s["flipAt"], s)
-            # His snaps as you cross.
+            # His snaps as you cross: 2 and 3 hits (2 and 2 until they were
+            # re-pinned 2026-11-12 on retail g and box area,
+            # features/retail-parity-cross-check-2026-11-12).
             self.assertLessEqual(s["hisShot"], 0.4, s)
-            self.assertLessEqual(s["hitsOnMe"], 2, s)
+            self.assertLessEqual(s["hitsOnMe"], 3, s)
         self.assertEqual(2, sum(1 for s in rows if s["hitsOnMe"] >= 1), rows)
         self.assertEqual(1, sum(1 for s in rows if s["myShot"] > 0), rows)
 
@@ -116,9 +118,12 @@ class ScissorsDfnTests(unittest.TestCase):
             self.assertEqual(0, s["attacks"], s)
             self.assertEqual(0, s["myShot"], s)
             self.assertLessEqual(s["hang"], 3.7, s)
-        # Level at even energy at the end in all nine; his one snap.
+        # Level at even energy at the end in all nine; his one snap, which
+        # misses (one hit until it was re-pinned 2026-11-12 on retail g and box area
+        # (features/retail-parity-cross-check-2026-11-12)).
         self.assertTrue(all(abs(s["edgeEnd"]) <= 30 for s in rows), rows)
-        self.assertEqual(1, sum(1 for s in rows if s["hitsOnMe"]), rows)
+        self.assertEqual(1, sum(1 for s in rows if s["hisShot"]), rows)
+        self.assertEqual(0, sum(s["hitsOnMe"] for s in rows), rows)
 
 
 if __name__ == "__main__":

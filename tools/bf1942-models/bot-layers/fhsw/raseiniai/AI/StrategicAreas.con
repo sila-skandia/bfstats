@@ -1,0 +1,73 @@
+rem *** Strategic areas: one per control point (botgen) ***
+
+aiStrategicArea.create barn 79/700.7 84/705.7 50
+aiStrategicArea.addNeighbour farmhouse
+aiStrategicArea.addNeighbour picket
+aiStrategicArea.addNeighbour Reinforcements_from_Dubissa
+aiStrategicArea.addObjectTypeFlag Base
+aiStrategicArea.setOrderPosition Tank 84/705.7
+aiStrategicArea.setOrderPosition Infantry 84/705.7
+aiStrategicArea.setSide 1
+aiStrategicArea.setTakeable 2 0
+
+aiStrategicArea.create farmhouse 831/687.7 836/692.7 50
+aiStrategicArea.addNeighbour barn
+aiStrategicArea.addNeighbour picket
+aiStrategicArea.addNeighbour soviet_hq
+aiStrategicArea.addNeighbour Reinforcements_from_Dubissa
+aiStrategicArea.addObjectTypeFlag Base
+aiStrategicArea.setOrderPosition Tank 836/692.7
+aiStrategicArea.setOrderPosition Infantry 836/692.7
+aiStrategicArea.setSide 2
+aiStrategicArea.setTakeable 1 0
+
+aiStrategicArea.create picket 238.9/570 253.9/585 150
+aiStrategicArea.addNeighbour barn
+aiStrategicArea.addNeighbour farmhouse
+aiStrategicArea.addNeighbour Reinforcements_from_Dubissa
+aiStrategicArea.addObjectTypeFlag Flank
+aiStrategicArea.addObjectTypeFlag Close
+aiStrategicArea.addObjectTypeFlag ControlPoint
+aiStrategicArea.setOrderPosition Tank 253.9/585
+aiStrategicArea.setOrderPosition Infantry 253.9/585
+aiStrategicArea.setSide 2
+
+aiStrategicArea.create trench 426.8/559 431.8/564 10
+aiStrategicArea.setSide 2
+aiStrategicArea.setTakeable 1 0
+aiStrategicArea.setTakeable 2 0
+
+aiStrategicArea.create church 489.7/506.9 494.7/511.9 10
+aiStrategicArea.setSide 2
+aiStrategicArea.setTakeable 1 0
+aiStrategicArea.setTakeable 2 0
+
+aiStrategicArea.create lenin_square 567.1/555.7 572.1/560.7 10
+aiStrategicArea.setSide 2
+aiStrategicArea.setTakeable 1 0
+aiStrategicArea.setTakeable 2 0
+
+aiStrategicArea.create kolkhoz 561.2/510 566.2/515 10
+aiStrategicArea.setSide 2
+aiStrategicArea.setTakeable 1 0
+aiStrategicArea.setTakeable 2 0
+
+aiStrategicArea.create soviet_hq 654.6/552.3 659.6/557.3 300
+aiStrategicArea.addNeighbour farmhouse
+aiStrategicArea.addObjectTypeFlag Centre
+aiStrategicArea.addObjectTypeFlag StrongPoint
+aiStrategicArea.addObjectTypeFlag Close
+aiStrategicArea.addObjectTypeFlag ControlPoint
+aiStrategicArea.setOrderPosition Tank 653.5/565.5
+aiStrategicArea.setOrderPosition Infantry 659.5/556.5
+aiStrategicArea.setSide 2
+
+aiStrategicArea.create Reinforcements_from_Dubissa 506.9/283 511.9/288 50
+aiStrategicArea.addNeighbour barn
+aiStrategicArea.addNeighbour farmhouse
+aiStrategicArea.addNeighbour picket
+aiStrategicArea.addObjectTypeFlag Base
+aiStrategicArea.setOrderPosition Tank 511.9/288
+aiStrategicArea.setOrderPosition Infantry 511.9/288
+aiStrategicArea.setSide 1
+aiStrategicArea.setTakeable 2 0

@@ -1,0 +1,165 @@
+{
+ "generator": "botgen",
+ "version": 5,
+ "mod": "FHSW",
+ "level": "battle_of_pavlov-1942",
+ "objectSpawners": 66,
+ "template": "few",
+ "templateSource": "DICE, bf1942 Kursk (1.6 patch archives, Kursk_003.rfa): AI/Strategies.con, AI/conditions.con, AI/prerequisites.con, unchanged",
+ "templateChoice": {
+  "name": "few",
+  "inPlay": 0,
+  "rule": "0 capturable flags in play, at most 3"
+ },
+ "scope": "an infantry map painted from the walk test, a Tank0 map from the page painter, infantry order positions, no strategic maps, no co-op layer",
+ "unreachable": [
+  "pavlov_house"
+ ],
+ "unreachableReasons": {
+  "pavlov_house": "walk test"
+ },
+ "botSpawnsExcluded": [
+  "germanhq5spawn"
+ ],
+ "walkMap": {
+  "source": "walk test",
+  "engine": "none",
+  "vehicleMap": "page painter",
+  "vehicleBrush": 1.5,
+  "vehicleBrushes": [
+   {
+    "brush": 3,
+    "flagsOn": 3,
+    "spawnersOn": 4,
+    "pieces": 4,
+    "main": 210351
+   },
+   {
+    "brush": 2.5,
+    "flagsOn": 3,
+    "spawnersOn": 6,
+    "pieces": 5,
+    "main": 218044
+   },
+   {
+    "brush": 2,
+    "flagsOn": 3,
+    "spawnersOn": 6,
+    "pieces": 8,
+    "main": 220217
+   },
+   {
+    "brush": 1.5,
+    "flagsOn": 3,
+    "spawnersOn": 9,
+    "pieces": 5,
+    "main": 227659
+   }
+  ],
+  "opened": [
+   [
+    1908,
+    1730
+   ],
+   [
+    1909,
+    1730
+   ],
+   [
+    1910,
+    1730
+   ],
+   [
+    1911,
+    1730
+   ],
+   [
+    1911,
+    1731
+   ],
+   [
+    1911,
+    1732
+   ],
+   [
+    1820,
+    1921
+   ],
+   [
+    1818,
+    1924
+   ],
+   [
+    1820,
+    1932
+   ]
+  ],
+  "ways": [
+   {
+    "who": "germanhq3spawn",
+    "kind": "spawn",
+    "way": "walk",
+    "opened": 1
+   },
+   {
+    "who": "germanhq4spawn",
+    "kind": "spawn",
+    "way": "walk",
+    "opened": 2
+   },
+   {
+    "who": "germanhq5spawn",
+    "kind": "spawn",
+    "way": "drop",
+    "opened": 6
+   }
+  ],
+  "cover": 0.987,
+  "floors": {
+   "stacked": true,
+   "twoFloorShare": 0.005,
+   "raised": [
+    "pavlov_house"
+   ],
+   "reason": "1 of 1 capturable flags stand a storey over or under another walked floor"
+  }
+ },
+ "routeProbe": {
+  "chokeMax": 4,
+  "unreachable": [],
+  "stops": {},
+  "oneSided": {},
+  "sides": {
+   "1": {
+    "spawns": 5,
+    "flags": []
+   },
+   "2": {
+    "spawns": 5,
+    "flags": []
+   }
+  },
+  "chokes": {},
+  "late": {},
+  "shutLinks": []
+ },
+ "inputs": {
+  "controlPoints": "eefdd532bb850103d70997ef4b32d7528f9e79ef4d5cee10de58ce1402c763bd",
+  "infantryMap": "bc6e6b506a2c0fdc2e4840cba216b7ddfff4bc37187e15d18911e67819f20cb9",
+  "template": "bdc0e455f47f91b7e7724e71d7c0c196e839b36946ac3abb7663d725944081e5"
+ },
+ "files": {
+  "AI.con": "8d91f767155a0d28a3aa098c7df0c5d2451f8be7b4b359878330c206d30c2db4",
+  "AIpathFinding.con": "9d8080cdfa7605961969aa126519b03be9691bd604ac76aef50166d81215edd2",
+  "AI/StrategicAreas.con": "321533e65c863ae15b056560cecca95f63fe3edef257f07b5d8c581ce4db2d81",
+  "AI/Strategies.con": "13da4dc35872dd4b5798a066f4425bdc824cfd61f31093d1808e1202644de52e",
+  "AI/conditions.con": "248a04b727c08d696bf0fa9c162bc22c43cde3c75f695892fe1e0f5141519c49",
+  "AI/prerequisites.con": "c96168b5f69860e578f5d26728fd2a2092c4c436e1da49b7d6f4009b65735398",
+  "Pathfinding/Infantry1Level0Map.raw": "f52b75f99dd5309215dc96d7714240dc23a7c6285433f177a599475b2219708d",
+  "Pathfinding/Infantry1Level1Map.raw": "830b3eee5af5c7f7ab79b077529068f0287d47a8cb8592b7bdd5d648a7994f5f",
+  "Pathfinding/Infantry1Level2Map.raw": "5bee204fe7275a91128019896070439f88a4e95b5de0fe769652acffe2c539f5",
+  "Pathfinding/Tank0Level0Map.raw": "de7abc6354ee78e2c184880d4e5d323e001289a2fb3d9079833af7d48a006aba",
+  "Pathfinding/Tank0Level1Map.raw": "a882144e62f376d832e476ec36deb9d9e3a9bd8f6bd2dee77f83b390f6baa86b",
+  "Pathfinding/Tank0Level2Map.raw": "8b7f6774835d94e53858955ad0b7f35cf2e250f8aa8c532cd7716053d507d65c"
+ }
+}

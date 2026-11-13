@@ -115,8 +115,8 @@ pull out, under the follower's wings, and come back up. Two fights:
 
 | | Nine starts |
 |---|---|
-| *You take it for a kill* (`leafFooled`: sure of the kill, flies on, never looks down) | gone every time: 1.2 to 1.4 km apart at the end, in sight 10 to 20% of the time after the fall, 0 to 4 rounds landed, nearly all in its first second |
-| *You follow them down* (`leafFollow`: above and behind through the fall, throttle back, in as they pull out) | with them every time: 80 to 320 m at the end, in sight 80 to 100%, 1 to 10 rounds landed after the fall; in 3 of 9 their pull-out meets you nose to nose and they land 2 to 5 |
+| *You take it for a kill* (`leafFooled`: sure of the kill, flies on, never looks down) | gone every time: 1.2 to 1.4 km apart at the end, in sight 10 to 20% of the time after the fall, 0 to 5 rounds landed, all within 1.5 s of it |
+| *You follow them down* (`leafFollow`: above and behind through the fall, throttle back, in as they pull out) | with them every time: 80 to 330 m at the end, in sight 80 to 100%, 1 to 11 rounds landed after the fall; in 3 of 9 their pull-out meets you nose to nose and they land 2 to 5 |
 
 What the flying found: the ruse is an escape, not a trap. The fooled pilot
 is never bounced afterwards: they fly on at full speed and the ace, 250 m
@@ -147,9 +147,9 @@ one plane up each side), a hunter 350 m behind you, from the nine starts:
 | Fight | Nine starts |
 |---|---|
 | Alone, flying straight | shot down every time, 16 to 30 s in |
-| Alone, turning hard | alive every time, nobody wins: 3 rounds on you in all, 8 of yours on them |
-| Drag and bag (`PLANS.dragger` and `PLANS.bagger`, since 2026-11-12; see below) | never hit; the hunter hit in 7 of 9, 45 rounds in all, 31 of them the wingman's |
-| Two abreast: the Thach weave, tried (`PLANS.weaver`) | from these starts the pair is never hit and the hunter takes 0 to 7 (11 in all); with the hunter's start moved instead of yours the pair took 3 to 4 a fight as well: it trades shots between equals |
+| Alone, turning hard | alive every time, nobody wins: 9 rounds on you in all, 2 of yours on them |
+| Drag and bag (`PLANS.dragger` and `PLANS.bagger`, since 2026-11-12; see below) | never hit; the hunter hit in 8 of 9, 65 rounds in all (shot down in one), 39 of them the wingman's (the drag's break, since the retail-law retune, 2026-11-12; see below) |
+| Two abreast: the Thach weave, tried (`PLANS.weaver`) | from these starts the pair takes one round in all (it was none before the retail-law retune) and the hunter 0 to 5 (14 in all); with the hunter's start moved instead of yours the pair took 3 to 4 a fight as well: it trades shots between equals |
 
 The weave was invented against a better turner (the Zero against the
 Wildcat); between equal airframes, on this law, it is a coin the geometry
@@ -185,7 +185,28 @@ What was tried and dropped, all on the nine starts and on every arena pair:
 | **Bait turns toward the wingman, wingman cuts in with lead (shipped)** | 28, and every vanilla, Road to Rome and Secret Weapons pair | 60 s let the Yak 9's hunter shoot the bait down at 50 s; 45 s cut too many late shots |
 
 Not shot down on any arena, nobody into the ground
-(`test_dogfight_arena_hunter.py`). The live fight (*Fly it*) still flies
+(`test_dogfight_arena_hunter.py`).
+
+**On retail g and box area (2026-11-12,
+`features/retail-parity-cross-check-2026-11-12`).** At the shipped
+`BAG.dragRate` 0.18 the bait was hit in two of the nine starts (3 and 4
+rounds) and the hunter took only 23 rounds, 10 of them the wingman's. The
+outcome is chaotic in the drag rate (0.15 to 0.21 in steps of 0.01 pass the
+test's five conditions at one or two values only), so the fix was judged on
+the safety claim's margin: the nine starts nudged twelve ways (up to 3 m
+sideways and along, 0.5 m/s). The drag alone at 0.18 left the bait unhit in
+0 of the 12 sets. A gentler 0.15 gave 10 of 12, but left vanilla's Battle of
+Britain and Coral Sea pairs (and Road to Rome's and Secret Weapons') without
+a round in the hunter. Shipped: the drag tightens to a hard turn, the same
+way, while the hunter is inside 250 m with the bait within 20 degrees of its
+nose (`BAG.breakRange`, `BAG.breakCone`): unhit in the nine and in 11 of the
+12 sets, every arena condition as before (40 of 59 arena pairs put rounds in
+the hunter, 39 before). From the nine starts: never hit, the hunter hit in
+eight, 65 rounds, 39 the wingman's, shot down in one, the first 9 to 42 s in.
+The rounds on the hunter still swing with the nudge (30 to 65 a set); the
+test's 40 and 7 of 9 hold on the nine starts, not on every nudge. The
+neighbours of 250 m and 20 degrees (230 to 270 m, 15 to 25 degrees) keep the
+bait unhit in 4 to 10 of the 12 sets. The live fight (*Fly it*) still flies
 `PLANS.wingman` beside you: a player is not a scripted bait.
 
 ### What the pair showed, and what it shows now (2026-11-11)

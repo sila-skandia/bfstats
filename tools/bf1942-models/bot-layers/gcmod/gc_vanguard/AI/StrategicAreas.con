@@ -1,0 +1,22 @@
+rem *** Strategic areas: one per control point (botgen) ***
+
+aiStrategicArea.create rebebbasetemplate 262.4/261.2 267.4/266.2 50
+aiStrategicArea.addObjectTypeFlag Base
+aiStrategicArea.setOrderPosition Tank 267.4/266.2
+aiStrategicArea.setOrderPosition Infantry 267.4/266.2
+
+aiStrategicArea.create imperail_spawntemplate 59.3/3936.7 65.3/3942.7 50
+aiStrategicArea.addObjectTypeFlag Base
+aiStrategicArea.setOrderPosition Tank 66.5/3942.5
+
+aiStrategicArea.create hyperspace_nav1template 3052.9/3399 3092.9/3439 10
+aiStrategicArea.setTakeable 1 0
+aiStrategicArea.setTakeable 2 0
+
+aiStrategicArea.create field_navpointtemplate 3451.5/726.8 3491.5/766.8 10
+aiStrategicArea.setTakeable 1 0
+aiStrategicArea.setTakeable 2 0
+
+aiStrategicArea.create field_entry_navtemplate 1953/2155.9 1993/2195.9 10
+aiStrategicArea.setTakeable 1 0
+aiStrategicArea.setTakeable 2 0

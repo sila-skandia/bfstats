@@ -131,7 +131,9 @@ class UpAndOverSurvivalTests(unittest.TestCase):
     def test_the_flip_from_following_him_up_never_works(self) -> None:
         # "It never works: ... 2 to 5 s under 35 m/s inside 300 m of him; in
         # none of the nine are you 2 s in his rear quarter with the shot, he
-        # hits you once or twice in three."
+        # hits you once or twice in four" (three until it was re-pinned
+        # 2026-11-12 on retail g and box area,
+        # features/retail-parity-cross-check-2026-11-12).
         d = self.demo("flip")
         self.assertGreaterEqual(d["seconds"], 40)
         for s in d["scores"]:
@@ -140,13 +142,15 @@ class UpAndOverSurvivalTests(unittest.TestCase):
             self.assertGreaterEqual(s["hang"], 2, s)
             self.assertLessEqual(s["hang"], 5.3, s)
             self.assertLessEqual(s["hitsAll"], 2, s)
-        self.assertEqual(3, sum(1 for s in d["scores"] if s["hitsAll"] > 0))
+        self.assertEqual(4, sum(1 for s in d["scores"] if s["hitsAll"] > 0))
 
     def test_the_ninja_shoots_at_his_top_then_from_behind_him_unseen(self) -> None:
         # "In six you shoot him at the top of his loop at 7 s and again from
         # behind him, unseen, at 16.6 to 17.3 s, and he never has a shot at
-        # you: in one he goes down at 19.7 s, in five he sees you ... and
-        # turns in, and you leave, 1256 to 1597 m apart ..."
+        # you: in three he goes down, 18.8 to 20.1 s in; in three he sees you
+        # ... and turns in, and you leave, 1308 to 1594 m apart ..." (one down
+        # at 19.7 s and five left until it was re-pinned 2026-11-12 on retail
+        # g and box area, features/retail-parity-cross-check-2026-11-12).
         d = self.demo("ninja")
         self.assertGreaterEqual(d["seconds"], 45)
         self.assertTrue(d["scores"][0]["ok"], "the start the theatre plays")
@@ -164,13 +168,13 @@ class UpAndOverSurvivalTests(unittest.TestCase):
             self.assertIn("ninja-stalk", s["myPhases"], s)
             if s["killT"] is not None:
                 down += 1
-                self.assertAlmostEqual(19.7, s["killT"], delta=0.1)
+                self.assertTrue(18.7 <= s["killT"] <= 20.2, s)
             else:
                 left += 1
                 self.assertIn("leave", s["myPhases"], s)
                 self.assertGreaterEqual(s["endRange"], 1250, s)
                 self.assertLessEqual(s["endRange"], 1600, s)
-        self.assertEqual((1, 5), (down, left))
+        self.assertEqual((3, 3), (down, left))
         fails = {(s["dx"], s["dz"], s["dy"], s["dv"]): s for s in d["scores"] if not s["ok"]}
         self.assertEqual({(0, -30, -10, -3), (0, 30, 10, 3), (30, -30, 0, 3)}, set(fails))
         self.assertLess(fails[(0, 30, 10, 3)]["minRange"], 15)

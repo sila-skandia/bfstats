@@ -152,7 +152,8 @@ class CircleOnAJetTests(unittest.TestCase):
         self.assertEqual((13, 35), tuple(round(v) for v in span(rows, "hisShot")))
         hit = sorted(s["hits"][0] for s in rows if s["hits"][0])
         self.assertEqual(5, len(hit))
-        self.assertEqual((5, 26), (hit[0], hit[-1]))
+        # (5, 26) before; re-pinned 2026-11-12 on retail g and box area (features/retail-parity-cross-check-2026-11-12).
+        self.assertEqual((3, 28), (hit[0], hit[-1]))
         self.assertEqual(2, sum(1 for s in rows if s["end"] == "shot down" and s["winner"] == 0))
 
     def test_the_chop_only_slows_you_and_sinks_you(self) -> None:
@@ -169,7 +170,8 @@ class CircleOnAJetTests(unittest.TestCase):
         for s in rows:
             self.assertEqual(0, s["passes"], s)
             self.assertEqual([0, 0], s["shots"], s)
-        self.assertEqual((92, 146), span(rows, "closeAfter"))
+        # (92, 146) before; re-pinned 2026-11-12 on retail g and box area (features/retail-parity-cross-check-2026-11-12).
+        self.assertEqual((87, 147), span(rows, "closeAfter"))
 
     def test_nose_low_gets_round_behind_them_but_never_onto_them(self) -> None:
         rows = self.rows("low")
@@ -204,9 +206,10 @@ class CircleFromTheHarnessStartsTests(unittest.TestCase):
         self.assertEqual("jet", jet_lesson("the-circle")["era"])
         for demo_id in ("circle", "dip", "zoom", "chop", "reverse", "low"):
             self.assertTrue(all(r["hits"] == [0, 0] for r in demos[demo_id]), demo_id)
-        # Turning back: hit 10 to 17 times in three, nobody shot down.
+        # Turning back: hit 13 to 17 times in three, nobody shot down
+        # ([10, 13, 17] before; re-pinned 2026-11-12 on retail g and box area (features/retail-parity-cross-check-2026-11-12)).
         self.assertEqual(0, shot_down(demos["back"], 1))
-        self.assertEqual([10, 13, 17], sorted(r["hits"][0] for r in demos["back"] if r["hits"][0]))
+        self.assertEqual([13, 14, 17], sorted(r["hits"][0] for r in demos["back"] if r["hits"][0]))
         self.assertTrue(all(r["hits"][1] == 0 for r in demos["back"]))
         # Leaving: they never let you go.
         self.assertTrue(all("let-go" not in r["phases"][0] for r in demos["dip"]))
@@ -215,23 +218,27 @@ class CircleFromTheHarnessStartsTests(unittest.TestCase):
         demos = jet_lesson("the-circle", plane="Mig29")["demos"]
         for demo_id in ("circle", "dip", "zoom", "chop", "reverse"):
             self.assertTrue(all(r["hits"] == [0, 0] for r in demos[demo_id]), demo_id)
-        # Nose low, one round of yours lands in one start of nine.
-        self.assertEqual([[0, 0]] * 8 + [[0, 1]], sorted(r["hits"] for r in demos["low"]))
+        # Nose low, no round lands either way (one of yours landed in one
+        # start of nine before; re-pinned 2026-11-12 on retail g and box area (features/retail-parity-cross-check-2026-11-12)).
+        self.assertEqual([[0, 0]] * 9, sorted(r["hits"] for r in demos["low"]))
         self.assertTrue(all("let-go" not in r["phases"][0] for r in demos["dip"]))
         self.assertEqual(5, shot_down(demos["back"], 1))
         hit = sorted(r["hits"][0] for r in demos["back"] if r["hits"][0])
         self.assertEqual([22] * 5, hit)
         # Apart at the end: the Dip at 40 s, the zoom and the chop at 30 s.
-        self.assertEqual((355, 465), (min(r["apart"] for r in demos["dip"]), max(r["apart"] for r in demos["dip"])))
-        self.assertEqual((327, 440), (min(r["apart"] for r in demos["zoom"]), max(r["apart"] for r in demos["zoom"])))
-        self.assertEqual((53, 439), (min(r["apart"] for r in demos["chop"]), max(r["apart"] for r in demos["chop"])))
+        # (355-465, 327-440 and 53-439 before; re-pinned 2026-11-12 on retail g
+        # and box area (features/retail-parity-cross-check-2026-11-12).)
+        self.assertEqual((355, 466), (min(r["apart"] for r in demos["dip"]), max(r["apart"] for r in demos["dip"])))
+        self.assertEqual((327, 441), (min(r["apart"] for r in demos["zoom"]), max(r["apart"] for r in demos["zoom"])))
+        self.assertEqual((56, 415), (min(r["apart"] for r in demos["chop"]), max(r["apart"] for r in demos["chop"])))
         # Over the school's STARTS, leaving gets you shot down in two.
         dip = scored("Mig29")["demos"]["dip"]["scores"]
         self.assertEqual(2, sum(1 for s in dip if s["end"] == "shot down" and s["winner"] == 0))
 
     def test_the_mig29_under_the_roof(self) -> None:
         tops = jet_tops("Mig29", "the-circle")["the-circle"]
-        self.assertEqual(818, max(max(x["top"]) for x in tops.values()))
+        # 818 before; re-pinned 2026-11-12 on retail g and box area (features/retail-parity-cross-check-2026-11-12).
+        self.assertEqual(812, max(max(x["top"]) for x in tops.values()))
         self.assertTrue(all(x["past"] == [0, 0] for x in tops.values()))
         # Every way out still fails on the MiG-29 too.
         for demo_id in TRIES:

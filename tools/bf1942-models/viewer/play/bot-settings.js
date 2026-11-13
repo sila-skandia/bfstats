@@ -5,7 +5,7 @@
 // PERFORMANCE block) is switched off — `menu-screen.js` `SHOW_BOT_SETTINGS` —
 // because most of it never meant anything here and what did mapped awkwardly
 // onto the viewer's own bot model. What the viewer actually takes into a
-// battle is two numbers, so the column is now two controls:
+// battle is two numbers and the respawn wait, so the column is three controls:
 //
 //   NUMBER OF BOTS      the total across both sides (skirmish.js splits it
 //                       between the teams, odd counts leaving the extra body
@@ -16,6 +16,14 @@
 //                       garrison, the squads) — is a separate axis chosen on
 //                       the URL today; until it gets a control of its own the
 //                       slider carries the caption BF1942 EQUIVALENT.
+//   SPAWN TIME          the seconds a downed player or bot waits to stand up
+//                       again in single player, 0..30 in whole seconds, 3 by
+//                       default (`map.html` `?spawnTime=`).
+//
+// DELIBERATE, the owner's choice, 2026-11-12: single player respawns in 3 s
+// by default, adjustable here; retail waits for the 20 s reinforcement wave
+// (`spawn-timer.js`, the single player block). Rooms keep retail's wave. Do
+// not take the control off or put the default back to the wave.
 //
 // DELIBERATE: a working skill slider is an improvement on the game. Retail
 // 1.61's Instant Battle AI SKILL slider is inert (ledger AI-21: the skirmish
@@ -29,6 +37,10 @@
 // layout walk cannot see it).
 
 import { drawBitmapText, rgb } from './menu-screen.js';
+import { MAX_SINGLE_PLAYER_SPAWN_SECONDS, singlePlayerSpawnSeconds } from '../spawn-timer.js';
+
+/** The spawn time's ceiling, whole seconds: the trough runs 0..30. */
+export const MAX_SPAWN_SECONDS = MAX_SINGLE_PLAYER_SPAWN_SECONDS;
 
 /** The five intelligence steps, as `map.html`'s `?botSkill=` takes them. */
 export const BOT_SKILL_STEPS = [0.10, 0.25, 0.50, 0.75, 1.00];
@@ -38,13 +50,13 @@ export const MAX_BOTS = 32;
 
 // Geometry, in the menu's 800x600 virtual units.
 //
-// The box the two controls sit in: the LEVELS list's own plate, so the column
+// The box the three controls sit in: the LEVELS list's own plate, so the column
 // reads as the same kind of panel as the list it stands beside. It starts
 // under the INSTANT BATTLE tab (y 125..157) and runs past CAPTION_Y.
 //
 // The plate's art fills only the top-left 182x190 of its 256x256 texture (the
 // rest is clear), so the source is that corner, stretched into the box.
-const BOX = [25, 160, 158, 130];
+const BOX = [25, 160, 158, 180];
 const BOX_PLATE = 'menu_singlepl_levellist_256x256';
 const BOX_ART = [0, 0, 182, 190];
 
@@ -65,6 +77,8 @@ const COUNT_Y = 188;
 const SKILL_LABEL_Y = 222;
 const SKILL_Y = 242;
 const CAPTION_Y = 264;
+const SPAWN_LABEL_Y = 290;
+const SPAWN_Y = 310;
 
 const GREEN = [0.4922, 0.5352, 0.2891, 1.0];
 const FRAME = [0.5468, 0.5468, 0.5468, 1.0];
@@ -76,11 +90,15 @@ export const botCountRect = () => [COL_X, COUNT_Y, COL_W, ROW_H];
 /** The trough the intelligence slider is set in. */
 export const botSkillRect = () => [COL_X, SKILL_Y, COL_W, ROW_H];
 
+/** The trough the single-player spawn time is set in. */
+export const spawnTimeRect = () => [COL_X, SPAWN_Y, COL_W, ROW_H];
+
 /** Where the pointer is in the bot settings, in virtual units: one of the
- *  two troughs, with the fraction across it (0..1) the click lands at. */
+ *  three troughs, with the fraction across it (0..1) the click lands at. */
 export function hitBotSettings(x, y) {
   if (inTrough(botCountRect(), x, y)) return { kind: 'botCount', frac: frac(botCountRect(), x) };
   if (inTrough(botSkillRect(), x, y)) return { kind: 'botSkill', frac: frac(botSkillRect(), x) };
+  if (inTrough(spawnTimeRect(), x, y)) return { kind: 'spawnTime', frac: frac(spawnTimeRect(), x) };
   return null;
 }
 
@@ -100,8 +118,14 @@ export function fracToBotSkill(f) {
                                   Math.max(0, Math.floor(f * BOT_SKILL_STEPS.length)))];
 }
 
-/** The two controls, over the level plate's left column. `env` is the menu
- *  pack's (texture/font/tint); `state` carries `botCount` and `botSkill`. */
+/** A click fraction to a spawn time, whole seconds: 0, 1, 2 ... 30. */
+export function fracToSpawnSeconds(f) {
+  return singlePlayerSpawnSeconds(f * MAX_SPAWN_SECONDS);
+}
+
+/** The three controls, over the level plate's left column. `env` is the menu
+ *  pack's (texture/font/tint); `state` carries `botCount`, `botSkill` and
+ *  `spawnSeconds`. */
 export function paintBotSettings(ctx, env, state) {
   const font = env.font('standard6');
   if (!font) return;
@@ -127,9 +151,15 @@ export function paintBotSettings(ctx, env, state) {
   ctx.imageSmoothingEnabled = false;
   drawBitmapText(ctx, font, env.tint, 'BF1942 EQUIVALENT',
                  COL_X + 1, CAPTION_Y, INK);
+
+  // Single player's respawn wait (the owner's choice: 3 s, not retail's wave).
+  label(ctx, env, font, 'SPAWN TIME (SECONDS):', SPAWN_LABEL_Y);
+  const seconds = singlePlayerSpawnSeconds(state.spawnSeconds);
+  trough(ctx, spawnTimeRect(), seconds / MAX_SPAWN_SECONDS);
+  value(ctx, env, font, String(seconds), spawnTimeRect());
 }
 
-/** The panel behind the two controls, the way the LEVELS list has its plate. */
+/** The panel behind the three controls, the way the LEVELS list has its plate. */
 function box(ctx, env) {
   const [x, y, w, h] = BOX;
   const img = env.texture(BOX_PLATE);

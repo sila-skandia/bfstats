@@ -1,0 +1,22 @@
+{
+ "level": "fht_conquest_of_java-1942",
+ "verdict": "fail",
+ "outcome": "unsuitable",
+ "config": "with vehicles",
+ "doctrine": "garrison",
+ "generatorVersion": 5,
+ "inputs": {
+  "controlPoints": "eaffb2ce92e5eed6b9fd8812d75964b748a5cc6039fde57280939a4bdd2d4082",
+  "infantryMap": "f29f6bd3d22acc40d1fac45654cc381bc1c492dc109fbf3d3bbb1bac34b56cc0",
+  "template": "43f8a790471528016570235f76e97dbb2045732458781a5139f37fed68bf98c0"
+ },
+ "baseline": "DICE layers with vehicles, garrison doctrine: berlin, stalingrad, kharkov, bocage; seeds 1..10, 600 s",
+ "bar": null,
+ "seeds": 1,
+ "sizes": {},
+ "oneSided": null,
+ "unreachable": [],
+ "lintErrors": [
+  "side 1 holds no spawn point at the start of the round"
+ ]
+}

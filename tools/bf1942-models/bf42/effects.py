@@ -463,6 +463,67 @@ def effect_names_for_firearms(library: con_mod.ObjectLibrary) -> set[str]:
     return names
 
 
+def starts_itself(library: con_mod.ObjectLibrary,
+                  bundle: con_mod.ObjectTemplate, depth: int = 0) -> bool:
+    """Whether the engine starts this bundle with no message from its host.
+
+    Three ways, each read on the binary (gap audit entry 10):
+
+    - an Emitter child with `startAtCreation 1`: `EffectBundle::init` (lnxded
+      0x081e0ed0) sends itself message 0 for each (`cmpb $0x0,0x13c(%esi)` at
+      0x081e0f73), and `Emitter::init` starts a parentless one the same way;
+    - `addWorkOnMaterial`: the Spring it hangs on starts and stops it by the
+      material under the wheel (`Spring::handleUpdate` 0x0824f6b0);
+    - `minDistanceUnderwaterSurface >= 0`: `EffectBundle::handleUpdate`
+      (0x081e1680) starts and stops it by its own depth under the water.
+    """
+    if bundle.work_on_materials:
+        return True
+    try:
+        if float(bundle.effect_props.get("mindistanceunderwatersurface", "").split()[0]) >= 0:
+            return True
+    except (ValueError, IndexError):
+        pass
+    for ref in bundle.children:
+        child = library.object(ref.template)
+        if child is None:
+            continue
+        kind = child.kind.lower()
+        if kind == "emitter" and con_mod.truthy(
+                child.effect_props.get("startatcreation", "")):
+            return True
+        if kind == "effectbundle" and depth < 6 and starts_itself(library, child, depth + 1):
+            return True
+    return False
+
+
+def effect_names_for_hosts(library: con_mod.ObjectLibrary) -> set[str]:
+    """Bundles an object carries as a child and the engine runs by itself.
+
+    A tank track's `e_wdustPanz`, a wheel's `e_wdustWheelF` and
+    `e_WaterTouchPlane`, a boat's `e_WaterFront` and `e_waterBoatSvall`, the
+    factory chimney's `e_ExFumeFact`, a mod's rain and snow boxes. The vehicle
+    and level bakes hang a node named for each at its placement; this puts the
+    bundle into the effect library so the viewer can run it there
+    (`viewer/ambient-effects.js`). A gun's and a round's children are the
+    other two readers' and are left to them, and so is an Obstacle's: barbed
+    wire's `e_Barbwire` is the scrape `Obstacle::handleCollision` sends
+    message 0 for (`viewer/obstacle.js`), which the page already sounds.
+    """
+    names: set[str] = set()
+    skipped = ("effectbundle", "emitter", "firearms", "handfirearms", "projectile",
+               "obstacle")
+    for template in library.objects.values():
+        if template.kind.lower() in skipped:
+            continue
+        for ref in template.children:
+            child = library.object(ref.template)
+            if (child is not None and child.kind.lower() == "effectbundle"
+                    and starts_itself(library, child)):
+                names.add(child.name)
+    return names
+
+
 def effect_names_for_kit_parts(library: con_mod.ObjectLibrary) -> set[str]:
     """Bundles a worn `ActiveKitPart` plays: XPack2's rocket pack carries
     `e_RocketPack` (the flame, while it burns) and `e_RocketPackDefault` (the

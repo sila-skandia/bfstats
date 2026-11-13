@@ -5,7 +5,7 @@
 // which delegates its methods here.
 
 import { lineClear, playerPosition, sensedPoint, sCurveExact } from './bot-sense.js';
-import { scoreTargets, scoreVehicleTargets, weaponAiOf, SOLDIER_BATTLE_STRENGTH, VEHICLE_FIRE } from './bot-fire.js';
+import { scoreTargets, scoreVehicleTargets, weaponAiOf, SOLDIER_BATTLE_STRENGTH, VEHICLE_FIRE, unarmedThreat, decliningSlope } from './bot-fire.js';
 import { QUADRANTS, quadrantOf } from './bot-behaviours.js';
 import { TANK } from './bot-vehicle.js';
 import { unitTable } from './bot-strength.js';
@@ -298,16 +298,31 @@ export function chooseVehicleTarget(bot, now) {
   // seat's offset). Empty, it returns
   // `BBFireUnarmed::calculateUrgency` 0x0856eb90, whose only `ret`
   // (0x0856ec35) follows `fldz`: its threat score goes to
-  // `addToFireInclination` (BotMain vt+0x164, read by `BBChange`; not
-  // modelled) and the Fire urgency is 0 (ledger SPOT-16).
+  // `addToFireInclination` (BotMain vt+0x164, read by `BBChange`;
+  // bot-fire.js `unarmedThreat`) and the Fire urgency is 0 (ledger SPOT-16).
   const gun = isArtilleryDriver(m) ? m.gunSeat : null;
-  if (isArtilleryDriver(m) && !(gun && m.gunSeatHeld?.())) {
-    return { targetId: null, targetPos: null, score: 0, weaponIndex: -1, urgency: 0 };
+  if ((isArtilleryDriver(m) && !(gun && m.gunSeatHeld?.())) || rowFire(m?.row) === 'FireUnarmed') {
+    // `BBFireUnarmed` (bot-fire.js `unarmedThreat`): no target and urgency
+    // 0; the threat's `Declein(2 best)` goes to the fire inclination
+    // (`inclination`, which `urgencyFire` scales by the modifier).
+    const r = unarmedThreat({
+      spotted: bot.senses.spottedEnemies(), position: bot.position, now,
+      infoOf: id => bot._unitInfo(id), myType: bot._myType(),
+      attackedBy: id => bot.senses.attackedBy(id),
+      insideOrderedArea: bot._insideOrderedArea(),
+      insideArea: bot.waypoints?.inside ? (pos) => bot.waypoints.inside(pos[0], pos[2]) : null,
+      currentTarget: bot._unarmedTarget ?? null,
+    });
+    bot._unarmedTarget = r.targetId;
+    return { targetId: null, targetPos: null, score: 0, weaponIndex: -1, urgency: 0,
+             inclination: r.best > 0 ? decliningSlope(2 * r.best) : 0 };
   }
   const weapons = gun ? gunWeapons(m) : bot.weapons;
-  const spotted = bot.senses.spottedEnemies();
+  const guided = !air && fireMode(m) === 'guided';
+  // A guided launcher scores the environment's list alone (`fireMode`).
+  const spotted = guided ? [] : bot.senses.spottedEnemies();
   // `getEnemyObjects`: the enemy objects around that are not spotted.
-  const radius = air ? VEHICLE_FIRE.environmentRadiusAir
+  const radius = guided ? VEHICLE_FIRE.environmentRadius : air ? VEHICLE_FIRE.environmentRadiusAir
     : (m.kind === 'ship' || m.kind === 'ground' || m.kind === 'tank' || m.kind === 'gun') ? VEHICLE_FIRE.environmentRadius
     : VEHICLE_FIRE.environmentRadiusGround;
   const environment = [];
@@ -342,7 +357,9 @@ export function chooseVehicleTarget(bot, now) {
     currentTarget: bot.firingTarget, currentScore: bot.targetScore,
     insideOrderedArea: bot._insideOrderedArea(),
     insideArea: bot.waypoints?.inside ? (pos) => bot.waypoints.inside(pos[0], pos[2]) : null,
-    vetoed: bot.vetoedTargets, aimable, mode: air ? 'air' : fireMode(m) === 'infantry' ? 'infantry' : 'largeBore',
+    vetoed: bot.vetoedTargets, aimable,
+    // The guided urgency is the large-bore's with no spotted list.
+    mode: air ? 'air' : fireMode(m) === 'infantry' ? 'infantry' : 'largeBore', guided,
     // A row that never walks (`BBMoveToFixed`) is a fixed gun's; vanilla's 4
     // and 11 for a seat with no row.
     fixed: (m.row ? m.row.behaviours.MoveTo === 'MoveToFixed' : FIXED_EQUIPMENT.has(m.equipmentType)) || !m.drives,
@@ -367,6 +384,17 @@ export function chooseVehicleTarget(bot, now) {
  * had every hull and seat on the large-bore rule. A tree without the field
  * takes a driven tank for a Tank (INFERRED, as `approachesByFinding`) and
  * keeps the large-bore rule for the rest.
+ *
+ * `BBFireGuided::calculateUrgency` 0x085705d0 (read 2026-11-13 against
+ * `BBFireLargeBore`'s, instruction for instruction: the large-bore's first
+ * loop, 0x0856b794..0x0856cb8e, is absent) walks ONE list, the enemy objects
+ * the environment hands it within 850.0 m (`pushl $0x44548000` at
+ * 0x085709a8, env vt+0x28 at 0x085709b0): never the bot's own spotted
+ * memory, so no sight of its own is needed and no lost-target decay
+ * applies. Each is scored as the large-bore's unspotted target is: the 0.75
+ * factor (0x86ba8cc), the weapon by `strength / (10 / ammo + 1)`, the 20 s
+ * feedback veto (`getBBPFeedback` 0x08571fa0 against 20.0 at 0x08570ed0),
+ * the attacker bonus, the same radio terms and `Declein(2 x)` shaping.
  */
 const INFANTRY_FIRE_EQUIPMENT = new Set([0, 4, 11]);
 const FIXED_EQUIPMENT = new Set([4, 11]);
@@ -382,6 +410,9 @@ export function fireMode(m) {
   const fire = rowFire(m?.row);
   if (fire === 'FireDriver') return 'artilleryDriver';
   if (fire === 'FireInfantery') return 'infantry';
+  // `FixedGuidedMissileLauncher`'s row (EoD's Hawk and SA-2, BF1918's M1 uboot,
+  // GCMOD's droid controls; vanilla has none): `BBFireGuided` / `BBPFireGuided`.
+  if (fire === 'FireGuided') return 'guided';
   if (fire) return 'largeBore';
   if (m?.equipmentType === ARTILLERY_DRIVER_EQUIPMENT) return 'artilleryDriver';
   if (Number.isInteger(m?.equipmentType)) return INFANTRY_FIRE_EQUIPMENT.has(m.equipmentType) ? 'infantry' : 'largeBore';

@@ -1948,13 +1948,103 @@ def projectile_materials(library) -> dict[str, dict]:
         # what the viewer assumes when this is absent.
         if template.force_on_explosion is not None:
             entry["forceOnExplosion"] = template.force_on_explosion
+        # `noFFSound 1` (`ProjectileTemplate+0x14f`, the gate at lnxded
+        # 0x0831efe6, FF-6): a teammate's round that meets a soldier never
+        # draws the friendly-fire call-out. Grenades, the pack, the landmine
+        # and the rifle grenade. Written only when set; the constructor's 0
+        # is what the viewer assumes when it is absent.
+        if template.no_ff_sound:
+            entry["noFFSound"] = True
+        # `useMMOnEndEffect 1` (`ProjectileTemplate+0x14e`, read at lnxded
+        # 0x0831f602): the end-of-life effect is the MaterialManager's for the
+        # round's material against the surface it last struck, or water.
+        # Written only when set (`viewer/round-impact.js` `detonate`).
+        if template.use_mm_on_end_effect:
+            entry["useMMOnEndEffect"] = True
+        # `projectileType` (`ProjectileTemplate+0x1d4`, constructor -1): the
+        # client lights `ShowMineIcon` for a friendly round of type 1 that
+        # `addToProjectileList 1` filed in the projectile map
+        # (`viewer/mine-icon.js`). Written only for a listed round that
+        # declares a type; vanilla's one is `LandmineProjectile`, 1.
+        if template.add_to_projectile_list and template.projectile_type is not None \
+                and template.projectile_type >= 0:
+            entry["projectileType"] = template.projectile_type
         if entry:
             out[name] = entry
     return out
 
 
+# `SimpleObjectTemplate::SimpleObjectTemplate` (lnxded 0x081dbc70): what an
+# Armor's death blast is when its template writes none of the four words
+# (0x081dbdf4 `0x41700000` 15.0, 0x081dbdfe `0x41200000` 10.0, 0x081dbe08
+# 204, 0x081dbe12 `0x43160000` 150.0), the two push words beside them
+# (0x081dc0ac 1.0, 0x081dc0b2 300.0). `viewer/vehicle-damage.js`
+# `ARMOR_EXPLOSION_DEFAULTS` holds the same six.
+ARMOR_EXPLOSION_DEFAULTS = {
+    "explosionRadius": 15.0, "explosionDamage": 10.0, "explosionMaterial": 204,
+    "explosionForce": 150.0, "explosionForceMod": 1.0, "explosionForceMax": 300.0,
+}
+
+
+def armor_explosions(library) -> dict[str, dict]:
+    """`template -> {its declared explosion words}` for every template that
+    carries an Armor (`hasArmor 1`, HFD-11), lower case.
+
+    Two mechanics read them. A destroyed object's own blast: `Armor::status`
+    (lnxded 0x081739e0) calls `handleExplosion` at the object's position with
+    `explosionRadius`, `explosionMaterial`, `explosionDamage` and
+    `explosionForce` whenever the damage is above 0.001 (0x08173d6b), so a
+    hull that writes none of them blows with the constructor's 10 over 15 m
+    (vanilla's Daihatsu and LCVP do). And any blast's push on a hull
+    (KNOCK-4): the victim's `explosionForceMod` times the blast's force over
+    its radius, held under `explosionForceMax`. Only the words a template
+    declares are written; the viewer fills the rest from
+    `ARMOR_EXPLOSION_DEFAULTS`, so a template missing from a table that has
+    the key is one with no Armor. Written into `damage.json` beside the
+    projectile table, the `damage` layer, so no glb is re-baked for it.
+    """
+    if library is None:
+        return {}
+    out: dict[str, dict] = {}
+    for name, template in sorted(library.objects.items()):
+        if not template.has_armor:
+            continue
+        out[name] = {key: value for key, value in {
+            "explosionRadius": template.armor_explosion_radius,
+            "explosionDamage": template.armor_explosion_damage,
+            "explosionMaterial": template.armor_explosion_material,
+            "explosionForce": template.armor_explosion_force,
+            "explosionForceMod": template.explosion_force_mod,
+            "explosionForceMax": template.explosion_force_max,
+        }.items() if value is not None}
+    return out
+
+
+def weapon_ammo_types(library) -> dict[str, int]:
+    """`weapon template -> ammoType`, the tag a depot row's id must equal.
+
+    `SupplyDepot::reloadAmmo` (lnxded 0x08323770) gives a gun only the units
+    of the row whose id equals `FireArms::getAmmoType` (0x0828d4c0, the
+    compare at 0x08323995): `FireArmsTemplate+0x238`, written by
+    `ObjectTemplate.ammoType` (0x082c98be) and 0 from the constructor
+    (0x0828d614). Every FireArms and HandFireArms that writes the word, lower
+    case; one that does not is 0, which `viewer/fire-state.js` `ammoTypeOf`
+    assumes for a weapon missing from a table that exists. Written into
+    `damage.json` beside the projectile table, so both a kit item and a seat
+    gun reach it by template name without a re-bake (SUP-2).
+    """
+    if library is None:
+        return {}
+    return {name: template.ammo_type
+            for name, template in sorted(library.objects.items())
+            if template.kind.lower() in ("firearms", "handfirearms")
+            and template.ammo_type is not None}
+
+
 def write_damage_tables(tables, shared_dir: Path, rel_base: Path,
-                        projectiles: dict | None = None) -> dict | None:
+                        projectiles: dict | None = None,
+                        ammo_types: dict | None = None,
+                        armors: dict | None = None) -> dict | None:
     """`damage.json` in the shared directory, plus the path to reach it.
 
     The MaterialManager tables are mod-wide, so they are written once beside
@@ -1976,13 +2066,32 @@ def write_damage_tables(tables, shared_dir: Path, rel_base: Path,
     # `round-not-in-damage-table`, 2026-10-21). So the rows already there
     # stay, and this level's own win where both have one.
     merged: dict = {}
+    merged_ammo: dict = {}
+    merged_armors: dict = {}
     if target.is_file():
         try:
-            merged = dict(json.loads(target.read_text()).get("projectiles") or {})
+            previous = json.loads(target.read_text())
+            merged = dict(previous.get("projectiles") or {})
+            merged_ammo = dict(previous.get("ammoTypes") or {})
+            merged_armors = dict(previous.get("armors") or {})
         except (OSError, ValueError, AttributeError):
-            merged = {}
+            merged, merged_ammo, merged_armors = {}, {}, {}
     merged.update(projectiles or {})
     payload["projectiles"] = merged
+    # The weapons' depot tags (`weapon_ammo_types`), merged the same way: a
+    # weapon only one level declares keeps its row. Always written, an empty
+    # table included, so the page can tell "no weapon of this mod writes the
+    # word" (every weapon 0) from a file written before the word was read.
+    if ammo_types is not None:
+        merged_ammo.update(ammo_types)
+        payload["ammoTypes"] = merged_ammo
+    # The Armors' explosion words (`armor_explosions`), merged the same way.
+    # Always written when given, so the page can tell "this template has no
+    # Armor" from a file written before the table existed (which leaves every
+    # hull's death blast off rather than guessing).
+    if armors is not None:
+        merged_armors.update(armors)
+        payload["armors"] = merged_armors
     text = json.dumps(payload, separators=(",", ":"))
     # Rewritten only when it differs, so a layer patch that changes nothing
     # leaves the file (and its mtime) alone.
@@ -3227,7 +3336,8 @@ class _Block:
     `SpawnPoint` the words the spawn report reads, and for an `ObjectSpawner`
     the object each side gets."""
 
-    __slots__ = ("name", "kind", "source", "order", "children", "spawn", "spawns")
+    __slots__ = ("name", "kind", "source", "order", "children", "spawn", "spawns",
+                 "shuts_spawns")
 
     def __init__(self, name: str, kind: str | None, source: str, order: int) -> None:
         self.name = name
@@ -3239,6 +3349,8 @@ class _Block:
         self.spawn: SoldierSpawnTemplate | None = None
         # team -> object, an ObjectSpawner's `setObjectTemplate` lines.
         self.spawns: dict[int, str] = {}
+        # `disableSpawnPointsOnEnter` on a PlayerControlObject (SPAWN-39).
+        self.shuts_spawns = False
 
 
 class LevelFirst:
@@ -3408,6 +3520,12 @@ class TemplateIndex:
                     last[1] = values
                 else:
                     last[2] = values[0]
+            elif cmd == "disablespawnpointsonenter":
+                # A bool read as a float (ConsoleClass510 0x082f4920: `!= 0`).
+                try:
+                    current.shuts_spawns = bool(tokens) and float(tokens[0]) != 0.0
+                except ValueError:
+                    pass
             elif current.spawn is not None:
                 spawn = current.spawn
                 if cmd == "setspawnid":
@@ -3685,6 +3803,11 @@ def _vehicle_soldier_spawn_report(info: LevelInfo, objects, game,
                 # hull the page floats or settles off its pad would leave
                 # the bake's point behind.
                 entry["carrierLocal"] = [round(lx, 3), round(ly, 3), round(-lz, 3)]
+            # SPAWN-39: the carrier's `disableSpawnPointsOnEnter`. Its points
+            # are off while someone holds its own seat. Written only when set.
+            carrier_block = index.get(vehicle)
+            if carrier_block is not None and carrier_block.shuts_spawns:
+                entry["disableOnEnter"] = True
             _stamp_seat(entry, tpl)
             _stamp_audience(entry, settings)
             out.append(entry)
@@ -4186,7 +4309,12 @@ def main() -> int:
     ap.add_argument("--mod", default="bf1942")
     ap.add_argument("--out", type=Path,
                     default=Path(__file__).resolve().parent / "viewer" / "maps")
-    ap.add_argument("--max-texture", type=int, default=512)
+    # 1024 is the largest texture the three retail packs ship (153 of 2492
+    # .dds files; 651 more are 512), so this default is lossless for them. It
+    # was 512: every 1024 terrain tile and every 1024 vehicle texture a level
+    # placed was halved, against retail's own tiles at 4 texels a metre
+    # (features/retail-look-parity).
+    ap.add_argument("--max-texture", type=int, default=1024)
     ap.add_argument("--terrain-only", action="store_true",
                     help="skip StaticObjects (faster, for judging the ground)")
     ap.add_argument("--texture-fallback", action="append", default=[],

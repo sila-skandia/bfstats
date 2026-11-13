@@ -1,0 +1,23 @@
+{
+ "level": "omaturi_channel_battleship",
+ "verdict": "fail",
+ "outcome": "unsuitable",
+ "config": "with vehicles",
+ "doctrine": "garrison",
+ "generatorVersion": 5,
+ "inputs": {
+  "controlPoints": "f0760e892e0c2d936f30f67a4be44b43d45ca106c13df484de6bb5a57595fdbd",
+  "infantryMap": "1617c34dbe8d9280b69a8db7fc4679dd0a3be795001fc39e447db03620dceda4",
+  "template": "bdc0e455f47f91b7e7724e71d7c0c196e839b36946ac3abb7663d725944081e5"
+ },
+ "baseline": "DICE layers with vehicles, garrison doctrine: berlin, stalingrad, kharkov, bocage; seeds 1..10, 600 s",
+ "bar": null,
+ "seeds": 1,
+ "sizes": {},
+ "oneSided": null,
+ "unreachable": [],
+ "lintErrors": [
+  "side 1 holds no spawn point at the start of the round",
+  "side 2 holds no spawn point at the start of the round"
+ ]
+}

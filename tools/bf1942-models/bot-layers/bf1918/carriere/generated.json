@@ -1,0 +1,601 @@
+{
+ "generator": "botgen",
+ "version": 7,
+ "mod": "bf1918",
+ "level": "carriere",
+ "objectSpawners": 43,
+ "template": "symmetric",
+ "templateSource": "DICE, bf1942 Kharkov (1.6 patch archives): AI/Strategies.con, AI/conditions.con, AI/prerequisites.con, unchanged",
+ "templateChoice": {
+  "name": "symmetric",
+  "inPlay": 5,
+  "rule": "5 capturable flags in play, more than 3"
+ },
+ "scope": "an infantry map painted from the walk test, a Tank0 map from the page painter, infantry order positions, no strategic maps, no co-op layer",
+ "unreachable": [],
+ "unreachableReasons": {},
+ "botSpawnsExcluded": [
+  "frz_hill1",
+  "reapir2",
+  "frzhill_Spawn4",
+  "frzhill_Spawn5",
+  "frzhill_Spawn6",
+  "frzhill_Spawn7",
+  "frzhill_Spawn11"
+ ],
+ "walkMap": {
+  "source": "walk test",
+  "engine": "none",
+  "vehicleMap": "page painter",
+  "vehicleBrush": 1.5,
+  "vehicleBrushes": [
+   {
+    "brush": 3,
+    "flagsOn": 2,
+    "spawnersOn": 0,
+    "pieces": 28,
+    "main": 6157
+   },
+   {
+    "brush": 2.5,
+    "flagsOn": 2,
+    "spawnersOn": 1,
+    "pieces": 20,
+    "main": 481104
+   },
+   {
+    "brush": 2,
+    "flagsOn": 3,
+    "spawnersOn": 2,
+    "pieces": 19,
+    "main": 497254
+   },
+   {
+    "brush": 1.5,
+    "flagsOn": 5,
+    "spawnersOn": 5,
+    "pieces": 12,
+    "main": 523648
+   }
+  ],
+  "opened": [
+   [
+    694,
+    493
+   ],
+   [
+    598,
+    619
+   ],
+   [
+    599,
+    619
+   ],
+   [
+    600,
+    619
+   ],
+   [
+    601,
+    619
+   ],
+   [
+    602,
+    619
+   ],
+   [
+    603,
+    619
+   ],
+   [
+    596,
+    620
+   ],
+   [
+    597,
+    620
+   ],
+   [
+    598,
+    620
+   ],
+   [
+    599,
+    620
+   ],
+   [
+    600,
+    620
+   ],
+   [
+    601,
+    620
+   ],
+   [
+    602,
+    620
+   ],
+   [
+    603,
+    620
+   ],
+   [
+    595,
+    621
+   ],
+   [
+    596,
+    621
+   ],
+   [
+    597,
+    621
+   ],
+   [
+    598,
+    621
+   ],
+   [
+    599,
+    621
+   ],
+   [
+    601,
+    621
+   ],
+   [
+    602,
+    621
+   ],
+   [
+    603,
+    621
+   ],
+   [
+    593,
+    622
+   ],
+   [
+    594,
+    622
+   ],
+   [
+    595,
+    622
+   ],
+   [
+    596,
+    622
+   ],
+   [
+    597,
+    622
+   ],
+   [
+    598,
+    622
+   ],
+   [
+    599,
+    622
+   ],
+   [
+    601,
+    622
+   ],
+   [
+    590,
+    623
+   ],
+   [
+    591,
+    623
+   ],
+   [
+    592,
+    623
+   ],
+   [
+    593,
+    623
+   ],
+   [
+    594,
+    623
+   ],
+   [
+    595,
+    623
+   ],
+   [
+    596,
+    623
+   ],
+   [
+    597,
+    623
+   ],
+   [
+    598,
+    623
+   ],
+   [
+    599,
+    623
+   ],
+   [
+    589,
+    624
+   ],
+   [
+    590,
+    624
+   ],
+   [
+    591,
+    624
+   ],
+   [
+    592,
+    624
+   ],
+   [
+    593,
+    624
+   ],
+   [
+    594,
+    624
+   ],
+   [
+    588,
+    625
+   ],
+   [
+    589,
+    625
+   ],
+   [
+    590,
+    625
+   ],
+   [
+    591,
+    625
+   ],
+   [
+    592,
+    625
+   ],
+   [
+    581,
+    631
+   ],
+   [
+    582,
+    631
+   ],
+   [
+    580,
+    632
+   ],
+   [
+    581,
+    632
+   ],
+   [
+    582,
+    632
+   ],
+   [
+    578,
+    633
+   ],
+   [
+    579,
+    633
+   ],
+   [
+    580,
+    633
+   ],
+   [
+    581,
+    633
+   ],
+   [
+    582,
+    633
+   ],
+   [
+    578,
+    634
+   ],
+   [
+    579,
+    634
+   ],
+   [
+    580,
+    634
+   ],
+   [
+    581,
+    634
+   ],
+   [
+    577,
+    635
+   ],
+   [
+    578,
+    635
+   ],
+   [
+    579,
+    635
+   ],
+   [
+    580,
+    635
+   ],
+   [
+    576,
+    636
+   ],
+   [
+    577,
+    636
+   ],
+   [
+    578,
+    636
+   ],
+   [
+    579,
+    636
+   ],
+   [
+    576,
+    637
+   ],
+   [
+    577,
+    637
+   ],
+   [
+    578,
+    637
+   ],
+   [
+    576,
+    638
+   ],
+   [
+    577,
+    638
+   ],
+   [
+    578,
+    638
+   ],
+   [
+    579,
+    638
+   ],
+   [
+    576,
+    639
+   ],
+   [
+    577,
+    639
+   ],
+   [
+    576,
+    640
+   ],
+   [
+    577,
+    640
+   ],
+   [
+    575,
+    644
+   ],
+   [
+    575,
+    645
+   ],
+   [
+    576,
+    645
+   ],
+   [
+    577,
+    645
+   ],
+   [
+    575,
+    646
+   ],
+   [
+    576,
+    646
+   ],
+   [
+    577,
+    646
+   ],
+   [
+    578,
+    646
+   ],
+   [
+    575,
+    647
+   ],
+   [
+    576,
+    647
+   ],
+   [
+    577,
+    647
+   ],
+   [
+    578,
+    647
+   ],
+   [
+    575,
+    648
+   ],
+   [
+    576,
+    648
+   ],
+   [
+    577,
+    648
+   ],
+   [
+    576,
+    649
+   ],
+   [
+    577,
+    649
+   ]
+  ],
+  "ways": [
+   {
+    "who": "overview1",
+    "kind": "spawn",
+    "way": "walk",
+    "opened": 1
+   },
+   {
+    "who": "reapir2",
+    "kind": "spawn",
+    "way": "none",
+    "opened": 0
+   },
+   {
+    "who": "frzhill_Spawn2",
+    "kind": "spawn",
+    "way": "drop",
+    "opened": 45
+   },
+   {
+    "who": "frzhill_Spawn3",
+    "kind": "spawn",
+    "way": "drop",
+    "opened": 6
+   },
+   {
+    "who": "frzhill_Spawn6",
+    "kind": "spawn",
+    "way": "jump",
+    "opened": 0
+   },
+   {
+    "who": "frzhill_Spawn7",
+    "kind": "spawn",
+    "way": "jump",
+    "opened": 0
+   },
+   {
+    "who": "frzhill_Spawn11",
+    "kind": "spawn",
+    "way": "jump",
+    "opened": 0
+   },
+   {
+    "who": "frzhill_Spawn12",
+    "kind": "spawn",
+    "way": "drop",
+    "opened": 33
+   },
+   {
+    "who": "frzhill_Spawn13",
+    "kind": "spawn",
+    "way": "drop",
+    "opened": 17
+   }
+  ],
+  "cover": 0.991,
+  "floors": {
+   "stacked": true,
+   "twoFloorShare": 0.003,
+   "raised": [
+    "french_ari_hill",
+    "center_trenches",
+    "french_repair_point",
+    "assault_point"
+   ],
+   "reason": "4 of 5 capturable flags stand a storey over or under another walked floor"
+  }
+ },
+ "routeProbe": {
+  "chokeMax": 4,
+  "unreachable": [],
+  "stops": {},
+  "oneSided": {},
+  "sides": {
+   "1": {
+    "spawns": 5,
+    "flags": [
+     "assault_point",
+     "center_trenches",
+     "french_ari_hill",
+     "french_overview_hill",
+     "french_repair_point"
+    ]
+   },
+   "2": {
+    "spawns": 23,
+    "flags": [
+     "assault_point",
+     "center_trenches",
+     "french_ari_hill",
+     "french_overview_hill",
+     "french_repair_point"
+    ]
+   }
+  },
+  "chokes": {
+   "french_overview_hill:1": 2,
+   "french_overview_hill:2": 0,
+   "french_ari_hill:1": 0,
+   "french_ari_hill:2": 0,
+   "center_trenches:1": 0,
+   "center_trenches:2": 0,
+   "french_repair_point:1": 0,
+   "french_repair_point:2": 1,
+   "assault_point:1": 0,
+   "assault_point:2": 1
+  },
+  "late": {},
+  "shutLinks": []
+ },
+ "inputs": {
+  "controlPoints": "fe2bc3caece806e346d7a2b6df964b8988cba274cec51a8c60085f2c456cdedf",
+  "infantryMap": "2b87bbf35a74012bdc5d4baa42ef1fb5ece836fe0f99c1488811c1528e1e7fd1",
+  "template": "43f8a790471528016570235f76e97dbb2045732458781a5139f37fed68bf98c0"
+ },
+ "files": {
+  "AI.con": "3dc94f663ac7545695a38d3670752432e4a5e64efe048dc4b26d578aece3748c",
+  "AIpathFinding.con": "9d8080cdfa7605961969aa126519b03be9691bd604ac76aef50166d81215edd2",
+  "AI/StrategicAreas.con": "fc05f9d455e1a250f6991f71c6061212b8c3297a61669e1e7737924e6b6b6f4a",
+  "AI/Strategies.con": "4ce0be59a0d6c5cd530db002fb062c4be8d936bc6ae59bd188803ccaf7869a8d",
+  "AI/conditions.con": "68a0c7a8aec69954063147b60fae560b2874884285737aa085efa76597d395aa",
+  "AI/prerequisites.con": "4c1f313bc285b228fd6ad03bfd1f44c5b15c8703c31f802eb605bc5f00f88bb5",
+  "Pathfinding/Infantry1Level0Map.raw": "762296bbda6d6bb42cec72cb9e05fa85846d7fb7113ca190ff696a737217d764",
+  "Pathfinding/Infantry1Level1Map.raw": "652186e6f852b360aac4fc0b2838a155219c773b6b01e9affffd18e89e76cac6",
+  "Pathfinding/Infantry1Level2Map.raw": "8f4104eb265754528d98a37338fb3bd37f6cd5a7912adee95dd02c2ced3a59dc",
+  "Pathfinding/Tank0Level0Map.raw": "0fabfd5bca3d21ddfee67ac41dfc068c9ba0b8ce3f56ee49acd9fc41977b71d0",
+  "Pathfinding/Tank0Level1Map.raw": "2bcec7af258d6607ac4939f52fc13e436e0465d3189907db2a03cb609b3f2f9a",
+  "Pathfinding/Tank0Level2Map.raw": "beba9d991a542183f5ac16736887c9b7efb56e644abeba8539fe41c7cd04fd75"
+ }
+}

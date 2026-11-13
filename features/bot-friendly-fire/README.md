@@ -109,6 +109,11 @@ this change.
 
 ## Decisions to know about
 
+- **The hold-fire stays, 2026-11-12.** The retail inverse audit
+  ([retail-inverse-gap-audit-2026-11-12](../retail-inverse-gap-audit-2026-11-12/README.md),
+  "Kept on purpose") listed it as a departure from retail (FF-7: retail bots
+  fire through a teammate), and the owner confirmed it is kept. Do not remove
+  it in the name of parity.
 - **A hold-fire was added, 2026-11-11 (INVENTION; superseding the September
   decision below).** Measured on the page
   ([hold-fire.md](../bot-map-generation/hold-fire.md),

@@ -1,0 +1,60 @@
+rem *** Strategic areas: one per control point (botgen) ***
+
+aiStrategicArea.create AxisBase 306.4/468.7 311.4/473.7 50
+aiStrategicArea.addNeighbour AlliedBase
+aiStrategicArea.addObjectTypeFlag Base
+aiStrategicArea.setOrderPosition Tank 310.5/475.5
+aiStrategicArea.setOrderPosition Infantry 311.5/474.5
+aiStrategicArea.setSide 1
+aiStrategicArea.setTakeable 2 0
+
+aiStrategicArea.create AlliedBase 328.6/466.4 333.6/471.4 50
+aiStrategicArea.addNeighbour AxisBase
+aiStrategicArea.addNeighbour Meta
+aiStrategicArea.addObjectTypeFlag Base
+aiStrategicArea.setOrderPosition Tank 335.5/470.5
+aiStrategicArea.setOrderPosition Infantry 334.5/471.5
+aiStrategicArea.setSide 2
+aiStrategicArea.setTakeable 1 0
+
+aiStrategicArea.create Meta 385/488.7 405/508.7 150
+aiStrategicArea.addNeighbour AlliedBase
+aiStrategicArea.addNeighbour Torre_aliado
+aiStrategicArea.addObjectTypeFlag Flank
+aiStrategicArea.addObjectTypeFlag Close
+aiStrategicArea.addObjectTypeFlag ControlPoint
+aiStrategicArea.setOrderPosition Tank 403.5/510.5
+aiStrategicArea.setOrderPosition Infantry 404.5/509.5
+
+aiStrategicArea.create torre_eje 444.8/526.3 449.8/531.3 50
+aiStrategicArea.addNeighbour Torre_aliado
+aiStrategicArea.addNeighbour New_Control_Point2
+aiStrategicArea.addObjectTypeFlag Base
+aiStrategicArea.setOrderPosition Tank 484.5/532.5
+aiStrategicArea.setOrderPosition Infantry 449.8/531.3
+aiStrategicArea.setSide 1
+aiStrategicArea.setTakeable 2 0
+
+aiStrategicArea.create Torre_aliado 444.5/528.4 449.5/533.4 50
+aiStrategicArea.addNeighbour Meta
+aiStrategicArea.addNeighbour torre_eje
+aiStrategicArea.addNeighbour New_Control_Point1
+aiStrategicArea.addObjectTypeFlag Base
+aiStrategicArea.setOrderPosition Tank 484.5/532.5
+aiStrategicArea.setOrderPosition Infantry 449.5/533.4
+aiStrategicArea.setSide 2
+aiStrategicArea.setTakeable 1 0
+
+aiStrategicArea.create New_Control_Point1 750.1/467.6 755.1/472.6 150
+aiStrategicArea.addNeighbour Torre_aliado
+aiStrategicArea.addNeighbour New_Control_Point2
+aiStrategicArea.addObjectTypeFlag Flank
+aiStrategicArea.addObjectTypeFlag ControlPoint
+aiStrategicArea.setOrderPosition Infantry 755.5/473.5
+
+aiStrategicArea.create New_Control_Point2 741.8/558.4 746.8/563.4 150
+aiStrategicArea.addNeighbour torre_eje
+aiStrategicArea.addNeighbour New_Control_Point1
+aiStrategicArea.addObjectTypeFlag Flank
+aiStrategicArea.addObjectTypeFlag ControlPoint
+aiStrategicArea.setOrderPosition Infantry 747.5/563.5

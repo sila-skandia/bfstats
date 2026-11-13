@@ -29,12 +29,17 @@
 //    has no consumer. Neither is modelled.
 
 import { traceValidPoint, isWalkable } from './nav-grid.js';
-import { playerPosition, SOLDIER_RADIUS } from './bot-sense.js';
-import { TAKE_COVER, MEDIC } from './bot-behaviours.js';
+import { playerPosition, SOLDIER_RADIUS, SOLDIER_PATH_REMOVAL } from './bot-sense.js';
+import { TAKE_COVER, MEDIC, HULL_TAKE_COVER, HullTakeCoverState } from './bot-behaviours.js';
 import { airAvoid } from './bot-pilot.js';
+import { drivesHull, hullAvoid, footAvoid } from './bot-route.js';
 import { isArtilleryDriver } from './bot-perception.js';
 import { captureReach, captureStandRadius } from './control-point-law.js';
 import { footingAt } from './bot-pose.js';
+import { inhibitorColumn, infantryRow } from './bot-rows.js';
+import { radioOf, fireRadioFactor, moveRadioFactor, scoutRadioFactor, coverRadioFactor, medicRadioFactors } from './bot-radio.js';
+import { REPAIR_PACK, worldHulls } from './healing-packs.js';
+import { CHANGE } from './bot-vehicle.js';
 
 /**
  * Behaviour names matching AIbehaviours.con §4.1, in registration order.
@@ -47,8 +52,11 @@ export const BEHAVIOUR = {
 export const REGISTERED = ['Avoid', 'MoveTo', 'Idle', 'Fire', 'Special', 'Scout', 'TakeCover', 'Change'];
 /** The Tank rows: no Special. */
 const REGISTERED_VEHICLE = ['Avoid', 'MoveTo', 'Idle', 'Fire', 'Scout', 'TakeCover', 'Change'];
-/** `ChangeInhibit`: the column applied while Change is the active behaviour. */
-const CHANGE_INHIBIT = { Avoid: 1.0, MoveTo: 0.0, Idle: 1.0, Fire: 1.0, Special: 1.0, Scout: 1.0, TakeCover: 1.0, Change: 1.0 };
+/** `ChangeInhibit` as vanilla's `AIbehaviours.con` writes it (Avoid 0.8,
+ *  MoveTo 0, Idle 0.01, Fire 0.75, Special 0, Scout 0.5), the Change column
+ *  of a vehicle row with no row of its own to read (bot-rows.js
+ *  `inhibitorColumn` holds every mod's, per row). */
+const CHANGE_INHIBIT = { Avoid: 0.8, MoveTo: 0.0, Idle: 0.01, Fire: 0.75, Special: 0.0, Scout: 0.5, TakeCover: 1.0, Change: 1.0 };
 
 /** `StandardWeights`, the standard personality of both sides. */
 export const STANDARD_WEIGHTS = {
@@ -58,8 +66,33 @@ export const STANDARD_WEIGHTS = {
 const UNIT_WEIGHTS = { Avoid: 1, MoveTo: 1, Idle: 1, Fire: 1, Special: 1, Scout: 1, TakeCover: 1, Change: 1 };
 /** `AvoidInhibit`: the column applied while Avoid is the active behaviour. */
 const AVOID_INHIBIT = { Avoid: 1.0, MoveTo: 0.3, Idle: 1.0, Fire: 1.0, Special: 0.5, Scout: 1.0, TakeCover: 1.0, Change: 1.0 };
-/** Each infantry row's modifier set (`setVehicleBehaviour Infantery ...`). */
-const INHIBITOR = { Avoid: AVOID_INHIBIT, MoveTo: UNIT_WEIGHTS, Idle: UNIT_WEIGHTS, Fire: UNIT_WEIGHTS, Special: UNIT_WEIGHTS, Scout: UNIT_WEIGHTS, TakeCover: UNIT_WEIGHTS, Change: CHANGE_INHIBIT };
+/** The columns a unit with no row of its own falls back to: vanilla's
+ *  Infantery row on foot (Avoid `AvoidInhibit`, every other column
+ *  `UnitWeights`, Change included), vanilla's Tank row in a seat (Change
+ *  `ChangeInhibit`). */
+const INHIBITOR_FOOT = { Avoid: AVOID_INHIBIT };
+const INHIBITOR_SEAT = { Avoid: AVOID_INHIBIT, Change: CHANGE_INHIBIT };
+
+/**
+ * The modifier column of the active behaviour, for the bot's unit row
+ * (`setVehicleBehaviour <row> <behaviour> ... <set>`, bot-rows.js
+ * `inhibitorColumn`; ledger AI-35): the row's own set for Avoid and Change,
+ * `UnitWeights` for the rest (every vanilla column but those two). So a bot
+ * changing vehicle on foot inhibits nothing (`Infantery ... Change ...
+ * UnitWeights`), and a bot changing out of or between seats of a Tank,
+ * Plane, Boat, BoatFixed, UnarmedTank, LandingCraft, Passenger, UnarmedBoat,
+ * ArtilleryDriver or UnarmedPlane row runs `ChangeInhibit`; Fixed, Car,
+ * LandingCraftFixed, FixedLargeBore, AmphibiousCar and
+ * FixedGuidedMissileLauncher keep `UnitWeights`.
+ */
+export function activeColumn(bot, active) {
+  if (active !== 'Avoid' && active !== 'Change') return UNIT_WEIGHTS;
+  const m = bot.vehicle;
+  const rowName = m ? m.row?.name ?? null : infantryRow()?.name ?? null;
+  const col = rowName ? inhibitorColumn(rowName, active) : null;
+  if (col) return col;
+  return (m ? INHIBITOR_SEAT : INHIBITOR_FOOT)[active] ?? UNIT_WEIGHTS;
+}
 
 /**
  * The engine's urge curves (assembly, `UCLinear::calculate` 0x085838f0 and
@@ -126,7 +159,9 @@ const RING_ROUTE_FAILURES = 2;
  *  ticks), and its one respawn of a living bot, the SAI's teleporter list
  *  (`registerTeleporter` 0x086369c0 -> `handleTeleportingBot` 0x08631390
  *  from `prepareUpdate` 0x08635210: a suitable spawn group, the bot handled
- *  as dead and teleported there), is fed by nothing that measures progress.
+ *  as dead and teleported there), is fed by nothing that measures progress:
+ *  its one feeder is `BBPChangeTeleport`'s re-deploy plan, a ship bot asked
+ *  for its seat (AI-173; bot-referee.js `handleTeleportingBot`).
  *  It stays as the viewer's safety net for a body wedged in geometry the map
  *  cannot see, measured per order. */
 const NO_PROGRESS_RESPAWN = 12.0;
@@ -141,8 +176,14 @@ const NO_PROGRESS_RESPAWN = 12.0;
  * (`BotBehaviour` per `setVehicleBehaviour` line), so a gunner the Tank rows
  * gave TakeCover sat in it for minutes with an enemy in its sights
  * (Stalingrad, seed 3: a PanzerIV's bow gunner, 220 s of 294 seated).
- * Special stays off a seat: BF1918's `BBRoam` is not modelled, and the
- * viewer's Special is the medic's. An aircraft and a seat with no row (the
+ * Special stays off a seat: the viewer's Special is the medic's, and
+ * BF1918's `BBRoam` on its armed hulls (`Special BBRoam BBPRoam2d`) roams
+ * nowhere: `BBRoam::calculateUrgency` 0x085771d0 returns a flat 0.8 while
+ * the side knows an occupied enemy unit the bot has not spotted itself, and
+ * hands `BBPRoam2d::init` 0x085c2cc0 the bot's own position (0x0857772d), to
+ * which `BBPRoam2d::createPlan` 0x085c2d20 builds its one `BAPAMoveToFinding`
+ * (AI-184; read 2026-11-13, not built: it would stand a hull where Idle
+ * already stands it). An aircraft and a seat with no row (the
  * synthetic level's stand-ins, a table extracted before `equipmentType`)
  * keep the Tank rows: the Plane row registers no Avoid in any mod's file,
  * and the viewer's pilots fly their own avoid (`airAvoid`, bot-pilot.js).
@@ -216,7 +257,32 @@ export function hasPlan(bot) {
   return bot.currentBehaviour !== null && bot.currentPlan.length > 0;
 }
 
+/** `stepMoveInclination` / `stepFireInclination` 0x0852e2d0 / 0x0852e360:
+ *  `v = 0.8 v + 0.2 acc` (`[0x086d2954]`, `[0x086c4f74]`), then `acc = 0`. */
+const INCLINATION_KEEP = Math.fround(0.8);
+const INCLINATION_TAKE = Math.fround(0.2);
+
+/**
+ * The bot's fire and move inclinations (`BotMain` +0x1a4 / +0x1a0, their
+ * accumulators +0x1ac / +0x1a8; ledger AI-43 corrected): `decisionMaking`
+ * 0x08520620 steps both first thing each pass (0x08520660, 0x0852066a), and
+ * each Fire generator (`BBFire`, `BBFire3d`, `BBFireLargeBore`,
+ * `BBFireGuided`, `BBFireUnarmed`: vt+0x164 `addToFireInclination`) and each
+ * MoveTo one (`BBMoveTo`, `BBMoveToFixed`: vt+0x160 `addToMoveInclination`)
+ * adds the urgency it stored this pass. `BBChange` reads the smoothed values
+ * (vt+0x16c / +0x168) for its fire / move split (bot-mount.js).
+ */
+export function stepInclinations(bot) {
+  const inc = bot.inclination ??= { fire: 0, move: 0, fireAcc: 0, moveAcc: 0 };
+  inc.move = Math.fround(INCLINATION_KEEP * inc.move + INCLINATION_TAKE * inc.moveAcc);
+  inc.fire = Math.fround(INCLINATION_KEEP * inc.fire + INCLINATION_TAKE * inc.fireAcc);
+  inc.moveAcc = 0;
+  inc.fireAcc = 0;
+  return inc;
+}
+
 export function decisionMaking(bot, now, dt) {
+  const inc = stepInclinations(bot);
   const hasPlan = bot._hasPlan();
   const active = hasPlan ? bot.currentBehaviour : null;
   const activeFor = active ? now - bot.behaviourChosenAt : 0;
@@ -225,9 +291,24 @@ export function decisionMaking(bot, now, dt) {
     let mod = bot._currentMod(name);
     if (active) {
       const curve = name === active ? curveOf(bot, active)(activeFor) : 1.0;
-      mod *= curve * ((INHIBITOR[active] ?? UNIT_WEIGHTS)[name] ?? 1.0);
+      mod *= curve * (activeColumn(bot, active)[name] ?? 1.0);
     }
-    if (mod > 0) bot.urgency[name] = bot._generate(name, mod, now, dt, true);
+    if (mod > 0) {
+      bot.urgency[name] = bot._generate(name, mod, now, dt, true);
+      // `addToFireInclination` / `addToMoveInclination` with the urgency the
+      // generator stored. `BBMoveToFixed` (a seat that does not drive)
+      // returns 0 and adds the order urgency it publishes (its +0x28,
+      // 0x085756bb..0x085756c6), here `bot._orderUrgency`. INFERRED: the
+      // engine's cheap and full evaluations (decisionMaking's bool, 0 at
+      // 0x08520a10, 1 at 0x08520bd7) both add for every generator but
+      // MoveToFixed's full one; the viewer runs every generator in full each
+      // pass and adds each time.
+      if (name === BEHAVIOUR.Fire) inc.fireAcc = Math.fround(inc.fireAcc + ((bot._fireInclinationAdd ?? bot.urgency[name]) || 0));
+      else if (name === BEHAVIOUR.MoveTo) {
+        const fixed = bot.vehicle && !bot.vehicle.drives;
+        inc.moveAcc = Math.fround(inc.moveAcc + ((fixed ? bot._orderUrgency : bot.urgency[name]) || 0));
+      }
+    }
     // else: not evaluated, the old urgency stands.
   }
   // The winner.
@@ -315,17 +396,26 @@ export function urgencyMoveTo(bot, mod) {
   const route = bot.route;
   if (wp.captureFlag && route?.failed && bot._pathFailures >= RING_ROUTE_FAILURES
       && Math.hypot(route.goal[0] - wp.point[0], route.goal[1] - wp.point[1]) < 0.5) wp.noRoute();
+  // The radio product, `(1 + Go)(1 - Hold position)(1 - Wait)` (0x08575035..
+  // 0x08575096; bot-radio.js `moveRadioFactor`): x the modifier x the
+  // waypoint's urgency (0x08575143..0x08575152). Exactly 1 while nobody has
+  // spoken. A shout from under 56 m lifts a strength past 1 (AI-169), and
+  // the product, like the engine's, then goes negative: the bot does not
+  // move on that order until the strength has fallen back under 1.
+  const radio = moveRadioFactor(radioOf(bot));
+  const urgency = u > 0 ? u * mod * radio : 0;
   // `BBMoveToFixed::calculateUrgency` 0x08575680 (the Fixed rows: a seat
-  // that does not drive) publishes the order's urgency to the bot and
-  // returns 0: a gunner or a fixed gun never walks.
-  bot._orderUrgency = u > 0 ? u * mod : 0;
+  // that does not drive) publishes the order's urgency to the bot, the same
+  // product on it (0x08575862..0x08575871), and returns 0: a gunner or a
+  // fixed gun never walks.
+  bot._orderUrgency = urgency;
   if (bot.vehicle && !bot.vehicle.drives) return 0;
-  return u > 0 ? u * mod : 0;
+  return urgency;
 }
 
 /** `Bot::getMaxPathPosRemovalDistance` for the unit the bot controls. */
 export function pathRadius(bot) {
-  return bot.vehicle ? 0.99 * Math.max(0.5, bot.vehicle.radius ?? SOLDIER_RADIUS) : SOLDIER_RADIUS;
+  return bot.vehicle ? 0.99 * Math.max(0.5, bot.vehicle.radius ?? SOLDIER_RADIUS) : SOLDIER_PATH_REMOVAL;
 }
 
 export function fallbackWaypoint(bot) {
@@ -398,7 +488,17 @@ export function urgencyFire(bot, mod, now) {
     bot.targetScore = 0;
   }
   bot.changedTarget.Fire = changed && !!t.targetId;
-  return t.urgency * mod;
+  // The radio product, `(1 + Fire)(1 + Cover me)(1 - Hold fire)`
+  // (0x085652b5..0x08565329 in `BBFire`, the same three reads in `BBFire3d`,
+  // `BBFireLargeBore`, `BBFireUnarmed` and `BBFireGuided`; bot-radio.js
+  // `fireRadioFactor`): x the modifier (0x08565415) x `Declein(2 best)`
+  // (0x0856543b) is both the urgency and what the fire inclination takes.
+  // Exactly 1 while nobody has spoken.
+  const radio = fireRadioFactor(radioOf(bot));
+  // What this generator adds to the fire inclination: its urgency, or an
+  // unarmed seat's threat (`BBFireUnarmed`'s +0x28, urgency 0).
+  bot._fireInclinationAdd = (Number.isFinite(t.inclination) ? t.inclination : t.urgency) * mod * radio;
+  return t.urgency * mod * radio;
 }
 
 /** `BBScout::calculateUrgency` through `ScoutState`. */
@@ -418,6 +518,8 @@ export function urgencyScout(bot, mod, now, dt) {
     incoming, heard, spotted: s.spottedEnemies(), attackers,
     isScouting: bot._scoutRan === true,
     coverActive: bot.currentBehaviour === BEHAVIOUR.TakeCover,
+    // `(1 + Check your six)` x the seven "spotted" calls (0x0857a81a..).
+    radio: scoutRadioFactor(radioOf(bot)),
   });
   bot._scoutRan = false;
   bot.changedTarget.Scout = !!r.changed;
@@ -429,8 +531,15 @@ export function urgencyScout(bot, mod, now, dt) {
 
 /** `BBTakeCoverInfantry::calculateUrgency` through `TakeCoverState`. */
 export function urgencyTakeCover(bot, mod, now) {
+  if (hullTakeCover(bot)) return urgencyHullTakeCover(bot, mod, now);
   const s = bot.senses;
-  const heard = [...s.heard.values()].map(h => ({ ...h, threat: 4, security: 1 }));
+  // A heard enemy weighs its information's security for the bot's side
+  // (`getSecurity()` through vt+0x18 at 0x085806e5, `InformationKnown::
+  // getSecurity` 0x085e86a0): 1 at a sighting, decaying over the template's
+  // `degeneration` (the soldier's 15 s), and brought back by the sound itself
+  // only as far as `setTime(t, 0.5)` takes it (bot-sense.js `SideKnowledge`,
+  // ledger AI-72, AI-75). 1 when the side keeps no knowledge store.
+  const heard = [...s.heard.values()].map(h => ({ ...h, threat: 4, security: s.securityOf(h.id, now) ?? 1 }));
   const spotted = s.spottedEnemies().map(m => ({ ...m, threat: 4 }));
   const nav = bot._nav();
   const r = bot.cover.evaluate({
@@ -443,7 +552,82 @@ export function urgencyTakeCover(bot, mod, now) {
       return p && isWalkable(nav, p[0], p[1]) ? p : null;
     } : null,
     mod,
+    // `1 + Take cover` (0x0858103d -> 0x08581086).
+    radio: coverRadioFactor(radioOf(bot)),
     myWidth: 0.6, myHeight: 1.8,
+  });
+  bot.changedTarget.TakeCover = !!r.changed;
+  bot._coverResult = r;
+  return r.urgency ?? 0;
+}
+
+/**
+ * Whether the bot's TakeCover is the hull's (`BBTakeCover` / `BBPTakeCover`,
+ * the Tank and ArtilleryDriver rows) and not the soldier's
+ * (`BBTakeCoverInfantry`): the generator its seat's row names (bot-rows.js);
+ * a seat with no row keeps the Tank row's.
+ */
+export function hullTakeCover(bot) {
+  const m = bot.vehicle;
+  if (!m) return false;
+  const g = m.row?.behaviours?.TakeCover;
+  return g ? g === 'TakeCover' : true;
+}
+
+/** The hull's own Mobile `coverSearchRadius`: the template's word, 0 when it
+ *  sets none (the ctor's, 0x085e0c63), and `HULL_TAKE_COVER.coverSearchRadius`
+ *  for data extracted before the exporter carried it. */
+function hullCoverRadius(m) {
+  const r = m?.coverSearchRadius;
+  if (r === undefined) return HULL_TAKE_COVER.coverSearchRadius;
+  return Number.isFinite(r) && r > 0 ? r : 0;
+}
+
+/**
+ * `BBTakeCover::calculateUrgency` 0x0857c120 through `HullTakeCoverState`
+ * (bot-behaviours.js, AI-182): the hull's danger from the fire aimed its way
+ * and the occupied enemy units it has spotted, each at its strength against
+ * the hull's own class, and the cover objects within the hull's own
+ * `coverSearchRadius`, measured against the hull's own box. The point behind
+ * a cover is traced on the hull's own map.
+ */
+export function urgencyHullTakeCover(bot, mod, now) {
+  const m = bot.vehicle;
+  const s = bot.senses;
+  const type = m.strType ?? 'LightArmour';
+  const spotted = [];
+  for (const e of s.spottedEnemies()) {
+    if (!e.pos || bot.world?.armorOf?.(e.id)?.destroyed) continue;
+    const strength = bot._unitInfo?.(e.id)?.table?.[type] ?? 0;
+    if (strength > 0) spotted.push({ id: e.id, pos: e.pos, strength });
+  }
+  const radius = hullCoverRadius(m);
+  const covers = [];
+  if (radius > 0) {
+    // A cover's portals are its mesh's (`coverPortals` in the mod's
+    // `vehicle-ai.json`, by the mesh's name; none in a file written before
+    // the exporter read them).
+    const portals = m.coverPortals?.() ?? null;
+    for (const c of bot.covers ?? []) {
+      if (Math.hypot(c.pos[0] - bot.position[0], c.pos[2] - bot.position[2]) > radius) continue;
+      const n = portals && c.template ? portals[c.template]?.length ?? 0 : 0;
+      covers.push(n ? { ...c, portals: n } : c);
+    }
+  }
+  const box = bot.vehicleCandidates?.find(c => c.vehicleId === m.vehicleId)?.localBox ?? null;
+  const nav = bot._nav();
+  const state = bot._hullCover ??= new HullTakeCoverState();
+  const r = state.evaluate({
+    now, position: bot.position,
+    incoming: s.incoming.filter(f => f.pos), spotted, covers,
+    traceValidPoint: nav ? (from, to) => {
+      const p = traceValidPoint(nav, from[0], from[1], to[0], to[1], bot.obstacles);
+      return p && isWalkable(nav, p[0], p[1]) ? p : null;
+    } : null,
+    myWidth: box ? Math.max(box.max[0] - box.min[0], box.max[2] - box.min[2]) : 2 * (m.radius ?? 3),
+    myHeight: box ? box.max[1] - box.min[1] : 2.5,
+    radio: coverRadioFactor(radioOf(bot)),
+    mod,
   });
   bot.changedTarget.TakeCover = !!r.changed;
   bot._coverResult = r;
@@ -463,10 +647,59 @@ export function coverCandidates(bot) {
 }
 
 /**
+ * The side's hulls as `BBMedicAssist` weighs them (0x08573840): every unit
+ * the environment lists for the bot's side is a candidate, a vehicle as
+ * much as a soldier (the loop at 0x08573db0 asks only for its armour class,
+ * `IPIPhysical` vt+0x40, and a healing weapon rated for it, 0x08573e04).
+ * One record a hull the level ships AI data for (`bot.vehicleCandidates`,
+ * bot-units.js): its armour class (`setStrType`), its hit-point fraction,
+ * `Information+0x14` (the root's `basicTemp`, `flds 0x14(%esi)` at
+ * 0x08574219; AI-92), whether it stands upright, and the radius the wrench's
+ * own reach is measured from (`healing-packs.js worldHulls`, the body's
+ * bounding radius). A hull is the side's by its crew or its last crew's
+ * stamp (`hullTeam`); an empty one nobody has held is no one's friend.
+ */
+export function friendlyHulls(bot) {
+  const cands = bot.vehicleCandidates;
+  if (!cands?.length) return [];
+  const world = bot.world;
+  let radii = null;
+  const out = [];
+  const seen = new Set();
+  for (const c of cands) {
+    if (seen.has(c.vehicleId)) continue;
+    seen.add(c.vehicleId);
+    if (!c.hullTeam || c.hullTeam !== bot.team || !c.pos) continue;
+    const d = Math.hypot(c.pos[0] - bot.position[0], c.pos[2] - bot.position[2]);
+    if (d > MEDIC.searchRadius) continue;
+    if (!radii) {
+      radii = new Map();
+      for (const h of worldHulls(world)) radii.set(h.owner, h.radius);
+    }
+    const owner = world?.nodeOwners?.get?.(c.node);
+    const box = c.localBox;
+    const boxRadius = box?.min && box?.max
+      ? 0.5 * Math.hypot(box.max[0] - box.min[0], box.max[1] - box.min[1], box.max[2] - box.min[2]) : 0;
+    const radius = (owner !== undefined ? radii.get(owner) : null) || boxRadius || SOLDIER_RADIUS;
+    out.push({
+      id: `hull:${c.vehicleId}`, hull: true, vehicleId: c.vehicleId, pos: c.pos,
+      health: c.health ?? 1, upright: c.upright !== false, inVehicle: false, radius,
+      type: c.strType ?? 'LightArmour',
+      value: (c.seats ?? []).find(seat => seat.isRoot)?.value ?? c.value ?? 0,
+      noPathfinding: !!c.noPathfinding, hullYaw: c.hullYaw ?? 0,
+    });
+  }
+  return out;
+}
+
+/**
  * `BBMedicAssist::calculateUrgency` (bot-behaviours.js `MedicState`): the
  * wounded friends in reach of a healing weapon. The friends are the
- * world's players of the bot's own side: their armour's fraction, whether
- * they sit in a vehicle; a soldier is always upright here.
+ * world's players of the bot's own side (their armour's fraction, whether
+ * they sit in a vehicle; a soldier is always upright here) and the side's
+ * hulls (`friendlyHulls`): vanilla's `RepairPackAI` rates every armour class
+ * 2.0 and Infantry 0, the `MedPackAI` Infantry 2.0 alone, so the wrench is
+ * the engineer's tool for every hull and the bag the medic's for soldiers.
  */
 export function urgencySpecial(bot, mod, now) {
   if (!bot.weapons?.some(w => w.healing)) return 0;
@@ -484,16 +717,42 @@ export function urgencySpecial(bot, mod, now) {
     friends.push({ id, pos, health: armor.hitPoints / armor.maxHitPoints,
                    upright: true, inVehicle: !!p.vehicle, radius: SOLDIER_RADIUS, type: 'Infantry' });
   }
+  const nav = bot._nav();
+  // A hull is a candidate only for a weapon rated for an armour class other
+  // than Infantry: a medic's evaluation never builds the list.
+  const mends = bot.weapons.some(w => w.healing
+    && Object.entries(w.strength ?? {}).some(([type, v]) => type !== 'Infantry' && v > 0));
+  const hulls = mends ? friendlyHulls(bot) : [];
+  for (const h of hulls) {
+    // The wrench's own reach past the hull's radius (`repairDistance`,
+    // healing-packs.js), which caps where the plan stops (`MedicState`).
+    h.reach = REPAIR_PACK.radius;
+    // A unit reached with no pathfinding (`AITemplateUnit+0x15`, the branch
+    // at 0x08574189 -> 0x08574490) is tested along the line behind it, as
+    // `BBChange` tests it (bot-mount.js `planChange`; the distance INFERRED
+    // from that reader, `CHANGE.behindDistance`), not on its own cell.
+    if (h.noPathfinding && nav) {
+      const fx = Math.sin(h.hullYaw), fz = Math.cos(h.hullYaw);
+      h.reachable = () => !!traceValidPoint(nav, h.pos[0], h.pos[2],
+                                            h.pos[0] - fx * CHANGE.behindDistance, h.pos[2] - fz * CHANGE.behindDistance);
+    }
+    friends.push(h);
+  }
+  // What the heal plan reads back (bot-plans.js `healPlanDone`, the hull's
+  // live state by its id).
+  bot._medicHulls = hulls;
   const collider = world?.collider;
   const water = collider?.waterLevel;
   const waterDepth = Number.isFinite(water) ? Math.max(0, water - bot.position[1]) : 0;
-  const nav = bot._nav();
   const wp = bot.waypoints;
   const r = bot.medic.evaluate({
     now, position: bot.position, waterDepth, weapons: bot.weapons, friends,
     isWalkable: nav ? (x, z) => isWalkable(nav, x, z) : null,
     insideMyArea: wp?.area ? (x, z) => wp.inside(x, z) : null,
     mod,
+    // `1 + Medic` for a soldier, `1 + Need repairs` for any other target
+    // (0x08573d59, 0x08573d83): which friend is helped first, not how much.
+    radio: medicRadioFactors(radioOf(bot)),
   });
   bot.changedTarget.Special = !!r.changed;
   bot._medicResult = r;
@@ -501,33 +760,25 @@ export function urgencySpecial(bot, mod, now) {
 }
 
 /**
- * `BBAvoid::calculateUrgency` for a soldier (zero look-ahead): a moving
- * body already overlapping the bot's own radius. Urgency `|relVel| /
- * |relPos|`; a stationary one is the map's business (`_trackContact`).
+ * `BBAvoid::calculateUrgency` 0x0855c650, one generator for every row that
+ * registers Avoid: the unit's own velocity and radius, its Mobile
+ * `avoidCollisionLookAhead` seconds ahead (5 for a soldier, AI-119), against
+ * its side's and the neutral bodies.
  */
 export function urgencyAvoid(bot, mod, now) {
   // An aircraft's pilot predicts collisions 5 s ahead against the other
   // own-side and neutral hulls (`BBAvoid::calculateUrgency` 0x0855c650 with
   // the Mobile plug-in's look-ahead; bot-pilot.js `airAvoid`).
   if (bot.vehicle?.kind === 'air' && bot.vehicle.drives) return airAvoid(bot) * mod;
-  let best = 0, bestDir = null;
-  const me = bot._player();
-  for (const [id, p] of bot.world?.players ?? []) {
-    if (id === bot.playerId || !p?.soldier) continue;
-    const s = p.soldier;
-    const dx = s.x - bot.position[0], dz = s.z - bot.position[2];
-    const d = Math.hypot(dx, dz);
-    if (d > 2 * SOLDIER_RADIUS * 0.6 || d < 1e-3) continue;
-    const v = s.speed ?? 0;
-    const mv = me?.soldier?.speed ?? 0;
-    const rel = Math.hypot(v * Math.sin(s.yaw) - mv * Math.sin(bot.yaw), v * Math.cos(s.yaw) - mv * Math.cos(bot.yaw));
-    if (rel < 0.2) continue;
-    const u = rel / d;
-    if (u > best) { best = u; bestDir = [dx / d, dz / d]; }
-  }
-  if (best > 0 && bestDir) {
-    bot._avoidThreatDir = bestDir;
-    bot.changedTarget.Avoid = true;
-  }
-  return best * mod;
+  // A ground hull's or a boat's driver predicts the same way against the
+  // side's soldiers and hulls (`BBAvoid` on the Tank, Car and Boat rows,
+  // AI-95; bot-route.js `hullAvoid`).
+  if (drivesHull(bot)) return hullAvoid(bot) * mod;
+  // A seat that does not drive has no velocity of its own to avoid with.
+  if (bot.vehicle) { bot._footAvoidBest = null; return 0; }
+  // A soldier on foot (the Infantery row, AI-192): a hit predicted inside
+  // 5 s on a friend or a friendly hull moving 1.0 m/s or more, `mass x
+  // |relVel| / |rel|` each (bot-route.js `footAvoid`). Until 2026-11-13 the
+  // page scored only a body already overlapping the bot's.
+  return footAvoid(bot) * mod;
 }

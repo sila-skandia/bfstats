@@ -1,8 +1,8 @@
 {
  "level": "HOP",
  "mod": "community",
- "url": "https://play.bfstats.io/map.html?map=HOP&team=2&mode=Conquest&mod=community&botCount=16&botSkill=0.75&mute&shots",
- "date": "2026-11-11",
+ "url": "https://play.bfstats.io/map.html?map=HOP&team=2&mode=Conquest&mod=community&botCount=16&botSkill=0.75&spawnTime=wave&mute&shots",
+ "date": "2026-11-12",
  "bar": "DICE levels on the page, 3 matches each of 600 s, 16 bots: Berlin, Stalingrad, Kharkov, Bocage; 2026-11-11",
  "verdict": "pass",
  "failed": [],
@@ -27,12 +27,23 @@
   },
   {
    "metric": "enemyKillsPerBotMinute",
-   "median": 0.5875,
+   "median": 0.5937,
    "bar": ">= 0.175",
    "pass": true
   }
  ],
- "matches": 1,
+ "matches": 2,
+ "rollout": {
+  "pass": true,
+  "floor": {
+   "kills": 0.15,
+   "killsWithFlags": 0.03,
+   "flags": 3,
+   "killsWithAFlag": 0.05,
+   "ownHand": 0.1,
+   "ownHandOfKills": 0.3333333333333333
+  }
+ },
  "runs": [
   {
    "generated": {
@@ -41,14 +52,49 @@
    },
    "minutes": 10,
    "tickets": {
-    "1": 55,
-    "2": 63
+    "1": 40,
+    "2": 58
    },
    "capturesTotal": 0,
    "teamKillsPerBotMinute": 0,
    "suicidesPerBotMinute": 0,
    "nonEnemyDeathShareWorseSide": 0,
-   "enemyKillsPerBotMinute": 0.5875,
+   "enemyKillsPerBotMinute": 0.7125,
+   "rollout": {
+    "pass": true,
+    "why": [],
+    "enemyKills": 0.7125,
+    "captures": 0,
+    "ownHand": 0
+   },
+   "teamKillsBySide": {
+    "1": 0,
+    "2": 0
+   },
+   "oldCode": "played on the bot code of e5003c584 or earlier, before drivers predicted collisions with their own side (3b1ebe45c, live 2026-11-13)"
+  },
+  {
+   "generated": {
+    "version": 5,
+    "template": "few"
+   },
+   "minutes": 10,
+   "tickets": {
+    "1": 72,
+    "2": 45
+   },
+   "capturesTotal": 0,
+   "teamKillsPerBotMinute": 0,
+   "suicidesPerBotMinute": 0,
+   "nonEnemyDeathShareWorseSide": 0,
+   "enemyKillsPerBotMinute": 0.5937,
+   "rollout": {
+    "pass": true,
+    "why": [],
+    "enemyKills": 0.5937,
+    "captures": 0,
+    "ownHand": 0
+   },
    "teamKillsBySide": {
     "1": 0,
     "2": 0

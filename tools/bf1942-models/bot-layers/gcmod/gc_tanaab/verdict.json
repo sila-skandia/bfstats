@@ -1,0 +1,22 @@
+{
+ "level": "gc_tanaab",
+ "verdict": "fail",
+ "outcome": "unsuitable",
+ "config": "with vehicles",
+ "doctrine": "garrison",
+ "generatorVersion": 6,
+ "inputs": {
+  "controlPoints": "7f2d83e20ff4dcdb7c2c018436c42482d65a31161832860c675f73c2b6f6f66c",
+  "infantryMap": "c5f4ddc64387b619d02f51f94c675eb5d57955c50c012d5fe297c1708f2eabee",
+  "template": "bdc0e455f47f91b7e7724e71d7c0c196e839b36946ac3abb7663d725944081e5"
+ },
+ "baseline": "DICE layers with vehicles, garrison doctrine: berlin, stalingrad, kharkov, bocage; seeds 1..10, 600 s",
+ "bar": null,
+ "seeds": 1,
+ "sizes": {},
+ "oneSided": null,
+ "unreachable": [],
+ "lintErrors": [
+  "side 2 has no spawn with a route to any flag it must take: the side starts at sea or in its vehicles, of its 4 spawns 4 seat their soldier in a vehicle (a landing craft, a ship, a half-track) and are no spawn on foot"
+ ]
+}

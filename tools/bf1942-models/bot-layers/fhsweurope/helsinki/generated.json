@@ -1,0 +1,75 @@
+{
+ "generator": "botgen",
+ "version": 5,
+ "mod": "FHSWEurope",
+ "level": "helsinki",
+ "objectSpawners": 132,
+ "template": "few",
+ "templateSource": "DICE, bf1942 Kursk (1.6 patch archives, Kursk_003.rfa): AI/Strategies.con, AI/conditions.con, AI/prerequisites.con, unchanged",
+ "templateChoice": {
+  "name": "few",
+  "inPlay": 0,
+  "rule": "0 capturable flags in play, at most 3"
+ },
+ "scope": "on foot: infantry order positions only, no search maps, no co-op layer",
+ "unreachable": [],
+ "unreachableReasons": {},
+ "botSpawnsExcluded": [
+  "alliedbase_spawn1",
+  "ostoya_spawn1",
+  "ostoya_spawn2",
+  "ostoya_spawn3",
+  "ostoya_spawn4",
+  "ostoya_spawn5",
+  "ostoya_spawn8",
+  "fornebufjellet_spawn1",
+  "fornebufjellet_spawn2",
+  "unnamedspawn1"
+ ],
+ "walkMap": {
+  "source": "page painter",
+  "engine": "none",
+  "opened": [],
+  "ways": [],
+  "cover": 0.922,
+  "floors": {
+   "stacked": false,
+   "twoFloorShare": 0.001,
+   "raised": [],
+   "reason": null
+  },
+  "capped": true,
+  "joined": 1
+ },
+ "routeProbe": {
+  "chokeMax": 4,
+  "unreachable": [],
+  "stops": {},
+  "oneSided": {},
+  "sides": {
+   "1": {
+    "spawns": 9,
+    "flags": []
+   },
+   "2": {
+    "spawns": 0,
+    "flags": []
+   }
+  },
+  "chokes": {},
+  "late": {},
+  "shutLinks": []
+ },
+ "inputs": {
+  "controlPoints": "195c1ba5d3ae3ba2e6c35edcd3230b2409267c9415915c728ecfc47f77970bb6",
+  "infantryMap": "4d06755522a7528e0623a0b433e18866e95c40fe6e674854510303745271483d",
+  "template": "bdc0e455f47f91b7e7724e71d7c0c196e839b36946ac3abb7663d725944081e5"
+ },
+ "files": {
+  "AI.con": "ff65da5cf781f265a28875b6cbca3063a01ed39073ce89fcfbb96af7a80600f7",
+  "AI/StrategicAreas.con": "4bede6f9e834ed44485927ef6bf1c52103efc17625fa30848d5daeb5f0e28f42",
+  "AI/Strategies.con": "13da4dc35872dd4b5798a066f4425bdc824cfd61f31093d1808e1202644de52e",
+  "AI/conditions.con": "248a04b727c08d696bf0fa9c162bc22c43cde3c75f695892fe1e0f5141519c49",
+  "AI/prerequisites.con": "c96168b5f69860e578f5d26728fd2a2092c4c436e1da49b7d6f4009b65735398"
+ }
+}

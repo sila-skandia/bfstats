@@ -1,0 +1,66 @@
+rem *** Strategic areas: one per control point (botgen) ***
+
+aiStrategicArea.create french_overview_hill 687/491 692/496 150
+aiStrategicArea.addNeighbour french_ari_hill
+aiStrategicArea.addNeighbour center_trenches
+aiStrategicArea.addNeighbour assault_point
+aiStrategicArea.addObjectTypeFlag Flank
+aiStrategicArea.addObjectTypeFlag ControlPoint
+aiStrategicArea.setOrderPosition Tank 686.5/499.5
+aiStrategicArea.setOrderPosition Infantry 692/496
+aiStrategicArea.setSide 2
+
+aiStrategicArea.create german_base 638.4/141.8 643.4/146.8 50
+aiStrategicArea.addNeighbour center_trenches
+aiStrategicArea.addNeighbour french_repair_point
+aiStrategicArea.addNeighbour assault_point
+aiStrategicArea.addObjectTypeFlag Base
+aiStrategicArea.setOrderPosition Tank 641.5/146.5
+aiStrategicArea.setOrderPosition Infantry 643.5/147.5
+aiStrategicArea.setSide 1
+aiStrategicArea.setTakeable 2 0
+
+aiStrategicArea.create french_ari_hill 614.5/617.4 619.5/622.4 200
+aiStrategicArea.addNeighbour french_overview_hill
+aiStrategicArea.addNeighbour center_trenches
+aiStrategicArea.addNeighbour french_repair_point
+aiStrategicArea.addObjectTypeFlag Centre
+aiStrategicArea.addObjectTypeFlag ControlPoint
+aiStrategicArea.setOrderPosition Tank 619.5/615.5
+aiStrategicArea.setOrderPosition Infantry 619.5/621.5
+aiStrategicArea.setSide 2
+
+aiStrategicArea.create center_trenches 585.9/503.7 590.9/508.7 300
+aiStrategicArea.addNeighbour french_overview_hill
+aiStrategicArea.addNeighbour german_base
+aiStrategicArea.addNeighbour french_ari_hill
+aiStrategicArea.addNeighbour french_repair_point
+aiStrategicArea.addNeighbour assault_point
+aiStrategicArea.addObjectTypeFlag Centre
+aiStrategicArea.addObjectTypeFlag StrongPoint
+aiStrategicArea.addObjectTypeFlag ControlPoint
+aiStrategicArea.setOrderPosition Tank 589.5/519.5
+aiStrategicArea.setOrderPosition Infantry 591.5/508.5
+aiStrategicArea.setSide 2
+
+aiStrategicArea.create french_repair_point 466.8/499.4 471.8/504.4 150
+aiStrategicArea.addNeighbour german_base
+aiStrategicArea.addNeighbour french_ari_hill
+aiStrategicArea.addNeighbour center_trenches
+aiStrategicArea.addNeighbour assault_point
+aiStrategicArea.addObjectTypeFlag Flank
+aiStrategicArea.addObjectTypeFlag ControlPoint
+aiStrategicArea.setOrderPosition Tank 469.5/505.5
+aiStrategicArea.setOrderPosition Infantry 471.5/505.5
+aiStrategicArea.setSide 2
+
+aiStrategicArea.create assault_point 714.9/370.7 719.9/375.7 150
+aiStrategicArea.addNeighbour french_overview_hill
+aiStrategicArea.addNeighbour german_base
+aiStrategicArea.addNeighbour center_trenches
+aiStrategicArea.addNeighbour french_repair_point
+aiStrategicArea.addObjectTypeFlag Flank
+aiStrategicArea.addObjectTypeFlag Close
+aiStrategicArea.addObjectTypeFlag ControlPoint
+aiStrategicArea.setOrderPosition Tank 719.5/377.5
+aiStrategicArea.setOrderPosition Infantry 719.5/376.5

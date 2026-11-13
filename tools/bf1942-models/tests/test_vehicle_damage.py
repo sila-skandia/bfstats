@@ -237,8 +237,13 @@ class SplashDamageTests(unittest.TestCase):
         self.assertEqual(self.results["hurt"],
                          [{"name": "Near", "lost": 10, "distance": 5}])
 
-    def test_the_firer_is_spared(self) -> None:
-        self.assertEqual(self.results["firerHp"], 100)
+    def test_the_struck_hull_is_spared_and_the_firer_is_not(self) -> None:
+        # The impact blast's source Armor is the struck object's
+        # (`handleCollisionForProjectile` 0x08153d3d..0x08153d71, pushed at
+        # 0x08154009; ledger HP-9g): the hull the round met has its direct hit
+        # and no blast, and the hull that fired it is hurt like any other.
+        self.assertEqual(self.results["struckHp"], 100)
+        self.assertEqual(self.results["firerHp"], 90)
 
     def test_who_a_blast_cannot_reach(self) -> None:
         # `Edge` sits exactly on the radius (a hard cutoff, HP-9), `Immune`'s

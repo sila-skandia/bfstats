@@ -233,6 +233,238 @@ export function playerChatLine(name, text, { teamOnly = false, team = 0, strings
   return `${name} [${word}]: ${text}`;
 }
 
+/** Someone else got into, or out of, the hull the local player sits in
+ *  (`GameClient::handleGameEventManagerEvent` cases 7 and 8, BF1942.exe
+ *  0x00493b59 and 0x00493ca7): the player's name, the wide `" "` at
+ *  0x008d636c and the lexicon's `ENTERED_YOUR_VEHICLE` (0x008d9704) or
+ *  `LEFT_YOUR_VEHICLE` (0x008d96f0), a game-information line of team 0 (the
+ *  `push ebx`, zero, at 0x00493c39). Never for the local player's own move,
+ *  and only while the vehicle ids match (`[+0x48]`, 0x00493b8f / 0x00493cfe). */
+export function vehicleLine(name, entered, strings) {
+  const word = entered ? (strings?.ENTERED_YOUR_VEHICLE ?? 'entered your vehicle')
+    : (strings?.LEFT_YOUR_VEHICLE ?? 'left your vehicle');
+  return `${name} ${word}`;
+}
+
+/** A player took a side (client event 0x36, BF1942.exe 0x00493fa4, and the
+ *  listen server's own `GameServer::setTeam`, 0x00487ec8): the name, `" "`,
+ *  `JOINED_THE` (0x008d8940), `" "` and `AXIS_TEAM` (0x008d8928) or
+ *  `ALLIED_TEAM` (0x008d8934), a game-information line in that side's colour
+ *  under its flag (the player's `+0xac` pushed at 0x00494138). A side that is
+ *  neither prints nothing (both compares fail, 0x00494090 / 0x004940e2). */
+export function joinLine(name, team, strings) {
+  if (team !== 1 && team !== 2) return null;
+  const side = team === 1 ? (strings?.AXIS_TEAM ?? 'axis team') : (strings?.ALLIED_TEAM ?? 'allied team');
+  return `${name} ${strings?.JOINED_THE ?? 'joined the'} ${side}`;
+}
+
+/** The room runs fewer bots than its settings allow (the server's memory cap,
+ *  `room-registry.mjs` `BOT_TIERS`: 0 none, 1 on foot, 2 ships, 3 hulls): the
+ *  game-information line the host reads. Null when the room runs its top tier. */
+export function botTierLine(tier, top) {
+  if (!Number.isInteger(tier) || !Number.isInteger(top) || tier >= top) return null;
+  const what = ['no bots', 'bots on foot only', 'bots on foot and in ships'][tier] ?? 'fewer bots';
+  return `This server is short of memory: the room runs ${what}`;
+}
+
+/**
+ * Who else sits in the local player's hull, frame to frame: the page's stand-in
+ * for the enter and exit events `vehicleLine` prints from. `observe(hull, ids)`
+ * takes the hull (any identity, null when the local player is in none) and the
+ * ids of everyone else aboard, and returns who entered and who left since the
+ * last call. A new hull is the local player's own move: it sets the baseline
+ * and reports nobody, as the client prints nothing for those already aboard.
+ */
+const NO_CREW_CHANGE = Object.freeze({ entered: Object.freeze([]), left: Object.freeze([]) });
+
+export class CrewWatch {
+  constructor() {
+    this.hull = null;
+    this.aboard = new Set();
+  }
+
+  observe(hull, ids = []) {
+    // Out of every hull, as on the frame before: nothing to do, nothing made.
+    if (hull == null && this.hull == null) return NO_CREW_CHANGE;
+    const now = new Set(hull == null ? [] : ids);
+    const out = { entered: [], left: [] };
+    if (hull != null && hull === this.hull) {
+      for (const id of now) if (!this.aboard.has(id)) out.entered.push(id);
+      for (const id of this.aboard) if (!now.has(id)) out.left.push(id);
+    }
+    this.hull = hull ?? null;
+    this.aboard = now;
+    return out;
+  }
+}
+
+// --- the typed line on the wire (CHAT-2) --------------------------------------
+
+/** `StringManager::addStringMsg` (lnxded 0x0815d280) cuts a line to 63 bytes
+ *  (`mov eax, 0x3f`, 0x0815d30a). */
+export const SAY_LINE_BYTES = 63;
+/** The lines one sender may have waiting: 4 for a player's (`0x086c0d28`), 16
+ *  for the server's own (`0x086c0d2c`); a line past that is refused. */
+export const SAY_WAITING_MAX = 4;
+export const SAY_WAITING_MAX_SERVER = 16;
+/** `StringManager::updateSendStream` (0x0815d3c0): one piece of at most 15
+ *  bytes (`0xf`, 0x0815d425) once 0.5 s (the double at 0x086be450) have
+ *  passed since the last piece. */
+export const SAY_PIECE_BYTES = 15;
+export const SAY_PIECE_SECONDS = 0.5;
+/** A refused line raises the choke flag (client `StringManager+0x70`, its
+ *  time at `+0x78`), and `shouldDisplayChokeMessage` (BF1942.exe 0x004b4910)
+ *  answers true until 10.0 s (the double at 0x008dc0b8) have passed. */
+export const SAY_CHOKE_SECONDS = 10;
+
+const utf8 = typeof TextEncoder !== 'undefined' ? new TextEncoder() : null;
+const byteLength = text => (utf8 ? utf8.encode(text).length : text.length);
+
+/** A line cut to `SAY_LINE_BYTES` bytes, never through the middle of a
+ *  character (the engine's lines are one byte a character; the page's are
+ *  UTF-8). */
+export function cutSayText(text, max = SAY_LINE_BYTES) {
+  let out = '';
+  let used = 0;
+  for (const ch of String(text ?? '')) {
+    const n = byteLength(ch);
+    if (used + n > max) break;
+    out += ch;
+    used += n;
+  }
+  return out;
+}
+
+/**
+ * One sender's waiting lines (`StringManager`, CHAT-2): `add` queues a line
+ * unless `limit` already wait, `update(now)` sends the head line's next piece
+ * when 0.5 s have passed since the last one and returns the line once its
+ * last piece has gone (a whole line is what the page's wire carries, so that
+ * is when it leaves). `now` is seconds on any steady clock.
+ */
+export class SayQueue {
+  constructor({ limit = SAY_WAITING_MAX } = {}) {
+    this.limit = limit;
+    this.lines = [];
+    /** The engine's `-100.0` (StringManager ctor, the double at `+0x60`). */
+    this.lastPiece = -100;
+    this.choked = false;
+    this.chokedAt = -100;
+  }
+
+  /** `addStringMsg`: false, and the choke flag, when `limit` lines wait. */
+  add(line, now) {
+    if (this.lines.length >= this.limit) {
+      this.choked = true;
+      this.chokedAt = now;
+      return false;
+    }
+    const text = cutSayText(line.text);
+    this.lines.push({ ...line, text, total: byteLength(text), sent: 0 });
+    return true;
+  }
+
+  /** `updateSendStream`: at most one piece a call. Returns the finished
+   *  line, else null. */
+  update(now) {
+    const head = this.lines[0];
+    if (!head) return null;
+    if (now - this.lastPiece < SAY_PIECE_SECONDS) return null;
+    this.lastPiece = now;
+    head.sent += Math.min(head.total - head.sent, SAY_PIECE_BYTES);
+    if (head.sent < head.total) return null;
+    this.lines.shift();
+    return head;
+  }
+
+  /** `shouldDisplayChokeMessage`: true for `SAY_CHOKE_SECONDS` after a
+   *  refused line, then the flag clears. */
+  showChoke(now) {
+    if (!this.choked) return false;
+    if (now - this.chokedAt < SAY_CHOKE_SECONDS) return true;
+    this.choked = false;
+    this.chokedAt = -100;
+    return false;
+  }
+}
+
+// --- the warning plate (`DisconnectMessage`) -----------------------------------
+
+/** `GameClient::update` (BF1942.exe 0x00495f02..0x00496075) reads the local
+ *  player's `ActionBuffer::size`, the input ticks the server has not answered:
+ *  above 45 (`cmp eax, 0x2d`, 0x00495f1b) the plate shows
+ *  `GAME_MESSAGE_CONNECTION_PROBLEM`; above 450 (`0x1c2`, 0x00495fef) the
+ *  client disconnects, writes `DISCONNECTED_FROM_SERVER` to the message log
+ *  and shows `GAME_MESSAGE_DISCONNECTED`. At 45 or under the plate is the
+ *  chat flood warning while `shouldDisplayChokeMessage` says so, else clear. */
+export const CONNECTION_PROBLEM_TICKS = 45;
+export const DISCONNECT_TICKS = 450;
+
+const PLATE_ENGLISH = {
+  GAME_MESSAGE_CONNECTION_PROBLEM: 'Warning! Connection problems detected!',
+  GAME_MESSAGE_DISCONNECTED: 'Warning! Disconnected from server!',
+  DISCONNECTED_FROM_SERVER: 'Disconnected from server',
+  CHAT_FLOOD_ERROR: 'Warning: Sending messages too fast, discarding',
+};
+/** A lexicon string of the plate's, English where `strings` lacks the key. */
+export const plateString = (key, strings) => strings?.[key] ?? PLATE_ENGLISH[key] ?? key;
+
+/** The plate for this frame: `{ show, text, disconnected }`. `ticks` is how
+ *  many 30 Hz ticks the server has left unanswered, `choke` whether the chat
+ *  flood warning is up. */
+export function warningPlate(ticks, choke, strings = null) {
+  if (ticks > DISCONNECT_TICKS) {
+    return { show: true, disconnected: true, text: plateString('GAME_MESSAGE_DISCONNECTED', strings) };
+  }
+  if (ticks > CONNECTION_PROBLEM_TICKS) {
+    return { show: true, disconnected: false, text: plateString('GAME_MESSAGE_CONNECTION_PROBLEM', strings) };
+  }
+  if (choke) return { show: true, disconnected: false, text: plateString('CHAT_FLOOD_ERROR', strings) };
+  return { show: false, disconnected: false, text: '' };
+}
+
+// --- the ignore list (`chat.addToIgnoreList`) ----------------------------------
+
+/**
+ * The players whose chat and radio the local player has muted, by the id the
+ * server knows each by (`BfMenu`'s list, tested by `isInIgnoreList`
+ * 0x006a8db0 before a chat line or a radio message is written). The console
+ * words answer with the client's own strings.
+ */
+export class IgnoreList {
+  constructor() { this.keys = new Set(); }
+
+  /** `key` is the page's own handle on a player (a room slot, a bot's player
+   *  id), which is what a line's sender carries. */
+  has(key) { return key != null && this.keys.has(key); }
+
+  /** `chat.addToIgnoreList <id>`: the error line, else ''. `key` is null
+   *  when no player holds the typed `id`. */
+  add(id, key) {
+    if (key != null && this.keys.has(key)) return 'Error: Player is already ignored!';
+    if (key == null) return `Error: Could not locate player: ${id}`;
+    this.keys.add(key);
+    return '';
+  }
+
+  /** `chat.removeFromIgnoreList <id>`: silent either way. */
+  remove(key) { this.keys.delete(key); }
+
+  /** `chat.ignoreList`: `id: %d name: %s` a line for each ignored player in
+   *  `players` (`[{ key, id, name }]`, everyone the server has); one who has
+   *  left is dropped from the list as the walk meets them. */
+  lines(players) {
+    const here = new Map(players.map(p => [p.key, p]));
+    const out = [];
+    for (const key of [...this.keys]) {
+      const p = here.get(key);
+      if (!p) { this.keys.delete(key); continue; }
+      out.push(`id: ${p.id} name: ${p.name}`);
+    }
+    return out.join('\n');
+  }
+}
+
 // --- geometry (800x600 virtual) ---------------------------------------------
 
 /** The list box's first row sits two row heights below its top (the list

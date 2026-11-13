@@ -43,6 +43,9 @@ export function matchUrl({ site = SITE, map, mod = null, mode = 'Conquest', bots
   if (mod && mod !== 'bf1942') q.set('mod', mod);
   q.set('botCount', String(bots));
   q.set('botSkill', String(skill));
+  // Retail's 20 s wave, which page-dice.json was recorded under, not single
+  // player's 3 s flat respawn (the owner's choice, 2026-11-12, `map.html`).
+  q.set('spawnTime', 'wave');
   return `${site}/map.html?${q}&mute&shots`;
 }
 
@@ -98,10 +101,26 @@ export function onTheLine(shooter, target, victim) {
   return { along: +((vx * tx + vz * tz) / len).toFixed(2), off: +Math.abs((vx * tz - vz * tx) / len).toFixed(2), target: +len.toFixed(1) };
 }
 
-/** Runs in the page: samples the bots five times a second and logs each team kill. */
+/**
+ * What a match's deaths by a bot's own hand were in: `events` are the
+ * sampler's suicides or team kills, each with the `vehicle` its bot was in
+ * (the template, null on foot) and whether it `drives`. Counts by "on
+ * foot", the vehicle's template for its driver, and "<template>
+ * (passenger)", most first. A team kill is filed under the killer's seat.
+ */
+export function ownHandIn(events) {
+  const n = {};
+  for (const e of events ?? []) {
+    const key = e.vehicle ? (e.drives ? e.vehicle : `${e.vehicle} (passenger)`) : 'on foot';
+    n[key] = (n[key] ?? 0) + (e.kills ?? 1);
+  }
+  return Object.fromEntries(Object.entries(n).sort((a, b) => b[1] - a[1] || a[0].localeCompare(b[0])));
+}
+
+/** Runs in the page: samples the bots five times a second and logs each team kill and each suicide. */
 function installSampler() {
-  const hist = new Map(), tks = new Map(), wasDead = new Map();
-  window.__pm = { teamKills: [], t0: performance.now() / 1000, tickets: [] };
+  const hist = new Map(), tks = new Map(), sui = new Map(), wasDead = new Map();
+  window.__pm = { teamKills: [], suicides: [], t0: performance.now() / 1000, tickets: [] };
   let n = 0;
   setInterval(() => {
     const now = performance.now() / 1000, bots = window.__bots(), round = window.__round();
@@ -109,7 +128,7 @@ function installSampler() {
     const by = new Map(bots.map(b => [b.id, b]));
     for (const b of bots) {
       const h = hist.get(b.id) ?? [];
-      h.push({ t: now, weapon: b.weapon, firing: b.firing, target: b.target, pos: b.pos });
+      h.push({ t: now, weapon: b.weapon, firing: b.firing, target: b.target, pos: b.pos, dead: b.dead, vehicle: b.vehicle ?? null, drives: !!b.seat?.drives });
       while (h.length && now - h[0].t > 10) h.shift();
       hist.set(b.id, h);
     }
@@ -121,12 +140,21 @@ function installSampler() {
         const target = shot?.target != null ? by.get(shot.target) : null;
         window.__pm.teamKills.push({
           t: +(now - window.__pm.t0).toFixed(1), killer: c.id, team: c.team, kit: by.get(c.id)?.kit ?? null, kills: c.teamKills - had,
+          vehicle: (h.filter(x => !x.dead).at(-1) ?? h.at(-1))?.vehicle ?? null, drives: !!(h.filter(x => !x.dead).at(-1) ?? h.at(-1))?.drives,
           fired: [...new Set(h.filter(x => x.firing).map(x => x.weapon))],
           shooter: shot?.pos ?? null, target: target?.pos ?? null, targetTeam: target?.team ?? null,
           victims: died.filter(v => v.team === c.team && v.id !== c.id).map(v => ({ id: v.id, pos: v.pos })),
         });
       }
       tks.set(c.id, c.teamKills ?? 0);
+      // A suicide: what the bot was in when last seen alive (a wreck, a fall and a drowning all count here).
+      const hadS = sui.get(c.id) ?? 0;
+      if ((c.suicides ?? 0) > hadS) {
+        const h = hist.get(c.id) ?? [], last = h.filter(x => !x.dead).at(-1) ?? h.at(-1) ?? null;
+        window.__pm.suicides.push({ t: +(now - window.__pm.t0).toFixed(1), id: c.id, team: c.team, kills: c.suicides - hadS,
+                                    vehicle: last?.vehicle ?? null, drives: !!last?.drives, pos: last?.pos ?? null });
+      }
+      sui.set(c.id, c.suicides ?? 0);
     }
     for (const b of bots) wasDead.set(b.id, b.dead);
     if (n++ % 150 === 0) window.__pm.tickets.push([Math.round(now - window.__pm.t0), round.tickets[1], round.tickets[2]]);
@@ -183,7 +211,8 @@ async function playOnce({ url, seconds = 600, loadTimeout = 240 }) {
     const raw = await page.evaluate(() => {
       const r = window.__round(), rows = window.__scoreboard.rows();
       return { minutes: (performance.now() / 1000 - window.__pm.t0) / 60, counts: r.counts, tickets: r.tickets, restarts: r.restarts ?? 0,
-               listed: Object.values(rows ?? {}).flat().filter(p => p.bot).length, series: window.__pm.tickets, teamKills: window.__pm.teamKills };
+               listed: Object.values(rows ?? {}).flat().filter(p => p.bot).length, series: window.__pm.tickets, teamKills: window.__pm.teamKills,
+               suicides: window.__pm.suicides ?? [] };
     });
     const teamKills = raw.teamKills.map(k => ({
       ...k, victims: k.victims.map(v => ({ id: v.id, ...(k.shooter && k.target ? onTheLine(k.shooter, k.target, v.pos) : {}),
@@ -191,7 +220,8 @@ async function playOnce({ url, seconds = 600, loadTimeout = 240 }) {
     }));
     for (const k of teamKills) { delete k.shooter; delete k.target; }
     return { url, ...level, ...summarise(raw.counts, raw.listed, raw.minutes), tickets: raw.tickets, restarts: raw.restarts,
-             ticketsOverTime: raw.series, teamKills, pageErrors: errors.slice(0, 5) };
+             ticketsOverTime: raw.series, teamKills, suicides: raw.suicides,
+             suicidesIn: ownHandIn(raw.suicides), teamKillsIn: ownHandIn(teamKills), pageErrors: errors.slice(0, 5) };
   } finally {
     await browser.close();
   }
@@ -240,19 +270,25 @@ export function judgePage(matches, pageBar) {
  *    of both (0.05 and 1 capture). Flags alone are not a fight: FHSW's Fall
  *    of Berlin took 7 with no enemy kill;
  *  - at most 0.10 deaths a bot-minute by a bot's own or its side's hand
- *    (suicides and team kills; DICE's worst match shows 0.056 and 0.025).
- *    Not the worse side's SHARE of such deaths: with few deaths that is
- *    noise (Red Square read 1.00 on one death);
+ *    (suicides and team kills; DICE's worst match shows 0.056 and 0.025),
+ *    or, on a level with more killing than that allows for, no more than a
+ *    third of its enemy kills (2026-11-12: DICE's own levels on the page
+ *    run to 0.31, Berlin 0.080 of 0.268 and Kharkov 0.080 of 0.259; the
+ *    flat cap alone turned down Happy Saint Patrick's Day at 0.58 enemy
+ *    kills for 0.119 by its own hand, a better ratio than Berlin's). The
+ *    second clause only ever applies above 0.30 enemy kills a bot-minute,
+ *    so it is never a share of a handful of deaths: with few deaths a share
+ *    is noise (Red Square read 1.00 on one death);
  *  - no page error.
  * `{ pass, why }`, `why` the clauses it fails.
  */
-export const ROLLOUT_FLOOR = Object.freeze({ kills: 0.15, killsWithFlags: 0.03, flags: 3, killsWithAFlag: 0.05, ownHand: 0.10 });
+export const ROLLOUT_FLOOR = Object.freeze({ kills: 0.15, killsWithFlags: 0.03, flags: 3, killsWithAFlag: 0.05, ownHand: 0.10, ownHandOfKills: 1 / 3 });
 export function rolloutFloor(m, floor = ROLLOUT_FLOOR) {
   const k = m.enemyKillsPerBotMinute ?? 0, c = m.capturesTotal ?? 0;
   const own = (m.suicidesPerBotMinute ?? 0) + (m.teamKillsPerBotMinute ?? 0);
   const why = [];
   if (!(k >= floor.kills || (k >= floor.killsWithFlags && c >= floor.flags) || (k >= floor.killsWithAFlag && c >= 1))) why.push('activity');
-  if (own > floor.ownHand) why.push('ownHand');
+  if (own > floor.ownHand && !(own <= k * (floor.ownHandOfKills ?? 0))) why.push('ownHand');
   if ((m.pageErrors ?? []).length) why.push('pageErrors');
   return { pass: !why.length, why, enemyKills: k, captures: c, ownHand: +own.toFixed(4) };
 }
@@ -273,11 +309,26 @@ function parseArgs(argv) {
 }
 
 if (process.argv[1] && path.resolve(process.argv[1]) === fileURLToPath(import.meta.url)) {
-  const cmd = ['bar', 'check'].includes(process.argv[2]) ? process.argv[2] : null;
+  const cmd = ['bar', 'check', 'rescore'].includes(process.argv[2]) ? process.argv[2] : null;
   const a = parseArgs(process.argv.slice(cmd ? 3 : 2));
   const { readFileSync, writeFileSync } = await import('node:fs');
+  if (cmd === 'rescore') {
+    // Ask today's floor of a page.json's matches again, in place. `--earlier <page.json>` puts that file's
+    // matches in front (an earlier match of the same level the last `check` wrote over); with `--old-code
+    // "<what changed>"` they are kept for the record and not counted, having been played on other bot code.
+    if (!a.file) { console.error('rescore: --file <page.json> [--earlier <page.json> [--old-code "<what changed since>"]]'); process.exit(2); }
+    const file = path.resolve(a.file), page = JSON.parse(readFileSync(file, 'utf8'));
+    const earlier = a.earlier ? JSON.parse(readFileSync(path.resolve(a.earlier), 'utf8')).runs.map(r => ({ ...r, ...(a['old-code'] && !r.oldCode ? { oldCode: String(a['old-code']) } : {}) })) : [];
+    const same = (x, y) => JSON.stringify({ ...x, rollout: 0, oldCode: 0 }) === JSON.stringify({ ...y, rollout: 0, oldCode: 0 });
+    page.runs = [...earlier.filter(e => !page.runs.some(r => same(e, r))), ...page.runs].map(r => ({ ...r, rollout: rolloutFloor(r) }));
+    page.matches = page.runs.length;
+    page.rollout = { pass: page.runs.some(r => !r.oldCode && r.rollout.pass), floor: ROLLOUT_FLOOR };
+    writeFileSync(file, JSON.stringify(page, null, 1) + '\n');
+    console.log(`${page.level}: ${page.rollout.pass ? 'PASS' : 'FAIL'} | ${page.runs.map(r => `${r.oldCode ? '(old code) ' : ''}kills ${r.enemyKillsPerBotMinute} captures ${r.capturesTotal} own-hand ${r.rollout.ownHand}${r.rollout.pass ? '' : ' ' + JSON.stringify(r.rollout.why)}`).join('; ')}`);
+    process.exit(0);
+  }
   const BAR_FILE = path.join(HERE, 'baselines', 'page-dice.json');
-  const slim = m => { const { teamKills, ticketsOverTime, generated, ...rest } = m; return { ...rest, generated: generated ? { version: generated.version, template: generated.template ?? null } : null }; };
+  const slim = m => { const { teamKills, suicides, ticketsOverTime, generated, ...rest } = m; return { ...rest, generated: generated ? { version: generated.version, template: generated.template ?? null } : null }; };
   if (cmd === 'bar') {
     const levels = String(a.levels ?? 'Berlin,Stalingrad,Kharkov,Bocage').split(','), n = Number(a.matches ?? 3), seconds = Number(a.seconds ?? 600);
     // The levels side by side, one match of each at a time.
@@ -297,7 +348,8 @@ if (process.argv[1] && path.resolve(process.argv[1]) === fileURLToPath(import.me
     const result = { level: a.map, mod: a.mod ?? 'bf1942', url, date: new Date().toISOString().slice(0, 10), bar: bar.note, ...judgePage(matches, bar),
                      rollout: { pass: matches.some(m => rolloutFloor(m).pass), floor: ROLLOUT_FLOOR },
                      runs: matches.map(m => ({ generated: m.generated, minutes: m.minutes, tickets: m.tickets, capturesTotal: m.capturesTotal, ...Object.fromEntries(PAGE_CHECKS.map(([k]) => [k, m[k]])),
-                                               rollout: rolloutFloor(m), ...(m.replayed ? { replayed: true } : {}), ...(m.pageErrors?.length ? { pageErrors: m.pageErrors } : {}),
+                                               rollout: rolloutFloor(m), ...(m.replayed ? { replayed: true } : {}),
+                                               ...(m.suicidesIn ? { suicidesIn: m.suicidesIn, teamKillsIn: m.teamKillsIn } : {}), ...(m.pageErrors?.length ? { pageErrors: m.pageErrors } : {}),
                                                teamKillsBySide: Object.fromEntries(Object.entries(m.sides).map(([t, s]) => [t, s.teamKills])) })) };
     if (a.out) writeFileSync(path.resolve(a.out), JSON.stringify(result, null, 1) + '\n');
     console.log(JSON.stringify(result, null, 1));

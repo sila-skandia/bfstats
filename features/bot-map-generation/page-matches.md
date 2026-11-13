@@ -494,6 +494,381 @@ owner's rollout may accept a level whose only lint error is that one
 (`acceptVerdict`). Invasion of the Philippines is out in both packs: a
 side holds no spawn at the start.
 
+### The rest of 2026-11-12: every botless level looked at, Galactic Conquest, new bot code
+
+Four things happened on the page this day, and they overlap.
+
+**The last screen.** `status.py` listed 127 levels with no AI and no
+verdict. All were fetched and screened (one seed at 8 and 16 a side); 29
+linted clean and showed some life, were published without a flag and
+played. Later the lint's four faults (README 22) reopened eleven more.
+
+**Galactic Conquest.** The owner imported GCMOD the same day: 30 levels,
+none with AI. 16 were played on the page (11 with a clean lint; Endor,
+Corellia, Lok, Alaris Prime and Mini Hoth despite a stacked-floors error,
+as Raid on Agheila was).
+
+**New bot code, about 12:10.** Commit 401826c1d (another session's
+retail-parity fixes: anti-aircraft spread, sense ray count, arrival radius,
+the upside-down test) went live mid-run. Matches started before it are
+bracketed in the table and do not count. All 45 levels then live were
+replayed once on it: 35 passed, 10 failed, and the 45 together had not
+moved (mean enemy kills a bot-minute 0.160 before and 0.152 after, median
+0.106 and 0.100). The ten were replayed: six passed their second match,
+four failed it and lost their tags (BF1918's chemin_des_dames and roye,
+FHSW's monte_cassino-1944, FH's seelow-heights-1945, all marginal when
+they went live).
+
+**The hull box fix, about 14:45** ([hull-box.md](hull-box.md)). Eight live
+levels place a hull whose box it changes. Their match on it: hindenburg_line,
+DC_Battle_of_73_Easting, DC_Urban_Siege, FHSWEurope's aberdeen and
+Inshallah_Valley passed; roye failed (above); DC_LostVillage and
+DC_Oil_Fields failed it after passing the 13:20 re-match (0.038 with 3
+captures and 0.050 with 8; those two results were overwritten and are not
+in their `page.json`), and passed a third.
+
+**The floor, changed once.** The cap on deaths by a bot's own or its
+side's hand was a flat 0.10 a bot-minute. Three community levels with far
+more fighting than most live levels failed on it alone: Happy Saint
+Patrick's Day (0.58 enemy kills, 0.119 own-hand), Rennpiste Gebirge (0.36,
+0.119), TL Race (0.45, 0.112). DICE's own levels on the page lose 0.30
+(Berlin) and 0.31 (Kharkov) as many bots by their own hand as to the
+enemy. The clause now also passes a match whose own-hand deaths are no
+more than a third of its enemy kills (`ROLLOUT_FLOOR.ownHandOfKills`). It
+only ever applies above 0.30 enemy kills a bot-minute. It let in those
+three (Rennpiste by 0.00003 in one match of two: marginal) and nothing
+else: GC's Endor, BCanyon, Lok and Alaris Prime lose as many or more by
+their own hand as to the enemy and still fail.
+
+`sim/pagematch.mjs rescore --file <page.json> [--earlier <page.json>
+[--old-code "<why>"]]` asks today's floor of a record again and puts an
+earlier match back in front of the one `check` wrote over it.
+
+Every match of the day (a level passes when any counted match passes):
+
+| Mod | Level | Matches: enemy kills, captures, own-hand deaths (a bot-minute) | Tag |
+|---|---|---|---|
+| bf1918 | battle_of_the_vosges | 0.019, 10, 0.000 | no |
+| bf1918 | chemin_des_dames | 0.000, 0, 0.019 | no |
+| bf1918 | dawnville | 0.163, 0, 0.006 | **yes** |
+| bf1918 | hindenburg_line | 0.075, 2, 0.006 | **yes** |
+| bf1918 | lutte_de_honneur | 0.069, 1, 0.006 | **yes** |
+| bf1918 | roye | 0.044, 1, 0.050; 0.013, 1, 0.056 | no |
+| bf1918 | scimitar_hill | 0.087, 2, 0.000 | **yes** |
+| bf1942 | _o_jka__ | 0.000, 0, 0.000 | no |
+| bf1942 | _o_jka__big | 0.269, 4, 0.044 | **yes** |
+| bf1942 | aberdeen | 0.275, 2, 0.062 | **yes** |
+| bf1942 | beinbrekkbakken | 0.138, 16, 0.050 | **yes** |
+| bf1942 | densloe_practice | (0.013, 5, 0.025); 0.087, 11, 0.013 | **yes** |
+| bf1942 | downhill_to_the_beach_two | (0.050, 0, 0.012); 0.006, 0, 0.000 | no |
+| bf1942 | dsfootball | 0.000, 0, 0.000 | no |
+| bf1942 | happy_saint_patrick_s_day | (0.606, 0, 0.100); 0.575, 0, 0.119 | **yes** |
+| bf1942 | hop | 0.713, 0, 0.000 | **yes** |
+| bf1942 | jeep_bowl | 0.044, 4, 0.025 | **yes** |
+| bf1942 | jeep_race___ | 0.087, 0, 0.044; 0.306, 0, 0.062 | **yes** |
+| bf1942 | knife_fight | 0.000, 0, 0.000 | no |
+| bf1942 | koh | 0.225, 23, 0.037 | **yes** |
+| bf1942 | liberation_of_caen | 0.081, 3, 0.037 | **yes** |
+| bf1942 | matrix | 0.169, 7, 0.019 | **yes** |
+| bf1942 | omaturi_channel_knife | 0.000, 0, 0.000 | no |
+| bf1942 | omaturi_channel_sniper | 0.031, 1, 0.013; 0.006, 0, 0.000 | no |
+| bf1942 | omaturi_channel_tank | 0.000, 0, 0.000 | no |
+| bf1942 | rallyrace | 0.225, 0, 0.094 | **yes** |
+| bf1942 | rennpiste_gebirge | 0.356, 3, 0.119; 0.444, 2, 0.175 | **yes** |
+| bf1942 | shigaisen_b | 0.438, 0, 0.000 | **yes** |
+| bf1942 | tank_bowl | 0.081, 1, 0.013 | **yes** |
+| bf1942 | tanquilizer | 0.075, 0, 0.275 | no |
+| bf1942 | team_liberation_air_race | 0.031, 0, 0.756; 0.144, 0, 0.613 | no |
+| bf1942 | the_maze | 0.250, 12, 0.013 | **yes** |
+| bf1942 | tl_plane_training | 0.037, 16, 0.094 | **yes** |
+| bf1942 | tl_race | 0.450, 12, 0.112; 0.369, 2, 0.256 | **yes** |
+| bf1942 | tsukuba_circuit | 0.000, 0, 0.000 | no |
+| bf1942 | up_and_down | 1.094, 0, 0.119; 1.131, 0, 0.087 | **yes** |
+| bf1942 | xhaos_lake | 0.000, 1, 0.013 | no |
+| desertcombat | dc_basrah_nights | 0.719, 6, 0.069 | **yes** |
+| desertcombat | dc_battle_of_73_easting | 0.200, 16, 0.000 | **yes** |
+| desertcombat | dc_lostvillage | 0.013, 0, 0.000; 0.069, 4, 0.000 | **yes** |
+| desertcombat | dc_no_fly_zone_day2 | 0.000, 0, 0.138 | no |
+| desertcombat | dc_oil_fields | 0.019, 4, 0.025; 0.037, 13, 0.037 | **yes** |
+| desertcombat | dc_urban_siege | 0.062, 3, 0.031 | **yes** |
+| desertcombat | dc_weapon_bunkers | 0.000, 0, 0.006 | no |
+| desertcombat | inshallah_valley | 0.044, 1, 0.025; 0.119, 3, 0.012 | **yes** |
+| fh | pegasus | 0.194, 8, 0.081 | **yes** |
+| fh | seelow-heights-1945 | 0.025, 1, 0.037; 0.025, 6, 0.019 | no |
+| fhsw | aberdeen | 0.188, 9, 0.044 | **yes** |
+| fhsw | apennines | (0.037, 3, 0.037); 0.013, 3, 0.025; 0.006, 0, 0.019 | no |
+| fhsw | battle_for_ortona-1943 | 0.100, 3, 0.006 | **yes** |
+| fhsw | battle_of_edson_s_ridge | 0.163, 3, 0.006 | **yes** |
+| fhsw | desert_hill | 0.019, 0, 0.006 | no |
+| fhsw | eagles_nest-1946 | 0.106, 1, 0.000 | **yes** |
+| fhsw | earned_in_blood | 0.081, 3, 0.006 | **yes** |
+| fhsw | fall_of_berlin-1945 | 0.044, 6, 0.006 | **yes** |
+| fhsw | fht_battle_of_mareth_line-1943 | 0.106, 1, 0.013 | **yes** |
+| fhsw | fht_hong_kong-1941 | 0.000, 0, 0.000 | no |
+| fhsw | fht_siege_of_zeeland-1940 | 0.013, 0, 0.100 | no |
+| fhsw | forgotten_hometown | 0.000, 1, 0.025 | no |
+| fhsw | hungary_forest-1945 | 0.037, 1, 0.000; 0.081, 5, 0.000 | **yes** |
+| fhsw | ilomantsi-1944 | (0.025, 0, 0.019); 0.019, 0, 0.019 | no |
+| fhsw | iron_monster | 0.031, 1, 0.006; 0.075, 2, 0.056 | **yes** |
+| fhsw | kushira | (0.006, 0, 0.000); 0.081, 2, 0.019 | **yes** |
+| fhsw | manchuria-1945 | 0.031, 2, 0.000; 0.062, 4, 0.000 | **yes** |
+| fhsw | monte_cassino-1944 | 0.037, 0, 0.000; 0.019, 0, 0.012 | no |
+| fhsw | moscow_outskirts-1941 | 0.219, 6, 0.044 | **yes** |
+| fhsw | naichi-1945 | (0.019, 0, 0.013); 0.006, 0, 0.006 | no |
+| fhsw | operation_coronet-1946 | (0.006, 0, 0.000); 0.006, 0, 0.000 | no |
+| fhsw | operation_springawakening | (0.069, 2, 0.025); 0.006, 1, 0.013; 0.000, 0, 0.006 | no |
+| fhsw | operation_varsity | (0.006, 0, 0.000); 0.006, 0, 0.013 | no |
+| fhsw | raseiniai | 0.075, 4, 0.000 | **yes** |
+| fhsw | salerno-1943 | 0.044, 12, 0.062 | **yes** |
+| fhsw | seelow-heights-1945 | (0.025, 2, 0.044); 0.000, 0, 0.025 | no |
+| fhsw | stalingrad_redsquare | 0.050, 3, 0.019 | **yes** |
+| fhsw | stalingrad_urban_area-1942 | 0.031, 1, 0.000; 0.081, 2, 0.006 | **yes** |
+| fhsw | the_great_pursuit | 0.219, 4, 0.000 | **yes** |
+| fhsw | tunis-1943 | 0.188, 4, 0.025 | **yes** |
+| fhsw | westminster-1942 | (0.113, 3, 0.031); 0.044, 3, 0.019 | **yes** |
+| fhsweurope | aberdeen | 0.081, 6, 0.025 | **yes** |
+| gcmod | gc_alaris_prime | 0.031, 4, 0.175; 0.044, 1, 0.256 | no |
+| gcmod | gc_anchorhead | 0.037, 11, 0.056 | **yes** |
+| gcmod | gc_bcanyon | 0.013, 4, 0.306; 0.050, 3, 0.281 | no |
+| gcmod | gc_corellia | 0.163, 1, 0.075 | **yes** |
+| gcmod | gc_endor | 0.144, 12, 0.156; 0.169, 6, 0.169 | no |
+| gcmod | gc_hoth | 0.019, 4, 0.037; 0.025, 4, 0.025 | no |
+| gcmod | gc_lok | 0.044, 3, 0.237; 0.025, 2, 0.344 | no |
+| gcmod | gc_mini_caves | 0.075, 6, 0.000 | **yes** |
+| gcmod | gc_mini_chandrila | 0.613, 0, 0.031 | **yes** |
+| gcmod | gc_mini_dant | 0.025, 14, 0.000; 0.031, 14, 0.000 | **yes** |
+| gcmod | gc_mini_hoth | 0.013, 0, 0.000; 0.006, 0, 0.000 | no |
+| gcmod | gc_mini_wasteland | 0.250, 17, 0.037 | **yes** |
+| gcmod | gc_mini_wayfar | 0.562, 23, 0.031 | **yes** |
+| gcmod | gc_ryloth | 0.037, 7, 0.037 | **yes** |
+| gcmod | gc_tatooine | 0.050, 6, 0.019 | **yes** |
+| xpack1 | aberdeen | 0.281, 8, 0.013 | **yes** |
+| xpack1 | liberation_of_caen | 0.081, 5, 0.031 | **yes** |
+| xpack2 | aberdeen | 0.312, 9, 0.050 | **yes** |
+| xpack2 | liberation_of_caen | 0.106, 3, 0.025 | **yes** |
+| xpack2 | raid_on_agheila | 0.100, 0, 0.050; 0.106, 1, 0.025 | **yes** |
+
+64 levels carry the tag at the end of the day: the vanilla tree 19 (18
+community, Aberdeen), FHSW 19, Galactic Conquest 9, Desert Combat 6,
+BF1918 4, Secret Weapons 3, Road to Rome 2, FH 1, FHSWEurope 1.
+
+Turned down with one match only, the day ending before a second: FHSW's
+desert_hill, fht_siege_of_zeeland-1940 and forgotten_hometown, BF1918's
+battle_of_the_vosges (10 captures, 0.019 enemy kills: the near miss),
+community tanquilizer, Desert Combat's dc_weapon_bunkers and
+dc_no_fly_zone_day2. FHSW's battle_over_hokkaido-1945 was published and
+never played.
+
+Not explained: why bots on GC's Endor, BCanyon, Lok and Alaris Prime die
+by their own hand at 0.16 to 0.34 a bot-minute (falls, craft, or their
+own blasts was not looked at); and chemin_des_dames, whose two matches on
+the new code ended with the same tickets and no kill.
+
+### 2026-11-13: two bot-code changes, the turned-down levels regenerated, what own-hand deaths are
+
+**The bot code of e5003c584** (another session's retail-parity work, live
+2026-11-12 19:38). 49 of the 64 levels then live played one match on it.
+Median enemy kills a bot-minute 0.106 before and after; deaths by a bot's
+own or its side's hand rose from 0.036 to 0.056 on average, which that
+session traced to drivers with no collision prediction and a stale hull
+track. Thirteen levels failed the one match and none lost its flag on it.
+BF1918's battle_of_the_vosges and FHSW's battle_over_hokkaido-1945, both
+left unplayed the day before, passed and went live: 66.
+
+**The bot code of 3b1ebe45c** (the fix for those drivers, sixteen more of
+retail's mechanics, and single player's 3 s respawn; live 2026-11-13
+00:41). Every match from here is pinned to `spawnTime=wave`, the
+reinforcement wave all earlier matches were played on, so the records
+compare; a hand-typed play link gets the 3 s respawn. All 66 live levels
+played one match on it: 52 passed, 14 failed. The 14 played a second:
+
+- passed, and stay: Desert Combat's DC_LostVillage, GC's Anchorhead,
+  community rennpiste_gebirge, FHSW's eagles_nest-1946 and
+  hungary_forest-1945;
+- failed twice, and lost their tags: GC's Mini Dant (15 and 16 captures a
+  match, under 0.02 enemy kills a bot-minute) and Mini Wasteland (own-hand
+  deaths); community jeep_bowl and tl_race (own-hand deaths), jeep_race___
+  and matrix; FHSW's kushira, raseiniai (7 and 4 captures, 0.02 enemy
+  kills a bot-minute) and tunis-1943 (no capture in either match, where
+  the earlier code showed 4 and 10).
+
+Across the 76 levels with matches on both codes, 3b1ebe45c lowered
+suicides (mean 0.030 to 0.024 a bot-minute; down on 43 levels, up on 15)
+and team kills (0.011 to 0.008). Enemy kills: mean 0.149 to 0.133, median
+0.081 on both. Captures over the 73 levels whose layer did not change:
+mean 5.2 to 5.5 a match. No general regression; the nine are those levels
+and one unseeded match each way.
+
+**The turned-down levels, regenerated.** The 26 layers turned down on
+generator 5 were regenerated on generator 6 (README 22) and screened, one
+seed at 8 and 16 a side. Three were dead in the runner (no kill, no
+capture: FHSW's fht_pasir_panjang-1942, ramelle_neuville-1944 and
+warsaw_uprising) and were not played. fht_dinant-1940 fails the lint on
+stacked floors. Westwall-1945 failed it on an order position, which was a
+generator fault (README 22.4, item 1); fixed, it lints clean, and so does
+fht_the_breaking_point-1940. The 22 that were left played on the page as
+new levels, their matches on the old layer kept and marked `oldCode`:
+
+- passed their first match: FHSW's gazaps-1945,
+  in_the_hell_of_bocage-1944, operation_coronet-1946, pegasus, apennines
+  and fht_battle_of_kohima-1944, Desert Combat's dc_operation_bragg;
+- passed their second: community _o_jka__, FH's seelow-heights-1945,
+  BF1918's fht_meuse_argonne_offensive;
+- failed twice: BF1918's roye and saint_quentin_canal, Desert Combat's
+  dc_medina_ridge, FHSW's operation_springawakening, ilomantsi-1944,
+  operation_varsity, fht_operation_longcloth-1943, naichi-1945,
+  seelow-heights-1945, ural_mountains-1947 and way_to_paris-1946;
+- Westwall-1945 failed once on generator 6 and once more on generator 7
+  with its ways widened (no kill, no capture): turned down.
+
+fht_the_breaking_point-1940, never played before, passed its first match
+on a generator 7 layer (0.050 enemy kills a bot-minute, 2 captures).
+
+**The levels the choke rule refuses, played despite it.** README 22.4,
+item 2, has the runner's figures. Deulemont and Liberation of Roeselare
+jam (14 to 23 stuck seconds a bot-minute) and Baghdad has no fight: not
+played. FHSW's transcarpathia-1944 and BF1918's somme_gasattack do not
+jam, were accepted under a new exception for the owner's rollout
+(`botbatch.mjs acceptVerdict`: a level run despite the choke rule and
+nothing else) and played; their rows are in the table.
+
+**What a death by a bot's own hand is.** `pagematch.mjs` now records, for
+each suicide and each team kill, what the bot was in when last seen alive:
+`suicidesIn` and `teamKillsIn` in every new `page.json` run, counted by
+the vehicle's template for its driver, "<template> (passenger)", or "on
+foot" (`ownHandIn`). The plain mode (`node sim/pagematch.mjs --map <Level>
+--mod <mod>`) also prints each team kill with the weapons its killer had
+fired. One diagnostic match each, not written to any `page.json`:
+
+| Level | Enemy kills | Suicides: what the bots were in | Team kills |
+|---|---|---|---|
+| gcmod GC_Endor | 0.138 | 17: Speederbike 15, its passenger 1, on foot 1 | 1 |
+| gcmod GC_BCanyon | 0.000 | 41: Speederbike 30, its passenger 4, TieFighter 5, others 2 | 0 |
+| gcmod GC_Lok | 0.069 | 61: Speederbike 44, its passenger 8, craft 7, on foot 2 | 0 |
+| gcmod GC_Mini_Wasteland | 0.150 | 11: Speederbike 6, Assault_Tank 3, on foot 2 | 2, an Assault_Tank's gun |
+| community jeep_bowl | 0.531 | 10, all on foot | 19: 18 by a bot on foot, 13 of them after a grenade |
+| community TL_Race | 0.281 | 13: on foot 4, Sexton 4, Katyusha 3, others 2 | 8, all on foot |
+| community Tanquilizer | 0.031 | 15, all in tanks and tank destroyers | 0 |
+| community team_liberation_air_race | 0.031 | 109, every one a Mustang's pilot | 4 |
+
+Galactic Conquest's own-hand deaths, "not explained" the day before, are
+one vehicle. A probe of Speederbike drivers on the page found them dying
+at 109 m/s far outside the level (Endor, a 1024 m world: z -1526; Lok,
+2048 m: x 2208). The retail-parity session found the cause the same
+morning: the bike hovers on five plane-type engines, so the bots took it
+for a plane and flew it with the plane law, where retail chooses a bot's
+control from the vehicle's AI template (the bike's is Willy's: a car). Its
+fix (`viewer/bot-rows.js botKind`) takes the runner's own-hand deaths on
+Mini Wasteland from 0.083 to 0.025 a bot-minute; it is not live yet. When
+it is, Endor, BCanyon, Lok, Alaris Prime and Mini Wasteland are replayed
+first. On jeep_bowl the team-kill weapon is the grenade, which the
+hold-fire does not cover.
+
+Every level with a counted match on 3b1ebe45c (earlier matches are in each
+`page.json`, marked `oldCode`; a level stands when any counted match
+passes):
+
+| Mod | Level | Generator | Matches: enemy kills, captures, own-hand deaths (a bot-minute) | Tag |
+|---|---|---|---|---|
+| bf1918 | battle_of_the_vosges | 6 | 0.106, 10, 0.000 | **yes** |
+| bf1918 | dawnville | 5 | 0.119, 5, 0.000 | **yes** |
+| bf1918 | fht_meuse_argonne_offensive | 6 | 0.037, 0, 0.013; 0.075, 1, 0.006 | **yes** |
+| bf1918 | hindenburg_line | 5 | 0.069, 5, 0.000 | **yes** |
+| bf1918 | lutte_de_honneur | 5 | 0.050, 1, 0.000 | **yes** |
+| bf1918 | roye | 6 | 0.013, 2, 0.025; 0.013, 3, 0.019 | no |
+| bf1918 | saint_quentin_canal | 6 | 0.000, 0, 0.019; 0.006, 0, 0.037 | no |
+| bf1918 | scimitar_hill | 5 | 0.044, 3, 0.000 | **yes** |
+| bf1942 | _o_jka__ | 6 | 0.106, 0, 0.013; 0.244, 0, 0.031 | **yes** |
+| bf1942 | _o_jka__big | 4 | 0.269, 3, 0.062 | **yes** |
+| bf1942 | aberdeen | 5 | 0.200, 3, 0.025 | **yes** |
+| bf1942 | beinbrekkbakken | 5 | 0.269, 6, 0.037 | **yes** |
+| bf1942 | densloe_practice | None | 0.087, 16, 0.013 | **yes** |
+| bf1942 | happy_saint_patrick_s_day | None | 0.738, 0, 0.200 | **yes** |
+| bf1942 | hop | 5 | 0.594, 0, 0.000 | **yes** |
+| bf1942 | jeep_bowl | None | 0.450, 43, 0.219; 0.344, 29, 0.188 | no |
+| bf1942 | jeep_race___ | None | 0.319, 0, 0.137; 0.013, 0, 0.013 | no |
+| bf1942 | koh | 5 | 0.169, 12, 0.075 | **yes** |
+| bf1942 | liberation_of_caen | 5 | 0.050, 4, 0.056 | **yes** |
+| bf1942 | matrix | None | 0.113, 0, 0.025; 0.050, 0, 0.000 | no |
+| bf1942 | rallyrace | None | 0.369, 0, 0.119 | **yes** |
+| bf1942 | rennpiste_gebirge | None | 0.100, 0, 0.044; 0.200, 2, 0.050 | **yes** |
+| bf1942 | shigaisen_b | 5 | 0.200, 0, 0.000 | **yes** |
+| bf1942 | tank_bowl | None | 0.250, 12, 0.019 | **yes** |
+| bf1942 | the_maze | 5 | 0.319, 25, 0.000 | **yes** |
+| bf1942 | tl_plane_training | 6 | 0.037, 15, 0.044 | **yes** |
+| bf1942 | tl_race | None | 0.325, 8, 0.119; 0.412, 18, 0.150 | no |
+| bf1942 | up_and_down | None | 0.475, 0, 0.050 | **yes** |
+| desertcombat | dc_basrah_nights | 5 | 0.581, 18, 0.075 | **yes** |
+| desertcombat | dc_battle_of_73_easting | 5 | 0.138, 5, 0.012 | **yes** |
+| desertcombat | dc_lostvillage | 5 | 0.025, 0, 0.031; 0.100, 5, 0.019 | **yes** |
+| desertcombat | dc_medina_ridge | 6 | 0.006, 0, 0.000; 0.013, 0, 0.006 | no |
+| desertcombat | dc_oil_fields | 5 | 0.037, 6, 0.006 | **yes** |
+| desertcombat | dc_operation_bragg | 6 | 0.050, 4, 0.031 | **yes** |
+| desertcombat | dc_urban_siege | 5 | 0.062, 5, 0.013 | **yes** |
+| desertcombat | inshallah_valley | 5 | 0.150, 1, 0.000 | **yes** |
+| fh | pegasus | 5 | 0.219, 3, 0.031 | **yes** |
+| fh | seelow-heights-1945 | 6 | 0.013, 0, 0.031; 0.062, 2, 0.044 | **yes** |
+| fhsw | aberdeen | 5 | 0.219, 10, 0.013 | **yes** |
+| fhsw | apennines | 6 | 0.031, 3, 0.013 | **yes** |
+| fhsw | battle_for_ortona-1943 | 5 | 0.156, 5, 0.013 | **yes** |
+| fhsw | battle_of_edson_s_ridge | 5 | 0.081, 4, 0.000 | **yes** |
+| fhsw | battle_over_hokkaido-1945 | 6 | 0.138, 12, 0.000 | **yes** |
+| fhsw | eagles_nest-1946 | 5 | 0.006, 6, 0.000; 0.062, 5, 0.019 | **yes** |
+| fhsw | earned_in_blood | 5 | 0.044, 5, 0.000 | **yes** |
+| fhsw | fall_of_berlin-1945 | 5 | 0.031, 3, 0.000 | **yes** |
+| fhsw | fht_battle_of_kohima-1944 | 6 | 0.062, 7, 0.006 | **yes** |
+| fhsw | fht_battle_of_mareth_line-1943 | 5 | 0.119, 1, 0.013 | **yes** |
+| fhsw | fht_operation_longcloth-1943 | 6 | 0.000, 0, 0.006; 0.031, 2, 0.025 | no |
+| fhsw | fht_the_breaking_point-1940 | 7 | 0.050, 2, 0.006 | **yes** |
+| fhsw | gazaps-1945 | 6 | 0.031, 6, 0.031 | **yes** |
+| fhsw | hungary_forest-1945 | 5 | 0.019, 0, 0.000; 0.056, 1, 0.000 | **yes** |
+| fhsw | ilomantsi-1944 | 6 | 0.025, 0, 0.025; 0.019, 0, 0.025 | no |
+| fhsw | in_the_hell_of_bocage-1944 | 6 | 0.188, 1, 0.012 | **yes** |
+| fhsw | iron_monster | 5 | 0.062, 6, 0.000 | **yes** |
+| fhsw | kushira | 5 | 0.044, 0, 0.000; 0.006, 0, 0.000 | no |
+| fhsw | manchuria-1945 | 5 | 0.062, 2, 0.000 | **yes** |
+| fhsw | moscow_outskirts-1941 | 5 | 0.150, 3, 0.006 | **yes** |
+| fhsw | naichi-1945 | 6 | 0.006, 0, 0.019; 0.044, 0, 0.037 | no |
+| fhsw | operation_coronet-1946 | 6 | 0.056, 1, 0.013 | **yes** |
+| fhsw | operation_springawakening | 6 | 0.000, 0, 0.006; 0.000, 0, 0.013 | no |
+| fhsw | operation_varsity | 6 | 0.006, 2, 0.006; 0.006, 2, 0.000 | no |
+| fhsw | pegasus | 6 | 0.263, 2, 0.050 | **yes** |
+| fhsw | raseiniai | 6 | 0.019, 7, 0.000; 0.025, 4, 0.006 | no |
+| fhsw | salerno-1943 | 5 | 0.031, 9, 0.044 | **yes** |
+| fhsw | seelow-heights-1945 | 6 | 0.019, 0, 0.050; 0.000, 0, 0.019 | no |
+| fhsw | stalingrad_redsquare | 5 | 0.100, 6, 0.006 | **yes** |
+| fhsw | stalingrad_urban_area-1942 | 5 | 0.081, 9, 0.025 | **yes** |
+| fhsw | the_great_pursuit | 5 | 0.181, 2, 0.000 | **yes** |
+| fhsw | tunis-1943 | 5 | 0.144, 0, 0.037; 0.106, 0, 0.013 | no |
+| fhsw | ural_mountains-1947 | 6 | 0.025, 0, 0.013; 0.025, 3, 0.000 | no |
+| fhsw | way_to_paris-1946 | 6 | 0.044, 1, 0.000; 0.031, 1, 0.000 | no |
+| fhsw | westminster-1942 | 5 | 0.050, 3, 0.031 | **yes** |
+| fhsw | westwall-1945 | 7 | 0.000, 0, 0.013 | no |
+| fhsweurope | aberdeen | 5 | 0.156, 12, 0.019 | **yes** |
+| gcmod | gc_anchorhead | 6 | 0.106, 8, 0.119; 0.056, 10, 0.100 | **yes** |
+| gcmod | gc_corellia | 6 | 0.125, 5, 0.062 | **yes** |
+| gcmod | gc_mini_caves | 6 | 0.113, 6, 0.000 | **yes** |
+| gcmod | gc_mini_chandrila | 6 | 0.388, 0, 0.031 | **yes** |
+| gcmod | gc_mini_dant | 6 | 0.019, 16, 0.000; 0.006, 15, 0.000 | no |
+| gcmod | gc_mini_wasteland | 6 | 0.138, 12, 0.138; 0.163, 7, 0.112 | no |
+| gcmod | gc_mini_wayfar | 6 | 0.463, 18, 0.006 | **yes** |
+| gcmod | gc_ryloth | 6 | 0.125, 3, 0.050 | **yes** |
+| gcmod | gc_tatooine | 6 | 0.031, 3, 0.006 | **yes** |
+| xpack1 | aberdeen | None | 0.219, 1, 0.044 | **yes** |
+| xpack1 | liberation_of_caen | None | 0.050, 1, 0.037 | **yes** |
+| xpack2 | aberdeen | None | 0.244, 3, 0.044 | **yes** |
+| xpack2 | liberation_of_caen | None | 0.144, 2, 0.031 | **yes** |
+| xpack2 | raid_on_agheila | None | 0.150, 2, 0.006 | **yes** |
+
+68 levels carry the tag: FHSW 24, the vanilla tree 16, Desert Combat 7,
+Galactic Conquest 7, BF1918 6, Secret Weapons 3, Road to Rome 2, FH 2,
+FHSWEurope 1.
+
+Not explained: why tunis-1943 and matrix, with 4 to 10 captures a match on
+the earlier bot code, show none in two matches each on 3b1ebe45c while
+their kills hold; and what the 3 Assault_Tank suicides on Mini Wasteland
+are (the parity session's 32 runner matches did not reproduce them).
+
 ## 7. What is not verified
 
 1. One match a level in sections 2 to 5, three in section 6, all unseeded:

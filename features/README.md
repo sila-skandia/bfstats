@@ -37,6 +37,7 @@ folder answers.
 | [browser-play-feedback-2026-11-06](browser-play-feedback-2026-11-06/README.md) | tracker | What did a first-time player's walkthrough video of play.bfstats.io report as broken, and what did each investigation find? |
 | [bf1942-corpus-sweep-2026-09-18](bf1942-corpus-sweep-2026-09-18/README.md) | tracker | Which gaps found by the 09-18 corpus audit are still open, and why? |
 | [retail-parity-cross-check-2026-11-12](retail-parity-cross-check-2026-11-12/README.md) | tracker | Does every retail value the browser game cites survive a second decompile and our own binaries, and what did the cross-check change? |
+| [retail-inverse-gap-audit-2026-11-12](retail-inverse-gap-audit-2026-11-12/README.md) | tracker | What does retail do that our game has never built, and what should we build next? |
 | [parity-lab](parity-lab/README.md) | build | How do I record a real bot round and compare it with the viewer? |
 | [server-replay-recorder](server-replay-recorder/README.md) | build | How does the lab server record the whole round itself, and what layout does it read? |
 | [vehicle-instance-refactor](vehicle-instance-refactor/README.md) | build | Who owns vehicle, seat and page state now, and where did map.html code move? |
@@ -58,6 +59,7 @@ folder answers.
 | [terrain-edge-wrap](terrain-edge-wrap/README.md) | build | What does the engine draw past the heightmap's edge, and how does the viewer repeat the terrain and the sea there without a re-bake? |
 | [level-lighting-laws](level-lighting-laws/README.md) | fix | Why did a level read flatter and lighter than retail, and what are the engine's combines for terrain detail, lightmapped statics and `materialDiffuse`? |
 | [remaster-browser](remaster-browser/README.md) | build | What does the browser game gain from a WebGPU renderer behind one OPTIONS > VIDEO toggle (real-time sun shadows, reflective water, explosions that light their surroundings, every surface still drawn with the engine's own combine), and what does it cost? |
+| [retail-look-parity](retail-look-parity/README.md) | fix | Why did the page read bland and lossy next to retail, which textures did the bake halve, and what does retail at its highest texture setting draw? |
 | [terrain-tile-grid](terrain-tile-grid/README.md) | fix | How big is the patch each Tx tile covers, which tiles does the engine draw, and why was Medina Ridge's ground scrambled? |
 | [mesh-asset-size](mesh-asset-size/README.md) | pipeline | How are mesh assets made smaller losslessly, and how is each phase deployed? |
 | [mesh-lod-chains](mesh-lod-chains/README.md) | build | Which LODs does retail draw for a static mesh, and at what distances? |

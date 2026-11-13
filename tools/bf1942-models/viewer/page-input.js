@@ -24,13 +24,15 @@ import { createOperaHint } from './opera-gestures.js';
  * `fullmapBox`, `gameConsole`, `handWeapon`, `isSlow`, `minimapBox`,
  * `overlay` (the load overlay's `briefingCaptures`/`acceptBriefing` handshake),
  * `isTouchDevice`, `itemsLocked`, `LOCAL_PLAYER`, `lookDelta`,
- * `nearEntry`, `occupancy`, `openDeploy`, `optOnFoot`, `optPilot`, `requestSeatToggle`,
+ * `nearEntry`, `occupancy`, `openDeploy`, `optOnFoot`, `optPilot`, `requestHeldSeat`, `requestSeatToggle`,
  * `panCamera`, `params`, `pickupKit`, `radioKeydown`, `renderer`, `resetCamera`,
  * `scoreboardOpen`, `scoutStep`,
  * `scoreFromSpawn`, `selectDeployFlag`, `selectKitWeapon`, `setConsoleOpen`,
  * `setEscMenu`, `setScoreboard`, `soldier`, `soldierDead`, `spawnAtFlag`, `stage`,
  * `startReload`, `switchSeat`, `throttleKey`, `toggleFullMap`, `toggleProne`, `uiFocused`,
- * `updateMobileControls`, `weaponBarFire`, `world`.
+ * `updateMobileControls`, `weaponBarFire`, `world`; for the pause
+ * `audioListener`, `hudVars`, `pauseText`, `replayActive`, `roomJoined`; and
+ * `toggleToolTip` for the tooltip key.
  */
 export function createPageInput(page) {
   const pageInput = {};
@@ -45,6 +47,57 @@ export function createPageInput(page) {
   pageInput.dragging = false;
   pageInput.lastPointerX = 0;
   pageInput.lastPointerY = 0;
+
+  // --- pause (single player) -----------------------------------------------------
+  //
+  // Retail: P is `c_GITogglePause` in the shipped `Controls.con`, and the game
+  // input pass hands it to `Setup::toggleGamePause` (lnxded 0x080c6b60; Mac
+  // 0x005dd014). That does nothing unless this machine is the game's server
+  // (`game->queryInterface(0x1d4c1)`, 0x080c6b80) and the game is not in
+  // status 2; then it flips between the status it was in and status 4
+  // (0x080c6c0e pushes 4), where nothing is simulated. Pausing writes the
+  // `Default` volume group to 0 and puts `GAME_PAUSE` ("PAUSED") on the
+  // `Pause/ShowPauseMessage` plate of `menu/InGame`
+  // (`BfMenu::outputPauseMessage`); the second press restores the status,
+  // the menu's master volume and clears the plate. A client of somebody
+  // else's server cannot pause, so a joined room cannot.
+  //
+  // Here: the page is the server in single player and Instant Battle, and
+  // not in a room or under a replay. Paused, the frame loop runs no frame
+  // (`map.html` asks `gamePaused` and only repaints the HUD's plate), the
+  // audio context is suspended, which silences every voice and holds every
+  // loop where it was, and the keyboard answers only the pause key (and
+  // Escape, which resumes and then opens the menu).
+  pageInput.gamePaused = false;
+  function canPause() {
+    return !!page.world && !page.roomJoined?.() && !page.replayActive?.();
+  }
+  function setGamePaused(on) {
+    on = !!on;
+    if (on === pageInput.gamePaused || (on && !canPause())) return pageInput.gamePaused;
+    pageInput.gamePaused = on;
+    const vars = page.hudVars?.();
+    if (vars) {
+      vars['Pause/ShowPauseMessage'] = on;
+      vars['Pause/PauseStatusMessage'] = page.pauseText?.() ?? 'PAUSED';
+      // The plate's second gate; nothing on this page raises a loading text
+      // over a running level.
+      if (vars['Loading/ShowLoadingText'] === undefined) vars['Loading/ShowLoadingText'] = false;
+    }
+    const audio = page.audioListener?.context;
+    try {
+      if (on) audio?.suspend?.();
+      else audio?.resume?.();
+    } catch { /* a context that never started has nothing to hold */ }
+    if (on) {
+      // Nothing held when the game stops is still held when it starts.
+      keys.clear();
+      pageInput.releaseButtons?.();
+    }
+    return on;
+  }
+  pageInput.setGamePaused = setGamePaused;
+  pageInput.toggleGamePause = () => setGamePaused(!pageInput.gamePaused);
 
   addEventListener('keydown', e => {
     // The console gets first refusal on every key. Tilde toggles it (the
@@ -93,6 +146,16 @@ export function createPageInput(page) {
       if (!page.chatCaptures()) chatClosed();
       return;
     }
+    // A paused game answers the pause key alone. Escape resumes it and goes
+    // on to open the menu, so a paused page is never a trap.
+    if (pageInput.gamePaused) {
+      const pauseKey = page.codeTriggers(e.code).includes('c_GITogglePause');
+      if ((pauseKey || e.code === 'Escape') && !e.repeat) setGamePaused(false);
+      if (e.code !== 'Escape') {
+        if (pauseKey || pageInput.captured) e.preventDefault();
+        return;
+      }
+    }
     if (e.code === 'Escape') {
       // The map is the topmost thing Escape can dismiss. In its deploy state
       // it is dismissed with intent: a redeploy resumes the life in progress,
@@ -135,6 +198,16 @@ export function createPageInput(page) {
         return;
       }
       const digit = /^Digit([1-9])$/.exec(e.code);
+      // A vote running in the room has the vote keys first, on the spawn
+      // screen too (a dead or waiting player still votes).
+      if (digit && !e.repeat) {
+        const bound = page.codeTriggers(e.code);
+        const yes = bound.includes('c_PIVoteYes');
+        if ((yes || bound.includes('c_PIVoteNo')) && page.voteKey?.(yes ? 0 : 1)) {
+          e.preventDefault();
+          return;
+        }
+      }
       if (digit) {
         e.preventDefault();
         page.selectDeployFlag(Number(digit[1]) - 1);
@@ -162,6 +235,22 @@ export function createPageInput(page) {
       openChat(!sayAll);
       return;
     }
+    // `c_GITogglePause` (P): single player's pause (`setGamePaused` above).
+    if (triggers.includes('c_GITogglePause') && !e.repeat
+        && !e.ctrlKey && !e.metaKey && !e.altKey && canPause()) {
+      e.preventDefault();
+      setGamePaused(true);
+      return;
+    }
+    // `c_PIToolTip` (T): closes the tooltip up, else flips the profile's
+    // tooltip option (`tooltips.js`, `Setup` player input 0x0044895c).
+    if (triggers.includes('c_PIToolTip') && !e.repeat
+        && !e.ctrlKey && !e.metaKey && !e.altKey && page.toggleToolTip
+        && !page.deployActive()) {
+      e.preventDefault();
+      page.toggleToolTip();
+      return;
+    }
     // F1..F8 are the radio (`c_PIRadio1..8`, input 0x22..0x29, handled by
     // the menu's key handler 0x006D42A0): comms.js takes them, and they never
     // reach the browser (F1 help, F5 reload). The numbers come from the
@@ -186,6 +275,19 @@ export function createPageInput(page) {
         page.setScoreboard(true, false);
       }
       return;
+    }
+    // The vote keys (`c_PIVoteYes`, `c_PIVoteNo`: 7 and 8 in the shipped map)
+    // lay a vote on the one running in the room, and `c_PIShowMapVote`
+    // (Insert) lists the room's maps with their ids (`room-host-client.js`).
+    // Off a room, or with no vote running, they do nothing, as in the game.
+    if (!e.repeat && !e.ctrlKey && !e.metaKey && !e.altKey) {
+      const yes = triggers.includes('c_PIVoteYes');
+      if (yes || triggers.includes('c_PIVoteNo')) {
+        if (page.voteKey?.(yes ? 0 : 1)) { e.preventDefault(); return; }
+      } else if (triggers.includes('c_PIShowMapVote') && page.showMapVote?.()) {
+        e.preventDefault();
+        return;
+      }
     }
     // `c_PIZoomMap`: it steps the minimap's three-level zoom counter
     // (bfmap.js). Behind the same gates as the map key — the console, the
@@ -238,8 +340,13 @@ export function createPageInput(page) {
     // gunner, bare gun). On foot `soldier-camera.js` owns it: C walks the
     // canopy's three views, and on the ground toggles first person and the
     // chase view (`FOOT_VIEW_CYCLE`), as retail's C does on foot.
+    // Dead, the same key walks the death camera to the next living human
+    // teammate (`FreeCamera::handlePlayerInput`, `death-camera.js`).
     if (triggers.includes('c_PIToggleCameraMode') && !e.repeat
-        && !e.ctrlKey && !e.metaKey) page.cycleView();
+        && !e.ctrlKey && !e.metaKey) {
+      if (page.soldierDead) page.toggleDeathCamera?.();
+      else page.cycleView();
+    }
     // `c_PILie`, a non-repetitive trigger, so it toggles rather than holds.
     if (triggers.includes('c_PILie') && !e.repeat
         && page.optOnFoot.checked && page.soldier) page.toggleProne();
@@ -344,7 +451,9 @@ export function createPageInput(page) {
     // of a drivetrain, the seat's for a gunner or a seat of a hull with no
     // drive (`mannedActive()` is the check that is right either way).
     if (page.optPilot.checked && page.occupancy) {
-      page.exitSeat();
+      // A press: a restricted exit blocked on both sides refuses it and the
+      // press is spent (SEAT-42, `toggleEntryPoint` 0x0814eee3).
+      page.exitSeat({ press: true });
       pageInput.noteSeatToggle();
     } else if (page.optOnFoot.checked && page.soldier && pageInput.captured) {
       // The door is looked up on the PRESS, not read off the HUD's offer.
@@ -361,6 +470,10 @@ export function createPageInput(page) {
       if (entry) {
         page.enterVehicle(entry);
         pageInput.noteSeatToggle();
+      } else {
+        // No free door: `toggleEntryPoint` asks the bot holding the nearest
+        // one for it (0x0814f1b6..0x0814f21a; bot-referee.js `requestSeat`).
+        page.requestHeldSeat?.();
       }
     }
   }
@@ -1176,6 +1289,9 @@ export function createPageInput(page) {
     // console is a keyboard surface and closing it should drop you straight
     // back into play — so the deltas are simply dropped.
     if (page.consoleCaptures()) return;
+    // A paused game turns no view: the deltas would all land on the first
+    // frame after it.
+    if (pageInput.gamePaused) return;
     if (pointerLocked()) {
       // Motion, a button edge, or both, decided off the `buttons` mask
       // against the last one seen (pointer-route.js): a held right button

@@ -25,7 +25,7 @@ import { existsSync, readFileSync, writeFileSync } from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { loadForBots, levelWalkFacts, flagsOf, spawnsOf, nearestFree, ORDER_SEARCH } from './botgen.mjs';
-import { components, STOREY } from './walkflood.mjs';
+import { components, serves, STOREY } from './walkflood.mjs';
 import { CHOKE_MAX, probeLevel, probeTools, wayStop } from './routeprobe.mjs';
 
 export { components };
@@ -271,7 +271,10 @@ export function slimFacts(facts) {
     cover: facts.cover, capped: facts.capped, joined: facts.joined ?? 0, mainPlaces: facts.mainPlaces, regions: facts.regions.length, objectFloor: facts.objectFloor,
     sidesMeet: facts.sidesMeet, ladders: facts.ladders,
     floors: facts.floors,
-    spawns: facts.spawns.map(s => ({ name: s.name, side: s.side, landed: s.landed, onMainGround: s.onMainGround, usable: s.usable, refused: s.refused, fall: s.fall, over: s.over, under: s.under })),
+    spawns: facts.spawns.map(s => ({ name: s.name, side: s.side, landed: s.landed, onMainGround: s.onMainGround, usable: s.usable,
+                                     resolved: s.resolved ?? null, exit: s.exit ?? null, sea: !!s.sea,
+                                     ...(s.carried ? { carried: s.carried, seats: !!s.seats } : {}),
+                                     refused: s.refused, fall: s.fall, over: s.over, under: s.under })),
     flags: facts.flags.map(f => ({ name: f.name, fixed: f.fixed, team: f.team, radius: f.radius, reachable: f.reachable, walked: !!f.inRing,
                                    onMainGround: !!f.onMainGround, poleLift: f.poleLift, over: f.over, under: f.under })),
   };
@@ -279,9 +282,10 @@ export function slimFacts(facts) {
 
 /**
  * The reach checks on the walk test's facts (`slimFacts`). A spawn serves
- * bots when it has a way to the main ground and no other floor under it; a
- * flag can be taken when a soldier on the map's main ground stands inside
- * its 3D radius.
+ * bots when it has a way to the main ground and no other floor under it
+ * (`walkflood.mjs serves`: on it within the page's start resolve, or a walk
+ * or a harmless drop onto it, never a seat in a vehicle); a flag can be
+ * taken when a soldier on the map's main ground stands inside its 3D radius.
  *
  * INVENTION: the retail engine has no such checks (a level with a sealed
  * base loads and its bots stand there). They are this tool's reading of what
@@ -290,7 +294,6 @@ export function slimFacts(facts) {
  */
 function lintWalk({ walk, flags, excluded, err, warn }) {
   const unreachable = [];
-  const serves = s => s.usable && s.over < STOREY;
   const takeable = f => f.reachable && f.over < STOREY;
   if (walk.capped) warn('reach', `the walk test ran out of room before the ground did: its findings cover part of the level${walk.joined ? `, and ${walk.joined} of its unfinished grounds are joined through the walk map` : ''}`);
   if (walk.floors?.stacked) err('floors', `the play surface is stacked floors (${walk.floors.reason}): a one-floor walk map cannot hold it`);
@@ -314,11 +317,22 @@ function lintWalk({ walk, flags, excluded, err, warn }) {
     if (!own.length) { err('reach', `side ${side} holds no spawn point at the start of the round`, 'no-spawn'); continue; }
     const good = own.filter(serves);
     if (!good.length) {
-      const sealed = own.filter(s => s.landed && !s.usable).length, air = own.filter(s => !s.landed).length;
-      const refused = own.filter(s => s.landed && !s.usable && s.refused).length;
-      err('reach', `side ${side} has no spawn with a route to any flag it must take: of its ${own.length} spawns ${sealed} have no way on foot to the main ground`
-        + (refused ? ` (${refused} stand on terrain the page's soldier refuses to climb: its normal there, read across a lattice cell, is past the slope limit)` : '')
-        + (air ? `, ${air} are in the air` : '') + (own.length - sealed - air ? `, ${own.length - sealed - air} stand over another floor` : '')
+      // What each spawn is: a seat in a vehicle, a hull or deck at sea, in the air, cut off on land, or over another floor.
+      const sea = own.filter(s => !s.landed && s.sea).length;
+      const seated = own.filter(s => s.seats && !(!s.landed && s.sea)).length;
+      const air = own.filter(s => !s.seats && !s.landed && !s.sea).length;
+      const cutOff = own.filter(s => !s.seats && s.landed && !s.usable && s.resolved == null && !s.exit);
+      const refused = cutOff.filter(s => s.refused).length;
+      const over = own.length - seated - sea - air - cutOff.length;
+      const parts = [];
+      if (cutOff.length) parts.push(`${cutOff.length} have no way on foot to the main ground`
+        + (refused ? ` (${refused} stand on terrain the page's soldier refuses to climb: its normal there, read across a lattice cell, is past the slope limit)` : ''));
+      if (sea) parts.push(`${sea} start at sea, on a ship or landing craft over water deeper than a soldier wades`);
+      if (seated) parts.push(`${seated} seat their soldier in a vehicle (a half-track, a plane, a landing craft on the beach) and are no spawn on foot`);
+      if (air) parts.push(`${air} are in the air`);
+      if (over) parts.push(`${over} stand over another floor`);
+      const atSea = sea + seated === own.length ? `: the side starts at sea or in its vehicles, ` : ': ';
+      err('reach', `side ${side} has no spawn with a route to any flag it must take${atSea}of its ${own.length} spawns ${parts.join(', ')}`
         + (walk.ladders ? `; the level places ${walk.ladders} ladders, which neither the walk test nor a bot climbs` : ''), 'sealed');
     } else if (must.length && !must.some(takeable)) {
       err('reach', `side ${side} has no spawn with a route to any flag it must take: none of the ${must.length} flags it does not hold can be reached`, 'no-route');
@@ -373,7 +387,7 @@ export async function lintLevel({ maps, models = null, map, source = null }) {
     const inPlay = extras.ai.strategicAreas.filter(a => !fixed.has(a.name.toLowerCase()) && order(a))
       .map(a => ({ name: a.name, order: order(a), neighbours: a.neighbours ?? [] }));
     const sideOf = new Map(spawnsOf(extras).map(sp => [sp.name, sp]));
-    const starts = fullWalk.spawns.filter(sp => sp.usable && sp.over < STOREY && (sp.side === 1 || sp.side === 2) && sideOf.has(sp.name))
+    const starts = fullWalk.spawns.filter(sp => serves(sp) && (sp.side === 1 || sp.side === 2) && sideOf.has(sp.name))
       .map(sp => ({ side: sp.side, x: sideOf.get(sp.name).x, z: sideOf.get(sp.name).z }));
     probe = probeLevel(await probeTools(), grid, { areas: inPlay, spawns: starts });
   }
@@ -391,11 +405,12 @@ export async function lintLevel({ maps, models = null, map, source = null }) {
       ? liveStrategiesAtStart({ StrategicLayer: M.StrategicLayer, StrategicAI: M.StrategicAI, ai: extras.ai, flags: world.flags, candidateMin: M.SAI?.candidateMin ?? 0.1 })
       : null,
   });
-  // The kits: a level whose bots would hold the stand-in weapon is not judged.
+  // The kits: a level whose bots would hold the stand-in weapon is not judged. The message names the file
+  // within the tree, never its absolute path: the text is kept in verdict.json, and a path names a machine.
   const loadoutsFile = path.join(maps, '_shared', 'loadouts.json');
   const kits = kitsDealt(existsSync(loadoutsFile) ? JSON.parse(readFileSync(loadoutsFile, 'utf8')) : null, map);
   if (kits.missing.length) {
-    res.errors.push({ check: 'kits', text: `no kit for ${kits.missing.map(s => (s === 1 ? 'Axis' : 'Allies')).join(' or ')} in ${loadoutsFile}: `
+    res.errors.push({ check: 'kits', text: `no kit for ${kits.missing.map(s => (s === 1 ? 'Axis' : 'Allies')).join(' or ')} in the tree's _shared/loadouts.json: `
       + 'the bots would fire the stand-in weapon; refresh the tree\'s loadouts.json from the published one' });
   }
   res.facts = { ...(res.facts ?? {}), kits: kits.sides };

@@ -8,7 +8,7 @@
 // Run by `tests/test_strategic.py`. One JSON object on stdout.
 
 import fs from 'node:fs';
-import { StrategicLayer, StrategicAI, compareCondition, SAI } from './strategic.js';
+import { StrategicLayer, StrategicAI, compareCondition, SAI, wantedStrength } from './strategic.js';
 import { captureReach, captureStandRadius } from './control-point-law.js';
 
 const scenePath = process.argv[2];
@@ -349,7 +349,47 @@ const captureOnly = {
   controlPoints: { neutralSeas, axisSeas },
   salerno: bindings(salerno),
 };
+// `AIStrategicArea::update` 0x0863d6d0, the wanted strength (AI-168).
+const soldier = { strategic: [1, 1], health: 1 };
+const wanted = {
+  ownedEmpty: wantedStrength(true, []),
+  ownedThree: wantedStrength(true, [soldier, soldier, soldier]),
+  // A Sherman (3 / 3) and its top gun (1 / 1) at 0.6 health: trunc(1.8) = 1,
+  // then trunc(1 + 0.6) = 1, so 2 x 1.
+  ownedHurtTank: wantedStrength(true, [{ strategic: [3, 3], health: 0.6 }, { strategic: [1, 1], health: 0.6 }]),
+  // A Willy counts on the attack (1) and not on the defence (0).
+  ownedWilly: wantedStrength(true, [{ strategic: [1, 0], health: 1 }, { strategic: [1, 0], health: 1 }, { strategic: [1, 0], health: 1 }]),
+  attackWilly: wantedStrength(false, [{ strategic: [1, 0], health: 1 }, { strategic: [1, 0], health: 1 }, { strategic: [1, 0], health: 1 }], 0, 24),
+  attackEmpty: wantedStrength(false, []),
+  attackUnopposed: wantedStrength(false, [], 16, 0),
+  attackEven: wantedStrength(false, [soldier, soldier, soldier, soldier], 32, 32),
+  attackOutnumbered: wantedStrength(false, [soldier, soldier, soldier, soldier], 8, 32),
+  // The pass itself: three Axis soldiers stand in a neutral area, one Allied
+  // soldier with them; then the Allies no longer know two of them.
+  ...(() => {
+    const layer = new StrategicLayer({
+      strategicAreas: [{ name: 'Mid', min: [450, -550], max: [550, -450], radius: 100, neighbours: [], flags: [],
+        orderPositions: { Infantery: [500, -500] }, side: 0 }],
+      conditions: [], prerequisites: [], strategies: [], sideStrategies: { 1: [], 2: [] },
+    }, [{ name: 'Mid', position: [500, 0, -500], team: 0, uncapturable: false }]);
+    let hidden = new Set();
+    const sai = new StrategicAI(layer, { random: () => 0.5,
+      sampleOf: (id, toSide) => hidden.has(id) && toSide === 1 ? null
+        : { strategic: [1, 1], health: 1, strength: 8, security: 1 } });
+    const mid = layer.areas.find(a => a.name === 'Mid');
+    const c = layer.orderPosition(mid);
+    const alive = new Map();
+    for (const [id, side] of [['a1', 1], ['x1', 2], ['x2', 2], ['x3', 2]]) { sai.addBot(id, side); alive.set(id, [c[0], 0, c[1]]); }
+    sai.beginPass(alive);
+    const st = sai.areaState.get(mid);
+    const passSeen = [st[1].wanted, st[2].wanted];
+    hidden = new Set(['x2', 'x3']);
+    sai.beginPass(alive);
+    return { passSeen, passHidden: [st[1].wanted, st[2].wanted] };
+  })(),
+};
 const pins = {
+  wanted,
   air, orderInside, prereq, presence, airHold, captureOnly, captureRing,
   corner: ia.corner, centre: ia.centre, min: ia.min, max: ia.max, sideRadius: +ia.sideRadius.toFixed(3),
   cpInside: island.isInside(ia, 838, -722), r0, r1: r1.map(v => +v.toFixed(3)),

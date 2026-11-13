@@ -249,3 +249,20 @@ counts above were on the old x-by-speed grid; on the L9 they are:
   Survival stays **yes** on the Dip; the line says holding the upper hand does not follow.
 - `test_dogfight_shape_height.mjs` still flies the old grid for the lesson's first three
   demos: its loop is shared with Boom and zoom, so it is left to whoever owns that file.
+
+
+## On retail g and box area (2026-11-12)
+
+Re-flown on the final law (gravity `Math.fround(-14.73)`, box-drag area
+`3.14 * 0.25`; `features/retail-parity-cross-check-2026-11-12`). 
+
+- **Flip 6/9** as before: reversed in eight, the turn back to 27-33 m/s and
+  298-326 m behind; the dive from above now shoots him down in four (two
+  before), lands too little in one (0.4 s), and in one never comes within
+  reach.
+- **Ninja 1/9 -> 2/9 (claim rewritten).** A second start's dive finishes him
+  (down at 56.1 s) beside STARTS[0] (62.7 s). Three more land a burst and
+  live (a second burst in two; 20 s or more near him without one in all
+  three), four land nothing; the longest circling 10.7 s. Not retuned back
+  to one: the move working once more is what was flown, and the category is
+  still "no".

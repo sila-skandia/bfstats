@@ -1,0 +1,63 @@
+{
+ "level": "gc_lok",
+ "verdict": "fail",
+ "outcome": "no-fight",
+ "config": "with vehicles",
+ "doctrine": "garrison",
+ "generatorVersion": 6,
+ "inputs": {
+  "controlPoints": "7eeddadb80548bb53f153cfbd21f858a36d7d03ce194358edc8d30824830340b",
+  "infantryMap": "67201acf6c29e149dd4f5d890b112765d6d98e4b4eb0f3b21aefe24f9ad140b4",
+  "template": "43f8a790471528016570235f76e97dbb2045732458781a5139f37fed68bf98c0"
+ },
+ "baseline": "DICE layers with vehicles, garrison doctrine: berlin, stalingrad, kharkov, bocage; seeds 1..10, 600 s",
+ "bar": {
+  "against": "dice",
+  "why": "no bar of gcmod's own: DICE's"
+ },
+ "seeds": 1,
+ "sizes": {
+  "8": {
+   "verdict": "fail",
+   "failed": [
+    "selfDeathsPerBotMinute",
+    "enemyKillsPerBotMinute",
+    "bothSidesCapture",
+    "bothSidesKill",
+    "nonEnemyDeathShareWorseSide",
+    "unitsNeverUsedShare"
+   ],
+   "winners": [
+    1,
+    0,
+    0
+   ]
+  },
+  "16": {
+   "verdict": "fail",
+   "failed": [
+    "selfDeathsPerBotMinute",
+    "enemyKillsPerBotMinute",
+    "nonEnemyDeathShareWorseSide",
+    "hullStuckSecondsPerDrivingMinute",
+    "hullStuckSecondsPerDrivingMinuteWorseSide",
+    "unitsNeverUsedShare"
+   ],
+   "winners": [
+    0,
+    1,
+    0
+   ]
+  }
+ },
+ "oneSided": null,
+ "unreachable": [],
+ "lintErrors": [
+  "the play surface is stacked floors (3 of 5 capturable flags stand a storey over or under another walked floor): a one-floor walk map cannot hold it"
+ ],
+ "acceptanceWithdrawn": {
+  "because": "page matches 2026-11-12: 0.24 then 0.34 deaths a bot-minute by the bots' own hand against 0.04 and 0.025 enemy kills; under the rollout floor",
+  "date": "2026-11-12",
+  "was": "Owner's rollout, 2026-11-12: the owner imported Galactic Conquest and asked for "
+ }
+}

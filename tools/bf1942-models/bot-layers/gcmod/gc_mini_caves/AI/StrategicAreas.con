@@ -1,0 +1,51 @@
+rem *** Strategic areas: one per control point (botgen) ***
+
+aiStrategicArea.create Rebel_Base 417.7/472.3 427.7/482.3 50
+aiStrategicArea.addNeighbour Upper_Bridge_Rebel_Side
+aiStrategicArea.addObjectTypeFlag Base
+aiStrategicArea.setOrderPosition Tank 429.5/478.5
+aiStrategicArea.setOrderPosition Infantry 427.7/482.3
+aiStrategicArea.setSide 2
+aiStrategicArea.setTakeable 1 0
+
+aiStrategicArea.create Upper_Bridge_Rebel_Side 388.1/548.5 398.1/558.5 200
+aiStrategicArea.addNeighbour Rebel_Base
+aiStrategicArea.addNeighbour Lower_Bridge_Rebel_Side
+aiStrategicArea.addObjectTypeFlag Centre
+aiStrategicArea.addObjectTypeFlag Close
+aiStrategicArea.addObjectTypeFlag ControlPoint
+aiStrategicArea.setOrderPosition Tank 394.5/556.5
+aiStrategicArea.setOrderPosition Infantry 398.1/558.5
+
+aiStrategicArea.create Lower_Bridge_Rebel_Side 437.1/581.3 447.1/591.3 200
+aiStrategicArea.addNeighbour Upper_Bridge_Rebel_Side
+aiStrategicArea.addNeighbour Lower_Bridge_Imperial_Side
+aiStrategicArea.addObjectTypeFlag Centre
+aiStrategicArea.addObjectTypeFlag ControlPoint
+aiStrategicArea.setOrderPosition Tank 424.5/588.5
+aiStrategicArea.setOrderPosition Infantry 447.1/591.3
+
+aiStrategicArea.create Lower_Bridge_Imperial_Side 440/631.2 450/641.2 150
+aiStrategicArea.addNeighbour Lower_Bridge_Rebel_Side
+aiStrategicArea.addNeighbour Upper_Bridge_Imperial_Side
+aiStrategicArea.addObjectTypeFlag Flank
+aiStrategicArea.addObjectTypeFlag ControlPoint
+aiStrategicArea.setOrderPosition Infantry 450/641.2
+
+aiStrategicArea.create Upper_Bridge_Imperial_Side 384.3/649.6 394.3/659.6 300
+aiStrategicArea.addNeighbour Lower_Bridge_Imperial_Side
+aiStrategicArea.addNeighbour Imperial_Base
+aiStrategicArea.addObjectTypeFlag Centre
+aiStrategicArea.addObjectTypeFlag StrongPoint
+aiStrategicArea.addObjectTypeFlag Close
+aiStrategicArea.addObjectTypeFlag ControlPoint
+aiStrategicArea.setOrderPosition Tank 390.5/661.5
+aiStrategicArea.setOrderPosition Infantry 394.5/658.5
+
+aiStrategicArea.create Imperial_Base 384.4/756.5 394.4/766.5 50
+aiStrategicArea.addNeighbour Upper_Bridge_Imperial_Side
+aiStrategicArea.addObjectTypeFlag Base
+aiStrategicArea.setOrderPosition Tank 390.5/764.5
+aiStrategicArea.setOrderPosition Infantry 394.4/766.5
+aiStrategicArea.setSide 1
+aiStrategicArea.setTakeable 2 0

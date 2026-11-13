@@ -103,44 +103,53 @@ class BreakTurnSurvivalTests(unittest.TestCase):
     def test_the_dip_is_never_hit_and_he_gives_up(self) -> None:
         # "In all nine his guns never have you and none of his rounds lands:
         # he follows you up, slows, chases your run without closing and
-        # gives it up 27 to 28 s in (41 s in one, where you wait longer over
-        # the top); at 50 s you are 1.4 to 2.9 km apart and opening."
+        # gives it up 27 to 28 s in (40 s in one, where you wait longer over
+        # the top); at 50 s you are 1.3 to 2.9 km apart and opening."
+        # re-pinned 2026-11-12 on retail g and box area
+        # (features/retail-parity-cross-check-2026-11-12): the late one let go at 41 s and
+        # was 1.4 km away at 50 s; now 40.4 s and 1,354 m.
         scores = self.demo("dip")["scores"]
         for s in scores:
             self.assertTrue(s["ok"], s)
             self.assertEqual(0, s["hitsAll"], s)
             self.assertEqual(0, s["hisShot"], s)
-            self.assertGreaterEqual(s["endRange"], 1400, s)
+            self.assertGreaterEqual(s["endRange"], 1300, s)
             self.assertLessEqual(s["endRange"], 2950, s)
             # No hanging at the top of the zoom.
             self.assertEqual(0, s["hang"], s)
         lets = sorted(s["letGoT"] for s in scores)
         self.assertGreaterEqual(lets[0], 26.5)
         self.assertLessEqual(lets[-2], 28.5)
-        self.assertEqual(41, round(lets[-1]))
+        self.assertEqual(40, round(lets[-1]))
 
     def test_the_flip_shoots_at_him_but_never_from_behind_in_time(self) -> None:
         # "you put rounds on him in 6 of 9 (up to 20), but the dives meet him
         # from the side or the front: 2 s in his rear quarter only twice, 20
-        # and 27 s after the zoom. In five a dive passes him inside 15 m, in
-        # three he hits you (1 to 3 rounds), and in one he never sits close
+        # 27 and 31 s after the zoom. In five a dive passes him inside 15 m,
+        # in one he hits you (5 rounds), and in one he never sits close
         # enough behind you to zoom from."
+        # Re-tuned 2026-11-12 on retail g and box area
+        # (features/retail-parity-cross-check-2026-11-12): off him, the nose
+        # now comes up for a moment (btFlip `minUp`); it was in his rear
+        # quarter twice (20, 27 s) and hit three times (1, 1, 3).
         scores = self.demo("flip")["scores"]
         flown = [s for s in scores if s["t0"] is not None]
         self.assertEqual(8, len(flown))
         self.assertEqual(6, sum(1 for s in flown if s["hitsOnHim"]))
         self.assertEqual(20, max(s["hitsOnHim"] for s in flown))
-        self.assertEqual([20, 27], sorted(int(s["flipAt"] - s["t0"]) for s in flown if s["flipAt"] is not None))
+        self.assertEqual([20, 27, 31], sorted(int(s["flipAt"] - s["t0"]) for s in flown if s["flipAt"] is not None))
         self.assertEqual(5, sum(1 for s in flown if s["minRange"] <= 15))
-        self.assertEqual([1, 1, 3], sorted(s["hitsAll"] for s in scores if s["hitsAll"]))
+        self.assertEqual([5], sorted(s["hitsAll"] for s in scores if s["hitsAll"]))
 
     def test_the_ninja_never_gives_him_a_chance_and_never_gets_the_dive(self) -> None:
         # "in all 9 his guns never have you and he never sits on your six,
         # but over the top his nose never leaves you, so the dive never
         # comes and you never fire. You leave, and he gives the chase up 27
-        # to 28 s in (41 s in one): 1.4 to 2.9 km apart at 50 s."
+        # to 28 s in (40 s in one): 1.3 to 2.9 km apart at 50 s."
+        # re-pinned 2026-11-12 on retail g and box area
+        # (features/retail-parity-cross-check-2026-11-12): 41 s and 1.4 km before.
         scores = self.demo("ninja")["scores"]
-        self.assertEqual(41, round(max(s["letGoT"] for s in scores)))
+        self.assertEqual(40, round(max(s["letGoT"] for s in scores)))
         for s in scores:
             # Flown long enough that what follows is seen, not assumed.
             self.assertGreaterEqual(s["flown"], 45, s)
@@ -150,7 +159,7 @@ class BreakTurnSurvivalTests(unittest.TestCase):
             self.assertEqual(0, s["attacks"], s)
             self.assertEqual(0, s["myShot"], s)
             self.assertGreaterEqual(s["letGoT"], 26.5, s)
-            self.assertGreaterEqual(s["endRange"], 1400, s)
+            self.assertGreaterEqual(s["endRange"], 1300, s)
             self.assertLessEqual(s["endRange"], 2950, s)
 
 

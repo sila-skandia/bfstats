@@ -1,0 +1,22 @@
+{
+ "level": "bombing_the_reich-1945",
+ "verdict": "fail",
+ "outcome": "unsuitable",
+ "config": "with vehicles",
+ "doctrine": "garrison",
+ "generatorVersion": 5,
+ "inputs": {
+  "controlPoints": "0343c38f75912b09645b0b9972e036850fc41891bde5b63a853933a4b77260c5",
+  "infantryMap": "40aa68258c966d1a7928dc5b31e6a5487ce905cf41ebf5023870deed5ad5a06d",
+  "template": "bdc0e455f47f91b7e7724e71d7c0c196e839b36946ac3abb7663d725944081e5"
+ },
+ "baseline": "DICE layers with vehicles, garrison doctrine: berlin, stalingrad, kharkov, bocage; seeds 1..10, 600 s",
+ "bar": null,
+ "seeds": 1,
+ "sizes": {},
+ "oneSided": null,
+ "unreachable": [],
+ "lintErrors": [
+  "side 2 has no spawn with a route to any flag it must take: of its 6 spawns 6 have no way on foot to the main ground; the level places 7 ladders, which neither the walk test nor a bot climbs"
+ ]
+}

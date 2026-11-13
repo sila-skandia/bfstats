@@ -1,0 +1,25 @@
+rem *** Strategic areas: one per control point (botgen) ***
+
+aiStrategicArea.create Imperial_Platform 757.1/989.3 772.1/1004.3 10
+aiStrategicArea.setTakeable 1 0
+aiStrategicArea.setTakeable 2 0
+
+aiStrategicArea.create Rebel_Platform 1225.6/989.3 1240.6/1004.3 10
+aiStrategicArea.setTakeable 1 0
+aiStrategicArea.setTakeable 2 0
+
+aiStrategicArea.create Imperial_Bridge 866.9/947.8 881.9/962.8 10
+aiStrategicArea.setTakeable 1 0
+aiStrategicArea.setTakeable 2 0
+
+aiStrategicArea.create Rebel_Tower 1132.1/1031 1147.1/1046 10
+aiStrategicArea.setTakeable 1 0
+aiStrategicArea.setTakeable 2 0
+
+aiStrategicArea.create Central_Platform 997.1/1036.4 1006.1/1045.4 10
+aiStrategicArea.setTakeable 1 0
+aiStrategicArea.setTakeable 2 0
+
+aiStrategicArea.create Court_Yard 986/893.1 1006/913.1 10
+aiStrategicArea.setTakeable 1 0
+aiStrategicArea.setTakeable 2 0

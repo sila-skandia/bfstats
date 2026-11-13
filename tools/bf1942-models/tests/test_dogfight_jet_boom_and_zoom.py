@@ -180,11 +180,12 @@ class BoomAndZoomOnAJetTests(unittest.TestCase):
         # "perched at 730 m, 372 m over you"
         for demo in ("move", "counter"):
             self.assertTrue(all(r["start"] == [730, 358] for r in self.nine(demo)), demo)
-        # "They dive from 338 to 356 m above you, 587 to 621 m out, and one
+        # "They dive from 338 to 356 m above you, 589 to 621 m out, and one
         # burst lands 15 to 23 rounds."
         first = [r["passes"][0] for r in self.nine("move")]
         self.assertEqual((338, 356), spread([p["above"] for p in first]))
-        self.assertEqual((587, 621), spread([p["range"] for p in first]))
+        # re-pinned 2026-11-12 on retail g and box area (features/retail-parity-cross-check-2026-11-12)
+        self.assertEqual((589, 621), spread([p["range"] for p in first]))
         self.assertEqual((15, 23), spread([p["hits"] for p in first]))
 
     def test_the_pilot_who_never_looks_up_is_shot_down(self) -> None:
@@ -199,10 +200,11 @@ class BoomAndZoomOnAJetTests(unittest.TestCase):
 
     def test_as_written_the_lessons_burst_leaves_them_alive(self) -> None:
         # The lesson with no jet file on the F-16 (a 0.6 s burst): one shot
-        # down in nine, the rest hit 11 to 21 times.
+        # down in nine, the rest hit 15 to 21 times.
         base = jet_lesson("boom-and-zoom", demo="move", base=True)["demos"]["move"]
         self.assertEqual(1, shot_down(base, 1))
-        self.assertEqual((11, 21), spread([r["hits"][0] for r in base if r["winner"] is None]))
+        # re-pinned 2026-11-12 on retail g and box area (features/retail-parity-cross-check-2026-11-12)
+        self.assertEqual((15, 21), spread([r["hits"][0] for r in base if r["winner"] is None]))
 
     def test_meeting_the_dive_is_never_hit(self) -> None:
         # "they pull out and zoom off without firing a round"
@@ -229,18 +231,19 @@ class BoomAndZoomOnAJetTests(unittest.TestCase):
         self.assertTrue(all(s["passes"][0]["t"] == 0 for s in scores))
         # "Out in all nine and never hit: their guns never bore on you. They
         # dive after you once more, 16 s in, from 1.7 to 1.8 km back and only
-        # 146 to 189 m above you, never get within 798 m, and give up the
-        # chase 19.5 to 20.4 s in. At 90 s you are 16.8 to 17.3 km apart, you
+        # 153 to 189 m above you, never get within 798 m, and give up the
+        # chase 19.6 to 20.4 s in. At 90 s you are 16.8 to 17.3 km apart, you
         # at 770 m and 128 m/s."
         self.assertTrue(all(s["ok"] and s["hitsOnMe"] == 0 and s["hisShot"] == 0 and s["hits"] == [0, 0] for s in scores), scores)
         self.assertTrue(all(len(s["passes"]) == 2 for s in scores))
         again = [s["passes"][1] for s in scores]
         self.assertTrue(all(16 <= p["t"] < 17 for p in again), again)
-        self.assertEqual((1736, 1828), spread([p["range"] for p in again]))
-        self.assertEqual((146, 189), spread([p["above"] for p in again]))
+        # re-pinned 2026-11-12 on retail g and box area (features/retail-parity-cross-check-2026-11-12)
+        self.assertEqual((1732, 1828), spread([p["range"] for p in again]))
+        self.assertEqual((153, 189), spread([p["above"] for p in again]))
         self.assertEqual((798, 827), spread([s["closestAfter"] for s in scores]))
-        self.assertEqual((19.5, 20.4), spread([entered(s["acePhases"], "let-go")[0] for s in scores]))
-        self.assertEqual((16835, 17321), spread([s["endRange"] for s in scores]))
+        self.assertEqual((19.6, 20.4), spread([entered(s["acePhases"], "let-go")[0] for s in scores]))
+        self.assertEqual((16837, 17327), spread([s["endRange"] for s in scores]))
         self.assertTrue(all(s["end"][1] == 770 and s["endSpeeds"][1] == 128 for s in scores), [(s["end"], s["endSpeeds"]) for s in scores])
 
     def test_run_low_as_a_spitfire_does_and_they_follow_you_down(self) -> None:
@@ -290,7 +293,8 @@ class BoomAndZoomOnAJetTests(unittest.TestCase):
         self.assertFalse(any(entered(s["myPhases"], "ninja-dive") for s in scores))
         self.assertEqual((7.9, 10.1), spread([entered(s["myPhases"], "ninja-run")[0] for s in scores]))
         self.assertTrue(all(s["hits"] == [0, 0] and s["myShot"] == 0 and s["hisShot"] == 0 for s in scores))
-        self.assertEqual((1715, 3176), spread([s["endRange"] for s in scores]))
+        # re-pinned 2026-11-12 on retail g and box area (features/retail-parity-cross-check-2026-11-12)
+        self.assertEqual((1702, 3178), spread([s["endRange"] for s in scores]))
 
     def test_the_survival_verdict_follows_from_the_three(self) -> None:
         verdicts = [self.jet["l9"][m]["measured"]["verdict"] for m in ("dip", "flip", "ninja")]
@@ -335,7 +339,8 @@ class BoomAndZoomOnTheMig29Tests(unittest.TestCase):
     def test_the_pilot_who_never_looks_up_is_shot_down_in_two(self) -> None:
         rows = self.mig["nine"]["move"]
         self.assertEqual(2, sum(1 for r in rows if r["winner"] == 0))
-        self.assertEqual((10, 20), spread([r["hits"][0] for r in rows if r["winner"] is None]))
+        # re-pinned 2026-11-12 on retail g and box area (features/retail-parity-cross-check-2026-11-12)
+        self.assertEqual((8, 20), spread([r["hits"][0] for r in rows if r["winner"] is None]))
         self.assertTrue(all(r["passes"][0]["hits"] == 0 for r in rows), [r["passes"][0] for r in rows])
 
     def test_nobody_is_hit_meeting_the_dive_and_no_move_works(self) -> None:

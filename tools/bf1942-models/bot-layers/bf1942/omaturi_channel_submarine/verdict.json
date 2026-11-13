@@ -1,0 +1,23 @@
+{
+ "level": "omaturi_channel_submarine",
+ "verdict": "fail",
+ "outcome": "unsuitable",
+ "config": "with vehicles",
+ "doctrine": "garrison",
+ "generatorVersion": 5,
+ "inputs": {
+  "controlPoints": "f6ab0220425c41e57c268a4b2c339f68d0794e2f8cdd8e66c7c30d57bd50b947",
+  "infantryMap": "5d2bafc266e711ed1e303de871e5b281fea2083d96e579dd504798bba5a34b42",
+  "template": "bdc0e455f47f91b7e7724e71d7c0c196e839b36946ac3abb7663d725944081e5"
+ },
+ "baseline": "DICE layers with vehicles, garrison doctrine: berlin, stalingrad, kharkov, bocage; seeds 1..10, 600 s",
+ "bar": null,
+ "seeds": 1,
+ "sizes": {},
+ "oneSided": null,
+ "unreachable": [],
+ "lintErrors": [
+  "side 1 holds no spawn point at the start of the round",
+  "side 2 holds no spawn point at the start of the round"
+ ]
+}

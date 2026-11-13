@@ -441,15 +441,19 @@ export function flagSide(flag) {
  * removes it from the manager): `hull-bodies.js` `bindCarriers` gives such a
  * point a live `absent`. A flag's static points never leave.
  *
+ * `absent(spawn)`, when given, answers the same for a host that keeps the
+ * carriers' state apart from the scene's shared entries (the room server,
+ * `level-instance.mjs` `carriedPointGone`).
+ *
  * Returns `{ 1: { groups, canGet }, 2: { groups, canGet } }`.
  */
-export function spawnGroupCensus(flags) {
+export function spawnGroupCensus(flags, { absent = null } = {}) {
   const groups = new Map();
   for (const flag of flags ?? []) {
     if (!flag || flag.captureOnly) continue;
     const teams = flag.groupTeams ?? null;
     for (const spawn of flag.ownedSpawns ?? flag.spawns ?? []) {
-      if (spawn?.group == null || spawn.absent) continue;
+      if (spawn?.group == null || spawn.absent || absent?.(spawn)) continue;
       let entry = groups.get(spawn.group);
       if (!entry) {
         const raw = teams ? teams[spawn.group] : (flag.team ?? spawn.team);

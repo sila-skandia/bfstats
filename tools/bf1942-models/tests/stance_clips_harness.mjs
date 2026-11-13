@@ -92,7 +92,8 @@ out.chainTails = {};
 for (const [role, byStance] of Object.entries(STANCE_CHAINS)) {
   // `bolt` is the one role with no original family to fall to: a rig that
   // bakes no bolt cycle has none to play (FH / FHSW's BoltOperate states).
-  if (role === 'bolt') continue;
+  // `eject` likewise: only a weapon that throws its clip bakes one.
+  if (role === 'bolt' || role === 'eject') continue;
   for (const [stance, chain] of Object.entries(byStance)) {
     out.chainTails[`${role}.${stance}`] = chain[chain.length - 1];
   }

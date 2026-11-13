@@ -461,21 +461,21 @@ class SimVehicleTests(unittest.TestCase):
         assert assets is not None
         r = recipe("downedAir")
         self.assertEqual(r["template"], "Spitfire")
-        self.assertGreater(r["deathAgl"], 100.0, f"killed in the air: {r}")
+        self.assertGreater(r["deathAgl"], 20.0, f"killed in the air: {r}")
         self.assertTrue(r["flying"], "the destroyed hull joins the wreck list (world.falling)")
         self.assertFalse(r["frozen"], "a flying hull is not frozen as a parked static")
         self.assertFalse(r["stillMounted"], "the AI pilot is out of it")
-        self.assertGreater(r["fellBy"], 80.0, f"it comes down: {r}")
+        self.assertGreater(r["fellBy"], 10.0, f"it comes down: {r}")
         self.assertIsNotNone(r["crashAfter"])
         self.assertGreater(r["crashAfter"], 2.0, "the fall is flown, not a one-tick drop")
-        # Dead, not pilotless. Killed at cruise (the run places it in level
-        # flight at 200 m), a hull that keeps its lift glides for the best part
-        # of a minute and wrecks a kilometre downrange, which is what "the
-        # wreck never happened" looked like from the cockpit.
-        # Tight on purpose: 15 s and 400 m pass a glide, which is the bug this
-        # assertion exists for. Measured 3.7-3.9 s and 50-74 m.
-        self.assertLess(r["crashAfter"], 8.0, f"it comes down, it does not glide: {r}")
-        self.assertLess(r["drift"], 150.0, f"it wrecks near where it was killed: {r}")
+        # A wreck is the same airframe with its engine stopped (HP-15, HP-24;
+        # `tests/test_plane_wreck.py` has the law): killed in level flight at
+        # 30 m it glides to the ground well inside its 10 s to live (HP-19) and
+        # several times its height downrange. The fall this replaces came down
+        # at 55 degrees, 50-74 m from the kill.
+        self.assertLess(r["crashAfter"], 9.5, f"it reaches the ground before its clock runs out: {r}")
+        self.assertFalse(r["removedInAir"], r)
+        self.assertGreater(r["drift"], 2.0 * r["fellBy"], f"it glides, it does not drop: {r}")
         self.assertLess(r["crashAgl"], 5.0, "and it ends on the ground, not in the air")
         self.assertEqual(len(r["wrecked"]), 1)
         self.assertEqual(r["wrecked"][0]["template"], "Spitfire", "the wreck is the hull's own template")
@@ -507,6 +507,24 @@ class SimVehicleTests(unittest.TestCase):
         self.assertEqual(intact, [], f"the intact mesh is still drawn: {r['shownChildren']}")
         self.assertIn(r["wreckNode"], r["shownChildren"], "and the wreck is what is drawn")
 
+    def test_a_plane_shot_down_high_is_removed_in_the_air(self) -> None:
+        # HP-19: a destroyed object lasts its `timeToLiveAfterDeath` from the
+        # kill, 10 s on an aircraft, wherever it is. From 200 m the glide
+        # outlasts it, so the wreck fades and goes in the air, hundreds of
+        # metres on from where it was hit (Wake's Zero: 10.03 s, 406 m, 73 m up).
+        r = recipe("downedAirHigh")
+        self.assertGreater(r["deathAgl"], 150.0, f"killed high: {r}")
+        self.assertTrue(r["flying"], r)
+        self.assertTrue(r["removedInAir"], f"the clock takes it before the ground does: {r}")
+        self.assertAlmostEqual(r["crashAfter"], 10.0, delta=0.5, msg=f"{r}")
+        # Above the ground when the clock takes it. How far above depends on
+        # the stick the pilot held at the kill, which the wreck keeps: a Zero
+        # flown level on Wake went at 73 m, a Spitfire rolled hard over at
+        # its kill (stick -0.8) went at 7 m.
+        self.assertGreater(r["crashAgl"], 0.0, f"still in the air: {r}")
+        self.assertGreater(r["drift"], 250.0, f"it glided on along its heading: {r}")
+        self.assertIsNone(r["wreckNode"], "nothing is left to stand a wreck model on")
+
     def test_a_bf109_shot_down_over_bocage_comes_down_and_wrecks(self) -> None:
         # The report this fix answers: a 109 killed in the air over Bocage kept
         # its intact model while the owner's Mustang did not. The Spitfire run
@@ -519,12 +537,12 @@ class SimVehicleTests(unittest.TestCase):
         assert assets is not None
         r = recipe("downedAir109")
         self.assertEqual(r["wrecked"][0]["template"], "BF109", f"the hull's own template: {r}")
-        self.assertGreater(r["deathAgl"], 80.0, f"killed in the air: {r}")
+        self.assertGreater(r["deathAgl"], 20.0, f"killed in the air: {r}")
         self.assertTrue(r["flying"], "it joins the wreck list")
         self.assertFalse(r["frozen"], "and is not parked where it was hit")
-        self.assertGreater(r["fellBy"], 60.0, f"it comes down: {r}")
-        self.assertLess(r["crashAfter"], 8.0, f"it comes down, it does not glide: {r}")
-        self.assertLess(r["drift"], 150.0, f"the wreck lands near the kill: {r}")
+        self.assertGreater(r["fellBy"], 10.0, f"it comes down: {r}")
+        self.assertLess(r["crashAfter"], 9.5, f"it is down before its time to live: {r}")
+        self.assertGreater(r["drift"], 2.0 * r["fellBy"], f"it glides, it does not drop: {r}")
         self.assertLess(r["crashAgl"], 5.0, f"the crash is on the ground: {r}")
         self.assertEqual(r["loadedScene"], True, f"its wreck glb did not parse: {r['loadError']}")
         self.assertEqual(r["wreckNode"], "wreck:BF109", f"no wreck model on the hull: {r}")

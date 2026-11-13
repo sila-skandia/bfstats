@@ -1,0 +1,1270 @@
+{
+ "generator": "botgen",
+ "version": 6,
+ "mod": "FHSW",
+ "level": "ilomantsi-1944",
+ "objectSpawners": 212,
+ "template": "symmetric",
+ "templateSource": "DICE, bf1942 Kharkov (1.6 patch archives): AI/Strategies.con, AI/conditions.con, AI/prerequisites.con, unchanged",
+ "templateChoice": {
+  "name": "symmetric",
+  "inPlay": 5,
+  "rule": "5 capturable flags in play, more than 3"
+ },
+ "scope": "an infantry map from the page painter with the walk test's ways out opened, a Tank0 map from the page painter, infantry order positions, no strategic maps, no co-op layer",
+ "unreachable": [],
+ "unreachableReasons": {},
+ "botSpawnsExcluded": [
+  "utriovaara_spawn7",
+  "ruukinpohja_spawn3",
+  "ruukinpohja_spawn7",
+  "Kuuksenvaara_spawn3",
+  "church_spawn1",
+  "church_spawn2"
+ ],
+ "walkMap": {
+  "source": "page painter",
+  "engine": "none",
+  "vehicleMap": "page painter",
+  "vehicleBrush": 1.5,
+  "vehicleBrushes": [
+   {
+    "brush": 3,
+    "flagsOn": 3,
+    "spawnersOn": 79,
+    "pieces": 29,
+    "main": 1991464
+   },
+   {
+    "brush": 2.5,
+    "flagsOn": 6,
+    "spawnersOn": 115,
+    "pieces": 14,
+    "main": 2224022
+   },
+   {
+    "brush": 2,
+    "flagsOn": 6,
+    "spawnersOn": 126,
+    "pieces": 12,
+    "main": 2367026
+   },
+   {
+    "brush": 1.5,
+    "flagsOn": 6,
+    "spawnersOn": 134,
+    "pieces": 11,
+    "main": 2496995
+   }
+  ],
+  "opened": [
+   [
+    1066,
+    192
+   ],
+   [
+    1066,
+    193
+   ],
+   [
+    1066,
+    194
+   ],
+   [
+    1066,
+    195
+   ],
+   [
+    1079,
+    195
+   ],
+   [
+    1066,
+    196
+   ],
+   [
+    1079,
+    196
+   ],
+   [
+    1080,
+    196
+   ],
+   [
+    1081,
+    196
+   ],
+   [
+    1081,
+    197
+   ],
+   [
+    1081,
+    198
+   ],
+   [
+    1081,
+    199
+   ],
+   [
+    1079,
+    200
+   ],
+   [
+    1081,
+    200
+   ],
+   [
+    1082,
+    206
+   ],
+   [
+    1083,
+    206
+   ],
+   [
+    1083,
+    207
+   ],
+   [
+    1083,
+    208
+   ],
+   [
+    1084,
+    208
+   ],
+   [
+    1737,
+    804
+   ],
+   [
+    1738,
+    804
+   ],
+   [
+    1739,
+    804
+   ],
+   [
+    1737,
+    805
+   ],
+   [
+    1737,
+    806
+   ],
+   [
+    1735,
+    807
+   ],
+   [
+    1736,
+    807
+   ],
+   [
+    1737,
+    807
+   ],
+   [
+    1737,
+    815
+   ],
+   [
+    1738,
+    815
+   ],
+   [
+    1739,
+    815
+   ],
+   [
+    1740,
+    815
+   ],
+   [
+    1741,
+    815
+   ],
+   [
+    1742,
+    815
+   ],
+   [
+    709,
+    907
+   ],
+   [
+    710,
+    907
+   ],
+   [
+    711,
+    907
+   ],
+   [
+    712,
+    907
+   ],
+   [
+    712,
+    908
+   ],
+   [
+    712,
+    909
+   ],
+   [
+    712,
+    910
+   ],
+   [
+    712,
+    911
+   ],
+   [
+    712,
+    912
+   ],
+   [
+    710,
+    927
+   ],
+   [
+    711,
+    927
+   ],
+   [
+    712,
+    927
+   ],
+   [
+    713,
+    927
+   ],
+   [
+    714,
+    927
+   ],
+   [
+    715,
+    927
+   ],
+   [
+    716,
+    927
+   ],
+   [
+    708,
+    928
+   ],
+   [
+    709,
+    928
+   ],
+   [
+    710,
+    928
+   ],
+   [
+    688,
+    959
+   ],
+   [
+    689,
+    959
+   ],
+   [
+    688,
+    960
+   ],
+   [
+    687,
+    961
+   ],
+   [
+    688,
+    961
+   ],
+   [
+    338,
+    970
+   ],
+   [
+    338,
+    971
+   ],
+   [
+    338,
+    972
+   ],
+   [
+    338,
+    973
+   ],
+   [
+    337,
+    974
+   ],
+   [
+    338,
+    974
+   ],
+   [
+    337,
+    975
+   ],
+   [
+    337,
+    976
+   ],
+   [
+    337,
+    977
+   ],
+   [
+    337,
+    978
+   ],
+   [
+    1197,
+    1074
+   ],
+   [
+    1198,
+    1074
+   ],
+   [
+    1199,
+    1074
+   ],
+   [
+    1200,
+    1074
+   ],
+   [
+    1197,
+    1075
+   ],
+   [
+    1197,
+    1076
+   ],
+   [
+    1197,
+    1077
+   ],
+   [
+    1197,
+    1078
+   ],
+   [
+    1197,
+    1079
+   ],
+   [
+    1197,
+    1080
+   ],
+   [
+    1197,
+    1081
+   ],
+   [
+    1197,
+    1082
+   ],
+   [
+    1196,
+    1083
+   ],
+   [
+    1197,
+    1083
+   ],
+   [
+    1196,
+    1084
+   ],
+   [
+    1196,
+    1085
+   ],
+   [
+    1196,
+    1086
+   ],
+   [
+    1195,
+    1087
+   ],
+   [
+    1196,
+    1087
+   ],
+   [
+    1219,
+    1092
+   ],
+   [
+    1220,
+    1092
+   ],
+   [
+    1221,
+    1092
+   ],
+   [
+    1222,
+    1092
+   ],
+   [
+    1222,
+    1093
+   ],
+   [
+    1222,
+    1094
+   ],
+   [
+    1221,
+    1095
+   ],
+   [
+    1222,
+    1095
+   ],
+   [
+    1220,
+    1096
+   ],
+   [
+    1221,
+    1096
+   ],
+   [
+    1220,
+    1097
+   ],
+   [
+    1220,
+    1098
+   ],
+   [
+    1220,
+    1099
+   ],
+   [
+    1220,
+    1100
+   ],
+   [
+    1220,
+    1101
+   ],
+   [
+    1220,
+    1102
+   ],
+   [
+    1220,
+    1103
+   ],
+   [
+    1238,
+    1124
+   ],
+   [
+    1239,
+    1124
+   ],
+   [
+    1238,
+    1125
+   ],
+   [
+    1238,
+    1126
+   ],
+   [
+    1238,
+    1127
+   ],
+   [
+    1238,
+    1128
+   ],
+   [
+    1237,
+    1129
+   ],
+   [
+    1238,
+    1129
+   ],
+   [
+    1237,
+    1130
+   ],
+   [
+    1237,
+    1131
+   ],
+   [
+    1237,
+    1132
+   ],
+   [
+    1237,
+    1133
+   ],
+   [
+    1237,
+    1134
+   ],
+   [
+    1237,
+    1135
+   ],
+   [
+    1237,
+    1136
+   ],
+   [
+    1250,
+    1142
+   ],
+   [
+    1250,
+    1143
+   ],
+   [
+    1250,
+    1144
+   ],
+   [
+    1250,
+    1145
+   ],
+   [
+    1250,
+    1146
+   ],
+   [
+    1250,
+    1147
+   ],
+   [
+    1250,
+    1148
+   ],
+   [
+    1250,
+    1149
+   ],
+   [
+    1250,
+    1150
+   ],
+   [
+    1250,
+    1151
+   ],
+   [
+    1250,
+    1152
+   ],
+   [
+    1250,
+    1153
+   ],
+   [
+    1250,
+    1154
+   ],
+   [
+    1249,
+    1155
+   ],
+   [
+    1250,
+    1155
+   ],
+   [
+    937,
+    1223
+   ],
+   [
+    937,
+    1224
+   ],
+   [
+    937,
+    1225
+   ],
+   [
+    937,
+    1226
+   ],
+   [
+    929,
+    1227
+   ],
+   [
+    930,
+    1227
+   ],
+   [
+    931,
+    1227
+   ],
+   [
+    932,
+    1227
+   ],
+   [
+    937,
+    1227
+   ],
+   [
+    929,
+    1228
+   ],
+   [
+    932,
+    1228
+   ],
+   [
+    933,
+    1228
+   ],
+   [
+    936,
+    1228
+   ],
+   [
+    937,
+    1228
+   ],
+   [
+    928,
+    1229
+   ],
+   [
+    929,
+    1229
+   ],
+   [
+    933,
+    1229
+   ],
+   [
+    934,
+    1229
+   ],
+   [
+    935,
+    1229
+   ],
+   [
+    936,
+    1229
+   ],
+   [
+    927,
+    1230
+   ],
+   [
+    928,
+    1230
+   ],
+   [
+    935,
+    1230
+   ],
+   [
+    926,
+    1241
+   ],
+   [
+    927,
+    1241
+   ],
+   [
+    928,
+    1241
+   ],
+   [
+    929,
+    1241
+   ],
+   [
+    925,
+    1242
+   ],
+   [
+    926,
+    1242
+   ],
+   [
+    924,
+    1243
+   ],
+   [
+    925,
+    1243
+   ],
+   [
+    922,
+    1244
+   ],
+   [
+    923,
+    1244
+   ],
+   [
+    924,
+    1244
+   ],
+   [
+    922,
+    1245
+   ],
+   [
+    921,
+    1246
+   ],
+   [
+    922,
+    1246
+   ],
+   [
+    920,
+    1247
+   ],
+   [
+    921,
+    1247
+   ],
+   [
+    920,
+    1248
+   ],
+   [
+    916,
+    1249
+   ],
+   [
+    917,
+    1249
+   ],
+   [
+    918,
+    1249
+   ],
+   [
+    919,
+    1249
+   ],
+   [
+    920,
+    1249
+   ],
+   [
+    954,
+    1262
+   ],
+   [
+    952,
+    1263
+   ],
+   [
+    953,
+    1263
+   ],
+   [
+    954,
+    1263
+   ],
+   [
+    951,
+    1264
+   ],
+   [
+    952,
+    1264
+   ],
+   [
+    950,
+    1265
+   ],
+   [
+    951,
+    1265
+   ],
+   [
+    949,
+    1266
+   ],
+   [
+    950,
+    1266
+   ],
+   [
+    948,
+    1267
+   ],
+   [
+    949,
+    1267
+   ],
+   [
+    960,
+    1267
+   ],
+   [
+    961,
+    1267
+   ],
+   [
+    962,
+    1267
+   ],
+   [
+    963,
+    1267
+   ],
+   [
+    964,
+    1267
+   ],
+   [
+    947,
+    1268
+   ],
+   [
+    948,
+    1268
+   ],
+   [
+    947,
+    1269
+   ],
+   [
+    944,
+    1270
+   ],
+   [
+    945,
+    1270
+   ],
+   [
+    946,
+    1270
+   ],
+   [
+    947,
+    1270
+   ],
+   [
+    984,
+    1287
+   ],
+   [
+    985,
+    1287
+   ],
+   [
+    986,
+    1287
+   ],
+   [
+    984,
+    1288
+   ],
+   [
+    984,
+    1289
+   ],
+   [
+    984,
+    1290
+   ],
+   [
+    984,
+    1291
+   ],
+   [
+    984,
+    1292
+   ],
+   [
+    984,
+    1293
+   ],
+   [
+    984,
+    1294
+   ],
+   [
+    983,
+    1295
+   ],
+   [
+    984,
+    1295
+   ],
+   [
+    983,
+    1296
+   ],
+   [
+    983,
+    1297
+   ],
+   [
+    983,
+    1298
+   ],
+   [
+    983,
+    1299
+   ],
+   [
+    492,
+    1522
+   ],
+   [
+    493,
+    1522
+   ],
+   [
+    494,
+    1522
+   ],
+   [
+    495,
+    1522
+   ],
+   [
+    496,
+    1522
+   ],
+   [
+    492,
+    1523
+   ],
+   [
+    496,
+    1523
+   ],
+   [
+    492,
+    1524
+   ],
+   [
+    496,
+    1524
+   ],
+   [
+    492,
+    1525
+   ],
+   [
+    496,
+    1525
+   ],
+   [
+    497,
+    1525
+   ],
+   [
+    405,
+    1539
+   ],
+   [
+    406,
+    1539
+   ],
+   [
+    407,
+    1539
+   ],
+   [
+    408,
+    1539
+   ],
+   [
+    409,
+    1539
+   ],
+   [
+    410,
+    1539
+   ],
+   [
+    411,
+    1539
+   ],
+   [
+    412,
+    1539
+   ],
+   [
+    413,
+    1539
+   ],
+   [
+    414,
+    1539
+   ],
+   [
+    415,
+    1539
+   ],
+   [
+    416,
+    1539
+   ],
+   [
+    416,
+    1540
+   ],
+   [
+    416,
+    1541
+   ],
+   [
+    416,
+    1542
+   ],
+   [
+    417,
+    1542
+   ],
+   [
+    417,
+    1543
+   ],
+   [
+    418,
+    1543
+   ],
+   [
+    419,
+    1543
+   ],
+   [
+    420,
+    1543
+   ],
+   [
+    421,
+    1543
+   ]
+  ],
+  "ways": [
+   {
+    "who": "hattuvaara_spawn1",
+    "kind": "spawn",
+    "way": "walk",
+    "opened": 12
+   },
+   {
+    "who": "alliedbase_spawn2",
+    "kind": "spawn",
+    "way": "walk",
+    "opened": 6
+   },
+   {
+    "who": "alliedbase_spawn6",
+    "kind": "spawn",
+    "way": "walk",
+    "opened": 8
+   },
+   {
+    "who": "ilajanjarvi_spawn2",
+    "kind": "spawn",
+    "way": "walk",
+    "opened": 19
+   },
+   {
+    "who": "alliedbase_spawn3",
+    "kind": "spawn",
+    "way": "walk",
+    "opened": 15
+   },
+   {
+    "who": "alliedbase_spawn4",
+    "kind": "spawn",
+    "way": "walk",
+    "opened": 15
+   },
+   {
+    "who": "alliedbase_spawn7",
+    "kind": "spawn",
+    "way": "walk",
+    "opened": 17
+   },
+   {
+    "who": "utriovaara_spawn2",
+    "kind": "spawn",
+    "way": "walk",
+    "opened": 22
+   },
+   {
+    "who": "utriovaara_spawn3",
+    "kind": "spawn",
+    "way": "walk",
+    "opened": 19
+   },
+   {
+    "who": "utriovaara_spawn4",
+    "kind": "spawn",
+    "way": "walk",
+    "opened": 5
+   },
+   {
+    "who": "utriovaara_spawn5",
+    "kind": "spawn",
+    "way": "walk",
+    "opened": 16
+   },
+   {
+    "who": "utriovaara_spawn6",
+    "kind": "spawn",
+    "way": "walk",
+    "opened": 23
+   },
+   {
+    "who": "hattuvaara_spawn2",
+    "kind": "spawn",
+    "way": "walk",
+    "opened": 21
+   },
+   {
+    "who": "hattuvaara_spawn3",
+    "kind": "spawn",
+    "way": "walk",
+    "opened": 10
+   },
+   {
+    "who": "hattuvaara_spawn5",
+    "kind": "spawn",
+    "way": "walk",
+    "opened": 0
+   },
+   {
+    "who": "ruukinpohja_spawn2",
+    "kind": "spawn",
+    "way": "walk",
+    "opened": 9
+   },
+   {
+    "who": "ruukinpohja_spawn5",
+    "kind": "spawn",
+    "way": "drop",
+    "opened": 5
+   },
+   {
+    "who": "ruukinpohja_spawn3",
+    "kind": "spawn",
+    "way": "none",
+    "opened": 0
+   },
+   {
+    "who": "ruukinpohja_spawn6",
+    "kind": "spawn",
+    "way": "walk",
+    "opened": 5
+   },
+   {
+    "who": "Kuuksenvaara_spawn1",
+    "kind": "spawn",
+    "way": "walk",
+    "opened": 5
+   },
+   {
+    "who": "Kuuksenvaara_spawn2",
+    "kind": "spawn",
+    "way": "drop",
+    "opened": 9
+   },
+   {
+    "who": "Kuuksenvaara_spawn4",
+    "kind": "spawn",
+    "way": "drop",
+    "opened": 10
+   }
+  ],
+  "cover": 0.861,
+  "floors": {
+   "stacked": false,
+   "twoFloorShare": 0.003,
+   "raised": [],
+   "reason": null
+  },
+  "capped": true
+ },
+ "routeProbe": {
+  "chokeMax": 4,
+  "unreachable": [],
+  "stops": {},
+  "oneSided": {},
+  "sides": {
+   "1": {
+    "spawns": 30,
+    "flags": [
+     "churchtemplate",
+     "firebasetemplate",
+     "first_linetemplate",
+     "second_linetemplate",
+     "village_1template"
+    ]
+   },
+   "2": {
+    "spawns": 15,
+    "flags": [
+     "churchtemplate",
+     "firebasetemplate",
+     "first_linetemplate",
+     "second_linetemplate",
+     "village_1template"
+    ]
+   }
+  },
+  "chokes": {
+   "first_linetemplate:1": 4,
+   "first_linetemplate:2": 0,
+   "second_linetemplate:1": 0,
+   "second_linetemplate:2": 0,
+   "village_1template:1": 2,
+   "village_1template:2": 0,
+   "firebasetemplate:1": 0,
+   "firebasetemplate:2": 0,
+   "churchtemplate:1": 3,
+   "churchtemplate:2": 0
+  },
+  "late": {},
+  "shutLinks": []
+ },
+ "inputs": {
+  "controlPoints": "39d78ac1f7c6b2f8ffb7ce932cc8fccf6bb2e31b58c465a4dd069cdef01a5067",
+  "infantryMap": "f9d14da3d8602fd000f8326e4eb0125cc75f015c9e5664949036e7cca0091350",
+  "template": "43f8a790471528016570235f76e97dbb2045732458781a5139f37fed68bf98c0"
+ },
+ "files": {
+  "AI.con": "877dc7214e3e56dbfd947a076fe7aa14cb18c6c7990755507510fe6d4e8b807a",
+  "AIpathFinding.con": "9d8080cdfa7605961969aa126519b03be9691bd604ac76aef50166d81215edd2",
+  "AI/StrategicAreas.con": "b79fe3cd08b8aa4862f6780ea1e9e8981c76748c02e1a2fae60f5e1cccdc618f",
+  "AI/Strategies.con": "4ce0be59a0d6c5cd530db002fb062c4be8d936bc6ae59bd188803ccaf7869a8d",
+  "AI/conditions.con": "68a0c7a8aec69954063147b60fae560b2874884285737aa085efa76597d395aa",
+  "AI/prerequisites.con": "4c1f313bc285b228fd6ad03bfd1f44c5b15c8703c31f802eb605bc5f00f88bb5",
+  "Pathfinding/Infantry1Level0Map.raw": "c65216cb63dd9c3dfbb444de106de20896e5453ce31f07ced65958a5df86da44",
+  "Pathfinding/Infantry1Level1Map.raw": "886271ee5ef1bba5443d1194b5e5d9c4724508527db81049cc20310080990fd9",
+  "Pathfinding/Infantry1Level2Map.raw": "47362b195690eab5a30e40a1a35e20174fa94a3546e9c648c51b6b41867a3c3b",
+  "Pathfinding/Tank0Level0Map.raw": "76b10c5c1cd1bac980c8d546cc10f2394661e9f68d8c9886d36c7b4fefb3677d",
+  "Pathfinding/Tank0Level1Map.raw": "08595330c676740fe307f1bd1b10d29dfa1eed31b542860155fd15d5072b2a2b",
+  "Pathfinding/Tank0Level2Map.raw": "a44b96439572ec13ff39ea6857f3a6c43427775b719406375bc2b20fd3c20fad"
+ }
+}

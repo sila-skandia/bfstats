@@ -73,8 +73,15 @@ from extract_map_images import decode_dds, encode_png  # noqa: E402
 VIRTUAL = (800, 600)
 RADIO_MENU = "menu/radiomenu"
 RADIO_TEXTURES = "menu/texture/radio/"
-RADIO_SSC = "menu/MenuRadioSoundHigh.ssc"
-LOCAL_SSC = "Objects/Soldiers/Common/Sounds/High/SoldierVoice.ssc"
+# The scripts the engine loads (ledger RADIO-2), read at the HIGH tier with
+# their `#include`s followed: vanilla's are dispatchers that include
+# `MenuRadioSoundHigh.ssc` and `High/SoldierVoice.ssc`, while a mod may write
+# its own patches straight into them. GCMOD's `MenuRadioSound.ssc` loads
+# `RogerThat01..06`, `Negative1..4`, `RequestingReinforcements1..2` and so on,
+# and reading vanilla's `High` file in its place asked every GC language for
+# stems it does not ship: the team radio (F1 to F4) played nothing (2026-11-12).
+RADIO_SSC = "menu/MenuRadioSound.ssc"
+LOCAL_SSC = "Objects/Soldiers/Common/Sounds/SoldierVoice.ssc"
 GAMEPLAY_SSC = "Bf1942/Game/GamePlay.ssc"
 HEARTBEAT_SSC = "Bf1942/Game/Heartbeats.ssc"
 
@@ -235,9 +242,17 @@ def _stem(file: str) -> str:
     return file.replace("\\", "/").rsplit("/", 1)[-1].rsplit(".", 1)[0]
 
 
+_INCLUDE = None
+
+
+def _parse(text: str, source: str):
+    """`parse_ssc` at the HIGH tier, following `#include` through the pool."""
+    return parse_ssc(text, level="high", include=_INCLUDE, source=source)
+
+
 def _patches(text: str, source: str) -> list[dict]:
     out = []
-    for index, patch in enumerate(parse_ssc(text, level="high", source=source)):
+    for index, patch in enumerate(_parse(text, source)):
         # `randomPlay 1` picks one sample; without it every sample is a layer
         # and they all play at once (`bf42.level.SoundSample`).
         row: dict = {"index": index, "stems": [_stem(s.file) for s in patch.samples],
@@ -253,7 +268,7 @@ def _patches(text: str, source: str) -> list[dict]:
 def _language_stems(text: str, source: str) -> set[str]:
     """The stems a script loads from `Sound/@RTD/@Language/`: the ones written
     per nation. `RadioCrackle`'s `radiomess.wav` sits outside it."""
-    return {_stem(s.file) for patch in parse_ssc(text, level="high", source=source)
+    return {_stem(s.file) for patch in _parse(text, source)
             for s in patch.samples if "@language/" in s.file.lower()}
 
 
@@ -268,7 +283,7 @@ def _free_loads(texts: dict[str, str]) -> dict[str, str]:
     """Stem -> path of every load outside `@Language/`: one file for every side."""
     out: dict[str, str] = {}
     for name, text in texts.items():
-        for patch in parse_ssc(text, level="high", source=name):
+        for patch in _parse(text, name):
             for s in patch.samples:
                 if "@language/" not in s.file.lower():
                     out.setdefault(_stem(s.file), s.file.replace("\\", "/"))
@@ -277,6 +292,12 @@ def _free_loads(texts: dict[str, str]) -> dict[str, str]:
 
 def extract_voices(game_dir: Path, mod: str, out: Path, transcode: bool) -> dict:
     pool = voice_pool(game_dir, mod)
+    global _INCLUDE
+
+    def _read(path: str) -> str | None:
+        raw = pool.try_read(path)
+        return raw.decode("latin-1") if raw is not None else None
+    _INCLUDE = _read
     texts = {name: _ssc_text(pool, name) for name in (RADIO_SSC, LOCAL_SSC, GAMEPLAY_SSC)}
     radio = _patches(texts[RADIO_SSC], RADIO_SSC)
     local = _patches(texts[LOCAL_SSC], LOCAL_SSC)
@@ -418,7 +439,26 @@ CHAT_STRING_KEYS = ("DEFAULT_KILL_TEXT", "TEAM_KILL", "DEATH", "AXIS_CAPTURED",
                     "ALLIES_HOLD_ALL_CONTROLPOINTS", "CAPTURED_THE_FLAG",
                     # The rest of a CTF flag's lines (0x006e4290, ledger CTF-7).
                     "STOLE_THE_FLAG", "RETURNED_THE_FLAG", "DROPPED_THE_FLAG",
-                    "TEAM_CHAT_AXIS", "TEAM_CHAT_ALLIES", "RADIO_ATTACK", "RADIO_DEFEND")
+                    "TEAM_CHAT_AXIS", "TEAM_CHAT_ALLIES", "RADIO_ATTACK", "RADIO_DEFEND",
+                    # Someone into or out of the local player's hull, and a
+                    # player taking a side (BF1942.exe 0x00493b98, 0x00493d07,
+                    # 0x00493fc7; `viewer/chat-log.js` `vehicleLine`, `joinLine`).
+                    "ENTERED_YOUR_VEHICLE", "LEFT_YOUR_VEHICLE",
+                    "JOINED_THE", "AXIS_TEAM", "ALLIED_TEAM",
+                    # A vote's lines and question, and what a refused join says
+                    # (`viewer/room-host-client.js`; the room's votes are
+                    # `server/room-votes.mjs`).
+                    "VOTEFEEDBACK_KICK", "VOTEFEEDBACK_MAP", "VOTEFEEDBACK_TEAMKICK",
+                    "VOTEMSG_KICK_INACTIVE", "VOTEMSG_KICK_NONCONCLUSIVE",
+                    "VOTEMSG_KICK_PROGRESS", "VOTEMSG_KICK_SUCCESS",
+                    "VOTEMSG_MAP_INACTIVE", "VOTEMSG_MAP_NONCONCLUSIVE",
+                    "VOTEMSG_MAP_PROGRESS", "VOTEMSG_MAP_SUCCESS",
+                    "VOTEMSG_TEAMKICK_NONCONCLUSIVE", "VOTEMSG_TEAMKICK_PROGRESS",
+                    "VOTEMSG_TEAMKICK_SUCCESS", "VOTE_CAST", "VOTE_NEEDED", "VOTE_NO",
+                    "VOTE_TIME_LEFT", "VOTE_YES", "MAPVOTE_HEADING",
+                    "PASSWORD_INVALID", "PASSWORD_INVALID_FIRST_ATTEMPT",
+                    "RESERVED_PASSWORD_INVALID", "ERROR_KICKED_FROM_SERVER",
+                    "ERROR_BANNED_FROM_SERVER", "CONFIRMATION_FAILED_TO_CONNECT_SERVER_FULL")
 MENU_CON = "Bf1942/Game/Init/Menu.con"
 PROFILE_OPTIONS = Path("Settings/Profiles/Default/GeneralOptions.con")
 

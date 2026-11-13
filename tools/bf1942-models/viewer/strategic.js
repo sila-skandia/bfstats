@@ -23,7 +23,7 @@
 // is imported here (features/bot-doctrines/README.md).
 
 export { INFANTRY_TYPE, areaGeometry, isStandIn, StrategicLayer } from './strategic-layer.js';
-export { compareCondition, SAI, StrategicAI } from './strategic-ai.js';
+export { compareCondition, SAI, StrategicAI, wantedStrength } from './strategic-ai.js';
 export {
   StrategicCommand, DOCTRINES, ORDER_KINDS, registerDoctrine, registerOrderKind, checkOrder,
   parseDoctrineSpec, closeToOrder, boardOrder, leaveOrder, CLOSE_TO,

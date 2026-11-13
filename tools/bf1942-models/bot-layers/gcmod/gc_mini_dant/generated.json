@@ -1,0 +1,156 @@
+{
+ "generator": "botgen",
+ "version": 6,
+ "mod": "GCMOD",
+ "level": "gc_mini_dant",
+ "objectSpawners": 6,
+ "template": "few",
+ "templateSource": "DICE, bf1942 Kursk (1.6 patch archives, Kursk_003.rfa): AI/Strategies.con, AI/conditions.con, AI/prerequisites.con, unchanged",
+ "templateChoice": {
+  "name": "few",
+  "inPlay": 3,
+  "rule": "3 capturable flags in play, at most 3"
+ },
+ "scope": "an infantry map painted from the walk test, a Tank0 map from the page painter, infantry order positions, no strategic maps, no co-op layer",
+ "unreachable": [],
+ "unreachableReasons": {},
+ "botSpawnsExcluded": [
+  "ib4"
+ ],
+ "walkMap": {
+  "source": "walk test",
+  "engine": "none",
+  "vehicleMap": "page painter",
+  "vehicleBrush": 2.5,
+  "vehicleBrushes": [
+   {
+    "brush": 3,
+    "flagsOn": 2,
+    "spawnersOn": 0,
+    "pieces": 8,
+    "main": 897781
+   },
+   {
+    "brush": 2.5,
+    "flagsOn": 3,
+    "spawnersOn": 0,
+    "pieces": 5,
+    "main": 14166
+   },
+   {
+    "brush": 2,
+    "flagsOn": 3,
+    "spawnersOn": 0,
+    "pieces": 6,
+    "main": 14814
+   },
+   {
+    "brush": 1.5,
+    "flagsOn": 3,
+    "spawnersOn": 0,
+    "pieces": 11,
+    "main": 35863
+   }
+  ],
+  "opened": [
+   [
+    878,
+    777
+   ],
+   [
+    878,
+    791
+   ],
+   [
+    959,
+    821
+   ]
+  ],
+  "ways": [
+   {
+    "who": "rm1",
+    "kind": "spawn",
+    "way": "walk",
+    "opened": 1
+   },
+   {
+    "who": "rm4",
+    "kind": "spawn",
+    "way": "walk",
+    "opened": 1
+   },
+   {
+    "who": "rb3",
+    "kind": "spawn",
+    "way": "walk",
+    "opened": 1
+   },
+   {
+    "who": "ib4",
+    "kind": "spawn",
+    "way": "none",
+    "opened": 0
+   }
+  ],
+  "cover": 0.994,
+  "floors": {
+   "stacked": false,
+   "twoFloorShare": 0.004,
+   "raised": [],
+   "reason": null
+  }
+ },
+ "routeProbe": {
+  "chokeMax": 4,
+  "unreachable": [],
+  "stops": {},
+  "oneSided": {},
+  "sides": {
+   "1": {
+    "spawns": 4,
+    "flags": [
+     "imperial_sidetemplate",
+     "rebel_sidetemplate",
+     "the_bridgetemplate"
+    ]
+   },
+   "2": {
+    "spawns": 4,
+    "flags": [
+     "imperial_sidetemplate",
+     "rebel_sidetemplate",
+     "the_bridgetemplate"
+    ]
+   }
+  },
+  "chokes": {
+   "imperial_sidetemplate:1": 0,
+   "imperial_sidetemplate:2": 0,
+   "the_bridgetemplate:1": 0,
+   "the_bridgetemplate:2": 0,
+   "rebel_sidetemplate:1": 0,
+   "rebel_sidetemplate:2": 0
+  },
+  "late": {},
+  "shutLinks": []
+ },
+ "inputs": {
+  "controlPoints": "d257c439ff0c876f44dbd56d9e9fd601122947061c21590f87bca4bec9aed4b7",
+  "infantryMap": "efd30994245e9a4eb94889cd5f265df114359f8c0ef1f4f220a2a3e39a27ad22",
+  "template": "bdc0e455f47f91b7e7724e71d7c0c196e839b36946ac3abb7663d725944081e5"
+ },
+ "files": {
+  "AI.con": "9c2af3380f8a98fc9447bba0dd137edd65a0a9b694fc58d303e2006c8923332b",
+  "AIpathFinding.con": "549030ff1cdb81bd819fcdc28c999857f4784e20ee4850753a8c1213f80184fe",
+  "AI/StrategicAreas.con": "a8288243b73f59308d2181c341a10b42100fe7f8c6f617ac0b966b0743d97541",
+  "AI/Strategies.con": "13da4dc35872dd4b5798a066f4425bdc824cfd61f31093d1808e1202644de52e",
+  "AI/conditions.con": "248a04b727c08d696bf0fa9c162bc22c43cde3c75f695892fe1e0f5141519c49",
+  "AI/prerequisites.con": "c96168b5f69860e578f5d26728fd2a2092c4c436e1da49b7d6f4009b65735398",
+  "Pathfinding/Infantry1Level0Map.raw": "ddd61597783e4c923abe47d16a7d4efb4e2f2259c74aa46d4c406285f5efa950",
+  "Pathfinding/Infantry1Level1Map.raw": "ac7e97dff220ad22110cb5b8b68a3019b7df6e872c7ea9d1e9ac5ad8542bf986",
+  "Pathfinding/Infantry1Level2Map.raw": "92220f3359ef07327fb648fb8d31352dda9f70c1005510427c9f89f1c8411119",
+  "Pathfinding/Tank0Level0Map.raw": "202d5d1c761a258fb2e6a2b0ffc3bba1202fcc76bcfa9f6a4c111e43959d6f1e",
+  "Pathfinding/Tank0Level1Map.raw": "fd1f14927dbeae1574e241f54e1e7b36cac366d32a08a328c510b0481d2cbd8a",
+  "Pathfinding/Tank0Level2Map.raw": "6d9bca29c0d1b669ecac025fde2c26b51bffc440168e3cc2ceb1faba761adea0"
+ }
+}

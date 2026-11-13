@@ -80,6 +80,7 @@ export const LOCO_CLIP = {
  *   fidgetPick: string | null,
  *   fireVariants?: string[] | null,
  *   altRunning?: boolean,
+ *   ejectRunning?: boolean,
  * }} s
  * @returns {{
  *   want: string,
@@ -173,6 +174,11 @@ export function wantViewmodelClip(s) {
   // is PlayOnce into `_POSE_`. It is not the fire family, so a bolt rifle
   // does not work its bolt after a stab.
   if (s.altRunning) return { want: s.active };
+  // The clip leaving the gun (`Ub_StandEjectClip<W>`, started by
+  // `hand-fire.js` `stepDryMagazine` when the eject timer is set): a
+  // one-shot that cut in and holds the arms until it has run out, then
+  // `_POSE_`. The reload cannot start under it: it waits for the eject timer.
+  if (s.ejectRunning) return { want: s.active };
   // Looping fire (c_AsmLooping) follows the trigger latch. Checked before the
   // PlayOnce fireRunning keep — Three.js LoopRepeat never clears isRunning().
   if (s.fireLoops && s.firing && s.hasFire) {

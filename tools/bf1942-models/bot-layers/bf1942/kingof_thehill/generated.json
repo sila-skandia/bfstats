@@ -1,0 +1,209 @@
+{
+ "generator": "botgen",
+ "version": 5,
+ "mod": "bf1942",
+ "level": "kingof_thehill",
+ "objectSpawners": 127,
+ "template": "few",
+ "templateSource": "DICE, bf1942 Kursk (1.6 patch archives, Kursk_003.rfa): AI/Strategies.con, AI/conditions.con, AI/prerequisites.con, unchanged",
+ "templateChoice": {
+  "name": "few",
+  "inPlay": 0,
+  "rule": "0 capturable flags in play, at most 3"
+ },
+ "scope": "on foot: infantry order positions only, no search maps, no co-op layer",
+ "unreachable": [
+  "AxisBase",
+  "AlliedBase",
+  "Axis_beachhead",
+  "TheBeachhead_Allies",
+  "CenterFlag"
+ ],
+ "unreachableReasons": {
+  "AxisBase": "walk test",
+  "AlliedBase": "walk test",
+  "Axis_beachhead": "route probe",
+  "TheBeachhead_Allies": "route probe",
+  "CenterFlag": "route probe"
+ },
+ "botSpawnsExcluded": [
+  "AxisBase_Spawn1",
+  "AlliedBase_Spawn1",
+  "AxisBase_Spawn2",
+  "AxisBase_Spawn3",
+  "AxisBase_Spawn4",
+  "AxisBase_Spawn5",
+  "AxisBase_Spawn6",
+  "AxisBase_Spawn7",
+  "AxisBase_Spawn8",
+  "AxisBase_Spawn9",
+  "AxisBase_Spawn10",
+  "AxisBase_Spawn11",
+  "AxisBase_Spawn12",
+  "AxisBase_Spawn13",
+  "AxisBase_Spawn14",
+  "AxisBase_Spawn15",
+  "AxisBase_Spawn16",
+  "AxisBase_Spawn17",
+  "AxisBase_Spawn18",
+  "AxisBase_Spawn19",
+  "AxisBase_Spawn20",
+  "AxisBase_Spawn21",
+  "AxisBase_Spawn22",
+  "AxisBase_Spawn23",
+  "AxisBase_Spawn24",
+  "AxisBase_Spawn25",
+  "AxisBase_Spawn26",
+  "AxisBase_Spawn27",
+  "AxisBase_Spawn28",
+  "AxisBase_Spawn29",
+  "AxisBase_Spawn30",
+  "AxisBase_Spawn31",
+  "AxisBase_Spawn32",
+  "AlliedBase_Spawn2",
+  "AlliedBase_Spawn3",
+  "AlliedBase_Spawn4",
+  "AlliedBase_Spawn5",
+  "AlliedBase_Spawn6",
+  "AlliedBase_Spawn7",
+  "AlliedBase_Spawn8",
+  "AlliedBase_Spawn9",
+  "AlliedBase_Spawn10",
+  "AlliedBase_Spawn11",
+  "AlliedBase_Spawn12",
+  "AlliedBase_Spawn13",
+  "AlliedBase_Spawn14",
+  "AlliedBase_Spawn15",
+  "AlliedBase_Spawn16",
+  "AlliedBase_Spawn17",
+  "AlliedBase_Spawn18",
+  "AlliedBase_Spawn19",
+  "AlliedBase_Spawn20",
+  "AlliedBase_Spawn21",
+  "AlliedBase_Spawn22",
+  "AlliedBase_Spawn23",
+  "AlliedBase_Spawn24",
+  "AlliedBase_Spawn25",
+  "AlliedBase_Spawn26",
+  "AlliedBase_Spawn27",
+  "AlliedBase_Spawn28",
+  "AlliedBase_Spawn29",
+  "AlliedBase_Spawn30",
+  "AlliedBase_Spawn31",
+  "AlliedBase_Spawn32",
+  "CenterFlag_01",
+  "CenterFlag_Spawn1",
+  "CenterFlag_Spawn2",
+  "CenterFlag_Spawn3",
+  "CenterFlag_Spawn4",
+  "CenterFlag_Spawn5",
+  "CenterFlag_Spawn6",
+  "CenterFlag_Spawn7",
+  "CenterFlag_Spawn8",
+  "CenterFlag_Spawn9",
+  "CenterFlag_Spawn10",
+  "CenterFlag_Spawn11",
+  "CenterFlag_Spawn12",
+  "CenterFlag_Spawn13",
+  "CenterFlag_Spawn14",
+  "CenterFlag_Spawn15",
+  "CenterFlag_Spawn16",
+  "CenterFlag_Spawn17",
+  "CenterFlag_Spawn18",
+  "CenterFlag_Spawn19",
+  "CenterFlag_Spawn20",
+  "CenterFlag_Spawn21",
+  "CenterFlag_Spawn22",
+  "CenterFlag_Spawn23",
+  "CenterFlag_Spawn24",
+  "CenterFlag_Spawn25",
+  "CenterFlag_Spawn38",
+  "CenterFlag_Spawn39",
+  "CenterFlag_Spawn40",
+  "CenterFlag_Spawn41",
+  "CenterFlag_Spawn42",
+  "CenterFlag_Spawn43",
+  "CenterFlag_Spawn44",
+  "CenterFlag_Spawn45",
+  "CenterFlag_Spawn46",
+  "CenterFlag_Spawn47",
+  "CenterFlag_Spawn48",
+  "CenterFlag_Spawn49",
+  "CenterFlag_Spawn50"
+ ],
+ "walkMap": {
+  "source": "page painter",
+  "engine": "none",
+  "opened": [],
+  "ways": [],
+  "cover": 0.915,
+  "floors": {
+   "stacked": false,
+   "twoFloorShare": 0.004,
+   "raised": [],
+   "reason": null
+  },
+  "capped": true,
+  "joined": 2
+ },
+ "routeProbe": {
+  "chokeMax": 4,
+  "unreachable": [
+   "Axis_beachhead",
+   "TheBeachhead_Allies",
+   "CenterFlag"
+  ],
+  "stops": {
+   "Axis_beachhead": {
+    "1": {
+     "stage": "no usable spawn"
+    },
+    "2": {
+     "stage": "no usable spawn"
+    }
+   },
+   "TheBeachhead_Allies": {
+    "1": {
+     "stage": "no usable spawn"
+    },
+    "2": {
+     "stage": "no usable spawn"
+    }
+   },
+   "CenterFlag": {
+    "1": {
+     "stage": "no usable spawn"
+    },
+    "2": {
+     "stage": "no usable spawn"
+    }
+   }
+  },
+  "oneSided": {},
+  "sides": {
+   "1": {
+    "spawns": 0,
+    "flags": []
+   },
+   "2": {
+    "spawns": 0,
+    "flags": []
+   }
+  },
+  "chokes": {},
+  "late": {},
+  "shutLinks": []
+ },
+ "inputs": {
+  "controlPoints": "50f6695aaebc3f8a407b0513bc71b762854e183a5f9c5b7d91db3c65fd49bade",
+  "infantryMap": "b5008d5fed0ed9addf160f90ed24b82ca4e1b1a3f11635f327910c8bf068a23c",
+  "template": "bdc0e455f47f91b7e7724e71d7c0c196e839b36946ac3abb7663d725944081e5"
+ },
+ "files": {
+  "AI.con": "ff65da5cf781f265a28875b6cbca3063a01ed39073ce89fcfbb96af7a80600f7",
+  "AI/StrategicAreas.con": "b82fd827efc5f889e584663ed101480dd396797a5fecd0cbc9127df2aef3c7be",
+  "AI/Strategies.con": "13da4dc35872dd4b5798a066f4425bdc824cfd61f31093d1808e1202644de52e",
+  "AI/conditions.con": "248a04b727c08d696bf0fa9c162bc22c43cde3c75f695892fe1e0f5141519c49",
+  "AI/prerequisites.con": "c96168b5f69860e578f5d26728fd2a2092c4c436e1da49b7d6f4009b65735398"
+ }
+}

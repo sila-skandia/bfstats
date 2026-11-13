@@ -10,6 +10,7 @@ import { kitOverridesAirMovement, kitPackSpec } from './kit-loadout.js';
 import { KIT_CLASSES } from './scoreboard.js';
 import { deployRowForKit, nearestFlagIndex } from './server-life.js';
 import { flagSide } from './spawn-flags.js';
+import { deployCountdownLine, spawnReadyAt, waveSecondsLeft } from './spawn-timer.js';
 
 /**
  * Built once by the page, where this code used to sit. `page` hands in
@@ -92,6 +93,23 @@ export function createSpawning(page) {
   // The server's position for a resumed life, while `resumeServerLife` stands
   // it: where the body goes when the flag it is filed under has no point.
   let servedAt = null;
+
+  // The reinforcement wave off a retail server (SPAWN-35). Retail's
+  // `killPlayer` 0x0814d920 gives every player a wait to the next spawn
+  // window, the listen server of single player and Instant Battle included
+  // (`GameServer::init` 0x08131cd0 turns waves on for every GameServer), and
+  // `gameStatusPlaying` stands nobody whose wait is not spent
+  // (0x08152917..0x08152987). On a retail relay the server gates the spawn
+  // itself (`serverOwnsSpawn`); here the page does: in solo play on its own
+  // round's clock, in a room on the wait its server sent with the death
+  // (`server/authority.mjs`, `sw`). A commit before the wave closes the screen
+  // to the free camera and the TIME TO SPAWN plate, and the wave stands the
+  // body (`waveTick`), as the relay's spectator wait does.
+  let waveReadyAt = null;     // solo: the round clock when the wait is spent
+  let waveRestarts = 0;       // the round's restart count at that death
+  let waveDeadline = null;    // a room: performance.now() when the server's wait is spent
+  let waveStanding = false;   // set while `waveTick` stands the body
+  spawning.waveWaiting = false;
   // The `Kit/MouseOver/*` flag the pointer currently holds true, and the footer
   // button under it, for the mouse-over plate.
   spawning.deployHoverVar = null;
@@ -722,11 +740,64 @@ export function createSpawning(page) {
     page.paintDeployChrome();
   }
 
+  /** The wave law's parameters off a room: the page's (`page.spawnParams()`,
+   *  single player's flat wait, `spawn-timer.js` `singlePlayerSpawnParams`,
+   *  the owner's choice), or retail's defaults where the page names none. */
+  const waveParams = () => page.spawnParams?.() ?? undefined;
+
+  /** The local player died off a retail server: their wait runs from now on
+   *  the round's clock (`killPlayer` 0x0814d920, SPAWN-35). A room's wait is
+   *  its server's and comes with the death row (`noteServerSpawnWait`). */
+  spawning.noteDeath = () => {
+    if (page.roomJoined) return;
+    const round = page.round;
+    if (!round || !Number.isFinite(round.clock)) return;
+    waveReadyAt = spawnReadyAt(round.clock, waveParams());
+    waveRestarts = round.restarts ?? 0;
+  };
+  /** A room's word on this player's wait, in seconds from now (the `killed`
+   *  and `spawnRefused` rows' `sw`, `server/authority.mjs`). */
+  spawning.noteServerSpawnWait = seconds => {
+    if (!Number.isFinite(seconds)) return;
+    waveDeadline = performance.now() + Math.max(0, seconds) * 1000;
+  };
+  /** Seconds before this player may spawn off a retail server; 0 when they
+   *  may now, or when nothing makes them wait (no death yet, no round, a
+   *  retail relay, which gates its own spawns). */
+  function waveLeft() {
+    if (page.serverOwnsSpawn?.()) return 0;
+    if (page.roomJoined) {
+      return waveDeadline == null ? 0 : Math.max(0, (waveDeadline - performance.now()) / 1000);
+    }
+    const round = page.round;
+    if (waveReadyAt == null || !round || round.status !== 'playing') return 0;
+    // A restart starts the round's clock over: the old round's wait is gone.
+    if ((round.restarts ?? 0) !== waveRestarts) { waveReadyAt = null; return 0; }
+    return waveSecondsLeft(round.clock, waveReadyAt, waveParams());
+  }
+  spawning.waveSecondsLeft = waveLeft;
+  /** The TIME TO SPAWN plate off a retail relay (`deploy-screen.js`
+   *  `paintSpawnTimer`), the relay's `spawnCountdown` shape: null while
+   *  the player has a body or nothing has made them wait. */
+  spawning.waveCountdown = () => {
+    if (page.soldier && !page.soldierDead) return null;
+    if (waveReadyAt == null && waveDeadline == null && !spawning.waveWaiting) return null;
+    return deployCountdownLine(0, 0, { spawnTime: 0, spawnDelay: Math.ceil(waveLeft()) });
+  };
+  /** Run every frame: a commit held for the wave stands the body once the
+   *  wave has the player. */
+  spawning.waveTick = () => {
+    if (!spawning.waveWaiting || waveLeft() > 0) return false;
+    waveStanding = true;
+    try { return deploySpawn(); } finally { waveStanding = false; spawning.waveWaiting = false; }
+  };
+
   function deploySpawn() {
     // The screen may already be CLOSED while a server-authority spawn is in
     // flight (`deployWaiting`): the stand still has to run when the server's
-    // row arrives (`standServerSpawn`), so allow it then too.
-    if ((!page.deployActive() && !spawning.deployWaiting) || !page.worldReady) return false;
+    // row arrives (`standServerSpawn`), so allow it then too. The same for a
+    // commit held for the wave (`waveTick`).
+    if ((!page.deployActive() && !spawning.deployWaiting && !waveStanding) || !page.worldReady) return false;
     const rejoin = spawning.deployRejoin;
     // The close commits the selection as it stands (0x004679e0: `+0xd8` and
     // the menu's `+0x18` take `+0xd4`, and the game's `setSpawnGroup` is
@@ -775,6 +846,18 @@ export function createSpawning(page) {
       page.logToConsole?.('deploy: waiting for the server to spawn you');
       return false;
     }
+    // Off a retail server the page holds the commit for the wave itself
+    // (SPAWN-35, `waveLeft`): the screen closes to the free camera and the
+    // plate, as the relay's does, and `waveTick` stands the body on the
+    // group committed above. A redeploy over a live soldier has become a
+    // death before it reaches here (the SUICIDE button).
+    if (!standingServerSpawn && !waveStanding && !rejoin && waveLeft() > 0) {
+      spawning.waveWaiting = true;
+      page.toggleFullMap(false);
+      enterFreeCam();
+      page.logToConsole?.(`deploy: waiting ${Math.ceil(waveLeft())} s for the reinforcement wave`);
+      return false;
+    }
     // Arm on-foot without firing `change` — that handler calls requestOnFoot
     // and would reopen this screen. Without the box ticked the frame loop
     // keeps flying even after setOnFoot builds a soldier (Caps Lock / auto
@@ -791,6 +874,9 @@ export function createSpawning(page) {
     // the mouse.
     if (spawned) {
       spawning.deployJoined = true;
+      spawning.waveWaiting = false;
+      waveReadyAt = null;
+      waveDeadline = null;
       page.capture();
     } else if (!page.soldier) page.markOnFoot(false);
     return spawned;
@@ -943,9 +1029,23 @@ export function createSpawning(page) {
     // the spawn screen and its wave. Spawning in its place, as the solo page
     // does, asked a live soldier's server for a spawn it ignored, and the
     // player went straight back to where he stood (the owner, 2026-10-22).
-    if (spawning.deployRejoin && page.serverOwnsSpawn?.()) {
+    // A room does the same (`server/room-control.mjs` `onSuicide`): its
+    // `killed` row carries the wave's wait.
+    if (spawning.deployRejoin && (page.serverOwnsSpawn?.() || page.roomJoined)) {
       page.netSendAction?.({ type: 'suicide' });
       cancelDeploy();
+      return;
+    }
+    // Solo play: the suicide is a death too (retail's Suicide is
+    // `killPlayer`, SPAWN-35), so the fresh body waits for the wave like
+    // any other. The live soldier goes as a change of side takes it
+    // (`chooseTeam`), and the commit below is the dead man's close.
+    if (spawning.deployRejoin && page.round) {
+      page.discardSoldier();
+      spawning.deployRejoin = false;
+      page.disposeHandWeapon();
+      spawning.noteDeath();
+      deploySpawn();
       return;
     }
     if (spawning.deployRejoin) deploySpawn();

@@ -19,6 +19,7 @@ import { createCanvasFit } from './map-canvas-fit.js';
 import { artContentRect, artToSurface, fullMapWindow, surfaceToArt, WHOLE_ART } from './map-art-frame.js';
 import { createMapSprites } from './map-sprites.js';
 import { createMapFriendlies } from './map-friendlies.js';
+import { FLASH_TINT } from './map-flash.js';
 import { createMapSonar } from './map-sonar.js';
 import { EMPTY_VEHICLE_TINT } from './map-vehicle-marks.js';
 import { mapAngle, minimapMarksKey } from './replay-minimap.js';
@@ -388,7 +389,7 @@ export function createMapSurfaces(page) {
   const vehicleFwd = new THREE.Vector3();
   function drawVehicles(ctx, toPx, sc, rot = 0) {
     const tint = MINIMAP_TEAM_TINT[localMapTeam()] || MINIMAP_TEAM_TINT[2];
-    for (const { node: vehicle, kind } of mapVehicleMarks()) {
+    for (const { node: vehicle, kind, flash } of mapVehicleMarks()) {
       vehicle.getWorldPosition(vehiclePos);
       const p = projectToArt(vehiclePos.x, vehiclePos.z);
       if (!p) continue;
@@ -411,7 +412,8 @@ export function createMapSurfaces(page) {
       // `rot` is the map's own turn (the rotating minimap): a heading drawn on a
       // turned map turns with it.
       const angle = Math.atan2(vehicleFwd.x, -vehicleFwd.z) + rot;
-      const colour = kind === 'friendly' ? tint : EMPTY_VEHICLE_TINT;
+      // A rider who spoke on the radio blinks the hull yellow (`map-flash.js`).
+      const colour = flash ? FLASH_TINT : kind === 'friendly' ? tint : EMPTY_VEHICLE_TINT;
       // At its declared `setMinimapIconSize` where the template gives one
       // (an attitude indicator's 256 over a 512 px picture).
       if (!icon || !drawSprite(ctx, icon, q.x, q.y, sc,
@@ -486,11 +488,14 @@ export function createMapSurfaces(page) {
   /** `rot` is the map's own turn, as everywhere else here: an arrow drawn on a
    *  turned map turns with it. */
   function drawFriendlies(ctx, toPx, sc, rot = 0) {
-    const tint = MINIMAP_TEAM_TINT[localMapTeam()] || MINIMAP_TEAM_TINT[2];
-    for (const { x, z, yaw, key } of friendlyMapUnits()) {
+    const sideTint = MINIMAP_TEAM_TINT[localMapTeam()] || MINIMAP_TEAM_TINT[2];
+    for (const { x, z, yaw, key, flash } of friendlyMapUnits()) {
       const p = projectToArt(x, z);
       if (!p) continue;
       const q = toPx(p);
+      // A radio speaker's mark is yellow while the blink is lit
+      // (`MenuMapNode::onPaint`, `map-flash.js`).
+      const tint = flash ? FLASH_TINT : sideTint;
       // A teammate calling for the local medic or engineer: his call's
       // sprite, white and unturned, in place of the arrow (BfMap::update
       // 0x0046af57..0x0046b0c8, `support-calls.js`, HUD-25).
@@ -832,10 +837,31 @@ export function createMapSurfaces(page) {
    *  window round the player is what a phone shooter's minimap is, and the
    *  stylesheet's `@media` rule keeps the corner. */
   mapSurfaces.minimapSyncKey = '';
+  // The stage's size as a ResizeObserver last reported it. Read here every
+  // frame, `clientWidth` came after the frame's own DOM writes and forced a
+  // layout of the whole page each time (features/mesh-viewer-performance,
+  // rule 3); on a phone's replay that was a layout a frame over its panels.
+  const stageSize = { w: 0, h: 0, watched: false };
+  function readStage() {
+    const stage = page.stage;
+    if (!stage) return stageSize;
+    if (!stageSize.watched && typeof ResizeObserver === 'function') {
+      stageSize.watched = true;
+      new ResizeObserver(() => {
+        stageSize.w = stage.clientWidth || 0;
+        stageSize.h = stage.clientHeight || 0;
+      }).observe(stage);
+      stageSize.w = stage.clientWidth || 0;
+      stageSize.h = stage.clientHeight || 0;
+    } else if (!stageSize.watched) {
+      stageSize.w = stage.clientWidth || 0;
+      stageSize.h = stage.clientHeight || 0;
+    }
+    return stageSize;
+  }
   function syncMinimapToTickets() {
     const canvas = minimapCanvas;
-    const stageW = page.stage.clientWidth || 0;
-    const stageH = page.stage.clientHeight || 0;
+    const { w: stageW, h: stageH } = readStage();
     if (!stageW || !stageH) return;
     // The open/close fraction: `c_PIMap` grows this widget into the open
     // map (bfmap.js `toggleOpen`), so its rect is part of the key.

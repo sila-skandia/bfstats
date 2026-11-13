@@ -264,3 +264,22 @@ sideways, along, height, speed; STARTS[0] is the theatre's):
 Tests: `dogfight_dfn_ol.mjs` runs the L9 starts; `test_dogfight_dfn_ol.py`
 holds the numbers above; `test_dogfight_fly_moves.py` names `olAce` as this
 lesson's FLY IT ace.
+
+
+## On retail g and box area (2026-11-12)
+
+Re-flown on the final law (gravity `Math.fround(-14.73)`, box-drag area
+`3.14 * 0.25`; `features/retail-parity-cross-check-2026-11-12`). The claims hold;
+the numbers that moved:
+
+- **Dip** 9/9 as before; 1144-1413 m clear at 40 s (was 1140-1410).
+- **Flip 1/9 -> 0/9 (claim rewritten).** The one start that counted (down,
+  on his tail for 2 s) now has 1.3 s in his rear quarter as he goes down.
+  The words say "not once in nine"; the pass is unchanged (10-22 hits, down
+  in 3, never hit).
+- **Ninja** 0/9 as before; the six he lives end 296-338 m behind and 28-65 m
+  under you (was 290-330 and 40-60); his held shot 0.27-0.63 s.
+- **The chop** (`counter`): a single hit in two of nine (was one in nine),
+  both at about 39 s from 14-17 m after a second chop, as he slides under
+  your tail; never a fly-past. `lockChop` is the jets' too, so it was not
+  retuned for one round.

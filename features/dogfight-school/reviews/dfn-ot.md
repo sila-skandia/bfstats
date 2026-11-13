@@ -271,3 +271,15 @@ Pictures (`<SCRATCH>/asc-ot/`): `n3-0-0.png` (the theatre's Ninja run),
 `n3-3-0.png` (a kill), `d3-0-0.png` (the Dip clear), `d3-5-0.png` (the Dip
 caught from further back), `top-on-his-tail-flip.png` (the Flip in the
 theatre at 23 s).
+
+## Retail g and box area (2026-11-12)
+
+Re-pinned on the law's retail gravity and box-drag area
+(features/retail-parity-cross-check-2026-11-12); verdicts unchanged (Dip 6/9,
+Flip 0/9, Ninja 3/9, survival partly). Dip: from 30 m further back he
+catches you at 99-110 m (was 110-117) and shoots you down twice; from 30 m
+nearer you are 1,030 m clear at 40 s (was 1,034). Flip: your guns have him
+0.27 s at most, 2 and 4 rounds in two of nine (was 3 at most); still never
+hit, but one start (dx -30, dz 30, dv -3) has him on your six for 1.17 s,
+where all nine were under 1 s: the test's bound is now 1.5 s. Ninja: the
+theatre's pass lands ten rounds (was nine), then he is on your tail 16 s.

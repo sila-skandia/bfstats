@@ -573,5 +573,92 @@ class ProjectileMaterialTests(unittest.TestCase):
             self.assertEqual(2, report["projectiles"])
 
 
+    def test_a_no_ff_sound_round_says_so_in_its_row(self) -> None:
+        # `noFFSound 1` (`ProjectileTemplate+0x14f`, lnxded 0x082e39fe; the
+        # gate at 0x0831efe6, FF-6): written only when set.
+        library = self.library(
+            "ObjectTemplate.create Projectile GrenadeAlliesProjectile\n"
+            "ObjectTemplate.noFFSound 1\n"
+            "ObjectTemplate.create Projectile K98Projectile\n")
+        table = projectile_materials(library)
+        self.assertIs(True, table["grenadealliesprojectile"]["noFFSound"])
+        self.assertNotIn("noFFSound", table["k98projectile"])
+
+    def test_the_weapons_depot_tags_are_written_beside_the_rounds(self) -> None:
+        # SUP-2: `ObjectTemplate.ammoType` is `FireArmsTemplate+0x238`
+        # (0x082c98be), the id `SupplyDepot::reloadAmmo` matches (0x08323995).
+        # Only the weapons that write it; the rest are the constructor's 0.
+        from extract_map import weapon_ammo_types
+        library = self.library(
+            "ObjectTemplate.create HandFireArms GrenadeAllies\n"
+            "ObjectTemplate.ammoType 2\n"
+            "ObjectTemplate.create FireArms B17BombRack\n"
+            "ObjectTemplate.ammoType 9\n"
+            "ObjectTemplate.create FireArms ShermanCannon\n"
+            "ObjectTemplate.create HandFireArms KnifeAllies\n")
+        self.assertEqual({"b17bombrack": 9, "grenadeallies": 2}, weapon_ammo_types(library))
+
+        class Tables:
+            def as_dict(self):
+                return {"materials": {}, "modifiers": {}, "effects": {}}
+
+        with tempfile.TemporaryDirectory() as tmp:
+            shared = Path(tmp) / "_shared"
+            write_damage_tables(Tables(), shared, Path(tmp) / "a", {}, {"bazooka": 3})
+            write_damage_tables(Tables(), shared, Path(tmp) / "b", {}, {"thompson": 1})
+            payload = json.loads((shared / "damage.json").read_text())
+            # Merged like the rounds: a weapon one level declares stays.
+            self.assertEqual({"bazooka": 3, "thompson": 1}, payload["ammoTypes"])
+            # A caller with no library writes no table rather than an empty one.
+            write_damage_tables(Tables(), Path(tmp) / "_other", Path(tmp) / "c", {})
+            self.assertNotIn("ammoTypes",
+                             json.loads((Path(tmp) / "_other" / "damage.json").read_text()))
+
+    def test_the_armors_explosion_words_are_written_beside_the_rounds(self) -> None:
+        # Gap audit 2026-11-12 entries 2 and 3: `explosionRadius` /
+        # `explosionDamage` / `explosionMaterial` / `explosionForce`
+        # (ConsoleClass120..123, `SimpleObjectTemplate+0xdc..+0xe8`) and the
+        # push pair, for every template with an Armor. Only the words written;
+        # `explosionMaterial` is an `istream >> int`.
+        from extract_map import ARMOR_EXPLOSION_DEFAULTS, armor_explosions
+        library = self.library(
+            "ObjectTemplate.create PlayerControlObject Sherman\n"
+            "ObjectTemplate.hasArmor 1\n"
+            "ObjectTemplate.explosionRadius 8\n"
+            "ObjectTemplate.explosionDamage 5\n"
+            "ObjectTemplate.explosionForceMod 13\n"
+            "ObjectTemplate.create PlayerControlObject Raft\n"
+            "ObjectTemplate.hasArmor 1\n"
+            "ObjectTemplate.explosionRadius 3.0\n"
+            "ObjectTemplate.explosionMaterial 52.7\n"
+            "ObjectTemplate.explosionForce 1.0\n"
+            "ObjectTemplate.create PlayerControlObject Daihatsu\n"
+            "ObjectTemplate.hasArmor 1\n"
+            "ObjectTemplate.create SimpleObject Palm\n"
+            "ObjectTemplate.explosionDamage 3\n")
+        table = armor_explosions(library)
+        self.assertEqual({"explosionRadius": 8.0, "explosionDamage": 5.0,
+                          "explosionForceMod": 13.0}, table["sherman"])
+        self.assertEqual({"explosionRadius": 3.0, "explosionMaterial": 52,
+                          "explosionForce": 1.0}, table["raft"])
+        self.assertEqual({}, table["daihatsu"])
+        self.assertNotIn("palm", table)
+        self.assertEqual({"explosionRadius": 15.0, "explosionDamage": 10.0,
+                          "explosionMaterial": 204, "explosionForce": 150.0,
+                          "explosionForceMod": 1.0, "explosionForceMax": 300.0},
+                         ARMOR_EXPLOSION_DEFAULTS)
+
+        class Tables:
+            def as_dict(self):
+                return {"materials": {}, "modifiers": {}, "effects": {}}
+
+        with tempfile.TemporaryDirectory() as tmp:
+            shared = Path(tmp) / "_shared"
+            write_damage_tables(Tables(), shared, Path(tmp) / "a", {}, {}, {"sherman": {}})
+            write_damage_tables(Tables(), shared, Path(tmp) / "b", {}, {}, {"willy": {}})
+            payload = json.loads((shared / "damage.json").read_text())
+            self.assertEqual({"sherman": {}, "willy": {}}, payload["armors"])
+
+
 if __name__ == "__main__":
     unittest.main()

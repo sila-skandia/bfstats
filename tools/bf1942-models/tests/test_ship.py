@@ -55,6 +55,8 @@ MODULES = {
     "drive-history.js": VIEWER / "drive-history.js",
     # `aircraft.js`'s engine law for an airframe with engines off its nose.
     "vectored-engines.js": VIEWER / "vectored-engines.js",
+    # `vectored-engines.js` steps an Engine's heat (PHY-45).
+    "rocket-burn.js": VIEWER / "rocket-burn.js",
     "body-float.js": VIEWER / "body-float.js",
     # `ship.js`'s own two new imports: the gearbox (`engine-revs.js`, no imports
     # of its own) and the Coulomb constants the beaching friction uses.

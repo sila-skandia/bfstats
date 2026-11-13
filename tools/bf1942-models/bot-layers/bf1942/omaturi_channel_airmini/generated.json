@@ -1,0 +1,157 @@
+{
+ "generator": "botgen",
+ "version": 5,
+ "mod": "bf1942",
+ "level": "omaturi_channel_airmini",
+ "objectSpawners": 16,
+ "template": "few",
+ "templateSource": "DICE, bf1942 Kursk (1.6 patch archives, Kursk_003.rfa): AI/Strategies.con, AI/conditions.con, AI/prerequisites.con, unchanged",
+ "templateChoice": {
+  "name": "few",
+  "inPlay": 0,
+  "rule": "0 capturable flags in play, at most 3"
+ },
+ "scope": "an infantry map painted from the walk test, a Tank0 map from the page painter, infantry order positions, no strategic maps, no co-op layer",
+ "unreachable": [],
+ "unreachableReasons": {},
+ "botSpawnsExcluded": [
+  "3F_Spawn_1_1",
+  "3F_Spawn_2_1",
+  "3F_Spawn_1_2",
+  "3F_Spawn_2_2",
+  "2F_Spawn_1_1",
+  "2F_Spawn_2_1",
+  "2F_Spawn_1_2",
+  "2F_Spawn_2_2",
+  "2F_Spawn_2_3",
+  "2F_Spawn_1_3",
+  "2F_Spawn_2_4",
+  "2F_Spawn_1_4",
+  "AxisBase_Spawn5",
+  "AlliedBase_Spawn9",
+  "AlliedBase_Spawn10",
+  "AlliedBase_Spawn11",
+  "AlliedBase_Spawn12",
+  "AlliedBase_Spawn13"
+ ],
+ "walkMap": {
+  "source": "walk test",
+  "engine": "none",
+  "vehicleMap": "page painter",
+  "vehicleBrush": 3,
+  "vehicleBrushes": [
+   {
+    "brush": 3,
+    "flagsOn": 2,
+    "spawnersOn": 2,
+    "pieces": 2,
+    "main": 538
+   },
+   {
+    "brush": 2.5,
+    "flagsOn": 2,
+    "spawnersOn": 2,
+    "pieces": 2,
+    "main": 628
+   },
+   {
+    "brush": 2,
+    "flagsOn": 2,
+    "spawnersOn": 2,
+    "pieces": 2,
+    "main": 636
+   },
+   {
+    "brush": 1.5,
+    "flagsOn": 2,
+    "spawnersOn": 2,
+    "pieces": 3,
+    "main": 733
+   }
+  ],
+  "opened": [],
+  "ways": [
+   {
+    "who": "AxisBase_Spawn5",
+    "kind": "spawn",
+    "way": "none",
+    "opened": 0
+   },
+   {
+    "who": "AlliedBase_Spawn9",
+    "kind": "spawn",
+    "way": "none",
+    "opened": 0
+   },
+   {
+    "who": "AlliedBase_Spawn10",
+    "kind": "spawn",
+    "way": "none",
+    "opened": 0
+   },
+   {
+    "who": "AlliedBase_Spawn11",
+    "kind": "spawn",
+    "way": "none",
+    "opened": 0
+   },
+   {
+    "who": "AlliedBase_Spawn12",
+    "kind": "spawn",
+    "way": "none",
+    "opened": 0
+   },
+   {
+    "who": "AlliedBase_Spawn13",
+    "kind": "spawn",
+    "way": "none",
+    "opened": 0
+   }
+  ],
+  "cover": 0.978,
+  "floors": {
+   "stacked": true,
+   "twoFloorShare": 0.649,
+   "raised": [],
+   "reason": "65 % of the main floor has another walked floor over or under it"
+  }
+ },
+ "routeProbe": {
+  "chokeMax": 4,
+  "unreachable": [],
+  "stops": {},
+  "oneSided": {},
+  "sides": {
+   "1": {
+    "spawns": 3,
+    "flags": []
+   },
+   "2": {
+    "spawns": 3,
+    "flags": []
+   }
+  },
+  "chokes": {},
+  "late": {},
+  "shutLinks": []
+ },
+ "inputs": {
+  "controlPoints": "22394f44fef580ada270f9a7ec40c88039d38acd4f50ae1ca57663399fa4345d",
+  "infantryMap": "873f283078bae93f98e6203d0f60fae1e2eb0c903a97804a01b51daa9bd34aab",
+  "template": "bdc0e455f47f91b7e7724e71d7c0c196e839b36946ac3abb7663d725944081e5"
+ },
+ "files": {
+  "AI.con": "39c086362b6dcfd68c98d0a970906aadd87bd9696ae330b3fadd5b90b8bfb447",
+  "AIpathFinding.con": "8014dbf6ef50a7e5ba3bd3af85ed910350bb0936cd33c5a2e1c5138053711957",
+  "AI/StrategicAreas.con": "e74880058303e6eb79cef9047561b88fb8c9b4106f36ebdb0931a5a289df3dc3",
+  "AI/Strategies.con": "13da4dc35872dd4b5798a066f4425bdc824cfd61f31093d1808e1202644de52e",
+  "AI/conditions.con": "248a04b727c08d696bf0fa9c162bc22c43cde3c75f695892fe1e0f5141519c49",
+  "AI/prerequisites.con": "c96168b5f69860e578f5d26728fd2a2092c4c436e1da49b7d6f4009b65735398",
+  "Pathfinding/Infantry1Level0Map.raw": "f90816144be052aa0519e3e20bc2c4ad53c4c62f26b621c88c6784b96ea2aae7",
+  "Pathfinding/Infantry1Level1Map.raw": "7d65345f0cf1535bf6ac2843ef8b2975e4635e21efc992bc525674d1cff35c8e",
+  "Pathfinding/Infantry1Level2Map.raw": "d73b0b5925883ef4a86aae0c36face811cfceeac18daafd7859582dbdd843cc3",
+  "Pathfinding/Tank0Level0Map.raw": "7251633d88495cbacffc0067329a4c7599b6e1e5abccc61dfea14746ce79fc29",
+  "Pathfinding/Tank0Level1Map.raw": "f645968e2873b336af7dbda356c65794f253462a09620c9613075c951ab09db7",
+  "Pathfinding/Tank0Level2Map.raw": "48d6064ce9f87721fe6b6fda1b34cd99b0bdfea6e556622955b145e800c9a3c6"
+ }
+}

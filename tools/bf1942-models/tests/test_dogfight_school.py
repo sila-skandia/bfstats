@@ -278,10 +278,13 @@ class LessonTests(_Harness):
 
     def test_the_counters_take_his_kill_shots_away(self) -> None:
         # Out of his lock: the lock is his shot, held while he closes to 150 m
-        # before you turn; after the turn he lands one hit in nine fights
-        # (test_dogfight_shape_tail.py holds the rest).
+        # before you turn; after the turn he lands a single hit in two of nine
+        # fights, both after a second chop (one in nine until it was
+        # re-pinned 2026-11-12 on retail g and box area
+        # (features/retail-parity-cross-check-2026-11-12);
+        # test_dogfight_shape_tail.py holds the rest).
         self.assertGreaterEqual(min(self.shot_seconds("out-of-the-lock", "without", 0)), 4)
-        self.assertLessEqual(sum(r["hits"][0] for r in self.demo("out-of-the-lock", "counter")), 1)
+        self.assertLessEqual(sum(r["hits"][0] for r in self.demo("out-of-the-lock", "counter")), 2)
         # A boom-and-zoomer's shots are short bursts by design, so only the
         # counters' side is held here; test_dogfight_shape_height holds the
         # passes, the bursts and the kills.
@@ -348,15 +351,17 @@ class LessonTests(_Harness):
 
     def test_following_him_up_gets_you_nothing_and_following_shallow_gets_you_the_hits(self) -> None:
         # "The school's ace seldom lands the shot from over the top (under
-        # one hit a fight)"; following shallow "you ... landed 12 a fight to
-        # his 0.6" (his 0.2 before every pilot had human eyes, 2026-11-07).
+        # one hit a fight)"; following shallow "you ... landed 10 a fight to
+        # his 0.6" (his 0.2 before every pilot had human eyes, 2026-11-07; 12
+        # until it was re-pinned 2026-11-12 on retail g and box area,
+        # features/retail-parity-cross-check-2026-11-12).
         # The shape (how high, how fast, from where) is
         # test_dogfight_shape_vertical's.
         up = self.demo("up-and-over", "move")
         shallow = self.demo("up-and-over", "counter")
         self.assertLess(sum(r["hits"][0] for r in up) / len(up), 1)
         self.assertLess(sum(r["hits"][1] for r in up) / len(up), 1)
-        self.assertGreater(sum(r["hits"][1] for r in shallow) / len(shallow), 11)
+        self.assertGreater(sum(r["hits"][1] for r in shallow) / len(shallow), 9.5)
         self.assertLess(sum(r["hits"][0] for r in shallow) / len(shallow), 0.7)
         self.assertTrue(all(r["winner"] != 0 for r in up + shallow))
 
@@ -386,8 +391,11 @@ class LessonTests(_Harness):
 
     def test_out_of_the_lock_turning_and_chopping_beats_flying_straight(self) -> None:
         # "flying straight was shot down every time ...; turning hard took no
-        # hit and landed none ...; the chop took one hit in nine fights and
-        # landed none". The dive and the chop's shape are held in
+        # hit and landed none ...; the chop took a single hit in two of nine
+        # fights ... and landed none" (one in nine until it was
+        # re-pinned 2026-11-12 on retail g and box area
+        # (features/retail-parity-cross-check-2026-11-12)).
+        # The dive and the chop's shape are held in
         # test_dogfight_shape_tail.py, the Dip, the Flip and the Ninja in
         # test_dogfight_dfn_ol.py.
         straight = self.demo("out-of-the-lock", "without")
@@ -395,7 +403,8 @@ class LessonTests(_Harness):
         chop = self.demo("out-of-the-lock", "counter")
         self.assertEqual(9, sum(1 for r in straight if r["winner"] == 0))
         self.assertEqual(0, sum(r["hits"][0] + r["hits"][1] for r in flat))
-        self.assertLessEqual(sum(r["hits"][0] for r in chop), 1)
+        self.assertLessEqual(sum(r["hits"][0] for r in chop), 2)
+        self.assertTrue(all(r["hits"][0] <= 1 for r in chop), chop)
         self.assertEqual(0, sum(r["hits"][1] for r in chop))
 
     def test_on_his_tail_rushing_in_is_nobodys_kill_and_the_pass_from_above_never_yours(self) -> None:
@@ -422,15 +431,24 @@ class LessonTests(_Harness):
         every start the paths cross again and again at a steady beat, the
         headings swing either side of the shared line and come back, the two
         stay close and flat, nobody falls below the speed a Spitfire turns
-        at, and the full-throttle pilot drifts out ahead."""
-        for row in self.results["scissorsShape"]:
+        at, and the full-throttle pilot drifts out ahead.
+
+        Rewritten 2026-11-12 on retail g and box area
+        (features/retail-parity-cross-check-2026-11-12): "nobody below 30 m/s,
+        nobody 130 m off the start height" now holds in eight of nine. From
+        30 m to the left and 3 m/s faster the ace, chasing his shot in the
+        fight's last 9 s, slows to 25 m/s and has sunk 135 m by the end; the
+        scissors plan is shared with the jets, so it is not retuned for it."""
+        rows = self.results["scissorsShape"]
+        for row in rows:
             self.assertGreaterEqual(row["crossings"], 6, row)
             self.assertTrue(all(2.5 <= g <= 8 for g in row["gaps"]), row)
             self.assertLessEqual(max(row["off"]), 90, row)
             self.assertLessEqual(row["maxRange"], 250, row)
-            self.assertLessEqual(max(row["dy"]), 130, row)
-            self.assertGreaterEqual(min(row["minV"]), 30, row)
+            self.assertLessEqual(max(row["dy"]), 140, row)
+            self.assertGreaterEqual(min(row["minV"]), 25, row)
             self.assertGreaterEqual(row["youAhead"], 30, row)
+        self.assertGreaterEqual(sum(1 for r in rows if max(r["dy"]) <= 130 and min(r["minV"]) >= 30), 8, rows)
 
     def test_in_the_scissors_the_slower_pilot_gets_the_shot(self) -> None:
         rows = self.results["scissorsShape"]

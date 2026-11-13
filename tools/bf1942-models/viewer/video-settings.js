@@ -18,6 +18,10 @@
 //                           emitter spawns that fraction as often (VID-2)
 //   ENVIRONMENT MAPPING     the StandardMesh reflection stage on or off (VID-3)
 //   LIGHTMAPS               object lightmaps on, or the lit path (VID-4)
+//   SHADOWS                 the dynamic shadow pass on or off: the
+//                           `hasDynamicShadow` objects within 50 m, each
+//                           projected on the terrain (VID-7, DSH-1..DSH-9;
+//                           `dynamic-shadows.js`, `shadow-pass.js`)
 //   TEXTURE QUALITY 1..5    20..100 %: the texture manager drops 3, 2, 1, 0, 0
 //                           top mip levels, and 100 % adds a mip LOD bias of
 //                           -1.5 (VID-5)
@@ -31,7 +35,8 @@
 // With nothing stored every value is the game's HIGH, which is also what
 // the viewer drew before these rows existed: LOD percent 1, every emitter at
 // its full intensity, reflections and lightmaps on, full mips (80 %), the
-// level's whole view distance. ANTI-ALIASING is this site's own row and
+// level's whole view distance. HIGH also has SHADOWS on, which the viewer did
+// not draw before 2026-11-13. ANTI-ALIASING is this site's own row and
 // keeps its own key (`render-antialias.js`).
 //
 //   DISPLAY MODE            the game's resolution list (VID-11): the
@@ -59,7 +64,11 @@ export const DEFAULT_VIDEO = Object.freeze({
   effectsQuality: 3,
   environmentMapping: true,
   lightmaps: true,
-  textureQuality: 4,
+  shadows: true,
+  // 100 %, the top of the row: retail at its highest draws every mip with
+  // a -1.5 LOD bias (VID-5), which `texture-quality.js` answers with the
+  // GPU's anisotropy. HIGH's own file says 80 %; nothing chosen is not HIGH.
+  textureQuality: 5,
   viewDistance: 100,
   // DISPLAY MODE's height in the screen's own pixels; null is the page's
   // default, the screen's ratio capped at 2 (what it drew before the list).
@@ -67,12 +76,12 @@ export const DEFAULT_VIDEO = Object.freeze({
 });
 
 /** `Settings/Default/Video{Low,Medium,High}.con`, the files VIDEO
- *  PERFORMANCE runs (BF1942.exe 0x006afc40, 0x006afac8, 0x006af954). Their
- *  shadows line is left out: the viewer draws no dynamic shadows. */
+ *  PERFORMANCE runs (BF1942.exe 0x006afc40, 0x006afac8, 0x006af954).
+ *  `game.setShadows` is 1 in HIGH alone. */
 export const PRESETS = Object.freeze({
-  1: Object.freeze({ graphicsQuality: 1, effectsQuality: 1, environmentMapping: false, lightmaps: false, textureQuality: 1, viewDistance: 75 }),
-  2: Object.freeze({ graphicsQuality: 2, effectsQuality: 2, environmentMapping: false, lightmaps: true, textureQuality: 3, viewDistance: 100 }),
-  3: Object.freeze({ graphicsQuality: 3, effectsQuality: 3, environmentMapping: true, lightmaps: true, textureQuality: 4, viewDistance: 100 }),
+  1: Object.freeze({ graphicsQuality: 1, effectsQuality: 1, environmentMapping: false, lightmaps: false, shadows: false, textureQuality: 1, viewDistance: 75 }),
+  2: Object.freeze({ graphicsQuality: 2, effectsQuality: 2, environmentMapping: false, lightmaps: true, shadows: false, textureQuality: 3, viewDistance: 100 }),
+  3: Object.freeze({ graphicsQuality: 3, effectsQuality: 3, environmentMapping: true, lightmaps: true, shadows: true, textureQuality: 4, viewDistance: 100 }),
 });
 
 /** VIDEO PERFORMANCE's radio lines: `Options/Video/Performance`. */
@@ -243,6 +252,7 @@ export function normalizeVideo(value = {}) {
     effectsQuality: clampInt(v.effectsQuality, 1, 3, DEFAULT_VIDEO.effectsQuality),
     environmentMapping: bool(v.environmentMapping, DEFAULT_VIDEO.environmentMapping),
     lightmaps: bool(v.lightmaps, DEFAULT_VIDEO.lightmaps),
+    shadows: bool(v.shadows, DEFAULT_VIDEO.shadows),
     textureQuality: clampInt(v.textureQuality, 1, 5, DEFAULT_VIDEO.textureQuality),
     // The game's edit box takes 50..100 and the setter caps at 100 (0x006af061).
     viewDistance: clampInt(v.viewDistance, 50, 100, DEFAULT_VIDEO.viewDistance),
@@ -307,6 +317,15 @@ export function storedVideo(storage = browserStorage(), display = displayOf()) {
   try {
     const text = storage?.getItem(VIDEO_KEY);
     const raw = text ? JSON.parse(text) : {};
+    // A choice kept before SHADOWS was a row: a preset keeps its own
+    // shadows line (LOW and MEDIUM stay LOW and MEDIUM), any other mix the
+    // default.
+    if (raw && typeof raw === 'object' && text && typeof raw.shadows !== 'boolean') {
+      const kept = normalizeVideo(raw);
+      const preset = Object.values(PRESETS).find(p =>
+        Object.entries(p).every(([k, x]) => k === 'shadows' || kept[k] === x));
+      if (preset) raw.shadows = preset.shadows;
+    }
     if (raw && typeof raw === 'object' && raw.displayHeight == null && 'renderScale' in raw) {
       raw.displayHeight = migrateRenderScale(raw.renderScale, display);
     }

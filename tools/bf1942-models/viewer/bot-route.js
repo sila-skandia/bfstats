@@ -28,10 +28,13 @@
 // circles and then walked straight at (INVENTION).
 
 import { beginLocalSearch, stepLocalSearch, findStrategicPath, traceClear, COARSE_CELL, freeLevel, isWalkable, resolveClearStart, freeRun } from './nav-grid.js';
-import { tankControl, TANK, actionStatusDecision, searchBox, checkLine } from './bot-vehicle.js';
-import { boatControl, boatResetControls, PLANE, collisionPredicted } from './bot-vehicle-air.js';
+import { tankControl, TANK, actionStatusDecision, searchBox, checkLine, boxExit,
+         HULL_AVOID, hullAvoidUrgency, hullAvoidTurn } from './bot-vehicle.js';
+import { boatControl, boatResetControls, PLANE, BOAT, collisionPredicted } from './bot-vehicle-air.js';
+import { SOLDIER_MASS } from './soldier-locomotion.js';
 import { friendlyHulls } from './bot-pilot.js';
 import { wrapAngle } from './bot-aim.js';
+import { SOLDIER_SMALLEST_RADIUS } from './bot-sense.js';
 import { movePose } from './bot-pose.js';
 
 /** How close to a plain waypoint before it counts as reached. */
@@ -124,9 +127,9 @@ const SMOOTHING = 10;
 export const LOCAL_SEARCH_RADIUS_MIN = 10;
 export const LOCAL_SEARCH_RADIUS_RAND = 14;
 /** The body radius a path point is popped inside (`checkAgainstPath`
- *  0x0852bc40 tests `(vehicle+0x24)->v(0x30)`, the AI object's radius).
- *  INVENTION: the soldier's value was not read; the engine floors the
- *  removal distance at 0.5 (`getMaxPathPosRemovalDistance` 0x0852b780). */
+ *  0x0852bc40 tests `(vehicle+0x24)->v(0x30)`, the AI object's radius): a
+ *  soldier's 1.0, the hull of `BodyCollision` (`bot-sense.js SOLDIER_RADIUS`,
+ *  AI-197). The avoid reads his `getSmallestRadius` instead, `SOLDIER_SMALLEST_RADIUS`. */
 export const BOT_RADIUS = 1.0;
 /** A land vehicle's body radius on its map when the page gives none (INVENTION). */
 export const VEHICLE_RADIUS = 3.0;
@@ -218,8 +221,19 @@ const HULL_WALL_NORMAL_Y = 0.6;
  */
 export const SOLDIER_AVOID = {
   lookAhead: 5.0,
-  /** `getPotentialObstacleMaxSpeed`, 0 (`AIPathfinding` ctor 0x0847a780). */
-  potentialObstacleMaxSpeed: 0,
+  /** `getPotentialObstacleMaxSpeed` (`AIPathfinding+0x2c`, read through
+   *  IAIPathfinding vt+0x8c by `BBAvoid::calculateUrgency` 0x0855cecf and
+   *  `updatePotentialObstacles` 0x0852dac0): 1.0, written by the
+   *  `AIPathfinding` ctor at 0x0847a7f0 and by `reset` 0x0847e5a2. No
+   *  console word sets it. Read as 0 until 2026-11-12. */
+  potentialObstacleMaxSpeed: 1.0,
+  /** `getPotentialObstacleMaxAge` (`+0x30`, vt+0x94, 0x0852daaa): 10 s, the
+   *  same two writes (0x0847a7f7, 0x0847e5a9). */
+  potentialObstacleMaxAge: 10.0,
+  /** `updatePotentialObstacles` drops a planted body moving faster than
+   *  `maxSpeed x 1.2` (the float at 0x086c4f64, 0x0852dac6; the compare at
+   *  0x0852dbd9). */
+  dropSpeedScale: 1.2,
   /** A body slower than this reads as still: the viewer's bodies drift a
    *  few mm/s at rest (INVENTION: the engine compares the exact speed). */
   stillSpeed: 0.05,
@@ -230,14 +244,15 @@ export const SOLDIER_AVOID = {
 /** The bodies a soldier's prediction tests: own-side soldiers on foot and
  *  own-side or empty hulls (the bot's side's grid and the neutral one,
  *  IAIEnvironment vt+0xdc), `{ id, x, z, vx, vz, r }`. */
-function avoidBodies(bot) {
+export function avoidBodies(bot) {
   const out = [];
   for (const [id, p] of bot.world?.players ?? []) {
     if (id === bot.playerId || !p?.soldier || p.vehicle || p.team !== bot.team) continue;
     const s = p.soldier;
     if (bot.world?.armorOf?.(id)?.destroyed || !Number.isFinite(s.x)) continue;
     const v = s.speed ?? 0;
-    out.push({ id: `p:${id}`, x: s.x, z: s.z, vx: v * Math.sin(s.yaw ?? 0), vz: v * Math.cos(s.yaw ?? 0), r: BOT_RADIUS });
+    out.push({ id: `p:${id}`, x: s.x, z: s.z, vx: v * Math.sin(s.yaw ?? 0), vz: v * Math.cos(s.yaw ?? 0), r: SOLDIER_SMALLEST_RADIUS,
+               mass: SOLDIER_MASS });
   }
   // The hull the bot is walking to board is its plan's own target, not an
   // obstacle (INVENTION: how `BBPChange::createPlan`'s finding move treats
@@ -265,7 +280,7 @@ function avoidBodies(bot) {
     });
     out.push({ id: `h:${h.id}`, x, z, vx: st?.velocity?.x ?? 0, vz: st?.velocity?.z ?? 0,
                r: 0.5 * Math.hypot(b.max[0] - b.min[0], b.max[2] - b.min[2]),
-               spheres, sphereR: sub.r });
+               spheres, sphereR: sub.r, mass: h.mass ?? 0 });
   }
   return out;
 }
@@ -315,35 +330,69 @@ export function subSpheres2d(box) {
  * the number of obstacles planted.
  */
 export function predictObstacles(bot, bodies = null) {
-  if (bot.vehicle) return 0;
-  const soldier = bot._player?.()?.soldier;
-  const speed = soldier?.speed ?? 0;
-  const yaw = soldier?.yaw ?? bot.yaw ?? 0;
+  // A driver predicts from the hull (`BBAvoid` on the Tank, Car and Boat
+  // rows, AI-95): its velocity, its radius, its Mobile `maxSpeed` for the
+  // cluster, its own look-ahead; the hull itself is no obstacle to it.
+  const hull = drivesHull(bot) ? bot.vehicle : null;
+  if (bot.vehicle && !hull) return 0;
   const me = [bot.position[0], bot.position[2]];
-  const vel = [speed * Math.sin(yaw), speed * Math.cos(yaw)];
+  let vel, speed, lookAhead = SOLDIER_AVOID.lookAhead, maxSpeed = SOLDIER_AVOID.maxSpeed;
+  if (hull) {
+    const v = hull.drive?.state?.velocity;
+    vel = [v?.x ?? 0, v?.z ?? 0];
+    speed = Math.hypot(vel[0], vel[1]);
+    lookAhead = hullLookAhead(hull);
+    maxSpeed = hull.hullMaxSpeed || hull.maxSpeed || 0;
+  } else {
+    const soldier = bot._player?.()?.soldier;
+    speed = soldier?.speed ?? 0;
+    const yaw = soldier?.yaw ?? bot.yaw ?? 0;
+    vel = [speed * Math.sin(yaw), speed * Math.cos(yaw)];
+  }
   const R = bot._radius?.() ?? BOT_RADIUS;
-  const reach = SOLDIER_AVOID.lookAhead * speed + R;
-  const list = bodies ?? avoidBodies(bot);
-  const still = o => Math.hypot(o.vx, o.vz) <= SOLDIER_AVOID.potentialObstacleMaxSpeed + SOLDIER_AVOID.stillSpeed;
+  const reach = lookAhead * speed + R;
+  const own = hull ? `h:${hull.vehicleId}` : null;
+  const list = (bodies ?? avoidBodies(bot)).filter(o => o.id !== own);
+  const unit = hull ? hull.vehicleId : null;
+  // `updatePotentialObstacles`' distance rule, `5 x size + R` (25.5 m for a
+  // soldier): a hull's size is its Mobile `maxSpeed`.
+  const drop = hull ? 5 * maxSpeed + R : undefined;
+  const still = o => Math.hypot(o.vx, o.vz) <= SOLDIER_AVOID.potentialObstacleMaxSpeed;
   let planted = 0;
   // One circle a sub-sphere (`addPotentialObstacle` 0x0852ceb0); a soldier
   // is one sphere at his feet.
+  // A driver plants no body whose circles it already stands in (INVENTION:
+  // the engine's search moves its start out of such a circle,
+  // `BotMain::resolveAvoidStartingPoint` 0x08528ca0, which the viewer's
+  // hull search does not; a Daihatsu beside its carrier at Wake planted the
+  // carrier's and its neighbours' spheres round itself, failed every route
+  // and never left, 2026-11-12).
+  const encloses = o => (o.spheres?.length
+    ? o.spheres.some(([x, z]) => Math.hypot(x - me[0], z - me[1]) < R + o.sphereR)
+    : Math.hypot(o.x - me[0], o.z - me[1]) < R + o.r);
   const plant = o => {
     if (bot.obstacles.some(ob => ob.id === o.id || ob.id?.startsWith(`${o.id}#`))) return;
+    if (hull && encloses(o)) return;
+    // Nor a body it has just forgotten (`ensureRoute`, INVENTION).
+    const forgotUntil = hull ? bot._forgotBodies?.get(o.id) : undefined;
+    if (forgotUntil !== undefined) {
+      if ((bot._now ?? 0) < forgotUntil) return;
+      bot._forgotBodies.delete(o.id);
+    }
     if (o.spheres?.length) {
-      o.spheres.forEach(([x, z], k) => bot.obstacles.push({ x, z, r: R + o.sphereR, age: 0, id: `${o.id}#${k}`, unit: null }));
+      o.spheres.forEach(([x, z], k) => bot.obstacles.push({ x, z, r: R + o.sphereR, age: 0, id: `${o.id}#${k}`, body: o.id, unit, drop }));
     } else {
-      bot.obstacles.push({ x: o.x, z: o.z, r: R + o.r, age: 0, id: o.id, unit: null });
+      bot.obstacles.push({ x: o.x, z: o.z, r: R + o.r, age: 0, id: o.id, body: o.id, unit, drop });
     }
     planted++;
   };
   for (const o of list) {
     const rel = [o.x - me[0], 0, o.z - me[1]];
     if (Math.hypot(rel[0], rel[2]) > reach + o.r) continue;
-    const hit = collisionPredicted(rel, [o.vx - vel[0], 0, o.vz - vel[1]], R + o.r, SOLDIER_AVOID.lookAhead);
+    const hit = collisionPredicted(rel, [o.vx - vel[0], 0, o.vz - vel[1]], R + o.r, lookAhead);
     if (!hit || !(hit.t === 0 || still(o))) continue;
     plant(o);
-    const around = SOLDIER_AVOID.maxSpeed * 5 + o.r;
+    const around = maxSpeed * 5 + o.r;
     for (const q of list) {
       if (q !== o && still(q) && Math.hypot(q.x - o.x, q.z - o.z) <= around) plant(q);
     }
@@ -351,15 +400,218 @@ export function predictObstacles(bot, bodies = null) {
   // `addPotentialObstacle` 0x0852ceb0 marks the bot's paths stale (+0xc0
   // |= 4, so `initPathfinding` builds afresh): the route is rebuilt now,
   // around the new circles.
-  if (planted && bot.route) bot.route = null;
+  // (`checkAndInitAvoidPathfinding` 0x08527bf0 returns at once on a path in
+  // state 3: a failed one is left as it is.)
+  if (planted && bot.route && !bot.route.searchFailed) bot.route = null;
   return planted;
 }
 
-/** `updatePotentialObstacles`: an obstacle is dropped once the bot is
- *  well away from it (max age 0 in every shipped level). */
-export function ageObstacles(bot, dt) {
+/**
+ * `BBAvoid::calculateUrgency` 0x0855c650 for a soldier on foot (the
+ * Infantery row's `Avoid BBAvoid BBPAvoidCollisionInfantery`, AI-192): the
+ * same generator a driver runs (`hullAvoidUrgency`), from the soldier's own
+ * velocity and radius, 5 s ahead (`SOLDIER_AVOID.lookAhead`, AI-119),
+ * against the side's soldiers on foot and the side's and empty hulls
+ * (`avoidBodies`, the board target left out as the engine leaves its change
+ * target out, 0x0855caad). A predicted hit on a body moving 1.0 m/s or more
+ * adds `mass x |relVel| / |rel|`; the largest names the plan's body and its
+ * predicted time (`BBPAvoidCollisionInfantery::init` 0x08588360). Records
+ * `bot._footAvoidBest` and returns the unscaled urgency. `bodies` defaults
+ * to the world's. One departure, below: a body already touching is not
+ * scored.
+ */
+export function footAvoid(bot, bodies = null) {
+  const soldier = bot._player?.()?.soldier;
+  const speed = soldier?.speed ?? 0;
+  const yaw = soldier?.yaw ?? bot.yaw ?? 0;
+  const self = { id: `p:${bot.playerId}`, x: bot.position[0], z: bot.position[2],
+                 vx: speed * Math.sin(yaw), vz: speed * Math.cos(yaw), r: bot.vehicle ? bot._radius() : SOLDIER_SMALLEST_RADIUS };
+  // INVENTION (2026-11-13): a body already inside the two radii is left out.
+  // The engine scores it too (`collisionPredicted` 0x0855d2f0 returns 1.0
+  // with t = 0 for an overlap, 0x0855d334..0x0855d340, and 0x0855cf03 scores
+  // any hit on a body at 1.0 m/s or more), against the soldier's own
+  // `getSmallestRadius` (IPIPhysicalReal vt+0x30, half his local box's
+  // diagonal: `SOLDIER_SMALLEST_RADIUS` 1.063, read in AI-197). At 1.06 m a side, two bots walking one route side by side are
+  // always "overlapping": the runner's Berlin match (seed 1, 8 a side, 600 s)
+  // spent 11.6 % of its bot time in Avoid, 83 % of 10,312 plans on a body
+  // inside 2 m, and went from 5 captures and 4 route failures to 0 and 68.
+  // So the page predicts the contact, which is the gap the audit named, and
+  // leaves the bodies already in contact to the contact rule (`trackContact`).
+  const list = (bodies ?? avoidBodies(bot)).filter(o => Math.hypot(o.x - self.x, o.z - self.z) >= self.r + o.r);
+  const r = hullAvoidUrgency({ self, others: list, lookAhead: SOLDIER_AVOID.lookAhead });
+  const prev = bot._footAvoidBest?.id ?? null;
+  bot._footAvoidBest = r.best ? { id: r.best.id, t: r.best.t, other: r.best.other, velocity: [self.vx, self.vz] } : null;
+  if (bot._footAvoidBest && bot._footAvoidBest.id !== prev) bot.changedTarget.Avoid = true;
+  return r.urgency;
+}
+
+/**
+ * `AIPathfinding::getBox` 0x0847d110 for a unit standing at `(x, z)` on its
+ * own map (`searchBox`, as `planHullAvoid` takes a hull's): `{ min, max }`
+ * in the map's own metres (x, and z negated as the map keeps it), or null
+ * on a blocked cell or with no map.
+ */
+export function standingBox(bot, x, z) {
+  const nav = bot._nav();
+  if (!nav) return null;
+  const cs = nav.cellSize;
+  const maxLevel = Number.isFinite(nav.maxLevel) ? nav.maxLevel : HULL_BOX_MAX_LEVEL;
+  const minLevel = bot.vehicle?.kind === 'ship' ? BOAT.baseLevel : 0;
+  const levelAt = (gx, gz) => freeLevel(nav, (gx + 0.5) * cs, -(gz + 0.5) * cs, maxLevel);
+  const gx = Math.floor(x / cs), gz = Math.floor(-z / cs);
+  if (levelAt(gx, gz) < minLevel) return null;
+  const box = searchBox(levelAt, gx, gz, { minLevel, maxLevel });
+  if (!box) return null;
+  return { min: [box.min[0] * cs, box.min[1] * cs], max: [box.max[0] * cs, box.max[1] * cs], cellSize: cs };
+}
+
+/** Whether the bot drives a hull that runs the 2d avoid: a ground hull or a
+ *  boat (`Avoid BBAvoid BBPAvoidCollision2d` on every driven ground and boat
+ *  row; the aircraft's is the 3d one, bot-pilot.js `airAvoid`). */
+export function drivesHull(bot) {
+  const m = bot.vehicle;
+  return !!(m?.drives && m.kind !== 'air' && m.kind !== 'gun');
+}
+
+/** The hull's Mobile `avoidCollisionLookAhead` (`HULL_AVOID.lookAhead`, 5 s,
+ *  where its template sets none). */
+function hullLookAhead(m) {
+  const t = m?.avoidCollisionLookAhead;
+  return Number.isFinite(t) && t > 0 ? t : HULL_AVOID.lookAhead;
+}
+
+/** `getSmallestRadius` 0x085d68f0: half the local box's diagonal. */
+function smallestRadius(box) {
+  return 0.5 * Math.hypot(box.max[0] - box.min[0], box.max[1] - box.min[1], box.max[2] - box.min[2]);
+}
+
+/**
+ * `BBAvoid::calculateUrgency` 0x0855c650 for a bot driving a ground hull or
+ * a boat (bot-vehicle.js `hullAvoidUrgency`): the hull against the side's
+ * soldiers on foot and the side's and empty hulls (the side's and the
+ * neutral grid, as `avoidBodies`), each with its physics mass (a soldier's
+ * `mass 100`, `CommonSoldierData.inc`). Records the plan's object on the bot
+ * (`_hullAvoidBest`) and returns the unscaled urgency. The still bodies are
+ * `predictObstacles`' half, run on the drive's move. On x/z at the objects'
+ * positions (the engine's sphere centres sit a box offset over them).
+ */
+export function hullAvoid(bot) {
+  const m = bot.vehicle;
+  const st = m?.drive?.state;
+  if (!st) { bot._hullAvoidBest = null; return 0; }
+  const hulls = friendlyHulls(bot);
+  const ownBox = hulls.find(h => h.id === m.vehicleId)?.box ?? null;
+  const self = { id: `h:${m.vehicleId}`, x: st.position.x, z: st.position.z, vx: st.velocity.x, vz: st.velocity.z,
+                 r: ownBox ? smallestRadius(ownBox) : bot._radius() };
+  const others = [];
+  for (const [id, p] of bot.world?.players ?? []) {
+    if (id === bot.playerId || !p?.soldier || p.vehicle || p.team !== bot.team) continue;
+    const s = p.soldier;
+    if (bot.world?.armorOf?.(id)?.destroyed || !Number.isFinite(s.x)) continue;
+    const v = s.speed ?? 0;
+    others.push({ id: `p:${id}`, x: s.x, z: s.z, vx: v * Math.sin(s.yaw ?? 0), vz: v * Math.cos(s.yaw ?? 0),
+                  r: SOLDIER_SMALLEST_RADIUS, mass: SOLDIER_MASS });
+  }
+  for (const h of hulls) {
+    if (h.id === m.vehicleId || !h.box || !h.pos) continue;
+    if (h.crew?.some(id => { const t = bot.world?.players?.get(id)?.team; return t !== undefined && t !== bot.team; })) continue;
+    const hs = h.drive?.state;
+    others.push({ id: `h:${h.id}`, x: hs?.position ? hs.position.x : h.pos[0], z: hs?.position ? hs.position.z : h.pos[2],
+                  vx: hs?.velocity?.x ?? 0, vz: hs?.velocity?.z ?? 0, r: smallestRadius(h.box), mass: h.mass ?? 0 });
+  }
+  const r = hullAvoidUrgency({ self, others, lookAhead: hullLookAhead(m) });
+  const prev = bot._hullAvoidBest?.id ?? null;
+  bot._hullAvoidBest = r.best ? { id: r.best.id, t: r.best.t, other: r.best.other } : null;
+  if (bot._hullAvoidBest && bot._hullAvoidBest.id !== prev) bot.changedTarget.Avoid = true;
+  return r.urgency;
+}
+
+/**
+ * `BBPAvoidCollision2d::createPlan` 0x08586420: the side step's point. The
+ * direction is `hullAvoidTurn`'s; the point is where the line along it from
+ * the hull leaves the hull's own box on its map (`IAIPathfinding` vt+0x3c,
+ * `AIPathfinding::getBox` 0x0847d110 -> 0x0847d140, then `getIntersection`
+ * 0x08612210, `boxExit`); no box (a blocked cell) or no exit, no plan.
+ * The move is `BAPAMoveToDirect` to that point at the hull's speed, ended
+ * by `BAPConTime(1.5 t)` or within 1.0 m of it (`BAPConOr`). Returns
+ * `{ point, until, otherId }` in the viewer's frame, or null.
+ */
+export function planHullAvoid(bot, now) {
+  const b = bot._hullAvoidBest;
+  const st = bot.vehicle?.drive?.state;
+  const nav = bot._nav();
+  if (!b || !st || !nav) return null;
+  const o = b.other;
+  const px = st.position.x, pz = st.position.z;
+  const { dir } = hullAvoidTurn({ velocity: [st.velocity.x, st.velocity.z], forward: bot._vehicleForward(),
+                                  otherVelocity: [o.vx, o.vz], rel: [o.x - px, o.z - pz] });
+  const cs = nav.cellSize;
+  const maxLevel = Number.isFinite(nav.maxLevel) ? nav.maxLevel : HULL_BOX_MAX_LEVEL;
+  const minLevel = bot.vehicle.kind === 'ship' ? BOAT.baseLevel : 0;
+  const levelAt = (gx, gz) => freeLevel(nav, (gx + 0.5) * cs, -(gz + 0.5) * cs, maxLevel);
+  const gx = Math.floor(px / cs), gz = Math.floor(-pz / cs);
+  if (levelAt(gx, gz) < minLevel) return null;
+  const box = searchBox(levelAt, gx, gz, { minLevel, maxLevel });
+  if (!box) return null;
+  const exit = boxExit([box.min[0] * cs, box.min[1] * cs], [box.max[0] * cs, box.max[1] * cs],
+                       [dir[0], -dir[1]], [px, -pz]);
+  if (!exit) return null;
+  return { point: [exit[0], st.position.y, -exit[1]], until: now + HULL_AVOID.timeFactor * b.t, otherId: b.id };
+}
+
+/** The side step's move: the hull's own drive straight at the point (as a
+ *  route leg steers it), done within `HULL_AVOID.arrive` of it or when its
+ *  time is up; driven on the tick that ends it too, as a plane's move is
+ *  (AI-154; INFERRED for the tank's `EntryTankMoveTo`). */
+export function execHullAvoid(bot, action, now) {
+  bot._asd = action._asd ?? (action._asd = { state: 0 });
+  bot._steerToward(action.point[0], action.point[2], 1);
+  bot._dbgSteer = [action.point[0], action.point[2]];
+  const dx = action.point[0] - bot.position[0], dz = action.point[2] - bot.position[2];
+  return Math.hypot(dx, dz) <= HULL_AVOID.arrive || now >= action.until;
+}
+
+/** The speed of each body a soldier's prediction planted, by its id
+ *  (`avoidBodies`' `p:` / `h:` ids), now; a body no longer there is absent. */
+function plantedSpeeds(bodies) {
+  const out = new Map();
+  for (const o of bodies) out.set(o.id, Math.hypot(o.vx, o.vz));
+  return out;
+}
+
+/**
+ * `updatePotentialObstacles` 0x0852d880 rebuilds the bot's circles from its
+ * planted bodies every update (the map at `BotMain+0x188`): a body that is
+ * gone (0x0852e0f9) or moving faster than `maxSpeed x 1.2` (0x0852dbd9 ->
+ * 0x0852e0e9) is dropped; one older than `maxAge` (10 s, 0x0852dbf0) is
+ * dropped once the bot is farther from it than `5 x size + R` (25.5 m,
+ * 0x0852df17..0x0852dfbf); a younger one stays wherever the bot is. A
+ * friend planted while touching (`collisionPredicted`'s t = 0) who walks on
+ * is therefore no obstacle a tick later. The page kept every circle until
+ * the bot was 25.5 m off, so a friend who had stood in a doorway closed it
+ * for the bots behind him long after he left: after the reinforcement wave
+ * (SPAWN-35) a side walks out of its base together and the circles from
+ * that crowd failed the routes of whoever followed (2026-11-12, the DICE
+ * runner: on-foot route failures per bot-minute about 1.5x). Contact
+ * circles and a hull's own circles (no planted body) keep the distance rule.
+ * `bodies` defaults to the world's (`avoidBodies`); with no world to ask,
+ * only the distance rule runs.
+ */
+export function ageObstacles(bot, dt, bodies = null) {
   if (!bot.obstacles.length) return;
   for (const ob of bot.obstacles) ob.age += dt;
+  if (bot.obstacles.some(ob => ob.body) && (bodies || bot.world)) {
+    const speeds = plantedSpeeds(bodies ?? avoidBodies(bot));
+    const fast = SOLDIER_AVOID.potentialObstacleMaxSpeed * SOLDIER_AVOID.dropSpeedScale;
+    bot.obstacles = bot.obstacles.filter(ob => {
+      if (!ob.body) return true;
+      const v = speeds.get(ob.body);
+      if (v === undefined || v > fast) return false;
+      if (ob.age <= SOLDIER_AVOID.potentialObstacleMaxAge) { ob.young = true; return true; }
+      ob.young = false;
+      return true;
+    });
+  }
   // A predicted obstacle is sized for the body that predicted it (`R_bot +
   // R_object`): one a soldier planted goes when he takes a hull, and one a
   // hull's crewman planted when he leaves it (INVENTION: what the engine's
@@ -371,7 +623,7 @@ export function ageObstacles(bot, dt) {
   const target = bot.currentPlan?.vehicleId != null ? `h:${String(bot.currentPlan.vehicleId).split(':')[0]}` : null;
   bot.obstacles = bot.obstacles.filter(ob => (ob.unit === undefined || ob.unit === unit)
     && !(target && (ob.id === target || ob.id?.startsWith(`${target}#`)))
-    && Math.hypot(ob.x - bot.position[0], ob.z - bot.position[2]) <= OBSTACLE_DROP_DISTANCE);
+    && (ob.young || Math.hypot(ob.x - bot.position[0], ob.z - bot.position[2]) <= (ob.drop ?? OBSTACLE_DROP_DISTANCE)));
 }
 
 /**
@@ -475,7 +727,17 @@ export function ensureRoute(bot, goal) {
   // straight at the goal.
   if (r?.failed) {
     const now = bot._now ?? 0;
-    if (now < (bot._routeRetryAt ?? -Infinity)) return null;
+    // A path whose search failed stays failed until a new move asks for one
+    // (`searchFailed`, AI-189): the engine starts a path only in the move's
+    // constructor (`BAPAMoveToFinding` 0x085447f0 -> `initPathfinding`,
+    // BotMain vt+0xec), `updatePathfinding` 0x08526d40 does nothing in state
+    // 3, and the goto-waypoint plan keeps its move while the order stands.
+    // The viewer searched again every 1.5 s. A new move, or a goal that has
+    // moved, searches at once.
+    const owner = bot._routeOwner ?? null;
+    if (r.searchFailed) {
+      if (r.owner === owner && Math.hypot(r.goal[0] - goal[0], r.goal[1] - goal[2]) <= REPLAN_GOAL_MOVE) return null;
+    } else if (now < (bot._routeRetryAt ?? -Infinity)) return null;
     bot._routeRetryAt = now + ROUTE_RETRY_AFTER;
     // A hull whose searches keep failing among the circles it planted on
     // itself forgets them (INVENTION): they are dropped only once the hull
@@ -483,10 +745,24 @@ export function ensureRoute(bot, goal) {
     // there. On Berlin (8 a side, seed 7) a T34 held by its own circles at
     // its base sat with its throttle off and every route failing for 410 s,
     // 700 route failures (hull-steering.md, cause 4).
+    //
+    // The bodies behind the forgotten circles stay forgotten for the life of
+    // a potential obstacle (`potentialObstacleMaxAge`, 10 s), so
+    // `predictObstacles` does not plant them again on the next tick (the same
+    // INVENTION, 2026-11-13). It did: the route the forgetting opened was
+    // thrown away one tick later by the very circles it had dropped, the
+    // next two searches failed, and the hull crept a third of a metre a
+    // cycle. On Bocage (8 a side, seed 1) a Sherman took 60 s and 38 failed
+    // routes to pass one empty hull parked by its base's exit lane.
     if (bot.vehicle && (bot._pathFailures ?? 0) >= HULL_FORGET_AFTER_FAILURES) {
       const unit = bot.vehicle.vehicleId ?? null;
       const kept = bot.obstacles.filter(o => o.unit === undefined || o.unit !== unit);
-      if (kept.length !== bot.obstacles.length) bot.obstacles = kept;
+      if (kept.length !== bot.obstacles.length) {
+        const until = now + SOLDIER_AVOID.potentialObstacleMaxAge;
+        const forgot = bot._forgotBodies ?? (bot._forgotBodies = new Map());
+        for (const o of bot.obstacles) if (o.body && o.unit === unit) forgot.set(o.body, until);
+        bot.obstacles = kept;
+      }
     }
   }
   const [bx, bz] = [bot.position[0], bot.position[2]];
@@ -514,6 +790,7 @@ export function ensureRoute(bot, goal) {
       bot.route = {
         goal: [goal[0], goal[2]], coarse: [], points: [], index: 0, lastPassed: [bx, bz],
         failed: true, searches: 0, widen: 0, search: null, deferred: false,
+        searchFailed: true, owner: bot._routeOwner ?? null,
       };
       bot._routeRetryAt = (bot._now ?? 0) + ROUTE_RETRY_AFTER;
       return null;
@@ -572,6 +849,7 @@ export function ensureRoute(bot, goal) {
     widen: 0,
     search: null,     // the current leg's search, while a budget slices it
     deferred: false,  // the leg's search is mid-way: the route stands
+    owner: bot._routeOwner ?? null,   // the move that asked for it (`searchFailed`)
     backOut,          // a wedged hull's first point (above), or null
   };
   // The count (`ObstructionDetection` +0, BotMain +0x1c0) starts again with
@@ -592,6 +870,31 @@ export function ensureRoute(bot, goal) {
 }
 
 /**
+ * The box a leg's local search takes, `updateLocalPath` 0x08527120. The
+ * path's LAST leg (Path +0x78 == +0x88) is searched in the move's own
+ * radius, BotMain+0x5c, the last float `initPathfinding` was handed
+ * (0x085271e8..0x085271eb); every other leg takes `10 + rand x 14`, raised to
+ * the largest potential obstacle, plus 1 (0x085277c3..0x0852783e). The
+ * ground moves hand the ctor of `BAPAMoveToFinding` that float: a waypoint
+ * walk (`BBPGotoWaypointSoldier::createPlan`, case 2, 0x085bb8e4) the
+ * waypoint's radius (vt+0x1c); the fire, medic, cover and change walks 0.0
+ * (`pushl $0x0` at 0x085a7f8b, 0x085c1185, 0x085cd845, 0x0858cf74). The
+ * widening after a failed leg and the failure count are the page's own
+ * (INVENTION). A hull's moves (`BBPGotoWaypoint2d`, the boat's, the driver's
+ * fire) pass their own float, unread: they keep the draw.
+ */
+export function legSearchRadius(bot, lastLeg, rand = Math.random) {
+  const widen = ROUTE_RETRY_WIDEN * Math.min(3, bot._pathFailures);
+  if (lastLeg && !bot.vehicle) {
+    const wp = bot._routeOwner?.waypointObject?.radius;
+    return (Number.isFinite(wp) ? wp : 0) + widen;
+  }
+  let radius = LOCAL_SEARCH_RADIUS_MIN + rand() * LOCAL_SEARCH_RADIUS_RAND;
+  for (const ob of bot.obstacles) radius = Math.max(radius, ob.r);
+  return radius + 1 + widen;
+}
+
+/**
  * `updateLocalPath`: while fewer than `SMOOTHING` followed points remain
  * and coarse legs are left, refine the next leg from the last followed
  * point. A leg the local search cannot answer is skipped (the engine sets
@@ -608,9 +911,7 @@ export function extendRoute(bot) {
       const from = r.points.length ? r.points[r.points.length - 1]
         : [bot.position[0], bot.position[2]];
       const [tx, tz] = r.coarse[0];
-      let radius = LOCAL_SEARCH_RADIUS_MIN + Math.random() * LOCAL_SEARCH_RADIUS_RAND;
-      for (const ob of bot.obstacles) radius = Math.max(radius, ob.r);
-      radius += 1 + ROUTE_RETRY_WIDEN * Math.min(3, bot._pathFailures);
+      const radius = legSearchRadius(bot, r.coarse.length === 1);
       // A predicted circle over the route's own end is left out of the last
       // leg's search: the viewer's plans end at points the engine's would not
       // pick (a vehicle's door between two parked hulls), and the circle
@@ -668,6 +969,7 @@ export function extendRoute(bot) {
       if (w < ROUTE_LEG_WIDENINGS) { r.widen = w + 1; return; }   // next tick, wider
       r.widen = 0;
       r.failed = true;
+      r.searchFailed = true;
       bot._pathFailures++;
       return;
     }
@@ -1152,6 +1454,7 @@ export function execInfantryMoveTo(bot, action, dt) {
     predictObstacles(bot);
     bot._trackContact(soldier);
   } else if (bot.vehicle.drives) {
+    predictObstacles(bot);
     trackHullContact(bot, bodySpeed, dt);
   }
   if (bot._trackObstruction(bodySpeed, dt)) {
@@ -1170,6 +1473,7 @@ export function execInfantryMoveTo(bot, action, dt) {
   if (navNow && isWalkable(navNow, bot.position[0], bot.position[2])) {
     bot._validPos = { nav: navNow, pos: [bot.position[0], bot.position[2]] };
   }
+  bot._routeOwner = action;
   let route = bot._ensureRoute(target);
   if (route) {
     bot._extendRoute();

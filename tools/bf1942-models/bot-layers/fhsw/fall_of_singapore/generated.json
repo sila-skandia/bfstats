@@ -1,0 +1,119 @@
+{
+ "generator": "botgen",
+ "version": 5,
+ "mod": "FHSW",
+ "level": "fall_of_singapore",
+ "objectSpawners": 302,
+ "template": "symmetric",
+ "templateSource": "DICE, bf1942 Kharkov (1.6 patch archives): AI/Strategies.con, AI/conditions.con, AI/prerequisites.con, unchanged",
+ "templateChoice": {
+  "name": "symmetric",
+  "inPlay": 6,
+  "rule": "6 capturable flags in play, more than 3"
+ },
+ "scope": "on foot: infantry order positions only, no search maps, no co-op layer",
+ "unreachable": [
+  "frontline_allies"
+ ],
+ "unreachableReasons": {
+  "frontline_allies": "walk test"
+ },
+ "botSpawnsExcluded": [
+  "axisspawnpoint_1_2",
+  "axisspawnpoint_1_3",
+  "axisspawnpoint_1_4",
+  "axisspawnpoint_1_5",
+  "alliesspawnpoint_2_6",
+  "alliesspawnpoint_2_7",
+  "alliesspawnpoint_2_8",
+  "openspawnpoint_3_10",
+  "openspawnpoint_3_11",
+  "openspawnpoint_3_12",
+  "openspawnpointb2_5_17",
+  "openspawnpointb2_5_18",
+  "industrynorth_6_19",
+  "industrynorth_6_20",
+  "industrynorth_6_21",
+  "industrysouth_7_22",
+  "industrysouth_7_23",
+  "industrysouth_7_24",
+  "industrysouth_7_26",
+  "basespawnpoint_4_13",
+  "basespawnpoint_4_14",
+  "basespawnpoint_4_15",
+  "cityeast_8_26",
+  "cityeast_8_29",
+  "cityeast_8_30",
+  "citynorth_9_28",
+  "citynorth_9_29",
+  "citynorth_9_30",
+  "frontline_allies_1",
+  "frontline_allies_2"
+ ],
+ "walkMap": {
+  "source": "page painter",
+  "engine": "none",
+  "opened": [],
+  "ways": [],
+  "cover": 0.8,
+  "floors": {
+   "stacked": false,
+   "twoFloorShare": 0.007,
+   "raised": [],
+   "reason": null
+  },
+  "capped": true
+ },
+ "routeProbe": {
+  "chokeMax": 4,
+  "unreachable": [],
+  "stops": {},
+  "oneSided": {
+   "axisbase_1_cpoint": 2,
+   "openbase_n": 2,
+   "openbase_s": 2,
+   "openbase_west_base": 2,
+   "openbase_east_base": 2,
+   "openbase_north_base": 2
+  },
+  "sides": {
+   "1": {
+    "spawns": 0,
+    "flags": []
+   },
+   "2": {
+    "spawns": 8,
+    "flags": [
+     "axisbase_1_cpoint",
+     "openbase_east_base",
+     "openbase_n",
+     "openbase_north_base",
+     "openbase_s",
+     "openbase_west_base"
+    ]
+   }
+  },
+  "chokes": {
+   "axisbase_1_cpoint:2": 4,
+   "openbase_n:2": 0,
+   "openbase_s:2": 0,
+   "openbase_west_base:2": 0,
+   "openbase_east_base:2": 2,
+   "openbase_north_base:2": 0
+  },
+  "late": {},
+  "shutLinks": []
+ },
+ "inputs": {
+  "controlPoints": "9bb343a5ba55e6b0fb31c74c2aa31ea68f478499a7f9db4882788735378699d3",
+  "infantryMap": "6661037402589a7e0d7139ef893e44d4733d3a2d767b9b3da85a7570802ccb9f",
+  "template": "43f8a790471528016570235f76e97dbb2045732458781a5139f37fed68bf98c0"
+ },
+ "files": {
+  "AI.con": "0c12557fa5b209d365156d63710b7352e81a16760bf427b0b2eca4d13edd0c02",
+  "AI/StrategicAreas.con": "a3efa08c2958434b5944524752f0c822137a316d943cd811e154fe6d17726739",
+  "AI/Strategies.con": "4ce0be59a0d6c5cd530db002fb062c4be8d936bc6ae59bd188803ccaf7869a8d",
+  "AI/conditions.con": "68a0c7a8aec69954063147b60fae560b2874884285737aa085efa76597d395aa",
+  "AI/prerequisites.con": "4c1f313bc285b228fd6ad03bfd1f44c5b15c8703c31f802eb605bc5f00f88bb5"
+ }
+}

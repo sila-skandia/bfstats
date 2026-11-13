@@ -47,6 +47,7 @@ const _speed = [0, 0, 0];
 const _relPos = [0, 0, 0];
 const _partPosTC = [0, 0, 0];
 const _bodyV = [0, 0, 0];
+const _surfaceV = [0, 0, 0];
 
 /**
  * `ResponsePhysics::checkVsTerrain` for ONE part (§7, R1 F3, V1). The part's
@@ -124,6 +125,14 @@ export function terrainContact(part, terrain, handlers, reportTerrainDamage = tr
     _C[0] = _w[0]; _C[1] = h; _C[2] = _w[2];
     terrain.normal(_w[0], _w[2], _N, vy);
     part.body.tangentSpeed(_C, _speed);
+    // A ship's deck the terrain answers for (`hull-bodies.js` `withShipDecks`)
+    // is an object, not the ground: the contact's speed is both roots'
+    // `getTangentSpeed`, the body's less the deck's (`checkObjectVsObject`
+    // 0x08259690, collision-response.md 6.2; `deck-carry.js`), so a parked
+    // body on a ship under way rides her by the friction. Zero elsewhere.
+    if (terrain.surfaceVelocity?.(_C[0], _C[1], _C[2], vy, _surfaceV)) {
+      _speed[0] -= _surfaceV[0]; _speed[1] -= _surfaceV[1]; _speed[2] -= _surfaceV[2];
+    }
 
     const matSelf = layer0.vertexMaterials ? layer0.vertexMaterials[i] : 0;
     const matTerrain = terrain.material(_w[0], _w[2], vy);
@@ -350,7 +359,24 @@ export class ParkedVehicle {
    *  wheel's CURRENT compression into its part's `offset` first — see this
    *  class's own doc comment for why. */
   detectGround(terrain, handlers) {
-    if (this.body.sleeping) return;
+    if (this.body.sleeping) {
+      // A sleeping body on a ship under way is still in her contacts: the ship
+      // is awake and visits it, and the resolve pass runs `addFriction` on every
+      // part with no sleeping test, which wakes the root once the contact's speed
+      // squared passes 0.1 (collision-response.md 2 and 4.3, 0x0825b6e0). The
+      // contact's speed is the deck's against a root at rest.
+      if (!terrain.surfaceVelocity) return;
+      for (const part of this.parts) {
+        if (part.mobile === false || !part.shape.layers[0]?.vertices?.length) continue;
+        part.worldVertex(0, 0, _w);
+        if (terrain.surfaceVelocity(_w[0], _w[1], _w[2], _w[1], _surfaceV)
+            && lenSq3(_surfaceV) > HANDLER_SPEED_THRESHOLD_SQ) {
+          this.body.wake();
+          break;
+        }
+      }
+      if (this.body.sleeping) return;
+    }
     for (const part of this.parts) {
       // Wheels are suspension contacts, not hull impacts. The driven vehicle
       // path already samples hull-only terrain damage, so reporting a rolling

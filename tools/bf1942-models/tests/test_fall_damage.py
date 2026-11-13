@@ -34,7 +34,7 @@ def run_harness() -> dict:
         shutil.copy(ROOT / "viewer" / "swim.js", work / "swim.js")
         # The modules `physics.js` re-exports from, under their own names.
         for name in ("point-body", "fixed-step", "soldier-pose",
-                     "soldier-locomotion", "walking-body", "rigid-body", "soldier-resolve"):
+                     "soldier-locomotion", "walking-body", "rigid-body", "soldier-resolve", "deck-carry"):
             shutil.copy(ROOT / "viewer" / f"{name}.js", work / f"{name}.js")
         shutil.copy(HARNESS, work / "harness.mjs")
         proc = subprocess.run(
@@ -88,6 +88,11 @@ class FallDamageTests(unittest.TestCase):
         # reach it, so an unlisted pair really does mean nothing happens.
         self.assertIsNone(self.results["scalars"]["unlisted"]["damageMod"])
         self.assertEqual(0, self.results["unlistedPairIsNoDamage"])
+
+    def test_an_undefined_ground_material_is_material_zero(self) -> None:
+        # `getDamageMod` 0x08175040: an id with no record is material 0's.
+        self.assertEqual(self.results["scalars"]["undefinedId"],
+                         {"damageMod": 0.001, "materialDamage": 30})
 
     # -- the formula, term by term ------------------------------------------ #
 

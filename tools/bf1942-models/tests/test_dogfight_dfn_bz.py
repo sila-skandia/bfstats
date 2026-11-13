@@ -86,7 +86,7 @@ class BoomAndZoomSurvivalTests(unittest.TestCase):
             self.assertEqual("bzAceMeet", self.demo(demo_id)["ace"], demo_id)
 
     def test_the_dip_runs_until_he_gives_up_the_chase(self) -> None:
-        # "from 15 s on never gets within 732 m or hits you; in four he gives
+        # "from 15 s on never gets within 700 m or hits you; in four he gives
         # up a chase he cannot win at about 80 s and climbs away, and at 90 s
         # you are 1.1 to 1.9 km apart and opening".
         scores = self.demo("dip")["scores"]
@@ -95,7 +95,11 @@ class BoomAndZoomSurvivalTests(unittest.TestCase):
             self.assertLess(s["t0"], 10, s)  # the run starts out of the first pass
             self.assertEqual(0, s["hitsAll"], s)
             self.assertFalse(s["grounded"], s)
-            self.assertGreaterEqual(s["runMin15"], 732, s)
+            # re-pinned 2026-11-12 on retail g and box area
+            # (features/retail-parity-cross-check-2026-11-12): the closest
+            # from 15 s on went from 732 to 731 m; the words now say 700 m,
+            # a claim with 31 m of margin rather than one metre.
+            self.assertGreaterEqual(s["runMin15"], 700, s)
             self.assertGreaterEqual(s["endRange"], 1050, s)
             self.assertLessEqual(s["endRange"], 1950, s)
             self.assertGreater(s["opening"], 0, s)

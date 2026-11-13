@@ -15,12 +15,14 @@ import { damageFactor } from './projectile-damage.js';
 import { roundHit, soldierTemplateValue } from './soldier-death.js';
 import {
   BLAST_SEPARATION_MIN, Knockback, VANILLA_SOLDIER_FORCE, soldierBlastAcceleration,
+  objectBlastAcceleration, blastPushPoint,
 } from './knockback.js';
+import { seatAnchor } from './seat-body.js';
 import { skeletonHit } from './skeleton-hit.js';
 import { FRIENDLY_FIRE_SHIPPED, friendlyDamage, roundPasses } from './friendly-fire.js';
 import { hitFromDirAlpha, hitFromDirOctantAxes } from './hud.js';
 import { inWaterOwners } from './world-damage.js';
-import { roundWeapon } from './vehicle-damage.js';
+import { armorExplosion, deathBlastRecord, roundWeapon } from './vehicle-damage.js';
 import { damageModifier, materialDamage, roundAttackerMaterial } from './crash-damage.js';
 
 /**
@@ -36,6 +38,8 @@ import { damageModifier, materialDamage, roundAttackerMaterial } from './crash-d
  * who hit the human, and how), `occupancy`, `optOnFoot`, `optPilot`,
  * `raiseHitIndication` (optional: a headless runner has no crosshair),
  * `reportImpact` (optional: in a room, the server prices the landing instead),
+ * `seatRoundsFromServer` (optional: the room flies its seat guns itself, so
+ * the page's own seat round reports and marks nothing),
  * `showDamageTier`,
  * `soldier`, `soldierArmor`, `soldierBody` (optional: `gaits.json`'s, for the
  * blast's push), `soldierDead`, `soldierTemplateFor` (optional), `stepWrecks`,
@@ -140,7 +144,10 @@ export function createVehicleHits(page) {
     }
     for (const change of step.damage) {
       if (change.changed) page.showDamageTier(change.vehicle, change.tier);
-      if (change.died) page.wreckVehicle(change.vehicle);
+      if (change.died) {
+        page.wreckVehicle(change.vehicle);
+        deathBlast(change.vehicle);
+      }
     }
     page.stepWrecks(dt);
     // `feedVehicleHud` runs on entry and on a seat switch, not per tick for a
@@ -208,7 +215,10 @@ export function createVehicleHits(page) {
     const inWater = !!(page.world && inWaterOwners(page.world)?.has(vehicle.owner));
     const result = vehicle.update(0, { inWater });
     if (result.changed) page.showDamageTier(vehicle, result.tier);
-    if (result.died) page.wreckVehicle(vehicle);
+    if (result.died) {
+      page.wreckVehicle(vehicle);
+      deathBlast(vehicle);
+    }
   }
 
   /** Scratch for `splashTargets`' world-position reads. */
@@ -242,7 +252,10 @@ export function createVehicleHits(page) {
   function splashTargets() {
     const targets = [];
     for (const [owner, visual] of page.damageVisuals) {
-      if (visual?.wrecked || visual?.removed) continue;
+      // A wreck stays a target until it is removed: `applySplash` prices it
+      // only for a caller that pushes it (`wrecks`), since a blast still
+      // shoves a wreck's body (HP-21, KNOCK-4), its own death blast included.
+      if (visual?.removed) continue;
       // A hull no spawner has stood up is not in the world (`level-statics.js`
       // `markAbsent`): the other side's pad vehicle, a node parked for a
       // round's spawner. A blast where it waits finds nothing.
@@ -269,8 +282,133 @@ export function createVehicleHits(page) {
         x: s.x, y: s.y + CHARACTER_HEIGHT, z: s.z,
       });
     }
+    crewTargets(targets);
     return targets;
   }
+
+  /** Scratch for `crewTargets`. */
+  const crewPos = new THREE.Vector3();
+  const crewQuat = new THREE.Quaternion();
+
+  /**
+   * The seated soldiers a blast splashes as soldiers in their own right
+   * (HFD-12, gap audit entry 30). After a root's own
+   * `handleExplosionOnObject`, `handleExplosion` (`0x08156ef0`) walks the
+   * root's seat map (`getPcos`, vt+0x40, `0x08157167`) and splashes each
+   * seat's occupant (`vt+0x10`, `0x08157189`) whose object flag bit 0 is
+   * clear (`[occupant+4] & 1`, `0x08157198`) and who has an Armor up his
+   * parents (`0x081571f6`), `handleExplosionOnObject(occupant)` at
+   * `0x08157271`. Bit 0 is what `PlayerControlObject::enter` sets on a
+   * soldier in a seat that reaches no `SeatObject` (SEAT-37): a tank's
+   * driver is neither drawn nor splashed, a jeep's crew and an open gun's
+   * gunner are. His distance and his exposure are his own, from his origin,
+   * which is the seat object he is parented to; the push is not his
+   * (`[+0x50] == 0` fails for a seated man, `0x081567ae`, KNOCK-4).
+   */
+  function crewTargets(targets) {
+    const registry = page.vehicles;
+    if (!registry?.instances) return targets;
+    for (const inst of registry.instances.values()) {
+      for (const [seatId, playerId] of inst.seats) {
+        const seat = inst.occupancy?.seatInfo?.(seatId);
+        if (!seat?.seatObjects?.length) continue;
+        const local = playerId === page.LOCAL_PLAYER;
+        const armor = local ? page.soldierArmor : page.world?.armorOf(playerId);
+        if (!armor || armor.destroyed || (local && page.soldierDead)) continue;
+        // Never twice: a man the on-foot pass already holds is not seated.
+        if (targets.some(t => t.armor === armor)) continue;
+        const anchor = seatAnchor(seat);
+        if (!anchor?.getWorldPosition) continue;
+        anchor.getWorldPosition(crewPos);
+        targets.push({
+          owner: -1, armor, soldier: true, seated: true, anchor,
+          pose: page.world?.player(playerId)?.soldier?.pose ?? 0,
+          botId: local ? undefined : playerId, playerId,
+          splashMaterial: SOLDIER_SPLASH_MATERIAL,
+          x: crewPos.x, y: crewPos.y, z: crewPos.z,
+        });
+      }
+    }
+    return targets;
+  }
+
+  /** Scratch for `pushHull`. */
+  const _hullPush = { x: 0, y: 0, z: 0, force: 0 };
+  const _hullAt = [0, 0, 0];
+  const _hullAccel = [0, 0, 0];
+  const _hullOrigin = [0, 0, 0];
+  const _hullNormal = { x: 0, y: 1, z: 0 };
+
+  /**
+   * The push a blast gives a hull it priced above zero (KNOCK-4, KNOCK-5;
+   * gap audit entry 2): `knockback.js` `objectBlastAcceleration` at the
+   * point `blastPushPoint` clamps onto its bounding sphere, into its body
+   * the way a gun's recoil goes in (`hull-bodies.js` `recoilOnHull`): the
+   * parked body woken first (`setIsAwake`, vt `+0xd4`, `0x08156aa4`), a
+   * driven one handed it through `DrivenBody`. The hull's own
+   * `explosionForceMod` / `explosionForceMax` out of `damage.json`'s `armors`
+   * table; nothing is pushed on a tree published before it, or for a hull
+   * with no body (a gun on no physics node, `[+0x60]` null, `0x081569bf`).
+   */
+  function pushHull(hit, record) {
+    const owner = hit.target?.owner;
+    if (!(owner >= 0)) return null;
+    const entry = page.world?.bodyWorld?.get(owner);
+    const body = entry?.driven ?? entry?.parked?.body;
+    if (!body?.addAccelerationAt) return null;
+    const vehicle = hit.vehicle;
+    const spec = armorExplosion(page.world?.damageTables, vehicle?.template ?? vehicle?.name);
+    if (!spec) return null;
+    const [bx, by, bz] = record.splashPoint ?? record.point;
+    const yMod = record.splashYMod > 0 ? record.splashYMod : 1;
+    const t = hit.target;
+    if (hit.distance < BLAST_SEPARATION_MIN) {
+      const n = [0, 1, 0];
+      page.collider?.heightfield?.normal?.(bx, bz, n);
+      [_hullNormal.x, _hullNormal.y, _hullNormal.z] = n;
+    }
+    objectBlastAcceleration({
+      force: record.splashForce ?? undefined,
+      radius: record.splashRadius,
+      distance: hit.distance,
+      offset: [t.x - bx, (t.y - by) * yMod, t.z - bz],
+      axes: body.axes,
+      forceMod: spec.explosionForceMod,
+      forceMax: spec.explosionForceMax,
+      terrainNormal: _hullNormal,
+    }, _hullPush);
+    if (!(_hullPush.force > 0)) return null;
+    _hullOrigin[0] = t.x; _hullOrigin[1] = t.y; _hullOrigin[2] = t.z;
+    blastPushPoint([bx, by, bz], _hullOrigin, body.boundingRadius, _hullAt);
+    _hullAccel[0] = _hullPush.x; _hullAccel[1] = _hullPush.y; _hullAccel[2] = _hullPush.z;
+    body.wake?.();
+    body.addAccelerationAt(_hullAt, _hullAccel);
+    return _hullPush;
+  }
+
+  /**
+   * A destroyed Armor's own blast (gap audit entry 3): `Armor::status`
+   * (lnxded `0x081739e0`) sends the destruction message and then, when its
+   * `explosionDamage` is above 0.001, calls `handleExplosion` at the
+   * object's origin with its radius, material, damage and force, its last
+   * hitter as the attacker and team -1 (`vehicle-damage.js`
+   * `deathBlastRecord`). It hurts and pushes everything in reach, the dying
+   * hull's own wreck included (its push stands on the terrain's normal), and
+   * a hull it kills blows in turn. In a room the server runs it
+   * (`server/room-hits.mjs` `deathBlasts`).
+   */
+  function deathBlast(vehicle) {
+    if (page.reportImpact || !vehicle) return null;
+    const spec = armorExplosion(page.world?.damageTables, vehicle.template ?? vehicle.name);
+    const node = page.damageVisuals?.get(vehicle.owner)?.node;
+    if (!spec || !node) return null;
+    const at = node.getWorldPosition(splashPos);
+    const record = deathBlastRecord(spec, [at.x, at.y, at.z]);
+    if (!record) return null;
+    const attacker = vehicle.lastHitPlayer ?? null;
+    return applyBlast(record, attacker, null);
+  }
+  vehicleHits.deathBlast = deathBlast;
 
   /** `guns.angleModOf`: the `angleMod` a placed object's template authors
    *  (the glb's physics extras), or null where it authors none and keeps the
@@ -389,12 +527,25 @@ export function createVehicleHits(page) {
       && !page.vehicleDamage.get(record.owner)?.destroyed;
   }
 
+  /** Whether a landed round left a seat's gun: its gun group is no hand's
+   *  (`group.firer` is a hand weapon's tag, `hand-weapon.js`; a bot
+   *  launcher's and a remote's too) and no replayed or remote copy. */
+  function isSeatRound(record) {
+    const group = record?.firerGroup;
+    return !!group && group.firer == null && !group.replay;
+  }
+
   /**
    * A round landed. Apply the direct hit, then the area pass if the round has
    * one (`damageType 1`: shells, bombs, grenades, the bazooka), and reconcile
    * every tier that moved on the same frame.
    */
   function applyVehicleHit(record) {
+    // A seat gun's round in a room that flies its own (`server/room-guns.mjs`;
+    // retail's server flies every round and its client draws, NET-15): this
+    // page's copy is the picture. The landing, the damage and the crosshair's
+    // marks (the `hitMark` row) are the server's.
+    if (page.reportImpact && page.seatRoundsFromServer && isSeatRound(record)) return;
     // Asked before any damage lands, as the engine asks before it prices the
     // round: the hit that wrecks a manned hull still marks.
     // On a real server (the relay) the server's own bool raises them
@@ -431,15 +582,33 @@ export function createVehicleHits(page) {
     }
     if (marks) page.raiseHitIndication?.();
     if (!(record?.splashRadius > 0)) return;
+    applyBlast(record, attacker, (amount, target) => priceFriendly(amount, {
+      attackerTeam, splash: true, soldier: !!target.soldier,
+      victimTeam: target.soldier ? teamOf(target.playerId) : hullTeam(target.owner),
+    }));
+  }
+
+  /**
+   * One `handleExplosion`: the splash on every hull and soldier in reach
+   * (HP-9, HP-10), the seated crews among them (HFD-12), each hull's push
+   * (KNOCK-4) and each soldier's. `scale` is `calcDamage`'s friendly-fire
+   * law, null for a blast with team -1 (a destroyed Armor's own).
+   */
+  function applyBlast(record, attacker, scale) {
     const splashed = page.vehicleDamage.applySplash(record, splashTargets(), {
-      materials: page.guns.materials, modifiers: page.guns.modifiers,
-      exposure: soldierExposureFor, attacker,
-      scale: (amount, target) => priceFriendly(amount, {
-        attackerTeam, splash: true, soldier: !!target.soldier,
-        victimTeam: target.soldier ? teamOf(target.playerId) : hullTeam(target.owner),
-      }),
+      materials: page.guns?.materials ?? page.world?.damageTables?.materials ?? null,
+      modifiers: page.guns?.modifiers ?? page.world?.damageTables?.modifiers ?? null,
+      exposure: soldierExposureFor, attacker, scale, wrecks: true,
     });
     for (const hit of splashed) {
+      if (hit.wreck) {
+        pushHull(hit, record);
+        continue;
+      }
+      if (hit.target?.seated) {
+        crewHit(hit, record, attacker);
+        continue;
+      }
       // A soldier target has no tier to re-pick and no wreck to build; what it
       // has is a figure that should stop standing there. The player's own death
       // is already handled where every other cause of it is.
@@ -466,8 +635,41 @@ export function createVehicleHits(page) {
       }
       // A splash hands `_giveDamage` the blast's centre (HFD-4).
       const [bx, by, bz] = record.splashPoint ?? record.point;
+      pushHull(hit, record);
       washSeatedCrew(hit.vehicle, hit.amount, { x: bx, y: by, z: bz });
       reconcileDamaged(hit.vehicle);
+    }
+    return splashed;
+  }
+
+  /**
+   * A seated soldier the blast priced (HFD-12): the HP is already off his
+   * Armor; what is left is his side of it. A bot's goes through
+   * `damageLanded` (the log, the incoming-fire event, a death named for the
+   * blast's attacker); the human's wash is his own, from his own frame (his
+   * seat map is himself, HFD-10), on top of the hull's.
+   */
+  function crewHit(hit, record, attacker) {
+    const t = hit.target;
+    const at = record.splashPoint ?? record.point ?? null;
+    if (t.armor === page.soldierArmor) {
+      if (attacker != null && attacker !== page.LOCAL_PLAYER) {
+        page.noteLocalAttack?.(attacker, { splash: true, weapon: roundWeapon(record), stamped: true });
+      }
+      if (page.triggerHitIndicator && at && t.anchor?.getWorldQuaternion) {
+        t.anchor.getWorldPosition(crewPos);
+        t.anchor.getWorldQuaternion(crewQuat);
+        hullForward.set(0, 0, -1).applyQuaternion(crewQuat);
+        hullRight.set(1, 0, 0).applyQuaternion(crewQuat);
+        const dir = hitFromDirOctantAxes(crewPos, hullForward, hullRight,
+                                         { x: at[0], y: at[1], z: at[2] });
+        page.triggerHitIndicator(dir, hitFromDirAlpha(hit.amount, t.armor.maxHitPoints));
+      }
+    } else if (t.botId != null) {
+      page.damageLanded?.(t.botId, hit.lost, attacker, at, {
+        via: `splash seated d ${hit.distance.toFixed(1)}`,
+        splash: true, weapon: roundWeapon(record), stamped: true,
+      });
     }
   }
   const AIR_KEYS = new Set([
@@ -711,6 +913,10 @@ export function createVehicleHits(page) {
     const id = record.target;
     const firer = recordFirer(record);
     const firerTeam = teamOf(firer);
+    // A teammate it touched says "Watch your aim!" whatever it costs him
+    // (`BFSoldier::projectileHit` lnxded 0x0827ea20, before any pricing).
+    // Not for a round that sets `noFFSound` (0x0831efe6: the rifle grenade).
+    page.roundTouchedSoldier?.(id, firerTeam, !!record.noFFSound);
     // A man seated in a hull has the hull for his root, and the engine prices
     // him as one: the vehicle ratio.
     const damage = priceFriendly(record.damage, {

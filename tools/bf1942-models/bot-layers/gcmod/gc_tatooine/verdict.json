@@ -1,0 +1,74 @@
+{
+ "level": "gc_tatooine",
+ "verdict": "fail",
+ "outcome": "better-than-nothing",
+ "config": "with vehicles",
+ "doctrine": "garrison",
+ "generatorVersion": 6,
+ "inputs": {
+  "controlPoints": "d3b8941e301caa643cb9d46364e65586584b990a5d76d460894741ce06cce84b",
+  "infantryMap": "276eac40616e9fd70488c116f75689a0200f37df35b28b85aad6ab8ecc82bb12",
+  "template": "bdc0e455f47f91b7e7724e71d7c0c196e839b36946ac3abb7663d725944081e5"
+ },
+ "baseline": "DICE layers with vehicles, garrison doctrine: berlin, stalingrad, kharkov, bocage; seeds 1..10, 600 s",
+ "bar": {
+  "against": "dice",
+  "why": "no bar of gcmod's own: DICE's"
+ },
+ "seeds": 1,
+ "sizes": {
+  "8": {
+   "verdict": "fail",
+   "failed": [
+    "enemyKillsPerBotMinute",
+    "nonEnemyDeathShareWorseSide",
+    "hullStuckSecondsPerDrivingMinute",
+    "hullStuckSecondsPerDrivingMinuteWorseSide",
+    "unitsNeverUsedShare"
+   ],
+   "winners": [
+    1,
+    0,
+    0
+   ]
+  },
+  "16": {
+   "verdict": "fail",
+   "failed": [
+    "enemyKillsPerBotMinute",
+    "nonEnemyDeathShareWorseSide",
+    "hullStuckSecondsPerDrivingMinute",
+    "hullStuckSecondsPerDrivingMinuteWorseSide",
+    "unitsNeverUsedShare"
+   ],
+   "winners": [
+    0,
+    1,
+    0
+   ]
+  }
+ },
+ "oneSided": null,
+ "unreachable": [
+  "the_sarlacctemplate"
+ ],
+ "lintErrors": [],
+ "accepted": {
+  "reason": "Owner's rollout, 2026-11-12: the owner imported Galactic Conquest and asked for bots on it (\"I'm sure we can add something to it\"). Screened in the runner at 8 and 16 a side under the garrison; the checks it fails are listed with this verdict, and a match on the page decides whether it keeps its menu flag.",
+  "date": "2026-11-12",
+  "outcome": "better-than-nothing",
+  "failed": [
+   "8:enemyKillsPerBotMinute",
+   "8:nonEnemyDeathShareWorseSide",
+   "8:hullStuckSecondsPerDrivingMinute",
+   "8:hullStuckSecondsPerDrivingMinuteWorseSide",
+   "8:unitsNeverUsedShare",
+   "16:enemyKillsPerBotMinute",
+   "16:nonEnemyDeathShareWorseSide",
+   "16:hullStuckSecondsPerDrivingMinute",
+   "16:hullStuckSecondsPerDrivingMinuteWorseSide",
+   "16:unitsNeverUsedShare"
+  ],
+  "by": "owner"
+ }
+}

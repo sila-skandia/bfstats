@@ -1,11 +1,12 @@
 {
  "level": "roye",
  "mod": "bf1918",
- "url": "https://play.bfstats.io/map.html?map=roye&team=2&mode=Conquest&mod=bf1918&botCount=16&botSkill=0.75&mute&shots",
- "date": "2026-11-11",
+ "url": "https://play.bfstats.io/map.html?map=roye&team=2&mode=Conquest&mod=bf1918&botCount=16&botSkill=0.75&spawnTime=wave&mute&shots",
+ "date": "2026-11-12",
  "bar": "DICE levels on the page, 3 matches each of 600 s, 16 bots: Berlin, Stalingrad, Kharkov, Bocage; 2026-11-11",
  "verdict": "fail",
  "failed": [
+  "nonEnemyDeathShareWorseSide",
   "enemyKillsPerBotMinute"
  ],
  "checks": [
@@ -23,26 +24,27 @@
   },
   {
    "metric": "nonEnemyDeathShareWorseSide",
-   "median": 0.25,
+   "median": 1,
    "bar": "<= 0.308",
-   "pass": true
+   "pass": false
   },
   {
    "metric": "enemyKillsPerBotMinute",
-   "median": 0.0812,
+   "median": 0.0125,
    "bar": ">= 0.175",
    "pass": false
   }
  ],
- "matches": 1,
+ "matches": 4,
  "rollout": {
-  "pass": true,
+  "pass": false,
   "floor": {
    "kills": 0.15,
    "killsWithFlags": 0.03,
    "flags": 3,
    "killsWithAFlag": 0.05,
-   "ownHand": 0.1
+   "ownHand": 0.1,
+   "ownHandOfKills": 0.3333333333333333
   }
  },
  "runs": [
@@ -53,19 +55,110 @@
    },
    "minutes": 10,
    "tickets": {
-    "1": 98,
-    "2": 98
+    "1": 100,
+    "2": 97
+   },
+   "capturesTotal": 1,
+   "teamKillsPerBotMinute": 0.0125,
+   "suicidesPerBotMinute": 0.0375,
+   "nonEnemyDeathShareWorseSide": 0.556,
+   "enemyKillsPerBotMinute": 0.0437,
+   "rollout": {
+    "pass": false,
+    "why": [
+     "activity"
+    ],
+    "enemyKills": 0.0437,
+    "captures": 1,
+    "ownHand": 0.05
+   },
+   "teamKillsBySide": {
+    "1": 0,
+    "2": 2
+   },
+   "oldCode": "played on the generator 5 layer, on the bot code of e5003c584 or earlier"
+  },
+  {
+   "generated": {
+    "version": 5,
+    "template": "few"
+   },
+   "minutes": 10,
+   "tickets": {
+    "1": 101,
+    "2": 100
+   },
+   "capturesTotal": 1,
+   "teamKillsPerBotMinute": 0,
+   "suicidesPerBotMinute": 0.0562,
+   "nonEnemyDeathShareWorseSide": 1,
+   "enemyKillsPerBotMinute": 0.0125,
+   "rollout": {
+    "pass": false,
+    "why": [
+     "activity"
+    ],
+    "enemyKills": 0.0125,
+    "captures": 1,
+    "ownHand": 0.0562
+   },
+   "teamKillsBySide": {
+    "1": 0,
+    "2": 0
+   },
+   "oldCode": "played on the generator 5 layer, on the bot code of e5003c584 or earlier"
+  },
+  {
+   "generated": {
+    "version": 6,
+    "template": "few"
+   },
+   "minutes": 10,
+   "tickets": {
+    "1": 103,
+    "2": 103
    },
    "capturesTotal": 2,
    "teamKillsPerBotMinute": 0,
-   "suicidesPerBotMinute": 0.0187,
-   "nonEnemyDeathShareWorseSide": 0.25,
-   "enemyKillsPerBotMinute": 0.0812,
+   "suicidesPerBotMinute": 0.025,
+   "nonEnemyDeathShareWorseSide": 1,
+   "enemyKillsPerBotMinute": 0.0125,
    "rollout": {
-    "pass": true,
-    "why": [],
-    "enemyKills": 0.0812,
+    "pass": false,
+    "why": [
+     "activity"
+    ],
+    "enemyKills": 0.0125,
     "captures": 2,
+    "ownHand": 0.025
+   },
+   "teamKillsBySide": {
+    "1": 0,
+    "2": 0
+   }
+  },
+  {
+   "generated": {
+    "version": 6,
+    "template": "few"
+   },
+   "minutes": 10,
+   "tickets": {
+    "1": 105,
+    "2": 102
+   },
+   "capturesTotal": 3,
+   "teamKillsPerBotMinute": 0,
+   "suicidesPerBotMinute": 0.0187,
+   "nonEnemyDeathShareWorseSide": 1,
+   "enemyKillsPerBotMinute": 0.0125,
+   "rollout": {
+    "pass": false,
+    "why": [
+     "activity"
+    ],
+    "enemyKills": 0.0125,
+    "captures": 3,
     "ownHand": 0.0187
    },
    "teamKillsBySide": {

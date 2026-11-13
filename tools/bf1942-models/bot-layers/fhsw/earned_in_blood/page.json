@@ -1,8 +1,8 @@
 {
  "level": "Earned_in_Blood",
  "mod": "fhsw",
- "url": "https://play.bfstats.io/map.html?map=Earned_in_Blood&team=2&mode=Conquest&mod=fhsw&botCount=16&botSkill=0.75&mute&shots",
- "date": "2026-11-11",
+ "url": "https://play.bfstats.io/map.html?map=Earned_in_Blood&team=2&mode=Conquest&mod=fhsw&botCount=16&botSkill=0.75&spawnTime=wave&mute&shots",
+ "date": "2026-11-12",
  "bar": "DICE levels on the page, 3 matches each of 600 s, 16 bots: Berlin, Stalingrad, Kharkov, Bocage; 2026-11-11",
  "verdict": "fail",
  "failed": [
@@ -11,7 +11,7 @@
  "checks": [
   {
    "metric": "teamKillsPerBotMinute",
-   "median": 0.0125,
+   "median": 0,
    "bar": "<= 0.025",
    "pass": true
   },
@@ -23,18 +23,29 @@
   },
   {
    "metric": "nonEnemyDeathShareWorseSide",
-   "median": 0.222,
+   "median": 0,
    "bar": "<= 0.308",
    "pass": true
   },
   {
    "metric": "enemyKillsPerBotMinute",
-   "median": 0.1375,
+   "median": 0.0437,
    "bar": ">= 0.175",
    "pass": false
   }
  ],
- "matches": 1,
+ "matches": 3,
+ "rollout": {
+  "pass": true,
+  "floor": {
+   "kills": 0.15,
+   "killsWithFlags": 0.03,
+   "flags": 3,
+   "killsWithAFlag": 0.05,
+   "ownHand": 0.1,
+   "ownHandOfKills": 0.3333333333333333
+  }
+ },
  "runs": [
   {
    "generated": {
@@ -43,17 +54,80 @@
    },
    "minutes": 10,
    "tickets": {
-    "1": 80,
-    "2": 32
+    "1": 84,
+    "2": 48
    },
-   "capturesTotal": 2,
-   "teamKillsPerBotMinute": 0.0125,
-   "suicidesPerBotMinute": 0,
-   "nonEnemyDeathShareWorseSide": 0.222,
-   "enemyKillsPerBotMinute": 0.1375,
+   "capturesTotal": 3,
+   "teamKillsPerBotMinute": 0,
+   "suicidesPerBotMinute": 0.0062,
+   "nonEnemyDeathShareWorseSide": 0.333,
+   "enemyKillsPerBotMinute": 0.0812,
+   "rollout": {
+    "pass": true,
+    "why": [],
+    "enemyKills": 0.0812,
+    "captures": 3,
+    "ownHand": 0.0062
+   },
    "teamKillsBySide": {
     "1": 0,
-    "2": 2
+    "2": 0
+   },
+   "oldCode": "played before the bot code of e5003c584 went live (2026-11-12, 19:38)"
+  },
+  {
+   "generated": {
+    "version": 5,
+    "template": "symmetric"
+   },
+   "minutes": 10,
+   "tickets": {
+    "1": 81,
+    "2": 73
+   },
+   "capturesTotal": 3,
+   "teamKillsPerBotMinute": 0.025,
+   "suicidesPerBotMinute": 0.0125,
+   "nonEnemyDeathShareWorseSide": 0.333,
+   "enemyKillsPerBotMinute": 0.1062,
+   "rollout": {
+    "pass": true,
+    "why": [],
+    "enemyKills": 0.1062,
+    "captures": 3,
+    "ownHand": 0.0375
+   },
+   "teamKillsBySide": {
+    "1": 1,
+    "2": 3
+   },
+   "oldCode": "played on the bot code of e5003c584 or earlier, before drivers predicted collisions with their own side (3b1ebe45c, live 2026-11-13)"
+  },
+  {
+   "generated": {
+    "version": 5,
+    "template": "symmetric"
+   },
+   "minutes": 10,
+   "tickets": {
+    "1": 90,
+    "2": 59
+   },
+   "capturesTotal": 5,
+   "teamKillsPerBotMinute": 0,
+   "suicidesPerBotMinute": 0,
+   "nonEnemyDeathShareWorseSide": 0,
+   "enemyKillsPerBotMinute": 0.0437,
+   "rollout": {
+    "pass": true,
+    "why": [],
+    "enemyKills": 0.0437,
+    "captures": 5,
+    "ownHand": 0
+   },
+   "teamKillsBySide": {
+    "1": 0,
+    "2": 0
    }
   }
  ]

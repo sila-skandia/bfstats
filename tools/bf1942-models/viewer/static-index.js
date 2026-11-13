@@ -23,6 +23,32 @@ export { isCollisionMesh, isDrivableCollisionMesh, outOfAnyWorld } from './colli
 // crosses more cells, each with a Y-band reject, and the DDA's step guard
 // below is sized from the grid rather than fixed (features/bot-fight-performance).
 const CELL_SIZE = 8;
+/** Metres an owner's box is widened by before `cast` clips a one-owner
+ *  segment to it: room for the rounding between the box, the ray and the
+ *  triangle test, so a face on the box's own plane is still reached. */
+const OWNER_BOX_PAD = 0.05;
+/** A one-owner cell list longer than this is walked through its bins
+ *  (`CollisionIndex.#binned`); the bins are about `OWNER_BIN_SIZE` metres, at
+ *  most `OWNER_BINS` to an axis. */
+const OWNER_BIN_MIN = 48;
+const OWNER_BIN_SIZE = 0.5;
+const OWNER_BINS = 16;
+
+/** The bins (`lo`, `size`, `n` per axis) a box spans into `out` as `[x0,
+ *  x1, y0, y1, z0, z1]`, clamped into the grid, never emptied: a box past
+ *  the grid's edge takes the edge bins, and a NaN bound the whole axis (the
+ *  face test it stands in for passes everything against a NaN). */
+function binSpan(lo, size, n, x0, x1, y0, y1, z0, z1, out) {
+  const v = [x0, x1, y0, y1, z0, z1];
+  for (let a = 0; a < 3; a++) {
+    const top = n[a] - 1;
+    let b0 = Math.floor((v[a * 2] - lo[a]) / size[a]);
+    let b1 = Math.floor((v[a * 2 + 1] - lo[a]) / size[a]);
+    b0 = b0 > top ? top : b0 >= 0 ? b0 : 0;
+    b1 = b1 < 0 ? 0 : b1 <= top ? b1 : top;
+    out[a * 2] = b0; out[a * 2 + 1] = b1;
+  }
+}
 
 /** Smallest root of `a t^2 + b t + c` inside [0, limit], or -1. */
 function lowestRoot(a, b, c, limit) {
@@ -160,6 +186,13 @@ export class CollisionIndex {
      * edge a rim.
      */
     this.internalEdges = null;
+    /** `#owned`'s records by owner id; `fillCells` empties it. */
+    this._owned = new Map();
+    /** `#binned`'s scratch: the faces it hands back, its per-query marks. */
+    this._binHits = new Int32Array(0);
+    this._binMark = new Int32Array(0);
+    this._binGen = 0;
+    this._binSpan = [0, 0, 0, 0, 0, 0];
   }
 
   /** Attach the per-triangle obstacle ids (`buildCollisionIndex`). */
@@ -365,6 +398,119 @@ export class CollisionIndex {
   cell(ix, iz) { return iz * this.cols + ix; }
 
   /**
+   * The faces of one owner's cell list (`#owned`) whose box overlaps the
+   * box `lo..hi`, ascending (the list's own order), into `_binHits`; returns
+   * how many. The bins are a small grid over the list's faces, made the
+   * first time the cell is asked: a face sits in every bin its box spans,
+   * and the query takes every bin its box spans, by the same floor, so a
+   * face whose box overlaps the query's always shares a bin with it.
+   */
+  #binned(own, cell, list, loX, hiX, loY, hiY, loZ, hiZ) {
+    let g = own.bins.get(cell);
+    const p = this.tris;
+    if (!g) {
+      const lo = [Infinity, Infinity, Infinity], hi = [-Infinity, -Infinity, -Infinity];
+      for (const tri of list) {
+        for (let k = tri * 9, e = k + 9; k < e; k += 3) {
+          for (let a = 0; a < 3; a++) {
+            const v = p[k + a];
+            if (v < lo[a]) lo[a] = v;
+            if (v > hi[a]) hi[a] = v;
+          }
+        }
+      }
+      const n = [0, 0, 0], size = [0, 0, 0];
+      for (let a = 0; a < 3; a++) {
+        const ext = hi[a] - lo[a];
+        n[a] = Math.max(1, Math.min(OWNER_BINS, Math.ceil(ext / OWNER_BIN_SIZE)));
+        size[a] = ext > 0 ? ext / n[a] : 1;
+      }
+      const cells = Array.from({ length: n[0] * n[1] * n[2] }, () => []);
+      const span = [0, 0, 0, 0, 0, 0];
+      for (const tri of list) {
+        const j = tri * 9;
+        binSpan(lo, size, n,
+                Math.min(p[j], p[j + 3], p[j + 6]), Math.max(p[j], p[j + 3], p[j + 6]),
+                Math.min(p[j + 1], p[j + 4], p[j + 7]), Math.max(p[j + 1], p[j + 4], p[j + 7]),
+                Math.min(p[j + 2], p[j + 5], p[j + 8]), Math.max(p[j + 2], p[j + 5], p[j + 8]), span);
+        for (let bx = span[0]; bx <= span[1]; bx++)
+          for (let by = span[2]; by <= span[3]; by++)
+            for (let bz = span[4]; bz <= span[5]; bz++) cells[(bx * n[1] + by) * n[2] + bz].push(tri);
+      }
+      g = { lo, size, n, cells: cells.map(c => Int32Array.from(c)) };
+      own.bins.set(cell, g);
+    }
+    if (this._binMark.length < this.count) {
+      this._binHits = new Int32Array(this.count);
+      this._binMark = new Int32Array(this.count);
+    }
+    const span = this._binSpan;
+    binSpan(g.lo, g.size, g.n, loX, hiX, loY, hiY, loZ, hiZ, span);
+    const mark = this._binMark, out = this._binHits;
+    const gen = ++this._binGen;
+    let count = 0;
+    const n = g.n;
+    for (let bx = span[0]; bx <= span[1]; bx++) {
+      for (let by = span[2]; by <= span[3]; by++) {
+        for (let bz = span[4]; bz <= span[5]; bz++) {
+          const items = g.cells[(bx * n[1] + by) * n[2] + bz];
+          for (let k = 0; k < items.length; k++) {
+            const tri = items[k];
+            if (mark[tri] === gen) continue;
+            mark[tri] = gen;
+            out[count++] = tri;
+          }
+        }
+      }
+    }
+    if (count > 1) out.subarray(0, count).sort();
+    return count;
+  }
+
+  /**
+   * Owner `id`'s triangles as baked, for a one-owner `cast`: their box,
+   * `[minX, minY, minZ, maxX, maxY, maxZ]`, and per grid cell the ones that
+   * cell lists, in its order (`fillCells` lists a cell's triangles by
+   * ascending id), or null when the owner has none. Made the first time an
+   * owner is asked and kept until `fillCells` re-packs the grid.
+   */
+  #owned(id) {
+    let rec = this._owned.get(id);
+    if (rec !== undefined) return rec;
+    rec = null;
+    const owners = this.owners, p = this.tris;
+    const { minX, minZ, cols, rows, cellSize } = this;
+    for (let tri = 0; tri < this.count; tri++) {
+      if (owners[tri] !== id) continue;
+      if (!rec) rec = { box: [Infinity, Infinity, Infinity, -Infinity, -Infinity, -Infinity], cells: new Map(), bins: new Map() };
+      const box = rec.box;
+      for (let k = tri * 9, e = k + 9; k < e; k += 3) {
+        for (let a = 0; a < 3; a++) {
+          const v = p[k + a];
+          if (v < box[a]) box[a] = v;
+          if (v > box[a + 3]) box[a + 3] = v;
+        }
+      }
+      // The cells `fillCells` lists this triangle in (its `spanOf`).
+      const i = tri * 9;
+      const ix0 = Math.max(0, Math.floor((Math.min(p[i], p[i + 3], p[i + 6]) - minX) / cellSize));
+      const ix1 = Math.min(cols - 1, Math.floor((Math.max(p[i], p[i + 3], p[i + 6]) - minX) / cellSize));
+      const iz0 = Math.max(0, Math.floor((Math.min(p[i + 2], p[i + 5], p[i + 8]) - minZ) / cellSize));
+      const iz1 = Math.min(rows - 1, Math.floor((Math.max(p[i + 2], p[i + 5], p[i + 8]) - minZ) / cellSize));
+      for (let iz = iz0; iz <= iz1; iz++) {
+        for (let ix = ix0; ix <= ix1; ix++) {
+          const cell = iz * cols + ix;
+          let list = rec.cells.get(cell);
+          if (!list) { list = []; rec.cells.set(cell, list); }
+          list.push(tri);
+        }
+      }
+    }
+    this._owned.set(id, rec);
+    return rec;
+  }
+
+  /**
    * Nearest hit along a segment, or null.
    *
    * `dx, dy, dz` must be unit length and `maxDist` is the segment length, so a
@@ -398,6 +544,40 @@ export class CollisionIndex {
        deckFloorCos = 2, onlySub = -1, groups = 0, ownHits = 0, ownOnly = false) {
     if (onlyDrivable && !this.drivable) return null;
     if (!this.cellStart || maxDist <= 0) return null;
+    // One owner's triangles (`WorldCollider.castMoved` asks this way for every
+    // moved hull the ray passes near): only the stretch of the segment inside
+    // that owner's box can meet them, so the walk starts and ends there. The
+    // whole segment's walk visited every cell from the eye to the target in
+    // the hull's baked frame and stepped past every other owner's triangles in
+    // each, once per moved hull: on a level with a hundred vehicles that was
+    // most of a bot match (features/bot-map-generation/README.md 22.4 item 5).
+    // Each cell it does visit is walked over that owner's own triangles alone
+    // (`#owned`), the ones the cell lists, in the order it lists them: the
+    // rest were skipped one by one before. The ray, the triangles tested and
+    // the order they are tested in are the same, so the hit is the same one.
+    let tStart = 0;
+    let tEnd = maxDist;
+    let ownCells = null;
+    let own = null;
+    if (onlyOwner >= 0) {
+      own = this.#owned(onlyOwner);
+      if (!own) return null;
+      const box = own.box;
+      ownCells = own.cells;
+      const o = [ox, oy, oz], d = [dx, dy, dz];
+      for (let a = 0; a < 3; a++) {
+        const lo = box[a] - OWNER_BOX_PAD, hi = box[a + 3] + OWNER_BOX_PAD;
+        if (d[a] === 0) {
+          if (o[a] < lo || o[a] > hi) return null;
+          continue;
+        }
+        let t0 = (lo - o[a]) / d[a], t1 = (hi - o[a]) / d[a];
+        if (t0 > t1) { const t = t0; t0 = t1; t1 = t; }
+        if (t0 > tStart) tStart = t0;
+        if (t1 < tEnd) tEnd = t1;
+      }
+      if (!(tStart <= tEnd)) return null;
+    }
     const stats = this.stats;
     stats.queries++;
     const stamp = ++this._query;
@@ -405,8 +585,8 @@ export class CollisionIndex {
     // Cell coordinates of the start, deliberately *not* clamped: a round can
     // begin outside the indexed area and fly into it, and the per-cell bounds
     // check below is what keeps an out-of-range index harmless.
-    let ix = Math.floor((ox - this.minX) / size);
-    let iz = Math.floor((oz - this.minZ) / size);
+    let ix = Math.floor((ox + dx * tStart - this.minX) / size);
+    let iz = Math.floor((oz + dz * tStart - this.minZ) / size);
     const stepX = dx > 0 ? 1 : (dx < 0 ? -1 : 0);
     const stepZ = dz > 0 ? 1 : (dz < 0 ? -1 : 0);
     // Distance along the ray to the next cell boundary on each axis, and the
@@ -421,7 +601,7 @@ export class CollisionIndex {
       : Infinity;
     if (tMaxX < 0) tMaxX = Infinity;
     if (tMaxZ < 0) tMaxZ = Infinity;
-    let tEnter = 0;
+    let tEnter = tStart;
     let best = maxDist;
     let found = false;
     // Is the driven-vehicle deck gate live at all? Hoisted out of the triangle
@@ -438,11 +618,18 @@ export class CollisionIndex {
     // crosses 375, and a cap under that ended it short of a real hit.)
     const maxSteps = this.cols + this.rows + 2;
     for (let guard = 0; guard < maxSteps; guard++) {
-      const tExit = Math.min(tMaxX, tMaxZ, maxDist);
+      const tExit = Math.min(tMaxX, tMaxZ, tEnd);
       if (ix >= 0 && iz >= 0 && ix < this.cols && iz < this.rows) {
         const cell = this.cell(ix, iz);
-        const from = this.cellStart[cell];
-        const to = this.cellStart[cell + 1];
+        let items = this.cellItems, from, to;
+        if (ownCells) {
+          items = ownCells.get(cell);
+          from = 0;
+          to = items ? items.length : 0;
+        } else {
+          from = this.cellStart[cell];
+          to = this.cellStart[cell + 1];
+        }
         if (to > from) {
           // Cheap reject on Y before touching a single triangle: the cell's own
           // vertical extent against the segment's over just this cell. Near-
@@ -467,8 +654,17 @@ export class CollisionIndex {
             const z0 = oz + dz * tEnter, z1 = oz + dz * tOut;
             const loZ = Math.min(z0, z1), hiZ = Math.max(z0, z1);
             const p = this.tris;
+            // A one-owner walk of a dense hull (FHSW's tanks carry thousands
+            // of collision faces in a cell or two) asks the owner's bins for
+            // the faces whose box can meet this one, in the cell's own order:
+            // every face the box test below would pass, and only faces it
+            // would reject left out.
+            if (ownCells && to - from > OWNER_BIN_MIN) {
+              to = this.#binned(own, cell, items, loX, hiX, loY, hiY, loZ, hiZ);
+              items = this._binHits;
+            }
             for (let k = from; k < to; k++) {
-              const tri = this.cellItems[k];
+              const tri = items[k];
               if (this._stamp[tri] === stamp) continue;
               stats.candidates++;
               if (onlyDrivable && !this.drivable[tri]) continue;
@@ -515,7 +711,7 @@ export class CollisionIndex {
       // Stop as soon as the nearest hit is behind us: anything in a later cell
       // is further along the ray by construction.
       if (found && best <= tExit) break;
-      if (tExit >= maxDist) break;
+      if (tExit >= tEnd) break;
       if (tMaxX < tMaxZ) { ix += stepX; tEnter = tMaxX; tMaxX += tDeltaX; }
       else { iz += stepZ; tEnter = tMaxZ; tMaxZ += tDeltaZ; }
       if (!stepX && !stepZ) break;   // straight up or down: one cell only
@@ -1250,7 +1446,11 @@ export function buildCollisionIndex(root, { ownerRoots = null, cellSize = CELL_S
   let anyDrivable = false;
   let minX = Infinity, minZ = Infinity, maxX = -Infinity, maxZ = -Infinity;
   let at = 0;
+  // Each mesh's triangle run, for a pass that marks one mesh's triangles
+  // after the build (`coarse-layer.js`, COL-22).
+  const meshRanges = [];
   for (const mesh of meshes) {
+    meshRanges.push([mesh, at]);
     const geometry = mesh.geometry;
     const position = geometry.attributes.position;
     const array = position.array;
@@ -1303,6 +1503,8 @@ export function buildCollisionIndex(root, { ownerRoots = null, cellSize = CELL_S
   index.setObstacles(obstacleIds.subarray(0, at), obstacleNodes);
   if (groupTable) index.setGroups(anyGroup ? groupIds.subarray(0, at) : null, groupTable);
   index.internalEdges = markInternalEdges(tris, ownerIds, subIds, at);
+  index.meshRanges = meshRanges.map(([mesh, start], i) =>
+    [mesh, start, i + 1 < meshRanges.length ? meshRanges[i + 1][1] : at]);
   return index;
 }
 
@@ -1469,6 +1671,7 @@ function fillCells(index) {
       }
     }
   }
+  index._owned?.clear();
   index.cellStart = counts;
   index.cellItems = items;
   index.cellMinY = minY;

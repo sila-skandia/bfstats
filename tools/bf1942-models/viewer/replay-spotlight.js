@@ -32,6 +32,9 @@ const FADE = 5;
  *  before the killing round left. */
 export const SPOT_LEAD = 5;
 const SPOT_ROUND_LEAD = 2;
+/** Radians the other's direction may drift from where the orbit last turned
+ *  to before it turns again. */
+const FACE_DRIFT = 0.4;
 /** Seconds a round that missed flies on past the one it was fired at. */
 const MISS_ON = 0.4;
 /** Seconds a hit's damage shows over whoever took it. */
@@ -68,9 +71,8 @@ const STYLE = `
 .rs-strip-mid small { display: block; color: var(--rp-muted); font: 700 9px/1.4 var(--rp-font); letter-spacing: .12em; white-space: nowrap; }
 .rs-strip .rp-btn { flex: none; height: 28px; border-color: var(--rp-edge); }
 .rs-strip .rp-btn[hidden] { display: none; }
-/* The replay's own name tags give way to the two's while a kill is lit, and
-   the fronts' tabs (replay-highlights.js), in the same place, to the strip. */
-.rp-root.rs-lit .rp-tags { opacity: 0; pointer-events: none; }
+/* The fronts' tabs (replay-highlights.js), in the same place, give way to
+   the strip while a kill is lit. */
 .rp-root.rs-lit .rp-hl-fronts { display: none; }
 /* Where the page's minimap would cover it (a phone, a narrow window), the
    strip keeps to its left (\`layoutStrip\`). */
@@ -113,6 +115,7 @@ const el = (tag, className, text) => {
 const shown = names => String(names ?? '').split(', ').map(n => decodePlayerName(n)).join(', ');
 const teamClass = team => (team === 1 ? 'is-axis' : team === 2 ? 'is-allies' : '');
 const _v = new THREE.Vector3();
+const _w = new THREE.Vector3();
 const _a = new THREE.Vector3();
 const _b = new THREE.Vector3();
 
@@ -122,7 +125,8 @@ export class ReplaySpotlight {
     this.episodes = null;
     this.board = null;
     this.boardAt = -Infinity;
-    // The kill lit: `{ raw, kill, from, until, faced }`, or null.
+    // The kill lit: `{ raw, kill, from, until, faced, faceIn, yaw, steered }`,
+    // or null.
     this.pin = null;
     this.raw = null;
     this.fight = null;
@@ -226,10 +230,24 @@ export class ReplaySpotlight {
     return true;
   }
 
+  /** The players of the kill lit, both sides, or null with none lit: the
+   *  replay's name tags (replay-ui.js `updateTags`) keep theirs on however
+   *  far off, and let everyone else's go. */
+  litPids(t) {
+    const fight = this.raw ? this.fight : null;
+    if (!fight) return null;
+    const rec = this.player.rec;
+    const pids = new Set([...peopleOf(rec, fight.a, t), ...peopleOf(rec, fight.b, t)]);
+    for (const pid of [fight.kill?.killerPid, fight.kill?.victimPid]) if (Number.isInteger(pid)) pids.add(pid);
+    return pids;
+  }
+
   /** The kill lit, once more from the start. */
   again() {
     if (!this.pin) return;
     this.pin.faced = false;
+    this.pin.steered = false;
+    this.pin.yaw = undefined;
     this.player.seek(this.pin.from);
     this.player.playing = true;
   }
@@ -285,6 +303,8 @@ export class ReplaySpotlight {
     if (this.pin && !this.pin.faced && this.fight && --this.pin.faceIn <= 0) {
       this.pin.faced = true;
       this.faceOther(this.fight, t);
+    } else if (this.pin?.faced && this.fight) {
+      this.faceOther(this.fight, t, FACE_DRIFT);
     }
     if (raw) {
       this.layoutStrip();
@@ -323,24 +343,38 @@ export class ReplaySpotlight {
     if (this.pin && !this.pin.faced) this.pin.faceIn = 2;
   }
 
-  /** The orbit swings once to behind the followed player, looking at the
-   *  other, when the other is off the screen. Only the orbit the viewer is
-   *  steering themselves, not Auto's director. */
-  faceOther(fight, t) {
+  /**
+   * The orbit swings round to behind the followed player, looking at the
+   * other, so both are in the view: once as the kill is lit, then again
+   * whenever the other's direction drifts more than `drift` from where it
+   * last turned to. A recording holds a far player's last place until they
+   * come back into its range: an M6's victim stood 400 m from where they
+   * were, and jumped behind the camera once the recording caught up. Only
+   * the orbit the viewer is steering themselves, not Auto's director, and
+   * never again once the viewer has turned it themselves.
+   */
+  faceOther(fight, t, drift = 0) {
     const p = this.player;
     const c = p.camera;
-    if (c?.mode !== 'orbit' || p.highlights?.auto || !Number.isFinite(c.yaw)) return;
+    const pin = this.pin;
+    if (c?.mode !== 'orbit' || p.highlights?.auto || !Number.isFinite(c.yaw) || pin?.steered) return;
+    // Turned since the last swing, and not by the swing: the viewer's.
+    if (pin && pin.yaw !== undefined && Math.abs(c.yaw - pin.yaw) > 1e-6) {
+      pin.steered = true;
+      return;
+    }
     if (!peopleOf(p.rec, fight.a, t).includes(p.followPid)) return;
     const a = this.placeOf(fight.a, t, new THREE.Vector3());
     const b = a ? this.placeOf(fight.b, t, new THREE.Vector3()) : null;
     if (!b) return;
-    const s = _v.copy(b).project(p.ctx.camera);
-    if (s.z < 1 && Math.abs(s.x) < 0.9 && Math.abs(s.y) < 0.9) return;
     const dx = a.x - b.x;
     const dz = a.z - b.z;
     if (Math.hypot(dx, dz) < 1) return;
     const want = Math.atan2(dx, dz);
-    c.yaw += Math.atan2(Math.sin(want - c.yaw), Math.cos(want - c.yaw));
+    const turn = Math.atan2(Math.sin(want - c.yaw), Math.cos(want - c.yaw));
+    if (Math.abs(turn) <= drift) return;
+    c.yaw += turn;
+    if (pin) pin.yaw = c.yaw;
   }
 
   /** Every round between the two over the fight, with its flight. */
@@ -456,7 +490,10 @@ export class ReplaySpotlight {
     const camera = this.player.ctx.camera;
     const s = _v.copy(v).project(camera);
     let { x, y } = s;
-    const behind = s.z > 1;
+    // Behind the camera by where it is from the camera, not by its projected
+    // depth, which is past 1 for anything beyond the far plane too: an
+    // opponent 400 m off in front of an M6 was put at the bottom edge.
+    const behind = _w.copy(v).applyMatrix4(camera.matrixWorldInverse).z > 0;
     if (behind) {
       x = -x;
       y = -y;
@@ -510,7 +547,11 @@ export class ReplaySpotlight {
       // over whatever is beyond: the tag stays a short way above them.
       if (s.on && base.on) s.y = Math.min(base.y - 24, Math.max(s.y, base.y - Math.min(150, 0.2 * h)));
       places[key] = s;
-      tag.node.style.display = 'block';
+      // On the screen, the replay's own name tag is theirs when it drew one
+      // (replay-ui.js `litTagged`); this one is for the edge, and for whoever
+      // it does not tag (the dead, the first person's other side).
+      const tagged = s.on && peopleOf(this.player.rec, tag.life, t).some(pid => this.player.ui.litTagged?.has(pid));
+      tag.node.style.display = tagged ? 'none' : 'block';
       tag.node.classList.toggle('is-off', !s.on);
       tag.node.style.transform = s.on
         ? `translate(${s.x.toFixed(1)}px, ${s.y.toFixed(1)}px) translate(-50%, -100%)`

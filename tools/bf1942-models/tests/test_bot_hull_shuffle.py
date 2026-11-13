@@ -139,6 +139,27 @@ class HullBounceTests(unittest.TestCase):
         self.assertEqual(self.results["walledOnce"], {"left": 6, "route": False})
         self.assertEqual(self.results["walledTwice"], {"left": 2, "route": True})
 
+    def test_a_forgotten_body_is_not_planted_again_at_once(self) -> None:
+        # The forgetting used to last one tick: the prediction planted the
+        # same body again and threw the opened route away. The body now stays
+        # forgotten for a potential obstacle's life (10 s, `AIPathfinding`
+        # +0x30); any other body is planted as before.
+        self.assertEqual(self.results["forgotten"],
+                         {"first": 1, "left": 0, "soon": 0, "otherBody": 1, "later": 1})
+
+    def test_a_failed_path_waits_for_a_new_move(self) -> None:
+        # Retail starts a path only in the move's constructor
+        # (`BAPAMoveToFinding` 0x085447f0 calls `initPathfinding` at
+        # 0x0854499a) and `updatePathfinding` 0x08526d40 searches nothing in
+        # state 3 (0x08526d9b): a failed path stands until a new move. The
+        # viewer searched again every 1.5 s.
+        r = self.results["failedPath"]
+        self.assertEqual(r["first"], {"failed": True, "searchFailed": True, "failures": 1})
+        self.assertIsNone(r["sameMove"])
+        self.assertEqual(r["afterWait"], 1)
+        self.assertEqual(r["newMove"], 2)
+        self.assertEqual(r["movedGoal"], 3)
+
     def test_a_goal_the_map_cannot_reach_is_approached_by_a_hull(self) -> None:
         # Cause 5: the painted coarse layer has no path across the wall; with
         # `nearest` it ends at the region nearest the goal on the start's

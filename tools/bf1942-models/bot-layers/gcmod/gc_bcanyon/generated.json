@@ -1,0 +1,718 @@
+{
+ "generator": "botgen",
+ "version": 6,
+ "mod": "GCMOD",
+ "level": "gc_bcanyon",
+ "objectSpawners": 54,
+ "template": "symmetric",
+ "templateSource": "DICE, bf1942 Kharkov (1.6 patch archives): AI/Strategies.con, AI/conditions.con, AI/prerequisites.con, unchanged",
+ "templateChoice": {
+  "name": "symmetric",
+  "inPlay": 5,
+  "rule": "5 capturable flags in play, more than 3"
+ },
+ "scope": "an infantry map from the page painter with the walk test's ways out opened, a Tank0 map from the page painter, infantry order positions, no strategic maps, no co-op layer",
+ "unreachable": [],
+ "unreachableReasons": {},
+ "botSpawnsExcluded": [
+  "bridge01",
+  "rebelstart01",
+  "rebelstart04"
+ ],
+ "walkMap": {
+  "source": "page painter",
+  "engine": "none",
+  "vehicleMap": "page painter",
+  "vehicleBrush": 1.5,
+  "vehicleBrushes": [
+   {
+    "brush": 3,
+    "flagsOn": 4,
+    "spawnersOn": 18,
+    "pieces": 19,
+    "main": 380956
+   },
+   {
+    "brush": 2.5,
+    "flagsOn": 4,
+    "spawnersOn": 19,
+    "pieces": 20,
+    "main": 404924
+   },
+   {
+    "brush": 2,
+    "flagsOn": 5,
+    "spawnersOn": 21,
+    "pieces": 19,
+    "main": 429466
+   },
+   {
+    "brush": 1.5,
+    "flagsOn": 5,
+    "spawnersOn": 23,
+    "pieces": 21,
+    "main": 444091
+   }
+  ],
+  "opened": [
+   [
+    1588,
+    705
+   ],
+   [
+    1589,
+    705
+   ],
+   [
+    1589,
+    706
+   ],
+   [
+    1590,
+    706
+   ],
+   [
+    1591,
+    706
+   ],
+   [
+    1592,
+    706
+   ],
+   [
+    1593,
+    706
+   ],
+   [
+    1430,
+    957
+   ],
+   [
+    1430,
+    958
+   ],
+   [
+    1430,
+    959
+   ],
+   [
+    1430,
+    976
+   ],
+   [
+    1430,
+    977
+   ],
+   [
+    1430,
+    978
+   ],
+   [
+    1430,
+    981
+   ],
+   [
+    1430,
+    982
+   ],
+   [
+    1430,
+    983
+   ],
+   [
+    1430,
+    984
+   ],
+   [
+    1430,
+    985
+   ],
+   [
+    1430,
+    986
+   ],
+   [
+    1430,
+    997
+   ],
+   [
+    1433,
+    1007
+   ],
+   [
+    1434,
+    1007
+   ],
+   [
+    1435,
+    1007
+   ],
+   [
+    1427,
+    1008
+   ],
+   [
+    1425,
+    1009
+   ],
+   [
+    1427,
+    1009
+   ],
+   [
+    1417,
+    1010
+   ],
+   [
+    1423,
+    1010
+   ],
+   [
+    1424,
+    1010
+   ],
+   [
+    1425,
+    1010
+   ],
+   [
+    1426,
+    1010
+   ],
+   [
+    1427,
+    1010
+   ],
+   [
+    1187,
+    1023
+   ],
+   [
+    1187,
+    1024
+   ],
+   [
+    1219,
+    1028
+   ],
+   [
+    1220,
+    1028
+   ],
+   [
+    1218,
+    1029
+   ],
+   [
+    1219,
+    1029
+   ],
+   [
+    1217,
+    1030
+   ],
+   [
+    1218,
+    1030
+   ],
+   [
+    662,
+    1541
+   ],
+   [
+    662,
+    1542
+   ],
+   [
+    662,
+    1543
+   ],
+   [
+    662,
+    1544
+   ],
+   [
+    657,
+    1545
+   ],
+   [
+    658,
+    1545
+   ],
+   [
+    659,
+    1545
+   ],
+   [
+    660,
+    1545
+   ],
+   [
+    661,
+    1545
+   ],
+   [
+    662,
+    1545
+   ],
+   [
+    647,
+    1546
+   ],
+   [
+    648,
+    1546
+   ],
+   [
+    649,
+    1546
+   ],
+   [
+    650,
+    1546
+   ],
+   [
+    651,
+    1546
+   ],
+   [
+    652,
+    1546
+   ],
+   [
+    653,
+    1546
+   ],
+   [
+    654,
+    1546
+   ],
+   [
+    655,
+    1546
+   ],
+   [
+    656,
+    1546
+   ],
+   [
+    657,
+    1546
+   ],
+   [
+    645,
+    1547
+   ],
+   [
+    646,
+    1547
+   ],
+   [
+    647,
+    1547
+   ],
+   [
+    642,
+    1548
+   ],
+   [
+    643,
+    1548
+   ],
+   [
+    644,
+    1548
+   ],
+   [
+    645,
+    1548
+   ],
+   [
+    642,
+    1549
+   ],
+   [
+    642,
+    1550
+   ],
+   [
+    642,
+    1551
+   ],
+   [
+    642,
+    1552
+   ],
+   [
+    642,
+    1553
+   ],
+   [
+    642,
+    1554
+   ],
+   [
+    642,
+    1555
+   ],
+   [
+    642,
+    1556
+   ],
+   [
+    642,
+    1557
+   ],
+   [
+    636,
+    1558
+   ],
+   [
+    637,
+    1558
+   ],
+   [
+    638,
+    1558
+   ],
+   [
+    639,
+    1558
+   ],
+   [
+    640,
+    1558
+   ],
+   [
+    641,
+    1558
+   ],
+   [
+    642,
+    1558
+   ],
+   [
+    627,
+    1559
+   ],
+   [
+    628,
+    1559
+   ],
+   [
+    629,
+    1559
+   ],
+   [
+    630,
+    1559
+   ],
+   [
+    631,
+    1559
+   ],
+   [
+    632,
+    1559
+   ],
+   [
+    633,
+    1559
+   ],
+   [
+    634,
+    1559
+   ],
+   [
+    635,
+    1559
+   ],
+   [
+    636,
+    1559
+   ],
+   [
+    626,
+    1560
+   ],
+   [
+    627,
+    1560
+   ],
+   [
+    624,
+    1561
+   ],
+   [
+    625,
+    1561
+   ],
+   [
+    626,
+    1561
+   ],
+   [
+    624,
+    1562
+   ],
+   [
+    624,
+    1563
+   ],
+   [
+    611,
+    1582
+   ],
+   [
+    612,
+    1582
+   ],
+   [
+    613,
+    1582
+   ],
+   [
+    614,
+    1582
+   ],
+   [
+    615,
+    1582
+   ],
+   [
+    616,
+    1582
+   ],
+   [
+    617,
+    1582
+   ],
+   [
+    618,
+    1582
+   ],
+   [
+    619,
+    1582
+   ],
+   [
+    620,
+    1582
+   ],
+   [
+    621,
+    1582
+   ],
+   [
+    1595,
+    1600
+   ],
+   [
+    1596,
+    1600
+   ],
+   [
+    1597,
+    1600
+   ],
+   [
+    1597,
+    1601
+   ],
+   [
+    1597,
+    1602
+   ],
+   [
+    1598,
+    1602
+   ],
+   [
+    627,
+    1609
+   ],
+   [
+    628,
+    1609
+   ],
+   [
+    629,
+    1609
+   ],
+   [
+    630,
+    1609
+   ],
+   [
+    631,
+    1609
+   ],
+   [
+    632,
+    1609
+   ],
+   [
+    632,
+    1610
+   ],
+   [
+    632,
+    1611
+   ],
+   [
+    630,
+    1612
+   ],
+   [
+    631,
+    1612
+   ]
+  ],
+  "ways": [
+   {
+    "who": "cit01",
+    "kind": "spawn",
+    "way": "walk",
+    "opened": 71
+   },
+   {
+    "who": "cit02",
+    "kind": "spawn",
+    "way": "walk",
+    "opened": 11
+   },
+   {
+    "who": "tusk01",
+    "kind": "spawn",
+    "way": "walk",
+    "opened": 6
+   },
+   {
+    "who": "mine01",
+    "kind": "spawn",
+    "way": "walk",
+    "opened": 2
+   },
+   {
+    "who": "mine03",
+    "kind": "spawn",
+    "way": "walk",
+    "opened": 6
+   },
+   {
+    "who": "bridge02",
+    "kind": "spawn",
+    "way": "walk",
+    "opened": 19
+   },
+   {
+    "who": "bridge03",
+    "kind": "spawn",
+    "way": "walk",
+    "opened": 5
+   },
+   {
+    "who": "insur03",
+    "kind": "spawn",
+    "way": "walk",
+    "opened": 7
+   },
+   {
+    "who": "rebelstart04",
+    "kind": "spawn",
+    "way": "none",
+    "opened": 0
+   },
+   {
+    "who": "bridge_passtemplate",
+    "kind": "flag",
+    "way": "walk",
+    "opened": 1
+   },
+   {
+    "who": "the_citideltemplate",
+    "kind": "flag",
+    "way": "none",
+    "opened": 0
+   }
+  ],
+  "cover": 0.588,
+  "floors": {
+   "stacked": false,
+   "twoFloorShare": 0.004,
+   "raised": [
+    "toshe_station",
+    "lost_citytemplate"
+   ],
+   "reason": null
+  },
+  "capped": true
+ },
+ "routeProbe": {
+  "chokeMax": 4,
+  "unreachable": [],
+  "stops": {},
+  "oneSided": {
+   "bridge_passtemplate": 1
+  },
+  "sides": {
+   "1": {
+    "spawns": 5,
+    "flags": [
+     "bridge_passtemplate",
+     "lost_citytemplate",
+     "sand_swept_basetemplate",
+     "toshe_station",
+     "tusken_forttemplate"
+    ]
+   },
+   "2": {
+    "spawns": 2,
+    "flags": [
+     "lost_citytemplate",
+     "sand_swept_basetemplate",
+     "toshe_station",
+     "tusken_forttemplate"
+    ]
+   }
+  },
+  "chokes": {
+   "bridge_passtemplate:1": 0,
+   "bridge_passtemplate:2": 12,
+   "sand_swept_basetemplate:1": 1,
+   "sand_swept_basetemplate:2": 0,
+   "tusken_forttemplate:1": 1,
+   "tusken_forttemplate:2": 0,
+   "toshe_station:1": 1,
+   "toshe_station:2": 0,
+   "lost_citytemplate:1": 11,
+   "lost_citytemplate:2": 0
+  },
+  "late": {},
+  "shutLinks": [
+   "bridge_passtemplate>sand_swept_basetemplate",
+   "bridge_passtemplate>toshe_station",
+   "sand_swept_basetemplate>bridge_passtemplate",
+   "toshe_station>bridge_passtemplate"
+  ]
+ },
+ "inputs": {
+  "controlPoints": "0d32b916f5642944bc68dccf7add9375661642092f20a9e40ac3b20891875df8",
+  "infantryMap": "e4af79b2f248120a411b77ed247e147facb2ddb301ef7768fd657adfd4519ccf",
+  "template": "43f8a790471528016570235f76e97dbb2045732458781a5139f37fed68bf98c0"
+ },
+ "files": {
+  "AI.con": "26f62f783813f16aedaa4cd94d6da44996c4e824dcf37c7206fe33779fba7eda",
+  "AIpathFinding.con": "9d8080cdfa7605961969aa126519b03be9691bd604ac76aef50166d81215edd2",
+  "AI/StrategicAreas.con": "7d1260956b02a4d304f720acd728cecbd50d5da1bd1f8ee2b3a62b597d0fe7d6",
+  "AI/Strategies.con": "4ce0be59a0d6c5cd530db002fb062c4be8d936bc6ae59bd188803ccaf7869a8d",
+  "AI/conditions.con": "68a0c7a8aec69954063147b60fae560b2874884285737aa085efa76597d395aa",
+  "AI/prerequisites.con": "4c1f313bc285b228fd6ad03bfd1f44c5b15c8703c31f802eb605bc5f00f88bb5",
+  "Pathfinding/Infantry1Level0Map.raw": "b3f32a749ac311483d91b7b50b15d80eca19dab84e23490b4e45f1cd1a0082ba",
+  "Pathfinding/Infantry1Level1Map.raw": "4484fab323c06e1963871d4ad8a3c97ac0d0c385e4d61c07eb576919d1b795e2",
+  "Pathfinding/Infantry1Level2Map.raw": "4168e95592974e0ff7000de1a766b09f240571f590e78bc860703b9fbbb5da08",
+  "Pathfinding/Tank0Level0Map.raw": "52868d84fa05d5f450cb377ece952d578e83ad50df67abc7a80d5c31d1ed72ec",
+  "Pathfinding/Tank0Level1Map.raw": "0a5866ec53df095fd77c840ec6b22a6e440dc55aa47190d61bed74007a3cb33d",
+  "Pathfinding/Tank0Level2Map.raw": "ccbc23d131ae56364faebf6efb8b4f5ecc781f5248930317ae977f68de010180"
+ }
+}

@@ -8,7 +8,7 @@ server's one Euler step a 30 Hz tick, in the air as on the ground. Measured
 against the lab server per acknowledged tick: 0.3-0.8 mm horizontal median on
 the ground, where the page was half a metre off vertically before, and the
 wings' unauthored lift now takes the engine's defaults. Open: the Corsair's own
-run, a moving deck (the rudder-coast residual closed 2026-10-25, AIRGND-9). 2026-10-28: a driven plane's hull
+run (the rudder-coast residual closed 2026-10-25, AIRGND-9); a moving deck built 2026-11-12 (below). 2026-10-28: a driven plane's hull
 meets the terrain (AIRGND-12), and FHSWEurope's A6M2b chattering on its springs
 is measured as retail's own (AIRGND-11).
 
@@ -45,8 +45,8 @@ One server tick, in the server's order (TANK-18 for the shape, AIRGND-1..5):
    `c` 12 on every vanilla plane, `D` the push the last collision pass left,
    the wheel snapped back to rest (TANK-19; `PhysicsSpring::updatePhysics`
    0x0824ddd0, the 1.5 being `getGravity() * -0.101833` with g = 0xC16BAE14 = -14.73f; an
-   earlier 1.49995 mis-decoded the seed, corrected 2026-11-12; the code still
-   holds the old -14.7295379 with `aircraft.js`, see
+   earlier 1.49995 mis-decoded the seed; the code runs `Math.fround(-14.73)`
+   from `rigid-body.js` since 2026-11-12, see
    `features/retail-parity-cross-check-2026-11-12`). A steered tail
    wheel's anchor and vertex are turned with its bundle.
 3. The wings, the engine and the box drag as the page already ran them, into
@@ -168,8 +168,9 @@ In flight and the correction a round trip late: [aircraft-flight-law](../aircraf
   `B17_Body_Wing` omit `setFlapLift`), and the hand-written `CORSAIR` table
   gives its regulators 0/4 where the engine's are 1/2. PHY-26's level-trim
   difference is likely the same defect and wants measuring again.
-- **A moving deck.** The contact speed is the plane's own; on a ship under
-  way the engine's is relative to the deck (`getTangentSpeed` of both).
+- ~~**A moving deck.**~~ Built 2026-11-12: the wheel's contact speed is the
+  plane's point speed less the deck's (`getTangentSpeed` of both,
+  `checkObjectVsObject` 0x08259690), section "A moving deck" below.
 - **The Corsair**, the same law and table shape, has no lab run of its own
   yet: the lab's probe could not reach Wake's (on the pad, past a farmhouse
   on the plateau's edge) before the round turned.
@@ -243,4 +244,40 @@ reading (`Ship.spinIsWorld` false): Wake's LCVP beach landing
 contact response wants its own measured change. Guards in `tests/test_vehicle_bodies.py`
 (`an_aircraft_on_the_ground_law_*`,
 `a_driven_aircraft_spin_is_read_and_written_in_the_world_frame`).
+
+## A moving deck (2026-11-12)
+
+Retail feeds an object contact's friction the relative speed of the two roots
+at the hit (`checkObjectVsObject` 0x08259690 takes `getTangentSpeed`
+0x08254b90 of both; `impulseOn` 0x08258900 means it into `+0x74`;
+`addFriction` 0x0825b6e0 works on `+0x74 - surfaceSpeed`, 0x0825b887..
+0x0825b8ae). A plane on a carrier is the vertex side at share 1 (the root radii
+more than 4x apart). So `collideWheels` now subtracts the deck's point speed
+(`plane.deckVelocity`, which `hull-bodies.js` `aircraftLawOnShipDecks` answers
+from the col0 deck it stands the wheel on and the ship's `hostPointVelocity`),
+and `body-ground.js` `terrainContact` does the same for a parked, empty plane
+on a ship (`withShipDecks` `surfaceVelocity`). The soldier's half is
+`walking-body.js` `#contactLaw` through `deck-carry.js`.
+
+Headless on Wake (seed 1), the Shokaku driven at full ahead to 16.9 m/s for
+60 s with her Zero let go empty on the deck: the Zero ends 0.77 m from where
+it was let go, in her frame; before, it slid aft and off the stern at 26 s.
+With a pilot aboard and the engine idle, RollGrip asks back only the speed
+along the axle (AIRGND-2), so the plane rolls aft as the carrier gathers way
+and leaves the stern at 24 s; rolling resistance on the relative speed is all
+that holds it, as in retail. Before, that plane fell asleep on the deck at
+rest in the world and was left hanging in the air when the ship sailed.
+Pins: `tests/test_body_ground.py` (`movingDeck`), `tests/test_deck_carry.py`.
+Land drives too (2026-11-12, later): `hull-bodies.js` `landOnShipDecks` gives a
+driven jeep or tank her deck as its floor (col1, or col0 for a root radius of
+4 m or more, COL-22) and her point speed, which `wheeled-vehicle.js` and
+`tracked-vehicle.js` take off the wheel's contact speed. A body asleep on a
+deck is woken once the deck's speed under it passes the 0.1 m^2/s^2 gate
+(`addFriction`'s wake, run on every part with no sleeping test), in the
+tracked law, the aircraft law and `ParkedVehicle.detectGround`. Headless on
+Wake, the Shokaku to 16.9 m/s: an empty Willy and an empty Sherman parked on
+her deck end 1.0 m and 0.6 m from where they were set down after 60 s, a
+driven Sherman 0.6 m (before: all left behind and over the stern). Pins:
+`tests/test_ground.py` (`jeepOnMovingDeck`, `tankOnMovingDeck`). The room
+server drives no ships.
 

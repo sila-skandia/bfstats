@@ -62,7 +62,7 @@ LAYERS: dict[str, tuple[tuple[str, ...], tuple[str, ...]]] = {
              ("gameTypes", "tickets", "combatArea", "flagBases", "objectives")),
     "environment": (("waterLevel", "fogColor", "fogStart", "fogEnd",
                      "sunDirection", "camera", "lighting", "drawDistance",
-                     "targetTriCount"), ()),
+                     "targetTriCount", "terrainLodDistance"), ()),
     "damage": (("damage",), ()),
     "materials": (("depthWriteOff", "materialDiffuse", "alphaBlend",
                    "alphaLodDistance", "textureFadeMaxDist"), ()),
@@ -77,6 +77,7 @@ LAYERS: dict[str, tuple[tuple[str, ...], tuple[str, ...]]] = {
     "meshCull": (("meshCull",), ()),
     "collisionGroups": (("collisionGroups",), ()),
     "fireOnce": (("fireOnce",), ()),
+    "templateWords": (("templateWords",), ()),
     # No scene.json key: the level's `lightmaps/*.png`, which the glb names.
     "lightmaps": ((), ()),
 }
@@ -117,6 +118,10 @@ REPORT_ORDER = (
     "fireOnce",
     # Added 2026-11-12, the same way (the `materials` layer).
     "textureFadeMaxDist",
+    # Added 2026-11-13, the same way (the `environment` layer).
+    "terrainLodDistance",
+    # Added 2026-11-13, the same way (its own layer).
+    "templateWords",
 )
 MODE_KEY_ORDER = ("gameTypes", "controlPoints", "soldierSpawns",
                   "objectSpawns", "vehicleSoldierSpawns", "tickets",
@@ -629,9 +634,12 @@ def layer_environment(ctx: LevelContext):
         # budget (read at PatchTerrain init; 4000 on the 1024 m levels, 5000
         # on the 2048 m ones). Informational: the viewer ships the full
         # heightmap grid, which is deliberately more detailed than the
-        # engine's budget. `lodDistance`, authored beside it, is dead in the
-        # retail binary and is not carried (level-content.md Gap 10).
+        # engine's budget.
         "targetTriCount": info.terrain.target_tri_count,
+        # `GeometryTemplate.lodDistance`, the range of the terrain's detail
+        # law (ledger TERR-8; `viewer/terrain-lod.js`). Null where the level
+        # omits it: the viewer then takes the constructor's 1050.
+        "terrainLodDistance": info.terrain.lod_distance,
     }, {}
 
 
@@ -640,7 +648,9 @@ def layer_damage(ctx: LevelContext):
     # shared sounds and referenced relatively from each level.
     return {"damage": em.write_damage_tables(
         ctx.damage_tables, ctx.shared_sounds.parent, ctx.final_level_dir(),
-        em.projectile_materials(ctx.library))}, {}
+        em.projectile_materials(ctx.library),
+        (em.weapon_ammo_types(ctx.library) if ctx.library is not None else None),
+        (em.armor_explosions(ctx.library) if ctx.library is not None else None))}, {}
 
 
 def layer_sounds(ctx: LevelContext):
@@ -996,6 +1006,72 @@ def fire_once_templates(library) -> list[str]:
                   if template.kind.lower() == "firearms" and template.fire_once)
 
 
+def template_words(library) -> dict[str, dict]:
+    """The Secret Weapons rocket and submarine words of the level's library,
+    by lower-case template name, as the glb's own extras spell them
+    (`physics` / `fireArms` blocks; retail-inverse-gap-audit entries 51-53):
+
+    - an Engine's heat (`heatIncrement`, `coolingFactor`, `heatBarType`,
+      `inverseHeatBar`; ledger PHY-45), where `heatIncrement` is above 0;
+    - a PlayerControlObject's `vehicleCameraShake` (CS-16),
+      `disableSpawnPointsOnEnter` (SPAWN-39) and `subPos` (SUB-6; said
+      outright, false too, on a `VTSubmarine` seat with a submarine block);
+    - a FireArms' `destroyVehicleWhenNoAmmo` and `disableWhenFired` (FA-28,
+      FA-30), and `projectile: {vehicle: true}` where the round it throws is
+      a PlayerControlObject (FA-29).
+
+    A glb baked since 2026-11-13 says all of it on its own nodes; this table
+    is what reaches a tree baked before, without re-baking it
+    (`viewer/template-words.js` lays it under each node's own extras). Only
+    templates that write one of the words are listed: vanilla's two
+    submarines, XPack2's Natter, Wasserfall and its rocket.
+    """
+    out: dict[str, dict] = {}
+    for key, template in sorted(library.objects.items()):
+        kind = template.kind.lower()
+        entry: dict = {}
+        if kind == "engine":
+            if template.heat_increment and template.heat_increment > 0:
+                physics = template.physics() or {}
+                entry["physics"] = {name: physics[name] for name in (
+                    "heatIncrement", "coolingFactor", "heatBarType", "inverseHeatBar")
+                    if name in physics}
+        elif kind == "playercontrolobject":
+            physics = {}
+            if template.vehicle_camera_shake:
+                physics["vehicleCameraShake"] = template.vehicle_camera_shake
+            if template.disable_spawn_points_on_enter:
+                physics["disableSpawnPointsOnEnter"] = True
+            if template.sub_pos:
+                physics["subPos"] = True
+            elif (template.submarine_data
+                  and (template.vehicle_type or "").lower() == "vtsubmarine"):
+                physics["subPos"] = False
+            if physics:
+                entry["physics"] = physics
+        elif kind == "firearms":
+            fire = {}
+            if template.destroy_vehicle_when_no_ammo:
+                fire["destroyVehicleWhenNoAmmo"] = True
+            if template.disable_when_fired:
+                fire["disableWhenFired"] = True
+            thrown = (library.object(template.projectile_template)
+                      if template.projectile_template else None)
+            if thrown is not None and thrown.kind.lower() == "playercontrolobject":
+                fire["projectile"] = {"vehicle": True}
+            if fire:
+                entry["fireArms"] = fire
+        if entry:
+            out[key.lower()] = entry
+    return out
+
+
+def layer_template_words(ctx: LevelContext):
+    library = ctx.library
+    return ({"templateWords": template_words(library)}
+            if library is not None else {}), {}
+
+
 def layer_fire_once(ctx: LevelContext):
     library = ctx.library
     return ({"fireOnce": fire_once_templates(library)}
@@ -1117,6 +1193,7 @@ COMPUTE = {
     "meshCull": layer_mesh_cull,
     "collisionGroups": layer_collision_groups,
     "fireOnce": layer_fire_once,
+    "templateWords": layer_template_words,
     "lightmaps": layer_lightmaps,
 }
 

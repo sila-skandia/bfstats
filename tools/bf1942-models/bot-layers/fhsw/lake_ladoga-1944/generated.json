@@ -1,0 +1,96 @@
+{
+ "generator": "botgen",
+ "version": 5,
+ "mod": "FHSW",
+ "level": "lake_ladoga-1944",
+ "objectSpawners": 106,
+ "template": "few",
+ "templateSource": "DICE, bf1942 Kursk (1.6 patch archives, Kursk_003.rfa): AI/Strategies.con, AI/conditions.con, AI/prerequisites.con, unchanged",
+ "templateChoice": {
+  "name": "few",
+  "inPlay": 0,
+  "rule": "0 capturable flags in play, at most 3"
+ },
+ "scope": "on foot: infantry order positions only, no search maps, no co-op layer",
+ "unreachable": [
+  "central_barge",
+  "lake_south",
+  "lake_north",
+  "air_supremacy"
+ ],
+ "unreachableReasons": {
+  "central_barge": "walk test",
+  "lake_south": "walk test",
+  "lake_north": "walk test",
+  "air_supremacy": "walk test"
+ },
+ "botSpawnsExcluded": [
+  "alliedbase_spawn1",
+  "alliedbase_spawn2",
+  "alliedbase_spawn3",
+  "alliedbase_spawn4",
+  "alliedbase_spawn5",
+  "alliedbase_spawn6",
+  "alliedbase_spawn7",
+  "alliedbase_spawn8",
+  "alliedbase_spawn9",
+  "alliedbase_spawn10",
+  "alliedbase_spawn11",
+  "axisbase_spawn7",
+  "axisbase_spawn9",
+  "axisbase_spawn13",
+  "alliedbase2_spawn1",
+  "alliedbase2_spawn2",
+  "alliedbase2_spawn3",
+  "alliedbase2_spawn4",
+  "alliedbase2_spawn5",
+  "alliedbase2_spawn6",
+  "alliedbase2_spawn7",
+  "alliedbase2_spawn8"
+ ],
+ "walkMap": {
+  "source": "page painter",
+  "engine": "none",
+  "opened": [],
+  "ways": [],
+  "cover": 0.939,
+  "floors": {
+   "stacked": false,
+   "twoFloorShare": 0,
+   "raised": [],
+   "reason": null
+  },
+  "capped": true
+ },
+ "routeProbe": {
+  "chokeMax": 4,
+  "unreachable": [],
+  "stops": {},
+  "oneSided": {},
+  "sides": {
+   "1": {
+    "spawns": 18,
+    "flags": []
+   },
+   "2": {
+    "spawns": 0,
+    "flags": []
+   }
+  },
+  "chokes": {},
+  "late": {},
+  "shutLinks": []
+ },
+ "inputs": {
+  "controlPoints": "7e22998e98c84ff552787b44d111debf3fd2511afc3057632380895446f3af91",
+  "infantryMap": "0d35b485357bdc73c26dc2284453c1eb89c08c192647d6b0685c01c60a89d7ec",
+  "template": "bdc0e455f47f91b7e7724e71d7c0c196e839b36946ac3abb7663d725944081e5"
+ },
+ "files": {
+  "AI.con": "ff65da5cf781f265a28875b6cbca3063a01ed39073ce89fcfbb96af7a80600f7",
+  "AI/StrategicAreas.con": "1a734dc32b315f14f740017f896f167213b53ba058fa24457b2d2b9b5c71b306",
+  "AI/Strategies.con": "13da4dc35872dd4b5798a066f4425bdc824cfd61f31093d1808e1202644de52e",
+  "AI/conditions.con": "248a04b727c08d696bf0fa9c162bc22c43cde3c75f695892fe1e0f5141519c49",
+  "AI/prerequisites.con": "c96168b5f69860e578f5d26728fd2a2092c4c436e1da49b7d6f4009b65735398"
+ }
+}

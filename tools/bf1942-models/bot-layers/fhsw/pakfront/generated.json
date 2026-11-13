@@ -1,0 +1,113 @@
+{
+ "generator": "botgen",
+ "version": 5,
+ "mod": "FHSW",
+ "level": "pakfront",
+ "objectSpawners": 187,
+ "template": "symmetric",
+ "templateSource": "DICE, bf1942 Kharkov (1.6 patch archives): AI/Strategies.con, AI/conditions.con, AI/prerequisites.con, unchanged",
+ "templateChoice": {
+  "name": "symmetric",
+  "inPlay": 4,
+  "rule": "4 capturable flags in play, more than 3"
+ },
+ "scope": "on foot: infantry order positions only, no search maps, no co-op layer",
+ "unreachable": [
+  "ussrbase1st_south",
+  "ussrbase_2nd_south"
+ ],
+ "unreachableReasons": {
+  "ussrbase1st_south": "walk test",
+  "ussrbase_2nd_south": "walk test"
+ },
+ "botSpawnsExcluded": [
+  "gerbase2_1",
+  "gerbase2_2",
+  "gerbase1_1",
+  "gerbase1_1",
+  "gerbase1_1",
+  "ussrbase1stsouth_1",
+  "ussrbase1stsouth_2",
+  "ussrbase1stsouth_3",
+  "ussrbase1stsouth_4",
+  "ussrbase_1st_central_1",
+  "ussrbase_1st_central_2",
+  "ussrbase_1st_central_3",
+  "ussrbase_1st_central_4",
+  "ussrbase_1st_north_1",
+  "ussrbase_1st_north_2",
+  "ussrbase_2nd_north_2",
+  "ussrbase_2nd_north_3",
+  "ussrbase_2nd_south_1",
+  "ussrbase_2nd_south_1",
+  "ussrbase_2nd_south_3",
+  "ussrbase_2nd_south_4",
+  "ussrbase3rd_1",
+  "ussrbase3rd_2",
+  "ussrbase3rd_3"
+ ],
+ "walkMap": {
+  "source": "page painter",
+  "engine": "none",
+  "opened": [],
+  "ways": [],
+  "cover": 0.838,
+  "floors": {
+   "stacked": true,
+   "twoFloorShare": 0.009,
+   "raised": [
+    "ussrbase1st_south",
+    "ussrbase_1st_central",
+    "ussrbase_2nd_south"
+   ],
+   "reason": "3 of 6 capturable flags stand a storey over or under another walked floor"
+  },
+  "capped": true
+ },
+ "routeProbe": {
+  "chokeMax": 4,
+  "unreachable": [],
+  "stops": {},
+  "oneSided": {
+   "ussrbase_1st_central": 2,
+   "ussrbase_1st_north": 2,
+   "ussrbase_2nd_north": 2,
+   "ussrbase3rd": 2
+  },
+  "sides": {
+   "1": {
+    "spawns": 0,
+    "flags": []
+   },
+   "2": {
+    "spawns": 1,
+    "flags": [
+     "ussrbase3rd",
+     "ussrbase_1st_central",
+     "ussrbase_1st_north",
+     "ussrbase_2nd_north"
+    ]
+   }
+  },
+  "chokes": {
+   "ussrbase_1st_central:2": 0,
+   "ussrbase_1st_north:2": 0,
+   "ussrbase_2nd_north:2": 0,
+   "ussrbase3rd:2": 0
+  },
+  "late": {},
+  "shutLinks": []
+ },
+ "inputs": {
+  "controlPoints": "585bbb39130c7270b7bd3b5fa378bda48f9d7ae099d833eadb05d793be454c4a",
+  "infantryMap": "93d2863af4ee7662dfbdb1b6ed0d1171aeefd809ba1b4033ddc26621c27a497b",
+  "template": "43f8a790471528016570235f76e97dbb2045732458781a5139f37fed68bf98c0"
+ },
+ "files": {
+  "AI.con": "84b54fdbafe161fd3682345ddef4b1a2f08529643491b9fc45c06500a5cc4522",
+  "AI/StrategicAreas.con": "7793ffbefd89cbb855928452d536223147deceaf346218192f09f2e7d34d9802",
+  "AI/Strategies.con": "4ce0be59a0d6c5cd530db002fb062c4be8d936bc6ae59bd188803ccaf7869a8d",
+  "AI/conditions.con": "68a0c7a8aec69954063147b60fae560b2874884285737aa085efa76597d395aa",
+  "AI/prerequisites.con": "4c1f313bc285b228fd6ad03bfd1f44c5b15c8703c31f802eb605bc5f00f88bb5"
+ }
+}

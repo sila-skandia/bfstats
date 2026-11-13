@@ -1,0 +1,66 @@
+rem *** Strategic areas: one per control point (botgen) ***
+
+aiStrategicArea.create axisbase 260.2/148.6 265.2/153.6 50
+aiStrategicArea.addObjectTypeFlag Base
+aiStrategicArea.setOrderPosition Infantry 266.5/154.5
+aiStrategicArea.setSide 1
+aiStrategicArea.setTakeable 2 0
+
+aiStrategicArea.create alliedbase 172.2/1734.4 177.2/1739.4 50
+aiStrategicArea.addNeighbour crashpointtemplate
+aiStrategicArea.addNeighbour mountain_command_posttemplate
+aiStrategicArea.addObjectTypeFlag Base
+aiStrategicArea.setOrderPosition Infantry 178.5/1738.5
+aiStrategicArea.setSide 2
+aiStrategicArea.setTakeable 1 0
+
+aiStrategicArea.create allied_airporttemplate 596/1350.4 611/1365.4 10
+aiStrategicArea.setSide 2
+aiStrategicArea.setTakeable 1 0
+aiStrategicArea.setTakeable 2 0
+
+aiStrategicArea.create factorytemplate 714.3/1082.7 734.3/1102.7 10
+aiStrategicArea.setSide 2
+aiStrategicArea.setTakeable 1 0
+aiStrategicArea.setTakeable 2 0
+
+aiStrategicArea.create towntemplate 864.3/971.7 884.3/991.7 150
+aiStrategicArea.addNeighbour crashpointtemplate
+aiStrategicArea.addNeighbour mountain_command_posttemplate
+aiStrategicArea.addNeighbour beach_flagtemplate
+aiStrategicArea.addObjectTypeFlag Flank
+aiStrategicArea.addObjectTypeFlag ControlPoint
+aiStrategicArea.setOrderPosition Infantry 886.5/991.5
+aiStrategicArea.setSide 2
+
+aiStrategicArea.create foresttemplate 1020.8/1528.3 1035.8/1543.3 10
+aiStrategicArea.setSide 2
+aiStrategicArea.setTakeable 1 0
+aiStrategicArea.setTakeable 2 0
+
+aiStrategicArea.create crashpointtemplate 239/1329.9 264/1354.9 300
+aiStrategicArea.addNeighbour alliedbase
+aiStrategicArea.addNeighbour towntemplate
+aiStrategicArea.addNeighbour mountain_command_posttemplate
+aiStrategicArea.addObjectTypeFlag Centre
+aiStrategicArea.addObjectTypeFlag StrongPoint
+aiStrategicArea.addObjectTypeFlag Close
+aiStrategicArea.addObjectTypeFlag ControlPoint
+aiStrategicArea.setOrderPosition Infantry 262.5/1356.5
+aiStrategicArea.setSide 2
+
+aiStrategicArea.create mountain_command_posttemplate 575.3/1770.3 595.3/1790.3 50
+aiStrategicArea.addNeighbour alliedbase
+aiStrategicArea.addNeighbour towntemplate
+aiStrategicArea.addNeighbour crashpointtemplate
+aiStrategicArea.addObjectTypeFlag Base
+aiStrategicArea.setOrderPosition Infantry 594.5/1789.5
+aiStrategicArea.setSide 2
+aiStrategicArea.setTakeable 1 0
+
+aiStrategicArea.create beach_flagtemplate 920/812.1 940/832.1 150
+aiStrategicArea.addNeighbour towntemplate
+aiStrategicArea.addObjectTypeFlag Flank
+aiStrategicArea.addObjectTypeFlag Close
+aiStrategicArea.addObjectTypeFlag ControlPoint
+aiStrategicArea.setOrderPosition Infantry 938.5/833.5

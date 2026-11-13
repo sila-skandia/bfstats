@@ -129,7 +129,7 @@ class RigidBodyTargetedTests(unittest.TestCase):
     def test_constants(self) -> None:
         c = self.results["api"]["constants"]
         self.assertEqual(1 / 30, c["TICK"])
-        self.assertEqual(-14.73, c["GRAVITY"])
+        self.assertEqual(-14.729999542236328, c["GRAVITY"])  # 0xC16BAE14 = -14.73f
         self.assertEqual(100, c["FRAMES_BEFORE_SLEEP"])
         self.assertEqual(1e6, c["ACCEL_CLAMP_LIMIT_SQ"])
         self.assertEqual(1000, c["ACCEL_CLAMP_SPEED"])
@@ -156,7 +156,7 @@ class RigidBodyTargetedTests(unittest.TestCase):
         self.assertEqual([0.0, 0.0, 0.0], trace[0]["v"])
         self.assertEqual(5.0, trace[0]["pos"][1])
         self.assertLess(trace[1]["v"][1], 0.0)
-        self.assertAlmostEqual(-14.73 / 30, trace[1]["v"][1], delta=TOLERANCE)
+        self.assertAlmostEqual(-14.729999542236328 / 30, trace[1]["v"][1], delta=TOLERANCE)
 
     def test_free_falling_body_never_sleeps(self) -> None:
         # §4.3: "a free-falling body can therefore never sleep" -- gravity

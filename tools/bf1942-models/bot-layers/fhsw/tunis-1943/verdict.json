@@ -58,29 +58,9 @@
  "oneSided": null,
  "unreachable": [],
  "lintErrors": [],
- "accepted": {
-  "reason": "The owner played it on the page on 2026-11-11 and said its bots are fine: 'they rushed to the spawn point, germans counter attacked. I think it's a huge improvement on what we have.' The runner's three seeds call it no-fight at 8 a side (0.038 enemy kills a bot-minute); on the page it had 0.09, 0.24 and 0.17 with 13, 6 and 6 captures.",
-  "date": "2026-11-11",
-  "outcome": "no-fight",
-  "failed": [
-   "8:idleShare",
-   "8:routeFailuresPerBotMinute",
-   "8:enemyKillsPerBotMinute",
-   "8:bothSidesKill",
-   "8:ticketsBleed",
-   "8:routeFailuresPerBotMinuteWorseSide",
-   "8:nonEnemyDeathShareWorseSide",
-   "8:hullStuckSecondsPerDrivingMinute",
-   "8:hullStuckSecondsPerDrivingMinuteWorseSide",
-   "8:unitsNeverUsedShare",
-   "16:routeFailuresPerBotMinute",
-   "16:enemyKillsPerBotMinute",
-   "16:routeFailuresPerBotMinuteWorseSide",
-   "16:nonEnemyDeathShareWorseSide",
-   "16:hullStuckSecondsPerDrivingMinute",
-   "16:hullStuckSecondsPerDrivingMinuteWorseSide",
-   "16:unitsNeverUsedShare"
-  ],
-  "by": "owner"
+ "acceptanceWithdrawn": {
+  "because": "on the bot code of 3b1ebe45c, two page matches of 600 s with 16 bots, both under the rollout floor: 0.14 and 0.11 enemy kills a bot-minute, no capture in either (4 and 10 captures on the earlier bot code)",
+  "date": "2026-11-13",
+  "was": "The owner played it on the page on 2026-11-11 and said its bots are fine: 'they "
  }
 }

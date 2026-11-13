@@ -2918,6 +2918,7 @@ ObjectTemplate.autoReload 1
 ObjectTemplate.heatAddWhenFire 0.05
 ObjectTemplate.coolDownPerSec 0.3
 ObjectTemplate.timeDelayOnOverHeat 2
+ObjectTemplate.ammoType 10
 
 GeometryTemplate.create StandardMesh Plane_hull
 """)
@@ -2932,6 +2933,8 @@ GeometryTemplate.create StandardMesh Plane_hull
         self.assertEqual(0.05, fire["heatAddWhenFire"])
         self.assertEqual(0.3, fire["coolDownPerSec"])
         self.assertEqual(2.0, fire["timeDelayOnOverheat"])
+        # The airfield depot's gun row (SUP-2, `FireArmsTemplate+0x238`).
+        self.assertEqual(10, fire["ammoType"])
 
     def test_a_gun_carries_the_shove_it_gives_its_hull(self) -> None:
         # `fireingForce` (sic, ledger FA-1): `FireArms::Fire` posts

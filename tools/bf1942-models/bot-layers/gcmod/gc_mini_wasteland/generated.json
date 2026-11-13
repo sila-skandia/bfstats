@@ -1,0 +1,125 @@
+{
+ "generator": "botgen",
+ "version": 6,
+ "mod": "GCMOD",
+ "level": "gc_mini_wasteland",
+ "objectSpawners": 16,
+ "template": "few",
+ "templateSource": "DICE, bf1942 Kursk (1.6 patch archives, Kursk_003.rfa): AI/Strategies.con, AI/conditions.con, AI/prerequisites.con, unchanged",
+ "templateChoice": {
+  "name": "few",
+  "inPlay": 3,
+  "rule": "3 capturable flags in play, at most 3"
+ },
+ "scope": "an infantry map painted from the walk test, a Tank0 map from the page painter, infantry order positions, no strategic maps, no co-op layer",
+ "unreachable": [],
+ "unreachableReasons": {},
+ "botSpawnsExcluded": [
+  "Imperial_Lowland_Spawn1"
+ ],
+ "walkMap": {
+  "source": "walk test",
+  "engine": "none",
+  "vehicleMap": "page painter",
+  "vehicleBrush": 3,
+  "vehicleBrushes": [
+   {
+    "brush": 3,
+    "flagsOn": 5,
+    "spawnersOn": 12,
+    "pieces": 4,
+    "main": 572334
+   },
+   {
+    "brush": 2.5,
+    "flagsOn": 5,
+    "spawnersOn": 12,
+    "pieces": 2,
+    "main": 582107
+   },
+   {
+    "brush": 2,
+    "flagsOn": 5,
+    "spawnersOn": 12,
+    "pieces": 2,
+    "main": 586887
+   },
+   {
+    "brush": 1.5,
+    "flagsOn": 5,
+    "spawnersOn": 12,
+    "pieces": 2,
+    "main": 597219
+   }
+  ],
+  "opened": [],
+  "ways": [
+   {
+    "who": "Imperial_Lowland_Spawn1",
+    "kind": "spawn",
+    "way": "none",
+    "opened": 0
+   }
+  ],
+  "cover": 0.996,
+  "floors": {
+   "stacked": false,
+   "twoFloorShare": 0.001,
+   "raised": [],
+   "reason": null
+  }
+ },
+ "routeProbe": {
+  "chokeMax": 4,
+  "unreachable": [],
+  "stops": {},
+  "oneSided": {},
+  "sides": {
+   "1": {
+    "spawns": 3,
+    "flags": [
+     "Imperial_Lowland",
+     "Rebel_Lowland",
+     "Volcano"
+    ]
+   },
+   "2": {
+    "spawns": 3,
+    "flags": [
+     "Imperial_Lowland",
+     "Rebel_Lowland",
+     "Volcano"
+    ]
+   }
+  },
+  "chokes": {
+   "Rebel_Lowland:1": 0,
+   "Rebel_Lowland:2": 0,
+   "Volcano:1": 0,
+   "Volcano:2": 0,
+   "Imperial_Lowland:1": 0,
+   "Imperial_Lowland:2": 0
+  },
+  "late": {},
+  "shutLinks": []
+ },
+ "inputs": {
+  "controlPoints": "b311488ba1d83c533f34d1273c5071c093c19cdb3385efaf9e045790ce60b005",
+  "infantryMap": "c9cc2960ea2f71f803bfeff10c46120d259e34c882d9ab869882f762547328a4",
+  "template": "bdc0e455f47f91b7e7724e71d7c0c196e839b36946ac3abb7663d725944081e5"
+ },
+ "files": {
+  "AI.con": "39c086362b6dcfd68c98d0a970906aadd87bd9696ae330b3fadd5b90b8bfb447",
+  "AIpathFinding.con": "8014dbf6ef50a7e5ba3bd3af85ed910350bb0936cd33c5a2e1c5138053711957",
+  "AI/StrategicAreas.con": "5c22c36ea52488d89a9986c0b0569902bebed4de230c48228a78cf657d3b3274",
+  "AI/Strategies.con": "13da4dc35872dd4b5798a066f4425bdc824cfd61f31093d1808e1202644de52e",
+  "AI/conditions.con": "248a04b727c08d696bf0fa9c162bc22c43cde3c75f695892fe1e0f5141519c49",
+  "AI/prerequisites.con": "c96168b5f69860e578f5d26728fd2a2092c4c436e1da49b7d6f4009b65735398",
+  "Pathfinding/Infantry1Level0Map.raw": "56da3dac9af6b751bddcd58645aedc988eae1e7020e3b166f4b517c220fda812",
+  "Pathfinding/Infantry1Level1Map.raw": "96dda4ff964a6bb0f9eaffcda988b5ecb5770a02a1f7c1412367d047505410e2",
+  "Pathfinding/Infantry1Level2Map.raw": "e8f3a7207b2e4fdbbd64cc71786a4b06ed356111409246e5b185758ca30781a0",
+  "Pathfinding/Tank0Level0Map.raw": "dcbb822c64eccaa3f842343a026539c6b34f226a7e3e7923ead699772ba3debe",
+  "Pathfinding/Tank0Level1Map.raw": "b813351ecded3612dea985a8733bd487e04c30eeded7a94d660974d00ec0a2ff",
+  "Pathfinding/Tank0Level2Map.raw": "6108312e723bb6e24b6b9ba03d9d73384422f50e97c6bbf3455735e4bbf2a70b"
+ }
+}

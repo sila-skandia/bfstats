@@ -1,0 +1,22 @@
+{
+ "level": "battle_of_angaur",
+ "verdict": "fail",
+ "outcome": "unsuitable",
+ "config": "with vehicles",
+ "doctrine": "garrison",
+ "generatorVersion": 5,
+ "inputs": {
+  "controlPoints": "b02e9d11cb9691cd42abd35048f8d0e85496893c971777ae9fd357508d17b1be",
+  "infantryMap": "6fe67f88c606ad645677b3cc81ab547277d5adecd51b82119ca106cf8cd2ba89",
+  "template": "43f8a790471528016570235f76e97dbb2045732458781a5139f37fed68bf98c0"
+ },
+ "baseline": "DICE layers with vehicles, garrison doctrine: berlin, stalingrad, kharkov, bocage; seeds 1..10, 600 s",
+ "bar": null,
+ "seeds": 1,
+ "sizes": {},
+ "oneSided": null,
+ "unreachable": [],
+ "lintErrors": [
+  "side 2 holds no spawn point at the start of the round"
+ ]
+}

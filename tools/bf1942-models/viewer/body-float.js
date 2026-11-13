@@ -65,15 +65,15 @@ import { inertiaGeometryNode, ownGeometryMeshes } from './geometry-search.js';
  *  them, the ship law and `aircraft.js` run on one g. */
 export const GRAVITY = RIGID_GRAVITY;
 
-/** The divisor at `0x086d0d6c`: -9.819999694824219. */
-export const BUOYANCY_DIVISOR = -9.82;
+/** The divisor at `0x086d0d6c`: -9.819999694824219, the float32 of -9.82. */
+export const BUOYANCY_DIVISOR = Math.fround(-9.82);
 
-/** `g / -9.82`: 1.5, since `9.82 * 1.5 = 14.73`. */
+/** `g / -9.82`: exactly 1.5 in float32 (-14.7299995 / -9.8199997). */
 export const LIFT_NORMALISER = GRAVITY / BUOYANCY_DIVISOR;
 
 /** What `sum (-f_i) * lift_i` has to reach for buoyancy to cancel gravity:
- *  `|g| / LIFT_NORMALISER`, which is the divisor's 9.82 whatever g is. */
-export const EQUILIBRIUM_SUM = -BUOYANCY_DIVISOR;
+ *  `|g| / LIFT_NORMALISER`, the divisor's 9.8199997. */
+export const EQUILIBRIUM_SUM = -GRAVITY / LIFT_NORMALISER;
 
 /** The 100.0 at `0x086b01ac`, multiplying the bounding-box footprint. */
 export const DAMPING_AREA_SCALE = 100;
@@ -87,6 +87,8 @@ export const SUBMERSION_FLOOR = -1;
 /** `handleMessage`'s own constants: `rate = (q + 0.1) * 0.05 * sinkingSpeedMod`. */
 export const SINK_RATE_BIAS = 0.1;
 export const SINK_RATE_SCALE = 0.05;
+/** `FloatingBundleTemplate+0x1c4` as its constructor leaves it (0x0824094c). */
+export const SINKING_SPEED_MOD_DEFAULT = 1;
 
 const clamp = (v, lo, hi) => (v < lo ? lo : v > hi ? hi : v);
 
@@ -361,7 +363,11 @@ export function floatNodesOf(root) {
         hullHeight: physics.hullHeight,
         floatMinLift: physics.floatMinLift ?? physics.floatMaxLift ?? 0,
         floatMaxLift: physics.floatMaxLift ?? physics.floatMinLift ?? 0,
-        sinkingSpeedMod: physics.sinkingSpeedMod ?? 0,
+        // Unset is the template's 1.0 (`FloatingBundleTemplate` ctor
+        // 0x0824094c writes 0x3f800000 to `+0x1c4`), not "never": no vanilla
+        // capital ship writes the word, and read as 0 none of them ever went
+        // down. A raft's written 0 is still never.
+        sinkingSpeedMod: physics.sinkingSpeedMod ?? SINKING_SPEED_MOD_DEFAULT,
         ...parentDamping(node, root),
         offsetX: e[12] - rootE[12],
         offsetY: e[13] - rootE[13],

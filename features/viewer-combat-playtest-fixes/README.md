@@ -115,6 +115,10 @@ glided down at 30-46 m/s for 45 s and wrecked about a kilometre downrange, so
 the intact model was the only thing the shooter saw come down. The wreck glb,
 the level tag and the placement path were all fine; only the flight was wrong.
 
+*(Superseded 2026-11-13: retail keeps a wreck's lift and removes it at its 10 s
+time to live; the sink floor, the drag and `killLift` are gone. See
+`features/flyable-vehicles/README.md`, "A plane shot down glides".)*
+
 A hull on `world.falling` is now a dead object. `FALL_MIN_SINK` (18 m/s) forbids
 holding altitude or climbing, clamped BEFORE the integration so the airframe's
 lift is resolved against a downward flow instead of fighting the floor, with a

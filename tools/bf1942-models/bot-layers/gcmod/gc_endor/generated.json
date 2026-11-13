@@ -1,0 +1,699 @@
+{
+ "generator": "botgen",
+ "version": 6,
+ "mod": "GCMOD",
+ "level": "gc_endor",
+ "objectSpawners": 28,
+ "template": "few",
+ "templateSource": "DICE, bf1942 Kursk (1.6 patch archives, Kursk_003.rfa): AI/Strategies.con, AI/conditions.con, AI/prerequisites.con, unchanged",
+ "templateChoice": {
+  "name": "few",
+  "inPlay": 2,
+  "rule": "2 capturable flags in play, at most 3"
+ },
+ "scope": "an infantry map from the page painter with the walk test's ways out opened, a Tank0 map from the page painter, infantry order positions, no strategic maps, no co-op layer",
+ "unreachable": [
+  "Bunker",
+  "Ewok_Village",
+  "Landing_Platform"
+ ],
+ "unreachableReasons": {
+  "Bunker": "route probe",
+  "Ewok_Village": "walk test",
+  "Landing_Platform": "walk test"
+ },
+ "botSpawnsExcluded": [
+  "Rebel_Landing_Spawn1",
+  "Rebel_Landing_Spawn2",
+  "Ewok_Village_Spawn1",
+  "Ewok_Village_Spawn2",
+  "Ewok_Village_Spawn5",
+  "Landing_Platform_Spawn1",
+  "Landing_Platform_Spawn2",
+  "Landing_Platform_Spawn3",
+  "Landing_Platform_Spawn5",
+  "Bunker_Spawn4"
+ ],
+ "walkMap": {
+  "source": "page painter",
+  "engine": "none",
+  "vehicleMap": "page painter",
+  "vehicleBrush": 2,
+  "vehicleBrushes": [
+   {
+    "brush": 3,
+    "flagsOn": 4,
+    "spawnersOn": 7,
+    "pieces": 4,
+    "main": 563243
+   },
+   {
+    "brush": 2.5,
+    "flagsOn": 3,
+    "spawnersOn": 9,
+    "pieces": 4,
+    "main": 586181
+   },
+   {
+    "brush": 2,
+    "flagsOn": 4,
+    "spawnersOn": 9,
+    "pieces": 3,
+    "main": 597287
+   },
+   {
+    "brush": 1.5,
+    "flagsOn": 3,
+    "spawnersOn": 9,
+    "pieces": 5,
+    "main": 614624
+   }
+  ],
+  "opened": [
+   [
+    506,
+    513
+   ],
+   [
+    507,
+    513
+   ],
+   [
+    508,
+    513
+   ],
+   [
+    506,
+    514
+   ],
+   [
+    508,
+    514
+   ],
+   [
+    503,
+    515
+   ],
+   [
+    504,
+    515
+   ],
+   [
+    505,
+    515
+   ],
+   [
+    506,
+    515
+   ],
+   [
+    508,
+    515
+   ],
+   [
+    509,
+    515
+   ],
+   [
+    510,
+    515
+   ],
+   [
+    511,
+    515
+   ],
+   [
+    512,
+    515
+   ],
+   [
+    513,
+    515
+   ],
+   [
+    514,
+    515
+   ],
+   [
+    515,
+    515
+   ],
+   [
+    415,
+    732
+   ],
+   [
+    415,
+    733
+   ],
+   [
+    415,
+    734
+   ],
+   [
+    415,
+    735
+   ],
+   [
+    415,
+    736
+   ],
+   [
+    415,
+    737
+   ],
+   [
+    415,
+    738
+   ],
+   [
+    415,
+    739
+   ],
+   [
+    415,
+    740
+   ],
+   [
+    415,
+    741
+   ],
+   [
+    415,
+    742
+   ],
+   [
+    415,
+    743
+   ],
+   [
+    415,
+    744
+   ],
+   [
+    415,
+    745
+   ],
+   [
+    415,
+    746
+   ],
+   [
+    415,
+    747
+   ],
+   [
+    415,
+    748
+   ],
+   [
+    415,
+    749
+   ],
+   [
+    415,
+    750
+   ],
+   [
+    415,
+    751
+   ],
+   [
+    415,
+    752
+   ],
+   [
+    415,
+    753
+   ],
+   [
+    415,
+    754
+   ],
+   [
+    415,
+    755
+   ],
+   [
+    415,
+    756
+   ],
+   [
+    415,
+    757
+   ],
+   [
+    415,
+    758
+   ],
+   [
+    414,
+    759
+   ],
+   [
+    415,
+    759
+   ],
+   [
+    659,
+    835
+   ],
+   [
+    659,
+    836
+   ],
+   [
+    659,
+    837
+   ],
+   [
+    659,
+    838
+   ],
+   [
+    659,
+    839
+   ],
+   [
+    659,
+    840
+   ],
+   [
+    659,
+    841
+   ],
+   [
+    659,
+    842
+   ],
+   [
+    659,
+    843
+   ],
+   [
+    617,
+    844
+   ],
+   [
+    618,
+    844
+   ],
+   [
+    619,
+    844
+   ],
+   [
+    620,
+    844
+   ],
+   [
+    621,
+    844
+   ],
+   [
+    622,
+    844
+   ],
+   [
+    659,
+    844
+   ],
+   [
+    617,
+    845
+   ],
+   [
+    622,
+    845
+   ],
+   [
+    623,
+    845
+   ],
+   [
+    624,
+    845
+   ],
+   [
+    659,
+    845
+   ],
+   [
+    617,
+    846
+   ],
+   [
+    624,
+    846
+   ],
+   [
+    659,
+    846
+   ],
+   [
+    617,
+    847
+   ],
+   [
+    624,
+    847
+   ],
+   [
+    579,
+    848
+   ],
+   [
+    580,
+    848
+   ],
+   [
+    581,
+    848
+   ],
+   [
+    582,
+    848
+   ],
+   [
+    583,
+    848
+   ],
+   [
+    584,
+    848
+   ],
+   [
+    585,
+    848
+   ],
+   [
+    586,
+    848
+   ],
+   [
+    587,
+    848
+   ],
+   [
+    588,
+    848
+   ],
+   [
+    589,
+    848
+   ],
+   [
+    590,
+    848
+   ],
+   [
+    591,
+    848
+   ],
+   [
+    592,
+    848
+   ],
+   [
+    593,
+    848
+   ],
+   [
+    594,
+    848
+   ],
+   [
+    595,
+    848
+   ],
+   [
+    596,
+    848
+   ],
+   [
+    597,
+    848
+   ],
+   [
+    598,
+    848
+   ],
+   [
+    599,
+    848
+   ],
+   [
+    600,
+    848
+   ],
+   [
+    601,
+    848
+   ],
+   [
+    602,
+    848
+   ],
+   [
+    603,
+    848
+   ],
+   [
+    604,
+    848
+   ],
+   [
+    605,
+    848
+   ],
+   [
+    606,
+    848
+   ],
+   [
+    607,
+    848
+   ],
+   [
+    608,
+    848
+   ],
+   [
+    609,
+    848
+   ],
+   [
+    610,
+    848
+   ],
+   [
+    611,
+    848
+   ],
+   [
+    612,
+    848
+   ],
+   [
+    613,
+    848
+   ],
+   [
+    614,
+    848
+   ],
+   [
+    615,
+    848
+   ],
+   [
+    616,
+    848
+   ],
+   [
+    617,
+    848
+   ],
+   [
+    624,
+    848
+   ],
+   [
+    625,
+    848
+   ],
+   [
+    626,
+    848
+   ],
+   [
+    626,
+    849
+   ],
+   [
+    630,
+    849
+   ],
+   [
+    631,
+    849
+   ],
+   [
+    632,
+    849
+   ],
+   [
+    633,
+    849
+   ],
+   [
+    634,
+    849
+   ],
+   [
+    635,
+    849
+   ]
+  ],
+  "ways": [
+   {
+    "who": "Imperial_Outpost_Spawn1",
+    "kind": "spawn",
+    "way": "walk",
+    "opened": 12
+   },
+   {
+    "who": "Landing_Platform_Spawn4",
+    "kind": "spawn",
+    "way": "walk",
+    "opened": 29
+   },
+   {
+    "who": "Bunker_Spawn3",
+    "kind": "spawn",
+    "way": "walk",
+    "opened": 12
+   },
+   {
+    "who": "Bunker",
+    "kind": "flag",
+    "way": "walk",
+    "opened": 63
+   },
+   {
+    "who": "Imperial_Outpost",
+    "kind": "flag",
+    "way": "walk",
+    "opened": 5
+   }
+  ],
+  "cover": 0.878,
+  "floors": {
+   "stacked": true,
+   "twoFloorShare": 0.023,
+   "raised": [
+    "Bunker",
+    "Ewok_Village",
+    "Landing_Platform"
+   ],
+   "reason": "3 of 5 capturable flags stand a storey over or under another walked floor"
+  },
+  "capped": true
+ },
+ "routeProbe": {
+  "chokeMax": 4,
+  "unreachable": [
+   "Bunker"
+  ],
+  "stops": {
+   "Bunker": {
+    "1": {
+     "stage": "choke",
+     "points": 20,
+     "metres": 60,
+     "first": [
+      [
+       579.6,
+       -849.4
+      ],
+      [
+       581.5,
+       -848.5
+      ],
+      [
+       584.5,
+       -848.5
+      ]
+     ]
+    },
+    "2": {
+     "stage": "choke",
+     "points": 20,
+     "metres": 60,
+     "first": [
+      [
+       579.6,
+       -849.4
+      ],
+      [
+       581.5,
+       -848.5
+      ],
+      [
+       584.5,
+       -848.5
+      ]
+     ]
+    }
+   }
+  },
+  "oneSided": {
+   "Imperial_Outpost": 1
+  },
+  "sides": {
+   "1": {
+    "spawns": 10,
+    "flags": [
+     "Imperial_Outpost",
+     "Rebel_Landing"
+    ]
+   },
+   "2": {
+    "spawns": 3,
+    "flags": [
+     "Rebel_Landing"
+    ]
+   }
+  },
+  "chokes": {
+   "Rebel_Landing:1": 0,
+   "Rebel_Landing:2": 0,
+   "Imperial_Outpost:1": 1,
+   "Imperial_Outpost:2": 7
+  },
+  "late": {},
+  "shutLinks": [
+   "Rebel_Landing>Imperial_Outpost",
+   "Imperial_Outpost>Rebel_Landing"
+  ]
+ },
+ "inputs": {
+  "controlPoints": "f631c62679ab9f4a42ada7446f9117c53ff730b17f8fb82810f2c31841e1a698",
+  "infantryMap": "b7cda327ddf70e744347859fda39a2232b09dc3a95568434b379724c3b4e1764",
+  "template": "bdc0e455f47f91b7e7724e71d7c0c196e839b36946ac3abb7663d725944081e5"
+ },
+ "files": {
+  "AI.con": "588bf8a78c8706ae6db0a1ae02f8979749ec486c1d2f06f01f87bc1e4e187a8e",
+  "AIpathFinding.con": "f41dfd5810e98ec067d853d4cdc8bbf2bb0ed9d4a5e9e14c87c94d234319cf53",
+  "AI/StrategicAreas.con": "78189b9394f7b3031f95512c4ff7bf481ddd1f8226f9df0fcaeefbf029155bda",
+  "AI/Strategies.con": "13da4dc35872dd4b5798a066f4425bdc824cfd61f31093d1808e1202644de52e",
+  "AI/conditions.con": "248a04b727c08d696bf0fa9c162bc22c43cde3c75f695892fe1e0f5141519c49",
+  "AI/prerequisites.con": "c96168b5f69860e578f5d26728fd2a2092c4c436e1da49b7d6f4009b65735398",
+  "Pathfinding/Infantry1Level0Map.raw": "86c2fb7105632a731956951a6ba7b0472d8d7c0af9d50145242f29e26329e89e",
+  "Pathfinding/Infantry1Level1Map.raw": "26a69b80665318eccba54008a77f91fea0c48f820fed310603d3c098f8b1e390",
+  "Pathfinding/Infantry1Level2Map.raw": "ee4b05c8840a915492aac465e6773fa3aeb555ede09fb5034198445e3d22ddc9",
+  "Pathfinding/Tank0Level0Map.raw": "9a954463ed98dada66fe0d380241600b0acd0ef31eb864d995b6c0d4c8480014",
+  "Pathfinding/Tank0Level1Map.raw": "8221900ba07bb1070d3bbc7d2a54a09f90fa68f488807ecd80b3c0e0875d6491",
+  "Pathfinding/Tank0Level2Map.raw": "4a2b2dda3b62c4d781742bea719ca99000ee37f7145b9a5a8cbfd800e0ea18f1"
+ }
+}

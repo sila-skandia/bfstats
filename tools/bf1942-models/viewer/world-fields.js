@@ -2,7 +2,7 @@
 // player, and the supply depots' heal, rearm and repair, once for the whole
 // world. Plain functions of the `World` (world.js), called from its tick.
 
-import { rearmTypeFor } from './fire-state.js';
+import { ammoTypeOf, rearmTypeFor } from './fire-state.js';
 
 export { rearmTypeFor };
 
@@ -156,12 +156,16 @@ function supplyHulls(world) {
       // not approximated).
       refillAmmo: crew ? types => {
         const seen = new Set();
+        // Each gun's depot tag (SUP-2): its own words, else the tree's
+        // `damage.json` table by template name, else the engine's 0.
+        const table = world.damageTables?.ammoTypes ?? null;
         for (const p of crew) {
           for (const group of [...p.groups, ...p.manned]) {
             if (seen.has(group.node)) continue;
             seen.add(group.node);
             const state = world.fireStateFor(group.node);
-            const type = rearmTypeFor(state.stats, types);
+            const type = rearmTypeFor(state.stats, types,
+              ammoTypeOf(state.stats, group.node?.name, table));
             if (type) state.rearm(type.units);
           }
         }

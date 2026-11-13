@@ -285,3 +285,52 @@ molotov, but every weapon. E.g. they can rapid fire the bolt weapons."
   (each fights with his Mp40, 0.133 s rounds); K98, Krag, Mp40, PzB35 and the
   Hagle keep the cadences above.
 
+
+## Bursts (2026-11-12)
+
+The owner: "Bots fire very oddly, they seem to single fire their weapon.
+They should actually burst fire."
+
+**What retail does.** The lab's server recordings of retail bots (Wake co-op,
+five rounds of `~/bf1942-lab/runs/20261106-144140-wake-coop-rec/server`, every
+bot round an `f` record) show a soldier's automatic firing short bursts on a
+fixed clock: a Thompson 2 rounds 3 ticks apart and then 9 ticks of nothing, a
+Type99, Bar1918 or Mp18 2 rounds 4 apart and then 8. Burst starts are 12
+ticks apart (Thompson 122 of 277 at exactly 12, 189 within 11..13), a burst is
+2 rounds (217 of 311 Thompson bursts) or 1 (77), and almost never longer (17
+of 311, the human's among them). A Type5 or M1Garand fires one round a period
+at its own cycle. The bots' stationary MG42s and Brownings are not on that
+clock: they stream at their cycle until the heat hold (section 8 of
+features/bot-desert-combat), so the clock is the soldier's fire plan's.
+
+The plan's round budget (ledger AI-131) is a truncation, not a round: the
+`fistp` at 0x085a519f runs under a control word with RC = 11 (`movb $0xc, %ah`
+at 0x085a512f). So a burst weapon's budget is `trunc(1 + 9u)`, 1 to 9, and a
+single-shot weapon's `trunc(2 + 3u)`, 2 to 4 (AI-131 says 1 to 10 and 2 to 5;
+the row is not yet corrected). With 2 rounds a period the budget binds only
+when it is 1, one plan in nine.
+
+**What we did before.** `execTrigger` held a soldier's trigger for as long as
+the aim held, with no budget for a burst weapon: an automatic emptied its
+magazine in one stream (bf1918 Albania, the runner, seed 1: Madsen bursts of
+15 to 24 rounds, Thompson on the synthetic level up to 30). That was the same
+before and after the 2026-11-12 parity pass (`4bc1f4603` against the tree).
+
+**What changed.** `bot-fire.js triggerWindow`: a soldier's trigger runs on a
+12-tick decision clock (`FIRE.decisionTicks`), down from the 6th tick of each
+period (`FIRE.triggerDelayTicks`) to its end, for at most the budget drawn for
+the period (`fireRoundBudget`). `bot-plans.js soldierTriggerOpen` gates
+`execTrigger` on foot (not a mounted gunner, not the medic's heal), the bot's
+phase on the clock fixed by its id (`decisionPhase`, no draw), its ticks
+counted in `bot.js tick`. The plan is kept across periods, so its route is not
+dropped. The 12 and the 6 are the lab's measure (INFERRED mechanism: a bot's
+decision every 6 LOD ticks with the two sides stepped in turn, AI-6, and a
+fresh plan's trigger waiting on its serial statements); the budget is the
+binary's.
+
+**Checked.** `tests/test_bot_burst.py`: a Thompson's bursts are 1 or 2
+rounds, 3 ticks apart inside, 9 after, 12 start to start; a Type99's 4 and 8;
+a K98's one round, the next on the first window after its 81-tick cycle (84);
+the budget's values. On the runner the Thompson's round-to-round ticks went
+from a stream of 3s to {3: 343, 9: 291, 12: 45} (the lab's {3: 240, 9: 110,
+12: 19}).

@@ -1,0 +1,86 @@
+rem *** Strategic areas: one per control point (botgen) ***
+
+aiStrategicArea.create deutsche_basis 620.1/634.8 640.1/654.8 50
+aiStrategicArea.addNeighbour frz_basetemplate
+aiStrategicArea.addNeighbour west_deutsche_stellungtemplate
+aiStrategicArea.addNeighbour frz_supply_trenchtemplate
+aiStrategicArea.addObjectTypeFlag Base
+aiStrategicArea.setOrderPosition Tank 641.5/651.5
+aiStrategicArea.setOrderPosition Infantry 640.5/645.5
+aiStrategicArea.setSide 1
+aiStrategicArea.setTakeable 2 0
+
+aiStrategicArea.create frz_basetemplate 378.4/429.2 398.4/449.2 50
+aiStrategicArea.addNeighbour deutsche_basis
+aiStrategicArea.addNeighbour ost_deutsche_stellungtemplate
+aiStrategicArea.addNeighbour west_frz_stellungtemplate
+aiStrategicArea.addNeighbour frz_supply_trenchtemplate
+aiStrategicArea.addObjectTypeFlag Base
+aiStrategicArea.setOrderPosition Tank 397.5/452.5
+aiStrategicArea.setOrderPosition Infantry 398.5/448.5
+aiStrategicArea.setSide 2
+aiStrategicArea.setTakeable 1 0
+
+aiStrategicArea.create west_deutsche_stellungtemplate 563.5/547.8 568.5/552.8 200
+aiStrategicArea.addNeighbour deutsche_basis
+aiStrategicArea.addNeighbour ost_deutsche_stellungtemplate
+aiStrategicArea.addNeighbour westl_frz_stellungtemplate
+aiStrategicArea.addNeighbour west_frz_stellungtemplate
+aiStrategicArea.addObjectTypeFlag Centre
+aiStrategicArea.addObjectTypeFlag Close
+aiStrategicArea.addObjectTypeFlag ControlPoint
+aiStrategicArea.setOrderPosition Tank 569.5/555.5
+aiStrategicArea.setOrderPosition Infantry 568.5/553.5
+aiStrategicArea.setSide 1
+
+aiStrategicArea.create ost_deutsche_stellungtemplate 508.1/609.3 513.1/614.3 150
+aiStrategicArea.addNeighbour frz_basetemplate
+aiStrategicArea.addNeighbour west_deutsche_stellungtemplate
+aiStrategicArea.addNeighbour westl_frz_stellungtemplate
+aiStrategicArea.addNeighbour west_frz_stellungtemplate
+aiStrategicArea.addNeighbour frz_supply_trenchtemplate
+aiStrategicArea.addObjectTypeFlag Flank
+aiStrategicArea.addObjectTypeFlag ControlPoint
+aiStrategicArea.setOrderPosition Tank 514.5/611.5
+aiStrategicArea.setOrderPosition Infantry 513.5/613.5
+aiStrategicArea.setSide 1
+
+aiStrategicArea.create deutscher_nachschub_grabentemplate 579.8/612.9 584.8/617.9 10
+aiStrategicArea.setSide 1
+aiStrategicArea.setTakeable 1 0
+aiStrategicArea.setTakeable 2 0
+
+aiStrategicArea.create westl_frz_stellungtemplate 494.8/504.2 499.8/509.2 300
+aiStrategicArea.addNeighbour west_deutsche_stellungtemplate
+aiStrategicArea.addNeighbour ost_deutsche_stellungtemplate
+aiStrategicArea.addNeighbour west_frz_stellungtemplate
+aiStrategicArea.addObjectTypeFlag Centre
+aiStrategicArea.addObjectTypeFlag StrongPoint
+aiStrategicArea.addObjectTypeFlag ControlPoint
+aiStrategicArea.setOrderPosition Tank 498.5/505.5
+aiStrategicArea.setOrderPosition Infantry 499.5/508.5
+aiStrategicArea.setSide 2
+
+aiStrategicArea.create west_frz_stellungtemplate 463/550.1 468/555.1 200
+aiStrategicArea.addNeighbour frz_basetemplate
+aiStrategicArea.addNeighbour west_deutsche_stellungtemplate
+aiStrategicArea.addNeighbour ost_deutsche_stellungtemplate
+aiStrategicArea.addNeighbour westl_frz_stellungtemplate
+aiStrategicArea.addNeighbour frz_supply_trenchtemplate
+aiStrategicArea.addObjectTypeFlag Centre
+aiStrategicArea.addObjectTypeFlag ControlPoint
+aiStrategicArea.setOrderPosition Tank 464.5/556.5
+aiStrategicArea.setOrderPosition Infantry 467.5/554.5
+aiStrategicArea.setSide 2
+
+aiStrategicArea.create frz_supply_trenchtemplate 436.5/481.3 441.5/486.3 200
+aiStrategicArea.addNeighbour deutsche_basis
+aiStrategicArea.addNeighbour frz_basetemplate
+aiStrategicArea.addNeighbour ost_deutsche_stellungtemplate
+aiStrategicArea.addNeighbour west_frz_stellungtemplate
+aiStrategicArea.addObjectTypeFlag Centre
+aiStrategicArea.addObjectTypeFlag Close
+aiStrategicArea.addObjectTypeFlag ControlPoint
+aiStrategicArea.setOrderPosition Tank 431.5/480.5
+aiStrategicArea.setOrderPosition Infantry 442.5/486.5
+aiStrategicArea.setSide 2

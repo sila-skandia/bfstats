@@ -1,0 +1,31 @@
+rem *** Strategic areas: one per control point (botgen) ***
+
+aiStrategicArea.create axisbase 2618.3/6918.1 2630.3/6930.1 50
+aiStrategicArea.addObjectTypeFlag Base
+aiStrategicArea.setOrderPosition Tank 2627.5/6931.5
+aiStrategicArea.setSide 1
+aiStrategicArea.setTakeable 2 0
+
+aiStrategicArea.create island 2605.2/5536.1 2620.2/5551.1 50
+aiStrategicArea.addObjectTypeFlag Base
+aiStrategicArea.setOrderPosition Tank 2616.5/5549.5
+aiStrategicArea.setSide 1
+aiStrategicArea.setTakeable 2 0
+
+aiStrategicArea.create aabase 1807/6404.8 1812/6409.8 50
+aiStrategicArea.addObjectTypeFlag Base
+aiStrategicArea.setOrderPosition Tank 1811.5/6403.5
+aiStrategicArea.setSide 1
+aiStrategicArea.setTakeable 2 0
+
+aiStrategicArea.create Takeshima_AirfieldTemplate 2842.5/6205.4 2857.5/6220.4 50
+aiStrategicArea.addObjectTypeFlag Base
+aiStrategicArea.setOrderPosition Tank 2858.5/6217.5
+aiStrategicArea.setOrderPosition Infantry 2857.5/6219.5
+aiStrategicArea.setSide 1
+aiStrategicArea.setTakeable 2 0
+
+aiStrategicArea.create alliedbase 7687/7687 7692/7692 50
+aiStrategicArea.addObjectTypeFlag Base
+aiStrategicArea.setSide 2
+aiStrategicArea.setTakeable 1 0

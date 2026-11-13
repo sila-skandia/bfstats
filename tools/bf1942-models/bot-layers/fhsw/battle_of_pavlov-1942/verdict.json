@@ -1,0 +1,26 @@
+{
+ "level": "battle_of_pavlov-1942",
+ "verdict": "fail",
+ "outcome": "unsuitable",
+ "config": "with vehicles",
+ "doctrine": "garrison",
+ "generatorVersion": 5,
+ "inputs": {
+  "controlPoints": "eefdd532bb850103d70997ef4b32d7528f9e79ef4d5cee10de58ce1402c763bd",
+  "infantryMap": "bc6e6b506a2c0fdc2e4840cba216b7ddfff4bc37187e15d18911e67819f20cb9",
+  "template": "bdc0e455f47f91b7e7724e71d7c0c196e839b36946ac3abb7663d725944081e5"
+ },
+ "baseline": "DICE layers with vehicles, garrison doctrine: berlin, stalingrad, kharkov, bocage; seeds 1..10, 600 s",
+ "bar": null,
+ "seeds": 1,
+ "sizes": {},
+ "oneSided": null,
+ "unreachable": [
+  "pavlov_house"
+ ],
+ "lintErrors": [
+  "the play surface is stacked floors (1 of 1 capturable flags stand a storey over or under another walked floor): a one-floor walk map cannot hold it",
+  "no capturable flag is reachable in 3D: none of the 1 has a place inside its radius that a soldier on the one-floor walk map's main ground can stand in",
+  "side 1 has no spawn with a route to any flag it must take: none of the 1 flags it does not hold can be reached"
+ ]
+}

@@ -41,7 +41,8 @@ export function installBotHooks(page) {
     const before = armor.hitPoints;
     armor.damage(1e6);
     page.referee.damageLanded(id, before, null);
-    bot._respawnIn = 0;
+    // Past the wave (SPAWN-35), which a staged respawn does not wait for.
+    bot._respawnForce = true;
     return true;
   };
   window.__botDismount = id => { const bot = page.referee.bots.find(b => b.playerId === id); if (bot?.vehicle) page.referee.leaveVehicle(bot); return !bot?.vehicle; };
@@ -132,7 +133,14 @@ export function installBotHooks(page) {
     plan: (b.currentPlan ?? []).map(a => `${a.type}${a.done ? '*' : ''}`),
     heard: b.senses?.heard?.size ?? 0,
     strategy: page.referee.strategy ? (page.referee.strategy.sides[b.team]?.active?.strategy?.name ?? null) : null,
+    // The soldier's own speed on foot; seated it is the last one they ran at
+    // before boarding (a Bf109's pilot read 6.13 m/s through a take-off
+    // roll at 10-18 m/s), so a seat's hull speed is `hullSpeed`.
     speed: +((page.world?.player(b.playerId)?.soldier?.speed ?? 0)).toFixed(2),
+    hullSpeed: (() => {
+      const v = b.vehicle?.drive?.state?.velocity;
+      return v ? +Math.hypot(v.x, v.y, v.z).toFixed(2) : null;
+    })(),
     team: b.team,
     hp: page.world?.armorOf(b.playerId)?.hitPoints ?? null,
     dead: !!page.world?.armorOf(b.playerId)?.destroyed,

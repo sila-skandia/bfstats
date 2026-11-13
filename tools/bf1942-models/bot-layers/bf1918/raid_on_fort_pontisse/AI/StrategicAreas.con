@@ -1,0 +1,49 @@
+rem *** Strategic areas: one per control point (botgen) ***
+
+aiStrategicArea.create Old_Oak 1085.1/1105.3 1125.1/1145.3 150
+aiStrategicArea.addNeighbour Chapel
+aiStrategicArea.addObjectTypeFlag Flank
+aiStrategicArea.addObjectTypeFlag Close
+aiStrategicArea.addObjectTypeFlag ControlPoint
+aiStrategicArea.setOrderPosition Infantry 1126.5/1146.5
+
+aiStrategicArea.create Fort_Pontisse_Main_Entrance 950.3/923 965.3/938 10
+aiStrategicArea.setSide 2
+aiStrategicArea.setTakeable 1 0
+aiStrategicArea.setTakeable 2 0
+
+aiStrategicArea.create Luik_square 920.1/858.5 940.1/878.5 10
+aiStrategicArea.setSide 2
+aiStrategicArea.setTakeable 1 0
+aiStrategicArea.setTakeable 2 0
+
+aiStrategicArea.create German_Base 1193.5/1442.4 1198.5/1447.4 50
+aiStrategicArea.addObjectTypeFlag Base
+aiStrategicArea.setOrderPosition Infantry 1203.5/1447.5
+aiStrategicArea.setSide 1
+aiStrategicArea.setTakeable 2 0
+
+aiStrategicArea.create Chapel 896.6/1144.1 936.6/1184.1 150
+aiStrategicArea.addNeighbour Old_Oak
+aiStrategicArea.addNeighbour Belgian_HQ_Underground
+aiStrategicArea.addObjectTypeFlag Flank
+aiStrategicArea.addObjectTypeFlag Close
+aiStrategicArea.addObjectTypeFlag ControlPoint
+aiStrategicArea.setOrderPosition Infantry 934.5/1183.5
+
+aiStrategicArea.create Belgian_HQ_Underground 839/888 859/908 50
+aiStrategicArea.addNeighbour Chapel
+aiStrategicArea.addObjectTypeFlag Base
+aiStrategicArea.setOrderPosition Infantry 858.5/907.5
+aiStrategicArea.setSide 2
+aiStrategicArea.setTakeable 1 0
+
+aiStrategicArea.create Observation_Post 1007.7/1058.8 1019.7/1070.8 10
+aiStrategicArea.setSide 2
+aiStrategicArea.setTakeable 1 0
+aiStrategicArea.setTakeable 2 0
+
+aiStrategicArea.create Fort_Pontisse 983.4/1014 998.4/1029 10
+aiStrategicArea.setSide 2
+aiStrategicArea.setTakeable 1 0
+aiStrategicArea.setTakeable 2 0

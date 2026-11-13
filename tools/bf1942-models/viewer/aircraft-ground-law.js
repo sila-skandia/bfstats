@@ -35,19 +35,7 @@
 import * as THREE from 'three';
 import { clipAngleStep } from './vectored-engines.js';
 
-/**
- * The g this law steps the root under, HELD with `aircraft.js`'s
- * `FLIGHT_GRAVITY` at -14.7295379 (retail is 0xC16BAE14 = -14.73f, lnxded
- * `0x08251e3b`). This law IS the fixed-wing root's one Euler step in the air
- * as well as on its wheels (AIRGND-1), so it cannot run a different g from
- * the flight law: on -14.73 alone `test_air_law`'s Bf109 lift-off goes past
- * its 1.0 mm bound, a Stuka of `test_dogfight_live_wing` (kursk, turn) flies
- * into the ground and `test_dogfight_jet_turnarounds`' dip stops working in
- * one of nine. A literal, not an import: `aircraft.js` imports this module.
- * Pending the same retune (`features/retail-parity-cross-check-2026-11-12`,
- * "Still open").
- */
-const GRAVITY = -14.7295379;
+import { GRAVITY } from './rigid-body.js';
 
 /** The wheel's own side of the material pair. Every vanilla plane's wheels
  *  are material 37, which `materialManagerDefine.con` never defines, so it
@@ -65,8 +53,7 @@ export const TICK_HZ = 30;
 export const TICK = 1 / TICK_HZ;
 
 /** `getGravity() * -0.101833`: the spring's and the wing's normaliser, 1.5
- *  at retail's 0xC16BAE14 = -14.73f, 1.49995 at the held `GRAVITY`
- *  (`PhysicsSpring::updatePhysics`). */
+ *  at the shipped 0xC16BAE14 = -14.73f (`PhysicsSpring::updatePhysics`). */
 const SPRING_SCALE = -GRAVITY * 0.101833;
 
 /** The root's sleep (TANK-21): the countdown, and what keeps it at 100. */
@@ -108,6 +95,7 @@ const _tPre = new THREE.Vector3();
 const _tPost = new THREE.Vector3();
 const _spin = new THREE.Quaternion();
 const _surface = { y: NaN, nx: 0, ny: 1, nz: 0 };
+const _deckV = [0, 0, 0];
 
 /** Whether a wheel table carries what the law needs (`aircraftSpec`'s
  *  `anchor`, `vertex`, `strength`). */
@@ -129,6 +117,8 @@ export function createGroundLaw(wheels) {
     rfr: new THREE.Vector3(),
     contacts: 0,
     frictionSamples: 0,
+    // Set by `Aircraft.adopt` with the server's accumulators; `rebase` keeps them.
+    adopted: false,
     // The pose the last collision pass ran at, and the one before it (where
     // each wheel's `Dprev` was pushed): what `rebase` measures a correction
     // against.
@@ -362,6 +352,21 @@ export function collideWheels(plane, law, s, occupied, g) {
   law.frictionSamples = 0;
   if (law.sleepiness <= 0) {
     for (const leg of law.legs) { leg.latch = false; leg.contact = false; }
+    // A sleeping body on a ship under way is still in her contacts: the ship
+    // is awake and visits it, and the resolve pass runs `addFriction` on every
+    // part with no sleeping test, which wakes the root once the contact's speed
+    // squared passes 0.1 (collision-response.md 2 and 4.3, 0x0825b6e0). The
+    // contact's speed is the deck's against a root at rest.
+    if (plane.deckVelocity) {
+      for (const leg of law.legs) {
+        legPoint(leg, leg.spec.anchor, _anchor).applyQuaternion(q).add(s.position);
+        if (plane.deckVelocity(_anchor.x, _anchor.y, _anchor.z, _anchor.y + 0.5, _deckV)
+            && _deckV[0] ** 2 + _deckV[1] ** 2 + _deckV[2] ** 2 > CONTACT_WAKE2) {
+          law.sleepiness = SLEEP_TICKS;
+          break;
+        }
+      }
+    }
     law.last.valid = false;
     law.prev.valid = false;
     return 0;
@@ -396,6 +401,16 @@ export function collideWheels(plane, law, s, occupied, g) {
     _C.set(_vert.x, _ground.y, _vert.z);
     _arm.subVectors(_C, s.position);
     const speed = _V.crossVectors(w, _arm).add(s.velocity);
+    // On a ship's deck the contact is object against object, and its speed is
+    // `getTangentSpeed` of both roots (`checkObjectVsObject` 0x08259690,
+    // collision-response.md 6.2), the plane the vertex side at share 1 (the
+    // root radii more than 4x apart, 5.3): the plane's point speed less the
+    // deck's (`hull-bodies.js` `aircraftLawOnShipDecks`, `deck-carry.js`). So
+    // a plane let go on a carrier under way is held on her deck by the same
+    // latch that holds it parked ashore, and rolls at its speed over the deck.
+    if (plane.deckVelocity?.(_C.x, _C.y, _C.z, _anchor.y + 0.5, _deckV)) {
+      speed.x -= _deckV[0]; speed.y -= _deckV[1]; speed.z -= _deckV[2];
+    }
     const speed2 = speed.lengthSq();
     const ground = plane.surfaceFriction ? plane.surfaceFriction(_vert.x, _vert.z, _anchor.y) : 1.0;
     const groundRes = plane.surfaceFriction?.resistance
@@ -502,6 +517,10 @@ const REBASE_LIMIT = 2;
  * velocity. Returns true when it rebased.
  */
 export function rebase(plane, law, s, occupied, g) {
+  // Whether this state's accumulators came from the server (`Aircraft.adopt`),
+  // read once: it holds for the tick the state was adopted at only.
+  const adopted = law.adopted;
+  law.adopted = false;
   if (!law.last.valid || law.sleepiness <= 0) return false;
   const moved = s.position.distanceToSquared(law.last.pos);
   const turned = 1 - Math.abs(s.orientation.dot(law.last.quat));
@@ -532,6 +551,15 @@ export function rebase(plane, law, s, occupied, g) {
   // just stepped (gravity alone in the accumulator).
   const steerNow = law.legs.map(leg => leg.steerLast);
   const steerBefore = law.legs.map(leg => leg.steerPrev);
+  // The accumulators the server sent with this state (`Aircraft.adopt`, the
+  // wire's acc/racc/fr/rfr) are what its own collision pass left: the pass
+  // runs again below only to re-derive the springs' hidden push, and its
+  // friction and accumulator replace the server's only where none came.
+  // Recomputing them threw the server's truth away at every correction and
+  // left a rewind through a lift-off to the page's friction, 0.02 m/s^2 off
+  // in the last contact ticks, which a replay a round trip late then
+  // amplified (`test_air_law` round-trip-late, AIRGND-9).
+  const sent = adopted ? [law.acc.clone(), law.racc.clone(), law.fr.clone(), law.rfr.clone()] : null;
   clearAccumulators(law, g);
   for (const leg of law.legs) leg.push.set(0, 0, 0);
   // collideWheels shifts `last` into `prev`; keep the corrected one.
@@ -540,5 +568,6 @@ export function rebase(plane, law, s, occupied, g) {
   law.last.quat.copy(prevQuat);
   law.legs.forEach((leg, i) => { leg.steerLast = steerBefore[i]; leg.steer.angle = steerNow[i]; });
   collideWheels(plane, law, s, occupied, g);
+  if (sent) { law.acc.copy(sent[0]); law.racc.copy(sent[1]); law.fr.copy(sent[2]); law.rfr.copy(sent[3]); }
   return true;
 }

@@ -139,6 +139,11 @@ export function setChatSizes(log, { chat, info, kill }) {
  *   levelRoot()     the level's glb root (`userData.kind` terrain/sky/water)
  *   levelName(), modId(), gameplayMode(), mapRows()
  *   players()       the play page's roster: [{ id, name, local, bot }]
+ *   teamKillRoom()  the joined room's sender, `verb => {}` taking 'punish'
+ *                   or 'forgive' (`room-control.mjs` `tk`); null off a room
+ *   roomHost()      the joined room's host half: { admin(cmd, args),
+ *                   vote(kind, target), maps(), settings(), slotOf(who) }
+ *                   (`room-host-client.js`); null off a room
  *   bfmap()         the BfMap (fullscreen map)
  *   chatLog()       the message log's ChatLog
  *   effectsRoot()   the effect player's group
@@ -286,6 +291,190 @@ export function registerViewerCommands(con, env = {}) {
       })));
     },
   });
+  // `game.TKPunish` / `game.TKForgive` (t0 a1; the shipped aliases `punish`,
+  // `punishtk`, `ptk`, `forgive`, `forgivetk`, `ftk`): the victim's answer to
+  // their last team kill, `GameServer::TKPunish(int)` 0x081593d0 /
+  // `TKForgive(int)` 0x081592e0 on the server, which decides what each does
+  // under its punish mode (FF-10). Off a room there is nobody to answer:
+  // single player's local server counts no team kill (FF-9). Both print
+  // nothing, as in the game.
+  for (const [name, verb] of [['TKPunish', 'punish'], ['TKForgive', 'forgive']]) {
+    method('Game', name, { access: 1, active: has('teamKillRoom'),
+      run: () => { get('teamKillRoom')?.(verb); } });
+  }
+  // --- the words a player types about other players ---------------------------
+  //
+  // All access 1 in the client's registry (CON-20), so they answer at a typed
+  // prompt. An id is the one `game.listPlayers` prints.
+  const rosterRows = () => (get('players') ?? []).map((p, i) => ({
+    id: p.serverId ?? p.slot ?? i, key: p.slot ?? p.id ?? null,
+    name: decodePlayerName(p.name ?? ''), raw: p.name ?? '', local: Boolean(p.local),
+  }));
+  const rowById = s => {
+    const id = readInt(s);
+    return { id, row: id === null ? null : rosterRows().find(p => p.id === id && !p.local) ?? null };
+  };
+  const social = () => get('social');
+  // `game.suicide` (t0 a1; the alias `suicide`): the client's Suicide event,
+  // `killPlayer` on the server (SPAWN-35). Nothing for a player already dead.
+  method('Game', 'suicide', { access: 1, active: has('suicide'), run: () => { get('suicide')?.(); } });
+  // `game.sayAll <text>` (the aliases `say`, `speak`): `BfMenu::sayAll`'s
+  // line, to everyone. One argument, so a line with spaces is quoted.
+  method('Game', 'sayAll', { minArgs: 1, argTypes: ['std::string'], access: 1, active: has('sayAll'),
+    run: ([text]) => { get('sayAll')?.(String(text)); } });
+  // `game.changePlayerName <name>` (the alias `name`).
+  method('Game', 'changePlayerName', { minArgs: 1, argTypes: ['std::string'], returns: 'bool', access: 1,
+    active: has('rename'), run: ([name]) => b01(get('rename')?.(String(name))) });
+  // `chat.addToIgnoreList <id>` / `removeFromIgnoreList <id>` / `ignoreList`
+  // (the aliases `ignore`, `unignore`, `ignorelist`; `BfMenu::addToIgnoreList`
+  // and its strings): a muted player's chat and radio never reach the log.
+  method('Chat', 'addToIgnoreList', { minArgs: 1, argTypes: ['int'], access: 1, active: has('social'),
+    run: ([s]) => {
+      const { id, row } = rowById(s);
+      if (id === null) return;
+      const msg = social().ignored.add(id, row?.key ?? null);
+      if (msg) con.output(msg);
+    } });
+  method('Chat', 'removeFromIgnoreList', { minArgs: 1, argTypes: ['int'], access: 1, active: has('social'),
+    run: ([s]) => { const { row } = rowById(s); if (row) social().ignored.remove(row.key); } });
+  method('Chat', 'ignoreList', { access: 1, returns: 'std::string', active: has('social'),
+    run: () => social().ignored.lines(rosterRows()) });
+  // `chat.ignoreRadioText` / `ignoreRadioAudio` (t1 a1) and the pair's own
+  // setter and readout (`BfMenu::getIgnoreRadioAudioAndText`'s two lines).
+  boolProp('Chat', 'ignoreRadioText', 1, () => social().radioMute.text, on => { social().radioMute.text = on; }, has('social'));
+  boolProp('Chat', 'ignoreRadioAudio', 1, () => social().radioMute.audio, on => { social().radioMute.audio = on; }, has('social'));
+  method('Chat', 'setIgnoreRadioAudioAndText', { minArgs: 1, argTypes: ['bool'], access: 1, active: has('social'),
+    run: ([s]) => {
+      const on = readBool(s);
+      if (on === null) return;
+      social().radioMute.text = on;
+      social().radioMute.audio = on;
+    } });
+  method('Chat', 'getIgnoreRadioAudioAndText', { access: 1, returns: 'std::string', active: has('social'),
+    run: () => `ignore radio text: ${b01(social().radioMute.text)}\nignore radio audio: ${b01(social().radioMute.audio)}` });
+  // The buddy list (`MenuMapNode`'s, the aliases `buddy`, `addbuddy`, `ab`,
+  // `unbuddy`, `removebuddy`, `rb`, `buddylist`): a buddy's lines are green.
+  method('Game', 'addPlayerToBuddyList', { minArgs: 1, argTypes: ['int'], returns: 'bool', access: 1, active: has('social'),
+    run: ([s]) => {
+      const { row } = rowById(s);
+      if (!row || social().buddies.has(row.key)) return 0;
+      social().buddies.add(row.key);
+      return 1;
+    } });
+  method('Game', 'addPlayerToBuddyListByName', { minArgs: 1, argTypes: ['std::string'], returns: 'bool', access: 1, active: has('social'),
+    run: ([name]) => {
+      // The name as stored or as shown; the stored one is what identifies.
+      const row = rosterRows().find(p => !p.local && (p.raw === name || p.name === name));
+      if (!row) {
+        con.output(`Error: failed  to add player <${name}> to buddylist. Couldn't locate player.`);
+        return 0;
+      }
+      if (social().buddies.has(row.key)) {
+        con.output(`Error: failed  to add player <${row.name}> to buddylist`);
+        return 0;
+      }
+      social().buddies.add(row.key);
+      return 1;
+    } });
+  method('Game', 'removePlayerFromBuddyList', { minArgs: 1, argTypes: ['int'], access: 1, active: has('social'),
+    run: ([s]) => { const { row } = rowById(s); if (row) social().buddies.delete(row.key); } });
+  method('Game', 'buddyList', { access: 1, returns: 'std::string', active: has('social'),
+    run: () => {
+      const here = new Map(rosterRows().map(p => [p.key, p]));
+      const out = [];
+      for (const key of [...social().buddies]) {
+        const p = here.get(key);
+        if (!p) { social().buddies.delete(key); continue; }
+        out.push(`id: ${p.id} name: ${p.name}`);
+      }
+      return out.join('\n');
+    } });
+  // --- a room's votes and its admin (gap audit entries 26 and 28) -----------
+  //
+  // `game.voteMap <id>`, `game.voteKickPlayer <id>` and
+  // `game.voteKickTeamPlayer <id>` (the shipped aliases `votemap`, `vm`,
+  // `kick`, `kickteam`, `kt`): the caller issues the vote, or votes yes on
+  // the one running (`GameServer::voteMap` 0x0814a000 and its two siblings,
+  // each `castVote` with option 0). The server answers a refused one in the
+  // message log, in its own words. A player may be named instead of numbered.
+  const host = () => get('roomHost');
+  const inRoom = () => host() !== null;
+  for (const [name, kind] of [['voteMap', 0], ['voteKickPlayer', 1], ['voteKickTeamPlayer', 2]]) {
+    method('Game', name, { access: 1, minArgs: 1, maxArgs: 1, argTypes: ['int'], returns: 'bool', active: inRoom,
+      run: args => {
+        const h = host();
+        const n = Number(args[0]);
+        const target = kind === 0 ? (String(args[0]).trim() !== '' && Number.isInteger(n) ? n : null)
+          : h.slotOf(args[0]);
+        if (target == null) {
+          con.output(kind === 0 ? 'Vote Failed: Map id outside Map Cycle' : 'Vote Failed: Target player not found.');
+          return undefined;
+        }
+        h.vote(kind, target);
+        return undefined;
+      } });
+  }
+  // The admin's words, routed to the room (`server/room-host.mjs` `onAdmin`),
+  // which acts on them for the room's creator alone. Each prints nothing
+  // here; the room's answer comes back as a line from the server. The
+  // argument counts and types are the client's own registrations (CON-20).
+  for (const [name, minArgs, maxArgs, argTypes, returns] of [
+    ['kickPlayer', 1, 1, ['int']], ['kickPlayerByName', 1, 1, ['std::string']],
+    ['banPlayer', 1, 2, ['int', 'std::string']], ['changeMap', 1, 1, ['int']],
+    ['setNextLevel', 3, 3, ['std::string', 'std::string', 'std::string']],
+    ['restartMap', 0, 0, []], ['runNextLevel', 0, 0, []],
+    ['listBannedAddresses', 0, 0, [], 'std::string'], ['clearBanList', 0, 0, []],
+    // `admin.serverMessage <text>`: `say(-1, text)` to everyone (0x0813a090).
+    ['serverMessage', 1, 1, ['std::string']],
+  ]) {
+    method('Admin', name, { access: 1, minArgs, maxArgs, argTypes, returns: returns ?? 'void', active: inRoom,
+      run: args => { host().admin(name, args.map(String)); return undefined; } });
+  }
+  // `admin.setNrOfRounds <n>` (`GameServer::setNrOfRounds` 0x0813dc90).
+  method('Admin', 'setNrOfRounds', { access: 1, minArgs: 1, maxArgs: 1, argTypes: ['int'], active: inRoom,
+    run: args => { host().admin('set', ['numberOfRounds', args[0]]); } });
+  // The settings a host changes on a live room: no argument reads the room's
+  // value as its HELLO or last `settings` row gave it, one sets it.
+  const hostSetting = (object, word, key, argType, access) => prop(object, word, argType, access,
+    () => host()?.settings()?.[key] ?? '',
+    value => { host().admin('set', [key, argType === 'bool' ? (readBool(value) ? 1 : 0) : value]); return ''; },
+    inRoom);
+  for (const [word, key, argType] of [
+    ['timeLimit', 'gameTime', 'unsigned int'], ['scoreLimit', 'scoreLimit', 'unsigned int'],
+    ['autoBalanceTeam', 'autoBalance', 'bool'],
+    ['delayBeforeStartingGame', 'gameStartDelay', 'float'],
+    ['roundDelayBeforeStartingGame', 'roundStartDelay', 'float'],
+    ['enableMapVote', 'enableMapVote', 'bool'],
+    ['enableKickPlayerVote', 'enableKickPlayerVote', 'bool'],
+    ['enableKickTeamPlayerVote', 'enableKickTeamPlayerVote', 'bool'],
+    ['voteMapMajority', 'voteMapMajority', 'float'],
+    ['voteKickPlayerMajority', 'voteKickPlayerMajority', 'float'],
+    ['voteKickTeamPlayerMajority', 'voteKickTeamPlayerMajority', 'float'],
+    ['votingTime', 'votingTime', 'float'],
+    ['TKPunishMode', 'tkPunishMode', 'bool'],
+    ['nrOfTKToKick', 'nrOfTKToKick', 'float'],
+    ['spawnDelayPenaltyForTK', 'tkSpawnPenalty', 'float'],
+  ]) hostSetting('Admin', word, key, argType, 1);
+  for (const [word, key, argType] of [
+    ['serverGameTime', 'gameTime'], ['serverScoreLimit', 'scoreLimit'],
+    ['serverNumberOfRounds', 'numberOfRounds'], ['serverSpawnTime', 'spawnTime'],
+    ['serverSpawnDelay', 'spawnDelay'], ['serverGameStartDelay', 'gameStartDelay'],
+    ['serverGameRoundStartDelay', 'roundStartDelay'],
+    ['serverTicketRatio', 'ticketRatio'], ['serverMaxPlayers', 'maxPlayers'],
+    ['serverSoldierFriendlyFire', 'soldierFriendlyFire'],
+    ['serverVehicleFriendlyFire', 'vehicleFriendlyFire'],
+    ['serverSoldierFriendlyFireOnSplash', 'soldierFriendlyFireOnSplash'],
+    ['serverVehicleFriendlyFireOnSplash', 'vehicleFriendlyFireOnSplash'],
+    ['serverAutoBalanceTeams', 'autoBalance', 'bool'],
+    ['serverNumReservedSlots', 'numReservedSlots'],
+    ['serverPassword', 'password', 'std::string'],
+    ['serverReservedPassword', 'reservedPassword', 'std::string'],
+  ]) hostSetting('Game', word, key, argType ?? 'int', 2);
+  // `game.setServerWelcomeMessage <id> <text>` (`Setup::setServerWelcomeMessage`
+  // 0x080c7b00): a line every joiner is sent.
+  method('Game', 'setServerWelcomeMessage', { access: 2, minArgs: 2, maxArgs: 2,
+    argTypes: ['int', 'std::string'], active: inRoom,
+    run: args => { host().admin('set', ['welcome', { id: Number(args[0]), text: String(args[1] ?? '') }]); } });
   method('Game', 'listMaps', {
     access: 1, returns: 'std::string',
     run: () => mapLines(get('mapRows') ?? [], { current: get('levelName') ?? '', gpm: get('gameplayMode') ?? '' }),
@@ -333,6 +522,8 @@ export function registerViewerCommands(con, env = {}) {
   videoWord('setEffectsQuality', 'int', 'effectsQuality', readInt);
   videoWord('setEnvironmentMapping', 'bool', 'environmentMapping', readBool);
   videoWord('setLightmaps', 'bool', 'lightmaps', readBool);
+  // SHADOWS: the dynamic shadow pass (VID-7, `shadow-pass.js`).
+  videoWord('setShadows', 'bool', 'shadows', readBool);
   // TEXTURE QUALITY, 1..5 (VID-5).
   videoWord('setDetailTexture', 'int', 'textureQuality', readInt);
   // VIEW DISTANCE's percentage; the client caps it at 100 (0x006af061).
@@ -345,8 +536,6 @@ export function registerViewerCommands(con, env = {}) {
   // page's line is worked out from the values, so the word has nothing to
   // keep; it is accepted as the client accepts it.
   method('Game', 'setPerformance', { minArgs: 1, argTypes: ['int'], active: has('video'), run: () => {} });
-  // SHADOWS: the viewer draws no dynamic shadows (VID-7).
-  method('Game', 'setShadows', { minArgs: 1, argTypes: ['bool'], active: () => false, run: () => {} });
   // The three numbers GRAPHICS QUALITY and EFFECTS QUALITY write (VID-1,
   // VID-2), each its own console property in the client. The next apply of
   // the options writes them again, as the client's does.
@@ -563,6 +752,24 @@ export function registerViewerCommands(con, env = {}) {
     run: args => {
       const rgb = args.map(readFloat);
       if (rgb.every(v => v !== null)) cross().setColor(rgb);
+    },
+  });
+  // `game.setRadioFlashTime N` (t0 a2; `Game/Init/Menu.con` writes 7): how
+  // many times a radio speaker's minimap mark blinks, `BfMenu+0x5d4`; and
+  // `game.setPlayerBlink on period` (1.0 2.0 there), the blink itself,
+  // `MenuMapNode+0xf4` and `+0xf8` (`map-flash.js`, MMAP-8).
+  method('Game', 'setRadioFlashTime', {
+    minArgs: 1, argTypes: ['float'], active: has('mapFlash'),
+    run: ([count]) => {
+      const n = readFloat(count);
+      if (n !== null) get('mapFlash').setCount(n);
+    },
+  });
+  method('Game', 'setPlayerBlink', {
+    minArgs: 2, argTypes: ['float', 'float'], active: has('mapFlash'),
+    run: ([on, period]) => {
+      const a = readFloat(on), b = readFloat(period);
+      if (a !== null && b !== null) get('mapFlash').setBlink(a, b);
     },
   });
 

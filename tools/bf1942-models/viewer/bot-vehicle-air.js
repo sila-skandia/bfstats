@@ -70,6 +70,12 @@ export const PLANE_FIRE = {
   breakClearance: 100.0,
   breakHeight: 100.0,
   breakDistance: 200.0,
+  /** The break point (`breakPoint` below): `1.5 x` the weapon's maxRange
+   *  along the heading (1.5 at 0x86be4d0, `fmuls 0x1c(weapon template)` at
+   *  0x0859c9e9), and the world-edge test's `1.3 x` the turn radius (1.3 at
+   *  0x87023e0, `fmuls 0xc(Mobile template)` at 0x0859b9d0). */
+  breakRangeFactor: 1.5,
+  breakEdgeFactor: 1.3,
   breakSpeedFactor: 1.5,
   passRadiusFactor: 1.3,
   arriveSpeedFactor: 0.5,
@@ -351,6 +357,57 @@ export function precisionGate(state, { m2, n2 = null, p2, bomb = false, closest 
 }
 
 /**
+ * Where a pilot flies to after a pass: the break's `BAPAMoveTo3dDirection`,
+ * `BBPFire3d::createPlanInternal` 0x0859b4b0 (read 2026-11-13, ledger AI-83).
+ *
+ *  * The test point `T = P + F x 1.3 R` (0x0859ba94..0x0859bade): the plane's
+ *    position and the x / z of its forward row (not re-normalised, so a dive
+ *    shortens it), `R` the Mobile template's turn radius.
+ *  * `T` inside the world (`T.x >= 0`, `T.z >= 0`, `T.x <= size`;
+ *    0x0859bb71..0x0859bbab: the fourth test reads the vector's third float,
+ *    the heading's x, against the size, so a `T.z` past the far edge passes;
+ *    both sizes are `getWorldMapSizeX`, AISettings vt+0x10 twice): the action
+ *    is built with a distance and no point (ctor 0x08541220 at 0x0859ca13),
+ *    `1.5 x` the chosen weapon's maxRange, and its first `execute` 0x08541400
+ *    writes the point `P + F x d` with y the move's 100.0 clearance
+ *    (0x08541507) and the direction the heading levelled and normalised.
+ *  * `T` outside: a point on the world's edge at y = 100.0 (0x0859bda5),
+ *    through the ctor that takes one (0x08541030 at 0x0859bec7). The edge
+ *    the heading leaves by, and along it the plane's own clamped coordinate
+ *    plus `sign(F) x sqrt(1.3 R - gap^2)`, `gap` the plane's distance to that
+ *    edge (0x0859bc86..0x0859bc9c, 0x0859bd11..0x0859bd2b). The root holds
+ *    `1.3 R`, not its square, so it is real only within about 9 m of the
+ *    edge; past that the engine's own result is not a number, and the slide
+ *    along the edge is left at 0 here (INFERRED: the one case not carried
+ *    over as read).
+ *
+ * `position` / `forward` are the viewer's (z negated from Refractor's);
+ * returns `{ point: [x, 100, z], edge }`.
+ */
+export function breakPoint({ position, forward, maxRange = 0, turnRadius = 25, worldSize = 2048 }) {
+  // Refractor's frame: z positive into the map.
+  const px = position[0], pz = -position[2], fx = forward[0], fz = -forward[2];
+  const L = PLANE_FIRE.breakEdgeFactor * turnRadius;
+  const tx = px + fx * L, tz = pz + fz * L;
+  if (tx >= 0 && tz >= 0 && tx <= worldSize) {
+    const d = PLANE_FIRE.breakRangeFactor * maxRange;
+    return { point: [px + fx * d, PLANE_FIRE.breakHeight, -(pz + fz * d)], edge: false };
+  }
+  const clamp = v => Math.min(worldSize, Math.max(0, v));
+  const cx = clamp(px), cz = clamp(pz);
+  const slide = gap => { const q = L - gap * gap; return q > 0 ? Math.sqrt(q) : 0; };
+  let x = cx, z = cz;
+  if (tx < 0 || tx > worldSize) {
+    x = tx < 0 ? 0 : worldSize;
+    z = clamp(cz + Math.sign(fz) * slide(x - cx));
+  } else {
+    z = tz < 0 ? 0 : worldSize;
+    x = clamp(cx + Math.sign(fx) * slide(z - cz));
+  }
+  return { point: [x, PLANE_FIRE.breakHeight, -z], edge: true };
+}
+
+/**
  * One step of the plane's fire plan: `state` is `{ phase, breakFrom }`
  * (`phase` 'approach' | 'attack' | 'break'), advanced in place. `position`
  * / `forward` / `velocity` are the plane's, `target` / `targetVel` the
@@ -389,9 +446,11 @@ export function attackRunStep(state, { position, forward, velocity, target, targ
   const needsFront = mode === 1 || mode === 2;
   if (!state.phase) state.phase = 'approach';
   if (state.phase === 'break') {
-    const from = state.breakFrom ?? position;
-    const run = Math.hypot(position[0] - from[0], position[2] - from[2]);
-    if (run >= PLANE_FIRE.breakDistance) state.phase = 'approach';
+    // The break ends where its move does: `Not(BAPConObjectDistance(target,
+    // 1.3 R))` (0x0859ba03 for the point inside the world, 0x0859be45 on its
+    // edge), R the Mobile template's +0xc: the plane is farther than 1.3 R
+    // from the target (ledger AI-83). Not a run of 200 m, which was ours.
+    if (dist > PLANE_FIRE.breakEdgeFactor * turnRadius) state.phase = 'approach';
   } else if (state.phase === 'attack') {
     const passed = needsFront && (dist < PLANE_FIRE.passRadiusFactor * turnRadius || !inFront);
     if (passed) { state.phase = 'break'; state.breakFrom = [...position]; }
@@ -969,6 +1028,12 @@ export const AIR_AVOID = {
   lookAhead: 5.0,
   /** `BAPConTime(1.1 t)` in `BBPAvoidCollision3d::createPlan`. */
   timeFactor: 1.1,
+  /** `BAPConPosition(point, 5.0)` beside it (`$0x40a00000`, 0x08587a48). */
+  arriveRadius: 5.0,
+  /** `getPotentialObstacleMaxSpeed` (IAIPathfinding vt+0x8c, 1.0; ledger
+   *  AI-176): a predicted object slower than this adds nothing to the
+   *  urgency (`fucompp` on its speed, C0 at 0x0855cf1d..0x0855cf24). */
+  obstacleMaxSpeed: 1.0,
 };
 
 /**
@@ -981,11 +1046,16 @@ export const AIR_AVOID = {
  * mass (`IPIPhysicalReal::getMass` 0x085ebd20 reads `AITemplatePhysical+8`,
  * which `initFromObject` 0x085e1130 copies from the world object's physics,
  * interface 0xc422 vt+0xa0). Neighbours are what the side's and the neutral
- * grid return within `lookAhead x speed + radius` of the centre. Each
- * predicted collision whose object moves at least the pathfinding's
- * potential-obstacle speed (`getPotentialObstacleMaxSpeed`, 0 on every
- * level, so every one) adds `mass x |relVel| / |rel|` (0x0855cf3d); the
- * largest names the plan's object. The caller multiplies by the modifier.
+ * grid return within `lookAhead x speed + radius` of the centre, and the
+ * grid's test is flat: `AIInformationGrid::getInformationWithinCircle`
+ * 0x085d0260 keeps a record when its x / z offset from the query's centre is
+ * within the query radius plus the record's own (`(r + R)^2` against `dx^2 +
+ * dz^2`, 0x085d042d..0x085d0472), whatever the heights. Each predicted
+ * collision whose object moves at least the pathfinding's potential-obstacle
+ * speed (`getPotentialObstacleMaxSpeed`, 1.0: `AIR_AVOID.obstacleMaxSpeed`)
+ * adds `mass x |relVel| / |rel|` (0x0855cf3d); a slower one adds nothing.
+ * The largest names the plan's object. The caller multiplies by the
+ * modifier.
  */
 export function airAvoidUrgency({ self, others, lookAhead = AIR_AVOID.lookAhead }) {
   const speed = Math.hypot(...self.velocity);
@@ -995,10 +1065,11 @@ export function airAvoidUrgency({ self, others, lookAhead = AIR_AVOID.lookAhead 
     if (o.id === self.id) continue;
     const rel = [o.centre[0] - self.centre[0], o.centre[1] - self.centre[1], o.centre[2] - self.centre[2]];
     const dist = Math.hypot(...rel);
-    if (dist > reach + o.radius) continue;
+    if (Math.hypot(rel[0], rel[2]) > reach + o.radius) continue;
     const relVel = [o.velocity[0] - self.velocity[0], o.velocity[1] - self.velocity[1], o.velocity[2] - self.velocity[2]];
     const hit = collisionPredicted(rel, relVel, self.radius + o.radius, lookAhead);
     if (!hit) continue;
+    if (Math.hypot(...o.velocity) < AIR_AVOID.obstacleMaxSpeed) continue;
     const term = (o.mass ?? 0) * Math.hypot(...relVel) / Math.max(dist, 1e-3);
     sum += term;
     if (term >= bestTerm) { bestTerm = term; best = { id: o.id, t: hit.t, point: hit.point, rel, relVel, other: o }; }
@@ -1013,12 +1084,24 @@ export function airAvoidUrgency({ self, others, lookAhead = AIR_AVOID.lookAhead 
  * on n's side (`n . d > 0`, `d` its x/z offset) the turn is +45 deg
  * (`((v.x - v.z), (v.x + v.z)) x 0.7071`), else -45 deg. The angle test
  * before it (`|u . n| - pi/2 > 0.349` at 0x085877f5, no acos) never passes:
- * that branch is dead. The point's height is the bot's less `2 t` when it is
- * the lower of the two, else plus `2 t` (the altitudes by Information
- * vt+0x20, INFERRED getAltitude). The move ends after `1.1 t` (`BAPConTime`)
- * or at the point (`BAPConPosition`); its speed is the Mobile plug-in's
- * `maxSpeed`, x0.3 unless the other is behind both diagonals, and the
- * viewer's `towardsPoint` takes no speed, so that cap is not ported.
+ * that branch is dead. The point's y is the bot's ALTITUDE less `2 t` when
+ * it is the lower of the two, else plus `2 t` (0x08587e4a..0x08587e4f,
+ * 0x085879dc..0x085879e9): Information vt+0x20 is `InformationReal::
+ * getAltitude()` 0x085e8b20, the height over the ground (the lesser of the
+ * position's y less the world's two surface heights), and the plan writes
+ * that number into the point's world y. So the point lies below the plane
+ * by the height of the ground it is over (41 m on El Alamein's airfield),
+ * and the move pushes down toward it until the 30.0 clearance lifts it.
+ * The engine's arithmetic, kept as it is (read 2026-11-13, ledger AI-95).
+ * The move ends after `1.1 t` (`BAPConTime`, 1.1 at 0x86c4c08) or inside
+ * 5.0 m of the point in 3D (`BAPConPosition(Pos3, 5.0)`, `$0x40a00000` at
+ * 0x08587a48; its Pos3 ctor 0x08554620 sets the 3D flag +0x10). The move is built with a speed (the
+ * Mobile plug-in's `maxSpeed`, x0.3 unless the other is behind both
+ * diagonals; the ctor 0x08540aa0 keeps it at +0x20 / +0x24), and a plane
+ * never reads it: `EntryPlaneMoveTo::execute` 0x08620220 hands
+ * `PlaneControl::towardsPoint` 0x08629730 the point, the literal 1.0 pushed
+ * at 0x08620324 and the move's clearance (+0x3c), nothing else of the move.
+ * So there is no speed to port for an aircraft (read 2026-11-13, AI-95).
  *
  * In the viewer's frame (z is the engine's negated); the side test is done
  * in the engine's.
@@ -1031,5 +1114,7 @@ export function airAvoidPoint({ position, velocity, other, t, altitude, otherAlt
   const k = Math.SQRT1_2;
   const off = plus ? [(a - b) * k, (a + b) * k] : [(a + b) * k, (b - a) * k];
   const dy = altitude <= otherAltitude ? -2 * t : 2 * t;
-  return { point: [position[0] + off[0], position[1] + dy, position[2] - off[1]], until: AIR_AVOID.timeFactor * t };
+  // (No surface under the plane: its own height stands in.)
+  const y = Number.isFinite(altitude) ? altitude : position[1];
+  return { point: [position[0] + off[0], y + dy, position[2] - off[1]], until: AIR_AVOID.timeFactor * t };
 }

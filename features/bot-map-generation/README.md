@@ -51,11 +51,45 @@ section 6).
 (`.claude/skills/bf1942-bot-rollout/`) is the procedure as scripts: list a
 mod's botless levels, mirror and screen them in the runner, publish
 without the menu flag, play them on the live page against the rollout
-floor (`sim/pagematch.mjs rolloutFloor`), tag what passes. 40 levels are
-live as of 2026-11-12 (`scripts/live.py` in the skill lists them): FHSW 17,
-the vanilla tree 8, Desert Combat 6, BF1918 6, FH 2, FHSWEurope 1. Every
-level judged has been played on the page; the skill's last section lists
-the ones turned down.
+floor (`sim/pagematch.mjs rolloutFloor`), tag what passes. 68 levels are
+live on 2026-11-13 (`scripts/live.py` in the skill lists them): FHSW 24,
+the vanilla tree 16, Desert Combat 7, Galactic Conquest 7, BF1918 6,
+Secret Weapons 3, Road to Rome 2, FH 2, FHSWEurope 1.
+
+**The mods first, 2026-11-13.** The owner's priority from this day: the
+mods' levels before the community map pack, whose jeep bowls and races
+"don't sound like bot friendly maps, or at least need some custom mod
+logic to actually race". No further work goes to a community level while
+a mod's level is open.
+
+**2026-11-13: the live levels on new bot code, the turned-down levels
+regenerated.** All 66 levels then live were replayed on the bot code of
+3b1ebe45c: 57 keep their flag and 9 lost it after two failed matches. The
+26 layers turned down on generator 5 were regenerated on generator 6 and
+10 of them now pass on the page; with FHSW's Breaking Point, which a
+generator fault had refused (section 22.4, item 1), that is 11 added. The
+page match now records what a bot was in when it died by its own hand,
+which found Galactic Conquest's own-hand deaths to be one vehicle the bots
+flew as a plane. Generator 7 widens the ways it opens (section 22.4, item
+2). [page-matches.md](page-matches.md) section 6 has every match.
+
+**No more EXPERIMENTAL BOTS, 2026-11-12.** After playing Galactic
+Conquest's the owner asked for the tag to go ("just show bots"): a level
+with a generated layer is listed like any other with bots, and its row
+carries a small bfstats.io mark that shows "Bot support added by skandia |
+bfstats.io" when pointed at (`viewer/play/menu-screen.js hasBotCredit`).
+Where older sections say a level is "tagged", read: it carries the menu's
+`generatedBots` flag.
+
+**Every botless level has been looked at, 2026-11-12.** Of the 248
+published levels with no AI of their own, 64 are live, 59 were played on
+the page and turned down, and 125 are out with a reason
+([status-2026-11-12.md](status-2026-11-12.md), written by the skill's
+`status.py`). The day also brought Galactic Conquest in (9 of its 30
+levels live), a re-match of every live level on new bot code, four lint
+faults that had refused walkable levels (section 22), and a hull box that
+hung a match ([hull-box.md](hull-box.md));
+[page-matches.md](page-matches.md) section 6 has every match.
 
 **The owner's rollout, 2026-11-11.** After playing Tunis-1943 against its
 generated bots the owner asked for every level with a fight to go live. A
@@ -3976,3 +4010,158 @@ a 600 s match for those that move and take flags (section 20).
    route crosses it.
 3. Generating a capped level now takes about two minutes (two floods and
    a route probe that has routes to plan), against twenty seconds.
+
+## 22. 2026-11-12: four ways the lint refused a walkable level
+
+A re-check of 21 land levels the lint had refused (14 for "no spawn with a
+route", 7 for "holds no spawn point at the start") found 10 refused on a
+wrong reading: the levels are plainly walkable. The faults are of four
+kinds. Each change is labelled INVENTION in the code, as the walk test is,
+and generator 6 carries all four (`botgen.mjs GENERATOR_VERSION`). Nothing
+in `viewer/` changed for them.
+
+### 22.1 The four faults
+
+**The spawns' sides.** `botgen.mjs spawnsOf` took a spawn's side only from
+a control point that claimed its group. The page asks more than that
+(`spawn-flags.js spawnFlags`, `flagSide`). A neutral point offers its
+groups to the side the spawn manager gave them, as on BF1918's Vosges,
+which writes `Object.setTeam 0` on both bases. A group that no point claims
+is a base of its own: Somme's French line, Breaking Point's German base.
+And a spawn point an object carries counts once that object stands, like
+Desert Combat's weapon bunkers. Those sides read as holding no spawn at
+all. The generator now takes the page's answer. A carried point counts
+when its spawner spawns that carrier for the side holding its point at the
+start (`carrierStandsAtStart`): Juno's Allied town house belongs to a point
+the Germans hold, so it does not. A point that seats its soldier in a
+vehicle is never a spawn on foot. A side that starts only on ships and
+landing craft is still refused, and the lint now says so: "the side starts
+at sea or in its vehicles" (Java, Juno, Omaha and 23 others).
+
+**One-way exits.** The walk test's regions are ground a soldier can walk
+both ways. A base on a shelf that a soldier drops 1 to 2 m off was its own
+region, and its spawns read as sealed, though the generator had already
+opened the drop in the layer's map (Deulemont: 296 to 333 cells for four
+of the seven German spawns). A landed spawn off the main ground now serves
+when a one-way walk reaches the main ground with no jump and no fall that
+costs health (`walkflood.mjs walkFacts`, `exit`; `serves`).
+
+**Flag seeds on wide levels.** On a level wider than the flood's cap the
+flood is run a second time, seeded at each flag (section 21). The seed sat
+on the pole, and Forgotten Hope's 8.5 m flagpoles have a collision of their
+own. A start inside one never grows, so the flag read as standing on no
+walked ground: Desert Hill's East Picket and Attack Point, though a
+soldier 3 m off the pole walks 50 m. Each flag is now also seeded at four
+points 2.5 m from its pole (`flagSeeds`).
+
+**The painter's map on wide levels.** A capped level wrote no map of its
+own, and the page painted one with no way opened in it. The painter's 30
+degree slope test, its outline of rubble and props, and the bridges it
+stamps shut sealed spawns the walk test walks out of: Forgotten Hometown's
+hill base, Raseiniai's barnyard. Such a level now ships the painter's map
+with the walked way out of every pocket opened, as an engine map gets
+(`prepareWalkMap`, `ground` and `paint`). A spawn also serves when the
+map's main component is within the 20 m the page moves a buried start
+(`nav-search.js START_RESOLVE_CELLS`).
+
+### 22.2 Guards
+
+- 131 layer folders linted with a frozen copy of the tools before any
+  edit: 35 clean before, 44 after, and no level that was clean has an error
+  now.
+- Three live levels regenerated into scratch. the_maze and tunis-1943
+  differ only in `"version": 5` to `6`. roye is capped, so the painter's
+  map applies: regenerated, it would ship an Infantry1 map with 128 opened
+  cells and a Tank0 map, bring Bahnhof and Bauernhof back into play (3
+  flags for 1), and drop its excluded spawns from 18 to 2. **Live layers
+  were not regenerated.** Regenerating roye is a change to a live level,
+  to be judged on the page like any other.
+- `tests/test_bot_layer.py WalkableRefusalTests`, six tests, one or two a
+  fault.
+
+### 22.3 What it opened
+
+Re-screened on generator 6, one seed at 8 and 16 a side:
+
+| Level | Lint before | Now | Runner |
+|---|---|---|---|
+| fhsw desert_hill | no route | clean | better than nothing |
+| bf1918 battle_of_the_vosges | no spawn | clean | better than nothing |
+| community tl_plane_training | no flag, no route | clean | better than nothing |
+| fhsw raseiniai | sealed | clean | no better than nothing |
+| community tanquilizer | no flag, no route | clean | no better than nothing |
+| desertcombat dc_weapon_bunkers | no spawn | clean | no fight (no capturable flag) |
+| desertcombat dc_no_fly_zone_day2 | no spawn | clean | no fight (no capturable flag) |
+| fhsw fht_hong_kong-1941 | sealed | clean | no fight |
+| fhsw fht_siege_of_zeeland-1940 | sealed | clean | no fight |
+| fhsw forgotten_hometown | sealed | clean | slow: see 22.4 |
+| fhsw battle_over_hokkaido-1945 | no flag, no route | clean | slow: see 22.4 |
+| bf1918 somme_gasattack | no spawn | route | refused: every route of the French line has 29 choke points |
+| bf1918 deulemont | sealed | route | refused: 70 choke points on the opened ways |
+| bf1918 liberation_of_roeselare | sealed | route | refused: 9 to 22 choke points |
+| fhsw fht_the_breaking_point-1940 | no spawn | new error | "spycker: the Infantry order position is not a free cell" |
+| fhsw battle_at_river_don | no route, sealed | still refused | the allied base's way out is longer than the 150 m search |
+
+The page figures for the nine that play are in `page-matches.md`
+section 6.
+
+### 22.4 Open
+
+1. **An order position on a blocked cell: found and fixed 2026-11-13**
+   (74fb6478b). The con files keep a position to one decimal. A flag within
+   5 cm of a cell edge (Westwall-1945's north mountain flag at z -1691.99,
+   Breaking Point's Spycker) was free where the generator tested it and
+   was written as -1692.0, a point in the blocked cell next door, which is
+   where the lint and the page then looked. `nearestFree` now tests the
+   position as it will be written and, when the rounding crosses into a
+   blocked cell, returns the centre of the position's own cell. Both
+   levels lint clean. Invasion of the Philippines' East Harbor was not
+   looked at again.
+2. **One-cell ways: widened 2026-11-13 (generator 7), and it was not what
+   refused the trench levels.** A way the generator opens out of a pocket
+   now also frees the walked ground within `WAY_WIDEN` (2) cells of its
+   path, so a way over open ground is five cells wide and a door stays a
+   door (`tests/test_bot_layer.py`,
+   `test_an_opened_way_is_five_cells_wide_over_open_ground_and_a_door_stays_a_door`).
+   INVENTION. On Westwall-1945 the same 130 ways open 6,977 cells instead
+   of 2,020, the station route's choke points fall from 21 to 12, and side
+   2 reaches four flags instead of three. Deulemont's fall from 70 to 30
+   and no further: what is left is a straight single-file run of 100 m with
+   no walked ground beside it, which reads as a trench. The five levels the
+   choke rule still refuses (Deulemont, Liberation of Roeselare, Somme
+   Gasattack, Baghdad, Transcarpathia-1944) were then run despite the lint,
+   one seed at 8 and 16 a side:
+
+   | Level | Chokes on the refused side's routes | Stuck seconds a bot-minute | Enemy kills a bot-minute | Captures |
+   |---|---|---|---|---|
+   | bf1918 deulemont | 30 | 23.2, 15.1 | 0.019, 0.066 | 0, 2 |
+   | bf1918 liberation_of_roeselare | 5 to 17 | 16.4, 13.8 | 0.057, 0.009 | 2, 2 |
+   | bf1918 somme_gasattack | 29 | 4.4, 2.8 | 0.039, 0.042 | 0, 0 |
+   | bf1918 baghdad | 7 to 9 | 2.7, 4.0 | 0, 0.019 | 0, 0 |
+   | fhsw transcarpathia-1944 | 13 to 15 | 0.3, 0.7 | 0.019, 0.084 | 0, 1 |
+
+   DICE's levels run to about 1 stuck second a bot-minute. On Deulemont
+   and Roeselare a bot spends a quarter of its time jammed: the choke rule
+   is right about them. It is wrong, or at least too strict, about
+   Transcarpathia. The page figures for the ones played are in
+   `page-matches.md` section 6.
+3. **River Don: not the reach.** On generator 7 it opens 25 ways (617
+   cells) and is still refused: side 2's four spawns have no way on foot to
+   the main ground and the level places six ladders, which neither the walk
+   test nor a bot climbs. Out until bots climb ladders.
+4. **`Object.setTeam` on a placement.** `extract_map.py
+   _control_point_report` takes the placement's `Object.setTeam` over the
+   template's team. Vosges writes `setTeam 0` on every point and `38585940`
+   on one, so its `scene.json` reads both bases as neutral while its spawn
+   rows carry teams 2 and 1. A value that is not 0, 1 or 2 should fall back
+   to the template's team. Not changed: it is an exporter fix with a
+   re-patch of every tree behind it.
+5. **A match at a third of real time.** forgotten_hometown places 103
+   vehicles. Its no-layer match at 16 a side had reached 348 s of game time
+   after 18 minutes. A profile 143 s into the match: 59 % of the time in
+   `static-index.js cast`, nearly all under `bot-sense.js lineClear` from
+   `world-collider.js castMoved`, about half through `_retestHull` in
+   `updateMemory`. Each bot re-tests a line of sight to every hull it
+   remembers on every sense pass, and each test is a full cast through the
+   moved statics. A cap or a stagger on the re-tests a pass is the likely
+   fix; it is page bot code and was not touched.

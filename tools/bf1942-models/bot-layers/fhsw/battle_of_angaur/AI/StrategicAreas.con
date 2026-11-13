@@ -1,0 +1,78 @@
+rem *** Strategic areas: one per control point (botgen) ***
+
+aiStrategicArea.create axisbase 863.2/1202.7 868.2/1207.7 150
+aiStrategicArea.addNeighbour defence_point
+aiStrategicArea.addNeighbour fishing_village
+aiStrategicArea.addNeighbour first_defence
+aiStrategicArea.addNeighbour road_defence
+aiStrategicArea.addObjectTypeFlag Flank
+aiStrategicArea.addObjectTypeFlag ControlPoint
+aiStrategicArea.setOrderPosition Tank 868.5/1209.5
+aiStrategicArea.setOrderPosition Infantry 868.5/1208.5
+aiStrategicArea.setSide 1
+
+aiStrategicArea.create alliedbase 1803.9/1843.2 1808.9/1848.2 50
+aiStrategicArea.addObjectTypeFlag Base
+aiStrategicArea.setSide 2
+aiStrategicArea.setTakeable 1 0
+
+aiStrategicArea.create defence_point 1304.9/1190.2 1309.9/1195.2 200
+aiStrategicArea.addNeighbour axisbase
+aiStrategicArea.addNeighbour fishing_village
+aiStrategicArea.addNeighbour first_defence
+aiStrategicArea.addNeighbour road_defence
+aiStrategicArea.addObjectTypeFlag Centre
+aiStrategicArea.addObjectTypeFlag ControlPoint
+aiStrategicArea.setOrderPosition Tank 1312.5/1195.5
+aiStrategicArea.setOrderPosition Infantry 1311.5/1195.5
+aiStrategicArea.setSide 1
+
+aiStrategicArea.create fishing_village 1011.6/958.3 1016.6/963.3 200
+aiStrategicArea.addNeighbour axisbase
+aiStrategicArea.addNeighbour defence_point
+aiStrategicArea.addNeighbour village
+aiStrategicArea.addNeighbour road_defence
+aiStrategicArea.addObjectTypeFlag Centre
+aiStrategicArea.addObjectTypeFlag ControlPoint
+aiStrategicArea.setOrderPosition Tank 1016.5/961.5
+aiStrategicArea.setOrderPosition Infantry 1016.5/962.5
+aiStrategicArea.setSide 1
+
+aiStrategicArea.create village 1170.9/790.9 1175.9/795.9 150
+aiStrategicArea.addNeighbour fishing_village
+aiStrategicArea.addNeighbour road_defence
+aiStrategicArea.addObjectTypeFlag Flank
+aiStrategicArea.addObjectTypeFlag ControlPoint
+aiStrategicArea.setOrderPosition Tank 1177.5/798.5
+aiStrategicArea.setOrderPosition Infantry 1174.5/796.5
+aiStrategicArea.setSide 1
+
+aiStrategicArea.create red_beach_ 1393.4/1375.7 1408.4/1390.7 300
+aiStrategicArea.addNeighbour first_defence
+aiStrategicArea.addObjectTypeFlag Centre
+aiStrategicArea.addObjectTypeFlag StrongPoint
+aiStrategicArea.addObjectTypeFlag Close
+aiStrategicArea.addObjectTypeFlag ControlPoint
+aiStrategicArea.setOrderPosition Tank 1408.5/1392.5
+aiStrategicArea.setOrderPosition Infantry 1408.5/1391.5
+
+aiStrategicArea.create first_defence 1354.7/1317.5 1361.7/1324.5 200
+aiStrategicArea.addNeighbour axisbase
+aiStrategicArea.addNeighbour defence_point
+aiStrategicArea.addNeighbour red_beach_
+aiStrategicArea.addObjectTypeFlag Centre
+aiStrategicArea.addObjectTypeFlag ControlPoint
+aiStrategicArea.setOrderPosition Tank 1358.5/1318.5
+aiStrategicArea.setOrderPosition Infantry 1361.7/1324.5
+aiStrategicArea.setSide 1
+
+aiStrategicArea.create road_defence 1193.9/1025.9 1198.9/1030.9 200
+aiStrategicArea.addNeighbour axisbase
+aiStrategicArea.addNeighbour defence_point
+aiStrategicArea.addNeighbour fishing_village
+aiStrategicArea.addNeighbour village
+aiStrategicArea.addObjectTypeFlag Centre
+aiStrategicArea.addObjectTypeFlag ControlPoint
+aiStrategicArea.setOrderPosition Tank 1198.5/1028.5
+aiStrategicArea.setOrderPosition Infantry 1198.5/1029.5
+aiStrategicArea.setSide 1

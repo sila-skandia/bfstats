@@ -28,7 +28,7 @@ import { createLevelWarmup } from './level-warmup.js';
 import { bareFireArmsName } from './vehicle-audio.js';
 import { idleFirePose } from './idle-vehicle.js';
 import { restoreLoadedRounds } from './loaded-rounds.js';
-import { SupplyDepot, depotPhase, heldObjectLife } from './supply.js';
+import { collectSupplyDepots as collectDepots } from './supply-collect.js';
 import { World } from './world.js';
 import { artCandidates } from './level-art.js';
 import { commentsWithBotCredit } from './briefing-screen.js';
@@ -47,6 +47,7 @@ import { bindTreeFoliage } from './tree-foliage.js';
 import { stampLevelNodes } from './level-nodes.js';
 import { armTeamCloths, restoreFlagNodeNames } from './flag-cloth-teams.js';
 import { createLevelSkin, repaintPage } from './level-skin.js';
+import { applyTemplateWords } from './template-words.js';
 // Remaster mode's hooks (features/remaster-browser, remaster-mode.js):
 // one registry on the global, so this module needs no import for it and
 // stays loadable by the harnesses that copy it alone. Empty without
@@ -71,15 +72,9 @@ const remasterHooks = globalThis.bfRemasterHooks ?? (globalThis.bfRemasterHooks 
  * `syncDeployReady`, `templateNameOf`, `texLoader`, `texManager`,
  * `toggleFullMap`, `unitRectOf`, `vehicles`, `vmScene`.
  */
-/** A depot's start phase (ledger SUP-4): the `SupplyDepot` ctor stamps its
- *  last cycle at `(rand() % 30) / 30.0` s of world time, so depots placed
- *  together do not fire on one frame (`supply.js` `depotPhase`). `random` is
- *  a [0, 1) source: the page's `random` when it has one, else `Math.random`,
- *  which the headless runner seeds (`sim/env.mjs` `seedMathRandom`), so a
- *  run with a seed is reproducible. Drawn once per depot per level load. */
-export function depotStartPhase(random = Math.random) {
-  return depotPhase(() => Math.floor(random() * 0x8000));
-}
+// A depot's start phase (SUP-4) and the walk that finds a level's depots:
+// one copy with the room server's (`supply-collect.js`).
+export { depotStartPhase } from './supply-collect.js';
 
 export function createLevel(page) {
   const level = {};
@@ -157,6 +152,7 @@ export function createLevel(page) {
     get MAPS_BASE() { return page.MAPS_BASE; },
     get rebaseDeckSpawns() { return page.rebaseDeckSpawns; },
     get registerDamageables() { return page.registerDamageables; },
+    get scene() { return page.scene; },
     get settlePlacedVehicles() { return page.settlePlacedVehicles; },
     get spawnersRoot() { return statics.spawnersRoot; },
     get world() { return level.world; },
@@ -278,52 +274,12 @@ export function createLevel(page) {
    *  translation, only the chain above it does. Run once per level load, from
    *  `onFoot` (below), never per frame. */
   function collectSupplyDepots(root) {
-    const depots = [];
-    if (!root) return depots;
-    const pos = new THREE.Vector3();
-    root.traverse(obj => {
-      const data = obj.userData?.supply;
-      if (!data || obj.userData.templateKind !== 'SupplyDepot') return;
-      obj.updateWorldMatrix(true, false);
-      obj.getWorldPosition(pos);
-      // The placed root the depot rides: the same owner the collider and
-      // the world key a hull by (a child of the level, or of its spawners).
-      // A depot inside an object a spawner on the root makes
-      // (`heldSpawner`) waits that spawner's delay out when the spawner
-      // says so (`SupplyField.update`).
-      // A held object that burns itself down (`heldObjectLife`) is made
-      // again after its spawner's delay, so its depot works in pulses:
-      // FHSW's bombers carry a reloader that lives 2 s in every 47.
-      let owner = obj, heldDelay = 0, heldLife = Infinity, heldGap = 0;
-      while (owner.parent && owner.parent !== root && owner.parent !== statics.spawnersRoot) {
-        const held = owner.userData?.heldSpawner;
-        if (held?.spawnDelayAtStart) heldDelay = Math.max(heldDelay, Number(held.minSpawnDelay) || 0);
-        const life = held ? heldObjectLife(owner.userData.armor) : Infinity;
-        if (Number.isFinite(life) && !Number.isFinite(heldLife)) {
-          heldLife = life;
-          const lo = Number(held.minSpawnDelay) || 0;
-          const hi = Number(held.maxSpawnDelay) || lo;
-          // `calcSpawnDelay` draws in [min, max]; the mean stands in for it.
-          heldGap = (lo + Math.max(lo, hi)) / 2;
-        }
-        owner = owner.parent;
-      }
-      // A depot on a hull (a half-track's locker, a Humvee's, a carrier's
-      // pads) goes where the hull goes: the engine measures from the depot's
-      // own absolute position every cycle (`workOnSoldiers` 0x08323dc0,
-      // `workOnVehicles` 0x08323f10), so its node is read again each cycle.
-      const rides = owner !== obj && owner.userData?.templateKind === 'PlayerControlObject';
-      const at = new THREE.Vector3();
-      const locate = rides ? () => {
-        obj.updateWorldMatrix(true, false);
-        return obj.getWorldPosition(at);
-      } : null;
-      depots.push(new SupplyDepot({ x: pos.x, y: pos.y, z: pos.z }, data, obj.name,
-        { root: owner, locate, heldDelay, heldLife, heldGap,
-          phase: depotStartPhase(typeof page.random === 'function' ? page.random : Math.random) }));
+    return collectDepots(root, {
+      spawnersRoot: statics.spawnersRoot,
+      random: typeof page.random === 'function' ? page.random : Math.random,
     });
-    return depots;
   }
+
 
   function wireframe(on) {
     if (!level.currentRoot) return;
@@ -544,11 +500,17 @@ export function createLevel(page) {
     // On a server, its hulls this level never places as well, which needs
     // the server's world dump in first (`net-room.js` `serverHullPool`).
     const extra = page.params.has('relay') && page.serverHullPool ? await page.serverHullPool() : [];
-    await loadRoundSpawnPool(gltf.scene, {
+    // A tree baked before the exporter read the rocket and submarine words
+    // takes them from the level's table (`template-words.js`): the scene
+    // before the pool is sized, since a launcher whose round is a vehicle
+    // parks one (FA-29), then what the pool added.
+    applyTemplateWords(gltf.scene, level.extras.templateWords);
+    const pooled = await loadRoundSpawnPool(gltf.scene, {
       load: loadPadModel,
       inMode: node => nodeInMode(node, level.extras.gameplayMode),
       extra,
     });
+    applyTemplateWords(pooled, level.extras.templateWords);
     // The bot side goes first: its bots, maps and door list are the old
     // level's, and the frames until `spawnBotsForLevel` below keep ticking the
     // referee -- against the new World once it is built.
@@ -616,6 +578,10 @@ export function createLevel(page) {
     // of the level on every gun nobody had touched yet. Fifteen of them on
     // Battle of Britain, four Spitfires and eleven Brownings.
     idleFirePose(level.currentRoot);
+    // The bundles among them that the engine runs by itself (a track's dust,
+    // a chimney's smoke) stay dark as nodes and are played from the effect
+    // library where they hang (`ambient-effects.js`).
+    page.effects?.ambient?.adoptLevel(level.currentRoot);
     // And the opposite payload shown: the rounds a rack carries in view
     // (`loaded-rounds.js`), full on every vehicle nobody has fired yet.
     restoreLoadedRounds(level.currentRoot);
@@ -802,7 +768,7 @@ export function createLevel(page) {
     // level), which the bots' nav maps are taken from (`nav-baked.js`).
     // And the whole heightmap (`terrain/heightmap.png`, tens to hundreds of KB),
     // which the collider stands on where the bake drew no tile.
-    const [terrainMaterials, damageTables, , searchMaps, heightmap] = await Promise.all([
+    const [terrainMaterials, damageTables, collisionMeshes, searchMaps, heightmap] = await Promise.all([
       terrain.loadTerrainMaterials(dir), terrain.loadDamageTables(dir), page.loadCollisionMeshes(dir),
       terrain.loadSearchMaps(dir), terrain.loadHeightmap(dir),
     ]);
@@ -811,7 +777,7 @@ export function createLevel(page) {
         { value: searchMaps, configurable: true, writable: true, enumerable: false });
     }
     terrain.setTables(terrainMaterials, damageTables, heightmap);
-    const collision = terrain.buildCollider(level.currentRoot);
+    const collision = terrain.buildCollider(level.currentRoot, { collisionMeshes });
     // The statics' shade from the ground under them (ledger DL-10): after the
     // collider, whose height it asks, and never in the way of the load.
     shading.bindTerrainShade(level.currentRoot, dir, terrain.groundHeight)

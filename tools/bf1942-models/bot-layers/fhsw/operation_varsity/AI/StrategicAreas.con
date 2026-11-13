@@ -1,0 +1,71 @@
+rem *** Strategic areas: one per control point (botgen) ***
+
+aiStrategicArea.create allies_basetemplate 500.6/387.9 505.6/392.9 50
+aiStrategicArea.addNeighbour hoteltemplate
+aiStrategicArea.addObjectTypeFlag Base
+aiStrategicArea.setOrderPosition Tank 507.5/393.5
+aiStrategicArea.setOrderPosition Infantry 506.5/394.5
+aiStrategicArea.setSide 2
+aiStrategicArea.setTakeable 1 0
+
+aiStrategicArea.create axis_basetemplate 1767/1031 1772/1036 50
+aiStrategicArea.addNeighbour churchtemplate
+aiStrategicArea.addNeighbour blumenkamptemplate
+aiStrategicArea.addNeighbour hoteltemplate
+aiStrategicArea.addObjectTypeFlag Base
+aiStrategicArea.setOrderPosition Tank 1774.5/1036.5
+aiStrategicArea.setOrderPosition Infantry 1773.5/1037.5
+aiStrategicArea.setSide 1
+aiStrategicArea.setTakeable 2 0
+
+aiStrategicArea.create stationtemplate 1469.2/1121 1474.2/1126 10
+aiStrategicArea.setSide 1
+aiStrategicArea.setTakeable 1 0
+aiStrategicArea.setTakeable 2 0
+
+aiStrategicArea.create feldmarktemplate 1438.4/1324.7 1452.4/1338.7 10
+aiStrategicArea.setSide 1
+aiStrategicArea.setTakeable 1 0
+aiStrategicArea.setTakeable 2 0
+
+aiStrategicArea.create churchtemplate 1211.9/1030.2 1217.9/1036.2 150
+aiStrategicArea.addNeighbour axis_basetemplate
+aiStrategicArea.addNeighbour blumenkamptemplate
+aiStrategicArea.addNeighbour hoteltemplate
+aiStrategicArea.addObjectTypeFlag Flank
+aiStrategicArea.addObjectTypeFlag Close
+aiStrategicArea.addObjectTypeFlag ControlPoint
+aiStrategicArea.setOrderPosition Tank 1215.5/1034.5
+aiStrategicArea.setOrderPosition Infantry 1215.5/1034.5
+aiStrategicArea.setSide 1
+
+aiStrategicArea.create blumenkamptemplate 1691/1750 1697/1756 150
+aiStrategicArea.addNeighbour axis_basetemplate
+aiStrategicArea.addNeighbour churchtemplate
+aiStrategicArea.addNeighbour allies_waco_pointtemplate
+aiStrategicArea.addNeighbour hoteltemplate
+aiStrategicArea.addObjectTypeFlag Flank
+aiStrategicArea.addObjectTypeFlag Close
+aiStrategicArea.addObjectTypeFlag ControlPoint
+aiStrategicArea.setOrderPosition Tank 1696.5/1753.5
+aiStrategicArea.setOrderPosition Infantry 1695.5/1754.5
+aiStrategicArea.setSide 1
+
+aiStrategicArea.create allies_waco_pointtemplate 1716.8/1960.9 1736.8/1980.9 50
+aiStrategicArea.addNeighbour blumenkamptemplate
+aiStrategicArea.addObjectTypeFlag Base
+aiStrategicArea.setOrderPosition Tank 1736.5/1981.5
+aiStrategicArea.setOrderPosition Infantry 1736.5/1981.5
+aiStrategicArea.setSide 2
+aiStrategicArea.setTakeable 1 0
+
+aiStrategicArea.create hoteltemplate 1232.9/732.4 1237.9/737.4 150
+aiStrategicArea.addNeighbour allies_basetemplate
+aiStrategicArea.addNeighbour axis_basetemplate
+aiStrategicArea.addNeighbour churchtemplate
+aiStrategicArea.addNeighbour blumenkamptemplate
+aiStrategicArea.addObjectTypeFlag Flank
+aiStrategicArea.addObjectTypeFlag Close
+aiStrategicArea.addObjectTypeFlag ControlPoint
+aiStrategicArea.setOrderPosition Tank 1237.5/735.5
+aiStrategicArea.setOrderPosition Infantry 1236.5/736.5

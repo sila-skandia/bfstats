@@ -24,10 +24,10 @@
 // selection and turns a pointer into a choice.
 
 import {
-  AXIS, ALLIED, hitTest, listBox, paintMenu, scrollTo, trackRect, visibleRows,
+  AXIS, ALLIED, botCreditAt, hitTest, listBox, paintMenu, scrollTo, trackRect, visibleRows,
 } from './menu-screen.js';
 import {
-  fracToBotCount, fracToBotSkill, hitBotSettings, paintBotSettings,
+  fracToBotCount, fracToBotSkill, fracToSpawnSeconds, hitBotSettings, paintBotSettings,
 } from './bot-settings.js';
 import { beginStage, pointerToVirtual } from './stage.js';
 import { createNavStrip } from './nav-strip.js';
@@ -36,6 +36,8 @@ import { menuMovie } from './menu-movie.js';
 import { loadMods, menuLevels, remember, servable, stored, treeOf, VANILLA, withMod } from '../mods.js';
 import { createLoadingAudioController } from '../audio.js';
 import { previewMuted } from '../preview-mute.js';
+import { instantBattleOdds } from './campaign.js';
+import { SINGLE_PLAYER_SPAWN_KEY, singlePlayerSpawnSeconds } from '../spawn-timer.js';
 import { loadHudPaths, hudPaths as plainHudPaths } from '../hud-pack.js';
 
 export { AXIS, ALLIED };
@@ -54,6 +56,18 @@ const menuMuted = () => {
 
 const rememberMute = muted => {
   try { localStorage.setItem(MUTE_KEY, muted ? '1' : '0'); } catch (_) { /* private mode */ }
+};
+
+/** The SPAWN TIME the player last set (`bot-settings.js`), remembered in this
+ *  browser like the speaker toggle; the 3 s default before any choice.
+ *  `map.html` reads the same key for a level opened without `?spawnTime=`. */
+const storedSpawnSeconds = () => {
+  try { return singlePlayerSpawnSeconds(localStorage.getItem(SINGLE_PLAYER_SPAWN_KEY)); }
+  catch (_) { return singlePlayerSpawnSeconds(null); }
+};
+
+const rememberSpawnSeconds = seconds => {
+  try { localStorage.setItem(SINGLE_PLAYER_SPAWN_KEY, String(seconds)); } catch (_) { /* private mode */ }
 };
 
 /**
@@ -112,6 +126,9 @@ export function createSkirmishScreen({
     // across both sides, and the skill behind `map.html`'s `?botSkill=`.
     botSkill: 0.75,
     botCount: 16,
+    // Single player's respawn wait, whole seconds (the owner's choice: 3 by
+    // default, not retail's 20 s wave; `spawn-timer.js`). Remembered.
+    spawnSeconds: storedSpawnSeconds(),
   };
   let layout = null;
   let levels = [];
@@ -146,6 +163,8 @@ export function createSkirmishScreen({
         return null;
       },
       icon: mod => (mod?.icon ? ready(image(`${root}${mod.icon}`)) : null),
+      // The site's mark, drawn on the row of a level whose bots were generated.
+      creditMark: () => ready(image(`${root}bfstats-logo.webp`)),
       text: () => '',
       get levels() { return levels; },
       get hover() { return hover; },
@@ -183,7 +202,7 @@ export function createSkirmishScreen({
       // scripts. `launchUrl` sends `mode=Conquest` and `botCount=0` for it,
       // unless the level carries a generated bot layer (`generatedBots`,
       // features/bot-map-generation): then it starts in Conquest with bots,
-      // and its row wears the EXPERIMENTAL BOTS tag instead.
+      // and its row carries the site's mark instead of a tag (`menu-screen.js hasBotCredit`).
       out.push({
         ...level,
         map: entry.name,
@@ -300,6 +319,10 @@ export function createSkirmishScreen({
   function applyBotSetting(hit) {
     if (hit.kind === 'botCount') state.botCount = fracToBotCount(hit.frac);
     else if (hit.kind === 'botSkill') state.botSkill = fracToBotSkill(hit.frac);
+    else if (hit.kind === 'spawnTime') {
+      state.spawnSeconds = fracToSpawnSeconds(hit.frac);
+      rememberSpawnSeconds(state.spawnSeconds);
+    }
     else return;
     paintSoon();
   }
@@ -324,6 +347,13 @@ export function createSkirmishScreen({
     const botless = state.level.singlePlayer === false && !state.level.generatedBots;
     url.searchParams.set('botCount', String(botless ? 0 : state.botCount));
     url.searchParams.set('botSkill', String(state.botSkill));
+    // Single player's respawn wait (`map.html` `?spawnTime=`).
+    url.searchParams.set('spawnTime', String(state.spawnSeconds));
+    // Retail's NORMAL split and death penalty (`campaign.js`
+    // `instantBattleOdds`, AI-20): the screen draws no sliders for them.
+    const odds = instantBattleOdds(botless ? 0 : state.botCount);
+    url.searchParams.set('enemyBots', String(odds.enemyBots));
+    url.searchParams.set('deathPenalty', String(odds.deathPenalty));
     return url.toString();
   }
 
@@ -447,6 +477,9 @@ export function createSkirmishScreen({
       : (t && inTrack(t, x, y)) ? { kind: 'scroll' }
       : strip?.hover(x, y)
       || hitTest(layout, state, x, y, levels.length, true);
+    // Over a generated level's mark: the row is still the row (a click picks
+    // it), and the paint shows who made its bots.
+    if (next?.kind === 'row' && botCreditAt(layout, state, levels, x, y) === next.index) next.credit = true;
     const changed = JSON.stringify(next) !== JSON.stringify(hover);
     hover = next;
     canvas.style.cursor = next ? 'pointer' : 'default';

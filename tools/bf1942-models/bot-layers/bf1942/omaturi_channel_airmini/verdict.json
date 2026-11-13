@@ -1,0 +1,22 @@
+{
+ "level": "omaturi_channel_airmini",
+ "verdict": "fail",
+ "outcome": "unsuitable",
+ "config": "with vehicles",
+ "doctrine": "garrison",
+ "generatorVersion": 5,
+ "inputs": {
+  "controlPoints": "22394f44fef580ada270f9a7ec40c88039d38acd4f50ae1ca57663399fa4345d",
+  "infantryMap": "873f283078bae93f98e6203d0f60fae1e2eb0c903a97804a01b51daa9bd34aab",
+  "template": "bdc0e455f47f91b7e7724e71d7c0c196e839b36946ac3abb7663d725944081e5"
+ },
+ "baseline": "DICE layers with vehicles, garrison doctrine: berlin, stalingrad, kharkov, bocage; seeds 1..10, 600 s",
+ "bar": null,
+ "seeds": 1,
+ "sizes": {},
+ "oneSided": null,
+ "unreachable": [],
+ "lintErrors": [
+  "the play surface is stacked floors (65 % of the main floor has another walked floor over or under it): a one-floor walk map cannot hold it"
+ ]
+}

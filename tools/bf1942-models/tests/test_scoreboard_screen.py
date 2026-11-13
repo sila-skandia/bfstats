@@ -14,7 +14,7 @@ from pathlib import Path
 ROOT = Path(__file__).resolve().parents[1]
 VIEWER = ROOT / "viewer"
 HARNESS = Path(__file__).with_name("scoreboard_screen_harness.mjs")
-MODULES = ("scoreboard-screen.js", "scoreboard.js")
+MODULES = ("scoreboard-screen.js", "scoreboard.js", "scoreboard-votes.js")
 
 
 def run_harness() -> dict:

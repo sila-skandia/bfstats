@@ -87,6 +87,16 @@ export const STANCE_CHAINS = Object.freeze({
     crouch: Object.freeze(['bolt']),
     prone: Object.freeze(['proneBolt', 'bolt']),
   }),
+  // The clip leaving the gun (`Ub_StandEjectClip<W>`, `Ub_LieEjectClip<W>`:
+  // `BFSoldier::handleMessage` picks by the lying flag alone, so a crouched
+  // soldier plays the standing one). Only a rig whose weapon ejects bakes
+  // them (`extract_viewmodel.py` `EJECT_FAMILIES`), and a rig without plays
+  // nothing.
+  eject: Object.freeze({
+    stand: Object.freeze(['eject']),
+    crouch: Object.freeze(['eject']),
+    prone: Object.freeze(['proneEject', 'eject']),
+  }),
   deploy: Object.freeze({
     stand: Object.freeze(['deploy']),
     crouch: Object.freeze(['crouchDeploy', 'deploy']),
@@ -185,6 +195,14 @@ export function familiesOf(names) {
   const baked = new Set(names ?? []);
   const list = [...baked];
   return name => baked.has(name) || fireVariantsFor(name, list).length > 0;
+}
+
+/**
+ * Is `name` the clip-eject one-shot (`STANCE_CHAINS.eject`): kept by the arms
+ * until it has run out, then `_POSE_`.
+ */
+export function isEjectClip(name) {
+  return name === 'eject' || name === 'proneEject';
 }
 
 /**

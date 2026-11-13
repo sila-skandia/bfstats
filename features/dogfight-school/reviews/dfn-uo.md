@@ -384,3 +384,16 @@ failure), `r2-ninja-s5.png` (the kill at 19.7 s), `r2-flip-s0.png`,
 `top-up-and-over-ninja.png`, `look-up-and-over-ninja-wide-17.5.png` (the
 second burst from behind him, "lost sight of him"),
 `look-up-and-over-flip-wide-14.png`.
+
+
+## On retail g and box area (2026-11-12)
+
+Re-flown on the final law (gravity `Math.fround(-14.73)`, box-drag area
+`3.14 * 0.25`; `features/retail-parity-cross-check-2026-11-12`). 
+
+- **Ninja 6/9** as before, the same three fails; but now three of the six
+  shoot him down (18.8-20.1 s; one at 19.7 s before) and three leave as he
+  turns in at 152-193 m, 1308-1594 m apart at 50 s.
+- **Flip 0/9**: he hits you once or twice in four (three before).
+- **Following shallow** (`counter`): 10.3 hits a fight to his 0.6 (12 to
+  0.6 before).

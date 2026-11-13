@@ -17,18 +17,26 @@
 import * as THREE from 'three';
 
 import { VehicleOccupancy, readWorldPose } from '../viewer/seats.js';
+import { objectBlocker, restrictedExit } from '../viewer/restricted-exit.js';
 import { Aircraft } from '../viewer/aircraft.js';
 import { bedGroundHeight } from '../viewer/amphibious.js';
 import { GroundVehicle } from '../viewer/wheeled-vehicle.js';
 import { TrackedVehicle } from '../viewer/tracked-vehicle.js';
+import { Ship } from '../viewer/ship.js';
 import { wheelContactDepths } from '../viewer/vehicle-bodies.js';
 import { bodySpecFor, quaternionToAxes } from './level-bodies.mjs';
 import { buildVehicleTable } from './vehicle-table.mjs';
 import { createHeldCraft } from './held-craft.mjs';
+import { spawnShutByBoarding } from '../viewer/spawn-boarded.js';
 
 /** The occupancy classes the page hands `VehicleOccupancy` (map.html's own
  *  pick: `TrackedVehicle` straight out of tracked-vehicle.js). */
-const DRIVE_CLASSES = { Aircraft, GroundVehicle, TrackedVehicle };
+const DRIVE_CLASSES = { Aircraft, GroundVehicle, TrackedVehicle, Ship };
+
+// `publishHullPoses`' scratch.
+const _hullPose = new THREE.Matrix4();
+const _hullFwd = new THREE.Matrix4();
+const _hullInv = new THREE.Matrix4();
 
 // --- one room's mutable half -------------------------------------------------
 
@@ -44,7 +52,7 @@ const DRIVE_CLASSES = { Aircraft, GroundVehicle, TrackedVehicle };
  */
 export class LevelInstance {
   constructor(data, { root, spawnersRoot, ownerRoots, collider, world, statics, groundHeightAt,
-                      extras = null, spawnables = null, heldCraft = null }) {
+                      extras = null, spawnables = null, heldCraft = null, ships = null }) {
     this.data = data;
     // The layer this room plays (`LevelData.instantiate(mode)`): its report
     // and the spawn rows its vehicle table is built from.
@@ -58,11 +66,107 @@ export class LevelInstance {
     this.statics = statics;
     this.groundHeightAt = groundHeightAt;
     this.surfaceFrictionAt = surfaceFrictionAt(data, collider, groundHeightAt);
+    // What the ships' spawners launched, each a table row of its own
+    // (`vehicle-table.mjs`), and the ships themselves (`room-ships.mjs`).
+    this.craft = heldCraft ?? [];
+    this.ships = ships;
     this.table = buildVehicleTable(this, data);
     this.ownerToEntry = new Map();
     for (const entry of this.table) this.ownerToEntry.set(entry.owner, entry);
     // The craft a static's spawner holds, kept on it (`held-craft.mjs`).
     this.held = createHeldCraft(this, heldCraft);
+    // Each tick ends: the hulls' poses (below), the ships' deck points, then
+    // the craft held on them.
+    ships?.attach(this);
+    // Every hull the body world moves, told to the collider at the end of
+    // each tick (`publishHullPoses`).
+    this.#bakedInverse = ownerRoots.map(node => {
+      if (!node?.matrixWorld) return null;
+      node.updateWorldMatrix(true, false);
+      return node.matrixWorld.clone().invert();
+    });
+    if (typeof collider?.setMovedOwner === 'function' && world?.bodyWorld) {
+      const next = world.onTick;
+      world.onTick = () => { this.publishHullPoses(); next?.(); };
+    }
+  }
+
+  // --- the hulls' poses, for everything that sweeps the collider ---------------
+
+  /** owner -> the inverse of its root's world matrix when the index baked it. */
+  #bakedInverse = [];
+  /** Owners already handed to `setMovedOwner` (they are re-sent every tick). */
+  #moved = new Set();
+
+  /**
+   * The page's `hull-bodies.js` `stepVehicleBodies` / `publishMovedHull`, for
+   * the room: every hull the body world holds, driven or parked, told to the
+   * collider where it stands now (`WorldCollider.setMovedOwner`, the baked
+   * frame to world and back). Until 2026-11-12 the room never did this, so
+   * its collider answered every hull at its baked pose: a soldier in a room
+   * walked through a driven tank and into the ghost of where it had been
+   * parked, and nothing a moving hull did could push or run them over
+   * (`soldier-resolve.js` `pushOutOfHulls`). Run at the end of each world
+   * tick, after the body world has pushed the hulls.
+   */
+  /** One hull told to the collider from its node's own pose: a craft its
+   *  spawner has just put back on a ship that moved (`held-craft.mjs`),
+   *  whose parked body sleeps and so is never asked by `publishHullPoses`. */
+  publishHullNode(owner) {
+    const collider = this.collider;
+    const inverse = this.#bakedInverse[owner];
+    const node = this.ownerRoots[owner];
+    if (!inverse || !node || typeof collider?.setMovedOwner !== 'function') return;
+    node.updateWorldMatrix(true, false);
+    _hullPose.copy(node.matrixWorld);
+    _hullFwd.multiplyMatrices(_hullPose, inverse);
+    _hullInv.copy(_hullFwd).invert();
+    this.#moved.add(owner);
+    const e = _hullPose.elements;
+    // A ship lying with no body (at rest, or going down) has her spec all the same.
+    const spec = this.world?.bodyWorld?.get(owner)?.spec
+      ?? (this.ships?.isShip({ root: node }) ? this.ships.specOf(node) : null);
+    collider.setMovedOwner(owner, _hullFwd.elements, _hullInv.elements, e[12], e[13], e[14],
+      spec?.boundingRadius ?? node.userData?.cullRadius ?? 8, spec?.mass);
+  }
+
+  publishHullPoses() {
+    const bodyWorld = this.world?.bodyWorld;
+    const collider = this.collider;
+    if (!bodyWorld || typeof collider?.setMovedOwner !== 'function') return;
+    for (const [owner, entry] of bodyWorld.entries) {
+      const inverse = this.#bakedInverse[owner];
+      if (!inverse) continue;
+      if (entry.driven) {
+        // The drive wrote the node in its `integrate` (`applyTransform`).
+        const node = this.ownerRoots[owner];
+        if (!node) continue;
+        node.updateWorldMatrix(true, false);
+        _hullPose.copy(node.matrixWorld);
+      } else if (entry.parked?.body) {
+        const body = entry.parked.body;
+        if (!this.#moved.has(owner) && body.sleeping) continue;
+        const a = body.axes, p = body.pos;
+        _hullPose.set(
+          a[0][0], a[1][0], a[2][0], p[0],
+          a[0][1], a[1][1], a[2][1], p[1],
+          a[0][2], a[1][2], a[2][2], p[2],
+          0, 0, 0, 1);
+      } else continue;
+      _hullFwd.multiplyMatrices(_hullPose, inverse);
+      // A hull still where the index baked it is answered by the index.
+      if (!this.#moved.has(owner)) {
+        const e = _hullFwd.elements;
+        if (Math.abs(e[12]) + Math.abs(e[13]) + Math.abs(e[14]) < 1e-4
+            && Math.abs(e[0] - 1) + Math.abs(e[5] - 1) + Math.abs(e[10] - 1) < 1e-6) continue;
+        this.#moved.add(owner);
+      }
+      _hullInv.copy(_hullFwd).invert();
+      const e = _hullPose.elements;
+      collider.setMovedOwner(owner, _hullFwd.elements, _hullInv.elements, e[12], e[13], e[14],
+        entry.spec?.boundingRadius ?? this.ownerRoots[owner]?.userData?.cullRadius ?? 8,
+        entry.spec?.mass);
+    }
   }
 
   // --- the seat points (`setEnterOnSpawn 1`, FHR-10) --------------------------
@@ -108,6 +212,49 @@ export class LevelInstance {
     return true;
   }
 
+  /**
+   * Whether a carried point is off because its carrier is boarded (SPAWN-39,
+   * `disableSpawnPointsOnEnter`: `viewer/spawn-boarded.js`). The carrier is
+   * the room hull of the point's template nearest it (`#bindCarriedPoints`),
+   * and it is boarded while anyone holds its root seat.
+   */
+  pointShutByBoarding(spawn) {
+    if (!spawn?.vehicle) return false;
+    const entry = this.#shutCarrierOf(spawn);
+    if (!entry?.root) return false;
+    // The seat itself, not the hull's driver record: a helm who moves to
+    // another seat has left the object that carries the word.
+    return spawnShutByBoarding(spawn, entry.root, root => {
+      for (const [id, player] of this.world.players) {
+        const occ = player.occupancy;
+        if (occ?.root === root && occ.activeSeatId === occ.rootId) return id;
+      }
+      return null;
+    });
+  }
+
+  #shutCarriers = new Map();
+
+  /** The table entry whose hull carries `spawn`: of the point's template,
+   *  nearest where the point was baked (`carrierOf`'s rule, for any carried
+   *  point). The table is the room's own in every kind of level; the owner
+   *  roots `#bindCarriedPoints` reads are a real level's only. */
+  #shutCarrierOf(spawn) {
+    if (this.#shutCarriers.has(spawn)) return this.#shutCarriers.get(spawn);
+    const want = String(spawn.vehicle ?? '').toLowerCase();
+    const at = spawn.position ?? [];
+    let carrier = null;
+    let best = Infinity;
+    for (const entry of this.table) {
+      if (entry.template.toLowerCase() !== want) continue;
+      const p = entry.home.position;
+      const d = at.length === 3 ? Math.hypot(p.x - at[0], p.z - at[2]) : 0;
+      if (d < best) { best = d; carrier = entry; }
+    }
+    this.#shutCarriers.set(spawn, carrier);
+    return carrier;
+  }
+
   /** Where a seat point is now, `[x, y, z]`: off its carrier as it stands for
    *  one baked in the carrier's frame (`carrierLocal`, a craft a spawner
    *  holds), else where the bake put it. */
@@ -121,6 +268,68 @@ export class LevelInstance {
 
   /** The flags the room's HELLO carries (the world owns a copy as well). */
   get flags() { return this.world.flags; }
+
+  // --- the carried points' carriers, for the end of a round (TKT-8) -------
+  //
+  // A point an object carries (`vehicleSoldierSpawns`: a ship's deck, DC
+  // Weapon Bunkers' bunkers, an airbase's hangars) leaves its group when the
+  // object is destroyed (`BFSpawnPoint::immediateDestroy` 0x08163c50). The
+  // page binds each to the placed object of its template nearest the middle
+  // of its pad's points (`hull-bodies.js` `bindCarriers`); the room binds the
+  // same way over its own owner roots and keeps the answer here, since the
+  // scene's entries are shared by every room of the level.
+
+  #carriedOwner = null;
+
+  /** Whether `spawn`'s carrier is gone in this room: its table hull not
+   *  standing (`live` false) or its Armor destroyed. False for a point no
+   *  object carries, or one the room found no carrier for. The room keeps
+   *  no static's time to live after death, so a destroyed carrier is gone at
+   *  once rather than when its wreck is removed. */
+  carriedPointGone(spawn) {
+    if (!this.#carriedOwner) this.#carriedOwner = this.#bindCarriedPoints();
+    const owner = this.#carriedOwner.get(spawn);
+    if (owner == null) return false;
+    const entry = this.ownerToEntry.get(owner);
+    if (entry && entry.live === false) return true;
+    return !!this.world.vehicleDamage?.get(owner)?.destroyed;
+  }
+
+  #bindCarriedPoints() {
+    const out = new Map();
+    const spawns = this.extras?.vehicleSoldierSpawns;
+    if (!Array.isArray(spawns) || !spawns.length) return out;
+    const roots = [];
+    const at = new THREE.Vector3();
+    for (const [owner, node] of (this.ownerRoots ?? []).entries()) {
+      if (!node) continue;
+      node.updateWorldMatrix?.(true, false);
+      node.getWorldPosition?.(at);
+      roots.push({ owner, at: [at.x, at.y, at.z],
+                   template: String(node.userData?.control || node.name || '').toLowerCase() });
+    }
+    const byPad = new Map();
+    for (const spawn of spawns) {
+      if (!spawn?.position) continue;
+      const key = `${String(spawn.vehicle ?? '').toLowerCase()}|${spawn.pad ?? spawn.spawner ?? ''}`;
+      if (!byPad.has(key)) byPad.set(key, []);
+      byPad.get(key).push(spawn);
+    }
+    for (const points of byPad.values()) {
+      const want = String(points[0].vehicle ?? '').toLowerCase();
+      if (!want) continue;
+      const mid = [0, 1, 2].map(i => points.reduce((sum, p) => sum + p.position[i], 0) / points.length);
+      let best = null;
+      let bestDist = Infinity;
+      for (const r of roots) {
+        if (r.template !== want) continue;
+        const d = Math.hypot(r.at[0] - mid[0], r.at[2] - mid[2]);
+        if (d < bestDist) { bestDist = d; best = r; }
+      }
+      if (best) for (const spawn of points) out.set(spawn, best.owner);
+    }
+    return out;
+  }
 
   /** The world owner id of the room vehicle whose seat-root is `root` — the
    *  authority's crash/water attribution lookup (one map hop over the
@@ -161,9 +370,21 @@ export class LevelInstance {
     const kind = occ.rootKind;
     let vehicle = null;
     const driveGranted = seatId === occ.rootId
-      && ['air', 'ground', 'tank'].includes(kind)
+      && ['air', 'ground', 'tank', 'ship'].includes(kind)
       && !this.#driveHeldByOther(playerId, entry);
-    if (driveGranted) {
+    if (driveGranted && kind === 'ship') {
+      // Her one `Ship`, kept for the hull's life and taken as she goes
+      // (`room-ships.mjs` `takeHelm`).
+      vehicle = this.ships?.takeHelm(entry, occ, () => occ.ensureDrive(this.root, {
+        cockpit: false,
+        groundHeight: (x, z) => this.groundHeightAt(x, z),
+        surfaceFriction: this.surfaceFrictionAt,
+        collider: bodyAwareCollider(this.collider, world),
+        waterLevel: this.collider?.waterLevel ?? this.data.extras?.waterLevel,
+        collisionMeshes: this.data.collisionMeshes,
+      })) ?? null;
+      if (vehicle) entry.driver = playerId;
+    } else if (driveGranted) {
       // The page's own inputs (`map.html` `buildHullDrive`): the collider,
       // which is how a land drive finds the sea BED rather than the sea
       // (`amphibious.js` `bedGroundHeight`, ledger PHY-16) and an amphibian
@@ -189,6 +410,8 @@ export class LevelInstance {
         }
         vehicle.autoFirstPerson = false;
         const spec = entry.owner >= 0 ? bodySpecFor(entry.root, this.data) : null;
+        // A carrier's deck is its floor (`hull-bodies.js` `aircraftOnShipDecks`).
+        if (kind === 'air') this.ships?.aircraftOnDecks(vehicle, spec);
         if (spec) {
           // `hull-bodies.js` `adoptDrivenBody`'s land half: each wheel's
           // col0 probe depth, and the root part the sea depth is taken on.
@@ -199,8 +422,16 @@ export class LevelInstance {
         entry.driver = playerId;
       }
     }
-    const gunGroup = node => ({ node, stats: node.userData?.fireArms || {} });
-    const groups = (occ.seatInfo(occ.rootId)?.fireArms ?? []).map(gunGroup);
+    // The room's own gun group for the node where the room flies rounds
+    // (`room-guns.mjs` `gunGroupOf`), else the bare pair the FireArms' state
+    // steps on.
+    const gunGroup = node => this.gunGroupOf?.(node, entry) ?? ({ node, stats: node.userData?.fireArms || {} });
+    // The drivetrain's own guns are its driver's (`vehicle-instance.js`
+    // `#collectGuns`: `driven` only with a drive). Handed to a passenger
+    // too, his tick's `setFiring(group, false)` let go of the driver's
+    // trigger; handed to the gunner of a root with no drive (an emplaced
+    // gun), the world's tick took them for driven and never fired them.
+    const groups = vehicle ? (occ.seatInfo(occ.rootId)?.fireArms ?? []).map(gunGroup) : [];
     const manned = occ.activeFireArmsNodes().map(gunGroup);
     world.setPlayerVehicle(playerId, { occupancy: occ, vehicle, kind, groups, manned });
     world.setPlayerPosition(playerId, this.positionOf(occ));
@@ -243,11 +474,19 @@ export class LevelInstance {
     const player = world.player(playerId);
     if (!player?.occupancy) return null;
     const occ = player.occupancy;
-    const exit = this.exitPoseOf(occ);
+    const exit = this.exitPoseOf(occ, entry?.owner ?? -1);
     const vehicle = player.vehicle;
-    if (vehicle) {
-      vehicle.state.velocity.set(0, 0, 0);
-      vehicle.state.angularVelocity.set(0, 0, 0);
+    if (vehicle && vehicle === entry?.shipDrive) {
+      // A ship runs on with her controls at zero until she is at rest
+      // (`room-ships.mjs` `leaveHelm`).
+      this.ships.leaveHelm(entry, vehicle);
+      entry.driver = null;
+    } else if (vehicle) {
+      // The controls go to zero; the motion does not. The hull is handed to
+      // the body world with the velocity it had, as the page's
+      // `releaseDrivenBody` does, and rolls to rest on its springs (retail's
+      // `ResponsePhysicsManager` keeps integrating a hull nobody drives).
+      // It used to be stopped dead here.
       vehicle.state.throttle = 0;
       vehicle.setInput('c_PIThrottle', 0);
       vehicle.setInput('c_PIYaw', 0);
@@ -262,9 +501,14 @@ export class LevelInstance {
           axes: quaternionToAxes(s.orientation),
         });
       }
+      // No body to roll it (an aircraft, or a hull without a spec): parked.
+      vehicle.state.velocity.set(0, 0, 0);
+      vehicle.state.angularVelocity.set(0, 0, 0);
       entry.driver = null;
     }
     if (entry.seated > 0) entry.seated--;
+    // Nobody holds these triggers now (`room-guns.mjs`).
+    this.quietGuns?.([...player.groups, ...player.manned]);
     world.clearPlayerVehicle(playerId);
     world.resetStick(playerId);
     if (player.soldier) {
@@ -282,28 +526,45 @@ export class LevelInstance {
    *  waterline) — and the template default, the seat's own origin, when the
    *  `.con` declares none (SEAT-35). Until 2026-11-12 this returned the root's
    *  position and dropped the offset it had just computed, and its fallback
-   *  was an invented (-2, 0.5, 0). */
-  exitPoseOf(occ) {
+   *  was an invented (-2, 0.5, 0).
+   *
+   *  Through the page's restricted-exit test (`restricted-exit.js`, SEAT-42)
+   *  against the room's collider, `owner` (the hull's collider owner) skipped:
+   *  a `hasRestrictedExit` seat whose door line is blocked puts the soldier
+   *  out the other side. `allowed` is false when both are blocked; the room
+   *  does not refuse on it (the page's press already did, `room-control.mjs`). */
+  exitPoseOf(occ, owner = -1) {
     const exitNode = occ.exitLocationNode();
-    const declared = exitNode?.userData?.physics?.soldierExitLocation;
+    const physics = exitNode?.userData?.physics;
+    const declared = physics?.soldierExitLocation;
     const local = (declared && Array.isArray(declared.position))
-      ? new THREE.Vector3(declared.position[0], declared.position[1],
-        -declared.position[2])
-      : new THREE.Vector3(0, 0, 0);
+      ? { x: declared.position[0], y: declared.position[1], z: -declared.position[2] }
+      : { x: 0, y: 0, z: 0 };
     const refNode = exitNode && exitNode !== occ.root ? exitNode : occ.root;
     const origin = new THREE.Vector3();
     const quat = new THREE.Quaternion();
     readWorldPose(refNode, origin, quat);
-    const position = local.applyQuaternion(quat).add(origin);
+    const toWorld = (x, y, z) => {
+      const w = new THREE.Vector3(x, y, z).applyQuaternion(quat).add(origin);
+      return { x: w.x, y: w.y, z: w.z };
+    };
+    const choice = restrictedExit({
+      restricted: physics?.hasRestrictedExit === true,
+      local, toWorld, origin, blocked: objectBlocker(this.collider, owner),
+    });
+    const position = toWorld(choice.local.x, choice.local.y, choice.local.z);
     const fwd = new THREE.Vector3(0, 0, -1).applyQuaternion(quat);
     return { x: position.x, y: position.y, z: position.z,
-             yaw: Math.atan2(fwd.x, fwd.z) };
+             yaw: Math.atan2(fwd.x, fwd.z), allowed: choice.allowed };
   }
 
   /** Seat switch within the same hull: the active seat changes, the manned
    *  guns and the aim rig rebuild, the bare-seat position feed refreshes.
-   *  The drive model stays with the mounting player and coasts — round 3's
-   *  first disclosed gap is the law here, not a bug to fix. */
+   *  The drive goes with the root seat: a driver who moves off it lets the
+   *  hull go (it parks where it stood), and whoever moves onto a root seat
+   *  nobody drives from gets the drive, as a mount there would. Until
+   *  2026-11-13 the drive stayed with the player who first mounted, so a
+   *  second player who took over the wheel of a shared hull drove nothing. */
   switchSeat(world, playerId, entry, seatIndex) {
     const player = world.player(playerId);
     if (!player?.occupancy?.root || player.occupancy.root !== entry.root) return null;
@@ -314,9 +575,18 @@ export class LevelInstance {
     }
     const seatId = order[seatIndex];
     if (seatId === occ.activeSeatId) return { occ, seatId, changed: false };
+    const leavesWheel = occ.activeSeatId === occ.rootId && !!player.vehicle;
+    const takesWheel = seatId === occ.rootId && !this.#driveHeldByOther(playerId, entry);
+    if (leavesWheel || takesWheel) {
+      this.unmountFromSeat(world, playerId, entry);
+      const mounted = this.mountIntoSeat(world, playerId, entry, seatIndex);
+      return mounted ? { occ: mounted.occupancy, seatId: mounted.seatId, changed: true } : null;
+    }
     occ.setActiveSeat(seatId);
-    const gunGroup = node => ({ node, stats: node.userData?.fireArms || {} });
+    const gunGroup = node => this.gunGroupOf?.(node, entry) ?? ({ node, stats: node.userData?.fireArms || {} });
     const manned = occ.activeFireArmsNodes().map(gunGroup);
+    // The seat left behind fires nothing more (`room-guns.mjs`).
+    this.quietGuns?.(player.manned);
     world.refreshMount(playerId, { manned });
     world.setPlayerPosition(playerId, this.positionOf(occ));
     return { occ, seatId, changed: true };

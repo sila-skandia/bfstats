@@ -15,7 +15,8 @@ import { craftTipped } from './doctrine-landing.js';
 import { CHANGE } from './bot-vehicle.js';
 import { mayEnterHull } from './vehicle-instance.js';
 import { findEntryPoint, wantsSeat, SPAWN_SEAT_REACH_AI, SPAWN_STANDS } from './spawn-seat.js';
-import { rowFor, rowFire } from './bot-rows.js';
+import { rowFor, rowFire, setRowsMod, botKind } from './bot-rows.js';
+import { objectBlocker, restrictedExit } from './restricted-exit.js';
 
 /** The body radius a land vehicle keeps on its map, and a plane's or ship's
  *  for its arrival circle (INVENTION). */
@@ -64,6 +65,17 @@ export function createBotUnits(env) {
         // The mod whose `AIbehaviours.con` rows the records' `equipmentType`
         // numbers index (bot-rows.js).
         units.aiMod = json?.mod ?? null;
+        // The mod's `Game/AI/radio.con` rows, what its bots hear
+        // (`extract_vehicle_ai.py` `radio_subscriptions`; bot-radio.js
+        // `subscriptionsFrom`); null in a tree written before the key.
+        units.aiRadio = Array.isArray(json?.radio) ? json.radio : null;
+        // ...and its meshes' portal centres (`coverPortals`, extract_vehicle_ai.py
+        // `cover_portals`): a cover object's doors and windows, by mesh name.
+        units.aiCoverPortals = json?.coverPortals ?? null;
+        // ...and each portal's plane (`coverPortalPlanes`, `portal_plane`): bot-portal.js.
+        units.aiCoverPortalPlanes = json?.coverPortalPlanes ?? null;
+        // ...and the row a bot on foot runs, for its modifier columns.
+        setRowsMod(units.aiMod);
         for (const [name, info] of Object.entries(json?.vehicles ?? {})) units.ai.set(name.toLowerCase(), { name, ...info });
         return units.ai;
       })
@@ -368,10 +380,11 @@ export function createBotUnits(env) {
       }
       for (const [node, doors] of byNode) {
         if (!env.vehicleSpawnActive(node)) continue;
-        const kind = units.kindOf(node);
-        if (!['ground', 'tank', 'gun', 'air', 'ship'].includes(kind)) continue;
         const ai = units.aiOf(node);
         if (!ai) continue;
+        // An aircraft by its AI template, not its engines (bot-rows.js `botKind`).
+        const kind = botKind(units.kindOf(node), ai);
+        if (!['ground', 'tank', 'gun', 'air', 'ship'].includes(kind)) continue;
         const owner = collider?.statics?.ownerOf(node) ?? -1;
         const damage = world?.vehicleDamage?.get(owner) ?? null;
         if (damage?.destroyed) continue;
@@ -481,7 +494,9 @@ export function createBotUnits(env) {
             door.node.getWorldPosition(_entryWorld);
             entry = [_entryWorld.x, _entryWorld.z];
           }
-          seats.push({ seatId, table: strengths, occupied: !!holder, strType: ai.strType ?? 'LightArmour', isRoot, door: !!door });
+          seats.push({ seatId, table: strengths, occupied: !!holder, strType: ai.strType ?? 'LightArmour', isRoot, door: !!door,
+                       // `Information+0x14`, the seat's `basicTemp` (BBFireUnarmed sums it).
+                       value: seatAi?.basicTemp ?? (isRoot ? ai.basicTemp : null) ?? 0 });
           (door ? entries : doorless).push({
             id: `${node.uuid}:${seatId}`, vehicleId: node.uuid, node, template: ai.name, kind,
             seatId, isRoot, drives, seats, turnRadius: ai.turnRadius ?? null,
@@ -517,6 +532,9 @@ export function createBotUnits(env) {
             // SAI's (`AISettings::getNStrategicStrengths` 0x084843e0 = 2).
             value: seatAi?.basicTemp ?? (isRoot ? ai.basicTemp : null) ?? 0,
             seatFactor,
+            // The seat's `setStrategicStrength 0|1` pair, the SAI's wanted
+            // strength of the area it stands in (strategic-ai.js, AI-168).
+            strategic: seatAi?.strategicStrength ?? (isRoot ? ai.strategicStrength : null) ?? null,
             // `setUseNoPathfindingToGetToObject` (AITemplateUnit +0x15): the
             // Change test is a trace 12 m behind the unit, not its own cell.
             noPathfinding: !!(seatAi?.useNoPathfinding ?? (isRoot && ai.useNoPathfinding)),
@@ -613,13 +631,16 @@ export function createBotUnits(env) {
     // The hull's own search type (`typeNav`, AI-118); a level that lists
     // none keeps the choice by drive kind (the Tank line for land, the
     // water maps by name).
-    const typed = drive && inst.rootKind !== 'air' && Number.isInteger(ai?.vehicleNumber)
+    // The bot's kind of the hull (bot-rows.js `botKind`); `airframe` is the
+    // drive's, whose input channels the world reads (bot-aim.js `writeInput`).
+    const kind = botKind(inst.rootKind, ai);
+    const typed = drive && kind !== 'air' && Number.isInteger(ai?.vehicleNumber)
       ? units.typeNav(ai.vehicleNumber) : undefined;
     const nav = typed !== undefined ? typed.nav
-      : drive && ['ground', 'tank'].includes(inst.rootKind) ? units.vehicleNav()
-      : drive && inst.rootKind === 'ship' ? units.waterNav(landingCraft ? 'LandingCraft' : 'Boat') : null;
+      : drive && ['ground', 'tank'].includes(kind) ? units.vehicleNav()
+      : drive && kind === 'ship' ? units.waterNav(landingCraft ? 'LandingCraft' : 'Boat') : null;
     return {
-      id: cand.id, vehicleId: cand.vehicleId, node, drive, occupancy: seat, kind: inst.rootKind,
+      id: cand.id, vehicleId: cand.vehicleId, node, drive, occupancy: seat, kind, airframe: inst.rootKind === 'air',
       seatId: seat.seatId, drives: !!drive,
       // The seat's groups, live: the instance re-collects them on a seat swap.
       get groups() { return seat.groups.driven; },
@@ -635,9 +656,11 @@ export function createBotUnits(env) {
       searchType: typed?.row && !typed.row.waterMap && !/^(Boat|LandingCraft)/i.test(typed.type.name)
         ? typed.type.name : null,
       turnRadius: ai?.turnRadius ?? null, strType: cand.strType, seats: cand.seats, isRoot: cand.isRoot,
+      // The seat's strategic pair and battle table, for the SAI's area pass.
+      strategic: cand.strategic ?? null, strengths: cand.strengths ?? null,
       // The hull's own velocity: its one drive, whoever holds the wheel.
       hullVelocity: () => inst.drive?.state?.velocity ?? null,
-      radius: inst.rootKind === 'air' || inst.rootKind === 'ship' ? BOT_VEHICLE_RADIUS_LARGE : BOT_VEHICLE_RADIUS,
+      radius: kind === 'air' || kind === 'ship' ? BOT_VEHICLE_RADIUS_LARGE : BOT_VEHICLE_RADIUS,
       maxSpeed: cand.maxSpeed,
       weapons: cand.weapons, template: cand.template, antiAircraft: !!cand.antiAircraft,
       controlInfo: cand.controlInfo ?? null, equipmentType: cand.equipmentType ?? null,
@@ -652,6 +675,16 @@ export function createBotUnits(env) {
       gunGroups: () => (cand.gunSeat ? inst.groupsOf(cand.gunSeat.seatId) : null),
       // A rider's move term follows whoever drives the hull right now.
       hullMaxSpeed: ai?.maxSpeed ?? 0,
+      // The Mobile plug-in's `avoidCollisionLookAhead` (null: the 5 s of both
+      // ctors; bot-route.js `hullLookAhead`).
+      avoidCollisionLookAhead: ai?.avoidCollisionLookAhead ?? null,
+      // The Mobile plug-in's `coverSearchRadius` (+0x14), which the hull's
+      // TakeCover lists its cover objects by (bot-decision.js
+      // `urgencyHullTakeCover`): the template's word, null when it sets
+      // none, undefined in data extracted before the exporter carried it.
+      coverSearchRadius: ai ? ai.coverSearchRadius : undefined,
+      // The mod's cover portals, for the same behaviour (null: the file has none).
+      coverPortals: () => units.aiCoverPortals ?? null,
       driverOf: () => env.vehicles.driverOf(node),
     };
   }
@@ -672,6 +705,42 @@ export function createBotUnits(env) {
     return seat ? mountRecord(cand, seat) : null;
   };
 
+  /**
+   * Where a soldier leaving `seat` steps out, `{x, y, z, yaw, allowed}`, or
+   * null when nothing declares an exit: the seat's (or its hull's)
+   * `setSoldierExitLocation`, in that node's frame with Refractor's z negated,
+   * through the restricted-exit test the human's `exitPoseManned` runs
+   * (`restricted-exit.js`, SEAT-42): blocked, the other side; both blocked,
+   * `allowed` false. Read before the seat is given back.
+   */
+  function seatExit(seat) {
+    const exitNode = seat?.exitLocationNode?.() ?? null;
+    const physics = exitNode?.userData?.physics;
+    const declared = physics?.soldierExitLocation;
+    if (!declared?.position) return null;
+    exitNode.getWorldPosition(_exitPos);
+    exitNode.getWorldQuaternion(_exitQuat);
+    const toWorld = (x, y, z) => {
+      const w = _exitLocal.set(x, y, z).applyQuaternion(_exitQuat).add(_exitPos);
+      return { x: w.x, y: w.y, z: w.z };
+    };
+    const collider = env.collider?.() ?? null;
+    const owner = seat.root ? (collider?.statics?.ownerOf?.(seat.root) ?? -1) : -1;
+    const choice = restrictedExit({
+      restricted: physics.hasRestrictedExit === true,
+      local: { x: declared.position[0], y: declared.position[1], z: -declared.position[2] },
+      toWorld, origin: _exitPos, blocked: objectBlocker(collider, owner),
+    });
+    const at = toWorld(choice.local.x, choice.local.y, choice.local.z);
+    const fwd = _exitFwd.set(0, 0, -1).applyQuaternion(_exitQuat);
+    return { ...at, yaw: Math.atan2(fwd.x, fwd.z), allowed: choice.allowed };
+  }
+
+  /** Whether the bot's own Use would let it out now: false only for a
+   *  restricted exit blocked on both sides (`isAllowedToExit` 0x08317490 is
+   *  asked on every press, a bot's through `checkPlayerTriggers`). */
+  units.mayExit = bot => seatExit(env.vehicles.seatOf(bot.playerId))?.allowed !== false;
+
   /** Give the seat back; returns where the body stands up beside: the hull's
    *  own simulated position when it has a drive, else its node's. */
   units.leave = (bot, { exited = false } = {}) => {
@@ -689,15 +758,8 @@ export function createBotUnits(env) {
     // `setSoldierExitLocation`, in that node's frame with Refractor's z
     // negated, as the human's `exitPoseManned` (vehicle-entry.js) places him.
     // Read before the seat is given back. Null when nothing declares one.
-    const exitNode = seat?.exitLocationNode?.() ?? null;
-    const declared = exitNode?.userData?.physics?.soldierExitLocation;
-    if (declared?.position) {
-      exitNode.getWorldPosition(_exitPos);
-      exitNode.getWorldQuaternion(_exitQuat);
-      const local = _exitLocal.set(declared.position[0], declared.position[1], -declared.position[2]).applyQuaternion(_exitQuat);
-      const fwd = _exitFwd.set(0, 0, -1).applyQuaternion(_exitQuat);
-      p.exit = { x: _exitPos.x + local.x, y: _exitPos.y + local.y, z: _exitPos.z + local.z, yaw: Math.atan2(fwd.x, fwd.z) };
-    }
+    const exit = seatExit(seat);
+    if (exit) p.exit = exit;
     // The seat goes back to the hull: its guns released, the world's record
     // cleared, the audio claim dropped; the last one out parks the hull where
     // it stands (`vehicle-instance.js`).
@@ -763,7 +825,7 @@ export function createBotUnits(env) {
     const node = seat.root;
     const cands = units.candidates().filter(c => c.vehicleId === node.uuid);
     const ai = units.aiOf(node);
-    const kind = units.kindOf(node);
+    const kind = botKind(units.kindOf(node), ai);
     const c = cands.find(x => x.seatId === seat.seatId) ?? cands[0] ?? null;
     const box = new THREE.Box3().setFromObject(node);
     const ext = box.isEmpty() ? [4, 2, 6] : [box.max.x - box.min.x, box.max.y - box.min.y, box.max.z - box.min.z];

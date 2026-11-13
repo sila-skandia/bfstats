@@ -1,0 +1,24 @@
+{
+ "level": "korsun_pocket",
+ "verdict": "fail",
+ "outcome": "unsuitable",
+ "config": "with vehicles",
+ "doctrine": "garrison",
+ "generatorVersion": 5,
+ "inputs": {
+  "controlPoints": "a5bee4cf208e1bf734945855c3e4dd43b1f9d75d540958084a1351f92cc20293",
+  "infantryMap": "76c3b2fa83de527a655e8a9b53ef693994e6ac1edf50aadaf266a99ae7c95d22",
+  "template": "bdc0e455f47f91b7e7724e71d7c0c196e839b36946ac3abb7663d725944081e5"
+ },
+ "baseline": "DICE layers with vehicles, garrison doctrine: berlin, stalingrad, kharkov, bocage; seeds 1..10, 600 s",
+ "bar": null,
+ "seeds": 1,
+ "sizes": {},
+ "oneSided": null,
+ "unreachable": [
+  "new_control_point1"
+ ],
+ "lintErrors": [
+  "the play surface is stacked floors (2 of 3 capturable flags stand a storey over or under another walked floor): a one-floor walk map cannot hold it"
+ ]
+}

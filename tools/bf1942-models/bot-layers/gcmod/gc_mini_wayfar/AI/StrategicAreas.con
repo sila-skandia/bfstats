@@ -1,0 +1,40 @@
+rem *** Strategic areas: one per control point (botgen) ***
+
+aiStrategicArea.create Imperial_Base 510.1/458.1 522.1/470.1 300
+aiStrategicArea.addNeighbour Rebel_Base
+aiStrategicArea.addNeighbour Bazaar
+aiStrategicArea.addNeighbour Cargo_Hold
+aiStrategicArea.addObjectTypeFlag Centre
+aiStrategicArea.addObjectTypeFlag StrongPoint
+aiStrategicArea.addObjectTypeFlag ControlPoint
+aiStrategicArea.setOrderPosition Tank 522.5/472.5
+aiStrategicArea.setOrderPosition Infantry 522.1/470.1
+aiStrategicArea.setSide 1
+
+aiStrategicArea.create Rebel_Base 513.7/619.8 525.7/631.8 200
+aiStrategicArea.addNeighbour Imperial_Base
+aiStrategicArea.addNeighbour Bazaar
+aiStrategicArea.addNeighbour Cargo_Hold
+aiStrategicArea.addObjectTypeFlag Centre
+aiStrategicArea.addObjectTypeFlag ControlPoint
+aiStrategicArea.setOrderPosition Tank 522.5/631.5
+aiStrategicArea.setOrderPosition Infantry 525.7/631.8
+aiStrategicArea.setSide 2
+
+aiStrategicArea.create Bazaar 467.6/530.3 485.6/548.3 150
+aiStrategicArea.addNeighbour Imperial_Base
+aiStrategicArea.addNeighbour Rebel_Base
+aiStrategicArea.addNeighbour Cargo_Hold
+aiStrategicArea.addObjectTypeFlag Flank
+aiStrategicArea.addObjectTypeFlag ControlPoint
+aiStrategicArea.setOrderPosition Tank 485.5/541.5
+aiStrategicArea.setOrderPosition Infantry 485.6/548.3
+
+aiStrategicArea.create Cargo_Hold 550.2/540.9 560.2/550.9 150
+aiStrategicArea.addNeighbour Imperial_Base
+aiStrategicArea.addNeighbour Rebel_Base
+aiStrategicArea.addNeighbour Bazaar
+aiStrategicArea.addObjectTypeFlag Flank
+aiStrategicArea.addObjectTypeFlag ControlPoint
+aiStrategicArea.setOrderPosition Tank 557.5/555.5
+aiStrategicArea.setOrderPosition Infantry 561.5/550.5

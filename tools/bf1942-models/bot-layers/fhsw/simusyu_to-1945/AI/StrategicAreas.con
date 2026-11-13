@@ -1,0 +1,67 @@
+rem *** Strategic areas: one per control point (botgen) ***
+
+aiStrategicArea.create kokutanzakitemplate 1313.9/1492.6 1333.9/1512.6 300
+aiStrategicArea.addNeighbour takedahamatemplate
+aiStrategicArea.addNeighbour hilltemplate
+aiStrategicArea.addObjectTypeFlag Centre
+aiStrategicArea.addObjectTypeFlag StrongPoint
+aiStrategicArea.addObjectTypeFlag Close
+aiStrategicArea.addObjectTypeFlag ControlPoint
+aiStrategicArea.setOrderPosition Infantry 1327.5/1515.5
+aiStrategicArea.setSide 1
+
+aiStrategicArea.create takedahamatemplate 1432.2/1305.4 1442.2/1315.4 150
+aiStrategicArea.addNeighbour kokutanzakitemplate
+aiStrategicArea.addNeighbour kodomarizakitemplate
+aiStrategicArea.addNeighbour hilltemplate
+aiStrategicArea.addNeighbour sireizantemplate
+aiStrategicArea.addObjectTypeFlag Flank
+aiStrategicArea.addObjectTypeFlag ControlPoint
+aiStrategicArea.setOrderPosition Infantry 1440.5/1313.5
+
+aiStrategicArea.create kodomarizakitemplate 876.6/1118.7 901.6/1143.7 200
+aiStrategicArea.addNeighbour takedahamatemplate
+aiStrategicArea.addNeighbour hilltemplate
+aiStrategicArea.addNeighbour sireizantemplate
+aiStrategicArea.addNeighbour taikandaitemplate
+aiStrategicArea.addObjectTypeFlag Centre
+aiStrategicArea.addObjectTypeFlag ControlPoint
+aiStrategicArea.setOrderPosition Infantry 903.5/1141.5
+aiStrategicArea.setSide 1
+
+aiStrategicArea.create hilltemplate 1183.1/1439.4 1193.1/1449.4 200
+aiStrategicArea.addNeighbour kokutanzakitemplate
+aiStrategicArea.addNeighbour takedahamatemplate
+aiStrategicArea.addNeighbour kodomarizakitemplate
+aiStrategicArea.addNeighbour sireizantemplate
+aiStrategicArea.addObjectTypeFlag Centre
+aiStrategicArea.addObjectTypeFlag ControlPoint
+aiStrategicArea.setOrderPosition Infantry 1195.5/1449.5
+aiStrategicArea.setSide 1
+
+aiStrategicArea.create sireizantemplate 984.9/1346.3 992.9/1354.3 200
+aiStrategicArea.addNeighbour takedahamatemplate
+aiStrategicArea.addNeighbour kodomarizakitemplate
+aiStrategicArea.addNeighbour hilltemplate
+aiStrategicArea.addObjectTypeFlag Centre
+aiStrategicArea.addObjectTypeFlag ControlPoint
+aiStrategicArea.setOrderPosition Infantry 990.5/1354.5
+aiStrategicArea.setSide 1
+
+aiStrategicArea.create taikandaitemplate 758.4/927.3 778.4/947.3 150
+aiStrategicArea.addNeighbour kodomarizakitemplate
+aiStrategicArea.addObjectTypeFlag Flank
+aiStrategicArea.addObjectTypeFlag ControlPoint
+aiStrategicArea.setOrderPosition Infantry 779.5/946.5
+aiStrategicArea.setSide 1
+
+aiStrategicArea.create kataokatemplate 405.3/1024.3 410.3/1029.3 10
+aiStrategicArea.setSide 1
+aiStrategicArea.setTakeable 1 0
+aiStrategicArea.setTakeable 2 0
+
+aiStrategicArea.create alliedbasetemplate 1878/1695.1 1883/1700.1 50
+aiStrategicArea.addObjectTypeFlag Base
+aiStrategicArea.setOrderPosition Infantry 1879.5/1700.5
+aiStrategicArea.setSide 2
+aiStrategicArea.setTakeable 1 0

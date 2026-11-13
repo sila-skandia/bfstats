@@ -1,0 +1,115 @@
+{
+ "generator": "botgen",
+ "version": 5,
+ "mod": "bf1942",
+ "level": "the_airport",
+ "objectSpawners": 49,
+ "template": "few",
+ "templateSource": "DICE, bf1942 Kursk (1.6 patch archives, Kursk_003.rfa): AI/Strategies.con, AI/conditions.con, AI/prerequisites.con, unchanged",
+ "templateChoice": {
+  "name": "few",
+  "inPlay": 3,
+  "rule": "3 capturable flags in play, at most 3"
+ },
+ "scope": "on foot: infantry order positions only, no search maps, no co-op layer",
+ "unreachable": [
+  "Rinku_town"
+ ],
+ "unreachableReasons": {
+  "Rinku_town": "walk test"
+ },
+ "botSpawnsExcluded": [
+  "kankuu_Spawn1",
+  "kankuu_Spawn2",
+  "kankuu_Spawn3",
+  "kankuu_Spawn4",
+  "kankuu_Spawn5",
+  "kankuu_Spawn6",
+  "kankuu_Spawn7",
+  "kankuu_Spawn8",
+  "kankuu_Spawn9",
+  "kankuu_Spawn10",
+  "kankuu_Spawn11",
+  "kankuu_Spawn12",
+  "kankuu_Spawn13",
+  "kankuu_Spawn14",
+  "kankuu_Spawn15",
+  "kankuu_Spawn16",
+  "kankuu_Spawn17",
+  "kankuu_Spawn18",
+  "kankuu_Spawn19",
+  "kankuu_Spawn20",
+  "kankuu_Spawn21",
+  "kankuu_Spawn22",
+  "izumisano_Spawn5",
+  "Rinku_town_Spawn1",
+  "Rinku_town_Spawn2",
+  "Rinku_town_Spawn3",
+  "Rinku_town_Spawn4",
+  "Rinku_town_Spawn5",
+  "Rinku_town_Spawn6",
+  "Rinku_town_Spawn7",
+  "Rinku_town_Spawn8",
+  "Rinku_town_Spawn9",
+  "Rinku_town_Spawn10",
+  "Rinku_town_Spawn11",
+  "Rinku_town_Spawn12"
+ ],
+ "walkMap": {
+  "source": "page painter",
+  "engine": "none",
+  "opened": [],
+  "ways": [],
+  "cover": 0.437,
+  "floors": {
+   "stacked": false,
+   "twoFloorShare": 0.002,
+   "raised": [],
+   "reason": null
+  },
+  "capped": true
+ },
+ "routeProbe": {
+  "chokeMax": 4,
+  "unreachable": [],
+  "stops": {},
+  "oneSided": {
+   "izumisano": 1,
+   "izumisano2": 1,
+   "suehirokouen": 1
+  },
+  "sides": {
+   "1": {
+    "spawns": 13,
+    "flags": [
+     "izumisano",
+     "izumisano2",
+     "suehirokouen"
+    ]
+   },
+   "2": {
+    "spawns": 0,
+    "flags": []
+   }
+  },
+  "chokes": {
+   "izumisano:1": 0,
+   "izumisano2:1": 0,
+   "suehirokouen:1": 0
+  },
+  "late": {},
+  "shutLinks": []
+ },
+ "inputs": {
+  "controlPoints": "3143ed35bac2aa9da4d6d5ad484ee1f38a99bc67669ec96fbe916ee1c08bff2c",
+  "infantryMap": "2f74a7914b64c21cfb6ddc338c5b7c440228342d9b7e1dc6283b64bb86cae222",
+  "template": "bdc0e455f47f91b7e7724e71d7c0c196e839b36946ac3abb7663d725944081e5"
+ },
+ "files": {
+  "AI.con": "ff65da5cf781f265a28875b6cbca3063a01ed39073ce89fcfbb96af7a80600f7",
+  "AI/StrategicAreas.con": "9a66b1dc990d88aa25ea080a4ad2432acba95ac600b718a94906878b29784829",
+  "AI/Strategies.con": "13da4dc35872dd4b5798a066f4425bdc824cfd61f31093d1808e1202644de52e",
+  "AI/conditions.con": "248a04b727c08d696bf0fa9c162bc22c43cde3c75f695892fe1e0f5141519c49",
+  "AI/prerequisites.con": "c96168b5f69860e578f5d26728fd2a2092c4c436e1da49b7d6f4009b65735398"
+ }
+}

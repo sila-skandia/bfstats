@@ -30,7 +30,9 @@ function room(extras) {
     groundHeight: () => 0,
     setPlayerArmor(slot, armor) { players.get(slot).armor = armor; },
   };
-  const authority = createAuthority({ world, loadouts: null, levelDir: 'test', onRow: row => rows.push(row) });
+  const authority = createAuthority({ world, loadouts: null, levelDir: 'test', onRow: row => rows.push(row),
+    // No pre-game (ROUND-14): the scenario plays from the first tick.
+    rules: { gameStartDelay: 0, roundStartDelay: 0 } });
   const join = (slot, team, at) => {
     players.set(slot, { id: slot, team, soldier: { x: at[0], y: at[1], z: at[2] }, occupancy: null, armor: null });
     authority.revive(slot, team, 'assault');

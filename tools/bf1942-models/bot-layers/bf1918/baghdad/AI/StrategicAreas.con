@@ -1,0 +1,68 @@
+rem *** Strategic areas: one per control point (botgen) ***
+
+aiStrategicArea.create Baghdad_Palace 489.1/429.8 494.1/434.8 150
+aiStrategicArea.addNeighbour Baghdad_mosque
+aiStrategicArea.addObjectTypeFlag Flank
+aiStrategicArea.addObjectTypeFlag ControlPoint
+aiStrategicArea.setOrderPosition Tank 494.5/437.5
+aiStrategicArea.setOrderPosition Infantry 494.5/435.5
+aiStrategicArea.setSide 1
+
+aiStrategicArea.create Indian_Start_Point 782.4/111.3 802.4/131.3 50
+aiStrategicArea.addNeighbour Ottoman_Defend_Lines_West
+aiStrategicArea.addNeighbour Baghdad_East
+aiStrategicArea.addNeighbour Ottoman_Defend_Lines_East
+aiStrategicArea.addObjectTypeFlag Base
+aiStrategicArea.setOrderPosition Tank 802.5/126.5
+aiStrategicArea.setOrderPosition Infantry 802.5/130.5
+aiStrategicArea.setSide 2
+aiStrategicArea.setTakeable 1 0
+
+aiStrategicArea.create Ottoman_Defend_Lines_West 554.3/359.9 564.3/369.9 150
+aiStrategicArea.addNeighbour Indian_Start_Point
+aiStrategicArea.addNeighbour Baghdad_mosque
+aiStrategicArea.addNeighbour Ottoman_Defend_Lines_East
+aiStrategicArea.addObjectTypeFlag Flank
+aiStrategicArea.addObjectTypeFlag ControlPoint
+aiStrategicArea.setOrderPosition Tank 564.5/377.5
+aiStrategicArea.setOrderPosition Infantry 563.5/369.5
+aiStrategicArea.setSide 1
+
+aiStrategicArea.create Baghdad_East 605/523 620/538 150
+aiStrategicArea.addNeighbour Indian_Start_Point
+aiStrategicArea.addNeighbour Baghdad_mosque
+aiStrategicArea.addNeighbour Ottoman_Defend_Lines_East
+aiStrategicArea.addObjectTypeFlag Flank
+aiStrategicArea.addObjectTypeFlag ControlPoint
+aiStrategicArea.setOrderPosition Tank 617.5/538.5
+aiStrategicArea.setOrderPosition Infantry 620.5/537.5
+aiStrategicArea.setSide 1
+
+aiStrategicArea.create Baghdad_mosque 592.7/446.8 602.7/456.8 300
+aiStrategicArea.addNeighbour Baghdad_Palace
+aiStrategicArea.addNeighbour Ottoman_Defend_Lines_West
+aiStrategicArea.addNeighbour Baghdad_East
+aiStrategicArea.addNeighbour Ottoman_Defend_Lines_East
+aiStrategicArea.addObjectTypeFlag Centre
+aiStrategicArea.addObjectTypeFlag StrongPoint
+aiStrategicArea.addObjectTypeFlag ControlPoint
+aiStrategicArea.setOrderPosition Tank 600.5/456.5
+aiStrategicArea.setOrderPosition Infantry 602.5/453.5
+aiStrategicArea.setSide 1
+
+aiStrategicArea.create Baghdad_Outskirts_South 627.2/236.7 647.2/256.7 10
+aiStrategicArea.setSide 1
+aiStrategicArea.setTakeable 1 0
+aiStrategicArea.setTakeable 2 0
+
+aiStrategicArea.create Ottoman_Defend_Lines_East 689.3/407.6 694.3/412.6 150
+aiStrategicArea.addNeighbour Indian_Start_Point
+aiStrategicArea.addNeighbour Ottoman_Defend_Lines_West
+aiStrategicArea.addNeighbour Baghdad_East
+aiStrategicArea.addNeighbour Baghdad_mosque
+aiStrategicArea.addObjectTypeFlag Flank
+aiStrategicArea.addObjectTypeFlag Close
+aiStrategicArea.addObjectTypeFlag ControlPoint
+aiStrategicArea.setOrderPosition Tank 703.5/412.5
+aiStrategicArea.setOrderPosition Infantry 693.5/412.5
+aiStrategicArea.setSide 1

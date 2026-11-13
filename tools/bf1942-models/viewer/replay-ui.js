@@ -20,6 +20,7 @@ import { AccuracyDash, ACC_DASH_STYLE } from './replay-accuracy-dash.js';
 import { mapListAt } from './replay-maplist.js';
 import { supportAt } from './replay-support.js';
 import { EXTERNAL_LABELS } from './replay-camera.js';
+import { LADDER as QUALITY_LADDER, storeQuality } from './replay-quality.js';
 
 export const SPEEDS = Object.freeze([0.25, 0.5, 1, 2, 4, 8]);
 
@@ -135,6 +136,7 @@ const ICON = {
   full: '<path d="M2 6V2h4M10 2h4v4M14 10v4h-4M6 14H2v-4" fill="none" stroke="currentColor" stroke-width="1.6"/>',
   unfull: '<path d="M6 2v4H2M10 2v4h4M14 10h-4v4M2 10h4v4" fill="none" stroke="currentColor" stroke-width="1.6"/>',
   more: '<circle cx="3" cy="8" r="1.6"/><circle cx="8" cy="8" r="1.6"/><circle cx="13" cy="8" r="1.6"/>',
+  quality: '<path d="M2.2 11.5a5.8 5.8 0 0 1 11.6 0" fill="none" stroke="currentColor" stroke-width="1.4" stroke-linecap="round"/><path d="M8 11.5l3-4.2" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"/><circle cx="8" cy="11.5" r="1.2"/>',
   tags: '<path d="M1.8 4h8.4l4 4-4 4H1.8z" fill="none" stroke="currentColor" stroke-width="1.4" stroke-linejoin="round"/><circle cx="5" cy="8" r="1.3"/>',
   markers: '<circle cx="8" cy="8" r="5.6" fill="none" stroke="currentColor" stroke-width="1.4"/><circle cx="8" cy="8" r="2.2"/>',
   tracers: '<path d="M2 13 13 2" fill="none" stroke="currentColor" stroke-width="1.4" stroke-linecap="round" stroke-dasharray="3 2.2"/><circle cx="13" cy="2.6" r="1.6"/>',
@@ -837,7 +839,12 @@ export class ReplayUi {
       log: item('rp-mi-roomy', 'log', 'Replay log', 'L', () => this.toggle('log-open')),
       open: item('rp-mi-roomy', 'upload', 'Open a recording', '', () => this.bar.querySelector('.ro-open')?.click()),
       bare: item('', 'hide', 'Hide the HUD', 'H', () => this.setBare(true)),
+      // What the page is drawing at, and Auto's or a pinned rung
+      // (replay-quality.js). A click steps to the next; the menu stays.
+      quality: item('', 'quality', 'Quality', '', () => this.stepQuality(), true),
     };
+    this.moreItems.quality.setAttribute('role', 'menuitem');
+    this.moreItems.quality.removeAttribute('aria-checked');
     this.moreWrap.append(this.moreBtn, this.moreMenu);
   }
 
@@ -872,10 +879,40 @@ export class ReplayUi {
     this.moreItems.markers.hidden = !highlights;
     if (highlights) check(this.moreItems.markers, highlights.showMarkers);
     this.moreItems.open.hidden = !this.bar.querySelector('.ro-open');
+    this.syncQuality();
     // When the round was recorded, once the bar has folded its date away.
     const stamp = this.bar.querySelector('.rp-stamp');
     this.moreWhen.textContent = stamp?.textContent ?? '';
     this.moreWhen.title = stamp?.title ?? '';
+  }
+
+  /** The Quality row: `AUTO · LOW` while Auto picks, the rung alone when
+   *  pinned; the measured rate in its title. */
+  syncQuality() {
+    const item = this.moreItems?.quality;
+    const governor = this.ctx.quality ?? null;
+    if (!item) return;
+    item.hidden = !governor;
+    if (!governor) return;
+    const { mode, level, fps, stopped } = governor.state;
+    item.querySelector('b').textContent = mode === 'auto'
+      ? `AUTO · ${level.name.toUpperCase()}` : level.name.toUpperCase();
+    item.title = mode === 'auto'
+      ? `Lowered on its own while the replay cannot keep its frame rate${fps ? ` (${fps} fps last measured)` : ''}`
+        + `${stopped ? '; lowering further did not help, so it stopped' : ''}. Click to pin a level.`
+      : 'Pinned. Click for the next level; after Lowest comes Auto.';
+  }
+
+  /** Auto, Full, Reduced, Low, Lowest, and round to Auto; kept in this
+   *  browser for the next replay. */
+  stepQuality() {
+    const governor = this.ctx.quality;
+    if (!governor) return;
+    const order = ['auto', ...QUALITY_LADDER.map(l => l.id)];
+    const next = order[(order.indexOf(governor.state.mode) + 1) % order.length];
+    governor.setMode(next);
+    storeQuality(next);
+    this.flash(next === 'auto' ? 'Quality: Auto' : `Quality: ${governor.state.level.name}`);
   }
 
   /** A line from each round's launch to where it struck, green for a hit
@@ -1381,7 +1418,10 @@ export class ReplayUi {
     this.playersBtn.classList.toggle('on', this.root.classList.contains('board-open'));
     this.logBtn.classList.toggle('on', this.root.classList.contains('log-open'));
     if (cls === 'board-open' && on) this.renderBoard(true);
-    if (cls === 'log-open' && on) this.scrollLogToCurrent();
+    if (cls === 'log-open' && on) {
+      this.ensureRows();
+      this.scrollLogToCurrent();
+    }
   }
 
   /** The whole page fullscreen, not the stage, so the page's own panels
@@ -1817,21 +1857,35 @@ export class ReplayUi {
   status(text) {
     this.statusText.textContent = text;
     // While the vehicles load, the card says so.
-    if (!this.rowNodes) this.loadingText = text;
+    if (!this.feedReady) this.loadingText = text;
   }
 
+  /** The round's lines are known. They are drawn when the log is first
+   *  opened (`ensureRows`): a 30-minute round has some 19,000, a node each,
+   *  which a phone carried, restyled and kept in memory for a panel most
+   *  viewers never open. */
   renderFeed() {
     this.loadingText = null;
+    this.feedReady = true;
     this.list.textContent = '';
+    this.rowNodes = null;
+    if (this.root.classList.contains('log-open')) this.ensureRows();
+  }
+
+  ensureRows() {
+    if (!this.feedReady || this.rowNodes) return;
+    const rows = document.createDocumentFragment();
     this.rowNodes = this.player.rows.map(row => {
       const node = el('div', `rp-row k-${row.kind}`);
       node.append(el('time', '', fmtTime(row.t)), el('span', `rp-src ${row.source}`, row.source), el('span', 'rp-text', row.text));
       node.addEventListener('click', () => quietly('a log line', () => this.player.seek(row.t - 1.5)));
-      this.list.appendChild(node);
+      rows.appendChild(node);
       return node;
     });
+    this.list.appendChild(rows);
     this.currentRow = -1;
     this.applyRowFilter();
+    this.updateLog(this.player.time);
   }
 
   applyRowFilter() {
@@ -2144,6 +2198,9 @@ export class ReplayUi {
   updateTags(t) {
     const seen = new Set();
     const player = this.player;
+    // The lit kill's players who carry a tag this frame: the spotlight draws
+    // its own only for one who does not.
+    this.litTagged = null;
     if (this.showTags && !this.root.classList.contains('rp-bare')) {
       const camera = this.ctx.camera;
       // The stage's size as `measure` keeps it: read here, after the frame's
@@ -2155,29 +2212,49 @@ export class ReplayUi {
       // Through his eyes, only his side's names, as the game tags friends.
       const ownTeam = hideOwn !== null ? teamAt(player.rec, hideOwn, t) || null : null;
       const orbit = player.camera.mode === 'orbit';
+      // A kill the spotlight has lit (replay-spotlight.js): its two carry
+      // their names however far off, the other side's too, and everyone
+      // else's give way.
+      const lit = player.spotlight?.litPids?.(t) ?? null;
       const candidates = [];
       for (const target of player.tagTargets(t)) {
+        const spot = lit !== null && Boolean(target.pids?.some(pid => lit.has(pid)));
+        if (lit !== null && !spot) continue;
         // Not over the head the first-person camera is inside.
         if (hideOwn !== null && target.pids?.includes(hideOwn)) continue;
-        if (ownTeam !== null && target.team !== ownTeam) continue;
+        if (ownTeam !== null && target.team !== ownTeam && !spot) continue;
         const me = Boolean(target.pids?.includes(player.followPid));
         v.copy(target.at);
         const distance = v.distanceTo(camera.position);
         // Only the players round the camera carry a name: whole close to it,
         // fading out further off.
         const reach = target.vehicle ? TAG_VEHICLE : 1;
-        const fade = me && orbit ? 1
+        const fade = spot || (me && orbit) ? 1
           : 1 - Math.min(1, Math.max(0, (distance - TAG_NEAR * reach) / ((TAG_FAR - TAG_NEAR) * reach)));
         if (fade < 0.05) continue;
         v.project(camera);
         if (!(v.z < 1 && Math.abs(v.x) < 1.05 && Math.abs(v.y) < 1.05)) continue;
-        candidates.push({ target, distance, fade, x: ((v.x + 1) / 2) * width, y: ((1 - v.y) / 2) * height });
+        const x = ((v.x + 1) / 2) * width;
+        let y = ((1 - v.y) / 2) * height;
+        // Close to the camera, a point over a hull projects towards the
+        // horizon, over whatever is beyond (a followed M6's tag sat on its
+        // victim's 250 m off): a hull's tag stays a short way above it.
+        if (target.base) {
+          v.copy(target.base).project(camera);
+          if (v.z < 1) {
+            const below = ((1 - v.y) / 2) * height;
+            y = Math.min(below - 24, Math.max(y, below - Math.min(150, 0.2 * height)));
+          }
+        }
+        candidates.push({ target, distance, fade, x, y });
       }
       candidates.sort((a, b) => a.distance - b.distance);
       const highlights = player.highlights;
       const leader = highlights?.leaderAt(t)?.pid ?? null;
+      if (lit !== null) this.litTagged = new Set();
       for (const { target, fade, x, y } of candidates.slice(0, TAG_MAX)) {
         seen.add(target.key);
+        if (this.litTagged) for (const pid of target.pids ?? []) this.litTagged.add(pid);
         let tag = this.tagNodes.get(target.key);
         if (!tag) {
           tag = el('button', 'rp-tag');

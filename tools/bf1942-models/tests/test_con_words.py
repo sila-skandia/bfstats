@@ -51,45 +51,41 @@ MODS = ("bf1942", "XPack1", "XPack2")
 #: for a weapon word, whatever kind writes it.
 ORPHAN_WORDS: dict[str, str] = {
     # -- the big ones, by how much data writes them --------------------- #
-    "settooltiptype": "161x playercontrolobject | new | the HUD's tooltip for a vehicle or emplacement",
-    "explosiondamage": "52x playercontrolobject, 10x bfsoldier, 9x bundle, 6x projectile | doc | what a destroyed object's own blast does",
-    "explosionradius": "52x playercontrolobject | doc | how far that blast reaches",
+    # `setToolTipType` left this table on 2026-11-13 (gap audit entry 57):
+    # `con.py` reads it, `extract_tooltips.py` and `assemble.py` carry it.
     "invisibleatendeffect": "38x projectile | doc | the round stops being drawn at its end effect",
-    "setboneoriginoffset": "37x animatedbundle | doc | the tank tracks' bone origin",
-    "useasbone": "37x animatedbundle | doc | the tracks again: the part drives a skeleton bone",
     "hasstaticcolor": "36x spriteparticle | doc | a particle that ignores its colour ramp",
     "setspawnpositionoffset": "27x spawnpoint | doc | the spawn's own offset from its node",
     "setspawnpreventiondelay": "27x spawnpoint | doc | how long a used spawn is held shut",
     "setspawnrotation": "27x spawnpoint | doc | which way a spawned soldier faces",
     "hasstarteffect": "20x projectile | doc | the round plays an effect as it leaves",
-    "disarmminesdistance": "10x bfsoldier | doc | the engineer's reach for disarming a mine",
+    # `disarmMinesDistance` left this table on 2026-11-12 (SUP-28):
+    # `healing-packs.js` `packParams` reads it, the crouched wrench's reach.
     "isportalpassing": "10x bfsoldier | new | nothing in the repo has ever looked at this",
     "portalpassingposition": "10x bfsoldier | new | its companion, equally unknown",
     "addpcoposid": "9x playercontrolobject | doc | another seat-id word",
     # -- the long tail -------------------------------------------------- #
-    "noffsound": "5x projectile | doc | a round's off sound",
+    # `noFFSound` left this table on 2026-11-12 (FF-6): `extract_map.py`
+    # `projectile_materials` carries it and `local-player.js` honours it.
     "alphatestrefovertime": "4x spriteparticle | doc | the alpha test reference as a ramp",
     "canberepaiedasdestroyed": "4x playercontrolobject | new | (sic) a wreck a depot can bring back",
     "dragoffset": "4x playercontrolobject, 1x simpleobject | doc | where the drag term is taken",
-    "usemmonendeffect": "4x projectile | doc | the minimap marker at the end effect",
-    "disablespawnpointsonenter": "2x playercontrolobject | new | boarding shuts the hull's own spawns",
-    "inverseheatbar": "2x engine | new | the heat bar reads the other way",
+    # `useMMOnEndEffect` left this table on 2026-11-13 (gap audit entry 37):
+    # `extract_map.py` `projectile_materials` carries it and
+    # `round-impact.js` `endEffectFor` picks the end effect by the surface.
+    # Ten Secret Weapons rocket and submarine words left this table on
+    # 2026-11-13 (gap audit entries 51 to 53): `con.py` `_SW_ROCKET_SUB_WORDS`
+    # reads `vehicleCameraShake`, `disableSpawnPointsOnEnter`, `setHeatBarType`,
+    # `inverseHeatBar`, `useButtonRadius` and the five seat `*AngleMultiplier`s.
     "removeatrestart": "2x simpleobject | new | the object does not come back on a round restart",
-    "setheatbartype": "2x engine | new | which heat bar an engine draws",
-    "usebuttonradius": "2x objectspawner | doc | the spawner is used by the action button, not by walking in",
-    "addtoprojectilelist": "1x projectile | new | nothing in the repo has looked at this",
+    # `addToProjectileList` and `projectileType` left this table on 2026-11-13
+    # (gap audit entry 23): `extract_map.py` carries the type of a listed
+    # round and `viewer/mine-icon.js` lights the friendly-mine icon from it.
     "deatheffectname": "1x playercontrolobject | doc | the effect a hull's death plays",
-    "downanglemultiplier": "1x seatobject | new | a seat's downward look limit",
-    "headmaxanglemultiplier": "1x seatobject | new | how far the occupant's head turns",
-    "leftanglemultiplier": "1x seatobject | new | a seat's left look limit",
     "nocollisionsasdestroyed": "1x bundle | doc | a wreck you can walk through",
-    "projectiletype": "1x projectile | new | unknown",
-    "rightanglemultiplier": "1x seatobject | new | a seat's right look limit",
     "setforwardmod": "1x playercontrolobject | new | unknown",
     "stalingradhouse": "1x simpleobject | new | a one-off word on one Stalingrad building",
-    "upanglemultiplier": "1x seatobject | new | a seat's upward look limit",
     "useuvrotation": "1x spriteparticle | doc | the particle's UVs turn with it",
-    "vehiclecamerashake": "1x playercontrolobject | new | the hull's own camera shake",
 }
 
 _ORPHANS: dict[str, set[str]] | None = None

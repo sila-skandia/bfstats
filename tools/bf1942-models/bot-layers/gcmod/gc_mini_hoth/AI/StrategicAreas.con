@@ -1,0 +1,63 @@
+rem *** Strategic areas: one per control point (botgen) ***
+
+aiStrategicArea.create testtemplate 454.4/384 464.4/394 150
+aiStrategicArea.addNeighbour rebel_strongholdtemplate
+aiStrategicArea.addNeighbour unnamedcontroltemplate
+aiStrategicArea.addNeighbour peaktemplate
+aiStrategicArea.addNeighbour armourytemplate
+aiStrategicArea.addObjectTypeFlag Flank
+aiStrategicArea.addObjectTypeFlag ControlPoint
+aiStrategicArea.setOrderPosition Tank 474.5/394.5
+aiStrategicArea.setOrderPosition Infantry 464.4/394
+
+aiStrategicArea.create imperial_strongholdtemplate 455.3/648.8 475.3/668.8 50
+aiStrategicArea.addNeighbour unnamedcontroltemplate
+aiStrategicArea.addNeighbour peaktemplate
+aiStrategicArea.addObjectTypeFlag Base
+aiStrategicArea.setOrderPosition Tank 472.5/657.5
+aiStrategicArea.setOrderPosition Infantry 475.3/668.8
+aiStrategicArea.setSide 1
+aiStrategicArea.setTakeable 2 0
+
+aiStrategicArea.create fallen_walkertemplate 408.6/288.9 413.6/293.9 10
+aiStrategicArea.setTakeable 1 0
+aiStrategicArea.setTakeable 2 0
+
+aiStrategicArea.create rebel_strongholdtemplate 309.7/168.3 329.7/188.3 50
+aiStrategicArea.addNeighbour testtemplate
+aiStrategicArea.addNeighbour peaktemplate
+aiStrategicArea.addObjectTypeFlag Base
+aiStrategicArea.setOrderPosition Tank 329.5/185.5
+aiStrategicArea.setOrderPosition Infantry 328.5/188.5
+aiStrategicArea.setSide 2
+aiStrategicArea.setTakeable 1 0
+
+aiStrategicArea.create unnamedcontroltemplate 505.2/510.3 515.2/520.3 150
+aiStrategicArea.addNeighbour testtemplate
+aiStrategicArea.addNeighbour imperial_strongholdtemplate
+aiStrategicArea.addNeighbour peaktemplate
+aiStrategicArea.addNeighbour armourytemplate
+aiStrategicArea.addObjectTypeFlag Flank
+aiStrategicArea.addObjectTypeFlag Close
+aiStrategicArea.addObjectTypeFlag ControlPoint
+aiStrategicArea.setOrderPosition Tank 506.5/524.5
+aiStrategicArea.setOrderPosition Infantry 515.2/520.3
+
+aiStrategicArea.create peaktemplate 276.3/388.6 286.3/398.6 150
+aiStrategicArea.addNeighbour testtemplate
+aiStrategicArea.addNeighbour imperial_strongholdtemplate
+aiStrategicArea.addNeighbour rebel_strongholdtemplate
+aiStrategicArea.addNeighbour unnamedcontroltemplate
+aiStrategicArea.addObjectTypeFlag Flank
+aiStrategicArea.addObjectTypeFlag Close
+aiStrategicArea.addObjectTypeFlag ControlPoint
+aiStrategicArea.setOrderPosition Tank 286.5/401.5
+aiStrategicArea.setOrderPosition Infantry 286.3/398.6
+
+aiStrategicArea.create armourytemplate 584.8/415.9 589.8/420.9 150
+aiStrategicArea.addNeighbour testtemplate
+aiStrategicArea.addNeighbour unnamedcontroltemplate
+aiStrategicArea.addObjectTypeFlag Flank
+aiStrategicArea.addObjectTypeFlag ControlPoint
+aiStrategicArea.setOrderPosition Tank 589.8/420.9
+aiStrategicArea.setOrderPosition Infantry 589.8/420.9

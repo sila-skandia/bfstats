@@ -1,5 +1,5 @@
 // tests/test_page_match.py: the pure parts of sim/pagematch.mjs (no browser).
-import { buildPageBar, isVoid, judgePage, matchUrl, onTheLine, rolloutFloor, summarise } from '../sim/pagematch.mjs';
+import { buildPageBar, isVoid, judgePage, matchUrl, onTheLine, ownHandIn, rolloutFloor, summarise } from '../sim/pagematch.mjs';
 
 const counts = [
   { id: 'bot_0', team: 1, kills: 3, deaths: 2, teamKills: 0, suicides: 0, captures: 1, score: 5 },
@@ -22,11 +22,19 @@ console.log(JSON.stringify({
     both: rolloutFloor({ enemyKillsPerBotMinute: 0.06, capturesTotal: 1 }),
     flagsOnly: rolloutFloor({ enemyKillsPerBotMinute: 0, capturesTotal: 7 }),
     quiet: rolloutFloor({ enemyKillsPerBotMinute: 0.04, capturesTotal: 2 }),
-    ownHand: rolloutFloor({ enemyKillsPerBotMinute: 0.4, capturesTotal: 5, suicidesPerBotMinute: 0.094, teamKillsPerBotMinute: 0.025 }),
+    ownHand: rolloutFloor({ enemyKillsPerBotMinute: 0.2, capturesTotal: 5, suicidesPerBotMinute: 0.094, teamKillsPerBotMinute: 0.025 }),
+    // A lively level: more by its own hand than the flat cap, and under a third of its enemy kills (Berlin's ratio is 0.30).
+    ownHandLively: rolloutFloor({ enemyKillsPerBotMinute: 0.575, capturesTotal: 0, suicidesPerBotMinute: 0.1, teamKillsPerBotMinute: 0.0187 }),
+    // A race track: plenty of killing, and two in three as many deaths by the bots' own hand.
+    ownHandRace: rolloutFloor({ enemyKillsPerBotMinute: 0.3687, capturesTotal: 2, suicidesPerBotMinute: 0.25, teamKillsPerBotMinute: 0.0062 }),
+    // Flags and almost no killing: a third of nearly nothing is no allowance.
+    ownHandQuiet: rolloutFloor({ enemyKillsPerBotMinute: 0.0437, capturesTotal: 3, suicidesPerBotMinute: 0.2375, teamKillsPerBotMinute: 0 }),
     error: rolloutFloor({ enemyKillsPerBotMinute: 0.4, capturesTotal: 5, pageErrors: ['TypeError'] }),
   },
   voids: [isVoid(summarise([], 16, 10)), isVoid(summarise(counts, 16, 10)), isVoid(summarise([{ id: 'bot_9', team: 0, captures: 2, score: 4 }], 16, 10))],
   unsided: summarise([counts[0], { id: 'bot_9', team: 0, captures: 2, score: 4 }], 16, 10),
+  ownHandIn: ownHandIn([{ vehicle: 'Willy', drives: true }, { vehicle: null }, { vehicle: 'Willy', drives: true, kills: 2 }, { vehicle: 'Willy', drives: false }, { vehicle: 'Lcvp', drives: true }]),
+  ownHandInNone: ownHandIn(undefined),
   ahead: onTheLine([0, 0, 0], [0, 0, 100], [0.3, 0, 12]),
   behind: onTheLine([0, 0, 0], [0, 0, 100], [0, 0, -4]),
   beside: onTheLine([0, 0, 0], [0, 0, 100], [6, 0, 12]),

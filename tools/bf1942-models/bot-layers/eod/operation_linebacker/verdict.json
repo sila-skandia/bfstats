@@ -1,0 +1,24 @@
+{
+ "level": "operation_linebacker",
+ "verdict": "fail",
+ "outcome": "unsuitable",
+ "config": "with vehicles",
+ "doctrine": "garrison",
+ "generatorVersion": 5,
+ "inputs": {
+  "controlPoints": "b4393f767c6ad3bec03ee1a42a43d112eb649626e60ecbbab83f8402f23fcc32",
+  "infantryMap": "1079a75ef627780ab67e7bf2711d49310b75fdf09226378679e700043a695b5b",
+  "template": "bdc0e455f47f91b7e7724e71d7c0c196e839b36946ac3abb7663d725944081e5"
+ },
+ "baseline": "DICE layers with vehicles, garrison doctrine: berlin, stalingrad, kharkov, bocage; seeds 1..10, 600 s",
+ "bar": null,
+ "seeds": 1,
+ "sizes": {},
+ "oneSided": null,
+ "unreachable": [],
+ "lintErrors": [
+  "the play surface is stacked floors (32 % of the main floor has another walked floor over or under it): a one-floor walk map cannot hold it",
+  "side 1 holds no spawn point at the start of the round",
+  "no kit for Axis or Allies in the tree's _shared/loadouts.json: the bots would fire the stand-in weapon; refresh the tree's loadouts.json from the published one"
+ ]
+}

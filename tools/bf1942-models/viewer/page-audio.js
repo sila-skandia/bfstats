@@ -19,6 +19,12 @@ import { entryInMode } from './game-modes.js';
 import { ScrapeVoices } from './obstacle.js';
 import { nationStems } from './radio.js';
 import { decodeGapless, gaplessAudioLoader } from './gapless-decode.js';
+import { createVoiceGates } from './soldier-voice-gates.js';
+import {
+  MATERIAL_PATCH, SST, SoldierSound, SoldierSoundState, VANILLA_FREQUENCIES,
+  distanceGain, triggerName, triggerOfState,
+} from './soldier-sound.js';
+import { voiceKind, voicePoolOf } from './voice-pool.js';
 
 /** `SoldierRefillAmmo.ssc`'s HIGH patch, as read from vanilla's Objects.rfa:
  *  `minDistance 5` and the `Volume <- Distance` ramp `10 15 1 -1`. */
@@ -695,10 +701,14 @@ export function createPageAudio(page) {
    * is one of many); the player's own stab is one press, so `hand-weapon.js`
    * primes its report as the weapon is raised. A property of `playWorldShot`
    * so every surface that already carries the one carries the other.
+   * `{ edges: false }` primes the report alone, not its Reload and eject
+   * slots: the replay primes every weapon a recording fires as it opens, and
+   * plays no magazine change.
    */
-  playWorldShot.prime = weaponName => {
+  playWorldShot.prime = (weaponName, { edges = true } = {}) => {
     if (!weaponName || page.AUDIO_OFF) return Promise.resolve(null);
-    return ensureWorldFire().then(fire => fire?.primeWeapon(weaponName) ?? null, () => null);
+    return ensureWorldFire().then(fire => (edges ? fire?.primeWeapon(weaponName) : fire?.prime(weaponName)) ?? null,
+      () => null);
   };
 
   /** A bot's magazine change, at the bot: the weapon's Reload slot (SND-17). */
@@ -800,42 +810,205 @@ export function createPageAudio(page) {
   }
 
   /**
-   * A bot's own bootfalls, for a listener who is not wearing them.
+   * A soldier's movement sounds for this frame: their `SoldierSound`
+   * (`soldier-sound.js`, BF1942.exe 0x00572f20) fed the trigger their body is
+   * in, and whatever it fires played from `soldier.json`.
    *
-   * The player's steps come off `soldier.drainFootstepEvents()`, a clock in the
-   * first-person soldier. A bot has no such body, so the cadence is driven here
-   * from how far the controller actually moved. The periods are the engine's,
-   * verbatim from `Objects/Soldiers/Common/Sounds/SoldierSound.inc`:
-   * `setRunFrequency 0.36`, `setWalkFrequency 0.66` (the crawl's 0.6 and the
-   * crouch's 0.50 are not distinguished here — a bot's gait is its speed).
-   * Positional, so a squad crossing a field is a line of small boots rather
-   * than one 2D overlay; `handleSoldierFootstep` does the surface pick.
+   * `owner` is any object that lives as long as the soldier (the machine is
+   * kept against it). `view` is the body this frame (`SoldierSoundState`), or
+   * `{ state }`, a replayed soldier's recorded lower-body state by name.
+   * `view.grounded`: the body stands on a floor (`setMaterial`'s contact),
+   * or null for a body that cannot say; `view.ticked` false on a frame its
+   * physics did not run.
+   * `view.x/y/z`: the feet. `position`: where a listener who is not this
+   * soldier hears it, or null for the listener's own body. `armor`: their hit
+   * points; a rise is the heal `handleDamage` raises `c_SstHealedByMedic` on.
+   *
+   * Cost: one small object per soldier and a few compares a frame; a sample
+   * is only looked up on the frames a sound fires.
    */
-  const BOT_GAIT_RUN = 0.36;
-  const BOT_GAIT_WALK = 0.66;
+  const soldierSounds = new WeakMap();
+  pageAudio.soldierSoundLog = [];
+  function soldierSoundTick(owner, view, dt, position = null, armor = null) {
+    // Run whatever the volume: the machine is a soldier's state, and a page
+    // that is muted (or a headless check) still reads what it fired.
+    if (!owner || !view || page.AUDIO_OFF) return null;
+    const manifest = pageAudio.soldierSoundsDoc;
+    if (manifest === undefined) { soldierSoundsManifest(); return null; }
+    if (!manifest) return null;
+    let entry = soldierSounds.get(owner);
+    if (!entry || entry.manifest !== manifest) {
+      entry = {
+        manifest,
+        machine: new SoldierSound(manifest.frequencies ?? VANILLA_FREQUENCIES),
+        state: new SoldierSoundState(),
+        armor: null, hp: 0,
+      };
+      soldierSounds.set(owner, entry);
+    }
+    const step = Number.isFinite(dt) && dt > 0 ? Math.min(dt, 0.25) : 0;
+    let trigger = view.state !== undefined
+      ? triggerOfState(view.state, manifest.states ?? null)
+      : entry.state.trigger(view, step);
+    // The heal: hit points that rose on a living soldier since the last frame.
+    if (armor) {
+      const hp = armor.hitPoints ?? 0;
+      if (entry.armor === armor && entry.hp > 0 && hp > entry.hp + 1e-6 && !armor.destroyed
+          && !view.quiet) {
+        trigger = SST.HealedByMedic;
+      }
+      entry.armor = armor;
+      entry.hp = hp;
+    }
+    // `setMaterial`, the floor contact that lands a jump. A body that says
+    // when it stands on something is believed once it has left the ground
+    // (the frame a jump starts it still stands there); one that cannot say
+    // (a recorded state, `grounded: null`) has landed when its jump state ends.
+    if (trigger === SST.Jump && entry.trigger !== SST.Jump) entry.takeoff = true;
+    else if (trigger !== SST.Jump) entry.takeoff = false;
+    entry.trigger = trigger;
+    let contact;
+    if (view.grounded == null) contact = trigger !== SST.Jump;
+    else {
+      if (!view.grounded) entry.takeoff = false;
+      // `handleCollision` runs in the physics tick: one contact a tick, not
+      // one a frame.
+      contact = view.grounded && view.ticked !== false && !entry.takeoff;
+    }
+    if (contact) entry.machine.setMaterial(null);
+    const out = entry.machine.update(step, trigger);
+    if (!out) return null;
+    const log = pageAudio.soldierSoundLog;
+    log.push({ name: out.name, own: !position, t: performance.now(),
+               patches: out.patches ? out.patches.slice() : null });
+    if (log.length > 128) log.splice(0, log.length - 128);
+    if (masterVolume() > 0) {
+      // A patch triggered again starts its samples over: a layer still
+      // waiting on its `Volume <- Time` gate from the trigger before never
+      // sounds (the patch's clock went back to zero), one already playing
+      // plays out (SND-14). A jump that lands inside its own state is
+      // triggered again every other frame until the state ends.
+      const batches = entry.batches ??= new Map();
+      const before = batches.get(out.name);
+      if (before) {
+        before.cancelled = true;
+        const now = pageAudio.audioListener?.context?.currentTime ?? 0;
+        for (const pending of before.voices) if (pending.at > now) pending.handle.stop();
+      }
+      const batch = { cancelled: false, voices: [] };
+      batches.set(out.name, batch);
+      playSoldierScript(manifest, out, view, position, batch);
+    }
+    return out;
+  }
+
+  /** A simulated soldier of the page (`soldier.js`, the player or a bot) as
+   *  the view `soldierSoundTick` reads. Reused: one per call site is enough. */
+  function soldierSoundView(soldier, view = {}) {
+    const body = soldier.body;
+    const chute = soldier.chute;
+    view.state = undefined;
+    view.stance = soldier.stance ?? 'stand';
+    view.gait = soldier.gait ?? 'stand';
+    view.swim = soldier.swim?.swimming ? (soldier.swim.family ?? null) : null;
+    view.climbing = !!soldier.climb?.active;
+    view.climbY = soldier.climb?.ly ?? 0;
+    view.jumping = !!body?.lowerBody?.jumping;
+    // The dive is the state speed the stance change set (`soldier.js`
+    // `#applyStance`); a lie-down that is not one is the backward `Lb_StandToLie`.
+    view.dive = (body?.stateSpeed ?? 1) > 1;
+    view.backward = !view.dive;
+    // Under a canopy or in the free fall the lower body is in the
+    // parachute's states, whose sounds `handleParachuteEvent` plays.
+    view.quiet = !!(chute && (chute.open || chute.falling || chute.state === 'falling'));
+    view.grounded = !!soldier.grounded;
+    const ticks = soldier.clock?.ticks;
+    view.ticked = ticks === undefined || ticks !== soldier._soundTicks;
+    soldier._soundTicks = ticks;
+    view.x = soldier.x; view.y = soldier.y; view.z = soldier.z;
+    return view;
+  }
+
+  const botSoundView = {};
+  const botSoundAt = { x: 0, y: 0, z: 0 };
+  const recordedView = { state: null, grounded: null, x: 0, y: 0, z: 0 };
+  /**
+   * A bot's or a replayed soldier's movement sounds, for a listener who is
+   * not wearing them. A bot of the page has a simulated soldier and is read
+   * like the player; a replayed soldier names the engine's own lower-body
+   * state (`recordedLower`), which is the trigger's source in the game.
+   */
   function botFootstepTick(bot, dt) {
-    if (bot.vehicle || page.AUDIO_OFF || masterVolume() <= 0) return;
-    const at = bot.getPosition();
-    const prev = bot._stepFrom;
-    bot._stepFrom = [at[0], at[1], at[2]];
-    if (!prev) return;
-    const dx = at[0] - prev[0], dy = at[1] - prev[1], dz = at[2] - prev[2];
-    const speed = Math.hypot(dx, dy, dz) / Math.max(dt, 1e-6);
-    if (speed < 0.4) { bot._stepPhase = 0; return; }
-    const period = speed > 3 ? BOT_GAIT_RUN : BOT_GAIT_WALK;
-    bot._stepPhase = (bot._stepPhase ?? Math.random()) + dt / period;
-    if (bot._stepPhase < 1) return;
-    bot._stepPhase -= 1;
-    handleSoldierFootstep(
-      { x: at[0], y: at[1], z: at[2], gait: speed > 3 ? 'run' : 'walk' },
-      { x: at[0], y: at[1], z: at[2] });
+    if (page.AUDIO_OFF) return;
+    if (bot.vehicle) return;
+    const at = bot.getPosition?.();
+    if (!at) return;
+    botSoundAt.x = at[0]; botSoundAt.y = at[1]; botSoundAt.z = at[2];
+    if (!soldierAudible(botSoundAt)) return;
+    if (bot.recordedLower !== undefined) {
+      recordedView.state = bot.recordedLower;
+      recordedView.x = at[0]; recordedView.y = at[1]; recordedView.z = at[2];
+      soldierSoundTick(bot, recordedView, dt, botSoundAt);
+      return;
+    }
+    const soldier = page.botSoldier?.(bot) ?? null;
+    if (!soldier) return;
+    const view = soldierSoundView(soldier, botSoundView);
+    const armor = page.botArmor?.(bot) ?? null;
+    if (armor?.destroyed) view.quiet = true;
+    soldierSoundTick(bot, view, dt, botSoundAt, armor);
+  }
+
+  /** The loudest any movement layer reaches: `SoldierRun.ssc` and the swim
+   *  entry ramp to zero by 30 m (`Ramp 10 30 1 -1` is silent at 20). Past it
+   *  a soldier's machine is not run at all. */
+  const SOLDIER_SOUND_RANGE = 30;
+  function soldierAudible(position) {
+    const e = pageAudio.audioListener?.matrixWorld?.elements;
+    if (!e) return true;
+    const dx = e[12] - position.x, dy = e[13] - position.y, dz = e[14] - position.z;
+    return dx * dx + dy * dy + dz * dz <= SOLDIER_SOUND_RANGE * SOLDIER_SOUND_RANGE;
+  }
+
+  /**
+   * A remote soldier of a room. `s` is the renderer's record (`want`, the
+   * clip family it drew, `remote-gait.js`), `state` the snapshot row: the
+   * stance bits, the swim state and the feet. The wire carries no jump and
+   * no ladder, so a remote has neither sound; a lie-down is taken for the
+   * dive, which is what the engine enters unless the soldier backs up.
+   */
+  const REMOTE_GAITS = new Set(['stand', 'walk', 'run', 'crouch', 'crouchwalk', 'prone', 'crawl']);
+  const REMOTE_MOVING = { walk: 'walk', run: 'run', crouchwalk: 'crouch', crawl: 'prone' };
+  const remoteView = {};
+  const remoteAt = { x: 0, y: 0, z: 0 };
+  function remoteSoldierSoundTick(s, state, dt) {
+    if (page.AUDIO_OFF || !s || !state) return;
+    remoteAt.x = state.x; remoteAt.y = state.y; remoteAt.z = state.z;
+    if (!placeable(remoteAt) || !soldierAudible(remoteAt)) return;
+    const v = remoteView;
+    const family = s.want ?? 'stand';
+    v.state = undefined;
+    v.stance = state.prone ? 'prone' : state.crouch ? 'crouch' : 'stand';
+    v.swim = state.swim ?? null;
+    v.gait = REMOTE_MOVING[family] ?? 'stand';
+    v.climbing = false;
+    v.climbY = 0;
+    v.jumping = false;
+    v.dive = true;
+    v.backward = false;
+    // A blast's flight, a canopy, a death: states with sounds of their own.
+    v.quiet = !v.swim && !REMOTE_GAITS.has(family);
+    v.grounded = true;
+    v.ticked = true;
+    v.x = state.x; v.y = state.y; v.z = state.z;
+    soldierSoundTick(s, v, dt, remoteAt, null);
   }
 
   // --- soldier footsteps, damage direction & hurt audio ------------------------
 
   pageAudio.soldierSoundsIndex = null;
-  pageAudio.lastHurtSoundTime = 0;
-  pageAudio.lastWorldHurtSoundTime = 0;
+  // Each soldier's own grunt and "Watch your aim!" clocks (`soldier-voice-gates.js`).
+  pageAudio.voiceGates = createVoiceGates();
 
   // A tree that has no `soldier.json` answers 404 for good: remembered per
   // models base, so every footstep of a round does not ask again. Anything
@@ -845,6 +1018,12 @@ export function createPageAudio(page) {
 
   function soldierSoundsManifest() {
     const base = page.MODELS_BASE;
+    if (pageAudio.soldierSoundsBase !== undefined && pageAudio.soldierSoundsBase !== base) {
+      // Another tree: its own manifest, asked for afresh.
+      pageAudio.soldierSoundsIndex = null;
+      pageAudio.soldierSoundsDoc = undefined;
+      pageAudio.soldierSoundsBase = undefined;
+    }
     if (pageAudio.soldierSoundsMissing === base) return Promise.resolve(null);
     if (!pageAudio.soldierSoundsIndex) {
       pageAudio.soldierSoundsIndex = fetch(`${base}/sounds/soldier.json${page.bust()}`)
@@ -853,7 +1032,16 @@ export function createPageAudio(page) {
           return r.ok ? r.json() : null;
         })
         .catch(() => null)
-        .then(doc => { if (!doc) pageAudio.soldierSoundsIndex = null; return doc; });
+        .then(doc => {
+          if (!doc) pageAudio.soldierSoundsIndex = null;
+          // The answered manifest, for the per-frame path that cannot wait:
+          // undefined until a fetch has answered, null for a tree with none.
+          if (doc || pageAudio.soldierSoundsMissing === base) {
+            pageAudio.soldierSoundsDoc = doc;
+            pageAudio.soldierSoundsBase = base;
+          }
+          return doc;
+        });
     }
     return pageAudio.soldierSoundsIndex;
   }
@@ -872,12 +1060,19 @@ export function createPageAudio(page) {
    * `loop` keeps it going until then.
    */
   function playSoldierOneShot(buffer, volume = 1, pitchJitter = 0.03, delay = 0,
-                              position = null, loop = false) {
+                              position = null, loop = false, { priority = 0, ranged = false } = {}) {
     if (!buffer || !pageAudio.audioListener || masterVolume() <= 0) return null;
     const ctx = pageAudio.audioListener.context;
     if (ctx.state === 'suspended') return null;
     if (position && !placeable(position)) return null;
+    let distance = 0;
     if (position) {
+      const e = pageAudio.audioListener.matrixWorld?.elements;
+      if (e) distance = Math.hypot(e[12] - position.x, e[13] - position.y, e[14] - position.z);
+    }
+    // `ranged`: the caller applied the layer's own `Volume <- Distance` ramp,
+    // which is what bounds it in the game.
+    if (position && !ranged) {
       // DELIBERATE, not retail (a voice has no maximum distance, SND-6): past
       // 40 m a bot's foley is ~-32 dB and the page skips the voice entirely. Twelve bots walking was a hundred one-shot panners a
       // second, most of them built for nobody.
@@ -887,13 +1082,28 @@ export function createPageAudio(page) {
         if (dx * dx + dy * dy + dz * dz > 1600) return null;
       }
     }
-    const source = ctx.createBufferSource();
+    // A voice of the pool (`voice-pool.js`, ledger SND-39): none free and
+    // nothing to take, and the sound does not play.
+    const pool = voicePoolOf(ctx);
+    let source = null;
+    let gain = null;
+    const voice = pool.claim({
+      kind: voiceKind(!!position, buffer.numberOfChannels),
+      priority,
+      distance,
+      stop: () => {
+        try { source.onended = null; source.stop(); } catch (_) {}
+        try { source.disconnect(); gain.disconnect(); } catch (_) {}
+      },
+    });
+    if (!voice) return null;
+    source = ctx.createBufferSource();
     source.buffer = buffer;
     source.loop = loop;
     if (pitchJitter > 0) {
       source.playbackRate.value = 1 + (Math.random() * 2 - 1) * pitchJitter;
     }
-    const gain = ctx.createGain();
+    gain = ctx.createGain();
     gain.gain.value = Math.min(Math.max(volume, 0), 1) * masterVolume() * WEAPON_HEADROOM;
     source.connect(gain);
     let panner = null;
@@ -909,6 +1119,7 @@ export function createPageAudio(page) {
     }
     (panner ?? gain).connect(pageAudio.audioListener.getInput());
     source.onended = () => {
+      pool.release(voice);
       try {
         source.disconnect();
         gain.disconnect();
@@ -916,7 +1127,7 @@ export function createPageAudio(page) {
       } catch (_) {}
     };
     const when = delay > 0 ? ctx.currentTime + delay : 0;
-    try { source.start(when); } catch (_) {}
+    try { source.start(when); } catch (_) { pool.release(voice); }
     return {
       stop() {
         const now = ctx.currentTime;
@@ -936,11 +1147,9 @@ export function createPageAudio(page) {
     dx: 0, dy: -1, dz: 0, material: 0, kind: '', owner: -1, triangle: -1,
   };
 
-  async function handleSoldierFootstep(step, position = null) {
-    if (page.AUDIO_OFF || masterVolume() <= 0) return;
-    const manifest = await soldierSoundsManifest();
-    if (!manifest) return;
-
+  /** The patch of the floor under (x, y, z): `addMaterialToSound`'s index
+   *  for the material a cast down finds (`soldier-sound.js` `MATERIAL_PATCH`). */
+  function floorPatchAt(x, y, z) {
     let matId = 0;
     const collider = page.soldier?.collider;
     if (collider) {
@@ -949,44 +1158,88 @@ export function createPageAudio(page) {
       if (collider.statics) {
         const record = footstepHit;
         record.dx = 0; record.dy = -1; record.dz = 0;
-        const hit = collider.statics.cast(step.x, step.y + 0.5, step.z, 0, -1, 0, 1.0, -1, record);
+        const hit = collider.statics.cast(x, y + 0.5, z, 0, -1, 0, 1.0, -1, record);
         if (hit) {
           best = hit.y;
           matId = hit.material;
           onStatic = true;
         }
       }
-      const ground = collider.surfaceHeight ? collider.surfaceHeight(step.x, step.z) : NaN;
+      const ground = collider.surfaceHeight ? collider.surfaceHeight(x, z) : NaN;
       if (!onStatic || (Number.isFinite(ground) && ground >= best)) {
-        matId = collider.heightfield?.material ? collider.heightfield.material(step.x, step.z) : 0;
+        matId = collider.heightfield?.material ? collider.heightfield.material(x, z) : 0;
+        // Wading: the sea over the ground they stand on is the floor's material.
+        const terrain = collider.heightfield?.height ? collider.heightfield.height(x, z) : NaN;
+        if (collider.waterLevel != null && Number.isFinite(terrain) && collider.waterLevel > terrain
+            && !onStatic) {
+          return MATERIAL_PATCH.water;
+        }
       }
     }
+    return MATERIAL_PATCH[footstepMaterial(matId)] ?? 0;
+  }
 
-    const matName = footstepMaterial(matId);
-    const triggerName = step.gait === 'run' ? 'c_SstRun' : 'c_SstWalk';
-    const trigger = manifest.triggers?.[triggerName];
-    if (!trigger?.patches) return;
-
-    const surfacePatch = trigger.patches.find(p => p.material === matName) || trigger.patches[0];
-    if (surfacePatch?.layers?.length) {
-      const choice = surfacePatch.layers[Math.floor(Math.random() * surfacePatch.layers.length)];
-      const buf = await modelSoundBuffer(`sounds/${choice.sample}.mp3`);
-      if (buf) playSoldierOneShot(buf, choice.volume ?? 1, 0.03, 0, position);
+  /**
+   * What `SoldierSound::update` triggers: `out.patches` of the script, or all
+   * of them. A patch plays every layer it loads, or one of them when its last
+   * load carries `randomPlay 1` (SND-15); `silence.wav` is a load that plays
+   * nothing. Each layer starts at its `Volume <- Time` gate (`at`) at the
+   * script's own volume times its `Volume <- Distance` ramp.
+   */
+  async function playSoldierScript(manifest, out, at, position = null, batch = null) {
+    const script = manifest.triggers?.[out.name];
+    if (!script?.patches?.length) return;
+    let indices = out.patches;
+    if (indices) {
+      // The stored material is the floor of the last contact, which for a
+      // body on the ground is the floor under it now.
+      indices = [floorPatchAt(at.x, at.y, at.z), ...indices.slice(1)];
+    } else {
+      indices = script.patches.map((_, i) => i);
     }
-
-    const fabricPatch = trigger.patches.find(p => p.material === 'fabric');
-    if (fabricPatch?.layers?.length) {
-      const choice = fabricPatch.layers[Math.floor(Math.random() * fabricPatch.layers.length)];
-      const buf = await modelSoundBuffer(`sounds/${choice.sample}.mp3`);
-      if (buf) playSoldierOneShot(buf, (choice.volume ?? 1) * 0.5, 0.03, choice.at ?? 0.2, position);
+    let distance = 0;
+    if (position) {
+      const e = pageAudio.audioListener?.matrixWorld?.elements;
+      if (e) distance = Math.hypot(e[12] - position.x, e[13] - position.y, e[14] - position.z);
     }
-
-    const harnessPatch = trigger.patches.find(p => p.material === 'harness');
-    if (harnessPatch?.layers?.length) {
-      const choice = harnessPatch.layers[Math.floor(Math.random() * harnessPatch.layers.length)];
-      const buf = await modelSoundBuffer(`sounds/${choice.sample}.mp3`);
-      if (buf) playSoldierOneShot(buf, (choice.volume ?? 1) * 0.4, 0.03, choice.at ?? 0.1, position);
+    for (const index of indices) {
+      const patch = script.patches[index];
+      if (!patch?.layers?.length) continue;
+      const layers = patch.randomPlay
+        ? [patch.layers[Math.floor(Math.random() * patch.layers.length)]]
+        : patch.layers;
+      for (const layer of layers) {
+        if (layer.silent) continue;
+        const volume = (layer.volume ?? 1) * distanceGain(layer.distance, distance);
+        if (!(volume > 0)) continue;
+        const buf = await modelSoundBuffer(`sounds/${layer.sample}.mp3`);
+        if (batch?.cancelled) return;
+        if (buf) {
+          const delay = layer.at ?? 0;
+          const handle = playSoldierOneShot(buf, volume, 0.03, delay, position, false,
+                                            { priority: layer.priority ?? 0, ranged: !!layer.distance });
+          if (handle && batch && delay > 0) {
+            batch.voices.push({ handle, at: (pageAudio.audioListener?.context?.currentTime ?? 0) + delay });
+          }
+        }
+      }
     }
+  }
+
+  /** A step at a place, by gait: the path a caller with no soldier of its own
+   *  still has (`c_SstRun` or `c_SstWalk`'s material patch, cloth and harness). */
+  async function handleSoldierFootstep(step, position = null) {
+    if (page.AUDIO_OFF || masterVolume() <= 0) return;
+    const manifest = await soldierSoundsManifest();
+    if (!manifest) return;
+    const trigger = step.gait === 'run' ? SST.Run
+      : step.gait === 'crouch' ? SST.CrouchMove
+        : step.gait === 'prone' ? SST.CrawlMove : SST.Walk;
+    const material = trigger === SST.Run || trigger === SST.Walk;
+    await playSoldierScript(manifest, {
+      name: triggerName(trigger),
+      patches: material ? [0, 8, 9] : null,
+    }, step, position);
   }
 
 
@@ -1061,25 +1314,41 @@ export function createPageAudio(page) {
     return (page.teamVoice ?? page.teamNation)?.(page.deployTeamId) ?? null;
   }
 
+  /**
+   * The hurt grunt (`c_SstHitDamage`), of soldier `key`: their own
+   * `SoldierSound` clock, 1.0 to 1.2 s between two (`soldier-voice-gates.js`).
+   * Until 2026-11-12 every world soldier shared one 0.9 s clock, so two bots
+   * hit within it gave one grunt. `cooled` false skips it: a replay's grunts
+   * come one per recorded blow (replay-bodies.js `hurt`), and one grenade that
+   * hurts three men is three grunts (8t224pppqe at 154.93 s). `isFriendlyFire`
+   * is the old caller's word and plays the grunt alone: "Watch your aim!" is a
+   * round's touch, not damage (`playFriendlyHitSound`).
+   */
   async function playSoldierHurtSound(isFriendlyFire = false, position = null, nation = undefined,
-                                      cooled = true) {
+                                      cooled = true, key = null) {
     if (page.AUDIO_OFF || masterVolume() <= 0) return;
     const now = performance.now() * 0.001;
-    // Two cooldowns: the listener's own grunt and the world's. A shared one
-    // meant a bot hit a second after the player took a round played nothing.
-    // `cooled` false skips them: a replay's grunts come one per recorded blow
-    // (replay-bodies.js `hurt`), and one grenade that hurts three men is three
-    // grunts (8t224pppqe at 154.93 s), which a world cooldown cut to one.
-    if (cooled) {
-      const last = position ? pageAudio.lastWorldHurtSoundTime : pageAudio.lastHurtSoundTime;
-      if (now - last < 0.9) return;
-      if (position) pageAudio.lastWorldHurtSoundTime = now;
-      else pageAudio.lastHurtSoundTime = now;
-    }
+    if (cooled && !pageAudio.voiceGates.hurt(key ?? (position ? 'world' : 'local'), now)) return;
+    await playSoldierTrigger('c_SstHitDamage', position, nation);
+  }
 
+  /**
+   * "Watch your aim!" (`c_SstFFHitDamage`): a round of `roundTeam` touched
+   * soldier `key` of `soldierTeam`, damaged or not (`BFSoldier::projectileHit`
+   * lnxded 0x0827ea20; `soldier-voice-gates.js`). Played at the soldier, in
+   * their own side's tongue; the human's own (`position` null) at the ear.
+   */
+  function playFriendlyHitSound(key, roundTeam, soldierTeam, position = null, nation = undefined) {
+    const now = performance.now() * 0.001;
+    if (!pageAudio.voiceGates.friendlyHit(key, now, roundTeam, soldierTeam)) return false;
+    if (page.AUDIO_OFF || masterVolume() <= 0) return true;
+    playSoldierTrigger('c_SstFFHitDamage', position, nation);
+    return true;
+  }
+
+  async function playSoldierTrigger(triggerName, position, nation) {
     const manifest = await soldierSoundsManifest();
     if (!manifest) return;
-    const triggerName = isFriendlyFire ? 'c_SstFFHitDamage' : 'c_SstHitDamage';
     const trigger = manifest.triggers?.[triggerName];
     const patch = trigger?.patches?.[0];
     if (!patch?.layers?.length) return;
@@ -1206,6 +1475,11 @@ export function createPageAudio(page) {
   Object.assign(pageAudio, {
     audioBufferCache,
     botFootstepTick,
+    voicePoolStats: () => (pageAudio.audioListener
+      ? voicePoolOf(pageAudio.audioListener.context).stats() : null),
+    remoteSoldierSoundTick,
+    soldierSoundTick,
+    soldierSoundView,
     claimVehicleAudio,
     cutVehicleAudio,
     disposeEngineAudio,
@@ -1219,6 +1493,7 @@ export function createPageAudio(page) {
     modelSoundBuffer,
     playSoldierDeathSound,
     playSoldierHurtSound,
+    playFriendlyHitSound,
     playObstacleScrape,
     playRefillSound,
     playRoundMusic,

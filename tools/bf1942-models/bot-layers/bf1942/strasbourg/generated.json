@@ -1,0 +1,139 @@
+{
+ "generator": "botgen",
+ "version": 5,
+ "mod": "bf1942",
+ "level": "strasbourg",
+ "objectSpawners": 41,
+ "template": "few",
+ "templateSource": "DICE, bf1942 Kursk (1.6 patch archives, Kursk_003.rfa): AI/Strategies.con, AI/conditions.con, AI/prerequisites.con, unchanged",
+ "templateChoice": {
+  "name": "few",
+  "inPlay": 1,
+  "rule": "1 capturable flag in play, at most 3"
+ },
+ "scope": "on foot: infantry order positions only, no search maps, no co-op layer",
+ "unreachable": [
+  "Hotel",
+  "Strasbourg_Cathedral",
+  "East_Bridge"
+ ],
+ "unreachableReasons": {
+  "Hotel": "walk test",
+  "Strasbourg_Cathedral": "walk test",
+  "East_Bridge": "route probe"
+ },
+ "botSpawnsExcluded": [
+  "Strasbourg_Cathedral_Spawn1",
+  "The_Courtyard_Spawn1",
+  "The_Courtyard_Spawn2",
+  "The_Courtyard_Spawn4",
+  "Strasbourg_Cathedral_Spawn3",
+  "Allied_Main_Base_Spawn5",
+  "Axis_Main_Base_Spawn4",
+  "Axis_Main_Base_Spawn8",
+  "Hotel_Spawn2",
+  "West_Bridge_Spawn3",
+  "West_Bridge_Spawn4",
+  "East_Bridge_Spawn4",
+  "German_Stronghold_Spawn9",
+  "German_Barracks_Spawn4",
+  "Hotel_Spawn10",
+  "Strasbourg_Cathedral_Spawn6"
+ ],
+ "walkMap": {
+  "source": "page painter",
+  "engine": "none",
+  "opened": [],
+  "ways": [],
+  "cover": 0.887,
+  "floors": {
+   "stacked": false,
+   "twoFloorShare": 0.007,
+   "raised": [],
+   "reason": null
+  },
+  "capped": true,
+  "joined": 1
+ },
+ "routeProbe": {
+  "chokeMax": 4,
+  "unreachable": [
+   "East_Bridge"
+  ],
+  "stops": {
+   "East_Bridge": {
+    "1": {
+     "stage": "choke",
+     "points": 10,
+     "metres": 30,
+     "first": [
+      [
+       1162.5,
+       -1034.4
+      ],
+      [
+       1160.5,
+       -1034.5
+      ],
+      [
+       1157.5,
+       -1034.5
+      ]
+     ]
+    },
+    "2": {
+     "stage": "choke",
+     "points": 10,
+     "metres": 30,
+     "first": [
+      [
+       1162.5,
+       -1034.4
+      ],
+      [
+       1160.5,
+       -1034.5
+      ],
+      [
+       1157.5,
+       -1034.5
+      ]
+     ]
+    }
+   }
+  },
+  "oneSided": {},
+  "sides": {
+   "1": {
+    "spawns": 8,
+    "flags": [
+     "West_Bridge"
+    ]
+   },
+   "2": {
+    "spawns": 6,
+    "flags": [
+     "West_Bridge"
+    ]
+   }
+  },
+  "chokes": {
+   "West_Bridge:1": 0,
+   "West_Bridge:2": 0
+  },
+  "late": {},
+  "shutLinks": []
+ },
+ "inputs": {
+  "controlPoints": "35a535c8de72a66866e3fedd6284753752b6e5fc37283986a1682cf8cf0f613a",
+  "infantryMap": "7dd6768e00ab4235e3356d383209cc69be9977c829bf9110e66bd803ae4b145e",
+  "template": "bdc0e455f47f91b7e7724e71d7c0c196e839b36946ac3abb7663d725944081e5"
+ },
+ "files": {
+  "AI.con": "ff65da5cf781f265a28875b6cbca3063a01ed39073ce89fcfbb96af7a80600f7",
+  "AI/StrategicAreas.con": "aa7d1870478ff4f768b8da22622c7c1130482d207cee01a89527a70ba61119bc",
+  "AI/Strategies.con": "13da4dc35872dd4b5798a066f4425bdc824cfd61f31093d1808e1202644de52e",
+  "AI/conditions.con": "248a04b727c08d696bf0fa9c162bc22c43cde3c75f695892fe1e0f5141519c49",
+  "AI/prerequisites.con": "c96168b5f69860e578f5d26728fd2a2092c4c436e1da49b7d6f4009b65735398"
+ }
+}

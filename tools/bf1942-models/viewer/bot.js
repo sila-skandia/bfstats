@@ -263,6 +263,9 @@ export class BotController {
    */
   tick(dt, now) {
     this._now = now;
+    // The world ticks this pass covers (the page may run two in one pass):
+    // the decision clock a soldier's trigger runs on (bot-plans.js).
+    this._aiTicks = (this._aiTicks ?? 0) + Math.max(1, Math.round(dt * 30));
     const player = this._player();
     if (this.vehicle) {
       // Mounted: the hull's pose (flight.js `FORWARD` is the node's -z); a

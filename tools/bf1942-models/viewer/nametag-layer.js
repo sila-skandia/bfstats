@@ -12,7 +12,7 @@ import { BOT_BODY_RADIUS, BOT_BODY_HEIGHT } from './bot-referee.js';
 import {
   NAMETAG_UP, SOLDIER_ORIGIN_UP,
   aimState, ageAim, markAimed, latchAim, nameTagAlpha, nameTagRgb, nameTagText,
-  nameTagDistances,
+  nameTagDistances, SERVER_NAMETAG_NEAR, SERVER_NAMETAG_SCOPE,
 } from './nametags.js';
 
 const KIT_ORDER = ['scout', 'assault', 'antitank', 'medic', 'engineer'];
@@ -35,9 +35,11 @@ export function createNametagLayer(page) {
   const ctx = canvas?.getContext('2d') ?? null;
   // `BFPlayer+0x1c8` / `+0x1c4`, by the page's key for the player.
   const states = new Map();
-  // Server caps (HUD-16); a server that never says leaves the client's own.
-  let serverNear = Infinity;
-  let serverScope = Infinity;
+  // Server caps (HUD-16). A page no server has spoken to is retail's listen
+  // server with `Setup::initServerSettings`' defaults, 50 and 300 (NET-21,
+  // lnxded 0x080c0a55); `game.setMaxNameTagDistance` moves them.
+  let serverNear = SERVER_NAMETAG_NEAR;
+  let serverScope = SERVER_NAMETAG_SCOPE;
   let font = null;
   let fontAsked = false;
   let painted = false;
@@ -228,7 +230,8 @@ export function createNametagLayer(page) {
       loadConsoleFont(page.hudPaths.consoleFont()).then(f => { font = f; });
     }
     // A real server says its caps in its SetLevel (net-relay.js
-    // `serverNameTags`, HUD-16); a page off a server keeps any set by hand.
+    // `serverNameTags`, HUD-16); a page off one (single player, a room)
+    // keeps the listen server's 50/300 or any set by hand.
     // A replay's are the recording's own SetLevel's, where it has them.
     const caps = replay ? replay.caps : page.roomJoined ? page.roomClient?.serverNameTags?.() ?? null : null;
     const dist = nameTagDistances(caps?.near ?? serverNear, caps?.scope ?? serverScope);

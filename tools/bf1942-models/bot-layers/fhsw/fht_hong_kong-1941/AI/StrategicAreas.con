@@ -1,0 +1,99 @@
+rem *** Strategic areas: one per control point (botgen) ***
+
+aiStrategicArea.create hong_kong_harbor 858.4/892.7 863.4/897.7 50
+aiStrategicArea.addNeighbour chai_wan_road
+aiStrategicArea.addNeighbour temple_ground
+aiStrategicArea.addNeighbour salesian_missionary
+aiStrategicArea.addNeighbour east_brigade_hq
+aiStrategicArea.addNeighbour west_brigade_hq
+aiStrategicArea.addObjectTypeFlag Base
+aiStrategicArea.setOrderPosition Tank 863.5/895.5
+aiStrategicArea.setOrderPosition Infantry 863.4/897.7
+aiStrategicArea.setSide 1
+aiStrategicArea.setTakeable 2 0
+
+aiStrategicArea.create chai_wan_road 510.8/702.2 520.8/712.2 150
+aiStrategicArea.addNeighbour hong_kong_harbor
+aiStrategicArea.addNeighbour temple_ground
+aiStrategicArea.addNeighbour salesian_missionary
+aiStrategicArea.addNeighbour east_brigade_hq
+aiStrategicArea.addNeighbour west_brigade_hq
+aiStrategicArea.addObjectTypeFlag Flank
+aiStrategicArea.addObjectTypeFlag ControlPoint
+aiStrategicArea.setOrderPosition Tank 518.5/712.5
+aiStrategicArea.setOrderPosition Infantry 519.5/713.5
+aiStrategicArea.setSide 2
+
+aiStrategicArea.create temple_ground 755.1/665.8 765.1/675.8 300
+aiStrategicArea.addNeighbour hong_kong_harbor
+aiStrategicArea.addNeighbour chai_wan_road
+aiStrategicArea.addNeighbour salesian_missionary
+aiStrategicArea.addNeighbour east_brigade_hq
+aiStrategicArea.addObjectTypeFlag Centre
+aiStrategicArea.addObjectTypeFlag StrongPoint
+aiStrategicArea.addObjectTypeFlag Close
+aiStrategicArea.addObjectTypeFlag ControlPoint
+aiStrategicArea.setOrderPosition Tank 762.5/675.5
+aiStrategicArea.setOrderPosition Infantry 763.5/674.5
+aiStrategicArea.setSide 2
+
+aiStrategicArea.create salesian_missionary 479.1/522.4 484.1/527.4 200
+aiStrategicArea.addNeighbour hong_kong_harbor
+aiStrategicArea.addNeighbour chai_wan_road
+aiStrategicArea.addNeighbour temple_ground
+aiStrategicArea.addNeighbour east_brigade_hq
+aiStrategicArea.addNeighbour west_brigade_hq
+aiStrategicArea.addNeighbour kai_tak_airport_template
+aiStrategicArea.addNeighbour Stanley_Peninsula
+aiStrategicArea.addObjectTypeFlag Centre
+aiStrategicArea.addObjectTypeFlag ControlPoint
+aiStrategicArea.setOrderPosition Tank 482.5/525.5
+aiStrategicArea.setOrderPosition Infantry 483.5/525.5
+aiStrategicArea.setSide 2
+
+aiStrategicArea.create east_brigade_hq 623/402.8 628/407.8 150
+aiStrategicArea.addNeighbour hong_kong_harbor
+aiStrategicArea.addNeighbour chai_wan_road
+aiStrategicArea.addNeighbour temple_ground
+aiStrategicArea.addNeighbour salesian_missionary
+aiStrategicArea.addNeighbour west_brigade_hq
+aiStrategicArea.addNeighbour kai_tak_airport_template
+aiStrategicArea.addObjectTypeFlag Flank
+aiStrategicArea.addObjectTypeFlag ControlPoint
+aiStrategicArea.setOrderPosition Tank 627.5/409.5
+aiStrategicArea.setOrderPosition Infantry 626.5/408.5
+aiStrategicArea.setSide 2
+
+aiStrategicArea.create west_brigade_hq 301.5/416.5 306.5/421.5 150
+aiStrategicArea.addNeighbour hong_kong_harbor
+aiStrategicArea.addNeighbour chai_wan_road
+aiStrategicArea.addNeighbour salesian_missionary
+aiStrategicArea.addNeighbour east_brigade_hq
+aiStrategicArea.addNeighbour kai_tak_airport_template
+aiStrategicArea.addNeighbour Stanley_Peninsula
+aiStrategicArea.addObjectTypeFlag Flank
+aiStrategicArea.addObjectTypeFlag ControlPoint
+aiStrategicArea.setOrderPosition Tank 310.5/421.5
+aiStrategicArea.setOrderPosition Infantry 310.5/421.5
+aiStrategicArea.setSide 2
+
+aiStrategicArea.create kai_tak_airport_template 498.7/269.5 503.7/274.5 150
+aiStrategicArea.addNeighbour salesian_missionary
+aiStrategicArea.addNeighbour east_brigade_hq
+aiStrategicArea.addNeighbour west_brigade_hq
+aiStrategicArea.addNeighbour Stanley_Peninsula
+aiStrategicArea.addObjectTypeFlag Flank
+aiStrategicArea.addObjectTypeFlag ControlPoint
+aiStrategicArea.setOrderPosition Tank 505.5/274.5
+aiStrategicArea.setOrderPosition Infantry 504.5/275.5
+aiStrategicArea.setSide 2
+
+aiStrategicArea.create Stanley_Peninsula 203.6/134.3 208.6/139.3 200
+aiStrategicArea.addNeighbour salesian_missionary
+aiStrategicArea.addNeighbour west_brigade_hq
+aiStrategicArea.addNeighbour kai_tak_airport_template
+aiStrategicArea.addObjectTypeFlag Centre
+aiStrategicArea.addObjectTypeFlag ControlPoint
+aiStrategicArea.setOrderPosition Tank 206.5/139.5
+aiStrategicArea.setOrderPosition Infantry 207.5/138.5
+aiStrategicArea.setSide 2

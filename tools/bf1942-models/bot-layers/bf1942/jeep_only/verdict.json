@@ -1,0 +1,30 @@
+{
+ "level": "jeep_only",
+ "verdict": "fail",
+ "outcome": "unsuitable",
+ "config": "with vehicles",
+ "doctrine": "garrison",
+ "generatorVersion": 5,
+ "inputs": {
+  "controlPoints": "547e35c6e614f0ab0402e24696a56b25cd5f58e4c10a2ce704b9285cf525c64c",
+  "infantryMap": "eda9d5a04f6e24582c8ca11b01a1532d5c0b6442544e8aa6a1094efd8e177275",
+  "template": "bdc0e455f47f91b7e7724e71d7c0c196e839b36946ac3abb7663d725944081e5"
+ },
+ "baseline": "DICE layers with vehicles, garrison doctrine: berlin, stalingrad, kharkov, bocage; seeds 1..10, 600 s",
+ "bar": null,
+ "seeds": 1,
+ "sizes": {},
+ "oneSided": null,
+ "unreachable": [
+  "bridge",
+  "basement",
+  "groove_south",
+  "groove_north"
+ ],
+ "lintErrors": [
+  "the play surface is stacked floors (2 of 4 capturable flags stand a storey over or under another walked floor): a one-floor walk map cannot hold it",
+  "no capturable flag is reachable in 3D: none of the 4 has a place inside its radius that a soldier on the one-floor walk map's main ground can stand in",
+  "side 1 has no spawn with a route to any flag it must take: none of the 4 flags it does not hold can be reached",
+  "side 2 has no spawn with a route to any flag it must take: none of the 4 flags it does not hold can be reached"
+ ]
+}

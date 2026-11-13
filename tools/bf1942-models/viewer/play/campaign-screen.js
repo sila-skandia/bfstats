@@ -490,10 +490,10 @@ export function createCampaignScreen({
       ctx.globalAlpha = 1;
       ctx.imageSmoothingEnabled = false;
       const title = `${index + 1}. ${mission.title || mission.level}`;
-      drawBitmapText(ctx, font, env.tint, fitText(font, title, room), left, y + 1, ink);
+      drawBitmapText(ctx, font, env.tint, fitText(font, title, room), left, y + 1, ink, true);
       if (tag) {
         drawBitmapText(ctx, font, env.tint, tag, Math.round(area.x + area.w - 4 - tagWidth), y + 1,
-                       result && !result.won ? DIM : INK);
+                       result && !result.won ? DIM : INK, true);
       }
     }
     if (area.track && data.order.length > visible) {

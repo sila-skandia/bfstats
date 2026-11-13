@@ -1,0 +1,57 @@
+rem *** Strategic areas: one per control point (botgen) ***
+
+aiStrategicArea.create Start_of_the_race 1969.6/1864.5 1974.6/1869.5 50
+aiStrategicArea.addNeighbour Bumps
+aiStrategicArea.addNeighbour Race_start
+aiStrategicArea.addObjectTypeFlag Base
+aiStrategicArea.setOrderPosition Tank 1976.5/1867.5
+aiStrategicArea.setOrderPosition Infantry 1975.5/1869.5
+aiStrategicArea.setSide 2
+aiStrategicArea.setTakeable 1 0
+
+aiStrategicArea.create Bumps 1563.1/1873.4 1603.1/1913.4 150
+aiStrategicArea.addNeighbour Start_of_the_race
+aiStrategicArea.addNeighbour Jump
+aiStrategicArea.addObjectTypeFlag Flank
+aiStrategicArea.addObjectTypeFlag Close
+aiStrategicArea.addObjectTypeFlag ControlPoint
+aiStrategicArea.setOrderPosition Tank 1584.5/1931.5
+aiStrategicArea.setOrderPosition Infantry 1603.5/1912.5
+
+aiStrategicArea.create Jump 1206/1701.8 1246/1741.8 150
+aiStrategicArea.addNeighbour Bumps
+aiStrategicArea.addNeighbour What_a_jump
+aiStrategicArea.addObjectTypeFlag Flank
+aiStrategicArea.addObjectTypeFlag ControlPoint
+aiStrategicArea.setOrderPosition Tank 1243.5/1743.5
+aiStrategicArea.setOrderPosition Infantry 1246.5/1742.5
+
+aiStrategicArea.create What_a_jump 1051.7/1359.9 1091.7/1399.9 150
+aiStrategicArea.addNeighbour Jump
+aiStrategicArea.addNeighbour GoGoGo_OrCrash
+aiStrategicArea.addObjectTypeFlag Flank
+aiStrategicArea.addObjectTypeFlag ControlPoint
+aiStrategicArea.setOrderPosition Infantry 1092.5/1399.5
+
+aiStrategicArea.create GoGoGo_OrCrash 404/1384.1 434/1414.1 150
+aiStrategicArea.addNeighbour What_a_jump
+aiStrategicArea.addObjectTypeFlag Flank
+aiStrategicArea.addObjectTypeFlag ControlPoint
+aiStrategicArea.setOrderPosition Tank 429.5/1415.5
+aiStrategicArea.setOrderPosition Infantry 433.5/1415.5
+
+aiStrategicArea.create Trial_zone 526.3/1618.4 546.3/1638.4 10
+aiStrategicArea.setTakeable 1 0
+aiStrategicArea.setTakeable 2 0
+
+aiStrategicArea.create Race_start 1959.7/1841.8 1964.7/1846.8 50
+aiStrategicArea.addNeighbour Start_of_the_race
+aiStrategicArea.addObjectTypeFlag Base
+aiStrategicArea.setOrderPosition Tank 1967.5/1846.5
+aiStrategicArea.setOrderPosition Infantry 1965.5/1846.5
+aiStrategicArea.setSide 1
+aiStrategicArea.setTakeable 2 0
+
+aiStrategicArea.create Beach 90.5/1641.1 95.5/1646.1 10
+aiStrategicArea.setTakeable 1 0
+aiStrategicArea.setTakeable 2 0

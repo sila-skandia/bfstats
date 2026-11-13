@@ -1,0 +1,29 @@
+{
+ "level": "rheinuebung-1941",
+ "verdict": "fail",
+ "outcome": "unsuitable",
+ "config": "with vehicles",
+ "doctrine": "garrison",
+ "generatorVersion": 5,
+ "inputs": {
+  "controlPoints": "56d9a8ca3977de9b2c898a42df544b8af27010038cb2d2d2aaa72c8bd84cad74",
+  "infantryMap": "9aeda0ca13e528c577f7436bdf406521ffbce63dde0d7ae17dc0aa0ea709fe89",
+  "template": "bdc0e455f47f91b7e7724e71d7c0c196e839b36946ac3abb7663d725944081e5"
+ },
+ "baseline": "DICE layers with vehicles, garrison doctrine: berlin, stalingrad, kharkov, bocage; seeds 1..10, 600 s",
+ "bar": null,
+ "seeds": 1,
+ "sizes": {},
+ "oneSided": null,
+ "unreachable": [
+  "East_Atlantic",
+  "North_Atlantic",
+  "West_Atlantic",
+  "South_Atlantic"
+ ],
+ "lintErrors": [
+  "no capturable flag is reachable in 3D: none of the 4 has a place inside its radius that a soldier on the one-floor walk map's main ground can stand in",
+  "side 1 holds no spawn point at the start of the round",
+  "side 2 holds no spawn point at the start of the round"
+ ]
+}

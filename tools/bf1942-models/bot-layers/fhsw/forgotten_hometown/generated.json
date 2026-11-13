@@ -1,0 +1,537 @@
+{
+ "generator": "botgen",
+ "version": 6,
+ "mod": "FHSW",
+ "level": "forgotten_hometown",
+ "objectSpawners": 128,
+ "template": "symmetric",
+ "templateSource": "DICE, bf1942 Kharkov (1.6 patch archives): AI/Strategies.con, AI/conditions.con, AI/prerequisites.con, unchanged",
+ "templateChoice": {
+  "name": "symmetric",
+  "inPlay": 4,
+  "rule": "4 capturable flags in play, more than 3"
+ },
+ "scope": "an infantry map from the page painter with the walk test's ways out opened, a Tank0 map from the page painter, infantry order positions, no strategic maps, no co-op layer",
+ "unreachable": [
+  "karasunuma"
+ ],
+ "unreachableReasons": {
+  "karasunuma": "walk test"
+ },
+ "botSpawnsExcluded": [
+  "numa_01",
+  "numa_08",
+  "chinju_06",
+  "chinju_07",
+  "chinju_08"
+ ],
+ "walkMap": {
+  "source": "page painter",
+  "engine": "none",
+  "vehicleMap": "page painter",
+  "vehicleBrush": 1.5,
+  "vehicleBrushes": [
+   {
+    "brush": 3,
+    "flagsOn": 4,
+    "spawnersOn": 23,
+    "pieces": 27,
+    "main": 304946
+   },
+   {
+    "brush": 2.5,
+    "flagsOn": 4,
+    "spawnersOn": 25,
+    "pieces": 22,
+    "main": 325808
+   },
+   {
+    "brush": 2,
+    "flagsOn": 4,
+    "spawnersOn": 30,
+    "pieces": 18,
+    "main": 334368
+   },
+   {
+    "brush": 1.5,
+    "flagsOn": 5,
+    "spawnersOn": 53,
+    "pieces": 13,
+    "main": 949034
+   }
+  ],
+  "opened": [
+   [
+    1412,
+    2299
+   ],
+   [
+    1412,
+    2300
+   ],
+   [
+    1412,
+    2301
+   ],
+   [
+    1412,
+    2302
+   ],
+   [
+    1442,
+    2308
+   ],
+   [
+    1442,
+    2309
+   ],
+   [
+    1442,
+    2310
+   ],
+   [
+    1412,
+    2311
+   ],
+   [
+    1412,
+    2312
+   ],
+   [
+    1412,
+    2313
+   ],
+   [
+    1412,
+    2314
+   ],
+   [
+    1442,
+    2318
+   ],
+   [
+    1442,
+    2319
+   ],
+   [
+    1442,
+    2320
+   ],
+   [
+    1442,
+    2321
+   ],
+   [
+    1442,
+    2322
+   ],
+   [
+    1442,
+    2323
+   ],
+   [
+    1412,
+    2335
+   ],
+   [
+    1412,
+    2336
+   ],
+   [
+    1412,
+    2337
+   ],
+   [
+    1412,
+    2338
+   ],
+   [
+    1412,
+    2339
+   ],
+   [
+    1412,
+    2340
+   ],
+   [
+    1419,
+    2341
+   ],
+   [
+    1427,
+    2341
+   ],
+   [
+    1428,
+    2341
+   ],
+   [
+    1428,
+    2342
+   ],
+   [
+    1429,
+    2342
+   ],
+   [
+    1429,
+    2343
+   ],
+   [
+    1429,
+    2344
+   ],
+   [
+    1412,
+    2345
+   ],
+   [
+    1429,
+    2345
+   ],
+   [
+    1430,
+    2345
+   ],
+   [
+    1412,
+    2346
+   ],
+   [
+    1430,
+    2346
+   ],
+   [
+    1431,
+    2346
+   ],
+   [
+    1412,
+    2347
+   ],
+   [
+    1441,
+    2378
+   ],
+   [
+    1442,
+    2378
+   ],
+   [
+    1441,
+    2379
+   ],
+   [
+    1440,
+    2380
+   ],
+   [
+    1441,
+    2380
+   ],
+   [
+    1441,
+    2381
+   ],
+   [
+    1441,
+    2382
+   ],
+   [
+    1441,
+    2383
+   ],
+   [
+    1440,
+    2384
+   ],
+   [
+    1441,
+    2384
+   ],
+   [
+    1441,
+    2385
+   ],
+   [
+    1441,
+    2386
+   ],
+   [
+    1444,
+    2392
+   ],
+   [
+    1445,
+    2392
+   ],
+   [
+    1446,
+    2392
+   ],
+   [
+    1447,
+    2392
+   ],
+   [
+    1441,
+    2394
+   ],
+   [
+    1441,
+    2395
+   ],
+   [
+    1441,
+    2396
+   ],
+   [
+    2057,
+    2483
+   ],
+   [
+    2054,
+    2484
+   ],
+   [
+    2055,
+    2484
+   ],
+   [
+    2056,
+    2484
+   ],
+   [
+    2057,
+    2484
+   ],
+   [
+    2053,
+    2485
+   ],
+   [
+    2054,
+    2485
+   ],
+   [
+    2053,
+    2494
+   ],
+   [
+    2054,
+    2494
+   ],
+   [
+    2055,
+    2494
+   ],
+   [
+    2056,
+    2494
+   ],
+   [
+    2057,
+    2494
+   ],
+   [
+    2058,
+    2494
+   ]
+  ],
+  "ways": [
+   {
+    "who": "su_base_01",
+    "kind": "spawn",
+    "way": "walk",
+    "opened": 22
+   },
+   {
+    "who": "su_base_02",
+    "kind": "spawn",
+    "way": "walk",
+    "opened": 0
+   },
+   {
+    "who": "su_base_03",
+    "kind": "spawn",
+    "way": "walk",
+    "opened": 0
+   },
+   {
+    "who": "su_base_04",
+    "kind": "spawn",
+    "way": "walk",
+    "opened": 0
+   },
+   {
+    "who": "su_base_05",
+    "kind": "spawn",
+    "way": "walk",
+    "opened": 17
+   },
+   {
+    "who": "su_base_06",
+    "kind": "spawn",
+    "way": "walk",
+    "opened": 5
+   },
+   {
+    "who": "su_base_07",
+    "kind": "spawn",
+    "way": "walk",
+    "opened": 1
+   },
+   {
+    "who": "su_base_08",
+    "kind": "spawn",
+    "way": "walk",
+    "opened": 1
+   },
+   {
+    "who": "su_base_09",
+    "kind": "spawn",
+    "way": "walk",
+    "opened": 0
+   },
+   {
+    "who": "su_base_10",
+    "kind": "spawn",
+    "way": "walk",
+    "opened": 0
+   },
+   {
+    "who": "su_base_11",
+    "kind": "spawn",
+    "way": "walk",
+    "opened": 0
+   },
+   {
+    "who": "su_base_12",
+    "kind": "spawn",
+    "way": "walk",
+    "opened": 0
+   },
+   {
+    "who": "that_02",
+    "kind": "spawn",
+    "way": "drop",
+    "opened": 6
+   },
+   {
+    "who": "that_09",
+    "kind": "spawn",
+    "way": "walk",
+    "opened": 7
+   },
+   {
+    "who": "chinju_06",
+    "kind": "spawn",
+    "way": "jump",
+    "opened": 0
+   },
+   {
+    "who": "chinju_07",
+    "kind": "spawn",
+    "way": "jump",
+    "opened": 0
+   },
+   {
+    "who": "chinju_08",
+    "kind": "spawn",
+    "way": "jump",
+    "opened": 0
+   },
+   {
+    "who": "m3a1susp67:m3a1susoldierspawn67",
+    "kind": "spawn",
+    "way": "walk",
+    "opened": 6
+   },
+   {
+    "who": "fordgpaspawn01:fordgpadriverspawn",
+    "kind": "spawn",
+    "way": "walk",
+    "opened": 0
+   },
+   {
+    "who": "isu_apc_sp80:isu_apc_soldierspawn80",
+    "kind": "spawn",
+    "way": "walk",
+    "opened": 0
+   },
+   {
+    "who": "alliesbase",
+    "kind": "flag",
+    "way": "walk",
+    "opened": 4
+   }
+  ],
+  "cover": 0.776,
+  "floors": {
+   "stacked": false,
+   "twoFloorShare": 0.002,
+   "raised": [
+    "karasunuma"
+   ],
+   "reason": null
+  },
+  "capped": true
+ },
+ "routeProbe": {
+  "chokeMax": 4,
+  "unreachable": [],
+  "stops": {},
+  "oneSided": {},
+  "sides": {
+   "1": {
+    "spawns": 55,
+    "flags": [
+     "bridgehead",
+     "chinju",
+     "jpartybase",
+     "thatched"
+    ]
+   },
+   "2": {
+    "spawns": 12,
+    "flags": [
+     "bridgehead",
+     "chinju",
+     "jpartybase",
+     "thatched"
+    ]
+   }
+  },
+  "chokes": {
+   "bridgehead:1": 2,
+   "bridgehead:2": 0,
+   "jpartybase:1": 0,
+   "jpartybase:2": 0,
+   "chinju:1": 0,
+   "chinju:2": 0,
+   "thatched:1": 0,
+   "thatched:2": 0
+  },
+  "late": {},
+  "shutLinks": []
+ },
+ "inputs": {
+  "controlPoints": "b79c68a1d8c99ce67102c720b9098e1c965e8bfcd0b0bd5d982b2669850d7186",
+  "infantryMap": "67ecb586080e552bd78e08efbabd3e798e0d34c37f1bdbd96ad21a583b4a5251",
+  "template": "43f8a790471528016570235f76e97dbb2045732458781a5139f37fed68bf98c0"
+ },
+ "files": {
+  "AI.con": "687ce2d75ca4ef5504313784c8a0a378a3bd23567d79475b13eede28e2836458",
+  "AIpathFinding.con": "9d8080cdfa7605961969aa126519b03be9691bd604ac76aef50166d81215edd2",
+  "AI/StrategicAreas.con": "3343fec7e6b1ddefaa9d2eba65f29f28011a105c3fb6d533b9fc994a17d96b9d",
+  "AI/Strategies.con": "4ce0be59a0d6c5cd530db002fb062c4be8d936bc6ae59bd188803ccaf7869a8d",
+  "AI/conditions.con": "68a0c7a8aec69954063147b60fae560b2874884285737aa085efa76597d395aa",
+  "AI/prerequisites.con": "4c1f313bc285b228fd6ad03bfd1f44c5b15c8703c31f802eb605bc5f00f88bb5",
+  "Pathfinding/Infantry1Level0Map.raw": "be72bf55fd4d06c06f3fa2e2fedb550282e708c668c5dce42acdac0cb6bafaa7",
+  "Pathfinding/Infantry1Level1Map.raw": "99f5c7bb6a6ae77a51b8a83b2c874c037b7bcae30715e5238ee727e75b13d0f7",
+  "Pathfinding/Infantry1Level2Map.raw": "4368eabf8e89ba0996629d9166c28cb7dcc97782f25be9dcca6c6898aff4f200",
+  "Pathfinding/Tank0Level0Map.raw": "aa0c0e3e744d094ac210ac0db669943e14e9b08c5cb99d2fc3f78bd2e4da1c87",
+  "Pathfinding/Tank0Level1Map.raw": "a69be7af799a77f4ccd3b32daa64bc9383af73bcaaf66317f727704320551004",
+  "Pathfinding/Tank0Level2Map.raw": "57b08951ea74ec4b6e4c5f1d2b58d4dd3576b811c73066ab7ab1de8565d36bb3"
+ }
+}

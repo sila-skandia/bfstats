@@ -222,11 +222,11 @@ class StraightClimbTests(unittest.TestCase):
     def test_the_energy_for_a_moment_then_them_behind_you(self) -> None:
         for r in self.runs:
             self.assertLessEqual(r["peak"], 780)
-            self.assertTrue(70 <= r["maxLead"] <= 92 and 24.9 <= r["maxLeadT"] <= 25.5, (r["maxLead"], r["maxLeadT"]))
+            self.assertTrue(70 <= r["maxLead"] <= 92 and 24.9 <= r["maxLeadT"] <= 25.7, (r["maxLead"], r["maxLeadT"]))  # re-pinned 2026-11-12 on retail g and box area (features/retail-parity-cross-check-2026-11-12)
             # Behind you, inside 450 m, nose on you: 8 to 38 s of the fight.
             self.assertTrue(8 <= r["behind"] <= 38.5, r["behind"])
         lo, hi = span(self.runs, "lead")
-        self.assertTrue(-86 <= lo and hi <= -12, (lo, hi))
+        self.assertTrue(-86 <= lo and hi <= -11, (lo, hi))  # re-pinned 2026-11-12 on retail g and box area (features/retail-parity-cross-check-2026-11-12)
 
 
 class FlatTurnTests(unittest.TestCase):
@@ -243,8 +243,9 @@ class FlatTurnTests(unittest.TestCase):
         for r in fired:
             # The third dive, about 41 s in, from 300 to 360 m.
             self.assertTrue(40.0 <= r["fireT"] <= 41.5 and 290 <= r["fireRange"] <= 360, (r["fireT"], r["fireRange"]))
-        # One round lands in two of them, and never on a pilot they did not fire at.
-        self.assertEqual([0] * 7 + [1] * 2, sorted(r["hits"][0] for r in self.runs))
+        # One round lands in each of them, and never on a pilot they did not fire at.
+        self.assertEqual([0] * 6 + [1] * 3, sorted(r["hits"][0] for r in self.runs))  # re-pinned 2026-11-12 on retail g and box area (features/retail-parity-cross-check-2026-11-12)
+        self.assertTrue(all(r["hits"][0] == (1 if r["aceFired"] else 0) for r in self.runs))
         self.assertTrue(all(r["hits"][1] == 0 for r in self.runs))
 
     def test_it_buys_nothing(self) -> None:
@@ -316,11 +317,11 @@ class MovesTests(unittest.TestCase):
         let_go = [r["letGo"] for r in runs if r["letGo"] is not None]
         self.assertEqual(7, len(let_go))
         self.assertTrue(all(38.5 <= t <= 64.4 for t in let_go), let_go)
-        self.assertTrue(all(1050 <= r["endRange"] <= 8749 and 116 <= r["endSpeed"] <= 124 for r in runs),
+        self.assertTrue(all(1045 <= r["endRange"] <= 8749 and 116 <= r["endSpeed"] <= 124 for r in runs),  # re-pinned 2026-11-12 on retail g and box area (features/retail-parity-cross-check-2026-11-12)
                         [(r["endRange"], r["endSpeed"]) for r in runs])
-        # Rounds of yours on them in five, 1 to 3.
+        # Rounds of yours on them in six, 1 to 3.
         landed = sorted(r["hits"][1] for r in runs if r["hits"][1])
-        self.assertEqual(5, len(landed))
+        self.assertEqual(6, len(landed))  # re-pinned 2026-11-12 on retail g and box area (features/retail-parity-cross-check-2026-11-12)
         self.assertTrue(1 <= landed[0] and landed[-1] <= 3, landed)
 
     def test_the_dip_has_its_own_steps_and_each_one_comes(self) -> None:
@@ -333,11 +334,19 @@ class MovesTests(unittest.TestCase):
     def test_the_flip_never_finds_a_tail_to_reverse_onto(self) -> None:
         self.assertFalse(any(r["flipped"] for r in self.moves["flip"]))
 
-    def test_the_ninja_never_wins_the_energy(self) -> None:
+    def test_the_ninja_wins_the_energy_only_once_they_have_let_you_go(self) -> None:
+        # Claim rewritten 2026-11-12 on retail g and box area
+        # (features/retail-parity-cross-check-2026-11-12): in one start of nine
+        # (the sixth) the edge comes at 43.9 s, after they let you go at 40.3 s
+        # 2.3 km off, and the dive never starts; in the other eight never. The
+        # third start ends with their paths crossing at 21 m on the 90 s
+        # clock: on your six 0.13 s, never 1 s.
         runs = self.moves["ninja"]
-        self.assertTrue(all(r["handed"] is None and r["sixLost"] == 0 for r in runs))
+        handed = [(i, r["handed"], r["letGo"]) for i, r in enumerate(runs) if r["handed"] is not None]
+        self.assertEqual([(5, 43.9, 40.3)], handed)
+        self.assertTrue(all(r["sixLost"] <= 0.2 for r in runs), [r["sixLost"] for r in runs])
         landed = sorted(r["hits"][1] for r in runs if r["hits"][1])
-        self.assertEqual(5, len(landed))
+        self.assertEqual(6, len(landed))
         self.assertTrue(1 <= landed[0] and landed[-1] <= 3, landed)
 
 
@@ -359,7 +368,7 @@ class OnTheMig29Tests(unittest.TestCase):
         self.assertTrue(all(3.5 <= r["behind"] <= 6 for r in move), [r["behind"] for r in move])
         self.assertTrue(all(-551 <= r["lead"] <= -442 for r in flat), [r["lead"] for r in flat])
         leads = sorted(r["lead"] for r in counter)
-        self.assertEqual(-28, leads[0])
+        self.assertEqual(-31, leads[0])  # re-pinned 2026-11-12 on retail g and box area (features/retail-parity-cross-check-2026-11-12)
         self.assertTrue(all(3 <= x <= 4 for x in leads[1:]), leads)
         self.assertTrue(all(r["behind"] == 0 and r["endSep"] >= 2400 for r in counter))
 

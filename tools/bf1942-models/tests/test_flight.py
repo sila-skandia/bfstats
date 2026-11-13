@@ -81,6 +81,8 @@ MODULES = {
     # (`engine-revs.js`) at the engine tick rate (`body-friction.js`, which
     # imports `rigid-body.js`).
     "vectored-engines.js": VIEWER / "vectored-engines.js",
+    # `vectored-engines.js` steps an Engine's heat (PHY-45).
+    "rocket-burn.js": VIEWER / "rocket-burn.js",
     "engine-revs.js": VIEWER / "engine-revs.js",
     # `vehicle-base.js` and `vectored-engines.js` import the rotor spin law.
     "engine-spin.js": VIEWER / "engine-spin.js",
@@ -113,8 +115,9 @@ THREE_PACKAGE = json.dumps({
     "main": "three.module.js", "exports": "./three.module.js",
 })
 
-# Gravity: `BasicPhysicsSystem::BasicPhysicsSystem`, client 0x00578f00.
-G = 14.7295379
+# Gravity: `BasicPhysicsSystem::BasicPhysicsSystem`, client 0x00578f00:
+# 0xC16BAE14 = -14.73f.
+G = 14.73
 # `airDensityZeroAtHeight`, same constructor, +0x30.
 CEILING = 1000.0
 

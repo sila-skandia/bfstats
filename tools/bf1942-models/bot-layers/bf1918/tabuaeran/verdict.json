@@ -1,0 +1,22 @@
+{
+ "level": "tabuaeran",
+ "verdict": "fail",
+ "outcome": "unsuitable",
+ "config": "with vehicles",
+ "doctrine": "garrison",
+ "generatorVersion": 5,
+ "inputs": {
+  "controlPoints": "166892f3f41e7733f865fedd9ac0498143e16b5620690058a4c7e2baf825002e",
+  "infantryMap": "483d8604ee8061fb45622da0bbf19ae0de4ba26b06bb55bf4d8dc08ae85467e4",
+  "template": "bdc0e455f47f91b7e7724e71d7c0c196e839b36946ac3abb7663d725944081e5"
+ },
+ "baseline": "DICE layers with vehicles, garrison doctrine: berlin, stalingrad, kharkov, bocage; seeds 1..10, 600 s",
+ "bar": null,
+ "seeds": 1,
+ "sizes": {},
+ "oneSided": null,
+ "unreachable": [],
+ "lintErrors": [
+  "side 1 has no spawn with a route to any flag it must take: of its 2 spawns 2 have no way on foot to the main ground; the level places 2 ladders, which neither the walk test nor a bot climbs"
+ ]
+}

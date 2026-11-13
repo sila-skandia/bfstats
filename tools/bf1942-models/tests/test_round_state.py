@@ -317,6 +317,28 @@ class RoundStateTests(unittest.TestCase):
         self.assertEqual({"1": 100, "2": 145}, e["noCensus"]["tickets"])
 
 
+    def test_the_pre_game_holds_a_new_map_20_s_and_a_restart_10(self) -> None:
+        """`gameStatusPreGame` 0x08150950 (ROUND-14): `+0x1ac` runs down by
+        dt, clamped at 0, and the frame it reaches 0 sets status 1; a new map
+        waits `serverGameStartDelay` 20 and a restart (`resetTimers`
+        0x08157790: `+0x1ac = +0x1b0`) `serverGameRoundStartDelay` 10
+        (NET-21). Nothing else runs: no bleed, no clock, no score. Single
+        player's local server has 0 (`GameServer::init` 0x08131ce6)."""
+        p = self.results["preGame"]
+        self.assertEqual([20, 10], p["delays"])
+        self.assertEqual(["preGame", 20], p["start"])
+        self.assertEqual("preGame", p["at19"]["status"])
+        self.assertAlmostEqual(1.0, p["at19"]["left"], places=2)
+        self.assertEqual(0, p["at19"]["clock"])
+        self.assertEqual({"1": 100, "2": 100}, p["at19"]["tickets"])
+        self.assertEqual(0, p["at19"]["pay"])
+        self.assertEqual("playing", p["at20"]["status"])
+        self.assertEqual(0, p["at20"]["left"])
+        self.assertLess(p["at20"]["clock"], 0.05)
+        self.assertEqual({"status": "preGame", "left": 10, "clock": 0}, p["restart"])
+        self.assertEqual("playing", p["afterRestart"]["status"])
+        self.assertEqual({"start": "playing", "restart": "playing"}, p["solo"])
+
 if __name__ == "__main__":
     unittest.main()
 

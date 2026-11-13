@@ -34,7 +34,7 @@ HARNESS = Path(__file__).resolve().parent / "bot_ai_harness.mjs"
 # imports resolve; the world is copied as `world.mjs` for the harness.
 _MODULE_NAMES = [
     "physics", "parachute", "rocket-pack", "swim", "soldier", "ladder-climb", "spawn-flags", "spawn-safety", "mouse-input",
-    "point-body", "fixed-step", "input-pace", "soldier-pose", "soldier-locomotion", "walking-body", "soldier-resolve",
+    "point-body", "fixed-step", "input-pace", "soldier-pose", "soldier-locomotion", "walking-body", "soldier-resolve", "deck-carry",
     "fall-damage",
     "body-world", "body-statics", "vehicle-bodies", "geometry-search", "combat-area", "supply", "armor",
     "vehicle-damage", "seats", "seat-dots", "rigid-body", "body-contact",
@@ -57,12 +57,15 @@ _MODULE_NAMES = [
     "control-point-law",
     # bot-plans.js's hold-fire for a teammate in the line.
     "friendly-fire",
+    # bot-decision.js lists the side's hulls for an engineer's wrench
+    # (`friendlyHulls`), by the wrench's own reach.
+    "healing-packs", "soldier-death", "skeleton-hit",
 ]
 MODULES = {f"{name}.js": VIEWER / f"{name}.js" for name in _MODULE_NAMES}
 MODULES["world.mjs"] = VIEWER / "world.js"
 MODULES["bot.js"] = VIEWER / "bot.js"
 MODULES["nav-grid.js"] = VIEWER / "nav-grid.js"
-for _m in ("bot-aim.js", "bot-perception.js", "bot-route.js", "bot-pilot.js", "bot-decision.js", "bot-plans.js", "bot-mount.js", "bot-sense.js", "bot-fire.js", "bot-behaviours.js", "bot-pose.js", "bot-vehicle.js", "bot-vehicle-air.js", "bot-strength.js", "bot-rows.js", "strategic.js", "strategic-layer.js", "strategic-ai.js", "doctrine.js", "doctrine-squad.js", "doctrine-garrison.js", "doctrine-landing.js"):
+for _m in ("bot-aim.js", "bot-perception.js", "bot-route.js", "bot-pilot.js", "bot-decision.js", "bot-plans.js", "bot-mount.js", "bot-radio.js", "bot-sense.js", "bot-fire.js", "bot-behaviours.js", "bot-pose.js", "bot-vehicle.js", "bot-vehicle-air.js", "bot-portal.js", "bot-strength.js", "bot-rows.js", "strategic.js", "strategic-layer.js", "strategic-ai.js", "doctrine.js", "doctrine-squad.js", "doctrine-garrison.js", "doctrine-landing.js"):
     MODULES[_m] = VIEWER / _m
 # `actionStatusDecision` against the binary (the x87 emulator's answers).
 MODULES["action_status_cases.json"] = Path(__file__).resolve().parent / "fixtures" / "action_status_cases.json"
@@ -314,6 +317,20 @@ class BotAiTests(unittest.TestCase):
         self.assertEqual(s["afterResight"], {"e1": 9, "e2": 5, "e4": 5})
         self.assertEqual(s["afterHear"], {"e1": 9, "e2": 5, "e4": 5, "e3": 9})
         self.assertIsNone(s["securityOfUnknown"])
+        # TakeCover's heard term is `security x threat / d`
+        # (`BBTakeCoverInfantry::calculateUrgency` 0x08580140, the
+        # `getSecurity()` call at 0x085806e5): full at the sound, half 7.5 s
+        # on (SCurve(0.5) = 0.5), nothing once the soldier's 15 s
+        # `degeneration` has passed, though the heard record lives 30 s.
+        c = s["heardCover"]
+        self.assertEqual(c["fresh"]["security"], 1.0)
+        self.assertAlmostEqual(c["half"]["security"], 0.5, places=6)
+        self.assertEqual(c["gone"]["security"], 0.0)
+        self.assertEqual(c["noStore"]["security"], 1.0)
+        self.assertGreater(c["fresh"]["urgency"], c["half"]["urgency"])
+        self.assertGreater(c["half"]["urgency"], 0)
+        self.assertEqual(c["gone"]["urgency"], 0)
+        self.assertGreater(c["noStore"]["urgency"], 0)
 
     def test_the_seat_swap_prefers_the_wheel_of_a_free_jeep(self) -> None:
         t = self.results["teleport"]
@@ -438,8 +455,30 @@ class BotAiTests(unittest.TestCase):
         self.assertEqual(p["inRange"], "attack")
         self.assertTrue(p["inRangeFire"])
         self.assertEqual(p["passed"], "break")                       # inside 1.3 x the turn radius
-        self.assertEqual(p["breaking"], "break")                     # 100 m into the 200 m run
+        # The break ends where its move does, `Not(BAPConObjectDistance(target,
+        # 1.3 R))` (0x0859ba03): 15 m from the target it goes on, 80 m (past
+        # 1.3 x 25) it is over; the 200 m run was ours.
+        self.assertEqual(p["breaking"], "break")
+        self.assertEqual(p["beyond"], "approach")
         self.assertEqual(p["again"], "approach")
+        # The break point (`createPlanInternal` 0x0859b4b0, AI-83): 1.5 x the
+        # weapon's 300 m range along the heading at y = 100; a dive's
+        # un-normalised forward shortens it (0.8 x 450).
+        b = p["breakPins"]
+        self.assertEqual(b["inside"], {"point": [1000, 100, -1450], "edge": False})
+        self.assertEqual(b["dive"], {"point": [1000, 100, -1360], "edge": False})
+        # The engine's far-z test reads the wrong float: no edge point there.
+        self.assertEqual(b["farZ"], {"point": [1000, 100, -2490], "edge": False})
+        # Leaving by x = 0 from 5 m: the edge, z slid by sqrt(1.3 x 40 - 25).
+        self.assertTrue(b["westNear"]["edge"])
+        self.assertEqual(b["westNear"]["point"][0], 0)
+        self.assertAlmostEqual(b["westNear"]["point"][2], -(1000 + 27 ** 0.5), places=4)
+        # From 30 m the engine's root is of a negative number: no slide.
+        self.assertEqual(b["westFar"]["point"], [0, 100, -1000])
+        self.assertEqual(b["east"]["point"][0], 2048)
+        self.assertAlmostEqual(b["east"]["point"][2], -(1000 - (52 - 9) ** 0.5), places=4)
+        self.assertEqual(b["south"]["point"][2], 0)
+        self.assertAlmostEqual(b["south"]["point"][0], 1000 + 36 ** 0.5, places=4)
         self.assertEqual([m["mode"] for m in p["modes"]], [0, 1, 2, 3])
         self.assertEqual(p["modes"][1]["radius"], 5.0)
         self.assertEqual(p["modes"][2]["radius"], 43.333333333333336)
@@ -620,7 +659,22 @@ class AirSpacingTests(unittest.TestCase):
         self.assertAlmostEqual(a["right"][1], 96.0, places=6)
         self.assertAlmostEqual(a["rightUntil"], 2.2, places=6)
         self.assertAlmostEqual(a["left"][2], 35.355, places=3)
-        self.assertAlmostEqual(a["left"][1], 104.0, places=6)
+        # The point's y is the ALTITUDE +- 2 t, not the world height
+        # (`getAltitude()` 0x085e8b20 written into the Pos3, 0x085879dc):
+        # 120 m over the ground at world y 100 gives 124.
+        self.assertAlmostEqual(a["left"][1], 124.0, places=6)
+
+    def test_the_slow_object_gate_and_the_flat_grid_test(self) -> None:
+        g = self.a["gate"]
+        # `getPotentialObstacleMaxSpeed` 1.0 (0x0855cf1d): slower adds nothing.
+        self.assertEqual(g["parked"], 0)
+        self.assertAlmostEqual(g["taxiing"], 2500 * 49 / 100, places=6)
+        # `getInformationWithinCircle` 0x085d0260 tests x / z only: 280 m up
+        # and 100 m ahead is inside the 265 m query, and the dive meets the
+        # plane 4 s on.
+        self.assertGreater(g["diving"], 0)
+        # 270 m to the side is outside it, whatever it does.
+        self.assertEqual(g["flatOut"], 0)
 
 
 class GunnerAimTests(unittest.TestCase):
@@ -937,6 +991,50 @@ class ArtilleryDriverTests(unittest.TestCase):
     @classmethod
     def setUpClass(cls) -> None:
         cls.a = run_harness()["artilleryDriver"]
+
+    def test_a_guided_launcher_looks_and_fires(self) -> None:
+        # `FixedGuidedMissileLauncher` registers `BBFireGuided` / `BBPFireGuided`
+        # (0x085705d0 / 0x085b0a60). The plan looks straight at the object
+        # (no lead: no Aimer in it) and its trigger waits for the look to
+        # come inside 0.0349066 rad (`$0x3d0efa35`), then stays down.
+        g = self.a["guided"]
+        self.assertEqual((g["mode"], g["plain"]), ("guided", "largeBore"))
+        self.assertEqual(g["constants"], {"lookTolerance": 0.03490658476948738, "coolLook": 0.1, "heatHigh": 0.8,
+                                          "heatLow": 0.7, "movedDistance": 10.0})
+        self.assertEqual(g["time"], 0)
+        self.assertAlmostEqual(g["dir"][1], 100 / (100 ** 2 + 1000 ** 2) ** 0.5, places=6)
+        self.assertAlmostEqual(g["off"][0], math.atan2(100, 1000), places=6)
+        self.assertAlmostEqual(g["off"][1], math.atan2(30, 1000), places=6)
+        # 5.7 deg off: held; 1.7 deg: fires; then it keeps firing off the line.
+        self.assertEqual(g["holds"], [False, True, True])
+        self.assertFalse(g["notGuided"])
+
+    def test_a_burnt_aircraft_is_not_worth_flying(self) -> None:
+        # `airOverheatBail` 0x08585750: an aircraft at engine heat 1.0 bails;
+        # a ground hull's heat only cuts the move term (`engineHeatInfluence`).
+        e = run_harness()["engineHeat"]
+        self.assertEqual([x["burnt"] for x in e["air"]], [False, True])
+        self.assertEqual(e["air"][1]["heat"], 1)
+        self.assertFalse(e["ground"]["burnt"])
+        self.assertEqual(e["none"], {"heat": 0, "burnt": False})
+        self.assertEqual(e["influence"][0], 1)
+        self.assertAlmostEqual(e["influence"][1], 0.8, places=6)
+        self.assertAlmostEqual(e["influence"][2], 0.0, places=6)
+
+    def test_a_guided_launcher_holds_at_eight_tenths_and_lets_go_at_seven(self) -> None:
+        # `BAPConWeaponHeat` 0.8 / 0.7 (0x085b3728, 0x085b3762): the fire
+        # plan's 0.8 / 0.5 for every other weapon is `heatResume`.
+        self.assertEqual(self.a["guided"]["heat"], [True, False, False, True, True])
+
+    def test_a_guided_launcher_scores_a_harmless_target_only_as_the_current_one(self) -> None:
+        # `BBFireGuided::calculateUrgency` 0x085705d0: no 0.33 harmless cut
+        # (the large-bore's would score it); the one it already fires at is
+        # kept (0x08571935).
+        h = self.a["guided"]["harmless"]
+        self.assertTrue(h["plain"])
+        self.assertIsNone(h["guidedNew"])
+        self.assertEqual(h["guidedCurrent"], "h")
+        self.assertAlmostEqual(h["ratio"], 1 / 0.33, places=4)
 
     def test_the_artillery_drivers_row(self) -> None:
         # Ledger SPOT-16: type 14 is its own row (`BBFireDriver`,

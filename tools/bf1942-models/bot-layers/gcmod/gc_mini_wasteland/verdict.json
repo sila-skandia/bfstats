@@ -1,0 +1,61 @@
+{
+ "level": "gc_mini_wasteland",
+ "verdict": "fail",
+ "outcome": "no-fight",
+ "config": "with vehicles",
+ "doctrine": "garrison",
+ "generatorVersion": 6,
+ "inputs": {
+  "controlPoints": "b311488ba1d83c533f34d1273c5071c093c19cdb3385efaf9e045790ce60b005",
+  "infantryMap": "c9cc2960ea2f71f803bfeff10c46120d259e34c882d9ab869882f762547328a4",
+  "template": "bdc0e455f47f91b7e7724e71d7c0c196e839b36946ac3abb7663d725944081e5"
+ },
+ "baseline": "DICE layers with vehicles, garrison doctrine: berlin, stalingrad, kharkov, bocage; seeds 1..10, 600 s",
+ "bar": {
+  "against": "dice",
+  "why": "no bar of gcmod's own: DICE's"
+ },
+ "seeds": 1,
+ "sizes": {
+  "8": {
+   "verdict": "fail",
+   "failed": [
+    "routeFailuresPerBotMinute",
+    "bothSidesKill",
+    "routeFailuresPerBotMinuteWorseSide",
+    "nonEnemyDeathShareWorseSide",
+    "hullStuckSecondsPerDrivingMinute",
+    "hullStuckSecondsPerDrivingMinuteWorseSide"
+   ],
+   "winners": [
+    0,
+    1,
+    0
+   ]
+  },
+  "16": {
+   "verdict": "fail",
+   "failed": [
+    "selfDeathsPerBotMinute",
+    "enemyKillsPerBotMinute",
+    "bothSidesCapture",
+    "bothSidesKill",
+    "nonEnemyDeathShareWorseSide",
+    "tankSilentShare"
+   ],
+   "winners": [
+    0,
+    1,
+    0
+   ]
+  }
+ },
+ "oneSided": null,
+ "unreachable": [],
+ "lintErrors": [],
+ "acceptanceWithdrawn": {
+  "because": "on the bot code of 3b1ebe45c, two page matches of 600 s with 16 bots, both under the rollout floor on deaths by their own hand: 0.14 and 0.16 enemy kills a bot-minute, 12 and 7 captures, own-hand deaths 0.11 a bot-minute in the second (floor 0.10, or a third of the kills)",
+  "date": "2026-11-13",
+  "was": "Owner's rollout, 2026-11-12: the owner imported Galactic Conquest and asked for "
+ }
+}

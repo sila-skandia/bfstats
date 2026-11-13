@@ -348,6 +348,122 @@ def collision_layers_for(mesh: stdmesh.StandardMesh) -> list[dict]:
     return layers
 
 
+# COL-22: a root whose composite bounding radius is under this meets a static's
+# col1, at or over it the static's col0 (`checkObjectVsObject` 0x08259735,
+# `flds 0x086c0304` = 4.0).
+COARSE_LAYER_RADIUS = 4.0
+
+
+def _sm_header_radius(mesh: stdmesh.StandardMesh) -> float:
+    """`LocalBoundingBox::calcRadius` (lnxded 0x083809f0): the farthest of the
+    `.sm` header box's eight corners from the mesh origin (COL-22)."""
+    lo, hi = mesh.bounds_min, mesh.bounds_max
+    return max((x * x + y * y + z * z) ** 0.5
+               for x in (lo[0], hi[0]) for y in (lo[1], hi[1]) for z in (lo[2], hi[2]))
+
+
+def collect_root_radii(library: con_mod.ObjectLibrary, meshes: ArchivePool,
+                       roots: list | None = None) -> dict[str, float]:
+    """Lowercase root template name -> its composite bounding radius, for every
+    PlayerControlObject a vehicle/emplacement folder declares (ledger COL-22).
+
+    `BCompositeObject::getBoundingRadius` (lnxded 0x08165630): the larger of
+    the object's own geometry radius (`_sm_header_radius`) and, for each child
+    (`getChild`, then the sibling chain), the child's offset length plus its
+    own radius, recursively. A LodObject's `getChild` hands back its current
+    alternative and the sibling chain runs on through the rest, so at the near
+    LOD every alternative counts. Every child counts, whatever it is: an
+    EntryPoint or an EffectBundle adds its offset with no geometry of its own.
+    Reproduces the thirteen vanilla radii COL-22 lists (Sherman 5.56, Wespe
+    4.06, Chi-ha 3.94, Kubelwagen 3.01 ...). Body worlds pick a static's
+    collision layer by it: `COARSE_LAYER_RADIUS`.
+    """
+    if roots is None:
+        roots = [t for t in library.objects.values()
+                 if t.source.replace("\\", "/").lower().startswith(ROOT_PREFIXES)
+                 and t.kind.lower() == "playercontrolobject"]
+    geometry_radius: dict[str, float] = {}
+
+    def own_radius(geometry_name: str | None) -> float:
+        if not geometry_name:
+            return 0.0
+        key = geometry_name.lower()
+        if key in geometry_radius:
+            return geometry_radius[key]
+        radius = 0.0
+        geom = library.geometry(geometry_name)
+        if geom is not None and geom.kind.lower() != "treemesh":
+            entry = meshes.resolve_ext(f"standardMesh/{geom.mesh_file}", (".sm",))
+            if entry:
+                try:
+                    radius = _sm_header_radius(stdmesh.parse(meshes.read(entry), entry))
+                except (stdmesh.MeshError, ValueError):
+                    radius = 0.0
+        geometry_radius[key] = radius
+        return radius
+
+    def radius_of(template_name: str, depth: int, path: frozenset) -> float:
+        key = template_name.lower()
+        if depth > 64 or key in path:
+            return 0.0
+        template = library.object(template_name)
+        if template is None:
+            return 0.0
+        best = own_radius(template.geometry)
+        for child in template.children:
+            offset = sum(v * v for v in child.position) ** 0.5
+            best = max(best, offset + radius_of(child.template, depth + 1, path | {key}))
+        return best
+
+    radii: dict[str, float] = {}
+    for root in roots:
+        radii[root.name.lower()] = round(radius_of(root.name, 0, frozenset()), 4)
+    return radii
+
+
+def collect_static_coarse(library: con_mod.ObjectLibrary, meshes: ArchivePool,
+                          skip_mesh_files: set[str]) -> dict[str, dict]:
+    """Lowercase `GeometryTemplate` name -> the col0 layer of its mesh, for every
+    StandardMesh outside the vehicle trees whose glb collision is not col0
+    (ledger COL-22).
+
+    The level bake keeps one layer per static mesh, the last with a face
+    (`bf42/assemble.py` `_collision_mesh_indices`), which for a two-layer mesh is
+    col1: what a soldier and a small root meet. A root of radius 4 m or more
+    meets col0 (`COARSE_LAYER_RADIUS`), which only this table carries:
+    `{"v": [x, y, z, ...], "f": [i, j, k, ...], "fm": [material per face]}` in
+    the glb's frame and winding, as `collision_layers_for` writes a layer.
+    `skip_mesh_files` are the vehicle meshes `meshes` already holds whole.
+    """
+    out: dict[str, dict] = {}
+    parsed: dict[str, dict | None] = {}
+    for name, geom in sorted(library.geometries.items()):
+        if geom.kind.lower() == "treemesh" or not geom.mesh_file:
+            continue
+        mesh_key = geom.mesh_file.lower()
+        if mesh_key in skip_mesh_files:
+            continue
+        if mesh_key not in parsed:
+            parsed[mesh_key] = None
+            entry = meshes.resolve_ext(f"standardMesh/{geom.mesh_file}", (".sm",))
+            if entry:
+                try:
+                    mesh = stdmesh.parse(meshes.read(entry), entry)
+                except (stdmesh.MeshError, ValueError):
+                    mesh = None
+                if mesh is not None and len(mesh.collision_layers) >= 2:
+                    layers = collision_layers_for(mesh)
+                    # The glb's layer: the last with a face. Only a mesh whose
+                    # glb layer is past col0 has a coarse layer to add.
+                    baked = max((i for i, layer in enumerate(layers) if layer["f"]), default=0)
+                    if baked >= 1:
+                        col0 = layers[0]
+                        parsed[mesh_key] = {"v": col0["v"], "f": col0["f"], "fm": col0["fm"]}
+        if parsed[mesh_key] is not None:
+            out[name.lower()] = parsed[mesh_key]
+    return out
+
+
 VEHICLE_CATEGORIES = ("land", "air", "sea", "emplacement")
 
 
@@ -608,6 +724,13 @@ def main() -> int:
         document["groups"] = dict(sorted(groups.items()))
     if mobility:
         document["mobility"] = dict(sorted(mobility.items()))
+    # COL-22: each vehicle root's radius, and each two-layer static's col0.
+    root_radii = collect_root_radii(library, meshes)
+    if root_radii:
+        document["rootRadius"] = dict(sorted(root_radii.items()))
+    static_coarse = collect_static_coarse(library, meshes, set(collision_meshes))
+    if static_coarse:
+        document["staticCoarse"] = static_coarse
 
     args.out.mkdir(parents=True, exist_ok=True)
     out_path = args.out / "collision-meshes.json"

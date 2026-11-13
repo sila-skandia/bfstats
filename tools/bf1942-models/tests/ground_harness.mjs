@@ -3472,4 +3472,31 @@ const pushGun = trailY => {
 };
 results.pushedGun = { noseDown: pushGun(-0.2), noseUp: pushGun(0.1565) };
 
+// --- a ship's deck under way (`deck-carry.js`) -------------------------------
+// The contact's speed on a ship's deck is the wheel's less her point speed
+// (`checkObjectVsObject` 0x08259690, both roots' `getTangentSpeed`), handed in
+// as `deckVelocity` (`hull-bodies.js` `landOnShipDecks`). A flat deck that
+// gathers way at 1 m/s^2 to 6 m/s and holds it 20 s, nobody at the controls.
+// Set down at rest, both stand on latched contacts (the idle drive's target
+// is zero), and the latch holds them to her deck as it holds them parked
+// ashore. Without the deck's speed in the contact both are left behind.
+function onMovingDeck(build, carried) {
+  const truck = build();
+  let deck = 0;
+  if (carried) truck.deckVelocity = (x, y, z, fromY, o) => { o[0] = deck; o[1] = 0; o[2] = 0; return true; };
+  drive(truck, 2);
+  const rel = () => truck.state.velocity.x - deck;
+  let t = 0;
+  drive(truck, 6, () => { t += 1 / 30; deck = Math.min(6, t); });
+  const relAtSpeed = rel();
+  drive(truck, 20, () => { deck = 6; });
+  return { relAtSpeed: round(relAtSpeed, 3), relEnd: round(rel(), 3), vx: round(truck.state.velocity.x, 3) };
+}
+for (const [name, build] of [
+  ['jeep', () => new GroundVehicle(willyNode(), null, { cockpit: false, groundHeight: () => 0 })],
+  ['tank', () => new TrackedVehicle(shermanNode(), null, { cockpit: false, groundHeight: () => 0 })],
+]) {
+  results[`${name}OnMovingDeck`] = { carried: onMovingDeck(build, true), still: onMovingDeck(build, false) };
+}
+
 process.stdout.write(JSON.stringify(results, null, 2));

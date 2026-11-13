@@ -32,7 +32,7 @@ words give).
   (436 to 543 m real, the Spitfire's 284 to 298), `otBreaker` chases and
   gives up by it.
 - **The circle.** The F-16 breaking at 75 m/s turns 68 to 70 degrees a
-  second round a circle 123 to 127 m across (the Spitfire 39 a second, about
+  second round a circle 123 to 126 m across (the Spitfire 39 a second, about
   120 m). A faster jet still turns faster, not wider.
 - **The vertical.** A jet does not run out of speed climbing, so the breaker
   climbs after you (or away to take the height back) as well as you climb.
@@ -59,7 +59,7 @@ They break 436 to 543 m out (the three slower starts later and nearer,
 7.3-7.5 s; the rest at 3.3-3.8 s). Your burst opens at 527-532 m and lands 0
 to 3 rounds (at 178 to 507 m), all between 2.2 s before the break and 4 s
 after it. You come past their tail 49 to 60 m from them 3.8-5.3 s into the
-break and then sit 104 to 110 m behind them, your nose 51 to 53 degrees off
+break and then sit 104 to 110 m behind them, your nose 51 to 54 degrees off
 them, for the rest of the minute: neither side ever has a shot that would
 land there. Nobody comes down in any of the nine.
 
@@ -73,7 +73,7 @@ lead follows a 68-degree-a-second turn.
 ### The Dip (claim false on a jet; the jet's way out flown instead)
 
 As written (`otDip`): round their circle after them, then out when they are
-across it going away. On the F-16 they come round in behind you 73 to 353 m
+across it going away. On the F-16 they come round in behind you 70 to 352 m
 back at the closest (the steady chase sits at about 310 m, both at 104-105
 m/s), well inside 512 m, and shoot you down 13 to 16 s after you leave, all
 nine (L9). Variants of the same exit, all 0 of 9 or worse: diving out at 15
@@ -85,7 +85,7 @@ The jet's way out (`jetOtLeave`, the decision (b) plus (a)): `otDip`'s run-in
 break) and, at their break, straight on: wings level, full throttle, nose 6
 degrees down to 140 m. You pass them 80 to 91 m off while they turn into you
 (75 to 97 m on the L9), they are never round in time, never chase (their
-phases are watch, break, chop), and at 40 s you are 2601 to 3360 m apart and
+phases are watch, break, chop), and at 40 s you are 2601 to 3361 m apart and
 opening, never hit, their guns never on you. L9: 9 of 9.
 
 Sensitivity, L9 (measured before the roof): leaving 1 or 2 s after the break 9 and 7 of 9, 4 s after it
@@ -111,7 +111,8 @@ On the Spitfire the climb beside their break gave one pass from above (3 of
 9 kills). On the F-16 they come up too (`otAce`'s climb, or turning after
 you), and under the roof both level off between 749 and 766 m, fast (you
 125 m/s at the end of the default start), with nobody in a place to shoot:
-`- 0/0` in eight starts, and in one they land 2 rounds on you. Up there they
+`- 0/0` in all nine (re-flown 2026-11-12 on retail g and box area; before it,
+one start had them land 2 rounds on you). Up there they
 come round onto your tail (in the default start 364 m back at 18 s, closing
 to 274 m by 48 s at your speed, their nose 4 to 12 degrees off you, firing
 at 42 s without a hit). L9: no kill, 2
@@ -172,13 +173,13 @@ F-16, nine starts (`--tops`, ace / you):
 | `move` | 504 / 490 m | unchanged | unchanged |
 | `dip` | 739 / 410 m | unchanged | 733 / 410 m |
 | `flip` | 640 / 598 m | unchanged | 640 / 591 m |
-| `ninja` | 1,688 / 1,574 m; `- 0/0` x8, `- 2/0` x1 | 833 / 836 m; `- 0/0` x9 | 764 / 766 m; `- 0/0` x8, `- 2/0` x1 |
+| `ninja` | 1,688 / 1,574 m; `- 0/0` x8, `- 2/0` x1 | 833 / 836 m; `- 0/0` x9 | 764 / 766 m; `- 0/0` x9 (`- 0/0` x8, `- 2/0` x1 before retail g) |
 
 Moves, L9, F-16:
 
 | Move | Before any roof | First roof | Reworked roof |
 |---|---|---|---|
-| Dip | 9 of 9, 2603-3193 m apart at 40 s | the same | 9 of 9, 2601-3360 m apart |
+| Dip | 9 of 9, 2603-3193 m apart at 40 s | the same | 9 of 9, 2601-3361 m apart |
 | Flip | 0 of 9, end 80-83 m/s | the same | 0 of 9, end 80-88 m/s |
 | Ninja | 0 of 9; their shot 0.23 s, 1 round on you, your six 7.4 s at most | 0 of 9; no shot, no round, your six 13-38 s in 7 of 9 | 0 of 9; their shot 0.93 s, 1 round on you once, your six 4.7-38 s in 8 of 9 |
 

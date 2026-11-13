@@ -202,6 +202,29 @@ export function buildSceneTree(gltf, bin) {
       ? prim.extras : {};
     return geometry;
   };
+  // A ship's drawn hull, as its box alone: her drag, her float damping and
+  // her keel are read off the root's own geometry box (`ship-spec.js`
+  // `hullGeometry`, COL-14), and with every drawn mesh empty that walk fell
+  // back to the world box of her collision meshes: a Hatsuzuki lying at 49
+  // degrees read 148 x 31 x 149 m and her float law rang itself off the sea.
+  // The accessor's own `min`/`max` (glTF requires them of a POSITION), no
+  // vertex decoded; every primitive of the mesh, which the page loads as one
+  // Mesh each under the node.
+  const boxOnly = (prims) => {
+    const geometry = new THREE.BufferGeometry();
+    const box = new THREE.Box3();
+    for (const prim of prims) {
+      const acc = gltf.accessors?.[prim.attributes?.POSITION];
+      if (Array.isArray(acc?.min) && Array.isArray(acc?.max) && acc.min.length === 3 && acc.max.length === 3) {
+        box.expandByPoint(new THREE.Vector3(...acc.min)).expandByPoint(new THREE.Vector3(...acc.max));
+      }
+    }
+    if (!box.isEmpty()) {
+      geometry.boundingBox = box;
+      geometry.computeBoundingBox = () => {};
+    }
+    return geometry;
+  };
   for (let i = 0; i < nodes.length; i++) {
     const prim = primitiveOf(i);
     if (!prim) continue;
@@ -216,7 +239,7 @@ export function buildSceneTree(gltf, bin) {
       || obj.parent?.userData?.collision || prim.extras?.collision
       || underSpring(obj));
     obj.isMesh = true;
-    obj.geometry = want ? geometryFor(prim) : new THREE.BufferGeometry();
+    obj.geometry = want ? geometryFor(prim) : (underSeaHull(obj) ? boxOnly(meshes[nodes[i].mesh].primitives) : new THREE.BufferGeometry());
     if (extras.kind === 'terrain') terrainTiles.push(obj);
     // A collision mesh's other primitives, each a sibling mesh as the page's
     // GLTFLoader makes them (one THREE.Mesh per primitive, the primitive's
@@ -272,6 +295,14 @@ export function readArmTracks(gltf, bin) {
     }
   }
   return tracks;
+}
+
+/** A node of a floating hull's tree (`vehicleCategory VCSea`). */
+function underSeaHull(obj) {
+  for (let p = obj; p; p = p.parent) {
+    if (p.userData?.physics?.vehicleCategory === 'VCSea') return true;
+  }
+  return false;
 }
 
 /** A `Spring` node (a wheel) or a node under one. */

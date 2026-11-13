@@ -1,0 +1,74 @@
+rem *** Strategic areas: one per control point (botgen) ***
+
+aiStrategicArea.create axisbase 135.3/771.5 140.3/776.5 50
+aiStrategicArea.addNeighbour hill_top_point2
+aiStrategicArea.addNeighbour attack_point
+aiStrategicArea.addNeighbour southbase
+aiStrategicArea.addObjectTypeFlag Base
+aiStrategicArea.setOrderPosition Tank 138.5/776.5
+aiStrategicArea.setOrderPosition Infantry 139.5/775.5
+aiStrategicArea.setSide 2
+aiStrategicArea.setTakeable 1 0
+
+aiStrategicArea.create axisbase2 1838/1659 1843/1664 50
+aiStrategicArea.addObjectTypeFlag Base
+aiStrategicArea.setOrderPosition Tank 1843.5/1671.5
+aiStrategicArea.setOrderPosition Infantry 1843.5/1669.5
+aiStrategicArea.setSide 1
+aiStrategicArea.setTakeable 2 0
+
+aiStrategicArea.create hill_top_point1 1021.3/1383.5 1041.3/1403.5 150
+aiStrategicArea.addNeighbour hill_top_point2
+aiStrategicArea.addNeighbour eastpicket
+aiStrategicArea.addNeighbour attack_point
+aiStrategicArea.addObjectTypeFlag Flank
+aiStrategicArea.addObjectTypeFlag ControlPoint
+aiStrategicArea.setOrderPosition Tank 1041.5/1405.5
+aiStrategicArea.setOrderPosition Infantry 1040.5/1404.5
+aiStrategicArea.setSide 2
+
+aiStrategicArea.create hill_top_point2 976.4/918.4 996.4/938.4 300
+aiStrategicArea.addNeighbour axisbase
+aiStrategicArea.addNeighbour hill_top_point1
+aiStrategicArea.addNeighbour eastpicket
+aiStrategicArea.addNeighbour attack_point
+aiStrategicArea.addNeighbour southbase
+aiStrategicArea.addObjectTypeFlag Centre
+aiStrategicArea.addObjectTypeFlag StrongPoint
+aiStrategicArea.addObjectTypeFlag Close
+aiStrategicArea.addObjectTypeFlag ControlPoint
+aiStrategicArea.setOrderPosition Tank 994.5/938.5
+aiStrategicArea.setOrderPosition Infantry 995.5/937.5
+aiStrategicArea.setSide 2
+
+aiStrategicArea.create eastpicket 1288.3/1180.7 1298.3/1190.7 200
+aiStrategicArea.addNeighbour hill_top_point1
+aiStrategicArea.addNeighbour hill_top_point2
+aiStrategicArea.addNeighbour attack_point
+aiStrategicArea.addObjectTypeFlag Centre
+aiStrategicArea.addObjectTypeFlag Close
+aiStrategicArea.addObjectTypeFlag ControlPoint
+aiStrategicArea.setOrderPosition Tank 1296.5/1190.5
+aiStrategicArea.setOrderPosition Infantry 1297.5/1191.5
+
+aiStrategicArea.create attack_point 648.3/1253.4 653.3/1258.4 150
+aiStrategicArea.addNeighbour axisbase
+aiStrategicArea.addNeighbour hill_top_point1
+aiStrategicArea.addNeighbour hill_top_point2
+aiStrategicArea.addNeighbour eastpicket
+aiStrategicArea.addNeighbour southbase
+aiStrategicArea.addObjectTypeFlag Flank
+aiStrategicArea.addObjectTypeFlag Close
+aiStrategicArea.addObjectTypeFlag ControlPoint
+aiStrategicArea.setOrderPosition Tank 651.5/1258.5
+aiStrategicArea.setOrderPosition Infantry 652.5/1257.5
+
+aiStrategicArea.create southbase 862.3/8.8 867.3/13.8 50
+aiStrategicArea.addNeighbour axisbase
+aiStrategicArea.addNeighbour hill_top_point2
+aiStrategicArea.addNeighbour attack_point
+aiStrategicArea.addObjectTypeFlag Base
+aiStrategicArea.setOrderPosition Tank 865.5/13.5
+aiStrategicArea.setOrderPosition Infantry 866.5/12.5
+aiStrategicArea.setSide 2
+aiStrategicArea.setTakeable 1 0

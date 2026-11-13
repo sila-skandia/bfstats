@@ -99,6 +99,7 @@ def effect_names(tables, library, extra: list[str]) -> set[str]:
     names.update(effects_mod.effect_names_for_armor(library))
     names.update(effects_mod.effect_names_for_firearms(library))
     names.update(effects_mod.effect_names_for_kit_parts(library))
+    names.update(effects_mod.effect_names_for_hosts(library))
     return names
 
 
@@ -498,7 +499,7 @@ def main() -> int:
     ap.add_argument("--out", type=Path, default=Path(__file__).parent / "viewer" / "maps" / "_shared")
     ap.add_argument("--name", action="append", default=[],
                     help="extra bundle template(s) to bake")
-    ap.add_argument("--max-texture", type=int, default=512)
+    ap.add_argument("--max-texture", type=int, default=1024)
     ap.add_argument("--shared-sounds", type=Path, default=None,
                     help="where the samples land (default: <out>/sounds, the "
                          "same directory extract_map.py fills)")

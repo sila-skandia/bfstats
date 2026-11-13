@@ -1,0 +1,31 @@
+rem *** Strategic areas: one per control point (botgen) ***
+
+aiStrategicArea.create AxisBase 1991/1965 1996/1970 50
+aiStrategicArea.addObjectTypeFlag Base
+aiStrategicArea.setSide 1
+aiStrategicArea.setTakeable 2 0
+
+aiStrategicArea.create AlliedBase 1895/1956 1900/1961 50
+aiStrategicArea.addObjectTypeFlag Base
+aiStrategicArea.setSide 2
+aiStrategicArea.setTakeable 1 0
+
+aiStrategicArea.create Helena_Hangars_nazi 1960.3/863.8 1965.3/868.8 10
+aiStrategicArea.setTakeable 1 0
+aiStrategicArea.setTakeable 2 0
+
+aiStrategicArea.create Helena_Hangars_US 1925.1/863.2 1930.1/868.2 10
+aiStrategicArea.setTakeable 1 0
+aiStrategicArea.setTakeable 2 0
+
+aiStrategicArea.create Teddy_Bear_VS_Garden_Gnome_allied 71.2/126.8 91.2/146.8 10
+aiStrategicArea.setTakeable 1 0
+aiStrategicArea.setTakeable 2 0
+
+aiStrategicArea.create Teddy_Bear_VS_Garden_Gnome_nazi 91.5/402.5 116.5/427.5 10
+aiStrategicArea.setTakeable 1 0
+aiStrategicArea.setTakeable 2 0
+
+aiStrategicArea.create Tiki_Tiki_Bar 196.9/1468.1 201.9/1473.1 10
+aiStrategicArea.setTakeable 1 0
+aiStrategicArea.setTakeable 2 0

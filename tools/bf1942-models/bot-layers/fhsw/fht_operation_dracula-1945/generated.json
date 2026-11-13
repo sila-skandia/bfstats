@@ -1,0 +1,108 @@
+{
+ "generator": "botgen",
+ "version": 5,
+ "mod": "FHSW",
+ "level": "fht_operation_dracula-1945",
+ "objectSpawners": 151,
+ "template": "few",
+ "templateSource": "DICE, bf1942 Kursk (1.6 patch archives, Kursk_003.rfa): AI/Strategies.con, AI/conditions.con, AI/prerequisites.con, unchanged",
+ "templateChoice": {
+  "name": "few",
+  "inPlay": 3,
+  "rule": "3 capturable flags in play, at most 3"
+ },
+ "scope": "on foot: infantry order positions only, no search maps, no co-op layer",
+ "unreachable": [
+  "melamu_temple"
+ ],
+ "unreachableReasons": {
+  "melamu_temple": "walk test"
+ },
+ "botSpawnsExcluded": [
+  "pegu_spawn1",
+  "rangoon_spawn1",
+  "mosque1",
+  "mosque2",
+  "mosque3",
+  "mosque4",
+  "mosque5",
+  "mosque6",
+  "mosque7",
+  "mosque8",
+  "pegu_spawn2",
+  "pegu_spawn3",
+  "pegu_spawn4",
+  "pegu_spawn5",
+  "pegu_spawn6",
+  "pegu_spawn7",
+  "rangoon_spawn2",
+  "rangoon_spawn5",
+  "rangoon_spawn6",
+  "rangoon_spawn7",
+  "rangoon_spawn8",
+  "harbor_spawn2",
+  "harbor_spawn3",
+  "harbor_spawn4",
+  "remains_spawn2"
+ ],
+ "walkMap": {
+  "source": "page painter",
+  "engine": "none",
+  "opened": [],
+  "ways": [],
+  "cover": 0.783,
+  "floors": {
+   "stacked": false,
+   "twoFloorShare": 0.006,
+   "raised": [
+    "melamu_temple"
+   ],
+   "reason": null
+  },
+  "capped": true,
+  "joined": 3
+ },
+ "routeProbe": {
+  "chokeMax": 4,
+  "unreachable": [],
+  "stops": {},
+  "oneSided": {
+   "old_school": 1,
+   "rangoon_docks": 1,
+   "infantry_camp": 1
+  },
+  "sides": {
+   "1": {
+    "spawns": 17,
+    "flags": [
+     "infantry_camp",
+     "old_school",
+     "rangoon_docks"
+    ]
+   },
+   "2": {
+    "spawns": 0,
+    "flags": []
+   }
+  },
+  "chokes": {
+   "old_school:1": 0,
+   "rangoon_docks:1": 0,
+   "infantry_camp:1": 0
+  },
+  "late": {},
+  "shutLinks": []
+ },
+ "inputs": {
+  "controlPoints": "c328b47b04bab84bbfc4817a444d18d37b1d6e562c13454bd304ae128c6b1bff",
+  "infantryMap": "dadd30cf18beb3fe6413e4fb1aa15a4a0c855bc6b969b1480e1738b1375e651a",
+  "template": "bdc0e455f47f91b7e7724e71d7c0c196e839b36946ac3abb7663d725944081e5"
+ },
+ "files": {
+  "AI.con": "9b22e83889ee475b19b5aaa9a293f648818d67ae43b4074c9288d11e89f0be83",
+  "AI/StrategicAreas.con": "6b305f2ec78a4c436471cf0cbd76fe7fe6f0c00e66286e2b14e2eeeecc3d0c17",
+  "AI/Strategies.con": "13da4dc35872dd4b5798a066f4425bdc824cfd61f31093d1808e1202644de52e",
+  "AI/conditions.con": "248a04b727c08d696bf0fa9c162bc22c43cde3c75f695892fe1e0f5141519c49",
+  "AI/prerequisites.con": "c96168b5f69860e578f5d26728fd2a2092c4c436e1da49b7d6f4009b65735398"
+ }
+}

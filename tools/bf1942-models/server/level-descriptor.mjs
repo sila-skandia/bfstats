@@ -7,7 +7,8 @@ import { existsSync } from 'node:fs';
 
 import { loadVehicleTree } from './glb-tree.mjs';
 import { LevelData } from './level-data.mjs';
-import { modelsDirOf, resolveTemplatePath } from './level-load.mjs';
+import { loadRoundTemplates, modelsDirOf, resolveTemplatePath } from './level-load.mjs';
+import { applyTemplateWords } from '../viewer/template-words.js';
 
 /**
  * The harness level: a flat-ground mock collider, two flags and a pair of
@@ -84,8 +85,12 @@ export function buildLevelFromDescriptor({ viewerDir, descriptor = null }) {
     if (!name || templates.has(name)) continue;
     const path = resolveTemplatePath(modelsDirOf(viewerDir), raw);
     if (!existsSync(path)) continue;
-    templates.set(name, loadVehicleTree(path));
+    const tree = loadVehicleTree(path);
+    // A descriptor's own `templateWords`, as a real level's (`level-load.mjs`).
+    applyTemplateWords(tree, spec.extras?.templateWords);
+    templates.set(name, tree);
   }
+  loadRoundTemplates(templates, spec.extras, name => resolveTemplatePath(modelsDirOf(viewerDir), name));
   return new LevelData({
     name: spec.name || 'test',
     extras: spec.extras,

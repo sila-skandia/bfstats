@@ -603,9 +603,11 @@ class ConsoleWordsTests(unittest.TestCase):
         r = self.results["replayPage"]
         self.assertEqual([{"graphicsQuality": 1}, {"effectsQuality": 2},
                           {"environmentMapping": False}, {"lightmaps": False},
-                          {"textureQuality": 5}, {"viewDistance": 100}], r["videoChanges"])
+                          {"textureQuality": 5}, {"viewDistance": 100},
+                          {"shadows": True}], r["videoChanges"])
         self.assertEqual([], r["performance"])
-        self.assertEqual("Error : Method is not active!", r["shadows"][1])
+        # SHADOWS is live: `game.setShadows` writes the row (VID-7).
+        self.assertEqual([], r["shadows"])
         self.assertEqual({"lod": 0.8, "bb": 1.5, "fx": 0.3}, r["tuning"])
 
     def test_the_sound_words_change_the_sound_record(self) -> None:
@@ -634,6 +636,15 @@ class ConsoleWordsTests(unittest.TestCase):
         self.assertEqual([False], r["trees"])
         # No document under node: the flare's canvas is not there.
         self.assertEqual("Error : Method is not active!", r["flareRead"][1])
+
+    def test_punish_and_forgive_reach_a_room_and_print_nothing(self) -> None:
+        """`game.TKPunish` / `game.TKForgive` (t0 a1) through the shipped
+        aliases `punish`, `ftk`: the room's server answers (FF-10), the word
+        prints nothing; off a room there is nobody to answer."""
+        t = self.results["teamKill"]
+        self.assertEqual([[], [], []], t["out"])
+        self.assertEqual(["punish", "forgive", "punish"], t["sent"])
+        self.assertEqual(["Error  (0): punish", "Error : Method is not active!"], t["solo"])
 
     def test_replay_words_are_not_active_on_the_flythrough(self) -> None:
         f = self.results["flythrough"]

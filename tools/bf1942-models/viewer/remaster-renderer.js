@@ -618,7 +618,9 @@ export async function createRemasterScene({ renderer, scene, camera, sun, hemi }
     },
     /** Pipelines built off the thread during play: `{ on, pending, built }`. */
     asyncPipelines: () => ({ ...asyncPipelines }),
-    render() {
+    /** One frame. `shadows` is OPTIONS > VIDEO's SHADOWS row. */
+    render({ shadows = true } = {}) {
+      atmosphere.setShadows(shadows);
       // Every call is a frame: three's node frame (which gates each pass
       // and shadow map to once a frame) only advances inside the animation
       // loop, so a frame drawn outside it (`__renderOnce`, a replay's

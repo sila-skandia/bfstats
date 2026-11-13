@@ -114,7 +114,7 @@
 
 import * as THREE from 'three';
 import { Aircraft } from './aircraft.js';
-import { floatAcceleration, floatNodesOf } from './body-float.js';
+import { floatAcceleration, floatNodesOf, sinkRate } from './body-float.js';
 import {
   currentRatio, currentTorque, loadSample, revAdvance,
 } from './engine-revs.js';
@@ -838,6 +838,39 @@ export class Ship extends Aircraft {
     return float ? float.trim.reg.value * float.trim.span : null;
   }
 
+  /**
+   * `FloatingBundle::handleMessage` 0x082402b0 on TemplateMessage 0x14, the
+   * crossing into critical (`cmpl $0x14` at 0x082402d6; HP-13, SHIP-4): each
+   * float takes its own sink rate, `(q + 0.1) * 0.05 * sinkingSpeedMod`
+   * (0x086b1ca0, 0x086c08a8, `+0x1c4`; stored `+0xb0` at 0x08240557), with
+   * `q` over `4 R` (0x086c0304), whoever is aboard: the message goes to every
+   * child of the object. From then `PhysicsFloatingBundle::updatePhysics`
+   * 0x0824d640 adds the rate to the float's offset every tick and wakes the
+   * root, so she goes down by the end whose floats sink fastest and never
+   * sleeps. Nothing disarms it: 0x13 (safe again) leaves the rate alone.
+   * `offsets` restores a hull that was already going down (its
+   * `sinkOffsets()`). Returns whether this call armed her.
+   */
+  armSinking(offsets = null) {
+    if (this.sinking) return false;
+    let radius = 0;
+    for (const float of this.floats) {
+      radius = Math.max(radius, Math.hypot(float.offsetX, float.offsetY, float.offsetZ));
+    }
+    this.floats.forEach((float, i) => {
+      float.sinkRate = sinkRate(float, { offsetX: float.local.x, offsetZ: float.local.z, boundingRadius: radius });
+      if (offsets) float.sinkOffset = offsets[i] ?? 0;
+    });
+    this.sinking = true;
+    return true;
+  }
+
+  /** Each float's sink offset, in `floats` order, for whoever takes the
+   *  hull over when this drive stops stepping her. */
+  sinkOffsets() {
+    return this.floats.map(float => float.sinkOffset || 0);
+  }
+
   /** The engine's own per-tick contact latch, cleared once a tick.
    *  Also latches `beachedThisTick` on the frame the keel first touches. */
   integrate(dt) {
@@ -878,6 +911,12 @@ export class Ship extends Aircraft {
     law.clock = Math.max(0, law.clock - ticks * SHIP_TICK);
     if (ticks > 8) ticks = 8;
     for (let i = 0; i < ticks; i++) {
+      // A hull going down: the offset first, once a tick (`armSinking`).
+      if (this.sinking) {
+        for (const float of this.floats) {
+          if (float.sinkRate) float.sinkOffset = (float.sinkOffset || 0) + float.sinkRate;
+        }
+      }
       this.advanceTrim(SHIP_TICK);
       if ((this._bedHold ?? 0) > 0 || this.deepestContact()) {
         this.#beachedTick();

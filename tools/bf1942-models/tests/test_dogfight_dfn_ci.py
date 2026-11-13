@@ -139,7 +139,9 @@ class CircleTests(unittest.TestCase):
             self.assertGreaterEqual(s["sixLost"], 1, s)
             self.assertLessEqual(s["at"]["again"], 17, s)
             self.assertEqual(0, s["myShot"], s)
-        self.assertEqual([6, 8], sorted(s["hits"][0] for s in self.rows("zoom") if s["hits"][0]))
+        # 6 and 8 rounds in two until they were re-pinned 2026-11-12 on
+        # retail g and box area (features/retail-parity-cross-check-2026-11-12).
+        self.assertEqual([1, 2, 8], sorted(s["hits"][0] for s in self.rows("zoom") if s["hits"][0]))
 
     def test_coming_back_they_see_you_and_meet_you(self) -> None:
         rows = self.rows("back")
@@ -153,10 +155,14 @@ class CircleTests(unittest.TestCase):
         self.assertEqual(1, snap[0]["hitsOnHim"])
         self.assertLessEqual(snap[0]["minRange"], 5)
         self.assertNotIn("guns", snap[0]["at"])
-        # Let go before you turned back in six; in five of those they turn to
-        # meet you; in three they never stopped chasing.
+        # Let go before you turned back in six; in four of those they turn to
+        # meet you (five until it was re-pinned 2026-11-12 on retail g and box
+        # area, features/retail-parity-cross-check-2026-11-12), and in two they
+        # pass you head-on; in three they never stopped chasing. Six of the
+        # passes come within 2 to 25 m.
         self.assertEqual(6, sum(1 for s in rows if s["letGo"] is not None and s["letGo"] < 30))
-        self.assertEqual(5, sum(1 for s in rows if s["meet"] is not None))
+        self.assertEqual(4, sum(1 for s in rows if s["meet"] is not None))
+        self.assertEqual(6, sum(1 for s in rows if 2 <= s["minRange"] <= 25))
         self.assertTrue(all(38 <= s["meet"] <= 53 for s in rows if s["meet"] is not None))
 
     def test_the_chop_only_slows_you_and_sinks_you(self) -> None:

@@ -7,6 +7,7 @@
 import * as THREE from 'three';
 import { buildHeightfield, heightfieldFromSamples } from './heightfield.js';
 import { buildCollisionIndex } from './static-index.js';
+import { attachCoarseLayer } from './coarse-layer.js';
 import { addLentCollisionCopies } from './collision-meshes.js';
 import { staticProbes } from './static-settle.js';
 import { buildDrivableMask } from './drivable-mask.js';
@@ -14,13 +15,15 @@ import { WorldCollider } from './world-collider.js';
 import { collectLadders } from './ladder-climb.js';
 import { kindOf } from './level-statics.js';
 import { loadSearchMaps as loadBakedSearchMaps } from './nav-baked.js';
+import { createTerrainLod } from './terrain-lod.js';
 
 /**
  * Built once by `createLevel` (level-load.js). `page` hands in what it reads,
  * as getters (a value the level reassigns is read live):
  * `bust`, `effects`, `extras`, `floatPlacedVehicles`, `guns`,
  * `loadEffectLibrary`, `MAPS_BASE`, `rebaseDeckSpawns`,
- * `registerDamageables`, `settlePlacedVehicles`, `spawnersRoot`, `world`.
+ * `registerDamageables`, `scene`, `settlePlacedVehicles`, `spawnersRoot`,
+ * `world`.
  */
 export function createLevelTerrain(page) {
   const terrain = {};
@@ -192,6 +195,15 @@ export function createLevelTerrain(page) {
     return terrain.collider?.deckNormal ? terrain.collider.deckNormal(x, z, fromY, out) : false;
   }
 
+  // The ground's detail by distance and the sea bed that is never drawn
+  // (terrain-lod.js, ledger TERR-8). `?noterrainlod` draws every sample.
+  terrain.lod = createTerrainLod(page);
+  if (typeof location !== 'undefined') {
+    const query = new URLSearchParams(location.search);
+    if (query.has('noterrainlod')) terrain.lod.setEnabled(false);
+    if (query.has('shots')) window.__terrainLod = terrain.lod;
+  }
+
   function collectTerrain(root) {
     terrain.terrainMeshes = [];
     terrainBBox.makeEmpty();
@@ -204,6 +216,7 @@ export function createLevelTerrain(page) {
         }
       }
     });
+    terrain.lod.bind(terrain.terrainMeshes);
   }
 
   function getFloorAltitude(x, z) {
@@ -314,7 +327,7 @@ export function createLevelTerrain(page) {
   }
 
   /** Rebuild the collider for the level now in `currentRoot`. */
-  function buildCollider(root) {
+  function buildCollider(root, { collisionMeshes = null } = {}) {
     const worldSize = page.extras?.worldSize || 0;
     // The whole heightmap where the level ships it, so an undrawn patch (the
     // sea floor of 29 levels) still has ground under it; else the lattice off
@@ -356,11 +369,17 @@ export function createLevelTerrain(page) {
     // (barbed wire, fences, palms; ledger FF-1, FF-2).
     const statics = buildCollisionIndex(root, { ownerRoots,
       collisionGroups: page.extras?.collisionGroups ?? null });
+    // A large root's layer of each two-layer static (COL-22), from the
+    // tree's `collision-meshes.json`.
+    attachCoarseLayer(statics, collisionMeshes?.staticCoarse,
+      { collisionGroups: page.extras?.collisionGroups ?? null });
     // Gap 16: the climbable ladders. `indexScene` has already composed every
     // matrix where the extract put it, so the `extras.isLadder` nodes read out
     // in world space; ship ladders ride the parked-vehicle subtrees and are
-    // covered by the same walk.
-    const ladders = collectLadders(root);
+    // covered by the same walk. Each keeps the owner it hangs in, so it is
+    // asked where that hull stands now (`followLadder`, LADDER-1's contact
+    // with the object's live collision, 0x0827d3b0).
+    const ladders = collectLadders(root, { ownerOf: node => statics?.ownerOf?.(node) ?? -1 });
     // Every damageable thing in the level, keyed by the same owner id the
     // collision index just handed out — which is what a hit record names, so a
     // round that lands resolves to the vehicle it landed on with one lookup and

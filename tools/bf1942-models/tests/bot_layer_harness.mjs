@@ -154,6 +154,24 @@ out.mill = tall.find(a => a.name === 'Mill');
 out.millCon = gen.areasCon(tall);
 out.pathCon = gen.pathFindingCon();
 out.tags = [menu.levelTag({ singlePlayer: false }), menu.levelTag({ singlePlayer: false, generatedBots: true }), menu.levelTag({ singlePlayer: true }), menu.levelTag({})];
+// The mark a generated level's row carries in place of a tag, and what it says when pointed at.
+{
+  const briefing = await imp('viewer/briefing-screen.js');
+  const box = { kind: 'listbox', rect: [100, 50, 200, 120], rowHeight: 12 };
+  const layout = { pages: { skirmish: { elements: [box] } } };
+  const levels = [{ singlePlayer: false, generatedBots: true }, { singlePlayer: false }, { singlePlayer: true }];
+  const rect = menu.botCreditRect(box, 100, 50, 200);
+  out.botCredit = {
+    marked: levels.map(menu.hasBotCredit),
+    sameLine: menu.BOT_CREDIT === briefing.GENERATED_BOTS_CREDIT,
+    rect,
+    // The pointer on the first row's mark, on the same row's title, and on the mark's place in a row with none.
+    onMark: menu.botCreditAt(layout, { scroll: 0 }, levels, rect[0] + 2, rect[1] + 2),
+    onTitle: menu.botCreditAt(layout, { scroll: 0 }, levels, 110, rect[1] + 2),
+    onBotless: menu.botCreditAt(layout, { scroll: 0 }, levels, rect[0] + 2, rect[1] + 2 + 12),
+    scrolled: menu.botCreditAt(layout, { scroll: 1 }, [{}, ...levels], rect[0] + 2, rect[1] + 2),
+  };
+}
 // --- acceptance (sim/botbatch.mjs) ---------------------------------------------
 const short = (o = {}) => ({ level: 'x', verdict: 'fail', outcome: 'better-than-nothing', lintErrors: [],
   sizes: { 8: { verdict: 'pass', failed: [] }, 16: { verdict: 'fail', failed: ['redeploysPerBotMinute'] } }, ...o });
@@ -181,6 +199,9 @@ out.ownerAcceptance = {
   // A level run despite a stacked-floors lint error may be accepted by the owner; any other lint error, or anyone else, may not.
   stacked: batch.acceptVerdict({ ...short(), lintErrors: ['the play surface is stacked floors (3 of 5 capturable flags stand a storey over another)'] }, 'why', '2026-11-12', { owner: true }).accepted.by,
   stackedNotOwner: refuse(() => batch.acceptVerdict({ ...short(), lintErrors: ['the play surface is stacked floors (x)'] }, 'why', '2026-11-12')),
+  // So may one run despite the choke rule; not by anyone else.
+  choked: batch.acceptVerdict({ ...short(), lintErrors: ["side 2's bots have an open route to none of the 5 flags in play"] }, 'why', '2026-11-13', { owner: true }).accepted.by,
+  chokedNotOwner: refuse(() => batch.acceptVerdict({ ...short(), lintErrors: ["side 2's bots have an open route to none of the 5 flags in play"] }, 'why', '2026-11-13')),
   sealed: refuse(() => batch.acceptVerdict({ ...short(), lintErrors: ['side 1 has no spawn with a route to any flag it must take'] }, 'why', '2026-11-12', { owner: true })),
   carried: batch.carryAccepted(noBetterShort, owned).accepted?.by ?? null,
   worse: batch.carryAccepted(short({ outcome: 'no-fight' }), owned).acceptanceWithdrawn?.because ?? null,
@@ -353,11 +374,19 @@ out.walkMap = {
   after: brief(prep.facts), excluded: gen.excludedByWalk(prep.facts),
   reach: Object.fromEntries(prep.facts.flags.map(f => [f.name, gen.flagReach(f).unreachable])),
   sameAgain: Buffer.from(again.pixels).equals(Buffer.from(prep.pixels)) && JSON.stringify(again.opened) === JSON.stringify(prep.opened),
+  // How many rows each opened way spans: the patch's runs west over open ground, the hut's through its door.
+  wide: { patch: new Set(prep.opened.filter(([x]) => x >= 40).map(([, z]) => z)).size, door: new Set(prep.opened.filter(([x]) => x < 40).map(([, z]) => z)).size },
 };
 // The order position: the flag's own nearest free cell when a soldier there is inside the ring, else the cell
 // of the place that is (a pole 4.2 m up with a 5 m radius is a 2.7 m ring on the ground), else none.
 const pole = prep.facts.flags.find(f => f.name === 'Pole');
 out.order = [gen.flagReach(pole, [30.5, -20.5]).order, gen.flagReach(pole, [34.5, -20.5]).order, gen.flagReach(prep.facts.flags.find(f => f.name === 'Tower'), null).order];
+// A flag a hair inside its cell: one decimal would write it into the next cell, so when that one is blocked the
+// answer is its own cell's centre. The same hair beside a free cell keeps the point.
+{
+  const one = { cellSize: 1 }, free = (_, x, z) => !(Math.floor(-z) === 20);
+  out.orderOnAnEdge = [gen.nearestFree(one, free, 12.07, -19.99), gen.nearestFree(one, free, 12.07, -18.99), gen.nearestFree(one, free, 12.4, -19.5)];
+}
 const ladderLint = lint.lintLayer({ ai: good, flags: lf, grid, isWalkable: walk, defined: ['homogenous'],
   walk: { cover: 1, capped: false, ladders: 3, floors: { stacked: false }, spawns: [{ name: 'a', side: 1, landed: true, usable: false, over: 0 }, { name: 'b', side: 2, landed: true, usable: true, over: 0 }],
           flags: [{ name: 'A', team: 1, fixed: false, reachable: true, over: 0 }, { name: 'B', team: 2, fixed: false, reachable: true, over: 0 }] } });
@@ -434,4 +463,89 @@ const refusedLevel = batch.unsuitable('sealed', sealedLint);
 out.unsuitable = { sound: batch.unsuitable('lively', lintOf(sound)), verdict: refusedLevel.verdict, outcome: refusedLevel.outcome, predictedDead: refusedLevel.predictedDead,
                    errors: refusedLevel.lint.errors.length, sizes: refusedLevel.sizes, acceptable: batch.ACCEPTABLE.includes(refusedLevel.outcome) };
 out.alive = jud.aliveChecks([match({}), match({ botErrors: 1 })]).filter(c => !c.pass).map(c => c.metric);
+
+// --- README 22: four ways the lint refused a walkable level ----------------------------
+{
+  // F4. The page's spawn sides: a neutral point whose group the spawn manager gives a side (Vosges), a group
+  // no point claims (Somme's French line), carriers that stand at the start (Desert Combat's weapon bunker:
+  // its spawner has a side and no point) and one that does not (Juno's Allied town house: its spawner is
+  // filed under a point the Germans hold), and a landing craft that seats whoever spawns on it.
+  const pos = (x, z) => [x, 0, z];
+  const extras = {
+    controlPoints: [
+      { name: 'Mountain', position: pos(10, -10), team: 0, spawnGroupId: 1, unableToChangeTeam: true, objectSpawnerId: 7 },
+      { name: 'Village', position: pos(30, -30), team: 1, spawnGroupId: 2, objectSpawnerId: 5 },
+    ],
+    soldierSpawns: [
+      { name: 'm1', position: pos(11, -11), group: 1, team: 2 },
+      { name: 'v1', position: pos(31, -31), group: 2, team: 1 },
+      { name: 'line1', position: pos(50, -50), group: 9, team: 2 },
+      { name: 'stray', position: pos(5, -5), group: 4, team: null },
+    ],
+    objectSpawns: [
+      { spawner: 'bunkerspawner', vehicle: 'bunker', team: 1, osId: 1 },
+      { spawner: 'townalliedspawner', vehicle: 'townallied', team: null, osId: 5, templates: { 2: 'townallied' } },
+      { spawner: 'townaxisspawner', vehicle: 'townaxis', team: null, osId: 5, templates: { 1: 'townaxis' } },
+      { spawner: 'lcvpspawner', vehicle: 'lcvp', team: 2 },
+    ],
+    vehicleSoldierSpawns: [
+      { name: 'b', vehicle: 'bunker', spawner: 'bunkerspawner', team: 1, group: 99, position: pos(20, -20) },
+      { name: 'b', vehicle: 'bunker', spawner: 'bunkerspawner', team: 1, group: 99, position: pos(21, -20) },
+      { name: 't', vehicle: 'townallied', spawner: 'townalliedspawner', team: 2, group: 5, position: pos(30, -32) },
+      { name: 'x', vehicle: 'townaxis', spawner: 'townaxisspawner', team: 1, group: 6, position: pos(30, -33) },
+      { name: 'd', vehicle: 'lcvp', spawner: 'lcvpspawner', team: 2, group: 72, position: pos(60, -5), aiEnterOnSpawn: true },
+    ],
+  };
+  const sides = Object.fromEntries(gen.spawnsOf(extras).map(s => [s.name, [s.side, !!s.carried, !!s.seats]]));
+  out.spawnSides = sides;
+
+  // F4's wording: a side whose spawns all start at sea (a deck, a landing craft) or seat their soldier in a vehicle.
+  const atSea = run(good, lf, grid, { walk: { ...sound, spawns: [sp('a', 1), sp('s', 2, { landed: false, usable: false, sea: true }),
+    sp('h', 2, { usable: false, carried: 'halftrack', seats: true })] } });
+  out.atSea = atSea.errors.map(e => e.text);
+
+  // F3. A platform 1.5 m up beside the main ground: walked off one way and never back; a 3 m one is no way.
+  const shelfFlags = [{ name: 'F', x: 40, y: 0, z: -30, radius: 5, team: 0, fixed: false }, { name: 'G', x: 50, y: 0, z: -20, radius: 5, team: 2, fixed: false }];
+  const exitOf = height => {
+    const world = boxWorld([[0, 20, 0, height, -64, 0]]);
+    const spawns = [{ name: 'up', x: 10, y: height, z: -30, side: 1 }, { name: 'low', x: 40, y: 0, z: -40, side: 2 }];
+    const f = wf.walkFacts({ collider: world, grid: gridOf(new Uint8Array(SIZE * SIZE)), flags: shelfFlags, spawns, body });
+    const up = f.spawns[0];
+    return { onMain: up.onMainGround, exit: up.exit, serves: wf.serves(up), excluded: gen.excludedByWalk(f) };
+  };
+  out.oneWay = { ledge: exitOf(1.5), cliff: exitOf(3) };
+
+  // F1. A capped flood seeds a flag beside its pole: a start inside the pole's collision (a cage 0.6 m
+  // across inside) never leaves it, and the flag would read as standing on no walked ground.
+  const flag = { name: 'Far', x: 50, y: 0, z: -50, radius: 5, team: 0, fixed: false };
+  const cage = [[49.3, 50.7, 0, 8, -50.75, -50.7], [49.3, 50.7, 0, 8, -49.3, -49.25], [49.25, 49.3, 0, 8, -50.7, -49.3], [50.7, 50.75, 0, 8, -50.7, -49.3]];
+  const poled = boxWorld(cage);
+  const pole = wf.walkFlood(poled, [[flag.x, flag.y, flag.z]], body, { twoWay: true, reach: 20 });
+  const seeds = wf.flagSeeds(poled, flag, body);
+  const spawnsFar = [{ name: 'a', x: 6, y: 0, z: -6, side: 1 }, { name: 'b', x: 8, y: 0, z: -6, side: 2 }];
+  const near = { name: 'Near', x: 7, y: 0, z: -8, radius: 5, team: 0, fixed: false };
+  const ground = wf.walkedGround(poled, spawnsFar, [flag, near], body, SIZE, { maxCells: 4000 });
+  const capped = wf.walkFacts({ collider: poled, grid: gridOf(new Uint8Array(SIZE * SIZE)), flags: [flag, near], spawns: spawnsFar, body, ground });
+  // The same capped flood seeded at the pole alone, as before generator 6.
+  const poleOnly = wf.walkFlood(poled, [...spawnsFar.map(q => [q.x, q.y, q.z]), [flag.x, flag.y, flag.z], [near.x, near.y, near.z]], body,
+    { twoWay: true, bounds: wf.floodBounds([...spawnsFar, flag, near], SIZE), maxCells: 4000 });
+  const before = wf.walkFacts({ collider: poled, grid: gridOf(new Uint8Array(SIZE * SIZE)), flags: [flag, near], spawns: spawnsFar, body, ground: poleOnly });
+  out.flagSeeds = { poleCells: pole.cells, seeds: seeds.length, capped: ground.capped, reachable: capped.flags[0].reachable,
+    poleOnlyCapped: poleOnly.capped, poleOnlyReachable: before.flags[0].reachable };
+
+  // F2. A capped level's painter map that holds little of the ground is kept, not painted from the flood,
+  // and a spawn the map shuts in gets its walked way opened; a spawn 5 m from the map's main component
+  // serves as the page resolves its start.
+  const painterPx = new Uint8Array(SIZE * SIZE).fill(1);
+  for (let z = 22; z <= 38; z++) for (let x = 2; x <= 40; x++) painterPx[z * SIZE + x] = 0;   // a strip from the west base to Mid
+  const kept = gen.prepareWalkMap({ collider: level, size: SIZE, flags: wFlags, spawns: wSpawns, body, engine: painterPx, paint: false });
+  const painted = gen.prepareWalkMap({ collider: level, size: SIZE, flags: wFlags, spawns: wSpawns, body, engine: painterPx });
+  out.painterMap = { keptSource: kept.source, paintedSource: painted.source, keptCover: kept.engineCover < 0.5,
+    keptWays: kept.ways.map(w => [w.who, w.way, w.opened > 0]) };
+  const ring = new Uint8Array(SIZE * SIZE);
+  for (let z = 25; z <= 35; z++) for (let x = 3; x <= 13; x++) ring[z * SIZE + x] = 1;                  // a 10 m square round a1
+  const resolveFacts = wf.walkFacts({ collider: level, grid: gridOf(ring), flags: wFlags, spawns: wSpawns.slice(0, 2), body });
+  const a1 = resolveFacts.spawns[0];
+  out.resolve = { usable: a1.usable, resolved: a1.resolved, serves: wf.serves(a1) };
+}
 console.log(JSON.stringify(out));

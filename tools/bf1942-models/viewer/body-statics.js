@@ -26,7 +26,7 @@
 //
 // --- what the static world has to answer -------------------------------------
 //
-//   near(x, y, z, dx, dy, dz, dist, radius, owner, stepTop) -> boolean
+//   near(x, y, z, dx, dy, dz, dist, radius, owner, stepTop, coarse) -> boolean
 //       Optional broadphase, the analogue of §5.1's one grid query per root
 //       per tick: is anything static within `radius` of the segment at all.
 //       Called ONCE per body, before its vertex casts, and a real adapter is
@@ -35,6 +35,8 @@
 //       (`WorldCollider.staticProbe` does exactly that, and it is the
 //       difference between one grid walk per body per tick and one per
 //       vertex). Without it every vertex pays a grid walk on an empty field.
+//       `coarse` (COL-22, `isCoarseRoot`): the body is a large root, which
+//       meets a two-layer static's col0 rather than its col1.
 //   cast(ox, oy, oz, dx, dy, dz, maxDist, owner, stepTop, groups)
 //       The first static face a ray crosses, or null. `dx/dy/dz` unit,
 //       `maxDist` metres. `owner` is the probing body's own owner id, to be
@@ -120,6 +122,20 @@ const HANDLER_SPEED_THRESHOLD_SQ = 0.1;
 export const KERB_STEP = 1.0;
 
 /**
+ * COL-22: a root whose composite bounding radius (`body.rootRadius`, from the
+ * tree's `collision-meshes.json` `rootRadius`, `coarse-layer.js`) is at least
+ * this meets a two-layer static's col0; a smaller one meets its col1
+ * (`checkObjectVsObject` lnxded 0x08259735, `flds 0x086c0304` = 4.0). A body
+ * with no table radius meets col1, as the bake has it.
+ */
+export const COARSE_LAYER_RADIUS = 4.0;
+
+/** Whether `body` meets the statics' coarse layer (COL-22). */
+export function isCoarseRoot(body) {
+  return Number.isFinite(body?.rootRadius) && !(body.rootRadius < COARSE_LAYER_RADIUS);
+}
+
+/**
  * `shareA` for a body of `mass` against a static object, through the same
  * §6.1 rule a vehicle pair takes. 1.0 for every vehicle mass there is — the
  * value is not the point, going through the one rule is.
@@ -150,7 +166,7 @@ const _partPos = [0, 0, 0];
  *   matVertex, matFace) -> boolean }`
  * @returns {number} contacts for which a response was applied
  */
-export function collideWithStatics(parts, statics, dt, handlers) {
+export function collideWithStatics(parts, statics, dt, handlers, springs = undefined) {
   if (!parts || !parts.length || !statics) return 0;
   const body = parts[0].body;
   if (!body || body.sleeping) return 0;
@@ -182,9 +198,20 @@ export function collideWithStatics(parts, statics, dt, handlers) {
     const dist = Math.hypot(dx, dy, dz);
     const inv = dist > 1e-9 ? 1 / dist : 0;
     if (!statics.near(_S[0], _S[1], _S[2], dx * inv, dy * inv, dz * inv,
-                      dist, body.boundingRadius ?? 0, owner, stepTop)) {
+                      dist, body.boundingRadius ?? 0, owner, stepTop, isCoarseRoot(body))) {
       return 0;
     }
+  }
+
+  // A long hull's own box, where its bounding sphere holds a great deal more
+  // (a destroyer's is 146 m across and takes in the carrier moored beside
+  // her): the candidates that cannot be met are dropped before the vertex
+  // probes test each one (`narrowToHull`). Only for a caller that names the
+  // wheel springs it will probe against the same candidates afterwards
+  // (`collideSpringsWithStatics`), null for none: their vertices are in the
+  // box too.
+  if (springs !== undefined && statics.narrow && (body.boundingRadius ?? 0) >= NARROW_RADIUS && body.axes) {
+    narrowToHull(parts, springs, body, statics);
   }
 
   const share = staticShare(body.mass);
@@ -194,6 +221,46 @@ export function collideWithStatics(parts, statics, dt, handlers) {
     applied += probePart(part, body, statics, handlers, owner, stepTop, share);
   }
   return applied;
+}
+
+/** The bounding radius from which a body's candidates are narrowed to its
+ *  own box: under it the sphere's box is hardly larger than the hull's, and
+ *  the pass would cost more than it saves. */
+const NARROW_RADIUS = 20;
+/** Slack on the hull's box, metres: a triangle on its face is kept. */
+const NARROW_SLACK = 0.01;
+const _lo = [0, 0, 0], _hi = [0, 0, 0];
+
+/**
+ * Drop the candidates this body's probes cannot reach. Every probe is a
+ * segment from `_S` to one of the parts' vertices, a hull part's or a wheel
+ * spring's, so all of them lie in the box, in the body's own frame, that
+ * holds `_S` and every such vertex; a triangle wholly outside one face of
+ * that box is met by none. The answer of every `cast` is unchanged: only
+ * triangles no ray could touch leave the list.
+ */
+function narrowToHull(parts, springs, body, statics) {
+  const a = body.axes, c = body.pos;
+  const local = (p, k) => (p[0] - c[0]) * a[k][0] + (p[1] - c[1]) * a[k][1] + (p[2] - c[2]) * a[k][2];
+  for (let k = 0; k < 3; k++) { _lo[k] = _hi[k] = local(_S, k); }
+  const take = part => {
+    const layer = part.shape?.layers?.[0];
+    if (!layer?.vertices || layer.vertices.length < 3) return;
+    const raw = layer.vertices.length / 3;
+    const count = raw < MIN_VERTEX_COUNT ? 1 : raw;
+    for (let vi = 0; vi < count; vi++) {
+      part.worldVertex(0, vi, _E);
+      for (let k = 0; k < 3; k++) {
+        const v = local(_E, k);
+        if (v < _lo[k]) _lo[k] = v;
+        if (v > _hi[k]) _hi[k] = v;
+      }
+    }
+  };
+  for (const part of parts) take(part);
+  for (const part of springs ?? []) take(part);
+  for (let k = 0; k < 3; k++) { _lo[k] -= NARROW_SLACK; _hi[k] += NARROW_SLACK; }
+  statics.narrow(c, a, _lo, _hi);
 }
 
 /**

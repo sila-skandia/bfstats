@@ -93,6 +93,29 @@ class DepotRearmTests(unittest.TestCase):
         self.assertEqual(r["tagged"], 9)
         self.assertIsNone(r["none"])
 
+    def test_the_damage_json_table_tags_a_gun_its_glb_does_not(self) -> None:
+        # SUP-2: `SupplyDepot::reloadAmmo` (lnxded 0x08323770) gives a gun the
+        # row whose id equals `FireArms::getAmmoType` (0x0828d4c0, exact int
+        # compare at 0x08323995). With the tree's `ammoTypes` table the B17's
+        # rack (9) takes the bomb row's 4/s: one rack of 8 in 2 s. Without
+        # any table it is still the first row's 100/s, every rack at once.
+        r = self.results["tableTagged"]
+        self.assertEqual(r["landed2s"]["magsLeft"], 1)
+        self.assertEqual(r["legacy2s"]["magsLeft"], 9)
+        self.assertEqual(r["suffixed"], 10)
+        self.assertEqual(r["ownWins"], 8)
+        self.assertIsNone(r["noTable"])
+        # A weapon the table does not list is the constructor's 0 (0x0828d614).
+        self.assertEqual(r["unlisted"], 0)
+
+    def test_an_unwritten_tag_is_zero_the_vehicle_box_row(self) -> None:
+        # `AmmoboxVehicleSupplyDepot` and `RepairPoint` carry one row, id 0:
+        # the tag of every gun that writes no `ammoType` (a tank's cannon).
+        # The airfield has no row 0, so such a gun gets nothing there.
+        r = self.results["untaggedIsZero"]
+        self.assertGreater(r["vehicleBox"], 300)
+        self.assertEqual(r["airfield"], 300)
+
     def test_rearm_returns_what_it_did_not_take(self) -> None:
         r = self.results["rearm"]
         self.assertEqual((r["fullLeft"], r["fullMags"]), (4, 9))

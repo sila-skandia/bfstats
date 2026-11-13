@@ -79,7 +79,7 @@ every number the words give.
 |---|---|---|
 | **Never race a TIE**: a TIE 450 m behind, closing at 22 m/s | Run for it (`swRun`) | shot down 9 of 9, 15.8 to 16.2 s in; it sits 95 m back for the seventh bolt |
 | | Hit the brakes (`swBrake`, inside 260 m) | shot down 9 of 9, 14.7 to 16.8 s in; you slow to 25 m/s, it to 39 to 41; it slides past in three, at 19 s, too late |
-| | Turn hard (`swBreak`, inside 300 m, full throttle) | never hit, 9 of 9; it is in front of you 9 to 19 s in; 53 to 224 m apart at 40 s; two bolts on it in one |
+| | Turn hard (`swBreak`, inside 300 m, full throttle) | never hit, 9 of 9; it is in front of you 9 to 19 s in; 52 to 224 m apart at 40 s; two bolts on it in one |
 | **Four guns to one**: head-on, 1,400 m apart | The joust (`swJoust` both) | the X-Wing wins 9 of 9, 6.1 to 7.1 s in; the TIE lands 0 to 4 of the seven it needs |
 | | The TIE comes back (`swSlash`) | for the TIE: shot down in five, 10.3 to 10.9 s in; four come to nothing; two bolts at most |
 | | The TIE leaves (`swExtend`) | for the TIE: never hit, 9 of 9; never closer than 1,124 m; 2.2 km apart at 40 s |

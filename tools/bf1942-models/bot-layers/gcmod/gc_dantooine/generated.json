@@ -1,0 +1,668 @@
+{
+ "generator": "botgen",
+ "version": 6,
+ "mod": "GCMOD",
+ "level": "gc_dantooine",
+ "objectSpawners": 44,
+ "template": "few",
+ "templateSource": "DICE, bf1942 Kursk (1.6 patch archives, Kursk_003.rfa): AI/Strategies.con, AI/conditions.con, AI/prerequisites.con, unchanged",
+ "templateChoice": {
+  "name": "few",
+  "inPlay": 2,
+  "rule": "2 capturable flags in play, at most 3"
+ },
+ "scope": "an infantry map from the page painter with the walk test's ways out opened, a Tank0 map from the page painter, infantry order positions, no strategic maps, no co-op layer",
+ "unreachable": [
+  "northopenbase"
+ ],
+ "unreachableReasons": {
+  "northopenbase": "route probe"
+ },
+ "botSpawnsExcluded": [],
+ "walkMap": {
+  "source": "page painter",
+  "engine": "none",
+  "vehicleMap": "page painter",
+  "vehicleBrush": 1.5,
+  "vehicleBrushes": [
+   {
+    "brush": 3,
+    "flagsOn": 5,
+    "spawnersOn": 32,
+    "pieces": 4,
+    "main": 3618037
+   },
+   {
+    "brush": 2.5,
+    "flagsOn": 5,
+    "spawnersOn": 33,
+    "pieces": 4,
+    "main": 3640893
+   },
+   {
+    "brush": 2,
+    "flagsOn": 5,
+    "spawnersOn": 34,
+    "pieces": 4,
+    "main": 3652307
+   },
+   {
+    "brush": 1.5,
+    "flagsOn": 5,
+    "spawnersOn": 35,
+    "pieces": 5,
+    "main": 3672532
+   }
+  ],
+  "opened": [
+   [
+    899,
+    537
+   ],
+   [
+    899,
+    538
+   ],
+   [
+    899,
+    539
+   ],
+   [
+    899,
+    540
+   ],
+   [
+    899,
+    541
+   ],
+   [
+    899,
+    542
+   ],
+   [
+    899,
+    543
+   ],
+   [
+    899,
+    544
+   ],
+   [
+    899,
+    545
+   ],
+   [
+    899,
+    546
+   ],
+   [
+    899,
+    547
+   ],
+   [
+    900,
+    547
+   ],
+   [
+    901,
+    547
+   ],
+   [
+    900,
+    565
+   ],
+   [
+    901,
+    565
+   ],
+   [
+    897,
+    566
+   ],
+   [
+    898,
+    566
+   ],
+   [
+    899,
+    566
+   ],
+   [
+    900,
+    566
+   ],
+   [
+    895,
+    567
+   ],
+   [
+    896,
+    567
+   ],
+   [
+    897,
+    567
+   ],
+   [
+    893,
+    568
+   ],
+   [
+    894,
+    568
+   ],
+   [
+    895,
+    568
+   ],
+   [
+    905,
+    577
+   ],
+   [
+    906,
+    577
+   ],
+   [
+    903,
+    578
+   ],
+   [
+    904,
+    578
+   ],
+   [
+    905,
+    578
+   ],
+   [
+    901,
+    579
+   ],
+   [
+    902,
+    579
+   ],
+   [
+    903,
+    579
+   ],
+   [
+    248,
+    997
+   ],
+   [
+    249,
+    997
+   ],
+   [
+    247,
+    998
+   ],
+   [
+    248,
+    998
+   ],
+   [
+    247,
+    999
+   ],
+   [
+    247,
+    1000
+   ],
+   [
+    247,
+    1001
+   ],
+   [
+    247,
+    1002
+   ],
+   [
+    247,
+    1003
+   ],
+   [
+    246,
+    1004
+   ],
+   [
+    247,
+    1004
+   ],
+   [
+    367,
+    1007
+   ],
+   [
+    367,
+    1008
+   ],
+   [
+    367,
+    1009
+   ],
+   [
+    367,
+    1010
+   ],
+   [
+    367,
+    1011
+   ],
+   [
+    1340,
+    1433
+   ],
+   [
+    1341,
+    1433
+   ],
+   [
+    1342,
+    1433
+   ],
+   [
+    1343,
+    1433
+   ],
+   [
+    1343,
+    1434
+   ],
+   [
+    1344,
+    1434
+   ],
+   [
+    1345,
+    1434
+   ],
+   [
+    802,
+    1706
+   ],
+   [
+    802,
+    1707
+   ],
+   [
+    802,
+    1708
+   ],
+   [
+    800,
+    1709
+   ],
+   [
+    801,
+    1709
+   ],
+   [
+    802,
+    1709
+   ],
+   [
+    818,
+    1743
+   ],
+   [
+    819,
+    1743
+   ],
+   [
+    820,
+    1743
+   ],
+   [
+    821,
+    1743
+   ],
+   [
+    821,
+    1744
+   ],
+   [
+    822,
+    1744
+   ],
+   [
+    822,
+    1745
+   ],
+   [
+    822,
+    1746
+   ],
+   [
+    822,
+    1747
+   ],
+   [
+    856,
+    1747
+   ],
+   [
+    822,
+    1748
+   ],
+   [
+    856,
+    1748
+   ],
+   [
+    822,
+    1749
+   ],
+   [
+    856,
+    1749
+   ],
+   [
+    822,
+    1750
+   ],
+   [
+    856,
+    1750
+   ],
+   [
+    822,
+    1751
+   ],
+   [
+    856,
+    1751
+   ],
+   [
+    822,
+    1752
+   ],
+   [
+    822,
+    1753
+   ],
+   [
+    822,
+    1754
+   ],
+   [
+    822,
+    1755
+   ],
+   [
+    822,
+    1756
+   ],
+   [
+    822,
+    1757
+   ],
+   [
+    816,
+    1758
+   ],
+   [
+    817,
+    1758
+   ],
+   [
+    818,
+    1758
+   ],
+   [
+    819,
+    1758
+   ],
+   [
+    820,
+    1758
+   ],
+   [
+    821,
+    1758
+   ],
+   [
+    822,
+    1758
+   ],
+   [
+    843,
+    1765
+   ],
+   [
+    844,
+    1765
+   ],
+   [
+    845,
+    1765
+   ],
+   [
+    846,
+    1765
+   ],
+   [
+    847,
+    1765
+   ],
+   [
+    848,
+    1765
+   ],
+   [
+    849,
+    1765
+   ],
+   [
+    849,
+    1766
+   ],
+   [
+    850,
+    1766
+   ],
+   [
+    851,
+    1766
+   ],
+   [
+    852,
+    1766
+   ],
+   [
+    852,
+    1767
+   ],
+   [
+    853,
+    1767
+   ],
+   [
+    854,
+    1767
+   ],
+   [
+    855,
+    1767
+   ],
+   [
+    856,
+    1767
+   ],
+   [
+    857,
+    1767
+   ]
+  ],
+  "ways": [
+   {
+    "who": "base01",
+    "kind": "spawn",
+    "way": "walk",
+    "opened": 17
+   },
+   {
+    "who": "base02",
+    "kind": "spawn",
+    "way": "walk",
+    "opened": 9
+   },
+   {
+    "who": "base05",
+    "kind": "spawn",
+    "way": "walk",
+    "opened": 7
+   },
+   {
+    "who": "impa2",
+    "kind": "spawn",
+    "way": "walk",
+    "opened": 11
+   },
+   {
+    "who": "impa3",
+    "kind": "spawn",
+    "way": "walk",
+    "opened": 5
+   },
+   {
+    "who": "so3",
+    "kind": "spawn",
+    "way": "walk",
+    "opened": 8
+   },
+   {
+    "who": "so4",
+    "kind": "spawn",
+    "way": "walk",
+    "opened": 12
+   },
+   {
+    "who": "so5",
+    "kind": "spawn",
+    "way": "walk",
+    "opened": 4
+   },
+   {
+    "who": "rb2",
+    "kind": "spawn",
+    "way": "walk",
+    "opened": 5
+   },
+   {
+    "who": "rb3",
+    "kind": "spawn",
+    "way": "walk",
+    "opened": 6
+   },
+   {
+    "who": "northopenbase",
+    "kind": "flag",
+    "way": "walk",
+    "opened": 26
+   }
+  ],
+  "cover": 0.889,
+  "floors": {
+   "stacked": false,
+   "twoFloorShare": 0,
+   "raised": [],
+   "reason": null
+  },
+  "capped": true
+ },
+ "routeProbe": {
+  "chokeMax": 4,
+  "unreachable": [
+   "northopenbase"
+  ],
+  "stops": {
+   "northopenbase": {
+    "1": {
+     "stage": "choke",
+     "points": 8,
+     "metres": 24,
+     "first": [
+      [
+       818.2,
+       -1743.2
+      ],
+      [
+       820.4,
+       -1744
+      ],
+      [
+       822.5,
+       -1744.5
+      ]
+     ]
+    },
+    "2": {
+     "stage": "choke",
+     "points": 8,
+     "metres": 24,
+     "first": [
+      [
+       818,
+       -1741.9
+      ],
+      [
+       818.5,
+       -1743.5
+      ],
+      [
+       821.4,
+       -1744.2
+      ]
+     ]
+    }
+   }
+  },
+  "oneSided": {},
+  "sides": {
+   "1": {
+    "spawns": 5,
+    "flags": [
+     "eastopenbase",
+     "southopenbase"
+    ]
+   },
+   "2": {
+    "spawns": 6,
+    "flags": [
+     "eastopenbase",
+     "southopenbase"
+    ]
+   }
+  },
+  "chokes": {
+   "southopenbase:1": 1,
+   "southopenbase:2": 0,
+   "eastopenbase:1": 1,
+   "eastopenbase:2": 0
+  },
+  "late": {},
+  "shutLinks": []
+ },
+ "inputs": {
+  "controlPoints": "9aa2d668fb160228cdb94a099c60ea61a0e19f4b74fffb00b5faedcd9459ce6d",
+  "infantryMap": "1b9e45a282e026b4574c7ceb432084c5fe81c151044fc0be2f778c9374fcbe4d",
+  "template": "bdc0e455f47f91b7e7724e71d7c0c196e839b36946ac3abb7663d725944081e5"
+ },
+ "files": {
+  "AI.con": "9c2af3380f8a98fc9447bba0dd137edd65a0a9b694fc58d303e2006c8923332b",
+  "AIpathFinding.con": "9d8080cdfa7605961969aa126519b03be9691bd604ac76aef50166d81215edd2",
+  "AI/StrategicAreas.con": "06398aa33ae2a873c0ed68113fab213be2d74fd3d4600d50429d6eec04a67089",
+  "AI/Strategies.con": "13da4dc35872dd4b5798a066f4425bdc824cfd61f31093d1808e1202644de52e",
+  "AI/conditions.con": "248a04b727c08d696bf0fa9c162bc22c43cde3c75f695892fe1e0f5141519c49",
+  "AI/prerequisites.con": "c96168b5f69860e578f5d26728fd2a2092c4c436e1da49b7d6f4009b65735398",
+  "Pathfinding/Infantry1Level0Map.raw": "f29968a6a63a7260efab26459970ee7dc915a09e37ac9f2a5b4806a16f643046",
+  "Pathfinding/Infantry1Level1Map.raw": "09c8b9bcae321d359a26628bd9504c86ecc0cd05ed8b97d661c424b5e3fc124e",
+  "Pathfinding/Infantry1Level2Map.raw": "61e9a7e795494ea7265e529e33240c20ce967bfbce5f3858560c643f05fe366b",
+  "Pathfinding/Tank0Level0Map.raw": "d94b49a17b9e76a0bca7d26456e776e601c3bbbf1f3803470136dc1befb8e9f5",
+  "Pathfinding/Tank0Level1Map.raw": "e6f7519152387099affa5afd504ed104e48bd2ba02c0c759065a2c47ecdd18e9",
+  "Pathfinding/Tank0Level2Map.raw": "89797f76a41f2f92cf16c80cbc96663d1501a9c1b90dbdba7ac5984d0fe7ced4"
+ }
+}

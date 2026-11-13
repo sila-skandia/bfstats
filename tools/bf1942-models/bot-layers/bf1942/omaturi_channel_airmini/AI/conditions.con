@@ -1,0 +1,34 @@
+if v_arg1 == host
+rem ----- Host 
+rem ---------------------------------------------------------------------------- 
+
+rem *** Create Conditions ***
+
+rem *** Kursk ***
+
+rem ** common **
+aiStrategy.createConstantCondition timeCond Fuzzy EqualSmaller Friendly StartTime 120
+aiStrategy.setConditionStrength AdvisoryNegative
+aiStrategy.setIsAbortCondition 1
+
+rem ** single & double **
+aiStrategy.createConstantCondition maxOneEnemyCP Crisp EqualSmaller Enemy ControlPoint 1
+aiStrategy.setConditionStrength Required
+
+rem ** holdAndCamp **
+aiStrategy.createConstantCondition twoFriendlyCPCond Crisp Equal Friendly ControlPoint 2
+aiStrategy.setConditionStrength Required
+
+aiStrategy.createConstantCondition minFiveFriendlyAreasCond Crisp EqualGreater Friendly NumberOfHostileAreas 5
+aiStrategy.setConditionStrength Required
+
+rem ** breakOut **
+aiStrategy.createConstantCondition noFriendlyCPCond Crisp Equal Friendly ControlPoint 0
+aiStrategy.setConditionStrength Required
+
+aiStrategy.createConstantCondition twoEnemyCPCond Crisp Equal Enemy ControlPoint 2
+aiStrategy.setConditionStrength Required
+
+
+rem ----------------------------------------------------------------------------
+endIf

@@ -1,0 +1,66 @@
+rem *** Strategic areas: one per control point (botgen) ***
+
+aiStrategicArea.create imperial_bridgetemplate 1586.6/876.7 1591.6/881.7 10
+aiStrategicArea.setSide 1
+aiStrategicArea.setTakeable 1 0
+aiStrategicArea.setTakeable 2 0
+
+aiStrategicArea.create rebelblockadetemplate 536.5/844.9 541.5/849.9 50
+aiStrategicArea.addObjectTypeFlag Base
+aiStrategicArea.setOrderPosition Tank 539.5/857.5
+aiStrategicArea.setSide 2
+aiStrategicArea.setTakeable 1 0
+
+aiStrategicArea.create lift_controltemplate 1637.1/987.7 1642.1/992.7 200
+aiStrategicArea.addNeighbour tram_controltemplate
+aiStrategicArea.addNeighbour checkpoint_3template
+aiStrategicArea.addObjectTypeFlag Centre
+aiStrategicArea.addObjectTypeFlag ControlPoint
+aiStrategicArea.setOrderPosition Tank 1642.1/992.7
+aiStrategicArea.setOrderPosition Infantry 1642.1/992.7
+aiStrategicArea.setSide 1
+
+aiStrategicArea.create level1_security_roomtemplate 552.6/920.2 557.6/925.2 200
+aiStrategicArea.addNeighbour tram_controltemplate
+aiStrategicArea.addNeighbour checkpoint_1template
+aiStrategicArea.addObjectTypeFlag Centre
+aiStrategicArea.addObjectTypeFlag Close
+aiStrategicArea.addObjectTypeFlag ControlPoint
+aiStrategicArea.setOrderPosition Infantry 557.6/925.2
+
+aiStrategicArea.create tram_controltemplate 546.2/979.9 551.2/984.9 150
+aiStrategicArea.addNeighbour lift_controltemplate
+aiStrategicArea.addNeighbour level1_security_roomtemplate
+aiStrategicArea.addObjectTypeFlag Flank
+aiStrategicArea.addObjectTypeFlag ControlPoint
+aiStrategicArea.setOrderPosition Tank 548.5/984.5
+aiStrategicArea.setOrderPosition Infantry 551.2/984.9
+aiStrategicArea.setSide 1
+
+aiStrategicArea.create checkpoint_1template 821.8/912.5 827.8/918.5 300
+aiStrategicArea.addNeighbour level1_security_roomtemplate
+aiStrategicArea.addNeighbour checkpoint_3template
+aiStrategicArea.addObjectTypeFlag Centre
+aiStrategicArea.addObjectTypeFlag StrongPoint
+aiStrategicArea.addObjectTypeFlag ControlPoint
+aiStrategicArea.setOrderPosition Tank 827.5/907.5
+aiStrategicArea.setOrderPosition Infantry 827.8/918.5
+aiStrategicArea.setSide 1
+
+aiStrategicArea.create checkpoint_3template 1036.5/879.1 1042.5/885.1 200
+aiStrategicArea.addNeighbour lift_controltemplate
+aiStrategicArea.addNeighbour checkpoint_1template
+aiStrategicArea.addNeighbour checkpoint_6template
+aiStrategicArea.addObjectTypeFlag Centre
+aiStrategicArea.addObjectTypeFlag ControlPoint
+aiStrategicArea.setOrderPosition Tank 1042.5/885.1
+aiStrategicArea.setOrderPosition Infantry 1042.5/885.1
+aiStrategicArea.setSide 1
+
+aiStrategicArea.create checkpoint_6template 1425.4/862 1431.4/868 150
+aiStrategicArea.addNeighbour checkpoint_3template
+aiStrategicArea.addObjectTypeFlag Flank
+aiStrategicArea.addObjectTypeFlag ControlPoint
+aiStrategicArea.setOrderPosition Tank 1431.4/868
+aiStrategicArea.setOrderPosition Infantry 1432.5/867.5
+aiStrategicArea.setSide 1

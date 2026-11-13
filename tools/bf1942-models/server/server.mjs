@@ -27,6 +27,8 @@ import { join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 
 import { RoomServerCore } from './rooms.mjs';
+import { ROOM_MEMORY } from './room-registry.mjs';
+import { BOT_LIMITS } from './room-bots.mjs';
 import { SocketPeer, acceptKey } from './websocket.mjs';
 import { buildLevelTable } from './level-table.mjs';
 
@@ -48,7 +50,9 @@ export function makeServer({ core, port = 8787, host = '0.0.0.0' }) {
         'content-type': 'application/json',
         'access-control-allow-origin': '*',
       });
-      res.end(JSON.stringify({ rooms: core.roomList() }));
+      // `full`: not even the cheapest new room fits under the cap (the lobby
+      // says so on CREATE GAME; joining a listed room still works).
+      res.end(JSON.stringify({ rooms: core.roomList(), full: !core.mayCreate() }));
       return;
     }
     if (url.pathname === NETCODE_PATH) {
@@ -90,6 +94,11 @@ export function makeServer({ core, port = 8787, host = '0.0.0.0' }) {
     const peer = new SocketPeer(socket, core);
     socket.on('data', chunk => peer.onData(chunk));
     socket.on('close', () => peer.onClose());
+    // A write to a socket the other end has reset (EPIPE, ECONNRESET: a tab
+    // closed while a snapshot, a kick's closed row or a level change's last
+    // row was on its way) must not take the process down: the peer is gone,
+    // and its `close` follows.
+    socket.on('error', () => peer.onClose());
   });
 
   const listener = server.listen(port, host, () => {
@@ -123,6 +132,22 @@ function parseArgs(argv) {
     else if (flag === '--viewer' && value) out.viewer = value;
     else if (flag === '--default-level' && value) out.defaultLevel = value;
     else if (flag === '--mod' && value && /^[\w-]+$/.test(value)) out.mod = value;
+    // `game.serverGameStartDelay` / `serverGameRoundStartDelay` (NET-21,
+    // ROUND-14): the shipped 20 and 10 unless given; a test's 0 opens at once.
+    else if (flag === '--game-start-delay' && Number.isFinite(Number(value))) out.gameStartDelay = Number(value);
+    else if (flag === '--round-start-delay' && Number.isFinite(Number(value))) out.roundStartDelay = Number(value);
+    // The rooms' bots (`room-bots.mjs`): on unless `--bots off`; the caps
+    // are `BOT_LIMITS` unless given.
+    else if (flag === '--bots' && value) out.bots = value !== 'off' && value !== '0';
+    else if (flag === '--bots-per-room' && Number.isInteger(Number(value))) out.botsPerRoom = Number(value);
+    else if (flag === '--bots-node' && Number.isInteger(Number(value))) out.botsNode = Number(value);
+    // The bots take hulls unless `--bot-vehicles off` (on since 2026-11-13:
+    // `room-bots.mjs`'s header has the measurement, and what a hull room costs).
+    else if (flag === '--bot-vehicles' && value) out.botVehicles = value !== 'off' && value !== '0';
+    // ...and the ships among them unless `--bot-ships off` (`room-ships.mjs`).
+    else if (flag === '--bot-ships' && value) out.botShips = value !== 'off' && value !== '0';
+    // The cap on live rooms (`room-registry.mjs` `ROOM_MEMORY`); 0 is none.
+    else if (flag === '--room-memory-mb' && Number.isFinite(Number(value))) out.roomMemoryMb = Number(value);
     else i--;
   }
   return out;
@@ -138,9 +163,18 @@ if (isMain) {
   const viewerDir = args.viewer ? String(args.viewer)
     : join(here, '..', 'viewer');
   const levels = buildLevelTable(viewerDir, args.mod);
+  const rules = {};
+  if (Number.isFinite(args.gameStartDelay)) rules.gameStartDelay = Math.max(0, args.gameStartDelay);
+  if (Number.isFinite(args.roundStartDelay)) rules.roundStartDelay = Math.max(0, args.roundStartDelay);
   const core = new RoomServerCore({
     levels,
     defaultLevel: levels.has(args.defaultLevel) ? args.defaultLevel : 'test',
+    rules,
+    bots: { enabled: args.bots !== false,
+            perRoom: Math.max(0, args.botsPerRoom ?? BOT_LIMITS.perRoom),
+            node: Math.max(0, args.botsNode ?? BOT_LIMITS.node),
+            vehicles: args.botVehicles !== false, ships: args.botShips !== false },
+    memoryBudgetMb: args.roomMemoryMb ?? ROOM_MEMORY.budget,
   });
   makeServer({ core, port: args.port });
   core.start();

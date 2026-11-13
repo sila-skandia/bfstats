@@ -1,0 +1,35 @@
+rem *** Strategic areas: one per control point (botgen) ***
+
+aiStrategicArea.create Hintere_Schuetzengraeben 512/603.9 517/608.9 10
+aiStrategicArea.setSide 1
+aiStrategicArea.setTakeable 1 0
+aiStrategicArea.setTakeable 2 0
+
+aiStrategicArea.create English_First_Trench 533.3/295 538.3/300 50
+aiStrategicArea.addObjectTypeFlag Base
+aiStrategicArea.setOrderPosition Tank 538.5/297.5
+aiStrategicArea.setSide 2
+aiStrategicArea.setTakeable 1 0
+
+aiStrategicArea.create Mittlere_Schuetzengraeben 541.2/534 546.2/539 300
+aiStrategicArea.addNeighbour Ruinenstadt
+aiStrategicArea.addObjectTypeFlag Centre
+aiStrategicArea.addObjectTypeFlag StrongPoint
+aiStrategicArea.addObjectTypeFlag Close
+aiStrategicArea.addObjectTypeFlag ControlPoint
+aiStrategicArea.setOrderPosition Tank 553.5/540.5
+aiStrategicArea.setOrderPosition Infantry 547.5/539.5
+aiStrategicArea.setSide 1
+
+aiStrategicArea.create Vordere_Schuetzengraeben 501/451.3 506/456.3 10
+aiStrategicArea.setSide 1
+aiStrategicArea.setTakeable 1 0
+aiStrategicArea.setTakeable 2 0
+
+aiStrategicArea.create Ruinenstadt 520.5/790 525.5/795 200
+aiStrategicArea.addNeighbour Mittlere_Schuetzengraeben
+aiStrategicArea.addObjectTypeFlag Centre
+aiStrategicArea.addObjectTypeFlag ControlPoint
+aiStrategicArea.setOrderPosition Tank 525.5/796.5
+aiStrategicArea.setOrderPosition Infantry 524.5/793.5
+aiStrategicArea.setSide 1

@@ -870,13 +870,24 @@ const recipes = {
 
 /** A plane with an AI pilot — which is what an enemy plane is — killed in the
  *  air. The crew dies with the hull, so nothing is left on the stick: the wreck
- *  has to fly itself down on the zeroed control word (`world.falling`, one
- *  integration a tick, HP-15) and the crash at the bottom is what places the
- *  wreck, under the hull's own template name — the model the viewer will fetch
- *  as `models/<Template>.wreck.glb`. The list of air templates the level places
- *  comes back with it, so the test can check that file exists for every one. */
+ *  glides down on its own flight law with its engine stopped (`world.falling`,
+ *  one integration a tick, HP-15, HP-24) and the crash at the bottom is what
+ *  places the wreck, under the hull's own template name — the model the viewer
+ *  will fetch as `models/<Template>.wreck.glb`. Killed at 30 m so the glide
+ *  reaches the ground inside the wreck's 10 s to live (HP-19). The list of air
+ *  templates the level places comes back with it, so the test can check that
+ *  file exists for every one.
+ *
+ *  `BF42_DOWNED_MAP` / `BF42_DOWNED_TEMPLATE` point the three recipes at
+ *  another level, for a checkout that holds only part of the vanilla tree. */
 recipes.downedAir = async function downedAir() {
   return downedAirOn('el_alamein', 'Spitfire');
+};
+
+/** The same kill at 200 m: the glide outlasts the time to live, so the wreck
+ *  is still in the air, well downrange, when the clock removes it. */
+recipes.downedAirHigh = async function downedAirHigh() {
+  return downedAirOn('el_alamein', 'Spitfire', { agl: 200 });
 };
 
 /** The same run on the planes the reports come from: a BF109 over Bocage. The
@@ -887,7 +898,9 @@ recipes.downedAir109 = async function downedAir109() {
   return downedAirOn('bocage', 'bf109');
 };
 
-async function downedAirOn(map, template) {
+async function downedAirOn(map, template, { agl = 30 } = {}) {
+  map = process.env.BF42_DOWNED_MAP || map;
+  template = process.env.BF42_DOWNED_TEMPLATE || template;
   wreckLoader = await realWreckLoader();
   const match = await start(map);
   const b = bot(match, 'bot_1');
@@ -904,34 +917,49 @@ async function downedAirOn(map, template) {
   const drive = () => match.stage.vehicles.lastFlightOf(node)?.drive ?? b.vehicle?.drive ?? null;
   const at = () => drive()?.state?.position ?? null;
 
-  // Put it in LEVEL flight at 200 m before the kill. A dead airframe's descent
-  // is decided by the energy it had, so the run has to set one: taken from the
-  // AI's own climb it stalls and drops quickly, and the case that was reported
-  // -- a 109 at cruise, killed, gliding for three quarters of a minute -- never
-  // happens. `__plane().place` sets exactly this on the live page.
+  // Put it in LEVEL flight at cruise before the kill, along its own nose. A
+  // dead airframe's descent is decided by the energy it had, so the run has
+  // to set one: taken from the AI's own climb it stalls and drops quickly.
+  // `__plane().place` sets exactly this on the live page.
   const cruise = drive();
-  if (cruise?.state?.position?.set && cruise.state.velocity?.set) {
-    const ground = match.groundAt(cruise.state.position.x, cruise.state.position.z);
-    cruise.state.position.set(cruise.state.position.x, ground + 200, cruise.state.position.z);
-    cruise.state.velocity.set(60, 0, 0);
-  }
-  match.step();
   let topAgl = -Infinity;
-  run(match, 6, () => {
-    const p = at();
-    if (!p) return false;
-    topAgl = Math.max(topAgl, p.y - match.groundAt(p.x, p.z));
-    return false;
-  });
+  const level = () => {
+    const s = cruise?.state;
+    if (!s?.position?.set || !s.velocity?.set) return;
+    const ground = match.groundAt(s.position.x, s.position.z);
+    const nose = new M.THREE.Vector3(0, 0, -1).applyQuaternion(s.orientation);
+    const flat = Math.hypot(nose.x, nose.z) || 1;
+    s.position.set(s.position.x, ground + agl, s.position.z);
+    s.velocity.set(60 * nose.x / flat, 0, 60 * nose.z / flat);
+    topAgl = Math.max(topAgl, agl);
+  };
+  level();
+  match.step();
+  // A second of its pilot's own flying so the surfaces and the engine are
+  // settled, then back on the height the kill is asked at.
+  run(match, 1, () => false);
+  level();
+  match.step();
   const death = at() ? { x: at().x, y: at().y, z: at().z } : null;
   match.stage.damageHull(b, 1e6, { attackerId: attacker.playerId });
   match.step();
   const flying = !!drive() && match.world.falling.has(drive());
+  // Read now: a glide is long enough for the pilot to respawn and board again.
+  const stillMounted = !!b.vehicle;
   const frozen = Object.hasOwn(node, 'updateMatrixWorld');
+  // A wreck keeps the stick its pilot died holding (HP-15: nothing forwards
+  // an input to a destroyed hull again), and this pilot, set down in level
+  // flight a second ago, is still pushing the nose over. The run measures the
+  // glide of a plane killed flying straight, so the stick is centred once.
+  const stick = drive() ? ['c_PIPitch', 'c_PIRoll', 'c_PIYaw'].map(c => drive().input(c)) : null;
+  for (const channel of ['c_PIPitch', 'c_PIRoll', 'c_PIYaw']) drive()?.setInput(channel, 0);
 
   // Until the fall ends: the wreck list hands the drive back on the crash.
   let minY = Infinity, crashAfter = null, crashY = null, crashX = null, crashZ = null;
+  let lastSpeed = null, removedInAir = false;
   const span = match.clock;
+  const visualOf = () => match.stage.wrecks.damageVisuals.get(b.playerId)
+    ?? [...match.stage.wrecks.damageVisuals.values()].find(v => v.node === node) ?? null;
   run(match, 300, () => {
     const d = drive();
     const p = at();
@@ -939,8 +967,11 @@ async function downedAirOn(map, template) {
     if (!d || !match.world.falling.has(d)) {
       crashAfter = round(match.clock - span);
       if (p) { crashY = round(p.y); crashX = p.x; crashZ = p.z; }
+      // The clock took it in the air (HP-19), or the ground did.
+      removedInAir = !!visualOf()?.removed;
       return true;
     }
+    lastSpeed = d.state.velocity.length();
     return false;
   });
 
@@ -970,11 +1001,11 @@ async function downedAirOn(map, template) {
   const guardVisual = match.stage.wrecks.damageVisuals.get(rec?.owner) === visual;
 
   return {
-    template: cand.template, topAgl: round(topAgl), stillMounted: !!b.vehicle, flying, frozen,
+    template: cand.template, topAgl: round(topAgl), stillMounted, flying, frozen,
     deathY: death ? round(death.y) : null,
     deathAgl: death ? round(death.y - match.groundAt(death.x, death.z)) : null,
     fellBy: death && Number.isFinite(minY) ? round(death.y - minY) : null,
-    crashAfter, crashY,
+    stickAtKill: stick, crashAfter, crashY, removedInAir, lastSpeed: lastSpeed === null ? null : round(lastSpeed),
     crashAgl: crashY === null ? null : round(crashY - match.groundAt(crashX, crashZ)),
     drift: death && crashX !== null
       ? round(Math.hypot(crashX - death.x, crashZ - death.z))

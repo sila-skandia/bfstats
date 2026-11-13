@@ -1,0 +1,39 @@
+rem *** Strategic areas: one per control point (botgen) ***
+
+aiStrategicArea.create bridge 1257.4/839.2 1297.4/879.2 150
+aiStrategicArea.addNeighbour alliesbase
+aiStrategicArea.addNeighbour axisbase
+aiStrategicArea.addNeighbour lz_comm_fokker
+aiStrategicArea.addObjectTypeFlag Flank
+aiStrategicArea.addObjectTypeFlag Close
+aiStrategicArea.addObjectTypeFlag ControlPoint
+aiStrategicArea.setOrderPosition Tank 1295.5/878.5
+aiStrategicArea.setOrderPosition Infantry 1297.5/878.5
+
+aiStrategicArea.create alliesbase 1509.9/1494.1 1514.9/1499.1 50
+aiStrategicArea.addNeighbour bridge
+aiStrategicArea.addObjectTypeFlag Base
+aiStrategicArea.setOrderPosition Tank 1512.5/1500.5
+aiStrategicArea.setOrderPosition Infantry 1515.5/1498.5
+aiStrategicArea.setSide 2
+aiStrategicArea.setTakeable 1 0
+
+aiStrategicArea.create axisbase 718.6/613.6 723.6/618.6 50
+aiStrategicArea.addNeighbour bridge
+aiStrategicArea.addObjectTypeFlag Base
+aiStrategicArea.setOrderPosition Tank 725.5/619.5
+aiStrategicArea.setOrderPosition Infantry 724.5/618.5
+aiStrategicArea.setSide 1
+aiStrategicArea.setTakeable 2 0
+
+aiStrategicArea.create v1_airbase 590.3/1291.7 630.3/1331.7 10
+aiStrategicArea.setTakeable 1 0
+aiStrategicArea.setTakeable 2 0
+
+aiStrategicArea.create lz_comm_fokker 1554.6/857.6 1564.6/867.6 150
+aiStrategicArea.addNeighbour bridge
+aiStrategicArea.addObjectTypeFlag Flank
+aiStrategicArea.addObjectTypeFlag Close
+aiStrategicArea.addObjectTypeFlag ControlPoint
+aiStrategicArea.setOrderPosition Tank 1533.5/869.5
+aiStrategicArea.setOrderPosition Infantry 1564.5/868.5

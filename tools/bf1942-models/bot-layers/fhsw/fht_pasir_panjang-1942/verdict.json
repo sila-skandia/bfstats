@@ -4,10 +4,10 @@
  "outcome": "no-fight",
  "config": "with vehicles",
  "doctrine": "garrison",
- "generatorVersion": 5,
+ "generatorVersion": 6,
  "inputs": {
   "controlPoints": "62a87133e1386d1dbeb1f17b2d4bd8cb88ab3d578fdc84dfecf08ea305bd6008",
-  "infantryMap": "9af4d58a7279fcbfb574fc931deae599c990a3fd78b122cf66a8811f28cee648",
+  "infantryMap": "0ee691fe1df1d4ed06889cc8e7e1d81a0db500a1fa737f87dd90f64fc7b232bf",
   "template": "43f8a790471528016570235f76e97dbb2045732458781a5139f37fed68bf98c0"
  },
  "baseline": "DICE layers with vehicles, garrison doctrine: berlin, stalingrad, kharkov, bocage; seeds 1..10, 600 s",
@@ -15,42 +15,38 @@
   "against": "dice",
   "why": "no bar of fhsw's own: DICE's"
  },
- "seeds": 2,
+ "seeds": 1,
  "sizes": {
   "8": {
    "verdict": "fail",
    "failed": [
     "idleShare",
     "routeFailuresPerBotMinute",
-    "redeploysPerBotMinute",
     "capturesTotal",
     "enemyKillsPerBotMinute",
     "flagCoverage",
     "bothSidesCapture",
     "bothSidesKill",
     "routeFailuresPerBotMinuteWorseSide",
-    "redeploysPerBotMinuteWorseSide",
     "nonEnemyDeathShareWorseSide",
-    "hullStuckSecondsPerDrivingMinute",
-    "hullStuckSecondsPerDrivingMinuteWorseSide",
-    "unitsNeverUsedShare",
-    "tankSilentShare"
+    "unitsNeverUsedShare"
    ],
    "winners": [
     0,
-    2,
+    1,
     0
    ]
   },
   "16": {
    "verdict": "fail",
    "failed": [
+    "idleShare",
     "routeFailuresPerBotMinute",
+    "capturesTotal",
     "enemyKillsPerBotMinute",
     "flagCoverage",
     "bothSidesCapture",
     "bothSidesKill",
-    "ticketsBleed",
     "routeFailuresPerBotMinuteWorseSide",
     "nonEnemyDeathShareWorseSide",
     "hullStuckSecondsPerDrivingMinute",
@@ -60,19 +56,18 @@
    ],
    "winners": [
     0,
-    2,
+    1,
     0
    ]
   }
  },
- "oneSided": 2,
+ "oneSided": null,
  "unreachable": [
   "underground_commandpost"
  ],
  "lintErrors": [],
  "acceptanceWithdrawn": {
-  "because": "page match 2026-11-12, after the flag binding: under the rollout floor (no enemy kill, no capture)",
-  "date": "2026-11-12",
-  "was": "Owner's rollout, 2026-11-11: after playing Tunis-1943 against its generated bots"
+  "because": "regenerated on generator 6 and screened in the runner on 2026-11-13, one seed at 8 and 16 a side: no kill and no capture at either size; not played on the page",
+  "date": "2026-11-13"
  }
 }

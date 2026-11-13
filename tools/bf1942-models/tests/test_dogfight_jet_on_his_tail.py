@@ -179,7 +179,7 @@ class OnTheirTailOnAJetTests(unittest.TestCase):
         # out. Rushing in, you fire as they break and land 0 to 3 rounds, all
         # between 2.2 s before their break and 4 s after it. Then you come past
         # their tail 49 to 60 m from them and sit 104 to 110 m behind them in
-        # their turn, your nose 51 to 53 degrees off them, and nobody comes down."
+        # their turn, your nose 51 to 54 degrees off them, and nobody comes down."
         rows = self.nine("move")
         self.assertTrue(all(r["winner"] is None for r in rows), rows)
         self.assertTrue(all(r["hits"][0] == 0 and 0 <= r["hits"][1] <= 3 for r in rows), [r["hits"] for r in rows])
@@ -190,7 +190,9 @@ class OnTheirTailOnAJetTests(unittest.TestCase):
         self.assertLessEqual(spread(rows, "myHitsTo")[1], 4.0)
         self.assertEqual((49, 60), spread(rows, "pass"))
         self.assertEqual((104, 110), spread(rows, "behind"))
-        self.assertEqual((51, 53), spread(rows, "noseOff"))
+        # re-pinned 2026-11-12 on retail g and box area (features/retail-parity-cross-check-2026-11-12);
+        # moved by the Spitfire retune of the shared `breakTurn` (reverses at 6 m across, was 8)
+        self.assertEqual((51, 54), spread(rows, "noseOff"))
         # In their turn neither has a shot that would land.
         self.assertTrue(all(r["aceShot"] == 0 and r["myShotAfter"] == 0 for r in rows), rows)
         # The school's own harness agrees on the hits and the kills.
@@ -200,22 +202,25 @@ class OnTheirTailOnAJetTests(unittest.TestCase):
 
     def test_their_circle_is_too_tight_for_any_lead(self) -> None:
         # "A jet turning hard at 75 m/s turns 68 to 70 degrees a second, round
-        # a circle 123 to 127 m across."
+        # a circle 123 to 126 m across."
         rows = self.nine("move")
         lo, hi = spread(rows, "degS")
         self.assertTrue(67.5 <= lo and hi <= 70, (lo, hi))
-        self.assertEqual((123, 127), spread(rows, "across"))
+        # re-pinned 2026-11-12 on retail g and box area (features/retail-parity-cross-check-2026-11-12);
+        # moved by the Spitfire retune of the shared `breakTurn` (reverses at 6 m across, was 8)
+        self.assertEqual((123, 126), spread(rows, "across"))
         self.assertEqual((75, 75), spread(rows, "aceSpeed"))
 
     def test_leaving_their_circle_the_spitfires_way_is_shot_down(self) -> None:
-        # "they come round in behind you, 73 to 353 m back at the closest,
+        # "they come round in behind you, 70 to 352 m back at the closest,
         # inside their cannon's reach, and shoot you down 13 to 16 s after you
         # leave"; "shot down in nine of nine".
         dip = self.l9("dip", base=True)
         self.assertEqual(0, dip["measured"]["works"])
         rows = dip["scores"]
         self.assertTrue(all(s["end"] == "shot down" and s["winner"] == 0 for s in rows), rows)
-        self.assertEqual((73, 353), spread(rows, "chaseMin"))
+        # re-pinned 2026-11-12 on retail g and box area (features/retail-parity-cross-check-2026-11-12)
+        self.assertEqual((70, 352), spread(rows, "chaseMin"))
         lo, hi = spread(rows, "downAfter")
         self.assertTrue(13 <= lo and hi <= 16.5, (lo, hi))
         runs = jet_lesson("on-his-tail", demo="dip", base=True)["demos"]["dip"]
@@ -232,14 +237,15 @@ class OnTheirTailOnAJetTests(unittest.TestCase):
         self.assertEqual(0, shot_down(jet_lesson("on-his-tail", demo="dip")["demos"]["dip"], 1))
         # The verdict: "Out in all nine and never hit: you passed them 75 to 97
         # m off, their guns never had you, they never came after you, and at
-        # 40 s you were 2601 to 3360 m apart and opening."
+        # 40 s you were 2601 to 3361 m apart and opening."
         dip = self.l9("dip")
         self.assertEqual(9, dip["measured"]["works"])
         self.assertEqual(dip["declared"]["works"], dip["measured"]["works"])
         scores = dip["scores"]
         self.assertTrue(all(s["hitsOnMe"] == 0 and s["hisShot"] == 0 and s["chaseMin"] is None and s["opening"] > 0 for s in scores), scores)
         self.assertEqual((75, 97), spread(scores, "minRange"))
-        self.assertEqual((2601, 3360), spread(scores, "endRange"))
+        # re-pinned 2026-11-12 on retail g and box area (features/retail-parity-cross-check-2026-11-12)
+        self.assertEqual((2601, 3361), spread(scores, "endRange"))
 
     def test_the_yo_yo_never_gets_the_shot(self) -> None:
         # "In all nine you were never hit, and from the pull-up on your guns
@@ -263,7 +269,7 @@ class OnTheirTailOnAJetTests(unittest.TestCase):
     def test_climbing_beside_their_break_gets_nothing_they_climb_too(self) -> None:
         # "they come up too, after you or away from you, and both of you level
         # off under the roof, between 749 and 766 m. Nobody is in a place to
-        # shoot, though once in nine they land 2 rounds on you." Every jet
+        # shoot, and in the nine starts nobody lands a round." Every jet
         # pilot flies under the roof (`dogfight-jet-ceiling.js` `underRoof`,
         # from `stepPilot`); before it both went on up to 910 to 1,690 m.
         rows = self.nine("ninja")
@@ -271,7 +277,10 @@ class OnTheirTailOnAJetTests(unittest.TestCase):
         tops = [h for r in rows for h in r["top"]]
         self.assertEqual((749, 766), (min(tops), max(tops)), [r["top"] for r in rows])
         self.assertTrue(all({"climb", "reverse"} & set(r["acePhases"]) for r in rows), [r["acePhases"] for r in rows])
-        self.assertEqual([[2, 0]], [r["hits"] for r in rows if r["hits"] != [0, 0]])
+        # Claim rewritten 2026-11-12 on retail g and box area
+        # (features/retail-parity-cross-check-2026-11-12): the 2 rounds they
+        # landed in one start no longer land; nobody is hit in the nine.
+        self.assertEqual([], [r["hits"] for r in rows if r["hits"] != [0, 0]])
         # "None of the nine: no kill, 2 rounds landed, in one of the nine, and
         # 0.17 s of a shot that would land. Level under the roof they came
         # round onto your tail and sat there, for 4.7 to 38 s in 8 of 9, but

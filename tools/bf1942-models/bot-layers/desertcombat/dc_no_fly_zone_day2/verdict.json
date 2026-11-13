@@ -1,0 +1,102 @@
+{
+ "level": "dc_no_fly_zone_day2",
+ "verdict": "fail",
+ "outcome": "no-fight",
+ "config": "with vehicles",
+ "doctrine": "garrison",
+ "generatorVersion": 6,
+ "inputs": {
+  "controlPoints": "5c186b59e2dc7f999d8b515342c84f4665a2417520af6d3b829aabdace5d5feb",
+  "infantryMap": "dc3e0ceb3c5d0390c353f0a65ef329c079c56add4fef54a1c325dc97d00dc58b",
+  "template": "bdc0e455f47f91b7e7724e71d7c0c196e839b36946ac3abb7663d725944081e5"
+ },
+ "baseline": "desertcombat's own layers with vehicles, garrison doctrine: berlin, dc_desertshield, kharkov, kursk, stalingrad; seeds 1..10, 600 s; dropped, no fight: dc_basrahs_edge",
+ "bar": {
+  "against": "desertcombat",
+  "why": "desertcombat's own bar, built from 5 of its levels that are alive (berlin, dc_desertshield, kharkov, kursk, stalingrad)"
+ },
+ "againstDice": {
+  "verdict": "fail",
+  "outcome": "no-fight",
+  "baseline": "DICE layers with vehicles, garrison doctrine: berlin, stalingrad, kharkov, bocage; seeds 1..10, 600 s",
+  "sizes": {
+   "8": {
+    "verdict": "fail",
+    "failed": [
+     "idleShare",
+     "selfDeathsPerBotMinute",
+     "capturesTotal",
+     "enemyKillsPerBotMinute",
+     "flagCoverage",
+     "bothSidesCapture",
+     "bothSidesKill",
+     "ticketsBleed",
+     "nonEnemyDeathShareWorseSide",
+     "unitsNeverUsedShare"
+    ]
+   },
+   "16": {
+    "verdict": "fail",
+    "failed": [
+     "idleShare",
+     "selfDeathsPerBotMinute",
+     "enemyKillsPerBotMinute",
+     "flagCoverage",
+     "bothSidesCapture",
+     "bothSidesKill",
+     "nonEnemyDeathShareWorseSide",
+     "unitsNeverUsedShare"
+    ]
+   }
+  }
+ },
+ "seeds": 1,
+ "sizes": {
+  "8": {
+   "verdict": "fail",
+   "failed": [
+    "selfDeathsPerBotMinute",
+    "capturesTotal",
+    "enemyKillsPerBotMinute",
+    "flagCoverage",
+    "bothSidesCapture",
+    "bothSidesKill",
+    "ticketsBleed",
+    "nonEnemyDeathShareWorseSide",
+    "unitsNeverUsedShare"
+   ],
+   "winners": [
+    1,
+    0,
+    0
+   ]
+  },
+  "16": {
+   "verdict": "fail",
+   "failed": [
+    "idleShare",
+    "selfDeathsPerBotMinute",
+    "capturesTotal",
+    "enemyKillsPerBotMinute",
+    "flagCoverage",
+    "bothSidesCapture",
+    "bothSidesKill",
+    "nonEnemyDeathShareWorseSide",
+    "unitsNeverUsedShare"
+   ],
+   "winners": [
+    1,
+    0,
+    0
+   ]
+  }
+ },
+ "oneSided": null,
+ "unreachable": [],
+ "lintErrors": [],
+ "acceptanceWithdrawn": {
+  "because": "page match 2026-11-12: no enemy kill, no capture, 0.14 deaths by the bots' own hand (the level has no capturable flag); under the rollout floor. One match only: the day ended before its second.",
+  "date": "2026-11-12",
+  "was": "Owner's rollout, 2026-11-12: the owner asked for everything with a fight to go l"
+ }
+}

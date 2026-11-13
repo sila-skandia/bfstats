@@ -1,0 +1,107 @@
+{
+ "level": "GC_Tatooine",
+ "mod": "gcmod",
+ "url": "https://play.bfstats.io/map.html?map=GC_Tatooine&team=2&mode=Conquest&mod=gcmod&botCount=16&botSkill=0.75&spawnTime=wave&mute&shots",
+ "date": "2026-11-12",
+ "bar": "DICE levels on the page, 3 matches each of 600 s, 16 bots: Berlin, Stalingrad, Kharkov, Bocage; 2026-11-11",
+ "verdict": "fail",
+ "failed": [
+  "nonEnemyDeathShareWorseSide",
+  "enemyKillsPerBotMinute"
+ ],
+ "checks": [
+  {
+   "metric": "teamKillsPerBotMinute",
+   "median": 0.0062,
+   "bar": "<= 0.025",
+   "pass": true
+  },
+  {
+   "metric": "suicidesPerBotMinute",
+   "median": 0,
+   "bar": "<= 0.0562",
+   "pass": true
+  },
+  {
+   "metric": "nonEnemyDeathShareWorseSide",
+   "median": 0.5,
+   "bar": "<= 0.308",
+   "pass": false
+  },
+  {
+   "metric": "enemyKillsPerBotMinute",
+   "median": 0.0312,
+   "bar": ">= 0.175",
+   "pass": false
+  }
+ ],
+ "matches": 2,
+ "rollout": {
+  "pass": true,
+  "floor": {
+   "kills": 0.15,
+   "killsWithFlags": 0.03,
+   "flags": 3,
+   "killsWithAFlag": 0.05,
+   "ownHand": 0.1,
+   "ownHandOfKills": 0.3333333333333333
+  }
+ },
+ "runs": [
+  {
+   "generated": {
+    "version": 6,
+    "template": "few"
+   },
+   "minutes": 10,
+   "tickets": {
+    "1": 105,
+    "2": 96
+   },
+   "capturesTotal": 6,
+   "teamKillsPerBotMinute": 0,
+   "suicidesPerBotMinute": 0.0187,
+   "nonEnemyDeathShareWorseSide": 0.3,
+   "enemyKillsPerBotMinute": 0.05,
+   "rollout": {
+    "pass": true,
+    "why": [],
+    "enemyKills": 0.05,
+    "captures": 6,
+    "ownHand": 0.0187
+   },
+   "teamKillsBySide": {
+    "1": 0,
+    "2": 0
+   },
+   "oldCode": "played on the bot code of e5003c584 or earlier, before drivers predicted collisions with their own side (3b1ebe45c, live 2026-11-13)"
+  },
+  {
+   "generated": {
+    "version": 6,
+    "template": "few"
+   },
+   "minutes": 10,
+   "tickets": {
+    "1": 104,
+    "2": 102
+   },
+   "capturesTotal": 3,
+   "teamKillsPerBotMinute": 0.0062,
+   "suicidesPerBotMinute": 0,
+   "nonEnemyDeathShareWorseSide": 0.5,
+   "enemyKillsPerBotMinute": 0.0312,
+   "rollout": {
+    "pass": true,
+    "why": [],
+    "enemyKills": 0.0312,
+    "captures": 3,
+    "ownHand": 0.0062
+   },
+   "teamKillsBySide": {
+    "1": 1,
+    "2": 0
+   }
+  }
+ ]
+}

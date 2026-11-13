@@ -1,6 +1,6 @@
 {
  "generator": "botgen",
- "version": 5,
+ "version": 6,
  "mod": "FHSW",
  "level": "warsaw_uprising",
  "objectSpawners": 172,
@@ -23,7 +23,6 @@
   "factory_spawn5",
   "crash_point_spawn3",
   "crash_point_spawn5",
-  "reproduction_factory_spawn2",
   "reproduction_factory_spawn3",
   "reproduction_factory_spawn4",
   "reproduction_factory_spawn5",
@@ -113,6 +112,12 @@
     "kind": "spawn",
     "way": "none",
     "opened": 0
+   },
+   {
+    "who": "Manhole_SP81:manhole_soldierspawn_81#3",
+    "kind": "spawn",
+    "way": "none",
+    "opened": 0
    }
   ],
   "cover": 0.961,
@@ -140,7 +145,7 @@
     ]
    },
    "2": {
-    "spawns": 10,
+    "spawns": 11,
     "flags": [
      "apartment",
      "crash_point",
@@ -167,7 +172,7 @@
  },
  "inputs": {
   "controlPoints": "2fcd176365b36269e2800d09e518accd137d30ad210ed7e84d469e4d7553c0db",
-  "infantryMap": "b6f787fa70cb84df5343de368a62394ecb5424decf6360eb9a41917790858958",
+  "infantryMap": "a39d1d763d60aba49364590dbe9546fd4ae192d462fa308a4d5d4cce7480bdb7",
   "template": "43f8a790471528016570235f76e97dbb2045732458781a5139f37fed68bf98c0"
  },
  "files": {
@@ -177,9 +182,9 @@
   "AI/Strategies.con": "4ce0be59a0d6c5cd530db002fb062c4be8d936bc6ae59bd188803ccaf7869a8d",
   "AI/conditions.con": "68a0c7a8aec69954063147b60fae560b2874884285737aa085efa76597d395aa",
   "AI/prerequisites.con": "4c1f313bc285b228fd6ad03bfd1f44c5b15c8703c31f802eb605bc5f00f88bb5",
-  "Pathfinding/Infantry1Level0Map.raw": "b4a224122d4441499034ed00e53cfa9b98eba623329b9e4c42d96c93d8d5fa00",
-  "Pathfinding/Infantry1Level1Map.raw": "99668d7a137d4f6cfb91adf1f4967314404f83f3d149f50dbbb472418a19fbeb",
-  "Pathfinding/Infantry1Level2Map.raw": "3f99d6d28dde2c570e58493a9521609c66b20c3a626cc1e21add10e4fa0589f0",
+  "Pathfinding/Infantry1Level0Map.raw": "fbba039e9b03983b33a449bb466355655adcd1717a0fb4eef187d2091750404b",
+  "Pathfinding/Infantry1Level1Map.raw": "8b5ed619cdd2bf943ad4cb602ba54e4b604726aeba2f3983d4466dc3ad647654",
+  "Pathfinding/Infantry1Level2Map.raw": "932ccf8234d536b4111ebda098ad47fded2746240da8d88d71a0c567becb99f5",
   "Pathfinding/Tank0Level0Map.raw": "f489fc3d6aebbb1f6c16d3fd02759e235844b09ae2ff39843f89059429449b9f",
   "Pathfinding/Tank0Level1Map.raw": "efc7ed29c4a6191f045320c8a9b834496005df9d192c33b8322c558e3f6aa7c6",
   "Pathfinding/Tank0Level2Map.raw": "532feb8face1254c8546c7580357195003b199ffe65a52801ff2ea31a198c9ca"

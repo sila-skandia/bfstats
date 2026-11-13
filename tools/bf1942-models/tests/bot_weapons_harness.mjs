@@ -96,7 +96,7 @@ const SEAT_MG = {
  * handed over `dataAt` seconds in (the page fetches it after the bot's first
  * tick). `launch` is the caller's answer to `launchRound` (null: no hook).
  */
-function hold({ kit, seconds, dataAt = 1.0, hz = 30, launch = null, trigger = null, onWindUp = null, swapAt = null }) {
+function hold({ kit, seconds, dataAt = 1.0, hz = 30, launch = null, trigger = null, onWindUp = null, swapAt = null, onTick = null }) {
   const L = syntheticLevel(M, { vehicles: false });
   const world = new M.World({ collider: L.collider, extras: L.extras });
   world.addBotPlayer('bot_0', { team: 2, flag: world.flags.find(f => f.team === 2) });
@@ -134,6 +134,7 @@ function hold({ kit, seconds, dataAt = 1.0, hz = 30, launch = null, trigger = nu
     }
     referee.clock += dt;
     referee.fireTick(dt);
+    onTick?.(bot, i);
     const mag = bot._mags?.get(bot.weaponAi.name);
     if (mag?.reloadLeft > 0 && (!reloads.length || reloads[reloads.length - 1].end !== null)) {
       reloads.push({ start: +referee.clock.toFixed(4), length: mag.reloadTime, end: null });
@@ -361,7 +362,8 @@ function lawReaches(words, level = Math.fround(0.8)) {
   const dry = { rounds: bot._mags.get('Bazooka').rounds, spare: bot._mags.get('Bazooka').spare };
   const index = [bot.lives, bot.inputIndex];
   world.armorOf('bot_0').damage(1e6);
-  bot._respawnIn = 0.01;
+  // Past the wave (SPAWN-35), which this check of the kit does not wait for.
+  bot._respawnForce = true;
   referee.respawnTick(bot, 0.02);
   index.push(bot.lives, bot.inputIndex);
   bot.isFiring = false;
@@ -547,6 +549,27 @@ out.thrownRounds = {
     east: off([1, 0, 0], 1.0, seatK),
     table: Array.from({ length: 1024 }, (_, k) => deviationPoint(k)),
   };
+}
+
+// --- the held weapon's isReadyToUse (bot-referee.js `botWeaponReady`) ---------
+//
+// `FireArms::isReadyToUse` 0x0828f510, which the stance change's torso gate
+// asks (BODY-2): true on the shot's own tick (the timer equals the period),
+// false while the fire timer runs below it, and false with the loaded
+// magazine empty and through the reload.
+{
+  const { botWeaponReady } = await imp('bot-referee.js');
+  const readiness = kit => {
+    const ticks = [];
+    hold({ kit: [kit], seconds: 9, dataAt: 0, trigger: b => !b._mags?.get(kit) || b._mags.get(kit).rounds === b._mags.get(kit).size && !(b._fireCooldown > 0) && !b._fired,
+           onTick: (b, i) => {
+             if (!b._fired && b._fireCooldown > 0) b._fired = i;
+             ticks.push(botWeaponReady(b) ? 1 : 0);
+           } });
+    return ticks;
+  };
+  out.weaponReady = { remington: readiness('Remington'), bazooka: readiness('Bazooka'),
+                      unarmed: botWeaponReady({}), nothing: botWeaponReady(null) };
 }
 
 console.log = log;

@@ -654,6 +654,19 @@ class TemplateWordsTests(unittest.TestCase):
         self.assertEqual(run_harness()["templateWords"],
                          ["Mustang Bomb", "K98 Sniper", "No4 Sniper", "Bazooka", "MG42", "Panzer IV", "BAR", "SBD Guns"])
 
+    def test_post_as_a_short_says_why_it_cannot_before_recording(self) -> None:
+        got = run_harness()["shortBlock"]
+        self.assertIsNone(got["ok"])
+        self.assertIn("kill shot", got["noClip"])
+        self.assertIn("shared on bfstats.io", got["file"])
+        self.assertIn("another site", got["elsewhere"])
+        self.assertIn("MP4", got["webm"])
+        self.assertIn("MP4", got["silentWebm"])
+
+    def test_a_shorts_title_starts_from_its_kill(self) -> None:
+        self.assertEqual(run_harness()["shortTitle"],
+                         ["Lagtastic with the Bazooka on FAVELA", "Lagtastic on FAVELA", "Lagtastic with the Bazooka", ""])
+
     def test_mounted_guns_read_as_what_they_are_on(self) -> None:
         # The owner, 2026-11-04: an ASMR Short captioned "AA POW GUN BARREL2".
         self.assertEqual(run_harness()["gunWords"],

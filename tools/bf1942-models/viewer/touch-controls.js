@@ -1163,7 +1163,7 @@ export function createTouchControls(page) {
       return;
     }
     if (page.occupancy) {
-      page.exitSeat();
+      page.exitSeat({ press: true });   // a press: SEAT-42's gate (page-input.js useKey)
       page.noteSeatToggle();
     } else {
       // The same press-time lookup the keyboard's E does (`page-input.js`

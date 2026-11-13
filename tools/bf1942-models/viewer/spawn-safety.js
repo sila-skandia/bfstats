@@ -131,3 +131,21 @@ export function resolveSpawn(pool, index, {
   first.spawn.blockedReason = first.reason;
   return first.spawn;
 }
+
+/**
+ * A hull's `setToolTipType` as its number, for SPAWN-14's one exemption (an
+ * air hull of type 0x24, the Wasserfall's, is created whoever stands on the
+ * point: `GameServer::createObjectOnAllClients` 0x08133a10). The node's own
+ * `extras.hud.toolTipType` in a tree baked since 2026-11-13, else the pack's
+ * table by lower-case template (`<maps tree>/_shared/hud/tooltip-layout.json`
+ * `vehicles`, which `tooltips.js` reads the same way). Null when neither
+ * says, which keeps the hold.
+ */
+export function toolTipTypeOf(node, layout = null) {
+  const own = node?.userData?.hud?.toolTipType;
+  if (Number.isInteger(own)) return own;
+  const template = String(node?.userData?.control ?? node?.name ?? '').toLowerCase();
+  if (!template) return null;
+  const type = layout?.vehicles?.[template] ?? layout?.vehicles?.[template.replace(/_\d+$/, '')];
+  return Number.isInteger(type) ? type : null;
+}

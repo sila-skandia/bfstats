@@ -81,7 +81,9 @@ class OutOfTheLockDipFlipNinja(unittest.TestCase):
         # you met head-on, 270 to 350 m out, and in 6 of 9 180 to 260 m behind
         # you at 18 to 22 s, but he holds his fire to 150 m and never fired;
         # he gave the chase up at 28 to 31 s, and at 40 s you were 1140 to
-        # 1410 m clear and opening." The pass: within about 25 m.
+        # 1415 m clear and opening." The pass: within about 25 m. (1410 m:
+        # re-pinned 2026-11-12 on retail g and box area
+        # (features/retail-parity-cross-check-2026-11-12).)
         scores = self.demo("dip")["scores"]
         for s in scores:
             self.assertEqual(["turn", "meet", "dip-run"], s["phases"], s)
@@ -90,7 +92,7 @@ class OutOfTheLockDipFlipNinja(unittest.TestCase):
             self.assertEqual([0, 0], s["hits"], s)
             self.assertTrue(24 <= s["minRange"] <= 26, s)
             self.assertTrue(28 <= s["gaveUpAt"] <= 31, s)
-            self.assertTrue(1140 <= s["endRange"] <= 1410, s)
+            self.assertTrue(1140 <= s["endRange"] <= 1420, s)
             self.assertGreater(s["opening"], 0, s)
             self.assertTrue(180 <= s["hisShotRange"][0] and s["hisShotRange"][1] <= 350, s)
         self.assertEqual(5, sum(1 for s in scores if s["hisShotFrom"] < 9))
@@ -98,8 +100,11 @@ class OutOfTheLockDipFlipNinja(unittest.TestCase):
 
     def test_the_flip_lands_a_pass_across_his_beam_but_does_not_make_you_the_hunter(self) -> None:
         # "After the move he never had a shot and never hit you; the pass
-        # landed 10 to 22 hits and shot him down in 3 of 9. ... only once, as
-        # he went down, were you on his tail ... for the 2 s". Slow over the
+        # landed 10 to 22 hits and shot him down in 3 of 9. ... not once, even
+        # as he went down, were you on his tail ... for the 2 s" ("only once",
+        # 1 of 9, until the claim was rewritten 2026-11-12 on retail g and box
+        # area (features/retail-parity-cross-check-2026-11-12): that kill's
+        # rear quarter is now 1.3 s, not 2). Slow over the
         # top: under 35 m/s near him for 2.2 to 2.7 s. He is at 35 to 44 m/s
         # when the burst lands, not hanging.
         scores = self.demo("flip")["scores"]
@@ -118,8 +123,10 @@ class OutOfTheLockDipFlipNinja(unittest.TestCase):
         # "One pass in all nine, 10 to 22 hits, down in 3 ... as you met
         # head-on he had his guns on you for 0.3 to 0.6 s at 270 to 350 m,
         # where he holds his fire; and in the 6 he lived he followed you up:
-        # at 30 s he was 290 to 330 m behind and 40 to 60 m under you, on your
+        # at 30 s he was 300 to 340 m behind and 30 to 65 m under you, on your
         # tail for 5 to 6 s of the climb." The theatre's start is one he lives.
+        # (290 to 330 m, 40 to 60 m and 0.3 s: re-pinned 2026-11-12 on retail g and box area
+        # (features/retail-parity-cross-check-2026-11-12).)
         self.assertGreaterEqual(self.demo("ninja")["seconds"], 30)
         scores = self.demo("ninja")["scores"]
         self.assertFalse(scores[0]["killed"], scores[0])
@@ -128,11 +135,11 @@ class OutOfTheLockDipFlipNinja(unittest.TestCase):
             self.assertTrue(10 <= s["hits"][1] <= 22, s)
             self.assertEqual(0, s["hitsOnMe"], s)
             self.assertFalse(s["hisFired"], s)
-            self.assertTrue(0.3 <= s["hisShot"] <= 0.65, s)
+            self.assertTrue(0.25 <= s["hisShot"] <= 0.65, s)
             if not s["killed"]:
                 self.assertIn("ninja-perch", s["phases"], s)
-                self.assertTrue(290 <= s["endRange"] <= 335, s)
-                self.assertTrue(40 <= s["endHigh"] <= 62, s)
+                self.assertTrue(290 <= s["endRange"] <= 345, s)
+                self.assertTrue(25 <= s["endHigh"] <= 68, s)
                 self.assertTrue(4.9 <= s["sixLost"] <= 6.3, s)
         self.assertEqual(3, sum(1 for s in scores if s["killed"]))
 

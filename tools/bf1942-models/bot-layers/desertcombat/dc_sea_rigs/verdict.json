@@ -1,0 +1,31 @@
+{
+ "level": "dc_sea_rigs",
+ "verdict": "fail",
+ "outcome": "unsuitable",
+ "config": "with vehicles",
+ "doctrine": "garrison",
+ "generatorVersion": 5,
+ "inputs": {
+  "controlPoints": "7344430e76b84b74074ea94ab330614a17dad8e3e2543ee15b79b3179d4268dc",
+  "infantryMap": "3e3af06ff787a6b9d23f8708d2b89401db5f6581cd03dd16422c699a14b44d92",
+  "template": "bdc0e455f47f91b7e7724e71d7c0c196e839b36946ac3abb7663d725944081e5"
+ },
+ "baseline": "DICE layers with vehicles, garrison doctrine: berlin, stalingrad, kharkov, bocage; seeds 1..10, 600 s",
+ "bar": null,
+ "seeds": 1,
+ "sizes": {},
+ "oneSided": null,
+ "unreachable": [
+  "OilRig1_Topside",
+  "OilRig2_Topside",
+  "Oil_Spill",
+  "OilRig1_Control_Room",
+  "OilRig2_Control_Room"
+ ],
+ "lintErrors": [
+  "the play surface is stacked floors (34 % of the main floor has another walked floor over or under it): a one-floor walk map cannot hold it",
+  "no capturable flag is reachable in 3D: none of the 5 has a place inside its radius that a soldier on the one-floor walk map's main ground can stand in",
+  "side 1 has no spawn with a route to any flag it must take: none of the 3 flags it does not hold can be reached",
+  "side 2 holds no spawn point at the start of the round"
+ ]
+}

@@ -60,7 +60,7 @@ HARNESS = Path(__file__).resolve().parent / "room_harness.mjs"
 # unmodified `../viewer/...` imports resolve from `server/`.
 _VIEWER_MODULES = [
     "world", "physics", "parachute", "rocket-pack", "swim", "soldier", "ladder-climb", "spawn-flags", "spawn-safety",
-    "point-body", "fixed-step", "input-pace", "soldier-pose", "soldier-locomotion", "walking-body", "soldier-resolve",
+    "point-body", "fixed-step", "input-pace", "soldier-pose", "soldier-locomotion", "walking-body", "soldier-resolve", "deck-carry",
     "mouse-input", "fall-damage",
     "body-world", "body-statics", "body-pose", "vehicle-bodies", "geometry-search", "combat-area", "supply", "armor",
     "vehicle-damage", "seats", "seat-dots", "rigid-body", "body-contact", "airborne",
@@ -84,7 +84,7 @@ _VIEWER_MODULES = [
     # vehicle-instance.js is what `room-control.mjs` asks whether a hull is
     # enterable; it re-exports seats.js's occupancy.
     "vehicle-instance",
-    "aircraft", "aircraft-ground-law", "vectored-engines", "engine-revs", "engine-spin", "ship-spec", "wheeled-vehicle", "suspension", "ground-specs", "ground-contact", "ground-engine",
+    "aircraft", "aircraft-ground-law", "vectored-engines", "rocket-burn", "spawn-boarded", "template-words", "camera-dof", "rocket-motor", "proximity-fuse", "round-impact", "contact-response", "loaded-rounds", "fire-timer", "round-launch", "gun-recoil", "gun-groups", "projectile-flight", "round-visuals", "gun-cycle", "idle-vehicle", "bot-deviation", "seat-cone", "gunfire", "engine-revs", "engine-spin", "ship-spec", "wheeled-vehicle", "suspension", "ground-specs", "ground-contact", "ground-engine",
     "tracked-vehicle", "game-modes", "netcode",
     # The land drives run an amphibian's water half (`amphibious.js`).
     "amphibious", "body-float",
@@ -95,6 +95,8 @@ _VIEWER_MODULES = [
     "bomb-release", "torpedo-run",
     # level-data.mjs gives each room its own tickets, scaled for its slots.
     "round-state",
+    # The wave law (SPAWN-35) and the auto-team (`getTeamToAddPlayer`).
+    "spawn-timer", "team-to-add",
     # authority.mjs runs a CTF layer's flags.
     "ctf",
     # room-pads.mjs runs the page's pad law (deployables.js) and the table
@@ -106,8 +108,22 @@ _VIEWER_MODULES = [
     "after-death",
     # room-hits.mjs prices a reported landing by the page's own law.
     "friendly-fire", "knockback", "soldier-exposure", "soldier-death", "skeleton-hit",
+    # ...and finds a seated soldier's body by the seat's anchor (seat-body.js),
+    # which poses through seat-ik.js and pose-compose.js (and its pose-bases.js
+    # and level-skin.js).
+    "seat-body", "seat-ik", "pose-compose", "pose-bases", "level-skin",
+    # room-packs.mjs runs the medic bag and the wrench by the page's law, and
+    # level-data.mjs finds the level's depots by the page's walk.
+    "healing-packs", "supply-collect",
     "tree-foliage",
     "level-batching",
+    # level-data.mjs adds a large root's static layer (COL-22), and
+    # level-instance.mjs places a soldier by the restricted exit (SEAT-42).
+    "coarse-layer", "restricted-exit",
+    # room-control.mjs paces the chat relay with the page's own queue (CHAT-2).
+    "chat-log",
+    # room-ships.mjs sails a ship on the page's own drive and law.
+    "ship", "ship-law",
 ]
 MODULES = {f"viewer/{name}.js": VIEWER / f"{name}.js" for name in _VIEWER_MODULES}
 MODULES.update({
@@ -125,6 +141,8 @@ MODULES.update({
     "server/level-data.mjs": SERVER / "level-data.mjs",
     "server/level-instance.mjs": SERVER / "level-instance.mjs",
     "server/held-craft.mjs": SERVER / "held-craft.mjs",
+    # The ships: their floats, their drives and their decks.
+    "server/room-ships.mjs": SERVER / "room-ships.mjs",
     "server/vehicle-table.mjs": SERVER / "vehicle-table.mjs",
     "server/level-load.mjs": SERVER / "level-load.mjs",
     "server/level-descriptor.mjs": SERVER / "level-descriptor.mjs",
@@ -138,7 +156,22 @@ MODULES.update({
     "server/room-wire.mjs": SERVER / "room-wire.mjs",
     "server/authority.mjs": SERVER / "authority.mjs",
     "server/room-pads.mjs": SERVER / "room-pads.mjs",
+    # The rounds that are vehicles (room.mjs builds it before the pads).
+    "server/room-missiles.mjs": SERVER / "room-missiles.mjs",
+    # The seat guns the room flies itself (room.mjs builds it after the hits).
+    "server/room-guns.mjs": SERVER / "room-guns.mjs",
+    "server/soldier-capsules.mjs": SERVER / "soldier-capsules.mjs",
     "server/room-hits.mjs": SERVER / "room-hits.mjs",
+    "server/room-packs.mjs": SERVER / "room-packs.mjs",
+    # The score board's numbers on the wire (HELLO and the `stats` rows).
+    "server/room-stats.mjs": SERVER / "room-stats.mjs",
+    # The room's bots (off in this harness: their own code is loaded on
+    # demand, and `tests/test_room_bots.py` drives it).
+    "server/room-bots.mjs": SERVER / "room-bots.mjs",
+    # The host half: settings, admin, votes, bans, the map list.
+    "server/room-host.mjs": SERVER / "room-host.mjs",
+    "server/room-settings.mjs": SERVER / "room-settings.mjs",
+    "server/room-votes.mjs": SERVER / "room-votes.mjs",
     # The real published templates the fake level's table is built from.
     "viewer/models/Willy.glb": VIEWER / "models" / "Willy.glb",
     "viewer/models/Zero.glb": VIEWER / "models" / "Zero.glb",
@@ -288,6 +321,45 @@ class RoomTests(unittest.TestCase):
         # (SEAT-35; `exitPoseOf` follows the page's `exitPoseManned`).
         self.assertLess(f["exitDist"], 5.0)
 
+    def test_a_crew_of_two_is_seated_by_the_servers_seat_order(self) -> None:
+        # What a page draws another player's hull from: the hull's id and the
+        # seat's place in the server's own order, the driver's seat first.
+        crew = self.results["crew"]
+        seated = {"seated": True, "inVehicle": True, "vehicleId": 1}
+        self.assertEqual(crew["both"]["driver"], {**seated, "seatIndex": 0}, crew)
+        self.assertEqual(crew["both"]["rider"], {**seated, "seatIndex": 1}, crew)
+        self.assertTrue(crew["both"]["hull"])
+        # The driver's seat is held: the rider's switch to it changes nothing
+        # (SEAT-11: an occupied seat is refused, never stolen), and a third
+        # player's Use on it is refused and said so.
+        self.assertEqual(crew["afterSwitch"], {**seated, "seatIndex": 1}, crew)
+        self.assertTrue(crew["third"]["refused"], crew)
+        self.assertFalse(crew["third"]["seat"]["inVehicle"], crew)
+        # The driver out, the rider still in: the hull is still held.
+        self.assertFalse(crew["afterExit"]["driver"]["inVehicle"], crew)
+        self.assertEqual(crew["afterExit"]["rider"], {**seated, "seatIndex": 1}, crew)
+        self.assertTrue(crew["afterExit"]["hull"])
+
+    def test_the_drive_goes_with_the_drivers_seat(self) -> None:
+        # A rider who moves onto a wheel nobody holds drives the hull, and
+        # lets it go on moving off: until 2026-11-13 the drive stayed with
+        # whoever mounted first, so a friend who took over drove nothing.
+        wheel = self.results["crew"]["wheel"]
+        self.assertEqual(wheel["driver"], 2, wheel)
+        self.assertEqual(wheel["seat"], 0, wheel)
+        self.assertTrue(wheel["drives"], wheel)
+        self.assertEqual(wheel["after"], {"driver": None, "seat": 1, "drives": False, "held": 1}, wheel)
+
+    def test_the_drivers_snapshot_has_his_hull_at_the_word_it_acknowledges(self) -> None:
+        # The page corrects the hull it drives against this row at this ack
+        # (`netcode-client.js` `selfHull`): one tick builds both, so the pose
+        # is the hull's after the acknowledged word and no later.
+        crew = self.results["crew"]
+        self.assertGreaterEqual(len(crew["acks"]), 10, crew)
+        for seq, ack in crew["acks"]:
+            self.assertEqual(ack, seq, crew)
+        self.assertTrue(crew["exact"], crew)
+
     def test_a_wreck_has_no_door(self) -> None:
         # SEAT-28; FHSWEurope 203 Hill's Vickers, destroyed by the battery
         # uphill, was manned and neither aimed nor fired (fhswe-mechanics-audit 13).
@@ -295,6 +367,10 @@ class RoomTests(unittest.TestCase):
         self.assertTrue(f2["destroyed"], f2)
         self.assertTrue(f2["refused"], f2)
         self.assertFalse(f2["seated"], f2)
+        # A late joiner is told which side the critical hit landed on (PHY-46).
+        self.assertEqual([1, 0, -1], f2["lateRow"], f2)
+        self.assertEqual([1, 0, 1], f2["lateRowRight"], f2)
+        self.assertEqual([1, 0], f2["lateRowPlain"], f2)
 
     # --- (g) fire throttling --------------------------------------------------------
 
@@ -332,6 +408,26 @@ class RoomTests(unittest.TestCase):
         assert "Willy:ground" in i["table"], i["table"]
         self.assertTrue(i["mountOk"])
         self.assertTrue(i["unmountOk"])
+        # The driver leaves a moving hull: it is released with its speed.
+        coast = i["land"]["coast"]
+        self.assertGreater(coast["before"], 1.0)
+        self.assertAlmostEqual(coast["handed"], coast["before"], places=6)
+
+    def test_a_rooms_moving_hull_runs_a_soldier_over_and_credits_its_driver(self) -> None:
+        # (runOver): the room tells its collider where each driven hull stands
+        # (`level-instance.mjs` `publishHullPoses`), so the server's soldier
+        # is met by the hull itself (`soldier-resolve.js` `pushOutOfHulls`)
+        # and a Willy at 10+ m/s runs them over; the room's kill row names
+        # the driver (V0's attribution, `authority.mjs`) and says `roadkill`.
+        r = self.results["runOver"]
+        self.assertTrue(r["seated"])
+        self.assertTrue(r["published"])
+        self.assertGreater(r["speedBefore"], 8)
+        self.assertEqual(30, r["hp0"])
+        self.assertEqual(0, r["hp"])
+        self.assertEqual({"type": "killed", "slot": r["victimSlot"], "other": r["driverSlot"],
+                          "roadkill": True},
+                         {k: r["killed"][k] for k in ("type", "slot", "other", "roadkill")})
 
     def test_a_rooms_land_drive_gets_the_pages_inputs_and_drives(self) -> None:
         # map.html's buildHullDrive hands a land drive the collider and the
@@ -384,6 +480,72 @@ class RoomTests(unittest.TestCase):
         k = self.results["k"]
         self.assertTrue(k["reviveOk"], k["reviveOk"])
         self.assertEqual(k["hpAfterRespawn"], 30)
+
+    # --- the reinforcement wave, a change of side, the flag's side -----------------------
+
+    def test_a_death_waits_for_the_next_spawn_window(self) -> None:
+        # SPAWN-35, `killPlayer` 0x0814d920: windows of 5 s every 20 + 5 s from
+        # the round's start; a death with more than a window to go waits for
+        # the next window, else the one after. The `killed` row says how long.
+        w = self.results["wave"]
+        self.assertAlmostEqual(25 - w["deathAt10"]["at"], w["deathAt10"]["sw"], places=1)
+        self.assertTrue(w["askAt20"]["refused"])
+        self.assertAlmostEqual(5, w["askAt20"]["sw"], places=1)
+        self.assertFalse(w["askAt25"]["refused"])
+        self.assertFalse(w["askAt25"]["dead"])
+        # 4 s to the window at 50 is not more than a window: the one at 75.
+        self.assertAlmostEqual(75 - w["deathAt46"]["at"], w["deathAt46"]["sw"], places=1)
+        self.assertTrue(w["askAt56"]["refused"])
+        self.assertFalse(w["askAt75"]["refused"])
+        # The k scenario: refused before its wave, stood up once it came.
+        k = self.results["k"]
+        self.assertGreater(k["killedWait"], 20)
+        self.assertGreater(k["earlyRefusedWait"], 20)
+        self.assertAlmostEqual(25, k["waveOpenedAt"], delta=0.1)
+
+    def test_a_spent_wait_not_taken_waits_for_the_next_window(self) -> None:
+        # `gameStatusPlaying` 0x0815288c..0x081528ab: at a window's close a
+        # dead player whose wait is spent is re-armed to the next window.
+        w = self.results["wave"]
+        self.assertAlmostEqual(100 - w["deathAt80"]["at"], w["deathAt80"]["sw"], places=1)
+        self.assertTrue(w["askAt106"]["refused"])
+        self.assertAlmostEqual(125 - w["askAt106"]["at"], w["askAt106"]["sw"], delta=0.1)
+        self.assertFalse(w["askAt125"]["refused"])
+
+    def test_a_flag_of_the_other_side_spawns_nobody(self) -> None:
+        # `spawnPlayer` 0x0814cb3e: the group's team must be the player's.
+        w = self.results["wave"]
+        self.assertTrue(w["otherSidesFlag"]["refused"])
+        self.assertFalse(w["firstSpawn"]["refused"])
+
+    def test_a_change_of_side_on_the_deploy_screen_takes_and_kills(self) -> None:
+        # `GameServer::setTeam` 0x08131800: the side is set for everyone and a
+        # live player who changed it dies (0x08131950), then waits the wave.
+        c = self.results["wave"]["sideChange"]
+        self.assertTrue(c["refused"])
+        self.assertEqual({"slot": 1, "team": 2}, c["teamRow"])
+        self.assertEqual(2, c["connectionTeam"])
+        self.assertEqual(2, c["worldTeam"])
+        self.assertTrue(c["deadAfter"])
+        self.assertAlmostEqual(150 - c["at"], c["killedWait"], delta=0.1)
+        w = self.results["wave"]
+        self.assertTrue(w["oldSidesFlagAfter"]["refused"])
+        self.assertFalse(w["newSidesFlagAfter"]["refused"])
+
+    def test_a_suicide_is_a_death_with_its_wave(self) -> None:
+        s = self.results["wave"]["suicide"]
+        self.assertTrue(s["killed"])
+        self.assertIsNone(s["other"])
+        self.assertTrue(s["dead"])
+        self.assertAlmostEqual(175 - s["at"], s["sw"], delta=0.1)
+
+    def test_the_auto_team_breaks_a_tie_at_random(self) -> None:
+        # `getTeamToAddPlayer` 0x08261670: the side under its share takes the
+        # join, a tie goes to `rand() & 1` + 1 (0x0826179e). The old rule put
+        # every first join on team 1.
+        a = self.results["autoTeam"]
+        self.assertEqual([1, 2, 1, 2], a["coinLow"])
+        self.assertEqual([2, 1, 2, 1], a["coinHigh"])
 
     # --- (l) P3: flag capture and the bleed ----------------------------------------------
 
@@ -548,6 +710,72 @@ class RoomTests(unittest.TestCase):
         self.assertEqual({"b": 1, "c": 0}, r["farShout"])
         self.assertEqual(0, r["badId"])
 
+    # ---- (chat) typed chat, the board's numbers and the ping ------------------
+
+    def test_chat_goes_to_everyone_but_the_sender(self) -> None:
+        # CHAT-4 (`handleChatMessage` 0x08134a70): no alive test, never back
+        # to the sender, and the line leaves on the room's next tick.
+        c = self.results["chat"]
+        self.assertEqual(0, c["beforeTick"])
+        self.assertEqual(0, c["all"]["a"])
+        self.assertEqual(1, c["all"]["c"])
+        self.assertEqual(1, len(c["all"]["b"]))
+        row = c["all"]["b"][0]
+        self.assertEqual((1, "hello", False), (row["slot"], row["text"], row["team"]))
+
+    def test_team_chat_stays_on_the_senders_side(self) -> None:
+        c = self.results["chat"]
+        self.assertEqual(0, c["team"]["a"])
+        self.assertEqual(0, c["team"]["c"])
+        self.assertEqual([("flank left", True)], [(r["text"], r["team"]) for r in c["team"]["b"]])
+
+    def test_a_line_is_cut_to_63_bytes_and_paced_in_15_byte_pieces(self) -> None:
+        # CHAT-2: `addStringMsg` 0x0815d280 cuts at 0x3f; `updateSendStream`
+        # 0x0815d3c0 sends 0xf bytes every 0.5 s, so 63 bytes are five pieces
+        # and the last leaves 2 s after the first.
+        c = self.results["chat"]
+        self.assertEqual(63, c["long"]["bytes"])
+        self.assertGreaterEqual(c["long"]["seconds"], 2.0)
+        self.assertLess(c["long"]["seconds"], 2.2)
+
+    def test_a_fifth_waiting_line_is_refused(self) -> None:
+        c = self.results["chat"]
+        self.assertEqual(["line 0", "line 1", "line 2", "line 3"], c["flood"])
+        self.assertEqual(0, c["empty"])
+
+    def test_the_room_times_the_ping_off_its_own_pong(self) -> None:
+        # MEME-27's column six: the server's own round trip (`NetServer::
+        # _update` 0x084341e2), here the pong the page sends straight back.
+        c = self.results["chat"]
+        self.assertEqual({"pongs": 1, "ms": 80}, c["ping"])
+
+    def test_the_boards_numbers_go_out_when_they_change(self) -> None:
+        c = self.results["chat"]
+        # Score 1 for a kill (`round-state.js`), the victim's death, B's ping.
+        self.assertEqual(1, c["stats"]["a"][1])
+        self.assertEqual(c["stats"]["a"][0], c["hello"]["a"][0])
+        self.assertEqual(1, c["stats"]["c"][2])
+        self.assertEqual([0, 0, 0, 80], c["stats"]["b"])
+        self.assertEqual(0, c["statsQuiet"])
+
+    def test_a_late_joiner_is_sent_everyones_numbers(self) -> None:
+        # J-1 (`sendDatabase` 0x08134400): the board is the server's from the
+        # first frame.
+        c = self.results["chat"]
+        self.assertEqual(1, c["hello"]["a"][1])
+        self.assertEqual(1, c["hello"]["c"][2])
+        self.assertEqual(80, c["hello"]["bPing"])
+        self.assertEqual({"score": 0, "kills": 0, "deaths": 0, "ping": 0}, c["hello"]["own"])
+        self.assertTrue(c["reused"]["sameSlot"])
+        self.assertEqual({"score": 0, "kills": 0, "deaths": 0, "ping": 0}, c["reused"]["stats"])
+
+    def test_a_join_row_names_the_side_and_a_rename_reaches_everyone(self) -> None:
+        c = self.results["chat"]
+        self.assertEqual(1, c["joinRowTeam"])
+        self.assertEqual("Renamed", c["name"]["b"]["text"])
+        self.assertEqual(1, c["name"]["a"])
+        self.assertEqual("Renamed", c["name"]["helloName"])
+
     # ---- (t) each room its own tickets --------------------------------------
 
     def test_each_room_spends_its_own_tickets(self) -> None:
@@ -700,6 +928,48 @@ class RoomTests(unittest.TestCase):
     def test_a_landing_off_the_shape_or_from_the_dead_is_dropped(self) -> None:
         self.assertEqual(0, self.results["z3"]["droppedLoss"])
 
+    # --- (z3p) the packs, run by the room (room-packs.mjs) --------------------
+
+    def test_the_rooms_medic_bag_heals_everyone_in_reach_and_the_medic(self) -> None:
+        # `useMedPack` 0x082768d0: every wounded soldier within healDistance
+        # (10 m), the enemy too (no team test), takes healFactor 0.25; the
+        # holder selfHealFactor 0.15. One round, one invocation.
+        z = self.results["z3p"]
+        self.assertEqual({"a": 0.15, "b": 0.25}, z["bag"])
+        self.assertEqual(0, z["far"])
+        self.assertEqual(0, z["notPack"])
+        self.assertEqual(0, z["deadHeal"])
+
+    def test_a_heal_in_a_room_reaches_the_healed_players_snapshot(self) -> None:
+        z = self.results["z3p"]
+        self.assertNotEqual(z["wireBefore"], z["wantWireHp"])
+        self.assertEqual(z["wantWireHp"], z["wireHp"])
+
+    def test_a_page_cannot_claim_more_rounds_than_the_pack_fires(self) -> None:
+        from_bucket = self.results["z3p"]["burst"]
+        self.assertGreater(from_bucket, 0)
+        self.assertLessEqual(from_bucket, 7)
+
+    def test_the_rooms_wrench_repairs_standing_not_crouched_nor_an_enemy_hull(self) -> None:
+        # `useRepairPack` 0x08276100: getPose()==1 skips the hull branch
+        # (0x082764ed), a hull whose team is set and not the holder's is
+        # skipped (0x08276731), else repairFactor 0.15.
+        z = self.results["z3p"]
+        self.assertEqual(0.15, z["standing"])
+        self.assertEqual(0, z["crouched"])
+        self.assertEqual(0, z["enemyHull"])
+
+    def test_the_rooms_crouched_wrench_passes_a_lift_in_reach_to_every_page(self) -> None:
+        # `useRepairPack`'s disarm branch (0x082764ed, SUP-28): crouched, a
+        # LandmineProjectile within its radius plus disarmMinesDistance 2.0
+        # goes; the room bounds the claim and tells every page (`disarm`).
+        z = self.results["z3p"]
+        self.assertEqual({"slot": 1, "template": "LandmineProjectile", "dx": 1.5}, z["liftNear"])
+        # 5 m off and a template the wrench does not lift: no row.
+        self.assertEqual(1, z["liftRefused"])
+        # Standing, the wrench repairs and lifts nothing.
+        self.assertEqual(1, z["liftStanding"])
+
     def test_a_statics_hit_points_go_out_by_its_scene_node(self) -> None:
         z4 = self.results.get("z4")
         if z4 is None:
@@ -735,6 +1005,38 @@ class RoomTests(unittest.TestCase):
         self.assertTrue(z["unseated"])
         self.assertEqual({"hp": 0, "destroyed": True}, z["hullRow"])
 
+    def test_the_room_climbs_the_pages_ladders(self) -> None:
+        # LADDER-1: the room indexes the level's ladders as the page does
+        # (`collectLadders`), each with the hull it hangs in, so a soldier
+        # the authority steps climbs one instead of being held at its foot.
+        i = self.results["i"]
+        if not i.get("loaded"):
+            self.skipTest("the real Wake level is not loaded")
+        ladders = i["ladders"]
+        self.assertGreater(ladders["count"], 0)
+        self.assertEqual(ladders["count"], ladders["owned"])
+        self.assertGreater(ladders["shokaku"], 0)
+        climb = ladders["climb"]
+        self.assertTrue(climb["grabbed"])
+        self.assertEqual("top", climb["exit"])
+        self.assertGreater(climb["rise"], 8)
+
+    def test_a_wreck_stays_a_body_until_it_is_removed(self) -> None:
+        # `ResponsePhysicsManager::update` 0x0825d0b0..0x0825d5c0 asks no
+        # destroyed flag (`+0xed`, HP-15/HP-21): the dead hull keeps a parked
+        # body, so it still rolls, settles and is rammed, until HP-19's time
+        # to live (or the pad's next hull) takes it out of the world.
+        z4 = self.results.get("z4")
+        if not z4 or "wreckBody" not in z4:
+            self.skipTest("the real Battle of Britain level is not loaded")
+        wreck = z4["wreckBody"]
+        self.assertTrue(wreck["destroyed"])
+        self.assertTrue(wreck["body"], wreck)
+        self.assertTrue(wreck["parked"], wreck)
+        # Gone at the wreck's clock: the Bf 109's Armor writes no
+        # `timeToLiveAfterDeath`, so HP-19's default 10 s.
+        self.assertEqual(10, wreck["goneAfter"], wreck)
+
     def test_the_pads_delay_runs_from_the_death(self) -> None:
         # SPAWN-18: min + (max - min) * (1 - players / slots), one player of 16,
         # counted down from the death; the wreck on the pad goes as the fresh
@@ -769,6 +1071,81 @@ class RoomTests(unittest.TestCase):
         self.assertEqual([{"template": "Willy", "live": 1}, {"template": "Zero", "live": 0}],
                          self.results["preGame"])
 
+
+    # --- the round's rules (ROUND-14, FF-9..FF-11, TKT-8) ---------------------
+
+    def test_a_new_map_holds_every_spawn_for_the_pre_game(self) -> None:
+        """`gameStatusPreGame` 0x08150950 writes its clock into every player's
+        wait and plays at 0 (ROUND-14); the shipped dedicated settings' 20."""
+        r = self.results["rules"]
+        # The host's own words (spawn time, limits, auto-balance) ride in the
+        # same rules object: `tests/test_room_host.py`.
+        want = {"gameStartDelay": 20, "roundStartDelay": 10, "tkPunishMode": True,
+                "nrOfTKToKick": 5, "tkSpawnPenalty": 1}
+        self.assertEqual(want, {key: r["rules"].get(key) for key in want})
+        self.assertEqual("preGame", r["hello"]["status"])
+        self.assertEqual(20, r["hello"]["preGameIn"])
+        self.assertEqual(20, r["early"]["sw"])
+        self.assertEqual(10, r["mid"]["sw"])
+        self.assertTrue(r["roundStart"])
+        self.assertEqual("playing", r["status"])
+        self.assertEqual([True, True, True], r["spawned"])
+
+    def test_punish_mode_counts_a_team_kill_only_when_punished(self) -> None:
+        """`_giveDamage` 0x0814c1bc marks the victim; with `serverTKPunishMode 1`
+        only `TKPunish` 0x081593d0 counts it (once: the mark clears), and
+        `TKForgive` 0x081592e0 does nothing in that mode (FF-9, FF-10)."""
+        r = self.results["rules"]
+        self.assertEqual({"total": 0, "sinceDeath": 0}, r["afterTk"])
+        self.assertEqual({"total": 0, "sinceDeath": 0}, r["afterForgive"])
+        self.assertEqual({"total": 1, "sinceDeath": 1}, r["afterPunish"])
+        self.assertEqual({"slot": 1, "victim": 2, "teamKills": 1},
+                         {k: r["punishedRow"][k] for k in ("slot", "victim", "teamKills")})
+        self.assertEqual({"total": 1, "sinceDeath": 1}, r["twice"])
+
+    def test_a_team_killers_next_death_waits_a_wave_more(self) -> None:
+        """`killPlayer` 0x0814df1f..0x0814df8b: + ceil(tks * 1.0) * 25, then
+        the since-death count cleared; the total stays for the kick."""
+        r = self.results["rules"]
+        self.assertEqual(0, r["penaltyPhase"])
+        self.assertEqual(50, r["penaltyWait"])
+        self.assertEqual({"total": 1, "sinceDeath": 0}, r["afterDeath"])
+
+    def test_the_fifth_punished_team_kill_kicks(self) -> None:
+        """`TKPunish` kicks at `nrOfTKToKick` 5.0 (ctor 0x0812f8c3) through
+        `kickPlayer(id, false)` vt+0x334 (FF-11)."""
+        k = self.results["rules"]["kicked"]
+        self.assertEqual(4001, k["closed"]["code"])
+        self.assertFalse(k["inRoom"])
+        self.assertTrue(k["leave"])
+
+    def test_punish_mode_off_counts_at_once_kills_at_the_limit_and_kicks_on_spawn(self) -> None:
+        """Mode 0, the engine's default: the counts rise in `_giveDamage`
+        (0x0814c1d2..0x0814c1ee), `punish` does nothing, `forgive` takes one
+        back (0x08159349..0x08159376), the limit kills the killer (0x0814c224)
+        and `spawnPlayer` kicks them on their next spawn (0x0814d841)."""
+        o = self.results["rulesOff"]
+        self.assertEqual({"total": 1, "sinceDeath": 1}, o["afterTk"])
+        self.assertEqual({"total": 1, "sinceDeath": 1}, o["afterPunish"])
+        self.assertEqual({"total": 0, "sinceDeath": 0}, o["afterForgive"])
+        self.assertTrue(o["killerDead"])
+        self.assertEqual({"total": 2, "sinceDeath": 0}, o["atLimit"])
+        self.assertEqual(4001, o["kicked"]["closed"]["code"])
+        self.assertFalse(o["kicked"]["inRoom"])
+
+    def test_a_stranded_side_loses_in_a_room(self) -> None:
+        """TKT-5, TKT-8: with its only group's carrier gone and nobody alive,
+        Iraq bleeds at 1000 a minute, the first ticket a whole 60 / 5 = 12 s
+        after (a shut gate's refill) and the rest every 0.06 s: 17.9 s."""
+        st = self.results["stranded"]
+        self.assertEqual({"1": 100, "2": 100}, st["whole"])
+        self.assertAlmostEqual(12.0, st["first"], delta=0.1)
+        self.assertEqual(100, st["bled"])
+        self.assertEqual(0, st["last"])
+        self.assertEqual({"winner": 2, "reason": "tickets"},
+                         {k: st["end"][k] for k in ("winner", "reason")})
+        self.assertAlmostEqual(17.94, st["end"]["at"], delta=0.1)
+        self.assertEqual(0, st["us"])
 
 if __name__ == "__main__":
     unittest.main()

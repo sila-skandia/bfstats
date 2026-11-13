@@ -36,7 +36,14 @@
 // harness.mjs` drives it under plain node.
 
 /** The `userData` marks the exporter puts on a payload that is only ever drawn
- *  while a gun is being fired. Every one of them is dark on an idle vehicle. */
+ *  while a gun is being fired. Every one of them is dark on an idle vehicle.
+ *
+ *  `effect` also marks the bundles the engine runs by itself: a track's
+ *  `e_wdustPanz`, a boat's `e_WaterFront`, a burning building's smoke. Their
+ *  nodes stay dark here as well, because what a baked bundle node holds is
+ *  its emitters' parked template quads, not particles. `ambient-effects.js`
+ *  plays the bundle of the same name from the effect library on that node
+ *  (`level-load.js` hands it the level's root right after this sweep). */
 export const IDLE_PAYLOAD_KEYS = ['effect', 'projectileMesh', 'projectileTrail', 'tracerMesh'];
 
 /** Depth-first over `children`, which is what both `THREE.Object3D` and the

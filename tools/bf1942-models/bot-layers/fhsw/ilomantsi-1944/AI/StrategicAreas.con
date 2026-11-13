@@ -1,0 +1,89 @@
+rem *** Strategic areas: one per control point (botgen) ***
+
+aiStrategicArea.create alliedbase 1715.7/796.4 1720.7/801.4 50
+aiStrategicArea.addNeighbour village_2template
+aiStrategicArea.addNeighbour first_linetemplate
+aiStrategicArea.addNeighbour village_1template
+aiStrategicArea.addObjectTypeFlag Base
+aiStrategicArea.setOrderPosition Tank 1720.5/799.5
+aiStrategicArea.setOrderPosition Infantry 1719.5/800.5
+aiStrategicArea.setSide 2
+aiStrategicArea.setTakeable 1 0
+
+aiStrategicArea.create village_2template 1055.3/178.9 1075.3/198.9 50
+aiStrategicArea.addNeighbour alliedbase
+aiStrategicArea.addNeighbour first_linetemplate
+aiStrategicArea.addNeighbour village_1template
+aiStrategicArea.addObjectTypeFlag Base
+aiStrategicArea.setOrderPosition Tank 1073.5/197.5
+aiStrategicArea.setOrderPosition Infantry 1074.5/197.5
+aiStrategicArea.setSide 2
+aiStrategicArea.setTakeable 1 0
+
+aiStrategicArea.create first_linetemplate 1209.3/1088 1229.3/1108 150
+aiStrategicArea.addNeighbour alliedbase
+aiStrategicArea.addNeighbour village_2template
+aiStrategicArea.addNeighbour second_linetemplate
+aiStrategicArea.addNeighbour village_1template
+aiStrategicArea.addObjectTypeFlag Flank
+aiStrategicArea.addObjectTypeFlag Close
+aiStrategicArea.addObjectTypeFlag ControlPoint
+aiStrategicArea.setOrderPosition Tank 1227.5/1108.5
+aiStrategicArea.setOrderPosition Infantry 1228.5/1109.5
+aiStrategicArea.setSide 1
+
+aiStrategicArea.create second_linetemplate 921.3/1229.1 941.3/1249.1 300
+aiStrategicArea.addNeighbour first_linetemplate
+aiStrategicArea.addNeighbour village_1template
+aiStrategicArea.addNeighbour churchtemplate
+aiStrategicArea.addObjectTypeFlag Centre
+aiStrategicArea.addObjectTypeFlag StrongPoint
+aiStrategicArea.addObjectTypeFlag ControlPoint
+aiStrategicArea.setOrderPosition Tank 941.5/1246.5
+aiStrategicArea.setOrderPosition Infantry 940.5/1247.5
+aiStrategicArea.setSide 1
+
+aiStrategicArea.create village_1template 725.8/918.4 745.8/938.4 200
+aiStrategicArea.addNeighbour alliedbase
+aiStrategicArea.addNeighbour village_2template
+aiStrategicArea.addNeighbour first_linetemplate
+aiStrategicArea.addNeighbour second_linetemplate
+aiStrategicArea.addNeighbour firebasetemplate
+aiStrategicArea.addNeighbour churchtemplate
+aiStrategicArea.addObjectTypeFlag Centre
+aiStrategicArea.addObjectTypeFlag Close
+aiStrategicArea.addObjectTypeFlag ControlPoint
+aiStrategicArea.setOrderPosition Tank 746.5/940.5
+aiStrategicArea.setOrderPosition Infantry 747.5/937.5
+aiStrategicArea.setSide 1
+
+aiStrategicArea.create firebasetemplate 330.6/989.2 335.6/994.2 150
+aiStrategicArea.addNeighbour village_1template
+aiStrategicArea.addNeighbour churchtemplate
+aiStrategicArea.addNeighbour axisbase
+aiStrategicArea.addObjectTypeFlag Flank
+aiStrategicArea.addObjectTypeFlag ControlPoint
+aiStrategicArea.setOrderPosition Tank 335.5/992.5
+aiStrategicArea.setOrderPosition Infantry 336.5/993.5
+aiStrategicArea.setSide 1
+
+aiStrategicArea.create churchtemplate 414.3/1480.3 434.3/1500.3 200
+aiStrategicArea.addNeighbour second_linetemplate
+aiStrategicArea.addNeighbour village_1template
+aiStrategicArea.addNeighbour firebasetemplate
+aiStrategicArea.addNeighbour axisbase
+aiStrategicArea.addObjectTypeFlag Centre
+aiStrategicArea.addObjectTypeFlag Close
+aiStrategicArea.addObjectTypeFlag ControlPoint
+aiStrategicArea.setOrderPosition Tank 434.5/1498.5
+aiStrategicArea.setOrderPosition Infantry 433.5/1499.5
+aiStrategicArea.setSide 1
+
+aiStrategicArea.create axisbase 136.3/1871.6 141.3/1876.6 50
+aiStrategicArea.addNeighbour firebasetemplate
+aiStrategicArea.addNeighbour churchtemplate
+aiStrategicArea.addObjectTypeFlag Base
+aiStrategicArea.setOrderPosition Tank 143.5/1876.5
+aiStrategicArea.setOrderPosition Infantry 142.5/1877.5
+aiStrategicArea.setSide 1
+aiStrategicArea.setTakeable 2 0

@@ -1,0 +1,64 @@
+rem *** Strategic areas: one per control point (botgen) ***
+
+aiStrategicArea.create bridgehead 1821.1/2287.2 1836.1/2302.2 200
+aiStrategicArea.addNeighbour alliesbase
+aiStrategicArea.addNeighbour chinju
+aiStrategicArea.addNeighbour thatched
+aiStrategicArea.addObjectTypeFlag Centre
+aiStrategicArea.addObjectTypeFlag Close
+aiStrategicArea.addObjectTypeFlag ControlPoint
+aiStrategicArea.setOrderPosition Tank 1836.5/2300.5
+aiStrategicArea.setOrderPosition Infantry 1837.5/2301.5
+
+aiStrategicArea.create jpartybase 2276.8/1744.6 2291.8/1759.6 200
+aiStrategicArea.addNeighbour jphq
+aiStrategicArea.addNeighbour chinju
+aiStrategicArea.addObjectTypeFlag Centre
+aiStrategicArea.addObjectTypeFlag Close
+aiStrategicArea.addObjectTypeFlag ControlPoint
+aiStrategicArea.setOrderPosition Tank 2291.5/1764.5
+aiStrategicArea.setOrderPosition Infantry 2291.5/1755.5
+aiStrategicArea.setSide 1
+
+aiStrategicArea.create karasunuma 2254/2294.3 2262/2302.3 10
+aiStrategicArea.setSide 1
+aiStrategicArea.setTakeable 1 0
+aiStrategicArea.setTakeable 2 0
+
+aiStrategicArea.create alliesbase 1443.2/2387.4 1448.2/2392.4 50
+aiStrategicArea.addNeighbour bridgehead
+aiStrategicArea.addNeighbour chinju
+aiStrategicArea.addObjectTypeFlag Base
+aiStrategicArea.setOrderPosition Tank 1448.5/2390.5
+aiStrategicArea.setOrderPosition Infantry 1447.5/2392.5
+aiStrategicArea.setSide 2
+aiStrategicArea.setTakeable 1 0
+
+aiStrategicArea.create jphq 2758.5/1501.3 2763.5/1506.3 50
+aiStrategicArea.addNeighbour jpartybase
+aiStrategicArea.addObjectTypeFlag Base
+aiStrategicArea.setOrderPosition Tank 2763.5/1504.5
+aiStrategicArea.setOrderPosition Infantry 2762.5/1505.5
+aiStrategicArea.setSide 1
+aiStrategicArea.setTakeable 2 0
+
+aiStrategicArea.create chinju 2058.4/2016.8 2078.4/2036.8 300
+aiStrategicArea.addNeighbour bridgehead
+aiStrategicArea.addNeighbour jpartybase
+aiStrategicArea.addNeighbour alliesbase
+aiStrategicArea.addNeighbour thatched
+aiStrategicArea.addObjectTypeFlag Centre
+aiStrategicArea.addObjectTypeFlag StrongPoint
+aiStrategicArea.addObjectTypeFlag ControlPoint
+aiStrategicArea.setOrderPosition Tank 2078.5/2038.5
+aiStrategicArea.setOrderPosition Infantry 2077.5/2037.5
+aiStrategicArea.setSide 1
+
+aiStrategicArea.create thatched 2036.8/2462.2 2052.8/2478.2 150
+aiStrategicArea.addNeighbour bridgehead
+aiStrategicArea.addNeighbour chinju
+aiStrategicArea.addObjectTypeFlag Flank
+aiStrategicArea.addObjectTypeFlag ControlPoint
+aiStrategicArea.setOrderPosition Tank 2052.5/2480.5
+aiStrategicArea.setOrderPosition Infantry 2051.5/2477.5
+aiStrategicArea.setSide 1

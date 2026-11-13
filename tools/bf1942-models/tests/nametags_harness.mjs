@@ -2,14 +2,15 @@
 // `tests/test_nametags.py` copies the module in beside it.
 
 import {
-  NAMETAG_NEAR, NAMETAG_SCOPE, TEAM_RGB, nameTagDistances, aimState, ageAim, markAimed,
+  NAMETAG_NEAR, NAMETAG_SCOPE, SERVER_NAMETAG_NEAR, SERVER_NAMETAG_SCOPE, TEAM_RGB, nameTagDistances, aimState, ageAim, markAimed,
   latchAim, nameTagAlpha, nameTagRgb, nameTagText, pulseRgb,
 } from './nametags.js';
 
 const r = {};
 const dist = nameTagDistances();
 r.distances = { near: NAMETAG_NEAR, scope: NAMETAG_SCOPE, def: dist,
-  capped: nameTagDistances(50, 300), above: nameTagDistances(500, 900) };
+  capped: nameTagDistances(50, 300), above: nameTagDistances(500, 900),
+  listen: nameTagDistances(SERVER_NAMETAG_NEAR, SERVER_NAMETAG_SCOPE) };
 r.rgb = TEAM_RGB;
 
 // A teammate at 30 m, nobody aiming.

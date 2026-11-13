@@ -32,8 +32,22 @@ authority.mjs  the P3 damage/death/ticket/flag authority, and the round's
                end and restart
 room-pads.mjs  the vehicle pads, the wrecks and the hulls' and statics' hit
                points to every client
-room-hits.mjs  a landing a page reports, priced: the direct hit, the blast,
-               the push
+room-hits.mjs  a landing priced, a page's reported one or the room's own
+               round's: the direct hit, the blast, the push
+room-guns.mjs  the seat guns and the bots' launchers and grenades, flown on
+               the server (the page's `GunFire` in the room's World), and each
+               held gun's magazine to its holder's page
+room-ships.mjs the ships: each floating hull at its draft at the load, one
+               `Ship` (the page's `viewer/ship.js`) a hull, sailed by its
+               helmsman's input and running on when the helm is let go, and
+               the decks that carry deck points, held aircraft and bodies
+soldier-capsules.mjs  a soldier's hit capsules in his stance, off the rig and
+               a pose recipe, for the rounds the room flies
+room-bots.mjs  the room's bots (online co-op): the page's referee
+               (`viewer/bot-referee.js`) in the room's World, retail's top-up
+               and removal, the caps; its bot code is loaded on demand
+room-packs.mjs a round of a medic bag or a wrench a page names, run on the
+               room's world by the page's law (`healing-packs.js`)
 server.mjs     the network half: GET /netcode/rooms + the WS upgrade on
                /netcode, on node:http — no npm, no deps
   websocket.mjs        the RFC 6455 codec and the SocketPeer adapter
@@ -160,9 +174,11 @@ landings and the reloads") has the whole of it; in short:
 - **The pads** (`room-pads.mjs`): one `SpawnerPad` per pad (`deployables.js`,
   the page's own law), the other side's hull in the table from the start,
   the wrecks, the abandoned clock, the round's half.
-- **The landings** (`room-hits.mjs`): a cited departure, since the room flies
-  no rounds; the shooter's page reports where its round met what, and the
-  room prices and applies it, the soldier's push included.
+- **The landings** (`room-hits.mjs`): the room flies its seat guns and its
+  bots' launchers itself (`room-guns.mjs`) and prices their landings. A
+  human's hand weapon is the cited departure that is left: the shooter's page
+  reports where its round met what, and the room prices and applies it, the
+  soldier's push included.
 - **Names**: a hull or static by its node index in `scene.glb`
   (`glb-scene.mjs` `levelNode`), a pad's other-side hull by its pad and
   template. The page reads the same index off GLTFLoader.
@@ -177,8 +193,11 @@ landings and the reloads") has the whole of it; in short:
 - `_shared/loadouts.json` is read but only its kit `maxHitpoints` is used
   (spawn armor); the deploy-screen kit pick and the `primary` weapon are the
   client's choice — the room's `#soldierMaxHp` is the seam.
-- Supply: `World#supplyTick` runs with an empty depot field; `setSupplyDepots`
-  wants the page's `collectSupplyDepots` equivalent over the scene tree.
+- Supply: the room's world takes the level's depots by the page's own walk
+  (`viewer/supply-collect.js`, in `level-data.mjs`), and the medic bag and the
+  wrench each round a page names (`room-packs.mjs`, `viewer/healing-packs.js`);
+  the soldiers' rises reach the pages on the snapshot, the hulls' as `hull`
+  rows.
 - Spawner respawn windows: run by `room-pads.mjs` since 2026-10-07, off the
   pad's own `objectSpawns` row (`deployables.js` `padFromSpawn`).
 - The `test` descriptor level is registered by server.mjs unconditionally —

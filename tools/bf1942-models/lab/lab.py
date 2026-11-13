@@ -335,16 +335,21 @@ def render_server_settings(template: str, scenario_settings: dict) -> str:
     return "\n".join(out) + "\n"
 
 
-def render_maplist(levels: list[dict]) -> str:
+def render_maplist(levels: list[dict], keep_case: bool = False) -> str:
+    """The map list. The Linux server lower-cases every path, so its names are
+    written lower case; the Windows one keeps the scenario's spelling, which
+    is the one a mod's `contentCrc32.con` keys its checksums by
+    (`game.addContentCrc32 GCMOD GC_Taskforce ...`)."""
+    case = (lambda v: v) if keep_case else str.lower
     lines = []
     for lv in levels:
         mode = lv.get("mode", "GPM_COOP").upper()
         if mode not in MODES:
             raise ValueError(f"unknown game mode {mode}")
-        lines.append(f"game.addLevel {lv['map'].lower()} {mode} {lv.get('mod', 'bf1942').lower()}")
+        lines.append(f"game.addLevel {case(lv['map'])} {mode} {case(lv.get('mod', 'bf1942'))}")
     first = levels[0]
-    lines.append(f"game.setCurrentLevel {first['map'].lower()} {first.get('mode', 'GPM_COOP').upper()} "
-                 f"{first.get('mod', 'bf1942').lower()}")
+    lines.append(f"game.setCurrentLevel {case(first['map'])} {first.get('mode', 'GPM_COOP').upper()} "
+                 f"{case(first.get('mod', 'bf1942'))}")
     return "\n".join(lines) + "\n"
 
 
@@ -381,7 +386,7 @@ def write_settings(sc: dict) -> None:
     shutil.copytree(TEMPLATE, SETTINGS)
     (SETTINGS / "serversettings.con").write_text(
         render_server_settings((TEMPLATE / "serversettings.con").read_text(), sc.get("serverSettings", {})))
-    (SETTINGS / "maplist.con").write_text(render_maplist(sc["levels"]))
+    (SETTINGS / "maplist.con").write_text(render_maplist(sc["levels"], keep_case=SERVER == "windows"))
     auto = TEMPLATE / "serverautoexec.con"
     (SETTINGS / "serverautoexec.con").write_text(
         render_autoexec(auto.read_text() if auto.exists() else "", sc.get("autoexec", [])))

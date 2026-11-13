@@ -25,6 +25,8 @@ SCRIPT = Path(__file__).resolve().parent / "dogfight_sphere_harness.mjs"
 MODULES = {
     "dogfight-sphere.js": VIEWER / "dogfight-sphere.js",
     "dogfight-flight.js": VIEWER / "dogfight-flight.js",
+    # `dogfight-flight.js` takes the engine's g from it.
+    "rigid-body.js": VIEWER / "rigid-body.js",
     "node_modules/three/three.module.js": VIEWER / "vendor" / "three.module.js",
 }
 

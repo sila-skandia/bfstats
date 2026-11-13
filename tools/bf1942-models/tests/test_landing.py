@@ -22,6 +22,8 @@ VIEWER = ROOT / "viewer"
 HARNESS = Path(__file__).resolve().parent / "landing_harness.mjs"
 MODULES = ("strategic.js", "strategic-layer.js", "strategic-ai.js", "doctrine.js", "doctrine-squad.js",
            "doctrine-garrison.js", "doctrine-landing.js", "bot-vehicle.js", "bot-behaviours.js",
+           # `bot-vehicle.js` shares `collisionPredicted` with the pilots.
+           "bot-vehicle-air.js",
            # `strategic-ai.js` reads a flag's capture radius for its orders.
            "control-point-law.js")
 
@@ -103,7 +105,8 @@ class LandingTests(unittest.TestCase):
         self.assertEqual(t["selfNeighbour"], ["B", "A"])
         # From SeaArea3: one route point in SeaArea1, whose 0.25 x side
         # radius (|p2 - p1| = 303) + 2 x 10 is the route's radius; the
-        # approach leg keeps 5 (INVENTION, doctrine-landing.js).
+        # approach leg's own is the ctor's floor, and its move ends by the
+        # craft's path radius (`arriveRadius`, ledger AI-113).
         f = t["fromSeaArea3"]
         self.assertEqual((f["kind"], f["via"], f["route"], f["radius"]), ("WPMoveToBeachLanding", "CrossRoads", ["SeaArea1"], 5))
         self.assertAlmostEqual(f["routeRadius"], 0.25 * (265 ** 2 + 147 ** 2) ** 0.5 + 20, places=2)
@@ -118,6 +121,16 @@ class LandingTests(unittest.TestCase):
         self.assertEqual((r["first"]["left"], r["first"]["direct"]), (1, False))
         self.assertGreater(r["first"]["radius"], 90)
         self.assertTrue(r["far"])
+        # `EntryBoatMoveTo::execute` 0x08613d60 stops the craft inside its own
+        # `getMaxPathPosRemovalDistance` of the path's point (0x08613f6c), not
+        # inside the 96 m the route gave the order, which is the last leg's
+        # search box (`updateLocalPath` 0x085271e8). A route leg ends by the
+        # order's radius; the beach leg is the direct run.
+        a = r["arrive"]
+        self.assertIsNone(a["route"])
+        self.assertEqual(a["before"], 5.0)
+        self.assertEqual(a["after"], 9.9)
+        self.assertIsNone(a["beach"])
         e = r["entered"]
         self.assertEqual((e["left"], e["radius"], e["direct"], e["approachZ"], e["insideZone"]), (0, 5, False, -603, False))
 

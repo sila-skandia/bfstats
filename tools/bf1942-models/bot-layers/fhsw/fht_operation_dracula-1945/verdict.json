@@ -1,0 +1,24 @@
+{
+ "level": "fht_operation_dracula-1945",
+ "verdict": "fail",
+ "outcome": "unsuitable",
+ "config": "with vehicles",
+ "doctrine": "garrison",
+ "generatorVersion": 5,
+ "inputs": {
+  "controlPoints": "c328b47b04bab84bbfc4817a444d18d37b1d6e562c13454bd304ae128c6b1bff",
+  "infantryMap": "dadd30cf18beb3fe6413e4fb1aa15a4a0c855bc6b969b1480e1738b1375e651a",
+  "template": "bdc0e455f47f91b7e7724e71d7c0c196e839b36946ac3abb7663d725944081e5"
+ },
+ "baseline": "DICE layers with vehicles, garrison doctrine: berlin, stalingrad, kharkov, bocage; seeds 1..10, 600 s",
+ "bar": null,
+ "seeds": 1,
+ "sizes": {},
+ "oneSided": null,
+ "unreachable": [
+  "melamu_temple"
+ ],
+ "lintErrors": [
+  "side 2 has no spawn with a route to any flag it must take: of its 15 spawns 15 have no way on foot to the main ground; the level places 25 ladders, which neither the walk test nor a bot climbs"
+ ]
+}

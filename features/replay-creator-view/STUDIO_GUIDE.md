@@ -17,6 +17,12 @@ design notes and the history of each control are in this folder's README.
 5. On the Export tab, click Record the clip. The clip plays once at full
    size and downloads as a video file when it ends.
 
+To post it as a Short instead, click Post as a Short at any point after
+step 2: it is in the studio's top bar, and on the bar over the view outside
+the studio (Record a file beside it saves a video file instead). The record
+button on a kill's row in the Kills tab posts a Short too. The clip plays once, recorded vertical, and a dialog asks
+for its title: Share puts it in the Shorts strip.
+
 Everything after step 2 is optional. Kill shot on its own makes a usable
 clip.
 
@@ -37,7 +43,7 @@ The same tour as videos, a step each and one of the whole tour, is made by
 ## The screen
 
 - The top bar has undo and redo, Clear, the frame (16:9, 9:16, 1:1,
-  2.39:1), Thumbnail, Record and Help. Esc or the cross leaves the studio.
+  2.39:1), Thumbnail, Record, Post as a Short and Help. Esc or the cross leaves the studio.
 - The monitor is the 3D view in the shape of the frame. What it shows is
   what gets recorded, text and colour included.
 - The inspector on the right has seven tabs: Kills, Camera, Look, Text,
@@ -354,6 +360,18 @@ clips keeps one style.
 
 ## Export
 
+- Post as a Short (here and in the top bar) is the whole way to the Shorts
+  strip in one click. The clip plays once and is recorded in 9:16 whatever
+  frame you have set (your frame comes back afterwards), then a dialog shows
+  the video with a title filled in from the kill. Change the title if you
+  like and click Share: it is live in the Shorts strip on the REPLAY tab,
+  under your linked in-game name. Nothing is downloaded unless you click
+  Save the file in the dialog. If you are not signed in the dialog says so
+  as it opens, with the Sign in link; come back to the tab and it carries
+  on. Where it cannot work (a round not shared on bfstats.io, a browser
+  that records WebM, which is Firefox) the note under the button says why
+  before you record anything. The clip is cropped to the middle of the
+  picture: to see the vertical framing first, set the frame to 9:16.
 - Share this edit: name it and click Share this edit. The link is copied:
   paste it in Discord or send it. Whoever opens it gets the studio on your
   clip with its cameras (yours too), slow motion, the hit's pin, look, text,

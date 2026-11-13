@@ -1,0 +1,80 @@
+rem *** Strategic areas: one per control point (botgen) ***
+
+aiStrategicArea.create AXISBASE_Cpoint 570/1058 590/1078 50
+aiStrategicArea.addNeighbour broaxis_Cpoint
+aiStrategicArea.addNeighbour Lumbermill_Cpoint
+aiStrategicArea.addNeighbour East_Cpoint
+aiStrategicArea.addNeighbour North_Cpoint
+aiStrategicArea.addObjectTypeFlag Base
+aiStrategicArea.setOrderPosition Infantry 588.5/1079.5
+aiStrategicArea.setSide 1
+aiStrategicArea.setTakeable 2 0
+
+aiStrategicArea.create ALLIESBase_Cpoint 1194/546 1214/566 50
+aiStrategicArea.addNeighbour broAlleis_Cpoint
+aiStrategicArea.addNeighbour West_Cpoint
+aiStrategicArea.addNeighbour East_Cpoint
+aiStrategicArea.addObjectTypeFlag Base
+aiStrategicArea.setOrderPosition Infantry 1212.5/567.5
+aiStrategicArea.setSide 2
+aiStrategicArea.setTakeable 1 0
+
+aiStrategicArea.create broaxis_Cpoint 714.8/1101.9 734.8/1121.9 150
+aiStrategicArea.addNeighbour AXISBASE_Cpoint
+aiStrategicArea.addNeighbour broAlleis_Cpoint
+aiStrategicArea.addNeighbour Lumbermill_Cpoint
+aiStrategicArea.addNeighbour East_Cpoint
+aiStrategicArea.addNeighbour North_Cpoint
+aiStrategicArea.addObjectTypeFlag Flank
+aiStrategicArea.addObjectTypeFlag Close
+aiStrategicArea.addObjectTypeFlag ControlPoint
+aiStrategicArea.setOrderPosition Infantry 733.5/1120.5
+aiStrategicArea.setSide 1
+
+aiStrategicArea.create broAlleis_Cpoint 999.5/787.5 1019.5/807.5 300
+aiStrategicArea.addNeighbour ALLIESBase_Cpoint
+aiStrategicArea.addNeighbour broaxis_Cpoint
+aiStrategicArea.addNeighbour Lumbermill_Cpoint
+aiStrategicArea.addObjectTypeFlag Centre
+aiStrategicArea.addObjectTypeFlag StrongPoint
+aiStrategicArea.addObjectTypeFlag Close
+aiStrategicArea.addObjectTypeFlag ControlPoint
+aiStrategicArea.setOrderPosition Infantry 1018.5/808.5
+aiStrategicArea.setSide 2
+
+aiStrategicArea.create Lumbermill_Cpoint 818/702 838/722 150
+aiStrategicArea.addNeighbour AXISBASE_Cpoint
+aiStrategicArea.addNeighbour broaxis_Cpoint
+aiStrategicArea.addNeighbour broAlleis_Cpoint
+aiStrategicArea.addObjectTypeFlag Flank
+aiStrategicArea.addObjectTypeFlag ControlPoint
+aiStrategicArea.setOrderPosition Infantry 836.5/723.5
+aiStrategicArea.setSide 1
+
+aiStrategicArea.create West_Cpoint 1621.9/370.5 1641.9/390.5 150
+aiStrategicArea.addNeighbour ALLIESBase_Cpoint
+aiStrategicArea.addNeighbour East_Cpoint
+aiStrategicArea.addObjectTypeFlag Flank
+aiStrategicArea.addObjectTypeFlag ControlPoint
+aiStrategicArea.setOrderPosition Infantry 1640.5/389.5
+aiStrategicArea.setSide 2
+
+aiStrategicArea.create East_Cpoint 1240/1360 1260/1380 150
+aiStrategicArea.addNeighbour AXISBASE_Cpoint
+aiStrategicArea.addNeighbour ALLIESBase_Cpoint
+aiStrategicArea.addNeighbour broaxis_Cpoint
+aiStrategicArea.addNeighbour West_Cpoint
+aiStrategicArea.addNeighbour North_Cpoint
+aiStrategicArea.addObjectTypeFlag Flank
+aiStrategicArea.addObjectTypeFlag ControlPoint
+aiStrategicArea.setOrderPosition Infantry 1258.5/1381.5
+aiStrategicArea.setSide 2
+
+aiStrategicArea.create North_Cpoint 712/1820 732/1840 150
+aiStrategicArea.addNeighbour AXISBASE_Cpoint
+aiStrategicArea.addNeighbour broaxis_Cpoint
+aiStrategicArea.addNeighbour East_Cpoint
+aiStrategicArea.addObjectTypeFlag Flank
+aiStrategicArea.addObjectTypeFlag ControlPoint
+aiStrategicArea.setOrderPosition Infantry 733.5/1841.5
+aiStrategicArea.setSide 1

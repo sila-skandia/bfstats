@@ -31,7 +31,7 @@ Real metres and m/s, the harness's nine starts (x -30/0/+30 by speed
   760, `pacedHeight`), you at 358 m: 372 m under them, where before the roof
   it was 512.
 - **The first pass.** They dive 35 degrees down to you from 338 to 356 m
-  above, 587 to 621 m out, and one 1.1 s burst lands 15 to 23 rounds. Twice in
+  above, 589 to 621 m out, and one 1.1 s burst lands 15 to 23 rounds. Twice in
   nine that is the kill (12.7 and 13.8 s).
 - **The second pass.** In the other seven the wingover brings them round 832
   to 964 m out and 290 to 318 m up, and the dive lands 9 to 20 rounds: down at
@@ -50,7 +50,7 @@ written" is the lesson with no jet file on this roof.
 
 | Demo | As written | Before | After |
 |---|---|---|---|
-| `move` never looks up | 1 of 9 down (43 s), the rest 11 to 21 hits | 9 of 9 down, 13 to 52 s | the same fight: **9 of 9**, 12.7 to 51.8 s, one pass (2) or two (7); words rewritten |
+| `move` never looks up | 1 of 9 down (43 s), the rest 15 to 21 hits | 9 of 9 down, 13 to 52 s | the same fight: **9 of 9**, 12.7 to 51.8 s, one pass (2) or two (7); words rewritten |
 | `counter` meet the dive | nobody hit | nobody hit | the same fight: nobody hit, the ace fires no round; one dive each, then both level at 764 to 770 m |
 | `dip` (90 s) | 0 of 9: never hit, closing at the end in six; never flown in three (starts 4, 6, 7) | the same | **9 of 9**: `jetBzDip` against `jetBzAceMeet` (below) |
 | `flip` (22 s) | 0 of 9: flown in eight, no shot | the same | the same fight, words rewritten |
@@ -94,9 +94,9 @@ still closing at 90 s; 0 of 9).
 `jetBzDip`: meet the first dive head on (`meetTheDive`), then straight on out
 of the pass the way it left you, full throttle, the nose 3 degrees up. Out in
 all nine and never hit; their guns never bear. They dive after you once more,
-16 s in, from 1.7 to 1.8 km back and only 146 to 189 m above you (you have
+16 s in, from 1.7 to 1.8 km back and only 153 to 189 m above you (you have
 climbed toward them), never get within 798 m from 10 s on, and let you go
-19.5 to 20.4 s in (`bzAce`'s rule: beyond their guns' reach and not closing
+19.6 to 20.4 s in (`bzAce`'s rule: beyond their guns' reach and not closing
 for 6 s). At 90 s you are 16.8 to 17.3 km apart, you at 770 m and 128 m/s.
 
 Sensitivity (the measure's nine): climbing 2, 3 or 4 degrees, 9 of 9, all let
@@ -158,7 +158,7 @@ On the first roof, all since superseded by the rework:
 The same file, the F-16's tuning. At the MiG's pace the perch is 748 m and
 you start at 420 m: 219 m apart at the Spitfire's size, not 290. The first
 dive (520 to 532 m out, 298 to 306 m up) lands nothing in all nine; the pilot
-who never looks up is shot down in 2 of 9 (53 to 54 s), the rest hit 10 to
+who never looks up is shot down in 2 of 9 (53 to 54 s), the rest hit 8 to
 20 times. Meeting the dive: nobody hits you; their one dive comes at their
 perch's end, 10 s in, from about your height (your climb has brought you up
 to them). The Dip is never flown (no dive to meet, even diving at 30

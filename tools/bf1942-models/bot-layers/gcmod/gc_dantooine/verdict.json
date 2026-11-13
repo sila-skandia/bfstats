@@ -1,0 +1,22 @@
+{
+ "level": "gc_dantooine",
+ "verdict": "fail",
+ "outcome": "unsuitable",
+ "config": "with vehicles",
+ "doctrine": "garrison",
+ "generatorVersion": 6,
+ "inputs": {
+  "controlPoints": "9aa2d668fb160228cdb94a099c60ea61a0e19f4b74fffb00b5faedcd9459ce6d",
+  "infantryMap": "1b9e45a282e026b4574c7ceb432084c5fe81c151044fc0be2f778c9374fcbe4d",
+  "template": "bdc0e455f47f91b7e7724e71d7c0c196e839b36946ac3abb7663d725944081e5"
+ },
+ "baseline": "DICE layers with vehicles, garrison doctrine: berlin, stalingrad, kharkov, bocage; seeds 1..10, 600 s",
+ "bar": null,
+ "seeds": 1,
+ "sizes": {},
+ "oneSided": null,
+ "unreachable": [],
+ "lintErrors": [
+  "no strategic areas"
+ ]
+}

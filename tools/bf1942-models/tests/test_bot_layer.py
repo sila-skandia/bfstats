@@ -218,6 +218,16 @@ class WalkMapTests(unittest.TestCase):
         self.assertLessEqual(((far[0] - 30) ** 2 + (far[1] + 20) ** 2) ** 0.5, 2.8)
         self.assertIsNone(none)
 
+    def test_an_opened_way_is_five_cells_wide_over_open_ground_and_a_door_stays_a_door(self) -> None:
+        # The walked path's own cells were single file, and the choke rule refused the generator's own ways.
+        self.assertEqual(self.walk["wide"], {"patch": 5, "door": 1})
+
+    def test_an_order_position_a_hair_from_a_blocked_cell_is_its_own_cells_centre(self) -> None:
+        edge, free_side, inside = self.out["orderOnAnEdge"]
+        self.assertEqual(edge, [12.5, -19.5])
+        self.assertEqual(free_side, [12.07, -18.99])
+        self.assertEqual(inside, [12.4, -19.5])
+
     def test_a_second_run_puts_the_engines_map_back_first_and_opens_the_same_cells(self) -> None:
         self.assertTrue(self.walk["sameAgain"])
 
@@ -328,6 +338,65 @@ class DeadLevelLintTests(unittest.TestCase):
         self.assertFalse(u["acceptable"])
 
         self.assertEqual(self.out["alive"], ["botErrors"])
+
+
+class WalkableRefusalTests(unittest.TestCase):
+    """README 22: four ways the lint refused a level a soldier walks."""
+
+    @classmethod
+    def setUpClass(cls) -> None:
+        cls.out = run_harness()
+
+    def test_spawn_sides_are_the_pages_and_carriers_that_stand_at_the_start_count(self) -> None:
+        sides = self.out["spawnSides"]
+        # A neutral point's group the spawn manager gives a side, and a group no point claims.
+        self.assertEqual(sides["m1"], [2, False, False])
+        self.assertEqual(sides["line1"], [2, False, False])
+        self.assertEqual(sides["v1"], [1, False, False])
+        # A spawn the page offers nobody is kept as a start of the flood, on no side.
+        self.assertEqual(sides["stray"], [0, False, False])
+        # A spawner with a side and no point stands; one filed under a point the other side holds does not.
+        self.assertEqual(sides["bunker:b"], [1, True, False])
+        self.assertIn("bunker:b#2", sides)
+        self.assertIn("townaxis:x", sides)
+        self.assertNotIn("townallied:t", sides)
+        # A landing craft that seats whoever spawns on it.
+        self.assertEqual(sides["lcvp:d"], [2, True, True])
+
+    def test_a_side_that_starts_at_sea_is_told_so(self) -> None:
+        text = " ".join(self.out["atSea"])
+        self.assertIn("side 2 has no spawn with a route", text)
+        self.assertIn("the side starts at sea or in its vehicles", text)
+        self.assertIn("1 start at sea", text)
+        self.assertIn("1 seat their soldier in a vehicle", text)
+
+    def test_a_spawn_that_drops_onto_the_main_ground_serves_and_a_cliff_does_not(self) -> None:
+        ledge, cliff = self.out["oneWay"]["ledge"], self.out["oneWay"]["cliff"]
+        self.assertEqual((ledge["onMain"], ledge["exit"], ledge["serves"], ledge["excluded"]), (False, "drop", True, []))
+        self.assertEqual((cliff["exit"], cliff["serves"], cliff["excluded"]), (None, False, ["up"]))
+
+    def test_a_capped_flood_seeds_a_flag_beside_its_pole(self) -> None:
+        f = self.out["flagSeeds"]
+        self.assertLess(f["poleCells"], 10)          # a start inside the pole stays there
+        self.assertEqual(f["seeds"], 5)              # the pole and four beside it
+        self.assertTrue(f["capped"] and f["poleOnlyCapped"])
+        self.assertFalse(f["poleOnlyReachable"])
+        self.assertTrue(f["reachable"])
+
+    def test_a_capped_levels_painter_map_is_kept_with_its_ways_opened(self) -> None:
+        m = self.out["painterMap"]
+        self.assertTrue(m["keptCover"])
+        self.assertEqual(m["paintedSource"], "walk test")
+        self.assertEqual(m["keptSource"], "engine")
+        self.assertIn(["hut", "walk", True], m["keptWays"])
+        self.assertIn(["in", "none", False], m["keptWays"])
+
+    def test_a_spawn_within_the_pages_start_resolve_serves(self) -> None:
+        r = self.out["resolve"]
+        self.assertFalse(r["usable"])
+        self.assertGreater(r["resolved"], 3)
+        self.assertLessEqual(r["resolved"], 20)
+        self.assertTrue(r["serves"])
 
 
 class DetectorTests(unittest.TestCase):
@@ -449,6 +518,8 @@ class JudgeTests(unittest.TestCase):
         self.assertIn("unsuitable", own["unsuitable"])
         self.assertEqual(own["stacked"], "owner")
         self.assertIn("lint errors", own["stackedNotOwner"])
+        self.assertEqual(own["choked"], "owner")
+        self.assertIn("lint errors", own["chokedNotOwner"])
         self.assertIn("lint errors", own["sealed"])
         # It stands at the outcome accepted, and goes when the level gets worse.
         self.assertEqual(own["carried"], "owner")
@@ -498,8 +569,19 @@ class DoorwayTests(unittest.TestCase):
 
 
 class MenuTagTests(unittest.TestCase):
-    def test_a_generated_level_wears_the_experimental_tag(self) -> None:
-        self.assertEqual(run_harness()["tags"], ["NO BOTS", "EXPERIMENTAL BOTS", None, None])
+    def test_a_generated_level_wears_no_tag(self) -> None:
+        # The owner, 2026-11-12: "drop the 'Experimental bots' thing, just show bots".
+        self.assertEqual(run_harness()["tags"], ["NO BOTS", None, None, None])
+
+    def test_a_generated_levels_row_carries_the_sites_mark(self) -> None:
+        c = run_harness()["botCredit"]
+        self.assertEqual(c["marked"], [True, False, False])
+        self.assertTrue(c["sameLine"], "the mark says what the briefing screen says")
+        self.assertEqual(c["rect"], [287, 51, 10, 10])
+        self.assertEqual(c["onMark"], 0)
+        self.assertEqual(c["onTitle"], -1)
+        self.assertEqual(c["onBotless"], -1)
+        self.assertEqual(c["scrolled"], 1)
 
 
 class BakeHookTests(unittest.TestCase):

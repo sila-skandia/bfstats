@@ -115,6 +115,7 @@ from __future__ import annotations
 import argparse
 import json
 import math
+import re
 import shutil
 import sys
 from concurrent.futures import ProcessPoolExecutor
@@ -423,9 +424,53 @@ STANCE_TRANSITIONS: tuple[str, ...] = (
 #
 # Baked into the lower bundle under those names, after the transitions, so a
 # renderer that is told the state (a replay's `st` rows) enters it by name.
+#
+# The turn on the spot and the relaxed stand (2026-11-13), which a live body
+# enters from the look's yaw rate and the idle timer (`viewer/soldier-actions.js`
+# `followLive`, `stepIdle`):
+#
+#   Lb_TurnLeft         3PTurnLower.baf        2.0  loop  morph 5 (default)  -> Lb_Stand
+#   Lb_TurnRight        3PTurnLower.baf       -2.0  loop  morph 5            -> Lb_Stand
+#   Lb_StandRelax       3PStandRelaxLower.baf  0.6  loop  morph 2
+#
+# `Lb_Stand`, `Lb_StandRelax` and the strafes take `addTransitionOne
+# c_PIMouseLookX -1 -0.01 Lb_TurnLeft` / `0.01 1 Lb_TurnRight`, and `Lb_Stand`
+# alone declares `addIdle Lb_StandRelax` (`AnimationStatesLower.con`).
 LOWER_ACTIONS: tuple[str, ...] = (
     "Lb_RunJump", "Lb_StandJump", "Lb_RunJumpBackward", "Lb_RunBackward",
+    "Lb_TurnLeft", "Lb_TurnRight", "Lb_StandRelax",
 )
+
+# The torso's idle fidgets: `Ub_StandAim<W>` declares `addIdle Ub_Idle<W>1..3`
+# and `Ub_Crouch<W>` `addIdle Ub_CrouchIdle<W>1..3` (`AnimationStatesIdle.con`,
+# `AnimationStatesCrouching.con`), one-shots that return to the aim; the
+# engine draws one when the state's idle timer runs out (ANIM-6). The weapon
+# sits in the middle of the state's name, so a bundle files each under the
+# name without it, `Ub_Idle1` .. `Ub_CrouchIdle3`. Most have a first-person
+# clip only: vanilla ships a third-person one for `3pIdle1Thompson.baf` and
+# `3PIdle1Sg44.baf` and no other (the `3PIdle1Upper<W>.baf` files beside them
+# are named by no state), so two grips bake `Ub_Idle1` and `Ub_CrouchIdle1`
+# and the rest bake none. A state without a third-person clip is still drawn
+# from the timer and shows nothing (`extras.states[...].idles` lists all
+# three, so the renderer's draw is one in three as the engine's is).
+IDLE_ACTIONS: tuple[str, ...] = ("Idle", "CrouchIdle")
+IDLE_COUNT = 3
+
+# The hand signs a shout plays (RADIO-3): `BFSoldier::speakLine` (lnxded
+# `0x0826e220`) and `speak` (`0x0826e3e0`) look `HandSign_Freeze` up by name
+# (`0x086d1dd8`) and set state `index + sign`, sign 0..6 in declaration order,
+# on the soldier's third machine instance (`this + 0x360`, the one the face
+# states run on). `AnimationStatesFace.con` declares the seven, each a
+# `c_AsmPlayOnce` of `animations/3P_NoWeapon/Handsignals/3pHandSign_*.baf` at
+# 1.0, morph 2.5, then `StopDummyState` (`resetSkeleton`). Each clip holds 19
+# bones, the left arm from the clavicle to the fingertips, so the sign is laid
+# over the torso's own state on that arm alone. Baked into
+# `gaits/handsign.gait.glb` under the states' own names.
+HANDSIGN_STATES: tuple[str, ...] = (
+    "HandSign_Freeze", "HandSign_Come", "HandSign_Medic", "HandSign_Shout",
+    "HandSign_Down", "HandSign_Roger", "HandSign_Negative",
+)
+HANDSIGN_ASSET = "handsign"
 
 # The upper-body states each grip's bundle carries beside its gaits: the
 # transitions' torso halves, the fire and the reload. The engine's per-weapon
@@ -1017,6 +1062,16 @@ def alt_state(machine: animstates.StateMachine, name: str, weapon: str,
     return state
 
 
+def idle_generic(name: str, weapon: str) -> str:
+    """An idle state's name without its weapon, which sits before the
+    number: `Ub_IdleThompson1` -> `Ub_Idle1`, `Lb_StandRelax` unchanged."""
+    if weapon:
+        m = re.fullmatch(rf"(.*?){re.escape(weapon)}(\d*)", name, re.IGNORECASE)
+        if m and m.group(1):
+            return m.group(1) + m.group(2)
+    return name
+
+
 def state_meta(state: animstates.State, weapon: str = "") -> dict:
     """What a renderer needs to play one state the engine's way: its rate
     (`speed`, cycles per second, negative backwards), whether it loops, its
@@ -1032,6 +1087,10 @@ def state_meta(state: animstates.State, weapon: str = "") -> dict:
     then = generic_target(state.return_to, weapon)
     if then:
         meta["then"] = then
+    if state.idles:
+        # `addIdle`, by the names the bundles file them under: the timer's
+        # draw is over all of them, clip or no clip (ANIM-6).
+        meta["idles"] = [idle_generic(name, weapon) for name in state.idles]
     if state.name.lower().startswith("lb_"):
         pose = state_pose(state)
         if pose:
@@ -1197,6 +1256,37 @@ def export_gait_clips(machine: animstates.StateMachine, meshes: ArchivePool,
                 if other_ref.speed != ref.speed:
                     machine_meta["weaponSpeeds"].setdefault(weapon, {})[name] = (
                         other_ref.speed)
+        # The idle fidgets (`IDLE_ACTIONS`), from the first weapon of the
+        # grip whose state has a third-person clip; `weapons` lists who of
+        # the grip may play it, as for a stab.
+        for family in IDLE_ACTIONS:
+            for n in range(1, IDLE_COUNT + 1):
+                name = f"{UPPER_PREFIX}{family}{n}"
+                baked = None
+                holders = []
+                for weapon in sharing:
+                    state = machine.state(f"{UPPER_PREFIX}{family}{weapon}{n}")
+                    ref = state.clip_3p() if state else None
+                    if ref is None or not ref.speed:
+                        continue
+                    if baked is None:
+                        animation = read_clip(meshes, ref.path)
+                        if animation is None:
+                            continue
+                        frames, period = clip_timeline(animation, ref.speed,
+                                                       skeleton, ref.loops)
+                        clips.append((name, frames, period, ref.loops, True))
+                        states[name] = {**state_meta(state, weapon),
+                                        "frames": animation.frames,
+                                        "period": round(period, 4)}
+                        baked = ref
+                    elif ref.path.lower() != baked.path.lower():
+                        continue
+                    elif ref.speed != baked.speed:
+                        machine_meta["weaponSpeeds"].setdefault(weapon, {})[name] = ref.speed
+                    holders.append(weapon)
+                if holders:
+                    states[name]["weapons"] = sorted(holders)
         for family in ALT_ACTIONS + SWING_ACTIONS:
             name = f"{UPPER_PREFIX}{family}"
             swing = family in SWING_ACTIONS
@@ -1612,6 +1702,51 @@ def export_hit_clips(machine: animstates.StateMachine, meshes: ArchivePool,
     return result
 
 
+def export_handsign_clips(machine: animstates.StateMachine, meshes: ArchivePool,
+                          skeleton: ske_mod.Skeleton, out: Path) -> dict:
+    """`gaits/handsign.gait.glb`: the seven hand signs (`HANDSIGN_STATES`),
+    one clip each under the state's own name, each over the left arm's 19
+    bones. `extras.states` describes them the way a grip bundle's does, and
+    `extras.signs` is the engine's order, the index `speakLine` adds to
+    `HandSign_Freeze`."""
+    clips, meta, absent, errors = _bake_named_states(
+        machine, meshes, skeleton, HANDSIGN_STATES)
+    result: dict = {"clips": meta, "absent": absent, "errors": errors,
+                    "asset": None}
+    if not clips:
+        return result
+    states = {name: {**state_meta(machine.state(name)),
+                     "frames": meta[name]["frames"],
+                     "period": meta[name]["period"]}
+              for name in meta}
+    _write_clip_bundle(
+        skeleton, clips, out / GAIT_ASSET_DIR / f"{HANDSIGN_ASSET}.gait.glb",
+        {"states": states, "signs": [n for n in HANDSIGN_STATES if n in meta],
+         "absent": absent, "skeleton": skeleton.source, "hidesWeapon": False})
+    result["asset"] = f"{GAIT_ASSET_DIR}/{HANDSIGN_ASSET}.gait.glb"
+    return result
+
+
+def write_handsign_assets(machine: animstates.StateMachine, meshes: ArchivePool,
+                          library: con_mod.ObjectLibrary, soldiers: list[str],
+                          out: Path) -> dict:
+    """The hand-sign bundle, merged into `gaits/gaits.json` under `handsign`."""
+    skeleton = None
+    for soldier in soldiers:
+        template = library.object(soldier)
+        if template is None or not template.skeleton:
+            continue
+        skeleton = read_skeleton(meshes, template.skeleton)
+        if skeleton is not None:
+            break
+    if skeleton is None:
+        return {"body": None}
+    body = export_handsign_clips(machine, meshes, skeleton, out)
+    if body["asset"]:
+        write_gaits_manifest(out, {"handsign": body["asset"]})
+    return {"body": body}
+
+
 def write_hit_assets(machine: animstates.StateMachine, meshes: ArchivePool,
                      library: con_mod.ObjectLibrary, soldiers: list[str],
                      out: Path) -> dict:
@@ -1893,7 +2028,7 @@ def build_skinned_part(builder: gltf.GlbBuilder, assembler: Assembler,
                        meshes: ArchivePool, skeleton: ske_mod.Skeleton,
                        template: con_mod.ObjectTemplate,
                        joint_nodes: dict[str, int], report: Report,
-                       part_report: dict) -> int | None:
+                       part_report: dict, extend_binds=None) -> int | None:
     library = assembler.library
     geom = library.geometry(template.geometry)
     entry = meshes.resolve_ext(f"standardMesh/{geom.mesh_file}", (".sm",))
@@ -1907,6 +2042,9 @@ def build_skinned_part(builder: gltf.GlbBuilder, assembler: Assembler,
         return None
 
     binds = pose_mod.refine_binds(skn)
+    if extend_binds is not None:
+        # The face: binds the skin cannot give alone (`face_binds`).
+        binds = extend_binds(skn, binds)
     bone_map, anchor = pose_mod.remap_influences(skn, skeleton, binds)
     part_report.setdefault("anchors", {})[template.name] = anchor
 
@@ -2392,6 +2530,373 @@ def export_rig(soldier: str, *, meshes, textures, objects, library,
             "bytes": target.stat().st_size,
             "soldierParts": part_report,
             "texturesMissing": sorted(set(report.missing_textures))}
+
+
+# -- the face ----------------------------------------------------------------- #
+#
+# A soldier's head is an `AnimatedBundle` with a skeleton of its own
+# (`ObjectTemplate.createSkeleton animations/UsFace.ske`: `Bip01 Spine3` ->
+# `Neck` -> `Head` -> `face` and 24 bones under it) whose first three bones
+# the soldier binds to their body's (`bindToSkeletonPart Bip01_Spine3 3`).
+# A third state machine plays on it (`BFSoldier::playFaceAnimation`, lnxded
+# `0x0826e160`): `AnimationStatesFace.con`'s `Face*` states, set from the
+# body's states (`setOtherState c_AsmFaceState`) and from a shout's lip-sync
+# symbols (`addSpeakConnectionSymbol`). The rig bakes the head rigid on
+# `Bip01 Head` (`pose.remap_influences`), which is what the engine draws past
+# the complex head's `setLodValue`; these files are the animated head that
+# stands in for it up close:
+#
+#   faces/<Soldier>.face.glb     the head skinned to its face skeleton
+#   faces/<Skeleton>.faceclips.glb  the face states' clips for that skeleton
+#   faces/faces.json             the states, the body-state table, the symbols
+#
+# Nothing the pose tree already holds is rewritten. The body skeleton has its
+# own `Bone07`..`Bone09` (a forearm helper chain), so every face bone below
+# `Bip01 Head` is written as `Face_<name>`: a renderer hangs them under the
+# body's head bone and no body clip can bind one by name.
+FACE_DIR = "faces"
+FACE_BONE_PREFIX = "Face_"
+FACE_MANIFEST = "faces.json"
+FACE_BASE_STATE = "FaceLook"    # `setDefaultAnimationStates`, lnxded 0x0826ce78
+
+
+def face_bound_bones(face: ske_mod.Skeleton, body: ske_mod.Skeleton | None) -> int:
+    """How many of the face skeleton's leading bones are the body's.
+
+    The head's `addTemplate` says it: `bindToSkeletonPart Bip01_Spine3 3`,
+    the bone and a count, in every vanilla soldier. `con.py` keeps the bone
+    and not the count, so this counts the leading bones the body skeleton
+    also has by name, which is the same three (`Bip01 Spine3`, `Neck`,
+    `Head`): the fourth is `face`, which no body has.
+    """
+    if body is None:
+        return 3
+    count = 0
+    for bone in face.bones:
+        if body.index(bone.name) is None or not bone.name.lower().startswith("bip01"):
+            break
+        count += 1
+    return count or 3
+
+
+def face_head_part(library: con_mod.ObjectLibrary, soldier: str,
+                   ) -> tuple[list[con_mod.ObjectTemplate], float | None] | None:
+    """The soldier's animated heads and their `setLodValue`, or None.
+
+    The head is the skinned child that declares a skeleton of its own. With
+    `setRandomGeometries 3` the engine never makes the named template: it
+    makes `<name>1`..`<name>3` by its round-robin counter (LOAD-6, KIT-2),
+    so the list is every numbered head the mod declares, in order; the rig
+    bakes the first.
+    """
+    root = library.object(soldier)
+    if root is None:
+        return None
+    for ref in root.children:
+        name = con_mod.instance_template_name(ref, library.object)
+        child = library.object(name) if name else None
+        if child is None or not child.geometry or not child.skeleton:
+            continue
+        if child.kind.lower() != "animatedbundle":
+            continue
+        if geometry_is_first_person(child.geometry):
+            continue
+        geom = library.geometry(child.geometry)
+        if geom is None or not geom.skin:
+            continue
+        # The parachute is an AnimatedBundle with a skeleton too: the head is
+        # the one the soldier binds to their own bones.
+        if not ref.skeleton_part or is_foreign_skeleton_part(child, root):
+            continue
+        heads = [child]
+        if ref.random_geometries and name == f"{ref.template}1":
+            for n in range(2, ref.random_geometries + 1):
+                other = library.object(f"{ref.template}{n}")
+                geom = library.geometry(other.geometry) if other and other.geometry else None
+                # A number the mod never declared draws nothing (KIT-3);
+                # the list keeps its place so the roll still lands there.
+                heads.append(other if geom is not None and geom.skin
+                             and other.skeleton else None)
+        return heads, ref.lod_value
+    return None
+
+
+def face_state_names(machine: animstates.StateMachine) -> list[str]:
+    """Every state the face machine can be in: the ones a body state names,
+    the ones a lip-sync symbol names, the base state, and whatever those
+    return to or draw as an idle. In declaration order."""
+    wanted: set[str] = {FACE_BASE_STATE.lower()}
+    for state in machine.states.values():
+        if state.face_state:
+            wanted.add(state.face_state.lower())
+        if state.speak_symbol:
+            wanted.add(state.name.lower())
+    grew = True
+    while grew:
+        grew = False
+        for key in list(wanted):
+            state = machine.state(key)
+            if state is None:
+                continue
+            for other in [state.return_to, *state.idles]:
+                if other and not other.startswith("_") \
+                        and other.lower() not in wanted \
+                        and machine.state(other) is not None:
+                    wanted.add(other.lower())
+                    grew = True
+    return [state.name for state in machine.states.values()
+            if state.name.lower() in wanted]
+
+
+def face_manifest(machine: animstates.StateMachine) -> dict:
+    """`faces.json` without its files: the states, the body-state table and
+    the lip-sync symbols, as the scripts declare them."""
+    states: dict[str, dict] = {}
+    for name in face_state_names(machine):
+        state = machine.state(name)
+        ref = state.clip_3p()
+        meta: dict = {"morph": state.morph_factor}
+        if ref is not None:
+            meta.update(clip=ref.path, speed=ref.speed, loop=ref.loops)
+        if state.return_to:
+            meta["then"] = state.return_to
+        if state.idles:
+            meta["idles"] = list(state.idles)
+        if state.speak_symbol:
+            meta["symbol"] = state.speak_symbol
+        states[state.name] = meta
+    body = {state.name.lower(): state.face_state
+            for state in machine.states.values() if state.face_state}
+    # A knife's fire is a clipless hub that hands to one of five swings
+    # (`addRandomTransition`), and the bundles file the swing under the hub's
+    # name (`SWING_ACTIONS`): the hub answers with the face its swings share.
+    for state in machine.states.values():
+        if state.face_state or not state.random:
+            continue
+        faces = {getattr(machine.state(name), "face_state", None)
+                 for name in state.random}
+        if len(faces) == 1 and None not in faces:
+            body[state.name.lower()] = faces.pop()
+    return {
+        "format": "bf1942-faces/1",
+        "base": FACE_BASE_STATE,
+        "bonePrefix": FACE_BONE_PREFIX,
+        "states": states,
+        # body state (lower-cased, the weapon's own copy) -> face state
+        "bodyStates": body,
+        "symbols": {state.speak_symbol: state.name
+                    for state in machine.states.values() if state.speak_symbol},
+    }
+
+
+def face_bind_locals(machine: animstates.StateMachine, meshes: ArchivePool,
+                     skeleton: ske_mod.Skeleton, bound: int) -> dict:
+    """The face bones' locals in the pose the skins were bound in: frame 0 of
+    the base state's clip (`FaceLook`, `USFaceIdle60.baf`).
+
+    Measured on all five nations' `*1Face.skn`: chained down from the skin's
+    own `Bip01 Head` bind, those locals land every face bone on its recovered
+    bind to 0.1 mm and the same rotation. `UsFace.ske`'s stored rest does
+    not (it holds each face bone's Z offset with the other sign, 5 to 14 cm
+    out), and no state ever shows it: the base state plays from the first
+    frame the head is drawn. So the head is written at this pose, and a bone
+    no clip names keeps its `.ske` rest.
+    """
+    state = machine.state(FACE_BASE_STATE)
+    ref = state.clip_3p() if state else None
+    animation = read_clip(meshes, ref.path) if ref else None
+    if animation is None:
+        return {}
+    body = {ske_mod.canonical(b.name) for b in skeleton.bones[:bound]}
+    return {name: local for name, local in animation.local_pose(0).items()
+            if name not in body and skeleton.index(name) is not None}
+
+
+def face_binds(skeleton: ske_mod.Skeleton, locals_map: dict):
+    """`build_skinned_part`'s `extend_binds` for a head: a face bone whose
+    bind the skin cannot give (no vertex it alone holds: `Bone08`, `Bone12`,
+    `Bone34`, `Bone36` in vanilla) takes it from its nearest bound ancestor
+    down the bind pose's own chain (`face_bind_locals`)."""
+    def extend(skn, binds):
+        out = dict(binds)
+        by_canonical = {ske_mod.canonical(name): name for name in skn.bones}
+
+        def bind_of(index: int):
+            bone = skeleton.bones[index]
+            name = by_canonical.get(ske_mod.canonical(bone.name), bone.name)
+            if name in out:
+                return out[name]
+            if bone.parent < 0:
+                return None
+            parent = bind_of(bone.parent)
+            if parent is None:
+                return None
+            local = locals_map.get(ske_mod.canonical(bone.name),
+                                   (bone.rotation, bone.translation))
+            return pose_mod.rt_mul(parent, local)
+
+        for name in skn.bones:
+            index = skeleton.index(name)
+            if name in out or index is None:
+                continue
+            found = bind_of(index)
+            if found is not None:
+                out[name] = found
+        return out
+    return extend
+
+
+def _face_rename(builder: gltf.GlbBuilder, skeleton: ske_mod.Skeleton,
+                 joint_nodes: dict[str, int], bound: int) -> None:
+    for index, bone in enumerate(skeleton.bones):
+        if index >= bound:
+            node = builder._nodes[joint_nodes[ske_mod.canonical(bone.name)]]
+            node.name = f"{FACE_BONE_PREFIX}{bone.name}"
+            node.extras = {"joint": True, "face": True}
+
+
+def export_face_clips(machine: animstates.StateMachine, meshes: ArchivePool,
+                      skeleton: ske_mod.Skeleton, bound: int,
+                      target: Path) -> dict:
+    """One face skeleton's clips, each under its state's name. A state plays
+    over `1 / |speed|` seconds whatever its frame count (ANIM-2), so a viseme
+    at 0.03 is a pose held, reached by its morph."""
+    builder = gltf.GlbBuilder()
+    joint_nodes, roots = _joint_hierarchy(builder, skeleton)
+    _face_rename(builder, skeleton, joint_nodes, bound)
+    body = {ske_mod.canonical(b.name) for b in skeleton.bones[:bound]}
+    face_nodes = {k: v for k, v in joint_nodes.items() if k not in body}
+    written: dict[str, dict] = {}
+    errors: dict[str, str] = {}
+    for name in face_state_names(machine):
+        state = machine.state(name)
+        ref = state.clip_3p()
+        if ref is None:
+            continue
+        animation = read_clip(meshes, ref.path)
+        if animation is None:
+            errors[state.name] = f"clip unreadable: {ref.path}"
+            continue
+        frames, period = clip_timeline(animation, ref.speed, skeleton, ref.loops)
+        tracks = timeline_tracks(frames, period, face_nodes, ref.loops)
+        if not tracks:
+            errors[state.name] = f"clip moves no face bone: {ref.path}"
+            continue
+        builder.add_animation(state.name, tracks, compact=True)
+        written[state.name] = {"frames": animation.frames,
+                               "period": round(period, 4),
+                               "bones": len(tracks)}
+    target.parent.mkdir(parents=True, exist_ok=True)
+    target.write_bytes(builder.build(roots, extras={
+        "faceClips": written, "skeleton": skeleton.source,
+        "boundBones": bound, "errors": errors}))
+    return {"clips": written, "errors": errors,
+            "bytes": target.stat().st_size}
+
+
+def export_face(soldier: str, *, machine, meshes, textures, objects, library,
+                max_texture: int, out: Path, variant: int = 1) -> dict:
+    """`faces/<Soldier>.face.glb`: the head skinned to its face skeleton, in
+    its bind pose. Its `Bip01 Spine3` / `Neck` / `Head` nodes stand for the
+    body's; everything under `Head` is `Face_*`. `variant` is the rolled
+    head, 1-based; the second and third are `<Soldier>.face2.glb` and
+    `.face3.glb`."""
+    found = face_head_part(library, soldier)
+    if found is None:
+        raise PoseError(f"{soldier} has no animated head")
+    heads, lod_value = found
+    template = heads[variant - 1] if 0 < variant <= len(heads) else None
+    if template is None:
+        raise PoseError(f"{soldier} has no head {variant}")
+    skeleton = read_skeleton(meshes, template.skeleton)
+    if skeleton is None:
+        raise PoseError(f"face skeleton unreadable: {template.skeleton}")
+    root = library.object(soldier)
+    bound = face_bound_bones(
+        skeleton, read_skeleton(meshes, root.skeleton) if root.skeleton else None)
+    builder = gltf.GlbBuilder()
+    assembler = Assembler(meshes, textures, objects, library,
+                          max_texture=max_texture, include_collision=False,
+                          include_effects=False)
+    report = Report(root=soldier, configuration="face", lod=0)
+    locals_map = face_bind_locals(machine, meshes, skeleton, bound)
+    joint_nodes, root_children = joint_nodes_of(builder, skeleton, locals_map)
+    part_report: dict = {}
+    node = build_skinned_part(builder, assembler, meshes, skeleton, template,
+                              joint_nodes, report, part_report,
+                              extend_binds=face_binds(skeleton, locals_map))
+    if node is None:
+        raise PoseError(f"{soldier}: head unreadable: {part_report.get('missing')}")
+    _face_rename(builder, skeleton, joint_nodes, bound)
+    rel = f"{FACE_DIR}/{soldier}.face{'' if variant == 1 else variant}.glb"
+    target = out / rel
+    target.parent.mkdir(parents=True, exist_ok=True)
+    target.write_bytes(builder.build(root_children + [node], extras={
+        "soldier": soldier, "face": True, "head": template.name,
+        "skeleton": skeleton.source, "boundBones": bound,
+        "soldierParts": part_report,
+        "texturesMissing": sorted(set(report.missing_textures)),
+    }))
+    stem = Path(template.skeleton.replace("\\", "/")).stem
+    return {"soldier": soldier, "head": rel, "part": template.name,
+            "skeletonPath": template.skeleton, "skeletonStem": stem,
+            "bound": bound, "heads": len(heads),
+            "lodValue": lod_value, "bytes": target.stat().st_size,
+            "parts": part_report.get("parts", [])}
+
+
+def write_face_assets(machine: animstates.StateMachine, soldiers: list[str],
+                      meshes, textures, objects, library, out: Path,
+                      max_texture: int) -> dict:
+    """Every soldier's animated head, one clip bundle per face skeleton, and
+    `faces/faces.json`. Touches nothing else in the pose tree."""
+    manifest = face_manifest(machine)
+    manifest["soldiers"] = {}
+    manifest["errors"] = {}
+    bundles: dict[str, dict] = {}
+    for soldier in soldiers:
+        try:
+            row = export_face(soldier, machine=machine, meshes=meshes,
+                              textures=textures,
+                              objects=objects, library=library,
+                              max_texture=max_texture, out=out)
+        except PoseError as exc:
+            manifest["errors"][soldier] = str(exc)
+            continue
+        key = row["skeletonPath"].replace("\\", "/").lower()
+        if key not in bundles:
+            skeleton = read_skeleton(meshes, row["skeletonPath"])
+            rel = f"{FACE_DIR}/{row['skeletonStem']}.faceclips.glb"
+            bundles[key] = {"asset": rel, **export_face_clips(
+                machine, meshes, skeleton, row["bound"], out / rel)}
+        entry = {"head": row["head"], "clips": bundles[key]["asset"],
+                 "part": row["part"]}
+        # The heads the soldier's `setRandomGeometries` rolls among, in the
+        # roll's order; null for a number the mod declares no head for, or
+        # one that will not read.
+        rolled = [row["head"]]
+        for variant in range(2, row["heads"] + 1):
+            try:
+                rolled.append(export_face(
+                    soldier, machine=machine, meshes=meshes, textures=textures,
+                    objects=objects, library=library, max_texture=max_texture,
+                    out=out, variant=variant)["head"])
+            except PoseError:
+                rolled.append(None)
+        if len(rolled) > 1:
+            entry["heads"] = rolled
+        if row["lodValue"] is not None:
+            # `ObjectTemplate.setLodValue` on the head's `addTemplate`: the
+            # head is drawn while `BFSoldier::getLevelOfDetail` is at or
+            # under it (`updateVisibleSets`, lnxded 0x082707c0).
+            entry["lodValue"] = row["lodValue"]
+        manifest["soldiers"][soldier] = entry
+    manifest["bundles"] = {b["asset"]: {"clips": b["clips"], "errors": b["errors"]}
+                           for b in bundles.values()}
+    target = out / FACE_DIR / FACE_MANIFEST
+    target.parent.mkdir(parents=True, exist_ok=True)
+    target.write_text(json.dumps(manifest, indent=1, sort_keys=True))
+    return manifest
 
 
 def write_rigs(soldiers: list[str], meshes, textures, objects, library,
@@ -3906,6 +4411,14 @@ def main() -> int:
                          "blast throws (gaits/explosion.gait.glb), and merge "
                          "that one key into gaits/gaits.json. Weapon- and "
                          "soldier-independent, so this is the whole of it.")
+    ap.add_argument("--faces", action="store_true",
+                    help="write only faces/: each soldier's animated head, "
+                         "the face states' clips and faces/faces.json. "
+                         "Touches nothing else in the pose tree")
+    ap.add_argument("--handsign", action="store_true",
+                    help="write only gaits/handsign.gait.glb, the seven hand "
+                         "signs a shout plays (RADIO-3), and merge its key "
+                         "into gaits/gaits.json")
     ap.add_argument("--hit", action="store_true",
                     help="write only the hit body clips, the torso's flinch "
                          "when a soldier is hurt and lives "
@@ -3992,7 +4505,8 @@ def main() -> int:
 
     if not args.matrix and not args.kit_poses and not args.seat_poses \
             and not args.parachute and not args.swim and not args.die \
-            and not args.explosion and not args.hit \
+            and not args.explosion and not args.hit and not args.handsign \
+            and not args.faces \
             and not args.shared_assets and not args.gaits_only and (
             not args.pairs or len(args.pairs) % 2):
         ap.error("give soldier/weapon pairs, or --matrix, or --kit-poses, "
@@ -4079,6 +4593,9 @@ def main() -> int:
         blast_body = report_body("explosion", blast["body"])
         hit = write_hit_assets(machine, meshes, library, soldiers, args.out)
         hit_body = report_body("hit", hit["body"])
+        # A mod that deletes the hand signs bakes none; data, not a failure.
+        report_body("hand sign", write_handsign_assets(
+            machine, meshes, library, soldiers, args.out)["body"])
         return 0 if (shared and body.get("asset")
                      and (chute["canopy"].get("asset")
                           or chute["canopy"].get("absent"))
@@ -4120,6 +4637,29 @@ def main() -> int:
         summary = write_die_assets(machine, meshes, library,
                                    soldier_templates(library), args.out)
         return 0 if report_body("death", summary["body"]).get("asset") else 1
+
+    if args.faces:
+        args.out.mkdir(parents=True, exist_ok=True)
+        soldiers = soldier_templates(library)
+        if args.soldiers is not None:
+            keep = {s.lower() for s in args.soldiers}
+            soldiers = [s for s in soldiers if s.lower() in keep]
+        faces = write_face_assets(machine, soldiers, meshes, textures, objects,
+                                  library, args.out, args.max_texture)
+        print(f"faces: {len(faces['soldiers'])} heads, "
+              f"{len(faces['bundles'])} clip bundles, "
+              f"{len(faces['states'])} states, "
+              f"{len(faces['bodyStates'])} body states name one",
+              file=sys.stderr)
+        for who, why in sorted(faces["errors"].items()):
+            print(f"  error:  {who}: {why}", file=sys.stderr)
+        return 0 if faces["soldiers"] else 1
+
+    if args.handsign:
+        args.out.mkdir(parents=True, exist_ok=True)
+        summary = write_handsign_assets(machine, meshes, library,
+                                        soldier_templates(library), args.out)
+        return 0 if report_body("hand sign", summary["body"]).get("asset") else 1
 
     if args.hit:
         args.out.mkdir(parents=True, exist_ok=True)

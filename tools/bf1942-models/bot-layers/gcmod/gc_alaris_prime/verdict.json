@@ -1,0 +1,71 @@
+{
+ "level": "gc_alaris_prime",
+ "verdict": "fail",
+ "outcome": "no-fight",
+ "config": "with vehicles",
+ "doctrine": "garrison",
+ "generatorVersion": 6,
+ "inputs": {
+  "controlPoints": "f72ce565b2d1535ab4387448f728be07784e74f32fd200a36b019c9145a1212d",
+  "infantryMap": "aa853c465aaa67e76f75c78e4b326527720bb2f15eea00647aad04e5dd87f0a2",
+  "template": "bdc0e455f47f91b7e7724e71d7c0c196e839b36946ac3abb7663d725944081e5"
+ },
+ "baseline": "DICE layers with vehicles, garrison doctrine: berlin, stalingrad, kharkov, bocage; seeds 1..10, 600 s",
+ "bar": {
+  "against": "dice",
+  "why": "no bar of gcmod's own: DICE's"
+ },
+ "seeds": 1,
+ "sizes": {
+  "8": {
+   "verdict": "fail",
+   "failed": [
+    "idleShare",
+    "selfDeathsPerBotMinute",
+    "routeFailuresPerBotMinute",
+    "enemyKillsPerBotMinute",
+    "bothSidesKill",
+    "routeFailuresPerBotMinuteWorseSide",
+    "nonEnemyDeathShareWorseSide",
+    "unitsNeverUsedShare"
+   ],
+   "winners": [
+    1,
+    0,
+    0
+   ]
+  },
+  "16": {
+   "verdict": "fail",
+   "failed": [
+    "oscillationsPerBotMinute",
+    "selfDeathsPerBotMinute",
+    "routeFailuresPerBotMinute",
+    "redeploysPerBotMinute",
+    "enemyKillsPerBotMinute",
+    "bothSidesCapture",
+    "routeFailuresPerBotMinuteWorseSide",
+    "redeploysPerBotMinuteWorseSide",
+    "nonEnemyDeathShareWorseSide",
+    "unitsNeverUsedShare"
+   ],
+   "winners": [
+    1,
+    0,
+    0
+   ]
+  }
+ },
+ "oneSided": null,
+ "unreachable": [
+  "Controlroom"
+ ],
+ "lintErrors": [
+  "the play surface is stacked floors (3 of 4 capturable flags stand a storey over or under another walked floor): a one-floor walk map cannot hold it"
+ ],
+ "acceptanceWithdrawn": {
+  "because": "page matches 2026-11-12: 0.17 then 0.26 deaths a bot-minute by the bots' own hand against 0.03 and 0.04 enemy kills; under the rollout floor",
+  "date": "2026-11-12",
+  "was": "Owner's rollout, 2026-11-12: the owner imported Galactic Conquest and asked for "
+ }
+}

@@ -43,8 +43,8 @@ out.insideReach = predictObstacles(b, [body('p:a', 0, 24)]);
 b = walker();
 out.pacing = predictObstacles(b, [body('p:a', 0, 8, 0, 5)]);
 
-// A body crossing the path: predicted, but moving, so no obstacle (the
-// potential-obstacle speed is 0 on every level).
+// A body crossing the path: predicted, but moving faster than the
+// potential-obstacle speed (1.0, the `AIPathfinding` ctor), so no obstacle.
 b = walker();
 out.crossing = predictObstacles(b, [body('p:a', -6, 8, 5, 0)]);
 
@@ -99,6 +99,39 @@ b.currentPlan = [{ type: 'InfanteryMoveTo' }];
 b.currentPlan.vehicleId = 'gun:AA_Allies';
 ageObstacles(b, 0.1);
 out.boardTarget = { before, after: b.obstacles.map(o => o.id) };
+
+// A slow walker (0.8 m/s, under the potential-obstacle speed 1.0) predicted
+// in the way is planted as a still one is.
+b = walker();
+out.slowWalker = predictObstacles(b, [body('p:a', 0, 8, 0.8, 0)]);
+
+// `updatePotentialObstacles` 0x0852d880: a planted body that moves faster
+// than 1.0 x 1.2 m/s goes, one at 1.1 m/s stays; one no longer there goes;
+// under 10 s old a planted body stays however far off, past it the 25.5 m
+// rule drops it; a contact circle keeps the distance rule alone.
+{
+  const plantAt = (id, x, z) => { const w = walker(); predictObstacles(w, [body(id, x, z)]); return w; };
+  let w = plantAt('p:a', 0, 8);
+  ageObstacles(w, 0.1, [body('p:a', 0, 8, 2, 0)]);
+  const walkedOn = w.obstacles.length;
+  w = plantAt('p:a', 0, 8);
+  ageObstacles(w, 0.1, [body('p:a', 0, 8, 1.1, 0)]);
+  const ambling = w.obstacles.length;
+  w = plantAt('p:a', 0, 8);
+  ageObstacles(w, 0.1, []);
+  const gone = w.obstacles.length;
+  w = plantAt('p:a', 0, 8);
+  w.position = [0, 0, 60];
+  ageObstacles(w, 5, [body('p:a', 0, 8)]);
+  const youngFar = w.obstacles.length;
+  ageObstacles(w, 6, [body('p:a', 0, 8)]);
+  const oldFar = w.obstacles.length;
+  w = walker();
+  w.obstacles.push({ x: 0, z: 3, r: 1.5, age: 0 });
+  w.position = [0, 0, 60];
+  ageObstacles(w, 0.1, []);
+  out.dropRules = { walkedOn, ambling, gone, youngFar, oldFar, contactFar: w.obstacles.length };
+}
 
 // --- A route's first leg, widened one search a tick -------------------------
 //

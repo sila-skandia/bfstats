@@ -1,0 +1,27 @@
+{
+ "level": "desert_winds",
+ "verdict": "fail",
+ "outcome": "unsuitable",
+ "config": "with vehicles",
+ "doctrine": "garrison",
+ "generatorVersion": 5,
+ "inputs": {
+  "controlPoints": "2f48d68c503174b6194c088d505dbdbda301f762da4b45a73a37c8a84ff415ee",
+  "infantryMap": "ebf5f1d5e117490286ad726433c5f343c5e7d473de553f108d235e5d1b2f01e4",
+  "template": "bdc0e455f47f91b7e7724e71d7c0c196e839b36946ac3abb7663d725944081e5"
+ },
+ "baseline": "DICE layers with vehicles, garrison doctrine: berlin, stalingrad, kharkov, bocage; seeds 1..10, 600 s",
+ "bar": null,
+ "seeds": 1,
+ "sizes": {},
+ "oneSided": null,
+ "unreachable": [
+  "oasis",
+  "caravan"
+ ],
+ "lintErrors": [
+  "no capturable flag is reachable in 3D: none of the 2 has a place inside its radius that a soldier on the one-floor walk map's main ground can stand in",
+  "side 1 has no spawn with a route to any flag it must take: none of the 2 flags it does not hold can be reached",
+  "side 2 has no spawn with a route to any flag it must take: none of the 2 flags it does not hold can be reached"
+ ]
+}

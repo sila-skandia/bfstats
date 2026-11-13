@@ -1,0 +1,117 @@
+{
+ "generator": "botgen",
+ "version": 5,
+ "mod": "FHSW",
+ "level": "battle_of_peleliu",
+ "objectSpawners": 184,
+ "template": "few",
+ "templateSource": "DICE, bf1942 Kursk (1.6 patch archives, Kursk_003.rfa): AI/Strategies.con, AI/conditions.con, AI/prerequisites.con, unchanged",
+ "templateChoice": {
+  "name": "few",
+  "inPlay": 3,
+  "rule": "3 capturable flags in play, at most 3"
+ },
+ "scope": "on foot: infantry order positions only, no search maps, no co-op layer",
+ "unreachable": [
+  "Peleliu_Flag1",
+  "Peleliu_Flag4",
+  "Peleliu_Flag3",
+  "landing"
+ ],
+ "unreachableReasons": {
+  "Peleliu_Flag1": "walk test",
+  "Peleliu_Flag4": "walk test",
+  "Peleliu_Flag3": "walk test",
+  "landing": "walk test"
+ },
+ "botSpawnsExcluded": [
+  "whitebeach2",
+  "beachhead1",
+  "beachhead2",
+  "beachhead3",
+  "beachhead5",
+  "beachhead6",
+  "beachhead7",
+  "beachhead8",
+  "beachhead9",
+  "hq1",
+  "hq2",
+  "hq3",
+  "hq5",
+  "hq6",
+  "hq8",
+  "hill100_1",
+  "hill100_2",
+  "hill100_3",
+  "hill100_4",
+  "hill100_5",
+  "hill100_6",
+  "hill80_1",
+  "hill80_3",
+  "hill80_5",
+  "hill80_8",
+  "hill80_9"
+ ],
+ "walkMap": {
+  "source": "page painter",
+  "engine": "none",
+  "opened": [],
+  "ways": [],
+  "cover": 0.586,
+  "floors": {
+   "stacked": false,
+   "twoFloorShare": 0.004,
+   "raised": [
+    "Peleliu_Flag1",
+    "Peleliu_Flag4",
+    "Peleliu_Flag3"
+   ],
+   "reason": null
+  },
+  "capped": true,
+  "joined": 1
+ },
+ "routeProbe": {
+  "chokeMax": 4,
+  "unreachable": [],
+  "stops": {},
+  "oneSided": {
+   "Peleliu_Flag2": 1,
+   "beach": 1,
+   "white_beachtemplate": 1
+  },
+  "sides": {
+   "1": {
+    "spawns": 15,
+    "flags": [
+     "Peleliu_Flag2",
+     "beach",
+     "white_beachtemplate"
+    ]
+   },
+   "2": {
+    "spawns": 0,
+    "flags": []
+   }
+  },
+  "chokes": {
+   "Peleliu_Flag2:1": 1,
+   "beach:1": 0,
+   "white_beachtemplate:1": 0
+  },
+  "late": {},
+  "shutLinks": []
+ },
+ "inputs": {
+  "controlPoints": "b225aa5a7c4a11e02424d51b26b9c081e0b1a176d6893e2881d0613b55c0e6ea",
+  "infantryMap": "de7739b84e37ad7f667e658919fd45098d891b08e4e63b355b75d1c33e6e5d09",
+  "template": "bdc0e455f47f91b7e7724e71d7c0c196e839b36946ac3abb7663d725944081e5"
+ },
+ "files": {
+  "AI.con": "73237dc6aaa6a0635578470b4f825888d4281599954787dc66743faf72cd6a7d",
+  "AI/StrategicAreas.con": "9bbe77f2d02cf3f7d96e7323dfeac758ed89d436e42babbffaae2327b1767373",
+  "AI/Strategies.con": "13da4dc35872dd4b5798a066f4425bdc824cfd61f31093d1808e1202644de52e",
+  "AI/conditions.con": "248a04b727c08d696bf0fa9c162bc22c43cde3c75f695892fe1e0f5141519c49",
+  "AI/prerequisites.con": "c96168b5f69860e578f5d26728fd2a2092c4c436e1da49b7d6f4009b65735398"
+ }
+}

@@ -55,12 +55,32 @@ only there for comparison was removed ("What was removed", below).
 ## How to turn it on
 
 OPTIONS > VIDEO > REMASTER, on the menu or in a game (Escape). It is a tick
-box under ANTI-ALIASING, kept in the browser (`localStorage`
-`bf42-mesh-remaster`), off until ticked, and cleared by DEFAULT. The
-renderer and the three build are chosen as a page loads, so a change made in
-a game waits for the next level, and the row says so (`NEXT LEVEL`), as
-ANTI-ALIASING and LIGHTMAPS do. Under the remaster ANTI-ALIASING does
-nothing: the frame is smoothed by SMAA.
+box under ANTI-ALIASING, on a ninth line of the page's own (the file's eight
+are taken), kept in the browser (`localStorage` `bf42-mesh-remaster`), off
+until ticked, and cleared by DEFAULT. The renderer and the three build are
+chosen as a page loads, so a change made in a game waits for the next level,
+and the row says so (`NEXT LEVEL`), as ANTI-ALIASING and LIGHTMAPS do. It
+needs WebGPU: in a browser without it the row is not drawn and nothing turns
+the remaster on.
+
+Under the plate, wherever the row is drawn, three lines say what it is (the
+owner, 2026-11-13: "as a user I'd want to know: wtf is it?"):
+
+```
+REMASTER: VISUAL IMPROVEMENTS BY SKANDIA @ BFSTATS.IO
+SUN SHADOWS, REFLECTIVE WATER, EXPLOSIONS THAT LIGHT THE GROUND
+REQUIRES WEBGPU AND A CAPABLE GPU: A FRAME COSTS ABOUT 2.5X
+```
+
+The last line is the measured cost ("Frame time"), not a hardware list: the
+remaster has only been timed on an M5 Max.
+
+The other rows under the remaster: SHADOWS turns the sun's shadows on and
+off, at once (the retail page's own shadow pass, `shadow-pass.js`, is GLSL
+on the WebGL renderer and does not run). ANTI-ALIASING does nothing: the
+frame is smoothed by SMAA. TEXTURE QUALITY does nothing: textures keep their
+full mips. The engine's tree sway (`geom::Swayer`) is left to the remaster's
+own wind.
 
 ![The row](shots/options_video_remaster.jpg)
 
@@ -94,6 +114,14 @@ The first stops the page's own animation loop and steps frames with
 CPU and GPU together. The last destroys vehicles, plays every explosion and
 throws what the kit throws, and fails on a frame over 100 ms or a frame that
 throws.
+
+In the mesh image the pages are stamped to versioned URLs
+(`mesh/stamp-viewer.mjs`). The remaster's import map is written by a script
+and is not stamped: `three.webgpu.js`, `three.tsl.js` and four addons load
+from their plain addresses (revalidated on each visit), and what they
+import by relative path picks the version up from the page's own map.
+Checked on a stamped copy served locally, both modes: one copy of three in
+each. The r169 build's preload is still fetched under the remaster, unused.
 
 ## Before and after
 

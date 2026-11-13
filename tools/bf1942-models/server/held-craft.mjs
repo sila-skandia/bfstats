@@ -27,6 +27,7 @@ const _local = new THREE.Matrix4();
 const _pos = new THREE.Vector3();
 const _quat = new THREE.Quaternion();
 const _scale = new THREE.Vector3();
+const _at = [0, 0, 0];
 
 /**
  * @param {object} instance  the room's LevelInstance (`world`, `ownerRoots`,
@@ -42,7 +43,8 @@ export function createHeldCraft(instance, craft) {
     const hold = spawnHoldOf(node);
     if (!hold) continue;
     records.push({ node, host: hold.host, local: hold.local, owner: instance.ownerRoots.indexOf(node),
-                   released: false, at: null, velocity: [0, 0, 0], stood: !!hold.stood });
+                   released: false, at: null, velocity: [0, 0, 0], stood: !!hold.stood,
+                   onShip: !!instance.ships?.floatHosts.some(h => h.node === hold.host), hostAt: null });
   }
 
   function step() {
@@ -56,7 +58,13 @@ export function createHeldCraft(instance, craft) {
       // The spawner's speed is its ROOT's `getTangentSpeed`, and a static
       // root's is zero whatever turns under it (`StaticPhysicsNode::
       // getTangentSpeed` 0x0825e6c0, SPAWN-23): held at rest, let go at rest.
+      // A ship's is her own speed at the craft (vt+0x74, 0x08254b90): a
+      // Zero rides the Shokaku whoever sails her (`room-ships.mjs`).
       const v = rec.velocity;
+      if (rec.onShip) {
+        _at[0] = _pos.x; _at[1] = _pos.y; _at[2] = _pos.z;
+        instance.ships.pointVelocity(rec.host, _at, v);
+      }
       const driver = instance.ownerToEntry?.get(rec.owner)?.driver ?? null;
       const state = driver != null ? world.player(driver)?.vehicle?.state : null;
       if (state) {
@@ -73,7 +81,19 @@ export function createHeldCraft(instance, craft) {
         state.velocity.set(v[0], v[1], v[2]);
         state.angularVelocity?.set(0, 0, 0);
         world.player(driver).vehicle.applyTransform?.();
+        if (rec.onShip) instance.publishHullNode?.(rec.owner);
         continue;
+      }
+      // A craft parked on a ship is only rewritten when she has moved, and
+      // has no body of its own while she holds it: the spawner resets its
+      // physics node every frame (`handleFrameUpdate` 0x083138c0, vt+0xc8),
+      // so nothing its contacts with her deck did would last the tick, and
+      // testing a carrier's hull against each aircraft on it cost half a
+      // millisecond a tick under way. Let go, its drive's release parks it.
+      if (rec.onShip) {
+        if (world.bodyWorld?.get(rec.owner)?.parked) world.removeBody(rec.owner);
+        if (rec.hostAt?.equals(rec.host.matrixWorld)) continue;
+        (rec.hostAt ??= new THREE.Matrix4()).copy(rec.host.matrixWorld);
       }
       const body = world.bodyWorld?.get(rec.owner)?.parked?.body ?? null;
       if (body) {
@@ -86,6 +106,7 @@ export function createHeldCraft(instance, craft) {
         body.w[0] = 0; body.w[1] = 0; body.w[2] = 0;
       }
       setNodeWorld(rec.node, _hold);
+      if (rec.onShip) instance.publishHullNode?.(rec.owner);
     }
   }
 

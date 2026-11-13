@@ -1,0 +1,22 @@
+{
+ "level": "operation_hailstone",
+ "verdict": "fail",
+ "outcome": "unsuitable",
+ "config": "with vehicles",
+ "doctrine": "garrison",
+ "generatorVersion": 5,
+ "inputs": {
+  "controlPoints": "3d7bc6c9f2cf793319e944daca8b82780bc952f21119d8fc8a768f33ff3146bf",
+  "infantryMap": "311013665bc5ac75986868c08d545de37c004a0848a64da58bc452ea856fa616",
+  "template": "bdc0e455f47f91b7e7724e71d7c0c196e839b36946ac3abb7663d725944081e5"
+ },
+ "baseline": "DICE layers with vehicles, garrison doctrine: berlin, stalingrad, kharkov, bocage; seeds 1..10, 600 s",
+ "bar": null,
+ "seeds": 1,
+ "sizes": {},
+ "oneSided": null,
+ "unreachable": [],
+ "lintErrors": [
+  "side 2 holds no spawn point at the start of the round"
+ ]
+}

@@ -4,7 +4,7 @@
 // Split out of `gunfire.js`; both take the `GunFire` instance (`guns`) whose
 // tables they read and whose `hits` / `onImpact` they report to.
 
-import { impactEffect, materialFamily } from './collision-materials.js';
+import { impactEffect, materialFamily, WATER_MATERIAL } from './collision-materials.js';
 import { damageFactor, IMPACT_BLAST_OFFSET, splashSpec } from './effects-core.js';
 import { angleFactor, materialOf, roundAttackerMaterial } from './crash-damage.js';
 import { spawnImpact } from './round-visuals.js';
@@ -99,6 +99,11 @@ export function impact(guns, group, spec, hit, velocity = null, travelled = 0, o
     defGroup,
     damageMod: mod,
     incidence,
+    // `noFFSound` (`ProjectileTemplate+0x14f`): set, the round's touch never
+    // draws a teammate's "Watch your aim!" (`Projectile::handleCollision`
+    // lnxded 0x0831efe6 skips `BFSoldier::projectileHit`, FF-6). The
+    // projectile table's row (`damage.json`), else the baked block's.
+    noFFSound: !!(guns.projectileEntry?.(spec)?.noFFSound ?? spec?.damage?.noFFSound),
     // The engine's whole direct-hit formula. `damageMod` genuinely absent
     // (no table loaded) leaves the base damage alone rather than zeroing it;
     // a table that *does* load and says 0.0 for this pairing means exactly
@@ -175,7 +180,9 @@ export function impact(guns, group, spec, hit, velocity = null, travelled = 0, o
  *     whole of why, and why handing this path a fractional radius would be
  *     wrong rather than faithful.
  *   - `sourceArmor` is pushed as **NULL** (0x0831f727), where the impact
- *     path passes the firer's. That argument does one thing downstream:
+ *     path passes the Armor of the object the round struck
+ *     (`handleCollisionForProjectile` 0x08153d3d..0x08153d71, 0x08154009).
+ *     That argument does one thing downstream:
  *     `handleExplosionOnObject` finds the victim's first Armor up its
  *     parent chain and skips the victim when it is the source's
  *     (`cmpl %ebx,0x30(%ebp)` / `je` at lnxded 0x08156597; ledger HP-9g).
@@ -187,7 +194,47 @@ export function impact(guns, group, spec, hit, velocity = null, travelled = 0, o
  *
  * Returns the record, or null when this round has no end-of-life blast.
  */
-export function detonate(guns, group, spec, position, travelled = 0, stamp = null) {
+/**
+ * The EffectBundle a round's end of life plays (`Projectile::startEndEffect`,
+ * lnxded 0x0831f590).
+ *
+ * A round that sets `useMMOnEndEffect` (`ProjectileTemplate+0x14e`, tested at
+ * 0x0831f602) and has an Armor (`hasArmor 1`: the walk up its own parent
+ * chain for IID 0xc4a4 at 0x0831f5c3) asks the MaterialManager instead of
+ * playing its `endEffectTemplate`: `getEffectTemplate(material2, defender,
+ * 1.0)` (vt+0x50 at 0x0831f644, `+0x1b8` being the material the same function
+ * hands the splash), where `defender` is 1, water, when the Armor's
+ * `getCollisionWithWater` holds (vt+0xf4 -> 0x08172ed0: the round's y is under
+ * the water level at its x, z) and otherwise the Armor's
+ * `getLastHitMaterialIndex` (vt+0x64 -> 0x081740b0, `Armor+0x8`, -1 until
+ * something is struck). `getEffectTemplate` (0x081750d0) reads an id it does
+ * not know as material 0, on either side, and a pair with no template plays
+ * nothing: there is no fall back to `endEffectTemplate`. Vanilla's four:
+ * both grenades and the pack (`material2` 205, 205, 204) burst as
+ * `e_waterimpact` in water, `GranadeExplDirt` on the terrain materials 2 to
+ * 12, 14 and 15, `GranadeExplDry` on 13 and `e_ExplGranade` elsewhere.
+ *
+ * `surface` is `{ material }`, the last thing the round touched, or null.
+ */
+export function endEffectFor(guns, spec, position, surface = null) {
+  const fixed = spec?.endEffect ?? null;
+  const entry = guns.projectileEntry?.(spec);
+  if (!(entry?.useMMOnEndEffect ?? spec?.damage?.useMMOnEndEffect)) return fixed;
+  // Without the table there is no MaterialManager to ask.
+  const effects = guns.damageEffects;
+  const material2 = spec?.damage?.material2;
+  if (!effects || material2 == null) return fixed;
+  const water = guns.collider?.waterLevel;
+  const y = position?.y;
+  const defender = Number.isFinite(water) && Number.isFinite(y) && y < water
+    ? WATER_MATERIAL
+    : (Number.isFinite(surface?.material) ? surface.material : -1);
+  const row = effects[String(material2)] ?? effects['0'];
+  if (!row) return null;
+  return row[String(defender)] ?? row['0'] ?? null;
+}
+
+export function detonate(guns, group, spec, position, travelled = 0, stamp = null, surface = null) {
   const splash = splashSpec(spec?.damage);
   if (!splash?.endOfLife) return null;
   const attacker = guns.attackerMaterial(spec);
@@ -196,15 +243,16 @@ export function detonate(guns, group, spec, position, travelled = 0, stamp = nul
     material: null,
     family: null,
     attacker,
-    // `endEffectTemplate` — `e_ExplGranade` on both grenades. Stood up on
-    // world up, not on a surface normal.
-    effect: spec?.endEffect ?? null,
+    // `endEffectTemplate`, or the MaterialManager's for the surface under a
+    // `useMMOnEndEffect` round (`endEffectFor`). Stood up on world up, not
+    // on a surface normal.
+    effect: endEffectFor(guns, spec, position, surface),
     point: [position.x, position.y, position.z],
     normal: [0, 1, 0],
     gun: group.node.name,
     distance: 0,
-    // Nothing was struck, so there is no owner to name and no firer to
-    // exclude (`sourceArmor = NULL`, above).
+    // Nothing was struck, so there is no owner to name and nobody the
+    // blast passes over (`sourceArmor = NULL`, above).
     owner: -1,
     firer: -1,
     firerGroup: group,

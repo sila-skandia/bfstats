@@ -1,0 +1,133 @@
+{
+ "generator": "botgen",
+ "version": 5,
+ "mod": "FHSW",
+ "level": "juno_beach",
+ "objectSpawners": 58,
+ "template": "symmetric",
+ "templateSource": "DICE, bf1942 Kharkov (1.6 patch archives): AI/Strategies.con, AI/conditions.con, AI/prerequisites.con, unchanged",
+ "templateChoice": {
+  "name": "symmetric",
+  "inPlay": 5,
+  "rule": "5 capturable flags in play, more than 3"
+ },
+ "scope": "on foot: infantry order positions only, no search maps, no co-op layer",
+ "unreachable": [
+  "checkpoint"
+ ],
+ "unreachableReasons": {
+  "checkpoint": "route probe"
+ },
+ "botSpawnsExcluded": [
+  "beach_town_spawn10",
+  "beach_town_spawn11",
+  "river_cross_spawn7",
+  "river_cross_spawn9",
+  "germannorthbase_control_point1_spawn11",
+  "germannorthbase_control_point1_spawn12",
+  "germannorthbase_control_point1_spawn13",
+  "river_cross_spawn18",
+  "beach_village_spawn6",
+  "beach_village_spawn7",
+  "beach_village_spawn9",
+  "hill_radar_spawn1",
+  "hill_radar_spawn2",
+  "hill_radar_spawn3",
+  "hill_radar_spawn4",
+  "hill_radar_spawn11",
+  "hill_radar_spawn12",
+  "german_northbase_spawn3",
+  "german_northbase_spawn4",
+  "german_northbase_spawn6",
+  "german_northbase_spawn7",
+  "beach_north_village_spawn2",
+  "beach_north_village_spawn3",
+  "checkpoint_spawn1"
+ ],
+ "walkMap": {
+  "source": "page painter",
+  "engine": "none",
+  "opened": [],
+  "ways": [],
+  "cover": 0.913,
+  "floors": {
+   "stacked": false,
+   "twoFloorShare": 0.003,
+   "raised": [
+    "river_crossing",
+    "checkpoint"
+   ],
+   "reason": null
+  },
+  "capped": true
+ },
+ "routeProbe": {
+  "chokeMax": 4,
+  "unreachable": [
+   "checkpoint"
+  ],
+  "stops": {
+   "checkpoint": {
+    "1": {
+     "stage": "leg",
+     "leg": 0,
+     "from": [
+      1073.8,
+      -1364.3
+     ],
+     "to": [
+      1067.6,
+      -1364
+     ]
+    },
+    "2": {
+     "stage": "no usable spawn"
+    }
+   }
+  },
+  "oneSided": {
+   "beach_village": 1,
+   "hill_radar": 1,
+   "german_northbase": 1,
+   "river_crossing": 1,
+   "beach_north_village": 1
+  },
+  "sides": {
+   "1": {
+    "spawns": 87,
+    "flags": [
+     "beach_north_village",
+     "beach_village",
+     "german_northbase",
+     "hill_radar",
+     "river_crossing"
+    ]
+   },
+   "2": {
+    "spawns": 0,
+    "flags": []
+   }
+  },
+  "chokes": {
+   "beach_village:1": 0,
+   "hill_radar:1": 0,
+   "german_northbase:1": 0,
+   "river_crossing:1": 0,
+   "beach_north_village:1": 0
+  },
+  "late": {},
+  "shutLinks": []
+ },
+ "inputs": {
+  "controlPoints": "7f4656ec8a22d473a5664c065b75d20214c673d1ad40a5784994b639464ce5b6",
+  "infantryMap": "dd8cefb3d5014ffb4f22a979a6a588785003d04bf578122036662f577a8dc44a",
+  "template": "43f8a790471528016570235f76e97dbb2045732458781a5139f37fed68bf98c0"
+ },
+ "files": {
+  "AI.con": "bcfee33850340555a35e468bc9abf4e7d12c67fb64e08bc81ba877bfb27ca3be",
+  "AI/StrategicAreas.con": "c6a306b0d0f4dfbcd0de290357905de847ed30138d432916f874e46587117569",
+  "AI/Strategies.con": "4ce0be59a0d6c5cd530db002fb062c4be8d936bc6ae59bd188803ccaf7869a8d",
+  "AI/conditions.con": "68a0c7a8aec69954063147b60fae560b2874884285737aa085efa76597d395aa",
+  "AI/prerequisites.con": "4c1f313bc285b228fd6ad03bfd1f44c5b15c8703c31f802eb605bc5f00f88bb5"
+ }
+}

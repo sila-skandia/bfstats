@@ -1,0 +1,132 @@
+{
+ "generator": "botgen",
+ "version": 6,
+ "mod": "GCMOD",
+ "level": "gc_mini_hoth",
+ "objectSpawners": 4,
+ "template": "symmetric",
+ "templateSource": "DICE, bf1942 Kharkov (1.6 patch archives): AI/Strategies.con, AI/conditions.con, AI/prerequisites.con, unchanged",
+ "templateChoice": {
+  "name": "symmetric",
+  "inPlay": 4,
+  "rule": "4 capturable flags in play, more than 3"
+ },
+ "scope": "an infantry map painted from the walk test, a Tank0 map from the page painter, infantry order positions, no strategic maps, no co-op layer",
+ "unreachable": [
+  "fallen_walkertemplate"
+ ],
+ "unreachableReasons": {
+  "fallen_walkertemplate": "walk test"
+ },
+ "botSpawnsExcluded": [
+  "unnamedspawn4",
+  "unnamedspawn7",
+  "unnamedspawn32",
+  "unnamedspawn33"
+ ],
+ "walkMap": {
+  "source": "walk test",
+  "engine": "none",
+  "vehicleMap": "page painter",
+  "vehicleBrush": 1.5,
+  "vehicleBrushes": [
+   {
+    "brush": 3,
+    "flagsOn": 5,
+    "spawnersOn": 2,
+    "pieces": 7,
+    "main": 432542
+   },
+   {
+    "brush": 2.5,
+    "flagsOn": 5,
+    "spawnersOn": 2,
+    "pieces": 10,
+    "main": 478903
+   },
+   {
+    "brush": 2,
+    "flagsOn": 5,
+    "spawnersOn": 2,
+    "pieces": 9,
+    "main": 494337
+   },
+   {
+    "brush": 1.5,
+    "flagsOn": 6,
+    "spawnersOn": 2,
+    "pieces": 5,
+    "main": 520434
+   }
+  ],
+  "opened": [],
+  "ways": [],
+  "cover": 0.996,
+  "floors": {
+   "stacked": true,
+   "twoFloorShare": 0.101,
+   "raised": [
+    "fallen_walkertemplate",
+    "armourytemplate"
+   ],
+   "reason": "10 % of the main floor has another walked floor over or under it"
+  }
+ },
+ "routeProbe": {
+  "chokeMax": 4,
+  "unreachable": [],
+  "stops": {},
+  "oneSided": {},
+  "sides": {
+   "1": {
+    "spawns": 5,
+    "flags": [
+     "armourytemplate",
+     "peaktemplate",
+     "testtemplate",
+     "unnamedcontroltemplate"
+    ]
+   },
+   "2": {
+    "spawns": 5,
+    "flags": [
+     "armourytemplate",
+     "peaktemplate",
+     "testtemplate",
+     "unnamedcontroltemplate"
+    ]
+   }
+  },
+  "chokes": {
+   "testtemplate:1": 0,
+   "testtemplate:2": 0,
+   "unnamedcontroltemplate:1": 0,
+   "unnamedcontroltemplate:2": 0,
+   "peaktemplate:1": 1,
+   "peaktemplate:2": 0,
+   "armourytemplate:1": 0,
+   "armourytemplate:2": 0
+  },
+  "late": {},
+  "shutLinks": []
+ },
+ "inputs": {
+  "controlPoints": "773dd1903be6a0df77010c51b1d2f427e3cd4500df5ac9740e015f01a67b3221",
+  "infantryMap": "5db9b0ec3f474ce8f46c97df4f417d7458613a4caabca893b2218cd618d65805",
+  "template": "43f8a790471528016570235f76e97dbb2045732458781a5139f37fed68bf98c0"
+ },
+ "files": {
+  "AI.con": "86407f5d07b94f0d26ea1c5d37d09458c4e42500e62687ccff144f5cc2682bde",
+  "AIpathFinding.con": "9d8080cdfa7605961969aa126519b03be9691bd604ac76aef50166d81215edd2",
+  "AI/StrategicAreas.con": "4098c5aec759e48094314d8442236eeb681c23888207deb29b8314a76e24055e",
+  "AI/Strategies.con": "4ce0be59a0d6c5cd530db002fb062c4be8d936bc6ae59bd188803ccaf7869a8d",
+  "AI/conditions.con": "68a0c7a8aec69954063147b60fae560b2874884285737aa085efa76597d395aa",
+  "AI/prerequisites.con": "4c1f313bc285b228fd6ad03bfd1f44c5b15c8703c31f802eb605bc5f00f88bb5",
+  "Pathfinding/Infantry1Level0Map.raw": "231a4172ed3484aefdf875e4b094a03002f6627c8bdd5edfdb7b0e867e78639f",
+  "Pathfinding/Infantry1Level1Map.raw": "c8fc3c8746518ce74fa151bd6b5a88c97f1c41d9c522201e0bff68045a6fc0fd",
+  "Pathfinding/Infantry1Level2Map.raw": "4af8dc1a2018423d8f568bab62584eae5e8d95c4245919e6262dc31842358bd3",
+  "Pathfinding/Tank0Level0Map.raw": "5da78f8163f5a7b22a5c79d82f7b0b37cea7d999ace04c3c6670fe6dacbb4fa8",
+  "Pathfinding/Tank0Level1Map.raw": "4a62c8bc605057b5638241d8b165c618a456098269165f3aa878c6dc44afb7a1",
+  "Pathfinding/Tank0Level2Map.raw": "cd1874ea95a8de4bfcb02fcaa2f94a545b0a194ee3ffe7518b334aee840805b0"
+ }
+}

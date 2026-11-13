@@ -28,8 +28,19 @@ corpus in `features/bf1942-engine-reference/` has read it.
                          u32 unknown
           then, in the same order, each material's vertex block followed by its
           index block — the descriptors come first, the payloads after.
-    u32   cid
-    u32   csize + csize bytes
+    u32   cid                  0 on every static and part; 1 on the hulls and
+                               hand weapons that carry a named block (not read)
+    u32   csize + csize bytes  with cid 0, the mesh's PortalMesh
+                               (`PortalMesh::load` lnxded 0x083c55f0):
+        u32 magic              0x99c3c2fc
+        u32 version            3 or 4
+        u32 portalCount        0 on most meshes (the chunk is then 54 bytes)
+          per portal: u32 vertexCount, f32 position[3] each: one convex
+          polygon in the mesh's own frame, a door or a window
+        the portal BSP (`Bsp::load` 0x08386d70), not read
+      `AIObjectCover::getPortalCount` 0x085d4fe0 reads the count through
+      `world::getPortalMesh` 0x0818d540 (ledger AI-182): 30 of vanilla's
+      1,514 meshes carry portals, the houses and hangars.
 
 The vertex layout is the `flags` word, which is the engine's vertex format
 (`dice::ref2::rend`): a component bitfield the renderer turns into a Direct3D
@@ -288,6 +299,9 @@ class StandardMesh:
     collision_layers: list[CollisionLayer]
     lods: list[Lod]
     lightmapped: bool = False
+    # The mesh's portals (its tail's PortalMesh): one polygon each, a list of
+    # `(x, y, z)` in the mesh's frame. Empty on a mesh with none.
+    portals: list[list[tuple[float, float, float]]] = field(default_factory=list)
 
     @property
     def collision_blocks(self) -> int:
@@ -452,4 +466,33 @@ def parse(data: bytes, name: str = "<mem>") -> StandardMesh:
     return StandardMesh(
         name=name, version=version, bounds_min=bmin, bounds_max=bmax,
         collision_layers=collision_layers, lods=lods, lightmapped=lightmapped,
+        portals=_portals(data, c.pos),
     )
+
+
+PORTAL_MAGIC = 0x99C3C2FC
+
+
+def _portals(data: bytes, pos: int) -> list[list[tuple[float, float, float]]]:
+    """The polygons of the PortalMesh in a mesh's tail, starting at `pos`
+    (the `cid` word); empty when the tail is not one or does not read."""
+    try:
+        cid, size = struct.unpack_from("<II", data, pos)
+        if cid != 0 or size < 12 or pos + 8 + size > len(data):
+            return []
+        end = pos + 8 + size
+        magic, _version, count = struct.unpack_from("<III", data, pos + 8)
+        if magic != PORTAL_MAGIC or count > 4096:
+            return []
+        at = pos + 20
+        out: list[list[tuple[float, float, float]]] = []
+        for _ in range(count):
+            (n,) = struct.unpack_from("<I", data, at)
+            at += 4
+            if n > 4096 or at + 12 * n > end:
+                return []
+            out.append([struct.unpack_from("<3f", data, at + 12 * k) for k in range(n)])
+            at += 12 * n
+        return out
+    except struct.error:
+        return []

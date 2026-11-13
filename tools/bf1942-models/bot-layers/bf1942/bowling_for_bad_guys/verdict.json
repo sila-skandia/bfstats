@@ -1,0 +1,22 @@
+{
+ "level": "bowling_for_bad_guys",
+ "verdict": "fail",
+ "outcome": "unsuitable",
+ "config": "with vehicles",
+ "doctrine": "garrison",
+ "generatorVersion": 5,
+ "inputs": {
+  "controlPoints": "e3c160e73a63125dfe6287be8bacf47672632dad8fa650af112a090c3c2514a9",
+  "infantryMap": "979e9166b1a76fd6aff2f76ef0716e09d0f303c68589490c744b46171c28931f",
+  "template": "bdc0e455f47f91b7e7724e71d7c0c196e839b36946ac3abb7663d725944081e5"
+ },
+ "baseline": "DICE layers with vehicles, garrison doctrine: berlin, stalingrad, kharkov, bocage; seeds 1..10, 600 s",
+ "bar": null,
+ "seeds": 1,
+ "sizes": {},
+ "oneSided": null,
+ "unreachable": [],
+ "lintErrors": [
+  "side 2 has no spawn with a route to any flag it must take: of its 1 spawns 0 have no way on foot to the main ground, 1 are in the air"
+ ]
+}

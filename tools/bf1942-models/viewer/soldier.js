@@ -449,10 +449,15 @@ export class Soldier {
     this.drown = new DrownTimer();
     /** HP the water owes the caller's `Armor`; drained with `drainDrowning()`. */
     this.drownDamage = 0;
+    this.killFaceTouched = false;
     /** The barbed wire the body passed through, `{ id, x, y, z }` per touch
      *  per tick (`SoldierBody.obstacleContacts`), oldest first; the world's
      *  soldier tick drains it with `drainObstacles()` and bills the Armor. */
     this.obstacleTouches = [];
+    /** A moving hull's contacts with the body (`SoldierBody.hullContacts`,
+     *  `soldier-resolve.js` `pushOutOfHulls`), oldest first; the world's soldier tick drains
+     *  it with `drainHullTouches()` and bills the run-over. */
+    this.hullTouches = [];
     /** True while the feet are on the water plane. Kept for the page's readout;
      *  it is now "he is swimming", because a man cannot stand on the sea. */
     this.onWater = false;
@@ -527,6 +532,10 @@ export class Soldier {
 
   /** Place the soldier's feet, facing `yaw`. Clears all motion. */
   spawn(x, y, z, yaw = 0) {
+    // Put in the level at least once: a player added before their first
+    // deploy has a body that stands nowhere, and meets nobody
+    // (`world-soldier-tick.js` `separateSoldiers`).
+    this.spawned = true;
     this.body.place(x, y, z, yaw);
     this.body.setPoseFlags(0, 0);
     this.pitch = 0;
@@ -550,6 +559,7 @@ export class Soldier {
     this.swim.reset();
     this.drown.reset();
     this.drownDamage = 0;
+    this.killFaceTouched = false;
     this.parachuteEvents.length = 0;
     this.footstepEvents.length = 0;
     this.body.setParachute(false);
@@ -605,6 +615,7 @@ export class Soldier {
     this.swim.reset();
     this.drown.reset();
     this.drownDamage = 0;
+    this.killFaceTouched = false;
     this.parachuteEvents.length = 0;
     this.body.setParachute(false);
     this.climb.reset();
@@ -894,6 +905,9 @@ export class Soldier {
         }
         // Bounded like `parachuteEvents`: a caller that never drains it.
         if (this.obstacleTouches.length > 64) this.obstacleTouches.splice(0, this.obstacleTouches.length - 64);
+        for (const c of this.body.hullContacts ?? []) this.hullTouches.push(c);
+        if (this.body.killFace) this.killFaceTouched = true;
+        if (this.hullTouches.length > 64) this.hullTouches.splice(0, this.hullTouches.length - 64);
       } else {
         // The climb's tick: a blast's push does not outlive it (KNOCK-6).
         this.body.climbTick?.(this.clock.dt, this._tickInput);
@@ -1290,6 +1304,22 @@ export class Soldier {
     const out = this.obstacleTouches;
     this.obstacleTouches = [];
     return out;
+  }
+
+  /** The hulls that pushed them since the last drain (`hullTouches`), emptied. */
+  drainHullTouches() {
+    if (!this.hullTouches.length) return [];
+    const out = this.hullTouches;
+    this.hullTouches = [];
+    return out;
+  }
+
+  /** Whether a tick since the last drain met a kill face (material 99,
+   *  `MATERIAL_KILL`), cleared. */
+  drainKillFace() {
+    const met = this.killFaceTouched === true;
+    this.killFaceTouched = false;
+    return met;
   }
 
   drainDrowning() {

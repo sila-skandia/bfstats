@@ -1,0 +1,167 @@
+{
+ "generator": "botgen",
+ "version": 6,
+ "mod": "GCMOD",
+ "level": "gc_judicator_push",
+ "objectSpawners": 30,
+ "template": "symmetric",
+ "templateSource": "DICE, bf1942 Kharkov (1.6 patch archives): AI/Strategies.con, AI/conditions.con, AI/prerequisites.con, unchanged",
+ "templateChoice": {
+  "name": "symmetric",
+  "inPlay": 6,
+  "rule": "6 capturable flags in play, more than 3"
+ },
+ "scope": "an infantry map painted from the walk test, a Tank0 map from the page painter, infantry order positions, no strategic maps, no co-op layer",
+ "unreachable": [
+  "imperial_bridgetemplate"
+ ],
+ "unreachableReasons": {
+  "imperial_bridgetemplate": "walk test"
+ },
+ "botSpawnsExcluded": [
+  "imp01",
+  "imp02",
+  "imp03",
+  "imp04",
+  "reb01",
+  "reb02",
+  "reb03",
+  "reb05",
+  "reb06"
+ ],
+ "walkMap": {
+  "source": "walk test",
+  "engine": "none",
+  "vehicleMap": "page painter",
+  "vehicleBrush": 1.5,
+  "vehicleBrushes": [
+   {
+    "brush": 3,
+    "flagsOn": 2,
+    "spawnersOn": 0,
+    "pieces": 14,
+    "main": 82842
+   },
+   {
+    "brush": 2.5,
+    "flagsOn": 1,
+    "spawnersOn": 0,
+    "pieces": 20,
+    "main": 4601
+   },
+   {
+    "brush": 2,
+    "flagsOn": 1,
+    "spawnersOn": 0,
+    "pieces": 21,
+    "main": 48757
+   },
+   {
+    "brush": 1.5,
+    "flagsOn": 1,
+    "spawnersOn": 1,
+    "pieces": 19,
+    "main": 50011
+   }
+  ],
+  "opened": [],
+  "ways": [
+   {
+    "who": "reb01",
+    "kind": "spawn",
+    "way": "none",
+    "opened": 0
+   },
+   {
+    "who": "reb02",
+    "kind": "spawn",
+    "way": "none",
+    "opened": 0
+   },
+   {
+    "who": "reb03",
+    "kind": "spawn",
+    "way": "none",
+    "opened": 0
+   },
+   {
+    "who": "reb05",
+    "kind": "spawn",
+    "way": "none",
+    "opened": 0
+   },
+   {
+    "who": "reb06",
+    "kind": "spawn",
+    "way": "none",
+    "opened": 0
+   }
+  ],
+  "cover": 0.972,
+  "floors": {
+   "stacked": false,
+   "twoFloorShare": 0.069,
+   "raised": [],
+   "reason": null
+  }
+ },
+ "routeProbe": {
+  "chokeMax": 4,
+  "unreachable": [],
+  "stops": {},
+  "oneSided": {
+   "lift_controltemplate": 1,
+   "level1_security_roomtemplate": 1,
+   "tram_controltemplate": 1,
+   "checkpoint_1template": 1,
+   "checkpoint_3template": 1,
+   "checkpoint_6template": 1
+  },
+  "sides": {
+   "1": {
+    "spawns": 12,
+    "flags": [
+     "checkpoint_1template",
+     "checkpoint_3template",
+     "checkpoint_6template",
+     "level1_security_roomtemplate",
+     "lift_controltemplate",
+     "tram_controltemplate"
+    ]
+   },
+   "2": {
+    "spawns": 0,
+    "flags": []
+   }
+  },
+  "chokes": {
+   "lift_controltemplate:1": 0,
+   "level1_security_roomtemplate:1": 0,
+   "tram_controltemplate:1": 0,
+   "checkpoint_1template:1": 0,
+   "checkpoint_3template:1": 0,
+   "checkpoint_6template:1": 0
+  },
+  "late": {},
+  "shutLinks": []
+ },
+ "inputs": {
+  "controlPoints": "9498f4cd6d89a2ba004250d442dc236c4833ac1d33a5236bffced21b16d60b3d",
+  "infantryMap": "15e0bba520fd6a25c98438e38971c37aacc6aca55e8093df3c81a62a47ce97d7",
+  "template": "43f8a790471528016570235f76e97dbb2045732458781a5139f37fed68bf98c0"
+ },
+ "files": {
+  "AI.con": "26f62f783813f16aedaa4cd94d6da44996c4e824dcf37c7206fe33779fba7eda",
+  "AIpathFinding.con": "9d8080cdfa7605961969aa126519b03be9691bd604ac76aef50166d81215edd2",
+  "AI/StrategicAreas.con": "2dd8ad3c924d69a5744ba07c4f0157a732bbdf31098a9b5adfed36ed0bb5cd83",
+  "AI/Strategies.con": "4ce0be59a0d6c5cd530db002fb062c4be8d936bc6ae59bd188803ccaf7869a8d",
+  "AI/conditions.con": "68a0c7a8aec69954063147b60fae560b2874884285737aa085efa76597d395aa",
+  "AI/prerequisites.con": "4c1f313bc285b228fd6ad03bfd1f44c5b15c8703c31f802eb605bc5f00f88bb5",
+  "Pathfinding/Infantry1Level0Map.raw": "599d6c70e38863d9d7e17fe0707657a31b3ba8829647108490d40c10dee5e37f",
+  "Pathfinding/Infantry1Level1Map.raw": "5e7954910110a4ba23744c7402fab84d805fcfb3374276a536e868d6cac87895",
+  "Pathfinding/Infantry1Level2Map.raw": "43aab8fa4c4e0370b185e7660458702ce48739932c7e6b293b44b4285d87f6bf",
+  "Pathfinding/Tank0Level0Map.raw": "33450c9be3ce3978a3057bffde8f839f3324b63d36626dbff0ccafcfdeb93677",
+  "Pathfinding/Tank0Level1Map.raw": "210fe1b6bd17aab319649abefaf3c25467ceaffb1a6bf38cbb31fa9e22e6539b",
+  "Pathfinding/Tank0Level2Map.raw": "88d988069a93326e23beb2686fbb47800d6f8a95199fb1ea5927deda60f32dac"
+ }
+}

@@ -247,5 +247,10 @@ export function createRemasterSky({ renderer, scene, camera, sun, hemi }) {
     staggerCascades();
   }
 
-  return { apply, update, paintedSky, cloudMaterial, sunDir };
+  /** OPTIONS > VIDEO's SHADOWS row: the sun casts, or it does not. */
+  function setShadows(on) {
+    if (sun.castShadow !== !!on) sun.castShadow = !!on;
+  }
+
+  return { apply, update, paintedSky, cloudMaterial, setShadows, sunDir };
 }

@@ -76,6 +76,17 @@ class FootRearmTests(unittest.TestCase):
         self.assertEqual(r["after3s"], {"rounds": 3, "mags": 0})
         self.assertEqual(r["knife"]["mags"], 0)
 
+    def test_the_damage_json_table_serves_each_item_its_own_row(self) -> None:
+        # SUP-2 with the tags from `damage.json` `ammoTypes`: at an Ammobox
+        # (`1 -1 15 0`, `2 -1 1.2 0`, `3 -1 1.2 0`) the pouch (2) and the tube
+        # (3) get nothing in the first half-second cycle and one each by
+        # 1.2 s, not the guns' 15/s that filled the pouch at once.
+        r = self.results["tableTagged"]
+        self.assertEqual(r["oneCycle"]["pouch"], {"rounds": 0, "mags": 0})
+        self.assertEqual(r["oneCycle"]["tube"], {"rounds": 0, "mags": 0})
+        self.assertEqual(r["after1s"]["pouch"], {"rounds": 1, "mags": 0})
+        self.assertEqual(r["after1s"]["tube"], {"rounds": 0, "mags": 1})
+
     def test_untagged_items_still_keep_the_loaded_magazine(self) -> None:
         r = self.results["untagged"]
         # Fed from the first row that gave units (the guns' 15 a second).

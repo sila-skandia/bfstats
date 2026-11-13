@@ -1,0 +1,25 @@
+{
+ "level": "jeeprace",
+ "verdict": "fail",
+ "outcome": "unsuitable",
+ "config": "with vehicles",
+ "doctrine": "garrison",
+ "generatorVersion": 5,
+ "inputs": {
+  "controlPoints": "ecb97a054b4eae1724de9764b7e14b468810d8d3c2d1069bd5732dbe8b87a9c9",
+  "infantryMap": "26f08b27373c1d49ce9b80c20b86275adadd487ab1e7d6d6bf070b413d658f1a",
+  "template": "bdc0e455f47f91b7e7724e71d7c0c196e839b36946ac3abb7663d725944081e5"
+ },
+ "baseline": "DICE layers with vehicles, garrison doctrine: berlin, stalingrad, kharkov, bocage; seeds 1..10, 600 s",
+ "bar": null,
+ "seeds": 1,
+ "sizes": {},
+ "oneSided": null,
+ "unreachable": [
+  "New_Control_Point1"
+ ],
+ "lintErrors": [
+  "no capturable flag is reachable in 3D: none of the 1 has a place inside its radius that a soldier on the one-floor walk map's main ground can stand in",
+  "side 2 has no spawn with a route to any flag it must take: none of the 1 flags it does not hold can be reached"
+ ]
+}

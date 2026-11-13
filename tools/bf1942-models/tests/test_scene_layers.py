@@ -293,9 +293,12 @@ GeometryTemplate.create TreeMesh Bush_m1
         self.assertEqual(scene_layers.LAYERS["meshCull"], (("meshCull",), ()))
         # After terrainDetail, ahead of envmapTexture (both added 2026-10-17),
         # collisionGroups (2026-10-20) and fireOnce (2026-11-10).
-        self.assertEqual(scene_layers.REPORT_ORDER[-5:],
+        # From `meshCull` on, however many keys later layers append
+        # (`terrainLodDistance` and `templateWords`, both 2026-11-13).
+        order = scene_layers.REPORT_ORDER
+        self.assertEqual(order[order.index("meshCull"):][:6],
                          ("meshCull", "envmapTexture", "collisionGroups", "fireOnce",
-                          "textureFadeMaxDist"))
+                          "textureFadeMaxDist", "terrainLodDistance"))
 
 
 class CollisionGroupTests(unittest.TestCase):

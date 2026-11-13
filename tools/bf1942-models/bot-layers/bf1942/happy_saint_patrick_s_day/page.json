@@ -1,0 +1,130 @@
+{
+ "level": "happy_saint_patrick_s_day",
+ "mod": "community",
+ "url": "https://play.bfstats.io/map.html?map=happy_saint_patrick_s_day&team=2&mode=Conquest&mod=community&botCount=16&botSkill=0.75&spawnTime=wave&mute&shots",
+ "date": "2026-11-12",
+ "bar": "DICE levels on the page, 3 matches each of 600 s, 16 bots: Berlin, Stalingrad, Kharkov, Bocage; 2026-11-11",
+ "verdict": "fail",
+ "failed": [
+  "teamKillsPerBotMinute",
+  "suicidesPerBotMinute",
+  "nonEnemyDeathShareWorseSide"
+ ],
+ "checks": [
+  {
+   "metric": "teamKillsPerBotMinute",
+   "median": 0.1375,
+   "bar": "<= 0.025",
+   "pass": false
+  },
+  {
+   "metric": "suicidesPerBotMinute",
+   "median": 0.0625,
+   "bar": "<= 0.0562",
+   "pass": false
+  },
+  {
+   "metric": "nonEnemyDeathShareWorseSide",
+   "median": 0.369,
+   "bar": "<= 0.308",
+   "pass": false
+  },
+  {
+   "metric": "enemyKillsPerBotMinute",
+   "median": 0.7375,
+   "bar": ">= 0.175",
+   "pass": true
+  }
+ ],
+ "matches": 3,
+ "rollout": {
+  "pass": true,
+  "floor": {
+   "kills": 0.15,
+   "killsWithFlags": 0.03,
+   "flags": 3,
+   "killsWithAFlag": 0.05,
+   "ownHand": 0.1,
+   "ownHandOfKills": 0.3333333333333333
+  }
+ },
+ "runs": [
+  {
+   "generated": {
+    "version": 5,
+    "template": "few"
+   },
+   "minutes": 10,
+   "tickets": {
+    "1": 56,
+    "2": 43
+   },
+   "capturesTotal": 0,
+   "teamKillsPerBotMinute": 0.0937,
+   "suicidesPerBotMinute": 0.0062,
+   "nonEnemyDeathShareWorseSide": 0.222,
+   "enemyKillsPerBotMinute": 0.6062,
+   "rollout": {
+    "pass": true,
+    "why": [],
+    "enemyKills": 0.6062,
+    "captures": 0,
+    "ownHand": 0.0999
+   },
+   "teamKillsBySide": {
+    "1": 1,
+    "2": 14
+   },
+   "oldCode": "played before the bot code of 401826c1d went live (2026-11-12, about 12:10)"
+  },
+  {
+   "generated": null,
+   "minutes": 10,
+   "tickets": {
+    "1": 35,
+    "2": 66
+   },
+   "capturesTotal": 0,
+   "teamKillsPerBotMinute": 0.1,
+   "suicidesPerBotMinute": 0.0187,
+   "nonEnemyDeathShareWorseSide": 0.425,
+   "enemyKillsPerBotMinute": 0.575,
+   "rollout": {
+    "pass": true,
+    "why": [],
+    "enemyKills": 0.575,
+    "captures": 0,
+    "ownHand": 0.1187
+   },
+   "teamKillsBySide": {
+    "1": 0,
+    "2": 16
+   },
+   "oldCode": "played on the bot code of e5003c584 or earlier, before drivers predicted collisions with their own side (3b1ebe45c, live 2026-11-13)"
+  },
+  {
+   "generated": null,
+   "minutes": 10,
+   "tickets": {
+    "1": 40,
+    "2": 22
+   },
+   "capturesTotal": 0,
+   "teamKillsPerBotMinute": 0.1375,
+   "suicidesPerBotMinute": 0.0625,
+   "nonEnemyDeathShareWorseSide": 0.369,
+   "enemyKillsPerBotMinute": 0.7375,
+   "rollout": {
+    "pass": true,
+    "why": [],
+    "enemyKills": 0.7375,
+    "captures": 0,
+    "ownHand": 0.2
+   },
+   "teamKillsBySide": {
+    "1": 1,
+    "2": 21
+   }
+  }
+ ]
+}

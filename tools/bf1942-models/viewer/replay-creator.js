@@ -186,6 +186,25 @@ function el(tag, className, text) {
 }
 
 /** A nicety that throws is a warning, never a frame or a click undone. */
+/** Why a clip cannot be posted as a Short, in words to show, or null:
+ *  `clip` whether one is marked, `replayUrl` the page's `?replay=`, `mimes`
+ *  what the browser would record in, with sound and without. */
+export function shortBlock({ clip, replayUrl, mimes, page = globalThis.location }) {
+  if (!clip) return 'Open a kill as a kill shot first: a Short is a clip.';
+  const shared = sharedRecordingOf(replayUrl, page?.origin ?? '');
+  if (!shared) return 'Only a round shared on bfstats.io can be posted as a Short. Share the round first.';
+  if (apiMode(shared.base, page) === 'remote') return 'This round is read from another site: open it on bfstats.io to post a Short.';
+  if (!mimes.every(mime => /mp4/i.test(mime ?? ''))) return 'This browser records WebM and Shorts take MP4: use Chrome, Edge or Safari.';
+  return null;
+}
+
+/** A Short's title to start from: who, with what, on whom; empty with no
+ *  killer. The creator types over it in the Share dialog. */
+export function shortTitle({ killer, weapon, victim }) {
+  if (!killer) return '';
+  return [killer, weapon ? `with the ${weapon}` : null, victim ? `on ${victim}` : null].filter(Boolean).join(' ').slice(0, 120);
+}
+
 function quietly(what, fn) {
   try {
     return fn();
@@ -2478,6 +2497,21 @@ export class ReplayCreator {
     return lines ? lines.filter(Boolean).join(' · ').slice(0, 80) : `Clip at ${fmt(this.span?.t0 ?? 0)}`;
   }
 
+  /** A Short's title to start from and the two names in it, from the
+   *  clip's kill: `{ title, killer, victim }`, the title empty with no kill. */
+  shortNames() {
+    return quietly('naming the Short', () => {
+      const { take } = this.fxKill;
+      if (!take?.f) return { title: '', killer: '', victim: '' };
+      const rec = this.player.rec;
+      const killer = nameAt(rec, take.f.pid, take.f.t) ?? '';
+      const v = take.kill?.victim;
+      const victim = v !== null && v !== undefined ? nameAt(rec, v, take.kill.t) ?? '' : '';
+      const weapon = this.display(take.kill?.weaponName ?? take.f.weapon) || '';
+      return { title: shortTitle({ killer, weapon, victim }), killer, victim };
+    }) ?? { title: '', killer: '', victim: '' };
+  }
+
   /** The clip shared as an edit of this round (POST /stats/recordings/
    *  {slug}/edits): resolves with `{ code, link, name }`. Throws with words
    *  to show where it cannot be: a round not shared on bfstats.io, read from
@@ -3648,12 +3682,30 @@ export class ReplayCreator {
     this.take = { f, kill };
     this.takeHeld = false;
     this.armShot(f, kill);
-    this.record({ fly: false });
+    this.recordTake();
+  }
+
+  /** An armed take recorded. Where it can be posted it is a Short by default
+   *  (the owner, 2026-11-13: "we specifically want to be able to export and
+   *  record as a short by default"): vertical, to the Share dialog. Where it
+   *  cannot (`shortBlocked`), or with `short` false, a file in the frame
+   *  set, as before. */
+  recordTake({ short = true } = {}) {
+    if (!short || this.shortBlocked({ clip: true })) {
+      this.record({ fly: false });
+      return;
+    }
+    this.holdFrame('916');
+    if (this.studio?.open) this.studio.record({ short: true });
+    else {
+      this.record({ fly: false, short: true });
+      if (!this.recorder) this.releaseFrame();
+    }
   }
 
   /** The ride on screen recorded (the plate's Record): the same shot armed
    *  again from the clip's start, written to a file. */
-  recordRide() {
+  recordRide({ short = false } = {}) {
     const target = this.rounds.target;
     const f = target?.f;
     if (!f || this.recorder) return;
@@ -3663,7 +3715,50 @@ export class ReplayCreator {
     this.take = { f, kill };
     this.takeHeld = false;
     this.armShot(f, kill);
-    this.record({ fly: false });
+    this.recordTake({ short });
+  }
+
+  /** Why the clip cannot be posted as a Short from here, in words to show,
+   *  or null: said before anything is recorded (the owner, 2026-11-13: "it's
+   *  all too many steps and complicated"; the offer used to come, or
+   *  silently not come, only after a recording in the 9:16 frame). */
+  shortBlocked({ clip = Boolean(this.span) } = {}) {
+    return shortBlock({
+      clip, replayUrl: new URLSearchParams(globalThis.location?.search ?? '').get('replay'),
+      mimes: [recorderMime(true), recorderMime(false)],
+    });
+  }
+
+  /** The frame held at `frame` for one recording, whatever the creator's
+   *  own is, and not kept: `releaseFrame` puts theirs back. */
+  holdFrame(frame) {
+    this.heldFrame ??= this.prefs.frame;
+    this.prefs.frame = frame;
+    this.syncFrame();
+  }
+
+  releaseFrame() {
+    if (this.heldFrame === null || this.heldFrame === undefined) return;
+    this.prefs.frame = this.heldFrame;
+    this.heldFrame = null;
+    this.syncFrame();
+    this.panel?.refresh(true);
+  }
+
+  /** Post as a Short, in one step: the clip on the strip recorded once in
+   *  9:16 whatever frame is set, then the Share dialog with its title filled
+   *  in (`stopRecording`). Nothing is downloaded unless the dialog's Save the
+   *  file is pressed. True when a recording started. */
+  postShort({ start = () => this.record({ short: true }) } = {}) {
+    if (this.recorder) return false;
+    const why = this.shortBlocked();
+    if (why) {
+      this.ui.flash(why, 4200);
+      return false;
+    }
+    this.holdFrame('916');
+    start();
+    return true;
   }
 
   /** The range recorded to a video file: from a little before its in point
@@ -3671,7 +3766,7 @@ export class ReplayCreator {
    *  stopped at the out point, whatever the camera is doing between.
    *  `fly` false leaves the clip's camera keys alone: an armed bullet cam
    *  is the shot's camera. */
-  record({ fly = true, queue = null } = {}) {
+  record({ fly = true, queue = null, short = false } = {}) {
     const span = this.span;
     if (!span) {
       this.ui.flash('Mark the clip first (I, O)', 2000);
@@ -3688,6 +3783,10 @@ export class ReplayCreator {
       this.ui.flash('This page has no canvas to record', 2400);
       return;
     }
+    // A take is drawn at Full whatever the replay's quality or a phone's
+    // profile (map.html `setFilming`): the canvas is the recording. Before
+    // the crop below is measured, so it is the full canvas's.
+    this.ctx.filming?.(true);
     this.ctx.ensureAudio?.();
     // A frame guide set is the clip's shape: the view cropped to it, drawn
     // after each render (`afterRender`).
@@ -3713,6 +3812,8 @@ export class ReplayCreator {
       clip, t0: span.t0, t1: span.t1, started: false, level: this.player.rec.level, crop, source, compose,
       // A montage: the kept clips still to come, one after another in one file.
       queue: queue ? [...queue] : null, count: queue ? queue.length + 1 : 1, paused: false, song: Boolean(song),
+      // Post as a Short: the file goes to the Share dialog, not the downloads.
+      short: Boolean(short) && !queue,
     };
 
     this.player.seek(Math.max(0, span.t0 - SETTLE));
@@ -3796,6 +3897,7 @@ export class ReplayCreator {
           console.warn('creator: recording', error);
           this.ui.flash(`Could not record: ${error.message}`, 2600);
           this.recorder = null;
+          this.releaseFrame();
         }
         this.syncPlate();
       }
@@ -3866,6 +3968,10 @@ export class ReplayCreator {
     const r = this.recorder;
     if (!r) return;
     this.recorder = null;
+    this.ctx.filming?.(false);
+    // What a Short is called and who is in it, read while its take stands.
+    const names = keep && r.short ? this.shortNames() : null;
+    this.releaseFrame();
     if (!r.started) {
       this.syncPlate();
       this.studio?.recordingEnded();
@@ -3886,15 +3992,33 @@ export class ReplayCreator {
       const name = r.count > 1
         ? clipName(r.level, r.t0, r.t1, mime).replace(/-\d+m\d+s-\d+m\d+s\./, `-montage-${r.count}-clips.`)
         : clipName(r.level, r.t0, r.t1, mime);
+      const kill = r.count > 1 ? null : this.take?.kill ?? null;
+      const clip = {
+        t0: r.t0, t1: r.t1, level: r.level, kill: kill ? { t: kill.t, victim: kill.victim } : null, ...(names ?? {}),
+      };
+      if (r.short) {
+        // Post as a Short: straight to the dialog, the file only if asked
+        // for, or if the dialog cannot open after all.
+        const save = () => download(blob, name);
+        import('./replay-share.js').then(m => {
+          const offer = m.offerShare(blob, mime, clip, { frame: '916', save });
+          if (offer.offered) return;
+          save();
+          this.ui.flash(`${offer.why} The clip is saved as a file instead.`, 4200);
+        }).catch(error => {
+          console.warn('creator: the Share as a Short dialog', error);
+          save();
+          this.ui.flash('The Share dialog would not open: the clip is saved as a file instead.', 4200);
+        });
+        return;
+      }
       download(blob, name);
       this.ui.flash(`Clip saved: ${(blob.size / 1e6).toFixed(1)} MB`, 2600);
       // A 9:16 MP4 of a shared round can go to the Shorts strip too
       // (replay-share.js); a nicety, so nothing here may break the save.
       quietly('offering the clip as a Short', () => {
-        const kill = r.count > 1 ? null : this.take?.kill ?? null;
-        import('./replay-share.js').then(m => m.offerShare(blob, mime, {
-          t0: r.t0, t1: r.t1, level: r.level, kill: kill ? { t: kill.t, victim: kill.victim } : null,
-        }, { frame: this.prefs.frame })).catch(error => console.warn('creator: the Share as a Short dialog', error));
+        import('./replay-share.js').then(m => m.offerShare(blob, mime, clip, { frame: this.prefs.frame, save: null }))
+          .catch(error => console.warn('creator: the Share as a Short dialog', error));
       });
     }).catch(error => console.warn('creator: finishing the recording', error));
     this.player.playing = false;
@@ -4041,6 +4165,17 @@ export class ReplayCreator {
       quietly('recording the ride', () => this.recordRide());
     });
     this.plateRec = rec;
+    // The ride as a Short, the plate's first choice: vertical, then the
+    // Share dialog. Hidden where a Short cannot be posted.
+    const post = el('button', 'rp-btn rc-plate-short', 'Post as a Short');
+    post.type = 'button';
+    post.title = 'Record this ride once in 9:16 and post it to the Shorts strip: you name it, nothing else to set';
+    post.hidden = true;
+    post.addEventListener('click', e => {
+      e.stopPropagation();
+      quietly('posting the ride as a Short', () => this.recordRide({ short: true }));
+    });
+    this.plateShort = post;
     // The take's shot style, one press to the next: try them as it loops.
     const style = el('button', 'rp-btn rc-plate-style', 'Chase');
     style.type = 'button';
@@ -4058,7 +4193,7 @@ export class ReplayCreator {
       e.stopPropagation();
       quietly('stopping', () => this.stopAll());
     });
-    plate.append(this.plateDot, this.plateText, style, rec, stop);
+    plate.append(this.plateDot, this.plateText, style, post, rec, stop);
     return plate;
   }
 
@@ -4084,7 +4219,7 @@ export class ReplayCreator {
     } else if (this.recorder) {
       const r = this.recorder;
       kind = 'rec';
-      text = r.started ? `REC ${fmt(Math.max(0, this.player.time - r.t0))} / ${fmt(r.t1 - r.t0)}${slowly}` : 'REC · getting ready';
+      text = r.started ? `${r.short ? 'REC FOR A SHORT' : 'REC'} ${fmt(Math.max(0, this.player.time - r.t0))} / ${fmt(r.t1 - r.t0)}${slowly}` : 'REC · getting ready';
     } else if (this.rounds.active && (!cam || onRound)) {
       const d = this.rounds.describe(name, k => this.display(k));
       kind = d?.phase ?? '';
@@ -4110,6 +4245,14 @@ export class ReplayCreator {
     if (this.plateText.textContent !== text) this.plateText.textContent = text;
     // A ride on a known shot can be recorded as it stands, in one press.
     this.plateRec.hidden = Boolean(this.recorder) || !(this.rounds.active && this.rounds.target?.f);
+    if (this.plateShort) {
+      const can = !this.plateRec.hidden;
+      // What blocks a Short (the round, the browser) holds for the page:
+      // asked once.
+      if (can) this.shortOff ??= Boolean(this.shortBlocked({ clip: true }));
+      this.plateShort.hidden = !can || this.shortOff;
+      this.plateRec.textContent = this.plateShort.hidden ? 'Record' : 'Record a file';
+    }
     this.plateStyle.hidden = Boolean(this.recorder) || !(this.take || this.movesCamera);
     // The button cycles the camera on the round's flight (G): it names that one.
     const flight = this.flightStretch();

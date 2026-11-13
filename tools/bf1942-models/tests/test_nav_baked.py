@@ -15,6 +15,7 @@ from __future__ import annotations
 import json
 import os
 import shutil
+import statistics
 import subprocess
 import tempfile
 import unittest
@@ -127,19 +128,38 @@ class NavBakedTests(unittest.TestCase):
                  "no extracted viewer/maps tree (set BF42_VIEWER_ASSETS)")
 class RunnerOnBakedMapTests(unittest.TestCase):
     def test_bocage_match_route_failures(self) -> None:
-        """A seeded 600 s Bocage match, 8 a side, on the baked maps: under 100
-        route failures (before the bridges were read, 30,000 a side)."""
+        """Seeded 600 s Bocage matches, 8 a side, on the baked maps: the
+        median of seeds 1, 2 and 3 is under 100 route failures (before the
+        bridges were read, 30,000 a side).
+
+        Three seeds since 2026-11-13. One seed pinned that seed's noise: the
+        figure is mostly drivers held behind a still hull in the two base
+        exit lanes, and how long they wait turns on the fight. origin/main
+        gave 67, 130 and 231 on seeds 1 to 3 that day, so it passed on seed
+        1 alone. The bar is the same 100."""
+        seeds = (1, 2, 3)
         with tempfile.TemporaryDirectory() as tmp:
-            proc = subprocess.run(
+            procs = [subprocess.Popen(
                 ["node", str(ROOT / "sim" / "run.mjs"), "--map", "bocage",
                  "--maps", str(ASSETS / "maps"), "--models", str(ASSETS / "models"),
-                 "--bots", "8", "--time", "600", "--seed", "1", "--no-trace", "--out", tmp],
-                cwd=ROOT, capture_output=True, text=True, timeout=900)
-            if proc.returncode != 0:
-                raise AssertionError(f"runner failed:\n{proc.stderr[-2000:]}")
-            summary = json.loads((Path(tmp) / "summary.json").read_text())
-        self.assertLess(summary["metrics"]["routeFailures"]["total"], 100)
-        self.assertGreater(summary["metrics"]["captures"]["total"], 0)
+                 "--bots", "8", "--time", "600", "--seed", str(seed), "--no-trace",
+                 "--out", str(Path(tmp) / str(seed))],
+                cwd=ROOT, stdout=subprocess.DEVNULL, stderr=subprocess.PIPE, text=True) for seed in seeds]
+            summaries = []
+            for seed, proc in zip(seeds, procs):
+                try:
+                    _, err = proc.communicate(timeout=1800)
+                except subprocess.TimeoutExpired:
+                    for other in procs:
+                        other.kill()
+                    raise
+                if proc.returncode != 0:
+                    raise AssertionError(f"runner failed on seed {seed}:\n{err[-2000:]}")
+                summaries.append(json.loads((Path(tmp) / str(seed) / "summary.json").read_text()))
+        failures = [s["metrics"]["routeFailures"]["total"] for s in summaries]
+        self.assertLess(statistics.median(failures), 100, f"route failures by seed: {failures}")
+        for seed, summary in zip(seeds, summaries):
+            self.assertGreater(summary["metrics"]["captures"]["total"], 0, f"seed {seed}")
 
 
 if __name__ == "__main__":

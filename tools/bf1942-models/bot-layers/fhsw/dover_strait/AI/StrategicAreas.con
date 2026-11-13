@@ -1,0 +1,29 @@
+rem *** Strategic areas: one per control point (botgen) ***
+
+aiStrategicArea.create airfield_allied1 5039.9/7517.1 5059.9/7537.1 50
+aiStrategicArea.addNeighbour airfield_allied2
+aiStrategicArea.addObjectTypeFlag Base
+aiStrategicArea.setOrderPosition Infantry 5058.5/7538.5
+aiStrategicArea.setSide 2
+aiStrategicArea.setTakeable 1 0
+
+aiStrategicArea.create airfield_allied2 4855.5/6958.2 4875.5/6978.2 50
+aiStrategicArea.addNeighbour airfield_allied1
+aiStrategicArea.addObjectTypeFlag Base
+aiStrategicArea.setOrderPosition Infantry 4875.5/6975.5
+aiStrategicArea.setSide 2
+aiStrategicArea.setTakeable 1 0
+
+aiStrategicArea.create airfield_axis1 3167.5/380.3 3187.5/400.3 50
+aiStrategicArea.addNeighbour airfield_axis2
+aiStrategicArea.addObjectTypeFlag Base
+aiStrategicArea.setOrderPosition Infantry 3186.5/399.5
+aiStrategicArea.setSide 1
+aiStrategicArea.setTakeable 2 0
+
+aiStrategicArea.create airfield_axis2 2336.6/83.6 2356.6/103.6 50
+aiStrategicArea.addNeighbour airfield_axis1
+aiStrategicArea.addObjectTypeFlag Base
+aiStrategicArea.setOrderPosition Infantry 2357.5/104.5
+aiStrategicArea.setSide 1
+aiStrategicArea.setTakeable 2 0

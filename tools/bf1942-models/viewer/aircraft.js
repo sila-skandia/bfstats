@@ -8,7 +8,7 @@ import { atRestPose, restQuaternion } from './rest-pose.js';
 import {
   hullGeometry, inertiaGeometryBox, DEFAULT_DIFFERENTIAL, DEFAULT_TORQUE, DEFAULT_NO_PROPELLER_EFFECT_AT_SPEED,
 } from './ship-spec.js';
-import { floatNodesOf, floatAcceleration } from './body-float.js';
+import { floatNodesOf, floatAcceleration, GRAVITY as SIGNED_GRAVITY } from './body-float.js';
 
 import { LIFT_ENGINE_ANGLE, VectoredEngine, clipAngleStep, engineGeometry } from './vectored-engines.js';
 import {
@@ -97,23 +97,13 @@ const clamp = (value, low, high) => Math.max(low, Math.min(high, value));
  *
  * The server seeds the same literal (lnxded `0x08251e3b`).
  *
- * HELD, with `BOX_AREA` below: the flight law alone does NOT run the retail
- * values. Retail is 0xC16BAE14 = -14.73f (lnxded `0x08251e3b` / client
- * `0x00578f11`; -14.7295379 was a mis-decode of that word, commit
- * `7daf0ae33`) and the box drag's `3.14 * 0.25` (`0x082545b8`). These two are
- * held at the old -14.7295379 and pi/4 because the dogfight school's lessons
- * and pinned flown outcomes were tuned on them: at the retail pair 76 tests
- * fail and about 30 lessons break their own claims (planes fly into the
- * ground, Kursk's drag-and-bag gets no shot on the hunter, the counters let
- * his shots land), and `test_air_law`'s Bf109 lift-off goes 1.19 mm against
- * its 1.0 mm bound. Switching is pending a retune: see
- * `features/retail-parity-cross-check-2026-11-12`, "Still open". Everything
- * else (`aircraft-ground-law.js`, the bodies, the floats, the ships) runs the
- * shared -14.73 of `rigid-body.js`.
+ * That is 0xC16BAE14 = -14.73f (client `0x00578f11`); -14.7295379, which
+ * this file carried until 2026-11-12, was a mis-decode of the word (commit
+ * `7daf0ae33`). The signed value is `rigid-body.js`'s, by way of
+ * `body-float.js`, so the flight law, its ground law, the bodies, the floats
+ * and the ships run on one g. This is its magnitude.
  */
-const FLIGHT_GRAVITY = -14.7295379;
-/** The flight law's g, a magnitude: `FLIGHT_GRAVITY`'s (HELD, above). */
-export const GRAVITY = -FLIGHT_GRAVITY;
+export const GRAVITY = -SIGNED_GRAVITY;
 
 /**
  * Where the air runs out. `airDensityZeroAtHeight`, +0x30 of the same
@@ -147,8 +137,7 @@ const FLAP_LIFT_DEFAULT = 0.1;
  * 1/9.82, the constant `PhysicsWing` and `PhysicsSpring` both normalise by.
  *
  * The engine multiplies authored coefficients by `getGravity() * -0.101833`,
- * which at the shipped g is a flat x1.5 (14.73 x 0.101833 = 1.5000001; the held
- * `FLIGHT_GRAVITY` makes it x1.49995). Whoever wrote it was expressing
+ * which at the shipped g is a flat x1.5 (14.73 x 0.101833 = 1.5000001). Whoever wrote it was expressing
  * "in units of gravity" against a g of 9.82 that the engine no longer runs at.
  */
 const GRAVITY_NORMALISER = 0.101833;
@@ -159,12 +148,10 @@ const SURFACE_LIFT_CLAMP = 200;
 /** A submerged surface makes ten times the lift. Same function. */
 const SUBMERGED_MEDIUM = 10;
 
-/** `(pi/4)`: the box drag law's faces are ellipses inscribed in them. HELD:
- *  retail is `3.14 * 0.25` (lnxded `PhysicsNode::updatePhysics`
- *  `0x082545b8`; the client's 0.785f at `0x8f733c`; SHIPLAW-3), which
- *  `ship.js` and `amphibious.js` run; see `FLIGHT_GRAVITY` for why the flight
- *  law keeps pi/4 until the dogfight school is retuned. */
-const BOX_AREA = Math.PI / 4;
+/** `3.14 * 0.25`: the box drag law's faces are ellipses inscribed in them,
+ *  with the engine's own 3.14, not pi (lnxded `PhysicsNode::updatePhysics`
+ *  `0x082545b8`/`0x082545c8`; the client's 0.785f at `0x8f733c`; SHIPLAW-3). */
+const BOX_AREA = 3.14 * 0.25;
 
 /** `0.1 * |throttle|`: the part of thrust that does not fade with speed. */
 const ENGINE_IDLE = 0.1;
@@ -335,6 +322,9 @@ export class Surface {
      * term.
      */
     this.coeff = lift * GRAVITY * GRAVITY_NORMALISER;
+    /** The template's own pair, which `coeff` is scaled from while the hull
+     *  is critically damaged (`Aircraft.criticalLift`). */
+    this.coeffFull = this.coeff;
 
     /**
      * ...and this is where the two values *are* told apart.
@@ -363,6 +353,9 @@ export class Surface {
     const [ax, ay, az] = spec.attach || [0, 0, 0];
     const [ox, oy, oz] = spec.offset || [0, 0, 0];
     this.apply = new THREE.Vector3(ax + ox, ay + oy, -(az + oz));
+    /** The Wing's own origin in the hull's frame (`addTemplate`'s position
+     *  alone): what `getAbsolutePosition` answers for it. */
+    this.attach = new THREE.Vector3(ax, ay, -az);
 
     // `mountQuaternion` is the same rotation already conjugated: a spec built
     // from an extracted scene reads the node's own glb quaternion, which IS
@@ -429,6 +422,30 @@ export class Surface {
     return out.copy(this.mount).multiply(_hinge.setFromAxisAngle(
       HINGE, (this.pitchOffset - deflectionDeg * this.flapShare) * RAD));
   }
+}
+
+/** The least a critically damaged hull's Wing keeps of its lift: the float
+ *  at lnxded `0x086b1ca0`, `Wing::handleMessage`'s lower clamp. */
+export const CRITICAL_LIFT_FLOOR = 0.1;
+
+/** `BCompositeObject::getBoundingRadius` (lnxded `0x08165630`) over a scene
+ *  node, as `entry-points.js` `boundingRadius` reads it: a mesh's bounding
+ *  sphere about the node's origin, or a child's distance plus its radius. */
+function compositeRadius(node) {
+  if (!node) return 0;
+  let own = 0;
+  const geometry = node.geometry;
+  if (geometry) {
+    if (!geometry.boundingSphere && geometry.computeBoundingSphere) geometry.computeBoundingSphere();
+    const sphere = geometry.boundingSphere;
+    if (sphere && sphere.radius >= 0) own = sphere.center.length() + sphere.radius;
+  }
+  for (const child of node.children ?? []) {
+    const s = child.scale;
+    const scale = s ? Math.max(Math.abs(s.x), Math.abs(s.y), Math.abs(s.z)) : 1;
+    own = Math.max(own, child.position.length() + scale * compositeRadius(child));
+  }
+  return own;
 }
 
 // Scratch. A per-surface model runs eight lift evaluations per sub-step and up
@@ -845,6 +862,12 @@ function surveyAircraft(root, physics, options) {
         differential: part.differential ?? DEFAULT_DIFFERENTIAL,
         torque: part.torque ?? DEFAULT_TORQUE,
         noPropellerEffectAtSpeed: part.noPropellerEffectAtSpeed ?? DEFAULT_NO_PROPELLER_EFFECT_AT_SPEED,
+        // The rocket motors' burn (PHY-45, `rocket-burn.js` reads these off
+        // the engine entry); absent on an engine without heat.
+        heatIncrement: part.heatIncrement,
+        coolingFactor: part.coolingFactor,
+        heatBarType: part.heatBarType,
+        inverseHeatBar: part.inverseHeatBar,
         ...engineGeometry(root, node),
       });
       // `setMaxSpeed` over the rev span, as `CORSAIR.throttleRate` reads it.
@@ -1160,13 +1183,67 @@ export class Aircraft extends Vehicle {
   get hullPushOut() {
     const law = this.groundLaw;
     if (!law || !(law.sleepiness > 0)) return false;
-    // A plane shot down in the air comes down under the wreck list's own
-    // fall (`world-vehicle-tick.js` `stepFallingWrecks`, its minimum sink)
-    // and crashes where its origin reaches its ride height
+    // A plane shot down in the air glides down on this same law with its
+    // engine stopped (`world-vehicle-tick.js` `stepFallingWrecks`) and
+    // crashes where its origin reaches its ride height
     // (`vehicle-wrecks.js` `hasLanded`); held out of the ground by its
     // wings it would tumble on them for seconds before that.
     if (this.fallingWreck) return false;
     return !(this.held ?? spawnHoldOf(this.node)?.released === false);
+  }
+
+  /**
+   * The radius `Wing::handleMessage` divides by: the root's
+   * `BCompositeObject::getBoundingRadius` (lnxded `0x08165630`, COL-22), the
+   * larger of a node's own geometry radius and, over its children, the
+   * child's distance plus the child's radius. Read off the hull's node once.
+   */
+  criticalLiftRadius() {
+    if (this._criticalRadius == null) this._criticalRadius = compositeRadius(this.node);
+    return this._criticalRadius;
+  }
+
+  /**
+   * The hull went critical (TemplateMessage 0x14, sent by its Armor on the
+   * crossing, HP-13/HP-17): every Wing's lift pair is scaled by where the
+   * Wing sits across the hull. `Wing::handleMessage` (lnxded `0x08250bf0`,
+   * the 0x14 branch `0x08250d70`..`0x08250ee0`):
+   *
+   *     f = (wing.absolutePosition.x - root.absolutePosition.x + R) / (2 R)
+   *     f = clamp(f, 0.1, 1)             (0.1 at `0x086b1ca0`)
+   *     if (armor.getLastHitPlace().x < 0) f = 1 - f     (1.0 at `0x086ba8d4`)
+   *     wing.wingLift = f * template.wingLift            (`+0x148`)
+   *     wing.flapLift = f * template.flapLift            (`+0x14c`)
+   *
+   * with `R` the root's bounding radius and the last hit place the hit
+   * point less the root's position (`GameServer::_giveDamage` `0x0814b996`).
+   * Both are WORLD x, not the hull's own lateral axis: a plane flying along
+   * the world's x has every wing at the same x and keeps half its lift on
+   * each, one flying along z loses one side and rolls. `PhysicsWing::
+   * updatePhysics` (`0x0824ed30`) reads the instance's pair each tick, so
+   * the scale is taken once, here, and holds until the recovery (0x13 puts
+   * the template's pair back, `0x08250cac`). Destruction (0x15) writes the
+   * destroyed byte alone (`0x08250d5a`), so a wreck keeps whatever it had.
+   *
+   * @param {number} hitX the last hit place's world x (0 where unknown: the
+   *   engine's test is `< 0`, so 0 does not mirror)
+   */
+  criticalLift(hitX = 0) {
+    const radius = this.criticalLiftRadius();
+    if (!(radius > 0)) return;
+    for (const surface of this.surfaces) {
+      const x = _r.copy(surface.attach).applyQuaternion(this.state.orientation).x;
+      let f = clamp((x + radius) / (2 * radius), CRITICAL_LIFT_FLOOR, 1);
+      if (hitX < 0) f = 1 - f;
+      surface.coeff = surface.coeffFull * f;
+    }
+    this.liftIsCritical = true;
+  }
+
+  /** The recovery out of critical (0x13), or a fresh hull on its pad. */
+  fullLift() {
+    for (const surface of this.surfaces) surface.coeff = surface.coeffFull;
+    this.liftIsCritical = false;
   }
 
   /** The body world moved the hull out of the ground: the law's last
@@ -1685,6 +1762,8 @@ export class Aircraft extends Vehicle {
       if (body.racc) law.racc.fromArray(body.racc);
       if (body.fr) law.fr.fromArray(body.fr);
       if (body.rfr) law.rfr.fromArray(body.rfr);
+      // `rebase` keeps these over its own pass on the next tick.
+      law.adopted = !!(body.acc && body.fr);
       if (body.sleep === true) law.sleepiness = 0;
       else if (body.sleep === false && law.sleepiness <= 0) law.sleepiness = AIR_SLEEP_TICKS;
     }

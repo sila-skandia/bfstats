@@ -24,7 +24,8 @@ VIEWER = ROOT / "viewer"
 HARNESS = Path(__file__).resolve().parent / "hand_heat_harness.mjs"
 MODULES = {"kit-ammo.mjs": VIEWER / "kit-ammo.js", "fire-state.js": VIEWER / "fire-state.js",
            "deviation.js": VIEWER / "deviation.js", "soldier-hud.js": VIEWER / "soldier-hud.js",
-           "hud.js": VIEWER / "hud.js", "nation.js": VIEWER / "nation.js"}
+           "hud.js": VIEWER / "hud.js", "nation.js": VIEWER / "nation.js",
+           "rocket-burn.js": VIEWER / "rocket-burn.js"}
 
 
 def run_harness() -> dict:

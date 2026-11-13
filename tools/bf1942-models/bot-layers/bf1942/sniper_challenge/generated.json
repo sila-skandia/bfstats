@@ -1,0 +1,437 @@
+{
+ "generator": "botgen",
+ "version": 5,
+ "mod": "bf1942",
+ "level": "sniper_challenge",
+ "objectSpawners": 123,
+ "template": "few",
+ "templateSource": "DICE, bf1942 Kursk (1.6 patch archives, Kursk_003.rfa): AI/Strategies.con, AI/conditions.con, AI/prerequisites.con, unchanged",
+ "templateChoice": {
+  "name": "few",
+  "inPlay": 0,
+  "rule": "0 capturable flags in play, at most 3"
+ },
+ "scope": "an infantry map painted from the walk test, a Tank0 map from the page painter, infantry order positions, no strategic maps, no co-op layer",
+ "unreachable": [
+  "landing_point",
+  "combat_zone",
+  "jeep_zone",
+  "checkpoint",
+  "landing_point2",
+  "combat_zone2"
+ ],
+ "unreachableReasons": {
+  "landing_point": "walk test",
+  "combat_zone": "route probe",
+  "jeep_zone": "walk test",
+  "checkpoint": "route probe",
+  "landing_point2": "walk test",
+  "combat_zone2": "route probe"
+ },
+ "botSpawnsExcluded": [
+  "AxisBase_Spawn1",
+  "combat_zone_Spawn1",
+  "combat_zone_Spawn2",
+  "combat_zone_Spawn3",
+  "combat_zone_Spawn4",
+  "combat_zone_Spawn5",
+  "combat_zone_Spawn6",
+  "combat_zone_Spawn7",
+  "combat_zone_Spawn8",
+  "landing_point_Spawn1",
+  "landing_point_Spawn2",
+  "landing_point_Spawn3",
+  "landing_point_Spawn4",
+  "landing_point_Spawn5",
+  "combat_zone2_Spawn1",
+  "New_Control_Point1_Spawn1",
+  "jeep_zone_Spawn1",
+  "jeep_zone_Spawn2",
+  "jeep_zone_Spawn8",
+  "jeep_zone_Spawn9",
+  "jeep_zone_Spawn10",
+  "combat_zone2_Spawn2",
+  "combat_zone2_Spawn3",
+  "combat_zone2_Spawn4",
+  "combat_zone2_Spawn5",
+  "combat_zone2_Spawn6",
+  "combat_zone2_Spawn7",
+  "landing_point2_Spawn1",
+  "landing_point2_Spawn2",
+  "landing_point2_Spawn3",
+  "landing_point2_Spawn4",
+  "landing_point2_Spawn5",
+  "landing_point2_Spawn6",
+  "landing_point2_Spawn7",
+  "landing_point2_Spawn8",
+  "jeep_zone_Spawn11",
+  "jeep_zone_Spawn12",
+  "jeep_zone_Spawn13",
+  "jeep_zone_Spawn14",
+  "combat_zone2_Spawn8",
+  "combat_zone2_Spawn9",
+  "combat_zone2_Spawn10",
+  "jeep_zone_Spawn15",
+  "jeep_zone_Spawn16",
+  "jeep_zone_Spawn17",
+  "jeep_zone_Spawn18",
+  "jeep_zone_Spawn19",
+  "combat_zone2_Spawn11",
+  "combat_zone2_Spawn12",
+  "AxisBase_Spawn2",
+  "AxisBase_Spawn5"
+ ],
+ "walkMap": {
+  "source": "walk test",
+  "engine": "none",
+  "vehicleMap": "page painter",
+  "vehicleBrush": 3,
+  "vehicleBrushes": [
+   {
+    "brush": 3,
+    "flagsOn": 2,
+    "spawnersOn": 11,
+    "pieces": 54,
+    "main": 20337
+   },
+   {
+    "brush": 2.5,
+    "flagsOn": 2,
+    "spawnersOn": 11,
+    "pieces": 32,
+    "main": 21583
+   },
+   {
+    "brush": 2,
+    "flagsOn": 2,
+    "spawnersOn": 11,
+    "pieces": 32,
+    "main": 22172
+   },
+   {
+    "brush": 1.5,
+    "flagsOn": 2,
+    "spawnersOn": 11,
+    "pieces": 24,
+    "main": 23257
+   }
+  ],
+  "opened": [],
+  "ways": [
+   {
+    "who": "landing_point_Spawn1",
+    "kind": "spawn",
+    "way": "none",
+    "opened": 0
+   },
+   {
+    "who": "landing_point_Spawn2",
+    "kind": "spawn",
+    "way": "none",
+    "opened": 0
+   },
+   {
+    "who": "landing_point_Spawn3",
+    "kind": "spawn",
+    "way": "none",
+    "opened": 0
+   },
+   {
+    "who": "landing_point_Spawn4",
+    "kind": "spawn",
+    "way": "none",
+    "opened": 0
+   },
+   {
+    "who": "landing_point_Spawn5",
+    "kind": "spawn",
+    "way": "none",
+    "opened": 0
+   },
+   {
+    "who": "combat_zone2_Spawn1",
+    "kind": "spawn",
+    "way": "none",
+    "opened": 0
+   },
+   {
+    "who": "New_Control_Point1_Spawn1",
+    "kind": "spawn",
+    "way": "none",
+    "opened": 0
+   },
+   {
+    "who": "jeep_zone_Spawn1",
+    "kind": "spawn",
+    "way": "none",
+    "opened": 0
+   },
+   {
+    "who": "jeep_zone_Spawn2",
+    "kind": "spawn",
+    "way": "none",
+    "opened": 0
+   },
+   {
+    "who": "jeep_zone_Spawn8",
+    "kind": "spawn",
+    "way": "none",
+    "opened": 0
+   },
+   {
+    "who": "jeep_zone_Spawn9",
+    "kind": "spawn",
+    "way": "none",
+    "opened": 0
+   },
+   {
+    "who": "jeep_zone_Spawn10",
+    "kind": "spawn",
+    "way": "none",
+    "opened": 0
+   },
+   {
+    "who": "combat_zone2_Spawn2",
+    "kind": "spawn",
+    "way": "none",
+    "opened": 0
+   },
+   {
+    "who": "combat_zone2_Spawn3",
+    "kind": "spawn",
+    "way": "none",
+    "opened": 0
+   },
+   {
+    "who": "combat_zone2_Spawn4",
+    "kind": "spawn",
+    "way": "none",
+    "opened": 0
+   },
+   {
+    "who": "combat_zone2_Spawn5",
+    "kind": "spawn",
+    "way": "none",
+    "opened": 0
+   },
+   {
+    "who": "combat_zone2_Spawn6",
+    "kind": "spawn",
+    "way": "none",
+    "opened": 0
+   },
+   {
+    "who": "combat_zone2_Spawn7",
+    "kind": "spawn",
+    "way": "none",
+    "opened": 0
+   },
+   {
+    "who": "landing_point2_Spawn1",
+    "kind": "spawn",
+    "way": "none",
+    "opened": 0
+   },
+   {
+    "who": "landing_point2_Spawn2",
+    "kind": "spawn",
+    "way": "none",
+    "opened": 0
+   },
+   {
+    "who": "landing_point2_Spawn3",
+    "kind": "spawn",
+    "way": "none",
+    "opened": 0
+   },
+   {
+    "who": "landing_point2_Spawn4",
+    "kind": "spawn",
+    "way": "none",
+    "opened": 0
+   },
+   {
+    "who": "landing_point2_Spawn5",
+    "kind": "spawn",
+    "way": "none",
+    "opened": 0
+   },
+   {
+    "who": "landing_point2_Spawn6",
+    "kind": "spawn",
+    "way": "none",
+    "opened": 0
+   },
+   {
+    "who": "landing_point2_Spawn7",
+    "kind": "spawn",
+    "way": "none",
+    "opened": 0
+   },
+   {
+    "who": "landing_point2_Spawn8",
+    "kind": "spawn",
+    "way": "none",
+    "opened": 0
+   },
+   {
+    "who": "jeep_zone_Spawn11",
+    "kind": "spawn",
+    "way": "none",
+    "opened": 0
+   },
+   {
+    "who": "jeep_zone_Spawn12",
+    "kind": "spawn",
+    "way": "none",
+    "opened": 0
+   },
+   {
+    "who": "jeep_zone_Spawn13",
+    "kind": "spawn",
+    "way": "none",
+    "opened": 0
+   },
+   {
+    "who": "jeep_zone_Spawn14",
+    "kind": "spawn",
+    "way": "none",
+    "opened": 0
+   },
+   {
+    "who": "combat_zone2_Spawn8",
+    "kind": "spawn",
+    "way": "none",
+    "opened": 0
+   },
+   {
+    "who": "combat_zone2_Spawn9",
+    "kind": "spawn",
+    "way": "none",
+    "opened": 0
+   },
+   {
+    "who": "combat_zone2_Spawn10",
+    "kind": "spawn",
+    "way": "none",
+    "opened": 0
+   },
+   {
+    "who": "jeep_zone_Spawn15",
+    "kind": "spawn",
+    "way": "none",
+    "opened": 0
+   },
+   {
+    "who": "jeep_zone_Spawn16",
+    "kind": "spawn",
+    "way": "none",
+    "opened": 0
+   },
+   {
+    "who": "jeep_zone_Spawn17",
+    "kind": "spawn",
+    "way": "none",
+    "opened": 0
+   },
+   {
+    "who": "jeep_zone_Spawn18",
+    "kind": "spawn",
+    "way": "none",
+    "opened": 0
+   },
+   {
+    "who": "jeep_zone_Spawn19",
+    "kind": "spawn",
+    "way": "none",
+    "opened": 0
+   },
+   {
+    "who": "combat_zone2_Spawn11",
+    "kind": "spawn",
+    "way": "none",
+    "opened": 0
+   },
+   {
+    "who": "combat_zone2_Spawn12",
+    "kind": "spawn",
+    "way": "none",
+    "opened": 0
+   }
+  ],
+  "cover": 0.986,
+  "floors": {
+   "stacked": false,
+   "twoFloorShare": 0.024,
+   "raised": [],
+   "reason": null
+  }
+ },
+ "routeProbe": {
+  "chokeMax": 4,
+  "unreachable": [
+   "combat_zone",
+   "checkpoint",
+   "combat_zone2"
+  ],
+  "stops": {
+   "combat_zone": {
+    "1": {
+     "stage": "no usable spawn"
+    },
+    "2": {
+     "stage": "no usable spawn"
+    }
+   },
+   "checkpoint": {
+    "1": {
+     "stage": "no usable spawn"
+    },
+    "2": {
+     "stage": "no usable spawn"
+    }
+   },
+   "combat_zone2": {
+    "1": {
+     "stage": "no usable spawn"
+    },
+    "2": {
+     "stage": "no usable spawn"
+    }
+   }
+  },
+  "oneSided": {},
+  "sides": {
+   "1": {
+    "spawns": 0,
+    "flags": []
+   },
+   "2": {
+    "spawns": 0,
+    "flags": []
+   }
+  },
+  "chokes": {},
+  "late": {},
+  "shutLinks": []
+ },
+ "inputs": {
+  "controlPoints": "399c0e18d2facb8a31dd81d5fd053d6741986e4b4b9c4331a2691458c9db7407",
+  "infantryMap": "240959945d89f85d8ca1bc0d0c71438f23514d30a7a671f71ab29b7ccd2a25cd",
+  "template": "bdc0e455f47f91b7e7724e71d7c0c196e839b36946ac3abb7663d725944081e5"
+ },
+ "files": {
+  "AI.con": "39c086362b6dcfd68c98d0a970906aadd87bd9696ae330b3fadd5b90b8bfb447",
+  "AIpathFinding.con": "8014dbf6ef50a7e5ba3bd3af85ed910350bb0936cd33c5a2e1c5138053711957",
+  "AI/StrategicAreas.con": "2e5ce852f41d48ce19f3a7ea4d3114b287f10eec258760ca0115096ecdeafdfb",
+  "AI/Strategies.con": "13da4dc35872dd4b5798a066f4425bdc824cfd61f31093d1808e1202644de52e",
+  "AI/conditions.con": "248a04b727c08d696bf0fa9c162bc22c43cde3c75f695892fe1e0f5141519c49",
+  "AI/prerequisites.con": "c96168b5f69860e578f5d26728fd2a2092c4c436e1da49b7d6f4009b65735398",
+  "Pathfinding/Infantry1Level0Map.raw": "db59c1d46fed2d0ed107e554a87e8e2b8dfa76490da2ffe2eafb5a17a6afc0d8",
+  "Pathfinding/Infantry1Level1Map.raw": "bbd03411ff51a7597bcc01d0d647a65170dcd128edc6ef40c0134e33438fabb9",
+  "Pathfinding/Infantry1Level2Map.raw": "989ec48a91dc5d0f7f3fa617468b8225efe673896a7fb24ea64ac625407f9e71",
+  "Pathfinding/Tank0Level0Map.raw": "13b63a84f352df0feb8dc298ab21901a9b3d1af7fb20020238aaf7c4bb58b2c7",
+  "Pathfinding/Tank0Level1Map.raw": "967ceb92897aba0e10f3a624a05c3585eb0736a4ad74ef0c7ccc99d90c2c6b9b",
+  "Pathfinding/Tank0Level2Map.raw": "e0eff89d11b645f606d1535ab5fc87c87b1916e27da8022dde61b1205410a054"
+ }
+}

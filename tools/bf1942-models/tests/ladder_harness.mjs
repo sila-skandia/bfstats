@@ -323,4 +323,37 @@ out.record = {
   };
 }
 
+// 19. A ladder on a hull that has moved (LADDER-1: the contact is with the
+//     object's live collision, 0x0827d3b0, and the snap is in its live
+//     transform, 0x08280b40). The ladder hangs in owner 7; the collider's
+//     `moved` frame for it (`setMovedOwner`'s `fwd`, baked world to world now)
+//     shifts it 30 m along z. A man at the baked foot finds nothing; one at
+//     the moved foot takes it; a man on it is carried when the hull moves on;
+//     back where it was baked, it is the baked ladder again.
+if (Ladder.followLadder) {
+  const shift = (dx, dz) => ({ fwd: [1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1, 0, dx, 0, dz, 1] });
+  const shipWorld = () => {
+    const ladder = Ladder.bakeLadder(Ladder.ladderRecord(SPEC, ELEMENTS, 'ClimbingNet'), 7);
+    return { waterLevel: null, casts: 0, surfaceHeight: () => 0, ladders: [ladder],
+             moved: new Map([[7, shift(0, 30)]]) };
+  };
+  const stale = spawnAt(2.8, 0, FACE_YAW, shipWorld());
+  stale.step(TICK, { forward: 1 });
+  const moved = shipWorld();
+  const s = spawnAt(2.8, 30, FACE_YAW, moved);
+  s.step(TICK, { forward: 1 });
+  const took = s.climb.active;
+  stepSeconds(s, 1, { forward: 1 });
+  const zBefore = s.body.position.z;
+  moved.moved.set(7, shift(5, 30));
+  s.step(TICK, {});
+  const carried = { dx: s.body.position.x - 2.48, dz: s.body.position.z - zBefore, active: s.climb.active };
+  moved.moved.delete(7);
+  Ladder.followLadders(moved.ladders, moved.moved);
+  out.movingHull = {
+    staleTook: stale.climb.active, took, carried,
+    home: { ox: moved.ladders[0].ox, oz: moved.ladders[0].oz },
+  };
+}
+
 console.log(JSON.stringify(out));

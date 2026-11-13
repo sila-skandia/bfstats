@@ -1,0 +1,89 @@
+{
+ "generator": "botgen",
+ "version": 5,
+ "mod": "FHSW",
+ "level": "bombing_the_reich-1945",
+ "objectSpawners": 141,
+ "template": "few",
+ "templateSource": "DICE, bf1942 Kursk (1.6 patch archives, Kursk_003.rfa): AI/Strategies.con, AI/conditions.con, AI/prerequisites.con, unchanged",
+ "templateChoice": {
+  "name": "few",
+  "inPlay": 0,
+  "rule": "0 capturable flags in play, at most 3"
+ },
+ "scope": "on foot: infantry order positions only, no search maps, no co-op layer",
+ "unreachable": [],
+ "unreachableReasons": {},
+ "botSpawnsExcluded": [
+  "ukfighterspawn1",
+  "ukfighterspawn2",
+  "ukfighterspawn3",
+  "ukbomberspawn1",
+  "ukbomberspawn2",
+  "ukbomberspawn3",
+  "usfighterspawn1",
+  "usfighterspawn2",
+  "usfighterspawn3",
+  "usbomberspawn1",
+  "usbomberspawn2",
+  "usbomberspawn3",
+  "axisfighterspawn3",
+  "axisbomberspawn2",
+  "axisjetspawn1",
+  "axisjetspawn2",
+  "axisjetspawn3",
+  "factoryspawn1",
+  "portspawn2",
+  "factoryspawn3",
+  "factoryspawn4",
+  "portspawn1",
+  "factoryspawn2",
+  "portspawn3"
+ ],
+ "walkMap": {
+  "source": "page painter",
+  "engine": "none",
+  "opened": [],
+  "ways": [],
+  "cover": 0.825,
+  "floors": {
+   "stacked": false,
+   "twoFloorShare": 0.002,
+   "raised": [],
+   "reason": null
+  },
+  "capped": true,
+  "joined": 2
+ },
+ "routeProbe": {
+  "chokeMax": 4,
+  "unreachable": [],
+  "stops": {},
+  "oneSided": {},
+  "sides": {
+   "1": {
+    "spawns": 3,
+    "flags": []
+   },
+   "2": {
+    "spawns": 0,
+    "flags": []
+   }
+  },
+  "chokes": {},
+  "late": {},
+  "shutLinks": []
+ },
+ "inputs": {
+  "controlPoints": "0343c38f75912b09645b0b9972e036850fc41891bde5b63a853933a4b77260c5",
+  "infantryMap": "40aa68258c966d1a7928dc5b31e6a5487ce905cf41ebf5023870deed5ad5a06d",
+  "template": "bdc0e455f47f91b7e7724e71d7c0c196e839b36946ac3abb7663d725944081e5"
+ },
+ "files": {
+  "AI.con": "73237dc6aaa6a0635578470b4f825888d4281599954787dc66743faf72cd6a7d",
+  "AI/StrategicAreas.con": "70455ec066eeeb4361befd9dfc395a6fe4b4cac75626d6865f85876856f95d72",
+  "AI/Strategies.con": "13da4dc35872dd4b5798a066f4425bdc824cfd61f31093d1808e1202644de52e",
+  "AI/conditions.con": "248a04b727c08d696bf0fa9c162bc22c43cde3c75f695892fe1e0f5141519c49",
+  "AI/prerequisites.con": "c96168b5f69860e578f5d26728fd2a2092c4c436e1da49b7d6f4009b65735398"
+ }
+}

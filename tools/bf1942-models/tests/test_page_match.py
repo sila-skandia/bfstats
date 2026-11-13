@@ -98,8 +98,10 @@ class Url(unittest.TestCase):
     def test_the_hooks_need_shots_and_a_vanilla_level_names_no_mod(self):
         out = run_harness()
         self.assertEqual(out["vanilla"],
-                         "https://play.bfstats.io/map.html?map=Berlin&team=2&mode=Conquest&botCount=16&botSkill=0.75&mute&shots")
+                         "https://play.bfstats.io/map.html?map=Berlin&team=2&mode=Conquest&botCount=16&botSkill=0.75&spawnTime=wave&mute&shots")
         self.assertIn("mod=community", out["mod"])
+        # page-dice.json was recorded on retail's wave, not single player's 3 s.
+        self.assertIn("spawnTime=wave", out["mod"])
         self.assertIn("botCount=32", out["mod"])
 
 
@@ -123,7 +125,23 @@ class RolloutFloor(unittest.TestCase):
         f = run_harness()["floor"]
         self.assertEqual(f["ownHand"]["why"], ["ownHand"])
         self.assertEqual(f["ownHand"]["ownHand"], 0.119)
+
+    def test_a_lively_level_may_lose_a_third_as_many_by_its_own_hand(self) -> None:
+        # DICE's own levels on the page run to 0.31 (Berlin, Kharkov); the flat cap is for quiet levels.
+        f = run_harness()["floor"]
+        self.assertTrue(f["ownHandLively"]["pass"])
+        self.assertEqual(f["ownHandRace"]["why"], ["ownHand"])
+        self.assertEqual(f["ownHandQuiet"]["why"], ["ownHand"])
         self.assertEqual(f["error"]["why"], ["pageErrors"])
+
+
+class OwnHand(unittest.TestCase):
+    def test_own_hand_deaths_are_counted_by_what_the_bot_was_in(self) -> None:
+        # Two wrecks by a jeep's driver (one of them a double), one by its passenger, one boat, one on foot.
+        out = run_harness()
+        self.assertEqual(out["ownHandIn"], {"Willy": 3, "Lcvp": 1, "on foot": 1, "Willy (passenger)": 1})
+        self.assertEqual(list(out["ownHandIn"])[0], "Willy")
+        self.assertEqual(out["ownHandInNone"], {})
 
 if __name__ == "__main__":
     unittest.main()

@@ -1,0 +1,70 @@
+rem *** Strategic areas: one per control point (botgen) ***
+
+aiStrategicArea.create Grote_Markt 417.2/358.3 442.2/383.3 150
+aiStrategicArea.addNeighbour Outskirts
+aiStrategicArea.addNeighbour Station
+aiStrategicArea.addNeighbour Factory
+aiStrategicArea.addNeighbour Botermarkt
+aiStrategicArea.addObjectTypeFlag Flank
+aiStrategicArea.addObjectTypeFlag ControlPoint
+aiStrategicArea.setOrderPosition Tank 447.5/398.5
+aiStrategicArea.setOrderPosition Infantry 445.5/377.5
+aiStrategicArea.setSide 1
+
+aiStrategicArea.create Belgian_Line 416.7/114.6 421.7/119.6 50
+aiStrategicArea.addNeighbour Outskirts
+aiStrategicArea.addObjectTypeFlag Base
+aiStrategicArea.setOrderPosition Tank 420.5/116.5
+aiStrategicArea.setOrderPosition Infantry 421.5/118.5
+aiStrategicArea.setSide 2
+aiStrategicArea.setTakeable 1 0
+
+aiStrategicArea.create Outskirts 402.6/248 422.6/268 150
+aiStrategicArea.addNeighbour Grote_Markt
+aiStrategicArea.addNeighbour Belgian_Line
+aiStrategicArea.addNeighbour Botermarkt
+aiStrategicArea.addObjectTypeFlag Flank
+aiStrategicArea.addObjectTypeFlag Close
+aiStrategicArea.addObjectTypeFlag ControlPoint
+aiStrategicArea.setOrderPosition Tank 426.5/268.5
+aiStrategicArea.setOrderPosition Infantry 423.5/268.5
+
+aiStrategicArea.create Station 554.5/415 574.5/435 200
+aiStrategicArea.addNeighbour Grote_Markt
+aiStrategicArea.addNeighbour Factory
+aiStrategicArea.addNeighbour Botermarkt
+aiStrategicArea.addObjectTypeFlag Centre
+aiStrategicArea.addObjectTypeFlag ControlPoint
+aiStrategicArea.setOrderPosition Infantry 575.5/435.5
+aiStrategicArea.setSide 1
+
+aiStrategicArea.create Factory 556.9/199.2 566.9/209.2 150
+aiStrategicArea.addNeighbour Grote_Markt
+aiStrategicArea.addNeighbour Station
+aiStrategicArea.addNeighbour Botermarkt
+aiStrategicArea.addObjectTypeFlag Flank
+aiStrategicArea.addObjectTypeFlag ControlPoint
+aiStrategicArea.setOrderPosition Infantry 566.5/208.5
+aiStrategicArea.setSide 1
+
+aiStrategicArea.create Harbour 690/300 700/310 10
+aiStrategicArea.setSide 1
+aiStrategicArea.setTakeable 1 0
+aiStrategicArea.setTakeable 2 0
+
+aiStrategicArea.create Botermarkt 482.2/302 497.2/317 300
+aiStrategicArea.addNeighbour Grote_Markt
+aiStrategicArea.addNeighbour Outskirts
+aiStrategicArea.addNeighbour Station
+aiStrategicArea.addNeighbour Factory
+aiStrategicArea.addObjectTypeFlag Centre
+aiStrategicArea.addObjectTypeFlag StrongPoint
+aiStrategicArea.addObjectTypeFlag ControlPoint
+aiStrategicArea.setOrderPosition Tank 501.5/322.5
+aiStrategicArea.setOrderPosition Infantry 496.5/316.5
+aiStrategicArea.setSide 1
+
+aiStrategicArea.create Sint_Michielskerk 363.8/345 378.8/360 10
+aiStrategicArea.setSide 1
+aiStrategicArea.setTakeable 1 0
+aiStrategicArea.setTakeable 2 0

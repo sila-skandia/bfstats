@@ -545,6 +545,69 @@ export function createRoundSpawners(page) {
     }
   }
 
+  // record -> node for every vehicle a gun fired as its round (`standVehicle`).
+  const fired = new Map();
+
+  /**
+   * A round that is itself a vehicle (FA-29): `FireArms::fireBarrel`
+   * 0x0828aba0, for a projectile template that is a PlayerControlObject,
+   * has the game spawn it (`Game` vt+0x50, on the server `GameServer::
+   * spawnObject` 0x08132440 -> `createObjectOnAllClients` 0x08133a10) at the
+   * barrel and sets its matrix to the barrel's. No ObjectSpawner made it, so
+   * it has no abandon clock and nothing holds it; the pool's node goes back
+   * when its wreck is gone. `createObjectOnAllClients` makes the same 2 m
+   * test it makes for a pad (SPAWN-14), which is where the tooltip type
+   * matters: the Wasserfall's rocket is an air hull of type 0x24, the one
+   * the test lets through, so a soldier standing by the launcher cannot
+   * hold the missile on its rail. `category` and `toolTipType` are the
+   * round's own (`extras.physics.vehicleCategory`; the type from the node's
+   * `extras.hud.toolTipType` or the pack's tooltip table, `spawn-safety.js`
+   * `toolTipTypeOf`), read off the parked node when not given.
+   *
+   * Returns the node stood at `matrix`, or null when there is none to
+   * stand (no model in the tree, the pool spent, a human in the way).
+   */
+  spawners.standVehicle = (template, matrix, { category = null, toolTipType = null, node: wanted = null } = {}) => {
+    const pads = page.vehiclePads;
+    const padWorld = page.wrecks?.padWorld;
+    // In a room the round is the room's: its own pooled copy (`wanted`,
+    // `net-room.js` `roundVehicleFor`), stood here as the firer's prediction.
+    if ((page.roomJoined && !wanted) || !template || !pads?.takeRoundNode || !padWorld) return null;
+    const record = wanted
+      ? (pads.roundRecords ?? []).find(r => r.baked === wanted && !r.mould) ?? null
+      : nodeFor(template, null);
+    if (!record) return refuse(template, 'no free node for a fired vehicle');
+    const node = record.baked;
+    const cat = category ?? node.userData?.physics?.vehicleCategory ?? null;
+    const tip = toolTipType ?? padWorld.toolTipTypeOf?.(node) ?? node.userData?.hud?.toolTipType ?? null;
+    if (needsClearance(cat, tip)) {
+      const e = matrix.elements;
+      if (!spawnClear([e[12], e[13], e[14]], humanOrigins())) return refuse(template, 'a human within 2 m');
+    }
+    pads.setRoundLive(record, true);
+    if (!padWorld.spawn(node)) {
+      pads.setRoundLive(record, false);
+      return refuse(template, 'the wreck side would not stand it');
+    }
+    page.hullBodies?.syncVehicleSpawnOwnership?.();
+    page.hullBodies?.standSpawnedObject?.(node, matrix);
+    pads.retagCull?.(node);
+    page.vehicles?.clearStamp?.(node);
+    fired.set(record, node);
+    stoodCount++;
+    return node;
+  };
+
+  /** A fired vehicle whose wreck is gone gives its node back to the pool. */
+  function tickFired() {
+    const padWorld = page.wrecks?.padWorld;
+    for (const [record, node] of fired) {
+      if (padWorld?.alive(node)) continue;
+      page.vehiclePads?.setRoundLive?.(record, false);
+      fired.delete(record);
+    }
+  }
+
   /** `dt` seconds of world time. */
   spawners.tick = dt => {
     if (!(dt > 0) || page.roomJoined) return;
@@ -585,12 +648,15 @@ export function createRoundSpawners(page) {
       tickRound(round, dt);
     }
     tickStanding(dt);
+    if (fired.size) tickFired();
   };
 
   /** A level change or a restart: the rounds and what they stood are gone. */
   spawners.reset = () => {
     for (const record of standing.keys()) page.vehiclePads?.setRoundLive?.(record, false);
     standing.clear();
+    for (const record of fired.keys()) page.vehiclePads?.setRoundLive?.(record, false);
+    fired.clear();
     rounds.length = 0;
     warned.clear();
     grownCount = 0;
@@ -614,6 +680,7 @@ export function createRoundSpawners(page) {
                team: page.vehicles?.teamOf?.(record.baked) ?? null };
     }),
     grown: grownCount,
+    fired: [...fired.keys()].map(record => record.template),
     launched, stood: stoodCount, refusals: [...refusals],
   });
 

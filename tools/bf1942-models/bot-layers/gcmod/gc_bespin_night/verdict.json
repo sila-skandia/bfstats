@@ -1,0 +1,26 @@
+{
+ "level": "gc_bespin_night",
+ "verdict": "fail",
+ "outcome": "unsuitable",
+ "config": "with vehicles",
+ "doctrine": "garrison",
+ "generatorVersion": 6,
+ "inputs": {
+  "controlPoints": "c45b4e19e0352f3e51cf08bca2c9eb9183b974e25fd13cb0f49ab658325b5e50",
+  "infantryMap": "30cfbfb54bd0e5d2a8395b48d588c927742a1e28b9e9e8deb974eff411009503",
+  "template": "bdc0e455f47f91b7e7724e71d7c0c196e839b36946ac3abb7663d725944081e5"
+ },
+ "baseline": "DICE layers with vehicles, garrison doctrine: berlin, stalingrad, kharkov, bocage; seeds 1..10, 600 s",
+ "bar": null,
+ "seeds": 1,
+ "sizes": {},
+ "oneSided": null,
+ "unreachable": [
+  "Imperial_Bridge",
+  "Central_Platform"
+ ],
+ "lintErrors": [
+  "side 1 holds no spawn point at the start of the round",
+  "side 2 holds no spawn point at the start of the round"
+ ]
+}

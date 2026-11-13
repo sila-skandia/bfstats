@@ -1,0 +1,36 @@
+rem *** Strategic areas: one per control point (botgen) ***
+
+aiStrategicArea.create beach 951.8/998.2 991.8/1038.2 200
+aiStrategicArea.addNeighbour commandpost
+aiStrategicArea.addObjectTypeFlag Centre
+aiStrategicArea.addObjectTypeFlag ControlPoint
+aiStrategicArea.setOrderPosition Tank 991.5/1036.5
+aiStrategicArea.setOrderPosition Infantry 991.5/1037.5
+
+aiStrategicArea.create commandpost 962.4/1321.4 985.4/1344.4 300
+aiStrategicArea.addNeighbour beach
+aiStrategicArea.addNeighbour german_base
+aiStrategicArea.addObjectTypeFlag Centre
+aiStrategicArea.addObjectTypeFlag StrongPoint
+aiStrategicArea.addObjectTypeFlag ControlPoint
+aiStrategicArea.setOrderPosition Tank 987.5/1345.5
+aiStrategicArea.setOrderPosition Infantry 984.5/1344.5
+aiStrategicArea.setSide 1
+
+aiStrategicArea.create german_base 945.9/1758.6 969.9/1782.6 200
+aiStrategicArea.addNeighbour commandpost
+aiStrategicArea.addObjectTypeFlag Centre
+aiStrategicArea.addObjectTypeFlag ControlPoint
+aiStrategicArea.setOrderPosition Tank 969.5/1784.5
+aiStrategicArea.setOrderPosition Infantry 969.5/1783.5
+aiStrategicArea.setSide 1
+
+aiStrategicArea.create west_bunker 927.3/1125.8 936.3/1134.8 10
+aiStrategicArea.setSide 1
+aiStrategicArea.setTakeable 1 0
+aiStrategicArea.setTakeable 2 0
+
+aiStrategicArea.create east_bunker 1051.7/1123.4 1059.7/1131.4 10
+aiStrategicArea.setSide 1
+aiStrategicArea.setTakeable 1 0
+aiStrategicArea.setTakeable 2 0

@@ -1,0 +1,357 @@
+{
+ "generator": "botgen",
+ "version": 6,
+ "mod": "FHSW",
+ "level": "desert_hill",
+ "objectSpawners": 175,
+ "template": "symmetric",
+ "templateSource": "DICE, bf1942 Kharkov (1.6 patch archives): AI/Strategies.con, AI/conditions.con, AI/prerequisites.con, unchanged",
+ "templateChoice": {
+  "name": "symmetric",
+  "inPlay": 4,
+  "rule": "4 capturable flags in play, more than 3"
+ },
+ "scope": "an infantry map from the page painter with the walk test's ways out opened, a Tank0 map from the page painter, infantry order positions, no strategic maps, no co-op layer",
+ "unreachable": [],
+ "unreachableReasons": {},
+ "botSpawnsExcluded": [
+  "hill_top_point1_spawn1"
+ ],
+ "walkMap": {
+  "source": "page painter",
+  "engine": "none",
+  "vehicleMap": "page painter",
+  "vehicleBrush": 1.5,
+  "vehicleBrushes": [
+   {
+    "brush": 3,
+    "flagsOn": 7,
+    "spawnersOn": 121,
+    "pieces": 5,
+    "main": 3852900
+   },
+   {
+    "brush": 2.5,
+    "flagsOn": 6,
+    "spawnersOn": 127,
+    "pieces": 5,
+    "main": 3897290
+   },
+   {
+    "brush": 2,
+    "flagsOn": 6,
+    "spawnersOn": 127,
+    "pieces": 5,
+    "main": 3922685
+   },
+   {
+    "brush": 1.5,
+    "flagsOn": 6,
+    "spawnersOn": 128,
+    "pieces": 5,
+    "main": 3959014
+   }
+  ],
+  "opened": [
+   [
+    981,
+    1241
+   ],
+   [
+    982,
+    1241
+   ],
+   [
+    983,
+    1241
+   ],
+   [
+    984,
+    1241
+   ],
+   [
+    979,
+    1242
+   ],
+   [
+    980,
+    1242
+   ],
+   [
+    981,
+    1242
+   ],
+   [
+    1041,
+    1382
+   ],
+   [
+    1042,
+    1382
+   ],
+   [
+    1043,
+    1382
+   ],
+   [
+    1044,
+    1382
+   ],
+   [
+    1036,
+    1383
+   ],
+   [
+    1037,
+    1383
+   ],
+   [
+    1038,
+    1383
+   ],
+   [
+    1039,
+    1383
+   ],
+   [
+    1040,
+    1383
+   ],
+   [
+    1041,
+    1383
+   ],
+   [
+    1859,
+    1598
+   ],
+   [
+    1860,
+    1598
+   ],
+   [
+    1861,
+    1598
+   ],
+   [
+    1862,
+    1598
+   ],
+   [
+    1863,
+    1598
+   ],
+   [
+    1863,
+    1599
+   ],
+   [
+    1863,
+    1600
+   ],
+   [
+    1863,
+    1601
+   ],
+   [
+    1864,
+    1601
+   ],
+   [
+    1864,
+    1602
+   ],
+   [
+    1865,
+    1602
+   ],
+   [
+    1866,
+    1602
+   ],
+   [
+    1852,
+    1651
+   ],
+   [
+    1852,
+    1652
+   ],
+   [
+    1852,
+    1653
+   ],
+   [
+    1852,
+    1654
+   ],
+   [
+    1852,
+    1655
+   ],
+   [
+    1852,
+    1656
+   ],
+   [
+    1852,
+    1657
+   ],
+   [
+    1852,
+    1658
+   ],
+   [
+    1852,
+    1659
+   ],
+   [
+    1852,
+    1660
+   ],
+   [
+    1852,
+    1661
+   ],
+   [
+    1852,
+    1662
+   ],
+   [
+    1852,
+    1663
+   ],
+   [
+    1852,
+    1664
+   ],
+   [
+    1852,
+    1665
+   ],
+   [
+    1852,
+    1666
+   ],
+   [
+    1852,
+    1667
+   ],
+   [
+    1852,
+    1668
+   ],
+   [
+    1852,
+    1669
+   ],
+   [
+    1852,
+    1670
+   ],
+   [
+    1850,
+    1671
+   ],
+   [
+    1851,
+    1671
+   ],
+   [
+    1852,
+    1671
+   ]
+  ],
+  "ways": [
+   {
+    "who": "axisbase2_spawn1",
+    "kind": "spawn",
+    "way": "walk",
+    "opened": 12
+   },
+   {
+    "who": "axisbase2_spawn2",
+    "kind": "spawn",
+    "way": "walk",
+    "opened": 23
+   },
+   {
+    "who": "hill_top_point1_spawn2",
+    "kind": "spawn",
+    "way": "walk",
+    "opened": 10
+   },
+   {
+    "who": "hill_top_point1_spawn3",
+    "kind": "spawn",
+    "way": "walk",
+    "opened": 7
+   }
+  ],
+  "cover": 0.949,
+  "floors": {
+   "stacked": false,
+   "twoFloorShare": 0.001,
+   "raised": [],
+   "reason": null
+  },
+  "capped": true
+ },
+ "routeProbe": {
+  "chokeMax": 4,
+  "unreachable": [],
+  "stops": {},
+  "oneSided": {},
+  "sides": {
+   "1": {
+    "spawns": 4,
+    "flags": [
+     "attack_point",
+     "eastpicket",
+     "hill_top_point1",
+     "hill_top_point2"
+    ]
+   },
+   "2": {
+    "spawns": 13,
+    "flags": [
+     "attack_point",
+     "eastpicket",
+     "hill_top_point1",
+     "hill_top_point2"
+    ]
+   }
+  },
+  "chokes": {
+   "hill_top_point1:1": 3,
+   "hill_top_point1:2": 2,
+   "hill_top_point2:1": 3,
+   "hill_top_point2:2": 0,
+   "eastpicket:1": 3,
+   "eastpicket:2": 0,
+   "attack_point:1": 3,
+   "attack_point:2": 0
+  },
+  "late": {},
+  "shutLinks": []
+ },
+ "inputs": {
+  "controlPoints": "b2b924d9b6e41816a7d4acdbe09cd9f65f1c4dd2b0a6d1b007aeff5fb0de1ef3",
+  "infantryMap": "687ff54efcaba3e37e1f76ae3fa2387ce9538f1934c7c954432aaf44ec147d18",
+  "template": "43f8a790471528016570235f76e97dbb2045732458781a5139f37fed68bf98c0"
+ },
+ "files": {
+  "AI.con": "26f62f783813f16aedaa4cd94d6da44996c4e824dcf37c7206fe33779fba7eda",
+  "AIpathFinding.con": "9d8080cdfa7605961969aa126519b03be9691bd604ac76aef50166d81215edd2",
+  "AI/StrategicAreas.con": "5b7efd05fd16c6c9cfb4e5b6b5dd71beee4615dcbaa745c5eab396bc57218033",
+  "AI/Strategies.con": "4ce0be59a0d6c5cd530db002fb062c4be8d936bc6ae59bd188803ccaf7869a8d",
+  "AI/conditions.con": "68a0c7a8aec69954063147b60fae560b2874884285737aa085efa76597d395aa",
+  "AI/prerequisites.con": "4c1f313bc285b228fd6ad03bfd1f44c5b15c8703c31f802eb605bc5f00f88bb5",
+  "Pathfinding/Infantry1Level0Map.raw": "a5e96d18ba0f97da69232c4ebce6687b6d941d18becb661e36f1c172811a7366",
+  "Pathfinding/Infantry1Level1Map.raw": "95367d522020f615bc39bda44e78b1b5e783e85b5ea2c9638015b5f7d51f6781",
+  "Pathfinding/Infantry1Level2Map.raw": "8016ffded6504401b315ec57b620f382fe09d7e55ed4148ed2b3f287bf5f9097",
+  "Pathfinding/Tank0Level0Map.raw": "cbccbaea701939d1830613a8054193b4a30d834aa5e8f9793477d8079093098f",
+  "Pathfinding/Tank0Level1Map.raw": "39b49b50b1a477c5d9a2433c23e17d7f12df32da2ebd3594c4060f4d9b8ab141",
+  "Pathfinding/Tank0Level2Map.raw": "5614a4e1bacbe84a8c8615ff65726856bf47f9a3469ef32ecfcf3d1c38d7fdff"
+ }
+}

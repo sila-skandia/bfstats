@@ -24,7 +24,7 @@
 // No DOM and no three.js: `tests/kit_ammo_harness.mjs` drives this under
 // plain node.
 
-import { FireState, reloadAmmo, rearmTypeFor } from './fire-state.js';
+import { FireState, reloadAmmo, rearmTypeFor, ammoTypeOf } from './fire-state.js';
 
 /** Rounds a full magazine holds. A negative `magSize` is the engine's
  *  unlimited ammo (the knife's -1), read as Infinity so a trigger gate and a
@@ -58,9 +58,8 @@ export class AmmoEntry {
     // `numOfMag -1`: the engine's unlimited magazines, which a depot leaves.
     this.unlimitedMags = (magazine?.magazines ?? 1) < 0;
     // The item's `ObjectTemplate.AmmoType`, the tag a depot row's id matches
-    // (SUP-2). The exporter does not write it yet, so it is null today and a
-    // depot serves the item from its first row that gave units
-    // (`rearmTypeFor`).
+    // (SUP-2), when its magazine words carry it (a bake since 2026-11-12);
+    // else `rearm`'s table answers by name (`ammoTypeOf`).
     this.ammoType = magazine?.ammoType ?? null;
     // The item's heat, a `FireState` over its heat words, built the first
     // time the item is raised (`itemHeat`); null for a
@@ -248,12 +247,15 @@ export class KitAmmo {
   /** A depot cycle's give (`SupplyDepot::reloadAmmo` 0x08323770, SUP-8):
    *  every item the kit holds takes the units of the depot row its
    *  `AmmoType` matches (`types`, `supply.js` `ammoTypes` with each row's
-   *  `units` this cycle; `rearmTypeFor`). True if any item took a round —
-   *  the caller's cue to play the give sound. */
-  rearm(types) {
+   *  `units` this cycle; `rearmTypeFor`): an Ammobox's 1.2/s rows for
+   *  grenades, the pack and launchers, its 15/s row for guns. `table` is the
+   *  tree's `damage.json` `ammoTypes` (`ammoTypeOf`), for items whose words
+   *  do not carry the tag. True if any item took a round — the caller's cue
+   *  to play the give sound. */
+  rearm(types, table = null) {
     let gave = false;
     for (const entry of this.#entries.values()) {
-      const type = rearmTypeFor(entry, types);
+      const type = rearmTypeFor(entry, types, ammoTypeOf(entry, entry.name, table));
       if (type && entry.rearm(type.units)) gave = true;
     }
     return gave;

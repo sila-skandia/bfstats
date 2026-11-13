@@ -1,0 +1,272 @@
+{
+ "generator": "botgen",
+ "version": 5,
+ "mod": "FHSW",
+ "level": "battle_of_iwo_jima",
+ "objectSpawners": 195,
+ "template": "symmetric",
+ "templateSource": "DICE, bf1942 Kharkov (1.6 patch archives): AI/Strategies.con, AI/conditions.con, AI/prerequisites.con, unchanged",
+ "templateChoice": {
+  "name": "symmetric",
+  "inPlay": 6,
+  "rule": "6 capturable flags in play, more than 3"
+ },
+ "scope": "an infantry map painted from the walk test, a Tank0 map from the page painter, infantry order positions, no strategic maps, no co-op layer",
+ "unreachable": [
+  "axis_point6"
+ ],
+ "unreachableReasons": {
+  "axis_point6": "walk test"
+ },
+ "botSpawnsExcluded": [
+  "axis_point2_spawn3",
+  "axis_point6_spawn1",
+  "axis_point2_spawn5",
+  "axis_point4_spawn2",
+  "axis_point5_spawn2",
+  "axis_point5_spawn3",
+  "axis_point5_spawn4",
+  "axis_point5_spawn5",
+  "axis_point4_spawn4",
+  "axisl_point1_spawn1",
+  "axisl_point1_spawn2",
+  "axis_point6_spawn4",
+  "axis_point6_spawn6",
+  "axisl_point1_spawn6",
+  "axis_point5_spawn6"
+ ],
+ "walkMap": {
+  "source": "walk test",
+  "engine": "none",
+  "vehicleMap": "page painter",
+  "vehicleBrush": 1.5,
+  "vehicleBrushes": [
+   {
+    "brush": 3,
+    "flagsOn": 2,
+    "spawnersOn": 28,
+    "pieces": 29,
+    "main": 27314
+   },
+   {
+    "brush": 2.5,
+    "flagsOn": 3,
+    "spawnersOn": 29,
+    "pieces": 31,
+    "main": 29404
+   },
+   {
+    "brush": 2,
+    "flagsOn": 2,
+    "spawnersOn": 30,
+    "pieces": 40,
+    "main": 31702
+   },
+   {
+    "brush": 1.5,
+    "flagsOn": 2,
+    "spawnersOn": 34,
+    "pieces": 42,
+    "main": 169621
+   }
+  ],
+  "opened": [
+   [
+    700,
+    775
+   ],
+   [
+    701,
+    775
+   ],
+   [
+    990,
+    1073
+   ],
+   [
+    990,
+    1078
+   ],
+   [
+    990,
+    1079
+   ],
+   [
+    1137,
+    1196
+   ],
+   [
+    1137,
+    1197
+   ],
+   [
+    1137,
+    1202
+   ],
+   [
+    1137,
+    1203
+   ]
+  ],
+  "ways": [
+   {
+    "who": "axis_point2_spawn3",
+    "kind": "spawn",
+    "way": "none",
+    "opened": 0
+   },
+   {
+    "who": "axis_point6_spawn1",
+    "kind": "spawn",
+    "way": "none",
+    "opened": 0
+   },
+   {
+    "who": "axis_point2_spawn5",
+    "kind": "spawn",
+    "way": "none",
+    "opened": 0
+   },
+   {
+    "who": "axis_point4_spawn2",
+    "kind": "spawn",
+    "way": "none",
+    "opened": 0
+   },
+   {
+    "who": "axis_point5_spawn2",
+    "kind": "spawn",
+    "way": "none",
+    "opened": 0
+   },
+   {
+    "who": "axis_point5_spawn4",
+    "kind": "spawn",
+    "way": "none",
+    "opened": 0
+   },
+   {
+    "who": "axis_point5_spawn5",
+    "kind": "spawn",
+    "way": "none",
+    "opened": 0
+   },
+   {
+    "who": "axisl_point1_spawn1",
+    "kind": "spawn",
+    "way": "none",
+    "opened": 0
+   },
+   {
+    "who": "axisl_point1_spawn2",
+    "kind": "spawn",
+    "way": "none",
+    "opened": 0
+   },
+   {
+    "who": "axis_point2_spawn6",
+    "kind": "spawn",
+    "way": "walk",
+    "opened": 2
+   },
+   {
+    "who": "axis_point6_spawn6",
+    "kind": "spawn",
+    "way": "none",
+    "opened": 0
+   },
+   {
+    "who": "axisl_point1_spawn6",
+    "kind": "spawn",
+    "way": "none",
+    "opened": 0
+   },
+   {
+    "who": "axis_point5_spawn6",
+    "kind": "spawn",
+    "way": "none",
+    "opened": 0
+   },
+   {
+    "who": "axis_point4",
+    "kind": "flag",
+    "way": "walk",
+    "opened": 3
+   },
+   {
+    "who": "axis_point5",
+    "kind": "flag",
+    "way": "walk",
+    "opened": 4
+   }
+  ],
+  "cover": 0.986,
+  "floors": {
+   "stacked": false,
+   "twoFloorShare": 0.017,
+   "raised": [
+    "axis_point6"
+   ],
+   "reason": null
+  }
+ },
+ "routeProbe": {
+  "chokeMax": 4,
+  "unreachable": [],
+  "stops": {},
+  "oneSided": {
+   "kaigan1": 1,
+   "axisl_point1": 1,
+   "axis_point2": 1,
+   "axis_point3": 1,
+   "axis_point4": 1,
+   "axis_point5": 1
+  },
+  "sides": {
+   "1": {
+    "spawns": 22,
+    "flags": [
+     "axis_point2",
+     "axis_point3",
+     "axis_point4",
+     "axis_point5",
+     "axisl_point1",
+     "kaigan1"
+    ]
+   },
+   "2": {
+    "spawns": 0,
+    "flags": []
+   }
+  },
+  "chokes": {
+   "kaigan1:1": 1,
+   "axisl_point1:1": 0,
+   "axis_point2:1": 0,
+   "axis_point3:1": 0,
+   "axis_point4:1": 2,
+   "axis_point5:1": 2
+  },
+  "late": {},
+  "shutLinks": []
+ },
+ "inputs": {
+  "controlPoints": "27245bde226ddf504613bcfd766701587b06b64bd5c8f95d08f81a2cf00df266",
+  "infantryMap": "d2c6fab3d1ee96e41a9f2f438919dbb21ded145f3539dd3a30735ec69a48672d",
+  "template": "43f8a790471528016570235f76e97dbb2045732458781a5139f37fed68bf98c0"
+ },
+ "files": {
+  "AI.con": "26f62f783813f16aedaa4cd94d6da44996c4e824dcf37c7206fe33779fba7eda",
+  "AIpathFinding.con": "9d8080cdfa7605961969aa126519b03be9691bd604ac76aef50166d81215edd2",
+  "AI/StrategicAreas.con": "a2700ab7b0132f622ba43779d458528d8bcdd0b51f59ea4b1151b07e80b1328f",
+  "AI/Strategies.con": "4ce0be59a0d6c5cd530db002fb062c4be8d936bc6ae59bd188803ccaf7869a8d",
+  "AI/conditions.con": "68a0c7a8aec69954063147b60fae560b2874884285737aa085efa76597d395aa",
+  "AI/prerequisites.con": "4c1f313bc285b228fd6ad03bfd1f44c5b15c8703c31f802eb605bc5f00f88bb5",
+  "Pathfinding/Infantry1Level0Map.raw": "32083ac36c3c1ee0fb5dd1584334b95c22aac8c4e370a81909a2b41309e29e38",
+  "Pathfinding/Infantry1Level1Map.raw": "74b037cbdf47e541fd2b9208a7219a2b4b88ab56dc25bd84536546d0af358060",
+  "Pathfinding/Infantry1Level2Map.raw": "25a8de6b56342ca21f47175e9ce8a6de5ff5b12e47bd0d771a49078115e4104d",
+  "Pathfinding/Tank0Level0Map.raw": "88708fed5b71c6b0ff43e42e89cae06eadf0b66818ec8e76b025cf2857ae0fd3",
+  "Pathfinding/Tank0Level1Map.raw": "595d383c72b2c8bdf014d86b6ed1017a0ee8f346133cb0deb5ca7bb656af3f76",
+  "Pathfinding/Tank0Level2Map.raw": "6393062fb3b488b120ff347814b78fd19992097f02e1ca5d1dfc3bdcd9655f6a"
+ }
+}

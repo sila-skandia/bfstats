@@ -150,8 +150,10 @@ class OutOfTheLockShapes(_Shapes):
         # Under the eyes (reviews/eyes.md) the chop does not break the lock:
         # he slides under your tail, where you cannot see him, and stays in
         # your rear half inside 300 m for all 20 s after the turn. He never
-        # flies past, never runs, never sits in front of you; one hit on you
-        # in nine fights, none on him.
+        # flies past, never runs, never sits in front of you; a single hit on
+        # you in two of nine fights, both from under 20 m after a second chop
+        # (one in nine until it was re-pinned 2026-11-12 on retail g and box
+        # area (features/retail-parity-cross-check-2026-11-12)), none on him.
         rows = self.runs("lock", "counter")
         for r in rows:
             self.assertIsNone(r["overshoot"], r)
@@ -159,7 +161,8 @@ class OutOfTheLockShapes(_Shapes):
             self.assertEqual(0, r["heInFront"], r)
             self.assertEqual(20, r["rearAfter"], r)
             self.assertEqual(0, r["hits"][1], r)
-        self.assertLessEqual(sum(r["hits"][0] for r in rows), 1)
+            self.assertLessEqual(r["hits"][0], 1, r)
+        self.assertLessEqual(sum(r["hits"][0] for r in rows), 2)
 
 
 # On his tail's chop demos (`close`, `lag`) were retired on 2026-11-07

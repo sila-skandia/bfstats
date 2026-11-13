@@ -1,0 +1,132 @@
+{
+ "generator": "botgen",
+ "version": 5,
+ "mod": "FHSW",
+ "level": "omaha_charlie-sector-1944",
+ "objectSpawners": 209,
+ "template": "few",
+ "templateSource": "DICE, bf1942 Kursk (1.6 patch archives, Kursk_003.rfa): AI/Strategies.con, AI/conditions.con, AI/prerequisites.con, unchanged",
+ "templateChoice": {
+  "name": "few",
+  "inPlay": 3,
+  "rule": "3 capturable flags in play, at most 3"
+ },
+ "scope": "on foot: infantry order positions only, no search maps, no co-op layer",
+ "unreachable": [
+  "west_bunker",
+  "east_bunker",
+  "commandpost",
+  "east_position"
+ ],
+ "unreachableReasons": {
+  "west_bunker": "walk test",
+  "east_bunker": "walk test",
+  "commandpost": "route probe",
+  "east_position": "walk test"
+ },
+ "botSpawnsExcluded": [
+  "german_base08",
+  "commandpost01",
+  "commandpost02",
+  "commandpost03",
+  "commandpost04",
+  "commandpost05",
+  "commandpost06",
+  "beach01",
+  "beach05",
+  "beach10",
+  "east_bunker1",
+  "east_bunker2",
+  "east_bunker3",
+  "east_bunker4",
+  "east_bunker5",
+  "west_bunker1",
+  "west_bunker2",
+  "west_bunker3",
+  "west_bunker4",
+  "west_bunker5",
+  "german_baseb_2",
+  "german_baseb_4",
+  "german_baseb_5"
+ ],
+ "walkMap": {
+  "source": "page painter",
+  "engine": "none",
+  "opened": [],
+  "ways": [],
+  "cover": 0.836,
+  "floors": {
+   "stacked": false,
+   "twoFloorShare": 0.002,
+   "raised": [
+    "west_bunker",
+    "east_bunker"
+   ],
+   "reason": null
+  },
+  "capped": true
+ },
+ "routeProbe": {
+  "chokeMax": 4,
+  "unreachable": [
+   "commandpost"
+  ],
+  "stops": {
+   "commandpost": {
+    "1": {
+     "stage": "leg",
+     "leg": 0,
+     "from": [
+      977.7,
+      -1359.2
+     ],
+     "to": [
+      987.5,
+      -1331.5
+     ]
+    },
+    "2": {
+     "stage": "no usable spawn"
+    }
+   }
+  },
+  "oneSided": {
+   "beach": 1,
+   "central_bunker": 1,
+   "west_position": 1
+  },
+  "sides": {
+   "1": {
+    "spawns": 12,
+    "flags": [
+     "beach",
+     "central_bunker",
+     "west_position"
+    ]
+   },
+   "2": {
+    "spawns": 0,
+    "flags": []
+   }
+  },
+  "chokes": {
+   "beach:1": 1,
+   "central_bunker:1": 1,
+   "west_position:1": 1
+  },
+  "late": {},
+  "shutLinks": []
+ },
+ "inputs": {
+  "controlPoints": "89647adf4d9e0b3f993819b87a9dd574343f30f401993e6f2d52f960da20d8d1",
+  "infantryMap": "70c480df5f71bffc7c905c89c2e2f781f566ccef7034cea4e0fd1fef409598f1",
+  "template": "bdc0e455f47f91b7e7724e71d7c0c196e839b36946ac3abb7663d725944081e5"
+ },
+ "files": {
+  "AI.con": "88bf64a4ade84626926a6ce80529417510c274f4f61cb063786482dfe7c034bf",
+  "AI/StrategicAreas.con": "ce06e93625d6096c224647c4d7175f88818fb8f2abf6164a9917c689bd46cd94",
+  "AI/Strategies.con": "13da4dc35872dd4b5798a066f4425bdc824cfd61f31093d1808e1202644de52e",
+  "AI/conditions.con": "248a04b727c08d696bf0fa9c162bc22c43cde3c75f695892fe1e0f5141519c49",
+  "AI/prerequisites.con": "c96168b5f69860e578f5d26728fd2a2092c4c436e1da49b7d6f4009b65735398"
+ }
+}

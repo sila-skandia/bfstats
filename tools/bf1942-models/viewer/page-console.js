@@ -154,7 +154,9 @@ export function createPageConsole(page) {
   /** The `GeneralOptions.con` minimap words a profile carries
    *  (`controls.js` `DEFAULT_GENERAL_OPTIONS`); `applyControlProfile` runs
    *  them with the maps' mouse words. */
-  const MINIMAP_WORDS = { setStaticMinimap: true, setMinimapTransparency: true };
+  const MINIMAP_WORDS = { setStaticMinimap: true, setMinimapTransparency: true,
+                          // OPTIONS > CUSTOMIZE's other two tick boxes.
+                          setToolTip: true, setRadioToolTip: true };
 
   /** `game.setMinimapTransparency T`, 0..100 (registrar 0x006b8ad0; the
    *  apply path `FUN_006d5650` writes `BfMap+0x54 = 1 - T * 0.01` through
@@ -193,6 +195,18 @@ export function createPageConsole(page) {
     run: args => {
       if (args.length) page.setRadioToolTip(args[0] !== '0' && args[0].toLowerCase() !== 'false');
       return page.radioToolTip() ? 1 : 0;
+    },
+  });
+
+  /** `game.setToolTip`, the profile's tooltip option (the shipped
+   *  `GeneralOptions.con` writes 0): 1 lets the tooltip plate show
+   *  (`tooltips.js`). Read back with no argument. */
+  gameConsole.register({
+    object: 'game', method: 'setToolTip',
+    minArgs: 0, maxArgs: 1, argTypes: ['int'], returns: 'int',
+    run: args => {
+      if (args.length) page.setToolTip?.(args[0] !== '0' && args[0].toLowerCase() !== 'false');
+      return page.toolTip?.() ? 1 : 0;
     },
   });
 
@@ -304,8 +318,8 @@ export function createPageConsole(page) {
   const OPTIONS_TABS = [
     ...ESC_TABS,
     { page: 'optionsNav',
-      items: [{ key: 'MENU_CONTROLS', id: 'controls' }, { key: 'MENU_VIDEO', id: 'video' },
-              { key: 'MENU_SOUND', id: 'sound' }] },
+      items: [{ key: 'MENU_CONTROLS', id: 'controls' }, { key: 'MENU_GENERAL_OPTIONS', id: 'general' },
+              { key: 'MENU_VIDEO', id: 'video' }, { key: 'MENU_SOUND', id: 'sound' }] },
   ];
 
   function optionsScreen() {
