@@ -10,6 +10,7 @@ network-attached volume. Most entries below trace back to one of those two facts
 
 | # | Date | Impact | Cause | Fixed by |
 |---|---|---|---|---|
+| 9 | 2026-11-13 | White terrain on re-baked levels, about 3 h | Levels published before their textures; nginx sent the 404 with a year-long `immutable` header, so Cloudflare kept it | `acd9943e9` |
 | 8 | 2026-11-08 | Levels and models at ~43 KB/s for hours | `cloudflared` tunnel degraded after 10 days up; `.glb`/`.json` not edge-cached, so every one crossed it | `rollout restart deployment/cloudflared` |
 | 7 | 2026-09-28 | play.bfstats.io pages did not start, 9.5 min | HAProxy `is_netcode` was `path_beg /netcode`, which took the viewer's `/netcode.js` | ACL narrowed, this commit |
 | 6 | 2026-08-16 | Site unresponsive | `Cache=Shared` in connection string | `b7feede` |
@@ -20,6 +21,26 @@ network-attached volume. Most entries below trace back to one of those two facts
 | 1 | — | App locked out of its own DB | `sqlite3` as root over SSH created root-owned WAL/shm | n/a — process |
 
 ---
+
+### 9. Levels went live before their textures — 2026-11-13
+
+**Symptom.** Re-baked levels drew white ground on play.bfstats.io (Liberation of
+Caen, El Alamein, Wake and the other levels re-baked that day).
+
+**Cause.** A re-bake published 300-odd `scene.glb` files from 13:26 without the
+texture store they name. Pages asked for those textures in the gap, and nginx
+answered the 404 with the textures' `Cache-Control: public, max-age=31536000,
+immutable` (`add_header ... always`), so Cloudflare kept 3,852 of them 404 after
+the store went up: the origin answered 200 to every one with a fresh query.
+
+**Fix.** The texture stores were published (textures first, then checked: every
+texture a live glb names answers 200 at the origin). `viewer/texture-url.js` asks
+for a content-addressed texture as `?r=<epoch>`, a cache key the edge never held;
+`mesh/nginx.conf` sends `/textures/` and `/glbs/` their immutable header on success
+only, so a 404 is never kept again (`acd9943e9`).
+
+**Remember.** Publish a referrer only after everything it names answers 200, and
+never send a long cache header on a 404.
 
 ### 8. The tunnel slowed every level to a crawl — 2026-11-08
 

@@ -1,7 +1,7 @@
 """`viewer/asset-prefetch.js`: the level asset manifest read at open, and the
 bounded, deduped, low-priority fetch of everything it names.
 
-`asset-prefetch.js` imports nothing, so this copies the one module plus its
+`asset-prefetch.js` imports only `texture-url.js`, so this copies the two modules plus its
 harness into a temp dir and runs `node harness.mjs`, the same shape as
 `test_armor.py`. What is asserted here is the module's contract, not a
 measurement: the load numbers live in `features/asset-batch-downloads/README.md`.
@@ -27,6 +27,8 @@ def run_harness() -> dict:
     with tempfile.TemporaryDirectory() as tmp:
         work = Path(tmp)
         shutil.copyfile(MODULE, work / "asset-prefetch.mjs")
+        # Its one import: the texture epoch (texture-url.js).
+        shutil.copyfile(MODULE.parent / "texture-url.js", work / "texture-url.js")
         shutil.copyfile(HARNESS, work / "harness.mjs")
         proc = subprocess.run(["node", str(work / "harness.mjs")],
                               capture_output=True, text=True, timeout=120)

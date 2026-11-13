@@ -66,6 +66,7 @@ MODULES = {
     # (features/mesh-asset-size, phase 5).
     "glb-loader.js": VIEWER / "glb-loader.js",
     "glb-store.js": VIEWER / "glb-store.js",
+    "texture-url.js": VIEWER / "texture-url.js",
     "camera-pivot.js": VIEWER / "camera-pivot.js",
     "aircraft.js": VIEWER / "aircraft.js",
     # An airframe on its spring wheels runs the server's per-tick law.

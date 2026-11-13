@@ -15,8 +15,16 @@
 
 import { GLTFLoader as VendorGLTFLoader } from './vendor/loaders/GLTFLoader.js';
 import { resolveGlb } from './glb-store.js';
+import { withTextureEpoch } from './texture-url.js';
 
 export class GLTFLoader extends VendorGLTFLoader {
+  constructor(manager) {
+    super(manager);
+    // Every texture a glb names is asked for by its epoch URL (texture-url.js):
+    // the edge may hold a stale 404 for the plain one.
+    withTextureEpoch(this.manager);
+  }
+
   load(url, onLoad, onProgress, onError) {
     resolveGlb(url)
       .catch(() => ({ url, resourcePath: null }))

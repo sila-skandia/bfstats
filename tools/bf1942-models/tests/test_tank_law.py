@@ -38,7 +38,7 @@ MODULES = [
     "tracked-vehicle.js", "suspension.js", "ground-specs.js", "ground-contact.js",
     "ground-engine.js", "track-scroll.js", "amphibious.js", "body-float.js",
     "vehicle-camera.js", "vehicle-discovery.js", "vehicle-base.js", "rest-pose.js", "viewer-root.js",
-    "glb-loader.js", "glb-store.js", "camera-pivot.js", "aircraft.js", "aircraft-ground-law.js", "spawned-craft.js", "drive-history.js", "ship-spec.js",
+    "glb-loader.js", "glb-store.js", "texture-url.js", "camera-pivot.js", "aircraft.js", "aircraft-ground-law.js", "spawned-craft.js", "drive-history.js", "ship-spec.js",
     "geometry-search.js", "vectored-engines.js", "rocket-burn.js", "engine-revs.js", "engine-spin.js",
     "body-friction.js", "rigid-body.js", "physics.js", "walking-body.js",
     "soldier-resolve.js", "deck-carry.js", "soldier-pose.js", "soldier-locomotion.js", "point-body.js",
