@@ -13,10 +13,12 @@
 // sits on the file's i-th line, so the column keeps the game's own rhythm,
 // and the rows the viewer cannot honour (SHADOWS, ALTERNATIVE SPAWN
 // INTERFACE) are left out rather than drawn dead, the rule the nav strip
-// follows. One row is this site's own and borrows a tick box's shape:
-// ANTI-ALIASING. The game has no anti-aliasing row: `Video.con` holds a
-// display mode and eight quality settings, and multisampling was the
-// driver's to force.
+// follows. Two rows are this site's own and borrow a tick box's shape:
+// ANTI-ALIASING (the game has no such row: `Video.con` holds a display mode
+// and eight quality settings, and multisampling was the driver's to force)
+// and REMASTER, which turns on the remaster's renderer: real-time shadows,
+// its water, and explosions that light what is around them
+// (features/remaster-browser).
 //
 // VIDEO PERFORMANCE's plate (`performancePanel`) is drawn too: its four
 // radio lines pick a preset. So is DISPLAY MODE's (`displayModePanel`): the
@@ -36,7 +38,7 @@ const TICK_ROW = 'VIDEO_OPTIONS_ENV_MAPPING';
 const elementsOf = (layout, page) => layout?.pages?.[page]?.elements || [];
 
 /** The VIDEO OPTIONS rows this site draws, top to bottom, each the file's
- *  row `key` (the last borrows a row's shape for a setting of the page's
+ *  row `key` (the last two borrow a row's shape for settings of the page's
  *  own). `steps` are a slider's values; `fileText` says the file
  *  carries the slider's value texts. SHADOWS and ALTERNATIVE SPAWN
  *  INTERFACE are not drawn: the viewer has nothing behind them. */
@@ -49,6 +51,7 @@ export const VIDEO_ROWS = Object.freeze([
   { id: 'viewDistance', key: 'VIDEO_OPTIONS_VIEWDISTANCE',
     steps: [50, 55, 60, 65, 70, 75, 80, 85, 90, 95, 100] },
   { id: 'antialias', key: 'VIDEO_OPTIONS_ENV_MAPPING', text: 'ANTI-ALIASING:' },
+  { id: 'remaster', key: 'VIDEO_OPTIONS_ENV_MAPPING', text: 'REMASTER:' },
 ]);
 
 /** Whether the pack carries the screen at all (one extracted before

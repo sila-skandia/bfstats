@@ -6,7 +6,7 @@
 // captured, and the per-frame draw time measured.
 //
 //   node tests/perf/remastershot.mjs --base http://localhost:5390 --map wake \
-//        --out ../../features/remaster-browser/shots [--modes 'retail;remaster;remaster=noao'] \
+//        --out ../../features/remaster-browser/shots [--modes 'retail;remaster'] \
 //        [--views airfield,beach] [--extra "&foo=1"] [--frames 120]
 //
 // Views are in VIEWS below: a position and a yaw/pitch for the free camera.

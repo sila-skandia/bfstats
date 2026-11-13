@@ -23,7 +23,7 @@ import * as THREE from 'three';
 
 // Remaster mode (features/remaster-browser) runs on three's WebGPU build,
 // which has no WebGLRenderer: a side view then takes a WebGPU renderer from
-// the remaster's hooks. Without `?remaster` this is the WebGLRenderer it was.
+// the remaster's hooks. Without the remaster this is the WebGLRenderer it was.
 const remasterSideRenderer = options => globalThis.bfRemasterHooks?.sideRenderer?.(options)
   ?? new THREE.WebGLRenderer(options);
 

@@ -10,7 +10,7 @@ import { RING } from './level-edge.js';
 // Remaster mode's hooks (features/remaster-browser, remaster-mode.js):
 // one registry on the global, so this module needs no import for it and
 // stays loadable by the harnesses that copy it alone. Empty without
-// `?remaster`.
+// the remaster.
 const remasterHooks = globalThis.bfRemasterHooks ?? (globalThis.bfRemasterHooks = {});
 
 /**
@@ -219,7 +219,6 @@ export function createLevelSky(page) {
     // Remaster mode: the node-material water (remaster-water.js) from the
     // same textures and words.
     if (remasterHooks.water) {
-      if (remasterHooks.off?.has('nowater')) { waterObj.visible = false; return; }
       waterObj.material = remasterHooks.water({
         w, layer1, layer2, normal, depthTex: depth,
         worldSize: w.worldSize || page.extras.worldSize || 2048, maxDepth: w.maxDepth || 0,

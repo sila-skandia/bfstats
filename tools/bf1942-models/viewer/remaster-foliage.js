@@ -100,7 +100,6 @@ export function spriteNodes(material) {
   material.needsUpdate = true;
 }
 
-const IMPOSTOR_ALBEDO = 1;
 
 /**
  * The far card: about Y toward the camera, two frames of the strip blended
@@ -135,7 +134,7 @@ export function impostorNodes(material, frames, eighth) {
   // the linear coverage that lands a dark texel over a bright sky where the
   // display-space blend put it.
   const cover = float(1).sub(pow(float(1).sub(col.a.clamp(0, 1)), 2.2));
-  material.colorNode = vec4(col.rgb.mul(IMPOSTOR_ALBEDO), cover);
+  material.colorNode = vec4(col.rgb, cover);
   material.normalNode = transformNormalToView(vec3(0, 1, 0));
   material.needsUpdate = true;
 }
@@ -152,7 +151,7 @@ export function impostorMaterial(tex, frames, eighth, alphaTest) {
 }
 
 const NODE_KEYS = ['positionNode', 'colorNode', 'normalNode', 'maskShadowNode', 'castShadowPositionNode',
-  'opacityNode', 'emissiveNode', 'aoNode', 'remasterSprite', 'remasterWind', 'remaster', 'bfKind'];
+  'opacityNode', 'remasterSprite', 'remasterWind', 'remaster', 'bfKind'];
 
 /** `Material.clone` drops the node slots of a plain material; carry them across. */
 export function carryNodes(from, to) {

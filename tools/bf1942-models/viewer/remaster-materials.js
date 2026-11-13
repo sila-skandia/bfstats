@@ -13,10 +13,9 @@
 import * as THREE from 'three/webgpu';
 import {
   abs, clamp, cubeTexture, diffuseColor, dot, float, fract, fwidth, materialColor, materialReference, max,
-  min, mix, positionWorld, step, normalView, normalWorld, reference, reflectView, uniform, normalize,
-  sRGBTransferEOTF, sRGBTransferOETF, smoothstep, uv, vec2, vec3, vec4, normalMap, transformNormalToView,
+  min, mix, positionWorld, step, normalView, normalWorld, reference, reflectView, uniform, sRGBTransferEOTF,
+  sRGBTransferOETF, smoothstep, uv, vec3, vec4, transformNormalToView,
 } from 'three/tsl';
-import { REMASTER_OFF } from './remaster-mode.js';
 import { ENVMAP_SWITCH } from './envmap.js';
 
 // Every texture in these graphs is read through the material being drawn
@@ -57,52 +56,6 @@ export function matTexture(name) {
 }
 
 const TERRAIN_DETAIL_MIP_BIAS = -1.5;
-const remasterDebug = REMASTER_OFF;
-
-// The generated normal and roughness maps (remaster_texture_maps.py): one
-// packed WebP a store texture (RG normal, B roughness) under
-// `remaster-textures/`, listed in its index, which remaster-renderer.js
-// loads before the first level (`setTextureMaps`).
-let mapIndex = new Set();
-const mapCache = new Map();
-const mapLoader = new THREE.TextureLoader();
-export function setTextureMaps(hashes) { mapIndex = new Set(hashes || []); }
-
-/** The packed map for `map`'s store texture, or null when none was generated. */
-function packedMapFor(map) {
-  const hash = map?.userData?.storeHash;
-  if (!hash || !mapIndex.has(hash) || !REMASTER_OFF.has('maps')) return null;
-  let t = mapCache.get(hash);
-  if (!t) {
-    t = mapLoader.load(`./remaster-textures/${hash.slice(0, 2)}/${hash}.webp`);
-    t.colorSpace = THREE.NoColorSpace;
-    t.flipY = map.flipY;
-    t.wrapS = map.wrapS;
-    t.wrapT = map.wrapT;
-    t.anisotropy = 8;
-    mapCache.set(hash, t);
-  }
-  return t;
-}
-
-/**
- * Relief and roughness on a lit material from its texture's generated map:
- * the normal perturbed in the texture's own space (three derives the
- * tangent frame from the UVs), the roughness read per texel and scaled by
- * the material's own (`roughness`: shinier materials stay shinier).
- */
-function applyPackedMap(mat, map, strength = 1) {
-  const packed = packedMapFor(map);
-  if (!packed) return;
-  mat.bfPacked = packed;
-  const nr = matTexture('bfPacked').ref;
-  const x = nr.r.mul(2).sub(1);
-  const y = nr.g.mul(2).sub(1);
-  const z = float(1).sub(x.mul(x)).sub(y.mul(y)).max(0).sqrt();
-  mat.normalNode = normalMap(vec3(nr.r, nr.g, z.mul(0.5).add(0.5)), vec2(strength, strength));
-  if (mat.isMeshStandardMaterial) mat.roughnessNode = nr.b.mul(materialReference('roughness', 'float').div(0.82)).clamp(0.05, 1);
-}
-
 /** Every node slot, `bf*` texture slot and remaster mark of `from`, onto `to`. */
 export function copyRemasterProps(from, to) {
   for (const k of Object.keys(from)) {
@@ -268,8 +221,6 @@ class EngineLightingModel extends THREE.LightingModel {
       const shade = mix(vec3(LEAF_SHADE), vec3(1), k);
       display = min(vec3(1), tex.mul(shade).mul(this.kind === 'leaf' ? 2 : 1));
     }
-    // `?remaster=showk`: the sun's share alone, for checking it.
-    if (remasterDebug.has('showk')) display = k;
     context.outgoingLight.rgb.assign(sRGBTransferEOTF(display).mul(viewGain));
   }
 }
@@ -397,10 +348,6 @@ export function dynamicMaterial(source, { light, materialDiffuse = null, cube = 
   if (byKey.has(key)) return byKey.get(key);
   const mat = engineFrom(source, 'lit');
   byKey.set(key, mat);
-  // Relief from the generated map (`?remaster=maps`), which turns the
-  // normal the sun's term reads; a leaf card takes none (its normal is the
-  // canopy's, remaster-foliage.js).
-  if (!/^sprite_\d+$/.test(source.name || '')) applyPackedMap(mat, source.map);
   mat.bfEngineFloor = new THREE.Vector3(...floor);
   mat.bfEngineSun = new THREE.Vector3(...sun);
   mat.bfEnv = !!cube;

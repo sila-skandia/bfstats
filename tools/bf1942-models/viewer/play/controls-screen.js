@@ -37,8 +37,8 @@
 // the game's VIDEO PERFORMANCE, DISPLAY MODE and VIDEO OPTIONS plates with
 // the rows the viewer has something behind (`../video-options.js`, `../video-settings.js`,
 // features/video-options). A change is kept the moment it is made; the level
-// page behind the Escape menu applies it live, except anti-aliasing and
-// lightmaps, which a level takes when it is built.
+// page behind the Escape menu applies it live, except anti-aliasing,
+// lightmaps and the remaster, which a level takes when it is built.
 //
 // OPTIONS > SOUND is the third: the game's SOUND OPTIONS plate with its
 // HARDWARE ACCELERATION row, the path a Creative card took, emulated with an
@@ -61,6 +61,7 @@ import {
   hasVideoPage, performancePanel, placeVideoRows, sliderKnob, sliderPick, VIDEO_ROWS, videoNavButtons, videoPanel,
 } from '../video-options.js';
 import { chooseAntialias, storeAntialias, storedAntialias } from '../render-antialias.js';
+import { remasterSupported, storeRemaster, storedRemaster } from '../remaster-mode.js';
 import {
   SOUND_NAV_DX, chooseHardware3d, hardwareRow, hasSoundPage, soundNavButtons, soundPanel,
   storeHardware3d, storedHardware3d,
@@ -180,6 +181,9 @@ export const PREVIEW_RECT = [450, 347, 328, 150];
  * @param {() => (boolean|null)} [options.lightmapsInEffect] whether the
  *                                    level behind the screen was built with
  *                                    its lightmaps (null: no level)
+ * @param {() => (boolean|null)} [options.remasterInEffect] whether the page
+ *                                    behind the screen runs the remaster's
+ *                                    renderer (null: no level)
  */
 export function createControlsScreen({
   canvas,
@@ -193,6 +197,7 @@ export function createControlsScreen({
   onBindingsChanged = () => {},
   antialiasInEffect = () => null,
   lightmapsInEffect = () => null,
+  remasterInEffect = () => null,
   profileSync = null,
   // FULL SCREEN on the preview's corner: the preview itself fills the screen
   // (features/proving-ground, "The controls preview"). False draws no button
@@ -523,7 +528,9 @@ export function createControlsScreen({
     pack.use(layout);
     // The pieces of the VIDEO section, or none where the pack predates it:
     // the row's VIDEO button is then not drawn either.
-    const rows = hasVideoPage(layout) ? placeVideoRows(layout, VIDEO_ROWS) : [];
+    // REMASTER needs WebGPU: without it the row is left out, not drawn dead.
+    const specs = VIDEO_ROWS.filter(spec => spec.id !== 'remaster' || remasterSupported());
+    const rows = hasVideoPage(layout) ? placeVideoRows(layout, specs) : [];
     video = rows.length ? {
       panel: videoPanel(layout),
       rows: rows.map(r => ({ ...r, spec: VIDEO_ROWS.find(s => s.id === r.id) })),
@@ -774,16 +781,20 @@ export function createControlsScreen({
 
   /** Every row's value, which VIDEO PERFORMANCE line that mix is, and the
    *  rows a level takes only when it is built and was built the other way
-   *  (`pendingRows`). Anti-aliasing keeps its own key and GPU default. */
+   *  (`pendingRows`). Anti-aliasing keeps its own key and GPU default, the
+   *  remaster its own key (off until ticked). */
   function videoState() {
     const stored = storedAntialias();
     const settings = storedVideo();
     const antialias = stored ?? antialiasDefault().antialias;
     const liveAa = antialiasInEffect();
     const liveLm = lightmapsInEffect();
+    const remaster = storedRemaster() === true;
+    const liveRm = remasterInEffect();
     const pendingRows = [];
     if (typeof liveLm === 'boolean' && liveLm !== settings.lightmaps) pendingRows.push('lightmaps');
     if (typeof liveAa === 'boolean' && liveAa !== antialias) pendingRows.push('antialias');
+    if (typeof liveRm === 'boolean' && liveRm !== remaster) pendingRows.push('remaster');
     const { custom: _custom, ...values } = settings;
     const modes = displayModes(displayOf());
     const mode = chosenDisplayMode(displayOf(), settings.displayHeight);
@@ -792,6 +803,7 @@ export function createControlsScreen({
       modes,
       displayMode: mode?.label ?? null,
       antialias,
+      remaster,
       chosen: stored !== null,
       performance: performanceOf(settings),
       pending: pendingRows.length > 0,
@@ -1503,9 +1515,11 @@ export function createControlsScreen({
     paint();
   }
 
-  /** One row's new value, kept at once (anti-aliasing under its own key). */
+  /** One row's new value, kept at once (anti-aliasing and the remaster
+   *  under their own keys). */
   function setVideo(id, value) {
     if (id === 'antialias') { setAntialias(value); return; }
+    if (id === 'remaster') { storeRemaster(!!value); paint(); return; }
     changeVideo({ [id]: value });
     paint();
   }
@@ -1521,6 +1535,7 @@ export function createControlsScreen({
   /** DEFAULT: every row back to what this page draws with no choice. */
   function resetVideo() {
     storeAntialias(null);
+    storeRemaster(null);
     changeVideo(null);
     paint();
   }

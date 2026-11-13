@@ -130,16 +130,16 @@ class VideoTests(_Harness):
 
     def test_the_rows_are_the_games_in_its_order_on_its_lines(self) -> None:
         video = self.results["video"]
-        # The file's eight lines, and the seven rows set on them in order:
+        # The file's eight lines, and the eight rows set on them in order:
         # the game's six the viewer has something behind, then this site's
-        # anti-aliasing. The resolution is DISPLAY MODE's list
-        # (`test_display_mode.py`), not a row.
+        # own two, anti-aliasing and the remaster. The resolution is DISPLAY
+        # MODE's list (`test_display_mode.py`), not a row.
         self.assertEqual([165, 195, 230, 260, 290, 315, 345, 375], video["lines"])
         self.assertEqual(
             [("graphicsQuality", "GRAPHICS QUALITY:", 165), ("effectsQuality", "EFFECTS QUALITY:", 195),
              ("environmentMapping", "ENVIRONMENT MAPPING:", 230), ("lightmaps", "LIGHTMAPS:", 260),
              ("textureQuality", "TEXTURE QUALITY:", 290), ("viewDistance", "VIEW DISTANCE:", 315),
-             ("antialias", "ANTI-ALIASING:", 345)],
+             ("antialias", "ANTI-ALIASING:", 345), ("remaster", "REMASTER:", 375)],
             [(r["id"], r["label"], r["y"]) for r in video["rows"]])
         # SHADOWS and ALTERNATIVE SPAWN INTERFACE have nothing behind them.
         labels = {r["label"] for r in video["rows"]}

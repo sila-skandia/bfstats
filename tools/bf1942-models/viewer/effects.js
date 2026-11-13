@@ -18,7 +18,7 @@ import {
 // Remaster mode's hooks (features/remaster-browser, remaster-mode.js):
 // one registry on the global, so this module needs no import for it and
 // stays loadable by the harnesses that copy it alone. Empty without
-// `?remaster`.
+// the remaster.
 const remasterHooks = globalThis.bfRemasterHooks ?? (globalThis.bfRemasterHooks = {});
 
 // Lids. The engine keeps 127 decals per emitter ring (`DecalEmitter::addDecal`,

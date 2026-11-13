@@ -16,7 +16,7 @@ import { collectWeaponParts, poseWeaponParts } from './weapon-part-pose.js';
 // Remaster mode's hooks (features/remaster-browser, remaster-mode.js):
 // one registry on the global, so this module needs no import for it and
 // stays loadable by the harnesses that copy it alone. Empty without
-// `?remaster`.
+// the remaster.
 const remasterHooks = globalThis.bfRemasterHooks ?? (globalThis.bfRemasterHooks = {});
 
 /**

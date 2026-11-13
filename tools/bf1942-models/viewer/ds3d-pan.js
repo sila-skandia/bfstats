@@ -38,11 +38,6 @@
 // in front of the listener, whose Web Audio azimuth yields DirectSound's two
 // gains for the voice's real place. `sin(x pi/2) = sqrt(a)` solves to an
 // azimuth of `asin(2 lambda / pi)`.
-//
-// Remaster mode's audio (`?remaster&remasterAudio=1`) installs
-// `remaster-audio.js` as the spatial hook below. Every placed voice then
-// stands at its real point (the chain casts its occlusion rays from there),
-// and pans with the model the player's sound options choose, as retail's does.
 
 /** The panning model every placed voice of the page uses by default: the
  *  software path, `game.setHardware 0`, which every shipped profile writes. */
@@ -102,30 +97,7 @@ export function ds3dHardware() { return hardware3d; }
 
 /** The panning model a placed voice gets now. */
 export function ds3dPanningModel() {
-  // The remaster chain does not choose the head: Chromium's HRTF tilts every
-  // voice dark (+3 dB under 500 Hz, -3 dB over 3 kHz ahead, -7 to -10 dB
-  // behind), which the owner heard as "like having headphones on"
-  // (2026-11-12). It follows the player's HARDWARE ACCELERATION tick, as
-  // retail does.
   return hardware3d ? DS3D_HARDWARE_PANNING_MODEL : DS3D_PANNING_MODEL;
-}
-
-// The remaster's spatial chain (`remaster-audio.js`, features/remaster-browser),
-// installed only under `?remaster`. Null in the retail build, and then nothing
-// below behaves differently. Set, every placed voice takes the hardware path's
-// real point (panned by the player's own model) and is handed to the hook's `adopt`, which
-// puts air absorption, occlusion and a reverb send behind the panner.
-let spatialHook = null;
-
-/** The installed spatial chain, or null (the retail build). */
-export function ds3dSpatialHook() { return spatialHook; }
-
-/** Install (or with null, remove) the spatial chain. Panners already
- *  configured take the new panning model where they stand. */
-export function setDs3dSpatialHook(hook) {
-  spatialHook = hook || null;
-  setDs3dHardware(hardware3d);
-  return spatialHook;
 }
 
 /**
@@ -204,7 +176,6 @@ export function configureDs3dPanner(panner) {
     panner.channelCount = 1;
     panner.channelCountMode = 'explicit';
   } catch (_) { /* a node that will not take it pans what it is given */ }
-  spatialHook?.adopt?.(panner);
   return panner;
 }
 
@@ -231,11 +202,7 @@ export function ds3dRenderPoint(m, x, y, z, out = {}, radius = DS3D_RENDER_RADIU
   if (!(rl > 0) || !(fl > 0) || !Number.isFinite(d)) return null;
   // The hardware path pans from the voice's own point, height and all: the
   // card's 3D engine was handed the true position (SetPosition), and an HRTF
-  // panner reads its direction from where it stands. The remaster chain pans
-  // like the player's own option too: at the render point in software, with
-  // the real point handed to it apart (`ds3dTruePoint`). Equal power at the
-  // real point was a hard pan, the far ear silent where DirectSound keeps it
-  // 25 dB down.
+  // panner reads its direction from where it stands.
   if (hardware3d) {
     out.x = x; out.y = y; out.z = z;
     return out;
@@ -272,16 +239,5 @@ export function standDs3dPanner(panner, listenerMatrix, x, y, z) {
   } else {
     panner.setPosition?.(at.x, at.y, at.z);
   }
-  ds3dTruePoint(panner, x, y, z, true);
   return panner;
-}
-
-/**
- * The real point of a voice whose panner was just put at its render point
- * (`ds3dRenderPoint`): the remaster chain measures distance and casts its
- * occlusion rays from here. A no-op in the retail build. `snap` when the
- * panner jumped there rather than ramped.
- */
-export function ds3dTruePoint(panner, x, y, z, snap = false) {
-  spatialHook?.place?.(panner, x, y, z, snap);
 }

@@ -100,15 +100,5 @@ export function remasterWaterMaterial({ w, layer1, layer2, normal, depthTex, wor
   mat.colorNode = mix(vec3(0), vec3(0.8), foam);
   mat.emissiveNode = scatter.mul(float(1).sub(fresnel)).mul(float(1).sub(foam));
   mat.opacityNode = clamp(float(1).sub(seeThrough).max(fresnel).max(foam), 0.35, 0.97);
-  // `?waterDebug=n`: one term as the colour, unlit, for checking the graph.
-  const dbg = Number(new URLSearchParams(location.search).get('waterDebug')) || 0;
-  if (dbg) {
-    const terms = [null, base, vec3(bedDepth.div(20)), vec3(fresnel), vec3(foam), vec3(mat.opacityNode), tex, scatter];
-    mat.colorNode = vec3(0);
-    mat.emissiveNode = terms[dbg] ?? vec3(1, 0, 1);
-    mat.opacityNode = float(1);
-    mat.roughness = 1;
-    mat.specularIntensity = 0;
-  }
   return mat;
 }

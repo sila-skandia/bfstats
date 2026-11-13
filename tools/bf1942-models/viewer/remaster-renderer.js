@@ -1,5 +1,5 @@
 // The remaster renderer (features/remaster-browser): three r186's
-// WebGPURenderer in place of r169's WebGLRenderer, under `?remaster` only.
+// WebGPURenderer in place of r169's WebGLRenderer, under the remaster only.
 // map.html imports this module dynamically, because it resolves
 // 'three/webgpu' and 'three/tsl', which only the remaster import map names.
 
@@ -8,10 +8,10 @@ import * as THREE from 'three/webgpu';
 /**
  * A WebGPU renderer, initialised (its device is up) before the page goes on.
  * HDR through the whole pipeline: the scene pass renders to half float and
- * the output pass tone-maps once, with AgX, which keeps saturated highlights
- * (muzzle flashes, fire) from clipping to white the way ACES does.
+ * the output pass tone-maps once, with the curve below, so a flash's core
+ * (a muzzle's, a fire's) rolls off to white instead of clipping.
  */
-export async function createRemasterRenderer({ antialias = true } = {}) {
+export async function createRemasterRenderer() {
   const renderer = new THREE.WebGPURenderer({
     // No MSAA on the canvas path: the frame comes from the post chain (SMAA),
     // and the overlay passes must load the very framebuffer the frame was
@@ -84,9 +84,9 @@ export async function createRemasterRenderer({ antialias = true } = {}) {
  * built: it appears a few frames late, once, and nothing stops.
  *
  * Full-screen quads (the post chain's passes) stay synchronous: a frame
- * without its output quad is a black frame. `?remaster=syncpipes` turns
- * this off. These are three's internals (r186): if either is not where it
- * was, nothing is installed and pipelines are built as before.
+ * without its output quad is a black frame. These are three's internals
+ * (r186): if either is not where it was, nothing is installed and pipelines
+ * are built in the frame that meets them, as three does by itself.
  */
 function installAsyncPipelines(renderer) {
   const state = { on: false, pending: 0, built: 0, installed: false };
@@ -140,14 +140,11 @@ function installWebglShims(renderer) {
 }
 
 /**
- * The remaster's frame: the sky and atmosphere (remaster-sky.js), the
- * surfaces (remaster-materials.js, through `remasterHooks`), every mesh
- * casting and taking the sun's shadow, and the post chain: ground-truth
- * ambient occlusion on the scene's depth, bloom on what is brighter than
- * white, and AgX tone mapping on the HDR result.
- *
- * `?remaster=noao`, `=nobloom`, `=nopost` (comma-separated) turn parts off
- * for the before/after and the frame-time table.
+ * The remaster's frame: the sky, sun and fog (remaster-sky.js), the surfaces
+ * (remaster-materials.js, through `remasterHooks`), every mesh casting and
+ * taking the sun's shadow, and the post chain: ambient occlusion on the
+ * scene's depth, bloom on what is brighter than white, sun shafts, SMAA, and
+ * the tone curve on the HDR result.
  */
 export async function createRemasterScene({ renderer, scene, camera, sun, hemi }) {
   const [{ createRemasterSky }, { remasterMaterials }, { remasterHooks }, tsl, gtao, bloomMod, water] = await Promise.all([
@@ -163,21 +160,13 @@ export async function createRemasterScene({ renderer, scene, camera, sun, hemi }
   const { createShadowProxies, SHADOW_LAYER } = await import('./remaster-shadow-proxies.js');
   const smaaMod = await import('three/addons/tsl/display/SMAANode.js');
   const shaftMod = await import('three/addons/tsl/display/radialBlur.js');
-  const { REMASTER_OFF: off } = await import('./remaster-mode.js');
   const atmosphere = createRemasterSky({ renderer, scene, camera, sun, hemi });
   const { viewGain } = await import('./remaster-materials.js');
   const overlays = new WeakMap();
-  const asyncPipelines = off.has('syncpipes') ? { on: false, pending: 0, built: 0, installed: false } : installAsyncPipelines(renderer);
+  const asyncPipelines = installAsyncPipelines(renderer);
   remasterHooks.materials = remasterMaterials;
-  // The generated normal and roughness maps' index (remaster_texture_maps.py);
-  // none generated is no relief, not an error. Asked for with `maps`.
-  if (off.has('maps')) try {
-    const index = await fetch('./remaster-textures/index.json').then(r => (r.ok ? r.json() : null));
-    (await import('./remaster-materials.js')).setTextureMaps(index?.hashes);
-  } catch { /* no maps */ }
   remasterHooks.provingFloor = (await import('./remaster-materials.js')).provingFloor;
   remasterHooks.water = water.remasterWaterMaterial;
-  remasterHooks.off = off;
   remasterHooks.foliage = remasterFoliage;
   remasterHooks.cloudMaterial = (tex, uniforms) => atmosphere.cloudMaterial(tex, uniforms);
   // Light, not surface: an additive flame, flash or tracer drawn GLOW times
@@ -203,11 +192,11 @@ export async function createRemasterScene({ renderer, scene, camera, sun, hemi }
   // effects.js), where the whole quad is on screen. A flash that is a mesh
   // (a muzzle's, a tracer) keeps the plain multiple: its shape is its
   // geometry, and the owner called the AA gun's "beautiful" as it is.
-  const GLOW = Number(new URLSearchParams(location.search).get('glow')) || 3;
+  const GLOW = 3;
   const addsLight = m => m.blending === THREE.AdditiveBlending
     || (m.blending === THREE.CustomBlending && m.blendDst === THREE.OneFactor);
   remasterHooks.glow = (m, { sprite = false } = {}) => {
-    if (!m || m.remasterGlow || off.has('noglow') || !addsLight(m)) return;
+    if (!m || m.remasterGlow || !addsLight(m)) return;
     m.remasterGlow = true;
     const c = tsl.materialColor;
     const byAlpha = m.blending === THREE.AdditiveBlending || m.blendSrc === THREE.SrcAlphaFactor;
@@ -238,19 +227,17 @@ export async function createRemasterScene({ renderer, scene, camera, sun, hemi }
     { test: /muzz|fire$/i, intensity: 1.2, range: 8, life: 0.05, color: 0xffc890 },
   ];
   const flashes = [];
-  if (!off.has('noflash')) {
-    for (let i = 0; i < 4; i++) {
-      const l = new THREE.PointLight(0xffb070, 0, 60, 2);
-      l.castShadow = false;
-      l.userData.remasterFlash = true;
-      scene.add(l);
-      flashes.push({ light: l, t: 0, life: 1, peak: 0 });
-    }
+  for (let i = 0; i < 4; i++) {
+    const l = new THREE.PointLight(0xffb070, 0, 60, 2);
+    l.castShadow = false;
+    l.userData.remasterFlash = true;
+    scene.add(l);
+    flashes.push({ light: l, t: 0, life: 1, peak: 0 });
   }
   let flashNext = 0;
   const _flashAt = new THREE.Vector3();
   remasterHooks.flash = (name, position, object = null) => {
-    if (!flashes.length || !name || (!position && !object)) return;
+    if (!name || (!position && !object)) return;
     const kind = FLASH_KINDS.find(k => k.test.test(name));
     if (!kind?.intensity) return;
     const f = flashes[flashNext++ % flashes.length];
@@ -281,10 +268,9 @@ export async function createRemasterScene({ renderer, scene, camera, sun, hemi }
   // The tracer material is a module constant, built before this renderer.
   import('./round-visuals.js').then(r => remasterHooks.glow(r.tracerMaterial)).catch(() => {});
 
-  renderer.toneMappingExposure = Number(new URLSearchParams(location.search).get('exposure')) || 0.58;
+  renderer.toneMappingExposure = 0.58;
   // The engine-combine surfaces are display-referred: handed the exposure to undo.
-  viewGain.value = 1 / Math.max(0.1, renderer.toneMappingExposure);
-  if (off.has('notonemap')) renderer.toneMapping = THREE.NoToneMapping;
+  viewGain.value = 1 / renderer.toneMappingExposure;
 
   // Shadow flags on everything that can take them, walked in slices as the
   // scene grows (bots, vehicles, effects arrive after the level). A level
@@ -296,9 +282,9 @@ export async function createRemasterScene({ renderer, scene, camera, sun, hemi }
   const SKIP = new Set(['sky', 'water', 'effects']);
   // Statics cast through their merged proxies (remaster-shadow-proxies.js)
   // at every distance the cascades reach; what is left here is what moves.
-  const FOLIAGE_REACH = Number(new URLSearchParams(location.search).get('leafReach')) || 120;
-  const SOLID_REACH = Number(new URLSearchParams(location.search).get('solidReach')) || 450;
-  const proxies = off.has('noproxies') ? null : createShadowProxies(scene);
+  const FOLIAGE_REACH = 120;
+  const SOLID_REACH = 450;
+  const proxies = createShadowProxies(scene);
   const casters = [];
   // A skinned mesh's bone matrices (a batch's instance data likewise) are a
   // uniform array whose size the compiled graph fixes, and three shares one
@@ -367,14 +353,13 @@ export async function createRemasterScene({ renderer, scene, camera, sun, hemi }
       // Only lit surfaces: an unlit alpha-tested material is an effect
       // sprite (smoke, a muzzle flash) parked in the pool, not a caster.
       if (!lit) return;
-      obj.receiveShadow = lit && !(off.has('noleafreceive') && mats.some(m => m.alphaTest));
+      obj.receiveShadow = true;
       // Terrain never casts (the art carries its own relief shadows), nor do
       // its copies past the world's edge (level-edge.js, `edgeOf`).
       // A far tree's billboard neither: the tree's own parts cast near, and
       // a card turned to the sun shadows as its whole strip.
       const cast = !blended && obj.userData?.kind !== 'terrain' && !obj.userData?.edgeOf
-        && !obj.userData?.treeImpostor
-        && !(off.has('noleafshadow') && mats.some(m => m.alphaTest));
+        && !obj.userData?.treeImpostor;
       if (!cast) return;
       const leafy = mats.some(m => m.alphaTest || m.remasterSprite);
       if (!obj.geometry.boundingSphere) obj.geometry.computeBoundingSphere();
@@ -385,7 +370,6 @@ export async function createRemasterScene({ renderer, scene, camera, sun, hemi }
   const _p = new THREE.Vector3();
   const _lastEye = new THREE.Vector3(1e9, 0, 0);
   function judgeCasters() {
-    if (api.frozenCasters) return -1;
     const c = camera.position;
     let n = 0;
     for (let i = casters.length - 1; i >= 0; i--) {
@@ -415,7 +399,7 @@ export async function createRemasterScene({ renderer, scene, camera, sun, hemi }
   const _sunPoint = new THREE.Vector3();
   const _view = new THREE.Vector3();
   function updateShafts() {
-    const toward = atmosphere.uniforms.sunDir.value;
+    const toward = atmosphere.sunDir;
     camera.getWorldDirection(_view);
     const facing = _view.dot(toward);
     _sunPoint.copy(camera.position).addScaledVector(toward, 1000).project(camera);
@@ -524,7 +508,6 @@ export async function createRemasterScene({ renderer, scene, camera, sun, hemi }
       console.info(`[remaster] warm-up (${why}): ${flipped.length} objects (${shown.length} hidden roots shown), walk ${walk.toFixed(0)} ms, pipelines ready in ${ms.toFixed(0)} ms, ${textureQueue.length} textures to upload`);
     }, err => console.warn('[remaster] warm-up', why, err));
     return lastWarm;
-    return lastWarm;
   }
 
   // The post chain, built once the camera is final.
@@ -537,35 +520,27 @@ export async function createRemasterScene({ renderer, scene, camera, sun, hemi }
     scenePassRef = scenePass;
     const color = scenePass.getTextureNode('output');
     const depth = scenePass.getTextureNode('depth');
-    let out = color;
-    if (!off.has('noao')) {
-      const aoPass = gtao.ao(depth, null, camera);
-      aoPass.resolutionScale = 0.5;
-      aoPass.radius.value = 1.6;
-      aoPass.distanceExponent.value = 1.4;
-      aoPass.scale.value = 1.1;
-      aoPass.thickness.value = 1.5;
-      // The sky has no surface to occlude.
-      const occlusion = depth.r.greaterThanEqual(0.99999).select(float(1), aoPass.getTextureNode().r);
-      out = vec4(color.rgb.mul(mix(float(1), occlusion, 0.85)), color.a);
-    }
-    if (!off.has('nobloom')) {
-      const glow = bloomMod.bloom(color, 0.3, 0.35, 2.4);
-      out = vec4(out.rgb.add(glow.rgb), out.a);
-    }
+    // Ambient occlusion at half resolution; the sky has no surface to occlude.
+    const aoPass = gtao.ao(depth, null, camera);
+    aoPass.resolutionScale = 0.5;
+    aoPass.radius.value = 1.6;
+    aoPass.distanceExponent.value = 1.4;
+    aoPass.scale.value = 1.1;
+    aoPass.thickness.value = 1.5;
+    const open = depth.r.greaterThanEqual(0.99999);
+    const occlusion = open.select(float(1), aoPass.getTextureNode().r);
+    let out = color.rgb.mul(mix(float(1), occlusion, 0.85));
+    out = out.add(bloomMod.bloom(color, 0.3, 0.35, 2.4).rgb);
     // Light shafts: the bright, open sky radially blurred toward the sun's
     // place on the screen, so the sun breaks through tree crowns, eaves and
     // the girders of a bridge. Faded out as the sun leaves the view.
-    if (!off.has('noshafts')) {
-      const sky = depth.r.greaterThanEqual(0.99999).select(float(1), float(0));
-      const bright = tsl.max(color.rgb.dot(tsl.vec3(0.2126, 0.7152, 0.0722)).sub(shaftThreshold), 0);
-      const mask = vec4(color.rgb.mul(bright).mul(sky), 1);
-      const rays = shaftMod.radialBlur(mask, { center: shaftCenter, weight: float(0.9), decay: float(0.955), count: tsl.int(40), exposure: float(1.2) });
-      out = vec4(out.rgb.add(rays.rgb.mul(shaftStrength)), out.a);
-    }
+    const bright = tsl.max(color.rgb.dot(tsl.vec3(0.2126, 0.7152, 0.0722)).sub(shaftThreshold), 0);
+    const mask = vec4(color.rgb.mul(bright).mul(open.select(float(1), float(0))), 1);
+    const rays = shaftMod.radialBlur(mask, { center: shaftCenter, weight: float(0.9), decay: float(0.955), count: tsl.int(40), exposure: float(1.2) });
+    out = out.add(rays.rgb.mul(shaftStrength));
     // SMAA on the HDR frame, its edges found on values held under 4 so a
     // flash's core does not swamp the luma test.
-    if (!off.has('nosmaa')) out = smaaMod.smaa(vec4(clamp(out.rgb, 0, 4), 1));
+    out = smaaMod.smaa(vec4(clamp(out, 0, 4), 1));
     // The frame is drawn as one full-screen quad through the renderer's own
     // output path, NOT a RenderPipeline. A RenderPipeline turns tone mapping
     // off and writes straight to the canvas; the page's overlay passes (the
@@ -588,14 +563,12 @@ export async function createRemasterScene({ renderer, scene, camera, sun, hemi }
   const api = {
     atmosphere,
     /** After a level is up: its sky, sun, fog and shadow flags. */
-    levelLoaded(extras, root, waterLevel) {
-      atmosphere.apply(extras, waterLevel);
+    levelLoaded(extras, root) {
+      atmosphere.apply(extras);
       flagShadows(root ?? scene);
-      if (proxies) {
-        const t = performance.now();
-        const r = proxies.build(casters, atmosphere.uniforms.sunDir.value);
-        console.info(`[remaster] shadow proxies: ${r.sources} static meshes as ${r.proxies} proxies in ${(performance.now() - t).toFixed(0)} ms`);
-      }
+      const t = performance.now();
+      const r = proxies.build(casters, atmosphere.sunDir);
+      console.info(`[remaster] shadow proxies: ${r.sources} static meshes as ${r.proxies} proxies in ${(performance.now() - t).toFixed(0)} ms`);
       judgeCasters();
       lastFlag = performance.now();
       // Five frames in (the scene pass is set up, the cascades fitted), and
@@ -645,10 +618,6 @@ export async function createRemasterScene({ renderer, scene, camera, sun, hemi }
     },
     /** Pipelines built off the thread during play: `{ on, pending, built }`. */
     asyncPipelines: () => ({ ...asyncPipelines }),
-    /** The last warm-up's promise (a harness waits on it). */
-    warmed: () => lastWarm,
-    /** How many meshes cast now, of how many could. */
-    casters: () => ({ casting: judgeCasters(), of: casters.length }),
     render() {
       // Every call is a frame: three's node frame (which gates each pass
       // and shadow map to once a frame) only advances inside the animation
@@ -668,13 +637,12 @@ export async function createRemasterScene({ renderer, scene, camera, sun, hemi }
       // before then), then once a second.
       earlyFrames++;
       if (earlyFrames < 600) flagShadows(scene);
-      if (now - lastFlag > 1000) { lastFlag = now; flagShadows(scene); proxies?.refresh(casters); }
+      if (now - lastFlag > 1000) { lastFlag = now; flagShadows(scene); proxies.refresh(casters); }
       if (now - lastJudge > 200 || camera.position.distanceToSquared(_lastEye) > 400) {
         lastJudge = now;
         _lastEye.copy(camera.position);
         judgeCasters();
       }
-      if (off.has('nopost')) { renderer.render(scene, camera); return; }
       const autoClear = renderer.autoClear;
       renderer.autoClear = true;
       (pipeline ?? buildPipeline()).render(renderer);

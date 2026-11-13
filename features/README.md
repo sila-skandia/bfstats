@@ -57,7 +57,7 @@ folder answers.
 | [level-archive-mounts](level-archive-mounts/README.md) | fix | How does a level bake find another level's meshes, a level's own textures and templates, and the spawn points buildings carry? |
 | [terrain-edge-wrap](terrain-edge-wrap/README.md) | build | What does the engine draw past the heightmap's edge, and how does the viewer repeat the terrain and the sea there without a re-bake? |
 | [level-lighting-laws](level-lighting-laws/README.md) | fix | Why did a level read flatter and lighter than retail, and what are the engine's combines for terrain detail, lightmapped statics and `materialDiffuse`? |
-| [remaster-browser](remaster-browser/README.md) | build | What does the browser game look and sound like with WebGPU, real-time shadows, HDR, a physical sky, height fog, modern water, HRTF and reverb (`?remaster`, a throwaway what-if branch), and what does it cost? |
+| [remaster-browser](remaster-browser/README.md) | build | What does the browser game gain from a WebGPU renderer behind one OPTIONS > VIDEO toggle (real-time sun shadows, reflective water, explosions that light their surroundings, every surface still drawn with the engine's own combine), and what does it cost? |
 | [terrain-tile-grid](terrain-tile-grid/README.md) | fix | How big is the patch each Tx tile covers, which tiles does the engine draw, and why was Medina Ridge's ground scrambled? |
 | [mesh-asset-size](mesh-asset-size/README.md) | pipeline | How are mesh assets made smaller losslessly, and how is each phase deployed? |
 | [mesh-lod-chains](mesh-lod-chains/README.md) | build | Which LODs does retail draw for a static mesh, and at what distances? |

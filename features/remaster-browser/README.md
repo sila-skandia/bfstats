@@ -1,90 +1,81 @@
-# Remaster mode for the browser game (`?remaster`)
+# Remaster mode for the browser game
 
-Status: built 2026-11-12 on the throwaway branch `claude/remaster-browser-c4f0dd`,
-as a what-if. It is not for main. The same sim, levels, models and sounds,
-shown the way a game made today would look and sound. Without `?remaster` the
-page is the retail-parity build it always was, so the two can be compared on
-the same level from the same camera.
+OPTIONS > VIDEO has a REMASTER row. Ticked, the game is drawn by three's
+WebGPU renderer with three things the retail page does not have:
 
-Audio has its own notes: [AUDIO.md](AUDIO.md).
+- the sun casts real-time shadows, from everything onto everything;
+- the water reflects the sky and the sun, shows its bed in the shallows
+  and foams at the shore;
+- explosions, muzzle flashes and tracers are light: their cores bloom and
+  they light the ground and walls around them.
 
-**What `?remaster` is now (2026-11-12).** The owner played it and kept the
-sun and the water: "I'd keep the sun and the water, but I'm not sold on
-anything else." The Sherman's generated relief read as hail damage, and the
-audio was "too muffled... like having headphones on", inside a tank most of
-all. So `?remaster` is the lighting (sun, sky, shadows, haze, AO, bloom) and
-the water. The relief maps are `?remaster=maps`, and the spatial audio is
-`&remasterAudio=1`. Both were fixed after the verdict (below), but they stay
-off unless asked for.
+Everything else is drawn as the retail page draws it: the same combines at
+the art's own brightness, the level's own sky and fog. Unticked (the
+default) the page is the retail-parity build it always was.
 
-**And what it is now (2026-11-13).** The owner played it again: the weapon
-in the hand lit by the remaster's sun "makes everything look rubbery and low
-detail... technically cool but provides nothing"; and of the world, "the dark
-shadows have that gel grey feeling", vehicles in the sun "overly darkened
-and grey", "in general our rendering of the shadows is ugly and lacking light
-and detail", the fog "dirty, not atmospheric". Every one of those was the
-physically based relighting. BF1942's art is painted to be seen under the
-engine's own combines, so the remaster now draws every surface with the
-combine the retail page draws it with, at the art's own brightness, and adds
-to it what it adds: the sun's real-time shadow in the combine's sun term,
-the water, the HDR frame (bloom, shafts, occlusion). The fog is the level's
-own. Nothing is relit.
+Status: built 2026-11-12 and 13 on the branch `claude/remaster-browser-c4f0dd`.
+Not merged.
+
+**How it got to this shape.** The first cut (2026-11-12) relit the whole
+game: physically based surfaces under a sun and the sky's image-based light,
+a physical sky, a height haze, generated relief maps and a spatial audio
+chain. The owner played it three times. First: "I'd keep the sun and the
+water, but I'm not sold on anything else"; the relief read as hail damage
+and the audio as "like having headphones on". Second: the weapon in the
+hand lit by the new sun "makes everything look rubbery and low detail";
+back-lit things were grey blobs, shadows "ugly and lacking light and
+detail", the fog "dirty, not atmospheric". Every one of those was the
+relighting: BF1942's art is painted to be seen under the engine's own
+combines. So every surface went back to its combine, with the cast shadow
+put inside the combine's sun term. Third (2026-11-13): "it looks nice, and
+it's smooth"; what they like is the water, the shadows, and most of all the
+flak gun's explosion; everything else looks about the same. So the remaster
+was packaged as the one toggle and everything that was off by default or
+only there for comparison was removed ("What was removed", below).
 
 ## Plan and progress
 
 | Step | State |
 |---|---|
-| `?remaster` switches three to r186's WebGPU build through the import map; the default path untouched | done |
-| The setting carries from the play menu into every game it starts, for the tab | done |
+| OPTIONS > VIDEO's REMASTER row, kept per browser, taken by the next level; `?remaster` / `?remaster=0` on the address for one page | done |
+| three r186's WebGPU build through the import map when it is on; the default path untouched | done |
 | WebGPU renderer under the whole game: shims for the WebGL-only calls, warm-up, node frame, overlay passes (first-person arms, replays), side views (tank sights, previews, the proving ground) | done |
-| Every surface drawn with the engine's own combine, the sun's real-time shadow in its sun term: terrain, lightmapped statics, vehicles, soldiers, trees | done (the owner's call, 2026-11-13; physically based until then) |
-| Real-time cascaded sun shadows out to the fog wall | done (static casters merged into shadow proxies) |
-| Ambient occlusion (GTAO), HDR, tone mapping, SMAA | done |
-| Each level's own painted sky (or cube), lifted into HDR, as the sky and as the ambient light | done (a physical sky only for a level with neither) |
-| The level's own fog (`fogColor` / `fogStart` / `fogEnd`), mixed as the retail page mixes it | done (2026-11-13; the height haze it replaced is `?remaster=haze`) |
-| Water from the level's own water words and depth bake | done |
-| Foliage: leaf sprites, billboards and wind as node graphs | done |
-| Bloom on muzzle flashes, explosions and tracers; flashes and blasts light their surroundings; sun shafts | done |
-| Audio: reverb by surroundings, occlusion, air absorption, the crack before the report | done, behind `remasterAudio=1` ([AUDIO.md](AUDIO.md)); no longer forces Chromium's HRTF |
-| Generated normal and roughness maps from the texture store | done, behind `?remaster=maps` (`remaster_texture_maps.py`, 3,367 maps); edges only, no paint mottle |
-| Pipelines and textures warmed before play, not on first sight | done (worst frame while turning: 141-501 ms down to 26-83 ms) |
-| The first-person arms and weapon drawn by the engine's own combine, not the remaster's sun | done (the owner's call, 2026-11-13) |
-| Nothing built during play holds a frame: hidden effects and vehicles warmed, later pipelines built off the thread | done (first kill of a kind: 283-486 ms down to 36-52 ms) |
-| A round thrown from the hand takes the world's material (a grenade no longer stops the frame) | done |
-| The sea drawn before every other transparent thing (far palms no longer cut at the waterline) | done |
+| Every surface drawn with the engine's own combine, the sun's real-time shadow in its sun term: terrain, lightmapped statics, vehicles, soldiers, trees | done |
+| Real-time cascaded sun shadows out to the fog's end, static casters merged into shadow proxies | done |
+| The level's own painted sky (or cube) in HDR, and its own fog mixed as the retail page mixes it | done |
+| Water from the level's own water words and depth bake, drawn before every other transparent thing | done |
+| Foliage: leaf sprites, far cards and wind as node graphs | done |
+| Bloom on muzzle flashes, explosions and tracers; flashes and blasts light their surroundings; sun shafts; ambient occlusion; SMAA | done |
+| The first-person arms and weapon drawn by the engine's own combine | done |
+| Pipelines and textures warmed before play; nothing built during play holds a frame | done (first kill of a kind: 283-486 ms down to about 30 ms) |
+| A round thrown from the hand takes the world's material | done |
+| Simplified to the one toggle: relief maps, audio chain, height haze, physical sky and every comparison flag removed | done (2026-11-13) |
 | Two levels with before/after captures and frame times | done: Wake, Battle of Britain |
 
-## How to look at it
+## How to turn it on
+
+OPTIONS > VIDEO > REMASTER, on the menu or in a game (Escape). It is a tick
+box under ANTI-ALIASING, kept in the browser (`localStorage`
+`bf42-mesh-remaster`), off until ticked, and cleared by DEFAULT. The
+renderer and the three build are chosen as a page loads, so a change made in
+a game waits for the next level, and the row says so (`NEXT LEVEL`), as
+ANTI-ALIASING and LIGHTMAPS do. Under the remaster ANTI-ALIASING does
+nothing: the frame is smoothed by SMAA.
+
+![The row](shots/options_video_remaster.jpg)
+
+For a comparison or a harness, the address decides for one page whatever is
+stored:
 
 ```
-map.html?map=wake&remaster
-play/index.html?remaster                     # the menu: every game it starts is remastered, in this tab
-map.html?map=wake&remaster=0                 # off again for the tab
-map.html?map=wake&remaster=noao,nobloom      # parts off, comma-separated
-map.html?map=wake&remaster=maps              # with the generated relief maps
-map.html?map=wake&remaster&remasterAudio=1   # with the spatial audio chain
+map.html?map=wake&remaster       # on
+map.html?map=wake&remaster=0     # off
 ```
 
-The setting lives in the tab's `sessionStorage` (`bfRemaster`): the menu and
-the game write it from the address and read it when the address says nothing.
-Instant battle, campaign, multiplayer, replays and the proving ground all
-start the game their own way; this covers all of them.
-
-The parts that can be turned off: `noshadow`, `noproxies` (statics cast for
-themselves), `noao`, `nobloom`, `nosmaa`, `nopost` (no post chain at all),
-`nofog`, `nowater`, `noglow` (effects at their texture brightness),
-`noflash` (no flash lights), `noshafts`, `nostagger` (every cascade every
-frame), `notonemap`, `syncpipes` (a pipeline met during play is built in
-the frame that meets it, as before 2026-11-13). Parts that are off unless
-named: `maps` (the generated normal and roughness maps), `haze` (the height
-haze, in place of the level's own fog). A check: `showk` draws each surface
-as the share of the sun its combine was given (white in the sun, black in a
-shadow or turned away). Tuning
-knobs: `&exposure=`, `&cascades=`, `&shadowFar=`, `&shadowSize=`,
-`&leafReach=`, `&solidReach=`, `&glow=`, `&gpuTiming`, `&pipelineSalt=`
-(a measurement's: a number folded into every fogged shader so the OS's
-shader cache has seen none of them). `remasterAudio=1`
-adds the spatial audio chain; without it the sound is retail's.
+There are no other switches. Two query words are left for measuring:
+`&pipelineSalt=<n>` folds a number into every fogged shader so the OS's
+shader cache has seen none of them, and `&gpuTiming` asks the renderer for
+timestamp queries.
 
 The before/after harness, one headless Google Chrome with WebGPU on the Mac's
 GPU (`apple metal-3`), both modes, named views per level, frame times and
@@ -95,26 +86,14 @@ cd tools/bf1942-models
 python3 serve_viewer.py 5390 &
 node tests/perf/remastershot.mjs --map wake --out /tmp/shots --modes 'retail;remaster' --frames 60
 node tests/perf/remastershot.mjs --map wake --views bunker --effect 'BombBig_Expl@1328,107.5,-1192@4'
+node tests/perf/remaster_explosions.mjs --base http://localhost:5390 --map wake
 ```
 
-It stops the page's own animation loop and steps frames with `__renderOnce`,
-waiting for the GPU queue after each one, so a frame time is CPU and GPU
-together.
-
-The normal and roughness maps are generated, not committed (150 MB for the
-two local levels and the whole models tree; 3.5 minutes):
-
-```
-python3 -m venv tools/bf1942-models/.venv-remaster
-tools/bf1942-models/.venv-remaster/bin/pip install numpy pillow
-cd tools/bf1942-models
-.venv-remaster/bin/python remaster_texture_maps.py viewer/maps/wake/scene.glb \
-    viewer/maps/battle_of_britain/scene.glb 'viewer/models/**/*.glb'
-```
-
-A level whose textures have no map (a level fetched from mesh.bfstats.io
-that was never run through the generator) draws without the relief; the page
-reads the generator's index and asks only for maps that exist.
+The first stops the page's own animation loop and steps frames with
+`__renderOnce`, waiting for the GPU queue after each one, so a frame time is
+CPU and GPU together. The last destroys vehicles, plays every explosion and
+throws what the kit throws, and fails on a frame over 100 ms or a frame that
+throws.
 
 ## Before and after
 
@@ -129,6 +108,9 @@ water, and the shafts:
 
 Wake, the supply bunker:
 ![Wake bunker](shots/wake_bunker.jpg)
+
+Wake from the air, over the causeway:
+![Wake from the air](shots/wake_hill.jpg)
 
 Wake, the beach below the hill. The ridge's palms throw long shadows down the
 slope toward the eye:
@@ -192,24 +174,20 @@ retail column is the default path on this branch, unchanged by it.
 | Battle of Britain | airfield | 4.0 ms | 9.6 ms | 6.0 ms |
 | Battle of Britain | overview | 4.8 ms | 10.4 ms | 6.4 ms |
 
-Every view is inside a 60 fps frame. The table is from 2026-11-12, before
-the surfaces went back to the engine's combines; that change did not move it
-(the two builds served side by side and timed back to back on 2026-11-13,
-with the machine busy: 17.3, 15.4, 11.1, 12.7 and 20.2 ms before, 16.4, 15.4,
-13.2, 12.3 and 19.8 ms after, the five Wake views in the table's order).
-Where it goes (about 1 ms of noise):
+Every view is inside a 60 fps frame. The table is from 2026-11-12, with the
+machine quiet; the changes since did not move it (old and new builds served
+side by side and timed back to back on 2026-11-13, with the machine busy:
+17.3, 15.4, 11.1, 12.7 and 20.2 ms before, 16.4, 15.4, 13.2, 12.3 and 19.8 ms
+after, the five Wake views in the table's order).
 
-| | Wake airfield | Battle of Britain base |
-|---|---|---|
-| everything | 13.9 ms | 11.1 ms |
-| `noshadow` | 9.8 ms | 8.3 ms |
-| `nopost` (no AO, bloom, shafts, SMAA) | 12.0 ms | 10.4 ms |
-| `nomaps` | 12.9 ms | 12.2 ms |
-| `noproxies` (every static casting for itself) | | 23.7 ms |
-
-The shadows are 3 to 4 ms with the range at the fog wall, the post chain 1 to
-2 ms, the generated maps about 1 ms; the rest is three's WebGPU renderer's
-own JS cost per draw over r169's WebGL one. None of it is GPU-bound.
+Where it goes, measured on 2026-11-13 with the machine busy (Wake airfield,
+bunker, into the sun): the whole post chain is 4.6 to 6.6 ms of a frame
+(17.1, 12.7 and 20.4 ms with it, 12.5, 6.6 and 13.8 ms drawing the scene
+straight to the canvas). Of that, ambient occlusion and the sun shafts
+together are 1 to 2.8 ms; the rest is the HDR scene pass, bloom and SMAA.
+The shadows are 3 to 4 ms. What is left over retail is three's WebGPU
+renderer's own JS cost per draw over r169's WebGL one. None of it is
+GPU-bound.
 
 How the shadows got here from 140 ms:
 
@@ -254,15 +232,13 @@ its listed neighbours into a temporary folder.
 
 | File | What it does |
 |---|---|
-| `remaster-mode.js` | the setting (address, else the tab's), the parts turned off, the hook registry |
+| `remaster-mode.js` | the setting (OPTIONS > VIDEO's row, the address for one page) and the hook registry |
 | `remaster-renderer.js` | the WebGPU renderer, its WebGL shims, the custom tone curve, shadow casters, the frame and its post chain, flash lights, sun shafts, side renderers |
-| `remaster-sky.js` | the painted sky in HDR, the physical sky's fallback, image-based light, the fog, cascaded shadows, the retail cloud layer |
-| `remaster-materials.js` | `EngineMaterial` and its lighting model (the engine's combines with the sun's shadow in them), the first-person rig's material, the generated maps, the proving ground's floor |
+| `remaster-sky.js` | the painted sky in HDR, the image-based light the water reflects, the fog, the sun and its cascaded shadows, the retail cloud layer |
+| `remaster-materials.js` | `EngineMaterial` and its lighting model (the engine's combines with the sun's shadow in them), the first-person rig's material, the proving ground's floor |
 | `remaster-shadow-proxies.js` | the merged static shadow casters |
 | `remaster-water.js` | the water |
 | `remaster-foliage.js` | leaf sprites, billboards, wind |
-| `remaster-audio*.js` | the audio chain ([AUDIO.md](AUDIO.md)) |
-| `../remaster_texture_maps.py` | the normal and roughness map generator |
 
 The retail modules call in where they build their own look:
 `level-shading.js` (terrain detail, lightmaps, dynamic shading),
@@ -306,8 +282,8 @@ billboards. Cut-outs cast through their map's alpha.
 **Sky.** The level's own painted SkyBox (or its cube of six faces), drawn at
 its painted brightness through the exposure and tone curve, down to its own
 painted horizon, and rendered once into the image-based light the water
-reflects. A level with neither gets three's SkyMesh (Preetham) lit by its
-sun, calibrated to the same mean brightness and eased toward grey.
+reflects. A level with neither (none of the 227 extracted levels) draws its
+fog colour, as retail does.
 
 **Surfaces.** One material class, `EngineMaterial`
 (`remaster-materials.js`), whose lighting model is the engine's combine for
@@ -332,25 +308,10 @@ reaches the screen as the combine left it. The first-person arms and weapon
 use the same combine with the retail page's light direction and no shadow
 (`viewMaterial`).
 
-Each texture's generated map (below, `?remaster=maps`) turns the normal the
-vehicles' N.L reads.
-
-**Generated maps.** `remaster_texture_maps.py` reads every store texture the
-given glbs name and writes one WebP per texture: the normal (RG) of a height
-taken from the texture's luminance, high-passed at a sixty-fourth of the
-texture, with only its steepest slopes kept (panel lines, hatch rims, rivets,
-plank edges, mortar; not paint mottle or weathering), and roughness (B) from
-brightness and that kept detail (broad bright paint smoother, edges and dark
-paint rougher). Drawn at strength 1. The page tags each texture with its store hash as the glb loads
-(`glb-loader.js`) and finds its map through the generator's index.
-
 **Fog.** The level's own, as the retail page draws it: three's fog between
 `fogStart` and `fogEnd` (a smoothstep of the view depth) in `fogColor`,
 mixed in display space as the retail page's is and the engine's was. What is
-brighter than white (a flame's glow) is carried past the mix. `?remaster=haze`
-draws what this replaced: an exponential haze thinning with height, floored
-at 70 % of a linear ramp, with a wall over the last fifth of `fogEnd` and a
-glow toward the sun.
+brighter than white (a flame's glow) is carried past the mix.
 
 **Water.** Drawn before every other transparent thing, as the retail water
 is. The level's two colour layers and normal map scrolled as retail
@@ -489,28 +450,6 @@ surroundings through a pool of four point lights.
   additively, and a particle's quad adds `EOTF(OETF(rgb) * alpha * opacity)`
   times the glow: the engine's own result over black. A flash that is a
   mesh (a muzzle's, a tracer) is as it was.
-- **The generated relief read as hail damage** on the Sherman. The first
-  generator took everything finer than an eighth of the texture as height,
-  so painted mottle, weathering and camo blotches became dents, and the page
-  drew them at 1.8 times. It now high-passes at a sixty-fourth and keeps a
-  slope only where it is among the texture's steepest (a soft knee between
-  its 70th and 97th percentiles): panel lines, hatch rims, rivets, plank
-  edges and mortar keep a bevel, paint stays flat. Drawn at 1.
-- **The spatial audio forced Chromium's HRTF on every voice.** Against equal
-  power on white noise it lifts the bottom 3 dB and takes 2.5 to 3.5 dB off
-  the top ahead and 7.5 to 10 dB behind: the owner's "like having headphones
-  on". The chain now pans with the player's own model (equal power, or HRTF
-  with HARDWARE ACCELERATION ticked). Its air absorption was a Q 0.5 corner,
-  -6 dB at the cutoff, moving from 15 m. It is now a Butterworth from 25 m,
-  13 kHz at 50 m and 8.7 kHz at 100 m. Full occlusion is 1.5 kHz and -5 dB,
-  where it was 700 Hz and -7 dB.
-- **In a tank the spatial audio was still fully muffled**, which is what the
-  owner heard on the second try. Its occlusion rays hit the listener's own
-  hull: every voice blocked, the reverb's survey reading "inside a room".
-  Measured in the page, in the Sherman: 22.5 dB down from 4 to 10 kHz against
-  retail in the same seat. The rays now pass through vehicles and the
-  listener's own engine is measured from the ear; the seat is within 0.2 dB
-  of retail in every band ([AUDIO.md](AUDIO.md), "Second pass").
 - **Everything in the world was relit, and looked worse for it.** Statics,
   vehicles, soldiers, trees and the ground were physically based surfaces
   under the sun and the sky's image-based light. A face out of the sun was
@@ -522,8 +461,7 @@ surroundings through a pool of four point lights.
   "ugly and lacking light and detail". The art is painted for the engine's
   combines, so every surface is drawn with its own (`EngineMaterial`, "The
   pieces"), and the remaster's part is the cast shadow inside the combine's
-  sun term. The two entries below this one (`envByAlpha`, the sky's share)
-  were tunings of the relighting and went with it.
+  sun term.
 - **A thrown grenade stopped the picture.** The game ran on and could be
   heard; the frame was frozen. `round-launch.js` clones a thrown round out of
   the hand rig, and since the weapon in the hand got its own material the
@@ -565,25 +503,6 @@ surroundings through a pool of four point lights.
   band, whose materials `tree-foliage.js` clones to fade them, drew its
   fronds as whole white blades. `cloneWithNodes` and `EngineMaterial.copy`
   carry it.
-- **`envmap true` made a whole material shiny.** The engine reflects the
-  level's cube by the texture's alpha, `lit * A + cube * (1 - A)`
-  (`envmap.js`); the remaster gave every such material roughness 0.5,
-  metalness 0.15 and full specular whatever its alpha. The Sherman's
-  Browning and its ammunition box (alpha 0.94: paint) mirrored the sky from
-  the gunner's seat, "washed out and too white". Reflection is now by
-  `1 - A` (`envByAlpha`).
-- **The sky lit a vehicle as brightly as the sun did.** Measured on that
-  gun: 0.068 linear from the sky alone, 0.05 from the sun alone, so no hull
-  had a lit side and a shaded side. The engine's own numbers for these
-  meshes on Wake are 0.24 ambient to 0.40 sun. Vehicles and soldiers now
-  take a quarter of the sky's image-based light (`DYNAMIC_SKY_FILL`, through
-  `aoNode`), which puts a sunlit face at 1.29 times its texture against
-  retail's 1.28. Trees take 0.6 (`FOLIAGE_SKY_FILL`): at a quarter a backlit
-  palm was a black cut-out.
-- **Far palms were pale ghosts.** The far tree card is lit with a
-  straight-up normal and always seen from the side, the angle at which a
-  specular surface mirrors the horizon. It was made a Lambert material, and
-  is now drawn unlit as retail draws it (above).
 - **The dev server dropped modules.** `serve_viewer.py` listened with
   socketserver's backlog of 5; the page asks for about 600 modules at once,
   and on macOS 27 some of that burst was reset, so the page never booted.
@@ -621,7 +540,6 @@ surroundings through a pool of four point lights.
   deepens to the level's deep colour, and foams at the shore.
 - Explosions and muzzle flashes are light: HDR cores, bloom, a flash of light
   on the ground and walls around them.
-- With `maps`: panel lines, rivets and planks turn the sun's light on vehicles.
 - Trees sway, leaves flutter, and leaves cast leaf-shaped shadows.
 - Contact shadows under eaves, in doorways and where objects meet the ground.
 
@@ -639,12 +557,27 @@ These are choices, not open faults.
 - **A frame costs about twice retail's** (9.6 to 18.7 ms against 3.8 to 6.9
   on this machine).
 
+## What was removed (2026-11-13)
+
+All of it is in the branch's history up to `ba68619ad`, the last commit
+that has it.
+
+| What | Why |
+|---|---|
+| The spatial audio chain (`remaster-audio*.js`, its notes, tests and measurements; `&remasterAudio=1`) | off by default since the first play ("too muffled... like having headphones on"); the audio modules are back to their retail versions |
+| The generated relief maps (`remaster_texture_maps.py`, `?remaster=maps`) | off by default since the first play (the Sherman's relief read as hail damage) |
+| The height haze (`?remaster=haze`) | replaced by the level's own fog |
+| The physical sky (three's SkyMesh) for a level with no sky of its own | no extracted level is without one |
+| The parts-off flags (`noao`, `nobloom`, `noshadow`, `nopost`, `syncpipes`, `showk` and the rest) and the tuning words (`exposure`, `cascades`, `shadowFar`, `shadowSize`, `leafReach`, `solidReach`, `glow`, `waterDebug`) | comparison and tuning aids; the values they defaulted to are constants |
+| The tab's `sessionStorage` setting and the menu's `?remaster` carry | the row in OPTIONS > VIDEO |
+| 69 of three's addon modules under `vendor/three-webgpu/addons/` | never imported; the six kept are CSM (two files), GTAO, bloom, SMAA and the radial blur |
+
 ## Files
 
 - `tools/bf1942-models/viewer/remaster-*.js`, `vendor/three-webgpu/`
-- `tools/bf1942-models/remaster_texture_maps.py` (its venv and output are
-  gitignored)
-- `tools/bf1942-models/tests/perf/remastershot.mjs`,
+- `tools/bf1942-models/viewer/video-options.js`, `play/controls-screen.js`
+  (the REMASTER row)
+- `tools/bf1942-models/tests/test_remaster_mode.py`,
+  `tools/bf1942-models/tests/perf/remastershot.mjs`,
   `tools/bf1942-models/tests/perf/remaster_explosions.mjs`
-- `features/remaster-browser/shots/` (the composites above),
-  `features/remaster-browser/AUDIO.md`
+- `features/remaster-browser/shots/` (the composites above)

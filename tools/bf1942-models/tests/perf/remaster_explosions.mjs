@@ -14,12 +14,11 @@
 // hangs", the owner, 2026-11-13). A frame that throws is a failure here.
 //
 //   node tests/perf/remaster_explosions.mjs --base http://localhost:5273 \
-//        [--map wake] [--modes 'remaster=syncpipes;remaster'] [--settle 15000]
+//        [--map wake] [--settle 15000]
 //
-// Each mode gets a `pipelineSalt` of its own (remaster-sky.js): macOS keeps
+// The run gets a `pipelineSalt` of its own (remaster-sky.js): macOS keeps
 // compiled shaders between runs, so without it only the first run of a
 // build ever pays for a pipeline and every later one reads as fixed.
-// `remaster=syncpipes` is the behaviour before the fix.
 
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
@@ -31,14 +30,14 @@ const argv = process.argv.slice(2);
 const opt = (k, d) => { const i = argv.indexOf(`--${k}`); return i >= 0 ? argv[i + 1] : d; };
 const base = opt('base', 'http://localhost:5273');
 const map = opt('map', 'wake');
-const modes = opt('modes', 'remaster=syncpipes;remaster').split(';');
 const settle = Number(opt('settle', 15000));
 
 const browser = await chromium.launch({
   channel: 'chrome', headless: true, args: ['--enable-unsafe-webgpu', '--ignore-gpu-blocklist'],
 });
 let failed = false;
-for (const mode of modes) {
+{
+  const mode = 'remaster';
   const page = await browser.newPage({ viewport: { width: 1600, height: 900 } });
   const errors = [];
   page.on('pageerror', e => errors.push(String(e).slice(0, 200)));
@@ -131,9 +130,8 @@ for (const mode of modes) {
   }
   if (result.pipelines) console.log(`pipelines built off the thread during play: ${result.pipelines.built}`);
   for (const e of errors) console.log(`page error: ${e}`);
-  // The fixed mode holds every event under 100 ms; `syncpipes` is the
-  // comparison and is allowed to be what it was.
-  if (!/syncpipes/.test(mode) && [...result.first, ...result.second, ...result.effects].some(r => r.worst > 100)) failed = true;
+  // Every event is held under 100 ms.
+  if ([...result.first, ...result.second, ...result.effects, ...result.thrown].some(r => r.worst > 100)) failed = true;
   if (errors.length) failed = true;
   await page.close();
 }

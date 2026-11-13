@@ -50,7 +50,7 @@ import { createLevelSkin, repaintPage } from './level-skin.js';
 // Remaster mode's hooks (features/remaster-browser, remaster-mode.js):
 // one registry on the global, so this module needs no import for it and
 // stays loadable by the harnesses that copy it alone. Empty without
-// `?remaster`.
+// the remaster.
 const remasterHooks = globalThis.bfRemasterHooks ?? (globalThis.bfRemasterHooks = {});
 
 /**
@@ -850,8 +850,7 @@ export function createLevel(page) {
     sky.applyFog();
     // Remaster mode (features/remaster-browser): its own sky, sun, fog and
     // shadows over the level just built.
-    remasterHooks.scene?.levelLoaded(level.extras, level.currentRoot,
-      level.collider?.waterLevel ?? level.extras?.waterLevel);
+    remasterHooks.scene?.levelLoaded(level.extras, level.currentRoot);
     page.placeCamera();
     wireframe(page.optWire.checked);
     statics.applyVisibility();

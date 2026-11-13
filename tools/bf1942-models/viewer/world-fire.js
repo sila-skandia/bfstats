@@ -57,27 +57,6 @@
 // vanilla's 239 reload loads stops at a metre, and 563 of Desert Combat's 573.
 
 import { loadEngineAudio, WEAPON_HEADROOM, INSTANCES_PER_SAMPLE } from './engine-audio.js';
-import { ds3dSpatialHook } from './ds3d-pan.js';
-import { modulate } from './ssc-curves.js';
-import { SPEED_OF_SOUND } from './remaster-audio-law.js';
-
-/**
- * Remaster mode only (features/remaster-browser, AUDIO.md): a report is heard
- * distance / 343 m/s after the shot, so a far rifle's flash comes before its
- * bang and a passing round's crack before both. A round is held in
- * `#inFlight` until its sound is within this many seconds of the ear, then
- * triggered with the rest as its `lead`: the start is sample-exact, and the
- * pool's instance steal (eight per sample) only ever sees the rounds of one
- * frame ahead, never a whole second of a burst. The retail build has no
- * spatial hook and plays every round at once, as it always has.
- *
- * The scripts already carry the speed of sound in steps: the K98's and the
- * Garand's far layers wait on `Volume <- Time` gates of 0.33, 0.66 and 0.99 s
- * for their 100-200, 200-300 and 300-380 m bands, which is d / 343 at each
- * band's floor. So the hold here is what the script's gate leaves to do
- * (`scriptDelayAt`), and the two together land the report at d / 343.
- */
-export const ARRIVAL_LOOKAHEAD = 0.05;
 
 /**
  * A stand-in `Volume <- Distance` for a manifest with no `layers`.
@@ -128,22 +107,6 @@ function timeGate(layer) {
     }
   }
   return at;
-}
-
-/**
- * The delay a patch's own `Time` gates already give a report heard at
- * `distance`: the smallest gate (`timeGate`) among the layers whose
- * `Volume <- Distance` ramps are open there. 0 when an open layer has no gate
- * (the near band), or none is open.
- */
-export function scriptDelayAt(layers, distance) {
-  let best = Infinity;
-  for (const layer of layers || []) {
-    const mods = (layer.modulators || []).filter(m => m.dest === 'volume' && m.source === 'distance');
-    if (!(modulate(mods, { distance }, 1) > 0)) continue;
-    best = Math.min(best, timeGate(layer));
-  }
-  return Number.isFinite(best) ? best : 0;
 }
 
 class Slot {
@@ -364,36 +327,6 @@ export class WorldFire {
    */
   play(name, position, owner = null) {
     if (this.disposed || !name) return false;
-    const hook = ds3dSpatialHook();
-    let delay = hook?.arrivalDelay && position ? hook.arrivalDelay(position) : 0;
-    if (delay > 0) {
-      const entry = this.weapons.get(String(name).toLowerCase());
-      if (!entry) return false;
-      delay = Math.max(0, delay - scriptDelayAt(entry.layers, delay * SPEED_OF_SOUND));
-    }
-    if (delay > ARRIVAL_LOOKAHEAD) {
-      this.#inFlight.push({ name, at: this.now() + delay, owner,
-                            position: { x: position.x, y: position.y, z: position.z } });
-      return true;
-    }
-    return this.#playNow(name, position, owner, delay);
-  }
-
-  // Remaster mode: reports on their way to the ear (`ARRIVAL_LOOKAHEAD`).
-  #inFlight = [];
-
-  #land(now) {
-    if (!this.#inFlight.length) return;
-    let keep = 0;
-    for (const shot of this.#inFlight) {
-      const lead = shot.at - now;
-      if (lead <= ARRIVAL_LOOKAHEAD) this.#playNow(shot.name, shot.position, shot.owner, Math.max(0, lead));
-      else this.#inFlight[keep++] = shot;
-    }
-    this.#inFlight.length = keep;
-  }
-
-  #playNow(name, position, owner, lead = 0) {
     const entry = this.weapons.get(String(name).toLowerCase());
     if (!entry) return false;
     this.shots += 1;
@@ -442,13 +375,13 @@ export class WorldFire {
       listenerForward: this.listenerForward,
       snap: true,
     });
-    const started = lead > 0 ? slot.audio.trigger(lead) : slot.audio.trigger();
+    const started = slot.audio.trigger();
     slot.armed = true;
     slot.lastAt = now;
     // Held while the round sounds (the header): a Fire Loop patch for one
     // cycle, so the shooter's next round takes the same slot; anything else
     // for a second, enough to keep a report's tail from being stolen.
-    slot.busyUntil = now + lead + (entry.hold ?? ONE_SHOT_HOLD + (entry.delay || 0));
+    slot.busyUntil = now + (entry.hold ?? ONE_SHOT_HOLD + (entry.delay || 0));
     // A reload's loads all wait on their own gates, so none starts here.
     return started > 0 || !!entry.sequence;
   }
@@ -508,7 +441,6 @@ export class WorldFire {
     const ear = this.#ear(this.getListener?.());
     const master = this.getMaster();
     const now = this.now();
-    this.#land(now);
     for (const entry of this.weapons.values()) {
       for (const slot of entry.slots) {
         // A hold covers its patch's last gate, so a load still armed past it
@@ -553,7 +485,6 @@ export class WorldFire {
 
   dispose() {
     this.disposed = true;
-    this.#inFlight.length = 0;
     for (const entry of this.weapons.values()) {
       for (const slot of entry.slots) slot.audio.dispose();
       entry.slots = [];

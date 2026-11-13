@@ -43,7 +43,7 @@
 
 import { clamp01, modulate, modulatorValue } from './ssc-curves.js';
 import { coherentSets, resolveCoherent } from './ssc-coherent.js';
-import { configureDs3dPanner, ds3dDopplerApplied, ds3dRenderPoint, ds3dTruePoint } from './ds3d-pan.js';
+import { configureDs3dPanner, ds3dDopplerApplied, ds3dRenderPoint } from './ds3d-pan.js';
 import { INSTANCES_PER_SAMPLE, claimOneShot, releaseOneShot } from './sample-instances.js';
 
 export {
@@ -568,18 +568,12 @@ export class EngineAudio {
    * still owns, which is what makes that safe. The stack stops at the game's
    * `INSTANCES_PER_SAMPLE`, past which the oldest tail goes.
    *
-   * `lead` (seconds, remaster mode only: `world-fire.js` hands it the part
-   * of a report's flight from the gun that falls inside this frame) starts
-   * the round's one-shots that far ahead of now and sets the clock back by
-   * as much, so its `Time` gates count from when it is heard. The retail
-   * build never passes it.
-   *
    * @returns {number} how many layers actually started.
    */
-  trigger(lead = 0) {
+  trigger() {
     if (this.relatch) return this.#press();
     if (!this.started || this.disposed || this.released) return 0;
-    return this.#fire(lead > 0 ? lead : 0);
+    return this.#fire();
   }
 
   /**
@@ -606,9 +600,9 @@ export class EngineAudio {
     return this.voices.some(voice => voice.layer.loop && voice.targetGain > 0);
   }
 
-  #fire(lead = 0) {
-    const now = this.ctx.currentTime + lead;
-    this.elapsed = lead > 0 ? -lead : 0;
+  #fire() {
+    const now = this.ctx.currentTime;
+    this.elapsed = 0;
     // A fresh alternate and a fresh pitch offset per round: `randomStartPitch`
     // is rolled once per *play* in the engine, and a one-shot voice that kept
     // the offset it was built with would give every ricochet in a burst the
@@ -877,10 +871,6 @@ export class EngineAudio {
           listenerPosition.x + (facing?.x ?? 0) * ahead,
           listenerPosition.y + (facing?.y ?? 0) * ahead,
           listenerPosition.z + (facing?.z ?? 0) * ahead, now, snap);
-        // The remaster chain: this voice is the listener's own hull, at the
-        // ear. Measured from where the panner stands (10 m ahead) it was
-        // occluded by whatever wall the listener faced.
-        ds3dTruePoint(group.panner, listenerPosition.x, listenerPosition.y, listenerPosition.z, snap);
       } else {
         // Not at the voice's own point: at the point whose equal-power pan is
         // DirectSound's for it. Without a listener pose to read (a harness's
@@ -889,7 +879,6 @@ export class EngineAudio {
                                    wx, wy, wz, this.#renderPoint);
         if (at) this.#placePanner(group.panner, at.x, at.y, at.z, now, snap);
         else this.#placePanner(group.panner, wx, wy, wz, now, snap);
-        ds3dTruePoint(group.panner, wx, wy, wz, snap);
       }
     }
 

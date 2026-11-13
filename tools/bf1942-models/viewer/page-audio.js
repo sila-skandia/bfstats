@@ -19,9 +19,6 @@ import { entryInMode } from './game-modes.js';
 import { ScrapeVoices } from './obstacle.js';
 import { nationStems } from './radio.js';
 import { decodeGapless, gaplessAudioLoader } from './gapless-decode.js';
-import { REMASTER_AUDIO } from './remaster-mode.js';
-import { installRemasterAudio } from './remaster-audio.js';
-import { remasterWorld } from './remaster-audio-world.js';
 
 /** `SoldierRefillAmmo.ssc`'s HIGH patch, as read from vanilla's Objects.rfa:
  *  `minDistance 5` and the `Volume <- Distance` ramp `10 15 1 -1`. */
@@ -45,7 +42,7 @@ const placeable = p => Number.isFinite(p?.x) && Number.isFinite(p?.y) && Number.
  * Built once by the page, where this code used to sit. `page` hands in
  * what it reads of the rest of the page, as getters (a binding the page
  * reassigns is read live):
- * `AUDIO_OFF`, `bust`, `camera`, `collider` (the level's, for the remaster chain), `currentDir`,
+ * `AUDIO_OFF`, `bust`, `camera`, `currentDir`,
  * `currentRoot`, `deployTeamId`, `effectAudio`, `ensureHandFireBus`, `extras`, `fireStates`,
  * `handFireBus`, `mannedGuns`, `MAPS_BASE`, `MODELS_BASE`, `occupancy`,
  * `scene`, `soldier`, `soundMaster` (OPTIONS > SOUND's MASTER VOLUME and
@@ -67,8 +64,6 @@ export function createPageAudio(page) {
 
   /** The master limiter, installed by `ensureListener` below. */
   pageAudio.audioLimiter = null;
-  /** The remaster spatial chain (`remaster-audio.js`), or null: retail. */
-  pageAudio.remaster = null;
 
   /**
    * The one AudioListener every player on this page hangs off, with a limiter
@@ -119,15 +114,6 @@ export function createPageAudio(page) {
         // A context with no compressor node is still a context: the graph keeps
         // its direct edge and the mix simply clips the way it used to.
         pageAudio.audioListener.gain.connect(ctx.destination);
-      }
-      // `?remaster` (features/remaster-browser, AUDIO.md): HRTF heads, air
-      // absorption, occlusion, reverb by surroundings and the speed of
-      // sound, behind every placed voice made from here on. The retail
-      // build never builds it.
-      if (REMASTER_AUDIO) {
-        pageAudio.remaster = installRemasterAudio({
-          context: ctx, input: pageAudio.audioListener.getInput(), master: () => masterVolume(),
-        });
       }
     }
     return pageAudio.audioListener;
@@ -269,8 +255,6 @@ export function createPageAudio(page) {
       try {
         if (item.sound.isPlaying) item.sound.stop();
         item.sound.disconnect();
-        // The remaster chain hangs off the panner, which three never lets go.
-        if (pageAudio.remaster) item.sound.panner?.disconnect();
         if (item.anchor) page.scene.remove(item.anchor);
       } catch (_) {}
     }
@@ -455,8 +439,6 @@ export function createPageAudio(page) {
         pageAudio.ambientAudio = new THREE.Audio(pageAudio.audioListener);
         pageAudio.ambientAudio.setBuffer(buf);
         pageAudio.ambientAudio.setLoop(true);
-        // Remaster: the wind outside, muffled under a roof.
-        if (pageAudio.remaster) pageAudio.ambientAudio.setFilters(pageAudio.remaster.bedFilters());
         const master = masterVolume();
         // The script's volume as the engine plays it: 0..1 (SND-27). FH writes
         // 80 on Road to Ramelle's bed, which read literally was +38 dB into
@@ -577,8 +559,6 @@ export function createPageAudio(page) {
         // which is a few dB wider than DirectSound's at a wide angle.
         sound.setRolloffFactor(0);
         configureDs3dPanner(sound.panner);
-        // three wired the panner to its gain before it was adopted.
-        pageAudio.remaster?.reroute(sound.panner, sound.gain);
         anchor.add(sound);
 
         pageAudio.activeAreaAudios.push({ anchor, sound, areas: group.areas });
@@ -792,12 +772,6 @@ export function createPageAudio(page) {
     // Bots' rounds: every pooled patch measured from the camera, and its clock
     // run, which is what brings a round's delayed layers due (bug A).
     pageAudio.worldFire?.update(dt, ear, facing);
-    // Remaster: occlusion rays, the surroundings survey and the reverb's
-    // crossfade, against the level the sim already holds.
-    if (pageAudio.remaster) {
-      if (page.handFireBus) pageAudio.remaster.tapBus(page.handFireBus);
-      pageAudio.remaster.update(dt, ear, remasterWorld(page.collider ?? null, page.currentRoot ?? null));
-    }
     if (page.handFireBus) {
       // The hand-shot bus tracks the master like the engine bus does.
       const target = master * WEAPON_HEADROOM;
