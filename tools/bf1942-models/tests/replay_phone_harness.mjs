@@ -139,4 +139,45 @@ out.walk = {
   visitsThree: nodesA.length, visitsShown: visits, idempotent: walkShownOnly(b) === b,
 };
 
+// Quality on the fly (replay-quality.js): a page drawing at `fpsAt(step)`,
+// frames fed for `seconds`, with `busy(t)` the frames that are not read.
+const { LADDER, createQualityGovernor, qualityMode } = await import('../viewer/replay-quality.js');
+const { capVideo } = await import('../viewer/video-apply.js');
+function simulate({ fpsAt, seconds = 60, target = 60, mode = 'auto', busy = () => false }) {
+  const applied = [];
+  const g = createQualityGovernor({ apply: l => applied.push(l.id), targetFps: target, mode });
+  let t = 0;
+  while (t < seconds * 1000) {
+    t += 1000 / fpsAt(g.state.step);
+    g.frame(t, busy(t));
+  }
+  return { applied, final: g.state.level.id, stopped: g.state.stopped, mode: g.state.mode };
+}
+out.governor = {
+  ladder: LADDER.map(l => l.id),
+  // A GPU-bound page: every rung buys frames.
+  gpuBound: simulate({ fpsAt: step => [20, 28, 38, 50][step] }),
+  // Each rung helps and Low is enough.
+  enoughAtLow: simulate({ fpsAt: step => [30, 40, 55, 70][step] }),
+  // A CPU-bound page: no rung buys a frame.
+  cpuBound: simulate({ fpsAt: () => 15 }),
+  // Fast enough already.
+  fast: simulate({ fpsAt: () => 58 }),
+  // A phone drawing for 30: 26 a second is fine.
+  phoneFine: simulate({ fpsAt: () => 26, target: 30 }),
+  phoneSlow: simulate({ fpsAt: step => [12, 16, 22, 28][step], target: 30 }),
+  // Slow only while busy (a drag, a load): nothing read, nothing dropped.
+  busyOnly: simulate({ fpsAt: () => 10, busy: () => true }),
+  // Pinned: Auto never moves it.
+  pinned: simulate({ fpsAt: () => 10, mode: 'reduced' }),
+  modes: [qualityMode('AUTO'), qualityMode('low'), qualityMode('ultra'), qualityMode(null)],
+};
+const choice = normalizeVideo({ graphicsQuality: 2, effectsQuality: 3, environmentMapping: true, viewDistance: 80, textureQuality: 4 });
+out.cap = {
+  none: capVideo(choice, null),
+  low: capVideo(choice, LADDER[2].cap),
+  // A cap never raises what the player chose lower.
+  neverRaises: capVideo(normalizeVideo({ graphicsQuality: 1, viewDistance: 60, environmentMapping: false }), LADDER[1].cap),
+};
+
 process.stdout.write(JSON.stringify(out));

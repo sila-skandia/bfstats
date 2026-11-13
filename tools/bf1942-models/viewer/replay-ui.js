@@ -20,6 +20,7 @@ import { AccuracyDash, ACC_DASH_STYLE } from './replay-accuracy-dash.js';
 import { mapListAt } from './replay-maplist.js';
 import { supportAt } from './replay-support.js';
 import { EXTERNAL_LABELS } from './replay-camera.js';
+import { LADDER as QUALITY_LADDER, storeQuality } from './replay-quality.js';
 
 export const SPEEDS = Object.freeze([0.25, 0.5, 1, 2, 4, 8]);
 
@@ -135,6 +136,7 @@ const ICON = {
   full: '<path d="M2 6V2h4M10 2h4v4M14 10v4h-4M6 14H2v-4" fill="none" stroke="currentColor" stroke-width="1.6"/>',
   unfull: '<path d="M6 2v4H2M10 2v4h4M14 10h-4v4M2 10h4v4" fill="none" stroke="currentColor" stroke-width="1.6"/>',
   more: '<circle cx="3" cy="8" r="1.6"/><circle cx="8" cy="8" r="1.6"/><circle cx="13" cy="8" r="1.6"/>',
+  quality: '<path d="M2.2 11.5a5.8 5.8 0 0 1 11.6 0" fill="none" stroke="currentColor" stroke-width="1.4" stroke-linecap="round"/><path d="M8 11.5l3-4.2" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"/><circle cx="8" cy="11.5" r="1.2"/>',
   tags: '<path d="M1.8 4h8.4l4 4-4 4H1.8z" fill="none" stroke="currentColor" stroke-width="1.4" stroke-linejoin="round"/><circle cx="5" cy="8" r="1.3"/>',
   markers: '<circle cx="8" cy="8" r="5.6" fill="none" stroke="currentColor" stroke-width="1.4"/><circle cx="8" cy="8" r="2.2"/>',
   tracers: '<path d="M2 13 13 2" fill="none" stroke="currentColor" stroke-width="1.4" stroke-linecap="round" stroke-dasharray="3 2.2"/><circle cx="13" cy="2.6" r="1.6"/>',
@@ -837,7 +839,12 @@ export class ReplayUi {
       log: item('rp-mi-roomy', 'log', 'Replay log', 'L', () => this.toggle('log-open')),
       open: item('rp-mi-roomy', 'upload', 'Open a recording', '', () => this.bar.querySelector('.ro-open')?.click()),
       bare: item('', 'hide', 'Hide the HUD', 'H', () => this.setBare(true)),
+      // What the page is drawing at, and Auto's or a pinned rung
+      // (replay-quality.js). A click steps to the next; the menu stays.
+      quality: item('', 'quality', 'Quality', '', () => this.stepQuality(), true),
     };
+    this.moreItems.quality.setAttribute('role', 'menuitem');
+    this.moreItems.quality.removeAttribute('aria-checked');
     this.moreWrap.append(this.moreBtn, this.moreMenu);
   }
 
@@ -872,10 +879,40 @@ export class ReplayUi {
     this.moreItems.markers.hidden = !highlights;
     if (highlights) check(this.moreItems.markers, highlights.showMarkers);
     this.moreItems.open.hidden = !this.bar.querySelector('.ro-open');
+    this.syncQuality();
     // When the round was recorded, once the bar has folded its date away.
     const stamp = this.bar.querySelector('.rp-stamp');
     this.moreWhen.textContent = stamp?.textContent ?? '';
     this.moreWhen.title = stamp?.title ?? '';
+  }
+
+  /** The Quality row: `AUTO · LOW` while Auto picks, the rung alone when
+   *  pinned; the measured rate in its title. */
+  syncQuality() {
+    const item = this.moreItems?.quality;
+    const governor = this.ctx.quality ?? null;
+    if (!item) return;
+    item.hidden = !governor;
+    if (!governor) return;
+    const { mode, level, fps, stopped } = governor.state;
+    item.querySelector('b').textContent = mode === 'auto'
+      ? `AUTO · ${level.name.toUpperCase()}` : level.name.toUpperCase();
+    item.title = mode === 'auto'
+      ? `Lowered on its own while the replay cannot keep its frame rate${fps ? ` (${fps} fps last measured)` : ''}`
+        + `${stopped ? '; lowering further did not help, so it stopped' : ''}. Click to pin a level.`
+      : 'Pinned. Click for the next level; after Lowest comes Auto.';
+  }
+
+  /** Auto, Full, Reduced, Low, Lowest, and round to Auto; kept in this
+   *  browser for the next replay. */
+  stepQuality() {
+    const governor = this.ctx.quality;
+    if (!governor) return;
+    const order = ['auto', ...QUALITY_LADDER.map(l => l.id)];
+    const next = order[(order.indexOf(governor.state.mode) + 1) % order.length];
+    governor.setMode(next);
+    storeQuality(next);
+    this.flash(next === 'auto' ? 'Quality: Auto' : `Quality: ${governor.state.level.name}`);
   }
 
   /** A line from each round's launch to where it struck, green for a hit

@@ -8,6 +8,12 @@ features/replay-performance, "Phones". The sentence these tests defend:
     1.5, the game's LOW LOD and effects, 30 frames a second) unless the
     visitor chose otherwise, nothing else changes for a desktop or for play,
     and the level's shown-only matrix walk draws exactly what three's draws.
+
+And quality on the fly (`viewer/replay-quality.js`, the runtime cap in
+`viewer/video-apply.js`): a replay that cannot hold its frame rate steps down
+a rung at a time while each rung buys frames, undoes a rung that bought none
+and stops there, reads no frame the page spent busy, never moves a pinned
+level, and never raises a setting the viewer chose lower.
 """
 
 from __future__ import annotations
@@ -74,6 +80,36 @@ class ReplayPhoneTests(unittest.TestCase):
         self.assertEqual(w["forcedWorst"], 0)
         self.assertLess(w["visitsShown"], w["visitsThree"])
         self.assertTrue(w["idempotent"])
+
+    def test_auto_steps_down_while_each_rung_buys_frames(self) -> None:
+        g = self.r["governor"]
+        self.assertEqual(g["ladder"], ["full", "reduced", "low", "lowest"])
+        self.assertEqual(g["gpuBound"]["applied"], ["full", "reduced", "low", "lowest"])
+        self.assertEqual(g["enoughAtLow"]["final"], "low")
+        self.assertEqual(g["phoneSlow"]["final"], "lowest")
+
+    def test_a_rung_that_buys_nothing_is_undone_and_auto_stops(self) -> None:
+        cpu = self.r["governor"]["cpuBound"]
+        self.assertEqual(cpu["applied"], ["full", "reduced", "full"])
+        self.assertTrue(cpu["stopped"])
+
+    def test_a_page_at_its_rate_or_busy_or_pinned_is_left_alone(self) -> None:
+        g = self.r["governor"]
+        for case in ("fast", "phoneFine", "busyOnly"):
+            with self.subTest(case):
+                self.assertEqual(g[case]["applied"], ["full"])
+        self.assertEqual(g["pinned"], {"applied": ["reduced"], "final": "reduced", "stopped": False, "mode": "reduced"})
+        self.assertEqual(g["modes"], ["auto", "low", None, None])
+
+    def test_the_cap_lowers_and_never_raises(self) -> None:
+        cap = self.r["cap"]
+        self.assertEqual(cap["none"]["graphicsQuality"], 2)
+        low = cap["low"]
+        self.assertEqual((low["graphicsQuality"], low["effectsQuality"], low["environmentMapping"], low["viewDistance"]),
+                         (1, 1, False, 75))
+        self.assertTrue(low["lightmaps"])
+        keep = cap["neverRaises"]
+        self.assertEqual((keep["graphicsQuality"], keep["viewDistance"], keep["environmentMapping"]), (1, 60, False))
 
 
 if __name__ == "__main__":

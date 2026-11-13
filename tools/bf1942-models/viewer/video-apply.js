@@ -32,6 +32,25 @@ import { setEmitterIntensityScale } from './effects-core.js';
 import { ENVMAP_SWITCH } from './envmap.js';
 import { createTextureQuality } from './texture-quality.js';
 
+/** The canvas's pixel ratio at least, however far a runtime cap scales it. */
+export const MIN_RUNTIME_RATIO = 0.5;
+
+/** `settings` with no field above `cap`'s: numbers at the lower, switches
+ *  on only where both are. LIGHTMAPS and DISPLAY MODE are not capped (the
+ *  one is read when a level is built, the other is the ratio's, which the
+ *  runtime scales instead). */
+export function capVideo(settings, cap) {
+  if (!cap) return settings;
+  const out = { ...settings };
+  for (const key of ['graphicsQuality', 'effectsQuality', 'textureQuality', 'viewDistance']) {
+    if (Number.isFinite(cap[key]) && Number.isFinite(out[key])) out[key] = Math.min(out[key], cap[key]);
+  }
+  for (const key of ['environmentMapping', 'shadows']) {
+    if (cap[key] === false && key in out) out[key] = false;
+  }
+  return out;
+}
+
 /**
  * The WebGL canvas's pixel ratio: `override` (`?dpr`, the bench's) when
  * given, else DISPLAY MODE's `displayHeight` on `display`, else (no screen
@@ -57,23 +76,51 @@ export function pixelRatioFor({ displayHeight = null, display = null, override =
  * TEXTURE QUALITY walks.
  */
 export function createVideoApply({ renderer, dprOverride = null, ratioCap = DEFAULT_RATIO_CAP, initial, resize, level, roots }) {
-  let settings = initial ?? storedVideo();
+  // What the player chose (or the page's defaults), and what is drawn: the
+  // choice under the runtime cap a replay's quality governor sets
+  // (`setRuntime`, replay-quality.js), which is never stored.
+  let chosen = initial ?? storedVideo();
+  let runtime = { cap: null, ratioScale: 1 };
+  let settings = capVideo(chosen, runtime.cap);
   const textures = createTextureQuality({ renderer, roots });
   let applied = null;
 
   /** The ratio the canvas should have now: read by `resize()`, so a window
-   *  resize, F11, a zoom or another monitor re-derives it. */
-  const pixelRatio = () => pixelRatioFor({
-    displayHeight: settings.displayHeight,
-    display: displayOf(),
-    override: dprOverride,
-    dpr: globalThis.devicePixelRatio,
-    cap: ratioCap,
-  });
+   *  resize, F11, a zoom or another monitor re-derives it. The runtime
+   *  scale lowers it, never under `MIN_RUNTIME_RATIO`; `?dpr` is the bench's
+   *  and stays as given. */
+  const pixelRatio = () => {
+    const ratio = pixelRatioFor({
+      displayHeight: chosen.displayHeight,
+      display: displayOf(),
+      override: dprOverride,
+      dpr: globalThis.devicePixelRatio,
+      cap: ratioCap,
+    });
+    if (dprOverride > 0 || !(runtime.ratioScale < 1)) return ratio;
+    return Math.min(ratio, Math.max(MIN_RUNTIME_RATIO, ratio * runtime.ratioScale));
+  };
 
   function apply(next = storedVideo()) {
+    chosen = next;
+    return draw();
+  }
+
+  /** The runtime cap: `{ cap, ratioScale }`, `cap` a partial settings
+   *  object no field of which is raised past the choice (`capVideo`), and
+   *  `ratioScale` the canvas's pixel ratio's share, 1 for the whole. Null
+   *  lifts it. Live: the canvas resizes and every row re-applies. */
+  function setRuntime(next = null) {
+    const prevScale = runtime.ratioScale;
+    runtime = { cap: next?.cap ?? null, ratioScale: next?.ratioScale > 0 ? Math.min(1, next.ratioScale) : 1 };
+    draw();
+    if (runtime.ratioScale !== prevScale && renderer.getPixelRatio() !== pixelRatio()) resize();
+    return applied;
+  }
+
+  function draw() {
     const prev = applied;
-    settings = next;
+    settings = capVideo(chosen, runtime.cap);
     const g = GRAPHICS[settings.graphicsQuality] ?? GRAPHICS[3];
     setLodPercent(g.lodPercent);
     // The viewer's tree swap is HIGH's; the others are fractions of it.
@@ -96,7 +143,12 @@ export function createVideoApply({ renderer, dprOverride = null, ratioCap = DEFA
 
   return {
     apply,
+    setRuntime,
+    /** What is drawn: the choice under the runtime cap. */
     get settings() { return settings; },
+    /** What the player chose, for the options screen. */
+    get chosen() { return chosen; },
+    get runtime() { return runtime; },
     pixelRatio,
     /** VIEW DISTANCE's percentage, for `level-sky.js`. */
     viewDistancePercent: () => settings.viewDistance,

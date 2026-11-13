@@ -920,6 +920,9 @@ class ReplayPlayer {
     // every life at no time, frame after frame.
     if (!Number.isFinite(t)) return;
     this.time = Math.min(Math.max(0, t), this.rec.duration);
+    // The frames after a seek rebuild the men and say nothing of the
+    // quality (replay-quality.js).
+    this.ctx.quality?.hold?.();
     const guard = this.guard ??= new ReplayGuard();
     guard.run('the seek', () => {
       this.ctx.guns?.clear();

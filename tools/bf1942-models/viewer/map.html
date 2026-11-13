@@ -460,6 +460,7 @@ import { DEFAULT_VOICE_BUDGET, EffectAudio } from './effect-audio.js';
 import { PassingRounds } from './passing-rounds.js';
 import { chooseAntialias, storedAntialias } from './render-antialias.js';
 import { PHONE_RATIO_CAP, frameGate, phoneFps, phoneReplay, phoneVideo } from './replay-phone.js';
+import { createQualityGovernor, qualityMode, storedQuality } from './replay-quality.js';
 import {
   changeSound, chooseHardware3d, currentSound, effectVoiceBudget, onSoundChange,
   storeHardware3d, storedHardware3d,
@@ -1148,7 +1149,7 @@ window.__consoleWords = registerViewerCommands(pageConsole.gameConsole, {
   effectsRoot: () => effects?.root ?? null,
   optWire: () => optWire,
   // OPTIONS > VIDEO and SOUND, the same paths their screens take.
-  video: () => ({ settings: () => videoApply.settings, change: changeVideo }),
+  video: () => ({ settings: () => videoApply.chosen, change: changeVideo }),
   level: () => level,
   sound: () => ({ settings: currentSound, change: changeSound }),
   hardware: () => ({ get: ds3dHardware, set: on => { storeHardware3d(on); setDs3dHardware(on); } }),
@@ -1249,6 +1250,18 @@ const videoApply = createVideoApply({
   },
 });
 canvasPixelRatio = videoApply.pixelRatio;
+// A replay's quality on the fly (replay-quality.js): Auto steps the drawing
+// down a rung at a time while the frame rate stays under its target, and the
+// replay's "..." menu shows the rung and pins another. `?quality=` picks one
+// for the page; screenshot tooling (`?shots`, `?dpr`) draws at Full unless it
+// asks, so a slow headless machine does not change what it measures.
+const replayQuality = params.has('replay') ? createQualityGovernor({
+  apply: level => videoApply.setRuntime(level),
+  targetFps: PHONE_REPLAY ? phoneFps(renderQuery) : 60,
+  mode: qualityMode(renderQuery.get('quality'))
+    ?? (renderQuery.has('shots') || renderQuery.has('dpr') ? 'full' : storedQuality() ?? 'auto'),
+  log: line => console.info(line),
+}) : null;
 // SHADOWS (ledger VID-7, DSH-1..DSH-9): the `hasDynamicShadow` objects within
 // 50 m, each drawn black from up the sun and projected on the terrain
 // (`shadow-pass.js`). The flags are the mod tree's `dynamic-shadows.json`
@@ -4127,6 +4140,7 @@ replayController = createReplayController({
   // The level's bake: its own vehicles wear its paint (Tobruk's desert), which
   // a replayed hull of the same template takes (replay-assets.js levelSkins).
   levelRoot: () => level.currentRoot ?? null,
+  quality: replayQuality,
   // The level's own parked vehicles would double every recorded one.
   hideBakedVehicles: () => { optVehicles.checked = false; },
   // The level's combat area and the terrain material under a point (CA-5),
@@ -4938,6 +4952,9 @@ renderer.setAnimationLoop(now => {
       return;
     }
     frame(Math.min(clock.getDelta(), 0.1));
+    // Only a replay playing undisturbed says anything about the quality.
+    replayQuality?.frame(now, document.hidden || !window.replay?.statusLine
+      || !window.replay.playing || !!window.replay.ui?.scrubbing);
     frameErrorCount = 0;
     if (frameErrorShown || stallShown) {
       // A throw (or a stall the loop recovered from) that stopped recurring:

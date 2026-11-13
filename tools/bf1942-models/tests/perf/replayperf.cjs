@@ -86,7 +86,9 @@ function selfTimes(profile, n = 25) {
       await cdp.send('Profiler.start');
     }
     const t0 = Date.now();
-    await page.goto(`${opts.base}/map.html?mod=bf1942&replay=${opts.replay}`, { waitUntil: 'domcontentloaded' });
+    // `quality=full`: the replay's Auto quality (replay-quality.js) would
+    // lower the drawing on a slow run and move what is measured.
+    await page.goto(`${opts.base}/map.html?mod=bf1942&replay=${opts.replay}&quality=full`, { waitUntil: 'domcontentloaded' });
     await page.waitForFunction(() => window.replay?.statusLine, null, { timeout: 600000, polling: 250 });
     report.load.readySeconds = (Date.now() - t0) / 1000;
     // The replay's first frames after it says it is ready, where the

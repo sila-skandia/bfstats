@@ -147,6 +147,50 @@ it, DISPLAY MODE over the ratio cap.
   The visible soldiers' bones are most of the scene walk that remains.
 - The minimap is still painted every drawn frame (about 6 % of the script).
 
+## Quality on the fly
+
+The owner's follow-up the same day: on every device, when a replay cannot
+hold its frame rate, lower the quality on its own, with the level shown under
+the bar's "..." menu where the viewer can change it.
+
+`replay-quality.js` keeps a ladder below the viewer's own settings, each rung
+a cap over OPTIONS > VIDEO and a share of the canvas's pixel ratio, all live
+through `video-apply.js` `setRuntime` (nothing stored; the options screen
+shows `videoApply.chosen`, the frame draws `videoApply.settings`):
+
+| Rung | Pixel ratio | Caps |
+|---|---|---|
+| Full | the page's | none |
+| Reduced | x0.85 | graphics 2, effects 2, no shadows, view 90 % |
+| Low | x0.7 | graphics 1, effects 1, no reflections or shadows, view 75 % |
+| Lowest | x0.5 (never under 0.5) | Low's, view 50 %, textures 40 % |
+
+Anti-aliasing (the WebGL context's) and lightmaps (the level's build) are not
+on it. A cap only lowers: a setting chosen below it stays.
+
+Auto reads the median interval of the drawn frames over 4 s while the replay
+plays undisturbed: not loading, paused, dragged, hidden, or within 2 s of a
+seek (`replay.seek` holds it). Under 75 % of the target (60, or a phone's 30)
+it steps down one rung and waits 2 s for the page to settle. A rung that buys
+under 8 % more frames is undone and Auto stops there: the frame rate is held
+down by something the ladder does not lower (a CPU busy with the round, a
+display or browser capped at 30). It never steps back up on its own.
+
+The menu's Quality row reads `AUTO · LOW` while Auto picks and the rung alone
+when pinned, with the last measured rate in its title; a click steps Auto,
+Full, Reduced, Low, Lowest and round, kept in this browser
+(`bf42-replay-quality`). `?quality=auto|full|reduced|low|lowest` picks for
+the page; `?shots` and `?dpr` (screenshots, the Shorts runner, benches) draw
+at Full unless they ask, and `replayperf.cjs` asks for Full.
+
+Checked headless on the Caen round: software GL at 1280x720 x2, Auto stepped
+to Lowest as the rate rose 5, 6, 8, 10 fps; Metal at 6x CPU throttle, Reduced
+bought nothing (15 fps either side), so Auto put Full back and stopped. On a
+phone's screen the row cycles every rung, the canvas following (1.5, 1.275,
+1.05, 0.75), and a pinned rung survives a reload. `test_replay_phone.py` runs
+the governor on synthetic pages (GPU-bound, enough at Low, CPU-bound, fast,
+a phone at 26 of 30, busy only, pinned) and the cap.
+
 ## A highlights file on the server
 
 Not done. Playback needs the whole recording anyway, and what the marks and
