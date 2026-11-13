@@ -30,6 +30,8 @@ loading screen (graded dark, cool)  ->  mod-coloured slash  ->  hero art (right)
   server's own mod is used. Forum posts made before the change re-render in the
   new look under the same URL.
 
+Adding or redrawing scenes: the `forum-signatures` skill (`.claude/skills/forum-signatures/SKILL.md`).
+
 Code: `api/Signatures/` (catalogue, the shared `SignatureCanvas`), the two
 layouts in `api/PlayerBanners/PlayerSignatureRenderer.cs` and
 `api/ServerBanners/ServerSignatureRenderer.cs`. UI:
