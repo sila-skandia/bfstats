@@ -1381,7 +1381,10 @@ export class ReplayUi {
     this.playersBtn.classList.toggle('on', this.root.classList.contains('board-open'));
     this.logBtn.classList.toggle('on', this.root.classList.contains('log-open'));
     if (cls === 'board-open' && on) this.renderBoard(true);
-    if (cls === 'log-open' && on) this.scrollLogToCurrent();
+    if (cls === 'log-open' && on) {
+      this.ensureRows();
+      this.scrollLogToCurrent();
+    }
   }
 
   /** The whole page fullscreen, not the stage, so the page's own panels
@@ -1817,21 +1820,35 @@ export class ReplayUi {
   status(text) {
     this.statusText.textContent = text;
     // While the vehicles load, the card says so.
-    if (!this.rowNodes) this.loadingText = text;
+    if (!this.feedReady) this.loadingText = text;
   }
 
+  /** The round's lines are known. They are drawn when the log is first
+   *  opened (`ensureRows`): a 30-minute round has some 19,000, a node each,
+   *  which a phone carried, restyled and kept in memory for a panel most
+   *  viewers never open. */
   renderFeed() {
     this.loadingText = null;
+    this.feedReady = true;
     this.list.textContent = '';
+    this.rowNodes = null;
+    if (this.root.classList.contains('log-open')) this.ensureRows();
+  }
+
+  ensureRows() {
+    if (!this.feedReady || this.rowNodes) return;
+    const rows = document.createDocumentFragment();
     this.rowNodes = this.player.rows.map(row => {
       const node = el('div', `rp-row k-${row.kind}`);
       node.append(el('time', '', fmtTime(row.t)), el('span', `rp-src ${row.source}`, row.source), el('span', 'rp-text', row.text));
       node.addEventListener('click', () => quietly('a log line', () => this.player.seek(row.t - 1.5)));
-      this.list.appendChild(node);
+      rows.appendChild(node);
       return node;
     });
+    this.list.appendChild(rows);
     this.currentRow = -1;
     this.applyRowFilter();
+    this.updateLog(this.player.time);
   }
 
   applyRowFilter() {

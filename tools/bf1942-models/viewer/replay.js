@@ -75,6 +75,7 @@ import { whereIs } from './replay-battles.js';
 import { isLocalReplay, readLocalRecording, recordingSummary } from './replay-open.js';
 import { FAULT_STREAK, ReplayGuard, finiteVector } from './replay-guard.js';
 import { CHARACTER_HEIGHT } from './soldier-pose.js';
+import { walkShownOnly } from './shown-walk.js';
 
 export { parseRecording, parseServerLog, alignServerLog };
 /** The player itself, for the node harness (it needs a DOM to construct). */
@@ -594,6 +595,10 @@ class ReplayPlayer {
 
   async load() {
     this.ctx.hideBakedVehicles();
+    // The level's own nodes, nine in ten hidden in a replay (its placed
+    // vehicles, collision meshes, LOD rungs), walked only where shown
+    // (shown-walk.js).
+    walkShownOnly(this.ctx.levelRoot?.() ?? null);
     // What a soldier carries is not a hull: every kit and every item a kit
     // hands out, by the level's own loadouts, lies on the ground as a plain
     // model when it lies there at all (a dropped kit, a thrown pistol).
