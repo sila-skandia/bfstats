@@ -4456,6 +4456,8 @@ function paintPlayingShell() {
  *  interval is the browser's: vsync, the compositor, or a GPU still busy
  *  with the last frame, which blocks inside `draw`. */
 const frameCost = { sim: 0, present: 0, draw: 0, hud: 0, total: 0 };
+// A rig reads each frame's phases (tests/perf/remaster_match.mjs --phases).
+if (renderQuery.has('shots')) window.__frameCost = frameCost;
 function frame(dt) {
   const tStart = performance.now();
   // The joystick is sampled once a frame with the rest of the devices: its

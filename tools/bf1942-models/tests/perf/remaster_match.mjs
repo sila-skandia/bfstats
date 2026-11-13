@@ -12,6 +12,10 @@
 //        [--map el_alamein] [--bots 16] [--seconds 45] [--retail]
 //
 //   --uncapped        no vsync: the median is what a frame costs
+//   --phases          every frame's phases (map.html `frameCost`: the
+//                     simulation, the presentation, the draw, the HUD) as
+//                     median, p90, p99 and worst, and what the frames over
+//                     15.5 ms of script were made of
 //   --ab <switch>     with --uncapped: flip `__remaster.tune.<switch>` every
 //                     1.5 s and print the frame time with it on and off. The
 //                     only way to time one change on a busy machine, where
@@ -53,8 +57,13 @@ await page.evaluate(async () => {
   const wait = ms => new Promise(r => setTimeout(r, ms));
   window.__setOnFoot(true); await wait(1500);
   const d = window.__deploy; d.select(d.flags.findIndex(f => f.side)); await wait(300); d.spawn(); await wait(8000);
-  window.__ft = []; let last = performance.now();
-  const tick = now => { window.__ft.push(now - last); last = now; requestAnimationFrame(tick); };
+  window.__ft = []; window.__phases = []; let last = performance.now();
+  const cost = window.__frameCost;
+  const tick = now => {
+    window.__ft.push(now - last); last = now;
+    if (cost) window.__phases.push([cost.sim, cost.present, cost.draw, cost.hud, cost.total]);
+    requestAnimationFrame(tick);
+  };
   requestAnimationFrame(tick);
   // The soldier walks and turns, as a player does.
   const keys = ['KeyW', 'KeyD', 'KeyW', 'KeyA'];
@@ -68,7 +77,7 @@ await page.evaluate(async () => {
 });
 const median = list => { const s = [...list].sort((a, b) => a - b); return s.length ? s[s.length >> 1] : NaN; };
 const frames = async ms => {
-  await page.evaluate(() => { window.__ft.length = 0; });
+  await page.evaluate(() => { window.__ft.length = 0; window.__phases.length = 0; });
   await page.waitForTimeout(ms);
   return page.evaluate(() => window.__ft.slice(1));
 };
@@ -95,5 +104,19 @@ if (ab) {
     late: f.filter(x => x > 25).length, over50: f.filter(x => x > 50).length,
     pacer: await page.evaluate(() => window.__framePacer?.state ?? null),
   }));
+  if (has('phases')) {
+    const rows = await page.evaluate(() => window.__phases.slice(1));
+    const names = ['sim', 'present', 'draw', 'hud', 'total'];
+    const out = {};
+    names.forEach((name, i) => {
+      const col = rows.map(r => r[i]).sort((a, b) => a - b);
+      const q = x => +col[Math.min(col.length - 1, Math.floor(col.length * x))].toFixed(1);
+      out[name] = { median: q(0.5), p90: q(0.9), p99: q(0.99), worst: +col.at(-1).toFixed(1) };
+    });
+    const over = rows.filter(r => r[4] > 15.5);
+    const mean = i => +(over.reduce((a, r) => a + r[i], 0) / Math.max(1, over.length)).toFixed(1);
+    out.over = { frames: over.length, sim: mean(0), present: mean(1), draw: mean(2), hud: mean(3) };
+    console.log(JSON.stringify({ phases: out }));
+  }
 }
 await browser.close();

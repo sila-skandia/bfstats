@@ -318,14 +318,48 @@ mode in the same match: 6 ms, no late frame. Seven Wake views before and
 after are the same picture (the shadows of the tank, the huts, the palms and
 the carrier's island all in place).
 
-What a late frame still is: the frame the bots' tick lands in. The scene
-pass is 7 to 8 ms on Wake and the tick about as much again on the one frame
-in two that carries it. Retail mode has room for it and the remaster, on a
-busy machine, sometimes has not.
+What a late frame still is: see the next section, which measured it.
 
 What is left over retail is the scene pass: the same 510 draws cost three's
 WebGPU renderer about three times what they cost r169's WebGL one, per draw,
 in JavaScript. Fewer draws is the next step there, not anything in a shader.
+
+### What a frame is made of, and two things that did not help
+
+`remaster_match.mjs --phases` records each frame's phases. Wake, 16 bots,
+60 Hz, 40 s:
+
+| | Simulation | Presentation | Draw | Script in all |
+|---|---|---|---|---|
+| Remaster, median | 4.9 ms | 1.0 ms | 9.3 ms | 15.0 ms |
+| Remaster, p90 / p99 | 8.4 / 13.5 | 1.2 / 2.6 | 12.2 / 16.2 | 21.6 / 30.3 |
+| Retail, median | 3.9 ms | 0.7 ms | 3.6 ms | 8.4 ms |
+| Retail, p90 / p99 | 5.1 / 10.4 | 0.9 / 1.9 | 4.0 / 4.7 | 9.8 / 14.9 |
+
+- **The simulation is not a spike to move.** The line above this section
+  about "the frame the tick lands in" was a guess, and the table corrects
+  it: `simulate` already runs the world's tick on one frame and the bots'
+  thinking on the frame between (map.html, `aiOwed`), so every frame carries
+  about 5 ms of it, in both modes. On one thread there is nowhere to move
+  that to; taking it off the frame means a worker for the bots, which is
+  their code's project and not a change to the frame loop. Its tail (13 ms
+  at p99, 25 to 32 ms at worst, in both modes) is what the last late frames
+  are: retail's 3.6 ms draw leaves room for it and the remaster's 9.3 does
+  not.
+- **Skipping three's per-frame refresh of unchanged objects: 0.4 ms.** three
+  refreshes an object in full every frame when its material holds a node of
+  its own, which every remaster material does. Asking its change check
+  instead cut the full refreshes from 799 to 477 a frame on Wake and saved
+  0.4 ms, with a risk (a value in one of the remaster's own uniforms is not
+  something that check sees). Taken back out, like the matrix freeze.
+- **It is still not the pixels.** Uncapped at pixel ratios of 2 and 1: 12.5
+  and 13.6 ms against 12.2 and 12.8.
+
+So the draw is about 950 objects a frame (the scene's 610 and the cascades')
+at some 5 microseconds each inside three, and a walk of 12,500 nodes. On
+Wake 149 of the level's 393 draws in view repeat a geometry and material
+(73 of them four jungle plants): instancing those, and merging statics that
+share a material, is where the next millisecond is.
 
 ## How it is built
 
