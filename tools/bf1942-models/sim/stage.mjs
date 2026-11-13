@@ -262,6 +262,16 @@ export function createStage(M, level, { vehicles = true, kinds = STAGE_KINDS, se
   hullBodies.setupVehicleBodies();
   stage.collider = terrain.collider;
 
+  // The level's supply depots, found by the page's own walk
+  // (`supply-collect.js`): the world's tick heals, rearms and repairs at them
+  // for every soldier in reach, a bot's as a player's (`world-fields.js`
+  // `supplyFieldTick`). A half-track's locker rides its hull. Their start
+  // phases draw from the match's seed, apart from every other draw.
+  if (S.collectSupplyDepots) {
+    const phase = M.mulberry32((seed ^ 0x5099171) >>> 0);
+    world.setSupplyDepots(S.collectSupplyDepots(root, { spawnersRoot: statics.spawnersRoot, random: phase }));
+  }
+
   /** map.html `buildHullDrive`, copied (SIM: the cockpit off). */
   function buildHullDrive(instance) {
     const occ = instance.occupancy;

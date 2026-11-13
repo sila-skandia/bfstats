@@ -133,7 +133,7 @@ export async function loadViewerModules(viewer) {
     loadStage: async function loadStage() {
       if (this.stage) return this.stage;
       const [instance, units, hulls, hits, wrecks, statics, terrain, entry, gunfire, aircraft, wheeled, tracked, ship, modes, seats,
-        seatCone, amphibious, heldArm, roundSpawners, rocketRide, templateWords] =
+        seatCone, amphibious, heldArm, roundSpawners, rocketRide, templateWords, supplyCollect] =
         await Promise.all([
           imp('vehicle-instance.js'), imp('bot-units.js'), imp('hull-bodies.js'), imp('vehicle-hits.js'),
           imp('vehicle-wrecks.js'), imp('level-statics.js'), imp('level-terrain.js'), imp('vehicle-entry.js'),
@@ -147,6 +147,9 @@ export async function loadViewerModules(viewer) {
           imp('round-spawners.js').catch(() => null),
           imp('rocket-ride.js').catch(() => null),
           imp('template-words.js').catch(() => null),
+          // The level's supply depots (a half-track's locker, the ammo boxes):
+          // absent from a viewer older than the file.
+          imp('supply-collect.js').catch(() => null),
         ]);
       this.stage = {
         VehicleRegistry: instance.VehicleRegistry, createBotUnits: units.createBotUnits,
@@ -156,6 +159,7 @@ export async function loadViewerModules(viewer) {
         nodeInMode: modes.nodeInMode ?? null, applyTemplateWords: templateWords?.applyTemplateWords ?? null,
         createRoundSpawners: roundSpawners?.createRoundSpawners ?? null,
         createRocketRide: rocketRide?.createRocketRide ?? null,
+        collectSupplyDepots: supplyCollect?.collectSupplyDepots ?? null,
         isCollision: statics.isCollision, createLevelTerrain: terrain.createLevelTerrain,
         createVehicleEntry: entry.createVehicleEntry, GunFire: gunfire.GunFire,
         // The drive classes map.html hands the registry, from their own modules.

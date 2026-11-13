@@ -6,6 +6,15 @@ import { ammoTypeOf, rearmTypeFor } from './fire-state.js';
 
 export { rearmTypeFor };
 
+/** A soldier's object origin stands 1.0 m over his feet (PHY-10: the five
+ *  contact vertices of `SkeletonCollisionMeshTemplate`, the lowest at
+ *  y = -1, `ResponsePhysics::checkVsTerrain` 0x0825a960), and a depot's reach
+ *  is measured to his origin (`workOnSoldiers` 0x08323dc0 takes the soldier's
+ *  `getAbsolutePosition`, vt+0x38, at 0x08323e67, SUP-23). `soldier-pose.js`
+ *  `CHARACTER_HEIGHT` is the same number; a module of its own here keeps this
+ *  file free of imports the test harnesses would have to copy. */
+export const SOLDIER_ORIGIN_OVER_FEET = 1.0;
+
 export function combatTick(world, player, dt) {
   if (!world.combatArea.active) {
     player.combat = null;
@@ -95,8 +104,13 @@ function supplySoldiers(world) {
     if (!player.soldier || !player.armor || player.armor.destroyed) continue;
     const root = player.occupancy?.root ?? null;
     if (root) {
-      // The seat's world position, published every tick by the registry.
-      const at = player.position;
+      // A seated soldier is the SeatObject's child (`SeatObject::enter`, SEAT-37),
+      // so his absolute position is the seat object's; the PlayerControlObject
+      // the registry publishes is the hull's origin for a half-track's rear
+      // seats. Hanomag's depot (radius 1.4, 1.46 m from the hull origin) only
+      // reaches its passengers from their seats (0.55 to 1.32 m). A seat with
+      // no SeatObject has the PlayerControlObject for a parent.
+      const at = seatBodyAt(player.occupancy, _seatBody) ?? player.position;
       if (!at) continue;
       out.push({
         x: at[0], y: at[1], z: at[2],
@@ -200,10 +214,25 @@ function depotSuspended(world, depot) {
   return !!world.vehicleDamage.get(owner)?.destroyed;
 }
 
+const _seatBody = [0, 0, 0];
+
+/** Where the soldier of an occupied seat is: the active seat's SeatObject, in
+ *  world space, into `out`; null when the seat has none (the caller falls back
+ *  to the seat's PlayerControlObject). Read only on a cycle that came due. */
+export function seatBodyAt(occ, out) {
+  const seat = occ?.seatInfo?.(occ.activeSeatId);
+  const node = seat?.seatObjects?.[0];
+  if (!node?.updateWorldMatrix) return null;
+  node.updateWorldMatrix(true, false);
+  const e = node.matrixWorld.elements;
+  out[0] = e[12]; out[1] = e[13]; out[2] = e[14];
+  return out;
+}
+
 export function supplyTarget(world, player) {
   return {
     x: player.soldier.x,
-    y: player.soldier.y,
+    y: player.soldier.y + SOLDIER_ORIGIN_OVER_FEET,
     z: player.soldier.z,
     team: player.supply.team ?? player.team,
     armor: player.armor,

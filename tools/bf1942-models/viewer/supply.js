@@ -538,9 +538,11 @@ export class SupplyField {
    *   carry the `AmmoType` of one of the seat's FireArms (0x08324b8a); else a
    *   `workOnSoldiers` depot on the soldier's own root, in radius.
    *
-   * `seat`: `{ team, root, x, y, z, rootX, rootY, rootZ, template,
-   * ammoTags }`: the seat object's place and template, its root's place, and
-   * the seat guns' depot tags (`fire-state.js` `ammoTypeOf`; a null tag, from
+   * `seat`: `{ team, root, x, y, z, rootX, rootY, rootZ, bodyX, bodyY, bodyZ,
+   * template, ammoTags }`: the seat's PlayerControlObject place and template,
+   * its root's place, the place of the soldier in it (his SeatObject, SEAT-37;
+   * the PlayerControlObject's when `bodyX` is absent), and the seat guns'
+   * depot tags (`fire-state.js` `ammoTypeOf`; a null tag, from
    * a tree exported before the word, matches any row as `rearmTypeFor` does).
    */
   seatedIcons(seat, out = { repair: false, heal: false, reload: false }) {
@@ -550,15 +552,16 @@ export class SupplyField {
     for (const d of this.depots) {
       if (d.team !== 0 && seat.team !== d.team) continue;
       const near = within(d, seat.x, seat.y, seat.z);
+      const nearBody = seat.bodyX === undefined ? near : within(d, seat.bodyX, seat.bodyY, seat.bodyZ);
       if (!out.repair && d.workOnVehicles && near && key
           && d.vehicleTypes.some(t => t.key === key)) out.repair = true;
       const sameRoot = d.root != null && d.root === seat.root;
-      if (!out.heal && d.workOnSoldiers && sameRoot && near && d.healRate > 0) out.heal = true;
+      if (!out.heal && d.workOnSoldiers && sameRoot && nearBody && d.healRate > 0) out.heal = true;
       if (!out.reload && d.ammoTypes.length) {
         if (d.workOnVehicles && tags.length
             && within(d, seat.rootX ?? seat.x, seat.rootY ?? seat.y, seat.rootZ ?? seat.z)
             && tags.some(tag => tag == null || d.ammoTypes.some(t => t.id === tag))) out.reload = true;
-        else if (d.workOnSoldiers && sameRoot && near) out.reload = true;
+        else if (d.workOnSoldiers && sameRoot && nearBody) out.reload = true;
       }
     }
     return out;
