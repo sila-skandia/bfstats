@@ -18,6 +18,7 @@ import {
   aimDistance, lookAngles,
 } from './soldier-camera.js';
 import { friendlyMineNear } from './mine-icon.js';
+import { SOLDIER_ORIGIN_OVER_FEET } from './world-fields.js';
 
 /**
  * Built once by the page, where this code used to sit. `page` hands in
@@ -184,7 +185,8 @@ export function createSoldierView(page) {
       page.world.setSupplyDepots(page.collectSupplyDepots(page.currentRoot));
       soldierView.supplyField = page.world.supplyField;
     }
-    page.supplyTarget.x = page.soldier.x; page.supplyTarget.y = page.soldier.y; page.supplyTarget.z = page.soldier.z;
+    // His origin, a metre over his feet (PHY-10): the point a depot measures to.
+    page.supplyTarget.x = page.soldier.x; page.supplyTarget.y = page.soldier.y + SOLDIER_ORIGIN_OVER_FEET; page.supplyTarget.z = page.soldier.z;
     page.supplyTarget.team = page.deployTeamId;
     page.supplyTarget.armor = page.soldierArmor;
     page.hudBridge.vars['ShowHealIcon'] = soldierView.supplyField.canHeal(page.supplyTarget);

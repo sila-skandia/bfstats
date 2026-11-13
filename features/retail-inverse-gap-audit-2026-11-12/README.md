@@ -934,6 +934,7 @@ What the eighteen builders of 2026-11-13 found and fixed outside the 68 entries,
 what they had just built. Each builder's report has the measurements; the ledger rows named here
 carry the addresses.
 
+- **A half-track's own locker reaches its riders.** Retail measures a depot to the soldier's absolute position: his origin, 1 m over his feet on foot, and his SeatObject seated. Ours measured feet and the hull origin, so the Hanomag's and Ho-Ha's locker (radius 1.4, 1.46 m from the origin) never served a rider and the M3A1's missed a man at the tailgate. Fixed in the page, the room and the runner (the runner had no depots at all). (apc-depot)
 - **A shot-down plane glides.** Retail's destruction message writes one byte on a Wing and nothing
   else, so a destroyed aircraft is the same airframe with a dead engine and a frozen stick until its
   time to live removes it, in the air or not (HP-26). Critical damage scales each wing's lift by

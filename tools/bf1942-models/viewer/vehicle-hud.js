@@ -443,8 +443,9 @@ export function createVehicleHud(page) {
     const e = node.matrixWorld.elements;
     into.x = e[12]; into.y = e[13]; into.z = e[14];
   };
+  const bodyAt = { x: 0, y: 0, z: 0 };
   const seatProbe = { team: 0, root: null, x: 0, y: 0, z: 0, rootX: 0, rootY: 0, rootZ: 0,
-                      template: null, ammoTags: [] };
+                      bodyX: 0, bodyY: 0, bodyZ: 0, template: null, ammoTags: [] };
   const seatIcons = { repair: false, heal: false, reload: false };
   const mineViewer = { alive: true, seated: true, kit: null, team: 0, x: 0, y: 0, z: 0 };
   // A round's side: its firer's in the world, else (a room's remote player,
@@ -464,12 +465,17 @@ export function createVehicleHud(page) {
     const seatNode = seat?.node?.matrixWorld ? seat.node : root;
     worldPlace(seatNode, seatAt);
     worldPlace(root, rootAt);
+    // The soldier is the SeatObject's child (SEAT-37): the heal and soldier
+    // reload predicates measure to it (`showHealIconInMenu` 0x08324700).
+    const body = seat?.seatObjects?.[0];
+    worldPlace(body?.matrixWorld ? body : seatNode, bodyAt);
     const field = page.world?.supplyField;
     if (field?.depots.length && alive) {
       seatProbe.team = team;
       seatProbe.root = root;
       seatProbe.x = seatAt.x; seatProbe.y = seatAt.y; seatProbe.z = seatAt.z;
       seatProbe.rootX = rootAt.x; seatProbe.rootY = rootAt.y; seatProbe.rootZ = rootAt.z;
+      seatProbe.bodyX = bodyAt.x; seatProbe.bodyY = bodyAt.y; seatProbe.bodyZ = bodyAt.z;
       // The player's vehicle is the seat's own PlayerControlObject: the hull
       // for its driver, the seat object for anyone else, and it is that
       // template a depot's `addVehicleType` rows are matched against.
