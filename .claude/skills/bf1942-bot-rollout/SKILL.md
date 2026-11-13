@@ -321,8 +321,24 @@ report with them. The ones live and passing stay as they are.
 session is landing one large commit (radio, repairs, seat requests,
 contact avoidance, hull TakeCover/Scout/Roam, grenade throws, sighting
 decay, and `viewer/bot-rows.js botKind`: a bot flies a hull only when its
-AI template is an aircraft's). It will message the hash. When
-`git log -- tools/bf1942-models/viewer/bot-*.js` shows it and it is live:
+AI template is an aircraft's). **It landed as `5b2095fd4`** (the hash came
+in at the end of 2026-11-13). Three things in it move the judging:
+
+- Bots aim at a random sensed skeleton bone and hit drawn capsules, on the
+  page, in rooms and in the runner (it reads `poses/stances.json` and prints
+  `bodies capsules`). `sim/baselines/` were recorded on the old stand-in
+  sphere: re-record them on this code before trusting a screen. The new
+  `stances.json` reaches live only when the parity session publishes the
+  data stage after the deploy, and it will message when it has. Page
+  matches before then run on the old bodies.
+- A vehicle whose path failed no longer re-searches on a timer; it waits for
+  a plan change, as retail does. Expect quieter rounds on levels whose hulls
+  path badly (Bocage seed 2 went to 5 kills against 33).
+- The air-avoid slow-object gate is retail's rule and gives more runway
+  collisions (El Alamein); do not read a rise in aircraft own-hand deaths on
+  a level with runways as a regression of ours.
+
+Once it is deployed and the data stage is published:
 
 1. Replay GC's Endor, BCanyon, Lok, Alaris Prime and Mini Wasteland first.
    They failed on own-hand deaths that were one vehicle: the Speederbike
