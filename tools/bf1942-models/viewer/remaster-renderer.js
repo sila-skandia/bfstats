@@ -402,6 +402,11 @@ export async function createRemasterScene({ renderer, scene, camera, sun, hemi }
   // at every distance the cascades reach; what is left here is what moves.
   const FOLIAGE_REACH = 120;
   const SOLID_REACH = 450;
+  // A caster's reach grows with its size: 300 m a metre of radius (a
+  // helmet's 0.2 m casts to 60 m, where it is a texel or two of the middle
+  // cascade), and never under 30 m, where the near cascade shows a hand's.
+  const REACH_PER_METRE = 300;
+  const SMALL_REACH_MIN = 30;
   const proxies = createShadowProxies(scene);
   const casters = [];
   // A skinned mesh's bone matrices (a batch's instance data likewise) are a
@@ -444,6 +449,9 @@ export async function createRemasterScene({ renderer, scene, camera, sun, hemi }
   // Any other scene this renderer draws (the first-person rig's, a replay's,
   // a preview's) gets the same split of its skinned and batched materials,
   // looked at once a second.
+  // The performance pass's switches, each on; a rig turns one off through
+  // `__remaster.tune` to measure it in the same page, the same second.
+  const tune = { cascadeMatrices: true, cascadeWalk: true, quietShadowMaterial: true, reachPerMetre: REACH_PER_METRE };
   const otherScenes = new WeakMap();
   const render = renderer.render.bind(renderer);
   renderer.render = (s, c) => {
@@ -456,8 +464,72 @@ export async function createRemasterScene({ renderer, scene, camera, sun, hemi }
         });
       }
     }
+    // A shadow cascade is drawn from inside the main pass, after that pass
+    // has brought every world matrix up to date; three would walk the whole
+    // scene again to update them for each cascade (about 0.7 ms a cascade on
+    // a level of 7,000 objects). The cascade's own camera and light are
+    // updated by the shadow node itself.
+    if (s === scene && c !== camera && c?.isOrthographicCamera && scene.matrixWorldAutoUpdate && tune.cascadeMatrices) {
+      scene.matrixWorldAutoUpdate = false;
+      // And it walks only the branches that hold a caster (`markCasters`).
+      cascadeWalk = castStamp > 0 && tune.cascadeWalk;
+      quietShadowMaterial(scene.overrideMaterial, tune.quietShadowMaterial);
+      try { return render(s, c); } finally { scene.matrixWorldAutoUpdate = true; cascadeWalk = false; }
+    }
     return render(s, c);
   };
+  // three draws every caster of a cascade with one shadow material, handed
+  // each caster's `alphaTest` in turn, and `Material.alphaTest`'s setter
+  // counts a change between cut and uncut as a new version of the material.
+  // Cut and uncut casters alternate (a palm, a wall, a fence), so every
+  // caster found the material "changed" and re-derived its whole cache key,
+  // every cascade, every frame: half the cost of a shadow draw. A caster's
+  // own draw record is built once with its own cut and does not depend on
+  // that counter, so on this one material the setter stops counting.
+  function quietShadowMaterial(material, quiet) {
+    if (!material?.isShadowPassMaterial || !!material.rmQuiet === !!quiet) return;
+    material.rmQuiet = !!quiet;
+    if (quiet) {
+      Object.defineProperty(material, 'alphaTest', {
+        configurable: true,
+        get() { return this._alphaTest; },
+        set(value) { this._alphaTest = value; },
+      });
+    } else {
+      delete material.alphaTest;
+    }
+  }
+  // three projects a scene by visiting every object in it, for every pass.
+  // A cascade draws a few hundred casters out of some 14,000 objects, and
+  // there are up to three cascades a frame; here its walk leaves every
+  // branch that `markCasters` did not stamp. The proxies' own group is
+  // walked whole: its members come and go between judgements.
+  const PROXY_ROOT = 'remaster shadow proxies';   // remaster-shadow-proxies.js
+  let cascadeWalk = false;
+  let castStamp = 0;
+  const projectObject = renderer._projectObject;
+  if (typeof projectObject === 'function') {
+    renderer._projectObject = function (object, cam, groupOrder, renderList, clippingContext) {
+      if (cascadeWalk) {
+        if (object.name === PROXY_ROOT) {
+          cascadeWalk = false;
+          try { return projectObject.call(this, object, cam, groupOrder, renderList, clippingContext); }
+          finally { cascadeWalk = true; }
+        }
+        if (object.rmCastStamp !== castStamp) return;
+      }
+      return projectObject.call(this, object, cam, groupOrder, renderList, clippingContext);
+    };
+  }
+  /** Stamp each casting mesh and the branch above it, after a judgement. */
+  function markCasters() {
+    castStamp++;
+    scene.rmCastStamp = castStamp;
+    for (const k of casters) {
+      if (k.proxied || !k.obj.castShadow) continue;
+      for (let a = k.obj; a && a.rmCastStamp !== castStamp; a = a.parent) a.rmCastStamp = castStamp;
+    }
+  }
 
   function flagShadows(root) {
     root.traverse(obj => {
@@ -481,7 +553,11 @@ export async function createRemasterScene({ renderer, scene, camera, sun, hemi }
       if (!cast) return;
       const leafy = mats.some(m => m.alphaTest || m.remasterSprite);
       if (!obj.geometry.boundingSphere) obj.geometry.computeBoundingSphere();
-      casters.push({ obj, reach: leafy ? FOLIAGE_REACH : SOLID_REACH, r: obj.geometry.boundingSphere?.radius ?? 1 });
+      // A small part casts only where a cascade can resolve it: a helmet,
+      // a hand or a wheel is under a shadow texel long before SOLID_REACH,
+      // and a soldier is thirteen such parts, each a draw in every cascade.
+      const r = obj.geometry.boundingSphere?.radius ?? 1;
+      casters.push({ obj, reach: leafy ? FOLIAGE_REACH : SOLID_REACH, r });
       obj.castShadow = false;
     });
   }
@@ -498,13 +574,36 @@ export async function createRemasterScene({ renderer, scene, camera, sun, hemi }
       // a mesh casting for itself is on that layer as well as its own.
       if (!k.layered) { k.obj.layers.enable(SHADOW_LAYER); k.layered = true; }
       _p.setFromMatrixPosition(k.obj.matrixWorld);
-      const reach = k.reach + k.r;
+      const reach = Math.min(k.reach, Math.max(SMALL_REACH_MIN, k.r * tune.reachPerMetre)) + k.r;
       const on = _p.distanceToSquared(c) < reach * reach;
       k.obj.castShadow = on;
       if (on) n++;
     }
+    markCasters();
     return n;
   }
+  // The hull the Inside view takes away (vehicle-base.js `CockpitSwap`): it
+  // leaves the eye's layer and stays on the shadow cameras', so the plane a
+  // pilot sits in still casts its whole shadow. Hidden outright it cast
+  // none, and what fell on the ground was the shadow of the few cockpit
+  // pieces the view draws: a small, broken copy of the plane's.
+  remasterHooks.viewHidden = (node, hidden) => {
+    node.visible = true;
+    if (!!node.userData.rmViewHidden === !!hidden) return;
+    node.userData.rmViewHidden = !!hidden;
+    node.traverse(obj => {
+      if (!obj.isMesh && !obj.isLine && !obj.isPoints && !obj.isSprite) return;
+      // Counted: one hidden node may hold another.
+      const n = (obj.userData.rmViewHides || 0) + (hidden ? 1 : -1);
+      obj.userData.rmViewHides = Math.max(0, n);
+      if (hidden && n === 1) {
+        obj.userData.rmEyeLayer = obj.layers.isEnabled(0);
+        obj.layers.disable(0);
+      } else if (!hidden && n === 0 && obj.userData.rmEyeLayer) {
+        obj.layers.enable(0);
+      }
+    });
+  };
   let lastFlag = 0;
   let lastJudge = 0;
   let lastNodeFrame = -1;
@@ -680,6 +779,7 @@ export async function createRemasterScene({ renderer, scene, camera, sun, hemi }
 
   const api = {
     atmosphere,
+    tune,
     /** For the captures and tests: the fires alight and each light's strength. */
     lights: () => ({ fires: [...fires].map(r => r.name), fire: fireLights.map(l => +l.intensity.toFixed(1)),
       flash: flashes.map(f => +f.light.intensity.toFixed(1)), bursts: bursts.map(b => b.sprite.visible) }),

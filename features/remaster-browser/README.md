@@ -247,6 +247,86 @@ How the shadows got here from 140 ms:
 4. One remaster material per source material, not per mesh: a level's few
    hundred glTF materials had become thousands, each with its own bindings.
 
+## A match with bots (2026-11-13, the performance pass)
+
+The owner, on the live site: "really stuttery. Not even just graphics events
+but when the radio plays it stutters." The table above is a still camera, no
+bots, pixel ratio 1. A match on the laptop's own screen is another question,
+and `tests/perf/remaster_match.mjs` asks it: El Alamein, 16 bots, the player
+on foot walking and turning, 1728 x 1117 at a pixel ratio of 2.
+
+What it found, before any change:
+
+- **354 of 2,357 frames late at 60 Hz (15 %)**, against 1 of 2,688 in retail
+  mode. Uncapped, a frame cost 18 to 20 ms against retail's 6.
+- **It is the CPU, not the pixels.** Pixel ratios of 1, 1.5 and 2 cost the
+  same (21.6, 19.5 and 18.3 ms, run to run noise). The main thread is never
+  idle.
+- **The sun's shadows were 7 ms of it**, the scene pass 5 ms, the bots' 30 Hz
+  tick 2 to 4 ms a frame averaged, but about 7 ms on the frame it lands in.
+  A frame with a tick in it was the one that came late, every second or
+  third frame: that alternation is the stutter. A radio message is not a
+  cause: a message a second for twelve seconds (the voice and the line) left
+  every frame at 17 ms.
+
+What was changed, each measured by flipping it on and off inside one
+running match (`--uncapped --ab <switch>`; two separate runs differ by more
+than any one change on a busy machine):
+
+1. **A small part casts only where a cascade can resolve it.** A soldier is
+   thirteen caster meshes (helmet, pack, two pouches, three face parts, three
+   body parts, two hands), a vehicle a wheel and a hatch at a time, and each
+   was a draw in every cascade out to 450 m. A caster's reach is now 300 m a
+   metre of radius, never under 30 m: a helmet to 60 m, a hull the whole
+   way. Shadows 7.0 to 3.6 ms; 1,062 draws a frame to 645.
+2. **A cascade no longer updates every matrix in the scene.** three calls
+   `scene.updateMatrixWorld()` for each render, and a cascade is a render of
+   the same scene from inside the main pass, which has just done it.
+3. **A cascade walks only the branches that hold a caster.** three projects
+   a scene by visiting every object, 14,000 on El Alamein, for a few hundred
+   casters. `judgeCasters` stamps each casting mesh and the groups above it,
+   and the cascade's walk leaves anything unstamped. (2 and 3 together:
+   3.7 ms.)
+4. **The shadow material's alpha test stops invalidating every caster.**
+   three draws a cascade with one material and hands it each caster's
+   `alphaTest` in turn; the setter counts a change between cut and uncut as
+   a new version of the material, and cut and uncut casters alternate. Every
+   caster then re-derived its whole cache key, every cascade, every frame.
+   On that one material the setter no longer counts (1.9 ms).
+5. **An even cadence** (`frame-pacer.js`). Where frames still straddle the
+   refresh, some are shown for one refresh and some for two in no order. The
+   pacer watches how many refreshes each drawn frame took and, when more
+   than 12 % overrun, draws on every second refresh instead: on a 120 Hz
+   panel, an even 60. It lets go when the frames get cheap, and it does not
+   take a page that is mostly at 60 down to 30 for one late frame in six
+   (that needs 35 %). `?pace=0` turns it off; `?shots` rigs draw every frame
+   unless they ask.
+
+Tried and taken back out: freezing the matrices of the statics (0.2 ms; the
+scene's own matrix pass is 1 ms of the frame, the rest is the simulation's).
+
+After, the same match at 60 Hz with other work running on the machine:
+
+| Level | Late frames before | After |
+|---|---|---|
+| El Alamein | 354 of 2,357 (15 %) | 2 of 2,696 and 69 of 2,636 (two runs) |
+| Wake, run back to back | 149 of 1,959 and 96 of 2,009 | 36 of 2,068 and 25 of 2,081 |
+
+Uncapped, a frame went from 13.7 to 11.9 ms with changes 2 to 4 alone on a
+quieter machine (20.3 to 16.8 ms on a busy one), on top of change 1. Retail
+mode in the same match: 6 ms, no late frame. Seven Wake views before and
+after are the same picture (the shadows of the tank, the huts, the palms and
+the carrier's island all in place).
+
+What a late frame still is: the frame the bots' tick lands in. The scene
+pass is 7 to 8 ms on Wake and the tick about as much again on the one frame
+in two that carries it. Retail mode has room for it and the remaster, on a
+busy machine, sometimes has not.
+
+What is left over retail is the scene pass: the same 510 draws cost three's
+WebGPU renderer about three times what they cost r169's WebGL one, per draw,
+in JavaScript. Fewer draws is the next step there, not anything in a shader.
+
 ## How it is built
 
 The page imports `'three'` everywhere. `map.html`'s static import map names the
@@ -276,6 +356,7 @@ its listed neighbours into a temporary folder.
 | `remaster-shadow-proxies.js` | the merged static shadow casters |
 | `remaster-water.js` | the water |
 | `remaster-lights.js` | which effect bundle is a flash, a blast or a fire, and how strong (pure tables) |
+| `frame-pacer.js` | the even cadence: frames on every second refresh where they cannot land on every one (pure) |
 | `remaster-foliage.js` | leaf sprites, billboards, wind |
 
 The retail modules call in where they build their own look:
@@ -612,6 +693,15 @@ keeps its own.
   remaster's: the engine alpha-tests every sprite (ledger SPR-10) and the
   page did not. `effects.js` now carries the floor, and the remaster's
   sprite hook tells that floor from a cut the art asked for.
+- **From the cockpit a plane cast a small, broken shadow.** The Inside view
+  hides the hull (`vehicle-base.js` `CockpitSwap`), and a hidden mesh casts
+  nothing, so what fell on the ground was the shadow of the few cockpit
+  pieces the view draws ("the shadow of the spitfire is tiny", the owner on
+  El Alamein, 2026-11-13). The engine's shadow is the hull's whichever view
+  is on, and the retail page's pass draws it from its own list. In remaster
+  mode the hidden hull now leaves the eye's layer and stays on the shadow
+  cameras' (`viewHidden`). Parked, in the chase view and in flight the
+  shadow was already the plane's own size.
 - **A cloned node material loses its alpha cut.** three r186's
   `NodeMaterial.copy` copies what it can enumerate; `alphaTest` is an
   accessor with an underscored field and is not reached. A palm in its fade
@@ -724,5 +814,8 @@ that has it.
 - `tools/bf1942-models/tests/test_remaster_mode.py`,
   `tools/bf1942-models/tests/test_remaster_lights.py`,
   `tools/bf1942-models/tests/perf/remastershot.mjs`,
-  `tools/bf1942-models/tests/perf/remaster_explosions.mjs`
+  `tools/bf1942-models/tests/perf/remaster_explosions.mjs`,
+  `tools/bf1942-models/tests/perf/remaster_match.mjs`
+- `tools/bf1942-models/viewer/frame-pacer.js`,
+  `tools/bf1942-models/tests/test_frame_pacer.py`
 - `features/remaster-browser/shots/` (the composites above)

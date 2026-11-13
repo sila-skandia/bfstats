@@ -509,7 +509,15 @@ class CockpitSwap {
       }
     }
     for (const node of this.interior) node.visible = inside;
-    for (const node of this.hidden) node.visible = !inside;
+    // Remaster mode keeps the exterior the Inside view takes away casting
+    // its shadow (remaster-renderer.js `viewHidden`): the engine's shadow
+    // is the hull's whichever view is on, and the retail page's pass draws
+    // it from its own list.
+    const hide = globalThis.bfRemasterHooks?.viewHidden;
+    for (const node of this.hidden) {
+      if (hide) hide(node, inside);
+      else node.visible = !inside;
+    }
   }
 }
 

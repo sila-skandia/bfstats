@@ -492,6 +492,7 @@ import { PassingRounds } from './passing-rounds.js';
 import { chooseAntialias, storedAntialias } from './render-antialias.js';
 import { REMASTER } from './remaster-mode.js';
 import { PHONE_RATIO_CAP, frameGate, phoneFps, phoneReplay, phoneVideo } from './replay-phone.js';
+import { createFramePacer } from './frame-pacer.js';
 import { createQualityGovernor, qualityMode, storedQuality } from './replay-quality.js';
 import {
   changeSound, chooseHardware3d, currentSound, effectVoiceBudget, onSoundChange,
@@ -5005,9 +5006,20 @@ let stallShown = false;
 // frames between are skipped whole, and the next drawn one's `getDelta`
 // carries the time they covered.
 const drawThisFrame = frameGate(PHONE_REPLAY ? phoneFps(renderQuery) : 0);
+// Remaster mode's even cadence (frame-pacer.js): where its frames cannot land
+// on every refresh, they are drawn on every second one instead of on a mix
+// of both. `?pace=0` turns it off; screenshot tooling (`?shots`) draws every
+// frame unless it asks with `?pace=1`, so a rig measures the frames themselves.
+const framePacer = REMASTER && (renderQuery.has('pace') ? renderQuery.get('pace') !== '0' : !renderQuery.has('shots'))
+  ? createFramePacer({ onChange: s => console.info(
+      `[remaster] pacing: every ${s.divisor === 1 ? '' : `${s.divisor}${['', '', 'nd', 'rd', 'th'][s.divisor]} `}refresh, ${Math.round(s.fps)} fps`) })
+  : null;
+if (renderQuery.has('shots')) window.__framePacer = framePacer;
 renderer.setAnimationLoop(now => {
   if (filming && !window.replay?.creator?.recorder) setFilming(false);
   if (!filming && !drawThisFrame(now)) return;
+  // Asked on every call, a take included: it is how the pacer measures.
+  if (framePacer && !framePacer.gate(now) && !filming) return;
   try {
     // A paused single-player game runs no frame (page-input.js, retail's game
     // status 4): the clock is still read, so the time away is not paid back

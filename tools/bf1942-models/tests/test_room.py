@@ -79,6 +79,8 @@ _VIEWER_MODULES = [
     # vehicle-base.js spells a template name as its model file, and loads its
     # cockpits through the glb store's loader (features/mesh-asset-size, phase 5).
     "model-file", "glb-loader", "glb-store",
+    # glb-loader.js builds a store texture's address with it (2026-11-13).
+    "texture-url",
     # world-soldier-tick.js carries the weapon's recoil.
     "recoil",
     # vehicle-instance.js is what `room-control.mjs` asks whether a hull is
