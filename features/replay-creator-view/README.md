@@ -2343,3 +2343,16 @@ sign-in. `test_replay_creator` asserts `shortBlock` and `shortTitle`.
 The skill's probe recipe assumes :5273 serves the main checkout. On this day
 it served another session's worktree, so the page was checked on
 `serve_viewer.py 5291` from the main checkout.
+
+**A Short by default outside the studio too (2026-11-13, later).** The owner,
+after trying it: "we specifically want to be able to export and record as a
+short by default". The plate over the view (the bar that names the camera)
+only had Record, a file in the frame set. It now leads with Post as a Short
+(`recordRide({ short: true })`), and Record beside it reads Record a file.
+The Kills tab's one-click record on a kill row posts a Short as well
+(`recordShort` through `recordTake`). Where a Short cannot be posted (a
+round not shared, a WebM browser) the plate shows Record alone and the row
+records a file, as before. Checked on the same page with the frame at 16:9:
+the plate read Bullet chase, Post as a Short, Record a file, Stop; a click
+recorded 506 x 900 under "REC FOR A SHORT", the frame came back to 16:9 and
+the dialog opened with the title.

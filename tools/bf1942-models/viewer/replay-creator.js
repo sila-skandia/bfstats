@@ -3682,12 +3682,30 @@ export class ReplayCreator {
     this.take = { f, kill };
     this.takeHeld = false;
     this.armShot(f, kill);
-    this.record({ fly: false });
+    this.recordTake();
+  }
+
+  /** An armed take recorded. Where it can be posted it is a Short by default
+   *  (the owner, 2026-11-13: "we specifically want to be able to export and
+   *  record as a short by default"): vertical, to the Share dialog. Where it
+   *  cannot (`shortBlocked`), or with `short` false, a file in the frame
+   *  set, as before. */
+  recordTake({ short = true } = {}) {
+    if (!short || this.shortBlocked({ clip: true })) {
+      this.record({ fly: false });
+      return;
+    }
+    this.holdFrame('916');
+    if (this.studio?.open) this.studio.record({ short: true });
+    else {
+      this.record({ fly: false, short: true });
+      if (!this.recorder) this.releaseFrame();
+    }
   }
 
   /** The ride on screen recorded (the plate's Record): the same shot armed
    *  again from the clip's start, written to a file. */
-  recordRide() {
+  recordRide({ short = false } = {}) {
     const target = this.rounds.target;
     const f = target?.f;
     if (!f || this.recorder) return;
@@ -3697,16 +3715,16 @@ export class ReplayCreator {
     this.take = { f, kill };
     this.takeHeld = false;
     this.armShot(f, kill);
-    this.record({ fly: false });
+    this.recordTake({ short });
   }
 
   /** Why the clip cannot be posted as a Short from here, in words to show,
    *  or null: said before anything is recorded (the owner, 2026-11-13: "it's
    *  all too many steps and complicated"; the offer used to come, or
    *  silently not come, only after a recording in the 9:16 frame). */
-  shortBlocked() {
+  shortBlocked({ clip = Boolean(this.span) } = {}) {
     return shortBlock({
-      clip: Boolean(this.span), replayUrl: new URLSearchParams(globalThis.location?.search ?? '').get('replay'),
+      clip, replayUrl: new URLSearchParams(globalThis.location?.search ?? '').get('replay'),
       mimes: [recorderMime(true), recorderMime(false)],
     });
   }
@@ -4142,6 +4160,17 @@ export class ReplayCreator {
       quietly('recording the ride', () => this.recordRide());
     });
     this.plateRec = rec;
+    // The ride as a Short, the plate's first choice: vertical, then the
+    // Share dialog. Hidden where a Short cannot be posted.
+    const post = el('button', 'rp-btn rc-plate-short', 'Post as a Short');
+    post.type = 'button';
+    post.title = 'Record this ride once in 9:16 and post it to the Shorts strip: you name it, nothing else to set';
+    post.hidden = true;
+    post.addEventListener('click', e => {
+      e.stopPropagation();
+      quietly('posting the ride as a Short', () => this.recordRide({ short: true }));
+    });
+    this.plateShort = post;
     // The take's shot style, one press to the next: try them as it loops.
     const style = el('button', 'rp-btn rc-plate-style', 'Chase');
     style.type = 'button';
@@ -4159,7 +4188,7 @@ export class ReplayCreator {
       e.stopPropagation();
       quietly('stopping', () => this.stopAll());
     });
-    plate.append(this.plateDot, this.plateText, style, rec, stop);
+    plate.append(this.plateDot, this.plateText, style, post, rec, stop);
     return plate;
   }
 
@@ -4185,7 +4214,7 @@ export class ReplayCreator {
     } else if (this.recorder) {
       const r = this.recorder;
       kind = 'rec';
-      text = r.started ? `REC ${fmt(Math.max(0, this.player.time - r.t0))} / ${fmt(r.t1 - r.t0)}${slowly}` : 'REC · getting ready';
+      text = r.started ? `${r.short ? 'REC FOR A SHORT' : 'REC'} ${fmt(Math.max(0, this.player.time - r.t0))} / ${fmt(r.t1 - r.t0)}${slowly}` : 'REC · getting ready';
     } else if (this.rounds.active && (!cam || onRound)) {
       const d = this.rounds.describe(name, k => this.display(k));
       kind = d?.phase ?? '';
@@ -4211,6 +4240,14 @@ export class ReplayCreator {
     if (this.plateText.textContent !== text) this.plateText.textContent = text;
     // A ride on a known shot can be recorded as it stands, in one press.
     this.plateRec.hidden = Boolean(this.recorder) || !(this.rounds.active && this.rounds.target?.f);
+    if (this.plateShort) {
+      const can = !this.plateRec.hidden;
+      // What blocks a Short (the round, the browser) holds for the page:
+      // asked once.
+      if (can) this.shortOff ??= Boolean(this.shortBlocked({ clip: true }));
+      this.plateShort.hidden = !can || this.shortOff;
+      this.plateRec.textContent = this.plateShort.hidden ? 'Record' : 'Record a file';
+    }
     this.plateStyle.hidden = Boolean(this.recorder) || !(this.take || this.movesCamera);
     // The button cycles the camera on the round's flight (G): it names that one.
     const flight = this.flightStretch();

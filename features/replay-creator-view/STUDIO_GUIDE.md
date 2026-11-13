@@ -17,8 +17,10 @@ design notes and the history of each control are in this folder's README.
 5. On the Export tab, click Record the clip. The clip plays once at full
    size and downloads as a video file when it ends.
 
-To post it as a Short instead, click Post as a Short in the top bar at any
-point after step 2. The clip plays once, recorded vertical, and a dialog asks
+To post it as a Short instead, click Post as a Short at any point after
+step 2: it is in the studio's top bar, and on the bar over the view outside
+the studio (Record a file beside it saves a video file instead). The record
+button on a kill's row in the Kills tab posts a Short too. The clip plays once, recorded vertical, and a dialog asks
 for its title: Share puts it in the Shorts strip.
 
 Everything after step 2 is optional. Kill shot on its own makes a usable
