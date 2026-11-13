@@ -65,6 +65,13 @@ export function createBotUnits(env) {
         // The mod whose `AIbehaviours.con` rows the records' `equipmentType`
         // numbers index (bot-rows.js).
         units.aiMod = json?.mod ?? null;
+        // The mod's `Game/AI/radio.con` rows, what its bots hear
+        // (`extract_vehicle_ai.py` `radio_subscriptions`; bot-radio.js
+        // `subscriptionsFrom`); null in a tree written before the key.
+        units.aiRadio = Array.isArray(json?.radio) ? json.radio : null;
+        // ...and its meshes' portal centres (`coverPortals`, extract_vehicle_ai.py
+        // `cover_portals`): a cover object's doors and windows, by mesh name.
+        units.aiCoverPortals = json?.coverPortals ?? null;
         // ...and the row a bot on foot runs, for its modifier columns.
         setRowsMod(units.aiMod);
         for (const [name, info] of Object.entries(json?.vehicles ?? {})) units.ai.set(name.toLowerCase(), { name, ...info });
@@ -523,6 +530,9 @@ export function createBotUnits(env) {
             // SAI's (`AISettings::getNStrategicStrengths` 0x084843e0 = 2).
             value: seatAi?.basicTemp ?? (isRoot ? ai.basicTemp : null) ?? 0,
             seatFactor,
+            // The seat's `setStrategicStrength 0|1` pair, the SAI's wanted
+            // strength of the area it stands in (strategic-ai.js, AI-168).
+            strategic: seatAi?.strategicStrength ?? (isRoot ? ai.strategicStrength : null) ?? null,
             // `setUseNoPathfindingToGetToObject` (AITemplateUnit +0x15): the
             // Change test is a trace 12 m behind the unit, not its own cell.
             noPathfinding: !!(seatAi?.useNoPathfinding ?? (isRoot && ai.useNoPathfinding)),
@@ -644,6 +654,8 @@ export function createBotUnits(env) {
       searchType: typed?.row && !typed.row.waterMap && !/^(Boat|LandingCraft)/i.test(typed.type.name)
         ? typed.type.name : null,
       turnRadius: ai?.turnRadius ?? null, strType: cand.strType, seats: cand.seats, isRoot: cand.isRoot,
+      // The seat's strategic pair and battle table, for the SAI's area pass.
+      strategic: cand.strategic ?? null, strengths: cand.strengths ?? null,
       // The hull's own velocity: its one drive, whoever holds the wheel.
       hullVelocity: () => inst.drive?.state?.velocity ?? null,
       radius: kind === 'air' || kind === 'ship' ? BOT_VEHICLE_RADIUS_LARGE : BOT_VEHICLE_RADIUS,
@@ -664,6 +676,13 @@ export function createBotUnits(env) {
       // The Mobile plug-in's `avoidCollisionLookAhead` (null: the 5 s of both
       // ctors; bot-route.js `hullLookAhead`).
       avoidCollisionLookAhead: ai?.avoidCollisionLookAhead ?? null,
+      // The Mobile plug-in's `coverSearchRadius` (+0x14), which the hull's
+      // TakeCover lists its cover objects by (bot-decision.js
+      // `urgencyHullTakeCover`): the template's word, null when it sets
+      // none, undefined in data extracted before the exporter carried it.
+      coverSearchRadius: ai ? ai.coverSearchRadius : undefined,
+      // The mod's cover portals, for the same behaviour (null: the file has none).
+      coverPortals: () => units.aiCoverPortals ?? null,
       driverOf: () => env.vehicles.driverOf(node),
     };
   }

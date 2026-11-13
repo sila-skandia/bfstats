@@ -100,6 +100,17 @@ class State:
     # *weapon's own* skeleton plays alongside this body state (the moving
     # magazine during a reload). Other kinds (`c_AsmFaceState`) are not kept.
     weapon_state: str | None = None
+    # `setOtherState c_AsmFaceState FaceFire1` -- the state the soldier's
+    # face plays while this body state is current: each frame
+    # `BFSoldier::handleFrameUpdate` (lnxded 0x08271140) takes
+    # `getOtherState(0)` of the lower machine's state, then of the upper's
+    # (0x082712d3, the later one wins), and hands it to `playFaceAnimation`
+    # (0x08271526) unless a spoken line's symbols are queued.
+    face_state: str | None = None
+    # `addSpeakConnectionSymbol i` -- the lip-sync symbol this face state
+    # answers to: one character, the index of the machine's 256-entry table
+    # (`getSpeakConnectionState`, lnxded 0x083274c0).
+    speak_symbol: str | None = None
     # `setMorphFactor f` — the rate, per second, at which the blend weight
     # ramps 0 -> 1 when this state is *entered*
     # (`AnimationStateMachineInstance::updateState`, lnxded 0x0832b50f:
@@ -298,6 +309,11 @@ class StateMachine:
         clone.random = (list(latest.random) if exact else
                         [_substitute(name, src_weapon, new_weapon, exact)
                          for name in latest.random])
+        # The face state is copied with the rest (`copyState` renames "the
+        # two other-states"); no face state carries a weapon's name.
+        if latest.face_state:
+            clone.face_state = _substitute(
+                latest.face_state, src_weapon, new_weapon, exact)
         if latest.weapon_state:
             # The paired weapon-channel state follows the body state's name:
             # `WeaponReloadThompson` -> `WeaponReloadColt`. Donors do not
@@ -493,6 +509,10 @@ def parse(read: Callable[[str], str | None],
             elif command == "setotherstate" and latest is not None and len(args) >= 2:
                 if args[0].lower() == "c_asmweaponstate":
                     latest.weapon_state = args[1]
+                elif args[0].lower() == "c_asmfacestate":
+                    latest.face_state = args[1]
+            elif command == "addspeakconnectionsymbol" and latest is not None and args:
+                latest.speak_symbol = args[0][:1]
             elif command in ("set1panimationspeed", "set3panimationspeed") \
                     and len(args) >= 2:
                 # `animations/{1p,3p}AnimationsTweaking.con`, run from

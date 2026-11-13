@@ -75,6 +75,11 @@ STEPS: list[tuple[str, str]] = [
     ("extract_console_font.py", "console"),
     ("extract_radio.py", ""),
     ("extract_score_settings.py", ""),
+    # The tooltip plate and the pause message: a mod's lexicon rewrites the
+    # help text and its PlayerControlObjects carry their own tooltip types.
+    ("extract_tooltips.py", ""),
+    # OPTIONS > CUSTOMIZE, the general options screen.
+    ("extract_general_options_layout.py", "menu"),
 ]
 
 #: Arguments a step needs beyond `--mod/--game-dir/--out`, given the staging

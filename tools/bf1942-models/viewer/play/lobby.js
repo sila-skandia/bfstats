@@ -28,6 +28,7 @@ export function createLobby({
   let rooms = [];
   let lastError = null;
   let polled = false;
+  let full = false;
   let timer = null;
 
   /** Whether the room server answered the last time this asked. Until the
@@ -45,6 +46,8 @@ export function createLobby({
       const body = await res.json();
       const list = Array.isArray(body) ? body : body?.rooms;
       rooms = Array.isArray(list) ? list.map(decorate) : [];
+      // The server's cap on live rooms is reached (`room-registry.mjs`).
+      full = body?.full === true;
       lastError = null;
     } catch (error) {
       // Said on the canvas, where the rows would be, in the screen's own
@@ -68,6 +71,8 @@ export function createLobby({
     start,
     stop,
     online,
+    /** Whether the server can take no new room now; a listed one still joins. */
+    get full() { return full; },
     get rooms() { return rooms; },
     get lastError() { return lastError; },
   };

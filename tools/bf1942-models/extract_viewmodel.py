@@ -213,6 +213,22 @@ FAMILIES: tuple[tuple[str, str], ...] = (
     ("altfire", "AltFire"),
 )
 
+# The clip leaving the gun (2026-11-13). `BFSoldier::handleMessage` (lnxded
+# `0x08277260`) answers `FireArms::startedEjecting` (`0x0828f970`) by setting
+# `Ub_LieEjectClip` (string `0x086d206f`) when the lower state lies, else
+# `Ub_StandEjectClip` (`0x086d207f`), at `0x082775d8`; both are
+# `addTransitionItem` hubs, so the state entered is `Ub_StandEjectClip<W>`,
+# a `c_AsmPlayOnce` that cuts in (`setMorphFactor 10000`), plays the weapon's
+# own `WeaponEjectClip<W>` on the weapon channel and hands to `_POSE_`
+# (`AnimationStatesEjectClip.con`). The scripts declare them for the Thompson
+# and copy them to the M1 Garand, and only a weapon whose template writes
+# `ejectClipTime` ever starts an eject (FA-7), so only such a weapon's rig
+# bakes them (`resolve_families` `ejects`): vanilla's is the Garand alone.
+EJECT_FAMILIES: tuple[tuple[str, str], ...] = (
+    ("eject", "StandEjectClip"),
+    ("proneEject", "LieEjectClip"),
+)
+
 # The bolt cycle families, resolved off the fire state's `returnToState`
 # (resolve_families), not by weapon name: key, the fire family that names it.
 BOLT_FAMILIES: tuple[tuple[str, str], ...] = (
@@ -434,14 +450,19 @@ def _camera_shake(state: animstates.State) -> dict:
 
 
 def resolve_families(machine: animstates.StateMachine, weapon: str,
+                     ejects: bool = False,
                      ) -> tuple[dict[str, dict], dict[str, dict]]:
-    """Per family: the 1P clip ref and any declared weapon-channel clip ref."""
+    """Per family: the 1P clip ref and any declared weapon-channel clip ref.
+    `ejects`: the weapon's template writes `ejectClipTime`, so its rig
+    carries the eject states too (`EJECT_FAMILIES`)."""
     resolved: dict[str, dict] = {}
     report: dict[str, dict] = {}
     variant_families: set[str] = set()
-    for key, family in FAMILIES:
+    for key, family in FAMILIES + (EJECT_FAMILIES if ejects else ()):
         state = machine.state(f"Ub_{family}{weapon}")
         clip_ref = state.clip_1p() if state else None
+        if clip_ref is None and (key, family) in EJECT_FAMILIES:
+            continue                      # declared for no clip: nothing to play
         if clip_ref is None:
             # Randomized variants: the knife's stand fire is five states
             # (`Ub_FireKnifeAllies1..5`, clips A-E) that the hub state
@@ -885,7 +906,9 @@ def export_viewmodel(soldier: str, weapon: str, *, machine, meshes, textures,
                             textures=textures, library=library,
                             max_texture=max_texture, out=out)
 
-    resolved, clip_report = resolve_families(machine, weapon)
+    weapon_template = library.object(weapon)
+    ejects = (getattr(weapon_template, "eject_clip_time", None) or 0) > 0
+    resolved, clip_report = resolve_families(machine, weapon, ejects)
     if PRIMARY not in resolved:
         # Numbered aim states only (`Ub_StandAim<W>1..n`) are not one weapon's
         # idle: FHSW's `Random*` kit items name one state per weapon they can

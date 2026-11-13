@@ -163,6 +163,9 @@ export class World {
     /** owner -> [x, y, z] for the water pass: the registration pose for
      *  static furniture, refreshed from the body world after each body tick. */
     this.positions = new Map();
+    // A round's hit place is its point less the hull's origin (`Armor::
+    // setLastHitPlace`, `vehicle-damage.js` `applyHit`).
+    this.vehicleDamage.originX = owner => this.originX(owner);
     /** The shared FireState table: the page's HUD reads the same instances. */
     this.fireStates = fireStates || new WeakMap();
 
@@ -222,6 +225,14 @@ export class World {
    * body world. Returns the DamageableVehicle, or null for a node with no
    * Armor, which is exactly what `registerDamageables`' caller wants.
    */
+  /** A damageable's present world x: its body where it has one, else the
+   *  pose it was registered at. Null when neither is known. */
+  originX(owner) {
+    const entry = this.bodyWorld?.entries?.get?.(owner);
+    const x = entry?.driven ? entry.driven.vehicle?.state?.position?.x : entry?.parked?.body?.pos?.[0];
+    return Number.isFinite(x) ? x : (this.positions.get(owner)?.[0] ?? null);
+  }
+
   addDamageable(owner, node = null, armorExtras = null, { name = null, position = null } = {}) {
     if (node) this.nodeOwners.set(node, owner);
     const vehicle = this.vehicleDamage.add(owner, armorExtras, {

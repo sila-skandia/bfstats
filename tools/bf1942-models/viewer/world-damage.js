@@ -20,6 +20,8 @@ export function onBodyDamage(world, owner, result, at, other) {
     // damage (`0x081dae4d`, ahead of the dispatch), so the contact that
     // kills names the death key's material (ARM-11).
     vehicle.noteHitMaterial(result.material);
+    const originX = world.originX?.(owner);
+    if (Number.isFinite(originX) && at) vehicle.noteHitPlace(at[0] - originX);
     lost = vehicle.damage(result.kill ? vehicle.hitPoints : result.damage);
   }
   // `lost` and `water` are for the crew's wash (`vehicle-hits.js`): a hull

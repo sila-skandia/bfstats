@@ -166,7 +166,7 @@ const _partPos = [0, 0, 0];
  *   matVertex, matFace) -> boolean }`
  * @returns {number} contacts for which a response was applied
  */
-export function collideWithStatics(parts, statics, dt, handlers) {
+export function collideWithStatics(parts, statics, dt, handlers, springs = undefined) {
   if (!parts || !parts.length || !statics) return 0;
   const body = parts[0].body;
   if (!body || body.sleeping) return 0;
@@ -203,6 +203,17 @@ export function collideWithStatics(parts, statics, dt, handlers) {
     }
   }
 
+  // A long hull's own box, where its bounding sphere holds a great deal more
+  // (a destroyer's is 146 m across and takes in the carrier moored beside
+  // her): the candidates that cannot be met are dropped before the vertex
+  // probes test each one (`narrowToHull`). Only for a caller that names the
+  // wheel springs it will probe against the same candidates afterwards
+  // (`collideSpringsWithStatics`), null for none: their vertices are in the
+  // box too.
+  if (springs !== undefined && statics.narrow && (body.boundingRadius ?? 0) >= NARROW_RADIUS && body.axes) {
+    narrowToHull(parts, springs, body, statics);
+  }
+
   const share = staticShare(body.mass);
   let applied = 0;
   for (const part of parts) {
@@ -210,6 +221,46 @@ export function collideWithStatics(parts, statics, dt, handlers) {
     applied += probePart(part, body, statics, handlers, owner, stepTop, share);
   }
   return applied;
+}
+
+/** The bounding radius from which a body's candidates are narrowed to its
+ *  own box: under it the sphere's box is hardly larger than the hull's, and
+ *  the pass would cost more than it saves. */
+const NARROW_RADIUS = 20;
+/** Slack on the hull's box, metres: a triangle on its face is kept. */
+const NARROW_SLACK = 0.01;
+const _lo = [0, 0, 0], _hi = [0, 0, 0];
+
+/**
+ * Drop the candidates this body's probes cannot reach. Every probe is a
+ * segment from `_S` to one of the parts' vertices, a hull part's or a wheel
+ * spring's, so all of them lie in the box, in the body's own frame, that
+ * holds `_S` and every such vertex; a triangle wholly outside one face of
+ * that box is met by none. The answer of every `cast` is unchanged: only
+ * triangles no ray could touch leave the list.
+ */
+function narrowToHull(parts, springs, body, statics) {
+  const a = body.axes, c = body.pos;
+  const local = (p, k) => (p[0] - c[0]) * a[k][0] + (p[1] - c[1]) * a[k][1] + (p[2] - c[2]) * a[k][2];
+  for (let k = 0; k < 3; k++) { _lo[k] = _hi[k] = local(_S, k); }
+  const take = part => {
+    const layer = part.shape?.layers?.[0];
+    if (!layer?.vertices || layer.vertices.length < 3) return;
+    const raw = layer.vertices.length / 3;
+    const count = raw < MIN_VERTEX_COUNT ? 1 : raw;
+    for (let vi = 0; vi < count; vi++) {
+      part.worldVertex(0, vi, _E);
+      for (let k = 0; k < 3; k++) {
+        const v = local(_E, k);
+        if (v < _lo[k]) _lo[k] = v;
+        if (v > _hi[k]) _hi[k] = v;
+      }
+    }
+  };
+  for (const part of parts) take(part);
+  for (const part of springs ?? []) take(part);
+  for (let k = 0; k < 3; k++) { _lo[k] -= NARROW_SLACK; _hi[k] += NARROW_SLACK; }
+  statics.narrow(c, a, _lo, _hi);
 }
 
 /**

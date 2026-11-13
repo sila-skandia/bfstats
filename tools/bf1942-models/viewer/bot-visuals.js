@@ -37,8 +37,11 @@
 import * as THREE from 'three';
 import { clone as skeletonClone } from './vendor/utils/SkeletonUtils.js';
 import {
-  FAMILY_CLIPS, recordedAction, recordedClip, recordedGait, recordedStanceEntry, remoteClipFamily, resolveRemoteGait,
+  FAMILY_CLIPS, bodyLowerState, liveHalves, recordedAction, recordedClip, recordedGait, recordedStanceEntry,
+  remoteClipFamily, resolveRemoteGait,
 } from './remote-gait.js';
+import { HandSignOverlay, isHandSignClip } from './hand-sign.js';
+import { attachSoldierFace } from './soldier-face.js';
 import { leanOnto } from './soldier-lean.js';
 import { createSeatBodies, seatAnchor, seatStandIn } from './seat-body.js';
 import { BOT_BODY_HEIGHT, botWeaponReady } from './bot-referee.js';
@@ -47,7 +50,7 @@ import { DIE_CLIPS, corpseSeconds, deathFamily, resolveDeathFamily } from './sol
 import { SWIM_CLIPS, switchFamily } from './swim.js';
 import { EXPLOSION_CLIPS, EXPLOSION_DEATHS, HELD_HIDES_WEAPON, canopyClipFor } from './knockback.js';
 import { canopyPosition } from './soldier-body.js';
-import { rigCapsules } from './rig-capsules.js';
+import { rigBones, rigCapsules } from './rig-capsules.js';
 import { DEFAULT_MORPH, FAMILY_HALVES, MORPH_CUT, MorphBlend, SoldierActions, stateInfo } from './soldier-actions.js';
 import { trackNodes } from './clip-nodes.js';
 import { TORSO_ROOT_BONE, bendTorso, makeAimBend, stanceBends, unbendTorso } from './replay-gait.js';
@@ -190,7 +193,7 @@ export function createBotVisuals(page) {
    * stance halves (`stand.lower` / `stand.upper`), which `buildStillRig`
    * then draws the way the bots always were.
    */
-  function buildHalfBodyRig(scene, clips, weapon, stateMachine) {
+  function buildHalfBodyRig(scene, clips, weapon, stateMachine, soldier = null, who = null) {
     const clipsByName = new Map(clips.map(c => [c.name, c]));
     const standLower = clipsByName.get(FAMILY_HALVES.stand.lower);
     const standUpper = clipsByName.get(FAMILY_HALVES.stand.upper);
@@ -222,7 +225,9 @@ export function createBotVisuals(page) {
 
     const actions = new Map();
     for (const clip of clips) {
-      if (actions.has(clip.name)) continue;
+      // A hand sign is laid over the left arm after the mixer (`sign`
+      // below), never mixed with the torso's clip.
+      if (actions.has(clip.name) || isHandSignClip(clip.name)) continue;
       const a = mixer.clipAction(clip);
       const loops = info(clip.name)?.loop ?? /\.(lower|upper)$/.test(clip.name);
       if (loops) a.setLoop(THREE.LoopRepeat, Infinity);
@@ -247,6 +252,12 @@ export function createBotVisuals(page) {
       const only = clipsByName.get(name)?.userData?.weapons;
       return !Array.isArray(only) || only.some(w => String(w).toLowerCase() === held);
     };
+    // The hand signs a shout plays (`hand-sign.js`, RADIO-3): the engine's
+    // third machine, over the left arm's bones alone.
+    const sign = new HandSignOverlay(clips, name => THREE.PropertyBinding.findNode(scene, name));
+    // Their face inside retail's 5 m (`soldier-face.js`); null on a page
+    // that shares no faces.
+    const face = soldier ? attachSoldierFace(scene, soldier, who) : null;
     const anim = new SoldierActions({
       has: name => actions.has(name) && mayPlay(name),
       info,
@@ -281,6 +292,7 @@ export function createBotVisuals(page) {
     /** One frame: the mixer's pose back on the bones a morph drew over
      *  (`MorphBlend.restore`), the machine's entries, the mixer, the morph. */
     function step(input, dt) {
+      sign.restore();
       halves.lower.blend.restore();
       halves.upper.blend.restore();
       // A state entered part-way in (`e.at`, a replay's late body) starts its
@@ -291,6 +303,11 @@ export function createBotVisuals(page) {
       mixer.update(dt);
       halves.lower.blend.update(dt);
       halves.upper.blend.update(dt);
+      // No sign on a corpse, in the water or in a blast's flight: the
+      // engine's sign machine is stopped with the soldier's others.
+      if (anim.dead || anim.swim || anim.held) sign.stop();
+      sign.update(dt);
+      face?.update(dt, anim.lower.name, anim.upper.name, weapon);
     }
 
     /**
@@ -366,7 +383,7 @@ export function createBotVisuals(page) {
     }
 
     return {
-      kind: 'halves', scene, mixer, actions, halves, anim, step, adopt, weapon,
+      kind: 'halves', scene, mixer, actions, halves, anim, step, adopt, weapon, sign, face,
       families: Object.fromEntries(Object.entries(FAMILY_HALVES)
         .filter(([, h]) => actions.has(h.lower) && actions.has(h.upper))
         .map(([family, h]) => [family, [actions.get(h.lower), actions.get(h.upper)]])),
@@ -542,7 +559,7 @@ export function createBotVisuals(page) {
     if (botVisuals.get(bot.playerId) !== vis) return null;
     const scene = skeletonClone(pair.scene);
     page.bindDynamicShading(scene);
-    const rig = buildHalfBodyRig(scene, gaits, weapon, stateMachine)
+    const rig = buildHalfBodyRig(scene, gaits, weapon, stateMachine, soldierName, bot.playerId)
       ?? buildStillRig(scene, pair.animations, gaits);
     rig.weaponNode = weaponNodeOf(scene, pair.weaponName ?? weapon);
     return { asked: held, soldierName, weapon, scene, rig, gaits };
@@ -572,6 +589,13 @@ export function createBotVisuals(page) {
   function wear(vis, bot, built) {
     const old = vis.rig?.scene ?? null;
     if (old && vis.rig) built.rig.adopt?.(vis.rig);
+    // A live body draws the item it has just been given (`Ub_<Pose>
+    // RaiseWeapon<W>`, set by name on an item change); a replayed one's
+    // recording names the draw itself (`followRecorded`).
+    if (old && vis.rig && bot.recordedLower === undefined && vis.weapon
+        && String(built.weapon ?? '').toLowerCase() !== String(vis.weapon).toLowerCase()) {
+      built.rig.anim?.draw();
+    }
     if (old) {
       vis.group.remove(old);
       page.disposeFootBodyScene(old);
@@ -708,6 +732,19 @@ export function createBotVisuals(page) {
   };
 
   /**
+   * A live bot on foot's skeleton bones for the other bots' sense rays and
+   * aim (`rig-capsules.js` `rigBones`, ledger AI-123), read off the body
+   * `capsulesOf` reads his capsules off. Null in a seat and for a bot not
+   * drawn: the sense rays then keep the stand-in heights, as his rounds'
+   * targets keep the stand-in sphere.
+   */
+  botBodies.bonesOf = (playerId, soldier) => {
+    const vis = botVisuals.get(playerId);
+    if (!vis || vis.bot?.vehicle || !vis.rig || !vis.group.visible) return null;
+    return rigBones(vis.rig.scene, soldier);
+  };
+
+  /**
    * Where a seated bot's stand-in body is (`referee.bodyAt`), in the
    * `{ x, y, z }`-at-the-feet form a man on foot is; `undefined` for anyone
    * this does not draw seated, which leaves them on their soldier.
@@ -831,6 +868,29 @@ export function createBotVisuals(page) {
     for (let i = corpses.length - 1; i >= 0; i--) if (corpses[i].name === playerId) return corpses[i].scene;
     return null;
   };
+  /**
+   * `playerId` shouted on foot: the hand sign over their left arm
+   * (`hand-sign.js`; `sign` a name of `HAND_SIGNS` or its number). Nothing
+   * in a seat, dead, in the water, or in a tree that bakes no signs. True
+   * when the body took it.
+   */
+  botBodies.botHandSign = (playerId, sign) => {
+    let vis = botVisuals.get(playerId);
+    if (!vis) for (const v of botVisuals.values()) if (v.pid === playerId) { vis = v; break; }
+    const rig = vis?.rig;
+    if (!rig?.sign || vis.seat || rig.anim?.dead || rig.anim?.swim || rig.anim?.held) return false;
+    return rig.sign.play(sign);
+  };
+
+  /** `playerId` shouted on foot: the line's lip-sync symbols on their face
+   *  (`soldier-face.js`), where the animated head is the one drawn. */
+  botBodies.botLipSync = (playerId, symbols) => {
+    let vis = botVisuals.get(playerId);
+    if (!vis) for (const v of botVisuals.values()) if (v.pid === playerId) { vis = v; break; }
+    if (!vis?.rig?.face || vis.seat || vis.rig.anim?.dead) return false;
+    return vis.rig.face.speak(symbols);
+  };
+
   /** Take one body away now (a replay's recorded DestroyObject for it). */
   botBodies.disposeCorpse = scene => {
     const i = corpses.findIndex(c => c.scene === scene);
@@ -896,17 +956,17 @@ export function createBotVisuals(page) {
         levelSoldier: soldierName, fallbackSoldier: BOT_SOLDIER[team] ?? BOT_SOLDIER[2],
         primary: weapon, pistol: BOT_WEAPON,
       });
-      let pair = null, held = null;
+      let pair = null, held = null, worn = null;
       for (const [soldier, item] of tries) {
         pair = await botPosePair(soldier, item);
-        if (pair) { held = item; break; }
+        if (pair) { held = item; worn = soldier; break; }
       }
       if (!pair || corpse.gone) return;
       const [gaits, stateMachine] = await Promise.all([botGaitClips(held), page.footStateMachine?.() ?? null]);
       if (corpse.gone) return;
       const scene = skeletonClone(pair.scene);
       page.bindDynamicShading(scene);
-      const rig = buildHalfBodyRig(scene, gaits, held, stateMachine) ?? buildStillRig(scene, pair.animations, gaits);
+      const rig = buildHalfBodyRig(scene, gaits, held, stateMachine, worn, spec.name) ?? buildStillRig(scene, pair.animations, gaits);
       const played = resolveDeathFamily(family, f => rig.hasDeath(f));
       if (!played) { page.disposeFootBodyScene(scene); return; }
       if (rig.anim) rig.anim.die(CORPSE_CLIPS[played].lower, CORPSE_CLIPS[played].upper);
@@ -1202,6 +1262,8 @@ export function createBotVisuals(page) {
       }
       if (vis.seat) { disposeSeat(vis.seat); vis.seat = null; }
       vis.seatLoading = null;
+      // A replayed soldier's recording id, which a shout names him by.
+      vis.pid = bot.pid;
       followHeld(vis, bot);
 
       vis.group.visible = true;
@@ -1252,7 +1314,14 @@ export function createBotVisuals(page) {
       const recorded = recordedGait(bot.recordedLower);
       const gait = recorded ? resolveRemoteGait(recorded.family, bound)
         : botClipFamily(vis.lastSpeed, stance, bound);
-      const reverse = Boolean(recorded?.reverse) && MOVING_FAMILIES.has(gait);
+      // A live body's own lower machine says what a recording would
+      // (`remote-gait.js` `bodyLowerState`, `liveHalves`): the jump, the
+      // backward run and the turn on the spot by name, a backward walk,
+      // crouch-walk or crawl as its gait reversed.
+      const live = bot.recordedLower !== undefined || !vis.rig.anim ? null
+        : liveHalves(bodyLowerState(page.world?.player(bot.playerId)?.soldier?.body, stance),
+                     gait, name => vis.rig.anim.rig.has(name));
+      const reverse = (Boolean(recorded?.reverse) || Boolean(live?.reverse)) && MOVING_FAMILIES.has(gait);
       // In the water the swim state holds both halves instead: the bot's own
       // `SwimState` (`swim.js`, run by his soldier's body every tick off his
       // throttle) says which of the engine's five states he is in, and the
@@ -1298,7 +1367,7 @@ export function createBotVisuals(page) {
       // goes in where the recording stands. `action` is the torso action the
       // recording is in, for a body that has just taken over
       // (`SoldierActions.resumeRecorded`).
-      const recordedStates = bot.recordedLower === undefined ? null : {
+      const recordedStates = bot.recordedLower === undefined ? live : {
         lower: recordedClip(bot.recordedLower, 'lower'),
         upper: recordedClip(bot.recordedUpper, 'upper', vis.rig.weapon ?? vis.weapon),
         at: { lower: bot.recordedLowerAt ?? 0, upper: bot.recordedUpperAt ?? 0 },
@@ -1309,7 +1378,10 @@ export function createBotVisuals(page) {
       };
       vis.rig.step({ stance, family: want, trigger: !!bot.isFiring && !swimWant,
                      swim: swimWant ? swim : null, held, reverse,
-                     recorded: recordedStates }, dt);
+                     recorded: recordedStates,
+                     // The idle timers (ANIM-6): the relaxed stand and the
+                     // torso's fidgets, on a live body.
+                     idle: bot.recordedLower === undefined }, dt);
       // A replayed man's recorded aim (`replay-bodies.js` sets `bot.aim`,
       // `aimAt`): his torso turned and bent to it over the pose just drawn, as
       // his rounds and his camera are (`replay-gait.js` `bendTorso`). Play's
@@ -1494,6 +1566,10 @@ export function createBotVisuals(page) {
         soldier: vis.soldierName, weapon: vis.weapon, kit: vis.kit,
         rig: vis.rig?.kind ?? null,
         lower: vis.rig?.anim?.lower.name ?? null, upper: vis.rig?.anim?.upper.name ?? null,
+        // The hand sign over the left arm (`hand-sign.js`), while one plays.
+        sign: vis.rig?.sign?.playing ?? null,
+        // The face state, while the animated head is drawn (`soldier-face.js`).
+        face: vis.rig?.face?.playing ?? null,
         held: vis.held, weaponShown: vis.rig?.weaponNode ? vis.rig.weaponNode.visible : null,
         canopy: vis.canopy?.scene.visible ? vis.canopy.want : null,
         stance: vis.stanceTick, shots: vis.shots, reloading: vis.reloading,

@@ -233,12 +233,26 @@ export function botCreditAt(layout, state, levels, x, y) {
 
 export const rgb = c => `rgb(${c.slice(0, 3).map(v => Math.round(v * 255)).join(',')})`;
 
+/** A face's glyph rows and the device-pixel snap, handed in by the page
+ *  (`setTextMetrics`): `../bitmap-text.js` `glyphTable` rescales the metrics
+ *  for the display width (ledger FONT-3) and `snapToPixel` is the list's and
+ *  the text field's snap (FONT-5). This file is copied alone into harnesses,
+ *  so it imports neither; until a page sets them the rows are the file's own
+ *  and the snap does nothing. */
+let glyphRows = font => font.meta.glyphs;
+let snapPx = v => v;
+export function setTextMetrics({ glyphTable = null, snapToPixel = null } = {}) {
+  glyphRows = typeof glyphTable === 'function' ? glyphTable : (font => font.meta.glyphs);
+  snapPx = typeof snapToPixel === 'function' ? snapToPixel : (v => v);
+}
+
 /** Width of a string in a bitmap face, by the `.dif` metrics: each glyph
  *  advances the pen by left + width + right. */
 export function measureText(font, text) {
   let w = 0;
+  const table = glyphRows(font);
   for (const ch of text) {
-    const g = font.meta.glyphs[ch.charCodeAt(0)];
+    const g = table[ch.charCodeAt(0)];
     if (g) w += g[0] + g[1] + g[2];
   }
   return w;
@@ -255,8 +269,9 @@ export function fitText(font, text, width) {
   const room = width - measureText(font, dots);
   let out = '';
   let w = 0;
+  const table = glyphRows(font);
   for (const ch of s) {
-    const g = font.meta.glyphs[ch.charCodeAt(0)];
+    const g = table[ch.charCodeAt(0)];
     const step = g ? g[0] + g[1] + g[2] : 0;
     if (w + step > room) break;
     out += ch;
@@ -268,20 +283,22 @@ export function fitText(font, text, width) {
 /** One line of bitmap text, its top at `y`. The atlas is white with the
  *  coverage as alpha, so a tinted copy is made per colour — `tint(font,
  *  rgbTriple)` returns it. */
-export function drawBitmapText(ctx, font, tint, text, x, y, color) {
+export function drawBitmapText(ctx, font, tint, text, x, y, color, snap = false) {
   const atlas = tint(font, color.slice(0, 3));
   if (!atlas) return;
   const base = font.meta.baseline;
+  const table = glyphRows(font);
   let pen = x;
   for (const ch of text) {
-    const g = font.meta.glyphs[ch.charCodeAt(0)];
+    const g = table[ch.charCodeAt(0)];
     if (!g) continue;
-    const [left, width, right, ascent, x0, y0, x1, y1] = g;
+    const [left, width, right, ascent, x0, y0, x1, y1, drawW = x1 - x0, drawH = y1 - y0] = g;
     // The space glyph's rectangle is an opaque corner texel; it only
-    // advances the pen.
+    // advances the pen. `snap` is a list row or a text field (FONT-5).
     if (ch !== ' ' && width > 0 && y1 > y0) {
+      const gx = pen + left, gy = y + base - ascent;
       ctx.drawImage(atlas, x0, y0, x1 - x0, y1 - y0,
-                    pen + left, y + base - ascent, x1 - x0, y1 - y0);
+                    snap ? snapPx(gx) : gx, snap ? snapPx(gy) : gy, drawW, drawH);
     }
     pen += left + width + right;
   }
@@ -432,10 +449,10 @@ function paintRows(ctx, layout, state, env) {
     // The rows are indented off the box's left edge by the inset the box
     // carries for its scrollbar.
     drawBitmapText(ctx, font, env.tint, fitText(font, level.title, titleRoom),
-                   left, y + 1, [0.78, 0.78, 0.78]);
+                   left, y + 1, [0.78, 0.78, 0.78], true);
     if (tagWidth) {
       drawBitmapText(ctx, font, env.tint, tag,
-                     Math.round(bx + width - tagWidth - 4), y + 1, [0.5, 0.5, 0.5]);
+                     Math.round(bx + width - tagWidth - 4), y + 1, [0.5, 0.5, 0.5], true);
     }
     const sigil = mark && env.creditMark?.();
     if (sigil) {

@@ -365,11 +365,11 @@ class HudLayoutGoldenTests(unittest.TestCase):
 
     # -- everything else the extractor is expected to produce ----------------
 
-    def test_all_nineteen_groups_are_present_and_non_empty(self) -> None:
+    def test_all_twenty_groups_are_present_and_non_empty(self) -> None:
         expected = {"soldierIcon", "soldierAmmo", "vehicleIcon", "vehicleHealth",
                     "vehicleSeats", "primaryAmmo", "secondaryAmmo", "supplyIcon",
                     "hitIndicator", "weaponBar", "crosshair", "tickets", "outside",
-                    "spawnTimer", "spawnText", "statusMessage",
+                    "spawnTimer", "spawnText", "statusMessage", "disconnectMessage",
                     "periscope", "depthFade", "submarine"}
         self.assertEqual(expected, set(self.hud["groups"]))
         for key in expected:
@@ -706,7 +706,7 @@ class DamageIndicatorGoldenTests(unittest.TestCase):
         "supplyIcon": list(hud.SUPPLY_KEYS), "hitIndicator": ["hitIndicator"],
         "weaponBar": ["weaponBar"], "crosshair": ["crosshair"], "tickets": ["tickets"],
         "outside": ["outside"], "spawnTimer": ["spawnTimer"], "spawnText": ["spawnText"],
-        "statusMessage": ["statusMessage"],
+        "statusMessage": ["statusMessage"], "disconnectMessage": ["disconnectMessage"],
         # The submarine's three tops, found by what each one draws (SUB-4).
         "periscope": ["periscope"], "depthFade": ["depthFade"], "submarine": ["submarine"],
     }

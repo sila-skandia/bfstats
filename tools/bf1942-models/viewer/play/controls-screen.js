@@ -45,6 +45,13 @@
 // HRTF head (`../sound-options.js`, `../ds3d-pan.js`,
 // features/sound-hardware-path). It takes effect at once, on the voices
 // already playing too.
+//
+// OPTIONS > CUSTOMIZE is the fourth, the game's general options screen
+// (`menu/GeneralOptionsMenu`, `../general-options.js`): TOOLTIP, RADIO
+// TOOLTIP, STATIC MINIMAP, MINIMAP TRANSPARENCY and CROSSHAIR COLOR, each a
+// word of the profile's `GeneralOptions.con`. A change is kept the moment it
+// is made, in the profile (`controls.setGeneralOption`), and the level page
+// behind the Escape menu takes it at once.
 
 import { createNavStrip } from './nav-strip.js';
 import { createMenuPack } from './menu-pack.js';
@@ -70,12 +77,15 @@ import { applyPreset, changeVideo, performanceOf, storedVideo } from '../video-s
 import { chosenDisplayMode, displayModes, displayOf } from '../video-settings.js';
 import { displayModeAt, displayModePanel } from '../video-options.js';
 import { drawBitmapText, rgb } from './menu-screen.js';
+import {
+  GENERAL_ROWS, generalKnob, generalPanel, generalPick, generalValues, hasGeneralPage,
+} from '../general-options.js';
 
 const TABS = ['common', 'infantry', 'air', 'landSea'];
 
 /** The screen's sections, by the id of the `menu/OptionsNavigation` button
  *  that picks each. */
-const SECTIONS = ['controls', 'video', 'sound'];
+const SECTIONS = ['controls', 'general', 'video', 'sound'];
 
 /** `menu/ControlsMenu`'s tab heads, left to right — the order the hit
  *  regions come out of the file in. */
@@ -220,6 +230,8 @@ export function createControlsScreen({
   };
   let video = null;
   let sound = null;
+  let general = null;
+  let generalDrag = null;   // the slider row the pointer holds
   const keys = new Set();
   const mouse = new Set();
   // A key tapped between two frames must still be seen: its release is
@@ -535,13 +547,28 @@ export function createControlsScreen({
     sound = video && hasSoundPage(layout)
       ? { panel: soundPanel(layout), row: hardwareRow(layout), nav: soundNavButtons(layout) }
       : null;
-    if ((state.section === 'video' && !video) || (state.section === 'sound' && !sound)) {
+    // CUSTOMIZE is its own file beside this one, or absent in a pack from
+    // before it: the row's button is then not drawn.
+    general = null;
+    try {
+      const file = await json(packUrl('general-options-layout.json'));
+      if (hasGeneralPage(file)) {
+        // Its pictures and pages join the layout the pack paints out of.
+        layout.textures = { ...(file.textures || {}), ...(layout.textures || {}) };
+        layout.fontFiles = { ...(file.fontFiles || {}), ...(layout.fontFiles || {}) };
+        layout.pages = { ...layout.pages, general: file.pages.general, generalNav: file.pages.generalNav };
+        general = generalPanel(file);
+      }
+    } catch { /* a pack without the screen */ }
+    if ((state.section === 'video' && !video) || (state.section === 'sound' && !sound)
+        || (state.section === 'general' && !general)) {
       state.section = 'controls';
     }
     if (tabs) {
       const rows = tabs.map(r => ({
         ...r,
-        items: r.items.filter(item => (video || item.id !== 'video') && (sound || item.id !== 'sound')),
+        items: r.items.filter(item => (video || item.id !== 'video') && (sound || item.id !== 'sound')
+          && (general || item.id !== 'general')),
       }));
       strip = createNavStrip({
         layout, env, rows, active: 'options',
@@ -860,7 +887,7 @@ export function createControlsScreen({
       ctx.globalAlpha = 1;
       ctx.imageSmoothingEnabled = false;
       drawBitmapText(ctx, font, env.tint, mode.label, Math.round(x + box.scrollbarOffset), top + 1,
-                     [0.78, 0.78, 0.78]);
+                     [0.78, 0.78, 0.78], true);
     });
   }
 
@@ -911,6 +938,69 @@ export function createControlsScreen({
     paintPage('videoNav', table, SOUND_NAV_DX);
   }
 
+  // --- CUSTOMIZE: the general options ------------------------------------------
+
+  function generalState() {
+    return generalValues(controls.generalOptions?.() ?? {}, controls.crossHairColor?.() ?? null);
+  }
+
+  function paintGeneral(table) {
+    const v = generalState();
+    for (const el of general.elements) paintElement(ctx, el, layout, table, env);
+    if (general.name) {
+      paintElement(ctx, { ...general.name, text: controls.playerName?.() ?? 'Player' }, layout, null, env);
+    }
+    for (const row of general.rows) {
+      if (row.kind === 'tick') {
+        if (v[row.id]) paintElement(ctx, row.mark, layout, null, env);
+        continue;
+      }
+      paintElement(ctx, { kind: 'fill', rect: generalKnob(row.track, row, v[row.id]),
+                          color: [1, 1, 1, 1] }, layout, null, env);
+      if (row.value) {
+        const { var: _bound, ...leaf } = row.value;
+        paintElement(ctx, { ...leaf, text: String(v[row.id]) }, layout, null, env);
+      }
+    }
+    // The cross's colour as the sliders stand, beside its three tracks.
+    const red = general.rows.find(r => r.id === 'crossHairRed');
+    const blue = general.rows.find(r => r.id === 'crossHairBlue');
+    if (red && blue) {
+      const x = red.track[0] + red.track[2] + 58;   // past the RED / GREEN / BLUE labels, inside the plate
+      const y = red.track[1];
+      const h = blue.track[1] + blue.track[3] - y;
+      paintElement(ctx, { kind: 'fill', rect: [x, y, h, h],
+        color: [v.crossHairRed / 255, v.crossHairGreen / 255, v.crossHairBlue / 255, 1] }, layout, null, env);
+    }
+    for (const plate of Object.values(general.nav)) {
+      for (const el of plate.elements) paintElement(ctx, el, layout, table, env);
+    }
+  }
+
+  /** One row's new value, written to the profile and taken by the page. */
+  function setGeneral(row, value) {
+    if (row.kind === 'tick') controls.setGeneralOption?.(row.verb, value ? 1 : 0);
+    else if (row.channel !== undefined) {
+      const v = generalState();
+      const rgb = [v.crossHairRed, v.crossHairGreen, v.crossHairBlue];
+      rgb[row.channel] = value;
+      controls.setGeneralOption?.(row.verb, rgb);
+    } else controls.setGeneralOption?.(row.verb, value);
+    onBindingsChanged();
+    paint();
+  }
+
+  function clickGeneralRow(row, x) {
+    if (row.kind === 'tick') setGeneral(row, !generalState()[row.id]);
+    else setGeneral(row, generalPick(row, x));
+  }
+
+  function resetGeneral() {
+    controls.resetGeneralOptions?.();
+    onBindingsChanged();
+    paint();
+  }
+
   /** A click on row `row` at `x`: a tick box toggles, a slider's track picks
    *  the step under the pointer, its value box steps on to the next. */
   function clickVideoRow(row, x) {
@@ -929,7 +1019,7 @@ export function createControlsScreen({
   /** The section that is up reads as chosen on the row that picks it: its
    *  button on the file's own clicked plate. Only where there is a choice. */
   function paintSection() {
-    if (!video && !sound) return;
+    if (!video && !sound && !general) return;
     const button = strip?.buttons.find(b => b.id === state.section);
     for (const el of button?.elements || []) {
       if (el.kind === 'button') {
@@ -945,8 +1035,9 @@ export function createControlsScreen({
     if (!beginStage(canvas, ctx, layout.virtual)) return;
     const table = vars();
     paintPage('background', table);
-    if (state.section === 'video' || state.section === 'sound') {
+    if (state.section === 'video' || state.section === 'sound' || state.section === 'general') {
       if (state.section === 'video') paintVideo(table);
+      else if (state.section === 'general') paintGeneral(table);
       else paintSound(table);
       strip?.paint(ctx);
       paintSection();
@@ -1291,6 +1382,15 @@ export function createControlsScreen({
       }
       return null;
     }
+    if (state.section === 'general') {
+      for (const [action, plate] of Object.entries(general.nav)) {
+        if (inRect(plate.rect, x, y)) return { kind: 'button', action: `general-${action}`, rect: plate.rect };
+      }
+      for (const row of general.rows) {
+        if (inRect(row.hit, x, y)) return { kind: `general-${row.kind}`, action: row.id, general: row };
+      }
+      return null;
+    }
     if (state.section === 'sound') {
       for (const [action, plate] of Object.entries(sound.nav)) {
         if (inRect(plate.rect, x, y)) return { kind: 'button', action: `sound-${action}`, rect: plate.rect };
@@ -1451,7 +1551,22 @@ export function createControlsScreen({
     else if (hit.action === 'video-default') resetVideo();
     else if (hit.action === 'hardware') setHardware3d(!soundState().hardware);
     else if (hit.action === 'sound-default') setHardware3d(null);
+    else if (hit.general) clickGeneralRow(hit.general, x);
+    else if (hit.action === 'general-default') resetGeneral();
   });
+
+  // A general slider follows the pointer while it is held: 256 steps on a
+  // 74-unit track are not picked by clicks alone.
+  canvas.addEventListener('pointerdown', event => {
+    if (!layout || state.section !== 'general' || !general) return;
+    const hit = hitTest(...at(event));
+    if (hit?.kind === 'general-slider') generalDrag = hit.general;
+  });
+  canvas.addEventListener('pointermove', event => {
+    if (!generalDrag || !(event.buttons & 1)) { generalDrag = null; return; }
+    setGeneral(generalDrag, generalPick(generalDrag, at(event)[0]));
+  });
+  addEventListener('pointerup', () => { generalDrag = null; });
 
   canvas.addEventListener('wheel', event => {
     if (!layout) return;
@@ -1477,6 +1592,7 @@ export function createControlsScreen({
     if (!SECTIONS.includes(section) || section === state.section) return;
     if (section === 'video' && !video) return;
     if (section === 'sound' && !sound) return;
+    if (section === 'general' && !general) return;
     state.section = section;
     cancelCapture(false);
     confirming = false;
@@ -1648,6 +1764,7 @@ export function createControlsScreen({
         section: state.section,
         video: video ? { ...videoState(), notes: videoNotes() } : null,
         sound: sound ? { ...soundState(), notes: soundNotes() } : null,
+        general: general ? { ...generalState(), rows: general.rows.map(r => ({ id: r.id, kind: r.kind, hit: r.hit })) } : null,
         tab: state.tab,
         page: state.page[state.tab],
         pages: tabPages(state.tab).length,

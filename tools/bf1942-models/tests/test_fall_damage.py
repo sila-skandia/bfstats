@@ -89,6 +89,11 @@ class FallDamageTests(unittest.TestCase):
         self.assertIsNone(self.results["scalars"]["unlisted"]["damageMod"])
         self.assertEqual(0, self.results["unlistedPairIsNoDamage"])
 
+    def test_an_undefined_ground_material_is_material_zero(self) -> None:
+        # `getDamageMod` 0x08175040: an id with no record is material 0's.
+        self.assertEqual(self.results["scalars"]["undefinedId"],
+                         {"damageMod": 0.001, "materialDamage": 30})
+
     # -- the formula, term by term ------------------------------------------ #
 
     def test_the_eight_comes_off_first_and_short_of_it_returns(self) -> None:

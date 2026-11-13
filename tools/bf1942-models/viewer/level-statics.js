@@ -9,7 +9,7 @@ import {
   SpawnerPad, calcSpawnDelay, followPadPoint, needsClearance, padControlPoint, padFromSpawn, padSides,
   preGameSetTeam, spawnClear,
 } from './deployables.js';
-import { heldSlotsOf, hullHeldActive, spawnHoldOf } from './spawned-craft.js';
+import { craftSpawnerOf, heldSlotsOf, hullHeldActive, spawnHoldOf } from './spawned-craft.js';
 import { bakedPadNode, padTemplateOf } from './pad-nodes.js';
 
 export { bakedPadNode, padFirstTemplate, padTemplateOf, settleGroupsOf } from './pad-nodes.js';
@@ -392,7 +392,16 @@ export function roundSpawnEntries(node) {
       }
     }
   };
-  node?.traverse?.(obj => add(obj.userData?.fireArms?.projectile?.spawners));
+  node?.traverse?.(obj => {
+    const projectile = obj.userData?.fireArms?.projectile;
+    add(projectile?.spawners);
+    // A round that is itself a vehicle (FA-29, `rocket-ride.js`): the
+    // Wasserfall launcher throws a `WasserfallRocket` its gunner rides. One
+    // is out at a time, for the launcher reloads only when it comes back.
+    if (projectile?.vehicle === true && projectile.template && !out.has(projectile.template)) {
+      out.set(projectile.template, { n: 1, entry: null });
+    }
+  });
   add(node?.userData?.logicObject?.spawners);
   return out;
 }
@@ -849,7 +858,10 @@ export function createLevelStatics(page) {
         minSpawnDelay: held.minSpawnDelay, maxSpawnDelay: held.maxSpawnDelay,
         maxNr: slots.length, radius: held.radius,
       });
-      const hold = spawnHoldOf(baked);
+      // A ship's spawner too (`spawned-craft.js` `craftSpawnerOf`): her
+      // landing craft are not held, and its point is where she has it now.
+      const hold = spawnHoldOf(baked) ?? craftSpawnerOf(baked);
+      if (!hold) continue;
       const record = {
         spawn, index: null, pad, baked, nodes: new Map([[template.toLowerCase(), baked]]),
         instances: slots, live: new Set(), point: null, held: null, flag: undefined,
@@ -1122,10 +1134,11 @@ export function createLevelStatics(page) {
             ? (record.instances.find(n => !record.live.has(n))
                ?? record.instances.find(n => world.destroyed(n)) ?? record.baked)
             : padNode(record, template);
-          // No land hull (nor an air one, SPAWN-14's tooltip 0x24 aside, which
-          // the trees do not carry) is created with a live human on foot
-          // within 2 m of the point: the slot stays empty and the pad asks
-          // again next frame, as `createObjectOnAllClients` does.
+          // No land hull (nor an air one, SPAWN-14's tooltip 0x24 aside:
+          // `spawn-safety.js` `toolTipTypeOf`) is created
+          // with a live human on foot within 2 m of the point: the slot
+          // stays empty and the pad asks again next frame, as
+          // `createObjectOnAllClients` does.
           if (!padSpawnClear(record, node, world)) return null;
           // One node per template: an earlier one of the same template still
           // standing has to clear first. The engine's next hull does not wait
@@ -1150,7 +1163,10 @@ export function createLevelStatics(page) {
 
   /** SPAWN-14 for a pad: whether `node` may stand at its spawner now. */
   function padSpawnClear(record, node, world) {
-    if (!needsClearance(node?.userData?.physics?.vehicleCategory ?? null)) return true;
+    // The air hull the test lets through is tooltip type 0x24, the
+    // Wasserfall's (`GameServer::createObjectOnAllClients` 0x08133a10).
+    if (!needsClearance(node?.userData?.physics?.vehicleCategory ?? null,
+                        world.toolTipTypeOf?.(node) ?? node?.userData?.hud?.toolTipType ?? null)) return true;
     return spawnClear(record.at, world.humanOrigins?.() ?? []);
   }
 
@@ -1191,6 +1207,10 @@ export function createLevelStatics(page) {
     if (record) {
       if (live) record.live.add(node);
       else record.live.delete(node);
+      // The page's own pad pass does not run in a room (`stepVehiclePads`),
+      // so the flag it keeps is kept here: a hull the room took off this
+      // page's field is no blast's target and no depot (`padAbsent`).
+      markAbsent(record);
       return;
     }
     if (live) remoteGone.delete(node);

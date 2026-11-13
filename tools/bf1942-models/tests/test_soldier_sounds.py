@@ -15,7 +15,7 @@ sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 
 from extract_soldier_sounds import (
     ALL_SOLDIER_SCRIPTS, BAIL_OUT_SCRIPTS, INJURY_SCRIPTS, LANGUAGES,
-    MOVEMENT_SCRIPTS, PATCH_MATERIALS, language_refs, script_manifest, time_gate,
+    MOVEMENT_SCRIPTS, PATCH_MATERIALS, distance_ramp, language_refs, script_manifest, time_gate,
 )
 from bf42.level import parse_ssc
 
@@ -149,9 +149,27 @@ trigger Volume
             list(BAIL_OUT_SCRIPTS))
 
     def test_all_soldier_scripts_includes_movement_and_injury(self) -> None:
+        # Every movement script `SoldierSound.inc` loads, by the trigger that
+        # plays it (`SoldierSound::update`, BF1942.exe 0x00572f20, asks for
+        # script `trigger - 1` of the list).
         self.assertEqual(
-            [("c_SstWalk", "SoldierWalk.ssc"),
-             ("c_SstRun", "SoldierRun.ssc")],
+            [("c_SstStand", "SoldierStop.ssc"),
+             ("c_SstWalk", "SoldierWalk.ssc"),
+             ("c_SstRun", "SoldierRun.ssc"),
+             ("c_SstJump", "SoldierJump.ssc"),
+             ("c_SstJumpLand", "SoldierJumpLand.ssc"),
+             ("c_SstToCrouch", "SoldierToCrouch.ssc"),
+             ("c_SstFromCrouch", "SoldierFromCrouch.ssc"),
+             ("c_SstCrouchMove", "SoldierCrouchMove.ssc"),
+             ("c_SstToCrawl", "SoldierToCrawl.ssc"),
+             ("c_SstStandUp", "SoldierStandUp.ssc"),
+             ("c_SstCrawlMove", "SoldierCrawlMove.ssc"),
+             ("c_SstToSwim", "SoldierToSwim.ssc"),
+             ("c_SstSwim", "SoldierSwim.ssc"),
+             ("c_SstSwimStand", "SoldierSwimStand.ssc"),
+             ("c_SstFromSwim", "SoldierFromSwim.ssc"),
+             ("c_SstHealedByMedic", "SoldierHealedByMedic.ssc"),
+             ("c_SstClimbLadder", "SoldierClimbLadder.ssc")],
             list(MOVEMENT_SCRIPTS))
         self.assertEqual(
             [("c_SstHitDamage", "SoldierHitDamage.ssc"),
@@ -162,10 +180,40 @@ trigger Volume
             list(BAIL_OUT_SCRIPTS) + list(MOVEMENT_SCRIPTS) + list(INJURY_SCRIPTS),
             list(ALL_SOLDIER_SCRIPTS))
 
-    def test_ten_surface_materials_match_soldier_patches(self) -> None:
+    def test_the_patch_names_are_addmaterialtosounds_indices(self) -> None:
+        # `SoldierSound::addMaterialToSound` (BF1942.exe 0x00573020): Sand 0,
+        # Metal 1, Wood 2, Concrete 3, Grass 4, Gravel 5, Frozen 6, Mud 7,
+        # Water 10; `update` adds patches 8 and 9 (cloth, harness).
         self.assertEqual(
-            ("sand", "metal", "wood", "concrete", "grass", "gravel", "ice", "mud", "fabric", "harness"),
+            ("sand", "metal", "wood", "concrete", "grass", "gravel", "ice", "mud", "fabric", "harness",
+             "water"),
             PATCH_MATERIALS)
+
+    def test_a_material_script_keeps_a_patch_that_loads_nothing(self) -> None:
+        # `SoldierJumpLand.ssc` ends on a WATER patch; an empty patch before a
+        # later one must not shift the ones behind it, since the engine asks
+        # by number.
+        text = "newPatch\nload @ROOT/Sound/@RTD/a.wav\nnewPatch\nnewPatch\nload @ROOT/Sound/@RTD/b.wav\n"
+        patches = script_manifest(text, "Objects/Soldiers/Common/Sounds/High/SoldierJumpLand.ssc")
+        got = [[layer["sample"] for layer in p["layers"]] for p in patches]
+        self.assertEqual([["a"], [], ["b"]], got)
+
+    def test_silence_is_a_load_that_plays_nothing(self) -> None:
+        # The ladder's six "DUMMY" material patches (SND-15).
+        text = "newPatch\nload @ROOT/Sound/@RTD/silence.wav\npriority 1\n"
+        patches = script_manifest(text, "Objects/Soldiers/Common/Sounds/High/SoldierClimbLadder.ssc")
+        self.assertTrue(patches[0]["layers"][0]["silent"])
+        self.assertEqual(1, patches[0]["layers"][0]["priority"])
+
+    def test_a_layer_carries_its_distance_ramp(self) -> None:
+        # `SoldierCrawlMove.ssc`: `Ramp 2 6 1 -1`, silent from 4 m.
+        text = ("newPatch\nload @ROOT/Sound/@RTD/SOCRAWL1.wav\nvolume .6\npriority 0\nbeginEffect\n"
+                "controlDestination Volume\ncontrolSource Distance\nenvelope Ramp\n"
+                "param 2\nparam 6\nparam 1\nparam -1\nendEffect\n")
+        layer = script_manifest(text, "Objects/Soldiers/Common/Sounds/SoldierCrawlMove.ssc")[0]["layers"][0]
+        self.assertEqual([2.0, 6.0, 1.0, -1.0], layer["distance"])
+        self.assertEqual(0, layer["priority"])
+        self.assertEqual([2.0, 6.0, 1.0, -1.0], distance_ramp(parse_ssc(text)[0].samples[0]))
 
     def test_movement_script_with_ten_patches_is_tagged_with_materials(self) -> None:
         ten_patch_text = "\n".join("newPatch\nload @ROOT/Sound/@RTD/test.wav\n" for _ in range(10))

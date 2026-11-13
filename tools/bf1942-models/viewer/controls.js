@@ -321,6 +321,11 @@ export const DEFAULT_CROSSHAIR_COLOR = Object.freeze([255, 255, 0]);
 export const DEFAULT_GENERAL_OPTIONS = Object.freeze({
   'game.setStaticMinimap': 1,
   'game.setMinimapTransparency': 20,
+  // The tooltip plate (`tooltips.js`) and the radio menu's headings
+  // (`comms.js`): OPTIONS > CUSTOMIZE's two other tick boxes, off and on in
+  // the shipped Default profile.
+  'game.setToolTip': 0,
+  'game.setRadioToolTip': 1,
 });
 
 /** The `DEFAULT_GENERAL_OPTIONS` words a `GeneralOptions.con` sets, as
@@ -1145,6 +1150,55 @@ export function createControls(page) {
     const valid = validCrossHairColor(rgb);
     if (valid) crossHairColor = valid;
     return controls.crossHairColor();
+  };
+
+  /** The profile's `GeneralOptions.con` words the page honours, the shipped
+   *  Default profile's where the profile says nothing. */
+  controls.generalOptions = () => ({ ...DEFAULT_GENERAL_OPTIONS, ...generalOptions });
+
+  /** One line of the imported `GeneralOptions.con` rewritten (or added), so
+   *  the account's copy says what the screen set. */
+  const patchGeneralText = (verb, text) => {
+    if (!generalText) return;
+    const line = new RegExp(`^${verb.replace('.', '\\.')}\\b.*$`, 'mi');
+    if (text === null) generalText = generalText.replace(new RegExp(`^${verb.replace('.', '\\.')}\\b.*\\r?\\n?`, 'mi'), '');
+    else if (line.test(generalText)) generalText = generalText.replace(line, `${verb} ${text}`);
+    else generalText = `${generalText.replace(/\s*$/, '')}\n${verb} ${text}\n`;
+  };
+
+  /**
+   * OPTIONS > CUSTOMIZE writes one word of the profile's general options
+   * (`play/controls-screen.js`, the game's `SaveGeneralOptions`): a number
+   * for a `DEFAULT_GENERAL_OPTIONS` verb, `[r, g, b]` in 0-255 for
+   * `game.setCrossHairColor`. Kept at once, with the maps; the page takes it
+   * through `describe().vars` (`page-console.js` `applyControlProfile`).
+   * Returns whether the word was one of them.
+   */
+  controls.setGeneralOption = (verb, value) => {
+    if (verb === 'game.setCrossHairColor') {
+      const valid = validCrossHairColor(value);
+      if (!valid) return false;
+      crossHairColor = valid.map(v => Math.max(0, Math.min(255, v)));
+      patchGeneralText(verb, crossHairColor.map(v => Number(v).toFixed(6)).join(' '));
+    } else if (verb in DEFAULT_GENERAL_OPTIONS && Number.isFinite(Number(value))) {
+      generalOptions = { ...generalOptions, [verb]: Number(value) };
+      patchGeneralText(verb, String(Number(value)));
+    } else {
+      return false;
+    }
+    save();
+    changed('general');
+    return true;
+  };
+
+  /** CUSTOMIZE's DEFAULT: the shipped Default profile's general options. */
+  controls.resetGeneralOptions = () => {
+    for (const verb of Object.keys(generalOptions)) patchGeneralText(verb, null);
+    patchGeneralText('game.setCrossHairColor', null);
+    generalOptions = {};
+    crossHairColor = null;
+    save();
+    changed('general');
   };
 
   /** What the sidebar paints: where the maps came from, and every player

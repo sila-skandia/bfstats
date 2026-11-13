@@ -154,31 +154,50 @@ hull, as a track on the ground moves.
 The model browser (`model-rig.js`) still scrolls by throttle, since it has no
 engine. It is unchanged.
 
-### Belt articulation: what the exporter lacks
+### Belt articulation (built 2026-11-13, gap 36 of the retail inverse audit)
 
-Gap 4 of `bf1942-3d-models/parity-audit/animation.md` needs three things,
-none of them in the viewer:
+The engine's loop is `AnimatedBundle::updateAnimations` (lnxded `0x08266080`):
+where the skeleton has as many bones as the template has `useAsBone`
+children, bone k takes the identity rotation and the relative position of
+the k-th such child, and the skeleton is transformed. `useAsBone <v>` and
+`setBoneOriginOffset <v>` (`0x082685a0`, `0x08268680`) only fill the
+BoneInfo records; their two vectors are read by the editor's `buildSkin`
+(`0x082678f0`) alone, which wrote the shipped `.skn`.
 
-1. **`con.py` must parse `useAsBone <v>` and `setBoneOriginOffset <v>`.** Each
-   `useAsBone` appends a BoneInfo naming the child of the most recent
-   `addTemplate`. `setBoneOriginOffset` writes the last BoneInfo. The runtime
-   loop reads neither vector; it needs only the child each BoneInfo names, in
-   order.
-2. **`assemble.py` must export the belt as a skinned mesh.** Each
-   `AnimatedMesh` geometry comes with its `setSkin` `.skn`, read by
-   `bf42/skin.py`, as JOINTS_0/WEIGHTS_0. There must be one joint per
-   BoneInfo, in order, at the bound child's rest translation; the shipped
-   `.ske`s, read by `bf42/ske.py`, carry the same bones. The export must also
-   name, per joint, the wheel node it follows, for example
-   `extras.boneWheels: [nodeName, ...]`.
-3. **The viewer must follow the wheels.** Each frame it sets joint k's
-   position to its wheel node's current local position, rotation left alone.
-   The tank drives already move the springs (`TrackedVehicle.#applyWheels`).
+What reads it now:
 
-Then both model trees and every level bake need re-baking and publishing:
-this is the `scene` layer, `features/level-bake-layers`. There are 27 belts
-on 14 vanilla vehicles and more in each mod (dc_final 49, desertcombat 45,
-eod 83, fhsw 1,561, xpack1 7, xpack2 10).
+1. **`con.py`** keeps both words on the child (`ChildRef.use_as_bone`,
+   `bone_origin_offset`).
+2. **`assemble.py` `_bind_belt`** bakes a belt as a skinned mesh: the `.skn`'s
+   bones are named `bone<N>` (`buildSkeleton` `0x08268360`), each vertex's
+   JOINTS_0 is that N, and the belt node gains one joint a bone
+   (`extras.trackBone` k) with `extras.trackBogie` k on the child it follows
+   and `extras.trackBones` on itself. A joint RESTS at the bind the `.skn`
+   records (`rest - offset` of its vertices), so a hull nothing drives draws
+   the belt as the `.sm` has it. That bind is the spring's position less the
+   `useAsBone` of the day the skin was built (0.15 m above the springs on a
+   Sherman, 0.25 m on a Panzer IV, 0 on a Tiger); the con has been edited
+   since on some hulls and the skin was not, so the file's bind is the
+   authority. A belt whose skeleton and `useAsBone` counts differ is left
+   rigid and the report says so, as the engine leaves it unposed.
+3. **`viewer/track-scroll.js` `followBogies`** is the loop: each joint takes
+   its bogie's position, never its spin. Both ground drives call it where
+   they integrate their springs. `restBelts` puts the joints back for a hull
+   presented from a recording or a room, whose springs nobody knows
+   (`presentKinematic` draws those wheels at their authored height).
+
+Every vanilla belt vertex has ONE influence, so the tread moves in rigid
+stretches, the top run and the wrap round the sprocket included: on a
+Sherman whose front springs are 0.2 m further in than its rear ones, the
+front of the belt stands that much higher against the fender. That is the
+shipped skin, not a choice made here.
+
+The trees carry it once re-baked (the `scene` layer,
+`features/level-bake-layers`): 44 belts in vanilla and the two packs. A glb
+baked before has no joints and its belt stays rigid. The other mods' trees
+(dc_final 49 belts, desertcombat 45, eod 83, fhsw 1,561) are not re-baked.
+
+Tests: `tests/test_track_belts.py`.
 
 ## 3. `window.__vehicles`
 
@@ -234,4 +253,5 @@ closed after each run:
   and a dark line at the horizon (W4-C's 2026-09-21 capture has the same
   streak). A raycast from the camera hits only terrain there, so the band is
   something that does not raycast. It was not investigated.
-- Belt articulation, above.
+- Belt articulation is built for vanilla and the two packs; the other mods'
+  trees still carry rigid belts until they are re-baked.

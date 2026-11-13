@@ -84,7 +84,7 @@ _VIEWER_MODULES = [
     # vehicle-instance.js is what `room-control.mjs` asks whether a hull is
     # enterable; it re-exports seats.js's occupancy.
     "vehicle-instance",
-    "aircraft", "aircraft-ground-law", "vectored-engines", "engine-revs", "engine-spin", "ship-spec", "wheeled-vehicle", "suspension", "ground-specs", "ground-contact", "ground-engine",
+    "aircraft", "aircraft-ground-law", "vectored-engines", "rocket-burn", "spawn-boarded", "template-words", "camera-dof", "rocket-motor", "proximity-fuse", "round-impact", "contact-response", "loaded-rounds", "fire-timer", "round-launch", "gun-recoil", "gun-groups", "projectile-flight", "round-visuals", "gun-cycle", "idle-vehicle", "bot-deviation", "seat-cone", "gunfire", "engine-revs", "engine-spin", "ship-spec", "wheeled-vehicle", "suspension", "ground-specs", "ground-contact", "ground-engine",
     "tracked-vehicle", "game-modes", "netcode",
     # The land drives run an amphibian's water half (`amphibious.js`).
     "amphibious", "body-float",
@@ -120,6 +120,10 @@ _VIEWER_MODULES = [
     # level-data.mjs adds a large root's static layer (COL-22), and
     # level-instance.mjs places a soldier by the restricted exit (SEAT-42).
     "coarse-layer", "restricted-exit",
+    # room-control.mjs paces the chat relay with the page's own queue (CHAT-2).
+    "chat-log",
+    # room-ships.mjs sails a ship on the page's own drive and law.
+    "ship", "ship-law",
 ]
 MODULES = {f"viewer/{name}.js": VIEWER / f"{name}.js" for name in _VIEWER_MODULES}
 MODULES.update({
@@ -137,6 +141,8 @@ MODULES.update({
     "server/level-data.mjs": SERVER / "level-data.mjs",
     "server/level-instance.mjs": SERVER / "level-instance.mjs",
     "server/held-craft.mjs": SERVER / "held-craft.mjs",
+    # The ships: their floats, their drives and their decks.
+    "server/room-ships.mjs": SERVER / "room-ships.mjs",
     "server/vehicle-table.mjs": SERVER / "vehicle-table.mjs",
     "server/level-load.mjs": SERVER / "level-load.mjs",
     "server/level-descriptor.mjs": SERVER / "level-descriptor.mjs",
@@ -150,8 +156,22 @@ MODULES.update({
     "server/room-wire.mjs": SERVER / "room-wire.mjs",
     "server/authority.mjs": SERVER / "authority.mjs",
     "server/room-pads.mjs": SERVER / "room-pads.mjs",
+    # The rounds that are vehicles (room.mjs builds it before the pads).
+    "server/room-missiles.mjs": SERVER / "room-missiles.mjs",
+    # The seat guns the room flies itself (room.mjs builds it after the hits).
+    "server/room-guns.mjs": SERVER / "room-guns.mjs",
+    "server/soldier-capsules.mjs": SERVER / "soldier-capsules.mjs",
     "server/room-hits.mjs": SERVER / "room-hits.mjs",
     "server/room-packs.mjs": SERVER / "room-packs.mjs",
+    # The score board's numbers on the wire (HELLO and the `stats` rows).
+    "server/room-stats.mjs": SERVER / "room-stats.mjs",
+    # The room's bots (off in this harness: their own code is loaded on
+    # demand, and `tests/test_room_bots.py` drives it).
+    "server/room-bots.mjs": SERVER / "room-bots.mjs",
+    # The host half: settings, admin, votes, bans, the map list.
+    "server/room-host.mjs": SERVER / "room-host.mjs",
+    "server/room-settings.mjs": SERVER / "room-settings.mjs",
+    "server/room-votes.mjs": SERVER / "room-votes.mjs",
     # The real published templates the fake level's table is built from.
     "viewer/models/Willy.glb": VIEWER / "models" / "Willy.glb",
     "viewer/models/Zero.glb": VIEWER / "models" / "Zero.glb",
@@ -300,6 +320,45 @@ class RoomTests(unittest.TestCase):
         # The declared `soldierExitLocation`, else the seat's own origin
         # (SEAT-35; `exitPoseOf` follows the page's `exitPoseManned`).
         self.assertLess(f["exitDist"], 5.0)
+
+    def test_a_crew_of_two_is_seated_by_the_servers_seat_order(self) -> None:
+        # What a page draws another player's hull from: the hull's id and the
+        # seat's place in the server's own order, the driver's seat first.
+        crew = self.results["crew"]
+        seated = {"seated": True, "inVehicle": True, "vehicleId": 1}
+        self.assertEqual(crew["both"]["driver"], {**seated, "seatIndex": 0}, crew)
+        self.assertEqual(crew["both"]["rider"], {**seated, "seatIndex": 1}, crew)
+        self.assertTrue(crew["both"]["hull"])
+        # The driver's seat is held: the rider's switch to it changes nothing
+        # (SEAT-11: an occupied seat is refused, never stolen), and a third
+        # player's Use on it is refused and said so.
+        self.assertEqual(crew["afterSwitch"], {**seated, "seatIndex": 1}, crew)
+        self.assertTrue(crew["third"]["refused"], crew)
+        self.assertFalse(crew["third"]["seat"]["inVehicle"], crew)
+        # The driver out, the rider still in: the hull is still held.
+        self.assertFalse(crew["afterExit"]["driver"]["inVehicle"], crew)
+        self.assertEqual(crew["afterExit"]["rider"], {**seated, "seatIndex": 1}, crew)
+        self.assertTrue(crew["afterExit"]["hull"])
+
+    def test_the_drive_goes_with_the_drivers_seat(self) -> None:
+        # A rider who moves onto a wheel nobody holds drives the hull, and
+        # lets it go on moving off: until 2026-11-13 the drive stayed with
+        # whoever mounted first, so a friend who took over drove nothing.
+        wheel = self.results["crew"]["wheel"]
+        self.assertEqual(wheel["driver"], 2, wheel)
+        self.assertEqual(wheel["seat"], 0, wheel)
+        self.assertTrue(wheel["drives"], wheel)
+        self.assertEqual(wheel["after"], {"driver": None, "seat": 1, "drives": False, "held": 1}, wheel)
+
+    def test_the_drivers_snapshot_has_his_hull_at_the_word_it_acknowledges(self) -> None:
+        # The page corrects the hull it drives against this row at this ack
+        # (`netcode-client.js` `selfHull`): one tick builds both, so the pose
+        # is the hull's after the acknowledged word and no later.
+        crew = self.results["crew"]
+        self.assertGreaterEqual(len(crew["acks"]), 10, crew)
+        for seq, ack in crew["acks"]:
+            self.assertEqual(ack, seq, crew)
+        self.assertTrue(crew["exact"], crew)
 
     def test_a_wreck_has_no_door(self) -> None:
         # SEAT-28; FHSWEurope 203 Hill's Vickers, destroyed by the battery
@@ -643,6 +702,72 @@ class RoomTests(unittest.TestCase):
         self.assertEqual({"b": 1, "c": 0}, r["farShout"])
         self.assertEqual(0, r["badId"])
 
+    # ---- (chat) typed chat, the board's numbers and the ping ------------------
+
+    def test_chat_goes_to_everyone_but_the_sender(self) -> None:
+        # CHAT-4 (`handleChatMessage` 0x08134a70): no alive test, never back
+        # to the sender, and the line leaves on the room's next tick.
+        c = self.results["chat"]
+        self.assertEqual(0, c["beforeTick"])
+        self.assertEqual(0, c["all"]["a"])
+        self.assertEqual(1, c["all"]["c"])
+        self.assertEqual(1, len(c["all"]["b"]))
+        row = c["all"]["b"][0]
+        self.assertEqual((1, "hello", False), (row["slot"], row["text"], row["team"]))
+
+    def test_team_chat_stays_on_the_senders_side(self) -> None:
+        c = self.results["chat"]
+        self.assertEqual(0, c["team"]["a"])
+        self.assertEqual(0, c["team"]["c"])
+        self.assertEqual([("flank left", True)], [(r["text"], r["team"]) for r in c["team"]["b"]])
+
+    def test_a_line_is_cut_to_63_bytes_and_paced_in_15_byte_pieces(self) -> None:
+        # CHAT-2: `addStringMsg` 0x0815d280 cuts at 0x3f; `updateSendStream`
+        # 0x0815d3c0 sends 0xf bytes every 0.5 s, so 63 bytes are five pieces
+        # and the last leaves 2 s after the first.
+        c = self.results["chat"]
+        self.assertEqual(63, c["long"]["bytes"])
+        self.assertGreaterEqual(c["long"]["seconds"], 2.0)
+        self.assertLess(c["long"]["seconds"], 2.2)
+
+    def test_a_fifth_waiting_line_is_refused(self) -> None:
+        c = self.results["chat"]
+        self.assertEqual(["line 0", "line 1", "line 2", "line 3"], c["flood"])
+        self.assertEqual(0, c["empty"])
+
+    def test_the_room_times_the_ping_off_its_own_pong(self) -> None:
+        # MEME-27's column six: the server's own round trip (`NetServer::
+        # _update` 0x084341e2), here the pong the page sends straight back.
+        c = self.results["chat"]
+        self.assertEqual({"pongs": 1, "ms": 80}, c["ping"])
+
+    def test_the_boards_numbers_go_out_when_they_change(self) -> None:
+        c = self.results["chat"]
+        # Score 1 for a kill (`round-state.js`), the victim's death, B's ping.
+        self.assertEqual(1, c["stats"]["a"][1])
+        self.assertEqual(c["stats"]["a"][0], c["hello"]["a"][0])
+        self.assertEqual(1, c["stats"]["c"][2])
+        self.assertEqual([0, 0, 0, 80], c["stats"]["b"])
+        self.assertEqual(0, c["statsQuiet"])
+
+    def test_a_late_joiner_is_sent_everyones_numbers(self) -> None:
+        # J-1 (`sendDatabase` 0x08134400): the board is the server's from the
+        # first frame.
+        c = self.results["chat"]
+        self.assertEqual(1, c["hello"]["a"][1])
+        self.assertEqual(1, c["hello"]["c"][2])
+        self.assertEqual(80, c["hello"]["bPing"])
+        self.assertEqual({"score": 0, "kills": 0, "deaths": 0, "ping": 0}, c["hello"]["own"])
+        self.assertTrue(c["reused"]["sameSlot"])
+        self.assertEqual({"score": 0, "kills": 0, "deaths": 0, "ping": 0}, c["reused"]["stats"])
+
+    def test_a_join_row_names_the_side_and_a_rename_reaches_everyone(self) -> None:
+        c = self.results["chat"]
+        self.assertEqual(1, c["joinRowTeam"])
+        self.assertEqual("Renamed", c["name"]["b"]["text"])
+        self.assertEqual(1, c["name"]["a"])
+        self.assertEqual("Renamed", c["name"]["helloName"])
+
     # ---- (t) each room its own tickets --------------------------------------
 
     def test_each_room_spends_its_own_tickets(self) -> None:
@@ -945,8 +1070,11 @@ class RoomTests(unittest.TestCase):
         """`gameStatusPreGame` 0x08150950 writes its clock into every player's
         wait and plays at 0 (ROUND-14); the shipped dedicated settings' 20."""
         r = self.results["rules"]
-        self.assertEqual({"gameStartDelay": 20, "roundStartDelay": 10, "tkPunishMode": True,
-                          "nrOfTKToKick": 5, "tkSpawnPenalty": 1}, r["rules"])
+        # The host's own words (spawn time, limits, auto-balance) ride in the
+        # same rules object: `tests/test_room_host.py`.
+        want = {"gameStartDelay": 20, "roundStartDelay": 10, "tkPunishMode": True,
+                "nrOfTKToKick": 5, "tkSpawnPenalty": 1}
+        self.assertEqual(want, {key: r["rules"].get(key) for key in want})
         self.assertEqual("preGame", r["hello"]["status"])
         self.assertEqual(20, r["hello"]["preGameIn"])
         self.assertEqual(20, r["early"]["sw"])

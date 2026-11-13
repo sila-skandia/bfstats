@@ -130,20 +130,20 @@ class VideoTests(_Harness):
 
     def test_the_rows_are_the_games_in_its_order_on_its_lines(self) -> None:
         video = self.results["video"]
-        # The file's eight lines, and the seven rows set on them in order:
-        # the game's six the viewer has something behind, then this site's
-        # anti-aliasing. The resolution is DISPLAY MODE's list
-        # (`test_display_mode.py`), not a row.
+        # The file's eight lines, and the eight rows set on them in order:
+        # the game's seven the viewer has something behind, each on its own
+        # line, then this site's anti-aliasing on the last. The resolution
+        # is DISPLAY MODE's list (`test_display_mode.py`), not a row.
         self.assertEqual([165, 195, 230, 260, 290, 315, 345, 375], video["lines"])
         self.assertEqual(
             [("graphicsQuality", "GRAPHICS QUALITY:", 165), ("effectsQuality", "EFFECTS QUALITY:", 195),
              ("environmentMapping", "ENVIRONMENT MAPPING:", 230), ("lightmaps", "LIGHTMAPS:", 260),
-             ("textureQuality", "TEXTURE QUALITY:", 290), ("viewDistance", "VIEW DISTANCE:", 315),
-             ("antialias", "ANTI-ALIASING:", 345)],
+             ("shadows", "SHADOWS:", 290),
+             ("textureQuality", "TEXTURE QUALITY:", 315), ("viewDistance", "VIEW DISTANCE:", 345),
+             ("antialias", "ANTI-ALIASING:", 375)],
             [(r["id"], r["label"], r["y"]) for r in video["rows"]])
-        # SHADOWS and ALTERNATIVE SPAWN INTERFACE have nothing behind them.
+        # ALTERNATIVE SPAWN INTERFACE has nothing behind it.
         labels = {r["label"] for r in video["rows"]}
-        self.assertNotIn("SHADOWS:", labels)
         self.assertNotIn("ALTERNATIVE SPAWN INTERFACE:", labels)
         # Painted plain: the page paints each value itself.
         self.assertTrue(all(r["key"] is None for r in video["rows"]))
@@ -157,22 +157,27 @@ class VideoTests(_Harness):
         self.assertEqual([474, 165, 74, 9], gq["track"])
         self.assertEqual({"1": "LOW", "2": "MEDIUM", "3": "HIGH"}, gq["values"])
         self.assertEqual([312, 160, 297, 19], gq["hit"])
-        # TEXTURE QUALITY, moved up a line into SHADOWS' place, keeps its
-        # shape: its value box and the file's percentages and % sign.
+        # TEXTURE QUALITY on its own line, under SHADOWS: its value box and
+        # the file's percentages and % sign.
         tq = self.rows()["textureQuality"]
-        self.assertEqual([554, 285, 55, 19], tq["box"])
+        self.assertEqual([554, 310, 55, 19], tq["box"])
         self.assertEqual({"1": "20", "2": "40", "3": "60", "4": "80", "5": "100"}, tq["values"])
-        self.assertEqual([587, 290, 115, 20], tq["unit"])
+        self.assertEqual([587, 315, 115, 20], tq["unit"])
         # VIEW DISTANCE's value is the file's edit box.
-        self.assertEqual([558, 315, 28, 20], self.rows()["viewDistance"]["edit"])
+        self.assertEqual([558, 345, 28, 20], self.rows()["viewDistance"]["edit"])
 
     def test_a_tick_box_is_the_games(self) -> None:
         # A 19-unit grey frame, a 17-unit black inside, a 9-unit olive mark.
         aa = self.rows()["antialias"]
         self.assertEqual("tick", aa["kind"])
-        self.assertEqual([[473, 340, 19, 19], [474, 341, 17, 17]], aa["frame"])
-        self.assertEqual([[478, 345, 9, 9], None], aa["mark"])
-        self.assertEqual([312, 340, 180, 19], aa["hit"])
+        self.assertEqual([[473, 370, 19, 19], [474, 371, 17, 17]], aa["frame"])
+        self.assertEqual([[478, 375, 9, 9], None], aa["mark"])
+        self.assertEqual([312, 370, 180, 19], aa["hit"])
+        # SHADOWS is the file's own tick row, on its own line.
+        sh = self.rows()["shadows"]
+        self.assertEqual("tick", sh["kind"])
+        self.assertEqual([[473, 285, 19, 19], [474, 286, 17, 17]], sh["frame"])
+        self.assertEqual([[478, 290, 9, 9], None], sh["mark"])
         env = self.rows()["environmentMapping"]
         self.assertEqual([[478, 230, 9, 9], None], env["mark"])
 

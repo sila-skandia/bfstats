@@ -357,7 +357,8 @@ export function endRound(guns, shot, index, blast) {
   shot.sound?.stop();
   const spec = shot.group.stats.projectile;
   const record = blast
-    ? detonate(guns, shot.group, spec, shot.mesh.position, shot.travelled, shot.stamp)
+    ? detonate(guns, shot.group, spec, shot.mesh.position, shot.travelled, shot.stamp,
+               shot.lastHit ?? null)
     : null;
   // The hull whose proximity set it off, for `guns.hits` readers.
   if (record && shot.fusedOn != null) record.fusedOn = shot.fusedOn;
@@ -421,6 +422,10 @@ function stepFuseRound(guns, shot, dt) {
     }
   }
   shot.resting = shot.body.resting;
+  // What it last touched (`Armor::setLastHitMaterialIndex` 0x081736b0, kept
+  // until the next contact): the surface a `useMMOnEndEffect` round's end
+  // effect is chosen by (`round-impact.js` `endEffectFor`).
+  if (shot.body.contact) shot.lastHit = shot.body.contact;
   // `isSticky`: the strike made the round the struck object's child
   // (`contact-response.js` `FuseRoundBody.stuck`). Kept in that object's frame
   // from here on, so it rides a tank that drives off with it.

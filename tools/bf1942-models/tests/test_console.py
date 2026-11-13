@@ -603,9 +603,11 @@ class ConsoleWordsTests(unittest.TestCase):
         r = self.results["replayPage"]
         self.assertEqual([{"graphicsQuality": 1}, {"effectsQuality": 2},
                           {"environmentMapping": False}, {"lightmaps": False},
-                          {"textureQuality": 5}, {"viewDistance": 100}], r["videoChanges"])
+                          {"textureQuality": 5}, {"viewDistance": 100},
+                          {"shadows": True}], r["videoChanges"])
         self.assertEqual([], r["performance"])
-        self.assertEqual("Error : Method is not active!", r["shadows"][1])
+        # SHADOWS is live: `game.setShadows` writes the row (VID-7).
+        self.assertEqual([], r["shadows"])
         self.assertEqual({"lod": 0.8, "bb": 1.5, "fx": 0.3}, r["tuning"])
 
     def test_the_sound_words_change_the_sound_record(self) -> None:

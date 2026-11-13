@@ -276,6 +276,12 @@ export class Match {
       // Read live: the stand-in vehicles are built after the referee.
       get units() { return stage ? stage.units : match.vehicles; },
       groundAt: (x, z, fromY) => this.groundAt(x, z, fromY),
+      // The body a bot's round meets and its aim picks a bone of: the
+      // capsules of the soldier's skeleton in his stance, as in a room
+      // (`sim/level.mjs` `bodies`); the stand-in sphere on a tree without
+      // the pose files.
+      capsulesOf: id => level.bodies?.capsulesAt(this.world.player(id)) ?? null,
+      soldierBones: player => level.bodies?.bonesFor(player) ?? null,
       armorFor: (bot) => new this.M.Armor(level.kits.maxHp(bot.kit)),
       // A crouched bot's wrench lifts the stage's live mines and packs
       // (SUP-28, `bot-referee.js` `usePack`); a synthetic level flies none.

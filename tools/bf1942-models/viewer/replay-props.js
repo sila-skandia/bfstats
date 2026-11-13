@@ -137,7 +137,8 @@ export const weaponOfProjectile = tmpl => {
  * assemble.py `_projectile_spec`), and the end effect that FireArms names.
  * A hull carries more than one -- an Elco80 has its torpedoes and its
  * floating mines -- so the FireArms decides, never the first mesh found.
- * `{ mesh, endEffect }`, or null.
+ * `{ mesh, endEffect, spec }`, or null; `spec` is the FireArms' whole
+ * `projectile` block (`round-impact.js` `endEffectFor` reads its `damage`).
  */
 export function roundIn(scene, tmpl) {
   const want = String(tmpl || '').toLowerCase();
@@ -149,7 +150,7 @@ export function roundIn(scene, tmpl) {
         || String(projectile.template || '').toLowerCase() !== want) return;
     let mesh = null;
     obj.traverse(child => { if (!mesh && child !== obj && child.userData?.projectileMesh) mesh = child; });
-    if (mesh) found = { mesh, endEffect: projectile.endEffect ?? null };
+    if (mesh) found = { mesh, endEffect: projectile.endEffect ?? null, spec: projectile };
   });
   return found;
 }

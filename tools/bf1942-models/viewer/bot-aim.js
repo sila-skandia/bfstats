@@ -669,6 +669,56 @@ export function turretAimAt(bot, targetPoint, targetVel = [0, 0, 0]) {
 }
 
 /**
+ * `BBPFireGuided::createPlan` 0x085b0a60's numbers (read 2026-11-13). The
+ * plan has no Aimer and no `BAPCConPrecision`: it turns the launcher onto the
+ * target with `BAPALookAtObject` and pulls the trigger, and the round does
+ * its own steering.
+ *  - `lookTolerance`: 0.0349066 rad (2 deg), `pushl $0x3d0efa35` into both
+ *    `BAPALookAtObject` ctors that go with the trigger (0x085b1403,
+ *    0x085b21f1).
+ *  - `coolLook`: the look kept while the launcher cools, 0.1 rad
+ *    (`$0x3dcccccd` at 0x085b3837).
+ *  - `heatHigh` / `heatLow`: the two `BAPConWeaponHeat` thresholds, 0.8
+ *    (`$0x3f4ccccd`, 0x085b3728) and 0.7 (`$0x3f333333`, 0x085b3762).
+ *  - `movedDistance`: `BAPConObjectMoved(target, 10.0)` (`$0x41200000`,
+ *    0x085b11f1), the mobile launcher's re-approach.
+ */
+export const GUIDED = {
+  lookTolerance: 0.03490658476948738,
+  coolLook: 0.1,
+  heatHigh: 0.8,
+  heatLow: 0.7,
+  movedDistance: 10.0,
+};
+
+/**
+ * A guided launcher's aim (`GUIDED`): the look counts straight at the
+ * target's point from the barrel, no lead and no drop. `off` is the angle
+ * still between the barrel and that line, which the trigger waits on.
+ * Null when the seat's guns are not collected.
+ */
+export function guidedLookAt(bot, targetPoint) {
+  const frame = barrelFrame(bot);
+  if (!frame) return null;
+  const o = frame.origin;
+  const dir = unit3([targetPoint[0] - o[0], targetPoint[1] - o[1], targetPoint[2] - o[2]]) ?? frame.f;
+  aimAlong(bot, dir, frame);
+  const dot = frame.f[0] * dir[0] + frame.f[1] * dir[1] + frame.f[2] * dir[2];
+  const aim = { valid: true, guided: true, dir, time: 0, off: Math.acos(Math.min(1, Math.max(-1, dot))) };
+  bot._turretAim = aim;
+  return aim;
+}
+
+/** The guided trigger's gate: the look inside 2 deg once (the plan's first
+ *  `BAPALookAtObject`), then held while the look-and-trigger loop runs.
+ *  `state` is the trigger action's own. */
+export function guidedHolds(aim, state) {
+  if (!aim?.guided) return false;
+  if (aim.off <= GUIDED.lookTolerance) state.locked = true;
+  return !!state.locked;
+}
+
+/**
  * `BAPWrapperAiming::execute` 0x08559770 as `BBPFire2dDriver` builds it (read
  * 2026-09-30, ledger SPOT-16): the aim of ANOTHER seat's gun, the hull's
  * gun seat, for a self-propelled gun's driver. The seat's chosen weapon

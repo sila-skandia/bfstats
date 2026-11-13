@@ -168,9 +168,11 @@ export function createStage(M, level, { vehicles = true, kinds = STAGE_KINDS, se
   stage.hullBodies = hullBodies;
   const vehicleHits = S.createVehicleHits({
     applyDamage: (...a) => stage.referee.applyDamage(...a), applyDamageToPlayer: noop,
-    // Where a round can meet a man: the referee's stand-in body, and no drawn
-    // skeleton to test (nothing draws here), so every round meets the sphere.
-    bodyAt: id => stage.referee.bodyAt(id), capsulesOf: () => null,
+    // Where a round can meet a man: the capsules of his skeleton in his
+    // stance (`level.bodies`, the room server's own module), and the
+    // referee's stand-in sphere for a seated man or a tree without poses.
+    bodyAt: id => stage.referee.bodyAt(id),
+    capsulesOf: id => level.bodies?.capsulesAt(world?.player(id)) ?? null,
     get bots() { return stage.referee?.bots ?? []; }, get camera() { return camera; },
     get collider() { return terrain.collider; }, get currentRoot() { return root; },
     damageLanded: (...a) => stage.referee.damageLanded(...a), get damageVisuals() { return wrecks.damageVisuals; },
@@ -314,6 +316,10 @@ export function createStage(M, level, { vehicles = true, kinds = STAGE_KINDS, se
     botUnits.ai = new Map(Object.entries(data.vehicleAi ?? {}).map(([k, v]) => [k.toLowerCase(), { name: k, ...v }]));
     // ...and the file's `mod`, as `loadAi` keeps it (bot-rows.js).
     botUnits.aiMod = data.vehicleAiMod ?? null;
+    // ...and its `radio` rows (the mod's `radio.con`, bot-radio.js).
+    botUnits.aiRadio = data.vehicleAiRadio ?? null;
+    // ...and its `coverPortals` (a cover mesh's doors and windows, bot-decision.js).
+    botUnits.aiCoverPortals = data.vehicleAiCoverPortals ?? null;
     const allowed = new Set(kinds);
     units = Object.create(botUnits);
     units.candidates = () => botUnits.candidates().filter(c => allowed.has(c.kind));

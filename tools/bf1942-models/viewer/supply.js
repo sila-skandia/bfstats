@@ -386,6 +386,13 @@ function merge(into, r) {
   if (r.healed) into.healed = true;
 }
 
+const NO_TAGS = [];
+/** Inclusive 3-D distance to a depot's radius (SUP-5). */
+function within(d, x, y, z) {
+  const dx = x - d.x, dy = y - d.y, dz = z - d.z;
+  return dx * dx + dy * dy + dz * dz <= d.radius * d.radius;
+}
+
 /** A level's whole set of depots, ticked and queried together so the world's
  *  per-tick code stays a couple of calls. */
 export class SupplyField {
@@ -505,6 +512,56 @@ export class SupplyField {
         && d.vehicleTypes.some(t => t.key === key && t.rate > 0));
     }
     return this.depots.some(d => d.healRate > 0 && d.eligibleForSoldier(target));
+  }
+
+  /**
+   * The three depot icons of a SEATED player, into `out` (`{repair, heal,
+   * reload}`), by the client's own writer: `MenuMapNode::onPaint` walks every
+   * depot each paint and sets the HUD's `ShowRepairIcon`, `ShowReloadIcon`
+   * and `ShowHealIcon` from `isRepairing && showRepairIconInMenu`,
+   * `isReloading && showAmmoIconInMenu`, `isHealing && showHealIconInMenu`
+   * for the local player while they are alive (Mac `MenuMapNode::onPaint`
+   * 0x00556244; the predicates are lnxded's, SUP-5, SUP-17). Seated:
+   *
+   * - **Repair** (`showRepairIconInMenu` 0x083245d0): never on foot (the
+   *   player's vehicle is their soldier, 0x08324616). A `workOnVehicles`
+   *   depot (template `+0x140`), on the player's side or neutral, within its
+   *   radius of the player's vehicle (the seat's own PlayerControlObject),
+   *   whose `addVehicleType` rows name that object's template
+   *   (0x083246ef). The hull's hit points are not asked: a whole tank on a
+   *   repair pad shows the wrench.
+   * - **Heal** (`showHealIconInMenu` 0x08324700): a seated soldier only from
+   *   a `workOnSoldiers` depot riding their own root (`getRootParent` of
+   *   both, 0x0832474f..0x08324765), in radius, with a heal rate above 0.
+   * - **Reload** (`showAmmoIconInMenu` 0x08324810): a `workOnVehicles` depot
+   *   within its radius of the vehicle's ROOT (0x08324a25) whose ammo rows
+   *   carry the `AmmoType` of one of the seat's FireArms (0x08324b8a); else a
+   *   `workOnSoldiers` depot on the soldier's own root, in radius.
+   *
+   * `seat`: `{ team, root, x, y, z, rootX, rootY, rootZ, template,
+   * ammoTags }`: the seat object's place and template, its root's place, and
+   * the seat guns' depot tags (`fire-state.js` `ammoTypeOf`; a null tag, from
+   * a tree exported before the word, matches any row as `rearmTypeFor` does).
+   */
+  seatedIcons(seat, out = { repair: false, heal: false, reload: false }) {
+    out.repair = false; out.heal = false; out.reload = false;
+    const key = seat.template ? String(seat.template).toLowerCase() : null;
+    const tags = seat.ammoTags ?? NO_TAGS;
+    for (const d of this.depots) {
+      if (d.team !== 0 && seat.team !== d.team) continue;
+      const near = within(d, seat.x, seat.y, seat.z);
+      if (!out.repair && d.workOnVehicles && near && key
+          && d.vehicleTypes.some(t => t.key === key)) out.repair = true;
+      const sameRoot = d.root != null && d.root === seat.root;
+      if (!out.heal && d.workOnSoldiers && sameRoot && near && d.healRate > 0) out.heal = true;
+      if (!out.reload && d.ammoTypes.length) {
+        if (d.workOnVehicles && tags.length
+            && within(d, seat.rootX ?? seat.x, seat.rootY ?? seat.y, seat.rootZ ?? seat.z)
+            && tags.some(tag => tag == null || d.ammoTypes.some(t => t.id === tag))) out.reload = true;
+        else if (d.workOnSoldiers && sameRoot && near) out.reload = true;
+      }
+    }
+    return out;
   }
 
   /** The closest depot to `target` and its straight-line distance, or null.

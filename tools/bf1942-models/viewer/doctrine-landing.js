@@ -396,14 +396,22 @@ export function beachTarget({ layer, zones, area, side, unit, x, z, from = null,
       const zone = closestZone(a, zones, x, z);
       if (!zone) return null;
       // The engine's radius, `max(5, R)` (ctor 0x08537ce0), is the order's
-      // for the route points (their moves and their pop distance). Past
-      // them, on the approach leg, the move's radius is also the path's goal
-      // tolerance (`BAPAMoveToFinding` ctor 0x085449f0 -> Path +0x5c, the
-      // last leg's local search radius, +0x60, at 0x085271e8): on Wake a
-      // route through SeaArea1 gives R = 0.25 x 303 + 20 = 96 m and the
-      // craft would stop 86 m short of its zone and never take the beach
-      // leg. Retail bots do land there, so something unread stands between;
-      // the approach leg keeps the no-route 5 (INVENTION, D's value).
+      // for the route points (their moves and their pop distance) and, on
+      // the approach leg, the float `BBPGotoWaypointBoat::createPlan`
+      // 0x085b8c50 hands `BAPAMoveToFinding` (`getWayPointRadius`, vt+0x1c,
+      // at 0x085ba1f1; waypoint ids 3 and 4 share the case, table
+      // 0x8702ee4). That float is no stopping distance (read 2026-11-13,
+      // ledger AI-113): the ctor 0x085449f0 keeps it at +0xa0,
+      // `initPathfinding` 0x0852a0d0 at Path +0x5c, and `updateLocalPath`
+      // 0x08527120 makes it the BOX of the last leg's local search
+      // (0x085271e8, where every other leg draws `10 + rand x 14`), the goal
+      // staying the point itself. The boat stops when its steering point is
+      // inside its own path-point removal distance (`EntryBoatMoveTo::
+      // execute` 0x08613d60: `vt+0x28` = `getMaxPointRemovalDistance`
+      // 0x08544ff0 = the bot's `getMaxPathPosRemovalDistance`, against the
+      // distance at 0x08613f7a, then `resetControls`). So on Wake the 96 m
+      // of a route through SeaArea1 is a search box and the craft drives on
+      // to its approach point: `beachLandingOrder`'s `arriveRadius`.
       return { kind: 'WPMoveToBeachLanding', zone, via: a, route: points,
                radius: Math.max(LANDING.moveToRadiusMin, LANDING.moveToRadiusNoRoute),
                routeRadius: Math.max(LANDING.moveToRadiusMin, radius) };
@@ -445,6 +453,15 @@ export function beachLandingOrder({ target, area, side, layer, isValid = null, r
   if (!point) return null;
   const order = {
     kind, zone, via, point, radius,
+    /** Where the move to the approach point ends: inside the craft's own
+     *  path-point removal distance (`EntryBoatMoveTo::execute` 0x08613f6c),
+     *  which `urgency` is handed every decision. The order's radius is the
+     *  last leg's search box there, not this (ledger AI-113). Undefined on
+     *  a route leg, whose move ends by the order's radius. */
+    get arriveRadius() {
+      if (this.route.length || this.insideZone) return undefined;
+      return Number.isFinite(this._pathRadius) ? this._pathRadius : LANDING.moveToRadiusMin;
+    },
     area: area ?? null,
     insideZone: inside,
     /** The route points still to drive, `{ point, area }` (`+0x20`). */

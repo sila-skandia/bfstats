@@ -259,6 +259,26 @@ seed after it: 13 seated route failures of 181, and the seconds a driver
 in MoveTo sits with the throttle off and no live route (`stopped.mjs`,
 scratch) 7 against 681, and 48 on the code before any of this.
 
+**The forgetting lasted one tick (fixed 2026-11-13).** Since a driver
+predicts still bodies too (AI-178, 2026-11-12), most of a hull's own
+circles are predicted ones: `predictObstacles` planted the same body again
+on the tick after the retry dropped it, threw the route away, and the next
+two searches failed. The hull crept about a third of a metre a cycle.
+Bocage, 8 a side with vehicles, seed 1: a Sherman took 60 s and 38 failed
+routes to pass one empty hull parked beside its base's exit lane; 243 of
+the match's 258 route failures were drivers', 185 of them walled by
+circles alone. The bodies
+behind the dropped circles now stay forgotten for a potential obstacle's
+life (`potentialObstacleMaxAge`, 10 s; `bot._forgotBodies`), and the
+prediction leaves them alone until then. Same INVENTION as the forgetting
+itself: retail's local search takes the circles as hard restrictions
+(`AIPathfinding::localSearch` 0x0847d940 -> `initRestrictedNormal`
+0x085f2a10) and fails the path the same way; what it does next was not
+read. Bocage seeds 1 to 3 on one snapshot of the tree: 258, 229, 167
+before; 93, 116, 189 after. Captures 3, 6, 3 against 3, 5, 6; team kills
+4, 1, 0 against 0, 1, 0. Test: `tests/test_bot_hull_shuffle.py`
+`test_a_forgotten_body_is_not_planted_again_at_once`.
+
 ### 2.5 An order point the hull's map cannot reach left it standing (fixed)
 
 With 2.4, FH's matrix had three matches of ten at 8 a side where a driver

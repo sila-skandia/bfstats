@@ -22,7 +22,11 @@ HARNESS = Path(__file__).with_name("chat_input_harness.mjs")
 MODULES = ("chat-input.js", "comms.js", "page-input.js", "radio.js", "chat-log.js",
            "announcer.js", "ds3d-pan.js", "console.js", "console-view.js",
            "touch-controls.js", "kit-icon.js", "pointer-route.js", "support-calls.js", "nametags.js",
-           "opera-gestures.js")
+           "opera-gestures.js",
+           # comms.js decodes a player's name for the lines it writes.
+           "vehicle-players.js",
+           # ...and puts a radio speaker on the minimap's flash list.
+           "map-flash.js")
 
 
 def run_harness() -> dict:

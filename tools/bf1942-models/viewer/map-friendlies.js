@@ -13,6 +13,7 @@
 
 import * as THREE from 'three';
 import { mapVehicleMark } from './map-vehicle-marks.js';
+import { mapFlash } from './map-flash.js';
 
 const DEG = Math.PI / 180;
 
@@ -48,6 +49,17 @@ export function createMapFriendlies(page) {
       out.get(p.vehicleId).push(p.team);
     }
     return out;
+  }
+
+  /** Whether any of a server entity's riders is lit on the flash list
+   *  (`map-flash.js`): the hull is the mark of the players inside it. */
+  function netCrewLit(remotes, entityId) {
+    if (!mapFlash.size) return false;
+    for (const p of remotes) {
+      if (p.vehicleId === entityId && p.alive && (p.seated || p.inVehicle)
+          && mapFlash.lit(`slot:${p.slot}`)) return true;
+    }
+    return false;
   }
 
   /** The scene node standing for a server entity, or null while it loads. */
@@ -94,7 +106,8 @@ export function createMapFriendlies(page) {
         if (p.team !== localTeam || !p.alive) continue;
         if (p.seated || p.inVehicle) continue;
         if (!Number.isFinite(p.x) || !Number.isFinite(p.z)) continue;
-        out.push({ x: p.x, z: p.z, yaw: (p.yaw ?? 0) * DEG, key: `slot:${p.slot}` });
+        out.push({ x: p.x, z: p.z, yaw: (p.yaw ?? 0) * DEG, key: `slot:${p.slot}`,
+                   flash: mapFlash.lit(`slot:${p.slot}`) });
       }
       return out;
     }
@@ -109,7 +122,7 @@ export function createMapFriendlies(page) {
       if (player.occupancy?.root) continue;
       const s = player.soldier;
       if (!s) continue;
-      out.push({ x: s.x, z: s.z, yaw: s.yaw, key: id });
+      out.push({ x: s.x, z: s.z, yaw: s.yaw, key: id, flash: mapFlash.lit(id) });
     }
     return out;
   }
@@ -136,6 +149,19 @@ export function createMapFriendlies(page) {
       out.get(hull).push(player.team);
     }
     return out;
+  }
+
+  /** Whether a living rider of `hull` is lit on the flash list. */
+  function hullCrewLit(hull) {
+    if (!mapFlash.size) return false;
+    const players = page.world?.players;
+    if (!players) return false;
+    for (const [id, player] of players) {
+      if (!mapFlash.lit(id) || player.armor?.destroyed) continue;
+      const root = player.occupancy?.root;
+      if (root && hullOf(root) === hull) return true;
+    }
+    return false;
   }
 
   /** The scene nodes a friendly (not the local player) is riding. A Set rather
@@ -212,7 +238,7 @@ export function createMapFriendlies(page) {
         applyRange, viewDistance,
         distance: applyRange ? node.getWorldPosition(vehiclePos).distanceTo(from) : 0,
       });
-      if (kind) out.push({ node, kind });
+      if (kind) out.push({ node, kind, flash: kind === 'friendly' && hullCrewLit(node) });
       // The objects the hull's own spawners hold (AI-121: each is an object
       // of its own, held at its spawner), drawn as marks of their own when
       // their template has a map symbol: FHSW's bombers carry an attitude
@@ -253,7 +279,7 @@ export function createMapFriendlies(page) {
         occupantTeams: crews.get(e.id) ?? [],
         localTeam,
       });
-      if (kind) out.push({ node: e.group, kind });
+      if (kind) out.push({ node: e.group, kind, flash: kind === 'friendly' && netCrewLit(remotes, e.id) });
     }
     return out;
   }
@@ -280,7 +306,11 @@ export function createMapFriendlies(page) {
    *  of a radian — the arrow turns visibly at this size well before it moves a
    *  backing pixel, so a position-only key would freeze a teammate mid-turn. */
   function friendlyMarkerKey() {
-    let key = '';
+    // The flash list's one blink clock steps here: the surfaces ask for this
+    // key once a painted frame (`MenuMapNode::update`). Its token is in the
+    // key, so a blink going on or off repaints. An empty list costs a compare.
+    mapFlash.updateAt(performance.now() / 1000);
+    let key = mapFlash.key();
     for (const { x, z, yaw } of friendlyMapUnits()) {
       key += `${Math.round(x)},${Math.round(z)},${Math.round(yaw * 10)};`;
     }

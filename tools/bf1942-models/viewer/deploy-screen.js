@@ -609,11 +609,18 @@ export function createDeployScreen(page) {
     // The status line under them is fed every frame, body or not
     // (`status-message.js`, HUD-24), so it also stands over the world.
     const status = page.statusPlate?.(strings) ?? null;
-    if (!cd && !status?.show) { if (!cv.hidden) cv.hidden = true; return; }
+    // The warning plate (connection problems, the chat flood warning), fed
+    // the same way (`net-room.js` `warningPlate`, `GameClient::update`).
+    const warning = page.warningPlate?.(strings) ?? null;
+    // A tooltip up over the spawn screen is this canvas's too (`tooltips.js`
+    // feeds its variables: the welcome and the respawn interface's help).
+    const tip = hud.vars['ToolTip/ShowToolTip'] === true;
+    if (!cd && !status?.show && !warning?.show && !tip) { if (!cv.hidden) cv.hidden = true; return; }
     const vars = hud.vars;
     vars['StatusMessage/ShowStatusMessage'] = !!status?.show;
     vars['StatusMessage/StatusMessage'] = status?.show ? status.text : '';
-    vars['DisconnectMessage/ShowDisconnectMessage'] = false;
+    vars['DisconnectMessage/ShowDisconnectMessage'] = !!warning?.show;
+    vars['DisconnectMessage/DisconnectMessage'] = warning?.show ? warning.text : '';
     vars.Timer = cd?.countdown ?? 0;
     // The same wait, labelled by the game status (`spawn-timer.js`).
     vars.TimerText = respawnPlateLabel(strings, !!page.serverPreGame?.());

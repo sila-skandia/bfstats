@@ -81,6 +81,8 @@ MODULES = {
     "geometry-search.js": VIEWER / "geometry-search.js",
     # `aircraft.js`'s engine law for an airframe with engines off its nose.
     "vectored-engines.js": VIEWER / "vectored-engines.js",
+    # `vectored-engines.js` steps an Engine's heat (PHY-45).
+    "rocket-burn.js": VIEWER / "rocket-burn.js",
     "engine-revs.js": VIEWER / "engine-revs.js",
     # `vehicle-base.js` and `vectored-engines.js` import the rotor spin law.
     "engine-spin.js": VIEWER / "engine-spin.js",

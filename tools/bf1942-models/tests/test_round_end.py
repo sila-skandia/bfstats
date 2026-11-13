@@ -30,7 +30,8 @@ from pathlib import Path
 ROOT = Path(__file__).resolve().parents[1]
 VIEWER = ROOT / "viewer"
 HARNESS = Path(__file__).with_name("round_end_harness.mjs")
-MODULES = ("round-end.js", "round-state.js", "scoreboard.js", "bitmap-text.js")
+# `bitmap-text.js` reads the DISPLAY MODE's width for its glyph metrics (FONT-3).
+MODULES = ("round-end.js", "round-state.js", "scoreboard.js", "bitmap-text.js", "video-settings.js")
 
 
 def run_harness() -> dict:

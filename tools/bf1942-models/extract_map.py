@@ -1955,6 +1955,20 @@ def projectile_materials(library) -> dict[str, dict]:
         # is what the viewer assumes when it is absent.
         if template.no_ff_sound:
             entry["noFFSound"] = True
+        # `useMMOnEndEffect 1` (`ProjectileTemplate+0x14e`, read at lnxded
+        # 0x0831f602): the end-of-life effect is the MaterialManager's for the
+        # round's material against the surface it last struck, or water.
+        # Written only when set (`viewer/round-impact.js` `detonate`).
+        if template.use_mm_on_end_effect:
+            entry["useMMOnEndEffect"] = True
+        # `projectileType` (`ProjectileTemplate+0x1d4`, constructor -1): the
+        # client lights `ShowMineIcon` for a friendly round of type 1 that
+        # `addToProjectileList 1` filed in the projectile map
+        # (`viewer/mine-icon.js`). Written only for a listed round that
+        # declares a type; vanilla's one is `LandmineProjectile`, 1.
+        if template.add_to_projectile_list and template.projectile_type is not None \
+                and template.projectile_type >= 0:
+            entry["projectileType"] = template.projectile_type
         if entry:
             out[name] = entry
     return out
@@ -3322,7 +3336,8 @@ class _Block:
     `SpawnPoint` the words the spawn report reads, and for an `ObjectSpawner`
     the object each side gets."""
 
-    __slots__ = ("name", "kind", "source", "order", "children", "spawn", "spawns")
+    __slots__ = ("name", "kind", "source", "order", "children", "spawn", "spawns",
+                 "shuts_spawns")
 
     def __init__(self, name: str, kind: str | None, source: str, order: int) -> None:
         self.name = name
@@ -3334,6 +3349,8 @@ class _Block:
         self.spawn: SoldierSpawnTemplate | None = None
         # team -> object, an ObjectSpawner's `setObjectTemplate` lines.
         self.spawns: dict[int, str] = {}
+        # `disableSpawnPointsOnEnter` on a PlayerControlObject (SPAWN-39).
+        self.shuts_spawns = False
 
 
 class LevelFirst:
@@ -3503,6 +3520,12 @@ class TemplateIndex:
                     last[1] = values
                 else:
                     last[2] = values[0]
+            elif cmd == "disablespawnpointsonenter":
+                # A bool read as a float (ConsoleClass510 0x082f4920: `!= 0`).
+                try:
+                    current.shuts_spawns = bool(tokens) and float(tokens[0]) != 0.0
+                except ValueError:
+                    pass
             elif current.spawn is not None:
                 spawn = current.spawn
                 if cmd == "setspawnid":
@@ -3780,6 +3803,11 @@ def _vehicle_soldier_spawn_report(info: LevelInfo, objects, game,
                 # hull the page floats or settles off its pad would leave
                 # the bake's point behind.
                 entry["carrierLocal"] = [round(lx, 3), round(ly, 3), round(-lz, 3)]
+            # SPAWN-39: the carrier's `disableSpawnPointsOnEnter`. Its points
+            # are off while someone holds its own seat. Written only when set.
+            carrier_block = index.get(vehicle)
+            if carrier_block is not None and carrier_block.shuts_spawns:
+                entry["disableOnEnter"] = True
             _stamp_seat(entry, tpl)
             _stamp_audience(entry, settings)
             out.append(entry)

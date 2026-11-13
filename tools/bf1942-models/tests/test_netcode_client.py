@@ -73,6 +73,17 @@ class NetcodeClientTests(unittest.TestCase):
     def setUpClass(cls):
         cls.results = run_harness()
 
+    def test_the_snapshot_names_the_seated_players_hull_at_its_ack(self):
+        # The hull row of the snapshot whose own row seats this player in it,
+        # un-lerped, with that row's ack: the driven hull's state at the
+        # acknowledged word.
+        hull = self.results["selfHull"]
+        self.assertEqual(hull["id"], 3)
+        self.assertEqual(hull["ack"], 0)
+        self.assertEqual([hull["x"], hull["y"], hull["z"]], [5, 1, 5])
+        self.assertEqual(hull["q"], [0, 0, 0, 1])
+        self.assertIsNone(self.results["selfHullOnFoot"])
+
     def test_join_row(self):
         row = self.results["joinRow"]
         self.assertEqual(row["room"], "abc")

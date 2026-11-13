@@ -322,6 +322,9 @@ export class Surface {
      * term.
      */
     this.coeff = lift * GRAVITY * GRAVITY_NORMALISER;
+    /** The template's own pair, which `coeff` is scaled from while the hull
+     *  is critically damaged (`Aircraft.criticalLift`). */
+    this.coeffFull = this.coeff;
 
     /**
      * ...and this is where the two values *are* told apart.
@@ -350,6 +353,9 @@ export class Surface {
     const [ax, ay, az] = spec.attach || [0, 0, 0];
     const [ox, oy, oz] = spec.offset || [0, 0, 0];
     this.apply = new THREE.Vector3(ax + ox, ay + oy, -(az + oz));
+    /** The Wing's own origin in the hull's frame (`addTemplate`'s position
+     *  alone): what `getAbsolutePosition` answers for it. */
+    this.attach = new THREE.Vector3(ax, ay, -az);
 
     // `mountQuaternion` is the same rotation already conjugated: a spec built
     // from an extracted scene reads the node's own glb quaternion, which IS
@@ -416,6 +422,30 @@ export class Surface {
     return out.copy(this.mount).multiply(_hinge.setFromAxisAngle(
       HINGE, (this.pitchOffset - deflectionDeg * this.flapShare) * RAD));
   }
+}
+
+/** The least a critically damaged hull's Wing keeps of its lift: the float
+ *  at lnxded `0x086b1ca0`, `Wing::handleMessage`'s lower clamp. */
+export const CRITICAL_LIFT_FLOOR = 0.1;
+
+/** `BCompositeObject::getBoundingRadius` (lnxded `0x08165630`) over a scene
+ *  node, as `entry-points.js` `boundingRadius` reads it: a mesh's bounding
+ *  sphere about the node's origin, or a child's distance plus its radius. */
+function compositeRadius(node) {
+  if (!node) return 0;
+  let own = 0;
+  const geometry = node.geometry;
+  if (geometry) {
+    if (!geometry.boundingSphere && geometry.computeBoundingSphere) geometry.computeBoundingSphere();
+    const sphere = geometry.boundingSphere;
+    if (sphere && sphere.radius >= 0) own = sphere.center.length() + sphere.radius;
+  }
+  for (const child of node.children ?? []) {
+    const s = child.scale;
+    const scale = s ? Math.max(Math.abs(s.x), Math.abs(s.y), Math.abs(s.z)) : 1;
+    own = Math.max(own, child.position.length() + scale * compositeRadius(child));
+  }
+  return own;
 }
 
 // Scratch. A per-surface model runs eight lift evaluations per sub-step and up
@@ -832,6 +862,12 @@ function surveyAircraft(root, physics, options) {
         differential: part.differential ?? DEFAULT_DIFFERENTIAL,
         torque: part.torque ?? DEFAULT_TORQUE,
         noPropellerEffectAtSpeed: part.noPropellerEffectAtSpeed ?? DEFAULT_NO_PROPELLER_EFFECT_AT_SPEED,
+        // The rocket motors' burn (PHY-45, `rocket-burn.js` reads these off
+        // the engine entry); absent on an engine without heat.
+        heatIncrement: part.heatIncrement,
+        coolingFactor: part.coolingFactor,
+        heatBarType: part.heatBarType,
+        inverseHeatBar: part.inverseHeatBar,
         ...engineGeometry(root, node),
       });
       // `setMaxSpeed` over the rev span, as `CORSAIR.throttleRate` reads it.
@@ -1147,13 +1183,67 @@ export class Aircraft extends Vehicle {
   get hullPushOut() {
     const law = this.groundLaw;
     if (!law || !(law.sleepiness > 0)) return false;
-    // A plane shot down in the air comes down under the wreck list's own
-    // fall (`world-vehicle-tick.js` `stepFallingWrecks`, its minimum sink)
-    // and crashes where its origin reaches its ride height
+    // A plane shot down in the air glides down on this same law with its
+    // engine stopped (`world-vehicle-tick.js` `stepFallingWrecks`) and
+    // crashes where its origin reaches its ride height
     // (`vehicle-wrecks.js` `hasLanded`); held out of the ground by its
     // wings it would tumble on them for seconds before that.
     if (this.fallingWreck) return false;
     return !(this.held ?? spawnHoldOf(this.node)?.released === false);
+  }
+
+  /**
+   * The radius `Wing::handleMessage` divides by: the root's
+   * `BCompositeObject::getBoundingRadius` (lnxded `0x08165630`, COL-22), the
+   * larger of a node's own geometry radius and, over its children, the
+   * child's distance plus the child's radius. Read off the hull's node once.
+   */
+  criticalLiftRadius() {
+    if (this._criticalRadius == null) this._criticalRadius = compositeRadius(this.node);
+    return this._criticalRadius;
+  }
+
+  /**
+   * The hull went critical (TemplateMessage 0x14, sent by its Armor on the
+   * crossing, HP-13/HP-17): every Wing's lift pair is scaled by where the
+   * Wing sits across the hull. `Wing::handleMessage` (lnxded `0x08250bf0`,
+   * the 0x14 branch `0x08250d70`..`0x08250ee0`):
+   *
+   *     f = (wing.absolutePosition.x - root.absolutePosition.x + R) / (2 R)
+   *     f = clamp(f, 0.1, 1)             (0.1 at `0x086b1ca0`)
+   *     if (armor.getLastHitPlace().x < 0) f = 1 - f     (1.0 at `0x086ba8d4`)
+   *     wing.wingLift = f * template.wingLift            (`+0x148`)
+   *     wing.flapLift = f * template.flapLift            (`+0x14c`)
+   *
+   * with `R` the root's bounding radius and the last hit place the hit
+   * point less the root's position (`GameServer::_giveDamage` `0x0814b996`).
+   * Both are WORLD x, not the hull's own lateral axis: a plane flying along
+   * the world's x has every wing at the same x and keeps half its lift on
+   * each, one flying along z loses one side and rolls. `PhysicsWing::
+   * updatePhysics` (`0x0824ed30`) reads the instance's pair each tick, so
+   * the scale is taken once, here, and holds until the recovery (0x13 puts
+   * the template's pair back, `0x08250cac`). Destruction (0x15) writes the
+   * destroyed byte alone (`0x08250d5a`), so a wreck keeps whatever it had.
+   *
+   * @param {number} hitX the last hit place's world x (0 where unknown: the
+   *   engine's test is `< 0`, so 0 does not mirror)
+   */
+  criticalLift(hitX = 0) {
+    const radius = this.criticalLiftRadius();
+    if (!(radius > 0)) return;
+    for (const surface of this.surfaces) {
+      const x = _r.copy(surface.attach).applyQuaternion(this.state.orientation).x;
+      let f = clamp((x + radius) / (2 * radius), CRITICAL_LIFT_FLOOR, 1);
+      if (hitX < 0) f = 1 - f;
+      surface.coeff = surface.coeffFull * f;
+    }
+    this.liftIsCritical = true;
+  }
+
+  /** The recovery out of critical (0x13), or a fresh hull on its pad. */
+  fullLift() {
+    for (const surface of this.surfaces) surface.coeff = surface.coeffFull;
+    this.liftIsCritical = false;
   }
 
   /** The body world moved the hull out of the ground: the law's last

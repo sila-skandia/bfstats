@@ -158,17 +158,69 @@ export function installTestHooks(page) {
       const v = h.vars || {};
       return { shown: !!h.canvas && !h.canvas.hidden, Timer: v.Timer, TimerText: v.TimerText,
                SpawnText: v.ShowSpawnText ? v.SpawnText : null,
-               status: v['StatusMessage/ShowStatusMessage'] ? v['StatusMessage/StatusMessage'] : null };
+               status: v['StatusMessage/ShowStatusMessage'] ? v['StatusMessage/StatusMessage'] : null,
+               // The warning plate (`DisconnectMessage/*`, `chat-log.js` `warningPlate`).
+               warning: v['DisconnectMessage/ShowDisconnectMessage'] ? v['DisconnectMessage/DisconnectMessage'] : null };
     };
     // Gun state, for headless checks. Muzzle world positions are what settles the
     // question the moving-vehicle port exists to answer: a tracer's position must
     // diverge from the muzzle it left, not travel with it.
     window.__effects = () => page.effects.stats();
+    // The bundles the engine runs by itself (`ambient-effects.js`): how many
+    // hosts the level holds by gate, how many run, and (`detail`) each host.
+    window.__ambient = detail => {
+      const ambient = page.effects.ambient;
+      if (!ambient) return null;
+      const stats = ambient.stats();
+      if (detail === 'cost') {
+        // What one look at every host costs, and one `EffectPlayer.advance`
+        // of nothing new (dt 0): the per-frame price of the running bundles.
+        const t0 = performance.now();
+        for (let i = 0; i < 20; i++) ambient.lookAll();
+        const t1 = performance.now();
+        for (let i = 0; i < 200; i++) page.effects.advance(0);
+        const t2 = performance.now();
+        return { ...stats, lookAllMs: (t1 - t0) / 20, advanceMs: (t2 - t1) / 200,
+                 runs: page.effects.runs.length, particles: page.effects.particles.length };
+      }
+      if (detail) {
+        // The live particles of the ambient runs: where each is and how it draws.
+        stats.particles = page.effects.particles.filter(q => q.emitter && page.effects.runs.some(
+          r => r.ambient && r.emitters.includes(q.emitter))).slice(0, 40).map(q => ({
+          template: q.spec?.template ?? null, at: q.position.map(n => Math.round(n * 100) / 100),
+          age: +q.age.toFixed(2), ttl: +q.ttl.toFixed(2), size: q.size,
+          shown: !!q.mesh?.visible, opacity: q.mesh?.material?.opacity ?? null,
+          scale: q.mesh ? +q.mesh.scale.x.toFixed(2) : null,
+        }));
+        stats.list = ambient.hosts.map(h => ({
+          name: h.name, parent: h.node.parent?.name ?? null, kind: h.gate?.kind ?? null,
+          running: !!h.handle, at: Array.from(h.node.matrixWorld.elements.slice(12, 15)),
+          // The nodes over it, nearest first, and whether each is switched on.
+          above: (() => {
+            const chain = [];
+            for (let at = h.node.parent; at && chain.length < 8; at = at.parent) {
+              chain.push(`${at.name}${at.visible === false ? ' (off)' : ''}`);
+            }
+            return chain;
+          })(),
+        }));
+      }
+      return stats;
+    };
     // The sound pool: budget, live sources, what was played, dropped, stolen or
     // ruled inaudible. A voice-count check reads this beside its own patched
     // `AudioBufferSourceNode.start` counter, and the two must agree.
     window.__effectAudio = detail => (page.effectAudio.listener
       ? page.effectAudio.snapshot(!!detail) : { loaded: false });
+    // The soldiers' movement sounds (`soldier-sound.js`): each one their
+    // `SoldierSound` fired, oldest first (`own` is the player's), whatever
+    // the volume; and the mixer's voice pool (`voice-pool.js`).
+    window.__soldierSounds = () => ({
+      log: (page.soldierSoundLog ?? []).map(e => ({ ...e })),
+      pool: page.voicePoolStats?.() ?? null,
+    });
+    // `c_PILie`, the press: the stance changes are checked through it.
+    window.__toggleProne = () => { page.localPlayer.toggleProne(); return page.localPlayer.prone; };
     // A bot's bullets flown for their round's script (`passing-rounds.js`):
     // how many flew, how many never came near the ear, how many are in flight.
     // `buffers`: the decoded samples of every passing-round script, so a

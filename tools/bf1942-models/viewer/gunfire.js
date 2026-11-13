@@ -140,6 +140,11 @@ export class GunFire {
     // handle's `end()` is called when the round is gone (`round-spawners.js`).
     // Null (the model browser) stands nothing.
     this.onRoundSpawners = null;
+    // A round that is itself a vehicle (`projectile.vehicle`, FA-29):
+    // `(group, projectile, { position, quaternion, velocity }) => boolean`,
+    // true when the page stood the vehicle and the round is spent
+    // (`rocket-ride.js`). Null, or false, flies the round as its drawn body.
+    this.onVehicleRound = null;
     // The ObjectSpawners an impact's EffectBundle carries (EMT-14: BF1918's
     // flamethrower fire): `(spawners, record) => void`, with `spawners` from
     // `effects.spawnersAt` (`{ frame, runs }`), called once per live hit

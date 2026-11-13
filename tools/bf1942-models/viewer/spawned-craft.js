@@ -10,8 +10,10 @@ const staticHeld = new WeakSet();
 /** The craft a land or air hull's spawner holds (`hullHeldCraftUnder`). */
 const hullHeld = new WeakSet();
 /** A static's held craft -> every craft its spawner can have alive at once,
- *  the baked one first (`heldSlotsOf`). */
+ *  the baked one first (`heldSlotsOf`). A ship's craft too. */
 const heldSlots = new WeakMap();
+/** A ship's craft -> where its spawner stands on her (`craftSpawnerOf`). */
+const craftSpawners = new WeakMap();
 
 /**
  * The objects an ObjectSpawner launches from a ship, split off as vehicles
@@ -51,10 +53,12 @@ const heldSlots = new WeakMap();
  * SPAWN-24).
  *
  * `shipCraft: false` leaves the ships' craft baked and splits off only what
- * a static's spawner holds: the room server's world, which floats no ship
- * and so has no deck to hold a craft on (`server/level-data.mjs`).
- * `extraSlots: false` makes no copies: the room runs no spawner law for a
- * held craft yet, so it has the baked one alone.
+ * a static's spawner holds. The room server passed it while it floated no
+ * ship; it splits them off as the page does now (`server/room-ships.mjs`).
+ * `extraSlots: false` makes no copies; `'ship'` copies a ship's craft only,
+ * which is what the room server runs a spawner law for
+ * (`server/room-pads.mjs`); a static's held craft has the baked one alone
+ * there.
  */
 export function detachSpawnedCraft(root, { clone = o => o.clone(true), shipCraft = true, extraSlots = true } = {}) {
   let spawners = null;
@@ -113,7 +117,7 @@ export function detachSpawnedCraft(root, { clone = o => o.clone(true), shipCraft
       spawners.attach(o);
       const slots = [o];
       const max = o.userData.heldSpawner.maxNrOfObjectSpawned;
-      for (let i = 1; extraSlots && i < (Number.isInteger(max) ? max : 1); i++) {
+      for (let i = 1; extraSlots === true && i < (Number.isInteger(max) ? max : 1); i++) {
         const twin = clone(o);
         // It shares the baked craft's place, as a pad's other-side vehicle
         // does (`level-statics.js` `loadPadVariants`).
@@ -145,12 +149,37 @@ export function detachSpawnedCraft(root, { clone = o => o.clone(true), shipCraft
     // the Nimitz's MH-53 and UH-60 pads and the Enterprise's F-14 and
     // Harrier pads, so those lift straight off the deck; a node without the
     // word (an older export) keeps the hold every vanilla ship spawner sets.
-    if (o.userData.physics.vehicleCategory === 'VCAir' && o.userData.heldSpawner?.holdObject !== false) {
+    const local = heldLocal(host, o);
+    const air = o.userData.physics.vehicleCategory === 'VCAir' && o.userData.heldSpawner?.holdObject !== false;
+    if (air) {
       // The spawner's pose on its ship, which is the pose the exporter baked,
       // plus its `spawnOffset` (`heldLocal`).
-      spawnHolds.set(o, { host, local: heldLocal(host, o) });
+      spawnHolds.set(o, { host, local });
     }
     spawners.attach(o);
+    // A ship's spawner is an ObjectSpawner like any pad's (SPAWN-9, SPAWN-24):
+    // `maxNrOfObjectSpawned` objects alive at once (three Daihatsus from each
+    // of a Hatsuzuki's davits), the next one stood on the spawner when the
+    // last has left its `radius`, each a vehicle of its own. The bake holds
+    // one; the others are copies, parked until the spawner's law stands them
+    // (`level-statics.js` `buildHeldPads`, `server/room-pads.mjs`). Only a
+    // craft the exporter stamped with its spawner has one to run.
+    if (!o.userData.heldSpawner) continue;
+    craftSpawners.set(o, { host, local });
+    const slots = [o];
+    const max = o.userData.heldSpawner.maxNrOfObjectSpawned;
+    for (let i = 1; extraSlots && i < (Number.isInteger(max) ? max : 1); i++) {
+      const twin = clone(o);
+      twin.userData.padVariant = true;
+      twin.userData.heldSlot = i;
+      spawners.add(twin);
+      twin.updateMatrixWorld(true);
+      if (air) spawnHolds.set(twin, { host, local });
+      craftSpawners.set(twin, { host, local });
+      slots.push(twin);
+      twins.push(twin);
+    }
+    for (const slot of slots) heldSlots.set(slot, slots);
   }
   return craft.concat(twins);
 }
@@ -314,6 +343,16 @@ export function hullHeldActive(node, active) {
   const hold = spawnHolds.get(node);
   if (!hold?.onHull) return null;
   return hold.released !== false || !!active(hold.host);
+}
+
+/**
+ * Where the ship's spawner that launched `node` stands: `{ host, local }`,
+ * her node and the spawner's pose on her (the baked pose plus its
+ * `spawnOffset`), or null for a craft no ship's spawner launched. The
+ * spawner's world pose now is `host.matrixWorld * local`.
+ */
+export function craftSpawnerOf(node) {
+  return craftSpawners.get(node) ?? null;
 }
 
 /**

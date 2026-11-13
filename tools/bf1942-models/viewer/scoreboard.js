@@ -464,7 +464,7 @@ export function leafText(el, vars) {
  *   boundTexture(name)                 -> the same for a bound picture's live
  *                                         value (optional; `texture` if absent)
  *   measure(fontId, text)              -> the face's advance, virtual units
- *   drawText(ctx, fontId, text, x, y, rgb)
+ *   drawText(ctx, fontId, text, x, y, rgb, snap)   `snap` on a list's rows
  *   baseline(fontId)                   -> the face's baseline below its line top
  *   hover(el)                          -> true when the pointer is over a button
  *   rowColor(row)                      -> the row's own text colour, or null
@@ -528,7 +528,10 @@ export function paintLeaves(ctx, layout, elements, vars, res, rows = {}) {
         const geo = listGeometry(el, layout.listColumns, res.baseline?.(el.font) ?? 0);
         visible[el.data] = geo.visibleRows;
         list.slice(0, geo.visibleRows).forEach((row, index) => {
-          const band = rowBand(row);
+          // A picked row (`scoreboard-votes.js`) is banded in the list's own
+          // `select` colour, whose alpha the file leaves at 0.
+          const band = row.selected && el.select
+            ? [...el.select.slice(0, 3), el.select[3] || 0.5] : rowBand(row);
           if (band) {
             const r = geo.band(index);
             ctx.globalAlpha = band[3];
@@ -559,7 +562,8 @@ export function paintLeaves(ctx, layout, elements, vars, res, rows = {}) {
           ctx.imageSmoothingEnabled = false;
           for (const cell of geo.cells(index, row)) {
             const text = clipText(cell.text, cell.clip, t => res.measure(el.font, t));
-            res.drawText(ctx, el.font, text, Math.round(cell.x), Math.round(cell.y), rgb);
+            // A list row: the list widget snaps its glyphs to device pixels (FONT-5).
+            res.drawText(ctx, el.font, text, Math.round(cell.x), Math.round(cell.y), rgb, true);
           }
         });
         break;

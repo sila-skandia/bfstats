@@ -455,21 +455,26 @@ import { seatConeOf } from './seat-cone.js';
 import { declaredBarrels, deviationIndex, inputDice } from './bot-deviation.js';
 import { inputRecoilRand } from './recoil.js';
 import { EffectLibrary, EffectPlayer } from './effects.js';
+import { AmbientEffects } from './ambient-effects.js';
 import { DEFAULT_VOICE_BUDGET, EffectAudio } from './effect-audio.js';
 import { PassingRounds } from './passing-rounds.js';
 import { chooseAntialias, storedAntialias } from './render-antialias.js';
+import { PHONE_RATIO_CAP, frameGate, phoneFps, phoneReplay, phoneVideo } from './replay-phone.js';
 import {
   changeSound, chooseHardware3d, currentSound, effectVoiceBudget, onSoundChange,
   storeHardware3d, storedHardware3d,
 } from './sound-options.js';
+import { setVoiceChannels } from './voice-pool.js';
 import { ds3dDopplerFactor, ds3dHardware, setDs3dDopplerFactor, setDs3dHardware } from './ds3d-pan.js';
-import { changeVideo, displayOf, screenFrame } from './video-settings.js';
+import { changeVideo, displayOf, hasStoredVideo, screenFrame, storedVideo } from './video-settings.js';
 import { lodPercent, setLodPercent } from './mesh-cull.js';
 import { billboardDistanceScale, setBillboardDistanceScale, setTreesDrawn } from './tree-foliage.js';
 import { emitterIntensityScale, setEmitterIntensityScale } from './effects-core.js';
 import { ownNameTagDistances, setOwnNameTagDistances } from './nametags.js';
 import { cameraShakeFactorGlobal, setCameraShakeFactorGlobal } from './soldier.js';
 import { createVideoApply } from './video-apply.js';
+import { createShadowPass } from './shadow-pass.js';
+import { shadowTemplates } from './dynamic-shadows.js';
 import { createGlContextGuard } from './gl-context.js';
 import { createReplayController, recordingInfo } from './replay.js';
 import { installRecordingOpener, loadingNote, ownModHref, packHref, unplayableReason } from './replay-open.js';
@@ -490,6 +495,11 @@ import { createScoreboardScreen } from './scoreboard-screen.js';
 import { createNametagLayer } from './nametag-layer.js';
 import { combatMaterial } from './world-fields.js';
 import { kitIndexOf } from './support-calls.js';
+import { createToolTips } from './tooltips.js';
+import { mapFlash } from './map-flash.js';
+import { glyphTable, snapToPixel } from './bitmap-text.js';
+import { setTextMetrics as setMenuTextMetrics } from './play/menu-screen.js';
+import { setGlyphTable as setHudGlyphTable } from './hud.js';
 import { createDeployScreen } from './deploy-screen.js';
 import { createSpawning } from './spawning.js';
 import { SINGLE_PLAYER_SPAWN_KEY, singlePlayerSpawnParams, singlePlayerSpawnSeconds } from './spawn-timer.js';
@@ -508,8 +518,11 @@ import { createKitDropsPage } from './kit-drops-page.js';
 import { wearPagePaint } from './level-skin.js';
 import { createDeployablesPage } from './deployables-page.js';
 import { createRoundSpawners } from './round-spawners.js';
+import { createRocketRide } from './rocket-ride.js';
 import { createSeatPose } from './seat-pose.js';
 import { createFootBody } from './foot-body.js';
+import { createSoldierFaces, lipSync as lipSyncSymbols, shareSoldierFaces } from './soldier-face.js';
+import { clone as cloneSkinned } from './vendor/utils/SkeletonUtils.js';
 import { createSoldierView } from './soldier-view.js';
 import { deathCameraLines } from './death-camera.js';
 import { createPageAudio } from './page-audio.js';
@@ -589,11 +602,16 @@ const FLY_KEYS = new Set([
 // features/intel-gpu-msaa-hang). `dpr` replaces the cap for the WebGL canvas
 // alone; the 2D map surfaces keep their own.
 const renderQuery = new URLSearchParams(location.search);
-const msaa = chooseAntialias({
-  aa: renderQuery.get('aa'),
-  stored: storedAntialias(),
-  userAgent: navigator.userAgent,
-});
+// A replay on a phone draws lean (`replay-phone.js`): no MSAA unless chosen,
+// a lower pixel ratio, LOW video and 30 frames a second.
+const PHONE_REPLAY = phoneReplay(renderQuery);
+const msaa = PHONE_REPLAY && !renderQuery.has('aa') && storedAntialias() === null
+  ? { antialias: false, reason: 'phone replay', gpu: '' }
+  : chooseAntialias({
+    aa: renderQuery.get('aa'),
+    stored: storedAntialias(),
+    userAgent: navigator.userAgent,
+  });
 if (msaa.reason === 'intel-mesa') {
   console.info(`map: MSAA off on ${msaa.gpu}: Intel under Mesa hangs drawing effects with it (OPTIONS > VIDEO turns it on)`);
 }
@@ -606,7 +624,8 @@ const dprOverride = dprParam > 0 && dprParam <= 4 ? dprParam : null;
 // What the page draws at until OPTIONS > VIDEO's DISPLAY MODE is read
 // (`video-apply.js`, once `resize` exists below): `?dpr`, else the screen's
 // ratio capped at 2, which is also the list's default entry.
-const basePixelRatio = dprOverride ?? Math.min(devicePixelRatio, 2);
+const ratioCap = PHONE_REPLAY ? PHONE_RATIO_CAP : 2;
+const basePixelRatio = dprOverride ?? Math.min(devicePixelRatio, ratioCap);
 renderer.setPixelRatio(basePixelRatio);
 renderer.outputColorSpace = THREE.SRGBColorSpace;
 const stage = document.getElementById('stage');
@@ -928,10 +947,29 @@ const pageInput = createPageInput(bag(
   from(() => localLook, `lookDelta mouseInput`),
   from(() => localPlayer, `aircraft car occupancy soldier soldierDead switchSeat toggleProne`),
   from(() => mapSurfaces, `bfmap fullmapBox minimapBox toggleFullMap`),
-  from(() => pageAudio, `ensureAudioContext`),
+  from(() => pageAudio, `audioListener ensureAudioContext`),
+  // P pauses single player and T is the tooltip key (page-input.js).
+  {
+    hudVars: () => hudFeed.gameHud.vars,
+    pauseText: () => hudFeed.gameHud.toolTipLayout?.strings?.GAME_PAUSE ?? null,
+    replayActive: () => !!replayController?.active(),
+    roomJoined: () => room.roomJoined,
+    toggleToolTip: () => toolTips.toggleKey(),
+  },
   from(() => pageConsole, `consoleCaptures escMenu escMenuCaptures escMenuKeydown escMenuKeyup
     gameConsole setConsoleOpen setEscMenu`),
   from(() => scoreboard, `scoreboardOpen scoreFromSpawn setScoreboard`),
+  // The vote keys (`c_PIVoteYes` / `No`) and SHOW MAP VOTE, in a room
+  // (`room-host-client.js`).
+  { voteKey: option => room.host?.castKey(option) ?? false,
+    showMapVote: () => {
+      if (!room.roomJoined || !room.host?.live) return false;
+      // The map-vote screen (`scoreboard-votes.js`); a pack without its
+      // layout lists the maps in the message log instead.
+      if (scoreboard.showMapVote()) return true;
+      for (const line of room.host.mapVoteLines()) comms?.chatLine?.(line, 0);
+      return true;
+    } },
   from(() => seatCamera, `cameraMode cycleView`),
   from(() => soldierKit, `altFireDemolitions cycleKitWeapon handWeapon itemsLocked
     selectKitWeapon startReload weaponBarFire`),
@@ -995,7 +1033,53 @@ const touchControls = createTouchControls(bag(
     get optPilot() { return optPilot; },
   },
 ));
+// The HUD's text takes the display width's glyph metrics (ledger FONT-3).
+setHudGlyphTable(glyphTable);
+// And the Escape menu's screens, with the list's and the text field's snap (FONT-5).
+setMenuTextMetrics({ glyphTable, snapToPixel });
+// The profile's tooltip option (`game.setToolTip`, off in the shipped
+// profile) and the tooltip plate it gates (tooltips.js).
+let toolTipOn = false;
+const toolTips = createToolTips({
+  vars: () => hudFeed.gameHud.vars,
+  layout: () => hudFeed.gameHud.toolTipLayout ?? null,
+  // The bound key's name, from whichever control map binds the trigger.
+  keyLabel: trigger => controls.rowLabels({ trigger }, null)[0]
+    ?? controls.rowLabels({ trigger }, 'infantry')[0] ?? '',
+  enabled: () => toolTipOn,
+  setEnabled: on => {
+    toolTipOn = !!on;
+    controls.setGeneralOption('game.setToolTip', on ? 1 : 0);
+  },
+  get occupancy() { return localPlayer.occupancy; },
+  deployActive: () => deployScreen.deployActive(),
+  deployKit: () => kitIndexOf(spawning.deployKit),
+  soldierAlive: () => !!(localPlayer.soldier && !localPlayer.soldierDead),
+  nearEntry: () => vehicleEntry.nearEntry,
+  // Over the spawn screen the plate is drawn on the spawn timer's canvas.
+  spawnVars: () => hudFeed.respawnHud?.vars ?? null,
+  gameplayMode: () => level.extras?.gameplayMode ?? '',
+  // Capture the Flag: within an enemy flag's own radius (ctf.js).
+  nearEnemyFlag: () => {
+    const flags = ctfPage.ctf?.flags;
+    const s = localPlayer.soldier;
+    if (!flags || !s) return false;
+    const team = spawning.deployTeamId;
+    return flags.some(f => f.team !== team && f.carrier == null
+      && Math.hypot(f.position[0] - s.x, f.position[1] - s.y, f.position[2] - s.z) <= f.base.flag.radius);
+  },
+  // The local side's tickets over what it started the round with.
+  ticketShare: () => {
+    if (!spawning.deployJoined && !room.roomJoined) return null;
+    if (/objective/i.test(level.extras?.gameplayMode ?? '')) return null;
+    const team = spawning.deployTeamId;
+    const now = level.extras?.tickets?.[`team${team}`];
+    const start = roundStartTickets?.[team];
+    return start > 0 && Number.isFinite(now) ? now / start : null;
+  },
+});
 const pageConsole = createPageConsole(bag(
+  { toolTip: () => toolTipOn, setToolTip: on => { toolTipOn = !!on; } },
   from(() => comms, `radioToolTip setRadioToolTip`),
   from(() => level, `extras`),
   from(() => localLook, `mouseInput`),
@@ -1032,8 +1116,35 @@ window.__consoleWords = registerViewerCommands(pageConsole.gameConsole, {
   // retail relay's is not reached through this page.
   teamKillRoom: () => (room.roomJoined && !room.serverAuthority
     ? verb => room.netSendAction({ type: 'tk', verb }) : null),
+  // The room's host half (gap audit entries 26 and 28): the `admin.*` words
+  // and the votes go to an own room's server (`server/room-host.mjs`).
+  roomHost: () => (room.roomJoined && !room.serverAuthority && room.host ? {
+    admin: (cmd, args) => room.sendAdmin(cmd, args),
+    vote: (kind, target) => room.host.vote(kind, target),
+    maps: () => room.host.maps,
+    settings: () => room.host.settings,
+    slotOf: who => {
+      const n = Number(who);
+      if (String(who ?? '').trim() !== '' && Number.isInteger(n)) return n;
+      const want = String(who ?? '').trim().toLowerCase();
+      const hit = scoreboard.scoreboardPlayers().find(p => String(p.name ?? '').toLowerCase() === want);
+      return hit ? (hit.slot ?? hit.serverId ?? null) : null;
+    },
+  } : null),
   bfmap: () => mapSurfaces?.bfmap ?? null,
   chatLog: () => comms?.chatLog?.() ?? null,
+  // The typed words about players (entry 45 of the retail gap audit):
+  // `suicide`, `say`, `name`, the ignore list, the radio switches and the
+  // buddy list. Off a replay, where nobody of the page's is in the world.
+  suicide: () => (replayController?.active() ? null : () => {
+    if (localPlayer.soldierDead || !localPlayer.soldierArmor) return;
+    if (room.roomJoined) { room.netSendAction({ type: 'suicide' }); return; }
+    const armor = localPlayer.soldierArmor;
+    armor.applyDamage(armor.hitPoints + armor.maxHitPoints);
+  }),
+  sayAll: () => (replayController?.active() ? null : text => comms.sayAll(text)),
+  rename: () => (replayController?.active() ? null : name => room.rename(name)),
+  social: () => comms?.social ?? null,
   effectsRoot: () => effects?.root ?? null,
   optWire: () => optWire,
   // OPTIONS > VIDEO and SOUND, the same paths their screens take.
@@ -1050,6 +1161,8 @@ window.__consoleWords = registerViewerCommands(pageConsole.gameConsole, {
   }),
   crosshair: () => ({ factors: CROSSHAIR_FACTORS, color: () => controls.crossHairColor(),
     setColor: rgb => controls.setCrossHairColor(rgb) }),
+  // `game.setRadioFlashTime` and `game.setPlayerBlink` (map-flash.js).
+  mapFlash: () => mapFlash,
   shake: () => ({ get: cameraShakeFactorGlobal, set: setCameraShakeFactorGlobal }),
   setTrees: on => setTreesDrawn(level.currentRoot, on),
   // VID-1 and VID-2's three numbers in the client's own units: the tree
@@ -1127,6 +1240,8 @@ setDs3dHardware(chooseHardware3d({
 const videoApply = createVideoApply({
   renderer,
   dprOverride,
+  ratioCap,
+  initial: PHONE_REPLAY ? phoneVideo(hasStoredVideo(), storedVideo()) : undefined,
   resize,
   level: () => level,
   roots: () => {
@@ -1134,6 +1249,30 @@ const videoApply = createVideoApply({
   },
 });
 canvasPixelRatio = videoApply.pixelRatio;
+// SHADOWS (ledger VID-7, DSH-1..DSH-9): the `hasDynamicShadow` objects within
+// 50 m, each drawn black from up the sun and projected on the terrain
+// (`shadow-pass.js`). The flags are the mod tree's `dynamic-shadows.json`
+// (extract_dynamic_shadows.py); a tree without the file flags nothing, the
+// engine's default for the word.
+let shadowFlags = null;
+fetchFirst(modelUrls(MODELS_BASE, 'dynamic-shadows.json', bust()))
+  .then(r => (r ? r.json() : null))
+  .then(json => { shadowFlags = shadowTemplates(json); })
+  .catch(() => {});
+const shadowPass = createShadowPass({
+  renderer, scene, camera,
+  heightAt: (x, z) => level.collider?.heightfield?.height?.(x, z) ?? null,
+  // `sky.sunLightDirectionVec` as the level wrote it: the vector the client
+  // hands the shadow manager (0x00466b32, 0x005e0159).
+  sunTo: out => {
+    const sd = level.extras?.sunDirection;
+    return sd ? out.set(sd[0], sd[1], sd[2]).normalize() : out.set(0, 1, 0);
+  },
+  templates: () => shadowFlags,
+  shadowColor: () => level.extras?.lighting?.shadowColor ?? null,
+  enabled: () => videoApply.settings.shadows,
+});
+if (params.has('shots')) window.__shadows = shadowPass;
 resize();
 if (renderQuery.has('shots')) window.__videoApply = videoApply;
 const pageAudio = createPageAudio(bag(
@@ -1146,6 +1285,9 @@ const pageAudio = createPageAudio(bag(
   {
     get AUDIO_OFF() { return AUDIO_OFF; }, get bust() { return bust; },
     get camera() { return camera; }, get effectAudio() { return effectAudio; },
+    // A bot's simulated soldier, whose state its movement sounds read.
+    botSoldier: bot => level.world?.player(bot.playerId)?.soldier ?? null,
+    botArmor: bot => level.world?.armorOf?.(bot.playerId) ?? null,
     get fireStates() { return fireStates; },
     get MAPS_BASE() { return MAPS_BASE; }, get MODELS_BASE() { return MODELS_BASE; },
     get optPilot() { return optPilot; }, get scene() { return scene; },
@@ -1164,6 +1306,8 @@ function applyEffectBudget(settings) {
   const m = effectAudio.manifest;
   effectAudio.budget = budget ?? (m?.voiceLimit > 0
     ? Math.max(1, m.voiceLimit - (m.reserved2d ?? 0)) : DEFAULT_VOICE_BUDGET);
+  // The same number is the whole mixer's pool (`voice-pool.js`, SND-44).
+  setVoiceChannels(settings.channels ?? null);
 }
 function showSoundSettings(settings) {
   optSound.checked = !settings.disableSound;
@@ -1259,11 +1403,11 @@ const localPlayer = createLocalPlayer(bag(
     rebuildVehicleInterp`),
   from(() => mapSurfaces, `toggleFullMap`),
   from(() => pageAudio, `handleParachuteEvent handleSoldierFootstep playSoldierDeathSound
-    playSoldierHurtSound playWorldShot stopFallSound`),
+    playSoldierHurtSound playWorldShot soldierSoundTick soldierSoundView stopFallSound`),
   from(() => pageInput, `captured kbLockLeave keys seatAltFire seatFire touchFlying triggerHeld
     wireAltFire wireFirePress`),
   from(() => room, `netSeatRow netSendAction netVehicleIdFor noteOccupiedVehicle remoteCrewTeam requestSeatSwitch
-    roomJoined`),
+    roomJoined roomSeatHeld`),
   from(() => seatCamera, `buildSeatView forgetSeatViews mannedActive seatedCamera view viewFor`),
   from(() => seatPose, `disposeSeatPose followSeat loadSeatPose stepSeatIk`),
   from(() => soldierHud, `triggerHitIndicator`),
@@ -1324,7 +1468,7 @@ const vehicleEntry = createVehicleEntry(bag(
   from(() => level, `collider currentRoot vehicleSpawnActive world`),
   from(() => localPlayer, `aircraft car hullOpenTo leaveSeat markPilot mayEnterHull occupancy setPilot soldier useLens`),
   from(() => pageInput, `releaseButtons`),
-  from(() => room, `netSeatRow netSendAction`),
+  from(() => room, `claimHeldHull heldHullRoots netSeatRow netSendAction roomSeatHeld`),
   from(() => seatCamera, `driveFwd mannedActive`),
   from(() => soldierKit, `drawWeapon holster`),
   from(() => touchControls, `resetMobileControls updateMobileControls`),
@@ -1451,6 +1595,10 @@ const wrecks = createVehicleWrecks(bag(
     // The human died in his hull: whoever killed it killed him (the message
     // log reads it when the death latches, `commsWatchLocalDeath`).
     noteHullKiller: id => comms.noteAttack(LOCAL_PLAYER, speakerOf(id), null, id),
+    // A ridden round's rider goes back to their launcher (`rocket-ride.js`).
+    rideOut: node => rocketRide.rideOut(node),
+    // The pack's tooltip table, for SPAWN-14's exemption (`spawn-safety.js`).
+    toolTipLayout: () => hudFeed.gameHud?.toolTipLayout ?? null,
   },
 ));
 const hullBodies = createHullBodies(bag(
@@ -1487,6 +1635,10 @@ const vehicleHits = createVehicleHits(bag(
     roundTouchedSoldier: (id, team, noFFSound) => roundTouchedSoldier(id, team, noFFSound),
     // In a room the server prices the landing (`server/room-hits.mjs`).
     get reportImpact() { return room.roomJoined ? room.reportImpact : null; },
+    // A room that flies its seat guns itself (`server/room-guns.mjs`, the
+    // HELLO's `rounds.seats`): the page's own copy of such a round is the
+    // picture, and prices and reports nothing (`vehicle-hits.js`).
+    get seatRoundsFromServer() { return !!(room.roomJoined && room.roomClient?.hello?.rounds?.seats); },
     // On a real server the marks are the server's word alone (net-room.js).
     get hitMarksFromServer() { return !!(room.roomJoined && room.serverMarksHits); },
   },
@@ -1654,6 +1806,21 @@ const effects = new EffectPlayer({
   onObject: (object, spec) => effectObjects.adopt(object, spec),
 });
 guns.effects = effects;
+// The bundles an object carries and the engine runs by itself: track and
+// wheel dust, bow waves and wakes, a burning building's smoke
+// (`ambient-effects.js`; the level hands its root over in `level-load.js`).
+// `?ambient=off` leaves them dark, as they were.
+const _ambientEye = [0, 0, 0];
+effects.ambient = new AmbientEffects({
+  effects,
+  ground: () => guns.collider ?? null,
+  eye: () => {
+    camera.getWorldPosition(_effectEar);
+    _ambientEye[0] = _effectEar.x; _ambientEye[1] = _effectEar.y; _ambientEye[2] = _effectEar.z;
+    return _ambientEye;
+  },
+});
+effects.ambient.enabled = params.get('ambient') !== 'off';
 // A bot's bullet is the referee's instant ray, so nothing flies to carry its
 // round's own script (the passing crack, ledger SND-19, SND-37): this flies
 // a point down the ray for it (`passing-rounds.js`, FHX-13).
@@ -1869,10 +2036,13 @@ const vehicleHud = createVehicleHud(bag(
   from(() => vehicleHits, `occupiedVehicleDamage`),
   {
     localName: () => room.roomName,
+    observeCrew: (hull, crew) => comms.observeCrew(hull, crew),
     get bust() { return bust; },
     get fireStateFor() { return fireStateFor; }, get hudPaths() { return hudPaths; },
     get LOCAL_PLAYER() { return LOCAL_PLAYER; }, get optOnFoot() { return optOnFoot; },
     get renderer() { return renderer; },
+    // The live rounds, for the friendly-mine icon (mine-icon.js).
+    get guns() { return guns; },
     // A replay's first person: the followed player's own cross.
     get replayAim() { return replayController?.crosshairAim() ?? null; },
   },
@@ -2132,6 +2302,13 @@ const referee = createBotReferee({
   // skeleton test, where the page draws him.
   capsulesOf: playerId => (playerId !== LOCAL_PLAYER ? botBodies.capsulesOf(playerId)
     : localPlayer.occupancy ? seatPose.seatCapsules() : footBodies.footCapsules()),
+  // The bones the bots' sense rays and aim pick among (AI-123), off the same
+  // drawn skeleton: a soldier on foot's, the human's own or a bot's.
+  soldierBones: player => {
+    const s = player?.soldier;
+    if (!s || player.occupancy) return null;
+    return player.id === LOCAL_PLAYER ? footBodies.footBones(s) : botBodies.bonesOf(player.id, s);
+  },
   defaultAttackerPos: () => (localPlayer.soldier ? [localPlayer.soldier.x, localPlayer.soldier.y, localPlayer.soldier.z] : null),
   // The grunt is the soldier's, not the shooter's: positional, so a bot hit
   // across the field is a distant cry rather than a 2D overlay. Same cooldown
@@ -2198,6 +2375,8 @@ const referee = createBotReferee({
     hullBodies.syncVehicleSpawnOwnership();
     pageConsole.logToConsole(`${target.name} lost by ${prevTeam === 1 ? 'Axis' : 'Allied'}`);
   },
+  // A bot whose ridden missile died goes back to its launcher (rocket-ride.js).
+  rideOut: bot => rocketRide.botRideOut(bot),
   onMounted: (bot, cand, mount) => {
     const vis = botBodies.botVisuals.get(bot.playerId);
     if (vis) vis.group.visible = false;
@@ -2492,6 +2671,7 @@ function restartRound(fromRoom = null) {
   kitDrops.reset();
   deployables.restartRound();
   roundSpawners.reset();
+  rocketRide.reset();
   ctfPage.reset();
   // `restartMap` (ROUND-10): `clearWorld` again, then every pad reset, so each
   // stands a fresh hull up on its own spot; the hulls no pad names come back
@@ -2732,17 +2912,65 @@ guns.onEffectSpawners = ({ frame, runs }) => {
   for (const { spec, life } of runs) roundSpawners.onEffect([spec], frame, life);
 };
 let roundSpawnersRoot = null;
+// The round that is a vehicle (`rocket-ride.js`, FA-29): Secret Weapons'
+// Wasserfall, whose gunner rides the missile; and `destroyVehicleWhenNoAmmo`
+// (FA-30) for any seat gun. After the hand weapon, whose `guns.onShot` its
+// own handler chains onto.
+const rocketRide = createRocketRide(bag(
+  from(() => footBodies, `footTriggerShakes`),
+  from(() => level, `world`),
+  from(() => localPlayer, `occupancy soldierDead`),
+  from(() => pageInput, `seatAltFire seatFire`),
+  from(() => room, `netSendAction roomJoined roundVehicleFor withServerSeat`),
+  from(() => vehicleEntry, `enterVehicle`),
+  {
+    referee: () => referee, botUnits: () => botUnits,
+    get camera() { return camera; }, get fireStates() { return fireStates; },
+    get fireStateFor() { return fireStateFor; }, get guns() { return guns; },
+    get LOCAL_PLAYER() { return LOCAL_PLAYER; }, get roundSpawners() { return roundSpawners; },
+    get vehicles() { return vehicles; },
+    seatView: () => seatCamera.view,
+    wrecked: node => vehicleEntry.isWreck(node),
+  },
+));
+guns.onVehicleRound = rocketRide.onVehicleRound;
 const tickRoundSpawners = roundSpawners.tick;
 roundSpawners.tick = dt => {
   // A level change: every round and what it stood is the old level's.
   if (level.currentRoot !== roundSpawnersRoot) {
     roundSpawners.reset();
+    rocketRide.reset();
     roundSpawnersRoot = level.currentRoot;
   }
   tickRoundSpawners(dt);
 };
 if (params.has('shots')) {
   window.__roundSpawners = () => roundSpawners.state();
+  window.__rocketRide = () => rocketRide.state();
+  // A bot of the hull's side seated in the launcher at `owner` and its round
+  // fired once, for a headless check of a bot's guided missile; and where
+  // a bot is now.
+  window.__botLaunch = async owner => {
+    const node = wrecks.damageVisuals.get(owner)?.node;
+    const door = botUnits.candidates().find(c => c.vehicleId === node?.uuid && !c.occupiedBy);
+    const bot = referee.bots.find(b => !b.vehicle && !level.world?.armorOf?.(b.playerId)?.destroyed);
+    if (!door || !bot) return { door: !!door, bot: !!bot };
+    if (!referee.enterVehicle(bot, door)) return { entered: false };
+    const g = vehicles.seatOf(bot.playerId)?.groups;
+    const group = [...(g?.driven ?? []), ...(g?.manned ?? [])].find(x => x.stats?.projectile?.vehicle === true);
+    if (!group) return { entered: true, group: false };
+    const { fireBarrel } = await import('./round-launch.js');
+    fireBarrel(guns, group, group.muzzles[0]);
+    return { entered: true, bot: bot.playerId, group: group.node.name };
+  };
+  window.__botSeat = id => {
+    const seat = vehicles.seatOf(id);
+    const s = seat?.drive?.state;
+    return { template: seat ? (seat.root.userData?.control ?? seat.root.name) : null,
+             alive: !level.world?.armorOf?.(id)?.destroyed,
+             at: s ? s.position.toArray().map(v => Math.round(v)) : null,
+             speed: s ? Math.round(s.velocity.length()) : null };
+  };
   window.__roundDepots = () => roundDepotsLaunched;
   // The parked pool, per node: its template, whether a round has it out, the mould.
   window.__roundPool = () => (level.vehiclePads?.roundRecords ?? [])
@@ -2871,6 +3099,12 @@ const soldierView = createSoldierView(bag(
   {
     get camera() { return camera; }, get hudBridge() { return hudBridge; },
     get params() { return params; },
+    // The friendly-mine icon on foot (mine-icon.js): the live rounds and the
+    // deploy screen's kit index, the engineer's 4.
+    get guns() { return guns; },
+    localKit: () => kitIndexOf(spawning.deployKit),
+    remoteTeamOf: slot => (room.roomJoined && Number.isInteger(slot)
+      ? room.roomClient?.teamOf?.(slot) || null : null),
     // The body on foot has died: the death, then the kit he carried on the
     // ground where he fell (`kit-drops-page.js`).
     dieOnFoot: () => {
@@ -2916,8 +3150,27 @@ const footBodies = createFootBody(bag(
     get scene() { return scene; },
     // The page's effect player: a worn rocket pack's flame (`rocket-flame.js`).
     get effects() { return effects; },
+    // Who the player is to the head pick (soldier-face.js `headVariant`):
+    // their room slot, as the room's other screens key them.
+    faceId: () => (room.roomClient?.slot != null ? `slot:${room.roomClient.slot}` : 'player'),
   },
 ));
+// Every soldier's face (soldier-face.js): the animated head inside retail's
+// 5 m, for the player's own body, the bots, a room's players and a replay's.
+const soldierFaceLayer = createSoldierFaces({
+  loader: () => footBodies.footBodyLoader,
+  modelsBase: () => MODELS_BASE,
+  bust: () => bust(),
+  clone: cloneSkinned,
+  makeSkeleton: (bones, inverses) => new THREE.Skeleton(bones, inverses),
+  camera: () => camera,
+  fetchJson: url => fetch(url).then(r => (r.ok ? r.json() : null)),
+  // A rolled head that is not the rig's wears its own skin (`headVariant`).
+  shade: node => level.bindDynamicShading(node),
+  paint: node => wearPagePaint(node),
+});
+shareSoldierFaces(soldierFaceLayer);
+if (params.has('shots')) window.__soldierFaces = soldierFaceLayer;
 const seatPose = createSeatPose(bag(
   from(() => botBodies, `addCorpse`),
   from(() => flagCapture, `flags`),
@@ -3040,7 +3293,7 @@ const deployScreen = createDeployScreen(bag(
   { get worldReady() { return playReady(); } },
   // The authority-mode reinforcement countdown (`net-room.js` `spawnCountdown`);
   // `room` is created below, so this reads it lazily at paint time.
-  from(() => room, `spawnCountdown serverPreGame statusPlate`),
+  from(() => room, `spawnCountdown serverPreGame statusPlate warningPlate`),
   from(() => mapSurfaces, `bfmap cameraHeading drawFullMap fullmapBox fullmapCanvas teamNation`),
   from(() => scoreboard, `scoreFromSpawn setScoreboard`),
   from(() => soldierKit, `KIT_ROW_KEYS KIT_ACTIVE_ROW_KEYS kitLoadout kitRowLabelFor kitActiveLabelFor loadouts loadoutsLoad`),
@@ -3052,13 +3305,15 @@ const deployScreen = createDeployScreen(bag(
   },
 ));
 const scoreboard = createScoreboardScreen(bag(
-  from(() => deployScreen, `deployVars drawBitmapText measureText placeHit spawnLayout`),
+  from(() => deployScreen, `deployActive deployVars drawBitmapText measureText placeHit spawnLayout`),
   from(() => hudFeed, `hudPack sprite`),
   from(() => level, `currentDir extras world`),
   from(() => localPlayer, `soldier soldierDead`),
   from(() => mapSurfaces, `fullmapBox`),
   from(() => referee, `bots`),
-  from(() => room, `roomClient roomJoined roomName`),
+  from(() => room, `roomClient roomJoined roomName host:roomHost`),
+  // The mod the map-vote list names beside each level.
+  { modId: () => activeMod.id ?? 'bf1942' },
   from(() => soldierKit, `carriedKit kitLoadout loadouts`),
   from(() => spawning, `deployKit deployRejoin deployTeamId`),
   from(() => ticketFeed, `ticketFlagTexture`),
@@ -3147,15 +3402,21 @@ if (params.has('embed') && params.has('school') && window.parent !== window) {
   report();
 }
 const room = createNetRoom(bag(
+  // The room refused the round the page fired (rocket-ride.js).
+  { launchRefused: row => rocketRide.launchRefused(row) },
+  // Whether the vote plate is drawn (`scoreboard-votes.js`): then a vote's
+  // question is on it and not in the message log.
+  { votePlateReady: () => scoreboard.votes?.plateReady() ?? false },
   from(() => deployScreen, `deployActive paintDeployChrome`),
   from(() => flagCapture, `announceCapture flags hoistCaptureFlag`),
-  from(() => hullBodies, `followServerCarriers placeParkedHull standSpawnedObject syncVehicleSpawnOwnership`),
+  from(() => hullBodies, `carryParkedHull carryShip followServerCarriers ownerIsShip placeParkedHull rebaseDeckSpawns standSpawnedObject syncVehicleSpawnOwnership`),
   from(() => level, `applyVisibility bindDynamicShading collider currentRoot extras groundHeight
     vehicleDamage vehiclePads world worldReady`),
   from(() => localLook, `blendFootCorrection blendHullCorrection snapPresentation`),
   from(() => localPlayer, `occupancy soldier soldierArmor soldierDead switchSeat`),
   from(() => pageConsole, `logToConsole`),
-  from(() => pageAudio, `claimVehicleAudio cutVehicleAudio playWorldReload playWorldShot releaseVehicleAudio`),
+  from(() => pageAudio, `claimVehicleAudio cutVehicleAudio playWorldReload playWorldShot releaseVehicleAudio
+    remoteSoldierSoundTick`),
   from(() => pageInput, `captured lockHeld`),
   from(() => soldierKit, `handWeapon loadouts soldierTemplateFor`),
   from(() => footBodies, `soldierDress`),
@@ -3236,6 +3497,8 @@ function playerTeamOf(id) {
 }
 /** The radio menu and the message log (comms.js, radio.js, chat-log.js). */
 const comms = createComms(bag(
+  // The message log and the chat line at the display width's metrics.
+  { glyphTable, snapToPixel },
   from(() => controls, `radioNumberOf`),
   from(() => flagCapture, `flags`),
   from(() => hudFeed, `sprite`),
@@ -3253,6 +3516,11 @@ const comms = createComms(bag(
       && (localPlayer.soldier || localPlayer.occupancy)),
     localName: () => room.roomName,
     localTeam: () => localSpeaker().team,
+    // Single player's own side once the first deploy has set it, for the
+    // `joined the ... team` line; a room's rows and a replay's feed own it
+    // elsewhere (comms.js `watchOwnSide`).
+    joinedSide: () => (!room.roomJoined && !replayController?.active() && spawning.deployJoined
+      ? spawning.deployTeamId : 0),
     // The listener the medic and engineer calls need (`support-calls.js`):
     // on foot, and his deploy-screen kit's index (Scout 0 .. Engineer 4).
     localOnFoot: () => !!(localPlayer.soldier && !localPlayer.soldierDead && !localPlayer.occupancy),
@@ -3265,6 +3533,32 @@ const comms = createComms(bag(
       return kind === 'air' ? 2 : kind === 'ship' ? 3 : 1;
     },
     roomSendRadio: (id, team) => room.sendRadio?.(id, team),
+    // A shout's hand sign on the speaker's body (hand-sign.js, RADIO-3):
+    // the player's own in the chase view, a room player's, a bot's or a
+    // replayed soldier's. `replayed`: the speaker is a recording's.
+    handSign: (speaker, sign, replayed) => {
+      if (speaker.local && !replayed) {
+        return localPlayer.occupancy ? false : footBodies.footHandSign(sign);
+      }
+      if (!replayed && typeof speaker.key === 'string' && speaker.key.startsWith('slot:')) {
+        return room.roomRenderer?.handSign?.(speaker.id, sign) ?? false;
+      }
+      return botBodies.botHandSign?.(speaker.botId ?? speaker.id, sign) ?? false;
+    },
+    // The shout on the speaker's face (soldier-face.js): the exe's lip-sync
+    // string for the message, picked as `getLipSync` picks it, by the name
+    // the game hands it, the side's soldier template.
+    lipSync: (speaker, id, replayed) => {
+      const symbols = lipSyncSymbols(soldierKit.soldierTemplateFor?.({ team: speaker.team }) ?? '', id);
+      if (!symbols) return false;
+      if (speaker.local && !replayed) {
+        return localPlayer.occupancy ? false : footBodies.footLipSync(symbols);
+      }
+      if (!replayed && typeof speaker.key === 'string' && speaker.key.startsWith('slot:')) {
+        return room.roomRenderer?.lipSync?.(speaker.id, symbols) ?? false;
+      }
+      return botBodies.botLipSync?.(speaker.botId ?? speaker.id, symbols) ?? false;
+    },
     // Offline the page is the server: its bots hear the message (bot-radio.js).
     // In a room the server's own AI does (the relay's lnxded; the node room
     // has no bots).
@@ -4126,6 +4420,9 @@ function frame(dt) {
   // The scout view takes the seat's camera after the seat has placed it
   // (map-spotter.js), and before anything reads the camera for the frame.
   phase(() => { if (!replayController?.active()) spotter.frame(step.ticks, dt); });
+  // A fired vehicle's rider boards it, comes back to the launcher, and the
+  // temporary camera behind where it ended (rocket-ride.js, CAM-4).
+  phase(() => { if (!replayController?.active()) rocketRide.frame(dt); });
   phase(() => presentWorld(step, dt));
   // The proving ground's paths, tags and hit zones, over the presented world.
   if (provingPage) phase(() => provingPage.frame(dt));
@@ -4381,6 +4678,8 @@ function presentWorld(step, dt) {
   // still gates the actual repaint on whether any of it changed.
   if (localPlayer.occupancy) vehicleHud.feedVehicleHud();
   effects.firstPerson = guns.firstPerson;
+  effects.waterLevel = guns.collider?.waterLevel ?? null;
+  effects.ambient.update(dt);
   effects.advance(dt);
   // The ear is the camera's, the same listener every other voice on the page
   // hangs off, so an impact is placed against the head the player is looking
@@ -4425,19 +4724,23 @@ function followSchoolCamera(view) {
 function draw3d() {
   // The dogfight school draws the level with its own renderer: drawing it
   // here too would be the same frame twice, unseen.
-  if (schoolCamera) return;
+  if (schoolCamera) { shadowPass.hide(); return; }
   // The weapon's camera shake, on the drawn view alone (hand-weapon.js
   // `shakeView`, ledger CS-11): put back once the arms are drawn.
   const unshake = soldierKit.shakeView();
   // An artillery seat's fire kick on the scope's picture (artillery-kick.js).
   const unkick = spotter.kickView(camera);
+  // A ridden missile's `vehicleCameraShake` (rocket-ride.js, CS-16).
+  const unride = rocketRide.shakeView(camera);
   // A replay's first person: the followed man's own camera shake (his hit
   // shake, replay-camera.js `shakeView`), on the drawn view and his arms.
   const unshakeReplay = replayController?.shakeView?.();
   // TEXTURE QUALITY reaches textures uploaded since its last walk (none at
   // the default, where it touches nothing).
   videoApply.tick();
+  shadowPass.update();
   renderer.render(scene, camera);
+  unride?.();
   unkick?.();
   soldierKit.renderViewmodel();
   unshake?.();
@@ -4460,6 +4763,8 @@ function draw3d() {
  *  part on its own: one that throws must not keep the rest cold. */
 function rewarmAfterRestore() {
   const parts = [
+    // The shadow atlas went with the context: every tile is drawn again.
+    () => shadowPass.reset(),
     () => level.warmSubtree(scene),
     () => level.warmSubtree(guns.warm()),
     () => (soldierKit.vmScene
@@ -4575,6 +4880,9 @@ function paintHud(dt) {
   // without any event of their own. Signature-gated inside, so a steady
   // state is one string compare.
   touchControls.updateMobileControls();
+  // The tooltip plate's clock and variables (tooltips.js); a compare a frame
+  // while the profile's option is off.
+  toolTips.frame(dt);
   hudFeed.gameHud.paint(hudW, hudH);
   // A replay runs the message log on the recording's clock: its speed while
   // it plays, stopped while it is paused. Without one the rate is 1.
@@ -4613,8 +4921,22 @@ let lastFrameAt = performance.now();
 let frameErrorShown = false;
 let frameErrorCount = 0;
 let stallShown = false;
-renderer.setAnimationLoop(() => {
+// A phone replay draws PHONE_FPS frames a second (`replay-phone.js`); the
+// frames between are skipped whole, and the next drawn one's `getDelta`
+// carries the time they covered.
+const drawThisFrame = frameGate(PHONE_REPLAY ? phoneFps(renderQuery) : 0);
+renderer.setAnimationLoop(now => {
+  if (!drawThisFrame(now)) return;
   try {
+    // A paused single-player game runs no frame (page-input.js, retail's game
+    // status 4): the clock is still read, so the time away is not paid back
+    // on resume, and the HUD repaints for its PAUSED plate alone.
+    if (pageInput.gamePaused) {
+      clock.getDelta();
+      hudFeed.gameHud.paint(renderer.domElement.width / renderer.getPixelRatio(),
+                            renderer.domElement.height / renderer.getPixelRatio());
+      return;
+    }
     frame(Math.min(clock.getDelta(), 0.1));
     frameErrorCount = 0;
     if (frameErrorShown || stallShown) {
@@ -4678,6 +5000,7 @@ const testHooks = installTestHooks(bag(
     soldierDead supplyTarget switchSeat`),
   from(() => mapSurfaces, `bfmap controlPointSprites friendlyMapUnits friendlyVehicleNodes fullmapCanvas mapSonar
     localMapTeam mapGate mapVehicleMarks MINIMAP_TEAM_TINT projectToArt projectToOpenMap setMapGate`),
+  from(() => pageAudio, `soldierSoundLog voicePoolStats`),
   from(() => pageAudio, `activeAreaAudios ambientAudio audioLimiter audioListener ensureWorldFire
     pendingSounds vehicleAudio worldFire`),
   from(() => pageInput, `aimHeld captured KBLOCK KBLOCK_KEYS kbLockState kbSession keys pressTrigger

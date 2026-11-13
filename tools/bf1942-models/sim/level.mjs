@@ -330,7 +330,7 @@ function stripTextures({ json, bin }) {
  *  statics' freeze. The collider, the bodies and the vehicles are built by
  *  the stage (`stage.mjs`) once the World exists, in the page's order; this
  *  returns what they are built from (`level.stage`). */
-export async function realLevel(M, { maps, models, map }) {
+export async function realLevel(M, { maps, models, map, glbs = null }) {
   const dir = path.join(maps, map);
   const sceneJson = path.join(dir, 'scene.json');
   const sceneGlb = path.join(dir, 'scene.glb');
@@ -525,13 +525,35 @@ export async function realLevel(M, { maps, models, map }) {
   const vehicleJson = existsSync(vehicleFile) ? JSON.parse(readFileSync(vehicleFile, 'utf8')) : null;
   const vehicleByName = new Map(Object.entries(vehicleJson?.vehicles ?? {}).map(([k, v]) => [k.toLowerCase(), { name: k, ...v }]));
 
+  // The soldiers' bodies: the capsules and bones of each side's skeleton in
+  // each stance, the module the room server builds too
+  // (`server/soldier-capsules.mjs`), so a bot here aims at and hits what a
+  // bot in a room does. Read from the tree's `poses/stances.json`
+  // (`extract_stances.py`); a tree without it, and without the pose files
+  // and the rig's blob (`--glbs`), answers null and every round meets the
+  // stand-in sphere.
+  const gaitsFile = modelDirs.map(d => path.join(d, 'poses', 'gaits', 'gaits.json')).find(existsSync);
+  let soldierBody = null;
+  try { soldierBody = gaitsFile ? JSON.parse(readFileSync(gaitsFile, 'utf8'))?.soldierBody ?? null : null; } catch { /* none */ }
+  // Imported here, after the runner's resolve hook maps `three` (env.mjs).
+  const { createStanceBodies } = await import('../server/soldier-capsules.mjs');
+  const bodies = createStanceBodies({
+    modelsDirs: modelDirs,
+    glbsDir: glbs ?? (modelDirs.length ? path.resolve(modelDirs[modelDirs.length - 1], '..', 'glbs') : null),
+    table: soldierBody?.collisionBones ?? null,
+    soldierOf: team => levelKits?.[team]?.soldier ?? null,
+  });
+
   return {
     name: map,
     extras,
+    bodies,
     // Built by the stage, after the World (`stage.mjs`).
     collider: null,
     stage: { root, levelClips, damageTables, collisionMeshes, terrainMaterials, heightmap,
-             vehicleAi: vehicleJson?.vehicles ?? {}, vehicleAiMod: vehicleJson?.mod ?? null },
+             vehicleAi: vehicleJson?.vehicles ?? {}, vehicleAiMod: vehicleJson?.mod ?? null,
+             vehicleAiRadio: Array.isArray(vehicleJson?.radio) ? vehicleJson.radio : null,
+             vehicleAiCoverPortals: vehicleJson?.coverPortals ?? null },
     kits: { kitFor, maxHp },
     botNames,
     weaponFire,
@@ -541,6 +563,9 @@ export async function realLevel(M, { maps, models, map }) {
       source: `${dir}`,
       loadMs: Math.round(performance.now() - started),
       kits: !!levelKits,
+      // The body a round meets: the skeleton's capsules, or the stand-in
+      // sphere where the tree has no pose files or rig (`--glbs`).
+      bodies: bodies.posed(1) || bodies.posed(2) ? 'capsules' : 'stand-in',
       models: modelIndex.size,
       damage: !!damage,
       collisionMeshes: !!collisionMeshes,

@@ -266,6 +266,14 @@ STEPS: tuple[Step, ...] = (
               "--out", "{models}/poses"),),
        needs=("{models}/kits.json",), outputs=(("{models}/poses/gaits/*", 1),),
        after=("poses_kit",)),
+    _s("poses_stances", "Each soldier's skeleton in the three stances (poses/stances.json)",
+       inputs=('{models}/kits.json',),
+       cmds=(("python3", "extract_stances.py", "{models}"),),
+       needs=("{models}/poses/index.json",), outputs=(("{models}/poses/stances.json", 1),),
+       after=("poses_shared",),
+       fixes="the room server and the headless runner meet a soldier on a stand-in sphere and "
+             "aim the bots at its centre, where the page hits and aims at the drawn skeleton: "
+             "the bot judges then score another fight than the one a player meets"),
     _s("poses_matrix", "Soldier x weapon matrix export (replay poses for non-kit weapons)",
        inputs=('{models}/kits.json',),
        cmds=(("python3", "extract_pose.py", "--mod", "{M}", "--matrix", "--export",
@@ -350,6 +358,12 @@ STEPS: tuple[Step, ...] = (
        cmds=(("python3", "extract_deployables.py", "--mod", "{M}", "--out", "{models}"),),
        outputs=(("{models}/deployables.json", 1),), after=("models",),
        fixes="DC's mortar fired nothing; deployables.json missing (FH 2026-10-11)"),
+    _s("dynamic_shadows", "Which templates cast a dynamic shadow (hasDynamicShadow)",
+       cmds=(("python3", "extract_dynamic_shadows.py", "--mod", "{M}",
+              "--out", "{models}/dynamic-shadows.json"),),
+       outputs=(("{models}/dynamic-shadows.json", 1),), after=("models",),
+       fixes="a mod's own vehicles and soldiers cast no shadow with SHADOWS on: the page "
+             "falls back on vanilla's list, which names none of them"),
     _s("viewmodels", "First-person arms rigs and index.json",
        inputs=('{maps}/maps.json', '{models}/kits.json', '{shared}/loadouts.json'),
        cmds=(("python3", "extract_viewmodel.py", "--mod", "{M}",
@@ -428,6 +442,8 @@ NOT_A_STEP: dict[str, str] = {
     "extract_debriefing_layout.py": "extract_hud_mods.py (step hud)",
     "extract_console_font.py": "extract_hud_mods.py (step hud)",
     "extract_score_settings.py": "extract_hud_mods.py (step hud)",
+    "extract_tooltips.py": "extract_hud_mods.py (step hud)",
+    "extract_general_options_layout.py": "extract_hud_mods.py (step hud)",
     "extract_custom_game_layout.py": "vanilla front-end chrome, not per mod (build_mods_manifest.MOD_INFO carries the mod's text)",
     "extract_profile_controls.py": "vanilla profile/controls defaults, not per mod",
     "extract_campaign.py": "vanilla's single-player campaign (campaign.json), not per mod "

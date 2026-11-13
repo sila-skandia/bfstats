@@ -15,13 +15,15 @@ import { WorldCollider } from './world-collider.js';
 import { collectLadders } from './ladder-climb.js';
 import { kindOf } from './level-statics.js';
 import { loadSearchMaps as loadBakedSearchMaps } from './nav-baked.js';
+import { createTerrainLod } from './terrain-lod.js';
 
 /**
  * Built once by `createLevel` (level-load.js). `page` hands in what it reads,
  * as getters (a value the level reassigns is read live):
  * `bust`, `effects`, `extras`, `floatPlacedVehicles`, `guns`,
  * `loadEffectLibrary`, `MAPS_BASE`, `rebaseDeckSpawns`,
- * `registerDamageables`, `settlePlacedVehicles`, `spawnersRoot`, `world`.
+ * `registerDamageables`, `scene`, `settlePlacedVehicles`, `spawnersRoot`,
+ * `world`.
  */
 export function createLevelTerrain(page) {
   const terrain = {};
@@ -193,6 +195,15 @@ export function createLevelTerrain(page) {
     return terrain.collider?.deckNormal ? terrain.collider.deckNormal(x, z, fromY, out) : false;
   }
 
+  // The ground's detail by distance and the sea bed that is never drawn
+  // (terrain-lod.js, ledger TERR-8). `?noterrainlod` draws every sample.
+  terrain.lod = createTerrainLod(page);
+  if (typeof location !== 'undefined') {
+    const query = new URLSearchParams(location.search);
+    if (query.has('noterrainlod')) terrain.lod.setEnabled(false);
+    if (query.has('shots')) window.__terrainLod = terrain.lod;
+  }
+
   function collectTerrain(root) {
     terrain.terrainMeshes = [];
     terrainBBox.makeEmpty();
@@ -205,6 +216,7 @@ export function createLevelTerrain(page) {
         }
       }
     });
+    terrain.lod.bind(terrain.terrainMeshes);
   }
 
   function getFloorAltitude(x, z) {

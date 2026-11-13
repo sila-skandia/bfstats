@@ -76,8 +76,9 @@ export function createModelRig(page) {
   // --- scrolling track textures ----------------------------------------------
   //
   // `ObjectTemplate.setAnimatedTextureSpeed -0.006/0` slides a mesh's UVs along U.
-  // It is how a Sherman's tread appears to move: the belt geometry itself is static
-  // (that needs the .ske/.skn skinned path), only the texture crawls over it.
+  // It is how a Sherman's tread appears to move: the texture crawls over the belt.
+  // The belt's shape is its skin's rest here (no springs run in the model browser;
+  // a driven hull's belt rides its bogies, `track-scroll.js` `followBogies`).
   //
   // The declared figure is in UV units per engine tick, which is not a unit this
   // viewer has, so it is scaled to per-second at the engine's 60 Hz assumption and

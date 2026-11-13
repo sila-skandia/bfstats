@@ -21,6 +21,7 @@ import { noteRestPose, restorePose } from './rest-pose.js';
 
 export { afterDeath, afterDeathOpacity } from './after-death.js';
 import { afterDeath, afterDeathOpacity } from './after-death.js';
+import { toolTipTypeOf } from './spawn-safety.js';
 
 /**
  * Built once by the page, where this code used to sit. `page` hands in
@@ -420,10 +421,15 @@ export function createVehicleWrecks(page) {
     // whatever killed it (a shell, the burn-down, drowning, the combat area).
     killOccupantInWreck(visual.node, vehicle.killedBy);
     // A plane shot down in the air does not stop where it was hit. It keeps its
-    // body, gets no input, and comes down under the flight model it already had;
-    // the crash — the wreck model, the second explosion, the linger and the fade
-    // — runs where it lands, on a clock that starts with the impact (`landWreck`).
+    // body, gets no input, and glides on under the flight model it already had
+    // with its engine stopped (`world-vehicle-tick.js` `stepFallingWrecks`);
+    // the crash — the wreck model, the second explosion — runs where it lands
+    // (`landWreck`), if its time to live lasts that long (`stepWrecks`).
     if (drive) {
+      // A hull that went critical and died before anyone's tick saw the byte
+      // move: its Wings took message 0x14 all the same (`Aircraft.
+      // criticalLift`), and 0x15 leaves what that gave them.
+      if (vehicle.criticalFlagged && !drive.liftIsCritical) drive.criticalLift?.(vehicle.criticalHitX ?? 0);
       visual.falling = drive;
       visual.fallingOwner = vehicle.owner;
       drive.fallingWreck = true;
@@ -473,7 +479,7 @@ export function createVehicleWrecks(page) {
    *  carrier's flight deck is the floor of a plane parked on it
    *  (`hull-bodies.js` `aircraftOnShipDecks`), and is neither the terrain nor
    *  the sea. Without it a B6N killed on the Shokaku's deck read 13 m in the
-   *  air, was dropped as a falling wreck at the wreck list's minimum sink and
+   *  air, was flown off as a falling wreck (then at a forced 30 m/s sink) and
    *  went through the deck into the sea (FHSWEurope operation_a, 2026-10-28).
    *  The deck query reaches only a few metres down (`SHIP_DECK_REACH`). */
   function surfaceUnder(x, z, fromY = NaN, drive = null) {
@@ -513,15 +519,12 @@ export function createVehicleWrecks(page) {
   /**
    * The plane has met the ground (or the water): the crash happens here.
    *
-   * The wreck's clock restarts on impact. It has been running since the kill,
-   * but nothing on it happens while the hull is in the air (a flying wreck has
-   * no linger and no fade to give), so a fall that outlasts the linger would
-   * otherwise arrive with the clock already expired: the fade would run on the
-   * next tick, before the wreck model's glb is back from the loader, and remove
-   * a wreck that had not been placed yet -- the crash site showing the intact
-   * mesh's last state instead of a wreck. Starting the crash's own clock here
-   * gives the wreck the whole linger wherever it came down, which is what
-   * "interact with the ground and then fade out" means.
+   * The wreck's clock does not restart on impact: it is the object's own
+   * `timeToLiveAfterDeath`, running since the kill wherever the hull is
+   * (HP-19, `SimpleObject::handleUpdate` `0x081db2e0` asks nothing about the
+   * ground), so the wreck lies here for what is left of it. A glide that
+   * outlasts it never gets here: `stepWrecks` fades and removes the hull in
+   * the air.
    *
    * What follows is the impact: the second explosion at the point it came down,
    * the wreck model in place of the flying one, the body retired so the hull is
@@ -530,7 +533,6 @@ export function createVehicleWrecks(page) {
   function landWreck(owner, visual) {
     const drive = visual.falling;
     visual.falling = null;
-    visual.wreckAge = 0;
     if (drive) {
       drive.fallingWreck = false;
       page.world.falling.delete(drive);
@@ -662,6 +664,9 @@ export function createVehicleWrecks(page) {
    */
   function killOccupantInWreck(node, killer = null) {
     if (!page.occupancy || page.occupancy.root !== node || page.soldierDead) return;
+    // A round the player rode (FA-29): `exitVehicle` seats them back in the
+    // launcher they fired it from, alive (`rocket-ride.js` `rideOut`).
+    if (page.rideOut?.(node)) return;
     // The hull's killer is his (`vehicle-damage.js` `killedBy`): the message
     // log names him when the death latches.
     page.noteHullKiller?.(killer);
@@ -780,12 +785,11 @@ export function createVehicleWrecks(page) {
       if (!visual.latched) { visual.latched = true; continue; }
       visual.wreckAge += dt;
       // A plane that died in the air is still flying: its crash waits for the
-      // ground, and nothing on this clock runs until it gets there — no linger,
-      // no fade, the intact mesh the whole way down. The crash restarts the
-      // clock (`landWreck`), so a fall longer than the linger still leaves the
-      // wreck its own full linger at the crash site.
-      if (visual.falling && !hasLanded(visual, dt)) continue;
-      if (visual.falling) { landWreck(owner, visual); continue; }
+      // ground. Its clock does not: the time to live runs from the kill
+      // (HP-19), so a wreck still gliding when it runs out fades and is
+      // removed in the air, as the server's `destroyObject` takes it wherever
+      // it is. 10 s on every aircraft that writes none.
+      if (visual.falling && hasLanded(visual, dt)) landWreck(owner, visual);
       const clock = visual.clock ??= afterDeath(visual.node?.userData?.armor);
       // `stayAsDestroyed`: nothing removes it.
       if (clock.stay) continue;
@@ -806,6 +810,15 @@ export function createVehicleWrecks(page) {
       // the hull went critical); a node no pad names keeps its own clock.
       // `resetWhenRemoved` puts its hit points back where it stands, and what a
       // spawn effect stood up has no spawner and leaves the world (HP-19).
+      if (visual.falling) {
+        // Still in the air: the glide ends with the object.
+        visual.falling.fallingWreck = false;
+        page.world.falling.delete(visual.falling);
+        restoreLift(visual.falling);
+        visual.falling = null;
+        delete visual.node.userData.fallingWreck;
+        page.freezeVehicle?.(visual.node);
+      }
       clearWreck(owner, visual);
       if (clock.reset) visual.respawnIn = 0;
       else if (visual.spawned) visual.onRemoved?.(owner);
@@ -965,6 +978,8 @@ export function createVehicleWrecks(page) {
       if (!s || page.soldierDead || !page.optOnFoot?.checked || page.optPilot?.checked) return [];
       return [[s.x, s.y + CHARACTER_HEIGHT, s.z]];
     },
+    // The hull's tooltip type, for the same test's one exemption (0x24).
+    toolTipTypeOf: node => toolTipTypeOf(node, page.toolTipLayout?.() ?? null),
   };
 
   function stepPads(dt) {

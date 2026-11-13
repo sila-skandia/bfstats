@@ -143,6 +143,54 @@ def console_word(namespace: str, command: str) -> str:
     return _CONSOLE_SPELLINGS.get(namespace, {}).get(command, command)
 
 
+# The Secret Weapons rocket and submarine words (`ObjectTemplate` fields
+# under "Secret Weapons' rocket and submarine words"): word -> (field, type).
+_SW_ROCKET_SUB_WORDS = {
+    "vehiclecamerashake": ("vehicle_camera_shake", "token"),
+    "disablespawnpointsonenter": ("disable_spawn_points_on_enter", "bool"),
+    "subpos": ("sub_pos", "bool"),
+    "destroyvehiclewhennoammo": ("destroy_vehicle_when_no_ammo", "bool"),
+    "disablewhenfired": ("disable_when_fired", "bool"),
+    "heatincrement": ("heat_increment", "float"),
+    "coolingfactor": ("cooling_factor", "float"),
+    # A property (CON-15): the packs write it `setHeatBarType`.
+    "heatbartype": ("heat_bar_type", "token"),
+    "setheatbartype": ("heat_bar_type", "token"),
+    "inverseheatbar": ("inverse_heat_bar", "bool"),
+    "usebuttonradius": ("use_button_radius", "float"),
+    "lesseryawatspeed": ("lesser_yaw_at_speed", "float"),
+    "leftanglemultiplier": ("left", "seat"),
+    "rightanglemultiplier": ("right", "seat"),
+    "headmaxanglemultiplier": ("headMax", "seat"),
+    "upanglemultiplier": ("up", "seat"),
+    "downanglemultiplier": ("down", "seat"),
+}
+
+
+def _read_sw_rocket_sub_word(obj, cmd: str, args: str) -> None:
+    """One `_SW_ROCKET_SUB_WORDS` line onto `obj`; a value that does not
+    parse leaves the field as it was."""
+    name, kind = _SW_ROCKET_SUB_WORDS[cmd]
+    tokens = args.split()
+    if not tokens:
+        return
+    if kind == "token":
+        setattr(obj, name, tokens[0].strip('"'))
+        return
+    if kind == "bool":
+        if (value := truthy(args)) is not None:
+            setattr(obj, name, value)
+        return
+    try:
+        value = float(tokens[0])
+    except ValueError:
+        return
+    if kind == "seat":
+        obj.seat_angle_multipliers[name] = value
+    else:
+        setattr(obj, name, value)
+
+
 def strip_comments(text: str) -> str:
     text = _REM_BLOCK.sub("", text)
     return "\n".join(
@@ -438,6 +486,41 @@ def floats(text: str) -> tuple[float, ...] | None:
     return values or None
 
 
+_SHADOW_FLOAT = re.compile(r"[+-]?(?:\d+\.?\d*|\.\d+)(?:[eE][+-]?\d+)?")
+
+
+def shadow_color(token: str) -> float | list[float] | None:
+    """`shadow.shadowColor`'s argument as the client's console reads it.
+
+    The word is `fx::ShadowManager::setShadowColor(Vec4)` and its argument is
+    read off a stream as four `float`, each followed by one separator
+    character (client 0x0043b9a0). All four extractions land in the SAME
+    local before it is copied out, and a failed extraction leaves it alone,
+    so the components a line does not write repeat the last one it does:
+    `0.55` is 0.55/0.55/0.55/0.55 and `0.36/0.36/0.38` leaves the alpha at
+    0.38. The alpha is what the dynamic shadows are drawn with
+    (`viewer/dynamic-shadows.js`).
+
+    A line of one number comes back as that float, the form scene.json has
+    always carried; a line with separators as the four floats. None when
+    there is no number to read (the constructor's 1/1/1/1 stands).
+    """
+    rest = token.strip()
+    out: list[float] = []
+    last: float | None = None
+    for _ in range(4):
+        match = _SHADOW_FLOAT.match(rest) if rest else None
+        if match is not None:
+            last = float(match.group(0))
+            rest = rest[match.end() + 1:]
+        else:
+            rest = ""
+        if last is None:
+            return None
+        out.append(last)
+    return out[0] if all(v == out[0] for v in out) else out
+
+
 #: `setEngineType`'s words in the engine's own spelling. The con reader takes
 #: an enum word in any case, and Jeep_Racing (a community map) writes
 #: `c_ETcar`; every reader downstream compares the canonical spelling, so the
@@ -445,6 +528,48 @@ def floats(text: str) -> tuple[float, ...] | None:
 #: driven (2026-11-09). A word not listed is kept as authored.
 ENGINE_TYPES = {name.lower(): name for name in (
     "c_ETPlane", "c_ETShip", "c_ETTank", "c_ETCar", "c_ETTorpedo", "c_ETRocket")}
+
+
+#: `ToolTipType` by name, as `operator>>(istream&, ToolTipType&)` (lnxded
+#: 0x0829be20) assigns them: each name's `movl $N, (%esi)` read in order. A
+#: name it does not know is 0x2f. The client's
+#: `ToolTipManager::getToolTipString` turns the same numbers into the
+#: `TOOLTIP_*` lexicon keys (`TOOL_TIP_STRINGS`, in its switch's order).
+TOOL_TIP_TYPES: dict[str, int] = {name: value for value, name in enumerate((
+    "TTHeavyTank", "TTLightTank", "TTArtillery", "TTApc", "TTScoutCar",
+    "TTFighter", "TTDiveBomber", "TTBomber", "TTAAGun", "TTStationaryMG",
+    "TTDestroyer", "TTBattleship", "TTCarrier", "TTSubmarine", "TTLcvp",
+    "TTDefGun", "TTBF110", "TTMosquito", "TTATGun", "TTArmoredCar",
+    "TTSturmGeschutz", "TTM3GMC", "TTAW52", "TTHO229", "TTT95",
+    "TTSturmTiger", "TTFlakPanzer", "TTT34Calliope", "TTGoblin",
+    "TTCommandoRaft", "TTC47", "TTLVT4", "TTHD42", "TTR75", "TTSchwimmwagen",
+    "TTNatter", "TTWasserfall", "TTRocketPack", "TTRadarTower", "TTPTBoat",
+    "TTPTRaft", "TTHelicopter", "TTRocketPlatform", "TTKettenkrad",
+    "TTMunitionsPanzer", "TTM4A1", "TTSasWilly",
+))}
+TOOL_TIP_UNKNOWN = 0x2F
+TOOL_TIP_STRINGS: tuple[str, ...] = (
+    "TOOLTIP_HEAVY_TANK", "TOOLTIP_LIGHT_TANK", "TOOLTIP_ARTILLERY", "TOOLTIP_APC",
+    "TOOLTIP_SCOUTCAR", "TOOLTIP_FIGHTER", "TOOLTIP_DIVE_BOMBER", "TOOLTIP_BOMBER",
+    "TOOLTIP_AAGUN", "TOOLTIP_STATMAG", "TOOLTIP_DESTROYER", "TOOLTIP_BATTLESHIP",
+    "TOOLTIP_CARRIER", "TOOLTIP_SUBMARINE", "TOOLTIP_LCVP", "TOOLTIP_DEFGUN",
+    "TOOLTIP_BF110", "TOOLTIP_MOSQUITO", "TOOLTIP_ANTI_TANK_GUN", "TOOLTIP_ARMORED_CAR",
+    "TOOLTIP_STURMGESCHUTZ", "TOOLTIP_M3GMC", "TOOLTIP_AW52", "TOOLTIP_HO229",
+    "TOOLTIP_T95", "TOOLTIP_STURMTIGER", "TOOLTIP_FLAKPANZER", "TOOLTIP_T34CALLIOPE",
+    "TOOLTIP_GOBLIN", "TOOLTIP_COMMANDORAFT", "TOOLTIP_C47", "TOOLTIP_LVT4",
+    "TOOLTIP_HD42", "TOOLTIP_R75", "TOOLTIP_SCHWIMMWAGEN", "TOOLTIP_NATTER",
+    "TOOLTIP_WASSERFALL", "TOOLTIP_ROCKETPACK", "TOOLTIP_RADARTOWER", "TOOLTIP_PTBOAT",
+    "TOOLTIP_PTRAFT", "TOOLTIP_HELICOPTER", "TOOLTIP_ROCKETPLATFORM",
+    "TOOLTIP_KETTENKRAD", "TOOLTIP_MUNITIONSPANZER", "TOOLTIP_M4A1", "TOOLTIP_SASWILLY",
+)
+
+
+def tool_tip_type_id(name: str | None) -> int | None:
+    """`setToolTipType`'s number for the name a template wrote, or None for a
+    template that never wrote the word. An unknown name is the parser's 0x2f."""
+    if not name:
+        return None
+    return TOOL_TIP_TYPES.get(name, TOOL_TIP_UNKNOWN)
 
 
 def truthy(text: str) -> bool | None:
@@ -661,6 +786,17 @@ class ChildRef:
     # every sub-part this way: the trigger, magazine and loaded round carry no
     # offset at all because the `.ske` bone they name already holds it.
     skeleton_part: str | None = None
+    # `useAsBone <v>` after an `addTemplate` on an AnimatedBundle: this child
+    # is one bone of the bundle's skin (a track belt's bogie).
+    # `AnimatedBundleTemplate::useAsBone` (lnxded `0x082685a0`) appends a
+    # 32-byte BoneInfo {child index = getTemplateCount() - 1, -1, this Vec3,
+    # 0/0/0}; `setBoneOriginOffset` (`0x08268680`) writes the last BoneInfo's
+    # second Vec3. Bone k is the k-th child carrying the word. The two vectors
+    # are read only by the editor's `buildSkin` (`0x082678f0`), which wrote
+    # the shipped `.skn`; the runtime (`AnimatedBundle::updateAnimations`
+    # `0x08266080`) reads the child index alone.
+    use_as_bone: tuple[float, float, float] | None = None
+    bone_origin_offset: tuple[float, float, float] | None = None
 
 
 @dataclass
@@ -1224,6 +1360,14 @@ class ObjectTemplate:
     # installed mods. A casemate hull -- Wespe, StuG, Hetzer -- never declares
     # it, which is the whole point: those get no dial.
     has_turret_icon: bool | None = None
+    # `setToolTipType <TT name>` on a PlayerControlObject writes
+    # `PlayerControlObjectTemplate+0x1e4` (lnxded 0x0831b9e0) through
+    # `operator>>(istream&, ToolTipType&)` (0x0829be20), whose names are
+    # `TOOL_TIP_TYPES` below. The client shows that class's `TOOLTIP_*` help
+    # for 15 s on entry (`menu::Vehicle::enableVehicleTooltip`), and the
+    # server's `createObjectOnAllClients` (0x08133a10) exempts type 0x24, the
+    # Wasserfall, from SPAWN-14's hold. Kept as the name the data wrote.
+    tool_tip_type: str | None = None
     # The sonar scope (SONAR-1..SONAR-7, features/vehicle-radar). `sonarPos 1`
     # on a PlayerControlObject is the seat that sees the scope on its minimap
     # (`getSonarPos`, lnxded 0x0831bc40). The other three are a SonarObject's:
@@ -1456,6 +1600,22 @@ class ObjectTemplate:
     # call-out, only while it is clear (0x0831efe6, FF-6). Vanilla sets it on
     # the grenades, the explosives pack, the landmine and the rifle grenade.
     no_ff_sound: bool | None = None
+    # `useMMOnEndEffect` is `ProjectileTemplate+0x14e` (the write at lnxded
+    # 0x082e35ee). `Projectile::startEndEffect` (0x0831f602) then asks the
+    # MaterialManager for the end effect instead of `endEffectTemplate`: the
+    # round's material against 1 (water) when its Armor's
+    # `getCollisionWithWater` holds, else against the Armor's last hit
+    # material. Vanilla sets it on the grenades, the pack and the rifle grenade.
+    use_mm_on_end_effect: bool | None = None
+    # `projectileType` is `ProjectileTemplate+0x1d4` (constructor -1) and
+    # `addToProjectileList` its byte `+0x1d0`: a round with the byte set is
+    # filed in the object manager's projectile map while it lives
+    # (`Projectile::activate` 0x0831e2f3), and the client's
+    # `MenuMapNode::onPaint` walks that map for rounds of type 1 on the local
+    # player's side to light the HUD's `ShowMineIcon` (gap audit 2026-11-12,
+    # entry 23). Vanilla writes both on `LandmineProjectile` alone.
+    projectile_type: int | None = None
+    add_to_projectile_list: bool | None = None
     # `setHasPointPhysics 0` puts a round on the `ResponsePhysics` path rather
     # than the point-mass one, i.e. a full rigid body with its `Wing` fins and
     # `FloatingBundle` floaters acting on it. Both grenades, the explosives
@@ -1638,6 +1798,54 @@ class ObjectTemplate:
     # so the PCO a gunner climbs out of dies as any destroyed hull does.
     # BF1918's deployed Stokes, Werfer16 and Hotchkiss; XPack2's Wasserfall.
     destroy_on_exit: bool | None = None
+    # Secret Weapons' rocket and submarine words (retail-inverse-gap-audit
+    # entries 51-53; addresses are lnxded's).
+    # `vehicleCameraShake` (PlayerControlObjectTemplate +0x244, setter
+    # 0x0831c010): a `CameraShakeTriggers` name. `Camera::getTransformation`
+    # 0x081ac344 triggers it on the occupant every frame he looks through
+    # this PCO's camera (CS-16). XPack2's WasserfallRocket: `CstMachinegun`.
+    vehicle_camera_shake: str | None = None
+    # `disableSpawnPointsOnEnter` (+0x240, ConsoleClass510 0x082f4920):
+    # `PlayerControlObject::enter` 0x08317159 switches every SpawnPoint under
+    # this PCO off, `exit` 0x08317edc and `exitPlayer` 0x08318482 back on
+    # (SPAWN-39). Vanilla's Gato and Sub7C.
+    disable_spawn_points_on_enter: bool | None = None
+    # `subPos` (PlayerControlObjectTemplate::setSubPos 0x0831bbb0): the seat
+    # whose occupant is shown the submarine HUD (SUB-6).
+    sub_pos: bool | None = None
+    # FireArms. `destroyVehicleWhenNoAmmo` (FireArmsTemplate +0x1ed):
+    # `fireFinished` 0x0828853d gives the weapon's root PCO 1e10 damage once
+    # its rounds (+0x298) are spent. `disableWhenFired` (+0x34a): the loaded
+    # dummy round stays away from the shot until `ReloadFinished` 0x08289ed0
+    # puts it back (FA-28).
+    destroy_vehicle_when_no_ammo: bool | None = None
+    disable_when_fired: bool | None = None
+    # Engine heat (EngineTemplate +0x528 `heatIncrement`, ctor -1: no heat;
+    # +0x52c `coolingFactor`, ctor 0; +0x530 `heatBarType`, ctor R; +0x534
+    # `inverseHeatBar`). `Engine::handleUpdate` 0x0823e320 adds
+    # `|revs| * heatIncrement - coolingFactor` a tick and stops the engine
+    # for good at 1 (PHY-45). XPack2's Natter and WasserfallRocket.
+    heat_increment: float | None = None
+    cooling_factor: float | None = None
+    heat_bar_type: str | None = None
+    inverse_heat_bar: bool | None = None
+    # SeatObject look multipliers (SeatObjectTemplate +0x164..+0x174; ctor
+    # left, right and headMax 0.6, up and down 0.4), by their console word
+    # without `AngleMultiplier`: {"up": 0.1, ...}. `BFSoldier::
+    # handlePlayerInput` 0x08275306 scales the seated soldier's own aim
+    # pitch limits by up / down (SEAT-43).
+    seat_angle_multipliers: dict[str, float] = field(default_factory=dict)
+    # `useButtonRadius` (ObjectSpawnerTemplate +0x170, ctor 0): above 0 the
+    # spawner makes nothing until `GameServer::useObjectSpawner` 0x08158370
+    # marks it, and nothing in lnxded calls that (SPAWN-40). Read, not
+    # exported: the two templates that write it (`GatoDaiHatsuSpawner`,
+    # `Sub7CDaiHatsuSpawner`) are added to nothing, their `addTemplate`
+    # sitting between `beginrem` and `endrem`.
+    use_button_radius: float | None = None
+    # `lesserYawAtSpeed` (RotationalBundleTemplate +0x1ac, setter 0x081d9e90
+    # keeps only a value above 0). Read, not exported: no archive of the ten
+    # mods surveyed on 2026-11-13 writes it.
+    lesser_yaw_at_speed: float | None = None
     # `dontClearTeamOnExit` (PlayerControlObjectTemplate +0x190, ledger
     # SEAT-27): `clearTeam` 0x0831a610 leaves the root's team as it is when
     # the last man gets out, so an empty hull stays its last crew's side and
@@ -2183,6 +2391,13 @@ class ObjectTemplate:
                 "gearDown": self.gear_down,
                 "gearChangeTime": self.gear_change_time,
                 "noPropellerEffectAtSpeed": self.no_propeller_effect_at_speed,
+                # Engine heat (PHY-45): the rocket motors' burn.
+                "heatIncrement": (self.heat_increment
+                                  if self.heat_increment and self.heat_increment > 0
+                                  else None),
+                "coolingFactor": self.cooling_factor or None,
+                "heatBarType": self.heat_bar_type,
+                "inverseHeatBar": True if self.inverse_heat_bar else None,
                 # An Engine's own RotationalBundle limits and rates, carried
                 # here as well as in `rig` because the drivetrain reads them
                 # as NUMBERS, not as a pose. `Engine::handleUpdate`
@@ -2288,6 +2503,14 @@ class ObjectTemplate:
             "cameraDelayTime": self.camera_delay_time,
             "cameraDelayDistance": self.camera_delay_distance,
             "destroyOnExit": True if self.destroy_on_exit else None,
+            "vehicleCameraShake": self.vehicle_camera_shake,
+            "disableSpawnPointsOnEnter": (True if self.disable_spawn_points_on_enter
+                                          else None),
+            # SUB-6. Said outright, false included, on a seat that authors
+            # `submarineData`, so the page can tell "not the boat's HUD seat"
+            # from a tree baked before the word was read.
+            "subPos": (bool(self.sub_pos) if self.submarine_data
+                       else True if self.sub_pos else None),
             "dontClearTeamOnExit": True if self.dont_clear_team_on_exit else None,
             "vehicleFov": (self.vehicle_fov
                            if self.vehicle_fov and self.vehicle_fov > 0 else None),
@@ -2436,6 +2659,10 @@ class AiWeaponTemplate:
     deviation: float = 5.0
     deviation_correction_time: float = 10.0
     indirect: int = 0
+    # `weaponTemplate.isThrown` (`WeaponTemplate::getIsThrown`): the weapon
+    # `soldier_choseThrownWeapon` 0x085cf300 picks for a bot's throw. Vanilla
+    # sets it on the two hand grenades only.
+    is_thrown: bool = False
     min_range: float = 0.0
     max_range: float = 0.0
     weapon_activate: str | None = None
@@ -2699,6 +2926,19 @@ class ObjectLibrary:
                 elif cmd in ("noffsound", "setnoffsound"):
                     if (value := engine_bool(args)) is not None:
                         obj.no_ff_sound = value
+                elif cmd == "projectiletype":
+                    # An int read (`istream >> int`): its leading digits.
+                    if match := re.match(r"\s*([+-]?\d+)", args):
+                        obj.projectile_type = int(match.group(1))
+                elif cmd == "addtoprojectilelist":
+                    if (value := engine_bool(args)) is not None:
+                        obj.add_to_projectile_list = value
+                elif cmd == "settooltiptype":
+                    if tokens := args.split():
+                        obj.tool_tip_type = tokens[0]
+                elif cmd == "usemmonendeffect":
+                    if (value := engine_bool(args)) is not None:
+                        obj.use_mm_on_end_effect = value
                 elif cmd == "setbonename":
                     # Always the template's own attachment, never a child's, and
                     # written before any `addTemplate` in every kit file in the
@@ -3347,6 +3587,8 @@ class ObjectLibrary:
                         "rotationalspeed": "rotational_speed",
                         "outsidehudoffset": "outside_hud_offset",
                     }[cmd], value)
+                elif cmd in _SW_ROCKET_SUB_WORDS:
+                    _read_sw_rocket_sub_word(obj, cmd, args)
                 elif cmd in ("rememberexcessinput", "hasrestrictedexit",
                              "damagefromwater", "destroyonexit",
                              "dontclearteamonexit", "damagefromdeepwater"):
@@ -3723,6 +3965,19 @@ class ObjectLibrary:
                     # Soldiers write a trailing bone index (`Bip01_Spine3 3`);
                     # only the name is load-bearing.
                     child.skeleton_part = args.split()[0] if args else None
+                elif cmd == "useasbone":
+                    try:
+                        child.use_as_bone = vec3_lenient(args.split()[0])
+                    except (ValueError, IndexError):
+                        child.use_as_bone = (0.0, 0.0, 0.0)
+                elif cmd == "setboneoriginoffset":
+                    # Writes the LAST BoneInfo, so a child with no `useAsBone`
+                    # of its own does not gain one from it.
+                    if child.use_as_bone is not None:
+                        try:
+                            child.bone_origin_offset = vec3_lenient(args.split()[0])
+                        except (ValueError, IndexError):
+                            pass
 
             elif ns == "lodselectortemplate":
                 if cmd == "create":
@@ -3813,6 +4068,11 @@ class ObjectLibrary:
                 elif cmd == "indirect":
                     try:
                         ai_wep.indirect = int(float(args.split()[0]))
+                    except (ValueError, IndexError):
+                        pass
+                elif cmd == "isthrown":
+                    try:
+                        ai_wep.is_thrown = int(float(args.split()[0])) != 0
                     except (ValueError, IndexError):
                         pass
                 elif cmd == "minrange":

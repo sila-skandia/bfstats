@@ -17,6 +17,7 @@ import {
   FOOT_VIEW_CYCLE, FOOT_CHASE_RADIUS, FOOT_CHASE_SHOULDER, FOOT_WALL_MARGIN, FOOT_WALL_MIN,
   aimDistance, lookAngles,
 } from './soldier-camera.js';
+import { friendlyMineNear } from './mine-icon.js';
 
 /**
  * Built once by the page, where this code used to sit. `page` hands in
@@ -29,7 +30,8 @@ import {
  * `footFire`, `footLookPending`, `footPending`, `footView`,
  * `frameInputLast`, `hudBridge`, `lastAttackerAt`, `openDeploy`, `params`, `presentAlpha`,
  * `runDeathCam`, `scanForEntry`, `serverSettings`, `setLook`, `soldier`,
- * `soldierArmor`, `soldierDead`, `supplyTarget`, `world`.
+ * `soldierArmor`, `soldierDead`, `supplyTarget`, `world`; and for the
+ * friendly-mine icon `guns` and `localKit`.
  */
 export function createSoldierView(page) {
   const soldierView = {};
@@ -40,6 +42,12 @@ export function createSoldierView(page) {
    *  one hook into the per-frame loop. */
   soldierView.supplyField = null;
   soldierView.supplyDepotsRoot = null;
+  // The friendly-mine icon's reader on foot, one object for every frame.
+  const mineViewer = { alive: true, seated: false, kit: null, team: 0, x: 0, y: 0, z: 0 };
+  // A round's side: its firer's in the world, else (a room's remote player,
+  // whose rounds are drawn here under their slot) the roster's.
+  const mineTeamOf = firer => (firer == null ? null
+    : page.world?.player(firer)?.team ?? page.remoteTeamOf?.(firer) ?? null);
 
   // --- the corpse cam -----------------------------------------------------------
   //
@@ -181,6 +189,18 @@ export function createSoldierView(page) {
     page.supplyTarget.armor = page.soldierArmor;
     page.hudBridge.vars['ShowHealIcon'] = soldierView.supplyField.canHeal(page.supplyTarget);
     page.hudBridge.vars['ShowReloadIcon'] = soldierView.supplyField.canRearm(page.supplyTarget);
+    // On foot the wrench never lights: `showRepairIconInMenu` (lnxded
+    // 0x083245d0) answers no when the player's vehicle is their own soldier
+    // (0x08324616). Seated, `vehicle-hud.js` writes all three.
+    page.hudBridge.vars['ShowRepairIcon'] = false;
+    // The friendly-mine warning (`mine-icon.js`): on foot only an engineer
+    // sees it, within 15 m of a mine their own side laid.
+    mineViewer.alive = !page.soldierDead;
+    mineViewer.kit = page.localKit?.() ?? null;
+    mineViewer.team = page.deployTeamId;
+    mineViewer.x = page.soldier.x; mineViewer.y = page.soldier.y; mineViewer.z = page.soldier.z;
+    page.hudBridge.vars['ShowMineIcon'] = friendlyMineNear(mineViewer, page.guns?.projectiles,
+      page.world?.damageTables?.projectiles, mineTeamOf);
     if (page.soldierArmor) {
       page.hudBridge.vars['Soldier/SoldierHitPoints'] = page.soldierArmor.hitPoints;
       page.hudBridge.vars['Soldier/SoldierMaxHitPoints'] = page.soldierArmor.maxHitPoints;

@@ -872,11 +872,20 @@ RAW_TOPS: dict[str, tuple[list[tuple[str, str]], tuple]] = {
     "statusMessage":    ([("is", "StatusMessage/ShowStatusMessage"),
                           ("not", "DisconnectMessage/ShowDisconnectMessage")],
                          (310.0, 68.0, 240.0, 40.0)),
+    # The warning plate under it: the same two-line plate at (305, 138) and a
+    # yellow line the client writes `GAME_MESSAGE_CONNECTION_PROBLEM`,
+    # `GAME_MESSAGE_DISCONNECTED` or `CHAT_FLOOD_ERROR` into
+    # (`BfMenu::outputDisconnectMessage`, BF1942.exe 0x006a7e90, from
+    # `GameClient::update` 0x00495f3d..0x00496070; `viewer/chat-log.js`
+    # `warningPlate`).
+    "disconnectMessage": ([("is", "DisconnectMessage/ShowDisconnectMessage"),
+                           ("not", "Loading/ShowLoadingText")],
+                          (310.0, 141.0, 245.0, 60.0)),
 }
 
 #: Groups the HUD canvas leaves to the respawn canvas, which sits over the
 #: spawn screen: `hud.js` `RESPAWN_GROUPS` is the same list.
-RESPAWN_GROUPS = ("spawnTimer", "spawnText", "statusMessage")
+RESPAWN_GROUPS = ("spawnTimer", "spawnText", "statusMessage", "disconnectMessage")
 
 #: Lexicon keys the client writes into the respawn groups' string variables
 #: (they are code, not layout, so no TextNode names them).
@@ -886,7 +895,11 @@ CLIENT_STRINGS = ("TIME_TO_SPAWN", "TIME_TO_START",
                   "INFO_MESSAGE_GAME_NOT_STARTED", "INFO_MESSAGE_GAME_IS_RESTARTING",
                   # The death camera's ride (`viewer/death-camera.js`,
                   # `BfMenu::updateHud`): "CHASE CAMERA", "TO TOGGLE BETWEEN PLAYERS".
-                  "DEATH_CAMERA_RIDING_WITH", "DEATH_CAMERA_TOGGLE")
+                  "DEATH_CAMERA_RIDING_WITH", "DEATH_CAMERA_TOGGLE",
+                  # The warning plate's three, and the message log's line at a
+                  # disconnect (`viewer/chat-log.js` `warningPlate`).
+                  "GAME_MESSAGE_CONNECTION_PROBLEM", "GAME_MESSAGE_DISCONNECTED",
+                  "CHAT_FLOOD_ERROR", "DISCONNECTED_FROM_SERVER")
 
 SUPPLY_KEYS = ("supplyCtf", "supplyParachute", "supplyRepair", "supplyHeal",
                "supplyMine", "supplyReload", "supplyFlag", "supplyNonTakeable")

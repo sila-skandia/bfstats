@@ -97,8 +97,11 @@ export function soldierFallScalars(tables, groundMaterial,
   const materials = tables?.materials;
   const modifiers = tables?.modifiers;
   if (!materials || !modifiers) return { damageMod: null, materialDamage: null };
-  const att = materials[groundMaterial] ?? materials[String(groundMaterial)];
-  const def = materials[defenderMaterial] ?? materials[String(defenderMaterial)];
+  // An id the table does not define is material 0's (`getDamageMod`
+  // 0x08175040 retries `getMaterialPtr` with 0 for either side; DMG-1).
+  const zero = materials[0] ?? materials['0'];
+  const att = materials[groundMaterial] ?? materials[String(groundMaterial)] ?? zero;
+  const def = materials[defenderMaterial] ?? materials[String(defenderMaterial)] ?? zero;
   if (!att) return { damageMod: null, materialDamage: null };
   const attGroup = att.attGroup ?? groundMaterial;
   const defGroup = def?.defGroup ?? defenderMaterial;

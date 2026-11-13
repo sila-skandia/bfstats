@@ -8,7 +8,7 @@
 import { isWalkable, traceValidPoint } from './nav-grid.js';
 import { playerPosition } from './bot-sense.js';
 import { weaponAiOf, SOLDIER_BATTLE_STRENGTH } from './bot-fire.js';
-import { unitUrgency, inclinationSplit, changeUrgency, teleportChangeUrgency, mannedByEnemy, TANK, CHANGE } from './bot-vehicle.js';
+import { unitUrgency, inclinationSplit, changeUrgency, teleportChangeUrgency, mannedByEnemy, TANK, CHANGE, TELEPORT } from './bot-vehicle.js';
 import { decleiningSlope } from './bot-behaviours.js';
 import { fireStrength, unitTable } from './bot-strength.js';
 import { wrapAngle } from './bot-aim.js';
@@ -17,20 +17,11 @@ import { PLAN_ACTION, approachGoal } from './bot-plans.js';
 import { candidateRunwayClear } from './bot-pilot.js';
 import { craftBailReason, levelZones, LANDING_CRAFT_RE } from './doctrine-landing.js';
 import { CHARACTER_HEIGHT } from './soldier-pose.js';
-import { changeRadioStrength, teleportRadioStrength } from './bot-radio.js';
+import { changeRadioStrength, teleportRadioStrength, radioOf } from './bot-radio.js';
 
 /** How long a human's request for a bot's seat lasts: `calculateVehicleUrgency`
  *  0x08583c61 (`15.0`, 0x86b01b0), past which the bot drops it (vt+0x184). */
 export const SEAT_REQUEST_SECONDS = 15.0;
-
-/**
- * The bot's radio strengths (`AIRadio::getMessageStrength`) as a function of
- * the message id, from the referee's AIRadio (bot-radio.js); 0 without one.
- */
-function radioOf(bot) {
-  const r = bot.radio;
-  return id => (r ? r.strength(bot.playerId, id) : 0);
-}
 
 /**
  * The age of a human's standing request for unit `id`, or Infinity
@@ -354,7 +345,8 @@ export function urgencyChange(bot, mod, now) {
     }
     // `BBChangeTeleport`: the other seats of this hull.
     const t = bot._urgencyChangeTeleport({ mine, selfU, split, driver, health,
-                                           radio: teleportRadioStrength(radioKind(m.kind), s) });
+                                           radio: teleportRadioStrength(radioKind(m.kind), s),
+                                           requestAge: seatRequestAge(bot, m.id, now) });
     if (t && (!r || t.urgency > r.urgency)) r = t;
     if (!r) { bot._changeResult = null; bot.changedTarget.Change = false; return 0; }
     bot.changedTarget.Change = (r.best?.id ?? null) !== (bot._changeResult?.best?.id ?? null);
@@ -550,7 +542,7 @@ export function fixedAimable(bot, c = null) {
  * `BBChangeTeleport::calculateUrgency`: the root's and the other seats'
  * urgencies by where the bot sits, the winner other than its own seat.
  */
-export function urgencyChangeTeleport(bot, { mine, selfU, split, driver, health, radio = 0 }) {
+export function urgencyChangeTeleport(bot, { mine, selfU, split, driver, health, radio = 0, requestAge = Infinity }) {
   const m = bot.vehicle;
   const seats = mine?.seats ?? m.seats ?? [];
   if (!seats.length) return null;
@@ -584,11 +576,28 @@ export function urgencyChangeTeleport(bot, { mine, selfU, split, driver, health,
   // `radio`: the BailOut (AbandonShip on a ship) strength in its `1 - s`
   // (0x0856145b). It scales the stay and every seat alike, so on its own it
   // moves no one to another seat.
+  // `requested`: a human's standing request for this seat (`requestAge`
+  // under 15 s; AI-172). `selfU` already carries its `age / 15`, so a free
+  // seat with anything to offer wins the ordinary swap; with none, the own
+  // seat stays best and the engine's answer is 6.0 and the re-deploy
+  // (0x0856192b..0x085619ce; AI-173).
+  // Only a seat whose row's Change is `BBChangeTeleport` or
+  // `BBChangeLandingCraft` reads the request here (the ship rows, the
+  // artillery gunner's): a tank's or a car's crew answers it through
+  // `BBChange`, by climbing out (`urgencyChange`). A seat with no row is
+  // taken by its hull's kind.
+  const landing = LANDING_CRAFT_RE.test(m.template ?? '');
+  const change = m.row?.behaviours?.Change ?? (m.kind === 'ship' ? 'ChangeTeleport' : null);
+  const requested = requestAge < SEAT_REQUEST_SECONDS && (landing || change === 'ChangeTeleport');
   const r = teleportChangeUrgency({ where, rootU, selfU, seats: others, orderFactor, attackSplit: split[0],
-                                    hasPlan: bot._hasPlan(), pending: !!bot.enterRequest, radio,
+                                    requested, radio,
                                     // `BBChangeLandingCraft` 0x085602b0 for a landing craft's seats.
-                                    landing: LANDING_CRAFT_RE.test(m.template ?? '') });
-  if (!r.best) return null;
+                                    landing });
+  if (!r.best) {
+    if (!r.redeploy) return null;
+    return { urgency: r.urgency, best: { id: m.id, u: selfU, dist: 0, cand: mine }, bail: false, teleport: true,
+             redeploy: true };
+  }
   const cand = r.best.id === 'root' ? rootCand : others.find(o => o.id === r.best.id)?.cand;
   if (!cand) return null;
   return { urgency: r.urgency, best: { id: cand.id, u: r.best.u, dist: 0, cand }, bail: false, teleport: true };
@@ -651,6 +660,25 @@ export function planChange(bot, now) {
   const r = bot._changeResult;
   if (bot.vehicle) {
     if (!r?.best) return bot._planIdle();
+    if (r.redeploy) {
+      // `BBPChangeTeleport::createPlan` 0x08590590 with the flag `init`
+      // stored clear (0x08590722 -> 0x08590cb0): `setChangeTarget(own
+      // unit)`, then `SAI::registerTeleporter(bot)` on the side's SAI
+      // (`IAIMain::getSAI(team)` vt+0x30, SAI vt+0x60 at 0x08590cde), and a
+      // plan that only waits: `BAPIWChange(unit, Parallel(BAPICChangeVehicle,
+      // BAPFlowCWait(BAPConTime(2.0))))`. The SAI's next pass takes the bot
+      // out of the seat and stands it on one of the side's spawn points,
+      // alive (bot-referee.js `handleTeleportingBot`). The plan is kept
+      // while it waits, so the bot is registered once a plan.
+      const cur = bot.currentPlan;
+      if (bot.planBehaviour === BEHAVIOUR.Change && cur?.redeploy && cur[0] && !cur[0].done) return cur;
+      bot.teleportRequest = true;
+      const plan = [{ type: PLAN_ACTION.Wait, until: now + TELEPORT.redeployWait }];
+      plan.vehicleId = r.best.id;
+      plan.startedAt = now;
+      plan.redeploy = true;
+      return plan;
+    }
     if (r.teleport) {
       // `BBPChangeTeleport::createPlan`: the seat-select key.
       const plan = [{ type: PLAN_ACTION.SwitchSeat, vehicleId: r.best.cand.vehicleId, seatId: r.best.cand.seatId }];

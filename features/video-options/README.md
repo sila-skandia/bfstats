@@ -1,12 +1,13 @@
 # OPTIONS > VIDEO
 
 Status: **built** (2026-10-10, anti-aliasing; 2026-11-01, the game's rows;
-2026-11-06, DISPLAY MODE; 2026-11-10, a window keeps the game's frame). Seven rows, the VIDEO PERFORMANCE presets and the
+2026-11-06, DISPLAY MODE; 2026-11-10, a window keeps the game's frame;
+2026-11-13, SHADOWS). Eight rows, the VIDEO PERFORMANCE presets and the
 DISPLAY MODE list: GRAPHICS QUALITY, EFFECTS QUALITY, ENVIRONMENT MAPPING,
-LIGHTMAPS, TEXTURE QUALITY and VIEW DISTANCE from the game, ANTI-ALIASING of
-this site's own, and the game's resolution list (VID-11), which replaced
-this site's RENDER SCALE row. SHADOWS and ALTERNATIVE SPAWN INTERFACE are not
-drawn.
+LIGHTMAPS, SHADOWS, TEXTURE QUALITY and VIEW DISTANCE from the game,
+ANTI-ALIASING of this site's own, and the game's resolution list (VID-11),
+which replaced this site's RENDER SCALE row. ALTERNATIVE SPAWN INTERFACE is
+not drawn.
 
 The front end's OPTIONS tab and the in-game Escape menu's have a second
 button on the options row, VIDEO, beside CONTROLS. It opens the game's VIDEO
@@ -70,17 +71,18 @@ from the driver's control panel.
 - The VIDEO PERFORMANCE plate with its four lines (`performancePanel`); the
   line lit is the preset the current values match, else CUSTOM. LOW, MEDIUM
   and HIGH write their file's values (`video-settings.js` PRESETS, which
-  `tests/test_video_settings.py` checks against the installed files; the
-  shadows line is left out). CUSTOM brings back the last mix that matched no
+  `tests/test_video_settings.py` checks against the installed files,
+  `game.setShadows` included: on in HIGH alone). CUSTOM brings back the last mix that matched no
   preset, as the game's runs `VideoCustom.con`.
 - The VIDEO OPTIONS plate and heading, and eight rows, each the file's own
   row taken whole from its label to the next (`videoRow`) and set on the
   plate's lines in order (`placeVideoRows`, `VIDEO_ROWS`): the i-th row drawn
   sits on the file's i-th line, so the column keeps the game's rhythm and
-  has no gaps. TEXTURE QUALITY therefore sits on SHADOWS' line.
+  has no gaps. The game's seven sit on their own lines and ANTI-ALIASING
+  on the eighth, ALTERNATIVE SPAWN INTERFACE's.
   - GRAPHICS QUALITY, EFFECTS QUALITY, TEXTURE QUALITY: the file's sliders
     and value texts (LOW / MEDIUM / HIGH, 20..100 and its %).
-  - ENVIRONMENT MAPPING, LIGHTMAPS: the file's tick boxes.
+  - ENVIRONMENT MAPPING, LIGHTMAPS, SHADOWS: the file's tick boxes.
   - VIEW DISTANCE: the file's slider and edit box, in steps of 5 %.
   - ANTI-ALIASING: a tick box in ENVIRONMENT MAPPING's shape.
 - The DISPLAY MODE plate (`displayModePanel`): the file's plate, heading,
@@ -94,8 +96,16 @@ from the driver's control panel.
 - DEFAULT and SAVE from `menu/VideoNavigation`. DEFAULT forgets every choice.
 - The section that is up is drawn on the button's clicked plate (`knapp_mc`).
 
-Not drawn: SHADOWS (the viewer draws no dynamic shadows) and ALTERNATIVE
-SPAWN INTERFACE (not a video setting here).
+Not drawn: ALTERNATIVE SPAWN INTERFACE (not a video setting here).
+
+SHADOWS (2026-11-13) switches the dynamic shadow pass: the
+`hasDynamicShadow` objects within 50 m of the camera, each drawn black from
+up the sun into a 128 px texture and projected on the terrain
+(`viewer/dynamic-shadows.js` is the law, `viewer/shadow-pass.js` the
+drawing; `tests/test_dynamic_shadows.py`). It is live: the pass reads the
+setting each frame, as the client reads `game +0x4d0`. A choice stored
+before the row existed keeps its preset's line (LOW and MEDIUM off, HIGH
+on).
 
 ### What each row does on the map page
 
@@ -157,7 +167,7 @@ kept and applied as a change on the screen is:
 | `game.setDetailTexture n` | TEXTURE QUALITY, 1..5 |
 | `game.setMenuViewdistance n` | VIEW DISTANCE, capped at 100 as the client caps it |
 | `game.setPerformance n` | accepted, kept nowhere: the client stores the radio line and runs no preset (VID-10); the page works the line out from the values |
-| `game.setShadows b` | *Method is not active!*: no shadows (VID-7) |
+| `game.setShadows b` | SHADOWS (VID-7) |
 
 The client's setters store and apply nothing; the menu's apply hands the
 record on (VID-10). The page applies a typed word at once, and clamps it to
@@ -231,9 +241,6 @@ dc_final, fhsw) were re-extracted; fhsw also draws the plates on its own art.
 
 ## Open
 
-- SHADOWS: the client's dynamic shadow pass (VID-7) is unread past its gate;
-  the viewer would need projected shadows for `hasDynamicShadow` objects
-  before the row can be drawn.
 - The tree swap at HIGH (VID-1's `+0x94`), and LOD-3's
   `lodObjectDistanceLodFactor`, which the viewer's bake-time LodObject choice
   does not take.

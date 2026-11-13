@@ -478,6 +478,67 @@ the spawners group (Aberdeen's stationary guns) is furniture with no pad, as
 it is on the page. `tests/test_level_nodes.py` loads Aberdeen and Wake both
 ways and finds every index naming the same placement on both sides.
 
+**A hull another player holds** (2026-11-13; `tests/test_room_remote_hull.py`,
+`tests/test_room.py` crew scenario). Wake, two pages at The_Airfield: one
+player took the pad's Willy, and the other page drew an empty jeep, no driver
+anywhere, and after it drove off a second jeep still on the pad. Four things:
+
+- *The seat a row names.* A replica is the template's glb under a wrapper
+  group, and the seat survey was taken from the wrapper, which made the
+  wrapper seat 0: a driver had no seat to be drawn in and every other index
+  named the seat before it. The survey now starts at the template's own root
+  (`netcode-render.js` `replicaHullRoot`), as the server's does
+  (`server/glb-tree.mjs`).
+- *One hull.* The page hid its own copy by `node.visible`, which the pads'
+  visibility pass writes every frame. The copy now leaves the page's field
+  (`level-statics.js` `setRemoteLive`, which keeps `padAbsent` too) for as
+  long as a replica of the hull is drawn, by one law for both
+  (`netcode-render.js` `heldHullIds`), and comes back where the server has the
+  hull when its last crew gets out. That was the path against a real server
+  already; it is now the page's own room's as well.
+- *The driver's own hull.* Nothing corrected the hull a player drives against
+  the room's: `correctDrivenHull` ran against a real server only. A 12 s
+  steered drive ended 20 m from where the room and every other page had the
+  jeep. The snapshot's hull row and its ack are built from one tick, so the
+  room client hands them over as the hull's state at the acked word
+  (`netcode-client.js` `selfHull`, no velocity: the record carries none) and
+  the same correction runs. Measured on the same drive: under 1.4 m at
+  20 m/s (the round trip), 1 cm at rest.
+- *An occupied seat.* The room refused a seat a bot held and gave one a human
+  held: two players shared a driver's seat. `server/room-control.mjs`
+  `seatHeldByAnother` refuses the enter (`seatRefused`) and ignores the
+  switch (SEAT-11).
+
+- *A friend's hull.* A second player could not get into a hull another
+  player held: the copy was off their field and a replica had no doors. Now
+  the replica's doors are offered (`vehicle-entry.js`, from `net-room.js`
+  `heldHullRoots`), a seat another player sits in is not (`roomSeatHeld`), and
+  the press stands the page's copy where the server has the hull and seats
+  them in it (`claimHeldHull`). From then on the copy is the hull on that
+  page: no replica of it, the others aboard drawn in its seats (`serverEntity`),
+  and while its player rides without driving it is carried on the server's
+  pose every frame (`carryRiddenHull`, `hull-bodies.js` `carryParkedHull`).
+  A switch onto a held seat is refused on the page as on the server.
+- *The wheel.* The server's drive stayed with whoever mounted first, so a
+  rider who took over the driver's seat drove nothing. The drive now goes
+  with the root seat (`server/level-instance.mjs` `switchSeat`).
+
+- *A carried hull's wheels.* Nothing integrates a hull the page only
+  carries, so nothing turned its wheels or belts: `viewer/carried-wheels.js`
+  rolls each wheel by the ground the hull covered over its radius and scrolls
+  the belts off the same motion, the drive's own two laws.
+- *A friend's ship.* A ship another player crews is never stood down: players
+  stand on her deck, which only the page's copy has. She stays the page's
+  copy where she is, her gun doors open and her crew drawn in her own seats
+  (`net-room.js` `shipsHeld`). **The room server sails no ship**
+  (`server/level-instance.mjs` grants a drive to air, ground and tank roots),
+  so a helmsman's page still sails her alone, as before; the driven-hull
+  correction leaves a ship be for that reason.
+
+Checked on Wake with three pages (an M3A1: a driver, a gunner and a
+passenger; seat switches; the wheel handed over): every page draws the other
+two in their seats and each rider's hull stays within 0.2 m of the server's.
+
 **The landings** (`server/room-hits.mjs`; HP-9, HP-10, KNOCK-4..KNOCK-9).
 *A cited departure.* Retail's server flies every round; the room flies none
 (the input word carries no weapon slot and the World no `GunFire`), so in a
@@ -610,6 +671,257 @@ is not `carrierLocal` keeps its baked position on the server, which matters
 only to a body the seat then refuses. An LVT at sea sinks to the bed in the
 room's world (two of Tarawa's eight stand at y = 10): the room's parked body
 has no float.
+
+### The room's own rounds: slice B for the seats (2026-11-13)
+
+Retail's server flies every projectile and decides every hit (NET-15: the
+client's `FireArms::Fire` skips its barrel loop for a networked round; the
+damage is the server's `giveDamage` and `handleExplosion`, DMG-3, HP-9, HP-10).
+Until now a room flew none: `world-vehicle-tick.js` ran every seated player's
+FireArms on the server and asked a `world.guns` the room did not have.
+
+**What a room flies now** (`server/room-guns.mjs`, the page's own `GunFire`
+with nothing drawn, as the headless runner `sim/stage.mjs` has it):
+
+- **Every seat gun**, a human's or a bot's. The round leaves the server's copy
+  of the barrel on the tick the server's FireArms fires, meets the room's
+  collider and its soldiers, and lands in `server/room-hits.mjs` `onRound`: the
+  direct hit on a hull or a soldier, the blast, the pushes, each under
+  `calcDamage` at the side stamped on the round when it left. The magazine is
+  the server's (`FireState.registerShot`), and a pad's fresh hull has full ones.
+- **A bot's rocket, rifle grenade or thrown weapon** (`launchBotRound`, the
+  referee's `env.launchRound`), which was a resolved ray that met soldiers only
+  and had no blast.
+- A human's page in a seat still flies its own copy of the round for the
+  picture and reports nothing for it (HELLO's `rounds: { seats: true }`,
+  `viewer/vehicle-hits.js`). Its crosshair's marks are the server's word, a
+  `hitMark` row to the firer alone (XHIT-4, XHIT-5).
+- Every other page is told of a pull by a `shot` row (`seat: true`, the hull,
+  the gun, where it stood and which way it pointed), the row a relay page gets
+  for a retail server's vehicle rounds, and lights the gun and draws the round
+  from it (`viewer/net-server-rounds.js`). At most six rows a second a gun.
+- A page's hand-weapon bullet is tested on the capsules of the body it draws
+  for a remote (`netcode-render.js` `capsulesOf`), so a head shot is priced as
+  the head; before it met the stand-in sphere and paid the torso's price.
+
+**Faults this found in the room, fixed:** a drivetrain's guns were handed to
+every seat of the hull, so a passenger's tick let go of the driver's trigger
+and an emplaced gun's own FireArms was taken for driven and never fired
+(`level-instance.mjs`); a bot passenger's seat stayed where it was boarded
+while the hull drove off, and nothing walked a crewed hull's matrices, so a
+bot aimed and fired from stale ones (`room-guns.mjs` `afterStep`); a bot's
+turret look, a rate, was sent on one tick in three (`room-bots.mjs`).
+
+**The magazine** (`room-guns.mjs` `syncGuns`, `viewer/gun-sync.js`). The
+server's FireArms is the one that fires, so its magazine is the truth, and
+the holder's page is sent it as `gun` rows: on taking the seat, when a reload
+starts or ends or a spare magazine goes or comes back, three times a second
+while rounds leave, and every two seconds regardless. The page predicts the
+same law on its own copy, so its HUD counts at the pull; the row corrects it,
+leaving alone the half second of rounds a held trigger has spent that the
+server has not yet. A gun is named by its place among the hull's FireArms.
+
+**The capsules** (`server/soldier-capsules.mjs`). A soldier on foot is met by
+the room's own rounds on the engine's eight capsules, on his skeleton in his
+stance: the rig's node tree and one of his pose recipes (`poses/rigs/*.rig.glb`
+through `poses/index.json` and the content store, `poses/<Soldier>__*.pose.json`),
+the three constant stance clips. A still pose: no walk cycle, no aim pitch.
+A bot's round, flown or resolved, meets the same body, and a bot's sense rays
+and aim go to one of that skeleton's bones, as `pickSoldierRandomSensePosition`
+picks one (AI-123; `bot-sense.js` `_rays`, the room hands it the bones), and
+the aim goes to that bone too, as `BAPAAimAtObject::getAimVec` aims at the
+memory record's sense point (`bot-plans.js` `aimPoint`). On the stand-in
+sphere the room had first (0.6 m about a metre up) a Berlin foot room made 25
+to 29 kills in 200 s; on the capsules it makes 30 (15 to 43, eight runs).
+For a day it made 10: the sense rays went to a bone and the aim stayed a
+metre over the feet, clear over a man lying down. `capsuleRays: false` in the
+server's bot policy puts the bots back on the sphere for a measurement. The
+headless runner builds the same body from the same module
+(`createStanceBodies`), and the page reads capsules and bones off the rig it
+draws.
+
+**The bots' hulls are on by default** (`server.mjs`, `--bot-vehicles off` for
+foot only). Berlin, 15 bots, 200 s, eight runs each way: 25 kills a run on
+foot, 22 in a hull room, the same flags taken. A seated bot with a target
+thinks every tick (`BOT_SEAT_AIM_THINK_TICKS`); what is left is the engine's
+precision test on a seat's trigger. A hull room costs 2.7 ms a tick against
+0.8, and 60 to 110 MB more.
+
+**Still a departure.** A human's hand weapon is the page's round, reported
+(the input word carries no weapon slot). A seated man is met on the stand-in
+body. The hull's own recoil is not pushed into the server's
+body. A bot's rocket and a remote's hand weapon are not drawn on other pages.
+
+**How it was checked.** `tests/test_room_guns.py` (40 tests over
+`tests/room_guns_harness.mjs`): on Wake a human on a carrier battery kills a
+soldier with the server's round, the kill, the marks and the `shot` rows; the
+seat left with the trigger held; a passenger's seat; a hull's direct hit; a
+bot's launcher round and its blast; the page's own seat round reporting
+nothing. The cost and the bots' fight are in the gap report's entry 13.
+
+### The room sails its ships (2026-11-13)
+
+Retail's server simulates every vehicle, and a ship is one more: her screw is
+the propeller's own law (PHY-3), her `FloatingBundle`s hold her (SHIP-1), her
+per-tick law is SHIPLAW-1..4, a submarine's dive is the SUB rows, and a client's
+copy of her is corrected to the server's (NET-10). Until now the room drove
+none. `mountIntoSeat` granted a drive to air, ground and tank roots, so a
+helmsman's page sailed its own copy alone while the server and every other page
+kept her at her pad; the ships' landing craft and deck aircraft stayed baked
+into their ships, so nobody could take one, and Wake's Axis bots swam from
+their carriers.
+
+**What the room does now** (`server/room-ships.mjs`, each piece the page's own
+law through the page's own code):
+
+- **The load.** Every floating hull is put at the draft its float nodes hold it
+  at before the collision index bakes it (`body-float.js` `equilibriumRootY`,
+  the page's `floatPlacedVehicles`), with the aircraft its spawners hold and its
+  deck spawn points. The level's pads are not that draft: Wake's Hatsuzuki
+  stands 0.19 m over hers, and Midway's fleets are metres off theirs
+  (`features/viewer-ships`). The points are a copy the room owns, since the
+  level's report is shared by every room of the level.
+- **The craft.** A ship's landing craft and deck aircraft are split off her as
+  on the page (`spawned-craft.js` `detachSpawnedCraft`) and are rows of the
+  room's vehicle table, after the level's own rows, named by their node in
+  `scene.glb`. Wake has six: four Daihatsus, the Shokaku's Zero and her Val.
+- **The drive.** One `Ship` a hull (`viewer/ship.js`), built when her helm is
+  first taken and kept for the hull's life: on the sea bed and its normal,
+  grounded on her own col0 (`ship-spec.js` `hullCollisionKeel` and
+  `hullCollisionLayers`, which the page's `hull-bodies.js` now imports from
+  there too), adopted by the body world. The World steps her from the
+  helmsman's input word as it steps a tank (`world-vehicle-tick.js`): throttle,
+  yaw, and the pitch a submarine's planes and a landing craft's ramp bind.
+- **The helm let go.** An empty PlayerControlObject keeps its physics in the
+  engine, so she runs on with her controls at zero (`World.coastHull`) until she
+  is under 0.5 m/s, then lies where she stopped. A Shokaku let go at 8.6 m/s is
+  still making 2.9 a minute later. The page alone stops a ship dead where her
+  driver leaves her; in a room every page draws the room's.
+- **The decks.** The collider is told where every hull is each tick, so a
+  soldier stands on a moving deck and is carried by it (COL-30, COL-31,
+  `deck-carry.js`). An aircraft's drive has the deck for its floor (its col0,
+  with the deck's material and point speed, AIRGND-5), a parked body has it for
+  its ground, and an aircraft its spawner still holds is put back on its pad on
+  her every tick with her speed there (`ObjectSpawner::handleFrameUpdate`
+  0x083138c0).
+- **The guns.** A ship's guns are seats like any other and fire through
+  `room-guns.mjs` from where she is.
+- **The bots.** `room-bots.mjs` offers the bots the ships (`ROOM_UNIT_KINDS`),
+  through the same registry the land hulls use. `--bot-ships off` keeps them
+  off the helms.
+
+**The page** (`viewer/net-room.js`):
+
+- the helmsman's own ship is corrected against the room's like a land hull
+  (`correctDrivenHull`; it left a ship alone while the room sailed none). A
+  `Ship` keeps no tick history, so it takes the delta reconciler. Measured
+  error at the acked tick on a 12 s run at 8.5 m/s: 0.02 mm. A helm taken
+  while she runs on starts at her speed (`keepShipsWay`, off the room's last
+  two drawn poses, since the hull row carries no velocity): 2 mm an ack,
+  where a start from rest was 0.4 to 0.5 m;
+- every other ship goes where the room's snapshots have her, each frame
+  (`carryShips`, `hull-bodies.js` `carryShip`): the node, the collider under
+  whoever stands on her, her deck points, and through the page's own hold the
+  aircraft on her deck. Crewed, running on empty or lying where she was left.
+
+**Checked in pages** (headless Chromium, Wake, real time; scripts and logs in
+the session's scratch folder, named in the builder's report):
+
+| Check | Result |
+|---|---|
+| C at the Shokaku's helm, B on her deck, 20 s with a turn | B's copy of her 0.00 to 0.21 m from the room's; C's 0.02 to 1.0 m (the round trip at 12 m/s) |
+| B standing on the deck | Foot correction 0.3 to 5.7 cm, no hard correction, alive; walking 16 m along the deck under way the same |
+| B takes `ShokakuAABattery1` and fires under way | 7 `shot` rows on C's page, flown by the room |
+| C leaves the helm at 12 m/s | She runs on; both pages within 0.2 m of the room for the next 9 s |
+| C moves to a gun while she runs on and B takes the helm with E | B sails her, 2 mm of error an ack |
+| A room with 15 bots | Bots take the Daihatsus within a second and sail them; the page's copies 0.0 to 0.2 m from the room's while they go |
+
+**What it costs** (M5 Max, process CPU per 30 Hz tick):
+
+| Case | ms a tick |
+|---|---|
+| A destroyer under way in open water, one helmsman | 0.2 |
+| The Shokaku under way in open water | 0.25 to 0.45 |
+| Either leaving her pad among the moored fleet, first 6 to 8 s | 1.1 to 4.6 |
+| A crewed ship lying still | nothing over an empty room after 3.3 s: the root sleeps (TANK-20) |
+| Wake, 15 bots, 240 s, bots off the helms / at them | 2.4 to 3.0 / 3.4 to 4.4 |
+| Midway, 15 bots, 240 s, bots off the helms / at them | 2.0 / 3.4 to 4.1 |
+
+Two things keep a ship cheap, and both leave her pose unchanged:
+
+- a hull's static candidates are cut to its own box before its vertex probes
+  test them (`body-statics.js` `narrowToHull`, `world-collider.js` `narrow`;
+  bodies of 20 m radius and more, the box holding the wheel springs
+  `body-world.js` names). A destroyer's bounding sphere is 146 m
+  across and took in the carrier moored beside her: 6.3 ms a tick at her pad
+  before, 1.75 after, the same pose to the last bit. The page gets this too;
+- a ship lying still with a crew aboard sleeps, as retail's root does. The
+  Shokaku at her pad with a helmsman who touches nothing was 4.6 ms a tick.
+
+Most of what a bot room gains with ships is the bots' own route search over
+open sea (`nav-search.js`), not the ships.
+
+**Going down (the same day).** A hull that crosses into critical is sent 0x14
+and each of her floats takes a sink rate (`FloatingBundle::handleMessage`
+0x082402b0: `cmpl $0x14` at 0x082402d6, `(q + 0.1) * 0.05 * sinkingSpeedMod`
+stored at 0x08240557; HP-13, SHIP-4). Two things were wrong on the page and
+are fixed for both sides:
+
+- an unwritten `sinkingSpeedMod` was read as 0, "never". The template's
+  constructor writes 1.0 (0x0824094c), and no vanilla capital ship writes the
+  word, so none of them ever sank; only the landing craft did
+  (`body-float.js` `SINKING_SPEED_MOD_DEFAULT`);
+- a ship somebody sat in never sank: the pass skipped a driven hull. The
+  message goes to every child of the object whoever is aboard, so her drive
+  takes the rates now (`Ship.armSinking`) and hands her float offsets on when
+  it lets her go.
+
+In a room the server sinks her (`room-ships.mjs` `stepSinking`: her drive
+while one steps her, a `FloatingHull` of her own otherwise) and the page
+carries its copy down on the room's pose. The Shokaku from 99 of 600 hit
+points: 2.9 m down at 5 s, 16.4 at 20, by one end, on the page and in the room
+alike; one destroyed in a single blow from above her threshold stays afloat
+(0x15 alone).
+
+**A ship's spawners.** Her landing craft and aircraft come from
+ObjectSpawners like any pad's (SPAWN-9, SPAWN-11, SPAWN-13, SPAWN-24), and
+neither side ran them: four Daihatsus on Wake, used once. Each craft the
+exporter stamped with its spawner now has that spawner's slots
+(`spawned-craft.js`: `maxNrOfObjectSpawned` copies, three for a Daihatsu's),
+the page files it as a pad (`level-statics.js` `buildHeldPads`) and the room
+does the same (`room-pads.mjs`): the next one stands at the spawner, where the
+ship is now, once the last is off its `radius` for the spawn delay, never more
+than the slots allow, and one left empty and far from its spawner is lost on
+its `timeToLive`. A copy is named on the wire by the baked craft's node and its
+slot. Checked in pages: single player and a two-page room, the second Daihatsu
+22 s after the first left, taken and sailed by the other player.
+
+**Not built.**
+
+- A land hull on a deck (`landOnShipDecks`; EoD's LCT) and a flying boat moored
+  on the sea (`floatsOnTheSea`; BF1918's Felixstowe). No vanilla level has
+  either.
+- A ship at rest is out of the body world, so another ship sails through a
+  ship that has been moved and left. The page is the same.
+- Retail holds a landing craft on its davit until its engine is opened
+  (`holdObject 1` on the Daihatsu and LCVP spawners too). Both sides put it
+  afloat beside the ship from the start, as the page always has.
+
+**The room cap counts each level's maps.** A bot map is one cell a square
+metre at 9 bytes: 36 MB on a 2 km level, 144 on Midway's 4 km, and Midway
+lists five. The cap's flat 35 + 85 for a room's bots and hulls was those maps
+on a 2 km level. It now costs a level by its own `scene.json`
+(`level-table.mjs` `levelCost`, `room-registry.mjs`), the hulls' maps are
+shared by a level's rooms as the infantry's was (`room-bots.mjs`
+`hullMapsFor`), and a room runs the richest bot tier that fits: every hull,
+ships only, on foot, or none. Midway's ships tier measured 733 MB at its peak
+(738 in the sum, with the scratch of a map being built), over the 690 MB
+budget, so at a 768Mi limit a Midway room's bots are on foot; a limit of
+832Mi and `--room-memory-mb 748` gives them the ships. The limit is unchanged.
+
+**Open, found here.** The page drops a player who leaves the Shokaku's helm
+through her bridge wing into the sea, in single player at HEAD too; the room
+keeps them on it.
 
 ### P4 — Feel and correctness
 

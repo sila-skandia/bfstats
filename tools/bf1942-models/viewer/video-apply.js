@@ -8,6 +8,9 @@
 //                         where trees become cards (`tree-foliage.js`)
 //   EFFECTS QUALITY       every emitter's intensity (`effects-core.js`)
 //   ENVIRONMENT MAPPING   the reflection stage's switch (`envmap.js`)
+//   SHADOWS               the dynamic shadow pass (`shadow-pass.js` reads
+//                         `settings.shadows` each frame, as the client reads
+//                         game +0x4d0 each frame)
 //   TEXTURE QUALITY       the textures' finest mip and anisotropy
 //                         (`texture-quality.js`)
 //   VIEW DISTANCE         the far plane, the fog and the statics' cull
@@ -32,21 +35,29 @@ import { createTextureQuality } from './texture-quality.js';
 /**
  * The WebGL canvas's pixel ratio: `override` (`?dpr`, the bench's) when
  * given, else DISPLAY MODE's `displayHeight` on `display`, else (no screen
- * to measure) the screen's ratio capped at 2, the page's default.
+ * to measure) the screen's ratio capped at 2, the page's default. With no
+ * mode chosen the answer is at most `cap`.
  */
-export function pixelRatioFor({ displayHeight = null, display = null, override = null, dpr = 1 } = {}) {
+export function pixelRatioFor({ displayHeight = null, display = null, override = null, dpr = 1, cap = DEFAULT_RATIO_CAP } = {}) {
   if (override > 0) return Math.min(4, Math.max(0.25, override));
-  return displayPixelRatio(display, displayHeight) ?? Math.min(dpr > 0 ? dpr : 1, DEFAULT_RATIO_CAP);
+  const ratio = displayPixelRatio(display, displayHeight) ?? Math.min(dpr > 0 ? dpr : 1, DEFAULT_RATIO_CAP);
+  // `cap` holds only while no mode is chosen: the list's default entry is
+  // the screen at DEFAULT_RATIO_CAP, and a phone replay's is lower.
+  return displayHeight == null ? Math.min(ratio, cap) : ratio;
 }
 
 /**
- * `renderer`; `dprOverride` (`?dpr`, or null); `resize()` re-sizes the
+ * `renderer`; `dprOverride` (`?dpr`, or null); `ratioCap`, the pixel ratio
+ * at most with no DISPLAY MODE chosen (a phone replay's is lower,
+ * `replay-phone.js`); `initial`, the settings to start from instead of the
+ * stored ones (a phone replay's, until OPTIONS > VIDEO changes one);
+ * `resize()` re-sizes the
  * drawing buffer and takes `pixelRatio()` as it does; `level()` the level
  * object (its `applyViewDistance`), `roots()` the scenes whose textures
  * TEXTURE QUALITY walks.
  */
-export function createVideoApply({ renderer, dprOverride = null, resize, level, roots }) {
-  let settings = storedVideo();
+export function createVideoApply({ renderer, dprOverride = null, ratioCap = DEFAULT_RATIO_CAP, initial, resize, level, roots }) {
+  let settings = initial ?? storedVideo();
   const textures = createTextureQuality({ renderer, roots });
   let applied = null;
 
@@ -57,6 +68,7 @@ export function createVideoApply({ renderer, dprOverride = null, resize, level, 
     display: displayOf(),
     override: dprOverride,
     dpr: globalThis.devicePixelRatio,
+    cap: ratioCap,
   });
 
   function apply(next = storedVideo()) {

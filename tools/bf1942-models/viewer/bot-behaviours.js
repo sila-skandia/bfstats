@@ -141,6 +141,9 @@ export const SCOUT = {
   lookGate: 0.087,
   senseDeviation: 10 * Math.PI / 180,
   planReuseCos: 0.95,
+  /** `BBPScout::createPlan` 0x085c3a70: `BAPATurnTowardsDirection`'s
+   *  tolerance, the push of 0x3db2b8c2 at 0x085c40a5 (5 deg). */
+  hullTurnTolerance: Math.fround(0.08726646),
 };
 
 export const TAKE_COVER = {
@@ -258,7 +261,11 @@ export class ScoutState {
     const changed = this.lastQuad !== best;
     this.lastQuad = best;
     this.lookDir = dir;
-    const urgency = decleiningSlope((this.accum * SCOUT.accumWeight + sum * SCOUT.interestWeight) * boost[best]);
+    // `ctx.radio`: `(1 + Check your six)` x the seven "spotted" calls
+    // (`BBScout` 0x0857a81a..0x0857a982, multiplied in at 0x0857a9a6;
+    // bot-radio.js `scoutRadioFactor`), 1 while nobody has spoken.
+    const urgency = decleiningSlope((this.accum * SCOUT.accumWeight + sum * SCOUT.interestWeight)
+      * (ctx.radio ?? 1) * boost[best]);
     return { urgency, dir, quad: best, changed };
   }
 
@@ -299,8 +306,18 @@ export const MEDIC = {
   outsideAreaFactor: 0.75,
   /** The environment's friendly-unit query radius (INVENTION: not read). */
   searchRadius: 60.0,
-  /** A unit's `Information+0x14` value term (INVENTION: 1 per soldier). */
+  /** A soldier's `Information+0x14` value term (`flds 0x14(%esi)` at
+   *  0x08574219): its `aiTemplate.basicTemp`, vanilla's 1 (AI-92). A hull
+   *  brings its own (`friend.value`: Willy 6, Sherman 12, Tiger 30). */
   unitValue: 1.0,
+  /** INVENTION: how much of the wrench's reach (`repairDistance`, measured
+   *  past the hull's bounding radius in 3D from the soldier's feet) the plan
+   *  spends before it stops. The engine stops at `R + 0.9 x maxRange` of the
+   *  AI weapon (2.25 m), with `R` its own AI object's radius, which is not
+   *  read; against the bounding radius the heal law uses, that stop is
+   *  0.25 m outside vanilla's 2.0 m reach, and the bot held the wrench on a
+   *  hull it could not touch. */
+  reachFraction: 0.75,
   // What a round of the bag heals is not this state's: the bot fires its
   // MedPack through the human's `useMedPack` law (`bot-referee.js` `usePack`,
   // `healing-packs.js`; SUP-27), every wounded soldier within `healDistance`.
@@ -317,9 +334,12 @@ export class MedicState {
   /**
    * `ctx`: `now`, `position`, `waterDepth`, `weapons` (AI entries with
    * `healing`, `strength`, `maxRange`, `ammo`), `friends` (`{ id, pos,
-   * health (0..1), upright, inVehicle, radius, type }`), `isWalkable(x, z)`,
-   * `insideMyArea(x, z)` or null, `mod`. Returns `{ urgency, targetId,
-   * weaponIndex, arrive, changed }`.
+   * health (0..1), upright, inVehicle, radius, type }`, and for a hull
+   * `hull: true`, its `value`, the wrench's `reach` past its radius and
+   * `reachable()` when it is reached with no pathfinding), `isWalkable(x,
+   * z)`, `insideMyArea(x, z)` or null, `mod`, `radio` (`{ soldier, other
+   * }`, bot-radio.js `medicRadioFactors`). Returns `{ urgency, targetId,
+   * weaponIndex, arrive, changed, hull, targetPos }`.
    */
   evaluate(ctx) {
     const none = { urgency: 0, targetId: null, weaponIndex: -1, arrive: 0, changed: false };
@@ -338,7 +358,7 @@ export class MedicState {
       }
     });
     if (!best.size) { this.targetId = null; return none; }
-    let sum = 0, top = 0, target = null, weaponIndex = -1, arrive = 0;
+    let sum = 0, top = 0, target = null, weaponIndex = -1, arrive = 0, chosen = null;
     for (const f of ctx.friends ?? []) {
       const w = best.get(f.type ?? 'Infantry');
       if (!w) continue;
@@ -347,14 +367,25 @@ export class MedicState {
       if (f.upright === false || f.inVehicle) continue;
       const dx = f.pos[0] - ctx.position[0], dy = f.pos[1] - ctx.position[1], dz = f.pos[2] - ctx.position[2];
       const d2 = dx * dx + dy * dy + dz * dz;
-      if (d2 > w.range * w.range && ctx.isWalkable && !ctx.isWalkable(f.pos[0], f.pos[2])) continue;
-      let value = MEDIC.unitValue;
+      if (d2 > w.range * w.range) {
+        // Beyond the weapon: on a valid cell of the bot's map, or, for a
+        // unit reached with no pathfinding, a valid point behind it
+        // (0x08574189 -> 0x08574490).
+        if (f.reachable ? !f.reachable() : (ctx.isWalkable && !ctx.isWalkable(f.pos[0], f.pos[2]))) continue;
+      }
+      let value = f.value ?? MEDIC.unitValue;
       if (ctx.insideMyArea && !ctx.insideMyArea(f.pos[0], f.pos[2])) value *= MEDIC.outsideAreaFactor;
       const term = value / (Math.max(0.5, Math.sqrt(d2)) * Math.max(1e-3, sCurve(h)));
+      // The sum takes the term as it is (`fadd %st(1)` at 0x085742a6); the
+      // radio weighs only the choice of target: `1 + Medic` for a soldier
+      // (`Information+6 & 0x40`, 0x085742ae -> 0x085742b4), `1 + Need
+      // repairs` for anything else (0x08574320).
       sum += term;
-      if (term > top) {
-        top = term; target = f.id; weaponIndex = w.index;
-        arrive = (f.radius ?? 1.0) + MEDIC.rangeFraction * w.range;
+      const weighed = term * ((f.hull ? ctx.radio?.other : ctx.radio?.soldier) ?? 1);
+      if (weighed > top) {
+        top = weighed; target = f.id; weaponIndex = w.index; chosen = f;
+        const stop = MEDIC.rangeFraction * w.range;
+        arrive = (f.radius ?? 1.0) + (f.reach > 0 ? Math.min(stop, MEDIC.reachFraction * f.reach) : stop);
       }
     }
     if (!target) { this.targetId = null; this.lastUrgency = 0; return none; }
@@ -362,7 +393,202 @@ export class MedicState {
     this.targetId = target; this.weaponIndex = weaponIndex; this.arrive = arrive;
     const urgency = decleiningSlope(sum) * MEDIC.urgencyScale * (ctx.mod ?? 1);
     this.lastUrgency = urgency;
-    return { urgency, targetId: target, weaponIndex, arrive, changed };
+    return { urgency, targetId: target, weaponIndex, arrive, changed,
+             hull: !!chosen?.hull, targetPos: chosen?.hull ? chosen.pos : null };
+  }
+}
+
+/**
+ * `BBTakeCover::calculateUrgency` 0x0857c120 and `BBPTakeCover::createPlan`
+ * 0x085c6b80: the TakeCover of the Tank and ArtilleryDriver rows (`TakeCover
+ * BBTakeCover BBPTakeCover 6 0 UCUnion UnitWeights`), read 2026-11-13
+ * (AI-182). A hull's is not the soldier's (`TakeCoverState`):
+ *
+ *  * Danger, binned twice a threat (the four axis quadrants and the four
+ *    diagonal ones, 0x0857c34e..0x0857c38d): each incoming-fire record
+ *    (`BFEnvironment::getIncommingFire` vt+0x8) `strength[myType] / (age x
+ *    rate + 1.0)`, times 0.8 when it was not aimed at the bot (0x086d2954 at
+ *    0x0857c513); each spotted enemy unit that is occupied
+ *    (`vehicleOccupied` 0x0857c6af, the information's flag bit 3)
+ *    `strength[myType] / max(d, 5.0)` (0x086c5288 at 0x0857d7a8), 3D. No
+ *    heard list, no staleness, no weapon-range term, no line test.
+ *  * The cover is a condition: `BFEnvironment::getCover` 0x085e4dd0 lists
+ *    the cover objects within the unit's Mobile `coverSearchRadius` (+0x14;
+ *    50 on every vanilla land hull and ship, 20 on the soldier), and each
+ *    one that is not the danger's own hull is tried: the point between
+ *    `0.75 R` and `3.0 R` behind it along danger -> cover that
+ *    `AIPathfinding::traceValidPoint` (vt+0x54) finds on the unit's own map
+ *    (0x086ba8cc, 0x086c08c8), no halfway line. Its score is `coverValue /
+ *    (d x base)`, `d` the 3D distance from the hull to the cover and `base =
+ *    0.25 clamp(0.2 widthRatio) + 0.75 clamp(0.5 heightRatio)` against the
+ *    hull's own box (its larger ground side, its height), the divisor times
+ *    0.1 when the cover's mesh has portals (`AIObjectCover::getPortalCount`
+ *    0x085d4fe0, 0x086b1ca0). The base divides where the soldier's
+ *    multiplies (`fmuls -0x334(%ebp)` at 0x0857d2d9, `fdivrs 0x8(%eax)` at
+ *    0x0857d344), so a low wall outscores a house: retail's rule, kept.
+ *    Every cover found scales the danger: x1.3 for each new best
+ *    (0x087023e0), x`(score / best x 0.3 + 1.0)` for each other. No cover,
+ *    no urgency (0x0857cd49's tail: the total is zeroed); there is no
+ *    lowest-ground fallback.
+ *  * `urgency = (SCurve(max(d, 10) x 0.1) x Declein(total) - 0.19) x (1 +
+ *    Take cover) x mod` (0x0857d015..0x0857d0bc, 0x08702868), `d` the 3D
+ *    distance to the danger: with `d` at least 10 the SCurve reads its last
+ *    entry, so the danger alone moves it.
+ *  * The plan: `ResetControls(1, 0, 0)`, then in parallel a
+ *    `BAPAMoveToFinding` to the point at the Mobile `maxSpeed`, ended inside
+ *    `0.5 maxSpeed` of it (4.0 for a unit slower than 4 m/s, 0x086c0304 at
+ *    0x085c6f29), and the look at the danger within 0.314 rad (`LookInDir`
+ *    for a fire record, `LookAtObject` for a unit). No pose. Kept while the
+ *    danger has moved under 3 m (a point, 9.0 squared at 0x085c7e0a) or
+ *    1 m (a unit).
+ *
+ * The portal count is the cover mesh's (`extract_vehicle_ai.py`
+ * `cover_portals`, the `.sm` tail's PortalMesh; `portals` on a cover, set by
+ * bot-decision.js from the mod's table). The plan's point is then traced
+ * from the point behind the cover toward a sense position of the cover
+ * (`BFEnvironment::pickRandomSensePosition` 0x085e4080, then
+ * `AIPathfinding::trace` vt+0x4c: the last free point before the first
+ * blocked one), so the hull closes up to the cover (bot-plans.js
+ * `planHullTakeCover`); the engine picks the position on a random child of
+ * the cover object, the page a random point of the cover's footprint
+ * (INFERRED: the children are not exported and all lie inside it).
+ *
+ * Not ported: the order factor on a unit named by the bot's orders
+ * (`getMemory`'s +8), and the halving of the distance to an enemy aboard the
+ * bot's own hull.
+ */
+export const HULL_TAKE_COVER = {
+  unaimedFire: Math.fround(0.8),
+  minDistance: 5.0,
+  behindNear: 0.75,
+  behindFar: 3.0,
+  widthWeight: 0.25, widthScale: Math.fround(0.2),
+  heightWeight: 0.75, heightScale: 0.5,
+  portalScale: Math.fround(0.1),
+  newBest: Math.fround(1.3),
+  otherCover: Math.fround(0.3),
+  dangerMin: 10.0,
+  dangerScale: Math.fround(0.1),
+  urgencyOffset: Math.fround(0.19),
+  /** The Mobile template's `coverSearchRadius` in data extracted before the
+   *  exporter carried the word: what every vanilla land hull and ship
+   *  writes. A template that sets none has the ctor's 0 (0x085e0c63). */
+  coverSearchRadius: 50.0,
+  arriveMin: 4.0,
+  arriveSpeedFraction: 0.5,
+  lookTolerance: Math.fround(0.314),
+  reuseMoveStatic: 3.0,
+  reuseMoveObject: 1.0,
+};
+
+/** The two bins of a threat `(dx, dz)` off the hull: an axis quadrant (0..3)
+ *  and a diagonal one (4..7), as 0x0857c400..0x0857c4a0 sorts them. */
+export function hullQuadrants(dx, dz) {
+  const a = dz >= 0 ? (dx >= 0 ? 1 : 0) : (dx >= 0 ? 2 : 3);
+  const u = dx + dz, v = dx - dz;
+  const b = u >= 0 ? (v >= 0 ? 5 : 4) : (v >= 0 ? 6 : 7);
+  return [a, b];
+}
+
+export class HullTakeCoverState {
+  constructor() {
+    this.coverId = null;
+    this.dangerPos = null;
+    this.dangerId = null;
+    this.goal = null;
+    this.lastUrgency = 0;
+  }
+
+  /**
+   * `ctx`: `now`, `position`, `incoming` (`{ pos, time, rate, strength,
+   * aimed, attacker }`, the strength against the hull's class), `spotted`
+   * (`{ id, pos, strength }`, occupied enemy units, the strength against the
+   * hull's class), `covers` (`{ id, pos, value, width, height, radius,
+   * portals? }`, within the search radius, the danger's own hull left out by
+   * `ownerOf(coverId) === dangerHull`), `traceValidPoint(from, to)`,
+   * `myWidth`, `myHeight`, `radio`, `mod`.
+   * Returns `{ urgency, dangerPos, dangerId, cover, goal, changed }`.
+   */
+  evaluate(ctx) {
+    const H = HULL_TAKE_COVER;
+    const sum = new Float32Array(QUADRANTS);
+    const top = new Float32Array(QUADRANTS);
+    const at = new Array(QUADRANTS).fill(null);
+    let total = 0;
+    const add = (pos, s, ref) => {
+      if (!(s > 0)) return;
+      for (const q of hullQuadrants(pos[0] - ctx.position[0], pos[2] - ctx.position[2])) {
+        sum[q] += s;
+        if (top[q] < s) { top[q] = s; at[q] = { pos, ref }; }
+      }
+      total += s;
+    };
+    for (const f of ctx.incoming ?? []) {
+      if (!f.pos) continue;
+      let s = f.strength / ((ctx.now - f.time) * f.rate + 1.0);
+      if (!f.aimed) s *= H.unaimedFire;
+      add(f.pos, s, { id: f.attacker ?? null, object: false });
+    }
+    for (const m of ctx.spotted ?? []) {
+      const d = Math.max(H.minDistance, Math.hypot(m.pos[0] - ctx.position[0], m.pos[1] - ctx.position[1],
+                                                   m.pos[2] - ctx.position[2]));
+      add(m.pos, (m.strength ?? 0) / d, { id: m.id, object: true });
+    }
+    const none = () => { this.goal = null; this.coverId = null; this.lastUrgency = 0; return { urgency: 0 }; };
+    if (!(total > 0)) return none();
+    let best = -1, bestV = 0;
+    for (let q = 0; q < QUADRANTS; q++) if (bestV < sum[q]) { bestV = sum[q]; best = q; }
+    const danger = best >= 0 ? at[best] : null;
+    if (!danger) return none();
+    const cover = this.chooseCover(ctx, danger);
+    if (!cover) return none();
+    total *= cover.scale;
+    const changed = cover.id !== this.coverId || danger.ref.id !== this.dangerId;
+    this.coverId = cover.id;
+    this.dangerPos = [...danger.pos];
+    this.dangerId = danger.ref.object ? danger.ref.id : null;
+    this.goal = cover.goal;
+    const d = Math.max(H.dangerMin, Math.hypot(danger.pos[0] - ctx.position[0], danger.pos[1] - ctx.position[1],
+                                               danger.pos[2] - ctx.position[2]));
+    const urgency = Math.max(0, (sCurve(d * H.dangerScale) * decleiningSlope(total) - H.urgencyOffset)
+      * (ctx.radio ?? 1) * (ctx.mod ?? 1));
+    this.lastUrgency = urgency;
+    return { urgency, dangerPos: this.dangerPos, dangerId: this.dangerId, dangerIsObject: !!danger.ref.object,
+             cover, goal: this.goal, changed, hull: true };
+  }
+
+  /** The best cover against `danger` and the danger's scale for every cover
+   *  found: `{ id, pos, goal, score, scale }` or null. */
+  chooseCover(ctx, danger) {
+    const H = HULL_TAKE_COVER;
+    let best = null, bestScore = 0, scale = 1.0;
+    for (const c of ctx.covers ?? []) {
+      if (danger.ref.object && ctx.coverOfUnit?.(c.id, danger.ref.id)) continue;
+      let nx = c.pos[0] - danger.pos[0], ny = c.pos[1] - danger.pos[1], nz = c.pos[2] - danger.pos[2];
+      const nLen = Math.hypot(nx, ny, nz);
+      if (nLen > 1e-6) { nx /= nLen; nz /= nLen; } else { nx = 0; nz = 0; }
+      const R = c.radius ?? Math.max(c.width ?? 1, 1);
+      const from = [c.pos[0] + nx * H.behindNear * R, c.pos[2] + nz * H.behindNear * R];
+      const to = [c.pos[0] + nx * H.behindFar * R, c.pos[2] + nz * H.behindFar * R];
+      const goal = ctx.traceValidPoint ? ctx.traceValidPoint(from, to) : to;
+      if (!goal) continue;
+      const clamp01 = x => Math.min(1, Math.max(0, x));
+      const base = H.widthWeight * clamp01(((c.width ?? 0) / (ctx.myWidth || 1)) * H.widthScale)
+        + H.heightWeight * clamp01(((c.height ?? 0) / (ctx.myHeight || 1)) * H.heightScale);
+      let denom = Math.hypot(c.pos[0] - ctx.position[0], c.pos[1] - ctx.position[1], c.pos[2] - ctx.position[2]) * base;
+      if (c.portals > 0) denom *= H.portalScale;
+      const score = (c.value ?? 0) / denom;
+      if (bestScore < score) {
+        bestScore = score;
+        scale *= H.newBest;
+        best = { id: c.id, pos: c.pos, goal, score, footprint: c.footprint ?? null };
+      } else if (score > 0 && Number.isFinite(bestScore)) {
+        scale *= (score / bestScore) * H.otherCover + 1.0;
+      }
+    }
+    if (!best || !(bestScore > 0)) return null;
+    best.scale = scale;
+    return best;
   }
 }
 
@@ -447,12 +673,14 @@ export class TakeCoverState {
     this.dangerPos = [...threat.pos];
     this.dangerId = threat.ref.id;
     this.goal = cover ? cover.goal : null;
-    // `d` is the distance to the threat, clamped 2 .. 100 m; the radio
-    // message term `(1 + strength)` is 1 (no radio in the viewer).
+    // `d` is the distance to the threat, clamped 2 .. 100 m; `ctx.radio`
+    // is `1 + Take cover` (`fadds 0x86ba8d4` after the read at 0x0858103d,
+    // multiplied in at 0x08581086; bot-radio.js `coverRadioFactor`), read
+    // when the urgency is recomputed, as the engine reads it.
     const d = Math.min(TAKE_COVER.distanceCap, Math.max(TAKE_COVER.minDistance,
       Math.hypot(threat.pos[0] - ctx.position[0], threat.pos[2] - ctx.position[2])));
     const urgency = changed || !(this.lastUrgency > 0)
-      ? decleiningSlope(total) * decleiningSlope(d * TAKE_COVER.distanceScale) * (ctx.mod ?? 1)
+      ? decleiningSlope(total) * decleiningSlope(d * TAKE_COVER.distanceScale) * (ctx.mod ?? 1) * (ctx.radio ?? 1)
       : this.lastUrgency;
     this.lastUrgency = urgency;
     return { urgency, dangerPos: this.dangerPos, dangerId: this.dangerId, cover, goal: this.goal, changed };

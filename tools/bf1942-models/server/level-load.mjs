@@ -26,6 +26,7 @@ import { buildHeightfield, heightfieldFromSamples } from '../viewer/heightfield.
 import { loadVehicleTree, readGlb } from './glb-tree.mjs';
 import { buildSceneTree, decodeMaterialIds, decodePng, readArmTracks } from './glb-scene.mjs';
 import { LevelData } from './level-data.mjs';
+import { applyTemplateWords } from '../viewer/template-words.js';
 
 /**
  * Load a published maps tree entry, headless.
@@ -55,6 +56,11 @@ export function loadRealLevel({ viewerDir, name, mod = null }) {
   }
   const { json, bin } = readGlb(join(levelDir, 'scene.glb'));
   const { root, terrainTiles } = buildSceneTree(json, bin);
+  // A tree baked before the exporter read the rocket and submarine words
+  // takes them from the level's table, as the page does
+  // (`viewer/template-words.js`): an Engine's heat stops the room's Natter
+  // too (PHY-45).
+  applyTemplateWords(root, extras.templateWords);
 
   // The heightfield, shared read-only by every room: the level's whole
   // heightmap where the tree ships it (`terrain/heightmap.png`, the page's
@@ -128,14 +134,49 @@ export function loadRealLevel({ viewerDir, name, mod = null }) {
     if (templates.has(template)) continue;
     const path = modelsDirs.map(dir => resolveTemplatePath(dir, name)).find(existsSync);
     if (!path) continue;
-    templates.set(template, loadVehicleTree(path));
+    const tree = loadVehicleTree(path);
+    applyTemplateWords(tree?.scene ?? tree?.root ?? tree, extras.templateWords);
+    templates.set(template, tree);
   }
+  loadRoundTemplates(templates, extras, name => modelsDirs.map(dir => resolveTemplatePath(dir, name)).find(existsSync));
 
   return new LevelData({
     name, extras, sceneRoot: root, heightfield, damageTables,
     collisionMeshes, templates, colliderMock: null, loadouts, soldierBody,
     armTracks: readArmTracks(json, bin),
+    // Where the level's own files are, for what a room's bots are made from
+    // (`room-bots.mjs` `botDataFor`: weapon glbs, names, search maps).
+    paths: { levelDir, sharedDir, modelsDirs, glbsDir: join(viewerDir, 'glbs') },
   });
+}
+
+/**
+ * The vehicles a loaded hull's FireArms throws as its round
+ * (`fireArms.projectile.vehicle`, FA-29: the Wasserfall's rocket), loaded
+ * beside it so a room can stand one (`room-missiles.mjs`). `resolve(name)`
+ * answers the template's glb path, or nothing. A round's own guns are
+ * followed too.
+ */
+export function loadRoundTemplates(templates, extras, resolve) {
+  const queue = [...templates.values()];
+  while (queue.length) {
+    const tree = queue.pop();
+    const wanted = [];
+    tree?.traverse?.(node => {
+      const p = node.userData?.fireArms?.projectile;
+      if (p && typeof p === 'object' && p.vehicle === true && p.template) wanted.push(String(p.template));
+    });
+    for (const name of wanted) {
+      const key = name.toLowerCase();
+      if (templates.has(key)) continue;
+      const path = resolve(name);
+      if (!path || !existsSync(path)) continue;
+      const round = loadVehicleTree(path);
+      applyTemplateWords(round, extras?.templateWords);
+      templates.set(key, round);
+      queue.push(round);
+    }
+  }
 }
 
 export function modelsDirOf(viewerDir) { return join(viewerDir, 'models'); }
@@ -164,7 +205,51 @@ export function resolveTemplatePath(modelsDir, template) {
   } catch { /* the models dir is optional on a bare harness */ }
   if (plain) return join(modelsDir, plain);
   if (prefixed) return join(modelsDir, prefixed);
-  return join(modelsDir, `${template}.glb`);
+  return storedTemplatePath(modelsDir, template) ?? join(modelsDir, `${template}.glb`);
+}
+
+/** modelsDir -> its `models.json` rows' blobs, `glb stem (lower) -> sha`. */
+const storeTables = new Map();
+
+/**
+ * The same template on a published tree, which keeps each glb once, by its
+ * content, under `<viewer>/glbs/<sha>.glb` and names it in the tree's
+ * `models.json` (`viewer/glb-store.js`, features/mesh-asset-size phase 5):
+ * there is no `models/<Template>.glb` there at all, so until 2026-11-13 a
+ * room on the live volume found no vehicle template. The row's own glb
+ * first, else a variant's (`<Template>.<Level>.glb`), as the scan above
+ * prefers them. Null for a tree with no manifest, a name it does not list,
+ * or a blob that is not on disk.
+ */
+export function storedTemplatePath(modelsDir, template) {
+  let table = storeTables.get(modelsDir);
+  if (table === undefined) {
+    table = null;
+    try {
+      const rows = JSON.parse(readFileSync(join(modelsDir, 'models.json'), 'utf8'));
+      table = new Map();
+      const put = row => {
+        const key = String(row?.glb ?? '').replace(/\.glb$/i, '').toLowerCase();
+        if (key && row.sha && !table.has(key)) table.set(key, row.sha);
+      };
+      for (const row of Array.isArray(rows) ? rows : []) {
+        put(row);
+        for (const variant of row?.variants ?? []) put(variant);
+      }
+    } catch { table = null; }
+    storeTables.set(modelsDir, table);
+  }
+  if (!table) return null;
+  const want = String(template).toLowerCase();
+  let sha = table.get(want) ?? null;
+  if (!sha) for (const [key, value] of table) if (key.startsWith(`${want}.`) && !key.endsWith('.cockpit')) { sha = value; break; }
+  if (!sha) return null;
+  // `<viewer>/glbs`: beside the `models` directory this tree hangs under
+  // (`models`, or `models/mods/<mod>`).
+  let root = modelsDir;
+  for (let i = 0; i < 4 && !/[\\/]models[\\/]?$/.test(root); i++) root = join(root, '..');
+  const blob = join(root, '..', 'glbs', `${sha}.glb`);
+  return existsSync(blob) ? blob : null;
 }
 
 /**

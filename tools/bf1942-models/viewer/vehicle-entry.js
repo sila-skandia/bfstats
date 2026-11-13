@@ -68,6 +68,20 @@ export function createVehicleEntry(page) {
         });
       }
     }
+    // A hull another player of the room sits in stands on this page as its
+    // replica, the page's own copy off the field (`net-room.js`
+    // `heldHullRoots`): its doors are the replica's, and taking one stands
+    // the copy there first (`claimHeldHull`, `enterVehicle`).
+    for (const { id, root } of page.heldHullRoots?.() ?? []) {
+      const control = root.userData?.control || root.name || 'vehicle';
+      const hullRadius = hullRadiusOf(root);
+      for (const entry of listEntryPoints(root, ENTRY_RADIUS_FALLBACK)) {
+        vehicleEntry.entryPoints.push({
+          node: entry.node, vehicle: root, control,
+          seatId: entry.seatId, radius: entry.radius, hullRadius, heldHull: id,
+        });
+      }
+    }
   }
 
   /**
@@ -159,6 +173,8 @@ export function createVehicleEntry(page) {
       hullOf: hullFrom(origin),
       open: entry => {
         if (page.seatHolder(entry.vehicle, entry.seatId)) return false;
+        // A seat one of the room's other players sits in (SEAT-11).
+        if (page.roomSeatHeld?.(entry.vehicle, entry.seatId)) return false;
         if (!page.mayEnterHull(entry.vehicle)) return false;
         // A wreck has no doors. The bots' candidate list skips a destroyed
         // hull (bot-units.js); the human's did not, and E seated him in a
@@ -188,7 +204,7 @@ export function createVehicleEntry(page) {
     if (rootId == null) return door;
     const seatId = preferredSeat(door.seatId, {
       vehicleType: survey.seats?.get(door.seatId)?.vehicleType,
-      rootId, rootFree: !page.seatHolder(door.vehicle, rootId),
+      rootId, rootFree: !page.seatHolder(door.vehicle, rootId) && !page.roomSeatHeld?.(door.vehicle, rootId),
     });
     return seatId === door.seatId ? door : { ...door, seatId };
   }
@@ -306,6 +322,12 @@ export function createVehicleEntry(page) {
     // adoptServerSeat) is taken whatever this page thinks of the hull: the
     // server seats a man in a hull that is burning down, and refusing it
     // left the page on foot beside the hull the server had him driving.
+    // A door of a replica: the page's own copy of that hull is stood where
+    // the server has it and is what he gets into (`net-room.js`).
+    if (entry?.heldHull != null) {
+      entry = page.claimHeldHull?.(entry) ?? null;
+      if (!entry) return;
+    }
     if (entry?.vehicle && !entry.granted && page.occupancy?.root !== entry.vehicle && isWreck(entry.vehicle)) return;
     page.holster();
     // A button held through the climb in must not arrive already pulling the

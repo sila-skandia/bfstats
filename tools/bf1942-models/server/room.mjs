@@ -21,8 +21,13 @@ import { chokeRates, sendSnapshots, snapshotRecord } from './room-stream.mjs';
 import { createControlChannel } from './room-control.mjs';
 import { teamToAddPlayer } from '../viewer/team-to-add.js';
 import { createRoomPads } from './room-pads.mjs';
+import { createRoomMissiles } from './room-missiles.mjs';
 import { createRoomHits } from './room-hits.mjs';
+import { createRoomGuns } from './room-guns.mjs';
 import { createRoomPacks } from './room-packs.mjs';
+import { createRoomStats } from './room-stats.mjs';
+import { createRoomHost } from './room-host.mjs';
+import { createRoomBots } from './room-bots.mjs';
 
 // --- the room ----------------------------------------------------------------
 
@@ -39,7 +44,8 @@ import { createRoomPacks } from './room-packs.mjs';
 export class Room {
   #control;
 
-  constructor({ code, level, mode = null, now = null, random = null, rules = null }) {
+  constructor({ code, level, mode = null, now = null, random = null, rules = null,
+                settings = null, host = null, bots = null }) {
     this.code = code;
     /** The auto-team's coin for a tie (`#autoTeam`, `rand() & 1`). */
     this.random = random || Math.random;
@@ -60,7 +66,14 @@ export class Room {
     this.players = new Map();
     this.lastAt = null;
     this.lastSweep = 0;
+    /** When the room last had nobody in it (`room-registry.mjs`
+     *  `reapEmptyRooms`); null while someone is. */
+    this.emptyAt = this.now();
     this.timer = null;
+    // The host half (room-host.mjs): the creator's settings, the admin, the
+    // votes, the bans and the map list. `host` is the registry's part of it
+    // (`hasLevel`, `changeLevel`, and a level change's `carry`).
+    this.host = createRoomHost({ room: this, settings, base: rules, ...(host ?? {}) });
     // P3: the damage/death/ticket/flag authority, fed this room's world
     // (its rows go to everyone — the kill feed, the tickets, the flags).
     this.authority = createAuthority({
@@ -77,16 +90,14 @@ export class Room {
       },
       onRestart: () => this.pads.restart(),
       // The server's settings (`authority.mjs` `ROOM_RULES`): the pre-game
-      // and the team-kill law.
-      rules,
+      // and the team-kill law, under the room's own settings.
+      rules: { ...(rules ?? {}), ...this.host.rules() },
       // `kickPlayer(id, false)` (vt+0x334, 0x08148d40) at the team-kill
-      // limit: the slot leaves and its socket closes.
-      onKick: slot => {
-        const connection = this.players.get(slot);
-        if (!connection) return;
-        this.leave(connection);
-        connection.peer.close(4001, 'kicked: team kills');
-      },
+      // limit: the slot leaves and its socket closes (`room-host.mjs` `kick`).
+      onKick: slot => { this.host.kick(slot); },
+      // `killPlayer`'s auto-balance and `gameStatusEndGame`'s round count.
+      onAutoBalance: slot => this.host.autoBalance(slot),
+      onRoundsOver: () => this.host.roundsOver(),
       // TKT-8: a carried point's carrier, as this room has it.
       spawnGone: spawn => this.instance.carriedPointGone?.(spawn) ?? false,
     });
@@ -94,6 +105,15 @@ export class Room {
     this.#control = createControlChannel({
       room: this,
       event: (type, connection, extra) => this.#event(type, connection, extra),
+    });
+    // The score board's numbers on the wire (room-stats.mjs).
+    this.stats = createRoomStats({ room: this });
+    // The rounds that are vehicles (room-missiles.mjs, FA-29): before the
+    // pads, whose books take the table as it stands at their start.
+    this.missiles = createRoomMissiles({
+      room: this,
+      onRow: row => this.broadcast(eventRow(row.type, this.tick, row), null),
+      unmount: connection => this.#unmount(connection),
     });
     // The vehicle pads and the wrecks (room-pads.mjs), whose rows go to
     // everyone as the authority's do.
@@ -111,6 +131,24 @@ export class Room {
       room: this,
       onRow: row => this.broadcast(eventRow(row.type, this.tick, row), null),
     });
+    // The seat guns and the bots' launchers, flown here (room-guns.mjs):
+    // the World's `guns`, each landing priced by `hits.onRound`.
+    this.guns = createRoomGuns({ room: this, capsuleRays: bots?.capsuleRays !== false });
+    // A round that is a vehicle leaves the room's own barrel as one
+    // (`round-launch.js` `fireRound` -> `guns.onVehicleRound`): the launch is
+    // the missiles' (room-missiles.mjs, FA-29), for a player in the launcher.
+    // The page's own `launch` row for the same round is then a repeat.
+    if (this.guns?.guns) {
+      this.guns.guns.onVehicleRound = group => {
+        const slot = this.guns.firerOf?.(group);
+        const root = slot != null ? this.world.player(slot)?.occupancy?.root : null;
+        const launcher = root ? this.instance.table.find(v => v.root === root) : null;
+        if (!launcher || !this.missiles.roundOf(launcher) || !this.players.has(slot)) return false;
+        this.missiles.launch(slot, launcher);
+        // Spent either way: a launcher with a round in the air throws no shell.
+        return true;
+      };
+    }
     // The medic bags and wrenches the players' pages fire, run here
     // (room-packs.mjs): the heal is the server's, on the snapshot and the
     // `hull` rows.
@@ -118,6 +156,9 @@ export class Room {
       room: this,
       onRow: row => this.broadcast(eventRow(row.type, this.tick, row), null),
     });
+    // The room's bots (room-bots.mjs, online co-op): the page's referee in
+    // this world, under the process's caps (`bots`, the registry's policy).
+    this.bots = createRoomBots({ room: this, policy: bots });
   }
 
   level() { return this.levelData.name; }
@@ -126,12 +167,13 @@ export class Room {
    *  URL names no `?mode=` loads too. */
   defaultMode() { return this.mode() === (this.levelData.modeOf(null) ?? this.mode()); }
   playerCount() { return this.players.size; }
-  capacity() { return MAX_PLAYERS; }
+  capacity() { return this.host.settings.maxPlayers; }
 
   /** The lobby row: {code, level, mode, players, max}. */
   listRow() {
     return { code: this.code, level: this.level(), mode: this.mode(),
-             players: this.playerCount(), max: this.capacity() };
+             players: this.playerCount(), max: this.capacity(),
+             password: !!this.host.settings.password };
   }
 
   start() {
@@ -151,12 +193,19 @@ export class Room {
    * On failure returns `{ok: false, code}`; the caller sends MSG_CLOSED and
    * closes. On success the connection's slot/name/team/rate are set.
    */
-  join(connection, { name, team }) {
+  join(connection, { name, team, password = '', admin = null, id = null }) {
     if (this.players.size >= MAX_PLAYERS) return error('room_full');
     if (!isPeer(connection.peer)) return error('no_peer');
     if (name == null || !NAME_OK.test(String(name).trim())) return error('bad_name');
     if (!(team === 0 || team === 1 || team === 2)) return error('bad_team');
-    const slot = nextFreeSlot(this.players);
+    // The host's gate: the bans, the password, the reserved slots, the
+    // room's own max players (`room-host.mjs` `mayJoin`).
+    const refused = this.host.mayJoin(connection, { name: String(name).trim(), password, admin, id });
+    if (refused) return error(refused);
+    // A slot table the bots have filled gives one up for a human
+    // (`room-bots.mjs` `makeRoom`); a bot's slot is held like a player's.
+    this.bots.makeRoom();
+    const slot = nextFreeSlot({ has: s => this.players.has(s) || this.bots.has(s) });
     if (slot === null) return error('room_full');
     if (team === 0) team = this.#autoTeam();
     connection.slot = slot;
@@ -168,6 +217,7 @@ export class Room {
     connection.fireAt = 0;
     connection.lastSeen = this.now();
     this.players.set(slot, connection);
+    this.emptyAt = null;
     // addPlayer places the soldier on the team's flag (world.js's own join
     // law) and the client's spawn row re-places it on its chosen flag.
     this.world.addPlayer(slot, { team });
@@ -179,13 +229,12 @@ export class Room {
   /** The engine's join half for team 0: `PlayerManager::getTeamToAddPlayer`
    *  (0x08261670, `viewer/team-to-add.js`) over every player on each side,
    *  weighed by the team ratios, a tie at random (`rand() & 1`, 0x0826179e).
-   *  A room has no ratio settings, so both are the default's equal pair. */
+   *  The ratios are CREATE GAME's AXIS VS ALLIED TEAM RATIO pair. */
   #autoTeam() {
-    let one = 0, two = 0;
-    for (const p of this.players.values()) {
-      if (p.team === 1) one++; else if (p.team === 2) two++;
-    }
-    return teamToAddPlayer(one, two, 1, 1, this.random);
+    // Every player on each side, the bots among them (`+0x7c` of each).
+    const [one, two] = this.bots.sideCounts();
+    return teamToAddPlayer(one, two, this.host.settings.axisTeamRatio,
+                           this.host.settings.alliedTeamRatio, this.random);
   }
 
   /** The HELLO row (netcode.js: slot, room, level, mode, team, name, slots,
@@ -196,8 +245,10 @@ export class Room {
     const roster = [];
     for (const [slot, c] of this.players) {
       if (slot === connection.slot) continue;
-      roster.push({ slot, name: c.name, team: c.team });
+      roster.push({ slot, name: c.name, team: c.team, ...this.stats.of(slot) });
     }
+    // The bots, each with its mark (`listPlayers`' " is an AI bot.", CON-24).
+    for (const row of this.bots.rosterRows()) roster.push({ ...row, ...this.stats.of(row.slot) });
     return {
       slot: connection.slot,
       room: this.code,
@@ -206,7 +257,17 @@ export class Room {
       team: connection.team,
       name: connection.name,
       slots: roster,
-      maxPlayers: MAX_PLAYERS,
+      // The joining player's own score, kills, deaths and ping (a slot's
+      // tally is new with its player).
+      stats: this.stats.of(connection.slot),
+      maxPlayers: this.capacity(),
+      // The settings, the map list, the admin flag and any running vote.
+      ...this.host.hello(connection),
+      // The bot settings and the cap in force (`room-bots.mjs`).
+      bots: this.bots.publicSettings(),
+      // What the room flies itself (`room-guns.mjs`): the seat guns, so a
+      // page reports no landing of its own seat rounds (`vehicle-hits.js`).
+      rounds: this.guns?.publicState() ?? null,
       flags: this.flagsForWire(),
       vehicles: this.vehiclesForWire(),
       tickets: this.world.tickets,
@@ -236,8 +297,14 @@ export class Room {
    *  a pad's other-side vehicle), which is how the page finds its own copy;
    *  `live` whether it stands in the world now (`room-pads.mjs`). */
   vehiclesForWire() {
+    // `round`: the launcher whose fired round this hull is (room-missiles.mjs);
+    // the page's copy is its pooled node of that template.
     return this.instance.table.map(v => ({ id: v.id, template: v.template, pad: v.pad ?? null,
-                                           node: v.node ?? null, live: !!v.live }));
+                                           node: v.node ?? null, live: !!v.live,
+                                           // A ship's spawner's second or third craft: the
+                                           // page's copy is that slot of the baked one's.
+                                           ...(v.craftSlot > 0 ? { slot: v.craftSlot } : {}),
+                                           ...(v.round != null ? { round: v.round } : {}) }));
   }
 
   // --- inbound messages ------------------------------------------------------
@@ -257,6 +324,9 @@ export class Room {
         // the timeout, not the cadence — the client decides when to ping.
         const clientMs = body.length >= 4
           ? (body[0] | (body[1] << 8) | (body[2] << 16) | (body[3] << 24)) : 0;
+        // A ping that carries a pong's time back is the round trip the board's
+        // ping column shows (room-stats.mjs), and is not answered.
+        if (this.stats.onPingEcho(connection, body, this.now())) return;
         connection.peer.send(frame(MSG_PONG, serverTimeBytes(this.now())));
         return;
       }
@@ -303,8 +373,11 @@ export class Room {
     const name = connection.name;
     if (this.world.player(slot)?.occupancy) this.#unmount(connection);
     this.authority.forget?.(slot);
+    this.stats.forget(slot);
+    this.host.forget(slot);
     this.world.removePlayer(slot);
     this.players.delete(slot);
+    if (!this.players.size) this.emptyAt = this.now();
     connection.slot = null;
     connection.name = null;
     connection.team = null;
@@ -358,12 +431,26 @@ export class Room {
     this.hits.deathBlasts(step);
     // A hull that died this step takes its crew with it, before the death
     // pass reads their Armors.
+    this.missiles.hullDeaths(step);
     this.pads.hullDeaths(step);
+    // The crewed hulls' matrices, for the bots' aim and the next tick's
+    // muzzles (room-guns.mjs).
+    this.guns?.afterStep();
+    // The bots' tick, where the page's frame and the headless runner have it:
+    // after the world's step, their rounds landing before the death pass.
+    this.bots.step(WORLD_TICK_DT);
     // P3: death decree, ticket bleeds, flag captures — the authority's own
     // half after every world step (all damage funnels landed during it).
     this.authority.afterStep(step, WORLD_TICK_DT);
+    // Retail's top-up and removal (`gameStatusPlaying`, `killPlayer`).
+    this.bots.afterAuthority();
     // The pads and the wrecks, after the captures (the page's order).
     this.pads.step(WORLD_TICK_DT);
+    // The chat relay's paced pieces (CHAT-2) and the board's changed numbers.
+    this.#control.chatTick();
+    this.stats.step();
+    // The votes' clocks (`updateVoteSystem`, once a server frame, D-1).
+    this.host.step();
     const nowMs = this.now();
     for (const [slot, connection] of this.players) {
       const player = world.player(slot);

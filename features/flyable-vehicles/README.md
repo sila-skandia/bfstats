@@ -415,3 +415,62 @@ is reached by the human alone today. The engine's own empty-hull trim for a
 fixed wing, whether it holds a shallow glide or noses over, has not been
 measured against the real game; the parity lab's bail-out scenario would
 settle it.
+
+## A plane shot down glides (2026-11-13)
+
+**Report.** "Shooting planes out of the sky. In our implementation planes
+will drop almost straight down once shot. In retail they basically glide in
+the path they were heading."
+
+**What we did.** The wreck pass (`world-vehicle-tick.js` `stepFallingWrecks`)
+zeroed every Wing's lift, held the hull to a 30 m/s sink, bled a quarter of
+its speed a second and centred the stick. That was the answer to an earlier
+report of a downed BF109 gliding 45 s
+(`features/viewer-combat-playtest-fixes/README.md`). The glide was not the
+fault; the missing time to live was.
+
+**Retail, read on the server binary.** Destruction is TemplateMessage 0x15
+and nothing in the physics asks about it:
+
+- `PlayerControlObject::handlePlayerInput` `0x08318920` forwards no input
+  once `+0xed` is set (HP-15), so each surface keeps the input its register
+  held at the kill;
+- `Engine::handleMessage` `0x0823e730` stops the engine (PHY-14);
+- `Wing::handleMessage` `0x08250bf0` writes `+0xed` at `0x08250d5a` and
+  leaves the lift pair (`+0x148`/`+0x14c`) alone; `Wing::handleUpdate`
+  `0x08250950` and `PhysicsWing::updatePhysics` `0x0824ed10` never read the
+  byte; the physics passes ask no destroyed flag (HP-24);
+- the object lasts its `timeToLiveAfterDeath` from the kill, 10 s on every
+  vanilla aircraft, wherever it is (HP-19).
+
+Critical damage is the one thing that does change a Wing: on message 0x14
+each Wing's lift pair is scaled by `f = clamp((wing.x - root.x + R) / 2R,
+0.1, 1)` in world x, `R` the root's bounding radius, mirrored to `1 - f`
+when `Armor::getLastHitPlace().x < 0` (`0x08250d70`..`0x08250ee0`), and put
+back on 0x13. A wreck keeps what it had.
+
+**Built.** `stepFallingWrecks` stops the engine, lets go of the triggers and
+integrates; no sink, no bleed, the stick untouched. `Aircraft.criticalLift`
+/ `fullLift` (`aircraft.js`) are the 0x14 / 0x13 answers, driven by
+`syncCriticalLift` from the pilot's tick and by `wreckVehicle` at the kill;
+`vehicle-damage.js` keeps the last hit place's x and the one the crossing
+found. `vehicle-wrecks.js` runs the wreck's clock from the kill: a glide that
+outlasts it fades and is removed in the air, and a crash no longer restarts
+it. A room's hull row carries the hit side (`hitX`) so the client predicts
+the same mirror.
+
+**Measured** (`tests/plane_wreck_harness.mjs`, the school's Spitfire at
+70 m/s and 200 m; before, after):
+
+| killed in | before | after | at 10 s (removed) |
+|---|---|---|---|
+| level flight | 4.3 s, 138 m, 55 deg | 20.3 s, 700 m, 16 deg | 347 m on, 167 m up |
+| 20 deg climb | 4.3 s, 132 m, 56 deg | 16.1 s, 481 m, zooms 68 m first | 259 m on, 174 m up |
+| 20 deg dive | 4.3 s, 129 m, 57 deg | 18.1 s, 652 m, 17 deg | 398 m on, 117 m up |
+| a turn | 3.9 s, 116 m, 59 deg | 11.1 s, 390 m, 27 deg | 367 m on, 30 m up |
+| critical, hands off | (as a live plane) | 9.5 s, 305 m, 33 deg, rolling | down |
+
+**Open.** A hull vacated in flight still has its stick centred every tick
+(`stepCoastingHulls`); `Wing::handleMessage` passes message 3 to nobody, so
+retail may leave it where the pilot let go. A coasting hull that goes
+critical with nobody aboard is not scaled until someone's tick sees it.

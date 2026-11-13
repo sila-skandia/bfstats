@@ -255,8 +255,10 @@ export const UNARMED_FIRE = { reach: 250.0, minDistance: 0.5, distanceScale: 1.5
  * is 0 (`fldz`, 0x0856ec31). Objects typed `ITTargetTemperature` (enum 29,
  * the `+7 & 0x20` branch: `armourClassValue[type] x basicTemp x ...`) are
  * scored too in retail, but no vanilla AI template adds that type, so it is
- * left out. The radio terms (messages 37 Fire, 43 CoverMe, 38 HoldFire) are
- * 1 here, as on every Fire generator of the viewer's.
+ * left out. The radio terms (messages 37 Fire, 43 CoverMe, 38 HoldFire,
+ * 0x0856f8fa..0x0856f95e) are one product on what this returns, applied
+ * where every Fire generator's is (bot-decision.js `urgencyFire`,
+ * bot-radio.js `fireRadioFactor`).
  */
 export function unarmedThreat({ spotted, position, now, infoOf, myType = 'LightArmour', attackedBy = null,
                                 insideOrderedArea = true, insideArea = null, currentTarget = null,
@@ -361,6 +363,11 @@ export function weaponAiOf(entry) {
     /** `weaponTemplate.indirect`, the template's byte +1 (ConsoleClass620
      *  0x08510db0): `EntryPlaneAimAt` levels an aircraft's aim for it. */
     indirect: entry?.indirect ?? 0,
+    /** `weaponTemplate.isThrown` (`WeaponTemplate::getIsThrown`): the weapon
+     *  a bot's throw is made with (`soldier_choseThrownWeapon` 0x085cf300,
+     *  bot-plans.js `soldierChoseThrownWeapon`). Null in a `loadouts.json`
+     *  extracted before the exporter carried the word. */
+    isThrown: entry?.isThrown ?? null,
     deviation: entry?.deviation ?? 5.0,
     deviationCorrectionTime: entry?.deviationCorrectionTime ?? 10.0,
     minRange: entry?.minRange ?? 0.0,
@@ -674,9 +681,18 @@ export function firePlanFor({ position, targetPos, targetId, weapon, pose, now }
  *    unless a case of `createPlan`'s state switch replaces it, with
  *    `calculateAwayPosition`'s point (2 minRange + 5 away) when the target
  *    is inside minRange + 1, or with `getPortalLookAtPosition`'s (an attack
- *    portal of the level's cover data, `getAttackPortal`). The portal case
- *    is not ported and which case a tank's firing state is in was not
- *    traced (INVENTION: its own position). Moving to his own position is
+ *    portal of the level's cover data, `getAttackPortal`). The portal
+ *    cases need the cover object the bot or its target is in (the draws
+ *    test its cover plug-in at 0x085a5f6b, 0x085a6297 and 0x085a633b; the
+ *    Mobile plug-in's vt+0x30 names it) and that object's portals. State 3's draw
+ *    weighs `1 - 1 / (2 n^2 + 1)` over its `n` portals
+ *    (0x085a5fc2..0x085a5fee), and no vanilla object has one: none has a
+ *    portal mesh or an `AIMeshes/<name>_a1.aim` file (`AITemplateCover::
+ *    initFromObject` 0x085dfb10; ledger AI-116). The viewer keeps no "in a
+ *    cover object" for a unit, so states 6 and 7 are not drawn either
+ *    (what they do with a cover that has no portal was not read). Its own
+ *    position is the
+ *    engine's firing point here. Moving to his own position is
  *    standing: inside `mid` without S the tank holds.
  *  - `BAPAMoveToObjectFinding` (ctor 0x08545c10: 0.9 maxRange, maxSpeed,
  *    0.5 maxSpeed arriving, `BAPConFalse`, the drive controls, and
@@ -884,7 +900,8 @@ export function scoreVehicleTargets({
       envBest = envCurrent.e; envScore = envCurrent.score; envWeapon = envCurrent.weapon;
     }
     if (bestScore <= 0 && envBest) {
-      // `Declein(2 x) * radio * x`: the unspotted target's own score scales it.
+      // `Declein(2 x) * radio * x`: the unspotted target's own score scales
+      // it (the radio product is `urgencyFire`'s, bot-decision.js).
       return {
         targetId: envBest.id, targetPos: [...envBest.pos], score: envScore, weaponIndex: envWeapon,
         urgency: decliningSlope(2 * envScore) * envScore, visible: false, environmental: true,

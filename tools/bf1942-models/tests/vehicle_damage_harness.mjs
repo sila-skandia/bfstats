@@ -347,7 +347,8 @@ const AC130 = {
   const tables = { materials, modifiers };
   const fresh = () => {
     const set = new VehicleDamageSet();
-    set.add(1, { ...SHERMAN, splashMaterial: 50 }, { name: 'Firer' });
+    // The hull the round struck: its Armor is the blast's source (HP-9g).
+    set.add(1, { ...SHERMAN, splashMaterial: 50 }, { name: 'Struck' });
     set.add(2, { ...SHERMAN, splashMaterial: 50 }, { name: 'Near' });
     set.add(3, { ...SHERMAN, splashMaterial: 50 }, { name: 'Edge' });
     set.add(4, { ...SHERMAN, splashMaterial: 73 }, { name: 'Immune' });
@@ -362,14 +363,16 @@ const AC130 = {
     { owner: 5, x: 1, y: 0, z: 0 },
     { owner: 99, x: 1, y: 0, z: 0 },
   ];
+  // Fired from hull 2 (`Near`), landed on hull 1 (`Struck`).
   const blast = {
-    point: [0, 0, 0], firer: 1, splashMaterial2: 236, splashRadius: 10,
+    point: [0, 0, 0], owner: 1, firer: 2, splashMaterial2: 236, splashRadius: 10,
   };
   const set = fresh();
   const hurt = set.applySplash(blast, targets, tables);
   out.splash = {
     hurt: hurt.map(h => ({ name: h.vehicle.name, lost: h.lost, distance: h.distance })),
-    firerHp: set.get(1).hitPoints,
+    struckHp: set.get(1).hitPoints,
+    firerHp: set.get(2).hitPoints,
     directOnly: fresh().applySplash({ point: [0, 0, 0], firer: 1 }, targets, tables).length,
     noSplashMaterial: fresh().applySplash(
       { ...blast, splashMaterial2: -1 }, targets, tables).length,

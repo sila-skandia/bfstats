@@ -318,7 +318,9 @@ async function main() {
   // other side), A's page holds off too; each room vehicle finds its copy.
   const hulls = await pageA.evaluate(() => window.__net().hulls);
   const unmatched = hulls.filter(h => h.page === null).map(h => h.template);
-  const disagree = hulls.filter(h => h.page !== null && h.page !== h.live)
+  // A hull another player holds is drawn as its replica, its copy stood down
+  // (`net-room.js` `remoteHeld`).
+  const disagree = hulls.filter(h => h.page !== null && h.page !== (h.live && !h.held))
     .map(h => `${h.template}#${h.id} room ${h.live} page ${h.page}`);
   process.stdout.write(`[A] hulls: ${hulls.length} in the room, ${hulls.filter(h => h.live).length} standing, `
     + `${unmatched.length} without a page copy, ${disagree.length} disagreeing\n`);

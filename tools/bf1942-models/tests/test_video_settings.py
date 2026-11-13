@@ -35,6 +35,7 @@ HARNESS = Path(__file__).resolve().parent / "video_settings_harness.mjs"
 _INSTALLS = [
     Path.home() / ".wine/drive_c/EA Games/Battlefield 1942",
     Path.home() / "Library/Application Support/CrossOver/Bottles/BF1942/drive_c/EA Games/Battlefield 1942",
+    Path.home() / ".cache/vimpact-game",
 ]
 SETTINGS = next((p / "Mods/bf1942/Settings/Default" for p in _INSTALLS
                  if (p / "Mods/bf1942/Settings/Default").is_dir()),
@@ -46,10 +47,11 @@ WORDS = {
     "seteffectsquality": "effectsQuality",
     "setenvironmentmapping": "environmentMapping",
     "setlightmaps": "lightmaps",
+    "setshadows": "shadows",
     "setdetailtexture": "textureQuality",
     "setmenuviewdistance": "viewDistance",
 }
-BOOLS = {"environmentMapping", "lightmaps"}
+BOOLS = {"environmentMapping", "lightmaps", "shadows"}
 
 
 def run_harness() -> dict:
@@ -96,6 +98,19 @@ class VideoSettingsTests(unittest.TestCase):
         self.assertEqual(100, d["viewDistance"])
         self.assertIsNone(d["displayHeight"])
         self.assertTrue(d["environmentMapping"] and d["lightmaps"])
+        # HIGH's `game.setShadows 1` (VID-7).
+        self.assertTrue(d["shadows"])
+
+    def test_a_choice_kept_before_shadows_was_a_row_keeps_its_preset(self) -> None:
+        # A stored LOW or MEDIUM has no `shadows` field: it reads as the
+        # preset's own line (off), not as CUSTOM; a stored HIGH and any other
+        # mix read the default.
+        k = self.results["shadowsKept"]
+        self.assertEqual({"performance": 1, "shadows": False}, k["low"])
+        self.assertEqual({"performance": 2, "shadows": False}, k["medium"])
+        self.assertEqual({"performance": 3, "shadows": True}, k["high"])
+        self.assertEqual({"performance": 0, "shadows": True}, k["mix"])
+        self.assertEqual({"performance": 0, "shadows": False}, k["off"])
 
     def test_the_tree_swap_distance(self) -> None:
         # TreeRenderer's draw 0x0064ddbd..0x0064ddfe: sqrt(dx^2 + dz^2), no

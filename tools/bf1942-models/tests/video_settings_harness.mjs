@@ -42,6 +42,22 @@ out.texture = TEXTURE;
 out.key = VIDEO_KEY;
 out.defaultPerformance = performanceOf(storedVideo(memory()));
 
+// A choice stored before SHADOWS was a row.
+{
+  const kept = raw => {
+    const s = memory();
+    s.setItem(VIDEO_KEY, JSON.stringify(raw));
+    const v = storedVideo(s);
+    return { performance: performanceOf(v), shadows: v.shadows };
+  };
+  const without = level => { const { shadows: _s, ...rest } = PRESETS[level]; return rest; };
+  out.shadowsKept = {
+    low: kept(without(1)), medium: kept(without(2)), high: kept(without(3)),
+    mix: kept({ ...without(1), viewDistance: 90 }),
+    off: kept({ ...PRESETS[3], shadows: false }),
+  };
+}
+
 // The stored choice, and storage that refuses.
 {
   const s = memory();

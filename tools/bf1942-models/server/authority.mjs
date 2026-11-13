@@ -64,7 +64,8 @@ import { Armor } from '../viewer/armor.js';
 import { createCtf } from '../viewer/ctf.js';
 import { createRoundState, GAME_PLAY_MODE, gamePlayModeOf, TICKET_BASE_PLAYERS,
   GAME_START_DELAY, ROUND_START_DELAY } from '../viewer/round-state.js';
-import { DEFAULT_TK_SPAWN_PENALTY, MAX_SPAWN_WAIT, spawnWait, waveSecondsLeft }
+import { DEFAULT_SPAWN_DELAY, DEFAULT_SPAWN_TIME, DEFAULT_TK_SPAWN_PENALTY, MAX_SPAWN_WAIT,
+  spawnWait, waveSecondsLeft }
   from '../viewer/spawn-timer.js';
 import { spawnGroupCensus } from '../viewer/spawn-flags.js';
 
@@ -77,10 +78,18 @@ import { spawnGroupCensus } from '../viewer/spawn-flags.js';
  *                    is 0, `GameServer` ctor 0x0812f8f6; FF-10)
  *   nrOfTKToKick     5.0, the ctor's (0x0812f8c3; the file does not set it)
  *   tkSpawnPenalty   1.0, the ctor's `spawnDelayPenaltyForTK` (0x0812f8b9)
+ * and the host's (`room-settings.mjs`, CREATE GAME's rows; NET-21's defaults):
+ *   spawnTime / spawnDelay  `game.serverSpawnTime 20`, `serverSpawnDelay 3`
+ *   gameTime         `game.serverGameTime` in seconds, 0 no limit
+ *   scoreLimit       `game.serverScoreLimit`, 0 none
+ *   ticketRatio      `game.serverTicketRatio`, a percentage (TKT-1)
+ *   autoBalance      `game.serverAutoBalanceTeams`, off
  */
 export const ROOM_RULES = Object.freeze({
   gameStartDelay: GAME_START_DELAY, roundStartDelay: ROUND_START_DELAY,
   tkPunishMode: true, nrOfTKToKick: 5, tkSpawnPenalty: DEFAULT_TK_SPAWN_PENALTY,
+  spawnTime: DEFAULT_SPAWN_TIME, spawnDelay: DEFAULT_SPAWN_DELAY,
+  gameTime: 0, scoreLimit: 0, ticketRatio: 100, autoBalance: false,
 });
 
 /** The game play modes in which `spawnPlayer` asks the side's tickets
@@ -125,6 +134,9 @@ const KITS = ['scout', 'assault', 'antitank', 'medic', 'engineer'];
 export function createAuthority(ctx) {
   const { world, loadouts, levelDir, onRow } = ctx;
   const rules = { ...ROOM_RULES, ...(ctx.rules ?? {}) };
+  /** The wave law's pair as the host set it, read live (an admin may change
+   *  `spawnTime` mid-round). */
+  const wave = () => ({ spawnTime: rules.spawnTime, spawnDelay: rules.spawnDelay });
 
   /** Slots under the death decree: dead until their spawn action revives
    *  them. The room stops forwarding their input while they are in the set
@@ -189,7 +201,22 @@ export function createAuthority(ctx) {
    *  maxPlayers / 16)`. The counts are handed over bare, because the object's
    *  own `maxPlayers` (a mode script's `game.maxNrOfPlayers`, Kasserine Pass
    *  co-op's 18) has already scaled the start once. */
+  // `game.serverTicketRatio` (TKT-1): `gamaStatusFirstPreGame` 0x08150710
+  // multiplies each side's count by the ratio (`+0x1f4`, the percentage over
+  // 100) before it truncates. The room's counts are already scaled for its
+  // slots, so the ratio is applied to them here, truncated the same way.
+  // ObjectiveMode's attacker modifier (`+0x1f8`) is not a room setting.
+  if (world.tickets && Number.isFinite(rules.ticketRatio) && rules.ticketRatio !== 100) {
+    for (const team of [1, 2]) {
+      const scaled = Math.trunc(Math.fround(ticketsOf(team) * Math.fround(rules.ticketRatio / 100)));
+      world.tickets[`team${team}`] = scaled;
+      if (`${team}` in world.tickets) world.tickets[`${team}`] = scaled;
+    }
+  }
   const round = createRoundState({
+    // The host's time limit (seconds) and score limit; 0 is none.
+    gameTime: rules.gameTime,
+    scoreLimit: rules.scoreLimit,
     tickets: { team1: ticketsOf(1), team2: ticketsOf(2) },
     rates: world.tickets?.lossPerMin ?? null,
     maxPlayers: TICKET_BASE_PLAYERS,
@@ -304,7 +331,7 @@ export function createAuthority(ctx) {
       // The pre-game writes its own clock into every player's wait
       // (0x081509e3..0x08150a08, ROUND-14).
       if (round.status === 'preGame') return round.preGameIn;
-      return spawnReady.has(slot) ? waveSecondsLeft(round.clock, spawnReady.get(slot)) : 0;
+      return spawnReady.has(slot) ? waveSecondsLeft(round.clock, spawnReady.get(slot), wave()) : 0;
     },
 
     /** The room's settings as this authority plays them (`ROOM_RULES`). */
@@ -373,6 +400,9 @@ export function createAuthority(ctx) {
       lastTeamKiller.delete(slot);
       for (const [victim, killer] of lastTeamKiller) if (killer === slot) lastTeamKiller.delete(victim);
       spawnReady.delete(slot);
+      // The slot's tally goes with its player (a BFPlayer's counters are its
+      // own), so whoever takes the slot next starts at 0 on every board.
+      round.counts.delete(slot);
     },
 
     /** The player's Suicide (retail's is `killPlayer`): the body's Armor
@@ -420,6 +450,13 @@ export function createAuthority(ctx) {
 
     /** The CTF law's state (null off a CTF layer), for a check. */
     ctf,
+
+    /** `admin.restartMap` (`GameServer::restartMap` 0x08157cb0): the world
+     *  cleared and the round made again, now. */
+    restart() {
+      clearWorld();
+      restartRound();
+    },
   };
 
   /** One tick of the CTF law over the room's players: a slot under the
@@ -493,16 +530,20 @@ export function createAuthority(ctx) {
         // the page waits it out before it asks.
         const tk = teamKills.get(slot);
         const wait = spawnWait(round.clock, { teamKills: tk?.sinceDeath ?? 0,
-                                              tkPenalty: rules.tkSpawnPenalty });
+                                              tkPenalty: rules.tkSpawnPenalty, ...wave() });
         if (tk) tk.sinceDeath = 0;
         spawnReady.set(slot, round.clock + Math.min(MAX_SPAWN_WAIT, wait));
         const row = { type: 'killed', slot,
-                      sw: Math.round(waveSecondsLeft(round.clock, spawnReady.get(slot)) * 100) / 100 };
+                      sw: Math.round(waveSecondsLeft(round.clock, spawnReady.get(slot), wave()) * 100) / 100 };
         if (other != null) row.other = other;
         // Run over: the kill line's `[killed]`, the weapon -1 `giveDamage`
         // was handed (`chat-log.js` `killStamp`).
         if (roadkills.has(slot)) row.roadkill = true;
         onRow(row);
+        // Auto-balance, the tail of `killPlayer` (0x0814dc02..0x0814dc90):
+        // while the round is not over, a death with the sides more than one
+        // apart moves the dead player (the room's `autoBalance`, gap entry 47).
+        if (rules.autoBalance && round.status !== 'endGame') ctx.onAutoBalance?.(slot);
       }
   }
 
@@ -525,6 +566,9 @@ export function createAuthority(ctx) {
     if (other == null || other === slot || !(team === 1 || team === 2)) return;
     const killer = world.players.get(other);
     if (!killer || killer.team !== team) return;
+    // Both human (BFPlayer vt+0x5c false for both, 0x0814c167..0x0814c182):
+    // a room's bot (`room-bots.mjs`) neither commits a team kill nor is one.
+    if (killer.bot || world.players.get(slot)?.bot) return;
     lastTeamKiller.set(slot, other);
     if (rules.tkPunishMode) return;
     const row = tkOf(other);
@@ -588,7 +632,9 @@ export function createAuthority(ctx) {
       onRow({ type: 'roundEnd', ...resultRow() });
       clearWorld();
     }
-    if (round.restartDue()) restartRound();
+    // `gameStatusEndGame` (0x08152d09..0x08153369): another round of this
+    // map, or the room's host loads the next level (`onRoundsOver` true).
+    if (round.restartDue() && !ctx.onRoundsOver?.()) restartRound();
   }
 
   /** The round's result as the rows carry it: the winner (0 a draw), the

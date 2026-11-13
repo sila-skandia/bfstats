@@ -59,6 +59,24 @@ TABLE_SEED = 0x009520C8
 # the console-commands module registers is in this set and in the client's
 # registry, so the catalogue cannot drift from the code silently.
 BUILT = {
+    # A room's votes and its admin (console-commands.js, routed to
+    # server/room-host.mjs; gap audit entries 26 and 28).
+    "Game.voteMap", "Game.voteKickPlayer", "Game.voteKickTeamPlayer",
+    "Admin.kickPlayer", "Admin.kickPlayerByName", "Admin.banPlayer", "Admin.changeMap",
+    "Admin.setNextLevel", "Admin.restartMap", "Admin.runNextLevel",
+    "Admin.listBannedAddresses", "Admin.clearBanList", "Admin.serverMessage",
+    "Admin.setNrOfRounds", "Admin.timeLimit", "Admin.scoreLimit", "Admin.autoBalanceTeam",
+    "Admin.delayBeforeStartingGame", "Admin.roundDelayBeforeStartingGame",
+    "Admin.enableMapVote", "Admin.enableKickPlayerVote", "Admin.enableKickTeamPlayerVote",
+    "Admin.voteMapMajority", "Admin.voteKickPlayerMajority", "Admin.voteKickTeamPlayerMajority",
+    "Admin.votingTime", "Admin.TKPunishMode", "Admin.nrOfTKToKick", "Admin.spawnDelayPenaltyForTK",
+    "Game.serverGameTime", "Game.serverScoreLimit", "Game.serverNumberOfRounds",
+    "Game.serverSpawnTime", "Game.serverSpawnDelay", "Game.serverGameStartDelay",
+    "Game.serverGameRoundStartDelay", "Game.serverTicketRatio", "Game.serverMaxPlayers",
+    "Game.serverSoldierFriendlyFire", "Game.serverVehicleFriendlyFire",
+    "Game.serverSoldierFriendlyFireOnSplash", "Game.serverVehicleFriendlyFireOnSplash",
+    "Game.serverAutoBalanceTeams", "Game.serverNumReservedSlots", "Game.serverPassword",
+    "Game.serverReservedPassword", "Game.setServerWelcomeMessage",
     # page-console.js
     "Game.disconnect", "Game.setCommonMouseSensitivity", "Game.setInfMouseSensitivity",
     "Game.setLandSeaMouseSensitivity", "Game.setAirMouseSensitivity",
@@ -82,22 +100,31 @@ BUILT = {
     "Debug.enableParticles",
     # console-commands.js: OPTIONS > VIDEO and SOUND, and the cheap hooks
     "Game.setGraphicsQuality", "Game.setEffectsQuality", "Game.setEnvironmentMapping",
-    "Game.setLightmaps", "Game.setDetailTexture", "Game.setMenuViewdistance", "Game.setPerformance",
+    "Game.setLightmaps", "Game.setShadows", "Game.setDetailTexture", "Game.setMenuViewdistance", "Game.setPerformance",
     "Renderer.globalLodPercent", "treeRenderer.billboardDistanceScale", "Game.intensityScale",
     "Game.setChannels", "Game.setSoundDetail", "Game.setQuality", "Game.setHardware",
     "Sound.dopplerFactor", "Sound.showSoundInfo",
     "Renderer.drawTrees", "lensFlare.enable",
     "Game.setNameTagDistance", "Game.setMaxNameTagDistance", "Game.getNameTagDistance",
     "Game.crossHairRadius", "Game.crossHairSize", "Game.setCrossHairColor",
+    # The minimap's radio flash (`map-flash.js`).
+    "Game.setRadioFlashTime", "Game.setPlayerBlink",
     "Soldier.cameraShakeFactor",
     # console-commands.js: a room's team-kill answer (FF-10)
     "Game.TKPunish", "Game.TKForgive",
+    # The typed words about players (gap audit entry 45): the local player's
+    # suicide, line and name, the ignore list, the radio switches, the buddies.
+    "Game.suicide", "Game.sayAll", "Game.changePlayerName",
+    "Chat.addToIgnoreList", "Chat.removeFromIgnoreList", "Chat.ignoreList",
+    "Chat.ignoreRadioText", "Chat.ignoreRadioAudio",
+    "Chat.setIgnoreRadioAudioAndText", "Chat.getIgnoreRadioAudioAndText",
+    "Game.addPlayerToBuddyList", "Game.addPlayerToBuddyListByName",
+    "Game.removePlayerFromBuddyList", "Game.buddyList",
 }
 
 # Words the viewer registers with the client's shape that answer *Method is not
 # active!*: the client has them, the page has nothing behind them. Each says why.
 INACTIVE = {
-    "Game.setShadows": "no dynamic shadows in the viewer (VID-7)",
     "Sound.rolloffFactor": "DirectSound's distance law; the page's fall-off is each script's own ramp",
     "Sound.distanceFactor": "DirectSound's distance law; the page's fall-off is each script's own ramp",
     "Sound.drawSoundObjects": "needs a marker at every live voice, which no one place reports",
@@ -147,9 +174,9 @@ FITS = {
     "Renderer.getVSyncEnabled": "video settings work",
     "Renderer.multiSampleMode": "video settings work (antialias)",
     "Renderer.useTrilinearFiltering": "texture filtering",
-    "Shadow.setShadows": "no shadows in the viewer yet",
-    "Shadow.shadowColor": "no shadows in the viewer yet",
-    "Shadow.numberOfActiveShadows": "no shadows in the viewer yet",
+    "Shadow.setShadows": "the dynamic shadow pass's switch; the page's is `game.setShadows` (VID-7)",
+    "Shadow.shadowColor": "the shadows' opacity (DSH-8): the page reads the level's line from scene.json `lighting.shadowColor`, the word is not typed",
+    "Shadow.numberOfActiveShadows": "the shadow pool's size, 10 (DSH-2): `dynamic-shadows.js` SHADOW_POOL, fixed on the page",
     "Sound.maxVoices": "the rack's voice cap",
     "Debug.debriefing": "the round-end debriefing screen",
     "treeRenderer.enable": "tree-foliage.js",

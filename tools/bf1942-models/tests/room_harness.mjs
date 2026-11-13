@@ -391,6 +391,85 @@ let nextTag = 1;
   };
 }
 
+// --- (crew) two players in one hull, and the driver's hull at his own ack -------
+// What a page draws a remote hull from (`netcode-render.js`): each row's
+// `vehicleId` and `seatIndex`, the server's own seat order (the hull's root is
+// seat 0). And what the driver's page corrects its own hull against
+// (`netcode-client.js` `selfHull`, `net-room.js` `correctDrivenHull`): the
+// hull's row in the snapshot whose own row acknowledges his newest word, both
+// built from one tick (`room-stream.mjs` `snapshotRecord`).
+{
+  const pA = attachPeer(core, String(nextTag++));
+  const pB = attachPeer(core, String(nextTag++));
+  const pW = attachPeer(core, String(nextTag++));
+  joinPeer(core, pA, 'CRW', 'Driver', 1);
+  joinPeer(core, pB, 'CRW', 'Rider', 1);
+  joinPeer(core, pW, 'CRW', 'Watcher', 1);
+  const room = core.room('CRW');
+  const w = room.world;
+  const lap = () => { clock.ms += FRAME_MS; room.frame(FRAME_MS); };
+  const rowsOf = peer => decodeSnapshot(ofType(peer, MSG_SNAPSHOT).at(-1).subarray(1));
+  const seatOf = (snap, slot) => {
+    const p = snap.players.find(r => r.slot === slot);
+    return p ? { seated: p.seated, inVehicle: p.inVehicle, vehicleId: p.vehicleId, seatIndex: p.seatIndex } : null;
+  };
+  sendJson(pA, MSG_ACTION, { type: 'spawn', flag: 0 });
+  sendJson(pB, MSG_ACTION, { type: 'spawn', flag: 0 });
+  sendJson(pA, MSG_ACTION, { type: 'seat', vehicle: 1, seat: 0, action: 'enter' });
+  sendJson(pB, MSG_ACTION, { type: 'seat', vehicle: 1, seat: 1, action: 'enter' });
+  lap(); lap();   // a snapshot every other tick
+  const entry = room.instance.table.find(v => v.id === 1);
+  const seen = rowsOf(pW);
+  const both = { driver: seatOf(seen, 1), rider: seatOf(seen, 2),
+                 hull: seen.vehicles.find(v => v.id === 1)?.occupied ?? null,
+                 seats: room.instance.seatSurveyOf?.(entry) ?? null };
+  // The seat the driver holds is refused to the rider's switch (SEAT-11), and
+  // to a third player's Use, who is told (`seatRefused`).
+  sendJson(pB, MSG_ACTION, { type: 'seat', vehicle: 1, seat: 0, action: 'switch' });
+  lap(); lap();
+  const afterSwitch = seatOf(rowsOf(pW), 2);
+  sendJson(pW, MSG_ACTION, { type: 'spawn', flag: 0 });
+  pW.sent.length = 0;
+  sendJson(pW, MSG_ACTION, { type: 'seat', vehicle: 1, seat: 0, action: 'enter' });
+  lap(); lap();
+  const third = { refused: ofType(pW, MSG_EVENT).map(jsonRow).some(r => r.type === 'seatRefused' && r.vehicle === 1),
+                  seat: seatOf(rowsOf(pA), 3) };
+  // The driver drives: every snapshot of his own acknowledges the word its
+  // tick ran and carries the hull where that tick left it.
+  const acks = [];
+  let exact = true;
+  for (let seq = 1; seq <= 40; seq++) {
+    const before = ofType(pA, MSG_SNAPSHOT).length;
+    sendInput(pA, seq, walkInput({ forwardKeys: 1 }));
+    lap();
+    if (ofType(pA, MSG_SNAPSHOT).length === before) continue;   // no snapshot this tick
+    const snap = rowsOf(pA);
+    const self = snap.players.find(r => r.slot === 1);
+    const hull = snap.vehicles.find(v => v.id === self.vehicleId);
+    const pose = w.vehiclePose(entry.owner);
+    acks.push([seq, self.ack]);
+    if (!hull || Math.hypot(hull.x - pose.x, hull.y - pose.y, hull.z - pose.z) > 1e-3) exact = false;
+  }
+  // The driver gets out: the rider still holds the hull.
+  sendJson(pA, MSG_ACTION, { type: 'seat', vehicle: 1, seat: 0, action: 'exit' });
+  lap(); lap();
+  const left = rowsOf(pW);
+  // The rider takes the wheel nobody holds: the drive is theirs, and it goes
+  // again when they move back off it.
+  sendJson(pB, MSG_ACTION, { type: 'seat', vehicle: 1, seat: 0, action: 'switch' });
+  lap(); lap();
+  const wheel = { driver: entry.driver, seat: seatOf(rowsOf(pW), 2).seatIndex, drives: !!w.player(2).vehicle };
+  sendJson(pB, MSG_ACTION, { type: 'seat', vehicle: 1, seat: 1, action: 'switch' });
+  lap(); lap();
+  wheel.after = { driver: entry.driver, seat: seatOf(rowsOf(pW), 2).seatIndex, drives: !!w.player(2).vehicle,
+                  held: entry.seated };
+  results.crew = {
+    both, afterSwitch, third, acks, exact, wheel,
+    afterExit: { driver: seatOf(left, 1), rider: seatOf(left, 2),
+                 hull: left.vehicles.find(v => v.id === 1)?.occupied ?? null },
+  };
+}
+
 // --- (g) fire throttling -------------------------------------------------------
 {
   const pA = attachPeer(core, String(nextTag++));
@@ -1179,6 +1258,98 @@ const wakeFlag = (room, name) => room.world.flags.find(f => f.controlPointName =
     farShout,
     badId: radioRows(rB).length,
   };
+}
+
+// --- (chat) typed chat, the board's numbers and the ping ---------------------------
+// `handleChatMessage` (CHAT-4): everyone but the sender, team chat to the
+// sender's side, no alive test; each receiver's queue holds four lines and
+// sends 15 bytes every 0.5 s (CHAT-2). HELLO and the `stats` rows carry every
+// player's score, kills, deaths and ping (J-1, MEME-27).
+{
+  const cA = attachPeer(core, String(nextTag++));
+  const cB = attachPeer(core, String(nextTag++));
+  const cC = attachPeer(core, String(nextTag++));
+  const hA = joinPeer(core, cA, 'CHT', 'Talker', 1);
+  const hB = joinPeer(core, cB, 'CHT', 'Mate', 1);
+  const joinSeenByA = ofType(cA, MSG_EVENT).map(jsonRow).find(r => r.type === 'join' && r.slot === hB.slot);
+  const hC = joinPeer(core, cC, 'CHT', 'Enemy', 2);
+  const room = core.room('CHT');
+  const peers = [cA, cB, cC];
+  const rows = (peer, type) => ofType(peer, MSG_EVENT).map(jsonRow).filter(r => r.type === type);
+  const clear = () => { for (const p of peers) p.sent.length = 0; };
+  const step = (n = 1) => {
+    for (let i = 0; i < n; i++) {
+      for (const connection of room.players.values()) connection.lastSeen = room.now();
+      room.frame(FRAME_MS); clock.ms += FRAME_MS;
+    }
+  };
+  const out = { joinRowTeam: joinSeenByA?.team ?? null };
+  // Nobody has spawned: the relay has no alive test.
+  clear();
+  sendJson(cA, MSG_ACTION, { type: 'chat', text: 'hello', team: false });
+  out.beforeTick = rows(cB, 'chat').length;
+  step(1);
+  out.all = { a: rows(cA, 'chat').length, b: rows(cB, 'chat'), c: rows(cC, 'chat').length };
+  // Team chat, 0.5 s on (the piece clock is per receiver).
+  step(16); clear();
+  sendJson(cA, MSG_ACTION, { type: 'chat', text: 'flank left', team: true });
+  step(1);
+  out.team = { a: rows(cA, 'chat').length, b: rows(cB, 'chat'), c: rows(cC, 'chat').length };
+  // A line past 63 bytes is cut, and its five pieces take four more half
+  // seconds to leave.
+  step(16); clear();
+  sendJson(cA, MSG_ACTION, { type: 'chat', text: 'x'.repeat(80), team: false });
+  let frames = 0;
+  while (!rows(cB, 'chat').length && frames < 200) { step(1); frames++; }
+  out.long = { bytes: rows(cB, 'chat')[0]?.text.length ?? null, seconds: frames * FRAME_MS / 1000 };
+  // Six lines at once: each receiver holds four, and the rest are gone.
+  step(16); clear();
+  for (let i = 0; i < 6; i++) sendJson(cA, MSG_ACTION, { type: 'chat', text: `line ${i}`, team: false });
+  step(30 * 6);
+  out.flood = rows(cB, 'chat').map(r => r.text);
+  // An empty line and a row that is no text go nowhere.
+  clear();
+  sendJson(cA, MSG_ACTION, { type: 'chat', text: '   ', team: false });
+  sendJson(cA, MSG_ACTION, { type: 'chat', text: 7, team: false });
+  step(20);
+  out.empty = rows(cB, 'chat').length;
+
+  // The ping: the page answers a pong with the pong's own time, and the room
+  // times the round trip on its clock.
+  clear();
+  send(cB, MSG_PING, Buffer.from([1, 0, 0, 0]));
+  const pong = cB.sent.find(b => b[0] === 0x86);
+  clock.ms += 80;
+  send(cB, MSG_PING, Buffer.from([2, 0, 0, 0, pong[1], pong[2], pong[3], pong[4]]));
+  out.ping = { pongs: cB.sent.filter(b => b[0] === 0x86).length, ms: room.players.get(hB.slot).ping };
+  // A kill on the round's books, then the next half second's `stats` row.
+  room.authority.round.kill({ killer: hA.slot, killerTeam: 1, victim: hC.slot, victimTeam: 2 });
+  clear();
+  step(16);
+  const stats = rows(cC, 'stats').flatMap(r => r.rows);
+  out.stats = Object.fromEntries(stats.map(r => [r[0] === hA.slot ? 'a' : r[0] === hB.slot ? 'b' : 'c', r.slice(1)]));
+  clear();
+  step(45);
+  out.statsQuiet = rows(cC, 'stats').length;
+  // A late joiner's HELLO carries everyone's numbers.
+  const cD = attachPeer(core, String(nextTag++));
+  const hD = joinPeer(core, cD, 'CHT', 'Late', 2);
+  const slotOf = slot => hD.slots.find(r => r.slot === slot);
+  out.hello = {
+    a: [slotOf(hA.slot).score, slotOf(hA.slot).kills, slotOf(hA.slot).deaths],
+    c: [slotOf(hC.slot).score, slotOf(hC.slot).kills, slotOf(hC.slot).deaths],
+    bPing: slotOf(hB.slot).ping, own: hD.stats,
+  };
+  // A new name reaches every roster, the actor's too.
+  clear();
+  sendJson(cB, MSG_ACTION, { type: 'name', name: 'Renamed' });
+  out.name = { b: rows(cB, 'name')[0] ?? null, a: rows(cA, 'name').length, helloName: room.players.get(hB.slot).name };
+  // The slot's tally leaves with its player.
+  send(cA, MSG_LEAVE, Buffer.alloc(0));
+  const cE = attachPeer(core, String(nextTag++));
+  const hE = joinPeer(core, cE, 'CHT', 'Next', 1);
+  out.reused = { sameSlot: hE.slot === hA.slot, stats: hE.stats };
+  results.chat = out;
 }
 
 // --- (t) each room its own tickets ----------------------------------------------

@@ -17,7 +17,7 @@ import { Armor } from './armor.js';
 import { tankControl, unitUrgency, changeUrgency, orderSplit, teleportChangeUrgency, actionStatusDecision, searchBox, checkLine, boxExit, TANK, TELEPORT, CHANGE } from './bot-vehicle.js';
 import { readFileSync } from 'fs';
 import { groupBallistics, aimerDrag } from './bot-pilot.js';
-import { towardsPoint, boatControl, boatSpeedControl, boatResetControls, BOAT, rotate, attackRunStep, roundMiss, planeFireMode, aimAtDirection, towardsDirectionEngine, stickShape, PLANE_FIRE,
+import { towardsPoint, boatControl, boatSpeedControl, boatResetControls, BOAT, rotate, attackRunStep, breakPoint, roundMiss, planeFireMode, aimAtDirection, towardsDirectionEngine, stickShape, PLANE_FIRE,
          planeAimFor, precisionGate, nearestMiss, runwayClear, collisionPredicted, airAvoidUrgency, airAvoidPoint } from './bot-vehicle-air.js';
 import { fireStrength, unitTable, EnemyStrengthTables, engineHeatInfluence, STRENGTH } from './bot-strength.js';
 import { scoreVehicleTargets, scoreTargets, SOLDIER_BATTLE_STRENGTH } from './bot-fire.js';
@@ -32,6 +32,8 @@ import { tankTurnTowards } from './bot-vehicle.js';
 import { curveOf } from './bot-decision.js';
 import { fixedAimable, gunsRule, planChange, execEnterVehicle, behindUnit, urgencyChangeTeleport, bailAllowedAt, changeArrive, urgencyChange } from './bot-mount.js';
 import { updateObjectiveReadout } from './bot-decision.js';
+import { urgencyTakeCover } from './bot-decision.js';
+import { TakeCoverState } from './bot-behaviours.js';
 import { footingAt } from './bot-pose.js';
 
 // The level sits in the map's own frame: x in [0, worldSize], z in
@@ -481,7 +483,27 @@ function securityScenario() {
   const afterResight = Object.fromEntries(senses.knowledge.t0);
   senses.hear(9, 'e3', 2, [40, 0, -40], [0, 0, 0], 1, { weaponRadius: 100, firedAt: 9 });
   const afterHear = Object.fromEntries(senses.knowledge.t0);
-  return { curve, soldier, heardFresh, heardKept, heardBack, series, forgot, legacy: legacy.strengths.Infantry,
+  // TakeCover weighs a heard enemy by its side's security of it (`getSecurity()`
+  // at 0x085806e5): an enemy heard at 9 s, 40 m off, as the bot asks at 9,
+  // 16.5 and 24 s, and with no knowledge store.
+  const cover = (now, withStore = true) => {
+    const k = new SideKnowledge();
+    k.heard('e3', 9);
+    let passed = null;
+    const state = new TakeCoverState();
+    const evaluate = state.evaluate.bind(state);
+    const bot = {
+      position: [0, 0, 0], changedTarget: {},
+      senses: { heard: new Map([['e3', { id: 'e3', pos: [40, 0, 0], time: 9 }]]), incoming: [], spottedEnemies: () => [],
+                securityOf: (id, t) => (withStore ? k.security(id, t) : 1) },
+      cover: { evaluate: ctx => { passed = ctx.heard[0].security; return evaluate(ctx); } },
+      _nav: () => null, _coverCandidates: () => [], _lineClear: () => true,
+    };
+    const urgency = urgencyTakeCover(bot, 1, now);
+    return { security: passed, urgency };
+  };
+  const heardCover = { fresh: cover(9), half: cover(16.5), gone: cover(24), noStore: cover(24, false) };
+  return { curve, soldier, heardFresh, heardKept, heardBack, series, forgot, legacy: legacy.strengths.Infantry, heardCover,
            afterSpot, afterResight, afterHear, e4InMemory, securityOfUnknown: senses.securityOf('nobody', 9) };
 }
 
@@ -694,6 +716,19 @@ function planeFireScenario() {
   const passed = attackRunStep(state, args(20));
   const breaking = attackRunStep(state, { ...args(20), position: [0, 100, -100] });
   const again = attackRunStep(state, { ...args(20), position: [0, 100, -250] });
+  // The break point (`BBPFire3d::createPlanInternal` 0x0859b4b0, AI-83).
+  const bp = o => breakPoint({ position: [1000, 60, -1000], forward: [0, 0, -1], maxRange: 300, turnRadius: 40, worldSize: 2048, ...o });
+  const breakPins = {
+    inside: bp({}),
+    dive: bp({ forward: [0, -0.6, -0.8] }),
+    // 1.3 x 40 = 52 m past the far z edge passes the engine's test.
+    farZ: bp({ position: [1000, 60, -2040] }),
+    // 5 m from the x = 0 edge heading out, drifting into the map's depth.
+    westNear: bp({ position: [5, 60, -1000], forward: [-0.8, 0, -0.6] }),
+    westFar: bp({ position: [30, 60, -1000], forward: [-0.8, 0, -0.6] }),
+    east: bp({ position: [2045, 60, -1000], forward: [0.8, 0, 0.6] }),
+    south: bp({ position: [1000, 60, -4], forward: [0.6, 0, 0.8] }),
+  };
   const modes = [planeFireMode({ extents: [0.6, 1.8, 0.6] }), planeFireMode({ extents: [3, 3, 6], vehicle: true }),
                  planeFireMode({ extents: [30, 10, 90], vehicle: true, large: true }), planeFireMode({ mobile: false })];
   const level = { x: 0, y: 0, z: 0, w: 1 };
@@ -723,7 +758,7 @@ function planeFireScenario() {
     target: [0, 100, -8], maxRange: 300, lineOfFire: true, mode: 1, precision: 5, roundSpeed: 800 });
   // A moving target: the lead solution puts the miss at 0 for the led aim.
   const lead = roundMiss({ rel: [0, 0, -300], relVel: [30, 0, 0], dir: [0.1, 0, -0.995], speed: 300, gravity: 0 });
-  return { far: far.phase, inRange: inRange.phase, inRangeFire: inRange.fire, passed: passed.phase, breaking: breaking.phase,
+  return { breakPins, far: far.phase, inRange: inRange.phase, inRangeFire: inRange.fire, passed: passed.phase, breaking: breaking.phase,
            again: again.phase, modes, aimUpPitch: aimUp.pitch, climb: PLANE_FIRE.maxClimbAngle,
            onTarget: [onTarget.phase, onTarget.fire, onTarget.miss], offTarget: [offTarget.fire, offTarget.miss],
            unseen: unseen.phase, closeInFront: close.inFront, leadMiss: lead.miss, leadT: lead.t,
@@ -1133,9 +1168,19 @@ function airSpacingScenario() {
     { id: 'b', centre: [5, 100, 200], velocity: [0, 0, -50], radius: 7.5, mass: 2500 },
     { id: 'c', centre: [300, 100, 0], velocity: [0, 0, 50], radius: 7.5, mass: 2500 },
   ] });
+  // A parked plane on the flight line (slower than 1.0 m/s) adds nothing,
+  // one taxiing at 1.0 does; the neighbour test is flat, so a plane diving
+  // from 260 m up, outside the 3D reach of 5 x 50 + 7.5 + 7.5, is still in.
+  const one = o => airAvoidUrgency({ self, others: [o] }).urgency;
+  const gate = {
+    parked: one({ id: 'p', centre: [0, 100, 100], velocity: [0, 0, 0.9], radius: 7.5, mass: 2500 }),
+    taxiing: one({ id: 'p', centre: [0, 100, 100], velocity: [0, 0, 1.0], radius: 7.5, mass: 2500 }),
+    diving: one({ id: 'd', centre: [0, 380, 100], velocity: [0, -70, 25], radius: 7.5, mass: 2500 }),
+    flatOut: one({ id: 'd', centre: [270, 100, 0], velocity: [-100, 0, 50], radius: 7.5, mass: 2500 }),
+  };
   const right = airAvoidPoint({ position: [0, 100, 0], velocity: [50, 0, 0], other: [100, 100, 20], t: 2, altitude: 100, otherAltitude: 110 });
   const left = airAvoidPoint({ position: [0, 100, 0], velocity: [50, 0, 0], other: [100, 100, -20], t: 2, altitude: 120, otherAltitude: 110 });
-  return { runway, headOn, offset, late, opening, touching, urgency: u.urgency, best: u.best?.id ?? null, bestT: u.best?.t ?? null,
+  return { gate, runway, headOn, offset, late, opening, touching, urgency: u.urgency, best: u.best?.id ?? null, bestT: u.best?.t ?? null,
            right: right.point.map(v => +v.toFixed(3)), rightUntil: right.until, left: left.point.map(v => +v.toFixed(3)) };
 }
 
@@ -1480,6 +1525,27 @@ results.briefL = {
   senseReset: senseResetScenario(),
 };
 
+// A guided launcher (`FixedGuidedMissileLauncher`: `BBFireGuided` /
+// `BBPFireGuided`): the mode by its row, and the plan's aim, a straight look
+// at the object and a trigger that waits for 2 deg once.
+results.guided = (() => {
+  const row = { behaviours: { MoveTo: 'MoveToFixed', Fire: 'FireGuided' } };
+  // A launcher at the origin whose barrel points down -z.
+  const node = { matrixWorld: { elements: [1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1] } };
+  const bot = { vehicle: { kind: 'gun', row, manned: [{ node }] }, weapons: [], weaponIndex: 0 };
+  const look = to => aiming.guidedLookAt(bot, to);
+  const ahead = look([0, 100, -1000]);          // 5.7 deg above the barrel
+  const near = look([0, 30, -1000]);            // 1.7 deg
+  const state = {};
+  const holds = [aiming.guidedHolds(ahead, state), aiming.guidedHolds(near, state), aiming.guidedHolds(ahead, state)];
+  return {
+    mode: fireMode({ row, equipmentType: 17 }), plain: fireMode({ row: { behaviours: { Fire: 'FireLargeBore' } } }),
+    dir: ahead.dir.map(v => +v.toFixed(6)), off: [ahead.off, near.off], time: ahead.time, holds,
+    notGuided: aiming.guidedHolds({ valid: true, off: 0 }, {}),
+    constants: aiming.GUIDED,
+  };
+})();
+
 // A self-propelled gun's driver (ledger SPOT-16): the unit row, the urge
 // curve, the hull-turn law and the back-off point.
 results.artilleryDriver = {
@@ -1543,4 +1609,6 @@ results.roundGravity = {
   };
 }
 
+// The guided launcher's pins ride with the other mounted Fire rows'.
+results.artilleryDriver.guided = results.guided;
 process.stdout.write(JSON.stringify(results));

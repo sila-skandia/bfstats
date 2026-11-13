@@ -47,6 +47,7 @@ import { bindTreeFoliage } from './tree-foliage.js';
 import { stampLevelNodes } from './level-nodes.js';
 import { armTeamCloths, restoreFlagNodeNames } from './flag-cloth-teams.js';
 import { createLevelSkin, repaintPage } from './level-skin.js';
+import { applyTemplateWords } from './template-words.js';
 
 /**
  * Built once by the page, where this code used to sit. `page` hands in
@@ -146,6 +147,7 @@ export function createLevel(page) {
     get MAPS_BASE() { return page.MAPS_BASE; },
     get rebaseDeckSpawns() { return page.rebaseDeckSpawns; },
     get registerDamageables() { return page.registerDamageables; },
+    get scene() { return page.scene; },
     get settlePlacedVehicles() { return page.settlePlacedVehicles; },
     get spawnersRoot() { return statics.spawnersRoot; },
     get world() { return level.world; },
@@ -493,11 +495,17 @@ export function createLevel(page) {
     // On a server, its hulls this level never places as well, which needs
     // the server's world dump in first (`net-room.js` `serverHullPool`).
     const extra = page.params.has('relay') && page.serverHullPool ? await page.serverHullPool() : [];
-    await loadRoundSpawnPool(gltf.scene, {
+    // A tree baked before the exporter read the rocket and submarine words
+    // takes them from the level's table (`template-words.js`): the scene
+    // before the pool is sized, since a launcher whose round is a vehicle
+    // parks one (FA-29), then what the pool added.
+    applyTemplateWords(gltf.scene, level.extras.templateWords);
+    const pooled = await loadRoundSpawnPool(gltf.scene, {
       load: loadPadModel,
       inMode: node => nodeInMode(node, level.extras.gameplayMode),
       extra,
     });
+    applyTemplateWords(pooled, level.extras.templateWords);
     // The bot side goes first: its bots, maps and door list are the old
     // level's, and the frames until `spawnBotsForLevel` below keep ticking the
     // referee -- against the new World once it is built.
@@ -565,6 +573,10 @@ export function createLevel(page) {
     // of the level on every gun nobody had touched yet. Fifteen of them on
     // Battle of Britain, four Spitfires and eleven Brownings.
     idleFirePose(level.currentRoot);
+    // The bundles among them that the engine runs by itself (a track's dust,
+    // a chimney's smoke) stay dark as nodes and are played from the effect
+    // library where they hang (`ambient-effects.js`).
+    page.effects?.ambient?.adoptLevel(level.currentRoot);
     // And the opposite payload shown: the rounds a rack carries in view
     // (`loaded-rounds.js`), full on every vehicle nobody has fired yet.
     restoreLoadedRounds(level.currentRoot);

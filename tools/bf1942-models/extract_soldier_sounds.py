@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Extract the soldier's three bail-out sound scripts as mp3s plus a manifest.
+"""Extract the soldier's own sound scripts as mp3s plus a manifest.
 
     python3 extract_soldier_sounds.py --out ./out
     python3 extract_soldier_sounds.py --mod DesertCombat --out ./out
@@ -21,7 +21,19 @@ nothing but those delays: wind from 0 s, two whooshes at 1.2 and 2.3, the
 human scream at 3.3, and `soprupp.wav` at **11.5 s**, which is the easter egg
 almost nobody has heard because it wants eleven and a half seconds of falling.
 
-A soldier's own footsteps and grunts are not here; this is the bail-out set.
+The movement set is the rest of `SoldierSound.inc`: the stop scuff, walk and
+run, the jump and its per-material landing, the four stance changes, the
+crouched and crawling moves, the four swim scripts, the ladder and the medic's
+heal. `viewer/soldier-sound.js` is the client's `SoldierSound` (BF1942.exe
+0x00572b40, 0x00572f20) and plays them; this ships what it needs besides the
+samples: the `SoldierSound.set*Frequency` cadences the same file sets
+(`frequencies`), the script order the engine indexes a trigger by (`order`),
+and which `c_Sst*` trigger each animation state declares (`states`, from the
+`AnimationStateMachine.setSoundTrigger` lines of `animations/*.con`). Each
+layer carries its `priority` (the voice pool's bid, ledger SND-39) and its
+`Volume <- Distance` ramp (`distance`), which is what keeps a boot from being
+heard across a field.
+
 Standard library plus ffmpeg, same as the map and weapon sound pipelines.
 """
 
@@ -54,10 +66,36 @@ BAIL_OUT_SCRIPTS = (
     ("c_SstParachuteLand", "SoldierParachuteLand.ssc"),
 )
 
+# Every movement script `SoldierSound.inc` loads, by the trigger an animation
+# state (or, for the landing and the heal, the code) raises it with.
 MOVEMENT_SCRIPTS = (
+    ("c_SstStand", "SoldierStop.ssc"),
     ("c_SstWalk", "SoldierWalk.ssc"),
     ("c_SstRun", "SoldierRun.ssc"),
+    ("c_SstJump", "SoldierJump.ssc"),
+    ("c_SstJumpLand", "SoldierJumpLand.ssc"),
+    ("c_SstToCrouch", "SoldierToCrouch.ssc"),
+    ("c_SstFromCrouch", "SoldierFromCrouch.ssc"),
+    ("c_SstCrouchMove", "SoldierCrouchMove.ssc"),
+    ("c_SstToCrawl", "SoldierToCrawl.ssc"),
+    ("c_SstStandUp", "SoldierStandUp.ssc"),
+    ("c_SstCrawlMove", "SoldierCrawlMove.ssc"),
+    ("c_SstToSwim", "SoldierToSwim.ssc"),
+    ("c_SstSwim", "SoldierSwim.ssc"),
+    ("c_SstSwimStand", "SoldierSwimStand.ssc"),
+    ("c_SstFromSwim", "SoldierFromSwim.ssc"),
+    ("c_SstHealedByMedic", "SoldierHealedByMedic.ssc"),
+    ("c_SstClimbLadder", "SoldierClimbLadder.ssc"),
 )
+
+# The scripts `SoldierSound::update` (BF1942.exe 0x00572f20) plays one
+# material patch of, plus patches 8 and 9 (cloth and harness): triggers 1, 2,
+# 3 and 5. The ladder (0x17) plays patches 0, 8 and 9; every other script
+# plays all its patches.
+MATERIAL_SCRIPTS = frozenset({
+    "SoldierStop.ssc", "SoldierWalk.ssc", "SoldierRun.ssc",
+    "SoldierJumpLand.ssc", "SoldierClimbLadder.ssc",
+})
 
 INJURY_SCRIPTS = (
     ("c_SstHitDamage", "SoldierHitDamage.ssc"),
@@ -78,6 +116,9 @@ PATCH_MATERIALS = (
     "mud",
     "fabric",
     "harness",
+    # Patch 10 is `addMaterialToSound`'s "Water" (BF1942.exe 0x00573143): only
+    # `SoldierJumpLand.ssc` has one, the splash of a jump into the shallows.
+    "water",
 )
 
 SOUND_DIR = "Objects/Soldiers/Common/Sounds"
@@ -122,25 +163,115 @@ def language_refs(ref: str) -> list[str]:
 def script_manifest(text: str, source: str) -> list[dict]:
     """One `.ssc` as the viewer's own shape: patches of layers."""
     patches = []
+    indexed = Path(source).name in MATERIAL_SCRIPTS
     for patch in parse_ssc(text, source=source):
         layers = []
         for sample in patch.samples:
-            layers.append({
+            # `silence.wav` is a load that plays nothing (ledger SND-15): it
+            # holds a patch's place, or a `randomPlay` roll's, and no file.
+            silent = Path(sample.file.replace("\\", "/")).name.lower() == "silence.wav"
+            layer = {
                 "sample": Path(sample.file.replace("\\", "/")).stem,
                 "file": sample.file,
                 "volume": round(sample.volume, 4),
                 "loop": bool(sample.loop),
                 "at": round(time_gate(sample), 4),
                 "minDistance": round(sample.min_distance, 4),
-            })
-        if layers:
+            }
+            if silent:
+                layer["silent"] = True
+            if sample.priority is not None:
+                layer["priority"] = sample.priority
+            ramp = distance_ramp(sample)
+            if ramp is not None:
+                layer["distance"] = ramp
+            layers.append(layer)
+        # A material script is indexed by patch (`SoldierSound::update` asks
+        # for patch `material`, 8 and 9), so a patch that loads nothing keeps
+        # its place there; elsewhere an empty patch is nothing to play.
+        if layers or indexed:
             p_entry = {"randomPlay": bool(patch.random_play),
                        "layers": layers}
             patches.append(p_entry)
-    if len(patches) == 10 and any(k in source.lower() for k in ("walk", "run", "crouch", "crawl")):
+    # The names are a reader's aid and hold only where the script has all ten
+    # (walk, run, the landing): `SoldierStop.ssc` and the ladder ship nine,
+    # with no mud patch, and the engine still asks for 8 and 9 by number. The
+    # viewer plays by index.
+    if indexed and len(patches) >= 10:
         for idx, p in enumerate(patches):
-            p["material"] = PATCH_MATERIALS[idx]
+            if idx < len(PATCH_MATERIALS):
+                p["material"] = PATCH_MATERIALS[idx]
     return patches
+
+
+def distance_ramp(sample: SoundSample) -> list[float] | None:
+    """A layer's `Volume <- Distance` `Ramp p1 p2 v1 v2`, or None.
+
+    Every movement layer carries one (`Ramp 2 6 1 -1`: full inside 2 m, zero
+    at 4 m, since the volume is clamped at zero on its way to -1).
+    """
+    for effect in sample.effects:
+        if effect.destination.lower() != "volume":
+            continue
+        if effect.source.lower() != "distance":
+            continue
+        if effect.envelope.lower() != "ramp" or len(effect.params) < 4:
+            continue
+        return [round(float(p), 4) for p in effect.params[:4]]
+    return None
+
+
+FREQUENCY_RE = re.compile(
+    r"^\s*SoldierSound\.set(\w+?)Frequency\s+([-\d.]+)", re.IGNORECASE | re.MULTILINE)
+LOAD_RE = re.compile(
+    r"^\s*ObjectTemplate\.loadSoundScript\s+(\S+)", re.IGNORECASE | re.MULTILINE)
+
+
+def soldier_sound_inc(objects: ArchivePool) -> tuple[dict[str, float], list[str]]:
+    """`SoldierSound.inc`: its cadences and its script list, in load order.
+
+    The cadences are keyed as the file names them, first letter lowered
+    (`run`, `randomRun`, `crawl`, `ladder`...). The list's order is the
+    trigger id less one: `SoldierSound::update` asks the soldier's sound for
+    script `trigger - 1`.
+    """
+    hit = objects.find(f"{SOUND_DIR}/SoldierSound.inc")
+    if hit is None:
+        return {}, []
+    text = objects.read(hit).decode("latin-1")
+    frequencies = {}
+    for name, value in FREQUENCY_RE.findall(text):
+        frequencies[name[0].lower() + name[1:]] = float(value)
+    return frequencies, LOAD_RE.findall(text)
+
+
+STATE_RE = re.compile(r"^\s*AnimationStateMachine\.createState\s+(\S+)", re.IGNORECASE)
+TRIGGER_RE = re.compile(
+    r"^\s*AnimationStateMachine\.setSoundTrigger\s+(c_Sst\w+)", re.IGNORECASE)
+
+
+def state_triggers(animations: ArchivePool) -> dict[str, str]:
+    """Animation state -> the `c_Sst*` trigger it declares.
+
+    `BFSoldier::getSoundTrigger` (lnxded 0x08276f40) answers the lower
+    machine's current state's trigger, and the upper's when the lower has
+    none, so both halves' states are kept.
+    """
+    out: dict[str, str] = {}
+    for name in sorted(animations.names()):
+        low = name.lower()
+        if not low.startswith("animations/animationstates") or not low.endswith(".con"):
+            continue
+        state = None
+        for line in animations.read(name).decode("latin-1").splitlines():
+            m = STATE_RE.match(line)
+            if m:
+                state = m.group(1)
+                continue
+            m = TRIGGER_RE.match(line)
+            if m and state:
+                out[state] = m.group(1)
+    return out
 
 
 def find_script(objects: ArchivePool, name: str) -> str | None:
@@ -164,16 +295,26 @@ def extract(game_dir: Path, mod: str, out: Path,
     chain = mod_chain(game_dir, mod)
     objects = ArchivePool()
     sounds = ArchivePool()
+    animations = ArchivePool()
     for step in chain:
         archives = find_archives_dir(step)
         if archives is None:
             continue
         objects.add_dir(archives, OBJECT_ARCHIVES)
         sounds.add_dir(archives, SOUND_ARCHIVES)
+        animations.add_dir(archives, ("animations",))
 
     sound_out = out / "sounds"
     sound_out.mkdir(parents=True, exist_ok=True)
     manifest: dict = {"mod": mod, "triggers": {}, "missing": []}
+    frequencies, order = soldier_sound_inc(objects)
+    if frequencies:
+        manifest["frequencies"] = frequencies
+    if order:
+        manifest["order"] = order
+    states = state_triggers(animations)
+    if states:
+        manifest["states"] = states
     wanted: dict[str, str] = {}
 
     for trigger, script in ALL_SOLDIER_SCRIPTS:
@@ -186,7 +327,8 @@ def extract(game_dir: Path, mod: str, out: Path,
         manifest["triggers"][trigger] = {"script": script, "patches": patches}
         for patch in patches:
             for layer in patch["layers"]:
-                wanted[layer["sample"]] = layer["file"]
+                if not layer.get("silent"):
+                    wanted[layer["sample"]] = layer["file"]
 
     written = []
     for stem, ref in sorted(wanted.items()):

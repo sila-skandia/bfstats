@@ -221,7 +221,9 @@ export function createHudFeed(page) {
   // screen (`deploy-screen.js` `paintSpawnTimer` feeds and paints it).
   const respawnHud = new Hud({ canvas: document.getElementById('spawn-timer'), sprite, pending,
                                base: rel => page.hudPaths.url(rel), bust: page.bust,
-                               groups: key => RESPAWN_GROUPS.includes(key) });
+                               // and the tooltip plate, which retail also draws
+                               // over the spawn screen (`tooltips.js`).
+                               groups: key => RESPAWN_GROUPS.includes(key) || key === 'toolTip' });
   respawnHud.load();
 
   Object.assign(hudFeed, {

@@ -140,6 +140,7 @@ export function createMultiplayScreen({
     report: level => (level?.report ? pack.json(`${MAPS}/${level.report}`).catch(() => null)
       : Promise.resolve(null)),
     online,
+    serverFull: () => lobby.full,
     page: name => page(name),
     paintPage: (name, table, skip) => paintPage(name, table, skip),
     thumbnailOf,
@@ -347,7 +348,7 @@ export function createMultiplayScreen({
       const x = Math.round(field.rect[0]);
       const y = box[1] + Math.round((box[3] - font.meta.lineHeight) / 2);
       drawBitmapText(ctx, font, pack.env.tint, text, x, y,
-                     filterInvalid(name, state.filters[name]) ? ALERT : ROW_COLOR);
+                     filterInvalid(name, state.filters[name]) ? ALERT : ROW_COLOR, true);
       if (state.editing === name && Math.floor(Date.now() / 500) % 2 === 0) {
         ctx.fillStyle = rgb(ROW_COLOR);
         ctx.fillRect(x + measureText(font, text) + 1, y, 1, font.meta.lineHeight);
@@ -476,7 +477,7 @@ export function createMultiplayScreen({
         if (c === 0) text = NAME_PREFIX + text;
         text = clipped(font, text, COLUMN_X[at + 1] - COLUMN_X[at] - CLIP_MARGIN);
         drawBitmapText(ctx, font, pack.env.tint, text, left + COLUMN_X[at],
-                       baseline - font.meta.baseline, ROW_COLOR);
+                       baseline - font.meta.baseline, ROW_COLOR, true);
       }
     }
     // An empty list with the stats API not answering says so, where the

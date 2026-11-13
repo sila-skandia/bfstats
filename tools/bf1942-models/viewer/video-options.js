@@ -11,9 +11,9 @@
 // taken whole from its label to the next one (`videoRow`) and set on the
 // plate's lines in the game's order (`placeVideoRows`): the i-th row drawn
 // sits on the file's i-th line, so the column keeps the game's own rhythm,
-// and the rows the viewer cannot honour (SHADOWS, ALTERNATIVE SPAWN
-// INTERFACE) are left out rather than drawn dead, the rule the nav strip
-// follows. One row is this site's own and borrows a tick box's shape:
+// and the row the viewer cannot honour (ALTERNATIVE SPAWN INTERFACE) is
+// left out rather than drawn dead, the rule the nav strip follows.
+// ANTI-ALIASING sits on its line. One row is this site's own and borrows a tick box's shape:
 // ANTI-ALIASING. The game has no anti-aliasing row: `Video.con` holds a
 // display mode and eight quality settings, and multisampling was the
 // driver's to force.
@@ -38,13 +38,14 @@ const elementsOf = (layout, page) => layout?.pages?.[page]?.elements || [];
 /** The VIDEO OPTIONS rows this site draws, top to bottom, each the file's
  *  row `key` (the last borrows a row's shape for a setting of the page's
  *  own). `steps` are a slider's values; `fileText` says the file
- *  carries the slider's value texts. SHADOWS and ALTERNATIVE SPAWN
- *  INTERFACE are not drawn: the viewer has nothing behind them. */
+ *  carries the slider's value texts. ALTERNATIVE SPAWN INTERFACE is not
+ *  drawn: the viewer has nothing behind it. */
 export const VIDEO_ROWS = Object.freeze([
   { id: 'graphicsQuality', key: 'VIDEO_OPTIONS_GRAPHICS_QUALITY', steps: [1, 2, 3], fileText: true },
   { id: 'effectsQuality', key: 'VIDEO_OPTIONS_EFFECTS_QUALITY', steps: [1, 2, 3], fileText: true },
   { id: 'environmentMapping', key: 'VIDEO_OPTIONS_ENV_MAPPING' },
   { id: 'lightmaps', key: 'VIDEO_OPTIONS_LIGHTMAPS' },
+  { id: 'shadows', key: 'VIDEO_OPTIONS_SHADOWS' },
   { id: 'textureQuality', key: 'VIDEO_OPTIONS_TEXTURE_QUALITY', steps: [1, 2, 3, 4, 5], fileText: true },
   { id: 'viewDistance', key: 'VIDEO_OPTIONS_VIEWDISTANCE',
     steps: [50, 55, 60, 65, 70, 75, 80, 85, 90, 95, 100] },

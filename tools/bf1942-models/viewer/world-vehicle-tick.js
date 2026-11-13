@@ -11,96 +11,61 @@ import { airborneDrive } from './airborne.js';
  * One hull nobody is in any more, one integration a tick: the wreck of an
  * aircraft that was destroyed in the air.
  *
- * This is HP-15's own rule, run by the only thing left to run it. A destroyed
- * `PlayerControlObject` receives no input at all
- * (`PlayerControlObject::handlePlayerInput`, lnxded 0x08318920) — the gate
- * `vehicleTick` below forces false for a live occupant — and the hull still
- * integrates and coasts. A plane whose crew is dead has no occupant left to
- * run that gate, so the wreck list (`world.falling`, filled by
- * `vehicle-wrecks.js`) is the driver: every control word is forced to the
- * engine's zero, the throttle spool is pinned at 0, and the flight model gets
- * the same one `integrate` a tick the pilot's tick gave it.
+ * Retail runs the same physics on a wreck as on the live hull. The Armor's
+ * destruction is TemplateMessage 0x15 on the object's own bus (HP-13), and
+ * what each node does with it is all there is:
  *
- * The airframe's own integration is kept — its attitude and momentum are its
- * own, and the crash test reads the same state — but a destroyed hull is a
- * dead object, so it is not allowed to fly: `FALL_MIN_SINK` forbids holding
- * altitude or climbing. Zeroing the controls alone is not enough, which the
- * report that prompted this settled: a downed BF109 over Bocage kept flying,
- * climbing first and then gliding at 30-46 m/s for 45 s from 200 m, so the
- * wreck landed a kilometre from where it was shot down and the intact model
- * was the only thing anyone saw come down.
+ *   - `PlayerControlObject::handlePlayerInput` (lnxded `0x08318920`) returns
+ *     before it forwards anything once `+0xed` is set (HP-15). No input
+ *     reaches a child again, a zero included, so every control surface keeps
+ *     the input its register held at the kill and its servo runs on from
+ *     there (`RotationalBundle` `+0x11c`; `Wing::handleMessage` does not even
+ *     pass on message 3, the seat emptying, which zeroes that register on a
+ *     plain RotationalBundle, `0x081d85c4`).
+ *   - `Engine::handleMessage` (`0x0823e730`) stops the engine and latches it
+ *     (PHY-14): its revs are forced to 0.
+ *   - `Wing::handleMessage` (`0x08250bf0`) writes the destroyed byte
+ *     (`0x08250d5a`) and nothing else. The lift pair (`+0x148`/`+0x14c`) is
+ *     untouched, and neither `Wing::handleUpdate` (`0x08250950`) nor
+ *     `PhysicsWing::updatePhysics` (`0x0824ed10`) reads `+0xed`.
+ *   - `ResponsePhysicsManager::update` and `PhysicsNode::
+ *     updatePositionalPhysics` ask no destroyed flag either (HP-24).
  *
- * The inputs are forced every tick rather than once, because the surfaces are
- * servos with their own rates: a stick left where it was at the moment of the
- * kill would hold that deflection until the wreck hit the ground.
+ * So a plane shot down is a glider with a dead engine and a frozen stick:
+ * it carries on along the path it was flying and comes down on its own lift
+ * and drag, for as long as its time to live lasts (HP-19, 10 s on every
+ * vanilla aircraft, `vehicle-wrecks.js`). A hull that was critically damaged
+ * first keeps the lift scale that gave it (`Aircraft.criticalLift`), which
+ * is what rolls a burning plane over on the way down.
+ *
+ * An earlier version of this pass held a wreck to a 30 m/s sink with its lift
+ * zeroed and its speed bled off, to answer a report of a downed BF109 gliding
+ * 45 s. That glide was the missing time to live, not the lift: a retail wreck
+ * glides too, and is removed at 10 s wherever it has got to.
+ *
+ * The wreck list (`world.falling`, filled by `vehicle-wrecks.js`) is the
+ * driver because a plane whose crew is dead has no occupant left to step it.
  */
 
-/** The sink a dead hull is held to, m/s. Well past any glide the airframe can
- *  hold, so a wreck comes down where it was killed; small enough that the
- *  descent still carries its forward speed and reads as a falling aeroplane. */
-const FALL_MIN_SINK = 30;
-
-/** How fast a dead hull's forward speed bleeds off, per second. Not a glide:
- *  a wreck that keeps 60 m/s for the whole descent still lands half a map
- *  away, which is the same "it just flew away" the sink floor is there to
- *  stop. */
-const FALL_DRAG = 0.25;
-
-/**
- * A wreck makes no lift. `aircraft.js` evaluates every surface's lift each
- * tick and the floor alone cannot out-vote it: asking for 18 m/s of sink was
- * delivered as 11, because the wing went on making the difference (a 100 m/s
- * floor came out at 68 the same way). Zeroing the surfaces' own coefficient is
- * the lever the model actually reads, and it takes the aero moments with it,
- * so the hull tumbles rather than flies. The air coefficients are kept on the
- * surface (`coeffAir`) so a hull that is put back on its pad can fly again.
- */
-function killLift(vehicle) {
-  for (const surface of vehicle?.surfaces ?? []) {
-    if (surface.coeffAir == null) surface.coeffAir = surface.coeff;
-    surface.coeff = 0;
-  }
-}
-
-/**
- * The sink a falling wreck is held to: `FALL_MIN_SINK`, or the hull's own
- * terminal speed falling flat under its drag, whichever is slower.
- *
- * The floor is there to out-vote an airframe's glide, and a fighter's box
- * drag lets it fall far faster than 30 m/s, so it keeps the floor. A hull
- * whose own drag holds it to less must not be pushed past it: BF1918's
- * Zeppelin L30 (`drag 5`, mass 16000, a 150 m envelope) falls flat at about
- * 5 m/s, and held at 30 its box drag and its up/down engine's propeller
- * term (`e = revs - v.fwd / noPropellerEffectAtSpeed`, a brake at revs 0)
- * threw it upward every tick faster than the floor pulled it down: a
- * destroyed airship (and the observation balloon) climbed at 7..13 m/s to
- * 400 m (t2 F4). The terminal speed is `sqrt(g m / (drag A_y))` under the
- * box law (`Aircraft.applyBoxDrag`, the flat face `0.785 DX DZ`), `g / drag`
- * under the linear one.   [HOUSE RULE, the floor's own bound]
- */
-export function fallSinkFloor(vehicle) {
-  const k = vehicle?.spec;
-  const g = Math.abs(k?.gravity ?? 0);
-  if (!(k?.drag > 0) || !(g > 0)) return FALL_MIN_SINK;
-  let terminal = Infinity;
-  if (k.dragLaw === 'box' && Array.isArray(k.size) && k.mass > 0) {
-    // `3.14 * 0.25`, the box law's face area as `aircraft.js` reads it (lnxded
-    // `0x082545b8`; SHIPLAW-3).
-    const area = (3.14 * 0.25) * k.size[0] * k.size[2];
-    if (area > 0) terminal = Math.sqrt(g * k.mass / (k.drag * area));
-  } else if (k.dragLaw !== 'box') {
-    terminal = g / k.drag;
-  }
-  return Math.min(FALL_MIN_SINK, terminal);
-}
-
-/** Undo `killLift`, for a hull the spawner puts back. */
+/** Put a hull's Wings back on their template's lift (`Aircraft.fullLift`):
+ *  a wreck's pad standing a fresh hull up, or its crash. */
 export function restoreLift(vehicle) {
-  for (const surface of vehicle?.surfaces ?? []) {
-    if (surface.coeffAir == null) continue;
-    surface.coeff = surface.coeffAir;
-    surface.coeffAir = null;
-  }
+  vehicle?.fullLift?.();
+}
+
+/**
+ * The Wings' answer to the Armor's critical byte, for whoever steps the
+ * drive: message 0x14 on the crossing into critical scales every Wing's lift
+ * (`Aircraft.criticalLift`), 0x13 on the recovery puts it back. Destruction
+ * sends neither (`vehicle-damage.js` `criticalFlagged`), so a wreck keeps
+ * what it had. Two compares a tick for a hull whose byte has not moved.
+ */
+export function syncCriticalLift(vehicle, hull) {
+  if (!hull || typeof vehicle?.criticalLift !== 'function') return;
+  const flagged = !!hull.criticalFlagged;
+  if (flagged === !!vehicle.liftIsCritical) return;
+  if (flagged) vehicle.criticalLift(hull.criticalHitX ?? 0);
+  else if (!hull.destroyed) vehicle.fullLift();
 }
 
 /**
@@ -116,12 +81,13 @@ export function restoreLift(vehicle) {
  * of exit, for every airframe (`features/flyable-vehicles/README.md`,
  * "A vacated aircraft hangs in the air").
  *
- * The control word is the engine's zero, forced every tick as the wreck's
- * is: the surfaces are servos with rates of their own, and a stick left
- * where the pilot let go of it would hold its deflection to the ground.
- * Unlike a wreck, nothing is done to the airframe itself -- the lift stays,
- * no sink floor -- because a live hull is still a live hull. One `integrate`
- * a tick, the same one the occupant's tick gave it.
+ * The control word is the engine's zero, forced every tick: the surfaces
+ * are servos with rates of their own, and a stick left where the pilot let
+ * go of it would hold its deflection to the ground. (Not read on the binary
+ * for a Wing: `Wing::handleMessage` `0x08250bf0` passes message 3 to nobody,
+ * so retail may leave an empty plane's stick where it was as it does a
+ * wreck's. Kept as built until that is measured.) One `integrate` a tick,
+ * the same one the occupant's tick gave it.
  *
  * A coasting drive the wreck pass takes over (`fallingWreck`) leaves this
  * list the tick it does, so nothing is stepped twice. One that is down and
@@ -158,37 +124,21 @@ export function stepCoastingHulls(world, dt) {
 export function stepFallingWrecks(world, dt) {
   for (const vehicle of world.falling) {
     if (!vehicle?.state) continue;
-    vehicle.setInput?.('c_PIThrottle', 0);
-    vehicle.setInput?.('c_PIRoll', 0);
-    vehicle.setInput?.('c_PIPitch', 0);
-    vehicle.setInput?.('c_PIYaw', 0);
+    // 0x15 takes the weapon component off the object (`setComponent(
+    // IID_IWeapon, NULL)`, `0x081db8f9`): a trigger held at the kill is let go.
     vehicle.setInput?.('c_PIFire', 0);
     vehicle.setInput?.('c_PIAltFire', 0);
-    // The spool state itself, not just its target: `#vacate` pinned it when
-    // the seat emptied, and a wreck's engine is dead rather than idling.
+    // The stick is left where the kill found it: no input is forwarded to a
+    // destroyed hull's children, so nothing writes their registers again.
+    // The throttle is the Engine's own and the Engine is stopped: 0x15 clears
+    // its running byte and latches it (PHY-14), an idle floor included
+    // (`setMinRotation`, the observation balloon's hover engines at 40%).
+    // A stopped Engine takes no input (`Engine::handlePlayerInput`
+    // `0x0823e5ef` writes zeros), which is the throttle channel's 0 here.
+    vehicle.setInput?.('c_PIThrottle', 0);
     vehicle.state.throttle = 0;
-    // TemplateMessage 0x15 stops every Engine under the PCO and latches it
-    // (PHY-14): the revs are forced to 0, an idle floor (`setMinRotation`,
-    // the observation balloon's hover engines at 40%) included.
     if ('engineRunning' in vehicle) vehicle.engineRunning = false;
-    killLift(vehicle);
-    const sink = fallSinkFloor(vehicle);
-    // Sink first, integrate second. `aircraft.js` computes lift from the flow
-    // over the wing, so a wreck already moving down gets its "lift" downward:
-    // clamping AFTER the integration left the airframe's own lift to fight the
-    // floor for the rest of the tick, and a 109 killed at 200 m still came down
-    // at 11 m/s instead of the 18 the floor asks for.
-    const velocity = vehicle.state.velocity;
-    const bleed = Math.max(0, 1 - FALL_DRAG * dt);
-    if (velocity) {
-      if (velocity.y > -sink) velocity.y = -sink;
-      velocity.x *= bleed;
-      velocity.z *= bleed;
-    }
     vehicle.integrate(dt);
-    // And again after: the floor holds even if the tick's own forces pushed the
-    // hull back up.
-    if (velocity && velocity.y > -sink) velocity.y = -sink;
   }
 }
 
@@ -253,6 +203,7 @@ export function vehicleTick(world, player, dt, integrators) {
   if ((vehicle?.engineLaw || vehicle?.landDrive || vehicle?.shipDrive) && activeRoot) {
     vehicle.engineRunning = !(hull?.critical || hull?.destroyed);
   }
+  if (activeRoot) syncCriticalLift(vehicle, hull);
   const inControl = activeRoot && !player.gate.blocked;
   // Exactly one entry for this tick: the buffer's oldest, else the page's
   // pending freshest, else the engine's zeroed idle word.
@@ -352,9 +303,8 @@ export function vehicleTick(world, player, dt, integrators) {
     // A hull on the wreck list is stepped by `stepFallingWrecks` instead. The
     // list is the driver for a hull nobody flies, and a dead pilot whose
     // occupant entry is still standing (the player killed in his own plane)
-    // would otherwise integrate it a second time with the controls his death
-    // left behind: the two together hold a glide, and a 109 shot down at
-    // 200 m came down 650 m downrange in 19 s instead of dropping in 6 s.
+    // would otherwise integrate it a second time in the same tick, at twice
+    // the engine's rate.
     if (integrators.get(vehicle) === player && !world.falling?.has(vehicle)) {
       vehicle.integrate(dt);
       // After `integrate`, never before: it ends in `applyRig`, which puts

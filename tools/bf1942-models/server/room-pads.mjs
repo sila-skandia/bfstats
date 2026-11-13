@@ -41,9 +41,10 @@
 import * as THREE from 'three';
 
 import {
-  AbandonClock, calcSpawnDelay, followPadPoint, padControlPoint, padFromSpawn, padSides,
+  AbandonClock, SpawnerPad, calcSpawnDelay, followPadPoint, padControlPoint, padFromSpawn, padSides,
   preGameSetTeam,
 } from '../viewer/deployables.js';
+import { craftSpawnerOf, heldSlotsOf } from '../viewer/spawned-craft.js';
 import { CHARACTER_HEIGHT } from '../viewer/soldier-pose.js';
 import { afterDeath } from '../viewer/after-death.js';
 import { MAX_PLAYERS } from '../viewer/netcode.js';
@@ -120,6 +121,77 @@ export function createRoomPads({ room, onRow, unmount }) {
     });
   }
 
+  // A ship's own spawners (`spawned-craft.js`: her landing craft and deck
+  // aircraft, rows of the table since `room-ships.mjs`): each an
+  // ObjectSpawner like any pad (SPAWN-9, SPAWN-24), with
+  // `maxNrOfObjectSpawned` slots, one entry a slot (`slots`), filed under no
+  // control point, and standing where the ship has it now (`spawnerAt`). The
+  // page's is `level-statics.js` `buildHeldPads`. Until 2026-11-13 the room
+  // ran none: a ship's four Daihatsus on Wake were used once.
+  const _spawner = new THREE.Matrix4();
+  const craftSlots = new Map();
+  for (const entry of instance.table) {
+    if (entry.craftSlot == null) continue;
+    const first = heldSlotsOf(entry.root)?.[0];
+    if (!first) continue;
+    if (!craftSlots.has(first)) craftSlots.set(first, []);
+    craftSlots.get(first)[entry.craftSlot] = entry;
+  }
+  for (const list of craftSlots.values()) {
+    const slots = list.filter(Boolean);
+    const baked = list[0];
+    const held = baked?.root.userData?.heldSpawner;
+    const spawner = baked ? craftSpawnerOf(baked.root) : null;
+    if (!held || !spawner) continue;
+    const team = held.team === 1 || held.team === 2 ? held.team : 0;
+    const homes = slots.map(entry => ({ position: entry.home.position.clone(), quaternion: entry.home.quaternion.clone() }));
+    const record = {
+      index: null, point: null, held: null, flag: undefined, pad: null, baked, live: new Set(), firstDraw: true,
+      spawn: { spawner: held.spawner, vehicle: baked.template, team,
+               timeToLive: held.timeToLive, distance: held.distance, damageWhenLost: held.damageWhenLost,
+               minSpawnDelay: held.minSpawnDelay, maxSpawnDelay: held.maxSpawnDelay },
+      entries: new Map([[baked.template.toLowerCase(), baked]]),
+      slots, homes, radius: held.radius, at: baked.home.position.toArray(),
+      /** Where the spawner is now: its ship's pose times its place on her. */
+      spawnerAt() {
+        spawner.host.updateWorldMatrix(true, false);
+        _spawner.multiplyMatrices(spawner.host.matrixWorld, spawner.local);
+        const e = _spawner.elements;
+        record.at[0] = e[12]; record.at[1] = e[13]; record.at[2] = e[14];
+        return _spawner;
+      },
+    };
+    records.push(record);
+  }
+
+  /** A craft spawner's pad (`buildHeldPads`): its own side's template all
+   *  round, a slot an entry. */
+  function craftPad(record) {
+    const { spawn } = record;
+    return new SpawnerPad({
+      templates: { [String(spawn.team)]: spawn.vehicle }, team: spawn.team,
+      minSpawnDelay: spawn.minSpawnDelay, maxSpawnDelay: spawn.maxSpawnDelay,
+      maxNr: record.slots.length, radius: record.radius,
+    });
+  }
+
+  /** The entry a craft spawner stands next: the first slot not out, else one
+   *  whose wreck can go. Stood where the spawner is now (`at` false: where
+   *  the level had it, at the load and at a restart). */
+  function craftEntry(record, at = true) {
+    let entry = record.slots.find(e => !record.live.has(e)) ?? null;
+    if (!entry) {
+      entry = record.slots.find(e => destroyed(e) && e.seated === 0) ?? null;
+      if (!entry) return null;
+      record.live.delete(entry);
+      retire(entry);
+    }
+    const home = record.homes[record.slots.indexOf(entry)];
+    if (at) record.spawnerAt().decompose(entry.home.position, entry.home.quaternion, _scale);
+    else { entry.home.position.copy(home.position); entry.home.quaternion.copy(home.quaternion); }
+    return entry;
+  }
+
   /** The side holding a pad's point now: its flag's live team, else the
    *  level's (a point that is no flag never changes hands); null for none. */
   function pointTeam(record) {
@@ -141,7 +213,8 @@ export function createRoomPads({ room, onRow, unmount }) {
   const destroyed = entry => !!world.vehicleDamage.get(entry.owner)?.destroyed;
 
   function positionOf(entry) {
-    const pose = world.vehiclePose(entry.owner);
+    // A ship or a craft held on one has no body at rest (`room-ships.mjs`).
+    const pose = instance.ships?.poseOf(entry) ?? world.vehiclePose(entry.owner);
     return pose ? [pose.x, pose.y, pose.z] : entry.home.position.toArray();
   }
 
@@ -152,7 +225,7 @@ export function createRoomPads({ room, onRow, unmount }) {
    *  (SPAWN-21); at a restart it holds. */
   function resetPads({ preGame = false } = {}) {
     for (const record of records) {
-      record.pad = padFromSpawn(record.spawn);
+      record.pad = record.slots ? craftPad(record) : padFromSpawn(record.spawn);
       record.held = null;
       record.flag = undefined;
       record.switchedOff = false;
@@ -166,12 +239,13 @@ export function createRoomPads({ room, onRow, unmount }) {
         critical: () => false,
         distance: () => 0,
         spawn: template => {
-          const entry = entryFor(record, template);
+          const entry = record.slots ? craftEntry(record, false) : entryFor(record, template);
+          if (!entry) return null;
           record.live.add(entry);
           return entry;
         },
       });
-      for (const entry of record.entries.values()) {
+      for (const entry of record.slots ?? record.entries.values()) {
         if (record.live.has(entry)) standUp(entry, { announce: false });
         else retire(entry, { announce: false });
       }
@@ -185,8 +259,12 @@ export function createRoomPads({ room, onRow, unmount }) {
   function standUp(entry, { announce = true } = {}) {
     const vehicle = world.vehicleDamage.get(entry.owner);
     vehicle?.reset();
+    // A new object: its magazines are full (`room-guns.mjs`).
+    room.guns?.resetHull(entry);
     entry.live = true;
     entry.wreckAge = null;
+    // A ship's drive is the old hull's (`room-ships.mjs`).
+    instance.ships?.forget(entry);
     // A depot the hull carries works again (`world-fields.js` `depotSuspended`).
     if (entry.root?.userData) entry.root.userData.padAbsent = false;
     // The home pose is world space; a scene node's is written through its
@@ -204,6 +282,9 @@ export function createRoomPads({ room, onRow, unmount }) {
     if (spec && world.bodyWorld) world.addParkedBody(entry.owner, spec, bodyPoseOf(entry.root));
     instance.collider?.clearMovedOwner?.(entry.owner, { enable: false });
     instance.statics?.enableOwner?.(entry.owner);
+    // A ship's craft: afloat at its draft, or back on its spawner's hold,
+    // and told to the collider where it now stands (`room-ships.mjs`).
+    if (entry.craftSlot != null) instance.ships?.launched(entry);
     sentHp.set(entry.owner, vehicle?.hitPoints ?? null);
     if (announce) {
       onRow({ type: 'padSpawn', vehicle: entry.id, pad: entry.pad, template: entry.template });
@@ -219,6 +300,7 @@ export function createRoomPads({ room, onRow, unmount }) {
     const was = entry.live;
     entry.live = false;
     entry.wreckAge = null;
+    instance.ships?.forget(entry);
     // ...and its depot with it, as the page's `markAbsent` stands one down.
     if (entry.root?.userData) entry.root.userData.padAbsent = true;
     world.removeBody(entry.owner);
@@ -238,7 +320,16 @@ export function createRoomPads({ room, onRow, unmount }) {
       if (!entry?.live || entry.wreckAge != null) continue;
       for (const [slot, player] of world.players) {
         if (player.occupancy?.root !== entry.root) continue;
-        if (player.armor && !player.armor.destroyed) player.armor.applyDamage(player.armor.hitPoints + 1);
+        if (player.armor && !player.armor.destroyed) {
+          // A hull's crew dies to whoever dealt the lethal hit, and a
+          // burn-down has no killer (AI-76; `_giveDamage` 0x0814b870 walks
+          // the seats on that call): the hull's own record of it
+          // (`vehicle-damage.js` `killedBy`) is the name the authority's
+          // decree reads off the Armor. Left unset, a bomb that wrecked a
+          // tank killed its crew for nobody.
+          player.armor.applyDamage(player.armor.hitPoints + 1);
+          player.armor.lastHit = change.vehicle?.killedBy ?? null;
+        }
         unmount(slot);
       }
       // The wreck keeps its body, parked by the unmount, until `retire` at its
@@ -289,7 +380,8 @@ export function createRoomPads({ room, onRow, unmount }) {
           feet ??= footOrigins();
           // His bounding radius: the page's is the drawn sphere
           // (`cullRadius`); the room draws nothing, so its collision parts'.
-          entry.radius ??= bodySpecFor(entry.root, room.levelData)?.boundingRadius ?? 0;
+          entry.radius ??= (bodySpecFor(entry.root, room.levelData)
+            ?? instance.ships?.specOf(entry.root))?.boundingRadius ?? 0;
           const r = entry.radius;
           soldierNear = feet.some(o =>
             (o[0] - at[0]) ** 2 + (o[1] - at[1]) ** 2 + (o[2] - at[2]) ** 2 < r * r);
@@ -328,6 +420,7 @@ export function createRoomPads({ room, onRow, unmount }) {
         if (pad.slots[0] != null) pad.delay = calcSpawnDelay(pad.min, pad.max, pad.players, pad.maxPlayers);
       }
       for (const entry of record.live) if (!entry.live) record.live.delete(entry);
+      record.spawnerAt?.();
       pad.tick(dt, {
         alive: entry => record.live.has(entry),
         critical: entry => destroyed(entry),
@@ -342,10 +435,10 @@ export function createRoomPads({ room, onRow, unmount }) {
           retire(entry);
         },
         spawn: template => {
-          const entry = entryFor(record, template);
+          const entry = record.slots ? craftEntry(record) : entryFor(record, template);
           // One hull per template: an earlier one still standing (its wreck
           // away from the pad) clears first, and nobody may still sit in it.
-          if (entry.live || entry.seated > 0) return null;
+          if (!entry || entry.live || entry.seated > 0) return null;
           standUp(entry);
           record.live.add(entry);
           return entry;
@@ -369,7 +462,11 @@ export function createRoomPads({ room, onRow, unmount }) {
       if (Math.abs(hp - last) < 1 && !(dead && last > 0)) continue;
       sentHp.set(owner, dead ? 0 : hp);
       const value = Math.max(0, Math.round(hp * 10) / 10);
-      onRow(entry ? { type: 'hull', vehicle: entry.id, hp: value, destroyed: dead }
+      // `hitX`: which side of the hull the hit that took it critical landed
+      // on (`Armor::getLastHitPlace().x`'s sign), which mirrors the lift its
+      // Wings keep (`aircraft.js` `criticalLift`); the client predicts with it.
+      onRow(entry ? { type: 'hull', vehicle: entry.id, hp: value, destroyed: dead,
+                      ...(vehicle.criticalFlagged ? { hitX: vehicle.criticalHitX < 0 ? -1 : 1 } : null) }
         : { type: 'object', node, hp: value, destroyed: dead });
     }
   }
@@ -405,6 +502,7 @@ export function createRoomPads({ room, onRow, unmount }) {
    *  level put it. */
   function restart() {
     for (const entry of instance.table) {
+      if (records.some(r => r.slots?.includes(entry))) continue;
       if (entry.pad == null || !records.some(r => r.entries.get(entry.template.toLowerCase()) === entry)) {
         standUp(entry);
       }

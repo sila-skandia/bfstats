@@ -327,7 +327,7 @@ export class BodyWorld {
         // again. `features/viewer-ground-hull-collision/README.md` has it as
         // the next step, with the settle pass as where it belongs.
         if (entry.driven) {
-          this.staticContacts += collideWithStatics(entry.parts, this.statics, TICK, handlers);
+          this.staticContacts += collideWithStatics(entry.parts, this.statics, TICK, handlers, entry.springs ?? null);
           // Its wheels too (`collideSpringsWithStatics`): the push each finds
           // is the wheel's displacement on the next tick.
           if (entry.springs) {

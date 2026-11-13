@@ -178,9 +178,9 @@ function paintRows(ctx, layout, ui, env) {
     }
     ctx.imageSmoothingEnabled = false;
     const color = [0.78, 0.78, 0.78, 1];
-    drawBitmapText(ctx, font, env.tint, mod.name, Math.round(textX), y + 1, color);
+    drawBitmapText(ctx, font, env.tint, mod.name, Math.round(textX), y + 1, color, true);
     drawBitmapText(ctx, font, env.tint, mod.version || '—',
-                   Math.round(versionX), y + 1, color);
+                   Math.round(versionX), y + 1, color, true);
   }
   paintThumb(ctx, layout, box, ui);
 }

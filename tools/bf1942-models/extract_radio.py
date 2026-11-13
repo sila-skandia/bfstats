@@ -439,7 +439,26 @@ CHAT_STRING_KEYS = ("DEFAULT_KILL_TEXT", "TEAM_KILL", "DEATH", "AXIS_CAPTURED",
                     "ALLIES_HOLD_ALL_CONTROLPOINTS", "CAPTURED_THE_FLAG",
                     # The rest of a CTF flag's lines (0x006e4290, ledger CTF-7).
                     "STOLE_THE_FLAG", "RETURNED_THE_FLAG", "DROPPED_THE_FLAG",
-                    "TEAM_CHAT_AXIS", "TEAM_CHAT_ALLIES", "RADIO_ATTACK", "RADIO_DEFEND")
+                    "TEAM_CHAT_AXIS", "TEAM_CHAT_ALLIES", "RADIO_ATTACK", "RADIO_DEFEND",
+                    # Someone into or out of the local player's hull, and a
+                    # player taking a side (BF1942.exe 0x00493b98, 0x00493d07,
+                    # 0x00493fc7; `viewer/chat-log.js` `vehicleLine`, `joinLine`).
+                    "ENTERED_YOUR_VEHICLE", "LEFT_YOUR_VEHICLE",
+                    "JOINED_THE", "AXIS_TEAM", "ALLIED_TEAM",
+                    # A vote's lines and question, and what a refused join says
+                    # (`viewer/room-host-client.js`; the room's votes are
+                    # `server/room-votes.mjs`).
+                    "VOTEFEEDBACK_KICK", "VOTEFEEDBACK_MAP", "VOTEFEEDBACK_TEAMKICK",
+                    "VOTEMSG_KICK_INACTIVE", "VOTEMSG_KICK_NONCONCLUSIVE",
+                    "VOTEMSG_KICK_PROGRESS", "VOTEMSG_KICK_SUCCESS",
+                    "VOTEMSG_MAP_INACTIVE", "VOTEMSG_MAP_NONCONCLUSIVE",
+                    "VOTEMSG_MAP_PROGRESS", "VOTEMSG_MAP_SUCCESS",
+                    "VOTEMSG_TEAMKICK_NONCONCLUSIVE", "VOTEMSG_TEAMKICK_PROGRESS",
+                    "VOTEMSG_TEAMKICK_SUCCESS", "VOTE_CAST", "VOTE_NEEDED", "VOTE_NO",
+                    "VOTE_TIME_LEFT", "VOTE_YES", "MAPVOTE_HEADING",
+                    "PASSWORD_INVALID", "PASSWORD_INVALID_FIRST_ATTEMPT",
+                    "RESERVED_PASSWORD_INVALID", "ERROR_KICKED_FROM_SERVER",
+                    "ERROR_BANNED_FROM_SERVER", "CONFIRMATION_FAILED_TO_CONNECT_SERVER_FULL")
 MENU_CON = "Bf1942/Game/Init/Menu.con"
 PROFILE_OPTIONS = Path("Settings/Profiles/Default/GeneralOptions.con")
 

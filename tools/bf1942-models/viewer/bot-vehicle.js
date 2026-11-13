@@ -102,9 +102,22 @@ export const TELEPORT = {
   seatAir: { root: 1.5, self: 0.5, other: 0.5 },
   root: { root: 1.0, self: 1.0, other: 0.5 },
   urgencyScale: 4.0,
+  /** A human's standing request for the bot's own seat, with no better seat
+   *  on the hull (0x08561680 -> 0x0856192b: `getPlayerRequestedPlayerControl
+   *  Object` vt+0x18c equals the bot's unit; `0x40c00000` at 0x085619ce). */
+  requestUrgency: 6.0,
+  /** The older name of `requestUrgency` (the test was first read as a
+   *  change still under way). */
   pendingUrgency: 6.0,
+  /** The own seat stays best, the attack share is under 0.05 (0x86c08a8,
+   *  0x08561874) and the bot is not at LOD 0 (`getLodLevel` vt+0xc,
+   *  0x08561898): `0x40000000` at 0x0856191f, the same re-deploy plan. */
   noOrderUrgency: 2.0,
   noOrderSplit: 0.05,
+  /** `BBPChangeTeleport::createPlan` 0x08590590 with its flag clear (the
+   *  two calls above): the wait under `BAPIWChange`, `BAPConTime(2.0)`
+   *  (`0x40000000` pushed at 0x08590dad). */
+  redeployWait: 2.0,
 };
 
 /**
@@ -627,19 +640,33 @@ export function changeUrgency({ staying, candidates, radius = CHANGE.searchRadiu
  * `'seatLand'` or `'seatShip'`; `rootU` / `selfU` the root's and the bot's
  * own seat's `calculateVehicleUrgency`; `seats` the other seats as `{ id,
  * u }` (free ones); `radio` the message strength, `orderFactor` the bot's
- * skill factor for seats other than its own (1 with an order), `pending`
- * a change into another object still under way, `attackSplit` w1,
- * `hasPlan` whether a plan runs. Returns `{ urgency, best }`, `best` null
- * when the bot keeps its seat.
+ * skill factor for seats other than its own (1 with an order),
+ * `requested` a human's standing request for the bot's own seat
+ * (`pending`, its older name, means the same), `attackSplit` w1, `lod` the
+ * bot's LOD level (0 for every bot of the viewer's, which all run the full
+ * mover). Returns `{ urgency, best, redeploy }`: `best` null when the bot
+ * keeps its seat, `redeploy` true when the plan is the engine's re-deploy
+ * (`BBPChangeTeleport::init(own unit, false)`: the SAI's teleporter list,
+ * bot-referee.js `handleTeleportingBot`).
+ *
+ * The own seat staying best has three ends, in the engine's order
+ * (0x08561680, 0x0856169e, 0x085616bc):
+ *  1. the requested unit is the bot's own -> 6.0 and the re-deploy;
+ *  2. the attack share under 0.05 and the bot's LOD level not 0 -> 2.0 and
+ *     the re-deploy (never here: no bot of the viewer's is off LOD 0);
+ *  3. else no Change, 0.
  */
 export function teleportChangeUrgency({ where = 'root', rootU = 0, selfU = 0, seats = [], radio = 0,
-                                        orderFactor = 1, pending = false, attackSplit = 0.5, hasPlan = true,
-                                        landing = false }) {
+                                        orderFactor = 1, requested = false, pending = false, attackSplit = 0.5,
+                                        lod = 0, landing = false }) {
   // A landing craft's seats run `BBChangeLandingCraft` (`LANDING_TELEPORT`):
-  // no order factor, and no pending or no-order urgency of its own (its
-  // 6.0 at 0x08560aaa is behind an unidentified `vt+0x18c` test, not ported).
+  // no order factor and no re-deploy. Its 6.0 (0x08560aaa) is the urgency of
+  // a swap to a better seat while the request stands on the bot's own
+  // (`init(best, true)` at 0x085609e6, then vt+0x18c against the own unit,
+  // 0x085609f4..0x08560a0f).
   const f = (landing ? LANDING_TELEPORT : TELEPORT)[where] ?? (landing ? LANDING_TELEPORT : TELEPORT).root;
-  if (landing) { orderFactor = 1; pending = false; hasPlan = true; }
+  requested = requested || pending;
+  if (landing) orderFactor = 1;
   const r = 1 - radio;
   let best = null, bestU = selfU * f.self * r;
   const own = bestU;
@@ -652,12 +679,14 @@ export function teleportChangeUrgency({ where = 'root', rootU = 0, selfU = 0, se
     if (u > bestU) { bestU = u; best = { id: seat.id, u }; }
   }
   if (!best) {
-    if (pending) return { urgency: TELEPORT.pendingUrgency, best: null };
-    if (attackSplit < TELEPORT.noOrderSplit && !hasPlan) return { urgency: TELEPORT.noOrderUrgency, best: null };
-    return { urgency: 0, best: null };
+    if (landing) return { urgency: 0, best: null, redeploy: false };
+    if (requested) return { urgency: TELEPORT.requestUrgency, best: null, redeploy: true };
+    if (attackSplit < TELEPORT.noOrderSplit && lod !== 0) return { urgency: TELEPORT.noOrderUrgency, best: null, redeploy: true };
+    return { urgency: 0, best: null, redeploy: false };
   }
+  if (landing && requested) return { urgency: TELEPORT.requestUrgency, best, redeploy: false };
   const x = own > 0 ? 0.5 * bestU / own : 0.5 * bestU;
-  return { urgency: decleiningSlope(x) * TELEPORT.urgencyScale, best };
+  return { urgency: decleiningSlope(x) * TELEPORT.urgencyScale, best, redeploy: false };
 }
 
 /**

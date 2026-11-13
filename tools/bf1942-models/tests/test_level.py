@@ -745,16 +745,21 @@ class TerrainDirectiveTests(unittest.TestCase):
         info = parse_terrain_con("GeometryTemplate.worldSize 2048\n")
         self.assertIsNone(info.target_tri_count)
 
-    def test_lod_distance_is_dead_and_not_read(self) -> None:
-        # 22 levels author it; the retail client never reads it. Recording it
-        # would imply a viewer behaviour the engine never had.
+    def test_lod_distance_is_read(self) -> None:
+        # The client registers the word on the PatchTerrain template
+        # (0x005d2d05) and its handler 0x005d2e40 writes template +0xf4, the
+        # range of the terrain's detail law (ledger TERR-8). Until 2026-11-13
+        # this test held it dead: the string search had missed it.
         info = parse_terrain_con(
             "GeometryTemplate.worldSize 2048\n"
             "GeometryTemplate.lodDistance 350\n"
             "GeometryTemplate.targetTriCount 5000\n"
         )
         self.assertEqual(5000, info.target_tri_count)
-        self.assertFalse(any("lod" in field for field in vars(info)))
+        self.assertEqual(350.0, info.lod_distance)
+
+    def test_undeclared_lod_distance_stays_none(self) -> None:
+        self.assertIsNone(parse_terrain_con("GeometryTemplate.worldSize 2048\n").lod_distance)
 
     def test_wave_height_is_read(self) -> None:
         info = parse_terrain_con(
@@ -863,7 +868,10 @@ class WaterEnvmapColorTests(unittest.TestCase):
         info = LevelInfo(name="El_Alamein", terrain=parse_terrain_con(""))
         parse_init_con("water.wateShallowAlpha 0.5\n", info)
         self.assertIsNone(info.water.envmap_color)
-        self.assertEqual(1.0, info.water.shallow_alpha)   # the ctor default
+        # The water constructor's own (client `0x00655005`, ledger WATER-5).
+        self.assertEqual(0.0, info.water.shallow_alpha)
+        self.assertEqual(1.7, info.water.alpha_depth)     # `0x00654ffe`
+        self.assertEqual(5.0, info.water.color_depth)     # `0x00655008`
 
 
 class RenderSettingsTests(unittest.TestCase):

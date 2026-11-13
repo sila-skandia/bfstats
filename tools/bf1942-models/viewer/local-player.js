@@ -249,6 +249,9 @@ export function createLocalPlayer(page) {
     // press then takes the seat.
     const holder = seat.instance.holder(seatId);
     if (holder != null) { page.requestBotSeat?.(holder); return; }
+    // One of the room's other players sits there: refused as well (SEAT-11),
+    // as the room refuses it (`server/room-control.mjs`).
+    if (page.roomSeatHeld?.(seat.root, seatId)) return;
     // Discard the previous seat's soldier pose (if any) before loading the new
     // one — a driver→passenger switch on a Willy, or vice-versa.
     page.disposeSeatPose();
@@ -842,8 +845,21 @@ export function createLocalPlayer(page) {
     // The free fall can also end without a state event -- a respawn or a
     // climb into a seat resets the chute outright -- and its winds loop.
     if (localPlayer.soldier?.parachuteState !== PARA_FALLING) page.stopFallSound();
-    if (localPlayer.soldier?.footstepEvents.length) {
-      for (const step of localPlayer.soldier.drainFootstepEvents()) page.handleSoldierFootstep(step);
+    // His movement sounds: the client's `SoldierSound` on the state his body
+    // is in (`soldier-sound.js`, `page-audio.js` `soldierSoundTick`). The
+    // bob's step clock no longer plays them; its queue is only emptied.
+    const soundSoldier = localPlayer.soldier;
+    if (soundSoldier) {
+      if (soundSoldier.footstepEvents.length) soundSoldier.footstepEvents.length = 0;
+      const now = performance.now();
+      const dt = localPlayer.soundAt ? Math.min(0.25, (now - localPlayer.soundAt) / 1000) : 0;
+      localPlayer.soundAt = now;
+      if (!localPlayer.occupancy && page.soldierSoundTick) {
+        const view = page.soldierSoundView(soundSoldier, localPlayer.soundView ??= {});
+        const armor = localPlayer.soldierArmor ?? null;
+        if (armor && !(armor.hitPoints > 0)) view.quiet = true;
+        page.soldierSoundTick(soundSoldier, view, dt, null, armor);
+      }
     }
     // The rocket pack's bursts (`rocket-pack.js`): the pack's own sound script
     // (`jetpack-thrusters`, patch 0) at the wearer, through the world-fire

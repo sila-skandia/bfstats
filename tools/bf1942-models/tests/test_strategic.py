@@ -290,6 +290,31 @@ class StrategicFixtureTests(unittest.TestCase):
         self.assertEqual(a["point"], self.results["pins"]["captureRing"]["engineDraw"])
         self.assertIsNone(a["flag"])
 
+    def test_wanted_strength_is_the_known_enemy_strategic_strength(self) -> None:
+        # `AIStrategicArea::update` 0x0863d6d0 (ledger AI-168): the enemy's
+        # `setStrategicStrength` x health, truncated per add, index 1 owned and
+        # 0 not; owned x 2 (0x86c08c4), not owned x 1.25 (0x87023d0) x
+        # (2 - SCurve(the side's share of the battle strength there)).
+        w = self.results["pins"]["wanted"]
+        self.assertEqual(w["ownedEmpty"], 2)
+        self.assertEqual(w["ownedThree"], 6)
+        self.assertEqual(w["ownedHurtTank"], 2)
+        self.assertEqual(w["ownedWilly"], 2)
+        # share 0: 2 x 1.25 x 3 = 7.5 -> 7.
+        self.assertEqual(w["attackWilly"], 7)
+        self.assertEqual(w["attackEmpty"], 2)
+        # share 1: (2 - 1) x 1.25 x 1 -> 1.
+        self.assertEqual(w["attackUnopposed"], 1)
+        # share 0.5: SCurve(0.5) = 0.5, 1.5 x 1.25 x 4 = 7.5 -> 7.
+        self.assertEqual(w["attackEven"], 7)
+        # share 0.2: SCurve(0.2) is small, so nearly 2 x 1.25 x 4 = 10 -> 9.
+        self.assertEqual(w["attackOutnumbered"], 9)
+        # In the pass: the Allies face three known Axis soldiers with one of
+        # their own (share 0.25), the Axis one Allied soldier with three.
+        self.assertEqual(w["passSeen"], [7, 1])
+        # Two of the three unknown to the Allies: one counted, share 0.5.
+        self.assertEqual(w["passHidden"], [1, 1])
+
     def test_each_side_picks_a_strategy_and_attacks_the_middle(self) -> None:
         for side in ("1", "2"):
             s = self.results["sides"][side]
@@ -297,16 +322,17 @@ class StrategicFixtureTests(unittest.TestCase):
             self.assertEqual(s["attacks"], ["Mid"], s)
 
     def test_the_attack_collects_its_wanted_strength_and_the_rest_hold(self) -> None:
-        # A neutral area wants `round(2 * 1 * 1.25)` = 3 units; the fourth bot
-        # of each side is retained at its base (`retainBot`) with no urgency
+        # An empty neutral area wants `trunc(2 x 1.25 x max(1, 0))` = 2 units
+        # (`AIStrategicArea::update` 0x0863dec3, AI-168); the other bots
+        # of each side are retained at their base (`retainBot`) with no urgency
         # to move, being inside an owned area.
         for side in ("1", "2"):
             orders = [o for b, o in self.results["orders"].items() if b.startswith(f"bot_{side}_")]
             self.assertTrue(all(o is not None for o in orders))
             attacking = [o for o in orders if o["area"] == "Mid"]
             holding = [o for o in orders if o["area"] != "Mid"]
-            self.assertEqual(len(attacking), 3, orders)
-            self.assertEqual(len(holding), 1, orders)
+            self.assertEqual(len(attacking), 2, orders)
+            self.assertEqual(len(holding), 2, orders)
             for o in attacking:
                 self.assertGreaterEqual(o["radius"], 5.0)
                 self.assertGreater(o["urgency"], 0)

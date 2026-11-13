@@ -46,6 +46,7 @@ import { currentRatio, currentTorque, loadSample, revAdvance } from './engine-re
 import { SIMULATION_FPS } from './body-friction.js';
 import { unboundRollAxis } from './engine-spin.js';
 import { DEFAULT_DIFFERENTIAL, DEFAULT_TORQUE, DEFAULT_NO_PROPELLER_EFFECT_AT_SPEED } from './ship-spec.js';
+import { EngineHeat, engineHeatSpec } from './rocket-burn.js';
 
 const FORWARD = new THREE.Vector3(0, 0, -1);
 const RAD = Math.PI / 180;
@@ -286,6 +287,9 @@ export class VectoredEngine {
     this.torque = spec.torque ?? DEFAULT_TORQUE;
     this.fadeSpeed = spec.noPropellerEffectAtSpeed || DEFAULT_NO_PROPELLER_EFFECT_AT_SPEED;
     this.throttle = spec.throttle || null;
+    // The rocket motors' burn (PHY-45, `rocket-burn.js`): null without heat.
+    const heat = engineHeatSpec(spec);
+    this.heat = heat ? new EngineHeat(heat) : null;
     this.maxRotationZ = spec.maxRotationZ ?? 0;
     this.chain = (spec.chain || []).map(segment => ({
       id: segment.id,
@@ -342,6 +346,8 @@ export class VectoredEngine {
   advance(dt, input, running = true) {
     if (this.throttle) clipAngleStep(this.roll, this.throttle, running ? input : 0, dt);
     this.revs = running ? revAdvance(this.revs, this.t1, this.load, dt * SIMULATION_FPS) : 0;
+    // The heat branch (0x0823e320): a motor at heat 1 is stopped for good.
+    if (this.heat) this.revs = this.heat.step(this.revs, dt * SIMULATION_FPS);
     this.load = 0;
     this.loadCount = 0;
   }

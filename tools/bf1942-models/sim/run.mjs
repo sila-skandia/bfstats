@@ -29,6 +29,7 @@ function parseArgs(argv) {
       case '--map': a.level = next(); break;
       case '--maps': a.maps = next(); break;
       case '--models': a.models = next(); break;
+      case '--glbs': a.glbs = next(); break;
       case '--viewer': a.viewer = next(); break;
       case '--bots': a.bots = Number(next()); break;
       case '--max-players': a.maxPlayers = parseMaxPlayers(next()); break;
@@ -111,6 +112,13 @@ match options:
   --out DIR         output directory (default sim/out/<level>-s<seed>)
   --maps DIR        the extracted maps tree (default <viewer>/maps)
   --models DIR      the extracted models tree (default <viewer>/models)
+  --glbs DIR        the content store, for a tree extracted before
+                    poses/stances.json (extract_stances.py): the soldiers' rig
+                    blobs are then read from it (default <models>/../glbs).
+                    With either, the bots' rounds meet the skeleton's capsules
+                    and they aim at its bones, as on the page and in a room;
+                    with neither, the stand-in sphere (the summary's level
+                    line says which)
   --viewer DIR      the viewer to load the AI from (default ../viewer)
   --quiet           no progress on stderr`;
 
@@ -124,7 +132,8 @@ async function runMatch(a) {
   const levelName = a.level ?? 'synthetic';
   const level = levelName === 'synthetic'
     ? syntheticLevel(M, { vehicles: a.vehicles })
-    : await realLevel(M, { maps: a.maps ?? path.join(viewer, 'maps'), models: a.models ?? path.join(viewer, 'models'), map: levelName });
+    : await realLevel(M, { maps: a.maps ?? path.join(viewer, 'maps'), models: a.models ?? path.join(viewer, 'models'), map: levelName,
+                        glbs: a.glbs ?? null });
   // Re-seed after the level load so a real level's load order cannot move
   // the match's first draw.
   seedMathRandom(a.seed);
@@ -173,7 +182,8 @@ async function runMatch(a) {
   const m = summary.metrics;
   const lines = [
     `level ${summary.level}  seed ${summary.seed}  ${summary.botsPerSide} a side  ${summary.maxPlayers} max players  `
-      + `${summary.duration} s  (${summary.runtime.wallMs} ms)`,
+      + `${summary.duration} s  (${summary.runtime.wallMs} ms)`
+      + `${summary.level_info?.bodies ? `  bodies ${summary.level_info.bodies}` : ''}`,
     `result: ${summary.result.reason}, tickets Axis ${summary.result.tickets[1]} / Allies ${summary.result.tickets[2]}`
       + `${summary.result.winner ? `, ${summary.result.winner === 1 ? 'Axis' : 'Allies'} ahead` : ', level'}`,
     `captures ${m.captures.total} (Axis ${m.captures[1]}, Allies ${m.captures[2]}), first ${m.timeToFirstCapture ? `${m.timeToFirstCapture.flag} at ${m.timeToFirstCapture.t} s` : 'none'}`,

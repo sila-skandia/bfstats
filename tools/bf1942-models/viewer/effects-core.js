@@ -229,6 +229,31 @@ export function rollBasis(basis, degrees) {
   };
 }
 
+/**
+ * Stand `basis` on world up in place, keeping its heading: up becomes
+ * (0, 1, 0), dof its own horizontal part and right what closes the frame with
+ * the hand it had. What `moveToWaterSurface` does to a mesh particle's frame
+ * (the Mac client's `Emitter::handleUpdate`: row 1 set to 0/1/0, then the
+ * three cross products). A frame whose dof is vertical is left as it is,
+ * as the engine's failed `normalize` leaves it.
+ */
+export function levelBasis(basis) {
+  const { right, up, dof } = basis;
+  const hx = dof[0], hz = dof[2];
+  const len = Math.hypot(hx, hz);
+  if (!(len > 1e-6)) return basis;
+  // The hand of the frame as it came: right against up x dof.
+  const cx = up[1] * dof[2] - up[2] * dof[1];
+  const cy = up[2] * dof[0] - up[0] * dof[2];
+  const cz = up[0] * dof[1] - up[1] * dof[0];
+  const hand = cx * right[0] + cy * right[1] + cz * right[2] < 0 ? -1 : 1;
+  dof[0] = hx / len; dof[1] = 0; dof[2] = hz / len;
+  up[0] = 0; up[1] = 1; up[2] = 0;
+  // (0, 1, 0) x dof
+  right[0] = hand * dof[2]; right[1] = 0; right[2] = hand * -dof[0];
+  return basis;
+}
+
 /** `a·right + b·up + c·dof`, as a fresh array. */
 export function inFrame(basis, r, u, d) {
   const { right, up, dof } = basis;
@@ -242,6 +267,9 @@ export function inFrame(basis, r, u, d) {
 // How long an emitter waits between spawns when its intensity is zero: the
 // engine's `calcInvItensity` answers 100 s for a non-finite reciprocal.
 const IDLE_INTERVAL = 100;
+// The shortest lifetime a looping emitter restarts with (lnxded 0x086c08a4,
+// compared at 0x081e3472).
+const LOOP_MIN_LIFETIME = 0.01;
 
 // The client's emitters multiply every sampled intensity by the game's
 // `intensityScale` (game +0x4cc, read in the client's interval function at
@@ -266,6 +294,9 @@ export function emitterIntensityScale() {
  * intensity resampled per spawn (`calcInvItensity`, 0x081e2f10) and scaled by
  * the emitter's own speed over `IntensityAtSpeed` when that is set. A looping
  * emitter resamples and starts over when its lifetime ends; any other stops.
+ * The speed is the root object's at the emitter's point (its physics'
+ * vt+0x74 with the emitter's position, 0x081e34f2), which `effects.js` reads
+ * off an attached run's own motion.
  *
  * The first spawn is due at once. That is the one rule here settled by data
  * rather than by reading the code: the decal emitters declare `intensity 2`
@@ -330,9 +361,19 @@ export class EmitterClock {
     }
     if (!alive) {
       if (this.spec.looping) {
-        this.ttl = sampleCrd(this.spec.timeToLive, this.rand);
+        // The restart (lnxded 0x081e3322..0x081e352e, the Mac client's
+        // `Emitter::handleUpdate` the same): the delay and the lifetime are
+        // drawn again, the lifetime held to 0.01 s at least (0x086c08a4), the
+        // age goes to 0 and the next spawn falls due one interval in, at the
+        // emitter's speed now (`calcInvItensity` into +0x114). Only a start
+        // (`handleMessage(0)`) puts the next spawn at 0. So a looping emitter
+        // whose interval is longer than its lifetime spawns nothing: a boat's
+        // bow wave (`Em_WaterFront`, 0.1 s loops, `intensityAtSpeed 10`) needs
+        // the hull under way, and a parked one makes no foam.
+        this.delay = Math.max(0, sampleCrd(this.spec.delay, this.rand));
+        this.ttl = Math.max(LOOP_MIN_LIFETIME, sampleCrd(this.spec.timeToLive, this.rand));
         this.age = 0;
-        this.next = 0;
+        this.next = this.interval(speed);
       } else {
         this.done = true;
       }

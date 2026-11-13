@@ -5,18 +5,18 @@
 // delegates its methods here.
 
 import { isWalkable, traceClear } from './nav-grid.js';
-import { playerPosition, sensedPoint } from './bot-sense.js';
+import { bakedToWorld, hullRadius, playerPosition, sensedPoint } from './bot-sense.js';
 import { scoutPose, takeCoverPose, fixedPose, directionPose, POSE_EYE } from './bot-pose.js';
-import { firingPose, firePlanFor, fireApproachStep, choseWeapon, FIRE, FIRE_APPROACH, weaponHeatHolds,
+import { firingPose, firePlanFor, fireApproachStep, choseWeapon, aiStrength, FIRE, FIRE_APPROACH, weaponHeatHolds,
          triggerWindow, decisionPhase } from './bot-fire.js';
-import { SCOUT, TAKE_COVER, MEDIC } from './bot-behaviours.js';
+import { SCOUT, TAKE_COVER, MEDIC, HULL_TAKE_COVER } from './bot-behaviours.js';
 import { planeFireMode, PLANE_FIRE, boatControl, BOAT } from './bot-vehicle-air.js';
 import { freeLevel } from './nav-grid.js';
-import { hullDecision, VEHICLE_YAW_SIGN, drivesHull, planHullAvoid, execHullAvoid } from './bot-route.js';
-import { AIM_COUNTS_MAX, wrapAngle, faceTarget, turretAimAt, turretMiss, precisionFor, precisionHolds, targetShape,
+import { hullDecision, VEHICLE_YAW_SIGN, drivesHull, planHullAvoid, execHullAvoid, standingBox } from './bot-route.js';
+import { AIM_COUNTS_MAX, wrapAngle, faceTarget, turretAimAt, guidedLookAt, guidedHolds, turretMiss, precisionFor, precisionHolds, targetShape,
   gunSeatAim, gunSeatIndirectLine, aimerOnlyHolds } from './bot-aim.js';
 import { tankTurnTowards } from './bot-vehicle.js';
-import { isArtilleryDriver } from './bot-perception.js';
+import { isArtilleryDriver, fireMode } from './bot-perception.js';
 import { BEHAVIOUR } from './bot-decision.js';
 import { planAirAvoid, execPlaneAvoid, weaponGroup } from './bot-pilot.js';
 import { friendInLine, roundPasses, HOLD_FIRE } from './friendly-fire.js';
@@ -48,6 +48,12 @@ export const PLAN_ACTION = {
   PlaneAvoid: 'PlaneAvoid',
   /** `BBPAvoidCollision2d`: a driven hull's or boat's side step (`BAPAMoveToDirect`). */
   HullAvoid: 'HullAvoid',
+  /** `BAPATurnTowardsDirection` (the `TankTurnTo` entry): a driven hull
+   *  turned on the spot toward a direction (`execHullTurnTo`). */
+  HullTurnTo: 'HullTurnTo',
+  /** `BAPAMoveToDirect` on foot: straight at a point at a speed, no route
+   *  (`BBPAvoidCollisionInfantery`, `execSoldierMoveToDirect`). */
+  SoldierMoveToDirect: 'SoldierMoveToDirect',
   MoveToMediumSoldier: 'MoveToMediumSoldier',
   MoveToObjectMediumSoldier: 'MoveToObjectMediumSoldier',
   MouseTurretAimAt: 'MouseTurretAimAt',
@@ -55,6 +61,9 @@ export const PLAN_ACTION = {
   Trigger: 'Trigger',
   TriggerContinously: 'TriggerContinously',
   InfantryResetControls: 'InfanteryResetControls',
+  /** `BAPFlowCWait(BAPConTime(t))`: nothing until `action.until` (the
+   *  re-deploy plan of `BBPChangeTeleport`, bot-mount.js `planChange`). */
+  Wait: 'Wait',
   Sense: 'Sense',
   SoldierPose: 'SoldierPose',
   InfoWrapper: 'InfoWrapper',
@@ -63,10 +72,6 @@ export const PLAN_ACTION = {
 /** `BAPALookAtObject` in the fire plan: within 5 deg. */
 const LOOK_TOLERANCE = 5 * Math.PI / 180;
 /** A remembered target's plan gets `firingTargetTime` from `setFiringTarget`. */
-/** The Avoid sidestep (INVENTION, header): a diagonal a second of travel long,
- *  ended after half a second. */
-const AVOID_STEP = 5.0;
-const AVOID_TIME = 0.5;
 
 // -----------------------------------------------------------------------
 // Plan generators
@@ -124,7 +129,9 @@ export function planMoveTo(bot, now) {
     return [{ type: PLAN_ACTION.BoatMoveToDirect, waypoint: goal, waypointObject: wp, persistent: true, ramp: true }];
   }
   // `gait`: the garrison's patrol walks (doctrine-garrison.js, INVENTION).
-  const plan = [{ type: PLAN_ACTION.InfantryMoveTo, waypoint: goal, arrive: wp.radius, waypointObject: wp,
+  // A beach order's approach ends at its point, not inside its radius
+  // (doctrine-landing.js `arriveRadius`, ledger AI-113).
+  const plan = [{ type: PLAN_ACTION.InfantryMoveTo, waypoint: goal, arrive: wp.arriveRadius ?? wp.radius, waypointObject: wp,
                   stance: wp.gait === 'walk' && !bot.vehicle ? 'walk' : 'stand' }];
   // `BBPGotoWaypoint2d::createPlan` 0x085b5490 runs a `BAPALookAhead(bot,
   // 5 deg)` beside the move (0x085b5531..) when the unit's ControlInfo looks
@@ -164,6 +171,7 @@ export function planFire(bot, now) {
       && !bot._firePlanDone(cur, now)) {
     // The plan fires the weapon it chose, whatever `BBFire` scored since.
     if (Number.isInteger(cur.weaponIndex)) bot.weaponIndex = cur.weaponIndex;
+    if (bot._fireData) bot._fireData.time = now;
     return cur;
   }
   if (isArtilleryDriver(bot.vehicle)) {
@@ -177,12 +185,23 @@ export function planFire(bot, now) {
   }
   // `createPlan` 0x085a3870 fires the weapon `choseWeapon` picks for the
   // target's distance, `BBFire`'s own choice counting three times
-  // (bot-fire.js `choseWeapon`). With none, the plan keeps `BBFire`'s: the
-  // thrown weapon's branch (`soldier_choseThrownWeapon` 0x085cf300 and the
-  // decisions that pick a throw) is not ported.
-  const chosen = choseWeapon(bot.weapons, bot.weaponIndex, distance3(bot.position, bot.targetPosition),
-                             bot._unitInfo?.(bot.firingTarget)?.type ?? 'Infantry');
-  if (chosen >= 0) bot.weaponIndex = chosen;
+  // (bot-fire.js `choseWeapon`), and beside it picks a thrown one
+  // (`soldier_choseThrownWeapon` 0x085cf300, at 0x085a4067). A soldier on
+  // foot throws when no direct weapon is to be had (`fireDecision`); with
+  // neither there is no plan (0x085a40f2: the record's +0x30 = -100). A seat
+  // has no thrown weapon and keeps `BBFire`'s when `choseWeapon` finds none.
+  const dist = distance3(bot.position, bot.targetPosition);
+  const type = bot._unitInfo?.(bot.firingTarget)?.type ?? 'Infantry';
+  const chosen = choseWeapon(bot.weapons, bot.weaponIndex, dist, type);
+  let throwing = false;
+  if (!bot.vehicle) {
+    const d = fireDecision(bot, { now, direct: chosen, dist, type });
+    if (d.state === FIRE_STATE.none) return bot._planIdle();
+    bot.weaponIndex = d.weaponIndex;
+    throwing = d.state === FIRE_STATE.throwAtTarget;
+  } else if (chosen >= 0) {
+    bot.weaponIndex = chosen;
+  }
   const weapon = bot.weapons[bot.weaponIndex] ?? bot.weapons[0];
   if (approachesByFinding(bot)) {
     // `createPlanInternal` 0x085a74e0 from 0x085a7c5e: the approach, the
@@ -214,8 +233,112 @@ export function planFire(bot, now) {
   plan.targetId = bot.firingTarget;
   plan.startedAt = now;
   plan.weaponIndex = bot.weaponIndex;
+  if (throwing) {
+    // The throw is one round (the firing state's count, `local_244 = 1` at
+    // 0x085ac4ef's block), then the plan is over.
+    const trigger = plan.find(a => a.type === PLAN_ACTION.Trigger || a.type === PLAN_ACTION.TriggerContinously);
+    if (trigger) trigger.shots = FIRE_THROW.rounds;
+    plan.throw = true;
+  }
   bot._shotsThisPlan = 0;
   return plan;
+}
+
+/** `BBPFireInfantery`'s firing states (`Data` +4), the ones the page runs. */
+export const FIRE_STATE = { none: 0, direct: 1, throwAtTarget: 2 };
+
+/**
+ * `BBPFireInfantery::createPlan` 0x085a3870's throw (AI-183).
+ *  - `resetAfter`: the per-target data (state, the last eight decisions, the
+ *    throw clock) starts over for a new target or after 5.0 s without a
+ *    plan (0x086c5288, 0x085a4301's compare).
+ *  - `waitMin`, `waitSpan`: after a throw the next waits `5 + 5 x rand` s
+ *    (`fmuls 0x086c4c10` [2^-24], x 5.0, `fadds 0x086c5288` at 0x085a4db2).
+ *  - `rounds`: one.
+ *  - `history`: the decisions kept (a ninth drops the oldest, 0x085a4500).
+ */
+export const FIRE_THROW = { resetAfter: 5.0, waitMin: 5.0, waitSpan: 5.0, rounds: 1, history: 8 };
+
+/**
+ * `soldier_choseThrownWeapon` 0x085cf300 (AI-158): the first weapon that is
+ * thrown (`WeaponTemplate::getIsThrown`), has ammunition (`getAmmo` not 0),
+ * a whole-number strength above 0 against the target's class and `minRange
+ * <= distance`. No `maxRange` test: the plan walks into range. -1 with none.
+ * This is the one range test before a throw: a hand grenade's `minRange 5`
+ * keeps a bot from throwing at a target inside 5 m. `isThrown` is the AI
+ * template's word; in a `loadouts.json` that predates it (`isThrown` null)
+ * a weapon whose FireArms winds up (`throwDelay`: the exporter's `throw.
+ * fireDelay`, every hand grenade) stands in (INFERRED from the kits' data).
+ */
+export function soldierChoseThrownWeapon(weapons, distance, type = 'Infantry', throwDelay = null) {
+  for (let i = 0; i < (weapons?.length ?? 0); i++) {
+    const w = weapons[i];
+    if (!w) continue;
+    const thrown = w.isThrown ?? ((throwDelay?.(w) ?? 0) > 0 && !w.healing);
+    if (!thrown || w.ammo === 0) continue;
+    if (!(aiStrength(w.strength?.[type] ?? 0) > 0)) continue;
+    if (!((w.minRange ?? 0) <= distance)) continue;
+    return i;
+  }
+  return -1;
+}
+
+/**
+ * The firing state `BBPFireInfantery::createPlan` 0x085a3870 picks for a
+ * soldier on foot when it builds a plan (read 2026-11-13, AI-183). `direct`
+ * is `choseWeapon`'s index. From no state the candidates are tried in the
+ * order 1, 2, 3, 4, 7, 6, 5 (0x085a4590..0x085a45c8) and the first eligible
+ * one stands unless a later one wins its own roll:
+ *
+ *  1. direct fire, eligible with a direct weapon: its roll is against `1 /
+ *     (0.1 n)` for `n` earlier direct decisions among the last eight (1.0
+ *     with none), never under 1.25, so it always wins. A soldier with a
+ *     direct weapon does not throw from here.
+ *  2. the throw at the target, eligible with a thrown weapon once the throw
+ *     clock has run (`FIRE_THROW`), and with a direct weapon only while
+ *     fewer than two of the last eight decisions were throws.
+ *
+ * So: the direct weapon when there is one; else the throw when one is
+ * allowed; else no plan. Returns `{ state, weaponIndex }` and keeps the
+ * data on the bot (`_fireData`).
+ *
+ * Not ported, and why:
+ *  - state 3, the throw through a portal of the cover the target stands in
+ *    (`getAttackPortal` 0x085a28c0): its draw weighs `1 - 1 / (2 n^2 + 1)`
+ *    over the cover's `n` portals (0x085a5fc2..0x085a5fee), and no vanilla
+ *    object has one (no portal mesh, no `AIMeshes/<name>_a1.aim`; ledger
+ *    AI-116), so the engine never draws it there;
+ *  - state 4, the throw at the point 10 m short of the target
+ *    (`getIndirectWeaponCloseToFiringPositions` 0x085a3540, taken at 0.5
+ *    when its arc is clear, 0x085a6144): from beyond the weapon's range it
+ *    walks the thrower to `minRange - 3` m from his own landing point
+ *    (0x085a3779..0x085a37a0: 2 m for a hand grenade), inside the blast;
+ *  - states 5 to 7, the soldier's moves between fire states, and with them
+ *    the mix in which a soldier back from a move lets his direct weapon
+ *    lose its roll (`/ 5.0` at 0x085a4667) and throws at 0.5 when
+ *    `hasIndirectLineOfFire` (vt+0x58) clears the arc, 0.05 when not
+ *    (0x085a5e65, 0x085a5e75): `createPlanInternal` 0x085a74e0 and
+ *    `createFirePlan` 0x085ac240 build those moves and were not re-read.
+ * Retail has no test of the thrower's own blast or of a friend in it.
+ */
+export function fireDecision(bot, { now, direct, dist, type }) {
+  let data = bot._fireData;
+  if (!data || data.targetId !== bot.firingTarget || now - data.time > FIRE_THROW.resetAfter) {
+    data = bot._fireData = { targetId: bot.firingTarget, time: now, history: [], lastThrow: 0, throwWait: 0 };
+  }
+  data.time = now;
+  const note = state => {
+    data.history.unshift(state);
+    if (data.history.length > FIRE_THROW.history) data.history.length = FIRE_THROW.history;
+  };
+  if (direct >= 0) { note(FIRE_STATE.direct); return { state: FIRE_STATE.direct, weaponIndex: direct }; }
+  const delay = w => bot.weaponData?.[w.name]?.throw?.fireDelay ?? 0;
+  const thrown = soldierChoseThrownWeapon(bot.weapons, dist, type, delay);
+  if (thrown < 0 || now - data.lastThrow < data.throwWait) return { state: FIRE_STATE.none, weaponIndex: -1 };
+  data.lastThrow = now;
+  data.throwWait = FIRE_THROW.waitMin + FIRE_THROW.waitSpan * bot.random();
+  note(FIRE_STATE.throwAtTarget);
+  return { state: FIRE_STATE.throwAtTarget, weaponIndex: thrown };
 }
 
 /** The straight-line distance between two points. */
@@ -729,6 +852,18 @@ export function planScout(bot, now) {
     const dot = cur.dir[0] * dir[0] + cur.dir[1] * dir[1] + cur.dir[2] * dir[2];
     if (dot > SCOUT.planReuseCos) return cur;
   }
+  if (hullScoutTurns(bot)) {
+    // `BBPScout::createPlan` 0x085c3a70 (the hull rows' Scout, AI-181):
+    // `ResetControls(1, 0, 0)` beside `If(ObjectValidYawAiming(dir),
+    // Parallel(LookInDir(dir), Sense(10 deg)), TurnTowardsDirection(dir,
+    // 5 deg))`, the `If` re-read every tick (`BAPFlowCIf`, last argument 1)
+    // and built only when the unit's Mobile template is `isTurnable` (its
+    // +0x30 byte, 0x085c3ba3). No pose statement.
+    const plan = [{ type: PLAN_ACTION.HullTurnTo, dir, tolerance: SCOUT.hullTurnTolerance, sense: SCOUT.senseDeviation,
+                    persistent: true }];
+    plan.dir = dir;
+    return plan;
+  }
   const plan = [
     { type: PLAN_ACTION.SoldierPose, component: scoutPose(bot.random) },
     { type: PLAN_ACTION.MouseTurretLookAt, dir, persistent: true },
@@ -736,6 +871,68 @@ export function planScout(bot, now) {
   ];
   plan.dir = dir;
   return plan;
+}
+
+/**
+ * Whether the bot's Scout is `BBPScout`'s turnable branch: it drives a
+ * ground hull or a boat whose Mobile template sets `isTurnable` (vanilla:
+ * the M3A1, M3 GMC, Priest, Wespe, Sexton, StuG and the other hulls whose
+ * gun the hull points). The row's generator names the plan (`Scout BBScout
+ * BBPScout` on every hull row; the soldier's is `BBPScoutInfantery`).
+ */
+export function hullScoutTurns(bot) {
+  return drivesHull(bot) && bot.vehicle.isTurnable === true;
+}
+
+/**
+ * `BAPConObjectValidYawAiming(-1, true, dir)` 0x08553730 for the driver's
+ * own seat: `AIObjectControlInfo::validateCameraDirectionYaw` on the scout
+ * direction. The seat's gun rig's traverse where it has one (bot-aim.js
+ * `turretCanPoint`), else the ControlInfo's camera yaw window about the
+ * hull's heading; a window of no width (`cameraMinDeg` = `cameraMaxDeg`,
+ * the Priest's and Wespe's driver, whose look turns the hull) reaches only
+ * the nose, taken to the turn's own tolerance. No window, no limit.
+ */
+export function hullYawAimValid(bot, dir, tolerance = SCOUT.hullTurnTolerance) {
+  const turret = bot.vehicle?.occupancy?.turret;
+  if (turret?.yawLimitsRadians?.()) return bot._turretCanPoint(dir);
+  const c = bot.vehicle?.controlInfo;
+  const lo = c?.cameraMinDeg?.[0], hi = c?.cameraMaxDeg?.[0];
+  if (!Number.isFinite(lo) || !Number.isFinite(hi)) return true;
+  const f = bot._vehicleForward();
+  const want = wrapAngle(Math.atan2(dir[0], dir[2]) - Math.atan2(f[0], f[1]));
+  if (hi > lo) return want >= lo * Math.PI / 180 && want <= hi * Math.PI / 180;
+  return Math.abs(want) <= tolerance;
+}
+
+/**
+ * The hull's Scout, one tick (`BBPScout`'s `If`): with the direction inside
+ * the seat's yaw window the look and the sense run (`execMouseTurretLookAt`,
+ * `execSense`); outside it the hull turns on the spot toward the direction
+ * (`BAPATurnTowardsDirection`, 5 deg: `EntryTankTurnTo::execute` 0x08624ff0,
+ * bot-vehicle.js `tankTurnTowards`) and neither runs. Never completes: the
+ * plan lasts as long as the direction does (`planScout`).
+ */
+export function execHullTurnTo(bot, action) {
+  const dir = action.dir;
+  if (hullYawAimValid(bot, dir, action.tolerance)) {
+    bot.moveForward = 0; bot.moveStrafe = 0; bot._lastThrottle = 0;
+    execMouseTurretLookAt(bot, { dir });
+    bot._execSense({ dir, deviation: action.sense });
+    action.turning = false;
+    return false;
+  }
+  const f = bot._vehicleForward();
+  const len = Math.hypot(dir[0], dir[2]) || 1;
+  const dx = dir[0] / len, dz = dir[2] / len;
+  const angle = Math.atan2(f[0] * dz - f[1] * dx, f[0] * dx + f[1] * dz);
+  const v = bot.vehicle?.drive?.state?.velocity;
+  const r = tankTurnTowards({ angle, speed: v ? Math.hypot(v.x, v.z) : 0, tolerance: action.tolerance });
+  bot.moveForward = r.throttle;
+  bot.moveStrafe = VEHICLE_YAW_SIGN * r.steer;
+  bot._lastThrottle = 0;
+  action.turning = r.turning;
+  return false;
 }
 
 /**
@@ -754,6 +951,7 @@ export function planScout(bot, now) {
 export function planTakeCover(bot, now) {
   const r = bot._coverResult;
   if (!r?.urgency) return bot._planIdle();
+  if (r.hull) return planHullTakeCover(bot, r);
   const cur = bot.currentPlan;
   if (bot.planBehaviour === BEHAVIOUR.TakeCover && cur.length && cur.danger && r.dangerPos) {
     const moved = Math.hypot(cur.danger[0] - r.dangerPos[0], cur.danger[2] - r.dangerPos[2]);
@@ -791,7 +989,75 @@ export function planTakeCover(bot, now) {
   return plan;
 }
 
-/** The Avoid sidestep: a diagonal away from the body (header). */
+/**
+ * `BBPTakeCover::createPlan` 0x085c6b80 (the Tank and ArtilleryDriver rows,
+ * AI-182; bot-behaviours.js `HullTakeCoverState` has the urgency):
+ * `ResetControls(1, 0, 0)`, then, side by side, the drive to the point
+ * behind the cover (`BAPAMoveToFinding` at the Mobile `maxSpeed`, done
+ * inside `0.5 maxSpeed` of it, 4.0 m for a unit slower than 4 m/s) and the
+ * look at the danger (`BAPALookInDir` toward a fire record's origin,
+ * `BAPALookAtObject` on a unit; the turret's, the hull's wheel stays the
+ * route's). No pose statement. The plan is kept while the danger has moved
+ * under 3 m (a point) or 1 m (a unit) since it was built. A seat that does
+ * not drive only looks.
+ */
+export function planHullTakeCover(bot, r) {
+  const H = HULL_TAKE_COVER;
+  const cur = bot.currentPlan;
+  if (bot.planBehaviour === BEHAVIOUR.TakeCover && cur.length && cur.hull && cur.danger && r.dangerPos
+      && cur.dangerId === (r.dangerId ?? null)) {
+    const moved = Math.hypot(cur.danger[0] - r.dangerPos[0], cur.danger[1] - r.dangerPos[1], cur.danger[2] - r.dangerPos[2]);
+    if (moved < (r.dangerId ? H.reuseMoveObject : H.reuseMoveStatic)) return cur;
+  }
+  if (!r.goal) return bot._planIdle();
+  const maxSpeed = bot.vehicle?.hullMaxSpeed || bot.vehicle?.maxSpeed || 0;
+  const arrive = maxSpeed >= H.arriveMin ? H.arriveSpeedFraction * maxSpeed : H.arriveMin;
+  const look = r.dangerId
+    ? { type: PLAN_ACTION.MouseTurretLookAt, targetId: r.dangerId, target: r.dangerPos, persistent: true }
+    : { type: PLAN_ACTION.MouseTurretLookAt, target: r.dangerPos, persistent: true };
+  // The point behind the cover, traced toward a sense position of the cover
+  // (`pickRandomSensePosition` 0x085e4080, `AIPathfinding::trace` vt+0x4c at
+  // 0x085c6ef4): the last free point on the unit's map before the first
+  // blocked one. The page's sense position is a random point of the cover's
+  // footprint (INFERRED, bot-behaviours.js).
+  let goal = r.goal;
+  const fp = r.cover?.footprint, nav = bot._nav?.();
+  if (fp && nav) {
+    const sense = [fp[0] + (fp[2] - fp[0]) * bot.random(), fp[1] + (fp[3] - fp[1]) * bot.random()];
+    goal = traceLastFree(nav, r.goal, sense);
+  }
+  const plan = [];
+  if (bot.vehicle?.drives) {
+    plan.push({ type: PLAN_ACTION.InfantryMoveTo, waypoint: [goal[0], bot.position[1], goal[1]], arrive });
+  }
+  plan.push(look);
+  plan.danger = [...r.dangerPos];
+  plan.dangerId = r.dangerId ?? null;
+  plan.hull = true;
+  plan.coverId = r.cover?.id ?? null;
+  return plan;
+}
+
+/**
+ * `AIPathfinding::trace` 0x0847e360 (vt+0x4c): the last free point of the
+ * map on the line from `from` toward `to` (`[x, z]`), walked half a cell at
+ * a time; `from` itself when its first step is blocked, `to` when the whole
+ * line is free.
+ */
+export function traceLastFree(nav, from, to) {
+  const dx = to[0] - from[0], dz = to[1] - from[1];
+  const len = Math.hypot(dx, dz);
+  const step = (nav.cellSize ?? 1) * 0.5;
+  let last = [from[0], from[1]];
+  for (let d = step; d <= len; d += step) {
+    const x = from[0] + dx / len * d, z = from[1] + dz / len * d;
+    if (!isWalkable(nav, x, z)) return last;
+    last = [x, z];
+  }
+  return last;
+}
+
+/** The Avoid plan of the unit's row: the pilot's, the driver's, the soldier's. */
 export function planAvoid(bot, now) {
   if (bot.vehicle?.kind === 'air' && bot.vehicle.drives) {
     // `BBPAvoidCollision3d::createPlan` 0x08587420 (bot-pilot.js).
@@ -815,16 +1081,153 @@ export function planAvoid(bot, now) {
     plan.otherId = r.otherId;
     return plan;
   }
-  const t = bot._avoidThreatDir;
-  if (!t) return bot._planIdle();
+  // `BBPAvoidCollisionInfantery::createPlan` 0x08588400 (AI-192).
+  const b = bot._footAvoidBest;
+  if (!b) return bot._planIdle();
   const cur = bot.currentPlan;
-  if (bot.planBehaviour === BEHAVIOUR.Avoid && cur.length && now < bot.avoidUntil) return cur;
-  const fx = Math.sin(bot.yaw), fz = Math.cos(bot.yaw);
-  const rx = fz, rz = -fx;
-  const side = (t[0] * rx + t[1] * rz) > 0 ? -1 : 1;
-  const dx = (fx + side * rx) * Math.SQRT1_2, dz = (fz + side * rz) * Math.SQRT1_2;
-  bot.avoidUntil = now + AVOID_TIME;
-  return [{ type: PLAN_ACTION.InfantryMoveToDirection, direction: [dx, dz], distance: AVOID_STEP, until: bot.avoidUntil }];
+  if (bot.planBehaviour === BEHAVIOUR.Avoid && cur.length && cur.otherId === b.id && !cur.every(a => a.done)) return cur;
+  const steps = footAvoidPlan({
+    position: [bot.position[0], bot.position[2]], velocity: b.velocity, other: [b.other.x, b.other.z],
+    forward: [Math.sin(bot.yaw), Math.cos(bot.yaw)], radius: bot._radius(), t: b.t,
+    box: standingBox(bot, bot.position[0], bot.position[2]),
+    waypoint: bot.waypoints?.point ?? null,
+  });
+  const plan = [{ type: PLAN_ACTION.SoldierPose, component: fixedPose('stand', bot.random) }];
+  steps.forEach((m, k) => plan.push({
+    type: PLAN_ACTION.SoldierMoveToDirect, point: m.point, speed: m.speed, arrive: m.arrive ?? null,
+    until: Number.isFinite(m.time) ? now + m.time : null, untilStill: m.untilStill === true,
+    after: k > 0 ? k - 1 : null,
+  }));
+  plan.otherId = b.id;
+  plan.branch = steps.branch;
+  return plan;
+}
+
+/**
+ * The soldier's side step, `BBPAvoidCollisionInfantery::createPlan`
+ * 0x08588400 (read 2026-11-13, AI-192), as a pure function in the viewer's
+ * x/z (the engine's z negated; the geometry is taken in the engine's frame).
+ * `position`, `velocity` and `forward` the soldier's, `other` the predicted
+ * body's position, `t` its predicted time (`init` 0x08588360's float),
+ * `radius` the soldier's AI radius, `box` the free box he stands in
+ * (bot-route.js `standingBox`; null: none), `waypoint` the order's point
+ * (`BotMain::getWaypoints` vt+0x40, its vt+0xc; null: none).
+ *
+ * With `v` the velocity: the two diagonals `d1 = 0.7071 (v.x - v.z, v.x +
+ * v.z)` and `d2 = 0.7071 (v.x + v.z, v.z - v.x)` (0x08702470: `v` turned 45
+ * deg either way, a second of travel long), `n = (v.z, -v.x)`
+ * (`ref2::getNormal` 0x08658780), `rel` the other less the soldier. The
+ * other is behind when `rel . d1 <= 0` and `rel . d2 <= 0`; the step is `d2`
+ * when `n . rel <= 0`, else `d1`: the diagonal on the side away from the
+ * body. (The test in front of it, `||u . n| - pi/2| <= 0.349` on the other's
+ * unit velocity `u`, 0x085887e2..0x085887f4, compares a cosine with angles
+ * and always holds.)
+ *
+ *  A. The stepped point inside the box: `BAPAMoveToDirect` to it at the
+ *     Mobile `maxSpeed`, times 0.3 (0x086c030c) unless the body is behind,
+ *     ended by `BAPConOr(BAPConTime(1.1 t) [0x086c4c08], BAPConPosition(
+ *     point, 5.0) [push 0x40a00000 at 0x0858a110])`.
+ *  B. Outside it, and the point pushed `3.0 x 2^level` normals (0x086c08c8;
+ *     the level is the map record's +0xc4a4, `AIPathfinding::getVehicle`
+ *     vt+0xac, here the map's level 0: INFERRED) further from the body also
+ *     outside it: the order's waypoint, at `maxSpeed` when the body is
+ *     behind and 0 otherwise (the soldier stands and lets it pass), ended
+ *     by the time or within `2 R` of the waypoint.
+ *  C. That pushed point inside the box: the point `2 x facing` behind the
+ *     soldier (`InformationReal::getFaceing` vt+0x2c, push 0x40000000 at
+ *     0x08589239), at half speed (0x086b05e8) to within `2 R`: alone with
+ *     no waypoint; after a stop (`BAPAMoveToDirect` at speed 0 until the
+ *     soldier's own speed is under 0.1, `BAPConNot(BAPConObjectSpeed(self,
+ *     0.1))` 0x085897b6) when that point is inside the box; and when it is
+ *     not, the waypoint as in B, ended within `2 R` only.
+ *
+ * Every plan opens with `BAPASoldierPose(1)`: stand. Returns the moves in
+ * order, `{ point: [x, z], speed (a fraction of maxSpeed), time (s, or
+ * null), arrive (m, or null), untilStill }`, with `.branch`.
+ */
+export const FOOT_AVOID = {
+  diagonal: Math.fround(0.7071),
+  aheadSpeed: Math.fround(0.3),
+  timeFactor: Math.fround(1.1),
+  arrive: 5.0,
+  push: 3.0,
+  back: 2.0,
+  backSpeed: 0.5,
+  stillSpeed: Math.fround(0.1),
+};
+
+export function footAvoidPlan({ position, velocity, other, forward, radius, t, box, waypoint }) {
+  const F = FOOT_AVOID;
+  // The engine's frame: z negated.
+  const px = position[0], pz = -position[1];
+  const vx = velocity[0], vz = -velocity[1];
+  const rx = other[0] - px, rz = -other[1] - pz;
+  const d1 = [(vx - vz) * F.diagonal, (vx + vz) * F.diagonal];
+  const d2 = [(vx + vz) * F.diagonal, (vz - vx) * F.diagonal];
+  const behind = rx * d1[0] + rz * d1[1] <= 0 && rx * d2[0] + rz * d2[1] <= 0;
+  const nx = vz, nz = -vx;
+  const side = nx * rx + nz * rz;
+  const step = side <= 0 ? d2 : d1;
+  let tx = px + step[0], tz = pz + step[1];
+  const inBox = (x, z) => !!box && x >= box.min[0] && x <= box.max[0] && z >= box.min[1] && z <= box.max[1];
+  const out = (x, z) => [x, -z];
+  const time = F.timeFactor * t;
+  const R2 = 2 * radius;
+  let moves, branch;
+  if (inBox(tx, tz)) {
+    branch = 'A';
+    moves = [{ point: out(tx, tz), speed: behind ? 1 : F.aheadSpeed, time, arrive: F.arrive }];
+  } else {
+    const s = side > 0 ? 1 : side < 0 ? -1 : 0;
+    const k = F.push * (box?.cellSize ?? 1) * s;
+    tx -= k * nx; tz -= k * nz;
+    const wp = waypoint ? [waypoint[0], waypoint[1]] : null;
+    if (!inBox(tx, tz)) {
+      branch = 'B';
+      moves = [{ point: wp ?? out(px, pz), speed: wp && behind ? 1 : 0, time, arrive: wp ? R2 : null }];
+    } else {
+      const bx = px - F.back * forward[0], bz = pz - F.back * -forward[1];
+      const back = { point: out(bx, bz), speed: F.backSpeed, time: null, arrive: R2 };
+      if (!wp) { branch = 'C'; moves = [back]; }
+      else if (!inBox(bx, bz)) { branch = 'Cw'; moves = [{ point: wp, speed: behind ? 1 : 0, time: null, arrive: R2 }]; }
+      else { branch = 'Cs'; moves = [{ point: wp, speed: 0, time: null, arrive: null, untilStill: true }, back]; }
+    }
+  }
+  moves.branch = branch;
+  moves.behind = behind;
+  return moves;
+}
+
+/**
+ * `BAPAMoveToDirect` on foot, one tick: straight at the point at the move's
+ * speed, no route; done on its conditions (the time, the distance to the
+ * point, or the soldier's own speed under 0.1 for the stop). A move that has
+ * neither a time nor a distance left to wait for (C's waypoint leg at speed
+ * 0, which the engine ends only by arriving) is ended after the avoid's own
+ * look-ahead (INVENTION: the decision loop drops the plan when Avoid's
+ * urgency goes, which it does once the body has passed; this is the
+ * backstop). The move's own pose asks on the ticks it steers.
+ */
+export function execSoldierMoveToDirect(bot, action, now) {
+  if (action.after != null && !bot.currentPlan.filter(a => a.type === PLAN_ACTION.SoldierMoveToDirect)[action.after]?.done) {
+    return false;
+  }
+  action.startedAt ??= now;
+  const dx = action.point[0] - bot.position[0], dz = action.point[1] - bot.position[2];
+  if (action.speed > 0) {
+    bot._steerToward(action.point[0], action.point[1], action.speed);
+    bot._lastThrottle = bot.moveForward;
+    if (!bot.vehicle) {
+      action._pose ??= directionPose(bot.random);
+      bot._requestPose(bot._poseOf(action._pose, now, 'control'));
+    }
+  } else {
+    bot.moveForward = 0; bot.moveStrafe = 0; bot._lastThrottle = 0;
+  }
+  if (action.until != null && now >= action.until) return true;
+  if (action.arrive != null && Math.hypot(dx, dz) <= action.arrive) return true;
+  if (action.untilStill && (bot._player?.()?.soldier?.speed ?? 0) <= FOOT_AVOID.stillSpeed) return true;
+  return now - action.startedAt >= 5.0;
 }
 
 /**
@@ -845,12 +1248,25 @@ export function planSpecial(bot, now) {
   if (!bot.vehicle) bot.heldWeapon = bot.weapons[r.weaponIndex]?.name ?? null;
   // No pose statement: `BBPMedicAssist::createPlan` 0x085bf350 builds none,
   // and the move's own pose decides (bot-pose.js `movePose`).
+  // A hull (an engineer's wrench on a friendly vehicle, bot-decision.js
+  // `friendlyHulls`) is no player: its id finds nobody, and the statements
+  // go to `targetPos`, the hull's own position array, live.
+  const at = r.hull ? { targetPos: r.targetPos, hull: true } : null;
   const plan = [
-    { type: PLAN_ACTION.InfantryMoveToObject, targetId: r.targetId, arrive: r.arrive },
-    { type: PLAN_ACTION.MouseTurretAimAt, targetId: r.targetId, afterMove: true },
+    { type: PLAN_ACTION.InfantryMoveToObject, targetId: r.targetId, arrive: r.arrive, ...at },
+    { type: PLAN_ACTION.MouseTurretAimAt, targetId: r.targetId, afterMove: true, ...at },
     { type: PLAN_ACTION.TriggerContinously, targetId: r.targetId, tolerance: MEDIC.lookTolerance,
-      afterMove: true, timeout: Infinity, shots: 0, heal: true, startedAt: now },
+      afterMove: true, timeout: Infinity, shots: 0, heal: true, startedAt: now, ...at },
   ];
+  // The wrench repairs nothing from a crouch (`useRepairPack` 0x0827612d,
+  // SUP-28: crouched it disarms), and the engine's plan resets the controls
+  // before its loop (`ResetControls(1, 1, 1)`, AI-42), which stands the
+  // soldier up. INFERRED from that reset: a standing pose once the walk is
+  // done, for a hull only.
+  if (r.hull && !bot.vehicle) {
+    plan.push({ type: PLAN_ACTION.SoldierPose, component: fixedPose('stand', bot.random), afterMove: true });
+  }
+  plan.hull = !!r.hull;
   plan.targetId = r.targetId;
   plan.weaponIndex = r.weaponIndex;
   plan.arrive = r.arrive;
@@ -861,6 +1277,13 @@ export function planSpecial(bot, now) {
 /** The heal plan's end: the friend gone, healed, out of reach, or the pack dry. */
 export function healPlanDone(bot, plan, now) {
   const world = bot.world;
+  if (plan.hull) {
+    // The hull's state as the last decision read it (`urgencySpecial`).
+    const h = bot._medicHulls?.find(f => f.id === plan.targetId);
+    if (!h || !(h.health > 0) || h.health >= MEDIC.healthBelow) return true;
+    if (Math.hypot(h.pos[0] - bot.position[0], h.pos[2] - bot.position[2]) > plan.arrive + 2.0) return true;
+    return bot.weapons[plan.weaponIndex]?.ammo === 0;
+  }
   const p = world?.players?.get(plan.targetId);
   const armor = world?.armorOf?.(plan.targetId);
   if (!p || !armor || armor.destroyed) return true;
@@ -1011,6 +1434,8 @@ export function executeAction(bot, action, dt, now) {
       return bot._execTrigger(action, now);
     case PLAN_ACTION.InfantryResetControls:
       return bot._execInfantryResetControls();
+    case PLAN_ACTION.Wait:
+      return now >= action.until;
     case PLAN_ACTION.EnterVehicle:
       return bot._execEnterVehicle(action);
     case PLAN_ACTION.ExitVehicle:
@@ -1023,6 +1448,10 @@ export function executeAction(bot, action, dt, now) {
       return execPlaneAvoid(bot, action, now);
     case PLAN_ACTION.HullAvoid:
       return execHullAvoid(bot, action, now);
+    case PLAN_ACTION.HullTurnTo:
+      return execHullTurnTo(bot, action);
+    case PLAN_ACTION.SoldierMoveToDirect:
+      return execSoldierMoveToDirect(bot, action, now);
     case PLAN_ACTION.Sense:
       return bot._execSense(action);
     case PLAN_ACTION.SoldierPose:
@@ -1058,20 +1487,60 @@ export function execInfantryMoveToDirection(bot, action, dt, now) {
   return false;
 }
 
-/** `MouseTurretAimAt` (`EntryMouseTurretAimAt`): aim at the target's live
- *  position, the engine's 4-count rate. A mounted gunner leads it and turns
- *  through the seat's ControlInfo (bot-aim.js `turretAimAt`). */
+/**
+ * The point an aim statement aims at (`BAPAAimAtObject::getAimVec`
+ * 0x0853b820, ledger AI-185): the bot's memory record of the target (the
+ * bot's vt+0x8c at 0x0853bb0f), its sense point +4..+0xc taken through the
+ * target's live matrix (0x0853bb39..0x0853bbbe); with no record, the
+ * object's position (vt+0x1c, 0x0853c05c).
+ *
+ * A soldier's sense point is the skeleton bone that saw him (bot-sense.js
+ * `_rays`, AI-123). A hull's is the zero vector while its own position is in
+ * sight (`BotMain::sense` sends the first ray there, 0x08522306, and
+ * `updateMemory` tests it first and writes the cleared locals back,
+ * 0x0852597e, 0x08524b2f), so the aim is the hull's origin; with the origin
+ * hidden it is the point of the hull's collision mesh that saw it
+ * (`pickRandomSensePosition` 0x085e4080, the record's `local`).
+ *
+ * Stand-ins keep the metre over the position: a soldier with no skeleton
+ * posed (the centre of the stand-in sphere his rounds meet) and a hull the
+ * collider holds no triangles of (the runner's stand-in vehicles, a test
+ * world).
+ */
+export function aimPoint(bot, targetId, p, pos) {
+  const rec = targetId != null ? bot.senses?.memory?.get(targetId) : null;
+  if (p?.occupancy?.root) {
+    const collider = bot.world?.collider;
+    const owner = bot.senses?.unitOwnerOf?.(p) ?? -1;
+    if (owner >= 0 && hullRadius(collider, owner) !== null) {
+      return rec?.local ? bakedToWorld(collider, owner, rec.local) : [pos[0], pos[1], pos[2]];
+    }
+  } else if (p?.soldier && rec?.offset && rec.bone != null) {
+    const point = sensedPoint(bot.world?.collider, rec, p, -1);
+    if (point) return point;
+  }
+  return [pos[0], pos[1] + 1.0, pos[2]];
+}
+
+/** `MouseTurretAimAt` (`EntryMouseTurretAimAt`): aim at the target's sensed
+ *  point where it is now (`aimPoint`), the engine's 4-count rate. A mounted
+ *  gunner leads it and turns through the seat's ControlInfo (bot-aim.js
+ *  `turretAimAt`). */
 export function execMouseTurretAimAt(bot, action) {
   const p = action.targetId ? bot.world?.players?.get(action.targetId) : null;
   const pos = playerPosition(p) ?? action.targetPos;
   if (!pos) return true;
+  const at = aimPoint(bot, action.targetId ?? null, p, pos);
   if (bot.vehicle && bot.vehicle.kind !== 'air') {
     const tv = p?.vehicle?.state?.velocity ?? p?.soldier?.body?.body?.velocity;
     const vel = tv ? [tv.x ?? tv[0] ?? 0, tv.y ?? tv[1] ?? 0, tv.z ?? tv[2] ?? 0] : [0, 0, 0];
-    const aim = turretAimAt(bot, [pos[0], pos[1] + 1.0, pos[2]], vel);
+    // A guided launcher looks straight at the object (`BBPFireGuided`,
+    // bot-aim.js `GUIDED`); every other gunner leads it.
+    const aim = fireMode(bot.vehicle) === 'guided' ? guidedLookAt(bot, at)
+      : turretAimAt(bot, at, vel);
     if (aim) { aim.targetId = action.targetId ?? null; return true; }
   }
-  const aim = faceTarget(bot._aimOrigin(), [pos[0], pos[1] + 1.0, pos[2]]);
+  const aim = faceTarget(bot._aimOrigin(), at);
   bot._aimLook(aim.yaw, aim.pitch, AIM_COUNTS_MAX);
   return true;
 }
@@ -1121,6 +1590,15 @@ export function execTrigger(bot, action, now) {
   // A mounted gunner's aim condition is `BAPCConPrecision` 0x0854b570: the
   // lead's miss at the impact time within the plan's precision (bot-aim.js).
   const aim = bot._turretAim;
+  if (aim?.guided && bot.vehicle && aim.targetId === (action.targetId ?? null)) {
+    // `BBPFireGuided::createPlan` 0x085b0a60: the look inside 2 deg, then
+    // the trigger with the look kept on; no precision test and no line test
+    // (the plan builds neither a `BAPCConPrecision` nor a
+    // `BAPConObjectLineOfFire`). The hold-fire is the page's own, kept.
+    action.guidedState ??= {};
+    if (guidedHolds(aim, action.guidedState) && !holdFireFor(bot, action, pos)) bot.isFiring = true;
+    return false;
+  }
   if (bot.vehicle && bot.vehicle.kind !== 'air' && aim && aim.targetId === (action.targetId ?? null)) {
     const shape = targetShape(p);
     const weapon = bot.weapons?.[bot.weaponIndex];
@@ -1144,7 +1622,7 @@ export function execTrigger(bot, action, now) {
       if (holds && approach.holds && !holdFireFor(bot, action, pos)) bot.isFiring = true;
       return false;
     }
-    if (holds && bot._lineClear(bot._eye(), [pos[0], pos[1] + 1.0, pos[2]])
+    if (holds && bot._lineClear(bot._eye(), aimPoint(bot, action.targetId ?? null, p, pos))
         && !holdFireFor(bot, action, pos)) bot.isFiring = true;
     return false;
   }
@@ -1152,12 +1630,20 @@ export function execTrigger(bot, action, now) {
   // its round budget (bot-fire.js `triggerWindow`). Not the medic's heal.
   if (!bot.vehicle && !action.heal && !soldierTriggerOpen(bot, action)) return false;
   const s = bot.vehicle?.kind === 'air' ? bot._noseReference() : bot._aimReference();
-  const want = faceTarget(bot._aimOrigin(), [pos[0], pos[1] + 1.0, pos[2]]);
+  const at = aimPoint(bot, action.targetId ?? null, p, pos);
+  const want = faceTarget(bot._aimOrigin(), at);
   const dy = wrapAngle(want.yaw - (s?.yaw ?? bot.yaw));
   const dp = s && s.pitch === null ? 0 : want.pitch - (s?.pitch ?? bot.pitch);
   const tol = Math.max(action.tolerance ?? LOOK_TOLERANCE, LOOK_TOLERANCE);
   const aligned = Math.hypot(dy, dp) < tol;
-  if (aligned && bot._lineClear(bot._eye(), [pos[0], pos[1] + 1.0, pos[2]])
+  // A hull being mended has no line test: the ray to its own origin ends on
+  // its own body, and the engine's loop is the look and the trigger alone
+  // (`BBPMedicAssist::createPlan`, AI-42).
+  // The line is tested to the point the bot aims at: the bone its sense ray
+  // reached (`aimPoint`), not a metre over the feet, which a wall can hide
+  // while a head or a hand shows over it. A bot that saw a man's head and
+  // aimed at it used to hold its fire for good behind that test.
+  if (aligned && (action.hull || bot._lineClear(bot._eye(), at))
       && !holdFireFor(bot, action, pos)) {
     bot.isFiring = true;
   }

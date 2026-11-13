@@ -54,6 +54,15 @@
 
 const DEFAULT_VIRTUAL = [800, 600];
 
+/** A face's glyph rows for the display width (`bitmap-text.js` `glyphTable`,
+ *  ledger FONT-3), handed in by the page with `setGlyphTable`: this file
+ *  ships to a harness alone, so it imports nothing. Until then, and in a
+ *  harness, the rows are the file's own. */
+let glyphTable = font => font.meta.glyphs;
+export function setGlyphTable(fn) {
+  glyphTable = typeof fn === 'function' ? fn : (font => font.meta.glyphs);
+}
+
 /** The groups in the order `menu/InGame` draws them: its root chain, each
  *  group at its first top's index (ledger HFD-8) -- crosshair 3, periscope 4,
  *  supply 6-13, depthFade 15, weaponBar 19, soldierIcon 21, soldierAmmo 22,
@@ -68,13 +77,40 @@ export const PAINT_ORDER = [
   'crosshair', 'periscope', 'supplyIcon', 'depthFade', 'weaponBar', 'soldierIcon', 'soldierAmmo',
   'vehicleIcon', 'vehicleHealth', 'vehicleSeats', 'primaryAmmo', 'secondaryAmmo',
   'tickets', 'spawnTimer', 'spawnText', 'hitIndicator', 'submarine', 'outside', 'statusMessage',
+  'disconnectMessage',
 ];
+
+/** The groups `tooltip-layout.json` adds to the layout (`extract_tooltips.py`):
+ *  the tooltip plate (root index 44) and the pause message (50), painted in
+ *  that order after everything `hud-layout.json` has for this canvas (its
+ *  last group here is `outside`, index 42; the status and warning lines are
+ *  the respawn canvas's). */
+export const TOOLTIP_GROUPS = ['toolTip', 'pause'];
 
 /** The respawn wait's plates (`extract_hud_layout.py` `RESPAWN_GROUPS`): the
  *  countdown, the spawn-point line and the game-state line. Retail draws them
  *  over the spawn screen as well as the world, so the page paints them on
  *  their own canvas above the spawn screen and the main HUD leaves them out. */
-export const RESPAWN_GROUPS = ['spawnTimer', 'spawnText', 'statusMessage'];
+export const RESPAWN_GROUPS = ['spawnTimer', 'spawnText', 'statusMessage', 'disconnectMessage'];
+
+/** The warning plate (`menu/InGame` top 52, `DisconnectMessage`: connection
+ *  problems, the disconnect and the chat flood warning, `chat-log.js`
+ *  `warningPlate`) as vanilla's file has it, for a `hud-layout.json` written
+ *  before `extract_hud_layout.py` carried the group: the two-line plate at
+ *  (305, 138) and the text in `trebuchet_ms8`, colour (0.7734, 0.7539,
+ *  0.2305), culled on `ShowDisconnectMessage` and not `Loading/ShowLoadingText`. */
+const DISCONNECT_WHEN = [
+  { var: 'DisconnectMessage/ShowDisconnectMessage', op: 'eq', value: true },
+  { var: 'Loading/ShowLoadingText', op: 'ne', value: true },
+];
+export const DISCONNECT_MESSAGE_DEFAULT = {
+  rect: [305, 138, 256, 63],
+  elements: [
+    { kind: 'picture', rect: [305, 138, 256, 32], when: DISCONNECT_WHEN, texture: 'textmessbg_2line_256x32' },
+    { kind: 'text', rect: [310, 141, 245, 60], color: [0.7734, 0.7539, 0.2305, 1], when: DISCONNECT_WHEN,
+      font: 'trebuchet_ms8', align: 'left', text: '', var: 'DisconnectMessage/DisconnectMessage' },
+  ],
+};
 
 /** `groups` in `PAINT_ORDER`, then whatever else the file has. */
 export function paintOrder(groups) {
@@ -378,10 +414,13 @@ function tintedAtlas(font, rgb) {
   return c;
 }
 
+/** The advance of `text`, at the metrics the display width gives the face
+ *  (`bitmap-text.js` `glyphTable`, FONT-3). */
 function measureText(font, text) {
   let w = 0;
+  const table = glyphTable(font);
   for (const ch of text) {
-    const g = font.meta.glyphs[ch.charCodeAt(0)];
+    const g = table[ch.charCodeAt(0)];
     if (g) w += g[0] + g[1] + g[2];
   }
   return w;
@@ -414,14 +453,17 @@ export function wrapText(font, text, width) {
 function drawBitmapText(ctx, font, text, x, y, rgb) {
   const atlas = tintedAtlas(font, rgb);
   const base = font.meta.baseline;
+  // The face's rows for the display width: the pen and the quad's size are
+  // the rescaled ones, the picture the file's own rect (FONT-3, FONT-4).
+  const table = glyphTable(font);
   let pen = x;
   for (const ch of text) {
-    const g = font.meta.glyphs[ch.charCodeAt(0)];
+    const g = table[ch.charCodeAt(0)];
     if (!g) continue;
-    const [left, width, right, ascent, x0, y0, x1, y1] = g;
+    const [left, width, right, ascent, x0, y0, x1, y1, drawW = x1 - x0, drawH = y1 - y0] = g;
     if (ch !== ' ' && width > 0 && y1 > y0) {
       ctx.drawImage(atlas, x0, y0, x1 - x0, y1 - y0,
-                    pen + left, y + base - ascent, x1 - x0, y1 - y0);
+                    pen + left, y + base - ascent, drawW, drawH);
     }
     pen += left + width + right;
   }
@@ -535,6 +577,11 @@ export class Hud {
     this._lastH = 0;
     this._lastDpr = 0;
     this._rgba = [1, 1, 1, 1];         // liveColor's scratch, reused per leaf
+    // `tooltip-layout.json` once it lands: its strings, vehicle classes and
+    // timers for `tooltips.js`, and the pictures its two groups draw, which
+    // the sprite pack does not list.
+    this.toolTipLayout = null;
+    this._ownSprites = new Map();
     // The page's own additions painted over the layout, in its virtual
     // space: `{ key(): string, paint(ctx, hud) }`. Not retail's; each says
     // so where it is built (capture-rings.js). A changed key repaints.
@@ -563,6 +610,9 @@ export class Hud {
     } catch (error) {
       console.warn('hud layout unavailable', error);
       return;
+    }
+    if (!data.groups.disconnectMessage?.elements?.length) {
+      data.groups.disconnectMessage = structuredClone(DISCONNECT_MESSAGE_DEFAULT);
     }
     const groups = this.groupFilter
       ? Object.fromEntries(Object.entries(data.groups).filter(([key]) => this.groupFilter(key)))
@@ -594,6 +644,64 @@ export class Hud {
     }));
     this.ready = true;
     this.requestRepaint();
+    // The tooltip plate and the pause message come after: nothing waits on
+    // them, and a pack from before them simply has neither.
+    this._loadToolTips(groups, tracked);
+  }
+
+  /** `tooltip-layout.json`: its two groups join the layout's (through the
+   *  same group filter), its fonts and pictures load, and `toolTipLayout`
+   *  becomes readable. Absent file, nothing changes. */
+  async _loadToolTips(groups, tracked) {
+    let data;
+    try {
+      const response = await fetch(`${this.url('tooltip-layout.json')}${this.bust()}`);
+      if (!response.ok) return;
+      data = await response.json();
+    } catch {
+      return;
+    }
+    const added = {};
+    for (const key of TOOLTIP_GROUPS) {
+      const group = data.groups?.[key];
+      if (!group || (this.groupFilter && !this.groupFilter(key))) continue;
+      for (const el of group.elements) {
+        prepareElement(el);
+        trackedVarsOf(el, tracked);
+      }
+      added[key] = group;
+    }
+    if (!Object.keys(added).length) return;
+    await Promise.all(Object.entries(data.fontFiles || {}).map(async ([id, entry]) => {
+      if (this.fonts.has(id)) return;
+      let meta;
+      try {
+        meta = await fetch(`${this.url(entry.glyphs)}${this.bust()}`).then(r => r.json());
+      } catch {
+        return;
+      }
+      const img = new Image();
+      await new Promise(resolve => {
+        img.onload = resolve;
+        img.onerror = resolve;
+        img.src = `${this.url(entry.file)}${this.bust()}`;
+      });
+      this.fonts.set(id, { meta, img, tinted: new Map() });
+    }));
+    for (const [key, entry] of Object.entries(data.icons || {})) {
+      const img = new Image();
+      img.onload = () => { this._ownSprites.set(key, img); this.requestRepaint(); };
+      img.src = `${this.url(entry.file)}${this.bust()}`;
+    }
+    this._trackedVars = [...tracked];
+    this._groups = [...paintOrder(groups), ...TOOLTIP_GROUPS.map(key => added[key]).filter(Boolean)];
+    this.toolTipLayout = data;
+    this.requestRepaint();
+  }
+
+  /** A picture by key: the tooltip file's own first, else the sprite pack's. */
+  _spriteOf(key) {
+    return this._ownSprites.get(key) ?? this.sprite(key);
   }
 
   /** Virtual-to-stage mapping: the engine stretches 800x600 independently on
@@ -675,7 +783,7 @@ export class Hud {
         this._drawScrollPicture(ctx, el, x, y, w, h);
         break;
       case 'picture':
-        this._drawPicture(ctx, el, x, y, w, h, this.sprite(el.texture));
+        this._drawPicture(ctx, el, x, y, w, h, this._spriteOf(el.texture));
         break;
       case 'variable-picture': {
         const img = resolveTexture(this.vars[el.var], el.texture, this.sprite, this.pending);
@@ -859,8 +967,9 @@ export class Hud {
     // and the warning's own plate settles that the engine wraps rather than
     // overflows: `menu/InGame` backs it with `textmessBG_3LINE_256x64`, three
     // lines of art for a 65-character string in a 230 px rect.
-    if (line > 0 && h >= line * 2 && measureText(font, text) > w) {
-      const lines = wrapText(font, text, w);
+    if (line > 0 && h >= line * 2 && (measureText(font, text) > w || text.includes('\n'))) {
+      // A lexicon line break is a line break (the tooltip bodies carry them).
+      const lines = text.split('\n').flatMap(part => wrapText(font, part, w));
       const room = Math.max(1, Math.floor(h / line));
       for (let i = 0; i < Math.min(lines.length, room); i++) {
         this._drawTextLine(ctx, el, lines[i], font, x, y + i * line, w, rgb);

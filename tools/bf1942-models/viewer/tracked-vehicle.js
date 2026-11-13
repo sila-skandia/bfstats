@@ -66,7 +66,9 @@ import { Wheel, gripOf, mergeWheelPush, meetsTerrain } from './suspension.js';
 import { clamp, EngineState, ENGINE_BIT_THRUST, engineTypeBits } from './ground-engine.js';
 import { traverseOwn } from './spawned-craft.js';
 import { UNDECLARED_ACCELERATION } from './engine-spin.js';
-import { bodyMotion, scrollBeltsByEngine, scrollBeltsByMotion } from './track-scroll.js';
+import {
+  bodyMotion, followBogies, restBelts, scrollBeltsByEngine, scrollBeltsByMotion,
+} from './track-scroll.js';
 import {
   AmphibiousKit, HullWater, bedGroundHeight, inertiaGeometryBox, geometryInertia,
 } from './amphibious.js';
@@ -1465,7 +1467,7 @@ export class TrackedVehicle extends Vehicle {
       wheel.angle += (along / radius) * dt;
     }
     super.presentKinematic(dt, throttle, running);
-    this.#applyWheels();
+    this.#applyWheels(false);
     // No engine is recorded to scroll the belts from: each runs at its side's
     // contact speed off the recorded motion (`track-scroll.js`).
     scrollBeltsByMotion(this.node, bodyMotion(s.orientation, s.velocity, s.angularVelocity), dt);
@@ -1476,13 +1478,18 @@ export class TrackedVehicle extends Vehicle {
    * either, for the same reason: a half-track's front-axle yaw is the
    * declared rig, and `applyRig` already poses it (subject to the shared-key
    * caveat noted in `#step`). */
-  #applyWheels() {
+  #applyWheels(sprung = true) {
     for (const wheel of this.wheels) {
       const lift = Math.min(wheel.compression, this.spec.suspensionTravel);
       wheel.node.position.y = wheel.basePosition.y + lift;
       this._wheelSpin.setFromEuler(this._wheelEuler.set(-wheel.angle, 0, 0));
       wheel.node.quaternion.copy(wheel.baseQuaternion).multiply(this._wheelSpin);
     }
+    // The belts ride their bogies (`AnimatedBundle::updateAnimations`
+    // `0x08266080`, `track-scroll.js`). A presented hull's springs are not
+    // known, so its belts stay as the mesh has them.
+    if (sprung) followBogies(this.node);
+    else restBelts(this.node);
   }
 
   /** Park it back on its spawn, engine off, wheels straight — same contract
@@ -1506,6 +1513,7 @@ export class TrackedVehicle extends Vehicle {
       wheel.node.position.copy(wheel.basePosition);
       wheel.node.quaternion.copy(wheel.baseQuaternion);
     }
+    restBelts(this.node);
     // Back to the engine's own construction state: gear 1, no revs, and the
     // gear-change lockout re-seeded at 1.0 the way a fresh `PhysicsEngine` is.
     this.engine.reset();

@@ -9,7 +9,7 @@
 // a bounce zeroed them every second or two. `hullTravelSpeed` gives them
 // the lower of the velocity and the ground covered over the last second.
 
-import { trackObstruction, trackHullContact, onObstructed, ensureRoute, extendRoute, popPassed, lookAhead,
+import { trackObstruction, trackHullContact, onObstructed, ensureRoute, extendRoute, popPassed, lookAhead, predictObstacles,
          execInfantryMoveTo, steerToward, hullTravelSpeed, HULL_TRAVEL_WINDOW, backOutDecision } from './bot-route.js';
 import { CELL_FREE, CELL_OBJECT, COARSE_CELL } from './nav-map.js';
 import { findStrategicPath } from './nav-search.js';
@@ -127,6 +127,63 @@ function walled(failures) {
 }
 out.walledOnce = walled(1);
 out.walledTwice = walled(2);
+
+// --- ... and does not plant them again at once -------------------------------------
+//
+// A still hull 6 m ahead, planted as a predicted circle that walls the hull
+// in with the map's own paint: the second failure forgets it, and the
+// prediction leaves that body alone for the life of a potential obstacle
+// (10 s), then may plant it again. Another body is planted as ever.
+{
+  const nav = flatNav();
+  for (let gz = 90; gz <= 112; gz++) for (const gx of [96, 104]) nav.blocked[gz * nav.width + gx] = CELL_OBJECT;
+  const b = hullBot(nav, 100.5, -100.5, Math.PI);
+  b.world = null;
+  b.vehicle.drive.state.velocity.z = -2;
+  const parked = { id: 'h:parked', x: 100.5, z: -106.5, vx: 0, vz: 0, r: 3, mass: 1 };
+  const other = { id: 'h:other', x: 100.5, z: -108.5, vx: 0, vz: 0, r: 3, mass: 1 };
+  const first = predictObstacles(b, [parked]);
+  b.route = { goal: [100.5, -125.5], points: [], coarse: [], failed: true };
+  b._pathFailures = 2;
+  b._now = 10;
+  b._routeRetryAt = 0;
+  ensureRoute(b, [100.5, 0, -125.5]);
+  const left = b.obstacles.length;
+  b._now = 12;
+  const soon = predictObstacles(b, [parked]);
+  const otherBody = predictObstacles(b, [parked, other]);
+  b.obstacles = [];
+  b._now = 20.5;
+  const later = predictObstacles(b, [parked]);
+  out.forgotten = { first, left, soon, otherBody, later };
+}
+
+// --- A path whose search failed waits for a new move (AI-189) ----------------------
+//
+// A soldier walled off from its goal by the map's paint: the leg search
+// fails once. The same move does not search again however long it waits; a
+// new move searches at once; so does the same move for a goal that moved.
+{
+  const nav = flatNav();
+  for (let gx = 0; gx < nav.width; gx++) nav.blocked[105 * nav.width + gx] = CELL_OBJECT;
+  const b = hullBot(nav, 100.5, -100.5, Math.PI);
+  b.vehicle = null;
+  b._radius = () => 1;
+  const move = { waypoint: [100.5, 0, -110.5] }, next = { waypoint: [100.5, 0, -110.5] };
+  const settle = () => { for (let i = 0; i < 12 && b.route && !b.route.failed; i++) extendRoute(b); };
+  b._routeOwner = move;
+  ensureRoute(b, move.waypoint); settle();
+  const first = { failed: !!b.route?.failed, searchFailed: !!b.route?.searchFailed, failures: b._pathFailures };
+  b._now = 60;
+  const sameMove = ensureRoute(b, move.waypoint);
+  const afterWait = b._pathFailures;
+  b._routeOwner = next;
+  ensureRoute(b, next.waypoint); settle();
+  const newMove = b._pathFailures;
+  ensureRoute(b, [100.5, 0, -131.5]); settle();   // more than `REPLAN_GOAL_MOVE` (20 m) on
+  const movedGoal = b._pathFailures;
+  out.failedPath = { first, sameMove, afterWait, newMove, movedGoal };
+}
 
 // --- A goal the map cannot reach, approached as far as it goes (cause 5) ---------------
 //

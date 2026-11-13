@@ -85,6 +85,10 @@ const live = snap(100, [
 ], [{ id: 3, occupied: true, air: false, ground: true, x: 5, y: 1, z: 5,
       q: [0, 0, 0, 1] }]);
 client.handleMessage(frame(MSG_JOIN_SNAPSHOT, live));
+// The hull this player sits in, at the word the snapshot acknowledges: what
+// the driver's own hull is corrected against (`net-room.js`
+// `correctDrivenHull`).
+out.selfHull = client.selfHull();
 out.remoteSlots = client.remoteSlots();
 out.selfNotRemote = !client.remoteSlots().includes(2);
 
@@ -100,6 +104,8 @@ const moved = snap(103, [
     hp: 30, vehicleId: 0, seatIndex: null },
 ]);
 client.handleMessage(frame(MSG_SNAPSHOT, moved));
+// This player is not in that snapshot (and so in no hull).
+out.selfHullOnFoot = client.selfHull();
 const lerpedA = client.remotePlayer(1, 150);
 out.lerpX = lerpedA.x;
 out.lerpProne = lerpedA.prone;

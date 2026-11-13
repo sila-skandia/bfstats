@@ -362,3 +362,57 @@ export function geometryInertia([dx, dy, dz], out = new THREE.Vector3()) {
   return out.set((dy * dy + dz * dz) / 3, (dz * dz + dx * dx) / 3, (dx * dx + dy * dy) / 3);
 }
 
+// --- a hull's own col0, for grounding her (the page's `hull-bodies.js` and the
+// room server's `room-ships.mjs` both hand these to `Ship`) --------------------
+
+/**
+ * How far the hull's own col0 collision VERTICES reach below its origin, in the
+ * hull's frame — the same set `BodyWorld.#drivenTerrainDamage` bills and the same
+ * set `checkVsTerrain` (`0x0825a960`) drops on the heightfield.
+ *
+ * `Ship.keel` is the collision BOX's bottom, and on a level whose drawn tree
+ * carries no hull collision node it is the drawn geometry box's bottom (ships
+ * README §15). A Gato's col0 vertices reach 1.06 m below that box, so a hull
+ * grounded on the box would report herself clear of a reef while the damage pass
+ * still had a vertex inside it — the one hull on Midway that kept dying after the
+ * footprint grounding went in. Handing `Ship` this number makes the two agree.
+ */
+export function hullCollisionKeel(spec) {
+  let lowest = Infinity;
+  for (const desc of spec?.parts || []) {
+    if (desc.kind !== 'body') continue;
+    const layer = desc.shape?.layers?.[0];
+    const v = layer?.vertices;
+    if (!v) continue;
+    const rot = desc.rot;
+    for (let i = 0; i < v.length; i += 3) {
+      // Part-local -> body frame, `body-contact.js`'s own row convention.
+      const y = desc.offset[1]
+        + v[i] * rot[0][1] + v[i + 1] * rot[1][1] + v[i + 2] * rot[2][1];
+      if (y < lowest) lowest = y;
+    }
+  }
+  return Number.isFinite(lowest) ? lowest : null;
+}
+
+/** Every hull (`body`) part's layer-0 col0 in the body frame, as
+ *  `[{ vertices, faces }]`: the surface `checkVsTerrain` grounds a hull on,
+ *  for `Ship.underside`. */
+export function hullCollisionLayers(spec) {
+  const out = [];
+  for (const desc of spec?.parts || []) {
+    if (desc.kind !== 'body') continue;
+    const layer = desc.shape?.layers?.[0];
+    const v = layer?.vertices;
+    if (!v) continue;
+    const { offset: o, rot } = desc;
+    const vertices = new Float32Array(v.length);
+    for (let i = 0; i < v.length; i += 3) {
+      for (let k = 0; k < 3; k++) {
+        vertices[i + k] = o[k] + v[i] * rot[0][k] + v[i + 1] * rot[1][k] + v[i + 2] * rot[2][k];
+      }
+    }
+    out.push({ vertices, faces: layer.faces });
+  }
+  return out;
+}

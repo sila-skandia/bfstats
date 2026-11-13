@@ -54,7 +54,11 @@ export function createHandFire(page) {
    * every bot and only the bots' rounds land.
    */
   function resolvePlayerShotOnBots() {
-    if (!page.bots.length || !page.world || !page.soldier) return;
+    // In a room the other soldiers, human and bot, are the server's: the
+    // round is tested against where each is drawn, and the landing is
+    // reported for the room to price (`resolvePlayerShotInRoom`).
+    const inRoom = !!(page.roomJoined && page.roomClient);
+    if ((!inRoom && !page.bots.length) || !page.world || !page.soldier) return;
     const myTeam = page.world.player(page.LOCAL_PLAYER)?.team ?? page.deployTeamId;
 
     page.camera.getWorldPosition(_shotOrigin);
@@ -82,6 +86,7 @@ export function createHandFire(page) {
 
     const origin = [_shotOrigin.x, _shotOrigin.y, _shotOrigin.z];
     const dir = [_shotConeDir.x, _shotConeDir.y, _shotConeDir.z];
+    if (inRoom) { resolvePlayerShotInRoom(origin, dir); return; }
     let best = null;
     let bestT = Infinity;
     let bestHit = null;
@@ -121,6 +126,46 @@ export function createHandFire(page) {
       page.applyDamage(best, damage,
                        page.LOCAL_PLAYER, origin, { hit: bestHit, weapon: page.handWeapon?.name ?? null, stamped: true });
     }
+  }
+
+  /**
+   * The same round in a room: against every other soldier the room's
+   * snapshots draw, on foot and alive, on his drawn body's capsules, else by
+   * the stand-in body the bots' own rounds use (`BOT_BODY_RADIUS` about
+   * `BOT_BODY_HEIGHT` over the feet, priced as the torso). The page applies nothing: the landing goes to the
+   * room as an `impact` row naming the slot (`net-room.js` `reportImpact`
+   * sends the hulls' the same way), and `server/room-hits.mjs` prices it
+   * under `calcDamage` and decrees any death. Before the rooms had bots a
+   * hand weapon's round met no soldier in a room at all.
+   */
+  function resolvePlayerShotInRoom(origin, dir) {
+    const client = page.roomClient;
+    let best = null;
+    let bestT = Infinity;
+    let bestMaterial = null;
+    for (const slot of client.remoteSlots?.() ?? []) {
+      const s = client.remotePlayer(slot);
+      if (!s || !s.alive || s.seated || !Number.isFinite(s.x)) continue;
+      // The engine's capsules on the body this page draws for him
+      // (`netcode-render.js` `capsulesOf`): the head, the chest and the
+      // limbs are each their own defending material (40, 41, 42), so a head
+      // shot is priced as one. A soldier not drawn yet keeps the stand-in
+      // sphere, priced as the torso.
+      const met = meetSoldier(origin, dir, BOT_FIRE_RANGE, {
+        capsules: client.remoteCapsulesOf?.(slot) ?? null,
+        center: [s.x, s.y + BOT_BODY_HEIGHT, s.z], radius: BOT_BODY_RADIUS,
+      });
+      if (!met || met.t >= bestT) continue;
+      if (!page.lineOfSight(origin, met.at)) continue;
+      bestT = met.t;
+      best = { slot, at: met.at };
+      bestMaterial = met.material;
+    }
+    if (!best) return;
+    const stats = page.handWeapon?.group?.stats ?? null;
+    const damage = page.botRoundDamage(stats, bestMaterial ?? undefined, bestT);
+    if (!(damage > 0)) return;
+    client.action({ type: 'impact', point: best.at.map(Number), hit: { slot: best.slot }, damage, splash: null });
   }
 
   // The eases are the engine's, both frame-rate dependent by design (no dt in
@@ -176,6 +221,17 @@ export function createHandFire(page) {
       hw.ammo.clipIn = false;
       hw.eject = magazine.ejectClipTime;
       hw.fire?.playEject?.();
+      // `BFSoldier::handleMessage` (lnxded `0x082775d8`) on `FireArms::
+      // startedEjecting`: `Ub_LieEjectClip<W>` lying, else
+      // `Ub_StandEjectClip<W>`, with the weapon's own `WeaponEjectClip<W>`
+      // on its channel (the Garand's en-bloc clip going out). The rig bakes
+      // them for a weapon that ejects (`extract_viewmodel.py`
+      // `EJECT_FAMILIES`); one baked before has neither, and nothing plays.
+      const has = hw.hasClip;
+      const eject = stanceClip('eject', stanceFor(page.soldier?.gait, page.soldier?.stance), has);
+      if (eject && (typeof has !== 'function' || has(eject))) {
+        page.playViewmodelClip?.(hw, eject, { restart: true });
+      }
       return;
     }
     if (magazine.autoReload && hw.mags > 0) startReload();

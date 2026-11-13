@@ -15,6 +15,8 @@
 import * as THREE from 'three';
 
 import { classifyRoot, listEntryPoints } from '../viewer/seats.js';
+import { heldSlotsOf, spawnHoldOf } from '../viewer/spawned-craft.js';
+import { isSeaHull } from './room-ships.mjs';
 import { spawnerWindow } from '../viewer/game-modes.js';
 import { bakedPadNode } from '../viewer/level-statics.js';
 
@@ -91,7 +93,41 @@ export function buildVehicleTable(instance, data) {
   };
 
   for (const spawn of spawnables ?? data.spawnables) addEntry(spawn);
+  // What a ship's own spawners launched (`spawned-craft.js`
+  // `detachSpawnedCraft`): her landing craft and deck aircraft, each an
+  // object of its own that no level row names. After the level's rows, so
+  // theirs keep their ids.
+  for (const node of instance.craft ?? []) {
+    if (claimed.has(node) || !shipCraft(node)) continue;
+    const owner = ownerRoots.indexOf(node);
+    if (owner < 0 || listEntryPoints(node).length === 0) continue;
+    claimed.add(node);
+    const entry = newEntry(table, { template: templateNameOf(node), tree: node, window: null, team: null,
+                                    pad: null, owner, root: node });
+    // Its spawner's slots (`spawned-craft.js`): the baked craft first, then
+    // the copies, each named to the page by the baked one's node and its
+    // place among them. A copy stands only when the spawner's law stands it
+    // (`room-pads.mjs`).
+    const slots = heldSlotsOf(node);
+    if (slots && node.userData?.heldSpawner) {
+      entry.craftSlot = slots.indexOf(node);
+      if (entry.craftSlot > 0) {
+        entry.node = slots[0].levelNode ?? null;
+        entry.live = false;
+      }
+    }
+    table.push(entry);
+  }
   return table;
+}
+
+/** A craft a ship launched: a sea hull of its own, or one a ship's spawner
+ *  holds on her deck. Not a static's (FH's flying spawn), whose row the
+ *  level's carried points already give it. */
+function shipCraft(node) {
+  if (isSeaHull(node)) return true;
+  const host = spawnHoldOf(node)?.host;
+  return !!host && isSeaHull(host);
 }
 
 /** One table row. `root` stands in the scene (or is a clone nothing parents). */

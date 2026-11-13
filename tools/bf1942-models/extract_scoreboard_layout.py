@@ -135,6 +135,15 @@ ROW_ICON_CLASSES = {
     "engineer": "engineer",
 }
 
+#: The vote's own top-level groups of `menu/InGame`, by the variable each
+#: culls on: the map-vote screen (`MapVoteInterface`: the `map_vote_497x350`
+#: plate, the Id / Mapname / Mod / Gamemode / Votes heads over
+#: `ScoreboardMapVote/MapList22`, the active-vote line, VOTE FOR MAP and
+#: DONE) and the vote message plate a running vote shows over the game
+#: (`Scoreboard/VoteMessageIngame` on `tooltip_256x128` at 528, 224).
+VOTE_GROUPS = {"mapVote": "ScoreboardMapVote/MapVoteActive",
+               "message": "Scoreboard/ShowVoteMessageIngame"}
+
 #: The list rows' glyphs, `menu/Texture/Debriefing/classes/*`: the class
 #: icon a human row and a bot row each get, and the skull that replaces it
 #: while the player is dead. Texture names are the pack's lower-cased stems.
@@ -233,6 +242,23 @@ def decode_layout(ingame: bytes, lexicon: dict[str, str],
     flat.run([top])
     fonts = {el["font"] for el in flat.elements
              if el.get("font") and el["kind"] in ("text", "listbox")}
+    # The vote's two own groups of `menu/InGame` (`VOTE_GROUPS`): the map-vote
+    # screen and the vote message plate. A menu chain without one (a mod that
+    # cut it) simply has no such key.
+    vote = {}
+    for key, var in VOTE_GROUPS.items():
+        group = find_group(root, var)
+        if group is None:
+            continue
+        part = BoardFlattener(lexicon, settled_values(root))
+        part.run([group])
+        fonts |= {el["font"] for el in part.elements
+                  if el.get("font") and el["kind"] in ("text", "listbox")}
+        flat.strings.update(part.strings)
+        flat.variables.update(part.variables)
+        vote[key] = {"var": var,
+                     "rect": [group["X"], group["Y"], group["Width"], group["Height"]],
+                     "elements": part.elements}
     return {
         "virtual": list(VIRTUAL),
         "source": source or "menu/InGame (MemeFile 2.0) in "
@@ -253,6 +279,7 @@ def decode_layout(ingame: bytes, lexicon: dict[str, str],
         "strings": dict(sorted(flat.strings.items())),
         "variables": dict(sorted(flat.variables.items())),
         "elements": flat.elements,
+        "vote": vote,
     }
 
 
@@ -262,7 +289,8 @@ def layout_textures(layout: dict) -> set[str]:
     flags), except that its shipped default is still a real plate and is
     taken too."""
     names: set[str] = set()
-    for el in layout["elements"]:
+    vote = [el for part in (layout.get("vote") or {}).values() for el in part["elements"]]
+    for el in [*layout["elements"], *vote]:
         for field in ("texture", "hover", "pressed"):
             if el.get(field):
                 names.add(el[field])

@@ -43,6 +43,7 @@ import { modelFileStem } from './model-file.js';
 import { wearPagePaint } from './level-skin.js';
 import { hideDrawnWeapon } from './net-remote-rounds.js';
 import { roundIn, trailOf, weaponOfProjectile } from './replay-props.js';
+import { endEffectFor } from './round-impact.js';
 import { recordedLaunch } from './replay-hulls.js';
 import { SEAT_GUN_OPTIONS } from './vehicle-instance.js';
 
@@ -111,14 +112,14 @@ export function createServerRounds(ctx) {
   }
 
   /** A drawable copy of a round's mesh, in the level's paint (LOAD-3). */
-  async function dress({ mesh, endEffect }) {
+  async function dress({ mesh, endEffect, spec = null }) {
     const scene = mesh.clone(true);
     scene.position.set(0, 0, 0);
     scene.quaternion.identity();
     scene.traverse(obj => { obj.visible = true; });
     ctx.shadeModel?.(scene);
     await wearPagePaint(scene);
-    return { scene, endEffect, trail: null };
+    return { scene, endEffect, trail: null, spec };
   }
 
   function nodeFor(tmpl, source) {
@@ -174,9 +175,21 @@ export function createServerRounds(ctx) {
     const at = Array.isArray(row.pos) && row.pos.every(Number.isFinite) ? row.pos : entry?.lastAt ?? null;
     if (entry) retire(row.id);
     if (!at) return false;
-    const blast = (effect) => { if (effect) fx()?.play?.(effect, { position: at, normal: [0, 1, 0] }); };
-    if (entry?.endEffect) blast(entry.endEffect);
-    else void sourceFor(row.tmpl || entry?.tmpl).then((source) => blast(source?.endEffect ?? null));
+    // A `useMMOnEndEffect` round's effect is the MaterialManager's for the
+    // surface (`round-impact.js` `endEffectFor`, lnxded 0x0831f602): water
+    // under the sea level, else what it last struck. The server's round has
+    // no contact to hand over, so the ground it lies on stands in: the
+    // terrain's material when the round is within half a metre of it (ours).
+    const blast = (effect, spec) => {
+      const guns = ctx.guns?.();
+      const field = guns?.collider?.heightfield;
+      const floor = field?.height ? field.height(at[0], at[2]) : NaN;
+      const surface = field?.material && at[1] - floor < 0.5 ? { material: field.material(at[0], at[2]) } : null;
+      const name = guns && spec ? endEffectFor(guns, spec, { y: at[1] }, surface) : effect;
+      if (name) fx()?.play?.(name, { position: at, normal: [0, 1, 0] });
+    };
+    if (entry?.endEffect) blast(entry.endEffect, entry.spec ?? null);
+    else void sourceFor(row.tmpl || entry?.tmpl).then((source) => blast(source?.endEffect ?? null, source?.spec ?? null));
     return true;
   }
 
@@ -208,6 +221,7 @@ export function createServerRounds(ctx) {
           if (!source || drawn.get(r.id) !== want || want.node) return;
           want.node = nodeFor(r.tmpl, source);
           want.endEffect = source.endEffect;
+          want.spec = source.spec ?? null;
           want.trail = source.trail ?? null;
         });
       }

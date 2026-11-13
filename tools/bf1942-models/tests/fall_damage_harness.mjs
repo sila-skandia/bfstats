@@ -45,13 +45,19 @@ for (let id = 0; id <= 15; id++) {
   tables.modifiers[String(id)] = { 40: id === MATERIAL_WATER ? 1.5e-05 : 0.001 };
 }
 tables.materials['40'] = { attGroup: 40, defGroup: 40, damage: 10.0 };
+// Defined, with no cell against the soldier: a pair the table never lists.
+tables.materials['201'] = { attGroup: 201, defGroup: 201, damage: 100.0 };
 
 results.scalars = {
   dryDirt: soldierFallScalars(tables, 4),
   water: soldierFallScalars(tables, MATERIAL_WATER),
-  // An id the define file never mentions: DMG-1 says that is no damage, not a
-  // default, so the pair comes back null and the formula returns 0.
+  // A pair with no cell: DMG-1 says that is no damage, not a default, so
+  // the pair comes back null and the formula returns 0.
   unlisted: soldierFallScalars(tables, 201),
+  // An id the define file never mentions is read as material 0
+  // (`MaterialManager::getDamageMod` 0x08175040 retries `getMaterialPtr`
+  // with 0, at 0x081750b0).
+  undefinedId: soldierFallScalars(tables, 77),
   // The product both terrain numbers collapse to.
   product: 0.001 * 30.0,
 };

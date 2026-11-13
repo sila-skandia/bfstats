@@ -24,6 +24,11 @@ it declares for itself (DC's Urban Siege `Nimitz`). One file per maps tree:
     python3 extract_vehicle_ai.py --mod bf1942
     python3 extract_vehicle_ai.py --mod DesertCombat --out viewer/maps/mods/desertcombat/_shared/vehicle-ai.json
     python3 extract_vehicle_ai.py --mod DC_Final --out viewer/maps/mods/dc_final/_shared/vehicle-ai.json
+
+The file also carries the mod's `Game/AI/radio.con` as `radio`: which radio
+messages its bots hear, how fast each fades and how hard it lands
+(`radio_subscriptions`; `viewer/bot-radio.js` reads it). `--radio-only`
+rewrites that key alone in a file already written.
 """
 
 from __future__ import annotations
@@ -413,6 +418,7 @@ def vehicle_record(folder: str, files: dict[str, str], read, all_weapons: dict[s
         "basicTemp": basic_temp(root), "types": list((root or {}).get("types", [])),
         "maxSpeed": None, "turnRadius": None, "vehicleNumber": None, "strType": None,
         "strategicStrength": None, "coverValue": None, "isTurnable": None,
+        "coverSearchRadius": None,
         "fireArms": {k: v for k, v in fire_arms.items()},
         "seats": {k: v for k, v in pcos.items()},
         "aiWeapons": {w["name"]: {kk: vv for kk, vv in w.items() if kk != "name"} for w in weapons.values()},
@@ -491,6 +497,13 @@ def apply_root(info: dict, root: dict | None, plugins: dict[str, dict]) -> None:
             # ctors' 5.0 (0x085e0bf0, 0x085e0cb0). Only big ships set it.
             if p.get("avoidcollisionlookahead") is not None:
                 info["avoidCollisionLookAhead"] = p.get("avoidcollisionlookahead")
+            # `coverSearchRadius` (Mobile +0x14, `AITemplateMobile::
+            # setCoverSearchRadius` 0x085e0e20): how far `BFEnvironment::
+            # getCover` 0x085e4dd0 lists cover objects for the unit's
+            # TakeCover. Always written: null says the template sets none
+            # (the ctor's 0, 0x085e0c63), so the viewer can tell that from a
+            # file extracted before this word was carried.
+            info["coverSearchRadius"] = p.get("coversearchradius")
         elif kind == "Physical":
             info["strType"] = p.get("strType")
         elif kind == "Unit":
@@ -608,6 +621,7 @@ def object_record(root: str, sites: dict[str, tuple[str, str]], graph: dict[str,
         "basicTemp": basic_temp(root_t), "types": list(root_t.get("types", [])),
         "maxSpeed": None, "turnRadius": None, "vehicleNumber": None, "strType": None,
         "strategicStrength": None, "coverValue": None, "isTurnable": None,
+        "coverSearchRadius": None,
         "fireArms": {spell.get(fa, fa): ai_of[fa] for fa in guns if fa in ai_of},
         "seats": {spell.get(p, p): ai_of[p] for p in pcos if p in ai_of},
         "aiWeapons": dict(seats_ai[name]["aiWeapons"]),
@@ -698,9 +712,12 @@ def extract(mod: str, game_dir: Path = GAME.parent, levels: bool = True) -> dict
     `<Unit>@<Level>`. Each such record carries the `level` that declares it.
     """
     chain = mod_chain(game_dir, mod)
-    _meshes, _textures, objects, game = build_pools(chain, [])
+    meshes, _textures, objects, game = build_pools(chain, [])
+    portals = cover_portals(meshes)
     blob = game.try_read("bf1942/game/aibehaviours.con")
     rows = equipment_rows(blob.decode("latin-1") if blob is not None else "")
+    blob = game.try_read(RADIO_CON)
+    radio = radio_subscriptions(blob.decode("latin-1") if blob is not None else None)
 
     def read(name: str) -> str | None:
         blob = objects.try_read(name)
@@ -723,7 +740,7 @@ def extract(mod: str, game_dir: Path = GAME.parent, levels: bool = True) -> dict
         if info is not None:
             vehicles[sites.get(root, (root, ""))[0]] = info
     if not levels:
-        return named(mod, vehicles, rows)
+        return named(mod, vehicles, rows, radio, portals)
 
     taken = {name.lower() for name in vehicles}
     seats = {pco.lower() for info in vehicles.values() for pco in info["seats"]}
@@ -789,10 +806,58 @@ def extract(mod: str, game_dir: Path = GAME.parent, levels: bool = True) -> dict
             info["level"] = level_name
             vehicles[key] = info
             taken.add(key.lower())
-    return named(mod, vehicles, rows)
+    return named(mod, vehicles, rows, radio, portals)
 
 
 SET_VEHICLE_RE = re.compile(r"^\s*aiSettings\.setVehicle\s+(\d+)\s+(\w+)", re.I | re.M)
+
+
+#: `operator>>(istream&, RadioMessage&)` (lnxded 0x08489060): the names a
+#: `radio.con` may subscribe and the id each parses to. `RMShipSpotted` parses
+#: to 17, the id of the name before it (the binary's own slip, `je 0x8489218`
+#: at 0x08489235); a name not listed parses to 0. `viewer/bot-radio.js`
+#: `RADIO_MESSAGE_IDS` is the same table, and `tests/test_bot_radio.py`
+#: holds the two together.
+RADIO_MESSAGE_IDS = {
+    "RMRoger": 1, "RMNegative": 2, "RMPickup": 8, "RMReinforcement": 9, "RMAntitankSupport": 10,
+    "RMNavalSupport": 11, "RMAirSupport": 12, "RMArtilleryReady": 13, "RMArtillerySupport": 59,
+    "RMArmorSpotted": 15, "RMInfantrySpotted": 16, "RMUnitSpotted": 17, "RMShipSpotted": 17,
+    "RMSubmarineSpotted": 19, "RMAirplaneSpotted": 20, "RMScoutSpotted": 21,
+    "RMControlPoint1": 22, "RMControlPoint2": 23, "RMControlPoint3": 24, "RMControlPoint4": 25,
+    "RMControlPoint5": 26, "RMControlPoint6": 27, "RMControlPoint7": 28, "RMControlPointAuto": 50,
+    "RMLocalDefending": 29, "RMLocalAttacking": 30, "RMLocalRoger": 31, "RMLocalNegative": 32,
+    "RMLocalWait": 36, "RMLocalFire": 37, "RMLocalHoldFire": 38, "RMLocalFireInHole": 39,
+    "RMLocalMedic": 40, "RMLocalTakeCover": 41, "RMLocalBailOut": 42, "RMLocalCoverMe": 43,
+    "RMLocalHoldPosition": 44, "RMLocalYouTakePoint": 45, "RMLocalFallBack": 46,
+    "RMLocalStickTogether": 47, "RMLocalFollowMe": 48, "RMLocalGo": 49, "RMLocalGetIn": 51,
+    "RMLocalCheckYourSix": 52, "RMLocalAbandonShip": 53, "RMLocalNeedRepairs": 54,
+    "RMNumberOfRadioMessages": 60,
+}
+
+#: The mod's AI radio script, as the pools key it (`Game/AI/radio.con`).
+RADIO_CON = "bf1942/game/ai/radio.con"
+
+
+def radio_subscriptions(text: str | None) -> list[dict] | None:
+    """The mod's `Game/AI/radio.con` as the engine runs it: one row a
+    `aiRadio.subscribeToMessage <name> [t [g]]` line, in file order, `{name,
+    id, a, b}` with `a` the fade a second and `b` the gain a message lands
+    with. `AIRadio::subscribeToMessage` has three forms (0x084824e0,
+    0x08482510, 0x08482540): one argument `a = 0.1, b = 0.5`; two `a = 1 /
+    t, b = 0.5`; three `a = 1 / t, b = g`. None when the mod's chain ships
+    no such file (the viewer then runs vanilla's list, `bot-radio.js`)."""
+    if text is None:
+        return None
+    rows: list[dict] = []
+    for raw in text.splitlines():
+        parts = raw.split()
+        if len(parts) < 2 or parts[0].lower() != "airadio.subscribetomessage":
+            continue
+        t = _num(parts[2]) if len(parts) > 2 else None
+        g = _num(parts[3]) if len(parts) > 3 else None
+        rows.append({"name": parts[1], "id": RADIO_MESSAGE_IDS.get(parts[1], 0),
+                     "a": 1.0 / t if t else 0.1, "b": g if g is not None else 0.5})
+    return rows
 
 
 def equipment_rows(text: str) -> dict[int, str]:
@@ -804,16 +869,62 @@ def equipment_rows(text: str) -> dict[int, str]:
     return {int(n): name for n, name in SET_VEHICLE_RE.findall(text)}
 
 
-def named(mod: str, vehicles: dict[str, dict], rows: dict[int, str]) -> dict:
+def cover_portals(meshes: ArchivePool) -> dict[str, list[list[float]]]:
+    """The portals of every StandardMesh along the chain that has any: the
+    mesh's name, lower case, to its portal polygons' centres in the mesh's own
+    frame (`bf42.stdmesh`, the tail's PortalMesh). A cover object's portals
+    are its mesh's (`AIObjectCover::getPortalCount` 0x085d4fe0 through
+    `world::getPortalMesh` 0x0818d540; a centre is `getPortalCenter`, the
+    polygon's mean vertex): the hull's TakeCover weighs a cover by having any
+    (ledger AI-182) and the fire plan throws through one (AI-183). Keyed by
+    the mesh, which is what a level's `ai.coverValues` keys a placed static
+    by (INFERRED: every vanilla cover template is named for its mesh)."""
+    from bf42 import stdmesh
+    out: dict[str, list[list[float]]] = {}
+    for name in sorted(meshes.names()):
+        if not name.lower().endswith(".sm"):
+            continue
+        blob = meshes.try_read(name)
+        if blob is None:
+            continue
+        try:
+            mesh = stdmesh.parse(blob, name)
+        except Exception:  # noqa: BLE001 - a mesh the reader refuses has no portals to offer
+            continue
+        if not mesh.portals:
+            continue
+        key = name.replace("\\", "/").rsplit("/", 1)[-1][:-3].lower()
+        if key in out:
+            continue
+        out[key] = [[round(sum(v[i] for v in poly) / len(poly), 3) for i in range(3)]
+                    for poly in mesh.portals if poly]
+    return out
+
+
+def named(mod: str, vehicles: dict[str, dict], rows: dict[int, str], radio: list[dict] | None = None,
+          portals: dict[str, list[list[float]]] | None = None) -> dict:
     """The table as written: each record and seat that has an
     `equipmentType` also carries its row's name as `equipment`, and the rows
-    themselves ride along as `equipmentTypes`."""
+    themselves ride along as `equipmentTypes`. `radio` is the mod's
+    `radio.con` (`radio_subscriptions`), left out when the chain has none."""
     for info in vehicles.values():
         for rec in (info, *(info.get("seatsAi") or {}).values()):
             row = rec.get("equipmentType") if isinstance(rec, dict) else None
             if row is not None and row in rows:
                 rec["equipment"] = rows[row]
-    return {"mod": mod, "equipmentTypes": {str(k): v for k, v in sorted(rows.items())}, "vehicles": vehicles}
+    out = {"mod": mod, "equipmentTypes": {str(k): v for k, v in sorted(rows.items())}, "vehicles": vehicles}
+    if radio is not None:
+        out["radio"] = radio
+    if portals is not None:
+        out["coverPortals"] = portals
+    return out
+
+
+def mod_radio(mod: str, game_dir: Path = GAME.parent) -> list[dict] | None:
+    """`radio_subscriptions` of `mod`'s chain: the nearest mod's file wins."""
+    _meshes, _textures, _objects, game = build_pools(mod_chain(game_dir, mod), [])
+    blob = game.try_read(RADIO_CON)
+    return radio_subscriptions(blob.decode("latin-1") if blob is not None else None)
 
 
 def level_roots(local_names: list[str], read_local, l_graph: dict, l_kinds: dict, l_ai_of: dict,
@@ -864,7 +975,19 @@ def main() -> int:
     ap.add_argument("--mod", default="bf1942")
     ap.add_argument("--out", type=Path,
                     default=Path(__file__).resolve().parent / "viewer" / "maps" / "_shared" / "vehicle-ai.json")
+    ap.add_argument("--radio-only", action="store_true",
+                    help="rewrite only the `radio` key of an existing --out file from the mod's radio.con")
     a = ap.parse_args()
+    if a.radio_only:
+        data = json.loads(a.out.read_text())
+        radio = mod_radio(a.mod)
+        if radio is None:
+            data.pop("radio", None)
+        else:
+            data["radio"] = radio
+        a.out.write_text(json.dumps(data, indent=1, sort_keys=True) + "\n")
+        print(f"{a.mod}: radio {len(radio) if radio is not None else 'none'} -> {a.out}")
+        return 0
     data = extract(a.mod)
     a.out.parent.mkdir(parents=True, exist_ok=True)
     a.out.write_text(json.dumps(data, indent=1, sort_keys=True) + "\n")

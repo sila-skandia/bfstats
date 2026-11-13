@@ -185,6 +185,17 @@ function fireRound(guns, group, muzzle, barrel) {
     : false;
   const projectile = group.stats.projectile;
   const spec = projectile && typeof projectile === 'object' ? projectile : null;
+  // A round that is a vehicle (FA-29): `fireBarrel` 0x0828aba0 has the game
+  // spawn the PlayerControlObject at the barrel and moves the firer into
+  // it. The page's own answer (`rocket-ride.js`) takes it when it can stand
+  // one for this firer; otherwise the round flies as the body it is drawn as.
+  if (spec?.vehicle === true && guns.onVehicleRound) {
+    const velocity = muzzleVelocity(guns, muzzle, group, releaseSpeed(group.stats),
+                                    new THREE.Vector3(), barrel);
+    if (guns.onVehicleRound(group, spec, {
+      position: _origin.clone(), quaternion: _aim.clone(), velocity,
+    })) return;
+  }
   if (spec && (spec.kind === 'shell' || spec.kind === 'rocket')
       && group.projectileMesh) {
     spawnProjectile(guns, muzzle, group, spec, barrel);

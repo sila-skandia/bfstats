@@ -161,7 +161,8 @@ export function buildBotCovers(world) {
       const name = (statics.ownerNodes[owner]?.name ?? '').toLowerCase();
       const value = values[name] ?? values[name.replace(/_\d+$/, '')] ?? null;
       if (value == null) { byOwner.set(owner, null); continue; }
-      e = { id: owner, value, minX: Infinity, minY: Infinity, minZ: Infinity, maxX: -Infinity, maxY: -Infinity, maxZ: -Infinity };
+      e = { id: owner, value, template: values[name] != null ? name : name.replace(/_\d+$/, ''),
+            minX: Infinity, minY: Infinity, minZ: Infinity, maxX: -Infinity, maxY: -Infinity, maxZ: -Infinity };
       byOwner.set(owner, e);
     }
     if (!e) continue;
@@ -181,6 +182,9 @@ export function buildBotCovers(world) {
       id: e.id, value: e.value,
       pos: [(e.minX + e.maxX) / 2, e.minY, (e.minZ + e.maxZ) / 2],
       width, height: e.maxY - e.minY, radius: width / 2,
+      // The template (its mesh's name: `coverPortals` is keyed by it) and
+      // the footprint, for the hull's TakeCover (bot-decision.js).
+      template: e.template, footprint: [e.minX, e.minZ, e.maxX, e.maxZ],
     });
   }
   return out;
@@ -284,7 +288,10 @@ export function lineOfSight(collider, from, to) {
  *    opts)` (`opts.seated`: he died in his seat), `seatedBodyAt(playerId)`
  *    (a seated player's stand-in body, see `referee.bodyAt`),
  *    `capsulesOf(playerId)` (the drawn body's hit capsules, `rig-capsules.js`,
- *    or null where nobody draws him), `onHealed(playerId, armor, before)`, `mountedFire(bot, dt)`,
+ *    or null where nobody draws him), `soldierBones(player)` (his skeleton's bones
+ *    for the bots' sense rays and aim, `{ count, at(i) }` or a list, in his body
+ *    frame; from the same skeleton as `capsulesOf`),
+ *    `onHealed(playerId, armor, before)`, `mountedFire(bot, dt)`,
  *    `soldierBody()` and `soldierTemplateOf(team)` (the packs' numbers, `usePack`),
  *    `packHulls()` (the wrench's hulls, `healing-packs.js` shape; absent, the World's),
  *    `packRounds()` and `retireRound(shot)` (the live rounds a crouched wrench may
@@ -432,6 +439,7 @@ export function createBotReferee(env) {
         isWalkable: (x, z) => isWalkable(referee.navGrid, x, z),
         unitOf: id => referee.strategicUnit(id),
         spottedOf: id => botOf(id)?.senses?.memory?.size ?? 0,
+        sampleOf: (id, toSide) => referee.strategicSample(id, toSide),
       }), {
         doctrine: env.doctrine ?? null,
         isWalkable: (x, z) => isWalkable(referee.navGrid, x, z),
@@ -522,6 +530,11 @@ export function createBotReferee(env) {
     if (!referee.bots.length) return;
     const w = world();
     referee.clock += dt;
+    // What the bots hear is the mod's own `Game/AI/radio.con`, which the
+    // tree's AI file carries (`vehicle-ai.json` `radio`, bot-units.js
+    // `aiRadio`); a tree without it keeps the table `env.mod()` picked.
+    const radioRows = units()?.aiRadio ?? null;
+    if (radioRows && referee.radio.source !== radioRows) referee.radio.subscribe(radioRows);
     // `AIMain::action` steps the radio every pass (`AIRadio::update`
     // 0x08482330, which acts only once half a second has gone by).
     referee.radio.update(referee.clock);
@@ -570,9 +583,22 @@ export function createBotReferee(env) {
       // The side's standing gun rule (doctrine.js `gunsRuleOf`), for the
       // seconds between a unit change and the next pass.
       bot.gunsRule = strategy?.gunsRuleOf?.(bot.playerId) ?? null;
+      // Where a soldier's skeleton is posed, a bot's sense rays and its aim go
+      // to his bones (`bot-sense.js` `_rays`, ledger AI-123): the same
+      // skeleton `capsulesOf` hangs his capsules on. A respawn makes the
+      // bot new senses, so the hook is put back here.
+      if (env.soldierBones && bot.senses && bot.senses.soldierBones !== env.soldierBones) {
+        bot.senses.soldierBones = env.soldierBones;
+      }
       if (env.tickBot) env.tickBot(bot, dt, referee.clock);
       else bot.tick(dt, referee.clock);
       env.afterBotTick?.(bot, dt);
+      // The SAI's teleporter list (`BBPChangeTeleport`'s re-deploy plan,
+      // bot-mount.js `planChange`).
+      if (bot.teleportRequest) {
+        bot.teleportRequest = false;
+        referee.handleTeleportingBot(bot);
+      }
       // A bot that could not walk out of its spawn after four escapes is
       // redeployed to the flag's next spawn point -- the deploy screen's own
       // `advance`, not a teleport out of the world. See `bot.js` `_trackStuck`.
@@ -595,6 +621,54 @@ export function createBotReferee(env) {
       }
     }
     referee.fireTick(dt);
+  };
+
+  /**
+   * `SAI::handleTeleportingBot` 0x08631390, the engine's one re-deploy of a
+   * living bot: `BBPChangeTeleport::createPlan` 0x08590590 registers the bot
+   * (`SAI::registerTeleporter` 0x086369c0) when a human has asked for its
+   * seat on a ship and the hull has no better seat for it (AI-173), and
+   * `SAI::prepareUpdate` 0x08635210 answers on its next pass: a suitable
+   * spawn group of the side (`BotSpawner::findSuitableSpawnGroup`
+   * 0x0864b3e0; none, nothing happens), `setIsInTransitionPhase(true)`,
+   * `handleDeadBot` (the SAI drops its order), `AIPlayer::setSpawnGroup`,
+   * and `BFEnvironment::teleportBot` 0x085e54b0, which is
+   * `GameServer::reSpawnPlayer` 0x0814c4b0: the player out of what it
+   * controls (0x0814c586), its soldier set on a point of the group
+   * (`getSpawnPoint`, `setTransformation` 0x0814c679), a `reSpawnEvent`
+   * logged. Nobody dies: no kill, no ticket, the same body with the hit
+   * points and kit it had. Here it runs on the tick the plan asks, not the
+   * SAI's next pass. The group is one of the side's the bot may spawn on,
+   * as a dead bot's is chosen (`respawnTick`). True when the bot was moved.
+   */
+  referee.handleTeleportingBot = (bot) => {
+    const w = world();
+    const record = w?.player(bot.playerId);
+    if (!record || w.armorOf(bot.playerId)?.destroyed) return false;
+    const u = units();
+    const seatFor = u?.spawnSeat ? spawn => u.spawnSeat(spawn, bot.team) : null;
+    const offered = f => (seatFor ? spawnOffered(f, { ai: true, seatFor }) : !f.inactive && !f.enterOnly);
+    const teamFlags = w.flags.filter(f => flagSide(f) === bot.team && !f.captureOnly && offered(f));
+    if (!teamFlags.length) return false;
+    const flag = teamFlags[Math.floor(Math.random() * teamFlags.length)];
+    if (bot.vehicle) referee.leaveVehicle(bot);
+    record.spawnIndex = Math.floor(Math.random() * 0x7fffffff);
+    const spawned = w.spawnPlayer(bot.playerId, { flag, advance: false, group: bot.team, ai: !!seatFor, seatFor });
+    if (!spawned) return false;
+    const soldier = w.player(bot.playerId)?.soldier;
+    if (soldier) bot.setPosition(soldier.x, soldier.y, soldier.z);
+    bot._lastX = null;
+    bot._lastZ = null;
+    bot.route = null;
+    bot.seatRequest = null;
+    env.onRedeploy?.(bot, flag);
+    // `reSpawnPlayer` presses Use on a seat point as a spawn does
+    // (`toggleEntryPoint` at 0x0814c8f6).
+    if (seatFor && wantsSeat(spawned.spawn, true)) {
+      const cand = seatFor(spawned.spawn);
+      if (cand && cand !== SPAWN_STANDS) referee.enterVehicle(bot, cand);
+    }
+    return true;
   };
 
   /**
@@ -1446,6 +1520,40 @@ export function createBotReferee(env) {
              air: m.kind === 'air', root: !!m.isRoot, fixed: m.kind === 'gun', groundAt: (x, z) => bot._groundAt(x, z) };
   };
 
+  /**
+   * The unit bot `id` occupies as side `toSide` holds it, for the wanted
+   * strength of `AIStrategicArea::update` 0x0863d6d0 (strategic-ai.js
+   * `wantedStrength`, AI-168): the seat's own `setStrategicStrength` pair
+   * (the soldier's 1 / 1 on foot), the unit's health (`IPIUnit+0x10`, which
+   * `calculateStrengths` 0x085ec3c0 scales them by), its six battle
+   * strengths summed, and the side's security of it. Null when the other
+   * side has no information of it (bot-sense.js `SideKnowledge`, AI-75).
+   */
+  referee.strategicSample = (id, toSide) => {
+    const w = world();
+    const p = w?.player(id);
+    if (!p) return null;
+    let security = 1;
+    if (p.team !== toSide) {
+      security = referee.enemyTables[toSide]?.knowledge?.security(id, referee.clock) ?? null;
+      if (security === null) return null;
+    }
+    const m = botOf(id)?.vehicle ?? null;
+    const a = w.armorOf(id);
+    let health = a?.maxHitPoints > 0 ? Math.max(0, a.hitPoints / a.maxHitPoints) : 1;
+    let strategic = null, table = BOT_SOLDIER_TABLE;
+    if (m) {
+      const s = m.strategic;
+      strategic = [s?.[0] ?? s?.['0'] ?? 0, s?.[1] ?? s?.['1'] ?? 0];
+      table = m.strengths ?? {};
+      const d = w.vehicleDamage?.get(w.collider?.statics?.ownerOf(m.node) ?? -1) ?? null;
+      if (d?.maxHitPoints > 0) health = Math.max(0, d.hitPoints / d.maxHitPoints);
+    }
+    let strength = 0;
+    for (const k in table) strength += table[k] ?? 0;
+    return { strategic, health, strength, security };
+  };
+
   // --- seating ------------------------------------------------------------------
 
   /** Seat a bot in `cand`'s seat. Returns true when it sits. */
@@ -1542,6 +1650,9 @@ export function createBotReferee(env) {
       if (bot.vehicle) {
         const m = bot.vehicle;
         if (u.destroyed(bot)) {
+          // A round the bot rode (FA-29): `exitVehicle` gives it back to the
+          // launcher it fired it from, alive (`rocket-ride.js` `botRideOut`).
+          if (env.rideOut?.(bot)) continue;
           const attacker = u.attackerOf?.(bot) ?? null;
           // The crew's kill is scored on the lethal call, so it carries that
           // call's weapon (and its splash) -- never the attacker's held one.

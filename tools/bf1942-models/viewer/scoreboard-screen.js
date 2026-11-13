@@ -5,6 +5,7 @@
 
 import { boardRows, boardVars, paintLeaves, listGeometry, rowColor }
   from './scoreboard.js';
+import { createBoardVotes } from './scoreboard-votes.js';
 
 /**
  * Built once by the page, where this code used to sit. `page` hands in
@@ -201,16 +202,39 @@ export function createScoreboardScreen(page) {
     // `bitmap-text.js`'s renderer (through the deploy screen's bag) takes the
     // face itself and an options bag, not a font id and a bare colour; the
     // board's faces are its own map, not the spawn screen's.
-    drawText: (ctx, fontId, text, x, y, rgb) => {
+    drawText: (ctx, fontId, text, x, y, rgb, snap = false) => {
       const font = scoreLayout.fonts.get(fontId);
-      if (font) page.drawBitmapText(ctx, font, text, x, y, { rgb });
+      if (font) page.drawBitmapText(ctx, font, text, x, y, { rgb, snap });
     },
     // A list row is placed by its baseline (MEME-21); the painter takes the
     // line's top, the face's own `baseline` above it.
     baseline: fontId => scoreLayout.fonts.get(fontId)?.meta?.baseline ?? 0,
-    hover: el => scoreboard.scoreHoverDone && el.texture === 'knappext_n',
+    hover: el => (scoreboard.scoreHoverDone && el.texture === 'knappext_n')
+      // A vote button under the pointer (`scoreboard-votes.js`).
+      || (!!scoreboard.votes?.state.hover && el.rect === scoreboard.votes.state.hover),
     rowColor: row => rowColor(row, scoreLayout.data?.colors),
   };
+
+  // The votes on the board (`scoreboard-votes.js`): the picked row, the vote
+  // buttons, the map-vote screen and the plate a running vote shows in play.
+  let lastVars = {};
+  const votes = createBoardVotes({
+    layout: () => scoreLayout.data,
+    host: () => page.roomHost ?? null,
+    res: scoreRes,
+    scale: scoreboardScale,
+    box: scoreBox,
+    rows: () => currentRows(),
+    boardVars: () => lastVars,
+    localTeam: () => (page.roomClient?.hello?.team === 1 ? 1 : 2),
+    modId: () => page.modId?.() ?? '',
+    // DONE on the spawn screen, LOCK over the live game (the file's two labels).
+    fromSpawn: () => scoreboard.scoreFromSpawn || !!page.deployActive?.(),
+    hasFont: id => scoreLayout.fonts.has(id),
+    lineHeight: id => scoreLayout.fonts.get(id)?.meta?.lineHeight ?? 12,
+    repaint: () => paintScoreboard(true),
+    openBoard: on => setScoreboard(on, false),
+  });
 
   /** One paint of the board. Cheap to ask for: nothing is drawn unless what it
    *  shows — the roster, the tallies, the size, the hover — has changed. */
@@ -218,7 +242,7 @@ export function createScoreboardScreen(page) {
     const data = scoreLayout.data;
     if (!data || !scoreboardOpen()) return;
     const inRoom = !!(page.roomJoined && page.roomClient);
-    const rows = currentRows();
+    const rows = votes.mark(currentRows());
     const s = scoreboardScale();
     // The page's own round, ended (`round-state.js`): the board's EndGame
     // state and the rounds won. A room's round is its server's.
@@ -226,7 +250,8 @@ export function createScoreboardScreen(page) {
     const endGame = round?.status === 'endGame';
     const roundsWon = round?.roundsWon ?? null;
     const key = JSON.stringify([rows, s.W, s.H, scoreboard.scoreFromSpawn, scoreboard.scoreHoverDone, inRoom,
-                                page.currentDir, page.hudPack.sprites.size, endGame, roundsWon]);
+                                page.currentDir, page.hudPack.sprites.size, endGame, roundsWon,
+                                votes.key()]);
     if (!force && key === scoreboard.scorePaintKey) return;
     scoreboard.scorePaintKey = key;
 
@@ -242,10 +267,13 @@ export function createScoreboardScreen(page) {
     ctx.clearRect(0, 0, cw, ch);
     ctx.setTransform(s.sx * dpr, 0, 0, s.sy * dpr, s.ox * dpr, s.oy * dpr);
 
+    // The map-vote screen stands in for the board while it is up.
+    scoreDoneBtn.hidden = votes.mapVoteOpen || !scoreboard.scoreFromSpawn;
+    if (votes.mapVoteOpen && votes.paintMapVote(ctx)) return;
     const box = data.elements.find(el => el.kind === 'listbox');
     const visibleRows = box
       ? listGeometry(box, data.listColumns).visibleRows : Infinity;
-    const vars = boardVars(data.variables, {
+    const vars = lastVars = { ...boardVars(data.variables, {
       fromSpawn: scoreboard.scoreFromSpawn,
       inRoom,
       alive: page.deployRejoin || (page.optOnFoot.checked && !!page.soldier),
@@ -258,7 +286,7 @@ export function createScoreboardScreen(page) {
       visibleRows,
       endGame,
       roundsWon,
-    });
+    }), ...votes.vars() };
     paintLeaves(ctx, data, data.elements, vars, scoreRes, {
       'Scoreboard/AxisScoreboardList': rows[1],
       'Scoreboard/AlliedScoreboardList': rows[2],
@@ -273,9 +301,9 @@ export function createScoreboardScreen(page) {
           const font = page.spawnLayout.fonts.get(fontId);
           return font ? page.measureText(font, text) : 0;
         },
-        drawText: (c, fontId, text, x, y, rgb) => {
+        drawText: (c, fontId, text, x, y, rgb, snap = false) => {
           const font = page.spawnLayout.fonts.get(fontId);
-          if (font) page.drawBitmapText(c, font, text, x, y, { rgb });
+          if (font) page.drawBitmapText(c, font, text, x, y, { rgb, snap });
         },
       };
       paintLeaves(ctx, data, page.spawnLayout.data.groups.tickets.elements, page.deployVars(), spawnRes);
@@ -293,6 +321,9 @@ export function createScoreboardScreen(page) {
     // The end of a round holds the board up (`holdOpen`): a Tab released or
     // a lost focus must not take it down under the debriefing.
     if (!on && scoreboard.held) return;
+    // The map-vote screen goes first: closing it gives back the board it
+    // stood on, or drops the box it raised (`scoreboard-votes.js`).
+    if (!on && votes.mapVoteOpen) { votes.showMapVote(false); return; }
     if (on === scoreboardOpen()) return;
     scoreboard.scoreFromSpawn = on && fromSpawn;
     scoreboard.scoreHoverDone = false;
@@ -358,6 +389,9 @@ export function createScoreboardScreen(page) {
     holdOpen,
     paintScoreboard,
     scoreLayout,
+    // SHOW MAP VOTE (`c_PIShowMapVote`) and the vote plate's state.
+    showMapVote: on => votes.showMapVote(on ?? !votes.mapVoteOpen),
+    votes,
     scoreboardOpen,
     scoreboardPlayers,
     setScoreboard,

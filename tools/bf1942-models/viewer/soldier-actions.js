@@ -43,6 +43,19 @@
 //    jumps, the backward run's own clip and the draw (`RECORDED_STATES`) are
 //    entered by that name where the bundle carries them, held while the
 //    recording stays in them and let go when it leaves. `followRecorded`.
+//  * **a live lower state.** Outside a replay the body's own lower machine
+//    (`soldier-locomotion.js` `SoldierJumpState`) says the same thing a
+//    recording does, and the same states are entered by the same names:
+//    `remote-gait.js` `liveLower` hands them in as `recorded`.
+//  * **a new item.** `Ub_{Stand,Crouch,Lie}RaiseWeapon`, the draw the engine
+//    sets by name when the item in the hands changes: a cut (`setMorphFactor
+//    10000`), then the pose. `draw`.
+//  * **standing idle.** A state's idle timer (ANIM-6: `(rand & 3) + 4.0` s,
+//    armed on entry) draws one of its `addIdle` states: `Lb_Stand`'s only
+//    one is `Lb_StandRelax`, a loop the legs stay in until an input takes
+//    them out; `Ub_StandAim<W>` and `Ub_Crouch<W>` have three one-shot
+//    fidgets each, of which vanilla ships a third-person clip for the
+//    Thompson's and the Sg44's first alone. `stepIdle`, for a live body.
 //  * **a reload.** `Ub_StandReload` or `Ub_LieReload`, a one-shot that cuts in
 //    and returns to the pose when its clip is done -- which is shorter than the
 //    weapon's `reloadTime` on most weapons; the torso aims again while the
@@ -107,6 +120,9 @@ export const STANCE_ENTRY = Object.freeze({
  */
 export const RECORDED_STATES = Object.freeze(new Set([
   'Lb_RunJump', 'Lb_StandJump', 'Lb_RunJumpBackward', 'Lb_RunBackward',
+  // The turn on the spot and the relaxed stand (bundles baked since
+  // 2026-11-13, `LOWER_ACTIONS`).
+  'Lb_TurnLeft', 'Lb_TurnRight', 'Lb_StandRelax',
   'Ub_RunJump', 'Ub_StandJump', 'Ub_RunBackward', 'Ub_StandRaiseWeapon',
   'Ub_CrouchRaiseWeapon', 'Ub_LieRaiseWeapon',
 ]));
@@ -135,11 +151,15 @@ const BASE_STATES = Object.freeze(new Set([
  * `3pAnimationsTweaking.con`).
  */
 export const VANILLA_STATES = Object.freeze({
-  'stand.lower': { morph: 2.0 }, 'walk.lower': { morph: 2.0 },
+  // `Lb_Stand` `addIdle Lb_StandRelax`; `Ub_StandAim<W>` and `Ub_Crouch<W>`
+  // `addIdle` three fidgets each (`AnimationStatesIdle.con`,
+  // `AnimationStatesCrouching.con`).
+  'stand.lower': { morph: 2.0, idles: ['Lb_StandRelax'] }, 'walk.lower': { morph: 2.0 },
   'run.lower': { morph: 2.0 }, 'crouch.lower': { morph: 2.0 },
   'crouchwalk.lower': { morph: 2.0 }, 'lie.lower': { morph: 2.0 },
   'crawl.lower': { morph: 2.0 },
-  'stand.upper': { morph: 0.7 }, 'crouch.upper': { morph: 0.7 },
+  'stand.upper': { morph: 0.7, idles: ['Ub_Idle1', 'Ub_Idle2', 'Ub_Idle3'] },
+  'crouch.upper': { morph: 0.7, idles: ['Ub_CrouchIdle1', 'Ub_CrouchIdle2', 'Ub_CrouchIdle3'] },
   'lie.upper': { morph: 0.7 }, 'walk.upper': { morph: 0.5 },
   'run.upper': { morph: 0.5 }, 'crouchwalk.upper': { morph: 0.5 },
   'crawl.upper': { morph: 0.5 },
@@ -157,6 +177,14 @@ export const VANILLA_STATES = Object.freeze({
   Lb_StandJump: { speed: 1.1, loop: false, morph: 4.0, then: 'Lb_Stand' },
   Lb_RunJumpBackward: { speed: -1.2, loop: false, morph: 50, then: 'Lb_RunBackward' },
   Lb_RunBackward: { speed: -1.6, loop: true, morph: 2.0 },
+  // `AnimationStatesLower.con`: the turns declare no morph (the
+  // constructor's 5.0) and `returnToState Lb_Stand`; the relaxed stand is
+  // 0.6 after `3pAnimationsTweaking.con`.
+  Lb_TurnLeft: { speed: 2.0, loop: true, morph: 5.0, then: 'Lb_Stand' },
+  Lb_TurnRight: { speed: -2.0, loop: true, morph: 5.0, then: 'Lb_Stand' },
+  Lb_StandRelax: { speed: 0.6, loop: true, morph: 2.0 },
+  Ub_Idle1: { speed: 0.5, loop: false, morph: 5.0, then: 'Ub_StandAim' },
+  Ub_CrouchIdle1: { speed: 1.0, loop: false, morph: 5.0, then: 'Ub_Crouch' },
   Ub_RunJump: { speed: 1.22, loop: false, morph: 100, then: 'Ub_RunForward' },
   Ub_StandJump: { speed: 1.1, loop: false, morph: 4.0, then: 'Ub_StandAim' },
   Ub_RunBackward: { speed: -1.6, loop: true, morph: 0.5, then: 'Ub_StandAim' },
@@ -240,6 +268,48 @@ export const DEFAULT_MORPH = 5.0;
 export const MORPH_CUT = 1000;
 /** Die states: `setMorphFactor 20` on all but the seated and free-fall ones. */
 export const DIE_MORPH = 20;
+
+/** `updateState` re-arms a state's idle timer at `(rand & 3) + 4.0` seconds
+ *  on entry (lnxded `0x0832b2d9`, `.rodata` `0x086c0304`, ANIM-6). */
+export const IDLE_DWELL_BASE = 4.0;
+export const IDLE_DWELL_STEPS = 4;
+
+/** One draw of the dwell: 4, 5, 6 or 7 seconds. */
+export function idleDwell(random = Math.random) {
+  return IDLE_DWELL_BASE + Math.min(IDLE_DWELL_STEPS - 1, Math.floor(random() * IDLE_DWELL_STEPS));
+}
+
+/**
+ * A state's idle timer (ANIM-6): armed when the state is entered, and at 0
+ * `AnimationState::checkTransitions(float)` (`0x0832a390`) draws `rand() % n`
+ * over the state's `addIdle` list. `step(key, dt, n)` runs it for the state
+ * `key` (any change of key is an entry; a null key is no state with idles)
+ * and answers the index drawn on the frame it runs out, else -1. The caller
+ * re-enters the state when the idle hands back, which arms it again; an idle
+ * the body has no clip for is over at once, and `rearm()` stands for that.
+ */
+export class IdleClock {
+  constructor(random = Math.random) {
+    this.random = random;
+    this.key = null;
+    this.left = Infinity;
+  }
+
+  rearm() { this.left = idleDwell(this.random); }
+
+  step(key, dt, n = 1) {
+    if (key !== this.key) {
+      this.key = key;
+      this.left = key == null ? Infinity : idleDwell(this.random);
+      return -1;
+    }
+    if (key == null || !(n > 0)) return -1;
+    this.left -= dt;
+    if (this.left > 0) return -1;
+    this.left = Infinity;
+    return Math.min(n - 1, Math.floor(this.random() * n));
+  }
+}
 
 /**
  * What a state is, `{ speed, loop, morph, then, ... }`: its clip's own
@@ -346,6 +416,10 @@ export class SoldierActions {
     this.lower = { half: 'lower', name: null, base: true, time: 0, duration: 0, loop: true, action: null, reverse: false };
     this.upper = { half: 'upper', name: null, base: true, time: 0, duration: 0, loop: true, action: null, reverse: false };
     this.entries = [];
+    /** Each half's idle timer (`stepIdle`), on `rig.random` where the rig
+     *  gives one (a test's), else `Math.random`. */
+    const random = rig.random ?? Math.random;
+    this.idle = { lower: new IdleClock(random), upper: new IdleClock(random) };
   }
 
   info(name) {
@@ -465,7 +539,8 @@ export class SoldierActions {
     // draw (the item is not ready until it is up). 8t224pppqe pid 1 at
     // 58.72-59.15: `Ub_CrouchRaiseWeaponMp40` holds the upper machine while
     // the legs go `Lb_CrouchToStand`, `Lb_RunForward`, `Lb_RunBackward`.
-    const drawing = this.upper.action === 'recorded' && /RaiseWeapon$/.test(this.upper.name ?? '');
+    const drawing = (this.upper.action === 'recorded' || this.upper.action === 'draw')
+      && /RaiseWeapon$/.test(this.upper.name ?? '');
     if (ready === false) return;
     if (this.upper.action !== 'reload' && !drawing) this.enter(this.upper, entry.upper, 'move');
   }
@@ -534,6 +609,62 @@ export class SoldierActions {
     const name = this.stance === 'prone' ? 'Ub_LieReload' : 'Ub_StandReload';
     if (!this.rig.has(name)) return;
     this.enter(this.upper, name, 'reload');
+  }
+
+  /**
+   * The item in the hands changed: the draw, `Ub_StandRaiseWeapon`,
+   * `Ub_CrouchRaiseWeapon` or `Ub_LieRaiseWeapon` by the pose the legs hold
+   * (the engine sets `Ub_<Pose>RaiseWeapon<W>` by name; each cuts in,
+   * `setMorphFactor 10000`, and hands to `_POSE_`). A replay's recording
+   * names the state itself (`followRecorded`); this is a live body's, called
+   * on the new item's body once it has taken over (`rig.adopt`). Nothing
+   * while the weapon is stowed (the water, a blast, the free fall). True
+   * when the torso took it.
+   */
+  draw() {
+    if (this.dead || this.swim || this.heldStowed || this.heldUpper) return false;
+    const pose = this.bodyPose();
+    const name = pose === 'prone' ? 'Ub_LieRaiseWeapon'
+      : pose === 'crouch' ? 'Ub_CrouchRaiseWeapon' : 'Ub_StandRaiseWeapon';
+    if (!this.rig.has(name)) return false;
+    this.enter(this.upper, name, 'draw');
+    return true;
+  }
+
+  /**
+   * The idle timers of a live body (ANIM-6), after the frame's entries: the
+   * legs' runs while they stand in `Lb_Stand` and at 0 enters its one idle,
+   * `Lb_StandRelax`, a loop they stay in until the gait, a turn, a jump or
+   * a stance change takes them out (its clauses are `Lb_Stand`'s own); the
+   * torso's runs while it holds the standing or crouched aim and at 0
+   * draws one of the state's `addIdle` fidgets (`info.idles`, three), a
+   * one-shot that hands back to the aim. A fidget this body has no
+   * third-person clip for (all but the Thompson's and the Sg44's first, in
+   * vanilla) shows nothing, and the timer starts again as it does when the
+   * engine's clipless state hands straight back. A replay does not run
+   * this: its recording names `Lb_StandRelax` itself.
+   */
+  stepIdle(dt) {
+    const blocked = this.dead || this.swim || this.held;
+    const lo = this.lower;
+    // The relaxed stand leaves with the standing gait.
+    if (lo.action === 'idle' && !lo.base && this.family !== 'stand') this.enterBase(lo, true);
+    const loKey = !blocked && lo.base && !lo.reverse && lo.name === FAMILY_HALVES.stand.lower ? lo.name : null;
+    const loIdles = loKey ? this.info(loKey)?.idles ?? [] : [];
+    const i = this.idle.lower.step(loKey, dt, loIdles.length);
+    if (i >= 0) {
+      if (this.rig.has(loIdles[i])) this.enter(lo, loIdles[i], 'idle');
+      else this.idle.lower.rearm();
+    }
+    const up = this.upper;
+    const upKey = !blocked && !this.heldUpper && !this.trigger && up.base
+      && (up.name === FAMILY_HALVES.stand.upper || up.name === FAMILY_HALVES.crouch.upper) ? up.name : null;
+    const upIdles = upKey ? this.info(upKey)?.idles ?? [] : [];
+    const j = this.idle.upper.step(upKey, dt, upIdles.length);
+    if (j >= 0) {
+      if (this.rig.has(upIdles[j])) this.enter(up, upIdles[j], 'idle');
+      else this.idle.upper.rearm();
+    }
   }
 
   /** The killing blow: both halves to the death `soldier-death.js` chose. */
@@ -725,10 +856,11 @@ export class SoldierActions {
    * return the states entered (`{ half, name, morph }`) since the last call.
    * `held` is `followHeld`'s pair, which outranks the swim the way the page's
    * own body has it (`soldier-body.js` `bodyFamily`: a canopy over water is
-   * the parachute's landing).
+   * the parachute's landing). `idle` runs the idle timers (`stepIdle`), for
+   * a live body.
    */
   update({ stance = this.stance, family = this.family, trigger = false, swim = null,
-           held = null, reverse = false, recorded = null } = {}, dt = 0) {
+           held = null, reverse = false, recorded = null, idle = false } = {}, dt = 0) {
     this.stance = stance;
     this.family = family;
     this.reverse = !!reverse;
@@ -768,6 +900,7 @@ export class SoldierActions {
       // the epsilon keeps six sixtieths from summing to just under a tenth.
       if (h.time >= h.duration - 1e-9) this.enter(h, this.info(h.name)?.then ?? '_POSE_');
     }
+    if (idle) this.stepIdle(dt);
     const out = this.entries;
     this.entries = [];
     return out;

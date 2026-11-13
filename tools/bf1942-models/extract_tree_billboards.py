@@ -74,6 +74,53 @@ def billboard_settings(text: str) -> dict[str, tuple[bool, float | None]]:
     return out
 
 
+# The `GeometryTemplate.sway*` words a TreeMesh block may carry, and the key
+# each gets in `trees.json`. `geom::SwayerTemplate` (server symbols
+# 0x083b8830..0x083b89f0): swayEnable +0x34, swayRangeDegrees +0x0c,
+# swayPeriodSeconds +0x10, swayWindFactor +0x14, swayDirection +0x18/+0x1c.
+# The three swayForce* words feed `CollisionSwayer` only, which nothing in the
+# installed game enables, so they are not carried.
+_SWAY_WORDS = {
+    "swayrangedegrees": "rangeDegrees",
+    "swayperiodseconds": "periodSeconds",
+    "swaywindfactor": "windFactor",
+    "swaydirection": "direction",
+}
+_SWAY = re.compile(r"^\s*GeometryTemplate\.(sway\w+)\s+(\S+)", re.IGNORECASE | re.MULTILINE)
+
+
+def sway_settings(text: str) -> dict[str, dict]:
+    """`{geometry name lower: sway words}` for every TreeMesh that says `swayEnable 1`.
+
+    A tree that never says it does not sway (`TreeMeshTemplate`'s constructor
+    passes `false`, 0x083bc409), so it gets no entry. A word the block omits
+    is left out and the viewer takes the constructor's value.
+    """
+    out: dict[str, dict] = {}
+    starts = list(_CREATE.finditer(text))
+    for i, m in enumerate(starts):
+        end = starts[i + 1].start() if i + 1 < len(starts) else len(text)
+        body = text[m.end():end]
+        nxt = re.search(r"^\s*GeometryTemplate\.create\s", body, re.IGNORECASE | re.MULTILINE)
+        if nxt:
+            body = body[:nxt.start()]
+        words: dict = {}
+        enabled = False
+        for w in _SWAY.finditer(body):
+            word, value = w.group(1).lower(), w.group(2)
+            if word == "swayenable":
+                enabled = value != "0"
+            elif word in _SWAY_WORDS:
+                try:
+                    parts = [float(v) for v in value.split("/")]
+                except ValueError:
+                    continue
+                words[_SWAY_WORDS[word]] = parts if word == "swaydirection" else parts[0]
+        if enabled:
+            out[m.group(1).lower()] = words
+    return out
+
+
 def tree_bounds(tm: bytes) -> tuple[list[float], list[float]] | None:
     """The two bounding boxes in a `.tm` header: whole mesh, then leaf sprites."""
     if len(tm) < 12 + 48:
@@ -102,6 +149,8 @@ def main() -> int:
     settings: dict[str, tuple[bool, float | None]] = {}
     con_cache: dict[str, dict[str, tuple[bool, float | None]]] = {}
     trees: dict[str, dict] = {}
+    sway: dict[str, dict] = {}
+    sway_cache: dict[str, dict[str, dict]] = {}
     missing: list[str] = []
     off: list[str] = []
     out_dir = args.out / "trees"
@@ -114,6 +163,14 @@ def main() -> int:
             blob = objects.try_read(geom.source)
             con_cache[geom.source] = billboard_settings(
                 blob.decode("latin-1", "replace")) if blob else {}
+        if geom.source not in sway_cache:
+            blob = objects.try_read(geom.source)
+            sway_cache[geom.source] = sway_settings(
+                blob.decode("latin-1", "replace")) if blob else {}
+        if key in sway_cache[geom.source]:
+            # Keyed like `trees`, and kept apart from it: a tree with its
+            # billboard off or its strip missing still sways.
+            sway[geom.name] = sway_cache[geom.source][key]
         on, distance = con_cache[geom.source].get(key, (True, None))
         settings[key] = (on, distance)
         if not on:
@@ -159,11 +216,12 @@ def main() -> int:
         "mod": args.mod,
         "frames": FRAMES,
         "trees": trees,
+        "sway": sway,
         "billboardOff": sorted(off),
         "missing": sorted(missing),
     }
     (args.out / "trees.json").write_text(json.dumps(manifest, indent=1, sort_keys=True))
-    print(f"{len(trees)} tree billboards, {len(off)} with billboard off, "
+    print(f"{len(trees)} tree billboards, {len(sway)} that sway, {len(off)} with billboard off, "
           f"{len(missing)} missing, {time.time() - started:.1f}s -> {args.out / 'trees.json'}",
           file=sys.stderr)
     for name in missing:

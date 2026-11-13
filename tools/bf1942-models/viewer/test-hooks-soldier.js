@@ -498,6 +498,10 @@ export function installSoldierHooks(page) {
     soldier: page.footBody.soldier,
     weapon: page.footBody.weapon,
     want: page.footBody.want,
+    // The hand sign a shout plays, and the relaxed stand (`hand-sign.js`,
+    // `remote-gait.js` `liveFamily`).
+    sign: page.footBody.sign?.playing ?? null,
+    relaxed: !!page.footBody.relaxed,
     bound: Object.keys(page.footBody.families),
     // The alternate fire's thrust (`foot-body.js` `stabFootBody`): which
     // stances have the clip, and the one playing with the torso weight under it.

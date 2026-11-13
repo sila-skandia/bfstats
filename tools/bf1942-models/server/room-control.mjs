@@ -4,10 +4,11 @@
 // leave and drop paths share. Split out of `rooms.mjs`'s Room, which builds one of these and
 // routes MSG_ACTION and its leave path through it.
 
-import { RADIO_LOCAL_RANGE, RELOAD_GAP_MS, SPAWN_INDEX_MAX, WEAPON_NAME_OK } from './room-rules.mjs';
+import { NAME_OK, RADIO_LOCAL_RANGE, RELOAD_GAP_MS, SPAWN_INDEX_MAX, WEAPON_NAME_OK } from './room-rules.mjs';
 import { encodeJsonMsg, eventRow } from './room-wire.mjs';
 import { mayEnterHull } from '../viewer/vehicle-instance.js';
 import { flagSide } from '../viewer/spawn-flags.js';
+import { SayQueue, cutSayText } from '../viewer/chat-log.js';
 
 /**
  * @param {object} options
@@ -23,13 +24,21 @@ export function createControlChannel({ room, event }) {
     else if (row.type === 'suicide') onSuicide(connection);
     else if (row.type === 'tk') onTeamKillVerdict(connection, row);
     else if (row.type === 'seat') onSeat(connection, row);
+    // A round that is a vehicle, and its warhead (room-missiles.mjs, FA-29).
+    else if (row.type === 'launch') room.missiles?.onLaunch(connection, row);
+    else if (row.type === 'detonate') room.missiles?.onDetonate(connection, row);
     else if (row.type === 'radio') onRadio(connection, row);
+    else if (row.type === 'chat') onChat(connection, row);
+    else if (row.type === 'name') onName(connection, row);
     else if (row.type === 'reload') onReload(connection, row);
     else if (row.type === 'stab') onStab(connection, row);
     // A landing of the page's own round, priced by the room (room-hits.mjs).
     else if (row.type === 'impact') room.hits?.onImpact(connection, row);
     // A round of the medic bag or the wrench, run by the room (room-packs.mjs).
     else if (row.type === 'pack') room.packs?.onPack(connection, row);
+    // A vote laid or issued, and an admin's word (room-host.mjs).
+    else if (row.type === 'vote') room.host?.onVote(connection, row);
+    else if (row.type === 'admin') room.host?.onAdmin(connection, row);
   }
 
   /**
@@ -89,6 +98,9 @@ export function createControlChannel({ room, event }) {
       slot, msg: id, broadcast: team, team: connection.team,
       at: at ? [at.x, at.y, at.z] : null,
     }));
+    // The AI's copy (`AIRadio::sendMessage` at 0x0813a26a): the bots of his side.
+    room.bots?.onRadio(id, { team: connection.team, speakerId: slot,
+                             at: at ? [at.x, at.y, at.z] : null, broadcast: team });
     for (const [other, listener] of room.players) {
       if (other === slot) continue;
       if (team) {
@@ -99,6 +111,60 @@ export function createControlChannel({ room, event }) {
         if (Math.hypot(there.x - at.x, there.y - at.y, there.z - at.z) > RADIO_LOCAL_RANGE) continue;
       }
       listener.peer.send(bytes);
+    }
+  }
+
+  /**
+   * A typed chat line (`GameServer::handleChatMessage`, lnxded 0x08134a70;
+   * CHAT-2, CHAT-4): cut to 63 bytes, then queued for every other player, or
+   * for the sender's side alone when it is team chat, with no alive test (a
+   * dead player on the spawn screen talks and hears). The sender is never
+   * sent their own line (0x08134bd7); their page has written it. Each
+   * receiver's connection holds its own queue (`chat`, a `SayQueue`): four
+   * waiting lines, a fifth refused (`addStringMsg` 0x0815d280), and the head
+   * line leaves in 15-byte pieces 0.5 s apart (`updateSendStream`
+   * 0x0815d3c0), which `chatTick` runs.
+   */
+  function onChat(connection, row) {
+    const slot = connection.slot;
+    if (slot == null || typeof row?.text !== 'string') return;
+    const text = cutSayText(row.text.replace(/[\x00-\x1f\x7f]/g, ''));
+    if (!text.trim()) return;
+    const team = row.team === true;
+    const now = room.now() / 1000;
+    for (const [other, listener] of room.players) {
+      if (other === slot) continue;
+      if (team && listener.team !== connection.team) continue;
+      (listener.chat ??= new SayQueue()).add({ slot, text, team }, now);
+    }
+  }
+
+  /** `game.changePlayerName <name>` (the alias `name`): the player's new
+   *  name, under the join's own test, to every roster (the actor's too). One
+   *  change a second at most. */
+  function onName(connection, row) {
+    const name = typeof row?.name === 'string' ? row.name.trim() : '';
+    if (connection.slot == null || !NAME_OK.test(name) || name === connection.name) return;
+    const now = room.now();
+    if (Number.isFinite(connection.renameAt) && now < connection.renameAt) return;
+    connection.renameAt = now + 1000;
+    connection.name = name;
+    room.broadcast(eventRow('name', room.tick, { slot: connection.slot, text: name }), null);
+  }
+
+  /** One room tick of the chat relay: each connection's waiting line sends
+   *  its next piece, and a finished line goes out as its `chat` row. Sixteen
+   *  connections, one array test each while nobody is talking. */
+  function chatTick() {
+    let now = null;
+    for (const listener of room.players.values()) {
+      if (!listener.chat?.lines.length) continue;
+      now ??= room.now() / 1000;
+      const line = listener.chat.update(now);
+      if (!line) continue;
+      listener.peer.send(encodeJsonMsg(eventRow('chat', room.tick, {
+        slot: line.slot, text: line.text, team: line.team,
+      })));
     }
   }
 
@@ -180,6 +246,15 @@ export function createControlChannel({ room, event }) {
     // whose carrier has no seat for him (gone, destroyed, another pilot's
     // since his page looked) spawns nobody: `getActive` is false, and the
     // page's prediction dies back to its spawn screen.
+    // SPAWN-39: a boarded submarine's points are out of the draw
+    // (`BFSpawnPoint::getActive` 0x08163de2), as the page's own walk has
+    // them (`hull-bodies.js` `bindCarriers`), so the index means the same
+    // point on both sides; a flag left with none spawns nobody.
+    const from = openToBoarding(flag);
+    if (flag && !from) {
+      refuse();
+      return;
+    }
     const named = Number.isInteger(row?.point) ? flag?.spawns?.[row.point] : null;
     const seatPoint = named?.enterOnSpawn ? named : null;
     if (seatPoint && !room.instance.seatPointOpen(seatPoint, slot)) {
@@ -212,8 +287,20 @@ export function createControlChannel({ room, event }) {
     const wanted = row?.spawnIndex;
     const pinned = Number.isInteger(wanted) && wanted >= 0 && wanted <= SPAWN_INDEX_MAX;
     if (pinned) player.spawnIndex = wanted;
-    if (!world.spawnPlayer(slot, { flag, advance: !pinned })) return;
+    if (!world.spawnPlayer(slot, { flag: from, advance: !pinned })) return;
+    // The world's books name the flag itself, not the view of it.
+    if (from !== flag && player.flag === from) player.flag = flag;
     event('spawn', connection, {});
+  }
+
+  /** `flag` without the points a boarded carrier has shut (SPAWN-39): the
+   *  flag itself when none is, null when every one is. The view keeps the
+   *  flag's own getters (a carried flag's live position). */
+  function openToBoarding(flag) {
+    const shut = room.instance.pointShutByBoarding?.bind(room.instance);
+    if (!flag || !shut || !Array.isArray(flag.spawns) || !flag.spawns.some(shut)) return flag;
+    const spawns = flag.spawns.filter(spawn => !shut(spawn));
+    return spawns.length ? Object.create(flag, { spawns: { value: spawns, enumerable: true } }) : null;
   }
 
   /** A change of side (`GameServer::setTeam` 0x08131800 -> `BFPlayer::
@@ -298,6 +385,15 @@ export function createControlChannel({ room, event }) {
         console.error(`room ${room.code}: slot ${slot} (team ${connection.team}) refused ${vehicle.template}: crewed by team ${crewTeamOf(vehicle, slot)}`);
         return refuse();
       }
+      // The seat is a bot's: `toggleEntryPoint` 0x0814ee70 asks the bot for it
+      // (`playerRequestPlayerControlObject`, 0x0814f1b6..0x0814f21a) and
+      // seats nobody; the bot's next Change gives it up (`room-bots.mjs`).
+      if (botHoldsSeat(vehicle, seatIndex, connection.team)) return refuse();
+      // Nor is a seat another player sits in taken: `GameServer::enterVehicle`
+      // 0x0814e860 passes `PlayerControlObject::enter` 0x08316f00 force =
+      // false for Use, a spawn and a switch alike (SEAT-11). Without it two
+      // players of one side shared the driver's seat.
+      if (seatHeldByAnother(vehicle, seatIndex, slot)) return refuse();
       if (current) unmount(connection);
       let mounted = null;
       try {
@@ -321,9 +417,17 @@ export function createControlChannel({ room, event }) {
       // has already stepped out, so the room follows rather than refusing
       // and leaving the two apart; `unmountFromSeat` places the soldier by
       // the same test (the other side when the door's line is blocked).
-      if (current && current === vehicle.root) unmount(connection);
+      if (current && current === vehicle.root) {
+        unmount(connection);
+        // Out of a ridden round: it dies and its rider goes back (FA-29).
+        room.missiles?.afterExit(connection, vehicle);
+      }
     } else if (action === 'switch') {
       if (!current || current !== vehicle.root) return;
+      // The seat switch's own request (`checkPlayerTriggers` 0x0814fb07..0x0814fb63).
+      if (botHoldsSeat(vehicle, seatIndex, connection.team)) return;
+      // An occupied seat is refused, not stolen (SEAT-11).
+      if (seatHeldByAnother(vehicle, seatIndex, slot)) return;
       const switched = room.instance.switchSeat(world, slot, vehicle, seatIndex);
       if (!switched || !switched.changed) return;
       event('seatEnter', connection, {
@@ -331,6 +435,34 @@ export function createControlChannel({ room, event }) {
         seat: switched.occ.order.indexOf(switched.seatId),
       });
     }
+  }
+
+  /** Whether a player of the room other than `slot`, human or bot, sits in
+   *  seat `seatIndex` of `vehicle` (the index the snapshot carries; one past
+   *  the hull's last seat is its first, as `mountIntoSeat` reads it). */
+  function seatHeldByAnother(vehicle, seatIndex, slot) {
+    const others = [...room.players.keys(), ...(room.bots?.count ? room.bots.slots.keys() : [])];
+    for (const other of others) {
+      if (other === slot) continue;
+      const occ = room.world.player(other)?.occupancy;
+      if (occ?.root !== vehicle.root) continue;
+      const want = seatIndex < occ.order.length ? seatIndex : 0;
+      if (occ.order.indexOf(occ.activeSeatId) === want) return true;
+    }
+    return false;
+  }
+
+  /** Whether a bot holds seat `seatIndex` of `vehicle`; when it does, it is
+   *  asked for it on `team`'s behalf (`referee.requestSeat`: same side only). */
+  function botHoldsSeat(vehicle, seatIndex, team) {
+    if (!room.bots?.count) return false;
+    for (const slot of room.bots.slots.keys()) {
+      const occ = room.world.player(slot)?.occupancy;
+      if (occ?.root !== vehicle.root || occ.order.indexOf(occ.activeSeatId) !== seatIndex) continue;
+      room.bots.requestSeat(team, slot);
+      return true;
+    }
+    return false;
   }
 
   /** Exit: the level's leave law (unmount + park + soldier placement), then
@@ -359,7 +491,7 @@ export function createControlChannel({ room, event }) {
     }
   }
 
-  return { onAction, unmount };
+  return { onAction, unmount, chatTick };
 }
 
 /** A world player's position, whatever holds it: the drive he sits on, the

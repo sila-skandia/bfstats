@@ -278,33 +278,29 @@ class WorldTests(unittest.TestCase):
         self.assertEqual(falling["noTick"], 0)
         self.assertEqual(falling["fourTicks"], 3)
 
-    def test_a_falling_wreck_gets_the_engines_zero_word(self) -> None:
-        """HP-15: a destroyed `PlayerControlObject` receives no input at all
-        (`PlayerControlObject::handlePlayerInput`, lnxded 0x08318920), so the
-        gate is forced false — here for a hull with no player left to force it.
-        The stick, the rudder, the throttle and both triggers are written to
-        zero, and the throttle spool itself is pinned, because the surfaces are
-        servos and a kill mid-turn would otherwise hold its deflection all the
-        way down."""
+    def test_a_falling_wreck_keeps_its_stick_and_loses_its_engine(self) -> None:
+        """HP-15: a destroyed `PlayerControlObject` forwards no input at all
+        (`PlayerControlObject::handlePlayerInput`, lnxded 0x08318920 returns
+        before its children), a zero included, so the stick and the rudder
+        are not written: each surface keeps the input its register held at
+        the kill. The triggers are let go (0x15 takes the weapon component
+        off) and the throttle is the stopped Engine's zero (PHY-14)."""
         falling = self.results["falling"]
         self.assertEqual(falling["oneTick"]["inputs"], [
-            ["c_PIThrottle", 0], ["c_PIRoll", 0], ["c_PIPitch", 0],
-            ["c_PIYaw", 0], ["c_PIFire", 0], ["c_PIAltFire", 0],
+            ["c_PIFire", 0], ["c_PIAltFire", 0], ["c_PIThrottle", 0],
         ])
         self.assertEqual(falling["oneTick"]["throttle"], 0)
 
-    def test_a_falling_wreck_sinks_no_faster_than_its_own_drag(self) -> None:
-        """A destroyed airship climbed to 400 m: held at a 30 m/s sink its box
-        drag and its up/down engine's propeller term threw it up every tick
-        (t2 F4). The floor is the hull's own flat-fall terminal speed when that
-        is slower, a fighter keeps 30, and the engines of a dead hull stop
+    def test_a_falling_wreck_is_moved_by_its_own_physics_alone(self) -> None:
+        """Nothing in retail's physics asks the destroyed flag (HP-24), so the
+        wreck pass forces no sink and bleeds no speed: what `integrate` leaves
+        is what the hull has. (The pass once held a wreck to a 30 m/s sink,
+        which made a shot-down plane drop almost straight down and threw a
+        destroyed airship upward, t2 F4.) The engines of a dead hull stop
         (PHY-14), so the balloon's 40% hover floor lifts nothing."""
-        floors = self.results["falling"]["sinkFloors"]
-        self.assertAlmostEqual(floors["zeppelin"], 3.32, places=1)
-        self.assertEqual(floors["fighter"], 30)
-        self.assertEqual(floors["noSpec"], 30)
-        self.assertFalse(floors["deadEngineRunning"])
-        self.assertAlmostEqual(floors["deadVy"], -floors["zeppelin"], places=6)
+        dead = self.results["falling"]["deadHull"]
+        self.assertFalse(dead["engineRunning"])
+        self.assertEqual(dead["velocity"], [12, 2, -3])
 
     def test_an_empty_falling_list_is_skipped(self) -> None:
         # The world's own guard: the pass runs only when something is in the

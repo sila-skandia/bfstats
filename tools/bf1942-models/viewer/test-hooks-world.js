@@ -103,6 +103,12 @@ export function installWorldHooks(page) {
     // The heartbeat under 5 % tickets (`Heartbeats.ssc`): its level and loop.
     heartbeat: () => page.comms.heartbeatState(),
     onKill: (victim, killer, how = null) => page.comms.onKill(victim, killer, how),
+    // A player's chat line, a player taking a side, and the crew of the
+    // local player's hull as `vehicle-hud.js` feeds it, each through the
+    // real entry point.
+    playerChat: (sender, text, opts = {}) => page.comms.playerChat(sender, text, opts),
+    onTeam: (player, team) => page.comms.onTeam(player, team),
+    observeCrew: (hull, crew) => page.comms.observeCrew(hull, crew),
     onCapture: (flag, team) => page.comms.onCapture(flag, team),
     // The referee's own damage path, so the kill line comes from the real hook.
     killBot: (id, attackerId = null, opts = {}) => page.referee.applyDamage(id, 1e6, attackerId, null, opts),

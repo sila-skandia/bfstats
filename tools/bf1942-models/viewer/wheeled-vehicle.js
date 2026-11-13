@@ -48,7 +48,9 @@ import {
 } from './suspension.js';
 import { clamp, EngineState, ENGINE_BIT_THRUST, engineTypeBits } from './ground-engine.js';
 import { traverseOwn } from './spawned-craft.js';
-import { bodyMotion, scrollBeltsByEngine, scrollBeltsByMotion } from './track-scroll.js';
+import {
+  bodyMotion, followBogies, restBelts, scrollBeltsByEngine, scrollBeltsByMotion,
+} from './track-scroll.js';
 import {
   AmphibiousKit, HullWater, bedGroundHeight, inertiaGeometryBox, geometryInertia,
 } from './amphibious.js';
@@ -429,7 +431,7 @@ export class GroundVehicle extends Vehicle {
       wheel.angle += (forward / (wheel.radius || this.spec.wheelRadius || 0.4)) * dt;
     }
     super.presentKinematic(dt, throttle, running);
-    this.#applyWheels();
+    this.#applyWheels(false);
     // No engine is recorded to scroll the belts from: each runs at its side's
     // contact speed off the recorded motion (`track-scroll.js`).
     scrollBeltsByMotion(this.node, bodyMotion(s.orientation, s.velocity, s.angularVelocity), dt);
@@ -956,7 +958,7 @@ export class GroundVehicle extends Vehicle {
    * here — the front wheels' yaw is the declared rig, and `applyRig` already
    * poses it from the same rate-limited surface the physics read.
    */
-  #applyWheels() {
+  #applyWheels(sprung = true) {
     const k = this.spec;
     for (const wheel of this.wheels) {
       const lift = Math.min(wheel.compression, k.suspensionTravel);
@@ -966,6 +968,10 @@ export class GroundVehicle extends Vehicle {
       wheel.node.quaternion.copy(wheel.baseQuaternion).multiply(
         new THREE.Quaternion().setFromEuler(new THREE.Euler(-wheel.angle, 0, 0)));
     }
+    // A half-track's belt rides its bogies (`track-scroll.js`); a presented
+    // hull's springs are not known, so its belt stays as the mesh has it.
+    if (sprung) followBogies(this.node);
+    else restBelts(this.node);
   }
 
   /** Park it back on its spawn, engine off, wheels straight. */
@@ -993,6 +999,7 @@ export class GroundVehicle extends Vehicle {
       wheel.node.position.copy(wheel.basePosition);
       wheel.node.quaternion.copy(wheel.baseQuaternion);
     }
+    restBelts(this.node);
     s.position.copy(this.node.userData.spawnPosition || s.position);
     s.orientation.copy(this.node.userData.spawnOrientation || s.orientation);
   }

@@ -154,6 +154,25 @@ const SENSE_JITTER = 0.25;
 /** The eye above the feet, per stance: the soldier's pose camera
  *  (bot-pose.js `POSE_EYE`, 1.65 / 1.12 / 0.30 m). */
 const EYE = POSE_EYE;
+/**
+ * Which of a soldier's skeleton bones a bot's sense ray goes to, and its aim
+ * after it: `BFEnvironment::pickSoldierRandomSensePosition` (lnxded
+ * `0x085e3d20`, ledger AI-123). The array is the soldier's own `Skeleton`
+ * (`BFSoldier+0x274`, a copy of the template's `+0x284` made in the
+ * constructor at `0x0826ba8f..0x0826bac0`: the `.ske` the soldier's
+ * `createSkeleton` names, vanilla's `animations/UsSoldier.ske`, 67 bones in
+ * file order from `Bip01` to `HipPack`, the thirty finger bones, the wrist
+ * and weapon helpers among them). The index is `trunc(u * (count - 1))`
+ * (`fildl` of `count - 1` at `0x085e3da3`, the truncating `fistpll` at
+ * `0x085e3e8a`), every bone with the same weight, so the array's last bone
+ * (`HipPack`) is never picked: two picks in three land on an arm or a hand.
+ * `u` is a draw in [0, 1); `count` the skeleton's bone count.
+ */
+export function senseBoneIndex(count, u) {
+  if (!(count > 1)) return 0;
+  return Math.min(count - 2, Math.max(0, Math.trunc(u * (count - 1))));
+}
+
 /** A soldier's body frame: `r` to his right, `f` ahead, for a yaw whose
  *  forward is (sin, cos). */
 export function toBodyFrame(yaw, dx, dz) {
@@ -462,6 +481,11 @@ export class BotSenses {
      *  `player -> owner` lookup for a target's unit: the rays skip both. */
     this.selfOwner = -1;
     this.unitOwnerOf = null;
+    // A soldier's skeleton bones where it has one posed, `(player) =>
+    // [[right, up, ahead], ...]` over his feet in his body frame, or null:
+    // the points `pickSoldierRandomSensePosition` picks among (`_rays`).
+    // Unset, a soldier's sense points are the stand-in heights below.
+    this.soldierBones = null;
     this.isMobile = isMobile;
     this.random = random;
     /** Vision memory: id -> { id, seen, lastSeen, lost, lostAt, pos, team }. */
@@ -566,7 +590,7 @@ export class BotSenses {
         // which `updateMemory` 0x085244e0 re-tests second).
         this.memory.set(id, { id, seen: true, lastSeen: now, lost: false, lostAt: null,
                               pos: [...pos], team: player.team ?? 0, shots: [], hits: [],
-                              local: ray.local ?? null, offset: ray.offset ?? null });
+                              local: ray.local ?? null, offset: ray.offset ?? null, bone: ray.bone ?? null });
         this._spotted(now, world, id, player);
       }
     }
@@ -580,6 +604,54 @@ export class BotSenses {
     if (!player?.occupancy?.root) return -1;
     const owner = this.unitOwnerOf?.(player) ?? -1;
     return hullRadius(collider, owner) !== null ? owner : -1;
+  }
+
+  /**
+   * A soldier's skeleton for the sense rays: `{ count, at(i) }`, `at` the
+   * bone's place now in his body frame (right, up, ahead of his feet), or
+   * null where no skeleton is posed for him (`soldierBones` unset or
+   * answering null: a seated man, a tree without the pose files) and the
+   * rays keep the stand-in heights. The hook may answer a plain list.
+   */
+  _bonesOf(player) {
+    const bones = this.soldierBones?.(player) ?? null;
+    if (!bones) return null;
+    if (Array.isArray(bones)) return bones.length > 1 ? { count: bones.length, at: i => bones[i] } : null;
+    return bones.count > 1 ? bones : null;
+  }
+
+  /** One ray to bone `index` where it is now: `{ local, offset, bone }` when
+   *  the line is clear, else null. */
+  _boneRay(collider, eye, pos, yaw, bones, index, skip) {
+    const b = bones.at(index);
+    if (!b) return null;
+    const [dx, dz] = fromBodyFrame(yaw, b[0], b[2]);
+    if (!lineClear(collider, eye, [pos[0] + dx, pos[1] + b[1], pos[2] + dz], skip)) return null;
+    return { local: null, offset: [b[0], b[1], b[2]], bone: index };
+  }
+
+  /**
+   * `updateMemory` 0x085244e0's re-test of a remembered soldier (the branch
+   * at 0x08524930 for a record whose object carries the soldier flag): the
+   * bone that saw him last, by its kept index, where it is now
+   * (`getSoldierSensePosition` 0x085e3f60, environment vt+0x64, called at
+   * 0x085258d7 with the record's +0x10), then one new random bone (vt+0x60 at
+   * 0x08524aa5, its index written back to +0x10 at 0x08524ab9). Either
+   * success rewrites the record's point (+4..+0xc, 0x08524b2f..0x08524b49),
+   * so the aim follows the bone as the body moves. The soldier's centre is
+   * tested only for a target bot above LOD 0 (0x0852482d, 0x0852591d), and
+   * the viewer runs every bot at LOD 0.
+   */
+  _retestSoldier(collider, eye, player, pos, m) {
+    const bones = this._bonesOf(player);
+    if (!bones) return this._rays(collider, eye, player, pos, Math.hypot(pos[0] - eye[0], pos[1] - eye[1], pos[2] - eye[2]));
+    const skip = [this.selfOwner, this.unitOwnerOf?.(player) ?? -1];
+    const yaw = player.soldier?.yaw ?? 0;
+    if (m.bone != null && m.bone < bones.count) {
+      const kept = this._boneRay(collider, eye, pos, yaw, bones, m.bone, skip);
+      if (kept) return kept;
+    }
+    return this._boneRay(collider, eye, pos, yaw, bones, senseBoneIndex(bones.count, this.random()), skip);
   }
 
   /**
@@ -613,6 +685,23 @@ export class BotSenses {
     const stance = player.soldier?.stance ?? 'stand';
     const top = stance === 'prone' ? 0.5 : stance === 'crouch' ? 1.1 : 1.7;
     const yaw = player.soldier?.yaw ?? 0;
+    // `BFEnvironment::pickSoldierRandomSensePosition` 0x085e3d20 (ledger
+    // AI-123): every ray at a soldier goes to one of his skeleton's bones,
+    // index `trunc(u * (count - 1))` over the bone array (`BFSoldier+0x274`,
+    // count `+4`; `fildl` of count - 1 at 0x085e3da3, the truncating
+    // `fistpll` at 0x085e3e8a), the bone's own position (`+0x78..+0x80` of a
+    // 0xe8-byte element, 0x085e3ea4). No ray at his origin: that one is a
+    // hull's. The point that saw him is what his attacker then aims at
+    // (`sensedPoint`), so a bot aims at a part of the body, and where the
+    // skeleton has capsules its round can land on one.
+    const bones = this._bonesOf(player);
+    if (bones) {
+      for (let i = 0; i < n; i++) {
+        const hit = this._boneRay(collider, eye, pos, yaw, bones, senseBoneIndex(bones.count, this.random()), skip);
+        if (hit) return hit;
+      }
+      return null;
+    }
     for (let i = 0; i < n; i++) {
       const h = (i === 0 && n > 1) ? Math.min(top, 1.0)
         : Math.min(top, SENSE_HEIGHTS[i % SENSE_HEIGHTS.length]);
@@ -638,7 +727,10 @@ export class BotSenses {
    */
   _retestHull(collider, eye, player, pos, m, hull) {
     const skip = [this.selfOwner, this.unitOwnerOf?.(player) ?? -1];
-    if (lineClear(collider, eye, pos, skip)) return true;
+    // Seen at its own position: the record's point is the zero vector again
+    // (the locals cleared at 0x0852597e are what 0x08524b2f writes back), so
+    // whoever aims at it aims at the hull's origin.
+    if (lineClear(collider, eye, pos, skip)) { m.local = null; return true; }
     if (m.local && lineClear(collider, eye, bakedToWorld(collider, hull, m.local), skip)) return true;
     const local = hullSensePoint(collider, hull, this.random);
     if (local && lineClear(collider, eye, bakedToWorld(collider, hull, local), skip)) { m.local = local; return true; }
@@ -671,8 +763,8 @@ export class BotSenses {
       let seen = false;
       if (inView && hull >= 0) seen = this._retestHull(world.collider, eye, player, pos, m, hull);
       else if (inView) {
-        const ray = this._rays(world.collider, eye, player, pos, d);
-        if (ray) { seen = true; m.offset = ray.offset ?? m.offset ?? null; }
+        const ray = this._retestSoldier(world.collider, eye, player, pos, m);
+        if (ray) { seen = true; m.offset = ray.offset ?? m.offset ?? null; m.bone = ray.bone ?? null; }
       }
       if (seen) {
         m.seen = true; m.lost = false; m.lostAt = null; m.lastSeen = now;

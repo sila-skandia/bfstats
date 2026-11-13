@@ -703,6 +703,37 @@ export class WorldCollider {
         }
         return count + coarseCount > 0;
       },
+      /**
+       * The last `near`'s candidates cut down to the triangles that reach
+       * into a box given in a body's own frame: origin `c`, row axes `a`,
+       * bounds `lo`..`hi` (`body-statics.js` `narrowToHull`). A triangle
+       * wholly past one face of the box is dropped; every other is kept.
+       */
+      narrow(c, a, lo, hi) {
+        const s = world.statics;
+        if (!s) return;
+        const cut = (index, list, n) => {
+          const p = index.tris;
+          let kept = 0;
+          for (let k = 0; k < n; k++) {
+            const tri = list[k];
+            const j = tri * 9;
+            let out = false;
+            for (let axis = 0; axis < 3 && !out; axis++) {
+              const ax = a[axis][0], ay = a[axis][1], az = a[axis][2];
+              const v0 = (p[j] - c[0]) * ax + (p[j + 1] - c[1]) * ay + (p[j + 2] - c[2]) * az;
+              const v1 = (p[j + 3] - c[0]) * ax + (p[j + 4] - c[1]) * ay + (p[j + 5] - c[2]) * az;
+              const v2 = (p[j + 6] - c[0]) * ax + (p[j + 7] - c[1]) * ay + (p[j + 8] - c[2]) * az;
+              if ((v0 > hi[axis] && v1 > hi[axis] && v2 > hi[axis])
+                  || (v0 < lo[axis] && v1 < lo[axis] && v2 < lo[axis])) out = true;
+            }
+            if (!out) list[kept++] = tri;
+          }
+          return kept;
+        };
+        if (count) count = cut(s, candidates, count);
+        if (coarseCount && s.coarse) coarseCount = cut(s.coarse, coarseCandidates, coarseCount);
+      },
       // `owner` and `stepTop` were applied by `near`; `groups` is the probing
       // part's collision-group mask (`body-statics.js`).
       cast(ox, oy, oz, dx, dy, dz, maxDist, owner, stepTop, groups = 0) {

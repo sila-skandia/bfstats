@@ -38,6 +38,8 @@ import { damageModifier, materialDamage, roundAttackerMaterial } from './crash-d
  * who hit the human, and how), `occupancy`, `optOnFoot`, `optPilot`,
  * `raiseHitIndication` (optional: a headless runner has no crosshair),
  * `reportImpact` (optional: in a room, the server prices the landing instead),
+ * `seatRoundsFromServer` (optional: the room flies its seat guns itself, so
+ * the page's own seat round reports and marks nothing),
  * `showDamageTier`,
  * `soldier`, `soldierArmor`, `soldierBody` (optional: `gaits.json`'s, for the
  * blast's push), `soldierDead`, `soldierTemplateFor` (optional), `stepWrecks`,
@@ -525,12 +527,25 @@ export function createVehicleHits(page) {
       && !page.vehicleDamage.get(record.owner)?.destroyed;
   }
 
+  /** Whether a landed round left a seat's gun: its gun group is no hand's
+   *  (`group.firer` is a hand weapon's tag, `hand-weapon.js`; a bot
+   *  launcher's and a remote's too) and no replayed or remote copy. */
+  function isSeatRound(record) {
+    const group = record?.firerGroup;
+    return !!group && group.firer == null && !group.replay;
+  }
+
   /**
    * A round landed. Apply the direct hit, then the area pass if the round has
    * one (`damageType 1`: shells, bombs, grenades, the bazooka), and reconcile
    * every tier that moved on the same frame.
    */
   function applyVehicleHit(record) {
+    // A seat gun's round in a room that flies its own (`server/room-guns.mjs`;
+    // retail's server flies every round and its client draws, NET-15): this
+    // page's copy is the picture. The landing, the damage and the crosshair's
+    // marks (the `hitMark` row) are the server's.
+    if (page.reportImpact && page.seatRoundsFromServer && isSeatRound(record)) return;
     // Asked before any damage lands, as the engine asks before it prices the
     // round: the hit that wrecks a manned hull still marks.
     // On a real server (the relay) the server's own bool raises them
