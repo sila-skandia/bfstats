@@ -1162,3 +1162,66 @@ gliding. **In the data and drawn from a guess: viewer-side.**
   (`features/fhsweurope-extraction/README.md`, 2026-11-10).
 - **Tests**: `test_remote_gait.py`
   `test_a_mods_weapon_named_lower_state_is_the_vanilla_state_it_extends`.
+
+## 13. A grip's weapons that swing another clip (2026-11-13)
+
+Report, on `3cqup373fj` (manchuria-1945, FHSWEurope, recorded 2026-11-08 by
+Jan Paul): at 9:15 (t = 555) "they knife someone but there's no knife
+reaching". Jan Paul (pid 27) stabs `ahalol`, the gunner of a 15 cm Type96
+howitzer 1.2 m away, and the page drew him standing with his arm down.
+
+- **The data was complete.** The file has the anim table (28,403 states, build
+  stamp `Oct 18 2026 13:34:34`, after bf42plus `3979cd2`), the stab as
+  recorded torso states (`Ub_FireKnifeAllies1` at 554.47, `Ub_FireKnifeAllies4`
+  at 555.52), the `f`/`fire` rows for the swings and the kill
+  (`score` kind 3, weapon `scoldID7`, 555.64). The stab direction in the
+  `fire` rows, (0.852, 0, -0.524), points exactly at the gunner's seat
+  (+1.02, -0.62 m). Nothing recorder-side.
+- **The page did not draw it.** `audit_replay_states.mjs --from 553 --to 558`:
+  `upper fire 1 of 2 drawn`, the miss being `Ub_FireKnifeAllies4`, 555.55-556.45,
+  drawn `stand.upper`. Instrumenting `SoldierActions.fire` on the live page
+  (a route handing the page an edited `soldier-actions.js`): for Jan Paul it
+  ran in the standing stance and returned at once on
+  `rig.has('Ub_Fire') === false`.
+- **Why.** The Russian knife `scoldID7` aims on the `KnifeAxis` grip
+  (`gaitAssets.grip`) and swings the Allied knife's five
+  (`Ub_FireKnifeAllies1..5`, the hub it copied never being renamed:
+  `features/con-reader-spellings`). A grip bundle held one clip a name, so
+  `export_gait_clips` baked `Ub_Fire` from the grip's first weapon (the Axe:
+  `3pFirekatanaA.baf`, `weapons: [Axe, katana, pick]`) and logged every other
+  weapon of the grip as `plays X, not the grip's Y` and left it out. 180 such
+  errors in FHSWEurope's `gaits.json`, 42 of them knives, bayonets and clubs
+  (`scoldID7`, `scold`, `scoldWrenchID5`, `Nailclub`, `GermanShovel`,
+  `Knife_SVT40Bayonet`, `Knife_Type30Bayonet`, `Knife_SG98Bayonet`,
+  `PuukkoKnife`, ...); FHSW has 24. Vanilla, FH, DC, EoD, bf1918 and gcmod have
+  none. Every one of those weapons' stabs was invisible in a replay and in the
+  chase view.
+- **The fix.** `extract_pose.py` (`SWING_VARIANT_SEP`) bakes each further clip a
+  grip's weapons swing, or thrust, as `Ub_Fire~2`, `Ub_LieFire~2`, ... with its
+  own `states[...]["weapons"]` and rate. `soldier-actions.js`
+  `weaponSwingClips`, called by `foot-body.js` `footBodyClips`, hands a body the
+  variant that lists the weapon in his hand under the plain name, so
+  `SoldierActions`, the bot rig and the chase view are unchanged.
+  FHSWEurope's `KnifeAxis.gait.glb` now carries ten variants (Allied 22
+  weapons, JPN 13, GER 24, RUS 12, FRE, POL, GER43, ITA, FIN), `scoldID7` on
+  `Ub_Fire~2`.
+- **Checked** on the live page with the re-baked bundle and the new modules
+  routed over it: Jan Paul's `Ub_Fire` is drawn from 554.4 and again from 555.5
+  (the stroke that kills), `rig.has('Ub_Fire')` true. Tests:
+  `test_gait_actions.py`
+  `test_a_weapon_swinging_another_clip_gets_a_variant_of_its_own`,
+  `test_soldier_actions.py` `test_a_weapon_gets_the_swing_variant_that_lists_it`.
+- **Left to do by rule**: FHSW's tree has the same 24 stabs undrawn and wants
+  `python3 extract_pose.py --mod fhsw --gaits-only --out viewer/models/mods/fhsw/poses`
+  and a publish; FHSW is outside this request's scope (CLAUDE.md, mod scope).
+  FHSWEurope's grips only a level declares are not seen by `--gaits-only` and
+  carry no knife.
+- **The gliding at 4:40 was not reproduced.** Jan Paul's life there (nid 1782):
+  recorded `Lb_RunForwardPPSh` at about 5.8 m/s, with 0.5 s of
+  `Lb_RunBackwardPPSh`/`Lb_StrafeLeftPPSh` at 2.8 m/s around 279.2-280.1; a
+  sweep of every soldier life in the file finds no moving soldier recorded in a
+  standing state for 0.5 s or more at that time (143 such runs in the round,
+  all blast flights, `LieToCrouch` get-ups and seated or mounted men);
+  `audit_replay_states.mjs --from 270 --to 295`: every lower state drawn; the
+  page, played from 4:36 with Jan Paul followed, draws `run.lower` throughout
+  and his legs stride in the frames.

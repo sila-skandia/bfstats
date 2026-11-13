@@ -4,7 +4,7 @@
 
 import {
   DIE_MORPH, FAMILY_HALVES, MorphBlend, RECORDED_STATES, SoldierActions, STANCE_ENTRY,
-  VANILLA_STATES, actionOf, bundleClips, stanceEntryKey, stateInfo, stateMorph,
+  VANILLA_STATES, actionOf, bundleClips, weaponSwingClips, stanceEntryKey, stateInfo, stateMorph,
 } from './soldier-actions.js';
 
 const results = {};
@@ -404,6 +404,25 @@ function bone(angle, y) {
     vanilla: stateMorph(stateInfo(null, 'stand.upper')),
     unknown: stateMorph(stateInfo(null, 'Lb_NoSuchState')),
     noMorph: stateMorph(stateInfo({ userData: { speed: 1 } }, 'run.lower')),
+  };
+}
+
+// A grip's weapons that swing another clip than the first (`Ub_Fire~2`): the
+// weapon gets the variant that lists it, under the plain name, and the others
+// keep the plain clip. A variant never goes in under its own name.
+{
+  const swing = (name, weapons, speed) => ({
+    name, userData: { weapons, speed }, clone() { return { name: this.name, userData: this.userData, clone: this.clone }; },
+  });
+  const clips = [swing('run.upper'), swing('Ub_Fire', ['Axe']), swing('Ub_Fire~2', ['scoldID7', 'scold'], 1.0),
+                 swing('Ub_Fire~3', ['Nailclub'], 2.0)];
+  clips[0].userData = {};
+  const view = weapon => weaponSwingClips(clips, weapon, { 'Ub_Fire~3': 1.7 })
+    .map(c => ({ name: c.name, weapons: c.userData.weapons ?? null, speed: c.userData.speed ?? null }));
+  results.swingVariants = {
+    first: view('Axe'), second: view('scoldid7'), third: view('Nailclub'),
+    none: view('Colt'), plain: weaponSwingClips([clips[0], clips[1]], 'Colt').map(c => c.name),
+    kept: weaponSwingClips(clips, 'Axe')[1] === clips[1],
   };
 }
 

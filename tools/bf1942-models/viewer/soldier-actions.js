@@ -344,6 +344,44 @@ export function bundleClips(gltf) {
   return clips;
 }
 
+/**
+ * A grip bundle's clips as `weapon` sees them. The weapons of a grip need not
+ * swing the same clip (`extract_pose.py` `SWING_VARIANT_SEP`): the first is
+ * baked as `Ub_Fire`, each other one as `Ub_Fire~2`, `Ub_Fire~3`..., every
+ * clip listing the weapons that play it. A plain name whose list leaves the
+ * weapon out is replaced by the variant that lists it, a copy filed under the
+ * plain name, so the rest of the page asks for `Ub_Fire` and gets the swing
+ * its weapon has. A variant never goes in under its own name. `speeds` is the
+ * weapon's own rate table (`gaits.json` `stateMachine.weaponSpeeds`), whose
+ * entry for the variant becomes the copy's rate.
+ */
+export function weaponSwingClips(clips, weapon, speeds = null) {
+  const variants = clips.filter(c => c.name.includes('~'));
+  if (!variants.length) return clips;
+  const held = String(weapon ?? '').toLowerCase();
+  const plays = clip => Array.isArray(clip.userData?.weapons)
+    && clip.userData.weapons.some(w => String(w).toLowerCase() === held);
+  const out = [];
+  for (const clip of clips) {
+    if (clip.name.includes('~')) continue;
+    const listed = clip.userData?.weapons;
+    if (Array.isArray(listed) && !plays(clip)) {
+      const own = variants.find(v => v.name.startsWith(`${clip.name}~`) && plays(v));
+      if (own) {
+        const copy = own.clone();
+        copy.name = clip.name;
+        copy.userData = { ...own.userData };
+        const speed = speeds?.[own.name];
+        if (Number.isFinite(speed)) copy.userData.speed = speed;
+        out.push(copy);
+        continue;
+      }
+    }
+    out.push(clip);
+  }
+  return out;
+}
+
 /** The named-state bundles (`die`, `swim`, `parachute`, `explosion`, `hit`)
  *  describe their clips in the older shape, `{ speed, loop, morphFactor,
  *  returnTo }` under the bundle's own key; read as the same `{ speed, loop,
