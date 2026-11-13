@@ -479,7 +479,8 @@ function spawnTracer(guns, muzzle, group, bright, barrel = 0) {
     mesh = pool.pop() || tracerClone(group.tracerMesh);
     mesh.visible = true;
     if (data) {
-      lengthScale = Math.max(engineLength, 1e-3);
+      // Remaster mode draws the tail longer than the engine's (`stretch`).
+      lengthScale = Math.max(engineLength, 1e-3) * (globalThis.bfRemasterHooks?.tracer?.stretch ?? 1);
       acrossScale = 10;
     } else {
       lengthScale = acrossScale = Math.max(scaler * 0.04, 1);
@@ -581,6 +582,9 @@ function tracerClone(template) {
       : part.material.clone();
     for (const material of [part.material].flat()) {
       material.transparent = true;
+      // Remaster mode: a round's own copy of the streak glows as the gun's
+      // template does (a clone does not carry the template's glow).
+      globalThis.bfRemasterHooks?.tracer?.glow(material);
       fade.push({ material, opacity: material.opacity });
     }
   });

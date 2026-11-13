@@ -512,9 +512,10 @@ export function createLevelShading(page) {
    * `firstPerson` marks the arms rig and the weapon in hand (arms-rig.js).
    * The retail page draws them as it draws everything else here; remaster
    * mode draws them with this same combine instead of its own sun
-   * (remaster-materials.js `viewMaterial`).
+   * (remaster-materials.js `viewMaterial`). `cockpit` marks the seat's own
+   * cockpit (`shadeCockpit`), which remaster mode lights the same way.
    */
-  function bindDynamicShading(root, rule = null, { firstPerson = false } = {}) {
+  function bindDynamicShading(root, rule = null, { firstPerson = false, cockpit = false } = {}) {
     applyInstanceColors(root);
     const lit = page.extras.lighting || {};
     const amb = rule ? rule.floor : lit.ambient || [0.2, 0.2, 0.2];
@@ -611,7 +612,7 @@ export function createLevelShading(page) {
               floor: [0, 1, 2].map(i => Math.min(1, (amb[i] || 0) + (glob[i] || 0))),
               sun: diff,
             },
-            materialDiffuse: md === WHITE ? null : md, cube: env,
+            materialDiffuse: md === WHITE ? null : md, cube: env, cockpit,
           });
           lit.bfShade = { value: new THREE.Vector4(1, 1, 1, 0) };
           lit.bfEnv = !!env;
@@ -1111,7 +1112,7 @@ export function createLevelShading(page) {
         }
       }
     });
-    bindDynamicShading(root, cockpitRule());
+    bindDynamicShading(root, cockpitRule(), { cockpit: true });
     // The shaded originals were never drawn; free them rather than leave a
     // standard-material program's worth of texture references alive.
     for (const original of [...lit, ...additive.keys()]) original.dispose();

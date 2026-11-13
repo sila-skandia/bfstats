@@ -96,6 +96,7 @@ function cloneWithNodes(mat) {
  *     frond      the same, a tree's branch card (k from either side)
  *     lightmap   2 * tex * lightmap'
  *     terrain    art * shade                (the ground, retail unlit)
+ *     cockpit    the lit combine from the retail page's side, no shadow
  *     leaf       2 * tex * shade            (a leaf sprite, retail unlit)
  *     card       tex * shade                (the far tree card, retail unlit)
  *
@@ -119,9 +120,20 @@ function cloneWithNodes(mat) {
  * colour with its shadow already multiplied in, so the sun's term over the
  * light's own colour (`engineSunLin`) is `k`. The sky's image-based light and
  * the hemisphere are not read.
+ *
+ * Every other light is a flash, a blast or a fire (remaster-renderer.js's
+ * pool of point lights). Those are not part of `k`, which stops at the sun's
+ * full share: they lift the finished colour, `combine * (1 + flash)`, so an
+ * explosion brightens sunlit ground as well as what stands in shade, and
+ * keeps the texture doing it.
+ *
+ * `cockpit` is the seat the player sits in. Like the weapon in the hand it
+ * is lit from the retail page's side and takes no shadow: flying into the
+ * sun, every face of the dashboard is turned from it, and lit by the real
+ * sun the whole cockpit sat at the combine's floor, near black.
  */
 export const viewGain = uniform(1);
-const engineSunLin = uniform(new THREE.Vector3(1, 1, 1));
+export const engineSunLin = uniform(new THREE.Vector3(1, 1, 1));
 /** The DirectionalLight whose colour and intensity `k` is measured against. */
 let engineSunLight = null;
 export function bindEngineSun(light) {
@@ -131,6 +143,15 @@ export function bindEngineSun(light) {
     engineSunLin.value.set(Math.max(1e-3, c.r * i), Math.max(1e-3, c.g * i), Math.max(1e-3, c.b * i));
   });
 }
+/** Whether `lightNode` is the sun's (a lighting model's `direct` asks). */
+export const isEngineSun = lightNode => !!engineSunLight && lightNode?.light === engineSunLight;
+/** The direction the retail page lights a mesh from (level-shading.js
+ *  `bindDynamicShading`): what a seat's own cockpit is lit by. */
+const engineSeatDir = uniform(new THREE.Vector3(0, 1, 0));
+export function setSeatLight(x, y, z) { engineSeatDir.value.set(x, y, z).normalize(); }
+/** How far a flash's or a fire's light lifts a surface over its own combine:
+ *  1 is the light a face square to the sun takes from the sun. */
+const FLASH_LIFT = 1;
 /** What a leaf in shade keeps of its texture, against one in the sun. */
 export const LEAF_SHADE = 0.66;
 /** The share of the sun a leaf or a frond takes whichever way it faces. */
@@ -169,7 +190,16 @@ class EngineLightingModel extends THREE.LightingModel {
 
   direct({ lightDirection, lightColor, lightNode, reflectedLight }) {
     const ndl = normalView.dot(lightDirection);
-    if ((this.kind === 'lightmap' || this.kind === 'terrain') && lightNode?.light === engineSunLight) {
+    const foliage = this.kind === 'leaf' || this.kind === 'card' || this.kind === 'frond';
+    if (!isEngineSun(lightNode)) {
+      // A flash, a blast, a fire: kept apart from the sun's share (the
+      // specular slot is otherwise unused), for `finish` to lift by.
+      reflectedLight.directSpecular.addAssign(lightColor.mul(foliage ? ndl.abs() : ndl.clamp()));
+      return;
+    }
+    // The seat's own cockpit reads no light of the scene's.
+    if (this.kind === 'cockpit') return;
+    if (this.kind === 'lightmap' || this.kind === 'terrain') {
       // The bake (a wall's lightmap, the ground's painted art) holds the
       // surface's own N.L, its own shade and the sky's light on the side
       // turned from the sun; only a sun-facing texel is asked whether
@@ -192,18 +222,19 @@ class EngineLightingModel extends THREE.LightingModel {
     // behind it glows, so the sun's share is taken from either side, and
     // never under FOLIAGE_THROUGH of it. (Lit as an opaque wall, a palm
     // against the sun was a black cut-out.)
-    const share = this.kind === 'lit' || this.kind === 'lightmap' || this.kind === 'terrain' ? ndl.clamp()
-      : ndl.abs().mul(1 - FOLIAGE_THROUGH).add(FOLIAGE_THROUGH);
+    const share = foliage ? ndl.abs().mul(1 - FOLIAGE_THROUGH).add(FOLIAGE_THROUGH) : ndl.clamp();
     reflectedLight.directDiffuse.addAssign(lightColor.mul(share));
   }
 
   indirect() {}
 
   finish({ context }) {
-    const k = context.reflectedLight.directDiffuse.div(engineSunLin).clamp(0, 1);
+    const k = this.kind === 'cockpit'
+      ? vec3(max(dot(normalWorld, engineSeatDir), 0))
+      : context.reflectedLight.directDiffuse.div(engineSunLin).clamp(0, 1);
     const tex = sRGBTransferOETF(diffuseColor.rgb);
     let display;
-    if (this.kind === 'lit' || this.kind === 'frond') {
+    if (this.kind === 'lit' || this.kind === 'frond' || this.kind === 'cockpit') {
       // D3D clamps the vertex diffuse to [0, 1] before the stage's
       // modulate-2x, and saturates again after the multiply.
       const lit = min(vec3(1), materialReference('bfEngineFloor', 'vec3')
@@ -221,7 +252,9 @@ class EngineLightingModel extends THREE.LightingModel {
       const shade = mix(vec3(LEAF_SHADE), vec3(1), k);
       display = min(vec3(1), tex.mul(shade).mul(this.kind === 'leaf' ? 2 : 1));
     }
-    context.outgoingLight.rgb.assign(sRGBTransferEOTF(display).mul(viewGain));
+    // The flashes' light over the sun's own (its green, as the measure).
+    const flash = context.reflectedLight.directSpecular.div(engineSunLin.y).mul(FLASH_LIFT);
+    context.outgoingLight.rgb.assign(sRGBTransferEOTF(display).mul(viewGain).mul(vec3(1).add(flash)));
   }
 }
 
@@ -335,18 +368,18 @@ export function lightmapMaterial(source, lightmap) {
  * combine. `light` is the level's `{ floor, sun }` (the clamp's constant
  * part and the sun's diffuse, each `[r, g, b]`); `materialDiffuse` (ledger
  * DL-9) scales the sun's term; `cube` is the level's reflection cube for an
- * `envmap true` material, or null.
+ * `envmap true` material, or null; `cockpit` marks the seat's own cockpit.
  */
 const dynamicCache = new WeakMap();
-export function dynamicMaterial(source, { light, materialDiffuse = null, cube = null } = {}) {
+export function dynamicMaterial(source, { light, materialDiffuse = null, cube = null, cockpit = false } = {}) {
   const floor = light?.floor ?? [0.4, 0.4, 0.4];
   const sun = (light?.sun ?? [0.5, 0.5, 0.5]).map((c, i) => c * (materialDiffuse ? materialDiffuse[i] : 1));
-  const key = `${floor.join(',')}|${sun.join(',')}|${!!cube}`;
+  const key = `${floor.join(',')}|${sun.join(',')}|${!!cube}|${cockpit}`;
   if (cube) levelCube(cube);
   let byKey = dynamicCache.get(source);
   if (!byKey) dynamicCache.set(source, byKey = new Map());
   if (byKey.has(key)) return byKey.get(key);
-  const mat = engineFrom(source, 'lit');
+  const mat = engineFrom(source, cockpit ? 'cockpit' : 'lit');
   byKey.set(key, mat);
   mat.bfEngineFloor = new THREE.Vector3(...floor);
   mat.bfEngineSun = new THREE.Vector3(...sun);

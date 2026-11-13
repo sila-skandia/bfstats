@@ -16,7 +16,7 @@ import {
   smoothstep, texture, uniform, vec3, vec4,
 } from 'three/tsl';
 import { CSMShadowNode } from 'three/addons/csm/CSMShadowNode.js';
-import { bindEngineSun } from './remaster-materials.js';
+import { bindEngineSun, setSeatLight } from './remaster-materials.js';
 import { SHADOW_LAYER } from './remaster-shadow-proxies.js';
 
 const SHADOW_MAP = 2048;
@@ -191,6 +191,8 @@ export function createRemasterSky({ renderer, scene, camera, sun, hemi }) {
   function apply(extras = {}) {
     const a = atmosphereFor(extras);
     sunDir.copy(sunToward(extras.sunDirection));
+    // The retail page's side, for the seat's own cockpit (level-shading.js).
+    setSeatLight(-sunDir.x, sunDir.y, -sunDir.z);
     sun.color.setRGB(a.sunTint[0], a.sunTint[1], a.sunTint[2], THREE.SRGBColorSpace);
     sun.intensity = a.sunIntensity;
     sun.position.copy(sunDir).multiplyScalar(400);

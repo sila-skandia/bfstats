@@ -31,7 +31,11 @@ put inside the combine's sun term. Third (2026-11-13): "it looks nice, and
 it's smooth"; what they like is the water, the shadows, and most of all the
 flak gun's explosion; everything else looks about the same. So the remaster
 was packaged as the one toggle and everything that was off by default or
-only there for comparison was removed ("What was removed", below).
+only there for comparison was removed ("What was removed", below). Fourth
+(2026-11-13), asked for quick wins that make firing "punchier", the owner
+picked four and their order: brighter aircraft tracers, fires that flicker
+light, gun flashes sized by the gun, shadows on the water ("The four quick
+wins", below).
 
 ## Plan and progress
 
@@ -51,6 +55,11 @@ only there for comparison was removed ("What was removed", below).
 | A round thrown from the hand takes the world's material | done |
 | Simplified to the one toggle: relief maps, audio chain, height haze, physical sky and every comparison flag removed | done (2026-11-13) |
 | Two levels with before/after captures and frame times | done: Wake, Battle of Britain |
+| Aircraft tracers as lines of fire: hotter glow, longer streak, a floor under their width and their light | done (2026-11-13) |
+| A fire lights what is around it for as long as it burns, with a flicker | done (2026-11-13) |
+| A gun's flash sized by the gun, and a hot burst at a big gun's muzzle | done (2026-11-13) |
+| Ships, planes and piers shade the water | done (2026-11-13) |
+| Smoke as dense as the engine draws it | done (2026-11-13) |
 
 ## How to turn it on
 
@@ -266,6 +275,7 @@ its listed neighbours into a temporary folder.
 | `remaster-materials.js` | `EngineMaterial` and its lighting model (the engine's combines with the sun's shadow in them), the first-person rig's material, the proving ground's floor |
 | `remaster-shadow-proxies.js` | the merged static shadow casters |
 | `remaster-water.js` | the water |
+| `remaster-lights.js` | which effect bundle is a flash, a blast or a fire, and how strong (pure tables) |
 | `remaster-foliage.js` | leaf sprites, billboards, wind |
 
 The retail modules call in where they build their own look:
@@ -327,10 +337,17 @@ it: `k`, the sun's N.L against the real sun times the cascaded shadow.
 | leaf sprites | `2 * tex`, unlit | shaded to 0.66 by the shadow and the canopy's turn |
 | far tree cards | the strip, unlit | the same; its alpha is firmed for linear blending |
 
+A seat's own cockpit is a fourth lit kind (`cockpit`): the same combine with
+the retail page's light direction and no cast shadow, as the first-person
+arms have. Flying into the sun its frame and panel were a third darker than
+on the retail page, lit from the remaster's sun (behind the panel) and
+shadowed by the canopy over them.
+
 `floor` is `ambient + globalAmbient`, `sun` is `lighting.diffuse`. Three
 hands a lighting model each light's colour with its shadow multiplied in, so
 `k` is the sun's term over the light's own colour, and a flash light or an
-explosion's adds to it. The sky's image-based light and the hemisphere are
+explosion's is a lift over the finished colour (`FLASH_LIFT`: a light as
+strong on a face as the sun doubles it). The sky's image-based light and the hemisphere are
 not read by these surfaces. The result is handed the exposure to undo, so it
 reaches the screen as the combine left it. The first-person arms and weapon
 use the same combine with the retail page's light direction and no shadow
@@ -345,7 +362,10 @@ brighter than white (a flame's glow) is carried past the mix.
 is. The level's two colour layers and normal map scrolled as retail
 scrolls them, a finer procedural ripple, PBR reflection a little over water's
 2 %, the bed seen through Beer-Lambert absorption over the baked depth and the
-slant of the view, foam on the last third of a metre at the shore.
+slant of the view, foam on the last third of a metre at the shore. It takes
+the sun's cascaded shadow: a hull, a pier or a plane overhead shades the
+light scattered up from under the surface to 0.55 and cuts the sun's glint,
+and leaves the sky's reflection, as a shadow on real water does.
 
 **Foliage.** Leaf sprites rebuilt around their centres from the drawing
 camera's axes in the mesh's own space, so in the sun's shadow pass (which
@@ -366,7 +386,44 @@ tone-mapped with it. The tone curve is Khronos PBR Neutral's highlight
 shoulder without its black-level offset, at exposure 0.58. Additive effects
 (flames, flashes, tracers) are drawn three times brighter than their texture,
 so their cores bloom, and an explosion, a muzzle flash or a fire lights its
-surroundings through a pool of four point lights.
+surroundings through a pool of point lights.
+
+### The four quick wins (2026-11-13)
+
+![Tank gun, burning jeep, tracers, a ship's shadow](shots/wake_quick_wins.jpg)
+
+**Tracers.** The engine's streak is a 6 cm spike eight metres long. The page
+widens it to stay visible and dims it by as much, so a fighter's burst was
+faint specks, and each round's own copy of the streak had lost the glow its
+gun's template was given. In the remaster a round's streak glows four times
+hotter than a flame (`TRACER_GLOW` 12), is never thinner than 3.2 pixels,
+keeps at least 0.3 of its light however far it is, and trails 1.6 times the
+engine's length (`remasterHooks.tracer`, read by `round-launch.js`,
+`projectile-flight.js` and `gun-groups.js`).
+
+**Fires.** A burning vehicle's bundle (`e_WillyFire`, `e_PanzFire`,
+`e_fire4`: `remaster-lights.js` `FIRE`) is a light for as long as it burns:
+40 cd over 26 m, with a slow breath and two quicker flutters. Two lights,
+given each frame to the two fires nearest the eye within 160 m. A jeep burns
+below 6 hit points, a tank below its own threshold.
+
+**Gun flashes.** `FLASH_KINDS` sizes a flash by its gun: a rifle's is a
+lift (1.2 cd over 8 m for a twentieth of a second), an anti-aircraft gun's
+or a heavy machine gun's 16 cd, a tank's or a coastal gun's 90 cd over 30 m
+for an eighth of a second, a blast's 150 cd over 60 m. A big gun also draws
+a burst at the muzzle itself: a soft disc 2.8 m across, six times white at
+its centre, which the bloom spreads. The engine's own flash sprites add up
+in display space, where two half-bright layers are white; in linear light
+they are a dull orange. The burst and the light start when the bundle's
+first particle is born, which is where the muzzle is (the object a muzzle
+bundle rides is the gun's mount) and when the flash's own sprites appear.
+
+**Smoke.** A particle that covers what is behind it is blended by the engine
+in display space, where black smoke at half alpha halves the picture. In
+linear light the same alpha only takes a wall from 0.8 to 0.58: a burning
+jeep's column was a grey veil and its flames were washed out. A dark texel's
+alpha is raised to `1 - (1 - a)^2.2`; one as bright as a typical background
+keeps its own.
 
 ## Bugs found on the way
 
@@ -556,6 +613,26 @@ surroundings through a pool of four point lights.
   vehicles are lit from the wrong side is a question for the retail path
   (ledger DL rows, `features/level-lighting-laws`), not this branch.
 
+- **A material's opacity read inside a colour node is not that sprite's.**
+  The smoke blend was first written as a `colorNode` whose alpha was
+  `texture alpha * materialOpacity`. A burning jeep's smoke then drew as
+  black squares, and its death's last puffs (opacity 0.03) as one solid
+  black square over half the screen. Filmed through the death with eight
+  variants: every one that read `materialOpacity` in the colour node drew
+  the square, and none that left the opacity to the `opacityNode` did, which
+  is where three itself asks for it. Why the value differs there was not
+  found. The glow of additive sprites reads `materialOpacity` in a colour
+  node too; filmed both ways through the same death it looks the same, so it
+  was left as the owner approved it.
+- **A fire's name.** The fire lights were first matched on `/fire$/`, which
+  missed `e_fire4` (the commonest burning bundle) and caught
+  `e_scrapmetal_Spitfire`. And the nearest-fires pick measured from
+  `camera.position`, which is local to the camera's rig: on foot it was
+  400 m from the eye and no fire ever lit.
+- **A muzzle bundle's object is the gun's mount.** The first burst was drawn
+  at the object the bundle is attached to, inside the Sherman's turret. The
+  bundle's first particle is at the barrel's end.
+
 ## What looks better
 
 - Light has a direction: buildings, towers, girders, palms and vehicles cast
@@ -567,7 +644,12 @@ surroundings through a pool of four point lights.
 - The water reflects the sky and the sun, shows the sand in the shallows,
   deepens to the level's deep colour, and foams at the shore.
 - Explosions and muzzle flashes are light: HDR cores, bloom, a flash of light
-  on the ground and walls around them.
+  on the ground and walls around them, sized by the gun. A tank's main gun
+  lights its own hull and the sand under the barrel.
+- A fighter's guns draw lines of fire to the target.
+- A burning vehicle flickers light onto the ground and whatever stands by it,
+  under a column of smoke as black as the engine's.
+- Ships and piers shade the sea.
 - Trees sway, leaves flutter, and leaves cast leaf-shaped shadows.
 - Contact shadows under eaves, in doorways and where objects meet the ground.
 
@@ -583,7 +665,11 @@ These are choices, not open faults.
 - **The first-person arms and weapon take no shadow**, and are lit from the
   retail page's side (the owner's call; see the bugs above).
 - **A frame costs about twice retail's** (9.6 to 18.7 ms against 3.8 to 6.9
-  on this machine).
+  on this machine). The four quick wins of 2026-11-13 added nothing
+  measurable: the build before them and the build with them, timed back to
+  back on three Wake views, twice, read 16.2 / 15.7 / 12.4 and 15.7 / 15.0 /
+  11.7 ms against 16.5 / 15.7 / 12.2 and 16.6 / 15.7 / 12.1 (a loaded
+  machine, so both sit above the table's numbers).
 
 ## What was removed (2026-11-13)
 
@@ -606,6 +692,7 @@ that has it.
 - `tools/bf1942-models/viewer/video-options.js`, `play/controls-screen.js`
   (the REMASTER row)
 - `tools/bf1942-models/tests/test_remaster_mode.py`,
+  `tools/bf1942-models/tests/test_remaster_lights.py`,
   `tools/bf1942-models/tests/perf/remastershot.mjs`,
   `tools/bf1942-models/tests/perf/remaster_explosions.mjs`
 - `features/remaster-browser/shots/` (the composites above)

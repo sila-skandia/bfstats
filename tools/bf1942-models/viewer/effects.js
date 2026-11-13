@@ -465,7 +465,7 @@ export class EffectPlayer {
     let soundPosition = position;
     let follow = null;
     // Remaster mode: a flash or blast lights what is around it for a moment.
-    remasterHooks.flash?.(name, position, attach?.object);
+    const burst = remasterHooks.flash?.(name, position, attach?.object) ?? null;
     // `silent` skips the sound half altogether, closures and all.
     if (attach?.object && !silent) {
       attach.object.updateWorldMatrix(true, false);
@@ -517,6 +517,8 @@ export class EffectPlayer {
     run.pooled = pooled;
     run.ambient = !!ambient;
     run.sampled = false;
+    // Remaster mode: a big gun's burst of light, placed by its first particle.
+    run.remasterBurst = burst;
     run.world = this.#worldOf(attach?.object);
     if (attach?.object) {
       attach.object.getWorldPosition(run.origin);
@@ -527,6 +529,8 @@ export class EffectPlayer {
       const basis = basisFromNormal(normal || [0, 1, 0]) || basisFromNormal([0, 1, 0]);
       frameQuaternion(basis, run.quaternion);
     }
+    // Remaster mode: a fire lights what is around it for as long as it burns.
+    remasterHooks.fire?.(run);
     const distance = this.camera ? this.camera.getWorldPosition(_camPos).distanceTo(run.origin) : 0;
     // `view` pins the observer for this one play: a gun's muzzle bundle is
     // seen from the seat only by the man in it (round-launch.js
@@ -918,6 +922,7 @@ export class EffectPlayer {
     this.particles.push(p);
     this.spawned++;
     this.#draw(p);
+    if (run.remasterBurst) { run.remasterBurst(p.position); run.remasterBurst = null; }
   }
 
   /**

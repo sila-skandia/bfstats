@@ -281,7 +281,7 @@ export function collectGroups(guns, root, options = {}) {
           material.transparent = true;
           material.depthWrite = false;
           material.needsUpdate = true;
-          remasterHooks.glow?.(material);
+          remasterHooks.tracer?.glow(material);
         }
       });
     }

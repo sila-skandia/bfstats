@@ -4,6 +4,7 @@
 // 'three/webgpu' and 'three/tsl', which only the remaster import map names.
 
 import * as THREE from 'three/webgpu';
+import { FIRE, fireFlicker, flashKind, isFire } from './remaster-lights.js';
 
 /**
  * A WebGPU renderer, initialised (its device is up) before the page goes on.
@@ -193,39 +194,69 @@ export async function createRemasterScene({ renderer, scene, camera, sun, hemi }
   // (a muzzle's, a tracer) keeps the plain multiple: its shape is its
   // geometry, and the owner called the AA gun's "beautiful" as it is.
   const GLOW = 3;
+  const TRACER_GLOW = 12;
   const addsLight = m => m.blending === THREE.AdditiveBlending
     || (m.blending === THREE.CustomBlending && m.blendDst === THREE.OneFactor);
-  remasterHooks.glow = (m, { sprite = false } = {}) => {
-    if (!m || m.remasterGlow || !addsLight(m)) return;
+  // Smoke is the other half. A particle that covers what is behind it
+  // (SrcAlpha / InvSrcAlpha) is blended by the engine in display space,
+  // where black smoke at half alpha halves the picture. In this frame's
+  // linear light the same alpha takes the wall behind it from 0.8 to 0.58:
+  // a burning jeep's column was a faint grey veil, and its flames, with
+  // nothing dark behind them, were washed out. A dark texel's alpha is
+  // raised to `1 - (1 - a)^2.2`, which over any background is what the
+  // engine's blend shows for black; a texel as bright as a typical
+  // background (0.45 and up) keeps its own, where the two blends agree.
+  const coversDark = m => m.blending === THREE.NormalBlending
+    || (m.blending === THREE.CustomBlending && m.blendSrc === THREE.SrcAlphaFactor && m.blendDst === THREE.OneMinusSrcAlphaFactor);
+  function smoke(m) {
+    m.remasterGlow = true;
+    // Asked in the opacity node, where three asks for the material's
+    // opacity itself: read inside a colour node it came back as some other
+    // sprite's, and a death's smoke at 0.03 drew as a black square.
+    const d = tsl.diffuseColor;
+    const a = d.a.mul(tsl.materialOpacity).clamp(0, 1);
+    const dark = tsl.float(1).sub(tsl.float(1).sub(a).pow(2.2));
+    const lum = tsl.sRGBTransferOETF(d.rgb.max(0)).dot(tsl.vec3(0.2126, 0.7152, 0.0722)).clamp(0, 1);
+    m.opacityNode = tsl.mix(dark, a, tsl.smoothstep(0, 0.45, lum)).div(d.a.max(1e-4));
+    m.needsUpdate = true;
+  }
+  remasterHooks.glow = (m, { sprite = false, gain = GLOW } = {}) => {
+    if (!m || m.remasterGlow) return;
+    if (!addsLight(m)) {
+      if (sprite && m.transparent && coversDark(m) && !(m.alphaTest > 0)) smoke(m);
+      return;
+    }
     m.remasterGlow = true;
     const c = tsl.materialColor;
     const byAlpha = m.blending === THREE.AdditiveBlending || m.blendSrc === THREE.SrcAlphaFactor;
     if (sprite && byAlpha && !(m.alphaTest > 0)) {
       const display = tsl.sRGBTransferOETF(c.rgb).mul(c.a).mul(tsl.materialOpacity).clamp(0, 1);
-      m.colorNode = tsl.vec4(tsl.sRGBTransferEOTF(display).mul(GLOW), 1);
+      m.colorNode = tsl.vec4(tsl.sRGBTransferEOTF(display).mul(gain), 1);
       m.opacityNode = tsl.float(1);
     } else {
-      m.colorNode = tsl.vec4(c.rgb.mul(GLOW), c.a);
+      m.colorNode = tsl.vec4(c.rgb.mul(gain), c.a);
     }
     m.needsUpdate = true;
   };
-  // Light from a flash or a blast (effects.js `play`): a pool of point lights
-  // that is always in the scene, dark until used, since adding or removing a
-  // light recompiles every lit material. A muzzle flash lights its
-  // surroundings for a few hundredths of a second, an explosion for half a
-  // second, fading as the square of the time left.
-  // Intensities against the sun's (a flat sunlit patch takes about 1.2 of
-  // its albedo): a muzzle flash adds ~0.4 at 1.5 m and fades within a few
-  // metres, an explosion ~1.5 at 10 m. By night they would be all the light
-  // there is; by day a flash is a lift, not a floodlight (at 70 cd the
-  // player's own rifle bleached the sand at their feet white).
-  // A round's impact (`e_ExplDrySand`, `e_ExplWindow`, ricochets) is dust,
-  // not fire, and lights nothing: matched first and dropped.
-  const FLASH_KINDS = [
-    { test: /expl(drysand|frozensnow|window|small)|collision|richo|ricoch|scrap/i, intensity: 0 },
-    { test: /bomb|granadeexpl|groundexpl|waterexpl|expl(armor|bazooka|boatarmor|gas|ani)|torpedo/i, intensity: 150, range: 60, life: 0.45, color: 0xffb070 },
-    { test: /muzz|fire$/i, intensity: 1.2, range: 8, life: 0.05, color: 0xffc890 },
-  ];
+  // Tracers (round-launch.js, projectile-flight.js). The engine's streak is
+  // a 6 cm spike eight metres long, and the page keeps the light it puts on
+  // screen honest: widened to stay visible, it is dimmed by as much, so a
+  // burst from a fighter was faint specks, and each round's own copy of the
+  // streak had lost the glow its gun's template was given. Here a round's
+  // streak glows hotter than a flame (its core blooms), keeps at least
+  // `coverage` of its light however far it is, is never thinner on screen
+  // than `minPx`, and trails `stretch` times the engine's length: a line
+  // of fire from the guns to the target.
+  remasterHooks.tracer = {
+    glow: m => remasterHooks.glow(m, { gain: TRACER_GLOW }),
+    stretch: 1.6,
+    coverage: 0.3,
+    minPx: 3.2,
+  };
+  // Light from a flash, a blast or a fire (effects.js `play`): a pool of
+  // point lights that is always in the scene, dark until used, since adding
+  // or removing a light recompiles every lit material. Which bundle lights
+  // what, and how strongly, is remaster-lights.js.
   const flashes = [];
   for (let i = 0; i < 4; i++) {
     const l = new THREE.PointLight(0xffb070, 0, 60, 2);
@@ -234,13 +265,74 @@ export async function createRemasterScene({ renderer, scene, camera, sun, hemi }
     scene.add(l);
     flashes.push({ light: l, t: 0, life: 1, peak: 0 });
   }
+  // Fires: two lights, given each frame to the two fires nearest the eye.
+  const fireLights = [];
+  for (let i = 0; i < 2; i++) {
+    const l = new THREE.PointLight(FIRE.color, 0, FIRE.range, 2);
+    l.castShadow = false;
+    l.userData.remasterFlash = true;
+    scene.add(l);
+    fireLights.push(l);
+  }
+  const fires = new Set();
+  /** A run effects.js has just started: kept while it burns, if it is a fire. */
+  remasterHooks.fire = run => {
+    if (!run?.origin || !isFire(run.name)) return;
+    run.remasterFlicker ??= Math.random() * 100;
+    fires.add(run);
+  };
+  const _nearest = [];
+  const _eye = new THREE.Vector3();
+  function tickFires(seconds) {
+    _nearest.length = 0;
+    _eye.setFromMatrixPosition(camera.matrixWorld);
+    for (const run of fires) {
+      // A pooled run is reused under another name once its fire is out.
+      if (!run.alive || run.stopped || !isFire(run.name)) { fires.delete(run); continue; }
+      const d2 = run.origin.distanceToSquared(_eye);
+      if (d2 < FIRE.reach * FIRE.reach) _nearest.push({ run, d2 });
+    }
+    _nearest.sort((a, b) => a.d2 - b.d2);
+    fireLights.forEach((light, i) => {
+      const pick = _nearest[i];
+      if (!pick) { light.intensity = 0; return; }
+      const { run } = pick;
+      light.position.set(run.origin.x, run.origin.y + 1.2, run.origin.z);
+      light.updateMatrixWorld();
+      light.intensity = FIRE.intensity * fireFlicker(seconds + run.remasterFlicker);
+    });
+  }
+  // A big gun's flash is also a burst of light at the muzzle itself: a soft
+  // disc `burst` metres across, hotter than white for the bloom, gone with
+  // the flash's light. The engine's own flash sprites add up in display
+  // space, where two half-bright layers are white; in this frame's linear
+  // light they are a dull orange, and a tank's main gun read as weaker than
+  // on the retail page. Four discs, as there are four flash lights.
+  const BURST_PEAK = 6;
+  const bursts = flashes.map(() => {
+    const strength = tsl.uniform(0);
+    const material = new THREE.SpriteNodeMaterial();
+    material.transparent = true;
+    material.depthWrite = false;
+    material.blending = THREE.AdditiveBlending;
+    material.fog = false;
+    const edge = tsl.float(1).sub(tsl.uv().sub(0.5).length().mul(2)).clamp(0, 1);
+    material.colorNode = tsl.vec4(tsl.vec3(1, 0.8, 0.5).mul(edge.mul(edge).mul(edge)).mul(strength), 1);
+    const sprite = new THREE.Sprite(material);
+    sprite.visible = false;
+    sprite.frustumCulled = false;
+    sprite.userData.remasterFlash = true;
+    scene.add(sprite);
+    return { sprite, strength, size: 0 };
+  });
   let flashNext = 0;
   const _flashAt = new THREE.Vector3();
   remasterHooks.flash = (name, position, object = null) => {
-    if (!name || (!position && !object)) return;
-    const kind = FLASH_KINDS.find(k => k.test.test(name));
-    if (!kind?.intensity) return;
-    const f = flashes[flashNext++ % flashes.length];
+    if (!position && !object) return;
+    const kind = flashKind(name);
+    if (!kind) return;
+    const slot = flashNext++ % flashes.length;
+    const f = flashes[slot];
     // A muzzle bundle plays attached to its gun, with no position of its own.
     if (!position) { object.updateWorldMatrix(true, false); object.getWorldPosition(_flashAt); }
     const p = !position ? _flashAt : position.isVector3 ? position : { x: position[0], y: position[1], z: position[2] };
@@ -251,22 +343,44 @@ export async function createRemasterScene({ renderer, scene, camera, sun, hemi }
     f.peak = kind.intensity;
     f.life = kind.life;
     f.t = kind.life;
+    const b = bursts[slot];
+    b.size = kind.burst ?? 0;
+    b.sprite.visible = false;
+    if (!b.size) return null;
+    // The bundle's first particle says where the muzzle is: the object a
+    // muzzle bundle rides is the gun's mount, a barrel's length behind it.
+    // The flash's clock starts again there, so the light and the burst are
+    // seen with the flash's own sprites however long the emitter waited.
+    const claim = f.claim = (f.claim ?? 0) + 1;
+    return at => {
+      if (f.claim !== claim) return;
+      f.t = f.life;
+      b.sprite.position.set(at[0], at[1], at[2]);
+      b.sprite.scale.setScalar(b.size);
+      b.sprite.updateMatrixWorld();
+      b.sprite.visible = true;
+    };
   };
   let lastFlashTick = performance.now();
   function tickFlashes() {
     const now = performance.now();
     const dt = Math.min(0.1, (now - lastFlashTick) / 1000);
     lastFlashTick = now;
-    for (const f of flashes) {
-      if (f.t <= 0) { f.light.intensity = 0; continue; }
+    flashes.forEach((f, i) => {
+      const b = bursts[i];
+      if (f.t <= 0) { f.light.intensity = 0; b.sprite.visible = false; b.size = 0; return; }
       f.t -= dt;
       const left = Math.max(0, f.t / f.life);
       f.light.intensity = f.peak * left * left;
-    }
+      // The disc swells a little as it fades, as a puff of burning gas does.
+      b.strength.value = BURST_PEAK * left * left;
+      if (b.size) { b.sprite.scale.setScalar(b.size * (1.25 - 0.25 * left)); b.sprite.updateMatrixWorld(); }
+    });
+    tickFires(now / 1000);
   }
 
   // The tracer material is a module constant, built before this renderer.
-  import('./round-visuals.js').then(r => remasterHooks.glow(r.tracerMaterial)).catch(() => {});
+  import('./round-visuals.js').then(r => remasterHooks.tracer.glow(r.tracerMaterial)).catch(() => {});
 
   renderer.toneMappingExposure = 0.58;
   // The engine-combine surfaces are display-referred: handed the exposure to undo.
@@ -562,6 +676,9 @@ export async function createRemasterScene({ renderer, scene, camera, sun, hemi }
 
   const api = {
     atmosphere,
+    /** For the captures and tests: the fires alight and each light's strength. */
+    lights: () => ({ fires: [...fires].map(r => r.name), fire: fireLights.map(l => +l.intensity.toFixed(1)),
+      flash: flashes.map(f => +f.light.intensity.toFixed(1)), bursts: bursts.map(b => b.sprite.visible) }),
     /** After a level is up: its sky, sun, fog and shadow flags. */
     levelLoaded(extras, root) {
       atmosphere.apply(extras);

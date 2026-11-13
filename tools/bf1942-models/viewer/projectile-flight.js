@@ -677,7 +677,8 @@ export function advanceTracers(guns, dt) {
       // old uniform scale in `lengthScale`.
       const real = tracer.acrossScale || tracer.lengthScale;
       const distance = tracer.mesh.position.distanceTo(guns.camera.position);
-      const floor = (distance * metresPerPxAt1m * TRACER_MIN_SCREEN_PX)
+      // (Remaster mode asks for a wider floor, `minPx`.)
+      const floor = (distance * metresPerPxAt1m * (globalThis.bfRemasterHooks?.tracer?.minPx ?? TRACER_MIN_SCREEN_PX))
         / tracer.width;
       const across = Math.max(real, floor);
       tracer.mesh.scale.set(across, across, drawnLength(tracer));
@@ -686,7 +687,9 @@ export function advanceTracers(guns, dt) {
       // floor drew a converged stream as two bright 2.5 px lines carrying on
       // hundreds of metres past the crossing; retail's real 0.3 m streak goes
       // to faint specks there (a Zero's burst, owner capture 2026-09-26).
-      const coverage = real / across;
+      // Remaster mode keeps a floor under it (`coverage`): a far streak is
+      // a line of light there, not a speck.
+      const coverage = Math.max(real / across, globalThis.bfRemasterHooks?.tracer?.coverage ?? 0);
       for (const fade of tracer.mesh.userData.tracerFade ?? []) {
         fade.material.opacity = fade.opacity * coverage;
       }

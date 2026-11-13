@@ -14,13 +14,49 @@
 //   (red first, then green): the blend's alpha comes from the baked depth
 //   and the slant of the view, so a beach shows sand under a hand of water
 //   and the lagoon deepens to the level's deep colour;
-// - foam where the water is thin against the shore.
+// - foam where the water is thin against the shore;
+// - the sun's shadow: a plane low over the lagoon, a landing craft, a
+//   carrier and a palm on the shore all shade the water under them. The
+//   sun's glint goes (the renderer's own shadowed light) and the light the
+//   water scatters back is cut to SHADE of itself; the sky's reflection
+//   stays, as it does on real water.
 
 import * as THREE from 'three/webgpu';
+import { engineSunLin, isEngineSun } from './remaster-materials.js';
 import {
   clamp, exp, float, max, mix, mx_noise_vec3, normalize, positionWorld, pow, smoothstep, texture, time,
   transformNormalToView, vec2, vec3, dot, positionViewDirection, sRGBTransferEOTF, sRGBTransferOETF,
 } from 'three/tsl';
+
+/** What water in a cast shadow keeps of its own scattered light. */
+const SHADE = 0.55;
+
+/**
+ * The water's material: three's physical one, with the scattered light added
+ * inside the lighting model instead of as an emissive, so it can be cut by
+ * the sun's shadow. three hands a lighting model each light's colour with
+ * its shadow multiplied in; the sun's over its own colour is how much of the
+ * sun reaches this fragment.
+ */
+class WaterMaterial extends THREE.MeshPhysicalNodeMaterial {
+  setupLightingModel(builder) {
+    const model = super.setupLightingModel(builder);
+    const material = this;
+    const direct = model.direct.bind(model);
+    const finish = model.finish.bind(model);
+    let sunlit = null;
+    model.direct = (data, b) => {
+      if (isEngineSun(data.lightNode)) sunlit = data.lightColor.y.div(engineSunLin.y).clamp(0, 1);
+      return direct(data, b);
+    };
+    model.finish = b => {
+      finish(b);
+      const scatter = material.bfScatterNode;
+      if (scatter) b.context.outgoingLight.rgb.addAssign(scatter.mul(sunlit ? mix(float(SHADE), float(1), sunlit) : float(1)));
+    };
+    return model;
+  }
+}
 
 const lin = (rgb, fallback) => {
   const c = new THREE.Color().setRGB(...(rgb || fallback), THREE.SRGBColorSpace);
@@ -33,7 +69,7 @@ const lin = (rgb, fallback) => {
  */
 export function remasterWaterMaterial({ w, layer1, layer2, normal, depthTex, worldSize, maxDepth }) {
   // Physical, for water's own reflectance (IOR 1.33: 2 % head-on).
-  const mat = new THREE.MeshPhysicalNodeMaterial();
+  const mat = new WaterMaterial();
   mat.ior = 1.333;
   // A little over water's 2 %: retail's stand-in reflection was stronger,
   // and the sea read dark from a height against it.
@@ -98,7 +134,8 @@ export function remasterWaterMaterial({ w, layer1, layer2, normal, depthTex, wor
   // ramp, lit by the sky.
   const scatter = base.mul(1.5);
   mat.colorNode = mix(vec3(0), vec3(0.8), foam);
-  mat.emissiveNode = scatter.mul(float(1).sub(fresnel)).mul(float(1).sub(foam));
+  // Added by the lighting model (`WaterMaterial`), under the sun's shadow.
+  mat.bfScatterNode = scatter.mul(float(1).sub(fresnel)).mul(float(1).sub(foam));
   mat.opacityNode = clamp(float(1).sub(seeThrough).max(fresnel).max(foam), 0.35, 0.97);
   return mat;
 }

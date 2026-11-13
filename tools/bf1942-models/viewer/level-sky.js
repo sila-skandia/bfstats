@@ -240,6 +240,8 @@ export function createLevelSky(page) {
       // every palm that stood against it: the crown above the horizon and
       // the foot on the sand, and water where the trunk met the sea.
       waterObj.renderOrder = -1;
+      // It takes the sun's shadow (remaster-water.js) and casts none.
+      waterObj.receiveShadow = true;
       return;
     }
     const env = page.extras.envmapTexture === 'texture/defaultTexture'
