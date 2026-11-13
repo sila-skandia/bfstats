@@ -62,6 +62,8 @@ function pageBase() {
  * in so the harness can watch the calls; `onProgress` hears `{ done, total,
  * bytes }` as requests settle, for a loader that wants to say how much is left.
  */
+import { textureUrl } from './texture-url.js';
+
 export function createAssetPrefetch({ fetcher = null, onProgress = null } = {}) {
   const doFetch = fetcher ?? globalThis.fetch?.bind(globalThis);
   // Every URL this page has already asked for, once per page. A level switch
@@ -147,7 +149,9 @@ export function createAssetPrefetch({ fetcher = null, onProgress = null } = {}) 
       const url = new URL(file, levelBase);
       if (asked.has(url.pathname)) continue;
       asked.add(url.pathname);
-      urls.push(url.href);
+      // The same URL the loader will ask for (texture-url.js), or the
+      // prefetch warms a key nothing reads.
+      urls.push(textureUrl(url.href));
     }
     state.total = urls.length;
     queue = urls;
