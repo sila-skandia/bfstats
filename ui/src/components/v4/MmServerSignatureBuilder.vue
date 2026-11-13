@@ -1,31 +1,34 @@
 <script setup lang="ts">
 import { computed, ref, watch, onUnmounted } from 'vue'
-
-type BannerStyle = 'reticle' | 'hologram' | 'waveform' | 'console'
+import MmSignatureArtPicker from './MmSignatureArtPicker.vue'
+import { useSignatureCatalogue } from '@/composables/useSignatureCatalogue'
 
 interface Props {
   serverName: string
+  /** The server's bflist game id, so the picker can show its own mod's scenes. */
+  gameId?: string
 }
 
 const props = defineProps<Props>()
 
-const styles: { id: BannerStyle; label: string; sub: string }[] = [
-  { id: 'reticle', label: 'Reticle', sub: 'Targeting HUD overlay' },
-  { id: 'hologram', label: 'Hologram', sub: 'Projected terrain grid' },
-  { id: 'waveform', label: 'Waveform', sub: '24h population signal' },
-  { id: 'console', label: 'Console', sub: 'Command ops readout' },
-]
-
-// Output sizes (aspect locked to the renderer's 960×200). Width is what forums key off —
+// Output sizes (aspect locked to the renderer's 800×200). Width is what forums key off —
 // smaller fits sites that cap signature dimensions, larger reads big and stays crisp on 4K.
 const sizes: { width: number; height: number; label: string; sub: string }[] = [
-  { width: 640, height: 133, label: 'Small', sub: '640×133' },
-  { width: 960, height: 200, label: 'Medium', sub: '960×200' },
-  { width: 1280, height: 267, label: 'Large', sub: '1280×267' },
+  { width: 640, height: 160, label: 'Small', sub: '640×160' },
+  { width: 800, height: 200, label: 'Medium', sub: '800×200' },
+  { width: 1280, height: 320, label: 'Large', sub: '1280×320' },
 ]
 
-const selectedStyle = ref<BannerStyle>('reticle')
-const selectedWidth = ref(960)
+// "" leaves the mod to the server: the signature wears whatever mod it runs.
+const selectedMod = ref('')
+const selectedScene = ref('')
+const selectedWidth = ref(800)
+
+const { mods } = useSignatureCatalogue()
+const ownMod = computed(() => {
+  const game = (props.gameId ?? '').toLowerCase()
+  return mods.value.find(m => m.gameIds.includes(game) || m.id === game)?.id ?? 'bf1942'
+})
 const showTickets = ref(true)
 
 const selectedSize = computed(() => sizes.find((s) => s.width === selectedWidth.value) ?? sizes[1])
@@ -57,7 +60,8 @@ const markdownImg = computed(() => `![${props.serverName}](${shareUrl.value})`)
 
 function buildUrl(relative: boolean, cacheBust?: number): string {
   const params = new URLSearchParams()
-  params.set('style', selectedStyle.value)
+  if (selectedMod.value) params.set('mod', selectedMod.value)
+  if (selectedScene.value) params.set('scene', selectedScene.value)
   params.set('w', String(selectedWidth.value))
   if (!showTickets.value) params.set('tickets', 'false')
   if (cacheBust !== undefined) params.set('_t', String(cacheBust))
@@ -93,8 +97,9 @@ const shareRows = computed(() => [
       <div class="mm-eyebrow mm-eyebrow--strong">Server signature</div>
       <h2 class="mm-h2 mm-sig__title">Mint a live status banner</h2>
       <p class="mm-sig__sub">
-        A self-updating PNG for forum signatures and embeds — shows current player
-        count, map, server IP, and the live team ticket score. Refreshes on every load.
+        A self-updating PNG for forum signatures and embeds: current player count, map,
+        server IP and the live team ticket score, over the current map's loading screen,
+        with a soldier, tank or aircraft from your mod mid-fight. Refreshes on every load.
       </p>
     </header>
 
@@ -115,27 +120,20 @@ const shareRows = computed(() => [
         </div>
       </div>
       <div class="mm-sig__preview-meta">
-        <span class="mm-chip">{{ selectedStyle }}</span>
+        <span class="mm-chip">{{ selectedMod || ownMod }} / {{ selectedScene || 'default' }}</span>
         <span class="mm-eyebrow">Auto-refreshes every 30s · PNG</span>
       </div>
     </div>
 
     <div class="mm-sig__controls">
       <div class="mm-sig__block">
-        <div class="mm-eyebrow">01 · Style</div>
-        <div class="mm-sig__styles">
-          <button
-            v-for="style in styles"
-            :key="style.id"
-            type="button"
-            class="mm-sig__style"
-            :class="{ 'is-active': selectedStyle === style.id }"
-            @click="selectedStyle = style.id"
-          >
-            <span class="mm-sig__style-label">{{ style.label }}</span>
-            <span class="mm-sig__style-sub">{{ style.sub }}</span>
-          </button>
-        </div>
+        <div class="mm-eyebrow">01 · Mod and scene</div>
+        <MmSignatureArtPicker
+          v-model:mod="selectedMod"
+          v-model:scene="selectedScene"
+          auto-label="Server's mod"
+          :auto-mod="ownMod"
+        />
         <button
           type="button"
           class="mm-sig__toggle"
@@ -256,52 +254,7 @@ const shareRows = computed(() => [
 
 .mm-sig__block { display: flex; flex-direction: column; gap: 10px; }
 
-.mm-sig__styles {
-  display: grid;
-  grid-template-columns: repeat(4, 1fr);
-  gap: 10px;
-}
 
-.mm-sig__style {
-  display: flex;
-  flex-direction: column;
-  gap: 4px;
-  align-items: flex-start;
-  background: transparent;
-  border: 1px solid var(--mm-rule);
-  border-radius: 2px;
-  padding: 12px 14px;
-  cursor: pointer;
-  text-align: left;
-  transition: border-color 0.12s ease, background-color 0.12s ease;
-}
-
-.mm-sig__style:hover {
-  border-color: var(--mm-ink);
-  background: var(--mm-bg-soft);
-}
-
-.mm-sig__style.is-active {
-  border-color: var(--mm-ink);
-  background: var(--mm-ink);
-  color: var(--mm-bg);
-}
-
-.mm-sig__style-label {
-  font-family: var(--mm-font-display);
-  font-size: 14px;
-  font-weight: 500;
-}
-
-.mm-sig__style-sub {
-  font-family: var(--mm-font-mono);
-  font-size: 10px;
-  letter-spacing: 0.06em;
-  text-transform: uppercase;
-  color: var(--mm-ink-muted);
-}
-
-.mm-sig__style.is-active .mm-sig__style-sub { color: var(--mm-bg-mute); }
 
 .mm-sig__toggle {
   display: flex;
@@ -442,7 +395,6 @@ const shareRows = computed(() => [
 }
 
 @media (max-width: 720px) {
-  .mm-sig__styles { grid-template-columns: repeat(2, 1fr); }
   .mm-sig__share-row { grid-template-columns: 1fr auto; }
   .mm-sig__share-tag { grid-column: 1 / -1; }
 }

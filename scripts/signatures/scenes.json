@@ -1,0 +1,109 @@
+{
+ "mods": {
+  "bf1942": {
+   "name": "Battlefield 1942", "short": "BF1942", "gameIds": ["bf1942"], "accent": "#e8b33a",
+   "scenes": [
+    {"id": "assault", "label": "Run and gun", "kind": "soldier", "kit": "Us_Assault", "gait": "run.lower+Ub_Fire", "time": 0.3, "yaw": 1.9, "fx": "smallarms", "backdrop": "Omaha_Beach"},
+    {"id": "gunner", "label": "Prone MG", "kind": "soldier", "kit": "Rus_Assault", "gait": "lie.lower+Ub_LieFire", "time": 0.05, "yaw": 2.25, "pitch": 0.22, "fx": "mg", "backdrop": "Stalingrad"},
+    {"id": "rocket", "label": "Panzerschreck", "kind": "soldier", "kit": "German_AT", "gait": "crouch.lower+Ub_Fire", "time": 0.05, "yaw": 1.85, "fx": "rocket", "box": "launcher", "backdrop": "Battle_of_the_Bulge"},
+    {"id": "leap", "label": "Leap and fire", "kind": "soldier", "kit": "GB_Medic", "gait": "Lb_RunJump+Ub_RunJump", "time": 0.15, "yaw": 1.9, "fx": "smallarms", "backdrop": "Berlin"},
+    {"id": "armour", "label": "Tiger fires", "kind": "vehicle", "glb": "Tiger.glb", "yaw": -0.99, "pitch": 0.14, "barrel": "TigerGunBarrel", "fx": "cannon", "backdrop": "Kursk"},
+    {"id": "fighter", "label": "Spitfire breaks", "kind": "plane", "glb": "Spitfire.glb", "yaw": -1.5708, "pitch": 0.2, "rot": [0, 0, 0.75], "box": "plane", "skip": ["SpitfireLandingGear", "SpitfireWheel"], "discs": [{"mesh": "SpitfirePropellerStatic"}], "fx": "guns", "backdrop": "Battle_of_Britain"},
+    {"id": "bomber", "label": "Stuka dives", "kind": "plane", "glb": "Stuka.glb", "yaw": -1.5708, "pitch": 0.18, "rot": [-0.4, 0, 0], "box": "plane", "discs": [{"mesh": "StukaPropellerStatic"}], "bomb": "StukaBombRack_projectile", "fx": "bombs", "backdrop": "El_Alamein"}
+   ]
+  },
+  "xpack1": {
+   "name": "Road to Rome", "short": "RtR", "gameIds": ["xpack1"], "accent": "#d9774a",
+   "scenes": [
+    {"id": "assault", "label": "Breda on the run", "kind": "soldier", "kit": "Italian_Assault", "gait": "run.lower+Ub_Fire", "time": 0.3, "yaw": 1.9, "fx": "smallarms", "backdrop": "Anzio"},
+    {"id": "gunner", "label": "Prone BAR", "kind": "soldier", "kit": "French_Assault", "gait": "lie.lower+Ub_LieFire", "time": 0.05, "yaw": 2.25, "pitch": 0.22, "fx": "mg", "backdrop": "Santo_Croce"},
+    {"id": "rocket", "label": "Italian AT", "kind": "soldier", "kit": "Italian_AT", "gait": "crouch.lower+Ub_Fire", "time": 0.05, "yaw": 1.85, "fx": "rocket", "box": "launcher", "backdrop": "cassino"},
+    {"id": "leap", "label": "Sten leap", "kind": "soldier", "kit": "It_GB_Medic", "gait": "Lb_RunJump+Ub_RunJump", "time": 0.15, "yaw": 1.9, "fx": "smallarms", "backdrop": "salerno"},
+    {"id": "armour", "label": "Grant fires", "kind": "vehicle", "glb": "M3Grant.glb", "yaw": -0.99, "pitch": 0.14, "barrel": "M3GrantCannon", "fx": "cannon", "backdrop": "Tobruk"},
+    {"id": "fighter", "label": "Mosquito strafes", "kind": "plane", "glb": "Mosquito.glb", "yaw": -1.5708, "pitch": 0.25, "rot": [0, 0, 0.6], "box": "plane", "skip": ["MosquitoWheel", "MosquitoLandingGear", "rh_dhmosquito_vprop_blur"], "discs": [{"mesh": "MosquitoPropellerStatic"}], "fx": "guns", "backdrop": "Battle_of_Britain"},
+    {"id": "bomber", "label": "Bf 110 drops", "kind": "plane", "glb": "BF110.glb", "yaw": -1.5708, "pitch": 0.2, "rot": [-0.3, 0, 0], "box": "plane", "skip": ["BF110Wheel", "BF110LandingGear", "rh_Bf110_prop_blur"], "discs": [{"mesh": "BF110PropellerStatic"}], "bomb": "BF110BombRack_projectile", "fx": "bombs", "backdrop": "husky"}
+   ]
+  },
+  "xpack2": {
+   "name": "Secret Weapons of WWII", "short": "SW", "gameIds": ["xpack2"], "accent": "#6fa8b8",
+   "scenes": [
+    {"id": "assault", "label": "Commando Bren", "kind": "soldier", "kit": "Commando_Assault", "gait": "run.lower+Ub_Fire", "time": 0.3, "yaw": 1.9, "fx": "smallarms", "backdrop": "Telemark"},
+    {"id": "gunner", "label": "Elite Gewehr 42", "kind": "soldier", "kit": "GermanElite_Assault", "gait": "lie.lower+Ub_LieFire", "time": 0.05, "yaw": 2.25, "pitch": 0.22, "fx": "mg", "backdrop": "Eagles_Nest"},
+    {"id": "rocket", "label": "Commando bazooka", "kind": "soldier", "kit": "Commando_AT", "gait": "crouch.lower+Ub_Fire", "time": 0.05, "yaw": 1.85, "fx": "rocket", "box": "launcher", "backdrop": "Hellendoorn"},
+    {"id": "leap", "label": "Elite leap", "kind": "soldier", "kit": "GermanElite_Medic", "gait": "Lb_RunJump+Ub_RunJump", "time": 0.15, "yaw": 1.9, "fx": "smallarms", "backdrop": "Essen"},
+    {"id": "armour", "label": "T95 fires", "kind": "vehicle", "glb": "T95.glb", "yaw": -0.99, "pitch": 0.14, "barrel": "T95GunBarrel", "fx": "cannon", "backdrop": "Mimoyecques"},
+    {"id": "fighter", "label": "Horten Ho 229", "kind": "plane", "glb": "HO229.glb", "yaw": -1.5708, "pitch": 0.3, "rot": [0, 0, 0.6], "box": "plane", "skip": ["HO229Wheel", "HO229LandingGear"], "fx": "guns", "backdrop": "Peenemunde"},
+    {"id": "bomber", "label": "AW-52 drops", "kind": "plane", "glb": "AW52.glb", "yaw": -1.5708, "pitch": 0.25, "rot": [-0.3, 0, 0], "box": "plane", "skip": ["AW52Wheel", "AW52LandingGear"], "bomb": "AW52BombDummy_projectile", "fx": "bombs", "backdrop": "Kbely_Airfield"}
+   ]
+  },
+  "desertcombat": {
+   "name": "Desert Combat", "short": "DC", "gameIds": ["desertcombat", "dc_final"], "accent": "#d6a35c",
+   "scenes": [
+    {"id": "assault", "label": "M16 on the run", "kind": "soldier", "kit": "Us_Assault", "gait": "run.lower+Ub_Fire", "time": 0.3, "yaw": 1.9, "fx": "smallarms", "backdrop": "DC_Urban_Siege"},
+    {"id": "gunner", "label": "Prone PKM", "kind": "soldier", "kit": "Iraq_HeavyAssault", "gait": "lie.lower+Ub_LieFire", "time": 0.05, "yaw": 2.25, "pitch": 0.22, "fx": "mg", "backdrop": "DC_Basrah_Nights"},
+    {"id": "rocket", "label": "RPG-7", "kind": "soldier", "kit": "Iraq_AT", "gait": "crouch.lower+Ub_Fire", "time": 0.05, "yaw": 1.85, "fx": "rocket", "box": "launcher", "backdrop": "DC_Medina_Ridge"},
+    {"id": "leap", "label": "Spec ops leap", "kind": "soldier", "kit": "US_SpecOps", "gait": "Lb_RunJump+Ub_RunJump", "time": 0.15, "yaw": 1.9, "fx": "smallarms", "backdrop": "DC_Al_Khafji_Docks"},
+    {"id": "armour", "label": "Abrams fires", "kind": "vehicle", "glb": "M1A1.glb", "yaw": -0.99, "pitch": 0.14, "barrel": "M1A1GunBarrel", "fx": "cannon", "backdrop": "DC_Battle_of_73_Easting"},
+    {"id": "fighter", "label": "F-16 guns", "kind": "plane", "glb": "F16.glb", "yaw": -1.5708, "pitch": 0.3, "rot": [0, 0, 0.7], "box": "plane", "skip": ["F16Wheel", "F16LandingGear"], "fx": "guns", "backdrop": "DC_No_Fly_Zone"},
+    {"id": "bomber", "label": "Su-25 drops", "kind": "plane", "glb": "SU-25.glb", "yaw": -1.5708, "pitch": 0.22, "rot": [-0.3, 0, 0], "box": "plane", "skip": ["SU-25Wheel", "SU-25LandingGear", "SU-25_Wheel"], "bomb": "SU-25_BombRack_projectile", "fx": "bombs", "backdrop": "DC_Oil_Fields"},
+    {"id": "heli", "label": "Apache", "kind": "plane", "glb": "AH64.glb", "yaw": -1.5708, "pitch": 0.2, "rot": [-0.18, 0, 0], "box": "plane", "skip": ["\\DesertCombat\\AH64\\AH64_Prop_Blur", "AH64RearPropellerBlurred"], "discs": [{"mesh": "AH64PropellerStatic", "kind": "rotor"}, {"mesh": "AH64RearPropellerStatic"}], "fx": "guns", "backdrop": "DC_DesertShield"}
+   ]
+  },
+  "eod": {
+   "name": "Eve of Destruction", "short": "EoD", "gameIds": ["eod"], "accent": "#7fae4f",
+   "scenes": [
+    {"id": "assault", "label": "AK on the run", "kind": "soldier", "kit": "NVA_Rifleman", "gait": "run.lower+Ub_Fire", "time": 0.3, "yaw": 1.9, "fx": "smallarms", "backdrop": "Battle_of_Hue"},
+    {"id": "gunner", "label": "Prone M60", "kind": "soldier", "kit": "ARVN_Assault", "gait": "lie.lower+Ub_LieFire", "time": 0.05, "yaw": 2.25, "pitch": 0.22, "fx": "mg", "backdrop": "A_Shau"},
+    {"id": "rocket", "label": "RPG-7", "kind": "soldier", "kit": "NVA_AT", "gait": "crouch.lower+Ub_Fire", "time": 0.05, "yaw": 1.85, "fx": "rocket", "box": "launcher", "backdrop": "Battle_of_Dien_Bien_Phu"},
+    {"id": "armour", "label": "Patton fires", "kind": "vehicle", "glb": "Patton.glb", "yaw": -0.99, "pitch": 0.14, "barrel": "M60_PattonGunBarrel", "fx": "cannon", "backdrop": "Battle_At_Quang_Tri"},
+    {"id": "fighter", "label": "MiG-21 guns", "kind": "plane", "glb": "EoD_MiG-21.glb", "yaw": -1.5708, "pitch": 0.3, "rot": [0, 0, 0.7], "box": "plane", "skip": ["EoD_MiG-21Wheel", "EoD_MiG-21LandingGear"], "fx": "guns", "backdrop": "Aces_Over_Vietnam"},
+    {"id": "bomber", "label": "Napalm run", "kind": "plane", "glb": "F105_Napalm.glb", "yaw": -1.5708, "pitch": 0.22, "rot": [-0.25, 0, 0], "box": "plane", "skip": ["F105_NapalmWheel", "F105_NapalmLandingGear"], "bomb": "F105_NapalmBombRack_projectile", "fx": "bombs", "backdrop": "Apocalypse_Now"},
+    {"id": "heli", "label": "Huey", "kind": "plane", "glb": "EoD_Huey.glb", "yaw": -1.5708, "pitch": 0.2, "rot": [-0.15, 0, 0], "box": "plane", "skip": ["Huey_Rotor_Blur", "EoD_HueyHoverPropRearBlurred"], "discs": [{"mesh": "EoD_HueyHoverPropStatic", "kind": "rotor"}, {"mesh": "EoD_HueyHoverPropRearStatic"}], "fx": "guns", "backdrop": "Agent_Orange"}
+   ]
+  },
+  "fh": {
+   "name": "Forgotten Hope", "short": "FH", "gameIds": ["fh"], "accent": "#a8a36a",
+   "scenes": [
+    {"id": "assault", "label": "MP 40 on the run", "kind": "soldier", "kit": "1German_CloseQuartersMp40", "gait": "run.lower+Ub_Fire", "time": 0.3, "yaw": 1.9, "fx": "smallarms", "backdrop": "Seelow-Heights-1945"},
+    {"id": "gunner", "label": "Prone Bren", "kind": "soldier", "kit": "4GB_SupportBren", "gait": "lie.lower+Ub_LieFire", "time": 0.05, "yaw": 2.25, "pitch": 0.22, "fx": "mg", "backdrop": "Pegasus"},
+    {"id": "rocket", "label": "Panzerschreck", "kind": "soldier", "kit": "3German_ATPanzerschreck", "gait": "crouch.lower+Ub_Fire", "time": 0.05, "yaw": 1.85, "fx": "rocket", "box": "launcher", "backdrop": "Operation_Goodwood-1944"},
+    {"id": "armour", "label": "Firefly fires", "kind": "vehicle", "glb": "Firefly.glb", "yaw": -0.99, "pitch": 0.14, "barrel": "FireflyGunBarrel", "fx": "cannon", "backdrop": "Gold_Beach-1944"},
+    {"id": "fighter", "label": "Fw 190 breaks", "kind": "plane", "glb": "FW190.glb", "yaw": -1.5708, "pitch": 0.2, "rot": [0, 0, 0.75], "box": "plane", "skip": ["FW190PropellerBlurred", "FW190Wheel", "FW190LandingGear"], "discs": [{"mesh": "FW190PropellerStatic"}], "fx": "guns", "backdrop": "Omaha_Charlie-Sector-1944"},
+    {"id": "bomber", "label": "Il-2 drops", "kind": "plane", "glb": "IL2-B.glb", "yaw": -1.5708, "pitch": 0.2, "rot": [-0.3, 0, 0], "box": "plane", "skip": ["IL2-BPropellerBlurred", "IL2-BWheel", "IL2-BLandingGear"], "discs": [{"mesh": "IL2-BPropellerStatic"}], "bomb": "Il2-bBombRack_projectile", "fx": "bombs", "backdrop": "Prokhorovka-1943"}
+   ]
+  },
+  "fhsw": {
+   "name": "Forgotten Hope: Secret Weapon", "short": "FHSW", "gameIds": ["fhsw", "fhsweurope"], "accent": "#c8563f",
+   "scenes": [
+    {"id": "assault", "label": "Owen on the run", "kind": "soldier", "kit": "1Auss_CloseQuartersOwen", "gait": "run.lower+Ub_Fire", "time": 0.3, "yaw": 1.9, "fx": "smallarms", "backdrop": "Battle_of_Bougainville"},
+    {"id": "gunner", "label": "Prone Bren", "kind": "soldier", "kit": "4Auss_SupportBren", "gait": "lie.lower+Ub_LieFire", "time": 0.05, "yaw": 2.25, "pitch": 0.22, "fx": "mg", "backdrop": "Battle_for_ortona-1943"},
+    {"id": "rocket", "label": "Bazooka", "kind": "soldier", "kit": "3GB_ATBazookaAll", "gait": "crouch.lower+Ub_Fire", "time": 0.05, "yaw": 1.85, "fx": "rocket", "box": "launcher", "backdrop": "Arnhem-1944"},
+    {"id": "armour", "label": "King Tiger fires", "kind": "vehicle", "glb": "Kingtiger.glb", "yaw": -0.99, "pitch": 0.14, "barrel": "KTGunBarrel", "fx": "cannon", "backdrop": "Battle_Of_The_Bulge"},
+    {"id": "fighter", "label": "Zero breaks", "kind": "plane", "glb": "A6M5b.glb", "yaw": -1.5708, "pitch": 0.2, "rot": [0, 0, 0.75], "box": "plane", "skip": ["zero_propblur", "A6M5bWheel", "A6M5bLandingGear"], "discs": [{"mesh": "A6M5bPropellerStatic"}], "fx": "guns", "backdrop": "Battle_Of_Makin"},
+    {"id": "bomber", "label": "B-25 drops", "kind": "plane", "glb": "B25.glb", "yaw": -1.5708, "pitch": 0.25, "rot": [-0.15, 0, 0], "box": "plane", "skip": ["b25PropellerBlurred", "B25Wheel", "B25LandingGear"], "discs": [{"mesh": "b25PropellerStatic"}], "bomb": "B17BombRack_projectile", "bombGlb": "models/B17.glb", "fx": "bombs", "backdrop": "Battle_Over_Hokkaido-1945"}
+   ]
+  },
+  "gcmod": {
+   "name": "Galactic Conquest", "short": "GC", "gameIds": ["gcmod"], "accent": "#5b8fd9",
+   "scenes": [
+    {"id": "assault", "label": "Trooper on the run", "kind": "soldier", "kit": "Empire_Trooper", "gait": "run.lower+Ub_Fire", "time": 0.3, "yaw": 1.9, "fx": "laser-arms", "bolt": "red", "backdrop": "GC_Tatooine"},
+    {"id": "gunner", "label": "Rebel prone", "kind": "soldier", "kit": "Rebel_Trooper", "gait": "lie.lower+Ub_LieFire", "time": 0.05, "yaw": 2.25, "pitch": 0.22, "fx": "laser-arms", "bolt": "red", "backdrop": "GC_Endor"},
+    {"id": "rocket", "label": "Rebel launcher", "kind": "soldier", "kit": "Rebel_AT", "gait": "crouch.lower+Ub_Fire", "time": 0.05, "yaw": 1.85, "fx": "rocket", "box": "launcher", "backdrop": "GC_Hoth"},
+    {"id": "armour", "label": "AT-ST fires", "kind": "vehicle", "glb": "ATST.glb", "yaw": -0.99, "pitch": 0.1, "barrel": "ATSTLaserBarrel", "fx": "laser", "bolt": "green", "backdrop": "GC_Endor"},
+    {"id": "fighter", "label": "X-wing attacks", "kind": "plane", "glb": "X-Wing.glb", "yaw": -1.5708, "pitch": 0.3, "rot": [0, 0, 0.6], "box": "plane", "fx": "lasers", "bolt": "red", "backdrop": "GC_DeathStar"},
+    {"id": "bomber", "label": "TIE bomber", "kind": "plane", "glb": "tiebomber.glb", "yaw": -1.15, "pitch": 0.2, "box": "compact", "bomb": "TieBombRack_projectile", "fx": "bombs", "backdrop": "GC_Corellia"}
+   ]
+  },
+  "bf1918": {
+   "name": "Battlefield 1918", "short": "BF1918", "gameIds": ["bf1918"], "accent": "#b88a4a",
+   "scenes": [
+    {"id": "assault", "label": "Over the top", "kind": "soldier", "kit": "Kuk_Assault", "gait": "run.lower+Ub_Fire", "time": 0.3, "yaw": 1.9, "fx": "smallarms", "backdrop": "battle_of_cambrai"},
+    {"id": "gunner", "label": "MG 08/15", "kind": "soldier", "kit": "Kuk_Support", "gait": "lie.lower+Ub_LieFire", "time": 0.05, "yaw": 2.25, "pitch": 0.22, "fx": "mg", "backdrop": "amiens"},
+    {"id": "flamer", "label": "Flamethrower", "kind": "soldier", "kit": "Kuk_Flamer", "gait": "stand.lower+Ub_Fire", "time": 0.05, "yaw": 1.85, "fx": "flame", "box": "launcher", "backdrop": "argonnerwald"},
+    {"id": "armour", "label": "A7V fires", "kind": "vehicle", "glb": "A7V.glb", "yaw": -0.99, "pitch": 0.14, "tip": [0, 0.83, -3.08], "base": [0, 0.83, -1.5], "fx": "cannon", "backdrop": "chemin_des_dames"},
+    {"id": "fighter", "label": "Red Fokker", "kind": "plane", "glb": "FokkerRed.glb", "yaw": -1.5708, "pitch": 0.2, "rot": [0, 0, 0.6], "box": "plane", "skip": ["AirFokker_BlurProp", "FokkerRedWheel", "FokkerRedLandingGear"], "discs": [{"mesh": "FokkerRedPropellerStatic"}], "fx": "guns", "backdrop": "champagne"},
+    {"id": "bomber", "label": "Gotha drops", "kind": "plane", "glb": "Gotha.glb", "yaw": -1.5708, "pitch": 0.25, "rot": [-0.1, 0, 0], "box": "plane", "skip": ["AirGotha_BlurProp"], "discs": [{"mesh": "GothaPropellerStatic"}], "bomb": "GothaBombRack_projectile", "fx": "bombs", "backdrop": "Bombing_Albion"}
+   ]
+  }
+ }
+}

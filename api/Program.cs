@@ -887,11 +887,13 @@ try
 
     // Register PlayerBanners (forum signature) services
     builder.Services.AddSingleton<api.PlayerBanners.BannerFonts>();
-    builder.Services.AddSingleton<api.PlayerBanners.BannerRenderer>();
+    builder.Services.AddSingleton<api.Signatures.SignatureArtCatalogue>();
+    builder.Services.AddSingleton<api.Signatures.SignatureCanvas>();
+    builder.Services.AddSingleton<api.PlayerBanners.PlayerSignatureRenderer>();
     builder.Services.AddScoped<api.PlayerBanners.IPlayerBannerService, api.PlayerBanners.PlayerBannerService>();
 
     // Register ServerBanners (live forum signature) services
-    builder.Services.AddSingleton<api.ServerBanners.ServerBannerRenderer>();
+    builder.Services.AddSingleton<api.ServerBanners.ServerSignatureRenderer>();
     builder.Services.AddScoped<api.ServerBanners.IServerBannerService, api.ServerBanners.ServerBannerService>();
 
     // SQLite-based analytics services

@@ -28,6 +28,30 @@ import mod_pipeline as M  # noqa: E402
 
 REPO = ROOT.parents[1]
 FH_TREE = ROOT / "viewer" / "maps" / "mods" / "fh" / "maps.json"
+
+
+def _fh_tree_extracted() -> bool:
+    """Whether this machine holds the FH tree itself, not just its manifests.
+
+    A checkout can carry `maps.json` and `models.json` with only a few of the
+    files they list (a machine that never ran the FH extraction keeps the
+    published manifests, the loading screens and a handful of glbs); the
+    checks below read the levels and count the models, so they need it whole."""
+    if not FH_TREE.is_file():
+        return False
+    models = ROOT / "viewer" / "models" / "mods" / "fh"
+    try:
+        rows = json.loads((models / "models.json").read_text())
+    except (OSError, ValueError):
+        return False
+    levels = json.loads(FH_TREE.read_text())
+    on_disk = sum(1 for _ in models.glob("*.glb"))
+    return (on_disk >= len(rows)
+            and all((FH_TREE.parent / Path(r["glb"]).parent.name / "scene.json").is_file()
+                    for r in levels if r.get("glb")))
+
+
+FH_EXTRACTED = _fh_tree_extracted()
 GAME = Path.home() / ".wine/drive_c/EA Games/Battlefield 1942"
 
 
@@ -524,7 +548,7 @@ class RuleChecks(unittest.TestCase):
         self.assertTrue(M._same(True, 1))
         self.assertFalse(M._same(2, None))
 
-    @unittest.skipUnless(FH_TREE.is_file() and (GAME / "Mods" / "FH").is_dir(),
+    @unittest.skipUnless(FH_EXTRACTED and (GAME / "Mods" / "FH").is_dir(),
                          "needs the FH tree and the game install")
     def test_a_tampered_scene_is_caught_against_the_real_archive(self):
         paths = M.tree_paths("fh")
@@ -715,7 +739,7 @@ class HarnessFailures(unittest.TestCase):
 
 
 class Verify(unittest.TestCase):
-    @unittest.skipUnless(FH_TREE.is_file(), "needs the extracted FH tree")
+    @unittest.skipUnless(FH_EXTRACTED, "needs the extracted FH tree")
     def test_fh_verification_steps_pass(self):
         ctx = M.Context(cfg=M.MODS["fh"], levels=[], level_names=[])
         ctx.levels, ctx.level_names = M.baked_levels(ctx)

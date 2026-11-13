@@ -1,0 +1,468 @@
+{
+ "format": "bfstats-signature-art/1",
+ "width": 640,
+ "height": 400,
+ "mods": [
+  {
+   "id": "bf1942",
+   "name": "Battlefield 1942",
+   "short": "BF1942",
+   "gameIds": [
+    "bf1942"
+   ],
+   "accent": "#e8b33a",
+   "scenes": [
+    {
+     "id": "assault",
+     "label": "Run and gun",
+     "kind": "soldier",
+     "backdrop": "Omaha_Beach"
+    },
+    {
+     "id": "gunner",
+     "label": "Prone MG",
+     "kind": "soldier",
+     "backdrop": "Stalingrad"
+    },
+    {
+     "id": "rocket",
+     "label": "Panzerschreck",
+     "kind": "soldier",
+     "backdrop": "Battle_of_the_Bulge"
+    },
+    {
+     "id": "leap",
+     "label": "Leap and fire",
+     "kind": "soldier",
+     "backdrop": "Berlin"
+    },
+    {
+     "id": "armour",
+     "label": "Tiger fires",
+     "kind": "vehicle",
+     "backdrop": "Kursk"
+    },
+    {
+     "id": "fighter",
+     "label": "Spitfire breaks",
+     "kind": "plane",
+     "backdrop": "Battle_of_Britain"
+    },
+    {
+     "id": "bomber",
+     "label": "Stuka dives",
+     "kind": "plane",
+     "backdrop": "El_Alamein"
+    }
+   ]
+  },
+  {
+   "id": "xpack1",
+   "name": "Road to Rome",
+   "short": "RtR",
+   "gameIds": [
+    "xpack1"
+   ],
+   "accent": "#d9774a",
+   "scenes": [
+    {
+     "id": "assault",
+     "label": "Breda on the run",
+     "kind": "soldier",
+     "backdrop": "Anzio"
+    },
+    {
+     "id": "gunner",
+     "label": "Prone BAR",
+     "kind": "soldier",
+     "backdrop": "Santo_Croce"
+    },
+    {
+     "id": "rocket",
+     "label": "Italian AT",
+     "kind": "soldier",
+     "backdrop": "cassino"
+    },
+    {
+     "id": "leap",
+     "label": "Sten leap",
+     "kind": "soldier",
+     "backdrop": "salerno"
+    },
+    {
+     "id": "armour",
+     "label": "Grant fires",
+     "kind": "vehicle",
+     "backdrop": "Tobruk"
+    },
+    {
+     "id": "fighter",
+     "label": "Mosquito strafes",
+     "kind": "plane",
+     "backdrop": "Battle_of_Britain"
+    },
+    {
+     "id": "bomber",
+     "label": "Bf 110 drops",
+     "kind": "plane",
+     "backdrop": "husky"
+    }
+   ]
+  },
+  {
+   "id": "xpack2",
+   "name": "Secret Weapons of WWII",
+   "short": "SW",
+   "gameIds": [
+    "xpack2"
+   ],
+   "accent": "#6fa8b8",
+   "scenes": [
+    {
+     "id": "assault",
+     "label": "Commando Bren",
+     "kind": "soldier",
+     "backdrop": "Telemark"
+    },
+    {
+     "id": "gunner",
+     "label": "Elite Gewehr 42",
+     "kind": "soldier",
+     "backdrop": "Eagles_Nest"
+    },
+    {
+     "id": "rocket",
+     "label": "Commando bazooka",
+     "kind": "soldier",
+     "backdrop": "Hellendoorn"
+    },
+    {
+     "id": "leap",
+     "label": "Elite leap",
+     "kind": "soldier",
+     "backdrop": "Essen"
+    },
+    {
+     "id": "armour",
+     "label": "T95 fires",
+     "kind": "vehicle",
+     "backdrop": "Mimoyecques"
+    },
+    {
+     "id": "fighter",
+     "label": "Horten Ho 229",
+     "kind": "plane",
+     "backdrop": "Peenemunde"
+    },
+    {
+     "id": "bomber",
+     "label": "AW-52 drops",
+     "kind": "plane",
+     "backdrop": "Kbely_Airfield"
+    }
+   ]
+  },
+  {
+   "id": "desertcombat",
+   "name": "Desert Combat",
+   "short": "DC",
+   "gameIds": [
+    "desertcombat",
+    "dc_final"
+   ],
+   "accent": "#d6a35c",
+   "scenes": [
+    {
+     "id": "assault",
+     "label": "M16 on the run",
+     "kind": "soldier",
+     "backdrop": "DC_Urban_Siege"
+    },
+    {
+     "id": "gunner",
+     "label": "Prone PKM",
+     "kind": "soldier",
+     "backdrop": "DC_Basrah_Nights"
+    },
+    {
+     "id": "rocket",
+     "label": "RPG-7",
+     "kind": "soldier",
+     "backdrop": "DC_Medina_Ridge"
+    },
+    {
+     "id": "leap",
+     "label": "Spec ops leap",
+     "kind": "soldier",
+     "backdrop": "DC_Al_Khafji_Docks"
+    },
+    {
+     "id": "armour",
+     "label": "Abrams fires",
+     "kind": "vehicle",
+     "backdrop": "DC_Battle_of_73_Easting"
+    },
+    {
+     "id": "fighter",
+     "label": "F-16 guns",
+     "kind": "plane",
+     "backdrop": "DC_No_Fly_Zone"
+    },
+    {
+     "id": "bomber",
+     "label": "Su-25 drops",
+     "kind": "plane",
+     "backdrop": "DC_Oil_Fields"
+    },
+    {
+     "id": "heli",
+     "label": "Apache",
+     "kind": "plane",
+     "backdrop": "DC_DesertShield"
+    }
+   ]
+  },
+  {
+   "id": "eod",
+   "name": "Eve of Destruction",
+   "short": "EoD",
+   "gameIds": [
+    "eod"
+   ],
+   "accent": "#7fae4f",
+   "scenes": [
+    {
+     "id": "assault",
+     "label": "AK on the run",
+     "kind": "soldier",
+     "backdrop": "Battle_of_Hue"
+    },
+    {
+     "id": "gunner",
+     "label": "Prone M60",
+     "kind": "soldier",
+     "backdrop": "A_Shau"
+    },
+    {
+     "id": "rocket",
+     "label": "RPG-7",
+     "kind": "soldier",
+     "backdrop": "Battle_of_Dien_Bien_Phu"
+    },
+    {
+     "id": "armour",
+     "label": "Patton fires",
+     "kind": "vehicle",
+     "backdrop": "Battle_At_Quang_Tri"
+    },
+    {
+     "id": "fighter",
+     "label": "MiG-21 guns",
+     "kind": "plane",
+     "backdrop": "Aces_Over_Vietnam"
+    },
+    {
+     "id": "bomber",
+     "label": "Napalm run",
+     "kind": "plane",
+     "backdrop": "Apocalypse_Now"
+    },
+    {
+     "id": "heli",
+     "label": "Huey",
+     "kind": "plane",
+     "backdrop": "Agent_Orange"
+    }
+   ]
+  },
+  {
+   "id": "fh",
+   "name": "Forgotten Hope",
+   "short": "FH",
+   "gameIds": [
+    "fh"
+   ],
+   "accent": "#a8a36a",
+   "scenes": [
+    {
+     "id": "assault",
+     "label": "MP 40 on the run",
+     "kind": "soldier",
+     "backdrop": "Seelow-Heights-1945"
+    },
+    {
+     "id": "gunner",
+     "label": "Prone Bren",
+     "kind": "soldier",
+     "backdrop": "Pegasus"
+    },
+    {
+     "id": "rocket",
+     "label": "Panzerschreck",
+     "kind": "soldier",
+     "backdrop": "Operation_Goodwood-1944"
+    },
+    {
+     "id": "armour",
+     "label": "Firefly fires",
+     "kind": "vehicle",
+     "backdrop": "Gold_Beach-1944"
+    },
+    {
+     "id": "fighter",
+     "label": "Fw 190 breaks",
+     "kind": "plane",
+     "backdrop": "Omaha_Charlie-Sector-1944"
+    },
+    {
+     "id": "bomber",
+     "label": "Il-2 drops",
+     "kind": "plane",
+     "backdrop": "Prokhorovka-1943"
+    }
+   ]
+  },
+  {
+   "id": "fhsw",
+   "name": "Forgotten Hope: Secret Weapon",
+   "short": "FHSW",
+   "gameIds": [
+    "fhsw",
+    "fhsweurope"
+   ],
+   "accent": "#c8563f",
+   "scenes": [
+    {
+     "id": "assault",
+     "label": "Owen on the run",
+     "kind": "soldier",
+     "backdrop": "Battle_of_Bougainville"
+    },
+    {
+     "id": "gunner",
+     "label": "Prone Bren",
+     "kind": "soldier",
+     "backdrop": "Battle_for_ortona-1943"
+    },
+    {
+     "id": "rocket",
+     "label": "Bazooka",
+     "kind": "soldier",
+     "backdrop": "Arnhem-1944"
+    },
+    {
+     "id": "armour",
+     "label": "King Tiger fires",
+     "kind": "vehicle",
+     "backdrop": "Battle_Of_The_Bulge"
+    },
+    {
+     "id": "fighter",
+     "label": "Zero breaks",
+     "kind": "plane",
+     "backdrop": "Battle_Of_Makin"
+    },
+    {
+     "id": "bomber",
+     "label": "B-25 drops",
+     "kind": "plane",
+     "backdrop": "Battle_Over_Hokkaido-1945"
+    }
+   ]
+  },
+  {
+   "id": "gcmod",
+   "name": "Galactic Conquest",
+   "short": "GC",
+   "gameIds": [
+    "gcmod"
+   ],
+   "accent": "#5b8fd9",
+   "scenes": [
+    {
+     "id": "assault",
+     "label": "Trooper on the run",
+     "kind": "soldier",
+     "backdrop": "GC_Tatooine"
+    },
+    {
+     "id": "gunner",
+     "label": "Rebel prone",
+     "kind": "soldier",
+     "backdrop": "GC_Endor"
+    },
+    {
+     "id": "rocket",
+     "label": "Rebel launcher",
+     "kind": "soldier",
+     "backdrop": "GC_Hoth"
+    },
+    {
+     "id": "armour",
+     "label": "AT-ST fires",
+     "kind": "vehicle",
+     "backdrop": "GC_Endor"
+    },
+    {
+     "id": "fighter",
+     "label": "X-wing attacks",
+     "kind": "plane",
+     "backdrop": "GC_DeathStar"
+    },
+    {
+     "id": "bomber",
+     "label": "TIE bomber",
+     "kind": "plane",
+     "backdrop": "GC_Corellia"
+    }
+   ]
+  },
+  {
+   "id": "bf1918",
+   "name": "Battlefield 1918",
+   "short": "BF1918",
+   "gameIds": [
+    "bf1918"
+   ],
+   "accent": "#b88a4a",
+   "scenes": [
+    {
+     "id": "assault",
+     "label": "Over the top",
+     "kind": "soldier",
+     "backdrop": "battle_of_cambrai"
+    },
+    {
+     "id": "gunner",
+     "label": "MG 08/15",
+     "kind": "soldier",
+     "backdrop": "amiens"
+    },
+    {
+     "id": "flamer",
+     "label": "Flamethrower",
+     "kind": "soldier",
+     "backdrop": "argonnerwald"
+    },
+    {
+     "id": "armour",
+     "label": "A7V fires",
+     "kind": "vehicle",
+     "backdrop": "chemin_des_dames"
+    },
+    {
+     "id": "fighter",
+     "label": "Red Fokker",
+     "kind": "plane",
+     "backdrop": "champagne"
+    },
+    {
+     "id": "bomber",
+     "label": "Gotha drops",
+     "kind": "plane",
+     "backdrop": "Bombing_Albion"
+    }
+   ]
+  }
+ ]
+}

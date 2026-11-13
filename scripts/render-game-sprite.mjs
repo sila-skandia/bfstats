@@ -44,6 +44,27 @@
 //   --sheet              draw eight yaws in a contact sheet instead (to pick an angle)
 //   --out <path>         the webp                       (play/loaders/brass-soldier.webp)
 //
+// For stills (the forum signatures, scripts/signatures/render_signature_art.py):
+//   --rot rx,ry,rz       turn the model before posing it (radians, Euler YXZ: yaw, then
+//                        pitch, then roll about its own nose): a fighter banked into a turn,
+//                        a dive bomber nose down
+//   --fit <margin>       choose --scale and --centre so the drawing fills the canvas, leaving
+//                        <margin> of it free on every side (0.06); the chosen values go to
+//                        --marks-json, so a second layer can be drawn with the same camera
+//   --shading studio     a key light, a cool fill and a rim light from behind, each face lit
+//                        on the side the camera sees, instead of the flat loader look
+//   --projectiles        draw the _projectile meshes too (a plane's bombs, a tank's shell)
+//   --mark-extreme n=prefix:dx,dy   the drawn vertex of the meshes named prefix* (or
+//                        @rigid: every mesh that is not skinned, i.e. the weapon in a pose;
+//                        @all: everything) furthest along the screen direction dx,dy (y down):
+//                        a muzzle. prefix:w:x,y,z goes along a world direction instead (a
+//                        barrel's tip), and prefix:centre takes the middle of its bounds (a hub)
+//   --kit <kits.json>#<template>   hang the kit's worn parts (helmet, packs) on the
+//                        soldier's bones, as the viewer does; part glbs are looked up beside
+//                        kits.json, then in each --kit-fallback directory
+//   --marks-json <path>  write the marks (in pixels of the written sprite), the crop and
+//                        the camera as JSON
+//
 // The marks are printed in CSS pixels of the sprite as shown at half its size
 // (it is drawn at 2x): loaders/brass.js's MUZZLE and PORT are those numbers.
 // Needs ui/node_modules (three) and python3 with Pillow (webp).
@@ -80,6 +101,14 @@ const { values: opt } = parseArgs({ options: {
   bounds: { type: 'boolean', default: false },
   sheet: { type: 'boolean', default: false },
   out: { type: 'string', default: 'play/loaders/brass-soldier.webp' },
+  rot: { type: 'string' },
+  fit: { type: 'string' },
+  shading: { type: 'string', default: 'flat' },
+  projectiles: { type: 'boolean', default: false },
+  'mark-extreme': { type: 'string', multiple: true, default: [] },
+  'marks-json': { type: 'string' },
+  kit: { type: 'string' },
+  'kit-fallback': { type: 'string', multiple: true },
 } });
 const vec = text => text.split(',').map(Number);
 const glbPath = inViewer(opt.glb);
@@ -94,7 +123,8 @@ const MARKS = Object.fromEntries(opt.mark.map(m => { const [k, v] = m.split('=')
 const CLIP = opt.clip;
 // Collision hulls, effect emitters and the projectile, tracer and trail
 // meshes a weapon carries are never drawn.
-const keep = name => !/collision|^Em_|_projectile$|_tracer$|_trail$/i.test(name) && (!opt.only || opt.only.split(',').some(p => name.startsWith(p)))
+const NEVER = opt.projectiles ? /collision|^Em_|_tracer$|_trail$/i : /collision|^Em_|_projectile$|_tracer$|_trail$/i;
+const keep = name => !NEVER.test(name) && (!opt.only || opt.only.split(',').some(p => name.startsWith(p)))
   && !(opt.skip && opt.skip.split(',').some(p => name.startsWith(p)));
 
 const THREE = await import(join(ROOT, 'ui/node_modules/three/build/three.module.js'));
@@ -102,34 +132,80 @@ const { GLTFLoader } = await import(join(ROOT, 'ui/node_modules/three/examples/j
 
 // --- pose: the glb without its textures (no DOM to decode them), each
 // material's image remembered ---------------------------------------------------
-const buf = readFileSync(glbPath);
-const jsonLength = buf.readUInt32LE(12);
-const json = JSON.parse(buf.subarray(20, 20 + jsonLength).toString());
-const imageOf = json.materials.map(m => {
-  const ref = m.pbrMetallicRoughness?.baseColorTexture;
-  const tex = ref && json.textures[ref.index];
-  return tex ? (tex.source ?? Object.values(tex.extensions ?? {})[0]?.source ?? -1) : -1;
-});
-const imageUris = json.images.map(i => i.uri);
-// Every texture reference goes, at any depth (a level bake's materials carry
-// lightmaps and other maps in extensions too).
-const dropTextures = o => {
-  for (const k of Object.keys(o)) {
-    if (/Texture$/.test(k)) delete o[k];
-    else if (o[k] && typeof o[k] === 'object') dropTextures(o[k]);
+/** A glb parsed without its textures, with each material's image index and
+ *  every image's path (resolved against the glb's own directory). */
+async function loadStripped(path) {
+  const buf = readFileSync(path);
+  const jsonLength = buf.readUInt32LE(12);
+  const json = JSON.parse(buf.subarray(20, 20 + jsonLength).toString());
+  const imageOf = (json.materials ?? []).map(m => {
+    const ref = m.pbrMetallicRoughness?.baseColorTexture;
+    const tex = ref && json.textures[ref.index];
+    return tex ? (tex.source ?? Object.values(tex.extensions ?? {})[0]?.source ?? -1) : -1;
+  });
+  const imageUris = (json.images ?? []).map(i => resolve(dirname(resolve(path)), i.uri));
+  // Every texture reference goes, at any depth (a level bake's materials carry
+  // lightmaps and other maps in extensions too).
+  const dropTextures = o => {
+    for (const k of Object.keys(o)) {
+      if (/Texture$/.test(k)) delete o[k];
+      else if (o[k] && typeof o[k] === 'object') dropTextures(o[k]);
+    }
+  };
+  (json.materials ?? []).forEach(dropTextures);
+  delete json.textures; delete json.images; delete json.samplers;
+  let jsonChunk = Buffer.from(JSON.stringify(json));
+  jsonChunk = Buffer.concat([jsonChunk, Buffer.alloc((4 - (jsonChunk.length % 4)) % 4, 0x20)]);
+  const binChunk = buf.subarray(20 + jsonLength);
+  const header = Buffer.alloc(20);
+  header.writeUInt32LE(0x46546c67, 0); header.writeUInt32LE(2, 4);
+  header.writeUInt32LE(20 + jsonChunk.length + binChunk.length, 8);
+  header.writeUInt32LE(jsonChunk.length, 12); header.writeUInt32LE(0x4e4f534a, 16);
+  const glb = Buffer.concat([header, jsonChunk, binChunk]);
+  const gltf = await new GLTFLoader().parseAsync(glb.buffer.slice(glb.byteOffset, glb.byteOffset + glb.length), '');
+  return { gltf, imageOf, imageUris };
+}
+const main = await loadStripped(glbPath);
+const { gltf, imageOf } = main;
+const imageUris = [...main.imageUris];
+// Worn kit parts (a helmet on bone A, a pack on backpack or HipPack), hung the
+// way the viewer hangs them (viewer/kit-graft.js): world(part) = world(bone) * slot.
+if (opt.kit) {
+  const { wornGrafts, bonePattern, kitsByTemplate } = await import(join(VIEWER, 'kit-graft.js'));
+  const [kitsPath, template] = opt.kit.split('#');
+  const kit = kitsByTemplate(JSON.parse(readFileSync(kitsPath, 'utf8'))).get(template.toLowerCase());
+  if (!kit) throw new Error(`--kit: no kit ${template} in ${kitsPath}`);
+  const searched = [dirname(kitsPath), ...(opt['kit-fallback'] ?? [])];
+  for (const graft of wornGrafts(kit)) {
+    const pattern = bonePattern(graft.bone);
+    let bone = null;
+    gltf.scene.traverse(o => { if (!bone && pattern.test(o.name)) bone = o; });
+    const file = searched.map(d => join(d, graft.glb)).find(f => existsSync(f));
+    if (!bone || !file) { console.warn(`kit part ${graft.glb}: ${bone ? 'no file' : `no bone ${graft.bone}`}`); continue; }
+    const part = await loadStripped(file);
+    const offset = imageUris.length;
+    imageUris.push(...part.imageUris);
+    part.gltf.scene.traverse(o => {
+      if (o.isMesh) o.userData.imageOf = m => {
+        const i = part.imageOf[part.gltf.parser.associations.get(m)?.materials ?? -1] ?? -1;
+        return i < 0 ? -1 : i + offset;
+      };
+    });
+    part.gltf.scene.quaternion.set(...graft.quaternion);
+    part.gltf.scene.position.set(...graft.position);
+    bone.add(part.gltf.scene);
   }
-};
-json.materials.forEach(dropTextures);
-delete json.textures; delete json.images; delete json.samplers;
-let jsonChunk = Buffer.from(JSON.stringify(json));
-jsonChunk = Buffer.concat([jsonChunk, Buffer.alloc((4 - (jsonChunk.length % 4)) % 4, 0x20)]);
-const binChunk = buf.subarray(20 + jsonLength);
-const header = Buffer.alloc(20);
-header.writeUInt32LE(0x46546c67, 0); header.writeUInt32LE(2, 4);
-header.writeUInt32LE(20 + jsonChunk.length + binChunk.length, 8);
-header.writeUInt32LE(jsonChunk.length, 12); header.writeUInt32LE(0x4e4f534a, 16);
-const glb = Buffer.concat([header, jsonChunk, binChunk]);
-const gltf = await new GLTFLoader().parseAsync(glb.buffer.slice(glb.byteOffset, glb.byteOffset + glb.length), '');
+}
+if (opt.rot) {
+  const [rx, ry, rz] = vec(opt.rot);
+  const turn = new THREE.Object3D();
+  turn.rotation.set(rx, ry, rz, 'YXZ');
+  turn.add(gltf.scene);
+  gltf.scene.updateMatrixWorld(true);
+  // collect() draws gltf.scene's world matrices, which now include the turn.
+  turn.updateMatrixWorld(true);
+  gltf.turn = turn;
+}
 // The clips to play together: the pose glb's own clip, or a gait's lower and
 // upper body clips from the shared gait glbs (they animate the same bone names).
 async function parseGlb(path) {
@@ -198,7 +274,7 @@ function collect(t) {
     }
     poser.setTime(t.t);
   } else if (mixer) { mixer.setTime(t); }
-  gltf.scene.updateMatrixWorld(true);
+  (gltf.turn ?? gltf.scene).updateMatrixWorld(true);
   const tris = [];
   const v = new THREE.Vector3();
   let from = gltf.scene;
@@ -225,10 +301,10 @@ function collect(t) {
   const groups = g.groups.length ? g.groups : [{ start: 0, count: index ? index.count : pos.count, materialIndex: 0 }];
   for (const group of groups) {
     const m = mats[group.materialIndex];
-    const img = imageOf[gltf.parser.associations.get(m)?.materials ?? -1] ?? -1;
+    const img = o.userData.imageOf ? o.userData.imageOf(m) : imageOf[gltf.parser.associations.get(m)?.materials ?? -1] ?? -1;
     for (let k = group.start; k < group.start + group.count; k += 3) {
       const ids = [0, 1, 2].map(j => (index ? index.getX(k + j) : k + j));
-      tris.push({ mesh: o.name, p: ids.map(i => world[i]), uv: uv && ids.map(i => [uv.getX(i), uv.getY(i)]), img,
+      tris.push({ mesh: o.name, rigid: !o.isSkinnedMesh && !o.userData.imageOf, p: ids.map(i => world[i]), uv: uv && ids.map(i => [uv.getX(i), uv.getY(i)]), img,
         c: [m.color.r, m.color.g, m.color.b], cutout: m.alphaTest > 0 || m.transparent });
     }
   }
@@ -269,19 +345,49 @@ open(sys.argv[2], 'wb').write(im.width.to_bytes(4, 'little') + im.height.to_byte
   }
 });
 
+// --- fit: the scale and centre that make the drawing fill the canvas ---------------
+if (opt.fit !== undefined) {
+  const margin = +opt.fit;
+  const probe = projector({ ...CAMERA, centre: [0, 0, 0], scale: 1, w: 0, h: 0 }, 1);
+  let x0 = Infinity, x1 = -Infinity, y0 = Infinity, y1 = -Infinity;
+  for (const t of tris) for (const p of t.p) {
+    const [x, y] = probe(p);
+    x0 = Math.min(x0, x); x1 = Math.max(x1, x); y0 = Math.min(y0, y); y1 = Math.max(y1, y);
+  }
+  const scale = Math.min((CAMERA.w * (1 - 2 * margin)) / (x1 - x0), (CAMERA.h * (1 - 2 * margin)) / (y1 - y0));
+  // The screen point to centre, back in world terms: x right, y up in the camera's frame.
+  const sx = (x0 + x1) / 2, sy = -(y0 + y1) / 2;
+  const cy = Math.cos(CAMERA.yaw), syw = Math.sin(CAMERA.yaw), cp = Math.cos(CAMERA.pitch), sp = Math.sin(CAMERA.pitch);
+  // Inverse of the projection's rotation for a point at camera depth 0.
+  const y = cp * sy, z1 = -sp * sy;
+  CAMERA.centre = [cy * sx + syw * z1, y, -syw * sx + cy * z1];
+  CAMERA.scale = scale;
+}
+
 // --- raster ------------------------------------------------------------------------
 const S = CAMERA.ss;
 const light = LIGHT.map(c => c / Math.hypot(...LIGHT));
+const STUDIO = opt.shading === 'studio';
+const unit = v => { const l = Math.hypot(...v) || 1; return v.map(c => c / l); };
+/** The direction from the scene towards the camera, in world terms. */
+function towardCamera(camera) {
+  const cy = Math.cos(camera.yaw), sy = Math.sin(camera.yaw), cp = Math.cos(camera.pitch), sp = Math.sin(camera.pitch);
+  // Depth (z2) grows away from the viewer, so the camera is along (0, 0, -1) in
+  // camera space; the rotation's transpose takes that back to the world.
+  const Y = -sp, Z1 = -cp;
+  return unit([sy * Z1, Y, cy * Z1]);
+}
+const KEY = unit([-0.55, 0.75, 0.35]), FILL = unit([0.7, 0.2, 0.3]), RIM = unit([0.2, 0.45, -0.85]);
 
 /** Where a world point lands on the supersampled canvas of `camera`. */
-function projector(camera) {
-  const W = camera.w * S, H = camera.h * S;
+function projector(camera, ss = S) {
+  const W = camera.w * ss, H = camera.h * ss;
   const cy = Math.cos(camera.yaw), sy = Math.sin(camera.yaw), cp = Math.cos(camera.pitch), sp = Math.sin(camera.pitch);
   return ([x, y, z]) => {
     x -= camera.centre[0]; y -= camera.centre[1]; z -= camera.centre[2];
     const x1 = cy * x - sy * z, z1 = sy * x + cy * z;
     const y2 = cp * y - sp * z1, z2 = sp * y + cp * z1;
-    return [W / 2 + x1 * camera.scale * S, H / 2 - y2 * camera.scale * S, z2];
+    return [W / 2 + x1 * camera.scale * ss, H / 2 - y2 * camera.scale * ss, z2];
   };
 }
 
@@ -289,6 +395,7 @@ function projector(camera) {
 function draw(camera) {
   const OW = camera.w, OH = camera.h, W = OW * S, H = OH * S;
   const project = projector(camera);
+  const view = towardCamera(camera);
   const colour = new Float32Array(W * H * 4);
   const depth = new Float32Array(W * H).fill(Infinity);
   for (const t of tris) {
@@ -297,7 +404,21 @@ function draw(camera) {
     const u = [b[0] - a[0], b[1] - a[1], b[2] - a[2]], w = [c[0] - a[0], c[1] - a[1], c[2] - a[2]];
     const n = [u[1] * w[2] - u[2] * w[1], u[2] * w[0] - u[0] * w[2], u[0] * w[1] - u[1] * w[0]];
     const nl = Math.hypot(...n) || 1;
-    const shade = AMBIENT + (1 - AMBIENT) * Math.abs((n[0] * light[0] + n[1] * light[1] + n[2] * light[2]) / nl);
+    let shade = AMBIENT + (1 - AMBIENT) * Math.abs((n[0] * light[0] + n[1] * light[1] + n[2] * light[2]) / nl);
+    let tint = null;
+    if (STUDIO) {
+      // Face the normal towards the camera: the winding is not to be trusted.
+      let N = n.map(c => c / nl);
+      const V = view;
+      if (N[0] * V[0] + N[1] * V[1] + N[2] * V[2] < 0) N = N.map(c => -c);
+      const dot = (a, b) => a[0] * b[0] + a[1] * b[1] + a[2] * b[2];
+      const key = Math.max(0, dot(N, KEY)), fill = Math.max(0, dot(N, FILL));
+      const rim = Math.pow(1 - Math.max(0, dot(N, V)), 2.2) * Math.max(0.25, dot(N, RIM) + 0.6);
+      tint = [0.22 + 1.0 * key + 0.16 * fill + 0.55 * rim,
+        0.22 + 0.93 * key + 0.20 * fill + 0.50 * rim,
+        0.25 + 0.82 * key + 0.28 * fill + 0.42 * rim];
+      shade = 1;
+    }
     const den = (P[1][1] - P[2][1]) * (P[0][0] - P[2][0]) + (P[2][0] - P[1][0]) * (P[0][1] - P[2][1]);
     if (Math.abs(den) < 1e-9) continue;
     const x0 = Math.max(0, Math.floor(Math.min(P[0][0], P[1][0], P[2][0]))), x1 = Math.min(W - 1, Math.ceil(Math.max(P[0][0], P[1][0], P[2][0])));
@@ -322,7 +443,8 @@ function draw(camera) {
         r *= T.px[k] / 255; g *= T.px[k + 1] / 255; bl *= T.px[k + 2] / 255;
       }
       depth[i] = z;
-      colour.set([r * shade, g * shade, bl * shade, 1], i * 4);
+      if (tint) colour.set([Math.min(1.4, r * tint[0]), Math.min(1.4, g * tint[1]), Math.min(1.4, bl * tint[2]), 1], i * 4);
+      else colour.set([r * shade, g * shade, bl * shade, 1], i * 4);
     }
   }
   const out = Buffer.alloc(OW * OH * 4);
@@ -408,3 +530,40 @@ const at = p => { const [x, y] = project(p); return [+((x / S - crop.left) / 2).
 const strip = FRAMES > 1 ? `, ${FRAMES} frames of ${crop.w / 2} x ${crop.h / 2} CSS px at ${frameTimes.map(t => t.toFixed(3)).join(', ')}` : '';
 console.log(`wrote ${outPath}: ${crop.w * FRAMES} x ${crop.h} (${(crop.w * FRAMES) / 2} x ${crop.h / 2} CSS px at 2x), ${tris.length} triangles${strip}`);
 for (const [name, p] of Object.entries(MARKS)) console.log(`${name}: ${at(p).join(', ')} (CSS px in the sprite${FRAMES > 1 ? "'s first frame" : ''})`);
+// Marks found from the drawing itself: the vertex furthest along a screen direction.
+const extremes = {};
+for (const spec of opt['mark-extreme']) {
+  const [name, rest] = spec.split('=');
+  const [prefix, ...how] = rest.split(':');
+  const matches = t => (prefix === '@rigid' ? t.rigid : prefix === '@all' ? true : t.mesh.startsWith(prefix));
+  let best = null, bestScore = -Infinity;
+  if (how[0] === 'centre') {
+    // The middle of the meshes' world bounds: a propeller's hub.
+    const lo = [Infinity, Infinity, Infinity], hi = [-Infinity, -Infinity, -Infinity];
+    for (const t of tris) if (matches(t)) for (const p of t.p) p.forEach((c, i) => { lo[i] = Math.min(lo[i], c); hi[i] = Math.max(hi[i], c); });
+    if (lo[0] !== Infinity) best = lo.map((c, i) => (c + hi[i]) / 2);
+  } else {
+    // Along a screen direction (dx,dy, y down), or a world one (w:x,y,z).
+    const world = how[0] === 'w';
+    const d = vec(world ? how[1] : how[0]);
+    for (const t of tris) {
+      if (!matches(t)) continue;
+      for (const p of t.p) {
+        let score;
+        if (world) score = p[0] * d[0] + p[1] * d[1] + p[2] * d[2];
+        else { const [x, y] = project(p); score = x * d[0] + y * d[1]; }
+        if (score > bestScore) { bestScore = score; best = p; }
+      }
+    }
+  }
+  if (best) { extremes[name] = best; console.log(`${name}: ${at(best).join(', ')} (CSS px, extreme of ${prefix})`); }
+  else console.warn(`--mark-extreme ${name}: no mesh matches ${prefix}`);
+}
+if (opt['marks-json']) {
+  const px = p => { const [x, y] = project(p); return [+(x / S - crop.left).toFixed(1), +(y / S - crop.top).toFixed(1)]; };
+  const marks = Object.fromEntries([...Object.entries(MARKS), ...Object.entries(extremes)].map(([k, p]) => [k, px(p)]));
+  writeFileSync(opt['marks-json'], JSON.stringify({
+    width: crop.w * FRAMES, height: crop.h, crop, marks,
+    camera: { yaw: CAMERA.yaw, pitch: -CAMERA.pitch, scale: CAMERA.scale, centre: CAMERA.centre.map(c => +c.toFixed(4)), size: `${CAMERA.w}x${CAMERA.h}` },
+  }, null, 1));
+}

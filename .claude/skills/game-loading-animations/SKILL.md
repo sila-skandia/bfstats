@@ -63,6 +63,11 @@ node scripts/render-game-sprite.mjs --glb models/Tiger.glb --clip none \
   --out play/loader-tiger.webp
 ```
 
+For stills (posed, kitted, lit and anchored automatically), the script also takes
+`--rot`, `--fit`, `--shading studio`, `--kit <kits.json>#<template>`,
+`--projectiles`, `--mark-extreme` and `--marks-json`; the forum signatures use them
+(`scripts/signatures/render_signature_art.py`, `features/forum-signatures`).
+
 Then look at the result on a dark background
 (`im.alpha_composite` onto `(18,18,16)` with Pillow) before building on it.
 

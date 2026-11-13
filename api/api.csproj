@@ -68,6 +68,8 @@
   <!-- Embed player-banner display fonts as resources -->
   <ItemGroup>
     <EmbeddedResource Include="PlayerBanners\Resources\*.ttf" />
+    <!-- The forum signatures' hero art (scripts/signatures/render_signature_art.py). -->
+    <Content Include="Signatures\Art\**\*" CopyToOutputDirectory="PreserveNewest" CopyToPublishDirectory="PreserveNewest" />
   </ItemGroup>
 
   <ItemGroup>

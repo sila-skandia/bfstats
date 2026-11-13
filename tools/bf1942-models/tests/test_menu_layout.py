@@ -579,6 +579,10 @@ class LevelNationFromArchivesTests(unittest.TestCase):
                 "extract_hud_pack.py has not been run for vanilla")
 
     def record(self, name: str, nations=None):
+        # An install can lack a level's archive (this Mac's has no
+        # Kasserine_Pass.rfa); that is a missing input, not a regression.
+        if name not in self.by_name:
+            self.skipTest(f"{name} is not in this install's levels")
         return eml.level_record(name, self.by_name[name], None, False,
                                 nations=nations)
 

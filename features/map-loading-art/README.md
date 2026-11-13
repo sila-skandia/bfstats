@@ -36,7 +36,7 @@ python3 scripts/build_map_loading_art.py \
 - Median 6-11 KB a level (the full screen is 25-115 KB). 695 levels, 6.9 MB in all.
 - Covers exported levels only, the rows of each tree's `maps.json`: bf1942 24, xpack1 29,
   xpack2 32, dc_final 48, desertcombat 35, fh 10, fhsw 278 (FHSWEurope's rows fill in
-  FHSW), eod 239. Other mods have no backdrop and the header shows its plain ground.
+  FHSW), eod 239. gcmod 30 and bf1918 133 since 2026-11-14. Other mods have no backdrop and the header shows its plain ground.
 - A screen a tree lacks is taken from the same path in a sibling tree. This PC's FHSW
   tree is missing `_shared/load/battleofmakin.webp`; FHSWEurope's copy is used.
 
@@ -63,6 +63,9 @@ tar cf - -C <out> . | kubectl --context hetzner -n bf42-stats exec -i <pod> -c n
 ```
 
 Published 2026-11-01: 695 files, per-mod counts on the volume match the build.
+Galactic Conquest (30) and BF1918 (133) were exported after that run and had no
+backdrop until 2026-11-14, when the forum signatures needed them: built with the same
+script and published (new files only, `gcmod/` and `bf1918/`), 2.2 MB.
 
 ## Open
 

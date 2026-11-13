@@ -1,7 +1,6 @@
 <script setup lang="ts">
 import { computed, ref, watch } from 'vue'
-
-type BannerStyle = 'tank' | 'plane' | 'island' | 'map'
+import MmSignatureArtPicker from './MmSignatureArtPicker.vue'
 
 interface BannerServer {
   serverGuid: string
@@ -16,14 +15,16 @@ interface Props {
 
 const props = defineProps<Props>()
 
-const styles: { id: BannerStyle; label: string; sub: string }[] = [
-  { id: 'tank', label: 'Panzer', sub: 'Eastern Front snowfields' },
-  { id: 'plane', label: 'Spitfire', sub: 'Battle of Britain skies' },
-  { id: 'island', label: 'Pacific', sub: 'Sunset naval theater' },
-  { id: 'map', label: 'Strategy', sub: 'D-Day tactical map' },
+// Output sizes, aspect locked to the renderer's 800x200. Forums key off the width.
+const sizes = [
+  { width: 640, height: 160, label: 'Small' },
+  { width: 800, height: 200, label: 'Medium' },
+  { width: 1280, height: 320, label: 'Large' },
 ]
 
-const selectedStyle = ref<BannerStyle>('tank')
+const selectedMod = ref('bf1942')
+const selectedScene = ref('assault')
+const selectedWidth = ref(800)
 const selectedServerGuid = ref<string>('')
 const copyState = ref<Record<string, boolean>>({})
 const isPreviewLoading = ref(true)
@@ -38,12 +39,15 @@ const shareUrl = computed(() => buildUrl(false))
 watch(previewUrl, () => { isPreviewLoading.value = true })
 
 const bbCode = computed(() => `[img]${shareUrl.value}[/img]`)
-const htmlImg = computed(() => `<img src="${shareUrl.value}" alt="${props.playerName} stats banner" />`)
+const selectedSize = computed(() => sizes.find(s => s.width === selectedWidth.value) ?? sizes[1])
+const htmlImg = computed(() => `<img src="${shareUrl.value}" alt="${props.playerName} stats banner" width="${selectedSize.value.width}" height="${selectedSize.value.height}" />`)
 const markdownImg = computed(() => `![${props.playerName}](${shareUrl.value})`)
 
 function buildUrl(relative: boolean): string {
   const params = new URLSearchParams()
-  params.set('style', selectedStyle.value)
+  params.set('mod', selectedMod.value)
+  if (selectedScene.value) params.set('scene', selectedScene.value)
+  params.set('w', String(selectedWidth.value))
   if (selectedServerGuid.value) params.set('server', selectedServerGuid.value)
   const path = `/stats/players/${encodeURIComponent(props.playerName)}/banner.png?${params.toString()}`
   if (relative) return path
@@ -83,8 +87,9 @@ const shareRows = computed(() => [
       <div class="mm-eyebrow mm-eyebrow--strong">Forum signature</div>
       <h2 class="mm-h2 mm-sig__title">Mint a banner for your forum sig</h2>
       <p class="mm-sig__sub">
-        Pick a backdrop, choose a server (or your lifetime profile), and grab the markup.
-        Your banner regenerates as your stats climb.
+        Pick your mod and a scene: the game's own soldiers, tanks and aircraft caught mid-fight,
+        over that mod's loading screen art. Choose a server (or your lifetime profile) and grab
+        the markup. Your banner regenerates as your stats climb.
       </p>
     </header>
 
@@ -105,26 +110,28 @@ const shareRows = computed(() => [
         </div>
       </div>
       <div class="mm-sig__preview-meta">
-        <span class="mm-chip">{{ selectedStyle }}</span>
-        <span class="mm-eyebrow">720 × auto · PNG · cached 1h</span>
+        <span class="mm-chip">{{ selectedMod }} / {{ selectedScene || 'default' }}</span>
+        <span class="mm-eyebrow">{{ selectedSize.width }} × {{ selectedSize.height }} · PNG · cached 1h</span>
         <span class="mm-eyebrow">{{ selectedServerLabel }}</span>
       </div>
     </div>
 
     <div class="mm-sig__controls">
       <div class="mm-sig__block">
-        <div class="mm-eyebrow">01 · Style</div>
-        <div class="mm-sig__styles">
+        <div class="mm-eyebrow">01 · Mod and scene</div>
+        <MmSignatureArtPicker v-model:mod="selectedMod" v-model:scene="selectedScene" />
+        <div class="mm-sig__sizes" role="radiogroup" aria-label="Size">
           <button
-            v-for="style in styles"
-            :key="style.id"
+            v-for="size in sizes"
+            :key="size.width"
             type="button"
-            class="mm-sig__style"
-            :class="{ 'is-active': selectedStyle === style.id }"
-            @click="selectedStyle = style.id"
+            role="radio"
+            class="mm-sig__size"
+            :class="{ 'is-active': selectedWidth === size.width }"
+            :aria-checked="selectedWidth === size.width"
+            @click="selectedWidth = size.width"
           >
-            <span class="mm-sig__style-label">{{ style.label }}</span>
-            <span class="mm-sig__style-sub">{{ style.sub }}</span>
+            {{ size.label }} <span>{{ size.width }}×{{ size.height }}</span>
           </button>
         </div>
       </div>
@@ -249,54 +256,26 @@ const shareRows = computed(() => [
   gap: 10px;
 }
 
-.mm-sig__styles {
-  display: grid;
-  grid-template-columns: repeat(4, 1fr);
-  gap: 10px;
-}
+.mm-sig__sizes { display: flex; flex-wrap: wrap; gap: 6px; }
 
-.mm-sig__style {
-  display: flex;
-  flex-direction: column;
-  gap: 4px;
-  align-items: flex-start;
+.mm-sig__size {
+  font-family: var(--mm-font-mono);
+  font-size: 11px;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  padding: 6px 10px;
   background: transparent;
+  color: var(--mm-ink-soft);
   border: 1px solid var(--mm-rule);
   border-radius: 2px;
-  padding: 12px 14px;
   cursor: pointer;
-  text-align: left;
-  transition: border-color 0.12s ease, background-color 0.12s ease;
 }
 
-.mm-sig__style:hover {
-  border-color: var(--mm-ink);
-  background: var(--mm-bg-soft);
-}
+.mm-sig__size span { color: var(--mm-ink-muted); margin-left: 4px; }
 
-.mm-sig__style.is-active {
-  border-color: var(--mm-ink);
-  background: var(--mm-ink);
-  color: var(--mm-bg);
-}
+.mm-sig__size.is-active { border-color: var(--mm-ink); background: var(--mm-ink); color: var(--mm-bg); }
 
-.mm-sig__style-label {
-  font-family: var(--mm-font-display);
-  font-size: 14px;
-  font-weight: 500;
-}
-
-.mm-sig__style-sub {
-  font-family: var(--mm-font-mono);
-  font-size: 10px;
-  letter-spacing: 0.06em;
-  text-transform: uppercase;
-  color: var(--mm-ink-muted);
-}
-
-.mm-sig__style.is-active .mm-sig__style-sub {
-  color: var(--mm-bg-mute);
-}
+.mm-sig__size.is-active span { color: var(--mm-bg-mute); }
 
 .mm-sig__select {
   font-family: var(--mm-font-display);
@@ -354,9 +333,6 @@ const shareRows = computed(() => [
 }
 
 @media (max-width: 720px) {
-  .mm-sig__styles {
-    grid-template-columns: repeat(2, 1fr);
-  }
   .mm-sig__share-row {
     grid-template-columns: 1fr auto;
   }

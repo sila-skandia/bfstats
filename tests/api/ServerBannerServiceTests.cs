@@ -1,6 +1,5 @@
 using api.Bflist;
 using api.Bflist.Models;
-using api.GameTrends;
 using api.PlayerTracking;
 using api.ServerBanners;
 using Microsoft.Data.Sqlite;
@@ -30,12 +29,10 @@ public sealed class ServerBannerServiceTests : IDisposable
         dbContext.Database.EnsureCreated();
 
         bfListApiService = Substitute.For<IBfListApiService>();
-        var gameTrendsService = Substitute.For<ISqliteGameTrendsService>();
-
         service = new ServerBannerService(
             dbContext,
             bfListApiService,
-            gameTrendsService,
+            null!,
             null!,
             NullLogger<ServerBannerService>.Instance);
     }
@@ -57,7 +54,7 @@ public sealed class ServerBannerServiceTests : IDisposable
         });
         await dbContext.SaveChangesAsync();
 
-        var stats = await service.ResolveStatsAsync("Apex BF1942", ServerBannerStyle.Reticle, showTickets: false, CancellationToken.None);
+        var stats = await service.ResolveStatsAsync("Apex BF1942", showTickets: false, CancellationToken.None);
 
         Assert.NotNull(stats);
         Assert.Equal(14, stats.NumPlayers);
@@ -81,7 +78,7 @@ public sealed class ServerBannerServiceTests : IDisposable
         });
         await dbContext.SaveChangesAsync();
 
-        var stats = await service.ResolveStatsAsync("Empty Box", ServerBannerStyle.Console, showTickets: false, CancellationToken.None);
+        var stats = await service.ResolveStatsAsync("Empty Box", showTickets: false, CancellationToken.None);
 
         Assert.NotNull(stats);
         Assert.Equal(0, stats.NumPlayers);
@@ -115,7 +112,7 @@ public sealed class ServerBannerServiceTests : IDisposable
         });
         await dbContext.SaveChangesAsync();
 
-        var stats = await service.ResolveStatsAsync("SiMPLE", ServerBannerStyle.Reticle, showTickets: false, CancellationToken.None);
+        var stats = await service.ResolveStatsAsync("SiMPLE", showTickets: false, CancellationToken.None);
 
         Assert.NotNull(stats);
         Assert.Equal("Gazala", stats.Map);
@@ -153,7 +150,7 @@ public sealed class ServerBannerServiceTests : IDisposable
                 Tickets2 = 150
             });
 
-        var stats = await service.ResolveStatsAsync("Quiet Mode", ServerBannerStyle.Reticle, showTickets: false, CancellationToken.None);
+        var stats = await service.ResolveStatsAsync("Quiet Mode", showTickets: false, CancellationToken.None);
 
         Assert.NotNull(stats);
         Assert.Equal("Iwo Jima", stats.Map);
@@ -197,7 +194,7 @@ public sealed class ServerBannerServiceTests : IDisposable
                 Tickets2 = 69
             });
 
-        var stats = await service.ResolveStatsAsync("Apex", ServerBannerStyle.Reticle, showTickets: true, CancellationToken.None);
+        var stats = await service.ResolveStatsAsync("Apex", showTickets: true, CancellationToken.None);
 
         Assert.NotNull(stats);
         Assert.Equal("El Alamein", stats.Map);
@@ -241,7 +238,6 @@ public sealed class ServerBannerServiceTests : IDisposable
 
         var stats = await service.ResolveStatsAsync(
             "CHASABA Main BF1942 Server",
-            ServerBannerStyle.Reticle,
             showTickets: false,
             CancellationToken.None);
 
@@ -285,7 +281,6 @@ public sealed class ServerBannerServiceTests : IDisposable
 
         var stats = await service.ResolveStatsAsync(
             "CHASABA Main BF1942 Server",
-            ServerBannerStyle.Reticle,
             showTickets: true,
             CancellationToken.None);
 

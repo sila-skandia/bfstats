@@ -636,7 +636,7 @@ watch(activeTab, (t) => {
             </div>
           </section>
 
-          <MmServerSignatureBuilder :server-name="serverName" />
+          <MmServerSignatureBuilder :server-name="serverName" :game-id="mapGameId ?? undefined" />
         </div>
       </div>
 

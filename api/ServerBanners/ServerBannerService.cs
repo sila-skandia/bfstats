@@ -1,8 +1,8 @@
 using api.Bflist;
 using api.Bflist.Models;
-using api.GameTrends;
 using api.PlayerTracking;
 using api.ServerBanners.Models;
+using api.Signatures;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Logging;
 
@@ -11,32 +11,37 @@ namespace api.ServerBanners;
 public sealed class ServerBannerService(
     PlayerTrackerDbContext dbContext,
     IBfListApiService bfListApiService,
-    ISqliteGameTrendsService gameTrendsService,
-    ServerBannerRenderer renderer,
+    SignatureArtCatalogue art,
+    ServerSignatureRenderer renderer,
     ILogger<ServerBannerService> logger) : IServerBannerService
 {
-    // Past + future hours shown either side of "now" on the Waveform timeline.
-    private const int ActivityHourRange = 4;
-
     public async Task<byte[]?> RenderAsync(
         string serverName,
-        ServerBannerStyle style,
+        string? modId,
+        string? scene,
         bool showTickets = true,
-        int width = ServerBannerRenderer.DefaultWidth,
+        int width = SignatureCanvas.DefaultWidth,
         CancellationToken cancellationToken = default)
     {
-        var stats = await ResolveStatsAsync(serverName, style, showTickets, cancellationToken);
+        var stats = await ResolveStatsAsync(serverName, showTickets, cancellationToken);
         if (stats is null)
         {
             return null;
         }
 
-        return await renderer.RenderAsync(stats, style, width, cancellationToken);
+        // Unless the caller picks one, the signature wears the server's own mod.
+        var choice = art.Pick(modId, scene, stats.GameId);
+        if (choice is null)
+        {
+            logger.LogWarning("No signature art in the catalogue; is Signatures/Art in the image?");
+            return null;
+        }
+
+        return await renderer.RenderAsync(stats, choice, width, cancellationToken);
     }
 
     internal async Task<ServerBannerStats?> ResolveStatsAsync(
         string serverName,
-        ServerBannerStyle style,
         bool showTickets,
         CancellationToken cancellationToken = default)
     {
@@ -84,12 +89,6 @@ public sealed class ServerBannerService(
                 : await ResolveTicketsAsync(server.Game, ip, port, cancellationToken)
             : null;
 
-        // Only the Waveform style renders the population timeline, so skip the extra
-        // query for the other three.
-        var activity = style == ServerBannerStyle.Waveform
-            ? await ResolveActivityAsync(server.Guid, server.CurrentNumPlayers, cancellationToken)
-            : null;
-
         return new ServerBannerStats(
             ServerName: server.Name,
             IpPort: $"{ip}:{port}",
@@ -99,50 +98,7 @@ public sealed class ServerBannerService(
             MaxPlayers: server.MaxPlayers ?? 0,
             IsOnline: server.IsOnline,
             Tickets: tickets,
-            Activity: activity);
-    }
-
-    /// <summary>
-    /// Builds the Waveform population timeline from the pre-computed hourly busy
-    /// patterns: typical players for the past <see cref="ActivityHourRange"/> hours, the
-    /// live count for the current hour, and the forecast for the next few hours.
-    /// Best-effort — any failure just drops the timeline and the renderer falls back.
-    /// </summary>
-    private async Task<ServerBannerActivity?> ResolveActivityAsync(
-        string serverGuid,
-        int currentPlayers,
-        CancellationToken cancellationToken)
-    {
-        _ = cancellationToken;
-        try
-        {
-            var grouped = await gameTrendsService.GetServerBusyIndicatorAsync([serverGuid], ActivityHourRange);
-            var timeline = grouped.ServerResults.FirstOrDefault()?.HourlyTimeline;
-            if (timeline is null || timeline.Count == 0)
-            {
-                return null;
-            }
-
-            var currentIndex = timeline.FindIndex(h => h.IsCurrentHour);
-            var bars = new List<ServerBannerActivityBar>(timeline.Count);
-            for (var i = 0; i < timeline.Count; i++)
-            {
-                var entry = timeline[i];
-                // The current bar carries the live count; the rest use the hourly average.
-                var players = entry.IsCurrentHour ? currentPlayers : entry.TypicalPlayers;
-                var isFuture = currentIndex >= 0 && i > currentIndex;
-                bars.Add(new ServerBannerActivityBar(players, entry.IsCurrentHour, isFuture));
-            }
-
-            // No history and nobody on now — let the renderer use its static fallback
-            // rather than paint a flat, empty equalizer.
-            return bars.Any(b => b.Players > 0) ? new ServerBannerActivity(bars) : null;
-        }
-        catch (Exception ex)
-        {
-            logger.LogWarning(ex, "Failed to resolve activity timeline for {ServerGuid}", serverGuid);
-            return null;
-        }
+            GameId: server.Game);
     }
 
     /// <summary>

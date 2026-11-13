@@ -1,18 +1,18 @@
-using api.ImageStorage;
 using api.PlayerBanners.Models;
 using api.PlayerStats;
 using api.PlayerTracking;
+using api.Signatures;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Caching.Distributed;
 using Microsoft.Extensions.Logging;
-using SixLabors.ImageSharp;
 
 namespace api.PlayerBanners;
 
 public sealed class PlayerBannerService(
     PlayerTrackerDbContext dbContext,
     ISqlitePlayerStatsService playerStatsService,
-    BannerRenderer renderer,
+    SignatureArtCatalogue art,
+    PlayerSignatureRenderer renderer,
     IDistributedCache cache,
     ILogger<PlayerBannerService> logger) : IPlayerBannerService
 {
@@ -20,12 +20,20 @@ public sealed class PlayerBannerService(
 
     public async Task<byte[]?> RenderAsync(
         string playerName,
-        BannerStyle style,
+        string? modId,
+        string? scene,
         string? serverGuid,
+        int width,
         CancellationToken cancellationToken = default)
     {
-        var cacheKey = BuildCacheKey(playerName, style, serverGuid);
+        var choice = art.Pick(modId, scene);
+        if (choice is null)
+        {
+            logger.LogWarning("No signature art in the catalogue; is Signatures/Art in the image?");
+            return null;
+        }
 
+        var cacheKey = BuildCacheKey(playerName, $"{choice.Mod.Id}/{choice.Scene.Id}", serverGuid, width);
         var cached = await cache.GetAsync(cacheKey, cancellationToken);
         if (cached is { Length: > 0 })
         {
@@ -38,15 +46,7 @@ public sealed class PlayerBannerService(
             return null;
         }
 
-        var basePath = Path.Combine(TournamentImagesConfig.ResolveBasePath(), "banners", style.FileName());
-        if (!File.Exists(basePath))
-        {
-            logger.LogWarning("Banner base image missing at {Path} — falling back to plain background", basePath);
-            return null;
-        }
-
-        using var baseImage = await Image.LoadAsync(basePath, cancellationToken);
-        var bytes = await renderer.RenderAsync(baseImage, stats, cancellationToken);
+        var bytes = await renderer.RenderAsync(stats, choice, width, cancellationToken);
 
         await cache.SetAsync(cacheKey, bytes, new DistributedCacheEntryOptions
         {
@@ -112,10 +112,10 @@ public sealed class PlayerBannerService(
             TotalHours: serverStats.TotalPlayTimeMinutes / 60.0);
     }
 
-    private static string BuildCacheKey(string playerName, BannerStyle style, string? serverGuid)
+    private static string BuildCacheKey(string playerName, string art, string? serverGuid, int width)
     {
         var safeName = playerName.Replace(":", "_").ToLowerInvariant();
         var serverPart = string.IsNullOrWhiteSpace(serverGuid) ? "all" : serverGuid;
-        return $"banner:v1:{safeName}:{style}:{serverPart}";
+        return $"banner:v2:{safeName}:{art}:{serverPart}:{width}";
     }
 }

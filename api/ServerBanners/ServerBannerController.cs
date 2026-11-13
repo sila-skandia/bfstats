@@ -1,44 +1,45 @@
+using api.Signatures;
 using Microsoft.AspNetCore.Mvc;
 
 namespace api.ServerBanners;
 
 /// <summary>
-/// Public endpoint for server signature banners. Returns a generated PNG suitable
-/// for direct embedding in forum BBCode ([img]…[/img]). The response is intentionally
-/// uncached — player count and current map/mode are read fresh on every request.
+/// Public endpoint for server signatures. Returns a generated PNG suitable for direct
+/// embedding in forum BBCode ([img]...[/img]). Player count and current map are read fresh,
+/// so the edge keeps it for 30 seconds only.
 /// </summary>
 [ApiController]
 [Route("stats/servers")]
 public class ServerBannerController(IServerBannerService bannerService) : ControllerBase
 {
+    /// <param name="mod">The mod whose models draw the hero; defaults to the server's own.</param>
+    /// <param name="scene">The mod's scene (<c>/stats/signatures/catalogue</c> lists them).</param>
+    /// <param name="style">The four pre-2026-11 art styles; links that still carry one get the server's mod.</param>
     [HttpGet("{serverName}/banner.png")]
     public async Task<IActionResult> GetBanner(
         string serverName,
+        [FromQuery] string? mod,
+        [FromQuery] string? scene,
         [FromQuery] string? style,
         [FromQuery] bool tickets = true,
-        [FromQuery] int w = ServerBannerRenderer.DefaultWidth,
+        [FromQuery] int w = SignatureCanvas.DefaultWidth,
         CancellationToken cancellationToken = default)
     {
+        _ = style;
         if (string.IsNullOrWhiteSpace(serverName))
         {
             return BadRequest(new { error = "serverName is required" });
         }
 
         serverName = Uri.UnescapeDataString(serverName);
-        var bannerStyle = ServerBannerStyleExtensions.TryParse(style, out var parsedStyle) ? parsedStyle : default;
-
-        var bytes = await bannerService.RenderAsync(serverName, bannerStyle, tickets, ServerBannerRenderer.ClampWidth(w), cancellationToken);
+        var bytes = await bannerService.RenderAsync(serverName, mod, scene, tickets, SignatureCanvas.ClampWidth(w), cancellationToken);
         if (bytes is null)
         {
             return NotFound(new { error = "Server not found" });
         }
 
-        // The banner paints live server state, so it can't be cached for long — but
-        // no-store meant re-rendering the PNG for every single view (p50 ~460ms,
-        // p95 ~714ms) and cf-cache-status: BYPASS, so the render also cost a round
-        // trip to Finland every time. The underlying data only moves as fast as the
-        // stats collector, so 30s matches the freshest it can ever be. Hot servers
-        // are shown far more than twice a minute; those views now come off the edge.
+        // The signature paints live server state, so the edge keeps it 30s: the collector's
+        // own cadence, and hot servers are viewed far more often than that.
         Response.Headers.CacheControl = "public, max-age=30";
         return File(bytes, "image/png");
     }
