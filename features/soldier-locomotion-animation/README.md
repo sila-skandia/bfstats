@@ -1211,11 +1211,9 @@ howitzer 1.2 m away, and the page drew him standing with his arm down.
   `test_gait_actions.py`
   `test_a_weapon_swinging_another_clip_gets_a_variant_of_its_own`,
   `test_soldier_actions.py` `test_a_weapon_gets_the_swing_variant_that_lists_it`.
-- **Left to do by rule**: FHSW's tree has the same 24 stabs undrawn and wants
-  `python3 extract_pose.py --mod fhsw --gaits-only --out viewer/models/mods/fhsw/poses`
-  and a publish; FHSW is outside this request's scope (CLAUDE.md, mod scope).
-  FHSWEurope's grips only a level declares are not seen by `--gaits-only` and
-  carry no knife.
+- **Published in both trees** (2026-11-13): FHSWEurope and FHSW, 134-138
+  gait files each, live sizes matching the local ones. `--gaits-only` does not
+  see a grip only a level declares; those carry no knife.
 - **The gliding at 4:40 was not reproduced.** Jan Paul's life there (nid 1782):
   recorded `Lb_RunForwardPPSh` at about 5.8 m/s, with 0.5 s of
   `Lb_RunBackwardPPSh`/`Lb_StrafeLeftPPSh` at 2.8 m/s around 279.2-280.1; a
