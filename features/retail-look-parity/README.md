@@ -31,7 +31,30 @@ other levels are ours before and after.
 
 ## Not done
 
-- The mods' trees (FH, FHSW, FHSWEurope, DC, EoD, bf1918, GC...) were not
-  re-baked here; anyone baking them passes `--max-texture 1024` or takes the
-  new default. Kit parts (`extract_kits.py` `MAX_TEXTURE` 512) and the
-  mods' own 2048 textures are untouched.
+- The mods' own 2048 textures are untouched (2026-11-14: the mod level trees
+  and the kit parts are now at 1024, below).
+- Not re-baked, so they keep their live 512 bakes: vanilla Strasbourg and FH
+  Road_To_Ramelle (no archives here); in FHSW a_day_of_zitadelle,
+  cretan_village, kiew, nuenen-1944, soletschnogorsk-1941, todtenbruch-1944 and
+  tulagi_island; FHSW Europe the same seven plus fall_gelb-1940,
+  operation_lilliput, road_to_ramelle, the_attack_on_carentan-1944 and
+  spurning_fate-1945, and stashuv_area (the Mac install's copy bakes 5 missing
+  meshes, 48 fewer placed objects and no terrain materials). The Mac install's
+  archives for these lack Init/Terrain.con or the heightmap (Kiew.rfa is 300 KB
+  here); they were first baked on the Linux PC, whose install has them, so a
+  bake there finishes them.
+
+## 2026-11-14: the mod trees and the kit parts
+
+- Every exported level of vanilla, xpack1, xpack2, fh, gcmod, desertcombat, eod
+  (239), bf1918 (133), fhsw (133 of 140) and fhsweurope (261 of 274) was
+  re-baked at 1024 and published on 2026-11-13/14, textures verified 200 before
+  the levels went up. The exceptions are listed under "Not done".
+- Kit parts: `extract_kits.py` `MAX_TEXTURE` was 512 ("a kit part is a hat"),
+  which halved EoD's AK47, bf1918's flamer and GCMOD's e-11. It is 1024 now and
+  `tests/test_texture_cap.py` guards it. Census of the live kit glbs against
+  the game archives (source dds above 512, stored at 512): bf1918 22, eod 10,
+  fhsweurope 4, gcmod 6, fhsw 2, desertcombat 4; fh, xpack2 and vanilla none
+  (xpack1 has no kit textures). Those six trees were rebuilt with
+  `mod_pipeline.py run --mod <M> --only-steps kits --force-steps`, which also
+  optimises, and published textures first, then the models unit.

@@ -27,6 +27,12 @@ class TextureCapTest(unittest.TestCase):
             with self.subTest(path):
                 self.assertGreaterEqual(default_of(path), RETAIL_LARGEST_TEXTURE)
 
+    def test_the_kit_bake_does_not_halve_a_retail_texture(self) -> None:
+        text = (HERE / "extract_kits.py").read_text()
+        m = re.search(r"^MAX_TEXTURE\s*=\s*(\d+)", text, re.M)
+        self.assertTrue(m, "extract_kits.py has no MAX_TEXTURE")
+        self.assertGreaterEqual(int(m.group(1)), RETAIL_LARGEST_TEXTURE)
+
 
 if __name__ == "__main__":
     unittest.main()

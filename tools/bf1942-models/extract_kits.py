@@ -69,9 +69,10 @@ from bf42.rfa import find_archives_dir
 # out. `viewer/kits.html` reads it off the loaded skeleton instead; see
 # "The graft, and the trap it walked into" in features/bf1942-3d-models/kits.md.
 
-# A kit part is a hat. It does not need the vehicle-sized texture budget, and
-# capping it keeps the whole worn set in the low megabytes.
-MAX_TEXTURE = 512
+# A kit part keeps its retail texture size, up to the largest retail ships
+# (1024). A 512 cap halved EoD's AK47, bf1918's flamer and GCMOD's e-11
+# (features/retail-look-parity).
+MAX_TEXTURE = 1024
 
 
 def theatre_label(theatre: str | None) -> str | None:
