@@ -20,12 +20,12 @@
 import * as THREE from 'three/webgpu';
 import {
   cameraPosition, clamp, exp, float, materialColor, max, mix, normalize, positionWorld, smoothstep,
-  uniform, vec3, vec4, output, dot, pow, texture,
+  uniform, vec3, vec4, output, dot, pow, texture, positionView, min, sRGBTransferEOTF, sRGBTransferOETF,
 } from 'three/tsl';
 import { SkyMesh } from 'three/addons/objects/SkyMesh.js';
 import { CSMShadowNode } from 'three/addons/csm/CSMShadowNode.js';
 import { REMASTER_OFF } from './remaster-mode.js';
-import { terrainSunDir } from './remaster-materials.js';
+import { bindEngineSun } from './remaster-materials.js';
 
 /**
  * The direction toward the sun from scene.json's `sunDirection`, which in
@@ -203,6 +203,8 @@ export function createRemasterSky({ renderer, scene, camera, sun, hemi }) {
   // level's fog end. Sized by the light's own shadow camera; the cascades
   // fit themselves to the view each frame.
   sun.castShadow = !REMASTER_OFF.has('noshadow');
+  // The engine combine's sun term is measured against this light (remaster-materials.js).
+  bindEngineSun(sun);
   const shadowSize = Number(new URLSearchParams(location.search).get('shadowSize')) || 2048;
   sun.shadow.mapSize.set(shadowSize, shadowSize);
   sun.shadow.bias = -0.0004;
@@ -227,11 +229,45 @@ export function createRemasterSky({ renderer, scene, camera, sun, hemi }) {
   if (!sun.target.parent) scene.add(sun.target);
 
   function fogNode() {
+    const toFrag = positionWorld.sub(cameraPosition);
+    const far = toFrag.length();
+    // `?pipelineSalt=<n>` (a measurement's, tests/perf): a number folded
+    // into every fogged shader, so the OS's shader cache has seen none of
+    // them and a run pays for its pipelines as a first visit does.
+    const salt = Number(qp.get('pipelineSalt')) || 0;
+    const salted = f => clamp(salt ? f.add(float(salt * 1e-9)) : f, 0, 1);
+    // The level's own fog, exactly as the retail page draws it: three's Fog
+    // between fogStart and fogEnd (a smoothstep of the view depth, so the
+    // middle distance stays clear and the far end closes softly) in the
+    // level's fog colour. Nothing else: no height falloff, no glow toward
+    // the sun.
+    //
+    // Until 2026-11-13 this was an exponential haze thinning with height,
+    // floored at 70 % of a linear ramp, closed by a wall over the last fifth
+    // of fogEnd, in a colour up to 1.8 times brighter toward the sun. At
+    // 150 m it was a quarter fog where retail has a few percent, so every
+    // dark thing in the middle distance (a palm, a bunker's shaded wall, a
+    // hill) was washed pale grey, and then the world shut in the wall's
+    // 90 m. The owner: "the fog view distance limiter is wrong in a way I
+    // can't put my finger on. It seems dirty, not atmospheric."
+    // `?remaster=haze` draws the old one.
+    //
+    // The mix is taken in display space, as the retail page's is (three's
+    // WebGL fog runs after the colour-space conversion) and as the engine's
+    // fixed-function fog was. Mixed in linear light, half fog over a dark
+    // palm is mostly fog: the same ramp read twice as thick on everything
+    // dark. What is brighter than white (a flame's glow) is carried past
+    // the mix and thinned by the fog's share.
+    if (!REMASTER_OFF.has('haze')) {
+      const ramp = salted(smoothstep(u.start, u.end, positionView.z.negate()));
+      const shown = output.rgb.div(skyGain);
+      const low = min(shown, vec3(1));
+      const mixed = sRGBTransferEOTF(mix(sRGBTransferOETF(low), sRGBTransferOETF(min(u.horizon.div(skyGain), vec3(1))), ramp));
+      return vec4(mixed.add(shown.sub(low).mul(float(1).sub(ramp))).mul(skyGain), output.a);
+    }
     // Distance and the height integral of an exponential haze between the
     // eye and the fragment (density `d * exp(-falloff * (y - base))`).
-    const toFrag = positionWorld.sub(cameraPosition);
-    // Clear air to 60 % of the level's fogStart, as retail is clear to it.
-    const dist = max(toFrag.length().sub(u.clear), 0);
+    const dist = max(far.sub(u.clear), 0);
     const dy = toFrag.y;
     const k = u.falloff;
     const eyeH = max(cameraPosition.y.sub(u.base), 0);
@@ -240,22 +276,9 @@ export function createRemasterSky({ renderer, scene, camera, sun, hemi }) {
     const shape = mix(float(1), float(1).sub(exp(kdy.negate())).div(kdy), smoothstep(0.001, 0.01, kdy.abs()));
     const optical = u.density.mul(dist).mul(heightTerm).mul(shape);
     const haze = float(1).sub(exp(optical.negate()));
-    // The world still ends at fogEnd: the far plane and the culling do.
-    const wall = smoothstep(u.end.mul(0.8), u.end, toFrag.length());
-    // Never less than 70 % of retail's own linear ramp (fogStart to fogEnd):
-    // from altitude the height haze is thin, and without the floor the
-    // world met the wall at 80 % of fogEnd as one hard band.
-    const ramp = clamp(toFrag.length().sub(u.start).div(max(u.end.sub(u.start), 1)), 0, 1).mul(0.7);
-    // `?pipelineSalt=<n>` (a measurement's, tests/perf): a number folded
-    // into every fogged shader, so the OS's shader cache has seen none of
-    // them and a run pays for its pipelines as a first visit does.
-    const salt = Number(qp.get('pipelineSalt')) || 0;
-    const mixed = max(max(haze, ramp), wall);
-    const factor = clamp(salt ? mixed.add(float(salt * 1e-9)) : mixed, 0, 1);
-    // The haze's colour: the sky's own horizon (computed on the CPU from
-    // the same model, `apply`), tinted by the level's fog colour, with the
-    // sun's forward glow. A per-pixel lookup of the sky's image-based light
-    // looked the same and cost ~16 ms a frame at 1600 x 900.
+    const wall = smoothstep(u.end.mul(0.8), u.end, far);
+    const ramp = clamp(far.sub(u.start).div(max(u.end.sub(u.start), 1)), 0, 1).mul(0.7);
+    const factor = salted(max(max(haze, ramp), wall));
     const dir = normalize(toFrag);
     const glow = pow(max(dot(dir, u.sunDir), 0), 6).mul(u.glow);
     const hazeCol = u.horizon.mul(float(1).add(glow));
@@ -270,7 +293,6 @@ export function createRemasterSky({ renderer, scene, camera, sun, hemi }) {
   // level-sky.js `setupSky` through `paintedSky`), `cube` its cube texture.
   let painted = null;
   let paintedEnv = null;
-  const horizonY = uniform(0.06);
   const skyGain = uniform(1);
   function paintedSky(root) {
     painted = root;
@@ -282,12 +304,12 @@ export function createRemasterSky({ renderer, scene, camera, sun, hemi }) {
         if (!m || m.remasterSky) continue;
         m.remasterSky = true;
         // Display-referred paint, lifted into the HDR frame so it shows at
-        // its painted brightness through the exposure and tone mapping, and
-        // faded into the haze in the last few degrees above the horizon,
-        // where the fogged world meets it.
-        const dirY = normalize(positionWorld.sub(cameraPosition)).y;
-        const paint = materialColor.rgb.mul(skyGain);
-        m.colorNode = vec4(mix(paint, u.horizon, smoothstep(horizonY, horizonY.mul(-0.3), dirY)), 1);
+        // its painted brightness through the exposure and tone mapping.
+        // Nothing else: the paint's own horizon is what the level's fog
+        // colour was chosen to meet. (Until 2026-11-13 the last degrees
+        // above the horizon were faded to the fog colour; from the air that
+        // was a flat band a fifth of the frame tall where retail shows sky.)
+        m.colorNode = vec4(materialColor.rgb.mul(skyGain), 1);
         m.fog = false;
         m.needsUpdate = true;
       }
@@ -377,7 +399,6 @@ export function createRemasterSky({ renderer, scene, camera, sun, hemi }) {
     u.tint.value.setRGB(
       0.5 + 0.5 * f[0] / lum, 0.5 + 0.5 * f[1] / lum, 0.5 + 0.5 * f[2] / lum);
     u.sunDir.value.copy(toward);
-    terrainSunDir.value.copy(toward);
     // The cascades reach the fog wall: past it nothing is drawn.
     if (csm && !qp.get('shadowFar')) {
       csm.maxFar = Math.min(800, a.fogEnd);

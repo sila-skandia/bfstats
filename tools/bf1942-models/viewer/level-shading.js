@@ -149,8 +149,8 @@ export function createLevelShading(page) {
     // The `terrainDetail` layer's key; a tree baked before 2026-10-12 carries
     // the image under `terrain.detailTexture`.
     const image = page.extras.terrainDetail?.image || page.extras.terrain?.detailTexture;
-    // Remaster mode (features/remaster-browser) lights the ground: every
-    // patch takes a lit material, with the detail grain when there is one.
+    // Remaster mode (features/remaster-browser): every patch takes the node
+    // material that draws this combine, with the detail grain when there is one.
     const R = remasterHooks.materials;
     if (!image) {
       if (R) remasterTerrain(root, null, () => 1);
@@ -224,15 +224,19 @@ export function createLevelShading(page) {
     });
   }
 
-  /** Remaster mode's terrain: a lit material on every patch (remaster-materials.js). */
+  /** Remaster mode's terrain: the same combine as a node material on every patch,
+   *  taking the sun's real-time shadow (remaster-materials.js). */
   function remasterTerrain(root, detail, repeatsOf) {
     const R = remasterHooks.materials;
+    // What a patch in a cast shadow keeps of its art: the level's own word.
+    const word = Number(page.extras.lighting?.shadowColor);
+    const shade = word > 0 && word <= 1 ? word : 0.5;
     root.traverse(node => {
       if (node.userData?.kind !== 'terrain') return;
       node.traverse(obj => {
         if (!obj.isMesh || !obj.material) return;
         const source = Array.isArray(obj.material) ? obj.material : [obj.material];
-        const bound = source.map(m => (m.remaster ? m : R.terrainMaterial(m, detail, repeatsOf(obj))));
+        const bound = source.map(m => (m.remaster ? m : R.terrainMaterial(m, detail, repeatsOf(obj), shade)));
         obj.material = Array.isArray(obj.material) ? bound : bound[0];
       });
     });
@@ -362,7 +366,7 @@ export function createLevelShading(page) {
       for (const obj of [...lightmapTargets(node), ...lodRungMeshes(node).filter(hasLightmapUvs)]) {
         const source = Array.isArray(obj.material) ? obj.material : [obj.material];
         const bound = source.map(m => {
-          // Remaster mode: a lit surface keeping the bake as occlusion.
+          // Remaster mode: the same bake, taking the sun's real-time shadow.
           if (remasterHooks.materials) return remasterHooks.materials.lightmapMaterial(m, tex);
           const mat = new THREE.MeshBasicMaterial({
             map: m.map || null,
@@ -600,9 +604,14 @@ export function createLevelShading(page) {
           return view;
         }
         if (remasterHooks.materials) {
-          // Remaster mode: lit by the real sun and sky (remaster-materials.js).
+          // Remaster mode: this same combine as a node material, with the
+          // sun's real-time shadow in its sun term (remaster-materials.js).
           const lit = remasterHooks.materials.dynamicMaterial(m, {
-            materialDiffuse: md === WHITE ? null : md, env: wantsEnvmap(m),
+            light: {
+              floor: [0, 1, 2].map(i => Math.min(1, (amb[i] || 0) + (glob[i] || 0))),
+              sun: diff,
+            },
+            materialDiffuse: md === WHITE ? null : md, cube: env,
           });
           lit.bfShade = { value: new THREE.Vector4(1, 1, 1, 0) };
           lit.bfEnv = !!env;

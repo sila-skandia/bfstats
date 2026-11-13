@@ -7,7 +7,11 @@
 // Chrome (WebGPU on the Mac's GPU), destroys one vehicle of each kind in
 // view of the free camera, then a second of the first few kinds, then plays
 // every explosion effect in the library, and prints the longest frame after
-// each.
+// each. Last, it spawns on foot and throws what the kit throws (a grenade,
+// an explosives pack): a round cloned out of the hand rig once carried the
+// rig's material into the world, the sun's shadow pass threw on it, and the
+// picture stopped while the game ran on ("when I throw a grenade the game
+// hangs", the owner, 2026-11-13). A frame that throws is a failure here.
 //
 //   node tests/perf/remaster_explosions.mjs --base http://localhost:5273 \
 //        [--map wake] [--modes 'remaster=syncpipes;remaster'] [--settle 15000]
@@ -38,6 +42,8 @@ for (const mode of modes) {
   const page = await browser.newPage({ viewport: { width: 1600, height: 900 } });
   const errors = [];
   page.on('pageerror', e => errors.push(String(e).slice(0, 200)));
+  // The page's frame loop catches what a frame throws and logs it once.
+  page.on('console', m => { if (m.type() === 'error' && /frame threw/.test(m.text())) errors.push(m.text().slice(0, 300)); });
   const salt = Math.floor(Math.random() * 1e6) + 1;
   await page.goto(`${base}/map.html?map=${map}&${mode}&shots=1&mute&pipelineSalt=${salt}`, { timeout: 180000 });
   await page.waitForFunction(() => window.__vehicles && window.__camera && window.__renderer, null, { timeout: 180000 });
@@ -90,11 +96,33 @@ for (const mode of modes) {
       for (let i = 0; i < 20; i++) { lookFrom(spot); await frame(); }
       out.effects.push({ name, ...(await run(150, spot, () => window.__playEffect(name, spot))) });
     }
+    // On foot: every kit slot thrown or fired once, and the frames after it.
+    out.thrown = [];
+    if (window.__setOnFoot && window.__deploy && window.__selectKitWeapon) {
+      const wait = ms => new Promise(r => setTimeout(r, ms));
+      window.__setOnFoot(true); await wait(1500);
+      const d = window.__deploy;
+      d.select(d.flags.findIndex(f => f.side)); await wait(300); d.spawn(); await wait(7000);
+      for (const slot of [3, 4, 5]) {
+        window.__selectKitWeapon(slot); await wait(2500);
+        const name = window.__handWeapon?.()?.name ?? null;
+        if (!name || out.thrown.some(t => t.name === name)) continue;
+        const gaps = [];
+        let last = performance.now();
+        window.__setTrigger(true);
+        for (let i = 0; i < 240; i++) {
+          if (i === 24) window.__setTrigger(false);
+          await frame();
+          const now = performance.now(); gaps.push(now - last); last = now;
+        }
+        out.thrown.push({ name, worst: Math.round(Math.max(...gaps)) });
+      }
+    }
     out.pipelines = window.__remaster?.asyncPipelines?.() ?? null;
     return out;
   });
   console.log(`== ${mode}`);
-  for (const group of ['first', 'second', 'effects']) {
+  for (const group of ['first', 'second', 'effects', 'thrown']) {
     const rows = result[group];
     const worst = rows.reduce((a, r) => (r.worst > a.worst ? r : a), { worst: 0, name: '-' });
     console.log(`${group.padEnd(8)} ${rows.length} events, worst frame ${worst.worst} ms (${worst.name}), `

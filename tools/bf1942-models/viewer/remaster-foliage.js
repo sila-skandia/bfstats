@@ -13,16 +13,18 @@
 // - Wind: the whole tree leans with a slow, gusting sway that grows with
 //   height, and each leaf card flutters on its own phase. Trunks, branch
 //   cards and leaves share one sway, so nothing tears apart.
-// - Light: leaves are lit like the rest of the remaster, with a rounded
-//   canopy normal (out from the trunk, tipped up) instead of the card's
-//   flat one, which would light a card by which way it happened to face.
+// - Light: a leaf is drawn as retail draws it, unlit at twice its texture,
+//   then shaded by the sun's shadow and by a rounded canopy normal (out
+//   from the trunk, tipped up) instead of the card's flat one, which would
+//   shade a card by which way it happened to face.
 
 import {
   attribute, atan, cameraPosition, cameraWorldMatrix, cos, float, floor, materialReference, mix, mod, modelScale,
-  modelWorldMatrix, modelWorldMatrixInverse, normalize, positionLocal, sin, time,
+  modelWorldMatrix, modelWorldMatrixInverse, normalize, positionLocal, pow, sin, time,
   transformNormalToView, uv, vec2, vec3, vec4,
 } from 'three/tsl';
-import { copyRemasterProps, FOLIAGE_SKY_FILL, matTexture, shadowCut } from './remaster-materials.js';
+import * as THREE from 'three/webgpu';
+import { copyRemasterProps, EngineMaterial, matTexture, shadowCut } from './remaster-materials.js';
 
 // One wind for the level: a direction and a gust, slowly varying.
 const WIND = vec3(0.86, 0, 0.5);
@@ -50,12 +52,14 @@ export function windNodes(material) {
     material.depthWrite = true;
     material.alphaTest = 0.4;
     if (material.map) material.maskShadowNode = shadowCut(material, 0.42);
+    // A frond passes light: the engine's lit combine, the sun's share taken
+    // from either side of the card (`EngineMaterial`'s `frond`).
+    material.bfKind = 'frond';
   }
   const h = positionLocal.y.max(0);
   const worldSway = sway(treeRoot(), h);
   const localSway = modelWorldMatrixInverse.mul(vec4(worldSway, 0)).xyz;
   material.positionNode = positionLocal.add(localSway);
-  material.aoNode = float(FOLIAGE_SKY_FILL);
   material.needsUpdate = true;
 }
 
@@ -89,7 +93,10 @@ export function spriteNodes(material) {
   // Through the material being drawn, not baked into the shared graph
   // (remaster-materials.js has the story).
   if (material.map) material.maskShadowNode = shadowCut(material, 0.42);
-  material.aoNode = float(FOLIAGE_SKY_FILL);
+  // Retail draws a leaf unlit, `2 * texture` (tree-foliage.js
+  // `patchSpriteMaterial`); the remaster keeps that and shades it by the
+  // sun's shadow and the canopy's turn from the sun (`EngineMaterial`).
+  material.bfKind = 'leaf';
   material.needsUpdate = true;
 }
 
@@ -117,18 +124,35 @@ export function impostorNodes(material, frames, eighth) {
   // graph ahead of the samples (remaster-materials.js `matTexture`).
   const col = vec4(strip.keep).add(mix(a, b, w));
   // The strip is the tree as the art drew it, light and all, and retail
-  // draws it unlit. Here it is lit matte from straight up (tree-foliage.js
-  // makes it a Lambert material: seen from the side, a specular one wore a
-  // pale veil of the horizon, a ghost of a palm beside the near trees), and
-  // takes a tree's share of the sky.
-  material.colorNode = vec4(col.rgb.mul(IMPOSTOR_ALBEDO), col.a);
-  material.aoNode = float(FOLIAGE_SKY_FILL);
+  // draws it unlit; so does the remaster (`EngineMaterial`'s `card`), with
+  // the sun's shadow over it where the cascades reach.
+  //
+  // The alpha is firmed for this frame's blend. Retail blended the card over
+  // the sky in display space, where a half-covered texel of a dark frond is
+  // a mid tone; this frame blends in linear light, where the same half is
+  // mostly sky, and every far palm drew as a pale grey wisp ("the grey blob",
+  // and the remaster's far trees since its first cut). `1 - (1 - a)^2.2` is
+  // the linear coverage that lands a dark texel over a bright sky where the
+  // display-space blend put it.
+  const cover = float(1).sub(pow(float(1).sub(col.a.clamp(0, 1)), 2.2));
+  material.colorNode = vec4(col.rgb.mul(IMPOSTOR_ALBEDO), cover);
   material.normalNode = transformNormalToView(vec3(0, 1, 0));
   material.needsUpdate = true;
 }
 
+/** The far card's material: the strip `tex` of `frames` frames, `eighth` apart. */
+export function impostorMaterial(tex, frames, eighth, alphaTest) {
+  const material = new EngineMaterial({
+    map: tex, alphaTest, transparent: true, depthWrite: false, side: THREE.DoubleSide,
+  });
+  material.name = 'tree impostor';
+  material.bfKind = 'card';
+  impostorNodes(material, frames, eighth);
+  return material;
+}
+
 const NODE_KEYS = ['positionNode', 'colorNode', 'normalNode', 'maskShadowNode', 'castShadowPositionNode',
-  'opacityNode', 'emissiveNode', 'aoNode', 'remasterSprite', 'remasterWind', 'remaster'];
+  'opacityNode', 'emissiveNode', 'aoNode', 'remasterSprite', 'remasterWind', 'remaster', 'bfKind'];
 
 /** `Material.clone` drops the node slots of a plain material; carry them across. */
 export function carryNodes(from, to) {
@@ -136,4 +160,4 @@ export function carryNodes(from, to) {
   return copyRemasterProps(from, to);
 }
 
-export const remasterFoliage = { windNodes, spriteNodes, impostorNodes, carryNodes };
+export const remasterFoliage = { windNodes, spriteNodes, impostorNodes, impostorMaterial, carryNodes };

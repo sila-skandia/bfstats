@@ -696,6 +696,9 @@ function spawnProjectile(guns, muzzle, group, spec, barrel = 0) {
       mesh = group.projectileMesh.clone();
     }
   }
+  // Remaster mode: a round cloned out of the hand rig leaves the hand with
+  // the rig's first-person materials; in the world it takes the world's.
+  globalThis.bfRemasterHooks?.materials?.worldMaterials?.(mesh);
   mesh.visible = true;
   mesh.traverse(o => { o.visible = true; });
   mesh.scale.setScalar(1);

@@ -224,6 +224,12 @@ export function createLevelSky(page) {
         w, layer1, layer2, normal, depthTex: depth,
         worldSize: w.worldSize || page.extras.worldSize || 2048, maxDepth: w.maxDepth || 0,
       });
+      // Before every other transparent object, as the retail water is
+      // (below). Left at 0 until 2026-11-13, the sea was drawn after a far
+      // tree's card, which writes no depth, and painted over the middle of
+      // every palm that stood against it: the crown above the horizon and
+      // the foot on the sand, and water where the trunk met the sea.
+      waterObj.renderOrder = -1;
       return;
     }
     const env = page.extras.envmapTexture === 'texture/defaultTexture'

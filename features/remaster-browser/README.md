@@ -17,6 +17,19 @@ the water. The relief maps are `?remaster=maps`, and the spatial audio is
 `&remasterAudio=1`. Both were fixed after the verdict (below), but they stay
 off unless asked for.
 
+**And what it is now (2026-11-13).** The owner played it again: the weapon
+in the hand lit by the remaster's sun "makes everything look rubbery and low
+detail... technically cool but provides nothing"; and of the world, "the dark
+shadows have that gel grey feeling", vehicles in the sun "overly darkened
+and grey", "in general our rendering of the shadows is ugly and lacking light
+and detail", the fog "dirty, not atmospheric". Every one of those was the
+physically based relighting. BF1942's art is painted to be seen under the
+engine's own combines, so the remaster now draws every surface with the
+combine the retail page draws it with, at the art's own brightness, and adds
+to it what it adds: the sun's real-time shadow in the combine's sun term,
+the water, the HDR frame (bloom, shafts, occlusion). The fog is the level's
+own. Nothing is relit.
+
 ## Plan and progress
 
 | Step | State |
@@ -24,11 +37,11 @@ off unless asked for.
 | `?remaster` switches three to r186's WebGPU build through the import map; the default path untouched | done |
 | The setting carries from the play menu into every game it starts, for the tab | done |
 | WebGPU renderer under the whole game: shims for the WebGL-only calls, warm-up, node frame, overlay passes (first-person arms, replays), side views (tank sights, previews, the proving ground) | done |
-| Lit materials: terrain (un-baked), lightmapped statics, vehicles and soldiers | done |
+| Every surface drawn with the engine's own combine, the sun's real-time shadow in its sun term: terrain, lightmapped statics, vehicles, soldiers, trees | done (the owner's call, 2026-11-13; physically based until then) |
 | Real-time cascaded sun shadows out to the fog wall | done (static casters merged into shadow proxies) |
 | Ambient occlusion (GTAO), HDR, tone mapping, SMAA | done |
 | Each level's own painted sky (or cube), lifted into HDR, as the sky and as the ambient light | done (a physical sky only for a level with neither) |
-| Height fog driven by `fogColor` / `fogStart` / `fogEnd` | done |
+| The level's own fog (`fogColor` / `fogStart` / `fogEnd`), mixed as the retail page mixes it | done (2026-11-13; the height haze it replaced is `?remaster=haze`) |
 | Water from the level's own water words and depth bake | done |
 | Foliage: leaf sprites, billboards and wind as node graphs | done |
 | Bloom on muzzle flashes, explosions and tracers; flashes and blasts light their surroundings; sun shafts | done |
@@ -37,6 +50,8 @@ off unless asked for.
 | Pipelines and textures warmed before play, not on first sight | done (worst frame while turning: 141-501 ms down to 26-83 ms) |
 | The first-person arms and weapon drawn by the engine's own combine, not the remaster's sun | done (the owner's call, 2026-11-13) |
 | Nothing built during play holds a frame: hidden effects and vehicles warmed, later pipelines built off the thread | done (first kill of a kind: 283-486 ms down to 36-52 ms) |
+| A round thrown from the hand takes the world's material (a grenade no longer stops the frame) | done |
+| The sea drawn before every other transparent thing (far palms no longer cut at the waterline) | done |
 | Two levels with before/after captures and frame times | done: Wake, Battle of Britain |
 
 ## How to look at it
@@ -61,7 +76,10 @@ themselves), `noao`, `nobloom`, `nosmaa`, `nopost` (no post chain at all),
 `noflash` (no flash lights), `noshafts`, `nostagger` (every cascade every
 frame), `notonemap`, `syncpipes` (a pipeline met during play is built in
 the frame that meets it, as before 2026-11-13). Parts that are off unless
-named: `maps` (the generated normal and roughness maps). Tuning
+named: `maps` (the generated normal and roughness maps), `haze` (the height
+haze, in place of the level's own fog). A check: `showk` draws each surface
+as the share of the sun its combine was given (white in the sun, black in a
+shadow or turned away). Tuning
 knobs: `&exposure=`, `&cascades=`, `&shadowFar=`, `&shadowSize=`,
 `&leafReach=`, `&solidReach=`, `&glow=`, `&gpuTiming`, `&pipelineSalt=`
 (a measurement's: a number folded into every fogged shader so the OS's
@@ -106,7 +124,7 @@ Wake, the airfield ridge across the lagoon:
 ![Wake airfield](shots/wake_airfield.jpg)
 
 Wake, looking into the sun: the painted sky kept, the sun's glint across the
-water, and the shafts through the haze:
+water, and the shafts:
 ![Wake into the sun](shots/wake_sun.jpg)
 
 Wake, the supply bunker:
@@ -139,6 +157,18 @@ An explosion's fireball, a frame after a gun emplacement dies off the left
 edge: the original game, the remaster's hard-edged rectangle, and now:
 ![Explosion glow](shots/wake_explosion_glow.jpg)
 
+What the owner pointed at on 2026-11-13, each as the original game, the
+remaster before that day and the remaster now. The Shokaku's island and
+masts against the sun, a Sherman's shaded side at the north village, and the
+north base (the palm in the last row is in its fade band, drawn before as
+white blades):
+![Ships and vehicles](shots/wake_ships_vehicles_3up.jpg)
+
+Far palms and a bunker at 200 m (grey ghosts, the hill washed out, and the
+sea drawn over the palms' trunks at the right edge), the village across the
+lagoon at 300 m, and a palm against the sun:
+![Trees and fog](shots/wake_trees_fog_3up.jpg)
+
 On foot, remaster only: [Wake](shots/wake_on_foot_remaster.jpg),
 [Battle of Britain](shots/bob_on_foot_remaster.jpg). Full-size frames:
 [Wake](shots/wake_airfield_remaster_full.jpg),
@@ -162,7 +192,12 @@ retail column is the default path on this branch, unchanged by it.
 | Battle of Britain | airfield | 4.0 ms | 9.6 ms | 6.0 ms |
 | Battle of Britain | overview | 4.8 ms | 10.4 ms | 6.4 ms |
 
-Every view is inside a 60 fps frame. Where it goes (about 1 ms of noise):
+Every view is inside a 60 fps frame. The table is from 2026-11-12, before
+the surfaces went back to the engine's combines; that change did not move it
+(the two builds served side by side and timed back to back on 2026-11-13,
+with the machine busy: 17.3, 15.4, 11.1, 12.7 and 20.2 ms before, 16.4, 15.4,
+13.2, 12.3 and 19.8 ms after, the five Wake views in the table's order).
+Where it goes (about 1 ms of noise):
 
 | | Wake airfield | Battle of Britain base |
 |---|---|---|
@@ -221,8 +256,8 @@ its listed neighbours into a temporary folder.
 |---|---|
 | `remaster-mode.js` | the setting (address, else the tab's), the parts turned off, the hook registry |
 | `remaster-renderer.js` | the WebGPU renderer, its WebGL shims, the custom tone curve, shadow casters, the frame and its post chain, flash lights, sun shafts, side renderers |
-| `remaster-sky.js` | the painted sky in HDR, the physical sky's fallback, image-based light, haze, cascaded shadows, the retail cloud layer |
-| `remaster-materials.js` | terrain, lightmapped statics, dynamic surfaces, the generated maps, the proving ground's floor |
+| `remaster-sky.js` | the painted sky in HDR, the physical sky's fallback, image-based light, the fog, cascaded shadows, the retail cloud layer |
+| `remaster-materials.js` | `EngineMaterial` and its lighting model (the engine's combines with the sun's shadow in them), the first-person rig's material, the generated maps, the proving ground's floor |
 | `remaster-shadow-proxies.js` | the merged static shadow casters |
 | `remaster-water.js` | the water |
 | `remaster-foliage.js` | leaf sprites, billboards, wind |
@@ -245,17 +280,18 @@ WebGPU).
 
 | `scene.json` | Retail | Remaster |
 |---|---|---|
-| `sunDirection` | the vehicles' N.L (and the bake) | the sun, its shadows, the terrain's un-bake |
-| `lighting.diffuse` | the sun's colour and the 2x combine | the sun's tint; its strength against the ambient pair |
-| `lighting.ambient` + `globalAmbient` | the floor of the combine | the sun-to-sky contrast |
-| `sky` (the SkyBox mesh), `skybox` (six faces) | drawn unlit | drawn lifted into HDR, and the source of the ambient light |
+| `sunDirection` | the vehicles' N.L (and the bake) | the sun: its shadows, the N.L of the vehicles' combine, the water's glint |
+| `lighting.diffuse` | the sun's colour and the 2x combine | the same, in the same combine (the real light's tint and strength reach only the water) |
+| `lighting.ambient` + `globalAmbient` | the floor of the combine | the same floor, which is also what a cast shadow leaves |
+| `lighting.shadowColor` | not read | what the ground keeps of its art in a cast shadow |
+| `sky` (the SkyBox mesh), `skybox` (six faces) | drawn unlit | drawn lifted into HDR; reflected by the water |
 | `sky.clouds` | the GLSL cloud layer | the same layer as a node material |
-| `fogColor` | the fog and the background | the haze colour (at the painted sky's brightness) |
-| `fogStart` | where the linear ramp starts | clear air to 60 % of it; 70 % of retail's ramp as a floor |
-| `fogEnd` | where the world is wholly fogged | the same wall (the far plane and the culling still end there); the haze's density; the shadows' reach |
+| `fogColor` | the fog and the background | the fog's colour |
+| `fogStart` | where three's fog ramp starts | the same |
+| `fogEnd` | where the world is wholly fogged | the same; the shadows' reach |
 | `water` (layers, normal map, scroll, shallow/deep colours, `colorDepth`, depth bake) | the GLSL water | the node water: same textures and scroll, PBR reflection, absorption by the bake |
-| lightmaps | `2 * lightmap * texture`, unlit | occlusion on the sky's light; the sun lights the wall for real |
-| terrain tile and detail | `tile + detail - 0.5`, unlit | the same combine, its painted light divided out, then lit |
+| lightmaps | `2 * lightmap * texture`, unlit | the same; a sun-facing texel in a real-time shadow is taken down to the bake's own shadow tone |
+| terrain tile and detail | `tile + detail - 0.5`, unlit | the same, times `shadowColor` in a cast shadow |
 
 ### The pieces
 
@@ -268,25 +304,36 @@ shadows painted in), nor its copies past the world's edge, nor far tree
 billboards. Cut-outs cast through their map's alpha.
 
 **Sky.** The level's own painted SkyBox (or its cube of six faces), drawn at
-its painted brightness through the exposure and tone curve, faded into the
-haze in the last degrees above the horizon, and rendered once into the
-image-based light, so every surface's shade takes the colour of the sky above
-it. A level with neither gets three's SkyMesh (Preetham) lit by its sun,
-calibrated to the same mean brightness and eased toward grey.
+its painted brightness through the exposure and tone curve, down to its own
+painted horizon, and rendered once into the image-based light the water
+reflects. A level with neither gets three's SkyMesh (Preetham) lit by its
+sun, calibrated to the same mean brightness and eased toward grey.
 
-**Terrain.** BF1942's terrain is drawn unlit (ledger TERR-15) because its art
-already holds the light. The remaster estimates the painted light from the
-ground's own normal against the level's sun, `(0.45 + 0.55 N.L) / (0.45 + 0.55
-L.y)` (1 on flat open ground), divides it out of the art, and lets the real
-sun relight the result with the real normal: a slope away from the sun keeps
-its painted shade, and everything standing on the ground shadows it. Lambert,
-no specular (the art's dark pre-lit ochre greyed under a white specular), a
-30 % fill of the un-baked art.
+**Surfaces.** One material class, `EngineMaterial`
+(`remaster-materials.js`), whose lighting model is the engine's combine for
+the kind of surface, in display space, with one number from the renderer in
+it: `k`, the sun's N.L against the real sun times the cascaded shadow.
 
-**Materials.** Statics and vehicles are physical with a third of the default
-specular; `envmap true` materials are smoother and reflect the sky. A
-lightmap becomes occlusion on the sky's light. Each texture's generated map
-(below) gives relief and per-texel roughness.
+| Kind | Combine | What `k` does |
+|---|---|---|
+| vehicles, soldiers, bare statics, trunks | `2 * tex * clamp(floor + sun * materialDiffuse * k)`, then `envmap true`'s stage | a face in shadow or turned from the sun draws at the floor, where the engine put its shaded side |
+| fronds (a tree's branch cards) | the same | `k` is taken from either side of the card and never under 0.6 of the sun: a frond passes light |
+| lightmapped statics | `2 * tex * lightmap` | a sun-facing texel in shadow is taken down to 0.12, where the bake's own cast shadows sit (Wake's read 0.06 to 0.12) |
+| terrain | the tile art and detail, unlit | level ground in a cast shadow keeps `lighting.shadowColor` of its art; a slope turned from the sun takes no cast shadow (the ground casts none, so one would fall through the hill) |
+| leaf sprites | `2 * tex`, unlit | shaded to 0.66 by the shadow and the canopy's turn |
+| far tree cards | the strip, unlit | the same; its alpha is firmed for linear blending |
+
+`floor` is `ambient + globalAmbient`, `sun` is `lighting.diffuse`. Three
+hands a lighting model each light's colour with its shadow multiplied in, so
+`k` is the sun's term over the light's own colour, and a flash light or an
+explosion's adds to it. The sky's image-based light and the hemisphere are
+not read by these surfaces. The result is handed the exposure to undo, so it
+reaches the screen as the combine left it. The first-person arms and weapon
+use the same combine with the retail page's light direction and no shadow
+(`viewMaterial`).
+
+Each texture's generated map (below, `?remaster=maps`) turns the normal the
+vehicles' N.L reads.
 
 **Generated maps.** `remaster_texture_maps.py` reads every store texture the
 given glbs name and writes one WebP per texture: the normal (RG) of a height
@@ -297,13 +344,16 @@ brightness and that kept detail (broad bright paint smoother, edges and dark
 paint rougher). Drawn at strength 1. The page tags each texture with its store hash as the glb loads
 (`glb-loader.js`) and finds its map through the generator's index.
 
-**Haze.** Distance and exponential height fog in one: clear to 60 % of
-`fogStart`, a haze that halves every ~70 m up, never less than 70 % of
-retail's own linear ramp, and the retail wall at `fogEnd`. Its colour is the
-level's fog colour at the painted sky's brightness, with the sun's forward
-glow, computed once a level on the CPU (a per-pixel lookup cost 16 ms).
+**Fog.** The level's own, as the retail page draws it: three's fog between
+`fogStart` and `fogEnd` (a smoothstep of the view depth) in `fogColor`,
+mixed in display space as the retail page's is and the engine's was. What is
+brighter than white (a flame's glow) is carried past the mix. `?remaster=haze`
+draws what this replaced: an exponential haze thinning with height, floored
+at 70 % of a linear ramp, with a wall over the last fifth of `fogEnd` and a
+glow toward the sun.
 
-**Water.** The level's two colour layers and normal map scrolled as retail
+**Water.** Drawn before every other transparent thing, as the retail water
+is. The level's two colour layers and normal map scrolled as retail
 scrolls them, a finer procedural ripple, PBR reflection a little over water's
 2 %, the bed seen through Beer-Lambert absorption over the baked depth and the
 slant of the view, foam on the last third of a metre at the shore.
@@ -313,7 +363,9 @@ camera's axes in the mesh's own space, so in the sun's shadow pass (which
 reads `positionNode`, not `vertexNode`) they face the sun. Leaves and branch
 cards are cut at 0.4 instead of blended, so they write depth for the occlusion
 pass. A slow gusting sway grows with height; each leaf flutters on its own
-phase. The far billboard is the same two-frame azimuth blend, lit.
+phase. The far billboard is the same two-frame azimuth blend, unlit as retail
+draws it. The swap between a tree and its card is judged from the player's
+camera only (the renderer also calls the hook for each shadow cascade).
 
 **The frame.** A one-sample scene pass (the occlusion reads its depth), GTAO
 at half resolution masked off the sky, bloom over 2.4 in HDR, sun shafts (the
@@ -459,6 +511,60 @@ surroundings through a pool of four point lights.
   retail in the same seat. The rays now pass through vehicles and the
   listener's own engine is measured from the ear; the seat is within 0.2 dB
   of retail in every band ([AUDIO.md](AUDIO.md), "Second pass").
+- **Everything in the world was relit, and looked worse for it.** Statics,
+  vehicles, soldiers, trees and the ground were physically based surfaces
+  under the sun and the sky's image-based light. A face out of the sun was
+  lit by the sky's blue alone, flattened by the tone curve: a palm against
+  the sun was a grey cut-out, the Shokaku's masts grey blobs, a bunker a
+  flat pale box, a sunlit hull darker and greyer than its paint, a shaded
+  hillside brown where its art is green. The owner (2026-11-13): "the dark
+  shadows have that gel grey feeling", "overly darkened and grey contrast",
+  "ugly and lacking light and detail". The art is painted for the engine's
+  combines, so every surface is drawn with its own (`EngineMaterial`, "The
+  pieces"), and the remaster's part is the cast shadow inside the combine's
+  sun term. The two entries below this one (`envByAlpha`, the sky's share)
+  were tunings of the relighting and went with it.
+- **A thrown grenade stopped the picture.** The game ran on and could be
+  heard; the frame was frozen. `round-launch.js` clones a thrown round out of
+  the hand rig, and since the weapon in the hand got its own material the
+  clone carried it into the world. The sun's shadow pass draws every caster
+  with a depth material, against which the rig material's per-material
+  light could not be resolved (`materialReference` read an undefined
+  vector), and the frame threw on every draw from the moment the round left
+  the hand. A first-person material now carries its world counterpart
+  (`remasterWorld`) and `worldMaterials` swaps it as the round is launched.
+  `tests/perf/remaster_explosions.mjs` now ends by spawning on foot and
+  throwing what the kit throws, and fails on a frame that throws.
+- **Far palms were cut at the waterline.** The remaster's branch of
+  `setupWater` returned before the line that gives the water
+  `renderOrder = -1`. three sorts transparent things by their origin, the
+  sea's is the world's corner, and a far tree card writes no depth: the sea
+  was drawn after the card and painted over every palm that stood against
+  it, leaving the crown above the horizon and the foot on the sand.
+- **Far tree cards were grey wisps.** Their alpha blends in linear light
+  here and blended in display space in retail, where a half-covered texel of
+  a dark frond is a mid tone and not mostly sky. The card's alpha is firmed,
+  `1 - (1 - a)^2.2`.
+- **The fog was a quarter thick at 150 m**, where retail's is a few percent,
+  in a colour up to 1.8 times brighter toward the sun, and it was mixed in
+  linear light, where half fog over a dark thing is mostly fog. Then the
+  world shut in a wall over the last fifth of `fogEnd`. It is the level's
+  own fog now, mixed in display space ("The pieces").
+- **A flat band of fog under the sky.** The painted sky was faded to the fog
+  colour in its last degrees above the horizon; from the air that was a
+  fifth of the frame where retail shows sky. The paint is drawn to its own
+  horizon.
+- **The tree swap was judged from the sun.** The WebGPU renderer calls
+  `scene.onBeforeRender` for every shadow cascade, each with its own
+  orthographic camera, in the middle of the main pass; `tree-foliage.js`
+  judged every tree's swap again from there, after the frame had picked what
+  to draw. The hook now answers the player's camera only.
+- **A cloned node material loses its alpha cut.** three r186's
+  `NodeMaterial.copy` copies what it can enumerate; `alphaTest` is an
+  accessor with an underscored field and is not reached. A palm in its fade
+  band, whose materials `tree-foliage.js` clones to fade them, drew its
+  fronds as whole white blades. `cloneWithNodes` and `EngineMaterial.copy`
+  carry it.
 - **`envmap true` made a whole material shiny.** The engine reflects the
   level's cube by the texture's alpha, `lit * A + cube * (1 - A)`
   (`envmap.js`); the remaster gave every such material roughness 0.5,
@@ -476,7 +582,8 @@ surroundings through a pool of four point lights.
   palm was a black cut-out.
 - **Far palms were pale ghosts.** The far tree card is lit with a
   straight-up normal and always seen from the side, the angle at which a
-  specular surface mirrors the horizon. It is a Lambert material now.
+  specular surface mirrors the horizon. It was made a Lambert material, and
+  is now drawn unlit as retail draws it (above).
 - **The dev server dropped modules.** `serve_viewer.py` listened with
   socketserver's backlog of 5; the page asks for about 600 modules at once,
   and on macOS 27 some of that burst was reset, so the page never booted.
@@ -494,23 +601,27 @@ surroundings through a pool of four point lights.
   (the slopes facing the eye from (1000, 108, -1080) along (0.67, -0.12,
   -0.73) are its brightest), while `level-load.js` aims the retail
   DirectionalLight, and `bindDynamicShading` its N.L, at `(-x, y, -z)`: the
-  opposite side in plan. The remaster follows the art. Whether the retail
+  opposite side in plan. The lightmaps agree with the art (on Wake a wall
+  facing `+sunDirection` reads 0.31 on average, one facing the other way
+  0.15; El Alamein 0.38 and 0.22). The remaster follows the art, so its
+  vehicles are lit from the side their shadows fall away from, the opposite
+  side to the retail page's. Whether the retail
   vehicles are lit from the wrong side is a question for the retail path
   (ledger DL rows, `features/level-lighting-laws`), not this branch.
 
 ## What looks better
 
 - Light has a direction: buildings, towers, girders, palms and vehicles cast
-  real shadows out to the fog, and things that move cast moving ones.
-- The levels keep their painted skies, and the light on every surface takes
-  the colour of the sky above it.
-- Depth: haze that thickens low down and with distance in the level's own fog
-  colour, with the sun's glow in it and shafts through it.
+  real shadows out to the fog, and things that move cast moving ones, onto
+  the ground, onto walls and onto each other.
+- A shadow is the tone the art already uses for shade, so a shaded face and
+  a cast shadow keep the whole texture.
+- Palms pass light: fronds glow with the sun behind them.
 - The water reflects the sky and the sun, shows the sand in the shallows,
   deepens to the level's deep colour, and foams at the shore.
 - Explosions and muzzle flashes are light: HDR cores, bloom, a flash of light
   on the ground and walls around them.
-- With `maps`: panel lines, rivets, planks and mortar have relief, and surfaces roughness of their own.
+- With `maps`: panel lines, rivets and planks turn the sun's light on vehicles.
 - Trees sway, leaves flutter, and leaves cast leaf-shaped shadows.
 - Contact shadows under eaves, in doorways and where objects meet the ground.
 
@@ -518,15 +629,13 @@ surroundings through a pool of four point lights.
 
 These are choices, not open faults.
 
-- **Slopes away from the sun are a little cooler** than retail's: their shade
-  now takes the sky's light, which is bluer than the painted brown (Wake's
-  backlit hill: 71/64/58 against retail's 72/58/37).
-- **The far haze is lighter from the air** than retail's: the remaster's haze
-  thins with height, retail's fog does not (retail's wall at `fogEnd` is
-  kept).
-- **The first-person arms and weapon are not lit by the remaster's sun.**
-  They draw as retail draws them (the owner's call; see the bugs above).
-  The weapon in the hand takes no shadow in either.
+- **Vehicles, soldiers and trees are lit from the other side** than on the
+  retail page: from the side the level's art and lightmaps are lit from
+  (see "The sun's side"), which is the side their shadows fall away from.
+- **The sea is darker from the air** than retail's, which fogs its water on
+  a linear ramp of its own; the remaster's water takes the scene's fog.
+- **The first-person arms and weapon take no shadow**, and are lit from the
+  retail page's side (the owner's call; see the bugs above).
 - **A frame costs about twice retail's** (9.6 to 18.7 ms against 3.8 to 6.9
   on this machine).
 

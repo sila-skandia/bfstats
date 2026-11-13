@@ -282,6 +282,8 @@ export async function createRemasterScene({ renderer, scene, camera, sun, hemi }
   import('./round-visuals.js').then(r => remasterHooks.glow(r.tracerMaterial)).catch(() => {});
 
   renderer.toneMappingExposure = Number(new URLSearchParams(location.search).get('exposure')) || 0.58;
+  // The engine-combine surfaces are display-referred: handed the exposure to undo.
+  viewGain.value = 1 / Math.max(0.1, renderer.toneMappingExposure);
   if (off.has('notonemap')) renderer.toneMapping = THREE.NoToneMapping;
 
   // Shadow flags on everything that can take them, walked in slices as the

@@ -1,10 +1,10 @@
 // Remaster mode's surfaces (features/remaster-browser). The retail page draws
 // every static, vehicle and soldier as an unlit MeshBasicMaterial with the
 // engine's fixed-function combine injected through `onBeforeCompile`
-// (level-shading.js). The WebGPU renderer runs no GLSL patches, and the
-// remaster wants real lights anyway: these builders give the same meshes
-// physically based materials lit by the sun (with its cascaded shadows), the
-// sky's image-based light, and the post chain's ambient occlusion.
+// (level-shading.js). The WebGPU renderer runs no GLSL patches, so these
+// builders make the same combines as node materials, and add to them what
+// the remaster adds: the sun's real-time shadow in the combine's sun term
+// (`EngineMaterial`). Nothing is relit: the art is painted for these combines.
 //
 // level-shading.js calls in here through `remasterHooks.materials`, at the
 // same three points it builds the retail materials: the terrain's detail
@@ -12,8 +12,9 @@
 
 import * as THREE from 'three/webgpu';
 import {
-  abs, clamp, cubeTexture, dot, float, fract, fwidth, materialColor, materialReference, max, min, mix, positionWorld, step, normalView, normalWorld, normalWorldGeometry, reference, reflectView, uniform, normalize, sRGBTransferEOTF, sRGBTransferOETF, smoothstep,
-  transformNormalToView, uv, vec2, vec3, vec4, normalMap,
+  abs, clamp, cubeTexture, diffuseColor, dot, float, fract, fwidth, materialColor, materialReference, max,
+  min, mix, positionWorld, step, normalView, normalWorld, reference, reflectView, uniform, normalize,
+  sRGBTransferEOTF, sRGBTransferOETF, smoothstep, uv, vec2, vec3, vec4, normalMap, transformNormalToView,
 } from 'three/tsl';
 import { REMASTER_OFF } from './remaster-mode.js';
 import { ENVMAP_SWITCH } from './envmap.js';
@@ -102,12 +103,6 @@ function applyPackedMap(mat, map, strength = 1) {
   if (mat.isMeshStandardMaterial) mat.roughnessNode = nr.b.mul(materialReference('roughness', 'float').div(0.82)).clamp(0.05, 1);
 }
 
-/**
- * A lit stand-in for a retail material, keeping the slots and marks the page
- * reads. Physical, for `specularIntensity`: the art's albedo carries baked
- * light and is dark, so a full 4 % white specular is a large share of what
- * a matte wall reflects and greys it; the remaster keeps a third of it.
- */
 /** Every node slot, `bf*` texture slot and remaster mark of `from`, onto `to`. */
 export function copyRemasterProps(from, to) {
   for (const k of Object.keys(from)) {
@@ -123,6 +118,13 @@ function cloneWithNodes(mat) {
   const base = Object.getPrototypeOf(mat).clone;
   mat.clone = function clone() {
     const c = base.call(this);
+    // three r186's `NodeMaterial.copy` copies what it can enumerate, and
+    // `alphaTest` is an accessor on Material's prototype with an underscored
+    // field behind it: neither is reached, so a node material's clone comes
+    // back with no alpha cut. A palm in its fade band (tree-foliage.js
+    // clones its materials to fade them) drew its fronds as whole white
+    // blades, the cards' uncut corners.
+    c.alphaTest = this.alphaTest;
     copyRemasterProps(this, c);
     c.clone = this.clone;
     return c;
@@ -130,8 +132,183 @@ function cloneWithNodes(mat) {
   return mat;
 }
 
-function litFrom(m, extra = {}, Kind = THREE.MeshPhysicalMaterial) {
-  const mat = new Kind({
+/**
+ * The engine's combine, with the sun's real-time shadow in it.
+ *
+ * Every static, vehicle, soldier and tree in the world is drawn with the
+ * combine the retail page draws it with (level-shading.js, ledger DL-5,
+ * LM-4; tree-foliage.js), in display space, at the art's own brightness:
+ *
+ *     lit        2 * tex * clamp(floor + sun * materialDiffuse * k)
+ *     frond      the same, a tree's branch card (k from either side)
+ *     lightmap   2 * tex * lightmap'
+ *     terrain    art * shade                (the ground, retail unlit)
+ *     leaf       2 * tex * shade            (a leaf sprite, retail unlit)
+ *     card       tex * shade                (the far tree card, retail unlit)
+ *
+ * What the remaster adds is `k`: the sun's N.L against the sun the player
+ * sees, times the cascaded shadow map. A face in another object's shadow
+ * draws at the combine's own floor, which is where the engine put its shaded
+ * side, so a cast shadow and a shaded face are the same tone and both keep
+ * the whole texture.
+ *
+ * Until 2026-11-13 these were physically based surfaces under the sun and
+ * the sky's image-based light. A shaded face was lit by the sky's blue alone:
+ * a palm against the sun was a grey cut-out, the Shokaku's masts grey blobs,
+ * a bunker a flat pale box, and a sunlit hull lost its paint to the specular.
+ * The owner: "the dark shadows have that gel grey feeling", "overly darkened
+ * and grey contrast", "ugly and lacking light and detail". The art is painted
+ * to be seen under the engine's combine (the same finding as the weapon in
+ * hand, below), so it gets that combine, and the remaster keeps what it adds:
+ * the shadows.
+ *
+ * A lighting model, not a colour graph: three hands `direct` each light's
+ * colour with its shadow already multiplied in, so the sun's term over the
+ * light's own colour (`engineSunLin`) is `k`. The sky's image-based light and
+ * the hemisphere are not read.
+ */
+export const viewGain = uniform(1);
+const engineSunLin = uniform(new THREE.Vector3(1, 1, 1));
+/** The DirectionalLight whose colour and intensity `k` is measured against. */
+let engineSunLight = null;
+export function bindEngineSun(light) {
+  engineSunLight = light;
+  engineSunLin.onRenderUpdate(() => {
+    const c = light.color, i = Math.max(1e-3, light.intensity);
+    engineSunLin.value.set(Math.max(1e-3, c.r * i), Math.max(1e-3, c.g * i), Math.max(1e-3, c.b * i));
+  });
+}
+/** What a leaf in shade keeps of its texture, against one in the sun. */
+export const LEAF_SHADE = 0.66;
+/** The share of the sun a leaf or a frond takes whichever way it faces. */
+export const FOLIAGE_THROUGH = 0.6;
+/**
+ * The lightmap value a real-time shadow takes a sunlit texel down to. The
+ * bake's own shadowed texels read 0.06 to 0.12 (Wake: half of every map sits
+ * there, the sunlit peak at 0.62), so a soldier's shadow on a wall lands
+ * where the palm's baked shadow beside it already is.
+ */
+export const LIGHTMAP_SHADE = 0.12;
+
+// OPTIONS > VIDEO's ENVIRONMENT MAPPING (ledger VID-3), read each frame.
+const viewEnvOn = uniform(1).onRenderUpdate(() => (ENVMAP_SWITCH.value ? 1 : 0));
+// One node for the level's cube, re-pointed at each level's own.
+let viewCube = null;
+function levelCube(cube) {
+  // three's cube lookup mirrors x for a loaded cube; the engine's stage,
+  // as the retail page's shader samples it, does not.
+  if (!viewCube) viewCube = cubeTexture(cube, vec3(reflectView.x.negate(), reflectView.y, reflectView.z));
+  viewCube.value = cube;
+  return viewCube;
+}
+/** `envmap true`'s stage over `display` (envmap.js): `lit * A + cube * (1 - A)`. */
+function envStage(display, alpha) {
+  const staged = mix(sRGBTransferOETF(viewCube.rgb), display, alpha.clamp(0, 1));
+  return mix(display, min(vec3(1), staged), viewEnvOn);
+}
+
+class EngineLightingModel extends THREE.LightingModel {
+  constructor(kind, env) {
+    super();
+    this.kind = kind;
+    this.env = env;
+  }
+
+  direct({ lightDirection, lightColor, lightNode, reflectedLight }) {
+    const ndl = normalView.dot(lightDirection);
+    if ((this.kind === 'lightmap' || this.kind === 'terrain') && lightNode?.light === engineSunLight) {
+      // The bake (a wall's lightmap, the ground's painted art) holds the
+      // surface's own N.L, its own shade and the sky's light on the side
+      // turned from the sun; only a sun-facing texel is asked whether
+      // something stands between it and the sun. (A wall turned away is in
+      // its own shadow in the shadow map, and taking that darkened every
+      // building's far side to the bake's cast-shadow tone.)
+      //
+      // The ground casts no shadow (its art has the relief's painted in), so
+      // a palm's shadow would otherwise fall through a hill onto the slope
+      // behind it. A slope turned from the sun takes none; level ground
+      // takes a cast shadow whole whatever the sun's height.
+      const flat = transformNormalToView(vec3(0, 1, 0)).dot(lightDirection).max(0.05);
+      const facing = this.kind === 'terrain'
+        ? smoothstep(0, flat.mul(0.5), ndl)
+        : smoothstep(0, 0.25, ndl);
+      reflectedLight.directDiffuse.addAssign(mix(engineSunLin, lightColor, facing));
+      return;
+    }
+    // lit: Lambert. Foliage passes light: a frond or a leaf with the sun
+    // behind it glows, so the sun's share is taken from either side, and
+    // never under FOLIAGE_THROUGH of it. (Lit as an opaque wall, a palm
+    // against the sun was a black cut-out.)
+    const share = this.kind === 'lit' || this.kind === 'lightmap' || this.kind === 'terrain' ? ndl.clamp()
+      : ndl.abs().mul(1 - FOLIAGE_THROUGH).add(FOLIAGE_THROUGH);
+    reflectedLight.directDiffuse.addAssign(lightColor.mul(share));
+  }
+
+  indirect() {}
+
+  finish({ context }) {
+    const k = context.reflectedLight.directDiffuse.div(engineSunLin).clamp(0, 1);
+    const tex = sRGBTransferOETF(diffuseColor.rgb);
+    let display;
+    if (this.kind === 'lit' || this.kind === 'frond') {
+      // D3D clamps the vertex diffuse to [0, 1] before the stage's
+      // modulate-2x, and saturates again after the multiply.
+      const lit = min(vec3(1), materialReference('bfEngineFloor', 'vec3')
+        .add(materialReference('bfEngineSun', 'vec3').mul(k))).mul(2);
+      display = min(vec3(1), tex.mul(lit));
+      if (this.env) display = envStage(display, matTexture('map').ref.a);
+    } else if (this.kind === 'lightmap') {
+      const lmTex = matTexture('bfLightmap');
+      const lm = vec3(lmTex.keep).add(lmTex.at(uv(1)).rgb);
+      const shaded = min(lm, vec3(LIGHTMAP_SHADE));
+      display = min(vec3(1), tex.mul(mix(shaded, lm, k).mul(2)));
+    } else if (this.kind === 'terrain') {
+      display = tex.mul(mix(materialReference('bfEngineFloor', 'vec3'), vec3(1), k));
+    } else {
+      const shade = mix(vec3(LEAF_SHADE), vec3(1), k);
+      display = min(vec3(1), tex.mul(shade).mul(this.kind === 'leaf' ? 2 : 1));
+    }
+    // `?remaster=showk`: the sun's share alone, for checking it.
+    if (remasterDebug.has('showk')) display = k;
+    context.outgoingLight.rgb.assign(sRGBTransferEOTF(display).mul(viewGain));
+  }
+}
+
+/**
+ * A world surface drawn with the engine's combine. `bfKind` picks the
+ * combine and is part of three's program key (a string property), so the
+ * kinds never share a compiled graph.
+ */
+export class EngineMaterial extends THREE.MeshLambertNodeMaterial {
+  constructor(parameters) {
+    super(parameters);
+    this.bfKind = 'lit';
+    this.bfEnv = false;
+    this.bfEngineFloor = new THREE.Vector3(0.4, 0.4, 0.4);
+    this.bfEngineSun = new THREE.Vector3(0.5, 0.5, 0.5);
+    this.remaster = true;
+  }
+
+  setupLightingModel() {
+    return new EngineLightingModel(this.bfKind, this.bfEnv === true);
+  }
+
+  setupEnvironment() {
+    return null;
+  }
+
+  copy(source) {
+    super.copy(source);
+    // NodeMaterial.copy carries every enumerable slot (the `bf*` ones too)
+    // but not the alpha test (see `cloneWithNodes`).
+    if (source.alphaTest !== undefined) this.alphaTest = source.alphaTest;
+    return this;
+  }
+}
+
+/** An engine-combine stand-in for a retail material, of `kind`. */
+function engineFrom(m, kind, extra = {}) {
+  const mat = new EngineMaterial({
     map: m.map || null,
     color: m.color ? m.color.clone() : 0xffffff,
     side: m.side,
@@ -139,29 +316,37 @@ function litFrom(m, extra = {}, Kind = THREE.MeshPhysicalMaterial) {
     transparent: m.transparent,
     opacity: m.opacity ?? 1,
     depthWrite: m.depthWrite ?? true,
-    ...(Kind === THREE.MeshLambertMaterial ? {} : { roughness: 0.82, metalness: 0, specularIntensity: 0.35 }),
     ...extra,
   });
   mat.name = m.name;
   // The exporter's extras marks (additive, textureFade) ride in userData; a
   // rebuild that drops them un-marks the material for every later pass.
   mat.userData = m.userData;
-  mat.remaster = true;
+  mat.bfKind = kind;
+  // A cut-out (wire, foliage, nets): its shadow cut by the same alpha, not
+  // the whole card (barbed wire cast a solid rectangle across Wake).
+  if ((mat.alphaTest > 0 || mat.transparent) && mat.map) mat.maskShadowNode = shadowCut(mat);
   return cloneWithNodes(mat);
 }
 
 /**
  * The terrain: the tile art and the detail map combined the engine's way
- * (`tile + detail - 0.5` in display space, ledger TERR-15) as the albedo,
- * then lit. The tile art carries the level's baked light, so the albedo is
- * that bake: the real-time sun adds the shadows of everything that moves
- * and the slope's own shading, and the lights are balanced (remaster-sky.js)
- * so a flat, sunlit patch draws at about its retail brightness.
+ * (`tile + detail - 0.5` in display space, ledger TERR-15), drawn unlit as
+ * the engine draws it, since the art carries the level's light. The remaster
+ * adds the sun's real-time shadow: a sun-facing patch something stands over
+ * keeps `shade` of its art, the level's own `lighting.shadowColor` (0.3 to
+ * 0.6 across the levels).
+ *
+ * Until 2026-11-13 the ground was the remaster's one relit surface: the
+ * painted light estimated from the slope and divided out, then the real sun
+ * and the sky put back. Every slope turned from the sun came out darker and
+ * browner than its art (Wake's beach hill lost its grass), which is the
+ * same "overly darkened" the owner saw on the vehicles.
  */
-export function terrainMaterial(source, detail, repeats) {
-  // Lambert: ground is matte, and its specular greyed the ochre art.
-  const mat = litFrom(source, { alphaTest: 0, transparent: false }, THREE.MeshLambertMaterial);
-  if (source.map && !detail) terrainLight(mat, matTexture('map').ref.rgb);
+export function terrainMaterial(source, detail, repeats, shade = 0.5) {
+  const mat = engineFrom(source, 'terrain', { alphaTest: 0, transparent: false });
+  mat.maskShadowNode = null;
+  mat.bfEngineFloor = new THREE.Vector3(shade, shade, shade);
   if (!source.map || !detail) return mat;
   mat.bfDetail = detail;
   mat.bfDetailRepeats = repeats;
@@ -171,58 +356,14 @@ export function terrainMaterial(source, detail, repeats) {
   // `keep` first: the reference must be built (and point at this
   // material's texture) before the sample that follows it.
   const display = clamp(detailTex.keep.add(sRGBTransferOETF(tile.rgb)).add(grain.rgb).sub(0.5), 0, 1);
-  const albedo = sRGBTransferEOTF(display);
-  if (remasterDebug.has('unlitterrain')) {
-    const flat = new THREE.MeshBasicNodeMaterial();
-    flat.map = source.map;
-    flat.bfDetail = detail;
-    flat.bfDetailRepeats = repeats;
-    flat.colorNode = vec4(albedo, 1);
-    flat.remaster = true;
-    return flat;
-  }
-  terrainLight(mat, albedo);
-  if (remasterDebug.has('greyterrain')) mat.colorNode = vec4(0.15, 0.10, 0.037, 1);
-  if (remasterDebug.has('tileonly')) mat.colorNode = vec4(tile.rgb, 1);
-  if (remasterDebug.has('greyterrain')) mat.emissiveNode = vec3(0);
-  if (remasterDebug.has('nomapslot')) mat.map = null;
-  if (remasterDebug.has('nonormal')) mat.normalNode = null;
+  mat.colorNode = vec4(sRGBTransferEOTF(display), 1);
   return mat;
 }
 
-/** The direction toward the sun, set by remaster-sky.js for each level. */
-export const terrainSunDir = uniform(new THREE.Vector3(0, 1, 0));
-
 /**
- * The terrain art already carries its slopes' light and the statics' baked
- * shadows (ledger TERR-15: the engine draws it unlit), so lighting it again
- * darkens every slope away from the sun twice. The remaster un-bakes it:
- * the painted light is estimated from the ground's own normal against the
- * level's sun, `(0.45 + 0.55 N.L) / (0.45 + 0.55 L.y)`, which is 1 on flat
- * open ground, and divided out of the art. The real sun then lights the
- * result with the real normal (a fifth of the way to straight up, for the
- * heightfield's coarse facets), so a sunlit slope and a shaded one keep
- * the contrast the artist painted, the real-time shadows of everything
- * standing on the ground fall on it, and the sky colours its shade. A fill
- * of 30 % of the un-baked art keeps a shadowed slope from going to the
- * sky's blue alone.
- */
-function terrainLight(mat, painted) {
-  const ndl = max(dot(normalWorldGeometry, terrainSunDir), 0);
-  const flat = max(terrainSunDir.y, 0.15);
-  const baked = float(0.45).add(ndl.mul(0.55)).div(float(0.45).add(flat.mul(0.55)));
-  const albedo = painted.div(clamp(baked, 0.55, 1.7));
-  mat.colorNode = vec4(albedo, 1);
-  mat.normalNode = normalize(mix(normalView, transformNormalToView(vec3(0, 1, 0)), 0.2));
-  mat.emissiveNode = albedo.mul(0.3);
-}
-
-/**
- * A lightmapped static. The bake (`2 * lightmap * texture`, ledger LM-4)
- * holds the sun's term and its shadows, which the real-time sun now draws;
- * what the remaster keeps of it is the bake's darkening of corners, eaves
- * and interiors, as occlusion on the sky's light. A texel the bake left at
- * its ambient floor keeps 45 % of the sky; anything the sun reached keeps it all.
+ * A lightmapped static: the bake (`2 * lightmap * texture`, ledger LM-4) as
+ * the retail page draws it, and the sun's real-time shadow taking a sunlit
+ * texel down to where the bake's own shadows sit (`LIGHTMAP_SHADE`).
  */
 const lightmapCache = new WeakMap();
 export function lightmapMaterial(source, lightmap) {
@@ -232,87 +373,37 @@ export function lightmapMaterial(source, lightmap) {
   let byMap = lightmapCache.get(source);
   if (!byMap) lightmapCache.set(source, byMap = new Map());
   if (byMap.has(lightmap)) return byMap.get(lightmap);
-  const mat = litFrom(source);
+  const mat = engineFrom(source, 'lightmap');
   byMap.set(lightmap, mat);
-  applyPackedMap(mat, source.map);
   mat.bfLightmap = lightmap;
-  const lmTex = matTexture('bfLightmap');
-  const lm = vec4(lmTex.keep).add(lmTex.at(uv(1)));
-  const bake = max(lm.r, max(lm.g, lm.b));
-  mat.aoNode = mix(float(0.45), float(1), smoothstep(0.04, 0.32, bake));
   return mat;
 }
 
 /**
- * How much of the sky's image-based light a vehicle or a soldier takes.
- *
- * The sky that lights the buildings and the ground at the right level lit a
- * vehicle's faces as brightly as the sun did (measured in the Sherman's
- * gunner seat on Wake: 0.068 linear from the sky alone on the gun, 0.05 from
- * the sun alone on the box beside it), so nothing on a hull had a lit side
- * and a shaded side: "washed out and too white" (the owner, 2026-11-12).
- * The engine's own combine for these meshes is `2 * tex * clamp(ambient +
- * diffuse * N.L)` (ledger DL-5); with Wake's 0.24 and 0.40 a sunlit face
- * draws at 1.28 times its texture and a shaded one at 0.48. A quarter of the
- * sky puts the remaster's sunlit face at 1.29 times its texture, and its
- * shaded one at 0.62: lit by the sky, and still the shaded side.
- */
-export const DYNAMIC_SKY_FILL = 0.25;
-/** A tree's share: leaves pass and scatter light, so a crown's shaded side
- *  is nowhere near as dark as a hull's (at a quarter, a backlit palm was a
- *  black cut-out against the sky). */
-export const FOLIAGE_SKY_FILL = 0.6;
-
-/**
- * `envmap true`, the engine's way (envmap.js): `lit * A + cube * (1 - A)`,
- * A the texture's own alpha. An opaque texel is plain paint and a clear one
- * is all reflection, so the art says where a surface shines: a canopy, a
- * polished cowl, and nowhere on a machine gun whose texture is opaque. As
- * PBR that is metalness (which takes the diffuse out by the same share) and
- * a smoother surface, both by `1 - A`.
- *
- * The first cut made every `envmap true` material shiny all over (roughness
- * 0.5, metalness 0.15, full specular) whatever its alpha. The Sherman's
- * Browning and its ammunition box (alpha 0.94) mirrored the sky from the
- * gunner's seat: "washed out and too white" (the owner, 2026-11-12).
- */
-function envByAlpha(mat) {
-  const shine = float(1).sub(matTexture('map').ref.a).clamp(0, 1);
-  mat.metalnessNode = shine.mul(0.85);
-  const smooth = mix(float(1), float(0.3), shine);
-  mat.roughnessNode = (mat.roughnessNode ?? materialReference('roughness', 'float')).mul(smooth);
-}
-
-/**
- * A vehicle, a soldier or a bare static. `materialDiffuse` (ledger DL-9)
- * scales the sun's term in the engine; a lit PBR surface folds it into the
- * albedo. `envmap true` materials reflect the sky where their texture's
- * alpha says they do (`envByAlpha`).
+ * A vehicle, a soldier, a tree's trunk or a bare static: the engine's lit
+ * combine. `light` is the level's `{ floor, sun }` (the clamp's constant
+ * part and the sun's diffuse, each `[r, g, b]`); `materialDiffuse` (ledger
+ * DL-9) scales the sun's term; `cube` is the level's reflection cube for an
+ * `envmap true` material, or null.
  */
 const dynamicCache = new WeakMap();
-export function dynamicMaterial(source, { materialDiffuse = null, env = false } = {}) {
-  const key = `${materialDiffuse ? materialDiffuse.join(',') : ''}|${env}`;
+export function dynamicMaterial(source, { light, materialDiffuse = null, cube = null } = {}) {
+  const floor = light?.floor ?? [0.4, 0.4, 0.4];
+  const sun = (light?.sun ?? [0.5, 0.5, 0.5]).map((c, i) => c * (materialDiffuse ? materialDiffuse[i] : 1));
+  const key = `${floor.join(',')}|${sun.join(',')}|${!!cube}`;
+  if (cube) levelCube(cube);
   let byKey = dynamicCache.get(source);
   if (!byKey) dynamicCache.set(source, byKey = new Map());
   if (byKey.has(key)) return byKey.get(key);
-  const mat = litFrom(source);
+  const mat = engineFrom(source, 'lit');
   byKey.set(key, mat);
-  // Relief and roughness from the generated map; a leaf card takes none
-  // (its normal is the canopy's, remaster-foliage.js).
+  // Relief from the generated map (`?remaster=maps`), which turns the
+  // normal the sun's term reads; a leaf card takes none (its normal is the
+  // canopy's, remaster-foliage.js).
   if (!/^sprite_\d+$/.test(source.name || '')) applyPackedMap(mat, source.map);
-  if (env && mat.map) envByAlpha(mat);
-  // The sky's share of the light on a vehicle or a soldier (three scales
-  // the image-based light, diffuse and reflected, by `aoNode`).
-  mat.aoNode = float(DYNAMIC_SKY_FILL);
-  // A cut-out (wire, foliage, nets): its shadow cut by the same alpha, not
-  // the whole card (barbed wire cast a solid rectangle across Wake).
-  if ((mat.alphaTest > 0 || mat.transparent) && mat.map) {
-    mat.maskShadowNode = shadowCut(mat);
-  }
-  if (materialDiffuse) {
-    mat.color.multiply(new THREE.Color(materialDiffuse[0], materialDiffuse[1], materialDiffuse[2]));
-  }
-  mat.bfEnv = env;
+  mat.bfEngineFloor = new THREE.Vector3(...floor);
+  mat.bfEngineSun = new THREE.Vector3(...sun);
+  mat.bfEnv = !!cube;
   return mat;
 }
 
@@ -345,14 +436,9 @@ export function dynamicMaterial(source, { materialDiffuse = null, env = false } 
  * (`skyGain`), so the rig's colours reach the screen as the combine left
  * them; remaster-renderer.js sets it.
  */
-export const viewGain = uniform(1);
 const viewFloor = uniform(new THREE.Vector3(0.4, 0.4, 0.4));
 const viewSun = uniform(new THREE.Vector3(0.5, 0.5, 0.5));
 const viewDir = uniform(new THREE.Vector3(0, 1, 0));
-// OPTIONS > VIDEO's ENVIRONMENT MAPPING (ledger VID-3), read each frame.
-const viewEnvOn = uniform(1).onRenderUpdate(() => (ENVMAP_SWITCH.value ? 1 : 0));
-// One node for the level's cube, re-pointed at each level's own.
-let viewCube = null;
 
 /**
  * `light` is the level's: `{ floor, sun, toward }`, the clamp's constant
@@ -365,12 +451,7 @@ export function viewMaterial(source, { light, materialDiffuse = null, cube = nul
   viewFloor.value.fromArray(light.floor);
   viewSun.value.fromArray(light.sun);
   viewDir.value.fromArray(light.toward).normalize();
-  if (cube) {
-    // three's cube lookup mirrors x for a loaded cube; the engine's stage,
-    // as the retail page's shader samples it, does not.
-    if (!viewCube) viewCube = cubeTexture(cube, vec3(reflectView.x.negate(), reflectView.y, reflectView.z));
-    viewCube.value = cube;
-  }
+  if (cube) levelCube(cube);
   const key = `${materialDiffuse ? materialDiffuse.join(',') : ''}|${!!cube}`;
   let byKey = viewCache.get(source);
   if (!byKey) viewCache.set(source, byKey = new Map());
@@ -395,16 +476,40 @@ export function viewMaterial(source, { light, materialDiffuse = null, cube = nul
   // and saturates again after the multiply.
   const lit = min(vec3(1), viewFloor.add(viewSun.mul(materialReference('bfViewDiffuse', 'vec3')).mul(ndl))).mul(2);
   let display = min(vec3(1), sRGBTransferOETF(materialColor.rgb).mul(lit));
-  if (cube) {
-    const staged = mix(sRGBTransferOETF(viewCube.rgb), display, materialColor.a.clamp(0, 1));
-    display = mix(display, min(vec3(1), staged), viewEnvOn);
-  }
+  if (cube) display = envStage(display, materialColor.a);
   mat.colorNode = vec4(sRGBTransferEOTF(display).mul(viewGain), materialColor.a);
   mat.bfEnv = !!cube;
+  // What this material is once its mesh leaves the hand for the world (a
+  // thrown grenade is a clone of the rig's own projectile node): the world's
+  // combine, which takes the sun's shadow. See `worldMaterials`.
+  mat.remasterWorld = () => dynamicMaterial(source, {
+    light: { floor: light.floor, sun: light.sun }, materialDiffuse, cube,
+  });
   return cloneWithNodes(mat);
 }
 
-export const remasterMaterials = { terrainMaterial, lightmapMaterial, dynamicMaterial, viewMaterial, vec3 };
+/**
+ * Every first-person material under `root`, swapped for its world one.
+ *
+ * round-launch.js clones a thrown round out of the hand rig, first-person
+ * materials and all. In the world such a material is wrong twice: it reads
+ * no shadow, and the sun's shadow pass, which draws every caster with its
+ * own depth material, could not resolve the rig material's per-material
+ * light and threw on every frame from the moment a grenade left the hand
+ * ("the game hangs, I can still hear it", the owner, 2026-11-13).
+ */
+export function worldMaterials(root) {
+  root?.traverse?.(obj => {
+    if (!obj.isMesh || !obj.material) return;
+    const swap = m => (m?.remasterView && m.remasterWorld ? m.remasterWorld() : m);
+    obj.material = Array.isArray(obj.material) ? obj.material.map(swap) : swap(obj.material);
+  });
+  return root;
+}
+
+export const remasterMaterials = {
+  terrainMaterial, lightmapMaterial, dynamicMaterial, viewMaterial, worldMaterials, EngineMaterial, vec3,
+};
 
 /**
  * The proving ground's floor (proving-ground.js `floorMaterial`) as a node

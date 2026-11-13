@@ -276,17 +276,9 @@ function impostorMaterial(texture, frames) {
   material.name = 'tree impostor';
   material.customProgramCacheKey = () => `bf-tree-impostor2:${frames}`;
   if (remasterHooks.foliage) {
-    // Remaster mode: lit, as a node graph (remaster-foliage.js).
-    // Lambert: the card's normal is straight up and it is always seen from
-    // the side, the angle at which any specular surface mirrors the horizon.
-    // As a standard material every far palm wore a pale veil of sky.
-    const lit = new THREE.MeshLambertMaterial({
-      map: texture, alphaTest: CARD_ALPHA_TEST, transparent: true, depthWrite: false,
-      side: THREE.DoubleSide,
-    });
-    lit.name = material.name;
-    remasterHooks.foliage.impostorNodes(lit, frames, EIGHTH_TURN);
-    return lit;
+    // Remaster mode: the same unlit strip as a node graph, taking the sun's
+    // shadow (remaster-foliage.js `impostorMaterial`).
+    return remasterHooks.foliage.impostorMaterial(texture, frames, EIGHTH_TURN, CARD_ALPHA_TEST);
   }
   material.onBeforeCompile = (shader) => {
     shader.vertexShader = shader.vertexShader
@@ -424,6 +416,11 @@ function installHook(scene, state) {
     if (typeof previous === 'function') previous.call(this, renderer, sceneArg, camera, target);
     const trees = hook.state?.trees;
     if (!trees?.length) return;
+    // The WebGPU renderer (remaster mode) calls this for the sun's shadow
+    // cascades too, each with its own orthographic camera, and it draws them
+    // in the middle of the main pass: judged from there, every tree's swap
+    // was rewritten after the frame had picked what to draw.
+    if (renderer?.isRemaster && camera.isOrthographicCamera) return;
     camPos.setFromMatrixPosition(camera.matrixWorld);
     const fov = camera.isPerspectiveCamera ? viewFieldOfView(camera.fov, camera.zoom) : 1;
     for (const tree of trees) {

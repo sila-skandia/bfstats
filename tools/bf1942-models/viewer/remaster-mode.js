@@ -29,7 +29,9 @@ export const REMASTER = SETTING !== null;
  * table: `?remaster=noao,nobloom,nofog,nowater,noshadow,nopost,nosky`. Parts
  * left out unless asked for (the owner kept the sun and the water, and was
  * not sold on the rest, 2026-11-12): `?remaster=maps` adds the generated
- * normal and roughness maps.
+ * normal and roughness maps, `?remaster=haze` draws the height haze the
+ * level's own fog replaced (2026-11-13). `?remaster=showk` is a check: each
+ * surface drawn as the share of the sun its combine was given.
  */
 export const REMASTER_OFF = new Set(REMASTER ? SETTING.split(',').filter(Boolean) : []);
 
