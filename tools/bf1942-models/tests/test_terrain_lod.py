@@ -163,6 +163,14 @@ class TerrainLodTests(unittest.TestCase):
         self.assertEqual(s["skipped"], 6)
         self.assertEqual(s["triangles"], 10 * 512)
 
+    def test_a_remaster_shadow_cascade_does_not_judge_the_ground(self) -> None:
+        # The sun's cascades draw the same scene in the middle of the main
+        # pass; judged from up the sun, the ground changed shape every frame
+        # (the live site, 2026-11-13).
+        cascade = self.results["scene"]["cascade"]
+        self.assertEqual(cascade["afterCascade"], cascade["view"])
+        self.assertLess(cascade["retailOrtho"], cascade["view"])
+
     def test_switching_it_off_puts_the_bakes_geometry_back(self) -> None:
         self.assertTrue(self.results["scene"]["offRestores"])
         self.assertEqual(self.results["scene"]["onAgain"], 1)

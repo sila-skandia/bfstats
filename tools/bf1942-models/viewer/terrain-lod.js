@@ -363,6 +363,14 @@ export function createTerrainLod(page) {
     const previous = scene.onBeforeRender;
     scene.onBeforeRender = function (renderer, sceneArg, camera, target) {
       if (typeof previous === 'function') previous.call(this, renderer, sceneArg, camera, target);
+      // The WebGPU renderer (remaster mode) calls this for the sun's shadow
+      // cascades too, each with its own orthographic camera hundreds of
+      // metres up the sun, and it draws them in the middle of the main pass
+      // (tree-foliage.js `installHook` has the same rule). Judged from
+      // there, every cell's index was rewritten for a far-off eye after the
+      // frame had taken its draw range: the ground changed shape from frame
+      // to frame and drew triangles out of a stale index.
+      if (renderer?.isRemaster && camera?.isOrthographicCamera) return;
       update(camera);
     };
   }

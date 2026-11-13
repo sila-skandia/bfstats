@@ -139,6 +139,21 @@ out.scene.indexInRange = (() => {
   for (let i = 0; i < mesh.geometry.drawRange.count; i++) if (idx.array[i] >= 65 * 65) return false;
   return true;
 })();
+// Remaster mode draws the sun's shadow cascades from the same scene, each
+// with an orthographic camera far up the sun, in the middle of the main
+// pass: they leave the index as the view's camera judged it. The retail
+// renderer's other cameras still judge, each for its own draw.
+out.scene.cascade = (() => {
+  const view = render(128, 40, -128).triangles;
+  const sun = new THREE.OrthographicCamera(-200, 200, 200, -200, 1, 4000);
+  sun.position.set(900, 1200, 700);
+  sun.updateMatrixWorld(true);
+  scene.onBeforeRender({ isRemaster: true }, scene, sun, null);
+  const afterCascade = lod.stats().triangles;
+  scene.onBeforeRender({}, scene, sun, null);
+  const retailOrtho = lod.stats().triangles;
+  return { view, afterCascade, retailOrtho };
+})();
 lod.setEnabled(false);
 out.scene.offRestores = mesh.geometry === geometry;
 lod.setEnabled(true);

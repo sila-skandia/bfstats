@@ -582,6 +582,21 @@ keeps its own.
   orthographic camera, in the middle of the main pass; `tree-foliage.js`
   judged every tree's swap again from there, after the frame had picked what
   to draw. The hook now answers the player's camera only.
+- **The ground wobbled and drew stray triangles (the live site, 2026-11-13).**
+  The same cause a second time. The terrain's detail by distance
+  (`terrain-lod.js`, ledger TERR-8) landed on main from the parity work the
+  day the remaster did, and it re-indexes each terrain cell from the scene's
+  per-render hook for whatever camera is drawing. The three cascades each
+  re-judged the whole level from hundreds of metres up the sun, after the
+  main pass had taken its draw ranges: the ground changed shape from frame
+  to frame and drew triangles out of a stale index, flat sand-coloured
+  sheets standing off the ground. Neither side saw it before the merge, and
+  the capture scripts stop the frame loop, so they never ran it. The hook
+  now skips the remaster's orthographic cameras, as the tree swap does, and
+  `test_terrain_lod.py` holds it. Found by filming a still eye for six
+  frames and marking what changed: in retail only the gun, the water and
+  the trees move; in the remaster the hillside did (30 % of the frame on
+  Wake's beach, 7 % after, all of it gun and water).
 - **A cloned node material loses its alpha cut.** three r186's
   `NodeMaterial.copy` copies what it can enumerate; `alphaTest` is an
   accessor with an underscored field and is not reached. A palm in its fade
