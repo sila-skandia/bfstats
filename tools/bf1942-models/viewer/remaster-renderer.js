@@ -206,6 +206,10 @@ export async function createRemasterScene({ renderer, scene, camera, sun, hemi }
   // raised to `1 - (1 - a)^2.2`, which over any background is what the
   // engine's blend shows for black; a texel as bright as a typical
   // background (0.45 and up) keeps its own, where the two blends agree.
+  // A sprite the art cuts (an `alphaTestRef` of its own) is left as it is.
+  // Every sprite carries the engine's floor, which drops alpha 0 alone
+  // (effects.js `SPRITE_ALPHA_REF`, 0.5/255) and is not a cut.
+  const cut = m => m.alphaTest > 0.01;
   const coversDark = m => m.blending === THREE.NormalBlending
     || (m.blending === THREE.CustomBlending && m.blendSrc === THREE.SrcAlphaFactor && m.blendDst === THREE.OneMinusSrcAlphaFactor);
   function smoke(m) {
@@ -223,13 +227,13 @@ export async function createRemasterScene({ renderer, scene, camera, sun, hemi }
   remasterHooks.glow = (m, { sprite = false, gain = GLOW } = {}) => {
     if (!m || m.remasterGlow) return;
     if (!addsLight(m)) {
-      if (sprite && m.transparent && coversDark(m) && !(m.alphaTest > 0)) smoke(m);
+      if (sprite && m.transparent && coversDark(m) && !cut(m)) smoke(m);
       return;
     }
     m.remasterGlow = true;
     const c = tsl.materialColor;
     const byAlpha = m.blending === THREE.AdditiveBlending || m.blendSrc === THREE.SrcAlphaFactor;
-    if (sprite && byAlpha && !(m.alphaTest > 0)) {
+    if (sprite && byAlpha && !cut(m)) {
       const display = tsl.sRGBTransferOETF(c.rgb).mul(c.a).mul(tsl.materialOpacity).clamp(0, 1);
       m.colorNode = tsl.vec4(tsl.sRGBTransferEOTF(display).mul(gain), 1);
       m.opacityNode = tsl.float(1);

@@ -115,6 +115,21 @@ const D3D_BLEND_FACTOR = [
 ];
 
 /**
+ * The alpha test every sprite particle is drawn under (ledger SPR-10). The
+ * particle systems' draw (BF1942.exe 0x0062e1f0) sets, ahead of its batches,
+ * `ALPHATESTENABLE` 1, `ALPHAFUNC` 5 (`D3DCMP_GREATER`) and `ALPHAREF` 0,
+ * beside `ALPHABLENDENABLE` 1, `ZWRITEENABLE` 0 and `CULLMODE` none: a pixel
+ * whose alpha, texture times particle, is 0 is not drawn at all. Under the
+ * usual pairs that pixel adds nothing anyway. Under a pair whose source
+ * factor is not the alpha (`Fx_MuzzPanz_Glint`, the tank gun's glint, is
+ * `BMInvSourceAlpha` twice over a white texture with a soft puff in its
+ * alpha) the corners of the quad are at full strength without it: the glint
+ * drew as a white square that turned red. Half an 8-bit step, as the bake's
+ * `ENGINE_ALPHA_FLOOR` is for a mesh (SM-15).
+ */
+export const SPRITE_ALPHA_REF = 0.5 / 255;
+
+/**
  * The ObjectSpawners a baked bundle carries (`extras.effectBundle.spawners`,
  * EMT-14), on the bundle itself or on a bundle it nests, each as its round
  * record with `translation` and `rotation` moved into the root bundle's
@@ -1002,6 +1017,8 @@ export class EffectPlayer {
         material.depthWrite = false;
         material.side = THREE.DoubleSide;
         material.forceSinglePass = true;
+        // The engine's sprite alpha test: alpha 0 is not drawn (SPR-10).
+        if (!(material.alphaTest > SPRITE_ALPHA_REF)) material.alphaTest = SPRITE_ALPHA_REF;
         // SPR-5 (verify-r8.md, corrected): srcBlendMode/destBlendMode are
         // the engine's own D3DBLEND ordinals (R8-1/R8-2 — an unset word
         // falls back to `geom::ParticleSystemTemplate`'s ctor default,

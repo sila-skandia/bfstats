@@ -15,7 +15,7 @@ installModuleHooks(viewer);
 const imp = f => import(path.join(viewer, f));
 const THREE = await imp('vendor/three.module.js');
 const { deathKey, tierAt, effectFrame, createSoldierArmorEffects } = await imp('soldier-armor-effects.js');
-const { EffectPlayer } = await imp('effects.js');
+const { EffectPlayer, SPRITE_ALPHA_REF } = await imp('effects.js');
 const { sampleCurve: roundSample } = await imp('round-visuals.js');
 const { newParticleRecord, spawnParticleInto, basisFromNormal } = await imp('effects-core.js');
 routeConsole(true);
@@ -154,6 +154,23 @@ out.page = { us, again, vanilla, missing, notANumber, fetches, plays: soldiers.p
   player.warm();
   out.blendPools = [...player.spritePool.values()].map(pool => pool.map(m => [m.material.blendSrc, m.material.blendDst]));
   out.blendFactors = { one: THREE.OneFactor, srcAlpha: THREE.SrcAlphaFactor, invSrcAlpha: THREE.OneMinusSrcAlphaFactor };
+}
+
+// --- every sprite is drawn under the engine's alpha test -------------------------
+{
+  // The tank gun's glint (InvSrcAlpha twice) and a sprite whose art cuts at 0.5.
+  const plain = new THREE.MeshBasicMaterial();
+  const cutout = new THREE.MeshBasicMaterial({ alphaTest: 0.5 });
+  const emitter = (template, material, srcBlendMode, destBlendMode) => ({
+    node: new THREE.Mesh(new THREE.PlaneGeometry(1, 1), material),
+    spec: { particle: { kind: 'sprite', template, blend: 'alpha', srcBlendMode, destBlendMode } } });
+  const emitters = [emitter('Fx_MuzzPanz_Glint', plain, 6, 6), emitter('Fx_Cut', cutout, 5, 6)];
+  const player = new EffectPlayer({ scene: new THREE.Scene(), camera: new THREE.PerspectiveCamera(),
+                                    library: { all: () => [{ emitters }] } });
+  player.warm();
+  out.alphaFloor = { ref: SPRITE_ALPHA_REF,
+                     tests: [...player.spritePool.values()].map(pool => pool.map(m => m.material.alphaTest)),
+                     templateKept: plain.alphaTest };
 }
 
 // --- the muzzle path's sampler ---------------------------------------------------

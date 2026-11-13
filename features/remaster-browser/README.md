@@ -597,6 +597,21 @@ keeps its own.
   frames and marking what changed: in retail only the gun, the water and
   the trees move; in the remaster the hillside did (30 % of the frame on
   Wake's beach, 7 % after, all of it gun and water).
+- **Two things a capture drew that the page does not (2026-11-13).** Both
+  were reported as retail-path defects and both were the capture script.
+  A tall grey cone over a plane filmed from 120 m ahead: the sky box stands
+  on the page's own eye, and a capture that moves only the drawn eye
+  (`scene.onBeforeRender`) sees the box's corner; with the sky moved to the
+  drawn eye it is gone. Dark blocks falling from a firing fighter: the
+  script held `__setTrigger` as well as `__setSeatFire`, so the pilot's own
+  rifle fired inside the cockpit and the blocks were the plane's hit debris
+  (`e_RichoCascadesPlane`; 43 hit points in 1.5 s). The mouse sets only the
+  seat's trigger while seated (`page-input.js`), and with that alone the
+  plane takes nothing. A capture of a seat fires with `__setSeatFire` only.
+- **The tank gun's glint drew as a square, in both modes.** Not the
+  remaster's: the engine alpha-tests every sprite (ledger SPR-10) and the
+  page did not. `effects.js` now carries the floor, and the remaster's
+  sprite hook tells that floor from a cut the art asked for.
 - **A cloned node material loses its alpha cut.** three r186's
   `NodeMaterial.copy` copies what it can enumerate; `alphaTest` is an
   accessor with an underscored field and is not reached. A palm in its fade

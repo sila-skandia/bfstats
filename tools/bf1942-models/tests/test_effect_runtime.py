@@ -112,6 +112,16 @@ class EffectRuntimeTests(unittest.TestCase):
         self.assertEqual([[[f["one"], f["invSrcAlpha"]]],
                           [[f["srcAlpha"], f["invSrcAlpha"]]]], self.r["blendPools"])
 
+    def test_a_sprite_pixel_of_alpha_zero_is_not_drawn(self) -> None:
+        # SPR-10: the particle draw sets ALPHATESTENABLE, GREATER and a
+        # reference of 0. Without it the tank gun's glint, InvSrcAlpha twice
+        # over a white texture, drew its whole quad as a white square.
+        floor = self.r["alphaFloor"]
+        self.assertAlmostEqual(0.5 / 255, floor["ref"])
+        self.assertEqual([[floor["ref"]], [0.5]], floor["tests"])
+        # The template's own material is cloned, never written.
+        self.assertEqual(0, floor["templateKept"])
+
     def test_the_muzzle_sampler_reads_around_an_empty_point(self) -> None:
         sample = self.r["roundSample"]
         self.assertEqual([2], sample["emptyBetween"])
