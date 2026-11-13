@@ -50,8 +50,8 @@
 //     are not posed here; a seated man and a tree without the pose files
 //     keep the stand-in body (a sphere `STAND_IN_RADIUS` about
 //     `STAND_IN_HEIGHT` over the feet, priced as the torso);
-//   * the hull's own recoil (`fireingForce`, FA-19) is not pushed into the
-//     server's body.
+//   * the hull's own recoil (`fireingForce`, FA-19) goes into the server's
+//     body of the hull, once a pull (`recoilOnHull`).
 //
 // COST. Per tick: one pass over the room's gun groups (a handful, each a
 // timer) and one collider sweep per round in the air. Measured with
@@ -131,6 +131,24 @@ export function createRoomGuns({ room, capsuleRays = true }) {
   const guns = new GunFire({ scene, camera, viewportHeight: () => 720 });
   guns.rand = room.random;
   guns.useLevel(collider, room.levelData.damageTables ?? null);
+  // The hull's own recoil (`fireingForce`, FA-19): the gun's shove goes into the
+  // server's body of the hull it is bolted to, once a pull, as `FireArms::Fire`
+  // posts it (0x0828a43f..0x0828a4cf; `viewer/hull-bodies.js recoilOnHull` on
+  // the page). The root's body is woken first (`setIsAwake`, 0x0828a44e).
+  const recoilAt = [0, 0, 0];
+  const recoilAccel = [0, 0, 0];
+  function recoilOnHull(owner, push) {
+    if (!(owner >= 0) || !push) return false;
+    const held = world.bodyWorld?.get(owner);
+    const body = held?.driven ?? held?.parked?.body;
+    if (!body) return false;
+    body.wake?.();
+    recoilAt[0] = push.px; recoilAt[1] = push.py; recoilAt[2] = push.pz;
+    recoilAccel[0] = push.ax; recoilAccel[1] = push.ay; recoilAccel[2] = push.az;
+    body.addAccelerationAt(recoilAt, recoilAccel);
+    return true;
+  }
+  guns.hullRecoil = (group, push) => { recoilOnHull(group.owner, push); };
 
   /** FireArms node -> its gun group, and each hull's groups by entry. */
   const groupOf = new Map();
@@ -585,7 +603,7 @@ export function createRoomGuns({ room, capsuleRays = true }) {
   instance.quietGuns = quiet;
 
   return {
-    guns, stats, firerOf, gunGroupOf, quiet, resetHull, bodyCast, capsulesOf, soldierBones,
+    guns, stats, firerOf, gunGroupOf, quiet, resetHull, bodyCast, capsulesOf, soldierBones, recoilOnHull,
     loadBotLaw, launchBotRound, forgetBot, clear, afterStep,
     /** What a page may know (HELLO's `rounds`). */
     publicState: () => ({ seats: true }),

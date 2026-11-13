@@ -367,6 +367,10 @@ class RoomTests(unittest.TestCase):
         self.assertTrue(f2["destroyed"], f2)
         self.assertTrue(f2["refused"], f2)
         self.assertFalse(f2["seated"], f2)
+        # A late joiner is told which side the critical hit landed on (PHY-46).
+        self.assertEqual([1, 0, -1], f2["lateRow"], f2)
+        self.assertEqual([1, 0, 1], f2["lateRowRight"], f2)
+        self.assertEqual([1, 0], f2["lateRowPlain"], f2)
 
     # --- (g) fire throttling --------------------------------------------------------
 
@@ -404,6 +408,10 @@ class RoomTests(unittest.TestCase):
         assert "Willy:ground" in i["table"], i["table"]
         self.assertTrue(i["mountOk"])
         self.assertTrue(i["unmountOk"])
+        # The driver leaves a moving hull: it is released with its speed.
+        coast = i["land"]["coast"]
+        self.assertGreater(coast["before"], 1.0)
+        self.assertAlmostEqual(coast["handed"], coast["before"], places=6)
 
     def test_a_rooms_moving_hull_runs_a_soldier_over_and_credits_its_driver(self) -> None:
         # (runOver): the room tells its collider where each driven hull stands

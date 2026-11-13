@@ -72,6 +72,8 @@ export function createBotUnits(env) {
         // ...and its meshes' portal centres (`coverPortals`, extract_vehicle_ai.py
         // `cover_portals`): a cover object's doors and windows, by mesh name.
         units.aiCoverPortals = json?.coverPortals ?? null;
+        // ...and each portal's plane (`coverPortalPlanes`, `portal_plane`): bot-portal.js.
+        units.aiCoverPortalPlanes = json?.coverPortalPlanes ?? null;
         // ...and the row a bot on foot runs, for its modifier columns.
         setRowsMod(units.aiMod);
         for (const [name, info] of Object.entries(json?.vehicles ?? {})) units.ai.set(name.toLowerCase(), { name, ...info });

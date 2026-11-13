@@ -5,6 +5,7 @@
 // under node, for tests/test_bot_plan_gaps.py. Prints one JSON object.
 
 import { footAvoid, standingBox, BOT_RADIUS } from './bot-route.js';
+import { SOLDIER_SMALLEST_RADIUS } from './bot-sense.js';
 import { traceLastFree, FOOT_AVOID, footAvoidPlan, planAvoid, planScout, planTakeCover, hullScoutTurns, hullYawAimValid,
          execHullTurnTo, soldierChoseThrownWeapon, fireDecision, FIRE_STATE, FIRE_THROW, PLAN_ACTION } from './bot-plans.js';
 import { HULL_TAKE_COVER, HullTakeCoverState, hullQuadrants, SCOUT, sCurve, decleiningSlope } from './bot-behaviours.js';
@@ -20,7 +21,7 @@ function flatNav(size = 64) {
   return { width: size, height: size, cellSize: 1, blocked: new Uint8Array(n).fill(CELL_FREE),
            heights: new Float32Array(n), normalY: new Float32Array(n).fill(1), maxLevel: 3 };
 }
-const friend = (id, x, z, vx = 0, vz = 0) => ({ id, x, z, vx, vz, r: BOT_RADIUS, mass: 100 });
+const friend = (id, x, z, vx = 0, vz = 0) => ({ id, x, z, vx, vz, r: SOLDIER_SMALLEST_RADIUS, mass: 100 });
 function walker(nav, { x = 32.5, z = -32.5, yaw = 0, speed = 5, vehicle = null } = {}) {
   const bot = {
     playerId: 'me', team: 1, position: [x, 0, z], yaw, obstacles: [], route: null, vehicle,
@@ -282,7 +283,8 @@ out.thrown = {
 };
 function shooter(weapons, rolls = [0.5]) {
   let i = 0;
-  return { weapons, firingTarget: 'e1', weaponData: {}, random: () => rolls[Math.min(i++, rolls.length - 1)] };
+  return { weapons, firingTarget: 'e1', weaponData: {}, position: [0, 0, 0], targetPosition: [12, 0, 0],
+           random: () => rolls[Math.min(i++, rolls.length - 1)] };
 }
 // A direct weapon: direct fire, whatever the distance.
 let sh = shooter(kit);

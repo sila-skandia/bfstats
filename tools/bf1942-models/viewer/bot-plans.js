@@ -4,7 +4,9 @@
 // instruction set. Plain functions of the `BotController` (bot.js), which
 // delegates its methods here.
 
-import { isWalkable, traceClear } from './nav-grid.js';
+import { isWalkable, traceClear, traceValidPoint } from './nav-grid.js';
+import { attackPortal, portalInWorld, portalFiringPosition, portalLookAtPosition, portalStateWeight,
+         ADVANCE, advanceArrive, advanceRadius, chooseAdvance, decisionCounts } from './bot-portal.js';
 import { bakedToWorld, hullRadius, playerPosition, sensedPoint } from './bot-sense.js';
 import { scoutPose, takeCoverPose, fixedPose, directionPose, POSE_EYE } from './bot-pose.js';
 import { firingPose, firePlanFor, fireApproachStep, choseWeapon, aiStrength, FIRE, FIRE_APPROACH, weaponHeatHolds,
@@ -13,7 +15,7 @@ import { SCOUT, TAKE_COVER, MEDIC, HULL_TAKE_COVER } from './bot-behaviours.js';
 import { planeFireMode, PLANE_FIRE, boatControl, BOAT } from './bot-vehicle-air.js';
 import { freeLevel } from './nav-grid.js';
 import { hullDecision, VEHICLE_YAW_SIGN, drivesHull, planHullAvoid, execHullAvoid, standingBox } from './bot-route.js';
-import { AIM_COUNTS_MAX, wrapAngle, faceTarget, turretAimAt, guidedLookAt, guidedHolds, turretMiss, precisionFor, precisionHolds, targetShape,
+import { AIM_COUNTS_MAX, GUIDED, wrapAngle, faceTarget, turretAimAt, guidedLookAt, guidedHolds, turretMiss, precisionFor, precisionHolds, targetShape,
   gunSeatAim, gunSeatIndirectLine, aimerOnlyHolds } from './bot-aim.js';
 import { tankTurnTowards } from './bot-vehicle.js';
 import { isArtilleryDriver, fireMode } from './bot-perception.js';
@@ -194,11 +196,15 @@ export function planFire(bot, now) {
   const type = bot._unitInfo?.(bot.firingTarget)?.type ?? 'Infantry';
   const chosen = choseWeapon(bot.weapons, bot.weaponIndex, dist, type);
   let throwing = false;
+  let portalState = false;
   if (!bot.vehicle) {
-    const d = fireDecision(bot, { now, direct: chosen, dist, type });
+    const d = fireDecision(bot, { now, direct: chosen, dist, type, portal: targetPortalCover(bot),
+                                  own: ownPortalCover(bot), blocked: sightBlocked(bot) });
     if (d.state === FIRE_STATE.none) return bot._planIdle();
     bot.weaponIndex = d.weaponIndex;
-    throwing = d.state === FIRE_STATE.throwAtTarget;
+    if (d.advance) return advancePlan(bot, d, now);
+    throwing = d.state === FIRE_STATE.throwAtTarget || d.state === FIRE_STATE.throughPortal;
+    portalState = d.state === FIRE_STATE.throughPortal;
   } else if (chosen >= 0) {
     bot.weaponIndex = chosen;
   }
@@ -233,6 +239,23 @@ export function planFire(bot, now) {
   plan.targetId = bot.firingTarget;
   plan.startedAt = now;
   plan.weaponIndex = bot.weaponIndex;
+  if (portalState) {
+    // State 3: stand where `getPortalFiringPosition` says and throw from
+    // there. A portal with no free ground in front of it refuses the state
+    // (0x085a570e), and the throw is the plain one.
+    const at = portalThrowPoint(bot, weapon);
+    if (at) {
+      for (let i = plan.length - 1; i >= 0; i--) {
+        if (plan[i].type === 'InfanteryMoveTo' || plan[i].type === 'InfanteryMoveToObject') plan.splice(i, 1);
+      }
+      // `createPlanInternal`'s move to a point (0x085a7e39..0x085a7f8b): it
+      // ends inside `0.5 r` of the point (`BAPConPosition`, r = the firing
+      // state's +0x34, bot-portal.js `advanceRadius`).
+      plan.unshift({ type: 'InfanteryMoveTo', waypoint: at.position,
+                     arrive: advanceArrive(advanceRadius(bot._pathRadius?.() ?? 1.0, bot._radius?.() ?? 1.0)) });
+      plan.portalDirection = at.direction;
+    }
+  }
   if (throwing) {
     // The throw is one round (the firing state's count, `local_244 = 1` at
     // 0x085ac4ef's block), then the plan is over.
@@ -245,7 +268,7 @@ export function planFire(bot, now) {
 }
 
 /** `BBPFireInfantery`'s firing states (`Data` +4), the ones the page runs. */
-export const FIRE_STATE = { none: 0, direct: 1, throwAtTarget: 2 };
+export const FIRE_STATE = { none: 0, direct: 1, throwAtTarget: 2, throughPortal: 3, approach: 5, walkToPortal: 6, walkToLookAt: 7 };
 
 /**
  * `BBPFireInfantery::createPlan` 0x085a3870's throw (AI-183).
@@ -321,7 +344,7 @@ export function soldierChoseThrownWeapon(weapons, distance, type = 'Infantry', t
  *    `createFirePlan` 0x085ac240 build those moves and were not re-read.
  * Retail has no test of the thrower's own blast or of a friend in it.
  */
-export function fireDecision(bot, { now, direct, dist, type }) {
+export function fireDecision(bot, { now, direct, dist, type, portal = null, own = null, blocked = false }) {
   let data = bot._fireData;
   if (!data || data.targetId !== bot.firingTarget || now - data.time > FIRE_THROW.resetAfter) {
     data = bot._fireData = { targetId: bot.firingTarget, time: now, history: [], lastThrow: 0, throwWait: 0 };
@@ -331,14 +354,178 @@ export function fireDecision(bot, { now, direct, dist, type }) {
     data.history.unshift(state);
     if (data.history.length > FIRE_THROW.history) data.history.length = FIRE_THROW.history;
   };
-  if (direct >= 0) { note(FIRE_STATE.direct); return { state: FIRE_STATE.direct, weaponIndex: direct }; }
+  if (direct >= 0) { data.advance = null; note(FIRE_STATE.direct); return { state: FIRE_STATE.direct, weaponIndex: direct }; }
   const delay = w => bot.weaponData?.[w.name]?.throw?.fireDelay ?? 0;
   const thrown = soldierChoseThrownWeapon(bot.weapons, dist, type, delay);
-  if (thrown < 0 || now - data.lastThrow < data.throwWait) return { state: FIRE_STATE.none, weaponIndex: -1 };
+  if (thrown < 0) { data.advance = null; return { state: FIRE_STATE.none, weaponIndex: -1 }; }
+  // A move of states 6 and 7 that is not done is issued again from the
+  // state's record (`createPlan` 0x085a5a29.. with the sub-state 1 kept); one
+  // that is done, or state 5's (its distance is 0: the record has no move
+  // point, 0x085a4ed2), is over and the state starts afresh.
+  const adv = data.advance;
+  if (adv) {
+    const done = adv.state === FIRE_STATE.approach
+      || Math.hypot(bot.position[0] - adv.point[0], bot.position[2] - adv.point[2]) <= adv.radius;
+    if (!done && adv.state !== FIRE_STATE.approach) return { state: adv.state, weaponIndex: adv.weaponIndex, advance: adv };
+    data.advance = null;
+  }
+  if (now - data.lastThrow < data.throwWait) return advanceDecision(bot, data, note, { dist, thrown, portal, own, blocked });
   data.lastThrow = now;
   data.throwWait = FIRE_THROW.waitMin + FIRE_THROW.waitSpan * bot.random();
+  // State 3 (`createPlan` 0x085a5f50..0x085a603d), tried after the throw at
+  // the target, and standing when its roll beats the first eligible: the
+  // target is in a cover with `p` portals (its Mobile's last passed portal),
+  // a thrown weapon is to hand and the throw clock has run; weight `1 - 1 /
+  // (2 p^2 + 1)` (bot-portal.js) against a roll in (0, 1] + 0.0 (0x086ffd68).
+  if (portal?.count > 0 && portalStateWeight(portal.count) > 1 - bot.random()) {
+    note(FIRE_STATE.throughPortal);
+    return { state: FIRE_STATE.throughPortal, weaponIndex: thrown };
+  }
   note(FIRE_STATE.throwAtTarget);
   return { state: FIRE_STATE.throwAtTarget, weaponIndex: thrown };
+}
+
+/**
+ * States 7, 6 and 5 for a soldier with no direct weapon against this target
+ * and no throw to make (bot-portal.js `ADVANCE`): `own` is the cover the bot
+ * stands in, `portal` the target's, `blocked` a sensed target behind a
+ * blocking line (`createPlan`'s `-0x419`). Returns the state with its move
+ * (`advance`: the point, the stop radius), or no plan.
+ */
+function advanceDecision(bot, data, note, { dist, thrown, portal, own, blocked }) {
+  const eligible = new Set();
+  if (own?.count > 0) eligible.add(FIRE_STATE.walkToLookAt);
+  if (portal?.count > 0) eligible.add(FIRE_STATE.walkToPortal);
+  if (!blocked && dist > ADVANCE.minDistance) eligible.add(FIRE_STATE.approach);
+  const roll = () => Math.min(1, ((Math.floor(bot.random() * 0x1000000) | 1) + 1) / 0x1000000);
+  const state = chooseAdvance({ eligible, counts: decisionCounts(data.history), coverValue: own?.cover?.value ?? 0, roll });
+  if (state === 0) return { state: FIRE_STATE.none, weaponIndex: -1 };
+  const radius = advanceRadius(bot._pathRadius?.() ?? 1.0, bot._radius?.() ?? 1.0);
+  const weapon = bot.weapons[thrown];
+  let point = null;
+  if (state === FIRE_STATE.walkToPortal) {
+    point = portalThrowPoint(bot, weapon)?.position ?? null;
+  } else if (state === FIRE_STATE.walkToLookAt) {
+    point = portalLookAtPoint(bot, own, weapon);
+  } else {
+    point = bot.targetPosition ? [...bot.targetPosition] : bot.position ? [...bot.position] : [0, 0, 0];
+  }
+  // A state whose point is refused is no plan (0x085a5724: sub-state reset).
+  if (!point) return { state: FIRE_STATE.none, weaponIndex: -1 };
+  note(state);
+  const advance = { state, point, radius, weaponIndex: thrown };
+  data.advance = advance;
+  return { state, weaponIndex: thrown, advance };
+}
+
+/** The bot's own cover (`getLastPassedPortal` -> its cover) when it has
+ *  portals: `{ count, cover, planes }`, as `targetPortalCover`. */
+export function ownPortalCover(bot) {
+  const inside = bot.portalPassing?.insideOf?.(bot.playerId) ?? -1;
+  if (inside < 0) return null;
+  const cover = bot.covers?.find(c => c.id === inside);
+  const planes = cover ? bot.coverPortalPlanes?.()?.[cover.template] : null;
+  return planes?.length ? { count: planes.length, cover, planes } : null;
+}
+
+/** State 7's point: `getPortalLookAtPosition` 0x085a32f0 of the attack portal
+ *  of the cover the bot stands in (`getAttackPortal` with the bot's own
+ *  cover): the first valid point inward of the portal's centre. */
+function portalLookAtPoint(bot, own, weapon) {
+  const nav = bot._nav?.();
+  if (!own || !nav || !own.cover.node) return null;
+  const matrix = own.cover.node.matrixWorld.elements;
+  const index = attackPortal({ botPosition: bot.position, targetPosition: bot.targetPosition, weapon,
+                               planes: own.planes, matrix });
+  if (index < 0) return null;
+  const portal = portalInWorld(own.planes[index], matrix);
+  const firstValid = (a, b) => {
+    const p = traceValidPoint(nav, a[0], a[1], b[0], b[1], bot.obstacles);
+    return p && isWalkable(nav, p[0], p[1]) ? p : null;
+  };
+  const at = portalLookAtPosition({ portal, firstValid });
+  // The engine returns y = 0 and the trace's own failure as the origin; the
+  // move reads x and z only. A failed trace is no point.
+  return at[0] === 0 && at[2] === 0 ? null : [at[0], bot.position[1], at[2]];
+}
+
+/**
+ * `createPlan`'s `-0x419` (0x085a3d..): the memory record says the target is
+ * in sight, and the plain line from the bot's eye to the sensed point is
+ * blocked. A target not in sight is not blocked (the engine's flag reads
+ * the other way round).
+ */
+function sightBlocked(bot) {
+  const seen = !!bot.senses?.memory?.get(bot.firingTarget)?.seen;
+  if (!seen) return false;
+  return !bot._lineClear(bot._eye?.() ?? bot.position, firingPoint(bot));
+}
+
+/**
+ * The plan of states 5, 6 and 7 (`createPlanInternal` 0x085a74e0): no fire
+ * statement (the record's round count is 0), only the move.
+ *  - 5 closes in on the target (the approach branch, 0x085a84a9: to
+ *    `0.9 maxRange`) with the look at it;
+ *  - 6 and 7 walk to their point, stopping inside `0.5 r`
+ *    (bot-portal.js `advanceArrive`).
+ * The plan ends when its move does; a move that ended short of `r` is issued
+ * again by the state (`fireDecision`).
+ */
+function advancePlan(bot, d, now) {
+  const weapon = bot.weapons[bot.weaponIndex] ?? bot.weapons[0];
+  const adv = d.advance;
+  if (!bot.vehicle) bot.heldWeapon = weapon?.name ?? null;
+  const plan = adv.state === FIRE_STATE.approach
+    ? [{ type: 'InfanteryMoveToObject', targetId: bot.firingTarget, targetPos: [...bot.targetPosition],
+         arrive: FIRE.approachRange * (weapon?.maxRange ?? 0) },
+       { type: PLAN_ACTION.MouseTurretAimAt, targetId: bot.firingTarget, targetPos: [...bot.targetPosition] }]
+    : [{ type: 'InfanteryMoveTo', waypoint: [...adv.point], arrive: advanceArrive(adv.radius) }];
+  plan.targetId = bot.firingTarget;
+  plan.startedAt = now;
+  plan.weaponIndex = bot.weaponIndex;
+  plan.advance = adv.state;
+  bot._shotsThisPlan = 0;
+  return plan;
+}
+
+/** The target's cover when it stands inside one that has portals:
+ *  `{ count, cover, planes }`, else null (bot-portal.js `createPortalPassing`). */
+export function targetPortalCover(bot) {
+  const inside = bot.portalPassing?.insideOf?.(bot.firingTarget) ?? -1;
+  if (inside < 0) return null;
+  const cover = bot.covers?.find(c => c.id === inside);
+  const planes = cover ? bot.coverPortalPlanes?.()?.[cover.template] : null;
+  return planes?.length ? { count: planes.length, cover, planes } : null;
+}
+
+/** State 3's standing point: `getAttackPortal` picks the portal,
+ *  `getPortalFiringPosition` the spot, on the bot's nav map. Null when the
+ *  portal has no free ground in front of it. */
+function portalThrowPoint(bot, weapon) {
+  const t = targetPortalCover(bot);
+  const nav = bot._nav?.();
+  if (!t || !nav || !t.cover.node) return null;
+  const matrix = t.cover.node.matrixWorld.elements;
+  const index = attackPortal({ botPosition: bot.position, targetPosition: bot.targetPosition, weapon,
+                               planes: t.planes, matrix });
+  if (index < 0) return null;
+  const portal = portalInWorld(t.planes[index], matrix);
+  const firstValid = (a, b) => {
+    const p = traceValidPoint(nav, a[0], a[1], b[0], b[1], bot.obstacles);
+    return p && isWalkable(nav, p[0], p[1]) ? p : null;
+  };
+  // `trace`: the last point still clear walking on toward the far end.
+  const lastClear = (a, b) => {
+    const n = Math.max(1, Math.ceil(Math.hypot(b[0] - a[0], b[1] - a[1]) / (nav.cellSize || 1)));
+    let last = a;
+    for (let k = 1; k <= n; k++) {
+      const p = [a[0] + (b[0] - a[0]) * k / n, a[1] + (b[1] - a[1]) * k / n];
+      if (!traceClear(nav, a[0], a[1], p[0], p[1], bot.obstacles)) break;
+      last = p;
+    }
+    return last;
+  };
+  return portalFiringPosition({ portal, weapon, firstValid, lastClear, random: () => bot.random() });
 }
 
 /** The straight-line distance between two points. */
@@ -822,6 +1009,8 @@ export function firePlanDone(bot, plan, now) {
     if (bot.magazineEmpty) return true;
     return false;
   }
+  // States 5 to 7 build no trigger: the plan is its move, which ends it.
+  if (plan.advance) return false;
   const trigger = plan.find(a => a.type === PLAN_ACTION.Trigger || a.type === PLAN_ACTION.TriggerContinously);
   if (!trigger) return true;
   if (now - plan.startedAt > trigger.timeout) return true;
@@ -1799,6 +1988,12 @@ export function heatHolds(bot, action) {
   const heat = weaponHeatOf(bot);
   if (heat === null) return false;
   action.heatCond ??= { latched: false };
+  // A guided launcher's plan holds at 0.8 and lets go at 0.7 (bot-aim.js
+  // `GUIDED`: `BBPFireGuided::createPlan`, 0x085b3728 and 0x085b3762); every
+  // other fire plan at 0.8 and 0.5.
+  if (bot.vehicle && fireMode(bot.vehicle) === 'guided') {
+    return !weaponHeatHolds(action.heatCond, heat, GUIDED.heatHigh, GUIDED.heatLow);
+  }
   return !weaponHeatHolds(action.heatCond, heat);
 }
 

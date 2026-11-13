@@ -499,7 +499,7 @@ def main() -> int:
     ap.add_argument("--out", type=Path, default=Path(__file__).parent / "viewer" / "maps" / "_shared")
     ap.add_argument("--name", action="append", default=[],
                     help="extra bundle template(s) to bake")
-    ap.add_argument("--max-texture", type=int, default=512)
+    ap.add_argument("--max-texture", type=int, default=1024)
     ap.add_argument("--shared-sounds", type=Path, default=None,
                     help="where the samples land (default: <out>/sounds, the "
                          "same directory extract_map.py fills)")

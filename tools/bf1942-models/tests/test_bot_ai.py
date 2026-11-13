@@ -65,7 +65,7 @@ MODULES = {f"{name}.js": VIEWER / f"{name}.js" for name in _MODULE_NAMES}
 MODULES["world.mjs"] = VIEWER / "world.js"
 MODULES["bot.js"] = VIEWER / "bot.js"
 MODULES["nav-grid.js"] = VIEWER / "nav-grid.js"
-for _m in ("bot-aim.js", "bot-perception.js", "bot-route.js", "bot-pilot.js", "bot-decision.js", "bot-plans.js", "bot-mount.js", "bot-radio.js", "bot-sense.js", "bot-fire.js", "bot-behaviours.js", "bot-pose.js", "bot-vehicle.js", "bot-vehicle-air.js", "bot-strength.js", "bot-rows.js", "strategic.js", "strategic-layer.js", "strategic-ai.js", "doctrine.js", "doctrine-squad.js", "doctrine-garrison.js", "doctrine-landing.js"):
+for _m in ("bot-aim.js", "bot-perception.js", "bot-route.js", "bot-pilot.js", "bot-decision.js", "bot-plans.js", "bot-mount.js", "bot-radio.js", "bot-sense.js", "bot-fire.js", "bot-behaviours.js", "bot-pose.js", "bot-vehicle.js", "bot-vehicle-air.js", "bot-portal.js", "bot-strength.js", "bot-rows.js", "strategic.js", "strategic-layer.js", "strategic-ai.js", "doctrine.js", "doctrine-squad.js", "doctrine-garrison.js", "doctrine-landing.js"):
     MODULES[_m] = VIEWER / _m
 # `actionStatusDecision` against the binary (the x87 emulator's answers).
 MODULES["action_status_cases.json"] = Path(__file__).resolve().parent / "fixtures" / "action_status_cases.json"
@@ -455,7 +455,11 @@ class BotAiTests(unittest.TestCase):
         self.assertEqual(p["inRange"], "attack")
         self.assertTrue(p["inRangeFire"])
         self.assertEqual(p["passed"], "break")                       # inside 1.3 x the turn radius
-        self.assertEqual(p["breaking"], "break")                     # 100 m into the 200 m run
+        # The break ends where its move does, `Not(BAPConObjectDistance(target,
+        # 1.3 R))` (0x0859ba03): 15 m from the target it goes on, 80 m (past
+        # 1.3 x 25) it is over; the 200 m run was ours.
+        self.assertEqual(p["breaking"], "break")
+        self.assertEqual(p["beyond"], "approach")
         self.assertEqual(p["again"], "approach")
         # The break point (`createPlanInternal` 0x0859b4b0, AI-83): 1.5 x the
         # weapon's 300 m range along the heading at y = 100; a dive's
@@ -1004,6 +1008,33 @@ class ArtilleryDriverTests(unittest.TestCase):
         # 5.7 deg off: held; 1.7 deg: fires; then it keeps firing off the line.
         self.assertEqual(g["holds"], [False, True, True])
         self.assertFalse(g["notGuided"])
+
+    def test_a_burnt_aircraft_is_not_worth_flying(self) -> None:
+        # `airOverheatBail` 0x08585750: an aircraft at engine heat 1.0 bails;
+        # a ground hull's heat only cuts the move term (`engineHeatInfluence`).
+        e = run_harness()["engineHeat"]
+        self.assertEqual([x["burnt"] for x in e["air"]], [False, True])
+        self.assertEqual(e["air"][1]["heat"], 1)
+        self.assertFalse(e["ground"]["burnt"])
+        self.assertEqual(e["none"], {"heat": 0, "burnt": False})
+        self.assertEqual(e["influence"][0], 1)
+        self.assertAlmostEqual(e["influence"][1], 0.8, places=6)
+        self.assertAlmostEqual(e["influence"][2], 0.0, places=6)
+
+    def test_a_guided_launcher_holds_at_eight_tenths_and_lets_go_at_seven(self) -> None:
+        # `BAPConWeaponHeat` 0.8 / 0.7 (0x085b3728, 0x085b3762): the fire
+        # plan's 0.8 / 0.5 for every other weapon is `heatResume`.
+        self.assertEqual(self.a["guided"]["heat"], [True, False, False, True, True])
+
+    def test_a_guided_launcher_scores_a_harmless_target_only_as_the_current_one(self) -> None:
+        # `BBFireGuided::calculateUrgency` 0x085705d0: no 0.33 harmless cut
+        # (the large-bore's would score it); the one it already fires at is
+        # kept (0x08571935).
+        h = self.a["guided"]["harmless"]
+        self.assertTrue(h["plain"])
+        self.assertIsNone(h["guidedNew"])
+        self.assertEqual(h["guidedCurrent"], "h")
+        self.assertAlmostEqual(h["ratio"], 1 / 0.33, places=4)
 
     def test_the_artillery_drivers_row(self) -> None:
         # Ledger SPOT-16: type 14 is its own row (`BBFireDriver`,

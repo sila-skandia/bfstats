@@ -20,7 +20,7 @@ import { groupBallistics, aimerDrag } from './bot-pilot.js';
 import { towardsPoint, boatControl, boatSpeedControl, boatResetControls, BOAT, rotate, attackRunStep, breakPoint, roundMiss, planeFireMode, aimAtDirection, towardsDirectionEngine, stickShape, PLANE_FIRE,
          planeAimFor, precisionGate, nearestMiss, runwayClear, collisionPredicted, airAvoidUrgency, airAvoidPoint } from './bot-vehicle-air.js';
 import { fireStrength, unitTable, EnemyStrengthTables, engineHeatInfluence, STRENGTH } from './bot-strength.js';
-import { scoreVehicleTargets, scoreTargets, SOLDIER_BATTLE_STRENGTH } from './bot-fire.js';
+import { scoreVehicleTargets, scoreTargets, SOLDIER_BATTLE_STRENGTH, weaponHeatHolds } from './bot-fire.js';
 import { freeRun, freeBox, freeLevel, CELL_LAND, CELL_FREE } from './nav-grid.js';
 // Brief F: the mounted gunner's aim.
 import * as THREE from 'three';
@@ -704,8 +704,8 @@ function antiAircraftScenario() {
 }
 
 /** The aircraft's fire plan: approach until inside 0.9 of the range with a
- *  line of fire, attack while the target is in front, break for 200 m after
- *  the pass; a seated unit that cannot move gets mode 3; the aim law holds
+ *  line of fire, attack while the target is in front, break until 1.3 x the turn
+ *  radius from the target after the pass; a seated unit that cannot move gets mode 3; the aim law holds
  *  the climb angle during a takeoff. */
 function planeFireScenario() {
   const state = { phase: 'approach', breakFrom: null };
@@ -714,7 +714,8 @@ function planeFireScenario() {
   const far = attackRunStep(state, args(1000));
   const inRange = attackRunStep(state, args(200));
   const passed = attackRunStep(state, args(20));
-  const breaking = attackRunStep(state, { ...args(20), position: [0, 100, -100] });
+  const breaking = attackRunStep(state, { ...args(20), position: [0, 100, -35] });
+  const beyond = attackRunStep({ phase: 'break' }, { ...args(20), position: [0, 100, -100] });
   const again = attackRunStep(state, { ...args(20), position: [0, 100, -250] });
   // The break point (`BBPFire3d::createPlanInternal` 0x0859b4b0, AI-83).
   const bp = o => breakPoint({ position: [1000, 60, -1000], forward: [0, 0, -1], maxRange: 300, turnRadius: 40, worldSize: 2048, ...o });
@@ -758,7 +759,7 @@ function planeFireScenario() {
     target: [0, 100, -8], maxRange: 300, lineOfFire: true, mode: 1, precision: 5, roundSpeed: 800 });
   // A moving target: the lead solution puts the miss at 0 for the led aim.
   const lead = roundMiss({ rel: [0, 0, -300], relVel: [30, 0, 0], dir: [0.1, 0, -0.995], speed: 300, gravity: 0 });
-  return { breakPins, far: far.phase, inRange: inRange.phase, inRangeFire: inRange.fire, passed: passed.phase, breaking: breaking.phase,
+  return { breakPins, far: far.phase, inRange: inRange.phase, inRangeFire: inRange.fire, passed: passed.phase, breaking: breaking.phase, beyond: beyond.phase,
            again: again.phase, modes, aimUpPitch: aimUp.pitch, climb: PLANE_FIRE.maxClimbAngle,
            onTarget: [onTarget.phase, onTarget.fire, onTarget.miss], offTarget: [offTarget.fire, offTarget.miss],
            unseen: unseen.phase, closeInFront: close.inFront, leadMiss: lead.miss, leadT: lead.t,
@@ -1525,6 +1526,18 @@ results.briefL = {
   senseReset: senseResetScenario(),
 };
 
+// AI-43: the engine heat of a unit and `airOverheatBail`.
+{
+  const { unitEngineHeat } = await import('./bot-mount.js');
+  const { engineHeatInfluence } = await import('./bot-strength.js');
+  // An `EngineHeat` stand-in: `step` is what `heatedEngine` recognises.
+  const burn = (kind, heat) => unitEngineHeat({ kind, drive: { lawEngines: [{ heat: { heat, step() {} } }] } });
+  results.engineHeat = {
+    air: [burn('air', 0.5), burn('air', 1)], ground: burn('tank', 1), none: unitEngineHeat({ kind: 'air', drive: { lawEngines: [{}] } }),
+    influence: [engineHeatInfluence(0.9), engineHeatInfluence(0.96), engineHeatInfluence(1)],
+  };
+}
+
 // A guided launcher (`FixedGuidedMissileLauncher`: `BBFireGuided` /
 // `BBPFireGuided`): the mode by its row, and the plan's aim, a straight look
 // at the object and a trigger that waits for 2 deg once.
@@ -1538,7 +1551,24 @@ results.guided = (() => {
   const near = look([0, 30, -1000]);            // 1.7 deg
   const state = {};
   const holds = [aiming.guidedHolds(ahead, state), aiming.guidedHolds(near, state), aiming.guidedHolds(ahead, state)];
+  // The heat latch at the launcher's 0.8 / 0.7: holds at 0.8, still held at 0.75, free at 0.7.
+  const cond = { latched: false };
+  const heat = [0.5, 0.8, 0.75, 0.7, 0.75].map(h => aiming.GUIDED && weaponHeatHolds(cond, h, aiming.GUIDED.heatHigh, aiming.GUIDED.heatLow));
+  // A harmless target (an enemy-manned hull that cannot hurt this one): the
+  // plain large-bore rule scores it x 0.33, the guided one only keeps it
+  // as the current target.
+  const weapons = [{ name: 'missile', strength: { LightArmour: 7 }, minRange: 2, maxRange: 900, ammo: 4 }];
+  const harmlessInfo = () => ({ type: 'LightArmour', air: false, table: {}, maxSpeed: 25, mobile: true, enemyManned: true,
+    seats: [{ type: 'LightArmour', table: { HeavyArmour: 0 }, occupied: true }] });
+  const score = o => scoreVehicleTargets({ position: [0, 0, 0], forward: [0, 0, -1], velocity: [0, 0, 0], weapons, now: 100,
+    attackedBy: () => -1000, velocityOf: () => [0, 0, 0], infoOf: harmlessInfo, myType: 'HeavyArmour', myTable: unitTable(weapons),
+    spotted: [], environment: [{ id: 'h', pos: [0, 0, -400] }], mode: 'largeBore', ...o });
+  const harmless = {
+    plain: score({}).score > 0, guidedNew: score({ guided: true }).targetId, guidedCurrent: score({ guided: true, currentTarget: 'h' }).targetId,
+    ratio: score({ guided: true, currentTarget: 'h' }).score / score({}).score,
+  };
   return {
+    heat, harmless,
     mode: fireMode({ row, equipmentType: 17 }), plain: fireMode({ row: { behaviours: { Fire: 'FireLargeBore' } } }),
     dir: ahead.dir.map(v => +v.toFixed(6)), off: [ahead.off, near.off], time: ahead.time, holds,
     notGuided: aiming.guidedHolds({ valid: true, off: 0 }, {}),

@@ -65,7 +65,10 @@ export const DEFAULT_VIDEO = Object.freeze({
   environmentMapping: true,
   lightmaps: true,
   shadows: true,
-  textureQuality: 4,
+  // 100 %, the top of the row: retail at its highest draws every mip with
+  // a -1.5 LOD bias (VID-5), which `texture-quality.js` answers with the
+  // GPU's anisotropy. HIGH's own file says 80 %; nothing chosen is not HIGH.
+  textureQuality: 5,
   viewDistance: 100,
   // DISPLAY MODE's height in the screen's own pixels; null is the page's
   // default, the screen's ratio capped at 2 (what it drew before the list).

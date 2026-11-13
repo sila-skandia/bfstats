@@ -6,11 +6,11 @@
 // here.
 
 import { isWalkable, traceValidPoint } from './nav-grid.js';
-import { playerPosition } from './bot-sense.js';
+import { playerPosition, SOLDIER_PATH_REMOVAL } from './bot-sense.js';
 import { weaponAiOf, SOLDIER_BATTLE_STRENGTH } from './bot-fire.js';
 import { unitUrgency, inclinationSplit, changeUrgency, teleportChangeUrgency, mannedByEnemy, TANK, CHANGE, TELEPORT } from './bot-vehicle.js';
 import { decleiningSlope } from './bot-behaviours.js';
-import { fireStrength, unitTable } from './bot-strength.js';
+import { fireStrength, unitTable, engineHeatInfluence } from './bot-strength.js';
 import { wrapAngle } from './bot-aim.js';
 import { BEHAVIOUR } from './bot-decision.js';
 import { PLAN_ACTION, approachGoal } from './bot-plans.js';
@@ -29,6 +29,21 @@ export const SEAT_REQUEST_SECONDS = 15.0;
  * 0x0852ed40). A request 15 s old is dropped, as the bot's vt+0x184 does
  * from `calculateVehicleUrgency` 0x08583d4f.
  */
+/**
+ * A unit's engine heat for the Change urgency (AI-43): the heat of its first
+ * Engine with heat (PHY-45), and whether it
+ * has burnt out. `airOverheatBail` 0x08585750 is `AIObjectMobile::
+ * getEngineHeat` >= 1.0 for an aircraft with a soldier aboard (information
+ * flags +4 & 0x10 and +0x10 bit 2); a ground hull's heat only cuts the move
+ * term (`engineHeatInfluence`).
+ */
+export function unitEngineHeat(m) {
+  // `rocket-burn.js` `heatedEngine`: the first engine whose `heat` is an `EngineHeat`.
+  const engine = (m?.drive?.lawEngines ?? m?.drive?.engines ?? []).find(e => typeof e?.heat?.step === 'function');
+  const heat = engine ? engine.heat.heat : 0;
+  return { heat, burnt: m?.kind === 'air' && !!engine && heat >= 1 };
+}
+
 export function seatRequestAge(bot, id, now) {
   const q = bot.seatRequest;
   if (!q) return Infinity;
@@ -43,8 +58,9 @@ function radioKind(kind) {
 }
 
 /** The Change walk's arrival: `getMaxPathPosRemovalDistance` 0x0852b780,
- *  `0.99 x max(0.5, radius - |sphere offset|)`, a soldier's 1.0 radius. */
-const CHANGE_ARRIVE = 0.99;
+ *  `0.99 x max(0.5, smallest radius - |sphere offset|)` for the soldier's
+ *  own box (`bot-sense.js SOLDIER_PATH_REMOVAL`, 0.953). */
+const CHANGE_ARRIVE = SOLDIER_PATH_REMOVAL;
 
 /** The soldier's collision radius `CHANGE_ARRIVE` is made from. */
 const SOLDIER_RADIUS = 1.0;
@@ -221,8 +237,16 @@ export function urgencyChange(bot, mod, now) {
       table: bot._seatStrengths(), others: bot._otherSeats(mine), air: m.kind === 'air', isSeat: !m.drives,
       myType: bot._myType(), fixed: !m.drives && !rootOccupied, aimable: bot._fixedAimable(),
     });
-    const selfU = unitUrgency({ health, fire: seatFire,
+    // The unit's engine heat: the move term's `engineHeatInfluence` (1 until
+    // 0.95, then a slope, bot-strength.js), and `airOverheatBail` 0x08585750:
+    // an aircraft whose engine has burnt out (heat 1, PHY-45) is worth
+    // nothing to its soldier (`calculateVehicleUrgency` 0x08583b10 returns 0
+    // for it), so the bot leaves a burnt Natter instead of flying it down
+    // (AI-43).
+    const { heat: engineHeat, burnt } = unitEngineHeat(m);
+    const selfU = burnt ? 0 : unitUrgency({ health, fire: seatFire,
                                 maxSpeed: seatSpeed, occupiedByBot: !m.drives && !!driver,
+                                engineHeat: engineHeatInfluence(engineHeat),
                                 value: mine?.value ?? 0, orderSplit: split,
                                 requestAge: seatRequestAge(bot, m.id, now) });
     let staying = selfU * CHANGE.stayFactor;

@@ -258,6 +258,15 @@ export function joinLine(name, team, strings) {
   return `${name} ${strings?.JOINED_THE ?? 'joined the'} ${side}`;
 }
 
+/** The room runs fewer bots than its settings allow (the server's memory cap,
+ *  `room-registry.mjs` `BOT_TIERS`: 0 none, 1 on foot, 2 ships, 3 hulls): the
+ *  game-information line the host reads. Null when the room runs its top tier. */
+export function botTierLine(tier, top) {
+  if (!Number.isInteger(tier) || !Number.isInteger(top) || tier >= top) return null;
+  const what = ['no bots', 'bots on foot only', 'bots on foot and in ships'][tier] ?? 'fewer bots';
+  return `This server is short of memory: the room runs ${what}`;
+}
+
 /**
  * Who else sits in the local player's hull, frame to frame: the page's stand-in
  * for the enter and exit events `vehicleLine` prints from. `observe(hull, ids)`

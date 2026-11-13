@@ -4309,7 +4309,12 @@ def main() -> int:
     ap.add_argument("--mod", default="bf1942")
     ap.add_argument("--out", type=Path,
                     default=Path(__file__).resolve().parent / "viewer" / "maps")
-    ap.add_argument("--max-texture", type=int, default=512)
+    # 1024 is the largest texture the three retail packs ship (153 of 2492
+    # .dds files; 651 more are 512), so this default is lossless for them. It
+    # was 512: every 1024 terrain tile and every 1024 vehicle texture a level
+    # placed was halved, against retail's own tiles at 4 texels a metre
+    # (features/retail-look-parity).
+    ap.add_argument("--max-texture", type=int, default=1024)
     ap.add_argument("--terrain-only", action="store_true",
                     help="skip StaticObjects (faster, for judging the ground)")
     ap.add_argument("--texture-fallback", action="append", default=[],

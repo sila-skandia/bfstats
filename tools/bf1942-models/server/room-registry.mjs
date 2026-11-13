@@ -241,6 +241,7 @@ export class RoomServerCore {
   #makeRoom(code, levelData, mode, host, tier = this.topTier()) {
     const room = this.#newRoom(code, levelData, mode, host, tier);
     room.botTier = tier;
+    room.botTierTop = this.topTier();   // what the settings allow, for the host's notice
     return room;
   }
 

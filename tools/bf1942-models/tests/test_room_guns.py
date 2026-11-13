@@ -135,6 +135,15 @@ class RoomGunsTests(unittest.TestCase):
         self.assertEqual(hull["hp"], hull["before"] - 14)
         self.assertEqual(hull["lastHit"], hull["wantLastHit"])
 
+    def test_a_guns_recoil_goes_into_the_servers_body_of_its_hull(self) -> None:
+        # FA-19: `fireingForce` posted once a pull at the gun's own point.
+        r = self.part("recoil")
+        self.assertTrue(r["wired"])
+        self.assertEqual(r["woke"], 1)                    # the root's node is woken first (0x0828a44e)
+        self.assertEqual(r["calls"], [[[1, 2, 3], [0, 0, -3.67]]])
+        self.assertFalse(r["none"])
+        self.assertFalse(r["other"])
+
     def test_only_a_crewed_hull_marks_the_crosshair(self) -> None:
         hull = self.part("hull")
         self.assertTrue(hull["seated"])

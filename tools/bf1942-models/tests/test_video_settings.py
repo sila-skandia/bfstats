@@ -88,13 +88,19 @@ class VideoSettingsTests(unittest.TestCase):
             with self.subTest(name):
                 self.assertEqual(read_preset(SETTINGS / name), self.results["presets"][level])
 
-    def test_nothing_chosen_is_high_and_the_old_look(self) -> None:
+    def test_nothing_chosen_is_high_with_retails_top_texture_row(self) -> None:
+        # Retail at its highest setting: HIGH's rows, but TEXTURE QUALITY at
+        # 100 % (every mip, LOD bias -1.5, VID-5), not the 80 % HIGH's file
+        # writes. That is not a preset, so VIDEO PERFORMANCE reads CUSTOM.
         r = self.results
-        self.assertEqual(3, r["defaultPerformance"])
+        self.assertEqual(0, r["defaultPerformance"])
         d = r["defaults"]
         self.assertEqual(1, r["graphics"][str(d["graphicsQuality"])]["lodPercent"])
         self.assertEqual(1, r["effects"][str(d["effectsQuality"])])
-        self.assertEqual({"mipSkip": 0, "lodBias": 0}, r["texture"][str(d["textureQuality"])])
+        self.assertEqual(5, d["textureQuality"])
+        self.assertEqual({"mipSkip": 0, "lodBias": -1.5}, r["texture"][str(d["textureQuality"])])
+        high = {k: v for k, v in r["presets"]["3"].items() if k != "textureQuality"}
+        self.assertEqual(high, {k: d[k] for k in high})
         self.assertEqual(100, d["viewDistance"])
         self.assertIsNone(d["displayHeight"])
         self.assertTrue(d["environmentMapping"] and d["lightmaps"])

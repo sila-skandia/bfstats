@@ -236,7 +236,7 @@ export function advanceGroups(guns, dt) {
     // The pylons follow the magazine, after this tick's round has been
     // billed: `roundsLeft` is the page's hook onto the seat's `FireState`
     // (hand-fire.js), Infinity where there is none (`loaded-rounds.js`).
-    if (group.loadedRounds) syncLoadedRounds(group.node, guns.roundsLeft?.(group) ?? Infinity);
+    if (group.loadedRounds) syncLoadedRounds(group.node, guns.roundsLeft?.(group) ?? Infinity, group.cooldown > 0);
   }
   return active;
 }

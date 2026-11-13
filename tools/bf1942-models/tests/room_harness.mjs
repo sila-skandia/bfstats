@@ -384,10 +384,20 @@ let nextTag = 1;
   pW.sent.length = 0;
   sendJson(pW, MSG_ACTION, { type: 'seat', vehicle: 1, seat: 0, action: 'enter' });
   const slot = [...w.players.keys()].at(-1);
+  // A late joiner is told the hit place with the hull's hit points: the third
+  // word of HELLO's `damage.hulls` row, the side of the world x (PHY-46).
+  hull.criticalFlagged = true;
+  hull.criticalHitX = -3;
+  const lateRow = room.pads.damageState().hulls.find(r => r[0] === 1) ?? null;
+  hull.criticalHitX = 4;
+  const lateRowRight = room.pads.damageState().hulls.find(r => r[0] === 1) ?? null;
+  hull.criticalFlagged = false;
+  const lateRowPlain = room.pads.damageState().hulls.find(r => r[0] === 1) ?? null;
   results.f2 = {
     destroyed: hull.destroyed,
     refused: ofType(pW, MSG_EVENT).map(jsonRow).some(r => r.type === 'seatRefused'),
     seated: w.player(slot)?.occupancy != null,
+    lateRow, lateRowRight, lateRowPlain,
   };
 }
 
@@ -573,6 +583,18 @@ let nextTag = 1;
           grounded: drive.state.grounded,
           waterPart: Boolean(bodySpecFor(landEntry.root, data)?.waterPart),
         };
+        // The driver gets out of a hull that is moving: it is handed to the
+        // body world with its velocity and rolls on (the page's
+        // `releaseDrivenBody`), and is not stopped dead.
+        const before = drive.state.velocity.length();
+        let handed = null;
+        const release = w.releaseDriven.bind(w);
+        w.releaseDriven = (...a) => { handed = drive.state.velocity.length(); return release(...a); };
+        inst.unmountFromSeat(w, 2, landEntry);
+        w.releaseDriven = release;
+        const body = w.bodyWorld?.get?.(landEntry.owner);
+        const speedAfter = body?.body ? Math.hypot(...body.body.v) : null;
+        land.coast = { before, handed, speedAfter };
       }
     }
     // The room's ladders (LADDER-1): the page's index, each with the hull it

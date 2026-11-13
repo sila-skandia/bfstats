@@ -738,7 +738,7 @@ point (AI-116, `getAttackPortal`), the landing approach radius (AI-113), the pil
 (AI-83, near `0x0859bc90`), and the air-avoid grid test and plan speed (AI-95). Notices: rarely.
 Approach: read each function and replace the placeholder. (ai-b)
 
-- **Built 2026-11-13.** bot-mind builder, three of the four: the pilot's break point (AI-83), the air avoid's flat grid test and slow-object gate (AI-95; the plan's speed is never read by a plane, so there was nothing to build there), and the landing approach radius, which is a search box and not a stopping distance (AI-113, AI-191). The tank's attack portal (AI-116) is not built: one builder found no portal a vanilla cover could have, another found a portal mesh in the tail of 95 vanilla meshes (SM-16), and the two readings are not reconciled.
+- **Built 2026-11-13.** bot-mind builder, three of the four: the pilot's break point (AI-83), the air avoid's flat grid test and slow-object gate (AI-95; the plan's speed is never read by a plane, so there was nothing to build there), and the landing approach radius, which is a search box and not a stopping distance (AI-113, AI-191). The tank's attack portal (AI-116), settled in wave 2 and built: `getAttackPortal` 0x085a28c0 reads the cover's PortalMesh, the tail of its `.sm` (SM-16), so vanilla covers do have portals. A tank never reaches the case (state 3 needs a thrown weapon, states 6 and 7 the soldier flag), so its firing point stays its own position; the soldier's state 3 (a grenade thrown from the portal's firing position at a target inside a cover) is built, `viewer/bot-portal.js` (AI-195), and so are states 5 to 7, the advance of a soldier with no direct weapon and no throw to make (AI-196). The pilot's break now ends beyond 1.3 R of the target, and the soldier's radii are the template's own (AI-197).
 
 **41. The bots' radio subscriptions are hard-coded per mod** (low, S). Retail: each mod's
 `Game/AI/radio.con`. Ours hard-codes vanilla's list (right for every shipped mod read so far). The
@@ -1008,6 +1008,28 @@ carry the addresses.
   JSON alone had a 0 x 0 x 0 inertia box and a NaN turn (COL-15). The room could not find a vehicle
   template on the content-addressed tree. BOMB-5's 2026-11-12 "ends at -24" is challenged and waits
   on its author.
+- **A soldier plays the portal.** Played in a headless match on Liberation of Caen: a thrower with
+  one grenade walks to within 0.04 m of the portal's firing position and throws from it (AI-195);
+  with no throw to make the same soldier closes in (5), walks to the target cover's firing position
+  (6) or behind their own cover's portal (7), and the move ends inside `0.5 r` (AI-196). A soldier's
+  AI body is `BodyCollision`'s hard-coded hull, so no mesh was read: radius 1.0, smallest radius
+  1.063, path removal 0.953 (AI-197), which also sizes the Avoid (AI-192) and the foot's last leg
+  (AI-191). Retail's own numbers replaced three stand-ins. (open-gaps, remaining-gaps, last-gaps)
+- **Smaller bot fixes of wave 2.** A plane's break ends beyond 1.3 R (AI-83); a guided launcher's
+  heat latch and harmless rule (AI-190); a pilot changes unit when the engine is burnt out (AI-43);
+  a plain single-barrel weapon's dummy round returns at the end of the fire timer (FA-28); a shot's
+  recoil goes into the room's server body (FA-19); the host is told the bot tier; a late joiner gets
+  a critical hull's hit place; `sim/` flies the guided missile. EoD's bot weapon table was written
+  (56 `aiWeapons`, 10 thrown) and staged, not published: today EoD's bots fire one default weapon.
+- **Textures were baked at 512, half of retail's top.** `extract_map.py`, `extract_maps_all.py` and
+  `extract_effects.py` capped textures at 512, so every 1024 Tx terrain tile (4 texels a metre
+  against 2) and 11 to 14 object textures a level (f4u1, Sherman, Zero, Tiger and others) were
+  halved; the three packs ship 153 files at 1024 and none above. The default is 1024 now,
+  lossless for the packs (`tests/test_texture_cap.py`); the mid-field detail of a frame rose 8 to
+  21 % (Wake 600 to 697, El Alamein 716 to 869). **TEXTURE QUALITY defaulted to 80 %**, retail's
+  highest is 100 %, whose -1.5 LOD bias the page answers with maximum anisotropy on statics and
+  vehicles; the default is 5 (VID-5). The 1024 bake is staged for vanilla (21 levels with archives
+  on this Mac) and not published. (retail-look-parity)
 
 ### Not built, and why
 
@@ -1026,54 +1048,59 @@ Retail does not do it, so there is nothing to build:
 
 Read, and waiting on data, a reader or a decision:
 
-- The tank's attack portal (AI-116): whether a vanilla cover has portals is disputed between the
-  `.aim` survey and SM-16.
-- The infantry fire machine's states 3 to 7 (portal throws and the advance), each needing its helper
-  read first; state 4 is left out on purpose, since it stands the thrower 2 m from their own grenade.
-- A hull TakeCover's order factor and same-hull halving (AI-182); the last leg's search box
-  (AI-191); the start moved out of a circle the searcher stands in (AI-187: ported in scratch, no
+- ~~The tank's attack portal (AI-116)~~ Built (wave 2): the covers do have portals (SM-16); state 3 for a soldier with a grenade. States 5 to 7 built (wave 2, remaining-gaps): a soldier with no direct weapon and no throw to make closes in (5), walks to the target's cover's firing position (6) or to the first free point behind their own cover's portal (7); a move stops inside `0.5 r` and not at an invented 3 m.
+- Hull and soldier Avoid, portal and advance states are built; what is left of that machine is state 4, left out on purpose, since it stands the thrower 2 m from their own grenade (states 3 and 5 to 7 are built).
+- ~~A hull TakeCover's order factor and same-hull halving (AI-182)~~ both inert on our game (an order names a unit only for the single ordered behaviour; a hull is team-locked); the last leg's search box
+  (AI-191, built for the foot, last-gaps; a hull's move radius is unread, so hulls keep the draw); the start moved out of a circle the searcher stands in (AI-187: ported in scratch, no
   gain on Bocage or Kharkov, not kept).
-- The soldier's own AI radius (mesh data, needs the lab): the Avoid's overlap departure and the heal
-  plan's stop both stand on a stand-in (AI-192, AI-42). The rise in Kharkov's on-foot route failures
+- ~~The soldier's own AI radius (mesh data, needs the lab)~~ Built (last-gaps): retail reads no mesh, the first geometry is `BodyCollision`'s hard-coded hull: radius 1.0, smallest radius 1.063, path removal 0.953 (AI-197). The rise in Kharkov's on-foot route failures
   has no fix.
-- The guided launcher's heat hysteresis, mobile re-approach and harmless rule (AI-190); the break
-  point's edge re-test and the break's end condition (AI-83); `BBPRoam3d`, the one place BF1918
+- ~~The guided launcher's heat hysteresis and harmless rule (AI-190)~~ built (remaining-gaps); its mobile re-approach is inert (it is the Mobile-plug-in branch, and every guided launcher is a fixed unit with none, last-gaps); the break's end condition (AI-83) is built, the break point's edge re-test is read and not built (a per-axis re-test of the slid coordinate, a plane within about 9 m of a map corner; last-gaps); `BBPRoam3d`, the one place BF1918
   roams.
 - The 2.0 no-order re-deploy (never taken: every bot of ours is LOD 0, kept on purpose);
-  `BBTakeCover3d`'s Check your six (no aircraft TakeCover); AI-43's overheat bail, so a bot flies a
-  burnt Natter down.
+  `BBTakeCover3d`'s Check your six (no aircraft TakeCover); ~~AI-43's overheat bail~~ built (a burnt aircraft is worth 0 to its pilot, who changes unit).
 - The Calliope's angle multipliers: retail bends the seated soldier's own aim pitch, and the page
-  never bends a seated soldier (SEAT-43). A dummy round that retail shows again before its reload
-  (FA-28).
+  never bends a seated soldier (SEAT-43). ~~A dummy round that retail shows again before its reload
+  (FA-28)~~ built for the plain single-barrel weapon; the `disableWhenFired` flag-1 case still waits on what object flag 1 gates.
 - A hull vacated in flight still has its stick centred, pending a lab bail-out; a coasting hull
   that goes critical with nobody aboard is not scaled until someone's tick sees it; BF1918's
   Zeppelin and balloon wrecks were not flown (plane-wreck).
 - The clip leaving a third-person rifle, a pose-exporter feature of its own (FA-31). The retail
   relay's remote players keep the speed bands.
-- Which parts of an object cast a shadow (DSH-9) and `moveToWaterSurface` (EMT-19) rest on the Mac
+- ~~Which parts of an object cast a shadow (DSH-9)~~ found in the PC client (`gatherGeometries` 0x005b8ea0, last-gaps) and `moveToWaterSurface` (EMT-19) rests on the Mac
   dump. The Spring's own collision as the dust trigger: a height test stands in (EMT-16). The coarse
   terrain blocks' index pattern: ours keeps a full border, 512 / 160 / 80 / 64 triangles a cell
   against retail's 512 / 144 / 40 / 12 (TERR-20).
 - How a "Round" ban expires and whether the vote count includes bots (VOTE-2, VOTE-4); who announces
   a rename; the ping request's cadence (MEME-27).
+- Retail look: no same-pose retail frame for El Alamein, Berlin or Kursk, nor any retail close-up
+  of a tank or soldier (the Mac client cannot be captured headless); the sky is about 10 % brighter
+  and the grass denser in retail's Wake and Ramelle frames, a cause not isolated. The 1024
+  textures are not published: xpack1 and xpack2 follow from the still-running re-bake, the wave-2
+  re-bake in `rebake-stage` passes `--max-texture 512` and its levels carry the halved textures,
+  and the mod trees (FH, FHSW, FHSWEurope, DC, EoD, bf1918, GC) and the kits (`MAX_TEXTURE` 512)
+  were not rebuilt. El Alamein's 64 tiles at 1024 are about 340 MB of mips in the browser, not
+  measured on a weak GPU.
+- EoD's bot weapon table is staged, not published; `kasserine_pass` and `truk` have no archives on
+  this Mac, so their 15 kits (19 items) stay without AI rows.
 
 In a room:
 
 - A room bot's Wasserfall seat and its missile; emplaced guns are left out of the room's bot units
-  (tried: over half the bots sat at a gun with nobody in its arc). The headless runner still throws
-  the shell.
-- A bot's rocket and a remote human's hand weapon are not drawn on other pages. The hull's own
-  recoil (FA-19) is not pushed into the server's body. The room and the runner pose a still stance:
+  (tried: over half the bots sat at a gun with nobody in its arc). ~~The headless runner still throws
+  the shell.~~ Built (wave 2): `sim/` flies the guided missile through the page's `rocket-ride.js`.
+- A bot's rocket and a remote human's hand weapon are not drawn on other pages. ~~The hull's own
+  recoil (FA-19) is not pushed into the server's body.~~ Built (last-gaps). The room and the runner pose a still stance:
   no walk cycle, aim pitch or death fall.
-- A remote hull's turret and gun angles (the snapshot carries no joints). A hull stops dead on the
-  server when its driver moves off the wheel, where retail lets it coast.
+- A remote hull's turret and gun angles (the snapshot carries no joints). ~~A hull stops dead on the
+  server when its driver moves off the wheel, where retail lets it coast.~~ Built: it is handed to the body world with its velocity.
 - Landing craft are not held on their davits (`holdObject 1`): they float beside the ship, a kept
   departure. A land hull on a deck and a flying boat moored on the sea (EoD and BF1918 only). A ship
   at rest is out of the body world. A sinking ship has no sea bed.
-- A lower bot tier is not shown to the host. Creating a room still stalls the process 350 to 400 ms.
+- ~~A lower bot tier is not shown to the host.~~ Built (last-gaps): the host's chat says so. Creating a room still stalls the process 350 to 400 ms.
 - The join line through a retail relay; hanging up at 450 unanswered ticks (the heartbeat is a kept
   departure, NET-22); the radio switches and the buddy list across page loads.
-- A late joiner gets a critical hull's hit points but not its hit place until the next hull row.
+- ~~A late joiner gets a critical hull's hit points but not its hit place~~ Built (last-gaps): HELLO's hull row carries the side.
 
 Out of scope for a builder, or not installed:
 

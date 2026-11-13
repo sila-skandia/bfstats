@@ -714,6 +714,7 @@ def extract(mod: str, game_dir: Path = GAME.parent, levels: bool = True) -> dict
     chain = mod_chain(game_dir, mod)
     meshes, _textures, objects, game = build_pools(chain, [])
     portals = cover_portals(meshes)
+    planes = cover_portal_planes(meshes)
     blob = game.try_read("bf1942/game/aibehaviours.con")
     rows = equipment_rows(blob.decode("latin-1") if blob is not None else "")
     blob = game.try_read(RADIO_CON)
@@ -740,7 +741,7 @@ def extract(mod: str, game_dir: Path = GAME.parent, levels: bool = True) -> dict
         if info is not None:
             vehicles[sites.get(root, (root, ""))[0]] = info
     if not levels:
-        return named(mod, vehicles, rows, radio, portals)
+        return named(mod, vehicles, rows, radio, portals, planes)
 
     taken = {name.lower() for name in vehicles}
     seats = {pco.lower() for info in vehicles.values() for pco in info["seats"]}
@@ -806,7 +807,7 @@ def extract(mod: str, game_dir: Path = GAME.parent, levels: bool = True) -> dict
             info["level"] = level_name
             vehicles[key] = info
             taken.add(key.lower())
-    return named(mod, vehicles, rows, radio, portals)
+    return named(mod, vehicles, rows, radio, portals, planes)
 
 
 SET_VEHICLE_RE = re.compile(r"^\s*aiSettings\.setVehicle\s+(\d+)\s+(\w+)", re.I | re.M)
@@ -901,8 +902,82 @@ def cover_portals(meshes: ArchivePool) -> dict[str, list[list[float]]]:
     return out
 
 
+def portal_plane(poly: list) -> list[float]:
+    """One portal polygon as `AITemplateCover::initFromObject` 0x085dfb10
+    keeps it (0x085e0820 `PortalInfo` holds the four arrays), in the mesh's
+    own frame: `[cx, cy, cz, nx, ny, nz, extentL, extentR, yMin, yMax]` (the last
+    two, the polygon's lowest and highest vertex, are this port's: the engine's
+    portal test is the world's own).
+
+    - the centre is the mean vertex (`getPortalCenter` 0x085e05b0);
+    - the normal is `cross(p2 - p0, p1 - p0)`, unit length unless its square
+      is within 1.1920929e-7 of 1 (`ABS(len2 - 1) < _DAT_08665f9c` keeps it) and
+      zero when the square is under that (`getPortalNormal` 0x085e05d0);
+    - the two extents run along `d = (nz, 0, -nx)`, the horizontal line in the
+      portal's plane, from the centre: `t = d . (v - c)` for each vertex, the
+      most negative a vertex reaches is `extentL` (array +4, `getPortalXZExtentL`
+      0x085e0610) and the most positive `extentR` (array +0, 0x085e05f0); both
+      start at 0, so L <= 0 <= R."""
+    n = len(poly)
+    c = [sum(v[i] for v in poly) / n for i in range(3)]
+    a = [poly[1][i] - poly[0][i] for i in range(3)]
+    b = [poly[2][i] - poly[0][i] for i in range(3)]
+    # `cross(b, a)`, the call's argument order at 0x085e7890's caller.
+    nx = b[1] * a[2] - b[2] * a[1]
+    ny = b[2] * a[0] - b[0] * a[2]
+    nz = b[0] * a[1] - b[1] * a[0]
+    len2 = nx * nx + ny * ny + nz * nz
+    eps = 1.1920928955078125e-07
+    if abs(len2 - 1.0) >= eps:
+        if abs(len2) >= eps:
+            k = 1.0 / len2 ** 0.5
+            nx, ny, nz = nx * k, ny * k, nz * k
+        else:
+            nx = ny = nz = 0.0
+    dx, dz = nz, -nx
+    low = high = 0.0
+    for v in poly:
+        t = dx * (v[0] - c[0]) + dz * (v[2] - c[2])
+        if t <= 0.0:
+            low = min(low, t)
+        else:
+            high = max(high, t)
+    ys = [v[1] for v in poly]
+    return [round(x, 4) for x in (*c, nx, ny, nz, low, high, min(ys), max(ys))]
+
+
+def cover_portal_planes(meshes: ArchivePool) -> dict[str, list[list[float]]]:
+    """`cover_portals`' meshes with each portal as `portal_plane` reads it:
+    what `getAttackPortal` 0x085a28c0 sorts the portals by (the centre, the
+    normal and the two extents) and what the soldier's firing and look-at
+    positions stand on (`getPortalFiringPosition` 0x085a2dc0,
+    `getPortalLookAtPosition` 0x085a32f0). A polygon of fewer than three
+    vertices has no plane and is left out of the list, which keeps the
+    portal indexes of `cover_portals` only where every polygon has one."""
+    from bf42 import stdmesh
+    out: dict[str, list[list[float]]] = {}
+    for name in sorted(meshes.names()):
+        if not name.lower().endswith(".sm"):
+            continue
+        blob = meshes.try_read(name)
+        if blob is None:
+            continue
+        try:
+            mesh = stdmesh.parse(blob, name)
+        except Exception:  # noqa: BLE001 - a mesh the reader refuses has no portals to offer
+            continue
+        if not mesh.portals:
+            continue
+        key = name.replace("\\", "/").rsplit("/", 1)[-1][:-3].lower()
+        if key in out:
+            continue
+        out[key] = [portal_plane(list(poly)) for poly in mesh.portals if len(poly) >= 3]
+    return out
+
+
 def named(mod: str, vehicles: dict[str, dict], rows: dict[int, str], radio: list[dict] | None = None,
-          portals: dict[str, list[list[float]]] | None = None) -> dict:
+          portals: dict[str, list[list[float]]] | None = None,
+          planes: dict[str, list[list[float]]] | None = None) -> dict:
     """The table as written: each record and seat that has an
     `equipmentType` also carries its row's name as `equipment`, and the rows
     themselves ride along as `equipmentTypes`. `radio` is the mod's
@@ -917,6 +992,8 @@ def named(mod: str, vehicles: dict[str, dict], rows: dict[int, str], radio: list
         out["radio"] = radio
     if portals is not None:
         out["coverPortals"] = portals
+    if planes is not None:
+        out["coverPortalPlanes"] = planes
     return out
 
 

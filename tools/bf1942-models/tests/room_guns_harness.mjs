@@ -276,6 +276,23 @@ out.pins = {
   sendJson(target, MSG_ACTION, { type: 'seat', vehicle: willy.id, seat: 0, action: 'exit' });
   run(core, 'SEAT', 2, [gunner, target]);
 
+  // recoil (FA-19): a gun's `fireingForce` shove goes into the server's body of the
+  // hull it is bolted to, once a pull, through the gun fire's own `hullRecoil` seam.
+  {
+    const calls = [];
+    let woke = 0;
+    const body = { wake: () => { woke++; }, addAccelerationAt: (p, a) => { calls.push([[...p], [...a]]); } };
+    const kept = w.bodyWorld;
+    // The unit level has no body world: a stand-in holds the Willy's body.
+    w.bodyWorld = { get: owner => (owner === willy.owner ? { driven: body } : null) };
+    const push = { px: 1, py: 2, pz: 3, ax: 0, ay: 0, az: -3.67 };
+    room.guns.guns.hullRecoil({ owner: willy.owner }, push);
+    const none = room.guns.recoilOnHull(-1, push);
+    const other = room.guns.recoilOnHull(willy.owner + 99, push);
+    w.bodyWorld = kept;
+    out.recoil = { woke, wired: typeof room.guns.guns.hullRecoil === 'function', calls, none, other };
+  }
+
   // rocket: a bot's launcher round, flown here, its blast beside a soldier.
   const tmp = mkdtempSync(path.join(os.tmpdir(), 'room-guns-'));
   try {

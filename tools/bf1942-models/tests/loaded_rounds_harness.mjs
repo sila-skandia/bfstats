@@ -257,4 +257,25 @@ const out = {};
   out.respawnAfter = shown(aim9);
 }
 
+// FA-28: a plain single-barrel weapon draws its dummy again when the fire timer
+// ends, before the reload; one with `disableWhenFired` waits for the reload.
+{
+  const single = (name, extra) => {
+    const gun = rack(name, { round: 'Shell', body: 'ShellDummy', muzzles: 1, magSize: 4, numOfMag: 2 });
+    Object.assign(gun.userData.fireArms, extra);
+    mountLoadedRounds(gun);
+    return gun;
+  };
+  const plain = single('PlainRack', {}), once = single('OnceRack', { disableWhenFired: true });
+  const vis = g => loadedRoundsOf(g).map(r => r.visible);
+  out.single = {
+    full: vis(plain),
+    timerRunning: (syncLoadedRounds(plain, 3, true), vis(plain)),
+    timerEnded: (syncLoadedRounds(plain, 3, false), vis(plain)),
+    emptyMagazine: (syncLoadedRounds(plain, 0, false), vis(plain)),
+    disableWhenFiredTimerEnded: (syncLoadedRounds(once, 3, false), vis(once)),
+    disableWhenFiredReloaded: (syncLoadedRounds(once, 4, false), vis(once)),
+  };
+}
+
 console.log(JSON.stringify(out));

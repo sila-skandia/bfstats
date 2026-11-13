@@ -287,6 +287,9 @@ export class Match {
       // (SUP-28, `bot-referee.js` `usePack`); a synthetic level flies none.
       packRounds: () => stage?.guns?.disarmRounds?.() ?? [],
       retireRound: shot => stage?.guns?.retireRound?.(shot) ?? false,
+      // A bot whose ridden missile died goes back to its launcher (FA-29,
+      // `rocket-ride.js` `botRideOut`); false off a real level.
+      rideOut: bot => stage?.rideOut?.(bot) ?? false,
       // The page's `botRoundDamage` on a real level: the struck material and
       // the distance the round flew price it (ledger DMG-3).
       roundDamage: (stats, material, distance) => (stage
@@ -481,6 +484,7 @@ export class Match {
     this.tickIndex++;
     this.referee.tick(dt);
     this.stage?.afterBots();
+    this.stage?.rounds?.(dt);
     this.referee.captureTick(dt);
     this.stage?.afterCapture(report, dt);
     if (this.stage) this.airTick();

@@ -1571,9 +1571,12 @@ export function createNetRoom(page) {
       // HELLO's word: each hull's state and the hit points of what is not at
       // its full count.
       const damage = room.roomClient.hello?.damage;
-      for (const [id, hp] of damage?.hulls ?? []) {
+      // The host, when the memory cap gave the room fewer bots than the settings.
+      const helloBots = room.roomClient.hello?.bots;
+      if (room.roomClient.hello?.admin && helloBots) page.comms?.onBotTier?.(helloBots.botTier, helloBots.botTierTop);
+      for (const [id, hp, hitX] of damage?.hulls ?? []) {
         const v = room.roomClient.vehicles.get(id);
-        if (v) { v.hp = hp; v.destroyed = hp <= 0; }
+        if (v) { v.hp = hp; v.destroyed = hp <= 0; if (hitX != null) v.hitX = hitX; }
       }
       for (const [node, hp] of damage?.objects ?? []) noteObject(node, hp, hp <= 0);
       for (const id of room.roomClient.vehicles.keys()) hullDirty.add(id);

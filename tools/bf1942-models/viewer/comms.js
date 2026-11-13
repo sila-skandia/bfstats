@@ -27,7 +27,7 @@ import {
 import {
   ChatLog, SECTION_CHAT, SECTION_INFO, SECTION_KILL, deathLines, captureLine,
   allPointsLine, rowGeometry, dividerGeometry, lineColor, playerChatLine,
-  vehicleLine, joinLine, CrewWatch, IgnoreList, cutSayText,
+  vehicleLine, joinLine, botTierLine, CrewWatch, IgnoreList, cutSayText,
 } from './chat-log.js';
 import { decodePlayerName } from './vehicle-players.js';
 import { ChatInput, CHAT_BOX, promptText } from './chat-input.js';
@@ -704,6 +704,15 @@ export function createComms(page) {
     const text = joinLine(decodePlayerName(player?.name ?? ''), team, strings());
     if (!text) return;
     chat.add(SECTION_INFO, { text, team });
+    dirty = true;
+  };
+
+  /** The host is told when the room runs fewer bots than their settings allow
+   *  (`chat-log.js` `botTierLine`): game information, no side. */
+  comms.onBotTier = (tier, top) => {
+    const text = botTierLine(tier, top);
+    if (!text) return;
+    chat.add(SECTION_INFO, { text, team: 0 });
     dirty = true;
   };
 

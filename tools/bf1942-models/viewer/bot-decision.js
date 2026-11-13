@@ -29,7 +29,7 @@
 //    has no consumer. Neither is modelled.
 
 import { traceValidPoint, isWalkable } from './nav-grid.js';
-import { playerPosition, SOLDIER_RADIUS } from './bot-sense.js';
+import { playerPosition, SOLDIER_RADIUS, SOLDIER_PATH_REMOVAL } from './bot-sense.js';
 import { TAKE_COVER, MEDIC, HULL_TAKE_COVER, HullTakeCoverState } from './bot-behaviours.js';
 import { airAvoid } from './bot-pilot.js';
 import { drivesHull, hullAvoid, footAvoid } from './bot-route.js';
@@ -415,7 +415,7 @@ export function urgencyMoveTo(bot, mod) {
 
 /** `Bot::getMaxPathPosRemovalDistance` for the unit the bot controls. */
 export function pathRadius(bot) {
-  return bot.vehicle ? 0.99 * Math.max(0.5, bot.vehicle.radius ?? SOLDIER_RADIUS) : SOLDIER_RADIUS;
+  return bot.vehicle ? 0.99 * Math.max(0.5, bot.vehicle.radius ?? SOLDIER_RADIUS) : SOLDIER_PATH_REMOVAL;
 }
 
 export function fallbackWaypoint(bot) {

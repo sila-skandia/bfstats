@@ -94,6 +94,9 @@ class RoomBotsTests(unittest.TestCase):
         self.assertEqual(topup["bots"], 5)
         self.assertEqual(topup["worldBots"], 5)
         self.assertEqual(topup["hello"]["botCap"], 15)
+        # The tier the room runs and the one the settings allow ride in HELLO for the host.
+        self.assertIn("botTier", topup["hello"])
+        self.assertIn("botTierTop", topup["hello"])
 
     def test_each_bot_joins_the_side_the_engine_would_add_to(self) -> None:
         topup = self.part("topup")

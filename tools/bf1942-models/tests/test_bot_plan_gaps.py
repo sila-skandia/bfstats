@@ -102,10 +102,11 @@ class SoldierAvoidTests(_Harness):
 
     def test_a_friend_walking_at_the_bot_is_predicted(self) -> None:
         h = self.r["headOn"]
-        # mass 100 x |relVel| 10 / |rel| 12, met after (12 - 2) / 10 s.
+        # mass 100 x |relVel| 10 / |rel| 12, met after (12 - 2 r) / 10 s, r the
+        # soldier's `getSmallestRadius` sqrt(0.4^2 + 0.9^2 + 0.4^2) (AI-197).
         self.assertAlmostEqual(h["urgency"], 100 * 10 / 12, places=6)
         self.assertEqual(h["best"], "p:a")
-        self.assertAlmostEqual(h["t"], 1.0, places=6)
+        self.assertAlmostEqual(h["t"], (12 - 2 * math.hypot(0.4, 0.9, 0.4)) / 10, places=5)
         self.assertTrue(h["changed"])
 
     def test_a_crossing_friend_is_predicted(self) -> None:
@@ -333,7 +334,8 @@ class ThrowTests(_Harness):
         self.assertEqual(c["waitSpan"], 5.0)
         self.assertEqual(c["rounds"], 1)
         self.assertEqual(c["history"], 8)
-        self.assertEqual(self.r["states"], {"none": 0, "direct": 1, "throwAtTarget": 2})
+        self.assertEqual(self.r["states"], {"none": 0, "direct": 1, "throwAtTarget": 2, "throughPortal": 3,
+                                            "approach": 5, "walkToPortal": 6, "walkToLookAt": 7})
 
     def test_the_thrown_weapon(self) -> None:
         t = self.r["thrown"]
@@ -354,11 +356,15 @@ class ThrowTests(_Harness):
     def test_the_throw_and_its_clock(self) -> None:
         d1, d2, d3, d4 = self.r["decideThrow"]
         self.assertEqual(d1, {"state": 2, "weaponIndex": 1})
-        self.assertEqual(d2["state"], 0)
-        self.assertEqual(d3["state"], 0)       # 7.4 s after: the wait is 7.5
+        # While the throw clock has not run the soldier is not idle: with no
+        # cover about, state 5 (close in, no fire) is the only state eligible
+        # and so the one that stands (createPlan 0x085a61c0, the fall-back at
+        # 0x085a4d86).
+        self.assertEqual(d2["state"], 5)
+        self.assertEqual(d3["state"], 5)       # 7.4 s after: the wait is 7.5
         self.assertEqual(d4, {"state": 2, "weaponIndex": 1})
         self.assertEqual(self.r["decideWait"], 7.5)
-        self.assertEqual(self.r["decideHistory"], [2, 2])
+        self.assertEqual(self.r["decideHistory"], [2, 5, 5, 2])
 
     def test_no_throw_inside_the_minimum_range(self) -> None:
         self.assertEqual(self.r["decideInside"], {"state": 0, "weaponIndex": -1})

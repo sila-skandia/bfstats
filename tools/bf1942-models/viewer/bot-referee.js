@@ -141,6 +141,7 @@ export { CAPTURE_FALLBACK_SECONDS, captureRadius, captureDuration, controlPointS
   controlPointStep, nearestEnemyFlag } from './control-point-law.js';
 import { captureRadius, controlPointStep } from './control-point-law.js';
 import { createAIRadio } from './bot-radio.js';
+import { createPortalPassing } from './bot-portal.js';
 
 /**
  * The cover objects the TakeCover behaviour chooses among: every collider
@@ -185,6 +186,8 @@ export function buildBotCovers(world) {
       // The template (its mesh's name: `coverPortals` is keyed by it) and
       // the footprint, for the hull's TakeCover (bot-decision.js).
       template: e.template, footprint: [e.minX, e.minZ, e.maxX, e.maxZ],
+      // The scene node, for its world matrix (bot-portal.js).
+      node: statics.ownerNodes[e.id] ?? null,
     });
   }
   return out;
@@ -458,9 +461,13 @@ export function createBotReferee(env) {
       })
       : null;
     referee.covers = buildBotCovers(w);
+    referee.portals = createPortalPassing();
+    referee.portalPlanes = null;
     for (const bot of referee.bots) {
       bot.navGrid = referee.navGrid;
       bot.covers = referee.covers;
+      bot.portalPassing = referee.portals;
+      bot.coverPortalPlanes = () => units()?.aiCoverPortalPlanes ?? null;
       bot.unitInfoOf = id => referee.unitInfo(id);
       bot.vehicleCandidates = [];
       // The hold-fire for a teammate in the line (INVENTION, bot-plans.js
@@ -526,6 +533,25 @@ export function createBotReferee(env) {
   }
 
   /** Per frame (the page) or per tick (the runner), after the world step. */
+  /** Each unit's last passed portal (bot-portal.js, `getLastPassedPortal`),
+   *  for the covers whose mesh has portals; built once the tree's planes are
+   *  in. One distance test per such cover per unit per tick. */
+  function stepPortals(w) {
+    const planes = units()?.aiCoverPortalPlanes ?? null;
+    if (!planes || !referee.portals) return;
+    if (referee.portalPlanes !== planes) {
+      referee.portalPlanes = planes;
+      referee.portals.setCovers(referee.covers.filter(c => c.node && planes[c.template]?.length).map(c => ({
+        id: c.id, planes: planes[c.template], matrix: () => c.node.matrixWorld.elements,
+        centre: c.pos, reach: c.width / 2 + 4,
+      })));
+    }
+    for (const [id, p] of w.players ?? []) {
+      const s = p?.soldier;
+      if (s && !w.armorOf?.(id)?.destroyed) referee.portals.step(id, [s.x, s.y + 1.0, s.z]);   // the body's middle, not its feet
+    }
+  }
+
   referee.tick = (dt) => {
     if (!referee.bots.length) return;
     const w = world();
@@ -538,6 +564,7 @@ export function createBotReferee(env) {
     // `AIMain::action` steps the radio every pass (`AIRadio::update`
     // 0x08482330, which acts only once half a second has gone by).
     referee.radio.update(referee.clock);
+    stepPortals(w);
     if (referee.firstLivesPending) referee.placeFirstLives();
     // The strategic pass (once per `SAI.updateFrequency`), then each bot's
     // order for this tick.

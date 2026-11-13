@@ -188,11 +188,23 @@ export function mountLoadedRounds(gun) {
  * Infinity for a gun this page keeps no magazine for (the model browser's
  * turntable, a replayed hull), which shows every pylon full.
  */
-export function syncLoadedRounds(gun, roundsLeft) {
+export function syncLoadedRounds(gun, roundsLeft, fireTimerRunning = false) {
   const rounds = loadedRoundsOf(gun);
   if (!rounds.length) return rounds;
-  const magSize = gun.userData?.fireArms?.magSize;
+  const arms = gun.userData?.fireArms;
+  const magSize = arms?.magSize;
   const unlimited = magSize == null || magSize < 0 || !(roundsLeft < Infinity);
+  // A plain single-barrel weapon (fewer than two `addFireArmsPosition`, no
+  // `disableWhenFired`): the dummy goes out as the round leaves
+  // (`fireBarrel` clears its drawn bit) and is drawn again when the fire
+  // timer ends, once the magazine has charged the next round -- before any
+  // reload (`FireArms::fireFinished` 0x08288470, 0x08288569..0x0828860e:
+  // `updateFlags(2, 0)`; FA-28). One that says `disableWhenFired` keeps it
+  // away until the reload ends (`ReloadFinished` 0x08289e70).
+  if (rounds.length < 2 && !arms?.disableWhenFired && !unlimited) {
+    rounds[0].visible = roundsLeft > 0 && !fireTimerRunning;
+    return rounds;
+  }
   const spent = unlimited ? 0 : Math.max(0, Math.min(rounds.length, magSize - roundsLeft));
   for (const round of rounds) {
     round.visible = round.userData[LOADED_ROUND_KEY].barrel >= spent;

@@ -446,9 +446,11 @@ export function attackRunStep(state, { position, forward, velocity, target, targ
   const needsFront = mode === 1 || mode === 2;
   if (!state.phase) state.phase = 'approach';
   if (state.phase === 'break') {
-    const from = state.breakFrom ?? position;
-    const run = Math.hypot(position[0] - from[0], position[2] - from[2]);
-    if (run >= PLANE_FIRE.breakDistance) state.phase = 'approach';
+    // The break ends where its move does: `Not(BAPConObjectDistance(target,
+    // 1.3 R))` (0x0859ba03 for the point inside the world, 0x0859be45 on its
+    // edge), R the Mobile template's +0xc: the plane is farther than 1.3 R
+    // from the target (ledger AI-83). Not a run of 200 m, which was ours.
+    if (dist > PLANE_FIRE.breakEdgeFactor * turnRadius) state.phase = 'approach';
   } else if (state.phase === 'attack') {
     const passed = needsFront && (dist < PLANE_FIRE.passRadiusFactor * turnRadius || !inFront);
     if (passed) { state.phase = 'break'; state.breakFrom = [...position]; }

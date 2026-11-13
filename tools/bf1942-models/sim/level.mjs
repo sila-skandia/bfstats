@@ -365,6 +365,23 @@ export async function realLevel(M, { maps, models, map, glbs = null }) {
       return new Promise((resolve, reject) => new GLTFLoader().parse(stripTextures(readGlb(file)), '', resolve, reject));
     },
   });
+  // A launcher whose round is a vehicle (FA-29: the Wasserfall's rocket, EoD's
+  // Hawk) parks that vehicle in the pool, as the page does (`level-load.js`
+  // after `loadPadVariants`): the level's `templateWords` first, since an
+  // older glb carries the round's words there, then the pool, then its nodes.
+  // A bot's launch stands one of them (`sim/stage.mjs`, `rocket-ride.js`).
+  if (S.loadRoundSpawnPool) {
+    S.applyTemplateWords?.(root, extras.templateWords);
+    const pooled = await S.loadRoundSpawnPool(root, {
+      load: async template => {
+        const file = modelFiles.get(String(template).replace(/[\\/]/g, '_').toLowerCase());
+        if (!file) return null;
+        return new Promise((resolve, reject) => new GLTFLoader().parse(stripTextures(readGlb(file)), '', resolve, reject));
+      },
+      inMode: node => S.nodeInMode(node, extras.gameplayMode),
+    });
+    S.applyTemplateWords?.(pooled, extras.templateWords);
+  }
   S.pruneToMode(root, extras.gameplayMode);
   // The ambient clips `show()` plays (flags, windmills), with the tracks
   // whose node the prune took dropped: what `freezeStatics` keeps thawed.
@@ -553,7 +570,8 @@ export async function realLevel(M, { maps, models, map, glbs = null }) {
     stage: { root, levelClips, damageTables, collisionMeshes, terrainMaterials, heightmap,
              vehicleAi: vehicleJson?.vehicles ?? {}, vehicleAiMod: vehicleJson?.mod ?? null,
              vehicleAiRadio: Array.isArray(vehicleJson?.radio) ? vehicleJson.radio : null,
-             vehicleAiCoverPortals: vehicleJson?.coverPortals ?? null },
+             vehicleAiCoverPortals: vehicleJson?.coverPortals ?? null,
+             vehicleAiCoverPortalPlanes: vehicleJson?.coverPortalPlanes ?? null },
     kits: { kitFor, maxHp },
     botNames,
     weaponFire,

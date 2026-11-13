@@ -473,7 +473,7 @@ export function createRoomPads({ room, onRow, unmount }) {
 
   /** The hit points of every hull and static that is not at its full count
    *  now, for a client joining mid-round (HELLO's `damage`): `{ hulls: [[id,
-   *  hp]], objects: [[node, hp]] }`. */
+   *  hp, hitX?]], objects: [[node, hp]] }`. */
   function damageState() {
     const hulls = [];
     const objects = [];
@@ -481,7 +481,14 @@ export function createRoomPads({ room, onRow, unmount }) {
       if (vehicle.hitPoints >= vehicle.maxHitPoints && !vehicle.destroyed) continue;
       const entry = byOwner.get(owner);
       const hp = vehicle.destroyed ? 0 : Math.round(vehicle.hitPoints * 10) / 10;
-      if (entry) { if (entry.live) hulls.push([entry.id, hp]); continue; }
+      // A third word, the hit place's side, when the hull is critical: a late joiner's
+      // wings keep the lift the room's do (`criticalLift`, PHY-46), not the even split.
+      if (entry) {
+        if (entry.live) {
+          hulls.push(vehicle.criticalFlagged ? [entry.id, hp, vehicle.criticalHitX < 0 ? -1 : 1] : [entry.id, hp]);
+        }
+        continue;
+      }
       const node = instance.ownerRoots[owner]?.levelNode;
       if (node != null) objects.push([node, hp]);
     }

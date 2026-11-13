@@ -359,7 +359,7 @@ export function chooseVehicleTarget(bot, now) {
     insideArea: bot.waypoints?.inside ? (pos) => bot.waypoints.inside(pos[0], pos[2]) : null,
     vetoed: bot.vetoedTargets, aimable,
     // The guided urgency is the large-bore's with no spotted list.
-    mode: air ? 'air' : fireMode(m) === 'infantry' ? 'infantry' : 'largeBore',
+    mode: air ? 'air' : fireMode(m) === 'infantry' ? 'infantry' : 'largeBore', guided,
     // A row that never walks (`BBMoveToFixed`) is a fixed gun's; vanilla's 4
     // and 11 for a seat with no row.
     fixed: (m.row ? m.row.behaviours.MoveTo === 'MoveToFixed' : FIXED_EQUIPMENT.has(m.equipmentType)) || !m.drives,

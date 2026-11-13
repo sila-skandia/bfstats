@@ -198,6 +198,18 @@ class LoadedRoundsTests(unittest.TestCase):
                 self.assertEqual(f"{name} muzzle 1", r["parent"])
                 self.assertLess(r["offMuzzle"], 1e-9)
 
+    def test_a_plain_single_barrel_dummy_comes_back_with_the_fire_timer(self) -> None:
+        # FA-28, `FireArms::fireFinished` 0x08288470: the dummy is drawn again at the
+        # end of the fire timer once the magazine charged a round; one that says
+        # `disableWhenFired` waits for the reload (`ReloadFinished` 0x08289e70).
+        r = self.results["single"]
+        self.assertEqual([True], r["full"])
+        self.assertEqual([False], r["timerRunning"])
+        self.assertEqual([True], r["timerEnded"])
+        self.assertEqual([False], r["emptyMagazine"])
+        self.assertEqual([False], r["disableWhenFiredTimerEnded"])
+        self.assertEqual([True], r["disableWhenFiredReloaded"])
+
     def test_a_bake_that_says_wins(self) -> None:
         # `fireArms.barrelsDeclared`, written by the exporter from 2026-11-09.
         self.assertTrue(self.results["saysDeclared"]["declared"])

@@ -482,8 +482,11 @@ export class LevelInstance {
       this.ships.leaveHelm(entry, vehicle);
       entry.driver = null;
     } else if (vehicle) {
-      vehicle.state.velocity.set(0, 0, 0);
-      vehicle.state.angularVelocity.set(0, 0, 0);
+      // The controls go to zero; the motion does not. The hull is handed to
+      // the body world with the velocity it had, as the page's
+      // `releaseDrivenBody` does, and rolls to rest on its springs (retail's
+      // `ResponsePhysicsManager` keeps integrating a hull nobody drives).
+      // It used to be stopped dead here.
       vehicle.state.throttle = 0;
       vehicle.setInput('c_PIThrottle', 0);
       vehicle.setInput('c_PIYaw', 0);
@@ -498,6 +501,9 @@ export class LevelInstance {
           axes: quaternionToAxes(s.orientation),
         });
       }
+      // No body to roll it (an aircraft, or a hull without a spec): parked.
+      vehicle.state.velocity.set(0, 0, 0);
+      vehicle.state.angularVelocity.set(0, 0, 0);
       entry.driver = null;
     }
     if (entry.seated > 0) entry.seated--;

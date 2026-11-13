@@ -920,7 +920,11 @@ export function createRoomBots({ room, policy = null }) {
     },
     /** What every client may know: the two settings and the caps in force. */
     publicSettings() {
-      return { ...want(), botCap: enabled ? perRoomCap() : 0, botData: layerHasBotData(extras) };
+      // `botTier` / `botTierTop`: the tier the room runs and the one the settings
+      // allow (`room-registry.mjs` `BOT_TIERS`), so the host is told when the
+      // memory cap gave the room less.
+      return { ...want(), botCap: enabled ? perRoomCap() : 0, botData: layerHasBotData(extras),
+               botTier: room.botTier ?? null, botTierTop: room.botTierTop ?? null };
     },
     /** A human's radio message, handed to the bots as `GameServer::
      *  radioMessage` hands it to the AI (0x0813a26a, `referee.radioMessage`). */

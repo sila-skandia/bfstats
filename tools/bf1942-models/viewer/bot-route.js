@@ -34,6 +34,7 @@ import { boatControl, boatResetControls, PLANE, BOAT, collisionPredicted } from 
 import { SOLDIER_MASS } from './soldier-locomotion.js';
 import { friendlyHulls } from './bot-pilot.js';
 import { wrapAngle } from './bot-aim.js';
+import { SOLDIER_SMALLEST_RADIUS } from './bot-sense.js';
 import { movePose } from './bot-pose.js';
 
 /** How close to a plain waypoint before it counts as reached. */
@@ -126,9 +127,9 @@ const SMOOTHING = 10;
 export const LOCAL_SEARCH_RADIUS_MIN = 10;
 export const LOCAL_SEARCH_RADIUS_RAND = 14;
 /** The body radius a path point is popped inside (`checkAgainstPath`
- *  0x0852bc40 tests `(vehicle+0x24)->v(0x30)`, the AI object's radius).
- *  INVENTION: the soldier's value was not read; the engine floors the
- *  removal distance at 0.5 (`getMaxPathPosRemovalDistance` 0x0852b780). */
+ *  0x0852bc40 tests `(vehicle+0x24)->v(0x30)`, the AI object's radius): a
+ *  soldier's 1.0, the hull of `BodyCollision` (`bot-sense.js SOLDIER_RADIUS`,
+ *  AI-197). The avoid reads his `getSmallestRadius` instead, `SOLDIER_SMALLEST_RADIUS`. */
 export const BOT_RADIUS = 1.0;
 /** A land vehicle's body radius on its map when the page gives none (INVENTION). */
 export const VEHICLE_RADIUS = 3.0;
@@ -250,7 +251,7 @@ export function avoidBodies(bot) {
     const s = p.soldier;
     if (bot.world?.armorOf?.(id)?.destroyed || !Number.isFinite(s.x)) continue;
     const v = s.speed ?? 0;
-    out.push({ id: `p:${id}`, x: s.x, z: s.z, vx: v * Math.sin(s.yaw ?? 0), vz: v * Math.cos(s.yaw ?? 0), r: BOT_RADIUS,
+    out.push({ id: `p:${id}`, x: s.x, z: s.z, vx: v * Math.sin(s.yaw ?? 0), vz: v * Math.cos(s.yaw ?? 0), r: SOLDIER_SMALLEST_RADIUS,
                mass: SOLDIER_MASS });
   }
   // The hull the bot is walking to board is its plan's own target, not an
@@ -424,14 +425,13 @@ export function footAvoid(bot, bodies = null) {
   const speed = soldier?.speed ?? 0;
   const yaw = soldier?.yaw ?? bot.yaw ?? 0;
   const self = { id: `p:${bot.playerId}`, x: bot.position[0], z: bot.position[2],
-                 vx: speed * Math.sin(yaw), vz: speed * Math.cos(yaw), r: bot._radius?.() ?? BOT_RADIUS };
+                 vx: speed * Math.sin(yaw), vz: speed * Math.cos(yaw), r: bot.vehicle ? bot._radius() : SOLDIER_SMALLEST_RADIUS };
   // INVENTION (2026-11-13): a body already inside the two radii is left out.
   // The engine scores it too (`collisionPredicted` 0x0855d2f0 returns 1.0
   // with t = 0 for an overlap, 0x0855d334..0x0855d340, and 0x0855cf03 scores
   // any hit on a body at 1.0 m/s or more), against the soldier's own
   // `getSmallestRadius` (IPIPhysicalReal vt+0x30, half his local box's
-  // diagonal), which was never read: the page's `BOT_RADIUS` 1.0 is a
-  // stand-in. At 1.0 m a side, two bots walking one route side by side are
+  // diagonal: `SOLDIER_SMALLEST_RADIUS` 1.063, read in AI-197). At 1.06 m a side, two bots walking one route side by side are
   // always "overlapping": the runner's Berlin match (seed 1, 8 a side, 600 s)
   // spent 11.6 % of its bot time in Avoid, 83 % of 10,312 plans on a body
   // inside 2 m, and went from 5 captures and 4 route failures to 0 and 68.
@@ -510,7 +510,7 @@ export function hullAvoid(bot) {
     if (bot.world?.armorOf?.(id)?.destroyed || !Number.isFinite(s.x)) continue;
     const v = s.speed ?? 0;
     others.push({ id: `p:${id}`, x: s.x, z: s.z, vx: v * Math.sin(s.yaw ?? 0), vz: v * Math.cos(s.yaw ?? 0),
-                  r: BOT_RADIUS, mass: SOLDIER_MASS });
+                  r: SOLDIER_SMALLEST_RADIUS, mass: SOLDIER_MASS });
   }
   for (const h of hulls) {
     if (h.id === m.vehicleId || !h.box || !h.pos) continue;
@@ -870,6 +870,31 @@ export function ensureRoute(bot, goal) {
 }
 
 /**
+ * The box a leg's local search takes, `updateLocalPath` 0x08527120. The
+ * path's LAST leg (Path +0x78 == +0x88) is searched in the move's own
+ * radius, BotMain+0x5c, the last float `initPathfinding` was handed
+ * (0x085271e8..0x085271eb); every other leg takes `10 + rand x 14`, raised to
+ * the largest potential obstacle, plus 1 (0x085277c3..0x0852783e). The
+ * ground moves hand the ctor of `BAPAMoveToFinding` that float: a waypoint
+ * walk (`BBPGotoWaypointSoldier::createPlan`, case 2, 0x085bb8e4) the
+ * waypoint's radius (vt+0x1c); the fire, medic, cover and change walks 0.0
+ * (`pushl $0x0` at 0x085a7f8b, 0x085c1185, 0x085cd845, 0x0858cf74). The
+ * widening after a failed leg and the failure count are the page's own
+ * (INVENTION). A hull's moves (`BBPGotoWaypoint2d`, the boat's, the driver's
+ * fire) pass their own float, unread: they keep the draw.
+ */
+export function legSearchRadius(bot, lastLeg, rand = Math.random) {
+  const widen = ROUTE_RETRY_WIDEN * Math.min(3, bot._pathFailures);
+  if (lastLeg && !bot.vehicle) {
+    const wp = bot._routeOwner?.waypointObject?.radius;
+    return (Number.isFinite(wp) ? wp : 0) + widen;
+  }
+  let radius = LOCAL_SEARCH_RADIUS_MIN + rand() * LOCAL_SEARCH_RADIUS_RAND;
+  for (const ob of bot.obstacles) radius = Math.max(radius, ob.r);
+  return radius + 1 + widen;
+}
+
+/**
  * `updateLocalPath`: while fewer than `SMOOTHING` followed points remain
  * and coarse legs are left, refine the next leg from the last followed
  * point. A leg the local search cannot answer is skipped (the engine sets
@@ -886,9 +911,7 @@ export function extendRoute(bot) {
       const from = r.points.length ? r.points[r.points.length - 1]
         : [bot.position[0], bot.position[2]];
       const [tx, tz] = r.coarse[0];
-      let radius = LOCAL_SEARCH_RADIUS_MIN + Math.random() * LOCAL_SEARCH_RADIUS_RAND;
-      for (const ob of bot.obstacles) radius = Math.max(radius, ob.r);
-      radius += 1 + ROUTE_RETRY_WIDEN * Math.min(3, bot._pathFailures);
+      const radius = legSearchRadius(bot, r.coarse.length === 1);
       // A predicted circle over the route's own end is left out of the last
       // leg's search: the viewer's plans end at points the engine's would not
       // pick (a vehicle's door between two parked hulls), and the circle

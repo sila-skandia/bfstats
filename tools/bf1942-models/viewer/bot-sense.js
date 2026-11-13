@@ -136,9 +136,30 @@ export const SOLDIER_SOUND_RADIUS = 15.0;
 /** Rays per candidate: `clamp(trunc(30 * radius / distance), 1, 10)` (ledger AI-33). */
 export const RAYS_PER_METRE_RADIUS = 30;
 export const RAYS_MAX = 10;
-/** A soldier's bounding radius as the AI object reports it (INVENTION: the
- *  value is the collision sphere's, not read). */
+/**
+ * A soldier's AI body, read on lnxded (AI-197, 2026-11-13). `AITemplatePhysical::
+ * initFromObject` 0x085e1130 takes the object's first geometry
+ * (`BFEnvironment::getFirstGeometry` 0x085e6280: the first object in the
+ * tree with a geometry, the root first) and keeps its box and `getRadius`. A
+ * soldier's is `ObjectTemplate.geometry BodyCollision`, a
+ * `SkeletonCollisionMesh` whose file ships nowhere, so the template's own
+ * 17-vertex hull stands (ctor 0x083af34a..0x083af660; box x/z +-0.4, y -1.0
+ * .. 0.8 from `computeBoundingValues` 0x083afb80), nothing read from a mesh:
+ *  - `getRadius` (vt+0x28, 0x083ad850) is the template's +0x34, 1.0
+ *    (0x083af2fb, the hull's longest vertex);
+ *  - `getSmallestRadius` (vt+0x30, 0x085d68f0) is `LocalBoundingBox::calcRadius`
+ *    0x083809f0's +0x1c: the farthest corner from the box centre,
+ *    `sqrt(0.4^2 + 0.9^2 + 0.4^2)`;
+ *  - `getSphereLocalOffset` (0x085d6860) is the box centre, (0, -0.1, 0).
+ */
 export const SOLDIER_RADIUS = 1.0;
+export const SOLDIER_SMALLEST_RADIUS = Math.fround(Math.hypot(0.4, 0.9, 0.4));
+export const SOLDIER_SPHERE_OFFSET = 0.1;
+/** `BotMain::getMaxPathPosRemovalDistance` 0x0852b780 for a soldier on foot:
+ *  `0.99 (0x086d0cdc) x max(0.5 (0x086b05e8), smallest radius - |sphere
+ *  offset|)`, cached at BotMain+0x16c. */
+export const SOLDIER_PATH_REMOVAL = Math.fround(
+  Math.fround(0.99) * Math.max(0.5, SOLDIER_SMALLEST_RADIUS - SOLDIER_SPHERE_OFFSET));
 /** Incoming-fire list and attacker-map lifetimes. */
 export const FIRE_LIST_TTL = 5.0;
 export const FIRE_LIST_BUDGET = 60.0;

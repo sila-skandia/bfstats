@@ -775,7 +775,7 @@ export function scoreVehicleTargets({
   isAntiAircraft = false, armourClassValues = ARMOUR_CLASS_VALUES,
   currentTarget = null, currentScore = 0, insideOrderedArea = true, insideArea = null,
   vetoed = null, orderFactor = 1, harmlessThreshold = 0, aimable = null, mode = 'largeBore',
-  fixed = false, lineOfFire = null,
+  fixed = false, lineOfFire = null, guided = false,
 }) {
   const none = { targetId: null, targetPos: null, score: 0, weaponIndex: -1, urgency: 0 };
   if (!weapons?.length) return none;
@@ -874,7 +874,12 @@ export function scoreVehicleTargets({
       distF = 1 - Math.min(1, Math.max(VEHICLE_FIRE.largeBoreFloor, VEHICLE_FIRE.largeBoreRangeFactor * dist / maxRange));
     }
     let score = facing * distF * wVal * lostFactor * moveFactor * attackedBonus * base;
-    if (harmless) score *= FIRE.harmlessFactor;
+    if (harmless) {
+      // `BBFireGuided::calculateUrgency` 0x085705d0 has no 0.33 cut: a
+      // harmless target is kept only as the current one (0x08571935, AI-190).
+      if (guided) { if (id !== currentTarget) return null; }
+      else score *= FIRE.harmlessFactor;
+    }
     return { score, weapon: wBest, pos, mySpeed };
   };
 
