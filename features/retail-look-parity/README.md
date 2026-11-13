@@ -58,3 +58,13 @@ other levels are ours before and after.
   (xpack1 has no kit textures). Those six trees were rebuilt with
   `mod_pipeline.py run --mod <M> --only-steps kits --force-steps`, which also
   optimises, and published textures first, then the models unit.
+- What went live: 206 kit glbs (bf1918 40, eod 51, gcmod 6, fhsw 30,
+  desertcombat 8, fhsweurope 71) plus 141 kit textures. The Mac install is not
+  the one the live kit tables were built from (EoD builds 113 kits against the
+  live 128, DesertCombat and the FHSW trees name some pickups differently), so
+  `kits.json` and every kit glb that differed beyond its texture stayed as
+  live. EoD and DesertCombat got their 1024 textures by pointing the live kit
+  glbs at the rebuilt webps (same texture name, downscale-checked against the
+  live 512 copy); the other four trees publish the rebuilt glbs, checked equal
+  to live apart from the image URIs. Kit textures still at 512 are 512 at
+  source.
