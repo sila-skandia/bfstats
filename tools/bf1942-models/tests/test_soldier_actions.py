@@ -334,6 +334,20 @@ class BundleStateTests(unittest.TestCase):
         self.assertEqual([{"speed": 1, "loop": True, "morph": 50, "hidesWeapon": True}],
                          self.results["bundles"]["named"])
 
+    def test_a_weapon_gets_the_swing_variant_that_lists_it(self) -> None:
+        # `Ub_Fire~2`, `Ub_Fire~3`: the clips a grip's other weapons swing
+        # (`extract_pose.py` `SWING_VARIANT_SEP`), filed under the plain name
+        # for whoever holds one; a variant never goes in under its own.
+        v = self.results["swingVariants"]
+        self.assertEqual(["run.upper", "Ub_Fire"], [c["name"] for c in v["first"]])
+        self.assertEqual({"name": "Ub_Fire", "weapons": ["scoldID7", "scold"], "speed": 1.0},
+                         v["second"][1])
+        self.assertEqual({"name": "Ub_Fire", "weapons": ["Nailclub"], "speed": 1.7}, v["third"][1])
+        # A weapon none of them list keeps the plain clip, which says no.
+        self.assertEqual(["Axe"], v["none"][1]["weapons"])
+        self.assertEqual(["run.upper", "Ub_Fire"], v["plain"])
+        self.assertTrue(v["kept"])
+
     def test_a_states_morph_is_the_first_description_of_it(self) -> None:
         morphs = self.results["stateMorphs"]
         self.assertEqual(2, morphs["bundle"])

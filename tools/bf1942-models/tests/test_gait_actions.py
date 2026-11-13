@@ -528,6 +528,29 @@ class KnifeSwingTests(unittest.TestCase):
             self.assertEqual(["Colt"], states["Ub_Fire"]["weapons"])
             self.assertNotIn("Ub_LieFire", states)
 
+    def test_a_weapon_swinging_another_clip_gets_a_variant_of_its_own(self) -> None:
+        # FHSW's `scoldID7` aims on the Axe's grip and swings the Allied
+        # knife: the grip's first clip names the Axe alone, and the stab that
+        # killed a gunner in 3cqup373fj (9:15, `Ub_FireKnifeAllies4`) was
+        # drawn by nobody. The second clip is baked as `Ub_Fire~2`, with the
+        # weapons that play it, and never clobbers the first.
+        m = self.knife_machine()
+        hub = animstates.State("Ub_FireWalterP38")
+        hub.random = ["Ub_FireWalterP381"]
+        swing = animstates.State("Ub_FireWalterP381", morph_factor=5000.0, return_to="_POSE_")
+        swing.clips.append(animstates.ClipRef("t/liereload_colt.baf", 1.5, "c_AsmPlayOnce"))
+        for state in (hub, swing):
+            m.states[state.name.lower()] = state
+        with tempfile.TemporaryDirectory() as tmp:
+            doc = self.export(m, Path(tmp))
+            states = doc["extras"]["states"]
+            names = [a["name"] for a in doc["animations"]]
+            self.assertEqual(["Colt"], states["Ub_Fire"]["weapons"])
+            self.assertEqual(["WalterP38"], states["Ub_Fire~2"]["weapons"])
+            self.assertEqual(1.5, states["Ub_Fire~2"]["speed"])
+            self.assertIn("Ub_Fire~2", names)
+            self.assertEqual("Ub_FireWalterP381", states["Ub_Fire~2"]["state"])
+
     def test_a_guns_fire_names_no_weapons(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
             doc = self.export(machine(), Path(tmp))

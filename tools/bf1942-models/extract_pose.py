@@ -542,6 +542,16 @@ ALT_ACTIONS: tuple[str, ...] = ("AltFire", "LieAltFire")
 # five, as the lab server's soldier did (run 20261017-093245).
 SWING_ACTIONS: tuple[str, ...] = ("Fire", "LieFire")
 
+# A grip bundle holds one clip a name, but the weapons that share a grip for
+# their aim need not swing the same clip: FHSW's `scoldID7` (the Russian knife)
+# aims on `KnifeAxis` and swings the Allied knife's five, so the Axe's bake
+# named it nowhere and its stab was never drawn (recording 3cqup373fj, 9:15,
+# `Ub_FireKnifeAllies4`; 42 weapons in FHSWEurope's tree, 24 in FHSW's). Each
+# further clip a grip's weapons play is baked under `<name>~<n>` (`Ub_Fire~2`),
+# its `weapons` listing who plays it; `footBodyClips` hands a body the one that
+# lists the weapon in its hand, under the plain name.
+SWING_VARIANT_SEP = "~"
+
 # Which fire state returns to each bolt-cycle state. The cycle a weapon plays
 # is the one ITS fire state names, not the one `Ub_StandBoltOperate<W>` would
 # spell: FH's `Ub_FireNo4` was cloned from the Mosin's and hands to
@@ -1294,6 +1304,11 @@ def export_gait_clips(machine: animstates.StateMachine, meshes: ArchivePool,
                 continue                  # a gun's fire, baked above
             baked = None
             holders: list[str] = []
+            # A weapon of the grip whose swing is another clip than the first
+            # one's (`SWING_VARIANT_SEP`): FHSW's `scoldID7` stands on the Axe's
+            # grip for its aim and swings the Allied knife. Each distinct clip
+            # is baked once under `<name>~<n>`, with the weapons that play it.
+            variants: dict[str, tuple[str, animstates.ClipRef, list[str]]] = {}
             for weapon in sharing:
                 if swing:
                     hub = machine.state(f"{name}{weapon}")
@@ -1317,14 +1332,33 @@ def export_gait_clips(machine: animstates.StateMachine, meshes: ArchivePool,
                                     "period": round(period, 4)}
                     baked = ref
                 elif ref.path.lower() != baked.path.lower():
-                    manifest["errors"][f"{weapon}/{name}"] = (
-                        f"plays {ref.path}, not the grip's {baked.path}")
+                    key = ref.path.lower()
+                    if key not in variants:
+                        animation = read_clip(meshes, ref.path)
+                        if animation is None:
+                            manifest["errors"][f"{weapon}/{name}"] = (
+                                f"alternate fire clip unreadable: {ref.path}")
+                            continue
+                        variant = f"{name}{SWING_VARIANT_SEP}{len(variants) + 2}"
+                        frames, period = clip_timeline(animation, ref.speed, skeleton,
+                                                       ref.loops)
+                        clips.append((variant, frames, period, ref.loops, True))
+                        states[variant] = {**state_meta(state, weapon),
+                                           "frames": animation.frames,
+                                           "period": round(period, 4)}
+                        variants[key] = (variant, ref, [])
+                    variant, variant_ref, variant_holders = variants[key]
+                    if ref.speed != variant_ref.speed:
+                        machine_meta["weaponSpeeds"].setdefault(weapon, {})[variant] = ref.speed
+                    variant_holders.append(weapon)
                     continue
                 elif ref.speed != baked.speed:
                     machine_meta["weaponSpeeds"].setdefault(weapon, {})[name] = ref.speed
                 holders.append(weapon)
             if holders:
                 states[name]["weapons"] = sorted(holders)
+            for variant, _ref, variant_holders in variants.values():
+                states[variant]["weapons"] = sorted(variant_holders)
         # A weapon sharing the grip whose own state hands over to something
         # else than the grip's bake does: the PTRD's fire returns to the pose
         # where the Enfield's goes on to the bolt, and a rifle grenade's goes

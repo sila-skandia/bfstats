@@ -11,7 +11,7 @@ import { clone as skeletonClone } from './vendor/utils/SkeletonUtils.js';
 import { rigBones, rigCapsules } from './rig-capsules.js';
 import { BODY_CLIPS, BODY_DEATHS, BODY_ONCE, BODY_HIDES_WEAPON, bodyClipFamily, canopyClip, canopyPosition } from './soldier-body.js';
 import { EXPLOSION_CLIPS } from './knockback.js';
-import { IdleClock, bundleClips } from './soldier-actions.js';
+import { IdleClock, bundleClips, weaponSwingClips } from './soldier-actions.js';
 import { LIVE_CLIPS, bodyLowerState, liveFamily } from './remote-gait.js';
 import { HandSignOverlay } from './hand-sign.js';
 import { attachSoldierFace, familyFaceStates } from './soldier-face.js';
@@ -191,6 +191,9 @@ export function createFootBody(page) {
       // bundle borrows the pistol's rather than sliding along unanimated.
       upper = await footBundle(manifest.grips.Colt);
     }
+    // The swing or thrust this weapon plays where its grip's bake is another
+    // weapon's (`weaponSwingClips`).
+    upper = weaponSwingClips(upper, weapon, byName(manifest.stateMachine?.weaponSpeeds, weapon));
     const lower = await footBundle(manifest.lower);
     const chute = await footBundle(manifest.parachute);
     // The swim bundle is weapon-independent like the parachute's -- every swim
