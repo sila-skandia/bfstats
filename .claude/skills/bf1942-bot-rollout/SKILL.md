@@ -338,7 +338,10 @@ in at the end of 2026-11-13). Three things in it move the judging:
   collisions (El Alamein); do not read a rise in aircraft own-hand deaths on
   a level with runways as a regression of ours.
 
-Once it is deployed and the data stage is published:
+**Both done by the end of 2026-11-13**: 5b2095fd4 is live on
+play.bfstats.io and its data stage, `poses/stances.json` for every live
+tree included, is published. Start with re-recording `sim/baselines/`,
+then:
 
 1. Replay GC's Endor, BCanyon, Lok, Alaris Prime and Mini Wasteland first.
    They failed on own-hand deaths that were one vehicle: the Speederbike
