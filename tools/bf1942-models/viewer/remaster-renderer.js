@@ -158,7 +158,8 @@ export async function createRemasterScene({ renderer, scene, camera, sun, hemi }
     import('./remaster-water.js'),
   ]);
   const { remasterFoliage } = await import('./remaster-foliage.js');
-  const { createShadowProxies, SHADOW_LAYER } = await import('./remaster-shadow-proxies.js');
+  const { createShadowProxies, SHADOW_LAYER, isVehicle } = await import('./remaster-shadow-proxies.js');
+  const { createShadowBatch } = await import('./remaster-shadow-batch.js');
   const smaaMod = await import('three/addons/tsl/display/SMAANode.js');
   const shaftMod = await import('three/addons/tsl/display/radialBlur.js');
   const atmosphere = createRemasterSky({ renderer, scene, camera, sun, hemi });
@@ -409,6 +410,27 @@ export async function createRemasterScene({ renderer, scene, camera, sun, hemi }
   const SMALL_REACH_MIN = 30;
   const proxies = createShadowProxies(scene);
   const casters = [];
+  // What moves and is rigid casts as an instance of one batch
+  // (remaster-shadow-batch.js): a tank's 74 caster meshes are one object to
+  // a cascade, each at its own matrix. In the proxies' group, which a
+  // cascade's walk takes whole.
+  const shadowBatch = createShadowBatch(THREE, proxies.root, { layer: SHADOW_LAYER });
+  /** True once this level's statics have gone to their proxies: what is
+   *  left, and what turns up later, is the batch's. */
+  let proxiesBuilt = false;
+  let batchSynced = false;
+  function batchCasters() {
+    if (!proxiesBuilt) return;
+    const fresh = [];
+    for (const k of casters) {
+      if (k.batchId != null) continue;
+      // A static keeps its proxy; a parked vehicle's part leaves its proxy
+      // the moment it moves, and is an instance from then on.
+      if (k.proxied && !isVehicle(k.obj)) { k.batchId = -1; continue; }
+      fresh.push(k);
+    }
+    if (fresh.length) shadowBatch.addAll(fresh);
+  }
   // A skinned mesh's bone matrices (a batch's instance data likewise) are a
   // uniform array whose size the compiled graph fixes, and three shares one
   // compiled graph between materials of the same shape: two skeletons of
@@ -451,7 +473,7 @@ export async function createRemasterScene({ renderer, scene, camera, sun, hemi }
   // looked at once a second.
   // The performance pass's switches, each on; a rig turns one off through
   // `__remaster.tune` to measure it in the same page, the same second.
-  const tune = { cascadeMatrices: true, cascadeWalk: true, quietShadowMaterial: true, reachPerMetre: REACH_PER_METRE };
+  const tune = { cascadeMatrices: true, cascadeWalk: true, quietShadowMaterial: true, reachPerMetre: REACH_PER_METRE, shadowBatch: true };
   const otherScenes = new WeakMap();
   const render = renderer.render.bind(renderer);
   renderer.render = (s, c) => {
@@ -474,6 +496,9 @@ export async function createRemasterScene({ renderer, scene, camera, sun, hemi }
       // And it walks only the branches that hold a caster (`markCasters`).
       cascadeWalk = castStamp > 0 && tune.cascadeWalk;
       quietShadowMaterial(scene.overrideMaterial, tune.quietShadowMaterial);
+      // The batch's instances at this frame's matrices, which the main pass
+      // has just brought up to date: once, before the frame's first cascade.
+      if (!batchSynced) { batchSynced = true; shadowBatch.sync(scene); }
       try { return render(s, c); } finally { scene.matrixWorldAutoUpdate = true; cascadeWalk = false; }
     }
     return render(s, c);
@@ -568,7 +593,7 @@ export async function createRemasterScene({ renderer, scene, camera, sun, hemi }
     let n = 0;
     for (let i = casters.length - 1; i >= 0; i--) {
       const k = casters[i];
-      if (!k.obj.parent) { casters.splice(i, 1); continue; }
+      if (!k.obj.parent) { shadowBatch.remove(k); casters.splice(i, 1); continue; }
       if (k.proxied) continue;
       // The sun's shadow cameras see only SHADOW_LAYER (remaster-sky.js), so
       // a mesh casting for itself is on that layer as well as its own.
@@ -576,7 +601,11 @@ export async function createRemasterScene({ renderer, scene, camera, sun, hemi }
       _p.setFromMatrixPosition(k.obj.matrixWorld);
       const reach = Math.min(k.reach, Math.max(SMALL_REACH_MIN, k.r * tune.reachPerMetre)) + k.r;
       const on = _p.distanceToSquared(c) < reach * reach;
-      k.obj.castShadow = on;
+      // An instance of the batch is shown by this judgement; the mesh
+      // itself casts only when it is not one.
+      const batched = k.batchId >= 0 && tune.shadowBatch;
+      k.on = batched && on;
+      k.obj.castShadow = on && !batched;
       if (on) n++;
     }
     markCasters();
@@ -780,6 +809,9 @@ export async function createRemasterScene({ renderer, scene, camera, sun, hemi }
   const api = {
     atmosphere,
     tune,
+    /** For the captures and tests: the moving casters batched and the batch's room. */
+    shadowBatch: () => ({ count: shadowBatch.count, ...shadowBatch.capacity,
+      shown: shadowBatch.mesh?._multiDrawCount ?? 0, casters: casters.length }),
     /** For the captures and tests: the fires alight and each light's strength. */
     lights: () => ({ fires: [...fires].map(r => r.name), fire: fireLights.map(l => +l.intensity.toFixed(1)),
       flash: flashes.map(f => +f.light.intensity.toFixed(1)), bursts: bursts.map(b => b.sprite.visible) }),
@@ -788,7 +820,24 @@ export async function createRemasterScene({ renderer, scene, camera, sun, hemi }
       atmosphere.apply(extras);
       flagShadows(root ?? scene);
       const t = performance.now();
+      // The last level's casters go with it. Its root left the scene with
+      // every mesh still under it, so none looks detached by itself; left
+      // in the list, its statics were merged into this level's proxies
+      // (their shadows on ground they never stood on) and its vehicles
+      // took instances. One that is only out of the scene for now (a round
+      // back in its pool) is flagged afresh when it returns.
+      for (let i = casters.length - 1; i >= 0; i--) {
+        let top = casters[i].obj;
+        while (top.parent) top = top.parent;
+        if (top === scene) continue;
+        casters[i].obj.userData.rmShadow = false;
+        casters.splice(i, 1);
+      }
+      shadowBatch.reset();
+      for (const k of casters) k.batchId = null;
       const r = proxies.build(casters, atmosphere.sunDir);
+      proxiesBuilt = true;
+      batchCasters();
       console.info(`[remaster] shadow proxies: ${r.sources} static meshes as ${r.proxies} proxies in ${(performance.now() - t).toFixed(0)} ms`);
       judgeCasters();
       lastFlag = performance.now();
@@ -860,7 +909,8 @@ export async function createRemasterScene({ renderer, scene, camera, sun, hemi }
       // before then), then once a second.
       earlyFrames++;
       if (earlyFrames < 600) flagShadows(scene);
-      if (now - lastFlag > 1000) { lastFlag = now; flagShadows(scene); proxies.refresh(casters); }
+      if (now - lastFlag > 1000) { lastFlag = now; flagShadows(scene); proxies.refresh(casters); batchCasters(); }
+      batchSynced = false;
       if (now - lastJudge > 200 || camera.position.distanceToSquared(_lastEye) > 400) {
         lastJudge = now;
         _lastEye.copy(camera.position);

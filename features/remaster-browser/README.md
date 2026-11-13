@@ -361,6 +361,93 @@ Wake 149 of the level's 393 draws in view repeat a geometry and material
 (73 of them four jungle plants): instancing those, and merging statics that
 share a material, is where the next millisecond is.
 
+### Fewer objects (2026-11-14)
+
+The owner, after the pass above: "much better, no more stuttering", and to
+go on if there was more. The last section ended on "fewer draws", so the
+first thing done was to count what three handles in a frame of the same bot
+match, object by object, by pass and kind (a wrapper round
+`_renderObjectDirect`). Two things in that count were waste:
+
+| Per frame | Wake | El Alamein |
+|---|---|---|
+| Objects before | 944 | 991 |
+| of them, tree cards drawn twice | 262 for 131 cards | 28 for 14 |
+| of them, moving parts casting one by one | 15 | 403 |
+| Objects after | 740 | 703 |
+
+1. **A tree's card is one draw, not two.** three draws a blended two-sided
+   material as two objects, back faces and then front. A far tree's card is
+   a quad turned to the eye: one of the two passes drew nothing and cost a
+   whole object. `forceSinglePass` on the card, and on a tree's trunk and
+   fronds while they fade through the blend band (the engine draws a
+   two-sided part once). 0.9 ms a frame on Wake. From among the palms with
+   the wind stopped, one pass and two differ in at most 25 of 140,800
+   pixels.
+2. **What moves casts as one batch a cascade**
+   (`remaster-shadow-batch.js`). A Sherman is 74 caster meshes (every road
+   wheel is three), a Priest 67, an M10 51, and each was an object in every
+   cascade it fell in: three tanks near the eye were 400 of El Alamein's 990
+   objects. Every rigid opaque moving caster is now an instance of one
+   `BatchedMesh` on the shadow cameras' layer, its matrix the part's own
+   world matrix, copied each frame before the first cascade and sent to the
+   GPU only when one moved. The shadow is the one the part cast: the turret
+   turned 75 degrees, the gun lifted, the tank wrecked, a Spitfire parked,
+   flown from its cockpit and seen from the chase view all match the
+   part-by-part picture, but for a fuller shadow under a hull (an instance
+   casts from both faces, as the statics' proxies do; a wreck's open hull
+   no longer lets the sun through). 0.7 to 1.4 ms a frame on El Alamein
+   near the tanks, 0.8 on Wake; nothing where every vehicle in reach is
+   parked, since those cast through the proxies already. Skinned meshes,
+   cut-outs and anything whose material moves its vertices cast as before.
+
+   One trap, pinned by a test: **the batch is never resized.**
+   `BatchedMesh.setInstanceCount` swaps in new instance textures, and a
+   cascade's draw record, compiled against the old ones, is not rebuilt for
+   it; the shadow pass went on reading matrices nobody wrote and every
+   moving caster lost its shadow. Out of room, a new batch is built at twice
+   the need and the old one let go.
+
+The same match at 60 Hz, 40 s, on a quiet machine:
+
+| Level | Draw, median | Script in all, median | Late frames |
+|---|---|---|---|
+| Wake before (the table above) | 9.3 ms | 15.0 ms | 5 of 1,195 |
+| Wake after | 7.5 ms | 12.2 ms | 12 of 2,388 |
+| El Alamein after | 6.5 ms | 9.8 ms | 2 of 2,398 |
+
+(The Wake rows are different runs on different days, so the medians compare
+and the late counts only say "about the same": what is late is still the
+simulation's long frame, 11 ms at p99 in that run.)
+
+Found on the way, and fixed: **a level picked in the page kept the last
+level's casters.** A level's root leaves the scene with every mesh still
+under it, so no caster looked detached, and the list only grew: El Alamein
+then Wake built Wake's proxies from both levels' statics (the first level's
+shadows on ground they never stood on) and would have given its vehicles
+instances. `levelLoaded` now drops every caster that no longer hangs from
+the scene before it builds anything: 5,425 casters then 4,062, Wake's own,
+and 2,678 statics in its proxies.
+
+Tried and taken back out: **the same parts batched in the main pass**, one
+`BatchedMesh` a material with the part's own material, the meshes left in
+the scene and passed by in the main camera's walk. It worked, pixel for
+pixel, and took El Alamein's 700 objects to 450, for 0.4 ms in a match and
+nothing measurable with the vehicles parked. A plain opaque mesh costs
+three's renderer far less than the average object does; the expensive ones
+are a cascade's casters (a full refresh each, a material handed from caster
+to caster) and blended objects (about 7 microseconds a card). Not worth a
+second way to draw every vehicle.
+
+What is left, measured and not taken: Wake's 131 cards are still 131 blended
+objects (0.9 ms); as one sorted mesh they would lose their order against
+smoke and water, each of which three sorts against each card today. The
+statics' cut-out proxies are 74 objects a frame on Wake (a tile's fronds,
+by texture). And the simulation, 4 to 5 ms of every frame in both modes,
+has its hottest function in the world's own collision
+(`static-index.js` `#intersect`, 1.5 ms: a vehicle's parts against the
+statics' triangles), which is the world's code and the retail page's too.
+
 ## How it is built
 
 The page imports `'three'` everywhere. `map.html`'s static import map names the
@@ -388,6 +475,7 @@ its listed neighbours into a temporary folder.
 | `remaster-sky.js` | the painted sky in HDR, the image-based light the water reflects, the fog, the sun and its cascaded shadows, the retail cloud layer |
 | `remaster-materials.js` | `EngineMaterial` and its lighting model (the engine's combines with the sun's shadow in them), the first-person rig's material, the proving ground's floor |
 | `remaster-shadow-proxies.js` | the merged static shadow casters |
+| `remaster-shadow-batch.js` | the moving shadow casters, one batch a cascade |
 | `remaster-water.js` | the water |
 | `remaster-lights.js` | which effect bundle is a flash, a blast or a fire, and how strong (pure tables) |
 | `frame-pacer.js` | the even cadence: frames on every second refresh where they cannot land on every one (pure) |
@@ -852,4 +940,5 @@ that has it.
   `tools/bf1942-models/tests/perf/remaster_match.mjs`
 - `tools/bf1942-models/viewer/frame-pacer.js`,
   `tools/bf1942-models/tests/test_frame_pacer.py`
+- `tools/bf1942-models/tests/test_remaster_shadow_batch.py`
 - `features/remaster-browser/shots/` (the composites above)

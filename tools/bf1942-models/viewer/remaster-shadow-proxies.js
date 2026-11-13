@@ -15,8 +15,10 @@
 // - Leaf sprites, which face the eye in the main pass, are baked facing the
 //   sun: in the sun's shadow camera that is the face that shadows. Their
 //   wind sway is left out of the shadow (a few centimetres at 100 m).
-// - Moving things (vehicles, soldiers, flags, effects) keep casting
-//   themselves, on both layers, culled by reach.
+// - Moving things (vehicles, soldiers, flags, effects) are culled by reach.
+//   Their rigid opaque parts cast as instances of one batch
+//   (remaster-shadow-batch.js); a skinned mesh or a cut-out casts for
+//   itself, on both layers.
 //
 // A static that is later removed (a destroyed bridge span) is dropped from
 // its tile's proxy: `refresh` rebuilds a tile when one of its sources is

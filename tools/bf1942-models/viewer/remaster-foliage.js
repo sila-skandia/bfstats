@@ -146,6 +146,11 @@ export function impostorMaterial(tex, frames, eighth, alphaTest) {
   });
   material.name = 'tree impostor';
   material.bfKind = 'card';
+  // One draw a card. three draws a blended two-sided material twice, back
+  // faces then front, as two objects; a card turned to the eye shows one
+  // face, so the other pass drew nothing and cost a whole object: 131 of
+  // Wake's 940 a frame. (A tree's clone keeps the flag.)
+  material.forceSinglePass = true;
   impostorNodes(material, frames, eighth);
   return material;
 }
@@ -156,6 +161,11 @@ const NODE_KEYS = ['positionNode', 'colorNode', 'normalNode', 'maskShadowNode', 
 /** `Material.clone` drops the node slots of a plain material; carry them across. */
 export function carryNodes(from, to) {
   for (const k of NODE_KEYS) if (from[k] !== undefined) to[k] = from[k];
+  // A tree's clone is one draw: its card (above), and its trunk and fronds
+  // while they fade through the blend band, which three would otherwise draw
+  // twice each, back faces then front, as two objects. The engine draws a
+  // two-sided part once.
+  to.forceSinglePass = true;
   return copyRemasterProps(from, to);
 }
 
