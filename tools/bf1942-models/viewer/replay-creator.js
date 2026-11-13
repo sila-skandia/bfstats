@@ -3783,6 +3783,10 @@ export class ReplayCreator {
       this.ui.flash('This page has no canvas to record', 2400);
       return;
     }
+    // A take is drawn at Full whatever the replay's quality or a phone's
+    // profile (map.html `setFilming`): the canvas is the recording. Before
+    // the crop below is measured, so it is the full canvas's.
+    this.ctx.filming?.(true);
     this.ctx.ensureAudio?.();
     // A frame guide set is the clip's shape: the view cropped to it, drawn
     // after each render (`afterRender`).
@@ -3964,6 +3968,7 @@ export class ReplayCreator {
     const r = this.recorder;
     if (!r) return;
     this.recorder = null;
+    this.ctx.filming?.(false);
     // What a Short is called and who is in it, read while its take stands.
     const names = keep && r.short ? this.shortNames() : null;
     this.releaseFrame();

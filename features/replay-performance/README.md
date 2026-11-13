@@ -168,10 +168,14 @@ shows `videoApply.chosen`, the frame draws `videoApply.settings`):
 Anti-aliasing (the WebGL context's) and lightmaps (the level's build) are not
 on it. A cap only lowers: a setting chosen below it stays.
 
-Auto reads the median interval of the drawn frames over 4 s while the replay
+Auto reads the median interval of the drawn frames over 4 s (at least five
+frames, so a page at 1 fps is judged over five seconds; a gap over 3 s is not a
+frame) while the replay
 plays undisturbed: not loading, paused, dragged, hidden, or within 2 s of a
 seek (`replay.seek` holds it). Under 75 % of the target (60, or a phone's 30)
-it steps down one rung and waits 2 s for the page to settle. A rung that buys
+it steps down one rung and waits 2 s for the page to settle. The rung is then
+judged over twice the window (8 s, ten frames at least), so one stall at a few
+frames a second does not read as the rung making it worse. A rung that buys
 under 8 % more frames is undone and Auto stops there: the frame rate is held
 down by something the ladder does not lower (a CPU busy with the round, a
 display or browser capped at 30). It never steps back up on its own.
@@ -188,8 +192,29 @@ to Lowest as the rate rose 5, 6, 8, 10 fps; Metal at 6x CPU throttle, Reduced
 bought nothing (15 fps either side), so Auto put Full back and stopped. On a
 phone's screen the row cycles every rung, the canvas following (1.5, 1.275,
 1.05, 0.75), and a pinned rung survives a reload. `test_replay_phone.py` runs
-the governor on synthetic pages (GPU-bound, enough at Low, CPU-bound, fast,
+the governor on synthetic pages (GPU-bound, crawling at 1-3 fps, enough at
+Low, CPU-bound, fast,
 a phone at 26 of 30, busy only, pinned) and the cap.
+
+### Recording draws at Full
+
+The studio records the canvas itself (replay-clip.js `captureStream`, the
+9:16 crop measured from the canvas when the take starts), so a lowered
+drawing is a lowered Short. The owner, 2026-11-13: exporting and recording
+a Short must be at full quality by default. So a take (replay-creator.js
+`record`, Post as a Short included) calls `ctx.filming(true)` before its crop
+is measured, and `stopRecording` calls it off; map.html `setFilming` then
+pauses Auto, lifts its cap, and lifts a phone's lean profile (the desktop's
+pixel ratio, the stored OPTIONS > VIDEO or HIGH, no 30 fps gate: the
+recorder takes 60), synchronously, so the crop is the full canvas's. The
+frame loop ends it if no take is running. After the take the page goes back
+to the rung and profile it had, and Auto lets it settle before reading.
+Anti-aliasing stays as the page was opened (a phone's off): it is the WebGL
+context's.
+
+Checked on a phone's screen pinned at Lowest (ratio 0.75, canvas 292x633): a
+9:16 take drew at ratio 2, 780x1688, its source 780x1386, Auto paused, 60
+frames a second; after it, Lowest again.
 
 ## A highlights file on the server
 

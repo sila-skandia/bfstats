@@ -87,6 +87,7 @@ class ReplayPhoneTests(unittest.TestCase):
         self.assertEqual(g["gpuBound"]["applied"], ["full", "reduced", "low", "lowest"])
         self.assertEqual(g["enoughAtLow"]["final"], "low")
         self.assertEqual(g["phoneSlow"]["final"], "lowest")
+        self.assertEqual(g["crawling"]["applied"], ["full", "reduced", "low", "lowest"])
 
     def test_a_rung_that_buys_nothing_is_undone_and_auto_stops(self) -> None:
         cpu = self.r["governor"]["cpuBound"]
@@ -100,6 +101,12 @@ class ReplayPhoneTests(unittest.TestCase):
                 self.assertEqual(g[case]["applied"], ["full"])
         self.assertEqual(g["pinned"], {"applied": ["reduced"], "final": "reduced", "stopped": False, "mode": "reduced"})
         self.assertEqual(g["modes"], ["auto", "low", None, None])
+
+    def test_a_recording_pauses_auto_and_it_resumes_after(self) -> None:
+        f = self.r["governor"]["filming"]
+        self.assertEqual(f["duringPause"], ["full"])
+        self.assertEqual(f["after"][:2], ["full", "reduced"])
+        self.assertFalse(f["paused"])
 
     def test_the_cap_lowers_and_never_raises(self) -> None:
         cap = self.r["cap"]

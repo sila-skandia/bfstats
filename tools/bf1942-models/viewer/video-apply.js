@@ -81,7 +81,13 @@ export function createVideoApply({ renderer, dprOverride = null, ratioCap = DEFA
   // (`setRuntime`, replay-quality.js), which is never stored.
   let chosen = initial ?? storedVideo();
   let runtime = { cap: null, ratioScale: 1 };
-  let settings = capVideo(chosen, runtime.cap);
+  // While the replay studio records (`setFull`), the page draws at Full:
+  // the player's stored choice (HIGH with none), the desktop's pixel ratio,
+  // and no runtime cap, whatever a phone's profile or the governor set. The
+  // recording is the canvas itself, so a lowered drawing is a lowered Short.
+  let full = false;
+  const target = () => (full ? storedVideo() : capVideo(chosen, runtime.cap));
+  let settings = target();
   const textures = createTextureQuality({ renderer, roots });
   let applied = null;
 
@@ -91,13 +97,13 @@ export function createVideoApply({ renderer, dprOverride = null, ratioCap = DEFA
    *  and stays as given. */
   const pixelRatio = () => {
     const ratio = pixelRatioFor({
-      displayHeight: chosen.displayHeight,
+      displayHeight: full ? storedVideo().displayHeight : chosen.displayHeight,
       display: displayOf(),
       override: dprOverride,
       dpr: globalThis.devicePixelRatio,
-      cap: ratioCap,
+      cap: full ? DEFAULT_RATIO_CAP : ratioCap,
     });
-    if (dprOverride > 0 || !(runtime.ratioScale < 1)) return ratio;
+    if (full || dprOverride > 0 || !(runtime.ratioScale < 1)) return ratio;
     return Math.min(ratio, Math.max(MIN_RUNTIME_RATIO, ratio * runtime.ratioScale));
   };
 
@@ -118,9 +124,20 @@ export function createVideoApply({ renderer, dprOverride = null, ratioCap = DEFA
     return applied;
   }
 
+  /** Draw at Full (`on`) or as before. Synchronous: the canvas has its new
+   *  size when this returns, so a recording's crop measured next is the
+   *  full one. */
+  function setFull(on) {
+    if (Boolean(on) === full) return applied;
+    full = Boolean(on);
+    draw();
+    if (renderer.getPixelRatio() !== pixelRatio()) resize();
+    return applied;
+  }
+
   function draw() {
     const prev = applied;
-    settings = capVideo(chosen, runtime.cap);
+    settings = target();
     const g = GRAPHICS[settings.graphicsQuality] ?? GRAPHICS[3];
     setLodPercent(g.lodPercent);
     // The viewer's tree swap is HIGH's; the others are fractions of it.
@@ -144,6 +161,8 @@ export function createVideoApply({ renderer, dprOverride = null, ratioCap = DEFA
   return {
     apply,
     setRuntime,
+    setFull,
+    get full() { return full; },
     /** What is drawn: the choice under the runtime cap. */
     get settings() { return settings; },
     /** What the player chose, for the options screen. */

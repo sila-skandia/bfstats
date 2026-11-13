@@ -1262,6 +1262,18 @@ const replayQuality = params.has('replay') ? createQualityGovernor({
     ?? (renderQuery.has('shots') || renderQuery.has('dpr') ? 'full' : storedQuality() ?? 'auto'),
   log: line => console.info(line),
 }) : null;
+// While the studio records, the page draws at Full: no governor cap, and on
+// a phone no lean profile and no 30 fps gate (the recorder takes 60). The
+// creator calls it as a take starts and ends (replay-creator.js `record`,
+// `stopRecording`); the frame loop below also ends it if no take is running.
+let filming = false;
+function setFilming(on) {
+  on = Boolean(on);
+  if (on === filming) return;
+  filming = on;
+  replayQuality?.pause(on);
+  videoApply.setFull(on);
+}
 // SHADOWS (ledger VID-7, DSH-1..DSH-9): the `hasDynamicShadow` objects within
 // 50 m, each drawn black from up the sun and projected on the terrain
 // (`shadow-pass.js`). The flags are the mod tree's `dynamic-shadows.json`
@@ -4141,6 +4153,7 @@ replayController = createReplayController({
   // a replayed hull of the same template takes (replay-assets.js levelSkins).
   levelRoot: () => level.currentRoot ?? null,
   quality: replayQuality,
+  filming: on => setFilming(on),
   // The level's own parked vehicles would double every recorded one.
   hideBakedVehicles: () => { optVehicles.checked = false; },
   // The level's combat area and the terrain material under a point (CA-5),
@@ -4940,7 +4953,8 @@ let stallShown = false;
 // carries the time they covered.
 const drawThisFrame = frameGate(PHONE_REPLAY ? phoneFps(renderQuery) : 0);
 renderer.setAnimationLoop(now => {
-  if (!drawThisFrame(now)) return;
+  if (filming && !window.replay?.creator?.recorder) setFilming(false);
+  if (!filming && !drawThisFrame(now)) return;
   try {
     // A paused single-player game runs no frame (page-input.js, retail's game
     // status 4): the clock is still read, so the time away is not paid back

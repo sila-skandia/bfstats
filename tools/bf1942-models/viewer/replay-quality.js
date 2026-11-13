@@ -33,19 +33,23 @@ export const LADDER = Object.freeze([
     cap: Object.freeze({ graphicsQuality: 1, effectsQuality: 1, environmentMapping: false, shadows: false, viewDistance: 50, textureQuality: 2 }) }),
 ]);
 
-/** The span of drawn frames one judgement reads, ms. */
+/** The span of drawn frames one judgement reads, ms; longer on a page so
+ *  slow that the span holds fewer than MIN_FRAMES. */
 export const WINDOW_MS = 4000;
-/** The fewest frames a judgement reads (a 2 fps page still gets one). */
-export const MIN_FRAMES = 8;
+/** The fewest frames a judgement reads: a page at 1 fps is judged on five
+ *  seconds, and it is the page that most needs judging. */
+export const MIN_FRAMES = 5;
+/** A step on trial is judged over this many windows. */
+export const TRIAL_SCALE = 2;
 /** After a step, the page's own settling (a resize, textures) is not read. */
 export const SETTLE_MS = 2000;
 /** Slow: a median rate under this share of the target. */
 export const SLOW = 0.75;
 /** A step that did not lift the rate by this share is undone. */
 export const HELPED = 0.08;
-/** A gap this long between frames is the page or the tab stopping, not a
- *  frame; it is not read. */
-const GAP_MS = 1000;
+/** A gap this long between frames is the page stopping, not a frame; it
+ *  is not read. A hidden tab and a load are left out before this (`busy`). */
+const GAP_MS = 3000;
 
 /** Where the viewer's pick is kept: 'auto' or a ladder id. */
 export const QUALITY_KEY = 'bf42-replay-quality';
@@ -85,6 +89,7 @@ export function createQualityGovernor({ apply, targetFps = 60, mode = 'auto', on
   let holdUntil = -Infinity;
   let trial = null;          // { from, fps } while a step is judged
   let lastFps = null;
+  let paused = false;
 
   const state = () => ({ mode: current, step, level: LADDER[step], stopped, fps: lastFps });
   const changed = () => onChange?.(state());
@@ -112,18 +117,22 @@ export function createQualityGovernor({ apply, targetFps = 60, mode = 'auto', on
    *  loading, dragged, seeking or hidden, when its frames say nothing of the
    *  quality. */
   function frame(now, busy = false) {
-    if (current !== 'auto' || stopped) return;
+    if (current !== 'auto' || stopped || paused) return;
     if (busy || now < holdUntil) { last = null; return; }
     if (last !== null) {
       const interval = now - last;
       if (interval > 0 && interval < GAP_MS) samples.push([now, interval]);
     }
     last = now;
-    while (samples.length && samples[0][0] < now - WINDOW_MS) samples.shift();
-    if (samples.length < MIN_FRAMES) return;
-    // A full window: its first frame at least WINDOW_MS back, less one frame.
-    const span = now - samples[0][0] + samples[0][1];
-    if (span < WINDOW_MS) return;
+    // The window: the last WINDOW_MS of frames, and never fewer than
+    // MIN_FRAMES, a frame's span counted from its start. A step on trial is
+    // judged over twice that: at a few frames a second one stall in five
+    // frames reads as the step making it worse.
+    const scale = trial ? TRIAL_SCALE : 1;
+    const windowMs = WINDOW_MS * scale, minFrames = MIN_FRAMES * scale;
+    const spanFrom = i => now - samples[i][0] + samples[i][1];
+    while (samples.length > minFrames && spanFrom(1) >= windowMs) samples.shift();
+    if (samples.length < minFrames || spanFrom(0) < windowMs) return;
     const fps = 1000 / median(samples.map(s => s[1]));
     lastFps = Math.round(fps);
     samples = [];
@@ -154,11 +163,23 @@ export function createQualityGovernor({ apply, targetFps = 60, mode = 'auto', on
     last = null;
   }
 
+  /** A recording: Auto reads nothing until it ends, and then lets the
+   *  page settle first. */
+  function pause(on, now = globalThis.performance?.now?.() ?? 0) {
+    paused = Boolean(on);
+    samples = [];
+    last = null;
+    trial = null;
+    if (!paused) holdUntil = Math.max(holdUntil, now + SETTLE_MS);
+  }
+
   setMode(mode);
 
   return {
     frame,
     hold,
+    pause,
+    get paused() { return paused; },
     setMode,
     get state() { return state(); },
   };

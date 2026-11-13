@@ -159,6 +159,8 @@ out.governor = {
   gpuBound: simulate({ fpsAt: step => [20, 28, 38, 50][step] }),
   // Each rung helps and Low is enough.
   enoughAtLow: simulate({ fpsAt: step => [30, 40, 55, 70][step] }),
+  // The unwatchable page: a frame or two a second, each rung a little more.
+  crawling: simulate({ fpsAt: step => [1.2, 1.6, 2.2, 3][step], seconds: 120 }),
   // A CPU-bound page: no rung buys a frame.
   cpuBound: simulate({ fpsAt: () => 15 }),
   // Fast enough already.
@@ -171,6 +173,19 @@ out.governor = {
   // Pinned: Auto never moves it.
   pinned: simulate({ fpsAt: () => 10, mode: 'reduced' }),
   modes: [qualityMode('AUTO'), qualityMode('low'), qualityMode('ultra'), qualityMode(null)],
+  // A recording: slow frames while paused are not read, and Auto picks up
+  // after it as it was.
+  filming: (() => {
+    const applied = [];
+    const g = createQualityGovernor({ apply: l => applied.push(l.id), targetFps: 60 });
+    let t = 0;
+    g.pause(true, t);
+    for (; t < 30000; t += 100) g.frame(t);
+    const duringPause = [...applied];
+    g.pause(false, t);
+    for (const end = t + 30000; t < end; t += 1000 / [20, 28, 38, 50][g.state.step]) g.frame(t);
+    return { duringPause, after: applied, paused: g.paused };
+  })(),
 };
 const choice = normalizeVideo({ graphicsQuality: 2, effectsQuality: 3, environmentMapping: true, viewDistance: 80, textureQuality: 4 });
 out.cap = {
