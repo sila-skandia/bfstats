@@ -115,6 +115,7 @@ export function collectGroups(guns, root, options = {}) {
     fireDelay = false,
     fireOnce = false,
     fireOnceNames = null,
+    viewCamera = null,
   } = options;
   if (replace) {
     guns.clear();
@@ -331,6 +332,9 @@ export function collectGroups(guns, root, options = {}) {
       roundLifetime,
       tracerLength,
       platformVelocity,
+      // The camera a first-person rig is drawn with (its own field of view):
+      // where its muzzle is on screen (round-launch.js `spawnTracer`).
+      viewCamera,
       // `aimRay` is the `fireInCameraDof` contract: 25 of 28 hand weapons
       // declare it with `projectilePosition 0/0/0`, meaning the round is
       // spawned on the camera's line of fire and the muzzle node only places

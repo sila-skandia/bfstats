@@ -304,6 +304,7 @@ function muzzleVelocity(guns, muzzle, group, speed, out, barrel = 0) {
 }
 
 const _launchOffset = new THREE.Vector3();
+const _muzzleAt = new THREE.Vector3();
 
 /**
  * Where a gun that fires from its own transform puts the round, and which way
@@ -555,7 +556,34 @@ function spawnTracer(guns, muzzle, group, bright, barrel = 0, lit = false) {
     pool = guns.tracerPool;
   }
   adopt(guns, mesh);
+  // Remaster mode: a round fired from the eye (`aimRay`: every hand weapon,
+  // a seat's camera-fired MG) leaves along the line of sight, so its streak
+  // pointed straight away from the shooter and the player saw none of their
+  // own. Its head stays on the round; its tail is drawn on a line that
+  // leaves the muzzle and closes onto the round's own over `fromMuzzle`
+  // metres (`advanceTracers`), so the streak reads from the gun to the
+  // crosshair. The round flies and strikes on the line it was fired on.
+  let vis = null;
+  const fromMuzzle = globalThis.bfRemasterHooks?.tracer?.fromMuzzle ?? 0;
+  if (fromMuzzle > 0 && lengthScale > 0 && (lit || bright) && group.aimRay && muzzle?.getWorldPosition) {
+    muzzle.getWorldPosition(_muzzleAt);
+    // A first-person rig is drawn with its own field of view: the muzzle as
+    // it appears on screen is the point at the same depth under the same
+    // screen position through the world's camera.
+    const view = group.viewCamera;
+    const eye = guns.camera;
+    if (view?.isPerspectiveCamera && eye?.isPerspectiveCamera && view.fov !== eye.fov) {
+      _muzzleAt.applyMatrix4(view.matrixWorldInverse);
+      const k = Math.tan(eye.fov * Math.PI / 360) / Math.tan(view.fov * Math.PI / 360);
+      _muzzleAt.x *= k;
+      _muzzleAt.y *= k;
+      _muzzleAt.applyMatrix4(eye.matrixWorld);
+    }
+    _muzzleAt.sub(_origin);
+    if (_muzzleAt.lengthSq() < 4) vis = { offset: _muzzleAt.clone(), over: fromMuzzle };
+  }
   guns.tracers.push({
+    vis,
     mesh,
     pool,
     group,

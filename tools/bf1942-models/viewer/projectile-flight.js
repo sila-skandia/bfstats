@@ -595,6 +595,35 @@ function recycle(guns, shot, index) {
 }
 
 /** Step every tracer round, sweep it, and retire it on a hit or its caps. True while any fly. */
+/**
+ * Remaster mode: a round fired from the eye has its streak's tail drawn on a
+ * line that leaves the muzzle and closes onto the round's own over
+ * `vis.over` metres (round-launch.js `spawnTracer`). The head stays on the
+ * round, so the hit test and the impact are where the round is; only the
+ * streak's heading and length change, and once its tail is past `over` it
+ * lies on its line again.
+ */
+const _visTail = new THREE.Vector3();
+const _visDir = new THREE.Vector3();
+function bendFromMuzzle(tracer) {
+  const unit = tracer.tail > 0 ? tracer.tail : 1;
+  const back = Math.min(tracer.mesh.scale.z * unit, tracer.travelled);
+  const tailAt = tracer.travelled - back;
+  const k = Math.max(0, 1 - tailAt / tracer.vis.over);
+  _visDir.copy(tracer.velocity).normalize();
+  if (k === 0) {
+    tracer.vis = null;
+    tracer.mesh.lookAt(_visTail.copy(tracer.mesh.position).sub(_visDir));
+    return;
+  }
+  _visTail.copy(tracer.mesh.position).addScaledVector(_visDir, -back)
+    .addScaledVector(tracer.vis.offset, k);
+  const length = _visTail.distanceTo(tracer.mesh.position);
+  // The tail is the mesh's +Z (`spawnTracer` aims it a step back).
+  tracer.mesh.lookAt(_visTail);
+  tracer.mesh.scale.z = Math.max(1e-3, length / unit);
+}
+
 export function advanceTracers(guns, dt) {
   let active = false;
   // Metres per pixel at one metre from the eye; the floor below scales it by
@@ -697,6 +726,7 @@ export function advanceTracers(guns, dt) {
         fade.material.opacity = fade.opacity * coverage;
       }
     }
+    if (tracer.vis) bendFromMuzzle(tracer);
     if (tracer.age > tracer.ttl || tracer.travelled > tracer.maxRange) {
       // A round whose `timeToLive` ran out bursts there when it says
       // `hasOnTimeEffect` (`Projectile::handleMessage` -> `detonate`, PROX-7,

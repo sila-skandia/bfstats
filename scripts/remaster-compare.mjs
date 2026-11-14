@@ -123,6 +123,15 @@ async function frame(page, shot, s, label, clean = false) {
     }
     window.__clock.step(1000 / FPS);
     window.__renderOnce(W, H, 1 / FPS);
+    // The remaster builds a new material's pipeline off the thread and skips
+    // its draw until it is ready; stepped faster than real time, a muzzle's
+    // flash never got its turn. Wait for them, then draw the same moment
+    // again (no time passes).
+    const building = () => window.__remaster?.asyncPipelines?.().pending ?? 0;
+    if (building() > 0) {
+      for (let t = 0; t < 200 && building() > 0; t++) await new Promise(r => setTimeout(r, 10));
+      window.__renderOnce(W, H, 0);
+    }
     const cv = (window.__cmpCanvas ??= Object.assign(document.createElement('canvas'), { width: W, height: H }));
     const g = cv.getContext('2d');
     g.drawImage(window.__renderer.domElement, 0, 0, W, H);

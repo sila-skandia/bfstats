@@ -20,6 +20,8 @@
 //                     1.5 s and print the frame time with it on and off. The
 //                     only way to time one change on a busy machine, where
 //                     two runs differ by more than the change does.
+//                     `hooks.<path>` flips a remaster hook instead
+//                     (`hooks.tracer.everyRound`: every round drawn).
 //
 // A late frame is one shown more than 25 ms after the last. The page's own
 // pacer (frame-pacer.js) is on, as it is for a player (`pace=1`).
@@ -83,15 +85,23 @@ const frames = async ms => {
 };
 
 if (ab) {
+  await page.evaluate(() => {
+    window.__abSet = (name, value) => {
+      if (!name.startsWith('hooks.')) { window.__remaster.tune[name] = value; return; }
+      const path = name.slice(6).split('.');
+      const leaf = path.pop();
+      path.reduce((o, k) => o[k], window.bfRemasterHooks)[leaf] = value;
+    };
+  });
   const on = [], off = [];
   for (let c = 0; c < 10; c++) {
     for (const state of [true, false]) {
-      await page.evaluate(([name, value]) => { window.__remaster.tune[name] = value; }, [ab, state]);
+      await page.evaluate(([name, value]) => window.__abSet(name, value), [ab, state]);
       await page.waitForTimeout(350);
       (state ? on : off).push(median(await frames(1300)));
     }
   }
-  await page.evaluate(name => { window.__remaster.tune[name] = true; }, ab);
+  await page.evaluate(name => window.__abSet(name, true), ab);
   const saved = on.map((v, i) => off[i] - v);
   console.log(JSON.stringify({ switch: ab, on: +median(on).toFixed(2), off: +median(off).toFixed(2), saves: +median(saved).toFixed(2) }));
 } else {

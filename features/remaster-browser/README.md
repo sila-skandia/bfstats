@@ -67,6 +67,7 @@ wins", below).
 | A shaded vehicle or soldier keeps the sky's fill; ambient occlusion eased | done (2026-11-14) |
 | A heavy MG's muzzle burst a small core, not the AA gun's disc | fixed (2026-11-14) |
 | A staged MG crossfire on Battleaxe for the tracers | done (2026-11-14) |
+| The player's own rounds drawn from the muzzle in first person | done (2026-11-14) |
 
 ## How to turn it on
 
@@ -781,6 +782,40 @@ remaster drew a sun-sized white disc every few frames: the hot burst at the
 muzzle, which every heavy machine gun (`e_MuzzHeavy`, and a tank's coaxial
 `e_MuzzB17`) took at the AA gun's 1.3 m. Those now draw a 0.45 m core with
 the same light (`remaster-lights.js` `FLASH_KINDS`).
+
+**The player's own rounds.** Every hand weapon fires from the eye
+(`fireInCameraDof`, XHIT-12): the round leaves along the line of sight, so
+its streak pointed straight away from the player and drew nothing they
+could see. Measured: with the remaster on, the BAR's and the Thompson's
+rounds were drawn and none showed. A round fired from the eye now keeps its
+head on the round and has its tail drawn on a line that leaves the muzzle
+and closes onto the round's own over the first 40 m
+(`remasterHooks.tracer.fromMuzzle`, projectile-flight.js
+`bendFromMuzzle`), so a burst reads from the gun to the crosshair. Only the
+streak's heading and length change; the hit test and the impact are where
+the round is (8 shots, 8 hits in both modes). The first-person rig is drawn
+with a field of view of its own (`nearPassFov`), so the muzzle is taken
+through that camera to the same screen point and depth under the world's
+(`viewCamera` on the gun group: the page's rig and the replay's).
+
+**Checked (2026-11-14).**
+
+| Check | How | Result |
+|---|---|---|
+| Every round drawn, vanilla | Battleaxe replay `ymdy248edr`, the halftrack's MG42 and an StG44 | every round a streak; retail draws the MG's tracers only, the rifle's none |
+| Every round drawn, other mods | on foot, a burst per kit, per frame `__getFire().tracers` (`lit`, `vis`) | Desert Combat AK-47 and PKM, EoD Type 56: every round drawn and bent from the muzzle on its first frame; retail none (AK-47) or the tracer rounds only (Type 56); Galactic Conquest's E-11 and FHSW Europe's Garand fire, their rounds strike inside the first frame from the spawn in both modes |
+| The player's own rounds | first person on open ground, Battleaxe, BAR and Thompson | a streak from the gun toward the crosshair (above) |
+| A mounted MG from its seat | `__enterOwner` on a Stationary_MG42, `__setSeatFire` | every round drawn; the seat's flash as retail's |
+| Cost | `remaster_match.mjs --uncapped --ab hooks.tracer.everyRound`, El Alamein, 16 bots | 16.4 ms with every round drawn, 16.6 without: no measurable cost |
+| Retail unchanged | the same counts with `?remaster=0` | only the guns' own tracer rounds drawn |
+
+Two things the checks turned up that were the harness, not the page. A
+remaster material's pipeline is built off the thread and its draw skipped
+until ready; frames stepped faster than real time never gave a new flash
+its turn, so the seat's muzzle flash looked missing. `remaster-compare.mjs`
+now waits for `__remaster.asyncPipelines().pending` and draws the same
+moment again. And the weapon bar stays up after a weapon switch and takes
+the first trigger press, as a click on it does.
 
 ## Marketing captures (2026-11-14)
 

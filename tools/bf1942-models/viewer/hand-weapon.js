@@ -574,6 +574,9 @@ export function createHandWeapon(page) {
         // it; a mod one that does not falls back to its muzzle. A thrown
         // weapon's round first appears at the fist's release point, a
         // launcher's at its `projectilePosition` (`hand-aim.js` `releaseFor`).
+        // Remaster: a round's streak is drawn from the muzzle as this rig's
+        // camera shows it (round-launch.js `spawnTracer`).
+        viewCamera: soldierKit.vmCamera,
         aimRay: data.fireInCameraDof
           ? handAimRay(eyeCamera, { release: releaseFor(data) })
           : null,

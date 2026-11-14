@@ -277,6 +277,10 @@ export async function createRemasterScene({ renderer, scene, camera, sun, hemi }
     minPx: 3.2,
     litPx: 2,
     everyRound: true,
+    // A round fired from the eye has its streak drawn from the muzzle,
+    // closing onto its line over this many metres (projectile-flight.js
+    // `bendFromMuzzle`).
+    fromMuzzle: 40,
   };
   // Light from a flash, a blast or a fire (effects.js `play`): a pool of
   // point lights that is always in the scene, dark until used, since adding

@@ -64,6 +64,12 @@ export function installVehicleHooks(page) {
       position: tracer.mesh.position.toArray(),
       velocity: tracer.velocity.toArray(),
       bright: tracer.bright,
+      // Remaster: a round drawn that retail leaves unseen, and the muzzle's
+      // offset from the eye its streak's tail is drawn from (null once the
+      // tail is back on the round's line).
+      lit: !!tracer.lit,
+      visible: tracer.mesh.visible,
+      vis: tracer.vis ? tracer.vis.offset.toArray() : null,
       age: tracer.age,
       ttl: tracer.ttl,
       // What the width floor settled on this frame, against the streak's own

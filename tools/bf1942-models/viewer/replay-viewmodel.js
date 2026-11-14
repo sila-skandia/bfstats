@@ -523,6 +523,9 @@ export class ReplayViewmodel {
     entry.ray = ray;
     const groups = guns.collect(entry.rig, {
       replace: false, speedScale: 1, maxRange: 1200, roundLifetime: 'data', aimRay: () => ray,
+      // Remaster: a round's streak is drawn from the muzzle as the near
+      // pass shows it (round-launch.js `spawnTracer`).
+      viewCamera: this.arms?.vmCamera ?? null,
     });
     for (const group of groups) {
       group.replay = true;
