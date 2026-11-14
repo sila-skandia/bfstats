@@ -320,6 +320,7 @@ export function createDogfightTheatre({ host, makePlane, planeVisual = () => nul
           <button type="button" class="dfs-btn dfs-restart" title="From the start" aria-label="Restart">${ICON.restart}</button>
           <span class="dfs-time"></span>
         </div>
+        <button type="button" class="dfs-btn dfs-demo-now" aria-haspopup="true" aria-expanded="false" hidden title="The lesson's fights and moves"><span class="dfs-demo-now-label"></span>${ICON.caret}</button>
         <div class="dfs-demos" role="tablist"></div>
         <div class="dfs-tools">
           <div class="dfs-menu"><button type="button" class="dfs-btn dfs-menu-btn" data-menu="speed" aria-haspopup="true" aria-expanded="false" title="Replay speed, slowing on shots, explaining shots"><span class="dfs-speed-now"></span>${ICON.caret}</button>
@@ -371,7 +372,7 @@ export function createDogfightTheatre({ host, makePlane, planeVisual = () => nul
     end: q('.dfs-endcard'), helper: q('.dfs-helper'), demos: q('.dfs-demos'), toggle: q('.dfs-toggle'), restart: q('.dfs-restart'),
     speeds: q('.dfs-speeds'), cams: q('.dfs-cams'), chart: q('.dfs-chart'), scrub: q('.dfs-scrub'),
     move: q('.dfs-move'), counter: q('.dfs-counter'), fly: q('.dfs-fly'), flyNote: q('.dfs-fly-note'), flyRow: q('.dfs-flyrow'),
-    arenaNow: q('.dfs-arena-now'), modNow: q('.dfs-mod-now'), modList: q('.dfs-mod-list'), modNote: q('.dfs-mod-note'), listToggle: q('.dfs-list-toggle'), notes: q('.dfs-notes'), notesBtn: q('.dfs-notes-btn'),
+    arenaNow: q('.dfs-arena-now'), modNow: q('.dfs-mod-now'), modList: q('.dfs-mod-list'), modNote: q('.dfs-mod-note'), listToggle: q('.dfs-list-toggle'), demoNow: q('.dfs-demo-now'), notes: q('.dfs-notes'), notesBtn: q('.dfs-notes-btn'),
     time: q('.dfs-time'), speedNow: q('.dfs-speed-now'), camNow: q('.dfs-cam-now'), menus: [...root.querySelectorAll('.dfs-menu')],
   };
 
@@ -1085,6 +1086,8 @@ export function createDogfightTheatre({ host, makePlane, planeVisual = () => nul
     // FLY IT practises the move on its tab, or flies the lesson.
     const name = MOVE_NAMES[demo.kind]?.toLowerCase();
     ui.fly.textContent = name ? `Practise the ${name}` : 'Fly it yourself';
+    // A phone's bar has room for a word or two (map.css, the compact rules).
+    ui.fly.dataset.short = name ? 'Practise' : 'Fly it';
     ui.flyNote.textContent = name
       ? `You fly the green plane (YOU), set up as this fight starts, against the ace it was measured against. The guide and the instructor (I) fly the ${name}: follow the green rings${stepsOf(lesson, demo.id) ? ', and the numbered steps on the move card' : ''}. ${demo.note}`
       : lesson.flyWith ? 'You fly the green plane (YOU), with your wingman off your wing on your own type and the hunter coming in behind. Your wingman breaks onto anyone on your tail; the coach says when.'
@@ -1157,6 +1160,12 @@ export function createDogfightTheatre({ host, makePlane, planeVisual = () => nul
     return demos.map((d, i) => [d, i]).sort(([a, i], [b, j]) => score(b) - score(a) || i - j).map(([d]) => d);
   }
 
+  /** A phone, upright or on its side: the media query of map.css's compact
+   *  rules, where the fight takes the screen and the rest folds away. */
+  function compact() {
+    return typeof matchMedia === 'function' && matchMedia('(max-width: 760px), (max-height: 500px) and (orientation: landscape)').matches;
+  }
+
   /** The fights' tabs fade at the bar's end only when there are more of
    *  them than fit (they scroll sideways then). */
   function fitDemos() {
@@ -1165,6 +1174,8 @@ export function createDogfightTheatre({ host, makePlane, planeVisual = () => nul
     // half out of sight. Only past that do they scroll, faded at the end.
     const row = ui.demos.parentElement;
     row.classList.remove('is-stacked');
+    // A phone: the tabs are a menu over the picture (`ui.demoNow`), not a row.
+    if (compact()) { ui.demos.classList.remove('is-over'); return; }
     if (ui.demos.scrollWidth > ui.demos.clientWidth + 1) row.classList.add('is-stacked');
     ui.demos.classList.toggle('is-over', ui.demos.scrollWidth > ui.demos.clientWidth + 1);
   }
@@ -3044,8 +3055,9 @@ export function createDogfightTheatre({ host, makePlane, planeVisual = () => nul
   const LIST_KEY = 'dogfight-school:list', NOTES_KEY = 'dogfight-school:notes';
   const remembered = key => { try { return localStorage.getItem(key); } catch { return null; } };
   const remember = (key, v) => { try { localStorage.setItem(key, v); } catch { /* private window */ } };
-  /** A phone's width: the list and the notes cover the picture, not share it. */
-  const narrow = () => typeof matchMedia === 'function' && matchMedia('(max-width: 760px)').matches;
+  /** A phone, upright or on its side (map.css, the compact rules): the list
+   *  and the notes start shut, and the fight has the screen. */
+  const narrow = () => compact();
   function setList(open, keep = true) {
     root.classList.toggle('is-list-closed', !open);
     ui.listToggle.setAttribute('aria-expanded', String(open));
@@ -3090,8 +3102,27 @@ export function createDogfightTheatre({ host, makePlane, planeVisual = () => nul
       m.querySelector('.dfs-menu-btn').setAttribute('aria-expanded', String(was));
     });
   }
+  // A phone (map.css, the compact rules): the fight is the screen. The
+  // lesson's tabs fold into one button that opens them as a menu, and the
+  // meters shrink to a line each; a tap on them brings back the full meters
+  // and the captions (what each pilot is doing and why), a second tap folds them.
+  function setDemoMenu(open) {
+    root.classList.toggle('is-demos-open', open);
+    ui.demoNow.setAttribute('aria-expanded', String(open));
+  }
+  function syncDemoNow() {
+    const tabs = [...ui.demos.querySelectorAll('button[data-demo]')];
+    const on = tabs.find(b => b.getAttribute('aria-selected') === 'true') ?? tabs[0];
+    ui.demoNow.hidden = tabs.length < 2;
+    if (tabs.length < 2) setDemoMenu(false);
+    ui.demoNow.firstElementChild.replaceChildren(...(on ? [...on.childNodes].map(n => n.cloneNode(true)) : []));
+  }
+  new MutationObserver(syncDemoNow).observe(ui.demos, { childList: true, subtree: true, attributes: true, attributeFilter: ['aria-selected'] });
+  ui.demoNow.addEventListener('click', () => setDemoMenu(!root.classList.contains('is-demos-open')));
+  ui.meters[0].parentElement.addEventListener('click', () => { if (compact()) root.classList.toggle('is-detail'); });
   root.addEventListener('pointerdown', e => {
     if (!e.target.closest('.dfs-menu')) closeMenus();
+    if (!e.target.closest('.dfs-demo-now, .dfs-demos')) setDemoMenu(false);
     if (!e.target.closest('.dfs-mod-now, .dfs-mod-list')) setModList(false);
   });
   // On a fight's map inside the school, the brand is the way back to it: the
@@ -3305,6 +3336,7 @@ export function createDogfightTheatre({ host, makePlane, planeVisual = () => nul
   ui.demos.addEventListener('click', e => {
     const b = e.target.closest('button[data-demo]');
     if (b && state.lesson) { helper.seen.clear(); pickDemo(state.lesson, b.dataset.demo); }
+    setDemoMenu(false);
   });
   ui.speeds.innerHTML = SPEEDS.map(v => `<button type="button" class="dfs-chip" data-speed="${v}">${v}x</button>`).join('')
     + '<button type="button" class="dfs-chip" data-slow="1" title="Slow the replay while the guns fire">Slow on shots</button>'
@@ -3377,6 +3409,7 @@ export function createDogfightTheatre({ host, makePlane, planeVisual = () => nul
     if (e.target.matches?.('input:not([type=range]), textarea')) return;
     const menuOpen = ui.menus.some(m => !m.querySelector('.dfs-pop').hidden);
     if (e.code === 'Escape' && menuOpen) { e.preventDefault(); closeMenus(); return; }
+    if (e.code === 'Escape' && root.classList.contains('is-demos-open')) { e.preventDefault(); setDemoMenu(false); ui.demoNow.focus(); return; }
     if (e.code === 'Escape' && !ui.modList.hidden) { e.preventDefault(); setModList(false); ui.modNow.focus(); return; }
     if (e.code === 'KeyL' && !e.metaKey && !e.ctrlKey) { setList(!listOpen()); return; }
     if (e.code === 'KeyN' && !e.metaKey && !e.ctrlKey) { setNotes(ui.notes.hidden); return; }

@@ -2615,23 +2615,102 @@ a { color: var(--accent); }
   .dfs-panel { position: absolute; left: 0; right: 0; top: 100%; width: auto; height: calc(100dvh - 44px); background: var(--mm-bg); border-top: 1px solid var(--mm-rule); }
   .dfs-main { grid-template-columns: minmax(0, 1fr); position: relative; }
   .dfs-notes { position: absolute; left: 0; right: 0; bottom: 0; z-index: 7; width: auto; max-height: 70%; border-left: 0; border-top: 1px solid var(--mm-rule-strong); box-shadow: 0 -12px 30px rgb(0 0 0 / 0.5); }
-  .dfs-bar-row { flex-wrap: wrap; padding: 0 8px; gap: 0 10px; }
-  .dfs-demos { order: 3; flex: 1 1 100%; gap: 14px; }
-  .dfs-demos button { padding: 8px 0 10px; }
-  .dfs-demos button[aria-selected="true"]::after { bottom: 3px; }
-  .dfs-time { min-width: 0; }
-  .dfs-tools { gap: 2px; }
-  .dfs-notes-btn span { display: none; }
-  .dfs-fly { padding: 7px 10px; font-size: 12px; }
-  .dfs-meter { width: 136px; padding: 6px 8px 7px; }
   .dfs-cap { font-size: 12.5px; padding: 4px 10px; }
   .dfs-intent { width: auto; }
 }
-@media (max-width: 420px) {
-  /* Play, the menus, the notes and FLY IT on one line: the clock goes (the
-     chart above still shows where the fight is). */
-  .dfs-time { display: none; }
-  .dfs-tools { margin-left: auto; }
+/* The dogfight school's theatre on a phone, upright or on its side (the same
+   query as `compact()` in dogfight-theatre.js): the 3D fight is the screen.
+   The captions and the full meters fold away (a tap on the meters brings
+   them back, a second folds them), the meters are a line each, the chart of
+   energy and shots is a thin strip to scrub on, and the lesson's tabs (its
+   fights and moves) are one button on the bar that opens them as a menu
+   over the picture. One bar under the strip, nothing else. */
+.dfs-demo-now { display: none; }
+@media (max-width: 760px), (max-height: 500px) and (orientation: landscape) {
+  .dfs:not(.is-detail) .dfs-captions { display: none; }
+  .dfs-meters { top: 8px; left: 8px; max-width: calc(100% - 16px); pointer-events: auto; cursor: pointer; }
+  .dfs-meter { min-width: 0; flex: 0 1 auto; }
+  .dfs-meters::after {
+    content: '+'; align-self: stretch; display: grid; place-content: center; width: 22px;
+    background: rgba(19, 19, 19, 0.82); color: var(--mm-ink-muted); font: 500 13px/1 var(--mm-font-mono);
+  }
+  .dfs.is-detail .dfs-meters::after { content: '\2212'; }
+  .dfs:not(.is-detail) .dfs-meter {
+    width: auto; display: flex; flex-wrap: wrap; align-items: baseline; gap: 0 8px; padding: 4px 8px 3px;
+  }
+  .dfs:not(.is-detail) .dfs-meter > b { max-width: 96px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .dfs:not(.is-detail) .dfs-meter :is(.dfs-m-plan, .dfs-m-eye, dt, .dfs-m-energy, .dfs-m-lost) { display: none; }
+  .dfs:not(.is-detail) .dfs-meter dl { display: flex; gap: 8px; }
+  .dfs:not(.is-detail) .dfs-meter dd { font-size: 11px; }
+  .dfs:not(.is-detail) .dfs-meter .dfs-bar { flex-basis: 100%; margin-top: 3px; }
+  .dfs.is-detail .dfs-meter { width: 136px; padding: 6px 8px 7px; }
+  /* Lost sight of them: the line still says so, in the side's colour. */
+  .dfs:not(.is-detail) .dfs-meter.is-blind > b { animation: dfs-blind 1.6s ease-in-out infinite; }
+
+  .dfs-timeline { padding: 3px 8px 2px; }
+  .dfs-chart { height: 18px; }
+  .dfs-scrub { left: 8px; top: 3px; width: calc(100% - 16px); height: 18px; }
+  .dfs-scrub::-webkit-slider-runnable-track { height: 18px; }
+  .dfs-scrub::-webkit-slider-thumb { height: 18px; }
+  .dfs-scrub::-moz-range-track { height: 18px; }
+  .dfs-scrub::-moz-range-thumb { height: 18px; }
+
+  .dfs-bar-row, .dfs-bar-row.is-stacked { position: relative; flex-wrap: nowrap; gap: 4px; padding: 0 6px; min-height: 42px; }
+  .dfs-play { gap: 0; }
+  .dfs-restart, .dfs-time { display: none; }
+  .dfs-tools { gap: 0; margin-left: auto; }
+  .dfs-tools .dfs-btn { padding: 6px 6px; }
+  .dfs-tools .dfs-menu-btn .dfs-ico[data-caret], .dfs-cam-now, .dfs-notes-btn span { display: none; }
+  .dfs-tools .dfs-flyrow { margin-left: 4px; }
+  .dfs-fly { padding: 8px 12px; white-space: nowrap; }
+  .dfs-fly[data-short] { font-size: 0; }
+  .dfs-fly[data-short]::after { content: attr(data-short); font-size: 12.5px; }
+
+  .dfs-demo-now:not([hidden]) {
+    display: inline-flex; flex: 1 1 auto; min-width: 0; align-items: center; gap: 6px;
+    padding: 6px 8px; border: 1px solid var(--mm-rule-strong); border-radius: 3px; color: var(--mm-ink);
+  }
+  .dfs-demo-now[aria-expanded="true"] { background: var(--mm-bg-soft); }
+  .dfs-demo-now-label { display: inline-flex; align-items: baseline; gap: 6px; min-width: 0; overflow: hidden; white-space: nowrap; }
+  .dfs-demo-now-label > :not(.dfs-verdict) { overflow: hidden; text-overflow: ellipsis; }
+  .dfs-demo-now-label > .dfs-verdict { flex: none; }
+  /* A move's tab says its nickname and its count ("the Dip 9/9"); the
+     pilot's name for it is in the menu. */
+  .dfs-demo-now-label .dfs-demo-kind { display: none; }
+  .dfs-demo-now-label .dfs-demo-nick { font-size: 13px; color: var(--mm-ink); }
+  .dfs-demo-now > .dfs-ico[data-caret] { flex: none; margin-left: auto; transform: rotate(180deg); }
+  .dfs-demo-now[aria-expanded="true"] > .dfs-ico[data-caret] { transform: none; }
+
+  /* The tabs as a menu up from the bar, over the picture. */
+  .dfs-demos, .dfs-bar-row.is-stacked .dfs-demos {
+    position: absolute; left: 6px; right: 6px; bottom: calc(100% + 6px); z-index: 8;
+    display: none; flex-direction: column; gap: 0; order: 0;
+    max-height: min(60dvh, 360px); overflow: hidden auto; padding: 2px 12px;
+    background: rgba(19, 19, 19, 0.96); border: 1px solid var(--mm-rule-strong); border-radius: 4px;
+    box-shadow: 0 10px 28px rgb(0 0 0 / 0.5); mask-image: none;
+    animation: dfs-cap 0.15s ease-out;
+  }
+  .dfs.is-demos-open .dfs-demos:not(:empty) { display: flex; }
+  .dfs-demos button, .dfs-bar-row.is-stacked .dfs-demos button { padding: 12px 0 12px 10px; white-space: normal; text-align: left; }
+  .dfs-demos button + button { border-top: 1px solid var(--mm-rule); }
+  .dfs-demos button[aria-selected="true"]::after { left: 0; right: auto; top: 10px; bottom: 10px; width: 2px; height: auto; }
+
+  /* The move card is its name and the step being flown now (the first
+     before the move starts), small in the corner; the whole card, its
+     verdict and every step are in the notes and on a wider screen. With the
+     captions up (a tap on the meters) they take the foot of the picture. */
+  .dfs-score { left: 8px; right: auto; bottom: 8px; width: min(300px, calc(100% - 16px)); gap: 4px; padding: 6px 10px 6px; }
+  .dfs-score :is(.dfs-card-what, .dfs-card-verdict, .dfs-score-how) { display: none; }
+  .dfs-score .dfs-steps li:not(.is-now) { display: none; }
+  .dfs-score .dfs-steps:not(:has(.is-now)) li:first-child { display: list-item; }
+  .dfs.is-detail .dfs-score { display: none; }
+  .dfs-shotcard { left: 8px; right: 8px; top: 50px; width: auto; padding: 8px 12px 10px; }
+  .dfs.is-detail .dfs-shotcard { top: 112px; }
+  /* The end card and the deadlock helper under the meters' line, the
+     picture's width; scrolled inside when they are taller than its top half. */
+  .dfs-endcard, .dfs-helper { left: 8px; right: 8px; top: 46px; width: auto; max-width: none; max-height: calc(100% - 120px); overflow: auto; }
+  .dfs.is-detail :is(.dfs-endcard, .dfs-helper) { top: 112px; max-height: calc(100% - 190px); }
+  .dfs-shotcard b { font-size: 15px; }
 }
 
 /* The live fight: a short coach line at the top, the sphere (the two of you,

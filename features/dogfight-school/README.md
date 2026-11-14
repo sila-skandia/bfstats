@@ -1311,6 +1311,37 @@ your own type and the hunter coming in behind, as in the demos.
   for the phones: nothing of the school's overlaps another panel, a mark or
   a touch control in any frame.
 
+## The theatre on a phone (2026-11-14)
+
+The owner: on mobile the 3D fight comes first, not the strip along the
+bottom showing the moves and the shots. Before, at 390 x 664 the picture had
+266 px of 664 with the captions and meters over half of that, and a phone on
+its side (844 x 390) missed the phone rules altogether: 170 px of fight under
+the meters and captions.
+
+Now one query, `compact()` in `dogfight-theatre.js` and its block in
+`map.css` (`max-width: 760px`, or a landscape window under 500 px tall), and
+in it:
+
+- **The captions are folded.** A tap on the meters (they carry a `+`) brings
+  them back with the full meters; a second tap folds them. While they are up
+  the move card steps aside for them.
+- **The meters are a line each:** the pilot, speed and height, the energy bar.
+  They shrink to fit long pilot names.
+- **The chart is an 18 px strip** to scrub on, still with the shots and hits.
+- **The lesson's tabs are one button** on the bar ("the Dip 9/9") that opens
+  them as a menu over the picture; a pick or a tap elsewhere shuts it.
+  Restart and the clock leave the bar, the menus lose their carets, FLY IT is
+  "Fly it" or "Practise". One 42 px bar.
+- **The move card** is its name and the step being flown now, in the corner.
+- **The shot card, end card and helper** sit under the meters at the
+  picture's width.
+- A phone on its side starts with the list and the notes shut, as upright.
+
+Measured headless (Chrome, touch on): the picture is 557 of 664 px upright
+(was 266 clear of panels) and 324 of 390 on its side (was 266, half covered);
+no page scroll sideways at 375; the desktop at 1440 x 900 unchanged.
+
 ## Reviewed against the real tactics (2026-11-07)
 
 The owner watched the flat scissors and saw "after the contact both planes
