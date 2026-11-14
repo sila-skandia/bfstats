@@ -677,8 +677,11 @@ export function advanceTracers(guns, dt) {
       // old uniform scale in `lengthScale`.
       const real = tracer.acrossScale || tracer.lengthScale;
       const distance = tracer.mesh.position.distanceTo(guns.camera.position);
-      // (Remaster mode asks for a wider floor, `minPx`.)
-      const floor = (distance * metresPerPxAt1m * (globalThis.bfRemasterHooks?.tracer?.minPx ?? TRACER_MIN_SCREEN_PX))
+      // (Remaster mode asks for a wider floor, `minPx`, and a finer one,
+      // `litPx`, for the rounds it lights that retail leaves unseen.)
+      const hooks = globalThis.bfRemasterHooks?.tracer;
+      const px = (tracer.lit ? hooks?.litPx : hooks?.minPx) ?? TRACER_MIN_SCREEN_PX;
+      const floor = (distance * metresPerPxAt1m * px)
         / tracer.width;
       const across = Math.max(real, floor);
       tracer.mesh.scale.set(across, across, drawnLength(tracer));

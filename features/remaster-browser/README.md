@@ -60,6 +60,10 @@ wins", below).
 | A gun's flash sized by the gun, and a hot burst at a big gun's muzzle | done (2026-11-13) |
 | Ships, planes and piers shade the water | done (2026-11-13) |
 | Smoke as dense as the engine draws it | done (2026-11-13) |
+| Every round a line of light: the rounds between a gun's tracers and every hand weapon's | done (2026-11-14) |
+| The sun's glint on the water held under a beam | done (2026-11-14) |
+| Far flak bursts drew as pale rectangles | fixed (2026-11-14) |
+| Matched before/after stills and a side-by-side reel for marketing | done (2026-11-14) |
 
 ## How to turn it on
 
@@ -713,6 +717,74 @@ jeep's column was a grey veil and its flames were washed out. A dark texel's
 alpha is raised to `1 - (1 - a)^2.2`; one as bright as a typical background
 keeps its own.
 
+### Owner feedback, 2026-11-14
+
+**Every round a line of light.** "The gun effects that improve the tracers
+are beautiful ... on Battleaxe the stationary machine gunners had the most
+stunning firing, but we should roll it out to more weapons, even hand held
+weapons." Retail draws one round in `interval` as the gun's streak and
+none at all for a hand weapon (their rounds are `invisible 1`, GUN-12). With
+the remaster on (`remasterHooks.tracer.everyRound`), `round-launch.js`
+draws every bullet: a gun's own baked streak for the rounds between its
+tracers, and for a gun that bakes none a stand-in shaped like vanilla's
+`TLight_m1` (a 0.0061 m spike, 1 m tail, scaled the engine's way to
+`|v| / 50` and `stretch` 1.6). Only the look changes: the round still flies,
+falls and lives as its own projectile (`bright` stays false, so it keeps its
+own gravity and `timeToLive`, not the tracer template's). These rounds take a
+finer floor than a gun's real tracers (`litPx` 2 against `minPx` 3.2), so a
+rifleman's shot is a thread of fire and the MG's tracers stay the boldest
+lines. Retail mode is untouched.
+
+**The glint on the water.** "The lens flare can hit the water and become a
+laser beam ... even if it's technically correct, it shouldn't be so bright."
+GGX at the water's 0.18 roughness puts hundreds of times the sun on the
+facets that mirror it; through the bloom that ran from the shore to the sun
+as a white column. `remaster-water.js` now caps the sun's specular softly,
+`s / (1 + s / GLINT)` with `GLINT` 3 (just over the bloom's 2.4), so the path
+keeps its sparkle and shape and loses its peak. The other lights' specular is
+untouched. `remastershot.mjs` has the view (`--map wake --views glare`):
+
+![Wake's glint, before and after](shots/wake_glare_before_after.jpg)
+
+**Far flak bursts drew as pale rectangles** (found filming the comparison
+below). An additive sprite's glow carried its whole shape in colour and held
+its alpha at 1; the fog then tinted the entire quad, its empty corners
+included, toward the fog colour, and the additive blend laid that on the sky.
+Near a burst the fog is nil and nothing showed; at 300 m `e_FlakBig` was a
+rectangle. The glow now carries light over coverage with the coverage in the
+alpha the blend multiplies by, so the frame gets the same light and the fog's
+tint is weighted as retail's is (`remaster-renderer.js` `glow`).
+
+## Marketing captures (2026-11-14)
+
+`scripts/remaster-compare.mjs` draws the same replayed moments twice, the
+retail page and the remaster, each page on its own virtual clock stepped one
+frame at a time in lockstep, so both halves show the same frame of the round.
+It writes a still from each mode and the two side by side per shot, and a
+side-by-side MP4 of every shot. The shots are `scripts/remaster-compare.shots.json`
+(a replayed moment followed in the orbit camera, or a glide over a level).
+
+```
+cd tools/bf1942-models && python3 serve_viewer.py 5390 &
+curl -s -o tools/bf1942-models/viewer/replays/ymdy248edr.ndjson \
+  https://bfstats.io/stats/recordings/ymdy248edr.ndjson
+node scripts/remaster-compare.mjs --out ~/.cache/bfstats-remaster-compare
+```
+
+The 2026-11-14 set, from the Battleaxe recording `ymdy248edr` and Wake, is in
+`marketing/` (a still per mode per shot and the pair side by side): the
+halftrack's MG42 at the Spitfires, a rifleman's StG44, the Flak 38 and the
+Allied AA gun with the blast that whites out the retail frame, and Wake's
+lagoon down into the sun. The 34 s reel is not committed (36 MB); the
+command above makes it again. `--probe=<from>,<to>` lists every effect,
+round and burst drawn in those frames, which is how the flak rectangle was
+named.
+
+![Flak before and after](marketing/battleaxe_allied_aa_side_by_side.jpg)
+
+![MG42 before and after](marketing/battleaxe_mg42_side_by_side.jpg)
+
+
 ## Bugs found on the way
 
 - **The arms smeared over a black world the moment a player spawned.** A
@@ -1027,3 +1099,5 @@ that has it.
   `tools/bf1942-models/tests/test_frame_pacer.py`
 - `tools/bf1942-models/tests/test_remaster_shadow_batch.py`
 - `features/remaster-browser/shots/` (the composites above)
+- `scripts/remaster-compare.mjs`, `scripts/remaster-compare.shots.json`,
+  `features/remaster-browser/marketing/` (the before/after set)

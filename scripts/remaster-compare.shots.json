@@ -1,0 +1,85 @@
+[
+ {
+  "name": "battleaxe_mg42",
+  "title": "A stationary MG42 at the Allied AA",
+  "map": "battleaxe",
+  "mod": "bf1942",
+  "replay": "replays/ymdy248edr.ndjson",
+  "at": 1053.0,
+  "len": 4,
+  "pid": 2,
+  "mode": "orbit",
+  "yaw": -1.95,
+  "pitch": 0.05,
+  "zoom": 0.6,
+  "still": 1.0
+ },
+ {
+  "name": "battleaxe_stg44",
+  "title": "A rifleman's StG44",
+  "map": "battleaxe",
+  "mod": "bf1942",
+  "replay": "replays/ymdy248edr.ndjson",
+  "at": 1054.5,
+  "len": 4,
+  "pid": 0,
+  "mode": "orbit",
+  "yaw": -1.9,
+  "pitch": 0.08,
+  "zoom": 0.55,
+  "still": 1.0
+ },
+ {
+  "name": "battleaxe_flak38",
+  "title": "The Flak 38 at the aircraft",
+  "map": "battleaxe",
+  "mod": "bf1942",
+  "replay": "replays/ymdy248edr.ndjson",
+  "at": 236.0,
+  "len": 10,
+  "pid": 12,
+  "mode": "orbit",
+  "yaw": 2.6,
+  "pitch": 0.12,
+  "zoom": 1.4,
+  "still": 1.0
+ },
+ {
+  "name": "battleaxe_allied_aa",
+  "title": "The Allied AA gun",
+  "map": "battleaxe",
+  "mod": "bf1942",
+  "replay": "replays/ymdy248edr.ndjson",
+  "at": 1015.0,
+  "len": 8,
+  "pid": 9,
+  "mode": "orbit",
+  "yaw": -0.8,
+  "pitch": 0.15,
+  "zoom": 1.3,
+  "still": 6.4
+ },
+ {
+  "name": "wake_lagoon",
+  "title": "Wake's lagoon, down into the sun",
+  "map": "wake",
+  "mod": "bf1942",
+  "level": true,
+  "from": [
+   1285,
+   190,
+   -1263,
+   -0.35,
+   -0.2
+  ],
+  "to": [
+   1240,
+   112,
+   -1140,
+   -0.35,
+   0.12
+  ],
+  "len": 8,
+  "still": 1.0
+ }
+]

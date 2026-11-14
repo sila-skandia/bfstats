@@ -41,6 +41,13 @@ export const VIEWS = {
     hill: [905, 170, -900, -2.6, -0.25],
     bunker: [1308, 110, -1195, 1.57, -0.05],
     sun: [1240, 112, -1140, -0.35, 0.12],
+    // High over the lagoon, down at the water toward the sun: the spectator's
+    // view where the sun's glint ran up the screen as a beam (2026-11-14).
+    glare: [1285, 190, -1263, -0.35, -0.2],
+  },
+  battleaxe: {
+    // Under the sky the AA guns fire into, a flak burst 80 m east and 30 m up.
+    sky: [1387, 40, 1069, 1.5708, 0.35],
   },
   battle_of_britain: {
     base: [1180, 116, -1640, 2.67, -0.12],

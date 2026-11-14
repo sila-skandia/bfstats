@@ -235,9 +235,16 @@ export async function createRemasterScene({ renderer, scene, camera, sun, hemi }
     const c = tsl.materialColor;
     const byAlpha = m.blending === THREE.AdditiveBlending || m.blendSrc === THREE.SrcAlphaFactor;
     if (sprite && byAlpha && !cut(m)) {
-      const display = tsl.sRGBTransferOETF(c.rgb).mul(c.a).mul(tsl.materialOpacity).clamp(0, 1);
-      m.colorNode = tsl.vec4(tsl.sRGBTransferEOTF(display).mul(gain), 1);
-      m.opacityNode = tsl.float(1);
+      // The light is carried as colour over coverage, the coverage in the
+      // alpha the blend multiplies by, so the frame gets the same light and
+      // the fog's tint is weighted by the coverage too. With the alpha held
+      // at 1 the fog tinted the whole quad, its empty corners included, and
+      // the blend added that tint to the sky: a flak burst 300 m out drew as
+      // a pale rectangle (2026-11-14, Battleaxe's AA guns in a replay).
+      const coverage = c.a.mul(tsl.materialOpacity).clamp(0, 1);
+      const display = tsl.sRGBTransferOETF(c.rgb).mul(coverage).clamp(0, 1);
+      m.colorNode = tsl.vec4(tsl.sRGBTransferEOTF(display).mul(gain).div(coverage.max(1 / 255)), 1);
+      m.opacityNode = coverage;
     } else {
       m.colorNode = tsl.vec4(c.rgb.mul(gain), c.a);
     }
@@ -252,11 +259,19 @@ export async function createRemasterScene({ renderer, scene, camera, sun, hemi }
   // `coverage` of its light however far it is, is never thinner on screen
   // than `minPx`, and trails `stretch` times the engine's length: a line
   // of fire from the guns to the target.
+  // `everyRound` (2026-11-14, the owner: the stationary MG's firing on
+  // Battleaxe "the most stunning", roll it out "even [to] hand held
+  // weapons"): every bullet is drawn as that line of light, the rounds
+  // between a gun's tracers and a hand weapon's too, which retail never
+  // draws. Those take the finer floor `litPx`, so a rifleman's shot is a
+  // thread of fire and a gun's own tracers stay the boldest lines.
   remasterHooks.tracer = {
     glow: m => remasterHooks.glow(m, { gain: TRACER_GLOW }),
     stretch: 1.6,
     coverage: 0.3,
     minPx: 3.2,
+    litPx: 2,
+    everyRound: true,
   };
   // Light from a flash, a blast or a fire (effects.js `play`): a pool of
   // point lights that is always in the scene, dark until used, since adding

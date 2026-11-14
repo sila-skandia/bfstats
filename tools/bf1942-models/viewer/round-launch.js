@@ -215,8 +215,13 @@ function fireRound(guns, group, muzzle, barrel) {
     // round still needs a ballistic in `tracers` so `sweep` / `impact`
     // run: hand weapons declare no tracer interval, so dropping the dim
     // stand-in without a hidden hit-test round killed every surface FX.
-    spawnTracer(guns, muzzle, group, !!tracerRound, barrel);
-    if (!tracerRound) {
+    // Remaster mode draws every round as a line of light (`everyRound`):
+    // the rounds between a gun's tracers and a hand weapon's rounds, which
+    // retail leaves invisible. Only the look: the round flies, falls and
+    // lives as its own projectile, not as the gun's tracer template.
+    const lit = !tracerRound && !!globalThis.bfRemasterHooks?.tracer?.everyRound;
+    spawnTracer(guns, muzzle, group, !!tracerRound, barrel, lit);
+    if (!tracerRound && !lit) {
       const tracer = guns.tracers[guns.tracers.length - 1];
       if (tracer) tracer.mesh.visible = false;
     }
@@ -429,7 +434,28 @@ function tracerGravity(guns, group, bright) {
   return spec && typeof spec === 'object' ? (spec.gravity ?? 1) : 0;
 }
 
-function spawnTracer(guns, muzzle, group, bright, barrel = 0) {
+/**
+ * Remaster mode's streak for a gun that bakes none (every hand weapon): the
+ * shape of vanilla's `TLight_m1`, a 0.0061 m spike with its head at the
+ * origin and a 1 m tail down the glb's +Z, in the fallback streak's colour.
+ * One template for every such gun; `tracerClone` gives each round its own
+ * glowing copy.
+ */
+let litTemplate = null;
+const LIT_WIDTH = 0.0061;
+function litStreak() {
+  if (litTemplate) return litTemplate;
+  const geometry = new THREE.ConeGeometry(LIT_WIDTH / 2, 1, 6, 1, true);
+  geometry.rotateX(Math.PI / 2);     // tip to +Z
+  geometry.translate(0, 0, 0.5);     // head at the origin, tail 1 m behind
+  litTemplate = new THREE.Mesh(geometry, new THREE.MeshBasicMaterial({
+    color: 0xffd9a0, transparent: true, opacity: 0.9,
+    blending: THREE.AdditiveBlending, depthWrite: false,
+  }));
+  return litTemplate;
+}
+
+function spawnTracer(guns, muzzle, group, bright, barrel = 0, lit = false) {
   // The engine's own default when the gun declares no `velocity` (FA-3).
   const authored = releaseSpeed(group.stats);
   const speed = displaySpeed(guns, group, authored);
@@ -465,7 +491,24 @@ function spawnTracer(guns, muzzle, group, bright, barrel = 0) {
   let pool;
   let lengthScale = 0;   // non-zero only for the baked streak: its local-Z scale
   let acrossScale = 0;   // the baked streak's X/Y scale (TRC-1: 10)
-  if (group.tracerMesh && bright) {
+  let width = group.tracerWidth;
+  let tail = group.tracerTail ?? 0;
+  if (lit) {
+    // Remaster mode's every-round streak: the gun's own baked streak when it
+    // has one, else the TLight-shaped stand-in, always at the engine's
+    // length for the round's speed (a hand weapon's groups are collected
+    // with the turntable's 'fixed' length).
+    const template = group.tracerMesh ?? litStreak();
+    pool = group.tracerMesh ? group.tracerMeshPool : (group.litStreakPool ??= []);
+    mesh = pool.pop() || tracerClone(template);
+    mesh.visible = true;
+    if (!group.tracerMesh) { width = LIT_WIDTH; tail = 1; }
+    lengthScale = Math.max(engineLength, 1e-3) * (globalThis.bfRemasterHooks?.tracer?.stretch ?? 1);
+    acrossScale = 10;
+    mesh.scale.set(acrossScale, acrossScale, tail > 0 ? 1e-3 : lengthScale);
+    mesh.position.copy(_origin);
+    mesh.lookAt(_aimBack.copy(mesh.position).sub(direction));
+  } else if (group.tracerMesh && bright) {
     // The real streak, scaled the engine's way. Its origin is the round
     // (TRC-2), wherever the authored geometry sits around it: `TLight_m1`
     // trails, `tracklight_m1` straddles. The glb's forward is -Z (the
@@ -520,9 +563,10 @@ function spawnTracer(guns, muzzle, group, bright, barrel = 0) {
     stamp: guns.stampOf?.(group) ?? null,
     lengthScale,
     acrossScale,
-    width: group.tracerWidth,
-    tail: group.tracerTail ?? 0,
+    width,
+    tail,
     bright,
+    lit,
     velocity,
     gravity: tracerGravity(guns, group, bright),
     // The square of the display scale, for the same reason a shell's g is

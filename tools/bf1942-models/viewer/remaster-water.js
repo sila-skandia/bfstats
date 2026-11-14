@@ -31,6 +31,11 @@ import {
 /** What water in a cast shadow keeps of its own scattered light. */
 const SHADE = 0.55;
 
+/** The most the sun's glint puts on the water, in the frame's linear light
+ *  before the exposure (0.58): a bright sparkle that only just reaches the
+ *  bloom's 2.4, never the beam it drew uncapped. */
+const GLINT = 3;
+
 /**
  * The water's material: three's physical one, with the scattered light added
  * inside the lighting model instead of as an emissive, so it can be cut by
@@ -46,8 +51,20 @@ class WaterMaterial extends THREE.MeshPhysicalNodeMaterial {
     const finish = model.finish.bind(model);
     let sunlit = null;
     model.direct = (data, b) => {
-      if (isEngineSun(data.lightNode)) sunlit = data.lightColor.y.div(engineSunLin.y).clamp(0, 1);
-      return direct(data, b);
+      if (!isEngineSun(data.lightNode)) return direct(data, b);
+      sunlit = data.lightColor.y.div(engineSunLin.y).clamp(0, 1);
+      // The sun's glint, held under GLINT. GGX at this roughness puts
+      // hundreds of times the sun on the facets that mirror it, which is
+      // right, but over the bloom it ran up the screen as a white beam from
+      // the shore to the sun (owner, 2026-11-14, the Wake recording:
+      // "shouldn't be so bright"). The cap is soft (s / (1 + s / GLINT)),
+      // so the path keeps its sparkle and shape and only its peak comes down.
+      const spec = data.reflectedLight.directSpecular;
+      const before = spec.toVar();
+      const result = direct(data, b);
+      const glint = spec.sub(before);
+      spec.assign(before.add(glint.div(glint.div(GLINT).add(1))));
+      return result;
     };
     model.finish = b => {
       finish(b);
