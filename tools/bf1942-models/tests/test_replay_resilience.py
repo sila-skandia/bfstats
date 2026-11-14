@@ -160,6 +160,8 @@ const spawning = {{ waveTick: part('waveTick') }};
 const provingPage = null;
 // No dogfight school over the replay (`?school`): the page's camera is its own.
 const schoolCamera = null;
+// Not a `?shots` capture: no camera of its own over the page's.
+const SHOT_CAMERA = false;
 const frameCost = {{ sim: 0, present: 0, draw: 0, hud: 0, total: 0 }};
 {function_body("frame")}
 let thrown = null;

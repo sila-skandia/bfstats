@@ -1,31 +1,46 @@
-// Remaster before/after (features/remaster-browser, "Marketing captures"):
-// the same replayed moments drawn twice, once by the retail page and once
-// by the remaster, stepped in lockstep on one virtual clock so both halves
-// show the same frame of the round. Writes, per shot, a still from each
-// mode and the two side by side, and one side-by-side MP4 of every shot.
+// The remaster's showreel (features/remaster-browser, "Marketing captures"):
+// what the remaster adds, one feature at a time: a clip drawn by the remaster
+// alone with a caption saying what to look at, then the same thing drawn
+// twice, the retail page beside the remaster, stepped in lockstep on one
+// virtual clock so both halves show the same frame. The reel takes the shots
+// in the order of the shot file.
 //
 //   node scripts/remaster-compare.mjs [--shots=<file.json>] [--out=<dir>]
-//        [--base=http://localhost:5390] [--w=1600] [--h=900] [--fps=30]
-//        [--stills-only] [--only=<shot name,...>]
+//        [--base=http://localhost:5390] [--w=1920] [--h=1080] [--fps=30]
+//        [--stills-only] [--only=<shot name,...>] [--reel-only]
 //
 // The viewer must be served at --base (`python3 serve_viewer.py 5390` in
 // tools/bf1942-models) and each shot's recording copied under
-// tools/bf1942-models/viewer/replays/. A shot is
-//   { name, title, map, mod, replay, at, len, pid, mode, yaw, pitch, zoom, still }
-// for a replayed moment (the camera follows `pid` in `mode`, `orbit` taking
-// `yaw`/`pitch`/`zoom`), or
-//   { name, title, map, mod, level: true, from: [x,y,z,yaw,pitch], to: [...], len, still }
-// for a camera glide over the level with nothing playing. `still` is the
-// second into the shot the stills are taken at. A level shot may stage a
-// fight: `gunners: { bots, seats: { <team>: <template> }, perTeam, warm }`
-// plays the level with `bots` bots, seats up to `perTeam` bots of a team on
-// the nearest free gun of that template (the rest fight on foot), keeps it there (its own plans would take it to a tank;
-// one killed is seated again once it is back), stands the bots on foot
-// back inside `field: [x0, z0, x1, z1]` every two seconds when given one,
-// with `bursts: [on, off]` aims each gunner at a gunner across the gap and
-// fires it in bursts of `on` seconds every `on + off`, and lets the fight run
-// `warm` seconds before the shot starts. The bots' choices are their own
-// dice in each page, so the two halves show the same fight, not the same
+// tools/bf1942-models/viewer/replays/. Every shot carries
+//   { name, part, title, note, map, mod, len, still }
+// `part` is `feature` (the remaster alone, full frame, `title` and `note`
+// as its caption) or `compare` (retail and remaster side by side, `title`
+// over them). `still` is the second into the shot the stills are taken at.
+// A shot is a replayed moment,
+//   { replay, at, pid, mode, yaw, pitch, zoom }
+// (the camera follows `pid` in `mode`, `orbit` taking `yaw`/`pitch`/`zoom`),
+// or a camera glide over the level with the level's own bots,
+//   { level: true, from: [x,y,z,yaw,pitch], to: [...] }
+// and either may have
+//   setup: "<js>"  run once in the page when the shot starts (async allowed)
+//   each:  "<js>"  run in the page before every frame, `s` the second
+// to stage what it shows: a vehicle set burning, an effect played.
+// `liveMods: true` hands the page the live mod registry (a mod's recording).
+//
+// A level shot may stage a fight: `gunners: { bots, seats: { <team>: <template> },
+// perTeam, warm, focus, field, northTeam, bursts }` plays the level with
+// `bots` bots and seats up to `perTeam` bots of a team on that team's guns of
+// that template, the guns nearest `focus` ([x, z], the glide's start when
+// not given) first, so the gun in the picture is manned in both pages. A
+// seated gunner cannot leave (its own plans would take it to a tank; it
+// set its exit between two frames and was back in its seat 22 frames later,
+// a body that blinked in and out of the nest); one killed is seated again on
+// its own gun. `field: [x0, z0, x1, z1]` stands the bots on foot back inside
+// it every two seconds; `bursts: [on, off]` aims each gunner at a gunner
+// across the gap (at `aimAt: [x, y, z]` in the sky, for flak) and fires in
+// bursts of `on` seconds every `on + off`;
+// `warm` seconds of the fight run before the shot starts. The bots' choices
+// are each page's own dice, so two halves show the same fight, not the same
 // rounds.
 import { createRequire } from 'node:module';
 import { execFileSync } from 'node:child_process';
@@ -40,14 +55,20 @@ const args = process.argv.slice(2);
 const opt = (n, d) => args.find(a => a.startsWith(`--${n}=`))?.slice(n.length + 3) ?? d;
 const BASE = opt('base', 'http://localhost:5390');
 const OUT = opt('out', path.join(os.homedir(), '.cache/bfstats-remaster-compare'));
-const W = Number(opt('w', 1600)), H = Number(opt('h', 900)), FPS = Number(opt('fps', 30));
+const W = Number(opt('w', 1920)), H = Number(opt('h', 1080)), FPS = Number(opt('fps', 30));
 const STILLS_ONLY = args.includes('--stills-only');
+const REEL_ONLY = args.includes('--reel-only');
+// `--trace=<expression>`: a debugging aid, the expression evaluated in each
+// page after every frame and logged beside the frame's number.
+const TRACE = opt('trace', null);
+// `--probe=<from>,<to>`: every effect, round and burst drawn in those frames.
 const PROBE = opt('probe', null)?.split(',').map(Number) ?? null;
-let probed = null;
 const ONLY = opt('only', null)?.split(',');
-const SHOTS = JSON.parse(fs.readFileSync(opt('shots', path.join(REPO, 'scripts/remaster-compare.shots.json')), 'utf8'))
-  .filter(s => !ONLY || ONLY.includes(s.name));
-const MODES = [['retail', 'remaster=0'], ['remaster', 'remaster']];
+const ALL = JSON.parse(fs.readFileSync(opt('shots', path.join(REPO, 'scripts/remaster-compare.shots.json')), 'utf8'));
+const SHOTS = ALL.filter(s => !ONLY || ONLY.includes(s.name));
+const modesOf = shot => (shot.part === 'feature'
+  ? [['remaster', 'remaster']]
+  : [['retail', 'remaster=0'], ['remaster', 'remaster']]);
 const log = (...a) => console.log(new Date().toISOString().slice(11, 19), ...a);
 fs.mkdirSync(OUT, { recursive: true });
 
@@ -62,7 +83,15 @@ async function open(browser, shot, query) {
   const page = await browser.newPage({ viewport: { width: W, height: H }, deviceScaleFactor: 1 });
   page.on('pageerror', e => log('pageerror', query, e.message.slice(0, 200)));
   await page.addInitScript(clockInit);
-  const q = `mod=${shot.mod}&map=${shot.map}${shot.level ? '' : `&replay=${shot.replay}`}&shots&mute&botCount=${shot.gunners?.bots ?? 0}&quality=full&${query}`;
+  if (shot.liveMods) {
+    // The local registry carries no counts, so the page serves vanilla only:
+    // hand it the live one, for that one file.
+    await page.route('**/models/mods.json', async route => {
+      const res = await fetch('https://mesh.bfstats.io/models/mods.json');
+      await route.fulfill({ status: res.status, contentType: 'application/json', body: await res.text() });
+    });
+  }
+  const q = `mod=${shot.mod}&map=${shot.map}${shot.level ? '' : `&replay=${shot.replay}`}&shots&mute&botCount=${shot.gunners?.bots ?? shot.bots ?? 0}&quality=full&${query}`;
   await page.goto(`${BASE}/map.html?${q}`, { waitUntil: 'domcontentloaded', timeout: 300000 });
   if (shot.level) {
     await page.waitForFunction(() => window.__renderOnce && window.__scene, null, { timeout: 480000, polling: 500 });
@@ -80,9 +109,10 @@ async function open(browser, shot, query) {
   return page;
 }
 
-/** Put the shot's camera on, at `s` seconds into it (a level glide only). */
-async function frame(page, shot, s, label, clean = false) {
-  return page.evaluate(async ({ shot, s, W, H, FPS, label, clean }) => {
+/** One frame of the shot at `s` seconds: the camera on (a level glide), the
+ *  staged fight kept up, `each` run, the world stepped and drawn. */
+async function frame(page, shot, s, keep = true) {
+  return page.evaluate(async ({ shot, s, W, H, FPS, keep }) => {
     if (shot.level) {
       const u = Math.min(1, s / Math.max(shot.len, 1e-3));
       const e = u * u * (3 - 2 * u);
@@ -93,21 +123,19 @@ async function frame(page, shot, s, label, clean = false) {
       cam.rotation.set(pitch, yaw, 0, 'YXZ');
       cam.updateMatrixWorld();
     }
-    if (window.__gunners) {
-      // The staged gunners stay on their guns.
-      const g = window.__gunners;
-      for (const id of g.ids) {
-        const bot = window.__botCtl(id);
-        const want = g.seats[bot?.team];
-        if (!want) continue;
-        bot.exitRequest = false;
-        bot.switchRequest = null;
-        if (!bot.vehicle && (g.tick++ % 15 === 0)) window.__botMount(id, want, 'driver');
+    const g = window.__gunners;
+    if (g) {
+      // A gunner killed on its gun is seated on the same gun once it is back.
+      if ((g.tick = (g.tick ?? 0) + 1) % 15 === 0) {
+        for (const id of g.ids) {
+          const bot = window.__botCtl(id);
+          if (bot && !bot.vehicle) window.__botMount(id, g.seats[bot.team], 'driver', g.home[id]);
+        }
       }
       // `field: [x0, z0, x1, z1]`: every two seconds the bots on foot that
       // have left it are stood back in it, facing the other side, so the
       // guns always have someone in front of them.
-      if (g.field && (g.frame = (g.frame ?? 0) + 1) % 60 === 1) {
+      if (g.field && g.tick % 60 === 1) {
         const [x0, z0, x1, z1] = g.field;
         for (const b of window.__bots()) {
           if (g.ids.includes(b.id) || b.vehicle) continue;
@@ -115,12 +143,41 @@ async function frame(page, shot, s, label, clean = false) {
           if (x >= x0 && x <= x1 && z >= z0 && z <= z1) continue;
           const team = window.__botCtl(b.id)?.team;
           const rx = x0 + (x1 - x0) * Math.random(), rz = z0 + (z1 - z0) * (team === g.northTeam ? 0.55 + 0.2 * Math.random() : 0.25 + 0.2 * Math.random());
-          // `seats` keys are teams; the side whose guns are further along +z
-          // stands on the +z half facing -z (the soldier's yaw is atan2(x, z)).
+          // The side further along +z stands on the +z half facing -z (the
+          // soldier's yaw is atan2(x, z)).
           window.__botPlace(b.id, rx, rz, team === g.northTeam ? Math.PI : 0);
         }
       }
     }
+    if (shot.flyby && window.replay) {
+      // A camera stood beside the path the followed man takes, `ahead`
+      // seconds along it, `side` metres off it and `up` over the ground,
+      // turned to keep him in frame: a plane passes it low, its shadow
+      // running over the ground below.
+      const r = window.replay, cam = r.camera;
+      const fb = shot.flyby;
+      if (!window.__flyby) {
+        const at = t => { const q = cam.targetAt(t)?.point; return q ? { x: q.x, y: q.y, z: q.z } : null; };
+        const p0 = at(r.time), p1 = at(r.time + (fb.ahead ?? 1.5));
+        if (p0 && p1) {
+          let dx = p1.x - p0.x, dz = p1.z - p0.z;
+          const n = Math.hypot(dx, dz) || 1;
+          dx /= n; dz /= n;
+          const x = p1.x + dz * (fb.side ?? 25), z = p1.z - dx * (fb.side ?? 25);
+          const ground = window.__groundAt?.(x, z);
+          window.__flyby = [x, (Number.isFinite(ground) ? ground : p1.y) + (fb.up ?? 3), z];
+        }
+      }
+      const at = window.__flyby, p = cam.targetAt(r.time)?.point;
+      if (at && p) {
+        cam.setMode('free');
+        cam.free.pos.set(at[0], at[1], at[2]);
+        const dx = p.x - at[0], dy = p.y + (fb.lift ?? 0) - at[1], dz = p.z - at[2];
+        cam.free.yaw = Math.atan2(-dx, -dz);
+        cam.free.pitch = Math.atan2(dy, Math.hypot(dx, dz));
+      }
+    }
+    if (shot.each) await new Function('s', `return (async () => { ${shot.each} })()`)(s);
     window.__clock.step(1000 / FPS);
     window.__renderOnce(W, H, 1 / FPS);
     // The remaster builds a new material's pipeline off the thread and skips
@@ -132,78 +189,21 @@ async function frame(page, shot, s, label, clean = false) {
       for (let t = 0; t < 200 && building() > 0; t++) await new Promise(r => setTimeout(r, 10));
       window.__renderOnce(W, H, 0);
     }
+    if (!keep) return null;
     const cv = (window.__cmpCanvas ??= Object.assign(document.createElement('canvas'), { width: W, height: H }));
-    const g = cv.getContext('2d');
-    g.drawImage(window.__renderer.domElement, 0, 0, W, H);
-    const still = clean ? cv.toDataURL('image/jpeg', 0.95) : null;
-    if (label) {
-      const k = H / 900;
-      g.save();
-      g.font = `800 ${22 * k}px system-ui, "Segoe UI", sans-serif`;
-      const w = g.measureText(label).width + 28 * k;
-      g.fillStyle = 'rgba(12,14,16,0.62)';
-      g.fillRect(24 * k, 24 * k, w, 40 * k);
-      g.fillStyle = label === 'REMASTER' ? 'rgba(255,196,110,0.98)' : 'rgba(236,232,220,0.95)';
-      g.textBaseline = 'middle';
-      g.fillText(label, 38 * k, 44 * k);
-      g.restore();
-    }
-    return { still, url: label ? cv.toDataURL('image/jpeg', 0.92) : null };
-  }, { shot, s, W, H, FPS, label, clean });
+    cv.getContext('2d').drawImage(window.__renderer.domElement, 0, 0, W, H);
+    return cv.toDataURL('image/jpeg', 0.93);
+  }, { shot, s, W, H, FPS, keep });
 }
 
 async function start(page, shot) {
   if (shot.level) {
-    if (!shot.gunners) return;
-    const staged = await page.evaluate(g => {
-      if (window.__gunners) return null;
-      // At most `perTeam` gunners a side; the rest fight on foot, which
-      // gives the guns something to fire at.
-      const per = {};
-      const ids = [];
-      for (const b of window.__bots()) {
-        const team = window.__botCtl(b.id)?.team;
-        const want = g.seats[team];
-        if (!want || (per[team] ?? 0) >= (g.perTeam ?? Infinity)) continue;
-        if (window.__botMount(b.id, want, 'driver')) { ids.push(b.id); per[team] = (per[team] ?? 0) + 1; }
-      }
-      window.__gunners = { seats: g.seats, ids, tick: 0, field: g.field ?? null, northTeam: Number(g.northTeam ?? 0) };
-      return ids.length;
-    }, shot.gunners);
-    if (staged === null) return;
-    if (shot.gunners.bursts) {
-      // A director's crossfire: each gunner aims at a gunner across the gap
-      // (sweeping a few metres either side) and fires in bursts on its own
-      // rhythm, through the bots' own aim and trigger (`bot-aim.js`
-      // `turretAimAt`, the input word the world fires the seat's gun from).
-      // Left to their own plans they found a target now and then.
-      await page.evaluate(async ([on, off]) => {
-        const aiming = await import(new URL('bot-aim.js', location.href).href);
-        const g = window.__gunners;
-        g.ids.forEach((id, i) => {
-          const bot = window.__botCtl(id);
-          const write = bot._writeInput.bind(bot);
-          const phase = i * 0.37 * (on + off);
-          bot._writeInput = () => {
-            const enemies = g.ids.map(e => window.__botCtl(e)).filter(e => e && e.team !== bot.team && e.vehicle);
-            if (bot.vehicle && enemies.length) {
-              const t = (bot._now ?? 0) + phase;
-              const target = enemies[(i + Math.floor(t / (on + off))) % enemies.length].getPosition();
-              const sweep = Math.sin(t * 0.9 + i) * 6;
-              aiming.turretAimAt(bot, [target[0] + sweep, target[1] + 0.8, target[2]]);
-              bot.isFiring = (t % (on + off)) < on;
-            }
-            write();
-          };
-        });
-      }, shot.gunners.bursts);
-    }
-    log(`  ${staged} gunners seated; the fight runs ${shot.gunners.warm ?? 0} s first`);
-    for (let k = 0; k < (shot.gunners.warm ?? 0) * FPS; k++) await frame(page, shot, 0, null);
+    if (shot.gunners) await seatGunners(page, shot);
     return;
   }
   await page.evaluate(shot => {
     const r = window.replay;
+    window.__flyby = null;
     r.creator?.toggle?.(false);
     r.playing = false;
     r.seek(shot.at);
@@ -220,78 +220,223 @@ async function start(page, shot) {
   }, shot);
 }
 
+async function seatGunners(page, shot) {
+  const gun = shot.gunners;
+  const staged = await page.evaluate(([g, focus]) => {
+    if (window.__gunners) return null;
+    // At most `perTeam` gunners a side, on the guns nearest the focus; the
+    // rest fight on foot, which gives the guns something to fire at.
+    const per = {};
+    const ids = [];
+    const home = {};
+    for (const b of window.__bots()) {
+      const bot = window.__botCtl(b.id);
+      const want = g.seats[bot?.team];
+      if (!want || (per[bot.team] ?? 0) >= (g.perTeam ?? Infinity)) continue;
+      if (!window.__botMount(b.id, want, 'driver', focus)) continue;
+      ids.push(b.id);
+      per[bot.team] = (per[bot.team] ?? 0) + 1;
+      const p = bot.getPosition();
+      home[b.id] = [p[0], p[2]];
+      // Its own plans would take it to a better vehicle: the exit it asks
+      // for inside its tick is dropped there, not after the frame.
+      Object.defineProperty(bot, 'exitRequest', { configurable: true, get: () => false, set() {} });
+      Object.defineProperty(bot, 'switchRequest', { configurable: true, get: () => null, set() {} });
+    }
+    window.__gunners = { seats: g.seats, ids, home, tick: 0, field: g.field ?? null, northTeam: Number(g.northTeam ?? 0) };
+    return ids.length;
+  }, [gun, gun.focus ?? (shot.from ? [shot.from[0], shot.from[2]] : null)]);
+  if (staged === null) return;
+  if (gun.bursts) {
+    // A director's crossfire: each gunner aims at a gunner across the gap
+    // (sweeping a few metres either side) and fires in bursts on its own
+    // rhythm, through the bots' own aim and trigger (`bot-aim.js`
+    // `turretAimAt`, the input word the world fires the seat's gun from).
+    // Left to their own plans they found a target now and then.
+    await page.evaluate(async ([on, off, sky]) => {
+      const aiming = await import(new URL('bot-aim.js', location.href).href);
+      const g = window.__gunners;
+      g.ids.forEach((id, i) => {
+        const bot = window.__botCtl(id);
+        const write = bot._writeInput.bind(bot);
+        const phase = i * 0.37 * (on + off);
+        bot._writeInput = () => {
+          const enemies = g.ids.map(e => window.__botCtl(e)).filter(e => e && e.team !== bot.team && e.vehicle);
+          const t = (bot._now ?? 0) + phase;
+          if (bot.vehicle && sky) {
+            // `aimAt`: a point in the sky, swept a little, for flak.
+            aiming.turretAimAt(bot, [sky[0] + Math.sin(t * 0.7 + i) * 30, sky[1] + Math.sin(t * 0.5 + 2 * i) * 15, sky[2] + Math.cos(t * 0.6 + i) * 30]);
+            bot.isFiring = (t % (on + off)) < on;
+          } else if (bot.vehicle && enemies.length) {
+            const target = enemies[(i + Math.floor(t / (on + off))) % enemies.length].getPosition();
+            const sweep = Math.sin(t * 0.9 + i) * 6;
+            aiming.turretAimAt(bot, [target[0] + sweep, target[1] + 0.8, target[2]]);
+            bot.isFiring = (t % (on + off)) < on;
+          }
+          write();
+        };
+      });
+    }, [...gun.bursts, gun.aimAt ?? null]);
+  }
+  log(`  ${staged} gunners seated; the fight runs ${gun.warm ?? 0} s first`);
+  for (let k = 0; k < (gun.warm ?? 0) * FPS; k++) await frame(page, shot, 0, false);
+}
+
+// --- the overlays: cards, captions and the before/after header ------------
+
+const CSS = `
+  * { margin: 0; box-sizing: border-box; }
+  html, body { width: 1920px; height: 1080px; background: transparent; overflow: hidden;
+    font-family: "SF Pro Display", "Helvetica Neue", system-ui, sans-serif; color: #f2eee4; }
+  .kick { font: 800 22px/1 "SF Pro Display", system-ui, sans-serif; letter-spacing: 0.32em; color: #ffc46e; text-transform: uppercase; }
+`;
+const esc = t => String(t ?? '').replace(/[&<>]/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;' })[c]);
+
+async function overlay(browser, file, body, opaque = false) {
+  const page = await browser.newPage({ viewport: { width: 1920, height: 1080 }, deviceScaleFactor: 1 });
+  await page.setContent(`<!doctype html><html><head><style>${CSS}</style></head><body>${body}</body></html>`);
+  await page.screenshot({ path: file, omitBackground: !opaque });
+  await page.close();
+}
+
+const captionHtml = shot => `
+  <div style="position:absolute;left:0;right:0;bottom:0;height:360px;background:linear-gradient(to top, rgba(6,8,10,0.78), rgba(6,8,10,0.45) 55%, rgba(6,8,10,0))"></div>
+  <div style="position:absolute;left:96px;bottom:92px;max-width:1300px">
+    <div class="kick">Remaster</div>
+    <div style="font:800 58px/1.08 'SF Pro Display',system-ui,sans-serif;margin-top:16px;text-shadow:0 2px 18px rgba(0,0,0,0.5)">${esc(shot.title)}</div>
+    <div style="font:500 30px/1.35 'SF Pro Text',system-ui,sans-serif;margin-top:14px;color:#e4dfd2;text-shadow:0 2px 12px rgba(0,0,0,0.6)">${esc(shot.note)}</div>
+  </div>`;
+
+const compareHtml = shot => `
+  <div style="position:absolute;left:0;right:0;top:118px;text-align:center">
+    <div class="kick">Before and after</div>
+    <div style="font:800 48px/1.1 'SF Pro Display',system-ui,sans-serif;margin-top:16px">${esc(shot.title)}</div>
+  </div>
+  <div style="position:absolute;top:840px;left:16px;width:944px;text-align:center;font:800 26px/1 system-ui;letter-spacing:0.24em;color:#d8d3c6">RETAIL</div>
+  <div style="position:absolute;top:840px;left:960px;width:944px;text-align:center;font:800 26px/1 system-ui;letter-spacing:0.24em;color:#ffc46e">REMASTER</div>
+  <div style="position:absolute;left:0;right:0;top:900px;text-align:center;font:500 26px/1.35 system-ui;color:#bdb7a8">${esc(shot.note)}</div>`;
+
+const cardHtml = (kick, title, sub) => `
+  <div style="position:absolute;inset:0;background:radial-gradient(ellipse at 50% 42%, #23201a, #0b0b0c 70%)"></div>
+  <div style="position:absolute;left:0;right:0;top:390px;text-align:center">
+    <div class="kick" style="font-size:26px">${esc(kick)}</div>
+    <div style="font:800 96px/1.05 'SF Pro Display',system-ui,sans-serif;margin-top:26px">${esc(title)}</div>
+    <div style="font:500 34px/1.4 system-ui;margin-top:26px;color:#c9c3b4">${esc(sub)}</div>
+  </div>`;
+
+const ENC = ['-c:v', 'libx264', '-crf', '18', '-preset', 'medium', '-pix_fmt', 'yuv420p', '-r', String(FPS)];
+
+function cardClip(png, secs, out) {
+  execFileSync('ffmpeg', ['-y', '-loglevel', 'error', '-loop', '1', '-framerate', String(FPS), '-t', String(secs), '-i', png, '-vf',
+    `scale=1920:1080,fade=t=in:st=0:d=0.5,fade=t=out:st=${secs - 0.5}:d=0.5`, ...ENC, out]);
+}
+
+function featureClip(shot, dir, png, out) {
+  const len = shot.len;
+  execFileSync('ffmpeg', ['-y', '-loglevel', 'error', '-framerate', String(FPS), '-i', path.join(dir, 'remaster', 'f%05d.jpg'),
+    '-loop', '1', '-framerate', String(FPS), '-i', png, '-filter_complex',
+    `[0:v]scale=1920:1080,fade=t=in:st=0:d=0.35,fade=t=out:st=${len - 0.35}:d=0.35[v];`
+    + `[1:v]format=rgba,fade=t=in:st=0.5:d=0.6:alpha=1,fade=t=out:st=${Math.max(1, len - 1.1)}:d=0.6:alpha=1[c];`
+    + '[v][c]overlay=0:0:shortest=1', ...ENC, out]);
+}
+
+function compareClip(shot, dir, png, out) {
+  const len = shot.len;
+  execFileSync('ffmpeg', ['-y', '-loglevel', 'error', '-framerate', String(FPS), '-i', path.join(dir, 'retail', 'f%05d.jpg'),
+    '-framerate', String(FPS), '-i', path.join(dir, 'remaster', 'f%05d.jpg'),
+    '-loop', '1', '-framerate', String(FPS), '-i', png,
+    '-f', 'lavfi', '-i', `color=c=0x0b0b0c:s=1920x1080:r=${FPS}`, '-filter_complex',
+    '[0:v]scale=944:531[a];[1:v]scale=944:531[b];'
+    + '[3:v][a]overlay=16:290:shortest=1[l];[l][b]overlay=960:290[lb];[lb][2:v]overlay=0:0,'
+    + `fade=t=in:st=0:d=0.35,fade=t=out:st=${len - 0.35}:d=0.35`, '-t', String(len), ...ENC, out]);
+}
+
 const save = (file, url) => fs.writeFileSync(file, Buffer.from(url.split(',')[1], 'base64'));
 const browser = await chromium.launch({
   channel: 'chrome', headless: true,
   args: ['--enable-unsafe-webgpu', '--ignore-gpu-blocklist', '--mute-audio'],
 });
-const clips = [];
+const clipOf = shot => path.join(OUT, `${shot.name}.mp4`);
 try {
-  for (const shot of SHOTS) {
-    log('shot', shot.name, shot.title);
+  for (const shot of REEL_ONLY ? [] : SHOTS) {
+    log('shot', shot.name, shot.part ?? 'compare', shot.title);
+    const modes = modesOf(shot);
     const pages = [];
-    for (const [, query] of MODES) pages.push(await open(browser, shot, query));
+    for (const [, query] of modes) pages.push(await open(browser, shot, query));
     const dir = path.join(OUT, shot.name);
     fs.rmSync(dir, { recursive: true, force: true });
-    for (const [m] of MODES) fs.mkdirSync(path.join(dir, m), { recursive: true });
+    for (const [m] of modes) fs.mkdirSync(path.join(dir, m), { recursive: true });
     for (const p of pages) await start(p, shot);
+    if (shot.setup) {
+      for (const p of pages) log('  setup', JSON.stringify(await p.evaluate(code => new Function(`return (async () => { ${code} })()`)(), shot.setup)));
+    }
     // Settle: the bodies and hulls near the start build, the camera eases in.
-    for (let k = 0; k < 20; k++) for (const p of pages) await frame(p, shot, 0, null);
-    for (const p of pages) await start(p, shot);
+    for (let k = 0; k < 20; k++) for (const p of pages) await frame(p, shot, 0, false);
+    if (!shot.level) for (const p of pages) await start(p, shot);
     const total = STILLS_ONLY ? Math.round((shot.still ?? 0) * FPS) + 1 : Math.round(shot.len * FPS);
     const stillAt = Math.round((shot.still ?? shot.len / 2) * FPS);
     for (let k = 0; k < total; k++) {
-      for (let i = 0; i < MODES.length; i++) {
-        const [m] = MODES[i];
-        const { still, url } = await frame(pages[i], shot, k / FPS, STILLS_ONLY ? null : m.toUpperCase(), k === stillAt);
-        if (still) save(path.join(OUT, `${shot.name}_${m}.jpg`), still);
+      for (let i = 0; i < modes.length; i++) {
+        const [m] = modes[i];
+        const keep = !STILLS_ONLY || k === stillAt;
+        const url = await frame(pages[i], shot, k / FPS, keep);
+        if (k === stillAt) save(path.join(OUT, `${shot.name}_${m}.jpg`), url);
+        if (TRACE) log('trace', m, k, JSON.stringify(await pages[i].evaluate(TRACE)));
         if (PROBE && k >= PROBE[0] && k <= PROBE[1]) {
-          // A debugging aid: the distinct materials of every visible effect
-          // particle in this frame, to name one that draws wrong.
+          // The distinct materials of every visible effect particle in this
+          // frame, to name one that draws wrong.
           const seen = await pages[i].evaluate(([W, H]) => {
             const out = {};
             const THREE = window.__THREE, v = new THREE.Vector3();
             window.__scene.traverseVisible(o => {
               const fx = o.parent?.name === 'effects' || o.userData?.remasterFlash || o.userData?.projectileMesh || o.userData?.tracerMesh;
               if (!fx || !(o.isMesh || o.isSprite)) return;
-              const m = [o.material].flat()[0];
+              const mat = [o.material].flat()[0];
               v.setFromMatrixPosition(o.matrixWorld).project(window.__camera);
-              const sig = JSON.stringify({ type: o.type, name: o.name, mat: m?.type, blend: m?.blending, src: m?.blendSrc, dst: m?.blendDst,
-                at: m?.alphaTest, glow: !!m?.remasterGlow, tex: m?.map?.name || '' });
+              const sig = JSON.stringify({ type: o.type, name: o.name, mat: mat?.type, blend: mat?.blending, src: mat?.blendSrc, dst: mat?.blendDst,
+                at: mat?.alphaTest, glow: !!mat?.remasterGlow, tex: mat?.map?.name || '' });
               (out[sig] ??= []).push(`${Math.round((v.x * 0.5 + 0.5) * W)},${Math.round((0.5 - v.y * 0.5) * H)}@${o.scale.x.toFixed(1)}`);
             });
             return out;
           }, [W, H]);
           for (const [sig, at] of Object.entries(seen)) log('probe', m, k, sig, at.slice(0, 4).join(' '));
         }
-        if (STILLS_ONLY) continue;
-        save(path.join(dir, m, `f${String(k).padStart(5, '0')}.jpg`), url);
+        if (!STILLS_ONLY) save(path.join(dir, m, `f${String(k).padStart(5, '0')}.jpg`), url);
       }
       if (k % FPS === 0) log(`  ${shot.name} ${(k / FPS).toFixed(0)} s`);
     }
     for (const p of pages) await p.close();
-    // The stills side by side.
-    const [a, b] = MODES.map(([m]) => path.join(OUT, `${shot.name}_${m}.jpg`));
-    if (fs.existsSync(a) && fs.existsSync(b)) {
+    if (modes.length === 2) {
+      const [a, b] = modes.map(([m]) => path.join(OUT, `${shot.name}_${m}.jpg`));
       execFileSync('ffmpeg', ['-y', '-loglevel', 'error', '-i', a, '-i', b, '-filter_complex',
         '[0:v]pad=iw+8:ih:0:0:color=black[l];[l][1:v]hstack', '-q:v', '2', path.join(OUT, `${shot.name}_side_by_side.jpg`)]);
     }
     if (STILLS_ONLY) continue;
-    const clip = path.join(OUT, `${shot.name}.mp4`);
-    execFileSync('ffmpeg', ['-y', '-loglevel', 'error', '-framerate', String(FPS), '-i', path.join(dir, 'retail', 'f%05d.jpg'),
-      '-framerate', String(FPS), '-i', path.join(dir, 'remaster', 'f%05d.jpg'), '-filter_complex',
-      '[0:v]pad=iw+8:ih:0:0:color=black[l];[l][1:v]hstack,format=yuv420p', '-c:v', 'libx264', '-crf', '18', '-preset', 'medium', clip]);
-    clips.push(clip);
-    log('  wrote', clip);
+    const png = path.join(OUT, `${shot.name}_overlay.png`);
+    if (shot.part === 'feature') {
+      await overlay(browser, png, captionHtml(shot));
+      featureClip(shot, dir, png, clipOf(shot));
+    } else {
+      await overlay(browser, png, compareHtml(shot));
+      compareClip(shot, dir, png, clipOf(shot));
+    }
+    log('  wrote', clipOf(shot));
+  }
+  if (!STILLS_ONLY && (!ONLY || REEL_ONLY)) {
+    // The reel: a title card, then each feature on its own and straight
+    // after it the same thing beside retail, in the order of the shot file.
+    const intro = path.join(OUT, 'card_intro.png');
+    await overlay(browser, intro, cardHtml('Battlefield 1942 in the browser', 'Remaster', 'Real sun shadows, light from every shot, water that reflects the sky'), true);
+    cardClip(intro, 3.5, path.join(OUT, 'card_intro.mp4'));
+    const order = [path.join(OUT, 'card_intro.mp4'), ...ALL.map(clipOf)];
+    const missing = order.filter(f => !fs.existsSync(f));
+    if (missing.length) log('reel: missing', missing.join(' '));
+    const list = path.join(OUT, 'clips.txt');
+    fs.writeFileSync(list, order.filter(f => fs.existsSync(f)).map(c => `file '${c}'`).join('\n'));
+    const reel = path.join(OUT, 'remaster_reel.mp4');
+    execFileSync('ffmpeg', ['-y', '-loglevel', 'error', '-f', 'concat', '-safe', '0', '-i', list, '-c', 'copy', '-movflags', '+faststart', reel]);
+    log('reel', reel);
   }
 } finally {
   await browser.close();
-}
-if (clips.length > 1) {
-  // Every shot in order, a short fade between them.
-  const list = path.join(OUT, 'clips.txt');
-  fs.writeFileSync(list, clips.map(c => `file '${c}'`).join('\n'));
-  const reel = path.join(OUT, 'remaster_side_by_side.mp4');
-  execFileSync('ffmpeg', ['-y', '-loglevel', 'error', '-f', 'concat', '-safe', '0', '-i', list, '-c', 'copy', reel]);
-  log('reel', reel);
 }

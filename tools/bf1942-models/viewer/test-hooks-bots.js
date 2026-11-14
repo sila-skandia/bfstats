@@ -21,12 +21,15 @@ export function installBotHooks(page) {
     };
   };
   window.__botVehicles = () => page.botUnits.candidates().map(c => ({ template: c.template, seat: c.seatId, root: c.isRoot, kind: c.kind, pos: c.pos.map(v => +v.toFixed(0)), entry: c.entry.map(v => +v.toFixed(0)), r: c.entryRadius, health: c.health, maxSpeed: c.maxSpeed, occupiedBy: c.occupiedBy, driver: c.driver, hullTeam: c.hullTeam ?? 0, upright: c.upright, strengths: c.strengths, value: c.value }));
-  window.__botMount = (id, template = null, seat = 'driver') => {
+  // The free seat nearest the bot, or nearest `near` ([x, z]) when given: a
+  // capture that films one gun seats a man on that gun
+  // (scripts/remaster-compare.mjs `gunners`).
+  window.__botMount = (id, template = null, seat = 'driver', near = null) => {
     const bot = page.referee.bots.find(b => b.playerId === id);
     const cands = page.botUnits.candidates().filter(c => !c.occupiedBy && (!template || c.template === template)
       && (seat === 'any' || (seat === 'driver' ? c.isRoot : c.seatId === seat)));
     if (!bot || !cands.length) return false;
-    const p = bot.getPosition();
+    const p = near ? [near[0], 0, near[1]] : bot.getPosition();
     cands.sort((a, b) => Math.hypot(a.pos[0] - p[0], a.pos[2] - p[2]) - Math.hypot(b.pos[0] - p[0], b.pos[2] - p[2]));
     return page.referee.enterVehicle(bot, cands[0]);
   };

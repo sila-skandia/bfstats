@@ -1,7 +1,7 @@
 [
  {
-  "name": "battleaxe_crossfire_wide",
-  "title": "Battleaxe: MG nests firing across no man's land, the sun behind the camera",
+  "name": "feature_tracers",
+  "title": "Every round is a line of light",
   "map": "battleaxe",
   "mod": "bf1942",
   "level": true,
@@ -16,109 +16,254 @@
    "bursts": [
     2.2,
     1.4
+   ],
+   "focus": [
+    1360,
+    -950
    ]
   },
   "from": [
-   1492,
-   42,
-   -985,
+   1418,
+   41.5,
+   -958,
    -1.5708,
-   0.0
-  ],
-  "to": [
-   1486,
-   43,
-   -922,
-   -1.5708,
-   0.0
-  ],
-  "len": 12,
-  "still": 7.0
- },
- {
-  "name": "battleaxe_crossfire_mg42",
-  "title": "Over an MG42 gunner's shoulder at the Browning nests",
-  "map": "battleaxe",
-  "mod": "bf1942",
-  "level": true,
-  "gunners": {
-   "bots": 8,
-   "seats": {
-    "2": "Stationary_Browning",
-    "1": "Stationary_MG42"
-   },
-   "perTeam": 4,
-   "warm": 6,
-   "bursts": [
-    2.2,
-    1.4
-   ]
-  },
-  "from": [
-   1360,
-   40.5,
-   -1010,
-   -0.3,
    -0.02
   ],
   "to": [
-   1357,
-   40.5,
-   -1007,
-   -0.2,
+   1404,
+   41.5,
+   -950,
+   -1.5708,
    -0.02
   ],
-  "len": 12,
-  "still": 7.0
- },
- {
-  "name": "battleaxe_mg42",
-  "title": "A stationary MG42 at the Allied AA",
-  "map": "battleaxe",
-  "mod": "bf1942",
-  "replay": "replays/ymdy248edr.ndjson",
-  "at": 1053.0,
-  "len": 4,
-  "pid": 2,
-  "mode": "orbit",
-  "yaw": 0.99,
-  "pitch": 0.05,
-  "zoom": 0.6,
-  "still": 1.0
- },
- {
-  "name": "battleaxe_stg44",
-  "title": "A rifleman's StG44",
-  "map": "battleaxe",
-  "mod": "bf1942",
-  "replay": "replays/ymdy248edr.ndjson",
-  "at": 1054.5,
-  "len": 4,
-  "pid": 0,
-  "mode": "orbit",
-  "yaw": 0.99,
-  "pitch": 0.08,
-  "zoom": 0.55,
-  "still": 1.0
- },
- {
-  "name": "battleaxe_flak38",
-  "title": "The Flak 38 at the aircraft",
-  "map": "battleaxe",
-  "mod": "bf1942",
-  "replay": "replays/ymdy248edr.ndjson",
-  "at": 236.0,
   "len": 10,
-  "pid": 12,
-  "mode": "orbit",
-  "yaw": 0.99,
-  "pitch": 0.12,
-  "zoom": 1.4,
-  "still": 1.0
+  "still": 5.0,
+  "part": "feature",
+  "note": "Each bullet from every gun draws its own glowing streak, not only the tracer rounds."
  },
  {
-  "name": "battleaxe_allied_aa",
-  "title": "The Allied AA gun",
+  "name": "battleaxe_crossfire_wide",
+  "title": "MG nests firing across no man's land",
+  "map": "battleaxe",
+  "mod": "bf1942",
+  "level": true,
+  "gunners": {
+   "bots": 8,
+   "seats": {
+    "2": "Stationary_Browning",
+    "1": "Stationary_MG42"
+   },
+   "perTeam": 4,
+   "warm": 6,
+   "bursts": [
+    2.2,
+    1.4
+   ],
+   "focus": [
+    1360,
+    -950
+   ]
+  },
+  "from": [
+   1418,
+   41.5,
+   -958,
+   -1.5708,
+   -0.02
+  ],
+  "to": [
+   1404,
+   41.5,
+   -950,
+   -1.5708,
+   -0.02
+  ],
+  "len": 8,
+  "still": 5.0,
+  "part": "compare",
+  "note": "Retail draws only the tracer rounds; the remaster draws every round as light."
+ },
+ {
+  "name": "feature_mg42",
+  "title": "Muzzle flashes are light",
+  "map": "battleaxe",
+  "mod": "bf1942",
+  "level": true,
+  "gunners": {
+   "bots": 8,
+   "seats": {
+    "2": "Stationary_Browning",
+    "1": "Stationary_MG42"
+   },
+   "perTeam": 4,
+   "warm": 6,
+   "bursts": [
+    2.2,
+    1.4
+   ],
+   "focus": [
+    1351,
+    -1001
+   ]
+  },
+  "from": [
+   1353.6,
+   39.7,
+   -1005.6,
+   -0.05,
+   -0.09
+  ],
+  "to": [
+   1353.1,
+   39.6,
+   -1004.4,
+   -0.04,
+   -0.09
+  ],
+  "len": 8,
+  "still": 7.0,
+  "part": "feature",
+  "note": "Each burst lights the gun, the gunner and the sandbags around them."
+ },
+ {
+  "name": "battleaxe_mg42_nest",
+  "title": "An MG42 nest in the crossfire",
+  "map": "battleaxe",
+  "mod": "bf1942",
+  "level": true,
+  "gunners": {
+   "bots": 8,
+   "seats": {
+    "2": "Stationary_Browning",
+    "1": "Stationary_MG42"
+   },
+   "perTeam": 4,
+   "warm": 6,
+   "bursts": [
+    2.2,
+    1.4
+   ],
+   "focus": [
+    1351,
+    -1001
+   ]
+  },
+  "from": [
+   1353.6,
+   39.7,
+   -1005.6,
+   -0.05,
+   -0.09
+  ],
+  "to": [
+   1353.1,
+   39.6,
+   -1004.4,
+   -0.04,
+   -0.09
+  ],
+  "len": 8,
+  "still": 7.0,
+  "part": "compare",
+  "note": "Retail draws the flash; the remaster's flash also lights the gunner and the sandbags."
+ },
+ {
+  "map": "battleaxe",
+  "mod": "bf1942",
+  "level": true,
+  "gunners": {
+   "bots": 6,
+   "seats": {
+    "1": "Flak_38",
+    "2": "Flak_38"
+   },
+   "perTeam": 3,
+   "warm": 4,
+   "bursts": [
+    3,
+    1
+   ],
+   "aimAt": [
+    1405,
+    150,
+    -1075
+   ],
+   "focus": [
+    1414,
+    -1157
+   ]
+  },
+  "from": [
+   1419,
+   65.5,
+   -1174,
+   -0.14,
+   0.42
+  ],
+  "to": [
+   1418,
+   65.5,
+   -1171,
+   -0.13,
+   0.45
+  ],
+  "len": 8,
+  "still": 5,
+  "name": "feature_flak",
+  "part": "feature",
+  "title": "Flak bursts glow against the sky",
+  "note": "Three Flak 38s firing at the sky: each shell bursts as a fireball that blooms."
+ },
+ {
+  "map": "battleaxe",
+  "mod": "bf1942",
+  "level": true,
+  "gunners": {
+   "bots": 6,
+   "seats": {
+    "1": "Flak_38",
+    "2": "Flak_38"
+   },
+   "perTeam": 3,
+   "warm": 4,
+   "bursts": [
+    3,
+    1
+   ],
+   "aimAt": [
+    1405,
+    150,
+    -1075
+   ],
+   "focus": [
+    1414,
+    -1157
+   ]
+  },
+  "from": [
+   1419,
+   65.5,
+   -1174,
+   -0.14,
+   0.42
+  ],
+  "to": [
+   1418,
+   65.5,
+   -1171,
+   -0.13,
+   0.45
+  ],
+  "len": 8,
+  "still": 5,
+  "name": "battleaxe_flak",
+  "part": "compare",
+  "title": "Flak over Battleaxe",
+  "note": "The same guns firing in both: the remaster's bursts are light, with bloom."
+ },
+ {
+  "name": "feature_blast",
+  "title": "Explosions are light",
   "map": "battleaxe",
   "mod": "bf1942",
   "replay": "replays/ymdy248edr.ndjson",
@@ -129,7 +274,155 @@
   "yaw": 0.99,
   "pitch": 0.28,
   "zoom": 2.2,
-  "still": 6.4
+  "still": 6.4,
+  "part": "feature",
+  "note": "The Allied AA gun is destroyed: the blast blooms and lights the sand around it."
+ },
+ {
+  "name": "battleaxe_allied_aa",
+  "title": "The Allied AA gun destroyed",
+  "map": "battleaxe",
+  "mod": "bf1942",
+  "replay": "replays/ymdy248edr.ndjson",
+  "at": 1015.0,
+  "len": 8,
+  "pid": 9,
+  "mode": "orbit",
+  "yaw": 0.99,
+  "pitch": 0.28,
+  "zoom": 2.2,
+  "still": 6.4,
+  "part": "compare",
+  "note": "The same recorded moment in both: the remaster's blast is light."
+ },
+ {
+  "map": "wake",
+  "mod": "bf1942",
+  "level": true,
+  "from": [
+   1392,
+   150,
+   -822,
+   0,
+   0
+  ],
+  "to": [
+   1392,
+   150,
+   -822,
+   0,
+   0
+  ],
+  "len": 5.0,
+  "still": 2.0,
+  "each": "// A Corsair flown low and level over the huts by the Allied airfield,\n// about eight metres up: the player is seated in it, switched to the chase\n// view, and the plane placed along a straight line every frame\n// (`__placeAircraft`). In the cockpit view the page draws the cockpit's\n// parts at the eye, and from a camera on the ground the plane was in\n// pieces; flown by the flight model this slow it stalled. Wake's sun is\n// to the north at 30 degrees, so the shadow falls 1.7 times the height to\n// the south, toward a camera thirty metres up south of the line, turned to\n// the point between the plane and its shadow. From the ground (either side)\n// the shadow fell behind rolling ground or huts.\nconst P = window.__pass ??= { owner: 820, from: [1350, 124.5, -760], speed: 25, yaw: -Math.PI / 2, at: [1392, 150, -822] };\nif (!window.__plane?.()) {\n  if (!P.spawned) { P.spawned = true; window.__deploy.selectAny(); window.__deploy.spawn(); }\n  else { const v = window.__vehicles().find(v => v.owner === P.owner); window.__setFly?.(true); window.__teleport(v.pos[0] + 3, v.pos[1] + 1, v.pos[2], 0); window.__enterOwner(P.owner); }\n}\nif (window.__plane?.() && !P.chase) { P.chase = true; window.__setView?.('chase'); }\nconst x = P.from[0] + P.speed * s, y = P.from[1], z = P.from[2];\nif (window.__plane?.()) window.__placeAircraft(x, y, z, P.yaw, P.speed);\n// The shadow: the ground point under the plane along the sun's rays (Wake's\n// sun direction, toward the sun, -0.295 0.496 0.816).\nconst h = Math.max(0, y - window.__groundAt(x, z));\nconst sx = x + 0.595 * h, sz = z - 1.645 * h, sy = window.__groundAt(sx, sz);\nconst at = P.at, dx = (sx + x) / 2 - at[0], dy = (sy + y) / 2 - at[1], dz = (sz + z) / 2 - at[2];\nwindow.__shotCamera = cam => {\n  const T = window.__THREE;\n  const q = new T.Quaternion().setFromEuler(new T.Euler(Math.atan2(dy, Math.hypot(dx, dz)), Math.atan2(-dx, -dz), 0, 'YXZ'));\n  const m = new T.Matrix4().compose(new T.Vector3(...at), q, new T.Vector3(1, 1, 1));\n  if (cam.parent) { cam.parent.updateMatrixWorld(true); m.premultiply(cam.parent.matrixWorld.clone().invert()); }\n  m.decompose(cam.position, cam.quaternion, cam.scale);\n  cam.updateMatrixWorld(true);\n};",
+  "name": "feature_plane_shadow",
+  "part": "feature",
+  "title": "A real sun casts real shadows",
+  "note": "Out to the fog, from everything, and they move: a Corsair eight metres up, its shadow sweeping the sand."
+ },
+ {
+  "map": "wake",
+  "mod": "bf1942",
+  "level": true,
+  "from": [
+   1392,
+   150,
+   -822,
+   0,
+   0
+  ],
+  "to": [
+   1392,
+   150,
+   -822,
+   0,
+   0
+  ],
+  "len": 5.0,
+  "still": 2.0,
+  "each": "// A Corsair flown low and level over the huts by the Allied airfield,\n// about eight metres up: the player is seated in it, switched to the chase\n// view, and the plane placed along a straight line every frame\n// (`__placeAircraft`). In the cockpit view the page draws the cockpit's\n// parts at the eye, and from a camera on the ground the plane was in\n// pieces; flown by the flight model this slow it stalled. Wake's sun is\n// to the north at 30 degrees, so the shadow falls 1.7 times the height to\n// the south, toward a camera thirty metres up south of the line, turned to\n// the point between the plane and its shadow. From the ground (either side)\n// the shadow fell behind rolling ground or huts.\nconst P = window.__pass ??= { owner: 820, from: [1350, 124.5, -760], speed: 25, yaw: -Math.PI / 2, at: [1392, 150, -822] };\nif (!window.__plane?.()) {\n  if (!P.spawned) { P.spawned = true; window.__deploy.selectAny(); window.__deploy.spawn(); }\n  else { const v = window.__vehicles().find(v => v.owner === P.owner); window.__setFly?.(true); window.__teleport(v.pos[0] + 3, v.pos[1] + 1, v.pos[2], 0); window.__enterOwner(P.owner); }\n}\nif (window.__plane?.() && !P.chase) { P.chase = true; window.__setView?.('chase'); }\nconst x = P.from[0] + P.speed * s, y = P.from[1], z = P.from[2];\nif (window.__plane?.()) window.__placeAircraft(x, y, z, P.yaw, P.speed);\n// The shadow: the ground point under the plane along the sun's rays (Wake's\n// sun direction, toward the sun, -0.295 0.496 0.816).\nconst h = Math.max(0, y - window.__groundAt(x, z));\nconst sx = x + 0.595 * h, sz = z - 1.645 * h, sy = window.__groundAt(sx, sz);\nconst at = P.at, dx = (sx + x) / 2 - at[0], dy = (sy + y) / 2 - at[1], dz = (sz + z) / 2 - at[2];\nwindow.__shotCamera = cam => {\n  const T = window.__THREE;\n  const q = new T.Quaternion().setFromEuler(new T.Euler(Math.atan2(dy, Math.hypot(dx, dz)), Math.atan2(-dx, -dz), 0, 'YXZ'));\n  const m = new T.Matrix4().compose(new T.Vector3(...at), q, new T.Vector3(1, 1, 1));\n  if (cam.parent) { cam.parent.updateMatrixWorld(true); m.premultiply(cam.parent.matrixWorld.clone().invert()); }\n  m.decompose(cam.position, cam.quaternion, cam.scale);\n  cam.updateMatrixWorld(true);\n};",
+  "name": "wake_plane_shadow",
+  "part": "compare",
+  "title": "A low pass over Wake",
+  "note": "Retail draws no shadow under the plane; the remaster's sun does."
+ },
+ {
+  "map": "kharkov",
+  "mod": "bf1942",
+  "level": true,
+  "from": [
+   752,
+   97,
+   -182,
+   0,
+   0
+  ],
+  "to": [
+   752,
+   97,
+   -182,
+   0,
+   0
+  ],
+  "len": 7,
+  "still": 4.0,
+  "each": "// A Kubelwagen parked under a barn's lean-to at the German base, set\n// burning (`__damageVehicle` to 3 of its 50 hit points, under its fire tier\n// of 6) and held there: below its critical hit points a car burns down and\n// blows up, which is not this shot. Kharkov's dim light (ambient 0.02) is\n// where a fire's own light shows. The camera circles it slowly.\nconst F = window.__fire ??= { owner: 952, hold: 3, p: null };\nconst v = window.__vehicles().find(v => v.owner === F.owner);\nif (!F.p) F.p = v.pos;\nif (Math.abs(v.hp - F.hold) > 0.5) window.__damageVehicle(F.owner, v.hp - F.hold);\nconst a = 3.5 + s * 0.06, [px, py, pz] = F.p;\nconst at = [px + Math.sin(a) * 7.5, py + 1.7, pz + Math.cos(a) * 7.5];\nconst dx = px - at[0], dy = py + 0.4 - at[1], dz = pz - at[2];\nwindow.__shotCamera = cam => {\n  const T = window.__THREE;\n  const q = new T.Quaternion().setFromEuler(new T.Euler(Math.atan2(dy, Math.hypot(dx, dz)), Math.atan2(-dx, -dz), 0, 'YXZ'));\n  const m = new T.Matrix4().compose(new T.Vector3(...at), q, new T.Vector3(1, 1, 1));\n  if (cam.parent) { cam.parent.updateMatrixWorld(true); m.premultiply(cam.parent.matrixWorld.clone().invert()); }\n  m.decompose(cam.position, cam.quaternion, cam.scale);\n  cam.updateMatrixWorld(true);\n};",
+  "name": "feature_fire",
+  "part": "feature",
+  "title": "Fire lights what is around it",
+  "note": "A burning car throws flickering orange light onto the barn wall and the roof above it."
+ },
+ {
+  "map": "kharkov",
+  "mod": "bf1942",
+  "level": true,
+  "from": [
+   752,
+   97,
+   -182,
+   0,
+   0
+  ],
+  "to": [
+   752,
+   97,
+   -182,
+   0,
+   0
+  ],
+  "len": 6,
+  "still": 4.0,
+  "each": "// A Kubelwagen parked under a barn's lean-to at the German base, set\n// burning (`__damageVehicle` to 3 of its 50 hit points, under its fire tier\n// of 6) and held there: below its critical hit points a car burns down and\n// blows up, which is not this shot. Kharkov's dim light (ambient 0.02) is\n// where a fire's own light shows. The camera circles it slowly.\nconst F = window.__fire ??= { owner: 952, hold: 3, p: null };\nconst v = window.__vehicles().find(v => v.owner === F.owner);\nif (!F.p) F.p = v.pos;\nif (Math.abs(v.hp - F.hold) > 0.5) window.__damageVehicle(F.owner, v.hp - F.hold);\nconst a = 3.5 + s * 0.06, [px, py, pz] = F.p;\nconst at = [px + Math.sin(a) * 7.5, py + 1.7, pz + Math.cos(a) * 7.5];\nconst dx = px - at[0], dy = py + 0.4 - at[1], dz = pz - at[2];\nwindow.__shotCamera = cam => {\n  const T = window.__THREE;\n  const q = new T.Quaternion().setFromEuler(new T.Euler(Math.atan2(dy, Math.hypot(dx, dz)), Math.atan2(-dx, -dz), 0, 'YXZ'));\n  const m = new T.Matrix4().compose(new T.Vector3(...at), q, new T.Vector3(1, 1, 1));\n  if (cam.parent) { cam.parent.updateMatrixWorld(true); m.premultiply(cam.parent.matrixWorld.clone().invert()); }\n  m.decompose(cam.position, cam.quaternion, cam.scale);\n  cam.updateMatrixWorld(true);\n};",
+  "name": "kharkov_fire",
+  "part": "compare",
+  "title": "A burning K\u00fcbelwagen at dusk",
+  "note": "In the remaster the fire lights the barn wall and the lean-to roof."
+ },
+ {
+  "name": "feature_water",
+  "title": "Water that reflects the sky",
+  "map": "wake",
+  "mod": "bf1942",
+  "level": true,
+  "from": [
+   1285,
+   190,
+   -1263,
+   -0.35,
+   -0.2
+  ],
+  "to": [
+   1240,
+   112,
+   -1140,
+   -0.35,
+   0.12
+  ],
+  "len": 8,
+  "still": 1.0,
+  "part": "feature",
+  "note": "The sea shows the sand in the shallows, deepens offshore and foams at the shore."
  },
  {
   "name": "wake_lagoon",
@@ -152,6 +445,8 @@
    0.12
   ],
   "len": 8,
-  "still": 1.0
+  "still": 1.0,
+  "part": "compare",
+  "note": "The sky's reflection, the sandy shallows and the sun's glint, held under a beam."
  }
 ]

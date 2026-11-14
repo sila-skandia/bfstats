@@ -903,6 +903,8 @@ const isTouchDevice = ('ontouchstart' in window || navigator.maxTouchPoints > 0 
 // `?shots` like `&nopreserve`, so no player can reach it.
 // (features/mesh-viewer-performance, audio automation cost.)
 const AUDIO_OFF = params.has('shots') && params.has('noaudio');
+// `?shots`: `window.__shotCamera(camera)` places the camera last (`frame`).
+const SHOT_CAMERA = params.has('shots');
 // `?mute`, or a level launched from a muted menu in this tab: every voice at 0.
 const PREVIEW_MUTED = previewMuted();
 
@@ -4520,6 +4522,10 @@ function frame(dt) {
   phase(() => replayController?.update(dt));
   // Under the dogfight school the page's camera is the school's.
   if (schoolCamera) phase(() => followSchoolCamera(schoolCamera));
+  // `?shots`: a capture's own camera over every other, from a seat as from
+  // the free camera (scripts/remaster-compare.mjs films a plane the page
+  // flies from a camera stood on the ground).
+  phase(() => { if (SHOT_CAMERA) window.__shotCamera?.(camera); });
   const tPresent = performance.now();
   phase(() => draw(dt));
   const tDraw = performance.now();

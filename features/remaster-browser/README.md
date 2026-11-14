@@ -68,6 +68,7 @@ wins", below).
 | A heavy MG's muzzle burst a small core, not the AA gun's disc | fixed (2026-11-14) |
 | A staged MG crossfire on Battleaxe for the tracers | done (2026-11-14) |
 | The player's own rounds drawn from the muzzle in first person | done (2026-11-14) |
+| The showreel: the remaster's features first with captions, the pairs last; a staged gunner held on the gun in shot | done (2026-11-15) |
 
 ## How to turn it on
 
@@ -817,14 +818,27 @@ now waits for `__remaster.asyncPipelines().pending` and draws the same
 moment again. And the weapon bar stays up after a weapon switch and takes
 the first trigger press, as a click on it does.
 
-## Marketing captures (2026-11-14)
+## Marketing captures (2026-11-14, reworked 2026-11-15)
 
-`scripts/remaster-compare.mjs` draws the same replayed moments twice, the
-retail page and the remaster, each page on its own virtual clock stepped one
-frame at a time in lockstep, so both halves show the same frame of the round.
-It writes a still from each mode and the two side by side per shot, and a
-side-by-side MP4 of every shot. The shots are `scripts/remaster-compare.shots.json`
-(a replayed moment followed in the orbit camera, or a glide over a level).
+`scripts/remaster-compare.mjs` films the showreel. The owner, on the first
+cut (2026-11-15): the side by sides "look almost the same" and did not show
+the interesting things; then: "show off each feature independently then do a
+side by side with retail to show the comparison, so intro it by itself, then
+side by side". So the reel (1:48, 1920 x 1080) is a title card and then, one
+feature at a time, a clip drawn by the remaster alone with a caption (what it
+is, one line on what to look at) followed straight away by the same thing
+drawn twice, retail left and remaster right on one frame, both pages stepped
+in lockstep on one virtual clock:
+
+| Feature | Staged as |
+|---|---|
+| Every round a line of light | Battleaxe's MG nests in a crossfire, filmed from inside the gap |
+| Muzzle flashes are light | over an MG42 gunner's shoulder in that crossfire |
+| Flak bursts glow against the sky | three Flak 38s fired at a point over the battlefield |
+| Explosions are light | the Allied AA gun destroyed in recording `ymdy248edr` (1015 s) |
+| A real sun casts real shadows | a Corsair eight metres over Wake's huts, seen from thirty metres up |
+| Fire lights what is around it | a Kubelwagen burning under a barn's lean-to on Kharkov |
+| Water that reflects the sky | Wake's lagoon, down into the sun (the glint held under a beam) |
 
 ```
 cd tools/bf1942-models && python3 serve_viewer.py 5390 &
@@ -833,32 +847,75 @@ curl -s -o tools/bf1942-models/viewer/replays/ymdy248edr.ndjson \
 node scripts/remaster-compare.mjs --out ~/.cache/bfstats-remaster-compare
 ```
 
-A level shot can stage a fight (`gunners`): the bots seated on a side's
-guns (`__botMount`), kept there, and with `bursts` aimed at a gunner across
-the gap and fired in bursts through their own aim and trigger
-(`bot-aim.js` `turretAimAt`, the input word the world fires the seat's gun
-from). Left to their own plans the gunners found a target now and then and
-the free bots took the tanks; the tracers need a steady crossfire to be
-seen. `field` stands the bots on foot back in no man's land
-(`__botPlace`, a test hook). Battleaxe's four Browning nests (z -842 to
--897) and four MG42 nests (z -1000 to -1050) face each other 110-160 m
-apart: the wide shot looks along the gap from the east with the sun behind
-it, the close one sits beside an MG42 nest. The bots' choices are each
-page's own dice, so the halves show the same fight, not the same rounds.
+The shots are `scripts/remaster-compare.shots.json`, in the reel's order: a
+replayed moment followed in the orbit camera, or a level with a camera glide,
+`setup` and `each` code run in the page to stage it, and a `gunners` fight.
+The captions, the title card and the pair headers are HTML screenshotted
+with a transparent background and laid over the frames by ffmpeg.
+`--only=<names>` films some shots, `--reel-only` re-cuts the reel from the
+clips on disk, `--stills-only` writes one still a shot, `--trace=<expr>`
+logs an expression each frame and `--probe=<from>,<to>` lists every effect
+drawn in those frames. A capture's camera can be its own: map.html's frame
+calls `window.__shotCamera(camera)` under `?shots`, after every camera of the
+page's own and before the draw.
 
-The set, from that crossfire, the Battleaxe recording `ymdy248edr` and
-Wake, is in `marketing/` (a still per mode per shot and the pair side by
-side; the sun is behind the camera in every Battleaxe shot). The 58 s reel
-(3208 x 900, 150 MB) is not committed; the command above makes it again.
-`--probe=<from>,<to>` lists every effect, round and burst drawn in those
-frames, which is how the flak rectangle and the MG's white ball were named.
+Staging, and what each needed:
 
-![MG crossfire before and after](marketing/battleaxe_crossfire_wide_side_by_side.jpg)
+- **The crossfire** (`gunners`): the bots seated on a side's guns
+  (`__botMount`), the guns nearest `focus` first (the hook's new `near`
+  argument), so the gun in the picture is manned in both pages, and with
+  `bursts` aimed at a gunner across the gap and fired in bursts through
+  their own aim and trigger (`bot-aim.js` `turretAimAt`). Battleaxe's four
+  Browning nests (z -842 to -897) and four MG42 nests (z -1000 to -1050) face
+  each other 110-160 m apart. From the first cut's 100 m back the streaks
+  were hairlines; the camera now stands 50 m east of the nests, between them.
+- **A gunner that blinked.** In the first cut the MG42 gunner in the close
+  shot was drawn only while his gun fired, and the retail half had nobody on
+  that gun. A trace (the nearest gunner's seat each frame) showed both: the
+  bot's own plans chose a better vehicle and set its exit inside its tick
+  (`bot-referee.js` `vehicleTick`), so the filmer's clearing of the flag
+  between frames came too late; it stood up every two seconds and was put
+  back 22 frames later. And seating each bot on the gun nearest *it* left the
+  gun in front of the camera empty in the retail page. The filmer now pins
+  the staged gunners' `exitRequest` and `switchRequest`, seats the guns
+  nearest the camera first and re-seats a killed gunner on its own gun. Over
+  360 frames of both pages the gun in shot held the same bot. Not a page
+  bug: the bots' plans are their own.
+- **Flak.** The recording's Flak 38 and AA gun fire almost level (elevation
+  under 0.18) at ground targets, so no shell of theirs bursts in the sky.
+  `gunners.aimAt` aims the seated gunners at a point in the sky instead,
+  swept a little. The bots know the gun as `Flak_38`, the level as `flak38`.
+- **The low pass.** The player spawned (`__deploy`), seated in a Corsair
+  (`__enterOwner`), switched to the chase view and placed along a straight
+  level line every frame (`__placeAircraft`). In the cockpit view the page
+  draws the cockpit's parts at the eye, and from a camera on the ground the
+  plane was in pieces (tail, wheels and wings metres apart, both modes);
+  flown by the flight model at 25-40 m/s it stalled. Wake's sun is to the
+  north at 30 degrees, so the shadow falls 1.7 times the height to the south.
+  From the ground on either side the shadow fell behind rolling ground or
+  huts; a check from straight above showed it was there all along, and the
+  shot is filmed from thirty metres up, south of the line.
+- **The fire.** `__damageVehicle` to 3 of the Kubelwagen's 50 hit points
+  (its fire tier is 6) and held there each frame: below its critical hit
+  points a car burns down and blows up within seconds (the first Wake still
+  caught a jeep's explosion, whose flash covered half the frame for a tenth
+  of a second, in both modes). On Wake at noon the fire's light hardly
+  showed; Kharkov's ambient is 0.02.
+- **A level shot's glide starts where the camera will be**: the page builds
+  the terrain and statics around the glide, and a capture camera placed far
+  from it looked out from under the ground.
 
-![Flak before and after](marketing/battleaxe_allied_aa_side_by_side.jpg)
+`marketing/` holds a still of each feature clip and each pair. The reel is
+not committed (106 MB; a 29 MB copy for sharing); the command above makes it
+again.
 
-![The halftrack's MG42, the sun behind the camera](marketing/battleaxe_mg42_side_by_side.jpg)
+![Flak before and after](marketing/battleaxe_flak_side_by_side.jpg)
 
+![A low pass before and after](marketing/wake_plane_shadow_side_by_side.jpg)
+
+![A burning car before and after](marketing/kharkov_fire_side_by_side.jpg)
+
+![An MG42 nest before and after](marketing/battleaxe_mg42_nest_side_by_side.jpg)
 
 ## Bugs found on the way
 
