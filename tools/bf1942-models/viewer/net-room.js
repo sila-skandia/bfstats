@@ -29,6 +29,7 @@ import { createInputPacer } from './input-pace.js';
 import { createInputIndex } from './input-index.js';
 import { createStatusMessage, stepStatusMessage } from './status-message.js';
 import { closeNotice, createRoomHostClient, joinExtras, roomStore } from './room-host-client.js';
+import { indexRelayCopies, indexSceneCopies } from './relay-copies.js';
 
 /**
  * Built once by the page, where this code used to sit. `page` hands in
@@ -513,18 +514,11 @@ export function createNetRoom(page) {
   function hullIndex() {
     const root = page.currentRoot;
     if (hullNames && hullNames.root === root) return hullNames;
-    hullNames = { root, byLevel: new Map() };
-    let pooled = 0;
-    root?.traverse(node => {
-      // A server's hull the level never places is bound to a parked pool
-      // copy (`loadRoundSpawnPool` `extra`), under a name no glb index takes.
-      if (relayUrl && node.levelNode == null && node.userData?.roundSpawned && !node.userData.roundMould) {
-        node.levelNode = `pool:${pooled++}`;
-      }
-      if (node.levelNode != null && !hullNames.byLevel.has(node.levelNode)) {
-        hullNames.byLevel.set(node.levelNode, node);
-      }
-    });
+    // On a real server, the copies the models tree added are named too: a
+    // parked pool copy for a hull the level never places, and a pad's
+    // other-side vehicle, the only copy of a template the bake stood the
+    // other side's on (`relay-copies.js`).
+    hullNames = { root, byLevel: relayUrl ? indexRelayCopies(root) : indexSceneCopies(root) };
     return hullNames;
   }
 

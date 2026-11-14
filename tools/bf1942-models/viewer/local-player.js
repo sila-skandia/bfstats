@@ -913,9 +913,20 @@ export function createLocalPlayer(page) {
   };
 
   /** The frame's camera phase, after the world has stepped and the drawn
-   *  instant is set (`localLook.present`): the camera of the mode the input
-   *  phase read, then the human's own body placed where that camera draws it. */
-  localPlayer.frameCameras = (dt, seated, onFoot) => {
+   *  instant is set (`localLook.present`): the camera of the mode the player
+   *  is in now, then the human's own body placed where that camera draws it.
+   *
+   *  Now, not as the input phase read it: a seat can be taken inside the
+   *  step. Against a real server the page takes the seat the server gives
+   *  when the server's hull is up (`net-room.js` `adoptServerSeat`, from the
+   *  frame's `syncHulls`), and a frame that had sampled him on foot then ran
+   *  the foot camera once more after `enterVehicle` had holstered the weapon:
+   *  `footFire` put the rifle back in his hands, and nothing hid it again
+   *  while he sat. The owner's Calliope rocket seat on Peenemunde
+   *  (2026-11-14): the rocket's ammo box and the Bar1918 in hand together. */
+  localPlayer.frameCameras = dt => {
+    const seated = page.optPilot?.checked && localPlayer.occupancy;
+    const onFoot = page.optOnFoot?.checked && localPlayer.soldier;
     if (seated) {
       page.seatedCamera(dt);
     } else if (onFoot) {

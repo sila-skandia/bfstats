@@ -4479,7 +4479,7 @@ function frame(dt) {
   // simulation reads it (the bots' AI after the step, on a frame that ran no
   // tick); `localLook.present` below draws them between ticks again.
   localLook.restoreTickPose();
-  const { seated, onFoot, input, look, wire } = localPlayer.frameInput(dt);
+  const { onFoot, input, look, wire } = localPlayer.frameInput(dt);
   // The hand weapon's trigger, between the word that sampled the press and
   // the ticks that consume it: a press fires on the first tick of the frame
   // that sampled it (`hand-fire.js` `footTrigger`), not on the next frame's.
@@ -4490,7 +4490,9 @@ function frame(dt) {
   const step = simulate(dt, input, look, wire);
   const tSim = performance.now();
   // ---- the cameras and the rest of the presentation -------------------------
-  localPlayer.frameCameras(dt, seated, onFoot);
+  // The cameras read the seat as it stands after the step, which can have
+  // taken one (`frameCameras`).
+  localPlayer.frameCameras(dt);
   // Each phase from here runs whatever the one before it threw. A throw in
   // the world's presentation (a voice handed a position that is not a
   // number) used to skip the replay, the render and the HUD with it: the

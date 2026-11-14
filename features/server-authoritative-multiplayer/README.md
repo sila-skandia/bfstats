@@ -1082,3 +1082,65 @@ guns and bombs all mark exactly when the server says so.
   recording now carries the server's `hitMark` rows, which the replay could
   read directly. It ignores them today: `replay-recording.js` falls through
   on an unknown event.
+
+## A seat the server gives, taken whole (2026-11-14)
+
+Two live reports from the owner on Secret Weapons levels, both through the
+relay, both with one look: the server had him seated and the page drew him
+with his own weapon in hand.
+
+**Peenemunde, the Calliope's rocket seat.** `Sherman_T34` is the Calliope:
+the driver has the 75 mm and the coax, and its second seat,
+`Sherman_T34_PCO1`, works the rocket rack (`Sherman_T34CalliopeBundle`, 30
+rounds of `CalliopeProjectile` through 10 muzzles on `c_PIFire`; HUD block
+`Icon_calliope`, `Icon_rocket` with `ABAmmoBarHeatBar`, `CHTIcon`; seat flags
+`c_SeatShowHalfBodySoldier` and `c_SeatShowSittingSoldier`). In retail the
+soldier's item is disabled as he takes any seat (`HandFireArms::disable`,
+lnxded 0x08293da0), and the seat's PCO feeds the ammo panel and the cross
+(VHUD-10, XHIT-15): the rockets, not the rifle. The owner's recording of the
+switch from the wheel to the rack: `exitVehicle`, `enterVehicle 542`, and 542
+scoped in as an object of its own with no template (`{"k":"o","id":542,
+"tid":0,"tmpl":"","cls":"Seat"}`). That much the page reads right:
+`net-relay.js` `seatOf` takes 542 to the hull below it, 541, seat 1, and the
+replayed rows give `vehicleId 541, seatIndex 1`.
+
+The defect was in the frame. A gunner's seat of a drivable hull is taken on
+the server's own hull (`server-seat.js` `seatHost`), which is not drawn while
+the page drives its copy, so the switch first stepped him out (the weapon
+drawn), waited a frame or two for the server's hull, and took the seat from
+`syncHulls`, inside the frame's step. That frame had already sampled him on
+foot, and its camera phase ran the foot camera: `footFire` set the rig
+visible again after `enterVehicle` had holstered it, and nothing hid it while
+he sat. Replayed from the owner's rows into the page (the rows fed through
+`__relayRow`, frames driven by `__renderOnce`): before, `1:Sherman_T34` with
+the rocket icon and the Bar1918 in hand; after, the rocket icon and no rifle.
+
+Fixed: `local-player.js` `frameCameras` reads the seat as it stands after the
+step, not as the input phase sampled it. It applies to every seat the server
+gives a gunner of a drivable hull: the hull MGs of the tanks and half-tracks,
+the jeeps' and bikes' guns, the bombers' gunners.
+
+**Mimoyecques, the Axis R75 motorbikes.** The server named the bike
+(`enterVehicle 572`, `R75`, `SimpleObjectNetworkable`), and the page found no
+copy of it to seat him in (`adoptNote {vehicle: 572, bound: false}`): the
+level's six bike pads (`ScoutBikeSpawner`, `templates` 1 `R75`, 2 `HD_XA42`)
+are baked with the Allies' HD_XA42, and the page stands the R75 as each pad's
+other side (`level-statics.js` `loadPadVariants`), the model glb's root, which
+no scene index names. `relayNodeFor` only binds named copies, and the pool
+for unplaced hulls (`loadRoundSpawnPool` `extra`) leaves out a template a
+variant already stands. So no R75 was ever bindable: the server drove him and
+the page kept him running on foot. Fixed: `relay-copies.js` names a pad's
+other-side vehicle (`variant:<k>`) beside the pool's (`pool:<k>`), so the
+server's R75 binds the nearest; replayed, the page seats him in `0:R75` with
+the BMW icon. The same holds for every pad whose two sides differ, on every
+level (Peenemunde's two other-side vehicles among them). The R75's passenger
+gunner (`R75PassengerPCO`) is a gunner's seat of a drivable hull, the
+Calliope's case.
+
+`tests/test_relay_seat_adoption.py` holds both: the cameras after a seat taken
+inside the step, the Seat object tied to its hull, and the copies named.
+
+**Not checked in retail by hand.** The rack seat's picture in the retail
+client (the rockets' box and the icon cross, no rifle) rests on the owner's
+own report and the engine rows above; no lab run put the real client in the
+seat this time.
