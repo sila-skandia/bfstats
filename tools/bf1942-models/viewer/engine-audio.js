@@ -151,6 +151,10 @@ const DOPPLER_MAX = 1.2;
 // slews pitch no matter what a script asks for.
 const GAIN_TAU = 0.05;
 const PITCH_TAU = 0.1;
+/** How long a loop sits at nothing before its source is stopped
+ *  (`#parkLoop`): six of the gain's own time constants, so it has faded to
+ *  a quarter of a percent of where it was. */
+export const LOOP_PARK_S = 6 * GAIN_TAU;
 
 // Below this an AudioParam write is not worth an automation event.
 const EPSILON = 1e-4;
@@ -172,6 +176,10 @@ class Voice {
     this.gain.gain.value = 0;
     this.gain.connect(panner);
     this.source = null;
+    // A loop stopped at nothing (`EngineAudio#parkLoop`), to start again
+    // when it rises, and when it last fell silent (context seconds).
+    this.parked = false;
+    this.quietSince = null;
     // This layer's one-shot plays still sounding, oldest first: the newest
     // (`source`) and the ones `trigger()` left to play out.
     this.instances = [];
@@ -505,6 +513,8 @@ export class EngineAudio {
     this.#dropLoopVoices();
     for (const voice of this.voices) {
       voice.source = null;
+      voice.parked = false;
+      voice.quietSince = null;
       voice.instances.length = 0;
     }
     // A loop still waiting on the context to wake must not spring to life
@@ -774,13 +784,16 @@ export class EngineAudio {
    *
    * The game stops a loop whose volume is zero and starts it again when it
    * rises, asking for a voice on every update until it has one (0x00802a40).
-   * The page keeps the source running and mutes it, so the hold follows the
-   * gain: taken when the loop becomes audible, given back when it falls
-   * silent, and a loop with no voice is held at zero and asks again each
-   * frame. Returns the gain to apply.
+   * The hold follows the gain: taken when the loop becomes audible, given
+   * back when it falls silent, and a loop with no voice is held at zero and
+   * asks again each frame. A loop parked at zero (`#parkLoop`) has no source
+   * and bids all the same, and starts again only once it holds a voice.
+   * Returns the gain to apply.
    */
   #loopVoice(voice, out) {
-    if (!(out > 0) || !voice.source) {
+    // A parked loop (`#parkLoop`) has no source, and bids as one that has:
+    // it starts again only once it holds a voice.
+    if (!(out > 0) || (!voice.source && !voice.parked)) {
       if (voice.pooled) {
         voicePoolOf(this.ctx).release(voice.pooled);
         voice.pooled = null;
@@ -795,6 +808,48 @@ export class EngineAudio {
     }));
     voice.starved = !voice.pooled;
     return voice.pooled ? out : 0;
+  }
+
+  /**
+   * A loop at nothing stops, and starts again when it rises: the game's own
+   * rule (`SoundPatch__updateSample` 0x00802a40 stops a loop whose volume is
+   * zero and `0x008022a0` starts a new instance once it is above it; ledger
+   * SND-27, SND-33). The page used to keep every loop running muted, and a
+   * muted source costs the audio thread what an audible one does: its
+   * resampling, its gain and its panner, every render quantum. A replay of a
+   * full server held five hulls' worth, 62 loops, 53 of them at zero (the
+   * far/near hand-overs, the rev bands not reached, the gun and part loops
+   * between presses), and on a phone's Firefox the audio thread could not
+   * keep up and the sound cut in and out (features/replay-performance,
+   * "Sound on a phone").
+   *
+   * The stop waits `LOOP_PARK_S` of silence so the gain's own ramp has run
+   * out (no click) and a loop flickering at its band's edge does not churn.
+   * A loop the game starts some other way (a `trigger Volume` or `trigger
+   * Release` layer) keeps its own start, and is never restarted here.
+   */
+  #parkLoop(voice, out, now) {
+    const own = voice.layer.trigger !== 'volume' && voice.layer.trigger !== 'release';
+    if (out > 0) {
+      voice.quietSince = null;
+      if (voice.parked && !voice.source && own && this.started && !this.disposed
+          && this.chosen.has(voice) && !(this.released && !this.relatch)) {
+        voice.parked = false;
+        this.#play(voice, now);
+      }
+      return;
+    }
+    if (!voice.source || !own) { voice.quietSince = null; return; }
+    voice.quietSince ??= now;
+    if (now - voice.quietSince < LOOP_PARK_S) return;
+    const source = voice.source;
+    try { source.onended = null; source.stop(); } catch (_) {}
+    try { source.disconnect(); } catch (_) {}
+    this.live.delete(source);
+    voice.source = null;
+    voice.parked = true;
+    voice.quietSince = null;
+    this.parkedLoops = (this.parkedLoops || 0) + 1;
   }
 
   /** Every loop's pool voice, given back: the patch is cut or gone. */
@@ -1101,7 +1156,10 @@ export class EngineAudio {
       // round's, now. Eased from the last round's, a close shot's stereo crack
       // leaked into the first 50 ms of the next one fired 200 m away.
       let out = voice.targetGain * voice.rolloff;
-      if (voice.layer.loop) out = this.#loopVoice(voice, out);
+      if (voice.layer.loop) {
+        out = this.#loopVoice(voice, out);
+        this.#parkLoop(voice, out, now);
+      }
       if (snap) this.#set(voice.gain.gain, out, now);
       else this.#ramp(voice.gain.gain, out, now, GAIN_TAU);
       if (voice.source) {
@@ -1247,6 +1305,7 @@ export class EngineAudio {
       // to wake -- see the constructor's note.
       suspended: this.suspended,
       pendingLoops: this.pendingLoops.size,
+      parkedLoops: this.parkedLoops || 0,
       panners: this.groups.size,
       attached: this.attached,
       rolloffFactor: this.rolloffFactor,
@@ -1254,6 +1313,7 @@ export class EngineAudio {
         file: v.layer.file,
         loop: !!v.layer.loop,
         playing: v.playing,
+        parked: v.parked,
         distance: v.group.distance,
         gain: v.targetGain,
         // DirectSound's fall-off, and what the node is asked to play: the

@@ -278,6 +278,9 @@ export class ReplayHull {
       obj.userData.collision = true;
     });
     this.group.add(scene);
+    // The group stands at the origin and the root moves: the draw's cull of
+    // what is out of view reads the hull's place there (draw-cull.js).
+    this.group.userData.cullAt = this.root;
     this.wreck = wreck;
     if (wreck) {
       wreck.visible = false;

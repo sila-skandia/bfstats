@@ -90,3 +90,24 @@ export function phoneFps(params) {
   const n = Number(params?.get?.('fps'));
   return n > 0 ? n : PHONE_FPS;
 }
+
+/** The audio context a phone replay asks for: the browser's `playback`
+ *  latency, its largest output buffer. At the default (`interactive`, a few
+ *  milliseconds) Firefox on Android let the buffer run dry whenever the
+ *  phone's cores were busy drawing the round, and the sound cut in and out
+ *  (features/replay-performance, "Sound on a phone"). A replay answers no
+ *  key press, so a tenth of a second more between a shot and its report
+ *  costs nothing. A recording taps the graph, not the speakers, so a Short's
+ *  sound keeps its place against its picture. */
+export const PHONE_AUDIO_LATENCY = 'playback';
+
+/** The `latencyHint` this page's audio context is made with, or null for
+ *  the browser's default: `?latency=interactive|balanced|playback|<seconds>`,
+ *  else `PHONE_AUDIO_LATENCY` on the phone profile. */
+export function audioLatencyHint(params, phone) {
+  const asked = params?.get?.('latency');
+  if (asked === 'interactive' || asked === 'balanced' || asked === 'playback') return asked;
+  const secs = Number(asked);
+  if (asked && secs > 0) return secs;
+  return phone ? PHONE_AUDIO_LATENCY : null;
+}

@@ -50,3 +50,49 @@ export function walkShownOnly(root) {
 }
 
 export { walk as walkShown };
+
+// A tree that moves (a replay's hulls and soldiers): `walkShown` walks a
+// hidden child whenever anything above it has moved, and on such a tree
+// something always has (every hull's root, every soldier's group and bones
+// recompose each frame), so a hull's wreck and collision meshes and a
+// soldier out of view, his bones and kit, were walked every frame. This walk
+// never enters a hidden child: one passed over while its parent moved is
+// marked stale, and walked whole the first frame it is shown, before that
+// frame draws it. Shown nodes get three's matrices, node for node.
+const STALE = Symbol('staleWhileHidden');
+
+function walkVisible(node, force) {
+  if (node.matrixAutoUpdate) node.updateMatrix();
+  if (node.matrixWorldNeedsUpdate || force) {
+    if (node.matrixWorldAutoUpdate === true) {
+      if (node.parent === null) node.matrixWorld.copy(node.matrix);
+      else node.matrixWorld.multiplyMatrices(node.parent.matrixWorld, node.matrix);
+    }
+    node.matrixWorldNeedsUpdate = false;
+    force = true;
+  }
+  const children = node.children;
+  for (let i = 0, l = children.length; i < l; i++) {
+    const child = children[i];
+    if (!child.visible) {
+      if (force) child[STALE] = true;
+      continue;
+    }
+    let f = force;
+    if (child[STALE]) { child[STALE] = false; f = true; }
+    if (child.updateMatrixWorld === BASE_WALK) walkVisible(child, f);
+    else child.updateMatrixWorld(f);
+  }
+}
+
+/** Make `root`'s per-frame walk skip its hidden subtrees whether or not
+ *  anything above them moved. For trees that move; idempotent. */
+export function walkVisibleOnly(root) {
+  if (!root || root.userData?.visibleWalk) return root;
+  root.updateMatrixWorld(true);
+  root.userData.visibleWalk = true;
+  root.updateMatrixWorld = function (force) { walkVisible(this, force); };
+  return root;
+}
+
+export { walkVisible };

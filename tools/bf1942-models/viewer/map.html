@@ -491,9 +491,11 @@ import { DEFAULT_VOICE_BUDGET, EffectAudio } from './effect-audio.js';
 import { PassingRounds } from './passing-rounds.js';
 import { chooseAntialias, storedAntialias } from './render-antialias.js';
 import { REMASTER } from './remaster-mode.js';
-import { PHONE_RATIO_CAP, frameGate, phoneFps, phoneReplay, phoneVideo } from './replay-phone.js';
+import * as drawCull from './draw-cull.js';
+const { hideOutsideView, setDrawCull, drawCullOn } = drawCull;
+import { PHONE_RATIO_CAP, audioLatencyHint, frameGate, phoneFps, phoneReplay, phoneVideo } from './replay-phone.js';
 import { createFramePacer } from './frame-pacer.js';
-import { createQualityGovernor, qualityMode, storedQuality } from './replay-quality.js';
+import { PHONE_SLOW, SLOW, createQualityGovernor, qualityMode, storedQuality } from './replay-quality.js';
 import {
   changeSound, chooseHardware3d, currentSound, effectVoiceBudget, onSoundChange,
   storeHardware3d, storedHardware3d,
@@ -639,6 +641,8 @@ const renderQuery = new URLSearchParams(location.search);
 // A replay on a phone draws lean (`replay-phone.js`): no MSAA unless chosen,
 // a lower pixel ratio, LOW video and 30 frames a second.
 const PHONE_REPLAY = phoneReplay(renderQuery);
+// And its sound on the browser's largest output buffer (`audioLatencyHint`).
+const AUDIO_LATENCY = audioLatencyHint(renderQuery, PHONE_REPLAY);
 const msaa = PHONE_REPLAY && !renderQuery.has('aa') && storedAntialias() === null
   ? { antialias: false, reason: 'phone replay', gpu: '' }
   : chooseAntialias({
@@ -1305,6 +1309,7 @@ canvasPixelRatio = videoApply.pixelRatio;
 const replayQuality = params.has('replay') ? createQualityGovernor({
   apply: level => videoApply.setRuntime(level),
   targetFps: PHONE_REPLAY ? phoneFps(renderQuery) : 60,
+  slow: PHONE_REPLAY ? PHONE_SLOW : SLOW,
   mode: qualityMode(renderQuery.get('quality'))
     ?? (renderQuery.has('shots') || renderQuery.has('dpr') ? 'full' : storedQuality() ?? 'auto'),
   log: line => console.info(line),
@@ -1349,6 +1354,9 @@ const shadowPass = createShadowPass({
 if (params.has('shots')) window.__shadows = shadowPass;
 resize();
 if (renderQuery.has('shots')) window.__videoApply = videoApply;
+// The draw's cull of a replay's hulls out of view (draw-cull.js).
+if (renderQuery.get('cull') === '0') setDrawCull(false);
+if (renderQuery.has('shots')) window.__drawCull = { set: setDrawCull, get on() { return drawCullOn(); }, get hidden() { return drawCull.lastHidden; } };
 const pageAudio = createPageAudio(bag(
   from(() => level, `collider currentDir currentRoot extras`),
   from(() => localPlayer, `aircraft car mannedGuns occupancy soldier vehicleGuns`),
@@ -1358,6 +1366,7 @@ const pageAudio = createPageAudio(bag(
   from(() => spawning, `deployTeamId`),
   {
     get AUDIO_OFF() { return AUDIO_OFF; }, get bust() { return bust; },
+    audioLatencyHint: AUDIO_LATENCY,
     get camera() { return camera; }, get effectAudio() { return effectAudio; },
     // A bot's simulated soldier, whose state its movement sounds read.
     botSoldier: bot => level.world?.player(bot.playerId)?.soldier ?? null,
@@ -4821,7 +4830,15 @@ function draw3d() {
   if (remaster) remaster.render({ shadows: videoApply.settings.shadows });
   else {
     shadowPass.update();
-    renderer.render(scene, camera);
+    // A replay's hulls and kits wholly out of view are left out of the main
+    // draw and put back after it (draw-cull.js); the shadow pass above has
+    // drawn from them all. Not in remaster, whose shadows are this render's.
+    const unseen = replayController ? hideOutsideView(camera, replayController.drawnRoots()) : null;
+    try {
+      renderer.render(scene, camera);
+    } finally {
+      unseen?.();
+    }
   }
   unride?.();
   unkick?.();

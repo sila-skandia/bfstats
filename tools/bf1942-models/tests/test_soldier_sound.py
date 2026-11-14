@@ -199,7 +199,10 @@ class VoicePoolTests(unittest.TestCase):
     def test_every_voice_of_the_page_asks_the_pool(self) -> None:
         engine = (VIEWER / "engine-audio.js").read_text()
         self.assertIn("const pooled = pool.claim(this.#ask(voice, steal));", engine)
-        self.assertIn("if (voice.layer.loop) out = this.#loopVoice(voice, out);", engine)
+        self.assertIn("out = this.#loopVoice(voice, out);", engine)
+        # A loop at zero stops and starts anew only once it holds a voice
+        # (SND-27, SND-39): `#parkLoop` runs on what the pool answered.
+        self.assertIn("this.#parkLoop(voice, out, now);", engine)
         self.assertIn("const voice = pool.claim({", (VIEWER / "page-audio.js").read_text())
         # A loop still starts at a random point of its buffer (SND-47, kept).
         self.assertIn("const offset = source.loop ? Math.random() * voice.buffer.duration : 0;", engine)

@@ -81,12 +81,43 @@ class ReplayPhoneTests(unittest.TestCase):
         self.assertLess(w["visitsShown"], w["visitsThree"])
         self.assertTrue(w["idempotent"])
 
+    def test_the_visible_walk_draws_what_threes_draws_on_a_moving_tree(self) -> None:
+        w = self.r["visibleWalk"]
+        self.assertGreater(w["compared"], 500)
+        self.assertGreater(w["reshown"], 20)
+        self.assertEqual(w["worst"], 0)
+        self.assertLess(w["visitsVisible"], w["visitsThree"])
+        self.assertTrue(w["idempotent"])
+
+    def test_the_draw_leaves_out_only_what_lies_wholly_out_of_view(self) -> None:
+        c = self.r["drawCull"]
+        # ahead, behind, past the far plane, just past it, a ship reaching
+        # into view, one hidden already, a kit off to the side.
+        self.assertEqual(c["during"], [True, False, False, True, True, False, False])
+        self.assertEqual(c["after"], [True, True, True, True, True, False, True])
+        self.assertTrue(c["droveIn"])
+        self.assertTrue(c["off"])
+
+    def test_a_phone_replay_asks_for_the_largest_audio_buffer(self) -> None:
+        l = self.r["latency"]
+        self.assertEqual(l["phone"], "playback")
+        self.assertIsNone(l["desktop"])
+        self.assertEqual(l["asked"], "interactive")
+        self.assertEqual(l["seconds"], 0.2)
+        self.assertIsNone(l["junk"])
+        self.assertEqual(l["constant"], "playback")
+
     def test_auto_steps_down_while_each_rung_buys_frames(self) -> None:
         g = self.r["governor"]
         self.assertEqual(g["ladder"], ["full", "reduced", "low", "lowest"])
         self.assertEqual(g["gpuBound"]["applied"], ["full", "reduced", "low", "lowest"])
         self.assertEqual(g["enoughAtLow"]["final"], "low")
         self.assertEqual(g["phoneSlow"]["final"], "lowest")
+        # A 120 Hz phone drawing every fifth refresh (24 of its 30) steps
+        # down, and keeps the rung that lets it keep up; 75 % alone did not.
+        self.assertEqual(g["phoneMissing"]["applied"], ["full", "reduced"])
+        self.assertEqual(g["phoneMissing"]["final"], "reduced")
+        self.assertEqual(g["phoneMissingOldRule"]["applied"], ["full"])
         self.assertEqual(g["crawling"]["applied"], ["full", "reduced", "low", "lowest"])
 
     def test_a_rung_that_buys_nothing_is_undone_and_auto_stops(self) -> None:

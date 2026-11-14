@@ -48,7 +48,7 @@ const placeable = p => Number.isFinite(p?.x) && Number.isFinite(p?.y) && Number.
  * Built once by the page, where this code used to sit. `page` hands in
  * what it reads of the rest of the page, as getters (a binding the page
  * reassigns is read live):
- * `AUDIO_OFF`, `bust`, `camera`, `currentDir`,
+ * `AUDIO_OFF`, `audioLatencyHint` (null, or the context's `latencyHint`), `bust`, `camera`, `currentDir`,
  * `currentRoot`, `deployTeamId`, `effectAudio`, `ensureHandFireBus`, `extras`, `fireStates`,
  * `handFireBus`, `mannedGuns`, `MAPS_BASE`, `MODELS_BASE`, `occupancy`,
  * `scene`, `soldier`, `soundMaster` (OPTIONS > SOUND's MASTER VOLUME and
@@ -94,6 +94,17 @@ export function createPageAudio(page) {
   function ensureListener() {
     if (page.AUDIO_OFF) return null;
     if (!pageAudio.audioListener) {
+      // A phone replay's context is made with a larger output buffer
+      // (`replay-phone.js` `audioLatencyHint`). This is the first place the
+      // page makes three's shared context, so it is set before anything asks.
+      if (page.audioLatencyHint != null) {
+        try {
+          const Ctor = globalThis.AudioContext ?? globalThis.webkitAudioContext;
+          THREE.AudioContext.setContext(new Ctor({ latencyHint: page.audioLatencyHint }));
+        } catch (e) {
+          console.warn('page audio: the default latency, as this browser refused', page.audioLatencyHint, e);
+        }
+      }
       pageAudio.audioListener = new THREE.AudioListener();
       page.camera.add(pageAudio.audioListener);
       // Not three's `AudioLoader`: a browser that ignores an MP3's gapless

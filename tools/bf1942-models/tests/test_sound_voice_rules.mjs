@@ -342,4 +342,53 @@ async function grow(fire, clock, n) {
   assert.equal(rounds.live.length, 0, 'and let go where it struck');
 }
 
+// --- a loop at nothing stops, and starts again when it rises ---------------
+
+{
+  // `SoundPatch__updateSample` 0x00802a40 (SND-27, SND-33): a loop whose
+  // volume is zero is stopped, and a new instance starts once it is above it.
+  // The page used to keep it running muted, which on a phone's Firefox was
+  // enough muted loops to starve the audio thread.
+  const ctx = stubCtx();
+  const engine = { file: 'engine.wav', loop: true, volume: 1, stereo: false, minDistance: 5,
+                   randomStartPitch: null, relativePosition: null, doppler: false,
+                   modulators: [{ dest: 'volume', source: 'distance', envelope: 'ramp', params: [10, 10, 1, -1] }] };
+  const a = new EngineAudio({ template: 'tank', level: 'high' }, [engine],
+                            new Map([['engine.wav', buffer('engine.wav')]]), listenerOf(ctx), 1, false);
+  a.setMaster(1);
+  a.start();
+  const at = x => a.update({ dt: 0.05, position: { x, y: 0, z: 0 }, quaternion: { x: 0, y: 0, z: 0, w: 1 },
+                             listenerPosition: { x: 0, y: 0, z: 0 } });
+  const step = (x, secs) => { for (let t = 0; t < secs; t += 0.05) { ctx.currentTime += 0.05; at(x); } };
+  step(5, 0.2);
+  assert.equal(ctx.started.length, 1, 'the loop starts');
+  assert.equal(a.live.size, 1);
+  step(100, 0.2);
+  assert.equal(ctx.started[0].stopped, undefined, 'not stopped while its gain is still fading');
+  step(100, 0.3);
+  assert.equal(ctx.started[0].stopped, true, 'stopped once it has sat at nothing');
+  assert.equal(a.live.size, 0, 'and no longer summed');
+  assert.equal(a.snapshot().layers[0].parked, true);
+  step(100, 2);
+  assert.equal(ctx.started.length, 1, 'nothing starts while it stays silent');
+  step(5, 0.1);
+  assert.equal(ctx.started.length, 2, 'a new instance as it rises');
+  assert.equal(a.live.size, 1);
+  assert.equal(a.snapshot().layers[0].playing, true);
+  step(6, 0.1);
+  step(100, 0.1);
+  step(5, 0.1);
+  assert.equal(ctx.started.length, 2, 'a dip shorter than the fade keeps the same source');
+  // Released (a crew gone), a parked loop never comes back.
+  step(100, 0.5);
+  a.release();
+  step(5, 0.5);
+  assert.equal(ctx.started.length, 2, 'a released patch does not restart its loops');
+  // Cut and started again, the loop is a loop again.
+  a.silence();
+  a.restart();
+  assert.equal(ctx.started.length, 3, 'restart() starts it');
+  a.dispose();
+}
+
 console.log('sound voice rules: ok');

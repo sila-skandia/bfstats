@@ -75,7 +75,7 @@ import { whereIs } from './replay-battles.js';
 import { isLocalReplay, readLocalRecording, recordingSummary } from './replay-open.js';
 import { FAULT_STREAK, ReplayGuard, finiteVector } from './replay-guard.js';
 import { CHARACTER_HEIGHT } from './soldier-pose.js';
-import { walkShownOnly } from './shown-walk.js';
+import { walkShownOnly, walkVisibleOnly } from './shown-walk.js';
 
 export { parseRecording, parseServerLog, alignServerLog };
 /** The player itself, for the node harness (it needs a DOM to construct). */
@@ -170,11 +170,10 @@ class ReplayPlayer {
     // features/mesh-viewer-performance rule 2). A hidden node's matrices are
     // brought up to date by `getWorldPosition` and its kind when read.
     this.root.matrixAutoUpdate = false;
-    this.root.updateMatrixWorld = function (force) {
-      for (const child of this.children) {
-        if (child.visible) child.updateMatrixWorld(force);
-      }
-    };
+    // Nor, under a shown hull, its hidden wreck, collision meshes and LOD
+    // rungs, which three walks whenever the hull moves (shown-walk.js
+    // `walkVisibleOnly`).
+    walkVisibleOnly(this.root);
     ctx.scene.add(this.root);
     this.serverRows = log && alignment ? serverRows(rec, log, alignment) : [];
     this.rows = [...rec.events, ...this.serverRows].sort((a, b) => a.t - b.t);
@@ -1467,6 +1466,12 @@ export function createReplayController(ctx) {
      *  drawn, or null (replay-camera.js `shakeView`). */
     shakeView() {
       return guarded('the hit shake', () => player.camera?.shakeView?.() ?? null, null);
+    },
+    /** The groups the replay draws into, for the draw's cull of what is out
+     *  of view (draw-cull.js): its own root. Its soldiers' bodies cull
+     *  themselves (bot-visuals.js `BOT_CULL_RADIUS`). */
+    drawnRoots() {
+      return guarded('the drawn roots', () => [player.root], []);
     },
     /** The page's message log runs at this rate: 1 with no replay open. */
     feedRate() {

@@ -8,9 +8,9 @@ import { installModuleHooks, viewerDir } from '../sim/env.mjs';
 installModuleHooks(viewerDir());
 const THREE = await import('three');
 const {
-  PHONE_FPS, PHONE_RATIO_CAP, PHONE_VIDEO, frameGate, isPhone, phoneFps, phoneReplay, phoneVideo,
+  PHONE_AUDIO_LATENCY, PHONE_FPS, PHONE_RATIO_CAP, PHONE_VIDEO, audioLatencyHint, frameGate, isPhone, phoneFps, phoneReplay, phoneVideo,
 } = await import('../viewer/replay-phone.js');
-const { walkShownOnly } = await import('../viewer/shown-walk.js');
+const { walkShownOnly, walkVisibleOnly } = await import('../viewer/shown-walk.js');
 const { pixelRatioFor } = await import('../viewer/video-apply.js');
 const { displayOf, normalizeVideo } = await import('../viewer/video-settings.js');
 
@@ -45,6 +45,14 @@ out.video = {
   chosen,
 };
 out.fps = { none: phoneFps(q('')), sixty: phoneFps(q('fps=60')), junk: phoneFps(q('fps=abc')) };
+out.latency = {
+  phone: audioLatencyHint(q('replay=x.ndjson'), true),
+  desktop: audioLatencyHint(q('replay=x.ndjson'), false),
+  asked: audioLatencyHint(q('latency=interactive'), true),
+  seconds: audioLatencyHint(q('latency=0.2'), false),
+  junk: audioLatencyHint(q('latency=loud'), false),
+  constant: PHONE_AUDIO_LATENCY,
+};
 
 // The gate on a display's ticks: which of a second of them it draws.
 const drawn = (fps, hz, seconds = 1) => {
@@ -139,13 +147,104 @@ out.walk = {
   visitsThree: nodesA.length, visitsShown: visits, idempotent: walkShownOnly(b) === b,
 };
 
+// The visible-only walk (a replay's moving trees: its hulls and soldiers)
+// against three's: the same run, but every node moves every frame, as a
+// hull's root and a soldier's bones do, so `walkShown` would walk the hidden
+// ones too. Shown nodes must be three's to the bit, including one shown
+// again after its parent moved while it was hidden.
+{
+  const nodesC = [], nodesD = [];
+  seed = 11; const c = build(5, nodesC);
+  seed = 11; const d = build(5, nodesD);
+  c.visible = true; d.visible = true;
+  const sceneC = new THREE.Scene(); sceneC.add(c);
+  const sceneD = new THREE.Scene(); sceneD.add(d);
+  walkVisibleOnly(d);
+  let visibleVisits = 0;
+  const countVisible = o => { visibleVisits++; for (const k of o.children) if (k.visible) countVisible(k); };
+  countVisible(d);
+  let vWorst = 0, vCompared = 0, reshown = 0;
+  seed = 5;
+  for (let frame = 0; frame < 60; frame++) {
+    const wasHidden = nodesD.map(n => !shownChain(n));
+    for (let i = 1; i < nodesC.length; i++) {
+      const x = rand() * 5;
+      nodesC[i].position.y = x; nodesD[i].position.y = x;
+    }
+    for (let k = 0; k < 15; k++) {
+      const i = 1 + Math.floor(rand() * (nodesC.length - 1));
+      const v = rand() > 0.3;
+      nodesC[i].visible = v; nodesD[i].visible = v;
+    }
+    c.position.z = frame; d.position.z = frame;
+    sceneC.updateMatrixWorld();
+    sceneD.updateMatrixWorld();
+    for (let i = 0; i < nodesC.length; i++) {
+      if (!shownChain(nodesC[i])) continue;
+      vCompared++;
+      if (wasHidden[i]) reshown++;
+      const ea = nodesC[i].matrixWorld.elements, eb = nodesD[i].matrixWorld.elements;
+      for (let j = 0; j < 16; j++) vWorst = Math.max(vWorst, Math.abs(ea[j] - eb[j]));
+    }
+  }
+  out.visibleWalk = {
+    nodes: nodesC.length, compared: vCompared, reshown, worst: vWorst,
+    visitsThree: nodesC.length, visitsVisible: visibleVisits, idempotent: walkVisibleOnly(d) === d,
+  };
+}
+
+// The draw's cull (draw-cull.js): a camera at the origin looking down -z,
+// far 100 m. A hull's group stands at the origin and its `cullAt` root
+// moves; what lies wholly outside the view is hidden for the draw and put
+// back after it.
+{
+  const { hideOutsideView, setDrawCull, MIN_RADIUS } = await import('../viewer/draw-cull.js');
+  const camera = new THREE.PerspectiveCamera(60, 0.5, 0.5, 100);
+  const root = new THREE.Group();
+  root.matrixAutoUpdate = false;
+  const box = size => new THREE.Mesh(new THREE.BoxGeometry(size, size, size));
+  const hull = (x, y, z, size = 4) => {
+    const group = new THREE.Group();
+    const inner = new THREE.Group();
+    inner.position.set(x, y, z);
+    inner.add(box(size));
+    group.add(inner);
+    group.userData.cullAt = inner;
+    root.add(group);
+    return group;
+  };
+  const scene = new THREE.Scene();
+  scene.add(root, camera);
+  const ahead = hull(0, 0, -50);
+  const behind = hull(0, 0, 50);
+  const pastFar = hull(0, 0, -200);
+  const edgeOfFar = hull(0, 0, -100 - MIN_RADIUS + 1);
+  const ship = hull(0, 0, -260, 400);   // 260 m out, but 400 m long
+  const hiddenAlready = hull(0, 0, 60); hiddenAlready.visible = false;
+  const prop = box(0.5); prop.position.set(300, 0, 0); root.add(prop);
+  scene.updateMatrixWorld(true);
+  const restore = hideOutsideView(camera, [root]);
+  const during = [ahead, behind, pastFar, edgeOfFar, ship, hiddenAlready, prop].map(o => o.visible);
+  restore?.();
+  const after = [ahead, behind, pastFar, edgeOfFar, ship, hiddenAlready, prop].map(o => o.visible);
+  // The hull drives in: its group never moved, its root did.
+  pastFar.userData.cullAt.position.z = -60;
+  const restore2 = hideOutsideView(camera, [root]);
+  const droveIn = pastFar.visible;
+  restore2?.();
+  setDrawCull(false);
+  const off = hideOutsideView(camera, [root]);
+  setDrawCull(true);
+  out.drawCull = { during, after, droveIn, off: off === null };
+}
+
 // Quality on the fly (replay-quality.js): a page drawing at `fpsAt(step)`,
 // frames fed for `seconds`, with `busy(t)` the frames that are not read.
-const { LADDER, createQualityGovernor, qualityMode } = await import('../viewer/replay-quality.js');
+const { LADDER, PHONE_SLOW, createQualityGovernor, qualityMode } = await import('../viewer/replay-quality.js');
 const { capVideo } = await import('../viewer/video-apply.js');
-function simulate({ fpsAt, seconds = 60, target = 60, mode = 'auto', busy = () => false }) {
+function simulate({ fpsAt, seconds = 60, target = 60, slow, mode = 'auto', busy = () => false }) {
   const applied = [];
-  const g = createQualityGovernor({ apply: l => applied.push(l.id), targetFps: target, mode });
+  const g = createQualityGovernor({ apply: l => applied.push(l.id), targetFps: target, slow, mode });
   let t = 0;
   while (t < seconds * 1000) {
     t += 1000 / fpsAt(g.state.step);
@@ -165,9 +264,13 @@ out.governor = {
   cpuBound: simulate({ fpsAt: () => 15 }),
   // Fast enough already.
   fast: simulate({ fpsAt: () => 58 }),
-  // A phone drawing for 30: 26 a second is fine.
-  phoneFine: simulate({ fpsAt: () => 26, target: 30 }),
-  phoneSlow: simulate({ fpsAt: step => [12, 16, 22, 28][step], target: 30 }),
+  // A phone drawing for 30 (map.html passes PHONE_SLOW): 28 a second is fine.
+  phoneFine: simulate({ fpsAt: () => 28, target: 30, slow: PHONE_SLOW }),
+  phoneSlow: simulate({ fpsAt: step => [12, 16, 22, 28][step], target: 30, slow: PHONE_SLOW }),
+  // A 120 Hz phone missing the gate: every fifth refresh, 24 fps, until a
+  // rung lets it keep up. SLOW alone read 24 of 30 as fine.
+  phoneMissing: simulate({ fpsAt: step => [24, 30, 30, 30][step], target: 30, slow: PHONE_SLOW }),
+  phoneMissingOldRule: simulate({ fpsAt: step => [24, 30, 30, 30][step], target: 30 }),
   // Slow only while busy (a drag, a load): nothing read, nothing dropped.
   busyOnly: simulate({ fpsAt: () => 10, busy: () => true }),
   // Pinned: Auto never moves it.

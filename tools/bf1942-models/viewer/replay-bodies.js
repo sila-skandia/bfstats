@@ -43,6 +43,7 @@ import {
   ROCKETEERING_AIRBORNE, ROCKETEERING_LOWER, replayBurning, rocketeeringClip,
 } from './rocket-pack.js';
 import { RocketFlames, packNodeOf } from './rocket-flame.js';
+import { walkVisibleOnly } from './shown-walk.js';
 
 /** The pose glb's root carries a baked half turn a vehicle's does not
  *  (README §12, measured 180.00 degrees off at two spawn instants); the
@@ -199,6 +200,10 @@ export class ReplaySoldiers {
     };
     this.bodies = ctx.makeReplayBodies ? ctx.makeReplayBodies(this.shim) : null;
     this.bodies?.ensureRoot?.();
+    // A soldier out of view (bot-visuals.js culls his rig) or put away is
+    // not walked: his bones and kit are brought up to date the frame he is
+    // shown again (shown-walk.js `walkVisibleOnly`).
+    walkVisibleOnly(this.bodies?.botRoot ?? null);
     // The rocket packs' flames (`rocket-flame.js`), keyed by pid.
     this.flames = new RocketFlames(ctx.effects ?? null);
     this.snap = true;

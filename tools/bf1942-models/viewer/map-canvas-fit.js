@@ -12,9 +12,16 @@ export function createCanvasFit(minimapCanvas, fullmapCanvas) {
   // has not reported yet — or reports at 0 because it is hidden — falls back
   // to one measured read, so the first frame after the map opens is right.
   const canvasCssWidth = new Map();
+  // And the minimap's box height, the same way: `clientHeight` read after the
+  // frame's DOM writes was the same forced layout, on every minimap paint
+  // (2.4 % of a phone replay's frame at 4x CPU throttle; features/
+  // replay-performance, "A phone at a full server").
+  const canvasCssHeight = new Map();
   const canvasObserver = new ResizeObserver(entries => {
     for (const entry of entries) {
       const width = entry.contentRect.width;
+      if (width) canvasCssHeight.set(entry.target, entry.contentRect.height);
+      else canvasCssHeight.delete(entry.target);
       // A 0 here means `display: none` — the box the surface lives in is hidden —
       // and it is reported at the end of the frame that hid it. Dropping the
       // entry rather than caching the 0 is what lets the frame that UNHIDES the
@@ -69,7 +76,11 @@ export function createCanvasFit(minimapCanvas, fullmapCanvas) {
     if (!css) return canvas.__ratio || 1;
     const dpr = backingRatio(canvas);
     const want = Math.round(css * dpr);
-    const boxH = canvas.clientHeight || 0;
+    let boxH = canvasCssHeight.get(canvas);
+    if (boxH === undefined) {
+      boxH = canvas.clientHeight || 0;
+      canvasCssHeight.set(canvas, boxH);
+    }
     const wantH = canvas === minimapCanvas && boxH
       ? Math.round(boxH * dpr) : want;
     if (canvas.width !== want || canvas.height !== wantH) {

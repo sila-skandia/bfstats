@@ -7,7 +7,9 @@ the replay's own overheads cut?
 
 ## Status
 
-Done (2026-09-29), in two passes; phones on 2026-11-13 ("Phones" below).
+Done (2026-09-29), in two passes; phones on 2026-11-13 ("Phones" below);
+a phone's sound and a full server's frame on 2026-11-14 ("A phone at a
+full server" below).
 The 2026-09-29 passes: the overheads first, then what the first
 pass left open (the samples' memory, the hulls built before the round shows,
 the drag). The overheads were the replay's own. Nothing server-side.
@@ -144,8 +146,105 @@ it, DISPLAY MODE over the ratio cap.
 
 - The replay's own frame (`the soldiers`, the hulls) and three's render of
   what is shown are the CPU that is left, about 10 and 11 ms of the 35 at 4x.
-  The visible soldiers' bones are most of the scene walk that remains.
+  The scene walk was cut again on 2026-11-14 ("A phone at a full server").
 - The minimap is still painted every drawn frame (about 6 % of the script).
+
+## A phone at a full server
+
+The 2026-11-14 report, a Samsung phone on Firefox: the sound cut in and out,
+and the frame rate was poor; Low was better, the sound still cut.
+
+### Measured
+
+The 30-minute Liberation of Caen round `c8z2nt8m7u` (a full server), at
+900 s and 1,300 to 1,500 s, headless Chromium on the owner's M5 Max with a
+390x844 phone's screen (3x, touch), CPU throttled 4x; every
+`AudioBufferSourceNode.start` counted and traced to its caller, its gain
+read each quarter second.
+
+| | Before | After |
+|---|---|---|
+| Sources playing at once (median / p95) | 75-78 / 85-107 | 21-32 / 39-46 |
+| Of them, loops | 55-80 | 8-31, all audible |
+| Vehicle loops at zero gain | 53 of 62 | 1-2 (fading out) |
+| Audio context's base latency (Chromium) | 5.3 ms | 21.3 ms (`playback`) |
+| Replay subtrees in the draw (900 s) | 74 | 13 (61 wholly out of view) |
+| Matrix walk + multiplies, 10 s at 900 s | 1,982 ms | 1,035 ms |
+| `projectObject`, 10 s | 721 ms | 495 ms |
+| Forced layout (`clientHeight`), 10 s | 264 ms | 0 |
+| Idle at 4x, 900 s / 1,300 s | 0.4 % / 0.8 % | 2.8 % / 4-10 % |
+| rAF interval at 1,300 s | 33 ms (every frame late) | 16.7 ms (time to spare) |
+
+The audio thread's cost grows with every playing source whatever its gain
+(an `OfflineAudioContext` of looping sources through a gain and an
+equal-power panner into a compressor: 12 sources 0.41 % of real time, 66
+sources 2.21 %, 100 sources 3.12 % on Chromium; WebKit 0.36 / 1.29 / 1.90 %).
+On this machine that is nothing. On a phone running Firefox, with every core
+already drawing the round, it is the margin: the buffer runs dry and the
+sound cuts.
+
+### What it was
+
+1. **Every vehicle loop ran muted.** The vehicle rack builds the nearest
+   five hulls, each a dozen loops: rev bands, near and far hand-overs, gun
+   and part loops between presses. The page kept every one running and set
+   its gain to zero. The game stops a loop whose volume is zero and starts
+   a new instance when it rises (`SoundPatch__updateSample` 0x00802a40,
+   ledger SND-27, SND-33). 53 of the 62 were silent, and each cost the audio
+   thread a resampler, a gain and a panner every render quantum.
+2. **The audio context ran at the browser's lowest latency**
+   (`interactive`). A replay answers no key press, but Firefox on Android
+   gave it a buffer of a few milliseconds, which a busy phone cannot refill
+   in time.
+3. **Every hull alive was walked and frustum-tested.** 73 hulls at 900 s,
+   their wrecks, collision meshes and LOD rungs included, against a far
+   plane of 177 m: three walks every shown node's matrix and tests every
+   shown mesh, then draws none of those out of view.
+4. **The soldiers' bodies group was walked whole.** bot-visuals.js culls a
+   body out of view by hiding its rig, but three's walk enters hidden
+   nodes, and `walkShown` does too once anything above has moved, which on
+   a moving tree is always: 3,053 nodes a frame for 640 shown.
+5. **A forced layout on every minimap paint.** `fitCanvas` read the
+   minimap's `clientHeight` after the frame's DOM writes.
+6. **Auto quality never stepped on a phone that could not keep up.** Slow
+   was 75 % of the target, 22.5 of 30 fps. A 120 Hz phone that misses the
+   30 fps gate draws every fifth refresh, 24 fps, so Auto read it as fine.
+
+### What changed
+
+| File | Change |
+|---|---|
+| `engine-audio.js` | `#parkLoop`: a loop at zero for `LOOP_PARK_S` (six of the gain's time constants, 0.3 s) stops its source; once its volume rises, and it holds a pool voice, a new one starts. `trigger Volume` and `trigger Release` layers keep their own starts; a released patch's loops never restart. `snapshot()` reports `parkedLoops` and each layer's `parked`. Every patch on every page: vehicles, guns, parts, single player too. |
+| `replay-phone.js`, `page-audio.js`, `map.html` | `audioLatencyHint`: a phone replay's audio context is made with `latencyHint: 'playback'`, the browser's largest buffer. `?latency=interactive\|balanced\|playback\|<seconds>` picks for any page. A recording taps the graph (`replay-clip.js`), not the speakers, so a Short's sound stays in step with its picture. |
+| `draw-cull.js` (new), `map.html`, `replay.js`, `replay-hulls.js` | `hideOutsideView`: for the length of the main draw, a child of the replay's root whose bounding sphere lies wholly outside the view frustum is hidden, then put back. The shadow pass draws first, from everything; remaster mode is not culled (its shadows are its render's). A hull is placed by its `root` (`userData.cullAt`), the radius measured once over its shown meshes and never under 20 m. `?cull=0` turns it off; `window.__drawCull` under `?shots`. |
+| `shown-walk.js`, `replay.js`, `replay-bodies.js` | `walkVisibleOnly`: a walk that never enters a hidden child, marks one passed over while its parent moved as stale, and walks it whole the first frame it is shown. The replay's root and its soldiers' bodies group. |
+| `map-canvas-fit.js` | The minimap's box height from the ResizeObserver that already kept its width. |
+| `replay-quality.js`, `map.html` | `PHONE_SLOW`: on the phone profile Auto steps below 90 % of the target (27 of 30). |
+
+### Checked
+
+- In the page, the same paused frame with the cull off and on at 600, 900,
+  1,200 and 1,500 s: the 3D picture is the same. The pixels that differ are
+  the blinking flag marks and the grass's sway, which two frames with the
+  cull off differ by as much.
+- In the page, every shown node under the replay's root and its bodies'
+  group against three's own forced walk, at five instants: the same nodes
+  differ under the new walk and the old one (164, 72, 111, 104, 160; parts
+  the replay moves after the draw), so the new walk changes no shown
+  matrix.
+- `test_sound_voice_rules.mjs`: a loop out of its distance band is not
+  stopped while its gain fades, is stopped after, starts a new source as it
+  comes back, keeps its source through a dip shorter than the fade, never
+  restarts once its patch is released, and starts again on `restart()`.
+- `test_replay_phone.py`: the visible-only walk is three's to the bit on a
+  tree that moves every frame, nodes shown again after their parent moved
+  included; the cull hides behind, past the far plane and off to the side,
+  keeps a ship reaching into view and one just past the far plane, follows
+  a hull's `cullAt`, and puts everything back; the latency choice; a 120 Hz
+  phone at 24 fps steps to Reduced, where 75 % alone did not.
+- Not measured: a real phone running Firefox. Playwright has no Firefox
+  build on this machine, and no headless browser can show a phone's audio
+  thread running dry. The numbers above are the load that was removed.
 
 ## Quality on the fly
 
@@ -245,6 +344,12 @@ mean downloading every recording.
   cache.
 - A change meant only to be faster must leave `tests/perf/replaydump.mjs`'s
   output byte-identical.
+- A tree that moves every frame (the replay's root, its bodies) walks with
+  `walkVisibleOnly`: `walkShown` enters every hidden child once anything
+  above has moved.
+- Never keep a Web Audio source running at zero gain: a muted source costs
+  the audio thread what an audible one does. Loops park
+  (`engine-audio.js` `#parkLoop`).
 - A phone is a viewer, not a creator: whatever a replay adds per frame is
   measured on the phone profile too (`?phone=1` on a desktop), and what a
   phone does not need to scrub and watch stays off it.

@@ -20,11 +20,11 @@
 // No cap is per object, per template or per script: two soldiers' rifles, or
 // two scripts that load one wav, draw on one buffer. This module is that
 // buffer's one-shot half, per AudioContext and per decoded AudioBuffer (the
-// page decodes each wav once, so one AudioBuffer is one file). The page plays
-// a loop from its start for good and mutes it by gain, where the game stops a
-// loop whose volume is zero and asks again when it rises (0x00802a40 ->
-// 0x00802210, 0x007fcc80), so a count of the page's loops would include ones
-// the game holds no instance for; loops are not pooled here.
+// page decodes each wav once, so one AudioBuffer is one file). A loop holds
+// one source while it sounds; the game stops a loop whose volume is zero and
+// asks again when it rises (0x00802a40 -> 0x00802210, 0x007fcc80), as the
+// page does after its gain has faded (`engine-audio.js` `#parkLoop`). Loops
+// are not pooled here.
 
 export const INSTANCES_PER_SAMPLE = 8;
 

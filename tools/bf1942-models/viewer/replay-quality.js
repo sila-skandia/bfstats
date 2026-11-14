@@ -45,6 +45,13 @@ export const TRIAL_SCALE = 2;
 export const SETTLE_MS = 2000;
 /** Slow: a median rate under this share of the target. */
 export const SLOW = 0.75;
+/** Slow on a phone: its target is the 30 fps gate's (replay-phone.js), and
+ *  a phone that keeps up draws exactly 30. One that misses frames on a
+ *  120 Hz screen draws every fifth refresh, 24 fps, which SLOW reads as
+ *  fine: a phone replay that visibly could not keep up, and that Low made
+ *  better, never stepped (features/replay-performance, "A phone at a full
+ *  server"). */
+export const PHONE_SLOW = 0.9;
 /** A step that did not lift the rate by this share is undone. */
 export const HELPED = 0.08;
 /** A gap this long between frames is the page stopping, not a frame; it
@@ -80,7 +87,7 @@ const median = list => {
  * 'auto' or a ladder id to start pinned at; `onChange(state)` hears every
  * change; `log` a step's line.
  */
-export function createQualityGovernor({ apply, targetFps = 60, mode = 'auto', onChange = null, log = null } = {}) {
+export function createQualityGovernor({ apply, targetFps = 60, slow = SLOW, mode = 'auto', onChange = null, log = null } = {}) {
   let current = 'auto';
   let step = 0;
   let stopped = false;
@@ -149,7 +156,7 @@ export function createQualityGovernor({ apply, targetFps = 60, mode = 'auto', on
         return;
       }
     }
-    if (fps < targetFps * SLOW && step < LADDER.length - 1) {
+    if (fps < targetFps * slow && step < LADDER.length - 1) {
       trial = { from: step, fps };
       go(step + 1, `${Math.round(fps)} fps against ${targetFps}`);
       holdUntil = now + SETTLE_MS;
