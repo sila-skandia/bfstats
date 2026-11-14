@@ -12,6 +12,8 @@ import { fmtClock } from './replay-timeline.js';
 
 /** A lane's height, pixels. */
 const LANE_H = 10;
+/** The widest a lane's canvas may be, device pixels. */
+const MAX_CANVAS = 8192;
 /** The lanes' smoothing, in buckets either side. */
 const SMOOTH = 1;
 /** The lanes' labels and the live dots are refreshed this often, seconds. */
@@ -60,6 +62,12 @@ export class ReplayLanes {
     }
     const timeline = highlights.ui.timeline;
     timeline.el.before(this.el);
+    // On a phone the lanes show the timeline's window, slid with it
+    // (replay-timeline.js `slideTo`).
+    this.timeline = timeline;
+    this.offset = 0;
+    highlights.ui.lanes = this;
+    this.el.classList.toggle('windowed', Boolean(timeline.windowed));
     // The timeline marks the followed player's own events from now on: the
     // lanes say where everyone's fighting was (replay-timeline.js `layout`).
     timeline.lanesShown = fronts.length > 0;
@@ -101,9 +109,23 @@ export class ReplayLanes {
     return out;
   }
 
+  /** The lanes' width at the timeline's scale: the round's at the window's
+   *  on a phone, else their own. */
+  stripWidth(own = this.el.clientWidth) {
+    return this.timeline.windowed ? own * (this.duration / this.timeline.span) : own;
+  }
+
   timeAt(clientX) {
     const r = this.el.getBoundingClientRect();
-    return Math.min(this.duration, Math.max(0, ((clientX - r.left) / Math.max(1, r.width)) * this.duration));
+    return Math.min(this.duration, Math.max(0, ((clientX - r.left + this.offset) / Math.max(1, this.stripWidth(r.width))) * this.duration));
+  }
+
+  /** The timeline slid its strip: the lanes' canvases go with it. */
+  slide(offset) {
+    if (offset === this.offset) return;
+    this.offset = offset;
+    const shift = `translate3d(${-offset}px, 0, 0)`;
+    for (const lane of this.lanes) lane.canvas.style.transform = shift;
   }
 
   onDown(e) {
@@ -139,9 +161,11 @@ export class ReplayLanes {
   /** Every lane, at this width: the fighting as bars, the plays as pips. All
    *  lanes share one scale, so a lane that looks quieter was. */
   draw() {
-    const width = this.el.clientWidth;
-    if (!width) return;
-    const dpr = Math.min(window.devicePixelRatio || 1, 2);
+    const own = this.el.clientWidth;
+    if (!own) return;
+    const width = this.stripWidth(own);
+    // A long round's strip on a phone stays inside what a canvas may be.
+    const dpr = Math.min(window.devicePixelRatio || 1, 2, MAX_CANVAS / width);
     const key = `${width}x${dpr}`;
     if (key === this.drawnFor) return;
     this.drawnFor = key;
@@ -151,6 +175,7 @@ export class ReplayLanes {
       const c = lane.canvas;
       c.width = Math.round(width * dpr);
       c.height = Math.round(LANE_H * dpr);
+      if (this.timeline.windowed) c.style.width = `${width}px`;
       const g = c.getContext('2d');
       g.setTransform(dpr, 0, 0, dpr, 0, 0);
       g.clearRect(0, 0, width, LANE_H);
@@ -183,7 +208,9 @@ export class ReplayLanes {
 
   update(t, dt) {
     if (!this.drawnFor) this.draw();
-    const k = `${((t / this.duration) * 100).toFixed(3)}%`;
+    const k = this.timeline.windowed
+      ? `${((t / this.duration) * this.stripWidth(this.timeline.width) - this.offset).toFixed(1)}px`
+      : `${((t / this.duration) * 100).toFixed(3)}%`;
     if (k !== this.headAt) {
       this.headAt = k;
       this.head.style.left = k;

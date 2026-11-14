@@ -8,7 +8,7 @@ import { installModuleHooks, viewerDir } from '../sim/env.mjs';
 installModuleHooks(viewerDir());
 const THREE = await import('three');
 const {
-  PHONE_AUDIO_LATENCY, PHONE_FPS, PHONE_RATIO_CAP, PHONE_VIDEO, audioLatencyHint, frameGate, isPhone, phoneFps, phoneReplay, phoneVideo,
+  PHONE_AUDIO_LATENCY, PHONE_FPS, PHONE_RATIO_CAP, PHONE_VIDEO, audioLatencyHint, frameGate, isPhone, phoneFps, phoneReplay, phoneVideo, phoneViewer,
 } = await import('../viewer/replay-phone.js');
 const { walkShownOnly, walkVisibleOnly } = await import('../viewer/shown-walk.js');
 const { pixelRatioFor } = await import('../viewer/video-apply.js');
@@ -45,6 +45,24 @@ out.video = {
   chosen,
 };
 out.fps = { none: phoneFps(q('')), sixty: phoneFps(q('fps=60')), junk: phoneFps(q('fps=abc')) };
+out.viewer = {
+  phone: phoneViewer(q(''), phone),
+  phoneOptOut: phoneViewer(q('phone=0'), phone),
+  laptop: phoneViewer(q(''), laptop),
+  laptopOptIn: phoneViewer(q('phone=1'), laptop),
+  tablet: phoneViewer(q(''), tablet),
+};
+{
+  // replay-timeline.js imports the DOM-free helpers only at module level.
+  const { windowStart, WINDOW_SPAN } = await import('../viewer/replay-timeline.js');
+  out.window = {
+    span: WINDOW_SPAN,
+    start: windowStart(10, 600, 1800),
+    middle: windowStart(900, 600, 1800),
+    end: windowStart(1790, 600, 1800),
+    short: windowStart(200, 600, 500),
+  };
+}
 out.latency = {
   phone: audioLatencyHint(q('replay=x.ndjson'), true),
   desktop: audioLatencyHint(q('replay=x.ndjson'), false),

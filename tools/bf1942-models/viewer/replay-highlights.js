@@ -785,6 +785,8 @@ const STYLE = `
 .rp-lane { position: relative; display: block; width: 100%; height: 10px; padding: 0; margin: 0; border: 0; border-radius: 2px;
   background: rgba(255, 255, 255, .04); cursor: pointer; }
 .rp-lane canvas { position: absolute; inset: 0; width: 100%; height: 100%; opacity: .6; transition: opacity .2s; }
+.rp-lanes.windowed .rp-lane { overflow: hidden; }
+.rp-lanes.windowed .rp-lane canvas { right: auto; will-change: transform; }
 .rp-lane.on canvas { opacity: 1; }
 .rp-lane:hover canvas { opacity: .9; }
 .rp-lane-name { position: absolute; left: 3px; top: -1px; font: 800 8.5px/12px var(--rp-font); letter-spacing: .1em;
@@ -952,6 +954,10 @@ html.replay-sight .rp-root.rp-idle .rp-hl-ticker { bottom: calc(25% + 10px); }
   /* The width of the view, so over the card and the Auto caption, not on them. */
   .rp-hl-ticker { width: calc(100% - 24px); bottom: calc(var(--rp-bar-h) + var(--rp-card-h) + 52px); }
   .rp-hl-callout b { font-size: 16px; }
+}
+/* A phone on its side: the highlight beside the card, not under it. */
+@media (max-height: 500px) and (min-width: 721px) {
+  .rp-root.rp-phone .rp-hl-ticker { width: min(360px, calc(50% - 168px)); }
 }
 /* A phone on its side: the map beside its list, as on a desktop. */
 @media (max-height: 500px) {

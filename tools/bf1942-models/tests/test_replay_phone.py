@@ -98,6 +98,16 @@ class ReplayPhoneTests(unittest.TestCase):
         self.assertTrue(c["droveIn"])
         self.assertTrue(c["off"])
 
+    def test_a_phones_viewer_is_found_without_the_replay_query(self) -> None:
+        v = self.r["viewer"]
+        self.assertEqual(v, {"phone": True, "phoneOptOut": False, "laptop": False, "laptopOptIn": True, "tablet": False})
+
+    def test_a_phones_timeline_shows_ten_minutes_round_the_playhead(self) -> None:
+        w = self.r["window"]
+        self.assertEqual(w["span"], 600)
+        # Held at the round's ends, centred between them; a short round whole.
+        self.assertEqual((w["start"], w["middle"], w["end"], w["short"]), (0, 600, 1200, 0))
+
     def test_a_phone_replay_asks_for_the_largest_audio_buffer(self) -> None:
         l = self.r["latency"]
         self.assertEqual(l["phone"], "playback")

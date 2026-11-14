@@ -576,6 +576,85 @@ click, H, N, Escape, F.
 Open: not yet on a device. Safari on iOS in particular (the fallback, the
 container queries, `touch-action`) was emulated, not driven.
 
+## A phone watches a video (2026-11-14)
+
+The report, on a Samsung phone: the timeline drew the whole round, so its
+marks ran together; tapping a kill on it brought up a box that closed
+before anything in it could be tapped. The owner's direction: a phone is
+for watching a round like a video, not for recording and cutting it, and
+its controls can be very different from the desktop's, simple, built round
+playing and scrubbing through the action.
+
+What was wrong:
+
+- **A 30-minute round across 360 px.** 36 to 59 marks merged into one
+  another, and a finger landed on whichever was nearest.
+- **The tooltip could not be reached by a finger.** Lifting a finger fires
+  `pointerleave`, which started the tooltip's 350 ms hide, so its Kill shot
+  and Spotlight buttons were gone before a second tap. A tap on a mark
+  jumped there straight away instead of showing what it was.
+- **The creator's studio was on a phone** for anyone signed in with it,
+  with its Kill shot, clip strip and panel.
+- **The bar carried a desktop's controls**: the 5 s steps, the free
+  camera's thumbstick, the replay log, Open a recording and Shot lines,
+  and up to four highlight cards stacked over the view (two over the player
+  card on a phone on its side).
+
+What it does now (`ReplayUi.phone`, `replay-phone.js` `phoneViewer`: a
+coarse pointer on a screen whose short side is under 600 px, `?phone=0/1`
+wins, with or without `?replay`):
+
+- **The timeline shows ten minutes round the playhead** (`WINDOW_SPAN`),
+  following it, held at the round's ends. The marks, the track, the
+  dogfights and the fronts' lanes lie on a strip as wide as the round at
+  that scale, slid under the bar (`slideTo`, `ReplayLanes.slide`), so
+  they are laid out once, not every frame. The window's two clocks sit
+  under its ends, and under the timeline the whole round with the window
+  on it: a finger there goes anywhere in the round. A round no longer than
+  12 minutes is shown whole.
+- **A finger on the timeline waits to see what it is.** A drag scrubs, the
+  window held still under it so the finger's place is the time; a tap off
+  the marks goes there; a tap on a mark (18 px of reach) opens what
+  happened there and keeps it open, with Watch (from just before it) and
+  Spotlight on a kill, until a choice or a touch anywhere else, which does
+  nothing more.
+- **A double tap on the view skips**, as in a video player: 10 s back on
+  its left third, 10 s ahead on its right, 10 s more for each tap that
+  follows, with the total shown. One tap still shows or hides the chrome
+  (on the sides it waits 300 ms to be sure).
+- **The bar**: previous surge, play, next surge, the clock, the speed; Orbit,
+  First person, Auto; the battle map, the players, the menu, fullscreen.
+  The 5 s steps, the free camera, the replay log, Open a recording and Shot
+  lines are left off. The menu keeps name tags, battle markers, hide the
+  HUD and quality.
+- **No creator's studio** (`ReplayCreator.grant`), and so no Kill shot.
+- **One highlight card at a time**, the newest; on its side, beside the
+  player card instead of under it.
+
+With a mouse or on a tablet nothing changed: checked at 1440x900, the strip
+is the bar, the knob at the playhead's share, the hover tooltip as before.
+
+| File | Change |
+|---|---|
+| `replay-timeline.js` | `WINDOW_SPAN`, `windowStart`, the strip and `slideTo`, the window's clocks, the whole-round overview, a finger's tap, drag and pinned tooltip (`touchDown`, `touchMove`, `touchUp`, `pinTip`), Watch. |
+| `replay-lanes.js` | The lanes at the timeline's scale, slid with it; a canvas no wider than 8,192 device pixels. |
+| `replay-ui.js` | `phone`, `rp-phone`, `phoneTap` (the double tap), the overview in the bar, the phone's CSS; `closeFloating` closes a pinned tooltip. |
+| `replay-phone.js` | `phoneViewer`. |
+| `replay-creator.js` | No grant on a phone. |
+| `replay-highlights.js` | The lanes' windowed CSS; the ticker's width on a phone on its side. |
+
+Checked headless (Chromium, touch, 390x844 and 844x390, the 30-minute
+Liberation of Caen round): a tap on a mark opens it and it is still open
+850 ms later; Watch goes to just before the mark (909 s to 678 s) and
+closes it; a drag across 30 % of the bar scrubs 3 minutes; a tap on the
+overview at a tenth goes to 3:01; double taps skip +10, +20 and -10 s; a
+tap in the middle hides the chrome; no creator button. `test_replay_phone.py`:
+the window at the round's start, middle and end and a short round whole;
+who is a phone's viewer.
+
+Open: not yet on a device; Firefox on Android in particular was emulated
+in Chromium.
+
 ## No HUD, and F for the cover (2026-09-29)
 
 The request: H as a no-HUD key that takes the chat and the minimap away too,

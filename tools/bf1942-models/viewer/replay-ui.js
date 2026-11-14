@@ -21,6 +21,7 @@ import { mapListAt } from './replay-maplist.js';
 import { supportAt } from './replay-support.js';
 import { EXTERNAL_LABELS } from './replay-camera.js';
 import { LADDER as QUALITY_LADDER, storeQuality } from './replay-quality.js';
+import { phoneViewer } from './replay-phone.js';
 
 export const SPEEDS = Object.freeze([0.25, 0.5, 1, 2, 4, 8]);
 
@@ -41,6 +42,11 @@ const IDLE_TOUCH = 4;
  *  pixels, is a tap on the view. */
 const TAP_SLOP = 10;
 const TAP_TIME = 350;
+/** A phone's second tap on the same side of the view within this, ms, skips
+ *  (a video's double tap): `PHONE_SKIP` seconds, back on the left third,
+ *  ahead on the right. A single tap there waits this long to be a tap. */
+const DOUBLE_TAP_MS = 300;
+export const PHONE_SKIP = 10;
 /** The free camera's thumbstick: a finger down on the left STICK_ZONE of the
  *  view, full speed at STICK_R pixels from where it went down. */
 const STICK_ZONE = 0.4;
@@ -280,6 +286,21 @@ html:has(.rp-root.board-open) #comms-canvas { visibility: hidden !important; }
 
 /* The timeline. */
 .rp-tl { position: relative; height: 32px; cursor: pointer; touch-action: none; outline: none; }
+.rp-tl-strip { position: absolute; inset: 0; }
+/* A phone's window round the playhead (replay-timeline.js WINDOW_SPAN): the
+   strip is the round at that scale, slid; the window's two ends under it,
+   and the whole round below with the window on it. */
+.rp-tl.windowed { height: 40px; overflow: hidden; }
+.rp-tl.windowed .rp-tl-strip { right: auto; will-change: transform; }
+.rp-tl.windowed .rp-tl-hover { display: none !important; }
+.rp-tl-edge { position: absolute; bottom: 0; font: 600 10px/12px var(--rp-mono); color: var(--rp-muted); pointer-events: none; }
+.rp-tl-edge.from { left: 0; } .rp-tl-edge.to { right: 0; }
+.rp-tl-overview { position: relative; height: 16px; margin: 0 0 4px; cursor: pointer; touch-action: none; }
+.rp-tl-overview::before { content: ''; position: absolute; left: 0; right: 0; top: 7px; height: 2px; border-radius: 1px;
+  background: rgba(255, 255, 255, .22); }
+.rp-tl-ov-window { position: absolute; top: 3px; bottom: 3px; border: 1px solid var(--rp-khaki); border-radius: 3px;
+  background: rgba(196, 186, 140, .22); }
+.rp-tl-ov-head { position: absolute; top: 2px; bottom: 2px; width: 2px; margin-left: -1px; background: #f3f0da; border-radius: 1px; }
 .rp-tl-marks { position: absolute; left: 0; right: 0; top: 1px; height: 16px; }
 .rp-tl-track { position: absolute; left: 0; right: 0; top: 21px; height: 5px; border-radius: 3px;
   background: rgba(255, 255, 255, .17); transition: top .12s, height .12s; }
@@ -363,6 +384,11 @@ html:has(.rp-root.board-open) #comms-canvas { visibility: hidden !important; }
 .rp-tip-shot.rp-tip-spotlight { border-color: var(--rp-fire); color: var(--rp-fire); }
 .rp-tip-shot.rp-tip-spotlight:hover { background: var(--rp-fire); color: var(--rp-khaki-ink); }
 .rp-tip-shot + .rp-tip-shot { margin-left: 4px; }
+/* Watch, in a phone's pinned tooltip: play from just before it. */
+.rp-tip-shot.rp-tip-watch { border-color: var(--rp-khaki); color: var(--rp-khaki); }
+.rp-tip.pinned { pointer-events: auto; max-width: calc(100vw - 16px); }
+.rp-tip.pinned .rp-tip-list li { gap: 8px; padding: 4px 2px; font-size: 13px; }
+.rp-tip.pinned .rp-tip-shot { height: 34px; padding: 0 12px; font-size: 11px; }
 
 /* The player card. Its own width, not the half of the view left of its
    anchor, or a phone cuts the spawn countdown short. */
@@ -578,6 +604,16 @@ html:has(.rp-root.board-open) #comms-canvas { visibility: hidden !important; }
 .rp-root.rp-bare > :not(.rp-input):not(.rp-notice):not(.rp-stick) { display: none !important; }
 @media (prefers-reduced-motion: reduce) { .rp-bar, .rp-card { transition: opacity .2s ease; } }
 
+/* A phone watches a video (features/round-replay-ux, "A phone watches a
+   video"): play, the surges either side, the windowed timeline; a double
+   tap on the view skips 10 s, so no 5 s steps; no free camera (a thumbstick
+   to fly is a creator's tool); one highlight at a time; none of the menu's
+   desk tools (the replay log, opening a file, shot lines). */
+.rp-root.rp-phone .rp-step, .rp-root.rp-phone .rp-free, .rp-root.rp-phone .rp-roomy,
+.rp-root.rp-phone .rp-mi.rp-mi-roomy, .rp-root.rp-phone .rp-mi-shotlines { display: none !important; }
+.rp-root.rp-phone .rp-hl-tick:not(:last-child) { display: none; }
+.rp-root.rp-phone .rp-btn.play { width: 56px; }
+
 /* Touch: targets a thumb can hit. */
 @media (pointer: coarse) {
   .rp-btn { min-width: 38px; height: 38px; }
@@ -659,6 +695,9 @@ export class ReplayUi {
     this.chromeHidden = false;   // the bar and the card are away, for either reason
     this.touchUi = false;        // the last hand on the replay was a finger
     this.coarse = window.matchMedia?.('(pointer: coarse)').matches ?? false;
+    // A phone watches the round as a video: its own timeline (a window round
+    // the playhead), taps that wait for a choice, no creator's studio.
+    this.phone = phoneViewer(new URLSearchParams(globalThis.location?.search ?? ''));
     this.stick = null;           // the free camera's thumb: { id, x, y, at, moved, floated }
     this.frameKey = null;        // F: the frame on screen as the cover (`useFrameKey`)
     this.slowClock = 0;
@@ -681,6 +720,7 @@ export class ReplayUi {
     player.ctx.releasePageInput?.();
 
     this.root = el('div', 'rp-root');
+    this.root.classList.toggle('rp-phone', this.phone);
     this.input = el('div', 'rp-input');
     this.tags = el('div', 'rp-tags');
     this.timeline = new ReplayTimeline(this);
@@ -768,7 +808,7 @@ export class ReplayUi {
     this.modeBtns = {
       orbit: this.button('', 'orbit', 'Orbit camera (1)', () => this.setMode('orbit')),
       pov: this.button('', 'pov', 'First person (2)', () => this.setMode('pov')),
-      free: this.button('', 'free', 'Free camera (3)', () => this.setMode('free')),
+      free: this.button('rp-free', 'free', 'Free camera (3)', () => this.setMode('free')),
       auto: this.button('', 'auto', 'Auto camera: follows the action (4)', () => this.setMode('auto')),
     };
     modes.append(this.modeBtns.orbit, this.modeBtns.pov, this.modeBtns.free, this.modeBtns.auto);
@@ -799,7 +839,7 @@ export class ReplayUi {
     const ctl = el('div', 'rp-ctl');
     ctl.append(transport, this.timeText, this.roundText, this.speedWrap, el('i', 'rp-break'), modes,
       this.playersBtn, this.logBtn, this.moreWrap, this.helpBtn, this.fullBtn);
-    this.bar.append(this.timeline.el, ctl);
+    this.bar.append(this.timeline.el, ...(this.timeline.overview ? [this.timeline.overview] : []), ctl);
     this.syncMode();
     this.syncSpeed();
     this.syncFullscreen();
@@ -835,7 +875,7 @@ export class ReplayUi {
     this.moreItems = {
       tags: item('', 'tags', 'Name tags', 'N', () => this.toggleTags(), true),
       markers: item('', 'markers', 'Battle markers', 'B', () => this.player.highlights?.toggleMarkers(), true),
-      shotLines: item('', 'tracers', 'Shot lines', '', () => this.toggleShotLines(), true),
+      shotLines: item('rp-mi-shotlines', 'tracers', 'Shot lines', '', () => this.toggleShotLines(), true),
       log: item('rp-mi-roomy', 'log', 'Replay log', 'L', () => this.toggle('log-open')),
       open: item('rp-mi-roomy', 'upload', 'Open a recording', '', () => this.bar.querySelector('.ro-open')?.click()),
       bare: item('', 'hide', 'Hide the HUD', 'H', () => this.setBare(true)),
@@ -1570,7 +1610,10 @@ export class ReplayUi {
         if (tap && e.pointerId === tap.id) {
           const tapped = e.type === 'pointerup' && performance.now() - tap.at < TAP_TIME && !tap.floated;
           tap = null;
-          if (tapped) this.tapView();
+          if (tapped) {
+            if (this.phone) this.phoneTap(e.clientX);
+            else this.tapView();
+          }
         }
       }
       if (!drag || e.pointerId !== drag.id) return;
@@ -1635,13 +1678,39 @@ export class ReplayUi {
    *  when one was open. */
   closeFloating() {
     const open = this.speedWrap.classList.contains('open') || this.moreWrap.classList.contains('open')
-      || this.root.matches('.board-open, .help-open, .map-open');
+      || this.root.matches('.board-open, .help-open, .map-open') || Boolean(this.timeline.pinned);
+    if (this.timeline.pinned) this.timeline.hideTip();
     this.speedWrap.classList.remove('open');
     this.closeMore();
     this.root.classList.remove('board-open', 'help-open');
     this.playersBtn.classList.remove('on');
     this.player.highlights?.map.close();
     return open;
+  }
+
+  /** A phone's tap on the view, as on a video: twice on the left or right
+   *  third skips back or ahead (`PHONE_SKIP`, and again with each tap that
+   *  follows), once anywhere shows or hides the chrome. */
+  phoneTap(clientX) {
+    const r = this.root.getBoundingClientRect();
+    const f = (clientX - r.left) / Math.max(1, r.width);
+    const side = f < 1 / 3 ? -1 : f > 2 / 3 ? 1 : 0;
+    const now = performance.now();
+    const last = this.lastTap;
+    clearTimeout(this.tapTimer);
+    if (side && last && last.side === side && now - last.at < DOUBLE_TAP_MS * (last.skipped ? 2 : 1)) {
+      this.lastTap = { at: now, side, skipped: true };
+      this.skip(side * PHONE_SKIP);
+      this.skipped = (last.skipped ? this.skipped ?? 0 : 0) + side * PHONE_SKIP;
+      this.flash(`${this.skipped < 0 ? '-' : '+'}${Math.abs(this.skipped)} s`, 700);
+      return;
+    }
+    this.lastTap = { at: now, side, skipped: false };
+    if (!side) {
+      this.tapView();
+      return;
+    }
+    this.tapTimer = setTimeout(() => { if (!this.disposed) this.tapView(); }, DOUBLE_TAP_MS);
   }
 
   /** A tap on the view (a touch screen): the chrome slides away, or back;

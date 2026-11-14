@@ -53,6 +53,17 @@ export function isPhone({
   return !!coarse && short > 0 && short < 600;
 }
 
+/** Whether the replay's viewer is on a phone, for its interface (a video
+ *  to watch, features/round-replay-ux "A phone watches a video"): the same
+ *  test, with `?phone=0/1` winning, whether or not the page was opened with
+ *  `?replay` (Open a recording reaches a replay without it). */
+export function phoneViewer(params, env) {
+  const forced = params?.get?.('phone');
+  if (forced === '0') return false;
+  if (forced === '1') return true;
+  return isPhone(env);
+}
+
 /** Whether this page is a replay on the phone profile. */
 export function phoneReplay(params, env) {
   if (!params?.has?.('replay')) return false;

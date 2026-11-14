@@ -638,7 +638,9 @@ export class ReplayCreator {
   /** The gate's answer: the button comes, or goes with the view. */
   grant(ok) {
     if (this.disposed) return;
-    ok = Boolean(ok);
+    // A phone watches the round, it does not cut it (features/round-replay-ux,
+    // "A phone watches a video"): no studio there, whoever is signed in.
+    ok = Boolean(ok) && !this.ui.phone;
     if (ok === this.granted) return;
     this.granted = ok;
     if (ok) {

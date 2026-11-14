@@ -27,6 +27,24 @@ const FRAME_AFTER = 0.35;
 const THUMB_W = 176;
 /** Events listed in the tooltip at most. */
 const TIP_EVENTS = 4;
+/** On a phone the timeline shows this many seconds round the playhead, not
+ *  the whole round (features/round-replay-ux, "A phone watches a video"):
+ *  a 30-minute round across 360 px put every mark on its neighbour. */
+export const WINDOW_SPAN = 600;
+/** A round no longer than this share over the window is shown whole. */
+const WINDOW_SLACK = 1.2;
+/** A finger lifted within TAP_MS having moved under TAP_PX is a tap. */
+const TAP_MS = 350;
+const TAP_PX = 10;
+/** A finger finds a mark this close, pixels. */
+const TOUCH_HOVER_PX = 18;
+
+/** The window a phone's timeline shows at `t`: its start, clamped to the
+ *  round. `span` the window's length, `duration` the round's. */
+export function windowStart(t, span, duration) {
+  if (!(duration > span)) return 0;
+  return Math.min(duration - span, Math.max(0, t - span / 2));
+}
 
 export function fmtClock(seconds) {
   const s = Math.max(0, Math.floor(seconds));
@@ -86,6 +104,14 @@ export class ReplayTimeline {
     this.player = ui.player;
     const duration = Math.max(0.001, this.player.rec.duration);
     this.duration = duration;
+    // A phone shows WINDOW_SPAN round the playhead: the marks, the track and
+    // the dogfights lie on a strip as wide as the round at that scale, slid
+    // so the playhead stays in the middle. Elsewhere the strip is the bar.
+    this.phone = Boolean(ui.phone);
+    this.windowed = this.phone && duration > WINDOW_SPAN * WINDOW_SLACK;
+    this.span = this.windowed ? WINDOW_SPAN : duration;
+    this.offset = 0;      // px the strip is slid left by
+    this.width = 0;       // the timeline's own width, px (the ResizeObserver's)
     // Not focusable: the arrow keys move the playhead from anywhere (the
     // replay's key map), and a click on the bar leaves no focus ring round it.
     this.el = el('div', 'rp-tl');
@@ -122,7 +148,29 @@ export class ReplayTimeline {
     this.fights = [];
     this.fightClusters = [];
     this.track.append(this.fill, this.fightSpans, this.hoverLine, this.knob);
-    this.el.append(this.marks, this.fightMarks, this.track);
+    this.strip = el('div', 'rp-tl-strip');
+    this.strip.append(this.marks, this.fightMarks, this.track);
+    this.el.append(this.strip);
+    if (this.windowed) {
+      this.el.classList.add('windowed');
+      this.strip.style.width = `${(duration / this.span) * 100}%`;
+      // The window's two ends, and the whole round under it with the window
+      // on it: a tap there goes anywhere in the round.
+      this.edgeFrom = el('span', 'rp-tl-edge from');
+      this.edgeTo = el('span', 'rp-tl-edge to');
+      this.el.append(this.edgeFrom, this.edgeTo);
+      this.overview = el('div', 'rp-tl-overview');
+      this.overview.setAttribute('aria-label', 'The whole round: tap to go there');
+      this.overviewWindow = el('i', 'rp-tl-ov-window');
+      this.overviewHead = el('i', 'rp-tl-ov-head');
+      this.overview.append(this.overviewWindow, this.overviewHead);
+      this.overviewWindow.style.width = `${(this.span / duration) * 100}%`;
+      this.overview.addEventListener('pointerdown', e => this.onOverview(e));
+      this.overview.addEventListener('pointermove', e => { if (this.overviewDrag === e.pointerId) this.onOverview(e); });
+      const end = e => { if (this.overviewDrag === e.pointerId) this.overviewDrag = null; };
+      this.overview.addEventListener('pointerup', end);
+      this.overview.addEventListener('pointercancel', end);
+    }
     recordingFights(rec).then(fights => {
       if (this.disposed || !fights.length) return;
       this.fights = fights;
@@ -156,8 +204,17 @@ export class ReplayTimeline {
     // keeps it up.
     this.el.addEventListener('pointerleave', () => this.hideSoon());
     this.tip.addEventListener('pointerenter', () => clearTimeout(this.hideTimer));
-    this.tip.addEventListener('pointerleave', () => this.hideTip());
+    this.tip.addEventListener('pointerleave', () => { if (!this.pinned) this.hideTip(); });
     this.tip.addEventListener('pointerdown', e => e.stopPropagation());
+    // A pinned tooltip (a phone's tap on a mark) stays until a choice in it,
+    // or a touch anywhere else.
+    this.pinned = null;
+    // A touch on the view is the view's to close it with (replay-ui.js
+    // `closeFloating`), so that tap does nothing more.
+    this.onAnyDown = e => {
+      if (this.pinned && !this.tip.contains(e.target) && e.target !== this.ui.input) this.hideTip();
+    };
+    document.addEventListener('pointerdown', this.onAnyDown, true);
     this.resize = new ResizeObserver(() => this.layout());
     this.resize.observe(this.el);
   }
@@ -166,16 +223,44 @@ export class ReplayTimeline {
     return this.player.chapters;
   }
 
+  /** The strip's width, px: the timeline's, or the round at the window's
+   *  scale. */
+  get stripWidth() {
+    return this.width * (this.duration / this.span);
+  }
+
+  /** `clientX` on the strip, px from the round's start. */
+  stripX(clientX, r = this.el.getBoundingClientRect()) {
+    return clientX - r.left + this.offset;
+  }
+
   timeAt(clientX) {
     const r = this.el.getBoundingClientRect();
-    return Math.min(this.duration, Math.max(0, ((clientX - r.left) / Math.max(1, r.width)) * this.duration));
+    if (!this.width) this.width = r.width;
+    return Math.min(this.duration, Math.max(0, (this.stripX(clientX, r) / Math.max(1, this.stripWidth)) * this.duration));
+  }
+
+  /** The window's start at `t`, seconds (0 when the round is shown whole). */
+  windowAt(t) {
+    return this.windowed ? windowStart(t, this.span, this.duration) : 0;
+  }
+
+  /** Slide the strip so the window starts at `t0`. */
+  slideTo(t0) {
+    const offset = Math.round((t0 / this.duration) * this.stripWidth * 2) / 2;
+    if (offset === this.offset) return;
+    this.offset = offset;
+    this.strip.style.transform = `translate3d(${-offset}px, 0, 0)`;
+    this.ui.lanes?.slide?.(offset, this.stripWidth);
   }
 
   /** The marks, merged where they would overlap at this width, emphasising
    *  the followed player's. */
   layout() {
-    const width = this.el.clientWidth;
-    if (!width) return;
+    const own = this.el.clientWidth;
+    if (!own) return;
+    this.width = own;
+    const width = this.stripWidth;
     const pid = this.player.followPid;
     this.markPid = pid;
     this.marks.textContent = '';
@@ -274,17 +359,35 @@ export class ReplayTimeline {
   fightsAt(clientX) {
     if (!this.fights.length) return [];
     const r = this.el.getBoundingClientRect();
-    const x = clientX - r.left;
-    const near = this.fightClusters.find(c => Math.abs(c.x - x) <= HOVER_PX);
+    const x = this.stripX(clientX, r);
+    const reach = this.phone ? TOUCH_HOVER_PX : HOVER_PX;
+    const near = this.fightClusters.find(c => Math.abs(c.x - x) <= reach);
     if (near) return near.fights.slice(0, 2);
     const t = this.timeAt(clientX);
-    const slack = (HOVER_PX / Math.max(1, r.width)) * this.duration;
+    const slack = (reach / Math.max(1, this.stripWidth)) * this.duration;
     return this.fights.filter(f => t >= f.t0 - slack && t <= f.t1 + slack).slice(0, 2);
   }
 
   /** The playhead at `t`. */
   update(t) {
     if (this.markPid !== this.player.followPid) this.layout();
+    if (this.windowed) {
+      // The window follows the playhead, but not under a finger: a drag
+      // holds it where it was, so the finger's place is the time.
+      if (!this.scrubbing) this.slideTo(this.windowAt(t));
+      const from = Math.round(this.offset / Math.max(1, this.stripWidth) * this.duration);
+      if (from !== this.shownFrom) {
+        this.shownFrom = from;
+        this.edgeFrom.textContent = fmtClock(from);
+        this.edgeTo.textContent = fmtClock(Math.min(this.duration, from + this.span));
+        this.overviewWindow.style.left = `${(from / this.duration) * 100}%`;
+      }
+      const head = `${((t / this.duration) * 100).toFixed(2)}%`;
+      if (head !== this.overviewAt) {
+        this.overviewAt = head;
+        this.overviewHead.style.left = head;
+      }
+    }
     // Written only when they move: a paused replay touches no style.
     const k = `${((t / this.duration) * 100).toFixed(3)}%`;
     if (k !== this.shownAt) {
@@ -298,18 +401,37 @@ export class ReplayTimeline {
       this.el.setAttribute('aria-valuenow', String(second));
       this.el.setAttribute('aria-valuetext', `${fmtClock(t)} of ${fmtClock(this.duration)}`);
     }
-    if (this.hoverX !== null && this.tip.classList.contains('show')) this.showTip(this.hoverX, false);
+    if (this.hoverX !== null && !this.pinned && this.tip.classList.contains('show')) this.showTip(this.hoverX, false);
+    // Nothing fades the chrome from under a choice still open.
+    if (this.pinned) this.ui.activity();
+  }
+
+  /** The whole round's strip on a phone: a finger there goes to that time. */
+  onOverview(e) {
+    if (e.type === 'pointerdown') {
+      if (e.button !== 0) return;
+      this.overviewDrag = e.pointerId;
+      try { this.overview.setPointerCapture(e.pointerId); } catch {}
+    }
+    e.preventDefault();
+    e.stopPropagation();
+    this.ui.activity();
+    this.hideTip();
+    const r = this.overview.getBoundingClientRect();
+    const t = Math.min(this.duration, Math.max(0, ((e.clientX - r.left) / Math.max(1, r.width)) * this.duration));
+    this.player.seek(t);
   }
 
   // --- the pointer -----------------------------------------------------------
 
   clusterAt(clientX) {
     const r = this.el.getBoundingClientRect();
-    const x = clientX - r.left;
+    const x = this.stripX(clientX, r);
+    const reach = this.phone ? TOUCH_HOVER_PX : HOVER_PX;
     let best = null;
     for (const c of this.clusters) {
       const d = Math.abs(c.x - x);
-      if (d <= HOVER_PX && (!best || d < best.d)) best = { c, d };
+      if (d <= reach && (!best || d < best.d)) best = { c, d };
     }
     return best?.c ?? null;
   }
@@ -318,6 +440,10 @@ export class ReplayTimeline {
     if (e.button !== 0) return;
     this.ui.activity();
     this.player.ctx.ensureAudio?.();
+    if (this.phone && e.pointerType !== 'mouse') {
+      this.touchDown(e);
+      return;
+    }
     // A dogfight's plane is a link: its click opens the school, no scrub.
     if (e.target.closest?.('.rp-mk-fight')) return;
     const mark = e.target.closest?.('.rp-mk');
@@ -335,8 +461,74 @@ export class ReplayTimeline {
     this.showTip(e.clientX, true);
   }
 
+  /**
+   * A finger on a phone's timeline. A tap on a mark opens what happened
+   * there and stays open, with a way to watch it (`pinTip`); a tap anywhere
+   * else goes there; a drag scrubs, the window held still under it. The
+   * finger is a video's: nothing happens until it is clear which it is.
+   */
+  touchDown(e) {
+    this.hideTip();
+    const cluster = this.clusterAt(e.clientX);
+    // A dogfight by its plane only: a tap on its span goes to that time.
+    const x = this.stripX(e.clientX);
+    const fight = cluster ? null : this.fightClusters.find(c => Math.abs(c.x - x) <= TOUCH_HOVER_PX) ?? null;
+    this.touch = { id: e.pointerId, x: e.clientX, y: e.clientY, at: performance.now(), cluster, fight };
+    try { this.el.setPointerCapture(e.pointerId); } catch {}
+    e.preventDefault();
+  }
+
+  touchMove(e) {
+    const touch = this.touch;
+    if (!touch || touch.id !== e.pointerId) return false;
+    if (!this.scrubbing && Math.hypot(e.clientX - touch.x, e.clientY - touch.y) >= TAP_PX) {
+      this.scrubbing = true;
+      this.el.classList.add('scrubbing');
+    }
+    if (this.scrubbing) {
+      this.scrubTo = this.timeAt(e.clientX);
+      this.showTip(e.clientX, true);
+    }
+    return true;
+  }
+
+  touchUp(e) {
+    const touch = this.touch;
+    if (!touch || touch.id !== e.pointerId) return false;
+    this.touch = null;
+    try { this.el.releasePointerCapture(e.pointerId); } catch {}
+    if (this.scrubbing) {
+      this.scrubbing = false;
+      this.el.classList.remove('scrubbing');
+      this.scrubTo = this.timeAt(e.clientX);
+      this.hideTip();
+      return true;
+    }
+    if (e.type === 'pointercancel') return true;
+    const tap = performance.now() - touch.at <= TAP_MS * 2;
+    if (!tap) return true;
+    if (touch.cluster || touch.fight) this.pinTip(touch.x);
+    else this.scrubTo = this.timeAt(touch.x);
+    return true;
+  }
+
+  /** What happened at `clientX`, held open until a choice or a touch
+   *  elsewhere. */
+  pinTip(clientX) {
+    this.tipKey = null;
+    this.pinned = { at: clientX };
+    // Its phone sizes first: the tooltip is placed by its own width.
+    this.tip.classList.add('pinned');
+    this.showTip(clientX, true);
+    this.showTip(clientX, true);
+  }
+
   onMove(e) {
     this.ui.activity();
+    if (this.phone && e.pointerType !== 'mouse') {
+      this.touchMove(e);
+      return;
+    }
     if (this.scrubbing) {
       this.scrubTo = this.timeAt(e.clientX);
     }
@@ -344,6 +536,7 @@ export class ReplayTimeline {
   }
 
   onUp(e) {
+    if (this.phone && e.pointerType !== 'mouse' && this.touchUp(e)) return;
     if (!this.scrubbing) return;
     this.scrubbing = false;
     this.el.classList.remove('scrubbing');
@@ -368,12 +561,12 @@ export class ReplayTimeline {
     const fights = this.fightsAt(clientX);
     const fightMark = fights.length && this.fightClusters.some(c => c.fights[0] === fights[0] && Math.abs(c.x - (clientX - rect.left)) <= HOVER_PX);
     const cluster = fightMark ? null : this.clusterAt(clientX);
-    this.hoverLine.style.left = `${((clientX - rect.left) / Math.max(1, rect.width)) * 100}%`;
+    this.hoverLine.style.left = `${(this.stripX(clientX, rect) / Math.max(1, this.stripWidth)) * 100}%`;
     const at = cluster ? cluster.lead.ch.t : fightMark ? fights[0].t0 : t;
     const frame = cluster ? this.frameOfChapter(cluster) : this.frameAt(at);
     // The content is rebuilt only when it changes: the tooltip is refreshed
     // every frame while the pointer rests on a playing timeline.
-    const key = `${cluster ? cluster.lead.i : ''}|${fights.map(f => f.id).join(',')}|${fmtClock(at)}|${frame?.id ?? ''}|${this.player.followPid}`;
+    const key = `${cluster ? cluster.lead.i : ''}|${fights.map(f => f.id).join(',')}|${fmtClock(at)}|${frame?.id ?? ''}|${this.player.followPid}|${this.pinned ? 'pin' : ''}`;
     if (key !== this.tipKey) {
       this.tipKey = key;
       // The time, and the round's own clock beside it.
@@ -393,6 +586,18 @@ export class ReplayTimeline {
           const icon = el('i', style.glyph ? 'g' : 'dot');
           if (style.glyph) icon.innerHTML = glyphSvg(style.glyph);
           li.append(icon, el('span', '', chapterText(this.player.rec, ch, lexicon)));
+          // A phone's pinned tooltip: watch it, from just before.
+          if (this.pinned) {
+            const go = el('button', 'rp-tip-shot rp-tip-watch', 'Watch');
+            go.type = 'button';
+            go.title = 'Play from just before this';
+            go.addEventListener('click', e => {
+              e.stopPropagation();
+              this.hideTip();
+              try { this.ui.jumpTo(ch); } catch (error) { console.warn('replay: watch from the timeline', error); }
+            });
+            li.append(go);
+          }
           // A kill straight to a kill shot: its clip framed round it, looping.
           if (ch.kind === 'kill' && creator?.granted && creator.killAt(ch.t, ch.victim)?.round?.f) {
             const go = el('button', 'rp-tip-shot', 'Kill shot');
@@ -464,12 +669,14 @@ export class ReplayTimeline {
   hideTip() {
     clearTimeout(this.hideTimer);
     this.hoverX = null;
-    this.tip.classList.remove('show');
+    this.pinned = null;
+    this.tip.classList.remove('show', 'pinned');
   }
 
   /** Off the timeline: the tooltip goes, unless the pointer is on its way
    *  into it. */
   hideSoon() {
+    if (this.pinned || this.touch) return;
     clearTimeout(this.hideTimer);
     if (!this.tip.querySelector('.rp-tip-shot')) {
       this.hideTip();
@@ -553,6 +760,8 @@ export class ReplayTimeline {
   dispose() {
     this.disposed = true;
     this.resize.disconnect();
+    document.removeEventListener('pointerdown', this.onAnyDown, true);
+    this.overview?.remove();
     for (const map of [this.chapterFrames, this.bucketFrames]) {
       for (const frame of map.values()) frame?.image?.close?.();
       map.clear();
