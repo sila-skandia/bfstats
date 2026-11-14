@@ -87,6 +87,12 @@ line is a review of real Shorts on the live site.
   before the render; the chase keeps its own offset, so the lift never
   accumulates. Unless a kill is some kind of miracle, that is how
   air kills are filmed.
+- **A gunner's volley is a pair shot** (2026-11-15, `ua4fjn8djz`: a Me323
+  Gigant's gunner, "the big plane is not framed nicely, and it doesn't show
+  the victim"). The chase looks where the hull flies; a gunner (seat not 0)
+  or a victim over 35 degrees off the nose gets the camera behind and above
+  the killer on the line to his victim, stood off by its radius
+  (`REEL_BEAT.volleyOffNose`, `pairLow`, `pairHigh`, `pairMin`).
 - **Sound is wanted.** Film with `--sound` (the nightly does).
 - **Look at what went up.** The nightly uploads unreviewed; after a run,
   contact-sheet the new ones and take down a bad one rather than waiting

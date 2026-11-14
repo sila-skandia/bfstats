@@ -97,6 +97,18 @@ attacker's own plane (BF109 on SBD at 247 m showed only debris), so when the
 victim falls inside the attacker's outline on screen the eye rises 3 m for
 the part; the SBD then shows above the BF109 as it blows up.
 
+**A gunner's volley is framed as a pair (2026-11-15).** `ua4fjn8djz`: a
+Me323 Gigant's gunner downed a Fairey Battle 330 m up and behind him, and
+the game's chase camera, which looks the way the hull flies, showed half a
+wing over a hillside and never the victim. When the killer is in any seat
+but the pilot's, or his victim is more than 35 degrees off his flight
+(`REEL_BEAT.volleyOffNose`), the lens hook places the camera itself: behind
+and above the killer on the line to his victim, stood off by the hull's
+radius so all of it fits in 9:16 (a Gigant about 100 m), the killer under the
+middle of the frame and the line of fire over it (`pairLow`, `pairHigh`),
+eased so it never jitters. The runner logs "volley framed as a pair". A
+pilot firing forward keeps the chase.
+
 **Filters, the end of a kill, more air compilations (2026-11-04).**
 
 - The strip has filters, All, Air, Ground to air, Vehicle and Soldier (the

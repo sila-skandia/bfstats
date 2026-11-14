@@ -1673,6 +1673,12 @@ const REEL_BEAT = Object.freeze({
   // on the chase line), the eye rises volleyLift metres, eased over
   // volleyLiftTime seconds, and stays up for the part.
   volleyLift: 3, volleyLiftTime: 0.4,
+  // A gunner's volley, or one at a victim more than volleyOffNose degrees off
+  // the killer's flight, is framed as a pair: the killer's centre pairLow of
+  // the half frame under the middle, the line of fire pairHigh over it, never
+  // nearer than pairMin metres, never looking up from under him (the way back
+  // rises at least pairBackY).
+  volleyOffNose: 35, pairLow: 0.5, pairHigh: 0.4, pairMin: 14, pairBackY: 0.15,
   man: [6, 8], hull: [26, 9], behind: 5, up: 3.5,
 });
 
@@ -3264,7 +3270,7 @@ async function filmReel(page, reel, dir) {
       else r.camera.setMode('chase');
     }, { from: spawn !== null ? spawn + 0.05 : part.t - (reel.player !== undefined ? REEL_BEAT.playerLead : volley ? REEL_BEAT.volleyLead : REEL_BEAT.lead), victim: volley ? part.killer : part.victim });
     if (volley) {
-      await page.evaluate(async ({ t, killer, victim, beat, FPS }) => {
+      const pair = await page.evaluate(async ({ t, killer, victim, beat, FPS }) => {
         const r = window.replay;
         const B = (window.__rb ??= await import(new URL('replay-battles.js', location.href).href));
         const cam = r.ctx.camera;
@@ -3275,8 +3281,111 @@ async function filmReel(page, reel, dir) {
         const at = (pid, time) => B.whereIs(r.rec, pid, time, r.kills ?? r.rec.kills)?.pos ?? null;
         const toCam = (out, cm) => out.applyMatrix4(cm.matrixWorldInverse);
         const ease = k => 1 - Math.exp(-1 / (k * FPS));
+        const RC = (window.__rcam ??= await import(new URL('replay-camera.js', location.href).href));
+        // A gunner, or a pilot whose victim is off his nose (2026-11-15,
+        // ua4fjn8djz: a Me323's gunner shooting a Fairey Battle up and behind
+        // him; the game's chase camera showed half a wing and a hillside, the
+        // victim never). The game's camera looks the way the hull flies, not
+        // where he shoots, so the volley frames the pair itself: behind and
+        // above the killer on the line to his victim, stood off by the hull's
+        // radius so all of it is in the picture, the killer low in the frame
+        // and his victim above him (`pairPose`).
+        const kAt = t - 0.3;
+        const kw = B.whereIs(r.rec, killer, kAt, r.kills ?? r.rec.kills);
+        const k0 = kw?.pos;
+        const k1 = at(killer, kAt - 0.4);
+        const v0 = at(victim, kAt);
+        if (k0 && v0) {
+          let off = 0;
+          if (k1) {
+            const f = [k0[0] - k1[0], k0[1] - k1[1], k0[2] - k1[2]];
+            const d = [v0[0] - k0[0], v0[1] - k0[1], v0[2] - k0[2]];
+            const fl = Math.hypot(...f);
+            const dl = Math.hypot(...d);
+            if (fl > 1 && dl > 1) off = (Math.acos(Math.max(-1, Math.min(1, (f[0] * d[0] + f[1] * d[1] + f[2] * d[2]) / (fl * dl)))) * 180) / Math.PI;
+          }
+          if ((kw.seat ?? 0) !== 0 || off > beat.volleyOffNose) st.pair = { seat: kw.seat ?? 0, off: Math.round(off) };
+        }
+        const P = { pos: new THREE_V(), look: new THREE_V(), fresh: true, victim: null };
+        function THREE_V() { return cam.position.clone().set(0, 0, 0); }
+        const _k = THREE_V();
+        const _v = THREE_V();
+        const _d = THREE_V();
+        const _u = THREE_V();
+        const _p = THREE_V();
+        const _l = THREE_V();
+        const pairPose = (c, now) => {
+          const w = B.whereIs(r.rec, killer, now, r.kills ?? r.rec.kills);
+          const hull = w?.life ? r.hulls?.get(w.life) ?? null : null;
+          if (hull?.root) hull.root.getWorldPosition(_k);
+          else if (w?.pos) _k.set(w.pos[0], w.pos[1], w.pos[2]);
+          else return false;
+          const radius = hull ? RC.hullRadius(hull) : 6;
+          const vp = at(victim, Math.min(now, t + 3)) ?? P.victim;
+          if (!vp) return false;
+          P.victim = vp;
+          _v.set(vp[0], vp[1], vp[2]);
+          _d.copy(_v).sub(_k);
+          if (_d.lengthSq() < 1) return false;
+          _d.normalize();
+          // The stand-off from the lens he started with, so opening it never
+          // moves the camera; the pin from the lens as it is.
+          const baseV = (st.base * Math.PI) / 360;
+          const halfV = (c.fov * Math.PI) / 360;
+          const halfH = Math.atan(Math.tan(baseV) * c.aspect);
+          const dist = Math.max(beat.pairMin, radius / Math.tan(halfH * 0.85), (radius * 0.6) / Math.tan(baseV * beat.pairLow * 0.9));
+          // Back along the line of fire, never from under him: a victim
+          // overhead put the camera in the ground under a plane on the runway.
+          _u.copy(_d).negate();
+          if (_u.y < beat.pairBackY) {
+            const h = Math.hypot(_u.x, _u.z);
+            const want = Math.sqrt(1 - beat.pairBackY * beat.pairBackY);
+            if (h > 1e-3) _u.set((_u.x / h) * want, beat.pairBackY, (_u.z / h) * want);
+            else _u.set(want, beat.pairBackY, 0);
+          }
+          _p.copy(_k).addScaledVector(_u, dist);
+          _p.y += dist * Math.sin(baseV * (beat.pairLow + beat.pairHigh)) * 0.5;
+          const floor = r.ctx.groundHeight?.(_p.x, _p.z);
+          if (Number.isFinite(floor) && _p.y < floor + 3) _p.y = floor + 3;
+          // The killer pinned pairLow of the half frame under the middle: the
+          // look turns from him toward his victim by that much.
+          const toK = _l.copy(_k).sub(_p).normalize().clone();
+          const toV = _u.copy(_v).sub(_p).normalize();
+          const gap = Math.acos(Math.max(-1, Math.min(1, toK.dot(toV))));
+          const turn = Math.min(gap, halfV * beat.pairLow);
+          if (gap > 1e-3) {
+            // Rotate toK toward toV by `turn`, in their plane.
+            _l.copy(toV).addScaledVector(toK, -Math.cos(gap)).normalize();
+            _l.multiplyScalar(Math.sin(turn)).addScaledVector(toK, Math.cos(turn)).normalize();
+          }
+          // The victim above him must stay in the picture: open the lens.
+          const need = Math.max(halfV, (gap - turn) / beat.volleyFit);
+          P.fov = Math.min(beat.volleyFov, Math.max(st.base, (need * 360) / Math.PI));
+          if (P.fresh) {
+            P.pos.copy(_p);
+            P.look.copy(_l);
+            P.fresh = false;
+          } else {
+            P.pos.lerp(_p, ease(0.25));
+            P.look.lerp(_l, ease(0.25)).normalize();
+          }
+          c.position.copy(P.pos);
+          const fov = c.fov + ((P.fov ?? c.fov) - c.fov) * ease(0.35);
+          if (Math.abs(fov - c.fov) > 0.01) {
+            c.fov = fov;
+            c.updateProjectionMatrix();
+          }
+          c.up.set(0, 1, 0);
+          c.lookAt(_p.copy(P.pos).add(P.look));
+          c.updateMatrixWorld();
+          return true;
+        };
         r.camera.setLensHook(c => {
           const now = r.time;
+          if (st.pair && pairPose(c, now)) {
+            window.__volleyState = st;
+            return;
+          }
           let want = st.base;
           const vp = now > t - 2.5 ? (at(victim, Math.min(now, t + 3)) ?? at(victim, t - 0.1)) : null;
           const kp = vp ? at(killer, now) : null;
@@ -3311,7 +3420,9 @@ async function filmReel(page, reel, dir) {
           }
           window.__volleyState = st;
         });
+        return st.pair ?? null;
       }, { t: part.t, killer: part.killer, victim: part.victim, beat: REEL_BEAT, FPS });
+      if (pair) log(`    volley framed as a pair (seat ${pair.seat}, victim ${pair.off} deg off his nose)`);
     }
     await page.waitForTimeout(1200);
     for (let k = 0; k < 20; k++) {
