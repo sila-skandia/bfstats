@@ -604,6 +604,12 @@ export function createLevelShading(page) {
           view.bfShade = { value: new THREE.Vector4(1, 1, 1, 0) };
           return view;
         }
+        // Remaster mode: a glow the exporter marks additive (a bullet's
+        // impact flash on the ground, a gun's muzzle mesh) is light, not a
+        // surface, and stays unlit, as the effect meshes skipped above do.
+        // Lit, it took the sun's N.L and the shadow: the soft glow a round
+        // throws up where it lands drew as a white speck (2026-11-15).
+        if (remasterHooks.materials && m.userData?.additive) return mat;
         if (remasterHooks.materials) {
           // Remaster mode: this same combine as a node material, with the
           // sun's real-time shadow in its sun term (remaster-materials.js).

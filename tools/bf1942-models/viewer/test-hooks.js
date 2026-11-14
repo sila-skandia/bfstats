@@ -75,6 +75,8 @@ export function installTestHooks(page) {
     // Scene handles for offline inspection: isolating one shader term is the
     // only practical way to attribute an artefact to it.
     window.__scene = page.scene;
+    // The first-person overlay's scene (the arms, the gun, its flash).
+    Object.defineProperty(window, '__vmScene', { get: () => page.vmScene, configurable: true });
     window.__camera = page.camera;
     window.__renderer = page.renderer;
     window.__THREE = THREE;

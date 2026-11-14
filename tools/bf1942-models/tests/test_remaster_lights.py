@@ -69,6 +69,23 @@ class RemasterLightsTests(unittest.TestCase):
             self.assertIsNone(flash[name], name)
         self.assertEqual([None, None, False, False], self.results["none"])
 
+    def test_a_flak_burst_is_a_blast_with_a_hot_core(self) -> None:
+        flash = self.results["flash"]
+        flak = flash["e_FlakBig"]
+        self.assertGreater(flak["intensity"], flash["e_MuzzPanz"]["intensity"])
+        self.assertGreater(flak["burst"], flash["e_MuzzAAGun"]["burst"])
+        # The gun's own scrap when it is destroyed lights nothing.
+        self.assertIsNone(flash["e_ScrapAAFlak38"])
+
+    def test_the_flash_pool_lights_what_counts_where_the_eye_is(self) -> None:
+        pool = self.results["pool"]
+        self.assertEqual(1, pool["free"])
+        # Held by far guns, the near gun takes the farthest one's light.
+        self.assertEqual(1, pool["near"])
+        # Held by near guns, a far gun's flash is not lit.
+        self.assertEqual(-1, pool["far"])
+        self.assertEqual(1, pool["spent"])
+
     def test_a_fire_is_a_burning_bundle_and_nothing_else(self) -> None:
         fire = self.results["fire"]
         burning = {"e_WillyFire", "e_PanzFire", "e_CorsairFire", "e_fire4"}

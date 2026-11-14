@@ -21,6 +21,10 @@
 export const FLASH_KINDS = [
   { test: /expl(drysand|frozensnow|window|small)|collision|richo|ricoch|scrap/i, intensity: 0 },
   { test: /bomb|granadeexpl|groundexpl|waterexpl|expl(armor|bazooka|boatarmor|gas|ani)|torpedo/i, intensity: 150, range: 60, life: 0.45, color: 0xffb070 },
+  // A flak shell's airburst (`e_FlakBig`): the blast's light and a hot core
+  // 4 m across for the bloom. Not lit until 2026-11-15, it drew as retail's
+  // (the owner: the flak bursts "look exactly the same").
+  { test: /flakbig/i, intensity: 120, range: 45, life: 0.3, color: 0xffb070, burst: 4 },
   // A tank's main gun, a self-propelled gun's, a coastal or a ship's gun.
   { test: /muzz(panz|sexton|priest|defgun)/i, intensity: 90, range: 30, life: 0.13, color: 0xffc080, burst: 2.8 },
   // An anti-aircraft gun.
@@ -33,6 +37,30 @@ export const FLASH_KINDS = [
   { test: /muzz(heavy|b17)/i, intensity: 16, range: 14, life: 0.07, color: 0xffc890, burst: 0.45 },
   { test: /muzz/i, intensity: 1.2, range: 8, life: 0.05, color: 0xffc890 },
 ];
+
+/**
+ * The slot of the flash pool a new flash at `p` (`{ x, y, z }`, with
+ * `peak` its light) takes, seen from `eye`: a free one, else the one whose
+ * flash counts least there (its light left, over its distance squared).
+ * -1 when the new flash counts less than every one lit: it is not lit.
+ * Each slot is `{ t, life, peak, at: { x, y, z } }`. Taken in turn, eight MG
+ * nests at ten rounds a second were eighty flashes a second for four lights:
+ * the gun in front of the camera lost its light and its burst to guns 150 m
+ * off within 50 ms, and its flash drew as retail's (2026-11-15).
+ */
+export function pickFlashSlot(slots, eye, peak, p) {
+  const weight = (w, q) => w / Math.max(1, (q.x - eye.x) ** 2 + (q.y - eye.y) ** 2 + (q.z - eye.z) ** 2);
+  let slot = -1;
+  let least = Infinity;
+  for (let i = 0; i < slots.length; i++) {
+    const g = slots[i];
+    if (g.t <= 0) return i;
+    const left = g.t / g.life;
+    const w = weight(g.peak * left * left, g.at);
+    if (w < least) { least = w; slot = i; }
+  }
+  return weight(peak, p) < least ? -1 : slot;
+}
 
 /** The flash an effect bundle makes, or null when it lights nothing. */
 export function flashKind(name) {

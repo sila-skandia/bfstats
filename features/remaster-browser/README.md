@@ -69,6 +69,8 @@ wins", below).
 | A staged MG crossfire on Battleaxe for the tracers | done (2026-11-14) |
 | The player's own rounds drawn from the muzzle in first person | done (2026-11-14) |
 | The showreel: the remaster's features first with captions, the pairs last; a staged gunner held on the gun in shot | done (2026-11-15) |
+| Effects that looked like retail or worse: a muffled blast, the MG's flash, flak, a pink first-person flash | fixed (2026-11-15) |
+| The reel's title and end cards in the bfstats brand | done (2026-11-15) |
 
 ## How to turn it on
 
@@ -916,6 +918,80 @@ again.
 ![A burning car before and after](marketing/kharkov_fire_side_by_side.jpg)
 
 ![An MG42 nest before and after](marketing/battleaxe_mg42_nest_side_by_side.jpg)
+
+### Owner feedback on the reel, 2026-11-15
+
+"The muzzle flash on the MG looks exactly the same as retail", "the
+explosion ... in retail looks way better than ours. Ours is sort of muffled.
+Are we sure that it's working as intended", "flak bursts look exactly the
+same". It was not working as intended, in five ways; measured on the Allied
+AA gun going up in recording `ymdy248edr` (the share of the blast's core
+drawn white, frame by frame, retail first):
+
+| | peak | 0.3 s | 0.8 s | 1.1 s |
+|---|---|---|---|---|
+| retail | 87% | 90% | 84% | 73% |
+| remaster before | 39% | 31% | 0% | 0% |
+| remaster now (gain 14) | 94% | 90% | 58% | 34% |
+
+- **Effects never had the exposure undone.** The frame is drawn at an
+  exposure of 0.58 and the engine-combine surfaces are handed `viewGain`
+  (1 / 0.58) to undo it; effect sprites and gun flashes were not. A sprite
+  that covers (a blast's fire and dust layers, a car's smoke) drew at 0.58
+  of its art, and every flash and burst gave 0.58 of its GLOW: a heavy MG's
+  flash and a flak burst came out as bright as retail's. Now `glow` gives
+  every effect material the same gain (tracers keep their tuned one).
+- **A blast's light was under its own dust.** Sorted by distance, the
+  additive fireball layers sat under the brown fire and dust layers that
+  cover. A sprite that gives light is drawn after those that cover
+  (`userData.remasterLight`, `renderOrder` 1 in effects.js).
+- **The dark-smoke rule read an opacity that was not the sprite's own.**
+  `smoke` set an opacity node that read `materialOpacity`; with that node the
+  blast's layers drew as a pale veil half a second in, and with an opacity
+  node that was `materialOpacity` itself the veil was the same. The rule now
+  runs where effects.js sets each particle's opacity
+  (`remasterHooks.smokeOpacity`), on the particle's own tint and only near
+  black, so a burning car's black smoke keeps its density and a fireball's
+  greying fire layers are not taken for smoke. (The additive sprites' own
+  opacity node stays: moved into the colour's alpha instead, the blast held
+  0% white a second in.)
+- **Faint layers add up to less as light.** The engine summed a blast's dozen
+  faint layers in display space, where ten at 0.1 are white; as light the
+  same ten make far less, and a fireball's faint edge over sand adds what
+  retail's does only at a gain of about 13. Particles now glow at 14
+  (`spriteGlow`, a uniform a capture can change); mesh flashes keep 3.
+- **The flash lights went to the wrong guns.** Four lights, taken in turn:
+  eight MG nests at ten rounds a second took them from the gun in front of
+  the camera within 50 ms, its burst with them. `pickFlashSlot`
+  (remaster-lights.js): a free light, else the one that counts least where
+  the eye is; a flash that counts less than every one lit is not lit.
+- **Flak bursts lit nothing.** `e_FlakBig` had no row in `FLASH_KINDS`; it
+  now has a blast's light and a hot core 4 m across.
+- **A hot flash went pink.** The tone curve kept a highlight's hue, so a
+  rifle's orange flash (3, 0.6, 0.1 after the exposure) went to salmon where
+  the engine's additive layers saturated each channel to yellow-white. Past
+  1 (light only: the painted art is display-referred and stays under it) the
+  shoulder now goes channel by channel.
+- **A glow lit as a surface.** A material the exporter marks additive (a
+  round's impact glow on the ground, a gun's muzzle mesh) reaching the
+  shading pass was rebuilt as a lit surface in the remaster, the sun's N.L
+  and shadow on a light. It stays unlit now, as the effect meshes skipped
+  before it do.
+
+The flak shots moved too: the recording's AA guns fire almost level, so the
+staged Flak 38s (`gunners.aimAt`) fire at the sky, and the camera is up among
+the bursts, 110 m from them, where they were a few pixels from the ground.
+
+![The AA gun going up, before and after](marketing/battleaxe_allied_aa_side_by_side.jpg)
+
+The reel opens and closes on the bfstats brand, after the BattleView
+trailer's end card (features/battleview-install-page, "Hero video"): an
+olive vignette, the badge (`viewer/bfstats-logo.webp`) over a two-part title,
+a gold rule and "A PROJECT BY AND FOR THE COMMUNITY · bfstats.io". The title
+comes up first, the badge and credit after it. "Remaster | BF1942 in the
+browser" opens it; "Remaster | play it at play.bfstats.io" closes it.
+
+![The title card](marketing/card_intro.jpg)
 
 ## Bugs found on the way
 

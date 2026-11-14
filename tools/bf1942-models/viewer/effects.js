@@ -1075,6 +1075,9 @@ export class EffectPlayer {
         remasterHooks.glow?.(material, { sprite: true });
         const geometry = animated ? source.geometry.clone() : source.geometry;
         mesh = new THREE.Mesh(geometry, material);
+        // Remaster mode: a sprite that gives light is drawn after those that
+        // cover (remaster-renderer.js `glow`).
+        if (material.userData.remasterLight) mesh.renderOrder = 1;
         mesh.userData.poolKey = key;
         mesh.frustumCulled = false;
         if (world.mask != null) mesh.layers.mask = world.mask;
@@ -1265,7 +1268,9 @@ export class EffectPlayer {
       if (look.color) {
         material.color.setRGB(look.color[0], look.color[1], look.color[2], THREE.SRGBColorSpace);
       }
-      material.opacity = look.opacity;
+      // Remaster mode: black smoke as dense as the engine's display-space
+      // blend drew it (remaster-renderer.js `smokeOpacity`).
+      material.opacity = remasterHooks.smokeOpacity?.(material, look.opacity, look.color) ?? look.opacity;
       if (p.spec.numAnimationFrames > 1) {
         // The spec is the shared template's `particle` object (one per
         // emitter, not per particle), so caching the grid there costs

@@ -21,11 +21,13 @@
 // (the camera follows `pid` in `mode`, `orbit` taking `yaw`/`pitch`/`zoom`),
 // or a camera glide over the level with the level's own bots,
 //   { level: true, from: [x,y,z,yaw,pitch], to: [...] }
+// (without `from`, the page's own camera: a player spawned by `setup`)
 // and either may have
 //   setup: "<js>"  run once in the page when the shot starts (async allowed)
 //   each:  "<js>"  run in the page before every frame, `s` the second
 // to stage what it shows: a vehicle set burning, an effect played.
-// `liveMods: true` hands the page the live mod registry (a mod's recording).
+// `liveMods: true` hands the page the live mod registry (a mod's recording);
+// `init: "<js>"` runs in the page before its own scripts.
 //
 // A level shot may stage a fight: `gunners: { bots, seats: { <team>: <template> },
 // perTeam, warm, focus, field, northTeam, bursts }` plays the level with
@@ -82,7 +84,9 @@ function clockInit() {
 async function open(browser, shot, query) {
   const page = await browser.newPage({ viewport: { width: W, height: H }, deviceScaleFactor: 1 });
   page.on('pageerror', e => log('pageerror', query, e.message.slice(0, 200)));
+  page.on('console', m => { if (m.type() === 'error') log('console', query, m.text().slice(0, 300)); });
   await page.addInitScript(clockInit);
+  if (shot.init) await page.addInitScript(shot.init);
   if (shot.liveMods) {
     // The local registry carries no counts, so the page serves vanilla only:
     // hand it the live one, for that one file.
@@ -113,7 +117,7 @@ async function open(browser, shot, query) {
  *  staged fight kept up, `each` run, the world stepped and drawn. */
 async function frame(page, shot, s, keep = true) {
   return page.evaluate(async ({ shot, s, W, H, FPS, keep }) => {
-    if (shot.level) {
+    if (shot.level && shot.from) {
       const u = Math.min(1, s / Math.max(shot.len, 1e-3));
       const e = u * u * (3 - 2 * u);
       const [x, y, z, yaw, pitch] = shot.from.map((a, i) => a + (shot.to[i] - a) * e);
@@ -316,13 +320,33 @@ const compareHtml = shot => `
   <div style="position:absolute;top:840px;left:960px;width:944px;text-align:center;font:800 26px/1 system-ui;letter-spacing:0.24em;color:#ffc46e">REMASTER</div>
   <div style="position:absolute;left:0;right:0;top:900px;text-align:center;font:500 26px/1.35 system-ui;color:#bdb7a8">${esc(shot.note)}</div>`;
 
-const cardHtml = (kick, title, sub) => `
-  <div style="position:absolute;inset:0;background:radial-gradient(ellipse at 50% 42%, #23201a, #0b0b0c 70%)"></div>
-  <div style="position:absolute;left:0;right:0;top:390px;text-align:center">
-    <div class="kick" style="font-size:26px">${esc(kick)}</div>
-    <div style="font:800 96px/1.05 'SF Pro Display',system-ui,sans-serif;margin-top:26px">${esc(title)}</div>
-    <div style="font:500 34px/1.4 system-ui;margin-top:26px;color:#c9c3b4">${esc(sub)}</div>
+// The title and end cards, after the BattleView trailer's end card
+// (features/battleview-install-page, "Hero video"): an olive vignette, the
+// bfstats badge over a two-part title, a short gold rule and the credit
+// line in spaced capitals. Two layers: the title comes up first, the badge
+// and the credit after it.
+const LOGO = `data:image/webp;base64,${fs.readFileSync(path.join(REPO, 'tools/bf1942-models/viewer/bfstats-logo.webp')).toString('base64')}`;
+const cardBack = `<div style="position:absolute;inset:0;background:radial-gradient(ellipse 62% 70% at 50% 46%, #232a17 0%, #12170c 45%, #030504 100%)"></div>`;
+const cardTitle = (lead, rest) => `
+  <div style="position:absolute;left:0;right:0;top:560px;text-align:center;font:400 84px/1 'Helvetica Neue','SF Pro Display',system-ui,sans-serif;color:#d9dcd2;letter-spacing:-0.01em">
+    <b style="font-weight:800;color:#fbfbf6;letter-spacing:-0.025em">${esc(lead)}</b><span style="display:inline-block;width:2px;height:74px;background:#8c8a55;margin:0 34px;vertical-align:-10px"></span>${rest}
   </div>`;
+const cardCredit = site => `
+  <img src="${LOGO}" style="position:absolute;left:50%;top:190px;width:330px;transform:translateX(-50%);filter:drop-shadow(0 10px 40px rgba(0,0,0,0.6))">
+  <div style="position:absolute;left:50%;top:712px;width:90px;height:2px;margin-left:-45px;background:linear-gradient(90deg,transparent,#c9b26a,transparent)"></div>
+  <div style="position:absolute;left:0;right:0;top:766px;text-align:center;font:500 28px/1 'SF Mono',Menlo,monospace;letter-spacing:0.42em;color:#8d9184">A PROJECT BY AND FOR THE COMMUNITY <span style="color:#6f735f">&middot;</span> <span style="letter-spacing:0.06em;color:#c8d88c">${esc(site)}</span></div>`;
+
+/** A card as two layers (`<file>.base.png`, opaque, and `<file>.over.png`)
+ *  and its clip: the base fades in, the badge and credit after it. */
+async function brandCard(browser, file, lead, rest, site, secs) {
+  await overlay(browser, `${file}.base.png`, cardBack + cardTitle(lead, rest), true);
+  await overlay(browser, `${file}.over.png`, cardCredit(site));
+  execFileSync('ffmpeg', ['-y', '-loglevel', 'error', '-loop', '1', '-framerate', String(FPS), '-t', String(secs), '-i', `${file}.base.png`,
+    '-loop', '1', '-framerate', String(FPS), '-t', String(secs), '-i', `${file}.over.png`, '-filter_complex',
+    `[1:v]format=rgba,fade=t=in:st=0.9:d=0.8:alpha=1[o];[0:v][o]overlay=0:0,fade=t=in:st=0:d=0.6,fade=t=out:st=${secs - 0.7}:d=0.7`,
+    ...ENC, `${file}.mp4`]);
+  return `${file}.mp4`;
+}
 
 const ENC = ['-c:v', 'libx264', '-crf', '18', '-preset', 'medium', '-pix_fmt', 'yuv420p', '-r', String(FPS)];
 
@@ -424,11 +448,11 @@ try {
   }
   if (!STILLS_ONLY && (!ONLY || REEL_ONLY)) {
     // The reel: a title card, then each feature on its own and straight
-    // after it the same thing beside retail, in the order of the shot file.
-    const intro = path.join(OUT, 'card_intro.png');
-    await overlay(browser, intro, cardHtml('Battlefield 1942 in the browser', 'Remaster', 'Real sun shadows, light from every shot, water that reflects the sky'), true);
-    cardClip(intro, 3.5, path.join(OUT, 'card_intro.mp4'));
-    const order = [path.join(OUT, 'card_intro.mp4'), ...ALL.map(clipOf)];
+    // after it the same thing beside retail, in the order of the shot file,
+    // and an end card.
+    const intro = await brandCard(browser, path.join(OUT, 'card_intro'), 'Remaster', '<b style="font-weight:800;color:#fbfbf6">BF1942</b> in the browser', 'bfstats.io', 4.5);
+    const outro = await brandCard(browser, path.join(OUT, 'card_outro'), 'Remaster', 'play it at <b style="font-weight:800;color:#fbfbf6">play.bfstats.io</b>', 'bfstats.io', 5);
+    const order = [intro, ...ALL.map(clipOf), outro];
     const missing = order.filter(f => !fs.existsSync(f));
     if (missing.length) log('reel: missing', missing.join(' '));
     const list = path.join(OUT, 'clips.txt');
