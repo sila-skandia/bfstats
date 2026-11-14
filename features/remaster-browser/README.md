@@ -448,6 +448,91 @@ has its hottest function in the world's own collision
 (`static-index.js` `#intersect`, 1.5 ms: a vehicle's parts against the
 statics' triangles), which is the world's code and the retail page's too.
 
+## A replay that slowed as it played (2026-11-14)
+
+The owner: the remaster "kicks my GPU's ass" on the M5 Max, and the latest
+Liberation of Caen recording (`c8z2nt8m7u`, 30 minutes, 12 Nov) "slowly
+degrades into a choppy mess" as it plays. `tests/perf/remaster_replay_soak.mjs`
+plays a recording in headless Google Chrome at the laptop's own 1728 x 1117,
+pixel ratio 2, uncapped, and prints every 15 s the frame interval with the
+renderer's and the scene's counts.
+
+**It is not a leak.** Before any change the median frame went from 6.7 ms at
+t = 30 s to 18-20 ms by t = 290 s, but the retail page climbs the same way
+(2.9 to 9.3 ms), and a page opened and seeked straight to t = 280 costs what
+the page that played there costs. Objects, geometries and textures level
+off. The round gets busier: by t = 250 the camera is in the town with a
+dozen soldiers, a hundred bullet holes and a machine gun's smoke in view,
+and the main pass is some 1,100 draws against 300 at the start.
+
+**The GPU was spending its frame on blurs.** At a pixel ratio of 2 the
+post chain's soft passes were sized by the device pixel: ambient occlusion
+at half of 3456 x 2234 and the sun shafts' 40-tap radial blur at all of it,
+four times the pixels of the 1600 x 900, ratio-1 captures the look was
+judged on. Made GPU-bound on purpose (`?dpr=4`, 6912 x 4468), a late Caen
+frame cost 46.7 to 49.9 ms; without AO, 21.2. Now (`sizePost`):
+
+- AO at half the CSS pixel (a quarter of the device's at ratio 2): the same
+  occlusion as the captures. The same frame at `?dpr=4`: 15.9 ms, back to
+  CPU-bound.
+- The shafts' mask and blur in their own half-CSS-pixel targets, and not
+  drawn at all while the sun is out of the view (their strength is then 0,
+  and zero times 40 taps a pixel was still 40 taps).
+- The bloom stays as it was. From a quarter-size source the sun's glint on
+  the water lost its glow (each sparkle point-sampled under the 2.4
+  threshold), and it saved 2.7 ms of the 3.3 the change took off Wake's
+  bunker view at ratio 2.
+- SMAA and the scene pass stay at the device pixel: they are the detail.
+
+Side by side at ratio 2 (Wake into the sun, the bunker, four Caen frames)
+the pictures are the same; the Kübelwagen's wheel arches and the ground under
+it hold the same occlusion. `__remaster.tune.cssPost = false` puts the old
+sizes back for an A/B, and `ao`, `bloom`, `shafts` and `smaa` turn each pass
+off (the chain is rebuilt on a change).
+
+**The CPU: three's change check on 5,000 statics.** Hiding the level's
+statics took a late Caen frame from 14.3 to 7.6 ms of script: about 600
+lightmapped draws, each with its own lightmap, so nothing batches them. For
+every object it draws three compares the world matrix, the material's
+properties, the geometry and the lights' shadow maps with what it drew last
+(`NodeMaterialObserver.equals`); an object marked `static` skips that.
+`holdStatics` marks the frozen statics (`freezeStatics`) except the ones
+whose materials the page changes with the camera (texture-fade planes, the
+alpha-LOD cards), batches and the spawners' vehicles: 4,988 on Caen. Once
+the level's textures are all up, so a later upload is never left unbound;
+once a second one frame draws them unmarked, so any other change reaches
+the GPU within the second; and SHADOWS changing (the replay's Reduced rung
+does it) unmarks them for five frames, since it builds or drops the shadow
+maps their bindings name. In the same page, four alternations: 13.2-13.6 ms
+marked, 13.5-14.3 unmarked, about 0.8 ms. Full and Reduced flipped four
+times mid-replay: no WebGPU error, and the shadows back as they were.
+(The 2026-11-13 attempt above skipped the full refresh of node materials,
+whose uniforms that check cannot see; this skips only the comparison, on
+objects that do not move.) `tune.staticObjects`.
+
+**Bullet holes past 48 m are not drawn, as in retail** (ledger IMP-14). A
+mesh particle is a StandardMesh, and the engine culls a StandardMesh under
+1 m by its distance (LOD-7); the page drew every hole, case and chip at any
+range. On this recording's late frames it changes nothing (the camera is in
+the fight), but a far firefight's holes no longer cost a draw each.
+
+Where a late Caen frame stands, 1728 x 1117 at ratio 2, the replay paused
+at t = 246 (`__renderOnce` back to back, the GPU queue drained every 20):
+
+| | Before | After |
+|---|---|---|
+| GPU at `?dpr=4` (GPU-bound) | 46.7-49.9 ms | under 15.9 (CPU-bound) |
+| Script, the frame | 14.3-15.0 ms | 13.2-13.6 ms |
+
+What is left is the draw count: about 1,100 objects in the main pass at
+roughly 10 microseconds each in three's WebGPU renderer, 600 of them
+lightmapped statics. A WebGPU render bundle would take those to near zero,
+but three records a bundle with the frustum's cull in it, so the statics
+would have to be regrouped into tiles that are culled as a whole and
+re-recorded when the draw distance or a building's state changes; that
+moves every static's parent, which their collision, LODs and destruction
+all read. Not done here.
+
 ## How it is built
 
 The page imports `'three'` everywhere. `map.html`'s static import map names the

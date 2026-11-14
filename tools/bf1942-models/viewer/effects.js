@@ -15,6 +15,9 @@ import {
   basisFromNormal, EmitterClock, spawnParticleInto, newParticleRecord, integrateParticle,
   evalParticleInto, atlasGrid, frameIndex, GRAVITY, sampleCrd, levelBasis,
 } from './effects-core.js';
+import {
+  CULL_PAD, DEFAULT_CULL_FACTOR, GLOBAL_LOD_RADIUS, fovModifier, lodPercent, originRadius, sizeFactor,
+} from './mesh-cull.js';
 // Remaster mode's hooks (features/remaster-browser, remaster-mode.js):
 // one registry on the global, so this module needs no import for it and
 // stays loadable by the harnesses that copy it alone. Empty without
@@ -63,7 +66,30 @@ const _anchorPos = new THREE.Vector3();
 const _anchorQuat = new THREE.Quaternion();
 const _anchorScale = new THREE.Vector3();
 const _turn = new THREE.Quaternion();
+const _cullBox = new THREE.Box3();
+const _cullPart = new THREE.Box3();
+const _cullInv = new THREE.Matrix4();
+const _cullRel = new THREE.Matrix4();
 const _carry = new THREE.Vector3();
+
+/**
+ * A mesh particle's `r` at a scale of 1: the largest distance of its parts'
+ * box corners from its own origin (`mesh-cull.js` `originRadius`), the
+ * engine's `+0x4c` before `setScale`. Taken once, when the pooled mesh is
+ * built.
+ */
+function particleRadius(root) {
+  root.updateMatrixWorld(true);
+  _cullInv.copy(root.matrixWorld).invert();
+  _cullBox.makeEmpty();
+  root.traverse(part => {
+    if (!part.isMesh || !part.geometry?.attributes?.position) return;
+    if (!part.geometry.boundingBox) part.geometry.computeBoundingBox();
+    _cullPart.copy(part.geometry.boundingBox).applyMatrix4(_cullRel.multiplyMatrices(_cullInv, part.matrixWorld));
+    _cullBox.union(_cullPart);
+  });
+  return _cullBox.isEmpty() ? Infinity : originRadius(_cullBox);
+}
 
 /**
  * EMT-5's `r`: a mesh particle's own local bounding box, magnitude from the
@@ -853,6 +879,7 @@ export class EffectPlayer {
         active = true;
       }
     }
+    this.#cullFrame();
     for (let i = this.particles.length - 1; i >= 0; i--) {
       const p = this.particles[i];
       let alive = false;
@@ -1062,6 +1089,7 @@ export class EffectPlayer {
     let mesh = pool.pop();
     if (!mesh) {
       mesh = template.clone();
+      mesh.userData.cullRadius = particleRadius(mesh);
       const fades = !!p.spec.alphaOverTime;
       // A particle owns its materials — opacity is per particle — but the
       // clone shares the template's. The page's lighting pass may replace
@@ -1167,6 +1195,41 @@ export class EffectPlayer {
     this.runPool.push(run);
   }
 
+  /**
+   * The small-mesh cull for this frame's mesh particles. A mesh particle is
+   * a StandardMesh (IMP-4: its alpha goes to `IStandardMesh::setAlpha`), and
+   * `StandardMesh_drawLod` skips any StandardMesh `StandardMesh_selectLod`
+   * returns -1 for (LOD-7): one under `globalLodRadius` (1 m) once
+   * `(dist_last^2 + 2500) x k < d^2/m - r^2`. A bullet hole (0.2 m quad,
+   * r 0.14) is not drawn past about 48 m at the 1 rad lens, nor a shell case
+   * or a chip of stone much past 20 m. The particle still lives; it is only
+   * not drawn. Particle templates carry no LOD table of their own, so their
+   * last distance is the template constructor's LOD 0 (0) and their
+   * cullFactor its 0.03 (`mesh-cull.js`). Only the world's own particles: a
+   * case thrown from the weapon in the player's hands draws in its own pass.
+   */
+  #cullFrame() {
+    const cam = this.camera;
+    if (!cam?.isPerspectiveCamera) { this.cullK = 0; return; }
+    cam.getWorldPosition(_camPos);
+    this.cullEye = _camPos;
+    this.cullK = lodPercent() * fovModifier(cam.fov, cam.zoom);
+  }
+
+  /** Whether the small-mesh cull hides mesh particle `p` this frame. */
+  #culled(p) {
+    const mesh = p.mesh;
+    const r0 = mesh.userData.cullRadius;
+    if (!this.cullK || !(r0 > 0) || mesh.parent !== this.root) return false;
+    const m = Math.max(mesh.scale.x, mesh.scale.y, mesh.scale.z);
+    const r = r0 * m;
+    if (!(r < GLOBAL_LOD_RADIUS)) return false;
+    const k = this.cullK * sizeFactor(r, DEFAULT_CULL_FACTOR);
+    const pos = p.position, eye = this.cullEye;
+    const dx = pos[0] - eye.x, dy = pos[1] - eye.y, dz = pos[2] - eye.z;
+    return CULL_PAD * k < (dx * dx + dy * dy + dz * dz) / m - r * r;
+  }
+
   #draw(p) {
     // `look`, its `scale` and its `color` are `effects-core`'s module scratch
     // and are valid only until the next `evalParticleInto` — the same contract
@@ -1232,6 +1295,7 @@ export class EffectPlayer {
       for (const material of mesh.userData.materials) {
         if (material.transparent) material.opacity = look.opacity;
       }
+      mesh.visible = !this.#culled(p);
     }
   }
 }

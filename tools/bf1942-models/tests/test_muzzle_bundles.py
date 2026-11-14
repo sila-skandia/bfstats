@@ -28,7 +28,7 @@ sys.path.insert(0, str(Path(__file__).resolve().parent))
 from test_gunfire_layers import MODULES as GUNFIRE_MODULES, THREE_PACKAGE, VIEWER  # noqa: E402
 
 HARNESS = Path(__file__).resolve().parent / "muzzle_bundle_harness.mjs"
-MODULES = {**GUNFIRE_MODULES, "effects.js": VIEWER / "effects.js"}
+MODULES = {**GUNFIRE_MODULES, "effects.js": VIEWER / "effects.js", "mesh-cull.js": VIEWER / "mesh-cull.js"}
 
 
 def run_harness() -> dict:

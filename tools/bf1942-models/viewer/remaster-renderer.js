@@ -473,7 +473,13 @@ export async function createRemasterScene({ renderer, scene, camera, sun, hemi }
   // looked at once a second.
   // The performance pass's switches, each on; a rig turns one off through
   // `__remaster.tune` to measure it in the same page, the same second.
-  const tune = { cascadeMatrices: true, cascadeWalk: true, quietShadowMaterial: true, reachPerMetre: REACH_PER_METRE, shadowBatch: true };
+  const tune = { cascadeMatrices: true, cascadeWalk: true, quietShadowMaterial: true, reachPerMetre: REACH_PER_METRE, shadowBatch: true,
+    // The post chain's passes (`buildPipeline`), each rebuilt on a change.
+    ao: true, bloom: true, shafts: true, smaa: true,
+    // The soft passes sized by the CSS pixel (`sizePost`); off, by the device pixel.
+    cssPost: true,
+    // The level's frozen statics drawn as three's `static` objects (`holdStatics`).
+    staticObjects: true };
   const otherScenes = new WeakMap();
   const render = renderer.render.bind(renderer);
   renderer.render = (s, c) => {
@@ -638,6 +644,60 @@ export async function createRemasterScene({ renderer, scene, camera, sun, hemi }
   let lastNodeFrame = -1;
   let earlyFrames = 0;
 
+  // The level's frozen statics as three's `static` objects. For every object
+  // it draws, three compares the object's world matrix, its material's
+  // properties, its geometry and the lights' shadow maps against what it drew
+  // last (`NodeMaterialObserver.equals`), to know whether its bindings need
+  // building again; a `static` object skips the comparison. A frozen static
+  // (level-statics.js `freezeStatics`) never moves, and on a level of
+  // lightmapped buildings the comparison was a millisecond of a frame
+  // (Liberation of Caen, 600 static draws; features/remaster-browser, "A replay
+  // that slowed as it played"). What the page does change on a static is left
+  // out: the texture-fade planes and the alpha-LOD cards (their materials
+  // change with the camera), batches, and the spawners' vehicles. For what
+  // is left, once a second one frame draws them without the flag, so any
+  // other change reaches the GPU within a second; and a change of SHADOWS
+  // (which builds or drops the sun's shadow maps the bindings name) drops the
+  // flag for a few frames at once. Only once the level's textures are all up
+  // (`uploadSome`): a texture uploaded after the flag would not be rebound.
+  let levelRoot = null;
+  let statics = null;     // the meshes, once marked
+  let staticsOn = false;
+  let staticsAt = 0;
+  let staticsShadows = null;
+  let staticsHold = 0;
+  function markStatics() {
+    statics = [];
+    for (const child of levelRoot.children) {
+      if (!Object.hasOwn(child, 'updateMatrixWorld') || child.userData?.kind === 'spawners') continue;
+      child.traverse(o => {
+        if (!o.isMesh || o.isSkinnedMesh || o.isBatchedMesh || o.isInstancedMesh) return;
+        const mats = [o.material].flat();
+        if (mats.some(m => !m || m.userData?.textureFade || m.userData?.alphaTestRef !== undefined
+          || m.userData?.additive)) return;
+        statics.push(o);
+      });
+    }
+  }
+  function setStatics(on) {
+    if (on === staticsOn || !statics) return;
+    staticsOn = on;
+    for (const o of statics) o.static = on;
+  }
+  function holdStatics(shadows, now) {
+    if (!tune.staticObjects) { setStatics(false); return; }
+    if (!levelRoot || textureQueue.length || earlyFrames < 600) return;
+    if (!statics) markStatics();
+    if (shadows !== staticsShadows) {
+      staticsShadows = shadows;
+      staticsHold = earlyFrames + 5;
+      setStatics(false);
+      return;
+    }
+    if (earlyFrames < staticsHold) return;
+    if (now - staticsAt > 1000) { staticsAt = now; setStatics(false); } else setStatics(true);
+  }
+
   // The light shafts' sun on the screen, set each frame (`updateShafts`).
   const shaftCenter = tsl.uniform(new THREE.Vector2(0.5, 0.5));
   const shaftStrength = tsl.uniform(0);
@@ -757,36 +817,79 @@ export async function createRemasterScene({ renderer, scene, camera, sun, hemi }
   }
 
   // The post chain, built once the camera is final.
+  //
+  // Its soft passes are sized by the CSS pixel, not the device pixel. The
+  // look was judged at 1600 x 900 and a pixel ratio of 1 (AO at 800 x 450,
+  // the shafts from 800 x 450); on a laptop's own screen at a ratio of 2 the
+  // same fractions of the drawing buffer are four times the pixels for a
+  // blur that looks the same, and they were most of the GPU's frame
+  // (features/remaster-browser, "A replay that slowed as it played").
+  // The scene pass and SMAA stay at the device pixel: they are the detail.
+  // So does the bloom: from a quarter-size source the sun's glint on the
+  // water lost its glow, its sparkles averaged under the threshold.
   let pipeline = null;
+  let builtFor = '';
+  let post = null;   // { ao, bloom, shaftMask, shaftRays } of the built chain
+  const postKey = () => `${tune.ao}${tune.bloom}${tune.shafts}${tune.smaa}`;
+  const softScale = () => tune.cssPost ? 1 / Math.max(1, renderer.getPixelRatio()) : 1;
+  function sizePost() {
+    if (!post) return;
+    const k = softScale();
+    if (post.ao) post.ao.resolutionScale = 0.5 * k;
+    // The shafts: drawn only while the sun is near the view (their strength
+    // is zero otherwise, and a zero times 40 taps a pixel is still 40 taps).
+    const on = shaftStrength.value > 0 || !tune.cssPost;
+    for (const node of [post.shaftMask, post.shaftRays]) {
+      if (!node) continue;
+      node._resolutionScale = 0.5 * k;
+      node.autoUpdate = on;
+    }
+  }
   function buildPipeline() {
     const { pass, mix, float, vec4, clamp } = tsl;
     // One sample: the ambient occlusion reads the depth, which a multisampled
     // pass cannot hand it; the edges are smoothed by SMAA instead.
+    builtFor = postKey();
+    post = {};
     const scenePass = pass(scene, camera, { samples: 0 });
     scenePassRef = scenePass;
     const color = scenePass.getTextureNode('output');
     const depth = scenePass.getTextureNode('depth');
-    // Ambient occlusion at half resolution; the sky has no surface to occlude.
-    const aoPass = gtao.ao(depth, null, camera);
-    aoPass.resolutionScale = 0.5;
-    aoPass.radius.value = 1.6;
-    aoPass.distanceExponent.value = 1.4;
-    aoPass.scale.value = 1.1;
-    aoPass.thickness.value = 1.5;
     const open = depth.r.greaterThanEqual(0.99999);
-    const occlusion = open.select(float(1), aoPass.getTextureNode().r);
-    let out = color.rgb.mul(mix(float(1), occlusion, 0.85));
-    out = out.add(bloomMod.bloom(color, 0.3, 0.35, 2.4).rgb);
+    let out = color.rgb;
+    // Ambient occlusion at half resolution; the sky has no surface to occlude.
+    if (tune.ao) {
+      const aoPass = post.ao = gtao.ao(depth, null, camera);
+      aoPass.resolutionScale = 0.5;
+      aoPass.radius.value = 1.6;
+      aoPass.distanceExponent.value = 1.4;
+      aoPass.scale.value = 1.1;
+      aoPass.thickness.value = 1.5;
+      const occlusion = open.select(float(1), aoPass.getTextureNode().r);
+      out = out.mul(mix(float(1), occlusion, 0.85));
+    }
+    if (tune.bloom) {
+      post.bloom = bloomMod.bloom(color, 0.3, 0.35, 2.4);
+      out = out.add(post.bloom.rgb);
+    }
     // Light shafts: the bright, open sky radially blurred toward the sun's
     // place on the screen, so the sun breaks through tree crowns, eaves and
-    // the girders of a bridge. Faded out as the sun leaves the view.
-    const bright = tsl.max(color.rgb.dot(tsl.vec3(0.2126, 0.7152, 0.0722)).sub(shaftThreshold), 0);
-    const mask = vec4(color.rgb.mul(bright).mul(open.select(float(1), float(0))), 1);
-    const rays = shaftMod.radialBlur(mask, { center: shaftCenter, weight: float(0.9), decay: float(0.955), count: tsl.int(40), exposure: float(1.2) });
-    out = out.add(rays.rgb.mul(shaftStrength));
+    // the girders of a bridge. Faded out as the sun leaves the view. The
+    // mask and the blur are each their own half-size target (in CSS pixels):
+    // inline, the 40 taps ran for every device pixel of the frame.
+    if (tune.shafts) {
+      const bright = tsl.max(color.rgb.dot(tsl.vec3(0.2126, 0.7152, 0.0722)).sub(shaftThreshold), 0);
+      const mask = post.shaftMask = tsl.rtt(vec4(color.rgb.mul(bright).mul(open.select(float(1), float(0))), 1),
+        null, null, { resolutionScale: 0.5 });
+      const rays = post.shaftRays = tsl.rtt(
+        shaftMod.radialBlur(mask, { center: shaftCenter, weight: float(0.9), decay: float(0.955), count: tsl.int(40), exposure: float(1.2) }),
+        null, null, { resolutionScale: 0.5 });
+      out = out.add(rays.rgb.mul(shaftStrength));
+    }
+    sizePost();
     // SMAA on the HDR frame, its edges found on values held under 4 so a
     // flash's core does not swamp the luma test.
-    out = smaaMod.smaa(vec4(clamp(out, 0, 4), 1));
+    if (tune.smaa) out = smaaMod.smaa(vec4(clamp(out, 0, 4), 1));
     // The frame is drawn as one full-screen quad through the renderer's own
     // output path, NOT a RenderPipeline. A RenderPipeline turns tone mapping
     // off and writes straight to the canvas; the page's overlay passes (the
@@ -817,6 +920,9 @@ export async function createRemasterScene({ renderer, scene, camera, sun, hemi }
       flash: flashes.map(f => +f.light.intensity.toFixed(1)), bursts: bursts.map(b => b.sprite.visible) }),
     /** After a level is up: its sky, sun, fog and shadow flags. */
     levelLoaded(extras, root) {
+      setStatics(false);
+      statics = null;
+      levelRoot = root ?? null;
       atmosphere.apply(extras);
       flagShadows(root ?? scene);
       const t = performance.now();
@@ -911,6 +1017,7 @@ export async function createRemasterScene({ renderer, scene, camera, sun, hemi }
       if (earlyFrames < 600) flagShadows(scene);
       if (now - lastFlag > 1000) { lastFlag = now; flagShadows(scene); proxies.refresh(casters); batchCasters(); }
       batchSynced = false;
+      holdStatics(shadows, now);
       if (now - lastJudge > 200 || camera.position.distanceToSquared(_lastEye) > 400) {
         lastJudge = now;
         _lastEye.copy(camera.position);
@@ -918,6 +1025,8 @@ export async function createRemasterScene({ renderer, scene, camera, sun, hemi }
       }
       const autoClear = renderer.autoClear;
       renderer.autoClear = true;
+      if (pipeline && builtFor !== postKey()) { pipeline.material.dispose(); pipeline = null; }
+      sizePost();
       (pipeline ?? buildPipeline()).render(renderer);
       renderer.autoClear = autoClear;
       for (let i = warmAt.length - 1; i >= 0; i--) {
