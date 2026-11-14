@@ -16,7 +16,17 @@
 // `yaw`/`pitch`/`zoom`), or
 //   { name, title, map, mod, level: true, from: [x,y,z,yaw,pitch], to: [...], len, still }
 // for a camera glide over the level with nothing playing. `still` is the
-// second into the shot the stills are taken at.
+// second into the shot the stills are taken at. A level shot may stage a
+// fight: `gunners: { bots, seats: { <team>: <template> }, perTeam, warm }`
+// plays the level with `bots` bots, seats up to `perTeam` bots of a team on
+// the nearest free gun of that template (the rest fight on foot), keeps it there (its own plans would take it to a tank;
+// one killed is seated again once it is back), stands the bots on foot
+// back inside `field: [x0, z0, x1, z1]` every two seconds when given one,
+// with `bursts: [on, off]` aims each gunner at a gunner across the gap and
+// fires it in bursts of `on` seconds every `on + off`, and lets the fight run
+// `warm` seconds before the shot starts. The bots' choices are their own
+// dice in each page, so the two halves show the same fight, not the same
+// rounds.
 import { createRequire } from 'node:module';
 import { execFileSync } from 'node:child_process';
 import fs from 'node:fs';
@@ -52,7 +62,7 @@ async function open(browser, shot, query) {
   const page = await browser.newPage({ viewport: { width: W, height: H }, deviceScaleFactor: 1 });
   page.on('pageerror', e => log('pageerror', query, e.message.slice(0, 200)));
   await page.addInitScript(clockInit);
-  const q = `mod=${shot.mod}&map=${shot.map}${shot.level ? '' : `&replay=${shot.replay}`}&shots&mute&botCount=0&quality=full&${query}`;
+  const q = `mod=${shot.mod}&map=${shot.map}${shot.level ? '' : `&replay=${shot.replay}`}&shots&mute&botCount=${shot.gunners?.bots ?? 0}&quality=full&${query}`;
   await page.goto(`${BASE}/map.html?${q}`, { waitUntil: 'domcontentloaded', timeout: 300000 });
   if (shot.level) {
     await page.waitForFunction(() => window.__renderOnce && window.__scene, null, { timeout: 480000, polling: 500 });
@@ -83,6 +93,34 @@ async function frame(page, shot, s, label, clean = false) {
       cam.rotation.set(pitch, yaw, 0, 'YXZ');
       cam.updateMatrixWorld();
     }
+    if (window.__gunners) {
+      // The staged gunners stay on their guns.
+      const g = window.__gunners;
+      for (const id of g.ids) {
+        const bot = window.__botCtl(id);
+        const want = g.seats[bot?.team];
+        if (!want) continue;
+        bot.exitRequest = false;
+        bot.switchRequest = null;
+        if (!bot.vehicle && (g.tick++ % 15 === 0)) window.__botMount(id, want, 'driver');
+      }
+      // `field: [x0, z0, x1, z1]`: every two seconds the bots on foot that
+      // have left it are stood back in it, facing the other side, so the
+      // guns always have someone in front of them.
+      if (g.field && (g.frame = (g.frame ?? 0) + 1) % 60 === 1) {
+        const [x0, z0, x1, z1] = g.field;
+        for (const b of window.__bots()) {
+          if (g.ids.includes(b.id) || b.vehicle) continue;
+          const [x, , z] = b.pos;
+          if (x >= x0 && x <= x1 && z >= z0 && z <= z1) continue;
+          const team = window.__botCtl(b.id)?.team;
+          const rx = x0 + (x1 - x0) * Math.random(), rz = z0 + (z1 - z0) * (team === g.northTeam ? 0.55 + 0.2 * Math.random() : 0.25 + 0.2 * Math.random());
+          // `seats` keys are teams; the side whose guns are further along +z
+          // stands on the +z half facing -z (the soldier's yaw is atan2(x, z)).
+          window.__botPlace(b.id, rx, rz, team === g.northTeam ? Math.PI : 0);
+        }
+      }
+    }
     window.__clock.step(1000 / FPS);
     window.__renderOnce(W, H, 1 / FPS);
     const cv = (window.__cmpCanvas ??= Object.assign(document.createElement('canvas'), { width: W, height: H }));
@@ -106,7 +144,55 @@ async function frame(page, shot, s, label, clean = false) {
 }
 
 async function start(page, shot) {
-  if (shot.level) return;
+  if (shot.level) {
+    if (!shot.gunners) return;
+    const staged = await page.evaluate(g => {
+      if (window.__gunners) return null;
+      // At most `perTeam` gunners a side; the rest fight on foot, which
+      // gives the guns something to fire at.
+      const per = {};
+      const ids = [];
+      for (const b of window.__bots()) {
+        const team = window.__botCtl(b.id)?.team;
+        const want = g.seats[team];
+        if (!want || (per[team] ?? 0) >= (g.perTeam ?? Infinity)) continue;
+        if (window.__botMount(b.id, want, 'driver')) { ids.push(b.id); per[team] = (per[team] ?? 0) + 1; }
+      }
+      window.__gunners = { seats: g.seats, ids, tick: 0, field: g.field ?? null, northTeam: Number(g.northTeam ?? 0) };
+      return ids.length;
+    }, shot.gunners);
+    if (staged === null) return;
+    if (shot.gunners.bursts) {
+      // A director's crossfire: each gunner aims at a gunner across the gap
+      // (sweeping a few metres either side) and fires in bursts on its own
+      // rhythm, through the bots' own aim and trigger (`bot-aim.js`
+      // `turretAimAt`, the input word the world fires the seat's gun from).
+      // Left to their own plans they found a target now and then.
+      await page.evaluate(async ([on, off]) => {
+        const aiming = await import(new URL('bot-aim.js', location.href).href);
+        const g = window.__gunners;
+        g.ids.forEach((id, i) => {
+          const bot = window.__botCtl(id);
+          const write = bot._writeInput.bind(bot);
+          const phase = i * 0.37 * (on + off);
+          bot._writeInput = () => {
+            const enemies = g.ids.map(e => window.__botCtl(e)).filter(e => e && e.team !== bot.team && e.vehicle);
+            if (bot.vehicle && enemies.length) {
+              const t = (bot._now ?? 0) + phase;
+              const target = enemies[(i + Math.floor(t / (on + off))) % enemies.length].getPosition();
+              const sweep = Math.sin(t * 0.9 + i) * 6;
+              aiming.turretAimAt(bot, [target[0] + sweep, target[1] + 0.8, target[2]]);
+              bot.isFiring = (t % (on + off)) < on;
+            }
+            write();
+          };
+        });
+      }, shot.gunners.bursts);
+    }
+    log(`  ${staged} gunners seated; the fight runs ${shot.gunners.warm ?? 0} s first`);
+    for (let k = 0; k < (shot.gunners.warm ?? 0) * FPS; k++) await frame(page, shot, 0, null);
+    return;
+  }
   await page.evaluate(shot => {
     const r = window.replay;
     r.creator?.toggle?.(false);

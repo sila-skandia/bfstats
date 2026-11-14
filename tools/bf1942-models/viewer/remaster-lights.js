@@ -23,8 +23,14 @@ export const FLASH_KINDS = [
   { test: /bomb|granadeexpl|groundexpl|waterexpl|expl(armor|bazooka|boatarmor|gas|ani)|torpedo/i, intensity: 150, range: 60, life: 0.45, color: 0xffb070 },
   // A tank's main gun, a self-propelled gun's, a coastal or a ship's gun.
   { test: /muzz(panz|sexton|priest|defgun)/i, intensity: 90, range: 30, life: 0.13, color: 0xffc080, burst: 2.8 },
-  // An anti-aircraft gun, a heavy machine gun, a bomber's turret.
-  { test: /muzz(aagun|heavy|b17)/i, intensity: 16, range: 14, life: 0.07, color: 0xffc890, burst: 1.3 },
+  // An anti-aircraft gun.
+  { test: /muzzaagun/i, intensity: 16, range: 14, life: 0.07, color: 0xffc890, burst: 1.3 },
+  // A heavy machine gun (`e_MuzzHeavy`: a nest's MG42 or Browning, a
+  // fighter's wing guns; `e_MuzzB17`: a tank's coaxial and pintle MGs): the
+  // AA gun's light, a small hot core. At the AA gun's 1.3 m disc, ten rounds a
+  // second ten metres off bloomed into a white ball the size of the sun
+  // (2026-11-14, filming Battleaxe's nests).
+  { test: /muzz(heavy|b17)/i, intensity: 16, range: 14, life: 0.07, color: 0xffc890, burst: 0.45 },
   { test: /muzz/i, intensity: 1.2, range: 8, life: 0.05, color: 0xffc890 },
 ];
 

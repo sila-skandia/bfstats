@@ -45,6 +45,20 @@ export function installBotHooks(page) {
     bot._respawnForce = true;
     return true;
   };
+  // Stand a bot on foot at (x, z) on the ground, facing `yaw`, the way the
+  // referee stands one out of a vehicle (`leaveVehicle`): for a check or a
+  // capture that stages a fight where it can be seen
+  // (scripts/remaster-compare.mjs `gunners.field`).
+  window.__botPlace = (id, x, z, yaw = 0) => {
+    const bot = page.referee.bots.find(b => b.playerId === id);
+    const soldier = page.world?.player(id)?.soldier;
+    if (!bot || !soldier || bot.vehicle || page.world?.armorOf(id)?.destroyed) return false;
+    const y = page.groundHeight(x, z);
+    if (!Number.isFinite(y)) return false;
+    soldier.spawn(x, y + 0.05, z, yaw);
+    bot.setPosition(soldier.x, soldier.y, soldier.z);
+    return true;
+  };
   window.__botDismount = id => { const bot = page.referee.bots.find(b => b.playerId === id); if (bot?.vehicle) page.referee.leaveVehicle(bot); return !bot?.vehicle; };
   // The bots' bodies on the page: each live bot's drawn family and seat, and
   // every corpse still down (`bot-visuals.js`), so a headless check can tell a

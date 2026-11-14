@@ -64,6 +64,9 @@ wins", below).
 | The sun's glint on the water held under a beam | done (2026-11-14) |
 | Far flak bursts drew as pale rectangles | fixed (2026-11-14) |
 | Matched before/after stills and a side-by-side reel for marketing | done (2026-11-14) |
+| A shaded vehicle or soldier keeps the sky's fill; ambient occlusion eased | done (2026-11-14) |
+| A heavy MG's muzzle burst a small core, not the AA gun's disc | fixed (2026-11-14) |
+| A staged MG crossfire on Battleaxe for the tracers | done (2026-11-14) |
 
 ## How to turn it on
 
@@ -755,6 +758,30 @@ rectangle. The glow now carries light over coverage with the coverage in the
 alpha the blend multiplies by, so the frame gets the same light and the fog's
 tint is weighted as retail's is (`remaster-renderer.js` `glow`).
 
+**Darker and worse** (owner, on the first set of captures: "only the water
+shot on Wake actually looks better. Everything else looks darker and
+worse"). Measured, the frames were not darker overall (mean grey 134 to 106
+on the halftrack, the same on the rifleman, brighter on the Flak 38): the
+subjects were. Two causes. Every shot looked into the sun, and the retail
+page lights its vehicles from the mirror of the level's painted sun ("The
+sun's side"), so the face the camera saw was lit there and in shade here,
+where the engine's combine leaves it at its floor (0.8 of its texture
+against up to 1.8 lit): a halftrack against the sun was a dark brown shape.
+And the contact darkening, at 0.85, took the detail out of the shaded side
+with it. A vehicle's or a soldier's face turned from the sun or in a cast
+shadow now keeps `SHADE_FILL` 0.35 of the sun (the sky's fill: the shaded
+side at 0.64 of the lit one, a cast shadow on a hull still reads;
+`remaster-materials.js`), and the occlusion is mixed at 0.55. Wake's
+harness views were checked against retail after it: nothing washed out.
+The captures were then reframed with the sun behind the camera, which is
+where the remaster's light reads as light.
+
+**A white ball over the frame.** Ten metres from a nest's MG42 the
+remaster drew a sun-sized white disc every few frames: the hot burst at the
+muzzle, which every heavy machine gun (`e_MuzzHeavy`, and a tank's coaxial
+`e_MuzzB17`) took at the AA gun's 1.3 m. Those now draw a 0.45 m core with
+the same light (`remaster-lights.js` `FLASH_KINDS`).
+
 ## Marketing captures (2026-11-14)
 
 `scripts/remaster-compare.mjs` draws the same replayed moments twice, the
@@ -771,18 +798,31 @@ curl -s -o tools/bf1942-models/viewer/replays/ymdy248edr.ndjson \
 node scripts/remaster-compare.mjs --out ~/.cache/bfstats-remaster-compare
 ```
 
-The 2026-11-14 set, from the Battleaxe recording `ymdy248edr` and Wake, is in
-`marketing/` (a still per mode per shot and the pair side by side): the
-halftrack's MG42 at the Spitfires, a rifleman's StG44, the Flak 38 and the
-Allied AA gun with the blast that whites out the retail frame, and Wake's
-lagoon down into the sun. The 34 s reel is not committed (36 MB); the
-command above makes it again. `--probe=<from>,<to>` lists every effect,
-round and burst drawn in those frames, which is how the flak rectangle was
-named.
+A level shot can stage a fight (`gunners`): the bots seated on a side's
+guns (`__botMount`), kept there, and with `bursts` aimed at a gunner across
+the gap and fired in bursts through their own aim and trigger
+(`bot-aim.js` `turretAimAt`, the input word the world fires the seat's gun
+from). Left to their own plans the gunners found a target now and then and
+the free bots took the tanks; the tracers need a steady crossfire to be
+seen. `field` stands the bots on foot back in no man's land
+(`__botPlace`, a test hook). Battleaxe's four Browning nests (z -842 to
+-897) and four MG42 nests (z -1000 to -1050) face each other 110-160 m
+apart: the wide shot looks along the gap from the east with the sun behind
+it, the close one sits beside an MG42 nest. The bots' choices are each
+page's own dice, so the halves show the same fight, not the same rounds.
+
+The set, from that crossfire, the Battleaxe recording `ymdy248edr` and
+Wake, is in `marketing/` (a still per mode per shot and the pair side by
+side; the sun is behind the camera in every Battleaxe shot). The 58 s reel
+(3208 x 900, 150 MB) is not committed; the command above makes it again.
+`--probe=<from>,<to>` lists every effect, round and burst drawn in those
+frames, which is how the flak rectangle and the MG's white ball were named.
+
+![MG crossfire before and after](marketing/battleaxe_crossfire_wide_side_by_side.jpg)
 
 ![Flak before and after](marketing/battleaxe_allied_aa_side_by_side.jpg)
 
-![MG42 before and after](marketing/battleaxe_mg42_side_by_side.jpg)
+![The halftrack's MG42, the sun behind the camera](marketing/battleaxe_mg42_side_by_side.jpg)
 
 
 ## Bugs found on the way

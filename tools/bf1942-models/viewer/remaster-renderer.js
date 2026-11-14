@@ -241,10 +241,15 @@ export async function createRemasterScene({ renderer, scene, camera, sun, hemi }
       // at 1 the fog tinted the whole quad, its empty corners included, and
       // the blend added that tint to the sky: a flak burst 300 m out drew as
       // a pale rectangle (2026-11-14, Battleaxe's AA guns in a replay).
-      const coverage = c.a.mul(tsl.materialOpacity).clamp(0, 1);
-      const display = tsl.sRGBTransferOETF(c.rgb).mul(coverage).clamp(0, 1);
-      m.colorNode = tsl.vec4(tsl.sRGBTransferEOTF(display).mul(gain).div(coverage.max(1 / 255)), 1);
-      m.opacityNode = coverage;
+      // The texture's coverage shapes the light in display space, as the
+      // engine's blend did; the material's fade is applied by the opacity
+      // node alone (a material's opacity read in a colour node is not
+      // always its own: "A material's opacity read inside a colour node",
+      // below).
+      const a = c.a.clamp(1 / 255, 1);
+      const display = tsl.sRGBTransferOETF(c.rgb).mul(a).clamp(0, 1);
+      m.colorNode = tsl.vec4(tsl.sRGBTransferEOTF(display).mul(gain).div(a), 1);
+      m.opacityNode = c.a.mul(tsl.materialOpacity).clamp(0, 1);
     } else {
       m.colorNode = tsl.vec4(c.rgb.mul(gain), c.a);
     }
@@ -881,7 +886,10 @@ export async function createRemasterScene({ renderer, scene, camera, sun, hemi }
       aoPass.scale.value = 1.1;
       aoPass.thickness.value = 1.5;
       const occlusion = open.select(float(1), aoPass.getTextureNode().r);
-      out = out.mul(mix(float(1), occlusion, 0.85));
+      // At 0.85 the contact darkening took the detail out of a soldier's or
+      // a hull's shaded side along with the shadow (owner, 2026-11-14);
+      // 0.55 keeps the grounding under a wheel and a sandbag.
+      out = out.mul(mix(float(1), occlusion, 0.55));
     }
     if (tune.bloom) {
       post.bloom = bloomMod.bloom(color, 0.3, 0.35, 2.4);

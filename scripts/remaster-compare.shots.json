@@ -1,5 +1,77 @@
 [
  {
+  "name": "battleaxe_crossfire_wide",
+  "title": "Battleaxe: MG nests firing across no man's land, the sun behind the camera",
+  "map": "battleaxe",
+  "mod": "bf1942",
+  "level": true,
+  "gunners": {
+   "bots": 8,
+   "seats": {
+    "2": "Stationary_Browning",
+    "1": "Stationary_MG42"
+   },
+   "perTeam": 4,
+   "warm": 6,
+   "bursts": [
+    2.2,
+    1.4
+   ]
+  },
+  "from": [
+   1492,
+   42,
+   -985,
+   -1.5708,
+   0.0
+  ],
+  "to": [
+   1486,
+   43,
+   -922,
+   -1.5708,
+   0.0
+  ],
+  "len": 12,
+  "still": 7.0
+ },
+ {
+  "name": "battleaxe_crossfire_mg42",
+  "title": "Over an MG42 gunner's shoulder at the Browning nests",
+  "map": "battleaxe",
+  "mod": "bf1942",
+  "level": true,
+  "gunners": {
+   "bots": 8,
+   "seats": {
+    "2": "Stationary_Browning",
+    "1": "Stationary_MG42"
+   },
+   "perTeam": 4,
+   "warm": 6,
+   "bursts": [
+    2.2,
+    1.4
+   ]
+  },
+  "from": [
+   1360,
+   40.5,
+   -1010,
+   -0.3,
+   -0.02
+  ],
+  "to": [
+   1357,
+   40.5,
+   -1007,
+   -0.2,
+   -0.02
+  ],
+  "len": 12,
+  "still": 7.0
+ },
+ {
   "name": "battleaxe_mg42",
   "title": "A stationary MG42 at the Allied AA",
   "map": "battleaxe",
@@ -9,7 +81,7 @@
   "len": 4,
   "pid": 2,
   "mode": "orbit",
-  "yaw": -1.95,
+  "yaw": 0.99,
   "pitch": 0.05,
   "zoom": 0.6,
   "still": 1.0
@@ -24,7 +96,7 @@
   "len": 4,
   "pid": 0,
   "mode": "orbit",
-  "yaw": -1.9,
+  "yaw": 0.99,
   "pitch": 0.08,
   "zoom": 0.55,
   "still": 1.0
@@ -39,7 +111,7 @@
   "len": 10,
   "pid": 12,
   "mode": "orbit",
-  "yaw": 2.6,
+  "yaw": 0.99,
   "pitch": 0.12,
   "zoom": 1.4,
   "still": 1.0
@@ -54,9 +126,9 @@
   "len": 8,
   "pid": 9,
   "mode": "orbit",
-  "yaw": -0.8,
-  "pitch": 0.15,
-  "zoom": 1.3,
+  "yaw": 0.99,
+  "pitch": 0.28,
+  "zoom": 2.2,
   "still": 6.4
  },
  {

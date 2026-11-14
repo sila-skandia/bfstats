@@ -48,6 +48,10 @@ class RemasterLightsTests(unittest.TestCase):
         self.assertEqual(0, flash["e_MuzzM1"]["burst"])
         self.assertGreater(flash["e_MuzzAAGun"]["burst"], 0)
         self.assertGreater(flash["e_MuzzPanz"]["burst"], flash["e_MuzzAAGun"]["burst"])
+        # A heavy MG fires ten a second, often near the eye: a small core,
+        # never the AA gun's disc (a white ball over the frame, 2026-11-14).
+        self.assertGreater(flash["e_MuzzHeavy"]["burst"], 0)
+        self.assertLess(flash["e_MuzzHeavy"]["burst"], flash["e_MuzzAAGun"]["burst"] / 2)
         for name in ("e_ExplGas", "e_Bomb"):
             self.assertEqual(0, flash[name]["burst"], name)
 

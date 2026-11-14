@@ -10,7 +10,7 @@ installModuleHooks(viewer);
 const { FIRE, fireFlicker, flashKind, isFire } = await import(pathToFileURL(path.join(viewer, 'remaster-lights.js')).href);
 
 const NAMES = [
-  'e_MuzzPanz', 'e_MuzzSexton', 'e_MuzzDefgun', 'e_MuzzAAGun', 'e_MuzzSG44', 'e_MuzzM1',
+  'e_MuzzPanz', 'e_MuzzSexton', 'e_MuzzDefgun', 'e_MuzzAAGun', 'e_MuzzHeavy', 'e_MuzzSG44', 'e_MuzzM1',
   'e_ExplGas', 'e_ExplArmor', 'e_GranadeExpl', 'e_Bomb', 'e_ExplDrySand', 'e_ExplWindow', 'e_RichoMetal',
   'e_Shell792mm', 'e_PanzShootTrail', 'e_waterimpact', 'e_WillyDamage',
   'e_WillyFire', 'e_PanzFire', 'e_CorsairFire', 'e_fire4', 'e_scrapmetal_Spitfire', 'e_scrapmetal',

@@ -163,6 +163,18 @@ export const FOLIAGE_THROUGH = 0.6;
  * where the palm's baked shadow beside it already is.
  */
 export const LIGHTMAP_SHADE = 0.12;
+/**
+ * The share of the sun a vehicle's or a soldier's face keeps when it is
+ * turned from the sun or in a cast shadow: the open sky's fill. The engine's
+ * combine leaves such a face at its floor (0.8 of its texture against up to
+ * 1.8 lit); the retail page aims its light at the mirror of the level's
+ * painted sun ("The sun's side"), so the side a camera looking into the
+ * remaster's sun sees is lit there and at the floor here. A tank seen
+ * against the sun read as a dark brown shape (owner, 2026-11-14: "darker and
+ * worse"). With this fill the shaded side keeps 0.64 of the lit side's
+ * light, and a cast shadow on a hull still reads.
+ */
+export const SHADE_FILL = 0.35;
 
 // OPTIONS > VIDEO's ENVIRONMENT MAPPING (ledger VID-3), read each frame.
 const viewEnvOn = uniform(1).onRenderUpdate(() => (ENVMAP_SWITCH.value ? 1 : 0));
@@ -236,9 +248,11 @@ class EngineLightingModel extends THREE.LightingModel {
     let display;
     if (this.kind === 'lit' || this.kind === 'frond' || this.kind === 'cockpit') {
       // D3D clamps the vertex diffuse to [0, 1] before the stage's
-      // modulate-2x, and saturates again after the multiply.
+      // modulate-2x, and saturates again after the multiply. A vehicle's
+      // or a soldier's shaded side keeps the sky's fill (`SHADE_FILL`).
+      const kLit = this.kind === 'lit' ? max(k, vec3(SHADE_FILL)) : k;
       const lit = min(vec3(1), materialReference('bfEngineFloor', 'vec3')
-        .add(materialReference('bfEngineSun', 'vec3').mul(k))).mul(2);
+        .add(materialReference('bfEngineSun', 'vec3').mul(kLit))).mul(2);
       display = min(vec3(1), tex.mul(lit));
       if (this.env) display = envStage(display, matTexture('map').ref.a);
     } else if (this.kind === 'lightmap') {
