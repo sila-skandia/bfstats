@@ -145,7 +145,11 @@ pipeline {
                   withCredentials([
                     file(credentialsId: 'bf42-stats-k3s-kubeconfig', variable: 'KUBECONFIG_FILE'),
                     string(credentialsId: 'bf42-stats-secrets-jwt-private-key', variable: 'JWT_PRIVATE_KEY'),
-                    string(credentialsId: 'bf42-stats-secrets-refresh-token-secret', variable: 'REFRESH_TOKEN_SECRET')
+                    string(credentialsId: 'bf42-stats-secrets-refresh-token-secret', variable: 'REFRESH_TOKEN_SECRET'),
+                    // The early access page's release Job reads the app's GitHub
+                    // releases with these (deploy/app/sidecar-release-job.yaml).
+                    string(credentialsId: 'bfstats-sidecar-release-repo', variable: 'SIDECAR_RELEASE_REPO'),
+                    string(credentialsId: 'bfstats-sidecar-release-token', variable: 'SIDECAR_RELEASE_TOKEN')
                   ]) {
                     sh '''
                       set -euo pipefail
@@ -156,6 +160,10 @@ pipeline {
                       kubectl -n bf42-stats create secret generic bf42-stats-secrets \
                         --from-file=jwt-private-key="$TMPDIR/jwt-private.pem" \
                         --from-literal=refresh-token-secret="$REFRESH_TOKEN_SECRET" \
+                        --dry-run=client -o yaml | kubectl apply -f -
+                      kubectl -n bf42-stats create secret generic sidecar-release \
+                        --from-literal=repo="$SIDECAR_RELEASE_REPO" \
+                        --from-literal=token="$SIDECAR_RELEASE_TOKEN" \
                         --dry-run=client -o yaml | kubectl apply -f -
                       # Recreate + imagePullPolicy Always can exceed 120s (Docker Hub
                       # pull + process start). A second restart during that window

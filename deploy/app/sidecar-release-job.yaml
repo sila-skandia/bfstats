@@ -7,11 +7,14 @@
 # release.json, then swaps the folder in. A failed run leaves the live release
 # as it was. The API reads the folder on each request: nothing restarts.
 #
-# The GitHub repository and a token that can read its releases are a Secret,
-# created once by hand (a fine-grained token, that repository only,
-# Contents: read-only):
-#   kubectl --context hetzner -n bf42-stats create secret generic sidecar-release \
-#     --from-literal=repo=<owner>/<repository> --from-literal=token=<token>
+# The GitHub repository and a token that can read its releases come from the
+# `sidecar-release` Secret, which the Jenkinsfile's API deploy makes from two
+# Jenkins credentials, as it does bf42-stats-secrets: bfstats-sidecar-release-repo
+# (owner/repository) and bfstats-sidecar-release-token (a fine-grained token,
+# that repository only, Contents: read-only).
+#
+# Jenkins' role does not cover Jobs, so this file is applied by hand, like
+# dogfights-cronjob.yaml.
 #
 # To publish a version: set SIDECAR_VERSION below and the Job's name to match
 # (a Job runs once per name), then apply it and follow it:

@@ -54,9 +54,11 @@ private, so its release files are not downloadable).
 ### Publishing a release
 
 `deploy/app/sidecar-release-job.yaml`, applied by hand like the other manifests
-Jenkins does not apply. One run of the Job reads the release from GitHub
-(the repository and a read-only token are the `sidecar-release` Secret, made
-once by hand, so neither is in this repo), downloads the six installers and
+Jenkins does not apply (its role does not cover Jobs). One run of the Job reads
+the release from GitHub (the repository and a read-only token are the
+`sidecar-release` Secret, which the Jenkinsfile's API deploy makes from the
+Jenkins credentials `bfstats-sidecar-release-repo` and
+`bfstats-sidecar-release-token`, so neither is in this repo), downloads the six installers and
 the release's `SHA256SUMS` files, checks every file, writes `release.json`
 into `/mnt/data/sidecar.next`, and swaps it in for `/mnt/data/sidecar`. A
 failed run leaves the live release as it was. The API reads the folder on each
