@@ -37,7 +37,15 @@ public sealed class SidecarController(
     {
         Response.Headers.CacheControl = "private, no-store";
         if (UserId() is not { } userId) return Forbid();
-        if (SidecarRelease.Read(settings.Path) is not { } release) return NotFound();
+        if (SidecarRelease.Read(settings.Path) is not { } release)
+        {
+            // A manifest that is there but unreadable is an upload gone wrong (an empty
+            // release.json, 2026-11-15), not "no release yet": say so in the log.
+            if (System.IO.File.Exists(Path.Combine(settings.Path, SidecarRelease.ManifestName)))
+                logger.LogWarning("Sidecar: {Manifest} in {Path} is unreadable; the early access page shows no downloads",
+                    SidecarRelease.ManifestName, settings.Path);
+            return NotFound();
+        }
         var lifetime = TimeSpan.FromMinutes(Math.Max(1, settings.LinkMinutes));
         var files = release.Files
             .Select(f => new FileDto(f.File, f.Platform, f.Arch, f.Size, f.Sha256,
